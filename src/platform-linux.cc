@@ -388,6 +388,8 @@ void OS::DebugBreak() {
 # endif
 #elif defined(__mips__)
   asm("break");
+#elif defined(__PPC__)
+  asm("nop");	// roohack - nothing for now;
 #else
   asm("int $3");
 #endif
@@ -1015,6 +1017,7 @@ static int GetThreadID() {
 
 
 static void ProfilerSignalHandler(int signal, siginfo_t* info, void* context) {
+#ifndef V8_HOST_ARCH_PPC	// roohack needs fixing
   USE(info);
   if (signal != SIGPROF) return;
   Isolate* isolate = Isolate::UncheckedCurrent();
@@ -1067,6 +1070,7 @@ static void ProfilerSignalHandler(int signal, siginfo_t* info, void* context) {
 #endif  // V8_HOST_ARCH_*
   sampler->SampleStack(sample);
   sampler->Tick(sample);
+#endif // V8_HOST_ARCH_PPC roohack
 }
 
 
