@@ -1661,6 +1661,13 @@ void Simulator::HandleVList(Instruction* instr) {
 // 64-bit value. With the code below we assume that all runtime calls return
 // 64 bits of result. If they don't, the r1 result register contains a bogus
 // value, which is fine because it is caller-saved.
+#if V8_HOST_ARCH_PPC
+typedef int64_t (*SimulatorRuntimeCall)(int *arg0, int32_t argx);
+typedef double (*SimulatorRuntimeFPCall)(int32_t arg0,
+                                         int32_t arg1,
+                                         int32_t arg2,
+                                         int32_t arg3);
+#else
 typedef int64_t (*SimulatorRuntimeCall)(int32_t arg0,
                                         int32_t arg1,
                                         int32_t arg2,
@@ -1671,6 +1678,7 @@ typedef double (*SimulatorRuntimeFPCall)(int32_t arg0,
                                          int32_t arg1,
                                          int32_t arg2,
                                          int32_t arg3);
+#endif
 
 // This signature supports direct call in to API function native callback
 // (refer to InvocationCallback in v8.h).
@@ -1776,9 +1784,27 @@ void Simulator::SoftwareInterrupt(Instruction* instr) {
         } else {
           SimulatorRuntimeCall target =
               reinterpret_cast<SimulatorRuntimeCall>(external);
+#if V8_HOST_ARCH_PPC
+	  // Fake out passing the args on the C stack on Power
+	  // Also, due to endian swap we need to fetch result halfs swapped too
+          int64_t result=0;
+          {
+          int blob[6];
+          blob[0] = arg0;
+          blob[1] = arg1;
+          blob[2] = arg2;
+          blob[3] = arg3;
+          blob[4] = arg4;
+          blob[5] = arg5;
+          result = target(blob, arg2);
+          }
+          int32_t hi_res = static_cast<int32_t>(result);
+          int32_t lo_res = static_cast<int32_t>(result >> 32);
+#else
           int64_t result = target(arg0, arg1, arg2, arg3, arg4, arg5);
           int32_t lo_res = static_cast<int32_t>(result);
           int32_t hi_res = static_cast<int32_t>(result >> 32);
+#endif
           if (::v8::internal::FLAG_trace_sim) {
             PrintF("Returned %08x\n", lo_res);
           }
@@ -1841,9 +1867,27 @@ void Simulator::SoftwareInterrupt(Instruction* instr) {
           PrintF("\n");
         }
         CHECK(stack_aligned);
+#if V8_HOST_ARCH_PPC
+	// Fake out passing the args on the C stack on Power
+	// Also, due to endian swap we need to fetch result halfs swapped too
+        int64_t result = 0;
+        {
+        int blob[6];
+        blob[0] = arg0;
+        blob[1] = arg1;
+        blob[2] = arg2;
+        blob[3] = arg3;
+        blob[4] = arg4;
+        blob[5] = arg5;
+        result = target(blob, arg2);
+        }
+        int32_t hi_res = static_cast<int32_t>(result);
+        int32_t lo_res = static_cast<int32_t>(result >> 32);
+#else
         int64_t result = target(arg0, arg1, arg2, arg3, arg4, arg5);
         int32_t lo_res = static_cast<int32_t>(result);
         int32_t hi_res = static_cast<int32_t>(result >> 32);
+#endif
         if (::v8::internal::FLAG_trace_sim) {
           PrintF("Returned %08x\n", lo_res);
         }
