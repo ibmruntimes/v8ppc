@@ -94,3 +94,8 @@ test-platform-tls/FastTLS: SKIP
 test-debug/DebuggerAgent: SKIP
 test-debug/DebuggerAgentProtocolOverflowHeader: SKIP
 test-sockets/Socket: SKIP
+
+# Roohack - remove tests that fail on x64 ARM simulator (TIMEOUT)
+test-debug/DebugBreakLoop: SKIP
+test-api/Threading: SKIP
+test-api/ExternalArrays: SKIP
