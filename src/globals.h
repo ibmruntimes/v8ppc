@@ -98,7 +98,7 @@ namespace internal {
 // environment as presented by the compiler.
 #if !defined(V8_TARGET_ARCH_X64) && !defined(V8_TARGET_ARCH_IA32) && \
     !defined(V8_TARGET_ARCH_ARM) && !defined(V8_TARGET_ARCH_MIPS) && \
-    !defined(V8_TARGET_ARCH_PPC) 
+    !defined(V8_TARGET_ARCH_PPC)
 #if defined(_M_X64) || defined(__x86_64__)
 #define V8_TARGET_ARCH_X64 1
 #elif defined(_M_IX86) || defined(__i386__)
@@ -121,7 +121,7 @@ namespace internal {
 #endif
 #if (defined(V8_TARGET_ARCH_ARM) && \
     !(defined(V8_HOST_ARCH_IA32) || defined(V8_HOST_ARCH_ARM)) && \
-    !(defined(V8_HOST_ARCH_PPC) || defined(V8_HOST_ARCH_ARM))) //roohack - bogus remove
+    !(defined(V8_HOST_ARCH_PPC) || defined(V8_HOST_ARCH_ARM)))  // roohack
 #error Target architecture arm is only supported on arm and ia32 host
 #endif
 #if (defined(V8_TARGET_ARCH_MIPS) && \

@@ -1785,9 +1785,9 @@ void Simulator::SoftwareInterrupt(Instruction* instr) {
           SimulatorRuntimeCall target =
               reinterpret_cast<SimulatorRuntimeCall>(external);
 #if V8_HOST_ARCH_PPC
-	  // Fake out passing the args on the C stack on Power
-	  // Also, due to endian swap we need to fetch result halfs swapped too
-          int64_t result=0;
+          // Fake out passing the args on the C stack on Power
+          // Also, due to endian swap we need to fetch result halfs swapped too
+          int64_t result = 0;
           {
           int blob[6];
           blob[0] = arg0;
@@ -1868,8 +1868,8 @@ void Simulator::SoftwareInterrupt(Instruction* instr) {
         }
         CHECK(stack_aligned);
 #if V8_HOST_ARCH_PPC
-	// Fake out passing the args on the C stack on Power
-	// Also, due to endian swap we need to fetch result halfs swapped too
+        // Fake out passing the args on the C stack on Power
+        // Also, due to endian swap we need to fetch result halfs swapped too
         int64_t result = 0;
         {
         int blob[6];

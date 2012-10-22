@@ -34,30 +34,30 @@
 namespace v8 {
 namespace internal {
 
-static unsigned int __cmpxchg_u32( volatile void* p, int val ) {
-	int old_value;
+static unsigned int __cmpxchg_u32(volatile void* p, int val) {
+  int old_value;
 
-	__asm__ __volatile__ (
-"1:	lwarx	%0,0,%2 \n\
-	stwcx.	%3,0,%2 \n\
-	bne-	1b"
-	: "=&r" (old_value), "+m" (*(volatile unsigned int *)p)
-	: "r" (p), "r" (val)
-	: "cc", "memory" );
+  __asm__ __volatile__(
+"1: lwarx  %0,0,%2 \n"  \
+"   stwcx. %3,0,%2 \n"  \
+"    bne-   1b\n"
+    : "=&r" (old_value), "+m" (*(volatile unsigned int *)p)
+    : "r" (p), "r" (val)
+    : "cc", "memory");
 
-	return old_value;
+  return old_value;
 }
 
 
 inline Atomic32 NoBarrier_CompareAndSwap(volatile Atomic32* ptr,
                                          Atomic32 old_value,
                                          Atomic32 new_value) {
-    return( __cmpxchg_u32( ptr, new_value ));
+  return( __cmpxchg_u32( ptr, new_value ));
 }
 
 inline Atomic32 NoBarrier_AtomicExchange(volatile Atomic32* ptr,
                                          Atomic32 new_value) {
-    return( __cmpxchg_u32( ptr, new_value ));
+  return( __cmpxchg_u32( ptr, new_value ));
 }
 
 inline Atomic32 NoBarrier_AtomicIncrement(volatile Atomic32* ptr,
@@ -67,12 +67,12 @@ inline Atomic32 NoBarrier_AtomicIncrement(volatile Atomic32* ptr,
 
 inline Atomic32 Barrier_AtomicIncrement(volatile Atomic32* ptr,
                                         Atomic32 increment) {
-    Atomic32 old_value = *ptr;
-    Atomic32 new_value = old_value + increment;
+  Atomic32 old_value = *ptr;
+  Atomic32 new_value = old_value + increment;
 
-    __cmpxchg_u32( ptr, new_value );
+  __cmpxchg_u32(ptr, new_value);
 
-    return new_value;
+  return new_value;
 }
 
 inline Atomic32 Acquire_CompareAndSwap(volatile Atomic32* ptr,
@@ -92,7 +92,7 @@ inline void NoBarrier_Store(volatile Atomic32* ptr, Atomic32 value) {
 }
 
 inline void MemoryBarrier() {
-  __asm__ __volatile__ ("sync" : : : "memory");
+  __asm__ __volatile__("sync" : : : "memory");
 }
 
 inline void Acquire_Store(volatile Atomic32* ptr, Atomic32 value) {
