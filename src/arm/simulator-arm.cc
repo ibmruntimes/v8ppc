@@ -1663,6 +1663,12 @@ void Simulator::HandleVList(Instruction* instr) {
 // value, which is fine because it is caller-saved.
 #if V8_HOST_ARCH_PPC
 typedef int64_t (*SimulatorRuntimeCall)(int *arg0, int32_t argx);
+typedef int64_t (*SimulatorRuntimeCallX)(int32_t arg0,
+                                        int32_t arg1,
+                                        int32_t arg2,
+                                        int32_t arg3,
+                                        int32_t arg4,
+                                        int32_t arg5);
 typedef double (*SimulatorRuntimeFPCall)(int32_t arg0,
                                          int32_t arg1,
                                          int32_t arg2,
@@ -1788,15 +1794,20 @@ void Simulator::SoftwareInterrupt(Instruction* instr) {
           // Fake out passing the args on the C stack on Power
           // Also, due to endian swap we need to fetch result halfs swapped too
           int64_t result = 0;
-          {
-          int blob[6];
-          blob[0] = arg0;
-          blob[1] = arg1;
-          blob[2] = arg2;
-          blob[3] = arg3;
-          blob[4] = arg4;
-          blob[5] = arg5;
-          result = target(blob, arg2);
+          if (arg0 <= 6) {
+            int blob[6];
+            blob[0] = arg0;
+            blob[1] = arg1;
+            blob[2] = arg2;
+            blob[3] = arg3;
+            blob[4] = arg4;
+            blob[5] = arg5;
+printf("1799 arg0:%d isolate:%p\n", arg0, (void*)arg2);
+            result = target(blob, arg2);
+          } else {
+            SimulatorRuntimeCallX targetx =
+              reinterpret_cast<SimulatorRuntimeCallX>(external);
+            result = targetx(arg0, arg1, arg2, arg3, arg4, arg5);
           }
           int32_t hi_res = static_cast<int32_t>(result);
           int32_t lo_res = static_cast<int32_t>(result >> 32);
@@ -1871,15 +1882,20 @@ void Simulator::SoftwareInterrupt(Instruction* instr) {
         // Fake out passing the args on the C stack on Power
         // Also, due to endian swap we need to fetch result halfs swapped too
         int64_t result = 0;
-        {
-        int blob[6];
-        blob[0] = arg0;
-        blob[1] = arg1;
-        blob[2] = arg2;
-        blob[3] = arg3;
-        blob[4] = arg4;
-        blob[5] = arg5;
-        result = target(blob, arg2);
+        if (arg0 <= 6) {
+          int blob[6];
+          blob[0] = arg0;
+          blob[1] = arg1;
+          blob[2] = arg2;
+          blob[3] = arg3;
+          blob[4] = arg4;
+          blob[5] = arg5;
+printf("1183 arg0:%d isolate:%p\n", arg0, (void*)arg2);
+          result = target(blob, arg2);
+        } else {
+          SimulatorRuntimeCallX targetx =
+            reinterpret_cast<SimulatorRuntimeCallX>(external);
+          result = targetx(arg0, arg1, arg2, arg3, arg4, arg5);
         }
         int32_t hi_res = static_cast<int32_t>(result);
         int32_t lo_res = static_cast<int32_t>(result >> 32);
