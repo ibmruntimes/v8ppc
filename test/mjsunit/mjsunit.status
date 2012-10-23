@@ -125,6 +125,10 @@ debug-liveedit-double-call: SKIP
 # Currently always deopt on minus zero
 math-floor-of-div-minus-zero: SKIP
 
+# Tests that are ARM simulated on PPC failures 
+# PPC math precise, Intel not http://code.google.com/p/v8/issues/detail?id=1975
+regress/regress-transcendental: SKIP
+
 ##############################################################################
 [ $arch == mipsel ]
 
