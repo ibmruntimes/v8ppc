@@ -1802,7 +1802,7 @@ void Simulator::SoftwareInterrupt(Instruction* instr) {
             blob[3] = arg3;
             blob[4] = arg4;
             blob[5] = arg5;
-printf("1799 arg0:%d isolate:%p\n", arg0, (void*)arg2);
+// printf("1799 arg0:%d isolate:%p\n", arg0, (void*)arg2);
             result = target(blob, arg2);
           } else {
             SimulatorRuntimeCallX targetx =
@@ -1890,7 +1890,7 @@ printf("1799 arg0:%d isolate:%p\n", arg0, (void*)arg2);
           blob[3] = arg3;
           blob[4] = arg4;
           blob[5] = arg5;
-printf("1183 arg0:%d isolate:%p\n", arg0, (void*)arg2);
+// printf("1183 arg0:%d isolate:%p\n", arg0, (void*)arg2);
           result = target(blob, arg2);
         } else {
           SimulatorRuntimeCallX targetx =
