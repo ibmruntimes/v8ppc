@@ -79,6 +79,11 @@ test-serialize/DeserializeFromSecondSerializationAndRunScript2: SKIP
 test-serialize/DeserializeAndRunScript2: SKIP
 test-serialize/DeserializeFromSecondSerialization: SKIP
 
+# Roohack - remove tests that fail on x64 ARM simulator (TIMEOUT)
+test-debug/DebugBreakLoop: SKIP
+test-api/Threading: SKIP
+test-api/ExternalArrays: SKIP
+
 ##############################################################################
 [ $arch == android_arm || $arch == android_ia32 ]
 
@@ -95,7 +100,3 @@ test-debug/DebuggerAgent: SKIP
 test-debug/DebuggerAgentProtocolOverflowHeader: SKIP
 test-sockets/Socket: SKIP
 
-# Roohack - remove tests that fail on x64 ARM simulator (TIMEOUT)
-test-debug/DebugBreakLoop: SKIP
-test-api/Threading: SKIP
-test-api/ExternalArrays: SKIP
