@@ -1103,13 +1103,6 @@ void Simulator::WriteW(int32_t addr, int value, Instruction* instr) {
 
 
 uint16_t Simulator::ReadHU(int32_t addr, Instruction* instr) {
-#if V8_HOST_ARCH_PPC
-  uint16_t value;
-  uint8_t* ptr = reinterpret_cast<uint8_t*>(addr);
-  value = *ptr++;
-  value |= *ptr << 8;
-  return value;
-#else
 #if V8_TARGET_CAN_READ_UNALIGNED
   uint16_t* ptr = reinterpret_cast<uint16_t*>(addr);
   return *ptr;
@@ -1124,18 +1117,10 @@ uint16_t Simulator::ReadHU(int32_t addr, Instruction* instr) {
   UNIMPLEMENTED();
   return 0;
 #endif
-#endif // V8_HOST_ARCH_PPC 
 }
 
 
 int16_t Simulator::ReadH(int32_t addr, Instruction* instr) {
-#if V8_HOST_ARCH_PPC
-  int16_t value;
-  int8_t* ptr = reinterpret_cast<int8_t*>(addr);
-  value = *ptr++;
-  value |= *ptr << 8;
-  return value;
-#else
 #if V8_TARGET_CAN_READ_UNALIGNED
   int16_t* ptr = reinterpret_cast<int16_t*>(addr);
   return *ptr;
@@ -1148,16 +1133,10 @@ int16_t Simulator::ReadH(int32_t addr, Instruction* instr) {
   UNIMPLEMENTED();
   return 0;
 #endif
-#endif // V8_HOST_ARCH_PPC 
 }
 
 
 void Simulator::WriteH(int32_t addr, uint16_t value, Instruction* instr) {
-#if V8_HOST_ARCH_PPC
-  uint8_t* ptr = reinterpret_cast<uint8_t*>(addr);
-  *ptr++ = value & 0xff;
-  *ptr = value >> 8;
-#else
 #if V8_TARGET_CAN_READ_UNALIGNED
   uint16_t* ptr = reinterpret_cast<uint16_t*>(addr);
   *ptr = value;
@@ -1173,16 +1152,10 @@ void Simulator::WriteH(int32_t addr, uint16_t value, Instruction* instr) {
          reinterpret_cast<intptr_t>(instr));
   UNIMPLEMENTED();
 #endif
-#endif // V8_HOST_ARCH_PPC 
 }
 
 
 void Simulator::WriteH(int32_t addr, int16_t value, Instruction* instr) {
-#if V8_HOST_ARCH_PPC
-  int8_t* ptr = reinterpret_cast<int8_t*>(addr);
-  *ptr++ = value & 0xff;
-  *ptr = value >> 8;
-#else
 #if V8_TARGET_CAN_READ_UNALIGNED
   int16_t* ptr = reinterpret_cast<int16_t*>(addr);
   *ptr = value;
@@ -1198,7 +1171,6 @@ void Simulator::WriteH(int32_t addr, int16_t value, Instruction* instr) {
          reinterpret_cast<intptr_t>(instr));
   UNIMPLEMENTED();
 #endif
-#endif // V8_HOST_ARCH_PPC 
 }
 
 
@@ -3283,7 +3255,6 @@ void Simulator::InstructionDecode(Instruction* instr) {
     v8::internal::EmbeddedVector<char, 256> buffer;
     dasm.InstructionDecode(buffer,
                            reinterpret_cast<byte*>(instr));
-//    PrintF("%08d 0x%08x  %s\n",icount_, reinterpret_cast<intptr_t>(instr), buffer.start());
     PrintF("  0x%08x  %s\n", reinterpret_cast<intptr_t>(instr), buffer.start());
   }
   if (instr->ConditionField() == kSpecialCondition) {
