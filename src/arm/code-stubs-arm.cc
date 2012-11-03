@@ -5679,12 +5679,14 @@ void StringHelper::GenerateCopyCharactersLong(MacroAssembler* masm,
     __ Check(eq, "Destination of copy not aligned.");
   }
 
+#ifndef V8_HOST_ARCH_PPC
   const int kReadAlignment = 4;
   const int kReadAlignmentMask = kReadAlignment - 1;
   // Ensure that reading an entire aligned word containing the last character
   // of a string will not read outside the allocated area (because we pad up
   // to kObjectAlignment).
   STATIC_ASSERT(kObjectAlignment >= kReadAlignment);
+#endif
   // Assumes word reads and writes are little endian.
   // Nothing to do for zero characters.
   Label done;
@@ -5697,6 +5699,10 @@ void StringHelper::GenerateCopyCharactersLong(MacroAssembler* masm,
 
   // Assume that you cannot read (or write) unaligned.
   Label byte_loop;
+#if V8_HOST_ARCH_PPC
+  __ add(count, dest, Operand(count));
+  Register limit = count;  // Read until src equals this.
+#else  // little endian only
   // Must copy at least eight bytes, otherwise just do it one byte at a time.
   __ cmp(count, Operand(8));
   __ add(count, dest, Operand(count));
@@ -5789,7 +5795,7 @@ void StringHelper::GenerateCopyCharactersLong(MacroAssembler* masm,
     __ cmp(scratch3, Operand(8));
     __ b(ge, &loop);
   }
-
+#endif  // !V8_HOST_ARCH_PPC
   // Copy bytes from src to dst until dst hits limit.
   __ bind(&byte_loop);
   __ cmp(dest, Operand(limit));
