@@ -8553,8 +8553,15 @@ static inline ObjectPair MakePair(MaybeObject* x, MaybeObject* y) {
 #else
 typedef uint64_t ObjectPair;
 static inline ObjectPair MakePair(MaybeObject* x, MaybeObject* y) {
+#if __BYTE_ORDER == __LITTLE_ENDIAN
   return reinterpret_cast<uint32_t>(x) |
       (reinterpret_cast<ObjectPair>(y) << 32);
+#else  // BIG ENDIAN
+  return reinterpret_cast<uint32_t>(y) |
+      (reinterpret_cast<ObjectPair>(x) << 32);
+#endif
+/*
+*/
 }
 #endif
 
