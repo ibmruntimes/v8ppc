@@ -3829,10 +3829,19 @@ void CEntryStub::GenerateCore(MacroAssembler* masm,
     __ str(r1, MemOperand(r0));
   }
 
+#if defined(V8_HOST_ARCH_PPC)
+  // Use frame storage reserved by calling function
+  // PPC passes C++ objects by reference not value
+  // This builds an object in the stack frame
+  __ str(r6, MemOperand(sp, 2 * kPointerSize));
+  __ str(r4, MemOperand(sp, 1 * kPointerSize));
+  __ add(r0, sp, Operand(1 * kPointerSize));
+#else
   // Call C built-in.
   // r0 = argc, r1 = argv
   __ mov(r0, Operand(r4));
   __ mov(r1, Operand(r6));
+#endif
 
 #if defined(V8_HOST_ARCH_ARM)
   int frame_alignment = MacroAssembler::ActivationFrameAlignment();
@@ -3850,7 +3859,13 @@ void CEntryStub::GenerateCore(MacroAssembler* masm,
   }
 #endif
 
+#if defined(V8_HOST_ARCH_PPC)
+  // PPC passes C++ objects by reference not value
+  // Thus argument 2 (r1) should be the isolate
+  __ mov(r1, Operand(ExternalReference::isolate_address()));
+#else
   __ mov(r2, Operand(ExternalReference::isolate_address()));
+#endif
 
   // To let the GC traverse the return address of the exit frames, we need to
   // know where the return address is. The CEntryStub is unmovable, so
@@ -3944,7 +3959,12 @@ void CEntryStub::Generate(MacroAssembler* masm) {
 
   // Enter the exit frame that transitions from JavaScript to C++.
   FrameScope scope(masm, StackFrame::MANUAL);
+#if defined(V8_HOST_ARCH_PPC)
+  // PPC needs extra frame space to fake out a C++ object
+  __ EnterExitFrame(save_doubles_, 2);
+#else
   __ EnterExitFrame(save_doubles_);
+#endif
 
   // Set up argc and the builtin function in callee-saved registers.
   __ mov(r4, Operand(r0));
