@@ -844,8 +844,13 @@ static void Generate_JSConstructStubHelper(MacroAssembler* masm,
       __ LoadRoot(r7, Heap::kUndefinedValueRootIndex);
       if (count_constructions) {
         __ ldr(r0, FieldMemOperand(r2, Map::kInstanceSizesOffset));
+#if defined(V8_HOST_ARCH_PPC)
+        __ Ubfx(r0, r0, (3 - Map::kPreAllocatedPropertyFieldsByte) * kBitsPerByte,
+                kBitsPerByte);
+#else
         __ Ubfx(r0, r0, Map::kPreAllocatedPropertyFieldsByte * kBitsPerByte,
                 kBitsPerByte);
+#endif
         __ add(r0, r5, Operand(r0, LSL, kPointerSizeLog2));
         // r0: offset of first field after pre-allocated fields
         if (FLAG_debug_code) {
@@ -873,11 +878,19 @@ static void Generate_JSConstructStubHelper(MacroAssembler* masm,
       // The field instance sizes contains both pre-allocated property fields
       // and in-object properties.
       __ ldr(r0, FieldMemOperand(r2, Map::kInstanceSizesOffset));
+#if defined(V8_HOST_ARCH_PPC)
+      __ Ubfx(r6, r0, (3 - Map::kPreAllocatedPropertyFieldsByte) * kBitsPerByte,
+              kBitsPerByte);
+      __ add(r3, r3, Operand(r6));
+      __ Ubfx(r6, r0, (3 - Map::kInObjectPropertiesByte) * kBitsPerByte,
+              kBitsPerByte);
+#else
       __ Ubfx(r6, r0, Map::kPreAllocatedPropertyFieldsByte * kBitsPerByte,
               kBitsPerByte);
       __ add(r3, r3, Operand(r6));
       __ Ubfx(r6, r0, Map::kInObjectPropertiesByte * kBitsPerByte,
               kBitsPerByte);
+#endif
       __ sub(r3, r3, Operand(r6), SetCC);
 
       // Done if no extra properties are to be allocated.
