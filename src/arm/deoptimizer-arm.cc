@@ -165,8 +165,13 @@ void Deoptimizer::PatchStackCheckCodeAt(Code* unoptimized_code,
 
   // Replace the stack check address in the constant pool
   // with the entry address of the replacement code.
+#if defined(V8_HOST_ARCH_PPC)
+  uint32_t stack_check_address_offset = Memory::uint16_at(pc_after -
+      (2 * kInstrSize) + 2) & 0xfff;
+#else
   uint32_t stack_check_address_offset = Memory::uint16_at(pc_after -
       2 * kInstrSize) & 0xfff;
+#endif
   Address stack_check_address_pointer = pc_after + stack_check_address_offset;
   ASSERT(Memory::uint32_at(stack_check_address_pointer) ==
          reinterpret_cast<uint32_t>(check_code->entry()));
@@ -201,8 +206,13 @@ void Deoptimizer::RevertStackCheckCodeAt(Code* unoptimized_code,
 
   // Replace the stack check address in the constant pool
   // with the entry address of the replacement code.
+#if defined(V8_HOST_ARCH_PPC)
+  uint32_t stack_check_address_offset = Memory::uint16_at(pc_after -
+      (2 * kInstrSize) +2) & 0xfff;
+#else
   uint32_t stack_check_address_offset = Memory::uint16_at(pc_after -
       2 * kInstrSize) & 0xfff;
+#endif
   Address stack_check_address_pointer = pc_after + stack_check_address_offset;
   ASSERT(Memory::uint32_at(stack_check_address_pointer) ==
          reinterpret_cast<uint32_t>(replacement_code->entry()));
