@@ -1593,9 +1593,8 @@ void LCodeGen::DoElementsKind(LElementsKind* instr) {
 
   // Load map into |result|.
   __ ldr(result, FieldMemOperand(input, HeapObject::kMapOffset));
-  // Load the map's "bit field 2" into |result|. We only need the first byte,
-  // but the following bit field extraction takes care of that anyway.
-  __ ldr(result, FieldMemOperand(result, Map::kBitField2Offset));
+  // Load the map's "bit field 2" into |result|
+  __ ldrb(result, FieldMemOperand(result, Map::kBitField2Offset));
   // Retrieve elements_kind from bit field 2.
   __ ubfx(result, result, Map::kElementsKindShift, Map::kElementsKindBitCount);
 }
@@ -2849,7 +2848,7 @@ void LCodeGen::DoLoadElements(LLoadElements* instr) {
     __ cmp(scratch, ip);
     __ b(eq, &done);
     // |scratch| still contains |input|'s map.
-    __ ldr(scratch, FieldMemOperand(scratch, Map::kBitField2Offset));
+    __ ldrb(scratch, FieldMemOperand(scratch, Map::kBitField2Offset));
     __ ubfx(scratch, scratch, Map::kElementsKindShift,
             Map::kElementsKindBitCount);
     __ cmp(scratch, Operand(GetInitialFastElementsKind()));
