@@ -1667,10 +1667,19 @@ typedef int64_t (*SimulatorRuntimeCall)(int32_t arg0,
                                         int32_t arg3,
                                         int32_t arg4,
                                         int32_t arg5);
+#if defined(V8_HOST_ARCH_PPC)
+typedef double (*SimulatorRuntimeFPCall)(double arg0,
+                                         double arg1);
+typedef int64_t (*SimulatorRuntimeFPCallX)(double arg0,
+                                         double arg1);
+typedef double (*SimulatorRuntimeFPCallY)(double arg0,
+                                         int32_t arg1);
+#else
 typedef double (*SimulatorRuntimeFPCall)(int32_t arg0,
                                          int32_t arg1,
                                          int32_t arg2,
                                          int32_t arg3);
+#endif
 
 // This signature supports direct call in to API function native callback
 // (refer to InvocationCallback in v8.h).
@@ -1768,6 +1777,45 @@ void Simulator::SoftwareInterrupt(Instruction* instr) {
           PrintF("\n");
         }
         CHECK(stack_aligned);
+#if defined(V8_HOST_ARCH_PPC)
+        SimulatorRuntimeFPCall target =
+            reinterpret_cast<SimulatorRuntimeFPCall>(external);
+        SimulatorRuntimeFPCallX targetx =
+            reinterpret_cast<SimulatorRuntimeFPCallX>(external);
+        SimulatorRuntimeFPCallY targety =
+            reinterpret_cast<SimulatorRuntimeFPCallY>(external);
+        double dval0, dval1, result;
+        int32_t ival, lo_res, hi_res;
+        int64_t iresult;
+        switch (redirection->type()) {
+        case ExternalReference::BUILTIN_FP_FP_CALL:
+          GetFpArgs(&dval0, &dval1);
+          result = target(dval0, dval1);
+          SetFpResult(result);
+          break;
+        case ExternalReference::BUILTIN_COMPARE_CALL:
+          GetFpArgs(&dval0, &dval1);
+          iresult = targetx(dval0, dval1);
+          hi_res = static_cast<int32_t>(iresult);
+          lo_res = static_cast<int32_t>(iresult >> 32);
+          set_register(r0, lo_res);
+          set_register(r1, hi_res);
+          break;
+        case ExternalReference::BUILTIN_FP_CALL:
+          GetFpArgs(&dval0);
+          result = target(dval0, dval1); // 2nd parm ignored
+          SetFpResult(result);
+          break;
+        case ExternalReference::BUILTIN_FP_INT_CALL:
+          GetFpArgs(&dval0, &ival);
+          result = targety(dval0, ival); 
+          SetFpResult(result);
+          break;
+        default:
+          UNREACHABLE();
+          break;
+        }
+#else
         if (redirection->type() != ExternalReference::BUILTIN_COMPARE_CALL) {
           SimulatorRuntimeFPCall target =
               reinterpret_cast<SimulatorRuntimeFPCall>(external);
@@ -1777,19 +1825,15 @@ void Simulator::SoftwareInterrupt(Instruction* instr) {
           SimulatorRuntimeCall target =
               reinterpret_cast<SimulatorRuntimeCall>(external);
           int64_t result = target(arg0, arg1, arg2, arg3, arg4, arg5);
-#if V8_HOST_ARCH_PPC
-          int32_t hi_res = static_cast<int32_t>(result);
-          int32_t lo_res = static_cast<int32_t>(result >> 32);
-#else
           int32_t lo_res = static_cast<int32_t>(result);
           int32_t hi_res = static_cast<int32_t>(result >> 32);
-#endif
           if (::v8::internal::FLAG_trace_sim) {
             PrintF("Returned %08x\n", lo_res);
           }
           set_register(r0, lo_res);
           set_register(r1, hi_res);
         }
+#endif
       } else if (redirection->type() == ExternalReference::DIRECT_API_CALL) {
         SimulatorRuntimeDirectApiCall target =
             reinterpret_cast<SimulatorRuntimeDirectApiCall>(external);
