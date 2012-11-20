@@ -3439,7 +3439,13 @@ Handle<Code> ConstructStubCompiler::CompileConstructStub(
   // r4: constructor function
   // r5: initial map
   // r10: undefined
+  ASSERT(function->has_initial_map());
   __ lbz(r6, FieldMemOperand(r5, Map::kInstanceSizeOffset));
+#ifdef DEBUG
+  int instance_size = function->initial_map()->instance_size();
+  __ cmpi(r6, Operand(instance_size >> kPointerSizeLog2));
+  __ Check(eq, "Instance size of initial map changed.");
+#endif
   __ AllocateInNewSpace(r6, r7, r8, r9, &generic_stub_call, SIZE_IN_WORDS);
 
   // Allocated the JSObject, now initialize the fields. Map is set to initial
