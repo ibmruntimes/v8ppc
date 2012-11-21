@@ -1376,9 +1376,36 @@ void RegExpMacroAssemblerARM::LoadCurrentCharacterUnchecked(int cp_offset,
 
   if (mode_ == ASCII) {
     if (characters == 4) {
+#if defined(V8_HOST_ARCH_PPC)
+      __ push(r3);  // may not need to preserve, but just in case.
+      __ add( offset, offset, Operand(3));
+      __ ldrb(current_character(), MemOperand(end_of_input_address(), offset));
+      __ sub( offset, offset, Operand(1));
+      __ ldrb(r3, MemOperand(end_of_input_address(), offset));
+      __ orr( current_character(), r3, Operand(current_character(), LSL, kBitsPerByte));
+      __ sub( offset, offset, Operand(1));
+      __ ldrb(r3, MemOperand(end_of_input_address(), offset));
+      __ orr( current_character(), r3, Operand(current_character(), LSL, kBitsPerByte));
+      __ sub( offset, offset, Operand(1));
+      __ ldrb(r3, MemOperand(end_of_input_address(), offset));
+      __ orr( current_character(), r3, Operand(current_character(), LSL, kBitsPerByte));
+      __ pop(r3);
+#else
       __ ldr(current_character(), MemOperand(end_of_input_address(), offset));
+#endif
     } else if (characters == 2) {
+#if defined(V8_HOST_ARCH_PPC)
+      __ push(r3);  // may not need to preserve, but just in case.
+      __ add( offset, offset, Operand(1));
+      __ ldrb(current_character(), MemOperand(end_of_input_address(), offset));
+      __ sub( offset, offset, Operand(1));
+      __ ldrb(r3, MemOperand(end_of_input_address(), offset));
+      __ orr( current_character(), r3, Operand(current_character(), LSL, kBitsPerByte));
+      __ pop(r3);
+
+#else
       __ ldrh(current_character(), MemOperand(end_of_input_address(), offset));
+#endif
     } else {
       ASSERT(characters == 1);
       __ ldrb(current_character(), MemOperand(end_of_input_address(), offset));
