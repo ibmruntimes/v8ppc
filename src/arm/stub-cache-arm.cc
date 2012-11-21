@@ -4431,7 +4431,11 @@ void KeyedLoadStubCompiler::GenerateLoadFastDoubleElement(
   // Load the upper word of the double in the fixed array and test for NaN.
   __ add(indexed_double_offset, elements_reg,
          Operand(key_reg, LSL, kDoubleSizeLog2 - kSmiTagSize));
+#if defined(V8_HOST_ARCH_PPC)
+  uint32_t upper_32_offset = FixedArray::kHeaderSize;
+#else
   uint32_t upper_32_offset = FixedArray::kHeaderSize + sizeof(kHoleNanLower32);
+#endif
   __ ldr(scratch, FieldMemOperand(indexed_double_offset, upper_32_offset));
   __ cmp(scratch, Operand(kHoleNanUpper32));
   __ b(&miss_force_generic, eq);
@@ -4445,8 +4449,13 @@ void KeyedLoadStubCompiler::GenerateLoadFastDoubleElement(
   // scratch.
   __ str(scratch, FieldMemOperand(heap_number_reg,
                                   HeapNumber::kExponentOffset));
+#if defined(V8_HOST_ARCH_PPC)
+  __ ldr(scratch, FieldMemOperand(indexed_double_offset,
+                                  FixedArray::kHeaderSize+4));
+#else
   __ ldr(scratch, FieldMemOperand(indexed_double_offset,
                                   FixedArray::kHeaderSize));
+#endif
   __ str(scratch, FieldMemOperand(heap_number_reg,
                                   HeapNumber::kMantissaOffset));
 
