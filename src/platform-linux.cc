@@ -1017,7 +1017,6 @@ static int GetThreadID() {
 
 
 static void ProfilerSignalHandler(int signal, siginfo_t* info, void* context) {
-#ifndef V8_HOST_ARCH_PPC  // roohack needs fixing
   USE(info);
   if (signal != SIGPROF) return;
   Isolate* isolate = Isolate::UncheckedCurrent();
@@ -1039,7 +1038,9 @@ static void ProfilerSignalHandler(int signal, siginfo_t* info, void* context) {
 
   // Extracting the sample from the context is extremely machine dependent.
   ucontext_t* ucontext = reinterpret_cast<ucontext_t*>(context);
+#ifndef V8_HOST_ARCH_PPC
   mcontext_t& mcontext = ucontext->uc_mcontext;
+#endif
   sample->state = isolate->current_vm_state();
 #if V8_HOST_ARCH_IA32
   sample->pc = reinterpret_cast<Address>(mcontext.gregs[REG_EIP]);
@@ -1067,10 +1068,13 @@ static void ProfilerSignalHandler(int signal, siginfo_t* info, void* context) {
   sample->pc = reinterpret_cast<Address>(mcontext.pc);
   sample->sp = reinterpret_cast<Address>(mcontext.gregs[29]);
   sample->fp = reinterpret_cast<Address>(mcontext.gregs[30]);
+#elif V8_HOST_ARCH_PPC
+  sample->pc = reinterpret_cast<Address>(ucontext->uc_mcontext.regs->nip);
+  sample->sp = reinterpret_cast<Address>(ucontext->uc_mcontext.regs->gpr[PT_R1]);
+  sample->fp = reinterpret_cast<Address>(ucontext->uc_mcontext.regs->gpr[PT_R31]);
 #endif  // V8_HOST_ARCH_*
   sampler->SampleStack(sample);
   sampler->Tick(sample);
-#endif  // V8_HOST_ARCH_PPC roohack
 }
 
 
