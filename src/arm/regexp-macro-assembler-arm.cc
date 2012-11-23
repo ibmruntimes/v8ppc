@@ -1413,7 +1413,17 @@ void RegExpMacroAssemblerARM::LoadCurrentCharacterUnchecked(int cp_offset,
   } else {
     ASSERT(mode_ == UC16);
     if (characters == 2) {
+#if defined(V8_HOST_ARCH_PPC)
+      __ push(r3);  // may not need to preserve, but just in case.
+      __ add( offset, offset, Operand(2));
+      __ ldrh(current_character(), MemOperand(end_of_input_address(), offset));
+      __ sub( offset, offset, Operand(2));
+      __ ldrh(r3, MemOperand(end_of_input_address(), offset));
+      __ orr( current_character(), r3, Operand(current_character(), LSL, 2*kBitsPerByte));
+      __ pop(r3);
+#else
       __ ldr(current_character(), MemOperand(end_of_input_address(), offset));
+#endif
     } else {
       ASSERT(characters == 1);
       __ ldrh(current_character(), MemOperand(end_of_input_address(), offset));
