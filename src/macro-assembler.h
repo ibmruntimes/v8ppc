@@ -58,6 +58,13 @@ const int kInvalidProtoDepth = -1;
 #include "arm/assembler-arm-inl.h"
 #include "code.h"  // must be after assembler_*.h
 #include "arm/macro-assembler-arm.h"
+#elif V8_TARGET_ARCH_PPC
+#include "ppc/constants-ppc.h"
+#include "assembler.h"
+#include "ppc/assembler-ppc.h"
+#include "ppc/assembler-ppc-inl.h"
+#include "code.h"  // must be after assembler_*.h
+#include "ppc/macro-assembler-ppc.h"
 #elif V8_TARGET_ARCH_MIPS
 #include "mips/constants-mips.h"
 #include "assembler.h"

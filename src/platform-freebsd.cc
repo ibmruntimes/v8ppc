@@ -705,6 +705,10 @@ static void ProfilerSignalHandler(int signal, siginfo_t* info, void* context) {
   sample->pc = reinterpret_cast<Address>(mcontext.mc_r15);
   sample->sp = reinterpret_cast<Address>(mcontext.mc_r13);
   sample->fp = reinterpret_cast<Address>(mcontext.mc_r11);
+#elif V8_HOST_ARCH_PPC
+  sample->pc = reinterpret_cast<Address>(mcontext.mc_r15);
+  sample->sp = reinterpret_cast<Address>(mcontext.mc_r13);
+  sample->fp = reinterpret_cast<Address>(mcontext.mc_r11);
 #endif
   sampler->SampleStack(sample);
   sampler->Tick(sample);

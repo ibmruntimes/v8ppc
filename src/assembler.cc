@@ -61,6 +61,8 @@
 #include "x64/assembler-x64-inl.h"
 #elif V8_TARGET_ARCH_ARM
 #include "arm/assembler-arm-inl.h"
+#elif V8_TARGET_ARCH_PPC
+#include "ppc/assembler-ppc-inl.h"
 #elif V8_TARGET_ARCH_MIPS
 #include "mips/assembler-mips-inl.h"
 #else
@@ -75,6 +77,8 @@
 #include "x64/regexp-macro-assembler-x64.h"
 #elif V8_TARGET_ARCH_ARM
 #include "arm/regexp-macro-assembler-arm.h"
+#elif V8_TARGET_ARCH_PPC
+#include "ppc/regexp-macro-assembler-ppc.h"
 #elif V8_TARGET_ARCH_MIPS
 #include "mips/regexp-macro-assembler-mips.h"
 #else  // Unknown architecture.
@@ -1063,6 +1067,8 @@ ExternalReference ExternalReference::re_check_stack_guard_state(
 #elif V8_TARGET_ARCH_IA32
   function = FUNCTION_ADDR(RegExpMacroAssemblerIA32::CheckStackGuardState);
 #elif V8_TARGET_ARCH_ARM
+  function = FUNCTION_ADDR(RegExpMacroAssemblerARM::CheckStackGuardState);
+#elif V8_TARGET_ARCH_PPC  // roohack
   function = FUNCTION_ADDR(RegExpMacroAssemblerARM::CheckStackGuardState);
 #elif V8_TARGET_ARCH_MIPS
   function = FUNCTION_ADDR(RegExpMacroAssemblerMIPS::CheckStackGuardState);

@@ -86,9 +86,6 @@ namespace internal {
 #elif defined(__MIPSEL__)
 #define V8_HOST_ARCH_MIPS 1
 #define V8_HOST_ARCH_32_BIT 1
-#elif defined(__PPC__)
-#define V8_HOST_ARCH_PPC 1
-#define V8_HOST_ARCH_32_BIT 1
 #else
 #error Host architecture was not detected as supported by v8
 #endif
@@ -98,7 +95,7 @@ namespace internal {
 // environment as presented by the compiler.
 #if !defined(V8_TARGET_ARCH_X64) && !defined(V8_TARGET_ARCH_IA32) && \
     !defined(V8_TARGET_ARCH_ARM) && !defined(V8_TARGET_ARCH_MIPS) && \
-    !defined(V8_TARGET_ARCH_PPC)
+    !defined(V8_TARGET_ARCH_PPC) 
 #if defined(_M_X64) || defined(__x86_64__)
 #define V8_TARGET_ARCH_X64 1
 #elif defined(_M_IX86) || defined(__i386__)
@@ -120,8 +117,7 @@ namespace internal {
 #error Target architecture x64 is only supported on x64 host
 #endif
 #if (defined(V8_TARGET_ARCH_ARM) && \
-    !(defined(V8_HOST_ARCH_IA32) || defined(V8_HOST_ARCH_ARM)) && \
-    !(defined(V8_HOST_ARCH_PPC) || defined(V8_HOST_ARCH_ARM)))  // roohack
+    !(defined(V8_HOST_ARCH_IA32) || defined(V8_HOST_ARCH_ARM)))
 #error Target architecture arm is only supported on arm and ia32 host
 #endif
 #if (defined(V8_TARGET_ARCH_MIPS) && \
@@ -134,6 +130,9 @@ namespace internal {
 // the use of a simulated environment.
 #if !defined(USE_SIMULATOR)
 #if (defined(V8_TARGET_ARCH_ARM) && !defined(V8_HOST_ARCH_ARM))
+#define USE_SIMULATOR 1
+#endif
+#if (defined(V8_TARGET_ARCH_PPC) && !defined(V8_HOST_ARCH_PPC))
 #define USE_SIMULATOR 1
 #endif
 #if (defined(V8_TARGET_ARCH_MIPS) && !defined(V8_HOST_ARCH_MIPS))

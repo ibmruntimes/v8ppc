@@ -38,6 +38,9 @@
 #elif V8_TARGET_ARCH_ARM
 #include "arm/lithium-arm.h"
 #include "arm/lithium-codegen-arm.h"
+#elif V8_TARGET_ARCH_PPC
+#include "ppc/lithium-ppc.h"
+#include "ppc/lithium-codegen-ppc.h"
 #elif V8_TARGET_ARCH_MIPS
 #include "mips/lithium-mips.h"
 #include "mips/lithium-codegen-mips.h"

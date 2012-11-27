@@ -50,6 +50,10 @@
 #include "v8threads.h"
 #include "v8utils.h"
 #include "vm-state-inl.h"
+#if V8_TARGET_ARCH_PPC && !V8_INTERPRETED_REGEXP
+#include "regexp-macro-assembler.h"
+#include "ppc/regexp-macro-assembler-ppc.h"
+#endif
 #if V8_TARGET_ARCH_ARM && !V8_INTERPRETED_REGEXP
 #include "regexp-macro-assembler.h"
 #include "arm/regexp-macro-assembler-arm.h"

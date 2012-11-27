@@ -28,8 +28,8 @@
 // This file is an internal atomic implementation, use atomicops.h instead.
 //
 
-#ifndef V8_ATOMICOPS_INTERNALS_ARM_PPC_H_
-#define V8_ATOMICOPS_INTERNALS_ARM_PPC_H_
+#ifndef V8_ATOMICOPS_INTERNALS_PPC_H_
+#define V8_ATOMICOPS_INTERNALS_PPC_H_
 
 namespace v8 {
 namespace internal {

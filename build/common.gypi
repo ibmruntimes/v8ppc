@@ -166,6 +166,11 @@
           }],
         ],
       }],  # v8_target_arch=="arm"
+      ['v8_target_arch=="ppc"', {
+        'defines': [
+          'V8_TARGET_ARCH_PPC',
+        ],
+      }],  # v8_target_arch=="ppc"
       ['v8_target_arch=="ia32"', {
         'defines': [
           'V8_TARGET_ARCH_IA32',
@@ -285,7 +290,7 @@
       ['(OS=="linux" or OS=="freebsd" or OS=="openbsd" or OS=="solaris" \
          or OS=="netbsd" or OS=="mac" or OS=="android") and \
         (v8_target_arch=="arm" or v8_target_arch=="ia32" or \
-         v8_target_arch=="mipsel")', {
+         v8_target_arch=="mipsel" or v8_target_arch=="ppc")', {
         # Check whether the host compiler and target compiler support the
         # '-m32' option and set it if so.
         'target_conditions': [

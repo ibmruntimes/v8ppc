@@ -75,6 +75,8 @@ enum TypeofState { INSIDE_TYPEOF, NOT_INSIDE_TYPEOF };
 #include "x64/codegen-x64.h"
 #elif V8_TARGET_ARCH_ARM
 #include "arm/codegen-arm.h"
+#elif V8_TARGET_ARCH_PPC
+#include "ppc/codegen-ppc.h"
 #elif V8_TARGET_ARCH_MIPS
 #include "mips/codegen-mips.h"
 #else

@@ -50,6 +50,8 @@
 #include "x64/regexp-macro-assembler-x64.h"
 #elif V8_TARGET_ARCH_ARM
 #include "arm/regexp-macro-assembler-arm.h"
+#elif V8_TARGET_ARCH_PPC
+#include "ppc/regexp-macro-assembler-ppc.h"
 #elif V8_TARGET_ARCH_MIPS
 #include "mips/regexp-macro-assembler-mips.h"
 #else
@@ -6129,6 +6131,9 @@ RegExpEngine::CompilationResult RegExpEngine::Compile(
   RegExpMacroAssemblerX64 macro_assembler(mode, (data->capture_count + 1) * 2,
                                           zone);
 #elif V8_TARGET_ARCH_ARM
+  RegExpMacroAssemblerARM macro_assembler(mode, (data->capture_count + 1) * 2,
+                                          zone);
+#elif V8_TARGET_ARCH_PPC  //roohack
   RegExpMacroAssemblerARM macro_assembler(mode, (data->capture_count + 1) * 2,
                                           zone);
 #elif V8_TARGET_ARCH_MIPS

@@ -1,4 +1,4 @@
-// Copyright 2009 the V8 project authors. All rights reserved.
+// Copyright 2011 the V8 project authors. All rights reserved.
 // Redistribution and use in source and binary forms, with or without
 // modification, are permitted provided that the following conditions are
 // met:
@@ -25,21 +25,21 @@
 // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#ifndef V8_SIMULATOR_H_
-#define V8_SIMULATOR_H_
+#include "v8.h"
 
-#if V8_TARGET_ARCH_IA32
-#include "ia32/simulator-ia32.h"
-#elif V8_TARGET_ARCH_X64
-#include "x64/simulator-x64.h"
-#elif V8_TARGET_ARCH_ARM
-#include "arm/simulator-arm.h"
-#elif V8_TARGET_ARCH_PPC
-#include "ppc/simulator-ppc.h"
-#elif V8_TARGET_ARCH_MIPS
-#include "mips/simulator-mips.h"
-#else
-#error Unsupported target architecture.
-#endif
+#if defined(V8_TARGET_ARCH_PPC)
 
-#endif  // V8_SIMULATOR_H_
+#include "frames-inl.h"
+
+namespace v8 {
+namespace internal {
+
+
+Address ExitFrame::ComputeStackPointer(Address fp) {
+  return Memory::Address_at(fp + ExitFrameConstants::kSPOffset);
+}
+
+
+} }  // namespace v8::internal
+
+#endif  // V8_TARGET_ARCH_PPC
