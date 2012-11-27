@@ -118,6 +118,12 @@
             'test-disasm-arm.cc'
           ],
         }],
+        ['v8_target_arch=="ppc"', {
+          'sources': [
+            'test-assembler-ppc.cc',
+            'test-disasm-ppc.cc'
+          ],
+        }],
         ['v8_target_arch=="mipsel"', {
           'sources': [
             'test-assembler-mips.cc',

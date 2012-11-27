@@ -66,7 +66,7 @@ def BuildOptions():
                     default='release,debug')
   result.add_option("--arch",
                     help='The architectures to run tests for (comma-separated)',
-                    default='ia32,x64,arm')
+                    default='ia32,x64,arm,ppc')
 
   # Flags that are passed on to the wrapped test.py script:
   result.add_option("-v", "--verbose", help="Verbose output",
@@ -151,7 +151,7 @@ def ProcessOptions(options):
       print "Unknown mode %s" % mode
       return False
   for arch in options.arch:
-    if not arch in ['ia32', 'x64', 'arm', 'mipsel', 'android_arm',
+    if not arch in ['ia32', 'x64', 'arm', 'ppc', 'mipsel', 'android_arm',
                     'android_ia32']:
       print "Unknown architecture %s" % arch
       return False
