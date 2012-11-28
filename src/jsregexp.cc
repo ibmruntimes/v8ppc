@@ -6133,8 +6133,8 @@ RegExpEngine::CompilationResult RegExpEngine::Compile(
 #elif V8_TARGET_ARCH_ARM
   RegExpMacroAssemblerARM macro_assembler(mode, (data->capture_count + 1) * 2,
                                           zone);
-#elif V8_TARGET_ARCH_PPC  //roohack
-  RegExpMacroAssemblerARM macro_assembler(mode, (data->capture_count + 1) * 2,
+#elif V8_TARGET_ARCH_PPC
+  RegExpMacroAssemblerPPC macro_assembler(mode, (data->capture_count + 1) * 2,
                                           zone);
 #elif V8_TARGET_ARCH_MIPS
   RegExpMacroAssemblerMIPS macro_assembler(mode, (data->capture_count + 1) * 2,

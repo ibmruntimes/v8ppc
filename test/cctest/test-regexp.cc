@@ -707,8 +707,8 @@ typedef RegExpMacroAssemblerIA32 ArchRegExpMacroAssembler;
 typedef RegExpMacroAssemblerX64 ArchRegExpMacroAssembler;
 #elif V8_TARGET_ARCH_ARM
 typedef RegExpMacroAssemblerARM ArchRegExpMacroAssembler;
-#elif V8_TARGET_ARCH_PPC   // roohack
-typedef RegExpMacroAssemblerARM ArchRegExpMacroAssembler;
+#elif V8_TARGET_ARCH_PPC
+typedef RegExpMacroAssemblerPPC ArchRegExpMacroAssembler;
 #elif V8_TARGET_ARCH_MIPS
 typedef RegExpMacroAssemblerMIPS ArchRegExpMacroAssembler;
 #endif

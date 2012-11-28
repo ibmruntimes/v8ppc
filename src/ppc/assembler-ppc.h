@@ -1449,7 +1449,7 @@ class Assembler : public AssemblerBase {
   // Record reloc info for current pc_
   void RecordRelocInfo(RelocInfo::Mode rmode, intptr_t data = 0);
 
-  friend class RegExpMacroAssemblerARM;
+  friend class RegExpMacroAssemblerPPC;
   friend class RelocInfo;
   friend class CodePatcher;
   friend class BlockConstPoolScope;

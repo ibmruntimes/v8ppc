@@ -1068,8 +1068,8 @@ ExternalReference ExternalReference::re_check_stack_guard_state(
   function = FUNCTION_ADDR(RegExpMacroAssemblerIA32::CheckStackGuardState);
 #elif V8_TARGET_ARCH_ARM
   function = FUNCTION_ADDR(RegExpMacroAssemblerARM::CheckStackGuardState);
-#elif V8_TARGET_ARCH_PPC  // roohack
-  function = FUNCTION_ADDR(RegExpMacroAssemblerARM::CheckStackGuardState);
+#elif V8_TARGET_ARCH_PPC
+  function = FUNCTION_ADDR(RegExpMacroAssemblerPPC::CheckStackGuardState);
 #elif V8_TARGET_ARCH_MIPS
   function = FUNCTION_ADDR(RegExpMacroAssemblerMIPS::CheckStackGuardState);
 #else
