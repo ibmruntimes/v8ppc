@@ -86,6 +86,9 @@ namespace internal {
 #elif defined(__MIPSEL__)
 #define V8_HOST_ARCH_MIPS 1
 #define V8_HOST_ARCH_32_BIT 1
+#elif defined(__PPC__)
+#define V8_HOST_ARCH_PPC 1
+#define V8_HOST_ARCH_32_BIT 1
 #else
 #error Host architecture was not detected as supported by v8
 #endif

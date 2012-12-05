@@ -47,6 +47,7 @@
 namespace v8 {
 namespace internal {
 
+#define INCLUDE_ARM 1
 // CPU Registers.
 //
 // 1) We would prefer to use an enum, but enum values are assignment-
@@ -95,6 +96,15 @@ struct Register {
       "r5",
       "r6",
       "r7",
+      "r8", 
+      "r9", 
+      "r10", 
+      "r11", 
+      "r12", 
+      "r13", 
+      "r14", 
+      "r15", 
+      "r16", 
     };
     return names[index];
   }
@@ -774,6 +784,10 @@ class Assembler : public AssemblerBase {
   void CodeTargetAlign();
 
   // Branch instructions
+  // PowerPC
+  void bclr(BOfield bo, LKBit lk);
+  void blr();
+  // end PowerPC
   void b(int branch_offset, Condition cond = al);
   void bl(int branch_offset, Condition cond = al);
   void blx(int branch_offset);  // v5 and above
@@ -807,12 +821,20 @@ class Assembler : public AssemblerBase {
   void rsb(Register dst, Register src1, const Operand& src2,
            SBit s = LeaveCC, Condition cond = al);
 
+  // PowerPC
+  void add(Register dst, Register src1, Register src2,
+           OEBit s = LeaveOE, RCBit r = LeaveRC );
+
   void add(Register dst, Register src1, const Operand& src2,
            SBit s = LeaveCC, Condition cond = al);
+
+#if 0
   void add(Register dst, Register src1, Register src2,
            SBit s = LeaveCC, Condition cond = al) {
+
     add(dst, src1, Operand(src2), s, cond);
   }
+#endif
 
   void adc(Register dst, Register src1, const Operand& src2,
            SBit s = LeaveCC, Condition cond = al);
@@ -1434,11 +1456,15 @@ class Assembler : public AssemblerBase {
   inline void emit(Instr x);
 
   // Instruction generation
+  void xo_form(Instr instr, Register rt, Register ra, Register rb, OEBit o, 
+	RCBit r);
+#if defined(INCLUDE_ARM)
   void addrmod1(Instr instr, Register rn, Register rd, const Operand& x);
   void addrmod2(Instr instr, Register rd, const MemOperand& x);
   void addrmod3(Instr instr, Register rd, const MemOperand& x);
   void addrmod4(Instr instr, Register rn, RegList rl);
   void addrmod5(Instr instr, CRegister crd, const MemOperand& x);
+#endif  // INCLUDE_ARM
 
   // Labels
   void print(Label* L);
@@ -1471,7 +1497,7 @@ class EnsureSpace BASE_EMBEDDED {
   }
 };
 
-
+#undef INCLUDE_ARM
 } }  // namespace v8::internal
 
 #endif  // V8_PPC_ASSEMBLER_PPC_H_

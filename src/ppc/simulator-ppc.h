@@ -126,11 +126,13 @@ class CachePage {
 
 class Simulator {
  public:
-  friend class ArmDebugger;
+  friend class PPCDebugger;
   enum Register {
     no_reg = -1,
     r0 = 0, r1, r2, r3, r4, r5, r6, r7,
     r8, r9, r10, r11, r12, r13, r14, r15,
+    r16, r17, r18, r19, r20, r21, r22, r23,
+    r24, r25, r26, r27, r28, r29, r30, r31,
     num_registers,
     sp = 13,
     lr = 14,
@@ -165,27 +167,27 @@ class Simulator {
   unsigned int get_s_register(int reg) const;
 
   void set_d_register_from_double(int dreg, const double& dbl) {
-    SetVFPRegister<double, 2>(dreg, dbl);
+    SetFPRegister<double, 2>(dreg, dbl);
   }
 
   double get_double_from_d_register(int dreg) {
-    return GetFromVFPRegister<double, 2>(dreg);
+    return GetFromFPRegister<double, 2>(dreg);
   }
 
   void set_s_register_from_float(int sreg, const float flt) {
-    SetVFPRegister<float, 1>(sreg, flt);
+    SetFPRegister<float, 1>(sreg, flt);
   }
 
   float get_float_from_s_register(int sreg) {
-    return GetFromVFPRegister<float, 1>(sreg);
+    return GetFromFPRegister<float, 1>(sreg);
   }
 
   void set_s_register_from_sinteger(int sreg, const int sint) {
-    SetVFPRegister<int, 1>(sreg, sint);
+    SetFPRegister<int, 1>(sreg, sint);
   }
 
   int get_sinteger_from_s_register(int sreg) {
-    return GetFromVFPRegister<int, 1>(sreg);
+    return GetFromFPRegister<int, 1>(sreg);
   }
 
   // Special case of set_register and get_register to access the raw PC value.
@@ -310,6 +312,10 @@ class Simulator {
   int32_t* ReadDW(int32_t addr);
   void WriteDW(int32_t addr, int32_t value1, int32_t value2);
 
+  // PowerPC
+  void DecodeExt1(Instruction* instr);
+  void DecodeExt2(Instruction* instr);
+
   // Executing is handled based on the instruction type.
   // Both type 0 and type 1 rolled into one.
   void DecodeType01(Instruction* instr);
@@ -351,16 +357,16 @@ class Simulator {
   void TrashCallerSaveRegisters();
 
   template<class ReturnType, int register_size>
-      ReturnType GetFromVFPRegister(int reg_index);
+      ReturnType GetFromFPRegister(int reg_index);
 
   template<class InputType, int register_size>
-      void SetVFPRegister(int reg_index, const InputType& value);
+      void SetFPRegister(int reg_index, const InputType& value);
 
   // Architecture state.
   // Saturating instructions require a Q flag to indicate saturation.
   // There is currently no way to read the CPSR directly, and thus read the Q
   // flag, so this is left unimplemented.
-  int32_t registers_[16];
+  int32_t registers_[32];  // PowerPC
   bool n_flag_;
   bool z_flag_;
   bool c_flag_;
@@ -368,6 +374,7 @@ class Simulator {
 
   // VFP architecture state.
   unsigned int vfp_register[num_s_registers];
+  unsigned int fp_register[num_s_registers];
   bool n_flag_FPSCR_;
   bool z_flag_FPSCR_;
   bool c_flag_FPSCR_;

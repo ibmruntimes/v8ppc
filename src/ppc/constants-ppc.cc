@@ -101,6 +101,40 @@ const char* VFPRegisters::names_[kNumVFPRegisters] = {
 };
 
 
+// Power
+const char* FPRegisters::names_[kNumVFPRegisters] = {
+    "s0", "s1", "s2", "s3", "s4", "s5", "s6", "s7",
+    "s8", "s9", "s10", "s11", "s12", "s13", "s14", "s15",
+    "s16", "s17", "s18", "s19", "s20", "s21", "s22", "s23",
+    "s24", "s25", "s26", "s27", "s28", "s29", "s30", "s31",
+    "d0", "d1", "d2", "d3", "d4", "d5", "d6", "d7",
+    "d8", "d9", "d10", "d11", "d12", "d13", "d14", "d15"
+};
+const char* FPRegisters::Name(int reg, bool is_double) {
+  ASSERT((0 <= reg) && (reg < kNumFPRegisters));
+  return names_[reg + (is_double ? kNumFPSingleRegisters : 0)];
+}
+int FPRegisters::Number(const char* name, bool* is_double) {
+  for (int i = 0; i < kNumFPRegisters; i++) {
+    if (strcmp(names_[i], name) == 0) {
+      if (i < kNumFPSingleRegisters) {
+        *is_double = false;
+        return i;
+      } else {
+        *is_double = true;
+        return i - kNumFPSingleRegisters;
+      }
+    }
+  }
+
+  // No register with the requested name found.
+  return kNoRegister;
+}
+
+// end of Power
+
+
+
 const char* VFPRegisters::Name(int reg, bool is_double) {
   ASSERT((0 <= reg) && (reg < kNumVFPRegisters));
   return names_[reg + (is_double ? kNumVFPSingleRegisters : 0)];

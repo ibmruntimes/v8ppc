@@ -117,6 +117,10 @@ class Decoder {
   void Format(Instruction* instr, const char* format);
   void Unknown(Instruction* instr);
 
+  // PowerPC decoding
+  void DecodeExt1(Instruction* instr);
+  void DecodeExt2(Instruction* instr);
+
   // Each of these functions decodes one particular instruction type, a 3-bit
   // field in the instruction encoding.
   // Types 0 and 1 are combined as they are largely the same except for the way
@@ -321,6 +325,22 @@ void Decoder::PrintSoftwareInterrupt(SoftwareInterruptCodes svc) {
 // complexity of FormatOption.
 int Decoder::FormatRegister(Instruction* instr, const char* format) {
   ASSERT(format[0] == 'r');
+
+  if (format[1] == 't') {  // 'rt: RT register
+    int reg = instr->RTValue();
+    PrintRegister(reg);
+    return 2;
+  } else if (format[1] == 'a') {  // 'ra: RA register
+    int reg = instr->RAValue();
+    PrintRegister(reg);
+    return 2;
+  } else if (format[1] == 'b') {  // 'rb: RB register
+    int reg = instr->RBValue();
+    PrintRegister(reg);
+    return 2;
+  }
+
+#if 0
   if (format[1] == 'n') {  // 'rn: Rn register
     int reg = instr->RnValue();
     PrintRegister(reg);
@@ -361,6 +381,7 @@ int Decoder::FormatRegister(Instruction* instr, const char* format) {
     Print("}");
     return 5;
   }
+#endif
   UNREACHABLE();
   return -1;
 }
@@ -424,6 +445,22 @@ void Decoder::PrintMovwMovt(Instruction* instr) {
 // consumed by the caller.)  FormatOption returns the number of
 // characters that were consumed from the formatting string.
 int Decoder::FormatOption(Instruction* instr, const char* format) {
+  switch (format[0]) {
+    case 'o': {
+      if (instr->Bit(10) == 1) {
+        Print("o");
+      }
+      return 1;
+    }
+    case 'r': {
+      return FormatRegister(instr, format);
+    }
+    default: {
+      UNREACHABLE();
+      break;
+    }
+  }
+#if 0
   switch (format[0]) {
     case 'a': {  // 'a: accumulate multiplies
       if (instr->Bit(21) == 0) {
@@ -640,6 +677,7 @@ int Decoder::FormatOption(Instruction* instr, const char* format) {
       break;
     }
   }
+#endif
   UNREACHABLE();
   return -1;
 }
@@ -677,6 +715,63 @@ void Decoder::Unknown(Instruction* instr) {
   Format(instr, "unknown");
 }
 
+// PowerPC
+void Decoder::DecodeExt1(Instruction* instr) {
+  switch(instr->Bits(10,1) << 1) {
+    case MCRF:
+      Unknown(instr);  // not used by V8
+    case BCLRX: {
+      switch(instr->Bits(25,21) << 21) {
+        case DCBNZF:
+        case DCBEZF:
+        case BF:
+        case DCBNZT:
+        case DCBEZT:
+        case BT:
+        case DCBNZ:
+        case DCBEZ: {
+          Unknown(instr);  // not used by V8
+          break;
+        }
+        case BA: {
+          Format(instr, "blr"); // todo - currently ignoring lk bit
+          break;
+        }
+        default: {
+          UNREACHABLE();
+        }
+      }
+      break;
+    }
+    case CRNOR:
+    case RFI:
+    case CRANDC:
+    case ISYNC:
+    case CRXOR:
+    case CRNAND:
+    case CRAND:
+    case CREQV:
+    case CRORC:
+    case CROR:
+    case BCCTRX:
+    default: {
+      Unknown(instr);  // not used by V8
+    }
+  }
+}
+
+void Decoder::DecodeExt2(Instruction* instr) {
+// ?? are all of these xo_form?
+  switch(instr->Bits(9,1) << 1) {
+    case ADDX: {
+      Format(instr, "add'o 'rt, 'ra, 'rb");
+      break;
+    }
+    default: {
+        Unknown(instr);  // not used by V8
+    }
+  }
+}
 
 void Decoder::DecodeType01(Instruction* instr) {
   int type = instr->TypeValue();
@@ -1381,6 +1476,71 @@ int Decoder::InstructionDecode(byte* instr_ptr) {
   out_buffer_pos_ += OS::SNPrintF(out_buffer_ + out_buffer_pos_,
                                   "%08x       ",
                                   instr->InstructionBits());
+
+    switch (instr->OpcodeValue() << 26) {
+    case TWI:
+    case MULLI:
+    case SUBFIC:
+    case CMPLI:
+    case CMPI:
+    case ADDIC:
+    case ADDICx:
+    case ADDI:
+    case ADDIS:
+    case BCX:
+    case SC:
+    case BX:
+    case EXT1: {
+      DecodeExt1(instr);
+      break;
+    }
+    case RLWIMIX:
+    case RLWINMX:
+    case RLWNMX:
+    case ORI:
+    case ORIS:
+    case XORI:
+    case XORIS:
+    case ANDIx:
+    case ANDISx:
+    case EXT2: {
+      DecodeExt2(instr);
+      break;
+    }
+    case LWZ:
+    case LWZU:
+    case LBZ:
+    case LBZU:
+    case STW:
+    case STWU:
+    case STB:
+    case STBU:
+    case LHZ:
+    case LHZU:
+    case LHA:
+    case LHAU:
+    case STH:
+    case STHU:
+    case LMW:
+    case STMW:
+    case LFS:
+    case LFSU:
+    case LFD:
+    case LFDU:
+    case STFS:
+    case STFSU:
+    case STFD:
+    case STFDU:
+    case EXT3:
+    case EXT4:
+    default: {
+      Unknown(instr);
+      break;
+    }
+  }
+
+
+#if 0
   if (instr->ConditionField() == kSpecialCondition) {
     Unknown(instr);
     return Instruction::kInstrSize;
@@ -1428,6 +1588,7 @@ int Decoder::InstructionDecode(byte* instr_ptr) {
       break;
     }
   }
+#endif
   return Instruction::kInstrSize;
 }
 

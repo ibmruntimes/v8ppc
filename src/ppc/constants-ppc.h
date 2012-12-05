@@ -28,6 +28,9 @@
 #ifndef V8_PPC_CONSTANTS_PPC_H_
 #define V8_PPC_CONSTANTS_PPC_H_
 
+#define INCLUDE_ARM 1
+
+#if defined(INCLUDE_ARM)
 // ARM EABI is required.
 #if defined(__arm__) && !defined(__ARM_EABI__)
 #error ARM EABI support is required.
@@ -83,25 +86,32 @@
 #if defined(USE_THUMB_INTERWORK) || defined(CAN_USE_ARMV5_INSTRUCTIONS)
 #define USE_BLX 1
 #endif
-
+#endif  // INCLUDE_ARM
 namespace v8 {
 namespace internal {
 
+// Number of registers
+const int kNumRegisters = 32;
+
+// FP support.
+const int kNumFPSingleRegisters = 32;
+const int kNumFPDoubleRegisters = 16;
+const int kNumFPRegisters = kNumFPSingleRegisters + kNumFPDoubleRegisters;
+
+#if defined(INCLUDE_ARM)
 // Constant pool marker.
 const int kConstantPoolMarkerMask = 0xffe00000;
 const int kConstantPoolMarker = 0x0c000000;
 const int kConstantPoolLengthMask = 0x001ffff;
 
-// Number of registers in normal ARM mode.
-const int kNumRegisters = 16;
-
 // VFP support.
 const int kNumVFPSingleRegisters = 32;
 const int kNumVFPDoubleRegisters = 16;
 const int kNumVFPRegisters = kNumVFPSingleRegisters + kNumVFPDoubleRegisters;
+#endif  // INCLUDE_ARM
 
-// PC is register 15.
-const int kPCRegister = 15;
+// PPC doesn't really have a PC register - assign a fake number for simulation
+const int kPCRegister = -2;
 const int kNoRegister = -1;
 
 // -----------------------------------------------------------------------------
@@ -110,9 +120,11 @@ const int kNoRegister = -1;
 // Defines constants and accessor classes to assemble, disassemble and
 // simulate ARM instructions.
 //
-// Section references in the code refer to the "ARM Architecture Reference
-// Manual" from July 2005 (available at http://www.arm.com/miscPDFs/14128.pdf)
+// Section references in the code refer to the "PowerPC Microprocessor 
+// Family: The Programmer.s Reference Guide" from 10/95
+// https://www-01.ibm.com/chips/techlib/techlib.nsf/techdocs/852569B20050FF778525699600741775/$file/prg.pdf
 //
+#if defined(INCLUDE_ARM)
 // Constants for specific fields are defined in their respective named enums.
 // General constants are in an anonymous enum in class Instr.
 
@@ -174,7 +186,7 @@ inline Condition ReverseCondition(Condition cond) {
       return cond;
   };
 }
-
+#endif  // INCLUDE_ARM
 
 // -----------------------------------------------------------------------------
 // Instructions encoding.
@@ -185,10 +197,61 @@ inline Condition ReverseCondition(Condition cond) {
 // access the various ISA fields.
 typedef int32_t Instr;
 
+// Opcodes as defined in section 4.2 table 34 (32bit PowerPC)
+enum Opcode {
+  TWI     =  3 << 26,  // Trap Word Immediate
+  MULLI   =  7 << 26,  // Multiply Low Immediate
+  SUBFIC  =  8 << 26,  // Subtract from Immediate Carrying
+  CMPLI   = 10 << 26,  // Compare Logical Immediate
+  CMPI    = 11 << 26,  // Compare Immediate
+  ADDIC   = 12 << 26,  // Add Immediate Carrying
+  ADDICx  = 13 << 26,  // Add Immediate Carrying and Record
+  ADDI    = 14 << 26,  // Add Immediate
+  ADDIS   = 15 << 26,  // Add Immediate Shifted
+  BCX     = 16 << 26,  // Branch Conditional
+  SC      = 17 << 26,  // System Call
+  BX      = 18 << 26,  // Branch
+  EXT1    = 19 << 26,  // Extended code set 1
+  RLWIMIX = 20 << 26,  // Rotate Left Word Immediate then Mask Insert
+  RLWINMX = 21 << 26,  // Rotate Left Word Immediate then AND with Mask
+  RLWNMX  = 23 << 26,  // Rotate Left then AND with Mask
+  ORI     = 24 << 26,  // OR Immediate
+  ORIS    = 25 << 26,  // OR Immediate Shifted
+  XORI    = 26 << 26,  // XOR Immediate
+  XORIS   = 27 << 26,  // XOR Immediate Shifted
+  ANDIx   = 28 << 26,  // AND Immediate
+  ANDISx  = 29 << 26,  // AND Immediate Shifted
+  EXT2    = 31 << 26,  // Extended code set 2
+  LWZ     = 32 << 26,  // Load Word and Zero
+  LWZU    = 33 << 26,  // Load Word with Zero Update
+  LBZ     = 34 << 26,  // Load Byte and Zero
+  LBZU    = 35 << 26,  // Load Byte and Zero with Update
+  STW     = 36 << 26,  // Store
+  STWU    = 37 << 26,  // Store Word with Update
+  STB     = 38 << 26,  // Store Byte
+  STBU    = 39 << 26,  // Store Byte with Update
+  LHZ     = 40 << 26,  // Load Half and Zero
+  LHZU    = 41 << 26,  // Load Half and Zero with Update
+  LHA     = 42 << 26,  // Load Half Algebraic
+  LHAU    = 43 << 26,  // Load Half Algebraic with Update
+  STH     = 44 << 26,  // Store Half
+  STHU    = 45 << 26,  // Store Half with Update
+  LMW     = 46 << 26,  // Load Multiple Word
+  STMW    = 47 << 26,  // Store Multiple Word
+  LFS     = 48 << 26,  // Load Floating-Point Single
+  LFSU    = 49 << 26,  // Load Floating-Point Single with Update
+  LFD     = 50 << 26,  // Load Floating-Point Double
+  LFDU    = 51 << 26,  // Load Floating-Point Double with Update
+  STFS    = 52 << 26,  // Store Floating-Point Single
+  STFSU   = 53 << 26,  // Store Floating-Point Single with Update
+  STFD    = 54 << 26,  // Store Floating-Point Double
+  STFDU   = 55 << 26,  // Store Floating-Point Double with Update
+  EXT3    = 59 << 26,  // Extended code set 3
+  EXT4    = 63 << 26,   // Extended code set 4
 
+#if defined(INCLUDE_ARM)
 // Opcodes for Data-processing instructions (instructions with a type 0 and 1)
 // as defined in section A3.4
-enum Opcode {
   AND =  0 << 21,  // Logical AND.
   EOR =  1 << 21,  // Logical Exclusive OR.
   SUB =  2 << 21,  // Subtract.
@@ -205,13 +268,35 @@ enum Opcode {
   MOV = 13 << 21,  // Move.
   BIC = 14 << 21,  // Bit Clear.
   MVN = 15 << 21   // Move Not.
+#endif  // INCLUDE_ARM
 };
 
+// Bits 10-1
+enum OpcodeExt1 { 
+  MCRF   = 0 << 1,    // Move Condition Register Field
+  BCLRX  = 16 << 1,   // Branch Conditional Link Register
+  CRNOR  = 33 << 1,   // Condition Register NOR)
+  RFI    = 50 << 1,   // Return from Interrupt
+  CRANDC = 129 << 1,  // Condition Register AND with Complement
+  ISYNC  = 150 << 1,  // Instruction Synchronize
+  CRXOR  = 193 << 1,  // Condition Register XOR
+  CRNAND = 225 << 1,  // Condition Register NAND
+  CRAND  = 257 << 1,  // Condition Register AND
+  CREQV  = 289 << 1,  // Condition Register Equivalent
+  CRORC  = 417 << 1,  // Condition Register OR with Complement
+  CROR   = 449 << 1,  // Condition Register OR
+  BCCTRX = 528 << 1   // Branch Conditional to Count Register
+};
 
+// Bits 9-1
+enum OpcodeExt2 {
+  ADDX = 266 << 1  // Add
+}; 
+
+#if defined(INCLUDE_ARM)
 // The bits for bit 7-4 for some type 0 miscellaneous instructions.
 enum MiscInstructionsBits74 {
   // With bits 22-21 01.
-  BX   =  1 << 4,
   BXJ  =  2 << 4,
   BLX  =  3 << 4,
   BKPT =  7 << 4,
@@ -219,10 +304,27 @@ enum MiscInstructionsBits74 {
   // With bits 22-21 11.
   CLZ  =  1 << 4
 };
-
+#endif  // INCLUDE_ARM
 
 // Instruction encoding bits and masks.
 enum {
+  B11 = 1 << 11,
+  B16 = 1 << 16,
+  B21 = 1 << 21,
+
+  kOpcodeMask = 0x3f << 26,
+  kExt2OpcodeMask = 0x1f << 1,
+  kBOMask = 0x1f << 21,
+  kBIMask = 0x1F << 16,
+  kBDMask = 0x14 << 2,
+  kAAMask = 0x01 << 1,
+  kLKMask = 0x01,
+  kRCMask = 0x01,
+  kTOMask = 0x1f << 21,
+
+
+#if defined(INCLUDE_ARM)
+// Instruction encoding bits and masks.
   H   = 1 << 5,   // Halfword (or byte).
   S6  = 1 << 6,   // Signed (or unsigned).
   L   = 1 << 20,  // Load (or store).
@@ -242,11 +344,9 @@ enum {
   B8  = 1 << 8,
   B9  = 1 << 9,
   B12 = 1 << 12,
-  B16 = 1 << 16,
   B18 = 1 << 18,
   B19 = 1 << 19,
   B20 = 1 << 20,
-  B21 = 1 << 21,
   B22 = 1 << 22,
   B23 = 1 << 23,
   B24 = 1 << 24,
@@ -263,12 +363,43 @@ enum {
   kOpCodeMask = 15 << 21,  // In data-processing instructions.
   kImm24Mask  = (1 << 24) - 1,
   kOff12Mask  = (1 << 12) - 1
+#endif  // INCLUDE_ARM
 };
-
 
 // -----------------------------------------------------------------------------
 // Addressing modes and instruction variants.
 
+// Overflow Exception
+enum OEBit { // 
+  SetOE   = 1 << 10, // Set overflow exception
+  LeaveOE = 0 << 10  // No overflow exception 
+};
+
+// Record bit
+enum RCBit {  // Bit 0
+  SetRC   = 1,  // LT,GT,EQ,SO
+  LeaveRC = 0   // None
+};
+
+// Link bit
+enum LKBit {  // Bit 0 
+  SetLK   = 1,  // Load effective address of next instruction
+  LeaveLK = 0   // No action
+};
+
+enum BOfield {  // Bits 25-21
+  DCBNZF =  0 << 21,  // Decrement CTR; branch if CTR != 0 and condition false
+  DCBEZF =  2 << 21,  // Decrement CTR; branch if CTR == 0 and condition false
+  BF     =  4 << 21,  // Branch if condition false
+  DCBNZT =  8 << 21,  // Decrement CTR; branch if CTR != 0 and condition true
+  DCBEZT = 10 << 21,  // Decrement CTR; branch if CTR == 0 and condition true
+  BT     = 12 << 21,  // Branch if condition true
+  DCBNZ  = 16 << 21,  // Decrement CTR; branch if CTR != 0
+  DCBEZ  = 18 << 21,  // Decrement CTR; branch if CTR == 0
+  BA     = 20 << 21   // Branch always
+};
+
+#if defined(INCLUDE_ARM)
 // Condition code updating mode.
 enum SBit {
   SetCC   = 1 << 20,  // Set condition code.
@@ -354,6 +485,7 @@ enum LFlag {
   Long  = 1 << 22,  // Long load/store coprocessor.
   Short = 0 << 22   // Short load/store coprocessor.
 };
+#endif  // INCLUDE_ARM
 
 
 // -----------------------------------------------------------------------------
@@ -492,6 +624,10 @@ extern const Instr kLdrStrInstrArgumentMask;
 extern const Instr kLdrStrOffsetMask;
 
 
+// use invalid format TWI to indicate redirection call for simulation mode
+const Instr rtCallRedirInstr = 3<<26;
+
+
 // -----------------------------------------------------------------------------
 // Instruction abstraction.
 
@@ -595,6 +731,13 @@ class Instruction {
 
   inline int TypeValue() const { return Bits(27, 25); }
 
+  //PowerPC
+  inline int RTValue() const { return Bits(25, 21); }
+  inline int RAValue() const { return Bits(20, 16); }
+  inline int RBValue() const { return Bits(15, 11); }
+
+  //end PowerPC
+
   inline int RnValue() const { return Bits(19, 16); }
   DECLARE_STATIC_ACCESSOR(RnValue);
   inline int RdValue() const { return Bits(15, 12); }
@@ -630,9 +773,8 @@ class Instruction {
     return VFPGlueRegValue(pre, 12, 22);
   }
 
-  // Fields used in Data processing instructions
   inline int OpcodeValue() const {
-    return static_cast<Opcode>(Bits(24, 21));
+    return static_cast<Opcode>(Bits(31, 26));  //PowerPC roohack
   }
   inline Opcode OpcodeField() const {
     return static_cast<Opcode>(BitField(24, 21));
@@ -754,7 +896,22 @@ class Registers {
   static const RegisterAlias aliases_[];
 };
 
-// Helper functions for converting between VFP register numbers and names.
+// Helper functions for converting between FP register numbers and names.
+class FPRegisters {
+ public:
+  // Return the name of the register.
+  static const char* Name(int reg, bool is_double);
+
+  // Lookup the register number for the name provided.
+  // Set flag pointed by is_double to true if register
+  // is double-precision.
+  static int Number(const char* name, bool* is_double);
+
+ private:
+  static const char* names_[kNumVFPRegisters];
+};
+
+// ARM code for VFP
 class VFPRegisters {
  public:
   // Return the name of the register.
@@ -772,4 +929,5 @@ class VFPRegisters {
 
 } }  // namespace v8::internal
 
+#undef INCLUDE_ARM
 #endif  // V8_PPC_CONSTANTS_PPC_H_

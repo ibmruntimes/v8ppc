@@ -43,6 +43,7 @@
 
 namespace v8 {
 namespace internal {
+#define INCLUDE_ARM 1
 
 #ifdef DEBUG
 bool CpuFeatures::initialized_ = false;
@@ -834,7 +835,17 @@ bool Operand::is_single_instruction(const Assembler* assembler,
   }
 }
 
+void Assembler::xo_form(Instr instr,
+                         Register rt,
+                         Register ra,
+                         Register rb,
+                         OEBit o,
+                         RCBit r) {
+  CheckBuffer();
+  emit(instr | rt.code()*B21 | ra.code()*B16 | rb.code()*B11 | o | r );
+}
 
+#if defined(INCLUDE_ARM)
 void Assembler::addrmod1(Instr instr,
                          Register rn,
                          Register rd,
@@ -996,7 +1007,7 @@ void Assembler::addrmod5(Instr instr, CRegister crd, const MemOperand& x) {
   ASSERT(offset_8 >= 0);  // no masking needed
   emit(instr | am | x.rn_.code()*B16 | crd.code()*B12 | offset_8);
 }
-
+#endif  // INCLUDE_ARM
 
 int Assembler::branch_offset(Label* L, bool jump_elimination_allowed) {
   int target_pos;
@@ -1035,6 +1046,18 @@ void Assembler::label_at_put(Label* L, int at_offset) {
 
 
 // Branch instructions.
+
+// PowerPC
+void Assembler::bclr(BOfield bo, LKBit lk) {
+  emit( EXT1 | bo | BCLRX | lk );
+}
+
+void Assembler::blr() {
+  bclr( BA, LeaveLK );
+}
+
+
+// end PowerPC
 void Assembler::b(int branch_offset, Condition cond) {
   ASSERT((branch_offset & 3) == 0);
   int imm24 = branch_offset >> 2;
@@ -1106,6 +1129,11 @@ void Assembler::rsb(Register dst, Register src1, const Operand& src2,
   addrmod1(cond | RSB | s, src1, dst, src2);
 }
 
+// PowerPC
+void Assembler::add(Register dst, Register src1, Register src2,
+                    OEBit o, RCBit r) {
+  xo_form( EXT2 | ADDX, dst, src1, src2, o, r );
+}
 
 void Assembler::add(Register dst, Register src1, const Operand& src2,
                     SBit s, Condition cond) {
@@ -2692,6 +2720,7 @@ void Assembler::CheckConstPool(bool force_emit, bool require_jump) {
   next_buffer_check_ = pc_offset() + kCheckPoolInterval;
 }
 
+#undef INCLUDE_ARM 
 
 } }  // namespace v8::internal
 
