@@ -120,8 +120,9 @@ namespace internal {
 #error Target architecture x64 is only supported on x64 host
 #endif
 #if (defined(V8_TARGET_ARCH_ARM) && \
-    !(defined(V8_HOST_ARCH_IA32) || defined(V8_HOST_ARCH_ARM)))
-#error Target architecture arm is only supported on arm and ia32 host
+    !(defined(V8_HOST_ARCH_IA32) || defined(V8_HOST_ARCH_ARM) || \
+      defined(V8_HOST_ARCH_PPC)))
+#error Target architecture arm is only supported on arm, ppc and ia32 host
 #endif
 #if (defined(V8_TARGET_ARCH_MIPS) && \
     !(defined(V8_HOST_ARCH_IA32) || defined(V8_HOST_ARCH_MIPS)))
