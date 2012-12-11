@@ -787,8 +787,9 @@ class Assembler : public AssemblerBase {
   // PowerPC
   void bclr(BOfield bo, LKBit lk);
   void blr();
-  // end PowerPC
+  void bc(int branch_offset, BOfield bo, int condition_bit);
   void b(int branch_offset, Condition cond = al);
+  // end PowerPC
   void bl(int branch_offset, Condition cond = al);
   void blx(int branch_offset);  // v5 and above
   void blx(Register target, Condition cond = al);  // v5 and above
@@ -799,11 +800,35 @@ class Assembler : public AssemblerBase {
     b(branch_offset(L, cond == al), cond);
   }
   void b(Condition cond, Label* L)  { b(branch_offset(L, cond == al), cond); }
+  // PowerPC
+  void bc(Label* L, BOfield bo, int bit)  { 
+    bc(branch_offset(L, false), bo, bit); }
+  void bne(Label* L)  { 
+    bc(branch_offset(L, false), BF, 30); }
+  // end PowerPC
   void bl(Label* L, Condition cond = al)  { bl(branch_offset(L, false), cond); }
   void bl(Condition cond, Label* L)  { bl(branch_offset(L, false), cond); }
   void blx(Label* L)  { blx(branch_offset(L, false)); }  // v5 and above
 
   // Data-processing instructions
+
+  // PowerPC
+  void add(Register dst, Register src1, Register src2,
+           OEBit s = LeaveOE, RCBit r = LeaveRC );
+
+  void add(Register dst, Register src, const Operand& imm,
+SBit s = LeaveCC, Condition cond = al // roohack - remove this line later
+           );
+
+  void orx(Register dst, Register src1, Register src2, RCBit r = LeaveRC);
+
+  void cmpi(Register src1, const Operand& src2);
+
+  void li(Register dst, const Operand &src);
+ 
+  void mr(Register dst, Register src);
+
+  // end PowerPC
 
   void and_(Register dst, Register src1, const Operand& src2,
             SBit s = LeaveCC, Condition cond = al);
@@ -821,19 +846,9 @@ class Assembler : public AssemblerBase {
   void rsb(Register dst, Register src1, const Operand& src2,
            SBit s = LeaveCC, Condition cond = al);
 
-  // PowerPC
-  void add(Register dst, Register src1, Register src2,
-           OEBit s = LeaveOE, RCBit r = LeaveRC );
-
+#if 0
   void add(Register dst, Register src1, const Operand& src2,
            SBit s = LeaveCC, Condition cond = al);
-
-#if 0
-  void add(Register dst, Register src1, Register src2,
-           SBit s = LeaveCC, Condition cond = al) {
-
-    add(dst, src1, Operand(src2), s, cond);
-  }
 #endif
 
   void adc(Register dst, Register src1, const Operand& src2,
@@ -942,6 +957,11 @@ class Assembler : public AssemblerBase {
   void bfi(Register dst, Register src, int lsb, int width,
            Condition cond = al);
 
+  // Condition register access
+  // PowerPC
+  void crxor(int bt, int ba, int bb);
+
+  // end PowerPC
   // Status register access instructions
 
   void mrs(Register dst, SRegister s, Condition cond = al);
@@ -1456,6 +1476,8 @@ class Assembler : public AssemblerBase {
   inline void emit(Instr x);
 
   // Instruction generation
+  void d_form(Instr instr, Register rt, Register ra, const Operand& x);
+  void x_form(Instr instr, Register ra, Register rs, Register rb, RCBit r); 
   void xo_form(Instr instr, Register rt, Register ra, Register rb, OEBit o, 
 	RCBit r);
 #if defined(INCLUDE_ARM)

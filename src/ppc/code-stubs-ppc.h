@@ -33,7 +33,6 @@
 namespace v8 {
 namespace internal {
 
-
 // Compute a transcendental math function natively, or call the
 // TranscendentalCache runtime function.
 class TranscendentalCacheStub: public CodeStub {
@@ -485,31 +484,32 @@ class RecordWriteStub: public CodeStub {
   virtual bool SometimesSetsUpAFrame() { return false; }
 
   static void PatchBranchIntoNop(MacroAssembler* masm, int pos) {
-    masm->instr_at_put(pos, (masm->instr_at(pos) & ~B27) | (B24 | B20));
-    ASSERT(Assembler::IsTstImmediate(masm->instr_at(pos)));
+    masm->instr_at_put(pos, (masm->instr_at(pos) & ~kBOfieldMask) | BT);
+    // roohack ASSERT(Assembler::IsTstImmediate(masm->instr_at(pos)));
   }
 
   static void PatchNopIntoBranch(MacroAssembler* masm, int pos) {
-    masm->instr_at_put(pos, (masm->instr_at(pos) & ~(B24 | B20)) | B27);
-    ASSERT(Assembler::IsBranch(masm->instr_at(pos)));
+    masm->instr_at_put(pos, (masm->instr_at(pos) & ~kBOfieldMask) | BF);
+    // roohack ASSERT(Assembler::IsBranch(masm->instr_at(pos)));
   }
 
   static Mode GetMode(Code* stub) {
-    Instr first_instruction = Assembler::instr_at(stub->instruction_start());
-    Instr second_instruction = Assembler::instr_at(stub->instruction_start() +
+    Instr first_instruction = Assembler::instr_at(stub->instruction_start() +
                                                    Assembler::kInstrSize);
+    Instr second_instruction = Assembler::instr_at(stub->instruction_start() +
+                                                   (Assembler::kInstrSize*2));
 
-    if (Assembler::IsBranch(first_instruction)) {
+    if (BF == (first_instruction & kBOfieldMask)) {
       return INCREMENTAL;
     }
 
-    ASSERT(Assembler::IsTstImmediate(first_instruction));
+    // roohack ASSERT(Assembler::IsTstImmediate(first_instruction));
 
-    if (Assembler::IsBranch(second_instruction)) {
+    if (BF == (second_instruction & kBOfieldMask)) {
       return INCREMENTAL_COMPACTION;
     }
 
-    ASSERT(Assembler::IsTstImmediate(second_instruction));
+    // roohack ASSERT(Assembler::IsTstImmediate(second_instruction));
 
     return STORE_BUFFER_ONLY;
   }
@@ -522,20 +522,22 @@ class RecordWriteStub: public CodeStub {
       case STORE_BUFFER_ONLY:
         ASSERT(GetMode(stub) == INCREMENTAL ||
                GetMode(stub) == INCREMENTAL_COMPACTION);
-        PatchBranchIntoNop(&masm, 0);
+        
         PatchBranchIntoNop(&masm, Assembler::kInstrSize);
+        PatchBranchIntoNop(&masm, Assembler::kInstrSize*2);
         break;
       case INCREMENTAL:
         ASSERT(GetMode(stub) == STORE_BUFFER_ONLY);
-        PatchNopIntoBranch(&masm, 0);
+        PatchNopIntoBranch(&masm, Assembler::kInstrSize);
         break;
       case INCREMENTAL_COMPACTION:
         ASSERT(GetMode(stub) == STORE_BUFFER_ONLY);
-        PatchNopIntoBranch(&masm, Assembler::kInstrSize);
+        PatchNopIntoBranch(&masm, Assembler::kInstrSize*2);
         break;
     }
     ASSERT(GetMode(stub) == mode);
-    CPU::FlushICache(stub->instruction_start(), 2 * Assembler::kInstrSize);
+    CPU::FlushICache(stub->instruction_start()+Assembler::kInstrSize,
+                      2 * Assembler::kInstrSize);
   }
 
  private:
@@ -896,7 +898,6 @@ class StringDictionaryLookupStub: public CodeStub {
 
   LookupMode mode_;
 };
-
 
 } }  // namespace v8::internal
 

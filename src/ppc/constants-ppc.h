@@ -131,7 +131,7 @@ const int kNoRegister = -1;
 // Values for the condition field as defined in section A3.2
 enum Condition {
   kNoCondition = -1,
-
+  
   eq =  0 << 28,                 // Z set            Equal.
   ne =  1 << 28,                 // Z clear          Not equal.
   cs =  2 << 28,                 // C set            Unsigned higher or same.
@@ -262,7 +262,6 @@ enum Opcode {
   RSC =  7 << 21,  // Reverse Subtract with Carry.
   TST =  8 << 21,  // Test.
   TEQ =  9 << 21,  // Test Equivalence.
-  CMP = 10 << 21,  // Compare.
   CMN = 11 << 21,  // Compare Negated.
   ORR = 12 << 21,  // Logical (inclusive) OR.
   MOV = 13 << 21,  // Move.
@@ -290,8 +289,52 @@ enum OpcodeExt1 {
 
 // Bits 9-1
 enum OpcodeExt2 {
-  ADDX = 266 << 1  // Add
+  CMP = 0 << 1,
+  TW = 4 << 1,
+  SUBFCX =8 << 1,
+  ADDCX = 10 << 1,
+  MULHWUX = 11 << 1, 
+  MFCR = 19 << 1,
+  LWARX = 20 << 1,
+  LDX = 21 << 1,
+  LWZX = 23 << 1,
+  SLWX = 24 << 1,
+/*
+  CNTLZWX = 26 << 1,
+  ANDX = 28 << 1,
+  CMPL = 32 << 1,
+  SUBFX = 40 << 1,
+  DCBST = 54 << 1,
+  LWZUX = 55 << 1,
+  ANDCX = 60 << 1,
+  MULHWX = 75 << 1,
+  DCBF = 86 << 1,
+  LBZX = 87 << 1,
+  NEGX = 104 << 1,
+  LBZUX = 119 << 1,
+  NORX = 124 << 1,
+  SUBFEX = 136 << 1,
+  ADDEX = 138 << 1,
+  MTCRF
+  MTMSR
+  STDX
+  STWCXx
+  STWX
+  STDUX
+  STWUX
+  SUBFZEX
+  ADDZEX
+  MTSR
+*/
+
+  ADDX = 266 << 1,  // Add
+  ORX = 444 << 1  // Or
 }; 
+
+// Bits 11-1
+enum OpcodeExt4 {
+  FOOBAR = 3
+};
 
 #if defined(INCLUDE_ARM)
 // The bits for bit 7-4 for some type 0 miscellaneous instructions.
@@ -361,9 +404,12 @@ enum {
   kRdMask     = 15 << 12,  // In str instruction.
   kCoprocessorMask = 15 << 8,
   kOpCodeMask = 15 << 21,  // In data-processing instructions.
+  kOff12Mask  = (1 << 12) - 1,
   kImm24Mask  = (1 << 24) - 1,
-  kOff12Mask  = (1 << 12) - 1
 #endif  // INCLUDE_ARM
+  kImm16Mask  = (1 << 16) - 1,
+  kImm26Mask  = (1 << 26) - 1,
+  kBOfieldMask = 0x1f << 20
 };
 
 // -----------------------------------------------------------------------------
@@ -732,6 +778,7 @@ class Instruction {
   inline int TypeValue() const { return Bits(27, 25); }
 
   //PowerPC
+  inline int RSValue() const { return Bits(25, 21); }
   inline int RTValue() const { return Bits(25, 21); }
   inline int RAValue() const { return Bits(20, 16); }
   inline int RBValue() const { return Bits(15, 11); }

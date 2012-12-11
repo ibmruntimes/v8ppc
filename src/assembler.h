@@ -840,6 +840,8 @@ inline bool is_int8(int x)  { return is_intn(x, 8); }
 inline bool is_int16(int x)  { return is_intn(x, 16); }
 inline bool is_int18(int x)  { return is_intn(x, 18); }
 inline bool is_int24(int x)  { return is_intn(x, 24); }
+inline bool is_int26(int x)  { return is_intn(x, 26); }
+
 
 inline bool is_uintn(int x, int n) {
   return (x & -(1 << n)) == 0;

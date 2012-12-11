@@ -391,7 +391,7 @@ Condition Assembler::GetCondition(Instr instr) {
 
 
 bool Assembler::IsBranch(Instr instr) {
-  return (instr & (B27 | B25)) == (B27 | B25);
+  return (instr & BX) == BX;  // this is bogus
 }
 
 
@@ -540,7 +540,6 @@ Register Assembler::GetCmpImmediateRegister(Instr instr) {
   return GetRn(instr);
 }
 
-
 int Assembler::GetCmpImmediateRawImmediate(Instr instr) {
   ASSERT(IsCmpImmediate(instr));
   return instr & kOff12Mask;
@@ -563,31 +562,79 @@ const int kEndOfChain = -4;
 
 int Assembler::target_at(int pos)  {
   Instr instr = instr_at(pos);
-  if ((instr & ~kImm24Mask) == 0) {
+  // check which type of branch this is 16 or 26 bit offset
+  int opcode = instr & kOpcodeMask;
+  if (BX == opcode) {
+    int imm26 = ((instr & kImm26Mask) << 6) >> 6;
+    return pos + imm26;
+  }
+  if (BCX == opcode) {
+    int imm16 = ((instr & kImm16Mask) << 16) >> 16;
+    return pos + imm16;
+  }
+  ASSERT(false);
+  return -1;
+
+#if 0
+  // else we fall into the ARM code.. which is busted
+  if ((instr & ~kImm26Mask) == 0) {  // todo - handle AA and LK bits if present
     // Emitted label constant, not part of a branch.
     return instr - (Code::kHeaderSize - kHeapObjectTag);
   }
+  // ignore for now with mixed branches
   ASSERT((instr & 7*B25) == 5*B25);  // b, bl, or blx imm24
-  int imm26 = ((instr & kImm24Mask) << 8) >> 6;
+  int imm26 = ((instr & kImm26Mask) << 6) >> 6;
   if ((Instruction::ConditionField(instr) == kSpecialCondition) &&
       ((instr & B24) != 0)) {
     // blx uses bit 24 to encode bit 2 of imm26
     imm26 += 2;
   }
-  return pos + kPcLoadDelta + imm26;
+  return pos + imm26;
+#endif
 }
 
 
 void Assembler::target_at_put(int pos, int target_pos) {
   Instr instr = instr_at(pos);
-  if ((instr & ~kImm24Mask) == 0) {
+  // check which type of branch this is 16 or 26 bit offset
+  int opcode = instr & kOpcodeMask;
+  if (BX == opcode) {
+    int imm26 = target_pos - pos;
+    ASSERT((imm26 & 3) == 0);
+    instr &= ~kImm26Mask;
+    ASSERT(is_int26(imm26));
+    // todo add AA and LK bits
+    instr_at_put(pos, instr | (imm26 & kImm26Mask));
+    return;
+  }
+  if (BCX == opcode) {
+    int imm16 = target_pos - pos;
+    ASSERT((imm16 & 3) == 0);
+    instr &= ~kImm16Mask;
+    ASSERT(is_int16(imm16));
+    // todo add AA and LK bits
+    instr_at_put(pos, instr | (imm16 & kImm16Mask));
+    return;
+  }
+  ASSERT(false);
+#if 0 
+
+  // else we fall into the ARM code.. which is busted
+
+  if ((instr & ~kImm26Mask) == 0) { // todo - handle AA and LK bits
     ASSERT(target_pos == kEndOfChain || target_pos >= 0);
     // Emitted label constant, not part of a branch.
     // Make label relative to Code* of generated Code object.
     instr_at_put(pos, target_pos + (Code::kHeaderSize - kHeapObjectTag));
     return;
   }
-  int imm26 = target_pos - (pos + kPcLoadDelta);
+  int imm26 = target_pos - pos;
+  ASSERT((imm26 & 3) == 0);
+  instr &= ~kImm26Mask;
+  ASSERT(is_int26(imm26));
+  // todo add AA and LK bits
+  instr_at_put(pos, instr | (imm26 & kImm26Mask));
+  
   ASSERT((instr & 7*B25) == 5*B25);  // b, bl, or blx imm24
   if (Instruction::ConditionField(instr) == kSpecialCondition) {
     // blx uses bit 24 to encode bit 2 of imm26
@@ -600,6 +647,7 @@ void Assembler::target_at_put(int pos, int target_pos) {
   int imm24 = imm26 >> 2;
   ASSERT(is_int24(imm24));
   instr_at_put(pos, instr | (imm24 & kImm24Mask));
+#endif
 }
 
 
@@ -834,6 +882,24 @@ bool Operand::is_single_instruction(const Assembler* assembler,
     return true;
   }
 }
+void Assembler::d_form(Instr instr,
+                        Register rt,
+                        Register ra,
+                        const Operand& x) {
+  CheckBuffer();
+  // roohack need to check x fits
+  //ASSERT(is_int16(x.imm32_));
+  emit(instr | rt.code()*B21 | ra.code()*B16 | (kImm16Mask & x.imm32_) );
+}
+
+void Assembler::x_form(Instr instr,
+                         Register ra,
+                         Register rs,
+                         Register rb,
+                         RCBit r ) {
+  CheckBuffer();
+  emit(instr | rs.code()*B21 | ra.code()*B16 | rb.code()*B11 | r );
+}
 
 void Assembler::xo_form(Instr instr,
                          Register rt,
@@ -1025,7 +1091,7 @@ int Assembler::branch_offset(Label* L, bool jump_elimination_allowed) {
   // Block the emission of the constant pool, since the branch instruction must
   // be emitted at the pc offset recorded by the label.
   BlockConstPoolFor(1);
-  return target_pos - (pc_offset() + kPcLoadDelta);
+  return target_pos - pc_offset();
 }
 
 
@@ -1049,27 +1115,39 @@ void Assembler::label_at_put(Label* L, int at_offset) {
 
 // PowerPC
 void Assembler::bclr(BOfield bo, LKBit lk) {
-  emit( EXT1 | bo | BCLRX | lk );
+  emit(EXT1 | bo | BCLRX | lk);
 }
 
+// Pseudo op - branch to link register
 void Assembler::blr() {
-  bclr( BA, LeaveLK );
+  bclr(BA, LeaveLK);
 }
 
+void Assembler::bc(int branch_offset, BOfield bo, int condition_bit) {
+  // currently assumes AA and LK are always zero
+  emit(BCX | bo | condition_bit*B16 | (kImm16Mask & branch_offset) );
+}
 
-// end PowerPC
 void Assembler::b(int branch_offset, Condition cond) {
   ASSERT((branch_offset & 3) == 0);
-  int imm24 = branch_offset >> 2;
-  ASSERT(is_int24(imm24));
-  emit(cond | B27 | B25 | (imm24 & kImm24Mask));
+  int imm26 = branch_offset;
+  ASSERT(is_int26(imm26));
+  // todo add AA and LK bits
+  emit(BX | (imm26 & kImm26Mask));
 
-  if (cond == al) {
-    // Dead code is a good location to emit the constant pool.
-    CheckConstPool(false, false);
-  }
+#if 0
+  ASSERT((branch_offset & 3) == 0);
+//  int imm24 = branch_offset >> 2;
+  int imm24 = branch_offset; // low 2 bits are tags on PPC
+  ASSERT(is_int24(imm24));
+  emit(BX | (imm24 & kImm24Mask));
+// emit(cond | B27 | B25 | (imm24 & kImm24Mask));
+
+// roohack  emit(BX | imm24<<2);
+#endif
 }
 
+// end PowerPC
 
 void Assembler::bl(int branch_offset, Condition cond) {
   positions_recorder()->WriteRecordedPositions();
@@ -1118,10 +1196,6 @@ void Assembler::eor(Register dst, Register src1, const Operand& src2,
 }
 
 
-void Assembler::sub(Register dst, Register src1, const Operand& src2,
-                    SBit s, Condition cond) {
-  addrmod1(cond | SUB | s, src1, dst, src2);
-}
 
 
 void Assembler::rsb(Register dst, Register src1, const Operand& src2,
@@ -1130,16 +1204,44 @@ void Assembler::rsb(Register dst, Register src1, const Operand& src2,
 }
 
 // PowerPC
+void Assembler::sub(Register dst, Register src, const Operand& imm,
+SBit s, Condition cond // delete this later when removing ARM
+) {
+  add(dst, src, Operand(-(imm.imm32_)));
+}
+
 void Assembler::add(Register dst, Register src1, Register src2,
                     OEBit o, RCBit r) {
   xo_form( EXT2 | ADDX, dst, src1, src2, o, r );
 }
 
-void Assembler::add(Register dst, Register src1, const Operand& src2,
-                    SBit s, Condition cond) {
-  addrmod1(cond | ADD | s, src1, dst, src2);
+void Assembler::add(Register dst, Register src, const Operand& imm, 
+SBit s, Condition cond // delete these later when removing ARM code
+) {
+  d_form(ADDI, dst, src, imm);
 }
 
+void Assembler::orx(Register dst, Register src1, Register src2, RCBit r) {
+  x_form( EXT2 | ORX, dst, src1, src2, r );
+}
+
+void Assembler::cmpi(Register src1, const Operand& src2) {
+  emit( CMPI | 7*B23 | src1.code()*B16 | src2.imm32_ );
+}
+
+// Pseudo op - load immediate
+void Assembler::li(Register dst, const Operand &src) {
+  // actually addi
+  add(dst, r0, src);
+}
+
+// Pseudo op - move register
+void Assembler::mr(Register dst, Register src) {
+  // actually or( dst, src, src )
+  orx(dst, src, src); 
+}
+
+//end PowerPC
 
 void Assembler::adc(Register dst, Register src1, const Operand& src2,
                     SBit s, Condition cond) {
@@ -1403,6 +1505,12 @@ void Assembler::bfi(Register dst,
        src.code());
 }
 
+// Condition register instructions
+// PowerPC
+void Assembler::crxor(int bt, int ba, int bb) {
+  emit(EXT1 | CRXOR | bt*B21 | ba*B16 | bb*B11);
+}
+//end PowerPC
 
 // Status register access instructions.
 void Assembler::mrs(Register dst, SRegister s, Condition cond) {

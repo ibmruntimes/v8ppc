@@ -55,14 +55,15 @@ static void InitializeVM() {
 
 #define __ assm.
 
+// Simple add parameter 1 to parameter 2 and return
 TEST(0) {
   InitializeVM();
   v8::HandleScope scope;
 
   Assembler assm(Isolate::Current(), NULL, 0);
 
-  __ add(r0, r0, Operand(r1));
-  __ mov(pc, Operand(lr));
+  __ add(r3, r3, r4);
+  __ blr();
 
   CodeDesc desc;
   assm.GetCode(&desc);
@@ -80,7 +81,7 @@ TEST(0) {
   CHECK_EQ(7, res);
 }
 
-
+// Loop ?? times
 TEST(1) {
   InitializeVM();
   v8::HandleScope scope;
@@ -88,18 +89,18 @@ TEST(1) {
   Assembler assm(Isolate::Current(), NULL, 0);
   Label L, C;
 
-  __ mov(r1, Operand(r0));
-  __ mov(r0, Operand(0, RelocInfo::NONE));
+  __ mr(r4, r3); 
+  __ li(r3, Operand(0, RelocInfo::NONE));
   __ b(&C);
 
   __ bind(&L);
-  __ add(r0, r0, Operand(r1));
-  __ sub(r1, r1, Operand(1));
+  __ add(r3, r3, r4);
+  __ sub(r4, r4, Operand(1));
 
   __ bind(&C);
-  __ teq(r1, Operand(0, RelocInfo::NONE));
-  __ b(ne, &L);
-  __ mov(pc, Operand(lr));
+  __ cmpi(r4, Operand(0, RelocInfo::NONE));
+  __ bne(&L);
+  __ blr();
 
   CodeDesc desc;
   assm.GetCode(&desc);
@@ -117,6 +118,7 @@ TEST(1) {
   CHECK_EQ(5050, res);
 }
 
+#if 0
 
 TEST(2) {
   InitializeVM();
@@ -422,7 +424,6 @@ TEST(6) {
     CHECK_EQ(382, res);
   }
 }
-
 
 enum VCVTTypes {
   s32_f64,
@@ -1023,5 +1024,6 @@ TEST(12) {
   __ bind(&target);
   __ nop();
 }
+#endif // roohack
 
 #undef __

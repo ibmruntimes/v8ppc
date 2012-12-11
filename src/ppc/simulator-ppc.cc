@@ -756,6 +756,7 @@ Simulator::Simulator(Isolate* isolate) : isolate_(isolate) {
   for (int i = 0; i < num_registers; i++) {
     registers_[i] = 0;
   }
+  condition_reg_ = 0;  // PowerPoc
   n_flag_ = false;
   z_flag_ = false;
   c_flag_ = false;
@@ -1886,7 +1887,7 @@ void Simulator::DecodeExt1(Instruction* instr) {
     case RFI:
     case CRANDC:
     case ISYNC:
-    case CRXOR:
+    case CRXOR: 
     case CRNAND:
     case CRAND:
     case CREQV:
@@ -1910,6 +1911,17 @@ void Simulator::DecodeExt2(Instruction* instr) {
       int32_t alu_out = ra_val + rb_val;
       set_register(rt, alu_out);
       // todo - handle RK bit
+      break;
+    }
+    case ORX: {
+      int rs = instr->RTValue();
+      int ra = instr->RAValue();
+      int rb = instr->RBValue();
+      int32_t rs_val = get_register(rs);
+      int32_t rb_val = get_register(rb);
+      int32_t alu_out = rs_val | rb_val;
+      set_register(ra, alu_out);
+      // todo - handle RC bit
       break;
     }
     default: {
@@ -2304,6 +2316,7 @@ void Simulator::DecodeType01(Instruction* instr) {
         break;
       }
 
+#if 0
       case CMP: {
         if (instr->HasS()) {
           // Format(instr, "cmp'cond 'rn, 'shift_rm");
@@ -2320,6 +2333,8 @@ void Simulator::DecodeType01(Instruction* instr) {
         }
         break;
       }
+#endif
+
 
       case CMN: {
         if (instr->HasS()) {
@@ -3160,16 +3175,87 @@ void Simulator::InstructionDecode(Instruction* instr) {
   switch (instr->OpcodeValue() << 26) {
     case TWI:
     case MULLI:
-    case SUBFIC:
+    case SUBFIC: {
+      int rt = instr->RTValue();
+      int ra = instr->RAValue();
+      int32_t ra_val = get_register(ra);
+      int32_t im_val = instr->Bits(15,0);
+      int32_t alu_out = im_val - ra_val;
+      set_register(rt, alu_out);
+      // todo - handle RC bit
+      break;
+    }
     case CMPLI:
-    case CMPI:
+    case CMPI: {
+      int ra = instr->RAValue();
+      int32_t ra_val = get_register(ra);
+      int32_t im_val = instr->Bits(15,0);
+      int cr = instr->Bits(25,23);
+      int bf = 0;
+      if(ra_val < im_val) { bf |= 0x80000000; }
+      if(ra_val > im_val) { bf |= 0x40000000; }
+      if(ra_val == im_val) { bf |= 0x20000000; }
+      int condition_mask = 0xF0000000 >> (cr*4);
+      int condition =  bf >> (cr*4);
+      condition_reg_ = (condition_reg_ & ~condition_mask) | condition;
+      break;
+    }
     case ADDIC:
     case ADDICx:
-    case ADDI:
+    case ADDI: {
+      int rt = instr->RTValue();
+      int ra = instr->RAValue();
+      int32_t ra_val = get_register(ra);
+      int32_t im_val = (instr->Bits(15,0) << 16) >> 16;
+      int32_t alu_out = ra_val + im_val;
+      set_register(rt, alu_out);
+      // todo - handle RC bit
+      break;
+    }
     case ADDIS:
-    case BCX:
+    case BCX: {
+      int bo = instr->Bits(25,21) << 21;
+      int offset = (instr->Bits(15,2) << 18) >> 16;
+      int condition_bit = instr->Bits(20,16);
+      int condition_mask = 0x80000000 >> condition_bit;
+      switch(bo) {
+        case DCBNZF: // Decrement CTR; branch if CTR != 0 and condition false
+        case DCBEZF: // Decrement CTR; branch if CTR == 0 and condition false
+          UNIMPLEMENTED(); 
+        case BF: {   // Branch if condition false
+          if (0 == (condition_reg_ & condition_mask)) {
+            set_pc(get_pc() + offset);
+          }
+          break;
+        }
+        case DCBNZT: // Decrement CTR; branch if CTR != 0 and condition true
+        case DCBEZT: // Decrement CTR; branch if CTR == 0 and condition true
+          UNIMPLEMENTED(); 
+        case BT: {   // Branch if condition true
+          if (1 == (condition_reg_ & condition_mask)) {
+            set_pc(get_pc() + offset);
+          }
+          break;
+        }
+        case DCBNZ:  // Decrement CTR; branch if CTR != 0
+        case DCBEZ:  // Decrement CTR; branch if CTR == 0
+          UNIMPLEMENTED(); 
+        case BA: {   // Branch always
+          set_pc(get_pc() + offset);
+          break;
+        }
+        default:
+          UNIMPLEMENTED(); // Invalid encoding
+      }
+      break;
+    }
     case SC:
-    case BX:
+    case BX: {
+      int offset = (instr->Bits(25,2) << 8) >> 6;
+      set_pc(get_pc() + offset);
+      // todo - AA and LK flags
+      break;
+    }
     case EXT1: {
       DecodeExt1(instr);
       break;

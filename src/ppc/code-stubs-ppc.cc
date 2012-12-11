@@ -7349,17 +7349,19 @@ void RecordWriteStub::Generate(MacroAssembler* masm) {
   Label skip_to_incremental_noncompacting;
   Label skip_to_incremental_compacting;
 
-  // The first two instructions are generated with labels so as to get the
-  // offset fixed up correctly by the bind(Label*) call.  We patch it back and
-  // forth between a compare instructions (a nop in this position) and the
-  // real branch when we start and stop incremental heap marking.
+  // The first two branch instructions are generated with labels so as to 
+  // get the offset fixed up correctly by the bind(Label*) call.  We patch 
+  // it back and forth between branch condition True and False
+  // when we start and stop incremental heap marking.
   // See RecordWriteStub::Patch for details.
   {
-    // Block literal pool emission, as the position of these two instructions
+    // Block literal pool emission, as the position of these three instructions
     // is assumed by the patching code.
     Assembler::BlockConstPoolScope block_const_pool(masm);
-    __ b(&skip_to_incremental_noncompacting);
-    __ b(&skip_to_incremental_compacting);
+    // Clear the bit, branch on True for NOP action initially
+    __ crxor(8, 8, 8);
+    __ bc(&skip_to_incremental_noncompacting, BT, 8);
+    __ bc(&skip_to_incremental_compacting, BT, 8);
   }
 
   if (remembered_set_action_ == EMIT_REMEMBERED_SET) {
@@ -7379,10 +7381,13 @@ void RecordWriteStub::Generate(MacroAssembler* masm) {
 
   // Initial mode of the stub is expected to be STORE_BUFFER_ONLY.
   // Will be checked in IncrementalMarking::ActivateGeneratedStub.
+#if 0
   ASSERT(Assembler::GetBranchOffset(masm->instr_at(0)) < (1 << 12));
   ASSERT(Assembler::GetBranchOffset(masm->instr_at(4)) < (1 << 12));
   PatchBranchIntoNop(masm, 0);
   PatchBranchIntoNop(masm, Assembler::kInstrSize);
+  // patching not required on PPC as the initial path is effectively NOP
+#endif
 }
 
 

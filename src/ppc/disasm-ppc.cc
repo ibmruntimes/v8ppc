@@ -120,6 +120,7 @@ class Decoder {
   // PowerPC decoding
   void DecodeExt1(Instruction* instr);
   void DecodeExt2(Instruction* instr);
+  void DecodeExt4(Instruction* instr);
 
   // Each of these functions decodes one particular instruction type, a 3-bit
   // field in the instruction encoding.
@@ -455,6 +456,47 @@ int Decoder::FormatOption(Instruction* instr, const char* format) {
     case 'r': {
       return FormatRegister(instr, format);
     }
+    case 'i': { // int16
+      int32_t value = (instr->Bits(15,0) << 16) >> 16;
+      out_buffer_pos_ += OS::SNPrintF(out_buffer_ + out_buffer_pos_,
+                                      "%d", value);
+      return 5;
+    }
+    case 'l': {
+      // Link (LK) Bit 0
+      if(instr->Bit(0) == 1) {
+        Print("l");
+      }
+      return 1;
+    }
+    case 'a': {
+      // Absolute Address Bit 1
+      if(instr->Bit(1) == 1) {
+        Print("a");
+      }
+      return 1;
+    }
+    case 't': {  // 'target: target of branch instructions
+      // target26 or target16
+      ASSERT(STRING_STARTS_WITH(format, "target"));
+      if ((format[6] == '2') && (format[7] == '6')) {
+        int off = ((instr->Bits(25, 2)) << 8 ) >> 6;
+        out_buffer_pos_ += OS::SNPrintF(out_buffer_ + out_buffer_pos_,
+                                        "%+d -> %s",
+                                        off,
+                                        converter_.NameOfAddress(
+                                        reinterpret_cast<byte*>(instr) + off));
+        return 8;
+      } else if ((format[6] == '1') && (format[7] == '6')) {
+        int off = ((instr->Bits(15, 2)) << 18 ) >> 16;
+        out_buffer_pos_ += OS::SNPrintF(out_buffer_ + out_buffer_pos_,
+                                        "%+d -> %s",
+                                        off,
+                                        converter_.NameOfAddress(
+                                        reinterpret_cast<byte*>(instr) + off));
+        return 8;
+      }
+    }
     default: {
       UNREACHABLE();
       break;
@@ -767,8 +809,24 @@ void Decoder::DecodeExt2(Instruction* instr) {
       Format(instr, "add'o 'rt, 'ra, 'rb");
       break;
     }
+    case ORX: { 
+      if( instr->RTValue() == instr->RBValue() ) {
+        Format(instr, "mr 'ra, 'rb");
+      } else {
+        Format(instr, "or 'rt, 'ra, 'rb");
+      }
+      break;
+    }
     default: {
-        Unknown(instr);  // not used by V8
+      Unknown(instr);  // not used by V8
+    }
+  }
+}
+
+void Decoder::DecodeExt4(Instruction* instr) {
+  switch(instr->Bits(11,1) << 1) {
+    default: {
+      Unknown(instr);  // not used by V8
     }
   }
 }
@@ -966,14 +1024,6 @@ void Decoder::DecodeType01(Instruction* instr) {
           // Other instructions matching this pattern are handled in the
           // miscellaneous instructions part above.
           UNREACHABLE();
-        }
-        break;
-      }
-      case CMP: {
-        if (instr->HasS()) {
-          Format(instr, "cmp'cond 'rn, 'shift_op");
-        } else {
-          Format(instr, "movt'cond 'mw");
         }
         break;
       }
@@ -1480,16 +1530,35 @@ int Decoder::InstructionDecode(byte* instr_ptr) {
     switch (instr->OpcodeValue() << 26) {
     case TWI:
     case MULLI:
-    case SUBFIC:
+    case SUBFIC: {
+      Format(instr, "subfic 'rt, 'ra, 'int16");
+      break;
+    }
     case CMPLI:
-    case CMPI:
+    case CMPI: {
+      Format(instr, "cmpi 'ra,'int16");
+      break;
+    }
     case ADDIC:
     case ADDICx:
-    case ADDI:
+    case ADDI: {
+      if( instr->RAValue() == 0 ) {
+        // this is load immediate
+        Format(instr, "li 'rt, 'int16");
+      } else {
+        Format(instr, "addi 'rt, 'ra, 'int16");
+      }
+      break;
+    }
     case ADDIS:
-    case BCX:
+    case BCX: {
+      Format(instr, "bc'l'a 'target16");
+    }
     case SC:
-    case BX:
+    case BX: {
+      Format(instr, "b'l'a 'target26");
+      break;
+    }
     case EXT1: {
       DecodeExt1(instr);
       break;
@@ -1532,7 +1601,10 @@ int Decoder::InstructionDecode(byte* instr_ptr) {
     case STFD:
     case STFDU:
     case EXT3:
-    case EXT4:
+    case EXT4: {
+      DecodeExt4(instr);
+      break;
+    }
     default: {
       Unknown(instr);
       break;
