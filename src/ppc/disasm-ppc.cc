@@ -453,6 +453,12 @@ int Decoder::FormatOption(Instruction* instr, const char* format) {
       }
       return 1;
     }
+    case '.': {
+      if (instr->Bit(1) == 1) {
+        Print(".");
+      }
+      return 1;
+    }
     case 'r': {
       return FormatRegister(instr, format);
     }
@@ -805,6 +811,10 @@ void Decoder::DecodeExt1(Instruction* instr) {
 void Decoder::DecodeExt2(Instruction* instr) {
 // ?? are all of these xo_form?
   switch(instr->Bits(9,1) << 1) {
+    case MULLW: {
+      Format(instr, "mullw'o'. 'rt, 'ra, 'rb");
+      break;
+    }
     case ADDX: {
       Format(instr, "add'o 'rt, 'ra, 'rb");
       break;

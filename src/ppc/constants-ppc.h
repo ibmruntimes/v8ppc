@@ -326,7 +326,7 @@ enum OpcodeExt2 {
   ADDZEX
   MTSR
 */
-
+  MULLW  = 235 << 1,  // Multiply Low Word
   ADDX = 266 << 1,  // Add
   ORX = 444 << 1  // Or
 }; 

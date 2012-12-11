@@ -906,8 +906,9 @@ SBit s = LeaveCC, Condition cond = al // roohack - remove this line later
   void mla(Register dst, Register src1, Register src2, Register srcA,
            SBit s = LeaveCC, Condition cond = al);
 
+  // PowerPC
   void mul(Register dst, Register src1, Register src2,
-           SBit s = LeaveCC, Condition cond = al);
+           OEBit s = LeaveOE, RCBit r = LeaveRC );
 
   void smlal(Register dstL, Register dstH, Register src1, Register src2,
              SBit s = LeaveCC, Condition cond = al);

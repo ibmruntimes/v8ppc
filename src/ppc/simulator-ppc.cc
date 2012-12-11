@@ -1902,6 +1902,17 @@ void Simulator::DecodeExt1(Instruction* instr) {
 
 void Simulator::DecodeExt2(Instruction* instr) {
   switch(instr->Bits(9,1) << 1) {
+    case MULLW: {
+      int rt = instr->RTValue();
+      int ra = instr->RAValue();
+      int rb = instr->RBValue();
+      int32_t ra_val = get_register(ra);
+      int32_t rb_val = get_register(rb);
+      int32_t alu_out = ra_val * rb_val;
+      set_register(rt, alu_out);
+      // todo - handle OE and RC bits
+      break;
+    }
     case ADDX: {
       int rt = instr->RTValue();
       int ra = instr->RAValue();

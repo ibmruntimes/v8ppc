@@ -1337,13 +1337,12 @@ void Assembler::mla(Register dst, Register src1, Register src2, Register srcA,
 }
 
 
+// PowerPC
 void Assembler::mul(Register dst, Register src1, Register src2,
-                    SBit s, Condition cond) {
-  ASSERT(!dst.is(pc) && !src1.is(pc) && !src2.is(pc));
-  // dst goes in bits 16-19 for this instruction!
-  emit(cond | s | dst.code()*B16 | src2.code()*B8 | B7 | B4 | src1.code());
+                    OEBit o, RCBit r) {
+  xo_form(EXT2 | MULLW, dst, src1, src2, o, r); 
 }
-
+// end PowerPC
 
 void Assembler::smlal(Register dstL,
                       Register dstH,

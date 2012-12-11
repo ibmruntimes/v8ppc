@@ -81,7 +81,7 @@ TEST(0) {
   CHECK_EQ(7, res);
 }
 
-// Loop ?? times
+// Loop 100 times, adding loop counter to result
 TEST(1) {
   InitializeVM();
   v8::HandleScope scope;
@@ -118,7 +118,6 @@ TEST(1) {
   CHECK_EQ(5050, res);
 }
 
-#if 0
 
 TEST(2) {
   InitializeVM();
@@ -127,18 +126,18 @@ TEST(2) {
   Assembler assm(Isolate::Current(), NULL, 0);
   Label L, C;
 
-  __ mov(r1, Operand(r0));
-  __ mov(r0, Operand(1));
+  __ mr(r4, r3);
+  __ li(r3, Operand(1));
   __ b(&C);
 
   __ bind(&L);
-  __ mul(r0, r1, r0);
-  __ sub(r1, r1, Operand(1));
+  __ mul(r3, r4, r3);
+  __ sub(r4, r4, Operand(1));
 
   __ bind(&C);
-  __ teq(r1, Operand(0, RelocInfo::NONE));
-  __ b(ne, &L);
-  __ mov(pc, Operand(lr));
+  __ cmpi(r4, Operand(0, RelocInfo::NONE));
+  __ bne(&L);
+  __ blr();
 
   // some relocated stuff here, not executed
   __ RecordComment("dead code, just testing relocations");
@@ -165,6 +164,7 @@ TEST(2) {
   CHECK_EQ(3628800, res);
 }
 
+#if 0
 
 TEST(3) {
   InitializeVM();
@@ -180,21 +180,30 @@ TEST(3) {
   Assembler assm(Isolate::Current(), NULL, 0);
   Label L, C;
 
+  // build a frame
   __ mov(ip, Operand(sp));
   __ stm(db_w, sp, r4.bit() | fp.bit() | lr.bit());
   __ sub(fp, ip, Operand(4));
+
+  // modify field int i of struct
   __ mov(r4, Operand(r0));
   __ ldr(r0, MemOperand(r4, OFFSET_OF(T, i)));
   __ mov(r2, Operand(r0, ASR, 1));
   __ str(r2, MemOperand(r4, OFFSET_OF(T, i)));
+
+  // modify field char c of struct
   __ ldrsb(r2, MemOperand(r4, OFFSET_OF(T, c)));
   __ add(r0, r2, Operand(r0));
   __ mov(r2, Operand(r2, LSL, 2));
   __ strb(r2, MemOperand(r4, OFFSET_OF(T, c)));
+
+  // modify field int16_t s of struct
   __ ldrsh(r2, MemOperand(r4, OFFSET_OF(T, s)));
   __ add(r0, r2, Operand(r0));
   __ mov(r2, Operand(r2, ASR, 3));
   __ strh(r2, MemOperand(r4, OFFSET_OF(T, s)));
+
+  // restore frame
   __ ldm(ia_w, sp, r4.bit() | fp.bit() | pc.bit());
 
   CodeDesc desc;
