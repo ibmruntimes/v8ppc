@@ -71,7 +71,7 @@ namespace internal {
 
 // Core register
 struct Register {
-  static const int kNumRegisters = 16;
+  static const int kNumRegisters = 32;
   static const int kNumAllocatableRegisters = 8;
   static const int kSizeInBytes = 4;
 
@@ -105,6 +105,21 @@ struct Register {
       "r14", 
       "r15", 
       "r16", 
+      "r17",
+      "r18",
+      "r19",
+      "r20",
+      "r21",
+      "r22",
+      "r23",
+      "r24",
+      "r25",
+      "r26",
+      "r27",
+      "r28",
+      "r29",
+      "r30",
+      "r31",
     };
     return names[index];
   }
@@ -137,7 +152,7 @@ struct Register {
 // These constants are used in several locations, including static initializers
 const int kRegister_no_reg_Code = -1;
 const int kRegister_r0_Code = 0;
-const int kRegister_r1_Code = 1;
+const int kRegister_sp_Code = 1;  // todo - rename to SP
 const int kRegister_r2_Code = 2;
 const int kRegister_r3_Code = 3;
 const int kRegister_r4_Code = 4;
@@ -147,16 +162,34 @@ const int kRegister_r7_Code = 7;
 const int kRegister_r8_Code = 8;
 const int kRegister_r9_Code = 9;
 const int kRegister_r10_Code = 10;
-const int kRegister_fp_Code = 11;
+const int kRegister_r11_Code = 11;  // todo - fix these
 const int kRegister_ip_Code = 12;
-const int kRegister_sp_Code = 13;
+const int kRegister_r13_Code = 13;
 const int kRegister_lr_Code = 14;
 const int kRegister_pc_Code = 15;
+
+const int kRegister_r16_Code = 16;
+const int kRegister_r17_Code = 17;
+const int kRegister_r18_Code = 18;
+const int kRegister_r19_Code = 19;
+const int kRegister_r20_Code = 20;
+const int kRegister_r21_Code = 21;
+const int kRegister_r22_Code = 22;
+const int kRegister_r23_Code = 23;
+const int kRegister_r24_Code = 24;
+const int kRegister_r25_Code = 25;
+const int kRegister_r26_Code = 26;
+const int kRegister_r27_Code = 27;
+const int kRegister_r28_Code = 28;
+const int kRegister_r29_Code = 29;
+const int kRegister_r30_Code = 30;
+const int kRegister_r31_Code = 31;
 
 const Register no_reg = { kRegister_no_reg_Code };
 
 const Register r0  = { kRegister_r0_Code };
-const Register r1  = { kRegister_r1_Code };
+const Register sp  = { kRegister_sp_Code };
+const Register r1  = { kRegister_r7_Code };  // hack for ARM
 const Register r2  = { kRegister_r2_Code };
 const Register r3  = { kRegister_r3_Code };
 const Register r4  = { kRegister_r4_Code };
@@ -169,11 +202,28 @@ const Register r8  = { kRegister_r8_Code };
 const Register r9  = { kRegister_r9_Code };
 // Used as roots register.
 const Register r10 = { kRegister_r10_Code };
-const Register fp  = { kRegister_fp_Code };
+const Register r11 = { kRegister_r11_Code };
 const Register ip  = { kRegister_ip_Code };
-const Register sp  = { kRegister_sp_Code };
+const Register r13  = { kRegister_r13_Code };
 const Register lr  = { kRegister_lr_Code };
 const Register pc  = { kRegister_pc_Code };
+
+const Register r16  = { kRegister_r16_Code };
+const Register r17  = { kRegister_r17_Code };
+const Register r18  = { kRegister_r18_Code };
+const Register r19  = { kRegister_r19_Code };
+const Register r20  = { kRegister_r20_Code };
+const Register r21  = { kRegister_r21_Code };
+const Register r22  = { kRegister_r22_Code };
+const Register r23  = { kRegister_r23_Code };
+const Register r24  = { kRegister_r24_Code };
+const Register r25  = { kRegister_r25_Code };
+const Register r26  = { kRegister_r26_Code };
+const Register r27  = { kRegister_r27_Code };
+const Register r28  = { kRegister_r28_Code };
+const Register r29  = { kRegister_r29_Code };
+const Register r30  = { kRegister_r30_Code };
+const Register r31  = { kRegister_r31_Code };
 
 
 // Single word VFP register.
@@ -459,23 +509,20 @@ class Operand BASE_EMBEDDED {
 
 
 // Class MemOperand represents a memory operand in load and store instructions
+// On PowerPC we have base register + 16bit signed value
+// Alternatively we can have a 16bit signed value immediate
 class MemOperand BASE_EMBEDDED {
  public:
-  // [rn +/- offset]      Offset/NegOffset
-  // [rn +/- offset]!     PreIndex/NegPreIndex
-  // [rn], +/- offset     PostIndex/NegPostIndex
-  // offset is any signed 32-bit value; offset is first loaded to register ip if
-  // it does not fit the addressing mode (12-bit unsigned and sign bit)
+
+  // Contains cruft left to allow ARM to continue to work
+
+  // PowerPC (remove AddrMode later)
   explicit MemOperand(Register rn, int32_t offset = 0, AddrMode am = Offset);
 
-  // [rn +/- rm]          Offset/NegOffset
-  // [rn +/- rm]!         PreIndex/NegPreIndex
-  // [rn], +/- rm         PostIndex/NegPostIndex
+  // ARM only
   explicit MemOperand(Register rn, Register rm, AddrMode am = Offset);
 
-  // [rn +/- rm <shift_op> shift_imm]      Offset/NegOffset
-  // [rn +/- rm <shift_op> shift_imm]!     PreIndex/NegPreIndex
-  // [rn], +/- rm <shift_op> shift_imm     PostIndex/NegPostIndex
+  // ARM only
   explicit MemOperand(Register rn, Register rm,
                       ShiftOp shift_op, int shift_imm, AddrMode am = Offset);
 
@@ -489,7 +536,11 @@ class MemOperand BASE_EMBEDDED {
       return offset_;
   }
 
-  Register rn() const { return rn_; }
+  // PowerPC - base register
+  Register ra() const { return ra_; }
+
+  // ARM stuff
+  Register rn() const { return ra_; }
   Register rm() const { return rm_; }
   AddrMode am() const { return am_; }
 
@@ -498,7 +549,7 @@ class MemOperand BASE_EMBEDDED {
   }
 
  private:
-  Register rn_;  // base
+  Register ra_;  // base
   Register rm_;  // register offset
   int32_t offset_;  // valid if rm_ == no_reg
   ShiftOp shift_op_;
@@ -821,12 +872,22 @@ SBit s = LeaveCC, Condition cond = al // roohack - remove this line later
            );
 
   void orx(Register dst, Register src1, Register src2, RCBit r = LeaveRC);
-
   void cmpi(Register src1, const Operand& src2);
-
-  void li(Register dst, const Operand &src);
- 
+  void li(Register dst, const Operand& src);
   void mr(Register dst, Register src);
+
+  void lbz(Register dst, const MemOperand& src);
+  void lhz(Register dst, const MemOperand& src);
+  void lwz(Register dst, const MemOperand& src);
+  void stb(Register dst, const MemOperand& src);
+  void sth(Register dst, const MemOperand& src);
+  void stw(Register dst, const MemOperand& src);
+  void stwu(Register dst, const MemOperand& src);
+
+  void rlwimi(Register ra, Register rs, int sh, int mb, int me, 
+              RCBit rc = LeaveRC);
+  void slwi(Register dst, Register src, const Operand& val);
+  void srwi(Register dst, Register src, const Operand& val);
 
   // end PowerPC
 
@@ -1477,7 +1538,7 @@ SBit s = LeaveCC, Condition cond = al // roohack - remove this line later
   inline void emit(Instr x);
 
   // Instruction generation
-  void d_form(Instr instr, Register rt, Register ra, const Operand& x);
+  void d_form(Instr instr, Register rt, Register ra, const int val);
   void x_form(Instr instr, Register ra, Register rs, Register rb, RCBit r); 
   void xo_form(Instr instr, Register rt, Register ra, Register rb, OEBit o, 
 	RCBit r);

@@ -1563,10 +1563,10 @@ void Simulator::SoftwareInterrupt(Instruction* instr) {
           (get_register(sp)
            & (::v8::internal::FLAG_sim_stack_alignment - 1)) == 0;
       Redirection* redirection = Redirection::FromSwiInstruction(instr);
-      int32_t arg0 = get_register(r0);
-      int32_t arg1 = get_register(r1);
-      int32_t arg2 = get_register(r2);
-      int32_t arg3 = get_register(r3);
+      int32_t arg0 = get_register(r3);
+      int32_t arg1 = get_register(r4);
+      int32_t arg2 = get_register(r5);
+      int32_t arg3 = get_register(r6);
       int32_t* stack_pointer = reinterpret_cast<int32_t*>(get_register(sp));
       int32_t arg4 = stack_pointer[0];
       int32_t arg5 = stack_pointer[1];
@@ -1670,7 +1670,7 @@ void Simulator::SoftwareInterrupt(Instruction* instr) {
           break;
         case ExternalReference::BUILTIN_FP_INT_CALL:
           GetFpArgs(&dval0, &ival);
-          result = targety(dval0, ival); 
+          result = targety(dval0, ival);
           SetFpResult(result);
           break;
         default:
@@ -1692,10 +1692,11 @@ void Simulator::SoftwareInterrupt(Instruction* instr) {
           if (::v8::internal::FLAG_trace_sim) {
             PrintF("Returned %08x\n", lo_res);
           }
-          set_register(r0, lo_res);
-          set_register(r1, hi_res);
+          set_register(r3, lo_res);
+          set_register(r4, hi_res);
         }
 #endif
+
       } else if (redirection->type() == ExternalReference::DIRECT_API_CALL) {
         SimulatorRuntimeDirectApiCall target =
             reinterpret_cast<SimulatorRuntimeDirectApiCall>(external);
@@ -1763,8 +1764,8 @@ void Simulator::SoftwareInterrupt(Instruction* instr) {
         if (::v8::internal::FLAG_trace_sim) {
           PrintF("Returned %08x\n", lo_res);
         }
-        set_register(r0, lo_res);
-        set_register(r1, hi_res);
+        set_register(r3, lo_res);
+        set_register(r4, hi_res);
       }
       set_register(lr, saved_lr);
       set_pc(get_register(lr));
@@ -3272,7 +3273,36 @@ void Simulator::InstructionDecode(Instruction* instr) {
       break;
     }
     case RLWIMIX:
-    case RLWINMX:
+    case RLWINMX: {
+      int ra = instr->RAValue();
+      int rs = instr->RSValue();
+      int32_t rs_val = get_register(rs);
+      int sh = instr->Bits(15,11);
+      int mb = instr->Bits(10,6);
+      int me = instr->Bits(5,1);
+      // rotate left
+      int result = (rs_val<<sh) | (rs_val>>(32-sh));
+      int mask = 0;
+      if(mb < me+1) {
+        int bit = 0x80000000 >> mb;
+        for(; mb<=me; mb++) {
+          mask |= bit;
+          bit >>= 1;
+        }
+      } else if(mb == me+1) {
+         mask = 0xffffffff;
+      } else { // mb > me+1 
+        int bit = 0x80000000 >> (me+1);  // needs to be tested
+        mask = 0xffffffff;
+        for(;me<mb;me++) {
+          mask ^= bit;
+          bit >>= 1;
+        }
+      }
+      result &= mask;  
+      set_register(ra, result);
+      break;
+    }
     case RLWNMX:
     case ORI:
     case ORIS:
@@ -3284,19 +3314,94 @@ void Simulator::InstructionDecode(Instruction* instr) {
       DecodeExt2(instr);
       break;
     }
-    case LWZ:
+    case LWZ: {
+      int ra = instr->RAValue();
+      int rt = instr->RTValue();
+      int32_t ra_val = get_register(ra);
+      int offset = (instr->Bits(15,0) << 16) >> 16;
+      if(ra != 0) {
+        offset += ra_val;
+      }
+      set_register(rt, ReadW(offset, instr));
+      break;
+    }
     case LWZU:
-    case LBZ:
+    case LBZ: {
+      int ra = instr->RAValue();
+      int rt = instr->RTValue();
+      int32_t ra_val = get_register(ra);
+      int offset = (instr->Bits(15,0) << 16) >> 16;
+      if(ra != 0) {
+        offset += ra_val;
+      }
+      set_register(rt, ReadB(offset));
+      break;
+    }
     case LBZU:
-    case STW:
-    case STWU:
-    case STB:
+    case STW: {
+      int ra = instr->RAValue();
+      int rs = instr->RSValue();
+      int32_t ra_val = get_register(ra);
+      int32_t rs_val = get_register(rs);
+      int offset = (instr->Bits(15,0) << 16) >> 16;
+      if(ra != 0) {
+        offset += ra_val;
+      }
+      WriteW(offset, rs_val, instr);
+      break;
+    }
+    case STWU: {
+      int ra = instr->RAValue();
+      int rs = instr->RSValue();
+      int32_t ra_val = get_register(ra);
+      int32_t rs_val = get_register(rs);
+      int offset = (instr->Bits(15,0) << 16) >> 16;
+      if(ra != 0) {
+        offset += ra_val;
+        set_register(ra, offset);
+      }
+      WriteW(offset, rs_val, instr);
+      break;
+    }
+    case STB: {
+      int ra = instr->RAValue();
+      int rs = instr->RSValue();
+      int32_t ra_val = get_register(ra);
+      int8_t rs_val = get_register(rs);
+      int offset = (instr->Bits(15,0) << 16) >> 16;
+      if(ra != 0) {
+        offset += ra_val;
+      }
+      WriteB(offset, rs_val);
+      break;
+    }
     case STBU:
-    case LHZ:
+    case LHZ: {
+      int ra = instr->RAValue();
+      int rt = instr->RTValue();
+      int32_t ra_val = get_register(ra);
+      int offset = (instr->Bits(15,0) << 16) >> 16;
+      if(ra != 0) {
+        offset += ra_val;
+      }
+      set_register(rt, ReadH(offset, instr));
+      break;
+    }
     case LHZU:
     case LHA:
     case LHAU:
-    case STH:
+    case STH: {
+      int ra = instr->RAValue();
+      int rs = instr->RSValue();
+      int32_t ra_val = get_register(ra);
+      int16_t rs_val = get_register(rs);
+      int offset = (instr->Bits(15,0) << 16) >> 16;
+      if(ra != 0) {
+        offset += ra_val;
+      }
+      WriteH(offset, rs_val, instr);
+      break;
+    }
     case STHU:
     case LMW:
     case STMW:
@@ -3417,13 +3522,13 @@ int32_t Simulator::Call(byte* entry, int argument_count, ...) {
 
   // Check that the callee-saved registers have been preserved.
   // CHECK_EQ(callee_saved_value, get_register(r4));
-  CHECK_EQ(callee_saved_value, get_register(r5));
+  // CHECK_EQ(callee_saved_value, get_register(r5));
   CHECK_EQ(callee_saved_value, get_register(r6));
   CHECK_EQ(callee_saved_value, get_register(r7));
   CHECK_EQ(callee_saved_value, get_register(r8));
   CHECK_EQ(callee_saved_value, get_register(r9));
   CHECK_EQ(callee_saved_value, get_register(r10));
-  CHECK_EQ(callee_saved_value, get_register(r11));
+  // CHECK_EQ(callee_saved_value, get_register(r11));
 
   // Restore callee-saved registers with the original value.
   // set_register(r4, r4_val);

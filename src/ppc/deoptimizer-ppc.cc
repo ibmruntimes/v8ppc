@@ -365,7 +365,7 @@ void Deoptimizer::DoComputeOsrOutputFrame() {
     output_[0]->SetPc(reinterpret_cast<uint32_t>(from_));
   } else {
     // Set up the frame pointer and the context pointer.
-    output_[0]->SetRegister(fp.code(), input_->GetRegister(fp.code()));
+    output_[0]->SetRegister(r11.code(), input_->GetRegister(r11.code()));
     output_[0]->SetRegister(cp.code(), input_->GetRegister(cp.code()));
 
     unsigned pc_offset = data->OsrPcOffset()->value();
@@ -771,7 +771,7 @@ void Deoptimizer::DoComputeJSFrame(TranslationIterator* iterator,
   if (is_bottommost) {
     // 2 = context and function in the frame.
     top_address =
-        input_->GetRegister(fp.code()) - (2 * kPointerSize) - height_in_bytes;
+        input_->GetRegister(r11.code()) - (2 * kPointerSize) - height_in_bytes;
   } else {
     top_address = output_[frame_index - 1]->GetTop() - output_frame_size;
   }
@@ -822,10 +822,10 @@ void Deoptimizer::DoComputeJSFrame(TranslationIterator* iterator,
   }
   output_frame->SetFrameSlot(output_offset, value);
   intptr_t fp_value = top_address + output_offset;
-  ASSERT(!is_bottommost || input_->GetRegister(fp.code()) == fp_value);
+  ASSERT(!is_bottommost || input_->GetRegister(r11.code()) == fp_value);
   output_frame->SetFp(fp_value);
   if (is_topmost) {
-    output_frame->SetRegister(fp.code(), fp_value);
+    output_frame->SetRegister(r11.code(), fp_value);
   }
   if (FLAG_trace_deopt) {
     PrintF("    0x%08x: [top + %d] <- 0x%08x ; caller's fp\n",
@@ -909,7 +909,7 @@ void Deoptimizer::FillInputFrame(Address tos, JavaScriptFrame* frame) {
     input_->SetRegister(i, i * 4);
   }
   input_->SetRegister(sp.code(), reinterpret_cast<intptr_t>(frame->sp()));
-  input_->SetRegister(fp.code(), reinterpret_cast<intptr_t>(frame->fp()));
+  input_->SetRegister(r11.code(), reinterpret_cast<intptr_t>(frame->fp()));
   for (int i = 0; i < DoubleRegister::kNumAllocatableRegisters; i++) {
     input_->SetDoubleRegister(i, 0.0);
   }
@@ -983,12 +983,12 @@ void Deoptimizer::EntryGenerator::Generate() {
     // Correct two words for bailout id and return address.
     __ add(r4, sp, Operand(kSavedRegistersAreaSize + (2 * kPointerSize)));
   }
-  __ sub(r4, fp, r4);
+  __ sub(r4, r11, r4);
 
   // Allocate a new deoptimizer object.
   // Pass four arguments in r0 to r3 and fifth argument on stack.
   __ PrepareCallCFunction(6, r5);
-  __ ldr(r0, MemOperand(fp, JavaScriptFrameConstants::kFunctionOffset));
+  __ ldr(r0, MemOperand(r11, JavaScriptFrameConstants::kFunctionOffset));
   __ mov(r1, Operand(type()));  // bailout type,
   // r2: bailout id already loaded.
   // r3: code address or 0 already loaded.

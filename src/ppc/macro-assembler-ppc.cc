@@ -51,26 +51,6 @@ MacroAssembler::MacroAssembler(Isolate* arg_isolate, void* buffer, int size)
 }
 
 
-// We always generate arm code, never thumb code, even if V8 is compiled to
-// thumb, so we require inter-working support
-#if defined(__thumb__) && !defined(USE_THUMB_INTERWORK)
-#error "flag -mthumb-interwork missing"
-#endif
-
-
-// We do not support thumb inter-working with an arm architecture not supporting
-// the blx instruction (below v5t).  If you know what CPU you are compiling for
-// you can use -march=armv7 or similar.
-#if defined(USE_THUMB_INTERWORK) && !defined(CAN_USE_THUMB_INSTRUCTIONS)
-# error "For thumb inter-working we require an architecture which supports blx"
-#endif
-
-
-// Using bx does not yield better code, so use it only when required
-#if defined(USE_THUMB_INTERWORK)
-#define USE_BX 1
-#endif
-
 
 void MacroAssembler::Jump(Register target, Condition cond) {
 #if USE_BX
@@ -716,6 +696,7 @@ void MacroAssembler::Ldrd(Register dst1, Register dst2,
 
 void MacroAssembler::Strd(Register src1, Register src2,
                           const MemOperand& dst, Condition cond) {
+#if 0
   ASSERT(dst.rm().is(no_reg));
   ASSERT(!src1.is(lr));  // r14.
   ASSERT_EQ(0, src1.code() % 2);
@@ -742,6 +723,7 @@ void MacroAssembler::Strd(Register src1, Register src2,
       str(src2, dst2, cond);
     }
   }
+#endif
 }
 
 
@@ -808,12 +790,12 @@ void MacroAssembler::Vmov(const DwVfpRegister dst,
 
 void MacroAssembler::EnterFrame(StackFrame::Type type) {
   // r0-r3: preserved
-  stm(db_w, sp, cp.bit() | fp.bit() | lr.bit());
+  stm(db_w, sp, cp.bit() | r11.bit() | lr.bit());
   mov(ip, Operand(Smi::FromInt(type)));
   push(ip);
   mov(ip, Operand(CodeObject()));
   push(ip);
-  add(fp, sp, Operand(3 * kPointerSize));  // Adjust FP to point to saved FP.
+  add(r11, sp, Operand(3 * kPointerSize));  // Adjust FP to point to saved FP.
 }
 
 
@@ -824,8 +806,8 @@ void MacroAssembler::LeaveFrame(StackFrame::Type type) {
 
   // Drop the execution stack down to the frame pointer and restore
   // the caller frame pointer and return address.
-  mov(sp, fp);
-  ldm(ia_w, sp, fp.bit() | lr.bit());
+  mov(sp, r11);
+  ldm(ia_w, sp, r11.bit() | lr.bit());
 }
 
 
@@ -834,20 +816,20 @@ void MacroAssembler::EnterExitFrame(bool save_doubles, int stack_space) {
   ASSERT_EQ(2 * kPointerSize, ExitFrameConstants::kCallerSPDisplacement);
   ASSERT_EQ(1 * kPointerSize, ExitFrameConstants::kCallerPCOffset);
   ASSERT_EQ(0 * kPointerSize, ExitFrameConstants::kCallerFPOffset);
-  Push(lr, fp);
-  mov(fp, Operand(sp));  // Set up new frame pointer.
+  Push(lr, r11);
+  mov(r11, Operand(sp));  // Set up new frame pointer.
   // Reserve room for saved entry sp and code object.
   sub(sp, sp, Operand(2 * kPointerSize));
   if (emit_debug_code()) {
     mov(ip, Operand(0));
-    str(ip, MemOperand(fp, ExitFrameConstants::kSPOffset));
+    str(ip, MemOperand(r11, ExitFrameConstants::kSPOffset));
   }
   mov(ip, Operand(CodeObject()));
-  str(ip, MemOperand(fp, ExitFrameConstants::kCodeOffset));
+  str(ip, MemOperand(r11, ExitFrameConstants::kCodeOffset));
 
   // Save the frame pointer and the context in top.
   mov(ip, Operand(ExternalReference(Isolate::kCEntryFPAddress, isolate())));
-  str(fp, MemOperand(ip));
+  str(r11, MemOperand(ip));
   mov(ip, Operand(ExternalReference(Isolate::kContextAddress, isolate())));
   str(cp, MemOperand(ip));
 
@@ -874,7 +856,7 @@ void MacroAssembler::EnterExitFrame(bool save_doubles, int stack_space) {
   // Set the exit frame sp value to point just before the return address
   // location.
   add(ip, sp, Operand(kPointerSize));
-  str(ip, MemOperand(fp, ExitFrameConstants::kSPOffset));
+  str(ip, MemOperand(r11, ExitFrameConstants::kSPOffset));
 }
 
 
@@ -915,7 +897,7 @@ void MacroAssembler::LeaveExitFrame(bool save_doubles,
   if (save_doubles) {
     // Calculate the stack location of the saved doubles and restore them.
     const int offset = 2 * kPointerSize;
-    sub(r3, fp, Operand(offset + DwVfpRegister::kNumRegisters * kDoubleSize));
+    sub(r3, r11, Operand(offset + DwVfpRegister::kNumRegisters * kDoubleSize));
     DwVfpRegister first = d0;
     DwVfpRegister last =
         DwVfpRegister::from_code(DwVfpRegister::kNumRegisters - 1);
@@ -935,8 +917,8 @@ void MacroAssembler::LeaveExitFrame(bool save_doubles,
 #endif
 
   // Tear down the exit frame, pop the arguments, and return.
-  mov(sp, Operand(fp));
-  ldm(ia_w, sp, fp.bit() | lr.bit());
+  mov(sp, Operand(r11));
+  ldm(ia_w, sp, r11.bit() | lr.bit());
   if (argument_count.is_valid()) {
     add(sp, sp, Operand(argument_count, LSL, kPointerSizeLog2));
   }
@@ -1227,7 +1209,7 @@ void MacroAssembler::PushTryHandler(StackHandler::Kind kind,
     mov(ip, Operand(0, RelocInfo::NONE));  // NULL frame pointer.
     stm(db_w, sp, r5.bit() | r6.bit() | r7.bit() | ip.bit());
   } else {
-    stm(db_w, sp, r5.bit() | r6.bit() | cp.bit() | fp.bit());
+    stm(db_w, sp, r5.bit() | r6.bit() | cp.bit() | r11.bit());
   }
 
   // Link the current handler as the next handler.
@@ -1283,13 +1265,13 @@ void MacroAssembler::Throw(Register value) {
 
   // Get the code object (r1) and state (r2).  Restore the context and frame
   // pointer.
-  ldm(ia_w, sp, r1.bit() | r2.bit() | cp.bit() | fp.bit());
+  ldm(ia_w, sp, r1.bit() | r2.bit() | cp.bit() | r11.bit());
 
   // If the handler is a JS frame, restore the context to the frame.
   // (kind == ENTRY) == (fp == 0) == (cp == 0), so we could test either fp
   // or cp.
   tst(cp, cp);
-  str(cp, MemOperand(fp, StandardFrameConstants::kContextOffset), ne);
+  str(cp, MemOperand(r11, StandardFrameConstants::kContextOffset), ne);
 
   JumpToHandlerEntry();
 }
@@ -1329,7 +1311,7 @@ void MacroAssembler::ThrowUncatchable(Register value) {
   str(r2, MemOperand(r3));
   // Get the code object (r1) and state (r2).  Clear the context and frame
   // pointer (0 was saved in the handler).
-  ldm(ia_w, sp, r1.bit() | r2.bit() | cp.bit() | fp.bit());
+  ldm(ia_w, sp, r1.bit() | r2.bit() | cp.bit() | r11.bit());
 
   JumpToHandlerEntry();
 }
@@ -1345,7 +1327,7 @@ void MacroAssembler::CheckAccessGlobalProxy(Register holder_reg,
   ASSERT(!scratch.is(ip));
 
   // Load current lexical context from the stack frame.
-  ldr(scratch, MemOperand(fp, StandardFrameConstants::kContextOffset));
+  ldr(scratch, MemOperand(r11, StandardFrameConstants::kContextOffset));
   // In debug mode, make sure the lexical context is set.
 #ifdef DEBUG
   cmp(scratch, Operand(0, RelocInfo::NONE));

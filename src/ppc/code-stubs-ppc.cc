@@ -4081,7 +4081,7 @@ void JSEntryStub::GenerateBody(MacroAssembler* masm, bool is_construct) {
   __ Push(r8, r7, r6, r5);
 
   // Set up frame pointer for the frame to be pushed.
-  __ add(fp, sp, Operand(-EntryFrameConstants::kCallerFPOffset));
+  __ add(r11, sp, Operand(-EntryFrameConstants::kCallerFPOffset));
 
   // If this is the outermost JS call, set js_entry_sp value.
   Label non_outermost_js;
@@ -4090,7 +4090,7 @@ void JSEntryStub::GenerateBody(MacroAssembler* masm, bool is_construct) {
   __ ldr(r6, MemOperand(r5));
   __ cmp(r6, Operand::Zero());
   __ b(ne, &non_outermost_js);
-  __ str(fp, MemOperand(r5));
+  __ str(r11, MemOperand(r5));
   __ mov(ip, Operand(Smi::FromInt(StackFrame::OUTERMOST_JSENTRY_FRAME)));
   Label cont;
   __ b(&cont);
@@ -4403,7 +4403,7 @@ void ArgumentsAccessStub::GenerateReadElement(MacroAssembler* masm) {
 
   // Check if the calling frame is an arguments adaptor frame.
   Label adaptor;
-  __ ldr(r2, MemOperand(fp, StandardFrameConstants::kCallerFPOffset));
+  __ ldr(r2, MemOperand(r11, StandardFrameConstants::kCallerFPOffset));
   __ ldr(r3, MemOperand(r2, StandardFrameConstants::kContextOffset));
   __ cmp(r3, Operand(Smi::FromInt(StackFrame::ARGUMENTS_ADAPTOR)));
   __ b(eq, &adaptor);
@@ -4416,7 +4416,7 @@ void ArgumentsAccessStub::GenerateReadElement(MacroAssembler* masm) {
 
   // Read the argument from the stack and return it.
   __ sub(r3, r0, r1);
-  __ add(r3, fp, Operand(r3, LSL, kPointerSizeLog2 - kSmiTagSize));
+  __ add(r3, r11, Operand(r3, LSL, kPointerSizeLog2 - kSmiTagSize));
   __ ldr(r0, MemOperand(r3, kDisplacement));
   __ Jump(lr);
 
@@ -4449,7 +4449,7 @@ void ArgumentsAccessStub::GenerateNewNonStrictSlow(MacroAssembler* masm) {
 
   // Check if the calling frame is an arguments adaptor frame.
   Label runtime;
-  __ ldr(r3, MemOperand(fp, StandardFrameConstants::kCallerFPOffset));
+  __ ldr(r3, MemOperand(r11, StandardFrameConstants::kCallerFPOffset));
   __ ldr(r2, MemOperand(r3, StandardFrameConstants::kContextOffset));
   __ cmp(r2, Operand(Smi::FromInt(StackFrame::ARGUMENTS_ADAPTOR)));
   __ b(ne, &runtime);
@@ -4481,7 +4481,7 @@ void ArgumentsAccessStub::GenerateNewNonStrictFast(MacroAssembler* masm) {
   // Check if the calling frame is an arguments adaptor frame.
   Label runtime;
   Label adaptor_frame, try_allocate;
-  __ ldr(r3, MemOperand(fp, StandardFrameConstants::kCallerFPOffset));
+  __ ldr(r3, MemOperand(r11, StandardFrameConstants::kCallerFPOffset));
   __ ldr(r2, MemOperand(r3, StandardFrameConstants::kContextOffset));
   __ cmp(r2, Operand(Smi::FromInt(StackFrame::ARGUMENTS_ADAPTOR)));
   __ b(eq, &adaptor_frame);
@@ -4670,7 +4670,7 @@ void ArgumentsAccessStub::GenerateNewStrict(MacroAssembler* masm) {
   // sp[8] : function
   // Check if the calling frame is an arguments adaptor frame.
   Label adaptor_frame, try_allocate, runtime;
-  __ ldr(r2, MemOperand(fp, StandardFrameConstants::kCallerFPOffset));
+  __ ldr(r2, MemOperand(r11, StandardFrameConstants::kCallerFPOffset));
   __ ldr(r3, MemOperand(r2, StandardFrameConstants::kContextOffset));
   __ cmp(r3, Operand(Smi::FromInt(StackFrame::ARGUMENTS_ADAPTOR)));
   __ b(eq, &adaptor_frame);
@@ -5022,7 +5022,7 @@ void RegExpExecStub::Generate(MacroAssembler* masm) {
   // frame. Therefore we have to use fp, which points exactly to two pointer
   // sizes below the previous sp. (Because creating a new stack frame pushes
   // the previous fp onto the stack and moves up sp by 2 * kPointerSize.)
-  __ ldr(subject, MemOperand(fp, kSubjectOffset + 2 * kPointerSize));
+  __ ldr(subject, MemOperand(r11, kSubjectOffset + 2 * kPointerSize));
   // If slice offset is not 0, load the length from the original sliced string.
   // Argument 4, r3: End of string data
   // Argument 3, r2: Start of string data
@@ -7266,13 +7266,13 @@ static const AheadOfTimeWriteBarrierStubList kAheadOfTime[] = {
   // Also used in KeyedStoreIC::GenerateGeneric.
   { REG(r3), REG(r4), REG(r5), EMIT_REMEMBERED_SET },
   // Used in CompileStoreGlobal.
-  { REG(r4), REG(r1), REG(r2), OMIT_REMEMBERED_SET },
+  { REG(r4), REG(r0), REG(r2), OMIT_REMEMBERED_SET },
   // Used in StoreStubCompiler::CompileStoreField via GenerateStoreField.
-  { REG(r1), REG(r2), REG(r3), EMIT_REMEMBERED_SET },
-  { REG(r3), REG(r2), REG(r1), EMIT_REMEMBERED_SET },
+  { REG(r5), REG(r2), REG(r3), EMIT_REMEMBERED_SET },
+  { REG(r3), REG(r2), REG(r5), EMIT_REMEMBERED_SET },
   // Used in KeyedStoreStubCompiler::CompileStoreField via GenerateStoreField.
-  { REG(r2), REG(r1), REG(r3), EMIT_REMEMBERED_SET },
-  { REG(r3), REG(r1), REG(r2), EMIT_REMEMBERED_SET },
+  { REG(r2), REG(r5), REG(r3), EMIT_REMEMBERED_SET },
+  { REG(r3), REG(r5), REG(r2), EMIT_REMEMBERED_SET },
   // KeyedStoreStubCompiler::GenerateStoreFastElement.
   { REG(r3), REG(r2), REG(r4), EMIT_REMEMBERED_SET },
   { REG(r2), REG(r3), REG(r4), EMIT_REMEMBERED_SET },
@@ -7287,7 +7287,7 @@ static const AheadOfTimeWriteBarrierStubList kAheadOfTime[] = {
   // StoreArrayLiteralElementStub::Generate
   { REG(r5), REG(r0), REG(r6), EMIT_REMEMBERED_SET },
   // FastNewClosureStub::Generate
-  { REG(r2), REG(r4), REG(r1), EMIT_REMEMBERED_SET },
+  { REG(r2), REG(r4), REG(r5), EMIT_REMEMBERED_SET },
   // Null termination.
   { REG(no_reg), REG(no_reg), REG(no_reg), EMIT_REMEMBERED_SET}
 };
@@ -7577,7 +7577,7 @@ void StoreArrayLiteralElementStub::Generate(MacroAssembler* masm) {
   __ bind(&slow_elements);
   // call.
   __ Push(r1, r3, r0);
-  __ ldr(r5, MemOperand(fp, JavaScriptFrameConstants::kFunctionOffset));
+  __ ldr(r5, MemOperand(r11, JavaScriptFrameConstants::kFunctionOffset));
   __ ldr(r5, FieldMemOperand(r5, JSFunction::kLiteralsOffset));
   __ Push(r5, r4);
   __ TailCallRuntime(Runtime::kStoreArrayLiteralElement, 5, 1);

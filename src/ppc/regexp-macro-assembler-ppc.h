@@ -184,7 +184,7 @@ class RegExpMacroAssemblerPPC: public NativeRegExpMacroAssembler {
 
   // Register holding the frame address. Local variables, parameters and
   // regexp registers are addressed relative to this.
-  inline Register frame_pointer() { return fp; }
+  inline Register frame_pointer() { return r11; }
 
   // The register containing the backtrack stack top. Provides a meaningful
   // name to the register.

@@ -992,7 +992,7 @@ static void Generate_JSConstructStubHelper(MacroAssembler* masm,
     __ ldr(r3, MemOperand(sp, 3 * kPointerSize));
 
     // Set up pointer to last argument.
-    __ add(r2, fp, Operand(StandardFrameConstants::kCallerSPOffset));
+    __ add(r2, r11, Operand(StandardFrameConstants::kCallerSPOffset));
 
     // Set up number of arguments for function call below
     __ mov(r0, Operand(r3, LSR, kSmiTagSize));
@@ -1041,7 +1041,7 @@ static void Generate_JSConstructStubHelper(MacroAssembler* masm,
     // sp[0]: receiver
     // sp[1]: constructor function
     // sp[2]: number of arguments (smi-tagged)
-    __ ldr(cp, MemOperand(fp, StandardFrameConstants::kContextOffset));
+    __ ldr(cp, MemOperand(r11, StandardFrameConstants::kContextOffset));
 
     // If the result is an object (in the ECMA sense), we should get rid
     // of the receiver and use the result; see ECMA-262 section 13.2.2-7
@@ -1286,12 +1286,12 @@ void Builtins::Generate_NotifyOSR(MacroAssembler* masm) {
   // doesn't do any garbage collection which allows us to save/restore
   // the registers without worrying about which of them contain
   // pointers. This seems a bit fragile.
-  __ stm(db_w, sp, kJSCallerSaved | kCalleeSaved | lr.bit() | fp.bit());
+  __ stm(db_w, sp, kJSCallerSaved | kCalleeSaved | lr.bit() | r11.bit());
   {
     FrameScope scope(masm, StackFrame::INTERNAL);
     __ CallRuntime(Runtime::kNotifyOSR, 0);
   }
-  __ ldm(ia_w, sp, kJSCallerSaved | kCalleeSaved | lr.bit() | fp.bit());
+  __ ldm(ia_w, sp, kJSCallerSaved | kCalleeSaved | lr.bit() | r11.bit());
   __ Ret();
 }
 
@@ -1305,7 +1305,7 @@ void Builtins::Generate_OnStackReplacement(MacroAssembler* masm) {
 
   // Lookup the function in the JavaScript frame and push it as an
   // argument to the on-stack replacement function.
-  __ ldr(r0, MemOperand(fp, JavaScriptFrameConstants::kFunctionOffset));
+  __ ldr(r0, MemOperand(r11, JavaScriptFrameConstants::kFunctionOffset));
   {
     FrameScope scope(masm, StackFrame::INTERNAL);
     __ push(r0);
@@ -1531,9 +1531,9 @@ void Builtins::Generate_FunctionApply(MacroAssembler* masm) {
   {
     FrameScope frame_scope(masm, StackFrame::INTERNAL);
 
-    __ ldr(r0, MemOperand(fp, kFunctionOffset));  // get the function
+    __ ldr(r0, MemOperand(r11, kFunctionOffset));  // get the function
     __ push(r0);
-    __ ldr(r0, MemOperand(fp, kArgsOffset));  // get the args array
+    __ ldr(r0, MemOperand(r11, kArgsOffset));  // get the args array
     __ push(r0);
     __ InvokeBuiltin(Builtins::APPLY_PREPARE, CALL_FUNCTION);
 
@@ -1550,7 +1550,7 @@ void Builtins::Generate_FunctionApply(MacroAssembler* masm) {
     __ b(gt, &okay);  // Signed comparison.
 
     // Out of stack space.
-    __ ldr(r1, MemOperand(fp, kFunctionOffset));
+    __ ldr(r1, MemOperand(r11, kFunctionOffset));
     __ push(r1);
     __ push(r0);
     __ InvokeBuiltin(Builtins::APPLY_OVERFLOW, CALL_FUNCTION);
@@ -1563,11 +1563,11 @@ void Builtins::Generate_FunctionApply(MacroAssembler* masm) {
     __ push(r1);
 
     // Get the receiver.
-    __ ldr(r0, MemOperand(fp, kRecvOffset));
+    __ ldr(r0, MemOperand(r11, kRecvOffset));
 
     // Check that the function is a JS function (otherwise it must be a proxy).
     Label push_receiver;
-    __ ldr(r1, MemOperand(fp, kFunctionOffset));
+    __ ldr(r1, MemOperand(r11, kFunctionOffset));
     __ CompareObjectType(r1, r2, r2, JS_FUNCTION_TYPE);
     __ b(ne, &push_receiver);
 
@@ -1626,14 +1626,14 @@ void Builtins::Generate_FunctionApply(MacroAssembler* masm) {
 
     // Copy all arguments from the array to the stack.
     Label entry, loop;
-    __ ldr(r0, MemOperand(fp, kIndexOffset));
+    __ ldr(r0, MemOperand(r11, kIndexOffset));
     __ b(&entry);
 
     // Load the current argument from the arguments array and push it to the
     // stack.
     // r0: current argument index
     __ bind(&loop);
-    __ ldr(r1, MemOperand(fp, kArgsOffset));
+    __ ldr(r1, MemOperand(r11, kArgsOffset));
     __ push(r1);
     __ push(r0);
 
@@ -1642,14 +1642,14 @@ void Builtins::Generate_FunctionApply(MacroAssembler* masm) {
     __ push(r0);
 
     // Use inline caching to access the arguments.
-    __ ldr(r0, MemOperand(fp, kIndexOffset));
+    __ ldr(r0, MemOperand(r11, kIndexOffset));
     __ add(r0, r0, Operand(1 << kSmiTagSize));
-    __ str(r0, MemOperand(fp, kIndexOffset));
+    __ str(r0, MemOperand(r11, kIndexOffset));
 
     // Test if the copy loop has finished copying all the elements from the
     // arguments object.
     __ bind(&entry);
-    __ ldr(r1, MemOperand(fp, kLimitOffset));
+    __ ldr(r1, MemOperand(r11, kLimitOffset));
     __ cmp(r0, r1);
     __ b(ne, &loop);
 
@@ -1657,7 +1657,7 @@ void Builtins::Generate_FunctionApply(MacroAssembler* masm) {
     Label call_proxy;
     ParameterCount actual(r0);
     __ mov(r0, Operand(r0, ASR, kSmiTagSize));
-    __ ldr(r1, MemOperand(fp, kFunctionOffset));
+    __ ldr(r1, MemOperand(r11, kFunctionOffset));
     __ CompareObjectType(r1, r2, r2, JS_FUNCTION_TYPE);
     __ b(ne, &call_proxy);
     __ InvokeFunction(r1, actual, CALL_FUNCTION,
@@ -1687,8 +1687,8 @@ void Builtins::Generate_FunctionApply(MacroAssembler* masm) {
 static void EnterArgumentsAdaptorFrame(MacroAssembler* masm) {
   __ mov(r0, Operand(r0, LSL, kSmiTagSize));
   __ mov(r4, Operand(Smi::FromInt(StackFrame::ARGUMENTS_ADAPTOR)));
-  __ stm(db_w, sp, r0.bit() | r1.bit() | r4.bit() | fp.bit() | lr.bit());
-  __ add(fp, sp, Operand(3 * kPointerSize));
+  __ stm(db_w, sp, r0.bit() | r1.bit() | r4.bit() | r11.bit() | lr.bit());
+  __ add(r11, sp, Operand(3 * kPointerSize));
 }
 
 
@@ -1698,9 +1698,9 @@ static void LeaveArgumentsAdaptorFrame(MacroAssembler* masm) {
   // -----------------------------------
   // Get the number of arguments passed (as a smi), tear down the frame and
   // then tear down the parameters.
-  __ ldr(r1, MemOperand(fp, -3 * kPointerSize));
-  __ mov(sp, fp);
-  __ ldm(ia_w, sp, fp.bit() | lr.bit());
+  __ ldr(r1, MemOperand(r11, -3 * kPointerSize));
+  __ mov(sp, r11);
+  __ ldm(ia_w, sp, r11.bit() | lr.bit());
   __ add(sp, sp, Operand(r1, LSL, kPointerSizeLog2 - kSmiTagSize));
   __ add(sp, sp, Operand(kPointerSize));  // adjust for receiver
 }
@@ -1732,7 +1732,7 @@ void Builtins::Generate_ArgumentsAdaptorTrampoline(MacroAssembler* masm) {
     // r1: function
     // r2: expected number of arguments
     // r3: code entry to call
-    __ add(r0, fp, Operand(r0, LSL, kPointerSizeLog2 - kSmiTagSize));
+    __ add(r0, r11, Operand(r0, LSL, kPointerSizeLog2 - kSmiTagSize));
     // adjust for return address and receiver
     __ add(r0, r0, Operand(2 * kPointerSize));
     __ sub(r2, r0, Operand(r2, LSL, kPointerSizeLog2));
@@ -1763,7 +1763,7 @@ void Builtins::Generate_ArgumentsAdaptorTrampoline(MacroAssembler* masm) {
     // r1: function
     // r2: expected number of arguments
     // r3: code entry to call
-    __ add(r0, fp, Operand(r0, LSL, kPointerSizeLog2 - kSmiTagSize));
+    __ add(r0, r11, Operand(r0, LSL, kPointerSizeLog2 - kSmiTagSize));
 
     // Copy the arguments (including the receiver) to the new stack frame.
     // r0: copy start address
@@ -1775,7 +1775,7 @@ void Builtins::Generate_ArgumentsAdaptorTrampoline(MacroAssembler* masm) {
     // Adjust load for return address and receiver.
     __ ldr(ip, MemOperand(r0, 2 * kPointerSize));
     __ push(ip);
-    __ cmp(r0, fp);  // Compare before moving to next argument.
+    __ cmp(r0, r11);  // Compare before moving to next argument.
     __ sub(r0, r0, Operand(kPointerSize));
     __ b(ne, &copy);
 
@@ -1784,7 +1784,7 @@ void Builtins::Generate_ArgumentsAdaptorTrampoline(MacroAssembler* masm) {
     // r2: expected number of arguments
     // r3: code entry to call
     __ LoadRoot(ip, Heap::kUndefinedValueRootIndex);
-    __ sub(r2, fp, Operand(r2, LSL, kPointerSizeLog2));
+    __ sub(r2, r11, Operand(r2, LSL, kPointerSizeLog2));
     __ sub(r2, r2, Operand(4 * kPointerSize));  // Adjust for frame.
 
     Label fill;

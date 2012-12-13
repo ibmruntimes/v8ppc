@@ -215,14 +215,14 @@ Operand::Operand(Register rm, ShiftOp shift_op, Register rs) {
 
 
 MemOperand::MemOperand(Register rn, int32_t offset, AddrMode am) {
-  rn_ = rn;
+  ra_ = rn;
   rm_ = no_reg;
   offset_ = offset;
   am_ = am;
 }
 
 MemOperand::MemOperand(Register rn, Register rm, AddrMode am) {
-  rn_ = rn;
+  ra_ = rn;
   rm_ = rm;
   shift_op_ = LSL;
   shift_imm_ = 0;
@@ -233,7 +233,7 @@ MemOperand::MemOperand(Register rn, Register rm, AddrMode am) {
 MemOperand::MemOperand(Register rn, Register rm,
                        ShiftOp shift_op, int shift_imm, AddrMode am) {
   ASSERT(is_uint5(shift_imm));
-  rn_ = rn;
+  ra_ = rn;
   rm_ = rm;
   shift_op_ = shift_op;
   shift_imm_ = shift_imm & 31;
@@ -283,13 +283,13 @@ const Instr kAndBicFlip = 0xe * B21;
 
 // A mask for the Rd register for push, pop, ldr, str instructions.
 const Instr kLdrRegFpOffsetPattern =
-    al | B26 | L | Offset | kRegister_fp_Code * B16;
+    al | B26 | L | Offset | kRegister_r11_Code * B16;
 const Instr kStrRegFpOffsetPattern =
-    al | B26 | Offset | kRegister_fp_Code * B16;
+    al | B26 | Offset | kRegister_r11_Code * B16;
 const Instr kLdrRegFpNegOffsetPattern =
-    al | B26 | L | NegOffset | kRegister_fp_Code * B16;
+    al | B26 | L | NegOffset | kRegister_r11_Code * B16;
 const Instr kStrRegFpNegOffsetPattern =
-    al | B26 | NegOffset | kRegister_fp_Code * B16;
+    al | B26 | NegOffset | kRegister_r11_Code * B16;
 const Instr kLdrStrInstrTypeMask = 0xffff0000;
 const Instr kLdrStrInstrArgumentMask = 0x0000ffff;
 const Instr kLdrStrOffsetMask = 0x00000fff;
@@ -885,11 +885,11 @@ bool Operand::is_single_instruction(const Assembler* assembler,
 void Assembler::d_form(Instr instr,
                         Register rt,
                         Register ra,
-                        const Operand& x) {
+                        const int val) {
   CheckBuffer();
-  // roohack need to check x fits
-  //ASSERT(is_int16(x.imm32_));
-  emit(instr | rt.code()*B21 | ra.code()*B16 | (kImm16Mask & x.imm32_) );
+  // roohack need to check val fits
+  //ASSERT(is_int16(val));
+  emit(instr | rt.code()*B21 | ra.code()*B16 | (kImm16Mask & val) );
 }
 
 void Assembler::x_form(Instr instr,
@@ -984,9 +984,9 @@ void Assembler::addrmod2(Instr instr, Register rd, const MemOperand& x) {
     if (!is_uint12(offset_12)) {
       // Immediate offset cannot be encoded, load it first to register ip
       // rn (and rd in a load) should never be ip, or will be trashed.
-      ASSERT(!x.rn_.is(ip) && ((instr & L) == L || !rd.is(ip)));
+      ASSERT(!x.ra_.is(ip) && ((instr & L) == L || !rd.is(ip)));
       mov(ip, Operand(x.offset_), LeaveCC, Instruction::ConditionField(instr));
-      addrmod2(instr, rd, MemOperand(x.rn_, ip, x.am_));
+      addrmod2(instr, rd, MemOperand(x.ra_, ip, x.am_));
       return;
     }
     ASSERT(offset_12 >= 0);  // no masking needed
@@ -998,14 +998,14 @@ void Assembler::addrmod2(Instr instr, Register rd, const MemOperand& x) {
     ASSERT(!x.rm_.is(pc));
     instr |= B25 | x.shift_imm_*B7 | x.shift_op_ | x.rm_.code();
   }
-  ASSERT((am & (P|W)) == P || !x.rn_.is(pc));  // no pc base with writeback
-  emit(instr | am | x.rn_.code()*B16 | rd.code()*B12);
+  ASSERT((am & (P|W)) == P || !x.ra_.is(pc));  // no pc base with writeback
+  emit(instr | am | x.ra_.code()*B16 | rd.code()*B12);
 }
 
 
 void Assembler::addrmod3(Instr instr, Register rd, const MemOperand& x) {
   ASSERT((instr & ~(kCondMask | L | S6 | H)) == (B4 | B7));
-  ASSERT(x.rn_.is_valid());
+  ASSERT(x.ra_.is_valid());
   int am = x.am_;
   if (!x.rm_.is_valid()) {
     // Immediate offset.
@@ -1017,9 +1017,9 @@ void Assembler::addrmod3(Instr instr, Register rd, const MemOperand& x) {
     if (!is_uint8(offset_8)) {
       // Immediate offset cannot be encoded, load it first to register ip
       // rn (and rd in a load) should never be ip, or will be trashed.
-      ASSERT(!x.rn_.is(ip) && ((instr & L) == L || !rd.is(ip)));
+      ASSERT(!x.ra_.is(ip) && ((instr & L) == L || !rd.is(ip)));
       mov(ip, Operand(x.offset_), LeaveCC, Instruction::ConditionField(instr));
-      addrmod3(instr, rd, MemOperand(x.rn_, ip, x.am_));
+      addrmod3(instr, rd, MemOperand(x.ra_, ip, x.am_));
       return;
     }
     ASSERT(offset_8 >= 0);  // no masking needed
@@ -1027,18 +1027,18 @@ void Assembler::addrmod3(Instr instr, Register rd, const MemOperand& x) {
   } else if (x.shift_imm_ != 0) {
     // Scaled register offset not supported, load index first
     // rn (and rd in a load) should never be ip, or will be trashed.
-    ASSERT(!x.rn_.is(ip) && ((instr & L) == L || !rd.is(ip)));
+    ASSERT(!x.ra_.is(ip) && ((instr & L) == L || !rd.is(ip)));
     mov(ip, Operand(x.rm_, x.shift_op_, x.shift_imm_), LeaveCC,
         Instruction::ConditionField(instr));
-    addrmod3(instr, rd, MemOperand(x.rn_, ip, x.am_));
+    addrmod3(instr, rd, MemOperand(x.ra_, ip, x.am_));
     return;
   } else {
     // Register offset.
     ASSERT((am & (P|W)) == P || !x.rm_.is(pc));  // no pc index with writeback
     instr |= x.rm_.code();
   }
-  ASSERT((am & (P|W)) == P || !x.rn_.is(pc));  // no pc base with writeback
-  emit(instr | am | x.rn_.code()*B16 | rd.code()*B12);
+  ASSERT((am & (P|W)) == P || !x.ra_.is(pc));  // no pc base with writeback
+  emit(instr | am | x.ra_.code()*B16 | rd.code()*B12);
 }
 
 
@@ -1054,7 +1054,7 @@ void Assembler::addrmod5(Instr instr, CRegister crd, const MemOperand& x) {
   // Unindexed addressing is not encoded by this function.
   ASSERT_EQ((B27 | B26),
             (instr & ~(kCondMask | kCoprocessorMask | P | U | N | W | L)));
-  ASSERT(x.rn_.is_valid() && !x.rm_.is_valid());
+  ASSERT(x.ra_.is_valid() && !x.rm_.is_valid());
   int am = x.am_;
   int offset_8 = x.offset_;
   ASSERT((offset_8 & 3) == 0);  // offset must be an aligned word offset
@@ -1064,14 +1064,14 @@ void Assembler::addrmod5(Instr instr, CRegister crd, const MemOperand& x) {
     am ^= U;
   }
   ASSERT(is_uint8(offset_8));  // unsigned word offset must fit in a byte
-  ASSERT((am & (P|W)) == P || !x.rn_.is(pc));  // no pc base with writeback
+  ASSERT((am & (P|W)) == P || !x.ra_.is(pc));  // no pc base with writeback
 
   // Post-indexed addressing requires W == 1; different than in addrmod2/3.
   if ((am & P) == 0)
     am |= W;
 
   ASSERT(offset_8 >= 0);  // no masking needed
-  emit(instr | am | x.rn_.code()*B16 | crd.code()*B12 | offset_8);
+  emit(instr | am | x.ra_.code()*B16 | crd.code()*B12 | offset_8);
 }
 #endif  // INCLUDE_ARM
 
@@ -1204,6 +1204,24 @@ void Assembler::rsb(Register dst, Register src1, const Operand& src2,
 }
 
 // PowerPC
+
+void Assembler::rlwimi(Register ra, Register rs,
+                       int sh, int mb, int me, RCBit rc) {
+  sh &= 0x1f;
+  mb &= 0x1f;
+  me &= 0x1f;
+  emit(RLWINMX | rs.code()*B21 | ra.code()*B16 | sh*B11 | mb*B6  | me<<1 | rc);
+}
+
+void Assembler::slwi(Register dst, Register src, const Operand& val) {
+  ASSERT((32 > val.imm32_)&&(val.imm32_ >= 0));
+  rlwimi(dst, src, val.imm32_, 0, 31-val.imm32_);
+}
+void Assembler::srwi(Register dst, Register src, const Operand& val) {
+  ASSERT((32 > val.imm32_)&&(val.imm32_ >= 0));
+  rlwimi(dst, src, 32-val.imm32_, val.imm32_, 31); 
+}
+
 void Assembler::sub(Register dst, Register src, const Operand& imm,
 SBit s, Condition cond // delete this later when removing ARM
 ) {
@@ -1218,7 +1236,7 @@ void Assembler::add(Register dst, Register src1, Register src2,
 void Assembler::add(Register dst, Register src, const Operand& imm, 
 SBit s, Condition cond // delete these later when removing ARM code
 ) {
-  d_form(ADDI, dst, src, imm);
+  d_form(ADDI, dst, src, imm.imm32_);
 }
 
 void Assembler::orx(Register dst, Register src1, Register src2, RCBit r) {
@@ -1240,6 +1258,35 @@ void Assembler::mr(Register dst, Register src) {
   // actually or( dst, src, src )
   orx(dst, src, src); 
 }
+
+void Assembler::lbz(Register dst, const MemOperand &src) {
+  d_form(LBZ, dst, src.ra_, src.offset_);
+}
+
+void Assembler::lhz(Register dst, const MemOperand &src) {
+  d_form(LHZ, dst, src.ra_, src.offset_);
+}
+
+void Assembler::lwz(Register dst, const MemOperand &src) {
+  d_form(LWZ, dst, src.ra_, src.offset_);
+}
+
+void Assembler::stb(Register dst, const MemOperand &src) {
+  d_form(STB, dst, src.ra_, src.offset_);
+}
+
+void Assembler::sth(Register dst, const MemOperand &src) {
+  d_form(STH, dst, src.ra_, src.offset_);
+}
+
+void Assembler::stw(Register dst, const MemOperand &src) {
+  d_form(STW, dst, src.ra_, src.offset_);
+}
+
+void Assembler::stwu(Register dst, const MemOperand &src) {
+  d_form(STWU, dst, src.ra_, src.offset_);
+}
+ 
 
 //end PowerPC
 

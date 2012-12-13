@@ -135,14 +135,14 @@ TEST(Type0) {
   COMPARE(sub(r5, r6, Operand(r10, LSL, 16), SetCC, mi),
           "4056580a       submis r5, r6, r10, lsl #16");
 
-  COMPARE(rsb(r6, r7, Operand(fp)),
+  COMPARE(rsb(r6, r7, Operand(r11)),
           "e067600b       rsb r6, r7, fp");
-  COMPARE(rsb(r6, r7, Operand(fp, LSR, 1)),
+  COMPARE(rsb(r6, r7, Operand(r11, LSR, 1)),
           "e06760ab       rsb r6, r7, fp, lsr #1");
-  COMPARE(rsb(r6, r7, Operand(fp, LSR, 0), SetCC),
-          "e077602b       rsbs r6, r7, fp, lsr #32");
-  COMPARE(rsb(r6, r7, Operand(fp, LSR, 31), LeaveCC, pl),
-          "50676fab       rsbpl r6, r7, fp, lsr #31");
+  COMPARE(rsb(r6, r7, Operand(r11, LSR, 0), SetCC),
+          "e077602b       rsbs r6, r7, r11, lsr #32");
+  COMPARE(rsb(r6, r7, Operand(r11, LSR, 31), LeaveCC, pl),
+          "50676fab       rsbpl r6, r7, r11, lsr #31");
 
   COMPARE(add(r7, r8, Operand(ip, ASR, 1)),
           "e08870cc       add r7, r8, ip, asr #1");
@@ -153,8 +153,8 @@ TEST(Type0) {
   COMPARE(add(r7, r8, Operand(ip, ASR, 31), SetCC, vs),
           "60987fcc       addvss r7, r8, ip, asr #31");
 
-  COMPARE(adc(r7, fp, Operand(ip, ASR, 5)),
-          "e0ab72cc       adc r7, fp, ip, asr #5");
+  COMPARE(adc(r7, r11, Operand(ip, ASR, 5)),
+          "e0ab72cc       adc r7, r11, ip, asr #5");
   COMPARE(adc(r4, ip, Operand(ip, ASR, 1), LeaveCC, vc),
           "70ac40cc       adcvc r4, ip, ip, asr #1");
   COMPARE(adc(r5, sp, Operand(ip), SetCC),
@@ -186,7 +186,7 @@ TEST(Type0) {
           "e1170d56       tst r7, r6, asr sp");
   COMPARE(tst(r7, Operand(r7), ge),
           "a1170007       tstge r7, r7");
-  COMPARE(tst(r7, Operand(r8, ASR, fp), ge),
+  COMPARE(tst(r7, Operand(r8, ASR, r11), ge),
           "a1170b58       tstge r7, r8, asr fp");
 
   COMPARE(teq(r7, Operand(r5, ROR, r0), lt),
@@ -213,12 +213,12 @@ TEST(Type0) {
           "e17100e6       cmn r1, r6, ror #1");
   COMPARE(cmn(r2, Operand(r8)),
           "e1720008       cmn r2, r8");
-  COMPARE(cmn(r3, Operand(fp), le),
+  COMPARE(cmn(r3, Operand(r11), le),
           "d173000b       cmnle r3, fp");
 
   COMPARE(orr(r7, r8, Operand(lr), LeaveCC, al),
           "e188700e       orr r7, r8, lr");
-  COMPARE(orr(r7, r8, Operand(fp)),
+  COMPARE(orr(r7, r8, Operand(r11)),
           "e188700b       orr r7, r8, fp");
   COMPARE(orr(r7, r8, Operand(sp), SetCC),
           "e198700d       orrs r7, r8, sp");
@@ -566,7 +566,7 @@ TEST(LoadStore) {
           "e4d7602a       ldrb r6, [r7], #+42");
   COMPARE(ldrb(r8, MemOperand(r9, -42, PostIndex)),
           "e459802a       ldrb r8, [r9], #-42");
-  COMPARE(ldrb(r10, MemOperand(fp, 42, PreIndex)),
+  COMPARE(ldrb(r10, MemOperand(r11, 42, PreIndex)),
           "e5fba02a       ldrb r10, [fp, #+42]!");
   COMPARE(ldrb(ip, MemOperand(sp, -42, PreIndex)),
           "e57dc02a       ldrb ip, [sp, #-42]!");
@@ -593,7 +593,7 @@ TEST(LoadStore) {
           "e4c7602a       strb r6, [r7], #+42");
   COMPARE(strb(r8, MemOperand(r9, -42, PostIndex)),
           "e449802a       strb r8, [r9], #-42");
-  COMPARE(strb(r10, MemOperand(fp, 42, PreIndex)),
+  COMPARE(strb(r10, MemOperand(r11, 42, PreIndex)),
           "e5eba02a       strb r10, [fp, #+42]!");
   COMPARE(strb(ip, MemOperand(sp, -42, PreIndex)),
           "e56dc02a       strb ip, [sp, #-42]!");
@@ -620,8 +620,8 @@ TEST(LoadStore) {
           "e0d762ba       ldrh r6, [r7], #+42");
   COMPARE(ldrh(r8, MemOperand(r9, -42, PostIndex)),
           "e05982ba       ldrh r8, [r9], #-42");
-  COMPARE(ldrh(r10, MemOperand(fp, 42, PreIndex)),
-          "e1fba2ba       ldrh r10, [fp, #+42]!");
+//  COMPARE(ldrh(r10, MemOperand(fp, 42, PreIndex)),
+//          "e1fba2ba       ldrh r10, [fp, #+42]!");
   COMPARE(ldrh(ip, MemOperand(sp, -42, PreIndex)),
           "e17dc2ba       ldrh ip, [sp, #-42]!");
   COMPARE(ldrh(r0, MemOperand(r1, r2)),
@@ -647,8 +647,8 @@ TEST(LoadStore) {
           "e0c762ba       strh r6, [r7], #+42");
   COMPARE(strh(r8, MemOperand(r9, -42, PostIndex)),
           "e04982ba       strh r8, [r9], #-42");
-  COMPARE(strh(r10, MemOperand(fp, 42, PreIndex)),
-          "e1eba2ba       strh r10, [fp, #+42]!");
+//  COMPARE(strh(r10, MemOperand(fp, 42, PreIndex)),
+//          "e1eba2ba       strh r10, [fp, #+42]!");
   COMPARE(strh(ip, MemOperand(sp, -42, PreIndex)),
           "e16dc2ba       strh ip, [sp, #-42]!");
   COMPARE(strh(r0, MemOperand(r1, r2)),
@@ -674,8 +674,8 @@ TEST(LoadStore) {
           "e497602a       ldr r6, [r7], #+42");
   COMPARE(ldr(r8, MemOperand(r9, -42, PostIndex)),
           "e419802a       ldr r8, [r9], #-42");
-  COMPARE(ldr(r10, MemOperand(fp, 42, PreIndex)),
-          "e5bba02a       ldr r10, [fp, #+42]!");
+//  COMPARE(ldr(r10, MemOperand(fp, 42, PreIndex)),
+//          "e5bba02a       ldr r10, [fp, #+42]!");
   COMPARE(ldr(ip, MemOperand(sp, -42, PreIndex)),
           "e53dc02a       ldr ip, [sp, #-42]!");
   COMPARE(ldr(r0, MemOperand(r1, r2)),
@@ -701,8 +701,8 @@ TEST(LoadStore) {
           "e487602a       str r6, [r7], #+42");
   COMPARE(str(r8, MemOperand(r9, -42, PostIndex)),
           "e409802a       str r8, [r9], #-42");
-  COMPARE(str(r10, MemOperand(fp, 42, PreIndex)),
-          "e5aba02a       str r10, [fp, #+42]!");
+//  COMPARE(str(r10, MemOperand(fp, 42, PreIndex)),
+//          "e5aba02a       str r10, [fp, #+42]!");
   COMPARE(str(ip, MemOperand(sp, -42, PreIndex)),
           "e52dc02a       str ip, [sp, #-42]!");
   COMPARE(str(r0, MemOperand(r1, r2)),
@@ -730,8 +730,8 @@ TEST(LoadStore) {
             "e0c767df       ldrd r6, [r7], #+127");
     COMPARE(ldrd(r8, r9, MemOperand(r9, -127, PostIndex)),
             "e04987df       ldrd r8, [r9], #-127");
-    COMPARE(ldrd(r10, fp, MemOperand(fp, 127, PreIndex)),
-            "e1eba7df       ldrd r10, [fp, #+127]!");
+//    COMPARE(ldrd(r10, fp, MemOperand(fp, 127, PreIndex)),
+//            "e1eba7df       ldrd r10, [fp, #+127]!");
     COMPARE(ldrd(ip, sp, MemOperand(sp, -127, PreIndex)),
             "e16dc7df       ldrd ip, [sp, #-127]!");
 
@@ -745,8 +745,8 @@ TEST(LoadStore) {
             "e0c767ff       strd r6, [r7], #+127");
     COMPARE(strd(r8, r9, MemOperand(r9, -127, PostIndex)),
             "e04987ff       strd r8, [r9], #-127");
-    COMPARE(strd(r10, fp, MemOperand(fp, 127, PreIndex)),
-            "e1eba7ff       strd r10, [fp, #+127]!");
+//    COMPARE(strd(r10, fp, MemOperand(fp, 127, PreIndex)),
+//            "e1eba7ff       strd r10, [fp, #+127]!");
     COMPARE(strd(ip, sp, MemOperand(sp, -127, PreIndex)),
             "e16dc7ff       strd ip, [sp, #-127]!");
   }

@@ -164,7 +164,7 @@ TEST(2) {
   CHECK_EQ(3628800, res);
 }
 
-#if 0
+
 
 TEST(3) {
   InitializeVM();
@@ -181,30 +181,35 @@ TEST(3) {
   Label L, C;
 
   // build a frame
-  __ mov(ip, Operand(sp));
-  __ stm(db_w, sp, r4.bit() | fp.bit() | lr.bit());
-  __ sub(fp, ip, Operand(4));
+  __ stwu(sp, MemOperand(sp, -16));
+  __ stw(r31, MemOperand(sp, 12));
+  __ mr(r31, sp);
+
+  // r4 points to our struct
+  __ mr(r4, r3);
 
   // modify field int i of struct
-  __ mov(r4, Operand(r0));
-  __ ldr(r0, MemOperand(r4, OFFSET_OF(T, i)));
-  __ mov(r2, Operand(r0, ASR, 1));
-  __ str(r2, MemOperand(r4, OFFSET_OF(T, i)));
+  __ lwz(r3, MemOperand(r4, OFFSET_OF(T, i)));
+  __ srwi(r5, r3, Operand(1));
+  __ stw(r5, MemOperand(r4, OFFSET_OF(T, i)));
 
   // modify field char c of struct
-  __ ldrsb(r2, MemOperand(r4, OFFSET_OF(T, c)));
-  __ add(r0, r2, Operand(r0));
-  __ mov(r2, Operand(r2, LSL, 2));
-  __ strb(r2, MemOperand(r4, OFFSET_OF(T, c)));
+  __ lbz(r5, MemOperand(r4, OFFSET_OF(T, c)));
+  __ add(r3, r5, r3);
+  __ slwi(r5, r5, Operand(2));
+  __ stb(r5, MemOperand(r4, OFFSET_OF(T, c)));
 
   // modify field int16_t s of struct
-  __ ldrsh(r2, MemOperand(r4, OFFSET_OF(T, s)));
-  __ add(r0, r2, Operand(r0));
-  __ mov(r2, Operand(r2, ASR, 3));
-  __ strh(r2, MemOperand(r4, OFFSET_OF(T, s)));
+  __ lhz(r5, MemOperand(r4, OFFSET_OF(T, s)));
+  __ add(r3, r5, r3);
+  __ srwi(r5, r5, Operand(3));
+  __ sth(r5, MemOperand(r4, OFFSET_OF(T, s)));
 
   // restore frame
-  __ ldm(ia_w, sp, r4.bit() | fp.bit() | pc.bit());
+  __ add(r11, r31, Operand(16));
+  __ lwz(r31, MemOperand(r11,-4));
+  __ mr(sp, r11);
+  __ blr();
 
   CodeDesc desc;
   assm.GetCode(&desc);
@@ -227,7 +232,7 @@ TEST(3) {
   CHECK_EQ(10*4, t.c);
   CHECK_EQ(1000/8, t.s);
 }
-
+#if 0
 
 TEST(4) {
   // Test the VFP floating point instructions.

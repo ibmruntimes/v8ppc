@@ -146,8 +146,8 @@ bool LCodeGen::GeneratePrologue() {
     __ bind(&ok);
   }
 
-  __ stm(db_w, sp, r1.bit() | cp.bit() | fp.bit() | lr.bit());
-  __ add(fp, sp, Operand(2 * kPointerSize));  // Adjust FP to point to saved FP.
+  __ stm(db_w, sp, r1.bit() | cp.bit() | r11.bit() | lr.bit());
+  __ add(r11, sp, Operand(2 * kPointerSize));  // Adjust FP to point to saved FP.
 
   // Reserve space for the stack slots needed by the code.
   int slots = GetStackSlotCount();
@@ -180,7 +180,7 @@ bool LCodeGen::GeneratePrologue() {
     RecordSafepoint(Safepoint::kNoLazyDeopt);
     // Context is returned in both r0 and cp.  It replaces the context
     // passed to us.  It's saved in the stack and kept live in cp.
-    __ str(cp, MemOperand(fp, StandardFrameConstants::kContextOffset));
+    __ str(cp, MemOperand(r11, StandardFrameConstants::kContextOffset));
     // Copy any necessary parameters into the context.
     int num_parameters = scope()->num_parameters();
     for (int i = 0; i < num_parameters; i++) {
@@ -189,7 +189,7 @@ bool LCodeGen::GeneratePrologue() {
         int parameter_offset = StandardFrameConstants::kCallerSPOffset +
             (num_parameters - 1 - i) * kPointerSize;
         // Load parameter from stack.
-        __ ldr(r0, MemOperand(fp, parameter_offset));
+        __ ldr(r0, MemOperand(r11, parameter_offset));
         // Store it in the context.
         MemOperand target = ContextOperand(cp, var->index());
         __ str(r0, target);
@@ -440,10 +440,10 @@ MemOperand LCodeGen::ToMemOperand(LOperand* op) const {
   if (index >= 0) {
     // Local or spill slot. Skip the frame pointer, function, and
     // context in the fixed part of the frame.
-    return MemOperand(fp, -(index + 3) * kPointerSize);
+    return MemOperand(r11, -(index + 3) * kPointerSize);
   } else {
     // Incoming parameter. Skip the return address.
-    return MemOperand(fp, -(index - 1) * kPointerSize);
+    return MemOperand(r11, -(index - 1) * kPointerSize);
   }
 }
 
@@ -454,11 +454,11 @@ MemOperand LCodeGen::ToHighMemOperand(LOperand* op) const {
   if (index >= 0) {
     // Local or spill slot. Skip the frame pointer, function, context,
     // and the first word of the double in the fixed part of the frame.
-    return MemOperand(fp, -(index + 3) * kPointerSize + kPointerSize);
+    return MemOperand(r11, -(index + 3) * kPointerSize + kPointerSize);
   } else {
     // Incoming parameter. Skip the return address and the first word of
     // the double.
-    return MemOperand(fp, -(index - 1) * kPointerSize + kPointerSize);
+    return MemOperand(r11, -(index - 1) * kPointerSize + kPointerSize);
   }
 }
 
@@ -2557,8 +2557,8 @@ void LCodeGen::DoReturn(LReturn* instr) {
     __ CallRuntime(Runtime::kTraceExit, 1);
   }
   int32_t sp_delta = (GetParameterCount() + 1) * kPointerSize;
-  __ mov(sp, fp);
-  __ ldm(ia_w, sp, fp.bit() | lr.bit());
+  __ mov(sp, r11);
+  __ ldm(ia_w, sp, r11.bit() | lr.bit());
   __ add(sp, sp, Operand(sp_delta));
   __ Jump(lr);
 }
@@ -3113,13 +3113,13 @@ void LCodeGen::DoArgumentsElements(LArgumentsElements* instr) {
   } else {
     // Check if the calling frame is an arguments adaptor frame.
     Label done, adapted;
-    __ ldr(scratch, MemOperand(fp, StandardFrameConstants::kCallerFPOffset));
+    __ ldr(scratch, MemOperand(r11, StandardFrameConstants::kCallerFPOffset));
     __ ldr(result, MemOperand(scratch, StandardFrameConstants::kContextOffset));
     __ cmp(result, Operand(Smi::FromInt(StackFrame::ARGUMENTS_ADAPTOR)));
 
     // Result is the frame pointer for the frame if not adapted and for the real
     // frame below the adaptor frame if adapted.
-    __ mov(result, fp, LeaveCC, ne);
+    __ mov(result, r11, LeaveCC, ne);
     __ mov(result, scratch, LeaveCC, eq);
   }
 }
@@ -3132,12 +3132,12 @@ void LCodeGen::DoArgumentsLength(LArgumentsLength* instr) {
   Label done;
 
   // If no arguments adaptor frame the number of arguments is fixed.
-  __ cmp(fp, elem);
+  __ cmp(r11, elem);
   __ mov(result, Operand(scope()->num_parameters()));
   __ b(eq, &done);
 
   // Arguments adaptor frame present. Get argument length from there.
-  __ ldr(result, MemOperand(fp, StandardFrameConstants::kCallerFPOffset));
+  __ ldr(result, MemOperand(r11, StandardFrameConstants::kCallerFPOffset));
   __ ldr(result,
          MemOperand(result, ArgumentsAdaptorFrameConstants::kLengthOffset));
   __ SmiUntag(result);
@@ -3240,7 +3240,7 @@ void LCodeGen::DoApplyArguments(LApplyArguments* instr) {
   ParameterCount actual(receiver);
   __ InvokeFunction(function, actual, CALL_FUNCTION,
                     safepoint_generator, CALL_AS_METHOD);
-  __ ldr(cp, MemOperand(fp, StandardFrameConstants::kContextOffset));
+  __ ldr(cp, MemOperand(r11, StandardFrameConstants::kContextOffset));
 }
 
 
@@ -3262,7 +3262,7 @@ void LCodeGen::DoDrop(LDrop* instr) {
 
 void LCodeGen::DoThisFunction(LThisFunction* instr) {
   Register result = ToRegister(instr->result());
-  __ ldr(result, MemOperand(fp, JavaScriptFrameConstants::kFunctionOffset));
+  __ ldr(result, MemOperand(r11, JavaScriptFrameConstants::kFunctionOffset));
 }
 
 
@@ -3342,7 +3342,7 @@ void LCodeGen::CallKnownFunction(Handle<JSFunction> function,
   }
 
   // Restore context.
-  __ ldr(cp, MemOperand(fp, StandardFrameConstants::kContextOffset));
+  __ ldr(cp, MemOperand(r11, StandardFrameConstants::kContextOffset));
 }
 
 
@@ -3783,7 +3783,7 @@ void LCodeGen::DoInvokeFunction(LInvokeFunction* instr) {
     SafepointGenerator generator(this, pointers, Safepoint::kLazyDeopt);
     ParameterCount count(instr->arity());
     __ InvokeFunction(r1, count, CALL_FUNCTION, generator, CALL_AS_METHOD);
-    __ ldr(cp, MemOperand(fp, StandardFrameConstants::kContextOffset));
+    __ ldr(cp, MemOperand(r11, StandardFrameConstants::kContextOffset));
   } else {
     CallKnownFunction(instr->known_function(),
                       instr->arity(),
@@ -3801,7 +3801,7 @@ void LCodeGen::DoCallKeyed(LCallKeyed* instr) {
   Handle<Code> ic =
       isolate()->stub_cache()->ComputeKeyedCallInitialize(arity);
   CallCode(ic, RelocInfo::CODE_TARGET, instr);
-  __ ldr(cp, MemOperand(fp, StandardFrameConstants::kContextOffset));
+  __ ldr(cp, MemOperand(r11, StandardFrameConstants::kContextOffset));
 }
 
 
@@ -3815,7 +3815,7 @@ void LCodeGen::DoCallNamed(LCallNamed* instr) {
   __ mov(r2, Operand(instr->name()));
   CallCode(ic, mode, instr);
   // Restore context register.
-  __ ldr(cp, MemOperand(fp, StandardFrameConstants::kContextOffset));
+  __ ldr(cp, MemOperand(r11, StandardFrameConstants::kContextOffset));
 }
 
 
@@ -3826,7 +3826,7 @@ void LCodeGen::DoCallFunction(LCallFunction* instr) {
   int arity = instr->arity();
   CallFunctionStub stub(arity, NO_CALL_FUNCTION_FLAGS);
   CallCode(stub.GetCode(), RelocInfo::CODE_TARGET, instr);
-  __ ldr(cp, MemOperand(fp, StandardFrameConstants::kContextOffset));
+  __ ldr(cp, MemOperand(r11, StandardFrameConstants::kContextOffset));
 }
 
 
@@ -3839,7 +3839,7 @@ void LCodeGen::DoCallGlobal(LCallGlobal* instr) {
       isolate()->stub_cache()->ComputeCallInitialize(arity, mode);
   __ mov(r2, Operand(instr->name()));
   CallCode(ic, mode, instr);
-  __ ldr(cp, MemOperand(fp, StandardFrameConstants::kContextOffset));
+  __ ldr(cp, MemOperand(r11, StandardFrameConstants::kContextOffset));
 }
 
 
@@ -5418,7 +5418,7 @@ void LCodeGen::DoIsConstructCallAndBranch(LIsConstructCallAndBranch* instr) {
 void LCodeGen::EmitIsConstructCall(Register temp1, Register temp2) {
   ASSERT(!temp1.is(temp2));
   // Get the frame pointer for the calling frame.
-  __ ldr(temp1, MemOperand(fp, StandardFrameConstants::kCallerFPOffset));
+  __ ldr(temp1, MemOperand(r11, StandardFrameConstants::kCallerFPOffset));
 
   // Skip the arguments adaptor frame if it exists.
   Label check_frame_marker;

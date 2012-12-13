@@ -351,6 +351,7 @@ enum MiscInstructionsBits74 {
 
 // Instruction encoding bits and masks.
 enum {
+  B10 = 1 << 10,
   B11 = 1 << 11,
   B16 = 1 << 16,
   B21 = 1 << 21,

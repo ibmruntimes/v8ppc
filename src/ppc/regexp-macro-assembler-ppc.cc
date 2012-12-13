@@ -669,7 +669,7 @@ Handle<HeapObject> RegExpMacroAssemblerPPC::GetCode(Handle<String> source) {
   // Store link register in existing stack-cell.
   // Order here should correspond to order of offset constants in header file.
   RegList registers_to_retain = r4.bit() | r5.bit() | r6.bit() |
-      r7.bit() | r8.bit() | r9.bit() | r10.bit() | fp.bit();
+      r7.bit() | r8.bit() | r9.bit() | r10.bit() | r11.bit();
   RegList argument_registers = r0.bit() | r1.bit() | r2.bit() | r3.bit();
   __ stm(db_w, sp, argument_registers | registers_to_retain | lr.bit());
   // Set frame pointer in space for it if this is not a direct call

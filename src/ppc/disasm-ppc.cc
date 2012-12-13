@@ -327,7 +327,7 @@ void Decoder::PrintSoftwareInterrupt(SoftwareInterruptCodes svc) {
 int Decoder::FormatRegister(Instruction* instr, const char* format) {
   ASSERT(format[0] == 'r');
 
-  if (format[1] == 't') {  // 'rt: RT register
+  if ((format[1] == 't') || (format[1] == 's')) {  // 'rt & 'rs register
     int reg = instr->RTValue();
     PrintRegister(reg);
     return 2;
@@ -454,8 +454,10 @@ int Decoder::FormatOption(Instruction* instr, const char* format) {
       return 1;
     }
     case '.': {
-      if (instr->Bit(1) == 1) {
+      if (instr->Bit(0) == 1) {
         Print(".");
+      } else {
+        Print(" ");  // ensure consistent spacing
       }
       return 1;
     }
@@ -502,6 +504,26 @@ int Decoder::FormatOption(Instruction* instr, const char* format) {
                                         reinterpret_cast<byte*>(instr) + off));
         return 8;
       }
+     case 's': { // SH Bits 15-11
+       ASSERT(format[1] == 'h');
+       int32_t value = (instr->Bits(15,11) << 26) >> 26;
+       out_buffer_pos_ += OS::SNPrintF(out_buffer_ + out_buffer_pos_,
+                                     "%d", value);
+       return 2;
+     }
+     case 'm': {
+       int32_t value=0;
+       if(format[1] == 'e') {  // ME Bits 10-6
+         value = (instr->Bits(10,6) << 26) >> 26;
+       } else if(format[1] == 'b') {  // MB Bits 5-1
+         value = (instr->Bits(5,1) << 26) >> 26;
+       } else {
+         UNREACHABLE(); // bad format
+       }
+       out_buffer_pos_ += OS::SNPrintF(out_buffer_ + out_buffer_pos_,
+                                     "%d", value);
+       return 2;
+     }
     }
     default: {
       UNREACHABLE();
@@ -812,18 +834,18 @@ void Decoder::DecodeExt2(Instruction* instr) {
 // ?? are all of these xo_form?
   switch(instr->Bits(9,1) << 1) {
     case MULLW: {
-      Format(instr, "mullw'o'. 'rt, 'ra, 'rb");
+      Format(instr, "mullw'o'. 'rt,'ra,'rb");
       break;
     }
     case ADDX: {
-      Format(instr, "add'o 'rt, 'ra, 'rb");
+      Format(instr, "add'o 'rt,'ra,'rb");
       break;
     }
     case ORX: { 
       if( instr->RTValue() == instr->RBValue() ) {
-        Format(instr, "mr 'ra, 'rb");
+        Format(instr, "mr      'ra,'rb");
       } else {
-        Format(instr, "or 'rt, 'ra, 'rb");
+        Format(instr, "or      'rt,'ra,'rb");
       }
       break;
     }
@@ -1574,7 +1596,10 @@ int Decoder::InstructionDecode(byte* instr_ptr) {
       break;
     }
     case RLWIMIX:
-    case RLWINMX:
+    case RLWINMX: {
+      Format(instr, "rlwimi'. 'ra,'rs,'sh,'me,'mb");
+      break;
+    }
     case RLWNMX:
     case ORI:
     case ORIS:
@@ -1586,19 +1611,40 @@ int Decoder::InstructionDecode(byte* instr_ptr) {
       DecodeExt2(instr);
       break;
     }
-    case LWZ:
+    case LWZ: {
+      Format(instr, "lwz     'rt, 'int16('ra)");
+      break;
+    }
     case LWZU:
-    case LBZ:
+    case LBZ: {
+      Format(instr, "lbz     'rt, 'int16('ra)");
+      break;
+    }
     case LBZU:
-    case STW:
-    case STWU:
-    case STB:
+    case STW: {
+      Format(instr, "stw     'rs, 'int16('ra)");
+      break;
+    }
+    case STWU: {
+      Format(instr, "stwu    'rs, 'int16('ra)");
+      break;
+    }
+    case STB: {
+      Format(instr, "stb     'rs, 'int16('ra)");
+      break;
+    }
     case STBU:
-    case LHZ:
+    case LHZ: {
+      Format(instr, "lhz     'rt, 'int16('ra)");
+      break;
+    }
     case LHZU:
     case LHA:
     case LHAU:
-    case STH:
+    case STH: {
+      Format(instr, "sth 'rs, 'int16('ra)");
+      break;
+    }
     case STHU:
     case LMW:
     case STMW:

@@ -2746,7 +2746,7 @@ void StoreStubCompiler::GenerateStoreViaSetter(
     __ pop(r0);
 
     // Restore context register.
-    __ ldr(cp, MemOperand(fp, StandardFrameConstants::kContextOffset));
+    __ ldr(cp, MemOperand(r11, StandardFrameConstants::kContextOffset));
   }
   __ Ret();
 }
@@ -2978,7 +2978,7 @@ void LoadStubCompiler::GenerateLoadViaGetter(MacroAssembler* masm,
     }
 
     // Restore context register.
-    __ ldr(cp, MemOperand(fp, StandardFrameConstants::kContextOffset));
+    __ ldr(cp, MemOperand(r11, StandardFrameConstants::kContextOffset));
   }
   __ Ret();
 }
