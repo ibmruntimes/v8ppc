@@ -3905,7 +3905,8 @@ void CEntryStub::GenerateCore(MacroAssembler* masm,
   // fp: frame pointer
   //  Callee-saved register r4 still holds argc.
   __ LeaveExitFrame(save_doubles_, r4);
-  __ mov(pc, lr);
+  __ mtlr(lr);
+  __ blr();
 
   // check if we should retry or throw exception
   Label retry;
@@ -4030,67 +4031,63 @@ void CEntryStub::Generate(MacroAssembler* masm) {
 
 
 void JSEntryStub::GenerateBody(MacroAssembler* masm, bool is_construct) {
-  // r0: code entry
-  // r1: function
-  // r2: receiver
-  // r3: argc
-  // [sp+0]: argv
+  // r3: code entry
+  // r4: function
+  // r5: receiver
+  // r6: argc
+  // r7: argv
 
   Label invoke, handler_entry, exit;
 
-  // Called from C, so do not pop argc and args on exit (preserve sp)
-  // No need to save register-passed args
-  // Save callee-saved registers (incl. cp and fp), sp, and lr
-  __ stm(db_w, sp, kCalleeSaved | lr.bit());
+  // Called from C
+  // Registers r0,r3-r12 are volatile
+  // r1 is SP, r2 is TOC, r13 is reserved
+  // r14-r31 are nonvolatile and must be preserved
 
-  if (CpuFeatures::IsSupported(VFP2)) {
-    CpuFeatures::Scope scope(VFP2);
-    // Save callee-saved vfp registers.
-    __ vstm(db_w, sp, kFirstCalleeSavedDoubleReg, kLastCalleeSavedDoubleReg);
-    // Set up the reserved register for 0.0.
-    __ vmov(kDoubleRegZero, 0.0);
-  }
+  __ stwu(sp, MemOperand(sp, -16));
+  __ mflr(r0);
+  __ stw(r0, MemOperand(sp, 20));
+  __ stw(r31, MemOperand(sp, 12));
+  __ mr(r31, sp);
 
-  // Get address of argv, see stm above.
-  // r0: code entry
-  // r1: function
-  // r2: receiver
-  // r3: argc
+  // Currently not worried about perserved regs - sub calls will save them
 
-  // Set up argv in r4.
-  int offset_to_argv = (kNumCalleeSaved + 1) * kPointerSize;
-  if (CpuFeatures::IsSupported(VFP2)) {
-    offset_to_argv += kNumDoubleCalleeSaved * kDoubleSize;
-  }
-  __ ldr(r4, MemOperand(sp, offset_to_argv));
+  // we might want cp and kRootRegister to be preserved regs
+  // see (macro-assembler.h)
+
+  // Floating point regs FPR0 - FRP13 are volatile
+  // FPR14-FPR31 are non-volatile, but again sub-calls will save them
 
   // Push a frame with special values setup to mark it as an entry frame.
-  // r0: code entry
-  // r1: function
-  // r2: receiver
-  // r3: argc
-  // r4: argv
+
+  // On ARM they push -1 as a bad frame pointer to catch errors
+  // we may want to do the same or similar, but not now
+
   Isolate* isolate = masm->isolate();
-  __ mov(r8, Operand(-1));  // Push a bad frame pointer to fail if it is used.
   int marker = is_construct ? StackFrame::ENTRY_CONSTRUCT : StackFrame::ENTRY;
-  __ mov(r7, Operand(Smi::FromInt(marker)));
-  __ mov(r6, Operand(Smi::FromInt(marker)));
-  __ mov(r5,
-         Operand(ExternalReference(Isolate::kCEntryFPAddress, isolate)));
-  __ ldr(r5, MemOperand(r5));
-  __ Push(r8, r7, r6, r5);
+  __ li(r0, Operand(Smi::FromInt(marker)));
+  __ push(r0);  // context slot
+  __ push(r0);  // function slot
+
+  // Save copies of the top frame descriptor on the stack.
+  __ mov(r8, Operand(ExternalReference(Isolate::kCEntryFPAddress, isolate)));
+  __ lwz(r0, MemOperand(r8));
+  __ push(r0);
 
   // Set up frame pointer for the frame to be pushed.
+  // not sure I need a frame pointer on PPC
+  // --> I now suspect this is related to maintaining a somwhat
+  // --> valid machine stack.. does ARM use r11 as a frame pointer?
   __ add(r11, sp, Operand(-EntryFrameConstants::kCallerFPOffset));
 
   // If this is the outermost JS call, set js_entry_sp value.
   Label non_outermost_js;
   ExternalReference js_entry_sp(Isolate::kJSEntrySPAddress, isolate);
-  __ mov(r5, Operand(ExternalReference(js_entry_sp)));
-  __ ldr(r6, MemOperand(r5));
-  __ cmp(r6, Operand::Zero());
-  __ b(ne, &non_outermost_js);
-  __ str(r11, MemOperand(r5));
+  __ mov(r8, Operand(ExternalReference(js_entry_sp)));
+  __ lwz(r9, MemOperand(r8));
+  __ cmpi(r9, Operand::Zero());
+  __ bne(&non_outermost_js);
+  __ stw(r11, MemOperand(r8));
   __ mov(ip, Operand(Smi::FromInt(StackFrame::OUTERMOST_JSENTRY_FRAME)));
   Label cont;
   __ b(&cont);
@@ -4117,14 +4114,14 @@ void JSEntryStub::GenerateBody(MacroAssembler* masm, bool is_construct) {
     __ mov(ip, Operand(ExternalReference(Isolate::kPendingExceptionAddress,
                                          isolate)));
   }
-  __ str(r0, MemOperand(ip));
+  __ stw(r0, MemOperand(ip));
   __ mov(r0, Operand(reinterpret_cast<int32_t>(Failure::Exception())));
   __ b(&exit);
 
   // Invoke: Link this frame into the handler chain.  There's only one
   // handler block in this code object, so its index is 0.
   __ bind(&invoke);
-  // Must preserve r0-r4, r5-r7 are available.
+  // Must preserve r0-r4, r5-r7 are available. (needs update for PPC)
   __ PushTryHandler(StackHandler::JS_ENTRY, 0);
   // If an exception not caught by another handler occurs, this handler
   // returns control to the code after the bl(&invoke) above, which
@@ -4132,39 +4129,43 @@ void JSEntryStub::GenerateBody(MacroAssembler* masm, bool is_construct) {
   // saved values before returning a failure to C.
 
   // Clear any pending exceptions.
-  __ mov(r5, Operand(isolate->factory()->the_hole_value()));
-  __ mov(ip, Operand(ExternalReference(Isolate::kPendingExceptionAddress,
+  __ mov(r8, Operand(isolate->factory()->the_hole_value()));
+  __ mov(r9, Operand(ExternalReference(Isolate::kPendingExceptionAddress,
                                        isolate)));
-  __ str(r5, MemOperand(ip));
+  __ stw(r8, MemOperand(r9));
 
   // Invoke the function by calling through JS entry trampoline builtin.
   // Notice that we cannot store a reference to the trampoline code directly in
   // this stub, because runtime stubs are not traversed when doing GC.
 
   // Expected registers by Builtins::JSEntryTrampoline
-  // r0: code entry
-  // r1: function
-  // r2: receiver
-  // r3: argc
-  // r4: argv
+  // r3: code entry
+  // r4: function
+  // r5: receiver
+  // r6: argc
+  // r7: argv
   if (is_construct) {
     ExternalReference construct_entry(Builtins::kJSConstructEntryTrampoline,
                                       isolate);
-    __ mov(ip, Operand(construct_entry));
+    __ mov(r8, Operand(construct_entry));
   } else {
     ExternalReference entry(Builtins::kJSEntryTrampoline, isolate);
-    __ mov(ip, Operand(entry));
+    __ mov(r8, Operand(entry));
   }
-  __ ldr(ip, MemOperand(ip));  // deref address
+  __ lwz(r8, MemOperand(r8));  // deref address
 
   // Branch and link to JSEntryTrampoline.  We don't use the double underscore
   // macro for the add instruction because we don't want the coverage tool
   // inserting instructions here after we read the pc. We block literal pool
   // emission for the same reason.
   {
+    // not sure we need const pools at all on PPC, keeping for now
     Assembler::BlockConstPoolScope block_const_pool(masm);
-    __ mov(lr, Operand(pc));
-    masm->add(pc, ip, Operand(Code::kHeaderSize - kHeapObjectTag));
+
+    // the address points to the start of the code object, skip the header
+    masm->add(r0, r8, Operand(Code::kHeaderSize - kHeapObjectTag));
+    masm->mtlr(r0);
+    masm->blr();  // make the call
   }
 
   // Unlink this frame from the handler chain.
@@ -4175,17 +4176,17 @@ void JSEntryStub::GenerateBody(MacroAssembler* masm, bool is_construct) {
   Label non_outermost_js_2;
   __ pop(r5);
   __ cmp(r5, Operand(Smi::FromInt(StackFrame::OUTERMOST_JSENTRY_FRAME)));
-  __ b(ne, &non_outermost_js_2);
+  __ bne(&non_outermost_js_2);
   __ mov(r6, Operand::Zero());
   __ mov(r5, Operand(ExternalReference(js_entry_sp)));
-  __ str(r6, MemOperand(r5));
+  __ stw(r6, MemOperand(r5));
   __ bind(&non_outermost_js_2);
 
   // Restore the top frame descriptors from the stack.
   __ pop(r3);
   __ mov(ip,
          Operand(ExternalReference(Isolate::kCEntryFPAddress, isolate)));
-  __ str(r3, MemOperand(ip));
+  __ stw(r3, MemOperand(ip));
 
   // Reset the stack to the callee saved registers.
   __ add(sp, sp, Operand(-EntryFrameConstants::kCallerFPOffset));
@@ -4197,11 +4198,6 @@ void JSEntryStub::GenerateBody(MacroAssembler* masm, bool is_construct) {
   }
 #endif
 
-  if (CpuFeatures::IsSupported(VFP2)) {
-    CpuFeatures::Scope scope(VFP2);
-    // Restore callee-saved vfp registers.
-    __ vldm(ia_w, sp, kFirstCalleeSavedDoubleReg, kLastCalleeSavedDoubleReg);
-  }
 
   __ ldm(ia_w, sp, kCalleeSaved | pc.bit());
 }
@@ -5359,14 +5355,14 @@ void CallFunctionStub::Generate(MacroAssembler* masm) {
     Label call_as_function;
     __ CompareRoot(r4, Heap::kTheHoleValueRootIndex);
     __ b(eq, &call_as_function);
-    __ InvokeFunction(r1,
+    __ InvokeFunction(r4, // roohack
                       actual,
                       JUMP_FUNCTION,
                       NullCallWrapper(),
                       CALL_AS_METHOD);
     __ bind(&call_as_function);
   }
-  __ InvokeFunction(r1,
+  __ InvokeFunction(r4, // roohack
                     actual,
                     JUMP_FUNCTION,
                     NullCallWrapper(),

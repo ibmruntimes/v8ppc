@@ -53,22 +53,20 @@ MacroAssembler::MacroAssembler(Isolate* arg_isolate, void* buffer, int size)
 
 
 void MacroAssembler::Jump(Register target, Condition cond) {
-#if USE_BX
-  bx(target, cond);
-#else
-  mov(pc, Operand(target), LeaveCC, cond);
-#endif
+  ASSERT(cond == al);
+  mtlr(target);
+  blr();
 }
 
 
 void MacroAssembler::Jump(intptr_t target, RelocInfo::Mode rmode,
                           Condition cond) {
-#if USE_BX
-  mov(ip, Operand(target, rmode));
-  bx(ip, cond);
-#else
-  mov(pc, Operand(target, rmode), LeaveCC, cond);
-#endif
+  ASSERT(rmode == RelocInfo::CODE_TARGET);
+  ASSERT(cond == al);
+  mov(r0, Operand(target));
+  mtlr(r0);
+  blr();
+//  mov(pc, Operand(target, rmode), LeaveCC, cond);
 }
 
 
@@ -88,11 +86,7 @@ void MacroAssembler::Jump(Handle<Code> code, RelocInfo::Mode rmode,
 
 
 int MacroAssembler::CallSize(Register target, Condition cond) {
-#if USE_BLX
-  return kInstrSize;
-#else
   return 2 * kInstrSize;
-#endif
 }
 
 
@@ -101,25 +95,24 @@ void MacroAssembler::Call(Register target, Condition cond) {
   BlockConstPoolScope block_const_pool(this);
   Label start;
   bind(&start);
-#if USE_BLX
-  blx(target, cond);
-#else
-  // set lr for return at current pc + 8
-  mov(lr, Operand(pc), LeaveCC, cond);
-  mov(pc, Operand(target), LeaveCC, cond);
-#endif
+  ASSERT(cond == al); // in prep of removal of condition
+  // branch via link register and set LK bit for return point
+  mtlr(target); 
+  bclr(BA, SetLK);
   ASSERT_EQ(CallSize(target, cond), SizeOfCodeGeneratedSince(&start));
 }
 
 
 int MacroAssembler::CallSize(
     Address target, RelocInfo::Mode rmode, Condition cond) {
-  int size = 2 * kInstrSize;
+  int size = 4 * kInstrSize;
+#if 0
   Instr mov_instr = cond | MOV | LeaveCC;
   intptr_t immediate = reinterpret_cast<intptr_t>(target);
   if (!Operand(immediate, rmode).is_single_instruction(this, mov_instr)) {
     size += kInstrSize;
   }
+#endif
   return size;
 }
 
@@ -139,32 +132,16 @@ int MacroAssembler::CallSizeNotPredictableCodeSize(
 void MacroAssembler::Call(Address target,
                           RelocInfo::Mode rmode,
                           Condition cond) {
+  ASSERT(cond == al);
   // Block constant pool for the call instruction sequence.
   BlockConstPoolScope block_const_pool(this);
   Label start;
   bind(&start);
-#if USE_BLX
-  // On ARMv5 and after the recommended call sequence is:
-  //  ldr ip, [pc, #...]
-  //  blx ip
 
-  // Statement positions are expected to be recorded when the target
-  // address is loaded. The mov method will automatically record
-  // positions when pc is the target, since this is not the case here
-  // we have to do it explicitly.
-  positions_recorder()->WriteRecordedPositions();
-
-  mov(ip, Operand(reinterpret_cast<int32_t>(target), rmode));
-  blx(ip, cond);
-
-  ASSERT(kCallTargetAddressOffset == 2 * kInstrSize);
-#else
-  // Set lr for return at current pc + 8.
-  mov(lr, Operand(pc), LeaveCC, cond);
-  // Emit a ldr<cond> pc, [pc + offset of target in constant pool].
-  mov(pc, Operand(reinterpret_cast<int32_t>(target), rmode), LeaveCC, cond);
+  mov(r0, Operand(reinterpret_cast<int32_t>(target), rmode), LeaveCC, cond);
+  mtlr(r0);
+  blr();
   ASSERT(kCallTargetAddressOffset == kInstrSize);
-#endif
   ASSERT_EQ(CallSize(target, rmode, cond), SizeOfCodeGeneratedSince(&start));
 }
 
@@ -196,11 +173,8 @@ void MacroAssembler::Call(Handle<Code> code,
 
 
 void MacroAssembler::Ret(Condition cond) {
-#if USE_BX
-  bx(lr, cond);
-#else
-  mov(pc, Operand(lr), LeaveCC, cond);
-#endif
+  ASSERT(cond == al);
+  blr();
 }
 
 
@@ -388,14 +362,14 @@ void MacroAssembler::Usat(Register dst, int satpos, const Operand& src,
 void MacroAssembler::LoadRoot(Register destination,
                               Heap::RootListIndex index,
                               Condition cond) {
-  ldr(destination, MemOperand(kRootRegister, index << kPointerSizeLog2), cond);
+  lwz(destination, MemOperand(kRootRegister, index << kPointerSizeLog2));
 }
 
 
 void MacroAssembler::StoreRoot(Register source,
                                Heap::RootListIndex index,
                                Condition cond) {
-  str(source, MemOperand(kRootRegister, index << kPointerSizeLog2), cond);
+  stw(source, MemOperand(kRootRegister, index << kPointerSizeLog2));
 }
 
 
@@ -562,7 +536,8 @@ void MacroAssembler::RememberedSetHelper(Register object,  // For debug tests.
     b(eq, &done);
   } else {
     ASSERT(and_then == kReturnAtEnd);
-    Ret(eq);
+    b(eq,&done);
+//    Ret(eq);
   }
   push(lr);
   StoreBufferOverflowStub store_buffer_overflow =
@@ -789,6 +764,14 @@ void MacroAssembler::Vmov(const DwVfpRegister dst,
 
 
 void MacroAssembler::EnterFrame(StackFrame::Type type) {
+  // Possibly reserver more space based on type?
+  stwu(sp, MemOperand(sp, -16));
+  mflr(r0);
+  stw(r0, MemOperand(sp, 20));
+  stw(r31, MemOperand(sp, 12));
+  mr(r31, sp);
+
+#if 0
   // r0-r3: preserved
   stm(db_w, sp, cp.bit() | r11.bit() | lr.bit());
   mov(ip, Operand(Smi::FromInt(type)));
@@ -796,10 +779,20 @@ void MacroAssembler::EnterFrame(StackFrame::Type type) {
   mov(ip, Operand(CodeObject()));
   push(ip);
   add(r11, sp, Operand(3 * kPointerSize));  // Adjust FP to point to saved FP.
+#endif
 }
 
 
 void MacroAssembler::LeaveFrame(StackFrame::Type type) {
+  // this destroys r11
+  // clean things up but don't perform return
+  add(r11,r31,Operand(16));
+  lwz(r0, MemOperand(r11, 4));
+  mtlr(r0);
+  lwz(r31, MemOperand(r11,-4));
+  mr(sp, r11);
+
+#if 0
   // r0: preserved
   // r1: preserved
   // r2: preserved
@@ -808,6 +801,7 @@ void MacroAssembler::LeaveFrame(StackFrame::Type type) {
   // the caller frame pointer and return address.
   mov(sp, r11);
   ldm(ia_w, sp, r11.bit() | lr.bit());
+#endif
 }
 
 
@@ -939,7 +933,7 @@ void MacroAssembler::SetCallKind(Register dst, CallKind call_kind) {
   // at the call sites. However, the dst register has to be r5 to
   // follow the calling convention which requires the call type to be
   // in r5.
-  ASSERT(dst.is(r5));
+  // roohack - temporary removal ASSERT(dst.is(r7));
   if (call_kind == CALL_AS_FUNCTION) {
     mov(dst, Operand(Smi::FromInt(1)));
   } else {
@@ -963,24 +957,26 @@ void MacroAssembler::InvokePrologue(const ParameterCount& expected,
 
   // Check whether the expected and actual arguments count match. If not,
   // setup registers according to contract with ArgumentsAdaptorTrampoline:
-  //  r0: actual arguments count
-  //  r1: function (passed through to callee)
-  //  r2: expected arguments count
-  //  r3: callee code entry
+  //  r3: actual arguments count
+  //  r4: function (passed through to callee)
+  //  r5: expected arguments count
+  //  r6: callee code entry
 
   // The code below is made a lot easier because the calling code already sets
   // up actual and expected registers according to the contract if values are
   // passed in registers.
-  ASSERT(actual.is_immediate() || actual.reg().is(r0));
-  ASSERT(expected.is_immediate() || expected.reg().is(r2));
-  ASSERT((!code_constant.is_null() && code_reg.is(no_reg)) || code_reg.is(r3));
+
+// roohack - remove these 3 checks temporarily
+//  ASSERT(actual.is_immediate() || actual.reg().is(r3));
+//  ASSERT(expected.is_immediate() || expected.reg().is(r5));
+//  ASSERT((!code_constant.is_null() && code_reg.is(no_reg)) || code_reg.is(r6));
 
   if (expected.is_immediate()) {
     ASSERT(actual.is_immediate());
     if (expected.immediate() == actual.immediate()) {
       definitely_matches = true;
     } else {
-      mov(r0, Operand(actual.immediate()));
+      mov(r3, Operand(actual.immediate()));
       const int sentinel = SharedFunctionInfo::kDontAdaptArgumentsSentinel;
       if (expected.immediate() == sentinel) {
         // Don't worry about adapting arguments for builtins that
@@ -990,38 +986,38 @@ void MacroAssembler::InvokePrologue(const ParameterCount& expected,
         definitely_matches = true;
       } else {
         *definitely_mismatches = true;
-        mov(r2, Operand(expected.immediate()));
+        mov(r5, Operand(expected.immediate()));
       }
     }
   } else {
     if (actual.is_immediate()) {
-      cmp(expected.reg(), Operand(actual.immediate()));
-      b(eq, &regular_invoke);
-      mov(r0, Operand(actual.immediate()));
+      cmpi(expected.reg(), Operand(actual.immediate()));
+      beq(&regular_invoke);
+      mov(r3, Operand(actual.immediate()));
     } else {
-      cmp(expected.reg(), Operand(actual.reg()));
-      b(eq, &regular_invoke);
+      cmp(expected.reg(), actual.reg());
+      beq(&regular_invoke);
     }
   }
 
   if (!definitely_matches) {
     if (!code_constant.is_null()) {
-      mov(r3, Operand(code_constant));
-      add(r3, r3, Operand(Code::kHeaderSize - kHeapObjectTag));
+      mov(r6, Operand(code_constant));
+      add(r6, r6, Operand(Code::kHeaderSize - kHeapObjectTag));
     }
 
     Handle<Code> adaptor =
         isolate()->builtins()->ArgumentsAdaptorTrampoline();
     if (flag == CALL_FUNCTION) {
       call_wrapper.BeforeCall(CallSize(adaptor));
-      SetCallKind(r5, call_kind);
+      SetCallKind(r7, call_kind);
       Call(adaptor);
       call_wrapper.AfterCall();
       if (!*definitely_mismatches) {
         b(done);
       }
     } else {
-      SetCallKind(r5, call_kind);
+      SetCallKind(r7, call_kind);
       Jump(adaptor, RelocInfo::CODE_TARGET);
     }
     bind(&regular_invoke);
@@ -1046,12 +1042,12 @@ void MacroAssembler::InvokeCode(Register code,
   if (!definitely_mismatches) {
     if (flag == CALL_FUNCTION) {
       call_wrapper.BeforeCall(CallSize(code));
-      SetCallKind(r5, call_kind);
+      SetCallKind(r7, call_kind);
       Call(code);
       call_wrapper.AfterCall();
     } else {
       ASSERT(flag == JUMP_FUNCTION);
-      SetCallKind(r5, call_kind);
+      SetCallKind(r7, call_kind);
       Jump(code);
     }
 
@@ -1078,10 +1074,10 @@ void MacroAssembler::InvokeCode(Handle<Code> code,
                  NullCallWrapper(), call_kind);
   if (!definitely_mismatches) {
     if (flag == CALL_FUNCTION) {
-      SetCallKind(r5, call_kind);
+      SetCallKind(r7, call_kind);
       Call(code, rmode);
     } else {
-      SetCallKind(r5, call_kind);
+      SetCallKind(r7, call_kind);
       Jump(code, rmode);
     }
 
@@ -1100,20 +1096,20 @@ void MacroAssembler::InvokeFunction(Register fun,
   // You can't call a function without a valid frame.
   ASSERT(flag == JUMP_FUNCTION || has_frame());
 
-  // Contract with called JS functions requires that function is passed in r1.
-  ASSERT(fun.is(r1));
+  // Contract with called JS functions requires that function is passed in r4.
+  ASSERT(fun.is(r4));
 
-  Register expected_reg = r2;
-  Register code_reg = r3;
+  Register expected_reg = r5;
+  Register code_reg = r6;
 
-  ldr(code_reg, FieldMemOperand(r1, JSFunction::kSharedFunctionInfoOffset));
-  ldr(cp, FieldMemOperand(r1, JSFunction::kContextOffset));
-  ldr(expected_reg,
+  lwz(code_reg, FieldMemOperand(r4, JSFunction::kSharedFunctionInfoOffset));
+  lwz(cp, FieldMemOperand(r4, JSFunction::kContextOffset));
+  lwz(expected_reg,
       FieldMemOperand(code_reg,
                       SharedFunctionInfo::kFormalParameterCountOffset));
-  mov(expected_reg, Operand(expected_reg, ASR, kSmiTagSize));
-  ldr(code_reg,
-      FieldMemOperand(r1, JSFunction::kCodeEntryOffset));
+  srwi(expected_reg, expected_reg, Operand(kSmiTagSize));
+  lwz(code_reg,
+      FieldMemOperand(r4, JSFunction::kCodeEntryOffset));
 
   ParameterCount expected(expected_reg);
   InvokeCode(code_reg, expected, actual, flag, call_wrapper, call_kind);
@@ -1129,15 +1125,15 @@ void MacroAssembler::InvokeFunction(Handle<JSFunction> function,
   ASSERT(flag == JUMP_FUNCTION || has_frame());
 
   // Get the function and setup the context.
-  LoadHeapObject(r1, function);
-  ldr(cp, FieldMemOperand(r1, JSFunction::kContextOffset));
+  LoadHeapObject(r4, function);
+  lwz(cp, FieldMemOperand(r4, JSFunction::kContextOffset));
 
   ParameterCount expected(function->shared()->formal_parameter_count());
   // We call indirectly through the code field in the function to
   // allow recompilation to take effect without changing any of the
   // call sites.
-  ldr(r3, FieldMemOperand(r1, JSFunction::kCodeEntryOffset));
-  InvokeCode(r3, expected, actual, flag, call_wrapper, call_kind);
+  ldr(r6, FieldMemOperand(r4, JSFunction::kCodeEntryOffset));
+  InvokeCode(r6, expected, actual, flag, call_wrapper, call_kind);
 }
 
 
@@ -1194,30 +1190,39 @@ void MacroAssembler::PushTryHandler(StackHandler::Kind kind,
   STATIC_ASSERT(StackHandlerConstants::kContextOffset == 3 * kPointerSize);
   STATIC_ASSERT(StackHandlerConstants::kFPOffset == 4 * kPointerSize);
 
-  // For the JSEntry handler, we must preserve r0-r4, r5-r7 are available.
+  // For the JSEntry handler, we must preserve r0-r7, r8-r15 are available.
   // We will build up the handler from the bottom by pushing on the stack.
-  // Set up the code object (r5) and the state (r6) for pushing.
+  // Set up the code object (r8) and the state (r9) for pushing.
   unsigned state =
       StackHandler::IndexField::encode(handler_index) |
       StackHandler::KindField::encode(kind);
-  mov(r5, Operand(CodeObject()));
-  mov(r6, Operand(state));
+  mov(r8, Operand(CodeObject()));
+  mov(r9, Operand(state));
 
   // Push the frame pointer, context, state, and code object.
   if (kind == StackHandler::JS_ENTRY) {
-    mov(r7, Operand(Smi::FromInt(0)));  // Indicates no context.
-    mov(ip, Operand(0, RelocInfo::NONE));  // NULL frame pointer.
-    stm(db_w, sp, r5.bit() | r6.bit() | r7.bit() | ip.bit());
+    mov(r10, Operand(Smi::FromInt(0)));  // Indicates no context.
+    mov(r11, Operand(0, RelocInfo::NONE));  // NULL frame pointer.
+    stwu(r11,MemOperand(sp));
+    stwu(r10,MemOperand(sp));
+    stwu(r9,MemOperand(sp));
+    stwu(r8,MemOperand(sp));
+    // stm(db_w, sp, r5.bit() | r6.bit() | r7.bit() | ip.bit());
   } else {
-    stm(db_w, sp, r5.bit() | r6.bit() | cp.bit() | r11.bit());
+    stwu(r11,MemOperand(sp));
+    stwu(r10,MemOperand(sp));
+    li(r0, Operand(-8)); // roohack - need to figure this out
+    stwu(r0,MemOperand(sp));
+    stwu(r0,MemOperand(sp));
+    // stm(db_w, sp, r5.bit() | r6.bit() | cp.bit() | r11.bit());
   }
 
   // Link the current handler as the next handler.
-  mov(r6, Operand(ExternalReference(Isolate::kHandlerAddress, isolate())));
-  ldr(r5, MemOperand(r6));
-  push(r5);
+  mov(r8, Operand(ExternalReference(Isolate::kHandlerAddress, isolate())));
+  lwz(r0, MemOperand(r8));
+  push(r0);
   // Set this new handler as the current one.
-  str(sp, MemOperand(r6));
+  stw(sp, MemOperand(r8));
 }
 
 
@@ -2637,8 +2642,8 @@ void MacroAssembler::CallRuntimeSaveDoubles(Runtime::FunctionId id) {
 
 void MacroAssembler::CallExternalReference(const ExternalReference& ext,
                                            int num_arguments) {
-  mov(r0, Operand(num_arguments));
-  mov(r1, Operand(ext));
+  mov(r3, Operand(num_arguments));
+  mov(r4, Operand(ext));
 
   CEntryStub stub(1);
   CallStub(&stub);
@@ -2652,7 +2657,7 @@ void MacroAssembler::TailCallExternalReference(const ExternalReference& ext,
   // arguments passed in because it is constant. At some point we
   // should remove this need and make the runtime routine entry code
   // smarter.
-  mov(r0, Operand(num_arguments));
+  mov(r3, Operand(num_arguments));
   JumpToExternalReference(ext);
 }
 
@@ -2683,16 +2688,16 @@ void MacroAssembler::InvokeBuiltin(Builtins::JavaScript id,
   // You can't call a builtin without a valid frame.
   ASSERT(flag == JUMP_FUNCTION || has_frame());
 
-  GetBuiltinEntry(r2, id);
+  GetBuiltinEntry(r5, id);
   if (flag == CALL_FUNCTION) {
     call_wrapper.BeforeCall(CallSize(r2));
-    SetCallKind(r5, CALL_AS_METHOD);
-    Call(r2);
+    SetCallKind(r7, CALL_AS_METHOD);
+    Call(r5);
     call_wrapper.AfterCall();
   } else {
     ASSERT(flag == JUMP_FUNCTION);
-    SetCallKind(r5, CALL_AS_METHOD);
-    Jump(r2);
+    SetCallKind(r7, CALL_AS_METHOD);
+    Jump(r5);
   }
 }
 

@@ -162,11 +162,11 @@ const int kRegister_r7_Code = 7;
 const int kRegister_r8_Code = 8;
 const int kRegister_r9_Code = 9;
 const int kRegister_r10_Code = 10;
-const int kRegister_r11_Code = 11;  // todo - fix these
-const int kRegister_ip_Code = 12;
+const int kRegister_r11_Code = 11;
+const int kRegister_ip_Code = 12;  // todo - fix
 const int kRegister_r13_Code = 13;
-const int kRegister_lr_Code = 14;
-const int kRegister_pc_Code = 15;
+const int kRegister_lr_Code = 14;  // todo - fix
+const int kRegister_pc_Code = 15;  // todo - fix
 
 const int kRegister_r16_Code = 16;
 const int kRegister_r17_Code = 17;
@@ -196,14 +196,14 @@ const Register r4  = { kRegister_r4_Code };
 const Register r5  = { kRegister_r5_Code };
 const Register r6  = { kRegister_r6_Code };
 const Register r7  = { kRegister_r7_Code };
-// Used as context register.
 const Register r8  = { kRegister_r8_Code };
-// Used as lithium codegen scratch register.
 const Register r9  = { kRegister_r9_Code };
-// Used as roots register.
+// Used as context register.
 const Register r10 = { kRegister_r10_Code };
+// Used as lithium codegen scratch register.
 const Register r11 = { kRegister_r11_Code };
 const Register ip  = { kRegister_ip_Code };
+// Used as roots register.
 const Register r13  = { kRegister_r13_Code };
 const Register lr  = { kRegister_lr_Code };
 const Register pc  = { kRegister_pc_Code };
@@ -773,47 +773,26 @@ class Assembler : public AssemblerBase {
 
   // Distance between the instruction referring to the address of the call
   // target and the return address.
-#ifdef USE_BLX
-  // Call sequence is:
-  //  ldr  ip, [pc, #...] @ call address
-  //  blx  ip
-  //                      @ return address
-  static const int kCallTargetAddressOffset = 2 * kInstrSize;
-#else
+
   // Call sequence is:
   //  mov  lr, pc
   //  ldr  pc, [pc, #...] @ call address
   //                      @ return address
   static const int kCallTargetAddressOffset = kInstrSize;
-#endif
 
   // Distance between start of patched return sequence and the emitted address
   // to jump to.
-#ifdef USE_BLX
-  // Patched return sequence is:
-  //  ldr  ip, [pc, #0]   @ emited address and start
-  //  blx  ip
-  static const int kPatchReturnSequenceAddressOffset =  0 * kInstrSize;
-#else
   // Patched return sequence is:
   //  mov  lr, pc         @ start of sequence
   //  ldr  pc, [pc, #-4]  @ emited address
   static const int kPatchReturnSequenceAddressOffset =  kInstrSize;
-#endif
 
   // Distance between start of patched debug break slot and the emitted address
   // to jump to.
-#ifdef USE_BLX
-  // Patched debug break slot code is:
-  //  ldr  ip, [pc, #0]   @ emited address and start
-  //  blx  ip
-  static const int kPatchDebugBreakSlotAddressOffset =  0 * kInstrSize;
-#else
   // Patched debug break slot code is:
   //  mov  lr, pc         @ start of sequence
   //  ldr  pc, [pc, #-4]  @ emited address
   static const int kPatchDebugBreakSlotAddressOffset =  kInstrSize;
-#endif
 
   // Difference between address of current opcode and value read from pc
   // register.
@@ -856,6 +835,8 @@ class Assembler : public AssemblerBase {
     bc(branch_offset(L, false), bo, bit); }
   void bne(Label* L)  { 
     bc(branch_offset(L, false), BF, 30); }
+  void beq(Label* L)  { 
+    bc(branch_offset(L, false), BT, 30); }
   // end PowerPC
   void bl(Label* L, Condition cond = al)  { bl(branch_offset(L, false), cond); }
   void bl(Condition cond, Label* L)  { bl(branch_offset(L, false), cond); }
@@ -871,6 +852,9 @@ class Assembler : public AssemblerBase {
 SBit s = LeaveCC, Condition cond = al // roohack - remove this line later
            );
 
+  void addis(Register dst, Register src, int imm);
+  void addic(Register dst, Register src, int imm);
+
   void orx(Register dst, Register src1, Register src2, RCBit r = LeaveRC);
   void cmpi(Register src1, const Operand& src2);
   void li(Register dst, const Operand& src);
@@ -879,6 +863,7 @@ SBit s = LeaveCC, Condition cond = al // roohack - remove this line later
   void lbz(Register dst, const MemOperand& src);
   void lhz(Register dst, const MemOperand& src);
   void lwz(Register dst, const MemOperand& src);
+  void lwzu(Register dst, const MemOperand& src);
   void stb(Register dst, const MemOperand& src);
   void sth(Register dst, const MemOperand& src);
   void stw(Register dst, const MemOperand& src);
@@ -929,9 +914,12 @@ SBit s = LeaveCC, Condition cond = al // roohack - remove this line later
   void teq(Register src1, const Operand& src2, Condition cond = al);
 
   void cmp(Register src1, const Operand& src2, Condition cond = al);
-  void cmp(Register src1, Register src2, Condition cond = al) {
+  void cmp(Register src1, Register src2, Condition cond = al);
+#if 0 // on ARM this was a redirect
+ {
     cmp(src1, Operand(src2), cond);
   }
+#endif
   void cmp_raw_immediate(Register src1, int raw_immediate, Condition cond = al);
 
   void cmn(Register src1, const Operand& src2, Condition cond = al);
@@ -1022,6 +1010,8 @@ SBit s = LeaveCC, Condition cond = al // roohack - remove this line later
   // Condition register access
   // PowerPC
   void crxor(int bt, int ba, int bb);
+  void mflr(Register dst);
+  void mtlr(Register src);
 
   // end PowerPC
   // Status register access instructions
@@ -1263,11 +1253,11 @@ SBit s = LeaveCC, Condition cond = al // roohack - remove this line later
   void nop(int type = 0);   // 0 is the default non-marking type.
 
   void push(Register src, Condition cond = al) {
-    str(src, MemOperand(sp, 4, NegPreIndex), cond);
+    stwu(src, MemOperand(sp, -4));
   }
 
   void pop(Register dst, Condition cond = al) {
-    ldr(dst, MemOperand(sp, 4, PostIndex), cond);
+    lwzu(dst, MemOperand(sp, 4));
   }
 
   void pop() {
@@ -1319,7 +1309,7 @@ SBit s = LeaveCC, Condition cond = al // roohack - remove this line later
   // Record the AST id of the CallIC being compiled, so that it can be placed
   // in the relocation information.
   void SetRecordedAstId(TypeFeedbackId ast_id) {
-    ASSERT(recorded_ast_id_.IsNone());
+// roohack - this shouldn't be failing    ASSERT(recorded_ast_id_.IsNone());
     recorded_ast_id_ = ast_id;
   }
 

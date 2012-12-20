@@ -1115,6 +1115,7 @@ void Assembler::label_at_put(Label* L, int at_offset) {
 
 // PowerPC
 void Assembler::bclr(BOfield bo, LKBit lk) {
+  positions_recorder()->WriteRecordedPositions();
   emit(EXT1 | bo | BCLRX | lk);
 }
 
@@ -1124,27 +1125,18 @@ void Assembler::blr() {
 }
 
 void Assembler::bc(int branch_offset, BOfield bo, int condition_bit) {
+  positions_recorder()->WriteRecordedPositions();
   // currently assumes AA and LK are always zero
   emit(BCX | bo | condition_bit*B16 | (kImm16Mask & branch_offset) );
 }
 
 void Assembler::b(int branch_offset, Condition cond) {
+  positions_recorder()->WriteRecordedPositions();
   ASSERT((branch_offset & 3) == 0);
   int imm26 = branch_offset;
   ASSERT(is_int26(imm26));
   // todo add AA and LK bits
   emit(BX | (imm26 & kImm26Mask));
-
-#if 0
-  ASSERT((branch_offset & 3) == 0);
-//  int imm24 = branch_offset >> 2;
-  int imm24 = branch_offset; // low 2 bits are tags on PPC
-  ASSERT(is_int24(imm24));
-  emit(BX | (imm24 & kImm24Mask));
-// emit(cond | B27 | B25 | (imm24 & kImm24Mask));
-
-// roohack  emit(BX | imm24<<2);
-#endif
 }
 
 // end PowerPC
@@ -1239,12 +1231,23 @@ SBit s, Condition cond // delete these later when removing ARM code
   d_form(ADDI, dst, src, imm.imm32_);
 }
 
+void  Assembler::addis(Register dst, Register src, int imm) {
+  d_form(ADDIS, dst, src, imm);
+}
+void  Assembler::addic(Register dst, Register src, int imm) {
+  d_form(ADDIC, dst, src, imm);
+}
+
 void Assembler::orx(Register dst, Register src1, Register src2, RCBit r) {
-  x_form( EXT2 | ORX, dst, src1, src2, r );
+  x_form(EXT2 | ORX, dst, src1, src2, r );
 }
 
 void Assembler::cmpi(Register src1, const Operand& src2) {
-  emit( CMPI | 7*B23 | src1.code()*B16 | src2.imm32_ );
+  emit(CMPI | 7*B23 | src1.code()*B16 | src2.imm32_ );
+}
+void Assembler::cmp(Register src1, Register src2 , Condition cond) {
+// Condition is ignored - hold over from ARM code
+  emit(EXT2 | CMP | 7*B23 | src1.code()*B16 | src2.code()*B11);
 }
 
 // Pseudo op - load immediate
@@ -1269,6 +1272,10 @@ void Assembler::lhz(Register dst, const MemOperand &src) {
 
 void Assembler::lwz(Register dst, const MemOperand &src) {
   d_form(LWZ, dst, src.ra_, src.offset_);
+}
+
+void Assembler::lwzu(Register dst, const MemOperand &src) {
+  d_form(LWZU, dst, src.ra_, src.offset_);
 }
 
 void Assembler::stb(Register dst, const MemOperand &src) {
@@ -1341,15 +1348,34 @@ void Assembler::orr(Register dst, Register src1, const Operand& src2,
 }
 
 
-void Assembler::mov(Register dst, const Operand& src, SBit s, Condition cond) {
-  if (dst.is(pc)) {
-    positions_recorder()->WriteRecordedPositions();
-  }
+void Assembler::mov(Register dst, const Operand& src
+, SBit s, Condition cond // ARM stuff, remove later
+) {
+  // Primarily used on PPC for loading constants
+
+#if 0
+  // hacky for ARM
+  if(src.is_reg()) {
   // Don't allow nop instructions in the form mov rn, rn to be generated using
   // the mov instruction. They must be generated using nop(int/NopMarkerTypes)
   // or MarkCode(int/NopMarkerTypes) pseudo instructions.
   ASSERT(!(src.is_reg() && src.rm().is(dst) && s == LeaveCC && cond == al));
   addrmod1(cond | MOV | s, r0, dst, src);
+  }
+#endif
+
+  // load constant in 2 instructions
+  // may want to optimize this later for constants that fit in 1 instruction
+  // but this will possibly have impact on call sequence sizes
+  int value = src.imm32_;
+  int lo_word = value & 0xffff;
+  int hi_word = value >> 16;
+  if(lo_word & 0x8000) {
+    // lo word is signed, so increment hi word by one
+    hi_word++;
+  }
+  addis(dst, r0, hi_word);
+  addic(dst, dst, lo_word);
 }
 
 
@@ -1555,6 +1581,14 @@ void Assembler::bfi(Register dst,
 // PowerPC
 void Assembler::crxor(int bt, int ba, int bb) {
   emit(EXT1 | CRXOR | bt*B21 | ba*B16 | bb*B11);
+}
+
+void Assembler::mflr(Register dst) {
+  emit(EXT2 | MFSPR | dst.code()*B21 | 256 << 11);   // Ignore RC bit
+}
+
+void Assembler::mtlr(Register src) {
+  emit(EXT2 | MTSPR | src.code()*B21 | 256 << 11);   // Ignore RC bit
 }
 //end PowerPC
 

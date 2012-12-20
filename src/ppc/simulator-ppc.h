@@ -367,6 +367,7 @@ class Simulator {
   // flag, so this is left unimplemented.
   int32_t registers_[32];  // PowerPC
   int32_t condition_reg_;  // PowerPC
+  int32_t special_reg_lr_;  // PowerPC
   bool n_flag_;
   bool z_flag_;
   bool c_flag_;

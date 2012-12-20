@@ -833,6 +833,10 @@ void Decoder::DecodeExt1(Instruction* instr) {
 void Decoder::DecodeExt2(Instruction* instr) {
 // ?? are all of these xo_form?
   switch(instr->Bits(9,1) << 1) {
+    case CMP: {
+      Format(instr, "cmp 'ra,'rb");
+      break;
+    }
     case MULLW: {
       Format(instr, "mullw'o'. 'rt,'ra,'rb");
       break;
@@ -846,6 +850,24 @@ void Decoder::DecodeExt2(Instruction* instr) {
         Format(instr, "mr      'ra,'rb");
       } else {
         Format(instr, "or      'rt,'ra,'rb");
+      }
+      break;
+    }
+    case MFSPR: { // roohack
+      int spr = instr->Bits(20,11);
+      if(256 == spr) {
+        Format(instr, "mflr    'rt");
+      } else {
+        Format(instr, "mfspr   'rt ??");
+      }
+      break;
+    }
+    case MTSPR: { // roohack
+      int spr = instr->Bits(20,11);
+      if(256 == spr) {
+        Format(instr, "mtlr    'rt");
+      } else {
+        Format(instr, "mtspr   'rt ??");
       }
       break;
     }
@@ -1563,26 +1585,36 @@ int Decoder::InstructionDecode(byte* instr_ptr) {
     case TWI:
     case MULLI:
     case SUBFIC: {
-      Format(instr, "subfic 'rt, 'ra, 'int16");
+      Format(instr, "subfic  'rt, 'ra, 'int16");
       break;
     }
     case CMPLI:
     case CMPI: {
-      Format(instr, "cmpi 'ra,'int16");
+      Format(instr, "cmpi    'ra,'int16");
       break;
     }
-    case ADDIC:
+    case ADDIC: {
+      Format(instr, "addic   'rt, 'ra, 'int16");
+      break;
+    }
     case ADDICx:
     case ADDI: {
       if( instr->RAValue() == 0 ) {
         // this is load immediate
-        Format(instr, "li 'rt, 'int16");
+        Format(instr, "li      'rt, 'int16");
       } else {
-        Format(instr, "addi 'rt, 'ra, 'int16");
+        Format(instr, "addi    'rt, 'ra, 'int16");
       }
       break;
     }
-    case ADDIS:
+    case ADDIS: {
+      if( instr->RAValue() == 0 ) {
+        Format(instr, "lis     'rt, 'int16");
+      } else {
+        Format(instr, "addis   'rt, 'ra, 'int16");
+      }
+      break;
+    }
     case BCX: {
       Format(instr, "bc'l'a 'target16");
     }
@@ -1615,7 +1647,10 @@ int Decoder::InstructionDecode(byte* instr_ptr) {
       Format(instr, "lwz     'rt, 'int16('ra)");
       break;
     }
-    case LWZU:
+    case LWZU: {
+      Format(instr, "lwzu    'rt, 'int16('ra)");
+      break;
+    }
     case LBZ: {
       Format(instr, "lbz     'rt, 'int16('ra)");
       break;

@@ -613,7 +613,8 @@ static void GenerateCallFunction(MacroAssembler* masm,
   CallKind call_kind = CallICBase::Contextual::decode(extra_ic_state)
       ? CALL_AS_FUNCTION
       : CALL_AS_METHOD;
-  __ InvokeFunction(r1, arguments, JUMP_FUNCTION, NullCallWrapper(), call_kind);
+  __ InvokeFunction(r4, arguments, JUMP_FUNCTION, NullCallWrapper(), call_kind);
+ // roohack
 }
 
 

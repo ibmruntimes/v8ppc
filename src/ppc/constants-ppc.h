@@ -82,10 +82,6 @@
 #define V8_TARGET_CAN_READ_UNALIGNED 1
 #endif
 
-// Using blx may yield better code, so use it when required or when available
-#if defined(USE_THUMB_INTERWORK) || defined(CAN_USE_ARMV5_INSTRUCTIONS)
-#define USE_BLX 1
-#endif
 #endif  // INCLUDE_ARM
 namespace v8 {
 namespace internal {
@@ -328,7 +324,9 @@ enum OpcodeExt2 {
 */
   MULLW  = 235 << 1,  // Multiply Low Word
   ADDX = 266 << 1,  // Add
-  ORX = 444 << 1  // Or
+  MFSPR = 339 <<1,  // Move from Special-Purpose-Register
+  ORX = 444 << 1,  // Or
+  MTSPR = 467 <<1  // Move to Special-Purpose-Register
 }; 
 
 // Bits 11-1

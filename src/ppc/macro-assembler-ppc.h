@@ -51,8 +51,8 @@ inline Operand SmiUntagOperand(Register object) {
 
 
 // Give alias names to registers
-const Register cp = { 8 };  // JavaScript context pointer
-const Register kRootRegister = { 10 };  // Roots array pointer.
+const Register cp = { 10 };  // JavaScript context pointer
+const Register kRootRegister = { 13 };  // Roots array pointer.
 
 // Flags used for the AllocateInNewSpace functions.
 enum AllocationFlags {

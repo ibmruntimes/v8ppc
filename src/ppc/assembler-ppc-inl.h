@@ -200,19 +200,11 @@ Object** RelocInfo::call_object_address() {
 bool RelocInfo::IsPatchedReturnSequence() {
   Instr current_instr = Assembler::instr_at(pc_);
   Instr next_instr = Assembler::instr_at(pc_ + Assembler::kInstrSize);
-#ifdef USE_BLX
-  // A patched return sequence is:
-  //  ldr ip, [pc, #0]
-  //  blx ip
-  return ((current_instr & kLdrPCMask) == kLdrPCPattern)
-          && ((next_instr & kBlxRegMask) == kBlxRegPattern);
-#else
   // A patched return sequence is:
   //  mov lr, pc
   //  ldr pc, [pc, #-4]
   return (current_instr == kMovLrPc)
           && ((next_instr & kLdrPCMask) == kLdrPCPattern);
-#endif
 }
 
 
@@ -337,15 +329,6 @@ Address Assembler::target_address_address_at(Address pc) {
     target_pc -= kInstrSize;
     instr = Memory::int32_at(target_pc);
   }
-
-#ifdef USE_BLX
-  // If we have a blx instruction, the instruction before it is
-  // what needs to be patched.
-  if ((instr & kBlxRegMask) == kBlxRegPattern) {
-    target_pc -= kInstrSize;
-    instr = Memory::int32_at(target_pc);
-  }
-#endif
 
   ASSERT(IsLdrPcImmediateOffset(instr));
   int offset = instr & 0xfff;  // offset_12 is unsigned

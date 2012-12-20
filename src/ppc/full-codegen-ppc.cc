@@ -3391,7 +3391,7 @@ void FullCodeGenerator::EmitCallFunction(CallRuntime* expr) {
   // InvokeFunction requires the function in r1. Move it in there.
   __ mov(r1, result_register());
   ParameterCount count(arg_count);
-  __ InvokeFunction(r1, count, CALL_FUNCTION,
+  __ InvokeFunction(r4, count, CALL_FUNCTION, // roohack
                     NullCallWrapper(), CALL_AS_METHOD);
   __ ldr(cp, MemOperand(r11, StandardFrameConstants::kContextOffset));
   __ jmp(&done);

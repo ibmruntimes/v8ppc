@@ -700,10 +700,11 @@ void Builtins::Generate_StringConstructCode(MacroAssembler* masm) {
 
 
 static void GenerateTailCallToSharedCode(MacroAssembler* masm) {
-  __ ldr(r2, FieldMemOperand(r1, JSFunction::kSharedFunctionInfoOffset));
-  __ ldr(r2, FieldMemOperand(r2, SharedFunctionInfo::kCodeOffset));
+  __ lwz(r2, FieldMemOperand(r1, JSFunction::kSharedFunctionInfoOffset));
+  __ lwz(r2, FieldMemOperand(r2, SharedFunctionInfo::kCodeOffset));
   __ add(r2, r2, Operand(Code::kHeaderSize - kHeapObjectTag));
-  __ mov(pc, r2);
+  __ mtlr(r2);
+  __ blr();
 }
 
 
@@ -1027,7 +1028,7 @@ static void Generate_JSConstructStubHelper(MacroAssembler* masm,
                     RelocInfo::CODE_TARGET, CALL_FUNCTION, CALL_AS_METHOD);
     } else {
       ParameterCount actual(r0);
-      __ InvokeFunction(r1, actual, CALL_FUNCTION,
+      __ InvokeFunction(r4, actual, CALL_FUNCTION, // roohack
                         NullCallWrapper(), CALL_AS_METHOD);
     }
 
@@ -1102,72 +1103,75 @@ void Builtins::Generate_JSConstructStubApi(MacroAssembler* masm) {
 static void Generate_JSEntryTrampolineHelper(MacroAssembler* masm,
                                              bool is_construct) {
   // Called from Generate_JS_Entry
-  // r0: code entry
-  // r1: function
-  // r2: receiver
-  // r3: argc
-  // r4: argv
-  // r5-r7, cp may be clobbered
+  // r3: code entry
+  // r4: function
+  // r5: receiver
+  // r6: argc
+  // r7: argv
+  // r0,r8-r9, cp may be clobbered
 
   // Clear the context before we push it when entering the internal frame.
-  __ mov(cp, Operand(0, RelocInfo::NONE));
+  __ li(cp, Operand(0, RelocInfo::NONE));
 
   // Enter an internal frame.
   {
     FrameScope scope(masm, StackFrame::INTERNAL);
 
     // Set up the context from the function argument.
-    __ ldr(cp, FieldMemOperand(r1, JSFunction::kContextOffset));
+    __ lwz(cp, FieldMemOperand(r4, JSFunction::kContextOffset));
 
     __ InitializeRootRegister();
 
     // Push the function and the receiver onto the stack.
-    __ push(r1);
-    __ push(r2);
+    __ push(r4);
+    __ push(r5);
 
     // Copy arguments to the stack in a loop.
-    // r1: function
-    // r3: argc
-    // r4: argv, i.e. points to first arg
+    // r4: function
+    // r6: argc
+    // r7: argv, i.e. points to first arg
     Label loop, entry;
-    __ add(r2, r4, Operand(r3, LSL, kPointerSizeLog2));
-    // r2 points past last arg.
+    __ slwi(r0, r6, Operand(kPointerSizeLog2));
+    __ add(r5, r7, r0);
+    // r5 points past last arg.
     __ b(&entry);
     __ bind(&loop);
-    __ ldr(r0, MemOperand(r4, kPointerSize, PostIndex));  // read next parameter
-    __ ldr(r0, MemOperand(r0));  // dereference handle
+    __ lwzu(r8, MemOperand(r7, kPointerSize));  // read next parameter
+    __ lwz(r0, MemOperand(r8));  // dereference handle
     __ push(r0);  // push parameter
     __ bind(&entry);
-    __ cmp(r4, r2);
-    __ b(ne, &loop);
+    __ cmp(r7, r5);
+    __ bne(&loop);
 
     // Initialize all JavaScript callee-saved registers, since they will be seen
     // by the garbage collector as part of handlers.
-    __ LoadRoot(r4, Heap::kUndefinedValueRootIndex);
-    __ mov(r5, Operand(r4));
-    __ mov(r6, Operand(r4));
-    __ mov(r7, Operand(r4));
+    __ LoadRoot(r7, Heap::kUndefinedValueRootIndex);
+    __ mr(r0, r7); // This is probably wrong
+    __ mr(r8, r7); // I think this is just pointing at an 'object'
+    __ mr(r9, r7); // This is probably wrong
+#if 0
     if (kR9Available == 1) {
-      __ mov(r9, Operand(r4));
+      __ mov(rxxxxx, Operand(r4));
     }
+#endif
 
-    // Invoke the code and pass argc as r0.
-    __ mov(r0, Operand(r3));
+    // Invoke the code and pass argc as r3.
+    __ mr(r3, r6);
     if (is_construct) {
       CallConstructStub stub(NO_CALL_FUNCTION_FLAGS);
       __ CallStub(&stub);
     } else {
-      ParameterCount actual(r0);
-      __ InvokeFunction(r1, actual, CALL_FUNCTION,
+      ParameterCount actual(r3);
+      __ InvokeFunction(r4, actual, CALL_FUNCTION,
                         NullCallWrapper(), CALL_AS_METHOD);
     }
     // Exit the JS frame and remove the parameters (except function), and
     // return.
-    // Respect ABI stack constraint.
+    // Respect ABI stack constraint. (ARM?)
   }
-  __ Jump(lr);
+  __ blr();
 
-  // r0: result
+  // r3: result
 }
 
 
@@ -1513,7 +1517,8 @@ void Builtins::Generate_FunctionCall(MacroAssembler* masm) {
   __ cmp(r2, r0);  // Check formal and actual parameter counts.
   __ Jump(masm->isolate()->builtins()->ArgumentsAdaptorTrampoline(),
           RelocInfo::CODE_TARGET,
-          ne);
+          al);
+       // roohack was   ne);  .. need to recode
 
   ParameterCount expected(0);
   __ InvokeCode(r3, expected, expected, JUMP_FUNCTION,
@@ -1660,7 +1665,7 @@ void Builtins::Generate_FunctionApply(MacroAssembler* masm) {
     __ ldr(r1, MemOperand(r11, kFunctionOffset));
     __ CompareObjectType(r1, r2, r2, JS_FUNCTION_TYPE);
     __ b(ne, &call_proxy);
-    __ InvokeFunction(r1, actual, CALL_FUNCTION,
+    __ InvokeFunction(r4, actual, CALL_FUNCTION,
                       NullCallWrapper(), CALL_AS_METHOD);
 
     frame_scope.GenerateLeaveFrame();

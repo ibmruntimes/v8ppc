@@ -340,6 +340,7 @@ void PPCDebugger::Debug() {
                      static_cast<uint32_t>(as_words >> 32),
                      static_cast<uint32_t>(as_words & 0xffffffff));
             }
+//            PrintF(" cr: 0x%08x", condition_reg_);
           } else {
             if (GetValue(arg1, &value)) {
               PrintF("%s: 0x%08x %d \n", arg1, value, value);
@@ -756,7 +757,8 @@ Simulator::Simulator(Isolate* isolate) : isolate_(isolate) {
   for (int i = 0; i < num_registers; i++) {
     registers_[i] = 0;
   }
-  condition_reg_ = 0;  // PowerPoc
+  condition_reg_ = 0;  // PowerPC
+  special_reg_lr_ = 0;  // PowerPC
   n_flag_ = false;
   z_flag_ = false;
   c_flag_ = false;
@@ -1879,9 +1881,8 @@ void Simulator::DecodeExt1(Instruction* instr) {
     case MCRF:
       UNIMPLEMENTED();  // Not used by V8.
     case BCLRX: {
-        // roohack I think this is x_form() << assembler?
         // need to check BO flag & LR flag
-        set_pc(get_register(lr));
+        set_pc(special_reg_lr_);
       break;
     }
     case CRNOR:
@@ -1903,6 +1904,21 @@ void Simulator::DecodeExt1(Instruction* instr) {
 
 void Simulator::DecodeExt2(Instruction* instr) {
   switch(instr->Bits(9,1) << 1) {
+    case CMP: {
+      int ra = instr->RAValue();
+      int rb = instr->RBValue();
+      int32_t ra_val = get_register(ra);
+      int32_t rb_val = get_register(rb);
+      int cr = instr->Bits(25,23);
+      int bf = 0;
+      if(ra_val < rb_val) { bf |= 0x80000000; }
+      if(ra_val > rb_val) { bf |= 0x40000000; }
+      if(ra_val == rb_val) { bf |= 0x20000000; }
+      int condition_mask = 0xF0000000 >> (cr*4);
+      int condition =  bf >> (cr*4);
+      condition_reg_ = (condition_reg_ & ~condition_mask) | condition;
+      break;
+    }
     case MULLW: {
       int rt = instr->RTValue();
       int ra = instr->RAValue();
@@ -1926,7 +1942,7 @@ void Simulator::DecodeExt2(Instruction* instr) {
       break;
     }
     case ORX: {
-      int rs = instr->RTValue();
+      int rs = instr->RSValue();
       int ra = instr->RAValue();
       int rb = instr->RBValue();
       int32_t rs_val = get_register(rs);
@@ -1934,6 +1950,25 @@ void Simulator::DecodeExt2(Instruction* instr) {
       int32_t alu_out = rs_val | rb_val;
       set_register(ra, alu_out);
       // todo - handle RC bit
+      break;
+    }
+    case MFSPR: {
+      int rt = instr->RTValue();
+      int spr = instr->Bits(20,11);
+      if (spr!=256) {
+        UNIMPLEMENTED();  // Only LR supported 
+      }
+      set_register(rt, special_reg_lr_);
+      break;
+    }
+    case MTSPR: {
+      int rt = instr->RTValue();
+      int32_t rt_val = get_register(rt);
+      int spr = instr->Bits(20,11);
+      if (spr!=256) {
+        UNIMPLEMENTED();  // Only LR supported 
+      }
+      special_reg_lr_ = rt_val;
       break;
     }
     default: {
@@ -3212,7 +3247,16 @@ void Simulator::InstructionDecode(Instruction* instr) {
       condition_reg_ = (condition_reg_ & ~condition_mask) | condition;
       break;
     }
-    case ADDIC:
+    case ADDIC: {
+      int rt = instr->RTValue();
+      int ra = instr->RAValue();
+      int32_t ra_val = get_register(ra);
+      int32_t im_val = (instr->Bits(15,0) << 16) >> 16;
+      int32_t alu_out = ra_val + im_val;
+      set_register(rt, alu_out);
+      // todo - handle Carry ? 
+      break;
+    }
     case ADDICx:
     case ADDI: {
       int rt = instr->RTValue();
@@ -3224,7 +3268,20 @@ void Simulator::InstructionDecode(Instruction* instr) {
       // todo - handle RC bit
       break;
     }
-    case ADDIS:
+    case ADDIS: {
+      int rt = instr->RTValue();
+      int ra = instr->RAValue();
+      int32_t im_val = (instr->Bits(15,0) << 16);
+      int32_t alu_out;
+      if(ra==0) { // treat r0 as zero
+        alu_out = im_val;
+      } else {
+        int32_t ra_val = get_register(ra);
+        alu_out = ra_val + im_val;
+      }
+      set_register(rt, alu_out);
+      break;
+    }
     case BCX: {
       int bo = instr->Bits(25,21) << 21;
       int offset = (instr->Bits(15,2) << 18) >> 16;
@@ -3235,7 +3292,7 @@ void Simulator::InstructionDecode(Instruction* instr) {
         case DCBEZF: // Decrement CTR; branch if CTR == 0 and condition false
           UNIMPLEMENTED(); 
         case BF: {   // Branch if condition false
-          if (0 == (condition_reg_ & condition_mask)) {
+          if (!(condition_reg_ & condition_mask)) {
             set_pc(get_pc() + offset);
           }
           break;
@@ -3244,7 +3301,7 @@ void Simulator::InstructionDecode(Instruction* instr) {
         case DCBEZT: // Decrement CTR; branch if CTR == 0 and condition true
           UNIMPLEMENTED(); 
         case BT: {   // Branch if condition true
-          if (1 == (condition_reg_ & condition_mask)) {
+          if (condition_reg_ & condition_mask) {
             set_pc(get_pc() + offset);
           }
           break;
@@ -3491,54 +3548,92 @@ int32_t Simulator::Call(byte* entry, int argument_count, ...) {
   // Put down marker for end of simulation. The simulator will stop simulation
   // when the PC reaches this value. By saving the "end simulation" value into
   // the LR the simulation stops when returning to this call point.
-  set_register(lr, end_sim_pc);
+  special_reg_lr_ = end_sim_pc;
 
   // Remember the values of callee-saved registers.
-  // The code below assumes that r9 is not used as sb (static base) in
-  // simulator code and therefore is regarded as a callee-saved register.
-  // int32_t r4_val = get_register(r4);
-  int32_t r5_val = get_register(r5);
-  int32_t r6_val = get_register(r6);
-  int32_t r7_val = get_register(r7);
-  int32_t r8_val = get_register(r8);
-  int32_t r9_val = get_register(r9);
-  int32_t r10_val = get_register(r10);
-  int32_t r11_val = get_register(r11);
+  int32_t r14_val = get_register(r14);
+//  int32_t r15_val = get_register(r15);  -- hack r15 is overloaded as ARM PC
+  int32_t r16_val = get_register(r16);
+  int32_t r17_val = get_register(r17);
+  int32_t r18_val = get_register(r18);
+  int32_t r19_val = get_register(r19);
+  int32_t r20_val = get_register(r20);
+  int32_t r21_val = get_register(r21);
+  int32_t r22_val = get_register(r22);
+  int32_t r23_val = get_register(r23);
+  int32_t r24_val = get_register(r24);
+  int32_t r25_val = get_register(r25);
+  int32_t r26_val = get_register(r26);
+  int32_t r27_val = get_register(r27);
+  int32_t r28_val = get_register(r28);
+  int32_t r29_val = get_register(r29);
+  int32_t r30_val = get_register(r30);
+  int32_t r31_val = get_register(r31);
 
   // Set up the callee-saved registers with a known value. To be able to check
   // that they are preserved properly across JS execution.
   int32_t callee_saved_value = icount_;
-  // set_register(r4, callee_saved_value);
-  set_register(r5, callee_saved_value);
-  set_register(r6, callee_saved_value);
-  set_register(r7, callee_saved_value);
-  set_register(r8, callee_saved_value);
-  set_register(r9, callee_saved_value);
-  set_register(r10, callee_saved_value);
-  set_register(r11, callee_saved_value);
+  set_register(r14, callee_saved_value);
+//  set_register(r15, callee_saved_value);  hack for r15 pc
+  set_register(r16, callee_saved_value);
+  set_register(r17, callee_saved_value);
+  set_register(r18, callee_saved_value);
+  set_register(r19, callee_saved_value);
+  set_register(r20, callee_saved_value);
+  set_register(r21, callee_saved_value);
+  set_register(r22, callee_saved_value);
+  set_register(r23, callee_saved_value);
+  set_register(r24, callee_saved_value);
+  set_register(r25, callee_saved_value);
+  set_register(r26, callee_saved_value);
+  set_register(r27, callee_saved_value);
+  set_register(r28, callee_saved_value);
+  set_register(r29, callee_saved_value);
+  set_register(r30, callee_saved_value);
+  set_register(r31, callee_saved_value);
 
   // Start the simulation
   Execute();
 
   // Check that the callee-saved registers have been preserved.
-  // CHECK_EQ(callee_saved_value, get_register(r4));
-  // CHECK_EQ(callee_saved_value, get_register(r5));
-  CHECK_EQ(callee_saved_value, get_register(r6));
-  CHECK_EQ(callee_saved_value, get_register(r7));
-  CHECK_EQ(callee_saved_value, get_register(r8));
-  CHECK_EQ(callee_saved_value, get_register(r9));
-  CHECK_EQ(callee_saved_value, get_register(r10));
-  // CHECK_EQ(callee_saved_value, get_register(r11));
+  CHECK_EQ(callee_saved_value, get_register(r14));
+//  CHECK_EQ(callee_saved_value, get_register(r15));  hack for r15 PC
+  CHECK_EQ(callee_saved_value, get_register(r16));
+  CHECK_EQ(callee_saved_value, get_register(r17));
+  CHECK_EQ(callee_saved_value, get_register(r18));
+  CHECK_EQ(callee_saved_value, get_register(r19));
+  CHECK_EQ(callee_saved_value, get_register(r20));
+  CHECK_EQ(callee_saved_value, get_register(r21));
+  CHECK_EQ(callee_saved_value, get_register(r22));
+  CHECK_EQ(callee_saved_value, get_register(r23));
+  CHECK_EQ(callee_saved_value, get_register(r24));
+  CHECK_EQ(callee_saved_value, get_register(r25));
+  CHECK_EQ(callee_saved_value, get_register(r26));
+  CHECK_EQ(callee_saved_value, get_register(r27));
+  CHECK_EQ(callee_saved_value, get_register(r28));
+  CHECK_EQ(callee_saved_value, get_register(r29));
+  CHECK_EQ(callee_saved_value, get_register(r30));
+  CHECK_EQ(callee_saved_value, get_register(r31));
 
   // Restore callee-saved registers with the original value.
-  // set_register(r4, r4_val);
-  set_register(r5, r5_val);
-  set_register(r6, r6_val);
-  set_register(r7, r7_val);
-  set_register(r8, r8_val);
-  set_register(r9, r9_val);
-  set_register(r10, r10_val);
-  set_register(r11, r11_val);
+  set_register(r14, r14_val);
+//  set_register(r15, r15_val);  hack for R15 PC
+  set_register(r16, r16_val);
+  set_register(r17, r17_val);
+  set_register(r18, r18_val);
+  set_register(r19, r19_val);
+  set_register(r20, r20_val);
+  set_register(r21, r21_val);
+  set_register(r22, r22_val);
+  set_register(r23, r23_val);
+  set_register(r24, r24_val);
+  set_register(r25, r25_val);
+  set_register(r26, r26_val);
+  set_register(r27, r27_val);
+  set_register(r28, r28_val);
+  set_register(r29, r29_val);
+  set_register(r30, r30_val);
+  set_register(r31, r31_val);
 
   // Pop stack passed arguments.
   CHECK_EQ(entry_stack, get_register(sp));

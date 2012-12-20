@@ -444,22 +444,23 @@ void CallICBase::GenerateMonomorphicCacheProbe(MacroAssembler* masm,
 }
 
 
+// PowerPC
 static void GenerateFunctionTailCall(MacroAssembler* masm,
                                      int argc,
                                      Label* miss,
                                      Register scratch) {
-  // r1: function
+  // r4: function
 
   // Check that the value isn't a smi.
-  __ JumpIfSmi(r1, miss);
+  __ JumpIfSmi(r4, miss);
 
   // Check that the value is a JSFunction.
-  __ CompareObjectType(r1, scratch, scratch, JS_FUNCTION_TYPE);
-  __ b(ne, miss);
+  __ CompareObjectType(r4, scratch, scratch, JS_FUNCTION_TYPE);
+  __ bne(miss);
 
   // Invoke the function.
   ParameterCount actual(argc);
-  __ InvokeFunction(r1, actual, JUMP_FUNCTION,
+  __ InvokeFunction(r4, actual, JUMP_FUNCTION,
                     NullCallWrapper(), CALL_AS_METHOD);
 }
 
@@ -545,7 +546,7 @@ void CallICBase::GenerateMiss(MacroAssembler* masm,
       ? CALL_AS_FUNCTION
       : CALL_AS_METHOD;
   ParameterCount actual(argc);
-  __ InvokeFunction(r1,
+  __ InvokeFunction(r4, // roohack
                     actual,
                     JUMP_FUNCTION,
                     NullCallWrapper(),
