@@ -3807,14 +3807,14 @@ void CEntryStub::GenerateCore(MacroAssembler* masm,
                               Label* throw_out_of_memory_exception,
                               bool do_gc,
                               bool always_allocate) {
-  // r0: result parameter for PerformGC, if any
-  // r4: number of arguments including receiver  (C callee-saved)
-  // r5: pointer to builtin function  (C callee-saved)
-  // r6: pointer to the first argument (C callee-saved)
+  // r3: result parameter for PerformGC, if any
+  // r14: number of arguments including receiver  (C callee-saved)
+  // r15: pointer to builtin function  (C callee-saved)
+  // r16: pointer to the first argument (C callee-saved)
   Isolate* isolate = masm->isolate();
 
   if (do_gc) {
-    // Passing r0.
+    // Passing r3.
     __ PrepareCallCFunction(1, 0, r1);
     __ CallCFunction(ExternalReference::perform_gc_function(isolate),
         1, 0);
@@ -3823,13 +3823,13 @@ void CEntryStub::GenerateCore(MacroAssembler* masm,
   ExternalReference scope_depth =
       ExternalReference::heap_always_allocate_scope_depth(isolate);
   if (always_allocate) {
-    __ mov(r0, Operand(scope_depth));
-    __ ldr(r1, MemOperand(r0));
-    __ add(r1, r1, Operand(1));
-    __ str(r1, MemOperand(r0));
+    __ mov(r3, Operand(scope_depth));
+    __ lwz(r4, MemOperand(r3));
+    __ add(r4, r4, Operand(1));
+    __ stw(r4, MemOperand(r3));
   }
 
-#if defined(V8_HOST_ARCH_PPC)
+#if defined(V8_HOST_ARCH_PPC) // this is bogus now -- roohack
   // Use frame storage reserved by calling function
   // PPC passes C++ objects by reference not value
   // This builds an object in the stack frame
@@ -3838,12 +3838,13 @@ void CEntryStub::GenerateCore(MacroAssembler* masm,
   __ add(r0, sp, Operand(1 * kPointerSize));
 #else
   // Call C built-in.
-  // r0 = argc, r1 = argv
-  __ mov(r0, Operand(r4));
-  __ mov(r1, Operand(r6));
+  // r3 = argc, r4 = argv
+  __ mov(r3, Operand(r24)); // hack
+  __ mov(r4, Operand(r16));
 #endif
 
-#if defined(V8_HOST_ARCH_ARM)
+#if defined(V8_HOST_ARCH_ARM) // this is never used -- may need
+                              // something similar for PPC?
   int frame_alignment = MacroAssembler::ActivationFrameAlignment();
   int frame_alignment_mask = frame_alignment - 1;
   if (FLAG_debug_code) {
@@ -3859,12 +3860,12 @@ void CEntryStub::GenerateCore(MacroAssembler* masm,
   }
 #endif
 
-#if defined(V8_HOST_ARCH_PPC)
+#if defined(V8_HOST_ARCH_PPC) // more bogosity
   // PPC passes C++ objects by reference not value
   // Thus argument 2 (r1) should be the isolate
   __ mov(r1, Operand(ExternalReference::isolate_address()));
 #else
-  __ mov(r2, Operand(ExternalReference::isolate_address()));
+  __ mov(r5, Operand(ExternalReference::isolate_address()));
 #endif
 
   // To let the GC traverse the return address of the exit frames, we need to
@@ -3883,28 +3884,28 @@ void CEntryStub::GenerateCore(MacroAssembler* masm,
   }
 
   if (always_allocate) {
-    // It's okay to clobber r2 and r3 here. Don't mess with r0 and r1
+    // It's okay to clobber r5 and r6 here. Don't mess with r3 and r4
     // though (contain the result).
-    __ mov(r2, Operand(scope_depth));
-    __ ldr(r3, MemOperand(r2));
-    __ sub(r3, r3, Operand(1));
-    __ str(r3, MemOperand(r2));
+    __ mov(r5, Operand(scope_depth));
+    __ lwz(r6, MemOperand(r5));
+    __ sub(r6, r6, Operand(1));
+    __ stw(r6, MemOperand(r5));
   }
 
   // check for failure result
   Label failure_returned;
   STATIC_ASSERT(((kFailureTag + 1) & kFailureTagMask) == 0);
-  // Lower 2 bits of r2 are 0 iff r0 has failure tag.
-  __ add(r2, r0, Operand(1));
-  __ tst(r2, Operand(kFailureTagMask));
-  __ b(eq, &failure_returned);
+  // Lower 2 bits of r5 are 0 iff r3 has failure tag.
+  __ add(r5, r3, Operand(1));
+  __ tst(r5, Operand(kFailureTagMask));
+  __ beq(&failure_returned);
 
   // Exit C frame and return.
-  // r0:r1: result
+  // r3:r4: result
   // sp: stack pointer
   // fp: frame pointer
-  //  Callee-saved register r4 still holds argc.
-  __ LeaveExitFrame(save_doubles_, r4);
+  //  Callee-saved register r14 still holds argc.
+  __ LeaveExitFrame(save_doubles_, r24); // hack
   __ mtlr(lr);
   __ blr();
 
@@ -3912,42 +3913,42 @@ void CEntryStub::GenerateCore(MacroAssembler* masm,
   Label retry;
   __ bind(&failure_returned);
   STATIC_ASSERT(Failure::RETRY_AFTER_GC == 0);
-  __ tst(r0, Operand(((1 << kFailureTypeTagSize) - 1) << kFailureTagSize));
-  __ b(eq, &retry);
+  __ tst(r3, Operand(((1 << kFailureTypeTagSize) - 1) << kFailureTagSize));
+  __ beq(&retry);
 
   // Special handling of out of memory exceptions.
   Failure* out_of_memory = Failure::OutOfMemoryException();
-  __ cmp(r0, Operand(reinterpret_cast<int32_t>(out_of_memory)));
-  __ b(eq, throw_out_of_memory_exception);
+  __ cmp(r3, Operand(reinterpret_cast<int32_t>(out_of_memory)));
+  __ beq(throw_out_of_memory_exception);
 
   // Retrieve the pending exception and clear the variable.
-  __ mov(r3, Operand(isolate->factory()->the_hole_value()));
+  __ mov(r6, Operand(isolate->factory()->the_hole_value()));
   __ mov(ip, Operand(ExternalReference(Isolate::kPendingExceptionAddress,
                                        isolate)));
-  __ ldr(r0, MemOperand(ip));
-  __ str(r3, MemOperand(ip));
+  __ ldr(r3, MemOperand(ip));
+  __ str(r6, MemOperand(ip));
 
   // Special handling of termination exceptions which are uncatchable
   // by javascript code.
-  __ cmp(r0, Operand(isolate->factory()->termination_exception()));
-  __ b(eq, throw_termination_exception);
+  __ cmp(r3, Operand(isolate->factory()->termination_exception()));
+  __ beq(throw_termination_exception);
 
   // Handle normal exception.
   __ jmp(throw_normal_exception);
 
-  __ bind(&retry);  // pass last failure (r0) as parameter (r0) when retrying
+  __ bind(&retry);  // pass last failure (r3) as parameter (r3) when retrying
 }
 
 
 void CEntryStub::Generate(MacroAssembler* masm) {
   // Called from JavaScript; parameters are on stack as if calling JS function
-  // r0: number of arguments including receiver
-  // r1: pointer to builtin function
+  // r3: number of arguments including receiver
+  // r4: pointer to builtin function
   // fp: frame pointer  (restored after C call)
   // sp: stack pointer  (restored as callee's sp after C call)
   // cp: current context  (C callee-saved)
 
-  // Result returned in r0 or r0+r1 by default.
+  // Result returned in r3 or r3+r4 by default.
 
   // NOTE: Invocations of builtins may return failure objects
   // instead of a proper result. The builtin entry handles
@@ -3955,25 +3956,27 @@ void CEntryStub::Generate(MacroAssembler* masm) {
   // builtin once.
 
   // Compute the argv pointer in a callee-saved register.
-  __ add(r6, sp, Operand(r0, LSL, kPointerSizeLog2));
-  __ sub(r6, r6, Operand(kPointerSize));
+  __ slwi(r16, r3, Operand(kPointerSizeLog2));
+  __ add(r16, r16, sp);
+  __ sub(r16, r16, Operand(kPointerSize));
 
   // Enter the exit frame that transitions from JavaScript to C++.
   FrameScope scope(masm, StackFrame::MANUAL);
 #if defined(V8_HOST_ARCH_PPC)
   // PPC needs extra frame space to fake out a C++ object
+  // probably not right on real PPC -- this was for simulation hack
   __ EnterExitFrame(save_doubles_, 2);
 #else
   __ EnterExitFrame(save_doubles_);
 #endif
 
   // Set up argc and the builtin function in callee-saved registers.
-  __ mov(r4, Operand(r0));
-  __ mov(r5, Operand(r1));
+  __ mr(r24, r3);  // hack for now should be r14
+  __ mr(r25, r4); // hack should be r15
 
-  // r4: number of arguments (C callee-saved)
-  // r5: pointer to builtin function (C callee-saved)
-  // r6: pointer to first argument (C callee-saved)
+  // r14: number of arguments (C callee-saved)
+  // r15: pointer to builtin function (C callee-saved)
+  // r16: pointer to first argument (C callee-saved)
 
   Label throw_normal_exception;
   Label throw_termination_exception;
@@ -3997,7 +4000,7 @@ void CEntryStub::Generate(MacroAssembler* masm) {
 
   // Do full GC and retry runtime call one final time.
   Failure* failure = Failure::InternalError();
-  __ mov(r0, Operand(reinterpret_cast<int32_t>(failure)));
+  __ mov(r3, Operand(reinterpret_cast<int32_t>(failure)));
   GenerateCore(masm,
                &throw_normal_exception,
                &throw_termination_exception,
@@ -4010,23 +4013,23 @@ void CEntryStub::Generate(MacroAssembler* masm) {
   Isolate* isolate = masm->isolate();
   ExternalReference external_caught(Isolate::kExternalCaughtExceptionAddress,
                                     isolate);
-  __ mov(r0, Operand(false, RelocInfo::NONE));
-  __ mov(r2, Operand(external_caught));
-  __ str(r0, MemOperand(r2));
+  __ li(r3, Operand(false, RelocInfo::NONE));
+  __ mov(r5, Operand(external_caught));
+  __ stw(r3, MemOperand(r5));
 
   // Set pending exception and r0 to out of memory exception.
   Failure* out_of_memory = Failure::OutOfMemoryException();
-  __ mov(r0, Operand(reinterpret_cast<int32_t>(out_of_memory)));
-  __ mov(r2, Operand(ExternalReference(Isolate::kPendingExceptionAddress,
+  __ mov(r3, Operand(reinterpret_cast<int32_t>(out_of_memory)));
+  __ mov(r5, Operand(ExternalReference(Isolate::kPendingExceptionAddress,
                                        isolate)));
-  __ str(r0, MemOperand(r2));
+  __ stw(r3, MemOperand(r5));
   // Fall through to the next label.
 
   __ bind(&throw_termination_exception);
-  __ ThrowUncatchable(r0);
+  __ ThrowUncatchable(r3);
 
   __ bind(&throw_normal_exception);
-  __ Throw(r0);
+  __ Throw(r3);
 }
 
 
@@ -4042,13 +4045,17 @@ void JSEntryStub::GenerateBody(MacroAssembler* masm, bool is_construct) {
   // Called from C
   // Registers r0,r3-r12 are volatile
   // r1 is SP, r2 is TOC, r13 is reserved
-  // r14-r31 are nonvolatile and must be preserved
+  // r14-r30,fp are nonvolatile and must be preserved
 
   __ stwu(sp, MemOperand(sp, -16));
   __ mflr(r0);
   __ stw(r0, MemOperand(sp, 20));
-  __ stw(r31, MemOperand(sp, 12));
-  __ mr(r31, sp);
+  __ stw(fp, MemOperand(sp, 12));
+  __ mr(fp, sp);
+
+  // We probably want to make this a proper C frame entirely
+  // that means reserving space for the 'pushes' below and sticking them
+  // into the frame correctly. (see the r11 modification below - ARM carryover)
 
   // Currently not worried about perserved regs - sub calls will save them
 

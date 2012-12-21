@@ -96,6 +96,11 @@ void MacroAssembler::Call(Register target, Condition cond) {
   Label start;
   bind(&start);
   ASSERT(cond == al); // in prep of removal of condition
+
+  // Statement positions are expected to be recorded when the target
+  // address is loaded.
+  positions_recorder()->WriteRecordedPositions();
+
   // branch via link register and set LK bit for return point
   mtlr(target); 
   bclr(BA, SetLK);
@@ -105,7 +110,7 @@ void MacroAssembler::Call(Register target, Condition cond) {
 
 int MacroAssembler::CallSize(
     Address target, RelocInfo::Mode rmode, Condition cond) {
-  int size = 4 * kInstrSize;
+  int size = 6 * kInstrSize;
 #if 0
   Instr mov_instr = cond | MOV | LeaveCC;
   intptr_t immediate = reinterpret_cast<intptr_t>(target);
@@ -138,7 +143,19 @@ void MacroAssembler::Call(Address target,
   Label start;
   bind(&start);
 
-  mov(r0, Operand(reinterpret_cast<int32_t>(target), rmode), LeaveCC, cond);
+  // Statement positions are expected to be recorded when the target
+  // address is loaded.
+  positions_recorder()->WriteRecordedPositions();
+
+  // This can likely be optimized to make use of bc() with 24bit relative
+  // 
+  // RecordRelocInfo(x.rmode_, x.imm32_);
+  // bc( BA, .... offset, LKset);
+  //
+
+  mov(r8, Operand(reinterpret_cast<int32_t>(target)));
+  lwz(r0, MemOperand(r8,0));
+  add(r0, r0, Operand(63)); // ugly hack
   mtlr(r0);
   blr();
   ASSERT(kCallTargetAddressOffset == kInstrSize);
@@ -768,8 +785,8 @@ void MacroAssembler::EnterFrame(StackFrame::Type type) {
   stwu(sp, MemOperand(sp, -16));
   mflr(r0);
   stw(r0, MemOperand(sp, 20));
-  stw(r31, MemOperand(sp, 12));
-  mr(r31, sp);
+  stw(fp, MemOperand(sp, 12));
+  mr(fp, sp);
 
 #if 0
   // r0-r3: preserved
@@ -786,10 +803,10 @@ void MacroAssembler::EnterFrame(StackFrame::Type type) {
 void MacroAssembler::LeaveFrame(StackFrame::Type type) {
   // this destroys r11
   // clean things up but don't perform return
-  add(r11,r31,Operand(16));
+  add(r11,fp,Operand(16));
   lwz(r0, MemOperand(r11, 4));
   mtlr(r0);
-  lwz(r31, MemOperand(r11,-4));
+  lwz(fp, MemOperand(r11,-4));
   mr(sp, r11);
 
 #if 0
@@ -815,17 +832,17 @@ void MacroAssembler::EnterExitFrame(bool save_doubles, int stack_space) {
   // Reserve room for saved entry sp and code object.
   sub(sp, sp, Operand(2 * kPointerSize));
   if (emit_debug_code()) {
-    mov(ip, Operand(0));
-    str(ip, MemOperand(r11, ExitFrameConstants::kSPOffset));
+    li(ip, Operand(0));
+    stw(ip, MemOperand(r11, ExitFrameConstants::kSPOffset));
   }
   mov(ip, Operand(CodeObject()));
-  str(ip, MemOperand(r11, ExitFrameConstants::kCodeOffset));
+  stw(ip, MemOperand(r11, ExitFrameConstants::kCodeOffset));
 
   // Save the frame pointer and the context in top.
   mov(ip, Operand(ExternalReference(Isolate::kCEntryFPAddress, isolate())));
-  str(r11, MemOperand(ip));
+  stw(r11, MemOperand(ip));
   mov(ip, Operand(ExternalReference(Isolate::kContextAddress, isolate())));
-  str(cp, MemOperand(ip));
+  stw(cp, MemOperand(ip));
 
   // Optionally save all double registers.
   if (save_doubles) {
@@ -850,7 +867,7 @@ void MacroAssembler::EnterExitFrame(bool save_doubles, int stack_space) {
   // Set the exit frame sp value to point just before the return address
   // location.
   add(ip, sp, Operand(kPointerSize));
-  str(ip, MemOperand(r11, ExitFrameConstants::kSPOffset));
+  stw(ip, MemOperand(r11, ExitFrameConstants::kSPOffset));
 }
 
 

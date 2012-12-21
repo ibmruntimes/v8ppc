@@ -119,7 +119,7 @@ struct Register {
       "r28",
       "r29",
       "r30",
-      "r31",
+      "fp",
     };
     return names[index];
   }
@@ -183,7 +183,7 @@ const int kRegister_r27_Code = 27;
 const int kRegister_r28_Code = 28;
 const int kRegister_r29_Code = 29;
 const int kRegister_r30_Code = 30;
-const int kRegister_r31_Code = 31;
+const int kRegister_fp_Code = 31;
 
 const Register no_reg = { kRegister_no_reg_Code };
 
@@ -223,7 +223,7 @@ const Register r27  = { kRegister_r27_Code };
 const Register r28  = { kRegister_r28_Code };
 const Register r29  = { kRegister_r29_Code };
 const Register r30  = { kRegister_r30_Code };
-const Register r31  = { kRegister_r31_Code };
+const Register fp = { kRegister_fp_Code };
 
 
 // Single word VFP register.

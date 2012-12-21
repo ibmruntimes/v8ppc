@@ -182,8 +182,8 @@ TEST(3) {
 
   // build a frame
   __ stwu(sp, MemOperand(sp, -16));
-  __ stw(r31, MemOperand(sp, 12));
-  __ mr(r31, sp);
+  __ stw(fp, MemOperand(sp, 12));
+  __ mr(fp, sp);
 
   // r4 points to our struct
   __ mr(r4, r3);
@@ -206,8 +206,8 @@ TEST(3) {
   __ sth(r5, MemOperand(r4, OFFSET_OF(T, s)));
 
   // restore frame
-  __ add(r11, r31, Operand(16));
-  __ lwz(r31, MemOperand(r11,-4));
+  __ add(r11, fp, Operand(16));
+  __ lwz(fp, MemOperand(r11,-4));
   __ mr(sp, r11);
   __ blr();
 

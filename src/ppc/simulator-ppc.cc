@@ -3568,72 +3568,72 @@ int32_t Simulator::Call(byte* entry, int argument_count, ...) {
   int32_t r28_val = get_register(r28);
   int32_t r29_val = get_register(r29);
   int32_t r30_val = get_register(r30);
-  int32_t r31_val = get_register(r31);
+	  int32_t fp_val = get_register(fp);
 
-  // Set up the callee-saved registers with a known value. To be able to check
-  // that they are preserved properly across JS execution.
-  int32_t callee_saved_value = icount_;
-  set_register(r14, callee_saved_value);
-//  set_register(r15, callee_saved_value);  hack for r15 pc
-  set_register(r16, callee_saved_value);
-  set_register(r17, callee_saved_value);
-  set_register(r18, callee_saved_value);
-  set_register(r19, callee_saved_value);
-  set_register(r20, callee_saved_value);
-  set_register(r21, callee_saved_value);
-  set_register(r22, callee_saved_value);
-  set_register(r23, callee_saved_value);
-  set_register(r24, callee_saved_value);
-  set_register(r25, callee_saved_value);
-  set_register(r26, callee_saved_value);
-  set_register(r27, callee_saved_value);
-  set_register(r28, callee_saved_value);
-  set_register(r29, callee_saved_value);
-  set_register(r30, callee_saved_value);
-  set_register(r31, callee_saved_value);
+	  // Set up the callee-saved registers with a known value. To be able to check
+	  // that they are preserved properly across JS execution.
+	  int32_t callee_saved_value = icount_;
+	  set_register(r14, callee_saved_value);
+	//  set_register(r15, callee_saved_value);  hack for r15 pc
+	  set_register(r16, callee_saved_value);
+	  set_register(r17, callee_saved_value);
+	  set_register(r18, callee_saved_value);
+	  set_register(r19, callee_saved_value);
+	  set_register(r20, callee_saved_value);
+	  set_register(r21, callee_saved_value);
+	  set_register(r22, callee_saved_value);
+	  set_register(r23, callee_saved_value);
+	  set_register(r24, callee_saved_value);
+	  set_register(r25, callee_saved_value);
+	  set_register(r26, callee_saved_value);
+	  set_register(r27, callee_saved_value);
+	  set_register(r28, callee_saved_value);
+	  set_register(r29, callee_saved_value);
+	  set_register(r30, callee_saved_value);
+	  set_register(fp, callee_saved_value);
 
-  // Start the simulation
-  Execute();
+	  // Start the simulation
+	  Execute();
 
-  // Check that the callee-saved registers have been preserved.
-  CHECK_EQ(callee_saved_value, get_register(r14));
-//  CHECK_EQ(callee_saved_value, get_register(r15));  hack for r15 PC
-  CHECK_EQ(callee_saved_value, get_register(r16));
-  CHECK_EQ(callee_saved_value, get_register(r17));
-  CHECK_EQ(callee_saved_value, get_register(r18));
-  CHECK_EQ(callee_saved_value, get_register(r19));
-  CHECK_EQ(callee_saved_value, get_register(r20));
-  CHECK_EQ(callee_saved_value, get_register(r21));
-  CHECK_EQ(callee_saved_value, get_register(r22));
-  CHECK_EQ(callee_saved_value, get_register(r23));
-  CHECK_EQ(callee_saved_value, get_register(r24));
-  CHECK_EQ(callee_saved_value, get_register(r25));
-  CHECK_EQ(callee_saved_value, get_register(r26));
-  CHECK_EQ(callee_saved_value, get_register(r27));
-  CHECK_EQ(callee_saved_value, get_register(r28));
-  CHECK_EQ(callee_saved_value, get_register(r29));
-  CHECK_EQ(callee_saved_value, get_register(r30));
-  CHECK_EQ(callee_saved_value, get_register(r31));
+	  // Check that the callee-saved registers have been preserved.
+	  CHECK_EQ(callee_saved_value, get_register(r14));
+	//  CHECK_EQ(callee_saved_value, get_register(r15));  hack for r15 PC
+	  CHECK_EQ(callee_saved_value, get_register(r16));
+	  CHECK_EQ(callee_saved_value, get_register(r17));
+	  CHECK_EQ(callee_saved_value, get_register(r18));
+	  CHECK_EQ(callee_saved_value, get_register(r19));
+	  CHECK_EQ(callee_saved_value, get_register(r20));
+	  CHECK_EQ(callee_saved_value, get_register(r21));
+	  CHECK_EQ(callee_saved_value, get_register(r22));
+	  CHECK_EQ(callee_saved_value, get_register(r23));
+	  CHECK_EQ(callee_saved_value, get_register(r24));
+	  CHECK_EQ(callee_saved_value, get_register(r25));
+	  CHECK_EQ(callee_saved_value, get_register(r26));
+	  CHECK_EQ(callee_saved_value, get_register(r27));
+	  CHECK_EQ(callee_saved_value, get_register(r28));
+	  CHECK_EQ(callee_saved_value, get_register(r29));
+	  CHECK_EQ(callee_saved_value, get_register(r30));
+	  CHECK_EQ(callee_saved_value, get_register(fp));
 
-  // Restore callee-saved registers with the original value.
-  set_register(r14, r14_val);
-//  set_register(r15, r15_val);  hack for R15 PC
-  set_register(r16, r16_val);
-  set_register(r17, r17_val);
-  set_register(r18, r18_val);
-  set_register(r19, r19_val);
-  set_register(r20, r20_val);
-  set_register(r21, r21_val);
-  set_register(r22, r22_val);
-  set_register(r23, r23_val);
-  set_register(r24, r24_val);
-  set_register(r25, r25_val);
-  set_register(r26, r26_val);
-  set_register(r27, r27_val);
-  set_register(r28, r28_val);
-  set_register(r29, r29_val);
-  set_register(r30, r30_val);
-  set_register(r31, r31_val);
+	  // Restore callee-saved registers with the original value.
+	  set_register(r14, r14_val);
+	//  set_register(r15, r15_val);  hack for R15 PC
+	  set_register(r16, r16_val);
+	  set_register(r17, r17_val);
+	  set_register(r18, r18_val);
+	  set_register(r19, r19_val);
+	  set_register(r20, r20_val);
+	  set_register(r21, r21_val);
+	  set_register(r22, r22_val);
+	  set_register(r23, r23_val);
+	  set_register(r24, r24_val);
+	  set_register(r25, r25_val);
+	  set_register(r26, r26_val);
+	  set_register(r27, r27_val);
+	  set_register(r28, r28_val);
+	  set_register(r29, r29_val);
+	  set_register(r30, r30_val);
+	  set_register(fp, fp_val);
 
   // Pop stack passed arguments.
   CHECK_EQ(entry_stack, get_register(sp));

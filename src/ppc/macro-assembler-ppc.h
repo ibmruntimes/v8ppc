@@ -311,12 +311,8 @@ class MacroAssembler: public Assembler {
   // Push two registers.  Pushes leftmost register first (to highest address).
   void Push(Register src1, Register src2, Condition cond = al) {
     ASSERT(!src1.is(src2));
-    if (src1.code() > src2.code()) {
-      stm(db_w, sp, src1.bit() | src2.bit(), cond);
-    } else {
-      str(src1, MemOperand(sp, 4, NegPreIndex), cond);
-      str(src2, MemOperand(sp, 4, NegPreIndex), cond);
-    }
+    stwu(src1, MemOperand(sp, -4));
+    stwu(src2, MemOperand(sp, -4));
   }
 
   // Push three registers.  Pushes leftmost register first (to highest address).
@@ -324,17 +320,8 @@ class MacroAssembler: public Assembler {
     ASSERT(!src1.is(src2));
     ASSERT(!src2.is(src3));
     ASSERT(!src1.is(src3));
-    if (src1.code() > src2.code()) {
-      if (src2.code() > src3.code()) {
-        stm(db_w, sp, src1.bit() | src2.bit() | src3.bit(), cond);
-      } else {
-        stm(db_w, sp, src1.bit() | src2.bit(), cond);
-        str(src3, MemOperand(sp, 4, NegPreIndex), cond);
-      }
-    } else {
-      str(src1, MemOperand(sp, 4, NegPreIndex), cond);
-      Push(src2, src3, cond);
-    }
+    stwu(src1, MemOperand(sp, -4));
+    Push(src2, src3, cond);
   }
 
   // Push four registers.  Pushes leftmost register first (to highest address).
@@ -349,25 +336,8 @@ class MacroAssembler: public Assembler {
     ASSERT(!src1.is(src4));
     ASSERT(!src2.is(src4));
     ASSERT(!src3.is(src4));
-    if (src1.code() > src2.code()) {
-      if (src2.code() > src3.code()) {
-        if (src3.code() > src4.code()) {
-          stm(db_w,
-              sp,
-              src1.bit() | src2.bit() | src3.bit() | src4.bit(),
-              cond);
-        } else {
-          stm(db_w, sp, src1.bit() | src2.bit() | src3.bit(), cond);
-          str(src4, MemOperand(sp, 4, NegPreIndex), cond);
-        }
-      } else {
-        stm(db_w, sp, src1.bit() | src2.bit(), cond);
-        Push(src3, src4, cond);
-      }
-    } else {
-      str(src1, MemOperand(sp, 4, NegPreIndex), cond);
-      Push(src2, src3, src4, cond);
-    }
+
+    stwu(src1, MemOperand(sp, -4));
   }
 
   // Pop two registers. Pops rightmost register first (from lower address).
