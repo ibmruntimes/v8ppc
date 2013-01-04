@@ -119,13 +119,13 @@ class JumpPatchSite BASE_EMBEDDED {
 // The live registers are:
 //   o r4: the JS function object being called (i.e., ourselves)
 //   o cp: our context
-//   o fp: our caller's frame pointer r11 (ARM specific) but we likely want one
+//   o fp: our caller's frame pointer r11 (ARM specific) PPC is fp (aka r31)
 //   o sp: stack pointer
 //   o lr: return address
 //   o r7: call kind (roohack)
 //
 // The function builds a JS frame.  Please see JavaScriptFrameConstants in
-// frames-arm.h for its layout.
+// frames-ppc.h for its layout.
 void FullCodeGenerator::Generate() {
   CompilationInfo* info = info_;
   handler_table_ =
@@ -977,6 +977,7 @@ void FullCodeGenerator::DeclareGlobals(Handle<FixedArray> pairs) {
   // Call the runtime to declare the globals.
   // The context is the first argument.
   __ mov(r4, Operand(pairs));
+  __ lwz(r4, MemOperand(r4,0));
   __ li(r3, Operand(Smi::FromInt(DeclareGlobalsFlags())));
   __ Push(cp, r4, r3);
   __ CallRuntime(Runtime::kDeclareGlobals, 3);

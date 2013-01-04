@@ -804,7 +804,11 @@ void Decoder::DecodeExt1(Instruction* instr) {
           break;
         }
         case BA: {
-          Format(instr, "blr"); // todo - currently ignoring lk bit
+          if(instr->Bit(0) == 1) {
+            Format(instr, "blrl");
+          } else {
+            Format(instr, "blr");
+          }
           break;
         }
         default: {
@@ -1582,7 +1586,10 @@ int Decoder::InstructionDecode(byte* instr_ptr) {
                                   instr->InstructionBits());
 
     switch (instr->OpcodeValue() << 26) {
-    case TWI:
+    case TWI: {
+      PrintSoftwareInterrupt(instr->SvcValue());
+      break;
+    }
     case MULLI:
     case SUBFIC: {
       Format(instr, "subfic  'rt, 'ra, 'int16");

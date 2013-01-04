@@ -154,9 +154,9 @@ void MacroAssembler::Call(Address target,
   //
 
   mov(r8, Operand(reinterpret_cast<int32_t>(target)));
-  lwz(r0, MemOperand(r8,0));
-  add(r0, r0, Operand(63)); // ugly hack
-  mtlr(r0);
+  lwz(r8, MemOperand(r8,0));
+  add(r8, r8, Operand(63)); // ugly hack
+  mtlr(r8);
   blr();
   ASSERT(kCallTargetAddressOffset == kInstrSize);
   ASSERT_EQ(CallSize(target, rmode, cond), SizeOfCodeGeneratedSince(&start));
@@ -821,29 +821,42 @@ void MacroAssembler::LeaveFrame(StackFrame::Type type) {
 #endif
 }
 
+// ExitFrame layout (probably wrongish.. needs updating)
+//
+//  SP -> previousSP
+//        LK reserved
+// code
+// sp
+//        resv
+//        fp (aka r31)
+// oldSP->prev SP
+//        LK
+//
 
 void MacroAssembler::EnterExitFrame(bool save_doubles, int stack_space) {
   // Set up the frame structure on the stack.
   ASSERT_EQ(2 * kPointerSize, ExitFrameConstants::kCallerSPDisplacement);
   ASSERT_EQ(1 * kPointerSize, ExitFrameConstants::kCallerPCOffset);
   ASSERT_EQ(0 * kPointerSize, ExitFrameConstants::kCallerFPOffset);
-  Push(lr, r11);
-  mov(r11, Operand(sp));  // Set up new frame pointer.
-  // Reserve room for saved entry sp and code object.
-  sub(sp, sp, Operand(2 * kPointerSize));
+  stwu(sp, MemOperand(sp,-24));
+  mflr(r0);
+//  stw(r0, MemOperand(sp,28)); .. urg.. need to rely on fp value being old sp?
+  stw(fp, MemOperand(sp,20));
+  add(fp, sp, Operand(20));  // point fp at resv slot..
   if (emit_debug_code()) {
-    li(ip, Operand(0));
-    stw(ip, MemOperand(r11, ExitFrameConstants::kSPOffset));
+    li(r8, Operand(0));
+    stw(r8, MemOperand(fp, ExitFrameConstants::kSPOffset));
   }
-  mov(ip, Operand(CodeObject()));
-  stw(ip, MemOperand(r11, ExitFrameConstants::kCodeOffset));
+  mov(r8, Operand(CodeObject()));
+  stw(r8, MemOperand(fp, ExitFrameConstants::kCodeOffset));
 
   // Save the frame pointer and the context in top.
-  mov(ip, Operand(ExternalReference(Isolate::kCEntryFPAddress, isolate())));
-  stw(r11, MemOperand(ip));
-  mov(ip, Operand(ExternalReference(Isolate::kContextAddress, isolate())));
-  stw(cp, MemOperand(ip));
+  mov(r8, Operand(ExternalReference(Isolate::kCEntryFPAddress, isolate())));
+  stw(fp, MemOperand(r8));
+  mov(r8, Operand(ExternalReference(Isolate::kContextAddress, isolate())));
+  stw(cp, MemOperand(r8));
 
+#if 0 //roohack - no double support yet
   // Optionally save all double registers.
   if (save_doubles) {
     DwVfpRegister first = d0;
@@ -854,7 +867,9 @@ void MacroAssembler::EnterExitFrame(bool save_doubles, int stack_space) {
     //   fp - 2 * kPointerSize - DwVfpRegister::kNumRegisters * kDoubleSize,
     // since the sp slot and code slot were pushed after the fp.
   }
+#endif
 
+#if 0 // roohack  - I don't see why we need to round up at all .. fixed frame
   // Reserve place for the return address and stack space and align the frame
   // preparing for calling the runtime function.
   const int frame_alignment = MacroAssembler::ActivationFrameAlignment();
@@ -863,11 +878,13 @@ void MacroAssembler::EnterExitFrame(bool save_doubles, int stack_space) {
     ASSERT(IsPowerOf2(frame_alignment));
     and_(sp, sp, Operand(-frame_alignment));
   }
+#endif
 
   // Set the exit frame sp value to point just before the return address
   // location.
-  add(ip, sp, Operand(kPointerSize));
-  stw(ip, MemOperand(r11, ExitFrameConstants::kSPOffset));
+  // roohack - this is wrong on PowerPC, but we'll leave it for now
+  add(r8, sp, Operand(kPointerSize));
+  stw(r8, MemOperand(fp, ExitFrameConstants::kSPOffset));
 }
 
 
@@ -1200,51 +1217,48 @@ void MacroAssembler::DebugBreak() {
 void MacroAssembler::PushTryHandler(StackHandler::Kind kind,
                                     int handler_index) {
   // Adjust this code if not the case.
-  STATIC_ASSERT(StackHandlerConstants::kSize == 5 * kPointerSize);
-  STATIC_ASSERT(StackHandlerConstants::kNextOffset == 0 * kPointerSize);
-  STATIC_ASSERT(StackHandlerConstants::kCodeOffset == 1 * kPointerSize);
-  STATIC_ASSERT(StackHandlerConstants::kStateOffset == 2 * kPointerSize);
-  STATIC_ASSERT(StackHandlerConstants::kContextOffset == 3 * kPointerSize);
-  STATIC_ASSERT(StackHandlerConstants::kFPOffset == 4 * kPointerSize);
+  STATIC_ASSERT(StackHandlerConstants::kSize == 7 * kPointerSize);
+  STATIC_ASSERT(StackHandlerConstants::kNextOffset == 2 * kPointerSize);
+  STATIC_ASSERT(StackHandlerConstants::kCodeOffset == 3 * kPointerSize);
+  STATIC_ASSERT(StackHandlerConstants::kStateOffset == 4 * kPointerSize);
+  STATIC_ASSERT(StackHandlerConstants::kContextOffset == 5 * kPointerSize);
+  STATIC_ASSERT(StackHandlerConstants::kFPOffset == 6 * kPointerSize);
 
-  // For the JSEntry handler, we must preserve r0-r7, r8-r15 are available.
-  // We will build up the handler from the bottom by pushing on the stack.
-  // Set up the code object (r8) and the state (r9) for pushing.
+  // For the JSEntry handler, we must preserve r1-r7, r0,r8-r15 are available.
+  // PowerPC has a fixed frame, so we just store into the stack at the
+  // appropriate offsets
+
+  if (kind == StackHandler::JS_ENTRY) {
+    li(r0, Operand(0, RelocInfo::NONE));  // NULL frame pointer.
+    stw(r0, MemOperand(sp,StackHandlerConstants::kFPOffset));
+    li(r0, Operand(Smi::FromInt(0)));    // Indicates no context.
+    stw(r0, MemOperand(sp,StackHandlerConstants::kContextOffset));
+  } else {
+    // still not sure if fp is right
+    stw(fp, MemOperand(sp,StackHandlerConstants::kFPOffset));
+    stw(cp, MemOperand(sp,StackHandlerConstants::kContextOffset));
+  }  
   unsigned state =
       StackHandler::IndexField::encode(handler_index) |
       StackHandler::KindField::encode(kind);
-  mov(r8, Operand(CodeObject()));
-  mov(r9, Operand(state));
-
-  // Push the frame pointer, context, state, and code object.
-  if (kind == StackHandler::JS_ENTRY) {
-    mov(r10, Operand(Smi::FromInt(0)));  // Indicates no context.
-    mov(r11, Operand(0, RelocInfo::NONE));  // NULL frame pointer.
-    stwu(r11,MemOperand(sp));
-    stwu(r10,MemOperand(sp));
-    stwu(r9,MemOperand(sp));
-    stwu(r8,MemOperand(sp));
-    // stm(db_w, sp, r5.bit() | r6.bit() | r7.bit() | ip.bit());
-  } else {
-    stwu(r11,MemOperand(sp));
-    stwu(r10,MemOperand(sp));
-    li(r0, Operand(-8)); // roohack - need to figure this out
-    stwu(r0,MemOperand(sp));
-    stwu(r0,MemOperand(sp));
-    // stm(db_w, sp, r5.bit() | r6.bit() | cp.bit() | r11.bit());
-  }
+  mov(r0, Operand(state));
+  stw(r0, MemOperand(sp,StackHandlerConstants::kStateOffset));
+  mov(r0, Operand(CodeObject()));
+  stw(r0, MemOperand(sp,StackHandlerConstants::kCodeOffset));
 
   // Link the current handler as the next handler.
   mov(r8, Operand(ExternalReference(Isolate::kHandlerAddress, isolate())));
   lwz(r0, MemOperand(r8));
-  push(r0);
+  stw(r0, MemOperand(sp,StackHandlerConstants::kNextOffset));
   // Set this new handler as the current one.
   stw(sp, MemOperand(r8));
 }
 
 
 void MacroAssembler::PopTryHandler() {
+#if 0
   STATIC_ASSERT(StackHandlerConstants::kNextOffset == 0);
+#endif
   pop(r1);
   mov(ip, Operand(ExternalReference(Isolate::kHandlerAddress, isolate())));
   add(sp, sp, Operand(StackHandlerConstants::kSize - kPointerSize));
@@ -1267,12 +1281,14 @@ void MacroAssembler::JumpToHandlerEntry() {
 
 void MacroAssembler::Throw(Register value) {
   // Adjust this code if not the case.
+#if 0
   STATIC_ASSERT(StackHandlerConstants::kSize == 5 * kPointerSize);
   STATIC_ASSERT(StackHandlerConstants::kNextOffset == 0);
   STATIC_ASSERT(StackHandlerConstants::kCodeOffset == 1 * kPointerSize);
   STATIC_ASSERT(StackHandlerConstants::kStateOffset == 2 * kPointerSize);
   STATIC_ASSERT(StackHandlerConstants::kContextOffset == 3 * kPointerSize);
   STATIC_ASSERT(StackHandlerConstants::kFPOffset == 4 * kPointerSize);
+#endif
 
   // The exception is expected in r0.
   if (!value.is(r0)) {
@@ -1301,12 +1317,14 @@ void MacroAssembler::Throw(Register value) {
 
 void MacroAssembler::ThrowUncatchable(Register value) {
   // Adjust this code if not the case.
+#if 0
   STATIC_ASSERT(StackHandlerConstants::kSize == 5 * kPointerSize);
   STATIC_ASSERT(StackHandlerConstants::kNextOffset == 0 * kPointerSize);
   STATIC_ASSERT(StackHandlerConstants::kCodeOffset == 1 * kPointerSize);
   STATIC_ASSERT(StackHandlerConstants::kStateOffset == 2 * kPointerSize);
   STATIC_ASSERT(StackHandlerConstants::kContextOffset == 3 * kPointerSize);
   STATIC_ASSERT(StackHandlerConstants::kFPOffset == 4 * kPointerSize);
+#endif
 
   // The exception is expected in r0.
   if (!value.is(r0)) {
@@ -2622,7 +2640,7 @@ void MacroAssembler::GetLeastBitsFromInt32(Register dst,
 
 void MacroAssembler::CallRuntime(const Runtime::Function* f,
                                  int num_arguments) {
-  // All parameters are on the stack.  r0 has the return value after call.
+  // All parameters are on the stack.  r3 has the return value after call.
 
   // If the expected number of arguments of the runtime function is
   // constant, we check that the actual number of arguments match the
@@ -2636,8 +2654,8 @@ void MacroAssembler::CallRuntime(const Runtime::Function* f,
   // arguments passed in because it is constant. At some point we
   // should remove this need and make the runtime routine entry code
   // smarter.
-  mov(r0, Operand(num_arguments));
-  mov(r1, Operand(ExternalReference(f, isolate())));
+  mov(r3, Operand(num_arguments));
+  mov(r4, Operand(ExternalReference(f, isolate())));
   CEntryStub stub(1);
   CallStub(&stub);
 }

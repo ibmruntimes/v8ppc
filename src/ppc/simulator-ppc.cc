@@ -808,7 +808,7 @@ class Redirection {
  public:
   Redirection(void* external_function, ExternalReference::Type type)
       : external_function_(external_function),
-        swi_instruction_(rtCallRedirInstr),
+        swi_instruction_(rtCallRedirInstr | kCallRtRedirected),
         type_(type),
         next_(NULL) {
     Isolate* isolate = Isolate::Current();
@@ -1605,7 +1605,7 @@ void Simulator::SoftwareInterrupt(Instruction* instr) {
       }
       // This is dodgy but it works because the C entry stubs are never moved.
       // See comment in codegen-arm.cc and bug 1242173.
-      int32_t saved_lr = get_register(lr);
+      int32_t saved_lr = special_reg_lr_;
       intptr_t external =
           reinterpret_cast<intptr_t>(redirection->external_function());
       if (fp_call) {
@@ -1769,8 +1769,7 @@ void Simulator::SoftwareInterrupt(Instruction* instr) {
         set_register(r3, lo_res);
         set_register(r4, hi_res);
       }
-      set_register(lr, saved_lr);
-      set_pc(get_register(lr));
+      set_pc(saved_lr);
       break;
     }
     case kBreakpoint: {
@@ -1881,8 +1880,12 @@ void Simulator::DecodeExt1(Instruction* instr) {
     case MCRF:
       UNIMPLEMENTED();  // Not used by V8.
     case BCLRX: {
-        // need to check BO flag & LR flag
+        // need to check BO flag
+        int old_pc = get_pc();
         set_pc(special_reg_lr_);
+        if(instr->Bit(0) == 1) {  // LK flag set 
+          special_reg_lr_ = old_pc + 4;
+        }
       break;
     }
     case CRNOR:
@@ -3220,7 +3223,11 @@ void Simulator::InstructionDecode(Instruction* instr) {
     PrintF("  0x%08x  %s\n", reinterpret_cast<intptr_t>(instr), buffer.start());
   }
   switch (instr->OpcodeValue() << 26) {
-    case TWI:
+    case TWI: {
+      // used for call redirection in simulation mode
+      SoftwareInterrupt(instr);
+      break;
+    }
     case MULLI:
     case SUBFIC: {
       int rt = instr->RTValue();
@@ -3261,9 +3268,14 @@ void Simulator::InstructionDecode(Instruction* instr) {
     case ADDI: {
       int rt = instr->RTValue();
       int ra = instr->RAValue();
-      int32_t ra_val = get_register(ra);
       int32_t im_val = (instr->Bits(15,0) << 16) >> 16;
-      int32_t alu_out = ra_val + im_val;
+      int32_t alu_out;
+      if(ra == 0) {
+        alu_out = im_val;
+      } else {
+        int32_t ra_val = get_register(ra);
+        alu_out = ra_val + im_val;
+      } 
       set_register(rt, alu_out);
       // todo - handle RC bit
       break;

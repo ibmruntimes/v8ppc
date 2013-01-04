@@ -669,8 +669,8 @@ extern const Instr kLdrStrInstrArgumentMask;
 extern const Instr kLdrStrOffsetMask;
 
 
-// use invalid format TWI to indicate redirection call for simulation mode
-const Instr rtCallRedirInstr = 3<<26;
+// use TWI to indicate redirection call for simulation mode
+const Instr rtCallRedirInstr = TWI;
 
 
 // -----------------------------------------------------------------------------

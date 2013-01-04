@@ -102,12 +102,14 @@ const int kNumSafepointSavedRegisters = kNumJSCallerSaved + kNumCalleeSaved;
 
 class StackHandlerConstants : public AllStatic {
  public:
-  static const int kNextOffset     = 0 * kPointerSize;
-  static const int kCodeOffset     = 1 * kPointerSize;
-  static const int kStateOffset    = 2 * kPointerSize;
-  static const int kContextOffset  = 3 * kPointerSize;
-  static const int kFPOffset       = 4 * kPointerSize;
+  static const int kNextOffset     = 2 * kPointerSize;
+  static const int kCodeOffset     = 3 * kPointerSize;
+  static const int kStateOffset    = 4 * kPointerSize;
+  static const int kContextOffset  = 5 * kPointerSize;
+  static const int kFPOffset       = 6 * kPointerSize;
 
+  // Not sure if this should be from SP -> kFPOffset, or just the
+  // size of the 5 values on the stack
   static const int kSize = kFPOffset + kPointerSize;
 };
 

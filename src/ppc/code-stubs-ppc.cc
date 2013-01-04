@@ -3833,14 +3833,14 @@ void CEntryStub::GenerateCore(MacroAssembler* masm,
   // Use frame storage reserved by calling function
   // PPC passes C++ objects by reference not value
   // This builds an object in the stack frame
-  __ str(r6, MemOperand(sp, 2 * kPointerSize));
-  __ str(r4, MemOperand(sp, 1 * kPointerSize));
+  __ stw(r6, MemOperand(sp, 2 * kPointerSize));
+  __ stw(r4, MemOperand(sp, 1 * kPointerSize));
   __ add(r0, sp, Operand(1 * kPointerSize));
 #else
   // Call C built-in.
   // r3 = argc, r4 = argv
-  __ mov(r3, Operand(r24)); // hack
-  __ mov(r4, Operand(r16));
+  __ mr(r3, r24); // hack
+  __ mr(r4, r16);
 #endif
 
 #if defined(V8_HOST_ARCH_ARM) // this is never used -- may need
@@ -3876,11 +3876,20 @@ void CEntryStub::GenerateCore(MacroAssembler* masm,
   // already at '+ 8' from the current instruction but return is after three
   // instructions so add another 4 to pc to get the return address.
   {
+    __ Call(r25);
+#if 0
+
+    // the below is the ARM code (hacked) but it's wrong for PPC
+    // we need to figure out the GC issue in the comment above
+
     // Prevent literal pool emission before return address.
     Assembler::BlockConstPoolScope block_const_pool(masm);
+   // This bit with the lr/pc is wrong 
     masm->add(lr, pc, Operand(4));
-    __ str(lr, MemOperand(sp, 0));
-    masm->Jump(r5);
+    __ stw(lr, MemOperand(sp, 0));
+   // above needs fixing
+    masm->Jump(r25);  // hack
+#endif
   }
 
   if (always_allocate) {
@@ -4046,46 +4055,71 @@ void JSEntryStub::GenerateBody(MacroAssembler* masm, bool is_construct) {
   // Registers r0,r3-r12 are volatile
   // r1 is SP, r2 is TOC, r13 is reserved
   // r14-r30,fp are nonvolatile and must be preserved
+  // stack must be 8 aligned
 
-  __ stwu(sp, MemOperand(sp, -16));
+  // Frame looks like this after we lay it down
+  // SP -> previous SP
+  //       LK reserved
+  //       receiver
+  //       next handler
+  //       code
+  //       state
+  //       context
+  //       frame pointer
+  //       frame-type
+  //       c_entry_fp
+  //       function
+  //       context
+  //       r14
+  //       r15
+  //       r16
+  //       fp (aka r31)
+  // oldSP->prev sp
+  //       LK
+
+  __ stwu(sp, MemOperand(sp, -64));
   __ mflr(r0);
-  __ stw(r0, MemOperand(sp, 20));
-  __ stw(fp, MemOperand(sp, 12));
+  __ stw(r0, MemOperand(sp, 68));
+  __ stw(fp, MemOperand(sp, 60));
   __ mr(fp, sp);
 
-  // We probably want to make this a proper C frame entirely
-  // that means reserving space for the 'pushes' below and sticking them
-  // into the frame correctly. (see the r11 modification below - ARM carryover)
-
-  // Currently not worried about perserved regs - sub calls will save them
+  // Save the non-volatile registers we will be using
+  // r14,r15,r16 (fp aka r31 is already stored)
+  __ stw(r24, MemOperand(sp, 48));      // roohack - r14 ARM hack
+  __ stw(r25, MemOperand(sp, 52));	// roohack - r15 ARM hack
+  __ stw(r16, MemOperand(sp, 56));
 
   // we might want cp and kRootRegister to be preserved regs
   // see (macro-assembler.h)
 
   // Floating point regs FPR0 - FRP13 are volatile
-  // FPR14-FPR31 are non-volatile, but again sub-calls will save them
+  // FPR14-FPR31 are non-volatile, but sub-calls will save them for us
 
   // Push a frame with special values setup to mark it as an entry frame.
-
   // On ARM they push -1 as a bad frame pointer to catch errors
   // we may want to do the same or similar, but not now
 
   Isolate* isolate = masm->isolate();
   int marker = is_construct ? StackFrame::ENTRY_CONSTRUCT : StackFrame::ENTRY;
   __ li(r0, Operand(Smi::FromInt(marker)));
-  __ push(r0);  // context slot
-  __ push(r0);  // function slot
+  __ stw(r0, MemOperand(sp, 40));  // function slot
+  __ stw(r0, MemOperand(sp, 44));  // context slot
 
   // Save copies of the top frame descriptor on the stack.
   __ mov(r8, Operand(ExternalReference(Isolate::kCEntryFPAddress, isolate)));
   __ lwz(r0, MemOperand(r8));
-  __ push(r0);
+  __ stw(r0, MemOperand(sp, 36));
 
+#if 0
   // Set up frame pointer for the frame to be pushed.
   // not sure I need a frame pointer on PPC
   // --> I now suspect this is related to maintaining a somwhat
   // --> valid machine stack.. does ARM use r11 as a frame pointer?
   __ add(r11, sp, Operand(-EntryFrameConstants::kCallerFPOffset));
+ 
+  // not needed, only question is frame pointer is javascript or machine?
+  // currently assuming this is machine fp
+#endif
 
   // If this is the outermost JS call, set js_entry_sp value.
   Label non_outermost_js;
@@ -4094,14 +4128,14 @@ void JSEntryStub::GenerateBody(MacroAssembler* masm, bool is_construct) {
   __ lwz(r9, MemOperand(r8));
   __ cmpi(r9, Operand::Zero());
   __ bne(&non_outermost_js);
-  __ stw(r11, MemOperand(r8));
+  __ stw(fp, MemOperand(r8));
   __ mov(ip, Operand(Smi::FromInt(StackFrame::OUTERMOST_JSENTRY_FRAME)));
   Label cont;
   __ b(&cont);
   __ bind(&non_outermost_js);
   __ mov(ip, Operand(Smi::FromInt(StackFrame::INNER_JSENTRY_FRAME)));
   __ bind(&cont);
-  __ push(ip);
+  __ stw(ip, MemOperand(sp, 36)); // frame-type
 
   // Jump to a faked try block that does the invoke, with a faked catch
   // block that sets the pending exception.
@@ -4137,6 +4171,7 @@ void JSEntryStub::GenerateBody(MacroAssembler* masm, bool is_construct) {
 
   // Clear any pending exceptions.
   __ mov(r8, Operand(isolate->factory()->the_hole_value()));
+  __ lwz(r8, MemOperand(r8));
   __ mov(r9, Operand(ExternalReference(Isolate::kPendingExceptionAddress,
                                        isolate)));
   __ stw(r8, MemOperand(r9));
@@ -4178,7 +4213,7 @@ void JSEntryStub::GenerateBody(MacroAssembler* masm, bool is_construct) {
   // Unlink this frame from the handler chain.
   __ PopTryHandler();
 
-  __ bind(&exit);  // r0 holds result
+  __ bind(&exit);  // r3 holds result
   // Check if the current stack frame is marked as the outermost JS frame.
   Label non_outermost_js_2;
   __ pop(r5);

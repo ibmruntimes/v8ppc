@@ -1146,9 +1146,9 @@ static void Generate_JSEntryTrampolineHelper(MacroAssembler* masm,
     // Initialize all JavaScript callee-saved registers, since they will be seen
     // by the garbage collector as part of handlers.
     __ LoadRoot(r7, Heap::kUndefinedValueRootIndex);
-    __ mr(r0, r7); // This is probably wrong
-    __ mr(r8, r7); // I think this is just pointing at an 'object'
-    __ mr(r9, r7); // This is probably wrong
+    __ mr(r24, r7); // This is probably wrong (r14)
+    __ mr(r25, r7); // I think this is just pointing at an 'object' (r15)
+    __ mr(r16, r7); // This is probably wrong
 #if 0
     if (kR9Available == 1) {
       __ mov(rxxxxx, Operand(r4));
