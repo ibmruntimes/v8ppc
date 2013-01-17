@@ -121,7 +121,7 @@ class JumpPatchSite BASE_EMBEDDED {
 //   o cp: our context
 //   o fp: our caller's frame pointer r11 (ARM specific) PPC is fp (aka r31)
 //   o sp: stack pointer
-//   o lr: return address
+//   o lr: return address  (bogus.. PPC has no lr reg)
 //   o r7: call kind (roohack)
 //
 // The function builds a JS frame.  Please see JavaScriptFrameConstants in
@@ -166,7 +166,12 @@ void FullCodeGenerator::Generate() {
   int locals_count = info->scope()->num_stack_slots();
 
 // roohack ARM specific  __ Push(lr, r11, cp, r1);
-// roohack - we will need to fix this to be a single big frame on Power...
+  __ mtlr(r0);
+  __ Push(r0, fp, cp, r4);
+  __ add(fp, sp, Operand(8));  // chain fp correctly
+  // roohack - this fp chain may break native stack frames
+  // trade-off being we make JS frames correct?
+  
   if (locals_count > 0) {
     // Load undefined value here, so the value is ready for the loop
     // below.
@@ -288,7 +293,7 @@ void FullCodeGenerator::Generate() {
       PrepareForBailoutForId(BailoutId::Declarations(), NO_REGISTERS);
       Label ok;
       __ LoadRoot(ip, Heap::kStackLimitRootIndex);
-      __ cmp(sp, Operand(ip));
+      __ cmp(sp, ip, al);
       __ b(hs, &ok);
       StackCheckStub stub;
       __ CallStub(&stub);
@@ -977,7 +982,7 @@ void FullCodeGenerator::DeclareGlobals(Handle<FixedArray> pairs) {
   // Call the runtime to declare the globals.
   // The context is the first argument.
   __ mov(r4, Operand(pairs));
-  __ lwz(r4, MemOperand(r4,0));
+// roohack - relocation fixes this  __ lwz(r4, MemOperand(r4,0));
   __ li(r3, Operand(Smi::FromInt(DeclareGlobalsFlags())));
   __ Push(cp, r4, r3);
   __ CallRuntime(Runtime::kDeclareGlobals, 3);

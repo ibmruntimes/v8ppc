@@ -122,17 +122,19 @@ class EntryFrameConstants : public AllStatic {
 
 class ExitFrameConstants : public AllStatic {
  public:
-  static const int kCodeOffset = -2 * kPointerSize;
-  static const int kSPOffset = -1 * kPointerSize;
+  static const int kCodeOffset = 2 * kPointerSize;
+  static const int kSPOffset = 3 * kPointerSize;
 
   // The caller fields are below the frame pointer on the stack.
-  static const int kCallerFPOffset = 0 * kPointerSize;
+  static const int kCallerFPOffset = 6 * kPointerSize;
   // The calling JS function is below FP.
-  static const int kCallerPCOffset = 1 * kPointerSize;
+  static const int kCallerPCOffset = 7 * kPointerSize;
 
   // FP-relative displacement of the caller's SP.  It points just
   // below the saved PC.
-  static const int kCallerSPDisplacement = 2 * kPointerSize;
+
+  // Assumes exit frame is constant 6 slots + 2 slots for clean up of previous frame
+  static const int kCallerSPDisplacement = 8 * kPointerSize;
 };
 
 

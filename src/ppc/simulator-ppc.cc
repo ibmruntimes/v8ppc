@@ -276,6 +276,9 @@ void PPCDebugger::Debug() {
   // Undo all set breakpoints while running in the debugger shell. This will
   // make them invisible to all commands.
   UndoBreakpoints();
+  // Disable tracing while simulating
+  bool trace=::v8::internal::FLAG_trace_sim;
+  ::v8::internal::FLAG_trace_sim = false;
 
   while (!done && !sim_->has_bad_pc()) {
     if (last_pc != sim_->get_pc()) {
@@ -620,6 +623,8 @@ void PPCDebugger::Debug() {
   // Add all the breakpoints back to stop execution and enter the debugger
   // shell when hit.
   RedoBreakpoints();
+  // Restore tracing
+  ::v8::internal::FLAG_trace_sim = trace;
 
 #undef COMMAND_SIZE
 #undef ARG_SIZE
@@ -759,6 +764,7 @@ Simulator::Simulator(Isolate* isolate) : isolate_(isolate) {
   }
   condition_reg_ = 0;  // PowerPC
   special_reg_lr_ = 0;  // PowerPC
+  special_reg_ctr_ = 0;  // PowerPC
   n_flag_ = false;
   z_flag_ = false;
   c_flag_ = false;
@@ -1888,6 +1894,15 @@ void Simulator::DecodeExt1(Instruction* instr) {
         }
       break;
     }
+    case BCCTRX: {
+        // need to check BO flag
+        int old_pc = get_pc();
+        set_pc(special_reg_ctr_);
+        if(instr->Bit(0) == 1) {  // LK flag set 
+          special_reg_lr_ = old_pc + 4;
+        }
+      break;
+    }
     case CRNOR:
     case RFI:
     case CRANDC:
@@ -1898,7 +1913,6 @@ void Simulator::DecodeExt1(Instruction* instr) {
     case CREQV:
     case CRORC:
     case CROR:
-    case BCCTRX:
     default: {
       UNIMPLEMENTED();  // Not used by V8.
     }
@@ -1968,10 +1982,13 @@ void Simulator::DecodeExt2(Instruction* instr) {
       int rt = instr->RTValue();
       int32_t rt_val = get_register(rt);
       int spr = instr->Bits(20,11);
-      if (spr!=256) {
+      if (spr==256) {
+        special_reg_lr_ = rt_val;
+      } else if (spr==288) {
+        special_reg_ctr_ = rt_val;
+      } else { 
         UNIMPLEMENTED();  // Only LR supported 
       }
-      special_reg_lr_ = rt_val;
       break;
     }
     default: {

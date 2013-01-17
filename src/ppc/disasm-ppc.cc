@@ -811,6 +811,30 @@ void Decoder::DecodeExt1(Instruction* instr) {
           }
           break;
         }
+      }
+      break;
+    }
+    case BCCTRX: {
+      switch(instr->Bits(25,21) << 21) {
+        case DCBNZF:
+        case DCBEZF:
+        case BF:
+        case DCBNZT:
+        case DCBEZT:
+        case BT:
+        case DCBNZ:
+        case DCBEZ: {
+          Unknown(instr);  // not used by V8
+          break;
+        }
+        case BA: {
+          if(instr->Bit(0) == 1) {
+            Format(instr, "bctrl");
+          } else {
+            Format(instr, "bctr");
+          }
+          break;
+        }
         default: {
           UNREACHABLE();
         }
@@ -827,7 +851,6 @@ void Decoder::DecodeExt1(Instruction* instr) {
     case CREQV:
     case CRORC:
     case CROR:
-    case BCCTRX:
     default: {
       Unknown(instr);  // not used by V8
     }
@@ -870,6 +893,8 @@ void Decoder::DecodeExt2(Instruction* instr) {
       int spr = instr->Bits(20,11);
       if(256 == spr) {
         Format(instr, "mtlr    'rt");
+      } else if (288 == spr) {
+        Format(instr, "mtctr   'rt");
       } else {
         Format(instr, "mtspr   'rt ??");
       }

@@ -745,10 +745,6 @@ class Assembler : public AssemblerBase {
   // The high 8 bits are set to zero.
   void label_at_put(Label* L, int at_offset);
 
-  // Return the address in the constant pool of the code target address used by
-  // the branch/call instruction at pc.
-  INLINE(static Address target_address_address_at(Address pc));
-
   // Read/Modify the code target address in the branch/call instruction at pc.
   INLINE(static Address target_address_at(Address pc));
   INLINE(static void set_target_address_at(Address pc, Address target));
@@ -775,10 +771,12 @@ class Assembler : public AssemblerBase {
   // target and the return address.
 
   // Call sequence is:
-  //  mov  lr, pc
-  //  ldr  pc, [pc, #...] @ call address
+  // lis     r8, 2148      @ call address hi
+  // addic   r8, r8, 5728  @ call address lo
+  // mtlr    r8
+  // blrl
   //                      @ return address
-  static const int kCallTargetAddressOffset = kInstrSize;
+  static const int kCallTargetAddressOffset = 4 * kInstrSize;
 
   // Distance between start of patched return sequence and the emitted address
   // to jump to.
@@ -819,6 +817,10 @@ class Assembler : public AssemblerBase {
   void blr();
   void bc(int branch_offset, BOfield bo, int condition_bit);
   void b(int branch_offset, Condition cond = al);
+
+  void bcctr(BOfield bo, LKBit lk);
+  void bcr();
+
   // end PowerPC
   void bl(int branch_offset, Condition cond = al);
   void blx(int branch_offset);  // v5 and above
@@ -1012,6 +1014,7 @@ SBit s = LeaveCC, Condition cond = al // roohack - remove this line later
   void crxor(int bt, int ba, int bb);
   void mflr(Register dst);
   void mtlr(Register src);
+  void mtctr(Register src);
 
   // end PowerPC
   // Status register access instructions
@@ -1314,7 +1317,7 @@ SBit s = LeaveCC, Condition cond = al // roohack - remove this line later
   }
 
   TypeFeedbackId RecordedAstId() {
-    ASSERT(!recorded_ast_id_.IsNone());
+    // roohack - another issue??? ASSERT(!recorded_ast_id_.IsNone());
     return recorded_ast_id_;
   }
 
@@ -1364,6 +1367,10 @@ SBit s = LeaveCC, Condition cond = al // roohack - remove this line later
     *reinterpret_cast<Instr*>(pc) = instr;
   }
   static Condition GetCondition(Instr instr);
+
+  static bool IsLis(Instr instr);
+  static bool IsAddic(Instr instr);
+
   static bool IsBranch(Instr instr);
   static int GetBranchOffset(Instr instr);
   static bool IsLdrRegisterImmediate(Instr instr);

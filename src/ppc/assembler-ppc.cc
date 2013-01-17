@@ -202,6 +202,7 @@ Operand::Operand(Register rm, ShiftOp shift_op, int shift_imm) {
     shift_op_ = ROR;
     shift_imm_ = 0;
   }
+  rmode_ = RelocInfo::NONE;  // ?? again why not needed on ARM
 }
 
 
@@ -211,6 +212,7 @@ Operand::Operand(Register rm, ShiftOp shift_op, Register rs) {
   rs_ = no_reg;
   shift_op_ = shift_op;
   rs_ = rs;
+  rmode_ = RelocInfo::NONE;  // ?? again why not needed on ARM
 }
 
 
@@ -359,9 +361,11 @@ Assembler::~Assembler() {
 
 
 void Assembler::GetCode(CodeDesc* desc) {
+#if 0
   // Emit constant pool if necessary.
   CheckConstPool(true, false);
   ASSERT(num_pending_reloc_info_ == 0);
+#endif
 
   // Set up code descriptor.
   desc->buffer = buffer_;
@@ -389,6 +393,18 @@ Condition Assembler::GetCondition(Instr instr) {
   return Instruction::ConditionField(instr);
 }
 
+// PowerPC
+
+bool Assembler::IsLis(Instr instr) {
+  return (instr & ADDIS) == ADDIS;
+}
+
+bool Assembler::IsAddic(Instr instr) {
+  return (instr & ADDIC) == ADDIC;
+}
+
+
+//end PowerPC
 
 bool Assembler::IsBranch(Instr instr) {
   return (instr & BX) == BX;  // this is bogus
@@ -1119,9 +1135,19 @@ void Assembler::bclr(BOfield bo, LKBit lk) {
   emit(EXT1 | bo | BCLRX | lk);
 }
 
-// Pseudo op - branch to link register
+void Assembler::bcctr(BOfield bo, LKBit lk) {
+  positions_recorder()->WriteRecordedPositions();
+  emit(EXT1 | bo | BCCTRX | lk);
+}
+
+// Pseudo op - branch to link register 
 void Assembler::blr() {
   bclr(BA, LeaveLK);
+}
+
+// Pseudo op - branch to count register -- used for "jump"
+void Assembler::bcr() {
+  bcctr(BA, LeaveLK);
 }
 
 void Assembler::bc(int branch_offset, BOfield bo, int condition_bit) {
@@ -1347,7 +1373,8 @@ void Assembler::orr(Register dst, Register src1, const Operand& src2,
   addrmod1(cond | ORR | s, src1, dst, src2);
 }
 
-
+// This should really move to be in macro-assembler as it
+// is really a pseudo instruction
 void Assembler::mov(Register dst, const Operand& src
 , SBit s, Condition cond // ARM stuff, remove later
 ) {
@@ -1364,6 +1391,10 @@ void Assembler::mov(Register dst, const Operand& src
   }
 #endif
 
+  if(src.rmode_ != RelocInfo::NONE) {
+    // some form of relocation needed
+    RecordRelocInfo(src.rmode_, src.imm32_);
+  }
   // load constant in 2 instructions
   // may want to optimize this later for constants that fit in 1 instruction
   // but this will possibly have impact on call sequence sizes
@@ -1589,6 +1620,10 @@ void Assembler::mflr(Register dst) {
 
 void Assembler::mtlr(Register src) {
   emit(EXT2 | MTSPR | src.code()*B21 | 256 << 11);   // Ignore RC bit
+}
+
+void Assembler::mtctr(Register src) {
+  emit(EXT2 | MTSPR | src.code()*B21 | 288 << 11);   // Ignore RC bit
 }
 //end PowerPC
 
@@ -2731,7 +2766,9 @@ void Assembler::db(uint8_t data) {
   // No relocation info should be pending while using db. db is used
   // to write pure data with no pointers and the constant pool should
   // be emitted before using db.
+#if 0
   ASSERT(num_pending_reloc_info_ == 0);
+#endif
   CheckBuffer();
   *reinterpret_cast<uint8_t*>(pc_) = data;
   pc_ += sizeof(uint8_t);
@@ -2742,7 +2779,9 @@ void Assembler::dd(uint32_t data) {
   // No relocation info should be pending while using dd. dd is used
   // to write pure data with no pointers and the constant pool should
   // be emitted before using dd.
+#if 0
   ASSERT(num_pending_reloc_info_ == 0);
+#endif
   CheckBuffer();
   *reinterpret_cast<uint32_t*>(pc_) = data;
   pc_ += sizeof(uint32_t);
@@ -2804,8 +2843,10 @@ void Assembler::BlockConstPoolFor(int instructions) {
   if (no_const_pool_before_ < pc_limit) {
     // If there are some pending entries, the constant pool cannot be blocked
     // further than first_const_pool_use_ + kMaxDistToPool
+#if 0
     ASSERT((num_pending_reloc_info_ == 0) ||
            (pc_limit < (first_const_pool_use_ + kMaxDistToPool)));
+#endif
     no_const_pool_before_ = pc_limit;
   }
 
@@ -2816,6 +2857,7 @@ void Assembler::BlockConstPoolFor(int instructions) {
 
 
 void Assembler::CheckConstPool(bool force_emit, bool require_jump) {
+#if 0 // we need to remove const pool
   // Some short sequence of instruction mustn't be broken up by constant pool
   // emission, such sequences are protected by calls to BlockConstPoolFor and
   // BlockConstPoolScope.
@@ -2906,6 +2948,7 @@ void Assembler::CheckConstPool(bool force_emit, bool require_jump) {
   // Since a constant pool was just emitted, move the check offset forward by
   // the standard interval.
   next_buffer_check_ = pc_offset() + kCheckPoolInterval;
+#endif
 }
 
 #undef INCLUDE_ARM 

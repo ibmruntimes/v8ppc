@@ -3906,7 +3906,7 @@ void CEntryStub::GenerateCore(MacroAssembler* masm,
   STATIC_ASSERT(((kFailureTag + 1) & kFailureTagMask) == 0);
   // Lower 2 bits of r5 are 0 iff r3 has failure tag.
   __ add(r5, r3, Operand(1));
-  __ tst(r5, Operand(kFailureTagMask));
+  __ cmpi(r5, Operand(kFailureTagMask));
   __ beq(&failure_returned);
 
   // Exit C frame and return.
@@ -3915,7 +3915,6 @@ void CEntryStub::GenerateCore(MacroAssembler* masm,
   // fp: frame pointer
   //  Callee-saved register r14 still holds argc.
   __ LeaveExitFrame(save_doubles_, r24); // hack
-  __ mtlr(lr);
   __ blr();
 
   // check if we should retry or throw exception
@@ -4171,7 +4170,7 @@ void JSEntryStub::GenerateBody(MacroAssembler* masm, bool is_construct) {
 
   // Clear any pending exceptions.
   __ mov(r8, Operand(isolate->factory()->the_hole_value()));
-  __ lwz(r8, MemOperand(r8));
+//  __ lwz(r8, MemOperand(r8)); roohack - relocation fixing me?
   __ mov(r9, Operand(ExternalReference(Isolate::kPendingExceptionAddress,
                                        isolate)));
   __ stw(r8, MemOperand(r9));

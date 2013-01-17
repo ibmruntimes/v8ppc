@@ -368,6 +368,7 @@ class Simulator {
   int32_t registers_[32];  // PowerPC
   int32_t condition_reg_;  // PowerPC
   int32_t special_reg_lr_;  // PowerPC
+  int32_t special_reg_ctr_;  // PowerPC
   bool n_flag_;
   bool z_flag_;
   bool c_flag_;

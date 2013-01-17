@@ -54,8 +54,8 @@ MacroAssembler::MacroAssembler(Isolate* arg_isolate, void* buffer, int size)
 
 void MacroAssembler::Jump(Register target, Condition cond) {
   ASSERT(cond == al);
-  mtlr(target);
-  blr();
+  mtctr(target);
+  bcr();
 }
 
 
@@ -63,9 +63,11 @@ void MacroAssembler::Jump(intptr_t target, RelocInfo::Mode rmode,
                           Condition cond) {
   ASSERT(rmode == RelocInfo::CODE_TARGET);
   ASSERT(cond == al);
-  mov(r0, Operand(target));
-  mtlr(r0);
-  blr();
+  int addr = *(reinterpret_cast<int*>(target));
+  addr = addr + Code::kHeaderSize - kHeapObjectTag; // roohack - ugly
+  mov(r0, Operand(addr));
+  mtctr(r0);
+  bcr();
 //  mov(pc, Operand(target, rmode), LeaveCC, cond);
 }
 
@@ -110,7 +112,7 @@ void MacroAssembler::Call(Register target, Condition cond) {
 
 int MacroAssembler::CallSize(
     Address target, RelocInfo::Mode rmode, Condition cond) {
-  int size = 6 * kInstrSize;
+  int size = 4 * kInstrSize;
 #if 0
   Instr mov_instr = cond | MOV | LeaveCC;
   intptr_t immediate = reinterpret_cast<intptr_t>(target);
@@ -153,12 +155,15 @@ void MacroAssembler::Call(Address target,
   // bc( BA, .... offset, LKset);
   //
 
-  mov(r8, Operand(reinterpret_cast<int32_t>(target)));
+  mov(r8, Operand(reinterpret_cast<int32_t>(target), rmode));
+#if 0  // relocation is working now.. 
   lwz(r8, MemOperand(r8,0));
   add(r8, r8, Operand(63)); // ugly hack
+#endif
   mtlr(r8);
-  blr();
-  ASSERT(kCallTargetAddressOffset == kInstrSize);
+  bclr(BA, SetLK);
+
+  ASSERT(kCallTargetAddressOffset == 4 * kInstrSize);
   ASSERT_EQ(CallSize(target, rmode, cond), SizeOfCodeGeneratedSince(&start));
 }
 
@@ -825,24 +830,34 @@ void MacroAssembler::LeaveFrame(StackFrame::Type type) {
 //
 //  SP -> previousSP
 //        LK reserved
-// code
-// sp
-//        resv
-//        fp (aka r31)
+//        code
+//        sp_on_exit (for debug?)
 // oldSP->prev SP
 //        LK
-//
+//        <parameters on stack>
+
+// Prior to calling EnterExitFrame, we've got a bunch of parameters
+// on the stack that we need to wrap a real frame around.. so first
+// we reserve a slot for LK and push the previous SP which is captured
+// in the fp register (r31)
+// Then - we buy a new frame
 
 void MacroAssembler::EnterExitFrame(bool save_doubles, int stack_space) {
   // Set up the frame structure on the stack.
-  ASSERT_EQ(2 * kPointerSize, ExitFrameConstants::kCallerSPDisplacement);
-  ASSERT_EQ(1 * kPointerSize, ExitFrameConstants::kCallerPCOffset);
-  ASSERT_EQ(0 * kPointerSize, ExitFrameConstants::kCallerFPOffset);
+  ASSERT_EQ(8 * kPointerSize, ExitFrameConstants::kCallerSPDisplacement);
+  ASSERT_EQ(7 * kPointerSize, ExitFrameConstants::kCallerPCOffset);
+  ASSERT_EQ(6 * kPointerSize, ExitFrameConstants::kCallerFPOffset);
+
+  stwu(fp, MemOperand(sp,-8));  // build frame for pushed parameters
+  mflr(r0);
+  stw(r0, MemOperand(fp, 4));
+  mr(fp, sp);
+  
   stwu(sp, MemOperand(sp,-24));
   mflr(r0);
-//  stw(r0, MemOperand(sp,28)); .. urg.. need to rely on fp value being old sp?
+  stw(r0, MemOperand(fp,4));   // Relies on fp value being old SP
   stw(fp, MemOperand(sp,20));
-  add(fp, sp, Operand(20));  // point fp at resv slot..
+  mr(fp, sp);
   if (emit_debug_code()) {
     li(r8, Operand(0));
     stw(r8, MemOperand(fp, ExitFrameConstants::kSPOffset));
@@ -921,6 +936,7 @@ int MacroAssembler::ActivationFrameAlignment() {
 
 void MacroAssembler::LeaveExitFrame(bool save_doubles,
                                     Register argument_count) {
+#if 0  // roohack - no double support on PPC yet
   // Optionally restore all double registers.
   if (save_doubles) {
     // Calculate the stack location of the saved doubles and restore them.
@@ -931,25 +947,38 @@ void MacroAssembler::LeaveExitFrame(bool save_doubles,
         DwVfpRegister::from_code(DwVfpRegister::kNumRegisters - 1);
     vldm(ia, r3, first, last);
   }
+#endif
 
   // Clear top frame.
-  mov(r3, Operand(0, RelocInfo::NONE));
+  li(r3, Operand(0, RelocInfo::NONE));
   mov(ip, Operand(ExternalReference(Isolate::kCEntryFPAddress, isolate())));
-  str(r3, MemOperand(ip));
+  stw(r3, MemOperand(ip));
 
   // Restore current context from top and clear it in debug mode.
   mov(ip, Operand(ExternalReference(Isolate::kContextAddress, isolate())));
-  ldr(cp, MemOperand(ip));
+  lwz(cp, MemOperand(ip));
 #ifdef DEBUG
-  str(r3, MemOperand(ip));
+  stw(r3, MemOperand(ip));
 #endif
 
   // Tear down the exit frame, pop the arguments, and return.
+  add(fp, fp, Operand(24));	// fp is now old SP value
+  lwz(r0, MemOperand(fp, 4));
+  mtlr(r0);
+  lwz(r0, MemOperand(fp));
+  add(sp, fp, Operand(8));
+  if (argument_count.is_valid()) {
+    slwi(argument_count, argument_count, Operand(kPointerSizeLog2));
+    add(sp, sp, argument_count);
+  }
+  mr(fp, r0);
+#if 0  // ARM code
   mov(sp, Operand(r11));
   ldm(ia_w, sp, r11.bit() | lr.bit());
   if (argument_count.is_valid()) {
     add(sp, sp, Operand(argument_count, LSL, kPointerSizeLog2));
   }
+#endif
 }
 
 void MacroAssembler::GetCFunctionDoubleResult(const DoubleRegister dst) {
@@ -2707,11 +2736,7 @@ void MacroAssembler::TailCallRuntime(Runtime::FunctionId fid,
 
 
 void MacroAssembler::JumpToExternalReference(const ExternalReference& builtin) {
-#if defined(__thumb__)
-  // Thumb mode builtin.
-  ASSERT((reinterpret_cast<intptr_t>(builtin.address()) & 1) == 1);
-#endif
-  mov(r1, Operand(builtin));
+  mov(r4, Operand(builtin));
   CEntryStub stub(1);
   Jump(stub.GetCode(), RelocInfo::CODE_TARGET);
 }

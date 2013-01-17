@@ -338,6 +338,7 @@ class MacroAssembler: public Assembler {
     ASSERT(!src3.is(src4));
 
     stwu(src1, MemOperand(sp, -4));
+    Push(src2, src3, src4, cond);
   }
 
   // Pop two registers. Pops rightmost register first (from lower address).

@@ -737,17 +737,20 @@ void LoadIC::GenerateNormal(MacroAssembler* masm) {
 
 void LoadIC::GenerateMiss(MacroAssembler* masm) {
   // ----------- S t a t e -------------
-  //  -- r2    : name
+  //  -- r5    : name
   //  -- lr    : return address
-  //  -- r0    : receiver
+  //  -- r3    : receiver
   //  -- sp[0] : receiver
   // -----------------------------------
   Isolate* isolate = masm->isolate();
 
+  // roohack - this is used for incrementing counters - off by 
+  // default it seems, we need to pass in some valid scratch regs.. 
+  // code below is 'ARM' code
   __ IncrementCounter(isolate->counters()->load_miss(), 1, r3, r4);
 
-  __ mov(r3, r0);
-  __ Push(r3, r2);
+//  __ mov(r3, r0);  not needed.. 
+  __ Push(r3, r5);
 
   // Perform tail call to the entry.
   ExternalReference ref =
