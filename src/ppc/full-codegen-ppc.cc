@@ -166,7 +166,7 @@ void FullCodeGenerator::Generate() {
   int locals_count = info->scope()->num_stack_slots();
 
 // roohack ARM specific  __ Push(lr, r11, cp, r1);
-  __ mtlr(r0);
+  __ mflr(r0);
   __ Push(r0, fp, cp, r4);
   __ add(fp, sp, Operand(8));  // chain fp correctly
   // roohack - this fp chain may break native stack frames
@@ -206,7 +206,7 @@ void FullCodeGenerator::Generate() {
     function_in_register = false;
     // Context is returned in both r3 and cp.  It replaces the context
     // passed to us.  It's saved in the stack and kept live in cp.
-    __ stw(cp, MemOperand(r11, StandardFrameConstants::kContextOffset));
+    __ stw(cp, MemOperand(fp, StandardFrameConstants::kContextOffset));
     // Copy any necessary parameters into the context.
     int num_parameters = info->scope()->num_parameters();
     for (int i = 0; i < num_parameters; i++) {
@@ -215,7 +215,7 @@ void FullCodeGenerator::Generate() {
         int parameter_offset = StandardFrameConstants::kCallerSPOffset +
             (num_parameters - 1 - i) * kPointerSize;
         // Load parameter from stack.
-        __ lwz(r0, MemOperand(r11, parameter_offset));
+        __ lwz(r0, MemOperand(fp, parameter_offset));
         // Store it in the context.
         MemOperand target = ContextOperand(cp, var->index());
         __ stw(r0, target);
@@ -234,14 +234,14 @@ void FullCodeGenerator::Generate() {
     Comment cmnt(masm_, "[ Allocate arguments object");
     if (!function_in_register) {
       // Load this again, if it's used by the local context below.
-      __ ldr(r3, MemOperand(r11, JavaScriptFrameConstants::kFunctionOffset));
+      __ lwz(r3, MemOperand(fp, JavaScriptFrameConstants::kFunctionOffset));
     } else {
       __ mov(r3, r1);
     }
     // Receiver is just before the parameters on the caller's stack.
     int num_parameters = info->scope()->num_parameters();
     int offset = num_parameters * kPointerSize;
-    __ add(r2, r11,
+    __ add(r2, fp,
            Operand(StandardFrameConstants::kCallerSPOffset + offset));
     __ mov(r1, Operand(Smi::FromInt(num_parameters)));
     __ Push(r3, r2, r1);
@@ -421,7 +421,7 @@ void FullCodeGenerator::EmitReturnSequence() {
       __ b(pl, &ok);
       __ push(r3);
       if (info_->ShouldSelfOptimize() && FLAG_direct_self_opt) {
-        __ lwz(r5, MemOperand(r11, JavaScriptFrameConstants::kFunctionOffset));
+        __ lwz(r5, MemOperand(fp, JavaScriptFrameConstants::kFunctionOffset));
         __ push(r5);
         __ CallRuntime(Runtime::kOptimizeFunctionOnNextCall, 1);
       } else {
@@ -446,7 +446,7 @@ void FullCodeGenerator::EmitReturnSequence() {
       int32_t sp_delta = (info_->scope()->num_parameters() + 1) * kPointerSize;
       CodeGenerator::RecordPositions(masm_, function()->end_position() - 1);
       __ RecordJSReturn();
-      masm_->mov(sp, r11);
+      masm_->mov(sp, fp);
       masm_->ldm(ia_w, sp, r11.bit() | lr.bit());
       masm_->add(sp, sp, Operand(sp_delta));
       masm_->Jump(lr);
@@ -716,7 +716,7 @@ MemOperand FullCodeGenerator::StackOperand(Variable* var) {
   } else {
     offset += JavaScriptFrameConstants::kLocal0Offset;
   }
-  return MemOperand(r11, offset);
+  return MemOperand(fp, offset);
 }
 
 
@@ -789,7 +789,7 @@ void FullCodeGenerator::EmitDebugCheckDeclarationContext(Variable* variable) {
   ASSERT_EQ(0, scope()->ContextChainLength(variable->scope()));
   if (generate_debug_code_) {
     // Check that we're not inside a with or catch context.
-    __ ldr(r4, FieldMemOperand(cp, HeapObject::kMapOffset));
+    __ lwz(r4, FieldMemOperand(cp, HeapObject::kMapOffset));
     __ CompareRoot(r4, Heap::kWithContextMapRootIndex);
     __ Check(ne, "Declaration in with context.");
     __ CompareRoot(r4, Heap::kCatchContextMapRootIndex);
@@ -1147,8 +1147,8 @@ void FullCodeGenerator::VisitForInStatement(ForInStatement* stmt) {
   __ beq(&no_descriptors);
 
   __ LoadInstanceDescriptors(r3, r5, r7); // roohack - not sure here
-  __ ldr(r5, FieldMemOperand(r5, DescriptorArray::kEnumCacheOffset));
-  __ ldr(r5, FieldMemOperand(r5, DescriptorArray::kEnumCacheBridgeCacheOffset));
+  __ lwz(r5, FieldMemOperand(r5, DescriptorArray::kEnumCacheOffset));
+  __ lwz(r5, FieldMemOperand(r5, DescriptorArray::kEnumCacheBridgeCacheOffset));
 
   // Set up the four remaining stack slots.
   __ push(r3);  // Map.
@@ -1305,12 +1305,12 @@ void FullCodeGenerator::EmitLoadGlobalCheckExtensions(Variable* var,
     if (s->num_heap_slots() > 0) {
       if (s->calls_non_strict_eval()) {
         // Check that extension is NULL.
-        __ ldr(temp, ContextOperand(current, Context::EXTENSION_INDEX));
+        __ lwz(temp, ContextOperand(current, Context::EXTENSION_INDEX));
         __ tst(temp, temp);
         __ bne(slow);
       }
       // Load next context in chain.
-      __ ldr(next, ContextOperand(current, Context::PREVIOUS_INDEX));
+      __ lwz(next, ContextOperand(current, Context::PREVIOUS_INDEX));
       // Walk the rest of the chain without clobbering cp.
       current = next;
     }
@@ -1341,7 +1341,7 @@ void FullCodeGenerator::EmitLoadGlobalCheckExtensions(Variable* var,
     __ bind(&fast);
   }
 
-  __ ldr(r3, GlobalObjectOperand());
+  __ lwz(r3, GlobalObjectOperand());
   __ mov(r5, Operand(var->name()));
   RelocInfo::Mode mode = (typeof_state == INSIDE_TYPEOF)
       ? RelocInfo::CODE_TARGET
@@ -1397,7 +1397,7 @@ void FullCodeGenerator::EmitDynamicLookupFastCase(Variable* var,
     __ jmp(done);
   } else if (var->mode() == DYNAMIC_LOCAL) {
     Variable* local = var->local_if_not_shadowed();
-    __ ldr(r3, ContextSlotOperandCheckExtensions(local, slow));
+    __ lwz(r3, ContextSlotOperandCheckExtensions(local, slow));
     if (local->mode() == CONST ||
         local->mode() == CONST_HARMONY ||
         local->mode() == LET) {
@@ -1530,11 +1530,11 @@ void FullCodeGenerator::VisitRegExpLiteral(RegExpLiteral* expr) {
   // r5 = RegExp pattern
   // r5 = RegExp flags
   // r3 = RegExp literal clone
-  __ ldr(r3, MemOperand(r11, JavaScriptFrameConstants::kFunctionOffset));
-  __ ldr(r7, FieldMemOperand(r3, JSFunction::kLiteralsOffset));
+  __ lwz(r3, MemOperand(fp, JavaScriptFrameConstants::kFunctionOffset));
+  __ lwz(r7, FieldMemOperand(r3, JSFunction::kLiteralsOffset));
   int literal_offset =
       FixedArray::kHeaderSize + expr->literal_index() * kPointerSize;
-  __ ldr(r8, FieldMemOperand(r7, literal_offset));
+  __ lwz(r8, FieldMemOperand(r7, literal_offset));
   __ LoadRoot(ip, Heap::kUndefinedValueRootIndex);
   __ cmp(r8, ip);
   __ b(ne, &materialized);
@@ -1584,8 +1584,8 @@ void FullCodeGenerator::EmitAccessor(Expression* expression) {
 void FullCodeGenerator::VisitObjectLiteral(ObjectLiteral* expr) {
   Comment cmnt(masm_, "[ ObjectLiteral");
   Handle<FixedArray> constant_properties = expr->constant_properties();
-  __ ldr(r6, MemOperand(r11,  JavaScriptFrameConstants::kFunctionOffset));
-  __ ldr(r6, FieldMemOperand(r6, JSFunction::kLiteralsOffset));
+  __ lwz(r6, MemOperand(fp,  JavaScriptFrameConstants::kFunctionOffset));
+  __ lwz(r6, FieldMemOperand(r6, JSFunction::kLiteralsOffset));
   __ mov(r5, Operand(Smi::FromInt(expr->literal_index())));
   __ mov(r4, Operand(constant_properties));
   int flags = expr->fast_elements()
@@ -1716,7 +1716,7 @@ void FullCodeGenerator::VisitArrayLiteral(ArrayLiteral* expr) {
   Handle<FixedArrayBase> constant_elements_values(
       FixedArrayBase::cast(constant_elements->get(1)));
 
-  __ lwz(r6, MemOperand(r11, JavaScriptFrameConstants::kFunctionOffset));
+  __ lwz(r6, MemOperand(fp, JavaScriptFrameConstants::kFunctionOffset));
   __ lwz(r6, FieldMemOperand(r6, JSFunction::kLiteralsOffset));
   __ mov(r5, Operand(Smi::FromInt(expr->literal_index())));
   __ mov(r4, Operand(constant_elements));
@@ -2096,7 +2096,7 @@ void FullCodeGenerator::EmitVariableAssignment(Variable* var,
   if (var->IsUnallocated()) {
     // Global var, const, or let.
     __ mov(r5, Operand(var->name()));
-    __ ldr(r4, GlobalObjectOperand());
+    __ lwz(r4, GlobalObjectOperand());
     Handle<Code> ic = is_classic_mode()
         ? isolate()->builtins()->StoreIC_Initialize()
         : isolate()->builtins()->StoreIC_Initialize_Strict();
@@ -2107,7 +2107,7 @@ void FullCodeGenerator::EmitVariableAssignment(Variable* var,
     ASSERT(!var->IsParameter());  // No const parameters.
     if (var->IsStackLocal()) {
       Label skip;
-      __ ldr(r4, StackOperand(var));
+      __ lwz(r4, StackOperand(var));
       __ CompareRoot(r4, Heap::kTheHoleValueRootIndex);
       __ b(ne, &skip);
       __ str(result_register(), StackOperand(var));
@@ -2137,7 +2137,7 @@ void FullCodeGenerator::EmitVariableAssignment(Variable* var,
       ASSERT(var->IsStackAllocated() || var->IsContextSlot());
       Label assign;
       MemOperand location = VarOperand(var, r4);
-      __ ldr(r6, location);
+      __ lwz(r6, location);
       __ CompareRoot(r6, Heap::kTheHoleValueRootIndex);
       __ b(ne, &assign);
       __ mov(r6, Operand(var->name()));
@@ -2162,7 +2162,7 @@ void FullCodeGenerator::EmitVariableAssignment(Variable* var,
       MemOperand location = VarOperand(var, r1);
       if (generate_debug_code_ && op == Token::INIT_LET) {
         // Check for an uninitialized let binding.
-        __ ldr(r5, location);
+        __ lwz(r5, location);
         __ CompareRoot(r5, Heap::kTheHoleValueRootIndex);
         __ Check(eq, "Let binding re-initialization.");
       }
@@ -2272,7 +2272,7 @@ void FullCodeGenerator::EmitCallWithIC(Call* expr,
   CallIC(ic, mode, expr->CallFeedbackId());
   RecordJSReturnSite(expr);
   // Restore context register.
-  __ ldr(cp, MemOperand(r11, StandardFrameConstants::kContextOffset));
+  __ lwz(cp, MemOperand(fp, StandardFrameConstants::kContextOffset));
   context()->Plug(r3);
 }
 
@@ -2301,11 +2301,11 @@ void FullCodeGenerator::EmitKeyedCallWithIC(Call* expr,
   // Call the IC initialization code.
   Handle<Code> ic =
       isolate()->stub_cache()->ComputeKeyedCallInitialize(arg_count);
-  __ ldr(r5, MemOperand(sp, (arg_count + 1) * kPointerSize));  // Key.
+  __ lwz(r5, MemOperand(sp, (arg_count + 1) * kPointerSize));  // Key.
   CallIC(ic, RelocInfo::CODE_TARGET, expr->CallFeedbackId());
   RecordJSReturnSite(expr);
   // Restore context register.
-  __ ldr(cp, MemOperand(r11, StandardFrameConstants::kContextOffset));
+  __ lwz(cp, MemOperand(fp, StandardFrameConstants::kContextOffset));
   context()->DropAndPlug(1, r3);  // Drop the key still on the stack.
 }
 
@@ -2332,11 +2332,11 @@ void FullCodeGenerator::EmitCallWithStub(Call* expr, CallFunctionFlags flags) {
   __ mov(r5, Operand(cell));
 
   CallFunctionStub stub(arg_count, flags);
-  __ ldr(r4, MemOperand(sp, (arg_count + 1) * kPointerSize));
+  __ lwz(r4, MemOperand(sp, (arg_count + 1) * kPointerSize));
   __ CallStub(&stub);
   RecordJSReturnSite(expr);
   // Restore context register.
-  __ ldr(cp, MemOperand(r11, StandardFrameConstants::kContextOffset));
+  __ lwz(cp, MemOperand(fp, StandardFrameConstants::kContextOffset));
   context()->DropAndPlug(1, r3);
 }
 
@@ -2344,7 +2344,7 @@ void FullCodeGenerator::EmitCallWithStub(Call* expr, CallFunctionFlags flags) {
 void FullCodeGenerator::EmitResolvePossiblyDirectEval(int arg_count) {
   // Push copy of the first argument or undefined if it doesn't exist.
   if (arg_count > 0) {
-    __ ldr(r4, MemOperand(sp, arg_count * kPointerSize));
+    __ lwz(r4, MemOperand(sp, arg_count * kPointerSize));
   } else {
     __ LoadRoot(r4, Heap::kUndefinedValueRootIndex);
   }
@@ -2352,7 +2352,7 @@ void FullCodeGenerator::EmitResolvePossiblyDirectEval(int arg_count) {
 
   // Push the receiver of the enclosing function.
   int receiver_offset = 2 + info_->scope()->num_parameters();
-  __ ldr(r4, MemOperand(r11, receiver_offset * kPointerSize));
+  __ lwz(r4, MemOperand(fp, receiver_offset * kPointerSize));
   __ push(r4);
   // Push the language mode.
   __ mov(r4, Operand(Smi::FromInt(language_mode())));
@@ -2399,7 +2399,7 @@ void FullCodeGenerator::VisitCall(Call* expr) {
 
       // Push a copy of the function (found below the arguments) and
       // resolve eval.
-      __ ldr(r4, MemOperand(sp, (arg_count + 1) * kPointerSize));
+      __ lwz(r4, MemOperand(sp, (arg_count + 1) * kPointerSize));
       __ push(r4);
       EmitResolvePossiblyDirectEval(arg_count);
 
@@ -2412,15 +2412,15 @@ void FullCodeGenerator::VisitCall(Call* expr) {
     // Record source position for debugger.
     SetSourcePosition(expr->position());
     CallFunctionStub stub(arg_count, RECEIVER_MIGHT_BE_IMPLICIT);
-    __ ldr(r4, MemOperand(sp, (arg_count + 1) * kPointerSize));
+    __ lwz(r4, MemOperand(sp, (arg_count + 1) * kPointerSize));
     __ CallStub(&stub);
     RecordJSReturnSite(expr);
     // Restore context register.
-    __ ldr(cp, MemOperand(r11, StandardFrameConstants::kContextOffset));
+    __ lwz(cp, MemOperand(fp, StandardFrameConstants::kContextOffset));
     context()->DropAndPlug(1, r3);
   } else if (proxy != NULL && proxy->var()->IsUnallocated()) {
     // Push global object as receiver for the call IC.
-    __ ldr(r3, GlobalObjectOperand());
+    __ lwz(r3, GlobalObjectOperand());
     __ push(r3);
     EmitCallWithIC(expr, proxy->name(), RelocInfo::CODE_TARGET_CONTEXT);
   } else if (proxy != NULL && proxy->var()->IsLookupSlot()) {
@@ -2479,8 +2479,8 @@ void FullCodeGenerator::VisitCall(Call* expr) {
       VisitForStackValue(callee);
     }
     // Load global receiver object.
-    __ ldr(r4, GlobalObjectOperand());
-    __ ldr(r4, FieldMemOperand(r4, GlobalObject::kGlobalReceiverOffset));
+    __ lwz(r4, GlobalObjectOperand());
+    __ lwz(r4, FieldMemOperand(r4, GlobalObject::kGlobalReceiverOffset));
     __ push(r4);
     // Emit function call.
     EmitCallWithStub(expr, NO_CALL_FUNCTION_FLAGS);
@@ -2517,7 +2517,7 @@ void FullCodeGenerator::VisitCallNew(CallNew* expr) {
 
   // Load function and argument count into r4 and r3.
   __ mov(r3, Operand(arg_count));
-  __ ldr(r4, MemOperand(sp, arg_count * kPointerSize));
+  __ lwz(r4, MemOperand(sp, arg_count * kPointerSize));
 
   // Record call targets in unoptimized code.
   Handle<Object> uninitialized =
@@ -2593,12 +2593,12 @@ void FullCodeGenerator::EmitIsObject(CallRuntime* expr) {
   __ LoadRoot(ip, Heap::kNullValueRootIndex);
   __ cmp(r3, ip);
   __ b(eq, if_true);
-  __ ldr(r5, FieldMemOperand(r3, HeapObject::kMapOffset));
+  __ lwz(r5, FieldMemOperand(r3, HeapObject::kMapOffset));
   // Undetectable objects behave like undefined when tested with typeof.
-  __ ldrb(r4, FieldMemOperand(r5, Map::kBitFieldOffset));
+  __ lbz(r4, FieldMemOperand(r5, Map::kBitFieldOffset));
   __ tst(r4, Operand(1 << Map::kIsUndetectable));
   __ b(ne, if_false);
-  __ ldrb(r4, FieldMemOperand(r5, Map::kInstanceTypeOffset));
+  __ lbz(r4, FieldMemOperand(r5, Map::kInstanceTypeOffset));
   __ cmp(r4, Operand(FIRST_NONCALLABLE_SPEC_OBJECT_TYPE));
   __ b(lt, if_false);
   __ cmp(r4, Operand(LAST_NONCALLABLE_SPEC_OBJECT_TYPE));
@@ -2645,8 +2645,8 @@ void FullCodeGenerator::EmitIsUndetectableObject(CallRuntime* expr) {
                          &if_true, &if_false, &fall_through);
 
   __ JumpIfSmi(r3, if_false);
-  __ ldr(r4, FieldMemOperand(r3, HeapObject::kMapOffset));
-  __ ldrb(r4, FieldMemOperand(r4, Map::kBitFieldOffset));
+  __ lwz(r4, FieldMemOperand(r3, HeapObject::kMapOffset));
+  __ lbz(r4, FieldMemOperand(r4, Map::kBitFieldOffset));
   __ tst(r4, Operand(1 << Map::kIsUndetectable));
   PrepareForBailoutBeforeSplit(expr, true, if_true, if_false);
   Split(ne, if_true, if_false, fall_through);
@@ -2671,14 +2671,14 @@ void FullCodeGenerator::EmitIsStringWrapperSafeForDefaultValueOf(
 
   if (generate_debug_code_) __ AbortIfSmi(r3);
 
-  __ ldr(r4, FieldMemOperand(r3, HeapObject::kMapOffset));
-  __ ldrb(ip, FieldMemOperand(r4, Map::kBitField2Offset));
+  __ lwz(r4, FieldMemOperand(r3, HeapObject::kMapOffset));
+  __ lbz(ip, FieldMemOperand(r4, Map::kBitField2Offset));
   __ tst(ip, Operand(1 << Map::kStringWrapperSafeForDefaultValueOf));
   __ b(ne, if_true);
 
   // Check for fast case object. Generate false result for slow case object.
-  __ ldr(r5, FieldMemOperand(r3, JSObject::kPropertiesOffset));
-  __ ldr(r5, FieldMemOperand(r5, HeapObject::kMapOffset));
+  __ lwz(r5, FieldMemOperand(r3, JSObject::kPropertiesOffset));
+  __ lwz(r5, FieldMemOperand(r5, HeapObject::kMapOffset));
   __ LoadRoot(ip, Heap::kHashTableMapRootIndex);
   __ cmp(r5, ip);
   __ b(eq, if_false);
@@ -2714,7 +2714,7 @@ void FullCodeGenerator::EmitIsStringWrapperSafeForDefaultValueOf(
   __ mov(ip, Operand(FACTORY->value_of_symbol()));
   __ jmp(&entry);
   __ bind(&loop);
-  __ ldr(r6, MemOperand(r7, 0));
+  __ lwz(r6, MemOperand(r7, 0));
   __ cmp(r6, ip);
   __ b(eq, if_false);
   __ add(r7, r7, Operand(DescriptorArray::kDescriptorSize * kPointerSize));
@@ -2725,18 +2725,18 @@ void FullCodeGenerator::EmitIsStringWrapperSafeForDefaultValueOf(
   __ bind(&done);
   // If a valueOf property is not found on the object check that its
   // prototype is the un-modified String prototype. If not result is false.
-  __ ldr(r5, FieldMemOperand(r4, Map::kPrototypeOffset));
+  __ lwz(r5, FieldMemOperand(r4, Map::kPrototypeOffset));
   __ JumpIfSmi(r5, if_false);
-  __ ldr(r5, FieldMemOperand(r5, HeapObject::kMapOffset));
-  __ ldr(r6, ContextOperand(cp, Context::GLOBAL_OBJECT_INDEX));
-  __ ldr(r6, FieldMemOperand(r6, GlobalObject::kNativeContextOffset));
-  __ ldr(r6, ContextOperand(r6, Context::STRING_FUNCTION_PROTOTYPE_MAP_INDEX));
+  __ lwz(r5, FieldMemOperand(r5, HeapObject::kMapOffset));
+  __ lwz(r6, ContextOperand(cp, Context::GLOBAL_OBJECT_INDEX));
+  __ lwz(r6, FieldMemOperand(r6, GlobalObject::kNativeContextOffset));
+  __ lwz(r6, ContextOperand(r6, Context::STRING_FUNCTION_PROTOTYPE_MAP_INDEX));
   __ cmp(r5, r6);
   __ b(ne, if_false);
 
   // Set the bit in the map to indicate that it has been checked safe for
   // default valueOf and set true result.
-  __ ldrb(r5, FieldMemOperand(r4, Map::kBitField2Offset));
+  __ lbz(r5, FieldMemOperand(r4, Map::kBitField2Offset));
   __ orr(r5, r5, Operand(1 << Map::kStringWrapperSafeForDefaultValueOf));
   __ strb(r5, FieldMemOperand(r4, Map::kBitField2Offset));
   __ jmp(if_true);
@@ -2824,18 +2824,18 @@ void FullCodeGenerator::EmitIsConstructCall(CallRuntime* expr) {
                          &if_true, &if_false, &fall_through);
 
   // Get the frame pointer for the calling frame.
-  __ ldr(r5, MemOperand(r11, StandardFrameConstants::kCallerFPOffset));
+  __ lwz(r5, MemOperand(fp, StandardFrameConstants::kCallerFPOffset));
 
   // Skip the arguments adaptor frame if it exists.
   Label check_frame_marker;
-  __ ldr(r5, MemOperand(r5, StandardFrameConstants::kContextOffset));
+  __ lwz(r5, MemOperand(r5, StandardFrameConstants::kContextOffset));
   __ cmp(r4, Operand(Smi::FromInt(StackFrame::ARGUMENTS_ADAPTOR)));
   __ b(ne, &check_frame_marker);
-  __ ldr(r5, MemOperand(r5, StandardFrameConstants::kCallerFPOffset));
+  __ lwz(r5, MemOperand(r5, StandardFrameConstants::kCallerFPOffset));
 
   // Check the marker in the calling frame.
   __ bind(&check_frame_marker);
-  __ ldr(r4, MemOperand(r5, StandardFrameConstants::kMarkerOffset));
+  __ lwz(r4, MemOperand(r5, StandardFrameConstants::kMarkerOffset));
   __ cmp(r4, Operand(Smi::FromInt(StackFrame::CONSTRUCT)));
   PrepareForBailoutBeforeSplit(expr, true, if_true, if_false);
   Split(eq, if_true, if_false, fall_through);
@@ -2890,14 +2890,14 @@ void FullCodeGenerator::EmitArgumentsLength(CallRuntime* expr) {
   __ mov(r3, Operand(Smi::FromInt(info_->scope()->num_parameters())));
 
   // Check if the calling frame is an arguments adaptor frame.
-  __ ldr(r5, MemOperand(r11, StandardFrameConstants::kCallerFPOffset));
-  __ ldr(r6, MemOperand(r5, StandardFrameConstants::kContextOffset));
+  __ lwz(r5, MemOperand(fp, StandardFrameConstants::kCallerFPOffset));
+  __ lwz(r6, MemOperand(r5, StandardFrameConstants::kContextOffset));
   __ cmp(r6, Operand(Smi::FromInt(StackFrame::ARGUMENTS_ADAPTOR)));
   __ b(ne, &exit);
 
   // Arguments adaptor case: Read the arguments length from the
   // adaptor frame.
-  __ ldr(r3, MemOperand(r5, ArgumentsAdaptorFrameConstants::kLengthOffset));
+  __ lwz(r3, MemOperand(r5, ArgumentsAdaptorFrameConstants::kLengthOffset));
 
   __ bind(&exit);
   context()->Plug(r3);
@@ -2934,14 +2934,14 @@ void FullCodeGenerator::EmitClassOf(CallRuntime* expr) {
   STATIC_ASSERT(LAST_NONCALLABLE_SPEC_OBJECT_TYPE == LAST_TYPE - 1);
 
   // Check if the constructor in the map is a JS function.
-  __ ldr(r3, FieldMemOperand(r3, Map::kConstructorOffset));
+  __ lwz(r3, FieldMemOperand(r3, Map::kConstructorOffset));
   __ CompareObjectType(r3, r4, r4, JS_FUNCTION_TYPE);
   __ b(ne, &non_function_constructor);
 
   // r3 now contains the constructor function. Grab the
   // instance class name from there.
-  __ ldr(r3, FieldMemOperand(r3, JSFunction::kSharedFunctionInfoOffset));
-  __ ldr(r3, FieldMemOperand(r3, SharedFunctionInfo::kInstanceClassNameOffset));
+  __ lwz(r3, FieldMemOperand(r3, JSFunction::kSharedFunctionInfoOffset));
+  __ lwz(r3, FieldMemOperand(r3, SharedFunctionInfo::kInstanceClassNameOffset));
   __ b(&done);
 
   // Functions have class 'Function'.
@@ -3009,9 +3009,9 @@ void FullCodeGenerator::EmitRandomHeapNumber(CallRuntime* expr) {
   // ( 1.(20 0s)(32 random bits) x 2^20 ) - (1.0 x 2^20)).
   if (CpuFeatures::IsSupported(VFP2)) {
     __ PrepareCallCFunction(1, r0);
-    __ ldr(r0,
+    __ lwz(r0,
            ContextOperand(context_register(), Context::GLOBAL_OBJECT_INDEX));
-    __ ldr(r0, FieldMemOperand(r0, GlobalObject::kNativeContextOffset));
+    __ lwz(r0, FieldMemOperand(r0, GlobalObject::kNativeContextOffset));
     __ CallCFunction(ExternalReference::random_uint32_function(isolate()), 1);
 
     CpuFeatures::Scope scope(VFP2);
@@ -3031,10 +3031,10 @@ void FullCodeGenerator::EmitRandomHeapNumber(CallRuntime* expr) {
     __ mov(r0, r4);
   } else {
     __ PrepareCallCFunction(2, r0);
-    __ ldr(r1,
+    __ lwz(r1,
            ContextOperand(context_register(), Context::GLOBAL_OBJECT_INDEX));
     __ mov(r0, Operand(r4));
-    __ ldr(r1, FieldMemOperand(r1, GlobalObject::kNativeContextOffset));
+    __ lwz(r1, FieldMemOperand(r1, GlobalObject::kNativeContextOffset));
     __ CallCFunction(
         ExternalReference::fill_heap_number_with_random_function(isolate()), 2);
   }
@@ -3082,7 +3082,7 @@ void FullCodeGenerator::EmitValueOf(CallRuntime* expr) {
   // If the object is not a value type, return the object.
   __ CompareObjectType(r3, r4, r4, JS_VALUE_TYPE);
   __ b(ne, &done);
-  __ ldr(r3, FieldMemOperand(r3, JSValue::kValueOffset));
+  __ lwz(r3, FieldMemOperand(r3, JSValue::kValueOffset));
 
   __ bind(&done);
   context()->Plug(r3);
@@ -3108,17 +3108,17 @@ void FullCodeGenerator::EmitDateField(CallRuntime* expr) {
   __ b(ne, &not_date_object);
 
   if (index->value() == 0) {
-    __ ldr(result, FieldMemOperand(object, JSDate::kValueOffset));
+    __ lwz(result, FieldMemOperand(object, JSDate::kValueOffset));
     __ jmp(&done);
   } else {
     if (index->value() < JSDate::kFirstUncachedField) {
       ExternalReference stamp = ExternalReference::date_cache_stamp(isolate());
       __ mov(scratch1, Operand(stamp));
-      __ ldr(scratch1, MemOperand(scratch1));
-      __ ldr(scratch0, FieldMemOperand(object, JSDate::kCacheStampOffset));
+      __ lwz(scratch1, MemOperand(scratch1));
+      __ lwz(scratch0, FieldMemOperand(object, JSDate::kCacheStampOffset));
       __ cmp(scratch1, scratch0);
       __ b(ne, &runtime);
-      __ ldr(result, FieldMemOperand(object, JSDate::kValueOffset +
+      __ lwz(result, FieldMemOperand(object, JSDate::kValueOffset +
                                              kPointerSize * index->value()));
       __ jmp(&done);
     }
@@ -3405,7 +3405,7 @@ void FullCodeGenerator::EmitCallFunction(CallRuntime* expr) {
   ParameterCount count(arg_count);
   __ InvokeFunction(r4, count, CALL_FUNCTION,
                     NullCallWrapper(), CALL_AS_METHOD);
-  __ ldr(cp, MemOperand(r11, StandardFrameConstants::kContextOffset));
+  __ lwz(cp, MemOperand(fp, StandardFrameConstants::kContextOffset));
   __ jmp(&done);
 
   __ bind(&runtime);
@@ -3448,25 +3448,25 @@ void FullCodeGenerator::EmitGetFromCache(CallRuntime* expr) {
 
   Register key = r3;
   Register cache = r4;
-  __ ldr(cache, ContextOperand(cp, Context::GLOBAL_OBJECT_INDEX));
-  __ ldr(cache, FieldMemOperand(cache, GlobalObject::kNativeContextOffset));
-  __ ldr(cache, ContextOperand(cache, Context::JSFUNCTION_RESULT_CACHES_INDEX));
-  __ ldr(cache,
+  __ lwz(cache, ContextOperand(cp, Context::GLOBAL_OBJECT_INDEX));
+  __ lwz(cache, FieldMemOperand(cache, GlobalObject::kNativeContextOffset));
+  __ lwz(cache, ContextOperand(cache, Context::JSFUNCTION_RESULT_CACHES_INDEX));
+  __ lwz(cache,
          FieldMemOperand(cache, FixedArray::OffsetOfElementAt(cache_id)));
 
   Label done, not_found;
   // tmp now holds finger offset as a smi.
   STATIC_ASSERT(kSmiTag == 0 && kSmiTagSize == 1);
-  __ ldr(r5, FieldMemOperand(cache, JSFunctionResultCache::kFingerOffset));
+  __ lwz(r5, FieldMemOperand(cache, JSFunctionResultCache::kFingerOffset));
   // r5 now holds finger offset as a smi.
   __ add(r6, cache, Operand(FixedArray::kHeaderSize - kHeapObjectTag));
   // r6 now points to the start of fixed array elements.
-  __ ldr(r5, MemOperand(r6, r5, LSL, kPointerSizeLog2 - kSmiTagSize, PreIndex));
+  __ lwz(r5, MemOperand(r6, r5, LSL, kPointerSizeLog2 - kSmiTagSize, PreIndex));
   // Note side effect of PreIndex: r6 now points to the key of the pair.
   __ cmp(key, r5);
   __ b(ne, &not_found);
 
-  __ ldr(r3, MemOperand(r6, kPointerSize));
+  __ lwz(r3, MemOperand(r6, kPointerSize));
   __ b(&done);
 
   __ bind(&not_found);
@@ -3498,15 +3498,15 @@ void FullCodeGenerator::EmitIsRegExpEquivalent(CallRuntime* expr) {
   // Fail if either is a non-HeapObject.
   __ and_(tmp, left, Operand(right));
   __ JumpIfSmi(tmp, &fail);
-  __ ldr(tmp, FieldMemOperand(left, HeapObject::kMapOffset));
-  __ ldrb(tmp2, FieldMemOperand(tmp, Map::kInstanceTypeOffset));
+  __ lwz(tmp, FieldMemOperand(left, HeapObject::kMapOffset));
+  __ lbz(tmp2, FieldMemOperand(tmp, Map::kInstanceTypeOffset));
   __ cmp(tmp2, Operand(JS_REGEXP_TYPE));
   __ b(ne, &fail);
-  __ ldr(tmp2, FieldMemOperand(right, HeapObject::kMapOffset));
+  __ lwz(tmp2, FieldMemOperand(right, HeapObject::kMapOffset));
   __ cmp(tmp, Operand(tmp2));
   __ b(ne, &fail);
-  __ ldr(tmp, FieldMemOperand(left, JSRegExp::kDataOffset));
-  __ ldr(tmp2, FieldMemOperand(right, JSRegExp::kDataOffset));
+  __ lwz(tmp, FieldMemOperand(left, JSRegExp::kDataOffset));
+  __ lwz(tmp2, FieldMemOperand(right, JSRegExp::kDataOffset));
   __ cmp(tmp, tmp2);
   __ b(eq, &ok);
   __ bind(&fail);
@@ -3531,7 +3531,7 @@ void FullCodeGenerator::EmitHasCachedArrayIndex(CallRuntime* expr) {
   context()->PrepareTest(&materialize_true, &materialize_false,
                          &if_true, &if_false, &fall_through);
 
-  __ ldr(r3, FieldMemOperand(r3, String::kHashFieldOffset));
+  __ lwz(r3, FieldMemOperand(r3, String::kHashFieldOffset));
   __ tst(r3, Operand(String::kContainsCachedArrayIndexMask));
   PrepareForBailoutBeforeSplit(expr, true, if_true, if_false);
   Split(eq, if_true, if_false, fall_through);
@@ -3548,7 +3548,7 @@ void FullCodeGenerator::EmitGetCachedArrayIndex(CallRuntime* expr) {
   __ AbortIfNotString(r3);
 
 
-  __ ldr(r3, FieldMemOperand(r3, String::kHashFieldOffset));
+  __ lwz(r3, FieldMemOperand(r3, String::kHashFieldOffset));
   __ IndexFromHash(r3, r3);
 
   context()->Plug(r3);
@@ -3591,7 +3591,7 @@ void FullCodeGenerator::EmitFastAsciiArrayJoin(CallRuntime* expr) {
   __ CheckFastElements(scratch1, scratch2, &bailout);
 
   // If the array has length zero, return the empty string.
-  __ ldr(array_length, FieldMemOperand(array, JSArray::kLengthOffset));
+  __ lwz(array_length, FieldMemOperand(array, JSArray::kLengthOffset));
   __ SmiUntag(array_length, SetCC);
   __ b(ne, &non_trivial_array);
   __ LoadRoot(r3, Heap::kEmptyStringRootIndex);
@@ -3601,7 +3601,7 @@ void FullCodeGenerator::EmitFastAsciiArrayJoin(CallRuntime* expr) {
 
   // Get the FixedArray containing array's elements.
   elements = array;
-  __ ldr(elements, FieldMemOperand(array, JSArray::kElementsOffset));
+  __ lwz(elements, FieldMemOperand(array, JSArray::kElementsOffset));
   array = no_reg;  // End of array's live range.
 
   // Check that all array elements are sequential ASCII strings, and
@@ -3623,12 +3623,12 @@ void FullCodeGenerator::EmitFastAsciiArrayJoin(CallRuntime* expr) {
     __ Assert(gt, "No empty arrays here in EmitFastAsciiArrayJoin");
   }
   __ bind(&loop);
-  __ ldr(string, MemOperand(element, kPointerSize, PostIndex));
+  __ lwz(string, MemOperand(element, kPointerSize, PostIndex));
   __ JumpIfSmi(string, &bailout);
-  __ ldr(scratch1, FieldMemOperand(string, HeapObject::kMapOffset));
-  __ ldrb(scratch1, FieldMemOperand(scratch1, Map::kInstanceTypeOffset));
+  __ lwz(scratch1, FieldMemOperand(string, HeapObject::kMapOffset));
+  __ lbz(scratch1, FieldMemOperand(scratch1, Map::kInstanceTypeOffset));
   __ JumpIfInstanceTypeIsNotSequentialAscii(scratch1, scratch2, &bailout);
-  __ ldr(scratch1, FieldMemOperand(string, SeqAsciiString::kLengthOffset));
+  __ lwz(scratch1, FieldMemOperand(string, SeqAsciiString::kLengthOffset));
   __ add(string_length, string_length, Operand(scratch1), SetCC);
   __ b(vs, &bailout);
   __ cmp(element, elements_end);
@@ -3637,7 +3637,7 @@ void FullCodeGenerator::EmitFastAsciiArrayJoin(CallRuntime* expr) {
   // If array_length is 1, return elements[0], a string.
   __ cmp(array_length, Operand(1));
   __ b(ne, &not_size_one_array);
-  __ ldr(r3, FieldMemOperand(elements, FixedArray::kHeaderSize));
+  __ lwz(r3, FieldMemOperand(elements, FixedArray::kHeaderSize));
   __ b(&done);
 
   __ bind(&not_size_one_array);
@@ -3650,14 +3650,14 @@ void FullCodeGenerator::EmitFastAsciiArrayJoin(CallRuntime* expr) {
 
   // Check that the separator is a flat ASCII string.
   __ JumpIfSmi(separator, &bailout);
-  __ ldr(scratch1, FieldMemOperand(separator, HeapObject::kMapOffset));
-  __ ldrb(scratch1, FieldMemOperand(scratch1, Map::kInstanceTypeOffset));
+  __ lwz(scratch1, FieldMemOperand(separator, HeapObject::kMapOffset));
+  __ lbz(scratch1, FieldMemOperand(scratch1, Map::kInstanceTypeOffset));
   __ JumpIfInstanceTypeIsNotSequentialAscii(scratch1, scratch2, &bailout);
 
   // Add (separator length times array_length) - separator length to the
   // string_length to get the length of the result string. array_length is not
   // smi but the other values are, so the result is a smi
-  __ ldr(scratch1, FieldMemOperand(separator, SeqAsciiString::kLengthOffset));
+  __ lwz(scratch1, FieldMemOperand(separator, SeqAsciiString::kLengthOffset));
   __ sub(string_length, string_length, Operand(scratch1));
   __ smull(scratch2, ip, array_length, scratch1);
   // Check for smi overflow. No overflow if higher 33 bits of 64-bit result are
@@ -3698,7 +3698,7 @@ void FullCodeGenerator::EmitFastAsciiArrayJoin(CallRuntime* expr) {
          Operand(SeqAsciiString::kHeaderSize - kHeapObjectTag));
 
   // Check the length of the separator.
-  __ ldr(scratch1, FieldMemOperand(separator, SeqAsciiString::kLengthOffset));
+  __ lwz(scratch1, FieldMemOperand(separator, SeqAsciiString::kLengthOffset));
   __ cmp(scratch1, Operand(Smi::FromInt(1)));
   __ b(eq, &one_char_separator);
   __ b(gt, &long_separator);
@@ -3711,8 +3711,8 @@ void FullCodeGenerator::EmitFastAsciiArrayJoin(CallRuntime* expr) {
   //   elements_end: Array end.
 
   // Copy next array element to the result.
-  __ ldr(string, MemOperand(element, kPointerSize, PostIndex));
-  __ ldr(string_length, FieldMemOperand(string, String::kLengthOffset));
+  __ lwz(string, MemOperand(element, kPointerSize, PostIndex));
+  __ lwz(string_length, FieldMemOperand(string, String::kLengthOffset));
   __ SmiUntag(string_length);
   __ add(string, string, Operand(SeqAsciiString::kHeaderSize - kHeapObjectTag));
   __ CopyBytes(string, result_pos, string_length, scratch1);
@@ -3724,7 +3724,7 @@ void FullCodeGenerator::EmitFastAsciiArrayJoin(CallRuntime* expr) {
   // One-character separator case
   __ bind(&one_char_separator);
   // Replace separator with its ASCII character value.
-  __ ldrb(separator, FieldMemOperand(separator, SeqAsciiString::kHeaderSize));
+  __ lbz(separator, FieldMemOperand(separator, SeqAsciiString::kHeaderSize));
   // Jump into the loop after the code that copies the separator, so the first
   // element is not preceded by a separator
   __ jmp(&one_char_separator_loop_entry);
@@ -3741,8 +3741,8 @@ void FullCodeGenerator::EmitFastAsciiArrayJoin(CallRuntime* expr) {
 
   // Copy next array element to the result.
   __ bind(&one_char_separator_loop_entry);
-  __ ldr(string, MemOperand(element, kPointerSize, PostIndex));
-  __ ldr(string_length, FieldMemOperand(string, String::kLengthOffset));
+  __ lwz(string, MemOperand(element, kPointerSize, PostIndex));
+  __ lwz(string_length, FieldMemOperand(string, String::kLengthOffset));
   __ SmiUntag(string_length);
   __ add(string, string, Operand(SeqAsciiString::kHeaderSize - kHeapObjectTag));
   __ CopyBytes(string, result_pos, string_length, scratch1);
@@ -3761,7 +3761,7 @@ void FullCodeGenerator::EmitFastAsciiArrayJoin(CallRuntime* expr) {
   //   separator: Separator string.
 
   // Copy the separator to the result.
-  __ ldr(string_length, FieldMemOperand(separator, String::kLengthOffset));
+  __ lwz(string_length, FieldMemOperand(separator, String::kLengthOffset));
   __ SmiUntag(string_length);
   __ add(string,
          separator,
@@ -3769,8 +3769,8 @@ void FullCodeGenerator::EmitFastAsciiArrayJoin(CallRuntime* expr) {
   __ CopyBytes(string, result_pos, string_length, scratch1);
 
   __ bind(&long_separator);
-  __ ldr(string, MemOperand(element, kPointerSize, PostIndex));
-  __ ldr(string_length, FieldMemOperand(string, String::kLengthOffset));
+  __ lwz(string, MemOperand(element, kPointerSize, PostIndex));
+  __ lwz(string_length, FieldMemOperand(string, String::kLengthOffset));
   __ SmiUntag(string_length);
   __ add(string, string, Operand(SeqAsciiString::kHeaderSize - kHeapObjectTag));
   __ CopyBytes(string, result_pos, string_length, scratch1);
@@ -3799,8 +3799,8 @@ void FullCodeGenerator::VisitCallRuntime(CallRuntime* expr) {
 
   if (expr->is_jsruntime()) {
     // Prepare for calling JS runtime function.
-    __ ldr(r3, GlobalObjectOperand());
-    __ ldr(r3, FieldMemOperand(r3, GlobalObject::kBuiltinsOffset));
+    __ lwz(r3, GlobalObjectOperand());
+    __ lwz(r3, FieldMemOperand(r3, GlobalObject::kBuiltinsOffset));
     __ push(r3);
   }
 
@@ -3818,7 +3818,7 @@ void FullCodeGenerator::VisitCallRuntime(CallRuntime* expr) {
         isolate()->stub_cache()->ComputeCallInitialize(arg_count, mode);
     CallIC(ic, mode, expr->CallRuntimeFeedbackId());
     // Restore context register.
-    __ ldr(cp, MemOperand(r11, StandardFrameConstants::kContextOffset));
+    __ lwz(cp, MemOperand(fp, StandardFrameConstants::kContextOffset));
   } else {
     // Call the C runtime function.
     __ CallRuntime(expr->function(), arg_count);
@@ -3849,7 +3849,7 @@ void FullCodeGenerator::VisitUnaryOperation(UnaryOperation* expr) {
         // but "delete this" is allowed.
         ASSERT(language_mode() == CLASSIC_MODE || var->is_this());
         if (var->IsUnallocated()) {
-          __ ldr(r5, GlobalObjectOperand());
+          __ lwz(r5, GlobalObjectOperand());
           __ mov(r4, Operand(var->name()));
           __ mov(r3, Operand(Smi::FromInt(kNonStrictMode)));
           __ Push(r5, r4, r3);
@@ -4019,7 +4019,7 @@ void FullCodeGenerator::VisitCountOperation(CountOperation* expr) {
     } else {
       VisitForStackValue(prop->obj());
       VisitForAccumulatorValue(prop->key());
-      __ ldr(r4, MemOperand(sp, 0));
+      __ lwz(r4, MemOperand(sp, 0));
       __ push(r3);
       EmitKeyedPropertyLoad(prop);
     }
@@ -4153,7 +4153,7 @@ void FullCodeGenerator::VisitForTypeofValue(Expression* expr) {
   VariableProxy* proxy = expr->AsVariableProxy();
   if (proxy != NULL && proxy->var()->IsUnallocated()) {
     Comment cmnt(masm_, "Global variable");
-    __ ldr(r3, GlobalObjectOperand());
+    __ lwz(r3, GlobalObjectOperand());
     __ mov(r5, Operand(proxy->name()));
     Handle<Code> ic = isolate()->builtins()->LoadIC_Initialize();
     // Use a regular load, not a contextual load, to avoid a reference
@@ -4200,7 +4200,7 @@ void FullCodeGenerator::EmitLiteralCompareTypeof(Expression* expr,
 
   if (check->Equals(isolate()->heap()->number_symbol())) {
     __ JumpIfSmi(r3, if_true);
-    __ ldr(r3, FieldMemOperand(r3, HeapObject::kMapOffset));
+    __ lwz(r3, FieldMemOperand(r3, HeapObject::kMapOffset));
     __ LoadRoot(ip, Heap::kHeapNumberMapRootIndex);
     __ cmp(r3, ip);
     Split(eq, if_true, if_false, fall_through);
@@ -4209,7 +4209,7 @@ void FullCodeGenerator::EmitLiteralCompareTypeof(Expression* expr,
     // Check for undetectable objects => false.
     __ CompareObjectType(r3, r3, r4, FIRST_NONSTRING_TYPE);
     __ b(ge, if_false);
-    __ ldrb(r4, FieldMemOperand(r3, Map::kBitFieldOffset));
+    __ lbz(r4, FieldMemOperand(r3, Map::kBitFieldOffset));
     __ tst(r4, Operand(1 << Map::kIsUndetectable));
     Split(eq, if_true, if_false, fall_through);
   } else if (check->Equals(isolate()->heap()->boolean_symbol())) {
@@ -4226,8 +4226,8 @@ void FullCodeGenerator::EmitLiteralCompareTypeof(Expression* expr,
     __ b(eq, if_true);
     __ JumpIfSmi(r3, if_false);
     // Check for undetectable objects => true.
-    __ ldr(r3, FieldMemOperand(r3, HeapObject::kMapOffset));
-    __ ldrb(r4, FieldMemOperand(r0, Map::kBitFieldOffset));
+    __ lwz(r3, FieldMemOperand(r3, HeapObject::kMapOffset));
+    __ lbz(r4, FieldMemOperand(r0, Map::kBitFieldOffset));
     __ tst(r4, Operand(1 << Map::kIsUndetectable));
     Split(ne, if_true, if_false, fall_through);
 
@@ -4250,7 +4250,7 @@ void FullCodeGenerator::EmitLiteralCompareTypeof(Expression* expr,
     __ CompareInstanceType(r3, r4, LAST_NONCALLABLE_SPEC_OBJECT_TYPE);
     __ b(gt, if_false);
     // Check for undetectable objects => false.
-    __ ldrb(r4, FieldMemOperand(r3, Map::kBitFieldOffset));
+    __ lbz(r4, FieldMemOperand(r3, Map::kBitFieldOffset));
     __ tst(r3, Operand(1 << Map::kIsUndetectable));
     Split(eq, if_true, if_false, fall_through);
   } else {
@@ -4384,8 +4384,8 @@ void FullCodeGenerator::EmitLiteralCompareNil(CompareOperation* expr,
     __ b(eq, if_true);
     __ JumpIfSmi(r3, if_false);
     // It can be an undetectable object.
-    __ ldr(r4, FieldMemOperand(r3, HeapObject::kMapOffset));
-    __ ldrb(r4, FieldMemOperand(r4, Map::kBitFieldOffset));
+    __ lwz(r4, FieldMemOperand(r3, HeapObject::kMapOffset));
+    __ lbz(r4, FieldMemOperand(r4, Map::kBitFieldOffset));
     __ and_(r4, r4, Operand(1 << Map::kIsUndetectable));
     __ cmp(r4, Operand(1 << Map::kIsUndetectable));
     Split(eq, if_true, if_false, fall_through);
@@ -4395,7 +4395,7 @@ void FullCodeGenerator::EmitLiteralCompareNil(CompareOperation* expr,
 
 
 void FullCodeGenerator::VisitThisFunction(ThisFunction* expr) {
-  __ ldr(r3, MemOperand(r11, JavaScriptFrameConstants::kFunctionOffset));
+  __ lwz(r3, MemOperand(fp, JavaScriptFrameConstants::kFunctionOffset));
   context()->Plug(r3);
 }
 
@@ -4412,12 +4412,12 @@ Register FullCodeGenerator::context_register() {
 
 void FullCodeGenerator::StoreToFrameField(int frame_offset, Register value) {
   ASSERT_EQ(POINTER_SIZE_ALIGN(frame_offset), frame_offset);
-  __ str(value, MemOperand(r11, frame_offset));
+  __ str(value, MemOperand(fp, frame_offset));
 }
 
 
 void FullCodeGenerator::LoadContextField(Register dst, int context_index) {
-  __ ldr(dst, ContextOperand(cp, context_index));
+  __ lwz(dst, ContextOperand(cp, context_index));
 }
 
 
@@ -4434,10 +4434,10 @@ void FullCodeGenerator::PushFunctionArgumentForContextAllocation() {
     // Contexts created by a call to eval have the same closure as the
     // context calling eval, not the anonymous closure containing the eval
     // code.  Fetch it from the context.
-    __ ldr(ip, ContextOperand(cp, Context::CLOSURE_INDEX));
+    __ lwz(ip, ContextOperand(cp, Context::CLOSURE_INDEX));
   } else {
     ASSERT(declaration_scope->is_function_scope());
-    __ ldr(ip, MemOperand(r11, JavaScriptFrameConstants::kFunctionOffset));
+    __ lwz(ip, MemOperand(fp, JavaScriptFrameConstants::kFunctionOffset));
   }
   __ push(ip);
 }
@@ -4463,20 +4463,20 @@ void FullCodeGenerator::EnterFinallyBlock() {
   ExternalReference pending_message_obj =
       ExternalReference::address_of_pending_message_obj(isolate());
   __ mov(ip, Operand(pending_message_obj));
-  __ ldr(r4, MemOperand(ip));
+  __ lwz(r4, MemOperand(ip));
   __ push(r4);
 
   ExternalReference has_pending_message =
       ExternalReference::address_of_has_pending_message(isolate());
   __ mov(ip, Operand(has_pending_message));
-  __ ldr(r4, MemOperand(ip));
+  __ lwz(r4, MemOperand(ip));
   __ SmiTag(r4);
   __ push(r4);
 
   ExternalReference pending_message_script =
       ExternalReference::address_of_pending_message_script(isolate());
   __ mov(ip, Operand(pending_message_script));
-  __ ldr(r4, MemOperand(ip));
+  __ lwz(r4, MemOperand(ip));
   __ push(r4);
 }
 
@@ -4530,8 +4530,8 @@ FullCodeGenerator::NestedStatement* FullCodeGenerator::TryFinally::Exit(
   __ Drop(*stack_depth);  // Down to the handler block.
   if (*context_length > 0) {
     // Restore the context to its dedicated register and the stack.
-    __ ldr(cp, MemOperand(sp, StackHandlerConstants::kContextOffset));
-    __ str(cp, MemOperand(r11, StandardFrameConstants::kContextOffset));
+    __ lwz(cp, MemOperand(sp, StackHandlerConstants::kContextOffset));
+    __ str(cp, MemOperand(fp, StandardFrameConstants::kContextOffset));
   }
   __ PopTryHandler();
   __ bl(finally_entry_);

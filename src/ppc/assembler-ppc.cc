@@ -582,49 +582,51 @@ int Assembler::target_at(int pos)  {
   int opcode = instr & kOpcodeMask;
   if (BX == opcode) {
     int imm26 = ((instr & kImm26Mask) << 6) >> 6;
+    imm26 &= ~kLKMask;  // discard LK bit if present
     return pos + imm26;
   }
   if (BCX == opcode) {
     int imm16 = ((instr & kImm16Mask) << 16) >> 16;
-    return pos + imm16;
-  }
-  ASSERT(false);
-  return -1;
+	    return pos + imm16;
+	  }
+	  ASSERT(false);
+	  return -1;
 
-#if 0
-  // else we fall into the ARM code.. which is busted
-  if ((instr & ~kImm26Mask) == 0) {  // todo - handle AA and LK bits if present
-    // Emitted label constant, not part of a branch.
-    return instr - (Code::kHeaderSize - kHeapObjectTag);
-  }
-  // ignore for now with mixed branches
-  ASSERT((instr & 7*B25) == 5*B25);  // b, bl, or blx imm24
-  int imm26 = ((instr & kImm26Mask) << 6) >> 6;
-  if ((Instruction::ConditionField(instr) == kSpecialCondition) &&
-      ((instr & B24) != 0)) {
-    // blx uses bit 24 to encode bit 2 of imm26
-    imm26 += 2;
-  }
-  return pos + imm26;
-#endif
-}
+	#if 0
+	  // else we fall into the ARM code.. which is busted
+	  if ((instr & ~kImm26Mask) == 0) {  // todo - handle AA and LK bits if present
+	    // Emitted label constant, not part of a branch.
+	    return instr - (Code::kHeaderSize - kHeapObjectTag);
+	  }
+	  // ignore for now with mixed branches
+	  ASSERT((instr & 7*B25) == 5*B25);  // b, bl, or blx imm24
+	  int imm26 = ((instr & kImm26Mask) << 6) >> 6;
+	  if ((Instruction::ConditionField(instr) == kSpecialCondition) &&
+	      ((instr & B24) != 0)) {
+	    // blx uses bit 24 to encode bit 2 of imm26
+	    imm26 += 2;
+	  }
+	  return pos + imm26;
+	#endif
+	}
 
 
-void Assembler::target_at_put(int pos, int target_pos) {
-  Instr instr = instr_at(pos);
-  // check which type of branch this is 16 or 26 bit offset
-  int opcode = instr & kOpcodeMask;
-  if (BX == opcode) {
-    int imm26 = target_pos - pos;
-    ASSERT((imm26 & 3) == 0);
-    instr &= ~kImm26Mask;
-    ASSERT(is_int26(imm26));
-    // todo add AA and LK bits
-    instr_at_put(pos, instr | (imm26 & kImm26Mask));
-    return;
-  }
-  if (BCX == opcode) {
-    int imm16 = target_pos - pos;
+	void Assembler::target_at_put(int pos, int target_pos) {
+	  Instr instr = instr_at(pos);
+	  // check which type of branch this is 16 or 26 bit offset
+	  int opcode = instr & kOpcodeMask;
+	  if (BX == opcode) {
+	    int imm26 = target_pos - pos;
+	    int lk = instr & kLKMask;
+	    // ASSERT((imm26 & 3) == 0); .. LK may or may not be set
+	    instr &= ~kImm26Mask;
+	    ASSERT(is_int26(imm26));
+	    // todo add AA and LK bits
+	    instr_at_put(pos, instr | (imm26 & kImm26Mask) | lk);
+	    return;
+	  }
+	  if (BCX == opcode) {
+	    int imm16 = target_pos - pos;
     ASSERT((imm16 & 3) == 0);
     instr &= ~kImm16Mask;
     ASSERT(is_int16(imm16));
@@ -1156,13 +1158,17 @@ void Assembler::bc(int branch_offset, BOfield bo, int condition_bit) {
   emit(BCX | bo | condition_bit*B16 | (kImm16Mask & branch_offset) );
 }
 
-void Assembler::b(int branch_offset, Condition cond) {
+void Assembler::b(int branch_offset, LKBit lk) {
   positions_recorder()->WriteRecordedPositions();
   ASSERT((branch_offset & 3) == 0);
   int imm26 = branch_offset;
   ASSERT(is_int26(imm26));
   // todo add AA and LK bits
-  emit(BX | (imm26 & kImm26Mask));
+  emit(BX | (imm26 & kImm26Mask) | lk);
+}
+
+void Assembler::b(int branch_offset, Condition cond) {
+  b(branch_offset, LeaveLK);
 }
 
 // end PowerPC
@@ -1223,7 +1229,12 @@ void Assembler::rsb(Register dst, Register src1, const Operand& src2,
 
 // PowerPC
 
-void Assembler::rlwimi(Register ra, Register rs,
+void Assembler::and_(Register dst, Register src1, Register src2, RCBit rc) {
+  x_form(EXT2 | ANDX, dst, src1, src2, rc );
+}
+
+
+void Assembler::rlwinm(Register ra, Register rs,
                        int sh, int mb, int me, RCBit rc) {
   sh &= 0x1f;
   mb &= 0x1f;
@@ -1231,13 +1242,21 @@ void Assembler::rlwimi(Register ra, Register rs,
   emit(RLWINMX | rs.code()*B21 | ra.code()*B16 | sh*B11 | mb*B6  | me<<1 | rc);
 }
 
+void Assembler::rlwimi(Register ra, Register rs,
+                       int sh, int mb, int me, RCBit rc) {
+  sh &= 0x1f;
+  mb &= 0x1f;
+  me &= 0x1f;
+  emit(RLWIMIX | rs.code()*B21 | ra.code()*B16 | sh*B11 | mb*B6  | me<<1 | rc);
+}
+
 void Assembler::slwi(Register dst, Register src, const Operand& val) {
   ASSERT((32 > val.imm32_)&&(val.imm32_ >= 0));
-  rlwimi(dst, src, val.imm32_, 0, 31-val.imm32_);
+  rlwinm(dst, src, val.imm32_, 0, 31-val.imm32_);
 }
 void Assembler::srwi(Register dst, Register src, const Operand& val) {
   ASSERT((32 > val.imm32_)&&(val.imm32_ >= 0));
-  rlwimi(dst, src, 32-val.imm32_, val.imm32_, 31); 
+  rlwinm(dst, src, 32-val.imm32_, val.imm32_, 31); 
 }
 
 void Assembler::sub(Register dst, Register src, const Operand& imm,
@@ -1260,8 +1279,13 @@ SBit s, Condition cond // delete these later when removing ARM code
 void  Assembler::addis(Register dst, Register src, int imm) {
   d_form(ADDIS, dst, src, imm);
 }
-void  Assembler::addic(Register dst, Register src, int imm) {
+
+void Assembler::addic(Register dst, Register src, int imm) {
   d_form(ADDIC, dst, src, imm);
+}
+
+void  Assembler::andi(Register dst, Register src, const Operand& imm) {
+  d_form(ANDIx, dst, src, imm.imm32_);
 }
 
 void Assembler::orx(Register dst, Register src1, Register src2, RCBit r) {
@@ -1269,7 +1293,10 @@ void Assembler::orx(Register dst, Register src1, Register src2, RCBit r) {
 }
 
 void Assembler::cmpi(Register src1, const Operand& src2) {
-  emit(CMPI | 7*B23 | src1.code()*B16 | src2.imm32_ );
+  int imm16 = src2.imm32_;
+  ASSERT(is_int16(imm16));
+  imm16 &= kImm16Mask;
+  emit(CMPI | 7*B23 | src1.code()*B16 | imm16);
 }
 void Assembler::cmp(Register src1, Register src2 , Condition cond) {
 // Condition is ignored - hold over from ARM code

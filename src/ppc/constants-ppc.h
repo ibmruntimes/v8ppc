@@ -295,7 +295,6 @@ enum OpcodeExt2 {
   LDX = 21 << 1,
   LWZX = 23 << 1,
   SLWX = 24 << 1,
-/*
   CNTLZWX = 26 << 1,
   ANDX = 28 << 1,
   CMPL = 32 << 1,
@@ -311,6 +310,7 @@ enum OpcodeExt2 {
   NORX = 124 << 1,
   SUBFEX = 136 << 1,
   ADDEX = 138 << 1,
+/*
   MTCRF
   MTMSR
   STDX

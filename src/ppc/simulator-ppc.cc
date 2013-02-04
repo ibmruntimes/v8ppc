@@ -1936,6 +1936,23 @@ void Simulator::DecodeExt2(Instruction* instr) {
       condition_reg_ = (condition_reg_ & ~condition_mask) | condition;
       break;
     }
+    case ANDX: {
+      int rs = instr->RSValue();
+      int ra = instr->RAValue();
+      int rb = instr->RBValue();
+      int32_t rs_val = get_register(rs);
+      int32_t rb_val = get_register(rb);
+      int32_t alu_out = rs_val & rb_val;
+      set_register(ra, alu_out);
+      if(instr->Bit(0)) {  // RCBit set
+        int bf = 0;
+        if(alu_out < 0) { bf |= 0x80000000; }
+        if(alu_out > 0) { bf |= 0x40000000; }
+        if(alu_out == 0) { bf |= 0x20000000; }
+        condition_reg_ = (condition_reg_ & ~0xF0000000) | bf;
+      } 
+      break;
+    }
     case MULLW: {
       int rt = instr->RTValue();
       int ra = instr->RAValue();
@@ -3237,7 +3254,7 @@ void Simulator::InstructionDecode(Instruction* instr) {
     // use a reasonably large buffer
     v8::internal::EmbeddedVector<char, 256> buffer;
     dasm.InstructionDecode(buffer, reinterpret_cast<byte*>(instr));
-    PrintF("  0x%08x  %s\n", reinterpret_cast<intptr_t>(instr), buffer.start());
+    PrintF("%05d  0x%08x  %s\n", icount_, reinterpret_cast<intptr_t>(instr), buffer.start());
   }
   switch (instr->OpcodeValue() << 26) {
     case TWI: {
@@ -3351,14 +3368,57 @@ void Simulator::InstructionDecode(Instruction* instr) {
     case BX: {
       int offset = (instr->Bits(25,2) << 8) >> 6;
       set_pc(get_pc() + offset);
-      // todo - AA and LK flags
+      // todo - AA flag
+      if(instr->Bit(0) == 1) {  // LK flag set 
+        special_reg_lr_ = get_pc();
+      }
       break;
     }
     case EXT1: {
       DecodeExt1(instr);
       break;
     }
-    case RLWIMIX:
+    case RLWIMIX: {
+      int ra = instr->RAValue();
+      int rs = instr->RSValue();
+      int32_t rs_val = get_register(rs);
+      int32_t ra_val = get_register(ra);
+      int sh = instr->Bits(15,11);
+      int mb = instr->Bits(10,6);
+      int me = instr->Bits(5,1);
+      int rc = instr->Bit(0);
+      // rotate left
+      int result = (rs_val<<sh) | (rs_val>>(32-sh));
+      int mask = 0;
+      if(mb < me+1) {
+        int bit = 0x80000000 >> mb;
+        for(; mb<=me; mb++) {
+          mask |= bit;
+          bit >>= 1;
+        }
+      } else if(mb == me+1) {
+         mask = 0xffffffff;
+      } else { // mb > me+1
+        int bit = 0x80000000 >> (me+1);  // needs to be tested
+        mask = 0xffffffff;
+        for(;me<mb;me++) {
+          mask ^= bit;
+          bit >>= 1;
+        }
+      }
+      result &= mask;
+      ra_val &= ~mask;
+      result |= ra_val;
+      set_register(ra, result);
+      if(rc) {
+        int bf = 0;
+        if(result < 0) { bf |= 0x80000000; }
+        if(result > 0) { bf |= 0x40000000; }
+        if(result == 0) { bf |= 0x20000000; }
+        condition_reg_ = (condition_reg_ & ~0xF0000000) | bf;
+      }
+      break;
+    }
     case RLWINMX: {
       int ra = instr->RAValue();
       int rs = instr->RSValue();
@@ -3366,6 +3426,7 @@ void Simulator::InstructionDecode(Instruction* instr) {
       int sh = instr->Bits(15,11);
       int mb = instr->Bits(10,6);
       int me = instr->Bits(5,1);
+      int rc = instr->Bit(0);
       // rotate left
       int result = (rs_val<<sh) | (rs_val>>(32-sh));
       int mask = 0;
@@ -3387,6 +3448,13 @@ void Simulator::InstructionDecode(Instruction* instr) {
       }
       result &= mask;  
       set_register(ra, result);
+      if(rc) {
+        int bf = 0;
+        if(result < 0) { bf |= 0x80000000; }
+        if(result > 0) { bf |= 0x40000000; }
+        if(result == 0) { bf |= 0x20000000; }
+        condition_reg_ = (condition_reg_ & ~0xF0000000) | bf;
+      }
       break;
     }
     case RLWNMX:
@@ -3394,7 +3462,16 @@ void Simulator::InstructionDecode(Instruction* instr) {
     case ORIS:
     case XORI:
     case XORIS:
-    case ANDIx:
+    case ANDIx: {
+      int rt = instr->RTValue();
+      int ra = instr->RAValue();
+      int32_t ra_val = get_register(ra);
+      uint32_t im_val = instr->Bits(15,0);
+      int32_t alu_out = ra_val & im_val;
+      set_register(rt, alu_out);
+      // todo - set condition based SO bit
+      break;
+    }
     case ANDISx:
     case EXT2: {
       DecodeExt2(instr);
@@ -3411,7 +3488,18 @@ void Simulator::InstructionDecode(Instruction* instr) {
       set_register(rt, ReadW(offset, instr));
       break;
     }
-    case LWZU:
+    case LWZU: {
+      int ra = instr->RAValue();
+      int rt = instr->RTValue();
+      int32_t ra_val = get_register(ra);
+      int offset = (instr->Bits(15,0) << 16) >> 16;
+      if(ra != 0) {
+        offset += ra_val;
+        set_register(ra, offset);
+      }
+      set_register(rt, ReadW(offset, instr));
+      break;
+    }
     case LBZ: {
       int ra = instr->RAValue();
       int rt = instr->RTValue();
@@ -3420,7 +3508,7 @@ void Simulator::InstructionDecode(Instruction* instr) {
       if(ra != 0) {
         offset += ra_val;
       }
-      set_register(rt, ReadB(offset));
+      set_register(rt, ReadB(offset) & 0xFF);
       break;
     }
     case LBZU:

@@ -470,6 +470,12 @@ int Decoder::FormatOption(Instruction* instr, const char* format) {
                                       "%d", value);
       return 5;
     }
+    case 'u': { // uint16
+      int32_t value = instr->Bits(15,0);
+      out_buffer_pos_ += OS::SNPrintF(out_buffer_ + out_buffer_pos_,
+                                      "%d", value);
+      return 6;
+    }
     case 'l': {
       // Link (LK) Bit 0
       if(instr->Bit(0) == 1) {
@@ -862,6 +868,10 @@ void Decoder::DecodeExt2(Instruction* instr) {
   switch(instr->Bits(9,1) << 1) {
     case CMP: {
       Format(instr, "cmp 'ra,'rb");
+      break;
+    }
+    case ANDX: {
+      Format(instr, "and'o    'rt,'ra,'rb");
       break;
     }
     case MULLW: {
@@ -1622,7 +1632,7 @@ int Decoder::InstructionDecode(byte* instr_ptr) {
     }
     case CMPLI:
     case CMPI: {
-      Format(instr, "cmpi    'ra,'int16");
+      Format(instr, "cmpwi   'ra,'int16");
       break;
     }
     case ADDIC: {
@@ -1659,9 +1669,12 @@ int Decoder::InstructionDecode(byte* instr_ptr) {
       DecodeExt1(instr);
       break;
     }
-    case RLWIMIX:
-    case RLWINMX: {
+    case RLWIMIX: {
       Format(instr, "rlwimi'. 'ra,'rs,'sh,'me,'mb");
+      break;
+    }
+    case RLWINMX: {
+      Format(instr, "rlwimn'. 'ra,'rs,'sh,'me,'mb");
       break;
     }
     case RLWNMX:
@@ -1669,7 +1682,10 @@ int Decoder::InstructionDecode(byte* instr_ptr) {
     case ORIS:
     case XORI:
     case XORIS:
-    case ANDIx:
+    case ANDIx: {
+      Format(instr, "andi.   'ra, 'rs, 'uint16");
+      break;
+    }
     case ANDISx:
     case EXT2: {
       DecodeExt2(instr);

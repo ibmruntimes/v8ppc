@@ -189,7 +189,7 @@ const Register no_reg = { kRegister_no_reg_Code };
 
 const Register r0  = { kRegister_r0_Code };
 const Register sp  = { kRegister_sp_Code };
-const Register r1  = { kRegister_r7_Code };  // hack for ARM
+const Register r1  = { kRegister_r22_Code };  // hack for ARM
 const Register r2  = { kRegister_r2_Code };
 const Register r3  = { kRegister_r3_Code };
 const Register r4  = { kRegister_r4_Code };
@@ -816,6 +816,7 @@ class Assembler : public AssemblerBase {
   void bclr(BOfield bo, LKBit lk);
   void blr();
   void bc(int branch_offset, BOfield bo, int condition_bit);
+  void b(int branch_offset, LKBit lk);
   void b(int branch_offset, Condition cond = al);
 
   void bcctr(BOfield bo, LKBit lk);
@@ -831,14 +832,25 @@ class Assembler : public AssemblerBase {
   void b(Label* L, Condition cond = al)  {
     b(branch_offset(L, cond == al), cond);
   }
+  void b(Label* L, LKBit lk)  {
+    b(branch_offset(L, false), lk);
+  }
   void b(Condition cond, Label* L)  { b(branch_offset(L, cond == al), cond); }
   // PowerPC
   void bc(Label* L, BOfield bo, int bit)  { 
     bc(branch_offset(L, false), bo, bit); }
-  void bne(Label* L)  { 
+  void bne(Label* L) { 
     bc(branch_offset(L, false), BF, 30); }
-  void beq(Label* L)  { 
+  void beq(Label* L) { 
     bc(branch_offset(L, false), BT, 30); }
+  void blt(Label* L) {
+    bc(branch_offset(L, false), BT, 28); }
+  void bge(Label* L) {
+    bc(branch_offset(L, false), BF, 28); }
+  void bgt(Label* L) {
+    bc(branch_offset(L, false), BT, 29); }
+  void bso(Label* L) {
+    bc(branch_offset(L, false), BT, 3); }
   // end PowerPC
   void bl(Label* L, Condition cond = al)  { bl(branch_offset(L, false), cond); }
   void bl(Condition cond, Label* L)  { bl(branch_offset(L, false), cond); }
@@ -850,6 +862,9 @@ class Assembler : public AssemblerBase {
   void add(Register dst, Register src1, Register src2,
            OEBit s = LeaveOE, RCBit r = LeaveRC );
 
+  void addo(Register dst, Register src1, Register src2) {
+    add(dst, src1, src2, SetOE); }
+
   void add(Register dst, Register src, const Operand& imm,
 SBit s = LeaveCC, Condition cond = al // roohack - remove this line later
            );
@@ -857,6 +872,7 @@ SBit s = LeaveCC, Condition cond = al // roohack - remove this line later
   void addis(Register dst, Register src, int imm);
   void addic(Register dst, Register src, int imm);
 
+  void andi(Register dst, Register src, const Operand& imm);
   void orx(Register dst, Register src1, Register src2, RCBit r = LeaveRC);
   void cmpi(Register src1, const Operand& src2);
   void li(Register dst, const Operand& src);
@@ -871,10 +887,14 @@ SBit s = LeaveCC, Condition cond = al // roohack - remove this line later
   void stw(Register dst, const MemOperand& src);
   void stwu(Register dst, const MemOperand& src);
 
+  void rlwinm(Register ra, Register rs, int sh, int mb, int me, 
+              RCBit rc = LeaveRC);
   void rlwimi(Register ra, Register rs, int sh, int mb, int me, 
               RCBit rc = LeaveRC);
   void slwi(Register dst, Register src, const Operand& val);
   void srwi(Register dst, Register src, const Operand& val);
+
+  void and_(Register dst, Register src1, Register src2, RCBit rc);  
 
   // end PowerPC
 
@@ -1260,7 +1280,8 @@ SBit s = LeaveCC, Condition cond = al // roohack - remove this line later
   }
 
   void pop(Register dst, Condition cond = al) {
-    lwzu(dst, MemOperand(sp, 4));
+    lwz(dst, MemOperand(sp));
+    add(sp, sp, Operand(4));
   }
 
   void pop() {

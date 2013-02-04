@@ -102,14 +102,12 @@ const int kNumSafepointSavedRegisters = kNumJSCallerSaved + kNumCalleeSaved;
 
 class StackHandlerConstants : public AllStatic {
  public:
-  static const int kNextOffset     = 2 * kPointerSize;
-  static const int kCodeOffset     = 3 * kPointerSize;
-  static const int kStateOffset    = 4 * kPointerSize;
-  static const int kContextOffset  = 5 * kPointerSize;
-  static const int kFPOffset       = 6 * kPointerSize;
+  static const int kNextOffset     = 0 * kPointerSize;
+  static const int kCodeOffset     = 1 * kPointerSize;
+  static const int kStateOffset    = 2 * kPointerSize;
+  static const int kContextOffset  = 3 * kPointerSize;
+  static const int kFPOffset       = 4 * kPointerSize;
 
-  // Not sure if this should be from SP -> kFPOffset, or just the
-  // size of the 5 values on the stack
   static const int kSize = kFPOffset + kPointerSize;
 };
 
@@ -122,19 +120,17 @@ class EntryFrameConstants : public AllStatic {
 
 class ExitFrameConstants : public AllStatic {
  public:
-  static const int kCodeOffset = 2 * kPointerSize;
-  static const int kSPOffset = 3 * kPointerSize;
+  static const int kCodeOffset = -2 * kPointerSize;
+  static const int kSPOffset = -1 * kPointerSize;
 
   // The caller fields are below the frame pointer on the stack.
-  static const int kCallerFPOffset = 6 * kPointerSize;
+  static const int kCallerFPOffset = 0 * kPointerSize;
   // The calling JS function is below FP.
-  static const int kCallerPCOffset = 7 * kPointerSize;
+  static const int kCallerPCOffset = 1 * kPointerSize;
 
   // FP-relative displacement of the caller's SP.  It points just
   // below the saved PC.
-
-  // Assumes exit frame is constant 6 slots + 2 slots for clean up of previous frame
-  static const int kCallerSPDisplacement = 8 * kPointerSize;
+  static const int kCallerSPDisplacement = 2 * kPointerSize;
 };
 
 
