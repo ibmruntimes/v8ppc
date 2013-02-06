@@ -1265,6 +1265,17 @@ SBit s, Condition cond // delete this later when removing ARM
   add(dst, src, Operand(-(imm.imm32_)));
 }
 
+void Assembler::addc(Register dst, Register src1, Register src2,
+                    OEBit o, RCBit r) {
+  xo_form( EXT2 | ADDCX, dst, src1, src2, o, r );
+}
+
+void Assembler::addze(Register dst, Register src1, OEBit o, RCBit r) {
+  // a special xo_form
+  CheckBuffer();
+  emit( EXT2 | ADDZEX | dst.code()*B21 | src1.code()*B16 | o | r );
+}
+
 void Assembler::add(Register dst, Register src1, Register src2,
                     OEBit o, RCBit r) {
   xo_form( EXT2 | ADDX, dst, src1, src2, o, r );

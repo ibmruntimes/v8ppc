@@ -870,8 +870,16 @@ void Decoder::DecodeExt2(Instruction* instr) {
       Format(instr, "cmp 'ra,'rb");
       break;
     }
+    case ADDCX: {
+      Format(instr, "addc'.   'rt,'ra,'rb");
+      break;
+    }
     case ANDX: {
       Format(instr, "and'o    'rt,'ra,'rb");
+      break;
+    }
+    case ADDZEX: {
+      Format(instr, "addze'.   'rt,'ra");
       break;
     }
     case MULLW: {

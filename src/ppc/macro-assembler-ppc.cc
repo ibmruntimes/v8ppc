@@ -811,11 +811,19 @@ void MacroAssembler::EnterFrame(StackFrame::Type type) {
 void MacroAssembler::LeaveFrame(StackFrame::Type type) {
   // this destroys r11
   // clean things up but don't perform return
+  mr(sp, fp);
+  lwz(fp, MemOperand(sp));
+  lwz(r0, MemOperand(sp, kPointerSize));
+  mtlr(r0);
+  add(sp, sp, Operand(2*kPointerSize));
+
+/*
   add(r11,fp,Operand(16));
   lwz(r0, MemOperand(r11, 4));
   mtlr(r0);
   lwz(fp, MemOperand(r11,-4));
   mr(sp, r11);
+*/
 
 #if 0
   // r0: preserved
@@ -1631,7 +1639,6 @@ void MacroAssembler::AllocateInNewSpace(int object_size,
     // Load allocation top into result and allocation limit into ip.
     lwz(result, MemOperand(topaddr));
     lwz(ip, MemOperand(topaddr,kPointerSize));
-    add(topaddr, topaddr, Operand(2*kPointerSize));
   } else {
     if (emit_debug_code()) {
       // Assert that result actually contains top on entry. ip is used
@@ -1647,8 +1654,10 @@ void MacroAssembler::AllocateInNewSpace(int object_size,
 
   // Calculate new top and bail out if new space is exhausted. Use result
   // to calculate the new top.
-  addo(scratch2, result, obj_size_reg);
-  bso(gc_required);
+  li(r0, Operand(-1));
+  addc(scratch2, result, obj_size_reg);
+  addze(r0, r0, LeaveOE, SetRC);
+  bc(gc_required, BT, 1);
   cmp(scratch2, ip);
   bgt(gc_required);
   stw(scratch2, MemOperand(topaddr));

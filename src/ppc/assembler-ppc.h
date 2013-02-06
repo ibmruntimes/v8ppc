@@ -849,8 +849,6 @@ class Assembler : public AssemblerBase {
     bc(branch_offset(L, false), BF, 28); }
   void bgt(Label* L) {
     bc(branch_offset(L, false), BT, 29); }
-  void bso(Label* L) {
-    bc(branch_offset(L, false), BT, 3); }
   // end PowerPC
   void bl(Label* L, Condition cond = al)  { bl(branch_offset(L, false), cond); }
   void bl(Condition cond, Label* L)  { bl(branch_offset(L, false), cond); }
@@ -862,8 +860,11 @@ class Assembler : public AssemblerBase {
   void add(Register dst, Register src1, Register src2,
            OEBit s = LeaveOE, RCBit r = LeaveRC );
 
-  void addo(Register dst, Register src1, Register src2) {
-    add(dst, src1, src2, SetOE); }
+  void addc(Register dst, Register src1, Register src2,
+                    OEBit o = LeaveOE, RCBit r = LeaveRC);
+
+  void addze(Register dst, Register src1, OEBit o, RCBit r);
+
 
   void add(Register dst, Register src, const Operand& imm,
 SBit s = LeaveCC, Condition cond = al // roohack - remove this line later

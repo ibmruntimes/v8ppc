@@ -1709,14 +1709,17 @@ static void EnterArgumentsAdaptorFrame(MacroAssembler* masm) {
 
 static void LeaveArgumentsAdaptorFrame(MacroAssembler* masm) {
   // ----------- S t a t e -------------
-  //  -- r0 : result being passed through
+  //  -- r3 : result being passed through
   // -----------------------------------
   // Get the number of arguments passed (as a smi), tear down the frame and
   // then tear down the parameters.
-  __ ldr(r1, MemOperand(r11, -3 * kPointerSize));
-  __ mov(sp, r11);
-  __ ldm(ia_w, sp, r11.bit() | lr.bit());
-  __ add(sp, sp, Operand(r1, LSL, kPointerSizeLog2 - kSmiTagSize));
+  __ ldr(r4, MemOperand(fp, -3 * kPointerSize));
+  __ mov(sp, fp);
+  __ lwz(fp, MemOperand(sp));
+  __ lwz(r0, MemOperand(sp, kPointerSize));
+  __ mtlr(r0);
+  __ slwi(r4, r4, Operand(kPointerSizeLog2 - kSmiTagSize));
+  __ add(sp, sp, r4);  // roohack - ok to destroy r4?
   __ add(sp, sp, Operand(kPointerSize));  // adjust for receiver
 }
 
@@ -1822,7 +1825,7 @@ void Builtins::Generate_ArgumentsAdaptorTrampoline(MacroAssembler* masm) {
 
   // Exit frame and return.
   LeaveArgumentsAdaptorFrame(masm);
-  __ Jump(lr);
+  __ blr();
 
 
   // -------------------------------------------

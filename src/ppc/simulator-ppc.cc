@@ -1936,6 +1936,25 @@ void Simulator::DecodeExt2(Instruction* instr) {
       condition_reg_ = (condition_reg_ & ~condition_mask) | condition;
       break;
     }
+    case ADDCX: {
+      int rt = instr->RTValue();
+      int ra = instr->RAValue();
+      int rb = instr->RBValue();
+      // int oe = instr->Bit(10);
+      // int rc = instr->Bit(0);
+      int32_t ra_val = get_register(ra);
+      int32_t rb_val = get_register(rb);
+      int64_t alu_out = ra_val + rb_val;
+      if(alu_out >> 32) {
+        alu_out &= 0xFFFFFFFF;
+        special_reg_xer_ = (special_reg_xer_ & ~0xF0000000) | 0x20000000;
+      } else {
+        special_reg_xer_ &= ~0xF0000000;
+      }
+      set_register(rt, alu_out);
+      // todo - handle OE and RC bits
+      break;
+    }
     case ANDX: {
       int rs = instr->RSValue();
       int ra = instr->RAValue();
@@ -1953,6 +1972,24 @@ void Simulator::DecodeExt2(Instruction* instr) {
       } 
       break;
     }
+    case ADDZEX: {
+      int rt = instr->RTValue();
+      int ra = instr->RAValue();
+      int32_t ra_val = get_register(ra);
+      if(special_reg_xer_ & 0x20000000) {
+        ra_val += 1;
+      }
+      set_register(rt, ra_val);
+      if(instr->Bit(0)) {  // RCBit set
+        int bf = 0;
+        if(ra_val < 0) { bf |= 0x80000000; }
+        if(ra_val > 0) { bf |= 0x40000000; }
+        if(ra_val == 0) { bf |= 0x20000000; }
+        condition_reg_ = (condition_reg_ & ~0xF0000000) | bf;
+      }
+      // todo - handle OE bit
+      break;
+    }
     case MULLW: {
       int rt = instr->RTValue();
       int ra = instr->RAValue();
@@ -1968,11 +2005,13 @@ void Simulator::DecodeExt2(Instruction* instr) {
       int rt = instr->RTValue();
       int ra = instr->RAValue();
       int rb = instr->RBValue();
+      // int oe = instr->Bit(10);
+      // int rc = instr->Bit(0);
       int32_t ra_val = get_register(ra);
       int32_t rb_val = get_register(rb);
       int32_t alu_out = ra_val + rb_val;
       set_register(rt, alu_out);
-      // todo - handle RK bit
+      // todo - handle OE and RC bits
       break;
     }
     case ORX: {

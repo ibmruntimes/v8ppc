@@ -318,8 +318,10 @@ enum OpcodeExt2 {
   STWX
   STDUX
   STWUX
-  SUBFZEX
-  ADDZEX
+  SUBFZEX 
+*/
+  ADDZEX = 202 << 1,  // Add to Zero Extended
+/*
   MTSR
 */
   MULLW  = 235 << 1,  // Multiply Low Word

@@ -329,7 +329,7 @@ void FullCodeGenerator::EmitProfilingCounterDecrement(int delta) {
   __ mov(r5, Operand(profiling_counter_));
   __ lwz(r6, FieldMemOperand(r5, JSGlobalPropertyCell::kValueOffset));
   __ sub(r6, r6, Operand(Smi::FromInt(delta)), SetCC);
-  __ str(r6, FieldMemOperand(r5, JSGlobalPropertyCell::kValueOffset));
+  __ stw(r6, FieldMemOperand(r5, JSGlobalPropertyCell::kValueOffset));
 }
 
 
@@ -345,7 +345,7 @@ void FullCodeGenerator::EmitProfilingCounterReset() {
   }
   __ mov(r5, Operand(profiling_counter_));
   __ mov(r6, Operand(Smi::FromInt(reset_value)));
-  __ str(r6, FieldMemOperand(r5, JSGlobalPropertyCell::kValueOffset));
+  __ stw(r6, FieldMemOperand(r5, JSGlobalPropertyCell::kValueOffset));
 }
 
 
@@ -446,10 +446,12 @@ void FullCodeGenerator::EmitReturnSequence() {
       int32_t sp_delta = (info_->scope()->num_parameters() + 1) * kPointerSize;
       CodeGenerator::RecordPositions(masm_, function()->end_position() - 1);
       __ RecordJSReturn();
-      masm_->mov(sp, fp);
-      masm_->ldm(ia_w, sp, r11.bit() | lr.bit());
-      masm_->add(sp, sp, Operand(sp_delta));
-      masm_->Jump(lr);
+      masm_->mr(sp, fp);
+      masm_->lwz(fp, MemOperand(sp));
+      masm_->lwz(r0, MemOperand(sp, kPointerSize));
+      masm_->mtctr(r0);
+      masm_->add(sp, sp, Operand(sp_delta + (2 * kPointerSize)));
+      masm_->bcr();
     }
 
 #ifdef DEBUG
@@ -881,7 +883,7 @@ void FullCodeGenerator::VisitFunctionDeclaration(
     case Variable::LOCAL: {
       Comment cmnt(masm_, "[ FunctionDeclaration");
       VisitForAccumulatorValue(declaration->fun());
-      __ str(result_register(), StackOperand(variable));
+      __ stw(result_register(), StackOperand(variable));
       break;
     }
 
@@ -889,7 +891,7 @@ void FullCodeGenerator::VisitFunctionDeclaration(
       Comment cmnt(masm_, "[ FunctionDeclaration");
       EmitDebugCheckDeclarationContext(variable);
       VisitForAccumulatorValue(declaration->fun());
-      __ str(result_register(), ContextOperand(cp, variable->index()));
+      __ stw(result_register(), ContextOperand(cp, variable->index()));
       int offset = Context::SlotOffset(variable->index());
       // We know that we have written a function, which is not a smi.
       __ RecordWriteContextSlot(cp,
@@ -2110,7 +2112,7 @@ void FullCodeGenerator::EmitVariableAssignment(Variable* var,
       __ lwz(r4, StackOperand(var));
       __ CompareRoot(r4, Heap::kTheHoleValueRootIndex);
       __ b(ne, &skip);
-      __ str(result_register(), StackOperand(var));
+      __ stw(result_register(), StackOperand(var));
       __ bind(&skip);
     } else {
       ASSERT(var->IsContextSlot() || var->IsLookupSlot());
@@ -2145,7 +2147,7 @@ void FullCodeGenerator::EmitVariableAssignment(Variable* var,
       __ CallRuntime(Runtime::kThrowReferenceError, 1);
       // Perform the assignment.
       __ bind(&assign);
-      __ str(result_register(), location);
+      __ stw(result_register(), location);
       if (var->IsContextSlot()) {
         // RecordWrite may destroy all its register arguments.
         __ mov(r6, result_register());
@@ -2167,7 +2169,7 @@ void FullCodeGenerator::EmitVariableAssignment(Variable* var,
         __ Check(eq, "Let binding re-initialization.");
       }
       // Perform the assignment.
-      __ str(r3, location);
+      __ stw(r3, location);
       if (var->IsContextSlot()) {
         __ mov(r6, r3);
         int offset = Context::SlotOffset(var->index());
@@ -2405,8 +2407,8 @@ void FullCodeGenerator::VisitCall(Call* expr) {
 
       // The runtime call returns a pair of values in r3 (function) and
       // r4 (receiver). Touch up the stack with the right values.
-      __ str(r3, MemOperand(sp, (arg_count + 1) * kPointerSize));
-      __ str(r4, MemOperand(sp, arg_count * kPointerSize));
+      __ stw(r3, MemOperand(sp, (arg_count + 1) * kPointerSize));
+      __ stw(r4, MemOperand(sp, arg_count * kPointerSize));
     }
 
     // Record source position for debugger.
@@ -3027,7 +3029,7 @@ void FullCodeGenerator::EmitRandomHeapNumber(CallRuntime* expr) {
     // Subtract and store the result in the heap number.
     __ vsub(d7, d7, d8);
     __ sub(r0, r4, Operand(kHeapObjectTag));
-    __ vstr(d7, r0, HeapNumber::kValueOffset);
+    __ vstw(d7, r0, HeapNumber::kValueOffset);
     __ mov(r0, r4);
   } else {
     __ PrepareCallCFunction(2, r0);
@@ -3168,7 +3170,7 @@ void FullCodeGenerator::EmitSetValueOf(CallRuntime* expr) {
   __ b(ne, &done);
 
   // Store the value.
-  __ str(r3, FieldMemOperand(r4, JSValue::kValueOffset));
+  __ stw(r3, FieldMemOperand(r4, JSValue::kValueOffset));
   // Update the write barrier.  Save the value as it will be
   // overwritten by the write barrier code and is needed afterward.
   __ mov(r5, r3);
@@ -4051,10 +4053,10 @@ void FullCodeGenerator::VisitCountOperation(CountOperation* expr) {
           __ push(r3);
           break;
         case NAMED_PROPERTY:
-          __ str(r3, MemOperand(sp, kPointerSize));
+          __ stw(r3, MemOperand(sp, kPointerSize));
           break;
         case KEYED_PROPERTY:
-          __ str(r3, MemOperand(sp, 2 * kPointerSize));
+          __ stw(r3, MemOperand(sp, 2 * kPointerSize));
           break;
       }
     }
@@ -4412,7 +4414,7 @@ Register FullCodeGenerator::context_register() {
 
 void FullCodeGenerator::StoreToFrameField(int frame_offset, Register value) {
   ASSERT_EQ(POINTER_SIZE_ALIGN(frame_offset), frame_offset);
-  __ str(value, MemOperand(fp, frame_offset));
+  __ stw(value, MemOperand(fp, frame_offset));
 }
 
 
@@ -4488,20 +4490,20 @@ void FullCodeGenerator::ExitFinallyBlock() {
   ExternalReference pending_message_script =
       ExternalReference::address_of_pending_message_script(isolate());
   __ mov(ip, Operand(pending_message_script));
-  __ str(r4, MemOperand(ip));
+  __ stw(r4, MemOperand(ip));
 
   __ pop(r4);
   __ SmiUntag(r4);
   ExternalReference has_pending_message =
       ExternalReference::address_of_has_pending_message(isolate());
   __ mov(ip, Operand(has_pending_message));
-  __ str(r4, MemOperand(ip));
+  __ stw(r4, MemOperand(ip));
 
   __ pop(r4);
   ExternalReference pending_message_obj =
       ExternalReference::address_of_pending_message_obj(isolate());
   __ mov(ip, Operand(pending_message_obj));
-  __ str(r4, MemOperand(ip));
+  __ stw(r4, MemOperand(ip));
 
   // Restore result register from stack.
   __ pop(r4);
@@ -4531,7 +4533,7 @@ FullCodeGenerator::NestedStatement* FullCodeGenerator::TryFinally::Exit(
   if (*context_length > 0) {
     // Restore the context to its dedicated register and the stack.
     __ lwz(cp, MemOperand(sp, StackHandlerConstants::kContextOffset));
-    __ str(cp, MemOperand(fp, StandardFrameConstants::kContextOffset));
+    __ stw(cp, MemOperand(fp, StandardFrameConstants::kContextOffset));
   }
   __ PopTryHandler();
   __ bl(finally_entry_);
