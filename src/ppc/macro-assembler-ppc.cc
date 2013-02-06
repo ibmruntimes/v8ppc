@@ -1303,7 +1303,7 @@ void MacroAssembler::PopTryHandler() {
   pop(r4);
   mov(ip, Operand(ExternalReference(Isolate::kHandlerAddress, isolate())));
   add(sp, sp, Operand(StackHandlerConstants::kSize - kPointerSize));
-  str(r4, MemOperand(ip));
+  stw(r4, MemOperand(ip));
 }
 
 

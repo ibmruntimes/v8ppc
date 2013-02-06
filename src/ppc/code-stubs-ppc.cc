@@ -4217,7 +4217,7 @@ void JSEntryStub::GenerateBody(MacroAssembler* masm, bool is_construct) {
     // the address points to the start of the code object, skip the header
     masm->add(r0, r8, Operand(Code::kHeaderSize - kHeapObjectTag));
     masm->mtlr(r0);
-    masm->blr();  // make the call
+    masm->bclr(BA, SetLK);  // make the call
   }
 
   // Unlink this frame from the handler chain.
@@ -4227,7 +4227,7 @@ void JSEntryStub::GenerateBody(MacroAssembler* masm, bool is_construct) {
   // Check if the current stack frame is marked as the outermost JS frame.
   Label non_outermost_js_2;
   __ pop(r5);
-  __ cmp(r5, Operand(Smi::FromInt(StackFrame::OUTERMOST_JSENTRY_FRAME)));
+  __ cmpi(r5, Operand(Smi::FromInt(StackFrame::OUTERMOST_JSENTRY_FRAME)));
   __ bne(&non_outermost_js_2);
   __ mov(r6, Operand::Zero());
   __ mov(r5, Operand(ExternalReference(js_entry_sp)));
@@ -4250,8 +4250,17 @@ void JSEntryStub::GenerateBody(MacroAssembler* masm, bool is_construct) {
   }
 #endif
 
+  // Restore non-volatile registers
+  __ lwz(r16, MemOperand(sp, 16));
+  __ lwz(r25, MemOperand(sp, 20));      // roohack - r15 ARM hack
+  __ lwz(r24, MemOperand(sp, 24));      // roohack - r14 ARM hack
 
-  __ ldm(ia_w, sp, kCalleeSaved | pc.bit());
+  __ lwz(fp, MemOperand(sp, 28));
+  __ lwz(r0, MemOperand(sp, 36));  // use pre-reserved LR slot
+
+  __ add(sp, sp, Operand(32));
+  __ mtlr(r0);
+  __ blr();
 }
 
 
