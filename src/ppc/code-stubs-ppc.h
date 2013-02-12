@@ -655,11 +655,11 @@ class RecordWriteStub: public CodeStub {
     code->GetHeap()->incremental_marking()->ActivateGeneratedStub(code);
   }
 
-  class ObjectBits: public BitField<int, 0, 4> {};
-  class ValueBits: public BitField<int, 4, 4> {};
-  class AddressBits: public BitField<int, 8, 4> {};
-  class RememberedSetActionBits: public BitField<RememberedSetAction, 12, 1> {};
-  class SaveFPRegsModeBits: public BitField<SaveFPRegsMode, 13, 1> {};
+  class ObjectBits: public BitField<int, 0, 5> {};
+  class ValueBits: public BitField<int, 5, 5> {};
+  class AddressBits: public BitField<int, 10, 5> {};
+  class RememberedSetActionBits: public BitField<RememberedSetAction, 15, 1> {};
+  class SaveFPRegsModeBits: public BitField<SaveFPRegsMode, 16, 1> {};
 
   Register object_;
   Register value_;

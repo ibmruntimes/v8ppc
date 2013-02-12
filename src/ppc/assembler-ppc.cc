@@ -906,7 +906,7 @@ void Assembler::d_form(Instr instr,
                         const int val) {
   CheckBuffer();
   // roohack need to check val fits
-  //ASSERT(is_int16(val));
+  // ASSERT(is_int16(val)); 
   emit(instr | rt.code()*B21 | ra.code()*B16 | (kImm16Mask & val) );
 }
 
@@ -1239,6 +1239,7 @@ void Assembler::rlwinm(Register ra, Register rs,
   sh &= 0x1f;
   mb &= 0x1f;
   me &= 0x1f;
+  CheckBuffer();
   emit(RLWINMX | rs.code()*B21 | ra.code()*B16 | sh*B11 | mb*B6  | me<<1 | rc);
 }
 
@@ -1247,6 +1248,7 @@ void Assembler::rlwimi(Register ra, Register rs,
   sh &= 0x1f;
   mb &= 0x1f;
   me &= 0x1f;
+  CheckBuffer();
   emit(RLWIMIX | rs.code()*B21 | ra.code()*B16 | sh*B11 | mb*B6  | me<<1 | rc);
 }
 
@@ -1258,6 +1260,10 @@ void Assembler::srwi(Register dst, Register src, const Operand& val) {
   ASSERT((32 > val.imm32_)&&(val.imm32_ >= 0));
   rlwinm(dst, src, 32-val.imm32_, val.imm32_, 31); 
 }
+void Assembler::srawi(Register ra, Register rs, int sh, RCBit r) {
+  CheckBuffer();
+  emit(EXT2 | SRAWIX | rs.code()*B21 | ra.code()*B16 | sh*B11 | r);
+}
 
 void Assembler::sub(Register dst, Register src, const Operand& imm,
 SBit s, Condition cond // delete this later when removing ARM
@@ -1267,7 +1273,7 @@ SBit s, Condition cond // delete this later when removing ARM
 
 void Assembler::addc(Register dst, Register src1, Register src2,
                     OEBit o, RCBit r) {
-  xo_form( EXT2 | ADDCX, dst, src1, src2, o, r );
+  xo_form(EXT2 | ADDCX, dst, src1, src2, o, r );
 }
 
 void Assembler::addze(Register dst, Register src1, OEBit o, RCBit r) {
@@ -1317,6 +1323,9 @@ void Assembler::cmp(Register src1, Register src2 , Condition cond) {
 // Pseudo op - load immediate
 void Assembler::li(Register dst, const Operand &src) {
   // actually addi
+  // this should only be signed 16bit values, the uint16 is a hack for now
+  // it may not work correctly on an actual PowerPC
+  ASSERT(is_int16(src.imm32_) || is_uint16(src.imm32_));
   add(dst, r0, src);
 }
 
@@ -1443,6 +1452,7 @@ void Assembler::mov(Register dst, const Operand& src
     // lo word is signed, so increment hi word by one
     hi_word++;
   }
+  // ASSERT(dst.code() != 0);  // r0 is invalid destination
   addis(dst, r0, hi_word);
   addic(dst, dst, lo_word);
 }

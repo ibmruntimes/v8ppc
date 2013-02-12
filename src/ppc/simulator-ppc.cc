@@ -472,7 +472,7 @@ void PPCDebugger::Debug() {
         while (cur < end) {
           prev = cur;
           cur += dasm.InstructionDecode(buffer, cur);
-          PrintF("  0x%08x  %s\n",
+          PrintF("MOO3  0x%08x  %s\n",
                  reinterpret_cast<intptr_t>(prev), buffer.start());
         }
       } else if (strcmp(cmd, "gdb") == 0) {
@@ -1920,6 +1920,27 @@ void Simulator::DecodeExt1(Instruction* instr) {
 }
 
 void Simulator::DecodeExt2(Instruction* instr) {
+  // Check first the 10-1 bit versions
+  switch(instr->Bits(10,1) << 1) {
+    case SRAWIX: {
+      int ra = instr->RAValue();
+      int rs = instr->RSValue();
+      int32_t rs_val = get_register(rs);
+      int sh = instr->Bits(15,11);
+      int rc = instr->Bit(0);
+      int result = rs_val >> sh;
+      set_register(ra, result);
+      if(rc) {
+        int bf = 0;
+        if(result < 0) { bf |= 0x80000000; }
+        if(result > 0) { bf |= 0x40000000; }
+        if(result == 0) { bf |= 0x20000000; }
+        condition_reg_ = (condition_reg_ & ~0xF0000000) | bf;
+      }
+      return;
+    }
+  }
+  // Now look at the lesser encodings
   switch(instr->Bits(9,1) << 1) {
     case CMP: {
       int ra = instr->RAValue();
@@ -3317,6 +3338,7 @@ void Simulator::InstructionDecode(Instruction* instr) {
       int ra = instr->RAValue();
       int32_t ra_val = get_register(ra);
       int32_t im_val = instr->Bits(15,0);
+      im_val = (im_val << 16) >> 16;  // sign extend if needed
       int cr = instr->Bits(25,23);
       int bf = 0;
       if(ra_val < im_val) { bf |= 0x80000000; }
@@ -3713,7 +3735,7 @@ int32_t Simulator::Call(byte* entry, int argument_count, ...) {
   int32_t r17_val = get_register(r17);
   int32_t r18_val = get_register(r18);
   int32_t r19_val = get_register(r19);
-  int32_t r20_val = get_register(r20);
+//  int32_t r20_val = get_register(r20);  -- this is cp
   int32_t r21_val = get_register(r21);
   int32_t r22_val = get_register(r22);
   int32_t r23_val = get_register(r23);
@@ -3735,7 +3757,7 @@ int32_t Simulator::Call(byte* entry, int argument_count, ...) {
 	  set_register(r17, callee_saved_value);
 	  set_register(r18, callee_saved_value);
 	  set_register(r19, callee_saved_value);
-	  set_register(r20, callee_saved_value);
+	//  set_register(r20, callee_saved_value); -- this is cp
 	  set_register(r21, callee_saved_value);
 	  set_register(r22, callee_saved_value);
 	  set_register(r23, callee_saved_value);
@@ -3758,7 +3780,7 @@ int32_t Simulator::Call(byte* entry, int argument_count, ...) {
 	  CHECK_EQ(callee_saved_value, get_register(r17));
 	  CHECK_EQ(callee_saved_value, get_register(r18));
 	  CHECK_EQ(callee_saved_value, get_register(r19));
-	  CHECK_EQ(callee_saved_value, get_register(r20));
+	  // CHECK_EQ(callee_saved_value, get_register(r20)); -- cp
 	  CHECK_EQ(callee_saved_value, get_register(r21));
 	  CHECK_EQ(callee_saved_value, get_register(r22));
 	  CHECK_EQ(callee_saved_value, get_register(r23));
@@ -3778,7 +3800,7 @@ int32_t Simulator::Call(byte* entry, int argument_count, ...) {
 	  set_register(r17, r17_val);
 	  set_register(r18, r18_val);
 	  set_register(r19, r19_val);
-	  set_register(r20, r20_val);
+	  // set_register(r20, r20_val); -- cp
 	  set_register(r21, r21_val);
 	  set_register(r22, r22_val);
 	  set_register(r23, r23_val);

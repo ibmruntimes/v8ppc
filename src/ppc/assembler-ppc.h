@@ -153,7 +153,7 @@ struct Register {
 const int kRegister_no_reg_Code = -1;
 const int kRegister_r0_Code = 0;
 const int kRegister_sp_Code = 1;  // todo - rename to SP
-const int kRegister_r2_Code = 2;
+const int kRegister_r2_Code = 2;  // special on PowerPC
 const int kRegister_r3_Code = 3;
 const int kRegister_r4_Code = 4;
 const int kRegister_r5_Code = 5;
@@ -894,6 +894,7 @@ SBit s = LeaveCC, Condition cond = al // roohack - remove this line later
               RCBit rc = LeaveRC);
   void slwi(Register dst, Register src, const Operand& val);
   void srwi(Register dst, Register src, const Operand& val);
+  void srawi(Register ra, Register rs, int sh, RCBit r = LeaveRC);
 
   void and_(Register dst, Register src1, Register src2, RCBit rc);  
 

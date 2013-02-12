@@ -864,10 +864,19 @@ void Decoder::DecodeExt1(Instruction* instr) {
 }
 
 void Decoder::DecodeExt2(Instruction* instr) {
+
+   // Some encodings are 10-1 bits, handle those first
+   switch(instr->Bits(10,1) << 1) {
+    case SRAWIX: {
+      Format(instr, "srawi'. 'ra,'rs,'sh");
+      return;
+    }
+  }
+
 // ?? are all of these xo_form?
   switch(instr->Bits(9,1) << 1) {
     case CMP: {
-      Format(instr, "cmp 'ra,'rb");
+      Format(instr, "cmp     'ra,'rb");
       break;
     }
     case ADDCX: {
@@ -887,7 +896,7 @@ void Decoder::DecodeExt2(Instruction* instr) {
       break;
     }
     case ADDX: {
-      Format(instr, "add'o 'rt,'ra,'rb");
+      Format(instr, "add'o     'rt,'ra,'rb");
       break;
     }
     case ORX: { 
@@ -1666,7 +1675,47 @@ int Decoder::InstructionDecode(byte* instr_ptr) {
       break;
     }
     case BCX: {
-      Format(instr, "bc'l'a 'target16");
+      int bo = instr->Bits(25,21) << 21;
+      int bi = instr->Bits(20,16);
+      switch(bi) {
+        case 30:
+          if(BT == bo) {
+            Format(instr, "beq'l'a 'target16");
+            break;
+          }
+          if(BF == bo) {
+            Format(instr, "bne'l'a 'target16");
+            break;
+          }
+          Format(instr, "bc'l'a 'target16");
+          break;
+        case 29:
+          if(BT == bo) {
+            Format(instr, "bgt'l'a 'target16");
+            break;
+          }
+          if(BF == bo) {
+            Format(instr, "ble'l'a 'target16");
+            break;
+          }
+          Format(instr, "bc'l'a 'target16");
+          break;
+        case 28:
+          if(BT == bo) {
+            Format(instr, "blt'l'a 'target16");
+            break;
+          }
+          if(BF == bo) {
+            Format(instr, "bge'l'a 'target16");
+            break;
+          }
+          Format(instr, "bc'l'a 'target16");
+          break;
+        default: 
+          Format(instr, "bc'l'a 'target16");
+          break;
+      }
+      break;
     }
     case SC:
     case BX: {

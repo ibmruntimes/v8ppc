@@ -283,7 +283,7 @@ enum OpcodeExt1 {
   BCCTRX = 528 << 1   // Branch Conditional to Count Register
 };
 
-// Bits 9-1
+// Bits 9-1 or 10-1
 enum OpcodeExt2 {
   CMP = 0 << 1,
   TW = 4 << 1,
@@ -328,7 +328,10 @@ enum OpcodeExt2 {
   ADDX = 266 << 1,  // Add
   MFSPR = 339 <<1,  // Move from Special-Purpose-Register
   ORX = 444 << 1,  // Or
-  MTSPR = 467 <<1  // Move to Special-Purpose-Register
+  MTSPR = 467 <<1,  // Move to Special-Purpose-Register
+
+  // Below represent bits 10-1
+  SRAWIX = 824 << 1  // Shift Right Algebraic Word Immediate
 }; 
 
 // Bits 11-1

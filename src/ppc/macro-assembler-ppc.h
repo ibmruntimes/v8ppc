@@ -51,7 +51,7 @@ inline Operand SmiUntagOperand(Register object) {
 
 
 // Give alias names to registers
-const Register cp = { 10 };  // JavaScript context pointer
+const Register cp = { 20 };  // JavaScript context pointer
 const Register kRootRegister = { 13 };  // Roots array pointer.
 
 // Flags used for the AllocateInNewSpace functions.
@@ -1163,8 +1163,8 @@ class MacroAssembler: public Assembler {
   }
   // Jump if either of the registers contain a non-smi.
   inline void JumpIfNotSmi(Register value, Label* not_smi_label) {
-    tst(value, Operand(kSmiTagMask));
-    b(ne, not_smi_label);
+    rlwimi(r0, value, 0, 31, 31, SetRC);  // tst(value, Operand(kSmiTagMask));
+    bne(not_smi_label);
   }
   // Jump if either of the registers contain a non-smi.
   void JumpIfNotBothSmi(Register reg1, Register reg2, Label* on_not_both_smi);
