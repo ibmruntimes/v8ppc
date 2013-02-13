@@ -422,7 +422,7 @@ static void ArrayNativeCode(MacroAssembler* masm,
   __ jmp(&entry);
   __ bind(&loop);
   __ lwz(r5, MemOperand(r10));
-  __ add(r5, r5, Operand(kPointerSize));
+  __ add(r10, r10, Operand(kPointerSize));
   if (FLAG_smi_only_arrays) {
     __ JumpIfNotSmi(r5, &has_non_smi_element);
   }
@@ -473,7 +473,7 @@ static void ArrayNativeCode(MacroAssembler* masm,
   __ sub(r10, r10, Operand(kPointerSize));
   __ bind(&loop2);
   __ lwz(r5, MemOperand(r10));
-  __ add(r5, r5, Operand(kPointerSize));
+  __ add(r10, r10, Operand(kPointerSize));
   __ stwu(r5, MemOperand(r8, -kPointerSize));
   __ cmp(r7, r8);
   __ blt(&loop2);
@@ -1031,7 +1031,8 @@ static void Generate_JSConstructStubHelper(MacroAssembler* masm,
     __ lwz(ip, MemOperand(r5, r6, LSL, kPointerSizeLog2 - 1));
     __ push(ip);
     __ bind(&entry);
-    __ sub(r6, r6, Operand(2), SetCC);
+    __ sub(r6, r6, Operand(2));
+    __ cmpi(r6, Operand(0));
     __ bge(&loop);
 
     // Call the function.

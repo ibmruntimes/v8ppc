@@ -1158,13 +1158,13 @@ class MacroAssembler: public Assembler {
 
   // Jump the register contains a smi.
   inline void JumpIfSmi(Register value, Label* smi_label) {
-    rlwimi(r0, value, 0, 31, 31, SetRC);  // tst(value, Operand(kSmiTagMask));
-    beq(smi_label);  // branch if SMI
+    rlwinm(r0, value, 0, 31, 31, SetRC);  // tst(value, Operand(kSmiTagMask));
+    bc(smi_label, BT, 2);  // branch if SMI
   }
   // Jump if either of the registers contain a non-smi.
   inline void JumpIfNotSmi(Register value, Label* not_smi_label) {
-    rlwimi(r0, value, 0, 31, 31, SetRC);  // tst(value, Operand(kSmiTagMask));
-    bne(not_smi_label);
+    rlwinm(r0, value, 0, 31, 31, SetRC);  // tst(value, Operand(kSmiTagMask));
+    bc(not_smi_label, BF, 2);
   }
   // Jump if either of the registers contain a non-smi.
   void JumpIfNotBothSmi(Register reg1, Register reg2, Label* on_not_both_smi);

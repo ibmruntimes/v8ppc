@@ -984,7 +984,6 @@ void FullCodeGenerator::DeclareGlobals(Handle<FixedArray> pairs) {
   // Call the runtime to declare the globals.
   // The context is the first argument.
   __ mov(r4, Operand(pairs));
-// roohack - relocation fixes this  __ lwz(r4, MemOperand(r4,0));
   __ li(r3, Operand(Smi::FromInt(DeclareGlobalsFlags())));
   __ Push(cp, r4, r3);
   __ CallRuntime(Runtime::kDeclareGlobals, 3);
