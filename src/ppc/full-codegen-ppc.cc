@@ -293,8 +293,8 @@ void FullCodeGenerator::Generate() {
       PrepareForBailoutForId(BailoutId::Declarations(), NO_REGISTERS);
       Label ok;
       __ LoadRoot(ip, Heap::kStackLimitRootIndex);
-      __ cmp(sp, ip, al);
-      __ b(hs, &ok);
+      __ cmp(sp, ip);
+      __ bgt(&ok);
       StackCheckStub stub;
       __ CallStub(&stub);
       __ bind(&ok);
@@ -330,6 +330,7 @@ void FullCodeGenerator::EmitProfilingCounterDecrement(int delta) {
   __ lwz(r6, FieldMemOperand(r5, JSGlobalPropertyCell::kValueOffset));
   __ sub(r6, r6, Operand(Smi::FromInt(delta)), SetCC);
   __ stw(r6, FieldMemOperand(r5, JSGlobalPropertyCell::kValueOffset));
+  __ cmpi(r6, Operand(0));
 }
 
 
@@ -365,7 +366,7 @@ void FullCodeGenerator::EmitStackCheck(IterationStatement* stmt,
                    Max(1, distance / kBackEdgeDistanceUnit));
     }
     EmitProfilingCounterDecrement(weight);
-    __ b(pl, &ok);
+    __ bge(&ok);
     InterruptStub stub;
     __ CallStub(&stub);
   } else {
@@ -418,7 +419,7 @@ void FullCodeGenerator::EmitReturnSequence() {
       }
       EmitProfilingCounterDecrement(weight);
       Label ok;
-      __ b(pl, &ok);
+      __ bge(&ok);
       __ push(r3);
       if (info_->ShouldSelfOptimize() && FLAG_direct_self_opt) {
         __ lwz(r5, MemOperand(fp, JavaScriptFrameConstants::kFunctionOffset));
@@ -4345,7 +4346,7 @@ void FullCodeGenerator::VisitCompareOperation(CompareOperation* expr) {
       CallIC(ic, RelocInfo::CODE_TARGET, expr->CompareOperationFeedbackId());
       patch_site.EmitPatchInfo();
       PrepareForBailoutBeforeSplit(expr, true, if_true, if_false);
-      __ cmp(r3, Operand(0));
+      __ cmpi(r3, Operand(0));
       Split(cond, if_true, if_false, fall_through);
     }
   }

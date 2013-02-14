@@ -907,7 +907,7 @@ static void Generate_JSConstructStubHelper(MacroAssembler* masm,
       __ Ubfx(r9, r3, Map::kInObjectPropertiesByte * kBitsPerByte,
               kBitsPerByte);
 #endif
-      __ sub(r6, r6, Operand(r9), SetCC);
+      __ sub(r6, r6, r9, LeaveOE, SetRC);
 
       // Done if no extra properties are to be allocated.
       __ beq(&allocated);

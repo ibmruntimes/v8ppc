@@ -1960,7 +1960,7 @@ void MacroAssembler::CheckFastElements(Register map,
   STATIC_ASSERT(FAST_HOLEY_ELEMENTS == 3);
   lbz(scratch, FieldMemOperand(map, Map::kBitField2Offset));
   cmp(scratch, Operand(Map::kMaximumBitField2FastHoleyElementValue));
-  b(hi, fail);
+  bgt(fail);
 }
 
 
@@ -1973,9 +1973,9 @@ void MacroAssembler::CheckFastObjectElements(Register map,
   STATIC_ASSERT(FAST_HOLEY_ELEMENTS == 3);
   lbz(scratch, FieldMemOperand(map, Map::kBitField2Offset));
   cmp(scratch, Operand(Map::kMaximumBitField2FastHoleySmiElementValue));
-  b(ls, fail);
+  blt(fail);
   cmp(scratch, Operand(Map::kMaximumBitField2FastHoleyElementValue));
-  b(hi, fail);
+  bgt(fail);
 }
 
 
@@ -3062,16 +3062,20 @@ void MacroAssembler::JumpIfNotBothSmi(Register reg1,
 void MacroAssembler::UntagAndJumpIfSmi(
     Register dst, Register src, Label* smi_case) {
   STATIC_ASSERT(kSmiTag == 0);
-  mov(dst, Operand(src, ASR, kSmiTagSize), SetCC);
-  b(cc, smi_case);  // Shifter carry is not set for a smi.
+  STATIC_ASSERT(kSmiTagSize == 1);
+  rlwinm(r0, src, 0, 31, 31, SetRC);
+  srawi(dst, src, kSmiTagSize, LeaveRC);
+  bc(smi_case, BT, 2);
 }
 
 
 void MacroAssembler::UntagAndJumpIfNotSmi(
     Register dst, Register src, Label* non_smi_case) {
   STATIC_ASSERT(kSmiTag == 0);
-  mov(dst, Operand(src, ASR, kSmiTagSize), SetCC);
-  b(cs, non_smi_case);  // Shifter carry is set for a non-smi.
+  STATIC_ASSERT(kSmiTagSize == 1);
+  rlwinm(r0, src, 0, 31, 31, SetRC);
+  srawi(dst, src, kSmiTagSize, LeaveRC);
+  bc(non_smi_case, BF, 2);
 }
 
 
@@ -3079,9 +3083,8 @@ void MacroAssembler::JumpIfEitherSmi(Register reg1,
                                      Register reg2,
                                      Label* on_either_smi) {
   STATIC_ASSERT(kSmiTag == 0);
-  tst(reg1, Operand(kSmiTagMask));
-  tst(reg2, Operand(kSmiTagMask), ne);
-  beq(on_either_smi);
+  JumpIfSmi(reg1, on_either_smi);
+  JumpIfSmi(reg2, on_either_smi);
 }
 
 

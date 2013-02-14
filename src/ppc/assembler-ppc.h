@@ -835,7 +835,32 @@ class Assembler : public AssemblerBase {
   void b(Label* L, LKBit lk)  {
     b(branch_offset(L, false), lk);
   }
-  void b(Condition cond, Label* L)  { b(branch_offset(L, cond == al), cond); }
+  void b(Condition cond, Label* L)  {
+    switch(cond) {
+      case eq:
+        beq(L);
+        break;
+      case ne:
+        bne(L);
+        break;
+      case le:
+        ble(L);
+        break;
+      case lt:
+        blt(L);
+        break;
+      case ge:
+        bge(L);
+        break;
+      case gt:
+        bgt(L);
+        break;
+      default:
+        li(r0, Operand(0xeeee));
+        b(L);
+        // UNIMPLEMENTED();
+    }
+  }
   // PowerPC
   void bc(Label* L, BOfield bo, int bit)  { 
     bc(branch_offset(L, false), bo, bit); }
@@ -847,6 +872,8 @@ class Assembler : public AssemblerBase {
     bc(branch_offset(L, false), BT, 28); }
   void bge(Label* L) {
     bc(branch_offset(L, false), BF, 28); }
+  void ble(Label* L) {
+    bc(branch_offset(L, false), BF, 29); }
   void bgt(Label* L) {
     bc(branch_offset(L, false), BT, 29); }
   // end PowerPC
@@ -857,6 +884,9 @@ class Assembler : public AssemblerBase {
   // Data-processing instructions
 
   // PowerPC
+  void sub(Register dst, Register src1, Register src2,
+           OEBit s = LeaveOE, RCBit r = LeaveRC );
+
   void add(Register dst, Register src1, Register src2,
            OEBit s = LeaveOE, RCBit r = LeaveRC );
 
@@ -874,6 +904,7 @@ SBit s = LeaveCC, Condition cond = al // roohack - remove this line later
   void addic(Register dst, Register src, int imm);
 
   void andi(Register dst, Register src, const Operand& imm);
+  void ori(Register dst, Register src, const Operand& imm);
   void orx(Register dst, Register src1, Register src2, RCBit r = LeaveRC);
   void cmpi(Register src1, const Operand& src2);
   void li(Register dst, const Operand& src);
@@ -909,7 +940,7 @@ SBit s = LeaveCC, Condition cond = al // roohack - remove this line later
   void sub(Register dst, Register src1, const Operand& src2,
            SBit s = LeaveCC, Condition cond = al);
   void sub(Register dst, Register src1, Register src2,
-           SBit s = LeaveCC, Condition cond = al) {
+           SBit s, Condition cond = al) {
     sub(dst, src1, Operand(src2), s, cond);
   }
 

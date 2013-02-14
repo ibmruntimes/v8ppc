@@ -1282,6 +1282,11 @@ void Assembler::addze(Register dst, Register src1, OEBit o, RCBit r) {
   emit( EXT2 | ADDZEX | dst.code()*B21 | src1.code()*B16 | o | r );
 }
 
+void Assembler::sub(Register dst, Register src1, Register src2,
+                    OEBit o, RCBit r) {
+  xo_form( EXT2 | SUBFX, dst, src1, src2, o, r );
+}
+
 void Assembler::add(Register dst, Register src1, Register src2,
                     OEBit o, RCBit r) {
   xo_form( EXT2 | ADDX, dst, src1, src2, o, r );
@@ -1303,6 +1308,10 @@ void Assembler::addic(Register dst, Register src, int imm) {
 
 void  Assembler::andi(Register dst, Register src, const Operand& imm) {
   d_form(ANDIx, dst, src, imm.imm32_);
+}
+
+void Assembler::ori(Register dst, Register src, const Operand& imm) {
+  d_form(ORI, dst, src, imm.imm32_);
 }
 
 void Assembler::orx(Register dst, Register src1, Register src2, RCBit r) {
@@ -2708,16 +2717,26 @@ void Assembler::vsqrt(const DwVfpRegister dst,
 
 // Pseudo instructions.
 void Assembler::nop(int type) {
-  // This is mov rx, rx.
-  ASSERT(0 <= type && type <= 14);  // mov pc, pc is not a nop.
-  emit(al | 13*B21 | type*B12 | type);
+  switch(type) {
+    case 0:
+      ori(r0, r0, Operand(0));
+      break;
+    case DEBUG_BREAK_NOP:
+      ori(r3, r3, Operand(0));
+      break;
+    default: 
+      UNIMPLEMENTED();
+  }
 }
 
 
 bool Assembler::IsNop(Instr instr, int type) {
-  // Check for mov rx, rx where x = type.
-  ASSERT(0 <= type && type <= 14);  // mov pc, pc is not a nop.
-  return instr == (al | 13*B21 | type*B12 | type);
+  ASSERT((0==type) || (DEBUG_BREAK_NOP == type));
+  int reg = 0;
+  if(DEBUG_BREAK_NOP == type) {
+    reg = 3;
+  }
+  return instr == (ORI | reg*B21 | reg*B16 );
 }
 
 

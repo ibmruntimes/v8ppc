@@ -787,7 +787,7 @@ static MemOperand GenerateMappedArgumentsLookup(MacroAssembler* masm,
   __ lwz(scratch2, FieldMemOperand(scratch1, FixedArray::kLengthOffset));
   __ sub(scratch2, scratch2, Operand(Smi::FromInt(2)));
   __ cmp(key, scratch2);
-  __ b(cs, unmapped_case);
+  __ bge(unmapped_case);
 
   // Load element index and check whether it is the hole.
   const int kOffset =
@@ -831,7 +831,7 @@ static MemOperand GenerateUnmappedArgumentsLookup(MacroAssembler* masm,
               DONT_DO_SMI_CHECK);
   __ lwz(scratch, FieldMemOperand(backing_store, FixedArray::kLengthOffset));
   __ cmp(key, scratch);
-  __ b(cs, slow_case);
+  __ bge(slow_case);
   __ mov(scratch, Operand(kPointerSize >> 1));
   __ mul(scratch, key, scratch);
   __ add(scratch,
@@ -1084,7 +1084,7 @@ void KeyedLoadIC::GenerateGeneric(MacroAssembler* masm) {
     }
     __ lwz(r8, MemOperand(r7, r6, LSL, kPointerSizeLog2));
     __ lbz(r9, FieldMemOperand(r5, Map::kInObjectPropertiesOffset));
-    __ sub(r8, r8, r9, SetCC);
+    __ sub(r8, r8, r9, LeaveOE, SetRC);
     __ bge(&property_array_property);
     if (i != 0) {
       __ jmp(&load_in_object_property);
@@ -1486,7 +1486,7 @@ void KeyedStoreIC::GenerateGeneric(MacroAssembler* masm,
   // Check array bounds. Both the key and the length of FixedArray are smis.
   __ lwz(ip, FieldMemOperand(elements, FixedArray::kLengthOffset));
   __ cmp(key, ip);
-  __ b(lo, &fast_object);
+  __ blt(&fast_object);
 
   // Slow case, handle jump to runtime.
   __ bind(&slow);
@@ -1506,7 +1506,7 @@ void KeyedStoreIC::GenerateGeneric(MacroAssembler* masm,
   // Both the key and the length of FixedArray are smis.
   __ lwz(ip, FieldMemOperand(elements, FixedArray::kLengthOffset));
   __ cmp(key, Operand(ip));
-  __ b(hs, &slow);
+  __ bgt(&slow);
   __ lwz(elements_map, FieldMemOperand(elements, HeapObject::kMapOffset));
   __ cmp(elements_map,
          Operand(masm->isolate()->factory()->fixed_array_map()));
@@ -1528,7 +1528,7 @@ void KeyedStoreIC::GenerateGeneric(MacroAssembler* masm,
   // Check the key against the length in the array.
   __ lwz(ip, FieldMemOperand(receiver, JSArray::kLengthOffset));
   __ cmp(key, Operand(ip));
-  __ b(hs, &extra);
+  __ bgt(&extra);
 
   KeyedStoreGenerateGenericHelper(masm, &fast_object, &fast_double,
                                   &slow, kCheckMap, kDontIncrementLength,

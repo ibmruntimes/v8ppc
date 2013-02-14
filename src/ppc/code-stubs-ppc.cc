@@ -1620,6 +1620,7 @@ void NumberToStringStub::GenerateLookupNumberStringCache(MacroAssembler* masm,
   // contains two elements (number and string) for each cache entry.
   __ lwz(mask, FieldMemOperand(number_string_cache, FixedArray::kLengthOffset));
   // Divide length by two (length is a smi).
+  __ li(r0, Operand(0xeee1));
   __ mov(mask, Operand(mask, ASR, kSmiTagSize + 1));
   __ sub(mask, mask, Operand(1));  // Make mask.
 
@@ -4072,7 +4073,7 @@ void JSEntryStub::GenerateBody(MacroAssembler* masm, bool is_construct) {
   // r4: function
   // r5: receiver
   // r6: argc
-  // r7: argv
+  // [sp+0]: argv
 
   Label invoke, handler_entry, exit;
 
@@ -4115,10 +4116,15 @@ void JSEntryStub::GenerateBody(MacroAssembler* masm, bool is_construct) {
   // Floating point regs FPR0 - FRP13 are volatile
   // FPR14-FPR31 are non-volatile, but sub-calls will save them for us
 
-  // Push a frame with special values setup to mark it as an entry frame.
-  // On ARM they push -1 as a bad frame pointer to catch errors
-  // we may want to do the same or similar, but not now
+  int offset_to_argv = kPointerSize * 8; // matches 32 above
+  __ lwz(r7, MemOperand(sp, offset_to_argv));
 
+  // Push a frame with special values setup to mark it as an entry frame.
+  // r3: code entry
+  // r4: function
+  // r5: receiver
+  // r6: argc
+  // r7: argv
   Isolate* isolate = masm->isolate();
   __ li(r0, Operand(-1)); // Push a bad frame pointer to fail if it is used.
   __ push(r0);
@@ -4472,7 +4478,7 @@ void ArgumentsAccessStub::GenerateReadElement(MacroAssembler* masm) {
   // through register r3. Use unsigned comparison to get negative
   // check for free.
   __ cmp(r4, r3);
-  __ b(hs, &slow);
+  __ bgt(&slow);
 
   // Read the argument from the stack and return it.
   __ sub(r6, r3, r4);
@@ -5570,22 +5576,22 @@ void StringCharCodeAtGenerator::GenerateFast(MacroAssembler* masm) {
   __ JumpIfSmi(object_, receiver_not_string_);
 
   // Fetch the instance type of the receiver into result register.
-  __ ldr(result_, FieldMemOperand(object_, HeapObject::kMapOffset));
-  __ ldrb(result_, FieldMemOperand(result_, Map::kInstanceTypeOffset));
+  __ lwz(result_, FieldMemOperand(object_, HeapObject::kMapOffset));
+  __ lbz(result_, FieldMemOperand(result_, Map::kInstanceTypeOffset));
   // If the receiver is not a string trigger the non-string case.
   __ tst(result_, Operand(kIsNotStringMask));
-  __ b(ne, receiver_not_string_);
+  __ bne(receiver_not_string_);
 
   // If the index is non-smi trigger the non-smi case.
   __ JumpIfNotSmi(index_, &index_not_smi_);
   __ bind(&got_smi_index_);
 
   // Check for index out of range.
-  __ ldr(ip, FieldMemOperand(object_, String::kLengthOffset));
+  __ lwz(ip, FieldMemOperand(object_, String::kLengthOffset));
   __ cmp(ip, Operand(index_));
-  __ b(ls, index_out_of_range_);
+  __ blt(index_out_of_range_);
 
-  __ mov(index_, Operand(index_, ASR, kSmiTagSize));
+  __ srawi(index_, index_, kSmiTagSize, LeaveRC);
 
   StringCharLoadGenerator::Generate(masm,
                                     object_,
@@ -5593,7 +5599,7 @@ void StringCharCodeAtGenerator::GenerateFast(MacroAssembler* masm) {
                                     result_,
                                     &call_runtime_);
 
-  __ mov(result_, Operand(result_, LSL, kSmiTagSize));
+  __ slwi(result_, result_, Operand(kSmiTagSize));
   __ bind(&exit_);
 }
 
@@ -5808,8 +5814,8 @@ void StringHelper::GenerateTwoCharacterSymbolTableProbe(MacroAssembler* masm,
   // different hash algorithm. Don't try to look for these in the symbol table.
   Label not_array_index;
   __ sub(scratch, c1, Operand(static_cast<int>('0')));
-  __ cmp(scratch, Operand(static_cast<int>('9' - '0')));
-  __ b(hi, &not_array_index);
+  __ cmpi(scratch, Operand(static_cast<int>('9' - '0')));
+  __ bgt(&not_array_index);
   __ sub(scratch, c2, Operand(static_cast<int>('0')));
   __ cmp(scratch, Operand(static_cast<int>('9' - '0')));
 
@@ -6461,7 +6467,7 @@ void StringAddStub::Generate(MacroAssembler* masm) {
   ASSERT(IsPowerOf2(String::kMaxLength + 1));
   // kMaxLength + 1 is representable as shifted literal, kMaxLength is not.
   __ cmp(r9, Operand(String::kMaxLength + 1));
-  __ b(hs, &call_runtime);
+  __ bgt(&call_runtime);
 
   // If result is not supposed to be flat, allocate a cons string object.
   // If both strings are ASCII the result is an ASCII cons string.
@@ -6674,11 +6680,13 @@ void ICCompareStub::GenerateSmis(MacroAssembler* masm) {
 
   if (GetCondition() == eq) {
     // For equality we do not care about the sign of the result.
-    __ sub(r3, r3, r4, SetCC);
+    // __ sub(r3, r3, r4, SetCC);
+     __ sub(r3, r3, r4, LeaveOE, SetRC);
   } else {
     // Untag before subtracting to avoid handling overflow.
     __ SmiUntag(r4);
-    __ sub(r3, r4, SmiUntagOperand(r3));
+    __ SmiUntag(r3);
+    __ sub(r3, r4, r3);
   }
   __ Ret();
 
@@ -7148,6 +7156,7 @@ void StringDictionaryLookupStub::Generate(MacroAssembler* masm) {
   Label in_dictionary, maybe_in_dictionary, not_in_dictionary;
 
   __ ldr(mask, FieldMemOperand(dictionary, kCapacityOffset));
+  __ li(r0, Operand(0xeee2));
   __ mov(mask, Operand(mask, ASR, kSmiTagSize));
   __ sub(mask, mask, Operand(1));
 
@@ -7441,15 +7450,18 @@ void RecordWriteStub::CheckNeedsToInformIncrementalMarker(
   Label need_incremental;
   Label need_incremental_pop_scratch;
 
-  __ and_(regs_.scratch0(), regs_.object(), Operand(~Page::kPageAlignmentMask));
-  __ ldr(regs_.scratch1(),
+  ASSERT((~Page::kPageAlignmentMask & 0xffff) == 0);
+  __ addis(r0, r0, (~Page::kPageAlignmentMask >> 16));
+  __ and_(regs_.scratch0(), regs_.object(), r0, LeaveRC);
+  __ lwz(regs_.scratch1(),
          MemOperand(regs_.scratch0(),
                     MemoryChunk::kWriteBarrierCounterOffset));
-  __ sub(regs_.scratch1(), regs_.scratch1(), Operand(1), SetCC);
-  __ str(regs_.scratch1(),
+  __ sub(regs_.scratch1(), regs_.scratch1(), Operand(1));
+  __ stw(regs_.scratch1(),
          MemOperand(regs_.scratch0(),
                     MemoryChunk::kWriteBarrierCounterOffset));
-  __ b(mi, &need_incremental);
+  __ cmpi(regs_.scratch1(), Operand(0));  // roohack, we could do better here
+  __ blt(&need_incremental);
 
   // Let's look at the color of the object:  If it is not black we don't have
   // to inform the incremental marker.
@@ -7469,7 +7481,7 @@ void RecordWriteStub::CheckNeedsToInformIncrementalMarker(
   __ bind(&on_black);
 
   // Get the value from the slot.
-  __ ldr(regs_.scratch0(), MemOperand(regs_.address(), 0));
+  __ lwz(regs_.scratch0(), MemOperand(regs_.address(), 0));
 
   if (mode == INCREMENTAL_COMPACTION) {
     Label ensure_not_white;

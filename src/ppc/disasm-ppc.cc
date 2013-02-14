@@ -868,7 +868,7 @@ void Decoder::DecodeExt2(Instruction* instr) {
    // Some encodings are 10-1 bits, handle those first
    switch(instr->Bits(10,1) << 1) {
     case SRAWIX: {
-      Format(instr, "srawi'. 'ra,'rs,'sh");
+      Format(instr, "srawi'.  'ra,'rs,'sh");
       return;
     }
   }
@@ -885,6 +885,10 @@ void Decoder::DecodeExt2(Instruction* instr) {
     }
     case ANDX: {
       Format(instr, "and'o    'rt,'ra,'rb");
+      break;
+    }
+    case SUBFX: {
+      Format(instr, "subf'.  'rt,'ra,'rb");
       break;
     }
     case ADDZEX: {
@@ -1735,7 +1739,10 @@ int Decoder::InstructionDecode(byte* instr_ptr) {
       break;
     }
     case RLWNMX:
-    case ORI:
+    case ORI: {
+      Format(instr, "ori.    'ra, 'rs, 'uint16");
+      break;
+    }
     case ORIS:
     case XORI:
     case XORIS:

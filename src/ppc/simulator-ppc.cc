@@ -1993,6 +1993,22 @@ void Simulator::DecodeExt2(Instruction* instr) {
       } 
       break;
     }
+    case SUBFX: {
+      int rt = instr->RTValue();
+      int ra = instr->RAValue();
+      int rb = instr->RBValue();
+      // int oe = instr->Bit(10);
+      int rc = instr->Bit(0);
+      if(rc) {
+        UNIMPLEMENTED();  //  need to handle RC bit
+      }
+      int32_t ra_val = get_register(ra);
+      int32_t rb_val = get_register(rb);
+      int32_t alu_out = ra_val - rb_val;
+      // todo - figure out underflow
+      set_register(rt, alu_out);
+      // todo - handle OE and RC bits
+    }
     case ADDZEX: {
       int rt = instr->RTValue();
       int ra = instr->RAValue();
@@ -3519,7 +3535,15 @@ void Simulator::InstructionDecode(Instruction* instr) {
       break;
     }
     case RLWNMX:
-    case ORI:
+    case ORI: {
+      int rt = instr->RTValue();
+      int ra = instr->RAValue();
+      int32_t ra_val = get_register(ra);
+      uint32_t im_val = instr->Bits(15,0);
+      int32_t alu_out = ra_val | im_val;
+      set_register(rt, alu_out);
+      // todo - set condition based SO bit
+    }
     case ORIS:
     case XORI:
     case XORIS:

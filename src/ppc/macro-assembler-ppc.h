@@ -44,11 +44,6 @@ inline MemOperand FieldMemOperand(Register object, int offset) {
 }
 
 
-inline Operand SmiUntagOperand(Register object) {
-  return Operand(object, ASR, kSmiTagSize);
-}
-
-
 
 // Give alias names to registers
 const Register cp = { 20 };  // JavaScript context pointer
@@ -1142,12 +1137,18 @@ class MacroAssembler: public Assembler {
   }
 
   void SmiUntag(Register reg, SBit s = LeaveCC) {
-    mov(reg, Operand(reg, ASR, kSmiTagSize), s);
-  }
-  void SmiUntag(Register dst, Register src, SBit s = LeaveCC) {
-    mov(dst, Operand(src, ASR, kSmiTagSize), s);
+    SmiUntag(reg, reg, s);
   }
 
+  void SmiUntag(Register dst, Register src, SBit s = LeaveCC) {
+    ASSERT(kSmiTagSize == 1);
+    // Temporary - map SBit to RCBit
+    RCBit r = LeaveRC;
+    if(s == SetCC) { r = SetRC; } 
+
+    srawi(dst, src, 1, r);
+  }
+  
   // Untag the source value into destination and jump if source is a smi.
   // Souce and destination can be the same register.
   void UntagAndJumpIfSmi(Register dst, Register src, Label* smi_case);
