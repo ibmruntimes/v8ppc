@@ -1957,6 +1957,24 @@ void Simulator::DecodeExt2(Instruction* instr) {
       condition_reg_ = (condition_reg_ & ~condition_mask) | condition;
       break;
     }
+    case SUBFCX: {
+      int rt = instr->RTValue();
+      int ra = instr->RAValue();
+      int rb = instr->RBValue();
+      // int oe = instr->Bit(10);
+      // int rc = instr->Bit(0);
+      uint32_t ra_val = get_register(ra);
+      uint32_t rb_val = get_register(rb);
+      uint32_t alu_out = ra_val - rb_val;
+      set_register(rt, alu_out);
+      if(ra_val > rb_val) {
+        special_reg_xer_ = (special_reg_xer_ & ~0xF0000000) | 0x20000000;
+      } else {
+        special_reg_xer_ &= ~0xF0000000;
+      }
+      // todo - handle OE and RC bits
+      break;
+    }
     case ADDCX: {
       int rt = instr->RTValue();
       int ra = instr->RAValue();
@@ -2008,6 +2026,7 @@ void Simulator::DecodeExt2(Instruction* instr) {
       // todo - figure out underflow
       set_register(rt, alu_out);
       // todo - handle OE and RC bits
+      break;
     }
     case ADDZEX: {
       int rt = instr->RTValue();

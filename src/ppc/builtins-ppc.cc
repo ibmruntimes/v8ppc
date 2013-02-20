@@ -495,7 +495,9 @@ void Builtins::Generate_InternalArrayCode(MacroAssembler* masm) {
   if (FLAG_debug_code) {
     // Initial map for the builtin InternalArray functions should be maps.
     __ lwz(r5, FieldMemOperand(r4, JSFunction::kPrototypeOrInitialMapOffset));
-    __ cmpi(r5, Operand(kSmiTagMask));
+    STATIC_ASSERT(kSmiTagMask < 0x8000);
+    __ andi(r0, r5, Operand(kSmiTagMask)); 
+    __ cmpi(r0, Operand(0));
     __ Assert(ne, "Unexpected initial map for InternalArray function");
     __ CompareObjectType(r5, r6, r7, MAP_TYPE);
     __ Assert(eq, "Unexpected initial map for InternalArray function");
@@ -529,7 +531,9 @@ void Builtins::Generate_ArrayCode(MacroAssembler* masm) {
   if (FLAG_debug_code) {
     // Initial map for the builtin Array functions should be maps.
     __ lwz(r5, FieldMemOperand(r4, JSFunction::kPrototypeOrInitialMapOffset));
-    __ cmpi(r5, Operand(kSmiTagMask));
+    STATIC_ASSERT(kSmiTagMask < 0x8000);
+    __ andi(r0, r5, Operand(kSmiTagMask));
+    __ cmpi(r0, Operand(0));
     __ Assert(ne, "Unexpected initial map for Array function");
     __ CompareObjectType(r5, r6, r7, MAP_TYPE);
     __ Assert(eq, "Unexpected initial map for Array function");
@@ -857,17 +861,14 @@ static void Generate_JSConstructStubHelper(MacroAssembler* masm,
       ASSERT_EQ(3 * kPointerSize, JSObject::kHeaderSize);
       __ LoadRoot(r10, Heap::kUndefinedValueRootIndex);
       if (count_constructions) {
-        __ ldr(r3, FieldMemOperand(r5, Map::kInstanceSizesOffset));
-#if defined(V8_HOST_ARCH_PPC)
-// bogus...
-        __ Ubfx(r0, r0, (3 - Map::kPreAllocatedPropertyFieldsByte) * kBitsPerByte,
-                kBitsPerByte);
-#else
-// bogus
-        __ Ubfx(r3, r3, Map::kPreAllocatedPropertyFieldsByte * kBitsPerByte,
-                kBitsPerByte);
-#endif
-        __ add(r3, r8, Operand(r3, LSL, kPointerSizeLog2));
+        __ lwz(r3, FieldMemOperand(r5, Map::kInstanceSizesOffset));
+        // ENDIAN
+        // Fetch Map::kPreAllocatedPropertyFieldsByte field from r3
+        // and multiply by kPointerSizeLog2
+        STATIC_ASSERT(2 == Map::kPreAllocatedPropertyFieldsByte);
+        STATIC_ASSERT(kPointerSizeLog2 == 2);
+        __ rlwinm(r3, r3, 26, 22, 29, LeaveRC);  // roohack - untested yet
+        __ add(r3, r8, r3);
         // r3: offset of first field after pre-allocated fields
         if (FLAG_debug_code) {
           __ cmp(r3, r9);
@@ -893,21 +894,16 @@ static void Generate_JSConstructStubHelper(MacroAssembler* masm,
       __ lbz(r6, FieldMemOperand(r5, Map::kUnusedPropertyFieldsOffset));
       // The field instance sizes contains both pre-allocated property fields
       // and in-object properties.
-      __ ldr(r3, FieldMemOperand(r5, Map::kInstanceSizesOffset));
-#if defined(V8_HOST_ARCH_PPC)
-      __ Ubfx(r9, r3, (3 - Map::kPreAllocatedPropertyFieldsByte) * kBitsPerByte,
-              kBitsPerByte);
+      __ lwz(r3, FieldMemOperand(r5, Map::kInstanceSizesOffset));
+      // ENDIAN
+      // Fetch Map::kPreAllocatedPropertyFieldsByte field from r3
+      STATIC_ASSERT(2 == Map::kPreAllocatedPropertyFieldsByte);
+      __ rlwinm(r9, r3, 24, 24, 31, LeaveRC);  // roohack - untested yet
       __ add(r6, r6, Operand(r9));
-      __ Ubfx(r9, r3, (3 - Map::kInObjectPropertiesByte) * kBitsPerByte,
-              kBitsPerByte);
-#else
-      __ Ubfx(r9, r3, Map::kPreAllocatedPropertyFieldsByte * kBitsPerByte,
-              kBitsPerByte);
-      __ add(r6, r6, Operand(r9));
-      __ Ubfx(r9, r3, Map::kInObjectPropertiesByte * kBitsPerByte,
-              kBitsPerByte);
-#endif
-      __ sub(r6, r6, r9, LeaveOE, SetRC);
+      STATIC_ASSERT(1 == Map::kInObjectPropertiesByte);
+      __ rlwinm(r9, r3, 0, 24, 31, LeaveRC);   // roohack - untested yet
+      __ sub(r6, r6, r9);  // roohack - sub order may be incorrect
+      __ cmpi(r6, Operand(0));
 
       // Done if no extra properties are to be allocated.
       __ beq(&allocated);

@@ -1727,14 +1727,16 @@ void CompareStub::Generate(MacroAssembler* masm) {
     Label not_two_smis, smi_done;
     __ orx(r5, r4, r3);
     __ JumpIfNotSmi(r5, &not_two_smis);
-    __ srawi(r4, r4, 1, LeaveRC);
-    __ srawi(r3, r3, 1, LeaveRC);
+    __ srawi(r4, r4, 1);
+    __ srawi(r3, r3, 1);
     __ sub(r3, r3, r4);
     __ Ret();
     __ bind(&not_two_smis);
   } else if (FLAG_debug_code) {
     __ orx(r5, r4, r3);
-    __ rlwimi(r0, r5, 0, 31, 31, SetRC);   // tst(r5, Operand(kSmiTagMask));
+    STATIC_ASSERT(kSmiTagMask < 0x8000);
+    __ andi(r0, r5, Operand(kSmiTagMask));
+    __ cmpi(r0, Operand(0));
     __ Assert(ne, "CompareStub: unexpected smi operands.");
   }
 
@@ -2441,41 +2443,57 @@ void BinaryOpStub::PrintName(StringStream* stream) {
 void BinaryOpStub::GenerateSmiSmiOperation(MacroAssembler* masm) {
   Register left = r4;
   Register right = r3;
-  Register scratch1 = r7; // roohack - what's the right thing here?
-  Register scratch2 = r9; // ditto
+  Register scratch1 = r10;
+  Register scratch2 = r22;
 
   ASSERT(right.is(r3));
   STATIC_ASSERT(kSmiTag == 0);
 
   Label not_smi_result;
   switch (op_) {
-    case Token::ADD:
-      __ add(right, left, Operand(right), SetCC);  // Add optimistically.
-      __ Ret(vc);
+    case Token::ADD: {
+      Label undo_add;
+      __ li(r0, Operand(-1));
+      __ addc(right, left, right);  // Add optimistically.
+      __ addze(r0, r0, LeaveOE, SetRC);
+      __ bc(&undo_add, BT, 1); 
+      __ Ret();
+      __ bind(&undo_add);
       __ sub(right, right, Operand(left));  // Revert optimistic add.
       break;
-    case Token::SUB:
-      __ sub(right, left, Operand(right), SetCC);  // Subtract optimistically.
-      __ Ret(vc);
-      __ sub(right, left, Operand(right));  // Revert optimistic subtract.
+    }
+    case Token::SUB: {
+      Label undo_sub;
+      __ li(r0, Operand(-1));
+      __ subfc(right, left, right);  // Subtract optimistically.
+      __ addze(r0, r0, LeaveOE, SetRC);
+      __ bc(&undo_sub, BT, 1); 
+      __ Ret();
+      __ bind(&undo_sub);
+      __ add(right, left, Operand(right));  // Revert optimistic subtract.
       break;
-    case Token::MUL:
+    }
+    case Token::MUL: {
+      Label mul_zero;
       // Remove tag from one of the operands. This way the multiplication result
       // will be a smi if it fits the smi range.
       __ SmiUntag(ip, right);
       // Do multiplication
       // scratch1 = lower 32 bits of ip * left.
       // scratch2 = higher 32 bits of ip * left.
-      __ smull(scratch1, scratch2, left, ip);
+      __ mullw(scratch1, left, ip);
+      __ mulhw(scratch2, left, ip);
       // Check for overflowing the smi range - no overflow if higher 33 bits of
       // the result are identical.
-      __ mov(ip, Operand(scratch1, ASR, 31));
-      __ cmp(ip, Operand(scratch2));
-      __ b(ne, &not_smi_result);
+      __ srawi(ip, scratch1, 31);
+      __ cmp(ip, scratch2);
+      __ bne(&not_smi_result);
       // Go slow on zero result to handle -0.
-      __ cmp(scratch1, Operand(0));
-      __ mov(right, Operand(scratch1), LeaveCC, ne);
-      __ Ret(ne);
+      __ cmpi(scratch1, Operand(0));
+      __ beq(&mul_zero);
+      __ mr(right, scratch1);
+      __ Ret();
+      __ bind(&mul_zero);
       // We need -0 if we were multiplying a negative number with 0 to get 0.
       // We know one of them was zero.
       __ add(scratch2, right, Operand(left), SetCC);
@@ -2484,6 +2502,7 @@ void BinaryOpStub::GenerateSmiSmiOperation(MacroAssembler* masm) {
       // We fall through here if we multiplied a negative number with 0, because
       // that would mean we should produce -0.
       break;
+    }
     case Token::DIV:
       // Check for power of two on the right hand side.
       __ JumpIfNotPowerOfTwoOrZero(right, scratch1, &not_smi_result);
@@ -2501,6 +2520,7 @@ void BinaryOpStub::GenerateSmiSmiOperation(MacroAssembler* masm) {
     case Token::MOD:
       // Check for two positive smis.
       __ orx(scratch1, left, right);
+      // roohack - this test can be a rlwinm + cmpi
       __ tst(scratch1, Operand(0x80000000u | kSmiTagMask));
       __ b(ne, &not_smi_result);
 
@@ -3848,7 +3868,7 @@ void CEntryStub::GenerateCore(MacroAssembler* masm,
 
   if (do_gc) {
     // Passing r3.
-    __ PrepareCallCFunction(1, 0, r1);
+    __ PrepareCallCFunction(1, 0, r4);
     __ CallCFunction(ExternalReference::perform_gc_function(isolate),
         1, 0);
   }
@@ -3933,7 +3953,9 @@ void CEntryStub::GenerateCore(MacroAssembler* masm,
   STATIC_ASSERT(((kFailureTag + 1) & kFailureTagMask) == 0);
   // Lower 2 bits of r5 are 0 iff r3 has failure tag.
   __ add(r5, r3, Operand(1));
-  __ cmpi(r5, Operand(kFailureTagMask));
+  STATIC_ASSERT(kFailureTagMask < 0x8000);
+  __ andi(r0, r5, Operand(kFailureTagMask)); 
+  __ cmpi(r0, Operand(0));
   __ beq(&failure_returned);
 
   // Exit C frame and return.
@@ -3948,24 +3970,27 @@ void CEntryStub::GenerateCore(MacroAssembler* masm,
   Label retry;
   __ bind(&failure_returned);
   STATIC_ASSERT(Failure::RETRY_AFTER_GC == 0);
-  __ tst(r3, Operand(((1 << kFailureTypeTagSize) - 1) << kFailureTagSize));
+  __ li(r0, Operand(((1 << kFailureTypeTagSize) - 1) << kFailureTagSize));
+  __ cmp(r3, r0);
   __ beq(&retry);
 
   // Special handling of out of memory exceptions.
   Failure* out_of_memory = Failure::OutOfMemoryException();
-  __ cmp(r3, Operand(reinterpret_cast<int32_t>(out_of_memory)));
+  __ mov(r6, Operand(reinterpret_cast<int32_t>(out_of_memory)));
+  __ cmp(r3, r6); 
   __ beq(throw_out_of_memory_exception);
 
   // Retrieve the pending exception and clear the variable.
   __ mov(r6, Operand(isolate->factory()->the_hole_value()));
   __ mov(ip, Operand(ExternalReference(Isolate::kPendingExceptionAddress,
                                        isolate)));
-  __ ldr(r3, MemOperand(ip));
-  __ str(r6, MemOperand(ip));
+  __ lwz(r3, MemOperand(ip));
+  __ stw(r6, MemOperand(ip));
 
   // Special handling of termination exceptions which are uncatchable
   // by javascript code.
-  __ cmp(r3, Operand(isolate->factory()->termination_exception()));
+  __ mov(r6, Operand(isolate->factory()->termination_exception()));
+  __ cmp(r3, r6);
   __ beq(throw_termination_exception);
 
   // Handle normal exception.
@@ -4190,9 +4215,9 @@ void JSEntryStub::GenerateBody(MacroAssembler* masm, bool is_construct) {
 
   // Clear any pending exceptions.
   __ mov(r8, Operand(isolate->factory()->the_hole_value()));
-  __ mov(r9, Operand(ExternalReference(Isolate::kPendingExceptionAddress,
+  __ mov(ip, Operand(ExternalReference(Isolate::kPendingExceptionAddress,
                                        isolate)));
-  __ stw(r8, MemOperand(r9));
+  __ stw(r8, MemOperand(ip));
 
   // Invoke the function by calling through JS entry trampoline builtin.
   // Notice that we cannot store a reference to the trampoline code directly in
@@ -4207,12 +4232,12 @@ void JSEntryStub::GenerateBody(MacroAssembler* masm, bool is_construct) {
   if (is_construct) {
     ExternalReference construct_entry(Builtins::kJSConstructEntryTrampoline,
                                       isolate);
-    __ mov(r8, Operand(construct_entry));
+    __ mov(ip, Operand(construct_entry));
   } else {
     ExternalReference entry(Builtins::kJSEntryTrampoline, isolate);
-    __ mov(r8, Operand(entry));
+    __ mov(ip, Operand(entry));
   }
-  __ lwz(r8, MemOperand(r8));  // deref address
+  __ lwz(ip, MemOperand(ip));  // deref address
 
   // Branch and link to JSEntryTrampoline.  We don't use the double underscore
   // macro for the add instruction because we don't want the coverage tool
@@ -4223,7 +4248,7 @@ void JSEntryStub::GenerateBody(MacroAssembler* masm, bool is_construct) {
     Assembler::BlockConstPoolScope block_const_pool(masm);
 
     // the address points to the start of the code object, skip the header
-    masm->add(r0, r8, Operand(Code::kHeaderSize - kHeapObjectTag));
+    masm->add(r0, ip, Operand(Code::kHeaderSize - kHeapObjectTag));
     masm->mtlr(r0);
     masm->bclr(BA, SetLK);  // make the call
   }
@@ -4234,19 +4259,19 @@ void JSEntryStub::GenerateBody(MacroAssembler* masm, bool is_construct) {
   __ bind(&exit);  // r3 holds result
   // Check if the current stack frame is marked as the outermost JS frame.
   Label non_outermost_js_2;
-  __ pop(r5);
-  __ cmpi(r5, Operand(Smi::FromInt(StackFrame::OUTERMOST_JSENTRY_FRAME)));
+  __ pop(r8);
+  __ cmpi(r8, Operand(Smi::FromInt(StackFrame::OUTERMOST_JSENTRY_FRAME)));
   __ bne(&non_outermost_js_2);
-  __ mov(r6, Operand::Zero());
-  __ mov(r5, Operand(ExternalReference(js_entry_sp)));
-  __ stw(r6, MemOperand(r5));
+  __ mov(r9, Operand::Zero());
+  __ mov(r8, Operand(ExternalReference(js_entry_sp)));
+  __ stw(r9, MemOperand(r8));
   __ bind(&non_outermost_js_2);
 
   // Restore the top frame descriptors from the stack.
-  __ pop(r3);
+  __ pop(r6);
   __ mov(ip,
          Operand(ExternalReference(Isolate::kCEntryFPAddress, isolate)));
-  __ stw(r3, MemOperand(ip));
+  __ stw(r6, MemOperand(ip));
 
   // Reset the stack to the callee saved registers.
   __ add(sp, sp, Operand(-EntryFrameConstants::kCallerFPOffset));
@@ -5591,7 +5616,7 @@ void StringCharCodeAtGenerator::GenerateFast(MacroAssembler* masm) {
   __ cmp(ip, Operand(index_));
   __ blt(index_out_of_range_);
 
-  __ srawi(index_, index_, kSmiTagSize, LeaveRC);
+  __ srawi(index_, index_, kSmiTagSize);
 
   StringCharLoadGenerator::Generate(masm,
                                     object_,

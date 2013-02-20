@@ -879,6 +879,10 @@ void Decoder::DecodeExt2(Instruction* instr) {
       Format(instr, "cmp     'ra,'rb");
       break;
     }
+    case SUBFCX: {
+      Format(instr, "subfc'. 'rt,'ra,'rb");
+      break;
+    }
     case ADDCX: {
       Format(instr, "addc'.   'rt,'ra,'rb");
       break;
@@ -907,7 +911,7 @@ void Decoder::DecodeExt2(Instruction* instr) {
       if( instr->RTValue() == instr->RBValue() ) {
         Format(instr, "mr      'ra,'rb");
       } else {
-        Format(instr, "or      'rt,'ra,'rb");
+        Format(instr, "or      'ra,'rs,'rb");
       }
       break;
     }

@@ -1322,35 +1322,39 @@ void MacroAssembler::JumpToHandlerEntry() {
 
 void MacroAssembler::Throw(Register value) {
   // Adjust this code if not the case.
-#if 0
   STATIC_ASSERT(StackHandlerConstants::kSize == 5 * kPointerSize);
   STATIC_ASSERT(StackHandlerConstants::kNextOffset == 0);
   STATIC_ASSERT(StackHandlerConstants::kCodeOffset == 1 * kPointerSize);
   STATIC_ASSERT(StackHandlerConstants::kStateOffset == 2 * kPointerSize);
   STATIC_ASSERT(StackHandlerConstants::kContextOffset == 3 * kPointerSize);
   STATIC_ASSERT(StackHandlerConstants::kFPOffset == 4 * kPointerSize);
-#endif
+  Label skip;
 
-  // The exception is expected in r0.
-  if (!value.is(r0)) {
-    mov(r0, value);
+  // The exception is expected in r3.
+  if (!value.is(r3)) {
+    mov(r3, value);
   }
   // Drop the stack pointer to the top of the top handler.
-  mov(r3, Operand(ExternalReference(Isolate::kHandlerAddress, isolate())));
-  lwz(sp, MemOperand(r3));
+  mov(r6, Operand(ExternalReference(Isolate::kHandlerAddress, isolate())));
+  lwz(sp, MemOperand(r6));
   // Restore the next handler.
-  pop(r2);
-  str(r2, MemOperand(r3));
+  pop(r5);
+  stw(r5, MemOperand(r6));
 
   // Get the code object (r1) and state (r2).  Restore the context and frame
   // pointer.
-  ldm(ia_w, sp, r1.bit() | r2.bit() | cp.bit() | r11.bit());
+  pop(r4);  //roohack, order may be wrong
+  pop(r5);
+  pop(cp);
+  pop(fp);
 
   // If the handler is a JS frame, restore the context to the frame.
   // (kind == ENTRY) == (fp == 0) == (cp == 0), so we could test either fp
   // or cp.
-  tst(cp, cp);
-  str(cp, MemOperand(r11, StandardFrameConstants::kContextOffset), ne);
+  cmpi(cp, Operand(0));
+  beq(&skip);
+  stw(cp, MemOperand(fp, StandardFrameConstants::kContextOffset));
+  bind(&skip);
 
   JumpToHandlerEntry();
 }
@@ -1358,22 +1362,20 @@ void MacroAssembler::Throw(Register value) {
 
 void MacroAssembler::ThrowUncatchable(Register value) {
   // Adjust this code if not the case.
-#if 0
   STATIC_ASSERT(StackHandlerConstants::kSize == 5 * kPointerSize);
   STATIC_ASSERT(StackHandlerConstants::kNextOffset == 0 * kPointerSize);
   STATIC_ASSERT(StackHandlerConstants::kCodeOffset == 1 * kPointerSize);
   STATIC_ASSERT(StackHandlerConstants::kStateOffset == 2 * kPointerSize);
   STATIC_ASSERT(StackHandlerConstants::kContextOffset == 3 * kPointerSize);
   STATIC_ASSERT(StackHandlerConstants::kFPOffset == 4 * kPointerSize);
-#endif
 
-  // The exception is expected in r0.
-  if (!value.is(r0)) {
-    mov(r0, value);
+  // The exception is expected in r3.
+  if (!value.is(r3)) {
+    mov(r3, value);
   }
   // Drop the stack pointer to the top of the top stack handler.
-  mov(r3, Operand(ExternalReference(Isolate::kHandlerAddress, isolate())));
-  lwz(sp, MemOperand(r3));
+  mov(r6, Operand(ExternalReference(Isolate::kHandlerAddress, isolate())));
+  lwz(sp, MemOperand(r6));
 
   // Unwind the handlers until the ENTRY handler is found.
   Label fetch_next, check_kind;
@@ -1383,16 +1385,20 @@ void MacroAssembler::ThrowUncatchable(Register value) {
 
   bind(&check_kind);
   STATIC_ASSERT(StackHandler::JS_ENTRY == 0);
-  lwz(r2, MemOperand(sp, StackHandlerConstants::kStateOffset));
-  tst(r2, Operand(StackHandler::KindField::kMask));
+  lwz(r5, MemOperand(sp, StackHandlerConstants::kStateOffset));
+  mov(r22, Operand(StackHandler::KindField::kMask));
+  cmp(r5, r22);
   bne(&fetch_next);
 
   // Set the top handler address to next handler past the top ENTRY handler.
-  pop(r2);
-  str(r2, MemOperand(r3));
-  // Get the code object (r1) and state (r2).  Clear the context and frame
+  pop(r5);
+  stw(r5, MemOperand(r6));
+  // Get the code object (r4) and state (r5).  Clear the context and frame
   // pointer (0 was saved in the handler).
-  ldm(ia_w, sp, r1.bit() | r2.bit() | cp.bit() | r11.bit());
+  pop(r4);  // roohack - order needs to be confirmed.
+  pop(r5);
+  pop(cp);
+  pop(fp);
 
   JumpToHandlerEntry();
 }
@@ -1959,7 +1965,8 @@ void MacroAssembler::CheckFastElements(Register map,
   STATIC_ASSERT(FAST_ELEMENTS == 2);
   STATIC_ASSERT(FAST_HOLEY_ELEMENTS == 3);
   lbz(scratch, FieldMemOperand(map, Map::kBitField2Offset));
-  cmp(scratch, Operand(Map::kMaximumBitField2FastHoleyElementValue));
+  STATIC_ASSERT(Map::kMaximumBitField2FastHoleyElementValue < 0x8000);
+  cmpi(scratch, Operand(Map::kMaximumBitField2FastHoleyElementValue));
   bgt(fail);
 }
 
@@ -2156,7 +2163,8 @@ void MacroAssembler::DispatchMap(Register obj,
   lwz(scratch, FieldMemOperand(obj, HeapObject::kMapOffset));
   mov(ip, Operand(map));
   cmp(scratch, ip);
-  Jump(success, RelocInfo::CODE_TARGET, eq);
+  bne(&fail);
+  Jump(success, RelocInfo::CODE_TARGET, al);
   bind(&fail);
 }
 
@@ -2671,12 +2679,8 @@ void MacroAssembler::EmitECMATruncate(Register result,
 void MacroAssembler::GetLeastBitsFromSmi(Register dst,
                                          Register src,
                                          int num_least_bits) {
-  if (CpuFeatures::IsSupported(ARMv7) && !predictable_code_size()) {
-    ubfx(dst, src, kSmiTagSize, num_least_bits);
-  } else {
-    mov(dst, Operand(src, ASR, kSmiTagSize));
-    and_(dst, dst, Operand((1 << num_least_bits) - 1));
-  }
+  rlwinm(dst, src, 31 - num_least_bits - kSmiTagSize, 
+          31 - num_least_bits, 31);
 }
 
 
@@ -3064,7 +3068,7 @@ void MacroAssembler::UntagAndJumpIfSmi(
   STATIC_ASSERT(kSmiTag == 0);
   STATIC_ASSERT(kSmiTagSize == 1);
   rlwinm(r0, src, 0, 31, 31, SetRC);
-  srawi(dst, src, kSmiTagSize, LeaveRC);
+  srawi(dst, src, kSmiTagSize);
   bc(smi_case, BT, 2);
 }
 
@@ -3074,7 +3078,7 @@ void MacroAssembler::UntagAndJumpIfNotSmi(
   STATIC_ASSERT(kSmiTag == 0);
   STATIC_ASSERT(kSmiTagSize == 1);
   rlwinm(r0, src, 0, 31, 31, SetRC);
-  srawi(dst, src, kSmiTagSize, LeaveRC);
+  srawi(dst, src, kSmiTagSize);
   bc(non_smi_case, BF, 2);
 }
 

@@ -887,6 +887,9 @@ class Assembler : public AssemblerBase {
   void sub(Register dst, Register src1, Register src2,
            OEBit s = LeaveOE, RCBit r = LeaveRC );
 
+  void subfc(Register dst, Register src1, Register src2,
+           OEBit s = LeaveOE, RCBit r = LeaveRC );
+
   void add(Register dst, Register src1, Register src2,
            OEBit s = LeaveOE, RCBit r = LeaveRC );
 
@@ -898,7 +901,13 @@ class Assembler : public AssemblerBase {
 
   void add(Register dst, Register src, const Operand& imm,
 SBit s = LeaveCC, Condition cond = al // roohack - remove this line later
-           );
+   );
+
+  void mullw(Register dst, Register src1, Register src2,
+               OEBit o = LeaveOE, RCBit r = LeaveRC);
+
+  void mulhw(Register dst, Register src1, Register src2,
+               OEBit o = LeaveOE, RCBit r = LeaveRC);
 
   void addis(Register dst, Register src, int imm);
   void addic(Register dst, Register src, int imm);
@@ -926,7 +935,8 @@ SBit s = LeaveCC, Condition cond = al // roohack - remove this line later
   void slwi(Register dst, Register src, const Operand& val);
   void srwi(Register dst, Register src, const Operand& val);
   void srawi(Register ra, Register rs, int sh, RCBit r = LeaveRC);
-
+  void slw(Register dst, Register src1, Register src2, RCBit r = LeaveRC);
+  void sraw(Register dst, Register src1, Register src2, RCBit r = LeaveRC);
   void and_(Register dst, Register src1, Register src2, RCBit rc);  
 
   // end PowerPC

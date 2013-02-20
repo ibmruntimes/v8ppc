@@ -274,8 +274,10 @@ static void GenerateKeyedLoadReceiverCheck(MacroAssembler* masm,
   __ lwz(map, FieldMemOperand(receiver, HeapObject::kMapOffset));
   // Check bit field.
   __ lbz(scratch, FieldMemOperand(map, Map::kBitFieldOffset));
-  __ tst(scratch,
-         Operand((1 << Map::kIsAccessCheckNeeded) | (1 << interceptor_bit)));
+  ASSERT(((1 << Map::kIsAccessCheckNeeded) | (1 << interceptor_bit)) < 0x8000);
+  __ andi(r0, scratch,
+          Operand((1 << Map::kIsAccessCheckNeeded) | (1 << interceptor_bit)));
+  __ cmpi(r0, Operand(0));
   __ bne(slow);
   // Check that the object is some kind of JS object EXCEPT JS Value type.
   // In the case that the object is a value-wrapper object,
@@ -610,7 +612,7 @@ void KeyedCallIC::GenerateMegamorphic(MacroAssembler* masm, int argc) {
   __ LoadRoot(ip, Heap::kHashTableMapRootIndex);
   __ cmp(r6, ip);
   __ bne(&slow_load);
-  __ srawi(r3, r5, kSmiTagSize, LeaveRC);
+  __ srawi(r3, r5, kSmiTagSize);
   // r3: untagged index
   __ LoadFromNumberDictionary(&slow_load, r7, r5, r4, r3, r6, r8);
   __ IncrementCounter(counters->keyed_call_generic_smi_dict(), 1, r3, r6);
@@ -1002,7 +1004,7 @@ void KeyedLoadIC::GenerateGeneric(MacroAssembler* masm) {
   __ LoadRoot(ip, Heap::kHashTableMapRootIndex);
   __ cmp(r6, ip);
   __ bne(&slow);
-  __ srawi(r5, r3, kSmiTagSize, LeaveRC);
+  __ srawi(r5, r3, kSmiTagSize);
   __ LoadFromNumberDictionary(&slow, r7, r3, r3, r5, r6, r8);
   __ Ret();
 
@@ -1029,7 +1031,7 @@ void KeyedLoadIC::GenerateGeneric(MacroAssembler* masm) {
   // Load the map of the receiver, compute the keyed lookup cache hash
   // based on 32 bits of the map pointer and the string hash.
   __ lwz(r5, FieldMemOperand(r4, HeapObject::kMapOffset));
-  __ srawi(r6, r5, KeyedLookupCache::kMapHashShift, LeaveRC);
+  __ srawi(r6, r5, KeyedLookupCache::kMapHashShift);
   __ lwz(r7, FieldMemOperand(r3, String::kHashFieldOffset));
   __ eor(r6, r6, Operand(r7, ASR, String::kHashShift));
   int mask = KeyedLookupCache::kCapacityMask & KeyedLookupCache::kHashMask;
@@ -1084,7 +1086,8 @@ void KeyedLoadIC::GenerateGeneric(MacroAssembler* masm) {
     }
     __ lwz(r8, MemOperand(r7, r6, LSL, kPointerSizeLog2));
     __ lbz(r9, FieldMemOperand(r5, Map::kInObjectPropertiesOffset));
-    __ sub(r8, r8, r9, LeaveOE, SetRC);
+    __ sub(r8, r9, r8);  // roohack, sub order may not be correct
+    __ cmpi(r8, Operand(0));
     __ bge(&property_array_property);
     if (i != 0) {
       __ jmp(&load_in_object_property);

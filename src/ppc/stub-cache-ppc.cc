@@ -352,10 +352,10 @@ void StubCompiler::GenerateLoadArrayLength(MacroAssembler* masm,
 
   // Check that the object is a JS array.
   __ CompareObjectType(receiver, scratch, scratch, JS_ARRAY_TYPE);
-  __ b(ne, miss_label);
+  __ bne(miss_label);
 
   // Load length directly from the JS array.
-  __ ldr(r0, FieldMemOperand(receiver, JSArray::kLengthOffset));
+  __ lwz(r3, FieldMemOperand(receiver, JSArray::kLengthOffset));
   __ Ret();
 }
 

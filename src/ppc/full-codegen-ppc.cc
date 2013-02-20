@@ -72,8 +72,7 @@ class JumpPatchSite BASE_EMBEDDED {
     ASSERT(!patch_site_.is_bound() && !info_emitted_);
     Assembler::BlockConstPoolScope block_const_pool(masm_);
     __ bind(&patch_site_);
-    __ cmp(reg, Operand(reg));
-    __ b(eq, target);  // Always taken before patched.
+    __ JumpIfSmi(reg, target);  // Always taken before patched.
   }
 
   // When initially emitting this ensure that a jump is never generated to skip
@@ -82,8 +81,7 @@ class JumpPatchSite BASE_EMBEDDED {
     ASSERT(!patch_site_.is_bound() && !info_emitted_);
     Assembler::BlockConstPoolScope block_const_pool(masm_);
     __ bind(&patch_site_);
-    __ cmp(reg, Operand(reg));
-    __ b(ne, target);  // Never taken before patched.
+    __ JumpIfNotSmi(reg, target);  // Never taken before patched.
   }
 
   void EmitPatchInfo() {
@@ -93,7 +91,7 @@ class JumpPatchSite BASE_EMBEDDED {
       int delta_to_patch_site = masm_->InstructionsGeneratedSince(&patch_site_);
       Register reg;
       reg.set_code(delta_to_patch_site / kOff12Mask);
-      __ cmp_raw_immediate(reg, delta_to_patch_site % kOff12Mask);
+      __ cmpi(reg, Operand(delta_to_patch_site % kOff12Mask));
 #ifdef DEBUG
       info_emitted_ = true;
 #endif
@@ -1939,7 +1937,7 @@ void FullCodeGenerator::EmitInlineSmiBinaryOp(BinaryOperation* expr,
   __ pop(left);
 
   // Perform combined smi check on both operands.
-  __ orr(scratch1, left, Operand(right));
+  __ orx(scratch1, left, right);
   STATIC_ASSERT(kSmiTag == 0);
   JumpPatchSite patch_site(masm_);
   patch_site.EmitJumpIfSmi(scratch1, &smi_case);
@@ -1959,15 +1957,16 @@ void FullCodeGenerator::EmitInlineSmiBinaryOp(BinaryOperation* expr,
     case Token::SAR:
       __ b(&stub_call);
       __ GetLeastBitsFromSmi(scratch1, right, 5);
-      __ mov(right, Operand(left, ASR, scratch1));
-      __ bic(right, right, Operand(kSmiTagMask));
+      __ sraw(right, left, scratch1);
+      __ SmiTag(right);
       break;
     case Token::SHL: {
       __ b(&stub_call);
       __ SmiUntag(scratch1, left);
       __ GetLeastBitsFromSmi(scratch2, right, 5);
-      __ mov(scratch1, Operand(scratch1, LSL, scratch2));
-      __ add(scratch2, scratch1, Operand(0x40000000), SetCC);
+      __ slw(scratch1, scratch1, scratch2);
+      // Check that the *signed* result fits in a smi
+      __ add(scratch2, scratch1, Operand(0x40000000), SetCC); 
       __ b(mi, &stub_call);
       __ SmiTag(right, scratch1);
       break;
@@ -3222,6 +3221,7 @@ void FullCodeGenerator::EmitStringCharCodeAt(CallRuntime* expr) {
   Register index = r3;
   Register result = r6;
 
+  __ li(r0, Operand(0xeeea));
   __ pop(object);
 
   Label need_conversion;
@@ -3268,6 +3268,7 @@ void FullCodeGenerator::EmitStringCharAt(CallRuntime* expr) {
   Register scratch = r6;
   Register result = r3;
 
+  __ li(r0, Operand(0xeeeb));
   __ pop(object);
 
   Label need_conversion;
@@ -4297,7 +4298,7 @@ void FullCodeGenerator::VisitCompareOperation(CompareOperation* expr) {
       __ CallStub(&stub);
       PrepareForBailoutBeforeSplit(expr, true, if_true, if_false);
       // The stub returns 0 for true.
-      __ tst(r3, r3);
+      __ cmpi(r3, Operand(0));
       Split(eq, if_true, if_false, fall_through);
       break;
     }
@@ -4333,7 +4334,7 @@ void FullCodeGenerator::VisitCompareOperation(CompareOperation* expr) {
       JumpPatchSite patch_site(masm_);
       if (inline_smi_code) {
         Label slow_case;
-        __ orr(r5, r3, Operand(r4));
+        __ orx(r5, r3, r4);
         patch_site.EmitJumpIfNotSmi(r5, &slow_case);
         __ cmp(r4, r3);
         Split(cond, if_true, if_false, NULL);
