@@ -189,7 +189,7 @@ const Register no_reg = { kRegister_no_reg_Code };
 
 const Register r0  = { kRegister_r0_Code };
 const Register sp  = { kRegister_sp_Code };
-const Register r1  = { kRegister_r22_Code };  // hack for ARM
+const Register r1  = { kRegister_r18_Code };  // hack for ARM
 const Register r2  = { kRegister_r2_Code };
 const Register r3  = { kRegister_r3_Code };
 const Register r4  = { kRegister_r4_Code };

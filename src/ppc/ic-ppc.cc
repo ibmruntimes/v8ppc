@@ -474,7 +474,7 @@ void CallICBase::GenerateNormal(MacroAssembler* masm, int argc) {
   // -----------------------------------
   Label miss;
 
-  // Get the receiver of the function from the stack into r1.
+  // Get the receiver of the function from the stack into r4.
   __ lwz(r4, MemOperand(sp, argc * kPointerSize));
 
   GenerateStringDictionaryReceiverCheck(masm, r4, r3, r6, r7, &miss);
@@ -564,7 +564,7 @@ void CallIC::GenerateMegamorphic(MacroAssembler* masm,
   //  -- lr    : return address
   // -----------------------------------
 
-  // Get the receiver of the function from the stack into r1.
+  // Get the receiver of the function from the stack into r4.
   __ lwz(r4, MemOperand(sp, argc * kPointerSize));
   GenerateMonomorphicCacheProbe(masm, argc, Code::CALL_IC, extra_ic_state);
   GenerateMiss(masm, argc, extra_ic_state);
@@ -577,7 +577,7 @@ void KeyedCallIC::GenerateMegamorphic(MacroAssembler* masm, int argc) {
   //  -- lr    : return address
   // -----------------------------------
 
-  // Get the receiver of the function from the stack into r1.
+  // Get the receiver of the function from the stack into r4.
   __ lwz(r4, MemOperand(sp, argc * kPointerSize));
 
   Label do_call, slow_call, slow_load, slow_reload_receiver;
