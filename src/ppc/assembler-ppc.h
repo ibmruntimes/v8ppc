@@ -1445,6 +1445,7 @@ SBit s = LeaveCC, Condition cond = al // roohack - remove this line later
   static bool IsAddRegisterImmediate(Instr instr);
   static Instr SetAddRegisterImmediateOffset(Instr instr, int offset);
   static Register GetRd(Instr instr);
+  static Register GetRA(Instr instr);
   static Register GetRn(Instr instr);
   static Register GetRm(Instr instr);
   static bool IsPush(Instr instr);
@@ -1457,6 +1458,7 @@ SBit s = LeaveCC, Condition cond = al // roohack - remove this line later
   static bool IsTstImmediate(Instr instr);
   static bool IsCmpRegister(Instr instr);
   static bool IsCmpImmediate(Instr instr);
+  static bool IsRlwinm(Instr instr);
   static Register GetCmpImmediateRegister(Instr instr);
   static int GetCmpImmediateRawImmediate(Instr instr);
   static bool IsNop(Instr instr, int type = NON_MARKING_NOP);

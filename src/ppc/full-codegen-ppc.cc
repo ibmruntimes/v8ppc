@@ -51,9 +51,10 @@ namespace internal {
 // A patch site is a location in the code which it is possible to patch. This
 // class has a number of methods to emit the code which is patchable and the
 // method EmitPatchInfo to record a marker back to the patchable code. This
-// marker is a cmp rx, #yyy instruction, and x * 0x00000fff + yyy (raw 12 bit
+// marker is a cmpi rx, #yyy instruction, and x * 0x0000ffff + yyy (raw 16 bit
 // immediate value is used) is the delta from the pc to the first instruction of
 // the patchable code.
+// See PatchInlinedSmiCode in ic-ppc.cc for the code that patches it
 class JumpPatchSite BASE_EMBEDDED {
  public:
   explicit JumpPatchSite(MacroAssembler* masm) : masm_(masm) {
@@ -90,8 +91,9 @@ class JumpPatchSite BASE_EMBEDDED {
     if (patch_site_.is_bound()) {
       int delta_to_patch_site = masm_->InstructionsGeneratedSince(&patch_site_);
       Register reg;
-      reg.set_code(delta_to_patch_site / kOff12Mask);
-      __ cmpi(reg, Operand(delta_to_patch_site % kOff12Mask));
+      // I believe this is using reg as the high bits of of the offset
+      reg.set_code(delta_to_patch_site / kOff16Mask);
+      __ cmpi(reg, Operand(delta_to_patch_site % kOff16Mask));
 #ifdef DEBUG
       info_emitted_ = true;
 #endif
@@ -4334,6 +4336,7 @@ void FullCodeGenerator::VisitCompareOperation(CompareOperation* expr) {
       JumpPatchSite patch_site(masm_);
       if (inline_smi_code) {
         Label slow_case;
+        __ li(r0, Operand(0xdead));
         __ orx(r5, r3, r4);
         patch_site.EmitJumpIfNotSmi(r5, &slow_case);
         __ cmp(r4, r3);

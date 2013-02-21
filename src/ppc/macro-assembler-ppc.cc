@@ -3923,7 +3923,16 @@ void CodePatcher::Emit(Address addr) {
 
 void CodePatcher::EmitCondition(Condition cond) {
   Instr instr = Assembler::instr_at(masm_.pc_);
-  instr = (instr & ~kCondMask) | cond;
+  switch(cond) {
+    case eq:
+      instr = (instr & ~kCondMask) | BT;
+      break;
+    case ne:
+      instr = (instr & ~kCondMask) | BF;
+      break;
+    default:
+      UNIMPLEMENTED();
+  }
   masm_.emit(instr);
 }
 

@@ -404,7 +404,7 @@ enum {
   B28 = 1 << 28,
 
   // Instruction bit masks.
-  kCondMask   = 15 << 28,
+  kCondMask   = 0x1F << 21,	// changed for PowerPC
   kALUMask    = 0x6f << 21,
   kRdMask     = 15 << 12,  // In str instruction.
   kCoprocessorMask = 15 << 8,
@@ -412,6 +412,7 @@ enum {
   kOff12Mask  = (1 << 12) - 1,
   kImm24Mask  = (1 << 24) - 1,
 #endif  // INCLUDE_ARM
+  kOff16Mask  = (1 << 16) - 1,
   kImm16Mask  = (1 << 16) - 1,
   kImm26Mask  = (1 << 26) - 1,
   kBOfieldMask = 0x1f << 20
@@ -786,6 +787,7 @@ class Instruction {
   inline int RSValue() const { return Bits(25, 21); }
   inline int RTValue() const { return Bits(25, 21); }
   inline int RAValue() const { return Bits(20, 16); }
+  DECLARE_STATIC_ACCESSOR(RAValue);
   inline int RBValue() const { return Bits(15, 11); }
 
   //end PowerPC

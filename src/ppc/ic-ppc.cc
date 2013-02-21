@@ -1735,7 +1735,9 @@ void CompareIC::UpdateCaches(Handle<Object> x, Handle<Object> y) {
   }
 }
 
-
+//
+// This code is paired with the JumpPatchSite class in full-codegen-ppc.cc
+//
 void PatchInlinedSmiCode(Address address, InlinedSmiCheck check) {
   Address cmp_instruction_address =
       address + Assembler::kCallTargetAddressOffset;
@@ -1751,8 +1753,8 @@ void PatchInlinedSmiCode(Address address, InlinedSmiCheck check) {
   // condition code uses at the patched jump.
   int delta = Assembler::GetCmpImmediateRawImmediate(instr);
   delta +=
-      Assembler::GetCmpImmediateRegister(instr).code() * kOff12Mask;
-  // If the delta is 0 the instruction is cmp r3, #0 which also signals that
+      Assembler::GetCmpImmediateRegister(instr).code() * kOff16Mask;
+  // If the delta is 0 the instruction is cmp r0, #0 which also signals that
   // nothing was inlined.
   if (delta == 0) {
     return;
@@ -1765,32 +1767,26 @@ void PatchInlinedSmiCode(Address address, InlinedSmiCheck check) {
   }
 #endif
 
-  Address patch_address =
-      cmp_instruction_address - delta * Instruction::kInstrSize;
-  Instr instr_at_patch = Assembler::instr_at(patch_address);
+  Address patch_address = cmp_instruction_address - 
+          (delta * Instruction::kInstrSize);
   Instr branch_instr =
       Assembler::instr_at(patch_address + Instruction::kInstrSize);
   // This is patching a conditional "jump if not smi/jump if smi" site.
-  // Enabling by changing from
-  //   cmp rx, rx
-  //   b eq/ne, <target>
-  // to
-  //   tst rx, #kSmiTagMask
-  //   b ne/eq, <target>
-  // and vice-versa to be disabled again.
-  CodePatcher patcher(patch_address, 2);
-  Register reg = Assembler::GetRn(instr_at_patch);
-  if (check == ENABLE_INLINED_SMI_CHECK) {
-    ASSERT(Assembler::IsCmpRegister(instr_at_patch));
-    ASSERT_EQ(Assembler::GetRn(instr_at_patch).code(),
-              Assembler::GetRm(instr_at_patch).code());
-    patcher.masm()->tst(reg, Operand(kSmiTagMask));
-  } else {
-    ASSERT(check == DISABLE_INLINED_SMI_CHECK);
-    ASSERT(Assembler::IsTstImmediate(instr_at_patch));
-    patcher.masm()->cmp(reg, reg);
-  }
+  // The default code emits the opposite logic branch. 
+  // Enabling means switching from a BT to BF, whereas disabling is the
+  // reverse operation of that.
+  // Code will look like
+  //  rlwinm(r0, value, 0, 31, 31, SetRC);
+  //  bc(label, BT, 2)
+  // or
+  //  rlwinm(r0, value, 0, 31, 31, SetRC);
+  //  bc(label, BF, 2)
+
+  CodePatcher patcher(patch_address + Instruction::kInstrSize, 1);
+  ASSERT(Assembler::IsRlwinm(Assembler::instr_at(patch_address)));
   ASSERT(Assembler::IsBranch(branch_instr));
+
+  // Invert the logic of the branch
   if (Assembler::GetCondition(branch_instr) == eq) {
     patcher.EmitCondition(ne);
   } else {
