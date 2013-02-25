@@ -1314,6 +1314,10 @@ void Assembler::subfc(Register dst, Register src1, Register src2,
   xo_form( EXT2 | SUBFCX, dst, src1, src2, o, r );
 }
 
+void Assembler::subfic(Register dst, Register src, const Operand& imm) {
+  d_form(SUBFIC, dst, src, imm.imm32_);
+}
+
 void Assembler::add(Register dst, Register src1, Register src2,
                     OEBit o, RCBit r) {
   xo_form( EXT2 | ADDX, dst, src1, src2, o, r );
@@ -1500,7 +1504,7 @@ void Assembler::mov(Register dst, const Operand& src
     // lo word is signed, so increment hi word by one
     hi_word++;
   }
-  // ASSERT(dst.code() != 0);  // r0 is invalid destination
+  // ASSERT(dst.code() != 0);  // r0 is invalid destination eee
   addis(dst, r0, hi_word);
   addic(dst, dst, lo_word);
 }

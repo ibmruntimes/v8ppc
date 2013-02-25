@@ -1984,14 +1984,18 @@ void FullCodeGenerator::EmitInlineSmiBinaryOp(BinaryOperation* expr,
       break;
     }
     case Token::ADD:
-      __ add(scratch1, left, Operand(right), SetCC);
-      __ b(vs, &stub_call);
-      __ mov(right, scratch1);
+      __ li(r0, Operand(-1));
+      __ addc(scratch1, left, right);
+      __ addze(r0, r0, LeaveOE, SetRC);
+      __ bc(&stub_call, BT, 1);
+      __ mr(right, scratch1);
       break;
     case Token::SUB:
-      __ sub(scratch1, left, Operand(right), SetCC);
-      __ b(vs, &stub_call);
-      __ mov(right, scratch1);
+      __ li(r0, Operand(-1));
+      __ subfc(scratch1, left, right);
+      __ addze(r0, r0, LeaveOE, SetRC);
+      __ bc(&stub_call, BT, 1);
+      __ mr(right, scratch1);
       break;
     case Token::MUL: {
       __ SmiUntag(ip, right);
@@ -2684,7 +2688,7 @@ void FullCodeGenerator::EmitIsStringWrapperSafeForDefaultValueOf(
   __ lwz(r5, FieldMemOperand(r5, HeapObject::kMapOffset));
   __ LoadRoot(ip, Heap::kHashTableMapRootIndex);
   __ cmp(r5, ip);
-  __ b(eq, if_false);
+  __ beq(if_false);
 
   // Look for valueOf symbol in the descriptor array, and indicate false if
   // found. Since we omit an enumeration index check, if it is added via a
@@ -2832,14 +2836,16 @@ void FullCodeGenerator::EmitIsConstructCall(CallRuntime* expr) {
   // Skip the arguments adaptor frame if it exists.
   Label check_frame_marker;
   __ lwz(r5, MemOperand(r5, StandardFrameConstants::kContextOffset));
-  __ cmp(r4, Operand(Smi::FromInt(StackFrame::ARGUMENTS_ADAPTOR)));
-  __ b(ne, &check_frame_marker);
+  STATIC_ASSERT(StackFrame::ARGUMENTS_ADAPTOR < 0x4000);
+  __ cmpi(r4, Operand(Smi::FromInt(StackFrame::ARGUMENTS_ADAPTOR)));
+  __ bne(&check_frame_marker);
   __ lwz(r5, MemOperand(r5, StandardFrameConstants::kCallerFPOffset));
 
   // Check the marker in the calling frame.
   __ bind(&check_frame_marker);
   __ lwz(r4, MemOperand(r5, StandardFrameConstants::kMarkerOffset));
-  __ cmp(r4, Operand(Smi::FromInt(StackFrame::CONSTRUCT)));
+  STATIC_ASSERT(StackFrame::CONSTRUCT<0x4000);
+  __ cmpi(r4, Operand(Smi::FromInt(StackFrame::CONSTRUCT)));
   PrepareForBailoutBeforeSplit(expr, true, if_true, if_false);
   Split(eq, if_true, if_false, fall_through);
 
@@ -4336,7 +4342,6 @@ void FullCodeGenerator::VisitCompareOperation(CompareOperation* expr) {
       JumpPatchSite patch_site(masm_);
       if (inline_smi_code) {
         Label slow_case;
-        __ li(r0, Operand(0xdead));
         __ orx(r5, r3, r4);
         patch_site.EmitJumpIfNotSmi(r5, &slow_case);
         __ cmp(r4, r3);

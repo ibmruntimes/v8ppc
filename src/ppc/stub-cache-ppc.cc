@@ -424,7 +424,7 @@ void StubCompiler::GenerateLoadFunctionPrototype(MacroAssembler* masm,
                                                  Register scratch2,
                                                  Label* miss_label) {
   __ TryGetFunctionPrototype(receiver, scratch1, scratch2, miss_label);
-  __ mov(r3, scratch1);
+  __ mr(r3, scratch1);
   __ Ret();
 }
 
@@ -543,7 +543,7 @@ void StubCompiler::GenerateStoreField(MacroAssembler* masm,
 
     // Update the write barrier for the array address.
     // Pass the now unused name_reg as a scratch register.
-    __ mov(name_reg, r3);
+    __ mr(name_reg, r3);
     __ RecordWriteField(receiver_reg,
                         offset,
                         name_reg,
@@ -563,7 +563,7 @@ void StubCompiler::GenerateStoreField(MacroAssembler* masm,
 
     // Update the write barrier for the array address.
     // Ok to clobber receiver_reg and name_reg, since we return.
-    __ mov(name_reg, r3);
+    __ mr(name_reg, r3);
     __ RecordWriteField(scratch1,
                         offset,
                         name_reg,
@@ -648,7 +648,7 @@ static void CompileCallLoadPropertyWithInterceptor(
   ExternalReference ref =
       ExternalReference(IC_Utility(IC::kLoadPropertyWithInterceptorOnly),
                         masm->isolate());
-  __ mov(r3, Operand(6));
+  __ li(r3, Operand(6));
   __ mov(r4, Operand(ref));
 
   CEntryStub stub(1);
@@ -664,7 +664,7 @@ static const int kFastApiCallArguments = 4;
 // These arguments are set by CheckPrototypes and GenerateFastApiDirectCall.
 static void ReserveSpaceForFastApiCall(MacroAssembler* masm,
                                        Register scratch) {
-  __ mov(scratch, Operand(Smi::FromInt(0)));
+  __ li(scratch, Operand(Smi::FromInt(0)));
   for (int i = 0; i < kFastApiCallArguments; i++) {
     __ push(scratch);
   }
@@ -727,10 +727,10 @@ static void GenerateFastApiDirectCall(MacroAssembler* masm,
   __ add(ip, r5, Operand(argc * kPointerSize));
   __ stw(ip, MemOperand(r3, 1 * kPointerSize));
   // v8::Arguments::length_ = argc
-  __ mov(ip, Operand(argc));
+  __ li(ip, Operand(argc));
   __ stw(ip, MemOperand(r3, 2 * kPointerSize));
   // v8::Arguments::is_construct_call = 0
-  __ mov(ip, Operand(0));
+  __ li(ip, Operand(0));
   __ stw(ip, MemOperand(r3, 3 * kPointerSize));
 
   const int kStackUnwindSpace = argc + kFastApiCallArguments + 1;
@@ -1297,7 +1297,7 @@ void StubCompiler::GenerateLoadCallback(Handle<JSObject> object,
   // Build AccessorInfo::args_ list on the stack and push property name below
   // the exit frame to make GC aware of them and store pointers to them.
   __ push(receiver);
-  __ mov(scratch2, sp);  // scratch2 = AccessorInfo::args_
+  __ mr(scratch2, sp);  // scratch2 = AccessorInfo::args_
   if (heap()->InNewSpace(callback->data())) {
     __ Move(scratch3, callback);
     __ lwz(scratch3, FieldMemOperand(scratch3, AccessorInfo::kDataOffset));
@@ -1307,7 +1307,7 @@ void StubCompiler::GenerateLoadCallback(Handle<JSObject> object,
   __ Push(reg, scratch3);
   __ mov(scratch3, Operand(ExternalReference::isolate_address()));
   __ Push(scratch3, name_reg);
-  __ mov(r3, sp);  // r3 = Handle<String>
+  __ mr(r3, sp);  // r3 = Handle<String>
 
   const int kApiStackSpace = 1;
   FrameScope frame_scope(masm(), StackFrame::MANUAL);
@@ -1678,7 +1678,7 @@ Handle<Code> CallStubCompiler::CompileArrayPushCall(
         // In case of fast smi-only, convert to fast object, otherwise bail out.
         __ bind(&not_fast_object);
         __ CheckFastSmiElements(r6, r10, &call_builtin);
-        // edx: receiver
+        // r4: receiver
         // r6: map
         Label try_holey_map;
         __ LoadTransitionedArrayMapConditional(FAST_SMI_ELEMENTS,
@@ -1686,7 +1686,7 @@ Handle<Code> CallStubCompiler::CompileArrayPushCall(
                                                r6,
                                                r10,
                                                &try_holey_map);
-        __ mov(r5, receiver);
+        __ mr(r5, receiver);
         ElementsTransitionGenerator::
             GenerateMapChangeElementsTransition(masm());
         __ jmp(&fast_object);
@@ -1697,7 +1697,7 @@ Handle<Code> CallStubCompiler::CompileArrayPushCall(
                                                r6,
                                                r10,
                                                &call_builtin);
-        __ mov(r5, receiver);
+        __ mr(r5, receiver);
         ElementsTransitionGenerator::
             GenerateMapChangeElementsTransition(masm());
         __ bind(&fast_object);
@@ -2569,7 +2569,7 @@ Handle<Code> CallStubCompiler::CompileCallInterceptor(Handle<JSObject> object,
                    &miss);
 
   // Move returned value, the function to call, to r4.
-  __ mov(r4, r3);
+  __ mr(r4, r3);
   // Restore receiver.
   __ lwz(r3, MemOperand(sp, argc * kPointerSize));
 
@@ -3084,7 +3084,7 @@ Handle<Code> LoadStubCompiler::CompileLoadGlobal(
     __ beq(&miss);
   }
 
-  __ mov(r3, r7);
+  __ mr(r3, r7);
   Counters* counters = masm()->isolate()->counters();
   __ IncrementCounter(counters->named_load_global_stub(), 1, r4, r6);
   __ Ret();
@@ -3304,6 +3304,7 @@ Handle<Code> KeyedLoadStubCompiler::CompileLoadPolymorphic(
   __ lwz(r5, FieldMemOperand(r4, HeapObject::kMapOffset));
   for (int current = 0; current < receiver_count; ++current) {
     __ mov(ip, Operand(receiver_maps->at(current)));
+    __ li(r0, Operand(0xeee3));
     __ cmp(r5, ip);
     __ Jump(handler_ics->at(current), RelocInfo::CODE_TARGET, eq);
   }
@@ -3479,7 +3480,7 @@ Handle<Code> ConstructStubCompiler::CompileConstructStub(
   // r7: JSObject (not tagged)
   // r10: undefined
   __ LoadRoot(r9, Heap::kEmptyFixedArrayRootIndex);
-  __ mov(r8, r7);
+  __ mr(r8, r7);
   ASSERT_EQ(0 * kPointerSize, JSObject::kMapOffset);
   __ stw(r5, MemOperand(r8, kPointerSize, PostIndex));
   ASSERT_EQ(1 * kPointerSize, JSObject::kPropertiesOffset);
@@ -3535,8 +3536,8 @@ Handle<Code> ConstructStubCompiler::CompileConstructStub(
   // r3: argc
   // r7: JSObject (not tagged)
   // Move argc to r4 and the JSObject to return to r3 and tag it.
-  __ mov(r4, r3);
-  __ mov(r3, r7);
+  __ mr(r4, r3);
+  __ mr(r3, r7);
   __ orr(r3, r3, Operand(kHeapObjectTag));
 
   // r3: JSObject
@@ -3577,7 +3578,7 @@ void KeyedLoadStubCompiler::GenerateLoadDictionaryElement(
   Register receiver = r4;
 
   __ JumpIfNotSmi(key, &miss_force_generic);
-  __ mov(r5, Operand(key, ASR, kSmiTagSize));
+  __ srawi(r5, key, kSmiTagSize);
   __ lwz(r7, FieldMemOperand(receiver, JSObject::kElementsOffset));
   __ LoadFromNumberDictionary(&slow, r7, key, r3, r5, r6, r8);
   __ Ret();
@@ -3647,6 +3648,7 @@ static void GenerateSmiKeyCheck(MacroAssembler* masm,
                                 Register scratch1,
                                 DwVfpRegister double_scratch0,
                                 Label* fail) {
+#if 0 // Possible optimization with float
   if (CpuFeatures::IsSupported(VFP2)) {
     CpuFeatures::Scope scope(VFP2);
     Label key_ok;
@@ -3670,12 +3672,12 @@ static void GenerateSmiKeyCheck(MacroAssembler* masm,
     __ bne(fail);
     __ vmov(scratch0, double_scratch0.low());
     __ TrySmiTag(scratch0, fail, scratch1);
-    __ mov(key, scratch0);
+    __ mr(key, scratch0);
     __ bind(&key_ok);
   } else {
-    // Check that the key is a smi.
-    __ JumpIfNotSmi(key, fail);
-  }
+#endif
+  // Check that the key is a smi.
+  __ JumpIfNotSmi(key, fail);
 }
 
 
@@ -3731,6 +3733,7 @@ void KeyedLoadStubCompiler::GenerateLoadExternalArray(
       break;
     case EXTERNAL_INT_ELEMENTS:
     case EXTERNAL_UNSIGNED_INT_ELEMENTS:
+      __ li(r0, Operand(0xdead));
       __ lwz(value, MemOperand(r6, key, LSL, 1));
       break;
     case EXTERNAL_FLOAT_ELEMENTS:
@@ -3783,7 +3786,7 @@ void KeyedLoadStubCompiler::GenerateLoadExternalArray(
     __ cmp(value, Operand(0xC0000000));
     __ b(mi, &box_int);
     // Tag integer as smi and return it.
-    __ mov(r3, Operand(value, LSL, kSmiTagSize));
+    __ slwi(r3, value, Operand(kSmiTagSize));
     __ Ret();
 
     __ bind(&box_int);
@@ -3793,7 +3796,7 @@ void KeyedLoadStubCompiler::GenerateLoadExternalArray(
     __ LoadRoot(r9, Heap::kHeapNumberMapRootIndex);
     __ AllocateHeapNumber(r8, r6, r7, r9, &slow);
     // Now we can use r3 for the result as key is not needed any more.
-    __ mov(r3, r8);
+    __ mr(r3, r8);
 
     if (CpuFeatures::IsSupported(VFP2)) {
       CpuFeatures::Scope scope(VFP2);
@@ -3829,7 +3832,7 @@ void KeyedLoadStubCompiler::GenerateLoadExternalArray(
       __ tst(value, Operand(0xC0000000));
       __ bne(&box_int);
       // Tag integer as smi and return it.
-      __ mov(r3, Operand(value, LSL, kSmiTagSize));
+      __ slwi(r3, value, Operand(value, LSL, kSmiTagSize));
       __ Ret();
 
       __ bind(&box_int);
@@ -3844,7 +3847,7 @@ void KeyedLoadStubCompiler::GenerateLoadExternalArray(
       __ sub(r4, r5, Operand(kHeapObjectTag));
       __ vstr(d0, r4, HeapNumber::kValueOffset);
 
-      __ mov(r3, r5);
+      __ mr(r3, r5);
       __ Ret();
     } else {
       // Check whether unsigned integer fits into smi.
@@ -3854,7 +3857,7 @@ void KeyedLoadStubCompiler::GenerateLoadExternalArray(
       __ tst(value, Operand(0x40000000));
       __ bne(&box_int_1);
       // Tag integer as smi and return it.
-      __ mov(r3, Operand(value, LSL, kSmiTagSize));
+      __ slwi(r3, value, Operand(value, LSL, kSmiTagSize));
       __ Ret();
 
       Register hiword = value;  // r5.
@@ -3881,7 +3884,7 @@ void KeyedLoadStubCompiler::GenerateLoadExternalArray(
       __ stw(hiword, FieldMemOperand(r7, HeapNumber::kExponentOffset));
       __ stw(loword, FieldMemOperand(r7, HeapNumber::kMantissaOffset));
 
-      __ mov(r3, r7);
+      __ mr(r3, r7);
       __ Ret();
     }
   } else if (elements_kind == EXTERNAL_FLOAT_ELEMENTS) {
@@ -3898,7 +3901,7 @@ void KeyedLoadStubCompiler::GenerateLoadExternalArray(
       __ sub(r4, r5, Operand(kHeapObjectTag));
       __ vstr(d0, r4, HeapNumber::kValueOffset);
 
-      __ mov(r3, r5);
+      __ mr(r3, r5);
       __ Ret();
     } else {
       // Allocate a HeapNumber for the result. Don't use r3 and r4 as
@@ -3951,7 +3954,7 @@ void KeyedLoadStubCompiler::GenerateLoadExternalArray(
       __ stw(r5, FieldMemOperand(r6, HeapNumber::kExponentOffset));
       __ stw(r3, FieldMemOperand(r6, HeapNumber::kMantissaOffset));
 
-      __ mov(r3, r6);
+      __ mr(r3, r6);
       __ Ret();
     }
   } else if (elements_kind == EXTERNAL_DOUBLE_ELEMENTS) {
@@ -4373,18 +4376,20 @@ void KeyedLoadStubCompiler::GenerateLoadFastElement(MacroAssembler* masm) {
 
   // Check that the key is within bounds.
   __ lwz(r6, FieldMemOperand(r5, FixedArray::kLengthOffset));
-  __ cmp(r3, Operand(r6));
-  __ b(hs, &miss_force_generic);
+  __ cmp(r3, r6);
+  __ bgt(&miss_force_generic);
 
   // Load the result and make sure it's not the hole.
   __ add(r6, r5, Operand(FixedArray::kHeaderSize - kHeapObjectTag));
   STATIC_ASSERT(kSmiTag == 0 && kSmiTagSize < kPointerSizeLog2);
-  __ lwz(r7,
-         MemOperand(r6, r3, LSL, kPointerSizeLog2 - kSmiTagSize));
+  __ slwi(r7, r3, Operand(kPointerSizeLog2 - kSmiTagSize));
+  __ add(r7, r6, r7);
+  __ lwz(r7, MemOperand(r7));
+  // above was lwz(r7, MemOperand(r6, r3, LSL, kPointerSizeLog2 - kSmiTagSize));
   __ LoadRoot(ip, Heap::kTheHoleValueRootIndex);
   __ cmp(r7, ip);
   __ beq(&miss_force_generic);
-  __ mov(r3, r7);
+  __ mr(r3, r7);
   __ Ret();
 
   __ bind(&miss_force_generic);
@@ -4459,7 +4464,7 @@ void KeyedLoadStubCompiler::GenerateLoadFastDoubleElement(
   __ stw(scratch, FieldMemOperand(heap_number_reg,
                                   HeapNumber::kMantissaOffset));
 
-  __ mov(r3, heap_number_reg);
+  __ mr(r3, heap_number_reg);
   __ Ret();
 
   __ bind(&slow_allocate_heapnumber);
@@ -4551,7 +4556,7 @@ void KeyedStoreStubCompiler::GenerateStoreFastElement(
            scratch,
            Operand(key_reg, LSL, kPointerSizeLog2 - kSmiTagSize));
     __ stw(value_reg, MemOperand(scratch));
-    __ mov(receiver_reg, value_reg);
+    __ mr(receiver_reg, value_reg);
     __ RecordWrite(elements_reg,  // Object.
                    scratch,       // Address.
                    receiver_reg,  // Value.
@@ -4612,7 +4617,7 @@ void KeyedStoreStubCompiler::GenerateStoreFastElement(
                         EMIT_REMEMBERED_SET, OMIT_SMI_CHECK);
 
     // Increment the length of the array.
-    __ mov(length_reg, Operand(Smi::FromInt(1)));
+    __ li(length_reg, Operand(Smi::FromInt(1)));
     __ stw(length_reg, FieldMemOperand(receiver_reg, JSArray::kLengthOffset));
     __ Ret();
 
@@ -4760,7 +4765,7 @@ void KeyedStoreStubCompiler::GenerateStoreFastDoubleElement(
                         EMIT_REMEMBERED_SET, OMIT_SMI_CHECK);
 
     // Increment the length of the array.
-    __ mov(length_reg, Operand(Smi::FromInt(1)));
+    __ li(length_reg, Operand(Smi::FromInt(1)));
     __ stw(length_reg, FieldMemOperand(receiver_reg, JSArray::kLengthOffset));
     __ lwz(elements_reg,
            FieldMemOperand(receiver_reg, JSObject::kElementsOffset));

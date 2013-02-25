@@ -892,7 +892,7 @@ void Decoder::DecodeExt2(Instruction* instr) {
       break;
     }
     case SUBFX: {
-      Format(instr, "subf'.  'rt,'ra,'rb");
+      Format(instr, "subf'.   'rt,'ra,'rb");
       break;
     }
     case ADDZEX: {
@@ -1686,6 +1686,7 @@ int Decoder::InstructionDecode(byte* instr_ptr) {
       int bo = instr->Bits(25,21) << 21;
       int bi = instr->Bits(20,16);
       switch(bi) {
+        case 2:
         case 30:
           if(BT == bo) {
             Format(instr, "beq'l'a 'target16");
@@ -1739,7 +1740,7 @@ int Decoder::InstructionDecode(byte* instr_ptr) {
       break;
     }
     case RLWINMX: {
-      Format(instr, "rlwimn'. 'ra,'rs,'sh,'me,'mb");
+      Format(instr, "rlwinm'. 'ra,'rs,'sh,'me,'mb");
       break;
     }
     case RLWNMX:

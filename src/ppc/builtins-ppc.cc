@@ -811,9 +811,11 @@ static void Generate_JSConstructStubHelper(MacroAssembler* masm,
         MemOperand constructor_count =
             FieldMemOperand(r6, SharedFunctionInfo::kConstructionCountOffset);
         __ lbz(r7, constructor_count);
-        __ sub(r7, r7, Operand(1), SetCC); // roohack need to check branch below
+        __ li(r0, Operand(-1));
+        __ subfic(r7, r7, Operand(1));
         __ stb(r7, constructor_count);
-        __ bne(&allocate);
+        __ addze(r0, r0, LeaveOE, SetRC);
+        __ bc(&allocate, BT, 1);
 
         __ Push(r4, r5);
 
@@ -857,7 +859,8 @@ static void Generate_JSConstructStubHelper(MacroAssembler* masm,
       // r6: object size (in words)
       // r7: JSObject (not tagged)
       // r8: First in-object property of JSObject (not tagged)
-      __ add(r9, r7, Operand(r6, LSL, kPointerSizeLog2));  // End of object.
+      __ slwi(r9, r6, Operand(kPointerSizeLog2));
+      __ add(r9, r7, r9);  // End of object.
       ASSERT_EQ(3 * kPointerSize, JSObject::kHeaderSize);
       __ LoadRoot(r10, Heap::kUndefinedValueRootIndex);
       if (count_constructions) {
@@ -898,10 +901,10 @@ static void Generate_JSConstructStubHelper(MacroAssembler* masm,
       // ENDIAN
       // Fetch Map::kPreAllocatedPropertyFieldsByte field from r3
       STATIC_ASSERT(2 == Map::kPreAllocatedPropertyFieldsByte);
-      __ rlwinm(r9, r3, 24, 24, 31, LeaveRC);  // roohack - untested yet
-      __ add(r6, r6, Operand(r9));
+      __ rlwinm(r9, r3, 16, 24, 31, LeaveRC);  // roohack - untested yet
+      __ add(r6, r6, r9);
       STATIC_ASSERT(1 == Map::kInObjectPropertiesByte);
-      __ rlwinm(r9, r3, 0, 24, 31, LeaveRC);   // roohack - untested yet
+      __ rlwinm(r9, r3, 24, 24, 31, LeaveRC);   // roohack - untested yet
       __ sub(r6, r6, r9);  // roohack - sub order may be incorrect
       __ cmpi(r6, Operand(0));
 
@@ -935,7 +938,7 @@ static void Generate_JSConstructStubHelper(MacroAssembler* masm,
       __ stw(r9, MemOperand(r5));
       __ add(r5, r5, Operand(kPointerSize));
       ASSERT_EQ(1 * kPointerSize, FixedArray::kLengthOffset);
-      __ mov(r3, Operand(r6, LSL, kSmiTagSize));
+      __ slwi(r3, r6, Operand(kSmiTagSize));
       __ stw(r3, MemOperand(r5));
       __ add(r5, r5, Operand(kPointerSize));
 
@@ -945,7 +948,8 @@ static void Generate_JSConstructStubHelper(MacroAssembler* masm,
       // r6: number of elements in properties array
       // r7: JSObject
       // r8: FixedArray (not tagged)
-      __ add(r9, r5, Operand(r6, LSL, kPointerSizeLog2));  // End of object.
+      __ slwi(r9, r6, Operand(kPointerSizeLog2));
+      __ add(r9, r5, r9);  // End of object.
       ASSERT_EQ(2 * kPointerSize, FixedArray::kHeaderSize);
       { Label loop, entry;
         if (count_constructions) {
@@ -990,7 +994,7 @@ static void Generate_JSConstructStubHelper(MacroAssembler* masm,
     __ bind(&rt_call);
     __ push(r4);  // argument for Runtime_NewObject
     __ CallRuntime(Runtime::kNewObject, 1);
-    __ mov(r7, r3);
+    __ mr(r7, r3);
 
     // Receiver for constructor call allocated.
     // r7: JSObject
@@ -1010,7 +1014,7 @@ static void Generate_JSConstructStubHelper(MacroAssembler* masm,
     __ add(r5, fp, Operand(StandardFrameConstants::kCallerSPOffset));
 
     // Set up number of arguments for function call below
-    __ mov(r3, Operand(r6, LSR, kSmiTagSize));
+    __ srwi(r3, r6, Operand(kSmiTagSize));
 
     // Copy arguments and receiver to the expression stack.
     // r3: number of arguments
@@ -1024,7 +1028,12 @@ static void Generate_JSConstructStubHelper(MacroAssembler* masm,
     Label loop, entry;
     __ b(&entry);
     __ bind(&loop);
-    __ lwz(ip, MemOperand(r5, r6, LSL, kPointerSizeLog2 - 1));
+
+    __ slwi(ip, r6, Operand(kPointerSizeLog2 - 1));
+    __ add(ip, r5, ip);
+    __ lwz(ip, MemOperand(ip));
+// was   __ lwz(ip, MemOperand(r5, r6, LSL, kPointerSizeLog2 - 1));
+
     __ push(ip);
     __ bind(&entry);
     __ sub(r6, r6, Operand(2));
@@ -1093,7 +1102,8 @@ static void Generate_JSConstructStubHelper(MacroAssembler* masm,
     // Leave construct frame.
   }
 
-  __ add(sp, sp, Operand(r4, LSL, kPointerSizeLog2 - 1));
+  __ slwi(r4, r4, Operand(kPointerSizeLog2 - 1));
+  __ add(sp, sp, r4);
   __ add(sp, sp, Operand(kPointerSize));
   __ IncrementCounter(isolate->counters()->constructed_objects(), 1, r4, r5);
   __ blr();

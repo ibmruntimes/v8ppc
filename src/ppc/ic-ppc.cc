@@ -862,7 +862,7 @@ void KeyedLoadIC::GenerateNonStrictArguments(MacroAssembler* masm) {
   __ LoadRoot(r6, Heap::kTheHoleValueRootIndex);
   __ cmp(r5, r6);
   __ beq(&slow);
-  __ mov(r3, r5);
+  __ mr(r3, r5);
   __ Ret();
   __ bind(&slow);
   GenerateMiss(masm, false);
@@ -881,7 +881,7 @@ void KeyedStoreIC::GenerateNonStrictArguments(MacroAssembler* masm) {
       GenerateMappedArgumentsLookup(masm, r5, r4, r6, r7, r8, &notin, &slow);
   __ stw(r3, mapped_location);
   __ add(r9, r6, r8);
-  __ mov(r22, r3);
+  __ mr(r22, r3);
   __ RecordWrite(r6, r9, r22, kLRHasNotBeenSaved, kDontSaveFPRegs);
   __ Ret();
   __ bind(&notin);
@@ -890,7 +890,7 @@ void KeyedStoreIC::GenerateNonStrictArguments(MacroAssembler* masm) {
       GenerateUnmappedArgumentsLookup(masm, r4, r6, r7, &slow);
   __ stw(r3, unmapped_location);
   __ add(r9, r6, r7);
-  __ mov(r22, r3);
+  __ mr(r22, r3);
   __ RecordWrite(r6, r9, r22, kLRHasNotBeenSaved, kDontSaveFPRegs);
   __ Ret();
   __ bind(&slow);
@@ -1276,7 +1276,7 @@ void KeyedStoreIC::GenerateTransitionElementsDoubleToObject(
   if (!FLAG_trace_elements_transitions) {
     Label fail;
     ElementsTransitionGenerator::GenerateDoubleToObject(masm, &fail);
-    __ mov(r3, r5);
+    __ mr(r3, r5);
     __ Ret();
     __ bind(&fail);
   }
@@ -1298,7 +1298,7 @@ void KeyedStoreIC::GenerateRuntimeSetProperty(MacroAssembler* masm,
   // Push receiver, key and value for runtime call.
   __ Push(r5, r4, r3);
 
-  __ mov(r4, Operand(Smi::FromInt(NONE)));          // PropertyAttributes
+  __ li(r4, Operand(Smi::FromInt(NONE)));          // PropertyAttributes
   __ mov(r3, Operand(Smi::FromInt(strict_mode)));   // Strict mode.
   __ Push(r4, r3);
 
@@ -1364,7 +1364,7 @@ static void KeyedStoreGenerateGenericHelper(
   __ add(address, address, Operand(key, LSL, kPointerSizeLog2 - kSmiTagSize));
   __ str(value, MemOperand(address));
   // Update write barrier for the elements array address.
-  __ mov(scratch_value, value);  // Preserve the value which is returned.
+  __ mr(scratch_value, value);  // Preserve the value which is returned.
   __ RecordWrite(elements,
                  address,
                  scratch_value,

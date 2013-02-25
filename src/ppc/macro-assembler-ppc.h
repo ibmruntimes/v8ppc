@@ -1119,11 +1119,12 @@ class MacroAssembler: public Assembler {
   // ---------------------------------------------------------------------------
   // Smi utilities
 
+  // Shift left by 1
   void SmiTag(Register reg, SBit s = LeaveCC) {
-    rlwinm(reg, reg, 0, 0, 30);
+    slwi(reg, reg, Operand(1));
   }
   void SmiTag(Register dst, Register src, SBit s = LeaveCC) {
-    rlwinm(dst, src, 0, 0, 30);
+    slwi(dst, src, Operand(1));
   }
 
   // Try to convert int32 to smi. If the value is to large, preserve

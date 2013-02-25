@@ -1279,10 +1279,10 @@ void MacroAssembler::PushTryHandler(StackHandler::Kind kind,
   stw(sp, MemOperand(r8));
 
   if (kind == StackHandler::JS_ENTRY) {
-    li(r0, Operand(0, RelocInfo::NONE));  // NULL frame pointer.
-    stw(r0, MemOperand(sp,StackHandlerConstants::kFPOffset));
-    li(r0, Operand(Smi::FromInt(0)));    // Indicates no context.
-    stw(r0, MemOperand(sp,StackHandlerConstants::kContextOffset));
+    li(r8, Operand(0, RelocInfo::NONE));  // NULL frame pointer.
+    stw(r8, MemOperand(sp,StackHandlerConstants::kFPOffset));
+    li(r8, Operand(Smi::FromInt(0)));    // Indicates no context.
+    stw(r8, MemOperand(sp,StackHandlerConstants::kContextOffset));
   } else {
     // still not sure if fp is right
     stw(fp, MemOperand(sp,StackHandlerConstants::kFPOffset));
@@ -1291,10 +1291,10 @@ void MacroAssembler::PushTryHandler(StackHandler::Kind kind,
   unsigned state =
       StackHandler::IndexField::encode(handler_index) |
       StackHandler::KindField::encode(kind);
-  mov(r0, Operand(state));
-  stw(r0, MemOperand(sp,StackHandlerConstants::kStateOffset));
-  mov(r0, Operand(CodeObject()));
-  stw(r0, MemOperand(sp,StackHandlerConstants::kCodeOffset));
+  mov(r8, Operand(state));
+  stw(r8, MemOperand(sp,StackHandlerConstants::kStateOffset));
+  mov(r8, Operand(CodeObject()));
+  stw(r8, MemOperand(sp,StackHandlerConstants::kCodeOffset));
 }
 
 
@@ -3297,10 +3297,11 @@ void MacroAssembler::InitializeFieldsWithFiller(Register start_offset,
   Label loop, entry;
   b(&entry);
   bind(&loop);
-  str(filler, MemOperand(start_offset, kPointerSize, PostIndex));
+  stw(filler, MemOperand(start_offset));
+  add(start_offset, start_offset, Operand(kPointerSize));
   bind(&entry);
   cmp(start_offset, end_offset);
-  b(lt, &loop);
+  blt(&loop);
 }
 
 
@@ -3406,7 +3407,7 @@ void MacroAssembler::PrepareCallCFunction(int num_reg_arguments,
   if (frame_alignment > kPointerSize) {
     // Make stack end at alignment and make room for num_arguments - 4 words
     // and the original value of sp.
-    mov(scratch, sp);
+    mr(scratch, sp);
     sub(sp, sp, Operand((stack_passed_arguments + 1) * kPointerSize));
     ASSERT(IsPowerOf2(frame_alignment));
     and_(sp, sp, Operand(-frame_alignment));
@@ -3643,7 +3644,8 @@ void MacroAssembler::GetMarkBits(Register addr_reg,
   Ubfx(ip, addr_reg, kLowBits, kPageSizeBits - kLowBits);
   add(bitmap_reg, bitmap_reg, Operand(ip, LSL, kPointerSizeLog2));
   mov(ip, Operand(1));
-  mov(mask_reg, Operand(ip, LSL, mask_reg));
+  slw(mask_reg, ip, mask_reg);  //roohack, I think this is right
+  // was mov(mask_reg, Operand(ip, LSL, mask_reg));
 }
 
 

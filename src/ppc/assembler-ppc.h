@@ -887,6 +887,8 @@ class Assembler : public AssemblerBase {
   void sub(Register dst, Register src1, Register src2,
            OEBit s = LeaveOE, RCBit r = LeaveRC );
 
+  void subfic(Register dst, Register src, const Operand& imm);
+
   void subfc(Register dst, Register src1, Register src2,
            OEBit s = LeaveOE, RCBit r = LeaveRC );
 
