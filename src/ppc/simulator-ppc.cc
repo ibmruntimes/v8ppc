@@ -1922,6 +1922,15 @@ void Simulator::DecodeExt1(Instruction* instr) {
 void Simulator::DecodeExt2(Instruction* instr) {
   // Check first the 10-1 bit versions
   switch(instr->Bits(10,1) << 1) {
+    case SRAW: {
+      int rs = instr->RSValue();
+      int ra = instr->RAValue();
+      int rb = instr->RBValue();
+      int32_t rs_val = get_register(rs);
+      int32_t rb_val = get_register(rb);
+      int32_t result = rs_val >> rb_val;
+      set_register(ra, result);
+    }
     case SRAWIX: {
       int ra = instr->RAValue();
       int rs = instr->RSValue();
@@ -3780,7 +3789,7 @@ int32_t Simulator::Call(byte* entry, int argument_count, ...) {
   int32_t r19_val = get_register(r19);
 //  int32_t r20_val = get_register(r20);  -- this is cp
   int32_t r21_val = get_register(r21);
-  int32_t r22_val = get_register(r22);
+//  int32_t r22_val = get_register(r22);  -- hacked for r9
   int32_t r23_val = get_register(r23);
   int32_t r24_val = get_register(r24);
   int32_t r25_val = get_register(r25);
@@ -3802,7 +3811,7 @@ int32_t Simulator::Call(byte* entry, int argument_count, ...) {
 	  set_register(r19, callee_saved_value);
 	//  set_register(r20, callee_saved_value); -- this is cp
 	  set_register(r21, callee_saved_value);
-	  set_register(r22, callee_saved_value);
+//	  set_register(r22, callee_saved_value);
 	  set_register(r23, callee_saved_value);
 	  set_register(r24, callee_saved_value);
 	  set_register(r25, callee_saved_value);
@@ -3825,7 +3834,7 @@ int32_t Simulator::Call(byte* entry, int argument_count, ...) {
 	  CHECK_EQ(callee_saved_value, get_register(r19));
 	  // CHECK_EQ(callee_saved_value, get_register(r20)); -- cp
 	  CHECK_EQ(callee_saved_value, get_register(r21));
-	  CHECK_EQ(callee_saved_value, get_register(r22));
+//	  CHECK_EQ(callee_saved_value, get_register(r22));
 	  CHECK_EQ(callee_saved_value, get_register(r23));
 	  CHECK_EQ(callee_saved_value, get_register(r24));
 	  CHECK_EQ(callee_saved_value, get_register(r25));
@@ -3845,7 +3854,7 @@ int32_t Simulator::Call(byte* entry, int argument_count, ...) {
 	  set_register(r19, r19_val);
 	  // set_register(r20, r20_val); -- cp
 	  set_register(r21, r21_val);
-	  set_register(r22, r22_val);
+//	  set_register(r22, r22_val);
 	  set_register(r23, r23_val);
 	  set_register(r24, r24_val);
 	  set_register(r25, r25_val);

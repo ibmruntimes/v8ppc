@@ -100,7 +100,7 @@ void FastNewClosureStub::Generate(MacroAssembler* masm) {
                         &gc,
                         TAG_OBJECT);
 
-  __ IncrementCounter(counters->fast_new_closure_total(), 1, r6, r7); // roohack - this is wrong, registers need to be updated to PPC
+  __ IncrementCounter(counters->fast_new_closure_total(), 1, r9, r10);
 
   int map_index = (language_mode_ == CLASSIC_MODE)
       ? Context::FUNCTION_MAP_INDEX
@@ -147,7 +147,7 @@ void FastNewClosureStub::Generate(MacroAssembler* masm) {
 
   __ bind(&check_optimized);
 
-  __ IncrementCounter(counters->fast_new_closure_try_optimized(), 1, r6, r7); // roohack - same as above
+  __ IncrementCounter(counters->fast_new_closure_try_optimized(), 1, r9, r10);
 
   // r5 holds native context, r4 points to fixed array of 3-element entries
   // (native context, optimized code, literals).
@@ -170,25 +170,21 @@ void FastNewClosureStub::Generate(MacroAssembler* masm) {
   __ sub(r7, r7, Operand(
       Smi::FromInt(SharedFunctionInfo::kEntryLength)));  // Skip an entry.
   __ add(r8, r4, Operand(FixedArray::kHeaderSize - kHeapObjectTag));
-  __ mr(r0, r7);
-  __ slwi(r7, r7, Operand(kPointerSizeLog2 - kSmiTagSize));
-  __ add(r8, r8, r7);
-  __ mr(r7,r0);
+  __ slwi(r9, r7, Operand(kPointerSizeLog2 - kSmiTagSize));
+  __ add(r8, r8, r9);
   __ ldr(r8, MemOperand(r8));
   __ cmp(r5, r8);
   __ bne(&loop);
   // Hit: fetch the optimized code.
   __ add(r8, r4, Operand(FixedArray::kHeaderSize - kHeapObjectTag));
-  __ mr(r0, r7);
-  __ slwi(r7, r7, Operand(kPointerSizeLog2 - kSmiTagSize));
-  __ add(r8, r8, r7);
-  __ mr(r7,r0);
+  __ slwi(r9, r7, Operand(kPointerSizeLog2 - kSmiTagSize));
+  __ add(r8, r8, r9);
   __ add(r8, r8, Operand(kPointerSize));
   __ lwz(r7, MemOperand(r8));
 
   __ bind(&install_optimized);
   __ IncrementCounter(counters->fast_new_closure_install_optimized(),
-                      1, r6, r7);  // roohack - needs fixing
+                      1, r9, r10);
 
   // TODO(fschneider): Idea: store proper code pointers in the map and either
   // unmangle them on marking or do nothing as the whole map is discarded on
@@ -205,7 +201,7 @@ void FastNewClosureStub::Generate(MacroAssembler* masm) {
   __ str(r3, ContextOperand(r5, Context::OPTIMIZED_FUNCTIONS_LIST));
   // Store JSFunction (eax) into edx before issuing write barrier as
   // it clobbers all the registers passed.
-  __ mov(r7, r3);
+  __ mr(r7, r3);
   __ RecordWriteContextSlot(
       r5,
       Context::SlotOffset(Context::OPTIMIZED_FUNCTIONS_LIST),
@@ -239,30 +235,30 @@ void FastNewContextStub::Generate(MacroAssembler* masm) {
                         TAG_OBJECT);
 
   // Load the function from the stack.
-  __ ldr(r6, MemOperand(sp, 0));
+  __ lwz(r6, MemOperand(sp, 0));
 
   // Set up the object header.
   __ LoadRoot(r4, Heap::kFunctionContextMapRootIndex);
-  __ mov(r5, Operand(Smi::FromInt(length)));
+  __ li(r5, Operand(Smi::FromInt(length)));
   __ stw(r5, FieldMemOperand(r3, FixedArray::kLengthOffset));
   __ stw(r4, FieldMemOperand(r3, HeapObject::kMapOffset));
 
   // Set up the fixed slots, copy the global object from the previous context.
-  __ ldr(r5, MemOperand(cp, Context::SlotOffset(Context::GLOBAL_OBJECT_INDEX)));
-  __ mov(r4, Operand(Smi::FromInt(0)));
-  __ str(r6, MemOperand(r3, Context::SlotOffset(Context::CLOSURE_INDEX)));
-  __ str(cp, MemOperand(r3, Context::SlotOffset(Context::PREVIOUS_INDEX)));
-  __ str(r4, MemOperand(r3, Context::SlotOffset(Context::EXTENSION_INDEX)));
-  __ str(r5, MemOperand(r3, Context::SlotOffset(Context::GLOBAL_OBJECT_INDEX)));
+  __ lwz(r5, MemOperand(cp, Context::SlotOffset(Context::GLOBAL_OBJECT_INDEX)));
+  __ li(r4, Operand(Smi::FromInt(0)));
+  __ stw(r6, MemOperand(r3, Context::SlotOffset(Context::CLOSURE_INDEX)));
+  __ stw(cp, MemOperand(r3, Context::SlotOffset(Context::PREVIOUS_INDEX)));
+  __ stw(r4, MemOperand(r3, Context::SlotOffset(Context::EXTENSION_INDEX)));
+  __ stw(r5, MemOperand(r3, Context::SlotOffset(Context::GLOBAL_OBJECT_INDEX)));
 
   // Initialize the rest of the slots to undefined.
   __ LoadRoot(r4, Heap::kUndefinedValueRootIndex);
   for (int i = Context::MIN_CONTEXT_SLOTS; i < length; i++) {
-    __ str(r4, MemOperand(r3, Context::SlotOffset(i)));
+    __ stw(r4, MemOperand(r3, Context::SlotOffset(i)));
   }
 
   // Remove the on-stack argument and return.
-  __ mov(cp, r3);
+  __ mr(cp, r3);
   __ pop();
   __ Ret();
 
@@ -293,7 +289,7 @@ void FastNewBlockContextStub::Generate(MacroAssembler* masm) {
   // Set up the object header.
   __ LoadRoot(r5, Heap::kBlockContextMapRootIndex);
   __ stw(r5, FieldMemOperand(r3, HeapObject::kMapOffset));
-  __ mov(r5, Operand(Smi::FromInt(length)));
+  __ li(r5, Operand(Smi::FromInt(length)));
   __ stw(r5, FieldMemOperand(r3, FixedArray::kLengthOffset));
 
   // If this block context is nested in the native context we get a smi
@@ -326,7 +322,7 @@ void FastNewBlockContextStub::Generate(MacroAssembler* masm) {
   }
 
   // Remove the on-stack argument and return.
-  __ mov(cp, r3);
+  __ mr(cp, r3);
   __ add(sp, sp, Operand(2 * kPointerSize));
   __ Ret();
 
@@ -1049,7 +1045,7 @@ void FloatingPointHelper::DoubleIs32BitInteger(MacroAssembler* masm,
 
   // Create the mask and test the lower bits (of the higher bits).
   __ rsb(scratch, scratch, Operand(32));
-  __ mov(src2, Operand(1));
+  __ li(src2, Operand(1));
   __ mov(src1, Operand(src2, LSL, scratch));
   __ sub(src1, src1, Operand(1));
   __ tst(dst, src1);
@@ -1883,14 +1879,13 @@ void CompareStub::Generate(MacroAssembler* masm) {
 }
 
 
-// roohack - not converted
 // The stub expects its argument in the tos_ register and returns its result in
 // it, too: zero for false, and a non-zero value for true.
 void ToBooleanStub::Generate(MacroAssembler* masm) {
   // This stub overrides SometimesSetsUpAFrame() to return false.  That means
   // we cannot call anything that could cause a GC from this stub.
   Label patch;
-  const Register map = r9.is(tos_) ? r7 : r9;
+  const Register map = r22.is(tos_) ? r10 : r22;
   const Register temp = map;
 
   // undefined -> false.
@@ -1905,45 +1900,58 @@ void ToBooleanStub::Generate(MacroAssembler* masm) {
 
   if (types_.Contains(SMI)) {
     // Smis: 0 -> false, all other -> true
-    __ tst(tos_, Operand(kSmiTagMask));
+    Label not_smi;
+    __ JumpIfNotSmi(tos_,  &not_smi);
     // tos_ contains the correct return value already
-    __ Ret(eq);
+    __ Ret();
+    __ bind(&not_smi);
   } else if (types_.NeedsMap()) {
     // If we need a map later and have a Smi -> patch.
     __ JumpIfSmi(tos_, &patch);
   }
 
   if (types_.NeedsMap()) {
-    __ ldr(map, FieldMemOperand(tos_, HeapObject::kMapOffset));
+    __ lwz(map, FieldMemOperand(tos_, HeapObject::kMapOffset));
 
     if (types_.CanBeUndetectable()) {
-      __ ldrb(ip, FieldMemOperand(map, Map::kBitFieldOffset));
-      __ tst(ip, Operand(1 << Map::kIsUndetectable));
+      Label not_undetectable;
+      __ lbz(ip, FieldMemOperand(map, Map::kBitFieldOffset));
+      STATIC_ASSERT((1 << Map::kIsUndetectable) < 0x8000);
+      __ andi(r0, ip, Operand(1 << Map::kIsUndetectable));
+      __ cmpi(r0, Operand(0));
+      __ beq(&not_undetectable);
       // Undetectable -> false.
-      __ mov(tos_, Operand(0, RelocInfo::NONE), LeaveCC, ne);
-      __ Ret(ne);
+      __ li(tos_, Operand(0, RelocInfo::NONE));
+      __ Ret();
+      __ bind(&not_undetectable);
     }
   }
 
   if (types_.Contains(SPEC_OBJECT)) {
     // Spec object -> true.
+    Label not_js_object;
     __ CompareInstanceType(map, ip, FIRST_SPEC_OBJECT_TYPE);
     // tos_ contains the correct non-zero return value already.
-    __ Ret(ge);
+    __ blt(&not_js_object);
+    __ Ret();
+    __ bind(&not_js_object);
   }
 
   if (types_.Contains(STRING)) {
     // String value -> false iff empty.
-  __ CompareInstanceType(map, ip, FIRST_NONSTRING_TYPE);
-  __ ldr(tos_, FieldMemOperand(tos_, String::kLengthOffset), lt);
-  __ Ret(lt);  // the string length is OK as the return value
+    Label not_string;
+    __ CompareInstanceType(map, ip, FIRST_NONSTRING_TYPE);
+    __ bge(&not_string);
+    __ lwz(tos_, FieldMemOperand(tos_, String::kLengthOffset));
+    __ Ret();  // the string length is OK as the return value
+    __ bind(&not_string);
   }
 
   if (types_.Contains(HEAP_NUMBER)) {
     // Heap number -> false iff +0, -0, or NaN.
     Label not_heap_number;
     __ CompareRoot(map, Heap::kHeapNumberMapRootIndex);
-    __ b(ne, &not_heap_number);
+    __ bne(&not_heap_number);
 
     if (CpuFeatures::IsSupported(VFP2)) {
       CpuFeatures::Scope scope(VFP2);
@@ -2009,21 +2017,26 @@ void ToBooleanStub::CheckOddball(MacroAssembler* masm,
                                  bool result) {
   if (types_.Contains(type)) {
     // If we see an expected oddball, return its ToBoolean value tos_.
+    Label different_value;
     __ LoadRoot(ip, value);
     __ cmp(tos_, ip);
+    __ bne(&different_value);
     // The value of a root is never NULL, so we can avoid loading a non-null
     // value into tos_ when we want to return 'true'.
     if (!result) {
-      __ mov(tos_, Operand(0, RelocInfo::NONE), LeaveCC, eq);
+      __ li(tos_, Operand(0, RelocInfo::NONE));
     }
-    __ Ret(eq);
+    // Intel has some logic here not present on ARM
+    // unclear if it's needed or not
+    __ Ret();
+    __ bind(&different_value);
   }
 }
 
 
 void ToBooleanStub::GenerateTypeTransition(MacroAssembler* masm) {
   if (!tos_.is(r6)) {
-    __ mov(r6, Operand(tos_));
+    __ mr(r6, tos_);
   }
   __ mov(r5, Operand(Smi::FromInt(tos_.code())));
   __ mov(r4, Operand(Smi::FromInt(types_.ToByte())));
@@ -2546,9 +2559,10 @@ void BinaryOpStub::GenerateSmiSmiOperation(MacroAssembler* masm) {
     case Token::SAR:
       // Remove tags from right operand.
       __ GetLeastBitsFromSmi(scratch1, right, 5);
-      __ mov(right, Operand(left, ASR, scratch1));
+      __ sraw(right, left, scratch1);
       // Smi tag result.
-      __ bic(right, right, Operand(kSmiTagMask));
+      __ li(r0, Operand(~kSmiTagMask));
+      __ and_(right, right, r0, LeaveRC);
       __ Ret();
       break;
     case Token::SHR:
@@ -4496,7 +4510,7 @@ void ArgumentsAccessStub::GenerateReadElement(MacroAssembler* masm) {
   Label adaptor;
   __ lwz(r5, MemOperand(fp, StandardFrameConstants::kCallerFPOffset));
   __ lwz(r6, MemOperand(r5, StandardFrameConstants::kContextOffset));
-  __ cmp(r6, Operand(Smi::FromInt(StackFrame::ARGUMENTS_ADAPTOR)));
+  __ cmpi(r6, Operand(Smi::FromInt(StackFrame::ARGUMENTS_ADAPTOR)));
   __ beq(&adaptor);
 
   // Check index against formal parameters count limit passed in
@@ -6706,7 +6720,7 @@ void ICCompareStub::GenerateSmis(MacroAssembler* masm) {
   if (GetCondition() == eq) {
     // For equality we do not care about the sign of the result.
     // __ sub(r3, r3, r4, SetCC);
-     __ sub(r3, r3, r4, LeaveOE, SetRC);
+     __ sub(r3, r3, r4);
   } else {
     // Untag before subtracting to avoid handling overflow.
     __ SmiUntag(r4);
@@ -7257,38 +7271,37 @@ struct AheadOfTimeWriteBarrierStubList {
 
 #define REG(Name) { kRegister_ ## Name ## _Code }
 
-// roohack - not sure what to do here..
 static const AheadOfTimeWriteBarrierStubList kAheadOfTime[] = {
   // Used in RegExpExecStub.
-  { REG(r6), REG(r4), REG(r7), EMIT_REMEMBERED_SET },
-  { REG(r6), REG(r2), REG(r7), EMIT_REMEMBERED_SET },
+  { REG(r9), REG(r7), REG(r10), EMIT_REMEMBERED_SET },
+  { REG(r9), REG(r5), REG(r10), EMIT_REMEMBERED_SET },
   // Used in CompileArrayPushCall.
   // Also used in StoreIC::GenerateNormal via GenerateDictionaryStore.
   // Also used in KeyedStoreIC::GenerateGeneric.
-  { REG(r3), REG(r4), REG(r5), EMIT_REMEMBERED_SET },
+  { REG(r6), REG(r7), REG(r8), EMIT_REMEMBERED_SET },
   // Used in CompileStoreGlobal.
-  { REG(r4), REG(r0), REG(r2), OMIT_REMEMBERED_SET },
+  { REG(r7), REG(r4), REG(r5), OMIT_REMEMBERED_SET },
   // Used in StoreStubCompiler::CompileStoreField via GenerateStoreField.
-  { REG(r5), REG(r2), REG(r3), EMIT_REMEMBERED_SET },
-  { REG(r3), REG(r2), REG(r5), EMIT_REMEMBERED_SET },
+  { REG(r4), REG(r5), REG(r6), EMIT_REMEMBERED_SET },
+  { REG(r6), REG(r5), REG(r4), EMIT_REMEMBERED_SET },
   // Used in KeyedStoreStubCompiler::CompileStoreField via GenerateStoreField.
-  { REG(r2), REG(r5), REG(r3), EMIT_REMEMBERED_SET },
-  { REG(r3), REG(r5), REG(r2), EMIT_REMEMBERED_SET },
+  { REG(r5), REG(r4), REG(r6), EMIT_REMEMBERED_SET },
+  { REG(r6), REG(r4), REG(r5), EMIT_REMEMBERED_SET },
   // KeyedStoreStubCompiler::GenerateStoreFastElement.
-  { REG(r3), REG(r2), REG(r4), EMIT_REMEMBERED_SET },
-  { REG(r2), REG(r3), REG(r4), EMIT_REMEMBERED_SET },
+  { REG(r6), REG(r5), REG(r7), EMIT_REMEMBERED_SET },
+  { REG(r5), REG(r6), REG(r7), EMIT_REMEMBERED_SET },
   // ElementsTransitionGenerator::GenerateMapChangeElementTransition
   // and ElementsTransitionGenerator::GenerateSmiToDouble
   // and ElementsTransitionGenerator::GenerateDoubleToObject
-  { REG(r2), REG(r3), REG(r9), EMIT_REMEMBERED_SET },
-  { REG(r2), REG(r3), REG(r9), OMIT_REMEMBERED_SET },
+  { REG(r5), REG(r6), REG(r22), EMIT_REMEMBERED_SET },
+  { REG(r5), REG(r6), REG(r22), OMIT_REMEMBERED_SET },
   // ElementsTransitionGenerator::GenerateDoubleToObject
-  { REG(r6), REG(r2), REG(r0), EMIT_REMEMBERED_SET },
-  { REG(r2), REG(r6), REG(r9), EMIT_REMEMBERED_SET },
+  { REG(r9), REG(r5), REG(r3), EMIT_REMEMBERED_SET },
+  { REG(r5), REG(r9), REG(r22), EMIT_REMEMBERED_SET },
   // StoreArrayLiteralElementStub::Generate
-  { REG(r5), REG(r0), REG(r6), EMIT_REMEMBERED_SET },
+  { REG(r8), REG(r3), REG(r9), EMIT_REMEMBERED_SET },
   // FastNewClosureStub::Generate
-  { REG(r2), REG(r4), REG(r5), EMIT_REMEMBERED_SET },
+  { REG(r5), REG(r7), REG(r4), EMIT_REMEMBERED_SET },
   // Null termination.
   { REG(no_reg), REG(no_reg), REG(no_reg), EMIT_REMEMBERED_SET}
 };
@@ -7667,7 +7680,7 @@ void ProfileEntryHookStub::Generate(MacroAssembler* masm) {
 
   // Restore the stack pointer if needed.
   if (frame_alignment > kPointerSize) {
-    __ mov(sp, r8);
+    __ mr(sp, r8);
   }
 
   __ Pop(lr, r8, r4);

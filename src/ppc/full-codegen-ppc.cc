@@ -165,12 +165,9 @@ void FullCodeGenerator::Generate() {
 
   int locals_count = info->scope()->num_stack_slots();
 
-// roohack ARM specific  __ Push(lr, r11, cp, r1);
   __ mflr(r0);
   __ Push(r0, fp, cp, r4);
   __ add(fp, sp, Operand(8));  // chain fp correctly
-  // roohack - this fp chain may break native stack frames
-  // trade-off being we make JS frames correct?
   
   if (locals_count > 0) {
     // Load undefined value here, so the value is ready for the loop
@@ -178,7 +175,7 @@ void FullCodeGenerator::Generate() {
     __ LoadRoot(ip, Heap::kUndefinedValueRootIndex);
   }
   // Adjust fp to point to caller's fp.
-// roohack ARM specific  __ add(r11, sp, Operand(2 * kPointerSize));
+  __ add(fp, sp, Operand(2 * kPointerSize));
 
   { Comment cmnt(masm_, "[ Allocate locals");
     for (int i = 0; i < locals_count; i++) {
@@ -215,15 +212,14 @@ void FullCodeGenerator::Generate() {
         int parameter_offset = StandardFrameConstants::kCallerSPOffset +
             (num_parameters - 1 - i) * kPointerSize;
         // Load parameter from stack.
-        __ lwz(r0, MemOperand(fp, parameter_offset));
+        __ lwz(r3, MemOperand(fp, parameter_offset));
         // Store it in the context.
         MemOperand target = ContextOperand(cp, var->index());
-        __ stw(r0, target);
+        __ stw(r3, target);
 
         // Update the write barrier.
-        // roohack - not sure why r3 is used here
         __ RecordWriteContextSlot(
-            cp, target.offset(), r0, r3, kLRHasBeenSaved, kDontSaveFPRegs);
+            cp, target.offset(), r3, r6, kLRHasBeenSaved, kDontSaveFPRegs);
       }
     }
   }
@@ -234,17 +230,17 @@ void FullCodeGenerator::Generate() {
     Comment cmnt(masm_, "[ Allocate arguments object");
     if (!function_in_register) {
       // Load this again, if it's used by the local context below.
-      __ lwz(r3, MemOperand(fp, JavaScriptFrameConstants::kFunctionOffset));
+      __ lwz(r6, MemOperand(fp, JavaScriptFrameConstants::kFunctionOffset));
     } else {
-      __ mov(r3, r1);
+      __ mr(r6, r4);
     }
     // Receiver is just before the parameters on the caller's stack.
     int num_parameters = info->scope()->num_parameters();
     int offset = num_parameters * kPointerSize;
-    __ add(r2, fp,
+    __ add(r5, fp,
            Operand(StandardFrameConstants::kCallerSPOffset + offset));
-    __ mov(r1, Operand(Smi::FromInt(num_parameters)));
-    __ Push(r3, r2, r1);
+    __ li(r4, Operand(Smi::FromInt(num_parameters)));
+    __ Push(r6, r5, r4);
 
     // Arguments to ArgumentsAccessStub:
     //   function, receiver address, parameter count.
@@ -261,7 +257,7 @@ void FullCodeGenerator::Generate() {
     ArgumentsAccessStub stub(type);
     __ CallStub(&stub);
 
-    SetVar(arguments, r0, r1, r2);
+    SetVar(arguments, r3, r4, r5);
   }
 
   if (FLAG_trace) {
@@ -310,7 +306,7 @@ void FullCodeGenerator::Generate() {
   // Always emit a 'return undefined' in case control fell off the end of
   // the body.
   { Comment cmnt(masm_, "[ return <undefined>;");
-    __ LoadRoot(r0, Heap::kUndefinedValueRootIndex);
+    __ LoadRoot(r3, Heap::kUndefinedValueRootIndex);
   }
   EmitReturnSequence();
 
@@ -689,7 +685,7 @@ void FullCodeGenerator::DoTest(Expression* condition,
                                Label* fall_through) {
   ToBooleanStub stub(result_register());
   __ CallStub(&stub);
-  __ tst(result_register(), result_register());
+  __ cmpi(result_register(), Operand(0));
   Split(ne, if_true, if_false, fall_through);
 }
 
@@ -2116,7 +2112,7 @@ void FullCodeGenerator::EmitVariableAssignment(Variable* var,
       Label skip;
       __ lwz(r4, StackOperand(var));
       __ CompareRoot(r4, Heap::kTheHoleValueRootIndex);
-      __ b(ne, &skip);
+      __ bne(&skip);
       __ stw(result_register(), StackOperand(var));
       __ bind(&skip);
     } else {
@@ -2166,7 +2162,7 @@ void FullCodeGenerator::EmitVariableAssignment(Variable* var,
     // Assignment to var or initializing assignment to let/const
     // in harmony mode.
     if (var->IsStackAllocated() || var->IsContextSlot()) {
-      MemOperand location = VarOperand(var, r1);
+      MemOperand location = VarOperand(var, r4);
       if (generate_debug_code_ && op == Token::INIT_LET) {
         // Check for an uninitialized let binding.
         __ lwz(r5, location);
@@ -2836,7 +2832,6 @@ void FullCodeGenerator::EmitIsConstructCall(CallRuntime* expr) {
   // Skip the arguments adaptor frame if it exists.
   Label check_frame_marker;
   __ lwz(r5, MemOperand(r5, StandardFrameConstants::kContextOffset));
-  STATIC_ASSERT(StackFrame::ARGUMENTS_ADAPTOR < 0x4000);
   __ cmpi(r4, Operand(Smi::FromInt(StackFrame::ARGUMENTS_ADAPTOR)));
   __ bne(&check_frame_marker);
   __ lwz(r5, MemOperand(r5, StandardFrameConstants::kCallerFPOffset));
@@ -2896,13 +2891,13 @@ void FullCodeGenerator::EmitArgumentsLength(CallRuntime* expr) {
   ASSERT(expr->arguments()->length() == 0);
   Label exit;
   // Get the number of formal parameters.
-  __ mov(r3, Operand(Smi::FromInt(info_->scope()->num_parameters())));
+  __ li(r3, Operand(Smi::FromInt(info_->scope()->num_parameters())));
 
   // Check if the calling frame is an arguments adaptor frame.
   __ lwz(r5, MemOperand(fp, StandardFrameConstants::kCallerFPOffset));
   __ lwz(r6, MemOperand(r5, StandardFrameConstants::kContextOffset));
-  __ cmp(r6, Operand(Smi::FromInt(StackFrame::ARGUMENTS_ADAPTOR)));
-  __ b(ne, &exit);
+  __ cmpi(r6, Operand(Smi::FromInt(StackFrame::ARGUMENTS_ADAPTOR)));
+  __ bne(&exit);
 
   // Arguments adaptor case: Read the arguments length from the
   // adaptor frame.
@@ -4219,13 +4214,15 @@ void FullCodeGenerator::EmitLiteralCompareTypeof(Expression* expr,
     __ JumpIfSmi(r3, if_false);
     // Check for undetectable objects => false.
     __ CompareObjectType(r3, r3, r4, FIRST_NONSTRING_TYPE);
-    __ b(ge, if_false);
+    __ bge(if_false);
     __ lbz(r4, FieldMemOperand(r3, Map::kBitFieldOffset));
-    __ tst(r4, Operand(1 << Map::kIsUndetectable));
+    STATIC_ASSERT((1 << Map::kIsUndetectable) < 0x8000);
+    __ andi(r0, r4, Operand(1 << Map::kIsUndetectable));
+    __ cmpi(r0, Operand(0));
     Split(eq, if_true, if_false, fall_through);
   } else if (check->Equals(isolate()->heap()->boolean_symbol())) {
     __ CompareRoot(r3, Heap::kTrueValueRootIndex);
-    __ b(eq, if_true);
+    __ beq(if_true);
     __ CompareRoot(r3, Heap::kFalseValueRootIndex);
     Split(eq, if_true, if_false, fall_through);
   } else if (FLAG_harmony_typeof &&
@@ -4234,7 +4231,7 @@ void FullCodeGenerator::EmitLiteralCompareTypeof(Expression* expr,
     Split(eq, if_true, if_false, fall_through);
   } else if (check->Equals(isolate()->heap()->undefined_symbol())) {
     __ CompareRoot(r3, Heap::kUndefinedValueRootIndex);
-    __ b(eq, if_true);
+    __ beq(if_true);
     __ JumpIfSmi(r3, if_false);
     // Check for undetectable objects => true.
     __ lwz(r3, FieldMemOperand(r3, HeapObject::kMapOffset));
@@ -4246,14 +4243,14 @@ void FullCodeGenerator::EmitLiteralCompareTypeof(Expression* expr,
     __ JumpIfSmi(r3, if_false);
     STATIC_ASSERT(NUM_OF_CALLABLE_SPEC_OBJECT_TYPES == 2);
     __ CompareObjectType(r3, r3, r4, JS_FUNCTION_TYPE);
-    __ b(eq, if_true);
+    __ beq(if_true);
     __ cmp(r4, Operand(JS_FUNCTION_PROXY_TYPE));
     Split(eq, if_true, if_false, fall_through);
   } else if (check->Equals(isolate()->heap()->object_symbol())) {
-    __ JumpIfSmi(r1, if_false);
+    __ JumpIfSmi(r4, if_false);
     if (!FLAG_harmony_typeof) {
       __ CompareRoot(r3, Heap::kNullValueRootIndex);
-      __ b(eq, if_true);
+      __ beq(if_true);
     }
     // Check for JS objects => true.
     __ CompareObjectType(r3, r3, r4, FIRST_NONCALLABLE_SPEC_OBJECT_TYPE);
@@ -4262,7 +4259,8 @@ void FullCodeGenerator::EmitLiteralCompareTypeof(Expression* expr,
     __ b(gt, if_false);
     // Check for undetectable objects => false.
     __ lbz(r4, FieldMemOperand(r3, Map::kBitFieldOffset));
-    __ tst(r3, Operand(1 << Map::kIsUndetectable));
+    __ andi(r0, r3, Operand(1 << Map::kIsUndetectable));
+    __ cmpi(r0, Operand(0));
     Split(eq, if_true, if_false, fall_through);
   } else {
     if (if_false != fall_through) __ jmp(if_false);

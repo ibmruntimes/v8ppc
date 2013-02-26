@@ -867,6 +867,10 @@ void Decoder::DecodeExt2(Instruction* instr) {
 
    // Some encodings are 10-1 bits, handle those first
    switch(instr->Bits(10,1) << 1) {
+    case SRAW: {
+      Format(instr, "sraw'.   'ra,'rs,'rb");
+      return;
+    }
     case SRAWIX: {
       Format(instr, "srawi'.  'ra,'rs,'sh");
       return;

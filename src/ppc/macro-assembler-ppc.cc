@@ -832,7 +832,7 @@ void MacroAssembler::LeaveFrame(StackFrame::Type type) {
 
   // Drop the execution stack down to the frame pointer and restore
   // the caller frame pointer and return address.
-  mov(sp, r11);
+  mr(sp, r11);
   ldm(ia_w, sp, r11.bit() | lr.bit());
 #endif
 }
@@ -2944,7 +2944,7 @@ void MacroAssembler::LoadContext(Register dst, int context_chain_length) {
     // Slot is in the current function context.  Move it into the
     // destination register in case we store into it (the write barrier
     // cannot be allowed to destroy the context in esi).
-    mov(dst, cp);
+    mr(dst, cp);
   }
 }
 

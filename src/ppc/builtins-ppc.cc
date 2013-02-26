@@ -60,7 +60,7 @@ void Builtins::Generate_Adaptor(MacroAssembler* masm,
   int num_extra_args = 0;
   if (extra_args == NEEDS_CALLED_FUNCTION) {
     num_extra_args = 1;
-    __ push(r1);
+    __ push(r4);
   } else {
     ASSERT(extra_args == NO_EXTRA_ARGUMENTS);
   }
@@ -732,17 +732,17 @@ void Builtins::Generate_ParallelRecompile(MacroAssembler* masm) {
     FrameScope scope(masm, StackFrame::INTERNAL);
 
     // Push a copy of the function onto the stack.
-    __ push(r1);
+    __ push(r4);
     // Push call kind information.
-    __ push(r5);
+    __ push(r8);
 
-    __ push(r1);  // Function is also the parameter to the runtime call.
+    __ push(r4);  // Function is also the parameter to the runtime call.
     __ CallRuntime(Runtime::kParallelRecompile, 1);
 
     // Restore call kind information.
-    __ pop(r5);
+    __ pop(r8);
     // Restore receiver.
-    __ pop(r1);
+    __ pop(r4);
 
     // Tear down internal frame.
   }
@@ -1217,26 +1217,26 @@ void Builtins::Generate_LazyCompile(MacroAssembler* masm) {
     FrameScope scope(masm, StackFrame::INTERNAL);
 
     // Preserve the function.
-    __ push(r1);
+    __ push(r4);
     // Push call kind information.
-    __ push(r5);
+    __ push(r8);
 
     // Push the function on the stack as the argument to the runtime function.
-    __ push(r1);
+    __ push(r4);
     __ CallRuntime(Runtime::kLazyCompile, 1);
     // Calculate the entry point.
-    __ add(r2, r0, Operand(Code::kHeaderSize - kHeapObjectTag));
+    __ add(r5, r3, Operand(Code::kHeaderSize - kHeapObjectTag));
 
     // Restore call kind information.
-    __ pop(r5);
+    __ pop(r8);
     // Restore saved function.
-    __ pop(r1);
+    __ pop(r4);
 
     // Tear down internal frame.
   }
 
   // Do a tail-call of the compiled function.
-  __ Jump(r2);
+  __ Jump(r5);
 }
 
 
@@ -1274,25 +1274,25 @@ static void Generate_NotifyDeoptimizedHelper(MacroAssembler* masm,
   {
     FrameScope scope(masm, StackFrame::INTERNAL);
     // Pass the function and deoptimization type to the runtime system.
-    __ mov(r0, Operand(Smi::FromInt(static_cast<int>(type))));
+    __ li(r0, Operand(Smi::FromInt(static_cast<int>(type))));
     __ push(r0);
     __ CallRuntime(Runtime::kNotifyDeoptimized, 1);
   }
 
   // Get the full codegen state from the stack and untag it -> r6.
-  __ ldr(r6, MemOperand(sp, 0 * kPointerSize));
+  __ lwz(r6, MemOperand(sp, 0 * kPointerSize));
   __ SmiUntag(r6);
   // Switch on the state.
   Label with_tos_register, unknown_state;
-  __ cmp(r6, Operand(FullCodeGenerator::NO_REGISTERS));
-  __ b(ne, &with_tos_register);
+  __ cmpi(r6, Operand(FullCodeGenerator::NO_REGISTERS));
+  __ bne(&with_tos_register);
   __ add(sp, sp, Operand(1 * kPointerSize));  // Remove state.
   __ Ret();
 
   __ bind(&with_tos_register);
-  __ ldr(r0, MemOperand(sp, 1 * kPointerSize));
-  __ cmp(r6, Operand(FullCodeGenerator::TOS_REG));
-  __ b(ne, &unknown_state);
+  __ lwz(r0, MemOperand(sp, 1 * kPointerSize));
+  __ cmpi(r6, Operand(FullCodeGenerator::TOS_REG));
+  __ bne(&unknown_state);
   __ add(sp, sp, Operand(2 * kPointerSize));  // Remove state.
   __ Ret();
 
@@ -1562,82 +1562,85 @@ void Builtins::Generate_FunctionApply(MacroAssembler* masm) {
   {
     FrameScope frame_scope(masm, StackFrame::INTERNAL);
 
-    __ ldr(r0, MemOperand(r11, kFunctionOffset));  // get the function
-    __ push(r0);
-    __ ldr(r0, MemOperand(r11, kArgsOffset));  // get the args array
-    __ push(r0);
+    __ lwz(r3, MemOperand(fp, kFunctionOffset));  // get the function
+    __ push(r3);
+    __ lwz(r3, MemOperand(fp, kArgsOffset));  // get the args array
+    __ push(r3);
     __ InvokeBuiltin(Builtins::APPLY_PREPARE, CALL_FUNCTION);
 
     // Check the stack for overflow. We are not trying to catch
     // interruptions (e.g. debug break and preemption) here, so the "real stack
     // limit" is checked.
     Label okay;
-    __ LoadRoot(r2, Heap::kRealStackLimitRootIndex);
-    // Make r2 the space we have left. The stack might already be overflowed
-    // here which will cause r2 to become negative.
-    __ sub(r2, sp, r2);
+    __ LoadRoot(r5, Heap::kRealStackLimitRootIndex);
+    // Make r5 the space we have left. The stack might already be overflowed
+    // here which will cause r5 to become negative.
+    __ sub(r5, sp, r5);
     // Check if the arguments will overflow the stack.
-    __ cmp(r2, Operand(r0, LSL, kPointerSizeLog2 - kSmiTagSize));
-    __ b(gt, &okay);  // Signed comparison.
+    __ slwi(r0, r3, Operand(kPointerSizeLog2 - kSmiTagSize));
+    __ cmp(r5, r0);
+    __ bgt(&okay);  // Signed comparison.
 
     // Out of stack space.
-    __ ldr(r1, MemOperand(r11, kFunctionOffset));
-    __ push(r1);
-    __ push(r0);
+    __ lwz(r4, MemOperand(fp, kFunctionOffset));
+    __ push(r4);
+    __ push(r3);
     __ InvokeBuiltin(Builtins::APPLY_OVERFLOW, CALL_FUNCTION);
     // End of stack check.
 
     // Push current limit and index.
     __ bind(&okay);
-    __ push(r0);  // limit
-    __ mov(r1, Operand(0, RelocInfo::NONE));  // initial index
-    __ push(r1);
+    __ push(r3);  // limit
+    __ li(r4, Operand(0, RelocInfo::NONE));  // initial index
+    __ push(r4);
 
     // Get the receiver.
-    __ ldr(r0, MemOperand(r11, kRecvOffset));
+    __ lwz(r3, MemOperand(fp, kRecvOffset));
 
     // Check that the function is a JS function (otherwise it must be a proxy).
     Label push_receiver;
-    __ ldr(r1, MemOperand(r11, kFunctionOffset));
-    __ CompareObjectType(r1, r2, r2, JS_FUNCTION_TYPE);
-    __ b(ne, &push_receiver);
+    __ lwz(r4, MemOperand(fp, kFunctionOffset));
+    __ CompareObjectType(r4, r5, r5, JS_FUNCTION_TYPE);
+    __ bne(&push_receiver);
 
     // Change context eagerly to get the right global object if necessary.
-    __ ldr(cp, FieldMemOperand(r1, JSFunction::kContextOffset));
-    // Load the shared function info while the function is still in r1.
-    __ ldr(r2, FieldMemOperand(r1, JSFunction::kSharedFunctionInfoOffset));
+    __ lwz(cp, FieldMemOperand(r4, JSFunction::kContextOffset));
+    // Load the shared function info while the function is still in r4.
+    __ lwz(r5, FieldMemOperand(r4, JSFunction::kSharedFunctionInfoOffset));
 
     // Compute the receiver.
     // Do not transform the receiver for strict mode functions.
     Label call_to_object, use_global_receiver;
-    __ ldr(r2, FieldMemOperand(r2, SharedFunctionInfo::kCompilerHintsOffset));
-    __ tst(r2, Operand(1 << (SharedFunctionInfo::kStrictModeFunction +
+    __ lwz(r5, FieldMemOperand(r5, SharedFunctionInfo::kCompilerHintsOffset));
+    __ andi(r0, r5, Operand(1 << (SharedFunctionInfo::kStrictModeFunction +
                              kSmiTagSize)));
-    __ b(ne, &push_receiver);
+    __ cmpi(r0, Operand(0));
+    __ bne(&push_receiver);
 
     // Do not transform the receiver for strict mode functions.
-    __ tst(r2, Operand(1 << (SharedFunctionInfo::kNative + kSmiTagSize)));
-    __ b(ne, &push_receiver);
+    __ andi(r0, r5, Operand(1 << (SharedFunctionInfo::kNative + kSmiTagSize)));
+    __ cmpi(r0, Operand(0));
+    __ bne(&push_receiver);
 
     // Compute the receiver in non-strict mode.
-    __ JumpIfSmi(r0, &call_to_object);
-    __ LoadRoot(r1, Heap::kNullValueRootIndex);
-    __ cmp(r0, r1);
-    __ b(eq, &use_global_receiver);
-    __ LoadRoot(r1, Heap::kUndefinedValueRootIndex);
-    __ cmp(r0, r1);
-    __ b(eq, &use_global_receiver);
+    __ JumpIfSmi(r3, &call_to_object);
+    __ LoadRoot(r4, Heap::kNullValueRootIndex);
+    __ cmp(r3, r4);
+    __ beq(&use_global_receiver);
+    __ LoadRoot(r4, Heap::kUndefinedValueRootIndex);
+    __ cmp(r3, r4);
+    __ beq(&use_global_receiver);
 
     // Check if the receiver is already a JavaScript object.
-    // r0: receiver
+    // r3: receiver
     STATIC_ASSERT(LAST_SPEC_OBJECT_TYPE == LAST_TYPE);
-    __ CompareObjectType(r0, r1, r1, FIRST_SPEC_OBJECT_TYPE);
-    __ b(ge, &push_receiver);
+    __ CompareObjectType(r3, r4, r4, FIRST_SPEC_OBJECT_TYPE);
+    __ bge(&push_receiver);
 
     // Convert the receiver to a regular object.
-    // r0: receiver
+    // r3: receiver
     __ bind(&call_to_object);
-    __ push(r0);
+    __ push(r3);
     __ InvokeBuiltin(Builtins::TO_OBJECT, CALL_FUNCTION);
     __ b(&push_receiver);
 
@@ -1645,52 +1648,52 @@ void Builtins::Generate_FunctionApply(MacroAssembler* masm) {
     __ bind(&use_global_receiver);
     const int kGlobalOffset =
         Context::kHeaderSize + Context::GLOBAL_OBJECT_INDEX * kPointerSize;
-    __ ldr(r0, FieldMemOperand(cp, kGlobalOffset));
-    __ ldr(r0, FieldMemOperand(r0, GlobalObject::kNativeContextOffset));
-    __ ldr(r0, FieldMemOperand(r0, kGlobalOffset));
-    __ ldr(r0, FieldMemOperand(r0, GlobalObject::kGlobalReceiverOffset));
+    __ lwz(r3, FieldMemOperand(cp, kGlobalOffset));
+    __ lwz(r3, FieldMemOperand(r3, GlobalObject::kNativeContextOffset));
+    __ lwz(r3, FieldMemOperand(r3, kGlobalOffset));
+    __ lwz(r3, FieldMemOperand(r3, GlobalObject::kGlobalReceiverOffset));
 
     // Push the receiver.
-    // r0: receiver
+    // r3: receiver
     __ bind(&push_receiver);
-    __ push(r0);
+    __ push(r3);
 
     // Copy all arguments from the array to the stack.
     Label entry, loop;
-    __ ldr(r0, MemOperand(r11, kIndexOffset));
+    __ lwz(r3, MemOperand(fp, kIndexOffset));
     __ b(&entry);
 
     // Load the current argument from the arguments array and push it to the
     // stack.
-    // r0: current argument index
+    // r3: current argument index
     __ bind(&loop);
-    __ ldr(r1, MemOperand(r11, kArgsOffset));
-    __ push(r1);
-    __ push(r0);
+    __ lwz(r4, MemOperand(fp, kArgsOffset));
+    __ push(r4);
+    __ push(r3);
 
     // Call the runtime to access the property in the arguments array.
     __ CallRuntime(Runtime::kGetProperty, 2);
-    __ push(r0);
+    __ push(r3);
 
     // Use inline caching to access the arguments.
-    __ ldr(r0, MemOperand(r11, kIndexOffset));
-    __ add(r0, r0, Operand(1 << kSmiTagSize));
-    __ str(r0, MemOperand(r11, kIndexOffset));
+    __ lwz(r3, MemOperand(fp, kIndexOffset));
+    __ add(r3, r3, Operand(1 << kSmiTagSize));
+    __ stw(r3, MemOperand(fp, kIndexOffset));
 
     // Test if the copy loop has finished copying all the elements from the
     // arguments object.
     __ bind(&entry);
-    __ ldr(r1, MemOperand(r11, kLimitOffset));
-    __ cmp(r0, r1);
-    __ b(ne, &loop);
+    __ lwz(r4, MemOperand(fp, kLimitOffset));
+    __ cmp(r3, r4);
+    __ bne(&loop);
 
     // Invoke the function.
     Label call_proxy;
-    ParameterCount actual(r0);
-    __ mov(r0, Operand(r0, ASR, kSmiTagSize));
-    __ ldr(r1, MemOperand(r11, kFunctionOffset));
-    __ CompareObjectType(r1, r2, r2, JS_FUNCTION_TYPE);
-    __ b(ne, &call_proxy);
+    ParameterCount actual(r3);
+    __ srawi(r3, r3, kSmiTagSize);
+    __ lwz(r4, MemOperand(fp, kFunctionOffset));
+    __ CompareObjectType(r4, r5, r5, JS_FUNCTION_TYPE);
+    __ bne(&call_proxy);
     __ InvokeFunction(r4, actual, CALL_FUNCTION,
                       NullCallWrapper(), CALL_AS_METHOD);
 
@@ -1700,11 +1703,11 @@ void Builtins::Generate_FunctionApply(MacroAssembler* masm) {
 
     // Invoke the function proxy.
     __ bind(&call_proxy);
-    __ push(r1);  // add function proxy as last argument
-    __ add(r0, r0, Operand(1));
-    __ mov(r2, Operand(0, RelocInfo::NONE));
-    __ SetCallKind(r5, CALL_AS_METHOD);
-    __ GetBuiltinEntry(r3, Builtins::CALL_FUNCTION_PROXY);
+    __ push(r4);  // add function proxy as last argument
+    __ add(r3, r3, Operand(1));
+    __ mov(r5, Operand(0, RelocInfo::NONE));
+    __ SetCallKind(r8, CALL_AS_METHOD);
+    __ GetBuiltinEntry(r6, Builtins::CALL_FUNCTION_PROXY);
     __ Call(masm->isolate()->builtins()->ArgumentsAdaptorTrampoline(),
             RelocInfo::CODE_TARGET);
 
@@ -1720,7 +1723,7 @@ static void EnterArgumentsAdaptorFrame(MacroAssembler* masm) {
   __ mov(r7, Operand(Smi::FromInt(StackFrame::ARGUMENTS_ADAPTOR)));
   __ mflr(r0);
   __ push(r0);
-  __ Push(r3, r4, r7, fp);
+  __ Push(fp, r7, r4, r3);
   __ add(fp, sp, Operand(3 * kPointerSize));
 }
 
@@ -1731,8 +1734,8 @@ static void LeaveArgumentsAdaptorFrame(MacroAssembler* masm) {
   // -----------------------------------
   // Get the number of arguments passed (as a smi), tear down the frame and
   // then tear down the parameters.
-  __ ldr(r4, MemOperand(fp, -3 * kPointerSize));
-  __ mov(sp, fp);
+  __ lwz(r4, MemOperand(fp, -3 * kPointerSize));
+  __ mr(sp, fp);
   __ lwz(fp, MemOperand(sp));
   __ lwz(r0, MemOperand(sp, kPointerSize));
   __ mtlr(r0);
