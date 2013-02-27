@@ -2101,7 +2101,9 @@ void MacroAssembler::CompareMap(Register obj_map,
                                 Handle<Map> map,
                                 Label* early_success,
                                 CompareMapMode mode) {
-  cmp(obj_map, Operand(map));
+  mr(r0, obj_map);
+  mov(obj_map, Operand(map));
+  cmp(r0, obj_map);
   if (mode == ALLOW_ELEMENT_TRANSITION_MAPS) {
     ElementsKind kind = map->elements_kind();
     if (IsFastElementsKind(kind)) {
@@ -2112,7 +2114,8 @@ void MacroAssembler::CompareMap(Register obj_map,
         current_map = current_map->LookupElementsTransitionMap(kind);
         if (!current_map) break;
         beq(early_success);
-        cmp(obj_map, Operand(Handle<Map>(current_map)));
+        mov(obj_map, Operand(Handle<Map>(current_map)));
+        cmp(r0, obj_map);  // roohack - not sure r0 survives to here
       }
     }
   }

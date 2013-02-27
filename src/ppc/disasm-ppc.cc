@@ -911,6 +911,10 @@ void Decoder::DecodeExt2(Instruction* instr) {
       Format(instr, "add'o     'rt,'ra,'rb");
       break;
     }
+    case XORX: {
+      Format(instr, "xor'.     'ra,'rs,'rb");
+      break;
+    }
     case ORX: { 
       if( instr->RTValue() == instr->RBValue() ) {
         Format(instr, "mr      'ra,'rb");

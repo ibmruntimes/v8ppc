@@ -300,7 +300,7 @@ void FastNewBlockContextStub::Generate(MacroAssembler* masm) {
   __ JumpIfNotSmi(r6, &after_sentinel);
   if (FLAG_debug_code) {
     const char* message = "Expected 0 as a Smi sentinel";
-    __ cmp(r6, Operand::Zero());
+    __ cmpi(r6, Operand::Zero());
     __ Assert(eq, message);
   }
   __ lwz(r6, GlobalObjectOperand());
@@ -394,7 +394,13 @@ void FastCloneShallowArrayStub::Generate(MacroAssembler* masm) {
   __ lwz(r6, MemOperand(sp, 2 * kPointerSize));
   __ lwz(r3, MemOperand(sp, 1 * kPointerSize));
   __ add(r6, r6, Operand(FixedArray::kHeaderSize - kHeapObjectTag));
-  __ lwz(r6, MemOperand(r3, r0, LSL, kPointerSizeLog2 - kSmiTagSize));
+
+  __ mr(r0, r3);
+  __ slwi(r3, r3, Operand(kPointerSizeLog2 - kSmiTagSize));
+  __ add(r6, r3, r6);
+  __ lwz(r6, MemOperand(r6, 0));
+  __ mr(r3, r0);
+
   __ CompareRoot(r6, Heap::kUndefinedValueRootIndex);
   __ beq(&slow_case);
 

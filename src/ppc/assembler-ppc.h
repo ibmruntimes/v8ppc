@@ -941,6 +941,7 @@ SBit s = LeaveCC, Condition cond = al // roohack - remove this line later
   void sraw(Register dst, Register src1, Register src2, RCBit r = LeaveRC);
   void and_(Register dst, Register src1, Register src2, RCBit rc);  
 
+  void xor_(Register dst, Register src1, Register src2, RCBit rc = LeaveRC);
   // end PowerPC
 
   void and_(Register dst, Register src1, const Operand& src2,

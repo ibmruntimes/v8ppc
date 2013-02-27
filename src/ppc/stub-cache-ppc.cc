@@ -3159,7 +3159,8 @@ Handle<Code> KeyedLoadStubCompiler::CompileLoadConstant(
   Label miss;
 
   // Check the key is the cached one.
-  __ cmp(r3, Operand(name));
+  __ mov(r5, Operand(name));
+  __ cmp(r3, r5);
   __ bne(&miss);
 
   GenerateLoadConstant(receiver, holder, r4, r5, r6, r7, value, name, &miss);

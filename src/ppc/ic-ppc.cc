@@ -361,6 +361,7 @@ static void GenerateKeyStringCheck(MacroAssembler* masm,
                                    Register hash,
                                    Label* index_string,
                                    Label* not_symbol) {
+  // assumes that r8 is free for scratch use
   // The key is not a smi.
   // Is it a string?
   __ CompareObjectType(key, map, hash, FIRST_NONSTRING_TYPE);
@@ -368,14 +369,16 @@ static void GenerateKeyStringCheck(MacroAssembler* masm,
 
   // Is the string an array index, with cached numeric value?
   __ lwz(hash, FieldMemOperand(key, String::kHashFieldOffset));
-  __ tst(hash, Operand(String::kContainsCachedArrayIndexMask));
+  __ mov(r8, Operand(String::kContainsCachedArrayIndexMask));
+  __ and_(r0, hash, r8, SetRC);
   __ beq(index_string);
 
   // Is the string a symbol?
   // map: key map
   __ lbz(hash, FieldMemOperand(map, Map::kInstanceTypeOffset));
   STATIC_ASSERT(kSymbolTag != 0);
-  __ tst(hash, Operand(kIsSymbolMask));
+  __ andi(r0, hash, Operand(kIsSymbolMask));
+  __ cmpi(r0, Operand(0));
   __ beq(not_symbol);
 }
 
@@ -1033,9 +1036,11 @@ void KeyedLoadIC::GenerateGeneric(MacroAssembler* masm) {
   __ lwz(r5, FieldMemOperand(r4, HeapObject::kMapOffset));
   __ srawi(r6, r5, KeyedLookupCache::kMapHashShift);
   __ lwz(r7, FieldMemOperand(r3, String::kHashFieldOffset));
-  __ eor(r6, r6, Operand(r7, ASR, String::kHashShift));
+  __ srawi(r7, r7, String::kHashShift);
+  __ xor_(r6, r6, r7);
   int mask = KeyedLookupCache::kCapacityMask & KeyedLookupCache::kHashMask;
-  __ And(r6, r6, Operand(mask));
+  __ mov(r7, Operand(mask));
+  __ and_(r6, r6, r7, LeaveRC);
 
   // Load the key (consisting of map and symbol) from the cache and
   // check for match.
@@ -1046,12 +1051,16 @@ void KeyedLoadIC::GenerateGeneric(MacroAssembler* masm) {
       ExternalReference::keyed_lookup_cache_keys(isolate);
 
   __ mov(r7, Operand(cache_keys));
-  __ add(r7, r7, Operand(r6, LSL, kPointerSizeLog2 + 1));
+  __ mr(r0, r5);
+  __ slwi(r5, r6, Operand(kPointerSizeLog2 + 1));
+  __ add(r7, r7, r5);
+  __ mr(r5, r0);
 
   for (int i = 0; i < kEntriesPerBucket - 1; i++) {
     Label try_next_entry;
     // Load map and move r7 to next entry.
-    __ lwz(r8, MemOperand(r7, kPointerSize * 2, PostIndex));
+    __ lwz(r8, MemOperand(r7));
+    __ add(r7, r7, Operand(kPointerSize * 2));
     __ cmp(r5, r8);
     __ bne(&try_next_entry);
     __ lwz(r8, MemOperand(r7, -kPointerSize));  // Load symbol
@@ -1329,8 +1338,9 @@ static void KeyedStoreGenerateGenericHelper(
   Register address = r8;
   if (check_map == kCheckMap) {
     __ lwz(elements_map, FieldMemOperand(elements, HeapObject::kMapOffset));
-    __ cmp(elements_map,
-           Operand(masm->isolate()->factory()->fixed_array_map()));
+    __ mov(scratch_value, 
+            Operand(masm->isolate()->factory()->fixed_array_map()));
+    __ cmp(elements_map, scratch_value);
     __ bne(fast_double);
   }
   // Smi stores don't require further checks.
@@ -1511,14 +1521,14 @@ void KeyedStoreIC::GenerateGeneric(MacroAssembler* masm,
   __ cmp(key, Operand(ip));
   __ bgt(&slow);
   __ lwz(elements_map, FieldMemOperand(elements, HeapObject::kMapOffset));
-  __ cmp(elements_map,
-         Operand(masm->isolate()->factory()->fixed_array_map()));
+  __ mov(ip, Operand(masm->isolate()->factory()->fixed_array_map()));
+  __ cmp(elements_map, ip); // roohack - I think I can re-use ip here
   __ bne(&check_if_double_array);
   __ jmp(&fast_object_grow);
 
   __ bind(&check_if_double_array);
-  __ cmp(elements_map,
-         Operand(masm->isolate()->factory()->fixed_double_array_map()));
+  __ mov(ip, Operand(masm->isolate()->factory()->fixed_double_array_map()));
+  __ cmp(elements_map, ip); // roohack - another ip re-use
   __ bne(&slow);
   __ jmp(&fast_double_grow);
 

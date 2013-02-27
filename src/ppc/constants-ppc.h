@@ -326,6 +326,7 @@ enum OpcodeExt2 {
 */
   MULLW  = 235 << 1,  // Multiply Low Word
   ADDX = 266 << 1,  // Add
+  XORX = 316 << 1,  // Exclusive OR
   MFSPR = 339 <<1,  // Move from Special-Purpose-Register
   ORX = 444 << 1,  // Or
   MTSPR = 467 <<1,  // Move to Special-Purpose-Register

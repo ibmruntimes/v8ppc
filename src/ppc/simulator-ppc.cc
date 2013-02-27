@@ -2079,6 +2079,17 @@ void Simulator::DecodeExt2(Instruction* instr) {
       // todo - handle OE and RC bits
       break;
     }
+    case XORX: {
+      int rs = instr->RSValue();
+      int ra = instr->RAValue();
+      int rb = instr->RBValue();
+      int32_t rs_val = get_register(rs);
+      int32_t rb_val = get_register(rb);
+      int32_t alu_out = rs_val ^ rb_val;
+      set_register(ra, alu_out);
+      // todo - handle RC bit
+      break;
+    }
     case ORX: {
       int rs = instr->RSValue();
       int ra = instr->RAValue();
@@ -3635,6 +3646,7 @@ void Simulator::InstructionDecode(Instruction* instr) {
         offset += ra_val;
       }
       WriteW(offset, rs_val, instr);
+      // printf("r%d %08x -> %08x\n", rs, rs_val, offset); // 0xdead
       break;
     }
     case STWU: {
