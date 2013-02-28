@@ -364,6 +364,7 @@ void ElementsTransitionGenerator::GenerateDoubleToObject(
 }
 
 
+// roohack - assume ip can be used as a scratch register below
 void StringCharLoadGenerator::Generate(MacroAssembler* masm,
                                        Register string,
                                        Register index,
@@ -375,19 +376,23 @@ void StringCharLoadGenerator::Generate(MacroAssembler* masm,
 
   // We need special handling for indirect strings.
   Label check_sequential;
-  __ tst(result, Operand(kIsIndirectStringMask));
+  __ andi(r0, result, Operand(kIsIndirectStringMask));
+  __ cmpi(r0, Operand(0));
   __ beq(&check_sequential);
 
   // Dispatch on the indirect string shape: slice or cons.
   Label cons_string;
-  __ tst(result, Operand(kSlicedNotConsMask));
+  __ mov(ip, Operand(kSlicedNotConsMask));
+  __ and_(r0, result, ip, LeaveRC);
+  __ cmpi(r0, Operand(0));
   __ beq(&cons_string);
 
   // Handle slices.
   Label indirect_string_loaded;
   __ lwz(result, FieldMemOperand(string, SlicedString::kOffsetOffset));
   __ lwz(string, FieldMemOperand(string, SlicedString::kParentOffset));
-  __ add(index, index, Operand(result, ASR, kSmiTagSize));
+  __ srawi(ip, result, kSmiTagSize);
+  __ add(index, index, ip);
   __ jmp(&indirect_string_loaded);
 
   // Handle cons strings.
@@ -412,7 +417,8 @@ void StringCharLoadGenerator::Generate(MacroAssembler* masm,
   Label external_string, check_encoding;
   __ bind(&check_sequential);
   STATIC_ASSERT(kSeqStringTag == 0);
-  __ tst(result, Operand(kStringRepresentationMask));
+  __ andi(r0, result, Operand(kStringRepresentationMask));
+  __ cmpi(r0, Operand(0));
   __ bne(&external_string);
 
   // Prepare sequential strings
@@ -427,26 +433,32 @@ void StringCharLoadGenerator::Generate(MacroAssembler* masm,
   if (FLAG_debug_code) {
     // Assert that we do not have a cons or slice (indirect strings) here.
     // Sequential strings have already been ruled out.
-    __ tst(result, Operand(kIsIndirectStringMask));
+    __ andi(r0, result, Operand(kIsIndirectStringMask));
+    __ cmpi(r0, Operand(0));
     __ Assert(eq, "external string expected, but not found");
   }
   // Rule out short external strings.
   STATIC_CHECK(kShortExternalStringTag != 0);
-  __ tst(result, Operand(kShortExternalStringMask));
+  __ andi(r0, result, Operand(kShortExternalStringMask));
+  __ cmpi(r0, Operand(0));
   __ bne(call_runtime);
   __ lwz(string, FieldMemOperand(string, ExternalString::kResourceDataOffset));
 
   Label ascii, done;
   __ bind(&check_encoding);
   STATIC_ASSERT(kTwoByteStringTag == 0);
-  __ tst(result, Operand(kStringEncodingMask));
+  __ andi(r0, result, Operand(kStringEncodingMask));
+  __ cmpi(r0, Operand(0));
   __ bne(&ascii);
   // Two-byte string.
-  __ ldrh(result, MemOperand(string, index, LSL, 1));
+  __ slwi(result, index, Operand(1));
+  __ add(result, result, string);
+  __ ldrh(result, MemOperand(result));
   __ jmp(&done);
   __ bind(&ascii);
   // Ascii string.
-  __ lbz(result, MemOperand(string, index));
+  __ add(result, string, index);
+  __ lbz(result, MemOperand(result));
   __ bind(&done);
 }
 

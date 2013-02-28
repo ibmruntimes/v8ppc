@@ -444,7 +444,8 @@ void MacroAssembler::RecordWriteField(
   add(dst, object, Operand(offset - kHeapObjectTag));
   if (emit_debug_code()) {
     Label ok;
-    tst(dst, Operand((1 << kPointerSizeLog2) - 1));
+    andi(r0, dst, Operand((1 << kPointerSizeLog2) - 1));
+    cmpi(r0, Operand(0));
     beq(&ok);
     stop("Unaligned cell in write barrier");
     bind(&ok);
@@ -493,9 +494,7 @@ void MacroAssembler::RecordWrite(Register object,
   Label done;
 
   if (smi_check == INLINE_SMI_CHECK) {
-    ASSERT_EQ(0, kSmiTag);
-    tst(value, Operand(kSmiTagMask));
-    beq(&done);
+    JumpIfSmi(value, &done);
   }
 
   CheckPageFlag(value,
@@ -511,12 +510,14 @@ void MacroAssembler::RecordWrite(Register object,
 
   // Record the actual write.
   if (lr_status == kLRHasNotBeenSaved) {
-    push(lr);
+    mflr(r0);
+    push(r0);
   }
   RecordWriteStub stub(object, value, address, remembered_set_action, fp_mode);
   CallStub(&stub);
   if (lr_status == kLRHasNotBeenSaved) {
-    pop(lr);
+    pop(r0);
+    mtlr(r0);
   }
 
   bind(&done);
@@ -548,12 +549,14 @@ void MacroAssembler::RememberedSetHelper(Register object,  // For debug tests.
   mov(ip, Operand(store_buffer));
   lwz(scratch, MemOperand(ip));
   // Store pointer to buffer and increment buffer top.
-  str(address, MemOperand(scratch, kPointerSize, PostIndex));
+  stw(address, MemOperand(scratch));
+  add(scratch, scratch, Operand(kPointerSize));
   // Write back new top of buffer.
   str(scratch, MemOperand(ip));
   // Call stub on end of buffer.
   // Check for end of buffer.
   tst(scratch, Operand(StoreBuffer::kStoreBufferOverflowBit));
+
   if (and_then == kFallThroughAtEnd) {
     beq(&done);
   } else {
@@ -624,7 +627,7 @@ void MacroAssembler::StoreToSafepointRegisterSlot(Register src, Register dst) {
 
 
 void MacroAssembler::LoadFromSafepointRegisterSlot(Register dst, Register src) {
-  lwz(dst, SafepointRegisterSlot(src));
+  ldr(dst, SafepointRegisterSlot(src));
 }
 
 
@@ -693,6 +696,7 @@ void MacroAssembler::Ldrd(Register dst1, Register dst2,
 
 void MacroAssembler::Strd(Register src1, Register src2,
                           const MemOperand& dst, Condition cond) {
+  ldr(src1, MemOperand(src2), al); // roohack - bogus instruction to cause error
 #if 0
   ASSERT(dst.rm().is(no_reg));
   ASSERT(!src1.is(lr));  // r14.
@@ -2189,15 +2193,17 @@ void MacroAssembler::TryGetFunctionPrototype(Register function,
         FieldMemOperand(function, JSFunction::kSharedFunctionInfoOffset));
     lwz(scratch,
         FieldMemOperand(scratch, SharedFunctionInfo::kCompilerHintsOffset));
-    tst(scratch,
+    andi(r0, scratch,
         Operand(Smi::FromInt(1 << SharedFunctionInfo::kBoundFunction)));
+    cmpi(r0, Operand(0));
     bne(miss);
   }
 
   // Make sure that the function has an instance prototype.
   Label non_instance;
   lbz(scratch, FieldMemOperand(result, Map::kBitFieldOffset));
-  tst(scratch, Operand(1 << Map::kHasNonInstancePrototype));
+  andi(r0, scratch, Operand(1 << Map::kHasNonInstancePrototype));
+  cmpi(r0, Operand(0));
   bne(&non_instance);
 
   // Get the prototype or initial map from the function.
@@ -3646,7 +3652,7 @@ void MacroAssembler::GetMarkBits(Register addr_reg,
   const int kLowBits = kPointerSizeLog2 + Bitmap::kBitsPerCellLog2;
   Ubfx(ip, addr_reg, kLowBits, kPageSizeBits - kLowBits);
   add(bitmap_reg, bitmap_reg, Operand(ip, LSL, kPointerSizeLog2));
-  mov(ip, Operand(1));
+  li(ip, Operand(1));
   slw(mask_reg, ip, mask_reg);  //roohack, I think this is right
   // was mov(mask_reg, Operand(ip, LSL, mask_reg));
 }
@@ -3672,14 +3678,17 @@ void MacroAssembler::EnsureNotWhite(
   // Since both black and grey have a 1 in the first position and white does
   // not have a 1 there we only need to check one bit.
   lwz(load_scratch, MemOperand(bitmap_scratch, MemoryChunk::kHeaderSize));
-  tst(mask_scratch, load_scratch);
+  and_(r0, mask_scratch, load_scratch, LeaveRC);
+  cmpi(r0, Operand(0));
   bne(&done);
 
   if (emit_debug_code()) {
     // Check for impossible bit pattern.
     Label ok;
     // LSL may overflow, making the check conservative.
-    tst(load_scratch, Operand(mask_scratch, LSL, 1));
+    slwi(r0, mask_scratch, Operand(1));
+    and_(r0, load_scratch, r0, LeaveRC);
+    cmpi(r0, Operand(0));
     beq(&ok);
     stop("Impossible marking bit pattern");
     bind(&ok);
@@ -3689,13 +3698,15 @@ void MacroAssembler::EnsureNotWhite(
   // Currently only checks for HeapNumber and non-cons strings.
   Register map = load_scratch;  // Holds map while checking type.
   Register length = load_scratch;  // Holds length of object after testing type.
-  Label is_data_object;
+  Label is_data_object, maybe_string_object, is_string_object, is_encoded;
 
   // Check for heap-number
   lwz(map, FieldMemOperand(value, HeapObject::kMapOffset));
   CompareRoot(map, Heap::kHeapNumberMapRootIndex);
-  mov(length, Operand(HeapNumber::kSize), LeaveCC, eq);
-  beq(&is_data_object);
+  bne(&maybe_string_object);
+  li(length, Operand(HeapNumber::kSize));
+  b(&is_data_object);
+  bind(&maybe_string_object);
 
   // Check for strings.
   ASSERT(kIsIndirectStringTag == 1 && kIsIndirectStringMask == 1);
@@ -3704,7 +3715,8 @@ void MacroAssembler::EnsureNotWhite(
   // no GC pointers.
   Register instance_type = load_scratch;
   lbz(instance_type, FieldMemOperand(map, Map::kInstanceTypeOffset));
-  tst(instance_type, Operand(kIsIndirectStringMask | kIsNotStringMask));
+  andi(r0, instance_type, Operand(kIsIndirectStringMask | kIsNotStringMask));
+  cmpi(r0, Operand(0));
   bne(value_is_white_and_not_data);
   // It's a non-indirect (non-cons and non-slice) string.
   // If it's external, the length is just ExternalString::kSize.
@@ -3713,9 +3725,12 @@ void MacroAssembler::EnsureNotWhite(
   // set.
   ASSERT_EQ(0, kSeqStringTag & kExternalStringTag);
   ASSERT_EQ(0, kConsStringTag & kExternalStringTag);
-  tst(instance_type, Operand(kExternalStringTag));
-  mov(length, Operand(ExternalString::kSize), LeaveCC, ne);
-  bne(&is_data_object);
+  andi(r0, instance_type, Operand(kExternalStringTag));
+  cmpi(r0, Operand(0));
+  beq(&is_string_object);
+  li(length, Operand(ExternalString::kSize));
+  b(&is_data_object);
+  bind(&is_string_object);
 
   // Sequential string, either ASCII or UC16.
   // For ASCII (char-size of 1) we shift the smi tag away to get the length.
@@ -3724,8 +3739,11 @@ void MacroAssembler::EnsureNotWhite(
   ASSERT(kAsciiStringTag == 4 && kStringEncodingMask == 4);
   ASSERT(kSmiTag == 0 && kSmiTagSize == 1);
   lwz(ip, FieldMemOperand(value, String::kLengthOffset));
-  tst(instance_type, Operand(kStringEncodingMask));
-  mov(ip, Operand(ip, LSR, 1), LeaveCC, ne);
+  andi(r0, instance_type, Operand(kStringEncodingMask));
+  cmpi(r0, Operand(0));
+  beq(&is_encoded);
+  slwi(ip, ip, Operand(1));
+  bind(&is_encoded);
   add(length, ip, Operand(SeqString::kHeaderSize + kObjectAlignmentMask));
   and_(length, length, Operand(~kObjectAlignmentMask));
 
@@ -3733,13 +3751,14 @@ void MacroAssembler::EnsureNotWhite(
   // Value is a data object, and it is white.  Mark it black.  Since we know
   // that the object is white we can make it black by flipping one bit.
   lwz(ip, MemOperand(bitmap_scratch, MemoryChunk::kHeaderSize));
-  orr(ip, ip, Operand(mask_scratch));
-  str(ip, MemOperand(bitmap_scratch, MemoryChunk::kHeaderSize));
+  orx(ip, ip, mask_scratch);
+  stw(ip, MemOperand(bitmap_scratch, MemoryChunk::kHeaderSize));
 
-  and_(bitmap_scratch, bitmap_scratch, Operand(~Page::kPageAlignmentMask));
+  mov(ip, Operand(~Page::kPageAlignmentMask));
+  and_(bitmap_scratch, bitmap_scratch, ip, LeaveRC);
   lwz(ip, MemOperand(bitmap_scratch, MemoryChunk::kLiveBytesOffset));
   add(ip, ip, Operand(length));
-  str(ip, MemOperand(bitmap_scratch, MemoryChunk::kLiveBytesOffset));
+  stw(ip, MemOperand(bitmap_scratch, MemoryChunk::kLiveBytesOffset));
 
   bind(&done);
 }
