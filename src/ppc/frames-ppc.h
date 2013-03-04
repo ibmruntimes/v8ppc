@@ -73,11 +73,11 @@ const RegList kCalleeSaved =
 // When calling into C++ (only for C++ calls that can't cause a GC).
 // The call code will take care of lr, fp, etc.
 const RegList kCallerSaved =
-  1 <<  0 |  // r0
-  1 <<  1 |  // r1
-  1 <<  2 |  // r2
   1 <<  3 |  // r3
-  1 <<  9;   // r9
+  1 <<  4 |  // r4
+  1 <<  5 |  // r5
+  1 <<  6 |  // r6
+  1 <<  7;   // r7
 
 
 const int kNumCalleeSaved = 7 + kR9Available;

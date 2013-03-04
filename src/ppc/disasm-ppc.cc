@@ -851,7 +851,10 @@ void Decoder::DecodeExt1(Instruction* instr) {
     case RFI:
     case CRANDC:
     case ISYNC:
-    case CRXOR:
+    case CRXOR: {
+      Format(instr, "crxor (stuff)");
+      break;
+    }
     case CRNAND:
     case CRAND:
     case CREQV:

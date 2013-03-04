@@ -72,7 +72,7 @@ namespace internal {
 // Core register
 struct Register {
   static const int kNumRegisters = 32;
-  static const int kNumAllocatableRegisters = 8;
+  static const int kNumAllocatableRegisters = 12;
   static const int kSizeInBytes = 4;
 
   static int ToAllocationIndex(Register reg) {
@@ -391,6 +391,7 @@ const DwVfpRegister d15 = { 15 };
 #define kDoubleRegZero d14
 #define kScratchDoubleReg d15
 
+Register ToRegister(int num);
 
 // Coprocessor register
 struct CRegister {
@@ -912,9 +913,9 @@ SBit s = LeaveCC, Condition cond = al // roohack - remove this line later
                OEBit o = LeaveOE, RCBit r = LeaveRC);
 
   void addis(Register dst, Register src, int imm);
-  void addic(Register dst, Register src, int imm);
+  void addic(Register dst, Register src, const Operand& imm);
 
-  void andi(Register dst, Register src, const Operand& imm);
+  void andi(Register ra, Register rs, const Operand& imm);
   void ori(Register dst, Register src, const Operand& imm);
   void orx(Register dst, Register src1, Register src2, RCBit r = LeaveRC);
   void cmpi(Register src1, const Operand& src2);
@@ -939,8 +940,9 @@ SBit s = LeaveCC, Condition cond = al // roohack - remove this line later
   void srawi(Register ra, Register rs, int sh, RCBit r = LeaveRC);
   void slw(Register dst, Register src1, Register src2, RCBit r = LeaveRC);
   void sraw(Register dst, Register src1, Register src2, RCBit r = LeaveRC);
-  void and_(Register dst, Register src1, Register src2, RCBit rc);  
+  void and_(Register dst, Register src1, Register src2, RCBit rc = LeaveRC);  
 
+  void xori(Register dst, Register src, const Operand& imm);
   void xor_(Register dst, Register src1, Register src2, RCBit rc = LeaveRC);
   // end PowerPC
 

@@ -160,6 +160,9 @@ class MacroAssembler: public Assembler {
   void Move(Register dst, Register src, Condition cond = al);
   void Move(DoubleRegister dst, DoubleRegister src);
 
+  void MultiPush(RegList regs);
+  void MultiPop(RegList regs);
+
   // Load an object from the root table.
   void LoadRoot(Register destination,
                 Heap::RootListIndex index,

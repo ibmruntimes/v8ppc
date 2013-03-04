@@ -230,16 +230,16 @@ void StubCache::GenerateProbe(MacroAssembler* masm,
   // Get the map of the receiver and compute the hash.
   __ lwz(scratch, FieldMemOperand(name, String::kHashFieldOffset));
   __ lwz(ip, FieldMemOperand(receiver, HeapObject::kMapOffset));
-  __ add(scratch, scratch, Operand(ip));
+  __ add(scratch, scratch, ip);
   uint32_t mask = kPrimaryTableSize - 1;
   // We shift out the last two bits because they are not part of the hash and
   // they are always 01 for maps.
-  __ mov(scratch, Operand(scratch, LSR, kHeapObjectTagSize));
+  __ slwi(scratch, scratch, Operand(kHeapObjectTagSize));
   // Mask down the eor argument to the minimum to keep the immediate
   // ARM-encodable.
-  __ eor(scratch, scratch, Operand((flags >> kHeapObjectTagSize) & mask));
+  __ xori(scratch, scratch, Operand((flags >> kHeapObjectTagSize) & mask));
   // Prefer and_ to ubfx here because ubfx takes 2 cycles.
-  __ and_(scratch, scratch, Operand(mask));
+  __ andi(scratch, scratch, Operand(mask));
 
   // Probe the primary table.
   ProbeTable(isolate,
@@ -254,10 +254,11 @@ void StubCache::GenerateProbe(MacroAssembler* masm,
              extra3);
 
   // Primary miss: Compute hash for secondary probe.
-  __ sub(scratch, scratch, Operand(name, LSR, kHeapObjectTagSize));
+  __ srwi(extra, scratch, Operand(kHeapObjectTagSize));
+  __ sub(scratch, scratch, extra);
   uint32_t mask2 = kSecondaryTableSize - 1;
   __ add(scratch, scratch, Operand((flags >> kHeapObjectTagSize) & mask2));
-  __ and_(scratch, scratch, Operand(mask2));
+  __ andi(scratch, scratch, Operand(mask2));
 
   // Probe the secondary table.
   ProbeTable(isolate,

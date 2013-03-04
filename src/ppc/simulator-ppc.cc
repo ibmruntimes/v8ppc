@@ -1907,7 +1907,19 @@ void Simulator::DecodeExt1(Instruction* instr) {
     case RFI:
     case CRANDC:
     case ISYNC:
-    case CRXOR: 
+      UNIMPLEMENTED();
+    case CRXOR: {
+      int bt = instr->Bits(25,21);
+      int ba = instr->Bits(20,16);
+      int bb = instr->Bits(15,11);
+      int ba_val = ((0x10000000 >> ba) & condition_reg_) == 0 ? 0 : 1;
+      int bb_val = ((0x10000000 >> bb) & condition_reg_) == 0 ? 0 : 1;
+      int bt_val = ba_val ^ bb_val;
+      bt_val = bt_val << (31-bt);  // shift bit to correct destination
+      condition_reg_ &= ~(0x10000000 >> bt);
+      condition_reg_ |= bt_val;
+      break;
+    }
     case CRNAND:
     case CRAND:
     case CREQV:
@@ -1930,6 +1942,7 @@ void Simulator::DecodeExt2(Instruction* instr) {
       int32_t rb_val = get_register(rb);
       int32_t result = rs_val >> rb_val;
       set_register(ra, result);
+      return;
     }
     case SRAWIX: {
       int ra = instr->RAValue();
@@ -3587,12 +3600,12 @@ void Simulator::InstructionDecode(Instruction* instr) {
     case XORI:
     case XORIS:
     case ANDIx: {
-      int rt = instr->RTValue();
+      int rs= instr->RSValue();
       int ra = instr->RAValue();
-      int32_t ra_val = get_register(ra);
+      int32_t rs_val = get_register(rs);
       uint32_t im_val = instr->Bits(15,0);
-      int32_t alu_out = ra_val & im_val;
-      set_register(rt, alu_out);
+      int32_t alu_out = rs_val & im_val;
+      set_register(ra, alu_out);
       // todo - set condition based SO bit
       break;
     }

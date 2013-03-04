@@ -122,7 +122,6 @@ class JumpPatchSite BASE_EMBEDDED {
 //   o fp: our caller's frame pointer r11 (ARM specific) PPC is fp (aka r31)
 //   o sp: stack pointer
 //   o lr: return address  (bogus.. PPC has no lr reg)
-//   o r7: call kind (roohack)
 //
 // The function builds a JS frame.  Please see JavaScriptFrameConstants in
 // frames-ppc.h for its layout.
@@ -146,15 +145,15 @@ void FullCodeGenerator::Generate() {
 
   // Strict mode functions and builtins need to replace the receiver
   // with undefined when called as functions (without an explicit
-  // receiver object). r7 is zero for method calls and non-zero for
+  // receiver object). r8 is zero for method calls and non-zero for
   // function calls.
   if (!info->is_classic_mode() || info->is_native()) {
     Label ok;
-    __ cmpi(r7, Operand(0));
+    __ cmpi(r8, Operand(0));
     __ beq(&ok);
     int receiver_offset = info->scope()->num_parameters() * kPointerSize;
-    __ LoadRoot(r0, Heap::kUndefinedValueRootIndex);
-    __ stw(r0, MemOperand(sp, receiver_offset));
+    __ LoadRoot(r5, Heap::kUndefinedValueRootIndex);
+    __ stw(r5, MemOperand(sp, receiver_offset));
     __ bind(&ok);
   }
 
@@ -167,7 +166,6 @@ void FullCodeGenerator::Generate() {
 
   __ mflr(r0);
   __ Push(r0, fp, cp, r4);
-  __ add(fp, sp, Operand(8));  // chain fp correctly
   
   if (locals_count > 0) {
     // Load undefined value here, so the value is ready for the loop
@@ -2551,7 +2549,8 @@ void FullCodeGenerator::EmitIsSmi(CallRuntime* expr) {
                          &if_true, &if_false, &fall_through);
 
   PrepareForBailoutBeforeSplit(expr, true, if_true, if_false);
-  __ tst(r3, Operand(kSmiTagMask));
+  __ andi(r0,r3, Operand(kSmiTagMask));
+  __ cmpi(r0, Operand(0));
   Split(eq, if_true, if_false, fall_through);
 
   context()->Plug(if_true, if_false);
@@ -2831,7 +2830,7 @@ void FullCodeGenerator::EmitIsConstructCall(CallRuntime* expr) {
 
   // Skip the arguments adaptor frame if it exists.
   Label check_frame_marker;
-  __ lwz(r5, MemOperand(r5, StandardFrameConstants::kContextOffset));
+  __ lwz(r4, MemOperand(r5, StandardFrameConstants::kContextOffset));
   __ cmpi(r4, Operand(Smi::FromInt(StackFrame::ARGUMENTS_ADAPTOR)));
   __ bne(&check_frame_marker);
   __ lwz(r5, MemOperand(r5, StandardFrameConstants::kCallerFPOffset));
@@ -3175,7 +3174,7 @@ void FullCodeGenerator::EmitSetValueOf(CallRuntime* expr) {
   __ stw(r3, FieldMemOperand(r4, JSValue::kValueOffset));
   // Update the write barrier.  Save the value as it will be
   // overwritten by the write barrier code and is needed afterward.
-  __ mov(r5, r3);
+  __ mr(r5, r3);
   __ RecordWriteField(
       r4, JSValue::kValueOffset, r5, r6, kLRHasBeenSaved, kDontSaveFPRegs);
 
@@ -4014,7 +4013,7 @@ void FullCodeGenerator::VisitCountOperation(CountOperation* expr) {
   } else {
     // Reserve space for result of postfix operation.
     if (expr->is_postfix() && !context()->IsEffect()) {
-      __ mov(ip, Operand(Smi::FromInt(0)));
+      __ li(ip, Operand(Smi::FromInt(0)));
       __ push(ip);
     }
     if (assign_type == NAMED_PROPERTY) {
@@ -4073,8 +4072,10 @@ void FullCodeGenerator::VisitCountOperation(CountOperation* expr) {
 
   int count_value = expr->op() == Token::INC ? 1 : -1;
   if (ShouldInlineSmiCase(expr->op())) {
-    __ add(r3, r3, Operand(Smi::FromInt(count_value)), SetCC);
-    __ b(vs, &stub_call);
+    __ li(r0, Operand(-1));
+    __ addic(r3, r3, Operand(Smi::FromInt(count_value)));
+    __ addze(r0, r0, LeaveOE, SetRC);
+    __ bc(&stub_call, BT, 1);
     // We could eliminate this smi check if we split the code at
     // the first smi check before calling ToNumber.
     patch_site.EmitJumpIfSmi(r3, &done);
@@ -4083,7 +4084,7 @@ void FullCodeGenerator::VisitCountOperation(CountOperation* expr) {
     // Call stub. Undo operation first.
     __ sub(r3, r3, Operand(Smi::FromInt(count_value)));
   }
-  __ mov(r4, Operand(Smi::FromInt(count_value)));
+  __ li(r4, Operand(Smi::FromInt(count_value)));
 
   // Record position before stub call.
   SetSourcePosition(expr->position());

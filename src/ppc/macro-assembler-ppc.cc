@@ -155,12 +155,8 @@ void MacroAssembler::Call(Address target,
   // bc( BA, .... offset, LKset);
   //
 
-  mov(r8, Operand(reinterpret_cast<int32_t>(target), rmode));
-#if 0  // relocation is working now.. 
-  lwz(r8, MemOperand(r8,0));
-  add(r8, r8, Operand(63)); // ugly hack
-#endif
-  mtlr(r8);
+  mov(ip, Operand(reinterpret_cast<int32_t>(target), rmode));
+  mtlr(ip);
   bclr(BA, SetLK);
 
   ASSERT(kCallTargetAddressOffset == 4 * kInstrSize);
@@ -380,6 +376,31 @@ void MacroAssembler::Usat(Register dst, int satpos, const Operand& src,
   }
 }
 
+void MacroAssembler::MultiPush(RegList regs) {
+  int16_t num_to_push = NumberOfBitsSet(regs);
+  int16_t stack_offset = num_to_push * kPointerSize;
+
+  sub(sp, sp, Operand(stack_offset));
+  for (int16_t i = kNumRegisters - 1; i >= 0; i--) {
+    if ((regs & (1 << i)) != 0) {
+      stack_offset -= kPointerSize;
+      stw(ToRegister(i), MemOperand(sp, stack_offset));
+    }
+  }
+}
+
+void MacroAssembler::MultiPop(RegList regs) {
+  int16_t stack_offset = 0;
+
+  for (int16_t i = 0; i < kNumRegisters; i++) {
+    if ((regs & (1 << i)) != 0) {
+      lwz(ToRegister(i), MemOperand(sp, stack_offset));
+      stack_offset += kPointerSize;
+    }
+  }
+  add(sp, sp, Operand(stack_offset));
+}
+
 
 void MacroAssembler::LoadRoot(Register destination,
                               Heap::RootListIndex index,
@@ -413,8 +434,10 @@ void MacroAssembler::InNewSpace(Register object,
                                 Condition cond,
                                 Label* branch) {
   ASSERT(cond == eq || cond == ne);
-  and_(scratch, object, Operand(ExternalReference::new_space_mask(isolate())));
-  cmp(scratch, Operand(ExternalReference::new_space_start(isolate())));
+  mov(scratch, Operand(ExternalReference::new_space_mask(isolate())));
+  and_(r0, scratch, object);
+  mov(scratch, Operand(ExternalReference::new_space_start(isolate())));
+  cmp(r0, scratch);
   b(cond, branch);
 }
 
@@ -930,12 +953,12 @@ void MacroAssembler::InitializeNewString(Register string,
                                          Heap::RootListIndex map_index,
                                          Register scratch1,
                                          Register scratch2) {
-  mov(scratch1, Operand(length, LSL, kSmiTagSize));
+  slwi(scratch1, length, Operand(kSmiTagSize));
   LoadRoot(scratch2, map_index);
-  str(scratch1, FieldMemOperand(string, String::kLengthOffset));
-  mov(scratch1, Operand(String::kEmptyHashField));
-  str(scratch2, FieldMemOperand(string, HeapObject::kMapOffset));
-  str(scratch1, FieldMemOperand(string, String::kHashFieldOffset));
+  stw(scratch1, FieldMemOperand(string, String::kLengthOffset));
+  li(scratch1, Operand(String::kEmptyHashField));
+  stw(scratch2, FieldMemOperand(string, HeapObject::kMapOffset));
+  stw(scratch1, FieldMemOperand(string, String::kHashFieldOffset));
 }
 
 
@@ -1007,10 +1030,10 @@ void MacroAssembler::GetCFunctionDoubleResult(const DoubleRegister dst) {
 
 void MacroAssembler::SetCallKind(Register dst, CallKind call_kind) {
   // This macro takes the dst register to make the code more readable
-  // at the call sites. However, the dst register has to be r5 to
+  // at the call sites. However, the dst register has to be r8 to
   // follow the calling convention which requires the call type to be
-  // in r5.
-  // roohack - temporary removal ASSERT(dst.is(r7));
+  // in r8.
+  ASSERT(dst.is(r8));
   if (call_kind == CALL_AS_FUNCTION) {
     mov(dst, Operand(Smi::FromInt(1)));
   } else {
@@ -1087,14 +1110,14 @@ void MacroAssembler::InvokePrologue(const ParameterCount& expected,
         isolate()->builtins()->ArgumentsAdaptorTrampoline();
     if (flag == CALL_FUNCTION) {
       call_wrapper.BeforeCall(CallSize(adaptor));
-      SetCallKind(r7, call_kind);
+      SetCallKind(r8, call_kind);
       Call(adaptor);
       call_wrapper.AfterCall();
       if (!*definitely_mismatches) {
         b(done);
       }
     } else {
-      SetCallKind(r7, call_kind);
+      SetCallKind(r8, call_kind);
       Jump(adaptor, RelocInfo::CODE_TARGET);
     }
     bind(&regular_invoke);
@@ -1119,12 +1142,12 @@ void MacroAssembler::InvokeCode(Register code,
   if (!definitely_mismatches) {
     if (flag == CALL_FUNCTION) {
       call_wrapper.BeforeCall(CallSize(code));
-      SetCallKind(r7, call_kind);
+      SetCallKind(r8, call_kind);
       Call(code);
       call_wrapper.AfterCall();
     } else {
       ASSERT(flag == JUMP_FUNCTION);
-      SetCallKind(r7, call_kind);
+      SetCallKind(r8, call_kind);
       Jump(code);
     }
 
@@ -1151,10 +1174,10 @@ void MacroAssembler::InvokeCode(Handle<Code> code,
                  NullCallWrapper(), call_kind);
   if (!definitely_mismatches) {
     if (flag == CALL_FUNCTION) {
-      SetCallKind(r7, call_kind);
+      SetCallKind(r8, call_kind);
       Call(code, rmode);
     } else {
-      SetCallKind(r7, call_kind);
+      SetCallKind(r8, call_kind);
       Jump(code, rmode);
     }
 
@@ -1837,7 +1860,8 @@ void MacroAssembler::AllocateAsciiString(Register result,
   ASSERT(kCharSize == 1);
   add(scratch1, length,
       Operand(kObjectAlignmentMask + SeqAsciiString::kHeaderSize));
-  and_(scratch1, scratch1, Operand(~kObjectAlignmentMask));
+  li(r0, Operand(~kObjectAlignmentMask));
+  and_(scratch1, scratch1, r0);
 
   // Allocate ASCII string in new space.
   AllocateInNewSpace(scratch1,
@@ -2285,7 +2309,7 @@ void MacroAssembler::CallApiFunctionAndReturn(ExternalReference function,
 
   // If result is non-zero, dereference to get the result value
   // otherwise set it to undefined.
-  cmp(r0, Operand(0));
+  cmpi(r0, Operand(0));
   LoadRoot(r0, Heap::kUndefinedValueRootIndex, eq);
   ldr(r0, MemOperand(r0), ne);
 
@@ -2688,8 +2712,7 @@ void MacroAssembler::EmitECMATruncate(Register result,
 void MacroAssembler::GetLeastBitsFromSmi(Register dst,
                                          Register src,
                                          int num_least_bits) {
-  rlwinm(dst, src, 31 - num_least_bits - kSmiTagSize, 
-          31 - num_least_bits, 31);
+  rlwinm(dst, src, 31, 31 - num_least_bits, 31);
 }
 
 
@@ -2784,12 +2807,12 @@ void MacroAssembler::InvokeBuiltin(Builtins::JavaScript id,
   GetBuiltinEntry(r5, id);
   if (flag == CALL_FUNCTION) {
     call_wrapper.BeforeCall(CallSize(r2));
-    SetCallKind(r7, CALL_AS_METHOD);
+    SetCallKind(r8, CALL_AS_METHOD);
     Call(r5);
     call_wrapper.AfterCall();
   } else {
     ASSERT(flag == JUMP_FUNCTION);
-    SetCallKind(r7, CALL_AS_METHOD);
+    SetCallKind(r8, CALL_AS_METHOD);
     Jump(r5);
   }
 }
@@ -3419,8 +3442,9 @@ void MacroAssembler::PrepareCallCFunction(int num_reg_arguments,
     mr(scratch, sp);
     sub(sp, sp, Operand((stack_passed_arguments + 1) * kPointerSize));
     ASSERT(IsPowerOf2(frame_alignment));
-    and_(sp, sp, Operand(-frame_alignment));
-    str(scratch, MemOperand(sp, stack_passed_arguments * kPointerSize));
+    li(r0, Operand(-frame_alignment));
+    and_(sp, sp, r0);
+    stw(scratch, MemOperand(sp, stack_passed_arguments * kPointerSize));
   } else {
     sub(sp, sp, Operand(stack_passed_arguments * kPointerSize));
   }
@@ -3573,6 +3597,7 @@ void MacroAssembler::CheckPageFlag(
   lwz(scratch, MemOperand(scratch, MemoryChunk::kFlagsOffset));
   li(r0, Operand(mask));
   and_(r0, r0, scratch, SetRC);
+  cmpi(r0, Operand(0));
   if(cc == ne) {
     bne(condition_met);
   }
@@ -3745,7 +3770,8 @@ void MacroAssembler::EnsureNotWhite(
   slwi(ip, ip, Operand(1));
   bind(&is_encoded);
   add(length, ip, Operand(SeqString::kHeaderSize + kObjectAlignmentMask));
-  and_(length, length, Operand(~kObjectAlignmentMask));
+  li(r0, Operand(~kObjectAlignmentMask));
+  and_(length, length, r0);
 
   bind(&is_data_object);
   // Value is a data object, and it is white.  Mark it black.  Since we know

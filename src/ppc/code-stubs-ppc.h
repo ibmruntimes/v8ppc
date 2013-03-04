@@ -571,7 +571,11 @@ class RecordWriteStub: public CodeStub {
     // saved registers that were not already preserved.  The scratch registers
     // will be restored by other means so we don't bother pushing them here.
     void SaveCallerSaveRegisters(MacroAssembler* masm, SaveFPRegsMode mode) {
-      masm->stm(db_w, sp, (kCallerSaved | lr.bit()) & ~scratch1_.bit());
+
+      masm->mflr(r0);
+      masm->push(r0);
+      masm->MultiPush(kCallerSaved & ~scratch1_.bit());
+#if 0  // roohack - ignoring doubles
       if (mode == kSaveFPRegs) {
         CpuFeatures::Scope scope(VFP2);
         masm->sub(sp,
@@ -583,10 +587,12 @@ class RecordWriteStub: public CodeStub {
           masm->vstr(reg, MemOperand(sp, (i - 1) * kDoubleSize));
         }
       }
+#endif
     }
 
     inline void RestoreCallerSaveRegisters(MacroAssembler*masm,
                                            SaveFPRegsMode mode) {
+#if 0  // roohack - ignoring doubles
       if (mode == kSaveFPRegs) {
         CpuFeatures::Scope scope(VFP2);
         // Restore all VFP registers except d0.
@@ -598,7 +604,10 @@ class RecordWriteStub: public CodeStub {
                   sp,
                   Operand(kDoubleSize * (DwVfpRegister::kNumRegisters - 1)));
       }
-      masm->ldm(ia_w, sp, (kCallerSaved | lr.bit()) & ~scratch1_.bit());
+#endif
+      masm->MultiPop(kCallerSaved & ~scratch1_.bit());
+      masm->pop(r0);
+      masm->mtlr(r0);
     }
 
     inline Register object() { return object_; }
@@ -615,7 +624,7 @@ class RecordWriteStub: public CodeStub {
     Register GetRegThatIsNotOneOf(Register r1,
                                   Register r2,
                                   Register r3) {
-      for (int i = 0; i < Register::kNumAllocatableRegisters; i++) {
+      for (int i = 3; i < Register::kNumAllocatableRegisters; i++) {
         Register candidate = Register::FromAllocationIndex(i);
         if (candidate.is(r1)) continue;
         if (candidate.is(r2)) continue;
