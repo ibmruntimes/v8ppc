@@ -919,6 +919,7 @@ SBit s = LeaveCC, Condition cond = al // roohack - remove this line later
   void ori(Register dst, Register src, const Operand& imm);
   void orx(Register dst, Register src1, Register src2, RCBit r = LeaveRC);
   void cmpi(Register src1, const Operand& src2);
+  void cmpli(Register src1, const Operand& src2);
   void li(Register dst, const Operand& src);
   void mr(Register dst, Register src);
 
@@ -985,11 +986,10 @@ SBit s = LeaveCC, Condition cond = al // roohack - remove this line later
 
   void cmp(Register src1, const Operand& src2, Condition cond = al);
   void cmp(Register src1, Register src2, Condition cond = al);
-#if 0 // on ARM this was a redirect
- {
-    cmp(src1, Operand(src2), cond);
-  }
-#endif
+  void cmp(int field, Register src1, Register src2);
+  void cmpl(Register src1, Register src2);
+  void cmpl(int field, Register src1, Register src2);
+  
   void cmp_raw_immediate(Register src1, int raw_immediate, Condition cond = al);
 
   void cmn(Register src1, const Operand& src2, Condition cond = al);
@@ -1451,6 +1451,7 @@ SBit s = LeaveCC, Condition cond = al // roohack - remove this line later
   static Instr SetAddRegisterImmediateOffset(Instr instr, int offset);
   static Register GetRd(Instr instr);
   static Register GetRA(Instr instr);
+  static Register GetRB(Instr instr);
   static Register GetRn(Instr instr);
   static Register GetRm(Instr instr);
   static bool IsPush(Instr instr);

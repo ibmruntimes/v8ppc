@@ -508,6 +508,12 @@ Register Assembler::GetRA(Instr instr) {
   return reg;
 }
 
+Register Assembler::GetRB(Instr instr) {
+  Register reg;
+  reg.code_ = Instruction::RBValue(instr);
+  return reg;
+}
+
 Register Assembler::GetRn(Instr instr) {
   Register reg;
   reg.code_ = Instruction::RnValue(instr);
@@ -566,8 +572,8 @@ bool Assembler::IsTstImmediate(Instr instr) {
 
 
 bool Assembler::IsCmpRegister(Instr instr) {
-  return (instr & (B27 | B26 | I | kOpCodeMask | S | kRdMask | B4)) ==
-      (CMP | S);
+  return (((instr & kOpcodeMask) == EXT2) && 
+          ((instr&kExt2OpcodeMask) == CMP));
 }
 
 bool Assembler::IsRlwinm(Instr instr) {
@@ -1198,16 +1204,12 @@ void Assembler::b(int branch_offset, Condition cond) {
   b(branch_offset, LeaveLK);
 }
 
-// end PowerPC
 
 void Assembler::bl(int branch_offset, Condition cond) {
-  positions_recorder()->WriteRecordedPositions();
-  ASSERT((branch_offset & 3) == 0);
-  int imm24 = branch_offset >> 2;
-  ASSERT(is_int24(imm24));
-  emit(cond | B27 | B25 | B24 | (imm24 & kImm24Mask));
+  b(branch_offset, SetLK);
 }
 
+// end PowerPC
 
 void Assembler::blx(int branch_offset) {  // v5 and above
   positions_recorder()->WriteRecordedPositions();
@@ -1387,9 +1389,29 @@ void Assembler::cmpi(Register src1, const Operand& src2) {
   imm16 &= kImm16Mask;
   emit(CMPI | 7*B23 | src1.code()*B16 | imm16);
 }
+
+void Assembler::cmpli(Register src1, const Operand& src2) {
+  uint uimm16 = src2.imm32_;
+  ASSERT(is_uint16(uimm16));
+  uimm16 &= kImm16Mask;
+  emit(CMPLI | 7*B23 | src1.code()*B16 | uimm16);
+}
+
+void Assembler::cmp(int field, Register src1, Register src2) {
+  emit(EXT2 | CMP | field*B23 | src1.code()*B16 | src2.code()*B11);
+}
+
+void Assembler::cmpl(int field, Register src1, Register src2) {
+  emit(EXT2 | CMPL | field*B23 | src1.code()*B16 | src2.code()*B11);
+}
+
+void Assembler::cmpl(Register src1, Register src2) {
+  cmpl(7, src1, src2);
+}
+
 void Assembler::cmp(Register src1, Register src2 , Condition cond) {
 // Condition is ignored - hold over from ARM code
-  emit(EXT2 | CMP | 7*B23 | src1.code()*B16 | src2.code()*B11);
+  cmp(7, src1, src2);
 }
 
 // Pseudo op - load immediate

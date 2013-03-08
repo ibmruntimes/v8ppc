@@ -1521,14 +1521,14 @@ static void EmitStrictTwoHeapObjectCompare(MacroAssembler* masm,
 
     __ bind(&first_non_object);
     // Check for oddballs: true, false, null, undefined.
-    __ cmp(r5, Operand(ODDBALL_TYPE));
+    __ cmpi(r5, Operand(ODDBALL_TYPE));
     __ beq(&return_not_equal);
 
     __ CompareObjectType(lhs, r6, r6, FIRST_SPEC_OBJECT_TYPE);
-    __ b(ge, &return_not_equal);
+    __ bge(&return_not_equal);
 
     // Check for oddballs: true, false, null, undefined.
-    __ cmp(r6, Operand(ODDBALL_TYPE));
+    __ cmpi(r6, Operand(ODDBALL_TYPE));
     __ beq(&return_not_equal);
 
     // Now that we have the types we might as well check for symbol-symbol.
@@ -1536,7 +1536,8 @@ static void EmitStrictTwoHeapObjectCompare(MacroAssembler* masm,
     STATIC_ASSERT(LAST_TYPE < kNotStringTag + kIsSymbolMask);
     STATIC_ASSERT(kSymbolTag != 0);
     __ and_(r5, r5, Operand(r6));
-    __ tst(r5, Operand(kIsSymbolMask));
+    __ andi(r0, r5, Operand(kIsSymbolMask));
+    __ cmpi(r0, Operand(0));
     __ bne(&return_not_equal);
 }
 
@@ -1636,8 +1637,7 @@ void NumberToStringStub::GenerateLookupNumberStringCache(MacroAssembler* masm,
   // contains two elements (number and string) for each cache entry.
   __ lwz(mask, FieldMemOperand(number_string_cache, FixedArray::kLengthOffset));
   // Divide length by two (length is a smi).
-  __ li(r0, Operand(0xeee1));
-  __ mov(mask, Operand(mask, ASR, kSmiTagSize + 1));
+  __ srawi(mask, mask, kSmiTagSize + 1);
   __ sub(mask, mask, Operand(1));  // Make mask.
 
   // Calculate the entry in the number string cache. The hash value in the
@@ -1649,6 +1649,7 @@ void NumberToStringStub::GenerateLookupNumberStringCache(MacroAssembler* masm,
   Label load_result_from_cache;
   if (!object_is_smi) {
     __ JumpIfSmi(object, &is_smi);
+#if 0
     if (CpuFeatures::IsSupported(VFP2)) {
       CpuFeatures::Scope scope(VFP2);
       __ CheckMap(object,
@@ -1683,28 +1684,29 @@ void NumberToStringStub::GenerateLookupNumberStringCache(MacroAssembler* masm,
       __ b(ne, not_found);  // The cache did not contain this value.
       __ b(&load_result_from_cache);
     } else {
+#endif
       __ b(not_found);
-    }
+//  }
   }
 
   __ bind(&is_smi);
   Register scratch = scratch1;
-  __ and_(scratch, mask, Operand(object, ASR, 1));
+  __ srawi(scratch, object, 1);
+  __ and_(scratch, mask, scratch);
   // Calculate address of entry in string cache: each entry consists
   // of two pointer sized fields.
-  __ add(scratch,
-         number_string_cache,
-         Operand(scratch, LSL, kPointerSizeLog2 + 1));
+  __ slwi(scratch, scratch, Operand(kPointerSizeLog2 + 1));
+  __ add(scratch, number_string_cache, scratch);
 
   // Check if the entry is the smi we are looking for.
   Register probe = mask;
-  __ ldr(probe, FieldMemOperand(scratch, FixedArray::kHeaderSize));
+  __ lwz(probe, FieldMemOperand(scratch, FixedArray::kHeaderSize));
   __ cmp(object, probe);
-  __ b(ne, not_found);
+  __ bne(not_found);
 
   // Get the result from the cache.
   __ bind(&load_result_from_cache);
-  __ ldr(result,
+  __ lwz(result,
          FieldMemOperand(scratch, FixedArray::kHeaderSize + kPointerSize));
   __ IncrementCounter(isolate->counters()->number_to_string_native(),
                       1,
@@ -1716,7 +1718,7 @@ void NumberToStringStub::GenerateLookupNumberStringCache(MacroAssembler* masm,
 void NumberToStringStub::Generate(MacroAssembler* masm) {
   Label runtime;
 
-  __ ldr(r4, MemOperand(sp, 0));
+  __ lwz(r4, MemOperand(sp, 0));
 
   // Generate code to lookup number in the number string cache.
   GenerateLookupNumberStringCache(masm, r4, r3, r5, r6, r7, false, &runtime);
@@ -5875,10 +5877,10 @@ void StringHelper::GenerateTwoCharacterSymbolTableProbe(MacroAssembler* masm,
   // different hash algorithm. Don't try to look for these in the symbol table.
   Label not_array_index;
   __ sub(scratch, c1, Operand(static_cast<int>('0')));
-  __ cmpi(scratch, Operand(static_cast<int>('9' - '0')));
+  __ cmpli(scratch, Operand(static_cast<int>('9' - '0')));
   __ bgt(&not_array_index);
   __ sub(scratch, c2, Operand(static_cast<int>('0')));
-  __ cmp(scratch, Operand(static_cast<int>('9' - '0')));
+  __ cmpli(scratch, Operand(static_cast<int>('9' - '0')));
   __ bgt(&not_array_index);
 
   // If check failed combine both characters into single halfword.
@@ -5891,9 +5893,9 @@ void StringHelper::GenerateTwoCharacterSymbolTableProbe(MacroAssembler* masm,
   __ bind(&not_array_index);
   // Calculate the two character string hash.
   Register hash = scratch1;
-  StringHelper::GenerateHashInit(masm, hash, c1);
-  StringHelper::GenerateHashAddCharacter(masm, hash, c2);
-  StringHelper::GenerateHashGetHash(masm, hash);
+  StringHelper::GenerateHashInit(masm, hash, c1, scratch);
+  StringHelper::GenerateHashAddCharacter(masm, hash, c2, scratch);
+  StringHelper::GenerateHashGetHash(masm, hash, scratch);
 
   // Collect the two characters in a register.
   Register chars = c1;
@@ -5944,7 +5946,7 @@ void StringHelper::GenerateTwoCharacterSymbolTableProbe(MacroAssembler* masm,
       __ mr(candidate, hash);
     }
 
-    __ andi(candidate, candidate, Operand(mask));
+    __ and_(candidate, candidate, mask);
 
     // Load the entry from the symble table.
     STATIC_ASSERT(SymbolTable::kEntrySize == 1);
@@ -5999,43 +6001,59 @@ void StringHelper::GenerateTwoCharacterSymbolTableProbe(MacroAssembler* masm,
 
 void StringHelper::GenerateHashInit(MacroAssembler* masm,
                                     Register hash,
-                                    Register character) {
+                                    Register character,
+                                    Register scratch) {
   // hash = character + (character << 10);
   __ LoadRoot(hash, Heap::kHashSeedRootIndex);
   // Untag smi seed and add the character.
-  __ add(hash, character, Operand(hash, LSR, kSmiTagSize));
+  __ srwi(scratch, hash, Operand(kSmiTagSize));
+  __ add(hash, character, scratch);
   // hash += hash << 10;
-  __ add(hash, hash, Operand(hash, LSL, 10));
+  __ slwi(scratch, hash, Operand(10));
+  __ add(hash, hash, scratch);
   // hash ^= hash >> 6;
-  __ eor(hash, hash, Operand(hash, LSR, 6));
+  __ srwi(scratch, hash, Operand(6));
+  __ xor_(hash, hash, scratch);
 }
 
 
 void StringHelper::GenerateHashAddCharacter(MacroAssembler* masm,
                                             Register hash,
-                                            Register character) {
+                                            Register character,
+                                            Register scratch) {
   // hash += character;
-  __ add(hash, hash, Operand(character));
+  __ add(hash, hash, character);
   // hash += hash << 10;
-  __ add(hash, hash, Operand(hash, LSL, 10));
+  __ slwi(scratch, hash, Operand(10));
+  __ add(hash, hash, scratch);
   // hash ^= hash >> 6;
-  __ eor(hash, hash, Operand(hash, LSR, 6));
+  __ srwi(scratch, hash, Operand(6));
+  __ xor_(hash, hash, scratch);
 }
 
 
 void StringHelper::GenerateHashGetHash(MacroAssembler* masm,
-                                       Register hash) {
+                                       Register hash,
+                                       Register scratch) {
   // hash += hash << 3;
-  __ add(hash, hash, Operand(hash, LSL, 3));
+  __ slwi(scratch, hash, Operand(3));
+  __ add(hash, hash, scratch);
   // hash ^= hash >> 11;
-  __ eor(hash, hash, Operand(hash, LSR, 11));
+  __ srwi(scratch, hash, Operand(11));
+  __ xor_(hash, hash, scratch);
   // hash += hash << 15;
-  __ add(hash, hash, Operand(hash, LSL, 15));
+  __ slwi(scratch, hash, Operand(15));
+  __ add(hash, hash, scratch);
 
-  __ and_(hash, hash, Operand(String::kHashBitMask), SetCC);
+  __ mov(scratch, Operand(String::kHashBitMask));
+  __ and_(hash, hash, scratch);
 
   // if (hash == 0) hash = 27;
-  __ mov(hash, Operand(StringHasher::kZeroHash), LeaveCC, eq);
+  Label done;
+  __ cmpi(hash, Operand(0));
+  __ bne(&done);
+  __ li(hash, Operand(StringHasher::kZeroHash));
+  __ bind(&done);
 }
 
 
@@ -6432,7 +6450,7 @@ void StringAddStub::Generate(MacroAssembler* masm) {
     } else if ((flags_ & NO_STRING_CHECK_RIGHT_IN_STUB) == 0) {
       ASSERT((flags_ & NO_STRING_CHECK_LEFT_IN_STUB) != 0);
       GenerateConvertArgument(
-          masm, 0 * kPointerSize, r1, r2, r3, r4, r5, &call_builtin);
+          masm, 0 * kPointerSize, r4, r5, r6, r7, r8, &call_builtin);
       builtin_id = Builtins::STRING_ADD_LEFT;
     }
   }
@@ -6520,7 +6538,7 @@ void StringAddStub::Generate(MacroAssembler* masm) {
   __ srwi(r5, r5, Operand(8));
   __ stb(r5, FieldMemOperand(r3, SeqAsciiString::kHeaderSize+1));
 #else // LITTLE ENDIAN host
-  __ strh(r5, FieldMemOperand(r3, SeqAsciiString::kHeaderSize));
+  __ sth(r5, FieldMemOperand(r3, SeqAsciiString::kHeaderSize));
 #endif
   __ IncrementCounter(counters->string_add_native(), 1, r5, r6);
   __ add(sp, sp, Operand(2 * kPointerSize));

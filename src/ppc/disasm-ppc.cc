@@ -898,6 +898,10 @@ void Decoder::DecodeExt2(Instruction* instr) {
       Format(instr, "and'o    'rt,'ra,'rb");
       break;
     }
+    case CMPL: {
+      Format(instr, "cmpl    'ra,'rb");
+      break;
+    }
     case SUBFX: {
       Format(instr, "subf'.   'rt,'ra,'rb");
       break;
@@ -1666,7 +1670,10 @@ int Decoder::InstructionDecode(byte* instr_ptr) {
       Format(instr, "subfic  'rt, 'ra, 'int16");
       break;
     }
-    case CMPLI:
+    case CMPLI: {
+      Format(instr, "cmpli   'ra,'uint16");
+      break;
+    }
     case CMPI: {
       Format(instr, "cmpwi   'ra,'int16");
       break;

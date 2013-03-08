@@ -677,9 +677,11 @@ MemOperand MacroAssembler::SafepointRegistersAndDoublesSlot(Register reg) {
 
 void MacroAssembler::Ldrd(Register dst1, Register dst2,
                           const MemOperand& src, Condition cond) {
+  ldr(dst1, MemOperand(dst2), al); // roohack - bogus instruction to cause error
+#if 0
   ASSERT(src.rm().is(no_reg));
   ASSERT(!dst1.is(lr));  // r14.
-  ASSERT_EQ(0, dst1.code() % 2);
+  // ASSERT_EQ(0, dst1.code() % 2);
   ASSERT_EQ(dst1.code() + 1, dst2.code());
 
   // V8 does not use this addressing mode, so the fallback code
@@ -714,6 +716,7 @@ void MacroAssembler::Ldrd(Register dst1, Register dst2,
       }
     }
   }
+#endif
 }
 
 
@@ -1691,7 +1694,7 @@ void MacroAssembler::AllocateInNewSpace(int object_size,
   addc(scratch2, result, obj_size_reg);
   addze(r0, r0, LeaveOE, SetRC);
   bc(gc_required, BT, 1);
-  cmp(scratch2, ip);
+  cmpl(scratch2, ip);
   bgt(gc_required);
   stw(scratch2, MemOperand(topaddr));
 
@@ -2831,10 +2834,10 @@ void MacroAssembler::GetBuiltinFunction(Register target,
 
 
 void MacroAssembler::GetBuiltinEntry(Register target, Builtins::JavaScript id) {
-  ASSERT(!target.is(r1));
-  GetBuiltinFunction(r1, id);
+  ASSERT(!target.is(r4));
+  GetBuiltinFunction(r4, id);
   // Load the code entry point from the builtins object.
-  lwz(target, FieldMemOperand(r1, JSFunction::kCodeEntryOffset));
+  lwz(target, FieldMemOperand(r4, JSFunction::kCodeEntryOffset));
 }
 
 
@@ -3384,11 +3387,11 @@ void MacroAssembler::JumpIfBothInstanceTypesAreNotSequentialAscii(
   int kFlatAsciiStringMask =
       kIsNotStringMask | kStringEncodingMask | kStringRepresentationMask;
   int kFlatAsciiStringTag = ASCII_STRING_TYPE;
-  and_(scratch1, first, Operand(kFlatAsciiStringMask));
-  and_(scratch2, second, Operand(kFlatAsciiStringMask));
-  cmp(scratch1, Operand(kFlatAsciiStringTag));
-  // Ignore second test if first test failed.
-  cmp(scratch2, Operand(kFlatAsciiStringTag), eq);
+  andi(scratch1, first, Operand(kFlatAsciiStringMask));
+  andi(scratch2, second, Operand(kFlatAsciiStringMask));
+  cmpi(scratch1, Operand(kFlatAsciiStringTag));
+  bne(failure);
+  cmpi(scratch2, Operand(kFlatAsciiStringTag));
   bne(failure);
 }
 
@@ -3399,8 +3402,8 @@ void MacroAssembler::JumpIfInstanceTypeIsNotSequentialAscii(Register type,
   int kFlatAsciiStringMask =
       kIsNotStringMask | kStringEncodingMask | kStringRepresentationMask;
   int kFlatAsciiStringTag = ASCII_STRING_TYPE;
-  and_(scratch, type, Operand(kFlatAsciiStringMask));
-  cmp(scratch, Operand(kFlatAsciiStringTag));
+  andi(scratch, type, Operand(kFlatAsciiStringMask));
+  cmpi(scratch, Operand(kFlatAsciiStringTag));
   bne(failure);
 }
 

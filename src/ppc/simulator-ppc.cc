@@ -2033,6 +2033,21 @@ void Simulator::DecodeExt2(Instruction* instr) {
       } 
       break;
     }
+    case CMPL: {
+      int ra = instr->RAValue();
+      int rb = instr->RBValue();
+      uint32_t ra_val = get_register(ra);
+      uint32_t rb_val = get_register(rb);
+      int cr = instr->Bits(25,23);
+      int bf = 0;
+      if(ra_val < rb_val) { bf |= 0x80000000; }
+      if(ra_val > rb_val) { bf |= 0x40000000; }
+      if(ra_val == rb_val) { bf |= 0x20000000; }
+      int condition_mask = 0xF0000000 >> (cr*4);
+      int condition =  bf >> (cr*4);
+      condition_reg_ = (condition_reg_ & ~condition_mask) | condition;
+      break;
+    }
     case SUBFX: {
       int rt = instr->RTValue();
       int ra = instr->RAValue();
@@ -3401,7 +3416,20 @@ void Simulator::InstructionDecode(Instruction* instr) {
       // todo - handle RC bit
       break;
     }
-    case CMPLI:
+    case CMPLI: {
+      int ra = instr->RAValue();
+      uint32_t ra_val = get_register(ra);
+      uint32_t im_val = instr->Bits(15,0);
+      int cr = instr->Bits(25,23);
+      int bf = 0;
+      if(ra_val < im_val) { bf |= 0x80000000; }
+      if(ra_val > im_val) { bf |= 0x40000000; }
+      if(ra_val == im_val) { bf |= 0x20000000; }
+      int condition_mask = 0xF0000000 >> (cr*4);
+      int condition =  bf >> (cr*4);
+      condition_reg_ = (condition_reg_ & ~condition_mask) | condition;
+      break;
+    }
     case CMPI: {
       int ra = instr->RAValue();
       int32_t ra_val = get_register(ra);

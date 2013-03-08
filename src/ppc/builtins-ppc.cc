@@ -815,13 +815,13 @@ static void Generate_JSConstructStubHelper(MacroAssembler* masm,
         MemOperand constructor_count =
             FieldMemOperand(r6, SharedFunctionInfo::kConstructionCountOffset);
         __ lbz(r7, constructor_count);
-        __ li(r0, Operand(-1));
-        __ subfic(r7, r7, Operand(1));
+        __ addic(r7, r7, Operand(-1));
         __ stb(r7, constructor_count);
-        __ addze(r0, r0, LeaveOE, SetRC);
-        __ bc(&allocate, BT, 1);
+        __ cmpi(r7, Operand(0));
+        __ bne(&allocate);
 
-        __ Push(r4, r5);
+        __ push(r4);
+        __ push(r5);
 
         __ push(r4);  // constructor
         // The call will replace the stub, so the countdown is only done once.

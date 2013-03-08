@@ -92,8 +92,9 @@ static void GenerateStringDictionaryReceiverCheck(MacroAssembler* masm,
 
   // Check that the global object does not require access checks.
   __ lbz(t1, FieldMemOperand(t0, Map::kBitFieldOffset));
-  __ tst(t1, Operand((1 << Map::kIsAccessCheckNeeded) |
+  __ andi(r0, t1, Operand((1 << Map::kIsAccessCheckNeeded) |
                      (1 << Map::kHasNamedInterceptor)));
+  __ cmpi(r0, Operand(0));
   __ bne(miss);
 
   __ lwz(elements, FieldMemOperand(receiver, JSObject::kPropertiesOffset));
@@ -146,8 +147,12 @@ static void GenerateDictionaryLoad(MacroAssembler* masm,
       StringDictionary::kElementsStartIndex * kPointerSize;
   const int kDetailsOffset = kElementsStartOffset + 2 * kPointerSize;
   __ lwz(scratch1, FieldMemOperand(scratch2, kDetailsOffset));
-  __ tst(scratch1, Operand(PropertyDetails::TypeField::kMask << kSmiTagSize));
+  __ mr(r0,scratch2);
+  __ mov(scratch2, Operand(PropertyDetails::TypeField::kMask << kSmiTagSize));
+  __ and_(scratch2, scratch1, scratch2);
+  __ cmpi(scratch2, Operand(0));
   __ bne(miss);
+  __ mr(scratch2, r0);
 
   // Get the value at the masked, scaled index and return.
   __ lwz(result,
@@ -198,8 +203,12 @@ static void GenerateDictionaryStore(MacroAssembler* masm,
       (PropertyDetails::TypeField::kMask |
        PropertyDetails::AttributesField::encode(READ_ONLY)) << kSmiTagSize;
   __ lwz(scratch1, FieldMemOperand(scratch2, kDetailsOffset));
-  __ tst(scratch1, Operand(kTypeAndReadOnlyMask));
+  __ mr(r0, scratch2);
+  __ mov(scratch2, Operand(kTypeAndReadOnlyMask));
+  __ and_(scratch2, scratch1, scratch2);
+  __ cmpi(scratch2, Operand(0));
   __ bne(miss);
+  __ mr(scratch2, r0);
 
   // Store the value at the masked, scaled index and return.
   const int kValueOffset = kElementsStartOffset + kPointerSize;
@@ -779,7 +788,9 @@ static MemOperand GenerateMappedArgumentsLookup(MacroAssembler* masm,
   __ blt(slow_case);
 
   // Check that the key is a positive smi.
-  __ tst(key, Operand(0x80000001));
+  __ mov(scratch1, Operand(0x80000001));
+  __ and_(r0, key, scratch1);
+  __ cmpi(r0, Operand(0));
   __ bne(slow_case);
 
   // Load the elements into scratch1 and check its map.
@@ -1188,7 +1199,8 @@ void KeyedLoadIC::GenerateIndexedInterceptor(MacroAssembler* masm) {
   __ JumpIfSmi(r4, &slow);
 
   // Check that the key is an array index, that is Uint32.
-  __ tst(r3, Operand(kSmiTagMask | kSmiSignMask));
+  __ andi(r0, r3, Operand(kSmiTagMask | kSmiSignMask));
+  __ cmpi(r0, Operand(0));
   __ bne(&slow);
 
   // Get the map of the receiver.
@@ -1484,14 +1496,15 @@ void KeyedStoreIC::GenerateGeneric(MacroAssembler* masm,
   // Check that the receiver does not require access checks.  We need
   // to do this because this generic stub does not perform map checks.
   __ lbz(ip, FieldMemOperand(receiver_map, Map::kBitFieldOffset));
-  __ tst(ip, Operand(1 << Map::kIsAccessCheckNeeded));
+  __ andi(r0,ip, Operand(1 << Map::kIsAccessCheckNeeded));
+  __ cmpi(r0, Operand(0));
   __ bne(&slow);
   // Check if the object is a JS array or not.
   __ lbz(r7, FieldMemOperand(receiver_map, Map::kInstanceTypeOffset));
-  __ cmp(r7, Operand(JS_ARRAY_TYPE));
+  __ cmpi(r7, Operand(JS_ARRAY_TYPE));
   __ beq(&array);
   // Check that the object is some kind of JSObject.
-  __ cmp(r7, Operand(FIRST_JS_OBJECT_TYPE));
+  __ cmpi(r7, Operand(FIRST_JS_OBJECT_TYPE));
   __ blt(&slow);
 
   // Object case: Check key against length in the elements array.
@@ -1777,23 +1790,31 @@ void PatchInlinedSmiCode(Address address, InlinedSmiCheck check) {
   }
 #endif
 
-  Address patch_address = cmp_instruction_address - 
-          (delta * Instruction::kInstrSize);
+  Address patch_address =
+      cmp_instruction_address - delta * Instruction::kInstrSize;
+  Instr instr_at_patch = Assembler::instr_at(patch_address);
   Instr branch_instr =
       Assembler::instr_at(patch_address + Instruction::kInstrSize);
   // This is patching a conditional "jump if not smi/jump if smi" site.
-  // The default code emits the opposite logic branch. 
-  // Enabling means switching from a BT to BF, whereas disabling is the
-  // reverse operation of that.
-  // Code will look like
+  // Enabling by changing from
+  //   cmp cr0, rx, rx
+  // to
   //  rlwinm(r0, value, 0, 31, 31, SetRC);
-  //  bc(label, BT, 2)
-  // or
-  //  rlwinm(r0, value, 0, 31, 31, SetRC);
-  //  bc(label, BF, 2)
+  //  bc(label, BT/BF, 2)
+  // and vice-versa to be disabled again.
+  CodePatcher patcher(patch_address, 2);
+  Register reg = Assembler::GetRA(instr_at_patch);
+ if (check == ENABLE_INLINED_SMI_CHECK) {
+    ASSERT(Assembler::IsCmpRegister(instr_at_patch));
+    ASSERT_EQ(Assembler::GetRA(instr_at_patch).code(),
+              Assembler::GetRB(instr_at_patch).code());
+    patcher.masm()->rlwinm(r0, reg, 0, 31, 31, SetRC);
+  } else {
+    ASSERT(check == DISABLE_INLINED_SMI_CHECK);
+    ASSERT(Assembler::IsRlwinm(instr_at_patch));
+    patcher.masm()->cmp(0, reg, reg);
+  }
 
-  CodePatcher patcher(patch_address + Instruction::kInstrSize, 1);
-  ASSERT(Assembler::IsRlwinm(Assembler::instr_at(patch_address)));
   ASSERT(Assembler::IsBranch(branch_instr));
 
   // Invert the logic of the branch

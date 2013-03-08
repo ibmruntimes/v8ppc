@@ -73,7 +73,8 @@ class JumpPatchSite BASE_EMBEDDED {
     ASSERT(!patch_site_.is_bound() && !info_emitted_);
     Assembler::BlockConstPoolScope block_const_pool(masm_);
     __ bind(&patch_site_);
-    __ JumpIfSmi(reg, target);  // Always taken before patched.
+    __ cmp(0, reg, reg);
+    __ bc(target, BT, 2);  // Always taken before patched.
   }
 
   // When initially emitting this ensure that a jump is never generated to skip
@@ -82,7 +83,8 @@ class JumpPatchSite BASE_EMBEDDED {
     ASSERT(!patch_site_.is_bound() && !info_emitted_);
     Assembler::BlockConstPoolScope block_const_pool(masm_);
     __ bind(&patch_site_);
-    __ JumpIfNotSmi(reg, target);  // Never taken before patched.
+    __ cmp(0, reg, reg);
+    __ bc(target, BF, 2);  // Never taken before patched.
   }
 
   void EmitPatchInfo() {
@@ -2571,7 +2573,10 @@ void FullCodeGenerator::EmitIsNonNegativeSmi(CallRuntime* expr) {
                          &if_true, &if_false, &fall_through);
 
   PrepareForBailoutBeforeSplit(expr, true, if_true, if_false);
-  __ tst(r3, Operand(kSmiTagMask | 0x80000000));
+  ASSERT((kSmiTagMask | 0x80000000) == 0x80000001);
+  __ rlwinm(r0, r3, 1, 30, 31); // roohack - I think this is right
+  __ cmpi(r0, Operand(0));
+  // was .. __ tst(r3, Operand(kSmiTagMask | 0x80000000));
   Split(eq, if_true, if_false, fall_through);
 
   context()->Plug(if_true, if_false);
@@ -4236,8 +4241,9 @@ void FullCodeGenerator::EmitLiteralCompareTypeof(Expression* expr,
     __ JumpIfSmi(r3, if_false);
     // Check for undetectable objects => true.
     __ lwz(r3, FieldMemOperand(r3, HeapObject::kMapOffset));
-    __ lbz(r4, FieldMemOperand(r0, Map::kBitFieldOffset));
-    __ tst(r4, Operand(1 << Map::kIsUndetectable));
+    __ lbz(r4, FieldMemOperand(r3, Map::kBitFieldOffset));
+    __ andi(r0, r4, Operand(1 << Map::kIsUndetectable));
+    __ cmpi(r0, Operand(0));
     Split(ne, if_true, if_false, fall_through);
 
   } else if (check->Equals(isolate()->heap()->function_symbol())) {
@@ -4248,16 +4254,16 @@ void FullCodeGenerator::EmitLiteralCompareTypeof(Expression* expr,
     __ cmp(r4, Operand(JS_FUNCTION_PROXY_TYPE));
     Split(eq, if_true, if_false, fall_through);
   } else if (check->Equals(isolate()->heap()->object_symbol())) {
-    __ JumpIfSmi(r4, if_false);
+    __ JumpIfSmi(r3, if_false);
     if (!FLAG_harmony_typeof) {
       __ CompareRoot(r3, Heap::kNullValueRootIndex);
       __ beq(if_true);
     }
     // Check for JS objects => true.
     __ CompareObjectType(r3, r3, r4, FIRST_NONCALLABLE_SPEC_OBJECT_TYPE);
-    __ b(lt, if_false);
+    __ blt(if_false);
     __ CompareInstanceType(r3, r4, LAST_NONCALLABLE_SPEC_OBJECT_TYPE);
-    __ b(gt, if_false);
+    __ bgt(if_false);
     // Check for undetectable objects => false.
     __ lbz(r4, FieldMemOperand(r3, Map::kBitFieldOffset));
     __ andi(r0, r3, Operand(1 << Map::kIsUndetectable));

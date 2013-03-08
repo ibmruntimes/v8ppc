@@ -1529,7 +1529,8 @@ void CallStubCompiler::GenerateLoadFunctionFromCell(
     __ lwz(r7, FieldMemOperand(r4, JSFunction::kSharedFunctionInfoOffset));
     __ cmp(r7, r6);
   } else {
-    __ cmp(r4, Operand(function));
+    __ mov(r6, Operand(function));
+    __ cmp(r4, r6);
   }
   __ bne(miss);
 }

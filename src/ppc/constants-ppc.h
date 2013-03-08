@@ -790,6 +790,7 @@ class Instruction {
   inline int RAValue() const { return Bits(20, 16); }
   DECLARE_STATIC_ACCESSOR(RAValue);
   inline int RBValue() const { return Bits(15, 11); }
+  DECLARE_STATIC_ACCESSOR(RBValue);
 
   //end PowerPC
 
