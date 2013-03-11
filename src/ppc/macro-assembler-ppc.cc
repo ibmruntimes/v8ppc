@@ -1253,10 +1253,10 @@ void MacroAssembler::IsInstanceJSObjectType(Register map,
                                             Register scratch,
                                             Label* fail) {
   lbz(scratch, FieldMemOperand(map, Map::kInstanceTypeOffset));
-  cmp(scratch, Operand(FIRST_NONCALLABLE_SPEC_OBJECT_TYPE));
-  b(lt, fail);
-  cmp(scratch, Operand(LAST_NONCALLABLE_SPEC_OBJECT_TYPE));
-  b(gt, fail);
+  cmpi(scratch, Operand(FIRST_NONCALLABLE_SPEC_OBJECT_TYPE));
+  blt(fail);
+  cmpi(scratch, Operand(LAST_NONCALLABLE_SPEC_OBJECT_TYPE));
+  bgt(fail);
 }
 
 
@@ -1447,7 +1447,7 @@ void MacroAssembler::CheckAccessGlobalProxy(Register holder_reg,
   lwz(scratch, MemOperand(r11, StandardFrameConstants::kContextOffset));
   // In debug mode, make sure the lexical context is set.
 #ifdef DEBUG
-  cmp(scratch, Operand(0, RelocInfo::NONE));
+  cmpi(scratch, Operand(0, RelocInfo::NONE));
   Check(ne, "we should not have an empty lexical context");
 #endif
 
@@ -1505,7 +1505,7 @@ void MacroAssembler::CheckAccessGlobalProxy(Register holder_reg,
 
   lwz(scratch, FieldMemOperand(scratch, token_offset));
   lwz(ip, FieldMemOperand(ip, token_offset));
-  cmp(scratch, Operand(ip));
+  cmp(scratch, ip);
   bne(miss);
 
   bind(&same_contexts);
@@ -1595,7 +1595,7 @@ void MacroAssembler::LoadFromNumberDictionary(Label* miss,
     // Check if the key is identical to the name.
     add(t2, elements, Operand(t2, LSL, kPointerSizeLog2));
     lwz(ip, FieldMemOperand(t2, SeededNumberDictionary::kElementsStartOffset));
-    cmp(key, Operand(ip));
+    cmp(key, ip);
     if (i != kProbes - 1) {
       beq(&done);
     } else {
@@ -2010,9 +2010,9 @@ void MacroAssembler::CheckFastObjectElements(Register map,
   STATIC_ASSERT(FAST_ELEMENTS == 2);
   STATIC_ASSERT(FAST_HOLEY_ELEMENTS == 3);
   lbz(scratch, FieldMemOperand(map, Map::kBitField2Offset));
-  cmp(scratch, Operand(Map::kMaximumBitField2FastHoleySmiElementValue));
+  cmpi(scratch, Operand(Map::kMaximumBitField2FastHoleySmiElementValue));
   blt(fail);
-  cmp(scratch, Operand(Map::kMaximumBitField2FastHoleyElementValue));
+  cmpi(scratch, Operand(Map::kMaximumBitField2FastHoleyElementValue));
   bgt(fail);
 }
 
@@ -2023,7 +2023,7 @@ void MacroAssembler::CheckFastSmiElements(Register map,
   STATIC_ASSERT(FAST_SMI_ELEMENTS == 0);
   STATIC_ASSERT(FAST_HOLEY_SMI_ELEMENTS == 1);
   lbz(scratch, FieldMemOperand(map, Map::kBitField2Offset));
-  cmp(scratch, Operand(Map::kMaximumBitField2FastHoleySmiElementValue));
+  cmpi(scratch, Operand(Map::kMaximumBitField2FastHoleySmiElementValue));
   b(hi, fail);
 }
 

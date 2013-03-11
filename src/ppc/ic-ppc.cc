@@ -1384,7 +1384,7 @@ static void KeyedStoreGenerateGenericHelper(
   }
   __ add(address, elements, Operand(FixedArray::kHeaderSize - kHeapObjectTag));
   __ add(address, address, Operand(key, LSL, kPointerSizeLog2 - kSmiTagSize));
-  __ str(value, MemOperand(address));
+  __ stw(value, MemOperand(address));
   // Update write barrier for the elements array address.
   __ mr(scratch_value, value);  // Preserve the value which is returned.
   __ RecordWrite(elements,
@@ -1435,7 +1435,7 @@ static void KeyedStoreGenerateGenericHelper(
                                          slow);
   ASSERT(receiver_map.is(r6));  // Transition code expects map in r6
   ElementsTransitionGenerator::GenerateSmiToDouble(masm, slow);
-  __ ldr(elements, FieldMemOperand(receiver, JSObject::kElementsOffset));
+  __ lwz(elements, FieldMemOperand(receiver, JSObject::kElementsOffset));
   __ jmp(&fast_double_without_map_check);
 
   __ bind(&non_double_value);

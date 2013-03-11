@@ -492,7 +492,7 @@ void FastCloneShallowObjectStub::Generate(MacroAssembler* masm) {
   int size = JSObject::kHeaderSize + length_ * kPointerSize;
   __ lwz(r3, FieldMemOperand(r6, HeapObject::kMapOffset));
   __ lbz(r3, FieldMemOperand(r3, Map::kInstanceSizeOffset));
-  __ cmp(r3, Operand(size >> kPointerSizeLog2));
+  __ cmpi(r3, Operand(size >> kPointerSizeLog2));
   __ bne(&slow_case);
 
   // Allocate the JS object and copy header together with all in-object
@@ -570,7 +570,7 @@ void ConvertToDoubleStub::Generate(MacroAssembler* masm) {
   // We have -1, 0 or 1, which we treat specially. Register source_ contains
   // absolute value: it is either equal to 1 (special case of -1 and 1),
   // greater than 1 (not a special case) or less than 1 (special case of 0).
-  __ cmp(source_, Operand(1));
+  __ cmpi(source_, Operand(1));
   __ b(gt, &not_special);
 
   // For 1 or -1 we need to or in the 0 exponent (biased to 1023).
@@ -794,7 +794,7 @@ void FloatingPointHelper::ConvertIntToDouble(MacroAssembler* masm,
     // | s |   exp   |              mantissa               |
 
     // Check for zero.
-    __ cmp(int_scratch, Operand::Zero());
+    __ cmpi(int_scratch, Operand::Zero());
     __ mov(dst2, int_scratch);
     __ mov(dst1, int_scratch);
     __ b(eq, &done);
@@ -2571,11 +2571,11 @@ void BinaryOpStub::GenerateSmiSmiOperation(MacroAssembler* masm) {
       __ Ret();
       break;
     case Token::BIT_AND:
-      __ and_(right, left, Operand(right));
+      __ and_(right, left, right);
       __ Ret();
       break;
     case Token::BIT_XOR:
-      __ eor(right, left, Operand(right));
+      __ xor_(right, left, right);
       __ Ret();
       break;
     case Token::SAR:
@@ -6354,20 +6354,23 @@ void StringCompareStub::GenerateAsciiCharsCompareLoop(
   __ SmiUntag(length);
   __ add(scratch1, length,
          Operand(SeqAsciiString::kHeaderSize - kHeapObjectTag));
-  __ add(left, left, Operand(scratch1));
-  __ add(right, right, Operand(scratch1));
-  __ rsb(length, length, Operand::Zero());
+  __ add(left, left, scratch1);
+  __ add(right, right, scratch1);
+  __ subfic(length, length, Operand::Zero());
   Register index = length;  // index = -length;
 
   // Compare loop.
   Label loop;
   __ bind(&loop);
-  __ ldrb(scratch1, MemOperand(left, index));
-  __ ldrb(scratch2, MemOperand(right, index));
-  __ cmp(scratch1, scratch2);
-  __ b(ne, chars_not_equal);
-  __ add(index, index, Operand(1), SetCC);
-  __ b(ne, &loop);
+  __ add(scratch2, left, index);
+  __ lbz(scratch1, MemOperand(scratch2));
+  __ add(scratch2, right, index);
+  __ lbz(r0, MemOperand(scratch2));
+  __ cmp(scratch1, r0);
+  __ bne(chars_not_equal);
+  __ add(index, index, Operand(1));
+  __ cmpi(index, Operand(0));
+  __ bne(&loop);
 }
 
 
@@ -6729,7 +6732,7 @@ void StringAddStub::GenerateConvertArgument(MacroAssembler* masm,
   Label not_string, done;
   __ JumpIfSmi(arg, &not_string);
   __ CompareObjectType(arg, scratch1, scratch1, FIRST_NONSTRING_TYPE);
-  __ b(lt, &done);
+  __ blt(&done);
 
   // Check the number to string cache.
   Label not_cached;
@@ -6743,8 +6746,8 @@ void StringAddStub::GenerateConvertArgument(MacroAssembler* masm,
                                                       scratch4,
                                                       false,
                                                       &not_cached);
-  __ mov(arg, scratch1);
-  __ str(arg, MemOperand(sp, stack_offset));
+  __ mr(arg, scratch1);
+  __ stw(arg, MemOperand(sp, stack_offset));
   __ jmp(&done);
 
   // Check if the argument is a safe string wrapper.
@@ -6752,15 +6755,15 @@ void StringAddStub::GenerateConvertArgument(MacroAssembler* masm,
   __ JumpIfSmi(arg, slow);
   __ CompareObjectType(
       arg, scratch1, scratch2, JS_VALUE_TYPE);  // map -> scratch1.
-  __ b(ne, slow);
-  __ ldrb(scratch2, FieldMemOperand(scratch1, Map::kBitField2Offset));
-  __ and_(scratch2,
+  __ bne(slow);
+  __ lbz(scratch2, FieldMemOperand(scratch1, Map::kBitField2Offset));
+  __ andi(scratch2,
           scratch2, Operand(1 << Map::kStringWrapperSafeForDefaultValueOf));
-  __ cmp(scratch2,
+  __ cmpi(scratch2,
          Operand(1 << Map::kStringWrapperSafeForDefaultValueOf));
-  __ b(ne, slow);
-  __ ldr(arg, FieldMemOperand(arg, JSValue::kValueOffset));
-  __ str(arg, MemOperand(sp, stack_offset));
+  __ bne(slow);
+  __ lwz(arg, FieldMemOperand(arg, JSValue::kValueOffset));
+  __ stw(arg, MemOperand(sp, stack_offset));
 
   __ bind(&done);
 }
@@ -7290,8 +7293,8 @@ void StringDictionaryLookupStub::Generate(MacroAssembler* masm) {
     __ b(eq, &not_in_dictionary);
 
     // Stop if found the property.
-    __ cmp(entry_key, Operand(key));
-    __ b(eq, &in_dictionary);
+    __ cmp(entry_key, key);
+    __ beq(&in_dictionary);
 
     if (i != kTotalProbes - 1 && mode_ == NEGATIVE_LOOKUP) {
       // Check if the entry name is not a symbol.

@@ -3524,11 +3524,11 @@ void Simulator::InstructionDecode(Instruction* instr) {
     case SC:
     case BX: {
       int offset = (instr->Bits(25,2) << 8) >> 6;
+      if(instr->Bit(0) == 1) {  // LK flag set 
+        special_reg_lr_ = get_pc() + 4;
+      }
       set_pc(get_pc() + offset);
       // todo - AA flag
-      if(instr->Bit(0) == 1) {  // LK flag set 
-        special_reg_lr_ = get_pc();
-      }
       break;
     }
     case EXT1: {
