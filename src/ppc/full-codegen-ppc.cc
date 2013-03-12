@@ -446,9 +446,9 @@ void FullCodeGenerator::EmitReturnSequence() {
       masm_->mr(sp, fp);
       masm_->lwz(fp, MemOperand(sp));
       masm_->lwz(r0, MemOperand(sp, kPointerSize));
-      masm_->mtctr(r0);
+      masm_->mtlr(r0);
       masm_->add(sp, sp, Operand(sp_delta + (2 * kPointerSize)));
-      masm_->bcr();
+      masm_->blr();
     }
 
 #ifdef DEBUG
@@ -1544,7 +1544,7 @@ void FullCodeGenerator::VisitRegExpLiteral(RegExpLiteral* expr) {
   __ mov(r4, Operand(expr->flags()));
   __ Push(r7, r6, r5, r4);
   __ CallRuntime(Runtime::kMaterializeRegExpLiteral, 4);
-  __ mov(r8, r3);
+  __ mr(r8, r3);
 
   __ bind(&materialized);
   int size = JSRegExp::kSize + JSRegExp::kInObjectFieldCount * kPointerSize;

@@ -3814,7 +3814,8 @@ int32_t Simulator::Call(byte* entry, int argument_count, ...) {
   // Remaining arguments passed on stack.
   int original_stack = get_register(sp);
   // Compute position of stack on entry to generated code.
-  int entry_stack = (original_stack - (argument_count - 4) * sizeof(int32_t));
+  int entry_stack = (original_stack - (argument_count - 4) * sizeof(int32_t)
+    - 8); // -8 extra stack is a hack for the LR slot + old SP on PPC
   if (OS::ActivationFrameAlignment() != 0) {
     entry_stack &= -OS::ActivationFrameAlignment();
   }

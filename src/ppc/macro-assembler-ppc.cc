@@ -3267,7 +3267,7 @@ void MacroAssembler::CopyFields(Register dst,
 
   for (int i = 0; i < field_count; i++) {
     lwz(tmp, FieldMemOperand(src, i * kPointerSize));
-    str(tmp, FieldMemOperand(dst, i * kPointerSize));
+    stw(tmp, FieldMemOperand(dst, i * kPointerSize));
   }
 }
 

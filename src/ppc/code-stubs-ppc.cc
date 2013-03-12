@@ -4602,8 +4602,8 @@ void ArgumentsAccessStub::GenerateNewNonStrictFast(MacroAssembler* masm) {
   //  sp[4] : address of receiver argument
   //  sp[8] : function
   // Registers used over whole function:
-  //  r6 : allocated object (tagged) -- roohack, needs update
-  //  r9 : mapped parameter count (tagged) -- roohack needs update
+  //  r9 : allocated object (tagged)
+  //  r22 : mapped parameter count (tagged)
 
   __ lwz(r4, MemOperand(sp, 0 * kPointerSize));
   // r4 = parameter count (tagged)
@@ -4617,21 +4617,25 @@ void ArgumentsAccessStub::GenerateNewNonStrictFast(MacroAssembler* masm) {
   __ beq(&adaptor_frame);
 
   // No adaptor, parameter count = argument count.
-  __ mov(r5, r4);
+  __ mr(r5, r4);
   __ b(&try_allocate);
 
   // We have an adaptor frame. Patch the parameters pointer.
   __ bind(&adaptor_frame);
   __ lwz(r5, MemOperand(r6, ArgumentsAdaptorFrameConstants::kLengthOffset));
-  __ add(r6, r6, Operand(r5, LSL, 1));
+  __ slwi(r7, r5, Operand(1));
+  __ add(r6, r6, r7);
   __ add(r6, r6, Operand(StandardFrameConstants::kCallerSPOffset));
   __ stw(r6, MemOperand(sp, 1 * kPointerSize));
 
   // r4 = parameter count (tagged)
   // r5 = argument count (tagged)
   // Compute the mapped parameter count = min(r4, r5) in r4.
-  __ cmp(r4, Operand(r5));
-  __ mov(r4, Operand(r5), LeaveCC, gt);
+  Label skip;
+  __ cmp(r4, r5);
+  __ blt(&skip);
+  __ mr(r4, r5);
+  __ bind(&skip);
 
   __ bind(&try_allocate);
 
@@ -4640,20 +4644,26 @@ void ArgumentsAccessStub::GenerateNewNonStrictFast(MacroAssembler* masm) {
   const int kParameterMapHeaderSize =
       FixedArray::kHeaderSize + 2 * kPointerSize;
   // If there are no mapped parameters, we do not need the parameter_map.
+  Label skip2, skip3;
   __ cmp(r4, Operand(Smi::FromInt(0)));
-  __ mov(r9, Operand::Zero(), LeaveCC, eq);
-  __ mov(r9, Operand(r4, LSL, 1), LeaveCC, ne);
-  __ add(r9, r9, Operand(kParameterMapHeaderSize), LeaveCC, ne);
+  __ bne(&skip2);
+  __ li(r22, Operand::Zero());
+  __ b(&skip3);
+  __ bind(&skip2);
+  __ slwi(r22, r4, Operand(1));
+  __ add(r22, r22, Operand(kParameterMapHeaderSize));
+  __ bind(&skip3);
 
   // 2. Backing store.
-  __ add(r9, r9, Operand(r5, LSL, 1));
-  __ add(r9, r9, Operand(FixedArray::kHeaderSize));
+  __ slwi(r7, r5, Operand(1));
+  __ add(r22, r22, r7);
+  __ add(r22, r22, Operand(FixedArray::kHeaderSize));
 
   // 3. Arguments object.
-  __ add(r9, r9, Operand(Heap::kArgumentsObjectSize));
+  __ add(r22, r22, Operand(Heap::kArgumentsObjectSize));
 
   // Do the allocation of all three objects in one go.
-  __ AllocateInNewSpace(r9, r3, r6, r7, &runtime, TAG_OBJECT);
+  __ AllocateInNewSpace(r22, r3, r6, r7, &runtime, TAG_OBJECT);
 
   // r3 = address of new object(s) (tagged)
   // r5 = argument count (tagged)
@@ -4663,7 +4673,8 @@ void ArgumentsAccessStub::GenerateNewNonStrictFast(MacroAssembler* masm) {
   const int kAliasedOffset =
       Context::SlotOffset(Context::ALIASED_ARGUMENTS_BOILERPLATE_INDEX);
 
-  __ ldr(r7, MemOperand(r8, Context::SlotOffset(Context::GLOBAL_OBJECT_INDEX)));
+  // roohack - not sure about r8 / r9 mapping in general
+  __ ldr(r7, MemOperand(r11, Context::SlotOffset(Context::GLOBAL_OBJECT_INDEX)));
   __ ldr(r7, FieldMemOperand(r7, GlobalObject::kNativeContextOffset));
   __ cmp(r1, Operand::Zero());
   __ ldr(r4, MemOperand(r7, kNormalOffset), eq);
@@ -5642,7 +5653,8 @@ void StringCharCodeAtGenerator::GenerateFast(MacroAssembler* masm) {
   __ lwz(result_, FieldMemOperand(object_, HeapObject::kMapOffset));
   __ lbz(result_, FieldMemOperand(result_, Map::kInstanceTypeOffset));
   // If the receiver is not a string trigger the non-string case.
-  __ tst(result_, Operand(kIsNotStringMask));
+  __ andi(r0, result_, Operand(kIsNotStringMask));
+  __ cmpi(r0, Operand(0));
   __ bne(receiver_not_string_);
 
   // If the index is non-smi trigger the non-smi case.
@@ -5651,7 +5663,7 @@ void StringCharCodeAtGenerator::GenerateFast(MacroAssembler* masm) {
 
   // Check for index out of range.
   __ lwz(ip, FieldMemOperand(object_, String::kLengthOffset));
-  __ cmp(ip, Operand(index_));
+  __ cmp(ip, index_);
   __ blt(index_out_of_range_);
 
   __ srawi(index_, index_, kSmiTagSize);
@@ -5727,18 +5739,22 @@ void StringCharFromCodeGenerator::GenerateFast(MacroAssembler* masm) {
   STATIC_ASSERT(kSmiTag == 0);
   STATIC_ASSERT(kSmiShiftSize == 0);
   ASSERT(IsPowerOf2(String::kMaxAsciiCharCode + 1));
-  __ tst(code_,
+  __ andi(r0, code_,
          Operand(kSmiTagMask |
                  ((~String::kMaxAsciiCharCode) << kSmiTagSize)));
-  __ b(ne, &slow_case_);
+  __ cmpi(r0, Operand(0));
+  __ bne(&slow_case_);
 
   __ LoadRoot(result_, Heap::kSingleCharacterStringCacheRootIndex);
   // At this point code register contains smi tagged ASCII char code.
   STATIC_ASSERT(kSmiTag == 0);
-  __ add(result_, result_, Operand(code_, LSL, kPointerSizeLog2 - kSmiTagSize));
-  __ ldr(result_, FieldMemOperand(result_, FixedArray::kHeaderSize));
+  __ mr(r0, code_);
+  __ slwi(code_, code_, Operand(kPointerSizeLog2 - kSmiTagSize));
+  __ add(result_, result_, code_);
+  __ mr(code_, r0);
+  __ lwz(result_, FieldMemOperand(result_, FixedArray::kHeaderSize));
   __ CompareRoot(result_, Heap::kUndefinedValueRootIndex);
-  __ b(eq, &slow_case_);
+  __ beq(&slow_case_);
   __ bind(&exit_);
 }
 

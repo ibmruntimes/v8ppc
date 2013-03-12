@@ -374,11 +374,9 @@ Assembler::~Assembler() {
 
 
 void Assembler::GetCode(CodeDesc* desc) {
-#if 0
   // Emit constant pool if necessary.
   CheckConstPool(true, false);
   ASSERT(num_pending_reloc_info_ == 0);
-#endif
 
   // Set up code descriptor.
   desc->buffer = buffer_;
@@ -620,12 +618,17 @@ int Assembler::target_at(int pos)  {
   }
   if (BCX == opcode) {
     int imm16 = ((instr & kImm16Mask) << 16) >> 16;
-	    return pos + imm16;
-	  }
-	  ASSERT(false);
-	  return -1;
+       // hack -- some sort of 16bit issue here?
+       if(pos + imm16 == 0xfffc) {
+         return kEndOfChain;
+       } else {
+         return pos + imm16;
+       }
+  }
+  ASSERT(false);
+  return -1;
 
-	#if 0
+#if 0
 	  // else we fall into the ARM code.. which is busted
 	  if ((instr & ~kImm26Mask) == 0) {  // todo - handle AA and LK bits if present
 	    // Emitted label constant, not part of a branch.
@@ -1547,6 +1550,7 @@ void Assembler::mov(Register dst, const Operand& src
     hi_word++;
   }
   // ASSERT(dst.code() != 0);  // r0 is invalid destination eee
+  BlockConstPoolFor(2); // don't split these
   addis(dst, r0, hi_word);
   addic(dst, dst, Operand(lo_word));
 }
@@ -2918,9 +2922,7 @@ void Assembler::db(uint8_t data) {
   // No relocation info should be pending while using db. db is used
   // to write pure data with no pointers and the constant pool should
   // be emitted before using db.
-#if 0
   ASSERT(num_pending_reloc_info_ == 0);
-#endif
   CheckBuffer();
   *reinterpret_cast<uint8_t*>(pc_) = data;
   pc_ += sizeof(uint8_t);
@@ -2931,9 +2933,7 @@ void Assembler::dd(uint32_t data) {
   // No relocation info should be pending while using dd. dd is used
   // to write pure data with no pointers and the constant pool should
   // be emitted before using dd.
-#if 0
   ASSERT(num_pending_reloc_info_ == 0);
-#endif
   CheckBuffer();
   *reinterpret_cast<uint32_t*>(pc_) = data;
   pc_ += sizeof(uint32_t);
@@ -2995,10 +2995,8 @@ void Assembler::BlockConstPoolFor(int instructions) {
   if (no_const_pool_before_ < pc_limit) {
     // If there are some pending entries, the constant pool cannot be blocked
     // further than first_const_pool_use_ + kMaxDistToPool
-#if 0
     ASSERT((num_pending_reloc_info_ == 0) ||
            (pc_limit < (first_const_pool_use_ + kMaxDistToPool)));
-#endif
     no_const_pool_before_ = pc_limit;
   }
 
@@ -3008,8 +3006,8 @@ void Assembler::BlockConstPoolFor(int instructions) {
 }
 
 
+// Power shouldn't need constant pools at all, remove this 
 void Assembler::CheckConstPool(bool force_emit, bool require_jump) {
-#if 0 // we need to remove const pool
   // Some short sequence of instruction mustn't be broken up by constant pool
   // emission, such sequences are protected by calls to BlockConstPoolFor and
   // BlockConstPoolScope.
@@ -3071,6 +3069,7 @@ void Assembler::CheckConstPool(bool force_emit, bool require_jump) {
              rinfo.rmode() != RelocInfo::STATEMENT_POSITION &&
              rinfo.rmode() != RelocInfo::CONST_POOL);
 
+#if 0 // don't actually modify the code - we have real relocations
       Instr instr = instr_at(rinfo.pc());
       // Instruction to patch must be 'ldr rd, [pc, #offset]' with offset == 0.
       ASSERT(IsLdrPcImmediateOffset(instr) &&
@@ -3084,6 +3083,8 @@ void Assembler::CheckConstPool(bool force_emit, bool require_jump) {
       ASSERT(is_uint12(delta));
 
       instr_at_put(rinfo.pc(), SetLdrRegisterImmediateOffset(instr, delta));
+#endif
+
       emit(rinfo.data());
     }
 
@@ -3100,7 +3101,6 @@ void Assembler::CheckConstPool(bool force_emit, bool require_jump) {
   // Since a constant pool was just emitted, move the check offset forward by
   // the standard interval.
   next_buffer_check_ = pc_offset() + kCheckPoolInterval;
-#endif
 }
 
 #undef INCLUDE_ARM 
