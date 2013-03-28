@@ -65,7 +65,7 @@ void CPU::FlushICache(void* start, size_t size) {
 // This constant will be different for other versions of PowerPC
 #define CACHELINESIZE 128
 
-  int *end = (int*)start+size;
+  int *end = (int*)start+(size/4);
   for( int *pointer=(int*)start; pointer<end; pointer+=CACHELINESIZE ) {
     __asm__( 
       "dcbf 0, %0  \n"  \

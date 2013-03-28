@@ -4177,8 +4177,8 @@ void JSEntryStub::GenerateBody(MacroAssembler* masm, bool is_construct) {
   // Floating point regs FPR0 - FRP13 are volatile
   // FPR14-FPR31 are non-volatile, but sub-calls will save them for us
 
-  int offset_to_argv = kPointerSize * 8; // matches 32 above
-  __ lwz(r7, MemOperand(sp, offset_to_argv));
+//  int offset_to_argv = kPointerSize * 8; // matches 32 above
+//  __ lwz(r7, MemOperand(sp, offset_to_argv));
 
   // Push a frame with special values setup to mark it as an entry frame.
   // r3: code entry

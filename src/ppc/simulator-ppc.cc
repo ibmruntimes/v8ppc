@@ -1987,7 +1987,7 @@ void Simulator::DecodeExt2(Instruction* instr) {
       // int rc = instr->Bit(0);
       uint32_t ra_val = get_register(ra);
       uint32_t rb_val = get_register(rb);
-      uint32_t alu_out = ra_val - rb_val;
+      uint32_t alu_out = rb_val - ra_val;
       set_register(rt, alu_out);
       if(ra_val > rb_val) {
         special_reg_xer_ = (special_reg_xer_ & ~0xF0000000) | 0x20000000;
@@ -2059,7 +2059,7 @@ void Simulator::DecodeExt2(Instruction* instr) {
       }
       int32_t ra_val = get_register(ra);
       int32_t rb_val = get_register(rb);
-      int32_t alu_out = ra_val - rb_val;
+      int32_t alu_out = rb_val - ra_val;
       // todo - figure out underflow
       set_register(rt, alu_out);
       // todo - handle OE and RC bits
@@ -3804,12 +3804,13 @@ int32_t Simulator::Call(byte* entry, int argument_count, ...) {
   va_start(parameters, argument_count);
   // Set up arguments
 
-  // First four arguments passed in registers. << probably wrong for PPC
-  ASSERT(argument_count >= 4);
+  // First five arguments passed in registers. << probably wrong for PPC
+  ASSERT(argument_count >= 5);
   set_register(r3, va_arg(parameters, int32_t));
   set_register(r4, va_arg(parameters, int32_t));
   set_register(r5, va_arg(parameters, int32_t));
   set_register(r6, va_arg(parameters, int32_t));
+  set_register(r7, va_arg(parameters, int32_t));
 
   // Remaining arguments passed on stack.
   int original_stack = get_register(sp);

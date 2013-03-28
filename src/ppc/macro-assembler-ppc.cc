@@ -1336,17 +1336,22 @@ void MacroAssembler::PopTryHandler() {
   stw(r4, MemOperand(ip));
 }
 
-
+// roohack - make use of ip as a temporary register
 void MacroAssembler::JumpToHandlerEntry() {
   // Compute the handler entry address and jump to it.  The handler table is
   // a fixed array of (smi-tagged) code offsets.
-  // r0 = exception, r1 = code object, r2 = state.
-  lwz(r3, FieldMemOperand(r1, Code::kHandlerTableOffset));  // Handler table.
-  add(r3, r3, Operand(FixedArray::kHeaderSize - kHeapObjectTag));
-  mov(r2, Operand(r2, LSR, StackHandler::kKindWidth));  // Handler index.
-  lwz(r2, MemOperand(r3, r2, LSL, kPointerSizeLog2));  // Smi-tagged offset.
-  add(r1, r1, Operand(Code::kHeaderSize - kHeapObjectTag));  // Code start.
-  add(pc, r1, Operand(r2, ASR, kSmiTagSize));  // Jump.
+  // r3 = exception, r4 = code object, r5 = state.
+  lwz(r6, FieldMemOperand(r4, Code::kHandlerTableOffset));  // Handler table.
+  add(r6, r6, Operand(FixedArray::kHeaderSize - kHeapObjectTag));
+  srwi(r5, r5, Operand(StackHandler::kKindWidth));  // Handler index.
+  slwi(ip, r5, Operand(kPointerSizeLog2));
+  add(ip, r6, ip);
+  lwz(r5, MemOperand(ip)); // Smi-tagged offset.
+  add(r4, r4, Operand(Code::kHeaderSize - kHeapObjectTag));  // Code start.
+  srawi(ip, r5, kSmiTagSize);
+  add(r0, r4, ip);
+  mtctr(r0);
+  bcr();
 }
 
 

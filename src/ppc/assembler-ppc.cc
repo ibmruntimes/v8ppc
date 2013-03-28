@@ -1331,12 +1331,12 @@ void Assembler::addze(Register dst, Register src1, OEBit o, RCBit r) {
 
 void Assembler::sub(Register dst, Register src1, Register src2,
                     OEBit o, RCBit r) {
-  xo_form( EXT2 | SUBFX, dst, src1, src2, o, r );
+  xo_form( EXT2 | SUBFX, dst, src2, src1, o, r );
 }
 
 void Assembler::subfc(Register dst, Register src1, Register src2,
                     OEBit o, RCBit r) {
-  xo_form( EXT2 | SUBFCX, dst, src1, src2, o, r );
+  xo_form( EXT2 | SUBFCX, dst, src2, src1, o, r );
 }
 
 void Assembler::subfic(Register dst, Register src, const Operand& imm) {
