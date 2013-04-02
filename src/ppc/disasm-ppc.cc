@@ -870,6 +870,10 @@ void Decoder::DecodeExt2(Instruction* instr) {
 
    // Some encodings are 10-1 bits, handle those first
    switch(instr->Bits(10,1) << 1) {
+    case SRWX: {
+      Format(instr, "srw'.    'ra,'rs,'rb");
+      return;
+    }
     case SRAW: {
       Format(instr, "sraw'.   'ra,'rs,'rb");
       return;
@@ -884,6 +888,10 @@ void Decoder::DecodeExt2(Instruction* instr) {
   switch(instr->Bits(9,1) << 1) {
     case CMP: {
       Format(instr, "cmp     'ra,'rb");
+      break;
+    }
+    case SLWX: {
+      Format(instr, "slw'.   'ra,'rs,'rb");
       break;
     }
     case SUBFCX: {

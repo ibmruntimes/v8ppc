@@ -1523,26 +1523,33 @@ void MacroAssembler::GetNumberHash(Register t0, Register scratch) {
   SmiUntag(scratch);
 
   // Xor original key with a seed.
-  eor(t0, t0, Operand(scratch));
+  xor_(t0, t0, scratch);
 
   // Compute the hash code from the untagged key.  This must be kept in sync
   // with ComputeIntegerHash in utils.h.
   //
   // hash = ~hash + (hash << 15);
-  mvn(scratch, Operand(t0));
-  add(t0, scratch, Operand(t0, LSL, 15));
+  xori(scratch, t0, Operand(-1));
+  slwi(t0, t0, Operand(15));
+  add(t0, scratch, t0);
   // hash = hash ^ (hash >> 12);
-  eor(t0, t0, Operand(t0, LSR, 12));
+  srwi(scratch, t0, Operand(12));
+  xor_(t0, t0, scratch);
   // hash = hash + (hash << 2);
-  add(t0, t0, Operand(t0, LSL, 2));
+  slwi(scratch, t0, Operand(2));
+  add(t0, t0, scratch);
   // hash = hash ^ (hash >> 4);
-  eor(t0, t0, Operand(t0, LSR, 4));
+  srwi(scratch, t0, Operand(4));
+  xor_(t0, t0, scratch);
   // hash = hash * 2057;
-  mov(scratch, Operand(t0, LSL, 11));
-  add(t0, t0, Operand(t0, LSL, 3));
+  mr(r0, t0);
+  slwi(scratch, t0, Operand(3));
+  add(t0, t0, scratch);
+  slwi(scratch, r0, Operand(11));
   add(t0, t0, scratch);
   // hash = hash ^ (hash >> 16);
-  eor(t0, t0, Operand(t0, LSR, 16));
+  srwi(scratch, t0, Operand(16));
+  xor_(t0, t0, scratch);
 }
 
 
@@ -1579,26 +1586,28 @@ void MacroAssembler::LoadFromNumberDictionary(Label* miss,
 
   // Compute the capacity mask.
   lwz(t1, FieldMemOperand(elements, SeededNumberDictionary::kCapacityOffset));
-  mov(t1, Operand(t1, ASR, kSmiTagSize));  // convert smi to int
+  srawi(t1, t1, kSmiTagSize);  // convert smi to int
   sub(t1, t1, Operand(1));
 
   // Generate an unrolled loop that performs a few probes before giving up.
   static const int kProbes = 4;
   for (int i = 0; i < kProbes; i++) {
     // Use t2 for index calculations and keep the hash intact in t0.
-    mov(t2, t0);
+    mr(t2, t0);
     // Compute the masked index: (hash + i + i * i) & mask.
     if (i > 0) {
       add(t2, t2, Operand(SeededNumberDictionary::GetProbeOffset(i)));
     }
-    and_(t2, t2, Operand(t1));
+    and_(t2, t2, t1);
 
     // Scale the index by multiplying by the element size.
     ASSERT(SeededNumberDictionary::kEntrySize == 3);
-    add(t2, t2, Operand(t2, LSL, 1));  // t2 = t2 * 3
+    slwi(ip, t2, Operand(1));
+    add(t2, t2, ip);  // t2 = t2 * 3
 
     // Check if the key is identical to the name.
-    add(t2, elements, Operand(t2, LSL, kPointerSizeLog2));
+    slwi(t2, t2, Operand(kPointerSizeLog2));
+    add(t2, elements, t2);
     lwz(ip, FieldMemOperand(t2, SeededNumberDictionary::kElementsStartOffset));
     cmp(key, ip);
     if (i != kProbes - 1) {
@@ -1614,7 +1623,9 @@ void MacroAssembler::LoadFromNumberDictionary(Label* miss,
   const int kDetailsOffset =
       SeededNumberDictionary::kElementsStartOffset + 2 * kPointerSize;
   lwz(t1, FieldMemOperand(t2, kDetailsOffset));
-  tst(t1, Operand(Smi::FromInt(PropertyDetails::TypeField::kMask)));
+  mov(ip, Operand(Smi::FromInt(PropertyDetails::TypeField::kMask)));
+  and_(r0, t1, ip);
+  cmpi(r0, Operand(0));
   bne(miss);
 
   // Get the value at the masked, scaled index and return.
@@ -3205,7 +3216,7 @@ void MacroAssembler::JumpIfNotBothSequentialAsciiStrings(Register first,
                                                          Label* failure) {
   // Check that neither is a smi.
   STATIC_ASSERT(kSmiTag == 0);
-  and_(scratch1, first, Operand(second));
+  and_(scratch1, first, second);
   JumpIfSmi(scratch1, failure);
   JumpIfNonSmisNotBothSequentialAsciiStrings(first,
                                              second,

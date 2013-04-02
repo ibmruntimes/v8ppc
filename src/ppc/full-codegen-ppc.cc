@@ -2607,9 +2607,9 @@ void FullCodeGenerator::EmitIsObject(CallRuntime* expr) {
   __ cmpi(r0, Operand(0));
   __ bne(if_false);
   __ lbz(r4, FieldMemOperand(r5, Map::kInstanceTypeOffset));
-  __ cmp(r4, Operand(FIRST_NONCALLABLE_SPEC_OBJECT_TYPE));
+  __ cmpi(r4, Operand(FIRST_NONCALLABLE_SPEC_OBJECT_TYPE));
   __ blt(if_false);
-  __ cmp(r4, Operand(LAST_NONCALLABLE_SPEC_OBJECT_TYPE));
+  __ cmpi(r4, Operand(LAST_NONCALLABLE_SPEC_OBJECT_TYPE));
   PrepareForBailoutBeforeSplit(expr, true, if_true, if_false);
   Split(le, if_true, if_false, fall_through);
 

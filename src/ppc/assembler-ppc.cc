@@ -1304,6 +1304,10 @@ void Assembler::srawi(Register ra, Register rs, int sh, RCBit r) {
   emit(EXT2 | SRAWIX | rs.code()*B21 | ra.code()*B16 | sh*B11 | r);
 }
 
+void Assembler::srw(Register dst, Register src1, Register src2, RCBit r) {
+  x_form(EXT2 | SRWX, dst, src1, src2, r );
+}
+
 void Assembler::slw(Register dst, Register src1, Register src2, RCBit r) {
   x_form(EXT2 | SLWX, dst, src1, src2, r );
 }

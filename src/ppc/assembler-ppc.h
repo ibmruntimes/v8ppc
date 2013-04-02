@@ -939,6 +939,7 @@ SBit s = LeaveCC, Condition cond = al // roohack - remove this line later
   void slwi(Register dst, Register src, const Operand& val);
   void srwi(Register dst, Register src, const Operand& val);
   void srawi(Register ra, Register rs, int sh, RCBit r = LeaveRC);
+  void srw(Register dst, Register src1, Register src2, RCBit r = LeaveRC);
   void slw(Register dst, Register src1, Register src2, RCBit r = LeaveRC);
   void sraw(Register dst, Register src1, Register src2, RCBit r = LeaveRC);
   void and_(Register dst, Register src1, Register src2, RCBit rc = LeaveRC);  

@@ -1934,6 +1934,16 @@ void Simulator::DecodeExt1(Instruction* instr) {
 void Simulator::DecodeExt2(Instruction* instr) {
   // Check first the 10-1 bit versions
   switch(instr->Bits(10,1) << 1) {
+    case SRWX: {
+      int rs = instr->RSValue();
+      int ra = instr->RAValue();
+      int rb = instr->RBValue();
+      uint32_t rs_val = get_register(rs);
+      uint32_t rb_val = get_register(rb);
+      uint32_t result = rs_val >> rb_val;
+      set_register(ra, result);
+      return;
+    }
     case SRAW: {
       int rs = instr->RSValue();
       int ra = instr->RAValue();
@@ -2014,6 +2024,16 @@ void Simulator::DecodeExt2(Instruction* instr) {
       }
       set_register(rt, alu_out);
       // todo - handle OE and RC bits
+      break;
+    }
+    case SLWX: {
+      int rs = instr->RSValue();
+      int ra = instr->RAValue();
+      int rb = instr->RBValue();
+      uint32_t rs_val = get_register(rs);
+      uint32_t rb_val = get_register(rb);
+      uint32_t result = rs_val << rb_val;
+      set_register(ra, result);
       break;
     }
     case ANDX: {

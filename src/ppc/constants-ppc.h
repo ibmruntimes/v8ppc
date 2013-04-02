@@ -331,7 +331,8 @@ enum OpcodeExt2 {
   ORX = 444 << 1,  // Or
   MTSPR = 467 <<1,  // Move to Special-Purpose-Register
 
-  // Below represent bits 10-1
+  // Below represent bits 10-1  (any value >= 512)
+  SRWX = 536 <<1,  // Shift Right Word
   SRAW = 792 << 1,  // Shift Right Algebraic Word
   SRAWIX = 824 << 1  // Shift Right Algebraic Word Immediate
 }; 

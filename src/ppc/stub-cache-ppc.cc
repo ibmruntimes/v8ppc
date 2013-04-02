@@ -1481,7 +1481,8 @@ void StubCompiler::GenerateLoadInterceptor(Handle<JSObject> object,
 
 void CallStubCompiler::GenerateNameCheck(Handle<String> name, Label* miss) {
   if (kind_ == Code::KEYED_CALL_IC) {
-    __ cmp(r5, Operand(name));
+    __ mov(r0, Operand(name));
+    __ cmp(r5, r0);
     __ bne(miss);
   }
 }
@@ -3112,7 +3113,8 @@ Handle<Code> KeyedLoadStubCompiler::CompileLoadField(Handle<String> name,
   Label miss;
 
   // Check the key is the cached one.
-  __ cmp(r3, Operand(name));
+  __ mov(r0, Operand(name));
+  __ cmp(r3, r0);
   __ bne(&miss);
 
   GenerateLoadField(receiver, holder, r4, r5, r6, r7, index, name, &miss);
@@ -3136,7 +3138,8 @@ Handle<Code> KeyedLoadStubCompiler::CompileLoadCallback(
   Label miss;
 
   // Check the key is the cached one.
-  __ cmp(r3, Operand(name));
+  __ mov(r0, Operand(name));
+  __ cmp(r3, r0);
   __ bne(&miss);
 
   GenerateLoadCallback(receiver, holder, r4, r3, r5, r6, r7, r8, callback, name,
@@ -3186,7 +3189,8 @@ Handle<Code> KeyedLoadStubCompiler::CompileLoadInterceptor(
   Label miss;
 
   // Check the key is the cached one.
-  __ cmp(r3, Operand(name));
+  __ mov(r0, Operand(name));
+  __ cmp(r3, r0);
   __ bne(&miss);
 
   LookupResult lookup(isolate());
@@ -3210,7 +3214,8 @@ Handle<Code> KeyedLoadStubCompiler::CompileLoadArrayLength(
   Label miss;
 
   // Check the key is the cached one.
-  __ cmp(r3, Operand(name));
+  __ mov(r0, Operand(name));
+  __ cmp(r3, r0);
   __ bne(&miss);
 
   GenerateLoadArrayLength(masm(), r4, r5, &miss);
@@ -3234,7 +3239,8 @@ Handle<Code> KeyedLoadStubCompiler::CompileLoadStringLength(
   __ IncrementCounter(counters->keyed_load_string_length(), 1, r5, r6);
 
   // Check the key is the cached one.
-  __ cmp(r3, Operand(name));
+  __ mov(r0, Operand(name));
+  __ cmp(r3, r0);
   __ bne(&miss);
 
   GenerateLoadStringLength(masm(), r4, r5, r6, &miss, true);
@@ -3260,7 +3266,8 @@ Handle<Code> KeyedLoadStubCompiler::CompileLoadFunctionPrototype(
   __ IncrementCounter(counters->keyed_load_function_prototype(), 1, r5, r6);
 
   // Check the name hasn't changed.
-  __ cmp(r3, Operand(name));
+  __ mov(r0, Operand(name));
+  __ cmp(r3, r0);
   __ bne(&miss);
 
   GenerateLoadFunctionPrototype(masm(), r4, r5, r6, &miss);
@@ -3306,10 +3313,12 @@ Handle<Code> KeyedLoadStubCompiler::CompileLoadPolymorphic(
   int receiver_count = receiver_maps->length();
   __ lwz(r5, FieldMemOperand(r4, HeapObject::kMapOffset));
   for (int current = 0; current < receiver_count; ++current) {
+    Label no_match;
     __ mov(ip, Operand(receiver_maps->at(current)));
-    __ li(r0, Operand(0xeee3));
     __ cmp(r5, ip);
-    __ Jump(handler_ics->at(current), RelocInfo::CODE_TARGET, eq);
+    __ bne(&no_match);
+    __ Jump(handler_ics->at(current), RelocInfo::CODE_TARGET, al);
+    __ bind(&no_match);
   }
 
   __ bind(&miss);
@@ -3337,7 +3346,8 @@ Handle<Code> KeyedStoreStubCompiler::CompileStoreField(Handle<JSObject> object,
   __ IncrementCounter(counters->keyed_store_field(), 1, r6, r7);
 
   // Check that the name has not changed.
-  __ cmp(r4, Operand(name));
+  __ mov(r0, Operand(name));
+  __ cmp(r4, r0);
   __ bne(&miss);
 
   // r6 is used as scratch register. r4 and r5 keep their values if a jump to
@@ -4525,11 +4535,11 @@ void KeyedStoreStubCompiler::GenerateStoreFastElement(
     __ lwz(scratch, FieldMemOperand(elements_reg, FixedArray::kLengthOffset));
   }
   // Compare smis.
-  __ cmp(key_reg, scratch);
+  __ cmpl(key_reg, scratch);
   if (is_js_array && grow_mode == ALLOW_JSARRAY_GROWTH) {
-    __ b(hs, &grow);
+    __ bge(&grow);
   } else {
-    __ b(hs, &miss_force_generic);
+    __ bge(&miss_force_generic);
   }
 
   // Make sure elements is a fast element array, not 'cow'.
@@ -4545,9 +4555,8 @@ void KeyedStoreStubCompiler::GenerateStoreFastElement(
            elements_reg,
            Operand(FixedArray::kHeaderSize - kHeapObjectTag));
     STATIC_ASSERT(kSmiTag == 0 && kSmiTagSize < kPointerSizeLog2);
-    __ add(scratch,
-           scratch,
-           Operand(key_reg, LSL, kPointerSizeLog2 - kSmiTagSize));
+    __ slwi(scratch2, key_reg, Operand(kPointerSizeLog2 - kSmiTagSize));
+    __ add(scratch, scratch, scratch2);
     __ stw(value_reg, MemOperand(scratch));
   } else {
     ASSERT(IsFastObjectElementsKind(elements_kind));
@@ -4555,9 +4564,8 @@ void KeyedStoreStubCompiler::GenerateStoreFastElement(
            elements_reg,
            Operand(FixedArray::kHeaderSize - kHeapObjectTag));
     STATIC_ASSERT(kSmiTag == 0 && kSmiTagSize < kPointerSizeLog2);
-    __ add(scratch,
-           scratch,
-           Operand(key_reg, LSL, kPointerSizeLog2 - kSmiTagSize));
+    __ slwi(scratch2, key_reg, Operand(kPointerSizeLog2 - kSmiTagSize));
+    __ add(scratch, scratch, scratch2);
     __ stw(value_reg, MemOperand(scratch));
     __ mr(receiver_reg, value_reg);
     __ RecordWrite(elements_reg,  // Object.
@@ -4633,8 +4641,8 @@ void KeyedStoreStubCompiler::GenerateStoreFastElement(
                 DONT_DO_SMI_CHECK);
 
     __ lwz(scratch, FieldMemOperand(elements_reg, FixedArray::kLengthOffset));
-    __ cmp(length_reg, scratch);
-    __ b(hs, &slow);
+    __ cmpl(length_reg, scratch);
+    __ bge(&slow);
 
     // Grow the array and finish the store.
     __ add(length_reg, length_reg, Operand(Smi::FromInt(1)));

@@ -1535,7 +1535,7 @@ static void EmitStrictTwoHeapObjectCompare(MacroAssembler* masm,
     // Ensure that no non-strings have the symbol bit set.
     STATIC_ASSERT(LAST_TYPE < kNotStringTag + kIsSymbolMask);
     STATIC_ASSERT(kSymbolTag != 0);
-    __ and_(r5, r5, Operand(r6));
+    __ and_(r5, r5, r6);
     __ andi(r0, r5, Operand(kIsSymbolMask));
     __ cmpi(r0, Operand(0));
     __ bne(&return_not_equal);
@@ -2592,11 +2592,13 @@ void BinaryOpStub::GenerateSmiSmiOperation(MacroAssembler* masm) {
       // because then the 0s get shifted into bit 30 instead of bit 31.
       __ SmiUntag(scratch1, left);
       __ GetLeastBitsFromSmi(scratch2, right, 5);
-      __ mov(scratch1, Operand(scratch1, LSR, scratch2));
+      __ srw(scratch1, scratch1, scratch2);
       // Unsigned shift is not allowed to produce a negative number, so
       // check the sign bit and the sign bit after Smi tagging.
-      __ tst(scratch1, Operand(0xc0000000));
-      __ b(ne, &not_smi_result);
+      __ mov(scratch2, Operand(0xc0000000));
+      __ and_(r0, scratch1, scratch2);
+      __ cmpi(r0, Operand(0));
+      __ bne(&not_smi_result);
       // Smi tag result.
       __ SmiTag(right, scratch1);
       __ Ret();
@@ -6911,7 +6913,7 @@ void ICCompareStub::GenerateSymbols(MacroAssembler* masm) {
 
 void ICCompareStub::GenerateStrings(MacroAssembler* masm) {
   ASSERT(state_ == CompareIC::STRINGS);
-  Label miss;
+  Label miss, not_identical, is_symbol;
 
   bool equality = Token::IsEqualityOp(op_);
 
@@ -6928,21 +6930,24 @@ void ICCompareStub::GenerateStrings(MacroAssembler* masm) {
 
   // Check that both operands are strings. This leaves the instance
   // types loaded in tmp1 and tmp2.
-  __ ldr(tmp1, FieldMemOperand(left, HeapObject::kMapOffset));
-  __ ldr(tmp2, FieldMemOperand(right, HeapObject::kMapOffset));
-  __ ldrb(tmp1, FieldMemOperand(tmp1, Map::kInstanceTypeOffset));
-  __ ldrb(tmp2, FieldMemOperand(tmp2, Map::kInstanceTypeOffset));
+  __ lwz(tmp1, FieldMemOperand(left, HeapObject::kMapOffset));
+  __ lwz(tmp2, FieldMemOperand(right, HeapObject::kMapOffset));
+  __ lbz(tmp1, FieldMemOperand(tmp1, Map::kInstanceTypeOffset));
+  __ lbz(tmp2, FieldMemOperand(tmp2, Map::kInstanceTypeOffset));
   STATIC_ASSERT(kNotStringTag != 0);
   __ orx(tmp3, tmp1, tmp2);
-  __ tst(tmp3, Operand(kIsNotStringMask));
-  __ b(ne, &miss);
+  __ andi(r0, tmp3, Operand(kIsNotStringMask));
+  __ cmpi(r0, Operand(0));
+  __ bne(&miss);
 
   // Fast check for identical strings.
   __ cmp(left, right);
   STATIC_ASSERT(EQUAL == 0);
   STATIC_ASSERT(kSmiTag == 0);
-  __ mov(r3, Operand(Smi::FromInt(EQUAL)), LeaveCC, eq);
-  __ Ret(eq);
+  __ bne(&not_identical);
+  __ li(r3, Operand(Smi::FromInt(EQUAL)));
+  __ Ret();
+  __ bind(&not_identical);
 
   // Handle not identical strings.
 
@@ -6951,12 +6956,15 @@ void ICCompareStub::GenerateStrings(MacroAssembler* masm) {
   if (equality) {
     ASSERT(GetCondition() == eq);
     STATIC_ASSERT(kSymbolTag != 0);
-    __ and_(tmp3, tmp1, Operand(tmp2));
-    __ tst(tmp3, Operand(kIsSymbolMask));
+    __ and_(tmp3, tmp1, tmp2);
+    __ andi(r0, tmp3, Operand(kIsSymbolMask));
+    __ cmpi(r0, Operand(0));
+    __ beq(&is_symbol);
     // Make sure r3 is non-zero. At this point input operands are
     // guaranteed to be non-zero.
     ASSERT(right.is(r3));
-    __ Ret(ne);
+    __ Ret();
+    __ bind(&is_symbol);
   }
 
   // Check that both strings are sequential ASCII.
@@ -6990,7 +6998,7 @@ void ICCompareStub::GenerateStrings(MacroAssembler* masm) {
 void ICCompareStub::GenerateObjects(MacroAssembler* masm) {
   ASSERT(state_ == CompareIC::OBJECTS);
   Label miss;
-  __ and_(r5, r4, Operand(r3));
+  __ and_(r5, r4, r3);
   __ JumpIfSmi(r5, &miss);
 
   __ CompareObjectType(r3, r5, r5, JS_OBJECT_TYPE);
@@ -7009,14 +7017,15 @@ void ICCompareStub::GenerateObjects(MacroAssembler* masm) {
 
 void ICCompareStub::GenerateKnownObjects(MacroAssembler* masm) {
   Label miss;
-  __ and_(r5, r4, Operand(r3));
+  __ and_(r5, r4, r3);
   __ JumpIfSmi(r5, &miss);
-  __ ldr(r5, FieldMemOperand(r3, HeapObject::kMapOffset));
-  __ ldr(r6, FieldMemOperand(r4, HeapObject::kMapOffset));
-  __ cmp(r5, Operand(known_map_));
-  __ b(ne, &miss);
-  __ cmp(r6, Operand(known_map_));
-  __ b(ne, &miss);
+  __ lwz(r5, FieldMemOperand(r3, HeapObject::kMapOffset));
+  __ lwz(r6, FieldMemOperand(r4, HeapObject::kMapOffset));
+  __ mov(r0, Operand(known_map_));
+  __ cmp(r5, r0);
+  __ bne(&miss);
+  __ cmp(r6, r0);
+  __ bne(&miss);
 
   __ sub(r3, r3, Operand(r4));
   __ Ret();
