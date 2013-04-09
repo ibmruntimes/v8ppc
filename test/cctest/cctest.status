@@ -95,8 +95,18 @@ test-log/ProfLazyMode: SKIP
 # platform-tls.h does not contain an ANDROID-related header.
 test-platform-tls/FastTLS: SKIP
 
-# BUG(945): Tests using Socket cannot be run in parallel.
+# This test times out.
+test-threads/ThreadJoinSelf: SKIP
+
+##############################################################################
+[ $arch == nacl_ia32 || $arch == nacl_x64 ]
+
+# These tests fail as there is no /tmp directory in Native Client.
+test-log/LogAccessorCallbacks: SKIP
+test-log/LogCallbacks: SKIP
+test-log/ProfLazyMode: SKIP
+
+# Native Client doesn't support sockets.
 test-debug/DebuggerAgent: SKIP
 test-debug/DebuggerAgentProtocolOverflowHeader: SKIP
 test-sockets/Socket: SKIP
-
