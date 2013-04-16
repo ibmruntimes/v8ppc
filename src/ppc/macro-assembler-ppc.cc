@@ -1683,7 +1683,7 @@ void MacroAssembler::AllocateInNewSpace(int object_size,
   Register topaddr = scratch1;
   Register obj_size_reg = scratch2;
   mov(topaddr, Operand(new_space_allocation_top));
-  mov(obj_size_reg, Operand(object_size));
+  li(obj_size_reg, Operand(object_size));
 
   // This code stores a temporary value in ip. This is OK, as the code below
   // does not need ip for implicit literal generation.
@@ -1803,7 +1803,8 @@ void MacroAssembler::AllocateInNewSpace(Register object_size,
 
   // Update allocation top. result temporarily holds the new top.
   if (emit_debug_code()) {
-    tst(scratch2, Operand(kObjectAlignmentMask));
+    andi(r0, scratch2, Operand(kObjectAlignmentMask));
+    cmpi(r0, Operand(0));
     Check(eq, "Unaligned allocation in new space");
   }
   stw(scratch2, MemOperand(topaddr));

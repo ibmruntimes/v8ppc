@@ -4266,7 +4266,9 @@ void JSEntryStub::GenerateBody(MacroAssembler* masm, bool is_construct) {
   // Restore callee-saved registers and return.
 #ifdef DEBUG
   if (FLAG_debug_code) {
-    __ mov(lr, Operand(pc));
+    Label here;
+    __ b(&here, SetLK);
+    __ bind(&here);
   }
 #endif
 
@@ -4279,8 +4281,8 @@ void JSEntryStub::GenerateBody(MacroAssembler* masm, bool is_construct) {
   __ lwz(r0, MemOperand(sp, 36));  // use pre-reserved LR slot
 
   __ add(sp, sp, Operand(32));
-  __ mtlr(r0);
-  __ blr();
+  __ mtctr(r0);
+  __ bcr();
 }
 
 

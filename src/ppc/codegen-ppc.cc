@@ -260,6 +260,7 @@ void ElementsTransitionGenerator::GenerateDoubleToObject(
   //  -- r6    : target map, scratch for subsequent call
   //  -- r7    : scratch (elements)
   // -----------------------------------
+  // we also use ip as a scratch register
   Label entry, loop, convert_hole, gc_required, only_change_map;
 
   // Check for empty arrays, which only require a map transition and no changes
@@ -268,15 +269,15 @@ void ElementsTransitionGenerator::GenerateDoubleToObject(
   __ CompareRoot(r7, Heap::kEmptyFixedArrayRootIndex);
   __ beq(&only_change_map);
 
-  __ push(lr);
   __ Push(r6, r5, r4, r3);
   __ lwz(r8, FieldMemOperand(r7, FixedArray::kLengthOffset));
   // r7: source FixedDoubleArray
   // r8: number of elements (smi-tagged)
 
   // Allocate new FixedArray.
-  __ mov(r3, Operand(FixedDoubleArray::kHeaderSize));
-  __ add(r3, r3, Operand(r8, LSL, 1));
+  __ li(r3, Operand(FixedDoubleArray::kHeaderSize));
+  __ slwi(ip, r8, Operand(1));
+  __ add(r3, r3, ip);
   __ AllocateInNewSpace(r3, r9, r10, r22, &gc_required, NO_ALLOCATION_FLAGS);
   // r9: destination FixedArray, not tagged as heap object
   // Set destination FixedDoubleArray's length and map.
@@ -288,7 +289,8 @@ void ElementsTransitionGenerator::GenerateDoubleToObject(
   __ add(r7, r7, Operand(FixedDoubleArray::kHeaderSize - kHeapObjectTag + 4));
   __ add(r6, r9, Operand(FixedArray::kHeaderSize));
   __ add(r9, r9, Operand(kHeapObjectTag));
-  __ add(r8, r6, Operand(r8, LSL, 1));
+  __ slwi(r8, r8, Operand(1));
+  __ add(r8, r6, r8);
   __ LoadRoot(r10, Heap::kTheHoleValueRootIndex);
   __ LoadRoot(r22, Heap::kHeapNumberMapRootIndex);
   // Using offsetted addresses in r7 to fully take advantage of post-indexing.
@@ -303,23 +305,30 @@ void ElementsTransitionGenerator::GenerateDoubleToObject(
   // Call into runtime if GC is required.
   __ bind(&gc_required);
   __ Pop(r6, r5, r4, r3);
-  __ pop(lr);
   __ b(fail);
 
   __ bind(&loop);
-  __ lwz(r4, MemOperand(r7, 8, PostIndex));
-  // lr: current element's upper 32 bit
+  __ lwz(r4, MemOperand(r7));
+  __ add(r7, r7, Operand(8));
+  // ip: current element's upper 32 bit
   // r7: address of next element's upper 32 bit
-  __ cmp(r4, Operand(kHoleNanUpper32));
+  __ mov(r0, Operand(kHoleNanUpper32));
+  __ cmp(r4, r0);
   __ beq(&convert_hole);
 
   // Non-hole double, copy value into a heap number.
-  __ AllocateHeapNumber(r5, r3, lr, r22, &gc_required);
+  __ push(r4);
+  __ mr(r4, ip);
+  __ AllocateHeapNumber(r5, r3, r4, r22, &gc_required);
+  __ mr(ip, r4);
+  __ pop(r4);
   // r5: new heap number
-  __ lwz(r3, MemOperand(r7, 12, NegOffset));
-  __ Strd(r3, r4, FieldMemOperand(r5, HeapNumber::kValueOffset));
-  __ mov(r3, r6);
-  __ stw(r5, MemOperand(r6, 4, PostIndex));
+  __ lwz(r3, MemOperand(r7, -12));
+  __ stw(r3, FieldMemOperand(r5, HeapNumber::kValueOffset));
+  __ stw(r4, FieldMemOperand(r5, HeapNumber::kValueOffset+4));
+  __ mr(r3, r6);
+  __ stw(r5, MemOperand(r6));
+  __ add(r6, r6, Operand(4));
   __ RecordWrite(r9,
                  r3,
                  r5,
@@ -331,11 +340,12 @@ void ElementsTransitionGenerator::GenerateDoubleToObject(
 
   // Replace the-hole NaN with the-hole pointer.
   __ bind(&convert_hole);
-  __ stw(r10, MemOperand(r6, 4, PostIndex));
+  __ stw(r10, MemOperand(r6));
+  __ add(r6, r6, Operand(4));
 
   __ bind(&entry);
-  __ cmp(r6, r8);
-  __ b(lt, &loop);
+  __ cmpl(r6, r8);
+  __ blt(&loop);
 
   __ Pop(r6, r5, r4, r3);
   // Replace receiver's backing store with newly created and filled FixedArray.
@@ -348,7 +358,6 @@ void ElementsTransitionGenerator::GenerateDoubleToObject(
                       kDontSaveFPRegs,
                       EMIT_REMEMBERED_SET,
                       OMIT_SMI_CHECK);
-  __ pop(lr);
 
   __ bind(&only_change_map);
   // Update receiver's map.
