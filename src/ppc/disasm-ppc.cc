@@ -101,7 +101,7 @@ class Decoder {
   void PrintRegister(int reg);
   void PrintSRegister(int reg);
   void PrintDRegister(int reg);
-  int FormatVFPRegister(Instruction* instr, const char* format);
+  int FormatFPRegister(Instruction* instr, const char* format);
   void PrintMovwMovt(Instruction* instr);
   int FormatVFPinstruction(Instruction* instr, const char* format);
   void PrintCondition(Instruction* instr);
@@ -388,37 +388,24 @@ int Decoder::FormatRegister(Instruction* instr, const char* format) {
 }
 
 
-// Handle all VFP register based formatting in this function to reduce the
+// Handle all FP register based formatting in this function to reduce the
 // complexity of FormatOption.
-int Decoder::FormatVFPRegister(Instruction* instr, const char* format) {
-  ASSERT((format[0] == 'S') || (format[0] == 'D'));
-
-  VFPRegPrecision precision =
-      format[0] == 'D' ? kDoublePrecision : kSinglePrecision;
+int Decoder::FormatFPRegister(Instruction* instr, const char* format) {
+  ASSERT(format[0] == 'D');
 
   int retval = 2;
   int reg = -1;
-  if (format[1] == 'n') {
-    reg = instr->VFPNRegValue(precision);
-  } else if (format[1] == 'm') {
-    reg = instr->VFPMRegValue(precision);
-  } else if (format[1] == 'd') {
-    reg = instr->VFPDRegValue(precision);
-    if (format[2] == '+') {
-      int immed8 = instr->Immed8Value();
-      if (format[0] == 'S') reg += immed8 - 1;
-      if (format[0] == 'D') reg += (immed8 / 2 - 1);
-    }
-    if (format[2] == '+') retval = 3;
+  if (format[1] == 't') {
+    reg = instr->RTValue();
+  } else if (format[1] == 'a') {
+    reg = instr->RAValue();
+  } else if (format[1] == 'b') {
+    reg = instr->RAValue();
   } else {
     UNREACHABLE();
   }
 
-  if (precision == kSinglePrecision) {
-    PrintSRegister(reg);
-  } else {
-    PrintDRegister(reg);
-  }
+  PrintDRegister(reg);
 
   return retval;
 }
@@ -463,6 +450,9 @@ int Decoder::FormatOption(Instruction* instr, const char* format) {
     }
     case 'r': {
       return FormatRegister(instr, format);
+    }
+    case 'D': {
+      return FormatFPRegister(instr, format);
     }
     case 'i': { // int16
       int32_t value = (instr->Bits(15,0) << 16) >> 16;
@@ -740,7 +730,7 @@ int Decoder::FormatOption(Instruction* instr, const char* format) {
     }
     case 'S':
     case 'D': {
-      return FormatVFPRegister(instr, format);
+      return FormatFPRegister(instr, format);
     }
     case 'w': {  // 'w: W field of load and store instructions
       if (instr->HasW()) {
@@ -927,7 +917,7 @@ void Decoder::DecodeExt2(Instruction* instr) {
       break;
     }
     case XORX: {
-      Format(instr, "xor'.     'ra,'rs,'rb");
+      Format(instr, "xor'.    'ra,'rs,'rb");
       break;
     }
     case ORX: { 
@@ -966,6 +956,26 @@ void Decoder::DecodeExt2(Instruction* instr) {
 
 void Decoder::DecodeExt4(Instruction* instr) {
   switch(instr->Bits(11,1) << 1) {
+    case FCMPU: {
+      Format(instr, "fcmpu     'Da, 'Db");
+      break;
+    }
+    case FDIV: {
+      Format(instr, "fdiv    'Dt, 'Da, 'Db");
+      break;
+    }
+    case FSUB: {
+      Format(instr, "fsub    'Dt, 'Da, 'Db");
+      break;
+    }
+    case FADD: {
+      Format(instr, "fadd    'Dt, 'Da, 'Db");
+      break;
+    }
+    case FMUL: {
+      Format(instr, "fmul    'Dt, 'Da, 'Db");
+      break;
+    }
     default: {
       Unknown(instr);  // not used by V8
     }
@@ -1828,11 +1838,17 @@ int Decoder::InstructionDecode(byte* instr_ptr) {
     case STMW:
     case LFS:
     case LFSU:
-    case LFD:
+    case LFD: {
+      Format(instr, "lfd     'Dt, 'int16('ra)");
+      break;
+    }
     case LFDU:
     case STFS:
     case STFSU:
-    case STFD:
+    case STFD: {
+      Format(instr, "stfd    'Dt, 'int16('ra)");
+      break;
+    }
     case STFDU:
     case EXT3:
     case EXT4: {

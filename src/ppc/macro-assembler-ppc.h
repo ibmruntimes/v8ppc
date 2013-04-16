@@ -849,9 +849,10 @@ class MacroAssembler: public Assembler {
   // Returns a condition that will be enabled if the object was a string.
   Condition IsObjectStringType(Register obj,
                                Register type) {
-    ldr(type, FieldMemOperand(obj, HeapObject::kMapOffset));
-    ldrb(type, FieldMemOperand(type, Map::kInstanceTypeOffset));
-    tst(type, Operand(kIsNotStringMask));
+    lwz(type, FieldMemOperand(obj, HeapObject::kMapOffset));
+    lbz(type, FieldMemOperand(type, Map::kInstanceTypeOffset));
+    andi(r0, type, Operand(kIsNotStringMask));
+    cmpi(r0, Operand(0));
     ASSERT_EQ(0, kStringTag);
     return eq;
   }
@@ -889,13 +890,13 @@ class MacroAssembler: public Assembler {
       Label* not_number,
       ObjectToDoubleFlags flags = NO_OBJECT_TO_DOUBLE_FLAGS);
 
-  // Load the value of a smi object into a VFP double register. The register
+  // Load the value of a smi object into a FP double register. The register
   // scratch1 can be the same register as smi in which case smi will hold the
   // untagged value afterwards.
-  void SmiToDoubleVFPRegister(Register smi,
+  void SmiToDoubleFPRegister(Register smi,
                               DwVfpRegister value,
                               Register scratch1,
-                              SwVfpRegister scratch2);
+                              DwVfpRegister scratch2);
 
   // Convert the HeapNumber pointed to by source to a 32bits signed integer
   // dest. If the HeapNumber does not fit into a 32bits signed integer branch

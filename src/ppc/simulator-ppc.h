@@ -315,6 +315,8 @@ class Simulator {
   void DecodeExt1(Instruction* instr);
   void DecodeExt2(Instruction* instr);
 
+  void DecodeExt4(Instruction* instr);
+
   // Executing is handled based on the instruction type.
   // Both type 0 and type 1 rolled into one.
   void DecodeType01(Instruction* instr);

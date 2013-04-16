@@ -2074,12 +2074,16 @@ void Simulator::DecodeExt2(Instruction* instr) {
       int rb = instr->RBValue();
       // int oe = instr->Bit(10);
       int rc = instr->Bit(0);
-      if(rc) {
-        UNIMPLEMENTED();  //  need to handle RC bit
-      }
       int32_t ra_val = get_register(ra);
       int32_t rb_val = get_register(rb);
       int32_t alu_out = rb_val - ra_val;
+      if(rc) {
+        int bf = 0;
+        if(alu_out < 0) { bf |= 0x80000000; }
+        if(alu_out > 0) { bf |= 0x40000000; }
+        if(alu_out == 0) { bf |= 0x20000000; }
+        condition_reg_ = (condition_reg_ & ~0xF0000000) | bf;
+      } 
       // todo - figure out underflow
       set_register(rt, alu_out);
       // todo - handle OE and RC bits
@@ -2175,9 +2179,70 @@ void Simulator::DecodeExt2(Instruction* instr) {
       UNIMPLEMENTED();  // Not used by V8.
     }
   }
-
 }
-
+void Simulator::DecodeExt4(Instruction* instr) {
+  switch(instr->Bits(5,1) << 1) {
+    case FCMPU: {
+      int fra = instr->RAValue();
+      int frb = instr->RBValue();
+      double fra_val = get_double_from_d_register(fra);
+      double frb_val = get_double_from_d_register(frb);
+      int cr = instr->Bits(25,23);
+      int bf = 0;
+      if(fra_val < frb_val) { bf |= 0x80000000; }
+      if(fra_val > frb_val) { bf |= 0x40000000; }
+      if(fra_val == frb_val) { bf |= 0x20000000; }
+      if(isunordered(fra_val, frb_val)) { bf |= 0x10000000; } 
+      int condition_mask = 0xF0000000 >> (cr*4);
+      int condition =  bf >> (cr*4);
+      condition_reg_ = (condition_reg_ & ~condition_mask) | condition;
+      break;
+    }
+    case FDIV: {
+      int frt = instr->RTValue();
+      int fra = instr->RAValue();
+      int frb = instr->RBValue();
+      double fra_val = get_double_from_d_register(fra);
+      double frb_val = get_double_from_d_register(frb);
+      double frt_val = fra_val / frb_val;
+      set_d_register_from_double(frt, frt_val);
+      break;
+    }
+    case FSUB: {
+      int frt = instr->RTValue();
+      int fra = instr->RAValue();
+      int frb = instr->RBValue();
+      double fra_val = get_double_from_d_register(fra);
+      double frb_val = get_double_from_d_register(frb);
+      double frt_val = fra_val - frb_val;
+      set_d_register_from_double(frt, frt_val);
+      break;
+    }
+    case FADD: {
+      int frt = instr->RTValue();
+      int fra = instr->RAValue();
+      int frb = instr->RBValue();
+      double fra_val = get_double_from_d_register(fra);
+      double frb_val = get_double_from_d_register(frb);
+      double frt_val = fra_val + frb_val;
+      set_d_register_from_double(frt, frt_val);
+      break;
+    }
+    case FMUL: {
+      int frt = instr->RTValue();
+      int fra = instr->RAValue();
+      int frb = instr->RBValue();
+      double fra_val = get_double_from_d_register(fra);
+      double frb_val = get_double_from_d_register(frb);
+      double frt_val = fra_val * frb_val;
+      set_d_register_from_double(frt, frt_val);
+      break;
+    }
+    default: {
+      UNIMPLEMENTED();  // Not used by V8.
+    }
+  }
+}
 // Instruction types 0 and 1 are both rolled into one function because they
 // only differ in the handling of the shifter_operand.
 void Simulator::DecodeType01(Instruction* instr) {
@@ -3704,7 +3769,7 @@ void Simulator::InstructionDecode(Instruction* instr) {
       int32_t rs_val = get_register(rs);
       int offset = (instr->Bits(15,0) << 16) >> 16;
       if(ra != 0) {
-        offset += ra_val;
+	offset += ra_val;
       }
       WriteW(offset, rs_val, instr);
       // printf("r%d %08x -> %08x\n", rs, rs_val, offset); // 0xdead
@@ -3767,14 +3832,34 @@ void Simulator::InstructionDecode(Instruction* instr) {
     case STMW:
     case LFS:
     case LFSU:
-    case LFD:
+    case LFD: {
+      int frt = instr->RTValue();
+      int ra = instr->RAValue();
+      int32_t offset = (instr->Bits(15,0) << 16) >> 16;
+      int32_t ra_val = get_register(ra);
+      double *dptr = (double*)ReadDW(ra_val + offset);
+      set_d_register_from_double(frt, static_cast<double>(*dptr));
+      break;
+    }
     case LFDU:
     case STFS:
     case STFSU:
-    case STFD:
+    case STFD: {
+      int frt = instr->RTValue();
+      int ra = instr->RAValue();
+      int32_t offset = (instr->Bits(15,0) << 16) >> 16;
+      int32_t ra_val = get_register(ra);
+      double frt_val = get_double_from_d_register(frt);
+      int *p = reinterpret_cast<int*>(&frt_val);
+      WriteDW(ra_val + offset, p[0], p[1]);
+      break;
+    }
     case STFDU:
     case EXT3:
-    case EXT4:
+    case EXT4: {
+      DecodeExt4(instr);
+      break;
+    }
     default: {
       UNIMPLEMENTED();
       break;

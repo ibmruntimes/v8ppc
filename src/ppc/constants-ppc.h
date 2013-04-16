@@ -337,9 +337,14 @@ enum OpcodeExt2 {
   SRAWIX = 824 << 1  // Shift Right Algebraic Word Immediate
 }; 
 
-// Bits 11-1
+// Bits 5-1
 enum OpcodeExt4 {
-  FOOBAR = 3
+  FCMPU = 0 << 1,   // Floating Compare Unordered
+  FDIV = 18 << 1,   // Floating Divide
+  FSUB = 20 << 1,   // Floating Subtract
+  FADD = 21 << 1,   // Floating Add
+  FMUL = 25 << 1,   // Floating Multiply
+  MCRFS = 64 << 1   // Move to Condition Register from FPSCR
 };
 
 #if defined(INCLUDE_ARM)

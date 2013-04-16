@@ -407,7 +407,7 @@ void StubCompiler::GenerateLoadStringLength(MacroAssembler* masm,
   if (support_wrappers) {
     // Check if the object is a JSValue wrapper.
     __ bind(&check_wrapper);
-    __ cmp(scratch1, Operand(JS_VALUE_TYPE));
+    __ cmpi(scratch1, Operand(JS_VALUE_TYPE));
     __ bne(miss);
 
     // Unwrap the value and check if the wrapped value is a string.
@@ -2846,7 +2846,8 @@ Handle<Code> StoreStubCompiler::CompileStoreGlobal(
 
   // Check that the map of the global has not changed.
   __ lwz(r6, FieldMemOperand(r4, HeapObject::kMapOffset));
-  __ cmp(r6, Operand(Handle<Map>(object->map())));
+  __ mov(r7, Operand(Handle<Map>(object->map())));
+  __ cmp(r6, r7); 
   __ bne(&miss);
 
   // Check that the value in the cell is not the hole. If it is, this

@@ -567,7 +567,8 @@ void Builtins::Generate_ArrayConstructCode(MacroAssembler* masm) {
     // Array functions which always have a map.
     // Initial map for the builtin Array function should be a map.
     __ lwz(r5, FieldMemOperand(r4, JSFunction::kPrototypeOrInitialMapOffset));
-    __ rlwimi(r0, r5, 0, 31, 31, SetRC);
+    __ andi(r0, r5, Operand(kSmiTagMask));
+    __ cmpi(r0, Operand(0));
     __ Assert(ne, "Unexpected initial map for Array function");
     __ CompareObjectType(r5, r6, r7, MAP_TYPE);
     __ Assert(eq, "Unexpected initial map for Array function");
@@ -1176,14 +1177,10 @@ static void Generate_JSEntryTrampolineHelper(MacroAssembler* masm,
     // Initialize all JavaScript callee-saved registers, since they will be seen
     // by the garbage collector as part of handlers.
     __ LoadRoot(r7, Heap::kUndefinedValueRootIndex);
-    __ mr(r24, r7); // This is probably wrong (r14)
-    __ mr(r25, r7); // I think this is just pointing at an 'object' (r15)
-    __ mr(r16, r7); // This is probably wrong
-#if 0
-    if (kR9Available == 1) {
-      __ mov(rxxxxx, Operand(r4));
-    }
-#endif
+    __ mr(r24, r7); // should be (r14)
+    __ mr(r25, r7); // should be (r15)
+    __ mr(r16, r7);
+    __ mr(r22, r7); // hmmm, possibly should be reassigned to r17
 
     // Invoke the code and pass argc as r3.
     __ mr(r3, r6);
@@ -1369,7 +1366,7 @@ void Builtins::Generate_FunctionCall(MacroAssembler* masm) {
   // 1. Make sure we have at least one argument.
   // r3: actual number of arguments
   { Label done;
-    __ cmp(r3, Operand(0));
+    __ cmpi(r3, Operand(0));
     __ bne(&done);
     __ LoadRoot(r5, Heap::kUndefinedValueRootIndex);
     __ push(r5);
@@ -1381,7 +1378,9 @@ void Builtins::Generate_FunctionCall(MacroAssembler* masm) {
   //    if it is a function.
   // r3: actual number of arguments
   Label slow, non_function;
-  __ lwz(r4, MemOperand(sp, r3, LSL, kPointerSizeLog2));
+  __ slwi(r4, r3, Operand(kPointerSizeLog2));
+  __ add(r4, sp, r4);
+  __ lwz(r4, MemOperand(r4));
   __ JumpIfSmi(r4, &non_function);
   __ CompareObjectType(r4, r5, r5, JS_FUNCTION_TYPE);
   __ bne(&slow);
@@ -1434,7 +1433,7 @@ void Builtins::Generate_FunctionCall(MacroAssembler* masm) {
     {
       // Enter an internal frame in order to preserve argument count.
       FrameScope scope(masm, StackFrame::INTERNAL);
-      __ mov(r3, Operand(r3, LSL, kSmiTagSize));  // Smi-tagged.
+      __ slwi(r3, r3, Operand(kSmiTagSize));  // Smi-tagged.
       __ push(r3);
 
       __ push(r5);
@@ -1474,7 +1473,7 @@ void Builtins::Generate_FunctionCall(MacroAssembler* masm) {
 
   // 3b. Check for function proxy.
   __ bind(&slow);
-  __ mov(r7, Operand(1, RelocInfo::NONE));  // indicate function proxy
+  __ li(r7, Operand(1, RelocInfo::NONE));  // indicate function proxy
   __ cmpi(r5, Operand(JS_FUNCTION_PROXY_TYPE));
   __ beq(&shift_arguments);
   __ bind(&non_function);

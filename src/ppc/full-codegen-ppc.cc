@@ -1770,7 +1770,7 @@ void FullCodeGenerator::VisitArrayLiteral(ArrayLiteral* expr) {
                           EMIT_REMEMBERED_SET, INLINE_SMI_CHECK);
     } else {
       __ lwz(r4, MemOperand(sp));  // Copy of array literal.
-      __ lwz(r5, FieldMemOperand(r1, JSObject::kMapOffset));
+      __ lwz(r5, FieldMemOperand(r4, JSObject::kMapOffset));
       __ li(r6, Operand(Smi::FromInt(i)));
       __ li(r7, Operand(Smi::FromInt(expr->literal_index())));
       StoreArrayLiteralElementStub stub;
@@ -3212,7 +3212,7 @@ void FullCodeGenerator::EmitStringCharFromCode(CallRuntime* expr) {
   VisitForAccumulatorValue(args->at(0));
 
   Label done;
-  StringCharFromCodeGenerator generator(r0, r1);
+  StringCharFromCodeGenerator generator(r3, r4);
   generator.GenerateFast(masm_);
   __ jmp(&done);
 
@@ -4264,7 +4264,7 @@ void FullCodeGenerator::EmitLiteralCompareTypeof(Expression* expr,
     STATIC_ASSERT(NUM_OF_CALLABLE_SPEC_OBJECT_TYPES == 2);
     __ CompareObjectType(r3, r3, r4, JS_FUNCTION_TYPE);
     __ beq(if_true);
-    __ cmp(r4, Operand(JS_FUNCTION_PROXY_TYPE));
+    __ cmpi(r4, Operand(JS_FUNCTION_PROXY_TYPE));
     Split(eq, if_true, if_false, fall_through);
   } else if (check->Equals(isolate()->heap()->object_symbol())) {
     __ JumpIfSmi(r3, if_false);
@@ -4279,7 +4279,7 @@ void FullCodeGenerator::EmitLiteralCompareTypeof(Expression* expr,
     __ bgt(if_false);
     // Check for undetectable objects => false.
     __ lbz(r4, FieldMemOperand(r3, Map::kBitFieldOffset));
-    __ andi(r0, r3, Operand(1 << Map::kIsUndetectable));
+    __ andi(r0, r4, Operand(1 << Map::kIsUndetectable));
     __ cmpi(r0, Operand(0));
     Split(eq, if_true, if_false, fall_through);
   } else {
@@ -4476,7 +4476,7 @@ void FullCodeGenerator::PushFunctionArgumentForContextAllocation() {
 // Non-local control flow support.
 
 void FullCodeGenerator::EnterFinallyBlock() {
-  ASSERT(!result_register().is(r1));
+  ASSERT(!result_register().is(r4));
   // Store result register while executing finally block.
   __ push(result_register());
   // Cook return address in link register to stack (smi encoded Code* delta)

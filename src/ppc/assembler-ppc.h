@@ -1078,12 +1078,13 @@ SBit s = LeaveCC, Condition cond = al // roohack - remove this line later
   void bfi(Register dst, Register src, int lsb, int width,
            Condition cond = al);
 
-  // Condition register access
+  // Special register access
   // PowerPC
   void crxor(int bt, int ba, int bb);
   void mflr(Register dst);
   void mtlr(Register src);
   void mtctr(Register src);
+  void mcrfs(int bf, int bfa);
 
   // end PowerPC
   // Status register access instructions
@@ -1154,6 +1155,19 @@ SBit s = LeaveCC, Condition cond = al // roohack - remove this line later
             LFlag l = Short);  // v5 and above
   void ldc2(Coprocessor coproc, CRegister crd, Register base, int option,
             LFlag l = Short);  // v5 and above
+
+  // Support for floating point
+  void lfd(const DwVfpRegister frt, const Register ra, int offset);
+  void stfd(const DwVfpRegister frs, const Register ra, int offset);
+  void fadd(const DwVfpRegister frt, const DwVfpRegister fra,
+            const DwVfpRegister frb, RCBit rc = LeaveRC );
+  void fsub(const DwVfpRegister frt, const DwVfpRegister fra,
+            const DwVfpRegister frb, RCBit rc = LeaveRC );
+  void fdiv(const DwVfpRegister frt, const DwVfpRegister fra,
+            const DwVfpRegister frb, RCBit rc = LeaveRC );
+  void fmul(const DwVfpRegister frt, const DwVfpRegister fra,
+            const DwVfpRegister frb, RCBit rc = LeaveRC );
+  void fcmpu(const DwVfpRegister fra, const DwVfpRegister frb);
 
   // Support for VFP.
   // All these APIs support S0 to S31 and D0 to D15.
@@ -1608,10 +1622,12 @@ SBit s = LeaveCC, Condition cond = al // roohack - remove this line later
   inline void emit(Instr x);
 
   // Instruction generation
+  void a_form(Instr instr, DwVfpRegister frt, DwVfpRegister fra, 
+              DwVfpRegister frb, RCBit r);
   void d_form(Instr instr, Register rt, Register ra, const int val);
   void x_form(Instr instr, Register ra, Register rs, Register rb, RCBit r); 
-  void xo_form(Instr instr, Register rt, Register ra, Register rb, OEBit o, 
-	RCBit r);
+  void xo_form(Instr instr, Register rt, Register ra, Register rb, 
+               OEBit o, RCBit r);
 #if defined(INCLUDE_ARM)
   void addrmod1(Instr instr, Register rn, Register rd, const Operand& x);
   void addrmod2(Instr instr, Register rd, const MemOperand& x);

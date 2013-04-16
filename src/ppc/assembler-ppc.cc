@@ -936,6 +936,16 @@ bool Operand::is_single_instruction(const Assembler* assembler,
     return true;
   }
 }
+
+void Assembler::a_form(Instr instr,
+                       DwVfpRegister frt,
+                       DwVfpRegister fra,
+                       DwVfpRegister frb,
+                       RCBit r) {
+  CheckBuffer();
+  emit(instr | frt.code()*B21 | fra.code()*B16 | frb.code()*B11 | r );
+}
+
 void Assembler::d_form(Instr instr,
                         Register rt,
                         Register ra,
@@ -1758,7 +1768,7 @@ void Assembler::bfi(Register dst,
        src.code());
 }
 
-// Condition register instructions
+// Special register instructions
 // PowerPC
 void Assembler::crxor(int bt, int ba, int bb) {
   emit(EXT1 | CRXOR | bt*B21 | ba*B16 | bb*B11);
@@ -1775,6 +1785,12 @@ void Assembler::mtlr(Register src) {
 void Assembler::mtctr(Register src) {
   emit(EXT2 | MTSPR | src.code()*B21 | 288 << 11);   // Ignore RC bit
 }
+
+void Assembler::mcrfs(int bf, int bfa) {
+  emit(EXT4 | MCRFS | bf*B23 | bfa*B18);
+}
+
+
 //end PowerPC
 
 // Status register access instructions.
@@ -2058,6 +2074,56 @@ void Assembler::ldc2(Coprocessor coproc,
   ldc(coproc, crd, rn, option, l, kSpecialCondition);
 }
 
+// Floating point support
+
+void Assembler::lfd(const DwVfpRegister frt, const Register ra, int offset) {
+  ASSERT(is_int16(offset));
+  int imm16 = offset & kImm16Mask; 
+  // could be x_form instruction with some casting magic
+  emit(LFD | frt.code()*B21 | ra.code()*B16 | imm16);
+}
+void Assembler::stfd(const DwVfpRegister frs, const Register ra, int offset) {
+  ASSERT(is_int16(offset));
+  int imm16 = offset & kImm16Mask; 
+  // could be x_form instruction with some casting magic
+  emit(STFD | frs.code()*B21 | ra.code()*B16 | imm16);
+}
+
+void Assembler::fsub(const DwVfpRegister frt, 
+                     const DwVfpRegister fra, 
+                     const DwVfpRegister frb,
+                     RCBit rc) {
+  CheckBuffer();
+  a_form(EXT4 | FSUB, frt, fra, frb, rc);
+}
+
+void Assembler::fadd(const DwVfpRegister frt, 
+                     const DwVfpRegister fra, 
+                     const DwVfpRegister frb,
+                     RCBit rc) {
+  CheckBuffer();
+  a_form(EXT4 | FADD, frt, fra, frb, rc);
+}
+void Assembler::fmul(const DwVfpRegister frt, 
+                     const DwVfpRegister fra, 
+                     const DwVfpRegister frb,
+                     RCBit rc) {
+  CheckBuffer();
+  a_form(EXT4 | FMUL, frt, fra, frb, rc);
+}
+void Assembler::fdiv(const DwVfpRegister frt, 
+                     const DwVfpRegister fra, 
+                     const DwVfpRegister frb,
+                     RCBit rc) {
+  CheckBuffer();
+  a_form(EXT4 | FDIV, frt, fra, frb, rc);
+}
+
+void Assembler::fcmpu(const DwVfpRegister fra,
+                     const DwVfpRegister frb) {
+  CheckBuffer();
+  emit(EXT4 | FCMPU | 7*B23 | fra.code()*B16 | frb.code()*B11);
+}
 
 // Support for VFP.
 

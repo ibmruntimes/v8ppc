@@ -2458,13 +2458,33 @@ void MacroAssembler::ObjectToDoubleVFPRegister(Register object,
 }
 
 
-void MacroAssembler::SmiToDoubleVFPRegister(Register smi,
+void MacroAssembler::SmiToDoubleFPRegister(Register smi,
                                             DwVfpRegister value,
                                             Register scratch1,
-                                            SwVfpRegister scratch2) {
-  mov(scratch1, Operand(smi, ASR, kSmiTagSize));
-  vmov(scratch2, scratch1);
-  vcvt_f64_s32(value, scratch2);
+                                            DwVfpRegister scratch2) {
+  srawi(scratch1, smi, kSmiTagSize);
+  sub(sp, sp, Operand(16));   // reserve two temporary doubles on the stack
+#if V8_HOST_ARCH_PPC  // Really we mean BIG ENDIAN host
+  addis(r0, r0, 0x4330);
+  stw(r0, MemOperand(sp, 0));   // ENDIAN issue here
+  stw(r0, MemOperand(sp, 8));
+  addis(r0, r0, 0x8000);
+  stw(r0, MemOperand(sp, 4));
+  xor_(r0, scratch1, r0);
+  stw(r0, MemOperand(sp, 12));
+#else
+  addis(r0, r0, 0x4330);
+  stw(r0, MemOperand(sp, 4));
+  stw(r0, MemOperand(sp, 12));
+  addis(r0, r0, 0x8000);
+  stw(r0, MemOperand(sp, 0));
+  xor_(r0, scratch1, r0);
+  stw(r0, MemOperand(sp, 8));
+#endif
+  lfd(value, sp, 0);
+  lfd(scratch2, sp, 8);
+  add(sp, sp, Operand(16));  // restore stack
+  fsub(value, scratch2, value);
 }
 
 
@@ -3244,7 +3264,7 @@ void MacroAssembler::AllocateHeapNumber(Register result,
 
   // Store heap number map in the allocated object.
   AssertRegisterIsRoot(heap_number_map, Heap::kHeapNumberMapRootIndex);
-  str(heap_number_map, FieldMemOperand(result, HeapObject::kMapOffset));
+  stw(heap_number_map, FieldMemOperand(result, HeapObject::kMapOffset));
 }
 
 
@@ -3897,39 +3917,39 @@ void MacroAssembler::EnumLength(Register dst, Register map) {
 
 
 void MacroAssembler::CheckEnumCache(Register null_value, Label* call_runtime) {
-  Register  empty_fixed_array_value = r6;
+  Register  empty_fixed_array_value = r9;
   LoadRoot(empty_fixed_array_value, Heap::kEmptyFixedArrayRootIndex);
   Label next, start;
-  mov(r2, r0);
+  mr(r5, r3);
 
   // Check if the enum length field is properly initialized, indicating that
   // there is an enum cache.
-  lwz(r1, FieldMemOperand(r2, HeapObject::kMapOffset));
+  lwz(r4, FieldMemOperand(r5, HeapObject::kMapOffset));
 
-  EnumLength(r3, r1);
-  cmp(r3, Operand(Smi::FromInt(Map::kInvalidEnumCache)));
+  EnumLength(r6, r4);
+  cmpi(r6, Operand(Smi::FromInt(Map::kInvalidEnumCache)));
   beq(call_runtime);
 
   jmp(&start);
 
   bind(&next);
-  lwz(r1, FieldMemOperand(r2, HeapObject::kMapOffset));
+  lwz(r4, FieldMemOperand(r5, HeapObject::kMapOffset));
 
   // For all objects but the receiver, check that the cache is empty.
-  EnumLength(r3, r1);
-  cmp(r3, Operand(Smi::FromInt(0)));
+  EnumLength(r6, r4);
+  cmpi(r6, Operand(Smi::FromInt(0)));
   bne(call_runtime);
 
   bind(&start);
 
-  // Check that there are no elements. Register r2 contains the current JS
+  // Check that there are no elements. Register r5 contains the current JS
   // object we've reached through the prototype chain.
-  lwz(r2, FieldMemOperand(r2, JSObject::kElementsOffset));
-  cmp(r2, empty_fixed_array_value);
+  lwz(r5, FieldMemOperand(r5, JSObject::kElementsOffset));
+  cmp(r5, empty_fixed_array_value);
   bne(call_runtime);
 
-  lwz(r2, FieldMemOperand(r1, Map::kPrototypeOffset));
-  cmp(r2, null_value);
+  lwz(r5, FieldMemOperand(r4, Map::kPrototypeOffset));
+  cmp(r5, null_value);
   bne(&next);
 }
 
