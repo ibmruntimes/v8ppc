@@ -3711,7 +3711,8 @@ void FullCodeGenerator::EmitFastAsciiArrayJoin(CallRuntime* expr) {
   // Prepare for looping. Set up elements_end to end of the array. Set
   // result_pos to the position of the result where to write the first
   // character.
-  __ add(elements_end, element, Operand(array_length, LSL, kPointerSizeLog2));
+  __ slwi(elements_end, array_length, Operand(kPointerSizeLog2));
+  __ add(elements_end, element, elements_end);
   result_pos = array_length;  // End of live range for array_length.
   array_length = no_reg;
   __ add(result_pos,

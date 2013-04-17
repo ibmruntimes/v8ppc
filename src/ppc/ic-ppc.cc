@@ -1104,7 +1104,9 @@ void KeyedLoadIC::GenerateGeneric(MacroAssembler* masm) {
     if (i != 0) {
       __ add(r6, r6, Operand(i));
     }
-    __ lwz(r8, MemOperand(r7, r6, LSL, kPointerSizeLog2));
+    __ slwi(r8, r6, Operand(kPointerSizeLog2));
+    __ add(r8, r8, r7);
+    __ lwz(r8, MemOperand(r8));
     __ lbz(r9, FieldMemOperand(r5, Map::kInObjectPropertiesOffset));
     __ sub(r8, r9, r8);  // roohack, sub order may not be correct
     __ cmpi(r8, Operand(0));
@@ -1119,7 +1121,9 @@ void KeyedLoadIC::GenerateGeneric(MacroAssembler* masm) {
   __ lbz(r9, FieldMemOperand(r5, Map::kInstanceSizeOffset));
   __ add(r9, r9, r8);  // Index from start of object.
   __ sub(r4, r4, Operand(kHeapObjectTag));  // Remove the heap tag.
-  __ lwz(r3, MemOperand(r4, r9, LSL, kPointerSizeLog2));
+  __ slwi(r3, r9, Operand(kPointerSizeLog2));
+  __ add(r3, r3, r4);
+  __ lwz(r3, MemOperand(r3));
   __ IncrementCounter(isolate->counters()->keyed_load_generic_lookup_cache(),
                       1, r5, r6);
   __ Ret();
@@ -1128,7 +1132,9 @@ void KeyedLoadIC::GenerateGeneric(MacroAssembler* masm) {
   __ bind(&property_array_property);
   __ lwz(r4, FieldMemOperand(r4, JSObject::kPropertiesOffset));
   __ add(r4, r4, Operand(FixedArray::kHeaderSize - kHeapObjectTag));
-  __ lwz(r3, MemOperand(r4, r8, LSL, kPointerSizeLog2));
+  __ slwi(r3, r8, Operand(kPointerSizeLog2));
+  __ add(r3, r3, r4);
+  __ lwz(r3, MemOperand(r3));
   __ IncrementCounter(isolate->counters()->keyed_load_generic_lookup_cache(),
                       1, r5, r6);
   __ Ret();
@@ -1366,7 +1372,8 @@ static void KeyedStoreGenerateGenericHelper(
   }
   // It's irrelevant whether array is smi-only or not when writing a smi.
   __ add(address, elements, Operand(FixedArray::kHeaderSize - kHeapObjectTag));
-  __ add(address, address, Operand(key, LSL, kPointerSizeLog2 - kSmiTagSize));
+  __ slwi(scratch_value, key, Operand(kPointerSizeLog2 - kSmiTagSize));
+  __ add(address, address, scratch_value);
   __ stw(value, MemOperand(address));
   __ Ret();
 
@@ -1383,7 +1390,8 @@ static void KeyedStoreGenerateGenericHelper(
     __ stw(scratch_value, FieldMemOperand(receiver, JSArray::kLengthOffset));
   }
   __ add(address, elements, Operand(FixedArray::kHeaderSize - kHeapObjectTag));
-  __ add(address, address, Operand(key, LSL, kPointerSizeLog2 - kSmiTagSize));
+  __ slwi(scratch_value, key, Operand(kPointerSizeLog2 - kSmiTagSize));
+  __ add(address, address, scratch_value);
   __ stw(value, MemOperand(address));
   // Update write barrier for the elements array address.
   __ mr(scratch_value, value);  // Preserve the value which is returned.
