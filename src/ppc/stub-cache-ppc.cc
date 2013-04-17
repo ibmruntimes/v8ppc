@@ -707,7 +707,9 @@ static void GenerateFastApiDirectCall(MacroAssembler* masm,
   }
   __ mov(r10, Operand(ExternalReference::isolate_address()));
   // Store JS function, call data and isolate.
-  __ stm(ib, sp, r8.bit() | r9.bit() | r10.bit());
+  __ stw(r8, MemOperand(sp, 0 * kPointerSize));
+  __ stw(r9, MemOperand(sp, 1 * kPointerSize));
+  __ stw(r10, MemOperand(sp, 2 * kPointerSize));
 
   // Prepare arguments.
   __ add(r5, sp, Operand(3 * kPointerSize));
@@ -3417,7 +3419,10 @@ Handle<Code> KeyedStoreStubCompiler::CompileStorePolymorphic(
     __ mov(ip, Operand(receiver_maps->at(i)));
     __ cmp(r6, ip);
     if (transitioned_maps->at(i).is_null()) {
-      __ Jump(handler_stubs->at(i), RelocInfo::CODE_TARGET, eq);
+      Label skip;
+      __ bne(&skip);
+      __ Jump(handler_stubs->at(i), RelocInfo::CODE_TARGET);
+      __ bind(&skip);
     } else {
       Label next_map;
       __ bne(&next_map);

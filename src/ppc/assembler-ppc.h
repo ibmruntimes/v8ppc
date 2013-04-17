@@ -795,7 +795,7 @@ class Assembler : public AssemblerBase {
 
   // Difference between address of current opcode and value read from pc
   // register.
-  static const int kPcLoadDelta = 8;
+  static const int kPcLoadDelta = 6 * 4;
 
   static const int kJSReturnSequenceInstructions = 4;
   static const int kDebugBreakSlotInstructions = 3;

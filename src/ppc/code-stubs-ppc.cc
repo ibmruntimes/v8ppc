@@ -1178,29 +1178,29 @@ static void EmitIdenticalObjectComparison(MacroAssembler* masm,
     // Smis.  If it's not a heap number, then return equal.
     if (cond == lt || cond == gt) {
       __ CompareObjectType(r3, r7, r7, FIRST_SPEC_OBJECT_TYPE);
-      __ b(ge, slow);
+      __ bge(slow);
     } else {
       __ CompareObjectType(r3, r7, r7, HEAP_NUMBER_TYPE);
       __ beq(&heap_number);
       // Comparing JS objects with <=, >= is complicated.
       if (cond != eq) {
-        __ cmp(r7, Operand(FIRST_SPEC_OBJECT_TYPE));
-        __ b(ge, slow);
+        __ cmpi(r7, Operand(FIRST_SPEC_OBJECT_TYPE));
+        __ bge(slow);
         // Normally here we fall through to return_equal, but undefined is
         // special: (undefined == undefined) == true, but
         // (undefined <= undefined) == false!  See ECMAScript 11.8.5.
         if (cond == le || cond == ge) {
-          __ cmp(r7, Operand(ODDBALL_TYPE));
+          __ cmpi(r7, Operand(ODDBALL_TYPE));
           __ bne(&return_equal);
           __ LoadRoot(r5, Heap::kUndefinedValueRootIndex);
           __ cmp(r3, r5);
           __ bne(&return_equal);
           if (cond == le) {
             // undefined <= undefined should fail.
-            __ mov(r3, Operand(GREATER));
+            __ li(r3, Operand(GREATER));
           } else  {
             // undefined >= undefined should fail.
-            __ mov(r3, Operand(LESS));
+            __ li(r3, Operand(LESS));
           }
           __ Ret();
         }
@@ -1210,11 +1210,11 @@ static void EmitIdenticalObjectComparison(MacroAssembler* masm,
 
   __ bind(&return_equal);
   if (cond == lt) {
-    __ mov(r3, Operand(GREATER));  // Things aren't less than themselves.
+    __ li(r3, Operand(GREATER));  // Things aren't less than themselves.
   } else if (cond == gt) {
-    __ mov(r3, Operand(LESS));     // Things aren't greater than themselves.
+    __ li(r3, Operand(LESS));     // Things aren't greater than themselves.
   } else {
-    __ mov(r3, Operand(EQUAL));    // Things are <=, >=, ==, === themselves.
+    __ li(r3, Operand(EQUAL));    // Things are <=, >=, ==, === themselves.
   }
   __ Ret();
 
@@ -1241,7 +1241,8 @@ static void EmitIdenticalObjectComparison(MacroAssembler* masm,
       __ mov(r5, Operand(r5, LSL, HeapNumber::kNonMantissaBitsInTopWord));
       // Or with all low-bits of mantissa.
       __ lwz(r6, FieldMemOperand(r3, HeapNumber::kMantissaOffset));
-      __ orr(r3, r6, Operand(r5), SetCC);
+      __ orx(r3, r6, r5);
+      __ cmpi(r3, Operand(0));
       // For equal we already have the right value in r3:  Return zero (equal)
       // if all bits in mantissa are zero (it's an Infinity) and non-zero if
       // not (it's a NaN).  For <= and >= we need to load r0 with the failing
@@ -1253,9 +1254,9 @@ static void EmitIdenticalObjectComparison(MacroAssembler* masm,
         __ Ret();
         __ bind(&not_equal);
         if (cond == le) {
-          __ mov(r3, Operand(GREATER));  // NaN <= NaN should fail.
+          __ li(r3, Operand(GREATER));  // NaN <= NaN should fail.
         } else {
-          __ mov(r3, Operand(LESS));     // NaN >= NaN should fail.
+          __ li(r3, Operand(LESS));     // NaN >= NaN should fail.
         }
       }
       __ Ret();
@@ -1558,22 +1559,25 @@ static void EmitCheckForSymbolsOrObjects(MacroAssembler* masm,
   // Ensure that no non-strings have the symbol bit set.
   Label object_test;
   STATIC_ASSERT(kSymbolTag != 0);
-  __ tst(r5, Operand(kIsNotStringMask));
+  __ andi(r0, r5, Operand(kIsNotStringMask));
+  __ cmpi(r0, Operand(0));
   __ bne(&object_test);
-  __ tst(r5, Operand(kIsSymbolMask));
+  __ andi(r0, r5, Operand(kIsSymbolMask));
+  __ cmpi(r0, Operand(0));
   __ beq(possible_strings);
   __ CompareObjectType(lhs, r6, r6, FIRST_NONSTRING_TYPE);
-  __ b(ge, not_both_strings);
-  __ tst(r6, Operand(kIsSymbolMask));
+  __ bge(not_both_strings);
+  __ andi(r0, r6, Operand(kIsSymbolMask));
+  __ cmpi(r0, Operand(0));
   __ beq(possible_strings);
 
   // Both are symbols.  We already checked they weren't the same pointer
   // so they are not equal.
-  __ mov(r3, Operand(NOT_EQUAL));
+  __ li(r3, Operand(NOT_EQUAL));
   __ Ret();
 
   __ bind(&object_test);
-  __ cmp(r5, Operand(FIRST_SPEC_OBJECT_TYPE));
+  __ cmpi(r5, Operand(FIRST_SPEC_OBJECT_TYPE));
   __ blt(not_both_strings);
   __ CompareObjectType(lhs, r5, r6, FIRST_SPEC_OBJECT_TYPE);
   __ blt(not_both_strings);
@@ -1583,9 +1587,9 @@ static void EmitCheckForSymbolsOrObjects(MacroAssembler* masm,
   __ lwz(r6, FieldMemOperand(rhs, HeapObject::kMapOffset));
   __ lbz(r5, FieldMemOperand(r5, Map::kBitFieldOffset));
   __ lbz(r6, FieldMemOperand(r6, Map::kBitFieldOffset));
-  __ and_(r3, r5, Operand(r6));
-  __ and_(r3, r3, Operand(1 << Map::kIsUndetectable));
-  __ eor(r3, r3, Operand(1 << Map::kIsUndetectable));
+  __ and_(r3, r5, r6);
+  __ andi(r3, r3, Operand(1 << Map::kIsUndetectable));
+  __ xori(r3, r3, Operand(1 << Map::kIsUndetectable));
   __ Ret();
 }
 
@@ -2475,7 +2479,7 @@ void BinaryOpStub::GenerateSmiSmiOperation(MacroAssembler* masm) {
       break;
     }
     case Token::MUL: {
-      Label mul_zero;
+      Label mul_zero, mul_neg_zero;
       // Remove tag from one of the operands. This way the multiplication result
       // will be a smi if it fits the smi range.
       __ SmiUntag(ip, right);
@@ -2497,9 +2501,12 @@ void BinaryOpStub::GenerateSmiSmiOperation(MacroAssembler* masm) {
       __ bind(&mul_zero);
       // We need -0 if we were multiplying a negative number with 0 to get 0.
       // We know one of them was zero.
-      __ add(scratch2, right, Operand(left), SetCC);
-      __ mov(right, Operand(Smi::FromInt(0)), LeaveCC, pl);
-      __ Ret(pl);  // Return smi 0 if the non-zero one was positive.
+      __ add(scratch2, right, left);
+      __ cmpi(scratch2, Operand(0));
+      __ blt(&mul_neg_zero);
+      __ li(right, Operand(Smi::FromInt(0)));
+      __ Ret();  // Return smi 0 if the non-zero one was positive.
+      __ bind(&mul_neg_zero);
       // We fall through here if we multiplied a negative number with 0, because
       // that would mean we should produce -0.
       break;
@@ -7054,7 +7061,8 @@ void ICCompareStub::GenerateMiss(MacroAssembler* masm) {
 
 
 void DirectCEntryStub::Generate(MacroAssembler* masm) {
-  __ ldr(pc, MemOperand(sp, 0));
+  __ lwz(r0, MemOperand(sp, 0));
+  __ Jump(r0);
 }
 
 
@@ -7067,7 +7075,7 @@ void DirectCEntryStub::GenerateCall(MacroAssembler* masm,
 
 void DirectCEntryStub::GenerateCall(MacroAssembler* masm,
                                     Register target) {
-  __ mov(lr, Operand(reinterpret_cast<intptr_t>(GetCode().location()),
+  __ mov(r0, Operand(reinterpret_cast<intptr_t>(GetCode().location()),
                      RelocInfo::CODE_TARGET));
 
   // Prevent literal pool emission during calculation of return address.
@@ -7075,10 +7083,14 @@ void DirectCEntryStub::GenerateCall(MacroAssembler* masm,
 
   // Push return address (accessible to GC through exit frame pc).
   // Note that using pc with str is deprecated.
-  Label start;
+  Label start, here;
   __ bind(&start);
-  __ add(ip, pc, Operand(Assembler::kInstrSize));
-  __ str(ip, MemOperand(sp, 0));
+  __ b(&here, SetLK);
+  __ bind(&here);
+  __ mflr(ip);
+  __ mtlr(r0);  // from above, so we know where to return
+  __ add(ip, ip, Operand(6 * Assembler::kInstrSize));
+  __ stw(ip, MemOperand(sp, 0));
   __ Jump(target);  // Call the C++ function.
   ASSERT_EQ(Assembler::kInstrSize + Assembler::kPcLoadDelta,
             masm->SizeOfCodeGeneratedSince(&start));

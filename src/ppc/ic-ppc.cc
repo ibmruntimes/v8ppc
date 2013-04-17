@@ -1531,7 +1531,7 @@ void KeyedStoreIC::GenerateGeneric(MacroAssembler* masm,
   // Check for room in the elements backing store.
   // Both the key and the length of FixedArray are smis.
   __ lwz(ip, FieldMemOperand(elements, FixedArray::kLengthOffset));
-  __ cmp(key, Operand(ip));
+  __ cmp(key, ip);
   __ bgt(&slow);
   __ lwz(elements_map, FieldMemOperand(elements, HeapObject::kMapOffset));
   __ mov(ip, Operand(masm->isolate()->factory()->fixed_array_map()));
@@ -1553,7 +1553,7 @@ void KeyedStoreIC::GenerateGeneric(MacroAssembler* masm,
 
   // Check the key against the length in the array.
   __ lwz(ip, FieldMemOperand(receiver, JSArray::kLengthOffset));
-  __ cmp(key, Operand(ip));
+  __ cmp(key, ip);
   __ bgt(&extra);
 
   KeyedStoreGenerateGenericHelper(masm, &fast_object, &fast_double,

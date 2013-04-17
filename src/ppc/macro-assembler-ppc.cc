@@ -2296,7 +2296,6 @@ static int AddressOffset(ExternalReference ref0, ExternalReference ref1) {
   return ref0.address() - ref1.address();
 }
 
-
 void MacroAssembler::CallApiFunctionAndReturn(ExternalReference function,
                                               int stack_space) {
   ExternalReference next_address =
@@ -2310,12 +2309,12 @@ void MacroAssembler::CallApiFunctionAndReturn(ExternalReference function,
       next_address);
 
   // Allocate HandleScope in callee-save registers.
-  mov(r7, Operand(next_address));
-  lwz(r4, MemOperand(r7, kNextOffset));
-  lwz(r5, MemOperand(r7, kLimitOffset));
-  lwz(r6, MemOperand(r7, kLevelOffset));
-  add(r6, r6, Operand(1));
-  str(r6, MemOperand(r7, kLevelOffset));
+  mov(r10, Operand(next_address));
+  lwz(r7, MemOperand(r10, kNextOffset));
+  lwz(r8, MemOperand(r10, kLimitOffset));
+  lwz(r9, MemOperand(r10, kLevelOffset));
+  add(r9, r9, Operand(1));
+  stw(r9, MemOperand(r10, kLevelOffset));
 
   // Native call returns to the DirectCEntry stub which redirects to the
   // return address pushed on stack (could have moved after GC).
@@ -2326,39 +2325,44 @@ void MacroAssembler::CallApiFunctionAndReturn(ExternalReference function,
   Label promote_scheduled_exception;
   Label delete_allocated_handles;
   Label leave_exit_frame;
+  Label skip1, skip2;
 
   // If result is non-zero, dereference to get the result value
   // otherwise set it to undefined.
-  cmpi(r0, Operand(0));
-  LoadRoot(r0, Heap::kUndefinedValueRootIndex, eq);
-  ldr(r0, MemOperand(r0), ne);
+  cmpi(r3, Operand(0));
+  bne(&skip1);
+  LoadRoot(r3, Heap::kUndefinedValueRootIndex);
+  b(&skip2);
+  bind(&skip1);
+  lwz(r3, MemOperand(r3));
+  bind(&skip2);
 
   // No more valid handles (the result handle was the last one). Restore
   // previous handle scope.
-  str(r4, MemOperand(r7, kNextOffset));
+  stw(r7, MemOperand(r10, kNextOffset));
   if (emit_debug_code()) {
-    lwz(r1, MemOperand(r7, kLevelOffset));
-    cmp(r1, r6);
+    lwz(r4, MemOperand(r10, kLevelOffset));
+    cmp(r4, r9);
     Check(eq, "Unexpected level after return from api call");
   }
-  sub(r6, r6, Operand(1));
-  str(r6, MemOperand(r7, kLevelOffset));
-  lwz(ip, MemOperand(r7, kLimitOffset));
-  cmp(r5, ip);
+  sub(r9, r9, Operand(1));
+  stw(r9, MemOperand(r10, kLevelOffset));
+  lwz(ip, MemOperand(r10, kLimitOffset));
+  cmp(r8, ip);
   bne(&delete_allocated_handles);
 
   // Check if the function scheduled an exception.
   bind(&leave_exit_frame);
-  LoadRoot(r4, Heap::kTheHoleValueRootIndex);
+  LoadRoot(r7, Heap::kTheHoleValueRootIndex);
   mov(ip, Operand(ExternalReference::scheduled_exception_address(isolate())));
-  lwz(r5, MemOperand(ip));
-  cmp(r4, r5);
+  lwz(r8, MemOperand(ip));
+  cmp(r7, r8);
   bne(&promote_scheduled_exception);
 
   // LeaveExitFrame expects unwind space to be in a register.
-  mov(r4, Operand(stack_space));
-  LeaveExitFrame(false, r4);
-  mov(pc, lr);
+  mov(r7, Operand(stack_space));
+  LeaveExitFrame(false, r7);
+  blr();
 
   bind(&promote_scheduled_exception);
   TailCallExternalReference(
@@ -2368,13 +2372,13 @@ void MacroAssembler::CallApiFunctionAndReturn(ExternalReference function,
 
   // HandleScope limit has changed. Delete allocated extensions.
   bind(&delete_allocated_handles);
-  str(r5, MemOperand(r7, kLimitOffset));
-  mov(r4, r0);
-  PrepareCallCFunction(1, r5);
-  mov(r0, Operand(ExternalReference::isolate_address()));
+  stw(r8, MemOperand(r10, kLimitOffset));
+  mr(r7, r3);
+  PrepareCallCFunction(1, r8);
+  mov(r3, Operand(ExternalReference::isolate_address()));
   CallCFunction(
       ExternalReference::delete_handle_scope_extensions(isolate()), 1);
-  mov(r0, r4);
+  mr(r3, r7);
   jmp(&leave_exit_frame);
 }
 
