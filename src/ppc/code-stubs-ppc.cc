@@ -2464,7 +2464,7 @@ void BinaryOpStub::GenerateSmiSmiOperation(MacroAssembler* masm) {
       __ bc(&undo_add, BT, 1); 
       __ Ret();
       __ bind(&undo_add);
-      __ sub(right, right, Operand(left));  // Revert optimistic add.
+      __ sub(right, right, left);  // Revert optimistic add.
       break;
     }
     case Token::SUB: {
@@ -2475,7 +2475,7 @@ void BinaryOpStub::GenerateSmiSmiOperation(MacroAssembler* masm) {
       __ bc(&undo_sub, BT, 1); 
       __ Ret();
       __ bind(&undo_sub);
-      __ add(right, left, Operand(right));  // Revert optimistic subtract.
+      __ add(right, left, right);  // Revert optimistic subtract.
       break;
     }
     case Token::MUL: {
@@ -4498,8 +4498,8 @@ void ArgumentsAccessStub::GenerateReadElement(MacroAssembler* masm) {
   // Check index against formal parameters count limit passed in
   // through register r3. Use unsigned comparison to get negative
   // check for free.
-  __ cmp(r4, r3);
-  __ bgt(&slow);
+  __ cmpl(r4, r3);
+  __ bge(&slow);
 
   // Read the argument from the stack and return it.
   __ sub(r6, r3, r4);
@@ -4796,7 +4796,8 @@ void ArgumentsAccessStub::GenerateNewStrict(MacroAssembler* masm) {
   __ bind(&adaptor_frame);
   __ lwz(r4, MemOperand(r5, ArgumentsAdaptorFrameConstants::kLengthOffset));
   __ stw(r4, MemOperand(sp, 0));
-  __ add(r6, r5, Operand(r4, LSL, kPointerSizeLog2 - kSmiTagSize));
+  __ slwi(r6, r4, Operand(kPointerSizeLog2 - kSmiTagSize));
+  __ add(r6, r5, r6);
   __ add(r6, r6, Operand(StandardFrameConstants::kCallerSPOffset));
   __ stw(r6, MemOperand(sp, 1 * kPointerSize));
 
@@ -5692,7 +5693,7 @@ void StringCharCodeAtGenerator::GenerateSlow(
   // is too complex (e.g., when the string needs to be flattened).
   __ bind(&call_runtime_);
   call_helper.BeforeCall(masm);
-  __ mov(index_, Operand(index_, LSL, kSmiTagSize));
+  __ slwi(index_, index_, Operand(kSmiTagSize));
   __ Push(object_, index_);
   __ CallRuntime(Runtime::kStringCharCodeAt, 2);
   __ Move(result_, r3);
@@ -6564,8 +6565,8 @@ void StringAddStub::Generate(MacroAssembler* masm) {
   ASSERT(IsPowerOf2(String::kMaxLength + 1));
   // kMaxLength + 1 is representable as shifted literal, kMaxLength is not.
   __ mov(r10, Operand(String::kMaxLength + 1));
-  __ cmp(r9, r10);
-  __ bgt(&call_runtime);
+  __ cmpl(r9, r10);
+  __ bge(&call_runtime);
 
   // If result is not supposed to be flat, allocate a cons string object.
   // If both strings are ASCII the result is an ASCII cons string.

@@ -344,8 +344,8 @@ static void GenerateFastArrayLoad(MacroAssembler* masm,
   }
   // Check that the key (index) is within bounds.
   __ lwz(scratch1, FieldMemOperand(elements, FixedArray::kLengthOffset));
-  __ cmp(key, scratch1);
-  __ bgt(out_of_range);
+  __ cmpl(key, scratch1);
+  __ bge(out_of_range);
   // Fast case: Do the load.
   __ add(scratch1, elements, Operand(FixedArray::kHeaderSize - kHeapObjectTag));
   // The key is a smi.
@@ -432,8 +432,8 @@ void CallICBase::GenerateMonomorphicCacheProbe(MacroAssembler* masm,
 
   // Check for string.
   __ bind(&non_number);
-  __ cmpi(r6, Operand(FIRST_NONSTRING_TYPE));
-  __ bgt(&non_string);
+  __ cmpli(r6, Operand(FIRST_NONSTRING_TYPE));
+  __ bge(&non_string);
   StubCompiler::GenerateLoadGlobalFunctionPrototype(
       masm, Context::STRING_FUNCTION_INDEX, r4);
   __ b(&probe);
@@ -1519,7 +1519,7 @@ void KeyedStoreIC::GenerateGeneric(MacroAssembler* masm,
   __ lwz(elements, FieldMemOperand(receiver, JSObject::kElementsOffset));
   // Check array bounds. Both the key and the length of FixedArray are smis.
   __ lwz(ip, FieldMemOperand(elements, FixedArray::kLengthOffset));
-  __ cmp(key, ip);
+  __ cmpl(key, ip);
   __ blt(&fast_object);
 
   // Slow case, handle jump to runtime.
@@ -1539,8 +1539,8 @@ void KeyedStoreIC::GenerateGeneric(MacroAssembler* masm,
   // Check for room in the elements backing store.
   // Both the key and the length of FixedArray are smis.
   __ lwz(ip, FieldMemOperand(elements, FixedArray::kLengthOffset));
-  __ cmp(key, ip);
-  __ bgt(&slow);
+  __ cmpl(key, ip);
+  __ bge(&slow);
   __ lwz(elements_map, FieldMemOperand(elements, HeapObject::kMapOffset));
   __ mov(ip, Operand(masm->isolate()->factory()->fixed_array_map()));
   __ cmp(elements_map, ip); // roohack - I think I can re-use ip here
@@ -1561,8 +1561,8 @@ void KeyedStoreIC::GenerateGeneric(MacroAssembler* masm,
 
   // Check the key against the length in the array.
   __ lwz(ip, FieldMemOperand(receiver, JSArray::kLengthOffset));
-  __ cmp(key, ip);
-  __ bgt(&extra);
+  __ cmpl(key, ip);
+  __ bge(&extra);
 
   KeyedStoreGenerateGenericHelper(masm, &fast_object, &fast_double,
                                   &slow, kCheckMap, kDontIncrementLength,

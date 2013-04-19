@@ -334,7 +334,9 @@ enum OpcodeExt2 {
   // Below represent bits 10-1  (any value >= 512)
   SRWX = 536 <<1,  // Shift Right Word
   SRAW = 792 << 1,  // Shift Right Algebraic Word
-  SRAWIX = 824 << 1  // Shift Right Algebraic Word Immediate
+  SRAWIX = 824 << 1,  // Shift Right Algebraic Word Immediate
+  EXTSH = 922 << 1,  // Extend Sign Halfword
+  EXTSB = 954 << 1  // Extend Sign Byte
 }; 
 
 // Bits 5-1

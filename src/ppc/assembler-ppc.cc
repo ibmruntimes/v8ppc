@@ -1477,7 +1477,16 @@ void Assembler::stw(Register dst, const MemOperand &src) {
 void Assembler::stwu(Register dst, const MemOperand &src) {
   d_form(STWU, dst, src.ra_, src.offset_);
 }
- 
+
+void Assembler::extsb(Register rs, Register ra, RCBit rc) {
+ CheckBuffer();
+ emit(EXT2 | EXTSB | rs.code()*B21 | ra.code()*B16 | rc );  
+} 
+
+void Assembler::extsh(Register rs, Register ra, RCBit rc) {
+ CheckBuffer();
+ emit(EXT2 | EXTSH | rs.code()*B21 | ra.code()*B16 | rc );  
+} 
 
 //end PowerPC
 

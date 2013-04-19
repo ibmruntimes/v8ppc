@@ -71,11 +71,13 @@ static void ProbeTable(Isolate* isolate,
   scratch = no_reg;
 
   // Multiply by 3 because there are 3 fields per entry (name, code, map).
-  __ add(offset_scratch, offset, Operand(offset, LSL, 1));
+  __ slwi(offset_scratch, offset, Operand(1));
+  __ add(offset_scratch, offset, offset_scratch);
 
   // Calculate the base address of the entry.
   __ mov(base_addr, Operand(key_offset));
-  __ add(base_addr, base_addr, Operand(offset_scratch, LSL, kPointerSizeLog2));
+  __ slwi(scratch2, offset_scratch, Operand(kPointerSizeLog2));
+  __ add(base_addr, base_addr, scratch2);
 
   // Check that the key in the entry matches the name.
   __ lwz(ip, MemOperand(base_addr, 0));
@@ -104,9 +106,9 @@ static void ProbeTable(Isolate* isolate,
   __ bic(flags_reg, flags_reg, Operand(mask));
   // Using cmn and the negative instead of cmp means we can use movw.
   if (flags < 0) {
-    __ cmn(flags_reg, Operand(-flags));
+    __ cmpi(flags_reg, Operand(-flags));
   } else {
-    __ cmp(flags_reg, Operand(flags));
+    __ cmpi(flags_reg, Operand(flags));
   }
   __ bne(&miss);
 
@@ -151,13 +153,14 @@ static void GenerateDictionaryNegativeLookup(MacroAssembler* masm,
   Register map = scratch1;
   __ lwz(map, FieldMemOperand(receiver, HeapObject::kMapOffset));
   __ lbz(scratch0, FieldMemOperand(map, Map::kBitFieldOffset));
-  __ tst(scratch0, Operand(kInterceptorOrAccessCheckNeededMask));
+  __ andi(r0, scratch0, Operand(kInterceptorOrAccessCheckNeededMask));
+  __ cmpi(r0, Operand(0));
   __ bne(miss_label);
 
   // Check that receiver is a JSObject.
   __ lbz(scratch0, FieldMemOperand(map, Map::kInstanceTypeOffset));
-  __ cmp(scratch0, Operand(FIRST_SPEC_OBJECT_TYPE));
-  __ b(lt, miss_label);
+  __ cmpi(scratch0, Operand(FIRST_SPEC_OBJECT_TYPE));
+  __ blt(miss_label);
 
   // Load properties array.
   Register properties = scratch0;
@@ -991,63 +994,11 @@ static void StoreIntAsFloat(MacroAssembler* masm,
                             Register fval,
                             Register scratch1,
                             Register scratch2) {
-  if (CpuFeatures::IsSupported(VFP2)) {
-    CpuFeatures::Scope scope(VFP2);
-    __ vmov(s0, ival);
-    __ add(scratch1, dst, Operand(wordoffset, LSL, 2));
-    __ vcvt_f32_s32(s0, s0);
-    __ vstr(s0, scratch1, 0);
-  } else {
-    Label not_special, done;
-    // Move sign bit from source to destination.  This works because the sign
-    // bit in the exponent word of the double has the same position and polarity
-    // as the 2's complement sign bit in a Smi.
-    ASSERT(kBinary32SignMask == 0x80000000u);
-
-    __ and_(fval, ival, Operand(kBinary32SignMask), SetCC);
-    // Negate value if it is negative.
-    __ rsb(ival, ival, Operand(0, RelocInfo::NONE), LeaveCC, ne);
-
-    // We have -1, 0 or 1, which we treat specially. Register ival contains
-    // absolute value: it is either equal to 1 (special case of -1 and 1),
-    // greater than 1 (not a special case) or less than 1 (special case of 0).
-    __ cmp(ival, Operand(1));
-    __ bgt(&not_special);
-
-    // For 1 or -1 we need to or in the 0 exponent (biased).
-    static const uint32_t exponent_word_for_1 =
-        kBinary32ExponentBias << kBinary32ExponentShift;
-
-    __ orr(fval, fval, Operand(exponent_word_for_1), LeaveCC, eq);
-    __ b(&done);
-
-    __ bind(&not_special);
-    // Count leading zeros.
-    // Gets the wrong answer for 0, but we already checked for that case above.
-    Register zeros = scratch2;
-    __ CountLeadingZeros(zeros, ival, scratch1);
-
-    // Compute exponent and or it into the exponent register.
-    __ rsb(scratch1,
-           zeros,
-           Operand((kBitsPerInt - 1) + kBinary32ExponentBias));
-
-    __ orr(fval,
-           fval,
-           Operand(scratch1, LSL, kBinary32ExponentShift));
-
-    // Shift up the source chopping the top bit off.
-    __ add(zeros, zeros, Operand(1));
-    // This wouldn't work for 1 and -1 as the shift would be 32 which means 0.
-    __ mov(ival, Operand(ival, LSL, zeros));
-    // And the top (top 20 bits).
-    __ orr(fval,
-           fval,
-           Operand(ival, LSR, kBitsPerInt - kBinary32MantissaBits));
-
-    __ bind(&done);
-    __ stw(fval, MemOperand(dst, wordoffset, LSL, 2));
-  }
+  __ vmov(s0, ival);
+  __ slwi(scratch2, wordoffset, Operand(2));
+  __ add(scratch1, dst, scratch2);
+  __ vcvt_f32_s32(s0, s0);
+  __ vstr(s0, scratch1, 0);
 }
 
 
@@ -1269,7 +1220,8 @@ void StubCompiler::GenerateDictionaryLoadCallback(Register receiver,
       StringDictionary::kElementsStartIndex * kPointerSize;
   const int kValueOffset = kElementsStartOffset + kPointerSize;
   __ lwz(scratch2, FieldMemOperand(pointer, kValueOffset));
-  __ cmp(scratch2, Operand(callback));
+  __ mov(scratch3, Operand(callback));
+  __ cmp(scratch2, scratch3);
   __ bne(miss);
 }
 
@@ -1662,11 +1614,11 @@ Handle<Code> CallStubCompiler::CompileArrayPushCall(
       // Store the value.
       // We may need a register containing the address end_elements below,
       // so write back the value in end_elements.
-      __ add(end_elements, elements,
-             Operand(r3, LSL, kPointerSizeLog2 - kSmiTagSize));
+      __ slwi(end_elements, r3, Operand(kPointerSizeLog2 - kSmiTagSize));
+      __ add(end_elements, elements, end_elements);
       const int kEndElementsOffset =
           FixedArray::kHeaderSize - kHeapObjectTag - argc * kPointerSize;
-      __ stw(r7, MemOperand(end_elements, kEndElementsOffset, PreIndex));
+      __ stw(r7, MemOperand(end_elements, kEndElementsOffset));
 
       // Check for a smi.
       __ Drop(argc + 1);
@@ -1716,9 +1668,9 @@ Handle<Code> CallStubCompiler::CompileArrayPushCall(
       // Store the value.
       // We may need a register containing the address end_elements below,
       // so write back the value in end_elements.
-      __ add(end_elements, elements,
-             Operand(r3, LSL, kPointerSizeLog2 - kSmiTagSize));
-      __ stw(r7, MemOperand(end_elements, kEndElementsOffset, PreIndex));
+      __ slwi(end_elements, r3, Operand(kPointerSizeLog2 - kSmiTagSize));
+      __ add(end_elements, elements, end_elements);
+      __ stw(r7, MemOperand(end_elements, kEndElementsOffset));
 
       __ RecordWrite(elements,
                      end_elements,
@@ -1755,8 +1707,8 @@ Handle<Code> CallStubCompiler::CompileArrayPushCall(
 
       const int kAllocationDelta = 4;
       // Load top and check if it is the end of elements.
-      __ add(end_elements, elements,
-             Operand(r3, LSL, kPointerSizeLog2 - kSmiTagSize));
+      __ slwi(end_elements, r3, Operand(kPointerSizeLog2 - kSmiTagSize));
+      __ add(end_elements, elements, end_elements);
       __ add(end_elements, end_elements, Operand(kEndElementsOffset));
       __ mov(r10, Operand(new_space_allocation_top));
       __ lwz(r6, MemOperand(r10));
@@ -1849,8 +1801,9 @@ Handle<Code> CallStubCompiler::CompileArrayPopCall(
 
   // Get the array's length into r7 and calculate new length.
   __ lwz(r7, FieldMemOperand(receiver, JSArray::kLengthOffset));
-  __ sub(r7, r7, Operand(Smi::FromInt(1)), SetCC);
-  __ b(lt, &return_undefined);
+  __ sub(r7, r7, Operand(Smi::FromInt(1)));
+  __ cmpi(r7, Operand(0));
+  __ blt(&return_undefined);
 
   // Get the last element.
   __ LoadRoot(r9, Heap::kTheHoleValueRootIndex);
@@ -1858,7 +1811,8 @@ Handle<Code> CallStubCompiler::CompileArrayPopCall(
   STATIC_ASSERT(kSmiTag == 0);
   // We can't address the last element in one operation. Compute the more
   // expensive shift first, and use an offset later on.
-  __ add(elements, elements, Operand(r7, LSL, kPointerSizeLog2 - kSmiTagSize));
+  __ slwi(r3, r7, Operand(kPointerSizeLog2 - kSmiTagSize));
+  __ add(elements, elements, r3);
   __ lwz(r3, FieldMemOperand(elements, FixedArray::kHeaderSize));
   __ cmp(r3, r9);
   __ beq(&call_builtin);
@@ -2102,7 +2056,8 @@ Handle<Code> CallStubCompiler::CompileStringFromCharCodeCall(
   __ JumpIfNotSmi(code, &slow);
 
   // Convert the smi code to uint16.
-  __ and_(code, code, Operand(Smi::FromInt(0xffff)));
+  __ mov(r0, Operand(Smi::FromInt(0xffff)));
+  __ and_(code, code, r0);
 
   StringCharFromCodeGenerator generator(code, r3);
   generator.GenerateFast(masm());
@@ -2237,7 +2192,7 @@ Handle<Code> CallStubCompiler::CompileMathFloorCall(
   __ b(&wont_fit_smi, mi);
   // Tag the result.
   STATIC_ASSERT(kSmiTag == 0);
-  __ mov(r3, Operand(r3, LSL, kSmiTagSize));
+  __ slwi(r3, r3, Operand(kSmiTagSize));
 
   // Check for -0.
   __ cmp(r3, Operand(0, RelocInfo::NONE));
@@ -2476,7 +2431,7 @@ Handle<Code> CallStubCompiler::CompileCallConstant(Handle<Object> object,
       if (function->IsBuiltin() || !function->shared()->is_classic_mode()) {
         // Check that the object is a two-byte string or a symbol.
         __ CompareObjectType(r4, r6, r6, FIRST_NONSTRING_TYPE);
-        __ b(ge, &miss);
+        __ bge(&miss);
         // Check that the maps starting from the prototype haven't changed.
         GenerateDirectLoadGlobalFunctionPrototype(
             masm(), Context::STRING_FUNCTION_INDEX, r3, &miss);
@@ -2815,7 +2770,7 @@ Handle<Code> StoreStubCompiler::CompileStoreInterceptor(
 
   __ Push(r4, r5, r3);  // Receiver, name, value.
 
-  __ mov(r3, Operand(Smi::FromInt(strict_mode_)));
+  __ li(r3, Operand(Smi::FromInt(strict_mode_)));
   __ push(r3);  // strict mode
 
   // Do tail-call to the runtime system.
@@ -3501,15 +3456,19 @@ Handle<Code> ConstructStubCompiler::CompileConstructStub(
   __ LoadRoot(r9, Heap::kEmptyFixedArrayRootIndex);
   __ mr(r8, r7);
   ASSERT_EQ(0 * kPointerSize, JSObject::kMapOffset);
-  __ stw(r5, MemOperand(r8, kPointerSize, PostIndex));
+  __ stw(r5, MemOperand(r8));
+  __ add(r8, r8, Operand(kPointerSize));
   ASSERT_EQ(1 * kPointerSize, JSObject::kPropertiesOffset);
-  __ stw(r9, MemOperand(r8, kPointerSize, PostIndex));
+  __ stw(r9, MemOperand(r8));
+  __ add(r8, r8, Operand(kPointerSize));
   ASSERT_EQ(2 * kPointerSize, JSObject::kElementsOffset);
-  __ stw(r9, MemOperand(r8, kPointerSize, PostIndex));
+  __ stw(r9, MemOperand(r8));
+  __ add(r8, r8, Operand(kPointerSize));
 
   // Calculate the location of the first argument. The stack contains only the
   // argc arguments.
-  __ add(r4, sp, Operand(r3, LSL, kPointerSizeLog2));
+  __ slwi(r4, r4, Operand(kPointerSizeLog2));
+  __ add(r4, sp, r4);
 
   // Fill all the in-object properties with undefined.
   // r3: argc
@@ -3526,21 +3485,24 @@ Handle<Code> ConstructStubCompiler::CompileConstructStub(
       Label not_passed, next;
       // Check if the argument assigned to the property is actually passed.
       int arg_number = shared->GetThisPropertyAssignmentArgument(i);
-      __ cmp(r3, Operand(arg_number));
-      __ b(le, &not_passed);
+      __ cmpi(r3, Operand(arg_number));
+      __ ble(&not_passed);
       // Argument passed - find it on the stack.
       __ lwz(r5, MemOperand(r4, (arg_number + 1) * -kPointerSize));
-      __ stw(r5, MemOperand(r8, kPointerSize, PostIndex));
+      __ stw(r5, MemOperand(r8));
+      __ add(r8, r8, Operand(kPointerSize));
       __ b(&next);
       __ bind(&not_passed);
       // Set the property to undefined.
-      __ stw(r10, MemOperand(r8, kPointerSize, PostIndex));
+      __ stw(r10, MemOperand(r8));
+      __ add(r8, r8, Operand(kPointerSize));
       __ bind(&next);
     } else {
       // Set the property to the constant value.
       Handle<Object> constant(shared->GetThisPropertyAssignmentConstant(i));
       __ mov(r5, Operand(constant));
-      __ stw(r5, MemOperand(r8, kPointerSize, PostIndex));
+      __ stw(r5, MemOperand(r8));
+      __ add(r8, r8, Operand(kPointerSize));
     }
   }
 
@@ -3549,7 +3511,8 @@ Handle<Code> ConstructStubCompiler::CompileConstructStub(
   for (int i = shared->this_property_assignments_count();
        i < function->initial_map()->inobject_properties();
        i++) {
-      __ stw(r10, MemOperand(r8, kPointerSize, PostIndex));
+      __ stw(r10, MemOperand(r8));
+      __ add(r8, r8, Operand(kPointerSize));
   }
 
   // r3: argc
@@ -3557,17 +3520,18 @@ Handle<Code> ConstructStubCompiler::CompileConstructStub(
   // Move argc to r4 and the JSObject to return to r3 and tag it.
   __ mr(r4, r3);
   __ mr(r3, r7);
-  __ orr(r3, r3, Operand(kHeapObjectTag));
+  __ ori(r3, r3, Operand(kHeapObjectTag));
 
   // r3: JSObject
   // r4: argc
   // Remove caller arguments and receiver from the stack and return.
-  __ add(sp, sp, Operand(r4, LSL, kPointerSizeLog2));
+  __ slwi(r4, r4, Operand(kPointerSizeLog2));
+  __ add(sp, sp, r4);
   __ add(sp, sp, Operand(kPointerSize));
   Counters* counters = masm()->isolate()->counters();
   __ IncrementCounter(counters->constructed_objects(), 1, r4, r5);
   __ IncrementCounter(counters->constructed_objects_stub(), 1, r4, r5);
-  __ Jump(lr);
+  __ blr();
 
   // Jump to the generic stub in case the specialized code cannot handle the
   // construction.
@@ -3724,9 +3688,9 @@ void KeyedLoadStubCompiler::GenerateLoadExternalArray(
 
   // Check that the index is in range.
   __ lwz(ip, FieldMemOperand(r6, ExternalArray::kLengthOffset));
-  __ cmp(key, ip);
+  __ cmpl(key, ip);
   // Unsigned comparison catches both negative and too-large values.
-  __ b(hs, &miss_force_generic);
+  __ bge(&miss_force_generic);
 
   __ lwz(r6, FieldMemOperand(r6, ExternalArray::kExternalPointerOffset));
   // r6: base pointer of external storage
@@ -3738,22 +3702,33 @@ void KeyedLoadStubCompiler::GenerateLoadExternalArray(
   Register value = r5;
   switch (elements_kind) {
     case EXTERNAL_BYTE_ELEMENTS:
-      __ ldrsb(value, MemOperand(r6, key, LSR, 1));
+      __ srwi(value, key, Operand(1));
+      __ add(value, value, r6);
+      __ lbz(value, MemOperand(value));
+      __ extsb(value, value);
       break;
     case EXTERNAL_PIXEL_ELEMENTS:
     case EXTERNAL_UNSIGNED_BYTE_ELEMENTS:
-      __ lbz(value, MemOperand(r6, key, LSR, 1));
+      __ srwi(value, key, Operand(1));
+      __ add(value, value, r6);
+      __ lbz(value, MemOperand(value));
       break;
     case EXTERNAL_SHORT_ELEMENTS:
-      __ ldrsh(value, MemOperand(r6, key, LSL, 0));
+      __ srwi(value, key, Operand(1));
+      __ add(value, value, r6);
+      __ lhz(value, MemOperand(value));
+      __ extsh(value, value);
       break;
     case EXTERNAL_UNSIGNED_SHORT_ELEMENTS:
-      __ ldrh(value, MemOperand(r6, key, LSL, 0));
+      __ srwi(value, key, Operand(1));
+      __ add(value, value, r6);
+      __ lhz(value, MemOperand(value));
       break;
     case EXTERNAL_INT_ELEMENTS:
     case EXTERNAL_UNSIGNED_INT_ELEMENTS:
-      __ li(r0, Operand(0xdead));
-      __ lwz(value, MemOperand(r6, key, LSL, 1));
+      __ srwi(value, key, Operand(1));
+      __ add(value, value, r6);
+      __ lwz(value, MemOperand(value));
       break;
     case EXTERNAL_FLOAT_ELEMENTS:
       if (CpuFeatures::IsSupported(VFP2)) {
@@ -4004,7 +3979,7 @@ void KeyedLoadStubCompiler::GenerateLoadExternalArray(
 
   } else {
     // Tag integer as smi and return it.
-    __ mov(r3, Operand(value, LSL, kSmiTagSize));
+    __ slwi(r3, value, Operand(kSmiTagSize));
     __ Ret();
   }
 
@@ -4058,9 +4033,9 @@ void KeyedStoreStubCompiler::GenerateStoreExternalArray(
 
   // Check that the index is in range
   __ lwz(ip, FieldMemOperand(r6, ExternalArray::kLengthOffset));
-  __ cmp(key, ip);
+  __ cmpl(key, ip);
   // Unsigned comparison catches both negative and too-large values.
-  __ b(hs, &miss_force_generic);
+  __ bge(&miss_force_generic);
 
   // Handle both smis and HeapNumbers in the fast path. Go to the
   // runtime for all other kinds of values.
@@ -4092,7 +4067,9 @@ void KeyedStoreStubCompiler::GenerateStoreExternalArray(
       break;
     case EXTERNAL_INT_ELEMENTS:
     case EXTERNAL_UNSIGNED_INT_ELEMENTS:
-      __ stw(r8, MemOperand(r6, key, LSL, 1));
+      __ slwi(r8, key, Operand(1));
+      __ add(r8, r8, r6);
+      __ stw(r8, MemOperand(r8));
       break;
     case EXTERNAL_FLOAT_ELEMENTS:
       // Perform int-to-float conversion and store to memory.
@@ -4100,7 +4077,8 @@ void KeyedStoreStubCompiler::GenerateStoreExternalArray(
       StoreIntAsFloat(masm, r6, r7, r8, r9, r10, r22);
       break;
     case EXTERNAL_DOUBLE_ELEMENTS:
-      __ add(r6, r6, Operand(key, LSL, 2));
+      __ slwi(r8, key, Operand(2));
+      __ add(r6, r6, r8);
       // r6: effective address of the double element
       FloatingPointHelper::Destination destination;
       if (CpuFeatures::IsSupported(VFP2)) {
@@ -4182,7 +4160,9 @@ void KeyedStoreStubCompiler::GenerateStoreExternalArray(
             break;
           case EXTERNAL_INT_ELEMENTS:
           case EXTERNAL_UNSIGNED_INT_ELEMENTS:
-            __ stw(r8, MemOperand(r6, key, LSL, 1));
+            __ slwi(r8, key, Operand(1));
+            __ add(r8, r8, r6);
+            __ stw(r8, MemOperand(r8));
             break;
           case EXTERNAL_PIXEL_ELEMENTS:
           case EXTERNAL_FLOAT_ELEMENTS:
@@ -4325,7 +4305,9 @@ void KeyedStoreStubCompiler::GenerateStoreExternalArray(
             break;
           case EXTERNAL_INT_ELEMENTS:
           case EXTERNAL_UNSIGNED_INT_ELEMENTS:
-            __ stw(r8, MemOperand(r6, key, LSL, 1));
+            __ slwi(r8, key, Operand(1));
+            __ add(r8, r8, r6);
+            __ stw(r8, MemOperand(r8));
             break;
           case EXTERNAL_PIXEL_ELEMENTS:
           case EXTERNAL_FLOAT_ELEMENTS:
@@ -4395,8 +4377,8 @@ void KeyedLoadStubCompiler::GenerateLoadFastElement(MacroAssembler* masm) {
 
   // Check that the key is within bounds.
   __ lwz(r6, FieldMemOperand(r5, FixedArray::kLengthOffset));
-  __ cmp(r3, r6);
-  __ bgt(&miss_force_generic);
+  __ cmpl(r3, r6);
+  __ bge(&miss_force_generic);
 
   // Load the result and make sure it's not the hole.
   __ add(r6, r5, Operand(FixedArray::kHeaderSize - kHeapObjectTag));
@@ -4404,7 +4386,6 @@ void KeyedLoadStubCompiler::GenerateLoadFastElement(MacroAssembler* masm) {
   __ slwi(r7, r3, Operand(kPointerSizeLog2 - kSmiTagSize));
   __ add(r7, r6, r7);
   __ lwz(r7, MemOperand(r7));
-  // above was lwz(r7, MemOperand(r6, r3, LSL, kPointerSizeLog2 - kSmiTagSize));
   __ LoadRoot(ip, Heap::kTheHoleValueRootIndex);
   __ cmp(r7, ip);
   __ beq(&miss_force_generic);
@@ -4449,12 +4430,13 @@ void KeyedLoadStubCompiler::GenerateLoadFastDoubleElement(
 
   // Check that the key is within bounds.
   __ lwz(scratch, FieldMemOperand(elements_reg, FixedArray::kLengthOffset));
-  __ cmp(key_reg, Operand(scratch));
-  __ b(hs, &miss_force_generic);
+  __ cmpl(key_reg, scratch);
+  __ bge(&miss_force_generic);
 
   // Load the upper word of the double in the fixed array and test for NaN.
-  __ add(indexed_double_offset, elements_reg,
-         Operand(key_reg, LSL, kDoubleSizeLog2 - kSmiTagSize));
+  __ slwi(indexed_double_offset, key_reg,
+         Operand(kDoubleSizeLog2 - kSmiTagSize));
+  __ add(indexed_double_offset, elements_reg, indexed_double_offset);
 #if defined(V8_HOST_ARCH_PPC)
   uint32_t upper_32_offset = FixedArray::kHeaderSize;
 #else
@@ -4706,11 +4688,11 @@ void KeyedStoreStubCompiler::GenerateStoreFastDoubleElement(
   }
   // Compare smis, unsigned compare catches both negative and out-of-bound
   // indexes.
-  __ cmp(key_reg, scratch1);
+  __ cmpl(key_reg, scratch1);
   if (grow_mode == ALLOW_JSARRAY_GROWTH) {
-    __ b(hs, &grow);
+    __ bge(&grow);
   } else {
-    __ b(hs, &miss_force_generic);
+    __ bge(&miss_force_generic);
   }
 
   __ bind(&finish_store);
@@ -4792,8 +4774,8 @@ void KeyedStoreStubCompiler::GenerateStoreFastDoubleElement(
     // Make sure that the backing store can hold additional elements.
     __ lwz(scratch1,
            FieldMemOperand(elements_reg, FixedDoubleArray::kLengthOffset));
-    __ cmp(length_reg, scratch1);
-    __ b(hs, &slow);
+    __ cmpl(length_reg, scratch1);
+    __ bge(&slow);
 
     // Grow the array and finish the store.
     __ add(length_reg, length_reg, Operand(Smi::FromInt(1)));

@@ -122,7 +122,7 @@ void ElementsTransitionGenerator::GenerateSmiToDouble(
 
   // Allocate new FixedDoubleArray.
   // Use lr as a temporary register.
-  __ mov(lr, Operand(r8, LSL, 2));
+  __ slwi(lr, r8, Operand(2));
   __ add(lr, lr, Operand(FixedDoubleArray::kHeaderSize + kPointerSize));
   __ AllocateInNewSpace(lr, r9, r10, r22, &gc_required, NO_ALLOCATION_FLAGS);
   // r9: destination FixedDoubleArray, not tagged as heap object.
@@ -174,7 +174,8 @@ void ElementsTransitionGenerator::GenerateSmiToDouble(
   // Prepare for conversion loop.
   __ add(r6, r7, Operand(FixedArray::kHeaderSize - kHeapObjectTag));
   __ add(r10, r9, Operand(FixedDoubleArray::kHeaderSize));
-  __ add(r9, r10, Operand(r8, LSL, 2));
+  __ slwi(r9, r8, Operand(2));
+  __ add(r9, r10, Operand(r9));
   __ mov(r7, Operand(kHoleNanLower32));
   __ mov(r8, Operand(kHoleNanUpper32));
   // r6: begin of source FixedArray element fields, not tagged

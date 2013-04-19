@@ -427,7 +427,7 @@ static void ArrayNativeCode(MacroAssembler* masm,
   if (FLAG_smi_only_arrays) {
     __ JumpIfNotSmi(r5, &has_non_smi_element);
   }
-  __ stwu(r5, MemOperand(r8, -kPointerSize));  // roohack preindex?
+  __ stwu(r5, MemOperand(r8, -kPointerSize));
   __ bind(&entry);
   __ cmp(r7, r8);
   __ blt(&loop);

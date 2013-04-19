@@ -289,8 +289,8 @@ void FullCodeGenerator::Generate() {
       PrepareForBailoutForId(BailoutId::Declarations(), NO_REGISTERS);
       Label ok;
       __ LoadRoot(ip, Heap::kStackLimitRootIndex);
-      __ cmp(sp, ip);
-      __ bgt(&ok);
+      __ cmpl(sp, ip);
+      __ bge(&ok);
       StackCheckStub stub;
       __ CallStub(&stub);
       __ bind(&ok);
@@ -368,7 +368,7 @@ void FullCodeGenerator::EmitStackCheck(IterationStatement* stmt,
   } else {
     __ LoadRoot(ip, Heap::kStackLimitRootIndex);
     __ cmpl(sp, ip);
-    __ bgt(&ok);
+    __ bge(&ok);
     StackCheckStub stub;
     __ CallStub(&stub);
   }
@@ -1190,7 +1190,7 @@ void FullCodeGenerator::VisitForInStatement(ForInStatement* stmt) {
   // Load the current count to r3, load the length to r4.
   __ Ldrd(r3, r4, MemOperand(sp, 0 * kPointerSize));
   __ cmpl(r3, r4);  // Compare to the array length.
-  __ bgt(loop_statement.break_label());
+  __ bge(loop_statement.break_label());
 
   // Get the current entry of the array into register r6.
   __ lwz(r5, MemOperand(sp, 2 * kPointerSize));
@@ -1995,16 +1995,11 @@ void FullCodeGenerator::EmitInlineSmiBinaryOp(BinaryOperation* expr,
       break;
     case Token::MUL: {
       __ SmiUntag(ip, right);
-      __ smull(scratch1, scratch2, left, ip);
-      __ mov(ip, Operand(scratch1, ASR, 31));
-      __ cmp(ip, Operand(scratch2));
-      __ b(ne, &stub_call);
-      __ cmp(scratch1, Operand(0));
-      __ mov(right, Operand(scratch1), LeaveCC, ne);
-      __ b(ne, &done);
-      __ add(scratch2, right, Operand(left), SetCC);
-      __ mov(right, Operand(Smi::FromInt(0)), LeaveCC, pl);
-      __ b(mi, &stub_call);
+      __ mullw(scratch1, left, ip);
+      __ mulhw(scratch2, left, ip);
+      __ cmpi(scratch2, Operand(0));
+      __ bne(&stub_call);
+      __ mr(right, scratch1);  // not sure logic is 100% correct
       break;
     }
     case Token::BIT_OR:

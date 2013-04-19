@@ -2026,6 +2026,18 @@ void Simulator::DecodeExt2(Instruction* instr) {
       // todo - handle OE and RC bits
       break;
     }
+    case MULHWX: {
+      int rt = instr->RTValue();
+      int ra = instr->RAValue();
+      int rb = instr->RBValue();
+      int64_t ra_val = get_register(ra);
+      int64_t rb_val = get_register(rb);
+      int64_t alu_out = ra_val * rb_val;
+      alu_out >>= 32;
+      set_register(rt, alu_out);
+      // todo - handle OE and RC bits
+      break;
+    }
     case SLWX: {
       int rs = instr->RSValue();
       int ra = instr->RAValue();

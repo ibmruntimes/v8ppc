@@ -1846,10 +1846,11 @@ void MacroAssembler::AllocateTwoByteString(Register result,
   // Calculate the number of bytes needed for the characters in the string while
   // observing object alignment.
   ASSERT((SeqTwoByteString::kHeaderSize & kObjectAlignmentMask) == 0);
-  mov(scratch1, Operand(length, LSL, 1));  // Length in bytes, not chars.
+  slwi(scratch1, length, Operand(1));  // Length in bytes, not chars.
   add(scratch1, scratch1,
       Operand(kObjectAlignmentMask + SeqTwoByteString::kHeaderSize));
-  and_(scratch1, scratch1, Operand(~kObjectAlignmentMask));
+  mov(r0, Operand(~kObjectAlignmentMask));
+  and_(scratch1, scratch1, r0);
 
   // Allocate two-byte string in new space.
   AllocateInNewSpace(scratch1,
@@ -2078,11 +2079,11 @@ void MacroAssembler::StoreNumberToDoubleElements(Register value_reg,
   lwz(mantissa_reg, FieldMemOperand(value_reg, HeapNumber::kMantissaOffset));
 
   bind(&have_double_value);
-  add(scratch1, elements_reg,
-      Operand(key_reg, LSL, kDoubleSizeLog2 - kSmiTagSize));
-  str(mantissa_reg, FieldMemOperand(scratch1, FixedDoubleArray::kHeaderSize));
+  slwi(scratch1, key_reg, Operand(kDoubleSizeLog2 - kSmiTagSize));
+  add(scratch1, elements_reg, scratch1);
+  stw(mantissa_reg, FieldMemOperand(scratch1, FixedDoubleArray::kHeaderSize));
   uint32_t offset = FixedDoubleArray::kHeaderSize + sizeof(kHoleNanLower32);
-  str(exponent_reg, FieldMemOperand(scratch1, offset));
+  stw(exponent_reg, FieldMemOperand(scratch1, offset));
   jmp(&done);
 
   bind(&maybe_nan);
@@ -2103,8 +2104,8 @@ void MacroAssembler::StoreNumberToDoubleElements(Register value_reg,
   bind(&smi_value);
   add(scratch1, elements_reg,
       Operand(FixedDoubleArray::kHeaderSize - kHeapObjectTag));
-  add(scratch1, scratch1,
-      Operand(key_reg, LSL, kDoubleSizeLog2 - kSmiTagSize));
+  slwi(scratch4, key_reg, Operand(kDoubleSizeLog2 - kSmiTagSize));
+  add(scratch1, scratch1, scratch4);
   // scratch1 is now effective address of the double element
 
   FloatingPointHelper::Destination destination;

@@ -932,6 +932,9 @@ SBit s = LeaveCC, Condition cond = al // roohack - remove this line later
   void stw(Register dst, const MemOperand& src);
   void stwu(Register dst, const MemOperand& src);
 
+  void extsb(Register rs, Register ra, RCBit r = LeaveRC);
+  void extsh(Register rs, Register ra, RCBit r = LeaveRC);
+
   void rlwinm(Register ra, Register rs, int sh, int mb, int me, 
               RCBit rc = LeaveRC);
   void rlwimi(Register ra, Register rs, int sh, int mb, int me, 
