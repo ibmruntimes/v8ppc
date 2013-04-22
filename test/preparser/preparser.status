@@ -31,3 +31,12 @@ prefix preparser
 # escapes (we need to parse to distinguish octal escapes from valid
 # back-references).
 strict-octal-regexp: FAIL
+
+##############################################################################
+#
+# PENGUIN: temporarily skip tests during initial ppc porting
+#
+[ $arch == ppc ]
+
+*: SKIP
+
