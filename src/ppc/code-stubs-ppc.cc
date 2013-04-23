@@ -622,8 +622,7 @@ void FloatingPointHelper::LoadSmis(MacroAssembler* masm,
   }
 }
 
-
-// roohack - not converted
+// needs cleanup for extra parameters that are unused
 void FloatingPointHelper::LoadOperands(
     MacroAssembler* masm,
     FloatingPointHelper::Destination destination,
@@ -632,17 +631,17 @@ void FloatingPointHelper::LoadOperands(
     Register scratch2,
     Label* slow) {
 
-  // Load right operand (r0) to d6 or r2/r3.
+  // Load right operand (r3) to d7
   LoadNumber(masm, destination,
-             r0, d7, r2, r3, heap_number_map, scratch1, scratch2, slow);
+             r3, d7, r5, r6, heap_number_map, scratch1, scratch2, slow);
 
-  // Load left operand (r1) to d7 or r0/r1.
+  // Load left operand (r4) to d6
   LoadNumber(masm, destination,
-             r1, d6, r0, r1, heap_number_map, scratch1, scratch2, slow);
+             r4, d6, r3, r4, heap_number_map, scratch1, scratch2, slow);
 }
 
-
-// roohack - not converted
+// needs cleanup for extra parameters that are unused
+// also needs a scratch double register instead of d3
 void FloatingPointHelper::LoadNumber(MacroAssembler* masm,
                                      Destination destination,
                                      Register object,
@@ -667,39 +666,45 @@ void FloatingPointHelper::LoadNumber(MacroAssembler* masm,
   __ JumpIfNotHeapNumber(object, heap_number_map, scratch1, not_number);
 
   // Handle loading a double from a heap number.
-  if (CpuFeatures::IsSupported(VFP2) &&
-      destination == kVFPRegisters) {
-    CpuFeatures::Scope scope(VFP2);
+  if (destination == kVFPRegisters) {
     // Load the double from tagged HeapNumber to double register.
     __ sub(scratch1, object, Operand(kHeapObjectTag));
-    __ vldr(dst, scratch1, HeapNumber::kValueOffset);
+    __ lfd(dst, scratch1, HeapNumber::kValueOffset);
   } else {
     ASSERT(destination == kCoreRegisters);
     // Load the double from heap number to dst1 and dst2 in double format.
-    __ Ldrd(dst1, dst2, FieldMemOperand(object, HeapNumber::kValueOffset));
+    __ lwz(dst1, FieldMemOperand(object, HeapNumber::kValueOffset));
+    __ lwz(dst2, FieldMemOperand(object, HeapNumber::kValueOffset+4));
   }
   __ jmp(&done);
 
   // Handle loading a double from a smi.
   __ bind(&is_smi);
-  if (CpuFeatures::IsSupported(VFP2)) {
-    CpuFeatures::Scope scope(VFP2);
-    // Convert smi to double using VFP instructions.
-    __ vmov(dst.high(), scratch1);
-    __ vcvt_f64_s32(dst, dst.high());
-    if (destination == kCoreRegisters) {
-      // Load the converted smi to dst1 and dst2 in double format.
-      __ vmov(dst1, dst2, dst);
-    }
-  } else {
-    ASSERT(destination == kCoreRegisters);
-    // Write smi to dst1 and dst2 double format.
-    __ mov(scratch1, Operand(object));
-    ConvertToDoubleStub stub(dst2, dst1, scratch1, scratch2);
-    __ push(lr);
-    __ Call(stub.GetCode());
-    __ pop(lr);
-  }
+
+  // Convert untagged smi to double using FP instructions.
+  // could possibly refactor with SmiToDoubleFPRegister
+  __ sub(sp, sp, Operand(16));   // reserve two temporary doubles on the stack
+#if V8_HOST_ARCH_PPC  // Really we mean BIG ENDIAN host
+  __ addis(r0, r0, 0x4330);
+  __ stw(r0, MemOperand(sp, 0));   // ENDIAN issue here
+  __ stw(r0, MemOperand(sp, 8));
+  __ addis(r0, r0, 0x8000);
+  __ stw(r0, MemOperand(sp, 4));
+  __ xor_(r0, scratch1, r0);
+  __ stw(r0, MemOperand(sp, 12));
+#else
+  __ addis(r0, r0, 0x4330);
+  __ stw(r0, MemOperand(sp, 4));
+  __ stw(r0, MemOperand(sp, 12));
+  __ addis(r0, r0, 0x8000);
+  __ stw(r0, MemOperand(sp, 0));
+  __ xor_(r0, scratch1, r0);
+  __ stw(r0, MemOperand(sp, 8));
+#endif
+  __ lfd(dst, sp, 0);
+  __ lfd(d3, sp, 8);
+  __ add(sp, sp, Operand(16));  // restore stack
+  __ fsub(dst, d3, dst);
 
   __ bind(&done);
 }
@@ -2746,8 +2751,10 @@ void BinaryOpStub::GenerateFPOperation(MacroAssembler* masm,
       }
 
       // Check that the *signed* result fits in a smi.
-      __ add(r6, r5, Operand(0x40000000), SetCC);
-      __ b(mi, &result_not_a_smi);
+      __ mov(r6, Operand(0x40000000));
+      __ add(r6, r5, r6);
+      __ cmpi(r6, Operand(0));
+      __ blt(&result_not_a_smi);
       __ SmiTag(r3, r5);
       __ Ret();
 
@@ -4102,32 +4109,39 @@ void JSEntryStub::GenerateBody(MacroAssembler* masm, bool is_construct) {
   // r14-r30,fp are nonvolatile and must be preserved
   // stack must be 8 aligned
 
-  // stack looks like
+  // stack looks like .. 22 * 4 bytes
 
   // sp     oldSP
   //        reserved
   //        <unused>
   //        <unused>
-  //        r16
-  //        r25
-  //        r24
+  // r14 - r30 (17 slots)
   //        fp (aka r31)
   // oldSP  (value)
   //        LR reserved
   //
-  __ stwu(sp, MemOperand(sp, -32));
+  __ stwu(sp, MemOperand(sp, -(22*4)));
   __ mflr(r0);
-  __ stw(r0, MemOperand(sp, 36));  // use pre-reserved LR slot
-  __ stw(fp, MemOperand(sp, 28));
+  __ stw(r0, MemOperand(sp, 92));  // use pre-reserved LR slot
+  __ stw(fp, MemOperand(sp, 84));
   __ mr(fp, sp);
   // we may need to remember fp in another saved reg for later
   // to allow for 'valid' PowerPC stack frames to be created
 
   // Save the non-volatile registers we will be using
   // r14,r15,r16 (fp aka r31 is already stored)
-  __ stw(r24, MemOperand(sp, 24));      // roohack - r14 ARM hack
+  __ stw(r24, MemOperand(sp, 16));      // roohack - r14 ARM hack
   __ stw(r25, MemOperand(sp, 20));	// roohack - r15 ARM hack
-  __ stw(r16, MemOperand(sp, 16));
+  __ stw(r16, MemOperand(sp, 24));
+
+  __ stw(r20, MemOperand(sp, 40));
+
+  __ stw(r22, MemOperand(sp, 48));
+
+  __ stw(r26, MemOperand(sp, 64));
+  __ stw(r27, MemOperand(sp, 68));
+  __ stw(r28, MemOperand(sp, 72));
+  __ stw(r29, MemOperand(sp, 76));
 
   // we might want cp and kRootRegister to be preserved regs
   // see (macro-assembler.h)
@@ -4135,7 +4149,7 @@ void JSEntryStub::GenerateBody(MacroAssembler* masm, bool is_construct) {
   // Floating point regs FPR0 - FRP13 are volatile
   // FPR14-FPR31 are non-volatile, but sub-calls will save them for us
 
-//  int offset_to_argv = kPointerSize * 8; // matches 32 above
+//  int offset_to_argv = kPointerSize * 22; // matches (22*4) above
 //  __ lwz(r7, MemOperand(sp, offset_to_argv));
 
   // Push a frame with special values setup to mark it as an entry frame.
@@ -4280,14 +4294,23 @@ void JSEntryStub::GenerateBody(MacroAssembler* masm, bool is_construct) {
 #endif
 
   // Restore non-volatile registers
-  __ lwz(r16, MemOperand(sp, 16));
+  __ lwz(r24, MemOperand(sp, 16));      // roohack - r14 ARM hack
   __ lwz(r25, MemOperand(sp, 20));      // roohack - r15 ARM hack
-  __ lwz(r24, MemOperand(sp, 24));      // roohack - r14 ARM hack
+  __ lwz(r16, MemOperand(sp, 24));
 
-  __ lwz(fp, MemOperand(sp, 28));
-  __ lwz(r0, MemOperand(sp, 36));  // use pre-reserved LR slot
+  __ lwz(r20, MemOperand(sp, 40));
 
-  __ add(sp, sp, Operand(32));
+  __ lwz(r22, MemOperand(sp, 48));
+
+  __ lwz(r26, MemOperand(sp, 64));
+  __ lwz(r27, MemOperand(sp, 68));
+  __ lwz(r28, MemOperand(sp, 72));
+  __ lwz(r29, MemOperand(sp, 76));
+
+  __ lwz(fp, MemOperand(sp, 84));
+  __ lwz(r0, MemOperand(sp, 92));
+
+  __ add(sp, sp, Operand(22*4));
   __ mtctr(r0);
   __ bcr();
 }
@@ -7060,8 +7083,11 @@ void ICCompareStub::GenerateMiss(MacroAssembler* masm) {
   __ Jump(r5);
 }
 
-
+// This stub is paired with DirectCEntryStub::GenerateCall
 void DirectCEntryStub::Generate(MacroAssembler* masm) {
+#if defined(V8_HOST_ARCH_PPC)
+  __ add(sp, sp, Operand(2 * kPointerSize));
+#endif
   __ lwz(r0, MemOperand(sp, 0));
   __ Jump(r0);
 }
@@ -7082,6 +7108,11 @@ void DirectCEntryStub::GenerateCall(MacroAssembler* masm,
   // Prevent literal pool emission during calculation of return address.
   Assembler::BlockConstPoolScope block_const_pool(masm);
 
+#if defined(V8_HOST_ARCH_PPC)
+#define PowerPCAdjustment 3 
+#else
+#define PowerPCAdjustment 0
+#endif
   // Push return address (accessible to GC through exit frame pc).
   // Note that using pc with str is deprecated.
   Label start, here;
@@ -7090,10 +7121,18 @@ void DirectCEntryStub::GenerateCall(MacroAssembler* masm,
   __ bind(&here);
   __ mflr(ip);
   __ mtlr(r0);  // from above, so we know where to return
-  __ add(ip, ip, Operand(6 * Assembler::kInstrSize));
+  __ add(ip, ip, Operand((6+PowerPCAdjustment) * Assembler::kInstrSize));
   __ stw(ip, MemOperand(sp, 0));
+#if defined(V8_HOST_ARCH_PPC)
+  // save extra 2 slots for call out (roohack)
+  __ sub(sp, sp, Operand(2 * kPointerSize));
+  __ mr(r4, r3);  // C++ 1st arg is in r4
+  __ mr(r3, sp);  // C++ uses a return pointer as 1st param?
+#endif
   __ Jump(target);  // Call the C++ function.
-  ASSERT_EQ(Assembler::kInstrSize + Assembler::kPcLoadDelta,
+  ASSERT_EQ(Assembler::kInstrSize +
+            (PowerPCAdjustment * Assembler::kInstrSize) +
+            Assembler::kPcLoadDelta,
             masm->SizeOfCodeGeneratedSince(&start));
 }
 

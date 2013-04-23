@@ -710,9 +710,9 @@ static void GenerateFastApiDirectCall(MacroAssembler* masm,
   }
   __ mov(r10, Operand(ExternalReference::isolate_address()));
   // Store JS function, call data and isolate.
-  __ stw(r8, MemOperand(sp, 0 * kPointerSize));
-  __ stw(r9, MemOperand(sp, 1 * kPointerSize));
-  __ stw(r10, MemOperand(sp, 2 * kPointerSize));
+  __ stw(r8, MemOperand(sp, 1 * kPointerSize));
+  __ stw(r9, MemOperand(sp, 2 * kPointerSize));
+  __ stw(r10, MemOperand(sp, 3 * kPointerSize));
 
   // Prepare arguments.
   __ add(r5, sp, Operand(3 * kPointerSize));
@@ -2364,6 +2364,11 @@ Handle<Code> CallStubCompiler::CompileFastApiCall(
   // Check that the maps haven't changed and find a Holder as a side effect.
   CheckPrototypes(Handle<JSObject>::cast(object), r4, holder, r3, r6, r7, name,
                   depth, &miss);
+
+#if defined(V8_HOST_ARCH_PPC)
+  // PPC passes C++ object by reference not value
+// roohack - this is wrong  __ add(r4, sp, Operand((argc + kFastApiCallArguments) * kPointerSize));
+#endif
 
   GenerateFastApiDirectCall(masm(), optimization, argc);
 
