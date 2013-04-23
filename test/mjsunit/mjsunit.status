@@ -182,3 +182,25 @@ debug-liveedit-stack-padding: SKIP
 debug-liveedit-restart-frame: SKIP
 debug-liveedit-double-call: SKIP
 
+##############################################################################
+#
+# PENGUIN: temporarily skip tests during initial ppc porting
+#
+[ $arch == ppc ]
+
+compiler/*: SKIP
+regress/*:SKIP
+bugs/*:SKIP
+third_party/*:SKIP
+tools/*:SKIP
+compiler/*:SKIP
+harmony/*:SKIP
+debug-*:SKIP
+regexp-*:SKIP
+throw-*:SKIP
+try-*:SKIP
+unicode-*:SKIP
+eval-*:SKIP
+mirror-*:SKIP
+fuzz-*:SKIP
+
