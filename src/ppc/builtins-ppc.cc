@@ -870,12 +870,15 @@ static void Generate_JSConstructStubHelper(MacroAssembler* masm,
       __ LoadRoot(r10, Heap::kUndefinedValueRootIndex);
       if (count_constructions) {
         __ lwz(r3, FieldMemOperand(r5, Map::kInstanceSizesOffset));
-        // ENDIAN
         // Fetch Map::kPreAllocatedPropertyFieldsByte field from r3
         // and multiply by kPointerSizeLog2
         STATIC_ASSERT(2 == Map::kPreAllocatedPropertyFieldsByte);
         STATIC_ASSERT(kPointerSizeLog2 == 2);
-        __ rlwinm(r3, r3, 26, 22, 29, LeaveRC);  // roohack - untested yet
+#if defined(V8_HOST_ARCH_PPC)  // ENDIAN
+        __ rlwinm(r3, r3, 26, 22, 29, LeaveRC);
+#else
+        __ rlwinm(r3, r3, 18, 22, 29, LeaveRC);
+#endif
         __ add(r3, r8, r3);
         // r3: offset of first field after pre-allocated fields
         if (FLAG_debug_code) {
@@ -903,13 +906,20 @@ static void Generate_JSConstructStubHelper(MacroAssembler* masm,
       // The field instance sizes contains both pre-allocated property fields
       // and in-object properties.
       __ lwz(r3, FieldMemOperand(r5, Map::kInstanceSizesOffset));
-      // ENDIAN
       // Fetch Map::kPreAllocatedPropertyFieldsByte field from r3
       STATIC_ASSERT(2 == Map::kPreAllocatedPropertyFieldsByte);
-      __ rlwinm(r9, r3, 16, 24, 31, LeaveRC);  // roohack - untested yet
+#if defined(V8_HOST_ARCH_PPC)  // ENDIAN
+      __ rlwinm(r9, r3, 24, 24, 31, LeaveRC);
+#else
+      __ rlwinm(r9, r3, 16, 24, 31, LeaveRC);
+#endif
       __ add(r6, r6, r9);
       STATIC_ASSERT(1 == Map::kInObjectPropertiesByte);
-      __ rlwinm(r9, r3, 24, 24, 31, LeaveRC);   // roohack - untested yet
+#if defined(V8_HOST_ARCH_PPC)  // ENDIAN
+      __ rlwinm(r9, r3, 16, 24, 31, LeaveRC);
+#else
+      __ rlwinm(r9, r3, 24, 24, 31, LeaveRC);
+#endif
       __ sub(r6, r6, r9);  // roohack - sub order may be incorrect
       __ cmpi(r6, Operand(0));
 

@@ -299,20 +299,18 @@ void MacroAssembler::Ubfx(Register dst, Register src1, int lsb, int width,
 
 void MacroAssembler::Sbfx(Register dst, Register src1, int lsb, int width,
                           Condition cond) {
+  ASSERT(cond == al);
   ASSERT(lsb < 32);
-  if (!CpuFeatures::IsSupported(ARMv7) || predictable_code_size()) {
-    int mask = (1 << (width + lsb)) - 1 - ((1 << lsb) - 1);
-    and_(dst, src1, Operand(mask), LeaveCC, cond);
-    int shift_up = 32 - lsb - width;
-    int shift_down = lsb + shift_up;
-    if (shift_up != 0) {
-      mov(dst, Operand(dst, LSL, shift_up), LeaveCC, cond);
-    }
-    if (shift_down != 0) {
-      mov(dst, Operand(dst, ASR, shift_down), LeaveCC, cond);
-    }
-  } else {
-    sbfx(dst, src1, lsb, width, cond);
+  int mask = (1 << (width + lsb)) - 1 - ((1 << lsb) - 1);
+  mov(r0, Operand(mask));
+  and_(dst, src1, r0);
+  int shift_up = 32 - lsb - width;
+  int shift_down = lsb + shift_up;
+  if (shift_up != 0) {
+    slwi(dst, dst, Operand(shift_up));
+  }
+  if (shift_down != 0) {
+    srawi(dst, dst, shift_down);
   }
 }
 
@@ -3192,21 +3190,24 @@ void MacroAssembler::JumpIfEitherSmi(Register reg1,
 
 void MacroAssembler::AbortIfSmi(Register object) {
   STATIC_ASSERT(kSmiTag == 0);
-  tst(object, Operand(kSmiTagMask));
+  andi(r0, object, Operand(kSmiTagMask));
+  cmpi(r0, Operand(0));
   Assert(ne, "Operand is a smi");
 }
 
 
 void MacroAssembler::AbortIfNotSmi(Register object) {
   STATIC_ASSERT(kSmiTag == 0);
-  tst(object, Operand(kSmiTagMask));
+  andi(r0, object, Operand(kSmiTagMask));
+  cmpi(r0, Operand(0));
   Assert(eq, "Operand is not smi");
 }
 
 
 void MacroAssembler::AbortIfNotString(Register object) {
   STATIC_ASSERT(kSmiTag == 0);
-  tst(object, Operand(kSmiTagMask));
+  andi(r0, object, Operand(kSmiTagMask));
+  cmpi(r0, Operand(0));
   Assert(ne, "Operand is not a string");
   push(object);
   lwz(object, FieldMemOperand(object, HeapObject::kMapOffset));

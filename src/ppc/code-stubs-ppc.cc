@@ -1243,7 +1243,7 @@ static void EmitIdenticalObjectComparison(MacroAssembler* masm,
       __ bne(&return_equal);
 
       // Shift out flag and all exponent bits, retaining only mantissa.
-      __ mov(r5, Operand(r5, LSL, HeapNumber::kNonMantissaBitsInTopWord));
+      __ slwi(r5, r5, Operand(HeapNumber::kNonMantissaBitsInTopWord));
       // Or with all low-bits of mantissa.
       __ lwz(r6, FieldMemOperand(r3, HeapNumber::kMantissaOffset));
       __ orx(r3, r6, r5);
