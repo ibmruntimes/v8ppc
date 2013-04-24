@@ -1097,7 +1097,7 @@ void FullCodeGenerator::VisitForInStatement(ForInStatement* stmt) {
   Label convert, done_convert;
   __ JumpIfSmi(r3, &convert);
   __ CompareObjectType(r3, r4, r4, FIRST_SPEC_OBJECT_TYPE);
-  __ b(ge, &done_convert);
+  __ bge(&done_convert);
   __ bind(&convert);
   __ push(r3);
   __ InvokeBuiltin(Builtins::TO_OBJECT, CALL_FUNCTION);
@@ -1108,7 +1108,7 @@ void FullCodeGenerator::VisitForInStatement(ForInStatement* stmt) {
   Label call_runtime;
   STATIC_ASSERT(FIRST_JS_PROXY_TYPE == FIRST_SPEC_OBJECT_TYPE);
   __ CompareObjectType(r3, r4, r4, LAST_JS_PROXY_TYPE);
-  __ b(le, &call_runtime);
+  __ ble(&call_runtime);
 
   // Check cache validity in generated code. This is a fast case for
   // the JSObject::IsSimpleEnum cache validity checks. If we cannot
@@ -1188,7 +1188,8 @@ void FullCodeGenerator::VisitForInStatement(ForInStatement* stmt) {
   PrepareForBailoutForId(stmt->BodyId(), NO_REGISTERS);
   __ bind(&loop);
   // Load the current count to r3, load the length to r4.
-  __ Ldrd(r3, r4, MemOperand(sp, 0 * kPointerSize));
+  __ lwz(r3, MemOperand(sp, 0 * kPointerSize));
+  __ lwz(r4, MemOperand(sp, 1 * kPointerSize));
   __ cmpl(r3, r4);  // Compare to the array length.
   __ bge(loop_statement.break_label());
 

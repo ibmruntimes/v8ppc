@@ -247,7 +247,7 @@ void MacroAssembler::Move(Register dst, Handle<Object> value) {
 void MacroAssembler::Move(Register dst, Register src, Condition cond) {
   ASSERT(cond == al);
   if (!dst.is(src)) {
-    mov(dst, src, LeaveCC, cond);
+    mr(dst, src);
   }
 }
 
