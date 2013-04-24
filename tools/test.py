@@ -239,6 +239,7 @@ class TapProgressIndicator(SimpleProgressIndicator):
         print '#' + l
       for l in output.output.stdout.splitlines():
         print '#' + l
+      print '# Command: %s' % EscapeCommand(output.command)
     else:
       print 'ok %i - %s' % (self._done, command)
 
