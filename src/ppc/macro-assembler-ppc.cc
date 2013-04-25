@@ -2783,8 +2783,7 @@ void MacroAssembler::GetLeastBitsFromSmi(Register dst,
 void MacroAssembler::GetLeastBitsFromInt32(Register dst,
                                            Register src,
                                            int num_least_bits) {
-  ldr(r0, MemOperand(r1)); // extra instruction to ensure runtime failure
-  and_(dst, src, Operand((1 << num_least_bits) - 1));
+  rlwinm(dst, src, 0, 32 - num_least_bits, 31);
 }
 
 

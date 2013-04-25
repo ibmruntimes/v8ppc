@@ -99,17 +99,9 @@ static void ProbeTable(Isolate* isolate,
   Register flags_reg = base_addr;
   base_addr = no_reg;
   __ lwz(flags_reg, FieldMemOperand(code, Code::kFlagsOffset));
-  // It's a nice optimization if this constant is encodable in the bic insn.
 
-  uint32_t mask = Code::kFlagsNotUsedInLookup;
-  ASSERT(__ ImmediateFitsAddrMode1Instruction(mask));
-  __ bic(flags_reg, flags_reg, Operand(mask));
-  // Using cmn and the negative instead of cmp means we can use movw.
-  if (flags < 0) {
-    __ cmpi(flags_reg, Operand(-flags));
-  } else {
-    __ cmpi(flags_reg, Operand(flags));
-  }
+  __ andi(flags_reg, flags_reg, Operand(~Code::kFlagsNotUsedInLookup));
+  __ cmpi(flags_reg, Operand(flags));
   __ bne(&miss);
 
 #ifdef DEBUG
@@ -237,7 +229,7 @@ void StubCache::GenerateProbe(MacroAssembler* masm,
   uint32_t mask = kPrimaryTableSize - 1;
   // We shift out the last two bits because they are not part of the hash and
   // they are always 01 for maps.
-  __ slwi(scratch, scratch, Operand(kHeapObjectTagSize));
+  __ srwi(scratch, scratch, Operand(kHeapObjectTagSize));
   // Mask down the eor argument to the minimum to keep the immediate
   // ARM-encodable.
   __ xori(scratch, scratch, Operand((flags >> kHeapObjectTagSize) & mask));

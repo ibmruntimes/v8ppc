@@ -3724,7 +3724,16 @@ void Simulator::InstructionDecode(Instruction* instr) {
       // todo - set condition based SO bit
     }
     case ORIS:
-    case XORI:
+    case XORI: {
+      int rs= instr->RSValue();
+      int ra = instr->RAValue();
+      int32_t rs_val = get_register(rs);
+      uint32_t im_val = instr->Bits(15,0);
+      int32_t alu_out = rs_val ^ im_val;
+      set_register(ra, alu_out);
+      // todo - set condition based SO bit
+      break;
+    }
     case XORIS:
     case ANDIx: {
       int rs= instr->RSValue();

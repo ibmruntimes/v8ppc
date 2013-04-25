@@ -1205,7 +1205,8 @@ void KeyedLoadIC::GenerateIndexedInterceptor(MacroAssembler* masm) {
   __ JumpIfSmi(r4, &slow);
 
   // Check that the key is an array index, that is Uint32.
-  __ andi(r0, r3, Operand(kSmiTagMask | kSmiSignMask));
+  ASSERT((uint)(kSmiTagMask | kSmiSignMask) == 0x80000001);
+  __ rlwinm(r0, r3, 1, 30, 31);
   __ cmpi(r0, Operand(0));
   __ bne(&slow);
 

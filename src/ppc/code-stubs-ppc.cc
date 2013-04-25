@@ -174,7 +174,7 @@ void FastNewClosureStub::Generate(MacroAssembler* masm) {
   __ add(r8, r4, Operand(FixedArray::kHeaderSize - kHeapObjectTag));
   __ slwi(r9, r7, Operand(kPointerSizeLog2 - kSmiTagSize));
   __ add(r8, r8, r9);
-  __ ldr(r8, MemOperand(r8));
+  __ lwz(r8, MemOperand(r8));
   __ cmp(r5, r8);
   __ bne(&loop);
   // Hit: fetch the optimized code.
@@ -283,10 +283,10 @@ void FastNewBlockContextStub::Generate(MacroAssembler* masm) {
                         r3, r4, r5, &gc, TAG_OBJECT);
 
   // Load the function from the stack.
-  __ ldr(r6, MemOperand(sp, 0));
+  __ lwz(r6, MemOperand(sp, 0));
 
   // Load the serialized scope info from the stack.
-  __ ldr(r4, MemOperand(sp, 1 * kPointerSize));
+  __ lwz(r4, MemOperand(sp, 1 * kPointerSize));
 
   // Set up the object header.
   __ LoadRoot(r5, Heap::kBlockContextMapRootIndex);
@@ -448,8 +448,8 @@ void FastCloneShallowArrayStub::Generate(MacroAssembler* masm) {
       expected_map_index = Heap::kFixedCOWArrayMapRootIndex;
     }
     __ push(r6);
-    __ ldr(r6, FieldMemOperand(r6, JSArray::kElementsOffset));
-    __ ldr(r6, FieldMemOperand(r6, HeapObject::kMapOffset));
+    __ lwz(r6, FieldMemOperand(r6, JSArray::kElementsOffset));
+    __ lwz(r6, FieldMemOperand(r6, HeapObject::kMapOffset));
     __ CompareRoot(r6, expected_map_index);
     __ Assert(eq, message);
     __ pop(r6);
@@ -6496,7 +6496,7 @@ void StringAddStub::Generate(MacroAssembler* masm) {
   // r7: first string instance type (if flags_ == NO_STRING_ADD_FLAGS)
   // r8: second string instance type (if flags_ == NO_STRING_ADD_FLAGS)
   {
-    Label first_not_empty, strings_not_empty;
+    Label first_not_empty, return_second, strings_not_empty;
     // Check if either of the strings are empty. In that case return the other.
     __ lwz(r5, FieldMemOperand(r3, String::kLengthOffset));
     __ lwz(r6, FieldMemOperand(r4, String::kLengthOffset));
@@ -6504,13 +6504,14 @@ void StringAddStub::Generate(MacroAssembler* masm) {
     __ cmpi(r5, Operand(Smi::FromInt(0)));  // Test if first string is empty.
     __ bne(&first_not_empty);
     __ mr(r3, r4);  // If first is empty, return second.
-    __ b(&strings_not_empty);
+    __ b(&return_second);
     STATIC_ASSERT(kSmiTag == 0);
     __ bind(&first_not_empty);
      // Else test if second string is empty.
     __ cmpi(r6, Operand(Smi::FromInt(0)));
     __ bne(&strings_not_empty);  // If either string was empty, return r3.
 
+    __ bind(&return_second);
     __ IncrementCounter(counters->string_add_native(), 1, r5, r6);
     __ add(sp, sp, Operand(2 * kPointerSize));
     __ Ret();
@@ -6830,6 +6831,9 @@ void ICCompareStub::GenerateHeapNumbers(MacroAssembler* masm) {
   Label unordered, maybe_undefined1, maybe_undefined2;
   Label miss;
   Label equal, less_than;
+
+  __ and_(r5, r4, r3);
+  __ JumpIfSmi(r5, &generic_stub);
 
   __ CompareObjectType(r3, r5, r5, HEAP_NUMBER_TYPE);
   __ bne(&maybe_undefined1);

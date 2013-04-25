@@ -1391,7 +1391,10 @@ void Assembler::addic(Register dst, Register src, const Operand& imm) {
 }
 
 void  Assembler::andi(Register ra, Register rs, const Operand& imm) {
-  d_form(ANDIx, rs, ra, imm.imm32_);
+  int imm16 = imm.imm32_;
+  ASSERT(is_int16(imm16));
+  imm16 &= kImm16Mask;
+  d_form(ANDIx, rs, ra, imm16);
 }
 
 void Assembler::ori(Register dst, Register src, const Operand& imm) {
