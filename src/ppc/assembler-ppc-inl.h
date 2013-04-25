@@ -229,7 +229,6 @@ bool RelocInfo::IsPatchedReturnSequence() {
           && ((next_instr & kLdrPCMask) == kLdrPCPattern);
 #else
   // PENGUIN FIXME
-  ASSERT(false);
   return false;
 #endif
 }
