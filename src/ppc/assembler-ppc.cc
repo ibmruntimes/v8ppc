@@ -271,8 +271,10 @@ const Instr kPushRegPattern =
 // register r is not encoded.
 const Instr kPopRegPattern =
     al | B26 | L | 4 | PostIndex | kRegister_sp_Code * B16;
+#ifdef PENGUIN_CLEANUP				
 // mov lr, pc
 const Instr kMovLrPc = al | MOV | kRegister_pc_Code | kRegister_lr_Code * B12;
+#endif
 // ldr rd, [pc, #offset]
 const Instr kLdrPCMask = kCondMask | 15 * B24 | 7 * B20 | 15 * B16;
 const Instr kLdrPCPattern = al | 5 * B24 | L | kRegister_pc_Code * B16;

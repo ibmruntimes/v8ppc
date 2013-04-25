@@ -30,6 +30,9 @@
 
 #define INCLUDE_ARM 1
 
+
+#ifdef PENGUIN_CLEANUP
+
 #if defined(INCLUDE_ARM)
 // ARM EABI is required.
 #if defined(__arm__) && !defined(__ARM_EABI__)
@@ -83,6 +86,9 @@
 #endif
 
 #endif  // INCLUDE_ARM
+
+#endif // PENGUIN_CLEANUP
+
 namespace v8 {
 namespace internal {
 
@@ -243,11 +249,14 @@ enum Opcode {
   STFD    = 54 << 26,  // Store Floating-Point Double
   STFDU   = 55 << 26,  // Store Floating-Point Double with Update
   EXT3    = 59 << 26,  // Extended code set 3
-  EXT4    = 63 << 26,   // Extended code set 4
+  EXT4    = 63 << 26   // Extended code set 4
+
+#ifdef PENGUIN_CLEANUP
 
 #if defined(INCLUDE_ARM)
 // Opcodes for Data-processing instructions (instructions with a type 0 and 1)
 // as defined in section A3.4
+  ,
   AND =  0 << 21,  // Logical AND.
   EOR =  1 << 21,  // Logical Exclusive OR.
   SUB =  2 << 21,  // Subtract.
@@ -264,6 +273,31 @@ enum Opcode {
   BIC = 14 << 21,  // Bit Clear.
   MVN = 15 << 21   // Move Not.
 #endif  // INCLUDE_ARM
+
+#else
+#if defined(INCLUDE_ARM)
+  // PENGUIN: temporarily copy it over to allow cleaning up one opcode at a time
+// Opcodes for Data-processing instructions (instructions with a type 0 and 1)
+// as defined in section A3.4
+  , 
+  AND =  0 << 21,  // Logical AND.
+  EOR =  1 << 21,  // Logical Exclusive OR.
+  SUB =  2 << 21,  // Subtract.
+  RSB =  3 << 21,  // Reverse Subtract.
+  ADD =  4 << 21,  // Add.
+  ADC =  5 << 21,  // Add with Carry.
+  SBC =  6 << 21,  // Subtract with Carry.
+  RSC =  7 << 21,  // Reverse Subtract with Carry.
+  TST =  8 << 21,  // Test.
+  TEQ =  9 << 21,  // Test Equivalence.
+  CMN = 11 << 21,  // Compare Negated.
+  ORR = 12 << 21,  // Logical (inclusive) OR.
+  //MOV = 13 << 21,  // Move.
+  BIC = 14 << 21,  // Bit Clear.
+  MVN = 15 << 21   // Move Not.
+#endif  // INCLUDE_ARM
+
+#endif // PENGUIN_CLEANUP
 };
 
 // Bits 10-1
@@ -647,8 +681,10 @@ extern const Instr kPushRegPattern;
 // register r is not encoded.
 extern const Instr kPopRegPattern;
 
+#ifdef PENGUIN_CLEANUP
 // mov lr, pc
 extern const Instr kMovLrPc;
+#endif
 // ldr rd, [pc, #offset]
 extern const Instr kLdrPCMask;
 extern const Instr kLdrPCPattern;

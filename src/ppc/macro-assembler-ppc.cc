@@ -126,7 +126,11 @@ int MacroAssembler::CallSize(
 
 int MacroAssembler::CallSizeNotPredictableCodeSize(
     Address target, RelocInfo::Mode rmode, Condition cond) {
+#ifndef PENGUIN_CLEANUP
+  // PENGUIN FIXME
   ASSERT(false);  // Always fail 
+  return 0;
+#else
   int size = 2 * kInstrSize;
   Instr mov_instr = cond | MOV | LeaveCC;
   intptr_t immediate = reinterpret_cast<intptr_t>(target);
@@ -134,6 +138,7 @@ int MacroAssembler::CallSizeNotPredictableCodeSize(
     size += kInstrSize;
   }
   return size;
+#endif
 }
 
 

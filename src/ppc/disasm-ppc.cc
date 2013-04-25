@@ -1192,10 +1192,12 @@ void Decoder::DecodeType01(Instruction* instr) {
         Format(instr, "orr'cond's 'rd, 'rn, 'shift_op");
         break;
       }
+#ifdef PENGUIN_CLEANUP
       case MOV: {
         Format(instr, "mov'cond's 'rd, 'shift_op");
         break;
       }
+#endif
       case BIC: {
         Format(instr, "bic'cond's 'rd, 'rn, 'shift_op");
         break;

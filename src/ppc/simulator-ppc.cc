@@ -2688,6 +2688,7 @@ void Simulator::DecodeType01(Instruction* instr) {
         break;
       }
 
+#ifdef PENGUIN_CLEANUP
       case MOV: {
         // Format(instr, "mov'cond's 'rd, 'shift_rm");
         // Format(instr, "mov'cond's 'rd, 'imm");
@@ -2699,6 +2700,7 @@ void Simulator::DecodeType01(Instruction* instr) {
         }
         break;
       }
+#endif
 
       case BIC: {
         // Format(instr, "bic'cond's 'rd, 'rn, 'shift_rm");

@@ -219,6 +219,7 @@ Object** RelocInfo::call_object_address() {
 
 
 bool RelocInfo::IsPatchedReturnSequence() {
+#ifdef PENGUIN_CLEANUP
   Instr current_instr = Assembler::instr_at(pc_);
   Instr next_instr = Assembler::instr_at(pc_ + Assembler::kInstrSize);
   // A patched return sequence is:
@@ -226,6 +227,11 @@ bool RelocInfo::IsPatchedReturnSequence() {
   //  ldr pc, [pc, #-4]
   return (current_instr == kMovLrPc)
           && ((next_instr & kLdrPCMask) == kLdrPCPattern);
+#else
+  // PENGUIN FIXME
+  ASSERT(false);
+  return false;
+#endif
 }
 
 
