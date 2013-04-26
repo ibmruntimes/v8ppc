@@ -163,7 +163,7 @@ DEFINE_bool(unbox_double_arrays, true, "automatically unbox arrays of doubles")
 DEFINE_bool(string_slices, true, "use string slices")
 
 // Flags for Crankshaft.
-DEFINE_bool(crankshaft, true, "use crankshaft")
+DEFINE_bool(crankshaft, false, "use crankshaft")  // Temp. disable crankshaft
 DEFINE_string(hydrogen_filter, "", "optimization filter")
 DEFINE_bool(use_range, true, "use hydrogen range analysis")
 DEFINE_bool(eliminate_dead_phis, true, "eliminate dead phis")
