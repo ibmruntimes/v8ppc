@@ -2139,6 +2139,12 @@ void Assembler::fcmpu(const DwVfpRegister fra,
   emit(EXT4 | FCMPU | 7*B23 | fra.code()*B16 | frb.code()*B11);
 }
 
+void Assembler::fmr(const DwVfpRegister frt,
+                     const DwVfpRegister frb) {
+  CheckBuffer();
+  emit(EXT4 | FMR | frt.code()*B21 | frb.code()*B11);
+}
+
 // Support for VFP.
 
 void Assembler::vldr(const DwVfpRegister dst,

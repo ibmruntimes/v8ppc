@@ -380,7 +380,8 @@ enum OpcodeExt4 {
   FSUB = 20 << 1,   // Floating Subtract
   FADD = 21 << 1,   // Floating Add
   FMUL = 25 << 1,   // Floating Multiply
-  MCRFS = 64 << 1   // Move to Condition Register from FPSCR
+  MCRFS = 64 << 1,  // Move to Condition Register from FPSCR
+  FMR = 72 << 1     // Floating Move Register
 };
 
 #if defined(INCLUDE_ARM)

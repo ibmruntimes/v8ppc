@@ -3378,116 +3378,139 @@ void BinaryOpStub::GenerateRegisterArgsPush(MacroAssembler* masm) {
 }
 
 
-// roohack - not converted
 void TranscendentalCacheStub::Generate(MacroAssembler* masm) {
   // Untagged case: double input in d2, double result goes
   //   into d2.
-  // Tagged case: tagged input on top of stack and in r0,
-  //   tagged result (heap number) goes into r0.
+  // Tagged case: tagged input on top of stack and in r3,
+  //   tagged result (heap number) goes into r3.
 
   Label input_not_smi;
   Label loaded;
   Label calculate;
   Label invalid_cache;
-  const Register scratch0 = r9;
-  const Register scratch1 = r7;
-  const Register cache_entry = r0;
+  const Register scratch0 = r22;
+  const Register scratch1 = r10;
+  const Register cache_entry = r3;
   const bool tagged = (argument_type_ == TAGGED);
 
-  if (CpuFeatures::IsSupported(VFP2)) {
-    CpuFeatures::Scope scope(VFP2);
-    if (tagged) {
-      // Argument is a number and is on stack and in r0.
-      // Load argument and check if it is a smi.
-      __ JumpIfNotSmi(r0, &input_not_smi);
+  if (tagged) {
+    // Argument is a number and is on stack and in r3.
+    // Load argument and check if it is a smi.
+    __ JumpIfNotSmi(r3, &input_not_smi);
 
-      // Input is a smi. Convert to double and load the low and high words
-      // of the double into r2, r3.
-      __ IntegerToDoubleConversionWithVFP3(r0, r3, r2);
-      __ b(&loaded);
+    // Input is a smi. Convert to double and load the low and high words
+    // of the double into r5, r6.
+    __ SmiToDoubleFPRegister(r3, d6, scratch0, d7);
+    __ sub(sp, sp, Operand(8));
+    __ stfd(d6, sp, 0);
+    // ENDIAN issue here
+#ifdef __LITTLE_ENDIAN
+    __ lwz(r5, MemOperand(sp));
+    __ lwz(r6, MemOperand(sp, 4));
+#else
+    __ lwz(r5, MemOperand(sp, 4));
+    __ lwz(r6, MemOperand(sp));
+#endif
+    __ add(sp, sp, Operand(8));
+    __ b(&loaded);
 
-      __ bind(&input_not_smi);
-      // Check if input is a HeapNumber.
-      __ CheckMap(r0,
-                  r1,
-                  Heap::kHeapNumberMapRootIndex,
-                  &calculate,
-                  DONT_DO_SMI_CHECK);
-      // Input is a HeapNumber. Load it to a double register and store the
-      // low and high words into r2, r3.
-      __ vldr(d0, FieldMemOperand(r0, HeapNumber::kValueOffset));
-      __ vmov(r2, r3, d0);
-    } else {
-      // Input is untagged double in d2. Output goes to d2.
-      __ vmov(r2, r3, d2);
-    }
+    __ bind(&input_not_smi);
+    // Check if input is a HeapNumber.
+    __ CheckMap(r3,
+                r4,
+                Heap::kHeapNumberMapRootIndex,
+                &calculate,
+                DONT_DO_SMI_CHECK);
+    // Input is a HeapNumber. Load it to a double register and store the
+    // low and high words into r5, r6.
+    __ lwz(r6, FieldMemOperand(r3, HeapNumber::kExponentOffset));
+    __ lwz(r5, FieldMemOperand(r3, HeapNumber::kMantissaOffset));
+  } else {
+    // Input is untagged double in d2. Output goes to d2.
+    __ sub(sp, sp, Operand(8));
+    __ stfd(d2, sp, 0);
+    // ENDIAN issue here
+#ifdef __LITTLE_ENDIAN
+    __ lwz(r5, MemOperand(sp));
+    __ lwz(r6, MemOperand(sp, 4));
+#else
+    __ lwz(r5, MemOperand(sp, 4));
+    __ lwz(r6, MemOperand(sp));
+#endif
+    __ add(sp, sp, Operand(8));
+  }
     __ bind(&loaded);
-    // r2 = low 32 bits of double value
-    // r3 = high 32 bits of double value
-    // Compute hash (the shifts are arithmetic):
-    //   h = (low ^ high); h ^= h >> 16; h ^= h >> 8; h = h & (cacheSize - 1);
-    __ eor(r1, r2, Operand(r3));
-    __ eor(r1, r1, Operand(r1, ASR, 16));
-    __ eor(r1, r1, Operand(r1, ASR, 8));
-    ASSERT(IsPowerOf2(TranscendentalCache::SubCache::kCacheSize));
-    __ And(r1, r1, Operand(TranscendentalCache::SubCache::kCacheSize - 1));
+  // r5 = low 32 bits of double value
+  // r6 = high 32 bits of double value
+  // Compute hash (the shifts are arithmetic):
+  //   h = (low ^ high); h ^= h >> 16; h ^= h >> 8; h = h & (cacheSize - 1);
+  __ xor_(r4, r5, r6);
+  __ srawi(scratch0, r4, 16);
+  __ xor_(r4, r4, scratch0);
+  __ srawi(scratch0, r4, 8);
+  __ xor_(r4, r4, scratch0);
+  ASSERT(IsPowerOf2(TranscendentalCache::SubCache::kCacheSize));
+  __ andi(r4, r4, Operand(TranscendentalCache::SubCache::kCacheSize - 1));
 
-    // r2 = low 32 bits of double value.
-    // r3 = high 32 bits of double value.
-    // r1 = TranscendentalCache::hash(double value).
-    Isolate* isolate = masm->isolate();
-    ExternalReference cache_array =
-        ExternalReference::transcendental_cache_array_address(isolate);
-    __ mov(cache_entry, Operand(cache_array));
-    // cache_entry points to cache array.
-    int cache_array_index
-        = type_ * sizeof(isolate->transcendental_cache()->caches_[0]);
-    __ ldr(cache_entry, MemOperand(cache_entry, cache_array_index));
-    // r0 points to the cache for the type type_.
-    // If NULL, the cache hasn't been initialized yet, so go through runtime.
-    __ cmp(cache_entry, Operand(0, RelocInfo::NONE));
-    __ b(eq, &invalid_cache);
+  // r5 = low 32 bits of double value.
+  // r6 = high 32 bits of double value.
+  // r4 = TranscendentalCache::hash(double value).
+  Isolate* isolate = masm->isolate();
+  ExternalReference cache_array =
+      ExternalReference::transcendental_cache_array_address(isolate);
+  __ mov(cache_entry, Operand(cache_array));
+  // cache_entry points to cache array.
+  int cache_array_index
+      = type_ * sizeof(isolate->transcendental_cache()->caches_[0]);
+  __ lwz(cache_entry, MemOperand(cache_entry, cache_array_index));
+  // r3 points to the cache for the type type_.
+  // If NULL, the cache hasn't been initialized yet, so go through runtime.
+  __ cmpi(cache_entry, Operand(0, RelocInfo::NONE));
+  __ beq(&invalid_cache);
 
 #ifdef DEBUG
-    // Check that the layout of cache elements match expectations.
-    { TranscendentalCache::SubCache::Element test_elem[2];
-      char* elem_start = reinterpret_cast<char*>(&test_elem[0]);
-      char* elem2_start = reinterpret_cast<char*>(&test_elem[1]);
-      char* elem_in0 = reinterpret_cast<char*>(&(test_elem[0].in[0]));
-      char* elem_in1 = reinterpret_cast<char*>(&(test_elem[0].in[1]));
-      char* elem_out = reinterpret_cast<char*>(&(test_elem[0].output));
-      CHECK_EQ(12, elem2_start - elem_start);  // Two uint_32's and a pointer.
-      CHECK_EQ(0, elem_in0 - elem_start);
-      CHECK_EQ(kIntSize, elem_in1 - elem_start);
-      CHECK_EQ(2 * kIntSize, elem_out - elem_start);
-    }
+  // Check that the layout of cache elements match expectations.
+  { TranscendentalCache::SubCache::Element test_elem[2];
+    char* elem_start = reinterpret_cast<char*>(&test_elem[0]);
+    char* elem2_start = reinterpret_cast<char*>(&test_elem[1]);
+    char* elem_in0 = reinterpret_cast<char*>(&(test_elem[0].in[0]));
+    char* elem_in1 = reinterpret_cast<char*>(&(test_elem[0].in[1]));
+    char* elem_out = reinterpret_cast<char*>(&(test_elem[0].output));
+    CHECK_EQ(12, elem2_start - elem_start);  // Two uint_32's and a pointer.
+    CHECK_EQ(0, elem_in0 - elem_start);
+    CHECK_EQ(kIntSize, elem_in1 - elem_start);
+    CHECK_EQ(2 * kIntSize, elem_out - elem_start);
+  }
 #endif
 
-    // Find the address of the r1'st entry in the cache, i.e., &r0[r1*12].
-    __ add(r1, r1, Operand(r1, LSL, 1));
-    __ add(cache_entry, cache_entry, Operand(r1, LSL, 2));
-    // Check if cache matches: Double value is stored in uint32_t[2] array.
-    __ ldm(ia, cache_entry, r4.bit() | r5.bit() | r6.bit());
-    __ cmp(r2, r4);
-    __ cmp(r3, r5, eq);
-    __ b(ne, &calculate);
-    // Cache hit. Load result, cleanup and return.
-    Counters* counters = masm->isolate()->counters();
-    __ IncrementCounter(
-        counters->transcendental_cache_hit(), 1, scratch0, scratch1);
-    if (tagged) {
-      // Pop input value from stack and load result into r0.
-      __ pop();
-      __ mov(r0, Operand(r6));
-    } else {
-      // Load result into d2.
-       __ vldr(d2, FieldMemOperand(r6, HeapNumber::kValueOffset));
-    }
-    __ Ret();
-  }  // if (CpuFeatures::IsSupported(VFP3))
+  // Find the address of the r4'th entry in the cache, i.e., &r3[r4*12].
+  __ slwi(scratch0, r4, Operand(1));
+  __ add(r4, r4, scratch0);
+  __ slwi(scratch0, r4, Operand(2));
+  __ add(cache_entry, cache_entry, scratch0);
+  // Check if cache matches: Double value is stored in uint32_t[2] array.
+  __ lwz(r7, MemOperand(cache_entry, 0));
+  __ lwz(r8, MemOperand(cache_entry, 4));
+  __ lwz(r9, MemOperand(cache_entry, 8));
+  __ cmp(r5, r7);
+  __ bne(&calculate);
+  __ cmp(r6, r8);
+  __ bne(&calculate);
+  // Cache hit. Load result, cleanup and return.
+  Counters* counters = masm->isolate()->counters();
+  __ IncrementCounter(
+      counters->transcendental_cache_hit(), 1, scratch0, scratch1);
+  if (tagged) {
+    // Pop input value from stack and load result into r3.
+    __ pop();
+    __ mr(r3, r9);
+  } else {
+    // Load result into d2.
+     __ lfd(d2, r9, HeapNumber::kValueOffset);
+  }
+  __ Ret();
 
   __ bind(&calculate);
-  Counters* counters = masm->isolate()->counters();
   __ IncrementCounter(
       counters->transcendental_cache_miss(), 1, scratch0, scratch1);
   if (tagged) {
@@ -3503,34 +3526,36 @@ void TranscendentalCacheStub::Generate(MacroAssembler* masm) {
     Label skip_cache;
 
     // Call C function to calculate the result and update the cache.
-    // r0: precalculated cache entry address.
-    // r2 and r3: parts of the double value.
-    // Store r0, r2 and r3 on stack for later before calling C function.
-    __ Push(r3, r2, cache_entry);
+    // r3: precalculated cache entry address.
+    // r5 and r6: parts of the double value.
+    // Store r3, r5 and r6 on stack for later before calling C function.
+    __ Push(r6, r5, cache_entry);
     GenerateCallCFunction(masm, scratch0);
     __ GetCFunctionDoubleResult(d2);
 
     // Try to update the cache. If we cannot allocate a
     // heap number, we return the result without updating.
-    __ Pop(r3, r2, cache_entry);
-    __ LoadRoot(r5, Heap::kHeapNumberMapRootIndex);
-    __ AllocateHeapNumber(r6, scratch0, scratch1, r5, &no_update);
-    __ vstr(d2, FieldMemOperand(r6, HeapNumber::kValueOffset));
-    __ stm(ia, cache_entry, r2.bit() | r3.bit() | r6.bit());
+    __ Pop(r6, r5, cache_entry);
+    __ LoadRoot(r8, Heap::kHeapNumberMapRootIndex);
+    __ AllocateHeapNumber(r9, scratch0, scratch1, r8, &no_update);
+    __ stfd(d2, r6, HeapNumber::kValueOffset);
+    __ stw(r5, MemOperand(cache_entry, 0));
+    __ stw(r6, MemOperand(cache_entry, 4));
+    __ stw(r9, MemOperand(cache_entry, 8));
     __ Ret();
 
     __ bind(&invalid_cache);
     // The cache is invalid. Call runtime which will recreate the
     // cache.
-    __ LoadRoot(r5, Heap::kHeapNumberMapRootIndex);
-    __ AllocateHeapNumber(r0, scratch0, scratch1, r5, &skip_cache);
-    __ vstr(d2, FieldMemOperand(r0, HeapNumber::kValueOffset));
+    __ LoadRoot(r8, Heap::kHeapNumberMapRootIndex);
+    __ AllocateHeapNumber(r3, scratch0, scratch1, r8, &skip_cache);
+    __ stfd(d2, r3, HeapNumber::kValueOffset);
     {
       FrameScope scope(masm, StackFrame::INTERNAL);
-      __ push(r0);
+      __ push(r3);
       __ CallRuntime(RuntimeFunction(), 1);
     }
-    __ vldr(d2, FieldMemOperand(r0, HeapNumber::kValueOffset));
+    __ lfd(d2, r3, HeapNumber::kValueOffset);
     __ Ret();
 
     __ bind(&skip_cache);

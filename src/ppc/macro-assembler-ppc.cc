@@ -1033,12 +1033,7 @@ void MacroAssembler::LeaveExitFrame(bool save_doubles,
 }
 
 void MacroAssembler::GetCFunctionDoubleResult(const DoubleRegister dst) {
-  ASSERT(CpuFeatures::IsSupported(VFP2));
-  if (use_eabi_hardfloat()) {
-    Move(dst, d0);
-  } else {
-    vmov(dst, r0, r1);
-  }
+    fmr(dst, d0);
 }
 
 
