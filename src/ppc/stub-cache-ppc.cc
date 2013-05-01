@@ -2088,17 +2088,12 @@ Handle<Code> CallStubCompiler::CompileMathFloorCall(
   //  -- sp[argc * 4]           : receiver
   // -----------------------------------
 
-  if (!CpuFeatures::IsSupported(VFP2)) {
-    return Handle<Code>::null();
-  }
-
-  CpuFeatures::Scope scope_vfp2(VFP2);
   const int argc = arguments().immediate();
   // If the object is not a JSObject or we got an unexpected number of
   // arguments, bail out to the regular call.
   if (!object->IsJSObject() || argc != 1) return Handle<Code>::null();
 
-  Label miss, slow;
+  Label miss, slow, not_smi, positive, drop_arg_return;
   GenerateNameCheck(name, &miss);
 
   if (cell.is_null()) {
@@ -2119,91 +2114,54 @@ Handle<Code> CallStubCompiler::CompileMathFloorCall(
 
   // If the argument is a smi, just return.
   STATIC_ASSERT(kSmiTag == 0);
-  __ tst(r3, Operand(kSmiTagMask));
-  __ Drop(argc + 1, eq);
-  __ Ret(eq);
+  __ andi(r0, r3, Operand(kSmiTagMask));
+  __ cmpi(r0, Operand(0));
+  __ bne(&not_smi);
+  __ Drop(argc + 1);
+  __ Ret();
+  __ bind(&not_smi);
 
   __ CheckMap(r3, r4, Heap::kHeapNumberMapRootIndex, &slow, DONT_DO_SMI_CHECK);
 
-  Label wont_fit_smi, no_vfp_exception, restore_fpscr_and_return;
-
-  // If vfp3 is enabled, we use the fpu rounding with the RM (round towards
-  // minus infinity) mode.
-
   // Load the HeapNumber value.
-  // We will need access to the value in the core registers, so we load it
-  // with ldrd and move it to the fpu. It also spares a sub instruction for
-  // updating the HeapNumber value address, as vldr expects a multiple
-  // of 4 offset.
-  __ Ldrd(r7, r8, FieldMemOperand(r3, HeapNumber::kValueOffset));
-  __ vmov(d1, r7, r8);
-
-  // Backup FPSCR.
-  __ vmrs(r6);
-  // Set custom FPCSR:
-  //  - Set rounding mode to "Round towards Minus Infinity"
-  //    (i.e. bits [23:22] = 0b10).
-  //  - Clear vfp cumulative exception flags (bits [3:0]).
-  //  - Make sure Flush-to-zero mode control bit is unset (bit 22).
-  __ bic(r22, r6,
-      Operand(kVFPExceptionMask | kVFPRoundingModeMask | kVFPFlushToZeroMask));
-  __ orr(r22, r22, Operand(kRoundToMinusInf));
-  __ vmsr(r22);
+  __ lfd(d1, r3, HeapNumber::kValueOffset - kHeapObjectTag);
 
   // Convert the argument to an integer.
-  __ vcvt_s32_f64(s0, d1, kFPSCRRounding);
+  __ fctiwz(d1, d1);
+  __ sub(sp, sp, Operand(8));
+  __ stfd(d1, sp, 0);
+  __ lwz(r3, MemOperand(sp, 4));
+  __ add(sp, sp, Operand(8));
 
-  // Use vcvt latency to start checking for special cases.
-  // Get the argument exponent and clear the sign bit.
-  __ bic(r9, r8, Operand(HeapNumber::kSignMask));
-  __ mov(r9, Operand(r9, LSR, HeapNumber::kMantissaBitsInTopWord));
+  // if resulting conversion is negative, invert for bit tests
+  __ rlwinm(r0, r3, 1, 31, 31, SetRC);
+  __ mr(r0, r3);
+  __ bc(&positive, BT, 2);
+  __ neg(r0, r3);
+  __ bind(&positive);
 
-  // Retrieve FPSCR and check for vfp exceptions.
-  __ vmrs(r22);
-  __ tst(r22, Operand(kVFPExceptionMask));
-  __ b(&no_vfp_exception, eq);
+  // if either of the high two bits are set, fail to generic
+  __ rlwinm(r0, r0, 2, 30, 31, SetRC);
+  __ bc(&slow, BF, 2);
 
-  // Check for NaN, Infinity, and -Infinity.
-  // They are invariant through a Math.Floor call, so just
-  // return the original argument.
-  __ sub(r10, r9, Operand(HeapNumber::kExponentMask
-        >> HeapNumber::kMantissaBitsInTopWord), SetCC);
-  __ b(&restore_fpscr_and_return, eq);
-  // We had an overflow or underflow in the conversion. Check if we
-  // have a big exponent.
-  __ cmp(r10, Operand(HeapNumber::kMantissaBits));
-  // If greater or equal, the argument is already round and in r3.
-  __ b(&restore_fpscr_and_return, ge);
-  __ b(&wont_fit_smi);
-
-  __ bind(&no_vfp_exception);
-  // Move the result back to general purpose register r3.
-  __ vmov(r3, s0);
-  // Check if the result fits into a smi.
-  __ add(r4, r3, Operand(0x40000000), SetCC);
-  __ b(&wont_fit_smi, mi);
   // Tag the result.
   STATIC_ASSERT(kSmiTag == 0);
   __ slwi(r3, r3, Operand(kSmiTagSize));
 
-  // Check for -0.
-  __ cmp(r3, Operand(0, RelocInfo::NONE));
-  __ b(&restore_fpscr_and_return, ne);
-  // r8 already holds the HeapNumber exponent.
-  __ tst(r8, Operand(HeapNumber::kSignMask));
-  // If our HeapNumber is negative it was -0, so load its address and return.
-  // Else r3 is loaded with 0, so we can also just return.
-  __ ldr(r3, MemOperand(sp, 0 * kPointerSize), ne);
+  // Check for -0
+  __ cmpi(r3, Operand(0));
+  __ bne(&drop_arg_return);
 
-  __ bind(&restore_fpscr_and_return);
-  // Restore FPSCR and return.
-  __ vmsr(r6);
+  __ lwz(r4, MemOperand(sp, 0 * kPointerSize));
+  __ lwz(r4, FieldMemOperand(r4, HeapNumber::kExponentOffset));
+  __ rlwinm(r0, r4, 1, 31, 31, SetRC);
+  __ bc(&drop_arg_return, BT, 2);
+  // If our HeapNumber is negative it was -0, so load its address and return.
+  __ lwz(r3, MemOperand(sp));
+
+  __ bind(&drop_arg_return);
   __ Drop(argc + 1);
   __ Ret();
-
-  __ bind(&wont_fit_smi);
-  // Restore FPCSR and fall to slow case.
-  __ vmsr(r6);
 
   __ bind(&slow);
   // Tail call the full function. We do not have to patch the receiver
@@ -3464,8 +3422,8 @@ Handle<Code> ConstructStubCompiler::CompileConstructStub(
 
   // Calculate the location of the first argument. The stack contains only the
   // argc arguments.
-  __ slwi(r4, r4, Operand(kPointerSizeLog2));
-  __ add(r4, sp, r4);
+  __ slwi(r3, r3, Operand(kPointerSizeLog2));
+  __ add(r4, sp, r3);
 
   // Fill all the in-object properties with undefined.
   // r3: argc

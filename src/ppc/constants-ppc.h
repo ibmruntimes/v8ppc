@@ -373,15 +373,16 @@ enum OpcodeExt2 {
   EXTSB = 954 << 1  // Extend Sign Byte
 }; 
 
-// Bits 5-1
+// Bits 10-1
 enum OpcodeExt4 {
-  FCMPU = 0 << 1,   // Floating Compare Unordered
-  FDIV = 18 << 1,   // Floating Divide
-  FSUB = 20 << 1,   // Floating Subtract
-  FADD = 21 << 1,   // Floating Add
-  FMUL = 25 << 1,   // Floating Multiply
-  MCRFS = 64 << 1,  // Move to Condition Register from FPSCR
-  FMR = 72 << 1     // Floating Move Register
+  FCMPU = 0 << 1,    // Floating Compare Unordered
+  FCTIWZ = 15 << 1,  // Floating Convert to Integer Word with Round to Zero
+  FDIV = 18 << 1,    // Floating Divide
+  FSUB = 20 << 1,    // Floating Subtract
+  FADD = 21 << 1,    // Floating Add
+  FMUL = 25 << 1,    // Floating Multiply
+  MCRFS = 64 << 1,   // Move to Condition Register from FPSCR
+  FMR = 72 << 1      // Floating Move Register
 };
 
 #if defined(INCLUDE_ARM)

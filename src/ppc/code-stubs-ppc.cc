@@ -1306,23 +1306,11 @@ static void EmitSmiNonsmiComparison(MacroAssembler* masm,
   }
 
   // Lhs is a smi, rhs is a number.
-    // Convert lhs to a double in d7.
-    __ SmiToDoubleFPRegister(lhs, d7, r10, d15);
-    // Load the double from rhs, tagged HeapNumber r3, to d6.
-    __ sub(r10, rhs, Operand(kHeapObjectTag));
-    __ lfd(d6, r10, HeapNumber::kValueOffset);
-#if 0 // was the else case..
-    __ mflr(r0);
-    __ push(r0);
-    // Convert lhs to a double in r5, r6.
-    __ mr(r7, lhs);
-    ConvertToDoubleStub stub1(r6, r5, r10, r9);
-    __ Call(stub1.GetCode());
-    // Load rhs to a double in r3, r4.
-    __ Ldrd(r3, r4, FieldMemOperand(rhs, HeapNumber::kValueOffset));
-    __ pop(r0);
-    __ mtlr(r0);
-#endif
+  // Convert lhs to a double in d7.
+  __ SmiToDoubleFPRegister(lhs, d7, r10, d15);
+  // Load the double from rhs, tagged HeapNumber r3, to d6.
+  __ sub(r10, rhs, Operand(kHeapObjectTag));
+  __ lfd(d6, r10, HeapNumber::kValueOffset);
 
   // We now have both loaded as doubles but we can skip the lhs nan check
   // since it's a smi.
@@ -1545,7 +1533,7 @@ static void EmitCheckForTwoHeapNumbers(MacroAssembler* masm,
   __ sub(r10, rhs, Operand(kHeapObjectTag));
   __ lfd(d6, r10, HeapNumber::kValueOffset);
   __ sub(r10, lhs, Operand(kHeapObjectTag));
-  __ lfd(d7, r7, HeapNumber::kValueOffset);
+  __ lfd(d7, r10, HeapNumber::kValueOffset);
 
   __ jmp(both_loaded_as_doubles);
 }
@@ -1883,7 +1871,6 @@ void ToBooleanStub::Generate(MacroAssembler* masm) {
   // we cannot call anything that could cause a GC from this stub.
   Label patch;
   const Register map = r22.is(tos_) ? r10 : r22;
-  const Register temp = map;
 
   // undefined -> false.
   CheckOddball(masm, UNDEFINED, Heap::kUndefinedValueRootIndex, false);
@@ -1946,60 +1933,28 @@ void ToBooleanStub::Generate(MacroAssembler* masm) {
 
   if (types_.Contains(HEAP_NUMBER)) {
     // Heap number -> false iff +0, -0, or NaN.
-    Label not_heap_number;
+    Label not_heap_number, nan_or_zero;
     __ CompareRoot(map, Heap::kHeapNumberMapRootIndex);
     __ bne(&not_heap_number);
 
-    if (CpuFeatures::IsSupported(VFP2)) {
-      CpuFeatures::Scope scope(VFP2);
-
-      __ vldr(d1, FieldMemOperand(tos_, HeapNumber::kValueOffset));
-      __ VFPCompareAndSetFlags(d1, 0.0);
-      // "tos_" is a register, and contains a non zero value by default.
-      // Hence we only need to overwrite "tos_" with zero to return false for
-      // FP_ZERO or FP_NAN cases. Otherwise, by default it returns true.
-      __ mov(tos_, Operand(0, RelocInfo::NONE), LeaveCC, eq);  // for FP_ZERO
-      __ mov(tos_, Operand(0, RelocInfo::NONE), LeaveCC, vs);  // for FP_NAN
-    } else {
-      Label done, not_nan, not_zero;
-      __ ldr(temp, FieldMemOperand(tos_, HeapNumber::kExponentOffset));
-      // -0 maps to false:
-      __ bic(
-          temp, temp, Operand(HeapNumber::kSignMask, RelocInfo::NONE), SetCC);
-      __ b(ne, &not_zero);
-      // If exponent word is zero then the answer depends on the mantissa word.
-      __ ldr(tos_, FieldMemOperand(tos_, HeapNumber::kMantissaOffset));
-      __ jmp(&done);
-
-      // Check for NaN.
-      __ bind(&not_zero);
-      // We already zeroed the sign bit, now shift out the mantissa so we only
-      // have the exponent left.
-      __ mov(temp, Operand(temp, LSR, HeapNumber::kMantissaBitsInTopWord));
-      unsigned int shifted_exponent_mask =
-          HeapNumber::kExponentMask >> HeapNumber::kMantissaBitsInTopWord;
-      __ cmp(temp, Operand(shifted_exponent_mask, RelocInfo::NONE));
-      __ b(ne, &not_nan);  // If exponent is not 0x7ff then it can't be a NaN.
-
-      // Reload exponent word.
-      __ ldr(temp, FieldMemOperand(tos_, HeapNumber::kExponentOffset));
-      __ tst(temp, Operand(HeapNumber::kMantissaMask, RelocInfo::NONE));
-      // If mantissa is not zero then we have a NaN, so return 0.
-      __ mov(tos_, Operand(0, RelocInfo::NONE), LeaveCC, ne);
-      __ b(ne, &done);
-
-      // Load mantissa word.
-      __ ldr(temp, FieldMemOperand(tos_, HeapNumber::kMantissaOffset));
-      __ cmp(temp, Operand(0, RelocInfo::NONE));
-      // If mantissa is not zero then we have a NaN, so return 0.
-      __ mov(tos_, Operand(0, RelocInfo::NONE), LeaveCC, ne);
-      __ b(ne, &done);
-
-      __ bind(&not_nan);
-      __ mov(tos_, Operand(1, RelocInfo::NONE));
-      __ bind(&done);
-    }
+    __ lfd(d1, tos_, HeapNumber::kValueOffset + kHeapObjectTag);
+    __ li(r0, Operand(0));
+    __ push(r0);
+    __ push(r0);
+    __ lfd(d2, sp, 0);
+    __ add(sp, sp, Operand(8));
+    __ fcmpu(d1, d2);
+    // "tos_" is a register, and contains a non zero value by default.
+    // Hence we only need to overwrite "tos_" with zero to return false for
+    // FP_ZERO or FP_NAN cases. Otherwise, by default it returns true.
+    __ bc(&nan_or_zero, BT, 31);
+    __ beq(&nan_or_zero);
     __ Ret();
+
+    __ bind(&nan_or_zero);
+    __ li(tos_, Operand(0));
+    __ Ret();
+
     __ bind(&not_heap_number);
   }
 
@@ -2247,7 +2202,8 @@ void UnaryOpStub::GenerateHeapNumberCodeSub(MacroAssembler* masm,
     __ lwz(r6, FieldMemOperand(r3, HeapNumber::kMantissaOffset));
     __ lwz(r5, FieldMemOperand(r3, HeapNumber::kExponentOffset));
     __ stw(r6, FieldMemOperand(r4, HeapNumber::kMantissaOffset));
-    __ eor(r5, r5, Operand(HeapNumber::kSignMask));  // Flip sign.
+    __ mov(r0, Operand(HeapNumber::kSignMask));
+    __ xor_(r5, r5, r0);
     __ stw(r5, FieldMemOperand(r4, HeapNumber::kExponentOffset));
     __ mr(r3, r4);
   }

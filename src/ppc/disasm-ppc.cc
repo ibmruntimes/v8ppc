@@ -400,7 +400,7 @@ int Decoder::FormatFPRegister(Instruction* instr, const char* format) {
   } else if (format[1] == 'a') {
     reg = instr->RAValue();
   } else if (format[1] == 'b') {
-    reg = instr->RAValue();
+    reg = instr->RBValue();
   } else {
     UNREACHABLE();
   }
@@ -893,7 +893,7 @@ void Decoder::DecodeExt2(Instruction* instr) {
       break;
     }
     case ANDX: {
-      Format(instr, "and'o    'rt,'ra,'rb");
+      Format(instr, "and'o    'ra,'rs,'rb");
       break;
     }
     case CMPL: {
@@ -955,9 +955,13 @@ void Decoder::DecodeExt2(Instruction* instr) {
 }
 
 void Decoder::DecodeExt4(Instruction* instr) {
-  switch(instr->Bits(11,1) << 1) {
+  switch(instr->Bits(10,1) << 1) {
     case FCMPU: {
       Format(instr, "fcmpu     'Da, 'Db");
+      break;
+    }
+    case FCTIWZ: {
+      Format(instr, "fctiwz    'Da, 'Db");
       break;
     }
     case FDIV: {

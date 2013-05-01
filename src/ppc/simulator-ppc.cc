@@ -2038,6 +2038,14 @@ void Simulator::DecodeExt2(Instruction* instr) {
       // todo - handle OE and RC bits
       break;
     }
+    case NEGX: {
+      int rt = instr->RTValue();
+      int ra = instr->RAValue();
+      int32_t ra_val = get_register(ra);
+      int alu_out = 1 - ~ra_val;
+      set_register(rt, alu_out);
+      break;
+    }
     case SLWX: {
       int rs = instr->RSValue();
       int ra = instr->RAValue();
@@ -2208,6 +2216,15 @@ void Simulator::DecodeExt4(Instruction* instr) {
       int condition_mask = 0xF0000000 >> (cr*4);
       int condition =  bf >> (cr*4);
       condition_reg_ = (condition_reg_ & ~condition_mask) | condition;
+      break;
+    }
+    case FCTIWZ: {
+      int frt = instr->RTValue();
+      int frb = instr->RBValue();
+      double frb_val = get_double_from_d_register(frb);
+      int64_t frt_val = (int64_t)frb_val;
+      double *p = reinterpret_cast<double*>(&frt_val);
+      set_d_register_from_double(frt, *p);
       break;
     }
     case FDIV: {

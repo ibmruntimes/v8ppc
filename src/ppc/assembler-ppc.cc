@@ -1280,8 +1280,8 @@ void Assembler::xor_(Register dst, Register src1, Register src2, RCBit rc) {
   x_form(EXT2 | XORX, dst, src1, src2, rc );
 }
 
-void Assembler::and_(Register dst, Register src1, Register src2, RCBit rc) {
-  x_form(EXT2 | ANDX, dst, src1, src2, rc );
+void Assembler::and_(Register ra, Register rs, Register rb, RCBit rc) {
+  x_form(EXT2 | ANDX, ra, rs, rb, rc );
 }
 
 
@@ -1492,6 +1492,11 @@ void Assembler::extsh(Register rs, Register ra, RCBit rc) {
  CheckBuffer();
  emit(EXT2 | EXTSH | rs.code()*B21 | ra.code()*B16 | rc );  
 } 
+
+void Assembler::neg(Register rt, Register ra, RCBit rc) {
+ CheckBuffer();
+ emit(EXT2 | NEGX| rt.code()*B21 | ra.code()*B16 | rc );
+}
 
 //end PowerPC
 
@@ -2143,6 +2148,12 @@ void Assembler::fmr(const DwVfpRegister frt,
                      const DwVfpRegister frb) {
   CheckBuffer();
   emit(EXT4 | FMR | frt.code()*B21 | frb.code()*B11);
+}
+
+void Assembler::fctiwz(const DwVfpRegister frt,
+                     const DwVfpRegister frb) {
+  CheckBuffer();
+  emit(EXT4 | FCTIWZ | frt.code()*B21 | frb.code()*B11);
 }
 
 // Support for VFP.

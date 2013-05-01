@@ -934,6 +934,8 @@ SBit s = LeaveCC, Condition cond = al // roohack - remove this line later
 
   void extsb(Register rs, Register ra, RCBit r = LeaveRC);
   void extsh(Register rs, Register ra, RCBit r = LeaveRC);
+ 
+  void neg(Register rt, Register ra, RCBit rc = LeaveRC);
 
   void rlwinm(Register ra, Register rs, int sh, int mb, int me, 
               RCBit rc = LeaveRC);
@@ -1172,6 +1174,7 @@ SBit s = LeaveCC, Condition cond = al // roohack - remove this line later
             const DwVfpRegister frb, RCBit rc = LeaveRC );
   void fcmpu(const DwVfpRegister fra, const DwVfpRegister frb);
   void fmr(const DwVfpRegister frt, const DwVfpRegister frb);
+  void fctiwz(const DwVfpRegister frt, const DwVfpRegister frb);
 
   // Support for VFP.
   // All these APIs support S0 to S31 and D0 to D15.

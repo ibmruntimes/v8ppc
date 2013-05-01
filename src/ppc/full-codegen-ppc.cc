@@ -775,7 +775,7 @@ void FullCodeGenerator::PrepareForBailoutBeforeSplit(Expression* expr,
   PrepareForBailout(expr, TOS_REG);
   if (should_normalize) {
     __ LoadRoot(ip, Heap::kTrueValueRootIndex);
-    __ cmp(r0, ip);
+    __ cmp(r3, ip);
     Split(eq, if_true, if_false, NULL);
     __ bind(&skip);
   }
@@ -1196,8 +1196,9 @@ void FullCodeGenerator::VisitForInStatement(ForInStatement* stmt) {
   // Get the current entry of the array into register r6.
   __ lwz(r5, MemOperand(sp, 2 * kPointerSize));
   __ add(r5, r5, Operand(FixedArray::kHeaderSize - kHeapObjectTag));
-  __ slwi(r5, r3, Operand(kPointerSizeLog2 - kSmiTagSize));
-  __ lwz(r6, MemOperand(r5));
+  __ slwi(r6, r3, Operand(kPointerSizeLog2 - kSmiTagSize));
+  __ add(r6, r5, r6);
+  __ lwz(r6, MemOperand(r6));
 
   // Get the expected map from the stack or a smi in the
   // permanent slow case into register r2.
@@ -1222,7 +1223,8 @@ void FullCodeGenerator::VisitForInStatement(ForInStatement* stmt) {
   __ push(r4);  // Enumerable.
   __ push(r6);  // Current entry.
   __ InvokeBuiltin(Builtins::FILTER_KEY, CALL_FUNCTION);
-  __ mov(r6, Operand(r0), SetCC);
+  __ mr(r6, r3);
+  __ cmpi(r6, Operand(0));
   __ beq(loop_statement.continue_label());
 
   // Update the 'each' property or variable from the possibly filtered
@@ -1607,7 +1609,7 @@ void FullCodeGenerator::VisitObjectLiteral(ObjectLiteral* expr) {
   }
 
   // If result_saved is true the result is on top of the stack.  If
-  // result_saved is false the result is in r0.
+  // result_saved is false the result is in r3.
   bool result_saved = false;
 
   // Mark all computed expressions that are bound to a key that
@@ -2433,7 +2435,7 @@ void FullCodeGenerator::VisitCall(Call* expr) {
     }
 
     __ bind(&slow);
-    // Call the runtime to find the function to call (returned in r0)
+    // Call the runtime to find the function to call (returned in r3)
     // and the object holding it (returned in edx).
     __ push(context_register());
     __ mov(r5, Operand(proxy->name()));

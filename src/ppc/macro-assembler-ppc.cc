@@ -1456,7 +1456,7 @@ void MacroAssembler::CheckAccessGlobalProxy(Register holder_reg,
   ASSERT(!scratch.is(ip));
 
   // Load current lexical context from the stack frame.
-  lwz(scratch, MemOperand(r11, StandardFrameConstants::kContextOffset));
+  lwz(scratch, MemOperand(fp, StandardFrameConstants::kContextOffset));
   // In debug mode, make sure the lexical context is set.
 #ifdef DEBUG
   cmpi(scratch, Operand(0, RelocInfo::NONE));
@@ -1485,7 +1485,7 @@ void MacroAssembler::CheckAccessGlobalProxy(Register holder_reg,
 
   // Check if both contexts are the same.
   lwz(ip, FieldMemOperand(holder_reg, JSGlobalProxy::kNativeContextOffset));
-  cmp(scratch, Operand(ip));
+  cmp(scratch, ip);
   beq(&same_contexts);
 
   // Check the context is a native context.
@@ -3343,7 +3343,7 @@ void MacroAssembler::CopyBytes(Register src,
 
   // Align src before copying in word size chunks.
   bind(&align_loop);
-  cmp(length, Operand(0));
+  cmpi(length, Operand(0));
   beq(&done);
   bind(&align_loop_1);
   andi(r0, src, Operand(kPointerSize - 1));
@@ -3362,7 +3362,7 @@ void MacroAssembler::CopyBytes(Register src,
     cmpi(r0, Operand(0));
     Assert(eq, "Expecting alignment for CopyBytes");
   }
-  cmp(length, Operand(kPointerSize));
+  cmpi(length, Operand(kPointerSize));
   blt(&byte_loop);
   lwz(scratch, MemOperand(src, kPointerSize, PostIndex));
 #if CAN_USE_UNALIGNED_ACCESSES
@@ -3381,7 +3381,7 @@ void MacroAssembler::CopyBytes(Register src,
 
   // Copy the last bytes if any left.
   bind(&byte_loop);
-  cmp(length, Operand(0));
+  cmpi(length, Operand(0));
   beq(&done);
   bind(&byte_loop_1);
   lbz(scratch, MemOperand(src, 1, PostIndex));
@@ -3663,10 +3663,10 @@ void MacroAssembler::CheckPageFlag(
   ASSERT(cc == ne || cc == eq);
   ASSERT((~Page::kPageAlignmentMask & 0xffff) == 0);
   addis(r0, r0, (~Page::kPageAlignmentMask >> 16));
-  and_(scratch, object, r0, LeaveRC);
+  and_(scratch, object, r0);
   lwz(scratch, MemOperand(scratch, MemoryChunk::kFlagsOffset));
   li(r0, Operand(mask));
-  and_(r0, r0, scratch, SetRC);
+  and_(r0, r0, scratch);
   cmpi(r0, Operand(0));
   if(cc == ne) {
     bne(condition_met);
