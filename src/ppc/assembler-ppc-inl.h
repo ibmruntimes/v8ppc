@@ -228,7 +228,7 @@ bool RelocInfo::IsPatchedReturnSequence() {
   return (current_instr == kMovLrPc)
           && ((next_instr & kLdrPCMask) == kLdrPCPattern);
 #else
-  // PENGUIN FIXME
+  PPCPORT_UNSAFE_IMPLEMENTATION();
   return false;
 #endif
 }

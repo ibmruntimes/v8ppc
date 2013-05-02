@@ -127,8 +127,7 @@ int MacroAssembler::CallSize(
 int MacroAssembler::CallSizeNotPredictableCodeSize(
     Address target, RelocInfo::Mode rmode, Condition cond) {
 #ifndef PENGUIN_CLEANUP
-  // PENGUIN FIXME
-  ASSERT(false);  // Always fail 
+  PPCPORT_UNIMPLEMENTED();  // Always fail 
   return 0;
 #else
   int size = 2 * kInstrSize;
