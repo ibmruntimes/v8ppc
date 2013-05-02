@@ -296,7 +296,7 @@ extern bool FLAG_enable_slow_asserts;
 //   - PPCPORT_UNIMPLEMENTED: checking for unimplemented features, assert when extra check is enabled
 //   - PPCPORT_CHECK: checking added for development phase, assert when extra-check is enabled
 //   - PPCPORT_UNSAFE_IMPLEMENTATION: marking implementations that work for common cases only, will not assert
-#ifdef ENABLE_EXTRA_CHECKS
+#ifdef ENABLE_EXTRA_PPCCHECKS
 #define PPCPORT_CHECK(condition) CHECK(condition)
 #define PPCPORT_UNIMPLEMENTED() UNIMPLEMENTED()
 #define PPCPORT_UNSAFE_IMPLEMENTATION() ((void)0)
