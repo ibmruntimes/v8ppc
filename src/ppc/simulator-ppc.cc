@@ -2201,7 +2201,7 @@ void Simulator::DecodeExt2(Instruction* instr) {
   }
 }
 void Simulator::DecodeExt4(Instruction* instr) {
-  switch(instr->Bits(5,1) << 1) {
+  switch(instr->Bits(10,1) << 1) {
     case FCMPU: {
       int fra = instr->RAValue();
       int frb = instr->RBValue();
@@ -2222,7 +2222,16 @@ void Simulator::DecodeExt4(Instruction* instr) {
       int frt = instr->RTValue();
       int frb = instr->RBValue();
       double frb_val = get_double_from_d_register(frb);
-      int64_t frt_val = (int64_t)frb_val;
+      int64_t frt_val;
+/*
+      if(frb_val < 0.0) {
+        frb_val *= -1.0;
+        frt_val = (int64_t)frb_val;
+        frt_val *= -1;
+      } else {
+*/
+        frt_val = (int64_t)frb_val;
+//      }
       double *p = reinterpret_cast<double*>(&frt_val);
       set_d_register_from_double(frt, *p);
       break;
@@ -2264,6 +2273,15 @@ void Simulator::DecodeExt4(Instruction* instr) {
       double fra_val = get_double_from_d_register(fra);
       double frb_val = get_double_from_d_register(frb);
       double frt_val = fra_val * frb_val;
+      set_d_register_from_double(frt, frt_val);
+      break;
+    }
+    case FRIM: {
+      int frt = instr->RTValue();
+      int frb = instr->RBValue();
+      double frb_val = get_double_from_d_register(frb);
+      int64_t floor_val = (int64_t)frb_val;
+      double frt_val = (double)floor_val;
       set_d_register_from_double(frt, frt_val);
       break;
     }

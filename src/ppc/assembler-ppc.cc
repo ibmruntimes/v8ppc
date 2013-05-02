@@ -2156,6 +2156,12 @@ void Assembler::fctiwz(const DwVfpRegister frt,
   emit(EXT4 | FCTIWZ | frt.code()*B21 | frb.code()*B11);
 }
 
+void Assembler::frim(const DwVfpRegister frt,
+                     const DwVfpRegister frb) {
+  CheckBuffer();
+  emit(EXT4 | FRIM | frt.code()*B21 | frb.code()*B11);
+}
+
 // Support for VFP.
 
 void Assembler::vldr(const DwVfpRegister dst,
