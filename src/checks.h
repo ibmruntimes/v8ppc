@@ -292,4 +292,18 @@ extern bool FLAG_enable_slow_asserts;
 #define EXTRA_CHECK(condition) ((void) 0)
 #endif
 
+// PENGUIN: Extra checks for PPC PORT (will be removed once PPC port is complete)
+//   - PPCPORT_UNIMPLEMENTED: checking for unimplemented features, assert when extra check is enabled
+//   - PPCPORT_CHECK: checking added for development phase, assert when extra-check is enabled
+//   - PPCPORT_UNSAFE_IMPLEMENTATION: marking implementations that work for common cases only, will not assert
+#ifdef ENABLE_EXTRA_CHECKS
+#define PPCPORT_CHECK(condition) CHECK(condition)
+#define PPCPORT_UNIMPLEMENTED() UNIMPLEMENTED()
+#define PPCPORT_UNSAFE_IMPLEMENTATION() ((void)0)
+#else
+#define PPCPORT_CHECK(condition) ((void) 0)
+#define PPCPORT_UNIMPLEMENTED() ((void) 0)
+#define PPCPORT_UNSAFE_IMPLEMENTATION() ((void)0)
+#endif
+
 #endif  // V8_CHECKS_H_
