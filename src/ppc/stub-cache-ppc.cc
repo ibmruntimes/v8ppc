@@ -2126,11 +2126,17 @@ Handle<Code> CallStubCompiler::CompileMathFloorCall(
   // Load the HeapNumber value.
   __ lfd(d1, r3, HeapNumber::kValueOffset - kHeapObjectTag);
 
+  // Round to integer minus 
+  __ frim(d1, d1);
   // Convert the argument to an integer.
   __ fctiwz(d1, d1);
   __ sub(sp, sp, Operand(8));
   __ stfd(d1, sp, 0);
+#ifdef __LITTLE_ENDIAN
+  __ lwz(r3, MemOperand(sp, 0));
+#else
   __ lwz(r3, MemOperand(sp, 4));
+#endif
   __ add(sp, sp, Operand(8));
 
   // if resulting conversion is negative, invert for bit tests

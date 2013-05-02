@@ -382,7 +382,8 @@ enum OpcodeExt4 {
   FADD = 21 << 1,    // Floating Add
   FMUL = 25 << 1,    // Floating Multiply
   MCRFS = 64 << 1,   // Move to Condition Register from FPSCR
-  FMR = 72 << 1      // Floating Move Register
+  FMR = 72 << 1,     // Floating Move Register
+  FRIM = 488 << 1    // Floating Round to Integer Minus
 };
 
 #if defined(INCLUDE_ARM)

@@ -961,7 +961,7 @@ void Decoder::DecodeExt4(Instruction* instr) {
       break;
     }
     case FCTIWZ: {
-      Format(instr, "fctiwz    'Da, 'Db");
+      Format(instr, "fctiwz    'Dt, 'Db");
       break;
     }
     case FDIV: {
