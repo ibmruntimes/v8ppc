@@ -4865,7 +4865,7 @@ void ArgumentsAccessStub::GenerateNewStrict(MacroAssembler* masm) {
   __ bind(&loop);
   // Pre-decrement r5 with kPointerSize on each iteration.
   // Pre-decrement in order to skip receiver.
-  __ ldr(r6, MemOperand(r5, kPointerSize, NegPreIndex));
+  __ ldr(r6, MemOperand(r5, kPointerSize, NegPreIndex)); // NegPreIndex modifies r5!
   // Post-increment r7 with kPointerSize on each iteration.
   __ str(r6, MemOperand(r7, kPointerSize, PostIndex));
   __ sub(r4, r4, Operand(1));

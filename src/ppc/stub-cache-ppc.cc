@@ -1610,7 +1610,8 @@ Handle<Code> CallStubCompiler::CompileArrayPushCall(
       __ add(end_elements, elements, end_elements);
       const int kEndElementsOffset =
           FixedArray::kHeaderSize - kHeapObjectTag - argc * kPointerSize;
-      __ stw(r7, MemOperand(end_elements, kEndElementsOffset));
+      __ add(end_elements, end_elements, Operand(kEndElementsOffset));
+      __ stw(r7, MemOperand(end_elements));
 
       // Check for a smi.
       __ Drop(argc + 1);
@@ -1662,7 +1663,8 @@ Handle<Code> CallStubCompiler::CompileArrayPushCall(
       // so write back the value in end_elements.
       __ slwi(end_elements, r3, Operand(kPointerSizeLog2 - kSmiTagSize));
       __ add(end_elements, elements, end_elements);
-      __ stw(r7, MemOperand(end_elements, kEndElementsOffset));
+      __ add(end_elements, end_elements, Operand(kEndElementsOffset));
+      __ stw(r7, MemOperand(end_elements));
 
       __ RecordWrite(elements,
                      end_elements,
