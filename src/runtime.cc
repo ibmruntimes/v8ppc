@@ -84,7 +84,6 @@ namespace internal {
 // the given name.  If the object is not a boolean call IllegalOperation
 // and return.
 #define CONVERT_BOOLEAN_ARG_CHECKED(name, index)                     \
-  PPCPORT_CHECK(args[index] != NULL);				     \
   RUNTIME_ASSERT(args[index]->IsBoolean());                          \
   bool name = args[index]->IsTrue();
 
@@ -92,7 +91,6 @@ namespace internal {
 // with the given name.  If the argument is not a Smi call IllegalOperation
 // and return.
 #define CONVERT_SMI_ARG_CHECKED(name, index)                         \
-  PPCPORT_CHECK(args[index] != NULL);				     \
   RUNTIME_ASSERT(args[index]->IsSmi());                              \
   int name = args.smi_at(index);
 
@@ -100,7 +98,6 @@ namespace internal {
 // the given name.  If the argument is not a number (as opposed to
 // the number not-a-number) call IllegalOperation and return.
 #define CONVERT_DOUBLE_ARG_CHECKED(name, index)                      \
-  PPCPORT_CHECK(args[index] != NULL);			             \
   RUNTIME_ASSERT(args[index]->IsNumber());                           \
   double name = args.number_at(index);
 
@@ -116,7 +113,6 @@ namespace internal {
 // variable with the given name.  If the argument is not a Smi call
 // IllegalOperation and return.
 #define CONVERT_PROPERTY_DETAILS_CHECKED(name, index)                \
-  PPCPORT_CHECK(args[index] != NULL);				     \
   RUNTIME_ASSERT(args[index]->IsSmi());                              \
   PropertyDetails name = PropertyDetails(Smi::cast(args[index]));
 
@@ -124,7 +120,6 @@ namespace internal {
 // Assert that the given argument has a valid value for a StrictModeFlag
 // and store it in a StrictModeFlag variable with the given name.
 #define CONVERT_STRICT_MODE_ARG_CHECKED(name, index)                 \
-  PPCPORT_CHECK(args[index] != NULL);				     \
   RUNTIME_ASSERT(args[index]->IsSmi());                              \
   RUNTIME_ASSERT(args.smi_at(index) == kStrictMode ||                \
                  args.smi_at(index) == kNonStrictMode);              \
@@ -135,7 +130,6 @@ namespace internal {
 // Assert that the given argument has a valid value for a LanguageMode
 // and store it in a LanguageMode variable with the given name.
 #define CONVERT_LANGUAGE_MODE_ARG(name, index)                       \
-  PPCPORT_CHECK(args[index] != NULL);				     \
   ASSERT(args[index]->IsSmi());                                      \
   ASSERT(args.smi_at(index) == CLASSIC_MODE ||                       \
          args.smi_at(index) == STRICT_MODE ||                        \
@@ -1567,10 +1561,6 @@ RUNTIME_FUNCTION(MaybeObject*, Runtime_InitializeVarGlobal) {
   CONVERT_ARG_HANDLE_CHECKED(String, name, 0);
   GlobalObject* global = isolate->context()->global_object();
   RUNTIME_ASSERT(args[1]->IsSmi());
-  /* penguin: temporary if(args[1] == 0) {
-    printf("args.length()=%d, args[0]=%p, args[1]=%p, args[1]->IsSmi()=%d, args[2]=%p\n", 
-	   args.length(), (void*)args[0], (void*)args[1], args[1]->IsSmi(), (void*)args[2]);
-	   }*/
   CONVERT_LANGUAGE_MODE_ARG(language_mode, 1);
   StrictModeFlag strict_mode_flag = (language_mode == CLASSIC_MODE)
       ? kNonStrictMode : kStrictMode;

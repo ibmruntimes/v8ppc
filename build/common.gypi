@@ -73,6 +73,8 @@
     # Enable extra checks in API functions and other strategic places.
     'v8_enable_extra_checks%': 1,
 
+    'v8_enable_extra_ppcchecks%': 0,
+
     'v8_object_print%': 0,
 
     'v8_enable_gdbjit%': 0,
@@ -114,6 +116,9 @@
       }],
       ['v8_enable_extra_checks==1', {
         'defines': ['ENABLE_EXTRA_CHECKS',],
+      }],
+      ['v8_enable_extra_ppcchecks==1', {
+        'defines': ['ENABLE_EXTRA_PPCCHECKS',],
       }],
       ['v8_object_print==1', {
         'defines': ['OBJECT_PRINT',],
