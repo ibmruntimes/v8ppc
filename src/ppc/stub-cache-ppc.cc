@@ -101,7 +101,11 @@ static void ProbeTable(Isolate* isolate,
   __ lwz(flags_reg, FieldMemOperand(code, Code::kFlagsOffset));
 
   __ andi(flags_reg, flags_reg, Operand(~Code::kFlagsNotUsedInLookup));
-  __ cmpi(flags_reg, Operand(flags));
+  if( flags < 0 ) {
+    __ cmpi(flags_reg, Operand(flags));
+  } else {
+    __ cmpli(flags_reg, Operand(flags));
+  }
   __ bne(&miss);
 
 #ifdef DEBUG
