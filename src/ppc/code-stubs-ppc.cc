@@ -4695,7 +4695,7 @@ void ArgumentsAccessStub::GenerateNewNonStrictFast(MacroAssembler* masm) {
   __ stw(r9, FieldMemOperand(r7, FixedArray::kMapOffset));
   __ add(r9, r4, Operand(Smi::FromInt(2)));
   __ stw(r9, FieldMemOperand(r7, FixedArray::kLengthOffset));
-  __ stw(r8, FieldMemOperand(r7, FixedArray::kHeaderSize + 0 * kPointerSize));
+  __ stw(r20, FieldMemOperand(r7, FixedArray::kHeaderSize + 0 * kPointerSize));
   __ slwi(r9, r4, Operand(1));
   __ add(r9, r7, r9);
   __ add(r9, r9, Operand(kParameterMapHeaderSize));
@@ -4734,7 +4734,8 @@ void ArgumentsAccessStub::GenerateNewNonStrictFast(MacroAssembler* masm) {
   __ mr(r0, r8);
   __ add(r8, r7, r8);
   __ stw(r22, MemOperand(r8));
-  __ sub(r8, r0, Operand(kParameterMapHeaderSize - FixedArray::kHeaderSize));
+  __ mr(r8, r0);
+  __ sub(r8, r8, Operand(kParameterMapHeaderSize - FixedArray::kHeaderSize));
   __ add(r8, r6, r8);
   __ stw(r10, MemOperand(r8));
   __ add(r22, r22, Operand(Smi::FromInt(1)));
