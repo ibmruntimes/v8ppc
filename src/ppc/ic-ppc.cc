@@ -1108,7 +1108,7 @@ void KeyedLoadIC::GenerateGeneric(MacroAssembler* masm) {
     __ add(r8, r8, r7);
     __ lwz(r8, MemOperand(r8));
     __ lbz(r9, FieldMemOperand(r5, Map::kInObjectPropertiesOffset));
-    __ sub(r8, r9, r8);  // roohack, sub order may not be correct
+    __ sub(r8, r8, r9);
     __ cmpi(r8, Operand(0));
     __ bge(&property_array_property);
     if (i != 0) {
