@@ -3952,8 +3952,8 @@ void CEntryStub::GenerateCore(MacroAssembler* masm,
   Label retry;
   __ bind(&failure_returned);
   STATIC_ASSERT(Failure::RETRY_AFTER_GC == 0);
-  __ li(r0, Operand(((1 << kFailureTypeTagSize) - 1) << kFailureTagSize));
-  __ cmp(r3, r0);
+  __ andi(r0, r3, Operand(((1 << kFailureTypeTagSize) - 1) << kFailureTagSize));
+  __ cmpi(r0, Operand(0));
   __ beq(&retry);
 
   // Special handling of out of memory exceptions.
