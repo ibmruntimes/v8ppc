@@ -3478,13 +3478,16 @@ void LCodeGen::DoMathFloor(LUnaryMathOperation* instr) {
   SwVfpRegister single_scratch = double_scratch0().low();
   Register scratch1 = scratch0();
   Register scratch2 = ToRegister(instr->temp());
+  Label was_int;
 
   __ EmitVFPTruncate(kRoundToMinusInf,
                      single_scratch,
                      input,
                      scratch1,
                      scratch2);
-  DeoptimizeIf(ne, instr->environment());
+  __ bc(&was_int, BF, 7);
+  DeoptimizeIf(al, instr->environment());
+  __ bind(&was_int);
 
   // Move the result back to general purpose register r0.
   __ vmov(result, single_scratch);
@@ -3506,7 +3509,7 @@ void LCodeGen::DoMathRound(LUnaryMathOperation* instr) {
   DoubleRegister input = ToDoubleRegister(instr->value());
   Register result = ToRegister(instr->result());
   Register scratch = scratch0();
-  Label done, check_sign_on_zero;
+  Label done, check_sign_on_zero, was_int;
 
   // Extract exponent bits.
   __ vmov(result, input.high());
@@ -3551,7 +3554,9 @@ void LCodeGen::DoMathRound(LUnaryMathOperation* instr) {
                      double_scratch0(),
                      result,
                      scratch);
-  DeoptimizeIf(ne, instr->environment());
+  __ bc(&was_int, BF, 7);
+  DeoptimizeIf(al, instr->environment());
+  __ bind(&was_int);
   __ vmov(result, double_scratch0().low());
 
   if (instr->hydrogen()->CheckFlag(HValue::kBailoutOnMinusZero)) {
@@ -4629,6 +4634,7 @@ void LCodeGen::DoDeferredTaggedToI(LTaggedToI* instr) {
     CpuFeatures::Scope scope(VFP3);
     // Deoptimize if we don't have a heap number.
     DeoptimizeIf(ne, instr->environment());
+    Label was_int;
 
     __ sub(ip, input_reg, Operand(kHeapObjectTag));
     __ vldr(double_scratch, ip, HeapNumber::kValueOffset);
@@ -4638,7 +4644,9 @@ void LCodeGen::DoDeferredTaggedToI(LTaggedToI* instr) {
                        scratch1,
                        scratch2,
                        kCheckForInexactConversion);
-    DeoptimizeIf(ne, instr->environment());
+    __ bc(&was_int, BF, 7);
+    DeoptimizeIf(al, instr->environment());
+    __ bind(&was_int);
     // Load the result.
     __ vmov(input_reg, single_scratch);
 
@@ -4706,7 +4714,7 @@ void LCodeGen::DoDoubleToI(LDoubleToI* instr) {
   DwVfpRegister double_input = ToDoubleRegister(instr->value());
   SwVfpRegister single_scratch = double_scratch0().low();
 
-  Label done;
+  Label done, was_int;
 
   if (instr->truncating()) {
     Register scratch3 = ToRegister(instr->temp2());
@@ -4726,7 +4734,9 @@ void LCodeGen::DoDoubleToI(LDoubleToI* instr) {
                        kCheckForInexactConversion);
     // Deoptimize if we had a vfp invalid exception,
     // including inexact operation.
-    DeoptimizeIf(ne, instr->environment());
+    __ bc(&was_int, BF, 7);
+    DeoptimizeIf(al, instr->environment());
+    __ bind(&was_int);
     // Retrieve the result.
     __ vmov(result_reg, single_scratch);
   }

@@ -1997,12 +1997,13 @@ void Simulator::DecodeExt2(Instruction* instr) {
       // int rc = instr->Bit(0);
       uint32_t ra_val = get_register(ra);
       uint32_t rb_val = get_register(rb);
-      uint32_t alu_out = rb_val - ra_val;
+      uint32_t alu_out = ~ra_val + rb_val + 1;
       set_register(rt, alu_out);
-      if(ra_val > rb_val) {
-        special_reg_xer_ = (special_reg_xer_ & ~0xF0000000) | 0x20000000;
-      } else {
+      // If the sign of rb and alu_out don't match, carry = 0
+      if((alu_out ^ rb_val) & 0x80000000) {
         special_reg_xer_ &= ~0xF0000000;
+      } else {
+        special_reg_xer_ = (special_reg_xer_ & ~0xF0000000) | 0x20000000;
       }
       // todo - handle OE and RC bits
       break;
@@ -2217,6 +2218,14 @@ void Simulator::DecodeExt4(Instruction* instr) {
       int condition =  bf >> (cr*4);
       condition_reg_ = (condition_reg_ & ~condition_mask) | condition;
       break;
+    }
+    case FRSP: {
+      int frt = instr->RTValue();
+      int frb = instr->RBValue();
+      double frb_val = get_double_from_d_register(frb);
+      float frt_val = (float)frb_val;
+      double *p = reinterpret_cast<double*>(&frt_val);
+      set_d_register_from_double(frt, *p);
     }
     case FCTIWZ: {
       int frt = instr->RTValue();
@@ -3584,9 +3593,14 @@ void Simulator::InstructionDecode(Instruction* instr) {
       int ra = instr->RAValue();
       int32_t ra_val = get_register(ra);
       int32_t im_val = (instr->Bits(15,0) << 16) >> 16;
-      int32_t alu_out = ra_val + im_val;
+      int64_t alu_out = ra_val + im_val;
+      if(alu_out >> 32) {
+        alu_out &= 0xFFFFFFFF;
+        special_reg_xer_ = (special_reg_xer_ & ~0xF0000000) | 0x20000000;
+      } else {
+        special_reg_xer_ &= ~0xF0000000;
+      }
       set_register(rt, alu_out);
-      // todo - handle Carry ? 
       break;
     }
     case ADDICx:

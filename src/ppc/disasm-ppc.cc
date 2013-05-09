@@ -960,6 +960,10 @@ void Decoder::DecodeExt4(Instruction* instr) {
       Format(instr, "fcmpu     'Da, 'Db");
       break;
     }
+    case FRSP: {
+      Format(instr, "frsp      'Dt, 'Db");
+      break;
+    }
     case FCTIWZ: {
       Format(instr, "fctiwz    'Dt, 'Db");
       break;

@@ -224,8 +224,7 @@ void ElementsTransitionGenerator::GenerateSmiToDouble(
                                             d0,
                                             r3,
                                             r4,
-                                            lr,
-                                            s0);
+                                            d3);
     __ Strd(r3, r4, MemOperand(r10, 8, PostIndex));
   }
   __ b(&entry);

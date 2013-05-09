@@ -1986,14 +1986,14 @@ void FullCodeGenerator::EmitInlineSmiBinaryOp(BinaryOperation* expr,
       __ li(r0, Operand(-1));
       __ addc(scratch1, left, right);
       __ addze(r0, r0, LeaveOE, SetRC);
-      __ bc(&stub_call, BT, 1);
+      __ bc(&stub_call, BT, 2);
       __ mr(right, scratch1);
       break;
     case Token::SUB:
       __ li(r0, Operand(-1));
       __ subfc(scratch1, left, right);
       __ addze(r0, r0, LeaveOE, SetRC);
-      __ bc(&stub_call, BT, 1);
+      __ bc(&stub_call, BF, 2);
       __ mr(right, scratch1);
       break;
     case Token::MUL: {
@@ -4092,7 +4092,7 @@ void FullCodeGenerator::VisitCountOperation(CountOperation* expr) {
     __ li(r0, Operand(-1));
     __ addic(r3, r3, Operand(Smi::FromInt(count_value)));
     __ addze(r0, r0, LeaveOE, SetRC);
-    __ bc(&stub_call, BT, 1);
+    __ bc(&stub_call, BT, 2);
     // We could eliminate this smi check if we split the code at
     // the first smi check before calling ToNumber.
     patch_site.EmitJumpIfSmi(r3, &done);

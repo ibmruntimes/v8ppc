@@ -101,11 +101,8 @@ static void ProbeTable(Isolate* isolate,
   __ lwz(flags_reg, FieldMemOperand(code, Code::kFlagsOffset));
 
   __ andi(flags_reg, flags_reg, Operand(~Code::kFlagsNotUsedInLookup));
-  if( flags < 0 ) {
-    __ cmpi(flags_reg, Operand(flags));
-  } else {
-    __ cmpli(flags_reg, Operand(flags));
-  }
+  __ mov(r0, Operand(flags));
+  __ cmpl(flags_reg, r0);
   __ bne(&miss);
 
 #ifdef DEBUG
@@ -3598,36 +3595,37 @@ static void GenerateSmiKeyCheck(MacroAssembler* masm,
                                 Register scratch1,
                                 DwVfpRegister double_scratch0,
                                 Label* fail) {
-#if 0 // Possible optimization with float
-  if (CpuFeatures::IsSupported(VFP2)) {
-    CpuFeatures::Scope scope(VFP2);
-    Label key_ok;
-    // Check for smi or a smi inside a heap number.  We convert the heap
-    // number and check if the conversion is exact and fits into the smi
-    // range.
-    __ JumpIfSmi(key, &key_ok);
-    __ CheckMap(key,
-                scratch0,
-                Heap::kHeapNumberMapRootIndex,
-                fail,
-                DONT_DO_SMI_CHECK);
-    __ sub(ip, key, Operand(kHeapObjectTag));
-    __ vldr(double_scratch0, ip, HeapNumber::kValueOffset);
-    __ EmitVFPTruncate(kRoundToZero,
-                       double_scratch0.low(),
-                       double_scratch0,
-                       scratch0,
-                       scratch1,
-                       kCheckForInexactConversion);
-    __ bne(fail);
-    __ vmov(scratch0, double_scratch0.low());
-    __ TrySmiTag(scratch0, fail, scratch1);
-    __ mr(key, scratch0);
-    __ bind(&key_ok);
-  } else {
+  Label key_ok;
+  // Check for smi or a smi inside a heap number.  We convert the heap
+  // number and check if the conversion is exact and fits into the smi
+  // range.
+  __ JumpIfSmi(key, &key_ok);
+  __ CheckMap(key,
+              scratch0,
+              Heap::kHeapNumberMapRootIndex,
+              fail,
+              DONT_DO_SMI_CHECK);
+  __ sub(ip, key, Operand(kHeapObjectTag));
+  __ lfd(double_scratch0, ip, HeapNumber::kValueOffset);
+  __ EmitVFPTruncate(kRoundToZero,
+                     d11,
+                     double_scratch0,
+                     scratch0,
+                     scratch1,
+                     kCheckForInexactConversion);
+  __ bc(fail, BT, 7);
+  __ fctiwz(double_scratch0, double_scratch0);
+  __ sub(sp, sp, Operand(8));
+  __ stfd(double_scratch0, sp, 0);
+#ifdef __LITTLE_ENDIAN
+  __ lwz(scratch0, MemOperand(sp, 0));
+#else
+  __ lwz(scratch0, MemOperand(sp, 4));
 #endif
-  // Check that the key is a smi.
-  __ JumpIfNotSmi(key, fail);
+  __ add(sp, sp, Operand(8));
+  __ TrySmiTag(scratch0, fail, scratch1);
+  __ mr(key, scratch0);
+  __ bind(&key_ok);
 }
 
 
@@ -3777,8 +3775,7 @@ void KeyedLoadStubCompiler::GenerateLoadExternalArray(
                                               d0,
                                               dst1,
                                               dst2,
-                                              r22,
-                                              s0);
+                                              d3);
       __ stw(dst1, FieldMemOperand(r3, HeapNumber::kMantissaOffset));
       __ stw(dst2, FieldMemOperand(r3, HeapNumber::kExponentOffset));
       __ Ret();
@@ -4056,7 +4053,7 @@ void KeyedStoreStubCompiler::GenerateStoreExternalArray(
       FloatingPointHelper::ConvertIntToDouble(
           masm, r8, destination,
           d0, r9, r10,  // These are: double_dst, dst1, dst2.
-          r7, s2);  // These are: scratch2, single_scratch.
+          d2);  // These are: scratch2, single_scratch.
       if (destination == FloatingPointHelper::kVFPRegisters) {
         CpuFeatures::Scope scope(VFP2);
         __ vstr(d0, r6, 0);

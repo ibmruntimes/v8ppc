@@ -1716,7 +1716,7 @@ void MacroAssembler::AllocateInNewSpace(int object_size,
   li(r0, Operand(-1));
   addc(scratch2, result, obj_size_reg);
   addze(r0, r0, LeaveOE, SetRC);
-  bc(gc_required, BT, 1);
+  bc(gc_required, BT, 2);
   cmpl(scratch2, ip);
   bgt(gc_required);
   stw(scratch2, MemOperand(topaddr));
@@ -1804,7 +1804,7 @@ void MacroAssembler::AllocateInNewSpace(Register object_size,
     addc(scratch2, result, object_size);
   }
   addze(r0, r0, LeaveOE, SetRC);
-  bc(gc_required, BT, 1);
+  bc(gc_required, BT, 2);
   cmp(scratch2, ip);
   bgt(gc_required);
 
@@ -2131,8 +2131,7 @@ void MacroAssembler::StoreNumberToDoubleElements(Register value_reg,
                                           d0,
                                           mantissa_reg,
                                           exponent_reg,
-                                          scratch4,
-                                          s2);
+                                          d2);
   if (destination == FloatingPointHelper::kVFPRegisters) {
     CpuFeatures::Scope scope(VFP2);
     vstr(d0, scratch1, 0);
@@ -2442,7 +2441,7 @@ void MacroAssembler::ObjectToDoubleVFPRegister(Register object,
                                                Register scratch1,
                                                Register scratch2,
                                                Register heap_number_map,
-                                               SwVfpRegister scratch3,
+                                               DwVfpRegister scratch3,
                                                Label* not_number,
                                                ObjectToDoubleFlags flags) {
   Label done;
@@ -2451,8 +2450,8 @@ void MacroAssembler::ObjectToDoubleVFPRegister(Register object,
     JumpIfNotSmi(object, &not_smi);
     // Remove smi tag and convert to double.
     mov(scratch1, Operand(object, ASR, kSmiTagSize));
-    vmov(scratch3, scratch1);
-    vcvt_f64_s32(result, scratch3);
+    vmov(scratch3.low(), scratch1); //roohack
+    vcvt_f64_s32(result, scratch3.low()); //roohack
     b(&done);
     bind(&not_smi);
   }
@@ -2606,49 +2605,43 @@ void MacroAssembler::ConvertToInt32(Register source,
 }
 
 
+// Temporary compatibility function
 void MacroAssembler::EmitVFPTruncate(VFPRoundingMode rounding_mode,
                                      SwVfpRegister result,
                                      DwVfpRegister double_input,
                                      Register scratch1,
                                      Register scratch2,
                                      CheckForInexactConversion check_inexact) {
-  ASSERT(CpuFeatures::IsSupported(VFP2));
-  CpuFeatures::Scope scope(VFP2);
-  Register prev_fpscr = scratch1;
-  Register scratch = scratch2;
+  ASSERT(false);  // Fail
+}
 
+
+
+void MacroAssembler::EmitVFPTruncate(VFPRoundingMode rounding_mode,
+                                     DwVfpRegister result,
+                                     DwVfpRegister double_input,
+                                     Register scratch1,
+                                     Register scratch2,
+                                     CheckForInexactConversion check_inexact) {
+
+  // Not sure if we need inexact conversion test on PowerPC
+#if 0
   int32_t check_inexact_conversion =
     (check_inexact == kCheckForInexactConversion) ? kVFPInexactExceptionBit : 0;
+#endif
 
-  // Set custom FPCSR:
-  //  - Set rounding mode.
-  //  - Clear vfp cumulative exception flags.
-  //  - Make sure Flush-to-zero mode control bit is unset.
-  vmrs(prev_fpscr);
-  bic(scratch,
-      prev_fpscr,
-      Operand(kVFPExceptionMask |
-              check_inexact_conversion |
-              kVFPRoundingModeMask |
-              kVFPFlushToZeroMask));
-  // 'Round To Nearest' is encoded by 0b00 so no bits need to be set.
-  if (rounding_mode != kRoundToNearest) {
-    orr(scratch, scratch, Operand(rounding_mode));
-  }
-  vmsr(scratch);
+  ASSERT((rounding_mode == kRoundToZero) 
+        || (rounding_mode == kRoundToMinusInf));
+  // Actually, Power defaults to round to nearest.. so we will need to
+  // fix this eventually
+  frsp(result, double_input, SetRC);
 
-  // Convert the argument to an integer.
-  vcvt_s32_f64(result,
-               double_input,
-               (rounding_mode == kRoundToZero) ? kDefaultRoundToZero
-                                               : kFPSCRRounding);
-
-  // Retrieve FPSCR.
-  vmrs(scratch);
-  // Restore FPSCR.
-  vmsr(prev_fpscr);
-  // Check for vfp exceptions.
-  tst(scratch, Operand(kVFPExceptionMask | check_inexact_conversion));
+  // Special branches must follow if the condition is required
+  // CR1 is set as follows: FX,FEX,VX,OX
+  // bit offset 4 - FX Floating-Point Exception
+  // bit offset 5 - FEX Floating-Point Enabled Exception
+  // bit offset 6 - VX Floating-Point Invalid Operation Exception
+  // bit offset 7 - OX Floating-Point Overflow Exception
 }
 
 

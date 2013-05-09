@@ -1176,6 +1176,8 @@ SBit s = LeaveCC, Condition cond = al // roohack - remove this line later
   void fmr(const DwVfpRegister frt, const DwVfpRegister frb);
   void fctiwz(const DwVfpRegister frt, const DwVfpRegister frb);
   void frim(const DwVfpRegister frt, const DwVfpRegister frb);
+  void frsp(const DwVfpRegister frt, const DwVfpRegister frb, 
+            RCBit rc = LeaveRC);
 
   // Support for VFP.
   // All these APIs support S0 to S31 and D0 to D15.

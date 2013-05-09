@@ -886,7 +886,7 @@ class MacroAssembler: public Assembler {
       Register scratch1,
       Register scratch2,
       Register heap_number_map,
-      SwVfpRegister scratch3,
+      DwVfpRegister scratch3,
       Label* not_number,
       ObjectToDoubleFlags flags = NO_OBJECT_TO_DOUBLE_FLAGS);
 
@@ -915,12 +915,21 @@ class MacroAssembler: public Assembler {
   // was inexact, i.e. if the double value could not be converted exactly
   // to a 32bit integer.
   void EmitVFPTruncate(VFPRoundingMode rounding_mode,
+                       DwVfpRegister result,
+                       DwVfpRegister double_input,
+                       Register scratch1,
+                       Register scratch2,
+                       CheckForInexactConversion check
+                           = kDontCheckForInexactConversion);
+  // temporary compatibility function  
+  void EmitVFPTruncate(VFPRoundingMode rounding_mode,
                        SwVfpRegister result,
                        DwVfpRegister double_input,
                        Register scratch1,
                        Register scratch2,
                        CheckForInexactConversion check
                            = kDontCheckForInexactConversion);
+
 
   // Helper for EmitECMATruncate.
   // This will truncate a floating-point value outside of the singed 32bit

@@ -376,6 +376,7 @@ enum OpcodeExt2 {
 // Bits 10-1
 enum OpcodeExt4 {
   FCMPU = 0 << 1,    // Floating Compare Unordered
+  FRSP = 12 << 1,    // Floating-Point Rounding 
   FCTIWZ = 15 << 1,  // Floating Convert to Integer Word with Round to Zero
   FDIV = 18 << 1,    // Floating Divide
   FSUB = 20 << 1,    // Floating Subtract

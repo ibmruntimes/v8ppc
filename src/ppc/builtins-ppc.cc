@@ -355,18 +355,17 @@ static void ArrayNativeCode(MacroAssembler* masm,
   __ b(&empty_array);
 
   __ bind(&not_empty_array);
-  // roohack - note, we can probably do this with rlwmin
-  __ mov(r8, Operand(kIntptrSignBit | kSmiTagMask));
-  __ and_(r3, r2, r8, SetRC);
-  __ cmpi(r3, Operand(0));
-  // __ and_(r3, r2, Operand(kIntptrSignBit | kSmiTagMask), SetCC);
+  // Posible optimization using rlwinm
+  __ mov(r0, Operand(kIntptrSignBit | kSmiTagMask));
+  __ and_(r6, r5, r0);
+  __ cmpi(r6, Operand(0));
   __ bne(call_generic_code);
 
   // Handle construction of an empty array of a certain size. Bail out if size
   // is too large to actually allocate an elements array.
   STATIC_ASSERT(kSmiTag == 0);
-  __ mov(r9, Operand(JSObject::kInitialMaxFastElementArray << kSmiTagSize)); 
-  __ cmp(r5, r9);
+  __ mov(r0, Operand(JSObject::kInitialMaxFastElementArray << kSmiTagSize)); 
+  __ cmp(r5, r0);
   __ bge(call_generic_code);
 
   // r3: argc
