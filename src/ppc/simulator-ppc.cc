@@ -2202,6 +2202,48 @@ void Simulator::DecodeExt2(Instruction* instr) {
   }
 }
 void Simulator::DecodeExt4(Instruction* instr) {
+  switch(instr->Bits(5,1) << 1) {
+    case FDIV: {
+      int frt = instr->RTValue();
+      int fra = instr->RAValue();
+      int frb = instr->RBValue();
+      double fra_val = get_double_from_d_register(fra);
+      double frb_val = get_double_from_d_register(frb);
+      double frt_val = fra_val / frb_val;
+      set_d_register_from_double(frt, frt_val);
+      return;
+    }
+    case FSUB: {
+      int frt = instr->RTValue();
+      int fra = instr->RAValue();
+      int frb = instr->RBValue();
+      double fra_val = get_double_from_d_register(fra);
+      double frb_val = get_double_from_d_register(frb);
+      double frt_val = fra_val - frb_val;
+      set_d_register_from_double(frt, frt_val);
+      return;
+    }
+    case FADD: {
+      int frt = instr->RTValue();
+      int fra = instr->RAValue();
+      int frb = instr->RBValue();
+      double fra_val = get_double_from_d_register(fra);
+      double frb_val = get_double_from_d_register(frb);
+      double frt_val = fra_val + frb_val;
+      set_d_register_from_double(frt, frt_val);
+      return;
+    }
+    case FMUL: {
+      int frt = instr->RTValue();
+      int fra = instr->RAValue();
+      int frc = instr->RCValue();
+      double fra_val = get_double_from_d_register(fra);
+      double frc_val = get_double_from_d_register(frc);
+      double frt_val = fra_val * frc_val;
+      set_d_register_from_double(frt, frt_val);
+      return;
+    }
+  }
   switch(instr->Bits(10,1) << 1) {
     case FCMPU: {
       int fra = instr->RAValue();
@@ -2217,7 +2259,7 @@ void Simulator::DecodeExt4(Instruction* instr) {
       int condition_mask = 0xF0000000 >> (cr*4);
       int condition =  bf >> (cr*4);
       condition_reg_ = (condition_reg_ & ~condition_mask) | condition;
-      break;
+      return;
     }
     case FRSP: {
       int frt = instr->RTValue();
@@ -2226,6 +2268,7 @@ void Simulator::DecodeExt4(Instruction* instr) {
       float frt_val = (float)frb_val;
       double *p = reinterpret_cast<double*>(&frt_val);
       set_d_register_from_double(frt, *p);
+      return;
     }
     case FCTIWZ: {
       int frt = instr->RTValue();
@@ -2243,47 +2286,7 @@ void Simulator::DecodeExt4(Instruction* instr) {
 //      }
       double *p = reinterpret_cast<double*>(&frt_val);
       set_d_register_from_double(frt, *p);
-      break;
-    }
-    case FDIV: {
-      int frt = instr->RTValue();
-      int fra = instr->RAValue();
-      int frb = instr->RBValue();
-      double fra_val = get_double_from_d_register(fra);
-      double frb_val = get_double_from_d_register(frb);
-      double frt_val = fra_val / frb_val;
-      set_d_register_from_double(frt, frt_val);
-      break;
-    }
-    case FSUB: {
-      int frt = instr->RTValue();
-      int fra = instr->RAValue();
-      int frb = instr->RBValue();
-      double fra_val = get_double_from_d_register(fra);
-      double frb_val = get_double_from_d_register(frb);
-      double frt_val = fra_val - frb_val;
-      set_d_register_from_double(frt, frt_val);
-      break;
-    }
-    case FADD: {
-      int frt = instr->RTValue();
-      int fra = instr->RAValue();
-      int frb = instr->RBValue();
-      double fra_val = get_double_from_d_register(fra);
-      double frb_val = get_double_from_d_register(frb);
-      double frt_val = fra_val + frb_val;
-      set_d_register_from_double(frt, frt_val);
-      break;
-    }
-    case FMUL: {
-      int frt = instr->RTValue();
-      int fra = instr->RAValue();
-      int frb = instr->RBValue();
-      double fra_val = get_double_from_d_register(fra);
-      double frb_val = get_double_from_d_register(frb);
-      double frt_val = fra_val * frb_val;
-      set_d_register_from_double(frt, frt_val);
-      break;
+      return;
     }
     case FRIM: {
       int frt = instr->RTValue();
@@ -2292,12 +2295,10 @@ void Simulator::DecodeExt4(Instruction* instr) {
       int64_t floor_val = (int64_t)frb_val;
       double frt_val = (double)floor_val;
       set_d_register_from_double(frt, frt_val);
-      break;
-    }
-    default: {
-      UNIMPLEMENTED();  // Not used by V8.
+      return;
     }
   }
+  UNIMPLEMENTED();  // Not used by V8.
 }
 // Instruction types 0 and 1 are both rolled into one function because they
 // only differ in the handling of the shifter_operand.

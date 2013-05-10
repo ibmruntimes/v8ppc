@@ -401,6 +401,8 @@ int Decoder::FormatFPRegister(Instruction* instr, const char* format) {
     reg = instr->RAValue();
   } else if (format[1] == 'b') {
     reg = instr->RBValue();
+  } else if (format[1] == 'c') {
+    reg = instr->RCValue();
   } else {
     UNREACHABLE();
   }
@@ -981,7 +983,7 @@ void Decoder::DecodeExt4(Instruction* instr) {
       break;
     }
     case FMUL: {
-      Format(instr, "fmul    'Dt, 'Da, 'Db");
+      Format(instr, "fmul    'Dt, 'Da, 'Dc");
       break;
     }
     default: {

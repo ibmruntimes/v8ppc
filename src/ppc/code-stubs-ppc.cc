@@ -684,7 +684,7 @@ void FloatingPointHelper::LoadNumber(MacroAssembler* masm,
   // Convert untagged smi to double using FP instructions.
   // could possibly refactor with SmiToDoubleFPRegister
   __ sub(sp, sp, Operand(16));   // reserve two temporary doubles on the stack
-#if __LITTLE_ENDIAN
+#if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
   __ addis(r0, r0, 0x4330);
   __ stw(r0, MemOperand(sp, 4));
   __ stw(r0, MemOperand(sp, 12));
@@ -763,7 +763,7 @@ void FloatingPointHelper::ConvertIntToDouble(MacroAssembler* masm,
   ASSERT(!int_scratch.is(dst2));
 
   __ sub(sp, sp, Operand(16));   // reserve two temporary doubles on the stack
-#if __LITTLE_ENDIAN
+#if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
   __ addis(r0, r0, 0x4330);
   __ stw(r0, MemOperand(sp, 4));
   __ stw(r0, MemOperand(sp, 12));
@@ -789,7 +789,7 @@ void FloatingPointHelper::ConvertIntToDouble(MacroAssembler* masm,
     __ fctiwz(double_scratch, double_dst);
     __ sub(sp, sp, Operand(8));
     __ stfd(double_scratch, sp, 0);
-#ifdef __LITTLE_ENDIAN
+#if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
   __ lwz(dst1, MemOperand(sp, 4));
   __ lwz(dst2, MemOperand(sp, 0));
 #else
@@ -853,7 +853,7 @@ void FloatingPointHelper::LoadNumberAsInt32Double(MacroAssembler* masm,
     __ fctiwz(double_dst, double_dst);
     __ sub(sp, sp, Operand(8));
     __ stfd(d1, sp, 0);
-#ifdef __LITTLE_ENDIAN
+#if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
   __ lwz(dst1, MemOperand(sp, 4));
   __ lwz(dst2, MemOperand(sp, 0));
 #else
@@ -2916,7 +2916,7 @@ void BinaryOpStub::GenerateInt32Stub(MacroAssembler* masm) {
           __ fctiwz(single_scratch, single_scratch);
           __ sub(sp, sp, Operand(8));
           __ stfd(single_scratch, sp, 0);
-#ifdef __LITTLE_ENDIAN
+#if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
           __ lwz(scratch1, MemOperand(sp, 0));
 #else
           __ lwz(scratch1, MemOperand(sp, 4));
@@ -2934,7 +2934,7 @@ void BinaryOpStub::GenerateInt32Stub(MacroAssembler* masm) {
 
           __ sub(sp, sp, Operand(8));
           __ stfd(d5, sp, 0);
-#ifdef __LITTLE_ENDIAN
+#if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
           __ lwz(scratch2, MemOperand(sp, 4));
 #else
           __ lwz(scratch2, MemOperand(sp, 0));
@@ -3106,7 +3106,7 @@ void BinaryOpStub::GenerateInt32Stub(MacroAssembler* masm) {
         // Convert the result to a floating point value.
 
         __ sub(sp, sp, Operand(16));   // reserve two temp doubles on the stack
-#if __LITTLE_ENDIAN
+#if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
         __ addis(r0, r0, 0x4330);
         __ stw(r0, MemOperand(sp, 4));
         __ stw(r0, MemOperand(sp, 12));
@@ -3132,7 +3132,7 @@ void BinaryOpStub::GenerateInt32Stub(MacroAssembler* masm) {
         // Conversion to unsigned is similar to above signed
 
          __ sub(sp, sp, Operand(16));   // reserve two temp doubles on the stack
-#if __LITTLE_ENDIAN
+#if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
         __ addis(r0, r0, 0x4330);
         __ stw(r0, MemOperand(sp, 4));
         __ stw(r0, MemOperand(sp, 12));
@@ -3375,7 +3375,7 @@ void TranscendentalCacheStub::Generate(MacroAssembler* masm) {
     __ sub(sp, sp, Operand(8));
     __ stfd(d6, sp, 0);
     // ENDIAN issue here
-#ifdef __LITTLE_ENDIAN
+#if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
     __ lwz(r5, MemOperand(sp));
     __ lwz(r6, MemOperand(sp, 4));
 #else
@@ -3401,7 +3401,7 @@ void TranscendentalCacheStub::Generate(MacroAssembler* masm) {
     __ sub(sp, sp, Operand(8));
     __ stfd(d2, sp, 0);
     // ENDIAN issue here
-#ifdef __LITTLE_ENDIAN
+#if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
     __ lwz(r5, MemOperand(sp));
     __ lwz(r6, MemOperand(sp, 4));
 #else

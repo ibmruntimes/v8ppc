@@ -1171,7 +1171,7 @@ SBit s = LeaveCC, Condition cond = al // roohack - remove this line later
   void fdiv(const DwVfpRegister frt, const DwVfpRegister fra,
             const DwVfpRegister frb, RCBit rc = LeaveRC );
   void fmul(const DwVfpRegister frt, const DwVfpRegister fra,
-            const DwVfpRegister frb, RCBit rc = LeaveRC );
+            const DwVfpRegister frc, RCBit rc = LeaveRC );
   void fcmpu(const DwVfpRegister fra, const DwVfpRegister frb);
   void fmr(const DwVfpRegister frt, const DwVfpRegister frb);
   void fctiwz(const DwVfpRegister frt, const DwVfpRegister frb);

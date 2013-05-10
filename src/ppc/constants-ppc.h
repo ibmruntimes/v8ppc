@@ -373,15 +373,18 @@ enum OpcodeExt2 {
   EXTSB = 954 << 1  // Extend Sign Byte
 }; 
 
-// Bits 10-1
+// Some use Bits 10-1 and other only 5-1 for the opcode
 enum OpcodeExt4 {
-  FCMPU = 0 << 1,    // Floating Compare Unordered
-  FRSP = 12 << 1,    // Floating-Point Rounding 
-  FCTIWZ = 15 << 1,  // Floating Convert to Integer Word with Round to Zero
+  // Bits 5-1
   FDIV = 18 << 1,    // Floating Divide
   FSUB = 20 << 1,    // Floating Subtract
   FADD = 21 << 1,    // Floating Add
   FMUL = 25 << 1,    // Floating Multiply
+
+  // Bits 10-1
+  FCMPU = 0 << 1,    // Floating Compare Unordered
+  FRSP = 12 << 1,    // Floating-Point Rounding 
+  FCTIWZ = 15 << 1,  // Floating Convert to Integer Word with Round to Zero
   MCRFS = 64 << 1,   // Move to Condition Register from FPSCR
   FMR = 72 << 1,     // Floating Move Register
   FRIM = 488 << 1    // Floating Round to Integer Minus
@@ -839,6 +842,8 @@ class Instruction {
   DECLARE_STATIC_ACCESSOR(RAValue);
   inline int RBValue() const { return Bits(15, 11); }
   DECLARE_STATIC_ACCESSOR(RBValue);
+  inline int RCValue() const { return Bits(10, 6); }
+  DECLARE_STATIC_ACCESSOR(RCValue);
 
   //end PowerPC
 

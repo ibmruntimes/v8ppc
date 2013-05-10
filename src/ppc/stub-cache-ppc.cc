@@ -2135,7 +2135,7 @@ Handle<Code> CallStubCompiler::CompileMathFloorCall(
   __ fctiwz(d1, d1);
   __ sub(sp, sp, Operand(8));
   __ stfd(d1, sp, 0);
-#ifdef __LITTLE_ENDIAN
+#if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
   __ lwz(r3, MemOperand(sp, 0));
 #else
   __ lwz(r3, MemOperand(sp, 4));
@@ -3617,7 +3617,7 @@ static void GenerateSmiKeyCheck(MacroAssembler* masm,
   __ fctiwz(double_scratch0, double_scratch0);
   __ sub(sp, sp, Operand(8));
   __ stfd(double_scratch0, sp, 0);
-#ifdef __LITTLE_ENDIAN
+#if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
   __ lwz(scratch0, MemOperand(sp, 0));
 #else
   __ lwz(scratch0, MemOperand(sp, 4));
