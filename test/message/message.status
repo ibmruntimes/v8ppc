@@ -29,12 +29,3 @@ prefix message
 
 # All tests in the bug directory are expected to fail.
 bugs/*: FAIL
-
-##############################################################################
-#
-# PENGUIN: temporarily skip tests during initial ppc porting
-#
-[ $arch == ppc ]
-
-*: SKIP
-

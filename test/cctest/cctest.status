@@ -100,11 +100,3 @@ test-debug/DebuggerAgent: SKIP
 test-debug/DebuggerAgentProtocolOverflowHeader: SKIP
 test-sockets/Socket: SKIP
 
-##############################################################################
-#
-# PENGUIN: temporarily skip tests during initial ppc porting
-#
-[ $arch == ppc ]
-
-*: SKIP
-
