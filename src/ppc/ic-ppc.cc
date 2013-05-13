@@ -1,4 +1,7 @@
 // Copyright 2012 the V8 project authors. All rights reserved.
+//
+// Copyright IBM Corp. 2012, 2013. All rights reserved.
+//
 // Redistribution and use in source and binary forms, with or without
 // modification, are permitted provided that the following conditions are
 // met:
@@ -1544,13 +1547,13 @@ void KeyedStoreIC::GenerateGeneric(MacroAssembler* masm,
   __ bge(&slow);
   __ lwz(elements_map, FieldMemOperand(elements, HeapObject::kMapOffset));
   __ mov(ip, Operand(masm->isolate()->factory()->fixed_array_map()));
-  __ cmp(elements_map, ip); // roohack - I think I can re-use ip here
+  __ cmp(elements_map, ip); // PPC - I think I can re-use ip here
   __ bne(&check_if_double_array);
   __ jmp(&fast_object_grow);
 
   __ bind(&check_if_double_array);
   __ mov(ip, Operand(masm->isolate()->factory()->fixed_double_array_map()));
-  __ cmp(elements_map, ip); // roohack - another ip re-use
+  __ cmp(elements_map, ip); // PPC - another ip re-use
   __ bne(&slow);
   __ jmp(&fast_double_grow);
 

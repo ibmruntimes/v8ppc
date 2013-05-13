@@ -34,6 +34,10 @@
 // modified significantly by Google Inc.
 // Copyright 2012 the V8 project authors. All rights reserved.
 
+//
+// Copyright IBM Corp. 2012, 2013. All rights reserved.
+//
+
 #include "v8.h"
 
 #if defined(V8_TARGET_ARCH_PPC)
@@ -433,7 +437,7 @@ bool Assembler::IsBranch(Instr instr) {
 //end PowerPC
 
 int Assembler::GetBranchOffset(Instr instr) {
-  // roohack - ASSERT(IsBranch(instr));
+  // roohack temporary removal - ASSERT(IsBranch(instr));
   // Take the jump offset in the lower 24 bits, sign extend it and multiply it
   // with 4 to get the offset in bytes.
   return ((instr & kImm24Mask) << 8) >> 6;
@@ -953,8 +957,7 @@ void Assembler::d_form(Instr instr,
                         Register ra,
                         const int val) {
   CheckBuffer();
-  // roohack need to check val fits
-  // ASSERT(is_int16(val)); 
+  // roohack - temporary removal ASSERT(is_int16(val)); 
   emit(instr | rt.code()*B21 | ra.code()*B16 | (kImm16Mask & val) );
 }
 
@@ -2177,7 +2180,7 @@ void Assembler::vldr(const DwVfpRegister dst,
   // Instruction details available in ARM DDI 0406A, A8-628.
   // cond(31-28) | 1101(27-24)| U001(23-20) | Rbase(19-16) |
   // Vdst(15-12) | 1011(11-8) | offset
-  // roohack ASSERT(CpuFeatures::IsEnabled(VFP2));
+  // roohack temporary removal ASSERT(CpuFeatures::IsEnabled(VFP2));
   int u = 1;
   if (offset < 0) {
     offset = -offset;

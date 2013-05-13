@@ -1,4 +1,7 @@
 // Copyright 2012 the V8 project authors. All rights reserved.
+//
+// Copyright IBM Corp. 2012, 2013. All rights reserved.
+//
 // Redistribution and use in source and binary forms, with or without
 // modification, are permitted provided that the following conditions are
 // met:
@@ -2572,7 +2575,7 @@ void FullCodeGenerator::EmitIsNonNegativeSmi(CallRuntime* expr) {
 
   PrepareForBailoutBeforeSplit(expr, true, if_true, if_false);
   ASSERT((kSmiTagMask | 0x80000000) == 0x80000001);
-  __ rlwinm(r0, r3, 1, 30, 31); // roohack - I think this is right
+  __ rlwinm(r0, r3, 1, 30, 31);
   __ cmpi(r0, Operand(0));
   // was .. __ tst(r3, Operand(kSmiTagMask | 0x80000000));
   Split(eq, if_true, if_false, fall_through);
@@ -3546,7 +3549,7 @@ void FullCodeGenerator::EmitHasCachedArrayIndex(CallRuntime* expr) {
                          &if_true, &if_false, &fall_through);
 
   __ lwz(r3, FieldMemOperand(r3, String::kHashFieldOffset));
-  // roohack - assume ip is free
+  // PPC - assume ip is free
   __ mov(ip, Operand(String::kContainsCachedArrayIndexMask));
   __ and_(r0, r3, ip);
   __ cmpi(r0, Operand(0));

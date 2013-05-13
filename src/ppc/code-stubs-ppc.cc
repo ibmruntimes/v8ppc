@@ -1,4 +1,7 @@
 // Copyright 2012 the V8 project authors. All rights reserved.
+//
+// Copyright IBM Corp. 2012, 2013. All rights reserved.
+//
 // Redistribution and use in source and binary forms, with or without
 // modification, are permitted provided that the following conditions are
 // met:
@@ -7142,7 +7145,7 @@ void DirectCEntryStub::GenerateCall(MacroAssembler* masm,
   __ add(ip, ip, Operand((6+PowerPCAdjustment) * Assembler::kInstrSize));
   __ stw(ip, MemOperand(sp, 0));
 #if defined(V8_HOST_ARCH_PPC)
-  // save extra 2 slots for call out (roohack)
+  // save extra 2 slots for call out to obey PPC ABI
   __ sub(sp, sp, Operand(2 * kPointerSize));
   __ mr(r4, r3);  // C++ 1st arg is in r4
   __ mr(r3, sp);  // C++ uses a return pointer as 1st param?
@@ -7647,7 +7650,7 @@ void RecordWriteStub::CheckNeedsToInformIncrementalMarker(
   __ stw(regs_.scratch1(),
          MemOperand(regs_.scratch0(),
                     MemoryChunk::kWriteBarrierCounterOffset));
-  __ cmpi(regs_.scratch1(), Operand(0));  // roohack, we could do better here
+  __ cmpi(regs_.scratch1(), Operand(0));  // PPC, we could do better here
   __ blt(&need_incremental);
 
   // Let's look at the color of the object:  If it is not black we don't have

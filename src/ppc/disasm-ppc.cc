@@ -1,4 +1,7 @@
 // Copyright 2011 the V8 project authors. All rights reserved.
+//
+// Copyright IBM Corp. 2012, 2013. All rights reserved.
+//
 // Redistribution and use in source and binary forms, with or without
 // modification, are permitted provided that the following conditions are
 // met:
@@ -930,7 +933,7 @@ void Decoder::DecodeExt2(Instruction* instr) {
       }
       break;
     }
-    case MFSPR: { // roohack
+    case MFSPR: {
       int spr = instr->Bits(20,11);
       if(256 == spr) {
         Format(instr, "mflr    'rt");
@@ -939,7 +942,7 @@ void Decoder::DecodeExt2(Instruction* instr) {
       }
       break;
     }
-    case MTSPR: { // roohack
+    case MTSPR: {
       int spr = instr->Bits(20,11);
       if(256 == spr) {
         Format(instr, "mtlr    'rt");

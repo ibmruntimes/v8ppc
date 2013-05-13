@@ -34,6 +34,10 @@
 // modified significantly by Google Inc.
 // Copyright 2012 the V8 project authors. All rights reserved.
 
+//
+// Copyright IBM Corp. 2012, 2013. All rights reserved.
+//
+
 // A light-weight ARM Assembler
 // Generates user mode instructions for the ARM architecture up to version 5
 
@@ -903,7 +907,7 @@ class Assembler : public AssemblerBase {
 
 
   void add(Register dst, Register src, const Operand& imm,
-SBit s = LeaveCC, Condition cond = al // roohack - remove this line later
+SBit s = LeaveCC, Condition cond = al // PPC - remove this line later (roohack)
    );
 
   void mullw(Register dst, Register src1, Register src2,
@@ -1406,7 +1410,7 @@ SBit s = LeaveCC, Condition cond = al // roohack - remove this line later
   // Record the AST id of the CallIC being compiled, so that it can be placed
   // in the relocation information.
   void SetRecordedAstId(TypeFeedbackId ast_id) {
-// roohack - this shouldn't be failing    ASSERT(recorded_ast_id_.IsNone());
+// PPC - this shouldn't be failing roohack   ASSERT(recorded_ast_id_.IsNone());
     recorded_ast_id_ = ast_id;
   }
 

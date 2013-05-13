@@ -1,4 +1,7 @@
 // Copyright 2012 the V8 project authors. All rights reserved.
+//
+// Copyright IBM Corp. 2012, 2013. All rights reserved.
+//
 // Redistribution and use in source and binary forms, with or without
 // modification, are permitted provided that the following conditions are
 // met:
@@ -64,7 +67,7 @@ void MacroAssembler::Jump(intptr_t target, RelocInfo::Mode rmode,
   ASSERT(rmode == RelocInfo::CODE_TARGET);
   ASSERT(cond == al);
   int addr = *(reinterpret_cast<int*>(target));
-  addr = addr + Code::kHeaderSize - kHeapObjectTag; // roohack - ugly
+  addr = addr + Code::kHeaderSize - kHeapObjectTag; // PPC - ugly
   mov(r0, Operand(addr));
   mtctr(r0);
   bcr();
@@ -687,7 +690,7 @@ MemOperand MacroAssembler::SafepointRegistersAndDoublesSlot(Register reg) {
 
 void MacroAssembler::Ldrd(Register dst1, Register dst2,
                           const MemOperand& src, Condition cond) {
-  ldr(dst1, MemOperand(dst2), al); // roohack - bogus instruction to cause error
+  ldr(dst1, MemOperand(dst2), al); // PPC - bogus instruction to cause error
 #if 0
   ASSERT(src.rm().is(no_reg));
   ASSERT(!dst1.is(lr));  // r14.
@@ -732,7 +735,7 @@ void MacroAssembler::Ldrd(Register dst1, Register dst2,
 
 void MacroAssembler::Strd(Register src1, Register src2,
                           const MemOperand& dst, Condition cond) {
-  ldr(src1, MemOperand(src2), al); // roohack - bogus instruction to cause error
+  ldr(src1, MemOperand(src2), al); // PPC - bogus instruction to cause error
 #if 0
   ASSERT(dst.rm().is(no_reg));
   ASSERT(!src1.is(lr));  // r14.
@@ -1342,7 +1345,7 @@ void MacroAssembler::PopTryHandler() {
   stw(r4, MemOperand(ip));
 }
 
-// roohack - make use of ip as a temporary register
+// PPC - make use of ip as a temporary register
 void MacroAssembler::JumpToHandlerEntry() {
   // Compute the handler entry address and jump to it.  The handler table is
   // a fixed array of (smi-tagged) code offsets.
@@ -1384,7 +1387,7 @@ void MacroAssembler::Throw(Register value) {
 
   // Get the code object (r1) and state (r2).  Restore the context and frame
   // pointer.
-  pop(r4);  //roohack, order may be wrong
+  pop(r4);
   pop(r5);
   pop(cp);
   pop(fp);
@@ -1436,7 +1439,7 @@ void MacroAssembler::ThrowUncatchable(Register value) {
   stw(r5, MemOperand(r6));
   // Get the code object (r4) and state (r5).  Clear the context and frame
   // pointer (0 was saved in the handler).
-  pop(r4);  // roohack - order needs to be confirmed.
+  pop(r4);
   pop(r5);
   pop(cp);
   pop(fp);
@@ -2450,8 +2453,8 @@ void MacroAssembler::ObjectToDoubleVFPRegister(Register object,
     JumpIfNotSmi(object, &not_smi);
     // Remove smi tag and convert to double.
     mov(scratch1, Operand(object, ASR, kSmiTagSize));
-    vmov(scratch3.low(), scratch1); //roohack
-    vcvt_f64_s32(result, scratch3.low()); //roohack
+    vmov(scratch3.low(), scratch1); //roohack - needs to be converted
+    vcvt_f64_s32(result, scratch3.low()); //roohack - needs to be converted
     b(&done);
     bind(&not_smi);
   }
