@@ -617,8 +617,19 @@ void FloatingPointHelper::LoadSmis(MacroAssembler* masm,
   __ SmiToDoubleFPRegister(r3, d7, scratch1, d15);
   __ SmiToDoubleFPRegister(r4, d6, scratch1, d15);
   if (destination == kCoreRegisters) {
-    __ vmov(r5, r6, d7);
-    __ vmov(r3, r4, d6);
+    __ sub(sp, sp, Operand(8));
+
+    __ stfd(d6, sp, 0);
+// ENDIAN - r3/r4 are in memory order
+    __ lwz(r3, MemOperand(sp, 0));
+    __ lwz(r4, MemOperand(sp, 4));
+
+    __ stfd(d7, sp, 0);
+// ENDIAN - r5/r6 are in memory order
+    __ lwz(r5, MemOperand(sp, 0));
+    __ lwz(r6, MemOperand(sp, 4));
+
+    __ add(sp, sp, Operand(8));
   }
 }
 
@@ -789,14 +800,10 @@ void FloatingPointHelper::ConvertIntToDouble(MacroAssembler* masm,
     __ fctiwz(double_scratch, double_dst);
     __ sub(sp, sp, Operand(8));
     __ stfd(double_scratch, sp, 0);
-#if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
-  __ lwz(dst1, MemOperand(sp, 4));
-  __ lwz(dst2, MemOperand(sp, 0));
-#else
-  __ lwz(dst1, MemOperand(sp, 0));
-  __ lwz(dst2, MemOperand(sp, 4));
-#endif
-  __ add(sp, sp, Operand(8));
+// ENDIAN - dst1/dst2 are in memory order
+    __ lwz(dst1, MemOperand(sp, 0));
+    __ lwz(dst2, MemOperand(sp, 4));
+    __ add(sp, sp, Operand(8));
   }
 
 }
@@ -853,14 +860,10 @@ void FloatingPointHelper::LoadNumberAsInt32Double(MacroAssembler* masm,
     __ fctiwz(double_dst, double_dst);
     __ sub(sp, sp, Operand(8));
     __ stfd(d1, sp, 0);
-#if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
-  __ lwz(dst1, MemOperand(sp, 4));
-  __ lwz(dst2, MemOperand(sp, 0));
-#else
-  __ lwz(dst1, MemOperand(sp, 0));
-  __ lwz(dst2, MemOperand(sp, 4));
-#endif
-  __ add(sp, sp, Operand(8));
+// ENDIAN - dst1/dst2 are in memory order
+    __ lwz(dst1, MemOperand(sp, 0));
+    __ lwz(dst2, MemOperand(sp, 4));
+    __ add(sp, sp, Operand(8));
   }
 
   __ bind(&done);
@@ -1008,49 +1011,60 @@ void FloatingPointHelper::DoubleIs32BitInteger(MacroAssembler* masm,
 }
 
 
-// roohack - not converted
 void FloatingPointHelper::CallCCodeForDoubleOperation(
     MacroAssembler* masm,
     Token::Value op,
     Register heap_number_result,
     Register scratch) {
   // Using core registers:
-  // r0: Left value (least significant part of mantissa).
-  // r1: Left value (sign, exponent, top of mantissa).
-  // r2: Right value (least significant part of mantissa).
-  // r3: Right value (sign, exponent, top of mantissa).
+  // r3: Left value (least significant part of mantissa).
+  // r4: Left value (sign, exponent, top of mantissa).
+  // r5: Right value (least significant part of mantissa).
+  // r6: Right value (sign, exponent, top of mantissa).
+
+  // d1 - first arg, d2 - second arg
+  // d1 return value
 
   // Assert that heap_number_result is callee-saved.
-  // We currently always use r5 to pass it.
-  ASSERT(heap_number_result.is(r5));
+  // PowerPC doesn't preserve r8.. need to handle this specially
+  // We currently always use r8 to pass it.
+  ASSERT(heap_number_result.is(r8));
+  __ push(r8);
 
   // Push the current return address before the C call. Return will be
-  // through pop(pc) below.
-  __ push(lr);
+  // through pop() below.
+  __ mflr(r0);
+  __ push(r0);
   __ PrepareCallCFunction(0, 2, scratch);
-  if (masm->use_eabi_hardfloat()) {
-    CpuFeatures::Scope scope(VFP2);
-    __ vmov(d0, r0, r1);
-    __ vmov(d1, r2, r3);
-  }
+
+  __ sub(sp, sp, Operand(8));
+// ENDIAN - r3/r4 are in memory order
+  __ stw(r3, MemOperand(sp, 0));
+  __ stw(r4, MemOperand(sp, 4));
+  __ lfd(d1, sp, 0);
+
+// ENDIAN - r3/r4 are in memory order
+  __ stw(r5, MemOperand(sp, 0));
+  __ stw(r6, MemOperand(sp, 4));
+  __ lfd(d2, sp, 0);
+  __ add(sp, sp, Operand(8));
+
   {
     AllowExternalCallThatCantCauseGC scope(masm);
     __ CallCFunction(
         ExternalReference::double_fp_operation(op, masm->isolate()), 0, 2);
   }
-  // Store answer in the overwritable heap number. Double returned in
-  // registers r0 and r1 or in d0.
-  if (masm->use_eabi_hardfloat()) {
-    CpuFeatures::Scope scope(VFP2);
-    __ vstr(d0,
-            FieldMemOperand(heap_number_result, HeapNumber::kValueOffset));
-  } else {
-    __ Strd(r0, r1, FieldMemOperand(heap_number_result,
-                                    HeapNumber::kValueOffset));
-  }
+  // load saved r8 value, restore lr
+  __ pop(r0);
+  __ mtlr(r0);
+  __ pop(r8);
+
+  // Store answer in the overwritable heap number. Double returned in d1
+  __ stfd(d1, heap_number_result, (HeapNumber::kValueOffset - kHeapObjectTag));
+
   // Place heap_number_result in r0 and return to the pushed return address.
-  __ mov(r0, Operand(heap_number_result));
-  __ pop(pc);
+  __ mr(r3, heap_number_result);
+  __ blr();
 }
 
 
@@ -2438,22 +2452,25 @@ void BinaryOpStub::GenerateSmiSmiOperation(MacroAssembler* masm) {
       // Check for power of two on the right hand side.
       __ JumpIfNotPowerOfTwoOrZero(right, scratch1, &not_smi_result);
       // Check for positive and no remainder (scratch1 contains right - 1).
-      __ orr(scratch2, scratch1, Operand(0x80000000u));
-      __ tst(left, scratch2);
-      __ b(ne, &not_smi_result);
+      __ mov(r0, Operand(0x80000000u));
+      __ orx(scratch2, scratch1, r0);
+      __ and_(r0, left, scratch2);
+      __ cmpi(r0, Operand(0));
+      __ bne(&not_smi_result);
 
       // Perform division by shifting.
       __ CountLeadingZeros(scratch1, scratch1, scratch2);
-      __ rsb(scratch1, scratch1, Operand(31));
-      __ mov(right, Operand(left, LSR, scratch1));
+      __ li(scratch2, Operand(31));
+      __ sub(scratch1, scratch2, scratch1);
+      __ slw(right, left, scratch1);
       __ Ret();
       break;
     case Token::MOD:
       // Check for two positive smis.
       __ orx(scratch1, left, right);
-      // roohack - this test can be a rlwinm + cmpi
-      __ tst(scratch1, Operand(0x80000000u | kSmiTagMask));
-      __ b(ne, &not_smi_result);
+      ASSERT((0x80000000u | kSmiTagMask) == 0x80000001);
+      __ rlwinm(r0, scratch1, 1, 30, 31, SetRC);
+      __ bne(&not_smi_result);
 
       // Check for power of two on the right hand side.
       __ JumpIfNotPowerOfTwoOrZero(right, scratch1, &not_smi_result);

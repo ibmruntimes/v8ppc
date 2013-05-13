@@ -976,19 +976,19 @@ void MacroAssembler::InitializeNewString(Register string,
 
 
 int MacroAssembler::ActivationFrameAlignment() {
-#if defined(V8_HOST_ARCH_ARM)
+#if defined(V8_HOST_ARCH_PPC)
   // Running on the real platform. Use the alignment as mandated by the local
   // environment.
-  // Note: This will break if we ever start generating snapshots on one ARM
-  // platform for another ARM platform with a different alignment.
+  // Note: This will break if we ever start generating snapshots on one PPC 
+  // platform for another PPC platform with a different alignment.
   return OS::ActivationFrameAlignment();
-#else  // defined(V8_HOST_ARCH_ARM)
+#else  // Simulated
   // If we are using the simulator then we should always align to the expected
   // alignment. As the simulator is used to generate snapshots we do not know
   // if the target platform will need alignment, so this is controlled from a
   // flag.
   return FLAG_sim_stack_alignment;
-#endif  // defined(V8_HOST_ARCH_ARM)
+#endif
 }
 
 
@@ -2482,15 +2482,7 @@ void MacroAssembler::SmiToDoubleFPRegister(Register smi,
                                             DwVfpRegister scratch2) {
   srawi(scratch1, smi, kSmiTagSize);
   sub(sp, sp, Operand(16));   // reserve two temporary doubles on the stack
-#if V8_HOST_ARCH_PPC  // Really we mean BIG ENDIAN host
-  addis(r0, r0, 0x4330);
-  stw(r0, MemOperand(sp, 0));   // ENDIAN issue here
-  stw(r0, MemOperand(sp, 8));
-  addis(r0, r0, 0x8000);
-  stw(r0, MemOperand(sp, 4));
-  xor_(r0, scratch1, r0);
-  stw(r0, MemOperand(sp, 12));
-#else
+#if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
   addis(r0, r0, 0x4330);
   stw(r0, MemOperand(sp, 4));
   stw(r0, MemOperand(sp, 12));
@@ -2498,6 +2490,14 @@ void MacroAssembler::SmiToDoubleFPRegister(Register smi,
   stw(r0, MemOperand(sp, 0));
   xor_(r0, scratch1, r0);
   stw(r0, MemOperand(sp, 8));
+#else
+  addis(r0, r0, 0x4330);
+  stw(r0, MemOperand(sp, 0));
+  stw(r0, MemOperand(sp, 8));
+  addis(r0, r0, 0x8000);
+  stw(r0, MemOperand(sp, 4));
+  xor_(r0, scratch1, r0);
+  stw(r0, MemOperand(sp, 12));
 #endif
   lfd(value, sp, 0);
   lfd(scratch2, sp, 8);
@@ -3500,14 +3500,25 @@ void MacroAssembler::PrepareCallCFunction(int num_reg_arguments,
       num_reg_arguments, num_double_arguments);
   if (frame_alignment > kPointerSize) {
     // Make stack end at alignment and make room for num_arguments - 4 words
-    // and the original value of sp.
+    // and the original value of sp (on native +2 empty slots to make ABI work)
     mr(scratch, sp);
+#if defined(V8_HOST_ARCH_PPC)
+    sub(sp, sp, Operand((stack_passed_arguments + 1 + 2) * kPointerSize));
+#else
     sub(sp, sp, Operand((stack_passed_arguments + 1) * kPointerSize));
+#endif
     ASSERT(IsPowerOf2(frame_alignment));
     li(r0, Operand(-frame_alignment));
     and_(sp, sp, r0);
+#if defined(V8_HOST_ARCH_PPC)
+    // On the simulator we pass args on the stack
+    stw(scratch, MemOperand(sp));
+#else
+    // On the simulator we pass args on the stack
     stw(scratch, MemOperand(sp, stack_passed_arguments * kPointerSize));
+#endif
   } else {
+    // this case appears to never beused on PPC (even simulated)
     sub(sp, sp, Operand(stack_passed_arguments * kPointerSize));
   }
 }
@@ -3595,7 +3606,7 @@ void MacroAssembler::CallCFunctionHelper(Register function,
   // Make sure that the stack is aligned before calling a C function unless
   // running in the simulator. The simulator has its own alignment check which
   // provides more information.
-#if defined(V8_HOST_ARCH_ARM)
+#if defined(V8_HOST_ARCH_ARM)  // never used on PPC
   if (emit_debug_code()) {
     int frame_alignment = OS::ActivationFrameAlignment();
     int frame_alignment_mask = frame_alignment - 1;
@@ -3619,8 +3630,15 @@ void MacroAssembler::CallCFunctionHelper(Register function,
   int stack_passed_arguments = CalculateStackPassedWords(
       num_reg_arguments, num_double_arguments);
   if (ActivationFrameAlignment() > kPointerSize) {
+#if defined(V8_HOST_ARCH_PPC)
+    // On real hardware we follow the ABI
+    lwz(sp, MemOperand(sp));
+#else
+    // On the simulator we pass args on the stack
     lwz(sp, MemOperand(sp, stack_passed_arguments * kPointerSize));
+#endif
   } else {
+    // this case appears to never beused on PPC (even simulated)
     add(sp, sp, Operand(stack_passed_arguments * sizeof(kPointerSize)));
   }
 }

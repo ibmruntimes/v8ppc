@@ -984,33 +984,34 @@ ReturnType Simulator::GetFromFPRegister(int reg_index) {
 
 
 // For use in calls that take two double values which are currently
-// in r3-r6 and need to move to d0 and d1 (roohack??)
+// in r3-r6 and need to move to d1 and d2
 void Simulator::GetFpArgs(double* x, double* y) {
-  *x = fp_register[0];
-  *y = fp_register[1];
+  *x = fp_register[1];  // this is probably wrong - but unused
+  *y = fp_register[2];
 }
 
 // For use in calls that take one double value, constructed either
-// from r3 and r4 or d0. (roohack??)
+// from r3 and r4 or d1.
 void Simulator::GetFpArgs(double* x) {
-  *x = vfp_register[0];
+  *x = vfp_register[1];
 }
 
 
 // For use in calls that take one double value constructed either
-// from r3 and r4 or d0 and one integer value. (roohack??)
+// from r3 and r4 or d1 and one integer value.
 void Simulator::GetFpArgs(double* x, int32_t* y) {
-  *x = vfp_register[0];
+  *x = vfp_register[1];
   *y = registers_[1];
 }
 
 
-// The return value is either in r0/r1 or d0.
+// The return value is in d1.
+// ugly - due to ARM heritage simulator single/double registers overlap
 void Simulator::SetFpResult(const double& result) {
-  char buffer[2 * sizeof(fp_register[0])];
+  char buffer[2 * sizeof(fp_register[2])];
   memcpy(buffer, &result, sizeof(buffer));
-  // Copy result to d0.
-  memcpy(fp_register, buffer, sizeof(buffer));
+  // Copy result to d1.
+  memcpy(&fp_register[2], buffer, sizeof(buffer));
 }
 
 
