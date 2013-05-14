@@ -726,7 +726,11 @@ class DirectCEntryStub: public CodeStub {
 class FloatingPointHelper : public AllStatic {
  public:
   enum Destination {
+#ifdef PENGUIN_CLEANUP
     kVFPRegisters,
+#else
+    kFPRegisters,
+#endif
     kCoreRegisters
   };
 

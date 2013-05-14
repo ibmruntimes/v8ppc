@@ -2119,22 +2119,29 @@ void MacroAssembler::StoreNumberToDoubleElements(Register value_reg,
   add(scratch1, scratch1, scratch4);
   // scratch1 is now effective address of the double element
 
+#ifdef PENGUIN_CLEANUP
   FloatingPointHelper::Destination destination;
   if (CpuFeatures::IsSupported(VFP2)) {
     destination = FloatingPointHelper::kVFPRegisters;
   } else {
     destination = FloatingPointHelper::kCoreRegisters;
   }
+#endif
 
   Register untagged_value = elements_reg;
   SmiUntag(untagged_value, value_reg);
   FloatingPointHelper::ConvertIntToDouble(this,
                                           untagged_value,
+#ifdef PENGUIN_CLEANUP
                                           destination,
+#else
+                                          FloatingPointHelper::kFPRegisters,
+#endif
                                           d0,
                                           mantissa_reg,
                                           exponent_reg,
                                           d2);
+#ifdef PENGUIN_CLEANUP
   if (destination == FloatingPointHelper::kVFPRegisters) {
     CpuFeatures::Scope scope(VFP2);
     vstr(d0, scratch1, 0);
@@ -2142,6 +2149,10 @@ void MacroAssembler::StoreNumberToDoubleElements(Register value_reg,
     str(mantissa_reg, MemOperand(scratch1, 0));
     str(exponent_reg, MemOperand(scratch1, Register::kSizeInBytes));
   }
+#else
+  stfd(d0, scratch1, 0);
+#endif
+
   bind(&done);
 }
 

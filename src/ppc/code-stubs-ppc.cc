@@ -679,8 +679,13 @@ void FloatingPointHelper::LoadNumber(MacroAssembler* masm,
   // Heap number check
   __ JumpIfNotHeapNumber(object, heap_number_map, scratch1, not_number);
 
-  // Handle loading a double from a heap number.
-  if (destination == kVFPRegisters) {
+  // Handle loading a double from a heap number
+#ifdef PENGUIN_CLEANUP
+  if (destination == kVFPRegisters)
+#else
+  if (destination == kFPRegisters) 
+#endif
+    {
     // Load the double from tagged HeapNumber to double register.
     __ sub(scratch1, object, Operand(kHeapObjectTag));
     __ lfd(dst, scratch1, HeapNumber::kValueOffset);
@@ -2565,7 +2570,11 @@ void BinaryOpStub::GenerateFPOperation(MacroAssembler* masm,
       // Load left and right operands into d6 and d7
       FloatingPointHelper::Destination destination =
           op_ != Token::MOD ?
+#ifdef PENGUIN_CLEANUP
           FloatingPointHelper::kVFPRegisters :
+#else
+	  FloatingPointHelper::kFPRegisters :
+#endif
           FloatingPointHelper::kCoreRegisters;
 
       // Allocate new heap number for result.
@@ -2586,7 +2595,12 @@ void BinaryOpStub::GenerateFPOperation(MacroAssembler* masm,
       }
 
       // Calculate the result.
-      if (destination == FloatingPointHelper::kVFPRegisters) {
+#ifdef PENGUIN_CLEANUP
+      if (destination == FloatingPointHelper::kVFPRegisters) 
+#else
+      if (destination == FloatingPointHelper::kFPRegisters) 
+#endif
+	{
         // Using FP registers:
         // d6: Left value
         // d7: Right value
@@ -2869,7 +2883,11 @@ void BinaryOpStub::GenerateInt32Stub(MacroAssembler* masm) {
       // and left) are preserved for the runtime call.
       FloatingPointHelper::Destination destination =
           (op_ != Token::MOD)
+#ifdef PENGUIN_CLEANUP
               ? FloatingPointHelper::kVFPRegisters
+#else
+ 	      ? FloatingPointHelper::kFPRegisters
+#endif
               : FloatingPointHelper::kCoreRegisters;
 
       FloatingPointHelper::LoadNumberAsInt32Double(masm,
@@ -2895,7 +2913,12 @@ void BinaryOpStub::GenerateInt32Stub(MacroAssembler* masm) {
                                                    d8,
                                                    &transition);
 
-      if (destination == FloatingPointHelper::kVFPRegisters) {
+#ifdef PENGUIN_CLEANUP
+      if (destination == FloatingPointHelper::kVFPRegisters) 
+#else
+      if (destination == FloatingPointHelper::kFPRegisters) 
+#endif
+      {
         CpuFeatures::Scope scope(VFP2);
         Label return_heap_number;
         switch (op_) {

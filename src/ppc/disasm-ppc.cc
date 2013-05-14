@@ -197,12 +197,20 @@ void Decoder::PrintRegister(int reg) {
 
 // Print the VFP S register name according to the active name converter.
 void Decoder::PrintSRegister(int reg) {
+#ifdef PENGUIN_CLEANUP
   Print(VFPRegisters::Name(reg, false));
+#else
+  Print(FPRegisters::Name(reg, false));
+#endif
 }
 
 // Print the  VFP D register name according to the active name converter.
 void Decoder::PrintDRegister(int reg) {
+#ifdef PENGUIN_CLEANUP
   Print(VFPRegisters::Name(reg, true));
+#else
+  Print(FPRegisters::Name(reg, true));
+#endif
 }
 
 

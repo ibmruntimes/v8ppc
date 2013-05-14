@@ -93,6 +93,7 @@ const char* Registers::Name(int reg) {
 }
 
 
+#ifdef PENGUIN_CLEANUP
 // Support for VFP registers s0 to s31 (d0 to d15).
 // Note that "sN:sM" is the same as "dN/2"
 // These register names are defined in a way to match the native disassembler
@@ -105,10 +106,10 @@ const char* VFPRegisters::names_[kNumVFPRegisters] = {
     "d0", "d1", "d2", "d3", "d4", "d5", "d6", "d7",
     "d8", "d9", "d10", "d11", "d12", "d13", "d14", "d15"
 };
-
+#endif
 
 // Power
-const char* FPRegisters::names_[kNumVFPRegisters] = {
+const char* FPRegisters::names_[kNumFPRegisters] = {
     "s0", "s1", "s2", "s3", "s4", "s5", "s6", "s7",
     "s8", "s9", "s10", "s11", "s12", "s13", "s14", "s15",
     "s16", "s17", "s18", "s19", "s20", "s21", "s22", "s23",
@@ -140,7 +141,7 @@ int FPRegisters::Number(const char* name, bool* is_double) {
 // end of Power
 
 
-
+#ifdef PENGUIN_CLEANUP
 const char* VFPRegisters::Name(int reg, bool is_double) {
   ASSERT((0 <= reg) && (reg < kNumVFPRegisters));
   return names_[reg + (is_double ? kNumVFPSingleRegisters : 0)];
@@ -163,7 +164,7 @@ int VFPRegisters::Number(const char* name, bool* is_double) {
   // No register with the requested name found.
   return kNoRegister;
 }
-
+#endif
 
 int Registers::Number(const char* name) {
   // Look through the canonical names.

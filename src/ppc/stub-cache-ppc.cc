@@ -4047,6 +4047,7 @@ void KeyedStoreStubCompiler::GenerateStoreExternalArray(
       __ slwi(r8, key, Operand(2));
       __ add(r6, r6, r8);
       // r6: effective address of the double element
+#ifdef PENGUIN_CLEANUP
       FloatingPointHelper::Destination destination;
       if (CpuFeatures::IsSupported(VFP2)) {
         destination = FloatingPointHelper::kVFPRegisters;
@@ -4064,6 +4065,13 @@ void KeyedStoreStubCompiler::GenerateStoreExternalArray(
         __ stw(r9, MemOperand(r6, 0));
         __ stw(r10, MemOperand(r6, Register::kSizeInBytes));
       }
+#else
+      FloatingPointHelper::ConvertIntToDouble(
+          masm, r8, FloatingPointHelper::kFPRegisters,
+          d0, r9, r10,  // These are: double_dst, dst1, dst2.
+          d2);  // These are: scratch2, single_scratch.
+      __ stfd(d0, r6, 0);
+#endif
       break;
     case FAST_ELEMENTS:
     case FAST_SMI_ELEMENTS:

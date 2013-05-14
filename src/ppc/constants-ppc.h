@@ -109,10 +109,13 @@ const int kConstantPoolMarkerMask = 0xffe00000;
 const int kConstantPoolMarker = 0x0c000000;
 const int kConstantPoolLengthMask = 0x001ffff;
 
+#ifdef PENGUIN_CLEANUP
 // VFP support.
 const int kNumVFPSingleRegisters = 32;
 const int kNumVFPDoubleRegisters = 16;
 const int kNumVFPRegisters = kNumVFPSingleRegisters + kNumVFPDoubleRegisters;
+#endif
+
 #endif  // INCLUDE_ARM
 
 // PPC doesn't really have a PC register - assign a fake number for simulation
@@ -619,7 +622,6 @@ enum VFPRegPrecision {
   kDoublePrecision = 1
 };
 
-
 // VFP FPSCR constants.
 enum VFPConversionMode {
   kFPSCRRounding = 0,
@@ -1020,9 +1022,14 @@ class FPRegisters {
   static int Number(const char* name, bool* is_double);
 
  private:
+#ifdef PENGUIN_CLEANUP
   static const char* names_[kNumVFPRegisters];
+#else
+  static const char* names_[kNumFPRegisters];
+#endif
 };
 
+#ifdef PENGUIN_CLEANUP
 // ARM code for VFP
 class VFPRegisters {
  public:
@@ -1037,6 +1044,7 @@ class VFPRegisters {
  private:
   static const char* names_[kNumVFPRegisters];
 };
+#endif
 
 
 } }  // namespace v8::internal
