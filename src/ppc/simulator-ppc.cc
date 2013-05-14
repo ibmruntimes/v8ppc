@@ -3927,8 +3927,8 @@ void Simulator::InstructionDecode(Instruction* instr) {
       int32_t offset = (instr->Bits(15,0) << 16) >> 16;
       int32_t ra_val = get_register(ra);
       double frt_val = get_double_from_d_register(frt);
-      int *p = reinterpret_cast<int*>(&frt_val);
-      WriteDW(ra_val + offset, p[0], p[1]);
+      int32_t *p = (int32_t *)(&frt_val);
+      WriteDW(ra_val + offset, (int32_t)(p[0]), (int32_t)(p[1]));
       break;
     }
     case STFDU:
