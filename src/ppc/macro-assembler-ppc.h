@@ -1163,7 +1163,7 @@ class MacroAssembler: public Assembler {
     ASSERT(kSmiTagSize == 1);
     // Temporary - map SBit to RCBit
     RCBit r = LeaveRC;
-    if(s == SetCC) { r = SetRC; } 
+    if (s == SetCC) { r = SetRC; } 
 
     srawi(dst, src, 1, r);
   }

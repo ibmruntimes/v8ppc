@@ -45,7 +45,7 @@ inline Atomic32 NoBarrier_AtomicExchange(volatile Atomic32* ptr,
   Atomic32 old_value;
   do {
     old_value = *ptr;
-  } while(__sync_bool_compare_and_swap(ptr, old_value, new_value));
+  } while (__sync_bool_compare_and_swap(ptr, old_value, new_value));
   return old_value;
 }
 
@@ -56,14 +56,14 @@ inline Atomic32 NoBarrier_AtomicIncrement(volatile Atomic32* ptr,
 
 inline Atomic32 Barrier_AtomicIncrement(volatile Atomic32* ptr,
                                         Atomic32 increment) {
-  for(;;) {
+  for (;;) {
     Atomic32 old_value = *ptr;
     Atomic32 new_value = old_value + increment;
-    if(__sync_bool_compare_and_swap(ptr, old_value, new_value)) {
+    if (__sync_bool_compare_and_swap(ptr, old_value, new_value)) {
       return new_value;
       // The exchange took place as expected.
     }
-   // Otherwise, *ptr changed mid-loop and we need to retry.
+    // Otherwise, *ptr changed mid-loop and we need to retry.
   }
 }
 

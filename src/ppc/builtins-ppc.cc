@@ -1069,7 +1069,7 @@ static void Generate_JSConstructStubHelper(MacroAssembler* masm,
                     RelocInfo::CODE_TARGET, CALL_FUNCTION, CALL_AS_METHOD);
     } else {
       ParameterCount actual(r3);
-      __ InvokeFunction(r4, actual, CALL_FUNCTION, // roohack
+      __ InvokeFunction(r4, actual, CALL_FUNCTION,  // roohack
                         NullCallWrapper(), CALL_AS_METHOD);
     }
 
@@ -1189,10 +1189,10 @@ static void Generate_JSEntryTrampolineHelper(MacroAssembler* masm,
     // Initialize all JavaScript callee-saved registers, since they will be seen
     // by the garbage collector as part of handlers.
     __ LoadRoot(r7, Heap::kUndefinedValueRootIndex);
-    __ mr(r24, r7); // should be (r14)
-    __ mr(r25, r7); // should be (r15)
+    __ mr(r24, r7);  // should be (r14)
+    __ mr(r25, r7);  // should be (r15)
     __ mr(r16, r7);
-    __ mr(r22, r7); // hmmm, possibly should be reassigned to r17
+    __ mr(r22, r7);  // hmmm, possibly should be reassigned to r17
 
     // Invoke the code and pass argc as r3.
     __ mr(r3, r6);
@@ -1852,7 +1852,7 @@ void Builtins::Generate_ArgumentsAdaptorTrampoline(MacroAssembler* masm) {
     // r6: code entry to call
     __ LoadRoot(ip, Heap::kUndefinedValueRootIndex);
     __ slwi(r5, r5, Operand(kPointerSizeLog2));
-    __ sub( r5, fp, r5);
+    __ sub(r5, fp, r5);
     __ sub(r5, r5, Operand(4 * kPointerSize));  // Adjust for frame.
 
     Label fill;

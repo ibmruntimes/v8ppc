@@ -90,7 +90,7 @@
 
 #endif  // INCLUDE_ARM
 
-#endif // PENGUIN_CLEANUP
+#endif  // PENGUIN_CLEANUP
 
 namespace v8 {
 namespace internal {
@@ -298,12 +298,12 @@ enum Opcode {
   TEQ =  9 << 21,  // Test Equivalence.
   CMN = 11 << 21,  // Compare Negated.
   ORR = 12 << 21,  // Logical (inclusive) OR.
-  //MOV = 13 << 21,  // Move.
+  // MOV = 13 << 21,  // Move.
   BIC = 14 << 21,  // Bit Clear.
   MVN = 15 << 21   // Move Not.
 #endif  // INCLUDE_ARM
 
-#endif // PENGUIN_CLEANUP
+#endif  // PENGUIN_CLEANUP
 };
 
 // Bits 10-1
@@ -460,7 +460,7 @@ enum {
   B28 = 1 << 28,
 
   // Instruction bit masks.
-  kCondMask   = 0x1F << 21,	// changed for PowerPC
+  kCondMask   = 0x1F << 21,  // changed for PowerPC
   kALUMask    = 0x6f << 21,
   kRdMask     = 15 << 12,  // In str instruction.
   kCoprocessorMask = 15 << 8,
@@ -478,9 +478,9 @@ enum {
 // Addressing modes and instruction variants.
 
 // Overflow Exception
-enum OEBit { // 
-  SetOE   = 1 << 10, // Set overflow exception
-  LeaveOE = 0 << 10  // No overflow exception 
+enum OEBit {
+  SetOE   = 1 << 10,  // Set overflow exception
+  LeaveOE = 0 << 10   // No overflow exception 
 };
 
 // Record bit
@@ -841,7 +841,7 @@ class Instruction {
 
   inline int TypeValue() const { return Bits(27, 25); }
 
-  //PowerPC
+  // PowerPC
   inline int RSValue() const { return Bits(25, 21); }
   inline int RTValue() const { return Bits(25, 21); }
   inline int RAValue() const { return Bits(20, 16); }
@@ -851,7 +851,7 @@ class Instruction {
   inline int RCValue() const { return Bits(10, 6); }
   DECLARE_STATIC_ACCESSOR(RCValue);
 
-  //end PowerPC
+  // end PowerPC
 
   inline int RnValue() const { return Bits(19, 16); }
   DECLARE_STATIC_ACCESSOR(RnValue);

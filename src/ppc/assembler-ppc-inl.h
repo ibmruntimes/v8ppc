@@ -101,7 +101,7 @@ Address RelocInfo::target_address_address() {
 
 
 int RelocInfo::target_address_size() {
-  return kPointerSize; // roohack needs to be kSpecialTargetSize??
+  return kPointerSize;  // roohack needs to be kSpecialTargetSize??
 }
 
 
@@ -386,8 +386,8 @@ Address Assembler::target_address_at(Address pc) {
   }
 
   // We should never get here, force a bad address if we do.
-  //UNREACHABLE();  -- temporary removal for ARM code.. 
-  //return (Address)0xdeadbeef;
+  // UNREACHABLE();  -- temporary removal for ARM code.. 
+  // return (Address)0xdeadbeef;
 
 // for now fall into ARM code.. for compatibility
 
@@ -417,8 +417,6 @@ Address Assembler::target_address_at(Address pc) {
   // Verify that the constant pool comes after the instruction referencing it.
   ASSERT(offset >= -4);
   return target_pc + offset + 8;
-
-
 }
 
 
@@ -443,7 +441,7 @@ void Assembler::set_target_address_at(Address pc, Address target) {
     uint32_t itarget = reinterpret_cast<uint32_t>(target);
     int lo_word = itarget & kImm16Mask;
     int hi_word = itarget >> 16;
-    if(lo_word & 0x8000) {
+    if (lo_word & 0x8000) {
       // lo word is signed, so increment hi word by one
       hi_word++;
     }
@@ -458,7 +456,7 @@ void Assembler::set_target_address_at(Address pc, Address target) {
     // do what ARM did
     Memory::Address_at(target_address_at(pc)) = target;
   }
-  // TODO need to flush icache
+  // TODO (roo): need to flush icache
 
 #if 0
   Instr instr2 = instr_at(pc + kInstrSize);

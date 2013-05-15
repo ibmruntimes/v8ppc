@@ -221,9 +221,10 @@ void ElementsTransitionGenerator::GenerateSmiToDouble(
     __ vcvt_f64_s32(d0, s0);
     __ vstr(d0, r10, 0);
     __ add(r10, r10, Operand(8));
-  } else 
+  } else
 #else
-    PPCPORT_UNIMPLEMENTED(); // penguin: the following code still uses Strd (arm-ISA)
+    // penguin: the following code still uses Strd (arm-ISA)
+    PPCPORT_UNIMPLEMENTED(); 
 #endif
   {
     FloatingPointHelper::ConvertIntToDouble(masm,

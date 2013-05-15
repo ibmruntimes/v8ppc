@@ -518,7 +518,6 @@ class Operand BASE_EMBEDDED {
 // Alternatively we can have a 16bit signed value immediate
 class MemOperand BASE_EMBEDDED {
  public:
-
   // Contains cruft left to allow ARM to continue to work
 
   // PowerPC (remove AddrMode later)
@@ -841,7 +840,7 @@ class Assembler : public AssemblerBase {
     b(branch_offset(L, false), lk);
   }
   void b(Condition cond, Label* L)  {
-    switch(cond) {
+    switch (cond) {
       case eq:
         beq(L);
         break;
@@ -890,15 +889,15 @@ class Assembler : public AssemblerBase {
 
   // PowerPC
   void sub(Register dst, Register src1, Register src2,
-           OEBit s = LeaveOE, RCBit r = LeaveRC );
+           OEBit s = LeaveOE, RCBit r = LeaveRC);
 
   void subfic(Register dst, Register src, const Operand& imm);
 
   void subfc(Register dst, Register src1, Register src2,
-           OEBit s = LeaveOE, RCBit r = LeaveRC );
+           OEBit s = LeaveOE, RCBit r = LeaveRC);
 
   void add(Register dst, Register src1, Register src2,
-           OEBit s = LeaveOE, RCBit r = LeaveRC );
+           OEBit s = LeaveOE, RCBit r = LeaveRC);
 
   void addc(Register dst, Register src1, Register src2,
                     OEBit o = LeaveOE, RCBit r = LeaveRC);
@@ -907,8 +906,8 @@ class Assembler : public AssemblerBase {
 
 
   void add(Register dst, Register src, const Operand& imm,
-SBit s = LeaveCC, Condition cond = al // PPC - remove this line later (roohack)
-   );
+SBit s = LeaveCC, Condition cond = al  // PPC - remove this line later (roohack)
+  );
 
   void mullw(Register dst, Register src1, Register src2,
                OEBit o = LeaveOE, RCBit r = LeaveRC);
@@ -1037,7 +1036,7 @@ SBit s = LeaveCC, Condition cond = al // PPC - remove this line later (roohack)
 
   // PowerPC
   void mul(Register dst, Register src1, Register src2,
-           OEBit s = LeaveOE, RCBit r = LeaveRC );
+           OEBit s = LeaveOE, RCBit r = LeaveRC);
 
   void smlal(Register dstL, Register dstH, Register src1, Register src2,
              SBit s = LeaveCC, Condition cond = al);
@@ -1169,13 +1168,13 @@ SBit s = LeaveCC, Condition cond = al // PPC - remove this line later (roohack)
   void lfd(const DwVfpRegister frt, const Register ra, int offset);
   void stfd(const DwVfpRegister frs, const Register ra, int offset);
   void fadd(const DwVfpRegister frt, const DwVfpRegister fra,
-            const DwVfpRegister frb, RCBit rc = LeaveRC );
+            const DwVfpRegister frb, RCBit rc = LeaveRC);
   void fsub(const DwVfpRegister frt, const DwVfpRegister fra,
-            const DwVfpRegister frb, RCBit rc = LeaveRC );
+            const DwVfpRegister frb, RCBit rc = LeaveRC);
   void fdiv(const DwVfpRegister frt, const DwVfpRegister fra,
-            const DwVfpRegister frb, RCBit rc = LeaveRC );
+            const DwVfpRegister frb, RCBit rc = LeaveRC);
   void fmul(const DwVfpRegister frt, const DwVfpRegister fra,
-            const DwVfpRegister frc, RCBit rc = LeaveRC );
+            const DwVfpRegister frc, RCBit rc = LeaveRC);
   void fcmpu(const DwVfpRegister fra, const DwVfpRegister frb);
   void fmr(const DwVfpRegister frt, const DwVfpRegister frb);
   void fctiwz(const DwVfpRegister frt, const DwVfpRegister frb);

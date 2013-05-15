@@ -67,11 +67,11 @@ void MacroAssembler::Jump(intptr_t target, RelocInfo::Mode rmode,
   ASSERT(rmode == RelocInfo::CODE_TARGET);
   ASSERT(cond == al);
   int addr = *(reinterpret_cast<int*>(target));
-  addr = addr + Code::kHeaderSize - kHeapObjectTag; // PPC - ugly
+  addr = addr + Code::kHeaderSize - kHeapObjectTag;   // PPC - ugly
   mov(r0, Operand(addr));
   mtctr(r0);
   bcr();
-//  mov(pc, Operand(target, rmode), LeaveCC, cond);
+  //  mov(pc, Operand(target, rmode), LeaveCC, cond);
 }
 
 
@@ -100,7 +100,7 @@ void MacroAssembler::Call(Register target, Condition cond) {
   BlockConstPoolScope block_const_pool(this);
   Label start;
   bind(&start);
-  ASSERT(cond == al); // in prep of removal of condition
+  ASSERT(cond == al);  // in prep of removal of condition
 
   // Statement positions are expected to be recorded when the target
   // address is loaded.
@@ -222,7 +222,8 @@ void MacroAssembler::Swap(Register reg1,
                           Register reg2,
                           Register scratch,
                           Condition cond) {
-  ldr(r0, MemOperand(r0)); // Bogus instruction, inserted so we can trap here if we execute
+  // Bogus instruction, inserted so we can trap here if we execute
+  ldr(r0, MemOperand(r0));
   if (scratch.is(no_reg)) {
     eor(reg1, reg1, Operand(reg2), LeaveCC, cond);
     eor(reg2, reg2, Operand(reg1), LeaveCC, cond);

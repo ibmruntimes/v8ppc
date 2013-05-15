@@ -135,7 +135,7 @@ static void Generate_DebugBreakCallHelper(MacroAssembler* masm,
     // Store the registers containing live values on the expression stack to
     // make sure that these are correctly updated during GC. Non object values
     // are stored as a smi causing it to be untouched by GC.
-//roohack temporary removal   ASSERT((object_regs & ~kJSCallerSaved) == 0);
+// roohack temporary removal   ASSERT((object_regs & ~kJSCallerSaved) == 0);
     ASSERT((non_object_regs & ~kJSCallerSaved) == 0);
     ASSERT((object_regs & non_object_regs) == 0);
     if ((object_regs | non_object_regs) != 0) {
