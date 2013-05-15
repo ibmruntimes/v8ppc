@@ -2402,25 +2402,37 @@ void BinaryOpStub::GenerateSmiSmiOperation(MacroAssembler* masm) {
   Label not_smi_result;
   switch (op_) {
     case Token::ADD: {
-      Label undo_add;
-      __ li(r0, Operand(-1));
+      Label undo_add, add_no_overflow;
+      // C = A+B; C overflows if A/B have same sign and C has diff sign than A
+      __ xor_(r0, left, right);
+      __ mr(scratch1, right);
       __ addc(right, left, right);  // Add optimistically.
-      __ addze(r0, r0, LeaveOE, SetRC);
-      __ bc(&undo_add, BT, 2); 
+      __ rlwinm(r0, r0, 1, 31, 31, SetRC);
+      __ bne(&add_no_overflow);
+      __ xor_(r0, right, scratch1);
+      __ rlwinm(r0, r0, 1, 31, 31, SetRC);
+      __ bne(&undo_add);
+      __ bind(&add_no_overflow);
       __ Ret();
       __ bind(&undo_add);
-      __ sub(right, right, left);  // Revert optimistic add.
+      __ mr(right, scratch1);  // Revert optimistic add.
       break;
     }
     case Token::SUB: {
-      Label undo_sub;
-      __ li(r0, Operand(-1));
+      Label undo_sub, sub_no_overflow;
+      // C = A-B; C overflows if A/B have diff signs and C has diff sign than A
+      __ xor_(r0, left, right);
+      __ mr(scratch1, right);
       __ subfc(right, left, right);  // Subtract optimistically.
-      __ addze(r0, r0, LeaveOE, SetRC);
-      __ bc(&undo_sub, BF, 2); 
+      __ rlwinm(r0, r0, 1, 31, 31, SetRC);
+      __ beq(&sub_no_overflow);
+      __ xor_(r0, right, scratch1);
+      __ rlwinm(r0, r0, 1, 31, 31, SetRC);
+      __ bne(&undo_sub);
+      __ bind(&sub_no_overflow);
       __ Ret();
       __ bind(&undo_sub);
-      __ add(right, left, right);  // Revert optimistic subtract.
+      __ mr(right, scratch1);  // Revert optimistic subtract.
       break;
     }
     case Token::MUL: {
