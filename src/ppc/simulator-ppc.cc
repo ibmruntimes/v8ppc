@@ -1385,7 +1385,7 @@ int32_t Simulator::GetShiftRm(Instruction* instr, bool* carry_out) {
   return result;
 }
 
-
+#ifdef PENGUIN_CLEANUP
 // Addressing Mode 1 - Data-processing operands:
 // Get the value based on the shifter_operand with immediate.
 int32_t Simulator::GetImm(Instruction* instr, bool* carry_out) {
@@ -1395,7 +1395,6 @@ int32_t Simulator::GetImm(Instruction* instr, bool* carry_out) {
   *carry_out = (rotate == 0) ? c_flag_ : (imm < 0);
   return imm;
 }
-
 
 static int count_bits(int bit_vector) {
   int count = 0;
@@ -1407,7 +1406,6 @@ static int count_bits(int bit_vector) {
   }
   return count;
 }
-
 
 void Simulator::ProcessPUW(Instruction* instr,
                            int num_regs,
@@ -1527,7 +1525,7 @@ void Simulator::HandleVList(Instruction* instr) {
   }
   ASSERT(reinterpret_cast<intptr_t>(address) - operand_size == end_address);
 }
-
+#endif
 
 // Calls into the V8 runtime are based on this very simple interface.
 // Note: To be able to return two values from some calls the code in runtime.cc
@@ -3327,7 +3325,7 @@ int VFPConversionSaturate(double val, bool unsigned_res) {
   }
 }
 
-
+#ifdef PENGUIN_CLEANUP
 void Simulator::DecodeVCVTBetweenFloatingPointAndInteger(Instruction* instr) {
   ASSERT((instr->Bit(4) == 0) && (instr->Opc1Value() == 0x7) &&
          (instr->Bits(27, 23) == 0x1D));
@@ -3534,7 +3532,7 @@ void Simulator::DecodeType6CoprocessorIns(Instruction* instr) {
     UNIMPLEMENTED();  // Not used by V8.
   }
 }
-
+#endif
 
 // Executes the current instruction.
 void Simulator::InstructionDecode(Instruction* instr) {
