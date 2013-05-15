@@ -2136,7 +2136,7 @@ Handle<Code> CallStubCompiler::CompileMathFloorCall(
   // Load the HeapNumber value.
   __ lfd(d1, r3, HeapNumber::kValueOffset - kHeapObjectTag);
 
-  // Round to integer minus 
+  // Round to integer minus
   __ frim(d1, d1);
   // Convert the argument to an integer.
   __ fctiwz(d1, d1);
@@ -2333,7 +2333,8 @@ Handle<Code> CallStubCompiler::CompileFastApiCall(
 
 #if defined(V8_HOST_ARCH_PPC)
   // PPC passes C++ object by reference not value
-  // roohack - this is wrong  __ add(r4, sp, Operand((argc + kFastApiCallArguments) * kPointerSize));
+  // roohack - this is wrong
+  // __ add(r4, sp, Operand((argc + kFastApiCallArguments) * kPointerSize));
 #endif
 
   GenerateFastApiDirectCall(masm(), optimization, argc);
@@ -2775,7 +2776,7 @@ Handle<Code> StoreStubCompiler::CompileStoreGlobal(
   // Check that the map of the global has not changed.
   __ lwz(r6, FieldMemOperand(r4, HeapObject::kMapOffset));
   __ mov(r7, Operand(Handle<Map>(object->map())));
-  __ cmp(r6, r7); 
+  __ cmp(r6, r7);
   __ bne(&miss);
 
   // Check that the value in the cell is not the hole. If it is, this

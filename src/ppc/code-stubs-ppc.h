@@ -528,7 +528,7 @@ class RecordWriteStub: public CodeStub {
       case STORE_BUFFER_ONLY:
         ASSERT(GetMode(stub) == INCREMENTAL ||
                GetMode(stub) == INCREMENTAL_COMPACTION);
-        
+
         PatchBranchIntoNop(&masm, Assembler::kInstrSize);
         PatchBranchIntoNop(&masm, Assembler::kInstrSize*2);
         break;

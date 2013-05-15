@@ -926,7 +926,7 @@ class MacroAssembler: public Assembler {
                        Register scratch2,
                        CheckForInexactConversion check
                            = kDontCheckForInexactConversion);
-  // temporary compatibility function  
+  // temporary compatibility function
   void EmitVFPTruncate(VFPRoundingMode rounding_mode,
                        SwVfpRegister result,
                        DwVfpRegister double_input,
@@ -1163,11 +1163,11 @@ class MacroAssembler: public Assembler {
     ASSERT(kSmiTagSize == 1);
     // Temporary - map SBit to RCBit
     RCBit r = LeaveRC;
-    if (s == SetCC) { r = SetRC; } 
+    if (s == SetCC) { r = SetRC; }
 
     srawi(dst, src, 1, r);
   }
-  
+
   // Untag the source value into destination and jump if source is a smi.
   // Souce and destination can be the same register.
   void UntagAndJumpIfSmi(Register dst, Register src, Label* smi_case);

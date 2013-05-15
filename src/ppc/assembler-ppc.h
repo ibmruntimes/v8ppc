@@ -904,10 +904,9 @@ class Assembler : public AssemblerBase {
 
   void addze(Register dst, Register src1, OEBit o, RCBit r);
 
-
+  // PPC - remove 2nd line later (roohack)
   void add(Register dst, Register src, const Operand& imm,
-SBit s = LeaveCC, Condition cond = al  // PPC - remove this line later (roohack)
-  );
+           SBit s = LeaveCC, Condition cond = al);
 
   void mullw(Register dst, Register src1, Register src2,
                OEBit o = LeaveOE, RCBit r = LeaveRC);
@@ -998,7 +997,7 @@ SBit s = LeaveCC, Condition cond = al  // PPC - remove this line later (roohack)
   void cmp(int field, Register src1, Register src2);
   void cmpl(Register src1, Register src2);
   void cmpl(int field, Register src1, Register src2);
- 
+
   void cmp_raw_immediate(Register src1, int raw_immediate, Condition cond = al);
 
   void cmn(Register src1, const Operand& src2, Condition cond = al);

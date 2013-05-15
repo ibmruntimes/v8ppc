@@ -107,7 +107,7 @@ void MacroAssembler::Call(Register target, Condition cond) {
   positions_recorder()->WriteRecordedPositions();
 
   // branch via link register and set LK bit for return point
-  mtlr(target); 
+  mtlr(target);
   bclr(BA, SetLK);
   ASSERT_EQ(CallSize(target, cond), SizeOfCodeGeneratedSince(&start));
 }
@@ -130,7 +130,7 @@ int MacroAssembler::CallSize(
 int MacroAssembler::CallSizeNotPredictableCodeSize(
     Address target, RelocInfo::Mode rmode, Condition cond) {
 #ifndef PENGUIN_CLEANUP
-  PPCPORT_UNIMPLEMENTED();  // Always fail 
+  PPCPORT_UNIMPLEMENTED();  // Always fail
   return 0;
 #else
   int size = 2 * kInstrSize;
@@ -158,7 +158,7 @@ void MacroAssembler::Call(Address target,
   positions_recorder()->WriteRecordedPositions();
 
   // This can likely be optimized to make use of bc() with 24bit relative
-  // 
+  //
   // RecordRelocInfo(x.rmode_, x.imm32_);
   // bc( BA, .... offset, LKset);
   //
@@ -919,7 +919,7 @@ void MacroAssembler::EnterExitFrame(bool save_doubles, int stack_space) {
   mr(fp, sp);
   // Reserve room for saved entry sp and code object.
   sub(sp, sp, Operand(2 * kPointerSize));
-  
+
   if (emit_debug_code()) {
     li(r8, Operand(0));
     stw(r8, MemOperand(fp, ExitFrameConstants::kSPOffset));
@@ -983,7 +983,7 @@ int MacroAssembler::ActivationFrameAlignment() {
 #if defined(V8_HOST_ARCH_PPC)
   // Running on the real platform. Use the alignment as mandated by the local
   // environment.
-  // Note: This will break if we ever start generating snapshots on one PPC 
+  // Note: This will break if we ever start generating snapshots on one PPC
   // platform for another PPC platform with a different alignment.
   return OS::ActivationFrameAlignment();
 #else  // Simulated
@@ -1306,7 +1306,7 @@ void MacroAssembler::PushTryHandler(StackHandler::Kind kind,
   // For the JSEntry handler, we must preserve r1-r7, r0,r8-r15 are available.
   // We want the stack to look like
   // sp -> NextOffset
-  //       CodeObject 
+  //       CodeObject
   //       state
   //       context
   //       frame pointer
@@ -1327,7 +1327,7 @@ void MacroAssembler::PushTryHandler(StackHandler::Kind kind,
     // still not sure if fp is right
     stw(fp, MemOperand(sp, StackHandlerConstants::kFPOffset));
     stw(cp, MemOperand(sp, StackHandlerConstants::kContextOffset));
-  }  
+  }
   unsigned state =
       StackHandler::IndexField::encode(handler_index) |
       StackHandler::KindField::encode(kind);
@@ -2336,7 +2336,6 @@ void MacroAssembler::CallApiFunctionAndReturn(ExternalReference function,
   // r27 - next_address->kNextOffset
   // r28 - next_address->kLimitOffset
   // r29 - next_address->kLevelOffset
-  // 
   mov(r26, Operand(next_address));
   lwz(r27, MemOperand(r26, kNextOffset));
   lwz(r28, MemOperand(r26, kLimitOffset));
@@ -2652,8 +2651,8 @@ void MacroAssembler::EmitVFPTruncate(VFPRoundingMode rounding_mode,
     (check_inexact == kCheckForInexactConversion) ? kVFPInexactExceptionBit : 0;
 #endif
 
-  ASSERT((rounding_mode == kRoundToZero) 
-        || (rounding_mode == kRoundToMinusInf));
+  ASSERT((rounding_mode == kRoundToZero)
+          || (rounding_mode == kRoundToMinusInf));
   // Actually, Power defaults to round to nearest.. so we will need to
   // fix this eventually
   frsp(result, double_input, SetRC);

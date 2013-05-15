@@ -171,7 +171,7 @@ void FullCodeGenerator::Generate() {
 
   __ mflr(r0);
   __ Push(r0, fp, cp, r4);
- 
+
   if (locals_count > 0) {
     // Load undefined value here, so the value is ready for the loop
     // below.

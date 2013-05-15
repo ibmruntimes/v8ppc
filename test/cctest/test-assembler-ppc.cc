@@ -89,7 +89,7 @@ TEST(1) {
   Assembler assm(Isolate::Current(), NULL, 0);
   Label L, C;
 
-  __ mr(r4, r3); 
+  __ mr(r4, r3);
   __ li(r3, Operand(0, RelocInfo::NONE));
   __ b(&C);
 

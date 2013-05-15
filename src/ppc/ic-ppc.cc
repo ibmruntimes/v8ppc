@@ -1360,7 +1360,7 @@ static void KeyedStoreGenerateGenericHelper(
   Register address = r8;
   if (check_map == kCheckMap) {
     __ lwz(elements_map, FieldMemOperand(elements, HeapObject::kMapOffset));
-    __ mov(scratch_value, 
+    __ mov(scratch_value,
             Operand(masm->isolate()->factory()->fixed_array_map()));
     __ cmp(elements_map, scratch_value);
     __ bne(fast_double);
