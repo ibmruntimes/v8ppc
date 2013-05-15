@@ -2304,6 +2304,8 @@ void Simulator::DecodeExt4(Instruction* instr) {
   }
   UNIMPLEMENTED();  // Not used by V8.
 }
+
+#ifdef PENGUIN_CLEANUP
 // Instruction types 0 and 1 are both rolled into one function because they
 // only differ in the handling of the shifter_operand.
 void Simulator::DecodeType01(Instruction* instr) {
@@ -3269,6 +3271,7 @@ void Simulator::DecodeVCVTBetweenDoubleAndSingle(Instruction* instr) {
     set_d_register_from_double(dst, static_cast<double>(val));
   }
 }
+#endif
 
 bool get_inv_op_vfp_flag(VFPRoundingMode mode,
                          double val,

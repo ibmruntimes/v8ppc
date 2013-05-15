@@ -1269,6 +1269,7 @@ SBit s = LeaveCC, Condition cond = al // PPC - remove this line later (roohack)
   void vmov(const Register dst,
             const SwVfpRegister src,
             const Condition cond = al);
+#ifdef PENGUIN_CLEANUP
   void vcvt_f64_s32(const DwVfpRegister dst,
                     const SwVfpRegister src,
                     VFPConversionMode mode = kDefaultRoundToZero,
@@ -1297,7 +1298,7 @@ SBit s = LeaveCC, Condition cond = al // PPC - remove this line later (roohack)
                     const DwVfpRegister src,
                     VFPConversionMode mode = kDefaultRoundToZero,
                     const Condition cond = al);
-
+#endif
   void vneg(const DwVfpRegister dst,
             const DwVfpRegister src,
             const Condition cond = al);

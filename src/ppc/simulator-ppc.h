@@ -320,6 +320,7 @@ class Simulator {
 
   void DecodeExt4(Instruction* instr);
 
+#ifdef PENGUIN_CLEANUP
   // Executing is handled based on the instruction type.
   // Both type 0 and type 1 rolled into one.
   void DecodeType01(Instruction* instr);
@@ -338,6 +339,7 @@ class Simulator {
   void DecodeVCMP(Instruction* instr);
   void DecodeVCVTBetweenDoubleAndSingle(Instruction* instr);
   void DecodeVCVTBetweenFloatingPointAndInteger(Instruction* instr);
+#endif
 
   // Executes one instruction.
   void InstructionDecode(Instruction* instr);

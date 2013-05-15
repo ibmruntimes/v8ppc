@@ -125,6 +125,7 @@ class Decoder {
   void DecodeExt2(Instruction* instr);
   void DecodeExt4(Instruction* instr);
 
+#ifdef PENGUIN_CLEANUP
   // Each of these functions decodes one particular instruction type, a 3-bit
   // field in the instruction encoding.
   // Types 0 and 1 are combined as they are largely the same except for the way
@@ -145,6 +146,7 @@ class Decoder {
   void DecodeVCMP(Instruction* instr);
   void DecodeVCVTBetweenDoubleAndSingle(Instruction* instr);
   void DecodeVCVTBetweenFloatingPointAndInteger(Instruction* instr);
+#endif
 
   const disasm::NameConverter& converter_;
   Vector<char> out_buffer_;
@@ -1003,6 +1005,7 @@ void Decoder::DecodeExt4(Instruction* instr) {
   }
 }
 
+#ifdef PENGUIN_CLEANUP
 void Decoder::DecodeType01(Instruction* instr) {
   int type = instr->TypeValue();
   if ((type == 0) && instr->IsSpecialType0()) {
@@ -1674,6 +1677,7 @@ void Decoder::DecodeType6CoprocessorIns(Instruction* instr) {
     Unknown(instr);  // Not used by V8.
   }
 }
+#endif
 
 #undef VERIFIY
 

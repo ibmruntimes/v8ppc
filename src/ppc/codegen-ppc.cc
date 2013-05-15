@@ -213,6 +213,7 @@ void ElementsTransitionGenerator::GenerateSmiToDouble(
   // r22: current element
   __ UntagAndJumpIfNotSmi(r22, r22, &convert_hole);
 
+#ifdef PENGUIN_CLEANUP
   // Normal smi, convert to double and store.
   if (vfp2_supported) {
     CpuFeatures::Scope scope(VFP2);
@@ -220,7 +221,11 @@ void ElementsTransitionGenerator::GenerateSmiToDouble(
     __ vcvt_f64_s32(d0, s0);
     __ vstr(d0, r10, 0);
     __ add(r10, r10, Operand(8));
-  } else {
+  } else 
+#else
+    PPCPORT_UNIMPLEMENTED(); // penguin: the following code still uses Strd (arm-ISA)
+#endif
+  {
     FloatingPointHelper::ConvertIntToDouble(masm,
                                             r22,
                                             FloatingPointHelper::kCoreRegisters,

@@ -2611,7 +2611,7 @@ void Assembler::vmov(const Register dst,
 // Used as specifier in generic vcvt instruction.
 enum VFPType { S32, U32, F32, F64 };
 
-
+#ifdef PENGUIN_CLEANUP
 static bool IsSignedVFPType(VFPType type) {
   switch (type) {
     case S32:
@@ -2781,7 +2781,7 @@ void Assembler::vcvt_f32_f64(const SwVfpRegister dst,
   // ASSERT(CpuFeatures::IsEnabled(VFP2));
   emit(EncodeVCVT(F32, dst.code(), F64, src.code(), mode, cond));
 }
-
+#endif
 
 void Assembler::vneg(const DwVfpRegister dst,
                      const DwVfpRegister src,

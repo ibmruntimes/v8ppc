@@ -990,14 +990,18 @@ static void StoreIntAsFloat(MacroAssembler* masm,
                             Register fval,
                             Register scratch1,
                             Register scratch2) {
+#ifdef PENGUIN_CLEANUP
   __ vmov(s0, ival);
   __ slwi(scratch2, wordoffset, Operand(2));
   __ add(scratch1, dst, scratch2);
   __ vcvt_f32_s32(s0, s0);
   __ vstr(s0, scratch1, 0);
+#else
+  PPCPORT_UNIMPLEMENTED();
+#endif
 }
 
-
+#ifdef PENGUIN_CLEANUP
 // Convert unsigned integer with specified number of leading zeroes in binary
 // representation to IEEE 754 double.
 // Integer to convert is passed in register hiword.
@@ -1032,7 +1036,7 @@ static void GenerateUInt2Double(MacroAssembler* masm,
     __ bic(hiword, hiword, Operand(1 << HeapNumber::kExponentShift));
   }
 }
-
+#endif
 
 #undef __
 #define __ ACCESS_MASM(masm())
@@ -3760,6 +3764,7 @@ void KeyedLoadStubCompiler::GenerateLoadExternalArray(
     // Now we can use r3 for the result as key is not needed any more.
     __ mr(r3, r8);
 
+#ifdef PENGUIN_CLEANUP
     if (CpuFeatures::IsSupported(VFP2)) {
       CpuFeatures::Scope scope(VFP2);
       __ vmov(s0, value);
@@ -3767,7 +3772,11 @@ void KeyedLoadStubCompiler::GenerateLoadExternalArray(
       __ sub(r6, r3, Operand(kHeapObjectTag));
       __ vstr(d0, r6, HeapNumber::kValueOffset);
       __ Ret();
-    } else {
+    } else 
+#else
+    PPCPORT_UNIMPLEMENTED(); // penguin: implement above sequence using PPC FPR
+#endif
+    {
       Register dst1 = r4;
       Register dst2 = r6;
       FloatingPointHelper::Destination dest =
@@ -3787,6 +3796,7 @@ void KeyedLoadStubCompiler::GenerateLoadExternalArray(
     // The test is different for unsigned int values. Since we need
     // the value to be in the range of a positive smi, we can't
     // handle either of the top two bits being set in the value.
+#ifdef PENGUIN_CLEANUP
     if (CpuFeatures::IsSupported(VFP2)) {
       CpuFeatures::Scope scope(VFP2);
       Label box_int, done;
@@ -3848,7 +3858,11 @@ void KeyedLoadStubCompiler::GenerateLoadExternalArray(
       __ mr(r3, r7);
       __ Ret();
     }
+#else
+    PPCPORT_UNIMPLEMENTED();
+#endif
   } else if (elements_kind == EXTERNAL_FLOAT_ELEMENTS) {
+#ifdef PENGUIN_CLEANUP
     // For the floating-point array type, we need to always allocate a
     // HeapNumber.
     if (CpuFeatures::IsSupported(VFP2)) {
@@ -3864,7 +3878,11 @@ void KeyedLoadStubCompiler::GenerateLoadExternalArray(
 
       __ mr(r3, r5);
       __ Ret();
-    } else {
+    } else
+#else
+      PPCPORT_UNIMPLEMENTED(); // penguin: implement above sequence using PPC FPR
+#endif
+    {
       // Allocate a HeapNumber for the result. Don't use r3 and r4 as
       // AllocateHeapNumber clobbers all registers - also when jumping due to
       // exhausted young space.
@@ -4101,6 +4119,7 @@ void KeyedStoreStubCompiler::GenerateStoreExternalArray(
     // The WebGL specification leaves the behavior of storing NaN and
     // +/-Infinity into integer arrays basically undefined. For more
     // reproducible behavior, convert these to zero.
+#ifdef PENGUIN_CLEANUP
     if (CpuFeatures::IsSupported(VFP2)) {
       CpuFeatures::Scope scope(VFP2);
 
@@ -4158,7 +4177,11 @@ void KeyedStoreStubCompiler::GenerateStoreExternalArray(
       // Entry registers are intact, r3 holds the value which is the return
       // value.
       __ Ret();
-    } else {
+    } else 
+#else
+      PPCPORT_UNIMPLEMENTED(); // penguin: implement above sequence using PPC FPR
+#endif
+    {
       // VFP3 is not available do manual conversions.
       __ lwz(r8, FieldMemOperand(value, HeapNumber::kExponentOffset));
       __ lwz(r9, FieldMemOperand(value, HeapNumber::kMantissaOffset));

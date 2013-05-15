@@ -353,6 +353,7 @@ DoubleRegister LCodeGen::ToDoubleRegister(LOperand* op) const {
 DoubleRegister LCodeGen::EmitLoadDoubleRegister(LOperand* op,
                                                 SwVfpRegister flt_scratch,
                                                 DoubleRegister dbl_scratch) {
+#ifdef PENGUIN_CLEANUP
   if (op->IsDoubleRegister()) {
     return ToDoubleRegister(op->index());
   } else if (op->IsConstantOperand()) {
@@ -380,6 +381,10 @@ DoubleRegister LCodeGen::EmitLoadDoubleRegister(LOperand* op,
   }
   UNREACHABLE();
   return dbl_scratch;
+#else
+  PPCPORT_UNIMPLEMENTED();
+  return dbl_scratch;
+#endif
 }
 
 
@@ -978,6 +983,7 @@ void LCodeGen::DoModI(LModI* instr) {
     return;
   }
 
+#ifdef PENGUIN_CLEANUP
   // These registers hold untagged 32 bit values.
   Register left = ToRegister(instr->left());
   Register right = ToRegister(instr->right());
@@ -1086,6 +1092,9 @@ void LCodeGen::DoModI(LModI* instr) {
   }
 
   __ bind(&done);
+#else
+  PPCPORT_UNIMPLEMENTED();
+#endif
 }
 
 
@@ -3019,6 +3028,7 @@ MemOperand LCodeGen::PrepareKeyedOperand(Register key,
 
 void LCodeGen::DoLoadKeyedSpecializedArrayElement(
     LLoadKeyedSpecializedArrayElement* instr) {
+#ifdef PENGUIN_CLEANUP
   Register external_pointer = ToRegister(instr->external_pointer());
   Register key = no_reg;
   ElementsKind elements_kind = instr->elements_kind();
@@ -3095,6 +3105,9 @@ void LCodeGen::DoLoadKeyedSpecializedArrayElement(
         break;
     }
   }
+#else
+  PPCPORT_UNIMPLEMENTED();
+#endif
 }
 
 
@@ -4082,7 +4095,7 @@ void LCodeGen::DoStoreKeyedFastDoubleElement(
 
 void LCodeGen::DoStoreKeyedSpecializedArrayElement(
     LStoreKeyedSpecializedArrayElement* instr) {
-
+#ifdef PENGUIN_CLEANUP
   Register external_pointer = ToRegister(instr->external_pointer());
   Register key = no_reg;
   ElementsKind elements_kind = instr->elements_kind();
@@ -4149,6 +4162,9 @@ void LCodeGen::DoStoreKeyedSpecializedArrayElement(
         break;
     }
   }
+#else
+  PPCPORT_UNIMPLEMENTED();
+#endif
 }
 
 
@@ -4327,6 +4343,7 @@ void LCodeGen::DoStringLength(LStringLength* instr) {
 
 
 void LCodeGen::DoInteger32ToDouble(LInteger32ToDouble* instr) {
+#ifdef PENGUIN_CLEANUP
   LOperand* input = instr->value();
   ASSERT(input->IsRegister() || input->IsStackSlot());
   LOperand* output = instr->result();
@@ -4340,16 +4357,23 @@ void LCodeGen::DoInteger32ToDouble(LInteger32ToDouble* instr) {
     __ vmov(single_scratch, ToRegister(input));
   }
   __ vcvt_f64_s32(ToDoubleRegister(output), single_scratch);
+#else
+  PPCPORT_UNIMPLEMENTED();
+#endif
 }
 
 
 void LCodeGen::DoUint32ToDouble(LUint32ToDouble* instr) {
+#ifdef PENGUIN_CLEANUP
   LOperand* input = instr->value();
   LOperand* output = instr->result();
 
   SwVfpRegister flt_scratch = double_scratch0().low();
   __ vmov(flt_scratch, ToRegister(input));
   __ vcvt_f64_u32(ToDoubleRegister(output), flt_scratch);
+#else
+  PPCPORT_UNIMPLEMENTED();
+#endif
 }
 
 
@@ -4408,6 +4432,7 @@ void LCodeGen::DoNumberTagU(LNumberTagU* instr) {
 void LCodeGen::DoDeferredNumberTagI(LInstruction* instr,
                                     LOperand* value,
                                     IntegerSignedness signedness) {
+#ifdef PENGUIN_CLEANUP
   Label slow;
   Register src = ToRegister(value);
   Register dst = ToRegister(instr->result());
@@ -4457,6 +4482,9 @@ void LCodeGen::DoDeferredNumberTagI(LInstruction* instr,
   __ sub(ip, dst, Operand(kHeapObjectTag));
   __ vstr(dbl_scratch, ip, HeapNumber::kValueOffset);
   __ StoreToSafepointRegisterSlot(dst, dst);
+#else
+  PPCPORT_UNIMPLEMENTED();
+#endif
 }
 
 
@@ -4528,6 +4556,7 @@ void LCodeGen::EmitNumberUntagD(Register input_reg,
                                 bool deoptimize_on_undefined,
                                 bool deoptimize_on_minus_zero,
                                 LEnvironment* env) {
+#ifdef PENGUIN_CLEANUP
   Register scratch = scratch0();
   SwVfpRegister flt_scratch = double_scratch0().low();
   ASSERT(!result_reg.is(double_scratch0()));
@@ -4578,6 +4607,9 @@ void LCodeGen::EmitNumberUntagD(Register input_reg,
   __ vmov(flt_scratch, scratch);
   __ vcvt_f64_s32(result_reg, flt_scratch);
   __ bind(&done);
+#else
+  PPCPORT_UNIMPLEMENTED();
+#endif
 }
 
 

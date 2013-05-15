@@ -2438,7 +2438,7 @@ void MacroAssembler::IndexFromHash(Register hash, Register index) {
   mov(index, Operand(hash, LSL, kSmiTagSize));
 }
 
-
+#ifdef PENGUIN_CLEANUP
 void MacroAssembler::IntegerToDoubleConversionWithVFP3(Register inReg,
                                                        Register outHighReg,
                                                        Register outLowReg) {
@@ -2488,7 +2488,7 @@ void MacroAssembler::ObjectToDoubleVFPRegister(Register object,
   vldr(result, scratch2, HeapNumber::kValueOffset);
   bind(&done);
 }
-
+#endif
 
 void MacroAssembler::SmiToDoubleFPRegister(Register smi,
                                             DwVfpRegister value,
@@ -2529,6 +2529,7 @@ void MacroAssembler::ConvertToInt32(Register source,
                                     Register scratch2,
                                     DwVfpRegister double_scratch,
                                     Label *not_int32) {
+#ifdef PENGUIN_CLEANUP
   if (CpuFeatures::IsSupported(VFP2)) {
     CpuFeatures::Scope scope(VFP2);
     sub(scratch, source, Operand(kHeapObjectTag));
@@ -2543,7 +2544,11 @@ void MacroAssembler::ConvertToInt32(Register source,
     cmp(scratch, Operand(LONG_MAX - 1));
     // If equal then dest was LONG_MAX, if greater dest was LONG_MIN.
     b(ge, not_int32);
-  } else {
+  } else 
+#else
+  PPCPORT_UNIMPLEMENTED(); // penguin: implement the above sequence using PPC 64-bit FPR
+#endif
+  {
     // This code is faster for doubles that are in the ranges -0x7fffffff to
     // -0x40000000 or 0x40000000 to 0x7fffffff. This corresponds almost to
     // the range of signed int32 values that are not Smis.  Jumps to the label
@@ -2738,6 +2743,7 @@ void MacroAssembler::EmitECMATruncate(Register result,
                                       Register scratch,
                                       Register input_high,
                                       Register input_low) {
+#ifdef PENGUIN_CLEANUP
   CpuFeatures::Scope scope(VFP2);
   ASSERT(!input_high.is(result));
   ASSERT(!input_low.is(result));
@@ -2771,6 +2777,9 @@ void MacroAssembler::EmitECMATruncate(Register result,
                               input_low,
                               scratch);
   bind(&done);
+#else
+  PPCPORT_UNIMPLEMENTED();
+#endif
 }
 
 
@@ -3885,10 +3894,11 @@ void MacroAssembler::ClampUint8(Register output_reg, Register input_reg) {
   Usat(output_reg, 8, Operand(input_reg));
 }
 
-
 void MacroAssembler::ClampDoubleToUint8(Register result_reg,
                                         DoubleRegister input_reg,
+
                                         DoubleRegister temp_double_reg) {
+#ifdef PENGUIN_CLEANUP
   Label above_zero;
   Label done;
   Label in_bounds;
@@ -3921,8 +3931,11 @@ void MacroAssembler::ClampDoubleToUint8(Register result_reg,
   // Restore FPSCR.
   vmsr(ip);
   bind(&done);
+#else
+  PPCPORT_UNIMPLEMENTED();
+  ASSERT(false);
+#endif
 }
-
 
 void MacroAssembler::LoadInstanceDescriptors(Register map,
                                              Register descriptors,

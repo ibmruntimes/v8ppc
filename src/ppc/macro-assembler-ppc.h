@@ -875,6 +875,7 @@ class MacroAssembler: public Assembler {
   void GetLeastBitsFromSmi(Register dst, Register src, int num_least_bits);
   void GetLeastBitsFromInt32(Register dst, Register src, int mun_least_bits);
 
+#ifdef PENGUIN_CLEANUP
   // Uses VFP instructions to Convert a Smi to a double.
   void IntegerToDoubleConversionWithVFP3(Register inReg,
                                          Register outHighReg,
@@ -892,6 +893,7 @@ class MacroAssembler: public Assembler {
       DwVfpRegister scratch3,
       Label* not_number,
       ObjectToDoubleFlags flags = NO_OBJECT_TO_DOUBLE_FLAGS);
+#endif
 
   // Load the value of a smi object into a FP double register. The register
   // scratch1 can be the same register as smi in which case smi will hold the

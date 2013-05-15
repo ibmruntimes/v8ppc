@@ -2241,6 +2241,7 @@ void UnaryOpStub::GenerateHeapNumberCodeBitNot(
     __ mr(r3, r5);  // Move newly allocated heap number to r0.
   }
 
+#ifdef PENGUIN_CLEANUP
   if (CpuFeatures::IsSupported(VFP2)) {
     // Convert the int32 in r4 to the heap number in r3. r5 is corrupted.
     CpuFeatures::Scope scope(VFP2);
@@ -2249,7 +2250,9 @@ void UnaryOpStub::GenerateHeapNumberCodeBitNot(
     __ sub(r5, r3, Operand(kHeapObjectTag));
     __ vstr(d0, r5, HeapNumber::kValueOffset);
     __ Ret();
-  } else {
+  } else 
+#endif
+  {
     // WriteInt32ToHeapNumberStub does not trigger GC, so we do not
     // have to set up a frame.
     WriteInt32ToHeapNumberStub stub(r4, r3, r5);
@@ -2728,6 +2731,7 @@ void BinaryOpStub::GenerateFPOperation(MacroAssembler* masm,
       // result.
       __ mr(r3, r8);
 
+#ifdef PENGUIN_CLEANUP
       // Convert the int32 in r5 to the heap number in r3. r6 is corrupted. As
       // mentioned above SHR needs to always produce a positive result.
       __ vmov(s0, r5);
@@ -2739,6 +2743,9 @@ void BinaryOpStub::GenerateFPOperation(MacroAssembler* masm,
       __ sub(r6, r3, Operand(kHeapObjectTag));
       __ vstr(d0, r6, HeapNumber::kValueOffset);
       __ Ret();
+#else
+      PPCPORT_UNIMPLEMENTED(); // penguin: above sequence needs to be converted into PPC
+#endif
       break;
     }
     default:
@@ -3660,6 +3667,7 @@ void InterruptStub::Generate(MacroAssembler* masm) {
 
 // roohack - not converted
 void MathPowStub::Generate(MacroAssembler* masm) {
+#ifdef PENGUIN_CLEANUP
   CpuFeatures::Scope vfp2_scope(VFP2);
   const Register base = r1;
   const Register exponent = r2;
@@ -3855,6 +3863,9 @@ void MathPowStub::Generate(MacroAssembler* masm) {
     __ IncrementCounter(counters->math_pow(), 1, scratch, scratch2);
     __ Ret();
   }
+#else
+  PPCPORT_UNIMPLEMENTED();
+#endif
 }
 
 

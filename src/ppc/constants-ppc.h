@@ -615,7 +615,7 @@ const uint32_t kStopCodeMask = kStopCode - 1;
 const uint32_t kMaxStopCode = kStopCode - 1;
 const int32_t  kDefaultStopCode = -1;
 
-
+#ifdef PENGUIN_CLEANUP
 // Type of VFP register. Determines register encoding.
 enum VFPRegPrecision {
   kSinglePrecision = 0,
@@ -627,6 +627,7 @@ enum VFPConversionMode {
   kFPSCRRounding = 0,
   kDefaultRoundToZero = 1
 };
+#endif
 
 // This mask does not include the "inexact" or "input denormal" cumulative
 // exceptions flags, because we usually don't want to check for it.
@@ -858,6 +859,8 @@ class Instruction {
   DECLARE_STATIC_ACCESSOR(RdValue);
 
   inline int CoprocessorValue() const { return Bits(11, 8); }
+
+#ifdef PENGUIN_CLEANUP
   // Support for VFP.
   // Vn(19-16) | Vd(15-12) |  Vm(3-0)
   inline int VnValue() const { return Bits(19, 16); }
@@ -886,6 +889,7 @@ class Instruction {
   inline int VFPDRegValue(VFPRegPrecision pre) {
     return VFPGlueRegValue(pre, 12, 22);
   }
+#endif
 
   inline int OpcodeValue() const {
     return static_cast<Opcode>(Bits(31, 26));  // PowerPC
@@ -952,6 +956,7 @@ class Instruction {
     return (TypeValue() == 7) && (Bit(24) == 1) && (SvcValue() >= kStopCode);
   }
 
+#ifdef PENGUIN_CLEANUP
   // Special accessors that test for existence of a value.
   inline bool HasS()    const { return SValue() == 1; }
   inline bool HasB()    const { return BValue() == 1; }
@@ -961,6 +966,7 @@ class Instruction {
   inline bool HasSign() const { return SignValue() == 1; }
   inline bool HasH()    const { return HValue() == 1; }
   inline bool HasLink() const { return LinkValue() == 1; }
+#endif
 
   // Decoding the double immediate in the vmov instruction.
   double DoubleImmedVmov() const;
@@ -975,6 +981,7 @@ class Instruction {
 
 
  private:
+#ifdef PENGUIN_CLEANUP
   // Join split register codes, depending on single or double precision.
   // four_bit is the position of the least-significant bit of the four
   // bit specifier. one_bit is the position of the additional single bit
@@ -985,6 +992,7 @@ class Instruction {
     }
     return (Bit(one_bit) << 4) | Bits(four_bit + 3, four_bit);
   }
+#endif
 
   // We need to prevent the creation of instances of class Instruction.
   DISALLOW_IMPLICIT_CONSTRUCTORS(Instruction);
