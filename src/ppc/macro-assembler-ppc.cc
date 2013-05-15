@@ -2434,8 +2434,10 @@ void MacroAssembler::IndexFromHash(Register hash, Register index) {
   // We want the smi-tagged index in key.  kArrayIndexValueMask has zeros in
   // the low kHashShift bits.
   STATIC_ASSERT(kSmiTag == 0);
-  Ubfx(hash, hash, String::kHashShift, String::kArrayIndexValueBits);
-  mov(index, Operand(hash, LSL, kSmiTagSize));
+  STATIC_ASSERT(String::kHashShift == 2);
+  STATIC_ASSERT(String::kArrayIndexValueBits == 24);
+  // This function is performing the logic: index = (hash & 0x03FFFFFC) >> 1;
+  rlwinm(index, hash, 31, 7, 30);
 }
 
 #ifdef PENGUIN_CLEANUP
