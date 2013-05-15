@@ -1378,17 +1378,17 @@ void RegExpMacroAssemblerARM::LoadCurrentCharacterUnchecked(int cp_offset,
     if (characters == 4) {
 #if defined(V8_HOST_ARCH_PPC)
       __ push(r3);  // may not need to preserve, but just in case.
-      __ add( offset, offset, Operand(3));
+      __ add(offset, offset, Operand(3));
       __ ldrb(current_character(), MemOperand(end_of_input_address(), offset));
-      __ sub( offset, offset, Operand(1));
+      __ sub(offset, offset, Operand(1));
       __ ldrb(r3, MemOperand(end_of_input_address(), offset));
-      __ orr( current_character(), r3, Operand(current_character(), LSL, kBitsPerByte));
-      __ sub( offset, offset, Operand(1));
+      __ orr(current_character(), r3, Operand(current_character(), LSL, kBitsPerByte));
+      __ sub(offset, offset, Operand(1));
       __ ldrb(r3, MemOperand(end_of_input_address(), offset));
-      __ orr( current_character(), r3, Operand(current_character(), LSL, kBitsPerByte));
-      __ sub( offset, offset, Operand(1));
+      __ orr(current_character(), r3, Operand(current_character(), LSL, kBitsPerByte));
+      __ sub(offset, offset, Operand(1));
       __ ldrb(r3, MemOperand(end_of_input_address(), offset));
-      __ orr( current_character(), r3, Operand(current_character(), LSL, kBitsPerByte));
+      __ orr(current_character(), r3, Operand(current_character(), LSL, kBitsPerByte));
       __ pop(r3);
 #else
       __ ldr(current_character(), MemOperand(end_of_input_address(), offset));
@@ -1396,11 +1396,11 @@ void RegExpMacroAssemblerARM::LoadCurrentCharacterUnchecked(int cp_offset,
     } else if (characters == 2) {
 #if defined(V8_HOST_ARCH_PPC)
       __ push(r3);  // may not need to preserve, but just in case.
-      __ add( offset, offset, Operand(1));
+      __ add(offset, offset, Operand(1));
       __ ldrb(current_character(), MemOperand(end_of_input_address(), offset));
-      __ sub( offset, offset, Operand(1));
+      __ sub(offset, offset, Operand(1));
       __ ldrb(r3, MemOperand(end_of_input_address(), offset));
-      __ orr( current_character(), r3, Operand(current_character(), LSL, kBitsPerByte));
+      __ orr(current_character(), r3, Operand(current_character(), LSL, kBitsPerByte));
       __ pop(r3);
 
 #else
@@ -1415,11 +1415,11 @@ void RegExpMacroAssemblerARM::LoadCurrentCharacterUnchecked(int cp_offset,
     if (characters == 2) {
 #if defined(V8_HOST_ARCH_PPC)
       __ push(r3);  // may not need to preserve, but just in case.
-      __ add( offset, offset, Operand(2));
+      __ add(offset, offset, Operand(2));
       __ ldrh(current_character(), MemOperand(end_of_input_address(), offset));
-      __ sub( offset, offset, Operand(2));
+      __ sub(offset, offset, Operand(2));
       __ ldrh(r3, MemOperand(end_of_input_address(), offset));
-      __ orr( current_character(), r3, Operand(current_character(), LSL, 2*kBitsPerByte));
+      __ orr(current_character(), r3, Operand(current_character(), LSL, 2*kBitsPerByte));
       __ pop(r3);
 #else
       __ ldr(current_character(), MemOperand(end_of_input_address(), offset));

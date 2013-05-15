@@ -65,7 +65,7 @@ class PPCDebugger {
   void Debug();
 
  private:
-  static const Instr kBreakpointInstr = (TWI | 0x1f * B21 );
+  static const Instr kBreakpointInstr = (TWI | 0x1f * B21);
   static const Instr kNopInstr = (ORI);  // ori, 0,0,0
 
   Simulator* sim_;
@@ -105,7 +105,7 @@ static void InitializeCoverage() {
 }
 
 
-void PPCDebugger::Stop(Instruction* instr) {  //roohack need to fix for PPC
+void PPCDebugger::Stop(Instruction* instr) {  // roohack need to fix for PPC
   // Get the stop code.
   uint32_t code = instr->SvcValue() & kStopCodeMask;
   // Retrieve the encoded address, which comes just after this stop.
@@ -139,7 +139,8 @@ static void InitializeCoverage() {
 
 void PPCDebugger::Stop(Instruction* instr) {
   // Get the stop code.
-  uint32_t code = instr->SvcValue() & kStopCodeMask;  //roohack remove kStopCodeMask
+  // use of kStopCodeMask not right on PowerPC
+  uint32_t code = instr->SvcValue() & kStopCodeMask;
   // Retrieve the encoded address, which comes just after this stop.
   char* msg = *reinterpret_cast<char**>(sim_->get_pc()
                                         + Instruction::kInstrSize);
@@ -1020,9 +1021,9 @@ void Simulator::SetFpResult(const double& result) {
 
 void Simulator::TrashCallerSaveRegisters() {
   // We don't trash the registers with the return value.
-#if 0 
--- roohack 
-A good idea to trash volatile registers, needs to be done 
+#if 0
+-- roohack
+A good idea to trash volatile registers, needs to be done
   registers_[2] = 0x50Bad4U;
   registers_[3] = 0x50Bad4U;
   registers_[12] = 0x50Bad4U;
@@ -1396,6 +1397,7 @@ int32_t Simulator::GetImm(Instruction* instr, bool* carry_out) {
   return imm;
 }
 
+
 static int count_bits(int bit_vector) {
   int count = 0;
   while (bit_vector != 0) {
@@ -1406,6 +1408,7 @@ static int count_bits(int bit_vector) {
   }
   return count;
 }
+
 
 void Simulator::ProcessPUW(Instruction* instr,
                            int num_regs,
@@ -1675,7 +1678,7 @@ void Simulator::SoftwareInterrupt(Instruction* instr) {
           break;
         case ExternalReference::BUILTIN_FP_CALL:
           GetFpArgs(&dval0);
-          result = target(dval0, dval1); // 2nd parm ignored
+          result = target(dval0, dval1);  // 2nd parm ignored
           SetFpResult(result);
           break;
         case ExternalReference::BUILTIN_FP_INT_CALL:
@@ -1884,14 +1887,14 @@ void Simulator::PrintStopInfo(uint32_t code) {
 
 // Handle execution based on instruction types.
 void Simulator::DecodeExt1(Instruction* instr) {
-  switch(instr->Bits(10,1) << 1) {
+  switch (instr->Bits(10, 1) << 1) {
     case MCRF:
       UNIMPLEMENTED();  // Not used by V8.
     case BCLRX: {
         // need to check BO flag
         int old_pc = get_pc();
         set_pc(special_reg_lr_);
-        if(instr->Bit(0) == 1) {  // LK flag set 
+        if (instr->Bit(0) == 1) {  // LK flag set
           special_reg_lr_ = old_pc + 4;
         }
       break;
@@ -1900,7 +1903,7 @@ void Simulator::DecodeExt1(Instruction* instr) {
         // need to check BO flag
         int old_pc = get_pc();
         set_pc(special_reg_ctr_);
-        if(instr->Bit(0) == 1) {  // LK flag set 
+        if (instr->Bit(0) == 1) {  // LK flag set
           special_reg_lr_ = old_pc + 4;
         }
       break;
@@ -1911,9 +1914,9 @@ void Simulator::DecodeExt1(Instruction* instr) {
     case ISYNC:
       UNIMPLEMENTED();
     case CRXOR: {
-      int bt = instr->Bits(25,21);
-      int ba = instr->Bits(20,16);
-      int bb = instr->Bits(15,11);
+      int bt = instr->Bits(25, 21);
+      int ba = instr->Bits(20, 16);
+      int bb = instr->Bits(15, 11);
       int ba_val = ((0x10000000 >> ba) & condition_reg_) == 0 ? 0 : 1;
       int bb_val = ((0x10000000 >> bb) & condition_reg_) == 0 ? 0 : 1;
       int bt_val = ba_val ^ bb_val;
@@ -1935,7 +1938,7 @@ void Simulator::DecodeExt1(Instruction* instr) {
 
 void Simulator::DecodeExt2(Instruction* instr) {
   // Check first the 10-1 bit versions
-  switch(instr->Bits(10,1) << 1) {
+  switch (instr->Bits(10, 1) << 1) {
     case SRWX: {
       int rs = instr->RSValue();
       int ra = instr->RAValue();
@@ -1960,32 +1963,32 @@ void Simulator::DecodeExt2(Instruction* instr) {
       int ra = instr->RAValue();
       int rs = instr->RSValue();
       int32_t rs_val = get_register(rs);
-      int sh = instr->Bits(15,11);
+      int sh = instr->Bits(15, 11);
       int rc = instr->Bit(0);
       int result = rs_val >> sh;
       set_register(ra, result);
-      if(rc) {
+      if (rc) {
         int bf = 0;
-        if(result < 0) { bf |= 0x80000000; }
-        if(result > 0) { bf |= 0x40000000; }
-        if(result == 0) { bf |= 0x20000000; }
+        if (result < 0) { bf |= 0x80000000; }
+        if (result > 0) { bf |= 0x40000000; }
+        if (result == 0) { bf |= 0x20000000; }
         condition_reg_ = (condition_reg_ & ~0xF0000000) | bf;
       }
       return;
     }
   }
   // Now look at the lesser encodings
-  switch(instr->Bits(9,1) << 1) {
+  switch (instr->Bits(9, 1) << 1) {
     case CMP: {
       int ra = instr->RAValue();
       int rb = instr->RBValue();
       int32_t ra_val = get_register(ra);
       int32_t rb_val = get_register(rb);
-      int cr = instr->Bits(25,23);
+      int cr = instr->Bits(25, 23);
       int bf = 0;
-      if(ra_val < rb_val) { bf |= 0x80000000; }
-      if(ra_val > rb_val) { bf |= 0x40000000; }
-      if(ra_val == rb_val) { bf |= 0x20000000; }
+      if (ra_val < rb_val) { bf |= 0x80000000; }
+      if (ra_val > rb_val) { bf |= 0x40000000; }
+      if (ra_val == rb_val) { bf |= 0x20000000; }
       int condition_mask = 0xF0000000 >> (cr*4);
       int condition =  bf >> (cr*4);
       condition_reg_ = (condition_reg_ & ~condition_mask) | condition;
@@ -2002,7 +2005,7 @@ void Simulator::DecodeExt2(Instruction* instr) {
       uint32_t alu_out = ~ra_val + rb_val + 1;
       set_register(rt, alu_out);
       // If the sign of rb and alu_out don't match, carry = 0
-      if((alu_out ^ rb_val) & 0x80000000) {
+      if ((alu_out ^ rb_val) & 0x80000000) {
         special_reg_xer_ &= ~0xF0000000;
       } else {
         special_reg_xer_ = (special_reg_xer_ & ~0xF0000000) | 0x20000000;
@@ -2019,7 +2022,7 @@ void Simulator::DecodeExt2(Instruction* instr) {
       int32_t ra_val = get_register(ra);
       int32_t rb_val = get_register(rb);
       int64_t alu_out = ra_val + rb_val;
-      if(alu_out >> 32) {
+      if (alu_out >> 32) {
         alu_out &= 0xFFFFFFFF;
         special_reg_xer_ = (special_reg_xer_ & ~0xF0000000) | 0x20000000;
       } else {
@@ -2067,13 +2070,13 @@ void Simulator::DecodeExt2(Instruction* instr) {
       int32_t rb_val = get_register(rb);
       int32_t alu_out = rs_val & rb_val;
       set_register(ra, alu_out);
-      if(instr->Bit(0)) {  // RCBit set
+      if (instr->Bit(0)) {  // RCBit set
         int bf = 0;
-        if(alu_out < 0) { bf |= 0x80000000; }
-        if(alu_out > 0) { bf |= 0x40000000; }
-        if(alu_out == 0) { bf |= 0x20000000; }
+        if (alu_out < 0) { bf |= 0x80000000; }
+        if (alu_out > 0) { bf |= 0x40000000; }
+        if (alu_out == 0) { bf |= 0x20000000; }
         condition_reg_ = (condition_reg_ & ~0xF0000000) | bf;
-      } 
+      }
       break;
     }
     case CMPL: {
@@ -2081,11 +2084,11 @@ void Simulator::DecodeExt2(Instruction* instr) {
       int rb = instr->RBValue();
       uint32_t ra_val = get_register(ra);
       uint32_t rb_val = get_register(rb);
-      int cr = instr->Bits(25,23);
+      int cr = instr->Bits(25, 23);
       int bf = 0;
-      if(ra_val < rb_val) { bf |= 0x80000000; }
-      if(ra_val > rb_val) { bf |= 0x40000000; }
-      if(ra_val == rb_val) { bf |= 0x20000000; }
+      if (ra_val < rb_val) { bf |= 0x80000000; }
+      if (ra_val > rb_val) { bf |= 0x40000000; }
+      if (ra_val == rb_val) { bf |= 0x20000000; }
       int condition_mask = 0xF0000000 >> (cr*4);
       int condition =  bf >> (cr*4);
       condition_reg_ = (condition_reg_ & ~condition_mask) | condition;
@@ -2100,13 +2103,13 @@ void Simulator::DecodeExt2(Instruction* instr) {
       int32_t ra_val = get_register(ra);
       int32_t rb_val = get_register(rb);
       int32_t alu_out = rb_val - ra_val;
-      if(rc) {
+      if (rc) {
         int bf = 0;
-        if(alu_out < 0) { bf |= 0x80000000; }
-        if(alu_out > 0) { bf |= 0x40000000; }
-        if(alu_out == 0) { bf |= 0x20000000; }
+        if (alu_out < 0) { bf |= 0x80000000; }
+        if (alu_out > 0) { bf |= 0x40000000; }
+        if (alu_out == 0) { bf |= 0x20000000; }
         condition_reg_ = (condition_reg_ & ~0xF0000000) | bf;
-      } 
+      }
       // todo - figure out underflow
       set_register(rt, alu_out);
       // todo - handle OE and RC bits
@@ -2116,15 +2119,15 @@ void Simulator::DecodeExt2(Instruction* instr) {
       int rt = instr->RTValue();
       int ra = instr->RAValue();
       int32_t ra_val = get_register(ra);
-      if(special_reg_xer_ & 0x20000000) {
+      if (special_reg_xer_ & 0x20000000) {
         ra_val += 1;
       }
       set_register(rt, ra_val);
-      if(instr->Bit(0)) {  // RCBit set
+      if (instr->Bit(0)) {  // RCBit set
         int bf = 0;
-        if(ra_val < 0) { bf |= 0x80000000; }
-        if(ra_val > 0) { bf |= 0x40000000; }
-        if(ra_val == 0) { bf |= 0x20000000; }
+        if (ra_val < 0) { bf |= 0x80000000; }
+        if (ra_val > 0) { bf |= 0x40000000; }
+        if (ra_val == 0) { bf |= 0x20000000; }
         condition_reg_ = (condition_reg_ & ~0xF0000000) | bf;
       }
       // todo - handle OE bit
@@ -2178,9 +2181,9 @@ void Simulator::DecodeExt2(Instruction* instr) {
     }
     case MFSPR: {
       int rt = instr->RTValue();
-      int spr = instr->Bits(20,11);
-      if (spr!=256) {
-        UNIMPLEMENTED();  // Only LR supported 
+      int spr = instr->Bits(20, 11);
+      if (spr != 256) {
+        UNIMPLEMENTED();  // Only LR supported
       }
       set_register(rt, special_reg_lr_);
       break;
@@ -2188,13 +2191,13 @@ void Simulator::DecodeExt2(Instruction* instr) {
     case MTSPR: {
       int rt = instr->RTValue();
       int32_t rt_val = get_register(rt);
-      int spr = instr->Bits(20,11);
-      if (spr==256) {
+      int spr = instr->Bits(20, 11);
+      if (spr == 256) {
         special_reg_lr_ = rt_val;
-      } else if (spr==288) {
+      } else if (spr == 288) {
         special_reg_ctr_ = rt_val;
-      } else { 
-        UNIMPLEMENTED();  // Only LR supported 
+      } else {
+        UNIMPLEMENTED();  // Only LR supported
       }
       break;
     }
@@ -2204,7 +2207,7 @@ void Simulator::DecodeExt2(Instruction* instr) {
   }
 }
 void Simulator::DecodeExt4(Instruction* instr) {
-  switch(instr->Bits(5,1) << 1) {
+  switch (instr->Bits(5, 1) << 1) {
     case FDIV: {
       int frt = instr->RTValue();
       int fra = instr->RAValue();
@@ -2246,18 +2249,18 @@ void Simulator::DecodeExt4(Instruction* instr) {
       return;
     }
   }
-  switch(instr->Bits(10,1) << 1) {
+  switch (instr->Bits(10, 1) << 1) {
     case FCMPU: {
       int fra = instr->RAValue();
       int frb = instr->RBValue();
       double fra_val = get_double_from_d_register(fra);
       double frb_val = get_double_from_d_register(frb);
-      int cr = instr->Bits(25,23);
+      int cr = instr->Bits(25, 23);
       int bf = 0;
-      if(fra_val < frb_val) { bf |= 0x80000000; }
-      if(fra_val > frb_val) { bf |= 0x40000000; }
-      if(fra_val == frb_val) { bf |= 0x20000000; }
-      if(isunordered(fra_val, frb_val)) { bf |= 0x10000000; } 
+      if (fra_val < frb_val) { bf |= 0x80000000; }
+      if (fra_val > frb_val) { bf |= 0x40000000; }
+      if (fra_val == frb_val) { bf |= 0x20000000; }
+      if (isunordered(fra_val, frb_val)) { bf |= 0x10000000; }
       int condition_mask = 0xF0000000 >> (cr*4);
       int condition =  bf >> (cr*4);
       condition_reg_ = (condition_reg_ & ~condition_mask) | condition;
@@ -2267,7 +2270,7 @@ void Simulator::DecodeExt4(Instruction* instr) {
       int frt = instr->RTValue();
       int frb = instr->RBValue();
       double frb_val = get_double_from_d_register(frb);
-      float frt_val = (float)frb_val;
+      float frt_val = static_cast<float>frb_val;
       double *p = reinterpret_cast<double*>(&frt_val);
       set_d_register_from_double(frt, *p);
       return;
@@ -2278,7 +2281,7 @@ void Simulator::DecodeExt4(Instruction* instr) {
       double frb_val = get_double_from_d_register(frb);
       int64_t frt_val;
 /*
-      if(frb_val < 0.0) {
+      if (frb_val < 0.0) {
         frb_val *= -1.0;
         frt_val = (int64_t)frb_val;
         frt_val *= -1;
@@ -2295,7 +2298,7 @@ void Simulator::DecodeExt4(Instruction* instr) {
       int frb = instr->RBValue();
       double frb_val = get_double_from_d_register(frb);
       int64_t floor_val = (int64_t)frb_val;
-      double frt_val = (double)floor_val;
+      double frt_val = static_cast<double>floor_val;
       set_d_register_from_double(frt, frt_val);
       return;
     }
@@ -3546,7 +3549,8 @@ void Simulator::InstructionDecode(Instruction* instr) {
     // use a reasonably large buffer
     v8::internal::EmbeddedVector<char, 256> buffer;
     dasm.InstructionDecode(buffer, reinterpret_cast<byte*>(instr));
-    PrintF("%05d  0x%08x  %s\n", icount_, reinterpret_cast<intptr_t>(instr), buffer.start());
+    PrintF("%05d  0x%08x  %s\n", icount_,
+           reinterpret_cast<intptr_t>(instr), buffer.start());
   }
   switch (instr->OpcodeValue() << 26) {
     case TWI: {
@@ -3559,7 +3563,7 @@ void Simulator::InstructionDecode(Instruction* instr) {
       int rt = instr->RTValue();
       int ra = instr->RAValue();
       int32_t ra_val = get_register(ra);
-      int32_t im_val = instr->Bits(15,0);
+      int32_t im_val = instr->Bits(15, 0);
       int32_t alu_out = im_val - ra_val;
       set_register(rt, alu_out);
       // todo - handle RC bit
@@ -3568,12 +3572,12 @@ void Simulator::InstructionDecode(Instruction* instr) {
     case CMPLI: {
       int ra = instr->RAValue();
       uint32_t ra_val = get_register(ra);
-      uint32_t im_val = instr->Bits(15,0);
-      int cr = instr->Bits(25,23);
+      uint32_t im_val = instr->Bits(15, 0);
+      int cr = instr->Bits(25, 23);
       int bf = 0;
-      if(ra_val < im_val) { bf |= 0x80000000; }
-      if(ra_val > im_val) { bf |= 0x40000000; }
-      if(ra_val == im_val) { bf |= 0x20000000; }
+      if (ra_val < im_val) { bf |= 0x80000000; }
+      if (ra_val > im_val) { bf |= 0x40000000; }
+      if (ra_val == im_val) { bf |= 0x20000000; }
       int condition_mask = 0xF0000000 >> (cr*4);
       int condition =  bf >> (cr*4);
       condition_reg_ = (condition_reg_ & ~condition_mask) | condition;
@@ -3582,13 +3586,13 @@ void Simulator::InstructionDecode(Instruction* instr) {
     case CMPI: {
       int ra = instr->RAValue();
       int32_t ra_val = get_register(ra);
-      int32_t im_val = instr->Bits(15,0);
+      int32_t im_val = instr->Bits(15, 0);
       im_val = (im_val << 16) >> 16;  // sign extend if needed
-      int cr = instr->Bits(25,23);
+      int cr = instr->Bits(25, 23);
       int bf = 0;
-      if(ra_val < im_val) { bf |= 0x80000000; }
-      if(ra_val > im_val) { bf |= 0x40000000; }
-      if(ra_val == im_val) { bf |= 0x20000000; }
+      if (ra_val < im_val) { bf |= 0x80000000; }
+      if (ra_val > im_val) { bf |= 0x40000000; }
+      if (ra_val == im_val) { bf |= 0x20000000; }
       int condition_mask = 0xF0000000 >> (cr*4);
       int condition =  bf >> (cr*4);
       condition_reg_ = (condition_reg_ & ~condition_mask) | condition;
@@ -3598,9 +3602,9 @@ void Simulator::InstructionDecode(Instruction* instr) {
       int rt = instr->RTValue();
       int ra = instr->RAValue();
       int32_t ra_val = get_register(ra);
-      int32_t im_val = (instr->Bits(15,0) << 16) >> 16;
+      int32_t im_val = (instr->Bits(15, 0) << 16) >> 16;
       int64_t alu_out = ra_val + im_val;
-      if(alu_out >> 32) {
+      if (alu_out >> 32) {
         alu_out &= 0xFFFFFFFF;
         special_reg_xer_ = (special_reg_xer_ & ~0xF0000000) | 0x20000000;
       } else {
@@ -3613,14 +3617,14 @@ void Simulator::InstructionDecode(Instruction* instr) {
     case ADDI: {
       int rt = instr->RTValue();
       int ra = instr->RAValue();
-      int32_t im_val = (instr->Bits(15,0) << 16) >> 16;
+      int32_t im_val = (instr->Bits(15, 0) << 16) >> 16;
       int32_t alu_out;
-      if(ra == 0) {
+      if (ra == 0) {
         alu_out = im_val;
       } else {
         int32_t ra_val = get_register(ra);
         alu_out = ra_val + im_val;
-      } 
+      }
       set_register(rt, alu_out);
       // todo - handle RC bit
       break;
@@ -3628,9 +3632,9 @@ void Simulator::InstructionDecode(Instruction* instr) {
     case ADDIS: {
       int rt = instr->RTValue();
       int ra = instr->RAValue();
-      int32_t im_val = (instr->Bits(15,0) << 16);
+      int32_t im_val = (instr->Bits(15, 0) << 16);
       int32_t alu_out;
-      if(ra==0) { // treat r0 as zero
+      if (ra == 0) {  // treat r0 as zero
         alu_out = im_val;
       } else {
         int32_t ra_val = get_register(ra);
@@ -3640,23 +3644,23 @@ void Simulator::InstructionDecode(Instruction* instr) {
       break;
     }
     case BCX: {
-      int bo = instr->Bits(25,21) << 21;
-      int offset = (instr->Bits(15,2) << 18) >> 16;
-      int condition_bit = instr->Bits(20,16);
+      int bo = instr->Bits(25, 21) << 21;
+      int offset = (instr->Bits(15, 2) << 18) >> 16;
+      int condition_bit = instr->Bits(20, 16);
       int condition_mask = 0x80000000 >> condition_bit;
-      switch(bo) {
-        case DCBNZF: // Decrement CTR; branch if CTR != 0 and condition false
-        case DCBEZF: // Decrement CTR; branch if CTR == 0 and condition false
-          UNIMPLEMENTED(); 
+      switch (bo) {
+        case DCBNZF:  // Decrement CTR; branch if CTR != 0 and condition false
+        case DCBEZF:  // Decrement CTR; branch if CTR == 0 and condition false
+          UNIMPLEMENTED();
         case BF: {   // Branch if condition false
           if (!(condition_reg_ & condition_mask)) {
             set_pc(get_pc() + offset);
           }
           break;
         }
-        case DCBNZT: // Decrement CTR; branch if CTR != 0 and condition true
-        case DCBEZT: // Decrement CTR; branch if CTR == 0 and condition true
-          UNIMPLEMENTED(); 
+        case DCBNZT:  // Decrement CTR; branch if CTR != 0 and condition true
+        case DCBEZT:  // Decrement CTR; branch if CTR == 0 and condition true
+          UNIMPLEMENTED();
         case BT: {   // Branch if condition true
           if (condition_reg_ & condition_mask) {
             set_pc(get_pc() + offset);
@@ -3665,20 +3669,20 @@ void Simulator::InstructionDecode(Instruction* instr) {
         }
         case DCBNZ:  // Decrement CTR; branch if CTR != 0
         case DCBEZ:  // Decrement CTR; branch if CTR == 0
-          UNIMPLEMENTED(); 
+          UNIMPLEMENTED();
         case BA: {   // Branch always
           set_pc(get_pc() + offset);
           break;
         }
         default:
-          UNIMPLEMENTED(); // Invalid encoding
+          UNIMPLEMENTED();  // Invalid encoding
       }
       break;
     }
     case SC:
     case BX: {
-      int offset = (instr->Bits(25,2) << 8) >> 6;
-      if(instr->Bit(0) == 1) {  // LK flag set 
+      int offset = (instr->Bits(25, 2) << 8) >> 6;
+      if (instr->Bit(0) == 1) {  // LK flag set
         special_reg_lr_ = get_pc() + 4;
       }
       set_pc(get_pc() + offset);
@@ -3694,25 +3698,25 @@ void Simulator::InstructionDecode(Instruction* instr) {
       int rs = instr->RSValue();
       int32_t rs_val = get_register(rs);
       int32_t ra_val = get_register(ra);
-      int sh = instr->Bits(15,11);
-      int mb = instr->Bits(10,6);
-      int me = instr->Bits(5,1);
+      int sh = instr->Bits(15, 11);
+      int mb = instr->Bits(10, 6);
+      int me = instr->Bits(5, 1);
       int rc = instr->Bit(0);
       // rotate left
-      int result = (rs_val<<sh) | (rs_val>>(32-sh));
+      int result = (rs_val << sh) | (rs_val >> (32-sh));
       int mask = 0;
-      if(mb < me+1) {
+      if (mb < me+1) {
         int bit = 0x80000000 >> mb;
-        for(; mb<=me; mb++) {
+        for (; mb <= me; mb++) {
           mask |= bit;
           bit >>= 1;
         }
-      } else if(mb == me+1) {
+      } else if (mb == me+1) {
          mask = 0xffffffff;
-      } else { // mb > me+1
+      } else {  // mb > me+1
         int bit = 0x80000000 >> (me+1);  // needs to be tested
         mask = 0xffffffff;
-        for(;me<mb;me++) {
+        for (;me < mb;me++) {
           mask ^= bit;
           bit >>= 1;
         }
@@ -3721,11 +3725,11 @@ void Simulator::InstructionDecode(Instruction* instr) {
       ra_val &= ~mask;
       result |= ra_val;
       set_register(ra, result);
-      if(rc) {
+      if (rc) {
         int bf = 0;
-        if(result < 0) { bf |= 0x80000000; }
-        if(result > 0) { bf |= 0x40000000; }
-        if(result == 0) { bf |= 0x20000000; }
+        if (result < 0) { bf |= 0x80000000; }
+        if (result > 0) { bf |= 0x40000000; }
+        if (result == 0) { bf |= 0x20000000; }
         condition_reg_ = (condition_reg_ & ~0xF0000000) | bf;
       }
       break;
@@ -3734,36 +3738,36 @@ void Simulator::InstructionDecode(Instruction* instr) {
       int ra = instr->RAValue();
       int rs = instr->RSValue();
       int32_t rs_val = get_register(rs);
-      int sh = instr->Bits(15,11);
-      int mb = instr->Bits(10,6);
-      int me = instr->Bits(5,1);
+      int sh = instr->Bits(15, 11);
+      int mb = instr->Bits(10, 6);
+      int me = instr->Bits(5, 1);
       int rc = instr->Bit(0);
       // rotate left
-      int result = (rs_val<<sh) | (rs_val>>(32-sh));
+      int result = (rs_val << sh) | (rs_val >> (32-sh));
       int mask = 0;
-      if(mb < me+1) {
+      if (mb < me+1) {
         int bit = 0x80000000 >> mb;
-        for(; mb<=me; mb++) {
+        for (; mb <= me; mb++) {
           mask |= bit;
           bit >>= 1;
         }
-      } else if(mb == me+1) {
+      } else if (mb == me+1) {
          mask = 0xffffffff;
-      } else { // mb > me+1 
+      } else {  // mb > me+1
         int bit = 0x80000000 >> (me+1);  // needs to be tested
         mask = 0xffffffff;
-        for(;me<mb;me++) {
+        for (;me < mb;me++) {
           mask ^= bit;
           bit >>= 1;
         }
       }
-      result &= mask;  
+      result &= mask;
       set_register(ra, result);
-      if(rc) {
+      if (rc) {
         int bf = 0;
-        if(result < 0) { bf |= 0x80000000; }
-        if(result > 0) { bf |= 0x40000000; }
-        if(result == 0) { bf |= 0x20000000; }
+        if (result < 0) { bf |= 0x80000000; }
+        if (result > 0) { bf |= 0x40000000; }
+        if (result == 0) { bf |= 0x20000000; }
         condition_reg_ = (condition_reg_ & ~0xF0000000) | bf;
       }
       break;
@@ -3773,7 +3777,7 @@ void Simulator::InstructionDecode(Instruction* instr) {
       int rt = instr->RTValue();
       int ra = instr->RAValue();
       int32_t ra_val = get_register(ra);
-      uint32_t im_val = instr->Bits(15,0);
+      uint32_t im_val = instr->Bits(15, 0);
       int32_t alu_out = ra_val | im_val;
       set_register(rt, alu_out);
       // todo - set condition based SO bit
@@ -3783,7 +3787,7 @@ void Simulator::InstructionDecode(Instruction* instr) {
       int rs= instr->RSValue();
       int ra = instr->RAValue();
       int32_t rs_val = get_register(rs);
-      uint32_t im_val = instr->Bits(15,0);
+      uint32_t im_val = instr->Bits(15, 0);
       int32_t alu_out = rs_val ^ im_val;
       set_register(ra, alu_out);
       // todo - set condition based SO bit
@@ -3794,7 +3798,7 @@ void Simulator::InstructionDecode(Instruction* instr) {
       int rs= instr->RSValue();
       int ra = instr->RAValue();
       int32_t rs_val = get_register(rs);
-      uint32_t im_val = instr->Bits(15,0);
+      uint32_t im_val = instr->Bits(15, 0);
       int32_t alu_out = rs_val & im_val;
       set_register(ra, alu_out);
       // todo - set condition based SO bit
@@ -3809,8 +3813,8 @@ void Simulator::InstructionDecode(Instruction* instr) {
       int ra = instr->RAValue();
       int rt = instr->RTValue();
       int32_t ra_val = get_register(ra);
-      int offset = (instr->Bits(15,0) << 16) >> 16;
-      if(ra != 0) {
+      int offset = (instr->Bits(15, 0) << 16) >> 16;
+      if (ra != 0) {
         offset += ra_val;
       }
       set_register(rt, ReadW(offset, instr));
@@ -3820,8 +3824,8 @@ void Simulator::InstructionDecode(Instruction* instr) {
       int ra = instr->RAValue();
       int rt = instr->RTValue();
       int32_t ra_val = get_register(ra);
-      int offset = (instr->Bits(15,0) << 16) >> 16;
-      if(ra != 0) {
+      int offset = (instr->Bits(15, 0) << 16) >> 16;
+      if (ra != 0) {
         offset += ra_val;
         set_register(ra, offset);
       }
@@ -3832,8 +3836,8 @@ void Simulator::InstructionDecode(Instruction* instr) {
       int ra = instr->RAValue();
       int rt = instr->RTValue();
       int32_t ra_val = get_register(ra);
-      int offset = (instr->Bits(15,0) << 16) >> 16;
-      if(ra != 0) {
+      int offset = (instr->Bits(15, 0) << 16) >> 16;
+      if (ra != 0) {
         offset += ra_val;
       }
       set_register(rt, ReadB(offset) & 0xFF);
@@ -3845,9 +3849,9 @@ void Simulator::InstructionDecode(Instruction* instr) {
       int rs = instr->RSValue();
       int32_t ra_val = get_register(ra);
       int32_t rs_val = get_register(rs);
-      int offset = (instr->Bits(15,0) << 16) >> 16;
-      if(ra != 0) {
-	offset += ra_val;
+      int offset = (instr->Bits(15, 0) << 16) >> 16;
+      if (ra != 0) {
+        offset += ra_val;
       }
       WriteW(offset, rs_val, instr);
       // printf("r%d %08x -> %08x\n", rs, rs_val, offset); // 0xdead
@@ -3858,8 +3862,8 @@ void Simulator::InstructionDecode(Instruction* instr) {
       int rs = instr->RSValue();
       int32_t ra_val = get_register(ra);
       int32_t rs_val = get_register(rs);
-      int offset = (instr->Bits(15,0) << 16) >> 16;
-      if(ra != 0) {
+      int offset = (instr->Bits(15, 0) << 16) >> 16;
+      if (ra != 0) {
         offset += ra_val;
         set_register(ra, offset);
       }
@@ -3871,8 +3875,8 @@ void Simulator::InstructionDecode(Instruction* instr) {
       int rs = instr->RSValue();
       int32_t ra_val = get_register(ra);
       int8_t rs_val = get_register(rs);
-      int offset = (instr->Bits(15,0) << 16) >> 16;
-      if(ra != 0) {
+      int offset = (instr->Bits(15, 0) << 16) >> 16;
+      if (ra != 0) {
         offset += ra_val;
       }
       WriteB(offset, rs_val);
@@ -3883,8 +3887,8 @@ void Simulator::InstructionDecode(Instruction* instr) {
       int ra = instr->RAValue();
       int rt = instr->RTValue();
       int32_t ra_val = get_register(ra);
-      int offset = (instr->Bits(15,0) << 16) >> 16;
-      if(ra != 0) {
+      int offset = (instr->Bits(15, 0) << 16) >> 16;
+      if (ra != 0) {
         offset += ra_val;
       }
       set_register(rt, ReadH(offset, instr));
@@ -3898,8 +3902,8 @@ void Simulator::InstructionDecode(Instruction* instr) {
       int rs = instr->RSValue();
       int32_t ra_val = get_register(ra);
       int16_t rs_val = get_register(rs);
-      int offset = (instr->Bits(15,0) << 16) >> 16;
-      if(ra != 0) {
+      int offset = (instr->Bits(15, 0) << 16) >> 16;
+      if (ra != 0) {
         offset += ra_val;
       }
       WriteH(offset, rs_val, instr);
@@ -3913,9 +3917,9 @@ void Simulator::InstructionDecode(Instruction* instr) {
     case LFD: {
       int frt = instr->RTValue();
       int ra = instr->RAValue();
-      int32_t offset = (instr->Bits(15,0) << 16) >> 16;
+      int32_t offset = (instr->Bits(15, 0) << 16) >> 16;
       int32_t ra_val = get_register(ra);
-      double *dptr = (double*)ReadDW(ra_val + offset);
+      double *dptr = reinterpret_cast<double*>ReadDW(ra_val + offset);
       set_d_register_from_double(frt, static_cast<double>(*dptr));
       break;
     }
@@ -3925,10 +3929,10 @@ void Simulator::InstructionDecode(Instruction* instr) {
     case STFD: {
       int frt = instr->RTValue();
       int ra = instr->RAValue();
-      int32_t offset = (instr->Bits(15,0) << 16) >> 16;
+      int32_t offset = (instr->Bits(15, 0) << 16) >> 16;
       int32_t ra_val = get_register(ra);
       double frt_val = get_double_from_d_register(frt);
-      int32_t *p = (int32_t *)(&frt_val);
+      int32_t *p =  reinterpret_cast<int32_t *>(&frt_val);
       WriteDW(ra_val + offset, (int32_t)(p[0]), (int32_t)(p[1]));
       break;
     }
@@ -3999,7 +4003,7 @@ int32_t Simulator::Call(byte* entry, int argument_count, ...) {
   int original_stack = get_register(sp);
   // Compute position of stack on entry to generated code.
   int entry_stack = (original_stack - (argument_count - 4) * sizeof(int32_t)
-    - 8); // -8 extra stack is a hack for the LR slot + old SP on PPC
+    - 8);  // -8 extra stack is a hack for the LR slot + old SP on PPC
   if (OS::ActivationFrameAlignment() != 0) {
     entry_stack &= -OS::ActivationFrameAlignment();
   }
@@ -4036,72 +4040,72 @@ int32_t Simulator::Call(byte* entry, int argument_count, ...) {
   int32_t r28_val = get_register(r28);
   int32_t r29_val = get_register(r29);
   int32_t r30_val = get_register(r30);
-	  int32_t fp_val = get_register(fp);
+  int32_t fp_val = get_register(fp);
 
-	  // Set up the callee-saved registers with a known value. To be able to check
-	  // that they are preserved properly across JS execution.
-	  int32_t callee_saved_value = icount_;
-	  set_register(r14, callee_saved_value);
-	//  set_register(r15, callee_saved_value);  hack for r15 pc
-	  set_register(r16, callee_saved_value);
-	  set_register(r17, callee_saved_value);
-	  set_register(r18, callee_saved_value);
-	  set_register(r19, callee_saved_value);
-	//  set_register(r20, callee_saved_value); -- this is cp
-	  set_register(r21, callee_saved_value);
-//	  set_register(r22, callee_saved_value);
-	  set_register(r23, callee_saved_value);
-	  set_register(r24, callee_saved_value);
-	  set_register(r25, callee_saved_value);
-	  set_register(r26, callee_saved_value);
-	  set_register(r27, callee_saved_value);
-	  set_register(r28, callee_saved_value);
-	  set_register(r29, callee_saved_value);
-	  set_register(r30, callee_saved_value);
-	  set_register(fp, callee_saved_value);
+  // Set up the callee-saved registers with a known value. To be able to check
+  // that they are preserved properly across JS execution.
+  int32_t callee_saved_value = icount_;
+  set_register(r14, callee_saved_value);
+//  set_register(r15, callee_saved_value);  hack for r15 pc
+  set_register(r16, callee_saved_value);
+  set_register(r17, callee_saved_value);
+  set_register(r18, callee_saved_value);
+  set_register(r19, callee_saved_value);
+//  set_register(r20, callee_saved_value); -- this is cp
+  set_register(r21, callee_saved_value);
+//  set_register(r22, callee_saved_value);
+  set_register(r23, callee_saved_value);
+  set_register(r24, callee_saved_value);
+  set_register(r25, callee_saved_value);
+  set_register(r26, callee_saved_value);
+  set_register(r27, callee_saved_value);
+  set_register(r28, callee_saved_value);
+  set_register(r29, callee_saved_value);
+  set_register(r30, callee_saved_value);
+  set_register(fp, callee_saved_value);
 
-	  // Start the simulation
-	  Execute();
+  // Start the simulation
+  Execute();
 
-	  // Check that the callee-saved registers have been preserved.
-	  CHECK_EQ(callee_saved_value, get_register(r14));
-	//  CHECK_EQ(callee_saved_value, get_register(r15));  hack for r15 PC
-	  CHECK_EQ(callee_saved_value, get_register(r16));
-	  CHECK_EQ(callee_saved_value, get_register(r17));
-	  CHECK_EQ(callee_saved_value, get_register(r18));
-	  CHECK_EQ(callee_saved_value, get_register(r19));
-	  // CHECK_EQ(callee_saved_value, get_register(r20)); -- cp
-	  CHECK_EQ(callee_saved_value, get_register(r21));
-//	  CHECK_EQ(callee_saved_value, get_register(r22));
-	  CHECK_EQ(callee_saved_value, get_register(r23));
-	  CHECK_EQ(callee_saved_value, get_register(r24));
-	  CHECK_EQ(callee_saved_value, get_register(r25));
-	  CHECK_EQ(callee_saved_value, get_register(r26));
-	  CHECK_EQ(callee_saved_value, get_register(r27));
-	  CHECK_EQ(callee_saved_value, get_register(r28));
-	  CHECK_EQ(callee_saved_value, get_register(r29));
-	  CHECK_EQ(callee_saved_value, get_register(r30));
-	  CHECK_EQ(callee_saved_value, get_register(fp));
+  // Check that the callee-saved registers have been preserved.
+  CHECK_EQ(callee_saved_value, get_register(r14));
+//  CHECK_EQ(callee_saved_value, get_register(r15));  hack for r15 PC
+  CHECK_EQ(callee_saved_value, get_register(r16));
+  CHECK_EQ(callee_saved_value, get_register(r17));
+  CHECK_EQ(callee_saved_value, get_register(r18));
+  CHECK_EQ(callee_saved_value, get_register(r19));
+  // CHECK_EQ(callee_saved_value, get_register(r20)); -- cp
+  CHECK_EQ(callee_saved_value, get_register(r21));
+//  CHECK_EQ(callee_saved_value, get_register(r22));
+  CHECK_EQ(callee_saved_value, get_register(r23));
+  CHECK_EQ(callee_saved_value, get_register(r24));
+  CHECK_EQ(callee_saved_value, get_register(r25));
+  CHECK_EQ(callee_saved_value, get_register(r26));
+  CHECK_EQ(callee_saved_value, get_register(r27));
+  CHECK_EQ(callee_saved_value, get_register(r28));
+  CHECK_EQ(callee_saved_value, get_register(r29));
+  CHECK_EQ(callee_saved_value, get_register(r30));
+  CHECK_EQ(callee_saved_value, get_register(fp));
 
-	  // Restore callee-saved registers with the original value.
-	  set_register(r14, r14_val);
-	//  set_register(r15, r15_val);  hack for R15 PC
-	  set_register(r16, r16_val);
-	  set_register(r17, r17_val);
-	  set_register(r18, r18_val);
-	  set_register(r19, r19_val);
-	  // set_register(r20, r20_val); -- cp
-	  set_register(r21, r21_val);
-//	  set_register(r22, r22_val);
-	  set_register(r23, r23_val);
-	  set_register(r24, r24_val);
-	  set_register(r25, r25_val);
-	  set_register(r26, r26_val);
-	  set_register(r27, r27_val);
-	  set_register(r28, r28_val);
-	  set_register(r29, r29_val);
-	  set_register(r30, r30_val);
-	  set_register(fp, fp_val);
+  // Restore callee-saved registers with the original value.
+  set_register(r14, r14_val);
+//  set_register(r15, r15_val);  hack for R15 PC
+  set_register(r16, r16_val);
+  set_register(r17, r17_val);
+  set_register(r18, r18_val);
+  set_register(r19, r19_val);
+  // set_register(r20, r20_val); -- cp
+  set_register(r21, r21_val);
+// set_register(r22, r22_val);
+  set_register(r23, r23_val);
+  set_register(r24, r24_val);
+  set_register(r25, r25_val);
+  set_register(r26, r26_val);
+  set_register(r27, r27_val);
+  set_register(r28, r28_val);
+  set_register(r29, r29_val);
+  set_register(r30, r30_val);
+  set_register(fp, fp_val);
 
   // Pop stack passed arguments.
   CHECK_EQ(entry_stack, get_register(sp));
