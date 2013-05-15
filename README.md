@@ -6,7 +6,7 @@ Port of Google V8 javascript engine to PowerPC
 May 14th 79% of the tests were passing. 
 
 Compile code:<br><code>
-make -j8 ppc snapshot=off regexp=interpreted
+make dependencies; make -j8 ppc snapshot=off regexp=interpreted
 </code>
 
 Test code:<br><code>
