@@ -2270,7 +2270,7 @@ void Simulator::DecodeExt4(Instruction* instr) {
       int frt = instr->RTValue();
       int frb = instr->RBValue();
       double frb_val = get_double_from_d_register(frb);
-      float frt_val = static_cast<float>frb_val;
+      float frt_val = static_cast<float>(frb_val);
       double *p = reinterpret_cast<double*>(&frt_val);
       set_d_register_from_double(frt, *p);
       return;
@@ -2298,7 +2298,7 @@ void Simulator::DecodeExt4(Instruction* instr) {
       int frb = instr->RBValue();
       double frb_val = get_double_from_d_register(frb);
       int64_t floor_val = (int64_t)frb_val;
-      double frt_val = static_cast<double>floor_val;
+      double frt_val = static_cast<double>(floor_val);
       set_d_register_from_double(frt, frt_val);
       return;
     }
@@ -3919,7 +3919,7 @@ void Simulator::InstructionDecode(Instruction* instr) {
       int ra = instr->RAValue();
       int32_t offset = (instr->Bits(15, 0) << 16) >> 16;
       int32_t ra_val = get_register(ra);
-      double *dptr = reinterpret_cast<double*>ReadDW(ra_val + offset);
+      double *dptr = reinterpret_cast<double*>(ReadDW(ra_val + offset));
       set_d_register_from_double(frt, static_cast<double>(*dptr));
       break;
     }
