@@ -469,28 +469,28 @@ int Decoder::FormatOption(Instruction* instr, const char* format) {
     case 'D': {
       return FormatFPRegister(instr, format);
     }
-    case 'i': { // int16
-      int32_t value = (instr->Bits(15,0) << 16) >> 16;
+    case 'i': {  // int16
+      int32_t value = (instr->Bits(15, 0) << 16) >> 16;
       out_buffer_pos_ += OS::SNPrintF(out_buffer_ + out_buffer_pos_,
                                       "%d", value);
       return 5;
     }
-    case 'u': { // uint16
-      int32_t value = instr->Bits(15,0);
+    case 'u': {  // uint16
+      int32_t value = instr->Bits(15, 0);
       out_buffer_pos_ += OS::SNPrintF(out_buffer_ + out_buffer_pos_,
                                       "%d", value);
       return 6;
     }
     case 'l': {
       // Link (LK) Bit 0
-      if(instr->Bit(0) == 1) {
+      if (instr->Bit(0) == 1) {
         Print("l");
       }
       return 1;
     }
     case 'a': {
       // Absolute Address Bit 1
-      if(instr->Bit(1) == 1) {
+      if (instr->Bit(1) == 1) {
         Print("a");
       }
       return 1;
@@ -499,7 +499,7 @@ int Decoder::FormatOption(Instruction* instr, const char* format) {
       // target26 or target16
       ASSERT(STRING_STARTS_WITH(format, "target"));
       if ((format[6] == '2') && (format[7] == '6')) {
-        int off = ((instr->Bits(25, 2)) << 8 ) >> 6;
+        int off = ((instr->Bits(25, 2)) << 8) >> 6;
         out_buffer_pos_ += OS::SNPrintF(out_buffer_ + out_buffer_pos_,
                                         "%+d -> %s",
                                         off,
@@ -507,7 +507,7 @@ int Decoder::FormatOption(Instruction* instr, const char* format) {
                                         reinterpret_cast<byte*>(instr) + off));
         return 8;
       } else if ((format[6] == '1') && (format[7] == '6')) {
-        int off = ((instr->Bits(15, 2)) << 18 ) >> 16;
+        int off = ((instr->Bits(15, 2)) << 18) >> 16;
         out_buffer_pos_ += OS::SNPrintF(out_buffer_ + out_buffer_pos_,
                                         "%+d -> %s",
                                         off,
@@ -515,21 +515,21 @@ int Decoder::FormatOption(Instruction* instr, const char* format) {
                                         reinterpret_cast<byte*>(instr) + off));
         return 8;
       }
-     case 's': { // SH Bits 15-11
+     case 's': {  // SH Bits 15-11
        ASSERT(format[1] == 'h');
-       int32_t value = (instr->Bits(15,11) << 26) >> 26;
+       int32_t value = (instr->Bits(15, 11) << 26) >> 26;
        out_buffer_pos_ += OS::SNPrintF(out_buffer_ + out_buffer_pos_,
                                      "%d", value);
        return 2;
      }
      case 'm': {
        int32_t value=0;
-       if(format[1] == 'e') {  // ME Bits 10-6
-         value = (instr->Bits(10,6) << 26) >> 26;
-       } else if(format[1] == 'b') {  // MB Bits 5-1
-         value = (instr->Bits(5,1) << 26) >> 26;
+       if (format[1] == 'e') {  // ME Bits 10-6
+         value = (instr->Bits(10, 6) << 26) >> 26;
+       } else if (format[1] == 'b') {  // MB Bits 5-1
+         value = (instr->Bits(5, 1) << 26) >> 26;
        } else {
-         UNREACHABLE(); // bad format
+         UNREACHABLE();  // bad format
        }
        out_buffer_pos_ += OS::SNPrintF(out_buffer_ + out_buffer_pos_,
                                      "%d", value);
@@ -784,10 +784,10 @@ void Decoder::Format(Instruction* instr, const char* format) {
 // The disassembler may end up decoding data inlined in the code. We do not want
 // it to crash if the data does not ressemble any known instruction.
 #define VERIFY(condition) \
-if(!(condition)) {        \
-  Unknown(instr);         \
-  return;                 \
-}
+  if (!(condition)) {	  \
+    Unknown(instr);	  \
+    return;		  \
+  }
 
 
 // For currently unimplemented decodings the disassembler calls Unknown(instr)
@@ -798,11 +798,11 @@ void Decoder::Unknown(Instruction* instr) {
 
 // PowerPC
 void Decoder::DecodeExt1(Instruction* instr) {
-  switch(instr->Bits(10,1) << 1) {
+  switch (instr->Bits(10, 1) << 1) {
     case MCRF:
       Unknown(instr);  // not used by V8
     case BCLRX: {
-      switch(instr->Bits(25,21) << 21) {
+      switch (instr->Bits(25, 21) << 21) {
         case DCBNZF:
         case DCBEZF:
         case BF:
@@ -815,7 +815,7 @@ void Decoder::DecodeExt1(Instruction* instr) {
           break;
         }
         case BA: {
-          if(instr->Bit(0) == 1) {
+          if (instr->Bit(0) == 1) {
             Format(instr, "blrl");
           } else {
             Format(instr, "blr");
@@ -826,7 +826,7 @@ void Decoder::DecodeExt1(Instruction* instr) {
       break;
     }
     case BCCTRX: {
-      switch(instr->Bits(25,21) << 21) {
+      switch (instr->Bits(25, 21) << 21) {
         case DCBNZF:
         case DCBEZF:
         case BF:
@@ -839,7 +839,7 @@ void Decoder::DecodeExt1(Instruction* instr) {
           break;
         }
         case BA: {
-          if(instr->Bit(0) == 1) {
+          if (instr->Bit(0) == 1) {
             Format(instr, "bctrl");
           } else {
             Format(instr, "bctr");
@@ -872,9 +872,8 @@ void Decoder::DecodeExt1(Instruction* instr) {
 }
 
 void Decoder::DecodeExt2(Instruction* instr) {
-
    // Some encodings are 10-1 bits, handle those first
-   switch(instr->Bits(10,1) << 1) {
+   switch (instr->Bits(10, 1) << 1) {
     case SRWX: {
       Format(instr, "srw'.    'ra,'rs,'rb");
       return;
@@ -890,7 +889,7 @@ void Decoder::DecodeExt2(Instruction* instr) {
   }
 
 // ?? are all of these xo_form?
-  switch(instr->Bits(9,1) << 1) {
+  switch (instr->Bits(9, 1) << 1) {
     case CMP: {
       Format(instr, "cmp     'ra,'rb");
       break;
@@ -936,7 +935,7 @@ void Decoder::DecodeExt2(Instruction* instr) {
       break;
     }
     case ORX: { 
-      if( instr->RTValue() == instr->RBValue() ) {
+      if ( instr->RTValue() == instr->RBValue() ) {
         Format(instr, "mr      'ra,'rb");
       } else {
         Format(instr, "or      'ra,'rs,'rb");
@@ -944,8 +943,8 @@ void Decoder::DecodeExt2(Instruction* instr) {
       break;
     }
     case MFSPR: {
-      int spr = instr->Bits(20,11);
-      if(256 == spr) {
+      int spr = instr->Bits(20, 11);
+      if (256 == spr) {
         Format(instr, "mflr    'rt");
       } else {
         Format(instr, "mfspr   'rt ??");
@@ -953,8 +952,8 @@ void Decoder::DecodeExt2(Instruction* instr) {
       break;
     }
     case MTSPR: {
-      int spr = instr->Bits(20,11);
-      if(256 == spr) {
+      int spr = instr->Bits(20, 11);
+      if (256 == spr) {
         Format(instr, "mtlr    'rt");
       } else if (288 == spr) {
         Format(instr, "mtctr   'rt");
@@ -970,7 +969,7 @@ void Decoder::DecodeExt2(Instruction* instr) {
 }
 
 void Decoder::DecodeExt4(Instruction* instr) {
-  switch(instr->Bits(10,1) << 1) {
+  switch (instr->Bits(10, 1) << 1) {
     case FCMPU: {
       Format(instr, "fcmpu     'Da, 'Db");
       break;
@@ -1729,7 +1728,7 @@ int Decoder::InstructionDecode(byte* instr_ptr) {
     }
     case ADDICx:
     case ADDI: {
-      if( instr->RAValue() == 0 ) {
+      if ( instr->RAValue() == 0 ) {
         // this is load immediate
         Format(instr, "li      'rt, 'int16");
       } else {
@@ -1738,7 +1737,7 @@ int Decoder::InstructionDecode(byte* instr_ptr) {
       break;
     }
     case ADDIS: {
-      if( instr->RAValue() == 0 ) {
+      if ( instr->RAValue() == 0 ) {
         Format(instr, "lis     'rt, 'int16");
       } else {
         Format(instr, "addis   'rt, 'ra, 'int16");
@@ -1746,38 +1745,38 @@ int Decoder::InstructionDecode(byte* instr_ptr) {
       break;
     }
     case BCX: {
-      int bo = instr->Bits(25,21) << 21;
-      int bi = instr->Bits(20,16);
-      switch(bi) {
+      int bo = instr->Bits(25, 21) << 21;
+      int bi = instr->Bits(20, 16);
+      switch (bi) {
         case 2:
         case 30:
-          if(BT == bo) {
+          if (BT == bo) {
             Format(instr, "beq'l'a 'target16");
             break;
           }
-          if(BF == bo) {
+          if (BF == bo) {
             Format(instr, "bne'l'a 'target16");
             break;
           }
           Format(instr, "bc'l'a 'target16");
           break;
         case 29:
-          if(BT == bo) {
+          if (BT == bo) {
             Format(instr, "bgt'l'a 'target16");
             break;
           }
-          if(BF == bo) {
+          if (BF == bo) {
             Format(instr, "ble'l'a 'target16");
             break;
           }
           Format(instr, "bc'l'a 'target16");
           break;
         case 28:
-          if(BT == bo) {
+          if (BT == bo) {
             Format(instr, "blt'l'a 'target16");
             break;
           }
-          if(BF == bo) {
+          if (BF == bo) {
             Format(instr, "bge'l'a 'target16");
             break;
           }

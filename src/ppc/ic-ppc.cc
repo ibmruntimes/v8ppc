@@ -150,7 +150,7 @@ static void GenerateDictionaryLoad(MacroAssembler* masm,
       StringDictionary::kElementsStartIndex * kPointerSize;
   const int kDetailsOffset = kElementsStartOffset + 2 * kPointerSize;
   __ lwz(scratch1, FieldMemOperand(scratch2, kDetailsOffset));
-  __ mr(r0,scratch2);
+  __ mr(r0, scratch2);
   __ mov(scratch2, Operand(PropertyDetails::TypeField::kMask << kSmiTagSize));
   __ and_(scratch2, scratch1, scratch2);
   __ cmpi(scratch2, Operand(0));
@@ -1508,7 +1508,7 @@ void KeyedStoreIC::GenerateGeneric(MacroAssembler* masm,
   // Check that the receiver does not require access checks.  We need
   // to do this because this generic stub does not perform map checks.
   __ lbz(ip, FieldMemOperand(receiver_map, Map::kBitFieldOffset));
-  __ andi(r0,ip, Operand(1 << Map::kIsAccessCheckNeeded));
+  __ andi(r0, ip, Operand(1 << Map::kIsAccessCheckNeeded));
   __ cmpi(r0, Operand(0));
   __ bne(&slow);
   // Check if the object is a JS array or not.
@@ -1547,13 +1547,13 @@ void KeyedStoreIC::GenerateGeneric(MacroAssembler* masm,
   __ bge(&slow);
   __ lwz(elements_map, FieldMemOperand(elements, HeapObject::kMapOffset));
   __ mov(ip, Operand(masm->isolate()->factory()->fixed_array_map()));
-  __ cmp(elements_map, ip); // PPC - I think I can re-use ip here
+  __ cmp(elements_map, ip);  // PPC - I think I can re-use ip here
   __ bne(&check_if_double_array);
   __ jmp(&fast_object_grow);
 
   __ bind(&check_if_double_array);
   __ mov(ip, Operand(masm->isolate()->factory()->fixed_double_array_map()));
-  __ cmp(elements_map, ip); // PPC - another ip re-use
+  __ cmp(elements_map, ip);  // PPC - another ip re-use
   __ bne(&slow);
   __ jmp(&fast_double_grow);
 
@@ -1816,7 +1816,7 @@ void PatchInlinedSmiCode(Address address, InlinedSmiCheck check) {
   // and vice-versa to be disabled again.
   CodePatcher patcher(patch_address, 2);
   Register reg = Assembler::GetRA(instr_at_patch);
- if (check == ENABLE_INLINED_SMI_CHECK) {
+  if (check == ENABLE_INLINED_SMI_CHECK) {
     ASSERT(Assembler::IsCmpRegister(instr_at_patch));
     ASSERT_EQ(Assembler::GetRA(instr_at_patch).code(),
               Assembler::GetRB(instr_at_patch).code());

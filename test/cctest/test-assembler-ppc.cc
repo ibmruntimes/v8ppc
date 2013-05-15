@@ -207,7 +207,7 @@ TEST(3) {
 
   // restore frame
   __ add(r11, fp, Operand(16));
-  __ lwz(fp, MemOperand(r11,-4));
+  __ lwz(fp, MemOperand(r11, -4));
   __ mr(sp, r11);
   __ blr();
 
@@ -1038,6 +1038,6 @@ TEST(12) {
   __ bind(&target);
   __ nop();
 }
-#endif // roohack
+#endif  // roohack
 
 #undef __
