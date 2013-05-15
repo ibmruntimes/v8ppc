@@ -523,7 +523,7 @@ int Decoder::FormatOption(Instruction* instr, const char* format) {
        return 2;
      }
      case 'm': {
-       int32_t value=0;
+       int32_t value = 0;
        if (format[1] == 'e') {  // ME Bits 10-6
          value = (instr->Bits(10, 6) << 26) >> 26;
        } else if (format[1] == 'b') {  // MB Bits 5-1
@@ -784,9 +784,9 @@ void Decoder::Format(Instruction* instr, const char* format) {
 // The disassembler may end up decoding data inlined in the code. We do not want
 // it to crash if the data does not ressemble any known instruction.
 #define VERIFY(condition) \
-  if (!(condition)) {	  \
-    Unknown(instr);	  \
-    return;		  \
+  if (!(condition)) {     \
+    Unknown(instr);       \
+    return;               \
   }
 
 
@@ -872,8 +872,8 @@ void Decoder::DecodeExt1(Instruction* instr) {
 }
 
 void Decoder::DecodeExt2(Instruction* instr) {
-   // Some encodings are 10-1 bits, handle those first
-   switch (instr->Bits(10, 1) << 1) {
+  // Some encodings are 10-1 bits, handle those first
+  switch (instr->Bits(10, 1) << 1) {
     case SRWX: {
       Format(instr, "srw'.    'ra,'rs,'rb");
       return;
@@ -888,7 +888,7 @@ void Decoder::DecodeExt2(Instruction* instr) {
     }
   }
 
-// ?? are all of these xo_form?
+  // ?? are all of these xo_form?
   switch (instr->Bits(9, 1) << 1) {
     case CMP: {
       Format(instr, "cmp     'ra,'rb");
@@ -934,7 +934,7 @@ void Decoder::DecodeExt2(Instruction* instr) {
       Format(instr, "xor'.    'ra,'rs,'rb");
       break;
     }
-    case ORX: { 
+    case ORX: {
       if ( instr->RTValue() == instr->RBValue() ) {
         Format(instr, "mr      'ra,'rb");
       } else {
@@ -1782,7 +1782,7 @@ int Decoder::InstructionDecode(byte* instr_ptr) {
           }
           Format(instr, "bc'l'a 'target16");
           break;
-        default: 
+        default:
           Format(instr, "bc'l'a 'target16");
           break;
       }

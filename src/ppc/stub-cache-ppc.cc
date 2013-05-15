@@ -2333,7 +2333,7 @@ Handle<Code> CallStubCompiler::CompileFastApiCall(
 
 #if defined(V8_HOST_ARCH_PPC)
   // PPC passes C++ object by reference not value
-// roohack - this is wrong  __ add(r4, sp, Operand((argc + kFastApiCallArguments) * kPointerSize));
+  // roohack - this is wrong  __ add(r4, sp, Operand((argc + kFastApiCallArguments) * kPointerSize));
 #endif
 
   GenerateFastApiDirectCall(masm(), optimization, argc);
@@ -3772,11 +3772,11 @@ void KeyedLoadStubCompiler::GenerateLoadExternalArray(
       __ sub(r6, r3, Operand(kHeapObjectTag));
       __ vstr(d0, r6, HeapNumber::kValueOffset);
       __ Ret();
-    } else 
+    } else {
 #else
-    PPCPORT_UNIMPLEMENTED(); // penguin: implement above sequence using PPC FPR
+    // penguin: implement above sequence using PPC FPR
+    PPCPORT_UNIMPLEMENTED();
 #endif
-    {
       Register dst1 = r4;
       Register dst2 = r6;
       FloatingPointHelper::Destination dest =
@@ -3791,7 +3791,9 @@ void KeyedLoadStubCompiler::GenerateLoadExternalArray(
       __ stw(dst1, FieldMemOperand(r3, HeapNumber::kMantissaOffset));
       __ stw(dst2, FieldMemOperand(r3, HeapNumber::kExponentOffset));
       __ Ret();
+#ifdef PENGUIN_CLEANUP
     }
+#endif
   } else if (elements_kind == EXTERNAL_UNSIGNED_INT_ELEMENTS) {
     // The test is different for unsigned int values. Since we need
     // the value to be in the range of a positive smi, we can't
@@ -3878,11 +3880,11 @@ void KeyedLoadStubCompiler::GenerateLoadExternalArray(
 
       __ mr(r3, r5);
       __ Ret();
-    } else
+    } else {
 #else
-      PPCPORT_UNIMPLEMENTED(); // penguin: implement above sequence using PPC FPR
+      // penguin: implement sequence using PPC FPR
+      PPCPORT_UNIMPLEMENTED();
 #endif
-    {
       // Allocate a HeapNumber for the result. Don't use r3 and r4 as
       // AllocateHeapNumber clobbers all registers - also when jumping due to
       // exhausted young space.
@@ -3935,7 +3937,9 @@ void KeyedLoadStubCompiler::GenerateLoadExternalArray(
 
       __ mr(r3, r6);
       __ Ret();
+#ifdef PENGUIN_CLEANUP
     }
+#endif
   } else if (elements_kind == EXTERNAL_DOUBLE_ELEMENTS) {
     if (CpuFeatures::IsSupported(VFP2)) {
       CpuFeatures::Scope scope(VFP2);
@@ -4177,11 +4181,11 @@ void KeyedStoreStubCompiler::GenerateStoreExternalArray(
       // Entry registers are intact, r3 holds the value which is the return
       // value.
       __ Ret();
-    } else 
+    } else {
 #else
-      PPCPORT_UNIMPLEMENTED(); // penguin: implement above sequence using PPC FPR
+      // penguin: implement above sequence using PPC FPR
+      PPCPORT_UNIMPLEMENTED();
 #endif
-    {
       // VFP3 is not available do manual conversions.
       __ lwz(r8, FieldMemOperand(value, HeapNumber::kExponentOffset));
       __ lwz(r9, FieldMemOperand(value, HeapNumber::kMantissaOffset));
@@ -4322,7 +4326,9 @@ void KeyedStoreStubCompiler::GenerateStoreExternalArray(
             break;
         }
       }
+#ifdef PENGUIN_CLEANUP
     }
+#endif
   }
 
   // Slow case, key and receiver still in r3 and r4.

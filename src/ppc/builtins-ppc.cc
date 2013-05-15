@@ -297,7 +297,7 @@ static void AllocateJSArray(MacroAssembler* masm,
     __ jmp(&entry);
     __ bind(&loop);
     __ stw(scratch1, MemOperand(elements_array_storage));
-    __ add(elements_array_storage, elements_array_storage, 
+    __ add(elements_array_storage, elements_array_storage,
            Operand(kPointerSize));
     __ bind(&entry);
     __ cmp(elements_array_storage, elements_array_end);
@@ -367,7 +367,7 @@ static void ArrayNativeCode(MacroAssembler* masm,
   // Handle construction of an empty array of a certain size. Bail out if size
   // is too large to actually allocate an elements array.
   STATIC_ASSERT(kSmiTag == 0);
-  __ mov(r0, Operand(JSObject::kInitialMaxFastElementArray << kSmiTagSize)); 
+  __ mov(r0, Operand(JSObject::kInitialMaxFastElementArray << kSmiTagSize));
   __ cmp(r5, r0);
   __ bge(call_generic_code);
 
@@ -393,7 +393,7 @@ static void ArrayNativeCode(MacroAssembler* masm,
 
   // Handle construction of an array from a list of arguments.
   __ bind(&argc_two_or_more);
-  __ slwi(r5, r3, Operand(kSmiTagSize));  // Convet argc to a smi. 
+  __ slwi(r5, r3, Operand(kSmiTagSize));  // Convet argc to a smi.
 
   // r3: argc
   // r4: constructor
@@ -499,7 +499,7 @@ void Builtins::Generate_InternalArrayCode(MacroAssembler* masm) {
     // Initial map for the builtin InternalArray functions should be maps.
     __ lwz(r5, FieldMemOperand(r4, JSFunction::kPrototypeOrInitialMapOffset));
     STATIC_ASSERT(kSmiTagMask < 0x8000);
-    __ andi(r0, r5, Operand(kSmiTagMask)); 
+    __ andi(r0, r5, Operand(kSmiTagMask));
     __ cmpi(r0, Operand(0));
     __ Assert(ne, "Unexpected initial map for InternalArray function");
     __ CompareObjectType(r5, r6, r7, MAP_TYPE);
@@ -1797,7 +1797,7 @@ void Builtins::Generate_ArgumentsAdaptorTrampoline(MacroAssembler* masm) {
     // r5: expected number of arguments
     // r6: code entry to call
     __ slwi(r3, r3, Operand(kPointerSizeLog2 - kSmiTagSize));
-    __ add(r3, r3, fp); 
+    __ add(r3, r3, fp);
     // adjust for return address and receiver
     __ add(r3, r3, Operand(2 * kPointerSize));
     __ slwi(r5, r5, Operand(kPointerSizeLog2));

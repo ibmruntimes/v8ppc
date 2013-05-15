@@ -71,12 +71,10 @@ namespace internal {
 // it in a variable with the given name.  If the object is not of the
 // expected type call IllegalOperation and return.
 #define CONVERT_ARG_CHECKED(Type, name, index)                       \
-  PPCPORT_CHECK(args[index] != NULL);				     \
   RUNTIME_ASSERT(args[index]->Is##Type());                           \
   Type* name = Type::cast(args[index]);
 
 #define CONVERT_ARG_HANDLE_CHECKED(Type, name, index)                \
-  PPCPORT_CHECK(args[index] != NULL);				     \
   RUNTIME_ASSERT(args[index]->Is##Type());                           \
   Handle<Type> name = args.at<Type>(index);
 

@@ -271,7 +271,7 @@ void MacroAssembler::Move(DoubleRegister dst, DoubleRegister src) {
 
 void MacroAssembler::And(Register dst, Register src1, const Operand& src2,
                          Condition cond) {
-  ASSERT(cond=al);
+  ASSERT(cond = al);
   if (!src2.is_reg() &&
       !src2.must_use_constant_pool(this) &&
       src2.immediate() == 0) {
@@ -597,7 +597,7 @@ void MacroAssembler::RememberedSetHelper(Register object,  // For debug tests.
     beq(&done);
   } else {
     ASSERT(and_then == kReturnAtEnd);
-    b(eq,&done);
+    b(eq, &done);
   }
   mflr(r0);
   push(r0);
@@ -691,7 +691,7 @@ MemOperand MacroAssembler::SafepointRegistersAndDoublesSlot(Register reg) {
 
 void MacroAssembler::Ldrd(Register dst1, Register dst2,
                           const MemOperand& src, Condition cond) {
-  ldr(dst1, MemOperand(dst2), al); // PPC - bogus instruction to cause error
+  ldr(dst1, MemOperand(dst2), al);  // PPC - bogus instruction to cause error
 #if 0
   ASSERT(src.rm().is(no_reg));
   ASSERT(!dst1.is(lr));  // r14.
@@ -736,7 +736,7 @@ void MacroAssembler::Ldrd(Register dst1, Register dst2,
 
 void MacroAssembler::Strd(Register src1, Register src2,
                           const MemOperand& dst, Condition cond) {
-  ldr(src1, MemOperand(src2), al); // PPC - bogus instruction to cause error
+  ldr(src1, MemOperand(src2), al);  // PPC - bogus instruction to cause error
 #if 0
   ASSERT(dst.rm().is(no_reg));
   ASSERT(!src1.is(lr));  // r14.
@@ -904,10 +904,10 @@ void MacroAssembler::EnterExitFrame(bool save_doubles, int stack_space) {
   ASSERT_EQ(0 * kPointerSize, ExitFrameConstants::kCallerFPOffset);
 
 #if 0
- // This is an opportunity to build a frame to wrap
- // all of the pushes that have happened inside of V8
- // since we were called from C code
-  stwu(fp, MemOperand(sp,-8));  // build frame for pushed parameters
+  // This is an opportunity to build a frame to wrap
+  // all of the pushes that have happened inside of V8
+  // since we were called from C code
+  stwu(fp, MemOperand(sp, -8));  // build frame for pushed parameters
   mflr(r0);
   stw(r0, MemOperand(fp, 4));
   mr(fp, sp);
@@ -933,7 +933,7 @@ void MacroAssembler::EnterExitFrame(bool save_doubles, int stack_space) {
   mov(r8, Operand(ExternalReference(Isolate::kContextAddress, isolate())));
   stw(cp, MemOperand(r8));
 
-#if 0 // no double support yet on power
+#if 0  // no double support yet on power
   // Optionally save all double registers.
   if (save_doubles) {
     DwVfpRegister first = d0;
@@ -1078,10 +1078,10 @@ void MacroAssembler::InvokePrologue(const ParameterCount& expected,
   // up actual and expected registers according to the contract if values are
   // passed in registers.
 
-// roohack - remove these 3 checks temporarily
-//  ASSERT(actual.is_immediate() || actual.reg().is(r3));
-//  ASSERT(expected.is_immediate() || expected.reg().is(r5));
-//  ASSERT((!code_constant.is_null() && code_reg.is(no_reg)) || code_reg.is(r6));
+  // roohack - remove these 3 checks temporarily
+  //  ASSERT(actual.is_immediate() || actual.reg().is(r3));
+  //  ASSERT(expected.is_immediate() || expected.reg().is(r5));
+  //  ASSERT((!code_constant.is_null() && code_reg.is(no_reg)) || code_reg.is(r6));
 
   if (expected.is_immediate()) {
     ASSERT(actual.is_immediate());
@@ -1314,27 +1314,27 @@ void MacroAssembler::PushTryHandler(StackHandler::Kind kind,
   // Link the current handler as the next handler.
   mov(r8, Operand(ExternalReference(Isolate::kHandlerAddress, isolate())));
   lwz(r0, MemOperand(r8));
-  stwu(r0, MemOperand(sp,-StackHandlerConstants::kSize));
+  stwu(r0, MemOperand(sp, -StackHandlerConstants::kSize));
   // Set this new handler as the current one.
   stw(sp, MemOperand(r8));
 
   if (kind == StackHandler::JS_ENTRY) {
     li(r8, Operand(0, RelocInfo::NONE));  // NULL frame pointer.
-    stw(r8, MemOperand(sp,StackHandlerConstants::kFPOffset));
+    stw(r8, MemOperand(sp, StackHandlerConstants::kFPOffset));
     li(r8, Operand(Smi::FromInt(0)));    // Indicates no context.
-    stw(r8, MemOperand(sp,StackHandlerConstants::kContextOffset));
+    stw(r8, MemOperand(sp, StackHandlerConstants::kContextOffset));
   } else {
     // still not sure if fp is right
-    stw(fp, MemOperand(sp,StackHandlerConstants::kFPOffset));
-    stw(cp, MemOperand(sp,StackHandlerConstants::kContextOffset));
+    stw(fp, MemOperand(sp, StackHandlerConstants::kFPOffset));
+    stw(cp, MemOperand(sp, StackHandlerConstants::kContextOffset));
   }  
   unsigned state =
       StackHandler::IndexField::encode(handler_index) |
       StackHandler::KindField::encode(kind);
   mov(r8, Operand(state));
-  stw(r8, MemOperand(sp,StackHandlerConstants::kStateOffset));
+  stw(r8, MemOperand(sp, StackHandlerConstants::kStateOffset));
   mov(r8, Operand(CodeObject()));
-  stw(r8, MemOperand(sp,StackHandlerConstants::kCodeOffset));
+  stw(r8, MemOperand(sp, StackHandlerConstants::kCodeOffset));
 }
 
 
@@ -1356,7 +1356,7 @@ void MacroAssembler::JumpToHandlerEntry() {
   srwi(r5, r5, Operand(StackHandler::kKindWidth));  // Handler index.
   slwi(ip, r5, Operand(kPointerSizeLog2));
   add(ip, r6, ip);
-  lwz(r5, MemOperand(ip)); // Smi-tagged offset.
+  lwz(r5, MemOperand(ip));  // Smi-tagged offset.
   add(r4, r4, Operand(Code::kHeaderSize - kHeapObjectTag));  // Code start.
   srawi(ip, r5, kSmiTagSize);
   add(r0, r4, ip);
@@ -1701,7 +1701,7 @@ void MacroAssembler::AllocateInNewSpace(int object_size,
   if ((flags & RESULT_CONTAINS_TOP) == 0) {
     // Load allocation top into result and allocation limit into ip.
     lwz(result, MemOperand(topaddr));
-    lwz(ip, MemOperand(topaddr,kPointerSize));
+    lwz(ip, MemOperand(topaddr, kPointerSize));
   } else {
     if (emit_debug_code()) {
       // Assert that result actually contains top on entry. ip is used
@@ -1783,7 +1783,7 @@ void MacroAssembler::AllocateInNewSpace(Register object_size,
   if ((flags & RESULT_CONTAINS_TOP) == 0) {
     // Load allocation top into result and allocation limit into ip.
     lwz(result, MemOperand(topaddr));
-    lwz(ip, MemOperand(topaddr,kPointerSize));
+    lwz(ip, MemOperand(topaddr, kPointerSize));
   } else {
     if (emit_debug_code()) {
       // Assert that result actually contains top on entry. ip is used
@@ -1835,7 +1835,7 @@ void MacroAssembler::UndoAllocationInNewSpace(Register object,
   // Make sure the object has no tag before resetting top.
   mov(r0, Operand(~kHeapObjectTagMask));
   and_(object, object, r0, LeaveRC);
-  //was.. and_(object, object, Operand(~kHeapObjectTagMask));
+  // was.. and_(object, object, Operand(~kHeapObjectTagMask));
 #ifdef DEBUG
   // Check that the object un-allocated is below the current top.
   mov(scratch, Operand(new_space_allocation_top));
@@ -2467,8 +2467,8 @@ void MacroAssembler::ObjectToDoubleVFPRegister(Register object,
     JumpIfNotSmi(object, &not_smi);
     // Remove smi tag and convert to double.
     mov(scratch1, Operand(object, ASR, kSmiTagSize));
-    vmov(scratch3.low(), scratch1); //roohack - needs to be converted
-    vcvt_f64_s32(result, scratch3.low()); //roohack - needs to be converted
+    vmov(scratch3.low(), scratch1);  // roohack - needs to be converted
+    vcvt_f64_s32(result, scratch3.low());  // roohack - needs to be converted
     b(&done);
     bind(&not_smi);
   }
@@ -2547,11 +2547,10 @@ void MacroAssembler::ConvertToInt32(Register source,
     cmp(scratch, Operand(LONG_MAX - 1));
     // If equal then dest was LONG_MAX, if greater dest was LONG_MIN.
     b(ge, not_int32);
-  } else 
+  } else {
 #else
-  PPCPORT_UNIMPLEMENTED(); // penguin: implement the above sequence using PPC 64-bit FPR
+  PPCPORT_UNIMPLEMENTED();  // penguin: implement the above sequence using PPC 64-bit FPR
 #endif
-  {
     // This code is faster for doubles that are in the ranges -0x7fffffff to
     // -0x40000000 or 0x40000000 to 0x7fffffff. This corresponds almost to
     // the range of signed int32 values that are not Smis.  Jumps to the label
@@ -2623,7 +2622,9 @@ void MacroAssembler::ConvertToInt32(Register source,
     // Fix sign if sign bit was set.
     rsb(dest, dest, Operand(0, RelocInfo::NONE), LeaveCC, ne);
     bind(&done);
+#ifdef PENGUIN_CLEANUP
   }
+#endif
 }
 
 
@@ -2645,7 +2646,6 @@ void MacroAssembler::EmitVFPTruncate(VFPRoundingMode rounding_mode,
                                      Register scratch1,
                                      Register scratch2,
                                      CheckForInexactConversion check_inexact) {
-
   // Not sure if we need inexact conversion test on PowerPC
 #if 0
   int32_t check_inexact_conversion =
@@ -3704,10 +3704,10 @@ void MacroAssembler::CheckPageFlag(
   li(r0, Operand(mask));
   and_(r0, r0, scratch);
   cmpi(r0, Operand(0));
-  if(cc == ne) {
+  if (cc == ne) {
     bne(condition_met);
   }
-  if(cc == eq) {
+  if (cc == eq) {
     beq(condition_met);
   }
 }
@@ -4081,7 +4081,7 @@ void CodePatcher::Emit(Address addr) {
 
 void CodePatcher::EmitCondition(Condition cond) {
   Instr instr = Assembler::instr_at(masm_.pc_);
-  switch(cond) {
+  switch (cond) {
     case eq:
       instr = (instr & ~kCondMask) | BT;
       break;

@@ -221,12 +221,11 @@ void ElementsTransitionGenerator::GenerateSmiToDouble(
     __ vcvt_f64_s32(d0, s0);
     __ vstr(d0, r10, 0);
     __ add(r10, r10, Operand(8));
-  } else
+  } else {
 #else
     // penguin: the following code still uses Strd (arm-ISA)
-    PPCPORT_UNIMPLEMENTED(); 
+    PPCPORT_UNIMPLEMENTED();
 #endif
-  {
     FloatingPointHelper::ConvertIntToDouble(masm,
                                             r22,
                                             FloatingPointHelper::kCoreRegisters,
@@ -235,7 +234,9 @@ void ElementsTransitionGenerator::GenerateSmiToDouble(
                                             r4,
                                             d3);
     __ Strd(r3, r4, MemOperand(r10, 8, PostIndex));
+#ifdef PENGUIN_CLEANUP
   }
+#endif
   __ b(&entry);
 
   // Hole found, store the-hole NaN.

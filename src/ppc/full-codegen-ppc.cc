@@ -171,7 +171,7 @@ void FullCodeGenerator::Generate() {
 
   __ mflr(r0);
   __ Push(r0, fp, cp, r4);
-  
+ 
   if (locals_count > 0) {
     // Load undefined value here, so the value is ready for the loop
     // below.
@@ -1970,7 +1970,7 @@ void FullCodeGenerator::EmitInlineSmiBinaryOp(BinaryOperation* expr,
       __ GetLeastBitsFromSmi(scratch2, right, 5);
       __ slw(scratch1, scratch1, scratch2);
       // Check that the *signed* result fits in a smi
-      __ add(scratch2, scratch1, Operand(0x40000000), SetCC); 
+      __ add(scratch2, scratch1, Operand(0x40000000), SetCC);
       __ b(mi, &stub_call);
       __ SmiTag(right, scratch1);
       break;
@@ -2552,7 +2552,7 @@ void FullCodeGenerator::EmitIsSmi(CallRuntime* expr) {
                          &if_true, &if_false, &fall_through);
 
   PrepareForBailoutBeforeSplit(expr, true, if_true, if_false);
-  __ andi(r0,r3, Operand(kSmiTagMask));
+  __ andi(r0, r3, Operand(kSmiTagMask));
   __ cmpi(r0, Operand(0));
   Split(eq, if_true, if_false, fall_through);
 
@@ -2848,7 +2848,7 @@ void FullCodeGenerator::EmitIsConstructCall(CallRuntime* expr) {
   // Check the marker in the calling frame.
   __ bind(&check_frame_marker);
   __ lwz(r4, MemOperand(r5, StandardFrameConstants::kMarkerOffset));
-  STATIC_ASSERT(StackFrame::CONSTRUCT<0x4000);
+  STATIC_ASSERT(StackFrame::CONSTRUCT < 0x4000);
   __ cmpi(r4, Operand(Smi::FromInt(StackFrame::CONSTRUCT)));
   PrepareForBailoutBeforeSplit(expr, true, if_true, if_false);
   Split(eq, if_true, if_false, fall_through);
@@ -3016,7 +3016,7 @@ void FullCodeGenerator::EmitRandomHeapNumber(CallRuntime* expr) {
 
   __ bind(&heapnumber_allocated);
 
-#if 0 // optimal ARM code - need to reimplement on PowerPC
+#if 0  // optimal ARM code - need to reimplement on PowerPC
   // Convert 32 random bits in r3 to 0.(32 random bits) in a double
   // by computing:
   // ( 1.(20 0s)(32 random bits) x 2^20 ) - (1.0 x 2^20)).
@@ -3162,7 +3162,7 @@ void FullCodeGenerator::EmitMathPow(CallRuntime* expr) {
   } else {
 #endif
     __ CallRuntime(Runtime::kMath_pow, 2);
- // }
+  // }
   context()->Plug(r3);
 }
 

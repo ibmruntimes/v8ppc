@@ -100,15 +100,15 @@ struct Register {
       "r5",
       "r6",
       "r7",
-      "r8", 
-      "r9", 
-      "r10", 
-      "r11", 
-      "r12", 
-      "r13", 
-      "r14", 
-      "r15", 
-      "r16", 
+      "r8",
+      "r9",
+      "r10",
+      "r11",
+      "r12",
+      "r13",
+      "r14",
+      "r15",
+      "r16",
       "r17",
       "r18",
       "r19",
@@ -866,11 +866,11 @@ class Assembler : public AssemblerBase {
     }
   }
   // PowerPC
-  void bc(Label* L, BOfield bo, int bit)  { 
+  void bc(Label* L, BOfield bo, int bit)  {
     bc(branch_offset(L, false), bo, bit); }
-  void bne(Label* L) { 
+  void bne(Label* L) {
     bc(branch_offset(L, false), BF, 30); }
-  void beq(Label* L) { 
+  void beq(Label* L) {
     bc(branch_offset(L, false), BT, 30); }
   void blt(Label* L) {
     bc(branch_offset(L, false), BT, 28); }
@@ -937,12 +937,12 @@ SBit s = LeaveCC, Condition cond = al  // PPC - remove this line later (roohack)
 
   void extsb(Register rs, Register ra, RCBit r = LeaveRC);
   void extsh(Register rs, Register ra, RCBit r = LeaveRC);
- 
+
   void neg(Register rt, Register ra, RCBit rc = LeaveRC);
 
-  void rlwinm(Register ra, Register rs, int sh, int mb, int me, 
+  void rlwinm(Register ra, Register rs, int sh, int mb, int me,
               RCBit rc = LeaveRC);
-  void rlwimi(Register ra, Register rs, int sh, int mb, int me, 
+  void rlwimi(Register ra, Register rs, int sh, int mb, int me,
               RCBit rc = LeaveRC);
   void slwi(Register dst, Register src, const Operand& val);
   void srwi(Register dst, Register src, const Operand& val);
@@ -950,7 +950,7 @@ SBit s = LeaveCC, Condition cond = al  // PPC - remove this line later (roohack)
   void srw(Register dst, Register src1, Register src2, RCBit r = LeaveRC);
   void slw(Register dst, Register src1, Register src2, RCBit r = LeaveRC);
   void sraw(Register dst, Register src1, Register src2, RCBit r = LeaveRC);
-  void and_(Register dst, Register src1, Register src2, RCBit rc = LeaveRC);  
+  void and_(Register dst, Register src1, Register src2, RCBit rc = LeaveRC);
 
   void xori(Register dst, Register src, const Operand& imm);
   void xor_(Register dst, Register src1, Register src2, RCBit rc = LeaveRC);
@@ -998,7 +998,7 @@ SBit s = LeaveCC, Condition cond = al  // PPC - remove this line later (roohack)
   void cmp(int field, Register src1, Register src2);
   void cmpl(Register src1, Register src2);
   void cmpl(int field, Register src1, Register src2);
-  
+ 
   void cmp_raw_immediate(Register src1, int raw_immediate, Condition cond = al);
 
   void cmn(Register src1, const Operand& src2, Condition cond = al);
@@ -1179,7 +1179,7 @@ SBit s = LeaveCC, Condition cond = al  // PPC - remove this line later (roohack)
   void fmr(const DwVfpRegister frt, const DwVfpRegister frb);
   void fctiwz(const DwVfpRegister frt, const DwVfpRegister frb);
   void frim(const DwVfpRegister frt, const DwVfpRegister frb);
-  void frsp(const DwVfpRegister frt, const DwVfpRegister frb, 
+  void frsp(const DwVfpRegister frt, const DwVfpRegister frb,
             RCBit rc = LeaveRC);
 
   // Support for VFP.
@@ -1636,11 +1636,11 @@ SBit s = LeaveCC, Condition cond = al  // PPC - remove this line later (roohack)
   inline void emit(Instr x);
 
   // Instruction generation
-  void a_form(Instr instr, DwVfpRegister frt, DwVfpRegister fra, 
+  void a_form(Instr instr, DwVfpRegister frt, DwVfpRegister fra,
               DwVfpRegister frb, RCBit r);
   void d_form(Instr instr, Register rt, Register ra, const int val);
-  void x_form(Instr instr, Register ra, Register rs, Register rb, RCBit r); 
-  void xo_form(Instr instr, Register rt, Register ra, Register rb, 
+  void x_form(Instr instr, Register ra, Register rs, Register rb, RCBit r);
+  void xo_form(Instr instr, Register rt, Register ra, Register rb,
                OEBit o, RCBit r);
 #if defined(INCLUDE_ARM)
   void addrmod1(Instr instr, Register rn, Register rd, const Operand& x);

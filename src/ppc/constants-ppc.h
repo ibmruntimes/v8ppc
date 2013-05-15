@@ -128,7 +128,7 @@ const int kNoRegister = -1;
 // Defines constants and accessor classes to assemble, disassemble and
 // simulate ARM instructions.
 //
-// Section references in the code refer to the "PowerPC Microprocessor 
+// Section references in the code refer to the "PowerPC Microprocessor
 // Family: The Programmer.s Reference Guide" from 10/95
 // https://www-01.ibm.com/chips/techlib/techlib.nsf/techdocs/852569B20050FF778525699600741775/$file/prg.pdf
 //
@@ -139,7 +139,7 @@ const int kNoRegister = -1;
 // Values for the condition field as defined in section A3.2
 enum Condition {
   kNoCondition = -1,
-  
+
   eq =  0 << 28,                 // Z set            Equal.
   ne =  1 << 28,                 // Z clear          Not equal.
   cs =  2 << 28,                 // C set            Unsigned higher or same.
@@ -283,9 +283,9 @@ enum Opcode {
 #else
 #if defined(INCLUDE_ARM)
   // PENGUIN: temporarily copy it over to allow cleaning up one opcode at a time
-// Opcodes for Data-processing instructions (instructions with a type 0 and 1)
-// as defined in section A3.4
-  , 
+  // Opcodes for Data-processing instructions (instructions with a type 0 and 1)
+  // as defined in section A3.4
+  ,
   AND =  0 << 21,  // Logical AND.
   EOR =  1 << 21,  // Logical Exclusive OR.
   SUB =  2 << 21,  // Subtract.
@@ -307,7 +307,7 @@ enum Opcode {
 };
 
 // Bits 10-1
-enum OpcodeExt1 { 
+enum OpcodeExt1 {
   MCRF   = 0 << 1,    // Move Condition Register Field
   BCLRX  = 16 << 1,   // Branch Conditional Link Register
   CRNOR  = 33 << 1,   // Condition Register NOR)
@@ -329,7 +329,7 @@ enum OpcodeExt2 {
   TW = 4 << 1,
   SUBFCX =8 << 1,
   ADDCX = 10 << 1,
-  MULHWUX = 11 << 1, 
+  MULHWUX = 11 << 1,
   MFCR = 19 << 1,
   LWARX = 20 << 1,
   LDX = 21 << 1,
@@ -358,7 +358,7 @@ enum OpcodeExt2 {
   STWX
   STDUX
   STWUX
-  SUBFZEX 
+  SUBFZEX
 */
   ADDZEX = 202 << 1,  // Add to Zero Extended
 /*
@@ -377,7 +377,7 @@ enum OpcodeExt2 {
   SRAWIX = 824 << 1,  // Shift Right Algebraic Word Immediate
   EXTSH = 922 << 1,  // Extend Sign Halfword
   EXTSB = 954 << 1  // Extend Sign Byte
-}; 
+};
 
 // Some use Bits 10-1 and other only 5-1 for the opcode
 enum OpcodeExt4 {
@@ -389,7 +389,7 @@ enum OpcodeExt4 {
 
   // Bits 10-1
   FCMPU = 0 << 1,    // Floating Compare Unordered
-  FRSP = 12 << 1,    // Floating-Point Rounding 
+  FRSP = 12 << 1,    // Floating-Point Rounding
   FCTIWZ = 15 << 1,  // Floating Convert to Integer Word with Round to Zero
   MCRFS = 64 << 1,   // Move to Condition Register from FPSCR
   FMR = 72 << 1,     // Floating Move Register
@@ -480,7 +480,7 @@ enum {
 // Overflow Exception
 enum OEBit {
   SetOE   = 1 << 10,  // Set overflow exception
-  LeaveOE = 0 << 10   // No overflow exception 
+  LeaveOE = 0 << 10   // No overflow exception
 };
 
 // Record bit
@@ -490,7 +490,7 @@ enum RCBit {  // Bit 0
 };
 
 // Link bit
-enum LKBit {  // Bit 0 
+enum LKBit {  // Bit 0
   SetLK   = 1,  // Load effective address of next instruction
   LeaveLK = 0   // No action
 };
