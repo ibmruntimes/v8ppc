@@ -4203,6 +4203,7 @@ void KeyedStoreStubCompiler::GenerateStoreExternalArray(
         // and infinities. All these should be converted to 0.
         __ mov(r10, Operand(HeapNumber::kExponentMask));
         __ and_(r22, r8, Operand(r10), SetCC);
+        __ cmpi(r22, Operand(0));
         __ beq(&nan_or_infinity_or_zero);
 
         __ teq(r22, Operand(r10));

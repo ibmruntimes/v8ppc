@@ -2055,7 +2055,7 @@ void UnaryOpStub::Generate(MacroAssembler* masm) {
 
 
 void UnaryOpStub::GenerateTypeTransition(MacroAssembler* masm) {
-  __ mov(r6, Operand(r3));  // the operand
+  __ mr(r6, r3);  // the operand
   __ mov(r5, Operand(Smi::FromInt(op_)));
   __ mov(r4, Operand(Smi::FromInt(mode_)));
   __ mov(r3, Operand(Smi::FromInt(operand_type_)));
@@ -4893,7 +4893,7 @@ void ArgumentsAccessStub::GenerateNewStrict(MacroAssembler* masm) {
   __ bind(&try_allocate);
   __ cmpi(r4, Operand(0, RelocInfo::NONE));
   __ beq(&add_arguments_object);
-  __ mov(r4, Operand(r4, LSR, kSmiTagSize));
+  __ srwi(r4, r4, Operand(kSmiTagSize));
   __ add(r4, r4, Operand(FixedArray::kHeaderSize / kPointerSize));
   __ bind(&add_arguments_object);
   __ add(r4, r4, Operand(Heap::kArgumentsObjectSizeStrict / kPointerSize));
@@ -4935,10 +4935,10 @@ void ArgumentsAccessStub::GenerateNewStrict(MacroAssembler* masm) {
   __ add(r7, r3, Operand(Heap::kArgumentsObjectSizeStrict));
   __ stw(r7, FieldMemOperand(r3, JSObject::kElementsOffset));
   __ LoadRoot(r6, Heap::kFixedArrayMapRootIndex);
-  __ str(r6, FieldMemOperand(r7, FixedArray::kMapOffset));
-  __ str(r4, FieldMemOperand(r7, FixedArray::kLengthOffset));
+  __ stw(r6, FieldMemOperand(r7, FixedArray::kMapOffset));
+  __ stw(r4, FieldMemOperand(r7, FixedArray::kLengthOffset));
   // Untag the length for the loop.
-  __ mov(r4, Operand(r4, LSR, kSmiTagSize));
+  __ srwi(r4, r4, Operand(kSmiTagSize));
 
   // Copy the fixed array slots.
   Label loop;
@@ -4947,11 +4947,12 @@ void ArgumentsAccessStub::GenerateNewStrict(MacroAssembler* masm) {
   __ bind(&loop);
   // Pre-decrement r5 with kPointerSize on each iteration.
   // Pre-decrement in order to skip receiver.
-  __ ldr(r6, MemOperand(r5, kPointerSize, NegPreIndex)); // NegPreIndex modifies r5!
+  __ lwzu(r6, MemOperand(r5, -kPointerSize));
   // Post-increment r7 with kPointerSize on each iteration.
-  __ str(r6, MemOperand(r7, kPointerSize, PostIndex));
+  __ stw(r6, MemOperand(r7));
+  __ add(r7, r7, Operand(kPointerSize));
   __ sub(r4, r4, Operand(1));
-  __ cmp(r4, Operand(0, RelocInfo::NONE));
+  __ cmpi(r4, Operand(0, RelocInfo::NONE));
   __ bne(&loop);
 
   // Return and remove the on-stack parameters.
@@ -7090,12 +7091,12 @@ void ICCompareStub::GenerateObjects(MacroAssembler* masm) {
   __ JumpIfSmi(r5, &miss);
 
   __ CompareObjectType(r3, r5, r5, JS_OBJECT_TYPE);
-  __ b(ne, &miss);
+  __ bne(&miss);
   __ CompareObjectType(r4, r5, r5, JS_OBJECT_TYPE);
-  __ b(ne, &miss);
+  __ bne(&miss);
 
   ASSERT(GetCondition() == eq);
-  __ sub(r3, r3, Operand(r4));
+  __ sub(r3, r3, r4);
   __ Ret();
 
   __ bind(&miss);
