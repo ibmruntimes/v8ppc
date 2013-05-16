@@ -1855,6 +1855,7 @@ void LCodeGen::EmitBranch(int left_block, int right_block, Condition cc) {
 
 
 void LCodeGen::DoBranch(LBranch* instr) {
+#ifdef PENGUIN_CLEANUP
   int true_block = chunk_->LookupDestination(instr->true_block_id());
   int false_block = chunk_->LookupDestination(instr->false_block_id());
 
@@ -1966,6 +1967,9 @@ void LCodeGen::DoBranch(LBranch* instr) {
       DeoptimizeIf(al, instr->environment());
     }
   }
+#else
+  PPCPORT_UNIMPLEMENTED();
+#endif
 }
 
 

@@ -1123,7 +1123,7 @@ void Simulator::Format(Instruction* instr, const char* format) {
   UNIMPLEMENTED();
 }
 
-
+#ifdef PENGUIN_CLEANUP
 // Checks if the current instruction should be executed based on its
 // condition bits.
 bool Simulator::ConditionallyExecute(Instruction* instr) {
@@ -1147,7 +1147,7 @@ bool Simulator::ConditionallyExecute(Instruction* instr) {
   }
   return false;
 }
-
+#endif
 
 // Calculate and set the Negative and Zero flags.
 void Simulator::SetNZFlags(int32_t val) {

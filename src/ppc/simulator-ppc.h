@@ -252,9 +252,11 @@ class Simulator {
   // Unsupported instructions use Format to print an error and stop execution.
   void Format(Instruction* instr, const char* format);
 
+#ifdef PENGUIN_CLEANUP
   // Checks if the current instruction should be executed based on its
   // condition bits.
   bool ConditionallyExecute(Instruction* instr);
+#endif
 
   // Helper functions to set the conditional flags in the architecture state.
   void SetNZFlags(int32_t val);

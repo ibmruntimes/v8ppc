@@ -105,11 +105,13 @@ class Decoder {
   void PrintSRegister(int reg);
   void PrintDRegister(int reg);
   int FormatFPRegister(Instruction* instr, const char* format);
+#ifdef PENGUIN_CLEANUP
   void PrintMovwMovt(Instruction* instr);
   int FormatVFPinstruction(Instruction* instr, const char* format);
   void PrintCondition(Instruction* instr);
   void PrintShiftRm(Instruction* instr);
   void PrintShiftImm(Instruction* instr);
+#endif
   void PrintShiftSat(Instruction* instr);
   void PrintPU(Instruction* instr);
   void PrintSoftwareInterrupt(SoftwareInterruptCodes svc);
@@ -177,7 +179,7 @@ void Decoder::Print(const char* str) {
   out_buffer_[out_buffer_pos_] = 0;
 }
 
-
+#ifdef PENGUIN_CLEANUP
 // These condition names are defined in a way to match the native disassembler
 // formatting. See for example the command "objdump -d <binary file>".
 static const char* cond_names[kNumberOfConditions] = {
@@ -190,7 +192,7 @@ static const char* cond_names[kNumberOfConditions] = {
 void Decoder::PrintCondition(Instruction* instr) {
   Print(cond_names[instr->ConditionValue()]);
 }
-
+#endif
 
 // Print the register name according to the active name converter.
 void Decoder::PrintRegister(int reg) {
@@ -215,13 +217,12 @@ void Decoder::PrintDRegister(int reg) {
 #endif
 }
 
-
+#ifdef PENGUIN_CLEANUP
 // These shift names are defined in a way to match the native disassembler
 // formatting. See for example the command "objdump -d <binary file>".
 static const char* const shift_names[kNumberOfShifts] = {
   "lsl", "lsr", "asr", "ror"
 };
-
 
 // Print the register shift operands for the instruction. Generally used for
 // data processing instructions.
@@ -307,7 +308,7 @@ void Decoder::PrintPU(Instruction* instr) {
     }
   }
 }
-
+#endif
 
 // Print SoftwareInterrupt codes. Factoring this out reduces the complexity of
 // the FormatOption method.
@@ -333,7 +334,6 @@ void Decoder::PrintSoftwareInterrupt(SoftwareInterruptCodes svc) {
       return;
   }
 }
-
 
 // Handle all register based formatting in this function to reduce the
 // complexity of FormatOption.
@@ -425,12 +425,11 @@ int Decoder::FormatFPRegister(Instruction* instr, const char* format) {
   return retval;
 }
 
-
+#ifdef PENGUIN_CLEANUP
 int Decoder::FormatVFPinstruction(Instruction* instr, const char* format) {
     Print(format);
     return 0;
 }
-
 
 // Print the movw or movt instruction.
 void Decoder::PrintMovwMovt(Instruction* instr) {
@@ -440,7 +439,7 @@ void Decoder::PrintMovwMovt(Instruction* instr) {
   out_buffer_pos_ += OS::SNPrintF(out_buffer_ + out_buffer_pos_,
                                   ", #%d", imm);
 }
-
+#endif
 
 // FormatOption takes a formatting string and interprets it based on
 // the current instructions. The format string points to the first

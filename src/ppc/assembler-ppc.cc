@@ -499,12 +499,13 @@ Instr Assembler::SetAddRegisterImmediateOffset(Instr instr, int offset) {
   return (instr & ~kOff12Mask) | offset;
 }
 
-
+#ifdef PENGUIN_CLEANUP
 Register Assembler::GetRd(Instr instr) {
   Register reg;
   reg.code_ = Instruction::RdValue(instr);
   return reg;
 }
+#endif
 
 Register Assembler::GetRA(Instr instr) {
   Register reg;
@@ -518,19 +519,19 @@ Register Assembler::GetRB(Instr instr) {
   return reg;
 }
 
+#ifdef PENGUIN_CLEANUP
 Register Assembler::GetRn(Instr instr) {
   Register reg;
   reg.code_ = Instruction::RnValue(instr);
   return reg;
 }
 
-
 Register Assembler::GetRm(Instr instr) {
   Register reg;
   reg.code_ = Instruction::RmValue(instr);
   return reg;
 }
-
+#endif
 
 bool Assembler::IsPush(Instr instr) {
   return ((instr & ~kRdMask) == kPushRegPattern);
@@ -708,7 +709,7 @@ void Assembler::target_at_put(int pos, int target_pos) {
 #endif
 }
 
-
+#ifdef PENGUIN_CLEANUP
 void Assembler::print(Label* L) {
   if (L->is_unused()) {
     PrintF("unused label\n");
@@ -765,7 +766,7 @@ void Assembler::print(Label* L) {
     PrintF("label in inconsistent state (pos = %d)\n", L->pos_);
   }
 }
-
+#endif
 
 void Assembler::bind_to(Label* L, int pos) {
   ASSERT(0 <= pos && pos <= pc_offset());  // must have a valid binding position
@@ -983,6 +984,7 @@ void Assembler::addrmod1(Instr instr,
                          Register rn,
                          Register rd,
                          const Operand& x) {
+#ifdef PENGUIN_CLEANUP
   CheckBuffer();
   // ASSERT((instr & ~(kCondMask | kOpCodeMask | S)) == 0);
   if (!x.rm_.is_valid()) {
@@ -1035,10 +1037,12 @@ void Assembler::addrmod1(Instr instr,
     // Block constant pool emission for one instruction after reading pc.
     BlockConstPoolFor(1);
   }
+#endif
 }
 
 
 void Assembler::addrmod2(Instr instr, Register rd, const MemOperand& x) {
+#ifdef PENGUIN_CLEANUP
   // ASSERT((instr & ~(kCondMask | B | L)) == B26);
   int am = x.am_;
   if (!x.rm_.is_valid()) {
@@ -1067,10 +1071,12 @@ void Assembler::addrmod2(Instr instr, Register rd, const MemOperand& x) {
   }
   ASSERT((am & (P|W)) == P || !x.ra_.is(pc));  // no pc base with writeback
   emit(instr | am | x.ra_.code()*B16 | rd.code()*B12);
+#endif
 }
 
 
 void Assembler::addrmod3(Instr instr, Register rd, const MemOperand& x) {
+#ifdef PENGUIN_CLEANUP
   // ASSERT((instr & ~(kCondMask | L | S6 | H)) == (B4 | B7));
   ASSERT(x.ra_.is_valid());
   int am = x.am_;
@@ -1106,6 +1112,7 @@ void Assembler::addrmod3(Instr instr, Register rd, const MemOperand& x) {
   }
   ASSERT((am & (P|W)) == P || !x.ra_.is(pc));  // no pc base with writeback
   emit(instr | am | x.ra_.code()*B16 | rd.code()*B12);
+#endif
 }
 
 

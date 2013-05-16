@@ -627,7 +627,6 @@ enum VFPConversionMode {
   kFPSCRRounding = 0,
   kDefaultRoundToZero = 1
 };
-#endif
 
 // This mask does not include the "inexact" or "input denormal" cumulative
 // exceptions flags, because we usually don't want to check for it.
@@ -642,7 +641,7 @@ const uint32_t kVFPNConditionFlagBit = 1 << 31;
 const uint32_t kVFPZConditionFlagBit = 1 << 30;
 const uint32_t kVFPCConditionFlagBit = 1 << 29;
 const uint32_t kVFPVConditionFlagBit = 1 << 28;
-
+#endif
 
 // VFP rounding modes. See ARM DDI 0406B Page A2-29.
 enum VFPRoundingMode {
@@ -815,7 +814,7 @@ class Instruction {
     return instr & (((2 << (hi - lo)) - 1) << lo);
   }
 
-
+#ifdef PENGUIN_CLEANUP
   // Accessors for the different named fields used in the ARM encoding.
   // The naming of these accessor corresponds to figure A3-1.
   //
@@ -838,8 +837,7 @@ class Instruction {
   }
   DECLARE_STATIC_TYPED_ACCESSOR(Condition, ConditionValue);
   DECLARE_STATIC_TYPED_ACCESSOR(Condition, ConditionField);
-
-  inline int TypeValue() const { return Bits(27, 25); }
+#endif
 
   // PowerPC
   inline int RSValue() const { return Bits(25, 21); }
@@ -852,6 +850,8 @@ class Instruction {
   DECLARE_STATIC_ACCESSOR(RCValue);
 
   // end PowerPC
+#ifdef PENGUIN_CLEANUP
+  inline int TypeValue() const { return Bits(27, 25); }
 
   inline int RnValue() const { return Bits(19, 16); }
   DECLARE_STATIC_ACCESSOR(RnValue);
@@ -860,7 +860,6 @@ class Instruction {
 
   inline int CoprocessorValue() const { return Bits(11, 8); }
 
-#ifdef PENGUIN_CLEANUP
   // Support for VFP.
   // Vn(19-16) | Vd(15-12) |  Vm(3-0)
   inline int VnValue() const { return Bits(19, 16); }
@@ -950,13 +949,12 @@ class Instruction {
                                            && (Bit(23) == 0)
                                            && (Bit(20) == 0)
                                            && ((Bit(7) == 0)); }
-
+#ifdef PENGUIN_CLEANUP
   // Test for a stop instruction.
   inline bool IsStop() const {
     return (TypeValue() == 7) && (Bit(24) == 1) && (SvcValue() >= kStopCode);
   }
 
-#ifdef PENGUIN_CLEANUP
   // Special accessors that test for existence of a value.
   inline bool HasS()    const { return SValue() == 1; }
   inline bool HasB()    const { return BValue() == 1; }
