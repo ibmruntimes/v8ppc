@@ -2411,10 +2411,10 @@ void BinaryOpStub::GenerateSmiSmiOperation(MacroAssembler* masm) {
       __ mr(scratch1, right);
       __ addc(right, left, right);  // Add optimistically.
       __ rlwinm(r0, r0, 1, 31, 31, SetRC);
-      __ bne(&add_no_overflow);
+      __ bc(&add_no_overflow, BF, 2);
       __ xor_(r0, right, scratch1);
       __ rlwinm(r0, r0, 1, 31, 31, SetRC);
-      __ bne(&undo_add);
+      __ bc(&undo_add, BF, 2);
       __ bind(&add_no_overflow);
       __ Ret();
       __ bind(&undo_add);
@@ -2428,10 +2428,10 @@ void BinaryOpStub::GenerateSmiSmiOperation(MacroAssembler* masm) {
       __ mr(scratch1, right);
       __ subfc(right, left, right);  // Subtract optimistically.
       __ rlwinm(r0, r0, 1, 31, 31, SetRC);
-      __ beq(&sub_no_overflow);
+      __ bc(&sub_no_overflow, BT, 2);
       __ xor_(r0, right, scratch1);
       __ rlwinm(r0, r0, 1, 31, 31, SetRC);
-      __ bne(&undo_sub);
+      __ bc(&undo_sub, BF, 2);
       __ bind(&sub_no_overflow);
       __ Ret();
       __ bind(&undo_sub);
@@ -5766,8 +5766,8 @@ void StringCharCodeAtGenerator::GenerateSlow(
   __ Move(index_, r3);
   __ pop(object_);
   // Reload the instance type.
-  __ ldr(result_, FieldMemOperand(object_, HeapObject::kMapOffset));
-  __ ldrb(result_, FieldMemOperand(result_, Map::kInstanceTypeOffset));
+  __ lwz(result_, FieldMemOperand(object_, HeapObject::kMapOffset));
+  __ lbz(result_, FieldMemOperand(result_, Map::kInstanceTypeOffset));
   call_helper.AfterCall(masm);
   // If index is still not a smi, it must be out of range.
   __ JumpIfNotSmi(index_, index_out_of_range_);
@@ -7115,7 +7115,7 @@ void ICCompareStub::GenerateKnownObjects(MacroAssembler* masm) {
   __ cmp(r6, r0);
   __ bne(&miss);
 
-  __ sub(r3, r3, Operand(r4));
+  __ sub(r3, r3, r4);
   __ Ret();
 
   __ bind(&miss);
