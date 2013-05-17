@@ -279,30 +279,6 @@ enum Opcode {
   BIC = 14 << 21,  // Bit Clear.
   MVN = 15 << 21   // Move Not.
 #endif  // INCLUDE_ARM
-
-#else
-#if defined(INCLUDE_ARM)
-  // PENGUIN: temporarily copy it over to allow cleaning up one opcode at a time
-  // Opcodes for Data-processing instructions (instructions with a type 0 and 1)
-  // as defined in section A3.4
-  ,
-  AND =  0 << 21,  // Logical AND.
-  EOR =  1 << 21,  // Logical Exclusive OR.
-  SUB =  2 << 21,  // Subtract.
-  RSB =  3 << 21,  // Reverse Subtract.
-  ADD =  4 << 21,  // Add.
-  ADC =  5 << 21,  // Add with Carry.
-  SBC =  6 << 21,  // Subtract with Carry.
-  RSC =  7 << 21,  // Reverse Subtract with Carry.
-  TST =  8 << 21,  // Test.
-  TEQ =  9 << 21,  // Test Equivalence.
-  CMN = 11 << 21,  // Compare Negated.
-  ORR = 12 << 21,  // Logical (inclusive) OR.
-  // MOV = 13 << 21,  // Move.
-  BIC = 14 << 21,  // Bit Clear.
-  MVN = 15 << 21   // Move Not.
-#endif  // INCLUDE_ARM
-
 #endif  // PENGUIN_CLEANUP
 };
 
@@ -396,6 +372,7 @@ enum OpcodeExt4 {
   FRIM = 488 << 1    // Floating Round to Integer Minus
 };
 
+#ifdef PENGUIN_CLEANUP
 #if defined(INCLUDE_ARM)
 // The bits for bit 7-4 for some type 0 miscellaneous instructions.
 enum MiscInstructionsBits74 {
@@ -408,6 +385,7 @@ enum MiscInstructionsBits74 {
   CLZ  =  1 << 4
 };
 #endif  // INCLUDE_ARM
+#endif
 
 // Instruction encoding bits and masks.
 enum {

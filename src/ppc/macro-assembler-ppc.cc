@@ -268,7 +268,7 @@ void MacroAssembler::Move(DoubleRegister dst, DoubleRegister src) {
   }
 }
 
-
+#ifdef PENGUIN_CLEANUP
 void MacroAssembler::And(Register dst, Register src1, const Operand& src2,
                          Condition cond) {
   ASSERT(cond = al);
@@ -288,7 +288,7 @@ void MacroAssembler::And(Register dst, Register src1, const Operand& src2,
     and_(dst, src1, src2, LeaveCC, cond);
   }
 }
-
+#endif
 
 void MacroAssembler::Ubfx(Register dst, Register src1, int lsb, int width,
                           Condition cond) {

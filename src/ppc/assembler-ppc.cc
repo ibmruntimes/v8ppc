@@ -282,12 +282,14 @@ const Instr kMovLrPc = al | MOV | kRegister_pc_Code | kRegister_lr_Code * B12;
 // ldr rd, [pc, #offset]
 const Instr kLdrPCMask = kCondMask | 15 * B24 | 7 * B20 | 15 * B16;
 const Instr kLdrPCPattern = al | 5 * B24 | L | kRegister_pc_Code * B16;
+#ifdef PENGUIN_CLEAN
 // blxcc rm
 const Instr kBlxRegMask =
     15 * B24 | 15 * B20 | 15 * B16 | 15 * B12 | 15 * B8 | 15 * B4;
 const Instr kBlxRegPattern =
     B24 | B21 | 15 * B16 | 15 * B12 | 15 * B8 | BLX;
 const Instr kBlxIp = al | kBlxRegPattern | ip.code();
+#endif
 const Instr kMovMvnMask = 0x6d * B21 | 0xf * B16;
 const Instr kMovMvnPattern = 0xd * B21;
 const Instr kMovMvnFlip = B22;
@@ -570,10 +572,12 @@ bool Assembler::IsLdrPcImmediateOffset(Instr instr) {
 }
 
 
+#ifdef PENGUIN_CLEANUP
 bool Assembler::IsTstImmediate(Instr instr) {
   return (instr & (B27 | B26 | I | kOpCodeMask | S | kRdMask)) ==
       (I | TST | S);
 }
+#endif
 
 
 bool Assembler::IsCmpRegister(Instr instr) {
@@ -828,7 +832,7 @@ static Instr EncodeMovwImmediate(uint32_t immediate) {
   return ((immediate & 0xf000) << 4) | (immediate & 0xfff);
 }
 
-
+#ifdef PENGUIN_CLEANUP
 // Low-level code emission routines depending on the addressing mode.
 // If this returns true then you have to use the rotate_imm and immed_8
 // that it returns, because it may have already changed the instruction
@@ -887,7 +891,7 @@ static bool fits_shifter(uint32_t imm32,
   }
   return false;
 }
-
+#endif
 
 // We have to use the temporary register for things that can be relocated even
 // if they can be encoded in the ARM's 12 bits of immediate-offset instruction
@@ -908,7 +912,7 @@ bool Operand::must_use_constant_pool(const Assembler* assembler) const {
   return true;
 }
 
-
+#ifdef PENGUIN_CLEANUP
 bool Operand::is_single_instruction(const Assembler* assembler,
                                     Instr instr) const {
   if (rm_.is_valid()) return true;
@@ -941,6 +945,7 @@ bool Operand::is_single_instruction(const Assembler* assembler,
     return true;
   }
 }
+#endif
 
 void Assembler::a_form(Instr instr,
                        DwVfpRegister frt,
@@ -979,12 +984,12 @@ void Assembler::xo_form(Instr instr,
   emit(instr | rt.code()*B21 | ra.code()*B16 | rb.code()*B11 | o | r);
 }
 
+#ifdef PENGUIN_CLEANUP
 #if defined(INCLUDE_ARM)
 void Assembler::addrmod1(Instr instr,
                          Register rn,
                          Register rd,
                          const Operand& x) {
-#ifdef PENGUIN_CLEANUP
   CheckBuffer();
   // ASSERT((instr & ~(kCondMask | kOpCodeMask | S)) == 0);
   if (!x.rm_.is_valid()) {
@@ -1037,12 +1042,10 @@ void Assembler::addrmod1(Instr instr,
     // Block constant pool emission for one instruction after reading pc.
     BlockConstPoolFor(1);
   }
-#endif
 }
 
 
 void Assembler::addrmod2(Instr instr, Register rd, const MemOperand& x) {
-#ifdef PENGUIN_CLEANUP
   // ASSERT((instr & ~(kCondMask | B | L)) == B26);
   int am = x.am_;
   if (!x.rm_.is_valid()) {
@@ -1071,12 +1074,10 @@ void Assembler::addrmod2(Instr instr, Register rd, const MemOperand& x) {
   }
   ASSERT((am & (P|W)) == P || !x.ra_.is(pc));  // no pc base with writeback
   emit(instr | am | x.ra_.code()*B16 | rd.code()*B12);
-#endif
 }
 
 
 void Assembler::addrmod3(Instr instr, Register rd, const MemOperand& x) {
-#ifdef PENGUIN_CLEANUP
   // ASSERT((instr & ~(kCondMask | L | S6 | H)) == (B4 | B7));
   ASSERT(x.ra_.is_valid());
   int am = x.am_;
@@ -1112,7 +1113,6 @@ void Assembler::addrmod3(Instr instr, Register rd, const MemOperand& x) {
   }
   ASSERT((am & (P|W)) == P || !x.ra_.is(pc));  // no pc base with writeback
   emit(instr | am | x.ra_.code()*B16 | rd.code()*B12);
-#endif
 }
 
 
@@ -1148,6 +1148,7 @@ void Assembler::addrmod5(Instr instr, CRegister crd, const MemOperand& x) {
   emit(instr | am | x.ra_.code()*B16 | crd.code()*B12 | offset_8);
 }
 #endif  // INCLUDE_ARM
+#endif  // PENGUIN_CLEANUP
 
 int Assembler::branch_offset(Label* L, bool jump_elimination_allowed) {
   int target_pos;
@@ -1234,6 +1235,7 @@ void Assembler::bl(int branch_offset, Condition cond) {
 
 // end PowerPC
 
+#ifdef PENGUIN_CLEANUP
 void Assembler::blx(int branch_offset) {  // v5 and above
   positions_recorder()->WriteRecordedPositions();
   ASSERT((branch_offset & 1) == 0);
@@ -1256,19 +1258,28 @@ void Assembler::bx(Register target, Condition cond) {  // v5 and above, plus v4t
   ASSERT(!target.is(pc));  // use of pc is actually allowed, but discouraged
   emit(cond | B24 | B21 | 15*B16 | 15*B12 | 15*B8 | BX | target.code());
 }
+#endif
 
 
 // Data-processing instructions.
 
 void Assembler::and_(Register dst, Register src1, const Operand& src2,
                      SBit s, Condition cond) {
+#ifdef PENGUIN_CLEANUP
   addrmod1(cond | AND | s, src1, dst, src2);
+#else
+  PPCPORT_CHECK(false);
+#endif
 }
 
 
 void Assembler::eor(Register dst, Register src1, const Operand& src2,
                     SBit s, Condition cond) {
+#ifdef PENGUIN_CLEANUP
   addrmod1(cond | EOR | s, src1, dst, src2);
+#else
+  PPCPORT_CHECK(false);
+#endif
 }
 
 
@@ -1276,7 +1287,11 @@ void Assembler::eor(Register dst, Register src1, const Operand& src2,
 
 void Assembler::rsb(Register dst, Register src1, const Operand& src2,
                     SBit s, Condition cond) {
+#ifdef PENGUIN_CLEANUP
   addrmod1(cond | RSB | s, src1, dst, src2);
+#else
+  PPCPORT_CHECK(false);
+#endif
 }
 
 // PowerPC
@@ -1509,34 +1524,58 @@ void Assembler::neg(Register rt, Register ra, RCBit rc) {
 
 void Assembler::adc(Register dst, Register src1, const Operand& src2,
                     SBit s, Condition cond) {
+#ifdef PENGUIN_CLEANUP
   addrmod1(cond | ADC | s, src1, dst, src2);
+#else
+  PPCPORT_CHECK(false);
+#endif
 }
 
 
 void Assembler::sbc(Register dst, Register src1, const Operand& src2,
                     SBit s, Condition cond) {
+#ifdef PENGUIN_CLEANUP
   addrmod1(cond | SBC | s, src1, dst, src2);
+#else
+  PPCPORT_CHECK(false);
+#endif
 }
 
 
 void Assembler::rsc(Register dst, Register src1, const Operand& src2,
                     SBit s, Condition cond) {
+#ifdef PENGUIN_CLEANUP
   addrmod1(cond | RSC | s, src1, dst, src2);
+#else
+  PPCPORT_CHECK(false);
+#endif
 }
 
 
 void Assembler::tst(Register src1, const Operand& src2, Condition cond) {
+#ifdef PENGUIN_CLEANUP
   addrmod1(cond | TST | S, src1, r0, src2);
+#else
+  PPCPORT_CHECK(false);
+#endif
 }
 
 
 void Assembler::teq(Register src1, const Operand& src2, Condition cond) {
+#ifdef PENGUIN_CLEANUP
   addrmod1(cond | TEQ | S, src1, r0, src2);
+#else
+  PPCPORT_CHECK(false);
+#endif
 }
 
 
 void Assembler::cmp(Register src1, const Operand& src2, Condition cond) {
+#ifdef PENGUIN_CLEANUP
   addrmod1(cond | CMP | S, src1, r0, src2);
+#else
+  PPCPORT_CHECK(false);
+#endif
 }
 
 
@@ -1548,13 +1587,21 @@ void Assembler::cmp_raw_immediate(
 
 
 void Assembler::cmn(Register src1, const Operand& src2, Condition cond) {
+#ifdef PENGUIN_CLEANUP
   addrmod1(cond | CMN | S, src1, r0, src2);
+#else
+  PPCPORT_CHECK(false);
+#endif
 }
 
 
 void Assembler::orr(Register dst, Register src1, const Operand& src2,
                     SBit s, Condition cond) {
+#ifdef PENGUIN_CLEANUP
   addrmod1(cond | ORR | s, src1, dst, src2);
+#else
+  PPCPORT_CHECK(false);
+#endif
 }
 
 // This should really move to be in macro-assembler as it
@@ -1608,12 +1655,20 @@ void Assembler::movt(Register reg, uint32_t immediate, Condition cond) {
 
 void Assembler::bic(Register dst, Register src1, const Operand& src2,
                     SBit s, Condition cond) {
+#ifdef PENGUIN_CLEANUP
   addrmod1(cond | BIC | s, src1, dst, src2);
+#else
+  PPCPORT_CHECK(false);
+#endif
 }
 
 
 void Assembler::mvn(Register dst, const Operand& src, SBit s, Condition cond) {
+#ifdef PENGUIN_CLEANUP
   addrmod1(cond | MVN | s, r0, dst, src);
+#else
+  PPCPORT_CHECK(false);
+#endif
 }
 
 
@@ -1685,6 +1740,7 @@ void Assembler::umull(Register dstL,
 }
 
 
+#ifdef PENGUIN_CLEANUP
 // Miscellaneous arithmetic instructions.
 void Assembler::clz(Register dst, Register src, Condition cond) {
   // v5 and above.
@@ -1692,6 +1748,7 @@ void Assembler::clz(Register dst, Register src, Condition cond) {
   emit(cond | B24 | B22 | B21 | 15*B16 | dst.code()*B12 |
        15*B8 | CLZ | src.code());
 }
+#endif
 
 
 // Saturating instructions.
@@ -1818,13 +1875,18 @@ void Assembler::mcrfs(int bf, int bfa) {
 
 // Status register access instructions.
 void Assembler::mrs(Register dst, SRegister s, Condition cond) {
+#ifdef PENGUIN_CLEANUP
   ASSERT(!dst.is(pc));
   emit(cond | B24 | s | 15*B16 | dst.code()*B12);
+#else
+  PPCPORT_CHECK(false);
+#endif
 }
 
 
 void Assembler::msr(SRegisterFieldMask fields, const Operand& src,
                     Condition cond) {
+#ifdef PENGUIN_CLEANUP
   ASSERT(fields >= B16 && fields < B20);  // at least one field set
   Instr instr;
   if (!src.rm_.is_valid()) {
@@ -1845,72 +1907,115 @@ void Assembler::msr(SRegisterFieldMask fields, const Operand& src,
     instr = src.rm_.code();
   }
   emit(cond | instr | B24 | B21 | fields | 15*B12);
+#else
+  PPCPORT_CHECK(false);
+#endif
 }
 
 
 // Load/Store instructions.
 void Assembler::ldr(Register dst, const MemOperand& src, Condition cond) {
+#ifdef PENGUIN_CLEANUP
   if (dst.is(pc)) {
     positions_recorder()->WriteRecordedPositions();
   }
   addrmod2(cond | B26 | L, dst, src);
+#else
+  PPCPORT_CHECK(false);
+#endif
 }
 
 
 void Assembler::str(Register src, const MemOperand& dst, Condition cond) {
+#ifdef PENGUIN_CLEANUP
   addrmod2(cond | B26, src, dst);
+#else
+  PPCPORT_CHECK(false);
+#endif
 }
 
 
 void Assembler::ldrb(Register dst, const MemOperand& src, Condition cond) {
+#ifdef PENGUIN_CLEANUP
   addrmod2(cond | B26 | B | L, dst, src);
+#else
+  PPCPORT_CHECK(false);
+#endif
 }
 
 
 void Assembler::strb(Register src, const MemOperand& dst, Condition cond) {
+#ifdef PENGUIN_CLEANUP
   addrmod2(cond | B26 | B, src, dst);
+#else
+  PPCPORT_CHECK(false);
+#endif
 }
 
 
 void Assembler::ldrh(Register dst, const MemOperand& src, Condition cond) {
+#ifdef PENGUIN_CLEANUP
   addrmod3(cond | L | B7 | H | B4, dst, src);
+#else
+  PPCPORT_CHECK(false);
+#endif
 }
 
 
 void Assembler::strh(Register src, const MemOperand& dst, Condition cond) {
+#ifdef PENGUIN_CLEANUP
   addrmod3(cond | B7 | H | B4, src, dst);
+#else
+  PPCPORT_CHECK(false);
+#endif
 }
 
 
 void Assembler::ldrsb(Register dst, const MemOperand& src, Condition cond) {
+#ifdef PENGUIN_CLEANUP
   addrmod3(cond | L | B7 | S6 | B4, dst, src);
+#else
+  PPCPORT_CHECK(false);
+#endif
 }
 
 
 void Assembler::ldrsh(Register dst, const MemOperand& src, Condition cond) {
+#ifdef PENGUIN_CLEANUP
   addrmod3(cond | L | B7 | S6 | H | B4, dst, src);
+#else
+  PPCPORT_CHECK(false);
+#endif
 }
 
 
 void Assembler::ldrd(Register dst1, Register dst2,
                      const MemOperand& src, Condition cond) {
+#ifdef PENGUIN_CLEANUP
   ASSERT(CpuFeatures::IsEnabled(ARMv7));
   ASSERT(src.rm().is(no_reg));
   ASSERT(!dst1.is(lr));  // r14.
   ASSERT_EQ(0, dst1.code() % 2);
   ASSERT_EQ(dst1.code() + 1, dst2.code());
   addrmod3(cond | B7 | B6 | B4, dst1, src);
+#else
+  PPCPORT_CHECK(false);
+#endif
 }
 
 
 void Assembler::strd(Register src1, Register src2,
                      const MemOperand& dst, Condition cond) {
+#ifdef PENGUIN_CLEANUP
   ASSERT(dst.rm().is(no_reg));
   ASSERT(!src1.is(lr));  // r14.
   ASSERT_EQ(0, src1.code() % 2);
   ASSERT_EQ(src1.code() + 1, src2.code());
   ASSERT(CpuFeatures::IsEnabled(ARMv7));
   addrmod3(cond | B7 | B6 | B5 | B4, src1, dst);
+#else
+  PPCPORT_CHECK(false);
+#endif
 }
 
 // Load/Store multiple instructions.
@@ -1918,6 +2023,7 @@ void Assembler::ldm(BlockAddrMode am,
                     Register base,
                     RegList dst,
                     Condition cond) {
+#ifdef PENGUIN_CLEANUP
   // ABI stack constraint: ldmxx base, {..sp..}  base != sp  is not restartable.
   ASSERT(base.is(sp) || (dst & sp.bit()) == 0);
 
@@ -1932,6 +2038,9 @@ void Assembler::ldm(BlockAddrMode am,
     // the case, we emit a jump over the pool.
     CheckConstPool(true, no_const_pool_before_ == pc_offset() - kInstrSize);
   }
+#else
+  PPCPORT_CHECK(false);
+#endif
 }
 
 
@@ -1939,7 +2048,11 @@ void Assembler::stm(BlockAddrMode am,
                     Register base,
                     RegList src,
                     Condition cond) {
+#ifdef PENGUIN_CLEANUP
   addrmod4(cond | B27 | am, base, src);
+#else
+  PPCPORT_CHECK(false);
+#endif
 }
 
 
@@ -1947,6 +2060,7 @@ void Assembler::stm(BlockAddrMode am,
 // Stops with a non-negative code less than kNumOfWatchedStops support
 // enabling/disabling and a counter feature. See simulator-arm.h .
 void Assembler::stop(const char* msg, Condition cond, int32_t code) {
+#ifdef PENGUIN_CLEANUP
 #ifndef __arm__
   ASSERT(code >= kDefaultStopCode);
   {
@@ -1974,18 +2088,29 @@ void Assembler::stop(const char* msg, Condition cond, int32_t code) {
   svc(0x9f0001, cond);
 #endif  // ndef CAN_USE_ARMV5_INSTRUCTIONS
 #endif  // def __arm__
+#else
+  PPCPORT_CHECK(false);
+#endif
 }
 
 
 void Assembler::bkpt(uint32_t imm16) {  // v5 and above
+#ifdef PENGUIN_CLEANUP
   ASSERT(is_uint16(imm16));
   emit(al | B24 | B21 | (imm16 >> 4)*B8 | BKPT | (imm16 & 0xf));
+#else
+  PPCPORT_CHECK(false);
+#endif
 }
 
 
 void Assembler::svc(uint32_t imm24, Condition cond) {
+#ifdef PENGUIN_CLEANUP
   ASSERT(is_uint24(imm24));
   emit(cond | 15*B24 | imm24);
+#else
+  PPCPORT_CHECK(false);
+#endif
 }
 
 
@@ -1997,9 +2122,13 @@ void Assembler::cdp(Coprocessor coproc,
                     CRegister crm,
                     int opcode_2,
                     Condition cond) {
+#ifdef PENGUIN_CLEANUP
   ASSERT(is_uint4(opcode_1) && is_uint3(opcode_2));
   emit(cond | B27 | B26 | B25 | (opcode_1 & 15)*B20 | crn.code()*B16 |
        crd.code()*B12 | coproc*B8 | (opcode_2 & 7)*B5 | crm.code());
+#else
+  PPCPORT_CHECK(false);
+#endif
 }
 
 
@@ -2009,7 +2138,11 @@ void Assembler::cdp2(Coprocessor coproc,
                      CRegister crn,
                      CRegister crm,
                      int opcode_2) {  // v5 and above
+#ifdef PENGUIN_CLEANUP
   cdp(coproc, opcode_1, crd, crn, crm, opcode_2, kSpecialCondition);
+#else
+  PPCPORT_CHECK(false);
+#endif
 }
 
 
@@ -2020,9 +2153,13 @@ void Assembler::mcr(Coprocessor coproc,
                     CRegister crm,
                     int opcode_2,
                     Condition cond) {
+#ifdef PENGUIN_CLEANUP
   ASSERT(is_uint3(opcode_1) && is_uint3(opcode_2));
   emit(cond | B27 | B26 | B25 | (opcode_1 & 7)*B21 | crn.code()*B16 |
        rd.code()*B12 | coproc*B8 | (opcode_2 & 7)*B5 | B4 | crm.code());
+#else
+  PPCPORT_CHECK(false);
+#endif
 }
 
 
@@ -2032,7 +2169,11 @@ void Assembler::mcr2(Coprocessor coproc,
                      CRegister crn,
                      CRegister crm,
                      int opcode_2) {  // v5 and above
+#ifdef PENGUIN_CLEANUP
   mcr(coproc, opcode_1, rd, crn, crm, opcode_2, kSpecialCondition);
+#else
+  PPCPORT_CHECK(false);
+#endif
 }
 
 
@@ -2043,9 +2184,13 @@ void Assembler::mrc(Coprocessor coproc,
                     CRegister crm,
                     int opcode_2,
                     Condition cond) {
+#ifdef PENGUIN_CLEANUP
   ASSERT(is_uint3(opcode_1) && is_uint3(opcode_2));
   emit(cond | B27 | B26 | B25 | (opcode_1 & 7)*B21 | L | crn.code()*B16 |
        rd.code()*B12 | coproc*B8 | (opcode_2 & 7)*B5 | B4 | crm.code());
+#else
+  PPCPORT_CHECK(false);
+#endif
 }
 
 
@@ -2055,7 +2200,11 @@ void Assembler::mrc2(Coprocessor coproc,
                      CRegister crn,
                      CRegister crm,
                      int opcode_2) {  // v5 and above
+#ifdef PENGUIN_CLEANUP
   mrc(coproc, opcode_1, rd, crn, crm, opcode_2, kSpecialCondition);
+#else
+  PPCPORT_CHECK(false);
+#endif
 }
 
 
@@ -2064,7 +2213,11 @@ void Assembler::ldc(Coprocessor coproc,
                     const MemOperand& src,
                     LFlag l,
                     Condition cond) {
+#ifdef PENGUIN_CLEANUP
   addrmod5(cond | B27 | B26 | l | L | coproc*B8, crd, src);
+#else
+  PPCPORT_CHECK(false);
+#endif
 }
 
 
@@ -2074,10 +2227,14 @@ void Assembler::ldc(Coprocessor coproc,
                     int option,
                     LFlag l,
                     Condition cond) {
+#ifdef PENGUIN_CLEANUP
   // Unindexed addressing.
   ASSERT(is_uint8(option));
   emit(cond | B27 | B26 | U | l | L | rn.code()*B16 | crd.code()*B12 |
        coproc*B8 | (option & 255));
+#else
+  PPCPORT_CHECK(false);
+#endif
 }
 
 
@@ -2085,7 +2242,11 @@ void Assembler::ldc2(Coprocessor coproc,
                      CRegister crd,
                      const MemOperand& src,
                      LFlag l) {  // v5 and above
+#ifdef PENGUIN_CLEANUP
   ldc(coproc, crd, src, l, kSpecialCondition);
+#else
+  PPCPORT_CHECK(false);
+#endif
 }
 
 
@@ -2094,7 +2255,11 @@ void Assembler::ldc2(Coprocessor coproc,
                      Register rn,
                      int option,
                      LFlag l) {  // v5 and above
+#ifdef PENGUIN_CLEANUP
   ldc(coproc, crd, rn, option, l, kSpecialCondition);
+#else
+  PPCPORT_CHECK(false);
+#endif
 }
 
 // Floating point support
@@ -2944,13 +3109,13 @@ bool Assembler::IsNop(Instr instr, int type) {
   return instr == (ORI | reg*B21 | reg*B16);
 }
 
-
+#ifdef PENGUIN_CLEANUP
 bool Assembler::ImmediateFitsAddrMode1Instruction(int32_t imm32) {
   uint32_t dummy1;
   uint32_t dummy2;
   return fits_shifter(imm32, &dummy1, &dummy2, NULL);
 }
-
+#endif
 
 // Debugging.
 void Assembler::RecordJSReturn() {

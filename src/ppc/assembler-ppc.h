@@ -670,9 +670,11 @@ class CpuFeatures : public AllStatic {
 extern const Instr kMovLrPc;
 extern const Instr kLdrPCMask;
 extern const Instr kLdrPCPattern;
+#ifdef PENGUIN_CLEANUP
 extern const Instr kBlxRegMask;
 extern const Instr kBlxRegPattern;
 extern const Instr kBlxIp;
+#endif
 
 extern const Instr kMovMvnMask;
 extern const Instr kMovMvnPattern;
@@ -828,9 +830,11 @@ class Assembler : public AssemblerBase {
 
   // end PowerPC
   void bl(int branch_offset, Condition cond = al);
+#ifdef PENGUIN_CLEANUP
   void blx(int branch_offset);  // v5 and above
   void blx(Register target, Condition cond = al);  // v5 and above
   void bx(Register target, Condition cond = al);  // v5 and above, plus v4t
+#endif
 
   // Convenience branch instructions using labels
   void b(Label* L, Condition cond = al)  {
@@ -883,7 +887,9 @@ class Assembler : public AssemblerBase {
   // end PowerPC
   void bl(Label* L, Condition cond = al)  { bl(branch_offset(L, false), cond); }
   void bl(Condition cond, Label* L)  { bl(branch_offset(L, false), cond); }
+#ifdef PENGUIN_CLEANUP
   void blx(Label* L)  { blx(branch_offset(L, false)); }  // v5 and above
+#endif
 
   // Data-processing instructions
 
@@ -1051,7 +1057,9 @@ class Assembler : public AssemblerBase {
 
   // Miscellaneous arithmetic instructions
 
+#ifdef PENGUIN_CLEANUP
   void clz(Register dst, Register src, Condition cond = al);  // v5 and above
+#endif
 
   // Saturating instructions. v6 and above.
 
@@ -1379,8 +1387,10 @@ class Assembler : public AssemblerBase {
     return SizeOfCodeGeneratedSince(label) / kInstrSize;
   }
 
+#ifdef PENGUIN_CLEANUP
   // Check whether an immediate fits an addressing mode 1 instruction.
   bool ImmediateFitsAddrMode1Instruction(int32_t imm32);
+#endif
 
   // Class for scoping postponing the constant pool generation.
   class BlockConstPoolScope {
@@ -1489,7 +1499,9 @@ class Assembler : public AssemblerBase {
   static bool IsStrRegFpNegOffset(Instr instr);
   static bool IsLdrRegFpNegOffset(Instr instr);
   static bool IsLdrPcImmediateOffset(Instr instr);
+#ifdef PENGUIN_CLEANUP
   static bool IsTstImmediate(Instr instr);
+#endif
   static bool IsCmpRegister(Instr instr);
   static bool IsCmpImmediate(Instr instr);
   static bool IsRlwinm(Instr instr);

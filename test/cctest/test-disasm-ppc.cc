@@ -323,14 +323,18 @@ TEST(Type0) {
           "e3530b01       cmp r3, #1024");
 
   // Miscellaneous instructions encoded as type 0.
+#ifdef PENGUIN_CLEANUP
   COMPARE(blx(ip),
           "e12fff3c       blx ip");
+#endif
   COMPARE(bkpt(0),
           "e1200070       bkpt 0");
   COMPARE(bkpt(0xffff),
           "e12fff7f       bkpt 65535");
+#ifdef PENGUIN_CLEANUP
   COMPARE(clz(r6, r7),
           "e16f6f17       clz r6, r7");
+#endif
 
   VERIFY_RUN();
 }
