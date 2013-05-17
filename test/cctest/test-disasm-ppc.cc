@@ -273,6 +273,7 @@ TEST(Type0) {
   COMPARE(mvn(r6, Operand(-1), LeaveCC, ne),
           "13a06000       movne r6, #0");
 
+#ifdef PENGUIN_CLEANUP
   // mov -> movw.
   if (CpuFeatures::IsSupported(ARMv7)) {
     COMPARE(mov(r5, Operand(0x01234), LeaveCC, ne),
@@ -298,6 +299,7 @@ TEST(Type0) {
     COMPARE(movw(r5, 0xabcd, eq),
             "030a5bcd       movweq r5, #43981");
   }
+#endif
 
   // Eor doesn't have an eor-negative variant, but we can do an mvn followed by
   // an eor to get the same effect.
@@ -372,6 +374,7 @@ TEST(Type1) {
 TEST(Type3) {
   SET_UP();
 
+#ifdef PENGUIN_CLEANUP
   if (CpuFeatures::IsSupported(ARMv7)) {
     COMPARE(ubfx(r0, r1, 5, 10),
             "e7e902d1       ubfx r0, r1, #5, #10");
@@ -418,6 +421,7 @@ TEST(Type3) {
     COMPARE(usat(r8, 0, Operand(r5, ASR, 17)),
             "e6e088d5       usat r8, #0, r5, asr #17");
   }
+#endif
 
   VERIFY_RUN();
 }

@@ -144,6 +144,7 @@ class MacroAssembler: public Assembler {
             Condition cond = al);
   void Sbfx(Register dst, Register src, int lsb, int width,
             Condition cond = al);
+#ifdef PENGUIN_CLEANUP
   // The scratch register is not used for ARMv7.
   // scratch can be the same register as src (in which case it is trashed), but
   // not the same as dst.
@@ -154,6 +155,7 @@ class MacroAssembler: public Assembler {
            int width,
            Condition cond = al);
   void Bfc(Register dst, int lsb, int width, Condition cond = al);
+#endif
   void Usat(Register dst, int satpos, const Operand& src,
             Condition cond = al);
 

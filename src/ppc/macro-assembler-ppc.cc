@@ -322,7 +322,7 @@ void MacroAssembler::Sbfx(Register dst, Register src1, int lsb, int width,
   }
 }
 
-
+#ifdef PENGUIN_CLEANUP
 void MacroAssembler::Bfi(Register dst,
                          Register src,
                          Register scratch,
@@ -355,6 +355,7 @@ void MacroAssembler::Bfc(Register dst, int lsb, int width, Condition cond) {
     bfc(dst, lsb, width, cond);
   }
 }
+#endif
 
 
 void MacroAssembler::Usat(Register dst, int satpos, const Operand& src,

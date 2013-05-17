@@ -1343,6 +1343,7 @@ static void EmitSmiNonsmiComparison(MacroAssembler* masm,
 
 // roohack - not converted
 void EmitNanCheck(MacroAssembler* masm, Label* lhs_not_nan, Condition cond) {
+#ifdef PENGUIN_CLEANUP
   bool exp_first = (HeapNumber::kExponentOffset == HeapNumber::kValueOffset);
   Register rhs_exponent = exp_first ? r0 : r1;
   Register lhs_exponent = exp_first ? r2 : r3;
@@ -1390,6 +1391,9 @@ void EmitNanCheck(MacroAssembler* masm, Label* lhs_not_nan, Condition cond) {
   __ Ret();
 
   __ bind(&neither_is_nan);
+#else
+  PPCPORT_UNIMPLEMENTED();
+#endif
 }
 
 

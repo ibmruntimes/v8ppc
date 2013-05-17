@@ -674,7 +674,6 @@ extern const Instr kPopRegPattern;
 #ifdef PENGUIN_CLEANUP
 // mov lr, pc
 extern const Instr kMovLrPc;
-#endif
 // ldr rd, [pc, #offset]
 extern const Instr kLdrPCMask;
 extern const Instr kLdrPCPattern;
@@ -709,7 +708,7 @@ extern const Instr kStrRegFpNegOffsetPattern;
 extern const Instr kLdrStrInstrTypeMask;
 extern const Instr kLdrStrInstrArgumentMask;
 extern const Instr kLdrStrOffsetMask;
-
+#endif
 
 // use TWI to indicate redirection call for simulation mode
 const Instr rtCallRedirInstr = TWI;

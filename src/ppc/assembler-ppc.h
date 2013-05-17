@@ -1004,7 +1004,9 @@ class Assembler : public AssemblerBase {
   void cmpl(Register src1, Register src2);
   void cmpl(int field, Register src1, Register src2);
 
+#ifdef PENGUIN_CLEANUP
   void cmp_raw_immediate(Register src1, int raw_immediate, Condition cond = al);
+#endif
 
   void cmn(Register src1, const Operand& src2, Condition cond = al);
 
@@ -1021,12 +1023,14 @@ class Assembler : public AssemblerBase {
     mov(dst, Operand(src), s, cond);
   }
 
+#ifdef PENGUIN_CLEANUP
   // ARMv7 instructions for loading a 32 bit immediate in two instructions.
   // This may actually emit a different mov instruction, but on an ARMv7 it
   // is guaranteed to only emit one instruction.
   void movw(Register reg, uint32_t immediate, Condition cond = al);
   // The constant for movt should be in the range 0-0xffff.
   void movt(Register reg, uint32_t immediate, Condition cond = al);
+#endif
 
   void bic(Register dst, Register src1, const Operand& src2,
            SBit s = LeaveCC, Condition cond = al);
@@ -1085,6 +1089,7 @@ class Assembler : public AssemblerBase {
   void ubfx(Register dst, Register src, int lsb, int width,
             Condition cond = al);
 
+#ifdef PENGUIN_CLEANUP
   void sbfx(Register dst, Register src, int lsb, int width,
             Condition cond = al);
 
@@ -1092,6 +1097,7 @@ class Assembler : public AssemblerBase {
 
   void bfi(Register dst, Register src, int lsb, int width,
            Condition cond = al);
+#endif
 
   // Special register access
   // PowerPC
@@ -1479,6 +1485,7 @@ class Assembler : public AssemblerBase {
   static bool IsAddic(Instr instr);
 
   static bool IsBranch(Instr instr);
+#ifdef PENGUIN_CLEANUP
   static int GetBranchOffset(Instr instr);
   static bool IsLdrRegisterImmediate(Instr instr);
   static int GetLdrRegisterImmediateOffset(Instr instr);
@@ -1488,16 +1495,21 @@ class Assembler : public AssemblerBase {
   static bool IsAddRegisterImmediate(Instr instr);
   static Instr SetAddRegisterImmediateOffset(Instr instr, int offset);
   static Register GetRd(Instr instr);
+#endif
   static Register GetRA(Instr instr);
   static Register GetRB(Instr instr);
+#ifdef PENGUIN_CLEANUP
   static Register GetRn(Instr instr);
   static Register GetRm(Instr instr);
+#endif
   static bool IsPush(Instr instr);
   static bool IsPop(Instr instr);
+#ifdef PENGUIN_CLEANUP
   static bool IsStrRegFpOffset(Instr instr);
   static bool IsLdrRegFpOffset(Instr instr);
   static bool IsStrRegFpNegOffset(Instr instr);
   static bool IsLdrRegFpNegOffset(Instr instr);
+#endif
   static bool IsLdrPcImmediateOffset(Instr instr);
 #ifdef PENGUIN_CLEANUP
   static bool IsTstImmediate(Instr instr);
