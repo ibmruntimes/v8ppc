@@ -2728,11 +2728,11 @@ void FullCodeGenerator::EmitIsStringWrapperSafeForDefaultValueOf(
   __ bind(&loop);
   __ lwz(r6, MemOperand(r7, 0));
   __ cmp(r6, ip);
-  __ b(eq, if_false);
+  __ beq(if_false);
   __ add(r7, r7, Operand(DescriptorArray::kDescriptorSize * kPointerSize));
   __ bind(&entry);
-  __ cmp(r7, Operand(r5));
-  __ b(ne, &loop);
+  __ cmp(r7, r5);
+  __ bne(&loop);
 
   __ bind(&done);
   // If a valueOf property is not found on the object check that its
@@ -3047,7 +3047,7 @@ void FullCodeGenerator::EmitRandomHeapNumber(CallRuntime* expr) {
     __ PrepareCallCFunction(2, r3);
     __ lwz(r4,
            ContextOperand(context_register(), Context::GLOBAL_OBJECT_INDEX));
-    __ mov(r3, Operand(r7));
+    __ mr(r3, r7);
     __ lwz(r4, FieldMemOperand(r4, GlobalObject::kNativeContextOffset));
     __ CallCFunction(
         ExternalReference::fill_heap_number_with_random_function(isolate()), 2);

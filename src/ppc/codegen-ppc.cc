@@ -178,7 +178,7 @@ void ElementsTransitionGenerator::GenerateSmiToDouble(
   __ add(r6, r7, Operand(FixedArray::kHeaderSize - kHeapObjectTag));
   __ add(r10, r9, Operand(FixedDoubleArray::kHeaderSize));
   __ slwi(r9, r8, Operand(2));
-  __ add(r9, r10, Operand(r9));
+  __ add(r9, r10, r9);
   __ mov(r7, Operand(kHoleNanLower32));
   __ mov(r8, Operand(kHoleNanUpper32));
   // r6: begin of source FixedArray element fields, not tagged
