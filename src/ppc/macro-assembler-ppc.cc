@@ -1081,7 +1081,8 @@ void MacroAssembler::InvokePrologue(const ParameterCount& expected,
   // roohack - remove these 3 checks temporarily
   //  ASSERT(actual.is_immediate() || actual.reg().is(r3));
   //  ASSERT(expected.is_immediate() || expected.reg().is(r5));
-  //  ASSERT((!code_constant.is_null() && code_reg.is(no_reg)) || code_reg.is(r6));
+  //  ASSERT((!code_constant.is_null() && code_reg.is(no_reg))
+  //          || code_reg.is(r6));
 
   if (expected.is_immediate()) {
     ASSERT(actual.is_immediate());
@@ -2548,7 +2549,7 @@ void MacroAssembler::ConvertToInt32(Register source,
     b(ge, not_int32);
   } else {
 #else
-  PPCPORT_UNIMPLEMENTED();  // penguin: implement the above sequence using PPC 64-bit FPR
+  PPCPORT_UNIMPLEMENTED();  // penguin: implement using PPC 64-bit FPR
 #endif
     // This code is faster for doubles that are in the ranges -0x7fffffff to
     // -0x40000000 or 0x40000000 to 0x7fffffff. This corresponds almost to

@@ -2006,10 +2006,10 @@ void Assembler::vmov(const DwVfpRegister dst,
       // instruction.
       mov(scratch, Operand(hi));
 #if V8_HOST_ARCH_PPC
-      vmov(dst, scratch, ip, cond); // hack, swap ENDIAN scratch/ip
+      vmov(dst, scratch, ip, cond);  // hack, swap ENDIAN scratch/ip
 #else
-      vmov(dst, ip, scratch, cond); // original ENDIAN
-#endif 
+      vmov(dst, ip, scratch, cond);  // original ENDIAN
+#endif
     }
   }
 }

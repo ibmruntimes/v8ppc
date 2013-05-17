@@ -150,7 +150,8 @@ bool LCodeGen::GeneratePrologue() {
   }
 
   __ stm(db_w, sp, r1.bit() | cp.bit() | r11.bit() | lr.bit());
-  __ add(r11, sp, Operand(2 * kPointerSize));  // Adjust FP to point to saved FP.
+  // Adjust FP to point to saved FP.
+  __ add(r11, sp, Operand(2 * kPointerSize));
 
   // Reserve space for the stack slots needed by the code.
   int slots = GetStackSlotCount();

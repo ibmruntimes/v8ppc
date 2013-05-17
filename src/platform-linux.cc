@@ -1073,8 +1073,10 @@ static void ProfilerSignalHandler(int signal, siginfo_t* info, void* context) {
   sample->fp = reinterpret_cast<Address>(mcontext.gregs[30]);
 #elif V8_HOST_ARCH_PPC
   sample->pc = reinterpret_cast<Address>(ucontext->uc_mcontext.regs->nip);
-  sample->sp = reinterpret_cast<Address>(ucontext->uc_mcontext.regs->gpr[PT_R1]);
-  sample->fp = reinterpret_cast<Address>(ucontext->uc_mcontext.regs->gpr[PT_R31]);
+  sample->sp =
+    reinterpret_cast<Address>(ucontext->uc_mcontext.regs->gpr[PT_R1]);
+  sample->fp =
+    reinterpret_cast<Address>(ucontext->uc_mcontext.regs->gpr[PT_R31]);
 #endif  // V8_HOST_ARCH_*
   sampler->SampleStack(sample);
   sampler->Tick(sample);

@@ -681,11 +681,10 @@ void FloatingPointHelper::LoadNumber(MacroAssembler* masm,
 
   // Handle loading a double from a heap number
 #ifdef PENGUIN_CLEANUP
-  if (destination == kVFPRegisters)
+  if (destination == kVFPRegisters) {
 #else
-  if (destination == kFPRegisters) 
+  if (destination == kFPRegisters) {
 #endif
-    {
     // Load the double from tagged HeapNumber to double register.
     __ sub(scratch1, object, Operand(kHeapObjectTag));
     __ lfd(dst, scratch1, HeapNumber::kValueOffset);
@@ -813,7 +812,6 @@ void FloatingPointHelper::ConvertIntToDouble(MacroAssembler* masm,
     __ lwz(dst2, MemOperand(sp, 4));
     __ add(sp, sp, Operand(8));
   }
-
 }
 
 
@@ -1730,7 +1728,7 @@ void CompareStub::Generate(MacroAssembler* masm) {
   // 3) Fall through to both_loaded_as_doubles.
   // 4) Jump to lhs_not_nan.
   // In cases 3 and 4 we have found out we were dealing with a number-number
-  // comparison.  The double values of the numbers have been loaded 
+  // comparison.  The double values of the numbers have been loaded
   // into d7 and d6.
   EmitSmiNonsmiComparison(masm, lhs_, rhs_, &lhs_not_nan, &slow, strict_);
 
@@ -2250,14 +2248,15 @@ void UnaryOpStub::GenerateHeapNumberCodeBitNot(
     __ sub(r5, r3, Operand(kHeapObjectTag));
     __ vstr(d0, r5, HeapNumber::kValueOffset);
     __ Ret();
-  } else 
+  } else {
 #endif
-  {
     // WriteInt32ToHeapNumberStub does not trigger GC, so we do not
     // have to set up a frame.
     WriteInt32ToHeapNumberStub stub(r4, r3, r5);
     __ Jump(stub.GetCode(), RelocInfo::CODE_TARGET);
+#ifdef PENGUIN_CLEANUP
   }
+#endif
 
   __ bind(&impossible);
   if (FLAG_debug_code) {
@@ -2588,7 +2587,7 @@ void BinaryOpStub::GenerateFPOperation(MacroAssembler* masm,
 #ifdef PENGUIN_CLEANUP
           FloatingPointHelper::kVFPRegisters :
 #else
-	  FloatingPointHelper::kFPRegisters :
+          FloatingPointHelper::kFPRegisters :
 #endif
           FloatingPointHelper::kCoreRegisters;
 
@@ -2611,11 +2610,10 @@ void BinaryOpStub::GenerateFPOperation(MacroAssembler* masm,
 
       // Calculate the result.
 #ifdef PENGUIN_CLEANUP
-      if (destination == FloatingPointHelper::kVFPRegisters) 
+      if (destination == FloatingPointHelper::kVFPRegisters) {
 #else
-      if (destination == FloatingPointHelper::kFPRegisters) 
+      if (destination == FloatingPointHelper::kFPRegisters) {
 #endif
-	{
         // Using FP registers:
         // d6: Left value
         // d7: Right value
@@ -2756,7 +2754,7 @@ void BinaryOpStub::GenerateFPOperation(MacroAssembler* masm,
       __ vstr(d0, r6, HeapNumber::kValueOffset);
       __ Ret();
 #else
-      PPCPORT_UNIMPLEMENTED(); // penguin: above sequence needs to be converted into PPC
+      PPCPORT_UNIMPLEMENTED();
 #endif
       break;
     }
@@ -2905,7 +2903,7 @@ void BinaryOpStub::GenerateInt32Stub(MacroAssembler* masm) {
 #ifdef PENGUIN_CLEANUP
               ? FloatingPointHelper::kVFPRegisters
 #else
- 	      ? FloatingPointHelper::kFPRegisters
+              ? FloatingPointHelper::kFPRegisters
 #endif
               : FloatingPointHelper::kCoreRegisters;
 
@@ -2933,11 +2931,10 @@ void BinaryOpStub::GenerateInt32Stub(MacroAssembler* masm) {
                                                    &transition);
 
 #ifdef PENGUIN_CLEANUP
-      if (destination == FloatingPointHelper::kVFPRegisters) 
+      if (destination == FloatingPointHelper::kVFPRegisters) {
 #else
-      if (destination == FloatingPointHelper::kFPRegisters) 
+      if (destination == FloatingPointHelper::kFPRegisters) {
 #endif
-      {
         CpuFeatures::Scope scope(VFP2);
         Label return_heap_number;
         switch (op_) {
@@ -3119,7 +3116,7 @@ void BinaryOpStub::GenerateInt32Stub(MacroAssembler* masm) {
         case Token::SHR:
           __ andi(r5, r5, Operand(0x1f));
           __ srw(r5, r6, r5);
-#if 0 // not clear if PPC needs this logic below
+#if 0  // not clear if PPC needs this logic below
           // SHR is special because it is required to produce a positive answer.
           // We only get a negative result if the shift value (r2) is 0.
           // This result cannot be respresented as a signed 32-bit integer, try
@@ -3713,8 +3710,8 @@ void MathPowStub::Generate(MacroAssembler* masm) {
     __ jmp(&unpack_exponent);
 
     __ bind(&base_is_smi);
-    __ vmov(single_scratch.low(), scratch); // roohack
-    __ vcvt_f64_s32(double_base, single_scratch.low()); // roohack
+    __ vmov(single_scratch.low(), scratch);  // roohack
+    __ vcvt_f64_s32(double_base, single_scratch.low());  // roohack
     __ bind(&unpack_exponent);
 
     __ UntagAndJumpIfSmi(scratch, exponent, &int_exponent);
@@ -3735,10 +3732,10 @@ void MathPowStub::Generate(MacroAssembler* masm) {
   if (exponent_type_ != INTEGER) {
     Label int_exponent_convert;
     // Detect integer exponents stored as double.
-    __ vcvt_u32_f64(single_scratch.low(), double_exponent); //roohack
+    __ vcvt_u32_f64(single_scratch.low(), double_exponent);  // roohack
     // We do not check for NaN or Infinity here because comparing numbers on
     // ARM correctly distinguishes NaNs.  We end up calling the built-in.
-    __ vcvt_f64_u32(double_scratch, single_scratch.low()); //roohack
+    __ vcvt_f64_u32(double_scratch, single_scratch.low());  // roohack
     __ VFPCompareAndSetFlags(double_scratch, double_exponent);
     __ b(eq, &int_exponent_convert);
 
@@ -3799,8 +3796,8 @@ void MathPowStub::Generate(MacroAssembler* masm) {
     __ jmp(&done);
 
     __ bind(&int_exponent_convert);
-    __ vcvt_u32_f64(single_scratch.low(), double_exponent); //roohack
-    __ vmov(scratch, single_scratch.low()); // roohack
+    __ vcvt_u32_f64(single_scratch.low(), double_exponent);  // roohack
+    __ vmov(scratch, single_scratch.low());  // roohack
   }
 
   // Calculate power with integer exponent.
@@ -3838,8 +3835,8 @@ void MathPowStub::Generate(MacroAssembler* masm) {
   __ b(ne, &done);
   // double_exponent may not containe the exponent value if the input was a
   // smi.  We set it with exponent value before bailing out.
-  __ vmov(single_scratch.low(), exponent);  //roohack
-  __ vcvt_f64_s32(double_exponent, single_scratch.low()); // roohack
+  __ vmov(single_scratch.low(), exponent);  // roohack
+  __ vcvt_f64_s32(double_exponent, single_scratch.low());  // roohack
 
   // Returning or bailing out.
   Counters* counters = masm->isolate()->counters();
@@ -3955,12 +3952,12 @@ void CEntryStub::GenerateCore(MacroAssembler* masm,
 #else
   // Call C built-in.
   // r3 = argc, r4 = argv
-  __ mr(r3, r24); // hack
+  __ mr(r3, r24);  // hack
   __ mr(r4, r16);
 #endif
 
-#if defined(V8_HOST_ARCH_ARM) // this is never used -- may need
-                              // something similar for PPC?
+#if defined(V8_HOST_ARCH_ARM)  // this is never used -- may need
+                               // something similar for PPC?
   int frame_alignment = MacroAssembler::ActivationFrameAlignment();
   int frame_alignment_mask = frame_alignment - 1;
   if (FLAG_debug_code) {
@@ -3981,7 +3978,7 @@ void CEntryStub::GenerateCore(MacroAssembler* masm,
   // PPC passes C++ objects by reference not value
   // Thus argument 2 (r4) should be the isolate
   __ mov(r4, Operand(ExternalReference::isolate_address()));
-#else 
+#else
   __ mov(r5, Operand(ExternalReference::isolate_address()));
 #endif
 
@@ -3992,7 +3989,7 @@ void CEntryStub::GenerateCore(MacroAssembler* masm,
   // Compute the return address in lr to return to after the jump below. Pc is
   // already at '+ 8' from the current instruction but return is after three
   // instructions so add another 4 to pc to get the return address.
-  {
+  // {
     Label here;
     __ b(&here, SetLK);
     __ bind(&here);
@@ -4000,7 +3997,7 @@ void CEntryStub::GenerateCore(MacroAssembler* masm,
     __ add(r0, r8, Operand(20));
     __ stw(r0, MemOperand(sp, 0));
     __ Call(r25);
-  }
+  // }
 
   if (always_allocate) {
     // It's okay to clobber r5 and r6 here. Don't mess with r3 and r4
@@ -4017,7 +4014,7 @@ void CEntryStub::GenerateCore(MacroAssembler* masm,
   // Lower 2 bits of r5 are 0 iff r3 has failure tag.
   __ add(r5, r3, Operand(1));
   STATIC_ASSERT(kFailureTagMask < 0x8000);
-  __ andi(r0, r5, Operand(kFailureTagMask)); 
+  __ andi(r0, r5, Operand(kFailureTagMask));
   __ cmpi(r0, Operand(0));
   __ beq(&failure_returned);
 
@@ -4026,7 +4023,7 @@ void CEntryStub::GenerateCore(MacroAssembler* masm,
   // sp: stack pointer
   // fp: frame pointer
   //  Callee-saved register r14 still holds argc.
-  __ LeaveExitFrame(save_doubles_, r24); // hack
+  __ LeaveExitFrame(save_doubles_, r24);  // hack
   __ blr();
 
   // check if we should retry or throw exception
@@ -4040,7 +4037,7 @@ void CEntryStub::GenerateCore(MacroAssembler* masm,
   // Special handling of out of memory exceptions.
   Failure* out_of_memory = Failure::OutOfMemoryException();
   __ mov(r6, Operand(reinterpret_cast<int32_t>(out_of_memory)));
-  __ cmp(r3, r6); 
+  __ cmp(r3, r6);
   __ beq(throw_out_of_memory_exception);
 
   // Retrieve the pending exception and clear the variable.
@@ -4095,7 +4092,7 @@ void CEntryStub::Generate(MacroAssembler* masm) {
 
   // Set up argc and the builtin function in callee-saved registers.
   __ mr(r24, r3);  // hack for now should be r14
-  __ mr(r25, r4); // hack should be r15
+  __ mr(r25, r4);  // hack should be r15
 
   // r14: number of arguments (C callee-saved)
   // r15: pointer to builtin function (C callee-saved)
@@ -4192,8 +4189,8 @@ void JSEntryStub::GenerateBody(MacroAssembler* masm, bool is_construct) {
 
   // Save the non-volatile registers we will be using
   // r14,r15,r16 (fp aka r31 is already stored)
-  __ stw(r24, MemOperand(sp, 16));      // roohack - r14 ARM hack
-  __ stw(r25, MemOperand(sp, 20));	// roohack - r15 ARM hack
+  __ stw(r24, MemOperand(sp, 16));  // roohack - r14 ARM hack
+  __ stw(r25, MemOperand(sp, 20));  // roohack - r15 ARM hack
   __ stw(r16, MemOperand(sp, 24));
 
   __ stw(r20, MemOperand(sp, 40));
@@ -4221,7 +4218,7 @@ void JSEntryStub::GenerateBody(MacroAssembler* masm, bool is_construct) {
   // r6: argc
   // r7: argv
   Isolate* isolate = masm->isolate();
-  __ li(r0, Operand(-1)); // Push a bad frame pointer to fail if it is used.
+  __ li(r0, Operand(-1));  // Push a bad frame pointer to fail if it is used.
   __ push(r0);
   int marker = is_construct ? StackFrame::ENTRY_CONSTRUCT : StackFrame::ENTRY;
   __ li(r0, Operand(Smi::FromInt(marker)));
@@ -4249,7 +4246,7 @@ void JSEntryStub::GenerateBody(MacroAssembler* masm, bool is_construct) {
   __ bind(&non_outermost_js);
   __ mov(ip, Operand(Smi::FromInt(StackFrame::INNER_JSENTRY_FRAME)));
   __ bind(&cont);
-  __ push(ip); // frame-type
+  __ push(ip);  // frame-type
 
   // Jump to a faked try block that does the invoke, with a faked catch
   // block that sets the pending exception.
@@ -4356,8 +4353,8 @@ void JSEntryStub::GenerateBody(MacroAssembler* masm, bool is_construct) {
 #endif
 
   // Restore non-volatile registers
-  __ lwz(r24, MemOperand(sp, 16));      // roohack - r14 ARM hack
-  __ lwz(r25, MemOperand(sp, 20));      // roohack - r15 ARM hack
+  __ lwz(r24, MemOperand(sp, 16));  // roohack - r14 ARM hack
+  __ lwz(r25, MemOperand(sp, 20));  // roohack - r15 ARM hack
   __ lwz(r16, MemOperand(sp, 24));
 
   __ lwz(r20, MemOperand(sp, 40));
@@ -4718,7 +4715,8 @@ void ArgumentsAccessStub::GenerateNewNonStrictFast(MacroAssembler* masm) {
   const int kAliasedOffset =
       Context::SlotOffset(Context::ALIASED_ARGUMENTS_BOILERPLATE_INDEX);
 
-  __ lwz(r7, MemOperand(r20, Context::SlotOffset(Context::GLOBAL_OBJECT_INDEX)));
+  __ lwz(r7, MemOperand(r20,
+             Context::SlotOffset(Context::GLOBAL_OBJECT_INDEX)));
   __ lwz(r7, FieldMemOperand(r7, GlobalObject::kNativeContextOffset));
   Label skip4, skip5;
   __ cmpi(r4, Operand::Zero());
@@ -5859,7 +5857,6 @@ void StringHelper::GenerateCopyCharacters(MacroAssembler* masm,
                                           Register count,
                                           Register scratch,
                                           bool ascii) {
-
   Label loop;
   __ bind(&loop);
   // This loop just copies one character at a time, as it is only used for very
@@ -6315,8 +6312,8 @@ void SubStringStub::Generate(MacroAssembler* masm) {
   // r5: result string length
   // r8: first character of substring to copy
   STATIC_ASSERT((SeqAsciiString::kHeaderSize & kObjectAlignmentMask) == 0);
-  StringHelper::GenerateCopyCharactersLong(masm, r4, r8, r5, r6, r7, r9, r10, r22,
-                                           COPY_ASCII | DEST_ALWAYS_ALIGNED);
+  StringHelper::GenerateCopyCharactersLong(masm, r4, r8, r5, r6, r7, r9,
+       r10, r22, COPY_ASCII | DEST_ALWAYS_ALIGNED);
   __ jmp(&return_r3);
 
   // Allocate and copy the resulting two-byte string.
@@ -6532,7 +6529,7 @@ void StringAddStub::Generate(MacroAssembler* masm) {
     __ lbz(r8, FieldMemOperand(r8, Map::kInstanceTypeOffset));
     STATIC_ASSERT(kStringTag == 0);
     // If either is not a string, go to runtime.
-    __ andi(r0,r7, Operand(kIsNotStringMask));
+    __ andi(r0, r7, Operand(kIsNotStringMask));
     __ cmpi(r0, Operand(0));
     __ bne(&call_runtime);
     __ andi(r0, r8, Operand(kIsNotStringMask));
@@ -6633,11 +6630,11 @@ void StringAddStub::Generate(MacroAssembler* masm) {
   // in a little endian mode)
   __ li(r9, Operand(2));
   __ AllocateAsciiString(r3, r9, r7, r8, r22, &call_runtime);
-#if V8_HOST_ARCH_PPC	// Really we mean BIG ENDIAN host
+#if V8_HOST_ARCH_PPC  // Really we mean BIG ENDIAN host
   __ stb(r5, FieldMemOperand(r3, SeqAsciiString::kHeaderSize));
   __ srwi(r5, r5, Operand(8));
   __ stb(r5, FieldMemOperand(r3, SeqAsciiString::kHeaderSize+1));
-#else // LITTLE ENDIAN host
+#else  // LITTLE ENDIAN host
   __ sth(r5, FieldMemOperand(r3, SeqAsciiString::kHeaderSize));
 #endif
   __ IncrementCounter(counters->string_add_native(), 1, r5, r6);
@@ -6669,7 +6666,7 @@ void StringAddStub::Generate(MacroAssembler* masm) {
   __ andi(r0, r7, Operand(kStringEncodingMask));
   __ cmpi(r0, Operand(0));
   __ beq(&non_ascii);
-  __ andi(r0,r8, Operand(kStringEncodingMask));
+  __ andi(r0, r8, Operand(kStringEncodingMask));
   __ cmpi(r0, Operand(0));
   __ beq(&non_ascii);
 
@@ -6910,7 +6907,7 @@ void ICCompareStub::GenerateHeapNumbers(MacroAssembler* masm) {
   // Load left and right operand
   // likely we can combine the constants to remove the sub
   __ sub(r5, r4, Operand(kHeapObjectTag));
-  __ lfd(d0, r5, HeapNumber::kValueOffset); 
+  __ lfd(d0, r5, HeapNumber::kValueOffset);
   __ sub(r5, r3, Operand(kHeapObjectTag));
   __ lfd(d1, r5, HeapNumber::kValueOffset);
 
@@ -7177,7 +7174,7 @@ void DirectCEntryStub::GenerateCall(MacroAssembler* masm,
   Assembler::BlockConstPoolScope block_const_pool(masm);
 
 #if defined(V8_HOST_ARCH_PPC)
-#define PowerPCAdjustment 3 
+#define PowerPCAdjustment 3
 #else
 #define PowerPCAdjustment 0
 #endif
@@ -7562,8 +7559,8 @@ void RecordWriteStub::Generate(MacroAssembler* masm) {
   Label skip_to_incremental_noncompacting;
   Label skip_to_incremental_compacting;
 
-  // The first two branch instructions are generated with labels so as to 
-  // get the offset fixed up correctly by the bind(Label*) call.  We patch 
+  // The first two branch instructions are generated with labels so as to
+  // get the offset fixed up correctly by the bind(Label*) call.  We patch
   // it back and forth between branch condition True and False
   // when we start and stop incremental heap marking.
   // See RecordWriteStub::Patch for details.
