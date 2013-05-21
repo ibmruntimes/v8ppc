@@ -1001,43 +1001,6 @@ static void StoreIntAsFloat(MacroAssembler* masm,
 #endif
 }
 
-#ifdef PENGUIN_CLEANUP
-// Convert unsigned integer with specified number of leading zeroes in binary
-// representation to IEEE 754 double.
-// Integer to convert is passed in register hiword.
-// Resulting double is returned in registers hiword:loword.
-// This functions does not work correctly for 0.
-static void GenerateUInt2Double(MacroAssembler* masm,
-                                Register hiword,
-                                Register loword,
-                                Register scratch,
-                                int leading_zeroes) {
-  const int meaningful_bits = kBitsPerInt - leading_zeroes - 1;
-  const int biased_exponent = HeapNumber::kExponentBias + meaningful_bits;
-
-  const int mantissa_shift_for_hi_word =
-      meaningful_bits - HeapNumber::kMantissaBitsInTopWord;
-
-  const int mantissa_shift_for_lo_word =
-      kBitsPerInt - mantissa_shift_for_hi_word;
-
-  __ mov(scratch, Operand(biased_exponent << HeapNumber::kExponentShift));
-  if (mantissa_shift_for_hi_word > 0) {
-    __ mov(loword, Operand(hiword, LSL, mantissa_shift_for_lo_word));
-    __ orr(hiword, scratch, Operand(hiword, LSR, mantissa_shift_for_hi_word));
-  } else {
-    __ mov(loword, Operand(0, RelocInfo::NONE));
-    __ orr(hiword, scratch, Operand(hiword, LSL, mantissa_shift_for_hi_word));
-  }
-
-  // If least significant bit of biased exponent was not 1 it was corrupted
-  // by most significant bit of mantissa so we should fix that.
-  if (!(biased_exponent & 1)) {
-    __ bic(hiword, hiword, Operand(1 << HeapNumber::kExponentShift));
-  }
-}
-#endif
-
 #undef __
 #define __ ACCESS_MASM(masm())
 

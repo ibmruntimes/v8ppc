@@ -252,12 +252,6 @@ class Simulator {
   // Unsupported instructions use Format to print an error and stop execution.
   void Format(Instruction* instr, const char* format);
 
-#ifdef PENGUIN_CLEANUP
-  // Checks if the current instruction should be executed based on its
-  // condition bits.
-  bool ConditionallyExecute(Instruction* instr);
-#endif
-
   // Helper functions to set the conditional flags in the architecture state.
   void SetNZFlags(int32_t val);
   void SetCFlag(bool val);
@@ -321,27 +315,6 @@ class Simulator {
   void DecodeExt2(Instruction* instr);
 
   void DecodeExt4(Instruction* instr);
-
-#ifdef PENGUIN_CLEANUP
-  // Executing is handled based on the instruction type.
-  // Both type 0 and type 1 rolled into one.
-  void DecodeType01(Instruction* instr);
-  void DecodeType2(Instruction* instr);
-  void DecodeType3(Instruction* instr);
-  void DecodeType4(Instruction* instr);
-  void DecodeType5(Instruction* instr);
-  void DecodeType6(Instruction* instr);
-  void DecodeType7(Instruction* instr);
-
-  // Support for VFP.
-  void DecodeTypeVFP(Instruction* instr);
-  void DecodeType6CoprocessorIns(Instruction* instr);
-
-  void DecodeVMOVBetweenCoreAndSinglePrecisionRegisters(Instruction* instr);
-  void DecodeVCMP(Instruction* instr);
-  void DecodeVCVTBetweenDoubleAndSingle(Instruction* instr);
-  void DecodeVCVTBetweenFloatingPointAndInteger(Instruction* instr);
-#endif
 
   // Executes one instruction.
   void InstructionDecode(Instruction* instr);

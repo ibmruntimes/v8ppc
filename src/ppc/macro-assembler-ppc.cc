@@ -268,28 +268,6 @@ void MacroAssembler::Move(DoubleRegister dst, DoubleRegister src) {
   }
 }
 
-#ifdef PENGUIN_CLEANUP
-void MacroAssembler::And(Register dst, Register src1, const Operand& src2,
-                         Condition cond) {
-  ASSERT(cond = al);
-  if (!src2.is_reg() &&
-      !src2.must_use_constant_pool(this) &&
-      src2.immediate() == 0) {
-    mov(dst, Operand(0, RelocInfo::NONE), LeaveCC, cond);
-
-  } else if (!src2.is_single_instruction(this) &&
-             !src2.must_use_constant_pool(this) &&
-             CpuFeatures::IsSupported(ARMv7) &&
-             IsPowerOf2(src2.immediate() + 1)) {
-    ubfx(dst, src1, 0,
-        WhichPowerOf2(static_cast<uint32_t>(src2.immediate()) + 1), cond);
-
-  } else {
-    and_(dst, src1, src2, LeaveCC, cond);
-  }
-}
-#endif
-
 void MacroAssembler::Ubfx(Register dst, Register src1, int lsb, int width,
                           Condition cond) {
   ASSERT(lsb < 32);
@@ -321,42 +299,6 @@ void MacroAssembler::Sbfx(Register dst, Register src1, int lsb, int width,
     srawi(dst, dst, shift_down);
   }
 }
-
-#ifdef PENGUIN_CLEANUP
-void MacroAssembler::Bfi(Register dst,
-                         Register src,
-                         Register scratch,
-                         int lsb,
-                         int width,
-                         Condition cond) {
-  ASSERT(0 <= lsb && lsb < 32);
-  ASSERT(0 <= width && width < 32);
-  ASSERT(lsb + width < 32);
-  ASSERT(!scratch.is(dst));
-  if (width == 0) return;
-  if (!CpuFeatures::IsSupported(ARMv7) || predictable_code_size()) {
-    int mask = (1 << (width + lsb)) - 1 - ((1 << lsb) - 1);
-    bic(dst, dst, Operand(mask));
-    and_(scratch, src, Operand((1 << width) - 1));
-    mov(scratch, Operand(scratch, LSL, lsb));
-    orr(dst, dst, scratch);
-  } else {
-    bfi(dst, src, lsb, width, cond);
-  }
-}
-
-
-void MacroAssembler::Bfc(Register dst, int lsb, int width, Condition cond) {
-  ASSERT(lsb < 32);
-  if (!CpuFeatures::IsSupported(ARMv7) || predictable_code_size()) {
-    int mask = (1 << (width + lsb)) - 1 - ((1 << lsb) - 1);
-    bic(dst, dst, Operand(mask));
-  } else {
-    bfc(dst, lsb, width, cond);
-  }
-}
-#endif
-
 
 void MacroAssembler::Usat(Register dst, int satpos, const Operand& src,
                           Condition cond) {
@@ -2122,39 +2064,16 @@ void MacroAssembler::StoreNumberToDoubleElements(Register value_reg,
   add(scratch1, scratch1, scratch4);
   // scratch1 is now effective address of the double element
 
-#ifdef PENGUIN_CLEANUP
-  FloatingPointHelper::Destination destination;
-  if (CpuFeatures::IsSupported(VFP2)) {
-    destination = FloatingPointHelper::kVFPRegisters;
-  } else {
-    destination = FloatingPointHelper::kCoreRegisters;
-  }
-#endif
-
   Register untagged_value = elements_reg;
   SmiUntag(untagged_value, value_reg);
   FloatingPointHelper::ConvertIntToDouble(this,
                                           untagged_value,
-#ifdef PENGUIN_CLEANUP
-                                          destination,
-#else
                                           FloatingPointHelper::kFPRegisters,
-#endif
                                           d0,
                                           mantissa_reg,
                                           exponent_reg,
                                           d2);
-#ifdef PENGUIN_CLEANUP
-  if (destination == FloatingPointHelper::kVFPRegisters) {
-    CpuFeatures::Scope scope(VFP2);
-    vstr(d0, scratch1, 0);
-  } else {
-    str(mantissa_reg, MemOperand(scratch1, 0));
-    str(exponent_reg, MemOperand(scratch1, Register::kSizeInBytes));
-  }
-#else
   stfd(d0, scratch1, 0);
-#endif
 
   bind(&done);
 }
@@ -2442,58 +2361,6 @@ void MacroAssembler::IndexFromHash(Register hash, Register index) {
   rlwinm(index, hash, 31, 7, 30);
 }
 
-#ifdef PENGUIN_CLEANUP
-void MacroAssembler::IntegerToDoubleConversionWithVFP3(Register inReg,
-                                                       Register outHighReg,
-                                                       Register outLowReg) {
-  // ARMv7 VFP3 instructions to implement integer to double conversion.
-  mov(r7, Operand(inReg, ASR, kSmiTagSize));
-  vmov(s15, r7);
-  vcvt_f64_s32(d7, s15);
-  vmov(outLowReg, outHighReg, d7);
-}
-
-
-void MacroAssembler::ObjectToDoubleVFPRegister(Register object,
-                                               DwVfpRegister result,
-                                               Register scratch1,
-                                               Register scratch2,
-                                               Register heap_number_map,
-                                               DwVfpRegister scratch3,
-                                               Label* not_number,
-                                               ObjectToDoubleFlags flags) {
-  Label done;
-  if ((flags & OBJECT_NOT_SMI) == 0) {
-    Label not_smi;
-    JumpIfNotSmi(object, &not_smi);
-    // Remove smi tag and convert to double.
-    mov(scratch1, Operand(object, ASR, kSmiTagSize));
-    vmov(scratch3.low(), scratch1);  // roohack - needs to be converted
-    vcvt_f64_s32(result, scratch3.low());  // roohack - needs to be converted
-    b(&done);
-    bind(&not_smi);
-  }
-  // Check for heap number and load double value from it.
-  lwz(scratch1, FieldMemOperand(object, HeapObject::kMapOffset));
-  sub(scratch2, object, Operand(kHeapObjectTag));
-  cmp(scratch1, heap_number_map);
-  bne(not_number);
-  if ((flags & AVOID_NANS_AND_INFINITIES) != 0) {
-    // If exponent is all ones the number is either a NaN or +/-Infinity.
-    lwz(scratch1, FieldMemOperand(object, HeapNumber::kExponentOffset));
-    Sbfx(scratch1,
-         scratch1,
-         HeapNumber::kExponentShift,
-         HeapNumber::kExponentBits);
-    // All-one value sign extend to -1.
-    cmpi(scratch1, Operand(-1));
-    beq(not_number);
-  }
-  vldr(result, scratch2, HeapNumber::kValueOffset);
-  bind(&done);
-}
-#endif
-
 void MacroAssembler::SmiToDoubleFPRegister(Register smi,
                                             DwVfpRegister value,
                                             Register scratch1,
@@ -2637,7 +2504,8 @@ void MacroAssembler::EmitVFPTruncate(VFPRoundingMode rounding_mode,
                                      Register scratch2,
                                      CheckForInexactConversion check_inexact) {
   PPCPORT_UNIMPLEMENTED();
-  //ASSERT(false);  // Fail (penguin: assert triggered in mjsunit/sparse-array-reverse)
+  // Fail (penguin: assert triggered in mjsunit/sparse-array-reverse)
+  // ASSERT(false);
 }
 
 

@@ -136,26 +136,10 @@ class MacroAssembler: public Assembler {
             Register scratch = no_reg,
             Condition cond = al);
 
-#ifdef PENGUIN_CLEANUP
-  void And(Register dst, Register src1, const Operand& src2,
-           Condition cond = al);
-#endif
   void Ubfx(Register dst, Register src, int lsb, int width,
             Condition cond = al);
   void Sbfx(Register dst, Register src, int lsb, int width,
             Condition cond = al);
-#ifdef PENGUIN_CLEANUP
-  // The scratch register is not used for ARMv7.
-  // scratch can be the same register as src (in which case it is trashed), but
-  // not the same as dst.
-  void Bfi(Register dst,
-           Register src,
-           Register scratch,
-           int lsb,
-           int width,
-           Condition cond = al);
-  void Bfc(Register dst, int lsb, int width, Condition cond = al);
-#endif
   void Usat(Register dst, int satpos, const Operand& src,
             Condition cond = al);
 
@@ -877,26 +861,6 @@ class MacroAssembler: public Assembler {
   // Get the number of least significant bits from a register
   void GetLeastBitsFromSmi(Register dst, Register src, int num_least_bits);
   void GetLeastBitsFromInt32(Register dst, Register src, int mun_least_bits);
-
-#ifdef PENGUIN_CLEANUP
-  // Uses VFP instructions to Convert a Smi to a double.
-  void IntegerToDoubleConversionWithVFP3(Register inReg,
-                                         Register outHighReg,
-                                         Register outLowReg);
-
-  // Load the value of a number object into a VFP double register. If the object
-  // is not a number a jump to the label not_number is performed and the VFP
-  // double register is unchanged.
-  void ObjectToDoubleVFPRegister(
-      Register object,
-      DwVfpRegister value,
-      Register scratch1,
-      Register scratch2,
-      Register heap_number_map,
-      DwVfpRegister scratch3,
-      Label* not_number,
-      ObjectToDoubleFlags flags = NO_OBJECT_TO_DOUBLE_FLAGS);
-#endif
 
   // Load the value of a smi object into a FP double register. The register
   // scratch1 can be the same register as smi in which case smi will hold the
