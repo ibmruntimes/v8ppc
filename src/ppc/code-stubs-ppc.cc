@@ -5916,7 +5916,7 @@ void StringHelper::GenerateCopyCharactersLong(MacroAssembler* masm,
   if (!ascii) {  // for non-ascii, double the length
     __ add(count, count, count);
   }
-  __ cmp(count, Operand(0, RelocInfo::NONE));
+  __ cmpi(count, Operand(0, RelocInfo::NONE));
   __ beq(&done);
 
   // Assume that you cannot read (or write) unaligned.
@@ -6171,6 +6171,7 @@ void SubStringStub::Generate(MacroAssembler* masm) {
   // Both r5 and r6 are untagged integers.
   __ cmpl(r5, r6);
   __ bgt(&runtime);  // Fail if from > to.
+  __ sub(r5, r5, r6);
 
   // Make sure first argument is a string.
   __ lwz(r3, MemOperand(sp, kStringOffset));
