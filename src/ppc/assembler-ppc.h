@@ -1141,6 +1141,7 @@ class Assembler : public AssemblerBase {
   void bkpt(uint32_t imm16);  // v5 and above
   void svc(uint32_t imm24, Condition cond = al);
 
+#ifdef PENGUIN_CLEANUP
   // Coprocessor instructions
 
   void cdp(Coprocessor coproc, int opcode_1,
@@ -1176,6 +1177,7 @@ class Assembler : public AssemblerBase {
             LFlag l = Short);  // v5 and above
   void ldc2(Coprocessor coproc, CRegister crd, Register base, int option,
             LFlag l = Short);  // v5 and above
+#endif
 
   // Support for floating point
   void lfd(const DwVfpRegister frt, const Register ra, int offset);
@@ -1233,6 +1235,7 @@ class Assembler : public AssemblerBase {
             const MemOperand& dst,
             const Condition cond = al);
 
+#ifdef PENGUIN_CLEANUP
   void vldm(BlockAddrMode am,
             Register base,
             DwVfpRegister first,
@@ -1256,6 +1259,7 @@ class Assembler : public AssemblerBase {
             SwVfpRegister first,
             SwVfpRegister last,
             Condition cond = al);
+#endif
 
   void vmov(const DwVfpRegister dst,
             double imm,

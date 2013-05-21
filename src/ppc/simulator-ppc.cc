@@ -1243,6 +1243,7 @@ void Simulator::Copy_FPSCR_to_APSR() {
 }
 
 
+#ifdef PENGUIN_CLEANUP
 // Addressing Mode 1 - Data-processing operands:
 // Get the value based on the shifter_operand with register.
 int32_t Simulator::GetShiftRm(Instruction* instr, bool* carry_out) {
@@ -1386,7 +1387,6 @@ int32_t Simulator::GetShiftRm(Instruction* instr, bool* carry_out) {
   return result;
 }
 
-#ifdef PENGUIN_CLEANUP
 // Addressing Mode 1 - Data-processing operands:
 // Get the value based on the shifter_operand with immediate.
 int32_t Simulator::GetImm(Instruction* instr, bool* carry_out) {

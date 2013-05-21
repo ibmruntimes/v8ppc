@@ -873,6 +873,8 @@ class Instruction {
   inline Opcode OpcodeField() const {
     return static_cast<Opcode>(BitField(24, 21));
   }
+
+#ifdef PENGUIN_CLEANUP
   inline int SValue() const { return Bit(20); }
     // with register
   inline int RmValue() const { return Bits(3, 0); }
@@ -911,12 +913,14 @@ class Instruction {
   // Fields used in Branch instructions
   inline int LinkValue() const { return Bit(24); }
   inline int SImmed24Value() const { return ((InstructionBits() << 8) >> 8); }
+#endif
 
   // Fields used in Software interrupt instructions
   inline SoftwareInterruptCodes SvcValue() const {
     return static_cast<SoftwareInterruptCodes>(Bits(23, 0));
   }
 
+#ifdef PENGUIN_CLEANUP
   // Test for special encodings of type 0 instructions (extra loads and stores,
   // as well as multiplications).
   inline bool IsSpecialType0() const { return (Bit(7) == 1) && (Bit(4) == 1); }
@@ -926,7 +930,6 @@ class Instruction {
                                            && (Bit(23) == 0)
                                            && (Bit(20) == 0)
                                            && ((Bit(7) == 0)); }
-#ifdef PENGUIN_CLEANUP
   // Test for a stop instruction.
   inline bool IsStop() const {
     return (TypeValue() == 7) && (Bit(24) == 1) && (SvcValue() >= kStopCode);
@@ -941,10 +944,10 @@ class Instruction {
   inline bool HasSign() const { return SignValue() == 1; }
   inline bool HasH()    const { return HValue() == 1; }
   inline bool HasLink() const { return LinkValue() == 1; }
-#endif
 
   // Decoding the double immediate in the vmov instruction.
   double DoubleImmedVmov() const;
+#endif
 
   // Instructions are read of out a code stream. The only way to get a
   // reference to an instruction is to convert a pointer. There is no way

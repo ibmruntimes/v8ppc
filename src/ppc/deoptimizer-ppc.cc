@@ -933,6 +933,7 @@ void Deoptimizer::FillInputFrame(Address tos, JavaScriptFrame* frame) {
 // This code tries to be close to ia32 code so that any changes can be
 // easily ported.
 void Deoptimizer::EntryGenerator::Generate() {
+#ifdef PENGUIN_CLEANUP
   GeneratePrologue();
 
   Isolate* isolate = masm()->isolate();
@@ -1119,6 +1120,9 @@ void Deoptimizer::EntryGenerator::Generate() {
   __ pop(lr);
   __ Jump(r7);
   __ stop("Unreachable.");
+#else
+  PPCPORT_UNIMPLEMENTED();
+#endif
 }
 
 

@@ -2111,7 +2111,7 @@ void Assembler::svc(uint32_t imm24, Condition cond) {
 #endif
 }
 
-
+#ifdef PENGUIN_CLEANUP
 // Coprocessor instructions.
 void Assembler::cdp(Coprocessor coproc,
                     int opcode_1,
@@ -2259,6 +2259,7 @@ void Assembler::ldc2(Coprocessor coproc,
   PPCPORT_CHECK(false);
 #endif
 }
+#endif
 
 // Floating point support
 
@@ -2537,7 +2538,7 @@ void Assembler::vstr(const SwVfpRegister src,
 #endif
 }
 
-
+#ifdef PENGUIN_CLEANUP
 void  Assembler::vldm(BlockAddrMode am,
                       Register base,
                       DwVfpRegister first,
@@ -2638,7 +2639,6 @@ void  Assembler::vstm(BlockAddrMode am,
 #endif
 }
 
-#ifdef PENGUIN_CLEANUP
 static void DoubleAsTwoUInt32(double d, uint32_t* lo, uint32_t* hi) {
   uint64_t i;
   memcpy(&i, &d, 8);
