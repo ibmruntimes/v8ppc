@@ -143,7 +143,9 @@ void Deoptimizer::PatchStackCheckCodeAt(Code* unoptimized_code,
   //  2a 00 00 01       bcs ok
   //  e5 9f c? ??       ldr ip, [pc, <stack guard address>]
   //  e1 2f ff 3c       blx ip
+#ifdef PENGUIN_CLEANUP
   ASSERT(Memory::int32_at(pc_after - kInstrSize) == kBlxIp);
+#endif
   ASSERT(Assembler::IsLdrPcImmediateOffset(
       Assembler::instr_at(pc_after - 2 * kInstrSize)));
   if (FLAG_count_based_interrupts) {
@@ -191,7 +193,9 @@ void Deoptimizer::RevertStackCheckCodeAt(Code* unoptimized_code,
                                          Code* check_code,
                                          Code* replacement_code) {
   const int kInstrSize = Assembler::kInstrSize;
+#ifdef PENGUIN_CLEANUP
   ASSERT(Memory::int32_at(pc_after - kInstrSize) == kBlxIp);
+#endif
   ASSERT(Assembler::IsLdrPcImmediateOffset(
       Assembler::instr_at(pc_after - 2 * kInstrSize)));
 
@@ -929,6 +933,7 @@ void Deoptimizer::FillInputFrame(Address tos, JavaScriptFrame* frame) {
 // This code tries to be close to ia32 code so that any changes can be
 // easily ported.
 void Deoptimizer::EntryGenerator::Generate() {
+#ifdef PENGUIN_CLEANUP
   GeneratePrologue();
 
   Isolate* isolate = masm()->isolate();
@@ -1115,6 +1120,9 @@ void Deoptimizer::EntryGenerator::Generate() {
   __ pop(lr);
   __ Jump(r7);
   __ stop("Unreachable.");
+#else
+  PPCPORT_UNIMPLEMENTED();
+#endif
 }
 
 

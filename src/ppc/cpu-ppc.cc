@@ -69,7 +69,8 @@ void CPU::FlushICache(void* start, size_t size) {
 #define CACHELINESIZE 128
 
   int *end = reinterpret_cast<int*>(start)+(size/4);
-  for ( int *pointer = reinterpret_cast<int*>(start); pointer < end; pointer+=CACHELINESIZE ) {
+  for (int *pointer = reinterpret_cast<int*>(start); pointer < end;
+        pointer+=CACHELINESIZE ) {
     __asm__(
       "dcbf 0, %0  \n"  \
       "sync        \n"  \

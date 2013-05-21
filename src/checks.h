@@ -295,7 +295,7 @@ extern bool FLAG_enable_slow_asserts;
 // PENGUIN: Extra checks for PPC PORT
 //   - PPCPORT_UNIMPLEMENTED: for unimplemented features
 //   - PPCPORT_CHECK: for development phase
-//   - PPCPORT_UNSAFE_IMPLEMENTATION: unsafe implementation (works for most cases)
+//   - PPCPORT_UNSAFE_IMPLEMENTATION: unsafe implementation
 #ifdef ENABLE_EXTRA_PPCCHECKS
 #define PPCPORT_CHECK(condition) CHECK(condition)
 #define PPCPORT_UNIMPLEMENTED() UNIMPLEMENTED()

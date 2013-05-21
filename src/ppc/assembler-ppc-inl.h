@@ -385,6 +385,7 @@ Address Assembler::target_address_at(Address pc) {
         (((instr2 & kImm16Mask) << 16) >> 16));
   }
 
+#ifdef PENGUIN_CLEANUP
   // We should never get here, force a bad address if we do.
   // UNREACHABLE();  -- temporary removal for ARM code..
   // return (Address)0xdeadbeef;
@@ -417,6 +418,10 @@ Address Assembler::target_address_at(Address pc) {
   // Verify that the constant pool comes after the instruction referencing it.
   ASSERT(offset >= -4);
   return target_pc + offset + 8;
+#else
+  PPCPORT_UNIMPLEMENTED();
+  return pc;  // fake a return (unimplemented path)
+#endif
 }
 
 

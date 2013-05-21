@@ -38,6 +38,7 @@
 namespace v8 {
 namespace internal {
 
+#ifdef PENGUIN_CLEANUP
 double Instruction::DoubleImmedVmov() const {
   // Reconstruct a double from the immediate encoded in the vmov instruction.
   //
@@ -57,7 +58,7 @@ double Instruction::DoubleImmedVmov() const {
   memcpy(&d, &imm, 8);
   return d;
 }
-
+#endif
 
 // These register names are defined in a way to match the native disassembler
 // formatting. See for example the command "objdump -d <binary file>".

@@ -3874,13 +3874,13 @@ void CEntryStub::GenerateCore(MacroAssembler* masm,
   // Compute the return address in lr to return to after the jump below. Pc is
   // already at '+ 8' from the current instruction but return is after three
   // instructions so add another 4 to pc to get the return address.
-  {
+  // {
     // Prevent literal pool emission before return address.
     Assembler::BlockConstPoolScope block_const_pool(masm);
     masm->add(lr, pc, Operand(4));
     __ str(lr, MemOperand(sp, 0));
     masm->Jump(r5);
-  }
+  // }
 
   if (always_allocate) {
     // It's okay to clobber r2 and r3 here. Don't mess with r0 and r1
@@ -6476,11 +6476,11 @@ void StringAddStub::Generate(MacroAssembler* masm) {
   // in a little endian mode)
   __ mov(r6, Operand(2));
   __ AllocateAsciiString(r0, r6, r4, r5, r9, &call_runtime);
-#if V8_HOST_ARCH_PPC	// Really we mean BIG ENDIAN host
+#if V8_HOST_ARCH_PPC  // Really we mean BIG ENDIAN host
   __ strb(r2, FieldMemOperand(r0, SeqAsciiString::kHeaderSize));
   __ mov(r2, Operand(r2, LSR, 8));
   __ strb(r2, FieldMemOperand(r0, SeqAsciiString::kHeaderSize+1));
-#else // LITTLE ENDIAN host
+#else  // LITTLE ENDIAN host
   __ strh(r2, FieldMemOperand(r0, SeqAsciiString::kHeaderSize));
 #endif
   __ IncrementCounter(counters->string_add_native(), 1, r2, r3);

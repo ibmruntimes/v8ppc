@@ -278,10 +278,11 @@ const Instr kPopRegPattern =
 #ifdef PENGUIN_CLEANUP
 // mov lr, pc
 const Instr kMovLrPc = al | MOV | kRegister_pc_Code | kRegister_lr_Code * B12;
-#endif
 // ldr rd, [pc, #offset]
 const Instr kLdrPCMask = kCondMask | 15 * B24 | 7 * B20 | 15 * B16;
+#endif
 const Instr kLdrPCPattern = al | 5 * B24 | L | kRegister_pc_Code * B16;
+#ifdef PENGUIN_CLEANUP
 // blxcc rm
 const Instr kBlxRegMask =
     15 * B24 | 15 * B20 | 15 * B16 | 15 * B12 | 15 * B8 | 15 * B4;
@@ -314,7 +315,7 @@ const Instr kStrRegFpNegOffsetPattern =
 const Instr kLdrStrInstrTypeMask = 0xffff0000;
 const Instr kLdrStrInstrArgumentMask = 0x0000ffff;
 const Instr kLdrStrOffsetMask = 0x00000fff;
-
+#endif
 
 // Spare buffer.
 static const int kMinimalBufferSize = 4*KB;
@@ -436,13 +437,13 @@ bool Assembler::IsBranch(Instr instr) {
 
 // end PowerPC
 
+#ifdef PENGUIN_CLEANUP
 int Assembler::GetBranchOffset(Instr instr) {
   // roohack temporary removal - ASSERT(IsBranch(instr));
   // Take the jump offset in the lower 24 bits, sign extend it and multiply it
   // with 4 to get the offset in bytes.
   return ((instr & kImm24Mask) << 8) >> 6;
 }
-
 
 bool Assembler::IsLdrRegisterImmediate(Instr instr) {
   return (instr & (B27 | B26 | B25 | B22 | B20)) == (B26 | B20);
@@ -499,7 +500,6 @@ Instr Assembler::SetAddRegisterImmediateOffset(Instr instr, int offset) {
   return (instr & ~kOff12Mask) | offset;
 }
 
-#ifdef PENGUIN_CLEANUP
 Register Assembler::GetRd(Instr instr) {
   Register reg;
   reg.code_ = Instruction::RdValue(instr);
@@ -542,7 +542,7 @@ bool Assembler::IsPop(Instr instr) {
   return ((instr & ~kRdMask) == kPopRegPattern);
 }
 
-
+#ifdef PENGUIN_CLEANUP
 bool Assembler::IsStrRegFpOffset(Instr instr) {
   return ((instr & kLdrStrInstrTypeMask) == kStrRegFpOffsetPattern);
 }
@@ -561,7 +561,7 @@ bool Assembler::IsStrRegFpNegOffset(Instr instr) {
 bool Assembler::IsLdrRegFpNegOffset(Instr instr) {
   return ((instr & kLdrStrInstrTypeMask) == kLdrRegFpNegOffsetPattern);
 }
-
+#endif
 
 bool Assembler::IsLdrPcImmediateOffset(Instr instr) {
   // Check the instruction is indeed a
@@ -570,10 +570,12 @@ bool Assembler::IsLdrPcImmediateOffset(Instr instr) {
 }
 
 
+#ifdef PENGUIN_CLEANUP
 bool Assembler::IsTstImmediate(Instr instr) {
   return (instr & (B27 | B26 | I | kOpCodeMask | S | kRdMask)) ==
       (I | TST | S);
 }
+#endif
 
 
 bool Assembler::IsCmpRegister(Instr instr) {
@@ -632,6 +634,7 @@ int Assembler::target_at(int pos)  {
          return pos + imm16;
        }
   }
+  PPCPORT_UNIMPLEMENTED();
   ASSERT(false);
   return -1;
 
@@ -822,12 +825,11 @@ void Assembler::next(Label* L) {
   }
 }
 
-
+#ifdef PENGUIN_CLEANUP
 static Instr EncodeMovwImmediate(uint32_t immediate) {
   ASSERT(immediate < 0x10000);
   return ((immediate & 0xf000) << 4) | (immediate & 0xfff);
 }
-
 
 // Low-level code emission routines depending on the addressing mode.
 // If this returns true then you have to use the rotate_imm and immed_8
@@ -887,7 +889,7 @@ static bool fits_shifter(uint32_t imm32,
   }
   return false;
 }
-
+#endif
 
 // We have to use the temporary register for things that can be relocated even
 // if they can be encoded in the ARM's 12 bits of immediate-offset instruction
@@ -908,7 +910,7 @@ bool Operand::must_use_constant_pool(const Assembler* assembler) const {
   return true;
 }
 
-
+#ifdef PENGUIN_CLEANUP
 bool Operand::is_single_instruction(const Assembler* assembler,
                                     Instr instr) const {
   if (rm_.is_valid()) return true;
@@ -941,6 +943,7 @@ bool Operand::is_single_instruction(const Assembler* assembler,
     return true;
   }
 }
+#endif
 
 void Assembler::a_form(Instr instr,
                        DwVfpRegister frt,
@@ -979,12 +982,12 @@ void Assembler::xo_form(Instr instr,
   emit(instr | rt.code()*B21 | ra.code()*B16 | rb.code()*B11 | o | r);
 }
 
+#ifdef PENGUIN_CLEANUP
 #if defined(INCLUDE_ARM)
 void Assembler::addrmod1(Instr instr,
                          Register rn,
                          Register rd,
                          const Operand& x) {
-#ifdef PENGUIN_CLEANUP
   CheckBuffer();
   // ASSERT((instr & ~(kCondMask | kOpCodeMask | S)) == 0);
   if (!x.rm_.is_valid()) {
@@ -1037,12 +1040,10 @@ void Assembler::addrmod1(Instr instr,
     // Block constant pool emission for one instruction after reading pc.
     BlockConstPoolFor(1);
   }
-#endif
 }
 
 
 void Assembler::addrmod2(Instr instr, Register rd, const MemOperand& x) {
-#ifdef PENGUIN_CLEANUP
   // ASSERT((instr & ~(kCondMask | B | L)) == B26);
   int am = x.am_;
   if (!x.rm_.is_valid()) {
@@ -1071,12 +1072,10 @@ void Assembler::addrmod2(Instr instr, Register rd, const MemOperand& x) {
   }
   ASSERT((am & (P|W)) == P || !x.ra_.is(pc));  // no pc base with writeback
   emit(instr | am | x.ra_.code()*B16 | rd.code()*B12);
-#endif
 }
 
 
 void Assembler::addrmod3(Instr instr, Register rd, const MemOperand& x) {
-#ifdef PENGUIN_CLEANUP
   // ASSERT((instr & ~(kCondMask | L | S6 | H)) == (B4 | B7));
   ASSERT(x.ra_.is_valid());
   int am = x.am_;
@@ -1112,7 +1111,6 @@ void Assembler::addrmod3(Instr instr, Register rd, const MemOperand& x) {
   }
   ASSERT((am & (P|W)) == P || !x.ra_.is(pc));  // no pc base with writeback
   emit(instr | am | x.ra_.code()*B16 | rd.code()*B12);
-#endif
 }
 
 
@@ -1148,6 +1146,7 @@ void Assembler::addrmod5(Instr instr, CRegister crd, const MemOperand& x) {
   emit(instr | am | x.ra_.code()*B16 | crd.code()*B12 | offset_8);
 }
 #endif  // INCLUDE_ARM
+#endif  // PENGUIN_CLEANUP
 
 int Assembler::branch_offset(Label* L, bool jump_elimination_allowed) {
   int target_pos;
@@ -1234,6 +1233,7 @@ void Assembler::bl(int branch_offset, Condition cond) {
 
 // end PowerPC
 
+#ifdef PENGUIN_CLEANUP
 void Assembler::blx(int branch_offset) {  // v5 and above
   positions_recorder()->WriteRecordedPositions();
   ASSERT((branch_offset & 1) == 0);
@@ -1256,19 +1256,28 @@ void Assembler::bx(Register target, Condition cond) {  // v5 and above, plus v4t
   ASSERT(!target.is(pc));  // use of pc is actually allowed, but discouraged
   emit(cond | B24 | B21 | 15*B16 | 15*B12 | 15*B8 | BX | target.code());
 }
+#endif
 
 
 // Data-processing instructions.
 
 void Assembler::and_(Register dst, Register src1, const Operand& src2,
                      SBit s, Condition cond) {
+#ifdef PENGUIN_CLEANUP
   addrmod1(cond | AND | s, src1, dst, src2);
+#else
+  PPCPORT_CHECK(false);
+#endif
 }
 
 
 void Assembler::eor(Register dst, Register src1, const Operand& src2,
                     SBit s, Condition cond) {
+#ifdef PENGUIN_CLEANUP
   addrmod1(cond | EOR | s, src1, dst, src2);
+#else
+  PPCPORT_CHECK(false);
+#endif
 }
 
 
@@ -1276,7 +1285,11 @@ void Assembler::eor(Register dst, Register src1, const Operand& src2,
 
 void Assembler::rsb(Register dst, Register src1, const Operand& src2,
                     SBit s, Condition cond) {
+#ifdef PENGUIN_CLEANUP
   addrmod1(cond | RSB | s, src1, dst, src2);
+#else
+  PPCPORT_CHECK(false);
+#endif
 }
 
 // PowerPC
@@ -1509,52 +1522,84 @@ void Assembler::neg(Register rt, Register ra, RCBit rc) {
 
 void Assembler::adc(Register dst, Register src1, const Operand& src2,
                     SBit s, Condition cond) {
+#ifdef PENGUIN_CLEANUP
   addrmod1(cond | ADC | s, src1, dst, src2);
+#else
+  PPCPORT_CHECK(false);
+#endif
 }
 
 
 void Assembler::sbc(Register dst, Register src1, const Operand& src2,
                     SBit s, Condition cond) {
+#ifdef PENGUIN_CLEANUP
   addrmod1(cond | SBC | s, src1, dst, src2);
+#else
+  PPCPORT_CHECK(false);
+#endif
 }
 
 
 void Assembler::rsc(Register dst, Register src1, const Operand& src2,
                     SBit s, Condition cond) {
+#ifdef PENGUIN_CLEANUP
   addrmod1(cond | RSC | s, src1, dst, src2);
+#else
+  PPCPORT_CHECK(false);
+#endif
 }
 
 
 void Assembler::tst(Register src1, const Operand& src2, Condition cond) {
+#ifdef PENGUIN_CLEANUP
   addrmod1(cond | TST | S, src1, r0, src2);
+#else
+  PPCPORT_CHECK(false);
+#endif
 }
 
 
 void Assembler::teq(Register src1, const Operand& src2, Condition cond) {
+#ifdef PENGUIN_CLEANUP
   addrmod1(cond | TEQ | S, src1, r0, src2);
+#else
+  PPCPORT_CHECK(false);
+#endif
 }
 
 
 void Assembler::cmp(Register src1, const Operand& src2, Condition cond) {
+#ifdef PENGUIN_CLEANUP
   addrmod1(cond | CMP | S, src1, r0, src2);
+#else
+  PPCPORT_CHECK(false);
+#endif
 }
 
-
+#ifdef PENGUIN_CLEAN
 void Assembler::cmp_raw_immediate(
     Register src, int raw_immediate, Condition cond) {
   ASSERT(is_uint12(raw_immediate));
   emit(cond | I | CMP | S | src.code() << 16 | raw_immediate);
 }
-
+#endif
 
 void Assembler::cmn(Register src1, const Operand& src2, Condition cond) {
+#ifdef PENGUIN_CLEANUP
   addrmod1(cond | CMN | S, src1, r0, src2);
+#else
+  PPCPORT_CHECK(false);
+#endif
 }
 
 
 void Assembler::orr(Register dst, Register src1, const Operand& src2,
                     SBit s, Condition cond) {
+#ifdef PENGUIN_CLEANUP
   addrmod1(cond | ORR | s, src1, dst, src2);
+#else
+  PPCPORT_CHECK(false);
+#endif
 }
 
 // This should really move to be in macro-assembler as it
@@ -1594,7 +1639,7 @@ void Assembler::mov(Register dst, const Operand& src, SBit s, Condition cond) {
   addic(dst, dst, Operand(lo_word));
 }
 
-
+#ifdef PENGUIN_CLEANUP
 void Assembler::movw(Register reg, uint32_t immediate, Condition cond) {
   ASSERT(immediate < 0x10000);
   mov(reg, Operand(immediate), LeaveCC, cond);
@@ -1604,16 +1649,24 @@ void Assembler::movw(Register reg, uint32_t immediate, Condition cond) {
 void Assembler::movt(Register reg, uint32_t immediate, Condition cond) {
   emit(cond | 0x34*B20 | reg.code()*B12 | EncodeMovwImmediate(immediate));
 }
-
+#endif
 
 void Assembler::bic(Register dst, Register src1, const Operand& src2,
                     SBit s, Condition cond) {
+#ifdef PENGUIN_CLEANUP
   addrmod1(cond | BIC | s, src1, dst, src2);
+#else
+  PPCPORT_CHECK(false);
+#endif
 }
 
 
 void Assembler::mvn(Register dst, const Operand& src, SBit s, Condition cond) {
+#ifdef PENGUIN_CLEANUP
   addrmod1(cond | MVN | s, r0, dst, src);
+#else
+  PPCPORT_CHECK(false);
+#endif
 }
 
 
@@ -1685,6 +1738,7 @@ void Assembler::umull(Register dstL,
 }
 
 
+#ifdef PENGUIN_CLEANUP
 // Miscellaneous arithmetic instructions.
 void Assembler::clz(Register dst, Register src, Condition cond) {
   // v5 and above.
@@ -1692,6 +1746,7 @@ void Assembler::clz(Register dst, Register src, Condition cond) {
   emit(cond | B24 | B22 | B21 | 15*B16 | dst.code()*B12 |
        15*B8 | CLZ | src.code());
 }
+#endif
 
 
 // Saturating instructions.
@@ -1739,6 +1794,7 @@ void Assembler::ubfx(Register dst,
 }
 
 
+#ifdef PENGUIN_CLEANUP
 // Signed bit field extract.
 // Extracts #width adjacent bits from position #lsb in a register, and
 // writes them to the low bits of a destination register. The extracted
@@ -1773,7 +1829,6 @@ void Assembler::bfc(Register dst, int lsb, int width, Condition cond) {
   emit(cond | 0x1f*B22 | msb*B16 | dst.code()*B12 | lsb*B7 | B4 | 0xf);
 }
 
-
 // Bit field insert.
 // Inserts #width adjacent bits from the low bits of the source register
 // into position #lsb of the destination register.
@@ -1792,6 +1847,7 @@ void Assembler::bfi(Register dst,
   emit(cond | 0x1f*B22 | msb*B16 | dst.code()*B12 | lsb*B7 | B4 |
        src.code());
 }
+#endif
 
 // Special register instructions
 // PowerPC
@@ -1818,13 +1874,18 @@ void Assembler::mcrfs(int bf, int bfa) {
 
 // Status register access instructions.
 void Assembler::mrs(Register dst, SRegister s, Condition cond) {
+#ifdef PENGUIN_CLEANUP
   ASSERT(!dst.is(pc));
   emit(cond | B24 | s | 15*B16 | dst.code()*B12);
+#else
+  PPCPORT_CHECK(false);
+#endif
 }
 
 
 void Assembler::msr(SRegisterFieldMask fields, const Operand& src,
                     Condition cond) {
+#ifdef PENGUIN_CLEANUP
   ASSERT(fields >= B16 && fields < B20);  // at least one field set
   Instr instr;
   if (!src.rm_.is_valid()) {
@@ -1845,72 +1906,115 @@ void Assembler::msr(SRegisterFieldMask fields, const Operand& src,
     instr = src.rm_.code();
   }
   emit(cond | instr | B24 | B21 | fields | 15*B12);
+#else
+  PPCPORT_CHECK(false);
+#endif
 }
 
 
 // Load/Store instructions.
 void Assembler::ldr(Register dst, const MemOperand& src, Condition cond) {
+#ifdef PENGUIN_CLEANUP
   if (dst.is(pc)) {
     positions_recorder()->WriteRecordedPositions();
   }
   addrmod2(cond | B26 | L, dst, src);
+#else
+  PPCPORT_CHECK(false);
+#endif
 }
 
 
 void Assembler::str(Register src, const MemOperand& dst, Condition cond) {
+#ifdef PENGUIN_CLEANUP
   addrmod2(cond | B26, src, dst);
+#else
+  PPCPORT_CHECK(false);
+#endif
 }
 
 
 void Assembler::ldrb(Register dst, const MemOperand& src, Condition cond) {
+#ifdef PENGUIN_CLEANUP
   addrmod2(cond | B26 | B | L, dst, src);
+#else
+  PPCPORT_CHECK(false);
+#endif
 }
 
 
 void Assembler::strb(Register src, const MemOperand& dst, Condition cond) {
+#ifdef PENGUIN_CLEANUP
   addrmod2(cond | B26 | B, src, dst);
+#else
+  PPCPORT_CHECK(false);
+#endif
 }
 
 
 void Assembler::ldrh(Register dst, const MemOperand& src, Condition cond) {
+#ifdef PENGUIN_CLEANUP
   addrmod3(cond | L | B7 | H | B4, dst, src);
+#else
+  PPCPORT_CHECK(false);
+#endif
 }
 
 
 void Assembler::strh(Register src, const MemOperand& dst, Condition cond) {
+#ifdef PENGUIN_CLEANUP
   addrmod3(cond | B7 | H | B4, src, dst);
+#else
+  PPCPORT_CHECK(false);
+#endif
 }
 
 
 void Assembler::ldrsb(Register dst, const MemOperand& src, Condition cond) {
+#ifdef PENGUIN_CLEANUP
   addrmod3(cond | L | B7 | S6 | B4, dst, src);
+#else
+  PPCPORT_CHECK(false);
+#endif
 }
 
 
 void Assembler::ldrsh(Register dst, const MemOperand& src, Condition cond) {
+#ifdef PENGUIN_CLEANUP
   addrmod3(cond | L | B7 | S6 | H | B4, dst, src);
+#else
+  PPCPORT_CHECK(false);
+#endif
 }
 
 
 void Assembler::ldrd(Register dst1, Register dst2,
                      const MemOperand& src, Condition cond) {
+#ifdef PENGUIN_CLEANUP
   ASSERT(CpuFeatures::IsEnabled(ARMv7));
   ASSERT(src.rm().is(no_reg));
   ASSERT(!dst1.is(lr));  // r14.
   ASSERT_EQ(0, dst1.code() % 2);
   ASSERT_EQ(dst1.code() + 1, dst2.code());
   addrmod3(cond | B7 | B6 | B4, dst1, src);
+#else
+  PPCPORT_CHECK(false);
+#endif
 }
 
 
 void Assembler::strd(Register src1, Register src2,
                      const MemOperand& dst, Condition cond) {
+#ifdef PENGUIN_CLEANUP
   ASSERT(dst.rm().is(no_reg));
   ASSERT(!src1.is(lr));  // r14.
   ASSERT_EQ(0, src1.code() % 2);
   ASSERT_EQ(src1.code() + 1, src2.code());
   ASSERT(CpuFeatures::IsEnabled(ARMv7));
   addrmod3(cond | B7 | B6 | B5 | B4, src1, dst);
+#else
+  PPCPORT_CHECK(false);
+#endif
 }
 
 // Load/Store multiple instructions.
@@ -1918,6 +2022,7 @@ void Assembler::ldm(BlockAddrMode am,
                     Register base,
                     RegList dst,
                     Condition cond) {
+#ifdef PENGUIN_CLEANUP
   // ABI stack constraint: ldmxx base, {..sp..}  base != sp  is not restartable.
   ASSERT(base.is(sp) || (dst & sp.bit()) == 0);
 
@@ -1932,6 +2037,9 @@ void Assembler::ldm(BlockAddrMode am,
     // the case, we emit a jump over the pool.
     CheckConstPool(true, no_const_pool_before_ == pc_offset() - kInstrSize);
   }
+#else
+  PPCPORT_CHECK(false);
+#endif
 }
 
 
@@ -1939,7 +2047,11 @@ void Assembler::stm(BlockAddrMode am,
                     Register base,
                     RegList src,
                     Condition cond) {
+#ifdef PENGUIN_CLEANUP
   addrmod4(cond | B27 | am, base, src);
+#else
+  PPCPORT_CHECK(false);
+#endif
 }
 
 
@@ -1947,6 +2059,7 @@ void Assembler::stm(BlockAddrMode am,
 // Stops with a non-negative code less than kNumOfWatchedStops support
 // enabling/disabling and a counter feature. See simulator-arm.h .
 void Assembler::stop(const char* msg, Condition cond, int32_t code) {
+#ifdef PENGUIN_CLEANUP
 #ifndef __arm__
   ASSERT(code >= kDefaultStopCode);
   {
@@ -1974,21 +2087,32 @@ void Assembler::stop(const char* msg, Condition cond, int32_t code) {
   svc(0x9f0001, cond);
 #endif  // ndef CAN_USE_ARMV5_INSTRUCTIONS
 #endif  // def __arm__
+#else
+  PPCPORT_CHECK(false);
+#endif
 }
 
 
 void Assembler::bkpt(uint32_t imm16) {  // v5 and above
+#ifdef PENGUIN_CLEANUP
   ASSERT(is_uint16(imm16));
   emit(al | B24 | B21 | (imm16 >> 4)*B8 | BKPT | (imm16 & 0xf));
+#else
+  PPCPORT_CHECK(false);
+#endif
 }
 
 
 void Assembler::svc(uint32_t imm24, Condition cond) {
+#ifdef PENGUIN_CLEANUP
   ASSERT(is_uint24(imm24));
   emit(cond | 15*B24 | imm24);
+#else
+  PPCPORT_CHECK(false);
+#endif
 }
 
-
+#ifdef PENGUIN_CLEANUP
 // Coprocessor instructions.
 void Assembler::cdp(Coprocessor coproc,
                     int opcode_1,
@@ -1997,9 +2121,13 @@ void Assembler::cdp(Coprocessor coproc,
                     CRegister crm,
                     int opcode_2,
                     Condition cond) {
+#ifdef PENGUIN_CLEANUP
   ASSERT(is_uint4(opcode_1) && is_uint3(opcode_2));
   emit(cond | B27 | B26 | B25 | (opcode_1 & 15)*B20 | crn.code()*B16 |
        crd.code()*B12 | coproc*B8 | (opcode_2 & 7)*B5 | crm.code());
+#else
+  PPCPORT_CHECK(false);
+#endif
 }
 
 
@@ -2009,7 +2137,11 @@ void Assembler::cdp2(Coprocessor coproc,
                      CRegister crn,
                      CRegister crm,
                      int opcode_2) {  // v5 and above
+#ifdef PENGUIN_CLEANUP
   cdp(coproc, opcode_1, crd, crn, crm, opcode_2, kSpecialCondition);
+#else
+  PPCPORT_CHECK(false);
+#endif
 }
 
 
@@ -2020,9 +2152,13 @@ void Assembler::mcr(Coprocessor coproc,
                     CRegister crm,
                     int opcode_2,
                     Condition cond) {
+#ifdef PENGUIN_CLEANUP
   ASSERT(is_uint3(opcode_1) && is_uint3(opcode_2));
   emit(cond | B27 | B26 | B25 | (opcode_1 & 7)*B21 | crn.code()*B16 |
        rd.code()*B12 | coproc*B8 | (opcode_2 & 7)*B5 | B4 | crm.code());
+#else
+  PPCPORT_CHECK(false);
+#endif
 }
 
 
@@ -2032,7 +2168,11 @@ void Assembler::mcr2(Coprocessor coproc,
                      CRegister crn,
                      CRegister crm,
                      int opcode_2) {  // v5 and above
+#ifdef PENGUIN_CLEANUP
   mcr(coproc, opcode_1, rd, crn, crm, opcode_2, kSpecialCondition);
+#else
+  PPCPORT_CHECK(false);
+#endif
 }
 
 
@@ -2043,9 +2183,13 @@ void Assembler::mrc(Coprocessor coproc,
                     CRegister crm,
                     int opcode_2,
                     Condition cond) {
+#ifdef PENGUIN_CLEANUP
   ASSERT(is_uint3(opcode_1) && is_uint3(opcode_2));
   emit(cond | B27 | B26 | B25 | (opcode_1 & 7)*B21 | L | crn.code()*B16 |
        rd.code()*B12 | coproc*B8 | (opcode_2 & 7)*B5 | B4 | crm.code());
+#else
+  PPCPORT_CHECK(false);
+#endif
 }
 
 
@@ -2055,7 +2199,11 @@ void Assembler::mrc2(Coprocessor coproc,
                      CRegister crn,
                      CRegister crm,
                      int opcode_2) {  // v5 and above
+#ifdef PENGUIN_CLEANUP
   mrc(coproc, opcode_1, rd, crn, crm, opcode_2, kSpecialCondition);
+#else
+  PPCPORT_CHECK(false);
+#endif
 }
 
 
@@ -2064,7 +2212,11 @@ void Assembler::ldc(Coprocessor coproc,
                     const MemOperand& src,
                     LFlag l,
                     Condition cond) {
+#ifdef PENGUIN_CLEANUP
   addrmod5(cond | B27 | B26 | l | L | coproc*B8, crd, src);
+#else
+  PPCPORT_CHECK(false);
+#endif
 }
 
 
@@ -2074,10 +2226,14 @@ void Assembler::ldc(Coprocessor coproc,
                     int option,
                     LFlag l,
                     Condition cond) {
+#ifdef PENGUIN_CLEANUP
   // Unindexed addressing.
   ASSERT(is_uint8(option));
   emit(cond | B27 | B26 | U | l | L | rn.code()*B16 | crd.code()*B12 |
        coproc*B8 | (option & 255));
+#else
+  PPCPORT_CHECK(false);
+#endif
 }
 
 
@@ -2085,7 +2241,11 @@ void Assembler::ldc2(Coprocessor coproc,
                      CRegister crd,
                      const MemOperand& src,
                      LFlag l) {  // v5 and above
+#ifdef PENGUIN_CLEANUP
   ldc(coproc, crd, src, l, kSpecialCondition);
+#else
+  PPCPORT_CHECK(false);
+#endif
 }
 
 
@@ -2094,8 +2254,13 @@ void Assembler::ldc2(Coprocessor coproc,
                      Register rn,
                      int option,
                      LFlag l) {  // v5 and above
+#ifdef PENGUIN_CLEANUP
   ldc(coproc, crd, rn, option, l, kSpecialCondition);
+#else
+  PPCPORT_CHECK(false);
+#endif
 }
+#endif
 
 // Floating point support
 
@@ -2177,6 +2342,7 @@ void Assembler::vldr(const DwVfpRegister dst,
                      const Register base,
                      int offset,
                      const Condition cond) {
+#ifdef PENGUIN_CLEANUP
   // Ddst = MEM(Rbase + offset).
   // Instruction details available in ARM DDI 0406A, A8-628.
   // cond(31-28) | 1101(27-24)| U001(23-20) | Rbase(19-16) |
@@ -2203,15 +2369,22 @@ void Assembler::vldr(const DwVfpRegister dst,
     }
     emit(cond | 0xD1*B20 | ip.code()*B16 | dst.code()*B12 | 0xB*B8);
   }
+#else
+  PPCPORT_CHECK(false);
+#endif
 }
 
 
 void Assembler::vldr(const DwVfpRegister dst,
                      const MemOperand& operand,
                      const Condition cond) {
+#ifdef PENGUIN_CLEANUP
   ASSERT(!operand.rm().is_valid());
   ASSERT(operand.am_ == Offset);
   vldr(dst, operand.rn(), operand.offset(), cond);
+#else
+  PPCPORT_CHECK(false);
+#endif
 }
 
 
@@ -2219,6 +2392,7 @@ void Assembler::vldr(const SwVfpRegister dst,
                      const Register base,
                      int offset,
                      const Condition cond) {
+#ifdef PENGUIN_CLEANUP
   // Sdst = MEM(Rbase + offset).
   // Instruction details available in ARM DDI 0406A, A8-628.
   // cond(31-28) | 1101(27-24)| U001(23-20) | Rbase(19-16) |
@@ -2247,15 +2421,22 @@ void Assembler::vldr(const SwVfpRegister dst,
     }
     emit(cond | d*B22 | 0xD1*B20 | ip.code()*B16 | sd*B12 | 0xA*B8);
   }
+#else
+  PPCPORT_CHECK(false);
+#endif
 }
 
 
 void Assembler::vldr(const SwVfpRegister dst,
                      const MemOperand& operand,
                      const Condition cond) {
+#ifdef PENGUIN_CLEANUP
   ASSERT(!operand.rm().is_valid());
   ASSERT(operand.am_ == Offset);
   vldr(dst, operand.rn(), operand.offset(), cond);
+#else
+  PPCPORT_CHECK(false);
+#endif
 }
 
 
@@ -2263,6 +2444,7 @@ void Assembler::vstr(const DwVfpRegister src,
                      const Register base,
                      int offset,
                      const Condition cond) {
+#ifdef PENGUIN_CLEANUP
   // MEM(Rbase + offset) = Dsrc.
   // Instruction details available in ARM DDI 0406A, A8-786.
   // cond(31-28) | 1101(27-24)| U000(23-20) | | Rbase(19-16) |
@@ -2288,15 +2470,22 @@ void Assembler::vstr(const DwVfpRegister src,
     }
     emit(cond | 0xD0*B20 | ip.code()*B16 | src.code()*B12 | 0xB*B8);
   }
+#else
+  PPCPORT_CHECK(false);
+#endif
 }
 
 
 void Assembler::vstr(const DwVfpRegister src,
                      const MemOperand& operand,
                      const Condition cond) {
+#ifdef PENGUIN_CLEANUP
   ASSERT(!operand.rm().is_valid());
   ASSERT(operand.am_ == Offset);
   vstr(src, operand.rn(), operand.offset(), cond);
+#else
+  PPCPORT_CHECK(false);
+#endif
 }
 
 
@@ -2304,6 +2493,7 @@ void Assembler::vstr(const SwVfpRegister src,
                      const Register base,
                      int offset,
                      const Condition cond) {
+#ifdef PENGUIN_CLEANUP
   // MEM(Rbase + offset) = SSrc.
   // Instruction details available in ARM DDI 0406A, A8-786.
   // cond(31-28) | 1101(27-24)| U000(23-20) | Rbase(19-16) |
@@ -2331,23 +2521,31 @@ void Assembler::vstr(const SwVfpRegister src,
     }
     emit(cond | d*B22 | 0xD0*B20 | ip.code()*B16 | sd*B12 | 0xA*B8);
   }
+#else
+  PPCPORT_CHECK(false);
+#endif
 }
 
 
 void Assembler::vstr(const SwVfpRegister src,
                      const MemOperand& operand,
                      const Condition cond) {
+#ifdef PENGUIN_CLEANUP
   ASSERT(!operand.rm().is_valid());
   ASSERT(operand.am_ == Offset);
   vldr(src, operand.rn(), operand.offset(), cond);
+#else
+  PPCPORT_CHECK(false);
+#endif
 }
 
-
+#ifdef PENGUIN_CLEANUP
 void  Assembler::vldm(BlockAddrMode am,
                       Register base,
                       DwVfpRegister first,
                       DwVfpRegister last,
                       Condition cond) {
+#ifdef PENGUIN_CLEANUP
   // Instruction details available in ARM DDI 0406A, A8-626.
   // cond(31-28) | 110(27-25)| PUDW1(24-20) | Rbase(19-16) |
   // first(15-12) | 1010(11-8) | (count * 2)
@@ -2362,6 +2560,9 @@ void  Assembler::vldm(BlockAddrMode am,
   ASSERT(count <= 16);
   emit(cond | B27 | B26 | am | d*B22 | B20 | base.code()*B16 | sd*B12 |
        0xB*B8 | count*2);
+#else
+  PPCPORT_CHECK(false);
+#endif
 }
 
 
@@ -2370,6 +2571,7 @@ void  Assembler::vstm(BlockAddrMode am,
                       DwVfpRegister first,
                       DwVfpRegister last,
                       Condition cond) {
+#ifdef PENGUIN_CLEANUP
   // Instruction details available in ARM DDI 0406A, A8-784.
   // cond(31-28) | 110(27-25)| PUDW0(24-20) | Rbase(19-16) |
   // first(15-12) | 1011(11-8) | (count * 2)
@@ -2384,6 +2586,9 @@ void  Assembler::vstm(BlockAddrMode am,
   ASSERT(count <= 16);
   emit(cond | B27 | B26 | am | d*B22 | base.code()*B16 | sd*B12 |
        0xB*B8 | count*2);
+#else
+  PPCPORT_CHECK(false);
+#endif
 }
 
 void  Assembler::vldm(BlockAddrMode am,
@@ -2391,6 +2596,7 @@ void  Assembler::vldm(BlockAddrMode am,
                       SwVfpRegister first,
                       SwVfpRegister last,
                       Condition cond) {
+#ifdef PENGUIN_CLEANUP
   // Instruction details available in ARM DDI 0406A, A8-626.
   // cond(31-28) | 110(27-25)| PUDW1(24-20) | Rbase(19-16) |
   // first(15-12) | 1010(11-8) | (count/2)
@@ -2404,6 +2610,9 @@ void  Assembler::vldm(BlockAddrMode am,
   int count = last.code() - first.code() + 1;
   emit(cond | B27 | B26 | am | d*B22 | B20 | base.code()*B16 | sd*B12 |
        0xA*B8 | count);
+#else
+  PPCPORT_CHECK(false);
+#endif
 }
 
 
@@ -2412,6 +2621,7 @@ void  Assembler::vstm(BlockAddrMode am,
                       SwVfpRegister first,
                       SwVfpRegister last,
                       Condition cond) {
+#ifdef PENGUIN_CLEANUP
   // Instruction details available in ARM DDI 0406A, A8-784.
   // cond(31-28) | 110(27-25)| PUDW0(24-20) | Rbase(19-16) |
   // first(15-12) | 1011(11-8) | (count/2)
@@ -2425,6 +2635,9 @@ void  Assembler::vstm(BlockAddrMode am,
   int count = last.code() - first.code() + 1;
   emit(cond | B27 | B26 | am | d*B22 | base.code()*B16 | sd*B12 |
        0xA*B8 | count);
+#else
+  PPCPORT_CHECK(false);
+#endif
 }
 
 static void DoubleAsTwoUInt32(double d, uint32_t* lo, uint32_t* hi) {
@@ -2484,12 +2697,13 @@ static bool FitsVMOVDoubleImmediate(double d, uint32_t *encoding) {
 
   return true;
 }
-
+#endif
 
 void Assembler::vmov(const DwVfpRegister dst,
                      double imm,
                      const Register scratch,
                      const Condition cond) {
+#ifdef PENGUIN_CLEANUP
   // Dd = immediate
   // Instruction details available in ARM DDI 0406B, A8-640.
   // ASSERT(CpuFeatures::IsEnabled(VFP2));
@@ -2521,12 +2735,16 @@ void Assembler::vmov(const DwVfpRegister dst,
       vmov(dst, ip, scratch, cond);
     }
   }
+#else
+  PPCPORT_CHECK(false);
+#endif
 }
 
 
 void Assembler::vmov(const SwVfpRegister dst,
                      const SwVfpRegister src,
                      const Condition cond) {
+#ifdef PENGUIN_CLEANUP
   // Sd = Sm
   // Instruction details available in ARM DDI 0406B, A8-642.
   // ASSERT(CpuFeatures::IsEnabled(VFP2));
@@ -2534,17 +2752,24 @@ void Assembler::vmov(const SwVfpRegister dst,
   dst.split_code(&sd, &d);
   src.split_code(&sm, &m);
   emit(cond | 0xE*B24 | d*B22 | 0xB*B20 | sd*B12 | 0xA*B8 | B6 | m*B5 | sm);
+#else
+  PPCPORT_CHECK(false);
+#endif
 }
 
 
 void Assembler::vmov(const DwVfpRegister dst,
                      const DwVfpRegister src,
                      const Condition cond) {
+#ifdef PENGUIN_CLEANUP
   // Dd = Dm
   // Instruction details available in ARM DDI 0406B, A8-642.
   // ASSERT(CpuFeatures::IsEnabled(VFP2));
   emit(cond | 0xE*B24 | 0xB*B20 |
        dst.code()*B12 | 0x5*B9 | B8 | B6 | src.code());
+#else
+  PPCPORT_CHECK(false);
+#endif
 }
 
 
@@ -2552,6 +2777,7 @@ void Assembler::vmov(const DwVfpRegister dst,
                      const Register src1,
                      const Register src2,
                      const Condition cond) {
+#ifdef PENGUIN_CLEANUP
   // Dm = <Rt,Rt2>.
   // Instruction details available in ARM DDI 0406A, A8-646.
   // cond(31-28) | 1100(27-24)| 010(23-21) | op=0(20) | Rt2(19-16) |
@@ -2560,6 +2786,9 @@ void Assembler::vmov(const DwVfpRegister dst,
   ASSERT(!src1.is(pc) && !src2.is(pc));
   emit(cond | 0xC*B24 | B22 | src2.code()*B16 |
        src1.code()*B12 | 0xB*B8 | B4 | dst.code());
+#else
+  PPCPORT_CHECK(false);
+#endif
 }
 
 
@@ -2567,6 +2796,7 @@ void Assembler::vmov(const Register dst1,
                      const Register dst2,
                      const DwVfpRegister src,
                      const Condition cond) {
+#ifdef PENGUIN_CLEANUP
   // <Rt,Rt2> = Dm.
   // Instruction details available in ARM DDI 0406A, A8-646.
   // cond(31-28) | 1100(27-24)| 010(23-21) | op=1(20) | Rt2(19-16) |
@@ -2575,12 +2805,16 @@ void Assembler::vmov(const Register dst1,
   ASSERT(!dst1.is(pc) && !dst2.is(pc));
   emit(cond | 0xC*B24 | B22 | B20 | dst2.code()*B16 |
        dst1.code()*B12 | 0xB*B8 | B4 | src.code());
+#else
+  PPCPORT_CHECK(false);
+#endif
 }
 
 
 void Assembler::vmov(const SwVfpRegister dst,
                      const Register src,
                      const Condition cond) {
+#ifdef PENGUIN_CLEANUP
   // Sn = Rt.
   // Instruction details available in ARM DDI 0406A, A8-642.
   // cond(31-28) | 1110(27-24)| 000(23-21) | op=0(20) | Vn(19-16) |
@@ -2590,12 +2824,16 @@ void Assembler::vmov(const SwVfpRegister dst,
   int sn, n;
   dst.split_code(&sn, &n);
   emit(cond | 0xE*B24 | sn*B16 | src.code()*B12 | 0xA*B8 | n*B7 | B4);
+#else
+  PPCPORT_CHECK(false);
+#endif
 }
 
 
 void Assembler::vmov(const Register dst,
                      const SwVfpRegister src,
                      const Condition cond) {
+#ifdef PENGUIN_CLEANUP
   // Rt = Sn.
   // Instruction details available in ARM DDI 0406A, A8-642.
   // cond(31-28) | 1110(27-24)| 000(23-21) | op=1(20) | Vn(19-16) |
@@ -2605,6 +2843,9 @@ void Assembler::vmov(const Register dst,
   int sn, n;
   src.split_code(&sn, &n);
   emit(cond | 0xE*B24 | B20 | sn*B16 | dst.code()*B12 | 0xA*B8 | n*B7 | B4);
+#else
+  PPCPORT_CHECK(false);
+#endif
 }
 
 
@@ -2787,18 +3028,26 @@ void Assembler::vcvt_f32_f64(const SwVfpRegister dst,
 void Assembler::vneg(const DwVfpRegister dst,
                      const DwVfpRegister src,
                      const Condition cond) {
+#ifdef PENGUIN_CLEANUP
   // ASSERT(CpuFeatures::IsEnabled(VFP2));
   emit(cond | 0xE*B24 | 0xB*B20 | B16 | dst.code()*B12 |
        0x5*B9 | B8 | B6 | src.code());
+#else
+  PPCPORT_CHECK(false);
+#endif
 }
 
 
 void Assembler::vabs(const DwVfpRegister dst,
                      const DwVfpRegister src,
                      const Condition cond) {
+#ifdef PENGUIN_CLEANUP
   // ASSERT(CpuFeatures::IsEnabled(VFP2));
   emit(cond | 0xE*B24 | 0xB*B20 | dst.code()*B12 |
        0x5*B9 | B8 | 0x3*B6 | src.code());
+#else
+  PPCPORT_CHECK(false);
+#endif
 }
 
 
@@ -2806,6 +3055,7 @@ void Assembler::vadd(const DwVfpRegister dst,
                      const DwVfpRegister src1,
                      const DwVfpRegister src2,
                      const Condition cond) {
+#ifdef PENGUIN_CLEANUP
   // Dd = vadd(Dn, Dm) double precision floating point addition.
   // Dd = D:Vd; Dm=M:Vm; Dn=N:Vm.
   // Instruction details available in ARM DDI 0406A, A8-536.
@@ -2814,6 +3064,9 @@ void Assembler::vadd(const DwVfpRegister dst,
   // ASSERT(CpuFeatures::IsEnabled(VFP2));
   emit(cond | 0xE*B24 | 0x3*B20 | src1.code()*B16 |
        dst.code()*B12 | 0x5*B9 | B8 | src2.code());
+#else
+  PPCPORT_CHECK(false);
+#endif
 }
 
 
@@ -2821,6 +3074,7 @@ void Assembler::vsub(const DwVfpRegister dst,
                      const DwVfpRegister src1,
                      const DwVfpRegister src2,
                      const Condition cond) {
+#ifdef PENGUIN_CLEANUP
   // Dd = vsub(Dn, Dm) double precision floating point subtraction.
   // Dd = D:Vd; Dm=M:Vm; Dn=N:Vm.
   // Instruction details available in ARM DDI 0406A, A8-784.
@@ -2829,6 +3083,9 @@ void Assembler::vsub(const DwVfpRegister dst,
   // ASSERT(CpuFeatures::IsEnabled(VFP2));
   emit(cond | 0xE*B24 | 0x3*B20 | src1.code()*B16 |
        dst.code()*B12 | 0x5*B9 | B8 | B6 | src2.code());
+#else
+  PPCPORT_CHECK(false);
+#endif
 }
 
 
@@ -2836,6 +3093,7 @@ void Assembler::vmul(const DwVfpRegister dst,
                      const DwVfpRegister src1,
                      const DwVfpRegister src2,
                      const Condition cond) {
+#ifdef PENGUIN_CLEANUP
   // Dd = vmul(Dn, Dm) double precision floating point multiplication.
   // Dd = D:Vd; Dm=M:Vm; Dn=N:Vm.
   // Instruction details available in ARM DDI 0406A, A8-784.
@@ -2844,6 +3102,9 @@ void Assembler::vmul(const DwVfpRegister dst,
   // ASSERT(CpuFeatures::IsEnabled(VFP2));
   emit(cond | 0xE*B24 | 0x2*B20 | src1.code()*B16 |
        dst.code()*B12 | 0x5*B9 | B8 | src2.code());
+#else
+  PPCPORT_CHECK(false);
+#endif
 }
 
 
@@ -2851,6 +3112,7 @@ void Assembler::vdiv(const DwVfpRegister dst,
                      const DwVfpRegister src1,
                      const DwVfpRegister src2,
                      const Condition cond) {
+#ifdef PENGUIN_CLEANUP
   // Dd = vdiv(Dn, Dm) double precision floating point division.
   // Dd = D:Vd; Dm=M:Vm; Dn=N:Vm.
   // Instruction details available in ARM DDI 0406A, A8-584.
@@ -2859,12 +3121,16 @@ void Assembler::vdiv(const DwVfpRegister dst,
   // ASSERT(CpuFeatures::IsEnabled(VFP2));
   emit(cond | 0xE*B24 | B23 | src1.code()*B16 |
        dst.code()*B12 | 0x5*B9 | B8 | src2.code());
+#else
+  PPCPORT_CHECK(false);
+#endif
 }
 
 
 void Assembler::vcmp(const DwVfpRegister src1,
                      const DwVfpRegister src2,
                      const Condition cond) {
+#ifdef PENGUIN_CLEANUP
   // vcmp(Dd, Dm) double precision floating point comparison.
   // Instruction details available in ARM DDI 0406A, A8-570.
   // cond(31-28) | 11101 (27-23)| D=?(22) | 11 (21-20) | 0100 (19-16) |
@@ -2872,12 +3138,16 @@ void Assembler::vcmp(const DwVfpRegister src1,
   // // ASSERT(CpuFeatures::IsEnabled(VFP2));
   emit(cond | 0xE*B24 |B23 | 0x3*B20 | B18 |
        src1.code()*B12 | 0x5*B9 | B8 | B6 | src2.code());
+#else
+  PPCPORT_CHECK(false);
+#endif
 }
 
 
 void Assembler::vcmp(const DwVfpRegister src1,
                      const double src2,
                      const Condition cond) {
+#ifdef PENGUIN_CLEANUP
   // vcmp(Dd, Dm) double precision floating point comparison.
   // Instruction details available in ARM DDI 0406A, A8-570.
   // cond(31-28) | 11101 (27-23)| D=?(22) | 11 (21-20) | 0101 (19-16) |
@@ -2886,37 +3156,52 @@ void Assembler::vcmp(const DwVfpRegister src1,
   ASSERT(src2 == 0.0);
   emit(cond | 0xE*B24 |B23 | 0x3*B20 | B18 | B16 |
        src1.code()*B12 | 0x5*B9 | B8 | B6);
+#else
+  PPCPORT_CHECK(false);
+#endif
 }
 
 
 void Assembler::vmsr(Register dst, Condition cond) {
+#ifdef PENGUIN_CLEANUP
   // Instruction details available in ARM DDI 0406A, A8-652.
   // cond(31-28) | 1110 (27-24) | 1110(23-20)| 0001 (19-16) |
   // Rt(15-12) | 1010 (11-8) | 0(7) | 00 (6-5) | 1(4) | 0000(3-0)
   // ASSERT(CpuFeatures::IsEnabled(VFP2));
   emit(cond | 0xE*B24 | 0xE*B20 |  B16 |
        dst.code()*B12 | 0xA*B8 | B4);
+#else
+  PPCPORT_CHECK(false);
+#endif
 }
 
 
 void Assembler::vmrs(Register dst, Condition cond) {
+#ifdef PENGUIN_CLEANUP
   // Instruction details available in ARM DDI 0406A, A8-652.
   // cond(31-28) | 1110 (27-24) | 1111(23-20)| 0001 (19-16) |
   // Rt(15-12) | 1010 (11-8) | 0(7) | 00 (6-5) | 1(4) | 0000(3-0)
   // // ASSERT(CpuFeatures::IsEnabled(VFP2));
   emit(cond | 0xE*B24 | 0xF*B20 |  B16 |
        dst.code()*B12 | 0xA*B8 | B4);
+#else
+  PPCPORT_CHECK(false);
+#endif
 }
 
 
 void Assembler::vsqrt(const DwVfpRegister dst,
                       const DwVfpRegister src,
                       const Condition cond) {
+#ifdef PENGUIN_CLEANUP
   // cond(31-28) | 11101 (27-23)| D=?(22) | 11 (21-20) | 0001 (19-16) |
   // Vd(15-12) | 101(11-9) | sz(8)=1 | 11 (7-6) | M(5)=? | 0(4) | Vm(3-0)
   // ASSERT(CpuFeatures::IsEnabled(VFP2));
   emit(cond | 0xE*B24 | B23 | 0x3*B20 | B16 |
        dst.code()*B12 | 0x5*B9 | B8 | 3*B6 | src.code());
+#else
+  PPCPORT_CHECK(false);
+#endif
 }
 
 
@@ -2944,13 +3229,13 @@ bool Assembler::IsNop(Instr instr, int type) {
   return instr == (ORI | reg*B21 | reg*B16);
 }
 
-
+#ifdef PENGUIN_CLEANUP
 bool Assembler::ImmediateFitsAddrMode1Instruction(int32_t imm32) {
   uint32_t dummy1;
   uint32_t dummy2;
   return fits_shifter(imm32, &dummy1, &dummy2, NULL);
 }
-
+#endif
 
 // Debugging.
 void Assembler::RecordJSReturn() {

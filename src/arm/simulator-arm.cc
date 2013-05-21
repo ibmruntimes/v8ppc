@@ -1803,12 +1803,12 @@ void Simulator::SoftwareInterrupt(Instruction* instr) {
           break;
         case ExternalReference::BUILTIN_FP_CALL:
           GetFpArgs(&dval0);
-          result = target(dval0, dval1); // 2nd parm ignored
+          result = target(dval0, dval1);  // 2nd parm ignored
           SetFpResult(result);
           break;
         case ExternalReference::BUILTIN_FP_INT_CALL:
           GetFpArgs(&dval0, &ival);
-          result = targety(dval0, ival); 
+          result = targety(dval0, ival);
           SetFpResult(result);
           break;
         default:

@@ -273,6 +273,7 @@ TEST(Type0) {
   COMPARE(mvn(r6, Operand(-1), LeaveCC, ne),
           "13a06000       movne r6, #0");
 
+#ifdef PENGUIN_CLEANUP
   // mov -> movw.
   if (CpuFeatures::IsSupported(ARMv7)) {
     COMPARE(mov(r5, Operand(0x01234), LeaveCC, ne),
@@ -298,6 +299,7 @@ TEST(Type0) {
     COMPARE(movw(r5, 0xabcd, eq),
             "030a5bcd       movweq r5, #43981");
   }
+#endif
 
   // Eor doesn't have an eor-negative variant, but we can do an mvn followed by
   // an eor to get the same effect.
@@ -323,14 +325,18 @@ TEST(Type0) {
           "e3530b01       cmp r3, #1024");
 
   // Miscellaneous instructions encoded as type 0.
+#ifdef PENGUIN_CLEANUP
   COMPARE(blx(ip),
           "e12fff3c       blx ip");
+#endif
   COMPARE(bkpt(0),
           "e1200070       bkpt 0");
   COMPARE(bkpt(0xffff),
           "e12fff7f       bkpt 65535");
+#ifdef PENGUIN_CLEANUP
   COMPARE(clz(r6, r7),
           "e16f6f17       clz r6, r7");
+#endif
 
   VERIFY_RUN();
 }
@@ -368,6 +374,7 @@ TEST(Type1) {
 TEST(Type3) {
   SET_UP();
 
+#ifdef PENGUIN_CLEANUP
   if (CpuFeatures::IsSupported(ARMv7)) {
     COMPARE(ubfx(r0, r1, 5, 10),
             "e7e902d1       ubfx r0, r1, #5, #10");
@@ -414,6 +421,7 @@ TEST(Type3) {
     COMPARE(usat(r8, 0, Operand(r5, ASR, 17)),
             "e6e088d5       usat r8, #0, r5, asr #17");
   }
+#endif
 
   VERIFY_RUN();
 }
@@ -531,6 +539,7 @@ TEST(Vfp) {
     COMPARE(vmrs(pc),
             "eef1fa10       vmrs APSR, FPSCR");
 
+#ifdef PENGUIN_CLEANUP
     COMPARE(vstm(ia, r0, d1, d3),
             "ec801b06       vstmia r0, {d1-d3}");
     COMPARE(vldm(ia, r1, d2, d5),
@@ -547,6 +556,7 @@ TEST(Vfp) {
             "ec860a20       vstmia r6, {s0-s31}");
     COMPARE(vldm(ia, r7, s0, s31),
             "ec970a20       vldmia r7, {s0-s31}");
+#endif
   }
 
   VERIFY_RUN();

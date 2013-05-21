@@ -845,8 +845,8 @@ static void Generate_JSConstructStubHelper(MacroAssembler* masm,
       if (count_constructions) {
         __ ldr(r0, FieldMemOperand(r2, Map::kInstanceSizesOffset));
 #if defined(V8_HOST_ARCH_PPC)
-        __ Ubfx(r0, r0, (3 - Map::kPreAllocatedPropertyFieldsByte) * kBitsPerByte,
-                kBitsPerByte);
+        __ Ubfx(r0, r0, (3 - Map::kPreAllocatedPropertyFieldsByte)
+                * kBitsPerByte, kBitsPerByte);
 #else
         __ Ubfx(r0, r0, Map::kPreAllocatedPropertyFieldsByte * kBitsPerByte,
                 kBitsPerByte);

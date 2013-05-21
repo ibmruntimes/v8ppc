@@ -670,9 +670,11 @@ class CpuFeatures : public AllStatic {
 extern const Instr kMovLrPc;
 extern const Instr kLdrPCMask;
 extern const Instr kLdrPCPattern;
+#ifdef PENGUIN_CLEANUP
 extern const Instr kBlxRegMask;
 extern const Instr kBlxRegPattern;
 extern const Instr kBlxIp;
+#endif
 
 extern const Instr kMovMvnMask;
 extern const Instr kMovMvnPattern;
@@ -828,9 +830,11 @@ class Assembler : public AssemblerBase {
 
   // end PowerPC
   void bl(int branch_offset, Condition cond = al);
+#ifdef PENGUIN_CLEANUP
   void blx(int branch_offset);  // v5 and above
   void blx(Register target, Condition cond = al);  // v5 and above
   void bx(Register target, Condition cond = al);  // v5 and above, plus v4t
+#endif
 
   // Convenience branch instructions using labels
   void b(Label* L, Condition cond = al)  {
@@ -883,7 +887,9 @@ class Assembler : public AssemblerBase {
   // end PowerPC
   void bl(Label* L, Condition cond = al)  { bl(branch_offset(L, false), cond); }
   void bl(Condition cond, Label* L)  { bl(branch_offset(L, false), cond); }
+#ifdef PENGUIN_CLEANUP
   void blx(Label* L)  { blx(branch_offset(L, false)); }  // v5 and above
+#endif
 
   // Data-processing instructions
 
@@ -998,7 +1004,9 @@ class Assembler : public AssemblerBase {
   void cmpl(Register src1, Register src2);
   void cmpl(int field, Register src1, Register src2);
 
+#ifdef PENGUIN_CLEANUP
   void cmp_raw_immediate(Register src1, int raw_immediate, Condition cond = al);
+#endif
 
   void cmn(Register src1, const Operand& src2, Condition cond = al);
 
@@ -1015,12 +1023,14 @@ class Assembler : public AssemblerBase {
     mov(dst, Operand(src), s, cond);
   }
 
+#ifdef PENGUIN_CLEANUP
   // ARMv7 instructions for loading a 32 bit immediate in two instructions.
   // This may actually emit a different mov instruction, but on an ARMv7 it
   // is guaranteed to only emit one instruction.
   void movw(Register reg, uint32_t immediate, Condition cond = al);
   // The constant for movt should be in the range 0-0xffff.
   void movt(Register reg, uint32_t immediate, Condition cond = al);
+#endif
 
   void bic(Register dst, Register src1, const Operand& src2,
            SBit s = LeaveCC, Condition cond = al);
@@ -1051,7 +1061,9 @@ class Assembler : public AssemblerBase {
 
   // Miscellaneous arithmetic instructions
 
+#ifdef PENGUIN_CLEANUP
   void clz(Register dst, Register src, Condition cond = al);  // v5 and above
+#endif
 
   // Saturating instructions. v6 and above.
 
@@ -1077,6 +1089,7 @@ class Assembler : public AssemblerBase {
   void ubfx(Register dst, Register src, int lsb, int width,
             Condition cond = al);
 
+#ifdef PENGUIN_CLEANUP
   void sbfx(Register dst, Register src, int lsb, int width,
             Condition cond = al);
 
@@ -1084,6 +1097,7 @@ class Assembler : public AssemblerBase {
 
   void bfi(Register dst, Register src, int lsb, int width,
            Condition cond = al);
+#endif
 
   // Special register access
   // PowerPC
@@ -1127,6 +1141,7 @@ class Assembler : public AssemblerBase {
   void bkpt(uint32_t imm16);  // v5 and above
   void svc(uint32_t imm24, Condition cond = al);
 
+#ifdef PENGUIN_CLEANUP
   // Coprocessor instructions
 
   void cdp(Coprocessor coproc, int opcode_1,
@@ -1162,6 +1177,7 @@ class Assembler : public AssemblerBase {
             LFlag l = Short);  // v5 and above
   void ldc2(Coprocessor coproc, CRegister crd, Register base, int option,
             LFlag l = Short);  // v5 and above
+#endif
 
   // Support for floating point
   void lfd(const DwVfpRegister frt, const Register ra, int offset);
@@ -1219,6 +1235,7 @@ class Assembler : public AssemblerBase {
             const MemOperand& dst,
             const Condition cond = al);
 
+#ifdef PENGUIN_CLEANUP
   void vldm(BlockAddrMode am,
             Register base,
             DwVfpRegister first,
@@ -1242,6 +1259,7 @@ class Assembler : public AssemblerBase {
             SwVfpRegister first,
             SwVfpRegister last,
             Condition cond = al);
+#endif
 
   void vmov(const DwVfpRegister dst,
             double imm,
@@ -1379,8 +1397,10 @@ class Assembler : public AssemblerBase {
     return SizeOfCodeGeneratedSince(label) / kInstrSize;
   }
 
+#ifdef PENGUIN_CLEANUP
   // Check whether an immediate fits an addressing mode 1 instruction.
   bool ImmediateFitsAddrMode1Instruction(int32_t imm32);
+#endif
 
   // Class for scoping postponing the constant pool generation.
   class BlockConstPoolScope {
@@ -1469,6 +1489,7 @@ class Assembler : public AssemblerBase {
   static bool IsAddic(Instr instr);
 
   static bool IsBranch(Instr instr);
+#ifdef PENGUIN_CLEANUP
   static int GetBranchOffset(Instr instr);
   static bool IsLdrRegisterImmediate(Instr instr);
   static int GetLdrRegisterImmediateOffset(Instr instr);
@@ -1478,18 +1499,25 @@ class Assembler : public AssemblerBase {
   static bool IsAddRegisterImmediate(Instr instr);
   static Instr SetAddRegisterImmediateOffset(Instr instr, int offset);
   static Register GetRd(Instr instr);
+#endif
   static Register GetRA(Instr instr);
   static Register GetRB(Instr instr);
+#ifdef PENGUIN_CLEANUP
   static Register GetRn(Instr instr);
   static Register GetRm(Instr instr);
+#endif
   static bool IsPush(Instr instr);
   static bool IsPop(Instr instr);
+#ifdef PENGUIN_CLEANUP
   static bool IsStrRegFpOffset(Instr instr);
   static bool IsLdrRegFpOffset(Instr instr);
   static bool IsStrRegFpNegOffset(Instr instr);
   static bool IsLdrRegFpNegOffset(Instr instr);
+#endif
   static bool IsLdrPcImmediateOffset(Instr instr);
+#ifdef PENGUIN_CLEANUP
   static bool IsTstImmediate(Instr instr);
+#endif
   static bool IsCmpRegister(Instr instr);
   static bool IsCmpImmediate(Instr instr);
   static bool IsRlwinm(Instr instr);
