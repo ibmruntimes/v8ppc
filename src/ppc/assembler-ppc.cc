@@ -634,6 +634,7 @@ int Assembler::target_at(int pos)  {
          return pos + imm16;
        }
   }
+  PPCPORT_UNIMPLEMENTED();
   ASSERT(false);
   return -1;
 

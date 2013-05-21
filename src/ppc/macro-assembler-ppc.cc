@@ -2636,7 +2636,8 @@ void MacroAssembler::EmitVFPTruncate(VFPRoundingMode rounding_mode,
                                      Register scratch1,
                                      Register scratch2,
                                      CheckForInexactConversion check_inexact) {
-  ASSERT(false);  // Fail
+  PPCPORT_UNIMPLEMENTED();
+  //ASSERT(false);  // Fail (penguin: assert triggered in mjsunit/sparse-array-reverse)
 }
 
 
