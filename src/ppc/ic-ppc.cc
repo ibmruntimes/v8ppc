@@ -899,7 +899,7 @@ void KeyedStoreIC::GenerateNonStrictArguments(MacroAssembler* masm) {
   MemOperand mapped_location =
       GenerateMappedArgumentsLookup(masm, r5, r4, r6, r7, r8, &notin, &slow);
   __ stw(r3, mapped_location);
-  __ add(r9, r6, r8);
+  __ mr(r9, r6);  // r6 is modified by GenerateMappedArgumentsLookup
   __ mr(r22, r3);
   __ RecordWrite(r6, r9, r22, kLRHasNotBeenSaved, kDontSaveFPRegs);
   __ Ret();
@@ -908,7 +908,7 @@ void KeyedStoreIC::GenerateNonStrictArguments(MacroAssembler* masm) {
   MemOperand unmapped_location =
       GenerateUnmappedArgumentsLookup(masm, r4, r6, r7, &slow);
   __ stw(r3, unmapped_location);
-  __ add(r9, r6, r7);
+  __ mr(r9, r6);  // r6 is modified by GenerateUnmappedArgumentsLookup
   __ mr(r22, r3);
   __ RecordWrite(r6, r9, r22, kLRHasNotBeenSaved, kDontSaveFPRegs);
   __ Ret();
