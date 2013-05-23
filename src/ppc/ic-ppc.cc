@@ -829,7 +829,8 @@ static MemOperand GenerateMappedArgumentsLookup(MacroAssembler* masm,
   __ li(scratch3, Operand(kPointerSize >> 1));
   __ mul(scratch3, scratch2, scratch3);
   __ add(scratch3, scratch3, Operand(Context::kHeaderSize - kHeapObjectTag));
-  return MemOperand(scratch1, scratch3);
+  __ add(scratch1, scratch1, scratch3);
+  return MemOperand(scratch1);
 }
 
 
@@ -856,7 +857,8 @@ static MemOperand GenerateUnmappedArgumentsLookup(MacroAssembler* masm,
   __ add(scratch,
          scratch,
          Operand(FixedArray::kHeaderSize - kHeapObjectTag));
-  return MemOperand(backing_store, scratch);
+  __ add(backing_store, backing_store, scratch);
+  return MemOperand(backing_store);
 }
 
 
