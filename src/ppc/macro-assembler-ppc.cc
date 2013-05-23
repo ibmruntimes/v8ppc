@@ -1997,8 +1997,8 @@ void MacroAssembler::CheckFastSmiElements(Register map,
   STATIC_ASSERT(FAST_SMI_ELEMENTS == 0);
   STATIC_ASSERT(FAST_HOLEY_SMI_ELEMENTS == 1);
   lbz(scratch, FieldMemOperand(map, Map::kBitField2Offset));
-  cmpi(scratch, Operand(Map::kMaximumBitField2FastHoleySmiElementValue));
-  b(hi, fail);
+  cmpli(scratch, Operand(Map::kMaximumBitField2FastHoleySmiElementValue));
+  bgt(fail);
 }
 
 

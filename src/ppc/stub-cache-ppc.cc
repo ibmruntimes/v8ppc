@@ -1683,8 +1683,8 @@ Handle<Code> CallStubCompiler::CompileArrayPushCall(
       __ mov(r22, Operand(new_space_allocation_limit));
       __ lwz(r22, MemOperand(r22));
       __ add(r6, r6, Operand(kAllocationDelta * kPointerSize));
-      __ cmp(r6, r22);
-      __ b(hi, &call_builtin);
+      __ cmpl(r6, r22);
+      __ bgt(&call_builtin);
 
       // We fit and could grow elements.
       // Update new_space_allocation_top.

@@ -1116,10 +1116,9 @@ class MacroAssembler: public Assembler {
   // the original value and jump to not_a_smi. Destroys scratch and
   // sets flags.
   void TrySmiTag(Register reg, Label* not_a_smi, Register scratch) {
-    mov(scratch, reg);
-    SmiTag(scratch, SetCC);
-    b(vs, not_a_smi);
-    mov(reg, scratch);
+    rlwinm(scratch, reg, 1, 31, 31, SetRC);
+    bc(not_a_smi, BF, 2);
+    rlwinm(reg, reg, 1, 0, 30);
   }
 
   void SmiUntag(Register reg, SBit s = LeaveCC) {

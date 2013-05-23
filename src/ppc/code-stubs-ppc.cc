@@ -7204,66 +7204,74 @@ void StringDictionaryLookupStub::GenerateNegativeLookup(MacroAssembler* masm,
     // Compute the masked index: (hash + i + i * i) & mask.
     Register index = scratch0;
     // Capacity is smi 2^n.
-    __ ldr(index, FieldMemOperand(properties, kCapacityOffset));
+    __ lwz(index, FieldMemOperand(properties, kCapacityOffset));
     __ sub(index, index, Operand(1));
-    __ and_(index, index, Operand(
+    __ mov(ip, Operand(
         Smi::FromInt(name->Hash() + StringDictionary::GetProbeOffset(i))));
+    __ and_(index, index, ip);
 
     // Scale the index by multiplying by the entry size.
     ASSERT(StringDictionary::kEntrySize == 3);
-    __ add(index, index, Operand(index, LSL, 1));  // index *= 3.
+    __ slwi(ip, index, Operand(1));
+    __ add(index, index, ip);  // index *= 3.
 
     Register entity_name = scratch0;
     // Having undefined at this place means the name is not contained.
     ASSERT_EQ(kSmiTagSize, 1);
     Register tmp = properties;
-    __ add(tmp, properties, Operand(index, LSL, 1));
-    __ ldr(entity_name, FieldMemOperand(tmp, kElementsStartOffset));
+    __ slwi(ip, index, Operand(1));
+    __ add(tmp, properties, ip);
+    __ lwz(entity_name, FieldMemOperand(tmp, kElementsStartOffset));
 
     ASSERT(!tmp.is(entity_name));
     __ LoadRoot(tmp, Heap::kUndefinedValueRootIndex);
     __ cmp(entity_name, tmp);
-    __ b(eq, done);
+    __ beq(done);
 
     if (i != kInlinedProbes - 1) {
       // Load the hole ready for use below:
       __ LoadRoot(tmp, Heap::kTheHoleValueRootIndex);
 
       // Stop if found the property.
-      __ cmp(entity_name, Operand(Handle<String>(name)));
-      __ b(eq, miss);
+      __ mov(r0, Operand(Handle<String>(name)));
+      __ cmp(entity_name, r0);
+      __ beq(miss);
 
       Label the_hole;
       __ cmp(entity_name, tmp);
-      __ b(eq, &the_hole);
+      __ beq(&the_hole);
 
       // Check if the entry name is not a symbol.
-      __ ldr(entity_name, FieldMemOperand(entity_name, HeapObject::kMapOffset));
-      __ ldrb(entity_name,
+      __ lwz(entity_name, FieldMemOperand(entity_name, HeapObject::kMapOffset));
+      __ lbz(entity_name,
               FieldMemOperand(entity_name, Map::kInstanceTypeOffset));
-      __ tst(entity_name, Operand(kIsSymbolMask));
-      __ b(eq, miss);
+      __ andi(r0, entity_name, Operand(kIsSymbolMask));
+      __ cmpi(r0, Operand(0));
+      __ beq(miss);
 
       __ bind(&the_hole);
 
       // Restore the properties.
-      __ ldr(properties,
+      __ lwz(properties,
              FieldMemOperand(receiver, JSObject::kPropertiesOffset));
     }
   }
 
-  // roohack, not converted this spill mask stuff
   const int spill_mask =
-      (lr.bit() | r6.bit() | r5.bit() | r4.bit() | r3.bit() |
-       r2.bit() | r1.bit() | r0.bit());
+      (r0.bit() | r9.bit() | r8.bit() | r7.bit() | r6.bit() |
+       r5.bit() | r4.bit() | r3.bit());
 
-  __ stm(db_w, sp, spill_mask);
+  __ mflr(r0);
+  __ MultiPush(spill_mask);
+
   __ ldr(r3, FieldMemOperand(receiver, JSObject::kPropertiesOffset));
   __ mov(r4, Operand(Handle<String>(name)));
   StringDictionaryLookupStub stub(NEGATIVE_LOOKUP);
   __ CallStub(&stub);
   __ cmp(r3, Operand(0));
-  __ ldm(ia_w, sp, spill_mask);
+
+  __ MultiPop(spill_mask);  // MultiPop does not touch condition flags
+  __ mtlr(r0);
 
   __ b(eq, done);
   __ b(ne, miss);
@@ -7326,12 +7334,12 @@ void StringDictionaryLookupStub::GeneratePositiveLookup(MacroAssembler* masm,
     __ beq(done);
   }
 
-  // roohack - spill mask not fixed yet
   const int spill_mask =
-      (lr.bit() | r6.bit() | r5.bit() | r4.bit() |
-       r3.bit() | r2.bit() | r1.bit() | r0.bit()) &
+      (r0.bit() | r9.bit() | r8.bit() | r7.bit() |
+       r6.bit() | r5.bit() | r4.bit() | r3.bit()) &
       ~(scratch1.bit() | scratch2.bit());
 
+  __ mflr(r0);
   __ MultiPush(spill_mask);
   if (name.is(r3)) {
     ASSERT(!elements.is(r4));
@@ -7346,6 +7354,7 @@ void StringDictionaryLookupStub::GeneratePositiveLookup(MacroAssembler* masm,
   __ cmpi(r3, Operand(0));
   __ mr(scratch2, r5);
   __ MultiPop(spill_mask);
+  __ mtlr(r0);
 
   __ bne(done);
   __ beq(miss);
