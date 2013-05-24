@@ -7136,8 +7136,12 @@ void ICCompareStub::GenerateMiss(MacroAssembler* masm) {
 // This stub is paired with DirectCEntryStub::GenerateCall
 void DirectCEntryStub::Generate(MacroAssembler* masm) {
 #if defined(V8_HOST_ARCH_PPC)
-  __ add(sp, sp, Operand(2 * kPointerSize));
+  // Retrieve return value and restore sp
+  // See PPC LINUX ABI notes in GenerateCall
+  __ lwz(r3, MemOperand(sp, 3 * kPointerSize));
+  __ add(sp, sp, Operand(4 * kPointerSize));
 #endif
+  // Retrieve return address
   __ lwz(r0, MemOperand(sp, 0));
   __ Jump(r0);
 }
@@ -7145,8 +7149,8 @@ void DirectCEntryStub::Generate(MacroAssembler* masm) {
 
 void DirectCEntryStub::GenerateCall(MacroAssembler* masm,
                                     ExternalReference function) {
-  __ mov(r5, Operand(function));
-  GenerateCall(masm, r5);
+  __ mov(r6, Operand(function));
+  GenerateCall(masm, r6);
 }
 
 
@@ -7159,7 +7163,7 @@ void DirectCEntryStub::GenerateCall(MacroAssembler* masm,
   Assembler::BlockConstPoolScope block_const_pool(masm);
 
 #if defined(V8_HOST_ARCH_PPC)
-#define PowerPCAdjustment 3
+#define PowerPCAdjustment 5
 #else
 #define PowerPCAdjustment 0
 #endif
@@ -7174,10 +7178,26 @@ void DirectCEntryStub::GenerateCall(MacroAssembler* masm,
   __ add(ip, ip, Operand((6+PowerPCAdjustment) * Assembler::kInstrSize));
   __ stw(ip, MemOperand(sp, 0));
 #if defined(V8_HOST_ARCH_PPC)
-  // save extra 2 slots for call out to obey PPC ABI
-  __ sub(sp, sp, Operand(2 * kPointerSize));
-  __ mr(r4, r3);  // C++ 1st arg is in r4
-  __ mr(r3, sp);  // C++ uses a return pointer as 1st param?
+  // PPC LINUX ABI:
+  //
+  // N.B. This code assumes that there are at most two arguments passed --
+  //      - a pointer-sized non-scalar first argument in r3
+  //      - a scalar second argument in r4
+  //      It also assumes a pointer-sized non-scalar return value.
+  //      Additional logic is required to support calls where these
+  //      assumptions do not hold.
+  //
+  // Need 4 extra slots on stack:
+  //    [0] backchain
+  //    [1] link register save area
+  //    [2] copy of pointer-sized non-scalar first arg (r4)
+  //    [3] space for pointer-sized non-scalar return value (r3)
+  //  Thus we must shift r3 -> r4 and r4 -> r5 to allow for implicit first arg
+  __ add(sp, sp, Operand(-4 * kPointerSize));
+  __ mr(r5, r4);
+  __ add(r4, sp, Operand(2 * kPointerSize));
+  __ stw(r3, MemOperand(r4, 0));
+  __ add(r3, sp, Operand(3 * kPointerSize));
 #endif
   __ Jump(target);  // Call the C++ function.
   ASSERT_EQ(Assembler::kInstrSize +
