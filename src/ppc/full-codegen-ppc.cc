@@ -1985,20 +1985,34 @@ void FullCodeGenerator::EmitInlineSmiBinaryOp(BinaryOperation* expr,
       __ SmiTag(right, scratch1);
       break;
     }
-    case Token::ADD:
-      __ li(r0, Operand(-1));
+    case Token::ADD: {
+      Label add_no_overflow;
+      // C = A+B; C overflows if A/B have same sign and C has diff sign than A
+      __ xor_(r0, left, right);
       __ addc(scratch1, left, right);
-      __ addze(r0, r0, LeaveOE, SetRC);
-      __ bc(&stub_call, BT, 2);
-      __ mr(right, scratch1);
-      break;
-    case Token::SUB:
-      __ li(r0, Operand(-1));
-      __ subfc(scratch1, left, right);
-      __ addze(r0, r0, LeaveOE, SetRC);
+      __ rlwinm(r0, r0, 1, 31, 31, SetRC);
+      __ bc(&add_no_overflow, BF, 2);
+      __ xor_(r0, right, scratch1);
+      __ rlwinm(r0, r0, 1, 31, 31, SetRC);
       __ bc(&stub_call, BF, 2);
+      __ bind(&add_no_overflow);
       __ mr(right, scratch1);
       break;
+    }
+    case Token::SUB: {
+      Label sub_no_overflow;
+      // C = A-B; C overflows if A/B have diff signs and C has diff sign than A
+      __ xor_(r0, left, right);
+      __ subfc(scratch1, left, right);
+      __ rlwinm(r0, r0, 1, 31, 31, SetRC);
+      __ bc(&sub_no_overflow, BT, 2);
+      __ xor_(r0, right, scratch1);
+      __ rlwinm(r0, r0, 1, 31, 31, SetRC);
+      __ bc(&stub_call, BF, 2);
+      __ bind(&sub_no_overflow);
+      __ mr(right, scratch1);
+      break;
+    }
     case Token::MUL: {
       __ SmiUntag(ip, right);
       __ mullw(scratch1, left, ip);

@@ -3530,6 +3530,7 @@ void KeyedLoadStubCompiler::GenerateLoadDictionaryElement(
 }
 
 
+#if 0  // never used roohack
 static bool IsElementTypeSigned(ElementsKind elements_kind) {
   switch (elements_kind) {
     case EXTERNAL_BYTE_ELEMENTS:
@@ -3558,6 +3559,7 @@ static bool IsElementTypeSigned(ElementsKind elements_kind) {
   }
   return false;
 }
+#endif
 
 
 static void GenerateSmiKeyCheck(MacroAssembler* masm,
@@ -3639,53 +3641,40 @@ void KeyedLoadStubCompiler::GenerateLoadExternalArray(
   switch (elements_kind) {
     case EXTERNAL_BYTE_ELEMENTS:
       __ srwi(value, key, Operand(1));
-      __ add(value, value, r6);
+      __ add(value, r6, value);
       __ lbz(value, MemOperand(value));
       __ extsb(value, value);
       break;
     case EXTERNAL_PIXEL_ELEMENTS:
     case EXTERNAL_UNSIGNED_BYTE_ELEMENTS:
       __ srwi(value, key, Operand(1));
-      __ add(value, value, r6);
+      __ add(value, r6, value);
       __ lbz(value, MemOperand(value));
       break;
     case EXTERNAL_SHORT_ELEMENTS:
-      __ srwi(value, key, Operand(1));
-      __ add(value, value, r6);
+      __ add(value, r6, key);
       __ lhz(value, MemOperand(value));
       __ extsh(value, value);
       break;
     case EXTERNAL_UNSIGNED_SHORT_ELEMENTS:
-      __ srwi(value, key, Operand(1));
-      __ add(value, value, r6);
+      __ add(value, r6, key);
       __ lhz(value, MemOperand(value));
       break;
     case EXTERNAL_INT_ELEMENTS:
     case EXTERNAL_UNSIGNED_INT_ELEMENTS:
-      __ srwi(value, key, Operand(1));
+      __ slwi(value, key, Operand(1));
       __ add(value, value, r6);
       __ lwz(value, MemOperand(value));
       break;
     case EXTERNAL_FLOAT_ELEMENTS:
-      if (CpuFeatures::IsSupported(VFP2)) {
-        CpuFeatures::Scope scope(VFP2);
-        __ add(r5, r6, Operand(key, LSL, 1));
-        __ vldr(s0, r5, 0);
-      } else {
-        __ lwz(value, MemOperand(r6, key, LSL, 1));
-      }
+      __ slwi(value, key, Operand(1));
+      __ add(value, value, r6);
+      __ lfs(d0, value, 0);
       break;
     case EXTERNAL_DOUBLE_ELEMENTS:
-      if (CpuFeatures::IsSupported(VFP2)) {
-        CpuFeatures::Scope scope(VFP2);
-        __ add(r5, r6, Operand(key, LSL, 2));
-        __ vldr(d0, r5, 0);
-      } else {
-        __ add(r7, r6, Operand(key, LSL, 2));
-        // r7: pointer to the beginning of the double we want to load.
-        __ lwz(r5, MemOperand(r7, 0));
-        __ lwz(r6, MemOperand(r7, Register::kSizeInBytes));
-      }
+      __ slwi(value, key, Operand(2));
+      __ add(value, value, r6);
+      __ lfd(d0, value, 0);
       break;
     case FAST_ELEMENTS:
     case FAST_SMI_ELEMENTS:
@@ -3702,19 +3691,20 @@ void KeyedLoadStubCompiler::GenerateLoadExternalArray(
   // For integer array types:
   // r5: value
   // For float array type:
-  // s0: value (if VFP3 is supported)
-  // r5: value (if VFP3 is not supported)
+  // d0: single value
   // For double array type:
-  // d0: value (if VFP3 is supported)
-  // r5/r6: value (if VFP3 is not supported)
+  // d0: double value
 
   if (elements_kind == EXTERNAL_INT_ELEMENTS) {
     // For the Int and UnsignedInt array types, we need to see whether
     // the value can be represented in a Smi. If not, we need to convert
     // it to a HeapNumber.
-    Label box_int;
-    __ cmp(value, Operand(0xC0000000));
-    __ b(mi, &box_int);
+    Label box_int, smi_ok;
+    __ rlwinm(r0, value, 2, 30, 31, SetRC);
+    __ bc(&smi_ok, BT, 2);     // If both high bits are clear smi is ok
+    __ cmpi(r0, Operand(3));
+    __ bne(&box_int);         // If both high bits are not set, we box it
+    __ bind(&smi_ok);
     // Tag integer as smi and return it.
     __ slwi(r3, value, Operand(kSmiTagSize));
     __ Ret();
@@ -3728,207 +3718,61 @@ void KeyedLoadStubCompiler::GenerateLoadExternalArray(
     // Now we can use r3 for the result as key is not needed any more.
     __ mr(r3, r8);
 
-#ifdef PENGUIN_CLEANUP
-    if (CpuFeatures::IsSupported(VFP2)) {
-      CpuFeatures::Scope scope(VFP2);
-      __ vmov(s0, value);
-      __ vcvt_f64_s32(d0, s0);
-      __ sub(r6, r3, Operand(kHeapObjectTag));
-      __ vstr(d0, r6, HeapNumber::kValueOffset);
-      __ Ret();
-    } else {
-#else
-    // penguin: implement above sequence using PPC FPR
-    PPCPORT_UNIMPLEMENTED();
-#endif
-      Register dst1 = r4;
-      Register dst2 = r6;
-      FloatingPointHelper::Destination dest =
-          FloatingPointHelper::kCoreRegisters;
-      FloatingPointHelper::ConvertIntToDouble(masm,
-                                              value,
-                                              dest,
-                                              d0,
-                                              dst1,
-                                              dst2,
-                                              d3);
-      __ stw(dst1, FieldMemOperand(r3, HeapNumber::kMantissaOffset));
-      __ stw(dst2, FieldMemOperand(r3, HeapNumber::kExponentOffset));
-      __ Ret();
-#ifdef PENGUIN_CLEANUP
-    }
-#endif
+    FloatingPointHelper::ConvertIntToDouble(
+      masm, value, FloatingPointHelper::kFPRegisters,
+      d0, r7, r7,  // r7 unused as we're using kFPRegisters
+      d2);
+    __ stfd(d0, r3, HeapNumber::kValueOffset-kHeapObjectTag);
+    __ Ret();
+
   } else if (elements_kind == EXTERNAL_UNSIGNED_INT_ELEMENTS) {
     // The test is different for unsigned int values. Since we need
     // the value to be in the range of a positive smi, we can't
     // handle either of the top two bits being set in the value.
-#ifdef PENGUIN_CLEANUP
-    if (CpuFeatures::IsSupported(VFP2)) {
-      CpuFeatures::Scope scope(VFP2);
-      Label box_int, done;
-      __ tst(value, Operand(0xC0000000));
-      __ bne(&box_int);
-      // Tag integer as smi and return it.
-      __ slwi(r3, value, Operand(value, LSL, kSmiTagSize));
-      __ Ret();
+    Label box_int;
+    __ rlwinm(r0, value, 2, 30, 31, SetRC);
+    __ bc(&box_int, BF, 2);   // If either two high bits are set, box
 
-      __ bind(&box_int);
-      __ vmov(s0, value);
-      // Allocate a HeapNumber for the result and perform int-to-double
-      // conversion. Don't use r3 and r4 as AllocateHeapNumber clobbers all
-      // registers - also when jumping due to exhausted young space.
-      __ LoadRoot(r9, Heap::kHeapNumberMapRootIndex);
-      __ AllocateHeapNumber(r5, r6, r7, r9, &slow);
+    // Tag integer as smi and return it.
+    __ slwi(r3, value, Operand(kSmiTagSize));
+    __ Ret();
 
-      __ vcvt_f64_u32(d0, s0);
-      __ sub(r4, r5, Operand(kHeapObjectTag));
-      __ vstr(d0, r4, HeapNumber::kValueOffset);
+    __ bind(&box_int);
+    // Allocate a HeapNumber for the result and perform int-to-double
+    // conversion. Don't use r3 and r4 as AllocateHeapNumber clobbers all
+    // registers - also when jumping due to exhausted young space.
+    __ LoadRoot(r9, Heap::kHeapNumberMapRootIndex);
+    __ AllocateHeapNumber(r5, r6, r7, r9, &slow);
+    __ mr(r3, r5);
 
-      __ mr(r3, r5);
-      __ Ret();
-    } else {
-      // Check whether unsigned integer fits into smi.
-      Label box_int_0, box_int_1, done;
-      __ tst(value, Operand(0x80000000));
-      __ bne(&box_int_0);
-      __ tst(value, Operand(0x40000000));
-      __ bne(&box_int_1);
-      // Tag integer as smi and return it.
-      __ slwi(r3, value, Operand(value, LSL, kSmiTagSize));
-      __ Ret();
+    FloatingPointHelper::ConvertIntToDouble(
+      masm, value, FloatingPointHelper::kFPRegisters,
+      d0, r7, r7,  // r7 unused as we're using kFPRegisters
+      d2);
+    __ stfd(d0, r3, HeapNumber::kValueOffset-kHeapObjectTag);
+    __ Ret();
 
-      Register hiword = value;  // r5.
-      Register loword = r6;
-
-      __ bind(&box_int_0);
-      // Integer does not have leading zeros.
-      GenerateUInt2Double(masm, hiword, loword, r7, 0);
-      __ b(&done);
-
-      __ bind(&box_int_1);
-      // Integer has one leading zero.
-      GenerateUInt2Double(masm, hiword, loword, r7, 1);
-
-
-      __ bind(&done);
-      // Integer was converted to double in registers hiword:loword.
-      // Wrap it into a HeapNumber. Don't use r3 and r4 as AllocateHeapNumber
-      // clobbers all registers - also when jumping due to exhausted young
-      // space.
-      __ LoadRoot(r9, Heap::kHeapNumberMapRootIndex);
-      __ AllocateHeapNumber(r7, r8, r10, r9, &slow);
-
-      __ stw(hiword, FieldMemOperand(r7, HeapNumber::kExponentOffset));
-      __ stw(loword, FieldMemOperand(r7, HeapNumber::kMantissaOffset));
-
-      __ mr(r3, r7);
-      __ Ret();
-    }
-#else
-    PPCPORT_UNIMPLEMENTED();
-#endif
   } else if (elements_kind == EXTERNAL_FLOAT_ELEMENTS) {
-#ifdef PENGUIN_CLEANUP
     // For the floating-point array type, we need to always allocate a
     // HeapNumber.
-    if (CpuFeatures::IsSupported(VFP2)) {
-      CpuFeatures::Scope scope(VFP2);
-      // Allocate a HeapNumber for the result. Don't use r3 and r4 as
-      // AllocateHeapNumber clobbers all registers - also when jumping due to
-      // exhausted young space.
-      __ LoadRoot(r9, Heap::kHeapNumberMapRootIndex);
-      __ AllocateHeapNumber(r5, r6, r7, r9, &slow);
-      __ vcvt_f64_f32(d0, s0);
-      __ sub(r4, r5, Operand(kHeapObjectTag));
-      __ vstr(d0, r4, HeapNumber::kValueOffset);
+    // Allocate a HeapNumber for the result. Don't use r3 and r4 as
+    // AllocateHeapNumber clobbers all registers - also when jumping due to
+    // exhausted young space.
+    __ LoadRoot(r9, Heap::kHeapNumberMapRootIndex);
+    __ AllocateHeapNumber(r5, r6, r7, r9, &slow);
+    __ stfd(d0, r5, HeapNumber::kValueOffset-kHeapObjectTag);
+    __ mr(r3, r5);
+    __ Ret();
 
-      __ mr(r3, r5);
-      __ Ret();
-    } else {
-#else
-      // penguin: implement sequence using PPC FPR
-      PPCPORT_UNIMPLEMENTED();
-#endif
-      // Allocate a HeapNumber for the result. Don't use r3 and r4 as
-      // AllocateHeapNumber clobbers all registers - also when jumping due to
-      // exhausted young space.
-      __ LoadRoot(r9, Heap::kHeapNumberMapRootIndex);
-      __ AllocateHeapNumber(r6, r7, r8, r9, &slow);
-      // VFP is not available, do manual single to double conversion.
-
-      // r5: floating point value (binary32)
-      // r6: heap number for result
-
-      // Extract mantissa to r3. OK to clobber r3 now as there are no jumps to
-      // the slow case from here.
-      __ and_(r3, value, Operand(kBinary32MantissaMask));
-
-      // Extract exponent to r4. OK to clobber r4 now as there are no jumps to
-      // the slow case from here.
-      __ mov(r4, Operand(value, LSR, kBinary32MantissaBits));
-      __ and_(r4, r4, Operand(kBinary32ExponentMask >> kBinary32MantissaBits));
-
-      Label exponent_rebiased;
-      __ teq(r4, Operand(0x00));
-      __ beq(&exponent_rebiased);
-
-      __ teq(r4, Operand(0xff));
-      __ mov(r4, Operand(0x7ff), LeaveCC, eq);
-      __ beq(&exponent_rebiased);
-
-      // Rebias exponent.
-      __ add(r4,
-             r4,
-             Operand(-kBinary32ExponentBias + HeapNumber::kExponentBias));
-
-      __ bind(&exponent_rebiased);
-      __ and_(r5, value, Operand(kBinary32SignMask));
-      value = no_reg;
-      __ orr(r5, r5, Operand(r4, LSL, HeapNumber::kMantissaBitsInTopWord));
-
-      // Shift mantissa.
-      static const int kMantissaShiftForHiWord =
-          kBinary32MantissaBits - HeapNumber::kMantissaBitsInTopWord;
-
-      static const int kMantissaShiftForLoWord =
-          kBitsPerInt - kMantissaShiftForHiWord;
-
-      __ orr(r5, r5, Operand(r3, LSR, kMantissaShiftForHiWord));
-      __ mov(r3, Operand(r3, LSL, kMantissaShiftForLoWord));
-
-      __ stw(r5, FieldMemOperand(r6, HeapNumber::kExponentOffset));
-      __ stw(r3, FieldMemOperand(r6, HeapNumber::kMantissaOffset));
-
-      __ mr(r3, r6);
-      __ Ret();
-#ifdef PENGUIN_CLEANUP
-    }
-#endif
   } else if (elements_kind == EXTERNAL_DOUBLE_ELEMENTS) {
-    if (CpuFeatures::IsSupported(VFP2)) {
-      CpuFeatures::Scope scope(VFP2);
-      // Allocate a HeapNumber for the result. Don't use r3 and r4 as
-      // AllocateHeapNumber clobbers all registers - also when jumping due to
-      // exhausted young space.
-      __ LoadRoot(r9, Heap::kHeapNumberMapRootIndex);
-      __ AllocateHeapNumber(r5, r6, r7, r9, &slow);
-      __ sub(r4, r5, Operand(kHeapObjectTag));
-      __ vstr(d0, r4, HeapNumber::kValueOffset);
-
-      __ mov(r3, r5);
-      __ Ret();
-    } else {
-      // Allocate a HeapNumber for the result. Don't use r3 and r4 as
-      // AllocateHeapNumber clobbers all registers - also when jumping due to
-      // exhausted young space.
-      __ LoadRoot(r10, Heap::kHeapNumberMapRootIndex);
-      __ AllocateHeapNumber(r7, r8, r9, r10, &slow);
-
-      __ stw(r5, FieldMemOperand(r7, HeapNumber::kMantissaOffset));
-      __ stw(r6, FieldMemOperand(r7, HeapNumber::kExponentOffset));
-      __ mov(r3, r7);
-      __ Ret();
-    }
+    // Allocate a HeapNumber for the result. Don't use r3 and r4 as
+    // AllocateHeapNumber clobbers all registers - also when jumping due to
+    // exhausted young space.
+    __ LoadRoot(r9, Heap::kHeapNumberMapRootIndex);
+    __ AllocateHeapNumber(r5, r6, r7, r9, &slow);
+    __ stfd(d0, r5, HeapNumber::kValueOffset-kHeapObjectTag);
+    __ mov(r3, r5);
+    __ Ret();
 
   } else {
     // Tag integer as smi and return it.
@@ -4004,25 +3848,31 @@ void KeyedStoreStubCompiler::GenerateStoreExternalArray(
 
   // r6: base pointer of external storage.
   // r8: value (integer).
+  // r10: scratch register
   switch (elements_kind) {
     case EXTERNAL_PIXEL_ELEMENTS:
       // Clamp the value to [0..255].
-      __ Usat(r8, 8, Operand(r8));
-      __ strb(r8, MemOperand(r6, key, LSR, 1));
+//      __ Usat(r8, 8, Operand(r8));  not needed on PPC
+      __ srwi(r10, key, Operand(1));
+      __ add(r10, r6, r10);
+      __ stb(r8, MemOperand(r10));
       break;
     case EXTERNAL_BYTE_ELEMENTS:
     case EXTERNAL_UNSIGNED_BYTE_ELEMENTS:
-      __ strb(r8, MemOperand(r6, key, LSR, 1));
+      __ srwi(r10, key, Operand(1));
+      __ add(r10, r6, r10);
+      __ stb(r8, MemOperand(r10));
       break;
     case EXTERNAL_SHORT_ELEMENTS:
     case EXTERNAL_UNSIGNED_SHORT_ELEMENTS:
-      __ strh(r8, MemOperand(r6, key, LSL, 0));
+      __ add(r10, r6, key);
+      __ sth(r8, MemOperand(r10));
       break;
     case EXTERNAL_INT_ELEMENTS:
     case EXTERNAL_UNSIGNED_INT_ELEMENTS:
-      __ slwi(r8, key, Operand(1));
-      __ add(r8, r8, r6);
-      __ stw(r8, MemOperand(r8));
+      __ slwi(r10, key, Operand(1));
+      __ add(r10, r6, r10);
+      __ stw(r8, MemOperand(r10));
       break;
     case EXTERNAL_FLOAT_ELEMENTS:
       // Perform int-to-float conversion and store to memory.
@@ -4030,34 +3880,14 @@ void KeyedStoreStubCompiler::GenerateStoreExternalArray(
       StoreIntAsFloat(masm, r6, r7, r8, r9, r10, r22);
       break;
     case EXTERNAL_DOUBLE_ELEMENTS:
-      __ slwi(r8, key, Operand(2));
-      __ add(r6, r6, r8);
+      __ slwi(r10, key, Operand(2));
+      __ add(r6, r6, r10);
       // r6: effective address of the double element
-#ifdef PENGUIN_CLEANUP
-      FloatingPointHelper::Destination destination;
-      if (CpuFeatures::IsSupported(VFP2)) {
-        destination = FloatingPointHelper::kVFPRegisters;
-      } else {
-        destination = FloatingPointHelper::kCoreRegisters;
-      }
-      FloatingPointHelper::ConvertIntToDouble(
-          masm, r8, destination,
-          d0, r9, r10,  // These are: double_dst, dst1, dst2.
-          d2);  // These are: scratch2, single_scratch.
-      if (destination == FloatingPointHelper::kVFPRegisters) {
-        CpuFeatures::Scope scope(VFP2);
-        __ vstr(d0, r6, 0);
-      } else {
-        __ stw(r9, MemOperand(r6, 0));
-        __ stw(r10, MemOperand(r6, Register::kSizeInBytes));
-      }
-#else
       FloatingPointHelper::ConvertIntToDouble(
           masm, r8, FloatingPointHelper::kFPRegisters,
           d0, r9, r10,  // These are: double_dst, dst1, dst2.
           d2);  // These are: scratch2, single_scratch.
       __ stfd(d0, r6, 0);
-#endif
       break;
     case FAST_ELEMENTS:
     case FAST_SMI_ELEMENTS:
@@ -4075,56 +3905,55 @@ void KeyedStoreStubCompiler::GenerateStoreExternalArray(
   __ Ret();
 
   if (elements_kind != EXTERNAL_PIXEL_ELEMENTS) {
-    // r6: external array.
-    __ bind(&check_heap_number);
-    __ CompareObjectType(value, r8, r9, HEAP_NUMBER_TYPE);
-    __ bne(&slow);
+      // r6: external array.
+      __ bind(&check_heap_number);
+      __ CompareObjectType(value, r8, r9, HEAP_NUMBER_TYPE);
+      __ bne(&slow);
 
-    __ lwz(r6, FieldMemOperand(r6, ExternalArray::kExternalPointerOffset));
+      __ lwz(r6, FieldMemOperand(r6, ExternalArray::kExternalPointerOffset));
 
-    // r6: base pointer of external storage.
+      // r6: base pointer of external storage.
 
-    // The WebGL specification leaves the behavior of storing NaN and
-    // +/-Infinity into integer arrays basically undefined. For more
-    // reproducible behavior, convert these to zero.
-#ifdef PENGUIN_CLEANUP
-    if (CpuFeatures::IsSupported(VFP2)) {
-      CpuFeatures::Scope scope(VFP2);
+      // The WebGL specification leaves the behavior of storing NaN and
+      // +/-Infinity into integer arrays basically undefined. For more
+      // reproducible behavior, convert these to zero.
 
       if (elements_kind == EXTERNAL_FLOAT_ELEMENTS) {
         // vldr requires offset to be a multiple of 4 so we can not
         // include -kHeapObjectTag into it.
-        __ sub(r8, r3, Operand(kHeapObjectTag));
-        __ vldr(d0, r8, HeapNumber::kValueOffset);
-        __ add(r8, r6, Operand(key, LSL, 1));
-        __ vcvt_f32_f64(s0, d0);
-        __ vstr(s0, r8, 0);
+        __ lfd(d0, r3, HeapNumber::kValueOffset-kHeapObjectTag);
+        __ slwi(r8, key, Operand(1));
+        __ add(r8, r6, r8);
+        __ frsp(d0, d0);
+        __ stfs(d0, r8, 0);
       } else if (elements_kind == EXTERNAL_DOUBLE_ELEMENTS) {
-        __ sub(r8, r3, Operand(kHeapObjectTag));
-        __ vldr(d0, r8, HeapNumber::kValueOffset);
-        __ add(r8, r6, Operand(key, LSL, 2));
-        __ vstr(d0, r8, 0);
+        __ lfd(d0, r3, HeapNumber::kValueOffset-kHeapObjectTag);
+        __ slwi(r8, key, Operand(1));
+        __ add(r8, r6, r8);
+        __ stfd(d0, r8, 0);
       } else {
-        // Hoisted load.  vldr requires offset to be a multiple of 4 so we can
-        // not include -kHeapObjectTag into it.
-        __ sub(r8, value, Operand(kHeapObjectTag));
-        __ vldr(d0, r8, HeapNumber::kValueOffset);
+        // Hoisted load.
+        __ mr(r8, value);
+        __ lfd(d0, r8, HeapNumber::kValueOffset-kHeapObjectTag);
         __ EmitECMATruncate(r8, d0, s2, r9, r10, r22);
 
         switch (elements_kind) {
           case EXTERNAL_BYTE_ELEMENTS:
           case EXTERNAL_UNSIGNED_BYTE_ELEMENTS:
-            __ strb(r8, MemOperand(r6, key, LSR, 1));
+            __ srwi(r10, key, Operand(1));
+            __ add(r10, r6, r10);
+            __ stb(r8, MemOperand(r10));
             break;
           case EXTERNAL_SHORT_ELEMENTS:
           case EXTERNAL_UNSIGNED_SHORT_ELEMENTS:
-            __ strh(r8, MemOperand(r6, key, LSL, 0));
+            __ add(r10, r6, key);
+            __ sth(r8, MemOperand(r10));
             break;
           case EXTERNAL_INT_ELEMENTS:
           case EXTERNAL_UNSIGNED_INT_ELEMENTS:
-            __ slwi(r8, key, Operand(1));
-            __ add(r8, r8, r6);
-            __ stw(r8, MemOperand(r8));
+            __ slwi(r10, key, Operand(1));
+            __ add(r10, r6, r10);
+            __ stw(r8, MemOperand(r10));
             break;
           case EXTERNAL_PIXEL_ELEMENTS:
           case EXTERNAL_FLOAT_ELEMENTS:
@@ -4142,158 +3971,9 @@ void KeyedStoreStubCompiler::GenerateStoreExternalArray(
         }
       }
 
-      // Entry registers are intact, r3 holds the value which is the return
-      // value.
-      __ Ret();
-    } else {
-#else
-      // penguin: implement above sequence using PPC FPR
-      PPCPORT_UNIMPLEMENTED();
-#endif
-      // VFP3 is not available do manual conversions.
-      __ lwz(r8, FieldMemOperand(value, HeapNumber::kExponentOffset));
-      __ lwz(r9, FieldMemOperand(value, HeapNumber::kMantissaOffset));
-
-      if (elements_kind == EXTERNAL_FLOAT_ELEMENTS) {
-        Label done, nan_or_infinity_or_zero;
-        static const int kMantissaInHiWordShift =
-            kBinary32MantissaBits - HeapNumber::kMantissaBitsInTopWord;
-
-        static const int kMantissaInLoWordShift =
-            kBitsPerInt - kMantissaInHiWordShift;
-
-        // Test for all special exponent values: zeros, subnormal numbers, NaNs
-        // and infinities. All these should be converted to 0.
-        __ mov(r10, Operand(HeapNumber::kExponentMask));
-        __ and_(r22, r8, Operand(r10), SetCC);
-        __ cmpi(r22, Operand(0));
-        __ beq(&nan_or_infinity_or_zero);
-
-        __ teq(r22, Operand(r10));
-        __ mov(r22, Operand(kBinary32ExponentMask), LeaveCC, eq);
-        __ beq(&nan_or_infinity_or_zero);
-
-        // Rebias exponent.
-        __ mov(r22, Operand(r22, LSR, HeapNumber::kExponentShift));
-        __ add(r22,
-               r22,
-               Operand(kBinary32ExponentBias - HeapNumber::kExponentBias));
-
-        __ cmp(r22, Operand(kBinary32MaxExponent));
-        __ and_(r8, r8, Operand(HeapNumber::kSignMask), LeaveCC, gt);
-        __ orr(r8, r8, Operand(kBinary32ExponentMask), LeaveCC, gt);
-        __ bgt(&done);
-
-        __ cmp(r22, Operand(kBinary32MinExponent));
-        __ and_(r8, r8, Operand(HeapNumber::kSignMask), LeaveCC, lt);
-        __ b(lt, &done);
-
-        __ and_(r10, r8, Operand(HeapNumber::kSignMask));
-        __ and_(r8, r8, Operand(HeapNumber::kMantissaMask));
-        __ orr(r10, r10, Operand(r8, LSL, kMantissaInHiWordShift));
-        __ orr(r10, r10, Operand(r9, LSR, kMantissaInLoWordShift));
-        __ orr(r8, r10, Operand(r22, LSL, kBinary32ExponentShift));
-
-        __ bind(&done);
-        __ stw(r8, MemOperand(r6, key, LSL, 1));
-        // Entry registers are intact, r3 holds the value which is the return
-        // value.
-        __ Ret();
-
-        __ bind(&nan_or_infinity_or_zero);
-        __ and_(r10, r8, Operand(HeapNumber::kSignMask));
-        __ and_(r8, r8, Operand(HeapNumber::kMantissaMask));
-        __ orr(r22, r22, r10);
-        __ orr(r22, r22, Operand(r8, LSL, kMantissaInHiWordShift));
-        __ orr(r8, r22, Operand(r9, LSR, kMantissaInLoWordShift));
-        __ b(&done);
-      } else if (elements_kind == EXTERNAL_DOUBLE_ELEMENTS) {
-        __ add(r10, r6, Operand(key, LSL, 2));
-        // r10: effective address of destination element.
-        __ stw(r9, MemOperand(r10, 0));
-        __ stw(r8, MemOperand(r10, Register::kSizeInBytes));
-        __ Ret();
-      } else {
-        bool is_signed_type = IsElementTypeSigned(elements_kind);
-        int meaningfull_bits = is_signed_type ? (kBitsPerInt - 1) : kBitsPerInt;
-        int32_t min_value = is_signed_type ? 0x80000000 : 0x00000000;
-
-        Label done, sign;
-
-        // Test for all special exponent values: zeros, subnormal numbers, NaNs
-        // and infinities. All these should be converted to 0.
-        __ mov(r10, Operand(HeapNumber::kExponentMask));
-        __ and_(r22, r8, Operand(r10), SetCC);
-        __ mov(r8, Operand(0, RelocInfo::NONE), LeaveCC, eq);
-        __ beq(&done);
-
-        __ teq(r22, Operand(r10));
-        __ mov(r8, Operand(0, RelocInfo::NONE), LeaveCC, eq);
-        __ beq(&done);
-
-        // Unbias exponent.
-        __ mov(r22, Operand(r22, LSR, HeapNumber::kExponentShift));
-        __ sub(r22, r22, Operand(HeapNumber::kExponentBias), SetCC);
-        // If exponent is negative then result is 0.
-        __ mov(r8, Operand(0, RelocInfo::NONE), LeaveCC, mi);
-        __ b(mi, &done);
-
-        // If exponent is too big then result is minimal value.
-        __ cmp(r22, Operand(meaningfull_bits - 1));
-        __ mov(r8, Operand(min_value), LeaveCC, ge);
-        __ b(ge, &done);
-
-        __ and_(r10, r8, Operand(HeapNumber::kSignMask), SetCC);
-        __ and_(r8, r8, Operand(HeapNumber::kMantissaMask));
-        __ orr(r8, r8, Operand(1u << HeapNumber::kMantissaBitsInTopWord));
-
-        __ rsb(r22, r22, Operand(HeapNumber::kMantissaBitsInTopWord), SetCC);
-        __ mov(r8, Operand(r8, LSR, r22), LeaveCC, pl);
-        __ b(pl, &sign);
-
-        __ rsb(r22, r22, Operand(0, RelocInfo::NONE));
-        __ mov(r8, Operand(r8, LSL, r22));
-        __ rsb(r22, r22, Operand(meaningfull_bits));
-        __ orr(r8, r8, Operand(r9, LSR, r22));
-
-        __ bind(&sign);
-        __ teq(r10, Operand(0, RelocInfo::NONE));
-        __ rsb(r8, r8, Operand(0, RelocInfo::NONE), LeaveCC, ne);
-
-        __ bind(&done);
-        switch (elements_kind) {
-          case EXTERNAL_BYTE_ELEMENTS:
-          case EXTERNAL_UNSIGNED_BYTE_ELEMENTS:
-            __ strb(r8, MemOperand(r6, key, LSR, 1));
-            break;
-          case EXTERNAL_SHORT_ELEMENTS:
-          case EXTERNAL_UNSIGNED_SHORT_ELEMENTS:
-            __ strh(r8, MemOperand(r6, key, LSL, 0));
-            break;
-          case EXTERNAL_INT_ELEMENTS:
-          case EXTERNAL_UNSIGNED_INT_ELEMENTS:
-            __ slwi(r8, key, Operand(1));
-            __ add(r8, r8, r6);
-            __ stw(r8, MemOperand(r8));
-            break;
-          case EXTERNAL_PIXEL_ELEMENTS:
-          case EXTERNAL_FLOAT_ELEMENTS:
-          case EXTERNAL_DOUBLE_ELEMENTS:
-          case FAST_ELEMENTS:
-          case FAST_SMI_ELEMENTS:
-          case FAST_DOUBLE_ELEMENTS:
-          case FAST_HOLEY_ELEMENTS:
-          case FAST_HOLEY_SMI_ELEMENTS:
-          case FAST_HOLEY_DOUBLE_ELEMENTS:
-          case DICTIONARY_ELEMENTS:
-          case NON_STRICT_ARGUMENTS_ELEMENTS:
-            UNREACHABLE();
-            break;
-        }
-      }
-#ifdef PENGUIN_CLEANUP
-    }
-#endif
+    // Entry registers are intact, r3 holds the value which is the return
+    // value.
+    __ Ret();
   }
 
   // Slow case, key and receiver still in r3 and r4.
@@ -4412,8 +4092,9 @@ void KeyedLoadStubCompiler::GenerateLoadFastDoubleElement(
   uint32_t upper_32_offset = FixedArray::kHeaderSize + sizeof(kHoleNanLower32);
 #endif
   __ lwz(scratch, FieldMemOperand(indexed_double_offset, upper_32_offset));
-  __ cmp(scratch, Operand(kHoleNanUpper32));
-  __ b(&miss_force_generic, eq);
+  __ mov(r0, Operand(kHoleNanUpper32));
+  __ cmp(scratch, r0);
+  __ beq(&miss_force_generic);
 
   // Non-NaN. Allocate a new heap number and copy the double value into it.
   __ LoadRoot(heap_number_map, Heap::kHeapNumberMapRootIndex);

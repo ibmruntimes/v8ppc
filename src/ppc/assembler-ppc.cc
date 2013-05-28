@@ -1332,11 +1332,26 @@ void Assembler::lfd(const DwVfpRegister frt, const Register ra, int offset) {
   // could be x_form instruction with some casting magic
   emit(LFD | frt.code()*B21 | ra.code()*B16 | imm16);
 }
+
+void Assembler::lfs(const DwVfpRegister frt, const Register ra, int offset) {
+  ASSERT(is_int16(offset));
+  int imm16 = offset & kImm16Mask;
+  // could be x_form instruction with some casting magic
+  emit(LFS | frt.code()*B21 | ra.code()*B16 | imm16);
+}
+
 void Assembler::stfd(const DwVfpRegister frs, const Register ra, int offset) {
   ASSERT(is_int16(offset));
   int imm16 = offset & kImm16Mask;
   // could be x_form instruction with some casting magic
   emit(STFD | frs.code()*B21 | ra.code()*B16 | imm16);
+}
+
+void Assembler::stfs(const DwVfpRegister frs, const Register ra, int offset) {
+  ASSERT(is_int16(offset));
+  int imm16 = offset & kImm16Mask;
+  // could be x_form instruction with some casting magic
+  emit(STFS | frs.code()*B21 | ra.code()*B16 | imm16);
 }
 
 void Assembler::fsub(const DwVfpRegister frt,

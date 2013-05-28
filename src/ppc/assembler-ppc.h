@@ -1103,7 +1103,9 @@ class Assembler : public AssemblerBase {
 
   // Support for floating point
   void lfd(const DwVfpRegister frt, const Register ra, int offset);
+  void lfs(const DwVfpRegister frt, const Register ra, int offset);
   void stfd(const DwVfpRegister frs, const Register ra, int offset);
+  void stfs(const DwVfpRegister frs, const Register ra, int offset);
   void fadd(const DwVfpRegister frt, const DwVfpRegister fra,
             const DwVfpRegister frb, RCBit rc = LeaveRC);
   void fsub(const DwVfpRegister frt, const DwVfpRegister fra,

@@ -723,6 +723,14 @@ void Decoder::DecodeExt2(Instruction* instr) {
       Format(instr, "srawi'.  'ra,'rs,'sh");
       return;
     }
+    case EXTSH: {
+      Format(instr, "extsh'.  'ra,'rs");
+      return;
+    }
+    case EXTSB: {
+      Format(instr, "extsb'.  'ra,'rs");
+      return;
+    }
   }
 
   // ?? are all of these xo_form?

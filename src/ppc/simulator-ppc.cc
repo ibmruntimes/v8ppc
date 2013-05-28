@@ -1662,6 +1662,22 @@ void Simulator::DecodeExt2(Instruction* instr) {
       }
       return;
     }
+    case EXTSH: {
+      int ra = instr->RAValue();
+      int rs = instr->RSValue();
+      int32_t rs_val = get_register(rs);
+      int32_t ra_val = (rs_val << 16) >> 16;
+      set_register(ra, ra_val);
+      return;
+    }
+    case EXTSB: {
+      int ra = instr->RAValue();
+      int rs = instr->RSValue();
+      int32_t rs_val = get_register(rs);
+      int32_t ra_val = (rs_val << 24) >> 24;
+      set_register(ra, ra_val);
+      return;
+    }
   }
   // Now look at the lesser encodings
   switch (instr->Bits(9, 1) << 1) {
@@ -2400,7 +2416,8 @@ void Simulator::InstructionDecode(Instruction* instr) {
       if (ra != 0) {
         offset += ra_val;
       }
-      set_register(rt, ReadH(offset, instr));
+      uint32_t result = ReadHU(offset, instr) & 0xffff;
+      set_register(rt, result);
       break;
     }
     case LHZU:
@@ -2421,7 +2438,10 @@ void Simulator::InstructionDecode(Instruction* instr) {
     case STHU:
     case LMW:
     case STMW:
-    case LFS:
+    case LFS: {
+      UNIMPLEMENTED();
+      break;
+    }
     case LFSU:
     case LFD: {
       int frt = instr->RTValue();
@@ -2433,7 +2453,10 @@ void Simulator::InstructionDecode(Instruction* instr) {
       break;
     }
     case LFDU:
-    case STFS:
+    case STFS: {
+      UNIMPLEMENTED();
+      break;
+    }
     case STFSU:
     case STFD: {
       int frt = instr->RTValue();

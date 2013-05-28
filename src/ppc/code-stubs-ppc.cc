@@ -1265,14 +1265,14 @@ static void EmitSmiNonsmiComparison(MacroAssembler* masm,
   __ JumpIfSmi(rhs, &rhs_is_smi);
 
   // Lhs is a Smi.  Check whether the rhs is a heap number.
-  __ CompareObjectType(rhs, r7, r7, HEAP_NUMBER_TYPE);
+  __ CompareObjectType(rhs, r6, r7, HEAP_NUMBER_TYPE);
   if (strict) {
     // If rhs is not a number and lhs is a Smi then strict equality cannot
     // succeed.  Return non-equal
     // If rhs is r3 then there is already a non zero value in it.
     Label skip;
+    __ beq(&skip);
     if (!rhs.is(r3)) {
-      __ beq(&skip);
       __ mov(r3, Operand(NOT_EQUAL));
     }
     __ Ret();
@@ -1302,8 +1302,8 @@ static void EmitSmiNonsmiComparison(MacroAssembler* masm,
     // succeed.  Return non-equal.
     // If lhs is r3 then there is already a non zero value in it.
     Label skip;
+    __ beq(&skip);
     if (!lhs.is(r3)) {
-      __ beq(&skip);
       __ mov(r3, Operand(NOT_EQUAL));
     }
     __ Ret();
@@ -1320,19 +1320,6 @@ static void EmitSmiNonsmiComparison(MacroAssembler* masm,
   __ lfd(d7, r10, HeapNumber::kValueOffset);
   // Convert rhs to a double in d6              .
   __ SmiToDoubleFPRegister(rhs, d6, r10, d13);
-#if 0
-  } else {
-    __ mflr(r0);
-    __ push(r0);
-    // Load lhs to a double in r5, r6.
-    __ Ldrd(r5, r6, FieldMemOperand(lhs, HeapNumber::kValueOffset));
-    // Convert rhs to a double in r3, r4.
-    __ mr(r10, rhs);
-    ConvertToDoubleStub stub2(r4, r3, r10, r9);
-    __ Call(stub2.GetCode());
-    __ pop(r0);
-    __ mtlr(r0);
-#endif
   // Fall through to both_loaded_as_doubles.
 }
 
@@ -1391,63 +1378,6 @@ void EmitNanCheck(MacroAssembler* masm, Label* lhs_not_nan, Condition cond) {
   PPCPORT_UNIMPLEMENTED();
 #endif
 }
-
-
-#if 0
-// roohack - not coonverted
-// See comment at call site.
-static void EmitTwoNonNanDoubleComparison(MacroAssembler* masm,
-                                          Condition cond) {
-  bool exp_first = (HeapNumber::kExponentOffset == HeapNumber::kValueOffset);
-  Register rhs_exponent = exp_first ? r0 : r1;
-  Register lhs_exponent = exp_first ? r2 : r3;
-  Register rhs_mantissa = exp_first ? r1 : r0;
-  Register lhs_mantissa = exp_first ? r3 : r2;
-
-  // r0, r1, r2, r3 have the two doubles.  Neither is a NaN.
-  if (cond == eq) {
-    // Doubles are not equal unless they have the same bit pattern.
-    // Exception: 0 and -0.
-    __ cmp(rhs_mantissa, Operand(lhs_mantissa));
-    __ orr(r0, rhs_mantissa, Operand(lhs_mantissa), LeaveCC, ne);
-    // Return non-zero if the numbers are unequal.
-    __ Ret(ne);
-
-    __ sub(r0, rhs_exponent, Operand(lhs_exponent), SetCC);
-    // If exponents are equal then return 0.
-    __ Ret(eq);
-
-    // Exponents are unequal.  The only way we can return that the numbers
-    // are equal is if one is -0 and the other is 0.  We already dealt
-    // with the case where both are -0 or both are 0.
-    // We start by seeing if the mantissas (that are equal) or the bottom
-    // 31 bits of the rhs exponent are non-zero.  If so we return not
-    // equal.
-    __ orr(r4, lhs_mantissa, Operand(lhs_exponent, LSL, kSmiTagSize), SetCC);
-    __ mov(r0, Operand(r4), LeaveCC, ne);
-    __ Ret(ne);
-    // Now they are equal if and only if the lhs exponent is zero in its
-    // low 31 bits.
-    __ mov(r0, Operand(rhs_exponent, LSL, kSmiTagSize));
-    __ Ret();
-  } else {
-    // Call a native function to do a comparison between two non-NaNs.
-    // Call C routine that may not cause GC or other trouble.
-    __ push(lr);
-    __ PrepareCallCFunction(0, 2, r5);
-    if (masm->use_eabi_hardfloat()) {
-      CpuFeatures::Scope scope(VFP2);
-      __ vmov(d0, r0, r1);
-      __ vmov(d1, r2, r3);
-    }
-
-    AllowExternalCallThatCantCauseGC scope(masm);
-    __ CallCFunction(ExternalReference::compare_doubles(masm->isolate()),
-                     0, 2);
-    __ pop(pc);  // Return.
-  }
-}
-#endif
 
 
 // See comment at call site.
@@ -3000,8 +2930,8 @@ void BinaryOpStub::GenerateInt32Stub(MacroAssembler* masm) {
         // call if we can't.
         if (result_type_ >= ((op_ == Token::DIV) ? BinaryOpIC::HEAP_NUMBER
                                                  : BinaryOpIC::INT32)) {
-          // We are using vfp registers so r8 is available.
-          heap_number_result = r8;
+          // We are using fp registers so r5 is available.
+          heap_number_result = r5;
           GenerateHeapResultAllocation(masm,
                                        heap_number_result,
                                        heap_number_map,
@@ -3010,7 +2940,7 @@ void BinaryOpStub::GenerateInt32Stub(MacroAssembler* masm) {
                                        &call_runtime);
           __ sub(r3, heap_number_result, Operand(kHeapObjectTag));
           __ stfd(d5, r3, HeapNumber::kValueOffset);
-          __ mov(r3, heap_number_result);
+          __ mr(r3, heap_number_result);
           __ Ret();
         }
 
@@ -3025,7 +2955,7 @@ void BinaryOpStub::GenerateInt32Stub(MacroAssembler* masm) {
         Label pop_and_call_runtime;
 
         // Allocate a heap number to store the result.
-        heap_number_result = r8;
+        heap_number_result = r5;
         GenerateHeapResultAllocation(masm,
                                      heap_number_result,
                                      heap_number_map,

@@ -3646,11 +3646,15 @@ void MacroAssembler::GetMarkBits(Register addr_reg,
                                  Register bitmap_reg,
                                  Register mask_reg) {
   ASSERT(!AreAliased(addr_reg, bitmap_reg, mask_reg, no_reg));
-  and_(bitmap_reg, addr_reg, Operand(~Page::kPageAlignmentMask));
-  Ubfx(mask_reg, addr_reg, kPointerSizeLog2, Bitmap::kBitsPerCellLog2);
+  ASSERT((~Page::kPageAlignmentMask & 0xffff) == 0);
+  addis(r0, r0, (~Page::kPageAlignmentMask >> 16));
+  and_(bitmap_reg, addr_reg, r0);
+  rlwinm(mask_reg, addr_reg, 32-kPointerSizeLog2,
+         31-Bitmap::kBitsPerCellLog2, 31);
   const int kLowBits = kPointerSizeLog2 + Bitmap::kBitsPerCellLog2;
-  Ubfx(ip, addr_reg, kLowBits, kPageSizeBits - kLowBits);
-  add(bitmap_reg, bitmap_reg, Operand(ip, LSL, kPointerSizeLog2));
+  rlwinm(ip, addr_reg, 32-kLowBits, 31-(kPageSizeBits - kLowBits), 31);
+  slwi(ip, ip, Operand(kPointerSizeLog2));
+  add(bitmap_reg, bitmap_reg, ip);
   li(ip, Operand(1));
   slw(mask_reg, ip, mask_reg);
 }
