@@ -758,20 +758,20 @@ void Assembler::bl(int branch_offset, Condition cond) {
 void Assembler::and_(Register dst, Register src1, const Operand& src2,
                      SBit s, Condition cond) {
   PPCPORT_CHECK(false);
+  EMIT_FAKE_ARM_INSTR(fAND);
 }
 
 
 void Assembler::eor(Register dst, Register src1, const Operand& src2,
                     SBit s, Condition cond) {
   PPCPORT_CHECK(false);
+  EMIT_FAKE_ARM_INSTR(fEOR);
 }
-
-
-
 
 void Assembler::rsb(Register dst, Register src1, const Operand& src2,
                     SBit s, Condition cond) {
   PPCPORT_CHECK(false);
+  EMIT_FAKE_ARM_INSTR(fRSB);
 }
 
 // PowerPC
@@ -1005,43 +1005,51 @@ void Assembler::neg(Register rt, Register ra, RCBit rc) {
 void Assembler::adc(Register dst, Register src1, const Operand& src2,
                     SBit s, Condition cond) {
   PPCPORT_CHECK(false);
+  EMIT_FAKE_ARM_INSTR(fADC);
 }
 
 
 void Assembler::sbc(Register dst, Register src1, const Operand& src2,
                     SBit s, Condition cond) {
   PPCPORT_CHECK(false);
+  EMIT_FAKE_ARM_INSTR(fSBC);
 }
 
 
 void Assembler::rsc(Register dst, Register src1, const Operand& src2,
                     SBit s, Condition cond) {
   PPCPORT_CHECK(false);
+  EMIT_FAKE_ARM_INSTR(fRSC);
 }
 
 
 void Assembler::tst(Register src1, const Operand& src2, Condition cond) {
   PPCPORT_CHECK(false);
+  EMIT_FAKE_ARM_INSTR(fTST);
 }
 
 
 void Assembler::teq(Register src1, const Operand& src2, Condition cond) {
   PPCPORT_CHECK(false);
+  EMIT_FAKE_ARM_INSTR(fTEQ);
 }
 
 
 void Assembler::cmp(Register src1, const Operand& src2, Condition cond) {
   PPCPORT_CHECK(false);
+  EMIT_FAKE_ARM_INSTR(fCMP);
 }
 
 void Assembler::cmn(Register src1, const Operand& src2, Condition cond) {
   PPCPORT_CHECK(false);
+  EMIT_FAKE_ARM_INSTR(fCMN);
 }
 
 
 void Assembler::orr(Register dst, Register src1, const Operand& src2,
                     SBit s, Condition cond) {
   PPCPORT_CHECK(false);
+  EMIT_FAKE_ARM_INSTR(fORR);
 }
 
 // This should really move to be in macro-assembler as it
@@ -1084,11 +1092,13 @@ void Assembler::mov(Register dst, const Operand& src, SBit s, Condition cond) {
 void Assembler::bic(Register dst, Register src1, const Operand& src2,
                     SBit s, Condition cond) {
   PPCPORT_CHECK(false);
+  EMIT_FAKE_ARM_INSTR(fBIC);
 }
 
 
 void Assembler::mvn(Register dst, const Operand& src, SBit s, Condition cond) {
   PPCPORT_CHECK(false);
+  EMIT_FAKE_ARM_INSTR(fMVN);
 }
 
 
@@ -1229,65 +1239,77 @@ void Assembler::mcrfs(int bf, int bfa) {
 // Status register access instructions.
 void Assembler::mrs(Register dst, SRegister s, Condition cond) {
   PPCPORT_CHECK(false);
+  EMIT_FAKE_ARM_INSTR(fMRS);
 }
 
 
 void Assembler::msr(SRegisterFieldMask fields, const Operand& src,
                     Condition cond) {
   PPCPORT_CHECK(false);
+  EMIT_FAKE_ARM_INSTR(fMSR);
 }
 
 
 // Load/Store instructions.
 void Assembler::ldr(Register dst, const MemOperand& src, Condition cond) {
   PPCPORT_CHECK(false);
+  EMIT_FAKE_ARM_INSTR(fLDR);
 }
 
 
 void Assembler::str(Register src, const MemOperand& dst, Condition cond) {
   PPCPORT_CHECK(false);
+  EMIT_FAKE_ARM_INSTR(fSTR);
 }
 
 
 void Assembler::ldrb(Register dst, const MemOperand& src, Condition cond) {
   PPCPORT_CHECK(false);
+  EMIT_FAKE_ARM_INSTR(fLDRB);
 }
 
 
 void Assembler::strb(Register src, const MemOperand& dst, Condition cond) {
   PPCPORT_CHECK(false);
+  EMIT_FAKE_ARM_INSTR(fSTRB);
 }
 
 
 void Assembler::ldrh(Register dst, const MemOperand& src, Condition cond) {
   PPCPORT_CHECK(false);
+  EMIT_FAKE_ARM_INSTR(fLDRH);
 }
 
 
 void Assembler::strh(Register src, const MemOperand& dst, Condition cond) {
   PPCPORT_CHECK(false);
+  EMIT_FAKE_ARM_INSTR(fSTRH);
 }
 
 
 void Assembler::ldrsb(Register dst, const MemOperand& src, Condition cond) {
   PPCPORT_CHECK(false);
+  EMIT_FAKE_ARM_INSTR(fLDRSB);
 }
 
 
 void Assembler::ldrsh(Register dst, const MemOperand& src, Condition cond) {
   PPCPORT_CHECK(false);
+  EMIT_FAKE_ARM_INSTR(fLDRSH);
 }
 
 
 void Assembler::ldrd(Register dst1, Register dst2,
                      const MemOperand& src, Condition cond) {
   PPCPORT_CHECK(false);
+  EMIT_FAKE_ARM_INSTR(fLDRD);
 }
 
 
 void Assembler::strd(Register src1, Register src2,
                      const MemOperand& dst, Condition cond) {
   PPCPORT_CHECK(false);
+  EMIT_FAKE_ARM_INSTR(fSTRD);
 }
 
 // Load/Store multiple instructions.
@@ -1296,6 +1318,7 @@ void Assembler::ldm(BlockAddrMode am,
                     RegList dst,
                     Condition cond) {
   PPCPORT_CHECK(false);
+  EMIT_FAKE_ARM_INSTR(fLDM);
 }
 
 
@@ -1304,6 +1327,7 @@ void Assembler::stm(BlockAddrMode am,
                     RegList src,
                     Condition cond) {
   PPCPORT_CHECK(false);
+  EMIT_FAKE_ARM_INSTR(fSTM);
 }
 
 
@@ -1312,16 +1336,19 @@ void Assembler::stm(BlockAddrMode am,
 // enabling/disabling and a counter feature. See simulator-arm.h .
 void Assembler::stop(const char* msg, Condition cond, int32_t code) {
   PPCPORT_CHECK(false);
+  EMIT_FAKE_ARM_INSTR(fSTOP);
 }
 
 
 void Assembler::bkpt(uint32_t imm16) {  // v5 and above
   PPCPORT_CHECK(false);
+  EMIT_FAKE_ARM_INSTR(fBKPT);
 }
 
 
 void Assembler::svc(uint32_t imm24, Condition cond) {
   PPCPORT_CHECK(false);
+  EMIT_FAKE_ARM_INSTR(fSVC);
 }
 
 // Floating point support
@@ -1420,6 +1447,7 @@ void Assembler::vldr(const DwVfpRegister dst,
                      int offset,
                      const Condition cond) {
   PPCPORT_CHECK(false);
+  EMIT_FAKE_ARM_INSTR(fVLDR);
 }
 
 
@@ -1427,6 +1455,7 @@ void Assembler::vldr(const DwVfpRegister dst,
                      const MemOperand& operand,
                      const Condition cond) {
   PPCPORT_CHECK(false);
+  EMIT_FAKE_ARM_INSTR(fVLDR);
 }
 
 
@@ -1435,6 +1464,7 @@ void Assembler::vldr(const SwVfpRegister dst,
                      int offset,
                      const Condition cond) {
   PPCPORT_CHECK(false);
+  EMIT_FAKE_ARM_INSTR(fVLDR);
 }
 
 
@@ -1442,6 +1472,7 @@ void Assembler::vldr(const SwVfpRegister dst,
                      const MemOperand& operand,
                      const Condition cond) {
   PPCPORT_CHECK(false);
+  EMIT_FAKE_ARM_INSTR(fVLDR);
 }
 
 
@@ -1450,6 +1481,7 @@ void Assembler::vstr(const DwVfpRegister src,
                      int offset,
                      const Condition cond) {
   PPCPORT_CHECK(false);
+  EMIT_FAKE_ARM_INSTR(fVSTR);
 }
 
 
@@ -1457,6 +1489,7 @@ void Assembler::vstr(const DwVfpRegister src,
                      const MemOperand& operand,
                      const Condition cond) {
   PPCPORT_CHECK(false);
+  EMIT_FAKE_ARM_INSTR(fVSTR);
 }
 
 
@@ -1465,6 +1498,7 @@ void Assembler::vstr(const SwVfpRegister src,
                      int offset,
                      const Condition cond) {
   PPCPORT_CHECK(false);
+  EMIT_FAKE_ARM_INSTR(fVSTR);
 }
 
 
@@ -1472,6 +1506,7 @@ void Assembler::vstr(const SwVfpRegister src,
                      const MemOperand& operand,
                      const Condition cond) {
   PPCPORT_CHECK(false);
+  EMIT_FAKE_ARM_INSTR(fVSTR);
 }
 
 void Assembler::vmov(const DwVfpRegister dst,
@@ -1479,6 +1514,7 @@ void Assembler::vmov(const DwVfpRegister dst,
                      const Register scratch,
                      const Condition cond) {
   PPCPORT_CHECK(false);
+  EMIT_FAKE_ARM_INSTR(fVMOV);
 }
 
 
@@ -1486,6 +1522,7 @@ void Assembler::vmov(const SwVfpRegister dst,
                      const SwVfpRegister src,
                      const Condition cond) {
   PPCPORT_CHECK(false);
+  EMIT_FAKE_ARM_INSTR(fVMOV);
 }
 
 
@@ -1493,6 +1530,7 @@ void Assembler::vmov(const DwVfpRegister dst,
                      const DwVfpRegister src,
                      const Condition cond) {
   PPCPORT_CHECK(false);
+  EMIT_FAKE_ARM_INSTR(fVMOV);
 }
 
 
@@ -1501,6 +1539,7 @@ void Assembler::vmov(const DwVfpRegister dst,
                      const Register src2,
                      const Condition cond) {
   PPCPORT_CHECK(false);
+  EMIT_FAKE_ARM_INSTR(fVMOV);
 }
 
 
@@ -1509,6 +1548,7 @@ void Assembler::vmov(const Register dst1,
                      const DwVfpRegister src,
                      const Condition cond) {
   PPCPORT_CHECK(false);
+  EMIT_FAKE_ARM_INSTR(fVMOV);
 }
 
 
@@ -1516,6 +1556,7 @@ void Assembler::vmov(const SwVfpRegister dst,
                      const Register src,
                      const Condition cond) {
   PPCPORT_CHECK(false);
+  EMIT_FAKE_ARM_INSTR(fVMOV);
 }
 
 
@@ -1523,6 +1564,7 @@ void Assembler::vmov(const Register dst,
                      const SwVfpRegister src,
                      const Condition cond) {
   PPCPORT_CHECK(false);
+  EMIT_FAKE_ARM_INSTR(fVMOV);
 }
 
 
@@ -1534,6 +1576,7 @@ void Assembler::vneg(const DwVfpRegister dst,
                      const DwVfpRegister src,
                      const Condition cond) {
   PPCPORT_CHECK(false);
+  EMIT_FAKE_ARM_INSTR(fVNEG);
 }
 
 
@@ -1541,6 +1584,7 @@ void Assembler::vabs(const DwVfpRegister dst,
                      const DwVfpRegister src,
                      const Condition cond) {
   PPCPORT_CHECK(false);
+  EMIT_FAKE_ARM_INSTR(fVABS);
 }
 
 
@@ -1549,6 +1593,7 @@ void Assembler::vadd(const DwVfpRegister dst,
                      const DwVfpRegister src2,
                      const Condition cond) {
   PPCPORT_CHECK(false);
+  EMIT_FAKE_ARM_INSTR(fVADD);
 }
 
 
@@ -1557,6 +1602,7 @@ void Assembler::vsub(const DwVfpRegister dst,
                      const DwVfpRegister src2,
                      const Condition cond) {
   PPCPORT_CHECK(false);
+  EMIT_FAKE_ARM_INSTR(fVSUB);
 }
 
 
@@ -1565,6 +1611,7 @@ void Assembler::vmul(const DwVfpRegister dst,
                      const DwVfpRegister src2,
                      const Condition cond) {
   PPCPORT_CHECK(false);
+  EMIT_FAKE_ARM_INSTR(fVMUL);
 }
 
 
@@ -1573,6 +1620,7 @@ void Assembler::vdiv(const DwVfpRegister dst,
                      const DwVfpRegister src2,
                      const Condition cond) {
   PPCPORT_CHECK(false);
+  EMIT_FAKE_ARM_INSTR(fVDIV);
 }
 
 
@@ -1580,6 +1628,7 @@ void Assembler::vcmp(const DwVfpRegister src1,
                      const DwVfpRegister src2,
                      const Condition cond) {
   PPCPORT_CHECK(false);
+  EMIT_FAKE_ARM_INSTR(fVCMP);
 }
 
 
@@ -1587,16 +1636,19 @@ void Assembler::vcmp(const DwVfpRegister src1,
                      const double src2,
                      const Condition cond) {
   PPCPORT_CHECK(false);
+  EMIT_FAKE_ARM_INSTR(fVCMP);
 }
 
 
 void Assembler::vmsr(Register dst, Condition cond) {
   PPCPORT_CHECK(false);
+  EMIT_FAKE_ARM_INSTR(fVMSR);
 }
 
 
 void Assembler::vmrs(Register dst, Condition cond) {
   PPCPORT_CHECK(false);
+  EMIT_FAKE_ARM_INSTR(fVMRS);
 }
 
 
@@ -1604,6 +1656,7 @@ void Assembler::vsqrt(const DwVfpRegister dst,
                       const DwVfpRegister src,
                       const Condition cond) {
   PPCPORT_CHECK(false);
+  EMIT_FAKE_ARM_INSTR(fVSQRT);
 }
 
 

@@ -346,6 +346,65 @@ enum {
   kBOfieldMask = 0x1f << 20
 };
 
+// the following is to differentiate different faked ARM opcodes for
+// the BOGUS PPC instruction we invented
+// (TODO: remove after all ARM code dependencies are removed)
+
+// use primary opcode 1 for undefined instruction, and use the least
+// significant 6-bit of the instruction indicate the ARM instruction
+// being faked (for debugging)
+#define FAKE_OPCODE 1 << 26  
+#define EMIT_FAKE_ARM_INSTR(arm_opcode) \
+  ASSERT(arm_opcode < fLastFaker);	\
+  emit(FAKE_OPCODE | arm_opcode);
+
+enum {
+  fMRS = 0,
+  fMSR = 1,
+  fLDR = 2,
+  fSTR = 3,
+  fLDRB = 4,
+  fSTRB = 5,
+  fLDRH = 6,
+  fSTRH = 7,
+  fLDRSH = 8,
+  fLDRD = 9,
+  fSTRD = 10,
+  fLDM = 11,
+  fSTM = 12,
+  fSTOP = 13,
+  fBKPT = 14,
+  fSVC = 15,
+  fVLDR = 16,
+  fVSTR = 17,
+  fVMOV = 18,
+  fVNEG = 19,
+  fVABS = 20,
+  fVADD = 21,
+  fVSUB = 22,
+  fVMUL = 23,
+  fVDIV = 24,
+  fVCMP = 25,
+  fVMSR = 26,
+  fVMRS = 27,
+  fVSQRT = 28,
+  fAND = 29,
+  fEOR = 30,
+  fRSB = 31,
+  fADC = 32,
+  fSBC = 33,
+  fRSC = 34,
+  fTST = 35,
+  fTEQ = 36,
+  fCMP = 37,
+  fCMN = 38,
+  fORR = 39,
+  fBIC = 40,
+  fMVN = 41,
+  fLDRSB = 42,
+  fLastFaker  // can't be more than 64
+};
+
 // -----------------------------------------------------------------------------
 // Addressing modes and instruction variants.
 
@@ -539,7 +598,6 @@ extern const Instr kPopRegPattern;
 
 // use TWI to indicate redirection call for simulation mode
 const Instr rtCallRedirInstr = TWI;
-
 
 // -----------------------------------------------------------------------------
 // Instruction abstraction.

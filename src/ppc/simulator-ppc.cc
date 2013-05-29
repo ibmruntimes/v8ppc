@@ -2474,6 +2474,12 @@ void Simulator::InstructionDecode(Instruction* instr) {
       DecodeExt4(instr);
       break;
     }
+
+    case FAKE_OPCODE:
+      printf("Hit faked ARM opcode: opcode=%d (check constant-ppc.h, FAKE_OPCODE definition)\n", instr->Bits(6,0));
+      UNIMPLEMENTED();
+      break;
+
     default: {
       UNIMPLEMENTED();
       break;
