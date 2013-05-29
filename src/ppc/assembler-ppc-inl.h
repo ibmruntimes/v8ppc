@@ -232,7 +232,7 @@ bool RelocInfo::IsPatchedReturnSequence() {
   // A patched return sequence is:
   //  mov lr, pc
   //  ldr pc, [pc, #-4]
-  return (current_instr == next_instr); 
+  return (current_instr == next_instr);
 // (current_instr == kMovLrPc)
 //          && ((next_instr & kLdrPCMask) == kLdrPCPattern);
 }

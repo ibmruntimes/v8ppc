@@ -90,7 +90,7 @@ bool BreakLocationIterator::IsDebugBreakAtSlot() {
 void BreakLocationIterator::SetDebugBreakAtSlot() {
   ASSERT(IsDebugBreakSlot());
   // Patch the code changing the debug break slot code from
-  // 
+  //
   //   ori r3, r3, 0
   //   ori r3, r3, 0
   //   ori r3, r3, 0
@@ -101,7 +101,7 @@ void BreakLocationIterator::SetDebugBreakAtSlot() {
   //   lis r0, <address hi>
   //   addic r0, r0, <address lo>
   //   mtlr r0
-  //   blrl 
+  //   blrl
   //
   CodePatcher patcher(rinfo()->pc(), Assembler::kDebugBreakSlotInstructions);
   patcher.masm()->mov(v8::internal::r0,
