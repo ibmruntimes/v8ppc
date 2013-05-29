@@ -353,9 +353,9 @@ enum {
 // use primary opcode 1 for undefined instruction, and use the least
 // significant 6-bit of the instruction indicate the ARM instruction
 // being faked (for debugging)
-#define FAKE_OPCODE 1 << 26  
+#define FAKE_OPCODE 1 << 26
 #define EMIT_FAKE_ARM_INSTR(arm_opcode) \
-  ASSERT(arm_opcode < fLastFaker);	\
+  ASSERT(arm_opcode < fLastFaker);      \
   emit(FAKE_OPCODE | arm_opcode);
 
 enum {

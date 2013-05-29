@@ -2476,7 +2476,8 @@ void Simulator::InstructionDecode(Instruction* instr) {
     }
 
     case FAKE_OPCODE:
-      printf("Hit faked ARM opcode: opcode=%d (check constant-ppc.h, FAKE_OPCODE definition)\n", instr->Bits(6,0));
+      printf("Hit fake ARM opcode: %d (constant-ppc.h below FAKE_OPCODE)\n",
+              instr->Bits(6, 0));
       UNIMPLEMENTED();
       break;
 
