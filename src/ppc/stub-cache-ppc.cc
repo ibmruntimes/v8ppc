@@ -3402,8 +3402,8 @@ Handle<Code> ConstructStubCompiler::CompileConstructStub(
 
   // Calculate the location of the first argument. The stack contains only the
   // argc arguments.
-  __ slwi(r3, r3, Operand(kPointerSizeLog2));
-  __ add(r4, sp, r3);
+  __ slwi(r4, r3, Operand(kPointerSizeLog2));
+  __ add(r4, sp, r4);
 
   // Fill all the in-object properties with undefined.
   // r3: argc

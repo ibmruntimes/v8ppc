@@ -223,18 +223,18 @@ Object** RelocInfo::call_object_address() {
 
 
 bool RelocInfo::IsPatchedReturnSequence() {
-#ifdef PENGUIN_CLEANUP
   Instr current_instr = Assembler::instr_at(pc_);
   Instr next_instr = Assembler::instr_at(pc_ + Assembler::kInstrSize);
+  //
+  // roohack - the patched return sequence is defined by
+  // BreakLocationIterator::SetDebugBreakAtReturn()
+  //
   // A patched return sequence is:
   //  mov lr, pc
   //  ldr pc, [pc, #-4]
-  return (current_instr == kMovLrPc)
-          && ((next_instr & kLdrPCMask) == kLdrPCPattern);
-#else
-  PPCPORT_UNSAFE_IMPLEMENTATION();
-  return false;
-#endif
+  return (current_instr == next_instr); 
+// (current_instr == kMovLrPc)
+//          && ((next_instr & kLdrPCMask) == kLdrPCPattern);
 }
 
 

@@ -798,7 +798,7 @@ class Assembler : public AssemblerBase {
   static const int kPcLoadDelta = 6 * 4;
 
   static const int kJSReturnSequenceInstructions = 4;
-  static const int kDebugBreakSlotInstructions = 3;
+  static const int kDebugBreakSlotInstructions = 4;
   static const int kDebugBreakSlotLength =
       kDebugBreakSlotInstructions * kInstrSize;
 
