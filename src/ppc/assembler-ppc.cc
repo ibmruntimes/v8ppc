@@ -1001,8 +1001,7 @@ void Assembler::neg(Register rt, Register ra, RCBit rc) {
   emit(EXT2 | NEGX| rt.code()*B21 | ra.code()*B16 | rc);
 }
 
-void Assembler::fake_asm(enum FAKE_OPCODE_T fopcode)
-{
+void Assembler::fake_asm(enum FAKE_OPCODE_T fopcode) {
   ASSERT(fopcode < fLastFaker);
   emit(FAKE_OPCODE | fopcode);
 }

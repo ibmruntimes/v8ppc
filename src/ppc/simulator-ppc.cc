@@ -2482,9 +2482,9 @@ void Simulator::InstructionDecode(Instruction* instr) {
         PrintF("Simulator hit BKPT.\n");
         dbg.Debug();
       } else {
-	ASSERT(fake_opcode < fLastFaker);
-	PrintF("Hit ARM opcode: %d(FAKE_OPCODE defined in constant-ppc.h)\n",
-	       fake_opcode);
+        ASSERT(fake_opcode < fLastFaker);
+        PrintF("Hit ARM opcode: %d(FAKE_OPCODE defined in constant-ppc.h)\n",
+               fake_opcode);
         UNIMPLEMENTED();
       }
       break;
