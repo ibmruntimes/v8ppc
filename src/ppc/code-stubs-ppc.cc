@@ -2032,11 +2032,11 @@ void UnaryOpStub::GenerateSmiCodeSub(MacroAssembler* masm,
   __ JumpIfNotSmi(r3, non_smi);
 
   // The result of negating zero or the smallest negative smi is not a smi.
-  __ bic(ip, r3, Operand(0x80000000), SetCC);
-  __ b(eq, slow);
+  __ rlwinm(r0, r3, 0, 1, 31, SetRC);
+  __ bc(slow, BT, 2);
 
-  // Return '0 - value'.
-  __ rsb(r3, r3, Operand(0, RelocInfo::NONE));
+  // Return '- value'.
+  __ neg(r3, r3);
   __ Ret();
 }
 

@@ -1750,7 +1750,7 @@ void Simulator::DecodeExt2(Instruction* instr) {
       int rt = instr->RTValue();
       int ra = instr->RAValue();
       int32_t ra_val = get_register(ra);
-      int alu_out = 1 - ~ra_val;
+      int alu_out = 1 + ~ra_val;
       set_register(rt, alu_out);
       break;
     }
