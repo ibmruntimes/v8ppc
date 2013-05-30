@@ -372,7 +372,7 @@ enum {
   fSTRD = 10,
   fLDM = 11,
   fSTM = 12,
-  fSTOP = 13,
+  // fSTOP = 13,
   fBKPT = 14,
   fSVC = 15,
   fVLDR = 16,

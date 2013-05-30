@@ -1335,13 +1335,23 @@ void Assembler::stm(BlockAddrMode am,
 // Stops with a non-negative code less than kNumOfWatchedStops support
 // enabling/disabling and a counter feature. See simulator-arm.h .
 void Assembler::stop(const char* msg, Condition cond, int32_t code) {
-  PPCPORT_CHECK(false);
-  EMIT_FAKE_ARM_INSTR(fSTOP);
+  // PPCPORT_CHECK(false);
+  // EMIT_FAKE_ARM_INSTR(fSTOP);
+  if (cond != al) {
+    Label skip;
+    b(&skip, NegateCondition(cond));
+    bkpt(0);
+    bind(&skip);
+  } else {
+    bkpt(0);
+  }
 }
 
 
-void Assembler::bkpt(uint32_t imm16) {  // v5 and above
-  PPCPORT_CHECK(false);
+void Assembler::bkpt(uint32_t imm16) {
+  // PPCPORT_CHECK(false);
+  ASSERT(is_uint16(imm16));
+  // only supported in simulator to trigger debugging
   EMIT_FAKE_ARM_INSTR(fBKPT);
 }
 

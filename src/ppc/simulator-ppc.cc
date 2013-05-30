@@ -2475,11 +2475,19 @@ void Simulator::InstructionDecode(Instruction* instr) {
       break;
     }
 
-    case FAKE_OPCODE:
-      printf("Hit fake ARM opcode: %d (constant-ppc.h below FAKE_OPCODE)\n",
-              instr->Bits(6, 0));
-      UNIMPLEMENTED();
+    case FAKE_OPCODE: {
+      int fake_opcode = instr->Bits(6, 0);
+      if (fake_opcode == fBKPT) {
+        PPCDebugger dbg(this);
+        PrintF("Simulator hit BKPT.\n");
+        dbg.Debug();
+      } else {
+        PrintF("Hit ARM opcode: %d(FAKE_OPCODE defined in constant-ppc.h)\n",
+               instr->Bits(6, 0));
+        UNIMPLEMENTED();
+      }
       break;
+    }
 
     default: {
       UNIMPLEMENTED();
