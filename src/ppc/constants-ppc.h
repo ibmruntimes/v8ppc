@@ -354,11 +354,9 @@ enum {
 // significant 6-bit of the instruction indicate the ARM instruction
 // being faked (for debugging)
 #define FAKE_OPCODE 1 << 26
-#define EMIT_FAKE_ARM_INSTR(arm_opcode) \
-  ASSERT(arm_opcode < fLastFaker);      \
-  emit(FAKE_OPCODE | arm_opcode);
+#define EMIT_FAKE_ARM_INSTR(arm_opcode) fake_asm(arm_opcode);
 
-enum {
+enum FAKE_OPCODE_T {
   fMRS = 0,
   fMSR = 1,
   fLDR = 2,
@@ -402,6 +400,16 @@ enum {
   fBIC = 40,
   fMVN = 41,
   fLDRSB = 42,
+  // the following is the marker for ARM instruction sequences outside
+  // assembler.cc that we have removed (marked by PPCPORT_UNIMPLEMENTED)
+  fMASM1 = 43,
+  fMASM2 = 44,
+  fMASM3 = 45,
+  fMASM4 = 46,
+  fMASM5 = 47,
+  fMASM6 = 48,
+  fMASM7 = 49,
+  fMASM8 = 50,
   fLastFaker  // can't be more than 64
 };
 

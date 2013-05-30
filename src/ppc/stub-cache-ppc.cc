@@ -998,6 +998,7 @@ static void StoreIntAsFloat(MacroAssembler* masm,
   __ vstr(s0, scratch1, 0);
 #else
   PPCPORT_UNIMPLEMENTED();
+  __ fake_asm(fMASM8);
 #endif
 }
 

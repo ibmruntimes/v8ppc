@@ -1000,6 +1000,12 @@ void Assembler::neg(Register rt, Register ra, RCBit rc) {
   CheckBuffer();
   emit(EXT2 | NEGX| rt.code()*B21 | ra.code()*B16 | rc);
 }
+
+void Assembler::fake_asm(enum FAKE_OPCODE_T fopcode)
+{
+  ASSERT(fopcode < fLastFaker);
+  emit(FAKE_OPCODE | fopcode);
+}
 // end PowerPC
 
 void Assembler::adc(Register dst, Register src1, const Operand& src2,

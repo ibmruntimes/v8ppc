@@ -2504,6 +2504,7 @@ void MacroAssembler::EmitVFPTruncate(VFPRoundingMode rounding_mode,
                                      Register scratch2,
                                      CheckForInexactConversion check_inexact) {
   PPCPORT_UNIMPLEMENTED();
+  fake_asm(fMASM5);
   // Fail (penguin: assert triggered in mjsunit/sparse-array-reverse)
   // ASSERT(false);
 }
@@ -2652,6 +2653,7 @@ void MacroAssembler::EmitECMATruncate(Register result,
   bind(&done);
 #else
   PPCPORT_UNIMPLEMENTED();
+  fake_asm(fMASM6);
 #endif
 }
 
@@ -3810,6 +3812,7 @@ void MacroAssembler::ClampDoubleToUint8(Register result_reg,
   bind(&done);
 #else
   PPCPORT_UNIMPLEMENTED();
+  fake_asm(fMASM7);
   ASSERT(false);
 #endif
 }

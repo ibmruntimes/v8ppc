@@ -1067,6 +1067,7 @@ class Assembler : public AssemblerBase {
   void mtctr(Register src);
   void mcrfs(int bf, int bfa);
 
+  void fake_asm(enum FAKE_OPCODE_T fopcode);
   // end PowerPC
   // Status register access instructions
 

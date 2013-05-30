@@ -1376,6 +1376,7 @@ void EmitNanCheck(MacroAssembler* masm, Label* lhs_not_nan, Condition cond) {
   __ bind(&neither_is_nan);
 #else
   PPCPORT_UNIMPLEMENTED();
+  __ fake_asm(fMASM1);
 #endif
 }
 
@@ -2677,6 +2678,7 @@ void BinaryOpStub::GenerateFPOperation(MacroAssembler* masm,
       __ Ret();
 #else
       PPCPORT_UNIMPLEMENTED();
+      __ fake_asm(fMASM2);
 #endif
       break;
     }
@@ -3788,6 +3790,7 @@ void MathPowStub::Generate(MacroAssembler* masm) {
   }
 #else
   PPCPORT_UNIMPLEMENTED();
+  __ fake_asm(fMASM3);
 #endif
 }
 

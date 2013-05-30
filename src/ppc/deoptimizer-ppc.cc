@@ -1122,6 +1122,7 @@ void Deoptimizer::EntryGenerator::Generate() {
   __ stop("Unreachable.");
 #else
   PPCPORT_UNIMPLEMENTED();
+  __ fake_asm(fMASM4);
 #endif
 }
 
