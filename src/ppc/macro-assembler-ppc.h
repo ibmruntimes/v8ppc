@@ -332,12 +332,10 @@ class MacroAssembler: public Assembler {
   // Pop two registers. Pops rightmost register first (from lower address).
   void Pop(Register src1, Register src2, Condition cond = al) {
     ASSERT(!src1.is(src2));
-    if (src1.code() > src2.code()) {
-      ldm(ia_w, sp, src1.bit() | src2.bit(), cond);
-    } else {
-      ldr(src2, MemOperand(sp, 4, PostIndex), cond);
-      ldr(src1, MemOperand(sp, 4, PostIndex), cond);
-    }
+    ASSERT(cond == al);
+    lwz(src2, MemOperand(sp, 0));
+    lwz(src1, MemOperand(sp, 4));
+    add(sp, sp, Operand(8));
   }
 
   // Pop three registers.  Pops rightmost register first (from lower address).
@@ -345,17 +343,11 @@ class MacroAssembler: public Assembler {
     ASSERT(!src1.is(src2));
     ASSERT(!src2.is(src3));
     ASSERT(!src1.is(src3));
-    if (src1.code() > src2.code()) {
-      if (src2.code() > src3.code()) {
-        ldm(ia_w, sp, src1.bit() | src2.bit() | src3.bit(), cond);
-      } else {
-        ldr(src3, MemOperand(sp, 4, PostIndex), cond);
-        ldm(ia_w, sp, src1.bit() | src2.bit(), cond);
-      }
-    } else {
-      Pop(src2, src3, cond);
-      str(src1, MemOperand(sp, 4, PostIndex), cond);
-    }
+    ASSERT(cond == al);
+    lwz(src3, MemOperand(sp, 0));
+    lwz(src2, MemOperand(sp, 4));
+    lwz(src1, MemOperand(sp, 8));
+    add(sp, sp, Operand(12));
   }
 
   // Pop four registers.  Pops rightmost register first (from lower address).
@@ -370,25 +362,12 @@ class MacroAssembler: public Assembler {
     ASSERT(!src1.is(src4));
     ASSERT(!src2.is(src4));
     ASSERT(!src3.is(src4));
-    if (src1.code() > src2.code()) {
-      if (src2.code() > src3.code()) {
-        if (src3.code() > src4.code()) {
-          ldm(ia_w,
-              sp,
-              src1.bit() | src2.bit() | src3.bit() | src4.bit(),
-              cond);
-        } else {
-          ldr(src4, MemOperand(sp, 4, PostIndex), cond);
-          ldm(ia_w, sp, src1.bit() | src2.bit() | src3.bit(), cond);
-        }
-      } else {
-        Pop(src3, src4, cond);
-        ldm(ia_w, sp, src1.bit() | src2.bit(), cond);
-      }
-    } else {
-      Pop(src2, src3, src4, cond);
-      ldr(src1, MemOperand(sp, 4, PostIndex), cond);
-    }
+    ASSERT(cond == al);
+    lwz(src4, MemOperand(sp, 0));
+    lwz(src3, MemOperand(sp, 4));
+    lwz(src2, MemOperand(sp, 8));
+    lwz(src1, MemOperand(sp, 12));
+    add(sp, sp, Operand(16));
   }
 
   // Push and pop the registers that can hold pointers, as defined by the

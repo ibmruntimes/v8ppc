@@ -133,11 +133,13 @@ void ElementsTransitionGenerator::GenerateSmiToDouble(
   // Align the array conveniently for doubles.
   // Store a filler value in the unused memory.
   Label aligned, aligned_done;
-  __ tst(r9, Operand(kDoubleAlignmentMask));
+  __ andi(r0, r9, Operand(kDoubleAlignmentMask));
+  __ cmpi(r0, Operand(0));
   __ mov(ip, Operand(masm->isolate()->factory()->one_pointer_filler_map()));
   __ beq(&aligned);
   // Store at the beginning of the allocated memory and update the base pointer.
-  __ stw(ip, MemOperand(r9, kPointerSize, PostIndex));
+  __ stw(ip, MemOperand(r9));
+  __ add(r9, r9, Operand(kPointerSize));
   __ b(&aligned_done);
 
   __ bind(&aligned);
@@ -213,30 +215,14 @@ void ElementsTransitionGenerator::GenerateSmiToDouble(
   // r22: current element
   __ UntagAndJumpIfNotSmi(r22, r22, &convert_hole);
 
-#ifdef PENGUIN_CLEANUP
   // Normal smi, convert to double and store.
-  if (vfp2_supported) {
-    CpuFeatures::Scope scope(VFP2);
-    __ vmov(s0, r22);
-    __ vcvt_f64_s32(d0, s0);
-    __ vstr(d0, r10, 0);
-    __ add(r10, r10, Operand(8));
-  } else {
-#else
-    // penguin: the following code still uses Strd (arm-ISA)
-    PPCPORT_UNIMPLEMENTED();
-#endif
-    FloatingPointHelper::ConvertIntToDouble(masm,
-                                            r22,
-                                            FloatingPointHelper::kCoreRegisters,
-                                            d0,
-                                            r3,
-                                            r4,
-                                            d3);
-    __ Strd(r3, r4, MemOperand(r10, 8, PostIndex));
-#ifdef PENGUIN_CLEANUP
-  }
-#endif
+  FloatingPointHelper::ConvertIntToDouble(
+    masm, r22, FloatingPointHelper::kFPRegisters,
+    d0, r7, r7,  // r7 unused as we're using kFPRegisters
+    d2);
+  __ stfd(d0, r10, 0);
+  __ add(r10, r10, Operand(8));
+
   __ b(&entry);
 
   // Hole found, store the-hole NaN.
@@ -244,15 +230,17 @@ void ElementsTransitionGenerator::GenerateSmiToDouble(
   if (FLAG_debug_code) {
     // Restore a "smi-untagged" heap object.
     __ SmiTag(r22);
-    __ orr(r22, r22, Operand(1));
+    __ ori(r22, r22, Operand(1));
     __ CompareRoot(r22, Heap::kTheHoleValueRootIndex);
     __ Assert(eq, "object found in smi-only array");
   }
-  __ Strd(r7, r8, MemOperand(r10, 8, PostIndex));
+  __ stw(r7, MemOperand(r10, 0));
+  __ stw(r8, MemOperand(r10, 4));
+  __ add(r10, r10, Operand(8));
 
   __ bind(&entry);
   __ cmp(r10, r9);
-  __ b(lt, &loop);
+  __ blt(&loop);
 
   if (!vfp2_supported) __ Pop(r4, r3);
   __ pop(lr);
