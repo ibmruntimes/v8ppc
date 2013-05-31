@@ -417,10 +417,12 @@ class MacroAssembler: public Assembler {
             const MemOperand& dst,
             Condition cond = al);
 
+#ifdef PENGUIN_CLEANUP
   // Clear specified FPSCR bits.
   void ClearFPSCRBits(const uint32_t bits_to_clear,
                       const Register scratch,
                       const Condition cond = al);
+#endif
 
   // Compare double values and move the result to the normal condition flags.
   void VFPCompareAndSetFlags(const DwVfpRegister src1,

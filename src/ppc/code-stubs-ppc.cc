@@ -882,6 +882,7 @@ void FloatingPointHelper::LoadNumberAsInt32(MacroAssembler* masm,
                                             Register scratch3,
                                             DwVfpRegister double_scratch,
                                             Label* not_int32) {
+#ifdef PENGUIN_CLEANUP
   ASSERT(!dst.is(object));
   ASSERT(!scratch1.is(object) && !scratch2.is(object) && !scratch3.is(object));
   ASSERT(!scratch1.is(scratch2) &&
@@ -949,6 +950,10 @@ void FloatingPointHelper::LoadNumberAsInt32(MacroAssembler* masm,
   }
 
   __ bind(&done);
+#else
+  PPCPORT_UNIMPLEMENTED();
+  __ fake_asm(fMASM9);
+#endif
 }
 
 
@@ -2047,8 +2052,11 @@ void UnaryOpStub::GenerateSmiCodeBitNot(MacroAssembler* masm,
   __ JumpIfNotSmi(r3, non_smi);
 
   // Flip bits and revert inverted smi-tag.
-  __ mvn(r3, Operand(r3));
-  __ bic(r3, r3, Operand(kSmiTagMask));
+  // __ mvn(r3, Operand(r3));
+  // __ bic(r3, r3, Operand(kSmiTagMask));
+  ASSERT(kSmiTagMask == 1);
+  __ neg(r3, r3);
+  __ rlwinm(r3, r3, 0, 0, 30);
   __ Ret();
 }
 

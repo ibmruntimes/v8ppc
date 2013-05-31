@@ -710,7 +710,7 @@ void MacroAssembler::Strd(Register src1, Register src2,
 #endif
 }
 
-
+#ifdef PENGUIN_CLEANUP
 void MacroAssembler::ClearFPSCRBits(const uint32_t bits_to_clear,
                                     const Register scratch,
                                     const Condition cond) {
@@ -718,7 +718,7 @@ void MacroAssembler::ClearFPSCRBits(const uint32_t bits_to_clear,
   bic(scratch, scratch, Operand(bits_to_clear), LeaveCC, cond);
   vmsr(scratch, cond);
 }
-
+#endif
 
 void MacroAssembler::VFPCompareAndSetFlags(const DwVfpRegister src1,
                                            const DwVfpRegister src2,
