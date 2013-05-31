@@ -558,6 +558,7 @@ class ConvertToDoubleStub : public CodeStub {
 
 // roohack - not converted
 void ConvertToDoubleStub::Generate(MacroAssembler* masm) {
+#ifdef PENGUIN_CLEANUP
   Register exponent = result1_;
   Register mantissa = result2_;
 
@@ -611,6 +612,10 @@ void ConvertToDoubleStub::Generate(MacroAssembler* masm) {
          exponent,
          Operand(source_, LSR, 32 - HeapNumber::kMantissaBitsInTopWord));
   __ Ret();
+#else
+  PPCPORT_UNIMPLEMENTED();
+  __ fake_asm(fMASM13);
+#endif
 }
 
 void FloatingPointHelper::LoadSmis(MacroAssembler* masm,
@@ -734,6 +739,7 @@ void FloatingPointHelper::ConvertNumberToInt32(MacroAssembler* masm,
                                                Register scratch3,
                                                DwVfpRegister double_scratch,
                                                Label* not_number) {
+#ifdef PENGUIN_CLEANUP
   if (FLAG_debug_code) {
     __ AbortIfNotRootValue(heap_number_map,
                            Heap::kHeapNumberMapRootIndex,
@@ -763,6 +769,10 @@ void FloatingPointHelper::ConvertNumberToInt32(MacroAssembler* masm,
                                  scratch2,
                                  scratch3);
   __ bind(&done);
+#else
+  PPCPORT_UNIMPLEMENTED();
+  __ fake_asm(fMASM14);
+#endif
 }
 
 
@@ -964,6 +974,7 @@ void FloatingPointHelper::DoubleIs32BitInteger(MacroAssembler* masm,
                                                Register dst,
                                                Register scratch,
                                                Label* not_int32) {
+#ifdef PENGUIN_CLEANUP
   // Get exponent alone in scratch.
   __ Ubfx(scratch,
           src1,
@@ -1015,6 +1026,10 @@ void FloatingPointHelper::DoubleIs32BitInteger(MacroAssembler* masm,
   __ sub(src1, src1, Operand(1));
   __ tst(dst, src1);
   __ b(ne, not_int32);
+#else
+  PPCPORT_UNIMPLEMENTED();
+  __ fake_asm(fMASM10);
+#endif
 }
 
 
@@ -1101,6 +1116,7 @@ void WriteInt32ToHeapNumberStub::GenerateFixedRegStubsAheadOfTime() {
 // roohack - not converted
 // See comment for class.
 void WriteInt32ToHeapNumberStub::Generate(MacroAssembler* masm) {
+#ifdef PENGUIN_CLENAUP
   Label max_negative_int;
   // the_int_ has the answer which is a signed int32 but not a Smi.
   // We test for the special value that has a different exponent.  This test
@@ -1142,6 +1158,10 @@ void WriteInt32ToHeapNumberStub::Generate(MacroAssembler* masm) {
   __ mov(ip, Operand(0, RelocInfo::NONE));
   __ str(ip, FieldMemOperand(the_heap_number_, HeapNumber::kMantissaOffset));
   __ Ret();
+#else
+  PPCPORT_UNIMPLEMENTED();
+  __ fake_asm(fMASM11);
+#endif
 }
 
 
@@ -3538,6 +3558,7 @@ void TranscendentalCacheStub::Generate(MacroAssembler* masm) {
 // roohack not converted
 void TranscendentalCacheStub::GenerateCallCFunction(MacroAssembler* masm,
                                                     Register scratch) {
+#ifdef PENGUIN_CLEANUP
   ASSERT(CpuFeatures::IsEnabled(VFP2));
   Isolate* isolate = masm->isolate();
 
@@ -3571,6 +3592,10 @@ void TranscendentalCacheStub::GenerateCallCFunction(MacroAssembler* masm,
       break;
   }
   __ pop(lr);
+#else
+  PPCPORT_UNIMPLEMENTED();
+  __ fake_asm(fMASM12);
+#endif
 }
 
 

@@ -2476,7 +2476,7 @@ void Simulator::InstructionDecode(Instruction* instr) {
     }
 
     case FAKE_OPCODE: {
-      int fake_opcode = instr->Bits(6, 0);
+      int fake_opcode = instr->Bits(7, 0);
       if (fake_opcode == fBKPT) {
         PPCDebugger dbg(this);
         PrintF("Simulator hit BKPT.\n");
