@@ -1074,77 +1074,6 @@ void FloatingPointHelper::CallCCodeForDoubleOperation(
   __ blr();
 }
 
-
-bool WriteInt32ToHeapNumberStub::IsPregenerated() {
-  // These variants are compiled ahead of time.  See next method.
-  if (the_int_.is(r4) && the_heap_number_.is(r3) && scratch_.is(r5)) {
-    return true;
-  }
-  if (the_int_.is(r5) && the_heap_number_.is(r3) && scratch_.is(r6)) {
-    return true;
-  }
-  // Other register combinations are generated as and when they are needed,
-  // so it is unsafe to call them from stubs (we can't generate a stub while
-  // we are generating a stub).
-  return false;
-}
-
-
-void WriteInt32ToHeapNumberStub::GenerateFixedRegStubsAheadOfTime() {
-  WriteInt32ToHeapNumberStub stub1(r4, r3, r5);
-  WriteInt32ToHeapNumberStub stub2(r5, r3, r6);
-  stub1.GetCode()->set_is_pregenerated(true);
-  stub2.GetCode()->set_is_pregenerated(true);
-}
-
-
-// roohack - not converted
-// See comment for class.
-void WriteInt32ToHeapNumberStub::Generate(MacroAssembler* masm) {
-  Label max_negative_int;
-  // the_int_ has the answer which is a signed int32 but not a Smi.
-  // We test for the special value that has a different exponent.  This test
-  // has the neat side effect of setting the flags according to the sign.
-  STATIC_ASSERT(HeapNumber::kSignMask == 0x80000000u);
-  __ cmp(the_int_, Operand(0x80000000u));
-  __ beq(&max_negative_int);
-  // Set up the correct exponent in scratch_.  All non-Smi int32s have the same.
-  // A non-Smi integer is 1.xxx * 2^30 so the exponent is 30 (biased).
-  uint32_t non_smi_exponent =
-      (HeapNumber::kExponentBias + 30) << HeapNumber::kExponentShift;
-  __ mov(scratch_, Operand(non_smi_exponent));
-  // Set the sign bit in scratch_ if the value was negative.
-  __ orr(scratch_, scratch_, Operand(HeapNumber::kSignMask), LeaveCC, cs);
-  // Subtract from 0 if the value was negative.
-  __ rsb(the_int_, the_int_, Operand(0, RelocInfo::NONE), LeaveCC, cs);
-  // We should be masking the implict first digit of the mantissa away here,
-  // but it just ends up combining harmlessly with the last digit of the
-  // exponent that happens to be 1.  The sign bit is 0 so we shift 10 to get
-  // the most significant 1 to hit the last bit of the 12 bit sign and exponent.
-  ASSERT(((1 << HeapNumber::kExponentShift) & non_smi_exponent) != 0);
-  const int shift_distance = HeapNumber::kNonMantissaBitsInTopWord - 2;
-  __ orr(scratch_, scratch_, Operand(the_int_, LSR, shift_distance));
-  __ str(scratch_, FieldMemOperand(the_heap_number_,
-                                   HeapNumber::kExponentOffset));
-  __ mov(scratch_, Operand(the_int_, LSL, 32 - shift_distance));
-  __ str(scratch_, FieldMemOperand(the_heap_number_,
-                                   HeapNumber::kMantissaOffset));
-  __ Ret();
-
-  __ bind(&max_negative_int);
-  // The max negative int32 is stored as a positive number in the mantissa of
-  // a double because it uses a sign bit instead of using two's complement.
-  // The actual mantissa bits stored are all 0 because the implicit most
-  // significant 1 bit is not stored.
-  non_smi_exponent += 1 << HeapNumber::kExponentShift;
-  __ mov(ip, Operand(HeapNumber::kSignMask | non_smi_exponent));
-  __ str(ip, FieldMemOperand(the_heap_number_, HeapNumber::kExponentOffset));
-  __ mov(ip, Operand(0, RelocInfo::NONE));
-  __ str(ip, FieldMemOperand(the_heap_number_, HeapNumber::kMantissaOffset));
-  __ Ret();
-}
-
-
 // Handle the case where the lhs and rhs are the same object.
 // Equality is almost reflexive (everything but NaN), so this is a test
 // for "identity and not NaN".
@@ -2052,8 +1981,6 @@ void UnaryOpStub::GenerateSmiCodeBitNot(MacroAssembler* masm,
   __ JumpIfNotSmi(r3, non_smi);
 
   // Flip bits and revert inverted smi-tag.
-  // __ mvn(r3, Operand(r3));
-  // __ bic(r3, r3, Operand(kSmiTagMask));
   ASSERT(kSmiTagMask == 1);
   __ neg(r3, r3);
   __ rlwinm(r3, r3, 0, 0, 30);
@@ -2178,24 +2105,13 @@ void UnaryOpStub::GenerateHeapNumberCodeBitNot(
     __ mr(r3, r5);  // Move newly allocated heap number to r0.
   }
 
-#ifdef PENGUIN_CLEANUP
-  if (CpuFeatures::IsSupported(VFP2)) {
-    // Convert the int32 in r4 to the heap number in r3. r5 is corrupted.
-    CpuFeatures::Scope scope(VFP2);
-    __ vmov(s0, r4);
-    __ vcvt_f64_s32(d0, s0);
-    __ sub(r5, r3, Operand(kHeapObjectTag));
-    __ vstr(d0, r5, HeapNumber::kValueOffset);
+    // Convert the int32 in r4 to the heap number in r3.
+    FloatingPointHelper::ConvertIntToDouble(
+      masm, r4, FloatingPointHelper::kFPRegisters,
+      d0, r7, r7,  // r7 unused as we're using kFPRegisters
+      d2);
+    __ stfd(d0, r3, HeapNumber::kValueOffset-kHeapObjectTag);
     __ Ret();
-  } else {
-#endif
-    // WriteInt32ToHeapNumberStub does not trigger GC, so we do not
-    // have to set up a frame.
-    WriteInt32ToHeapNumberStub stub(r4, r3, r5);
-    __ Jump(stub.GetCode(), RelocInfo::CODE_TARGET);
-#ifdef PENGUIN_CLEANUP
-  }
-#endif
 
   __ bind(&impossible);
   if (FLAG_debug_code) {
@@ -3816,7 +3732,6 @@ bool CEntryStub::IsPregenerated() {
 
 void CodeStub::GenerateStubsAheadOfTime() {
   CEntryStub::GenerateAheadOfTime();
-  WriteInt32ToHeapNumberStub::GenerateFixedRegStubsAheadOfTime();
   StoreBufferOverflowStub::GenerateFixedRegStubsAheadOfTime();
   RecordWriteStub::GenerateFixedRegStubsAheadOfTime();
 }
@@ -4441,7 +4356,8 @@ void InstanceofStub::Generate(MacroAssembler* masm) {
   __ bne(&slow);
 
   // Null is not instance of anything.
-  __ cmp(scratch, Operand(masm->isolate()->factory()->null_value()));
+  __ mov(r0, Operand(masm->isolate()->factory()->null_value()));
+  __ cmp(scratch, r0);
   __ bne(&object_not_null);
   __ li(r3, Operand(Smi::FromInt(1)));
   __ Ret(HasArgsInRegisters() ? 0 : 2);
@@ -5317,12 +5233,12 @@ void RegExpConstructResultStub::Generate(MacroAssembler* masm) {
   Label done;
   Factory* factory = masm->isolate()->factory();
 
-  __ ldr(r4, MemOperand(sp, kPointerSize * 2));
+  __ lwz(r4, MemOperand(sp, kPointerSize * 2));
   STATIC_ASSERT(kSmiTag == 0);
   STATIC_ASSERT(kSmiTagSize == 1);
   __ JumpIfNotSmi(r4, &slowcase);
-  __ cmp(r4, Operand(Smi::FromInt(kMaxInlineLength)));
-  __ b(hi, &slowcase);
+  __ cmpli(r4, Operand(Smi::FromInt(kMaxInlineLength)));
+  __ bgt(&slowcase);
   // Smi-tagging is equivalent to multiplying by 2.
   // Allocate RegExpResult followed by FixedArray with size in ebx.
   // JSArray:   [Map][empty properties][Elements][Length-smi][index][input]
@@ -5331,7 +5247,7 @@ void RegExpConstructResultStub::Generate(MacroAssembler* masm) {
   // FixedArray.
   int objects_size =
       (JSRegExpResult::kSize + FixedArray::kHeaderSize) / kPointerSize;
-  __ mov(r8, Operand(r4, LSR, kSmiTagSize + kSmiShiftSize));
+  __ srwi(r8, r4, Operand(kSmiTagSize + kSmiShiftSize));
   __ add(r5, r8, Operand(objects_size));
   __ AllocateInNewSpace(
       r5,  // In: Size, in words.
@@ -5348,22 +5264,22 @@ void RegExpConstructResultStub::Generate(MacroAssembler* masm) {
   // Set empty properties FixedArray.
   // Set elements to point to FixedArray allocated right after the JSArray.
   // Interleave operations for better latency.
-  __ ldr(r5, ContextOperand(cp, Context::GLOBAL_OBJECT_INDEX));
+  __ lwz(r5, ContextOperand(cp, Context::GLOBAL_OBJECT_INDEX));
   __ add(r6, r3, Operand(JSRegExpResult::kSize));
   __ mov(r7, Operand(factory->empty_fixed_array()));
-  __ ldr(r5, FieldMemOperand(r5, GlobalObject::kNativeContextOffset));
-  __ str(r6, FieldMemOperand(r3, JSObject::kElementsOffset));
-  __ ldr(r5, ContextOperand(r5, Context::REGEXP_RESULT_MAP_INDEX));
-  __ str(r7, FieldMemOperand(r3, JSObject::kPropertiesOffset));
-  __ str(r5, FieldMemOperand(r3, HeapObject::kMapOffset));
+  __ lwz(r5, FieldMemOperand(r5, GlobalObject::kNativeContextOffset));
+  __ stw(r6, FieldMemOperand(r3, JSObject::kElementsOffset));
+  __ lwz(r5, ContextOperand(r5, Context::REGEXP_RESULT_MAP_INDEX));
+  __ stw(r7, FieldMemOperand(r3, JSObject::kPropertiesOffset));
+  __ stw(r5, FieldMemOperand(r3, HeapObject::kMapOffset));
 
   // Set input, index and length fields from arguments.
-  __ ldr(r4, MemOperand(sp, kPointerSize * 0));
-  __ ldr(r5, MemOperand(sp, kPointerSize * 1));
-  __ ldr(r9, MemOperand(sp, kPointerSize * 2));
-  __ str(r4, FieldMemOperand(r3, JSRegExpResult::kInputOffset));
-  __ str(r5, FieldMemOperand(r3, JSRegExpResult::kIndexOffset));
-  __ str(r9, FieldMemOperand(r3, JSArray::kLengthOffset));
+  __ lwz(r4, MemOperand(sp, kPointerSize * 0));
+  __ lwz(r5, MemOperand(sp, kPointerSize * 1));
+  __ lwz(r9, MemOperand(sp, kPointerSize * 2));
+  __ stw(r4, FieldMemOperand(r3, JSRegExpResult::kInputOffset));
+  __ stw(r5, FieldMemOperand(r3, JSRegExpResult::kIndexOffset));
+  __ stw(r9, FieldMemOperand(r3, JSArray::kLengthOffset));
 
   // Fill out the elements FixedArray.
   // r3: JSArray, tagged.
@@ -5372,10 +5288,10 @@ void RegExpConstructResultStub::Generate(MacroAssembler* masm) {
 
   // Set map.
   __ mov(r5, Operand(factory->fixed_array_map()));
-  __ str(r5, FieldMemOperand(r6, HeapObject::kMapOffset));
+  __ stw(r5, FieldMemOperand(r6, HeapObject::kMapOffset));
   // Set FixedArray length.
-  __ mov(r9, Operand(r8, LSL, kSmiTagSize));
-  __ str(r9, FieldMemOperand(r6, FixedArray::kLengthOffset));
+  __ slwi(r9, r8, Operand(kSmiTagSize));
+  __ stw(r9, FieldMemOperand(r6, FixedArray::kLengthOffset));
   // Fill contents of fixed-array with undefined.
   __ LoadRoot(r5, Heap::kUndefinedValueRootIndex);
   __ add(r6, r6, Operand(FixedArray::kHeaderSize - kHeapObjectTag));
@@ -5387,9 +5303,12 @@ void RegExpConstructResultStub::Generate(MacroAssembler* masm) {
   Label loop;
   __ cmpi(r8, Operand(0));
   __ bind(&loop);
-  __ b(le, &done);  // Jump if r8 is negative or zero.
-  __ sub(r8, r8, Operand(1), SetCC);
-  __ str(r5, MemOperand(r6, r8, LSL, kPointerSizeLog2));
+  __ ble(&done);  // Jump if r8 is negative or zero.
+  __ sub(r8, r8, Operand(1));
+  __ slwi(ip, r8, Operand(kPointerSizeLog2));
+  __ add(ip, r6, ip);
+  __ stw(r5, MemOperand(ip));
+  __ cmpi(r8, Operand(0));
   __ jmp(&loop);
 
   __ bind(&done);
@@ -6668,7 +6587,7 @@ void StringAddStub::Generate(MacroAssembler* masm) {
   __ andi(r0, r7, Operand(kShortExternalStringMask));
   __ cmpi(r0, Operand(0));
   __ bne(&call_runtime);
-  __ ldr(r10, FieldMemOperand(r3, ExternalString::kResourceDataOffset));
+  __ lwz(r10, FieldMemOperand(r3, ExternalString::kResourceDataOffset));
   __ bind(&first_prepared);
 
   STATIC_ASSERT(kSeqStringTag == 0);
@@ -6683,7 +6602,7 @@ void StringAddStub::Generate(MacroAssembler* masm) {
   __ andi(r0, r8, Operand(kShortExternalStringMask));
   __ cmpi(r0, Operand(0));
   __ bne(&call_runtime);
-  __ ldr(r4, FieldMemOperand(r4, ExternalString::kResourceDataOffset));
+  __ lwz(r4, FieldMemOperand(r4, ExternalString::kResourceDataOffset));
   __ bind(&second_prepared);
 
   Label non_ascii_string_add_flat_result;
@@ -7225,11 +7144,11 @@ void StringDictionaryLookupStub::GenerateNegativeLookup(MacroAssembler* masm,
   __ mflr(r0);
   __ MultiPush(spill_mask);
 
-  __ ldr(r3, FieldMemOperand(receiver, JSObject::kPropertiesOffset));
+  __ lwz(r3, FieldMemOperand(receiver, JSObject::kPropertiesOffset));
   __ mov(r4, Operand(Handle<String>(name)));
   StringDictionaryLookupStub stub(NEGATIVE_LOOKUP);
   __ CallStub(&stub);
-  __ cmp(r3, Operand(0));
+  __ cmpi(r3, Operand(0));
 
   __ MultiPop(spill_mask);  // MultiPop does not touch condition flags
   __ mtlr(r0);
@@ -7342,15 +7261,15 @@ void StringDictionaryLookupStub::Generate(MacroAssembler* masm) {
   Register hash = r7;
   Register undefined = r8;
   Register entry_key = r9;
+  Register scratch = r9;
 
   Label in_dictionary, maybe_in_dictionary, not_in_dictionary;
 
-  __ ldr(mask, FieldMemOperand(dictionary, kCapacityOffset));
-  __ li(r0, Operand(0xeee2));
-  __ mov(mask, Operand(mask, ASR, kSmiTagSize));
+  __ lwz(mask, FieldMemOperand(dictionary, kCapacityOffset));
+  __ srawi(mask, mask, kSmiTagSize);
   __ sub(mask, mask, Operand(1));
 
-  __ ldr(hash, FieldMemOperand(key, String::kHashFieldOffset));
+  __ lwz(hash, FieldMemOperand(key, String::kHashFieldOffset));
 
   __ LoadRoot(undefined, Heap::kUndefinedValueRootIndex);
 
@@ -7366,21 +7285,24 @@ void StringDictionaryLookupStub::Generate(MacroAssembler* masm) {
       __ add(index, hash, Operand(
           StringDictionary::GetProbeOffset(i) << String::kHashShift));
     } else {
-      __ mov(index, Operand(hash));
+      __ mr(index, hash);
     }
-    __ and_(index, mask, Operand(index, LSR, String::kHashShift));
+    __ srwi(r0, index, Operand(String::kHashShift));
+    __ and_(index, mask, r0);
 
     // Scale the index by multiplying by the entry size.
     ASSERT(StringDictionary::kEntrySize == 3);
-    __ add(index, index, Operand(index, LSL, 1));  // index *= 3.
+    __ slwi(scratch, index, Operand(1));
+    __ add(index, index, scratch);  // index *= 3.
 
     ASSERT_EQ(kSmiTagSize, 1);
-    __ add(index, dictionary, Operand(index, LSL, 2));
-    __ ldr(entry_key, FieldMemOperand(index, kElementsStartOffset));
+    __ slwi(scratch, index, Operand(2));
+    __ add(index, dictionary, scratch);
+    __ lwz(entry_key, FieldMemOperand(index, kElementsStartOffset));
 
     // Having undefined at this place means the name is not contained.
-    __ cmp(entry_key, Operand(undefined));
-    __ b(eq, &not_in_dictionary);
+    __ cmp(entry_key, undefined);
+    __ beq(&not_in_dictionary);
 
     // Stop if found the property.
     __ cmp(entry_key, key);
@@ -7388,11 +7310,12 @@ void StringDictionaryLookupStub::Generate(MacroAssembler* masm) {
 
     if (i != kTotalProbes - 1 && mode_ == NEGATIVE_LOOKUP) {
       // Check if the entry name is not a symbol.
-      __ ldr(entry_key, FieldMemOperand(entry_key, HeapObject::kMapOffset));
-      __ ldrb(entry_key,
+      __ lwz(entry_key, FieldMemOperand(entry_key, HeapObject::kMapOffset));
+      __ lbz(entry_key,
               FieldMemOperand(entry_key, Map::kInstanceTypeOffset));
-      __ tst(entry_key, Operand(kIsSymbolMask));
-      __ b(eq, &maybe_in_dictionary);
+      __ andi(r0, entry_key, Operand(kIsSymbolMask));
+      __ cmpi(r0, Operand(0));
+      __ beq(&maybe_in_dictionary);
     }
   }
 
@@ -7401,16 +7324,16 @@ void StringDictionaryLookupStub::Generate(MacroAssembler* masm) {
   // treated as a lookup success. For positive lookup probing failure
   // should be treated as lookup failure.
   if (mode_ == POSITIVE_LOOKUP) {
-    __ mov(result, Operand::Zero());
+    __ li(result, Operand::Zero());
     __ Ret();
   }
 
   __ bind(&in_dictionary);
-  __ mov(result, Operand(1));
+  __ li(result, Operand(1));
   __ Ret();
 
   __ bind(&not_in_dictionary);
-  __ mov(result, Operand::Zero());
+  __ li(result, Operand::Zero());
   __ Ret();
 }
 
