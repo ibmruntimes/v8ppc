@@ -411,7 +411,26 @@ enum FAKE_OPCODE_T {
   fMASM7 = 49,
   fMASM8 = 50,
   fMASM9 = 51,
-  fLastFaker  // can't be more than 64
+  fMASM10 = 52,
+  fMASM11 = 53,
+  fMASM12 = 54,
+  fMASM13 = 55,
+  fMASM14 = 56,
+  fMASM15 = 57,
+  fMASM16 = 58,
+  fMASM17 = 59,
+  fMASM18 = 60,
+  fMASM19 = 61,
+  fMASM20 = 62,
+  fMASM21 = 63,
+  fMASM22 = 64,
+  fMASM23 = 65,
+  fMASM24 = 66,
+  fMASM25 = 67,
+  fMASM26 = 68,
+  fMASM27 = 69,
+  fMASM28 = 70,
+  fLastFaker  // can't be more than 128
 };
 
 // -----------------------------------------------------------------------------

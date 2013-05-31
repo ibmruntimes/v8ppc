@@ -222,6 +222,7 @@ void MacroAssembler::Swap(Register reg1,
                           Register reg2,
                           Register scratch,
                           Condition cond) {
+#ifdef PENGUIN_CLEANUP
   // Bogus instruction, inserted so we can trap here if we execute
   ldr(r0, MemOperand(r0));
   if (scratch.is(no_reg)) {
@@ -233,6 +234,10 @@ void MacroAssembler::Swap(Register reg1,
     mov(reg1, reg2, LeaveCC, cond);
     mov(reg2, scratch, LeaveCC, cond);
   }
+#else
+  PPCPORT_UNIMPLEMENTED();
+  fake_asm(fMASM16);
+#endif
 }
 
 
@@ -261,11 +266,16 @@ void MacroAssembler::Move(Register dst, Register src, Condition cond) {
 
 
 void MacroAssembler::Move(DoubleRegister dst, DoubleRegister src) {
+#ifdef PENGUIN_CLEANUP
   ASSERT(CpuFeatures::IsSupported(VFP2));
   CpuFeatures::Scope scope(VFP2);
   if (!dst.is(src)) {
     vmov(dst, src);
   }
+#else
+  PPCPORT_UNIMPLEMENTED();
+  fake_asm(fMASM17);
+#endif
 }
 
 void MacroAssembler::Ubfx(Register dst, Register src1, int lsb, int width,
@@ -558,6 +568,7 @@ void MacroAssembler::RememberedSetHelper(Register object,  // For debug tests.
 
 // Push and pop all registers that can hold pointers.
 void MacroAssembler::PushSafepointRegisters() {
+#ifdef PENGUIN_CLEANUP
   // Safepoints expect a block of contiguous register values starting with r0:
   ASSERT(((1 << kNumSafepointSavedRegisters) - 1) == kSafepointSavedRegisters);
   // Safepoints expect a block of kNumSafepointRegisters values on the
@@ -566,48 +577,82 @@ void MacroAssembler::PushSafepointRegisters() {
   ASSERT(num_unsaved >= 0);
   sub(sp, sp, Operand(num_unsaved * kPointerSize));
   stm(db_w, sp, kSafepointSavedRegisters);
+#else
+  PPCPORT_UNIMPLEMENTED();
+  fake_asm(fMASM20);
+#endif
 }
 
 
 void MacroAssembler::PopSafepointRegisters() {
+#ifdef PENGUIN_CLEANUP
   const int num_unsaved = kNumSafepointRegisters - kNumSafepointSavedRegisters;
   ldm(ia_w, sp, kSafepointSavedRegisters);
   add(sp, sp, Operand(num_unsaved * kPointerSize));
+#else
+  PPCPORT_UNIMPLEMENTED();
+  fake_asm(fMASM21);
+#endif
 }
 
 
 void MacroAssembler::PushSafepointRegistersAndDoubles() {
+#ifdef PENGUIN_CLEANUP
   PushSafepointRegisters();
   sub(sp, sp, Operand(DwVfpRegister::kNumAllocatableRegisters *
                       kDoubleSize));
   for (int i = 0; i < DwVfpRegister::kNumAllocatableRegisters; i++) {
     vstr(DwVfpRegister::FromAllocationIndex(i), sp, i * kDoubleSize);
   }
+#else
+  PPCPORT_UNIMPLEMENTED();
+  fake_asm(fMASM22);
+#endif
 }
 
 
 void MacroAssembler::PopSafepointRegistersAndDoubles() {
+#ifdef PENGUIN_CLEANUP
   for (int i = 0; i < DwVfpRegister::kNumAllocatableRegisters; i++) {
     vldr(DwVfpRegister::FromAllocationIndex(i), sp, i * kDoubleSize);
   }
   add(sp, sp, Operand(DwVfpRegister::kNumAllocatableRegisters *
                       kDoubleSize));
   PopSafepointRegisters();
+#else
+  PPCPORT_UNIMPLEMENTED();
+  fake_asm(fMASM23);
+#endif
 }
 
 void MacroAssembler::StoreToSafepointRegistersAndDoublesSlot(Register src,
                                                              Register dst) {
+#ifdef PENGUIN_CLEANUP
   str(src, SafepointRegistersAndDoublesSlot(dst));
+#else
+  PPCPORT_UNIMPLEMENTED();
+  fake_asm(fMASM24);
+#endif
 }
 
 
 void MacroAssembler::StoreToSafepointRegisterSlot(Register src, Register dst) {
+#ifdef PENGUIN_CLEANUP
   str(src, SafepointRegisterSlot(dst));
+#else
+  PPCPORT_UNIMPLEMENTED();
+  fake_asm(fMASM25);
+#endif
 }
 
 
 void MacroAssembler::LoadFromSafepointRegisterSlot(Register dst, Register src) {
+#ifdef PENGUIN_CLEANUP
   ldr(dst, SafepointRegisterSlot(src));
+#else
+  PPCPORT_UNIMPLEMENTED();
+  fake_asm(fMASM26);
+#endif
 }
 
 
@@ -634,6 +679,7 @@ MemOperand MacroAssembler::SafepointRegistersAndDoublesSlot(Register reg) {
 
 void MacroAssembler::Ldrd(Register dst1, Register dst2,
                           const MemOperand& src, Condition cond) {
+#ifdef PENGUIN_CLEANUP
   ldr(dst1, MemOperand(dst2), al);  // PPC - bogus instruction to cause error
 #if 0
   ASSERT(src.rm().is(no_reg));
@@ -674,11 +720,16 @@ void MacroAssembler::Ldrd(Register dst1, Register dst2,
     }
   }
 #endif
+#else
+  PPCPORT_UNIMPLEMENTED();
+  fake_asm(fMASM18);
+#endif
 }
 
 
 void MacroAssembler::Strd(Register src1, Register src2,
                           const MemOperand& dst, Condition cond) {
+#ifdef PENGUIN_CLEANUP
   ldr(src1, MemOperand(src2), al);  // PPC - bogus instruction to cause error
 #if 0
   ASSERT(dst.rm().is(no_reg));
@@ -707,6 +758,10 @@ void MacroAssembler::Strd(Register src1, Register src2,
       str(src2, dst2, cond);
     }
   }
+#endif
+#else
+  PPCPORT_UNIMPLEMENTED();
+  fake_asm(fMASM19);
 #endif
 }
 
@@ -739,24 +794,35 @@ void MacroAssembler::VFPCompareAndLoadFlags(const DwVfpRegister src1,
                                             const DwVfpRegister src2,
                                             const Register fpscr_flags,
                                             const Condition cond) {
+#ifdef PENGUIN_CLEANUP
   // Compare and load FPSCR.
   vcmp(src1, src2, cond);
   vmrs(fpscr_flags, cond);
+#else
+  PPCPORT_UNIMPLEMENTED();
+  fake_asm(fMASM26);
+#endif
 }
 
 void MacroAssembler::VFPCompareAndLoadFlags(const DwVfpRegister src1,
                                             const double src2,
                                             const Register fpscr_flags,
                                             const Condition cond) {
+#ifdef PENGUIN_CLEANUP
   // Compare and load FPSCR.
   vcmp(src1, src2, cond);
   vmrs(fpscr_flags, cond);
+#else
+  PPCPORT_UNIMPLEMENTED();
+  fake_asm(fMASM27);
+#endif
 }
 
 void MacroAssembler::Vmov(const DwVfpRegister dst,
                           const double imm,
                           const Register scratch,
                           const Condition cond) {
+#ifdef PENGUIN_CLEANUP
   ASSERT(CpuFeatures::IsEnabled(VFP2));
   static const DoubleRepresentation minus_zero(-0.0);
   static const DoubleRepresentation zero(0.0);
@@ -769,6 +835,10 @@ void MacroAssembler::Vmov(const DwVfpRegister dst,
   } else {
     vmov(dst, imm, scratch, cond);
   }
+#else
+  PPCPORT_UNIMPLEMENTED();
+  fake_asm(fMASM28);
+#endif
 }
 
 
@@ -2400,6 +2470,8 @@ void MacroAssembler::ConvertToInt32(Register source,
                                     Register scratch2,
                                     DwVfpRegister double_scratch,
                                     Label *not_int32) {
+  // penguin: this one seems not converted, should we add a marker here?
+
 #ifdef PENGUIN_CLEANUP
   if (CpuFeatures::IsSupported(VFP2)) {
     CpuFeatures::Scope scope(VFP2);
@@ -2542,6 +2614,7 @@ void MacroAssembler::EmitOutOfInt32RangeTruncate(Register result,
                                                  Register input_high,
                                                  Register input_low,
                                                  Register scratch) {
+#ifdef PENGUIN_CLEANUP
   Label done, normal_exponent, restore_sign;
 
   // Extract the biased exponent in result.
@@ -2608,6 +2681,10 @@ void MacroAssembler::EmitOutOfInt32RangeTruncate(Register result,
   rsb(result, input_high, Operand(0), LeaveCC, ne);
   mov(result, input_high, LeaveCC, eq);
   bind(&done);
+#else
+  PPCPORT_UNIMPLEMENTED();
+  fake_asm(fMASM15);
+#endif
 }
 
 
