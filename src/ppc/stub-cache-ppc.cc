@@ -3743,8 +3743,8 @@ void KeyedLoadStubCompiler::GenerateLoadExternalArray(
     // conversion. Don't use r3 and r4 as AllocateHeapNumber clobbers all
     // registers - also when jumping due to exhausted young space.
     __ LoadRoot(r9, Heap::kHeapNumberMapRootIndex);
-    __ AllocateHeapNumber(r5, r6, r7, r9, &slow);
-    __ mr(r3, r5);
+    __ AllocateHeapNumber(r8, r6, r7, r9, &slow);
+    __ mr(r3, r8);
 
     FloatingPointHelper::ConvertIntToDouble(
       masm, value, FloatingPointHelper::kFPRegisters,
