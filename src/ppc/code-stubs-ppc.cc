@@ -821,6 +821,49 @@ void FloatingPointHelper::ConvertIntToDouble(MacroAssembler* masm,
 }
 
 
+void FloatingPointHelper::ConvertUnsignedIntToDouble(MacroAssembler* masm,
+                                               Register int_scratch,
+                                               Destination destination,
+                                               DwVfpRegister double_dst,
+                                               Register dst1,
+                                               Register dst2,
+                                               DwVfpRegister double_scratch) {
+  ASSERT(!int_scratch.is(dst1));
+  ASSERT(!int_scratch.is(dst2));
+
+  __ sub(sp, sp, Operand(16));   // reserve two temporary doubles on the stack
+#if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
+  __ addis(r0, r0, 0x4330);
+  __ stw(r0, MemOperand(sp, 4));
+  __ stw(r0, MemOperand(sp, 12));
+  __ li(r0, Operand(0));
+  __ stw(r0, MemOperand(sp, 0));
+  __ stw(int_scratch, MemOperand(sp, 8));
+#else
+  __ addis(r0, r0, 0x4330);
+  __ stw(r0, MemOperand(sp, 0));
+  __ stw(r0, MemOperand(sp, 8));
+  __ li(r0, Operand(0));
+  __ stw(r0, MemOperand(sp, 4));
+  __ stw(int_scratch, MemOperand(sp, 12));
+#endif
+  __ lfd(double_dst, sp, 0);
+  __ lfd(double_scratch, sp, 8);
+  __ add(sp, sp, Operand(16));  // restore stack
+  __ fsub(double_dst, double_scratch, double_dst);
+
+  if (destination == kCoreRegisters) {
+    __ fctiwz(double_scratch, double_dst);
+    __ sub(sp, sp, Operand(8));
+    __ stfd(double_scratch, sp, 0);
+// ENDIAN - dst1/dst2 are in memory order
+    __ lwz(dst1, MemOperand(sp, 0));
+    __ lwz(dst2, MemOperand(sp, 4));
+    __ add(sp, sp, Operand(8));
+  }
+}
+
+
 void FloatingPointHelper::LoadNumberAsInt32Double(MacroAssembler* masm,
                                                   Register object,
                                                   Destination destination,

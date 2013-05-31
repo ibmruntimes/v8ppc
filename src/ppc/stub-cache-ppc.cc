@@ -3746,7 +3746,7 @@ void KeyedLoadStubCompiler::GenerateLoadExternalArray(
     __ AllocateHeapNumber(r8, r6, r7, r9, &slow);
     __ mr(r3, r8);
 
-    FloatingPointHelper::ConvertIntToDouble(
+    FloatingPointHelper::ConvertUnsignedIntToDouble(
       masm, value, FloatingPointHelper::kFPRegisters,
       d0, r7, r7,  // r7 unused as we're using kFPRegisters
       d2);
