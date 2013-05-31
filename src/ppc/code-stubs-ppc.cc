@@ -2588,22 +2588,19 @@ void BinaryOpStub::GenerateFPOperation(MacroAssembler* masm,
       // result.
       __ mr(r3, r8);
 
-#ifdef PENGUIN_CLEANUP
-      // Convert the int32 in r5 to the heap number in r3. r6 is corrupted. As
+      // Convert the int32 in r5 to the heap number in r3. As
       // mentioned above SHR needs to always produce a positive result.
-      __ vmov(s0, r5);
       if (op_ == Token::SHR) {
-        __ vcvt_f64_u32(d0, s0);
+        PPCPORT_UNIMPLEMENTED();
+        __ fake_asm(fMASM2);
       } else {
-        __ vcvt_f64_s32(d0, s0);
+        FloatingPointHelper::ConvertIntToDouble(
+          masm, r5, FloatingPointHelper::kFPRegisters,
+          d0, r7, r7,  // r7 unused as we're using kFPRegisters
+          d2);
       }
-      __ sub(r6, r3, Operand(kHeapObjectTag));
-      __ vstr(d0, r6, HeapNumber::kValueOffset);
+      __ stfd(d0, r3, HeapNumber::kValueOffset-kHeapObjectTag);
       __ Ret();
-#else
-      PPCPORT_UNIMPLEMENTED();
-      __ fake_asm(fMASM2);
-#endif
       break;
     }
     default:
