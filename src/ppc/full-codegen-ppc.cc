@@ -3659,16 +3659,19 @@ void FullCodeGenerator::EmitFastAsciiArrayJoin(CallRuntime* expr) {
     __ Assert(gt, "No empty arrays here in EmitFastAsciiArrayJoin");
   }
   __ bind(&loop);
-  __ lwz(string, MemOperand(element, kPointerSize, PostIndex));
+  __ lwz(string, MemOperand(element));
+  __ add(element, element, Operand(kPointerSize));
   __ JumpIfSmi(string, &bailout);
   __ lwz(scratch1, FieldMemOperand(string, HeapObject::kMapOffset));
   __ lbz(scratch1, FieldMemOperand(scratch1, Map::kInstanceTypeOffset));
   __ JumpIfInstanceTypeIsNotSequentialAscii(scratch1, scratch2, &bailout);
   __ lwz(scratch1, FieldMemOperand(string, SeqAsciiString::kLengthOffset));
-  __ add(string_length, string_length, Operand(scratch1), SetCC);
-  __ b(vs, &bailout);
+  __ li(r0, Operand(-1));
+  __ addc(string_length, string_length, scratch1);
+  __ addze(r0, r0, LeaveOE, SetRC);
+  __ bc(&bailout, BT, 2);
   __ cmp(element, elements_end);
-  __ b(lt, &loop);
+  __ blt(&loop);
 
   // If array_length is 1, return elements[0], a string.
   __ cmpi(array_length, Operand(1));
@@ -3694,16 +3697,20 @@ void FullCodeGenerator::EmitFastAsciiArrayJoin(CallRuntime* expr) {
   // string_length to get the length of the result string. array_length is not
   // smi but the other values are, so the result is a smi
   __ lwz(scratch1, FieldMemOperand(separator, SeqAsciiString::kLengthOffset));
-  __ sub(string_length, string_length, Operand(scratch1));
-  __ smull(scratch2, ip, array_length, scratch1);
+  __ sub(string_length, string_length, scratch1);
+  __ mullw(scratch2, array_length, scratch1);
+  __ mulhw(ip, array_length, scratch1);
   // Check for smi overflow. No overflow if higher 33 bits of 64-bit result are
   // zero.
   __ cmpi(ip, Operand(0));
   __ bne(&bailout);
-  __ tst(scratch2, Operand(0x80000000));
-  __ b(ne, &bailout);
-  __ add(string_length, string_length, Operand(scratch2), SetCC);
-  __ b(vs, &bailout);
+  __ rlwinm(r0, scratch2, 1, 31, 31);
+  __ cmpi(r0, Operand(0));
+  __ bne(&bailout);
+  __ li(r0, Operand(-1));
+  __ addc(string_length, string_length, scratch2);
+  __ addze(r0, r0, LeaveOE, SetRC);
+  __ bc(&bailout, BT, 2);
   __ SmiUntag(string_length);
 
   // Get first element in the array to free up the elements register to be used
@@ -3738,7 +3745,7 @@ void FullCodeGenerator::EmitFastAsciiArrayJoin(CallRuntime* expr) {
   __ lwz(scratch1, FieldMemOperand(separator, SeqAsciiString::kLengthOffset));
   __ cmpi(scratch1, Operand(Smi::FromInt(1)));
   __ beq(&one_char_separator);
-  __ b(gt, &long_separator);
+  __ bgt(&long_separator);
 
   // Empty separator case
   __ bind(&empty_separator_loop);
@@ -3748,13 +3755,14 @@ void FullCodeGenerator::EmitFastAsciiArrayJoin(CallRuntime* expr) {
   //   elements_end: Array end.
 
   // Copy next array element to the result.
-  __ lwz(string, MemOperand(element, kPointerSize, PostIndex));
+  __ lwz(string, MemOperand(element));
+  __ add(element, element, Operand(kPointerSize));
   __ lwz(string_length, FieldMemOperand(string, String::kLengthOffset));
   __ SmiUntag(string_length);
   __ add(string, string, Operand(SeqAsciiString::kHeaderSize - kHeapObjectTag));
   __ CopyBytes(string, result_pos, string_length, scratch1);
   __ cmp(element, elements_end);
-  __ b(lt, &empty_separator_loop);  // End while (element < elements_end).
+  __ blt(&empty_separator_loop);  // End while (element < elements_end).
   ASSERT(result.is(r3));
   __ b(&done);
 
@@ -3808,7 +3816,8 @@ void FullCodeGenerator::EmitFastAsciiArrayJoin(CallRuntime* expr) {
   __ CopyBytes(string, result_pos, string_length, scratch1);
 
   __ bind(&long_separator);
-  __ lwz(string, MemOperand(element, kPointerSize, PostIndex));
+  __ lwz(string, MemOperand(element));
+  __ add(element, element, Operand(kPointerSize));
   __ lwz(string_length, FieldMemOperand(string, String::kLengthOffset));
   __ SmiUntag(string_length);
   __ add(string, string, Operand(SeqAsciiString::kHeaderSize - kHeapObjectTag));

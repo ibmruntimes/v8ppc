@@ -3269,8 +3269,7 @@ void MacroAssembler::AllocateHeapNumberWithValue(Register result,
                                                  Register heap_number_map,
                                                  Label* gc_required) {
   AllocateHeapNumber(result, scratch1, scratch2, heap_number_map, gc_required);
-  sub(scratch1, result, Operand(kHeapObjectTag));
-  vstr(value, scratch1, HeapNumber::kValueOffset);
+  stfd(value, result, HeapNumber::kValueOffset-kHeapObjectTag);
 }
 
 
@@ -3316,8 +3315,10 @@ void MacroAssembler::CopyBytes(Register src,
   andi(r0, src, Operand(kPointerSize - 1));
   cmpi(r0, Operand(0));
   beq(&word_loop);
-  lbz(scratch, MemOperand(src, 1, PostIndex));
-  stb(scratch, MemOperand(dst, 1, PostIndex));
+  lbz(scratch, MemOperand(src));
+  add(src, src, Operand(1));
+  stb(scratch, MemOperand(dst));
+  add(dst, dst, Operand(1));
   sub(length, length, Operand(1));
   cmpi(r0, Operand(0));
   bne(&byte_loop_1);
@@ -3331,17 +3332,21 @@ void MacroAssembler::CopyBytes(Register src,
   }
   cmpi(length, Operand(kPointerSize));
   blt(&byte_loop);
-  lwz(scratch, MemOperand(src, kPointerSize, PostIndex));
+  lwz(scratch, MemOperand(src));
+  add(src, src, Operand(kPointerSize));
 #if CAN_USE_UNALIGNED_ACCESSES
-  stw(scratch, MemOperand(dst, kPointerSize, PostIndex));
+  // currently false for PPC - but possible future opt
+  stw(scratch, MemOperand(dst));
+  add(dst, dst, Operand(kPointerSize));
 #else
-  stb(scratch, MemOperand(dst, 1, PostIndex));
-  slwi(scratch, scratch, Operand(8));
-  stb(scratch, MemOperand(dst, 1, PostIndex));
-  slwi(scratch, scratch, Operand(8));
-  stb(scratch, MemOperand(dst, 1, PostIndex));
-  slwi(scratch, scratch, Operand(8));
-  stb(scratch, MemOperand(dst, 1, PostIndex));
+  stb(scratch, MemOperand(dst, 0));
+  srwi(scratch, scratch, Operand(8));
+  stb(scratch, MemOperand(dst, 1));
+  srwi(scratch, scratch, Operand(8));
+  stb(scratch, MemOperand(dst, 2));
+  srwi(scratch, scratch, Operand(8));
+  stb(scratch, MemOperand(dst, 3));
+  add(dst, dst, Operand(4));
 #endif
   sub(length, length, Operand(kPointerSize));
   b(&word_loop);
@@ -3351,8 +3356,10 @@ void MacroAssembler::CopyBytes(Register src,
   cmpi(length, Operand(0));
   beq(&done);
   bind(&byte_loop_1);
-  lbz(scratch, MemOperand(src, 1, PostIndex));
-  stb(scratch, MemOperand(dst, 1, PostIndex));
+  lbz(scratch, MemOperand(src));
+  add(src, src, Operand(1));
+  stb(scratch, MemOperand(dst));
+  add(dst, dst, Operand(1));
   sub(length, length, Operand(1));
   cmpi(length, Operand(0));
   bne(&byte_loop_1);
