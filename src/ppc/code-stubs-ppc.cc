@@ -4496,7 +4496,7 @@ void ArgumentsAccessStub::GenerateReadElement(MacroAssembler* masm) {
   // comparison to get negative check for free.
   __ bind(&adaptor);
   __ lwz(r3, MemOperand(r5, ArgumentsAdaptorFrameConstants::kLengthOffset));
-  __ cmp(r4, r3);
+  __ cmpl(r4, r3);
   __ bge(&slow);
 
   // Read the argument from the adaptor frame and return it.
