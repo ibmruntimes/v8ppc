@@ -2237,7 +2237,7 @@ void Simulator::InstructionDecode(Instruction* instr) {
       int me = instr->Bits(5, 1);
       int rc = instr->Bit(0);
       // rotate left
-      int result = (rs_val << sh) | (rs_val >> (32-sh));
+      int result = (rs_val << sh) | (((unsigned int)rs_val) >> (32-sh));
       int mask = 0;
       if (mb < me+1) {
         int bit = 0x80000000 >> mb;
@@ -2277,7 +2277,7 @@ void Simulator::InstructionDecode(Instruction* instr) {
       int me = instr->Bits(5, 1);
       int rc = instr->Bit(0);
       // rotate left
-      int result = (rs_val << sh) | (rs_val >> (32-sh));
+      int result = (rs_val << sh) | (((unsigned int)rs_val) >> (32-sh));
       int mask = 0;
       if (mb < me+1) {
         int bit = 0x80000000 >> mb;

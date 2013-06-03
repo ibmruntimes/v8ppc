@@ -890,6 +890,180 @@ void FloatingPointHelper::ConvertIntToFloat(MacroAssembler* masm,
   __ frsp(dst, dst); 
 }
 
+void FloatingPointHelper::ConvertDoubleToInt(MacroAssembler* masm,
+                                             DwVfpRegister double_value,
+                                             Register int_dst,
+                                             Register scratch1,
+                                             DwVfpRegister double_scratch) {
+  Label done, underflow, overflow, convert_to_zero;
+
+  // Perform float-to-int conversion with truncation (round-to-zero)
+  // behavior.
+  __ add(sp, sp, Operand(-2 * kPointerSize));
+
+  __ fctiwz(double_scratch, double_value);
+  __ stfd(double_scratch, sp, 0);
+#if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
+  __ lwz(int_dst, MemOperand(sp, 0));
+#else
+  __ lwz(int_dst, MemOperand(sp, kPointerSize));
+#endif
+
+  // check for possibility of NaN or +/-Infinity
+  __ addis(scratch1, r0, 0x8000);
+  __ cmp(scratch1, int_dst);
+  __ beq(&underflow);
+  __ add(scratch1, scratch1, Operand(-1));
+  __ cmp(scratch1, int_dst);
+  __ beq(&overflow);
+  __ b(&done);
+
+  // fabricate double representation of INFINITY
+  __ bind(&overflow);
+  __ addis(r0, r0, 0x7ff0);
+#if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
+  __ stw(r0, MemOperand(sp, kPointerSize));
+#else
+  __ stw(r0, MemOperand(sp, 0));
+#endif
+  __ li(r0, Operand(0));
+#if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
+  __ stw(r0, MemOperand(sp, 0));
+#else
+  __ stw(r0, MemOperand(sp, kPointerSize));
+#endif
+  __ lfd(double_scratch, sp, 0);
+  __ fcmpu(double_value, double_scratch);
+  __ bc(&convert_to_zero, BT, 31);  // NaN
+  __ beq(&convert_to_zero);
+  __ b(&done);
+
+  // fabricate double representation of -INFINITY
+  __ bind(&underflow);
+  __ addis(r0, r0, 0xfff0);
+#if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
+  __ stw(r0, MemOperand(sp, kPointerSize));
+#else
+  __ stw(r0, MemOperand(sp, 0));
+#endif
+  __ li(r0, Operand(0));
+#if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
+  __ stw(r0, MemOperand(sp, 0));
+#else
+  __ stw(r0, MemOperand(sp, kPointerSize));
+#endif
+  __ lfd(double_scratch, sp, 0);
+  __ fcmpu(double_value, double_scratch);
+  __ bc(&convert_to_zero, BT, 31);  // NaN
+  __ beq(&convert_to_zero);
+  __ b(&done);
+
+  // convert NaN or +/-Infinity to zero
+  __ bind(&convert_to_zero);
+  __ li(int_dst, Operand(0));
+
+  __ bind(&done);
+  __ add(sp, sp, Operand(2 * kPointerSize));
+}
+
+
+void FloatingPointHelper::ConvertDoubleToUnsignedInt(MacroAssembler* masm,
+                                               DwVfpRegister double_value,
+                                               Register int_dst,
+                                               Register scratch1,
+                                               DwVfpRegister double_scratch) {
+  Label done, overflow, underflow, convert_to_zero;
+
+  // Perform float-to-int conversion with truncation (round-to-zero)
+  // behavior.
+  __ add(sp, sp, Operand(-2 * kPointerSize));
+
+  __ fctiwz(double_scratch, double_value);
+  __ stfd(double_scratch, sp, 0);
+#if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
+  __ lwz(int_dst, MemOperand(sp, 0));
+#else
+  __ lwz(int_dst, MemOperand(sp, kPointerSize));
+#endif
+
+  // check for possibility of NaN or +/-Infinity
+  __ addis(scratch1, r0, 0x8000);
+  __ cmp(scratch1, int_dst);
+  __ beq(&underflow);
+  __ add(scratch1, scratch1, Operand(-1));
+  __ cmp(scratch1, int_dst);
+  __ beq(&overflow);
+  __ b(&done);
+
+  // fabricate double representation of INFINITY
+  __ bind(&overflow);
+  __ addis(r0, r0, 0x7ff0);
+#if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
+  __ stw(r0, MemOperand(sp, kPointerSize));
+#else
+  __ stw(r0, MemOperand(sp, 0));
+#endif
+  __ li(r0, Operand(0));
+#if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
+  __ stw(r0, MemOperand(sp, 0));
+#else
+  __ stw(r0, MemOperand(sp, kPointerSize));
+#endif
+  __ lfd(double_scratch, sp, 0);
+  __ fcmpu(double_value, double_scratch);
+  __ bc(&convert_to_zero, BT, 31);  // NaN
+  __ beq(&convert_to_zero);
+
+  // fabricate double representation of 2147483648
+  __ addis(r0, r0, 0x41e0);
+#if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
+  __ stw(r0, MemOperand(sp, kPointerSize));
+#else
+  __ stw(r0, MemOperand(sp, 0));
+#endif
+  __ lfd(double_scratch, sp, 0);
+
+  __ fsub(double_scratch, double_value, double_scratch);
+  __ fctiwz(double_scratch, double_scratch);
+  __ stfd(double_scratch, sp, 0);
+#if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
+  __ lwz(int_dst, MemOperand(sp, 0));
+#else
+  __ lwz(int_dst, MemOperand(sp, kPointerSize));
+#endif
+  __ addis(r0, r0, 0x8000);
+  __ xor_(int_dst, int_dst, r0);
+  __ b(&done);
+
+  // fabricate double representation of -INFINITY
+  __ bind(&underflow);
+  __ addis(r0, r0, 0xfff0);
+#if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
+  __ stw(r0, MemOperand(sp, kPointerSize));
+#else
+  __ stw(r0, MemOperand(sp, 0));
+#endif
+  __ li(r0, Operand(0));
+#if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
+  __ stw(r0, MemOperand(sp, 0));
+#else
+  __ stw(r0, MemOperand(sp, kPointerSize));
+#endif
+  __ lfd(double_scratch, sp, 0);
+  __ fcmpu(double_value, double_scratch);
+  __ bc(&convert_to_zero, BT, 31);  // NaN
+  __ beq(&convert_to_zero);
+  __ b(&done);
+
+  // convert NaN or +/-Infinity to zero
+  __ bind(&convert_to_zero);
+  __ li(int_dst, Operand(0));
+
+  __ bind(&done);
+  __ add(sp, sp, Operand(2 * kPointerSize));
+}
+
+
 void FloatingPointHelper::LoadNumberAsInt32Double(MacroAssembler* masm,
                                                   Register object,
                                                   Destination destination,
@@ -4522,7 +4696,7 @@ void ArgumentsAccessStub::GenerateReadElement(MacroAssembler* masm) {
   // comparison to get negative check for free.
   __ bind(&adaptor);
   __ lwz(r3, MemOperand(r5, ArgumentsAdaptorFrameConstants::kLengthOffset));
-  __ cmp(r4, r3);
+  __ cmpl(r4, r3);
   __ bge(&slow);
 
   // Read the argument from the adaptor frame and return it.
