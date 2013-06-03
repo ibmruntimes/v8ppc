@@ -863,6 +863,32 @@ void FloatingPointHelper::ConvertUnsignedIntToDouble(MacroAssembler* masm,
   }
 }
 
+void FloatingPointHelper::ConvertIntToFloat(MacroAssembler* masm,
+					    const DwVfpRegister dst,
+					    const Register src,
+					    const Register int_scratch)
+{
+  __ sub(sp, sp, Operand(8));  // reserve one temporary double on the stack
+  /* srawi      r0,r3,31
+     stw        r0,24(SP)
+     stw        r3,28(SP)
+     lfd        fp0,24(SP)
+     fcfid      fp1,fp0
+     frsp       fp1,fp1
+  */
+  // sign-extend src to 64-bit and store it to temp double on the stack
+  __ srawi(int_scratch, src, 31);
+  __ stw(int_scratch, MemOperand(sp, 0));
+  __ stw(int_scratch, MemOperand(sp, 4));
+
+  // load sign-extended src into FPR
+  __ lfd(dst, sp, 0);
+
+  __ add(sp, sp, Operand(8));  // restore stack
+
+  __ fcfid(dst, dst);
+  __ frsp(dst, dst); 
+}
 
 void FloatingPointHelper::LoadNumberAsInt32Double(MacroAssembler* masm,
                                                   Register object,

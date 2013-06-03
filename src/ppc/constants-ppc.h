@@ -278,7 +278,8 @@ enum OpcodeExt4 {
   FCTIWZ = 15 << 1,  // Floating Convert to Integer Word with Round to Zero
   MCRFS = 64 << 1,   // Move to Condition Register from FPSCR
   FMR = 72 << 1,     // Floating Move Register
-  FRIM = 488 << 1    // Floating Round to Integer Minus
+  FRIM = 488 << 1,   // Floating Round to Integer Minus
+  FCFID = 846 << 1   // Floating convert from integer doubleword
 };
 
 // Instruction encoding bits and masks.

@@ -1454,6 +1454,12 @@ void Assembler::frsp(const DwVfpRegister frt,
   emit(EXT4 | FRSP | frt.code()*B21 | frb.code()*B11 | rc);
 }
 
+void Assembler::fcfid(const DwVfpRegister frt,
+		      const DwVfpRegister frb,
+		      RCBit rc) {
+  CheckBuffer();
+  emit(EXT4 | FCFID | frt.code()*B21 | frb.code()*B11 | rc);
+}
 
 // Support for VFP.
 

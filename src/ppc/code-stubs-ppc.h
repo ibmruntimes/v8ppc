@@ -754,6 +754,14 @@ class FloatingPointHelper : public AllStatic {
                                          Register dst2,
                                          DwVfpRegister double_scratch);
 
+  // Converts the integer (untagged smi) in |src| to
+  // a float, storing the result in |dst|
+  // Warning: The value in |int_scrach| will be changed in the process!
+  static void ConvertIntToFloat(MacroAssembler* masm,
+				const DwVfpRegister dst,
+				const Register src,
+				const Register int_scratch);
+
   // Load the number from object into double_dst in the double format.
   // Control will jump to not_int32 if the value cannot be exactly represented
   // by a 32-bit integer.

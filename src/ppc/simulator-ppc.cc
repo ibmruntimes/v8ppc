@@ -1885,7 +1885,7 @@ void Simulator::DecodeExt2(Instruction* instr) {
       int rt = instr->RTValue();
       int spr = instr->Bits(20, 11);
       if (spr != 256) {
-        UNIMPLEMENTED();  // Only LR supported
+        UNIMPLEMENTED();  // Only LRLR supported
       }
       set_register(rt, special_reg_lr_);
       break;
@@ -1975,6 +1975,15 @@ void Simulator::DecodeExt4(Instruction* instr) {
       float frt_val = static_cast<float>(frb_val);
       double *p = reinterpret_cast<double*>(&frt_val);
       set_d_register_from_double(frt, *p);
+      return;
+    }
+    case FCFID: {
+      int frt = instr->RTValue();
+      int frb = instr->RBValue();
+      double t_val = get_double_from_d_register(frb);
+      int64_t* frb_val_p = reinterpret_cast<int64_t*>(&t_val);
+      double frt_val = static_cast<double>(*frb_val_p);
+      set_d_register_from_double(frt, frt_val);
       return;
     }
     case FCTIWZ: {
@@ -2452,9 +2461,18 @@ void Simulator::InstructionDecode(Instruction* instr) {
       set_d_register_from_double(frt, static_cast<double>(*dptr));
       break;
     }
-    case LFDU:
-    case STFS: {
+    case LFDU: {
       UNIMPLEMENTED();
+      break;
+    }
+    case STFS: {
+      int frt = instr->RTValue();
+      int ra = instr->RAValue();
+      int32_t offset = (instr->Bits(15, 0) << 16) >> 16;
+      int32_t ra_val = get_register(ra);
+      float frt_val = static_cast<float>(get_double_from_d_register(frt));
+      int32_t *p=  reinterpret_cast<int32_t*>(&frt_val);
+      WriteW(ra_val + offset, *p, instr);
       break;
     }
     case STFSU:

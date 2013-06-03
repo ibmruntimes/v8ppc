@@ -979,29 +979,6 @@ static void GenerateCheckPropertyCells(MacroAssembler* masm,
   }
 }
 
-
-// Convert and store int passed in register ival to IEEE 754 single precision
-// floating point value at memory location (dst + 4 * wordoffset)
-// If VFP3 is available use it for conversion.
-static void StoreIntAsFloat(MacroAssembler* masm,
-                            Register dst,
-                            Register wordoffset,
-                            Register ival,
-                            Register fval,
-                            Register scratch1,
-                            Register scratch2) {
-#ifdef PENGUIN_CLEANUP
-  __ vmov(s0, ival);
-  __ slwi(scratch2, wordoffset, Operand(2));
-  __ add(scratch1, dst, scratch2);
-  __ vcvt_f32_s32(s0, s0);
-  __ vstr(s0, scratch1, 0);
-#else
-  PPCPORT_UNIMPLEMENTED();
-  __ fake_asm(fMASM8);
-#endif
-}
-
 #undef __
 #define __ ACCESS_MASM(masm())
 
@@ -3878,8 +3855,13 @@ void KeyedStoreStubCompiler::GenerateStoreExternalArray(
     case EXTERNAL_FLOAT_ELEMENTS:
       // Perform int-to-float conversion and store to memory.
       __ SmiUntag(r7, key);
-      StoreIntAsFloat(masm, r6, r7, r8, r9, r10, r22);
+      __ slwi(r10, r7, Operand(1));
+      __ add(r10, r6, r10);
+      // r10: efective address of the float element
+      FloatingPointHelper::ConvertIntToFloat(masm, d0, r8, r9);
+      __ stfs(d0, r10, 0);
       break;
+
     case EXTERNAL_DOUBLE_ELEMENTS:
       __ slwi(r10, key, Operand(2));
       __ add(r6, r6, r10);
