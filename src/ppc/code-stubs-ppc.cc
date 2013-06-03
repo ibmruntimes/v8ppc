@@ -735,44 +735,25 @@ void FloatingPointHelper::ConvertNumberToInt32(MacroAssembler* masm,
                                                Register dst,
                                                Register heap_number_map,
                                                Register scratch1,
-                                               Register scratch2,
-                                               Register scratch3,
-                                               DwVfpRegister double_scratch,
+                                               DwVfpRegister double_scratch1,
+                                               DwVfpRegister double_scratch2,
                                                Label* not_number) {
-#ifdef PENGUIN_CLEANUP
   if (FLAG_debug_code) {
     __ AbortIfNotRootValue(heap_number_map,
                            Heap::kHeapNumberMapRootIndex,
                            "HeapNumberMap register clobbered.");
   }
   Label done;
-  Label not_in_int32_range;
 
   __ UntagAndJumpIfSmi(dst, object, &done);
-  __ ldr(scratch1, FieldMemOperand(object, HeapNumber::kMapOffset));
+  __ lwz(scratch1, FieldMemOperand(object, HeapNumber::kMapOffset));
   __ cmp(scratch1, heap_number_map);
   __ b(ne, not_number);
-  __ ConvertToInt32(object,
-                    dst,
-                    scratch1,
-                    scratch2,
-                    double_scratch,
-                    &not_in_int32_range);
-  __ jmp(&done);
 
-  __ bind(&not_in_int32_range);
-  __ ldr(scratch1, FieldMemOperand(object, HeapNumber::kExponentOffset));
-  __ ldr(scratch2, FieldMemOperand(object, HeapNumber::kMantissaOffset));
+  __ lfd(double_scratch1, object, HeapNumber::kValueOffset-kHeapObjectTag);
+  ConvertDoubleToInt(masm, double_scratch1, dst, scratch1, double_scratch2);
 
-  __ EmitOutOfInt32RangeTruncate(dst,
-                                 scratch1,
-                                 scratch2,
-                                 scratch3);
   __ bind(&done);
-#else
-  PPCPORT_UNIMPLEMENTED();
-  __ fake_asm(fMASM14);
-#endif
 }
 
 
@@ -785,6 +766,7 @@ void FloatingPointHelper::ConvertIntToDouble(MacroAssembler* masm,
                                              DwVfpRegister double_scratch) {
   ASSERT(!int_scratch.is(dst1));
   ASSERT(!int_scratch.is(dst2));
+
 
   __ sub(sp, sp, Operand(16));   // reserve two temporary doubles on the stack
 #if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
@@ -895,12 +877,26 @@ void FloatingPointHelper::ConvertDoubleToInt(MacroAssembler* masm,
                                              Register int_dst,
                                              Register scratch1,
                                              DwVfpRegister double_scratch) {
-  Label done, underflow, overflow, convert_to_zero;
+  Label done;
 
   // Perform float-to-int conversion with truncation (round-to-zero)
   // behavior.
   __ add(sp, sp, Operand(-2 * kPointerSize));
 
+  // check NaN or +/-Infinity
+  // by extracting exponent (mask: 0x7ff00000)
+  __ stfd(double_value, sp, 0);
+#if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
+  __ lwz(r0, MemOperand(sp, kPointerSize));
+#else
+  __ lwz(r0, MemOperand(sp, 0));
+#endif
+  __ rlwinm(r0, r0, 12, 21, 31, LeaveRC);
+  __ cmpli(r0, Operand(0x7ff));
+  __ li(int_dst, Operand(0));
+  __ beq(&done);
+
+  // otherwise do the conversion
   __ fctiwz(double_scratch, double_value);
   __ stfd(double_scratch, sp, 0);
 #if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
@@ -908,59 +904,6 @@ void FloatingPointHelper::ConvertDoubleToInt(MacroAssembler* masm,
 #else
   __ lwz(int_dst, MemOperand(sp, kPointerSize));
 #endif
-
-  // check for possibility of NaN or +/-Infinity
-  __ addis(scratch1, r0, 0x8000);
-  __ cmp(scratch1, int_dst);
-  __ beq(&underflow);
-  __ add(scratch1, scratch1, Operand(-1));
-  __ cmp(scratch1, int_dst);
-  __ beq(&overflow);
-  __ b(&done);
-
-  // fabricate double representation of INFINITY
-  __ bind(&overflow);
-  __ addis(r0, r0, 0x7ff0);
-#if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
-  __ stw(r0, MemOperand(sp, kPointerSize));
-#else
-  __ stw(r0, MemOperand(sp, 0));
-#endif
-  __ li(r0, Operand(0));
-#if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
-  __ stw(r0, MemOperand(sp, 0));
-#else
-  __ stw(r0, MemOperand(sp, kPointerSize));
-#endif
-  __ lfd(double_scratch, sp, 0);
-  __ fcmpu(double_value, double_scratch);
-  __ bc(&convert_to_zero, BT, 31);  // NaN
-  __ beq(&convert_to_zero);
-  __ b(&done);
-
-  // fabricate double representation of -INFINITY
-  __ bind(&underflow);
-  __ addis(r0, r0, 0xfff0);
-#if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
-  __ stw(r0, MemOperand(sp, kPointerSize));
-#else
-  __ stw(r0, MemOperand(sp, 0));
-#endif
-  __ li(r0, Operand(0));
-#if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
-  __ stw(r0, MemOperand(sp, 0));
-#else
-  __ stw(r0, MemOperand(sp, kPointerSize));
-#endif
-  __ lfd(double_scratch, sp, 0);
-  __ fcmpu(double_value, double_scratch);
-  __ bc(&convert_to_zero, BT, 31);  // NaN
-  __ beq(&convert_to_zero);
-  __ b(&done);
-
-  // convert NaN or +/-Infinity to zero
-  __ bind(&convert_to_zero);
-  __ li(int_dst, Operand(0));
 
   __ bind(&done);
   __ add(sp, sp, Operand(2 * kPointerSize));
@@ -972,12 +915,26 @@ void FloatingPointHelper::ConvertDoubleToUnsignedInt(MacroAssembler* masm,
                                                Register int_dst,
                                                Register scratch1,
                                                DwVfpRegister double_scratch) {
-  Label done, overflow, underflow, convert_to_zero;
+  Label done;
 
   // Perform float-to-int conversion with truncation (round-to-zero)
   // behavior.
   __ add(sp, sp, Operand(-2 * kPointerSize));
 
+  // check for NaN or +/-Infinity
+  // by extracting exponent (mask: 0x7ff00000)
+  __ stfd(double_value, sp, 0);
+#if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
+  __ lwz(r0, MemOperand(sp, kPointerSize));
+#else
+  __ lwz(r0, MemOperand(sp, 0));
+#endif
+  __ rlwinm(r0, r0, 12, 21, 31, LeaveRC);
+  __ cmpli(r0, Operand(0x7ff));
+  __ li(int_dst, Operand(0));
+  __ beq(&done);
+
+  // otherwise do the conversion
   __ fctiwz(double_scratch, double_value);
   __ stfd(double_scratch, sp, 0);
 #if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
@@ -986,18 +943,14 @@ void FloatingPointHelper::ConvertDoubleToUnsignedInt(MacroAssembler* masm,
   __ lwz(int_dst, MemOperand(sp, kPointerSize));
 #endif
 
-  // check for possibility of NaN or +/-Infinity
+  // check for overflow
   __ addis(scratch1, r0, 0x8000);
-  __ cmp(scratch1, int_dst);
-  __ beq(&underflow);
   __ add(scratch1, scratch1, Operand(-1));
   __ cmp(scratch1, int_dst);
-  __ beq(&overflow);
-  __ b(&done);
+  __ bne(&done);
 
-  // fabricate double representation of INFINITY
-  __ bind(&overflow);
-  __ addis(r0, r0, 0x7ff0);
+  // fabricate double representation of 2147483648
+  __ addis(r0, r0, 0x41e0);
 #if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
   __ stw(r0, MemOperand(sp, kPointerSize));
 #else
@@ -1008,18 +961,6 @@ void FloatingPointHelper::ConvertDoubleToUnsignedInt(MacroAssembler* masm,
   __ stw(r0, MemOperand(sp, 0));
 #else
   __ stw(r0, MemOperand(sp, kPointerSize));
-#endif
-  __ lfd(double_scratch, sp, 0);
-  __ fcmpu(double_value, double_scratch);
-  __ bc(&convert_to_zero, BT, 31);  // NaN
-  __ beq(&convert_to_zero);
-
-  // fabricate double representation of 2147483648
-  __ addis(r0, r0, 0x41e0);
-#if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
-  __ stw(r0, MemOperand(sp, kPointerSize));
-#else
-  __ stw(r0, MemOperand(sp, 0));
 #endif
   __ lfd(double_scratch, sp, 0);
 
@@ -1033,31 +974,6 @@ void FloatingPointHelper::ConvertDoubleToUnsignedInt(MacroAssembler* masm,
 #endif
   __ addis(r0, r0, 0x8000);
   __ xor_(int_dst, int_dst, r0);
-  __ b(&done);
-
-  // fabricate double representation of -INFINITY
-  __ bind(&underflow);
-  __ addis(r0, r0, 0xfff0);
-#if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
-  __ stw(r0, MemOperand(sp, kPointerSize));
-#else
-  __ stw(r0, MemOperand(sp, 0));
-#endif
-  __ li(r0, Operand(0));
-#if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
-  __ stw(r0, MemOperand(sp, 0));
-#else
-  __ stw(r0, MemOperand(sp, kPointerSize));
-#endif
-  __ lfd(double_scratch, sp, 0);
-  __ fcmpu(double_value, double_scratch);
-  __ bc(&convert_to_zero, BT, 31);  // NaN
-  __ beq(&convert_to_zero);
-  __ b(&done);
-
-  // convert NaN or +/-Infinity to zero
-  __ bind(&convert_to_zero);
-  __ li(int_dst, Operand(0));
 
   __ bind(&done);
   __ add(sp, sp, Operand(2 * kPointerSize));
@@ -2677,7 +2593,6 @@ void BinaryOpStub::GenerateFPOperation(MacroAssembler* masm,
   Register right = r3;
   Register scratch1 = r10;
   Register scratch2 = r22;
-  Register scratch3 = r7;
 
   ASSERT(smi_operands || (not_numbers != NULL));
   if (smi_operands && FLAG_debug_code) {
@@ -2770,18 +2685,16 @@ void BinaryOpStub::GenerateFPOperation(MacroAssembler* masm,
                                                   r6,
                                                   heap_number_map,
                                                   scratch1,
-                                                  scratch2,
-                                                  scratch3,
                                                   d0,
+                                                  d1,
                                                   not_numbers);
         FloatingPointHelper::ConvertNumberToInt32(masm,
                                                   right,
                                                   r5,
                                                   heap_number_map,
                                                   scratch1,
-                                                  scratch2,
-                                                  scratch3,
                                                   d0,
+                                                  d1,
                                                   not_numbers);
       }
 
@@ -2849,8 +2762,10 @@ void BinaryOpStub::GenerateFPOperation(MacroAssembler* masm,
       // Convert the int32 in r5 to the heap number in r3. As
       // mentioned above SHR needs to always produce a positive result.
       if (op_ == Token::SHR) {
-        PPCPORT_UNIMPLEMENTED();
-        __ fake_asm(fMASM2);
+        FloatingPointHelper::ConvertUnsignedIntToDouble(
+          masm, r5, FloatingPointHelper::kFPRegisters,
+          d0, r7, r7,  // r7 unused as we're using kFPRegisters
+          d2);
       } else {
         FloatingPointHelper::ConvertIntToDouble(
           masm, r5, FloatingPointHelper::kFPRegisters,
