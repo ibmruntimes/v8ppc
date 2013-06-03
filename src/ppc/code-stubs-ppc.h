@@ -754,6 +754,24 @@ class FloatingPointHelper : public AllStatic {
                                          Register dst2,
                                          DwVfpRegister double_scratch);
 
+  // Converts the double in |double_value| to an integer, storing the
+  // result in |int_dst|.
+  // Warning: The value in |double_value| will be changed in the process!
+  static void ConvertDoubleToInt(MacroAssembler* masm,
+                                 DwVfpRegister double_value,
+                                 Register int_dst,
+                                 Register scratch1,
+                                 DwVfpRegister double_scratch);
+
+  // Converts the double in |double_value| to an unsigned integer,
+  // storing the result in |int_dst|.
+  // Warning: The value in |double_value| will be changed in the process!
+  static void ConvertDoubleToUnsignedInt(MacroAssembler* masm,
+                                         DwVfpRegister double_value,
+                                         Register int_dst,
+                                         Register scratch1,
+                                         DwVfpRegister double_scratch);
+
   // Load the number from object into double_dst in the double format.
   // Control will jump to not_int32 if the value cannot be exactly represented
   // by a 32-bit integer.

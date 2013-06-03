@@ -3937,17 +3937,16 @@ void KeyedStoreStubCompiler::GenerateStoreExternalArray(
         __ mr(r8, value);
         __ lfd(d0, r8, HeapNumber::kValueOffset-kHeapObjectTag);
 
-        // Perform float-to-int conversion with truncation (round-to-zero)
-        // behavior.
-        __ fctiwz(d0, d0);
-        __ add(sp, sp, Operand(-2 * kPointerSize));
-        __ stfd(d0, sp, 0);
-#if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
-        __ lwz(r8, MemOperand(sp, 0));
-#else
-        __ lwz(r8, MemOperand(sp, kPointerSize));
-#endif
-        __ add(sp, sp, Operand(2 * kPointerSize));
+        if (elements_kind == EXTERNAL_UNSIGNED_INT_ELEMENTS) {
+            // Perform float-to-uint conversion with truncation (round-to-zero)
+            // behavior.
+            FloatingPointHelper::ConvertDoubleToUnsignedInt(masm, d0, r8, r9,
+                                                            d1);
+        } else {
+            // Perform float-to-int conversion with truncation (round-to-zero)
+            // behavior.
+            FloatingPointHelper::ConvertDoubleToInt(masm, d0, r8, r9, d1);
+        }
 
         switch (elements_kind) {
           case EXTERNAL_BYTE_ELEMENTS:
