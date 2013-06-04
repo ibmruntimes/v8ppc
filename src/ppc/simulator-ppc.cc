@@ -1629,20 +1629,36 @@ void Simulator::DecodeExt2(Instruction* instr) {
       int rs = instr->RSValue();
       int ra = instr->RAValue();
       int rb = instr->RBValue();
+      int rc = instr->Bit(0);
       uint32_t rs_val = get_register(rs);
       uint32_t rb_val = get_register(rb);
-      uint32_t result = rs_val >> rb_val;
+      int32_t  result = rs_val >> rb_val;
       set_register(ra, result);
+      if (rc) {
+        int bf = 0;
+        if (result < 0) { bf |= 0x80000000; }
+        if (result > 0) { bf |= 0x40000000; }
+        if (result == 0) { bf |= 0x20000000; }
+        condition_reg_ = (condition_reg_ & ~0xF0000000) | bf;
+      }
       return;
     }
     case SRAW: {
       int rs = instr->RSValue();
       int ra = instr->RAValue();
       int rb = instr->RBValue();
+      int rc = instr->Bit(0);
       int32_t rs_val = get_register(rs);
       int32_t rb_val = get_register(rb);
       int32_t result = rs_val >> rb_val;
       set_register(ra, result);
+      if (rc) {
+        int bf = 0;
+        if (result < 0) { bf |= 0x80000000; }
+        if (result > 0) { bf |= 0x40000000; }
+        if (result == 0) { bf |= 0x20000000; }
+        condition_reg_ = (condition_reg_ & ~0xF0000000) | bf;
+      }
       return;
     }
     case SRAWIX: {
