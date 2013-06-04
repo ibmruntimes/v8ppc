@@ -2242,7 +2242,7 @@ void UnaryOpStub::GenerateHeapNumberCodeBitNot(
 
   // Do the bitwise operation and check if the result fits in a smi.
   Label try_float;
-  __ mvn(r4, Operand(r4));
+  __ neg(r4, r4);
   __ add(r5, r4, Operand(0x40000000), SetCC);
   __ b(mi, &try_float);
 
@@ -2272,7 +2272,8 @@ void UnaryOpStub::GenerateHeapNumberCodeBitNot(
     // This can't go slow-case because it's the same number we already
     // converted once again.
     __ ConvertToInt32(r3, r4, r6, r7, d0, &impossible);
-    __ mvn(r4, Operand(r4));
+    // Negate the result.
+    __ neg(r4, r4);
 
     __ bind(&heapnumber_allocated);
     __ mr(r3, r5);  // Move newly allocated heap number to r0.
