@@ -2738,7 +2738,7 @@ void MacroAssembler::EmitECMATruncate(Register result,
 void MacroAssembler::GetLeastBitsFromSmi(Register dst,
                                          Register src,
                                          int num_least_bits) {
-  rlwinm(dst, src, 31, 31 - num_least_bits, 31);
+  rlwinm(dst, src, 31, 32 - num_least_bits, 31);
 }
 
 
