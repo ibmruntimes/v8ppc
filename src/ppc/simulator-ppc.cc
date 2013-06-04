@@ -2086,7 +2086,8 @@ void Simulator::InstructionDecode(Instruction* instr) {
     PrintF("%05d  0x%08x  %s\n", icount_,
            reinterpret_cast<intptr_t>(instr), buffer.start());
   }
-  switch (instr->OpcodeValue() << 26) {
+  int opcode = instr->OpcodeValue() << 26;
+  switch (opcode) {
     case TWI: {
       // used for call redirection in simulation mode
       SoftwareInterrupt(instr);
@@ -2343,150 +2344,160 @@ void Simulator::InstructionDecode(Instruction* instr) {
       DecodeExt2(instr);
       break;
     }
+
+    case LWZU:
     case LWZ: {
       int ra = instr->RAValue();
       int rt = instr->RTValue();
-      int32_t ra_val = get_register(ra);
+      int32_t ra_val = ra == 0 ? 0 : get_register(ra);
       int offset = (instr->Bits(15, 0) << 16) >> 16;
-      if (ra != 0) {
-        offset += ra_val;
+      set_register(rt, ReadW(ra_val+offset, instr));
+      if (opcode == LWZU) {
+	ASSERT(ra != 0);
+	set_register(ra, ra_val+offset);
       }
-      set_register(rt, ReadW(offset, instr));
       break;
     }
-    case LWZU: {
-      int ra = instr->RAValue();
-      int rt = instr->RTValue();
-      int32_t ra_val = get_register(ra);
-      int offset = (instr->Bits(15, 0) << 16) >> 16;
-      if (ra != 0) {
-        offset += ra_val;
-        set_register(ra, offset);
-      }
-      set_register(rt, ReadW(offset, instr));
-      break;
-    }
+
+    case LBZU:
     case LBZ: {
       int ra = instr->RAValue();
       int rt = instr->RTValue();
-      int32_t ra_val = get_register(ra);
+      int32_t ra_val = ra == 0 ? 0 : get_register(ra);
       int offset = (instr->Bits(15, 0) << 16) >> 16;
-      if (ra != 0) {
-        offset += ra_val;
+      set_register(rt, ReadB(ra_val+offset) & 0xFF);
+      if (opcode == LBZU) {
+	ASSERT(ra != 0);
+	set_register(ra, ra_val+offset);
       }
-      set_register(rt, ReadB(offset) & 0xFF);
       break;
     }
-    case LBZU:
+   
+    case STWU:
     case STW: {
       int ra = instr->RAValue();
       int rs = instr->RSValue();
-      int32_t ra_val = get_register(ra);
+      int32_t ra_val = ra == 0 ? 0 : get_register(ra);
       int32_t rs_val = get_register(rs);
       int offset = (instr->Bits(15, 0) << 16) >> 16;
-      if (ra != 0) {
-        offset += ra_val;
+      WriteW(ra_val+offset, rs_val, instr);
+      if (opcode == STWU) {
+	ASSERT(ra != 0);
+	set_register(ra, ra_val+offset);
       }
-      WriteW(offset, rs_val, instr);
       // printf("r%d %08x -> %08x\n", rs, rs_val, offset); // 0xdead
       break;
     }
-    case STWU: {
-      int ra = instr->RAValue();
-      int rs = instr->RSValue();
-      int32_t ra_val = get_register(ra);
-      int32_t rs_val = get_register(rs);
-      int offset = (instr->Bits(15, 0) << 16) >> 16;
-      if (ra != 0) {
-        offset += ra_val;
-        set_register(ra, offset);
-      }
-      WriteW(offset, rs_val, instr);
-      break;
-    }
+
+    case STBU:
     case STB: {
       int ra = instr->RAValue();
       int rs = instr->RSValue();
-      int32_t ra_val = get_register(ra);
+      int32_t ra_val = ra == 0 ? 0 : get_register(ra);
       int8_t rs_val = get_register(rs);
       int offset = (instr->Bits(15, 0) << 16) >> 16;
-      if (ra != 0) {
-        offset += ra_val;
+      WriteB(ra_val+offset, rs_val);
+      if (opcode == STBU) {
+	ASSERT(ra != 0);
+	set_register(ra, ra_val+offset);
       }
-      WriteB(offset, rs_val);
       break;
     }
-    case STBU:
+
+    case LHZU:
     case LHZ: {
       int ra = instr->RAValue();
       int rt = instr->RTValue();
-      int32_t ra_val = get_register(ra);
+      int32_t ra_val = ra == 0 ? 0 : get_register(ra);
       int offset = (instr->Bits(15, 0) << 16) >> 16;
-      if (ra != 0) {
-        offset += ra_val;
-      }
-      uint32_t result = ReadHU(offset, instr) & 0xffff;
+      uint32_t result = ReadHU(ra_val+offset, instr) & 0xffff;
       set_register(rt, result);
+      if (opcode == LHZU) {
+	ASSERT(ra != 0);
+	set_register(ra, ra_val+offset);
+      }
       break;
     }
-    case LHZU:
+   
     case LHA:
-    case LHAU:
+    case LHAU: {
+      UNIMPLEMENTED();
+      break;
+    }
+
+    case STHU:
     case STH: {
       int ra = instr->RAValue();
       int rs = instr->RSValue();
-      int32_t ra_val = get_register(ra);
+      int32_t ra_val = ra == 0 ? 0 : get_register(ra);
       int16_t rs_val = get_register(rs);
       int offset = (instr->Bits(15, 0) << 16) >> 16;
-      if (ra != 0) {
-        offset += ra_val;
+      WriteH(ra_val+offset, rs_val, instr);
+      if (opcode == STHU) {
+	ASSERT(ra != 0);
+	set_register(ra, ra_val+offset);
       }
-      WriteH(offset, rs_val, instr);
       break;
     }
-    case STHU:
+ 
     case LMW:
-    case STMW:
+    case STMW: {
+      UNIMPLEMENTED();
+      break;
+    }
+
+    case LFSU:
     case LFS: {
       UNIMPLEMENTED();
       break;
     }
-    case LFSU:
+   
+    case LFDU:
     case LFD: {
       int frt = instr->RTValue();
       int ra = instr->RAValue();
       int32_t offset = (instr->Bits(15, 0) << 16) >> 16;
-      int32_t ra_val = get_register(ra);
+      int32_t ra_val = ra == 0 ? 0 : get_register(ra);
       double *dptr = reinterpret_cast<double*>(ReadDW(ra_val + offset));
       set_d_register_from_double(frt, static_cast<double>(*dptr));
+      if (opcode == LFDU) {
+	ASSERT(ra != 0);
+	set_register(ra, ra_val+offset);
+      }
       break;
     }
-    case LFDU: {
-      UNIMPLEMENTED();
-      break;
-    }
-    case STFS: {
+   
+    case STFSU: {
+    case STFS: 
       int frt = instr->RTValue();
       int ra = instr->RAValue();
       int32_t offset = (instr->Bits(15, 0) << 16) >> 16;
-      int32_t ra_val = get_register(ra);
+      int32_t ra_val = ra == 0 ? 0 : get_register(ra);
       float frt_val = static_cast<float>(get_double_from_d_register(frt));
       int32_t *p=  reinterpret_cast<int32_t*>(&frt_val);
       WriteW(ra_val + offset, *p, instr);
+      if (opcode == STFSU) {
+	ASSERT(ra != 0);
+	set_register(ra, ra_val+offset);
+      }
       break;
     }
-    case STFSU:
+    case STFDU:
     case STFD: {
       int frt = instr->RTValue();
       int ra = instr->RAValue();
       int32_t offset = (instr->Bits(15, 0) << 16) >> 16;
-      int32_t ra_val = get_register(ra);
+      int32_t ra_val = ra == 0 ? 0 : get_register(ra);
       double frt_val = get_double_from_d_register(frt);
       int32_t *p =  reinterpret_cast<int32_t *>(&frt_val);
       WriteDW(ra_val + offset, (int32_t)(p[0]), (int32_t)(p[1]));
+      if (opcode == STFDU) {
+	ASSERT(ra != 0);
+	set_register(ra, ra_val+offset);
+      }
       break;
     }
-    case STFDU:
+ 
     case EXT3:
     case EXT4: {
       DecodeExt4(instr);
