@@ -783,6 +783,10 @@ void Assembler::xor_(Register dst, Register src1, Register src2, RCBit rc) {
   x_form(EXT2 | XORX, dst, src1, src2, rc);
 }
 
+void Assembler::cntlzw_(Register ra, Register rs, RCBit rc) {
+  x_form(EXT2 | CNTLZWX, ra, rs, r0, rc);
+}
+
 void Assembler::and_(Register ra, Register rs, Register rb, RCBit rc) {
   x_form(EXT2 | ANDX, ra, rs, rb, rc);
 }

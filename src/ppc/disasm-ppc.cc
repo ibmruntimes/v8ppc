@@ -751,6 +751,10 @@ void Decoder::DecodeExt2(Instruction* instr) {
       Format(instr, "addc'.   'rt,'ra,'rb");
       break;
     }
+    case CNTLZWX: {
+      Format(instr, "cntlzw'. 'ra,'rs");
+      break;
+    }
     case ANDX: {
       Format(instr, "and'o    'ra,'rs,'rb");
       break;

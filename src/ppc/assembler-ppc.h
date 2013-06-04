@@ -946,6 +946,8 @@ class Assembler : public AssemblerBase {
 
   void xori(Register dst, Register src, const Operand& imm);
   void xor_(Register dst, Register src1, Register src2, RCBit rc = LeaveRC);
+
+  void cntlzw_(Register dst, Register src, RCBit rc = LeaveRC);
   // end PowerPC
 
   void and_(Register dst, Register src1, const Operand& src2,
