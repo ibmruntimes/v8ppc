@@ -1991,15 +1991,13 @@ void Simulator::DecodeExt4(Instruction* instr) {
       int frb = instr->RBValue();
       double frb_val = get_double_from_d_register(frb);
       int64_t frt_val;
-/*
-      if (frb_val < 0.0) {
-        frb_val *= -1.0;
-        frt_val = (int64_t)frb_val;
-        frt_val *= -1;
+      if (frb_val > 0x7fffffff) {
+        frt_val = 0x7fffffff;
+      } else if (frb_val < -0x7fffffff) {
+        frt_val = 0x80000000;
       } else {
-*/
         frt_val = (int64_t)frb_val;
-//      }
+      }
       double *p = reinterpret_cast<double*>(&frt_val);
       set_d_register_from_double(frt, *p);
       return;
