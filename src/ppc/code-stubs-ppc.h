@@ -758,9 +758,9 @@ class FloatingPointHelper : public AllStatic {
   // a float, storing the result in |dst|
   // Warning: The value in |int_scrach| will be changed in the process!
   static void ConvertIntToFloat(MacroAssembler* masm,
-				const DwVfpRegister dst,
-				const Register src,
-				const Register int_scratch);
+                                const DwVfpRegister dst,
+                                const Register src,
+                                const Register int_scratch);
 
   // Converts the double in |double_value| to an integer, storing the
   // result in |int_dst|.

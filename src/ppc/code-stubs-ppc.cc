@@ -864,10 +864,9 @@ void FloatingPointHelper::ConvertUnsignedIntToDouble(MacroAssembler* masm,
 }
 
 void FloatingPointHelper::ConvertIntToFloat(MacroAssembler* masm,
-					    const DwVfpRegister dst,
-					    const Register src,
-					    const Register int_scratch)
-{
+                                            const DwVfpRegister dst,
+                                            const Register src,
+                                            const Register int_scratch) {
   __ sub(sp, sp, Operand(8));  // reserve one temporary double on the stack
   /* srawi      r0,r3,31
      stw        r0,24(SP)
@@ -887,7 +886,7 @@ void FloatingPointHelper::ConvertIntToFloat(MacroAssembler* masm,
   __ add(sp, sp, Operand(8));  // restore stack
 
   __ fcfid(dst, dst);
-  __ frsp(dst, dst); 
+  __ frsp(dst, dst);
 }
 
 void FloatingPointHelper::ConvertDoubleToInt(MacroAssembler* masm,

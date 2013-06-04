@@ -1455,8 +1455,8 @@ void Assembler::frsp(const DwVfpRegister frt,
 }
 
 void Assembler::fcfid(const DwVfpRegister frt,
-		      const DwVfpRegister frb,
-		      RCBit rc) {
+                      const DwVfpRegister frb,
+                      RCBit rc) {
   CheckBuffer();
   emit(EXT4 | FCFID | frt.code()*B21 | frb.code()*B11 | rc);
 }

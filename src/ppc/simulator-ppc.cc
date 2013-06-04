@@ -2353,8 +2353,8 @@ void Simulator::InstructionDecode(Instruction* instr) {
       int offset = (instr->Bits(15, 0) << 16) >> 16;
       set_register(rt, ReadW(ra_val+offset, instr));
       if (opcode == LWZU) {
-	ASSERT(ra != 0);
-	set_register(ra, ra_val+offset);
+        ASSERT(ra != 0);
+        set_register(ra, ra_val+offset);
       }
       break;
     }
@@ -2367,12 +2367,12 @@ void Simulator::InstructionDecode(Instruction* instr) {
       int offset = (instr->Bits(15, 0) << 16) >> 16;
       set_register(rt, ReadB(ra_val+offset) & 0xFF);
       if (opcode == LBZU) {
-	ASSERT(ra != 0);
-	set_register(ra, ra_val+offset);
+        ASSERT(ra != 0);
+        set_register(ra, ra_val+offset);
       }
       break;
     }
-   
+
     case STWU:
     case STW: {
       int ra = instr->RAValue();
@@ -2382,8 +2382,8 @@ void Simulator::InstructionDecode(Instruction* instr) {
       int offset = (instr->Bits(15, 0) << 16) >> 16;
       WriteW(ra_val+offset, rs_val, instr);
       if (opcode == STWU) {
-	ASSERT(ra != 0);
-	set_register(ra, ra_val+offset);
+        ASSERT(ra != 0);
+        set_register(ra, ra_val+offset);
       }
       // printf("r%d %08x -> %08x\n", rs, rs_val, offset); // 0xdead
       break;
@@ -2398,8 +2398,8 @@ void Simulator::InstructionDecode(Instruction* instr) {
       int offset = (instr->Bits(15, 0) << 16) >> 16;
       WriteB(ra_val+offset, rs_val);
       if (opcode == STBU) {
-	ASSERT(ra != 0);
-	set_register(ra, ra_val+offset);
+        ASSERT(ra != 0);
+        set_register(ra, ra_val+offset);
       }
       break;
     }
@@ -2413,12 +2413,12 @@ void Simulator::InstructionDecode(Instruction* instr) {
       uint32_t result = ReadHU(ra_val+offset, instr) & 0xffff;
       set_register(rt, result);
       if (opcode == LHZU) {
-	ASSERT(ra != 0);
-	set_register(ra, ra_val+offset);
+        ASSERT(ra != 0);
+        set_register(ra, ra_val+offset);
       }
       break;
     }
-   
+
     case LHA:
     case LHAU: {
       UNIMPLEMENTED();
@@ -2434,12 +2434,12 @@ void Simulator::InstructionDecode(Instruction* instr) {
       int offset = (instr->Bits(15, 0) << 16) >> 16;
       WriteH(ra_val+offset, rs_val, instr);
       if (opcode == STHU) {
-	ASSERT(ra != 0);
-	set_register(ra, ra_val+offset);
+        ASSERT(ra != 0);
+        set_register(ra, ra_val+offset);
       }
       break;
     }
- 
+
     case LMW:
     case STMW: {
       UNIMPLEMENTED();
@@ -2451,7 +2451,7 @@ void Simulator::InstructionDecode(Instruction* instr) {
       UNIMPLEMENTED();
       break;
     }
-   
+
     case LFDU:
     case LFD: {
       int frt = instr->RTValue();
@@ -2461,14 +2461,14 @@ void Simulator::InstructionDecode(Instruction* instr) {
       double *dptr = reinterpret_cast<double*>(ReadDW(ra_val + offset));
       set_d_register_from_double(frt, static_cast<double>(*dptr));
       if (opcode == LFDU) {
-	ASSERT(ra != 0);
-	set_register(ra, ra_val+offset);
+        ASSERT(ra != 0);
+        set_register(ra, ra_val+offset);
       }
       break;
     }
-   
+
     case STFSU: {
-    case STFS: 
+    case STFS:
       int frt = instr->RTValue();
       int ra = instr->RAValue();
       int32_t offset = (instr->Bits(15, 0) << 16) >> 16;
@@ -2477,8 +2477,8 @@ void Simulator::InstructionDecode(Instruction* instr) {
       int32_t *p=  reinterpret_cast<int32_t*>(&frt_val);
       WriteW(ra_val + offset, *p, instr);
       if (opcode == STFSU) {
-	ASSERT(ra != 0);
-	set_register(ra, ra_val+offset);
+        ASSERT(ra != 0);
+        set_register(ra, ra_val+offset);
       }
       break;
     }
@@ -2492,12 +2492,12 @@ void Simulator::InstructionDecode(Instruction* instr) {
       int32_t *p =  reinterpret_cast<int32_t *>(&frt_val);
       WriteDW(ra_val + offset, (int32_t)(p[0]), (int32_t)(p[1]));
       if (opcode == STFDU) {
-	ASSERT(ra != 0);
-	set_register(ra, ra_val+offset);
+        ASSERT(ra != 0);
+        set_register(ra, ra_val+offset);
       }
       break;
     }
- 
+
     case EXT3:
     case EXT4: {
       DecodeExt4(instr);
