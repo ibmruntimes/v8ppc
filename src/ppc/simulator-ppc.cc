@@ -1781,11 +1781,6 @@ void Simulator::DecodeExt2(Instruction* instr) {
       break;
     }
     case CNTLZWX: {
-
-      // Temporary to find relevant tests
-      PrintF("Hit CNTLZW\n");
-      UNIMPLEMENTED();
-
       int rs = instr->RSValue();
       int ra = instr->RAValue();
       uint32_t rs_val = get_register(rs);
