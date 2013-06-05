@@ -1223,7 +1223,7 @@ void FloatingPointHelper::CallCCodeForDoubleOperation(
   __ stw(r4, MemOperand(sp, 4));
   __ lfd(d1, sp, 0);
 
-// ENDIAN - r3/r4 are in memory order
+// ENDIAN - r5/r6 are in memory order
   __ stw(r5, MemOperand(sp, 0));
   __ stw(r6, MemOperand(sp, 4));
   __ lfd(d2, sp, 0);
@@ -3403,7 +3403,7 @@ void BinaryOpStub::GenerateHeapResultAllocation(MacroAssembler* masm,
     __ b(&allocated);
     __ bind(&skip_allocation);
     // Use object holding the overwritable operand for result.
-    __ mov(result, Operand(overwritable_operand));
+    __ mr(result, overwritable_operand);
     __ bind(&allocated);
   } else {
     ASSERT(mode_ == NO_OVERWRITE);

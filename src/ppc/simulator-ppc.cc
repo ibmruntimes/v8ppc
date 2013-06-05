@@ -988,10 +988,10 @@ ReturnType Simulator::GetFromFPRegister(int reg_index) {
 
 
 // For use in calls that take two double values which are currently
-// in r3-r6 and need to move to d1 and d2
+// in d1 and d2
 void Simulator::GetFpArgs(double* x, double* y) {
-  *x = fp_register[1];  // this is probably wrong - but unused
-  *y = fp_register[2];
+  *x = get_double_from_d_register(1);
+  *y = get_double_from_d_register(2);
 }
 
 // For use in calls that take one double value, constructed either
