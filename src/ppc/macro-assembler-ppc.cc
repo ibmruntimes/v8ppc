@@ -3384,38 +3384,7 @@ void MacroAssembler::InitializeFieldsWithFiller(Register start_offset,
 void MacroAssembler::CountLeadingZeros(Register zeros,   // Answer.
                                        Register source,  // Input.
                                        Register scratch) {
-  ASSERT(!zeros.is(source) || !source.is(scratch));
-  ASSERT(!zeros.is(scratch));
-  ASSERT(!scratch.is(ip));
-  ASSERT(!source.is(ip));
-  ASSERT(!zeros.is(ip));
-#ifdef CAN_USE_ARMV5_INSTRUCTIONS
-  clz(zeros, source);  // This instruction is only supported after ARM5.
-#else
-  // Order of the next two lines is important: zeros register
-  // can be the same as source register.
-  Move(scratch, source);
-  mov(zeros, Operand(0, RelocInfo::NONE));
-  // Top 16.
-  tst(scratch, Operand(0xffff0000));
-  add(zeros, zeros, Operand(16), LeaveCC, eq);
-  mov(scratch, Operand(scratch, LSL, 16), LeaveCC, eq);
-  // Top 8.
-  tst(scratch, Operand(0xff000000));
-  add(zeros, zeros, Operand(8), LeaveCC, eq);
-  mov(scratch, Operand(scratch, LSL, 8), LeaveCC, eq);
-  // Top 4.
-  tst(scratch, Operand(0xf0000000));
-  add(zeros, zeros, Operand(4), LeaveCC, eq);
-  mov(scratch, Operand(scratch, LSL, 4), LeaveCC, eq);
-  // Top 2.
-  tst(scratch, Operand(0xc0000000));
-  add(zeros, zeros, Operand(2), LeaveCC, eq);
-  mov(scratch, Operand(scratch, LSL, 2), LeaveCC, eq);
-  // Top bit.
-  tst(scratch, Operand(0x80000000u));
-  add(zeros, zeros, Operand(1), LeaveCC, eq);
-#endif
+  cntlzw_(zeros, source);
 }
 
 

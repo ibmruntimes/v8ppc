@@ -1780,6 +1780,28 @@ void Simulator::DecodeExt2(Instruction* instr) {
       set_register(ra, result);
       break;
     }
+    case CNTLZWX: {
+      int rs = instr->RSValue();
+      int ra = instr->RAValue();
+      uint32_t rs_val = get_register(rs);
+      uint32_t count  = 0;
+      int      n      = 0;
+      uint32_t bit    = 0x80000000;
+      for (; n < 32; n++) {
+          if (bit & rs_val)
+              break;
+          count++;
+          bit >>= 1;
+      }
+      set_register(ra, count);
+      if (instr->Bit(0)) {  // RCBit set
+        int bf = 0;
+        if (count > 0)  { bf |= 0x40000000; }
+        if (count == 0) { bf |= 0x20000000; }
+        condition_reg_ = (condition_reg_ & ~0xF0000000) | bf;
+      }
+      break;
+    }
     case ANDX: {
       int rs = instr->RSValue();
       int ra = instr->RAValue();
