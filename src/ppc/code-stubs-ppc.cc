@@ -2155,7 +2155,8 @@ void UnaryOpStub::GenerateSmiCodeBitNot(MacroAssembler* masm,
 
   // Flip bits and revert inverted smi-tag.
   ASSERT(kSmiTagMask == 1);
-  __ neg(r3, r3);
+  __ li(r0, Operand(-1));
+  __ xor_(r3, r3, r0);
   __ rlwinm(r3, r3, 0, 0, 30);
   __ Ret();
 }
@@ -2242,7 +2243,8 @@ void UnaryOpStub::GenerateHeapNumberCodeBitNot(
 
   // Do the bitwise operation and check if the result fits in a smi.
   Label try_float;
-  __ neg(r4, r4);
+  __ li(r0, Operand(-1));
+  __ xor_(r4, r4, r0);
   __ add(r5, r4, Operand(0x40000000), SetCC);
   __ b(mi, &try_float);
 
@@ -2272,8 +2274,8 @@ void UnaryOpStub::GenerateHeapNumberCodeBitNot(
     // This can't go slow-case because it's the same number we already
     // converted once again.
     __ ConvertToInt32(r3, r4, r6, r7, d0, &impossible);
-    // Negate the result.
-    __ neg(r4, r4);
+    __ li(r0, Operand(-1));
+    __ xor_(r4, r4, r0);
 
     __ bind(&heapnumber_allocated);
     __ mr(r3, r5);  // Move newly allocated heap number to r0.
