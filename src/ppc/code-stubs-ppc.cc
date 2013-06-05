@@ -2516,9 +2516,9 @@ void BinaryOpStub::GenerateSmiSmiOperation(MacroAssembler* masm) {
 
       // Perform division by shifting.
       __ CountLeadingZeros(scratch1, scratch1, scratch2);
-      __ li(scratch2, Operand(31));
+      __ li(scratch2, Operand(33));
       __ sub(scratch1, scratch2, scratch1);
-      __ slw(right, left, scratch1);
+      __ sraw(right, left, scratch1);
       __ Ret();
       break;
     case Token::MOD:
