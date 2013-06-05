@@ -2470,101 +2470,31 @@ void MacroAssembler::ConvertToInt32(Register source,
                                     Register scratch2,
                                     DwVfpRegister double_scratch,
                                     Label *not_int32) {
-  // penguin: this one seems not converted, should we add a marker here?
+  add(sp, sp, Operand(-2 * kPointerSize));
 
-#ifdef PENGUIN_CLEANUP
-  if (CpuFeatures::IsSupported(VFP2)) {
-    CpuFeatures::Scope scope(VFP2);
-    sub(scratch, source, Operand(kHeapObjectTag));
-    vldr(double_scratch, scratch, HeapNumber::kValueOffset);
-    vcvt_s32_f64(double_scratch.low(), double_scratch);
-    vmov(dest, double_scratch.low());
-    // Signed vcvt instruction will saturate to the minimum (0x80000000) or
-    // maximun (0x7fffffff) signed 32bits integer when the double is out of
-    // range. When substracting one, the minimum signed integer becomes the
-    // maximun signed integer.
-    sub(scratch, dest, Operand(1));
-    cmp(scratch, Operand(LONG_MAX - 1));
-    // If equal then dest was LONG_MAX, if greater dest was LONG_MIN.
-    b(ge, not_int32);
-  } else {
+  // Retrieve double from heap
+  lfd(double_scratch, source, HeapNumber::kValueOffset-kHeapObjectTag);
+
+  // Convert
+  fctiwz(double_scratch, double_scratch);
+  stfd(double_scratch, sp, 0);
+#if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
+  lwz(dest, MemOperand(sp, 0));
 #else
-  PPCPORT_UNIMPLEMENTED();  // penguin: implement using PPC 64-bit FPR
+  lwz(dest, MemOperand(sp, kPointerSize));
 #endif
-    // This code is faster for doubles that are in the ranges -0x7fffffff to
-    // -0x40000000 or 0x40000000 to 0x7fffffff. This corresponds almost to
-    // the range of signed int32 values that are not Smis.  Jumps to the label
-    // 'not_int32' if the double isn't in the range -0x80000000.0 to
-    // 0x80000000.0 (excluding the endpoints).
-    Label right_exponent, done;
-    // Get exponent word.
-    lwz(scratch, FieldMemOperand(source, HeapNumber::kExponentOffset));
-    // Get exponent alone in scratch2.
-    Ubfx(scratch2,
-         scratch,
-         HeapNumber::kExponentShift,
-         HeapNumber::kExponentBits);
-    // Load dest with zero.  We use this either for the final shift or
-    // for the answer.
-    mov(dest, Operand(0, RelocInfo::NONE));
-    // Check whether the exponent matches a 32 bit signed int that is not a Smi.
-    // A non-Smi integer is 1.xxx * 2^30 so the exponent is 30 (biased). This is
-    // the exponent that we are fastest at and also the highest exponent we can
-    // handle here.
-    const uint32_t non_smi_exponent = HeapNumber::kExponentBias + 30;
-    // The non_smi_exponent, 0x41d, is too big for ARM's immediate field so we
-    // split it up to avoid a constant pool entry.  You can't do that in general
-    // for cmp because of the overflow flag, but we know the exponent is in the
-    // range 0-2047 so there is no overflow.
-    int fudge_factor = 0x400;
-    sub(scratch2, scratch2, Operand(fudge_factor));
-    cmp(scratch2, Operand(non_smi_exponent - fudge_factor));
-    // If we have a match of the int32-but-not-Smi exponent then skip some
-    // logic.
-    beq(&right_exponent);
-    // If the exponent is higher than that then go to slow case.  This catches
-    // numbers that don't fit in a signed int32, infinities and NaNs.
-    b(gt, not_int32);
 
-    // We know the exponent is smaller than 30 (biased).  If it is less than
-    // 0 (biased) then the number is smaller in magnitude than 1.0 * 2^0, i.e.
-    // it rounds to zero.
-    const uint32_t zero_exponent = HeapNumber::kExponentBias + 0;
-    sub(scratch2, scratch2, Operand(zero_exponent - fudge_factor), SetCC);
-    // Dest already has a Smi zero.
-    b(lt, &done);
+  add(sp, sp, Operand(2 * kPointerSize));
 
-    // We have an exponent between 0 and 30 in scratch2.  Subtract from 30 to
-    // get how much to shift down.
-    rsb(dest, scratch2, Operand(30));
-
-    bind(&right_exponent);
-    // Get the top bits of the mantissa.
-    and_(scratch2, scratch, Operand(HeapNumber::kMantissaMask));
-    // Put back the implicit 1.
-    orr(scratch2, scratch2, Operand(1 << HeapNumber::kExponentShift));
-    // Shift up the mantissa bits to take up the space the exponent used to
-    // take. We just orred in the implicit bit so that took care of one and
-    // we want to leave the sign bit 0 so we subtract 2 bits from the shift
-    // distance.
-    const int shift_distance = HeapNumber::kNonMantissaBitsInTopWord - 2;
-    mov(scratch2, Operand(scratch2, LSL, shift_distance));
-    // Put sign in zero flag.
-    tst(scratch, Operand(HeapNumber::kSignMask));
-    // Get the second half of the double. For some exponents we don't
-    // actually need this because the bits get shifted out again, but
-    // it's probably slower to test than just to do it.
-    lwz(scratch, FieldMemOperand(source, HeapNumber::kMantissaOffset));
-    // Shift down 22 bits to get the last 10 bits.
-    orr(scratch, scratch2, Operand(scratch, LSR, 32 - shift_distance));
-    // Move down according to the exponent.
-    mov(dest, Operand(scratch, LSR, dest));
-    // Fix sign if sign bit was set.
-    rsb(dest, dest, Operand(0, RelocInfo::NONE), LeaveCC, ne);
-    bind(&done);
-#ifdef PENGUIN_CLEANUP
-  }
-#endif
+  // fctiwz instruction will saturate to the minimum (0x80000000) or
+  // maximum (0x7fffffff) signed 32bits integer when the double is out of
+  // range. When substracting one, the minimum signed integer becomes the
+  // maximun signed integer.
+  add(scratch, dest, Operand(-1));
+  mov(scratch2, Operand(LONG_MAX - 1));
+  cmp(scratch, scratch2);
+  // If equal then dest was LONG_MAX, if greater dest was LONG_MIN.
+  bge(not_int32);
 }
 
 

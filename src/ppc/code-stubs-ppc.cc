@@ -2238,18 +2238,21 @@ void UnaryOpStub::GenerateHeapNumberCodeBitNot(
   Label impossible;
 
   EmitCheckForHeapNumber(masm, r3, r4, r9, slow);
-  // Convert the heap number is r3 to an untagged integer in r4.
+  // Convert the heap number in r3 to an untagged integer in r4.
   __ ConvertToInt32(r3, r4, r5, r6, d0, slow);
 
   // Do the bitwise operation and check if the result fits in a smi.
   Label try_float;
   __ li(r0, Operand(-1));
   __ xor_(r4, r4, r0);
-  __ add(r5, r4, Operand(0x40000000), SetCC);
-  __ b(mi, &try_float);
+
+  __ mov(r5, Operand(0x40000000));
+  __ add(r5, r4, r5);
+  __ cmpi(r5, Operand(0));
+  __ blt(&try_float);
 
   // Tag the result as a smi and we're done.
-  __ mov(r3, Operand(r4, LSL, kSmiTagSize));
+  __ SmiTag(r3, r4);
   __ Ret();
 
   // Try to store the result in a heap number.
@@ -2258,14 +2261,14 @@ void UnaryOpStub::GenerateHeapNumberCodeBitNot(
     Label slow_allocate_heapnumber, heapnumber_allocated;
     // Allocate a new heap number without zapping r0, which we need if it fails.
     __ AllocateHeapNumber(r5, r6, r7, r9, &slow_allocate_heapnumber);
-    __ jmp(&heapnumber_allocated);
+    __ b(&heapnumber_allocated);
 
     __ bind(&slow_allocate_heapnumber);
     {
       FrameScope scope(masm, StackFrame::INTERNAL);
       __ push(r3);  // Push the heap number, not the untagged int32.
       __ CallRuntime(Runtime::kNumberAlloc, 0);
-      __ mov(r5, r3);  // Move the new heap number into r5.
+      __ mr(r5, r3);  // Move the new heap number into r5.
       // Get the heap number into r3, now that the new heap number is in r5.
       __ pop(r3);
     }
@@ -2281,13 +2284,13 @@ void UnaryOpStub::GenerateHeapNumberCodeBitNot(
     __ mr(r3, r5);  // Move newly allocated heap number to r0.
   }
 
-    // Convert the int32 in r4 to the heap number in r3.
-    FloatingPointHelper::ConvertIntToDouble(
+  // Convert the int32 in r4 to the heap number in r3.
+  FloatingPointHelper::ConvertIntToDouble(
       masm, r4, FloatingPointHelper::kFPRegisters,
       d0, r7, r7,  // r7 unused as we're using kFPRegisters
       d2);
-    __ stfd(d0, r3, HeapNumber::kValueOffset-kHeapObjectTag);
-    __ Ret();
+  __ stfd(d0, r3, HeapNumber::kValueOffset-kHeapObjectTag);
+  __ Ret();
 
   __ bind(&impossible);
   if (FLAG_debug_code) {
