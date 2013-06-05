@@ -860,7 +860,7 @@ void FloatingPointHelper::ConvertIntToFloat(MacroAssembler* masm,
   // sign-extend src to 64-bit and store it to temp double on the stack
   __ srawi(int_scratch, src, 31);
   __ stw(int_scratch, MemOperand(sp, 0));
-  __ stw(int_scratch, MemOperand(sp, 4));
+  __ stw(src, MemOperand(sp, 4));
 
   // load sign-extended src into FPR
   __ lfd(dst, sp, 0);

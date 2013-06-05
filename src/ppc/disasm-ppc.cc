@@ -836,19 +836,19 @@ void Decoder::DecodeExt2(Instruction* instr) {
 void Decoder::DecodeExt4(Instruction* instr) {
   switch (instr->Bits(10, 1) << 1) {
     case FCMPU: {
-      Format(instr, "fcmpu     'Da, 'Db");
+      Format(instr, "fcmpu   'Da, 'Db");
       break;
     }
     case FRSP: {
-      Format(instr, "frsp     'Dt, 'Db");
+      Format(instr, "frsp    'Dt, 'Db");
       break;
     }
     case FCFID: {
-      Format(instr, "fcfid    'Dt, 'Db");
+      Format(instr, "fcfid   'Dt, 'Db");
       break;
     }
     case FCTIWZ: {
-      Format(instr, "fctiwz    'Dt, 'Db");
+      Format(instr, "fctiwz  'Dt, 'Db");
       break;
     }
     case FDIV: {
