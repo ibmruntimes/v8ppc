@@ -3854,14 +3854,12 @@ void KeyedStoreStubCompiler::GenerateStoreExternalArray(
       break;
     case EXTERNAL_FLOAT_ELEMENTS:
       // Perform int-to-float conversion and store to memory.
-      __ SmiUntag(r7, key);
-      __ slwi(r10, r7, Operand(1));
+      __ slwi(r10, key, Operand(1));
       __ add(r10, r6, r10);
       // r10: efective address of the float element
       FloatingPointHelper::ConvertIntToFloat(masm, d0, r8, r9);
       __ stfs(d0, r10, 0);
       break;
-
     case EXTERNAL_DOUBLE_ELEMENTS:
       __ slwi(r10, key, Operand(2));
       __ add(r6, r6, r10);

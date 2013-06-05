@@ -689,10 +689,22 @@ void Decoder::DecodeExt1(Instruction* instr) {
       }
       break;
     }
-    case CRNOR:
-    case RFI:
-    case CRANDC:
-    case ISYNC:
+    case CRNOR: {
+      Format(instr, "crnor (stuff)");
+      break;
+    }
+    case RFI: {
+      Format(instr, "rfi (stuff)");
+      break;
+    }
+    case CRANDC: {
+      Format(instr, "crandc (stuff)");
+      break;
+    }
+    case ISYNC: {
+      Format(instr, "isync (stuff)");
+      break;
+    }
     case CRXOR: {
       Format(instr, "crxor (stuff)");
       break;
@@ -824,7 +836,11 @@ void Decoder::DecodeExt4(Instruction* instr) {
       break;
     }
     case FRSP: {
-      Format(instr, "frsp      'Dt, 'Db");
+      Format(instr, "frsp     'Dt, 'Db");
+      break;
+    }
+    case FCFID: {
+      Format(instr, "fcfid    'Dt, 'Db");
       break;
     }
     case FCTIWZ: {
@@ -884,7 +900,10 @@ int Decoder::InstructionDecode(byte* instr_ptr) {
       PrintSoftwareInterrupt(instr->SvcValue());
       break;
     }
-    case MULLI:
+    case MULLI: {
+      Unknown(instr);
+      break;
+    }
     case SUBFIC: {
       Format(instr, "subfic  'rt, 'ra, 'int16");
       break;
@@ -901,7 +920,10 @@ int Decoder::InstructionDecode(byte* instr_ptr) {
       Format(instr, "addic   'rt, 'ra, 'int16");
       break;
     }
-    case ADDICx:
+    case ADDICx: {
+      Unknown(instr);
+      break;
+    }
     case ADDI: {
       if ( instr->RAValue() == 0 ) {
         // this is load immediate
@@ -963,7 +985,10 @@ int Decoder::InstructionDecode(byte* instr_ptr) {
       }
       break;
     }
-    case SC:
+    case SC: {
+      Unknown(instr);
+      break;
+    }
     case BX: {
       Format(instr, "b'l'a 'target26");
       break;
@@ -980,17 +1005,26 @@ int Decoder::InstructionDecode(byte* instr_ptr) {
       Format(instr, "rlwinm'. 'ra,'rs,'sh,'me,'mb");
       break;
     }
-    case RLWNMX:
+    case RLWNMX: {
+      Unknown(instr);
+      break;
+    }
     case ORI: {
       Format(instr, "ori.    'ra, 'rs, 'uint16");
       break;
     }
-    case ORIS:
+    case ORIS: {
+      Unknown(instr);
+      break;
+    }
     case XORI: {
       Format(instr, "xori.   'ra, 'rs, 'uint16");
       break;
     }
-    case XORIS:
+    case XORIS: {
+      Unknown(instr);
+      break;
+    }
     case ANDIx: {
       Format(instr, "andi.   'ra, 'rs, 'uint16");
       break;
@@ -1012,7 +1046,10 @@ int Decoder::InstructionDecode(byte* instr_ptr) {
       Format(instr, "lbz     'rt, 'int16('ra)");
       break;
     }
-    case LBZU:
+    case LBZU: {
+      Format(instr, "lbzu    'rt, 'int16('ra)");
+      break;
+    }
     case STW: {
       Format(instr, "stw     'rs, 'int16('ra)");
       break;
@@ -1025,35 +1062,71 @@ int Decoder::InstructionDecode(byte* instr_ptr) {
       Format(instr, "stb     'rs, 'int16('ra)");
       break;
     }
-    case STBU:
+    case STBU: {
+      Format(instr, "stbu    'rs, 'int16('ra)");
+      break;
+    }
     case LHZ: {
       Format(instr, "lhz     'rt, 'int16('ra)");
       break;
     }
-    case LHZU:
-    case LHA:
-    case LHAU:
+    case LHZU: {
+      Format(instr, "lhzu    'rt, 'int16('ra)");
+      break;
+    }
+    case LHA: {
+      Format(instr, "lha     'rt, 'int16('ra)");
+      break;
+    }
+    case LHAU: {
+      Format(instr, "lhau    'rt, 'int16('ra)");
+      break;
+    }
     case STH: {
       Format(instr, "sth 'rs, 'int16('ra)");
       break;
     }
-    case STHU:
+    case STHU: {
+      Format(instr, "sthu 'rs, 'int16('ra)");
+      break;
+    }
     case LMW:
-    case STMW:
-    case LFS:
-    case LFSU:
+    case STMW: {
+      Unknown(instr);
+      break;
+    }
+    case LFS: {
+      Format(instr, "lfs     'Dt, 'int16('ra)");
+      break;
+    }
+    case LFSU: {
+      Format(instr, "lfsu    'Dt, 'int16('ra)");
+      break;
+    }
     case LFD: {
       Format(instr, "lfd     'Dt, 'int16('ra)");
       break;
     }
-    case LFDU:
-    case STFS:
-    case STFSU:
+    case LFDU: {
+      Format(instr, "lfdu    'Dt, 'int16('ra)");
+      break;
+    }
+    case STFS: {
+      Format(instr, "stfs    'Dt, 'int16('ra)");
+      break;
+    }
+    case STFSU: {
+      Format(instr, "stfsu   'Dt, 'int16('ra)");
+      break;
+    }
     case STFD: {
       Format(instr, "stfd    'Dt, 'int16('ra)");
       break;
     }
-    case STFDU:
+    case STFDU: {
+      Format(instr, "stfdu   'Dt, 'int16('ra)");
+      break;
+    }
     case EXT3:
     case EXT4: {
       DecodeExt4(instr);

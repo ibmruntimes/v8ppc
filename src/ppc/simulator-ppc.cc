@@ -2462,7 +2462,17 @@ void Simulator::InstructionDecode(Instruction* instr) {
 
     case LFSU:
     case LFS: {
-      UNIMPLEMENTED();
+     int frt = instr->RTValue();
+      int ra = instr->RAValue();
+      int32_t offset = (instr->Bits(15, 0) << 16) >> 16;
+      int32_t ra_val = ra == 0 ? 0 : get_register(ra);
+      int32_t val = ReadW(ra_val + offset, instr);
+      float *fptr = reinterpret_cast<float*>(&val);
+      set_d_register_from_double(frt, static_cast<double>(*fptr));
+      if (opcode == LFSU) {
+        ASSERT(ra != 0);
+        set_register(ra, ra_val+offset);
+      }
       break;
     }
 
