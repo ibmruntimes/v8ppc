@@ -775,6 +775,10 @@ void Decoder::DecodeExt2(Instruction* instr) {
       Format(instr, "cmpl    'ra,'rb");
       break;
     }
+    case NEGX: {
+      Format(instr, "neg'.    'rt,'ra");
+      break;
+    }
     case SUBFX: {
       Format(instr, "subf'.   'rt,'ra,'rb");
       break;
