@@ -1030,14 +1030,17 @@ int Decoder::InstructionDecode(byte* instr_ptr) {
       break;
     }
     case XORIS: {
-      Unknown(instr);
+      Format(instr, "xoris   'ra, 'rs, 'uint16");
       break;
     }
     case ANDIx: {
       Format(instr, "andi.   'ra, 'rs, 'uint16");
       break;
     }
-    case ANDISx:
+    case ANDISx: {
+      Format(instr, "andis.  'ra, 'rs, 'uint16");
+      break;
+    }
     case EXT2: {
       DecodeExt2(instr);
       break;

@@ -2345,25 +2345,25 @@ void Simulator::InstructionDecode(Instruction* instr) {
     }
     case RLWNMX:
     case ORI: {
-      int rt = instr->RTValue();
+      int rs = instr->RSValue();
       int ra = instr->RAValue();
-      int32_t ra_val = get_register(ra);
+      int32_t rs_val = get_register(rs);
       uint32_t im_val = instr->Bits(15, 0);
-      int32_t alu_out = ra_val | im_val;
-      set_register(rt, alu_out);
+      int32_t alu_out = rs_val | im_val;
+      set_register(ra, alu_out);
       break;
     }
     case ORIS: {
-      int rt = instr->RTValue();
+      int rs = instr->RSValue();
       int ra = instr->RAValue();
-      int32_t ra_val = get_register(ra);
+      int32_t rs_val = get_register(rs);
       uint32_t im_val = instr->Bits(15, 0);
-      int32_t alu_out = ra_val | (im_val << 16);
-      set_register(rt, alu_out);
+      int32_t alu_out = rs_val | (im_val << 16);
+      set_register(ra, alu_out);
       break;
     }
     case XORI: {
-      int rs= instr->RSValue();
+      int rs = instr->RSValue();
       int ra = instr->RAValue();
       int32_t rs_val = get_register(rs);
       uint32_t im_val = instr->Bits(15, 0);
@@ -2372,9 +2372,17 @@ void Simulator::InstructionDecode(Instruction* instr) {
       // todo - set condition based SO bit
       break;
     }
-    case XORIS:
+    case XORIS: {
+      int rs = instr->RSValue();
+      int ra = instr->RAValue();
+      int32_t rs_val = get_register(rs);
+      uint32_t im_val = instr->Bits(15, 0);
+      int32_t alu_out = rs_val ^ (im_val << 16);
+      set_register(ra, alu_out);
+      break;
+    }
     case ANDIx: {
-      int rs= instr->RSValue();
+      int rs = instr->RSValue();
       int ra = instr->RAValue();
       int32_t rs_val = get_register(rs);
       uint32_t im_val = instr->Bits(15, 0);
@@ -2383,7 +2391,20 @@ void Simulator::InstructionDecode(Instruction* instr) {
       // todo - set condition based SO bit
       break;
     }
-    case ANDISx:
+    case ANDISx: {
+      int rs = instr->RSValue();
+      int ra = instr->RAValue();
+      int32_t rs_val = get_register(rs);
+      uint32_t im_val = instr->Bits(15, 0);
+      int32_t alu_out = rs_val & (im_val << 16);
+      set_register(ra, alu_out);
+      int bf = 0;
+      if (alu_out < 0) { bf |= 0x80000000; }
+      if (alu_out > 0) { bf |= 0x40000000; }
+      if (alu_out == 0) { bf |= 0x20000000; }
+      condition_reg_ = (condition_reg_ & ~0xF0000000) | bf;
+      break;
+    }
     case EXT2: {
       DecodeExt2(instr);
       break;

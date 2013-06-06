@@ -2179,10 +2179,11 @@ Handle<Code> CallStubCompiler::CompileMathAbsCall(
 
   // Do bitwise not or do nothing depending on the sign of the
   // argument.
-  __ eor(r4, r3, Operand(r3, ASR, kBitsPerInt - 1));
+  __ srawi(r0, r3, kBitsPerInt - 1);
+  __ xor_(r4, r3, r0);
 
   // Add 1 or do nothing depending on the sign of the argument.
-  __ sub(r3, r4, Operand(r3, ASR, kBitsPerInt - 1), SetCC);
+    __ sub(r3, r4, r0);
 
   // If the result is still negative, go to the slow case.
   // This only happens for the most negative smi.
@@ -2202,7 +2203,7 @@ Handle<Code> CallStubCompiler::CompileMathAbsCall(
   // Check the sign of the argument. If the argument is positive,
   // just return it.
   Label negative_sign;
-  __ tst(r4, Operand(HeapNumber::kSignMask));
+  __ andis(r0, r4, Operand(HeapNumber::kSignMask >> 16));
   __ bne(&negative_sign);
   __ Drop(argc + 1);
   __ Ret();
@@ -2210,7 +2211,8 @@ Handle<Code> CallStubCompiler::CompileMathAbsCall(
   // If the argument is negative, clear the sign, and return a new
   // number.
   __ bind(&negative_sign);
-  __ eor(r4, r4, Operand(HeapNumber::kSignMask));
+  STATIC_ASSERT(HeapNumber::kSignMask == 0x80000000u);
+  __ xoris(r4, r4, Operand(HeapNumber::kSignMask >> 16));
   __ lwz(r6, FieldMemOperand(r3, HeapNumber::kMantissaOffset));
   __ LoadRoot(r9, Heap::kHeapNumberMapRootIndex);
   __ AllocateHeapNumber(r3, r7, r8, r9, &slow);

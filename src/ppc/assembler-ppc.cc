@@ -779,6 +779,14 @@ void Assembler::rsb(Register dst, Register src1, const Operand& src2,
 void Assembler::xori(Register dst, Register src, const Operand& imm) {
   d_form(XORI, dst, src, imm.imm32_);
 }
+
+void Assembler::xoris(Register ra, Register rs, const Operand& imm) {
+  int imm16 = imm.imm32_;
+  ASSERT(is_int16(imm16) || is_uint16(imm16));
+  imm16 &= kImm16Mask;
+  d_form(XORIS, rs, ra, imm16);
+}
+
 void Assembler::xor_(Register dst, Register src1, Register src2, RCBit rc) {
   x_form(EXT2 | XORX, dst, src1, src2, rc);
 }
@@ -904,8 +912,15 @@ void  Assembler::andi(Register ra, Register rs, const Operand& imm) {
   d_form(ANDIx, rs, ra, imm16);
 }
 
-void Assembler::ori(Register dst, Register src, const Operand& imm) {
-  d_form(ORI, dst, src, imm.imm32_);
+void Assembler::andis(Register ra, Register rs, const Operand& imm) {
+  int imm16 = imm.imm32_;
+  ASSERT(is_int16(imm16) || is_uint16(imm16));
+  imm16 &= kImm16Mask;
+  d_form(ANDISx, rs, ra, imm16);
+}
+
+void Assembler::ori(Register ra, Register rs, const Operand& imm) {
+  d_form(ORI, ra, rs, imm.imm32_);
 }
 
 void Assembler::oris(Register dst, Register src, const Operand& imm) {
