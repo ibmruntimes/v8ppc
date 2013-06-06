@@ -2544,77 +2544,80 @@ void MacroAssembler::EmitOutOfInt32RangeTruncate(Register result,
                                                  Register input_high,
                                                  Register input_low,
                                                  Register scratch) {
-#ifdef PENGUIN_CLEANUP
-  Label done, normal_exponent, restore_sign;
+  Label done, high_shift_needed, pos_shift, neg_shift, shift_done;
 
-  // Extract the biased exponent in result.
-  Ubfx(result,
-       input_high,
-       HeapNumber::kExponentShift,
-       HeapNumber::kExponentBits);
+  li(result, Operand(0));
 
-  // Check for Infinity and NaNs, which should return 0.
-  cmp(result, Operand(HeapNumber::kExponentMask));
-  mov(result, Operand(0), LeaveCC, eq);
+  // check for NaN or +/-Infinity
+  // by extracting exponent (mask: 0x7ff00000)
+  STATIC_ASSERT(HeapNumber::kExponentMask == 0x7ff00000u);
+  rlwinm(scratch, input_high, 12, 21, 31, LeaveRC);
+  cmpli(scratch, Operand(0x7ff));
   beq(&done);
 
   // Express exponent as delta to (number of mantissa bits + 31).
-  sub(result,
-      result,
-      Operand(HeapNumber::kExponentBias + HeapNumber::kMantissaBits + 31),
-      SetCC);
+  add(scratch,
+      scratch,
+      Operand(-(HeapNumber::kExponentBias + HeapNumber::kMantissaBits + 31)));
 
   // If the delta is strictly positive, all bits would be shifted away,
   // which means that we can return 0.
-  b(le, &normal_exponent);
-  mov(result, Operand(0));
-  b(&done);
+  cmpi(scratch, Operand(0));
+  bgt(&done);
 
-  bind(&normal_exponent);
   const int kShiftBase = HeapNumber::kNonMantissaBitsInTopWord - 1;
   // Calculate shift.
-  add(scratch, result, Operand(kShiftBase + HeapNumber::kMantissaBits), SetCC);
+  add(scratch, scratch, Operand(kShiftBase + HeapNumber::kMantissaBits));
 
   // Save the sign.
+  STATIC_ASSERT(HeapNumber::kSignMask == 0x80000000u);
   Register sign = result;
   result = no_reg;
-  and_(sign, input_high, Operand(HeapNumber::kSignMask));
+  rlwinm(sign, input_high, 0, 0, 0, LeaveRC);
+
+  // Shifts >= 32 bits should result in zero.
+  // slw extracts only the 6 most significant bits of the shift value.
+  cmpi(scratch, Operand(32));
+  blt(&high_shift_needed);
+  li(input_high, Operand(0));
+  subfic(scratch, scratch, Operand(32));
+  b(&neg_shift);
 
   // Set the implicit 1 before the mantissa part in input_high.
-  orr(input_high,
-      input_high,
-      Operand(1 << HeapNumber::kMantissaBitsInTopWord));
+  bind(&high_shift_needed);
+  STATIC_ASSERT(HeapNumber::kMantissaBitsInTopWord >= 16);
+  oris(input_high,
+       input_high,
+       Operand(1 << ((HeapNumber::kMantissaBitsInTopWord) - 16)));
   // Shift the mantissa bits to the correct position.
   // We don't need to clear non-mantissa bits as they will be shifted away.
   // If they weren't, it would mean that the answer is in the 32bit range.
-  mov(input_high, Operand(input_high, LSL, scratch));
+  slw(input_high, input_high, scratch);
+  subfic(scratch, scratch, Operand(32));
+  b(&pos_shift);
 
   // Replace the shifted bits with bits from the lower mantissa word.
-  Label pos_shift, shift_done;
-  rsb(scratch, scratch, Operand(32), SetCC);
-  b(&pos_shift, ge);
 
-  // Negate scratch.
-  rsb(scratch, scratch, Operand(0));
-  mov(input_low, Operand(input_low, LSL, scratch));
+  bind(&neg_shift);
+  neg(scratch, scratch);
+  slw(input_low, input_low, scratch);
   b(&shift_done);
 
   bind(&pos_shift);
-  mov(input_low, Operand(input_low, LSR, scratch));
+  srw(input_low, input_low, scratch);
 
   bind(&shift_done);
-  orr(input_high, input_high, Operand(input_low));
+  orx(input_high, input_high, input_low);
+
   // Restore sign if necessary.
   cmpi(sign, Operand(0));
   result = sign;
   sign = no_reg;
-  rsb(result, input_high, Operand(0), LeaveCC, ne);
-  mov(result, input_high, LeaveCC, eq);
+  mr(result, input_high);
+  beq(&done);
+  neg(result, result);
+
   bind(&done);
-#else
-  PPCPORT_UNIMPLEMENTED();
-  fake_asm(fMASM15);
-#endif
 }
 
 

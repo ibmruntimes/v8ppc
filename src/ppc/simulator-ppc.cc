@@ -2351,9 +2351,17 @@ void Simulator::InstructionDecode(Instruction* instr) {
       uint32_t im_val = instr->Bits(15, 0);
       int32_t alu_out = ra_val | im_val;
       set_register(rt, alu_out);
-      // todo - set condition based SO bit
+      break;
     }
-    case ORIS:
+    case ORIS: {
+      int rt = instr->RTValue();
+      int ra = instr->RAValue();
+      int32_t ra_val = get_register(ra);
+      uint32_t im_val = instr->Bits(15, 0);
+      int32_t alu_out = ra_val | (im_val << 16);
+      set_register(rt, alu_out);
+      break;
+    }
     case XORI: {
       int rs= instr->RSValue();
       int ra = instr->RAValue();

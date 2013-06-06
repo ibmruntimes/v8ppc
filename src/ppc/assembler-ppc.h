@@ -912,6 +912,7 @@ class Assembler : public AssemblerBase {
 
   void andi(Register ra, Register rs, const Operand& imm);
   void ori(Register dst, Register src, const Operand& imm);
+  void oris(Register dst, Register src, const Operand& imm);
   void orx(Register dst, Register src1, Register src2, RCBit r = LeaveRC);
   void cmpi(Register src1, const Operand& src2);
   void cmpli(Register src1, const Operand& src2);
