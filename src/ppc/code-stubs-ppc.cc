@@ -3230,7 +3230,7 @@ void BinaryOpStub::GenerateInt32Stub(MacroAssembler* masm) {
       // Store the result.
       __ sub(r3, heap_number_result, Operand(kHeapObjectTag));
       __ stfd(double_scratch, r3, HeapNumber::kValueOffset);
-      __ mov(r3, heap_number_result);
+      __ mr(r3, heap_number_result);
       __ Ret();
 
       break;
@@ -7914,7 +7914,7 @@ void ProfileEntryHookStub::Generate(MacroAssembler* masm) {
   // Align the stack if necessary.
   int frame_alignment = masm->ActivationFrameAlignment();
   if (frame_alignment > kPointerSize) {
-    __ mov(r8, sp);
+    __ mr(r8, sp);
     ASSERT(IsPowerOf2(frame_alignment));
     __ and_(sp, sp, Operand(-frame_alignment));
   }

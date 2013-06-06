@@ -2166,7 +2166,7 @@ void FullCodeGenerator::EmitVariableAssignment(Variable* var,
       __ stw(result_register(), location);
       if (var->IsContextSlot()) {
         // RecordWrite may destroy all its register arguments.
-        __ mov(r6, result_register());
+        __ mr(r6, result_register());
         int offset = Context::SlotOffset(var->index());
         __ RecordWriteContextSlot(
             r4, offset, r6, r5, kLRHasBeenSaved, kDontSaveFPRegs);
@@ -2729,7 +2729,7 @@ void FullCodeGenerator::EmitIsStringWrapperSafeForDefaultValueOf(
   // Calculate location of the first key name.
   __ add(r7, r7, Operand(DescriptorArray::kFirstOffset - kHeapObjectTag));
   // Calculate the end of the descriptor array.
-  __ mov(r5, r7);
+  __ mr(r5, r7);
   __ slwi(ip, r6, Operand(kPointerSizeLog2 - kSmiTagSize));
   __ add(r5, r5, ip);
 

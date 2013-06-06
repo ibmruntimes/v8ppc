@@ -1430,7 +1430,7 @@ void MacroAssembler::ThrowUncatchable(Register value) {
 
   // The exception is expected in r3.
   if (!value.is(r3)) {
-    mov(r3, value);
+    mr(r3, value);
   }
   // Drop the stack pointer to the top of the top stack handler.
   mov(r6, Operand(ExternalReference(Isolate::kHandlerAddress, isolate())));

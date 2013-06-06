@@ -1450,7 +1450,7 @@ void Builtins::Generate_FunctionCall(MacroAssembler* masm) {
 
       __ push(r5);
       __ InvokeBuiltin(Builtins::TO_OBJECT, CALL_FUNCTION);
-      __ mov(r5, r3);
+      __ mr(r5, r3);
 
       __ pop(r3);
       __ srawi(r3, r3, kSmiTagSize);
