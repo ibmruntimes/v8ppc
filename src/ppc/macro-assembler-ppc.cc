@@ -543,14 +543,13 @@ void MacroAssembler::RememberedSetHelper(Register object,  // For debug tests.
   // Call stub on end of buffer.
   // Check for end of buffer.
   mov(r0, Operand(StoreBuffer::kStoreBufferOverflowBit));
-  and_(r0, scratch, r0);
-  cmpi(r0, Operand(0));
+  and_(r0, scratch, r0, SetRC);
 
   if (and_then == kFallThroughAtEnd) {
-    beq(&done);
+    bc(&done, BT, 2);
   } else {
     ASSERT(and_then == kReturnAtEnd);
-    b(eq, &done);
+    bc(&done, BT, 2);
   }
   mflr(r0);
   push(r0);
@@ -1648,9 +1647,8 @@ void MacroAssembler::LoadFromNumberDictionary(Label* miss,
       SeededNumberDictionary::kElementsStartOffset + 2 * kPointerSize;
   lwz(t1, FieldMemOperand(t2, kDetailsOffset));
   mov(ip, Operand(Smi::FromInt(PropertyDetails::TypeField::kMask)));
-  and_(r0, t1, ip);
-  cmpi(r0, Operand(0));
-  bne(miss);
+  and_(r0, t1, ip, SetRC);
+  bc(miss, BF, 2);
 
   // Get the value at the masked, scaled index and return.
   const int kValueOffset =
@@ -3034,9 +3032,8 @@ void MacroAssembler::JumpIfNotPowerOfTwoOrZero(
   cmpi(reg, Operand(0));
   blt(not_power_of_two_or_zero);
   sub(scratch, reg, Operand(1));
-  and_(r0, scratch, reg);
-  cmpi(scratch, Operand(0));
-  bne(not_power_of_two_or_zero);
+  and_(r0, scratch, reg, SetRC);
+  bc(not_power_of_two_or_zero, BF, 2);
 }
 
 
@@ -3048,9 +3045,8 @@ void MacroAssembler::JumpIfNotPowerOfTwoOrZeroAndNeg(
   sub(scratch, reg, Operand(1));
   cmpi(reg, Operand(0));
   blt(zero_and_neg);
-  and_(r0, scratch, reg);
-  cmpi(scratch, Operand(0));
-  bne(not_power_of_two);
+  and_(r0, scratch, reg, SetRC);
+  bc(not_power_of_two, BF, 2);
 }
 
 
@@ -3566,13 +3562,12 @@ void MacroAssembler::CheckPageFlag(
   and_(scratch, object, r0);
   lwz(scratch, MemOperand(scratch, MemoryChunk::kFlagsOffset));
   li(r0, Operand(mask));
-  and_(r0, r0, scratch);
-  cmpi(r0, Operand(0));
+  and_(r0, r0, scratch, SetRC);
   if (cc == ne) {
-    bne(condition_met);
+    bc(condition_met, BF, 2);
   }
   if (cc == eq) {
-    beq(condition_met);
+    bc(condition_met, BT, 2);
   }
 }
 
@@ -3674,18 +3669,16 @@ void MacroAssembler::EnsureNotWhite(
   // Since both black and grey have a 1 in the first position and white does
   // not have a 1 there we only need to check one bit.
   lwz(load_scratch, MemOperand(bitmap_scratch, MemoryChunk::kHeaderSize));
-  and_(r0, mask_scratch, load_scratch, LeaveRC);
-  cmpi(r0, Operand(0));
-  bne(&done);
+  and_(r0, mask_scratch, load_scratch, SetRC);
+  bc(&done, BF, 2);
 
   if (emit_debug_code()) {
     // Check for impossible bit pattern.
     Label ok;
     // LSL may overflow, making the check conservative.
     slwi(r0, mask_scratch, Operand(1));
-    and_(r0, load_scratch, r0, LeaveRC);
-    cmpi(r0, Operand(0));
-    beq(&ok);
+    and_(r0, load_scratch, r0, SetRC);
+    bc(&ok, BT, 2);
     stop("Impossible marking bit pattern");
     bind(&ok);
   }

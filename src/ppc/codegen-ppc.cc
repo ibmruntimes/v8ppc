@@ -390,9 +390,8 @@ void StringCharLoadGenerator::Generate(MacroAssembler* masm,
   // Dispatch on the indirect string shape: slice or cons.
   Label cons_string;
   __ mov(ip, Operand(kSlicedNotConsMask));
-  __ and_(r0, result, ip, LeaveRC);
-  __ cmpi(r0, Operand(0));
-  __ beq(&cons_string);
+  __ and_(r0, result, ip, SetRC);
+  __ bc(&cons_string, BT, 2);
 
   // Handle slices.
   Label indirect_string_loaded;

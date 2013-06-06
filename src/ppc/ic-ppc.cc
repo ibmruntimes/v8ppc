@@ -152,9 +152,8 @@ static void GenerateDictionaryLoad(MacroAssembler* masm,
   __ lwz(scratch1, FieldMemOperand(scratch2, kDetailsOffset));
   __ mr(r0, scratch2);
   __ mov(scratch2, Operand(PropertyDetails::TypeField::kMask << kSmiTagSize));
-  __ and_(scratch2, scratch1, scratch2);
-  __ cmpi(scratch2, Operand(0));
-  __ bne(miss);
+  __ and_(scratch2, scratch1, scratch2, SetRC);
+  __ bc(miss, BF, 2);
   __ mr(scratch2, r0);
 
   // Get the value at the masked, scaled index and return.
@@ -208,9 +207,8 @@ static void GenerateDictionaryStore(MacroAssembler* masm,
   __ lwz(scratch1, FieldMemOperand(scratch2, kDetailsOffset));
   __ mr(r0, scratch2);
   __ mov(scratch2, Operand(kTypeAndReadOnlyMask));
-  __ and_(scratch2, scratch1, scratch2);
-  __ cmpi(scratch2, Operand(0));
-  __ bne(miss);
+  __ and_(scratch2, scratch1, scratch2, SetRC);
+  __ bc(miss, BF, 2);
   __ mr(scratch2, r0);
 
   // Store the value at the masked, scaled index and return.
@@ -383,7 +381,7 @@ static void GenerateKeyStringCheck(MacroAssembler* masm,
   __ lwz(hash, FieldMemOperand(key, String::kHashFieldOffset));
   __ mov(r8, Operand(String::kContainsCachedArrayIndexMask));
   __ and_(r0, hash, r8, SetRC);
-  __ beq(index_string);
+  __ bc(index_string, BT, 2);
 
   // Is the string a symbol?
   // map: key map
@@ -792,9 +790,8 @@ static MemOperand GenerateMappedArgumentsLookup(MacroAssembler* masm,
 
   // Check that the key is a positive smi.
   __ mov(scratch1, Operand(0x80000001));
-  __ and_(r0, key, scratch1);
-  __ cmpi(r0, Operand(0));
-  __ bne(slow_case);
+  __ and_(r0, key, scratch1, SetRC);
+  __ bc(slow_case, BF, 2);
 
   // Load the elements into scratch1 and check its map.
   Handle<Map> arguments_map(heap->non_strict_arguments_elements_map());

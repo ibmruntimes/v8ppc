@@ -2525,9 +2525,8 @@ void BinaryOpStub::GenerateSmiSmiOperation(MacroAssembler* masm) {
       // Check for positive and no remainder (scratch1 contains right - 1).
       __ mov(r0, Operand(0x80000000u));
       __ orx(scratch2, scratch1, r0);
-      __ and_(r0, left, scratch2);
-      __ cmpi(r0, Operand(0));
-      __ bne(&not_smi_result);
+      __ and_(r0, left, scratch2, SetRC);
+      __ bc(&not_smi_result, BF, 2);
 
       // Perform division by shifting.
       __ CountLeadingZeros(scratch1, scratch1, scratch2);
@@ -2580,9 +2579,8 @@ void BinaryOpStub::GenerateSmiSmiOperation(MacroAssembler* masm) {
       // Unsigned shift is not allowed to produce a negative number, so
       // check the sign bit and the sign bit after Smi tagging.
       __ mov(scratch2, Operand(0xc0000000));
-      __ and_(r0, scratch1, scratch2);
-      __ cmpi(r0, Operand(0));
-      __ bne(&not_smi_result);
+      __ and_(r0, scratch1, scratch2, SetRC);
+      __ bc(&not_smi_result, BF, 2);
       // Smi tag result.
       __ SmiTag(right, scratch1);
       __ Ret();
@@ -6161,12 +6159,11 @@ void StringHelper::GenerateHashGetHash(MacroAssembler* masm,
   __ add(hash, hash, scratch);
 
   __ mov(scratch, Operand(String::kHashBitMask));
-  __ and_(hash, hash, scratch);
+  __ and_(hash, hash, scratch, SetRC);
 
   // if (hash == 0) hash = 27;
   Label done;
-  __ cmpi(hash, Operand(0));
-  __ bne(&done);
+  __ bc(&done, BF, 2);
   __ li(hash, Operand(StringHasher::kZeroHash));
   __ bind(&done);
 }
