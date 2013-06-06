@@ -2107,9 +2107,15 @@ void MacroAssembler::StoreNumberToDoubleElements(Register value_reg,
   bind(&have_double_value);
   slwi(scratch1, key_reg, Operand(kDoubleSizeLog2 - kSmiTagSize));
   add(scratch1, elements_reg, scratch1);
+#if __BYTE_ORDER == __LITTLE_ENDIAN
   stw(mantissa_reg, FieldMemOperand(scratch1, FixedDoubleArray::kHeaderSize));
   uint32_t offset = FixedDoubleArray::kHeaderSize + sizeof(kHoleNanLower32);
   stw(exponent_reg, FieldMemOperand(scratch1, offset));
+#elif __BYTE_ORDER == __BIG_ENDIAN
+  stw(exponent_reg, FieldMemOperand(scratch1, FixedDoubleArray::kHeaderSize));
+  uint32_t offset = FixedDoubleArray::kHeaderSize + sizeof(kHoleNanLower32);
+  stw(mantissa_reg, FieldMemOperand(scratch1, offset));
+#endif
   jmp(&done);
 
   bind(&maybe_nan);
