@@ -3749,7 +3749,7 @@ void KeyedLoadStubCompiler::GenerateLoadExternalArray(
     __ LoadRoot(r9, Heap::kHeapNumberMapRootIndex);
     __ AllocateHeapNumber(r5, r6, r7, r9, &slow);
     __ stfd(d0, r5, HeapNumber::kValueOffset-kHeapObjectTag);
-    __ mov(r3, r5);
+    __ mr(r3, r5);
     __ Ret();
 
   } else {
