@@ -2045,6 +2045,8 @@ void Simulator::DecodeExt4(Instruction* instr) {
       int frb = instr->RBValue();
       double frb_val = get_double_from_d_register(frb);
       int64_t floor_val = (int64_t)frb_val;
+      if (floor_val > frb_val)
+        floor_val--;
       double frt_val = static_cast<double>(floor_val);
       set_d_register_from_double(frt, frt_val);
       return;

@@ -871,6 +871,10 @@ void Decoder::DecodeExt4(Instruction* instr) {
       Format(instr, "fmul    'Dt, 'Da, 'Dc");
       break;
     }
+    case FRIM: {
+      Format(instr, "frim    'Dt, 'Db");
+      break;
+    }
     default: {
       Unknown(instr);  // not used by V8
     }
