@@ -908,6 +908,10 @@ void Assembler::ori(Register dst, Register src, const Operand& imm) {
   d_form(ORI, dst, src, imm.imm32_);
 }
 
+void Assembler::oris(Register dst, Register src, const Operand& imm) {
+  d_form(ORIS, dst, src, imm.imm32_);
+}
+
 void Assembler::orx(Register dst, Register src1, Register src2, RCBit r) {
   x_form(EXT2 | ORX, dst, src1, src2, r);
 }

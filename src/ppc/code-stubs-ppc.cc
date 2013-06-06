@@ -729,14 +729,14 @@ void FloatingPointHelper::LoadNumber(MacroAssembler* masm,
 }
 
 
-// roohack - not converted
 void FloatingPointHelper::ConvertNumberToInt32(MacroAssembler* masm,
                                                Register object,
                                                Register dst,
                                                Register heap_number_map,
                                                Register scratch1,
-                                               DwVfpRegister double_scratch1,
-                                               DwVfpRegister double_scratch2,
+                                               Register scratch2,
+                                               Register scratch3,
+                                               DwVfpRegister double_scratch,
                                                Label* not_number) {
   if (FLAG_debug_code) {
     __ AbortIfNotRootValue(heap_number_map,
@@ -744,15 +744,28 @@ void FloatingPointHelper::ConvertNumberToInt32(MacroAssembler* masm,
                            "HeapNumberMap register clobbered.");
   }
   Label done;
+  Label not_in_int32_range;
 
   __ UntagAndJumpIfSmi(dst, object, &done);
   __ lwz(scratch1, FieldMemOperand(object, HeapNumber::kMapOffset));
   __ cmp(scratch1, heap_number_map);
   __ b(ne, not_number);
+  __ ConvertToInt32(object,
+                    dst,
+                    scratch1,
+                    scratch2,
+                    double_scratch,
+                    &not_in_int32_range);
+  __ b(&done);
 
-  __ lfd(double_scratch1, object, HeapNumber::kValueOffset-kHeapObjectTag);
-  ConvertDoubleToInt(masm, double_scratch1, dst, scratch1, double_scratch2);
+  __ bind(&not_in_int32_range);
+  __ lwz(scratch1, FieldMemOperand(object, HeapNumber::kExponentOffset));
+  __ lwz(scratch2, FieldMemOperand(object, HeapNumber::kMantissaOffset));
 
+  __ EmitOutOfInt32RangeTruncate(dst,
+                                 scratch1,
+                                 scratch2,
+                                 scratch3);
   __ bind(&done);
 }
 
@@ -890,6 +903,7 @@ void FloatingPointHelper::ConvertDoubleToInt(MacroAssembler* masm,
 #else
   __ lwz(r0, MemOperand(sp, 0));
 #endif
+  STATIC_ASSERT(HeapNumber::kExponentMask == 0x7ff00000u);
   __ rlwinm(r0, r0, 12, 21, 31, LeaveRC);
   __ cmpli(r0, Operand(0x7ff));
   __ li(int_dst, Operand(0));
@@ -928,6 +942,7 @@ void FloatingPointHelper::ConvertDoubleToUnsignedInt(MacroAssembler* masm,
 #else
   __ lwz(r0, MemOperand(sp, 0));
 #endif
+  STATIC_ASSERT(HeapNumber::kExponentMask == 0x7ff00000u);
   __ rlwinm(r0, r0, 12, 21, 31, LeaveRC);
   __ cmpli(r0, Operand(0x7ff));
   __ li(int_dst, Operand(0));
@@ -2598,6 +2613,7 @@ void BinaryOpStub::GenerateFPOperation(MacroAssembler* masm,
   Register right = r3;
   Register scratch1 = r10;
   Register scratch2 = r22;
+  Register scratch3 = r7;
 
   ASSERT(smi_operands || (not_numbers != NULL));
   if (smi_operands && FLAG_debug_code) {
@@ -2690,16 +2706,18 @@ void BinaryOpStub::GenerateFPOperation(MacroAssembler* masm,
                                                   r6,
                                                   heap_number_map,
                                                   scratch1,
+                                                  scratch2,
+                                                  scratch3,
                                                   d0,
-                                                  d1,
                                                   not_numbers);
         FloatingPointHelper::ConvertNumberToInt32(masm,
                                                   right,
                                                   r5,
                                                   heap_number_map,
                                                   scratch1,
+                                                  scratch2,
+                                                  scratch3,
                                                   d0,
-                                                  d1,
                                                   not_numbers);
       }
 

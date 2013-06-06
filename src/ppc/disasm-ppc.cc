@@ -1022,7 +1022,7 @@ int Decoder::InstructionDecode(byte* instr_ptr) {
       break;
     }
     case ORIS: {
-      Unknown(instr);
+      Format(instr, "oris    'ra, 'rs, 'uint16");
       break;
     }
     case XORI: {
