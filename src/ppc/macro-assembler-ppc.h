@@ -1077,10 +1077,19 @@ class MacroAssembler: public Assembler {
   // Smi utilities
 
   // Shift left by 1
-  void SmiTag(Register reg, SBit s = LeaveCC) {
+  void SmiTag(Register reg, RCBit rc = LeaveRC) {
+    SmiTag(reg, reg, rc);
+  }
+  void SmiTag(Register dst, Register src, RCBit rc = LeaveRC) {
+    rlwinm(dst, src, 1, 0, 30, rc);
+  }
+
+  // temporary
+  void SmiTag(Register reg, SBit s) {
     slwi(reg, reg, Operand(1));
   }
-  void SmiTag(Register dst, Register src, SBit s = LeaveCC) {
+  // temporary
+  void SmiTag(Register dst, Register src, SBit s) {
     slwi(dst, src, Operand(1));
   }
 
@@ -1093,11 +1102,22 @@ class MacroAssembler: public Assembler {
     rlwinm(reg, reg, 1, 0, 30);
   }
 
-  void SmiUntag(Register reg, SBit s = LeaveCC) {
+  void SmiUntag(Register reg, RCBit rc = LeaveRC) {
+    SmiUntag(reg, reg, rc);
+  }
+
+  void SmiUntag(Register dst, Register src, RCBit rc = LeaveRC) {
+    ASSERT(kSmiTagSize == 1);
+    srawi(dst, src, 1, rc);
+  }
+
+  // temporary
+  void SmiUntag(Register reg, SBit s) {
     SmiUntag(reg, reg, s);
   }
 
-  void SmiUntag(Register dst, Register src, SBit s = LeaveCC) {
+  // temporary
+  void SmiUntag(Register dst, Register src, SBit s) {
     ASSERT(kSmiTagSize == 1);
     // Temporary - map SBit to RCBit
     RCBit r = LeaveRC;

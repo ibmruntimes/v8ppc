@@ -3588,9 +3588,9 @@ void MacroAssembler::HasColor(Register object,
   lwz(ip, MemOperand(bitmap_scratch, MemoryChunk::kHeaderSize));
   tst(ip, Operand(mask_scratch));
   b(first_bit == 1 ? eq : ne, &other_color);
-  // Shift left 1 by adding.
-  add(mask_scratch, mask_scratch, Operand(mask_scratch), SetCC);
-  beq(&word_boundary);
+  // Shift left 1
+  rlwinm(mask_scratch, mask_scratch, 1, 0, 30, SetRC);
+  bc(&word_boundary, BT, 2);
   tst(ip, Operand(mask_scratch));
   b(second_bit == 1 ? ne : eq, has_color);
   jmp(&other_color);

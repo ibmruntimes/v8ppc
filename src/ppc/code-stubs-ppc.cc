@@ -562,22 +562,25 @@ void ConvertToDoubleStub::Generate(MacroAssembler* masm) {
   Register exponent = result1_;
   Register mantissa = result2_;
 
-  Label not_special;
+  Label positive, not_special;
   // Convert from Smi to integer.
   __ mov(source_, Operand(source_, ASR, kSmiTagSize));
   // Move sign bit from source to destination.  This works because the sign bit
   // in the exponent word of the double has the same position and polarity as
   // the 2's complement sign bit in a Smi.
   STATIC_ASSERT(HeapNumber::kSignMask == 0x80000000u);
-  __ and_(exponent, source_, Operand(HeapNumber::kSignMask), SetCC);
-  // Subtract from 0 if source was negative.
-  __ rsb(source_, source_, Operand(0, RelocInfo::NONE), LeaveCC, ne);
+  __ andis(exponent, source_, Operand(0x8000));
+
+  // Negate if source was negative.
+  __ bc(&positive, BT, 2);
+  __ neg(source_, source_);
+  __ bind(&positive);
 
   // We have -1, 0 or 1, which we treat specially. Register source_ contains
   // absolute value: it is either equal to 1 (special case of -1 and 1),
   // greater than 1 (not a special case) or less than 1 (special case of 0).
   __ cmpi(source_, Operand(1));
-  __ b(gt, &not_special);
+  __ bgt(&not_special);
 
   // For 1 or -1 we need to or in the 0 exponent (biased to 1023).
   const uint32_t exponent_word_for_1 =
@@ -1153,7 +1156,7 @@ void FloatingPointHelper::DoubleIs32BitInteger(MacroAssembler* masm,
           HeapNumber::kExponentBits);
 
   // Substract the bias from the exponent.
-  __ sub(scratch, scratch, Operand(HeapNumber::kExponentBias), SetCC);
+  __ add(scratch, scratch, Operand(-HeapNumber::kExponentBias));
 
   // src1: higher (exponent) part of the double value.
   // src2: lower (mantissa) part of the double value.
@@ -1161,7 +1164,8 @@ void FloatingPointHelper::DoubleIs32BitInteger(MacroAssembler* masm,
 
   // Fast cases. Check for obvious non 32-bit integer values.
   // Negative exponent cannot yield 32-bit integers.
-  __ b(mi, not_int32);
+  __ cmpi(scratch, Operand(0));
+  __ blt(not_int32);
   // Exponent greater than 31 cannot yield 32-bit integers.
   // Also, a positive value with an exponent equal to 31 is outside of the
   // signed 32-bit integer range.
@@ -1461,10 +1465,9 @@ void EmitNanCheck(MacroAssembler* masm, Label* lhs_not_nan, Condition cond) {
   // NaNs have all-one exponents so they sign extend to -1.
   __ cmpi(r4, Operand(-1));
   __ b(ne, lhs_not_nan);
-  __ mov(r4,
-         Operand(lhs_exponent, LSL, HeapNumber::kNonMantissaBitsInTopWord),
-         SetCC);
-  __ b(ne, &one_is_nan);
+  __ rlwinm(r4, lhs_exponent, 0,
+            HeapNumber::kNonMantissaBitsInTopWord, 31, SetRC);
+  __ bc(&one_is_nan, BF, 2);
   __ cmpi(lhs_mantissa, Operand(0, RelocInfo::NONE));
   __ b(ne, &one_is_nan);
 
@@ -1476,10 +1479,9 @@ void EmitNanCheck(MacroAssembler* masm, Label* lhs_not_nan, Condition cond) {
   // NaNs have all-one exponents so they sign extend to -1.
   __ cmpi(r4, Operand(-1));
   __ b(ne, &neither_is_nan);
-  __ mov(r4,
-         Operand(rhs_exponent, LSL, HeapNumber::kNonMantissaBitsInTopWord),
-         SetCC);
-  __ b(ne, &one_is_nan);
+  __ rlwinm(r4, rhs_exponent, 0,
+            HeapNumber::kNonMantissaBitsInTopWord, 31, SetRC);
+  __ bc(&one_is_nan, BF, 2);
   __ cmpi(rhs_mantissa, Operand(0, RelocInfo::NONE));
   __ b(eq, &neither_is_nan);
 
@@ -2588,8 +2590,9 @@ void BinaryOpStub::GenerateSmiSmiOperation(MacroAssembler* masm) {
       __ GetLeastBitsFromSmi(scratch2, right, 5);
       __ mov(scratch1, Operand(scratch1, LSL, scratch2));
       // Check that the signed result fits in a Smi.
-      __ add(scratch2, scratch1, Operand(0x40000000), SetCC);
-      __ b(mi, &not_smi_result);
+      __ addis(scratch2, scratch1, 0x4000);
+      __ cmpi(scratch2, Operand(0));
+      __ blt(&not_smi_result);
       __ SmiTag(right, scratch1);
       __ Ret();
       break;
@@ -3853,10 +3856,10 @@ void MathPowStub::Generate(MacroAssembler* masm) {
 
   Label while_true;
   __ bind(&while_true);
-  __ mov(scratch, Operand(scratch, ASR, 1), SetCC);
+  __ srawi(scratch, scratch, 1, SetRC);
   __ vmul(double_result, double_result, double_scratch, cs);
   __ vmul(double_scratch, double_scratch, double_scratch, ne);
-  __ b(ne, &while_true);
+  __ bc(&while_true, BF, 2);
 
   __ cmpi(exponent, Operand(0));
   __ b(ge, &done);
