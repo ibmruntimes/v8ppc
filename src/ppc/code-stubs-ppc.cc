@@ -2041,13 +2041,13 @@ void StoreBufferOverflowStub::Generate(MacroAssembler* masm) {
   // We don't allow a GC during a store buffer overflow so there is no need to
   // store the registers in any particular way, but we do have to store and
   // restore them.
-  __ stm(db_w, sp, kCallerSaved | lr.bit());
+  __ MultiPush(kJSCallerSaved | lr.bit());
   if (save_doubles_ == kSaveFPRegs) {
     CpuFeatures::Scope scope(VFP2);
     __ sub(sp, sp, Operand(kDoubleSize * DwVfpRegister::kNumRegisters));
     for (int i = 0; i < DwVfpRegister::kNumRegisters; i++) {
       DwVfpRegister reg = DwVfpRegister::from_code(i);
-      __ vstr(reg, MemOperand(sp, i * kDoubleSize));
+        __ stfd(reg, sp, i * kDoubleSize);
     }
   }
   const int argument_count = 1;
@@ -2064,11 +2064,11 @@ void StoreBufferOverflowStub::Generate(MacroAssembler* masm) {
     CpuFeatures::Scope scope(VFP2);
     for (int i = 0; i < DwVfpRegister::kNumRegisters; i++) {
       DwVfpRegister reg = DwVfpRegister::from_code(i);
-      __ vldr(reg, MemOperand(sp, i * kDoubleSize));
+        __ lfd(reg, sp, i * kDoubleSize);
     }
     __ add(sp, sp, Operand(kDoubleSize * DwVfpRegister::kNumRegisters));
   }
-  __ ldm(ia_w, sp, kCallerSaved | pc.bit());  // Also pop pc to get Ret(0).
+  __ MultiPop(kJSCallerSaved | lr.bit() | pc.bit());  // Pop pc to get Ret(0).
 }
 
 
