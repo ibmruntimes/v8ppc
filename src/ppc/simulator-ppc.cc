@@ -986,6 +986,29 @@ ReturnType Simulator::GetFromFPRegister(int reg_index) {
   return value;
 }
 
+double Simulator::get_double_from_d_register(int reg_index) {
+  ASSERT(reg_index >= 0 && reg_index < num_d_registers);
+  union {
+    double dvalue;
+    unsigned int regs[2];
+  } data;
+  ASSERT(__FLOAT_WORD_ORDER == __LITTLE_ENDIAN);
+  data.regs[0] = fp_register[2 * reg_index+1];
+  data.regs[1] = fp_register[2 * reg_index+0];
+  return data.dvalue;
+}
+
+void Simulator::set_d_register_from_double(int reg_index, const double& dbl) {
+  ASSERT(reg_index >= 0 && reg_index < num_d_registers);
+  union {
+    double dvalue;
+    unsigned int regs[2];
+  } data;
+  data.dvalue = dbl;
+  ASSERT(__FLOAT_WORD_ORDER == __LITTLE_ENDIAN);
+  fp_register[2 * reg_index] = data.regs[1];
+  fp_register[2 * reg_index+1] = data.regs[0];
+}
 
 // For use in calls that take two double values which are currently
 // in d1 and d2
@@ -2010,9 +2033,9 @@ void Simulator::DecodeExt4(Instruction* instr) {
       int frt = instr->RTValue();
       int frb = instr->RBValue();
       double frb_val = get_double_from_d_register(frb);
-      float frt_val = static_cast<float>(frb_val);
-      double *p = reinterpret_cast<double*>(&frt_val);
-      set_d_register_from_double(frt, *p);
+      // frsp round 8-byte double-precision value to 8-byte
+      // single-precision value, ignore the round here
+      set_d_register_from_double(frt, frb_val);
       return;
     }
     case FCFID: {

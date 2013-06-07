@@ -168,13 +168,9 @@ class Simulator {
   void set_s_register(int reg, unsigned int value);
   unsigned int get_s_register(int reg) const;
 
-  void set_d_register_from_double(int dreg, const double& dbl) {
-    SetFPRegister<double, 2>(dreg, dbl);
-  }
+  void set_d_register_from_double(int dreg, const double& dbl);
 
-  double get_double_from_d_register(int dreg) {
-    return GetFromFPRegister<double, 2>(dreg);
-  }
+  double get_double_from_d_register(int dreg);
 
   void set_s_register_from_float(int sreg, const float flt) {
     SetFPRegister<float, 1>(sreg, flt);

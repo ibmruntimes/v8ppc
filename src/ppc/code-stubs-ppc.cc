@@ -863,17 +863,16 @@ void FloatingPointHelper::ConvertIntToFloat(MacroAssembler* masm,
                                             const Register src,
                                             const Register int_scratch) {
   __ sub(sp, sp, Operand(8));  // reserve one temporary double on the stack
-  /* srawi      r0,r3,31
-     stw        r0,24(SP)
-     stw        r3,28(SP)
-     lfd        fp0,24(SP)
-     fcfid      fp1,fp0
-     frsp       fp1,fp1
-  */
+
   // sign-extend src to 64-bit and store it to temp double on the stack
   __ srawi(int_scratch, src, 31);
+#if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
+  __ stw(int_scratch, MemOperand(sp, 4));
+  __ stw(src, MemOperand(sp, 0));
+#else
   __ stw(int_scratch, MemOperand(sp, 0));
   __ stw(src, MemOperand(sp, 4));
+#endif
 
   // load sign-extended src into FPR
   __ lfd(dst, sp, 0);
