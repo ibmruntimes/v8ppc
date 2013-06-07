@@ -806,7 +806,7 @@ void Assembler::rlwinm(Register ra, Register rs,
   mb &= 0x1f;
   me &= 0x1f;
   CheckBuffer();
-  emit(RLWINMX | rs.code()*B21 | ra.code()*B16 | sh*B11 | mb*B6  | me<<1 | rc);
+  emit(RLWINMX | rs.code()*B21 | ra.code()*B16 | sh*B11 | mb*B6 | me << 1 | rc);
 }
 
 void Assembler::rlwimi(Register ra, Register rs,
@@ -815,7 +815,7 @@ void Assembler::rlwimi(Register ra, Register rs,
   mb &= 0x1f;
   me &= 0x1f;
   CheckBuffer();
-  emit(RLWIMIX | rs.code()*B21 | ra.code()*B16 | sh*B11 | mb*B6  | me<<1 | rc);
+  emit(RLWIMIX | rs.code()*B21 | ra.code()*B16 | sh*B11 | mb*B6 | me << 1 | rc);
 }
 
 void Assembler::slwi(Register dst, Register src, const Operand& val) {
@@ -969,6 +969,13 @@ void Assembler::li(Register dst, const Operand &src) {
   // it may not work correctly on an actual PowerPC
   ASSERT(is_int16(src.imm32_) || is_uint16(src.imm32_));
   add(dst, r0, src);
+}
+
+void  Assembler::lis(Register dst, const Operand& imm) {
+  int imm16 = imm.imm32_;
+  ASSERT(is_int16(imm16) || is_uint16(imm16));
+  imm16 &= kImm16Mask;
+  d_form(ADDIS, dst, r0, imm16);
 }
 
 // Pseudo op - move register

@@ -1329,12 +1329,14 @@ void Builtins::Generate_NotifyOSR(MacroAssembler* masm) {
   // doesn't do any garbage collection which allows us to save/restore
   // the registers without worrying about which of them contain
   // pointers. This seems a bit fragile.
-  __ stm(db_w, sp, kJSCallerSaved | kCalleeSaved | lr.bit() | r11.bit());
+  RegList saved_regs =
+      (kJSCallerSaved | kCalleeSaved | lr.bit() | r11.bit()) & ~sp.bit();
+  __ MultiPush(saved_regs);
   {
     FrameScope scope(masm, StackFrame::INTERNAL);
     __ CallRuntime(Runtime::kNotifyOSR, 0);
   }
-  __ ldm(ia_w, sp, kJSCallerSaved | kCalleeSaved | lr.bit() | r11.bit());
+  __ MultiPop(saved_regs);
   __ Ret();
 }
 
@@ -1358,7 +1360,7 @@ void Builtins::Generate_OnStackReplacement(MacroAssembler* masm) {
   // If the result was -1 it means that we couldn't optimize the
   // function. Just return and continue in the unoptimized version.
   Label skip;
-  __ cmp(r3, Operand(Smi::FromInt(-1)));
+  __ cmpi(r3, Operand(Smi::FromInt(-1)));
   __ bne(&skip);
   __ Ret();
 

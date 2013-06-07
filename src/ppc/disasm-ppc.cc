@@ -837,7 +837,7 @@ void Decoder::DecodeExt2(Instruction* instr) {
       break;
     }
     case ANDX: {
-      Format(instr, "and'o    'ra,'rs,'rb");
+      Format(instr, "and'.    'ra,'rs,'rb");
       break;
     }
     case CMPL: {
