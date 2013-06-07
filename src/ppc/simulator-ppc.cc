@@ -986,30 +986,6 @@ ReturnType Simulator::GetFromFPRegister(int reg_index) {
   return value;
 }
 
-double Simulator::get_double_from_d_register(int reg_index) {
-  ASSERT(reg_index >= 0 && reg_index < num_d_registers);
-  union {
-    double dvalue;
-    unsigned int regs[2];
-  } data;
-  ASSERT(__FLOAT_WORD_ORDER == __LITTLE_ENDIAN);
-  data.regs[0] = fp_register[2 * reg_index+1];
-  data.regs[1] = fp_register[2 * reg_index+0];
-  return data.dvalue;
-}
-
-void Simulator::set_d_register_from_double(int reg_index, const double& dbl) {
-  ASSERT(reg_index >= 0 && reg_index < num_d_registers);
-  union {
-    double dvalue;
-    unsigned int regs[2];
-  } data;
-  data.dvalue = dbl;
-  ASSERT(__FLOAT_WORD_ORDER == __LITTLE_ENDIAN);
-  fp_register[2 * reg_index] = data.regs[1];
-  fp_register[2 * reg_index+1] = data.regs[0];
-}
-
 // For use in calls that take two double values which are currently
 // in d1 and d2
 void Simulator::GetFpArgs(double* x, double* y) {
