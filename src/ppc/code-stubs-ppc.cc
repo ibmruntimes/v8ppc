@@ -7968,7 +7968,6 @@ void ProfileEntryHookStub::Generate(MacroAssembler* masm) {
 }
 
 #undef __
-
 } }  // namespace v8::internal
 
 #endif  // V8_TARGET_ARCH_PPC

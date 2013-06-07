@@ -806,7 +806,7 @@ void Assembler::rlwinm(Register ra, Register rs,
   mb &= 0x1f;
   me &= 0x1f;
   CheckBuffer();
-  emit(RLWINMX | rs.code()*B21 | ra.code()*B16 | sh*B11 | mb*B6  | me<<1 | rc);
+  emit(RLWINMX | rs.code()*B21 | ra.code()*B16 | sh*B11 | mb*B6 | me << 1 | rc);
 }
 
 void Assembler::rlwimi(Register ra, Register rs,
@@ -815,7 +815,7 @@ void Assembler::rlwimi(Register ra, Register rs,
   mb &= 0x1f;
   me &= 0x1f;
   CheckBuffer();
-  emit(RLWIMIX | rs.code()*B21 | ra.code()*B16 | sh*B11 | mb*B6  | me<<1 | rc);
+  emit(RLWIMIX | rs.code()*B21 | ra.code()*B16 | sh*B11 | mb*B6 | me << 1 | rc);
 }
 
 void Assembler::slwi(Register dst, Register src, const Operand& val) {
