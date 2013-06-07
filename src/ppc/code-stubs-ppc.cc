@@ -564,7 +564,8 @@ void ConvertToDoubleStub::Generate(MacroAssembler* masm) {
 
   Label positive, not_special;
   // Convert from Smi to integer.
-  __ mov(source_, Operand(source_, ASR, kSmiTagSize));
+  __ SmiUntag(source_);
+
   // Move sign bit from source to destination.  This works because the sign bit
   // in the exponent word of the double has the same position and polarity as
   // the 2's complement sign bit in a Smi.
@@ -606,9 +607,9 @@ void ConvertToDoubleStub::Generate(MacroAssembler* masm) {
   // Shift up the source chopping the top bit off.
   __ add(zeros_, zeros_, Operand(1));
   // This wouldn't work for 1.0 or -1.0 as the shift would be 32 which means 0.
-  __ mov(source_, Operand(source_, LSL, zeros_));
+  __ slw(source_, source_, zeros_);
   // Compute lower part of fraction (last 12 bits).
-  __ mov(mantissa, Operand(source_, LSL, HeapNumber::kMantissaBitsInTopWord));
+  __ slwi(mantissa_, source_, Operand(HeapNumber::kMantissaBitsInTopWord));
   // And the top (top 20 bits).
   __ orr(exponent,
          exponent,
@@ -1123,10 +1124,11 @@ void FloatingPointHelper::LoadNumberAsInt32(MacroAssembler* masm,
     // scratch2: 1
 
     // Shift back the higher bits of the mantissa.
-    __ mov(dst, Operand(dst, LSR, scratch3));
+    __ srw(dst, dst, scratch3);
     // Set the implicit first bit.
-    __ rsb(scratch3, scratch3, Operand(32));
-    __ orr(dst, dst, Operand(scratch2, LSL, scratch3));
+    __ subfic(scratch3, scratch3, Operand(32));
+    __ slw(scratch2, scratch2, scratch3);
+    __ orx(dst, dst, scratch2);
     // Set the sign.
     __ ldr(scratch1, FieldMemOperand(object, HeapNumber::kExponentOffset));
     STATIC_ASSERT(HeapNumber::kSignMask == 0x80000000u);
@@ -1174,7 +1176,8 @@ void FloatingPointHelper::DoubleIs32BitInteger(MacroAssembler* masm,
   // Another way to put it is that if (exponent - signbit) > 30 then the
   // number cannot be represented as an int32.
   Register tmp = dst;
-  __ sub(tmp, scratch, Operand(src1, LSR, 31));
+  __ rlwinm(tmp, scratch, 1, 31, 31);
+  __ sub(tmp, scratch, tmp);
   __ cmpi(tmp, Operand(30));
   __ bgt(not_int32);
   // - Bits [21:0] in the mantissa are not null.
@@ -1194,14 +1197,13 @@ void FloatingPointHelper::DoubleIs32BitInteger(MacroAssembler* masm,
           src2,
           HeapNumber::kMantissaBitsInTopWord,
           32 - HeapNumber::kMantissaBitsInTopWord);
-  __ orr(dst,
-         dst,
-         Operand(src1, LSL, HeapNumber::kNonMantissaBitsInTopWord));
+  __ slwi(src1, src1, Operand(HeapNumber::kMantissaBitsInTopWord));
+  __ orx(dst, dst, src1);
 
   // Create the mask and test the lower bits (of the higher bits).
-  __ rsb(scratch, scratch, Operand(32));
+  __ subfic(scratch, scratch, Operand(32));
   __ li(src2, Operand(1));
-  __ mov(src1, Operand(src2, LSL, scratch));
+  __ slw(src1, src2, scratch);
   __ sub(src1, src1, Operand(1));
   __ and_(r0, dst, src1, SetRC);
   __ bne(not_int32);
@@ -1673,9 +1675,8 @@ void NumberToStringStub::GenerateLookupNumberStringCache(MacroAssembler* masm,
 
       // Calculate address of entry in string cache: each entry consists
       // of two pointer sized fields.
-      __ add(scratch1,
-             number_string_cache,
-             Operand(scratch1, LSL, kPointerSizeLog2 + 1));
+      __ slwi(scratch1, scratch1, Operand(kPointerSizeLog2 + 1));
+      __ add(scratch1, number_string_cache, scratch1);
 
       Register probe = mask;
       __ ldr(probe,
@@ -5174,7 +5175,7 @@ void RegExpExecStub::Generate(MacroAssembler* masm) {
 
   // String is sliced.
   __ ldr(r11, FieldMemOperand(subject, SlicedString::kOffsetOffset));
-  __ mov(r11, Operand(r11, ASR, kSmiTagSize));
+  __ SmiUntag(r11);
   __ ldr(subject, FieldMemOperand(subject, SlicedString::kParentOffset));
   // r11: offset of sliced string, smi-tagged.
   __ jmp(&check_encoding);
@@ -5202,7 +5203,6 @@ void RegExpExecStub::Generate(MacroAssembler* masm) {
   // Find the code object based on the assumptions above.
   STATIC_ASSERT(kStringEncodingMask == 4);
   __ andi(r3, r3, Operand(kStringEncodingMask));
-  __ mov(r6, Operand(r3, ASR, 2), SetCC);
   __ srawi(r6, r3, 2, SetRC);
   __ lwz(r10, FieldMemOperand(regexp_data, JSRegExp::kDataAsciiCodeOffset), ne);
   __ lwz(r10, FieldMemOperand(regexp_data, JSRegExp::kDataUC16CodeOffset), eq);
@@ -5219,7 +5219,7 @@ void RegExpExecStub::Generate(MacroAssembler* masm) {
   // Load used arguments before starting to push arguments for call to native
   // RegExp code to avoid handling changing stack height.
   __ lwz(r4, MemOperand(sp, kPreviousIndexOffset));
-  __ mov(r4, Operand(r4, ASR, kSmiTagSize));
+  __ SmiUntag(r4);
 
   // r4: previous index
   // r6: encoding of subject string (1 if ASCII, 0 if two_byte);
@@ -5276,12 +5276,15 @@ void RegExpExecStub::Generate(MacroAssembler* masm) {
   // Argument 4, r6: End of string data
   // Argument 3, r5: Start of string data
   // Prepare start and end index of the input.
-  __ add(r11, r22, Operand(r11, LSL, r6));
-  __ add(r5, r11, Operand(r4, LSL, r6));
+  __ slw(r11, r11, r6);
+  __ add(r11, r22, r11));
+  __ slw(r5, r4, r6);
+  __ add(r5, r11, r5);
 
   __ lwz(r22, FieldMemOperand(subject, String::kLengthOffset));
-  __ mov(r22, Operand(r22, ASR, kSmiTagSize));
-  __ add(r6, r11, Operand(r22, LSL, r6));
+  __ SmiUnTag(r22);
+  __ slw(r6, r22, r6);
+  __ add(r6, r11, r6);
 
   // Argument 2 (r4): Previous index.
   // Already there
@@ -5356,7 +5359,7 @@ void RegExpExecStub::Generate(MacroAssembler* masm) {
   // r4: number of capture registers
   // r7: subject string
   // Store the capture count.
-  __ mov(r5, Operand(r4, LSL, kSmiTagSize + kSmiShiftSize));  // To smi.
+  __ SmiTag(r5, r4);
   __ stw(r5, FieldMemOperand(last_match_info_elements,
                              RegExpImpl::kLastCaptureCountOffset));
   // Store last subject and last input.
@@ -5399,7 +5402,7 @@ void RegExpExecStub::Generate(MacroAssembler* masm) {
   // Read the value from the static offsets vector buffer.
   __ lwz(r6, MemOperand(r5, kPointerSize, PostIndex));
   // Store the smi value in the last match info.
-  __ mov(r6, Operand(r6, LSL, kSmiTagSize));
+  __ SmiTag(r6);
   __ stw(r6, MemOperand(r3, kPointerSize, PostIndex));
   __ jmp(&next_capture);
   __ bind(&done);
