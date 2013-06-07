@@ -327,7 +327,7 @@ void FullCodeGenerator::ClearAccumulator() {
 void FullCodeGenerator::EmitProfilingCounterDecrement(int delta) {
   __ mov(r5, Operand(profiling_counter_));
   __ lwz(r6, FieldMemOperand(r5, JSGlobalPropertyCell::kValueOffset));
-  __ sub(r6, r6, Operand(Smi::FromInt(delta)), SetCC);
+  __ sub(r6, r6, Operand(Smi::FromInt(delta)));
   __ stw(r6, FieldMemOperand(r5, JSGlobalPropertyCell::kValueOffset));
   __ cmpi(r6, Operand(0));
 }
@@ -1970,8 +1970,9 @@ void FullCodeGenerator::EmitInlineSmiBinaryOp(BinaryOperation* expr,
       __ GetLeastBitsFromSmi(scratch2, right, 5);
       __ slw(scratch1, scratch1, scratch2);
       // Check that the *signed* result fits in a smi
-      __ add(scratch2, scratch1, Operand(0x40000000), SetCC);
-      __ b(mi, &stub_call);
+      __ addis(scratch2, scratch1, 0x4000);
+      __ cmpi(scratch2, Operand(0));
+      __ blt(&stub_call);
       __ SmiTag(right, scratch1);
       break;
     }
@@ -4601,9 +4602,7 @@ FullCodeGenerator::NestedStatement* FullCodeGenerator::TryFinally::Exit(
   return previous_;
 }
 
-
 #undef __
-
 } }  // namespace v8::internal
 
 #endif  // V8_TARGET_ARCH_PPC
