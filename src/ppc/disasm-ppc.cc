@@ -114,6 +114,7 @@ class Decoder {
   int FormatOption(Instruction* instr, const char* option);
   void Format(Instruction* instr, const char* format);
   void Unknown(Instruction* instr);
+  void UnknownFormat(Instruction* instr, const char* opcname);
 
   // PowerPC decoding
   void DecodeExt1(Instruction* instr);
@@ -633,22 +634,54 @@ void Decoder::Unknown(Instruction* instr) {
   Format(instr, "unknown");
 }
 
+// For currently unimplemented decodings the disassembler calls
+// UnknownFormat(instr) which will just print opcode name of the
+// instruction bits.
+void Decoder::UnknownFormat(Instruction* instr, const char* name) {
+  char buffer[100];
+  snprintf(buffer, sizeof(buffer), "%s (unknown-format)", name);
+  Format(instr, name);
+}
+
 // PowerPC
 void Decoder::DecodeExt1(Instruction* instr) {
   switch (instr->Bits(10, 1) << 1) {
-    case MCRF:
-      Unknown(instr);  // not used by V8
+    case MCRF: {
+      UnknownFormat(instr, "mcrf");  // not used by V8
+      break;
+    }
     case BCLRX: {
       switch (instr->Bits(25, 21) << 21) {
-        case DCBNZF:
-        case DCBEZF:
-        case BF:
-        case DCBNZT:
-        case DCBEZT:
-        case BT:
-        case DCBNZ:
+        case DCBNZF: {
+          UnknownFormat(instr, "bclrx-dcbnzf");
+          break;
+        }
+        case DCBEZF: {
+          UnknownFormat(instr, "bclrx-dcbezf");
+          break;
+        }
+        case BF: {
+          UnknownFormat(instr, "bclrx-bf");
+          break;
+        }
+        case DCBNZT: {
+          UnknownFormat(instr, "bclrx-dcbbzt");
+          break;
+        }
+        case DCBEZT: {
+          UnknownFormat(instr, "bclrx-dcbnezt");
+          break;
+        }
+        case BT: {
+          UnknownFormat(instr, "bclrx-bt");
+          break;
+        }
+        case DCBNZ: {
+          UnknownFormat(instr, "bclrx-dcbnz");
+          break;
+        }
         case DCBEZ: {
-          Unknown(instr);  // not used by V8
+          UnknownFormat(instr, "bclrx-dcbez");  // not used by V8
           break;
         }
         case BA: {
@@ -664,15 +697,36 @@ void Decoder::DecodeExt1(Instruction* instr) {
     }
     case BCCTRX: {
       switch (instr->Bits(25, 21) << 21) {
-        case DCBNZF:
-        case DCBEZF:
-        case BF:
-        case DCBNZT:
-        case DCBEZT:
-        case BT:
-        case DCBNZ:
+        case DCBNZF: {
+          UnknownFormat(instr, "bcctrx-dcbnzf");
+          break;
+        }
+        case DCBEZF: {
+          UnknownFormat(instr, "bcctrx-dcbezf");
+          break;
+        }
+        case BF: {
+          UnknownFormat(instr, "bcctrx-bf");
+          break;
+        }
+        case DCBNZT: {
+          UnknownFormat(instr, "bcctrx-dcbnzt");
+          break;
+        }
+        case DCBEZT: {
+          UnknownFormat(instr, "bcctrx-dcbezf");
+          break;
+        }
+        case BT: {
+          UnknownFormat(instr, "bcctrx-bt");
+          break;
+        }
+        case DCBNZ: {
+          UnknownFormat(instr, "bcctrx-dcbnz");
+          break;
+        }
         case DCBEZ: {
-          Unknown(instr);  // not used by V8
+          UnknownFormat(instr, "bcctrx-dcbez");
           break;
         }
         case BA: {
@@ -709,11 +763,26 @@ void Decoder::DecodeExt1(Instruction* instr) {
       Format(instr, "crxor (stuff)");
       break;
     }
-    case CRNAND:
-    case CRAND:
-    case CREQV:
-    case CRORC:
-    case CROR:
+    case CRNAND: {
+      UnknownFormat(instr, "crnand");
+      break;
+    }
+    case CRAND: {
+      UnknownFormat(instr, "crand");
+      break;
+    }
+    case CREQV: {
+      UnknownFormat(instr, "creqv");
+      break;
+    }
+    case CRORC: {
+      UnknownFormat(instr, "crorc");
+      break;
+    }
+    case CROR: {
+      UnknownFormat(instr, "cror");
+      break;
+    }
     default: {
       Unknown(instr);  // not used by V8
     }
@@ -913,7 +982,7 @@ int Decoder::InstructionDecode(byte* instr_ptr) {
       break;
     }
     case MULLI: {
-      Unknown(instr);
+      UnknownFormat(instr, "mulli");
       break;
     }
     case SUBFIC: {
@@ -933,7 +1002,7 @@ int Decoder::InstructionDecode(byte* instr_ptr) {
       break;
     }
     case ADDICx: {
-      Unknown(instr);
+      UnknownFormat(instr, "addicx");
       break;
     }
     case ADDI: {
@@ -998,7 +1067,7 @@ int Decoder::InstructionDecode(byte* instr_ptr) {
       break;
     }
     case SC: {
-      Unknown(instr);
+      UnknownFormat(instr, "sc");
       break;
     }
     case BX: {
@@ -1018,7 +1087,7 @@ int Decoder::InstructionDecode(byte* instr_ptr) {
       break;
     }
     case RLWNMX: {
-      Unknown(instr);
+      UnknownFormat(instr, "rlwnmx");
       break;
     }
     case ORI: {
@@ -1105,9 +1174,12 @@ int Decoder::InstructionDecode(byte* instr_ptr) {
       Format(instr, "sthu 'rs, 'int16('ra)");
       break;
     }
-    case LMW:
+    case LMW: {
+      UnknownFormat(instr, "lmw");
+      break;
+    }
     case STMW: {
-      Unknown(instr);
+      UnknownFormat(instr, "stmw");
       break;
     }
     case LFS: {
