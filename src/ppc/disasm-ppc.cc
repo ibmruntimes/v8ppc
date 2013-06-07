@@ -907,6 +907,25 @@ void Decoder::DecodeExt2(Instruction* instr) {
 }
 
 void Decoder::DecodeExt4(Instruction* instr) {
+  switch (instr->Bits(5, 1) << 1) {
+    case FDIV: {
+      Format(instr, "fdiv    'Dt, 'Da, 'Db");
+      return;
+    }
+    case FSUB: {
+      Format(instr, "fsub    'Dt, 'Da, 'Db");
+      return;
+    }
+    case FADD: {
+      Format(instr, "fadd    'Dt, 'Da, 'Db");
+      return;
+    }
+    case FMUL: {
+      Format(instr, "fmul    'Dt, 'Da, 'Dc");
+      return;
+    }
+  }
+
   switch (instr->Bits(10, 1) << 1) {
     case FCMPU: {
       Format(instr, "fcmpu   'Da, 'Db");
@@ -922,22 +941,6 @@ void Decoder::DecodeExt4(Instruction* instr) {
     }
     case FCTIWZ: {
       Format(instr, "fctiwz  'Dt, 'Db");
-      break;
-    }
-    case FDIV: {
-      Format(instr, "fdiv    'Dt, 'Da, 'Db");
-      break;
-    }
-    case FSUB: {
-      Format(instr, "fsub    'Dt, 'Da, 'Db");
-      break;
-    }
-    case FADD: {
-      Format(instr, "fadd    'Dt, 'Da, 'Db");
-      break;
-    }
-    case FMUL: {
-      Format(instr, "fmul    'Dt, 'Da, 'Dc");
       break;
     }
     case FRIM: {
