@@ -3316,13 +3316,6 @@ void MacroAssembler::InitializeFieldsWithFiller(Register start_offset,
 }
 
 
-void MacroAssembler::CountLeadingZeros(Register zeros,   // Answer.
-                                       Register source,  // Input.
-                                       Register scratch) {
-  cntlzw_(zeros, source);
-}
-
-
 void MacroAssembler::JumpIfBothInstanceTypesAreNotSequentialAscii(
     Register first,
     Register second,

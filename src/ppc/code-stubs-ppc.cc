@@ -588,9 +588,8 @@ void ConvertToDoubleStub::Generate(MacroAssembler* masm) {
   __ Ret();
 
   __ bind(&not_special);
-  // Count leading zeros.  Uses mantissa for a scratch register on pre-ARM5.
-  // Gets the wrong answer for 0, but we already checked for that case above.
-  __ CountLeadingZeros(zeros_, source_, mantissa);
+  // Count leading zeros.
+  __ cntlzw_(zeros_, source_);
   // Compute exponent and or it into the exponent register.
   // We use mantissa as a scratch register here.  Use a fudge factor to
   // divide the constant 31 + HeapNumber::kExponentBias, 0x41d, into two parts
@@ -2529,9 +2528,8 @@ void BinaryOpStub::GenerateSmiSmiOperation(MacroAssembler* masm) {
       __ bc(&not_smi_result, BF, 2);
 
       // Perform division by shifting.
-      __ CountLeadingZeros(scratch1, scratch1, scratch2);
-      __ li(scratch2, Operand(33));
-      __ sub(scratch1, scratch2, scratch1);
+      __ cntlzw_(scratch1, scratch1);
+      __ subfic(scratch1, scratch1, Operand(31));
       __ sraw(right, left, scratch1);
       __ Ret();
       break;
