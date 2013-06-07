@@ -971,6 +971,13 @@ void Assembler::li(Register dst, const Operand &src) {
   add(dst, r0, src);
 }
 
+void  Assembler::lis(Register dst, const Operand& imm) {
+  int imm16 = imm.imm32_;
+  ASSERT(is_int16(imm16) || is_uint16(imm16));
+  imm16 &= kImm16Mask;
+  d_form(ADDIS, dst, r0, imm16);
+}
+
 // Pseudo op - move register
 void Assembler::mr(Register dst, Register src) {
   // actually or(dst, src, src)

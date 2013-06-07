@@ -918,6 +918,7 @@ class Assembler : public AssemblerBase {
   void cmpi(Register src1, const Operand& src2);
   void cmpli(Register src1, const Operand& src2);
   void li(Register dst, const Operand& src);
+  void lis(Register dst, const Operand& imm);
   void mr(Register dst, Register src);
 
   void lbz(Register dst, const MemOperand& src);

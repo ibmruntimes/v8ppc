@@ -142,13 +142,15 @@ static void Generate_DebugBreakCallHelper(MacroAssembler* masm,
         Register reg = { r };
         if ((non_object_regs & (1 << r)) != 0) {
           if (FLAG_debug_code) {
-            __ tst(reg, Operand(0xc0000000));
+            __ lis(r0, Operand(0xc0000000 >> 16));
+            __ cmp(reg, r0);
             __ Assert(eq, "Unable to encode value as smi");
           }
-          __ mov(reg, Operand(reg, LSL, kSmiTagSize));
+          STATIC_ASSERT(kSmiTagSize == 1);
+          __ slwi(reg, reg, Operand(kSmiTagSize));
         }
       }
-      __ stm(db_w, sp, object_regs | non_object_regs);
+      __ MultiPush(object_regs | non_object_regs);
     }
 
 #ifdef DEBUG
@@ -162,12 +164,13 @@ static void Generate_DebugBreakCallHelper(MacroAssembler* masm,
 
     // Restore the register values from the expression stack.
     if ((object_regs | non_object_regs) != 0) {
-      __ ldm(ia_w, sp, object_regs | non_object_regs);
+      __ MultiPop(object_regs | non_object_regs);
       for (int i = 0; i < kNumJSCallerSaved; i++) {
         int r = JSCallerSavedCode(i);
         Register reg = { r };
         if ((non_object_regs & (1 << r)) != 0) {
-          __ mov(reg, Operand(reg, LSR, kSmiTagSize));
+          STATIC_ASSERT(kSmiTagSize == 1);
+          __ srawi(reg, reg, kSmiTagSize);
         }
         if (FLAG_debug_code &&
             (((object_regs |non_object_regs) & (1 << r)) == 0)) {
