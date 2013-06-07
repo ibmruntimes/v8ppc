@@ -1111,7 +1111,7 @@ void FloatingPointHelper::LoadNumberAsInt32(MacroAssembler* masm,
     // Check for 0 and -0.
     __ bic(dst, scratch1, Operand(HeapNumber::kSignMask));
     __ orx(dst, scratch2, dst);
-    __ cmp(dst, Operand::Zero());
+    __ cmpi(dst, Operand::Zero());
     __ b(eq, &done);
 
     DoubleIs32BitInteger(masm, scratch1, scratch2, dst, scratch3, not_int32);
@@ -1170,7 +1170,7 @@ void FloatingPointHelper::DoubleIs32BitInteger(MacroAssembler* masm,
   // number cannot be represented as an int32.
   Register tmp = dst;
   __ sub(tmp, scratch, Operand(src1, LSR, 31));
-  __ cmp(tmp, Operand(30));
+  __ cmpi(tmp, Operand(30));
   __ b(gt, not_int32);
   // - Bits [21:0] in the mantissa are not null.
   __ tst(src2, Operand(0x3fffff));
@@ -1460,13 +1460,13 @@ void EmitNanCheck(MacroAssembler* masm, Label* lhs_not_nan, Condition cond) {
           HeapNumber::kExponentShift,
           HeapNumber::kExponentBits);
   // NaNs have all-one exponents so they sign extend to -1.
-  __ cmp(r4, Operand(-1));
+  __ cmpi(r4, Operand(-1));
   __ b(ne, lhs_not_nan);
   __ mov(r4,
          Operand(lhs_exponent, LSL, HeapNumber::kNonMantissaBitsInTopWord),
          SetCC);
   __ b(ne, &one_is_nan);
-  __ cmp(lhs_mantissa, Operand(0, RelocInfo::NONE));
+  __ cmpi(lhs_mantissa, Operand(0, RelocInfo::NONE));
   __ b(ne, &one_is_nan);
 
   __ bind(lhs_not_nan);
@@ -1475,13 +1475,13 @@ void EmitNanCheck(MacroAssembler* masm, Label* lhs_not_nan, Condition cond) {
           HeapNumber::kExponentShift,
           HeapNumber::kExponentBits);
   // NaNs have all-one exponents so they sign extend to -1.
-  __ cmp(r4, Operand(-1));
+  __ cmpi(r4, Operand(-1));
   __ b(ne, &neither_is_nan);
   __ mov(r4,
          Operand(rhs_exponent, LSL, HeapNumber::kNonMantissaBitsInTopWord),
          SetCC);
   __ b(ne, &one_is_nan);
-  __ cmp(rhs_mantissa, Operand(0, RelocInfo::NONE));
+  __ cmpi(rhs_mantissa, Operand(0, RelocInfo::NONE));
   __ b(eq, &neither_is_nan);
 
   __ bind(&one_is_nan);
@@ -3848,7 +3848,7 @@ void MathPowStub::Generate(MacroAssembler* masm) {
   __ vmov(double_result, 1.0, scratch2);
 
   // Get absolute value of exponent.
-  __ cmp(scratch, Operand(0));
+  __ cmpi(scratch, Operand(0));
   __ mov(scratch2, Operand(0), LeaveCC, mi);
   __ sub(scratch, scratch2, scratch, LeaveCC, mi);
 
@@ -3859,7 +3859,7 @@ void MathPowStub::Generate(MacroAssembler* masm) {
   __ vmul(double_scratch, double_scratch, double_scratch, ne);
   __ b(ne, &while_true);
 
-  __ cmp(exponent, Operand(0));
+  __ cmpi(exponent, Operand(0));
   __ b(ge, &done);
   __ vmov(double_scratch, 1.0, scratch);
   __ vdiv(double_result, double_scratch, double_result);
@@ -4609,6 +4609,7 @@ void ArgumentsAccessStub::GenerateReadElement(MacroAssembler* masm) {
   Label adaptor;
   __ lwz(r5, MemOperand(fp, StandardFrameConstants::kCallerFPOffset));
   __ lwz(r6, MemOperand(r5, StandardFrameConstants::kContextOffset));
+  STATIC_ASSERT(StackFrame::ARGUMENTS_ADAPTOR < 0x3fffu);
   __ cmpi(r6, Operand(Smi::FromInt(StackFrame::ARGUMENTS_ADAPTOR)));
   __ beq(&adaptor);
 
@@ -4657,7 +4658,8 @@ void ArgumentsAccessStub::GenerateNewNonStrictSlow(MacroAssembler* masm) {
   Label runtime;
   __ lwz(r6, MemOperand(fp, StandardFrameConstants::kCallerFPOffset));
   __ lwz(r5, MemOperand(r6, StandardFrameConstants::kContextOffset));
-  __ cmp(r5, Operand(Smi::FromInt(StackFrame::ARGUMENTS_ADAPTOR)));
+  STATIC_ASSERT(StackFrame::ARGUMENTS_ADAPTOR < 0x3fffu);
+  __ cmpi(r5, Operand(Smi::FromInt(StackFrame::ARGUMENTS_ADAPTOR)));
   __ bne(&runtime);
 
   // Patch the arguments.length and the parameters pointer in the current frame.
@@ -4690,6 +4692,7 @@ void ArgumentsAccessStub::GenerateNewNonStrictFast(MacroAssembler* masm) {
   Label adaptor_frame, try_allocate;
   __ lwz(r6, MemOperand(fp, StandardFrameConstants::kCallerFPOffset));
   __ lwz(r5, MemOperand(r6, StandardFrameConstants::kContextOffset));
+  STATIC_ASSERT(StackFrame::ARGUMENTS_ADAPTOR < 0x3fffu);
   __ cmpi(r5, Operand(Smi::FromInt(StackFrame::ARGUMENTS_ADAPTOR)));
   __ beq(&adaptor_frame);
 
@@ -4904,7 +4907,8 @@ void ArgumentsAccessStub::GenerateNewStrict(MacroAssembler* masm) {
   Label adaptor_frame, try_allocate, runtime;
   __ lwz(r5, MemOperand(fp, StandardFrameConstants::kCallerFPOffset));
   __ lwz(r6, MemOperand(r5, StandardFrameConstants::kContextOffset));
-  __ cmp(r6, Operand(Smi::FromInt(StackFrame::ARGUMENTS_ADAPTOR)));
+  STATIC_ASSERT(StackFrame::ARGUMENTS_ADAPTOR < 0x3fffu);
+  __ cmpi(r6, Operand(Smi::FromInt(StackFrame::ARGUMENTS_ADAPTOR)));
   __ beq(&adaptor_frame);
 
   // Get the length from the frame.
@@ -5059,7 +5063,8 @@ void RegExpExecStub::Generate(MacroAssembler* masm) {
   // regexp_data: RegExp data (FixedArray)
   // Check the type of the RegExp. Only continue if type is JSRegExp::IRREGEXP.
   __ ldr(r3, FieldMemOperand(regexp_data, JSRegExp::kDataTagOffset));
-  __ cmp(r3, Operand(Smi::FromInt(JSRegExp::IRREGEXP)));
+  STATIC_ASSERT(Smi::FromInt(JSRegExp::IRREGEXP < 0xffffu);
+  __ cmpi(r3, Operand(Smi::FromInt(JSRegExp::IRREGEXP)));
   __ bne(&runtime);
 
   // regexp_data: RegExp data (FixedArray)
@@ -5072,7 +5077,8 @@ void RegExpExecStub::Generate(MacroAssembler* masm) {
   STATIC_ASSERT(kSmiTagSize + kSmiShiftSize == 1);
   __ add(r5, r5, Operand(2));  // r5 was a smi.
   // Check that the static offsets vector buffer is large enough.
-  __ cmp(r5, Operand(Isolate::kJSRegexpStaticOffsetsVectorSize));
+  STATIC_ASSERT(Isolate::kJSRegexpStaticOffsetsVectorSize < 0xffffu);
+  __ cmpi(r5, Operand(Isolate::kJSRegexpStaticOffsetsVectorSize));
   __ b(hi, &runtime);
 
   // r5: Number of capture registers
@@ -5093,7 +5099,7 @@ void RegExpExecStub::Generate(MacroAssembler* masm) {
   // string length. A negative value will be greater (unsigned comparison).
   __ ldr(r3, MemOperand(sp, kPreviousIndexOffset));
   __ JumpIfNotSmi(r3, &runtime);
-  __ cmp(r6, Operand(r3));
+  __ cmp(r6, r3);
   __ b(ls, &runtime);
 
   // r5: Number of capture registers
@@ -5115,7 +5121,9 @@ void RegExpExecStub::Generate(MacroAssembler* masm) {
   __ ldr(r3,
          FieldMemOperand(last_match_info_elements, FixedArray::kLengthOffset));
   __ add(r5, r5, Operand(RegExpImpl::kLastMatchOverhead));
-  __ cmp(r5, Operand(r3, ASR, kSmiTagSize));
+  STATIC_ASSERT(kSmiTagSize == 1);
+  __ srawi(r0, r3, kSmiTagSize);
+  __ cmp(r5, r0);
   __ bgt(&runtime);
 
   // Reset offset for possibly sliced string.
@@ -5151,7 +5159,8 @@ void RegExpExecStub::Generate(MacroAssembler* masm) {
   STATIC_ASSERT(kSlicedStringTag > kExternalStringTag);
   STATIC_ASSERT(kIsNotStringMask > kExternalStringTag);
   STATIC_ASSERT(kShortExternalStringTag > kExternalStringTag);
-  __ cmp(r4, Operand(kExternalStringTag));
+  STATIC_ASSERT(kExternalStringTag < 0xffffu);
+  __ cmpi(r4, Operand(kExternalStringTag));
   __ blt(&cons_string);
   __ beq(&external_string);
 
@@ -5624,6 +5633,7 @@ void CallFunctionStub::Generate(MacroAssembler* masm) {
     __ stw(ip, FieldMemOperand(r5, JSGlobalPropertyCell::kValueOffset));
   }
   // Check for function proxy.
+  STATIC_ASSERT(JS_FUNCTION_PROXY_TYPE < 0xffffu);
   __ cmpi(r6, Operand(JS_FUNCTION_PROXY_TYPE));
   __ bne(&non_function);
   __ push(r4);  // put proxy as additional argument
@@ -5677,7 +5687,8 @@ void CallConstructStub::Generate(MacroAssembler* masm) {
   // r6: object type
   Label do_call;
   __ bind(&slow);
-  __ cmp(r6, Operand(JS_FUNCTION_PROXY_TYPE));
+  STATIC_ASSERT(JS_FUNCTION_PROXY_TYPE < 0xffffu);
+  __ cmpi(r6, Operand(JS_FUNCTION_PROXY_TYPE));
   __ bne(&non_function_call);
   __ GetBuiltinEntry(r6, Builtins::CALL_FUNCTION_PROXY_AS_CONSTRUCTOR);
   __ jmp(&do_call);

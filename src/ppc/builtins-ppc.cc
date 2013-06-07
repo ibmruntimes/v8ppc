@@ -1360,7 +1360,7 @@ void Builtins::Generate_OnStackReplacement(MacroAssembler* masm) {
   // If the result was -1 it means that we couldn't optimize the
   // function. Just return and continue in the unoptimized version.
   Label skip;
-  __ cmp(r3, Operand(Smi::FromInt(-1)));
+  __ cmpi(r3, Operand(Smi::FromInt(-1)));
   __ bne(&skip);
   __ Ret();
 
