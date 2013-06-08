@@ -906,7 +906,7 @@ void FloatingPointHelper::ConvertDoubleToInt(MacroAssembler* masm,
   __ lwz(r0, MemOperand(sp, 0));
 #endif
   STATIC_ASSERT(HeapNumber::kExponentMask == 0x7ff00000u);
-  __ rlwinm(r0, r0, 12, 21, 31, LeaveRC);
+  __ rlwinm(r0, r0, 12, 21, 31);
   __ cmpli(r0, Operand(0x7ff));
   __ li(int_dst, Operand(0));
   __ beq(&done);
@@ -945,7 +945,7 @@ void FloatingPointHelper::ConvertDoubleToUnsignedInt(MacroAssembler* masm,
   __ lwz(r0, MemOperand(sp, 0));
 #endif
   STATIC_ASSERT(HeapNumber::kExponentMask == 0x7ff00000u);
-  __ rlwinm(r0, r0, 12, 21, 31, LeaveRC);
+  __ rlwinm(r0, r0, 12, 21, 31);
   __ cmpli(r0, Operand(0x7ff));
   __ li(int_dst, Operand(0));
   __ beq(&done);
@@ -1145,19 +1145,15 @@ void FloatingPointHelper::LoadNumberAsInt32(MacroAssembler* masm,
 }
 
 
-// roohack - not converted
 void FloatingPointHelper::DoubleIs32BitInteger(MacroAssembler* masm,
                                                Register src1,
                                                Register src2,
                                                Register dst,
                                                Register scratch,
                                                Label* not_int32) {
-#ifdef PENGUIN_CLEANUP
   // Get exponent alone in scratch.
-  __ Ubfx(scratch,
-          src1,
-          HeapNumber::kExponentShift,
-          HeapNumber::kExponentBits);
+  STATIC_ASSERT(HeapNumber::kExponentMask == 0x7ff00000u);
+  __ rlwinm(scratch, src1, 12, 21, 31);
 
   // Substract the bias from the exponent.
   __ add(scratch, scratch, Operand(-HeapNumber::kExponentBias));
@@ -1180,11 +1176,9 @@ void FloatingPointHelper::DoubleIs32BitInteger(MacroAssembler* masm,
   __ sub(tmp, scratch, tmp);
   __ cmpi(tmp, Operand(30));
   __ bgt(not_int32);
-  // - Bits [21:0] in the mantissa are not null.
-  __ lis(r0, 0x0040);
-  __ addi(r0, r0, -1);
-  __ cmp(src2, r0);  // compare against 0x3fffff
-  __ bne(not_int32);
+  // - Check whether bits [21:0] in the mantissa are not null.
+  __ rlwinm(r0, src2, 0, 10, 31, SetRC);
+  __ bc(not_int32, BF, 2);
 
   // Otherwise the exponent needs to be big enough to shift left all the
   // non zero bits left. So we need the (30 - exponent) last bits of the
@@ -1193,24 +1187,18 @@ void FloatingPointHelper::DoubleIs32BitInteger(MacroAssembler* masm,
   // (32 - exponent) last bits of the 32 higher bits of the mantissa are null.
 
   // Get the 32 higher bits of the mantissa in dst.
-  __ Ubfx(dst,
-          src2,
-          HeapNumber::kMantissaBitsInTopWord,
-          32 - HeapNumber::kMantissaBitsInTopWord);
-  __ slwi(src1, src1, Operand(HeapNumber::kMantissaBitsInTopWord));
+  STATIC_ASSERT(HeapNumber::kMantissaBitsInTopWord == 20);
+  __ rlwinm(dst, src2, 12, 20, 31);
+  __ slwi(src1, src1, Operand(HeapNumber::kNonMantissaBitsInTopWord));
   __ orx(dst, dst, src1);
 
   // Create the mask and test the lower bits (of the higher bits).
   __ subfic(scratch, scratch, Operand(32));
   __ li(src2, Operand(1));
   __ slw(src1, src2, scratch);
-  __ sub(src1, src1, Operand(1));
+  __ add(src1, src1, Operand(-1));
   __ and_(r0, dst, src1, SetRC);
-  __ bne(not_int32);
-#else
-  PPCPORT_UNIMPLEMENTED();
-  __ fake_asm(fMASM10);
-#endif
+  __ bc(not_int32, BF, 2);
 }
 
 
@@ -1345,9 +1333,9 @@ static void EmitIdenticalObjectComparison(MacroAssembler* masm,
       // Read top bits of double representation (second word of value).
       __ lwz(r5, FieldMemOperand(r3, HeapNumber::kExponentOffset));
       // Test that exponent bits are all set.
-      __ Sbfx(r6, r5, HeapNumber::kExponentShift, HeapNumber::kExponentBits);
-      // NaNs have all-one exponents so they sign extend to -1.
-      __ cmpi(r6, Operand(-1));
+      STATIC_ASSERT(HeapNumber::kExponentMask == 0x7ff00000u);
+      __ rlwinm(r6, r5, 12, 21, 31);
+      __ cmpli(r6, Operand(0x7ff));
       __ bne(&return_equal);
 
       // Shift out flag and all exponent bits, retaining only mantissa.
@@ -1464,13 +1452,11 @@ void EmitNanCheck(MacroAssembler* masm, Label* lhs_not_nan, Condition cond) {
   Register lhs_mantissa = exp_first ? r3 : r2;
   Label one_is_nan, neither_is_nan;
 
-  __ Sbfx(r4,
-          lhs_exponent,
-          HeapNumber::kExponentShift,
-          HeapNumber::kExponentBits);
-  // NaNs have all-one exponents so they sign extend to -1.
-  __ cmpi(r4, Operand(-1));
+  STATIC_ASSERT(HeapNumber::kExponentMask == 0x7ff00000u);
+  __ rlwinm(r4, lhs_exponent, 12, 21, 31);
+  __ cmpli(r4, Operand(0x7ff));
   __ b(ne, lhs_not_nan);
+
   __ rlwinm(r4, lhs_exponent, 0,
             HeapNumber::kNonMantissaBitsInTopWord, 31, SetRC);
   __ bc(&one_is_nan, BF, 2);
@@ -1478,13 +1464,11 @@ void EmitNanCheck(MacroAssembler* masm, Label* lhs_not_nan, Condition cond) {
   __ bne(&one_is_nan);
 
   __ bind(lhs_not_nan);
-  __ Sbfx(r4,
-          rhs_exponent,
-          HeapNumber::kExponentShift,
-          HeapNumber::kExponentBits);
-  // NaNs have all-one exponents so they sign extend to -1.
-  __ cmpi(r4, Operand(-1));
+  STATIC_ASSERT(HeapNumber::kExponentMask == 0x7ff00000u);
+  __ rlwinm(r4, rhs_exponent, 12, 21, 31);
+  __ cmpli(r4, Operand(0x7ff));
   __ b(ne, &neither_is_nan);
+
   __ rlwinm(r4, rhs_exponent, 0,
             HeapNumber::kNonMantissaBitsInTopWord, 31, SetRC);
   __ bc(&one_is_nan, BF, 2);
