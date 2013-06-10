@@ -5184,11 +5184,11 @@ void RegExpExecStub::Generate(MacroAssembler* masm) {
   STATIC_ASSERT(kStringEncodingMask == 4);
   __ andi(r3, r3, Operand(kStringEncodingMask));
   __ srawi(r6, r3, 2, SetRC);
-  __ beq(&encoding_type_UC16);
-  __ lwz(r10, FieldMemOperand(regexp_data, JSRegExp::kDataAsciiCodeOffset), ne);
+  __ beq(&encoding_type_UC16, cr0);
+  __ lwz(r10, FieldMemOperand(regexp_data, JSRegExp::kDataAsciiCodeOffset));
   __ jmp(&br_over);
   __ bind(&encoding_type_UC16);
-  __ lwz(r10, FieldMemOperand(regexp_data, JSRegExp::kDataUC16CodeOffset), eq);
+  __ lwz(r10, FieldMemOperand(regexp_data, JSRegExp::kDataUC16CodeOffset));
   __ bind(&br_over);
 
   // Check that the irregexp code has been generated for the actual string
