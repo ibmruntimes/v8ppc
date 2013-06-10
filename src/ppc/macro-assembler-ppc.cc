@@ -330,7 +330,9 @@ void MacroAssembler::Usat(Register dst, int satpos, const Operand& src,
     if (!(src.is_reg() && dst.is(src.rm()))) {
       mov(dst, src);
     }
-    tst(dst, Operand(~satval));
+//    tst(dst, Operand(~satval));
+    mov(r0, Operand(~satval));
+    and_(r0, dst, r0, SetRC);
     beq(&done);
     mov(dst, Operand(0, RelocInfo::NONE), LeaveCC, mi);  // 0 if negative.
     mov(dst, Operand(satval), LeaveCC, pl);  // satval if positive.
@@ -539,7 +541,7 @@ void MacroAssembler::RememberedSetHelper(Register object,  // For debug tests.
   stw(address, MemOperand(scratch));
   add(scratch, scratch, Operand(kPointerSize));
   // Write back new top of buffer.
-  str(scratch, MemOperand(ip));
+  stw(scratch, MemOperand(ip));
   // Call stub on end of buffer.
   // Check for end of buffer.
   mov(r0, Operand(StoreBuffer::kStoreBufferOverflowBit));
@@ -2806,7 +2808,7 @@ void MacroAssembler::SetCounter(StatsCounter* counter, int value,
   if (FLAG_native_code_counters && counter->Enabled()) {
     mov(scratch1, Operand(value));
     mov(scratch2, Operand(ExternalReference(counter)));
-    str(scratch1, MemOperand(scratch2));
+    stw(scratch1, MemOperand(scratch2));
   }
 }
 
@@ -3054,9 +3056,9 @@ void MacroAssembler::JumpIfNotBothSmi(Register reg1,
                                       Register reg2,
                                       Label* on_not_both_smi) {
   STATIC_ASSERT(kSmiTag == 0);
-  tst(reg1, Operand(kSmiTagMask));
-  tst(reg2, Operand(kSmiTagMask), eq);
-  bne(on_not_both_smi);
+  ASSERT_EQ(1, kSmiTagMask);
+  orx(r0, reg1, reg2, LeaveRC);
+  JumpIfNotSmi(r0, on_not_both_smi);
 }
 
 
@@ -3586,18 +3588,18 @@ void MacroAssembler::HasColor(Register object,
 
   Label other_color, word_boundary;
   lwz(ip, MemOperand(bitmap_scratch, MemoryChunk::kHeaderSize));
-  tst(ip, Operand(mask_scratch));
+  and_(r0, ip, mask_scratch, SetRC);
   b(first_bit == 1 ? eq : ne, &other_color);
   // Shift left 1
   rlwinm(mask_scratch, mask_scratch, 1, 0, 30, SetRC);
   beq(&word_boundary, cr0);
-  tst(ip, Operand(mask_scratch));
+  and_(r0, ip, mask_scratch, SetRC);
   b(second_bit == 1 ? ne : eq, has_color);
   jmp(&other_color);
 
   bind(&word_boundary);
   lwz(ip, MemOperand(bitmap_scratch, MemoryChunk::kHeaderSize + kPointerSize));
-  tst(ip, Operand(1));
+  andi(r0, ip, Operand(1));
   b(second_bit == 1 ? ne : eq, has_color);
   bind(&other_color);
 }
@@ -3618,7 +3620,8 @@ void MacroAssembler::JumpIfDataObject(Register value,
   // If it's a string and it's not a cons string then it's an object containing
   // no GC pointers.
   lbz(scratch, FieldMemOperand(scratch, Map::kInstanceTypeOffset));
-  tst(scratch, Operand(kIsIndirectStringMask | kIsNotStringMask));
+  STATIC_ASSERT((kIsIndirectStringMask | kIsNotStringMask) == 0x81);
+  andi(scratch, scratch, Operand(kIsIndirectStringMask | kIsNotStringMask));
   bne(not_data_object);
   bind(&is_data_object);
 }
