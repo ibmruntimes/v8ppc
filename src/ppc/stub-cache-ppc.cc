@@ -2093,13 +2093,13 @@ Handle<Code> CallStubCompiler::CompileMathFloorCall(
   // if resulting conversion is negative, invert for bit tests
   __ rlwinm(r0, r3, 1, 31, 31, SetRC);
   __ mr(r0, r3);
-  __ beq(&positive, 0);
+  __ beq(&positive, cr0);
   __ neg(r0, r3);
   __ bind(&positive);
 
   // if either of the high two bits are set, fail to generic
   __ rlwinm(r0, r0, 2, 30, 31, SetRC);
-  __ bne(&slow, 0);
+  __ bne(&slow, cr0);
 
   // Tag the result.
   STATIC_ASSERT(kSmiTag == 0);
@@ -2112,7 +2112,7 @@ Handle<Code> CallStubCompiler::CompileMathFloorCall(
   __ lwz(r4, MemOperand(sp, 0 * kPointerSize));
   __ lwz(r4, FieldMemOperand(r4, HeapNumber::kExponentOffset));
   __ rlwinm(r0, r4, 1, 31, 31, SetRC);
-  __ beq(&drop_arg_return, 0);
+  __ beq(&drop_arg_return, cr0);
   // If our HeapNumber is negative it was -0, so load its address and return.
   __ lwz(r3, MemOperand(sp));
 
@@ -3681,7 +3681,7 @@ void KeyedLoadStubCompiler::GenerateLoadExternalArray(
     // it to a HeapNumber.
     Label box_int, smi_ok;
     __ rlwinm(r0, value, 2, 30, 31, SetRC);
-    __ beq(&smi_ok, 0);     // If both high bits are clear smi is ok
+    __ beq(&smi_ok, cr0);     // If both high bits are clear smi is ok
     __ cmpi(r0, Operand(3));
     __ bne(&box_int);         // If both high bits are not set, we box it
     __ bind(&smi_ok);
@@ -3711,7 +3711,7 @@ void KeyedLoadStubCompiler::GenerateLoadExternalArray(
     // handle either of the top two bits being set in the value.
     Label box_int;
     __ rlwinm(r0, value, 2, 30, 31, SetRC);
-    __ bne(&box_int, 0);   // If either two high bits are set, box
+    __ bne(&box_int, cr0);   // If either two high bits are set, box
 
     // Tag integer as smi and return it.
     __ slwi(r3, value, Operand(kSmiTagSize));
