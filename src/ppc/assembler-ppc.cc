@@ -931,35 +931,30 @@ void Assembler::orx(Register dst, Register src1, Register src2, RCBit r) {
   x_form(EXT2 | ORX, dst, src1, src2, r);
 }
 
-void Assembler::cmpi(Register src1, const Operand& src2) {
+void Assembler::cmpi(Register src1, const Operand& src2, int crField) {
   int imm16 = src2.imm32_;
   ASSERT(is_int16(imm16));
+  ASSERT(crField >= 0 && crField <= 7);
   imm16 &= kImm16Mask;
-  emit(CMPI | 7*B23 | src1.code()*B16 | imm16);
+  emit(CMPI | crField*B23 | src1.code()*B16 | imm16);
 }
 
-void Assembler::cmpli(Register src1, const Operand& src2) {
+void Assembler::cmpli(Register src1, const Operand& src2, int crField) {
   uint uimm16 = src2.imm32_;
   ASSERT(is_uint16(uimm16));
+  ASSERT(crField >= 0 && crField <= 7);
   uimm16 &= kImm16Mask;
-  emit(CMPLI | 7*B23 | src1.code()*B16 | uimm16);
+  emit(CMPLI | crField*B23 | src1.code()*B16 | uimm16);
 }
 
-void Assembler::cmp(int field, Register src1, Register src2) {
-  emit(EXT2 | CMP | field*B23 | src1.code()*B16 | src2.code()*B11);
+void Assembler::cmp(Register src1, Register src2, int crField) {
+  ASSERT(crField >= 0 && crField <= 7);
+  emit(EXT2 | CMP | crField*B23 | src1.code()*B16 | src2.code()*B11);
 }
 
-void Assembler::cmpl(int field, Register src1, Register src2) {
-  emit(EXT2 | CMPL | field*B23 | src1.code()*B16 | src2.code()*B11);
-}
-
-void Assembler::cmpl(Register src1, Register src2) {
-  cmpl(7, src1, src2);
-}
-
-void Assembler::cmp(Register src1, Register src2 , Condition cond) {
-// Condition is ignored - hold over from ARM code
-  cmp(7, src1, src2);
+void Assembler::cmpl(Register src1, Register src2, int crField) {
+  ASSERT(crField >= 0 && crField <= 7);
+  emit(EXT2 | CMPL | crField*B23 | src1.code()*B16 | src2.code()*B11);
 }
 
 // Pseudo op - load immediate
@@ -1454,9 +1449,11 @@ void Assembler::fdiv(const DwVfpRegister frt,
 }
 
 void Assembler::fcmpu(const DwVfpRegister fra,
-                     const DwVfpRegister frb) {
+                      const DwVfpRegister frb,
+                      int crField) {
   CheckBuffer();
-  emit(EXT4 | FCMPU | 7*B23 | fra.code()*B16 | frb.code()*B11);
+  ASSERT(crField >= 0 && crField <= 7);
+  emit(EXT4 | FCMPU | crField*B23 | fra.code()*B16 | frb.code()*B11);
 }
 
 void Assembler::fmr(const DwVfpRegister frt,

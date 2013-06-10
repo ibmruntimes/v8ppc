@@ -76,8 +76,8 @@ class JumpPatchSite BASE_EMBEDDED {
     ASSERT(!patch_site_.is_bound() && !info_emitted_);
     Assembler::BlockConstPoolScope block_const_pool(masm_);
     __ bind(&patch_site_);
-    __ cmp(0, reg, reg);
-    __ bc(target, BT, 2);  // Always taken before patched.
+    __ cmp(reg, reg, 0);
+    __ beq(target, 0);  // Always taken before patched.
   }
 
   // When initially emitting this ensure that a jump is never generated to skip
@@ -86,8 +86,8 @@ class JumpPatchSite BASE_EMBEDDED {
     ASSERT(!patch_site_.is_bound() && !info_emitted_);
     Assembler::BlockConstPoolScope block_const_pool(masm_);
     __ bind(&patch_site_);
-    __ cmp(0, reg, reg);
-    __ bc(target, BF, 2);  // Never taken before patched.
+    __ cmp(reg, reg, 0);
+    __ bne(target, 0);  // Never taken before patched.
   }
 
   void EmitPatchInfo() {
@@ -1993,10 +1993,10 @@ void FullCodeGenerator::EmitInlineSmiBinaryOp(BinaryOperation* expr,
       __ xor_(r0, left, right);
       __ addc(scratch1, left, right);
       __ rlwinm(r0, r0, 1, 31, 31, SetRC);
-      __ bc(&add_no_overflow, BF, 2);
+      __ bne(&add_no_overflow, 0);
       __ xor_(r0, right, scratch1);
       __ rlwinm(r0, r0, 1, 31, 31, SetRC);
-      __ bc(&stub_call, BF, 2);
+      __ bne(&stub_call, 0);
       __ bind(&add_no_overflow);
       __ mr(right, scratch1);
       break;
@@ -2007,10 +2007,10 @@ void FullCodeGenerator::EmitInlineSmiBinaryOp(BinaryOperation* expr,
       __ xor_(r0, left, right);
       __ subfc(scratch1, left, right);
       __ rlwinm(r0, r0, 1, 31, 31, SetRC);
-      __ bc(&sub_no_overflow, BT, 2);
+      __ beq(&sub_no_overflow, 0);
       __ xor_(r0, right, scratch1);
       __ rlwinm(r0, r0, 1, 31, 31, SetRC);
-      __ bc(&stub_call, BF, 2);
+      __ bne(&stub_call, 0);
       __ bind(&sub_no_overflow);
       __ mr(right, scratch1);
       break;
@@ -3671,7 +3671,7 @@ void FullCodeGenerator::EmitFastAsciiArrayJoin(CallRuntime* expr) {
   __ li(r0, Operand(-1));
   __ addc(string_length, string_length, scratch1);
   __ addze(r0, r0, LeaveOE, SetRC);
-  __ bc(&bailout, BT, 2);
+  __ beq(&bailout, 0);
   __ cmp(element, elements_end);
   __ blt(&loop);
 
@@ -3712,7 +3712,7 @@ void FullCodeGenerator::EmitFastAsciiArrayJoin(CallRuntime* expr) {
   __ li(r0, Operand(-1));
   __ addc(string_length, string_length, scratch2);
   __ addze(r0, r0, LeaveOE, SetRC);
-  __ bc(&bailout, BT, 2);
+  __ beq(&bailout, 0);
   __ SmiUntag(string_length);
 
   // Get first element in the array to free up the elements register to be used
@@ -4120,7 +4120,7 @@ void FullCodeGenerator::VisitCountOperation(CountOperation* expr) {
     __ li(r0, Operand(-1));
     __ addic(r3, r3, Operand(Smi::FromInt(count_value)));
     __ addze(r0, r0, LeaveOE, SetRC);
-    __ bc(&stub_call, BT, 2);
+    __ beq(&stub_call, 0);
     // We could eliminate this smi check if we split the code at
     // the first smi check before calling ToNumber.
     patch_site.EmitJumpIfSmi(r3, &done);

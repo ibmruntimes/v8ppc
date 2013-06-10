@@ -391,7 +391,7 @@ void StringCharLoadGenerator::Generate(MacroAssembler* masm,
   Label cons_string;
   __ mov(ip, Operand(kSlicedNotConsMask));
   __ and_(r0, result, ip, SetRC);
-  __ bc(&cons_string, BT, 2);
+  __ beq(&cons_string, 0);
 
   // Handle slices.
   Label indirect_string_loaded;

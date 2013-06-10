@@ -3506,7 +3506,7 @@ void LCodeGen::DoMathFloor(LUnaryMathOperation* instr) {
                      input,
                      scratch1,
                      scratch2);
-  __ bc(&was_int, BF, 7);
+  __ bnotoverflow(&was_int);
   DeoptimizeIf(al, instr->environment());
   __ bind(&was_int);
 
@@ -3575,7 +3575,7 @@ void LCodeGen::DoMathRound(LUnaryMathOperation* instr) {
                      double_scratch0(),
                      result,
                      scratch);
-  __ bc(&was_int, BF, 7);
+  __ bnotoverflow(&was_int);
   DeoptimizeIf(al, instr->environment());
   __ bind(&was_int);
   __ vmov(result, double_scratch0().low());
@@ -4684,7 +4684,7 @@ void LCodeGen::DoDeferredTaggedToI(LTaggedToI* instr) {
                        scratch1,
                        scratch2,
                        kCheckForInexactConversion);
-    __ bc(&was_int, BF, 7);
+    __ bnotoverflow(&was_int);
     DeoptimizeIf(al, instr->environment());
     __ bind(&was_int);
     // Load the result.
@@ -4774,7 +4774,7 @@ void LCodeGen::DoDoubleToI(LDoubleToI* instr) {
                        kCheckForInexactConversion);
     // Deoptimize if we had a vfp invalid exception,
     // including inexact operation.
-    __ bc(&was_int, BF, 7);
+    __ bnotoverflow(&was_int);
     DeoptimizeIf(al, instr->environment());
     __ bind(&was_int);
     // Retrieve the result.
