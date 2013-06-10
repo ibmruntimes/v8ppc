@@ -200,10 +200,10 @@ void FastNewClosureStub::Generate(MacroAssembler* masm) {
   // Now link a function into a list of optimized functions.
   __ lwz(r7, ContextOperand(r5, Context::OPTIMIZED_FUNCTIONS_LIST));
 
-  __ str(r7, FieldMemOperand(r3, JSFunction::kNextFunctionLinkOffset));
+  __ stw(r7, FieldMemOperand(r3, JSFunction::kNextFunctionLinkOffset));
   // No need for write barrier as JSFunction (eax) is in the new space.
 
-  __ str(r3, ContextOperand(r5, Context::OPTIMIZED_FUNCTIONS_LIST));
+  __ stw(r3, ContextOperand(r5, Context::OPTIMIZED_FUNCTIONS_LIST));
   // Store JSFunction (eax) into edx before issuing write barrier as
   // it clobbers all the registers passed.
   __ mr(r7, r3);
@@ -564,7 +564,8 @@ void ConvertToDoubleStub::Generate(MacroAssembler* masm) {
 
   Label positive, not_special;
   // Convert from Smi to integer.
-  __ mov(source_, Operand(source_, ASR, kSmiTagSize));
+  __ SmiUntag(source_);
+
   // Move sign bit from source to destination.  This works because the sign bit
   // in the exponent word of the double has the same position and polarity as
   // the 2's complement sign bit in a Smi.
@@ -606,9 +607,9 @@ void ConvertToDoubleStub::Generate(MacroAssembler* masm) {
   // Shift up the source chopping the top bit off.
   __ add(zeros_, zeros_, Operand(1));
   // This wouldn't work for 1.0 or -1.0 as the shift would be 32 which means 0.
-  __ mov(source_, Operand(source_, LSL, zeros_));
+  __ slw(source_, source_, zeros_);
   // Compute lower part of fraction (last 12 bits).
-  __ mov(mantissa, Operand(source_, LSL, HeapNumber::kMantissaBitsInTopWord));
+  __ slwi(mantissa_, source_, Operand(HeapNumber::kMantissaBitsInTopWord));
   // And the top (top 20 bits).
   __ orr(exponent,
          exponent,
@@ -751,7 +752,7 @@ void FloatingPointHelper::ConvertNumberToInt32(MacroAssembler* masm,
   __ UntagAndJumpIfSmi(dst, object, &done);
   __ lwz(scratch1, FieldMemOperand(object, HeapNumber::kMapOffset));
   __ cmp(scratch1, heap_number_map);
-  __ b(ne, not_number);
+  __ bne(not_number);
   __ ConvertToInt32(object,
                     dst,
                     scratch1,
@@ -905,7 +906,7 @@ void FloatingPointHelper::ConvertDoubleToInt(MacroAssembler* masm,
   __ lwz(r0, MemOperand(sp, 0));
 #endif
   STATIC_ASSERT(HeapNumber::kExponentMask == 0x7ff00000u);
-  __ rlwinm(r0, r0, 12, 21, 31, LeaveRC);
+  __ rlwinm(r0, r0, 12, 21, 31);
   __ cmpli(r0, Operand(0x7ff));
   __ li(int_dst, Operand(0));
   __ beq(&done);
@@ -944,7 +945,7 @@ void FloatingPointHelper::ConvertDoubleToUnsignedInt(MacroAssembler* masm,
   __ lwz(r0, MemOperand(sp, 0));
 #endif
   STATIC_ASSERT(HeapNumber::kExponentMask == 0x7ff00000u);
-  __ rlwinm(r0, r0, 12, 21, 31, LeaveRC);
+  __ rlwinm(r0, r0, 12, 21, 31);
   __ cmpli(r0, Operand(0x7ff));
   __ li(int_dst, Operand(0));
   __ beq(&done);
@@ -1107,8 +1108,8 @@ void FloatingPointHelper::LoadNumberAsInt32(MacroAssembler* masm,
 
   } else {
     // Load the double value in the destination registers.
-    __ ldr(scratch1, FieldMemOperand(object, HeapNumber::kExponentOffset));
-    __ ldr(scratch2, FieldMemOperand(object, HeapNumber::kMantissaOffset));
+    __ lwz(scratch1, FieldMemOperand(object, HeapNumber::kExponentOffset));
+    __ lwz(scratch2, FieldMemOperand(object, HeapNumber::kMantissaOffset));
 
     // Check for 0 and -0.
     __ bic(dst, scratch1, Operand(HeapNumber::kSignMask));
@@ -1123,13 +1124,16 @@ void FloatingPointHelper::LoadNumberAsInt32(MacroAssembler* masm,
     // scratch2: 1
 
     // Shift back the higher bits of the mantissa.
-    __ mov(dst, Operand(dst, LSR, scratch3));
+    __ srw(dst, dst, scratch3);
     // Set the implicit first bit.
-    __ rsb(scratch3, scratch3, Operand(32));
-    __ orr(dst, dst, Operand(scratch2, LSL, scratch3));
+    __ subfic(scratch3, scratch3, Operand(32));
+    __ slw(scratch2, scratch2, scratch3);
+    __ orx(dst, dst, scratch2);
     // Set the sign.
     __ ldr(scratch1, FieldMemOperand(object, HeapNumber::kExponentOffset));
-    __ tst(scratch1, Operand(HeapNumber::kSignMask));
+    STATIC_ASSERT(HeapNumber::kSignMask == 0x80000000u);
+    __ lis(r0, Operand(HeapNumber::kSignMask >> 16));
+    __ cmp(scratch1, r0);
     __ rsb(dst, dst, Operand::Zero(), LeaveCC, mi);
   }
 
@@ -1141,19 +1145,15 @@ void FloatingPointHelper::LoadNumberAsInt32(MacroAssembler* masm,
 }
 
 
-// roohack - not converted
 void FloatingPointHelper::DoubleIs32BitInteger(MacroAssembler* masm,
                                                Register src1,
                                                Register src2,
                                                Register dst,
                                                Register scratch,
                                                Label* not_int32) {
-#ifdef PENGUIN_CLEANUP
   // Get exponent alone in scratch.
-  __ Ubfx(scratch,
-          src1,
-          HeapNumber::kExponentShift,
-          HeapNumber::kExponentBits);
+  STATIC_ASSERT(HeapNumber::kExponentMask == 0x7ff00000u);
+  __ rlwinm(scratch, src1, 12, 21, 31);
 
   // Substract the bias from the exponent.
   __ add(scratch, scratch, Operand(-HeapNumber::kExponentBias));
@@ -1172,12 +1172,13 @@ void FloatingPointHelper::DoubleIs32BitInteger(MacroAssembler* masm,
   // Another way to put it is that if (exponent - signbit) > 30 then the
   // number cannot be represented as an int32.
   Register tmp = dst;
-  __ sub(tmp, scratch, Operand(src1, LSR, 31));
+  __ rlwinm(tmp, scratch, 1, 31, 31);
+  __ sub(tmp, scratch, tmp);
   __ cmpi(tmp, Operand(30));
-  __ b(gt, not_int32);
-  // - Bits [21:0] in the mantissa are not null.
-  __ tst(src2, Operand(0x3fffff));
-  __ b(ne, not_int32);
+  __ bgt(not_int32);
+  // - Check whether bits [21:0] in the mantissa are not null.
+  __ rlwinm(r0, src2, 0, 10, 31, SetRC);
+  __ bc(not_int32, BF, 2);
 
   // Otherwise the exponent needs to be big enough to shift left all the
   // non zero bits left. So we need the (30 - exponent) last bits of the
@@ -1186,25 +1187,18 @@ void FloatingPointHelper::DoubleIs32BitInteger(MacroAssembler* masm,
   // (32 - exponent) last bits of the 32 higher bits of the mantissa are null.
 
   // Get the 32 higher bits of the mantissa in dst.
-  __ Ubfx(dst,
-          src2,
-          HeapNumber::kMantissaBitsInTopWord,
-          32 - HeapNumber::kMantissaBitsInTopWord);
-  __ orr(dst,
-         dst,
-         Operand(src1, LSL, HeapNumber::kNonMantissaBitsInTopWord));
+  STATIC_ASSERT(HeapNumber::kMantissaBitsInTopWord == 20);
+  __ rlwinm(dst, src2, 12, 20, 31);
+  __ slwi(src1, src1, Operand(HeapNumber::kNonMantissaBitsInTopWord));
+  __ orx(dst, dst, src1);
 
   // Create the mask and test the lower bits (of the higher bits).
-  __ rsb(scratch, scratch, Operand(32));
+  __ subfic(scratch, scratch, Operand(32));
   __ li(src2, Operand(1));
-  __ mov(src1, Operand(src2, LSL, scratch));
-  __ sub(src1, src1, Operand(1));
-  __ tst(dst, src1);
-  __ b(ne, not_int32);
-#else
-  PPCPORT_UNIMPLEMENTED();
-  __ fake_asm(fMASM10);
-#endif
+  __ slw(src1, src2, scratch);
+  __ add(src1, src1, Operand(-1));
+  __ and_(r0, dst, src1, SetRC);
+  __ bc(not_int32, BF, 2);
 }
 
 
@@ -1339,9 +1333,9 @@ static void EmitIdenticalObjectComparison(MacroAssembler* masm,
       // Read top bits of double representation (second word of value).
       __ lwz(r5, FieldMemOperand(r3, HeapNumber::kExponentOffset));
       // Test that exponent bits are all set.
-      __ Sbfx(r6, r5, HeapNumber::kExponentShift, HeapNumber::kExponentBits);
-      // NaNs have all-one exponents so they sign extend to -1.
-      __ cmpi(r6, Operand(-1));
+      STATIC_ASSERT(HeapNumber::kExponentMask == 0x7ff00000u);
+      __ rlwinm(r6, r5, 12, 21, 31);
+      __ cmpli(r6, Operand(0x7ff));
       __ bne(&return_equal);
 
       // Shift out flag and all exponent bits, retaining only mantissa.
@@ -1442,7 +1436,7 @@ static void EmitSmiNonsmiComparison(MacroAssembler* masm,
   // Load the double from lhs, tagged HeapNumber r4, to d7.
   __ sub(r10, lhs, Operand(kHeapObjectTag));
   __ lfd(d7, r10, HeapNumber::kValueOffset);
-  // Convert rhs to a double in d6              .
+  // Convert rhs to a double in d6.
   __ SmiToDoubleFPRegister(rhs, d6, r10, d13);
   // Fall through to both_loaded_as_doubles.
 }
@@ -1458,32 +1452,28 @@ void EmitNanCheck(MacroAssembler* masm, Label* lhs_not_nan, Condition cond) {
   Register lhs_mantissa = exp_first ? r3 : r2;
   Label one_is_nan, neither_is_nan;
 
-  __ Sbfx(r4,
-          lhs_exponent,
-          HeapNumber::kExponentShift,
-          HeapNumber::kExponentBits);
-  // NaNs have all-one exponents so they sign extend to -1.
-  __ cmpi(r4, Operand(-1));
+  STATIC_ASSERT(HeapNumber::kExponentMask == 0x7ff00000u);
+  __ rlwinm(r4, lhs_exponent, 12, 21, 31);
+  __ cmpli(r4, Operand(0x7ff));
   __ b(ne, lhs_not_nan);
+
   __ rlwinm(r4, lhs_exponent, 0,
             HeapNumber::kNonMantissaBitsInTopWord, 31, SetRC);
   __ bc(&one_is_nan, BF, 2);
   __ cmpi(lhs_mantissa, Operand(0, RelocInfo::NONE));
-  __ b(ne, &one_is_nan);
+  __ bne(&one_is_nan);
 
   __ bind(lhs_not_nan);
-  __ Sbfx(r4,
-          rhs_exponent,
-          HeapNumber::kExponentShift,
-          HeapNumber::kExponentBits);
-  // NaNs have all-one exponents so they sign extend to -1.
-  __ cmpi(r4, Operand(-1));
+  STATIC_ASSERT(HeapNumber::kExponentMask == 0x7ff00000u);
+  __ rlwinm(r4, rhs_exponent, 12, 21, 31);
+  __ cmpli(r4, Operand(0x7ff));
   __ b(ne, &neither_is_nan);
+
   __ rlwinm(r4, rhs_exponent, 0,
             HeapNumber::kNonMantissaBitsInTopWord, 31, SetRC);
   __ bc(&one_is_nan, BF, 2);
   __ cmpi(rhs_mantissa, Operand(0, RelocInfo::NONE));
-  __ b(eq, &neither_is_nan);
+  __ beq(&neither_is_nan);
 
   __ bind(&one_is_nan);
   // NaN comparisons always fail.
@@ -1588,16 +1578,13 @@ static void EmitCheckForSymbolsOrObjects(MacroAssembler* masm,
   Label object_test;
   STATIC_ASSERT(kSymbolTag != 0);
   __ andi(r0, r5, Operand(kIsNotStringMask));
-  __ cmpi(r0, Operand(0));
-  __ bne(&object_test);
+  __ bc(&object_test, BF, 2);  // bne cr0
   __ andi(r0, r5, Operand(kIsSymbolMask));
-  __ cmpi(r0, Operand(0));
-  __ beq(possible_strings);
+  __ bc(possible_strings, BT, 2);  // beq cr0
   __ CompareObjectType(lhs, r6, r6, FIRST_NONSTRING_TYPE);
   __ bge(not_both_strings);
   __ andi(r0, r6, Operand(kIsSymbolMask));
-  __ cmpi(r0, Operand(0));
-  __ beq(possible_strings);
+  __ bc(possible_strings, BT, 2);  // beq cr0
 
   // Both are symbols.  We already checked they weren't the same pointer
   // so they are not equal.
@@ -1672,9 +1659,8 @@ void NumberToStringStub::GenerateLookupNumberStringCache(MacroAssembler* masm,
 
       // Calculate address of entry in string cache: each entry consists
       // of two pointer sized fields.
-      __ add(scratch1,
-             number_string_cache,
-             Operand(scratch1, LSL, kPointerSizeLog2 + 1));
+      __ slwi(scratch1, scratch1, Operand(kPointerSizeLog2 + 1));
+      __ add(scratch1, number_string_cache, scratch1);
 
       Register probe = mask;
       __ ldr(probe,
@@ -2218,9 +2204,9 @@ void UnaryOpStub::GenerateHeapNumberCodeSub(MacroAssembler* masm,
   EmitCheckForHeapNumber(masm, r3, r4, r9, slow);
   // r0 is a heap number.  Get a new heap number in r3.
   if (mode_ == UNARY_OVERWRITE) {
-    __ ldr(r5, FieldMemOperand(r3, HeapNumber::kExponentOffset));
-    __ eor(r5, r5, Operand(HeapNumber::kSignMask));  // Flip sign.
-    __ str(r2, FieldMemOperand(r0, HeapNumber::kExponentOffset));
+    __ lwz(r5, FieldMemOperand(r3, HeapNumber::kExponentOffset));
+    __ xoris(r5, r5, Operand(HeapNumber::kExponentOffset));  // Flip sign.
+    __ stw(r2, FieldMemOperand(r0, HeapNumber::kExponentOffset));
   } else {
     Label slow_allocate_heapnumber, heapnumber_allocated;
     __ AllocateHeapNumber(r4, r5, r6, r9, &slow_allocate_heapnumber);
@@ -2261,7 +2247,7 @@ void UnaryOpStub::GenerateHeapNumberCodeBitNot(
   __ li(r0, Operand(-1));
   __ xor_(r4, r4, r0);
 
-  __ mov(r5, Operand(0x40000000));
+  __ lis(r5, Operand(0x40000000 >> 16));
   __ add(r5, r4, r5);
   __ cmpi(r5, Operand(0));
   __ blt(&try_float);
@@ -2523,7 +2509,7 @@ void BinaryOpStub::GenerateSmiSmiOperation(MacroAssembler* masm) {
       // Check for power of two on the right hand side.
       __ JumpIfNotPowerOfTwoOrZero(right, scratch1, &not_smi_result);
       // Check for positive and no remainder (scratch1 contains right - 1).
-      __ mov(r0, Operand(0x80000000u));
+      __ lis(r0, Operand(0x80000000u >> 16));
       __ orx(scratch2, scratch1, r0);
       __ and_(r0, left, scratch2, SetRC);
       __ bc(&not_smi_result, BF, 2);
@@ -2577,7 +2563,7 @@ void BinaryOpStub::GenerateSmiSmiOperation(MacroAssembler* masm) {
       __ srw(scratch1, scratch1, scratch2);
       // Unsigned shift is not allowed to produce a negative number, so
       // check the sign bit and the sign bit after Smi tagging.
-      __ mov(scratch2, Operand(0xc0000000));
+      __ lis(scratch2, Operand(0xc0000000u >> 16));
       __ and_(r0, scratch1, scratch2, SetRC);
       __ bc(&not_smi_result, BF, 2);
       // Smi tag result.
@@ -2588,7 +2574,7 @@ void BinaryOpStub::GenerateSmiSmiOperation(MacroAssembler* masm) {
       // Remove tags from operands.
       __ SmiUntag(scratch1, left);
       __ GetLeastBitsFromSmi(scratch2, right, 5);
-      __ mov(scratch1, Operand(scratch1, LSL, scratch2));
+      __ slw(scratch1, scratch1, scratch2);
       // Check that the signed result fits in a Smi.
       __ addis(scratch2, scratch1, 0x4000);
       __ cmpi(scratch2, Operand(0));
@@ -2755,8 +2741,7 @@ void BinaryOpStub::GenerateFPOperation(MacroAssembler* masm,
       }
 
       // Check that the *signed* result fits in a smi.
-      __ mov(r6, Operand(0x40000000));
-      __ add(r6, r5, r6);
+      __ addis(r6, r5, 0x40000000u >> 16);
       __ cmpi(r6, Operand(0));
       __ blt(&result_not_a_smi);
       __ SmiTag(r3, r5);
@@ -2884,12 +2869,12 @@ void BinaryOpStub::GenerateBothStringStub(MacroAssembler* masm) {
   // Test if left operand is a string.
   __ JumpIfSmi(left, &call_runtime);
   __ CompareObjectType(left, r5, r5, FIRST_NONSTRING_TYPE);
-  __ b(ge, &call_runtime);
+  __ bge(&call_runtime);
 
   // Test if right operand is a string.
   __ JumpIfSmi(right, &call_runtime);
   __ CompareObjectType(right, r5, r5, FIRST_NONSTRING_TYPE);
-  __ b(ge, &call_runtime);
+  __ bge(&call_runtime);
 
   StringAddStub string_add_stub(NO_STRING_CHECK_IN_STUB);
   GenerateRegisterArgsPush(masm);
@@ -3012,8 +2997,7 @@ void BinaryOpStub::GenerateInt32Stub(MacroAssembler* masm) {
           __ lwz(scratch1, MemOperand(sp, 4));
 #endif
           __ add(sp, sp, Operand(8));
-          __ mov(scratch2,  Operand(0x40000000));
-          __ add(scratch2, scratch1, scratch2);
+          __ addis(scratch2, scratch1, 0x40000000u >> 16);
           __ cmpi(scratch2, Operand(0));
           // If not try to return a heap number.
           __ blt(&return_heap_number);
@@ -3174,8 +3158,7 @@ void BinaryOpStub::GenerateInt32Stub(MacroAssembler* masm) {
       }
 
       // Check if the result fits in a smi.
-      __ mov(scratch1, Operand(0x40000000));
-      __ add(scratch1, r5, scratch1);
+      __ addis(scratch1, r5, 0x40000000u >> 16);
       __ cmpi(scratch1, Operand(0));
       // If not try to return a heap number. (We know the result is an int32.)
       __ blt(&return_heap_number);
@@ -3282,7 +3265,7 @@ void BinaryOpStub::GenerateOddballStub(MacroAssembler* masm) {
   // Convert oddball arguments to numbers.
   Label check, done;
   __ CompareRoot(r4, Heap::kUndefinedValueRootIndex);
-  __ b(ne, &check);
+  __ bne(&check);
   if (Token::IsBitOp(op_)) {
     __ mov(r4, Operand(Smi::FromInt(0)));
   } else {
@@ -3339,7 +3322,7 @@ void BinaryOpStub::GenerateAddStrings(MacroAssembler* masm) {
   // Check if left argument is a string.
   __ JumpIfSmi(left, &left_not_string);
   __ CompareObjectType(left, r5, r5, FIRST_NONSTRING_TYPE);
-  __ b(ge, &left_not_string);
+  __ bge(&left_not_string);
 
   StringAddStub string_add_left_stub(NO_STRING_CHECK_LEFT_IN_STUB);
   GenerateRegisterArgsPush(masm);
@@ -3349,7 +3332,7 @@ void BinaryOpStub::GenerateAddStrings(MacroAssembler* masm) {
   __ bind(&left_not_string);
   __ JumpIfSmi(right, &call_runtime);
   __ CompareObjectType(right, r5, r5, FIRST_NONSTRING_TYPE);
-  __ b(ge, &call_runtime);
+  __ bge(&call_runtime);
 
   StringAddStub string_add_right_stub(NO_STRING_CHECK_RIGHT_IN_STUB);
   GenerateRegisterArgsPush(masm);
@@ -3732,13 +3715,13 @@ void MathPowStub::Generate(MacroAssembler* masm) {
     // The exponent and base are supplied as arguments on the stack.
     // This can only happen if the stub is called from non-optimized code.
     // Load input parameters from stack to double registers.
-    __ ldr(base, MemOperand(sp, 1 * kPointerSize));
-    __ ldr(exponent, MemOperand(sp, 0 * kPointerSize));
+    __ lwz(base, MemOperand(sp, 1 * kPointerSize));
+    __ lwz(exponent, MemOperand(sp, 0 * kPointerSize));
 
     __ LoadRoot(heapnumbermap, Heap::kHeapNumberMapRootIndex);
 
     __ UntagAndJumpIfSmi(scratch, base, &base_is_smi);
-    __ ldr(scratch, FieldMemOperand(base, JSObject::kMapOffset));
+    __ lwz(scratch, FieldMemOperand(base, JSObject::kMapOffset));
     __ cmp(scratch, heapnumbermap);
     __ b(ne, &call_runtime);
 
@@ -3752,7 +3735,7 @@ void MathPowStub::Generate(MacroAssembler* masm) {
 
     __ UntagAndJumpIfSmi(scratch, exponent, &int_exponent);
 
-    __ ldr(scratch, FieldMemOperand(exponent, JSObject::kMapOffset));
+    __ lwz(scratch, FieldMemOperand(exponent, JSObject::kMapOffset));
     __ cmp(scratch, heapnumbermap);
     __ b(ne, &call_runtime);
     __ vldr(double_exponent,
@@ -5042,21 +5025,22 @@ void RegExpExecStub::Generate(MacroAssembler* masm) {
   ExternalReference address_of_regexp_stack_memory_size =
       ExternalReference::address_of_regexp_stack_memory_size(isolate);
   __ mov(r3, Operand(address_of_regexp_stack_memory_size));
-  __ ldr(r3, MemOperand(r3, 0));
+  __ lwz(r3, MemOperand(r3, 0));
   __ cmpi(r3, Operand(0));
   __ beq(&runtime);
 
   // Check that the first argument is a JSRegExp object.
-  __ ldr(r3, MemOperand(sp, kJSRegExpOffset));
+  __ lwz(r3, MemOperand(sp, kJSRegExpOffset));
   STATIC_ASSERT(kSmiTag == 0);
   __ JumpIfSmi(r3, &runtime);
   __ CompareObjectType(r3, r4, r4, JS_REGEXP_TYPE);
   __ bne(&runtime);
 
   // Check that the RegExp has been compiled (data contains a fixed array).
-  __ ldr(regexp_data, FieldMemOperand(r3, JSRegExp::kDataOffset));
+  __ lwz(regexp_data, FieldMemOperand(r3, JSRegExp::kDataOffset));
   if (FLAG_debug_code) {
-    __ tst(regexp_data, Operand(kSmiTagMask));
+    STATIC_ASSERT(kSmiTagMask == 1);
+    __ andi(r0, regexp_data, Operand(kSmiTagMask));
     __ Check(ne, "Unexpected type for RegExp data, FixedArray expected");
     __ CompareObjectType(regexp_data, r3, r3, FIXED_ARRAY_TYPE);
     __ Check(eq, "Unexpected type for RegExp data, FixedArray expected");
@@ -5064,20 +5048,20 @@ void RegExpExecStub::Generate(MacroAssembler* masm) {
 
   // regexp_data: RegExp data (FixedArray)
   // Check the type of the RegExp. Only continue if type is JSRegExp::IRREGEXP.
-  __ ldr(r3, FieldMemOperand(regexp_data, JSRegExp::kDataTagOffset));
+  __ lwz(r3, FieldMemOperand(regexp_data, JSRegExp::kDataTagOffset));
   STATIC_ASSERT(Smi::FromInt(JSRegExp::IRREGEXP < 0xffffu);
   __ cmpi(r3, Operand(Smi::FromInt(JSRegExp::IRREGEXP)));
   __ bne(&runtime);
 
   // regexp_data: RegExp data (FixedArray)
   // Check that the number of captures fit in the static offsets vector buffer.
-  __ ldr(r5,
+  __ lwz(r5,
          FieldMemOperand(regexp_data, JSRegExp::kIrregexpCaptureCountOffset));
   // Calculate number of capture registers (number_of_captures + 1) * 2. This
   // uses the asumption that smis are 2 * their untagged value.
   STATIC_ASSERT(kSmiTag == 0);
   STATIC_ASSERT(kSmiTagSize + kSmiShiftSize == 1);
-  __ add(r5, r5, Operand(2));  // r5 was a smi.
+  __ addi(r5, r5, Operand(2));  // r5 was a smi.
   // Check that the static offsets vector buffer is large enough.
   STATIC_ASSERT(Isolate::kJSRegexpStaticOffsetsVectorSize < 0xffffu);
   __ cmpi(r5, Operand(Isolate::kJSRegexpStaticOffsetsVectorSize));
@@ -5086,12 +5070,12 @@ void RegExpExecStub::Generate(MacroAssembler* masm) {
   // r5: Number of capture registers
   // regexp_data: RegExp data (FixedArray)
   // Check that the second argument is a string.
-  __ ldr(subject, MemOperand(sp, kSubjectOffset));
+  __ lwz(subject, MemOperand(sp, kSubjectOffset));
   __ JumpIfSmi(subject, &runtime);
   Condition is_string = masm->IsObjectStringType(subject, r0);
   __ b(NegateCondition(is_string), &runtime);
   // Get the length of the string to r6.
-  __ ldr(r6, FieldMemOperand(subject, String::kLengthOffset));
+  __ lwz(r6, FieldMemOperand(subject, String::kLengthOffset));
 
   // r5: Number of capture registers
   // r6: Length of subject string as a smi
@@ -5099,7 +5083,7 @@ void RegExpExecStub::Generate(MacroAssembler* masm) {
   // regexp_data: RegExp data (FixedArray)
   // Check that the third argument is a positive smi less than the subject
   // string length. A negative value will be greater (unsigned comparison).
-  __ ldr(r3, MemOperand(sp, kPreviousIndexOffset));
+  __ lwz(r3, MemOperand(sp, kPreviousIndexOffset));
   __ JumpIfNotSmi(r3, &runtime);
   __ cmp(r6, r3);
   __ b(ls, &runtime);
@@ -5108,14 +5092,14 @@ void RegExpExecStub::Generate(MacroAssembler* masm) {
   // subject: Subject string
   // regexp_data: RegExp data (FixedArray)
   // Check that the fourth object is a JSArray object.
-  __ ldr(r3, MemOperand(sp, kLastMatchInfoOffset));
+  __ lwz(r3, MemOperand(sp, kLastMatchInfoOffset));
   __ JumpIfSmi(r3, &runtime);
   __ CompareObjectType(r3, r4, r4, JS_ARRAY_TYPE);
-  __ bne(&runtime);
+  __ bne(runtime);
   // Check that the JSArray is in fast case.
-  __ ldr(last_match_info_elements,
+  __ lwz(last_match_info_elements,
          FieldMemOperand(r3, JSArray::kElementsOffset));
-  __ ldr(r3, FieldMemOperand(last_match_info_elements, HeapObject::kMapOffset));
+  __ lwz(r3, FieldMemOperand(last_match_info_elements, HeapObject::kMapOffset));
   __ CompareRoot(r3, Heap::kFixedArrayMapRootIndex);
   __ bne(&runtime);
   // Check that the last match info has space for the capture registers and the
@@ -5129,7 +5113,7 @@ void RegExpExecStub::Generate(MacroAssembler* masm) {
   __ bgt(&runtime);
 
   // Reset offset for possibly sliced string.
-  __ mov(r11, Operand(0));
+  __ li(r11, Operand(0));
   // subject: Subject string
   // regexp_data: RegExp data (FixedArray)
   // Check the representation and encoding of the subject string.
@@ -5138,12 +5122,13 @@ void RegExpExecStub::Generate(MacroAssembler* masm) {
   __ ldrb(r3, FieldMemOperand(r3, Map::kInstanceTypeOffset));
   // First check for flat string.  None of the following string type tests will
   // succeed if subject is not a string or a short external string.
-  __ and_(r4,
-          r3,
-          Operand(kIsNotStringMask |
+  STATIC_ASSERT((kIsNotStringMask |
                   kStringRepresentationMask |
-                  kShortExternalStringMask),
-          SetCC);
+                  kShortExternalStringMask) == 0x93);
+  __ andi(r4, r3, Operand(kIsNotStringMask |
+                          kStringRepresentationMask |
+                          kShortExternalStringMask));
+  __ cmpi(r4, Operand(0));
   STATIC_ASSERT((kStringTag | kSeqStringTag) == 0);
   __ beq(&seq_string);
 
@@ -5168,12 +5153,13 @@ void RegExpExecStub::Generate(MacroAssembler* masm) {
 
   // Catch non-string subject or short external string.
   STATIC_ASSERT(kNotStringTag != 0 && kShortExternalStringTag !=0);
-  __ tst(r4, Operand(kIsNotStringMask | kShortExternalStringMask));
+  STATIC_ASSERT(kNotStringTag | kShortExternalStringTag < 0xffffu);
+  __ andi(r0, r4, Operand(kIsNotStringMask | kShortExternalStringMask));
   __ bne(&runtime);
 
   // String is sliced.
   __ ldr(r11, FieldMemOperand(subject, SlicedString::kOffsetOffset));
-  __ mov(r11, Operand(r11, ASR, kSmiTagSize));
+  __ SmiUntag(r11);
   __ ldr(subject, FieldMemOperand(subject, SlicedString::kParentOffset));
   // r11: offset of sliced string, smi-tagged.
   __ jmp(&check_encoding);
@@ -5188,8 +5174,9 @@ void RegExpExecStub::Generate(MacroAssembler* masm) {
   __ ldr(r3, FieldMemOperand(subject, HeapObject::kMapOffset));
   __ ldrb(r3, FieldMemOperand(r3, Map::kInstanceTypeOffset));
   STATIC_ASSERT(kSeqStringTag == 0);
-  __ tst(r3, Operand(kStringRepresentationMask));
-  __ bne(&external_string);
+  STATIC_ASSERT(kStringRepresentationMask == 3);
+  __ andi(r0, r3, Operand(kStringRepresentationMask));
+  __ bc(&external_string, BF, 2);
 
   __ bind(&seq_string);
   // subject: Subject string
@@ -5198,10 +5185,11 @@ void RegExpExecStub::Generate(MacroAssembler* masm) {
   STATIC_ASSERT(4 == kAsciiStringTag);
   STATIC_ASSERT(kTwoByteStringTag == 0);
   // Find the code object based on the assumptions above.
-  __ and_(r3, r3, Operand(kStringEncodingMask));
-  __ mov(r6, Operand(r3, ASR, 2), SetCC);
-  __ ldr(r10, FieldMemOperand(regexp_data, JSRegExp::kDataAsciiCodeOffset), ne);
-  __ ldr(r10, FieldMemOperand(regexp_data, JSRegExp::kDataUC16CodeOffset), eq);
+  STATIC_ASSERT(kStringEncodingMask == 4);
+  __ andi(r3, r3, Operand(kStringEncodingMask));
+  __ srawi(r6, r3, 2, SetRC);
+  __ lwz(r10, FieldMemOperand(regexp_data, JSRegExp::kDataAsciiCodeOffset), ne);
+  __ lwz(r10, FieldMemOperand(regexp_data, JSRegExp::kDataUC16CodeOffset), eq);
 
   // Check that the irregexp code has been generated for the actual string
   // encoding. If it has, the field contains a code object otherwise it contains
@@ -5214,8 +5202,8 @@ void RegExpExecStub::Generate(MacroAssembler* masm) {
   // regexp_data: RegExp data (FixedArray)
   // Load used arguments before starting to push arguments for call to native
   // RegExp code to avoid handling changing stack height.
-  __ ldr(r4, MemOperand(sp, kPreviousIndexOffset));
-  __ mov(r4, Operand(r4, ASR, kSmiTagSize));
+  __ lwz(r4, MemOperand(sp, kPreviousIndexOffset));
+  __ SmiUntag(r4);
 
   // r4: previous index
   // r6: encoding of subject string (1 if ASCII, 0 if two_byte);
@@ -5235,29 +5223,29 @@ void RegExpExecStub::Generate(MacroAssembler* masm) {
 
   // Argument 9 (sp[20]): Pass current isolate address.
   __ mov(r3, Operand(ExternalReference::isolate_address()));
-  __ str(r3, MemOperand(sp, 5 * kPointerSize));
+  __ stw(r3, MemOperand(sp, 5 * kPointerSize));
 
   // Argument 8 (sp[16]): Indicate that this is a direct call from JavaScript.
   __ mov(r3, Operand(1));
-  __ str(r3, MemOperand(sp, 4 * kPointerSize));
+  __ stw(r3, MemOperand(sp, 4 * kPointerSize));
 
   // Argument 7 (sp[12]): Start (high end) of backtracking stack memory area.
   __ mov(r3, Operand(address_of_regexp_stack_memory_address));
-  __ ldr(r3, MemOperand(r3, 0));
+  __ lwz(r3, MemOperand(r3, 0));
   __ mov(r5, Operand(address_of_regexp_stack_memory_size));
-  __ ldr(r5, MemOperand(r5, 0));
+  __ lwz(r5, MemOperand(r5, 0));
   __ add(r3, r3, Operand(r5));
-  __ str(r3, MemOperand(sp, 3 * kPointerSize));
+  __ stw(r3, MemOperand(sp, 3 * kPointerSize));
 
   // Argument 6: Set the number of capture registers to zero to force global
   // regexps to behave as non-global.  This does not affect non-global regexps.
   __ mov(r3, Operand(0));
-  __ str(r3, MemOperand(sp, 2 * kPointerSize));
+  __ stw(r3, MemOperand(sp, 2 * kPointerSize));
 
   // Argument 5 (sp[4]): static offsets vector buffer.
   __ mov(r3,
          Operand(ExternalReference::address_of_static_offsets_vector(isolate)));
-  __ str(r3, MemOperand(sp, 1 * kPointerSize));
+  __ stw(r3, MemOperand(sp, 1 * kPointerSize));
 
   // For arguments 4 and 3 get string length, calculate start of string data and
   // calculate the shift of the index (0 for ASCII and 1 for two byte).
@@ -5267,17 +5255,20 @@ void RegExpExecStub::Generate(MacroAssembler* masm) {
   // frame. Therefore we have to use fp, which points exactly to two pointer
   // sizes below the previous sp. (Because creating a new stack frame pushes
   // the previous fp onto the stack and moves up sp by 2 * kPointerSize.)
-  __ ldr(subject, MemOperand(fp, kSubjectOffset + 2 * kPointerSize));
+  __ lwz(subject, MemOperand(fp, kSubjectOffset + 2 * kPointerSize));
   // If slice offset is not 0, load the length from the original sliced string.
   // Argument 4, r6: End of string data
   // Argument 3, r5: Start of string data
   // Prepare start and end index of the input.
-  __ add(r11, r22, Operand(r11, LSL, r6));
-  __ add(r5, r11, Operand(r4, LSL, r6));
+  __ slw(r11, r11, r6);
+  __ add(r11, r22, r11));
+  __ slw(r5, r4, r6);
+  __ add(r5, r11, r5);
 
-  __ ldr(r22, FieldMemOperand(subject, String::kLengthOffset));
-  __ mov(r22, Operand(r22, ASR, kSmiTagSize));
-  __ add(r6, r11, Operand(r22, LSL, r6));
+  __ lwz(r22, FieldMemOperand(subject, String::kLengthOffset));
+  __ SmiUnTag(r22);
+  __ slw(r6, r22, r6);
+  __ add(r6, r11, r6);
 
   // Argument 2 (r4): Previous index.
   // Already there
@@ -5317,11 +5308,11 @@ void RegExpExecStub::Generate(MacroAssembler* masm) {
   __ mov(r4, Operand(isolate->factory()->the_hole_value()));
   __ mov(r5, Operand(ExternalReference(Isolate::kPendingExceptionAddress,
                                        isolate)));
-  __ ldr(r3, MemOperand(r5, 0));
+  __ lwz(r3, MemOperand(r5, 0));
   __ cmp(r3, r4);
   __ beq(&runtime);
 
-  __ str(r4, MemOperand(r5, 0));  // Clear pending exception.
+  __ stw(r4, MemOperand(r5, 0));  // Clear pending exception.
 
   // Check if the exception is a termination. If so, throw as uncatchable.
   __ CompareRoot(r3, Heap::kTerminationExceptionRootIndex);
@@ -5342,7 +5333,7 @@ void RegExpExecStub::Generate(MacroAssembler* masm) {
 
   // Process the result from the native regexp code.
   __ bind(&success);
-  __ ldr(r4,
+  __ lwz(r4,
          FieldMemOperand(regexp_data, JSRegExp::kIrregexpCaptureCountOffset));
   // Calculate number of capture registers (number_of_captures + 1) * 2.
   STATIC_ASSERT(kSmiTag == 0);
@@ -5352,11 +5343,11 @@ void RegExpExecStub::Generate(MacroAssembler* masm) {
   // r4: number of capture registers
   // r7: subject string
   // Store the capture count.
-  __ mov(r5, Operand(r4, LSL, kSmiTagSize + kSmiShiftSize));  // To smi.
-  __ str(r5, FieldMemOperand(last_match_info_elements,
+  __ SmiTag(r5, r4);
+  __ stw(r5, FieldMemOperand(last_match_info_elements,
                              RegExpImpl::kLastCaptureCountOffset));
   // Store last subject and last input.
-  __ str(subject,
+  __ stw(subject,
          FieldMemOperand(last_match_info_elements,
                          RegExpImpl::kLastSubjectOffset));
   __ mr(r5, subject);
@@ -5366,7 +5357,7 @@ void RegExpExecStub::Generate(MacroAssembler* masm) {
                       r10,
                       kLRHasNotBeenSaved,
                       kDontSaveFPRegs);
-  __ str(subject,
+  __ stw(subject,
          FieldMemOperand(last_match_info_elements,
                          RegExpImpl::kLastInputOffset));
   __ RecordWriteField(last_match_info_elements,
@@ -5393,30 +5384,32 @@ void RegExpExecStub::Generate(MacroAssembler* masm) {
   __ sub(r4, r4, Operand(1), SetCC);
   __ b(mi, &done);
   // Read the value from the static offsets vector buffer.
-  __ ldr(r6, MemOperand(r5, kPointerSize, PostIndex));
+  __ lwz(r6, MemOperand(r5, kPointerSize, PostIndex));
   // Store the smi value in the last match info.
-  __ mov(r6, Operand(r6, LSL, kSmiTagSize));
-  __ str(r6, MemOperand(r3, kPointerSize, PostIndex));
+  __ SmiTag(r6);
+  __ stw(r6, MemOperand(r3, kPointerSize, PostIndex));
   __ jmp(&next_capture);
   __ bind(&done);
 
   // Return last match info.
-  __ ldr(r3, MemOperand(sp, kLastMatchInfoOffset));
+  __ lwz(r3, MemOperand(sp, kLastMatchInfoOffset));
   __ add(sp, sp, Operand(4 * kPointerSize));
   __ Ret();
 
   // External string.  Short external strings have already been ruled out.
   // r3: scratch
   __ bind(&external_string);
-  __ ldr(r3, FieldMemOperand(subject, HeapObject::kMapOffset));
+  __ lwz(r3, FieldMemOperand(subject, HeapObject::kMapOffset));
   __ ldrb(r3, FieldMemOperand(r3, Map::kInstanceTypeOffset));
   if (FLAG_debug_code) {
     // Assert that we do not have a cons or slice (indirect strings) here.
     // Sequential strings have already been ruled out.
-    __ tst(r3, Operand(kIsIndirectStringMask));
+    STATIC_ASSERT(kIsIndirectStringMask == 1));
+    __ andi(r0, r3, Operand(kIsIndirectStringMask));
+    __ cmpi(r0, Operand(0));  // to get cr7 set
     __ Assert(eq, "external string expected, but not found");
   }
-  __ ldr(subject,
+  __ lwz(subject,
          FieldMemOperand(subject, ExternalString::kResourceDataOffset));
   // Move the pointer so that offset-wise, it looks like a sequential string.
   STATIC_ASSERT(SeqTwoByteString::kHeaderSize == SeqAsciiString::kHeaderSize);
@@ -7359,8 +7352,8 @@ void StringDictionaryLookupStub::GenerateNegativeLookup(MacroAssembler* masm,
   __ MultiPop(spill_mask);  // MultiPop does not touch condition flags
   __ mtlr(r0);
 
-  __ b(eq, done);
-  __ b(ne, miss);
+  __ beq(done);
+  __ bne(miss);
 }
 
 

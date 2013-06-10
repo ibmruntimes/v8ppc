@@ -1980,9 +1980,10 @@ void FullCodeGenerator::EmitInlineSmiBinaryOp(BinaryOperation* expr,
       __ b(&stub_call);
       __ SmiUntag(scratch1, left);
       __ GetLeastBitsFromSmi(scratch2, right, 5);
-      __ mov(scratch1, Operand(scratch1, LSR, scratch2));
-      __ tst(scratch1, Operand(0xc0000000));
-      __ b(ne, &stub_call);
+      __ srw(scratch1, scratch1, scratch2);
+      __ lis(r0, Operand(0xc0000000 >> 16));
+      __ cmp(scratch1, r0);
+      __ bne(&stub_call);
       __ SmiTag(right, scratch1);
       break;
     }
