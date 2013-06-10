@@ -330,10 +330,9 @@ void MacroAssembler::Usat(Register dst, int satpos, const Operand& src,
     if (!(src.is_reg() && dst.is(src.rm()))) {
       mov(dst, src);
     }
-//    tst(dst, Operand(~satval));
     mov(r0, Operand(~satval));
     and_(r0, dst, r0, SetRC);
-    beq(&done);
+    beq(&done, cr0);
     mov(dst, Operand(0, RelocInfo::NONE), LeaveCC, mi);  // 0 if negative.
     mov(dst, Operand(satval), LeaveCC, pl);  // satval if positive.
     bind(&done);
@@ -434,8 +433,7 @@ void MacroAssembler::RecordWriteField(
   if (emit_debug_code()) {
     Label ok;
     andi(r0, dst, Operand((1 << kPointerSizeLog2) - 1));
-    cmpi(r0, Operand(0));
-    beq(&ok);
+    beq(&ok, cr0);
     stop("Unaligned cell in write barrier");
     bind(&ok);
   }
@@ -1292,8 +1290,7 @@ void MacroAssembler::IsObjectJSStringType(Register object,
   lwz(scratch, FieldMemOperand(object, HeapObject::kMapOffset));
   lbz(scratch, FieldMemOperand(scratch, Map::kInstanceTypeOffset));
   andi(r0, scratch, Operand(kIsNotStringMask));
-  cmpi(r0, Operand(0));
-  bne(fail);
+  bne(fail, cr0);
 }
 
 
@@ -1848,7 +1845,7 @@ void MacroAssembler::UndoAllocationInNewSpace(Register object,
 
   // Make sure the object has no tag before resetting top.
   mov(r0, Operand(~kHeapObjectTagMask));
-  and_(object, object, r0, LeaveRC);
+  and_(object, object, r0);
   // was.. and_(object, object, Operand(~kHeapObjectTagMask));
 #ifdef DEBUG
   // Check that the object un-allocated is below the current top.
@@ -2258,16 +2255,14 @@ void MacroAssembler::TryGetFunctionPrototype(Register function,
         FieldMemOperand(scratch, SharedFunctionInfo::kCompilerHintsOffset));
     andi(r0, scratch,
         Operand(Smi::FromInt(1 << SharedFunctionInfo::kBoundFunction)));
-    cmpi(r0, Operand(0));
-    bne(miss);
+    bne(miss, cr0);
   }
 
   // Make sure that the function has an instance prototype.
   Label non_instance;
   lbz(scratch, FieldMemOperand(result, Map::kBitFieldOffset));
   andi(r0, scratch, Operand(1 << Map::kHasNonInstancePrototype));
-  cmpi(r0, Operand(0));
-  bne(&non_instance);
+  bne(&non_instance, cr0);
 
   // Get the prototype or initial map from the function.
   lwz(result,
@@ -3250,8 +3245,7 @@ void MacroAssembler::CopyBytes(Register src,
   beq(&done);
   bind(&align_loop_1);
   andi(r0, src, Operand(kPointerSize - 1));
-  cmpi(r0, Operand(0));
-  beq(&word_loop);
+  beq(&word_loop, cr0);
   lbz(scratch, MemOperand(src));
   add(src, src, Operand(1));
   stb(scratch, MemOperand(dst));
@@ -3589,18 +3583,18 @@ void MacroAssembler::HasColor(Register object,
   Label other_color, word_boundary;
   lwz(ip, MemOperand(bitmap_scratch, MemoryChunk::kHeaderSize));
   and_(r0, ip, mask_scratch, SetRC);
-  b(first_bit == 1 ? eq : ne, &other_color);
+  b(first_bit == 1 ? eq : ne, &other_color, cr0);
   // Shift left 1
   rlwinm(mask_scratch, mask_scratch, 1, 0, 30, SetRC);
   beq(&word_boundary, cr0);
   and_(r0, ip, mask_scratch, SetRC);
-  b(second_bit == 1 ? ne : eq, has_color);
+  b(second_bit == 1 ? ne : eq, has_color, cr0);
   jmp(&other_color);
 
   bind(&word_boundary);
   lwz(ip, MemOperand(bitmap_scratch, MemoryChunk::kHeaderSize + kPointerSize));
   andi(r0, ip, Operand(1));
-  b(second_bit == 1 ? ne : eq, has_color);
+  b(second_bit == 1 ? ne : eq, has_color, cr0);
   bind(&other_color);
 }
 
@@ -3622,7 +3616,7 @@ void MacroAssembler::JumpIfDataObject(Register value,
   lbz(scratch, FieldMemOperand(scratch, Map::kInstanceTypeOffset));
   STATIC_ASSERT((kIsIndirectStringMask | kIsNotStringMask) == 0x81);
   andi(scratch, scratch, Operand(kIsIndirectStringMask | kIsNotStringMask));
-  bne(not_data_object);
+  bne(not_data_object, cr0);
   bind(&is_data_object);
 }
 
@@ -3701,8 +3695,7 @@ void MacroAssembler::EnsureNotWhite(
   Register instance_type = load_scratch;
   lbz(instance_type, FieldMemOperand(map, Map::kInstanceTypeOffset));
   andi(r0, instance_type, Operand(kIsIndirectStringMask | kIsNotStringMask));
-  cmpi(r0, Operand(0));
-  bne(value_is_white_and_not_data);
+  bne(value_is_white_and_not_data, cr0);
   // It's a non-indirect (non-cons and non-slice) string.
   // If it's external, the length is just ExternalString::kSize.
   // Otherwise it's String::kHeaderSize + string->length() * (1 or 2).
@@ -3711,8 +3704,7 @@ void MacroAssembler::EnsureNotWhite(
   ASSERT_EQ(0, kSeqStringTag & kExternalStringTag);
   ASSERT_EQ(0, kConsStringTag & kExternalStringTag);
   andi(r0, instance_type, Operand(kExternalStringTag));
-  cmpi(r0, Operand(0));
-  beq(&is_string_object);
+  beq(&is_string_object, cr0);
   li(length, Operand(ExternalString::kSize));
   b(&is_data_object);
   bind(&is_string_object);
@@ -3725,8 +3717,7 @@ void MacroAssembler::EnsureNotWhite(
   ASSERT(kSmiTag == 0 && kSmiTagSize == 1);
   lwz(ip, FieldMemOperand(value, String::kLengthOffset));
   andi(r0, instance_type, Operand(kStringEncodingMask));
-  cmpi(r0, Operand(0));
-  beq(&is_encoded);
+  beq(&is_encoded, cr0);
   slwi(ip, ip, Operand(1));
   bind(&is_encoded);
   add(length, ip, Operand(SeqString::kHeaderSize + kObjectAlignmentMask));
@@ -3741,7 +3732,7 @@ void MacroAssembler::EnsureNotWhite(
   stw(ip, MemOperand(bitmap_scratch, MemoryChunk::kHeaderSize));
 
   mov(ip, Operand(~Page::kPageAlignmentMask));
-  and_(bitmap_scratch, bitmap_scratch, ip, LeaveRC);
+  and_(bitmap_scratch, bitmap_scratch, ip);
   lwz(ip, MemOperand(bitmap_scratch, MemoryChunk::kLiveBytesOffset));
   add(ip, ip, Operand(length));
   stw(ip, MemOperand(bitmap_scratch, MemoryChunk::kLiveBytesOffset));

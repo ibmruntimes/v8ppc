@@ -1533,8 +1533,7 @@ static void EmitStrictTwoHeapObjectCompare(MacroAssembler* masm,
     STATIC_ASSERT(kSymbolTag != 0);
     __ and_(r5, r5, r6);
     __ andi(r0, r5, Operand(kIsSymbolMask));
-    __ cmpi(r0, Operand(0));
-    __ bne(&return_not_equal);
+    __ bne(&return_not_equal, cr0);
 }
 
 
@@ -1655,7 +1654,7 @@ void NumberToStringStub::GenerateLookupNumberStringCache(MacroAssembler* masm,
              Operand(HeapNumber::kValueOffset - kHeapObjectTag));
       __ ldm(ia, scratch1, scratch1.bit() | scratch2.bit());
       __ eor(scratch1, scratch1, Operand(scratch2));
-      __ and_(scratch1, scratch1, Operand(mask));
+      __ and_(scratch1, scratch1, mask);
 
       // Calculate address of entry in string cache: each entry consists
       // of two pointer sized fields.
@@ -1759,7 +1758,7 @@ void CompareStub::Generate(MacroAssembler* masm) {
   // be strictly equal if the other is a HeapNumber.
   STATIC_ASSERT(kSmiTag == 0);
   ASSERT_EQ(0, Smi::FromInt(0));
-  __ and_(r5, lhs_, rhs_, LeaveRC);
+  __ and_(r5, lhs_, rhs_);
   __ JumpIfNotSmi(r5, &not_smis);
   // One operand is a smi.  EmitSmiNonsmiComparison generates code that can:
   // 1) Return the answer.
@@ -1923,8 +1922,7 @@ void ToBooleanStub::Generate(MacroAssembler* masm) {
       __ lbz(ip, FieldMemOperand(map, Map::kBitFieldOffset));
       STATIC_ASSERT((1 << Map::kIsUndetectable) < 0x8000);
       __ andi(r0, ip, Operand(1 << Map::kIsUndetectable));
-      __ cmpi(r0, Operand(0));
-      __ beq(&not_undetectable);
+      __ beq(&not_undetectable, cr0);
       // Undetectable -> false.
       __ li(tos_, Operand(0, RelocInfo::NONE));
       __ Ret();
@@ -2531,7 +2529,7 @@ void BinaryOpStub::GenerateSmiSmiOperation(MacroAssembler* masm) {
       __ JumpIfNotPowerOfTwoOrZero(right, scratch1, &not_smi_result);
 
       // Perform modulus by masking.
-      __ and_(right, left, Operand(scratch1));
+      __ and_(right, left, scratch1);
       __ Ret();
       break;
     case Token::BIT_OR:
@@ -2552,7 +2550,7 @@ void BinaryOpStub::GenerateSmiSmiOperation(MacroAssembler* masm) {
       __ sraw(right, left, scratch1);
       // Smi tag result.
       __ li(r0, Operand(~kSmiTagMask));
-      __ and_(right, right, r0, LeaveRC);
+      __ and_(right, right, r0);
       __ Ret();
       break;
     case Token::SHR:
@@ -4034,8 +4032,7 @@ void CEntryStub::GenerateCore(MacroAssembler* masm,
   __ add(r5, r3, Operand(1));
   STATIC_ASSERT(kFailureTagMask < 0x8000);
   __ andi(r0, r5, Operand(kFailureTagMask));
-  __ cmpi(r0, Operand(0));
-  __ beq(&failure_returned);
+  __ beq(&failure_returned, cr0);
 
   // Exit C frame and return.
   // r3:r4: result
@@ -4050,8 +4047,7 @@ void CEntryStub::GenerateCore(MacroAssembler* masm,
   __ bind(&failure_returned);
   STATIC_ASSERT(Failure::RETRY_AFTER_GC == 0);
   __ andi(r0, r3, Operand(((1 << kFailureTypeTagSize) - 1) << kFailureTagSize));
-  __ cmpi(r0, Operand(0));
-  __ beq(&retry);
+  __ beq(&retry, cr0);
 
   // Special handling of out of memory exceptions.
   Failure* out_of_memory = Failure::OutOfMemoryException();
@@ -5007,7 +5003,7 @@ void RegExpExecStub::Generate(MacroAssembler* masm) {
   const int kSubjectOffset = 2 * kPointerSize;
   const int kJSRegExpOffset = 3 * kPointerSize;
 
-  Label runtime, invoke_regexp;
+  Label runtime, invoke_regexp, br_over, encoding_type_UC16;
 
   // Allocation of registers for this function. These are in callee save
   // registers and will be preserved by the call to the native RegExp code, as
@@ -5041,6 +5037,7 @@ void RegExpExecStub::Generate(MacroAssembler* masm) {
   if (FLAG_debug_code) {
     STATIC_ASSERT(kSmiTagMask == 1);
     __ andi(r0, regexp_data, Operand(kSmiTagMask));
+    __ cmp(r0, Operand(0));  // Can eliminate this if Check can take crX
     __ Check(ne, "Unexpected type for RegExp data, FixedArray expected");
     __ CompareObjectType(regexp_data, r3, r3, FIXED_ARRAY_TYPE);
     __ Check(eq, "Unexpected type for RegExp data, FixedArray expected");
@@ -5128,9 +5125,8 @@ void RegExpExecStub::Generate(MacroAssembler* masm) {
   __ andi(r4, r3, Operand(kIsNotStringMask |
                           kStringRepresentationMask |
                           kShortExternalStringMask));
-  __ cmpi(r4, Operand(0));
   STATIC_ASSERT((kStringTag | kSeqStringTag) == 0);
-  __ beq(&seq_string);
+  __ beq(&seq_string, cr0);
 
   // subject: Subject string
   // regexp_data: RegExp data (FixedArray)
@@ -5155,7 +5151,7 @@ void RegExpExecStub::Generate(MacroAssembler* masm) {
   STATIC_ASSERT(kNotStringTag != 0 && kShortExternalStringTag !=0);
   STATIC_ASSERT(kNotStringTag | kShortExternalStringTag < 0xffffu);
   __ andi(r0, r4, Operand(kIsNotStringMask | kShortExternalStringMask));
-  __ bne(&runtime);
+  __ bne(&runtime, cr0);
 
   // String is sliced.
   __ ldr(r11, FieldMemOperand(subject, SlicedString::kOffsetOffset));
@@ -5188,8 +5184,12 @@ void RegExpExecStub::Generate(MacroAssembler* masm) {
   STATIC_ASSERT(kStringEncodingMask == 4);
   __ andi(r3, r3, Operand(kStringEncodingMask));
   __ srawi(r6, r3, 2, SetRC);
+  __ beq(&encoding_type_UC16);
   __ lwz(r10, FieldMemOperand(regexp_data, JSRegExp::kDataAsciiCodeOffset), ne);
+  __ jmp(&br_over);
+  __ bind(&encoding_type_UC16);
   __ lwz(r10, FieldMemOperand(regexp_data, JSRegExp::kDataUC16CodeOffset), eq);
+  __ bind(&br_over);
 
   // Check that the irregexp code has been generated for the actual string
   // encoding. If it has, the field contains a code object otherwise it contains
@@ -7021,8 +7021,7 @@ void ICCompareStub::GenerateSymbols(MacroAssembler* masm) {
   STATIC_ASSERT(kSymbolTag != 0);
   __ and_(tmp1, tmp1, tmp2);
   __ andi(r0, tmp1, Operand(kIsSymbolMask));
-  __ cmpi(r0, Operand(0));
-  __ beq(&miss);
+  __ beq(&miss, cr0);
 
   // Symbols are compared by identity.
   __ cmp(left, right);
@@ -7088,8 +7087,7 @@ void ICCompareStub::GenerateStrings(MacroAssembler* masm) {
     STATIC_ASSERT(kSymbolTag != 0);
     __ and_(tmp3, tmp1, tmp2);
     __ andi(r0, tmp3, Operand(kIsSymbolMask));
-    __ cmpi(r0, Operand(0));
-    __ beq(&is_symbol);
+    __ beq(&is_symbol, cr0);
     // Make sure r3 is non-zero. At this point input operands are
     // guaranteed to be non-zero.
     ASSERT(right.is(r3));
@@ -7763,7 +7761,7 @@ void RecordWriteStub::CheckNeedsToInformIncrementalMarker(
 
   ASSERT((~Page::kPageAlignmentMask & 0xffff) == 0);
   __ addis(r0, r0, (~Page::kPageAlignmentMask >> 16));
-  __ and_(regs_.scratch0(), regs_.object(), r0, LeaveRC);
+  __ and_(regs_.scratch0(), regs_.object(), r0);
   __ lwz(regs_.scratch1(),
          MemOperand(regs_.scratch0(),
                     MemoryChunk::kWriteBarrierCounterOffset));
@@ -7935,7 +7933,8 @@ void ProfileEntryHookStub::Generate(MacroAssembler* masm) {
   if (frame_alignment > kPointerSize) {
     __ mr(r8, sp);
     ASSERT(IsPowerOf2(frame_alignment));
-    __ and_(sp, sp, Operand(-frame_alignment));
+    ASSERT(-frame_alignment == -8);
+    __ rlwinm(sp, sp, 0, 0, 28);
   }
 
 #if defined(V8_HOST_ARCH_ARM)
