@@ -3841,10 +3841,10 @@ void MathPowStub::Generate(MacroAssembler* masm) {
 
   // Get two copies of exponent in the registers scratch and exponent.
   if (exponent_type_ == INTEGER) {
-    __ mov(scratch, exponent);
+    __ mr(scratch, exponent);
   } else {
     // Exponent has previously been stored into scratch as untagged integer.
-    __ mov(exponent, scratch);
+    __ mr(exponent, scratch);
   }
   __ vmov(double_scratch, double_base);  // Back up base.
   __ vmov(double_result, 1.0, scratch2);
@@ -5283,7 +5283,7 @@ void RegExpExecStub::Generate(MacroAssembler* masm) {
   // Already there
 
   // Argument 1 (r3): Subject string.
-  __ mov(r3, subject);
+  __ mr(r3, subject);
 
   // Locate the code entry and call it.
   __ add(r10, r10, Operand(Code::kHeaderSize - kHeapObjectTag));
@@ -5359,7 +5359,7 @@ void RegExpExecStub::Generate(MacroAssembler* masm) {
   __ str(subject,
          FieldMemOperand(last_match_info_elements,
                          RegExpImpl::kLastSubjectOffset));
-  __ mov(r5, subject);
+  __ mr(r5, subject);
   __ RecordWriteField(last_match_info_elements,
                       RegExpImpl::kLastSubjectOffset,
                       r5,
