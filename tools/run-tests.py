@@ -58,10 +58,8 @@ VARIANT_FLAGS = [[],
                  ["--nocrankshaft"]]
 MODE_FLAGS = {
     "debug"   : ["--nobreak-on-abort", "--nodead-code-elimination",
-                 "--nofold-constants", "--enable-slow-asserts",
-                 "--debug-code", "--verify-heap"],
-    "release" : ["--nobreak-on-abort", "--nodead-code-elimination",
-                 "--nofold-constants"]}
+                 "--enable-slow-asserts", "--debug-code", "--verify-heap"],
+    "release" : ["--nobreak-on-abort", "--nodead-code-elimination"]}
 
 SUPPORTED_ARCHS = ["android_arm",
                    "android_ia32",
