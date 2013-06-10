@@ -3056,7 +3056,7 @@ void FullCodeGenerator::EmitRandomHeapNumber(CallRuntime* expr) {
     __ vsub(d7, d7, d8);
     __ sub(r0, r4, Operand(kHeapObjectTag));
     __ vstw(d7, r0, HeapNumber::kValueOffset);
-    __ mov(r0, r4);
+    __ mr(r0, r4);
   } else {
 #endif
     __ PrepareCallCFunction(2, r3);
