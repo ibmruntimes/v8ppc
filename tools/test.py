@@ -751,7 +751,8 @@ class Context(object):
 #    if '--stress-opt' in self.GetVmFlags(testcase, mode):
 #      return result * 4
 #    else:
-      return result
+#      return result
+    return result
 
 def RunTestCases(cases_to_run, progress, tasks):
   progress = PROGRESS_INDICATORS[progress](cases_to_run)
