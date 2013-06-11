@@ -1771,7 +1771,7 @@ Handle<Code> CallStubCompiler::CompileArrayPopCall(
     Handle<JSFunction> function,
     Handle<String> name) {
   EMIT_STUB_MARKER(34);
- 
+
   // ----------- S t a t e -------------
   //  -- r5    : name
   //  -- lr    : return address

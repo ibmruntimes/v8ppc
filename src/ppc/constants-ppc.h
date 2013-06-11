@@ -349,11 +349,9 @@ enum {
 
 // the following is to differentiate different faked ARM opcodes for
 // the BOGUS PPC instruction we invented (when bit 25 is 0) or to mark
-// different stub code (when bit 25 is 1) 
-//
-// TODO: remove after all ARM code dependencies are removed)
+// different stub code (when bit 25 is 1)
 //   - use primary opcode 1 for undefined instruction
-//   - use bit 25 to indicate whether the opcode is for fake-arm 
+//   - use bit 25 to indicate whether the opcode is for fake-arm
 //     instr or stub-marker
 //   - use the least significant 6-bit to indicate FAKE_OPCODE_T or
 //     MARKER_T
@@ -438,8 +436,8 @@ enum FAKE_OPCODE_T {
   fMASM28 = 70,
   fLastFaker  // can't be more than 128 (2^^7)
 };
-#define FAKE_OPCODE_HIGH_BIT 7 // fake opcode has to fall into bit 0~7
-#define F_NEXT_AVAILABLE_STUB_MARKER 80
+#define FAKE_OPCODE_HIGH_BIT 7  // fake opcode has to fall into bit 0~7
+#define F_NEXT_AVAILABLE_STUB_MARKER 199
 #define STUB_MARKER_HIGH_BIT 8  // stub marker has to fall into bit 0~8
 // -----------------------------------------------------------------------------
 // Addressing modes and instruction variants.
