@@ -2581,16 +2581,24 @@ void Simulator::InstructionDecode(Instruction* instr) {
     }
 
     case FAKE_OPCODE: {
-      int fake_opcode = instr->Bits(7, 0);
-      if (fake_opcode == fBKPT) {
-        PPCDebugger dbg(this);
-        PrintF("Simulator hit BKPT.\n");
-        dbg.Debug();
+      bool isMarker = instr->Bits(MARKER_SUBOPCODE_BIT,MARKER_SUBOPCODE_BIT) == 1;
+      if (isMarker) {
+	int marker_code = instr->Bits(STUB_MARKER_HIGH_BIT, 0);
+	ASSERT(marker_code < F_NEXT_AVAILABLE_STUB_MARKER);
+	PrintF("Hit stub-marker: %d (EMIT_STUB_MARKER)\n",
+	       marker_code);
       } else {
-        ASSERT(fake_opcode < fLastFaker);
-        PrintF("Hit ARM opcode: %d(FAKE_OPCODE defined in constant-ppc.h)\n",
-               fake_opcode);
-        UNIMPLEMENTED();
+	int fake_opcode = instr->Bits(FAKE_OPCODE_HIGH_BIT, 0);
+	if (fake_opcode == fBKPT) {
+	  PPCDebugger dbg(this);
+	  PrintF("Simulator hit BKPT.\n");
+	  dbg.Debug();
+	} else {
+	  ASSERT(fake_opcode < fLastFaker);
+	  PrintF("Hit ARM opcode: %d(FAKE_OPCODE defined in constant-ppc.h)\n",
+		 fake_opcode);
+	  UNIMPLEMENTED();
+	}
       }
       break;
     }

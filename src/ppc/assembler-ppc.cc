@@ -55,6 +55,7 @@ bool CpuFeatures::initialized_ = false;
 unsigned CpuFeatures::supported_ = 0;
 unsigned CpuFeatures::found_by_runtime_probing_ = 0;
 
+#define EMIT_FAKE_ARM_INSTR(arm_opcode) fake_asm(arm_opcode);
 
 // Get the CPU features enabled by the build. For cross compilation the
 // preprocessor symbols CAN_USE_ARMV7_INSTRUCTIONS and CAN_USE_VFP3_INSTRUCTIONS
@@ -1033,7 +1034,14 @@ void Assembler::neg(Register rt, Register ra, RCBit rc) {
 
 void Assembler::fake_asm(enum FAKE_OPCODE_T fopcode) {
   ASSERT(fopcode < fLastFaker);
-  emit(FAKE_OPCODE | fopcode);
+  emit(FAKE_OPCODE | FAKER_SUBOPCODE | fopcode);
+}
+
+void Assembler::marker_asm(int mcode) {
+  if (::v8::internal::FLAG_trace_sim_stubs) {
+    ASSERT(mcode < F_NEXT_AVAILABLE_STUB_MARKER);
+    emit(FAKE_OPCODE | MARKER_SUBOPCODE | mcode);
+  }
 }
 // end PowerPC
 
