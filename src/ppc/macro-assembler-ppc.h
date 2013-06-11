@@ -1098,7 +1098,7 @@ class MacroAssembler: public Assembler {
   // sets flags.
   void TrySmiTag(Register reg, Label* not_a_smi, Register scratch) {
     rlwinm(scratch, reg, 1, 31, 31, SetRC);
-    bc(not_a_smi, BF, 2);
+    bne(not_a_smi, cr0);
     rlwinm(reg, reg, 1, 0, 30);
   }
 
@@ -1137,12 +1137,12 @@ class MacroAssembler: public Assembler {
   // Jump the register contains a smi.
   inline void JumpIfSmi(Register value, Label* smi_label) {
     rlwinm(r0, value, 0, 31, 31, SetRC);  // tst(value, Operand(kSmiTagMask));
-    bc(smi_label, BT, 2);  // branch if SMI
+    beq(smi_label, cr0);  // branch if SMI
   }
   // Jump if either of the registers contain a non-smi.
   inline void JumpIfNotSmi(Register value, Label* not_smi_label) {
     rlwinm(r0, value, 0, 31, 31, SetRC);  // tst(value, Operand(kSmiTagMask));
-    bc(not_smi_label, BF, 2);
+    bne(not_smi_label, cr0);
   }
   // Jump if either of the registers contain a non-smi.
   void JumpIfNotBothSmi(Register reg1, Register reg2, Label* on_not_both_smi);

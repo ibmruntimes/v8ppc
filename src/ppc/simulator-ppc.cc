@@ -2389,7 +2389,11 @@ void Simulator::InstructionDecode(Instruction* instr) {
       uint32_t im_val = instr->Bits(15, 0);
       int32_t alu_out = rs_val & im_val;
       set_register(ra, alu_out);
-      // todo - set condition based SO bit
+      int bf = 0;
+      if (alu_out < 0) { bf |= 0x80000000; }
+      if (alu_out > 0) { bf |= 0x40000000; }
+      if (alu_out == 0) { bf |= 0x20000000; }
+      condition_reg_ = (condition_reg_ & ~0xF0000000) | bf;
       break;
     }
     case ANDISx: {

@@ -30,6 +30,7 @@ import imp
 import os
 
 from . import statusfile
+from . import utils
 
 class TestSuite(object):
 
@@ -88,6 +89,8 @@ class TestSuite(object):
     used_rules = set()
     for t in self.tests:
       testname = self.CommonTestName(t)
+      if utils.IsWindows():
+        testname = testname.replace("\\", "/")
       if testname in self.rules:
         used_rules.add(testname)
         outcomes = self.rules[testname]
@@ -96,14 +99,17 @@ class TestSuite(object):
         if statusfile.DoSkip(outcomes):
           continue  # Don't add skipped tests to |filtered|.
       if len(self.wildcards) != 0:
+        skip = False
         for rule in self.wildcards:
           assert rule[-1] == '*'
           if testname.startswith(rule[:-1]):
             used_rules.add(rule)
             outcomes = self.wildcards[rule]
-            if statusfile.DoSkip(outcomes):
-              continue
             t.outcomes = outcomes
+            if statusfile.DoSkip(outcomes):
+              skip = True
+              break  # "for rule in self.wildcards"
+        if skip: continue  # "for t in self.tests"
       filtered.append(t)
     self.tests = filtered
 

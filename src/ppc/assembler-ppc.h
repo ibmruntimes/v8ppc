@@ -833,25 +833,30 @@ class Assembler : public AssemblerBase {
   void b(Label* L, LKBit lk)  {
     b(branch_offset(L, false), lk);
   }
-  void b(Condition cond, Label* L)  {
+  // PowerPC
+  void bc(Label* L, BOfield bo, int bit)  {
+    bc(branch_offset(L, false), bo, bit);
+  }
+  void b(Condition cond, Label* L, CRegister cr = cr7)  {
+    ASSERT(cr.code() >= 0 && cr.code() <= 7);
     switch (cond) {
       case eq:
-        beq(L);
+        bc(branch_offset(L, false), BT, 2 + (cr.code() * 4));
         break;
       case ne:
-        bne(L);
-        break;
-      case le:
-        ble(L);
-        break;
-      case lt:
-        blt(L);
-        break;
-      case ge:
-        bge(L);
+        bc(branch_offset(L, false), BF, 2 + (cr.code() * 4));
         break;
       case gt:
-        bgt(L);
+        bc(branch_offset(L, false), BT, 1 + (cr.code() * 4));
+        break;
+      case le:
+        bc(branch_offset(L, false), BF, 1 + (cr.code() * 4));
+        break;
+      case lt:
+        bc(branch_offset(L, false), BT, 0 + (cr.code() * 4));
+        break;
+      case ge:
+        bc(branch_offset(L, false), BF, 0 + (cr.code() * 4));
         break;
       default:
         li(r0, Operand(0xeeee));
@@ -859,21 +864,36 @@ class Assembler : public AssemblerBase {
         // UNIMPLEMENTED();
     }
   }
-  // PowerPC
-  void bc(Label* L, BOfield bo, int bit)  {
-    bc(branch_offset(L, false), bo, bit); }
-  void bne(Label* L) {
-    bc(branch_offset(L, false), BF, 30); }
-  void beq(Label* L) {
-    bc(branch_offset(L, false), BT, 30); }
-  void blt(Label* L) {
-    bc(branch_offset(L, false), BT, 28); }
-  void bge(Label* L) {
-    bc(branch_offset(L, false), BF, 28); }
-  void ble(Label* L) {
-    bc(branch_offset(L, false), BF, 29); }
-  void bgt(Label* L) {
-    bc(branch_offset(L, false), BT, 29); }
+  void bne(Label* L, CRegister cr = cr7) {
+    b(ne, L, cr); }
+  void beq(Label* L, CRegister cr = cr7) {
+    b(eq, L, cr); }
+  void blt(Label* L, CRegister cr = cr7) {
+    b(lt, L, cr); }
+  void bge(Label* L, CRegister cr = cr7) {
+    b(ge, L, cr); }
+  void ble(Label* L, CRegister cr = cr7) {
+    b(le, L, cr); }
+  void bgt(Label* L, CRegister cr = cr7) {
+    b(gt, L, cr); }
+
+  void bunordered(Label* L, CRegister cr = cr7) {
+    ASSERT(cr.code() >= 0 && cr.code() <= 7);
+    bc(branch_offset(L, false), BT, 3 + (cr.code() * 4));
+  }
+  void bordered(Label* L, CRegister cr = cr7) {
+    ASSERT(cr.code() >= 0 && cr.code() <= 7);
+    bc(branch_offset(L, false), BF, 3 + (cr.code() * 4));
+  }
+  void boverflow(Label* L, CRegister cr = cr1) {
+    ASSERT(cr.code() >= 0 && cr.code() <= 7);
+    bc(branch_offset(L, false), BT, 3 + (cr.code() * 4));
+  }
+  void bnotoverflow(Label* L, CRegister cr = cr1) {
+    ASSERT(cr.code() >= 0 && cr.code() <= 7);
+    bc(branch_offset(L, false), BF, 3 + (cr.code() * 4));
+  }
+
   // end PowerPC
   void bl(Label* L, Condition cond = al)  { bl(branch_offset(L, false), cond); }
   void bl(Condition cond, Label* L)  { bl(branch_offset(L, false), cond); }
@@ -915,8 +935,8 @@ class Assembler : public AssemblerBase {
   void ori(Register dst, Register src, const Operand& imm);
   void oris(Register dst, Register src, const Operand& imm);
   void orx(Register dst, Register src1, Register src2, RCBit r = LeaveRC);
-  void cmpi(Register src1, const Operand& src2);
-  void cmpli(Register src1, const Operand& src2);
+  void cmpi(Register src1, const Operand& src2, CRegister cr = cr7);
+  void cmpli(Register src1, const Operand& src2, CRegister cr = cr7);
   void li(Register dst, const Operand& src);
   void lis(Register dst, const Operand& imm);
   void mr(Register dst, Register src);
@@ -992,10 +1012,8 @@ class Assembler : public AssemblerBase {
   void teq(Register src1, const Operand& src2, Condition cond = al);
 
   void cmp(Register src1, const Operand& src2, Condition cond = al);
-  void cmp(Register src1, Register src2, Condition cond = al);
-  void cmp(int field, Register src1, Register src2);
-  void cmpl(Register src1, Register src2);
-  void cmpl(int field, Register src1, Register src2);
+  void cmp(Register src1, Register src2, CRegister cr = cr7);
+  void cmpl(Register src1, Register src2, CRegister cr = cr7);
 
   void cmn(Register src1, const Operand& src2, Condition cond = al);
 
@@ -1122,7 +1140,8 @@ class Assembler : public AssemblerBase {
             const DwVfpRegister frb, RCBit rc = LeaveRC);
   void fmul(const DwVfpRegister frt, const DwVfpRegister fra,
             const DwVfpRegister frc, RCBit rc = LeaveRC);
-  void fcmpu(const DwVfpRegister fra, const DwVfpRegister frb);
+  void fcmpu(const DwVfpRegister fra, const DwVfpRegister frb,
+             CRegister cr = cr7);
   void fmr(const DwVfpRegister frt, const DwVfpRegister frb);
   void fctiwz(const DwVfpRegister frt, const DwVfpRegister frb);
   void frim(const DwVfpRegister frt, const DwVfpRegister frb);

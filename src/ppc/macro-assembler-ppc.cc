@@ -330,8 +330,9 @@ void MacroAssembler::Usat(Register dst, int satpos, const Operand& src,
     if (!(src.is_reg() && dst.is(src.rm()))) {
       mov(dst, src);
     }
-    tst(dst, Operand(~satval));
-    beq(&done);
+    mov(r0, Operand(~satval));
+    and_(r0, dst, r0, SetRC);
+    beq(&done, cr0);
     mov(dst, Operand(0, RelocInfo::NONE), LeaveCC, mi);  // 0 if negative.
     mov(dst, Operand(satval), LeaveCC, pl);  // satval if positive.
     bind(&done);
@@ -432,8 +433,7 @@ void MacroAssembler::RecordWriteField(
   if (emit_debug_code()) {
     Label ok;
     andi(r0, dst, Operand((1 << kPointerSizeLog2) - 1));
-    cmpi(r0, Operand(0));
-    beq(&ok);
+    beq(&ok, cr0);
     stop("Unaligned cell in write barrier");
     bind(&ok);
   }
@@ -539,17 +539,17 @@ void MacroAssembler::RememberedSetHelper(Register object,  // For debug tests.
   stw(address, MemOperand(scratch));
   add(scratch, scratch, Operand(kPointerSize));
   // Write back new top of buffer.
-  str(scratch, MemOperand(ip));
+  stw(scratch, MemOperand(ip));
   // Call stub on end of buffer.
   // Check for end of buffer.
   mov(r0, Operand(StoreBuffer::kStoreBufferOverflowBit));
   and_(r0, scratch, r0, SetRC);
 
   if (and_then == kFallThroughAtEnd) {
-    bc(&done, BT, 2);
+    beq(&done, cr0);
   } else {
     ASSERT(and_then == kReturnAtEnd);
-    bc(&done, BT, 2);
+    beq(&done, cr0);
   }
   mflr(r0);
   push(r0);
@@ -1290,8 +1290,7 @@ void MacroAssembler::IsObjectJSStringType(Register object,
   lwz(scratch, FieldMemOperand(object, HeapObject::kMapOffset));
   lbz(scratch, FieldMemOperand(scratch, Map::kInstanceTypeOffset));
   andi(r0, scratch, Operand(kIsNotStringMask));
-  cmpi(r0, Operand(0));
-  bne(fail);
+  bne(fail, cr0);
 }
 
 
@@ -1648,7 +1647,7 @@ void MacroAssembler::LoadFromNumberDictionary(Label* miss,
   lwz(t1, FieldMemOperand(t2, kDetailsOffset));
   mov(ip, Operand(Smi::FromInt(PropertyDetails::TypeField::kMask)));
   and_(r0, t1, ip, SetRC);
-  bc(miss, BF, 2);
+  bne(miss, cr0);
 
   // Get the value at the masked, scaled index and return.
   const int kValueOffset =
@@ -1732,7 +1731,7 @@ void MacroAssembler::AllocateInNewSpace(int object_size,
   li(r0, Operand(-1));
   addc(scratch2, result, obj_size_reg);
   addze(r0, r0, LeaveOE, SetRC);
-  bc(gc_required, BT, 2);
+  beq(gc_required, cr0);
   cmpl(scratch2, ip);
   bgt(gc_required);
   stw(scratch2, MemOperand(topaddr));
@@ -1820,7 +1819,7 @@ void MacroAssembler::AllocateInNewSpace(Register object_size,
     addc(scratch2, result, object_size);
   }
   addze(r0, r0, LeaveOE, SetRC);
-  bc(gc_required, BT, 2);
+  beq(gc_required, cr0);
   cmp(scratch2, ip);
   bgt(gc_required);
 
@@ -1846,7 +1845,7 @@ void MacroAssembler::UndoAllocationInNewSpace(Register object,
 
   // Make sure the object has no tag before resetting top.
   mov(r0, Operand(~kHeapObjectTagMask));
-  and_(object, object, r0, LeaveRC);
+  and_(object, object, r0);
   // was.. and_(object, object, Operand(~kHeapObjectTagMask));
 #ifdef DEBUG
   // Check that the object un-allocated is below the current top.
@@ -2256,16 +2255,14 @@ void MacroAssembler::TryGetFunctionPrototype(Register function,
         FieldMemOperand(scratch, SharedFunctionInfo::kCompilerHintsOffset));
     andi(r0, scratch,
         Operand(Smi::FromInt(1 << SharedFunctionInfo::kBoundFunction)));
-    cmpi(r0, Operand(0));
-    bne(miss);
+    bne(miss, cr0);
   }
 
   // Make sure that the function has an instance prototype.
   Label non_instance;
   lbz(scratch, FieldMemOperand(result, Map::kBitFieldOffset));
   andi(r0, scratch, Operand(1 << Map::kHasNonInstancePrototype));
-  cmpi(r0, Operand(0));
-  bne(&non_instance);
+  bne(&non_instance, cr0);
 
   // Get the prototype or initial map from the function.
   lwz(result,
@@ -2806,7 +2803,7 @@ void MacroAssembler::SetCounter(StatsCounter* counter, int value,
   if (FLAG_native_code_counters && counter->Enabled()) {
     mov(scratch1, Operand(value));
     mov(scratch2, Operand(ExternalReference(counter)));
-    str(scratch1, MemOperand(scratch2));
+    stw(scratch1, MemOperand(scratch2));
   }
 }
 
@@ -3033,7 +3030,7 @@ void MacroAssembler::JumpIfNotPowerOfTwoOrZero(
   blt(not_power_of_two_or_zero);
   sub(scratch, reg, Operand(1));
   and_(r0, scratch, reg, SetRC);
-  bc(not_power_of_two_or_zero, BF, 2);
+  bne(not_power_of_two_or_zero, cr0);
 }
 
 
@@ -3046,7 +3043,7 @@ void MacroAssembler::JumpIfNotPowerOfTwoOrZeroAndNeg(
   cmpi(reg, Operand(0));
   blt(zero_and_neg);
   and_(r0, scratch, reg, SetRC);
-  bc(not_power_of_two, BF, 2);
+  bne(not_power_of_two, cr0);
 }
 
 
@@ -3054,9 +3051,9 @@ void MacroAssembler::JumpIfNotBothSmi(Register reg1,
                                       Register reg2,
                                       Label* on_not_both_smi) {
   STATIC_ASSERT(kSmiTag == 0);
-  tst(reg1, Operand(kSmiTagMask));
-  tst(reg2, Operand(kSmiTagMask), eq);
-  bne(on_not_both_smi);
+  ASSERT_EQ(1, kSmiTagMask);
+  orx(r0, reg1, reg2, LeaveRC);
+  JumpIfNotSmi(r0, on_not_both_smi);
 }
 
 
@@ -3066,7 +3063,7 @@ void MacroAssembler::UntagAndJumpIfSmi(
   STATIC_ASSERT(kSmiTagSize == 1);
   rlwinm(r0, src, 0, 31, 31, SetRC);
   srawi(dst, src, kSmiTagSize);
-  bc(smi_case, BT, 2);
+  beq(smi_case, cr0);
 }
 
 
@@ -3076,7 +3073,7 @@ void MacroAssembler::UntagAndJumpIfNotSmi(
   STATIC_ASSERT(kSmiTagSize == 1);
   rlwinm(r0, src, 0, 31, 31, SetRC);
   srawi(dst, src, kSmiTagSize);
-  bc(non_smi_case, BF, 2);
+  bne(non_smi_case, cr0);
 }
 
 
@@ -3248,8 +3245,7 @@ void MacroAssembler::CopyBytes(Register src,
   beq(&done);
   bind(&align_loop_1);
   andi(r0, src, Operand(kPointerSize - 1));
-  cmpi(r0, Operand(0));
-  beq(&word_loop);
+  beq(&word_loop, cr0);
   lbz(scratch, MemOperand(src));
   add(src, src, Operand(1));
   stb(scratch, MemOperand(dst));
@@ -3557,10 +3553,10 @@ void MacroAssembler::CheckPageFlag(
   li(r0, Operand(mask));
   and_(r0, r0, scratch, SetRC);
   if (cc == ne) {
-    bc(condition_met, BF, 2);
+    bne(condition_met, cr0);
   }
   if (cc == eq) {
-    bc(condition_met, BT, 2);
+    beq(condition_met, cr0);
   }
 }
 
@@ -3586,19 +3582,19 @@ void MacroAssembler::HasColor(Register object,
 
   Label other_color, word_boundary;
   lwz(ip, MemOperand(bitmap_scratch, MemoryChunk::kHeaderSize));
-  tst(ip, Operand(mask_scratch));
-  b(first_bit == 1 ? eq : ne, &other_color);
+  and_(r0, ip, mask_scratch, SetRC);
+  b(first_bit == 1 ? eq : ne, &other_color, cr0);
   // Shift left 1
   rlwinm(mask_scratch, mask_scratch, 1, 0, 30, SetRC);
-  bc(&word_boundary, BT, 2);
-  tst(ip, Operand(mask_scratch));
-  b(second_bit == 1 ? ne : eq, has_color);
+  beq(&word_boundary, cr0);
+  and_(r0, ip, mask_scratch, SetRC);
+  b(second_bit == 1 ? ne : eq, has_color, cr0);
   jmp(&other_color);
 
   bind(&word_boundary);
   lwz(ip, MemOperand(bitmap_scratch, MemoryChunk::kHeaderSize + kPointerSize));
-  tst(ip, Operand(1));
-  b(second_bit == 1 ? ne : eq, has_color);
+  andi(r0, ip, Operand(1));
+  b(second_bit == 1 ? ne : eq, has_color, cr0);
   bind(&other_color);
 }
 
@@ -3618,8 +3614,9 @@ void MacroAssembler::JumpIfDataObject(Register value,
   // If it's a string and it's not a cons string then it's an object containing
   // no GC pointers.
   lbz(scratch, FieldMemOperand(scratch, Map::kInstanceTypeOffset));
-  tst(scratch, Operand(kIsIndirectStringMask | kIsNotStringMask));
-  bne(not_data_object);
+  STATIC_ASSERT((kIsIndirectStringMask | kIsNotStringMask) == 0x81);
+  andi(scratch, scratch, Operand(kIsIndirectStringMask | kIsNotStringMask));
+  bne(not_data_object, cr0);
   bind(&is_data_object);
 }
 
@@ -3663,7 +3660,7 @@ void MacroAssembler::EnsureNotWhite(
   // not have a 1 there we only need to check one bit.
   lwz(load_scratch, MemOperand(bitmap_scratch, MemoryChunk::kHeaderSize));
   and_(r0, mask_scratch, load_scratch, SetRC);
-  bc(&done, BF, 2);
+  bne(&done, cr0);
 
   if (emit_debug_code()) {
     // Check for impossible bit pattern.
@@ -3671,7 +3668,7 @@ void MacroAssembler::EnsureNotWhite(
     // LSL may overflow, making the check conservative.
     slwi(r0, mask_scratch, Operand(1));
     and_(r0, load_scratch, r0, SetRC);
-    bc(&ok, BT, 2);
+    beq(&ok, cr0);
     stop("Impossible marking bit pattern");
     bind(&ok);
   }
@@ -3698,8 +3695,7 @@ void MacroAssembler::EnsureNotWhite(
   Register instance_type = load_scratch;
   lbz(instance_type, FieldMemOperand(map, Map::kInstanceTypeOffset));
   andi(r0, instance_type, Operand(kIsIndirectStringMask | kIsNotStringMask));
-  cmpi(r0, Operand(0));
-  bne(value_is_white_and_not_data);
+  bne(value_is_white_and_not_data, cr0);
   // It's a non-indirect (non-cons and non-slice) string.
   // If it's external, the length is just ExternalString::kSize.
   // Otherwise it's String::kHeaderSize + string->length() * (1 or 2).
@@ -3708,8 +3704,7 @@ void MacroAssembler::EnsureNotWhite(
   ASSERT_EQ(0, kSeqStringTag & kExternalStringTag);
   ASSERT_EQ(0, kConsStringTag & kExternalStringTag);
   andi(r0, instance_type, Operand(kExternalStringTag));
-  cmpi(r0, Operand(0));
-  beq(&is_string_object);
+  beq(&is_string_object, cr0);
   li(length, Operand(ExternalString::kSize));
   b(&is_data_object);
   bind(&is_string_object);
@@ -3722,8 +3717,7 @@ void MacroAssembler::EnsureNotWhite(
   ASSERT(kSmiTag == 0 && kSmiTagSize == 1);
   lwz(ip, FieldMemOperand(value, String::kLengthOffset));
   andi(r0, instance_type, Operand(kStringEncodingMask));
-  cmpi(r0, Operand(0));
-  beq(&is_encoded);
+  beq(&is_encoded, cr0);
   slwi(ip, ip, Operand(1));
   bind(&is_encoded);
   add(length, ip, Operand(SeqString::kHeaderSize + kObjectAlignmentMask));
@@ -3738,7 +3732,7 @@ void MacroAssembler::EnsureNotWhite(
   stw(ip, MemOperand(bitmap_scratch, MemoryChunk::kHeaderSize));
 
   mov(ip, Operand(~Page::kPageAlignmentMask));
-  and_(bitmap_scratch, bitmap_scratch, ip, LeaveRC);
+  and_(bitmap_scratch, bitmap_scratch, ip);
   lwz(ip, MemOperand(bitmap_scratch, MemoryChunk::kLiveBytesOffset));
   add(ip, ip, Operand(length));
   stw(ip, MemOperand(bitmap_scratch, MemoryChunk::kLiveBytesOffset));

@@ -1,4 +1,4 @@
-# Copyright 2012 the V8 project authors. All rights reserved.
+# Copyright 2013 the V8 project authors. All rights reserved.
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions are
 # met:
@@ -26,25 +26,24 @@
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 
-class Context():
-  def __init__(self, arch, mode, shell_dir, mode_flags, verbose, timeout,
-               isolates, command_prefix, extra_flags):
-    self.arch = arch
-    self.mode = mode
-    self.shell_dir = shell_dir
-    self.mode_flags = mode_flags
-    self.verbose = verbose
-    self.timeout = timeout
-    self.isolates = isolates
-    self.command_prefix = command_prefix
-    self.extra_flags = extra_flags
+import xml.etree.ElementTree as xml
 
-  def Pack(self):
-    return [self.arch, self.mode, self.mode_flags, self.timeout, self.isolates,
-            self.command_prefix, self.extra_flags]
 
-  @staticmethod
-  def Unpack(packed):
-    # For the order of the fields, refer to Pack() above.
-    return Context(packed[0], packed[1], None, packed[2], False,
-                   packed[3], packed[4], packed[5], packed[6])
+class JUnitTestOutput:
+  def __init__(self, test_suite_name):
+    self.root = xml.Element("testsuite")
+    self.root.attrib["name"] = test_suite_name
+
+  def HasRunTest(self, test_name, test_duration, test_failure):
+    testCaseElement = xml.Element("testcase")
+    testCaseElement.attrib["name"] = " ".join(test_name)
+    testCaseElement.attrib["time"] = str(round(test_duration, 3))
+    if len(test_failure):
+      failureElement = xml.Element("failure")
+      failureElement.text = test_failure
+      testCaseElement.append(failureElement)
+    self.root.append(testCaseElement)
+
+  def FinishAndWrite(self, file):
+    xml.ElementTree(self.root).write(file, "UTF-8")
+
