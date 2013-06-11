@@ -437,8 +437,8 @@ enum FAKE_OPCODE_T {
   fLastFaker  // can't be more than 128 (2^^7)
 };
 #define FAKE_OPCODE_HIGH_BIT 7  // fake opcode has to fall into bit 0~7
-#define F_NEXT_AVAILABLE_STUB_MARKER 199
-#define STUB_MARKER_HIGH_BIT 8  // stub marker has to fall into bit 0~8
+#define F_NEXT_AVAILABLE_STUB_MARKER 323  // must be less than 2^^9 (512)
+#define STUB_MARKER_HIGH_BIT 9  // stub marker has to fall into bit 0~8
 // -----------------------------------------------------------------------------
 // Addressing modes and instruction variants.
 
