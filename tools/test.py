@@ -712,9 +712,8 @@ FLAGS = {
     'debug'   : ['--nobreak-on-abort', '--nodead-code-elimination',
                  '--enable-slow-asserts', '--debug-code', '--verify-heap'],
     'release' : ['--nobreak-on-abort', '--nodead-code-elimination']}
-# Temporary measure to decrease test run time (debug was 4)
 TIMEOUT_SCALEFACTOR = {
-    'debug'   : 3,
+    'debug'   : 4,
     'release' : 1 }
 
 
@@ -747,12 +746,10 @@ class Context(object):
 
   def GetTimeout(self, testcase, mode):
     result = self.timeout * TIMEOUT_SCALEFACTOR[mode]
-# Temporary measure to decrease test run time.
-#    if '--stress-opt' in self.GetVmFlags(testcase, mode):
-#      return result * 4
-#    else:
-#      return result
-    return result
+    if '--stress-opt' in self.GetVmFlags(testcase, mode):
+      return result * 4
+    else:
+      return result
 
 def RunTestCases(cases_to_run, progress, tasks):
   progress = PROGRESS_INDICATORS[progress](cases_to_run)

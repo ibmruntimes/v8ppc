@@ -49,8 +49,7 @@ from testrunner.objects import context
 ARCH_GUESS = utils.DefaultArch()
 DEFAULT_TESTS = ["mjsunit", "cctest", "message", "preparser"]
 TIMEOUT_DEFAULT = 60
-# Temporary measure to decrease test run time (debug was 4)
-TIMEOUT_SCALEFACTOR = {"debug"   : 3,
+TIMEOUT_SCALEFACTOR = {"debug"   : 4,
                        "release" : 1 }
 
 # Use this to run several variants of the tests.
