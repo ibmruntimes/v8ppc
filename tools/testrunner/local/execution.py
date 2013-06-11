@@ -110,10 +110,11 @@ class Runner(object):
         queued_exception = e
         continue
       timeout = self.context.timeout
-      if ("--stress-opt" in test.flags or
-          "--stress-opt" in self.context.mode_flags or
-          "--stress-opt" in self.context.extra_flags):
-        timeout *= 4
+      # Temporary measure to decrease test run time
+      # if ("--stress-opt" in test.flags or
+      #     "--stress-opt" in self.context.mode_flags or
+      #     "--stress-opt" in self.context.extra_flags):
+      #   timeout *= 4
       if test.dependency is not None:
         dep_command = [ c.replace(test.path, test.dependency) for c in command ]
       else:
