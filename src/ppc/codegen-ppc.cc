@@ -40,6 +40,8 @@ namespace internal {
 
 #define __ ACCESS_MASM(masm)
 
+#define EMIT_STUB_MARKER(stub_marker) __ marker_asm(stub_marker)
+
 UnaryMathFunction CreateTranscendentalFunction(TranscendentalCache::Type type) {
   switch (type) {
     case TranscendentalCache::SIN: return &sin;
@@ -78,6 +80,7 @@ void StubRuntimeCallHelper::AfterCall(MacroAssembler* masm) const {
 
 void ElementsTransitionGenerator::GenerateMapChangeElementsTransition(
     MacroAssembler* masm) {
+  EMIT_STUB_MARKER(323);
   // ----------- S t a t e -------------
   //  -- r3    : value
   //  -- r4    : key
@@ -101,6 +104,7 @@ void ElementsTransitionGenerator::GenerateMapChangeElementsTransition(
 
 void ElementsTransitionGenerator::GenerateSmiToDouble(
     MacroAssembler* masm, Label* fail) {
+  EMIT_STUB_MARKER(324);
   // ----------- S t a t e -------------
   //  -- r3    : value
   //  -- r4    : key
@@ -250,6 +254,7 @@ void ElementsTransitionGenerator::GenerateSmiToDouble(
 
 void ElementsTransitionGenerator::GenerateDoubleToObject(
     MacroAssembler* masm, Label* fail) {
+  EMIT_STUB_MARKER(325);
   // ----------- S t a t e -------------
   //  -- r3    : value
   //  -- r4    : key
@@ -377,6 +382,7 @@ void StringCharLoadGenerator::Generate(MacroAssembler* masm,
                                        Register index,
                                        Register result,
                                        Label* call_runtime) {
+  EMIT_STUB_MARKER(326);
   // Fetch the instance type of the receiver into result register.
   __ lwz(result, FieldMemOperand(string, HeapObject::kMapOffset));
   __ lbz(result, FieldMemOperand(result, Map::kInstanceTypeOffset));
