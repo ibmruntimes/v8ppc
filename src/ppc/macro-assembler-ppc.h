@@ -851,6 +851,15 @@ class MacroAssembler: public Assembler {
                               Register scratch1,
                               DwVfpRegister scratch2);
 
+  // Compute dst = left + right, setting condition codes. dst may be same as
+  // either left or right (or a unique register). left and right must not be
+  // the same register. Should be followed by a  branch: blt(label, cr0).
+  void AddAndCheckForOverflow(Register dst,
+                              Register left,
+                              Register right,
+                              Register overflow_dst,
+                              Register scratch = r0);
+
   // Convert the HeapNumber pointed to by source to a 32bits signed integer
   // dest. If the HeapNumber does not fit into a 32bits signed integer branch
   // to not_int32 label. If VFP3 is available double_scratch is used but not

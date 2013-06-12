@@ -2152,6 +2152,38 @@ void MacroAssembler::StoreNumberToDoubleElements(Register value_reg,
 }
 
 
+void MacroAssembler::AddAndCheckForOverflow(Register dst,
+                                            Register left,
+                                            Register right,
+                                            Register overflow_dst,
+                                            Register scratch) {
+  ASSERT(!dst.is(overflow_dst));
+  ASSERT(!dst.is(scratch));
+  ASSERT(!overflow_dst.is(scratch));
+  ASSERT(!overflow_dst.is(left));
+  ASSERT(!overflow_dst.is(right));
+
+  if (dst.is(left)) {
+    mr(scratch, left);            // Preserve left.
+    add(dst, left, right);        // Left is overwritten.
+    xor_(scratch, dst, scratch);  // Original left.
+    xor_(overflow_dst, dst, right);
+    and_(overflow_dst, overflow_dst, scratch, SetRC);
+  } else if (dst.is(right)) {
+    mr(scratch, right);           // Preserve right.
+    add(dst, left, right);        // Right is overwritten.
+    xor_(scratch, dst, scratch);  // Original right.
+    xor_(overflow_dst, dst, left);
+    and_(overflow_dst, overflow_dst, scratch, SetRC);
+  } else {
+    add(dst, left, right);
+    xor_(overflow_dst, dst, left);
+    xor_(scratch, dst, right);
+    and_(overflow_dst, scratch, overflow_dst, SetRC);
+  }
+}
+
+
 void MacroAssembler::CompareMap(Register obj,
                                 Register scratch,
                                 Handle<Map> map,

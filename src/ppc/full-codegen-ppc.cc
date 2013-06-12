@@ -4199,17 +4199,17 @@ void FullCodeGenerator::VisitCountOperation(CountOperation* expr) {
     }
   }
 
-
   // Inline smi case if we are in a loop.
   Label stub_call, done;
   JumpPatchSite patch_site(masm_);
 
   int count_value = expr->op() == Token::INC ? 1 : -1;
+  __ li(r4, Operand(Smi::FromInt(count_value)));
+
   if (ShouldInlineSmiCase(expr->op())) {
-    __ li(r0, Operand(-1));
-    __ addic(r3, r3, Operand(Smi::FromInt(count_value)));
-    __ addze(r0, r0, LeaveOE, SetRC);
-    __ beq(&stub_call, cr0);
+    __ AddAndCheckForOverflow(r3, r3, r4, r5, r0);
+    __ blt(&stub_call, cr0);
+
     // We could eliminate this smi check if we split the code at
     // the first smi check before calling ToNumber.
     patch_site.EmitJumpIfSmi(r3, &done);
@@ -4218,7 +4218,6 @@ void FullCodeGenerator::VisitCountOperation(CountOperation* expr) {
     // Call stub. Undo operation first.
     __ sub(r3, r3, Operand(Smi::FromInt(count_value)));
   }
-  __ li(r4, Operand(Smi::FromInt(count_value)));
 
   // Record position before stub call.
   SetSourcePosition(expr->position());
