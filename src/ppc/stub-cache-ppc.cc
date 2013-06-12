@@ -4057,7 +4057,7 @@ void KeyedStoreStubCompiler::GenerateStoreExternalArray(
         __ stfs(d0, r8, 0);
       } else if (elements_kind == EXTERNAL_DOUBLE_ELEMENTS) {
         __ lfd(d0, r3, HeapNumber::kValueOffset-kHeapObjectTag);
-        __ slwi(r8, key, Operand(1));
+        __ slwi(r8, key, Operand(2));
         __ add(r8, r6, r8);
         __ stfd(d0, r8, 0);
       } else {
