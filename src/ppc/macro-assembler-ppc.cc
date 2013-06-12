@@ -2163,6 +2163,7 @@ void MacroAssembler::AddAndCheckForOverflow(Register dst,
   ASSERT(!overflow_dst.is(left));
   ASSERT(!overflow_dst.is(right));
 
+  // C = A+B; C overflows if A/B have same sign and C has diff sign than A
   if (dst.is(left)) {
     mr(scratch, left);            // Preserve left.
     add(dst, left, right);        // Left is overwritten.

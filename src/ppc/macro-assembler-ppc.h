@@ -851,14 +851,42 @@ class MacroAssembler: public Assembler {
                               Register scratch1,
                               DwVfpRegister scratch2);
 
+  // Overflow handling functions.
+  // Usage: call the appropriate arithmetic function and then call one of the
+  // flow control functions with the corresponding label.
+
   // Compute dst = left + right, setting condition codes. dst may be same as
   // either left or right (or a unique register). left and right must not be
-  // the same register. Should be followed by a  branch: blt(label, cr0).
+  // the same register.
   void AddAndCheckForOverflow(Register dst,
                               Register left,
                               Register right,
                               Register overflow_dst,
                               Register scratch = r0);
+
+  void BranchOnOverflow(Label* label) {
+    blt(label, cr0);
+  }
+
+  void BranchOnNoOverflow(Label* label) {
+    bge(label, cr0);
+  }
+
+  void RetOnOverflow(void) {
+    Label label;
+
+    blt(&label, cr0);
+    Ret();
+    bind(&label);
+  }
+
+  void RetOnNoOverflow(void) {
+    Label label;
+
+    bge(&label, cr0);
+    Ret();
+    bind(&label);
+  }
 
   // Convert the HeapNumber pointed to by source to a 32bits signed integer
   // dest. If the HeapNumber does not fit into a 32bits signed integer branch

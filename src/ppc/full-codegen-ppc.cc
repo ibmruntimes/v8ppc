@@ -3753,10 +3753,11 @@ void FullCodeGenerator::EmitFastAsciiArrayJoin(CallRuntime* expr) {
   __ lbz(scratch1, FieldMemOperand(scratch1, Map::kInstanceTypeOffset));
   __ JumpIfInstanceTypeIsNotSequentialAscii(scratch1, scratch2, &bailout);
   __ lwz(scratch1, FieldMemOperand(string, SeqAsciiString::kLengthOffset));
-  __ li(r0, Operand(-1));
-  __ addc(string_length, string_length, scratch1);
-  __ addze(r0, r0, LeaveOE, SetRC);
-  __ beq(&bailout, cr0);
+
+  __ AddAndCheckForOverflow(string_length, string_length, scratch1,
+                            scratch2, r0);
+  __ BranchOnOverflow(&bailout);
+
   __ cmp(element, elements_end);
   __ blt(&loop);
 
@@ -3794,10 +3795,10 @@ void FullCodeGenerator::EmitFastAsciiArrayJoin(CallRuntime* expr) {
   __ rlwinm(r0, scratch2, 1, 31, 31);
   __ cmpi(r0, Operand(0));
   __ bne(&bailout);
-  __ li(r0, Operand(-1));
-  __ addc(string_length, string_length, scratch2);
-  __ addze(r0, r0, LeaveOE, SetRC);
-  __ beq(&bailout, cr0);
+
+  __ AddAndCheckForOverflow(string_length, string_length, scratch2,
+                            scratch1, r0);
+  __ BranchOnOverflow(&bailout);
   __ SmiUntag(string_length);
 
   // Get first element in the array to free up the elements register to be used
@@ -4208,7 +4209,7 @@ void FullCodeGenerator::VisitCountOperation(CountOperation* expr) {
 
   if (ShouldInlineSmiCase(expr->op())) {
     __ AddAndCheckForOverflow(r3, r3, r4, r5, r0);
-    __ blt(&stub_call, cr0);
+    __ BranchOnOverflow(&stub_call);
 
     // We could eliminate this smi check if we split the code at
     // the first smi check before calling ToNumber.
