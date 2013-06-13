@@ -1716,7 +1716,6 @@ void Simulator::DecodeExt2(Instruction* instr) {
       int ra = instr->RAValue();
       int rb = instr->RBValue();
       // int oe = instr->Bit(10);
-      // int rc = instr->Bit(0);
       uint32_t ra_val = get_register(ra);
       uint32_t rb_val = get_register(rb);
       uint32_t alu_out = ~ra_val + rb_val + 1;
@@ -1738,7 +1737,6 @@ void Simulator::DecodeExt2(Instruction* instr) {
       int ra = instr->RAValue();
       int rb = instr->RBValue();
       // int oe = instr->Bit(10);
-      // int rc = instr->Bit(0);
       int32_t ra_val = get_register(ra);
       int32_t rb_val = get_register(rb);
       int64_t alu_out = ra_val + rb_val;
@@ -1849,7 +1847,6 @@ void Simulator::DecodeExt2(Instruction* instr) {
       int ra = instr->RAValue();
       int rb = instr->RBValue();
       // int oe = instr->Bit(10);
-      int rc = instr->Bit(0);
       int32_t ra_val = get_register(ra);
       int32_t rb_val = get_register(rb);
       int32_t alu_out = rb_val - ra_val;
@@ -1879,7 +1876,6 @@ void Simulator::DecodeExt2(Instruction* instr) {
       int rs = instr->RSValue();
       int ra = instr->RAValue();
       int rb = instr->RBValue();
-      // int rc = instr->Bit(0);
       int32_t rs_val = get_register(rs);
       int32_t rb_val = get_register(rb);
       int32_t alu_out = ~(rs_val | rb_val);
@@ -1908,7 +1904,6 @@ void Simulator::DecodeExt2(Instruction* instr) {
       int ra = instr->RAValue();
       int rb = instr->RBValue();
       // int oe = instr->Bit(10);
-      // int rc = instr->Bit(0);
       int32_t ra_val = get_register(ra);
       int32_t rb_val = get_register(rb);
       int32_t alu_out = ra_val + rb_val;
@@ -2300,7 +2295,6 @@ void Simulator::InstructionDecode(Instruction* instr) {
       int sh = instr->Bits(15, 11);
       int mb = instr->Bits(10, 6);
       int me = instr->Bits(5, 1);
-      int rc = instr->Bit(0);
       // rotate left
       int result = (rs_val << sh) | (((unsigned int)rs_val) >> (32-sh));
       int mask = 0;
@@ -2324,12 +2318,8 @@ void Simulator::InstructionDecode(Instruction* instr) {
       ra_val &= ~mask;
       result |= ra_val;
       set_register(ra, result);
-      if (rc) {
-        int bf = 0;
-        if (result < 0) { bf |= 0x80000000; }
-        if (result > 0) { bf |= 0x40000000; }
-        if (result == 0) { bf |= 0x20000000; }
-        condition_reg_ = (condition_reg_ & ~0xF0000000) | bf;
+      if (instr->Bit(0)) {  // RC bit set
+        SetCR0(result);
       }
       break;
     }
@@ -2340,7 +2330,6 @@ void Simulator::InstructionDecode(Instruction* instr) {
       int sh = instr->Bits(15, 11);
       int mb = instr->Bits(10, 6);
       int me = instr->Bits(5, 1);
-      int rc = instr->Bit(0);
       // rotate left
       int result = (rs_val << sh) | (((unsigned int)rs_val) >> (32-sh));
       int mask = 0;
@@ -2362,12 +2351,8 @@ void Simulator::InstructionDecode(Instruction* instr) {
       }
       result &= mask;
       set_register(ra, result);
-      if (rc) {
-        int bf = 0;
-        if (result < 0) { bf |= 0x80000000; }
-        if (result > 0) { bf |= 0x40000000; }
-        if (result == 0) { bf |= 0x20000000; }
-        condition_reg_ = (condition_reg_ & ~0xF0000000) | bf;
+      if (instr->Bit(0)) {  // RC bit set
+        SetCR0(result);
       }
       break;
     }
@@ -2416,11 +2401,7 @@ void Simulator::InstructionDecode(Instruction* instr) {
       uint32_t im_val = instr->Bits(15, 0);
       int32_t alu_out = rs_val & im_val;
       set_register(ra, alu_out);
-      int bf = 0;
-      if (alu_out < 0) { bf |= 0x80000000; }
-      if (alu_out > 0) { bf |= 0x40000000; }
-      if (alu_out == 0) { bf |= 0x20000000; }
-      condition_reg_ = (condition_reg_ & ~0xF0000000) | bf;
+      SetCR0(alu_out);
       break;
     }
     case ANDISx: {
@@ -2430,11 +2411,7 @@ void Simulator::InstructionDecode(Instruction* instr) {
       uint32_t im_val = instr->Bits(15, 0);
       int32_t alu_out = rs_val & (im_val << 16);
       set_register(ra, alu_out);
-      int bf = 0;
-      if (alu_out < 0) { bf |= 0x80000000; }
-      if (alu_out > 0) { bf |= 0x40000000; }
-      if (alu_out == 0) { bf |= 0x20000000; }
-      condition_reg_ = (condition_reg_ & ~0xF0000000) | bf;
+      SetCR0(alu_out);
       break;
     }
     case EXT2: {
