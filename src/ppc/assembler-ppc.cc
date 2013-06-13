@@ -920,6 +920,10 @@ void Assembler::andis(Register ra, Register rs, const Operand& imm) {
   d_form(ANDISx, rs, ra, imm16);
 }
 
+void Assembler::nor(Register dst, Register src1, Register src2, RCBit r) {
+  x_form(EXT2 | NORX, dst, src1, src2, r);
+}
+
 void Assembler::ori(Register ra, Register rs, const Operand& imm) {
   d_form(ORI, ra, rs, imm.imm32_);
 }

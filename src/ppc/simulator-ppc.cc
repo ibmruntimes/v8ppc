@@ -1570,6 +1570,15 @@ void Simulator::PrintStopInfo(uint32_t code) {
 }
 
 
+void Simulator::SetCR0(int32_t result) {
+  int bf = 0;
+  if (result <  0) { bf |= 0x80000000; }
+  if (result >  0) { bf |= 0x40000000; }
+  if (result == 0) { bf |= 0x20000000; }
+  condition_reg_ = (condition_reg_ & ~0xF0000000) | bf;
+}
+
+
 // Handle execution based on instruction types.
 void Simulator::DecodeExt1(Instruction* instr) {
   switch (instr->Bits(10, 1) << 1) {
@@ -1628,17 +1637,12 @@ void Simulator::DecodeExt2(Instruction* instr) {
       int rs = instr->RSValue();
       int ra = instr->RAValue();
       int rb = instr->RBValue();
-      int rc = instr->Bit(0);
       uint32_t rs_val = get_register(rs);
       uint32_t rb_val = get_register(rb);
       int32_t  result = rs_val >> rb_val;
       set_register(ra, result);
-      if (rc) {
-        int bf = 0;
-        if (result < 0) { bf |= 0x80000000; }
-        if (result > 0) { bf |= 0x40000000; }
-        if (result == 0) { bf |= 0x20000000; }
-        condition_reg_ = (condition_reg_ & ~0xF0000000) | bf;
+      if (instr->Bit(0)) {  // RC bit set
+        SetCR0(result);
       }
       return;
     }
@@ -1646,34 +1650,24 @@ void Simulator::DecodeExt2(Instruction* instr) {
       int rs = instr->RSValue();
       int ra = instr->RAValue();
       int rb = instr->RBValue();
-      int rc = instr->Bit(0);
       int32_t rs_val = get_register(rs);
       int32_t rb_val = get_register(rb);
       int32_t result = rs_val >> rb_val;
       set_register(ra, result);
-      if (rc) {
-        int bf = 0;
-        if (result < 0) { bf |= 0x80000000; }
-        if (result > 0) { bf |= 0x40000000; }
-        if (result == 0) { bf |= 0x20000000; }
-        condition_reg_ = (condition_reg_ & ~0xF0000000) | bf;
+      if (instr->Bit(0)) {  // RC bit set
+        SetCR0(result);
       }
       return;
     }
     case SRAWIX: {
       int ra = instr->RAValue();
       int rs = instr->RSValue();
-      int32_t rs_val = get_register(rs);
       int sh = instr->Bits(15, 11);
-      int rc = instr->Bit(0);
-      int result = rs_val >> sh;
+      int32_t rs_val = get_register(rs);
+      int32_t result = rs_val >> sh;
       set_register(ra, result);
-      if (rc) {
-        int bf = 0;
-        if (result < 0) { bf |= 0x80000000; }
-        if (result > 0) { bf |= 0x40000000; }
-        if (result == 0) { bf |= 0x20000000; }
-        condition_reg_ = (condition_reg_ & ~0xF0000000) | bf;
+      if (instr->Bit(0)) {  // RC bit set
+        SetCR0(result);
       }
       return;
     }
@@ -1683,6 +1677,9 @@ void Simulator::DecodeExt2(Instruction* instr) {
       int32_t rs_val = get_register(rs);
       int32_t ra_val = (rs_val << 16) >> 16;
       set_register(ra, ra_val);
+      if (instr->Bit(0)) {  // RC bit set
+        SetCR0(ra_val);
+      }
       return;
     }
     case EXTSB: {
@@ -1691,6 +1688,9 @@ void Simulator::DecodeExt2(Instruction* instr) {
       int32_t rs_val = get_register(rs);
       int32_t ra_val = (rs_val << 24) >> 24;
       set_register(ra, ra_val);
+      if (instr->Bit(0)) {  // RC bit set
+        SetCR0(ra_val);
+      }
       return;
     }
   }
@@ -1727,7 +1727,10 @@ void Simulator::DecodeExt2(Instruction* instr) {
       } else {
         special_reg_xer_ = (special_reg_xer_ & ~0xF0000000) | 0x20000000;
       }
-      // todo - handle OE and RC bits
+      if (instr->Bit(0)) {  // RC bit set
+        SetCR0(alu_out);
+      }
+      // todo - handle OE bit
       break;
     }
     case ADDCX: {
@@ -1746,7 +1749,10 @@ void Simulator::DecodeExt2(Instruction* instr) {
         special_reg_xer_ &= ~0xF0000000;
       }
       set_register(rt, alu_out);
-      // todo - handle OE and RC bits
+      if (instr->Bit(0)) {  // RC bit set
+        SetCR0(static_cast<int32_t>(alu_out));
+      }
+      // todo - handle OE bit
       break;
     }
     case MULHWX: {
@@ -1758,15 +1764,21 @@ void Simulator::DecodeExt2(Instruction* instr) {
       int64_t alu_out = ra_val * rb_val;
       alu_out >>= 32;
       set_register(rt, alu_out);
-      // todo - handle OE and RC bits
+      if (instr->Bit(0)) {  // RC bit set
+        SetCR0(static_cast<int32_t>(alu_out));
+      }
+      // todo - handle OE bit
       break;
     }
     case NEGX: {
       int rt = instr->RTValue();
       int ra = instr->RAValue();
       int32_t ra_val = get_register(ra);
-      int alu_out = 1 + ~ra_val;
+      int32_t alu_out = 1 + ~ra_val;
       set_register(rt, alu_out);
+      if (instr->Bit(0)) {  // RC bit set
+        SetCR0(alu_out);
+      }
       break;
     }
     case SLWX: {
@@ -1777,6 +1789,9 @@ void Simulator::DecodeExt2(Instruction* instr) {
       uint32_t rb_val = get_register(rb);
       uint32_t result = rs_val << rb_val;
       set_register(ra, result);
+      if (instr->Bit(0)) {  // RC bit set
+        SetCR0(result);
+      }
       break;
     }
     case CNTLZWX: {
@@ -1793,7 +1808,7 @@ void Simulator::DecodeExt2(Instruction* instr) {
           bit >>= 1;
       }
       set_register(ra, count);
-      if (instr->Bit(0)) {  // RCBit set
+      if (instr->Bit(0)) {  // RC Bit set
         int bf = 0;
         if (count > 0)  { bf |= 0x40000000; }
         if (count == 0) { bf |= 0x20000000; }
@@ -1809,12 +1824,8 @@ void Simulator::DecodeExt2(Instruction* instr) {
       int32_t rb_val = get_register(rb);
       int32_t alu_out = rs_val & rb_val;
       set_register(ra, alu_out);
-      if (instr->Bit(0)) {  // RCBit set
-        int bf = 0;
-        if (alu_out < 0) { bf |= 0x80000000; }
-        if (alu_out > 0) { bf |= 0x40000000; }
-        if (alu_out == 0) { bf |= 0x20000000; }
-        condition_reg_ = (condition_reg_ & ~0xF0000000) | bf;
+      if (instr->Bit(0)) {  // RC Bit set
+        SetCR0(alu_out);
       }
       break;
     }
@@ -1842,16 +1853,12 @@ void Simulator::DecodeExt2(Instruction* instr) {
       int32_t ra_val = get_register(ra);
       int32_t rb_val = get_register(rb);
       int32_t alu_out = rb_val - ra_val;
-      if (rc) {
-        int bf = 0;
-        if (alu_out < 0) { bf |= 0x80000000; }
-        if (alu_out > 0) { bf |= 0x40000000; }
-        if (alu_out == 0) { bf |= 0x20000000; }
-        condition_reg_ = (condition_reg_ & ~0xF0000000) | bf;
-      }
       // todo - figure out underflow
       set_register(rt, alu_out);
-      // todo - handle OE and RC bits
+      if (instr->Bit(0)) {  // RC Bit set
+        SetCR0(alu_out);
+      }
+      // todo - handle OE bit
       break;
     }
     case ADDZEX: {
@@ -1862,14 +1869,24 @@ void Simulator::DecodeExt2(Instruction* instr) {
         ra_val += 1;
       }
       set_register(rt, ra_val);
-      if (instr->Bit(0)) {  // RCBit set
-        int bf = 0;
-        if (ra_val < 0) { bf |= 0x80000000; }
-        if (ra_val > 0) { bf |= 0x40000000; }
-        if (ra_val == 0) { bf |= 0x20000000; }
-        condition_reg_ = (condition_reg_ & ~0xF0000000) | bf;
+      if (instr->Bit(0)) {  // RC bit set
+        SetCR0(ra_val);
       }
       // todo - handle OE bit
+      break;
+    }
+    case NORX: {
+      int rs = instr->RSValue();
+      int ra = instr->RAValue();
+      int rb = instr->RBValue();
+      // int rc = instr->Bit(0);
+      int32_t rs_val = get_register(rs);
+      int32_t rb_val = get_register(rb);
+      int32_t alu_out = ~(rs_val | rb_val);
+      set_register(ra, alu_out);
+      if (instr->Bit(0)) {  // RC bit set
+        SetCR0(alu_out);
+      }
       break;
     }
     case MULLW: {
@@ -1880,7 +1897,10 @@ void Simulator::DecodeExt2(Instruction* instr) {
       int32_t rb_val = get_register(rb);
       int32_t alu_out = ra_val * rb_val;
       set_register(rt, alu_out);
-      // todo - handle OE and RC bits
+      if (instr->Bit(0)) {  // RC bit set
+        SetCR0(alu_out);
+      }
+      // todo - handle OE bit
       break;
     }
     case ADDX: {
@@ -1893,7 +1913,10 @@ void Simulator::DecodeExt2(Instruction* instr) {
       int32_t rb_val = get_register(rb);
       int32_t alu_out = ra_val + rb_val;
       set_register(rt, alu_out);
-      // todo - handle OE and RC bits
+      if (instr->Bit(0)) {  // RC bit set
+        SetCR0(alu_out);
+      }
+      // todo - handle OE bit
       break;
     }
     case XORX: {
@@ -1904,7 +1927,9 @@ void Simulator::DecodeExt2(Instruction* instr) {
       int32_t rb_val = get_register(rb);
       int32_t alu_out = rs_val ^ rb_val;
       set_register(ra, alu_out);
-      // todo - handle RC bit
+      if (instr->Bit(0)) {  // RC bit set
+        SetCR0(alu_out);
+      }
       break;
     }
     case ORX: {
@@ -1915,7 +1940,9 @@ void Simulator::DecodeExt2(Instruction* instr) {
       int32_t rb_val = get_register(rb);
       int32_t alu_out = rs_val | rb_val;
       set_register(ra, alu_out);
-      // todo - handle RC bit
+      if (instr->Bit(0)) {  // RC bit set
+        SetCR0(alu_out);
+      }
       break;
     }
     case MFSPR: {

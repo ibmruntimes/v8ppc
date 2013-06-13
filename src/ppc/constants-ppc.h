@@ -212,7 +212,7 @@ enum OpcodeExt1 {
 enum OpcodeExt2 {
   CMP = 0 << 1,
   TW = 4 << 1,
-  SUBFCX =8 << 1,
+  SUBFCX = 8 << 1,
   ADDCX = 10 << 1,
   MULHWUX = 11 << 1,
   MFCR = 19 << 1,
