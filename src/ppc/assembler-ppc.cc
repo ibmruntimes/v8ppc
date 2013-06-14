@@ -142,7 +142,7 @@ Register ToRegister(int num) {
   ASSERT(num >= 0 && num < kNumRegisters);
   const Register kRegisters[] = {
     r0,
-    sp, r1,
+    sp,
     r2, r3, r4, r5, r6, r7, r8, r9, r10,
     r11, ip, r13, lr, pc,
     r16, r17, r18, r19, r20, r21, r22, r23, r24,
