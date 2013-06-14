@@ -5126,7 +5126,7 @@ void RegExpExecStub::Generate(MacroAssembler* masm) {
   // regexp_data: RegExp data (FixedArray)
   // Check the type of the RegExp. Only continue if type is JSRegExp::IRREGEXP.
   __ lwz(r3, FieldMemOperand(regexp_data, JSRegExp::kDataTagOffset));
-  ASSERT(Smi::FromInt(JSRegExp::IRREGEXP < 0xffffu));
+  ASSERT(Smi::FromInt(JSRegExp::IRREGEXP) < 0xffffu);
   __ cmpi(r3, Operand(Smi::FromInt(JSRegExp::IRREGEXP)));
   __ bne(&runtime);
 

@@ -276,11 +276,11 @@ const Instr kPushRegPattern =
 // register r is not encoded.
 const Instr kPopRegPattern =
     al | B26 | L | 4 | PostIndex | kRegister_sp_Code * B16;
-const Instr kMrSPFP = 0x7fe1fb78;
+const Instr kMrLRPC = 0x7dee7b78;      // hacked mr r14,r15 for pc
 const Instr kLwzPCMask = 0xffff0000;
-// lwz r31,disp(r1)
-const Instr kLwzPCPattern = LWZ | kRegister_fp_Code * B21
-                                | kRegister_sp_Code * B16;
+// lwz r15,disp(15)     Note: hacked r15 for pc
+const Instr kLwzPCPattern = LWZ | kRegister_pc_Code * B21
+                                | kRegister_pc_Code * B16;
 
 // Spare buffer.
 static const int kMinimalBufferSize = 4*KB;

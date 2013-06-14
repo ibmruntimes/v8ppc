@@ -226,13 +226,13 @@ bool RelocInfo::IsPatchedReturnSequence() {
   Instr current_instr = Assembler::instr_at(pc_);
   Instr next_instr = Assembler::instr_at(pc_ + Assembler::kInstrSize);
   //
-  // roohack - the patched return sequence is defined by
+  // The patched return sequence is defined by
   // BreakLocationIterator::SetDebugBreakAtReturn()
   //
-  // A patched return sequence is:
-  //  mr  r1, r31
-  //  lwz r31, disp(r1)
-  return (current_instr == kMrSPFP)
+  // The patched return sequence is:
+  //  mr  lr, pc        where lr = r14, and pc = r15
+  //  lwz pc, -4(pc)
+  return (current_instr == kMrLRPC)
           && ((next_instr & kLwzPCMask) == kLwzPCPattern);
 }
 
