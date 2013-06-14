@@ -667,9 +667,9 @@ class CpuFeatures : public AllStatic {
 };
 
 
-extern const Instr kMovLrPc;
-extern const Instr kLdrPCMask;
-extern const Instr kLdrPCPattern;
+extern const Instr kMrSPFP;
+extern const Instr kLwzPCMask;
+extern const Instr kLwzPCPattern;
 
 extern const Instr kMovMvnMask;
 extern const Instr kMovMvnPattern;

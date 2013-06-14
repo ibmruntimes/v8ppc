@@ -3559,8 +3559,8 @@ void MacroAssembler::GetRelocatedValueLocation(Register lwz_location,
   lwz(result, MemOperand(lwz_location));
   if (emit_debug_code()) {
     // Check that the instruction is a lwz reg, [pc + offset] .
-    and_(result, result, Operand(kLdrPCPattern));
-    cmp(result, Operand(kLdrPCPattern));
+    and_(result, result, Operand(kLwzPCPattern));
+    cmp(result, Operand(kLwzPCPattern));
     Check(eq, "The instruction to patch should be a load from pc.");
     // Result was clobbered. Restore it.
     lwz(result, MemOperand(lwz_location));

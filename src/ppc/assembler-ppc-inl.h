@@ -230,11 +230,10 @@ bool RelocInfo::IsPatchedReturnSequence() {
   // BreakLocationIterator::SetDebugBreakAtReturn()
   //
   // A patched return sequence is:
-  //  mov lr, pc
-  //  ldr pc, [pc, #-4]
-  return (current_instr == next_instr);
-// (current_instr == kMovLrPc)
-//          && ((next_instr & kLdrPCMask) == kLdrPCPattern);
+  //  mr  r1, r31
+  //  lwz r31, disp(r1)
+  return (current_instr == kMrSPFP)
+          && ((next_instr & kLwzPCMask) == kLwzPCPattern);
 }
 
 
