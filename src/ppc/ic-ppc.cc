@@ -1249,7 +1249,7 @@ void KeyedLoadIC::GenerateIndexedInterceptor(MacroAssembler* masm) {
   // Check that it has indexed interceptor and access checks
   // are not enabled for this object.
   __ lbz(r6, FieldMemOperand(r5, Map::kBitFieldOffset));
-  __ and_(r6, r6, Operand(kSlowCaseBitFieldMask));
+  __ andi(r6, r6, Operand(kSlowCaseBitFieldMask));
   __ cmpi(r6, Operand(1 << Map::kHasIndexedInterceptor));
   __ bne(&slow);
 
