@@ -965,7 +965,7 @@ void MacroAssembler::EnterExitFrame(bool save_doubles, int stack_space) {
   sub(sp, sp, Operand((stack_space + 1 + 1) * kPointerSize));
   if (frame_alignment > 0) {
     ASSERT(frame_alignment == 8);
-    rlwinm(sp, sp, 0, 29, 27);  // equivalent to &= -8
+    rlwinm(sp, sp, 0, 0, 28);  // equivalent to &= -8
   }
 
   // Set the exit frame sp value to point just before the return address
