@@ -3662,9 +3662,9 @@ void MacroAssembler::GetMarkBits(Register addr_reg,
   addis(r0, r0, (~Page::kPageAlignmentMask >> 16));
   and_(bitmap_reg, addr_reg, r0);
   rlwinm(mask_reg, addr_reg, 32-kPointerSizeLog2,
-         31-Bitmap::kBitsPerCellLog2, 31);
+         32-Bitmap::kBitsPerCellLog2, 31);
   const int kLowBits = kPointerSizeLog2 + Bitmap::kBitsPerCellLog2;
-  rlwinm(ip, addr_reg, 32-kLowBits, 31-(kPageSizeBits - kLowBits), 31);
+  rlwinm(ip, addr_reg, 32-kLowBits, 32-(kPageSizeBits - kLowBits), 31);
   slwi(ip, ip, Operand(kPointerSizeLog2));
   add(bitmap_reg, bitmap_reg, ip);
   li(ip, Operand(1));
