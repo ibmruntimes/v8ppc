@@ -474,16 +474,16 @@ int Assembler::target_at(int pos)  {
   if (BX == opcode) {
     int imm26 = ((instr & kImm26Mask) << 6) >> 6;
     imm26 &= ~kLKMask;  // discard LK bit if present
+    if (imm26 == 0)
+        return kEndOfChain;
     return pos + imm26;
   }
   if (BCX == opcode) {
     int imm16 = ((instr & kImm16Mask) << 16) >> 16;
-       // hack -- some sort of 16bit issue here?
-       if (pos + imm16 == 0xfffc) {
-         return kEndOfChain;
-       } else {
-         return pos + imm16;
-       }
+    imm16 &= ~(kAAMask|kLKMask);  // discard AA|LK bits if present
+    if (imm16 == 0)
+        return kEndOfChain;
+    return pos + imm16;
   }
   PPCPORT_UNIMPLEMENTED();
   ASSERT(false);
@@ -681,7 +681,11 @@ int Assembler::branch_offset(Label* L, bool jump_elimination_allowed) {
     if (L->is_linked()) {
       target_pos = L->pos();  // L's link
     } else {
-      target_pos = kEndOfChain;
+      // was: target_pos = kEndOfChain;
+      // However, using branch to self to mark the first reference
+      // should avoid most instances of branch offset overflow.  See
+      // target_at() for where this is converted back to kEndOfChain.
+      target_pos = pc_offset();
     }
     L->link_to(pc_offset());
   }
@@ -735,6 +739,7 @@ void Assembler::bcr() {
 void Assembler::bc(int branch_offset, BOfield bo, int condition_bit) {
   positions_recorder()->WriteRecordedPositions();
   // currently assumes AA and LK are always zero
+  ASSERT(is_int16(branch_offset) || is_uint16(branch_offset));
   emit(BCX | bo | condition_bit*B16 | (kImm16Mask & branch_offset));
 }
 
