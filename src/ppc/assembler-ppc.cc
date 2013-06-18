@@ -57,6 +57,9 @@ unsigned CpuFeatures::found_by_runtime_probing_ = 0;
 
 #define EMIT_FAKE_ARM_INSTR(arm_opcode) fake_asm(arm_opcode);
 
+#define IS_SIGNED_IMM16(imm) (((static_cast<int>(imm) << 16) >> 16) == imm)
+#define IS_UNSIGNED_IMM16(imm) ((imm & kImm16Mask) == imm)
+
 // Get the CPU features enabled by the build. For cross compilation the
 // preprocessor symbols CAN_USE_ARMV7_INSTRUCTIONS and CAN_USE_VFP3_INSTRUCTIONS
 // can be defined to enable ARMv7 and VFPv3 instructions when building the
@@ -648,14 +651,23 @@ void Assembler::a_form(Instr instr,
 void Assembler::d_form(Instr instr,
                         Register rt,
                         Register ra,
-		        const int val,
+                        const int val,
                         bool signed_disp) {
   CheckBuffer();
+#ifdef NEW_IMM_CHECK_CODE
   if (signed_disp) {
-    ASSERT(is_int16(val));
+    if (!IS_SIGNED_IMM16(val)) {
+      PrintF("val = %d, 0x%x\n", val, val);
+    }
+    ASSERT(IS_SIGNED_IMM16(val));
   } else {
-    ASSERT(is_uint16(val));
+    if (!IS_UNSIGNED_IMM16(val)) {
+      PrintF("val = %d, 0x%x, is_unsigned_imm16(val)=%d, kImm16Mask=0x%x\n",
+             val, val, IS_UNSIGNED_IMM16(val), kImm16Mask);
+    }
+    ASSERT(IS_UNSIGNED_IMM16(val));
   }
+#endif
   emit(instr | rt.code()*B21 | ra.code()*B16 | (kImm16Mask & val));
 }
 
@@ -796,10 +808,14 @@ void Assembler::xori(Register dst, Register src, const Operand& imm) {
 }
 
 void Assembler::xoris(Register ra, Register rs, const Operand& imm) {
-  // int imm16 = imm.imm32_;
-  // ASSERT(is_int16(imm16) || is_uint16(imm16));
-  // imm16 &= kImm16Mask;
+#ifndef NEW_IMM_CHECK_CODE
+  int imm16 = imm.imm32_;
+  ASSERT(is_int16(imm16) || is_uint16(imm16));
+  imm16 &= kImm16Mask;
+  d_form(XORIS, rs, ra, imm16, false);
+#else
   d_form(XORIS, rs, ra, imm.imm32_, false);
+#endif
 }
 
 void Assembler::xor_(Register dst, Register src1, Register src2, RCBit rc) {
@@ -921,17 +937,25 @@ void Assembler::addic(Register dst, Register src, const Operand& imm) {
 }
 
 void  Assembler::andi(Register ra, Register rs, const Operand& imm) {
-  // int imm16 = imm.imm32_;
-  // ASSERT(is_int16(imm16));
-  // imm16 &= kImm16Mask;
+#ifndef NEW_IMM_CHECK_CODE
+  int imm16 = imm.imm32_;
+  ASSERT(is_int16(imm16));
+  imm16 &= kImm16Mask;
+  d_form(ANDIx, rs, ra, imm16, false);
+#else
   d_form(ANDIx, rs, ra, imm.imm32_, false);
+#endif
 }
 
 void Assembler::andis(Register ra, Register rs, const Operand& imm) {
-  // int imm16 = imm.imm32_;
-  // ASSERT(is_int16(imm16) || is_uint16(imm16));
-  // imm16 &= kImm16Mask;
+#ifndef NEW_IMM_CHECK_CODE
+  int imm16 = imm.imm32_;
+  ASSERT(is_int16(imm16) || is_uint16(imm16));
+  imm16 &= kImm16Mask;
+  d_form(ANDISx, rs, ra, imm16, false);
+#else
   d_form(ANDISx, rs, ra, imm.imm32_, false);
+#endif
 }
 
 void Assembler::nor(Register dst, Register src1, Register src2, RCBit r) {
@@ -981,15 +1005,21 @@ void Assembler::li(Register dst, const Operand &src) {
   // actually addi
   // this should only be signed 16bit values, the uint16 is a hack for now
   // it may not work correctly on an actual PowerPC
-  // ASSERT(is_int16(src.imm32_) || is_uint16(src.imm32_));
+#ifndef NEW_IMM_CHECK_CODE
+  ASSERT(is_int16(src.imm32_) || is_uint16(src.imm32_));
+#endif
   add(dst, r0, src);
 }
 
 void  Assembler::lis(Register dst, const Operand& imm) {
-  // int imm16 = imm.imm32_;
-  // ASSERT(is_int16(imm16) || is_uint16(imm16));
-  // imm16 &= kImm16Mask;
+#ifndef NEW_IMM_CHECK_CODE
+  int imm16 = imm.imm32_;
+  ASSERT(is_int16(imm16) || is_uint16(imm16));
+  imm16 &= kImm16Mask;
+  d_form(ADDIS, dst, r0, imm16, true);
+#else
   d_form(ADDIS, dst, r0, imm.imm32_, true);
+#endif
 }
 
 // Pseudo op - move register
@@ -1141,16 +1171,16 @@ void Assembler::mov(Register dst, const Operand& src, SBit s, Condition cond) {
   // Assembler::kCallTargetAddressOffset (which is hard-coded as 4
   // instructions).
 
-  if (is_int16(value)) {
+  if (IS_SIGNED_IMM16(value)) {
     // PrintF("Generated li value: %d\n", value);
     li(dst, Operand(value));
   } else {
-    int hi_word = value >> 16;
+    int hi_word = static_cast<int>(value) >> 16;
     if ((hi_word << 16) == value) {
       // PrintF("Generated addis value: %d\n", value);
       addis(dst, r0, hi_word);
     } else {
-      int lo_word = value & 0xffff;
+      int lo_word = (static_cast<int>(value) << 16) >> 16;  // value & 0xffff;
       if (lo_word & 0x8000) {
         // lo word is signed, so increment hi word by one
         hi_word++;
@@ -1162,8 +1192,8 @@ void Assembler::mov(Register dst, const Operand& src, SBit s, Condition cond) {
     }
   }
 #else
-  int hi_word = value >> 16;
-  int lo_word = value & 0xffff;
+  int hi_word = static_cast<int>(value) >> 16;
+  int lo_word = (static_cast<int>(value) << 16) >> 16;  // value & 0xffff;
   if (lo_word & 0x8000) {
     // lo word is signed, so increment hi word by one
     hi_word++;
