@@ -119,7 +119,7 @@ int MacroAssembler::CallSize(
   int size;
   int movSize;
 
-  if (is_int16(value) || ((value & 0xffff0000) == value)) {
+  if (is_int16(value) || (((value << 16) >> 16) == value)) {
     movSize = 1;
   } else {
     movSize = 2;
