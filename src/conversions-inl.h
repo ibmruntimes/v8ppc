@@ -75,7 +75,11 @@ inline unsigned int FastD2UI(double x) {
   if (x < k2Pow52) {
     x += k2Pow52;
     uint32_t result;
+#if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
     Address mantissa_ptr = reinterpret_cast<Address>(&x);
+#else
+    Address mantissa_ptr = reinterpret_cast<Address>(&x) + kPointerSize;
+#endif
     // Copy least significant 32 bits of mantissa.
     memcpy(&result, mantissa_ptr, sizeof(result));
     return negative ? ~result + 1 : result;
