@@ -5359,7 +5359,7 @@ void RegExpExecStub::Generate(MacroAssembler* masm) {
   // Locate the code entry and call it.
   __ add(r10, r10, Operand(Code::kHeaderSize - kHeapObjectTag));
   DirectCEntryStub stub;
-  stub.GenerateCall(masm, r10);
+  stub.GenerateCall(masm, r10, CallType_ScalarArg);
 
   __ LeaveExitFrame(false, no_reg);
 
@@ -7314,14 +7314,16 @@ void DirectCEntryStub::Generate(MacroAssembler* masm) {
 
 
 void DirectCEntryStub::GenerateCall(MacroAssembler* masm,
-                                    ExternalReference function) {
+                                    ExternalReference function,
+                                    FunctionCallType type) {
   __ mov(r6, Operand(function));
-  GenerateCall(masm, r6);
+  GenerateCall(masm, r6, type);
 }
 
 
 void DirectCEntryStub::GenerateCall(MacroAssembler* masm,
-                                    Register target) {
+                                    Register target,
+                                    FunctionCallType type) {
   EMIT_STUB_MARKER(188);
   __ mov(r0, Operand(reinterpret_cast<intptr_t>(GetCode().location()),
                      RelocInfo::CODE_TARGET));
@@ -7330,7 +7332,7 @@ void DirectCEntryStub::GenerateCall(MacroAssembler* masm,
   Assembler::BlockConstPoolScope block_const_pool(masm);
 
 #if defined(V8_HOST_ARCH_PPC)
-#define PowerPCAdjustment 5
+  int PowerPCAdjustment = ((type == CallType_ScalarArg) ? 3 : 5);
 #else
 #define PowerPCAdjustment 0
 #endif
@@ -7347,23 +7349,37 @@ void DirectCEntryStub::GenerateCall(MacroAssembler* masm,
 #if defined(V8_HOST_ARCH_PPC)
   // PPC LINUX ABI:
   //
-  // N.B. This code assumes that there are at most two arguments passed --
-  //      - a pointer-sized non-scalar first argument in r3
-  //      - a scalar second argument in r4
-  //      It also assumes a pointer-sized non-scalar return value.
-  //      Additional logic is required to support calls where these
-  //      assumptions do not hold.
-  //
-  // Need 4 extra slots on stack:
+  // Create 4 extra slots on stack:
   //    [0] backchain
   //    [1] link register save area
-  //    [2] copy of pointer-sized non-scalar first arg (r4)
+  //    [2] copy of pointer-sized non-scalar first arg (if needed)
   //    [3] space for pointer-sized non-scalar return value (r3)
-  //  Thus we must shift r3 -> r4 and r4 -> r5 to allow for implicit first arg
+  //
+  // We shift the arguments over a register (e.g. r3 -> r4) to allow
+  // for the return value buffer in implicit first arg.
   __ add(sp, sp, Operand(-4 * kPointerSize));
-  __ mr(r5, r4);
-  __ add(r4, sp, Operand(2 * kPointerSize));
-  __ stw(r3, MemOperand(r4, 0));
+
+  if (type == CallType_NonScalarArg) {
+      // This type implies that there are at most two arguments passed --
+      //      - a pointer-sized non-scalar first argument in r3
+      //      - a scalar second argument in r4
+      //      It also implies a pointer-sized non-scalar return value.
+
+      // 2nd arg by value
+      __ mr(r5, r4);
+      // 1st arg by reference
+      __ add(r4, sp, Operand(2 * kPointerSize));
+      __ stw(r3, MemOperand(r4, 0));
+  } else {
+      ASSERT(type == CallType_ScalarArg);
+      // This type implies that there is a single scalar arguments passed and
+      // a pointer-sized non-scalar return value.
+
+      // 1st arg by value
+      __ mr(r4, r3);
+  }
+
+  // return value buffer as implicit first arg
   __ add(r3, sp, Operand(3 * kPointerSize));
 #endif
   __ Jump(target);  // Call the C++ function.

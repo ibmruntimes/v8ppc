@@ -782,6 +782,15 @@ class FPRegisters {
   static const char* names_[kNumFPRegisters];
 };
 
+// Argument encoding for function calls
+enum FunctionCallType {
+  // First arg passed by value
+  CallType_ScalarArg,
+  // First arg passed by reference
+  CallType_NonScalarArg
+};
+
+
 } }  // namespace v8::internal
 
 #undef INCLUDE_ARM

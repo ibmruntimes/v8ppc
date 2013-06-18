@@ -775,7 +775,7 @@ static void GenerateFastApiDirectCall(MacroAssembler* masm,
                                             masm->isolate());
   AllowExternalCallThatCantCauseGC scope(masm);
 
-  __ CallApiFunctionAndReturn(ref, kStackUnwindSpace);
+  __ CallApiFunctionAndReturn(ref, kStackUnwindSpace, CallType_ScalarArg);
 }
 
 
@@ -1271,7 +1271,7 @@ void StubCompiler::GenerateLoadCallback(Handle<JSObject> object,
       ExternalReference(&fun,
                         ExternalReference::DIRECT_GETTER_CALL,
                         masm()->isolate());
-  __ CallApiFunctionAndReturn(ref, kStackUnwindSpace);
+  __ CallApiFunctionAndReturn(ref, kStackUnwindSpace, CallType_NonScalarArg);
 }
 
 
