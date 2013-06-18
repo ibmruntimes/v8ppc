@@ -1534,7 +1534,7 @@ class Assembler : public AssemblerBase {
   // Instruction generation
   void a_form(Instr instr, DwVfpRegister frt, DwVfpRegister fra,
               DwVfpRegister frb, RCBit r);
-  void d_form(Instr instr, Register rt, Register ra, const int val);
+  void d_form(Instr instr, Register rt, Register ra, const int val, bool signed_disp);
   void x_form(Instr instr, Register ra, Register rs, Register rb, RCBit r);
   void xo_form(Instr instr, Register rt, Register ra, Register rb,
                OEBit o, RCBit r);

@@ -648,9 +648,14 @@ void Assembler::a_form(Instr instr,
 void Assembler::d_form(Instr instr,
                         Register rt,
                         Register ra,
-                        const int val) {
+		        const int val,
+                        bool signed_disp) {
   CheckBuffer();
-  // roohack - temporary removal ASSERT(is_int16(val));
+  if (signed_disp) {
+    ASSERT(is_int16(val));
+  } else {
+    ASSERT(is_uint16(val));
+  }
   emit(instr | rt.code()*B21 | ra.code()*B16 | (kImm16Mask & val));
 }
 
@@ -787,14 +792,14 @@ void Assembler::rsb(Register dst, Register src1, const Operand& src2,
 // PowerPC
 
 void Assembler::xori(Register dst, Register src, const Operand& imm) {
-  d_form(XORI, dst, src, imm.imm32_);
+  d_form(XORI, dst, src, imm.imm32_, false);
 }
 
 void Assembler::xoris(Register ra, Register rs, const Operand& imm) {
-  int imm16 = imm.imm32_;
-  ASSERT(is_int16(imm16) || is_uint16(imm16));
-  imm16 &= kImm16Mask;
-  d_form(XORIS, rs, ra, imm16);
+  // int imm16 = imm.imm32_;
+  // ASSERT(is_int16(imm16) || is_uint16(imm16));
+  // imm16 &= kImm16Mask;
+  d_form(XORIS, rs, ra, imm.imm32_, false);
 }
 
 void Assembler::xor_(Register dst, Register src1, Register src2, RCBit rc) {
@@ -881,7 +886,7 @@ void Assembler::subfc(Register dst, Register src1, Register src2,
 }
 
 void Assembler::subfic(Register dst, Register src, const Operand& imm) {
-  d_form(SUBFIC, dst, src, imm.imm32_);
+  d_form(SUBFIC, dst, src, imm.imm32_, true);
 }
 
 void Assembler::add(Register dst, Register src1, Register src2,
@@ -904,29 +909,29 @@ void Assembler::mulhw(Register dst, Register src1, Register src2,
 // delete these later when removing ARM code
 void Assembler::add(Register dst, Register src, const Operand& imm,
 SBit s, Condition cond) {
-  d_form(ADDI, dst, src, imm.imm32_);
+  d_form(ADDI, dst, src, imm.imm32_, true);
 }
 
 void  Assembler::addis(Register dst, Register src, int imm) {
-  d_form(ADDIS, dst, src, imm);
+  d_form(ADDIS, dst, src, imm, true);
 }
 
 void Assembler::addic(Register dst, Register src, const Operand& imm) {
-  d_form(ADDIC, dst, src, imm.imm32_);
+  d_form(ADDIC, dst, src, imm.imm32_, true);
 }
 
 void  Assembler::andi(Register ra, Register rs, const Operand& imm) {
-  int imm16 = imm.imm32_;
-  ASSERT(is_int16(imm16));
-  imm16 &= kImm16Mask;
-  d_form(ANDIx, rs, ra, imm16);
+  // int imm16 = imm.imm32_;
+  // ASSERT(is_int16(imm16));
+  // imm16 &= kImm16Mask;
+  d_form(ANDIx, rs, ra, imm.imm32_, false);
 }
 
 void Assembler::andis(Register ra, Register rs, const Operand& imm) {
-  int imm16 = imm.imm32_;
-  ASSERT(is_int16(imm16) || is_uint16(imm16));
-  imm16 &= kImm16Mask;
-  d_form(ANDISx, rs, ra, imm16);
+  // int imm16 = imm.imm32_;
+  // ASSERT(is_int16(imm16) || is_uint16(imm16));
+  // imm16 &= kImm16Mask;
+  d_form(ANDISx, rs, ra, imm.imm32_, false);
 }
 
 void Assembler::nor(Register dst, Register src1, Register src2, RCBit r) {
@@ -934,11 +939,11 @@ void Assembler::nor(Register dst, Register src1, Register src2, RCBit r) {
 }
 
 void Assembler::ori(Register ra, Register rs, const Operand& imm) {
-  d_form(ORI, ra, rs, imm.imm32_);
+  d_form(ORI, ra, rs, imm.imm32_, false);
 }
 
 void Assembler::oris(Register dst, Register src, const Operand& imm) {
-  d_form(ORIS, dst, src, imm.imm32_);
+  d_form(ORIS, dst, src, imm.imm32_, false);
 }
 
 void Assembler::orx(Register dst, Register src1, Register src2, RCBit r) {
@@ -976,15 +981,15 @@ void Assembler::li(Register dst, const Operand &src) {
   // actually addi
   // this should only be signed 16bit values, the uint16 is a hack for now
   // it may not work correctly on an actual PowerPC
-  ASSERT(is_int16(src.imm32_) || is_uint16(src.imm32_));
+  // ASSERT(is_int16(src.imm32_) || is_uint16(src.imm32_));
   add(dst, r0, src);
 }
 
 void  Assembler::lis(Register dst, const Operand& imm) {
-  int imm16 = imm.imm32_;
-  ASSERT(is_int16(imm16) || is_uint16(imm16));
-  imm16 &= kImm16Mask;
-  d_form(ADDIS, dst, r0, imm16);
+  // int imm16 = imm.imm32_;
+  // ASSERT(is_int16(imm16) || is_uint16(imm16));
+  // imm16 &= kImm16Mask;
+  d_form(ADDIS, dst, r0, imm.imm32_, true);
 }
 
 // Pseudo op - move register
@@ -994,35 +999,35 @@ void Assembler::mr(Register dst, Register src) {
 }
 
 void Assembler::lbz(Register dst, const MemOperand &src) {
-  d_form(LBZ, dst, src.ra_, src.offset_);
+  d_form(LBZ, dst, src.ra_, src.offset_, true);
 }
 
 void Assembler::lhz(Register dst, const MemOperand &src) {
-  d_form(LHZ, dst, src.ra_, src.offset_);
+  d_form(LHZ, dst, src.ra_, src.offset_, true);
 }
 
 void Assembler::lwz(Register dst, const MemOperand &src) {
-  d_form(LWZ, dst, src.ra_, src.offset_);
+  d_form(LWZ, dst, src.ra_, src.offset_, true);
 }
 
 void Assembler::lwzu(Register dst, const MemOperand &src) {
-  d_form(LWZU, dst, src.ra_, src.offset_);
+  d_form(LWZU, dst, src.ra_, src.offset_, true);
 }
 
 void Assembler::stb(Register dst, const MemOperand &src) {
-  d_form(STB, dst, src.ra_, src.offset_);
+  d_form(STB, dst, src.ra_, src.offset_, true);
 }
 
 void Assembler::sth(Register dst, const MemOperand &src) {
-  d_form(STH, dst, src.ra_, src.offset_);
+  d_form(STH, dst, src.ra_, src.offset_, true);
 }
 
 void Assembler::stw(Register dst, const MemOperand &src) {
-  d_form(STW, dst, src.ra_, src.offset_);
+  d_form(STW, dst, src.ra_, src.offset_, true);
 }
 
 void Assembler::stwu(Register dst, const MemOperand &src) {
-  d_form(STWU, dst, src.ra_, src.offset_);
+  d_form(STWU, dst, src.ra_, src.offset_, true);
 }
 
 void Assembler::extsb(Register rs, Register ra, RCBit rc) {
