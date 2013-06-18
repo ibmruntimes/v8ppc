@@ -3785,7 +3785,7 @@ void MacroAssembler::EnsureNotWhite(
   mov(ip, Operand(~Page::kPageAlignmentMask));
   and_(bitmap_scratch, bitmap_scratch, ip);
   lwz(ip, MemOperand(bitmap_scratch, MemoryChunk::kLiveBytesOffset));
-  add(ip, ip, Operand(length));
+  add(ip, ip, length);
   stw(ip, MemOperand(bitmap_scratch, MemoryChunk::kLiveBytesOffset));
 
   bind(&done);
