@@ -1124,20 +1124,28 @@ void Assembler::mov(Register dst, const Operand& src, SBit s, Condition cond) {
     // some form of relocation needed
     RecordRelocInfo(src.rmode_, src.imm32_);
   }
-  // load constant in 2 instructions
-  // may want to optimize this later for constants that fit in 1 instruction
-  // but this will possibly have impact on call sequence sizes
+
   int value = src.imm32_;
-  int lo_word = value & 0xffff;
-  int hi_word = value >> 16;
-  if (lo_word & 0x8000) {
-    // lo word is signed, so increment hi word by one
-    hi_word++;
+  if (is_int16(value)) {
+    // PrintF("Generated li value: %d\n", value);
+    li(dst, Operand(value));
+  } else {
+    int hi_word = value >> 16;
+    if ((hi_word << 16) == value) {
+      // PrintF("Generated addis value: %d\n", value);
+      addis(dst, r0, hi_word);
+    } else {
+      int lo_word = value & 0xffff;
+      if (lo_word & 0x8000) {
+        // lo word is signed, so increment hi word by one
+        hi_word++;
+      }
+      // ASSERT(dst.code() != 0);  // r0 is invalid destination eee
+      BlockConstPoolFor(2);  // don't split these
+      addis(dst, r0, hi_word);
+      addic(dst, dst, Operand(lo_word));
+    }
   }
-  // ASSERT(dst.code() != 0);  // r0 is invalid destination eee
-  BlockConstPoolFor(2);  // don't split these
-  addis(dst, r0, hi_word);
-  addic(dst, dst, Operand(lo_word));
 }
 
 void Assembler::bic(Register dst, Register src1, const Operand& src2,
