@@ -1126,6 +1126,16 @@ void Assembler::mov(Register dst, const Operand& src, SBit s, Condition cond) {
   }
 
   int value = src.imm32_;
+#if 0
+  // Generate variable length sequence.
+
+  // If this code is made active, code in MacroAssembler::CallSize
+  // must also be activated to handle variable length call sequences.
+
+  // N.B.: This is disable for now due to unresolved dependencies on
+  // Assembler::kCallTargetAddressOffset (which is hard-coded as 4
+  // instructions).
+
   if (is_int16(value)) {
     // PrintF("Generated li value: %d\n", value);
     li(dst, Operand(value));
@@ -1146,6 +1156,18 @@ void Assembler::mov(Register dst, const Operand& src, SBit s, Condition cond) {
       addic(dst, dst, Operand(lo_word));
     }
   }
+#else
+  int hi_word = value >> 16;
+  int lo_word = value & 0xffff;
+  if (lo_word & 0x8000) {
+    // lo word is signed, so increment hi word by one
+    hi_word++;
+  }
+  // ASSERT(dst.code() != 0);  // r0 is invalid destination eee
+  BlockConstPoolFor(2);  // don't split these
+  addis(dst, r0, hi_word);
+  addic(dst, dst, Operand(lo_word));
+#endif
 }
 
 void Assembler::bic(Register dst, Register src1, const Operand& src2,
