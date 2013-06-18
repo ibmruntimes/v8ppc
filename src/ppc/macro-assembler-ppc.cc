@@ -115,7 +115,17 @@ void MacroAssembler::Call(Register target, Condition cond) {
 
 int MacroAssembler::CallSize(
     Address target, RelocInfo::Mode rmode, Condition cond) {
-  int size = 4 * kInstrSize;
+  intptr_t value = reinterpret_cast<intptr_t>(target);
+  int size;
+  int movSize;
+
+  if (is_int16(value) || ((value & 0xffff0000) == value)) {
+    movSize = 1;
+  } else {
+    movSize = 2;
+  }
+  size = (2 + movSize) * kInstrSize;
+
 #if 0
   Instr mov_instr = cond | MOV | LeaveCC;
   intptr_t immediate = reinterpret_cast<intptr_t>(target);
