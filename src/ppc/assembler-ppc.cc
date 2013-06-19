@@ -57,6 +57,8 @@ unsigned CpuFeatures::found_by_runtime_probing_ = 0;
 
 #define EMIT_FAKE_ARM_INSTR(arm_opcode) fake_asm(arm_opcode);
 
+  //#define NEW_IMM_CHECK_CODE
+
 #define IS_SIGNED_IMM16(imm) (((static_cast<int>(imm) << 16) >> 16) == imm)
 #define IS_UNSIGNED_IMM16(imm) ((imm & kImm16Mask) == imm)
 
@@ -1073,6 +1075,10 @@ void Assembler::extsh(Register rs, Register ra, RCBit rc) {
 void Assembler::neg(Register rt, Register ra, RCBit rc) {
   CheckBuffer();
   emit(EXT2 | NEGX| rt.code()*B21 | ra.code()*B16 | rc);
+}
+
+void Assembler::andc(Register dst, Register src1, Register src2, RCBit rc) {
+  x_form(EXT2 | ANDCX, dst, src1, src2, rc);
 }
 
 void Assembler::fake_asm(enum FAKE_OPCODE_T fopcode) {

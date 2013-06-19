@@ -106,7 +106,9 @@ static void ProbeTable(Isolate* isolate,
   base_addr = no_reg;
   __ lwz(flags_reg, FieldMemOperand(code, Code::kFlagsOffset));
 
-  __ andi(flags_reg, flags_reg, Operand(~Code::kFlagsNotUsedInLookup));
+  ASSERT(!r0.is(flags_reg));
+  __ li(r0, Operand(Code::kFlagsNotUsedInLookup));
+  __ andc(flags_reg, flags_reg, r0);
   __ mov(r0, Operand(flags));
   __ cmpl(flags_reg, r0);
   __ bne(&miss);

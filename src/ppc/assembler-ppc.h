@@ -930,6 +930,7 @@ class Assembler : public AssemblerBase {
   void addis(Register dst, Register src, int imm);
   void addic(Register dst, Register src, const Operand& imm);
 
+  void andc(Register dst, Register src1, Register src2, RCBit rc = LeaveRC);
   void andi(Register ra, Register rs, const Operand& imm);
   void andis(Register ra, Register rs, const Operand& imm);
   void nor(Register dst, Register src1, Register src2, RCBit r = LeaveRC);

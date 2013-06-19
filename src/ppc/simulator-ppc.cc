@@ -1827,6 +1827,19 @@ void Simulator::DecodeExt2(Instruction* instr) {
       }
       break;
     }
+    case ANDCX: {
+      int rs = instr->RSValue();
+      int ra = instr->RAValue();
+      int rb = instr->RBValue();
+      int32_t rs_val = get_register(rs);
+      int32_t rb_val = get_register(rb);
+      int32_t alu_out = rs_val & ~rb_val;
+      set_register(ra, alu_out);
+      if (instr->Bit(0)) {  // RC Bit set
+        SetCR0(alu_out);
+      }
+      break;
+    }
     case CMPL: {
       int ra = instr->RAValue();
       int rb = instr->RBValue();
