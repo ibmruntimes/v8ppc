@@ -5871,9 +5871,9 @@ void StringCharCodeAtGenerator::GenerateSlow(
   STATIC_ASSERT(kSmiTag == 0);
   STATIC_ASSERT(kSmiShiftSize == 0);
   ASSERT(IsPowerOf2(String::kMaxAsciiCharCode + 1));
-  __ li(safe_implicit_scratch_r30, Operand(kSmiTagMask |
+  __ li(r0, Operand(kSmiTagMask |
            ((~String::kMaxAsciiCharCode) << kSmiTagSize)));
-  __ and_(r0, code_, safe_implicit_scratch_r30);
+  __ and_(r0, code_, r0);
   __ cmpi(r0, Operand(0));
   __ bne(&slow_case_);
 
