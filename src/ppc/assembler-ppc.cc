@@ -57,7 +57,7 @@ unsigned CpuFeatures::found_by_runtime_probing_ = 0;
 
 #define EMIT_FAKE_ARM_INSTR(arm_opcode) fake_asm(arm_opcode);
 
-  //#define NEW_IMM_CHECK_CODE
+// #define NEW_IMM_CHECK_CODE
 
 #define IS_SIGNED_IMM16(imm) (((static_cast<int>(imm) << 16) >> 16) == imm)
 #define IS_UNSIGNED_IMM16(imm) ((imm & kImm16Mask) == imm)

@@ -5922,15 +5922,15 @@ void StringCharCodeAtGenerator::GenerateSlow(
 // -------------------------------------------------------------------------
 // StringCharFromCodeGenerator
 
-void StringCharFromCodeGenerator::GenerateFast(MacroAssembler* masm) {
+  void StringCharFromCodeGenerator::GenerateFast(MacroAssembler* masm) {
   EMIT_STUB_MARKER(165);
   // Fast case of Heap::LookupSingleCharacterStringFromCode.
   STATIC_ASSERT(kSmiTag == 0);
   STATIC_ASSERT(kSmiShiftSize == 0);
   ASSERT(IsPowerOf2(String::kMaxAsciiCharCode + 1));
-  __ andi(r0, code_,
-         Operand(kSmiTagMask |
-                 ((~String::kMaxAsciiCharCode) << kSmiTagSize)));
+  __ li(safe_implicit_scratch_r30, Operand(kSmiTagMask |
+           ((~String::kMaxAsciiCharCode) << kSmiTagSize)));
+  __ and_(r0, code_, safe_implicit_scratch_r30);
   __ cmpi(r0, Operand(0));
   __ bne(&slow_case_);
 
