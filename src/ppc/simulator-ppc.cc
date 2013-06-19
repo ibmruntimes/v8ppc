@@ -2720,7 +2720,7 @@ int32_t Simulator::Call(byte* entry, int argument_count, ...) {
   int32_t r27_val = get_register(r27);
   int32_t r28_val = get_register(r28);
   int32_t r29_val = get_register(r29);
-  int32_t r30_val = get_register(r30);
+//  int32_t r30_val = get_register(r30); // this is safe_implicit_scratch
   int32_t fp_val = get_register(fp);
 
   // Set up the callee-saved registers with a known value. To be able to check
@@ -2742,7 +2742,7 @@ int32_t Simulator::Call(byte* entry, int argument_count, ...) {
   set_register(r27, callee_saved_value);
   set_register(r28, callee_saved_value);
   set_register(r29, callee_saved_value);
-  set_register(r30, callee_saved_value);
+  //  set_register(r30, callee_saved_value); -- this is safe_implicit_scratch
   set_register(fp, callee_saved_value);
 
   // Start the simulation
@@ -2765,7 +2765,7 @@ int32_t Simulator::Call(byte* entry, int argument_count, ...) {
   CHECK_EQ(callee_saved_value, get_register(r27));
   CHECK_EQ(callee_saved_value, get_register(r28));
   CHECK_EQ(callee_saved_value, get_register(r29));
-  CHECK_EQ(callee_saved_value, get_register(r30));
+  //  CHECK_EQ(callee_saved_value, get_register(r30)); -- safe_implicit_scratch
   CHECK_EQ(callee_saved_value, get_register(fp));
 
   // Restore callee-saved registers with the original value.
@@ -2785,7 +2785,7 @@ int32_t Simulator::Call(byte* entry, int argument_count, ...) {
   set_register(r27, r27_val);
   set_register(r28, r28_val);
   set_register(r29, r29_val);
-  set_register(r30, r30_val);
+//  set_register(r30, r30_val);  -- safe_implicit_scratch
   set_register(fp, fp_val);
 
   // Pop stack passed arguments.
