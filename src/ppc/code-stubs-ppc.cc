@@ -1050,8 +1050,7 @@ void FloatingPointHelper::LoadNumberAsInt32Double(MacroAssembler* masm,
   __ JumpIfNotHeapNumber(object, heap_number_map, scratch1, not_int32);
 
   // Load the double value.
-  __ sub(scratch1, object, Operand(kHeapObjectTag));
-  __ lfd(double_dst, scratch1, HeapNumber::kValueOffset);
+  __ lfd(double_scratch, object, HeapNumber::kValueOffset - kHeapObjectTag);
 
   __ EmitVFPTruncate(kRoundToZero,
                      double_scratch,
@@ -1077,7 +1076,6 @@ void FloatingPointHelper::LoadNumberAsInt32Double(MacroAssembler* masm,
 }
 
 
-// roohack - not converted
 void FloatingPointHelper::LoadNumberAsInt32(MacroAssembler* masm,
                                             Register object,
                                             Register dst,
@@ -1088,7 +1086,6 @@ void FloatingPointHelper::LoadNumberAsInt32(MacroAssembler* masm,
                                             DwVfpRegister double_scratch,
                                             Label* not_int32) {
   EMIT_STUB_MARKER(99);
-#ifdef PENGUIN_CLEANUP
   ASSERT(!dst.is(object));
   ASSERT(!scratch1.is(object) && !scratch2.is(object) && !scratch3.is(object));
   ASSERT(!scratch1.is(scratch2) &&
@@ -1106,63 +1103,9 @@ void FloatingPointHelper::LoadNumberAsInt32(MacroAssembler* masm,
   }
   __ JumpIfNotHeapNumber(object, heap_number_map, scratch1, not_int32);
 
-  // Object is a heap number.
-  // Convert the floating point value to a 32-bit integer.
-  if (CpuFeatures::IsSupported(VFP2)) {
-    CpuFeatures::Scope scope(VFP2);
-    SwVfpRegister single_scratch = double_scratch.low();
-    // Load the double value.
-    __ sub(scratch1, object, Operand(kHeapObjectTag));
-    __ vldr(double_scratch, scratch1, HeapNumber::kValueOffset);
-
-    __ EmitVFPTruncate(kRoundToZero,
-                       single_scratch,
-                       double_scratch,
-                       scratch1,
-                       scratch2,
-                       kCheckForInexactConversion);
-
-    // Jump to not_int32 if the operation did not succeed.
-    __ boverflow(not_int32);
-    // Get the result in the destination register.
-    __ vmov(dst, single_scratch);
-
-  } else {
-    // Load the double value in the destination registers.
-    __ lwz(scratch1, FieldMemOperand(object, HeapNumber::kExponentOffset));
-    __ lwz(scratch2, FieldMemOperand(object, HeapNumber::kMantissaOffset));
-
-    // Check for 0 and -0.
-    __ bic(dst, scratch1, Operand(HeapNumber::kSignMask));
-    __ orx(dst, scratch2, dst);
-    __ cmpi(dst, Operand::Zero());
-    __ b(eq, &done);
-
-    DoubleIs32BitInteger(masm, scratch1, scratch2, dst, scratch3, not_int32);
-
-    // Registers state after DoubleIs32BitInteger.
-    // dst: mantissa[51:20].
-    // scratch2: 1
-
-    // Shift back the higher bits of the mantissa.
-    __ srw(dst, dst, scratch3);
-    // Set the implicit first bit.
-    __ subfic(scratch3, scratch3, Operand(32));
-    __ slw(scratch2, scratch2, scratch3);
-    __ orx(dst, dst, scratch2);
-    // Set the sign.
-    __ ldr(scratch1, FieldMemOperand(object, HeapNumber::kExponentOffset));
-    STATIC_ASSERT(HeapNumber::kSignMask == 0x80000000u);
-    __ lis(r0, Operand(HeapNumber::kSignMask >> 16));
-    __ cmp(scratch1, r0);
-    __ rsb(dst, dst, Operand::Zero(), LeaveCC, mi);
-  }
+  __ ConvertToInt32(object, dst, scratch1, scratch2, double_scratch, not_int32);
 
   __ bind(&done);
-#else
-  PPCPORT_UNIMPLEMENTED();
-  __ fake_asm(fMASM9);
-#endif
 }
 
 
