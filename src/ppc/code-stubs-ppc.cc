@@ -1219,7 +1219,7 @@ void FloatingPointHelper::CallCCodeForDoubleOperation(
   // Store answer in the overwritable heap number. Double returned in d1
   __ stfd(d1, heap_number_result, (HeapNumber::kValueOffset - kHeapObjectTag));
 
-  // Place heap_number_result in r0 and return to the pushed return address.
+  // Place heap_number_result in r3 and return to the pushed return address.
   __ mr(r3, heap_number_result);
   __ blr();
 }
@@ -2894,12 +2894,12 @@ void BinaryOpStub::GenerateInt32Stub(MacroAssembler* masm) {
   Register left = r4;
   Register right = r3;
   Register scratch1 = r10;
-  Register scratch2 = r9;
+  Register scratch2 = r11;
   DwVfpRegister double_scratch = d0;
   DwVfpRegister single_scratch = d10;
 
   Register heap_number_result = no_reg;
-  Register heap_number_map = r8;
+  Register heap_number_map = r9;
   __ LoadRoot(heap_number_map, Heap::kHeapNumberMapRootIndex);
 
   Label call_runtime;
@@ -2934,8 +2934,8 @@ void BinaryOpStub::GenerateInt32Stub(MacroAssembler* masm) {
                                                    right,
                                                    destination,
                                                    d7,
-                                                   r2,
-                                                   r3,
+                                                   r5,
+                                                   r6,
                                                    heap_number_map,
                                                    scratch1,
                                                    scratch2,
@@ -2945,8 +2945,8 @@ void BinaryOpStub::GenerateInt32Stub(MacroAssembler* masm) {
                                                    left,
                                                    destination,
                                                    d6,
-                                                   r4,
-                                                   r5,
+                                                   r7,
+                                                   r8,
                                                    heap_number_map,
                                                    scratch1,
                                                    scratch2,
@@ -3034,8 +3034,7 @@ void BinaryOpStub::GenerateInt32Stub(MacroAssembler* masm) {
         // call if we can't.
         if (result_type_ >= ((op_ == Token::DIV) ? BinaryOpIC::HEAP_NUMBER
                                                  : BinaryOpIC::INT32)) {
-          // We are using fp registers so r5 is available.
-          heap_number_result = r5;
+          heap_number_result = r8;
           GenerateHeapResultAllocation(masm,
                                        heap_number_result,
                                        heap_number_map,
@@ -3059,7 +3058,7 @@ void BinaryOpStub::GenerateInt32Stub(MacroAssembler* masm) {
         Label pop_and_call_runtime;
 
         // Allocate a heap number to store the result.
-        heap_number_result = r5;
+        heap_number_result = r8;
         GenerateHeapResultAllocation(masm,
                                      heap_number_result,
                                      heap_number_map,
