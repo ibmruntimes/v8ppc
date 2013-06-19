@@ -1050,7 +1050,7 @@ void FloatingPointHelper::LoadNumberAsInt32Double(MacroAssembler* masm,
   __ JumpIfNotHeapNumber(object, heap_number_map, scratch1, not_int32);
 
   // Load the double value.
-  __ lfd(double_scratch, object, HeapNumber::kValueOffset - kHeapObjectTag);
+  __ lfd(double_dst, object, HeapNumber::kValueOffset - kHeapObjectTag);
 
   __ EmitVFPTruncate(kRoundToZero,
                      double_scratch,
