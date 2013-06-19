@@ -2003,7 +2003,7 @@ void FullCodeGenerator::EmitInlineSmiBinaryOp(BinaryOperation* expr,
       __ GetLeastBitsFromSmi(scratch2, right, 5);
       __ slw(scratch1, scratch1, scratch2);
       // Check that the *signed* result fits in a smi
-      __ addis(scratch2, scratch1, 0x4000);
+      __ addis(scratch2, scratch1, Operand(0x4000));
       __ cmpi(scratch2, Operand(0));
       __ blt(&stub_call);
       __ SmiTag(right, scratch1);

@@ -720,18 +720,18 @@ void FloatingPointHelper::LoadNumber(MacroAssembler* masm,
   // could possibly refactor with SmiToDoubleFPRegister
   __ sub(sp, sp, Operand(16));   // reserve two temporary doubles on the stack
 #if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
-  __ addis(r0, r0, 0x4330);
+  __ addis(r0, r0, Operand(0x4330));
   __ stw(r0, MemOperand(sp, 4));
   __ stw(r0, MemOperand(sp, 12));
-  __ addis(r0, r0, 0x8000);
+  __ addis(r0, r0, Operand(0x8000));
   __ stw(r0, MemOperand(sp, 0));
   __ xor_(r0, scratch1, r0);
   __ stw(r0, MemOperand(sp, 8));
 #else
-  __ addis(r0, r0, 0x4330);
+  __ addis(r0, r0, Operand(0x4330));
   __ stw(r0, MemOperand(sp, 0));
   __ stw(r0, MemOperand(sp, 8));
-  __ addis(r0, r0, 0x8000);
+  __ addis(r0, r0, Operand(0x8000));
   __ stw(r0, MemOperand(sp, 4));
   __ xor_(r0, scratch1, r0);
   __ stw(r0, MemOperand(sp, 12));
@@ -801,18 +801,18 @@ void FloatingPointHelper::ConvertIntToDouble(MacroAssembler* masm,
 
   __ sub(sp, sp, Operand(16));   // reserve two temporary doubles on the stack
 #if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
-  __ addis(r0, r0, 0x4330);
+  __ addis(r0, r0, Operand(0x4330));
   __ stw(r0, MemOperand(sp, 4));
   __ stw(r0, MemOperand(sp, 12));
-  __ addis(r0, r0, 0x8000);
+  __ addis(r0, r0, Operand(0x8000));
   __ stw(r0, MemOperand(sp, 0));
   __ xor_(r0, int_scratch, r0);
   __ stw(r0, MemOperand(sp, 8));
 #else
-  __ addis(r0, r0, 0x4330);
+  __ addis(r0, r0, Operand(0x4330));
   __ stw(r0, MemOperand(sp, 0));
   __ stw(r0, MemOperand(sp, 8));
-  __ addis(r0, r0, 0x8000);
+  __ addis(r0, r0, Operand(0x8000));
   __ stw(r0, MemOperand(sp, 4));
   __ xor_(r0, int_scratch, r0);
   __ stw(r0, MemOperand(sp, 12));
@@ -847,14 +847,14 @@ void FloatingPointHelper::ConvertUnsignedIntToDouble(MacroAssembler* masm,
 
   __ sub(sp, sp, Operand(16));   // reserve two temporary doubles on the stack
 #if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
-  __ addis(r0, r0, 0x4330);
+  __ addis(r0, r0, Operand(0x4330));
   __ stw(r0, MemOperand(sp, 4));
   __ stw(r0, MemOperand(sp, 12));
   __ li(r0, Operand(0));
   __ stw(r0, MemOperand(sp, 0));
   __ stw(int_scratch, MemOperand(sp, 8));
 #else
-  __ addis(r0, r0, 0x4330);
+  __ addis(r0, r0, Operand(0x4330));
   __ stw(r0, MemOperand(sp, 0));
   __ stw(r0, MemOperand(sp, 8));
   __ li(r0, Operand(0));
@@ -979,13 +979,13 @@ void FloatingPointHelper::ConvertDoubleToUnsignedInt(MacroAssembler* masm,
 #endif
 
   // check for overflow
-  __ addis(scratch1, r0, 0x8000);
+  __ addis(scratch1, r0, Operand(0x8000));
   __ add(scratch1, scratch1, Operand(-1));
   __ cmp(scratch1, int_dst);
   __ bne(&done);
 
   // fabricate double representation of 2147483648
-  __ addis(r0, r0, 0x41e0);
+  __ addis(r0, r0, Operand(0x41e0));
 #if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
   __ stw(r0, MemOperand(sp, kPointerSize));
 #else
@@ -1007,7 +1007,7 @@ void FloatingPointHelper::ConvertDoubleToUnsignedInt(MacroAssembler* masm,
 #else
   __ lwz(int_dst, MemOperand(sp, kPointerSize));
 #endif
-  __ addis(r0, r0, 0x8000);
+  __ addis(r0, r0, Operand(0x8000));
   __ xor_(int_dst, int_dst, r0);
 
   __ bind(&done);
@@ -2573,7 +2573,7 @@ void BinaryOpStub::GenerateSmiSmiOperation(MacroAssembler* masm) {
       __ GetLeastBitsFromSmi(scratch2, right, 5);
       __ slw(scratch1, scratch1, scratch2);
       // Check that the signed result fits in a Smi.
-      __ addis(scratch2, scratch1, 0x4000);
+      __ addis(scratch2, scratch1, Operand(0x4000));
       __ cmpi(scratch2, Operand(0));
       __ blt(&not_smi_result);
       __ SmiTag(right, scratch1);
@@ -2739,7 +2739,7 @@ void BinaryOpStub::GenerateFPOperation(MacroAssembler* masm,
       }
 
       // Check that the *signed* result fits in a smi.
-      __ addis(r6, r5, 0x40000000u >> 16);
+      __ addis(r6, r5, Operand(0x40000000u >> 16));
       __ cmpi(r6, Operand(0));
       __ blt(&result_not_a_smi);
       __ SmiTag(r3, r5);
@@ -3000,7 +3000,7 @@ void BinaryOpStub::GenerateInt32Stub(MacroAssembler* masm) {
           __ lwz(scratch1, MemOperand(sp, 4));
 #endif
           __ add(sp, sp, Operand(8));
-          __ addis(scratch2, scratch1, 0x40000000u >> 16);
+          __ addis(scratch2, scratch1, Operand(0x40000000u >> 16));
           __ cmpi(scratch2, Operand(0));
           // If not try to return a heap number.
           __ blt(&return_heap_number);
@@ -3160,7 +3160,7 @@ void BinaryOpStub::GenerateInt32Stub(MacroAssembler* masm) {
       }
 
       // Check if the result fits in a smi.
-      __ addis(scratch1, r5, 0x40000000u >> 16);
+      __ addis(scratch1, r5, Operand(0x40000000u >> 16));
       __ cmpi(scratch1, Operand(0));
       // If not try to return a heap number. (We know the result is an int32.)
       __ blt(&return_heap_number);
@@ -3182,18 +3182,18 @@ void BinaryOpStub::GenerateInt32Stub(MacroAssembler* masm) {
 
         __ sub(sp, sp, Operand(16));   // reserve two temp doubles on the stack
 #if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
-        __ addis(r0, r0, 0x4330);
+        __ addis(r0, r0, Operand(0x4330));
         __ stw(r0, MemOperand(sp, 4));
         __ stw(r0, MemOperand(sp, 12));
-        __ addis(r0, r0, 0x8000);
+        __ addis(r0, r0, Operand(0x8000));
         __ stw(r0, MemOperand(sp, 0));
         __ xor_(r0, r5, r0);
         __ stw(r0, MemOperand(sp, 8));
 #else
-        __ addis(r0, r0, 0x4330);
+        __ addis(r0, r0, Operand(0x4330));
         __ stw(r0, MemOperand(sp, 0));
         __ stw(r0, MemOperand(sp, 8));
-        __ addis(r0, r0, 0x8000);
+        __ addis(r0, r0, Operand(0x8000));
         __ stw(r0, MemOperand(sp, 4));
         __ xor_(r0, r5, r0);
         __ stw(r0, MemOperand(sp, 12));
@@ -3208,14 +3208,14 @@ void BinaryOpStub::GenerateInt32Stub(MacroAssembler* masm) {
 
          __ sub(sp, sp, Operand(16));   // reserve two temp doubles on the stack
 #if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
-        __ addis(r0, r0, 0x4330);
+        __ addis(r0, r0, Operand(0x4330));
         __ stw(r0, MemOperand(sp, 4));
         __ stw(r0, MemOperand(sp, 12));
         __ li(r0, Operand(0));
         __ stw(r0, MemOperand(sp, 0));
         __ stw(r5, MemOperand(sp, 8));
 #else
-        __ addis(r0, r0, 0x4330);
+        __ addis(r0, r0, Operand(0x4330));
         __ stw(r0, MemOperand(sp, 0));
         __ stw(r0, MemOperand(sp, 8));
         __ li(r0, Operand(0));
@@ -7835,7 +7835,7 @@ void RecordWriteStub::CheckNeedsToInformIncrementalMarker(
   Label need_incremental_pop_scratch;
 
   ASSERT((~Page::kPageAlignmentMask & 0xffff) == 0);
-  __ addis(r0, r0, (~Page::kPageAlignmentMask >> 16));
+  __ addis(r0, r0, Operand((~Page::kPageAlignmentMask >> 16)));
   __ and_(regs_.scratch0(), regs_.object(), r0);
   __ lwz(regs_.scratch1(),
          MemOperand(regs_.scratch0(),

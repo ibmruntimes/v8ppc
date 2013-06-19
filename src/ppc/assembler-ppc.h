@@ -926,7 +926,7 @@ class Assembler : public AssemblerBase {
   void mulhw(Register dst, Register src1, Register src2,
                OEBit o = LeaveOE, RCBit r = LeaveRC);
 
-  void addis(Register dst, Register src, int imm);
+  void addis(Register dst, Register src, const Operand& imm);
   void addic(Register dst, Register src, const Operand& imm);
 
   void andc(Register dst, Register src1, Register src2, RCBit rc = LeaveRC);

@@ -934,8 +934,8 @@ SBit s, Condition cond) {
   d_form(ADDI, dst, src, imm.imm32_, true);
 }
 
-void  Assembler::addis(Register dst, Register src, int imm) {
-  d_form(ADDIS, dst, src, imm, true);
+void  Assembler::addis(Register dst, Register src, const Operand& imm) {
+  d_form(ADDIS, dst, src, imm.imm32_, true);
 }
 
 void Assembler::addic(Register dst, Register src, const Operand& imm) {
@@ -1188,7 +1188,7 @@ void Assembler::mov(Register dst, const Operand& src, SBit s, Condition cond) {
     int hi_word = static_cast<int>(value) >> 16;
     if ((hi_word << 16) == value) {
       // PrintF("Generated addis value: %d\n", value);
-      addis(dst, r0, hi_word);
+      addis(dst, r0, Operand(hi_word));
     } else {
       int lo_word = SIGN_EXT_IMM16(value);
       if (lo_word & 0x8000) {
@@ -1197,7 +1197,7 @@ void Assembler::mov(Register dst, const Operand& src, SBit s, Condition cond) {
       }
       // ASSERT(dst.code() != 0);  // r0 is invalid destination eee
       BlockConstPoolFor(2);  // don't split these
-      addis(dst, r0, hi_word);
+      addis(dst, r0, Operand(hi_word));
       addic(dst, dst, Operand(lo_word));
     }
   }
@@ -1210,7 +1210,7 @@ void Assembler::mov(Register dst, const Operand& src, SBit s, Condition cond) {
   }
   // ASSERT(dst.code() != 0);  // r0 is invalid destination eee
   BlockConstPoolFor(2);  // don't split these
-  addis(dst, r0, hi_word);
+  addis(dst, r0, Operand(hi_word));
   addic(dst, dst, Operand(lo_word));
 #endif
 }

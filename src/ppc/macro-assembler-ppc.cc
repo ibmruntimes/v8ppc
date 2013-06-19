@@ -2489,18 +2489,18 @@ void MacroAssembler::SmiToDoubleFPRegister(Register smi,
   srawi(scratch1, smi, kSmiTagSize);
   sub(sp, sp, Operand(16));   // reserve two temporary doubles on the stack
 #if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
-  addis(r0, r0, 0x4330);
+  addis(r0, r0, Operand(0x4330));
   stw(r0, MemOperand(sp, 4));
   stw(r0, MemOperand(sp, 12));
-  addis(r0, r0, 0x8000);
+  addis(r0, r0, Operand(0x8000));
   stw(r0, MemOperand(sp, 0));
   xor_(r0, scratch1, r0);
   stw(r0, MemOperand(sp, 8));
 #else
-  addis(r0, r0, 0x4330);
+  addis(r0, r0, Operand(0x4330));
   stw(r0, MemOperand(sp, 0));
   stw(r0, MemOperand(sp, 8));
-  addis(r0, r0, 0x8000);
+  addis(r0, r0, Operand(0x8000));
   stw(r0, MemOperand(sp, 4));
   xor_(r0, scratch1, r0);
   stw(r0, MemOperand(sp, 12));
@@ -3598,7 +3598,7 @@ void MacroAssembler::CheckPageFlag(
     Label* condition_met) {
   ASSERT(cc == ne || cc == eq);
   ASSERT((~Page::kPageAlignmentMask & 0xffff) == 0);
-  addis(r0, r0, (~Page::kPageAlignmentMask >> 16));
+  addis(r0, r0, Operand((~Page::kPageAlignmentMask >> 16)));
   and_(scratch, object, r0);
   lwz(scratch, MemOperand(scratch, MemoryChunk::kFlagsOffset));
   li(r0, Operand(mask));
@@ -3677,7 +3677,7 @@ void MacroAssembler::GetMarkBits(Register addr_reg,
                                  Register mask_reg) {
   ASSERT(!AreAliased(addr_reg, bitmap_reg, mask_reg, no_reg));
   ASSERT((~Page::kPageAlignmentMask & 0xffff) == 0);
-  addis(r0, r0, (~Page::kPageAlignmentMask >> 16));
+  addis(r0, r0, Operand((~Page::kPageAlignmentMask >> 16)));
   and_(bitmap_reg, addr_reg, r0);
   rlwinm(mask_reg, addr_reg, 32-kPointerSizeLog2,
          32-Bitmap::kBitsPerCellLog2, 31);
