@@ -59,8 +59,8 @@ unsigned CpuFeatures::found_by_runtime_probing_ = 0;
 
 // #define NEW_IMM_CHECK_CODE
 
-#define IS_SIGNED_IMM16(imm) (((static_cast<int>(imm) << 16) >> 16) == imm)
-#define IS_UNSIGNED_IMM16(imm) ((imm & kImm16Mask) == imm)
+// sign-extend the least significant 16-bit of value <imm>
+#define SIGN_EXT_IMM16(imm) ((static_cast<int>(imm) << 16) >> 16)
 
 // Get the CPU features enabled by the build. For cross compilation the
 // preprocessor symbols CAN_USE_ARMV7_INSTRUCTIONS and CAN_USE_VFP3_INSTRUCTIONS
@@ -484,7 +484,7 @@ int Assembler::target_at(int pos)  {
     return pos + imm26;
   }
   if (BCX == opcode) {
-    int imm16 = ((instr & kImm16Mask) << 16) >> 16;
+    int imm16 = SIGN_EXT_IMM16((instr & kImm16Mask));
     imm16 &= ~(kAAMask|kLKMask);  // discard AA|LK bits if present
     if (imm16 == 0)
         return kEndOfChain;
@@ -658,16 +658,16 @@ void Assembler::d_form(Instr instr,
   CheckBuffer();
 #ifdef NEW_IMM_CHECK_CODE
   if (signed_disp) {
-    if (!IS_SIGNED_IMM16(val)) {
+    if (!is_int16(val)) {
       PrintF("val = %d, 0x%x\n", val, val);
     }
-    ASSERT(IS_SIGNED_IMM16(val));
+    ASSERT(is_int16(val));
   } else {
-    if (!IS_UNSIGNED_IMM16(val)) {
+    if (!is_uint16(val)) {
       PrintF("val = %d, 0x%x, is_unsigned_imm16(val)=%d, kImm16Mask=0x%x\n",
-             val, val, IS_UNSIGNED_IMM16(val), kImm16Mask);
+             val, val, is_uint16(val), kImm16Mask);
     }
-    ASSERT(IS_UNSIGNED_IMM16(val));
+    ASSERT(is_uint16(val));
   }
 #endif
   emit(instr | rt.code()*B21 | ra.code()*B16 | (kImm16Mask & val));
@@ -757,8 +757,12 @@ void Assembler::bcr() {
 
 void Assembler::bc(int branch_offset, BOfield bo, int condition_bit) {
   positions_recorder()->WriteRecordedPositions();
+#ifndef NEW_IMM_CHECK_CODE
   // currently assumes AA and LK are always zero
   ASSERT(is_int16(branch_offset) || is_uint16(branch_offset));
+#else
+  ASSERT(is_int16(branch_offset));
+#endif
   emit(BCX | bo | condition_bit*B16 | (kImm16Mask & branch_offset));
 }
 
@@ -1177,7 +1181,7 @@ void Assembler::mov(Register dst, const Operand& src, SBit s, Condition cond) {
   // Assembler::kCallTargetAddressOffset (which is hard-coded as 4
   // instructions).
 
-  if (IS_SIGNED_IMM16(value)) {
+  if (is_int16(value)) {
     // PrintF("Generated li value: %d\n", value);
     li(dst, Operand(value));
   } else {
@@ -1186,7 +1190,7 @@ void Assembler::mov(Register dst, const Operand& src, SBit s, Condition cond) {
       // PrintF("Generated addis value: %d\n", value);
       addis(dst, r0, hi_word);
     } else {
-      int lo_word = (static_cast<int>(value) << 16) >> 16;  // value & 0xffff;
+      int lo_word = SIGN_EXT_IMM16(value);
       if (lo_word & 0x8000) {
         // lo word is signed, so increment hi word by one
         hi_word++;
@@ -1199,7 +1203,7 @@ void Assembler::mov(Register dst, const Operand& src, SBit s, Condition cond) {
   }
 #else
   int hi_word = static_cast<int>(value) >> 16;
-  int lo_word = (static_cast<int>(value) << 16) >> 16;  // value & 0xffff;
+  int lo_word = SIGN_EXT_IMM16(value);
   if (lo_word & 0x8000) {
     // lo word is signed, so increment hi word by one
     hi_word++;
