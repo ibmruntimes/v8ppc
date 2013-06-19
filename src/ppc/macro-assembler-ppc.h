@@ -1268,8 +1268,9 @@ class MacroAssembler: public Assembler {
   void DecodeField(Register reg) {
     static const int shift = Field::kShift;
     static const int mask = (Field::kMask >> shift) << kSmiTagSize;
-    mov(reg, Operand(reg, LSR, shift));
-    and_(reg, reg, Operand(mask));
+    STATIC_ASSERT((mask & kImm16Mask) == mask);
+    srwi(reg, reg, Operand(shift));
+    andi(reg, reg, Operand(mask));
   }
 
   // Activation support.
