@@ -2261,12 +2261,12 @@ Handle<Code> CallStubCompiler::CompileMathAbsCall(
   __ xor_(r4, r3, r0);
 
   // Add 1 or do nothing depending on the sign of the argument.
-    __ sub(r3, r4, r0);
+  __ sub(r3, r4, r0, LeaveOE, SetRC);
 
   // If the result is still negative, go to the slow case.
   // This only happens for the most negative smi.
   Label slow;
-  __ b(mi, &slow);
+  __ blt(&slow, cr0);
 
   // Smi case done.
   __ Drop(argc + 1);
