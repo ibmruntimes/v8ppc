@@ -56,11 +56,24 @@ void BreakLocationIterator::SetDebugBreakAtReturn() {
   //   <debug break return code entry point address>
   //   bktp 0
   CodePatcher patcher(rinfo()->pc(), Assembler::kJSReturnSequenceInstructions);
+// printf("SetDebugBreakAtReturn: pc=%08x\n", (unsigned int)rinfo()->pc());
+#if 0
   // This code sequence is checked for in assembler-ppc-inl.h
   // by the function IsPatchedReturnSequence()
   patcher.masm()->mr(v8::internal::lr, v8::internal::pc);
-  patcher.masm()->lwz(v8::internal::pc, MemOperand(v8::internal::pc, -4));
+//  patcher.masm()->lwz(v8::internal::pc, MemOperand(v8::internal::pc, -4));
+  patcher.masm()->lwz(v8::internal::pc, MemOperand(v8::internal::pc, 0));
   patcher.Emit(Isolate::Current()->debug()->debug_break_return()->entry());
+
+#else
+
+  patcher.masm()->mov(v8::internal::r0,
+            Operand(reinterpret_cast<int32_t>(
+                   Isolate::Current()->debug()->debug_break_slot()->entry())));
+  patcher.masm()->mtlr(v8::internal::r0);
+  patcher.masm()->bclr(BA, SetLK);
+#endif
+
   patcher.masm()->bkpt(0);
 }
 
@@ -104,6 +117,7 @@ void BreakLocationIterator::SetDebugBreakAtSlot() {
   //   blrl
   //
   CodePatcher patcher(rinfo()->pc(), Assembler::kDebugBreakSlotInstructions);
+// printf("SetDebugBreakAtSlot: pc=%08x\n", (unsigned int)rinfo()->pc());
   patcher.masm()->mov(v8::internal::r0,
             Operand(reinterpret_cast<int32_t>(
                    Isolate::Current()->debug()->debug_break_slot()->entry())));
@@ -130,6 +144,7 @@ static void Generate_DebugBreakCallHelper(MacroAssembler* masm,
   {
     FrameScope scope(masm, StackFrame::INTERNAL);
 
+// printf("Generate_DebugBreakCallHelper\n");
     // Store the registers containing live values on the expression stack to
     // make sure that these are correctly updated during GC. Non object values
     // are stored as a smi causing it to be untouched by GC.

@@ -392,7 +392,8 @@ void OS::DebugBreak() {
 #elif defined(__mips__)
   asm("break");
 #elif defined(__PPC__)
-  asm("nop");  // roohack - nothing for now;
+  asm("twge 2,2");
+//  asm("nop");  // roohack - nothing for now;
 #else
   asm("int $3");
 #endif

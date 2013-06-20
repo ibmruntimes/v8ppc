@@ -1475,10 +1475,13 @@ void Assembler::stop(const char* msg, Condition cond, int32_t code) {
 
 
 void Assembler::bkpt(uint32_t imm16) {
+  emit(0x7d821008);
+#if 0
   // PPCPORT_CHECK(false);
   ASSERT(is_uint16(imm16));
   // only supported in simulator to trigger debugging
   EMIT_FAKE_ARM_INSTR(fBKPT);
+#endif
 }
 
 

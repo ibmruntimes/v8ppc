@@ -783,20 +783,32 @@ class Assembler : public AssemblerBase {
   // Patched return sequence is:
   //  mov  lr, pc         @ start of sequence
   //  ldr  pc, [pc, #-4]  @ emited address
+#if 0
   static const int kPatchReturnSequenceAddressOffset =  kInstrSize;
+#else
+  static const int kPatchReturnSequenceAddressOffset =  0 * kInstrSize;
+#endif
 
   // Distance between start of patched debug break slot and the emitted address
   // to jump to.
   // Patched debug break slot code is:
   //  mov  lr, pc         @ start of sequence
   //  ldr  pc, [pc, #-4]  @ emited address
+#if 0
   static const int kPatchDebugBreakSlotAddressOffset =  kInstrSize;
+#else
+  static const int kPatchDebugBreakSlotAddressOffset =  0 * kInstrSize;
+#endif
 
   // Difference between address of current opcode and value read from pc
   // register.
   static const int kPcLoadDelta = 6 * 4;
 
+#if 0
   static const int kJSReturnSequenceInstructions = 4;
+#else
+  static const int kJSReturnSequenceInstructions = 5;
+#endif
   static const int kDebugBreakSlotInstructions = 4;
   static const int kDebugBreakSlotLength =
       kDebugBreakSlotInstructions * kInstrSize;

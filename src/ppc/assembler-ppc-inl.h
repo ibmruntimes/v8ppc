@@ -223,6 +223,7 @@ Object** RelocInfo::call_object_address() {
 
 
 bool RelocInfo::IsPatchedReturnSequence() {
+#if 0
   Instr current_instr = Assembler::instr_at(pc_);
   Instr next_instr = Assembler::instr_at(pc_ + Assembler::kInstrSize);
   //
@@ -234,6 +235,18 @@ bool RelocInfo::IsPatchedReturnSequence() {
   //  lwz pc, -4(pc)
   return (current_instr == kMrLRPC)
           && ((next_instr & kLwzPCMask) == kLwzPCPattern);
+#else
+  Instr instr0 = Assembler::instr_at(pc_);
+  Instr instr1 = Assembler::instr_at(pc_ + 1 * Assembler::kInstrSize);
+//  Instr instr2 = Assembler::instr_at(pc_ + 2 * Assembler::kInstrSize);
+  Instr instr4 = Assembler::instr_at(pc_ + 4 * Assembler::kInstrSize);
+  bool patched_return = ((instr0 & kOpcodeMask) == ADDIS &&
+                         (instr1 & kOpcodeMask) == ADDIC &&
+                         (instr4 == 0x7d821008));
+
+// printf("IsPatchedReturnSequence: %d\n", patched_return);
+  return patched_return;
+#endif
 }
 
 
@@ -419,7 +432,8 @@ Address Assembler::target_address_at(Address pc) {
   return target_pc + offset + 8;
 #else
   PPCPORT_UNIMPLEMENTED();
-  return pc;  // fake a return (unimplemented path)
+return (Address)0;
+//  return pc;  // fake a return (unimplemented path)
 #endif
 }
 
