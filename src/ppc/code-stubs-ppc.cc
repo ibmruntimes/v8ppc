@@ -723,7 +723,7 @@ void FloatingPointHelper::LoadNumber(MacroAssembler* masm,
   __ addis(r0, r0, Operand(0x4330));
   __ stw(r0, MemOperand(sp, 4));
   __ stw(r0, MemOperand(sp, 12));
-  __ addis(r0, r0, Operand(0xffff8000));
+  __ addis(r0, r0, Operand(0x8000));
   __ stw(r0, MemOperand(sp, 0));
   __ xor_(r0, scratch1, r0);
   __ stw(r0, MemOperand(sp, 8));
@@ -731,7 +731,7 @@ void FloatingPointHelper::LoadNumber(MacroAssembler* masm,
   __ addis(r0, r0, Operand(0x4330));
   __ stw(r0, MemOperand(sp, 0));
   __ stw(r0, MemOperand(sp, 8));
-  __ addis(r0, r0, Operand(0xffff8000));
+  __ addis(r0, r0, Operand(0x8000));
   __ stw(r0, MemOperand(sp, 4));
   __ xor_(r0, scratch1, r0);
   __ stw(r0, MemOperand(sp, 12));
@@ -804,7 +804,7 @@ void FloatingPointHelper::ConvertIntToDouble(MacroAssembler* masm,
   __ addis(r0, r0, Operand(0x4330));
   __ stw(r0, MemOperand(sp, 4));
   __ stw(r0, MemOperand(sp, 12));
-  __ addis(r0, r0, Operand(0xffff8000));
+  __ addis(r0, r0, Operand(0x8000));
   __ stw(r0, MemOperand(sp, 0));
   __ xor_(r0, int_scratch, r0);
   __ stw(r0, MemOperand(sp, 8));
@@ -812,7 +812,7 @@ void FloatingPointHelper::ConvertIntToDouble(MacroAssembler* masm,
   __ addis(r0, r0, Operand(0x4330));
   __ stw(r0, MemOperand(sp, 0));
   __ stw(r0, MemOperand(sp, 8));
-  __ addis(r0, r0, Operand(0xffff8000));
+  __ addis(r0, r0, Operand(0x8000));
   __ stw(r0, MemOperand(sp, 4));
   __ xor_(r0, int_scratch, r0);
   __ stw(r0, MemOperand(sp, 12));
@@ -979,7 +979,7 @@ void FloatingPointHelper::ConvertDoubleToUnsignedInt(MacroAssembler* masm,
 #endif
 
   // check for overflow
-  __ addis(scratch1, r0, Operand(0xffff8000));
+  __ addis(scratch1, r0, Operand(0x8000));
   __ add(scratch1, scratch1, Operand(-1));
   __ cmp(scratch1, int_dst);
   __ bne(&done);
@@ -1007,7 +1007,7 @@ void FloatingPointHelper::ConvertDoubleToUnsignedInt(MacroAssembler* masm,
 #else
   __ lwz(int_dst, MemOperand(sp, kPointerSize));
 #endif
-  __ addis(r0, r0, Operand(0xffff8000));
+  __ addis(r0, r0, Operand(0x8000));
   __ xor_(int_dst, int_dst, r0);
 
   __ bind(&done);
@@ -3185,7 +3185,7 @@ void BinaryOpStub::GenerateInt32Stub(MacroAssembler* masm) {
         __ addis(r0, r0, Operand(0x4330));
         __ stw(r0, MemOperand(sp, 4));
         __ stw(r0, MemOperand(sp, 12));
-        __ addis(r0, r0, Operand(0xffff8000));
+        __ addis(r0, r0, Operand(0x8000));
         __ stw(r0, MemOperand(sp, 0));
         __ xor_(r0, r5, r0);
         __ stw(r0, MemOperand(sp, 8));
@@ -3193,7 +3193,7 @@ void BinaryOpStub::GenerateInt32Stub(MacroAssembler* masm) {
         __ addis(r0, r0, Operand(0x4330));
         __ stw(r0, MemOperand(sp, 0));
         __ stw(r0, MemOperand(sp, 8));
-        __ addis(r0, r0, Operand(0xffff8000));
+        __ addis(r0, r0, Operand(0x8000));
         __ stw(r0, MemOperand(sp, 4));
         __ xor_(r0, r5, r0);
         __ stw(r0, MemOperand(sp, 12));
