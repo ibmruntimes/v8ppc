@@ -169,8 +169,8 @@ const int kRegister_r10_Code = 10;
 const int kRegister_r11_Code = 11;
 const int kRegister_ip_Code = 12;  // todo - fix
 const int kRegister_r13_Code = 13;
-const int kRegister_lr_Code = 14;  // todo - fix
-const int kRegister_pc_Code = 15;  // todo - fix
+const int kRegister_r14_Code = 14;
+const int kRegister_r15_Code = 15;
 
 const int kRegister_r16_Code = 16;
 const int kRegister_r17_Code = 17;
@@ -209,8 +209,8 @@ const Register r11 = { kRegister_r11_Code };
 const Register ip  = { kRegister_ip_Code };
 // Used as roots register.
 const Register r13  = { kRegister_r13_Code };
-const Register lr  = { kRegister_lr_Code };
-const Register pc  = { kRegister_pc_Code };
+const Register r14  = { kRegister_r14_Code };
+const Register r15  = { kRegister_r15_Code };
 
 const Register r16  = { kRegister_r16_Code };
 const Register r17  = { kRegister_r17_Code };
@@ -665,10 +665,6 @@ class CpuFeatures : public AllStatic {
   DISALLOW_COPY_AND_ASSIGN(CpuFeatures);
 };
 
-
-extern const Instr kMrLRPC;
-extern const Instr kLwzPCMask;
-extern const Instr kLwzPCPattern;
 
 extern const Instr kMovMvnMask;
 extern const Instr kMovMvnPattern;

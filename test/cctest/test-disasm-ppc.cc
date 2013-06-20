@@ -37,6 +37,10 @@
 #include "serialize.h"
 #include "cctest.h"
 
+// todo: fix references to these
+#define lr r14
+#define pc r15
+
 using namespace v8::internal;
 
 

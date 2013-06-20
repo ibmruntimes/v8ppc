@@ -329,7 +329,6 @@ void MacroAssembler::Sbfx(Register dst, Register src1, int lsb, int width,
 void MacroAssembler::Usat(Register dst, int satpos, const Operand& src,
                           Condition cond) {
   if (!CpuFeatures::IsSupported(ARMv7) || predictable_code_size()) {
-    ASSERT(!dst.is(pc) && !src.rm().is(pc));
     ASSERT((satpos >= 0) && (satpos <= 31));
 
     // These asserts are required to ensure compatibility with the ARMv7
@@ -794,14 +793,18 @@ void MacroAssembler::VFPCompareAndSetFlags(const DwVfpRegister src1,
                                            const DwVfpRegister src2,
                                            const Condition cond) {
   // Compare and move FPSCR flags to the normal condition flags.
-  VFPCompareAndLoadFlags(src1, src2, pc, cond);
+  VFPCompareAndLoadFlags(src1, src2,
+                         r15,  // was pc?
+                         cond);
 }
 
 void MacroAssembler::VFPCompareAndSetFlags(const DwVfpRegister src1,
                                            const double src2,
                                            const Condition cond) {
   // Compare and move FPSCR flags to the normal condition flags.
-  VFPCompareAndLoadFlags(src1, src2, pc, cond);
+    VFPCompareAndLoadFlags(src1, src2,
+                           r15,  // was pc?
+                           cond);
 }
 
 
@@ -3571,6 +3574,7 @@ void MacroAssembler::CallCFunctionHelper(Register function,
 
 void MacroAssembler::GetRelocatedValueLocation(Register lwz_location,
                                Register result) {
+#ifdef PENGUIN_CLEANUP
   const uint32_t kLdrOffsetMask = (1 << 12) - 1;
   const int32_t kPCRegOffset = 2 * kPointerSize;
   lwz(result, MemOperand(lwz_location));
@@ -3587,6 +3591,10 @@ void MacroAssembler::GetRelocatedValueLocation(Register lwz_location,
   andi(result, result, Operand(kLdrOffsetMask));
   add(result, lwz_location, Operand(result));
   add(result, result, Operand(kPCRegOffset));
+#else
+  PPCPORT_UNIMPLEMENTED();
+  fake_asm(fMASM8);
+#endif
 }
 
 

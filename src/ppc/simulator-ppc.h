@@ -137,8 +137,6 @@ class Simulator {
     r16, r17, r18, r19, r20, r21, r22, r23,
     r24, r25, r26, r27, r28, r29, r30, fp,
     num_registers,
-    lr = 14,
-    pc = 15,
     s0 = 0, s1, s2, s3, s4, s5, s6, s7,
     s8, s9, s10, s11, s12, s13, s14, s15,
     s16, s17, s18, s19, s20, s21, s22, s23,
@@ -156,9 +154,7 @@ class Simulator {
   // for each native thread.
   static Simulator* current(v8::internal::Isolate* isolate);
 
-  // Accessors for register state. Reading the pc value adheres to the ARM
-  // architecture specification and is off by a 8 from the currently executing
-  // instruction.
+  // Accessors for register state.
   void set_register(int reg, int32_t value);
   int32_t get_register(int reg) const;
   double get_double_from_register_pair(int reg);
@@ -199,7 +195,7 @@ class Simulator {
   // Accessor to the internal simulator stack area.
   uintptr_t StackLimit() const;
 
-  // Executes ARM instructions until the PC reaches end_sim_pc.
+  // Executes PPC instructions until the PC reaches end_sim_pc.
   void Execute();
 
   // Call on program start.
@@ -351,6 +347,7 @@ class Simulator {
   int32_t registers_[32];  // PowerPC
   int32_t condition_reg_;  // PowerPC
   int32_t special_reg_lr_;  // PowerPC
+  int32_t special_reg_pc_;  // PowerPC
   int32_t special_reg_ctr_;  // PowerPC
   int32_t special_reg_xer_;  // PowerPC
   bool n_flag_;

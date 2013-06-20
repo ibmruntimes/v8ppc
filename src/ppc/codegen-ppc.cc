@@ -122,16 +122,17 @@ void ElementsTransitionGenerator::GenerateSmiToDouble(
   __ CompareRoot(r7, Heap::kEmptyFixedArrayRootIndex);
   __ beq(&only_change_map);
 
-  __ push(lr);
+  __ mflr(r14);
+  __ push(r14);
   __ lwz(r8, FieldMemOperand(r7, FixedArray::kLengthOffset));
   // r7: source FixedArray
   // r8: number of elements (smi-tagged)
 
   // Allocate new FixedDoubleArray.
-  // Use lr as a temporary register.
-  __ slwi(lr, r8, Operand(2));
-  __ add(lr, lr, Operand(FixedDoubleArray::kHeaderSize + kPointerSize));
-  __ AllocateInNewSpace(lr, r9, r10, r22, &gc_required, NO_ALLOCATION_FLAGS);
+  // Use r14 as a temporary register.
+  __ slwi(r14, r8, Operand(2));
+  __ add(r14, r14, Operand(FixedDoubleArray::kHeaderSize + kPointerSize));
+  __ AllocateInNewSpace(r14, r9, r10, r22, &gc_required, NO_ALLOCATION_FLAGS);
   // r9: destination FixedDoubleArray, not tagged as heap object.
 
   // Align the array conveniently for doubles.
@@ -148,8 +149,8 @@ void ElementsTransitionGenerator::GenerateSmiToDouble(
 
   __ bind(&aligned);
   // Store the filler at the end of the allocated memory.
-  __ sub(lr, lr, Operand(kPointerSize));
-  __ stwx(ip, r9, lr);
+  __ sub(r14, r14, Operand(kPointerSize));
+  __ stwx(ip, r9, r14);
 
   __ bind(&aligned_done);
 
@@ -210,7 +211,8 @@ void ElementsTransitionGenerator::GenerateSmiToDouble(
 
   // Call into runtime if GC is required.
   __ bind(&gc_required);
-  __ pop(lr);
+  __ pop(r14);
+  __ mtlr(r14);
   __ b(fail);
 
   // Convert and copy elements.
@@ -247,7 +249,8 @@ void ElementsTransitionGenerator::GenerateSmiToDouble(
   __ blt(&loop);
 
   if (!vfp2_supported) __ Pop(r4, r3);
-  __ pop(lr);
+  __ pop(r14);
+  __ mtlr(r14);
   __ bind(&done);
 }
 
@@ -335,7 +338,7 @@ void ElementsTransitionGenerator::GenerateDoubleToObject(
   __ RecordWrite(r9,
                  r3,
                  r5,
-                 kLRHasBeenSaved,
+                 kLRHasNotBeenSaved,
                  kDontSaveFPRegs,
                  EMIT_REMEMBERED_SET,
                  OMIT_SMI_CHECK);
@@ -357,7 +360,7 @@ void ElementsTransitionGenerator::GenerateDoubleToObject(
                       JSObject::kElementsOffset,
                       r9,
                       r22,
-                      kLRHasBeenSaved,
+                      kLRHasNotBeenSaved,
                       kDontSaveFPRegs,
                       EMIT_REMEMBERED_SET,
                       OMIT_SMI_CHECK);

@@ -35,6 +35,10 @@
 #include "full-codegen.h"
 #include "safepoint-table.h"
 
+// todo: fix references to these
+#define lr r14
+#define pc r15
+
 namespace v8 {
 namespace internal {
 

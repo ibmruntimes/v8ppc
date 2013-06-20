@@ -2004,7 +2004,8 @@ void StoreBufferOverflowStub::Generate(MacroAssembler* masm) {
   // We don't allow a GC during a store buffer overflow so there is no need to
   // store the registers in any particular way, but we do have to store and
   // restore them.
-  __ MultiPush(kJSCallerSaved | lr.bit());
+  __ mflr(r14);
+  __ MultiPush(kJSCallerSaved | r14.bit());
   if (save_doubles_ == kSaveFPRegs) {
     CpuFeatures::Scope scope(VFP2);
     __ sub(sp, sp, Operand(kDoubleSize * DwVfpRegister::kNumRegisters));
@@ -2031,7 +2032,9 @@ void StoreBufferOverflowStub::Generate(MacroAssembler* masm) {
     }
     __ add(sp, sp, Operand(kDoubleSize * DwVfpRegister::kNumRegisters));
   }
-  __ MultiPop(kJSCallerSaved | lr.bit() | pc.bit());  // Pop pc to get Ret(0).
+  __ MultiPop(kJSCallerSaved | r14.bit());
+  __ mtlr(r14);
+  __ Ret();
 }
 
 
@@ -7982,9 +7985,11 @@ void ProfileEntryHookStub::MaybeCallEntryHook(MacroAssembler* masm) {
   EMIT_STUB_MARKER(197);
   if (entry_hook_ != NULL) {
     ProfileEntryHookStub stub;
-    __ push(lr);
+    __ mflr(r0);
+    __ push(r0);
     __ CallStub(&stub);
-    __ pop(lr);
+    __ pop(r0);
+    __ mtlr(r0);
   }
 }
 
@@ -7996,11 +8001,12 @@ void ProfileEntryHookStub::Generate(MacroAssembler* masm) {
       Assembler::kCallTargetAddressOffset + Assembler::kInstrSize;
 
   // Save live volatile registers.
-  __ Push(lr, r8, r4);
+  __ mflr(r14);
+  __ Push(r14, r8, r4);
   const int32_t kNumSavedRegs = 3;
 
   // Compute the function's address for the first argument.
-  __ sub(r3, lr, Operand(kReturnAddressDistanceFromFunctionStart));
+  __ sub(r3, r14, Operand(kReturnAddressDistanceFromFunctionStart));
 
   // The caller's return address is above the saved temporaries.
   // Grab that for the second argument to the hook.
@@ -8015,9 +8021,9 @@ void ProfileEntryHookStub::Generate(MacroAssembler* masm) {
     __ rlwinm(sp, sp, 0, 0, 28);
   }
 
-#if defined(V8_HOST_ARCH_ARM)
+#if defined(V8_HOST_ARCH_PPC)
   __ mov(ip, Operand(reinterpret_cast<int32_t>(&entry_hook_)));
-  __ ldr(ip, MemOperand(ip));
+  __ lwz(ip, MemOperand(ip));
 #else
   // Under the simulator we need to indirect the entry hook through a
   // trampoline function at a known address.
@@ -8035,7 +8041,8 @@ void ProfileEntryHookStub::Generate(MacroAssembler* masm) {
     __ mr(sp, r8);
   }
 
-  __ Pop(lr, r8, r4);
+  __ Pop(r14, r8, r4);
+  __ mtlr(r14);
   __ Ret();
 }
 

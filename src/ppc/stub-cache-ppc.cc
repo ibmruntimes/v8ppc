@@ -122,7 +122,9 @@ static void ProbeTable(Isolate* isolate,
 #endif
 
   // Jump to the first instruction in the code stub.
-  __ add(pc, code, Operand(Code::kHeaderSize - kHeapObjectTag));
+  __ add(r0, code, Operand(Code::kHeaderSize - kHeapObjectTag));
+  __ mtctr(r0);
+  __ bcr();
 
   // Miss: fall through.
   __ bind(&miss);

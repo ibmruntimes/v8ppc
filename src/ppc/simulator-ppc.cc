@@ -78,8 +78,8 @@ class PPCDebugger {
   bool GetFPDoubleValue(const char* desc, double* value);
 
   // Set or delete a breakpoint. Returns true if successful.
-  bool SetBreakpoint(Instruction* breakpc);
-  bool DeleteBreakpoint(Instruction* breakpc);
+  bool SetBreakpoint(Instruction* break_pc);
+  bool DeleteBreakpoint(Instruction* break_pc);
 
   // Undo and redo all breakpoints. This is needed to bracket disassembly and
   // execution to skip past breakpoints when run from the debugger.
@@ -161,11 +161,7 @@ void PPCDebugger::Stop(Instruction* instr) {
 
 
 int32_t PPCDebugger::GetRegisterValue(int regnum) {
-  if (regnum == kPCRegister) {
-    return sim_->get_pc();
-  } else {
-    return sim_->get_register(regnum);
-  }
+  return sim_->get_register(regnum);
 }
 
 
@@ -217,22 +213,22 @@ bool PPCDebugger::GetFPDoubleValue(const char* desc, double* value) {
 }
 
 
-bool PPCDebugger::SetBreakpoint(Instruction* breakpc) {
+bool PPCDebugger::SetBreakpoint(Instruction* break_pc) {
   // Check if a breakpoint can be set. If not return without any side-effects.
   if (sim_->break_pc_ != NULL) {
     return false;
   }
 
   // Set the breakpoint.
-  sim_->break_pc_ = breakpc;
-  sim_->break_instr_ = breakpc->InstructionBits();
+  sim_->break_pc_ = break_pc;
+  sim_->break_instr_ = break_pc->InstructionBits();
   // Not setting the breakpoint instruction in the code itself. It will be set
   // when the debugger shell continues.
   return true;
 }
 
 
-bool PPCDebugger::DeleteBreakpoint(Instruction* breakpc) {
+bool PPCDebugger::DeleteBreakpoint(Instruction* break_pc) {
   if (sim_->break_pc_ != NULL) {
     sim_->break_pc_->SetInstructionBits(sim_->break_instr_);
   }
@@ -767,6 +763,7 @@ Simulator::Simulator(Isolate* isolate) : isolate_(isolate) {
     registers_[i] = 0;
   }
   condition_reg_ = 0;  // PowerPC
+  special_reg_pc_ = 0;  // PowerPC
   special_reg_lr_ = 0;  // PowerPC
   special_reg_ctr_ = 0;  // PowerPC
   n_flag_ = false;
@@ -797,10 +794,6 @@ Simulator::Simulator(Isolate* isolate) : isolate_(isolate) {
   // allocated stack area. To be safe in potential stack underflows we leave
   // some buffer below.
   registers_[sp] = reinterpret_cast<int32_t>(stack_) + stack_size - 64;
-  // The lr and pc are initialized to a known bad value that will cause an
-  // access violation if the simulator ever tries to execute it.
-  registers_[pc] = bad_lr;
-  registers_[lr] = bad_lr;
   InitializeCoverage();
 
   last_debugger_input_ = NULL;
@@ -885,26 +878,21 @@ Simulator* Simulator::current(Isolate* isolate) {
 }
 
 
-// Sets the register in the architecture state. It will also deal with updating
-// Simulator internal state for special registers such as PC.
+// Sets the register in the architecture state.
 void Simulator::set_register(int reg, int32_t value) {
   ASSERT((reg >= 0) && (reg < num_registers));
-  if (reg == pc) {
-    pc_modified_ = true;
-  }
   registers_[reg] = value;
 }
 
 
-// Get the register from the architecture state. This function does handle
-// the special case of accessing the PC register.
+// Get the register from the architecture state.
 int32_t Simulator::get_register(int reg) const {
   ASSERT((reg >= 0) && (reg < num_registers));
   // Stupid code added to avoid bug in GCC.
   // See: http://gcc.gnu.org/bugzilla/show_bug.cgi?id=43949
   if (reg >= num_registers) return 0;
   // End stupid code.
-  return registers_[reg] + ((reg == pc) ? Instruction::kPCReadOffset : 0);
+  return registers_[reg];
 }
 
 
@@ -931,18 +919,18 @@ void Simulator::set_dw_register(int dreg, const int* dbl) {
 // Raw access to the PC register.
 void Simulator::set_pc(int32_t value) {
   pc_modified_ = true;
-  registers_[pc] = value;
+  special_reg_pc_ = value;
 }
 
 
 bool Simulator::has_bad_pc() const {
-  return ((registers_[pc] == bad_lr) || (registers_[pc] == end_sim_pc));
+  return ((special_reg_pc_ == bad_lr) || (special_reg_pc_ == end_sim_pc));
 }
 
 
 // Raw access to the PC register without the special adjustment when reading.
 int32_t Simulator::get_pc() const {
-  return registers_[pc];
+  return special_reg_pc_;
 }
 
 
@@ -2645,8 +2633,7 @@ void Simulator::InstructionDecode(Instruction* instr) {
     }
   }
   if (!pc_modified_) {
-    set_register(pc, reinterpret_cast<int32_t>(instr)
-                         + Instruction::kInstrSize);
+    set_pc(reinterpret_cast<int32_t>(instr) + Instruction::kInstrSize);
   }
 }
 
@@ -2713,7 +2700,7 @@ int32_t Simulator::Call(byte* entry, int argument_count, ...) {
   set_register(sp, entry_stack);
 
   // Prepare to execute the code at entry
-  set_register(pc, reinterpret_cast<int32_t>(entry));
+  set_pc(reinterpret_cast<int32_t>(entry));
   // Put down marker for end of simulation. The simulator will stop simulation
   // when the PC reaches this value. By saving the "end simulation" value into
   // the LR the simulation stops when returning to this call point.
@@ -2721,7 +2708,7 @@ int32_t Simulator::Call(byte* entry, int argument_count, ...) {
 
   // Remember the values of callee-saved registers.
   int32_t r14_val = get_register(r14);
-//  int32_t r15_val = get_register(r15);  -- hack r15 is overloaded as ARM PC
+  int32_t r15_val = get_register(r15);
   int32_t r16_val = get_register(r16);
   int32_t r17_val = get_register(r17);
   int32_t r18_val = get_register(r18);
@@ -2743,7 +2730,7 @@ int32_t Simulator::Call(byte* entry, int argument_count, ...) {
   // that they are preserved properly across JS execution.
   int32_t callee_saved_value = icount_;
   set_register(r14, callee_saved_value);
-//  set_register(r15, callee_saved_value);  hack for r15 pc
+  set_register(r15, callee_saved_value);
   set_register(r16, callee_saved_value);
   set_register(r17, callee_saved_value);
   set_register(r18, callee_saved_value);
@@ -2766,7 +2753,7 @@ int32_t Simulator::Call(byte* entry, int argument_count, ...) {
 
   // Check that the callee-saved registers have been preserved.
   CHECK_EQ(callee_saved_value, get_register(r14));
-//  CHECK_EQ(callee_saved_value, get_register(r15));  hack for r15 PC
+  CHECK_EQ(callee_saved_value, get_register(r15));
   CHECK_EQ(callee_saved_value, get_register(r16));
   CHECK_EQ(callee_saved_value, get_register(r17));
   CHECK_EQ(callee_saved_value, get_register(r18));
@@ -2786,7 +2773,7 @@ int32_t Simulator::Call(byte* entry, int argument_count, ...) {
 
   // Restore callee-saved registers with the original value.
   set_register(r14, r14_val);
-//  set_register(r15, r15_val);  hack for R15 PC
+  set_register(r15, r15_val);
   set_register(r16, r16_val);
   set_register(r17, r17_val);
   set_register(r18, r18_val);

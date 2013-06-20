@@ -149,7 +149,7 @@ Register ToRegister(int num) {
     r0,
     sp,
     r2, r3, r4, r5, r6, r7, r8, r9, r10,
-    r11, ip, r13, lr, pc,
+    r11, ip, r13, r14, r15,
     r16, r17, r18, r19, r20, r21, r22, r23, r24,
     r25, r26, r27, r28, r29, r30, fp
   };
@@ -281,11 +281,6 @@ const Instr kPushRegPattern =
 // register r is not encoded.
 const Instr kPopRegPattern =
     al | B26 | L | 4 | PostIndex | kRegister_sp_Code * B16;
-const Instr kMrLRPC = 0x7dee7b78;      // hacked mr r14,r15 for pc
-const Instr kLwzPCMask = 0xffff0000;
-// lwz r15,disp(15)     Note: hacked r15 for pc
-const Instr kLwzPCPattern = LWZ | kRegister_pc_Code * B21
-                                | kRegister_pc_Code * B16;
 
 // Spare buffer.
 static const int kMinimalBufferSize = 4*KB;
@@ -1239,7 +1234,6 @@ void Assembler::mvn(Register dst, const Operand& src, SBit s, Condition cond) {
 // Multiply instructions.
 void Assembler::mla(Register dst, Register src1, Register src2, Register srcA,
                     SBit s, Condition cond) {
-  ASSERT(!dst.is(pc) && !src1.is(pc) && !src2.is(pc) && !srcA.is(pc));
   emit(cond | A | s | dst.code()*B16 | srcA.code()*B12 |
        src2.code()*B8 | B7 | B4 | src1.code());
 }
@@ -1258,7 +1252,6 @@ void Assembler::smlal(Register dstL,
                       Register src2,
                       SBit s,
                       Condition cond) {
-  ASSERT(!dstL.is(pc) && !dstH.is(pc) && !src1.is(pc) && !src2.is(pc));
   ASSERT(!dstL.is(dstH));
   emit(cond | B23 | B22 | A | s | dstH.code()*B16 | dstL.code()*B12 |
        src2.code()*B8 | B7 | B4 | src1.code());
@@ -1271,7 +1264,6 @@ void Assembler::smull(Register dstL,
                       Register src2,
                       SBit s,
                       Condition cond) {
-  ASSERT(!dstL.is(pc) && !dstH.is(pc) && !src1.is(pc) && !src2.is(pc));
   ASSERT(!dstL.is(dstH));
   emit(cond | B23 | B22 | s | dstH.code()*B16 | dstL.code()*B12 |
        src2.code()*B8 | B7 | B4 | src1.code());
@@ -1284,7 +1276,6 @@ void Assembler::umlal(Register dstL,
                       Register src2,
                       SBit s,
                       Condition cond) {
-  ASSERT(!dstL.is(pc) && !dstH.is(pc) && !src1.is(pc) && !src2.is(pc));
   ASSERT(!dstL.is(dstH));
   emit(cond | B23 | A | s | dstH.code()*B16 | dstL.code()*B12 |
        src2.code()*B8 | B7 | B4 | src1.code());
@@ -1297,7 +1288,6 @@ void Assembler::umull(Register dstL,
                       Register src2,
                       SBit s,
                       Condition cond) {
-  ASSERT(!dstL.is(pc) && !dstH.is(pc) && !src1.is(pc) && !src2.is(pc));
   ASSERT(!dstL.is(dstH));
   emit(cond | B23 | s | dstH.code()*B16 | dstL.code()*B12 |
        src2.code()*B8 | B7 | B4 | src1.code());
@@ -1312,7 +1302,6 @@ void Assembler::usat(Register dst,
                      Condition cond) {
   // v6 and above.
   ASSERT(CpuFeatures::IsSupported(ARMv7));
-  ASSERT(!dst.is(pc) && !src.rm_.is(pc));
   ASSERT((satpos >= 0) && (satpos <= 31));
   ASSERT((src.shift_op_ == ASR) || (src.shift_op_ == LSL));
   ASSERT(src.rs_.is(no_reg));
@@ -1340,7 +1329,6 @@ void Assembler::ubfx(Register dst,
                      Condition cond) {
   // v7 and above.
   ASSERT(CpuFeatures::IsSupported(ARMv7));
-  ASSERT(!dst.is(pc) && !src.is(pc));
   ASSERT((lsb >= 0) && (lsb <= 31));
   ASSERT((width >= 1) && (width <= (32 - lsb)));
   emit(cond | 0xf*B23 | B22 | B21 | (width - 1)*B16 | dst.code()*B12 |

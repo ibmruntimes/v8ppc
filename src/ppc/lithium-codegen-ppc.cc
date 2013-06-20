@@ -35,6 +35,10 @@
 #include "code-stubs.h"
 #include "stub-cache.h"
 
+// todo: fix references to these
+#define lr r14
+#define pc r15
+
 namespace v8 {
 namespace internal {
 

@@ -1348,14 +1348,16 @@ void Builtins::Generate_NotifyOSR(MacroAssembler* masm) {
   // doesn't do any garbage collection which allows us to save/restore
   // the registers without worrying about which of them contain
   // pointers. This seems a bit fragile.
+  __ mflr(r14);
   RegList saved_regs =
-      (kJSCallerSaved | kCalleeSaved | lr.bit() | r11.bit()) & ~sp.bit();
+      (kJSCallerSaved | kCalleeSaved | r14.bit() | r11.bit()) & ~sp.bit();
   __ MultiPush(saved_regs);
   {
     FrameScope scope(masm, StackFrame::INTERNAL);
     __ CallRuntime(Runtime::kNotifyOSR, 0);
   }
   __ MultiPop(saved_regs);
+  __ mtlr(r14);
   __ Ret();
 }
 
