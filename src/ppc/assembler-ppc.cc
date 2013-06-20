@@ -1066,6 +1066,14 @@ void Assembler::stwu(Register dst, const MemOperand &src) {
   d_form(STWU, dst, src.ra_, src.offset_, true);
 }
 
+void Assembler::stwx(Register rs, Register ra, Register rb) {
+  x_form(EXT2 | STWX, rs, ra, rb, LeaveRC);
+}
+
+void Assembler::stwux(Register rs, Register ra, Register rb) {
+  x_form(EXT2 | STWUX, rs, ra, rb, LeaveRC);
+}
+
 void Assembler::extsb(Register rs, Register ra, RCBit rc) {
   CheckBuffer();
   emit(EXT2 | EXTSB | rs.code()*B21 | ra.code()*B16 | rc);

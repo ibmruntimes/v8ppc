@@ -962,6 +962,8 @@ class Assembler : public AssemblerBase {
   void sth(Register dst, const MemOperand& src);
   void stw(Register dst, const MemOperand& src);
   void stwu(Register dst, const MemOperand& src);
+  void stwx(Register rs, Register ra, Register rb);
+  void stwux(Register rs, Register ra, Register rb);
 
   void extsb(Register rs, Register ra, RCBit r = LeaveRC);
   void extsh(Register rs, Register ra, RCBit r = LeaveRC);

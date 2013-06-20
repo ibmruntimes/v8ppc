@@ -235,14 +235,14 @@ enum OpcodeExt2 {
   NORX = 124 << 1,
   SUBFEX = 136 << 1,
   ADDEX = 138 << 1,
+  STWX = 151 << 1,
+  STWUX = 183 << 1,
 /*
   MTCRF
   MTMSR
   STDX
   STWCXx
-  STWX
   STDUX
-  STWUX
   SUBFZEX
 */
   ADDZEX = 202 << 1,  // Add to Zero Extended

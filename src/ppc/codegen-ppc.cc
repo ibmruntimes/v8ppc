@@ -149,7 +149,7 @@ void ElementsTransitionGenerator::GenerateSmiToDouble(
   __ bind(&aligned);
   // Store the filler at the end of the allocated memory.
   __ sub(lr, lr, Operand(kPointerSize));
-  __ stw(ip, MemOperand(r9, lr));
+  __ stwx(ip, r9, lr);
 
   __ bind(&aligned_done);
 

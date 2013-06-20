@@ -915,6 +915,14 @@ void Decoder::DecodeExt2(Instruction* instr) {
       }
       break;
     }
+    case STWX: {
+      Format(instr, "stwx     'rs,'ra,'rb");
+      break;
+    }
+    case STWUX: {
+      Format(instr, "stwxu    'rs,'ra,'rb");
+      break;
+    }
     default: {
       Unknown(instr);  // not used by V8
     }

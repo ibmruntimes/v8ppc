@@ -1695,7 +1695,8 @@ void Simulator::DecodeExt2(Instruction* instr) {
     }
   }
   // Now look at the lesser encodings
-  switch (instr->Bits(9, 1) << 1) {
+  int opcode = instr->Bits(9, 1) << 1;
+  switch (opcode) {
     case CMP: {
       int ra = instr->RAValue();
       int rb = instr->RBValue();
@@ -1972,6 +1973,21 @@ void Simulator::DecodeExt2(Instruction* instr) {
         special_reg_ctr_ = rt_val;
       } else {
         UNIMPLEMENTED();  // Only LR supported
+      }
+      break;
+    }
+    case STWUX:
+    case STWX: {
+      int rs = instr->RSValue();
+      int ra = instr->RAValue();
+      int rb = instr->RBValue();
+      int32_t ra_val = ra == 0 ? 0 : get_register(ra);
+      int32_t rs_val = get_register(rs);
+      int32_t rb_val = get_register(rb);
+      WriteW(ra_val+rb_val, rs_val, instr);
+      if (opcode == STWUX) {
+        ASSERT(ra != 0);
+        set_register(ra, ra_val+rb_val);
       }
       break;
     }
