@@ -1995,7 +1995,7 @@ void FullCodeGenerator::EmitInlineSmiBinaryOp(BinaryOperation* expr,
       __ b(&stub_call);
       __ GetLeastBitsFromSmi(scratch1, right, 5);
       __ sraw(right, left, scratch1);
-      __ SmiTag(right);
+      __ rlwinm(right, right, 0, 0, 30);
       break;
     case Token::SHL: {
       __ b(&stub_call);
