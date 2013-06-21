@@ -1200,7 +1200,7 @@ void Assembler::mov(Register dst, const Operand& src, SBit s, Condition cond) {
       }
       // ASSERT(dst.code() != 0);  // r0 is invalid destination eee
       BlockConstPoolFor(2);  // don't split these
-      addis(dst, r0, Operand(hi_word));
+      addis(dst, r0, Operand(SIGN_EXT_IMM16(hi_word)));
       addic(dst, dst, Operand(lo_word));
     }
   }
@@ -1213,7 +1213,7 @@ void Assembler::mov(Register dst, const Operand& src, SBit s, Condition cond) {
   }
   // ASSERT(dst.code() != 0);  // r0 is invalid destination eee
   BlockConstPoolFor(2);  // don't split these
-  addis(dst, r0, Operand(hi_word));
+  addis(dst, r0, Operand(SIGN_EXT_IMM16(hi_word)));
   addic(dst, dst, Operand(lo_word));
 #endif
 }
