@@ -3164,7 +3164,7 @@ void MacroAssembler::AbortIfNotString(Register object) {
   lwz(object, FieldMemOperand(object, HeapObject::kMapOffset));
   CompareInstanceType(object, object, FIRST_NONSTRING_TYPE);
   pop(object);
-  Assert(lo, "Operand is not a string");
+  Assert(lt, "Operand is not a string");
 }
 
 

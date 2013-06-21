@@ -157,7 +157,7 @@ static void Generate_DebugBreakCallHelper(MacroAssembler* masm,
         Register reg = { r };
         if ((non_object_regs & (1 << r)) != 0) {
           if (FLAG_debug_code) {
-            __ lis(r0, Operand(0xc0000000 >> 16));
+            __ lis(r0, Operand(SIGN_EXT_IMM16(0xc000)));
             __ cmp(reg, r0);
             __ Assert(eq, "Unable to encode value as smi");
           }

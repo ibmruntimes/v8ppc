@@ -941,7 +941,7 @@ static void Generate_JSConstructStubHelper(MacroAssembler* masm,
 
       // Done if no extra properties are to be allocated.
       __ beq(&allocated);
-      __ Assert(pl, "Property allocation count failed.");
+      __ Assert(ge, "Property allocation count failed.");
 
       // Scale the number of elements by pointer size and add the header for
       // FixedArrays to the start of the next object calculation from above.
