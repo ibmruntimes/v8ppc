@@ -581,7 +581,7 @@ void ConvertToDoubleStub::Generate(MacroAssembler* masm) {
   // in the exponent word of the double has the same position and polarity as
   // the 2's complement sign bit in a Smi.
   STATIC_ASSERT(HeapNumber::kSignMask == 0x80000000u);
-  __ andis(exponent, source_, Operand(0x80000000 >> 16));
+  __ andis(exponent, source_, Operand(SIGN_EXT_IMM16(0x8000)));
 
   // Negate if source was negative.
   __ beq(&positive, cr0);
@@ -723,7 +723,7 @@ void FloatingPointHelper::LoadNumber(MacroAssembler* masm,
   __ addis(r0, r0, Operand(0x4330));
   __ stw(r0, MemOperand(sp, 4));
   __ stw(r0, MemOperand(sp, 12));
-  __ addis(r0, r0, Operand(0x80000000 >> 16));
+  __ addis(r0, r0, Operand(SIGN_EXT_IMM16(0x8000)));
   __ stw(r0, MemOperand(sp, 0));
   __ xor_(r0, scratch1, r0);
   __ stw(r0, MemOperand(sp, 8));
@@ -731,7 +731,7 @@ void FloatingPointHelper::LoadNumber(MacroAssembler* masm,
   __ addis(r0, r0, Operand(0x4330));
   __ stw(r0, MemOperand(sp, 0));
   __ stw(r0, MemOperand(sp, 8));
-  __ addis(r0, r0, Operand(0x80000000 >> 16));
+  __ addis(r0, r0, Operand(SIGN_EXT_IMM16(0x8000)));
   __ stw(r0, MemOperand(sp, 4));
   __ xor_(r0, scratch1, r0);
   __ stw(r0, MemOperand(sp, 12));
@@ -804,7 +804,7 @@ void FloatingPointHelper::ConvertIntToDouble(MacroAssembler* masm,
   __ addis(r0, r0, Operand(0x4330));
   __ stw(r0, MemOperand(sp, 4));
   __ stw(r0, MemOperand(sp, 12));
-  __ addis(r0, r0, Operand(0x80000000 >> 16));
+  __ addis(r0, r0, Operand(SIGN_EXT_IMM16(0x8000)));
   __ stw(r0, MemOperand(sp, 0));
   __ xor_(r0, int_scratch, r0);
   __ stw(r0, MemOperand(sp, 8));
@@ -812,7 +812,7 @@ void FloatingPointHelper::ConvertIntToDouble(MacroAssembler* masm,
   __ addis(r0, r0, Operand(0x4330));
   __ stw(r0, MemOperand(sp, 0));
   __ stw(r0, MemOperand(sp, 8));
-  __ addis(r0, r0, Operand(0x80000000 >> 16));
+  __ addis(r0, r0, Operand(SIGN_EXT_IMM16(0x8000)));
   __ stw(r0, MemOperand(sp, 4));
   __ xor_(r0, int_scratch, r0);
   __ stw(r0, MemOperand(sp, 12));
@@ -979,7 +979,7 @@ void FloatingPointHelper::ConvertDoubleToUnsignedInt(MacroAssembler* masm,
 #endif
 
   // check for overflow
-  __ addis(scratch1, r0, Operand(0x80000000 >> 16));
+  __ addis(scratch1, r0, Operand(SIGN_EXT_IMM16(0x8000)));
   __ add(scratch1, scratch1, Operand(-1));
   __ cmp(scratch1, int_dst);
   __ bne(&done);
@@ -1007,7 +1007,7 @@ void FloatingPointHelper::ConvertDoubleToUnsignedInt(MacroAssembler* masm,
 #else
   __ lwz(int_dst, MemOperand(sp, kPointerSize));
 #endif
-  __ addis(r0, r0, Operand(0x80000000 >> 16));
+  __ addis(r0, r0, Operand(SIGN_EXT_IMM16(0x8000)));
   __ xor_(int_dst, int_dst, r0);
 
   __ bind(&done);
@@ -2509,7 +2509,7 @@ void BinaryOpStub::GenerateSmiSmiOperation(MacroAssembler* masm) {
       // Check for power of two on the right hand side.
       __ JumpIfNotPowerOfTwoOrZero(right, scratch1, &not_smi_result);
       // Check for positive and no remainder (scratch1 contains right - 1).
-      __ lis(r0, Operand(0x80000000 >> 16));
+      __ lis(r0, Operand(SIGN_EXT_IMM16(0x8000)));
       __ orx(scratch2, scratch1, r0);
       __ and_(r0, left, scratch2, SetRC);
       __ bne(&not_smi_result, cr0);
@@ -3188,7 +3188,7 @@ void BinaryOpStub::GenerateInt32Stub(MacroAssembler* masm) {
         __ addis(r0, r0, Operand(0x4330));
         __ stw(r0, MemOperand(sp, 4));
         __ stw(r0, MemOperand(sp, 12));
-        __ addis(r0, r0, Operand(0x80000000 >> 16));
+        __ addis(r0, r0, Operand(SIGN_EXT_IMM16(0x8000)));
         __ stw(r0, MemOperand(sp, 0));
         __ xor_(r0, r5, r0);
         __ stw(r0, MemOperand(sp, 8));
@@ -3196,7 +3196,7 @@ void BinaryOpStub::GenerateInt32Stub(MacroAssembler* masm) {
         __ addis(r0, r0, Operand(0x4330));
         __ stw(r0, MemOperand(sp, 0));
         __ stw(r0, MemOperand(sp, 8));
-        __ addis(r0, r0, Operand(0x80000000 >> 16));
+        __ addis(r0, r0, Operand(SIGN_EXT_IMM16(0x8000)));
         __ stw(r0, MemOperand(sp, 4));
         __ xor_(r0, r5, r0);
         __ stw(r0, MemOperand(sp, 12));

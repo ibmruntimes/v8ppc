@@ -2495,7 +2495,7 @@ void MacroAssembler::SmiToDoubleFPRegister(Register smi,
   addis(r0, r0, Operand(0x4330));
   stw(r0, MemOperand(sp, 4));
   stw(r0, MemOperand(sp, 12));
-  addis(r0, r0, Operand(0x80000000 >> 16));
+  addis(r0, r0, Operand(SIGN_EXT_IMM16(0x8000)));
   stw(r0, MemOperand(sp, 0));
   xor_(r0, scratch1, r0);
   stw(r0, MemOperand(sp, 8));
@@ -2503,7 +2503,7 @@ void MacroAssembler::SmiToDoubleFPRegister(Register smi,
   addis(r0, r0, Operand(0x4330));
   stw(r0, MemOperand(sp, 0));
   stw(r0, MemOperand(sp, 8));
-  addis(r0, r0, Operand(0x80000000 >> 16));
+  addis(r0, r0, Operand(SIGN_EXT_IMM16(0x8000)));
   stw(r0, MemOperand(sp, 4));
   xor_(r0, scratch1, r0);
   stw(r0, MemOperand(sp, 12));

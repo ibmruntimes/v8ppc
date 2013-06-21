@@ -59,9 +59,6 @@ unsigned CpuFeatures::found_by_runtime_probing_ = 0;
 
 // #define NEW_IMM_CHECK_CODE
 
-// sign-extend the least significant 16-bit of value <imm>
-#define SIGN_EXT_IMM16(imm) ((static_cast<int>(imm) << 16) >> 16)
-
 // Get the CPU features enabled by the build. For cross compilation the
 // preprocessor symbols CAN_USE_ARMV7_INSTRUCTIONS and CAN_USE_VFP3_INSTRUCTIONS
 // can be defined to enable ARMv7 and VFPv3 instructions when building the

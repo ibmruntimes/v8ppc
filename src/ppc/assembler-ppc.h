@@ -52,6 +52,10 @@ namespace v8 {
 namespace internal {
 
 #define INCLUDE_ARM 1
+
+// sign-extend the least significant 16-bit of value <imm>
+#define SIGN_EXT_IMM16(imm) ((static_cast<int>(imm) << 16) >> 16)
+
 // CPU Registers.
 //
 // 1) We would prefer to use an enum, but enum values are assignment-
