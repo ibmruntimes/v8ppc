@@ -218,7 +218,7 @@ static void GenerateDictionaryStore(MacroAssembler* masm,
 
   // Store the value at the masked, scaled index and return.
   const int kValueOffset = kElementsStartOffset + kPointerSize;
-  __ add(scratch2, scratch2, Operand(kValueOffset - kHeapObjectTag));
+  __ addi(scratch2, scratch2, Operand(kValueOffset - kHeapObjectTag));
   __ stw(value, MemOperand(scratch2));
 
   // Update the write barrier. Make sure not to clobber the value.
@@ -358,7 +358,7 @@ static void GenerateFastArrayLoad(MacroAssembler* masm,
   __ cmpl(key, scratch1);
   __ bge(out_of_range);
   // Fast case: Do the load.
-  __ add(scratch1, elements, Operand(FixedArray::kHeaderSize - kHeapObjectTag));
+  __ addi(scratch1, elements, Operand(FixedArray::kHeaderSize - kHeapObjectTag));
   // The key is a smi.
   STATIC_ASSERT(kSmiTag == 0 && kSmiTagSize < kPointerSizeLog2);
   __ slwi(scratch2, key, Operand(kPointerSizeLog2 - kSmiTagSize));
@@ -833,7 +833,7 @@ static MemOperand GenerateMappedArgumentsLookup(MacroAssembler* masm,
 
   __ li(scratch3, Operand(kPointerSize >> 1));
   __ mul(scratch3, key, scratch3);
-  __ add(scratch3, scratch3, Operand(kOffset));
+  __ addi(scratch3, scratch3, Operand(kOffset));
 
   __ add(scratch2, scratch1, scratch3);
   __ lwz(scratch2, MemOperand(scratch2));
@@ -847,7 +847,7 @@ static MemOperand GenerateMappedArgumentsLookup(MacroAssembler* masm,
   __ lwz(scratch1, FieldMemOperand(scratch1, FixedArray::kHeaderSize));
   __ li(scratch3, Operand(kPointerSize >> 1));
   __ mul(scratch3, scratch2, scratch3);
-  __ add(scratch3, scratch3, Operand(Context::kHeaderSize - kHeapObjectTag));
+  __ addi(scratch3, scratch3, Operand(Context::kHeaderSize - kHeapObjectTag));
   __ add(scratch1, scratch1, scratch3);
   return MemOperand(scratch1);
 }
@@ -874,9 +874,9 @@ static MemOperand GenerateUnmappedArgumentsLookup(MacroAssembler* masm,
   __ bge(slow_case);
   __ mov(scratch, Operand(kPointerSize >> 1));
   __ mul(scratch, key, scratch);
-  __ add(scratch,
-         scratch,
-         Operand(FixedArray::kHeaderSize - kHeapObjectTag));
+  __ addi(scratch,
+          scratch,
+          Operand(FixedArray::kHeaderSize - kHeapObjectTag));
   __ add(backing_store, backing_store, scratch);
   return MemOperand(backing_store);
 }
@@ -1102,7 +1102,7 @@ void KeyedLoadIC::GenerateGeneric(MacroAssembler* masm) {
     Label try_next_entry;
     // Load map and move r7 to next entry.
     __ lwz(r8, MemOperand(r7));
-    __ add(r7, r7, Operand(kPointerSize * 2));
+    __ addi(r7, r7, Operand(kPointerSize * 2));
     __ cmp(r5, r8);
     __ bne(&try_next_entry);
     __ lwz(r8, MemOperand(r7, -kPointerSize));  // Load symbol
@@ -1113,7 +1113,7 @@ void KeyedLoadIC::GenerateGeneric(MacroAssembler* masm) {
 
   // Last entry: Load map and move r7 to symbol.
   __ lwz(r8, MemOperand(r7));
-  __ add(r7, r7, Operand(kPointerSize));
+  __ addi(r7, r7, Operand(kPointerSize));
   __ cmp(r5, r8);
   __ bne(&slow);
   __ lwz(r8, MemOperand(r7));
@@ -1133,7 +1133,7 @@ void KeyedLoadIC::GenerateGeneric(MacroAssembler* masm) {
     __ bind(&hit_on_nth_entry[i]);
     __ mov(r7, Operand(cache_field_offsets));
     if (i != 0) {
-      __ add(r6, r6, Operand(i));
+      __ addi(r6, r6, Operand(i));
     }
     __ slwi(r8, r6, Operand(kPointerSizeLog2));
     __ add(r8, r8, r7);
@@ -1162,7 +1162,7 @@ void KeyedLoadIC::GenerateGeneric(MacroAssembler* masm) {
   // Load property array property.
   __ bind(&property_array_property);
   __ lwz(r4, FieldMemOperand(r4, JSObject::kPropertiesOffset));
-  __ add(r4, r4, Operand(FixedArray::kHeaderSize - kHeapObjectTag));
+  __ addi(r4, r4, Operand(FixedArray::kHeaderSize - kHeapObjectTag));
   __ slwi(r3, r8, Operand(kPointerSizeLog2));
   __ add(r3, r3, r4);
   __ lwz(r3, MemOperand(r3));
@@ -1407,11 +1407,11 @@ static void KeyedStoreGenerateGenericHelper(
 
   if (increment_length == kIncrementLength) {
     // Add 1 to receiver->length.
-    __ add(scratch_value, key, Operand(Smi::FromInt(1)));
+    __ addi(scratch_value, key, Operand(Smi::FromInt(1)));
     __ stw(scratch_value, FieldMemOperand(receiver, JSArray::kLengthOffset));
   }
   // It's irrelevant whether array is smi-only or not when writing a smi.
-  __ add(address, elements, Operand(FixedArray::kHeaderSize - kHeapObjectTag));
+  __ addi(address, elements, Operand(FixedArray::kHeaderSize - kHeapObjectTag));
   __ slwi(scratch_value, key, Operand(kPointerSizeLog2 - kSmiTagSize));
   __ add(address, address, scratch_value);
   __ stw(value, MemOperand(address));
@@ -1426,10 +1426,10 @@ static void KeyedStoreGenerateGenericHelper(
   __ bind(&finish_object_store);
   if (increment_length == kIncrementLength) {
     // Add 1 to receiver->length.
-    __ add(scratch_value, key, Operand(Smi::FromInt(1)));
+    __ addi(scratch_value, key, Operand(Smi::FromInt(1)));
     __ stw(scratch_value, FieldMemOperand(receiver, JSArray::kLengthOffset));
   }
-  __ add(address, elements, Operand(FixedArray::kHeaderSize - kHeapObjectTag));
+  __ addi(address, elements, Operand(FixedArray::kHeaderSize - kHeapObjectTag));
   __ slwi(scratch_value, key, Operand(kPointerSizeLog2 - kSmiTagSize));
   __ add(address, address, scratch_value);
   __ stw(value, MemOperand(address));
@@ -1463,7 +1463,7 @@ static void KeyedStoreGenerateGenericHelper(
                                  &transition_double_elements);
   if (increment_length == kIncrementLength) {
     // Add 1 to receiver->length.
-    __ add(scratch_value, key, Operand(Smi::FromInt(1)));
+    __ addi(scratch_value, key, Operand(Smi::FromInt(1)));
     __ stw(scratch_value, FieldMemOperand(receiver, JSArray::kLengthOffset));
   }
   __ Ret();

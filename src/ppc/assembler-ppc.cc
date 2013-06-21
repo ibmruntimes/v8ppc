@@ -875,7 +875,7 @@ void Assembler::sraw(Register ra, Register rs, Register rb, RCBit r) {
 // delete this later when removing ARM
 void Assembler::sub(Register dst, Register src, const Operand& imm,
     SBit s, Condition cond) {
-  add(dst, src, Operand(-(imm.imm32_)));
+  addi(dst, src, Operand(-(imm.imm32_)));
 }
 
 void Assembler::addc(Register dst, Register src1, Register src2,
@@ -920,13 +920,13 @@ void Assembler::mulhw(Register dst, Register src1, Register src2,
   xo_form(EXT2 | MULHWX, dst, src1, src2, o, r);
 }
 
-// delete these later when removing ARM code
-void Assembler::add(Register dst, Register src, const Operand& imm,
-SBit s, Condition cond) {
+void Assembler::addi(Register dst, Register src, const Operand& imm) {
+  ASSERT(!src.is(r0));  // use li instead to show intent
   d_form(ADDI, dst, src, imm.imm32_, true);
 }
 
 void  Assembler::addis(Register dst, Register src, const Operand& imm) {
+  ASSERT(!src.is(r0));  // use lis instead to show intent
   d_form(ADDIS, dst, src, imm.imm32_, true);
 }
 
@@ -999,14 +999,13 @@ void Assembler::cmpl(Register src1, Register src2, CRegister cr) {
 }
 
 // Pseudo op - load immediate
-void Assembler::li(Register dst, const Operand &src) {
-  // actually addi
+void Assembler::li(Register dst, const Operand &imm) {
   // this should only be signed 16bit values, the uint16 is a hack for now
   // it may not work correctly on an actual PowerPC
 #ifndef NEW_IMM_CHECK_CODE
-  ASSERT(is_int16(src.imm32_) || is_uint16(src.imm32_));
+  ASSERT(is_int16(imm.imm32_) || is_uint16(imm.imm32_));
 #endif
-  add(dst, r0, src);
+  d_form(ADDI, dst, r0, imm.imm32_, true);
 }
 
 void  Assembler::lis(Register dst, const Operand& imm) {
@@ -1027,42 +1026,52 @@ void Assembler::mr(Register dst, Register src) {
 }
 
 void Assembler::lbz(Register dst, const MemOperand &src) {
+  ASSERT(!src.ra_.is(r0));
   d_form(LBZ, dst, src.ra_, src.offset_, true);
 }
 
 void Assembler::lhz(Register dst, const MemOperand &src) {
+  ASSERT(!src.ra_.is(r0));
   d_form(LHZ, dst, src.ra_, src.offset_, true);
 }
 
 void Assembler::lwz(Register dst, const MemOperand &src) {
+  ASSERT(!src.ra_.is(r0));
   d_form(LWZ, dst, src.ra_, src.offset_, true);
 }
 
 void Assembler::lwzu(Register dst, const MemOperand &src) {
+  ASSERT(!src.ra_.is(r0));
   d_form(LWZU, dst, src.ra_, src.offset_, true);
 }
 
 void Assembler::stb(Register dst, const MemOperand &src) {
+  ASSERT(!src.ra_.is(r0));
   d_form(STB, dst, src.ra_, src.offset_, true);
 }
 
 void Assembler::sth(Register dst, const MemOperand &src) {
+  ASSERT(!src.ra_.is(r0));
   d_form(STH, dst, src.ra_, src.offset_, true);
 }
 
 void Assembler::stw(Register dst, const MemOperand &src) {
+  ASSERT(!src.ra_.is(r0));
   d_form(STW, dst, src.ra_, src.offset_, true);
 }
 
 void Assembler::stwu(Register dst, const MemOperand &src) {
+  ASSERT(!src.ra_.is(r0));
   d_form(STWU, dst, src.ra_, src.offset_, true);
 }
 
 void Assembler::stwx(Register rs, Register ra, Register rb) {
+  ASSERT(!ra.is(r0));
   x_form(EXT2 | STWX, rs, ra, rb, LeaveRC);
 }
 
 void Assembler::stwux(Register rs, Register ra, Register rb) {
+  ASSERT(!ra.is(r0));
   x_form(EXT2 | STWUX, rs, ra, rb, LeaveRC);
 }
 
@@ -1097,6 +1106,12 @@ void Assembler::marker_asm(int mcode) {
   }
 }
 // end PowerPC
+
+void Assembler::add(Register dst, Register src1, const Operand& src2,
+                    SBit s, Condition cond) {
+  PPCPORT_CHECK(false);
+  EMIT_FAKE_ARM_INSTR(fADD);
+}
 
 void Assembler::adc(Register dst, Register src1, const Operand& src2,
                     SBit s, Condition cond) {
@@ -1188,7 +1203,7 @@ void Assembler::mov(Register dst, const Operand& src, SBit s, Condition cond) {
     int hi_word = static_cast<int>(value) >> 16;
     if ((hi_word << 16) == value) {
       // PrintF("Generated addis value: %d\n", value);
-      addis(dst, r0, Operand(hi_word));
+      lis(dst, Operand(SIGN_EXT_IMM16(hi_word)));
     } else {
       int lo_word = SIGN_EXT_IMM16(value);
       if (lo_word & 0x8000) {
@@ -1197,7 +1212,7 @@ void Assembler::mov(Register dst, const Operand& src, SBit s, Condition cond) {
       }
       // ASSERT(dst.code() != 0);  // r0 is invalid destination eee
       BlockConstPoolFor(2);  // don't split these
-      addis(dst, r0, Operand(SIGN_EXT_IMM16(hi_word)));
+      lis(dst, Operand(SIGN_EXT_IMM16(hi_word)));
       addic(dst, dst, Operand(lo_word));
     }
   }
@@ -1210,7 +1225,7 @@ void Assembler::mov(Register dst, const Operand& src, SBit s, Condition cond) {
   }
   // ASSERT(dst.code() != 0);  // r0 is invalid destination eee
   BlockConstPoolFor(2);  // don't split these
-  addis(dst, r0, Operand(SIGN_EXT_IMM16(hi_word)));
+  lis(dst, Operand(SIGN_EXT_IMM16(hi_word)));
   addic(dst, dst, Operand(lo_word));
 #endif
 }
@@ -1494,6 +1509,7 @@ void Assembler::lfd(const DwVfpRegister frt, const Register ra, int offset) {
 
 void Assembler::lfs(const DwVfpRegister frt, const Register ra, int offset) {
   ASSERT(is_int16(offset));
+  ASSERT(!ra.is(r0));
   int imm16 = offset & kImm16Mask;
   // could be x_form instruction with some casting magic
   emit(LFS | frt.code()*B21 | ra.code()*B16 | imm16);
@@ -1501,6 +1517,7 @@ void Assembler::lfs(const DwVfpRegister frt, const Register ra, int offset) {
 
 void Assembler::stfd(const DwVfpRegister frs, const Register ra, int offset) {
   ASSERT(is_int16(offset));
+  ASSERT(!ra.is(r0));
   int imm16 = offset & kImm16Mask;
   // could be x_form instruction with some casting magic
   emit(STFD | frs.code()*B21 | ra.code()*B16 | imm16);
@@ -1508,6 +1525,7 @@ void Assembler::stfd(const DwVfpRegister frs, const Register ra, int offset) {
 
 void Assembler::stfs(const DwVfpRegister frs, const Register ra, int offset) {
   ASSERT(is_int16(offset));
+  ASSERT(!ra.is(r0));
   int imm16 = offset & kImm16Mask;
   // could be x_form instruction with some casting magic
   emit(STFS | frs.code()*B21 | ra.code()*B16 | imm16);

@@ -122,7 +122,7 @@ static void ProbeTable(Isolate* isolate,
 #endif
 
   // Jump to the first instruction in the code stub.
-  __ add(r0, code, Operand(Code::kHeaderSize - kHeapObjectTag));
+  __ addi(r0, code, Operand(Code::kHeaderSize - kHeapObjectTag));
   __ mtctr(r0);
   __ bcr();
 
@@ -267,7 +267,7 @@ void StubCache::GenerateProbe(MacroAssembler* masm,
   __ srwi(extra, scratch, Operand(kHeapObjectTagSize));
   __ sub(scratch, scratch, extra);
   uint32_t mask2 = kSecondaryTableSize - 1;
-  __ add(scratch, scratch, Operand((flags >> kHeapObjectTagSize) & mask2));
+  __ addi(scratch, scratch, Operand((flags >> kHeapObjectTagSize) & mask2));
   __ andi(scratch, scratch, Operand(mask2));
 
   // Probe the secondary table.
@@ -747,7 +747,7 @@ static void GenerateFastApiDirectCall(MacroAssembler* masm,
   __ stw(r10, MemOperand(sp, 3 * kPointerSize));
 
   // Prepare arguments.
-  __ add(r5, sp, Operand(3 * kPointerSize));
+  __ addi(r5, sp, Operand(3 * kPointerSize));
 
   // Allocate the v8::Arguments structure in the arguments' space since
   // it's not controlled by GC.
@@ -758,11 +758,11 @@ static void GenerateFastApiDirectCall(MacroAssembler* masm,
 
   // r3 = v8::Arguments&
   // Arguments is after the return address.
-  __ add(r3, sp, Operand(1 * kPointerSize));
+  __ addi(r3, sp, Operand(1 * kPointerSize));
   // v8::Arguments::implicit_args_
   __ stw(r5, MemOperand(r3, 0 * kPointerSize));
   // v8::Arguments::values_
-  __ add(ip, r5, Operand(argc * kPointerSize));
+  __ addi(ip, r5, Operand(argc * kPointerSize));
   __ stw(ip, MemOperand(r3, 1 * kPointerSize));
   // v8::Arguments::length_ = argc
   __ li(ip, Operand(argc));
@@ -1266,7 +1266,7 @@ void StubCompiler::GenerateLoadCallback(Handle<JSObject> object,
   // Create AccessorInfo instance on the stack above the exit frame with
   // scratch2 (internal::Object** args_) as the data.
   __ stw(scratch2, MemOperand(sp, 1 * kPointerSize));
-  __ add(r4, sp, Operand(1 * kPointerSize));  // r4 = AccessorInfo&
+  __ addi(r4, sp, Operand(1 * kPointerSize));  // r4 = AccessorInfo&
 
   const int kStackUnwindSpace = 5;
   Address getter_address = v8::ToCData<Address>(callback->getter());
@@ -1603,7 +1603,7 @@ Handle<Code> CallStubCompiler::CompileArrayPushCall(
       __ lwz(r3, FieldMemOperand(receiver, JSArray::kLengthOffset));
       STATIC_ASSERT(kSmiTagSize == 1);
       STATIC_ASSERT(kSmiTag == 0);
-      __ add(r3, r3, Operand(Smi::FromInt(argc)));
+      __ addi(r3, r3, Operand(Smi::FromInt(argc)));
 
       // Get the elements' length.
       __ lwz(r7, FieldMemOperand(elements, FixedArray::kLengthOffset));
@@ -1627,7 +1627,7 @@ Handle<Code> CallStubCompiler::CompileArrayPushCall(
       __ add(end_elements, elements, end_elements);
       const int kEndElementsOffset =
           FixedArray::kHeaderSize - kHeapObjectTag - argc * kPointerSize;
-      __ add(end_elements, end_elements, Operand(kEndElementsOffset));
+      __ addi(end_elements, end_elements, Operand(kEndElementsOffset));
       __ stw(r7, MemOperand(end_elements));
 
       // Check for a smi.
@@ -1680,7 +1680,7 @@ Handle<Code> CallStubCompiler::CompileArrayPushCall(
       // so write back the value in end_elements.
       __ slwi(end_elements, r3, Operand(kPointerSizeLog2 - kSmiTagSize));
       __ add(end_elements, elements, end_elements);
-      __ add(end_elements, end_elements, Operand(kEndElementsOffset));
+      __ addi(end_elements, end_elements, Operand(kEndElementsOffset));
       __ stw(r7, MemOperand(end_elements));
 
       __ RecordWrite(elements,
@@ -1720,7 +1720,7 @@ Handle<Code> CallStubCompiler::CompileArrayPushCall(
       // Load top and check if it is the end of elements.
       __ slwi(end_elements, r3, Operand(kPointerSizeLog2 - kSmiTagSize));
       __ add(end_elements, elements, end_elements);
-      __ add(end_elements, end_elements, Operand(kEndElementsOffset));
+      __ addi(end_elements, end_elements, Operand(kEndElementsOffset));
       __ mov(r10, Operand(new_space_allocation_top));
       __ lwz(r6, MemOperand(r10));
       __ cmp(end_elements, r6);
@@ -1728,7 +1728,7 @@ Handle<Code> CallStubCompiler::CompileArrayPushCall(
 
       __ mov(r22, Operand(new_space_allocation_limit));
       __ lwz(r22, MemOperand(r22));
-      __ add(r6, r6, Operand(kAllocationDelta * kPointerSize));
+      __ addi(r6, r6, Operand(kAllocationDelta * kPointerSize));
       __ cmpl(r6, r22);
       __ bgt(&call_builtin);
 
@@ -1745,7 +1745,7 @@ Handle<Code> CallStubCompiler::CompileArrayPushCall(
 
       // Update elements' and array's sizes.
       __ stw(r3, FieldMemOperand(receiver, JSArray::kLengthOffset));
-      __ add(r7, r7, Operand(Smi::FromInt(kAllocationDelta)));
+      __ addi(r7, r7, Operand(Smi::FromInt(kAllocationDelta)));
       __ stw(r7, FieldMemOperand(elements, FixedArray::kLengthOffset));
 
       // Elements are in new space, so write barrier is not required.
@@ -2166,7 +2166,7 @@ Handle<Code> CallStubCompiler::CompileMathFloorCall(
 #else
   __ lwz(r3, MemOperand(sp, 4));
 #endif
-  __ add(sp, sp, Operand(8));
+  __ addi(sp, sp, Operand(8));
 
   // if resulting conversion is negative, invert for bit tests
   __ rlwinm(r0, r3, 1, 31, 31, SetRC);
@@ -2359,7 +2359,7 @@ Handle<Code> CallStubCompiler::CompileFastApiCall(
 #if defined(V8_HOST_ARCH_PPC)
   // PPC passes C++ object by reference not value
   // roohack - this is wrong
-  // __ add(r4, sp, Operand((argc + kFastApiCallArguments) * kPointerSize));
+  // __ addi(r4, sp, Operand((argc + kFastApiCallArguments) * kPointerSize));
 #endif
 
   GenerateFastApiDirectCall(masm(), optimization, argc);
@@ -3514,13 +3514,13 @@ Handle<Code> ConstructStubCompiler::CompileConstructStub(
   __ mr(r8, r7);
   ASSERT_EQ(0 * kPointerSize, JSObject::kMapOffset);
   __ stw(r5, MemOperand(r8));
-  __ add(r8, r8, Operand(kPointerSize));
+  __ addi(r8, r8, Operand(kPointerSize));
   ASSERT_EQ(1 * kPointerSize, JSObject::kPropertiesOffset);
   __ stw(r9, MemOperand(r8));
-  __ add(r8, r8, Operand(kPointerSize));
+  __ addi(r8, r8, Operand(kPointerSize));
   ASSERT_EQ(2 * kPointerSize, JSObject::kElementsOffset);
   __ stw(r9, MemOperand(r8));
-  __ add(r8, r8, Operand(kPointerSize));
+  __ addi(r8, r8, Operand(kPointerSize));
 
   // Calculate the location of the first argument. The stack contains only the
   // argc arguments.
@@ -3547,19 +3547,19 @@ Handle<Code> ConstructStubCompiler::CompileConstructStub(
       // Argument passed - find it on the stack.
       __ lwz(r5, MemOperand(r4, (arg_number + 1) * -kPointerSize));
       __ stw(r5, MemOperand(r8));
-      __ add(r8, r8, Operand(kPointerSize));
+      __ addi(r8, r8, Operand(kPointerSize));
       __ b(&next);
       __ bind(&not_passed);
       // Set the property to undefined.
       __ stw(r10, MemOperand(r8));
-      __ add(r8, r8, Operand(kPointerSize));
+      __ addi(r8, r8, Operand(kPointerSize));
       __ bind(&next);
     } else {
       // Set the property to the constant value.
       Handle<Object> constant(shared->GetThisPropertyAssignmentConstant(i));
       __ mov(r5, Operand(constant));
       __ stw(r5, MemOperand(r8));
-      __ add(r8, r8, Operand(kPointerSize));
+      __ addi(r8, r8, Operand(kPointerSize));
     }
   }
 
@@ -3569,7 +3569,7 @@ Handle<Code> ConstructStubCompiler::CompileConstructStub(
        i < function->initial_map()->inobject_properties();
        i++) {
       __ stw(r10, MemOperand(r8));
-      __ add(r8, r8, Operand(kPointerSize));
+      __ addi(r8, r8, Operand(kPointerSize));
   }
 
   // r3: argc
@@ -3584,7 +3584,7 @@ Handle<Code> ConstructStubCompiler::CompileConstructStub(
   // Remove caller arguments and receiver from the stack and return.
   __ slwi(r4, r4, Operand(kPointerSizeLog2));
   __ add(sp, sp, r4);
-  __ add(sp, sp, Operand(kPointerSize));
+  __ addi(sp, sp, Operand(kPointerSize));
   Counters* counters = masm()->isolate()->counters();
   __ IncrementCounter(counters->constructed_objects(), 1, r4, r5);
   __ IncrementCounter(counters->constructed_objects_stub(), 1, r4, r5);
@@ -3721,7 +3721,7 @@ static void GenerateSmiKeyCheck(MacroAssembler* masm,
 #else
   __ lwz(scratch0, MemOperand(sp, 4));
 #endif
-  __ add(sp, sp, Operand(8));
+  __ addi(sp, sp, Operand(8));
   __ TrySmiTag(scratch0, fail, scratch1);
   __ mr(key, scratch0);
   __ bind(&key_ok);
@@ -4175,7 +4175,7 @@ void KeyedLoadStubCompiler::GenerateLoadFastElement(MacroAssembler* masm) {
   __ bge(&miss_force_generic);
 
   // Load the result and make sure it's not the hole.
-  __ add(r6, r5, Operand(FixedArray::kHeaderSize - kHeapObjectTag));
+  __ addi(r6, r5, Operand(FixedArray::kHeaderSize - kHeapObjectTag));
   STATIC_ASSERT(kSmiTag == 0 && kSmiTagSize < kPointerSizeLog2);
   __ slwi(r7, r3, Operand(kPointerSizeLog2 - kSmiTagSize));
   __ add(r7, r6, r7);
@@ -4338,18 +4338,18 @@ void KeyedStoreStubCompiler::GenerateStoreFastElement(
 
   __ bind(&finish_store);
   if (IsFastSmiElementsKind(elements_kind)) {
-    __ add(scratch,
-           elements_reg,
-           Operand(FixedArray::kHeaderSize - kHeapObjectTag));
+    __ addi(scratch,
+            elements_reg,
+            Operand(FixedArray::kHeaderSize - kHeapObjectTag));
     STATIC_ASSERT(kSmiTag == 0 && kSmiTagSize < kPointerSizeLog2);
     __ slwi(scratch2, key_reg, Operand(kPointerSizeLog2 - kSmiTagSize));
     __ add(scratch, scratch, scratch2);
     __ stw(value_reg, MemOperand(scratch));
   } else {
     ASSERT(IsFastObjectElementsKind(elements_kind));
-    __ add(scratch,
-           elements_reg,
-           Operand(FixedArray::kHeaderSize - kHeapObjectTag));
+    __ addi(scratch,
+            elements_reg,
+            Operand(FixedArray::kHeaderSize - kHeapObjectTag));
     STATIC_ASSERT(kSmiTag == 0 && kSmiTagSize < kPointerSizeLog2);
     __ slwi(scratch2, key_reg, Operand(kPointerSizeLog2 - kSmiTagSize));
     __ add(scratch, scratch, scratch2);
@@ -4432,7 +4432,7 @@ void KeyedStoreStubCompiler::GenerateStoreFastElement(
     __ bge(&slow);
 
     // Grow the array and finish the store.
-    __ add(length_reg, length_reg, Operand(Smi::FromInt(1)));
+    __ addi(length_reg, length_reg, Operand(Smi::FromInt(1)));
     __ stw(length_reg, FieldMemOperand(receiver_reg, JSArray::kLengthOffset));
     __ jmp(&finish_store);
 
@@ -4579,7 +4579,7 @@ void KeyedStoreStubCompiler::GenerateStoreFastDoubleElement(
     __ bge(&slow);
 
     // Grow the array and finish the store.
-    __ add(length_reg, length_reg, Operand(Smi::FromInt(1)));
+    __ addi(length_reg, length_reg, Operand(Smi::FromInt(1)));
     __ stw(length_reg, FieldMemOperand(receiver_reg, JSArray::kLengthOffset));
     __ jmp(&finish_store);
 

@@ -335,7 +335,7 @@ class MacroAssembler: public Assembler {
     ASSERT(cond == al);
     lwz(src2, MemOperand(sp, 0));
     lwz(src1, MemOperand(sp, 4));
-    add(sp, sp, Operand(8));
+    addi(sp, sp, Operand(8));
   }
 
   // Pop three registers.  Pops rightmost register first (from lower address).
@@ -347,7 +347,7 @@ class MacroAssembler: public Assembler {
     lwz(src3, MemOperand(sp, 0));
     lwz(src2, MemOperand(sp, 4));
     lwz(src1, MemOperand(sp, 8));
-    add(sp, sp, Operand(12));
+    addi(sp, sp, Operand(12));
   }
 
   // Pop four registers.  Pops rightmost register first (from lower address).
@@ -367,7 +367,7 @@ class MacroAssembler: public Assembler {
     lwz(src3, MemOperand(sp, 4));
     lwz(src2, MemOperand(sp, 8));
     lwz(src1, MemOperand(sp, 12));
-    add(sp, sp, Operand(16));
+    addi(sp, sp, Operand(16));
   }
 
   // Push and pop the registers that can hold pointers, as defined by the

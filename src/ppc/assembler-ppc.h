@@ -928,16 +928,13 @@ class Assembler : public AssemblerBase {
 
   void addze(Register dst, Register src1, OEBit o, RCBit r);
 
-  // PPC - remove 2nd line later (roohack)
-  void add(Register dst, Register src, const Operand& imm,
-           SBit s = LeaveCC, Condition cond = al);
-
   void mullw(Register dst, Register src1, Register src2,
                OEBit o = LeaveOE, RCBit r = LeaveRC);
 
   void mulhw(Register dst, Register src1, Register src2,
                OEBit o = LeaveOE, RCBit r = LeaveRC);
 
+  void addi(Register dst, Register src, const Operand& imm);
   void addis(Register dst, Register src, const Operand& imm);
   void addic(Register dst, Register src, const Operand& imm);
 
@@ -1005,10 +1002,8 @@ class Assembler : public AssemblerBase {
   void rsb(Register dst, Register src1, const Operand& src2,
            SBit s = LeaveCC, Condition cond = al);
 
-#if 0
   void add(Register dst, Register src1, const Operand& src2,
            SBit s = LeaveCC, Condition cond = al);
-#endif
 
   void adc(Register dst, Register src1, const Operand& src2,
            SBit s = LeaveCC, Condition cond = al);
@@ -1287,11 +1282,11 @@ class Assembler : public AssemblerBase {
 
   void pop(Register dst, Condition cond = al) {
     lwz(dst, MemOperand(sp));
-    add(sp, sp, Operand(4));
+    addi(sp, sp, Operand(4));
   }
 
   void pop() {
-    add(sp, sp, Operand(kPointerSize));
+    addi(sp, sp, Operand(kPointerSize));
   }
 
   // Jump unconditionally to given label.

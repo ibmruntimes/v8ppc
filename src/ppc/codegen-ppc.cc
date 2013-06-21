@@ -131,7 +131,7 @@ void ElementsTransitionGenerator::GenerateSmiToDouble(
   // Allocate new FixedDoubleArray.
   // Use r14 as a temporary register.
   __ slwi(r14, r8, Operand(2));
-  __ add(r14, r14, Operand(FixedDoubleArray::kHeaderSize + kPointerSize));
+  __ addi(r14, r14, Operand(FixedDoubleArray::kHeaderSize + kPointerSize));
   __ AllocateInNewSpace(r14, r9, r10, r22, &gc_required, NO_ALLOCATION_FLAGS);
   // r9: destination FixedDoubleArray, not tagged as heap object.
 
@@ -144,7 +144,7 @@ void ElementsTransitionGenerator::GenerateSmiToDouble(
   __ beq(&aligned);
   // Store at the beginning of the allocated memory and update the base pointer.
   __ stw(ip, MemOperand(r9));
-  __ add(r9, r9, Operand(kPointerSize));
+  __ addi(r9, r9, Operand(kPointerSize));
   __ b(&aligned_done);
 
   __ bind(&aligned);
@@ -170,7 +170,7 @@ void ElementsTransitionGenerator::GenerateSmiToDouble(
                       OMIT_REMEMBERED_SET,
                       OMIT_SMI_CHECK);
   // Replace receiver's backing store with newly created FixedDoubleArray.
-  __ add(r6, r9, Operand(kHeapObjectTag));
+  __ addi(r6, r9, Operand(kHeapObjectTag));
   __ stw(r6, FieldMemOperand(r5, JSObject::kElementsOffset));
   __ RecordWriteField(r5,
                       JSObject::kElementsOffset,
@@ -182,8 +182,8 @@ void ElementsTransitionGenerator::GenerateSmiToDouble(
                       OMIT_SMI_CHECK);
 
   // Prepare for conversion loop.
-  __ add(r6, r7, Operand(FixedArray::kHeaderSize - kHeapObjectTag));
-  __ add(r10, r9, Operand(FixedDoubleArray::kHeaderSize));
+  __ addi(r6, r7, Operand(FixedArray::kHeaderSize - kHeapObjectTag));
+  __ addi(r10, r9, Operand(FixedDoubleArray::kHeaderSize));
   __ slwi(r9, r8, Operand(2));
   __ add(r9, r10, r9);
   __ mov(r7, Operand(kHoleNanLower32));
@@ -227,7 +227,7 @@ void ElementsTransitionGenerator::GenerateSmiToDouble(
     d0, r7, r7,  // r7 unused as we're using kFPRegisters
     d2);
   __ stfd(d0, r10, 0);
-  __ add(r10, r10, Operand(8));
+  __ addi(r10, r10, Operand(8));
 
   __ b(&entry);
 
@@ -242,7 +242,7 @@ void ElementsTransitionGenerator::GenerateSmiToDouble(
   }
   __ stw(r7, MemOperand(r10, 0));
   __ stw(r8, MemOperand(r10, 4));
-  __ add(r10, r10, Operand(8));
+  __ addi(r10, r10, Operand(8));
 
   __ bind(&entry);
   __ cmp(r10, r9);
@@ -292,9 +292,9 @@ void ElementsTransitionGenerator::GenerateDoubleToObject(
   __ stw(r22, MemOperand(r9, HeapObject::kMapOffset));
 
   // Prepare for conversion loop.
-  __ add(r7, r7, Operand(FixedDoubleArray::kHeaderSize - kHeapObjectTag + 4));
-  __ add(r6, r9, Operand(FixedArray::kHeaderSize));
-  __ add(r9, r9, Operand(kHeapObjectTag));
+  __ addi(r7, r7, Operand(FixedDoubleArray::kHeaderSize - kHeapObjectTag + 4));
+  __ addi(r6, r9, Operand(FixedArray::kHeaderSize));
+  __ addi(r9, r9, Operand(kHeapObjectTag));
   __ slwi(r8, r8, Operand(1));
   __ add(r8, r6, r8);
   __ LoadRoot(r10, Heap::kTheHoleValueRootIndex);
@@ -315,7 +315,7 @@ void ElementsTransitionGenerator::GenerateDoubleToObject(
 
   __ bind(&loop);
   __ lwz(r4, MemOperand(r7));
-  __ add(r7, r7, Operand(8));
+  __ addi(r7, r7, Operand(8));
   // ip: current element's upper 32 bit
   // r7: address of next element's upper 32 bit
   __ mov(r0, Operand(kHoleNanUpper32));
@@ -334,7 +334,7 @@ void ElementsTransitionGenerator::GenerateDoubleToObject(
   __ stw(r4, FieldMemOperand(r5, HeapNumber::kValueOffset+4));
   __ mr(r3, r6);
   __ stw(r5, MemOperand(r6));
-  __ add(r6, r6, Operand(4));
+  __ addi(r6, r6, Operand(4));
   __ RecordWrite(r9,
                  r3,
                  r5,
@@ -347,7 +347,7 @@ void ElementsTransitionGenerator::GenerateDoubleToObject(
   // Replace the-hole NaN with the-hole pointer.
   __ bind(&convert_hole);
   __ stw(r10, MemOperand(r6));
-  __ add(r6, r6, Operand(4));
+  __ addi(r6, r6, Operand(4));
 
   __ bind(&entry);
   __ cmpl(r6, r8);
@@ -438,9 +438,9 @@ void StringCharLoadGenerator::Generate(MacroAssembler* masm,
 
   // Prepare sequential strings
   STATIC_ASSERT(SeqTwoByteString::kHeaderSize == SeqAsciiString::kHeaderSize);
-  __ add(string,
-         string,
-         Operand(SeqTwoByteString::kHeaderSize - kHeapObjectTag));
+  __ addi(string,
+          string,
+          Operand(SeqTwoByteString::kHeaderSize - kHeapObjectTag));
   __ jmp(&check_encoding);
 
   // Handle external strings.
