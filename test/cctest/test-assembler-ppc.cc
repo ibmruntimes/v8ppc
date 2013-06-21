@@ -206,7 +206,7 @@ TEST(3) {
   __ sth(r5, MemOperand(r4, OFFSET_OF(T, s)));
 
   // restore frame
-  __ add(r11, fp, Operand(16));
+  __ addi(r11, fp, Operand(16));
   __ lwz(fp, MemOperand(r11, -4));
   __ mr(sp, r11);
   __ blr();
@@ -417,8 +417,8 @@ TEST(6) {
     __ usat(r1, 8, Operand(r0));           // Sat 0xFFFF to 0-255 = 0xFF.
     __ usat(r2, 12, Operand(r0, ASR, 9));  // Sat (0xFFFF>>9) to 0-4095 = 0x7F.
     __ usat(r3, 1, Operand(r0, LSL, 16));  // Sat (0xFFFF<<16) to 0-1 = 0x0.
-    __ add(r0, r1, Operand(r2));
-    __ add(r0, r0, Operand(r3));
+    __ addi(r0, r1, Operand(r2));
+    __ addi(r0, r0, Operand(r3));
     __ mov(pc, Operand(lr));
 
     CodeDesc desc;
@@ -664,19 +664,19 @@ TEST(8) {
     __ stm(db_w, sp, r4.bit() | fp.bit() | lr.bit());
     __ sub(fp, ip, Operand(4));
 
-    __ add(r4, r0, Operand(OFFSET_OF(D, a)));
+    __ addi(r4, r0, Operand(OFFSET_OF(D, a)));
     __ vldm(ia_w, r4, d0, d3);
     __ vldm(ia_w, r4, d4, d7);
 
-    __ add(r4, r0, Operand(OFFSET_OF(D, a)));
+    __ addi(r4, r0, Operand(OFFSET_OF(D, a)));
     __ vstm(ia_w, r4, d6, d7);
     __ vstm(ia_w, r4, d0, d5);
 
-    __ add(r4, r1, Operand(OFFSET_OF(F, a)));
+    __ addi(r4, r1, Operand(OFFSET_OF(F, a)));
     __ vldm(ia_w, r4, s0, s3);
     __ vldm(ia_w, r4, s4, s7);
 
-    __ add(r4, r1, Operand(OFFSET_OF(F, a)));
+    __ addi(r4, r1, Operand(OFFSET_OF(F, a)));
     __ vstm(ia_w, r4, s6, s7);
     __ vstm(ia_w, r4, s0, s5);
 
@@ -775,24 +775,24 @@ TEST(9) {
     __ stm(db_w, sp, r4.bit() | fp.bit() | lr.bit());
     __ sub(fp, ip, Operand(4));
 
-    __ add(r4, r0, Operand(OFFSET_OF(D, a)));
+    __ addi(r4, r0, Operand(OFFSET_OF(D, a)));
     __ vldm(ia, r4, d0, d3);
-    __ add(r4, r4, Operand(4 * 8));
+    __ addi(r4, r4, Operand(4 * 8));
     __ vldm(ia, r4, d4, d7);
 
-    __ add(r4, r0, Operand(OFFSET_OF(D, a)));
+    __ addi(r4, r0, Operand(OFFSET_OF(D, a)));
     __ vstm(ia, r4, d6, d7);
-    __ add(r4, r4, Operand(2 * 8));
+    __ addi(r4, r4, Operand(2 * 8));
     __ vstm(ia, r4, d0, d5);
 
-    __ add(r4, r1, Operand(OFFSET_OF(F, a)));
+    __ addi(r4, r1, Operand(OFFSET_OF(F, a)));
     __ vldm(ia, r4, s0, s3);
-    __ add(r4, r4, Operand(4 * 4));
+    __ addi(r4, r4, Operand(4 * 4));
     __ vldm(ia, r4, s4, s7);
 
-    __ add(r4, r1, Operand(OFFSET_OF(F, a)));
+    __ addi(r4, r1, Operand(OFFSET_OF(F, a)));
     __ vstm(ia, r4, s6, s7);
-    __ add(r4, r4, Operand(2 * 4));
+    __ addi(r4, r4, Operand(2 * 4));
     __ vstm(ia, r4, s0, s5);
 
     __ ldm(ia_w, sp, r4.bit() | fp.bit() | pc.bit());
@@ -890,19 +890,19 @@ TEST(10) {
     __ stm(db_w, sp, r4.bit() | fp.bit() | lr.bit());
     __ sub(fp, ip, Operand(4));
 
-    __ add(r4, r0, Operand(OFFSET_OF(D, h) + 8));
+    __ addi(r4, r0, Operand(OFFSET_OF(D, h) + 8));
     __ vldm(db_w, r4, d4, d7);
     __ vldm(db_w, r4, d0, d3);
 
-    __ add(r4, r0, Operand(OFFSET_OF(D, h) + 8));
+    __ addi(r4, r0, Operand(OFFSET_OF(D, h) + 8));
     __ vstm(db_w, r4, d0, d5);
     __ vstm(db_w, r4, d6, d7);
 
-    __ add(r4, r1, Operand(OFFSET_OF(F, h) + 4));
+    __ addi(r4, r1, Operand(OFFSET_OF(F, h) + 4));
     __ vldm(db_w, r4, s4, s7);
     __ vldm(db_w, r4, s0, s3);
 
-    __ add(r4, r1, Operand(OFFSET_OF(F, h) + 4));
+    __ addi(r4, r1, Operand(OFFSET_OF(F, h) + 4));
     __ vstm(db_w, r4, s0, s5);
     __ vstm(db_w, r4, s6, s7);
 
