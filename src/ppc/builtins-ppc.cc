@@ -1206,8 +1206,8 @@ static void Generate_JSEntryTrampolineHelper(MacroAssembler* masm,
     // Initialize all JavaScript callee-saved registers, since they will be seen
     // by the garbage collector as part of handlers.
     __ LoadRoot(r7, Heap::kUndefinedValueRootIndex);
-    __ mr(r24, r7);  // should be (r14)
-    __ mr(r25, r7);  // should be (r15)
+    __ mr(r14, r7);
+    __ mr(r15, r7);
     __ mr(r16, r7);
     __ mr(r22, r7);  // hmmm, possibly should be reassigned to r17
 
@@ -1350,16 +1350,16 @@ void Builtins::Generate_NotifyOSR(MacroAssembler* masm) {
   // doesn't do any garbage collection which allows us to save/restore
   // the registers without worrying about which of them contain
   // pointers. This seems a bit fragile.
-  __ mflr(r14);
+  __ mflr(r0);
   RegList saved_regs =
-      (kJSCallerSaved | kCalleeSaved | r14.bit() | r11.bit()) & ~sp.bit();
+      (kJSCallerSaved | kCalleeSaved | r0.bit() | r11.bit()) & ~sp.bit();
   __ MultiPush(saved_regs);
   {
     FrameScope scope(masm, StackFrame::INTERNAL);
     __ CallRuntime(Runtime::kNotifyOSR, 0);
   }
   __ MultiPop(saved_regs);
-  __ mtlr(r14);
+  __ mtlr(r0);
   __ Ret();
 }
 

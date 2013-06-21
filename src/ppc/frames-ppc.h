@@ -43,7 +43,7 @@ const int kR9Available = 1;  // 1 if available to us, 0 if reserved
 
 // Register list in load/store instructions
 // Note that the bit values must match those used in actual instruction encoding
-const int kNumRegs = 16;
+const int kNumRegs = 32;
 
 
 // Caller-saved/arguments registers

@@ -122,17 +122,18 @@ void ElementsTransitionGenerator::GenerateSmiToDouble(
   __ CompareRoot(r7, Heap::kEmptyFixedArrayRootIndex);
   __ beq(&only_change_map);
 
-  __ mflr(r14);
-  __ push(r14);
+  // Preserve lr and use r30 as a temporary register.
+  __ mflr(r0);
+  __ Push(r0, r30);
+
   __ lwz(r8, FieldMemOperand(r7, FixedArray::kLengthOffset));
   // r7: source FixedArray
   // r8: number of elements (smi-tagged)
 
   // Allocate new FixedDoubleArray.
-  // Use r14 as a temporary register.
-  __ slwi(r14, r8, Operand(2));
-  __ addi(r14, r14, Operand(FixedDoubleArray::kHeaderSize + kPointerSize));
-  __ AllocateInNewSpace(r14, r9, r10, r22, &gc_required, NO_ALLOCATION_FLAGS);
+  __ slwi(r30, r8, Operand(2));
+  __ addi(r30, r30, Operand(FixedDoubleArray::kHeaderSize + kPointerSize));
+  __ AllocateInNewSpace(r30, r9, r10, r22, &gc_required, NO_ALLOCATION_FLAGS);
   // r9: destination FixedDoubleArray, not tagged as heap object.
 
   // Align the array conveniently for doubles.
@@ -149,8 +150,8 @@ void ElementsTransitionGenerator::GenerateSmiToDouble(
 
   __ bind(&aligned);
   // Store the filler at the end of the allocated memory.
-  __ sub(r14, r14, Operand(kPointerSize));
-  __ stwx(ip, r9, r14);
+  __ sub(r30, r30, Operand(kPointerSize));
+  __ stwx(ip, r9, r30);
 
   __ bind(&aligned_done);
 
@@ -211,8 +212,8 @@ void ElementsTransitionGenerator::GenerateSmiToDouble(
 
   // Call into runtime if GC is required.
   __ bind(&gc_required);
-  __ pop(r14);
-  __ mtlr(r14);
+  __ Pop(r0, r30);
+  __ mtlr(r0);
   __ b(fail);
 
   // Convert and copy elements.
@@ -249,8 +250,8 @@ void ElementsTransitionGenerator::GenerateSmiToDouble(
   __ blt(&loop);
 
   if (!vfp2_supported) __ Pop(r4, r3);
-  __ pop(r14);
-  __ mtlr(r14);
+  __ Pop(r0, r30);
+  __ mtlr(r0);
   __ bind(&done);
 }
 

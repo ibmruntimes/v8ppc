@@ -2004,8 +2004,8 @@ void StoreBufferOverflowStub::Generate(MacroAssembler* masm) {
   // We don't allow a GC during a store buffer overflow so there is no need to
   // store the registers in any particular way, but we do have to store and
   // restore them.
-  __ mflr(r14);
-  __ MultiPush(kJSCallerSaved | r14.bit());
+  __ mflr(r0);
+  __ MultiPush(kJSCallerSaved | r0.bit());
   if (save_doubles_ == kSaveFPRegs) {
     CpuFeatures::Scope scope(VFP2);
     __ sub(sp, sp, Operand(kDoubleSize * DwVfpRegister::kNumRegisters));
@@ -2032,8 +2032,8 @@ void StoreBufferOverflowStub::Generate(MacroAssembler* masm) {
     }
     __ addi(sp, sp, Operand(kDoubleSize * DwVfpRegister::kNumRegisters));
   }
-  __ MultiPop(kJSCallerSaved | r14.bit());
-  __ mtlr(r14);
+  __ MultiPop(kJSCallerSaved | r0.bit());
+  __ mtlr(r0);
   __ Ret();
 }
 
@@ -3980,13 +3980,13 @@ void CEntryStub::GenerateCore(MacroAssembler* masm,
   // Use frame storage reserved by calling function
   // PPC passes C++ objects by reference not value
   // This builds an object in the stack frame
-  __ stw(r24, MemOperand(sp, 2 * kPointerSize));
+  __ stw(r14, MemOperand(sp, 2 * kPointerSize));
   __ stw(r16, MemOperand(sp, 3 * kPointerSize));
   __ addi(r3, sp, Operand(2 * kPointerSize));
 #else
   // Call C built-in.
   // r3 = argc, r4 = argv
-  __ mr(r3, r24);  // hack
+  __ mr(r3, r14);
   __ mr(r4, r16);
 #endif
 
@@ -4030,7 +4030,7 @@ void CEntryStub::GenerateCore(MacroAssembler* masm,
     __ mflr(r8);
     __ addi(r0, r8, Operand(20));
     __ stw(r0, MemOperand(sp, 0));
-    __ Call(r25);
+    __ Call(r15);
   // }
 
   if (always_allocate) {
@@ -4056,7 +4056,7 @@ void CEntryStub::GenerateCore(MacroAssembler* masm,
   // sp: stack pointer
   // fp: frame pointer
   //  Callee-saved register r14 still holds argc.
-  __ LeaveExitFrame(save_doubles_, r24);  // hack
+  __ LeaveExitFrame(save_doubles_, r14);
   __ blr();
 
   // check if we should retry or throw exception
@@ -4124,8 +4124,8 @@ void CEntryStub::Generate(MacroAssembler* masm) {
 #endif
 
   // Set up argc and the builtin function in callee-saved registers.
-  __ mr(r24, r3);  // hack for now should be r14
-  __ mr(r25, r4);  // hack should be r15
+  __ mr(r14, r3);
+  __ mr(r15, r4);
 
   // r14: number of arguments (C callee-saved)
   // r15: pointer to builtin function (C callee-saved)
@@ -4223,8 +4223,8 @@ void JSEntryStub::GenerateBody(MacroAssembler* masm, bool is_construct) {
 
   // Save the non-volatile registers we will be using
   // r14,r15,r16 (fp aka r31 is already stored)
-  __ stw(r24, MemOperand(sp, 16));  // roohack - r14 ARM hack
-  __ stw(r25, MemOperand(sp, 20));  // roohack - r15 ARM hack
+  __ stw(r14, MemOperand(sp, 16));
+  __ stw(r15, MemOperand(sp, 20));
   __ stw(r16, MemOperand(sp, 24));
 
   __ stw(r20, MemOperand(sp, 40));
@@ -4387,8 +4387,8 @@ void JSEntryStub::GenerateBody(MacroAssembler* masm, bool is_construct) {
 #endif
 
   // Restore non-volatile registers
-  __ lwz(r24, MemOperand(sp, 16));  // roohack - r14 ARM hack
-  __ lwz(r25, MemOperand(sp, 20));  // roohack - r15 ARM hack
+  __ lwz(r14, MemOperand(sp, 16));
+  __ lwz(r15, MemOperand(sp, 20));
   __ lwz(r16, MemOperand(sp, 24));
 
   __ lwz(r20, MemOperand(sp, 40));
@@ -8001,12 +8001,12 @@ void ProfileEntryHookStub::Generate(MacroAssembler* masm) {
       Assembler::kCallTargetAddressOffset + Assembler::kInstrSize;
 
   // Save live volatile registers.
-  __ mflr(r14);
-  __ Push(r14, r8, r4);
+  __ mflr(r3);
+  __ Push(r3, r8, r4);
   const int32_t kNumSavedRegs = 3;
 
   // Compute the function's address for the first argument.
-  __ sub(r3, r14, Operand(kReturnAddressDistanceFromFunctionStart));
+  __ sub(r3, r3, Operand(kReturnAddressDistanceFromFunctionStart));
 
   // The caller's return address is above the saved temporaries.
   // Grab that for the second argument to the hook.
@@ -8041,8 +8041,8 @@ void ProfileEntryHookStub::Generate(MacroAssembler* masm) {
     __ mr(sp, r8);
   }
 
-  __ Pop(r14, r8, r4);
-  __ mtlr(r14);
+  __ Pop(r0, r8, r4);
+  __ mtlr(r0);
   __ Ret();
 }
 
