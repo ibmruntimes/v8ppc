@@ -2563,7 +2563,7 @@ void BinaryOpStub::GenerateSmiSmiOperation(MacroAssembler* masm) {
       __ srw(scratch1, scratch1, scratch2);
       // Unsigned shift is not allowed to produce a negative number, so
       // check the sign bit and the sign bit after Smi tagging.
-      __ lis(scratch2, Operand(0xc0000000u >> 16));
+      __ lis(scratch2, Operand(SIGN_EXT_IMM16(0xc0000000u >> 16)));
       __ and_(r0, scratch1, scratch2, SetRC);
       __ bne(&not_smi_result, cr0);
       // Smi tag result.

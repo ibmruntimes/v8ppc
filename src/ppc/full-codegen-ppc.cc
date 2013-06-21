@@ -2014,7 +2014,7 @@ void FullCodeGenerator::EmitInlineSmiBinaryOp(BinaryOperation* expr,
       __ SmiUntag(scratch1, left);
       __ GetLeastBitsFromSmi(scratch2, right, 5);
       __ srw(scratch1, scratch1, scratch2);
-      __ lis(r0, Operand(0xc0000000 >> 16));
+      __ lis(r0, Operand(SIGN_EXT_IMM16(0xc0000000 >> 16)));
       __ cmp(scratch1, r0);
       __ bne(&stub_call);
       __ SmiTag(right, scratch1);
