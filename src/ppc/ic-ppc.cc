@@ -358,7 +358,8 @@ static void GenerateFastArrayLoad(MacroAssembler* masm,
   __ cmpl(key, scratch1);
   __ bge(out_of_range);
   // Fast case: Do the load.
-  __ addi(scratch1, elements, Operand(FixedArray::kHeaderSize - kHeapObjectTag));
+  __ addi(scratch1, elements,
+          Operand(FixedArray::kHeaderSize - kHeapObjectTag));
   // The key is a smi.
   STATIC_ASSERT(kSmiTag == 0 && kSmiTagSize < kPointerSizeLog2);
   __ slwi(scratch2, key, Operand(kPointerSizeLog2 - kSmiTagSize));

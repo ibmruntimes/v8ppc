@@ -279,11 +279,13 @@ static void AllocateJSArray(MacroAssembler* masm,
   __ LoadRoot(scratch1, Heap::kFixedArrayMapRootIndex);
   ASSERT_EQ(0 * kPointerSize, FixedArray::kMapOffset);
   __ stw(scratch1, MemOperand(elements_array_storage));
-  __ addi(elements_array_storage, elements_array_storage, Operand(kPointerSize));
+  __ addi(elements_array_storage, elements_array_storage,
+          Operand(kPointerSize));
   STATIC_ASSERT(kSmiTag == 0);
   ASSERT_EQ(1 * kPointerSize, FixedArray::kLengthOffset);
   __ stw(array_size, MemOperand(elements_array_storage));
-  __ addi(elements_array_storage, elements_array_storage, Operand(kPointerSize));
+  __ addi(elements_array_storage, elements_array_storage,
+          Operand(kPointerSize));
 
   // Calculate elements array and elements array end.
   // result: JSObject

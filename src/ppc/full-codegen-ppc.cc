@@ -3847,7 +3847,8 @@ void FullCodeGenerator::EmitFastAsciiArrayJoin(CallRuntime* expr) {
   __ addi(element, element, Operand(kPointerSize));
   __ lwz(string_length, FieldMemOperand(string, String::kLengthOffset));
   __ SmiUntag(string_length);
-  __ addi(string, string, Operand(SeqAsciiString::kHeaderSize - kHeapObjectTag));
+  __ addi(string, string,
+          Operand(SeqAsciiString::kHeaderSize - kHeapObjectTag));
   __ CopyBytes(string, result_pos, string_length, scratch1);
   __ cmp(element, elements_end);
   __ blt(&empty_separator_loop);  // End while (element < elements_end).
@@ -3879,7 +3880,8 @@ void FullCodeGenerator::EmitFastAsciiArrayJoin(CallRuntime* expr) {
   __ addi(element, element, Operand(kPointerSize));
   __ lwz(string_length, FieldMemOperand(string, String::kLengthOffset));
   __ SmiUntag(string_length);
-  __ addi(string, string, Operand(SeqAsciiString::kHeaderSize - kHeapObjectTag));
+  __ addi(string, string,
+          Operand(SeqAsciiString::kHeaderSize - kHeapObjectTag));
   __ CopyBytes(string, result_pos, string_length, scratch1);
   __ cmpl(element, elements_end);
   __ blt(&one_char_separator_loop);  // End while (element < elements_end).
@@ -3908,7 +3910,8 @@ void FullCodeGenerator::EmitFastAsciiArrayJoin(CallRuntime* expr) {
   __ addi(element, element, Operand(kPointerSize));
   __ lwz(string_length, FieldMemOperand(string, String::kLengthOffset));
   __ SmiUntag(string_length);
-  __ addi(string, string, Operand(SeqAsciiString::kHeaderSize - kHeapObjectTag));
+  __ addi(string, string,
+          Operand(SeqAsciiString::kHeaderSize - kHeapObjectTag));
   __ CopyBytes(string, result_pos, string_length, scratch1);
   __ cmpl(element, elements_end);
   __ blt(&long_separator_loop);  // End while (element < elements_end).
