@@ -4667,7 +4667,7 @@ void FullCodeGenerator::ExitFinallyBlock() {
   __ pop(result_register());
   ASSERT_EQ(1, kSmiTagSize + kSmiShiftSize);
   __ srawi(r4, r4, 1);  // Un-smi-tag value.
-  __ li(r0, Operand(0xdead));
+  __ li(r0, Operand(SIGN_EXT_IMM16(0xdead)));
   __ mov(ip, Operand(masm_->CodeObject()));
   __ add(ip, ip, r4);
   __ mtctr(ip);
