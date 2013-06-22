@@ -3323,6 +3323,7 @@ void MacroAssembler::CopyBytes(Register src,
   stw(scratch, MemOperand(dst));
   addi(dst, dst, Operand(kPointerSize));
 #else
+#if __BYTE_ORDER == __LITTLE_ENDIAN
   stb(scratch, MemOperand(dst, 0));
   srwi(scratch, scratch, Operand(8));
   stb(scratch, MemOperand(dst, 1));
@@ -3330,6 +3331,15 @@ void MacroAssembler::CopyBytes(Register src,
   stb(scratch, MemOperand(dst, 2));
   srwi(scratch, scratch, Operand(8));
   stb(scratch, MemOperand(dst, 3));
+#else
+  stb(scratch, MemOperand(dst, 3));
+  srwi(scratch, scratch, Operand(8));
+  stb(scratch, MemOperand(dst, 2));
+  srwi(scratch, scratch, Operand(8));
+  stb(scratch, MemOperand(dst, 1));
+  srwi(scratch, scratch, Operand(8));
+  stb(scratch, MemOperand(dst, 0));
+#endif
   addi(dst, dst, Operand(4));
 #endif
   sub(length, length, Operand(kPointerSize));
