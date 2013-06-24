@@ -916,11 +916,19 @@ void Decoder::DecodeExt2(Instruction* instr) {
       break;
     }
     case STWX: {
-      Format(instr, "stwx     'rs,'ra,'rb");
+      Format(instr, "stwx    'rs, 'ra, 'rb");
       break;
     }
     case STWUX: {
-      Format(instr, "stwxu    'rs,'ra,'rb");
+      Format(instr, "stwux   'rs, 'ra, 'rb");
+      break;
+    }
+    case LWZX: {
+      Format(instr, "lwzx    'rt, 'ra, 'rb");
+      break;
+    }
+    case LWZUX: {
+      Format(instr, "lwzux   'rt, 'ra, 'rb");
       break;
     }
     default: {

@@ -5597,7 +5597,7 @@ void CallFunctionStub::Generate(MacroAssembler* masm) {
     Label call;
     // Get the receiver from the stack.
     // function, receiver [, arguments]
-    __ lwz(r7, MemOperand(sp, argc_ * kPointerSize));
+    __ LoadFromBaseAndOffset(LWZ, r7, sp, argc_ * kPointerSize, r0);
     // Call as function is indicated with the hole.
     __ CompareRoot(r7, Heap::kTheHoleValueRootIndex);
     __ bne(&call);
@@ -5605,7 +5605,7 @@ void CallFunctionStub::Generate(MacroAssembler* masm) {
     __ lwz(r6,
            MemOperand(cp, Context::SlotOffset(Context::GLOBAL_OBJECT_INDEX)));
     __ lwz(r6, FieldMemOperand(r6, GlobalObject::kGlobalReceiverOffset));
-    __ stw(r6, MemOperand(sp, argc_ * kPointerSize));
+    __ StoreToBaseAndOffset(STW, r6, sp, argc_ * kPointerSize, r0);
     __ bind(&call);
   }
 
@@ -5670,7 +5670,7 @@ void CallFunctionStub::Generate(MacroAssembler* masm) {
   // CALL_NON_FUNCTION expects the non-function callee as receiver (instead
   // of the original receiver from the call site).
   __ bind(&non_function);
-  __ stw(r4, MemOperand(sp, argc_ * kPointerSize));
+  __ StoreToBaseAndOffset(STW, r4, sp, argc_ * kPointerSize, r0);
   __ li(r3, Operand(argc_));  // Set up the number of arguments.
   __ li(r5, Operand(0));
   __ GetBuiltinEntry(r6, Builtins::CALL_NON_FUNCTION);

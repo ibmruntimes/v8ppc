@@ -955,6 +955,8 @@ class Assembler : public AssemblerBase {
   void lhz(Register dst, const MemOperand& src);
   void lwz(Register dst, const MemOperand& src);
   void lwzu(Register dst, const MemOperand& src);
+  void lwzx(Register dst, Register ra, Register rb);
+  void lwzux(Register dst, Register ra, Register rb);
   void stb(Register dst, const MemOperand& src);
   void sth(Register dst, const MemOperand& src);
   void stw(Register dst, const MemOperand& src);

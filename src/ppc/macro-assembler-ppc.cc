@@ -3936,6 +3936,88 @@ void MacroAssembler::CheckEnumCache(Register null_value, Label* call_runtime) {
 }
 
 
+////////////////////////////////////////////////////////////////////////////////
+//
+// New MacroAssembler Interfaces added for PPC
+//
+////////////////////////////////////////////////////////////////////////////////
+void MacroAssembler::LoadSignedImmediate(Register dst, int value) {
+  if (is_int16(value)) {
+    li(dst, Operand(value));
+  } else {
+    int hi_word = static_cast<int>(value) >> 16;
+    if ((hi_word << 16) == value) {
+      lis(dst, Operand(hi_word));
+    } else {
+      mov(dst, Operand(value));
+    }
+  }
+}
+
+// Variable length depending on whether offset fits into immediate field
+void MacroAssembler::LoadFromBaseAndOffset(Opcode opcode,  Register dst,
+                                           Register base, int offset,
+                                           Register scratch) {
+  bool use_dform = true;
+  if (!is_int16(offset)) {
+    use_dform = false;
+    LoadSignedImmediate(scratch, offset);
+  }
+
+  switch (opcode) {
+  case LWZ:
+    if (use_dform) {
+      lwz(dst, MemOperand(base, offset));
+    } else {
+      lwzx(dst, base, scratch);
+    }
+    break;
+
+  case LWZU:
+    if (use_dform) {
+      lwzu(dst, MemOperand(base, offset));
+    } else {
+      lwzux(dst, base, scratch);
+    }
+    break;
+
+  default:
+    ASSERT(false);
+  }
+}
+
+// Variable length depending on whether offset fits into immediate field
+void MacroAssembler::StoreToBaseAndOffset(Opcode opcode,  Register src,
+                                          Register base, int offset,
+                                          Register scratch) {
+  bool use_dform = true;
+  if (!is_int16(offset)) {
+    use_dform = false;
+    LoadSignedImmediate(scratch, offset);
+  }
+
+  switch (opcode) {
+  case STW:
+    if (use_dform) {
+      stw(src, MemOperand(base, offset));
+    } else {
+      stwx(src, base, scratch);
+    }
+    break;
+
+  case STWU:
+    if (use_dform) {
+      stwu(src, MemOperand(base, offset));
+    } else {
+      stwux(src, base, scratch);
+    }
+    break;
+
+  default:
+    ASSERT(false);
+  }
+}
+
 #ifdef DEBUG
 bool AreAliased(Register reg1,
                 Register reg2,

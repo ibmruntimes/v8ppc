@@ -2394,7 +2394,7 @@ void FullCodeGenerator::EmitCallWithStub(Call* expr, CallFunctionFlags flags) {
   __ mov(r5, Operand(cell));
 
   CallFunctionStub stub(arg_count, flags);
-  __ lwz(r4, MemOperand(sp, (arg_count + 1) * kPointerSize));
+  __ LoadFromBaseAndOffset(LWZ, r4, sp, (arg_count + 1) * kPointerSize, r0);
   __ CallStub(&stub);
   RecordJSReturnSite(expr);
   // Restore context register.
@@ -2582,7 +2582,7 @@ void FullCodeGenerator::VisitCallNew(CallNew* expr) {
 
   // Load function and argument count into r4 and r3.
   __ mov(r3, Operand(arg_count));
-  __ lwz(r4, MemOperand(sp, arg_count * kPointerSize));
+  __ LoadFromBaseAndOffset(LWZ, r4, sp, arg_count * kPointerSize, r0);
 
   // Record call targets in unoptimized code.
   Handle<Object> uninitialized =

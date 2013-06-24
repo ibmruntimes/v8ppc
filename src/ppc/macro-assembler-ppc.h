@@ -471,6 +471,19 @@ class MacroAssembler: public Assembler {
     mov(kRootRegister, Operand(roots_array_start));
   }
 
+  // ----------------------------------------------------------------
+  // new PPC macro-assembler interfaces that are slightly higher level
+  // than assembler-ppc and may generate variable length sequences
+
+  void LoadSignedImmediate(Register dst, int value);
+
+  void LoadFromBaseAndOffset(Opcode opcode,  Register dst,
+                             Register base, int offset,
+                             Register scratch);
+
+  void StoreToBaseAndOffset(Opcode opcode,  Register src,
+                            Register base, int offset,
+                            Register scratch);
   // ---------------------------------------------------------------------------
   // JavaScript invokes
 
