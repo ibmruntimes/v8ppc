@@ -1979,6 +1979,20 @@ void Simulator::DecodeExt2(Instruction* instr) {
       }
       break;
     }
+    case LWZX:
+    case LWZUX: {
+      int rt = instr->RTValue();
+      int ra = instr->RAValue();
+      int rb = instr->RBValue();
+      int32_t ra_val = ra == 0 ? 0 : get_register(ra);
+      int32_t rb_val = get_register(rb);
+      set_register(rt, ReadW(ra_val+rb_val, instr));
+      if (opcode == LWZUX) {
+        ASSERT(ra != 0 && ra != rt);
+        set_register(ra, ra_val+rb_val);
+      }
+      break;
+    }
     default: {
       UNIMPLEMENTED();  // Not used by V8.
     }
