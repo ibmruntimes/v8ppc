@@ -6836,7 +6836,7 @@ void StringAddStub::Generate(MacroAssembler* masm) {
 
   STATIC_ASSERT(kSeqStringTag == 0);
   __ andi(r0, r8, Operand(kStringRepresentationMask));
-  __ bne(&external_string2);
+  __ bne(&external_string2, cr0);
   STATIC_ASSERT(SeqAsciiString::kHeaderSize == SeqTwoByteString::kHeaderSize);
   __ addi(r4, r4, Operand(SeqAsciiString::kHeaderSize - kHeapObjectTag));
   __ b(&second_prepared);
