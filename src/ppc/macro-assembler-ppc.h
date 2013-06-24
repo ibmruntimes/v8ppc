@@ -1062,12 +1062,12 @@ class MacroAssembler: public Assembler {
 
   // Calls Abort(msg) if the condition cond is not satisfied.
   // Use --debug_code to enable.
-  void Assert(Condition cond, const char* msg);
+  void Assert(Condition cond, const char* msg, CRegister cr = cr7);
   void AssertRegisterIsRoot(Register reg, Heap::RootListIndex index);
   void AssertFastElements(Register elements);
 
   // Like Assert(), but always enabled.
-  void Check(Condition cond, const char* msg);
+  void Check(Condition cond, const char* msg, CRegister cr = cr7);
 
   // Print a message to stdout and abort execution.
   void Abort(const char* msg);

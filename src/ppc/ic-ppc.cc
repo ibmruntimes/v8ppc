@@ -100,8 +100,7 @@ static void GenerateStringDictionaryReceiverCheck(MacroAssembler* masm,
   __ lbz(t1, FieldMemOperand(t0, Map::kBitFieldOffset));
   __ andi(r0, t1, Operand((1 << Map::kIsAccessCheckNeeded) |
                      (1 << Map::kHasNamedInterceptor)));
-  __ cmpi(r0, Operand(0));
-  __ bne(miss);
+  __ bne(miss, cr0);
 
   __ lwz(elements, FieldMemOperand(receiver, JSObject::kPropertiesOffset));
   __ lwz(t1, FieldMemOperand(elements, HeapObject::kMapOffset));
@@ -296,8 +295,7 @@ static void GenerateKeyedLoadReceiverCheck(MacroAssembler* masm,
   ASSERT(((1 << Map::kIsAccessCheckNeeded) | (1 << interceptor_bit)) < 0x8000);
   __ andi(r0, scratch,
           Operand((1 << Map::kIsAccessCheckNeeded) | (1 << interceptor_bit)));
-  __ cmpi(r0, Operand(0));
-  __ bne(slow);
+  __ bne(slow, cr0);
   // Check that the object is some kind of JS object EXCEPT JS Value type.
   // In the case that the object is a value-wrapper object,
   // we enter the runtime system to make sure that indexing into string
@@ -400,8 +398,7 @@ static void GenerateKeyStringCheck(MacroAssembler* masm,
   __ lbz(hash, FieldMemOperand(map, Map::kInstanceTypeOffset));
   STATIC_ASSERT(kSymbolTag != 0);
   __ andi(r0, hash, Operand(kIsSymbolMask));
-  __ cmpi(r0, Operand(0));
-  __ beq(not_symbol);
+  __ beq(not_symbol, cr0);
 }
 
 
@@ -1547,8 +1544,7 @@ void KeyedStoreIC::GenerateGeneric(MacroAssembler* masm,
   // to do this because this generic stub does not perform map checks.
   __ lbz(ip, FieldMemOperand(receiver_map, Map::kBitFieldOffset));
   __ andi(r0, ip, Operand(1 << Map::kIsAccessCheckNeeded));
-  __ cmpi(r0, Operand(0));
-  __ bne(&slow);
+  __ bne(&slow, cr0);
   // Check if the object is a JS array or not.
   __ lbz(r7, FieldMemOperand(receiver_map, Map::kInstanceTypeOffset));
   __ cmpi(r7, Operand(JS_ARRAY_TYPE));

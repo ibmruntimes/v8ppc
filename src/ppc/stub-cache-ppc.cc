@@ -159,8 +159,7 @@ static void GenerateDictionaryNegativeLookup(MacroAssembler* masm,
   __ lwz(map, FieldMemOperand(receiver, HeapObject::kMapOffset));
   __ lbz(scratch0, FieldMemOperand(map, Map::kBitFieldOffset));
   __ andi(r0, scratch0, Operand(kInterceptorOrAccessCheckNeededMask));
-  __ cmpi(r0, Operand(0));
-  __ bne(miss_label);
+  __ bne(miss_label, cr0);
 
   // Check that receiver is a JSObject.
   __ lbz(scratch0, FieldMemOperand(map, Map::kInstanceTypeOffset));
@@ -2144,8 +2143,7 @@ Handle<Code> CallStubCompiler::CompileMathFloorCall(
   // If the argument is a smi, just return.
   STATIC_ASSERT(kSmiTag == 0);
   __ andi(r0, r3, Operand(kSmiTagMask));
-  __ cmpi(r0, Operand(0));
-  __ bne(&not_smi);
+  __ bne(&not_smi, cr0);
   __ Drop(argc + 1);
   __ Ret();
   __ bind(&not_smi);

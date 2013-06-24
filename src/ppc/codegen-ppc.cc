@@ -140,9 +140,8 @@ void ElementsTransitionGenerator::GenerateSmiToDouble(
   // Store a filler value in the unused memory.
   Label aligned, aligned_done;
   __ andi(r0, r9, Operand(kDoubleAlignmentMask));
-  __ cmpi(r0, Operand(0));
   __ mov(ip, Operand(masm->isolate()->factory()->one_pointer_filler_map()));
-  __ beq(&aligned);
+  __ beq(&aligned, cr0);
   // Store at the beginning of the allocated memory and update the base pointer.
   __ stw(ip, MemOperand(r9));
   __ addi(r9, r9, Operand(kPointerSize));
@@ -394,8 +393,7 @@ void StringCharLoadGenerator::Generate(MacroAssembler* masm,
   // We need special handling for indirect strings.
   Label check_sequential;
   __ andi(r0, result, Operand(kIsIndirectStringMask));
-  __ cmpi(r0, Operand(0));
-  __ beq(&check_sequential);
+  __ beq(&check_sequential, cr0);
 
   // Dispatch on the indirect string shape: slice or cons.
   Label cons_string;
@@ -434,8 +432,7 @@ void StringCharLoadGenerator::Generate(MacroAssembler* masm,
   __ bind(&check_sequential);
   STATIC_ASSERT(kSeqStringTag == 0);
   __ andi(r0, result, Operand(kStringRepresentationMask));
-  __ cmpi(r0, Operand(0));
-  __ bne(&external_string);
+  __ bne(&external_string, cr0);
 
   // Prepare sequential strings
   STATIC_ASSERT(SeqTwoByteString::kHeaderSize == SeqAsciiString::kHeaderSize);
@@ -450,22 +447,19 @@ void StringCharLoadGenerator::Generate(MacroAssembler* masm,
     // Assert that we do not have a cons or slice (indirect strings) here.
     // Sequential strings have already been ruled out.
     __ andi(r0, result, Operand(kIsIndirectStringMask));
-    __ cmpi(r0, Operand(0));
-    __ Assert(eq, "external string expected, but not found");
+    __ Assert(eq, "external string expected, but not found", cr0);
   }
   // Rule out short external strings.
   STATIC_CHECK(kShortExternalStringTag != 0);
   __ andi(r0, result, Operand(kShortExternalStringMask));
-  __ cmpi(r0, Operand(0));
-  __ bne(call_runtime);
+  __ bne(call_runtime, cr0);
   __ lwz(string, FieldMemOperand(string, ExternalString::kResourceDataOffset));
 
   Label ascii, done;
   __ bind(&check_encoding);
   STATIC_ASSERT(kTwoByteStringTag == 0);
   __ andi(r0, result, Operand(kStringEncodingMask));
-  __ cmpi(r0, Operand(0));
-  __ bne(&ascii);
+  __ bne(&ascii, cr0);
   // Two-byte string.
   __ slwi(result, index, Operand(1));
   __ add(result, result, string);

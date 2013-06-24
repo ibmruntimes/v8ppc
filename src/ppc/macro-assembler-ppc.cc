@@ -1845,8 +1845,7 @@ void MacroAssembler::AllocateInNewSpace(Register object_size,
   // Update allocation top. result temporarily holds the new top.
   if (emit_debug_code()) {
     andi(r0, scratch2, Operand(kObjectAlignmentMask));
-    cmpi(r0, Operand(0));
-    Check(eq, "Unaligned allocation in new space");
+    Check(eq, "Unaligned allocation in new space", cr0);
   }
   stw(scratch2, MemOperand(topaddr));
 
@@ -2885,9 +2884,9 @@ void MacroAssembler::DecrementCounter(StatsCounter* counter, int value,
 }
 
 
-void MacroAssembler::Assert(Condition cond, const char* msg) {
+void MacroAssembler::Assert(Condition cond, const char* msg, CRegister cr) {
   if (emit_debug_code())
-    Check(cond, msg);
+    Check(cond, msg, cr);
 }
 
 
@@ -2923,9 +2922,9 @@ void MacroAssembler::AssertFastElements(Register elements) {
 }
 
 
-void MacroAssembler::Check(Condition cond, const char* msg) {
+void MacroAssembler::Check(Condition cond, const char* msg, CRegister cr) {
   Label L;
-  b(cond, &L);
+  b(cond, &L, cr);
   Abort(msg);
   // will not return here
   bind(&L);
@@ -3142,24 +3141,21 @@ void MacroAssembler::JumpIfEitherSmi(Register reg1,
 void MacroAssembler::AbortIfSmi(Register object) {
   STATIC_ASSERT(kSmiTag == 0);
   andi(r0, object, Operand(kSmiTagMask));
-  cmpi(r0, Operand(0));
-  Assert(ne, "Operand is a smi");
+  Assert(ne, "Operand is a smi", cr0);
 }
 
 
 void MacroAssembler::AbortIfNotSmi(Register object) {
   STATIC_ASSERT(kSmiTag == 0);
   andi(r0, object, Operand(kSmiTagMask));
-  cmpi(r0, Operand(0));
-  Assert(eq, "Operand is not smi");
+  Assert(eq, "Operand is not smi", cr0);
 }
 
 
 void MacroAssembler::AbortIfNotString(Register object) {
   STATIC_ASSERT(kSmiTag == 0);
   andi(r0, object, Operand(kSmiTagMask));
-  cmpi(r0, Operand(0));
-  Assert(ne, "Operand is not a string");
+  Assert(ne, "Operand is not a string", cr0);
   push(object);
   lwz(object, FieldMemOperand(object, HeapObject::kMapOffset));
   CompareInstanceType(object, object, FIRST_NONSTRING_TYPE);
@@ -3311,8 +3307,7 @@ void MacroAssembler::CopyBytes(Register src,
   bind(&word_loop);
   if (emit_debug_code()) {
     andi(r0, src, Operand(kPointerSize - 1));
-    cmpi(r0, Operand(0));
-    Assert(eq, "Expecting alignment for CopyBytes");
+    Assert(eq, "Expecting alignment for CopyBytes", cr0);
   }
   cmpi(length, Operand(kPointerSize));
   blt(&byte_loop);

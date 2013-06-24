@@ -2669,8 +2669,7 @@ void FullCodeGenerator::EmitIsObject(CallRuntime* expr) {
   // Undetectable objects behave like undefined when tested with typeof.
   __ lbz(r4, FieldMemOperand(r5, Map::kBitFieldOffset));
   __ andi(r0, r4, Operand(1 << Map::kIsUndetectable));
-  __ cmpi(r0, Operand(0));
-  __ bne(if_false);
+  __ bne(if_false, cr0);
   __ lbz(r4, FieldMemOperand(r5, Map::kInstanceTypeOffset));
   __ cmpi(r4, Operand(FIRST_NONCALLABLE_SPEC_OBJECT_TYPE));
   __ blt(if_false);
@@ -2751,8 +2750,7 @@ void FullCodeGenerator::EmitIsStringWrapperSafeForDefaultValueOf(
   __ lwz(r4, FieldMemOperand(r3, HeapObject::kMapOffset));
   __ lbz(ip, FieldMemOperand(r4, Map::kBitField2Offset));
   __ andi(r0, ip, Operand(1 << Map::kStringWrapperSafeForDefaultValueOf));
-  __ cmpi(r0, Operand(0));
-  __ bne(if_true);
+  __ bne(if_true, cr0);
 
   // Check for fast case object. Generate false result for slow case object.
   __ lwz(r5, FieldMemOperand(r3, JSObject::kPropertiesOffset));

@@ -369,9 +369,8 @@ static void ArrayNativeCode(MacroAssembler* masm,
   __ bind(&not_empty_array);
   // Posible optimization using rlwinm
   __ mov(r0, Operand(kIntptrSignBit | kSmiTagMask));
-  __ and_(r6, r5, r0);
-  __ cmpi(r6, Operand(0));
-  __ bne(call_generic_code);
+  __ and_(r6, r5, r0, SetRC);
+  __ bne(call_generic_code, cr0);
 
   // Handle construction of an empty array of a certain size. Bail out if size
   // is too large to actually allocate an elements array.
@@ -510,8 +509,7 @@ void Builtins::Generate_InternalArrayCode(MacroAssembler* masm) {
     __ lwz(r5, FieldMemOperand(r4, JSFunction::kPrototypeOrInitialMapOffset));
     STATIC_ASSERT(kSmiTagMask < 0x8000);
     __ andi(r0, r5, Operand(kSmiTagMask));
-    __ cmpi(r0, Operand(0));
-    __ Assert(ne, "Unexpected initial map for InternalArray function");
+    __ Assert(ne, "Unexpected initial map for InternalArray function", cr0);
     __ CompareObjectType(r5, r6, r7, MAP_TYPE);
     __ Assert(eq, "Unexpected initial map for InternalArray function");
   }
@@ -547,8 +545,7 @@ void Builtins::Generate_ArrayCode(MacroAssembler* masm) {
     __ lwz(r5, FieldMemOperand(r4, JSFunction::kPrototypeOrInitialMapOffset));
     STATIC_ASSERT(kSmiTagMask < 0x8000);
     __ andi(r0, r5, Operand(kSmiTagMask));
-    __ cmpi(r0, Operand(0));
-    __ Assert(ne, "Unexpected initial map for Array function");
+    __ Assert(ne, "Unexpected initial map for Array function", cr0);
     __ CompareObjectType(r5, r6, r7, MAP_TYPE);
     __ Assert(eq, "Unexpected initial map for Array function");
   }
@@ -582,8 +579,7 @@ void Builtins::Generate_ArrayConstructCode(MacroAssembler* masm) {
     // Initial map for the builtin Array function should be a map.
     __ lwz(r5, FieldMemOperand(r4, JSFunction::kPrototypeOrInitialMapOffset));
     __ andi(r0, r5, Operand(kSmiTagMask));
-    __ cmpi(r0, Operand(0));
-    __ Assert(ne, "Unexpected initial map for Array function");
+    __ Assert(ne, "Unexpected initial map for Array function", cr0);
     __ CompareObjectType(r5, r6, r7, MAP_TYPE);
     __ Assert(eq, "Unexpected initial map for Array function");
   }
@@ -694,8 +690,7 @@ void Builtins::Generate_StringConstructCode(MacroAssembler* masm) {
   __ lbz(r6, FieldMemOperand(r5, Map::kInstanceTypeOffset));
   STATIC_ASSERT(kNotStringTag != 0);
   __ andi(r0, r6, Operand(kIsNotStringMask));
-  __ cmpi(r0, Operand(0));
-  __ bne(&convert_argument);
+  __ bne(&convert_argument, cr0);
   __ mr(argument, r3);
   __ IncrementCounter(counters->string_ctor_conversions(), 1, r6, r7);
   __ b(&argument_is_string);
@@ -1438,14 +1433,12 @@ void Builtins::Generate_FunctionCall(MacroAssembler* masm) {
     __ lwz(r6, FieldMemOperand(r5, SharedFunctionInfo::kCompilerHintsOffset));
     __ andi(r0, r6, Operand(1 << (SharedFunctionInfo::kStrictModeFunction +
                              kSmiTagSize)));
-    __ cmpi(r0, Operand(0));
-    __ bne(&shift_arguments);
+    __ bne(&shift_arguments, cr0);
 
     // Do not transform the receiver for native (Compilerhints already in r6).
     STATIC_ASSERT((1 << (SharedFunctionInfo::kNative + kSmiTagSize)) < 0x8000);
     __ andi(r0, r6, Operand(1 << (SharedFunctionInfo::kNative + kSmiTagSize)));
-    __ cmpi(r0, Operand(0));
-    __ bne(&shift_arguments);
+    __ bne(&shift_arguments, cr0);
 
     // Compute the receiver in non-strict mode.
     __ slwi(ip, r3, Operand(kPointerSizeLog2));
@@ -1667,13 +1660,11 @@ void Builtins::Generate_FunctionApply(MacroAssembler* masm) {
     __ lwz(r5, FieldMemOperand(r5, SharedFunctionInfo::kCompilerHintsOffset));
     __ andi(r0, r5, Operand(1 << (SharedFunctionInfo::kStrictModeFunction +
                              kSmiTagSize)));
-    __ cmpi(r0, Operand(0));
-    __ bne(&push_receiver);
+    __ bne(&push_receiver, cr0);
 
     // Do not transform the receiver for strict mode functions.
     __ andi(r0, r5, Operand(1 << (SharedFunctionInfo::kNative + kSmiTagSize)));
-    __ cmpi(r0, Operand(0));
-    __ bne(&push_receiver);
+    __ bne(&push_receiver, cr0);
 
     // Compute the receiver in non-strict mode.
     __ JumpIfSmi(r3, &call_to_object);
