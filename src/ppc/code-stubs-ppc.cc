@@ -2440,18 +2440,9 @@ void BinaryOpStub::GenerateSmiSmiOperation(MacroAssembler* masm) {
     case Token::ADD: {
       Label undo_add, add_no_overflow;
       // C = A+B; C overflows if A/B have same sign and C has diff sign than A
-      __ xor_(r0, left, right);
-      __ mr(scratch1, right);
-      __ addc(right, left, right);  // Add optimistically.
-      __ rlwinm(r0, r0, 1, 31, 31, SetRC);
-      __ bne(&add_no_overflow, cr0);
-      __ xor_(r0, right, scratch1);
-      __ rlwinm(r0, r0, 1, 31, 31, SetRC);
-      __ bne(&undo_add, cr0);
-      __ bind(&add_no_overflow);
-      __ Ret();
-      __ bind(&undo_add);
-      __ mr(right, scratch1);  // Revert optimistic add.
+      __ AddAndCheckForOverflow(right, left, right, scratch1);
+      __ RetOnNoOverflow();
+      // No need to revert anything - right and left are intact.
       break;
     }
     case Token::SUB: {
