@@ -2129,7 +2129,6 @@ void Simulator::InstructionDecode(Instruction* instr) {
       SoftwareInterrupt(instr);
       break;
     }
-    case MULLI:
     case SUBFIC: {
       int rt = instr->RTValue();
       int ra = instr->RAValue();
