@@ -1819,7 +1819,8 @@ class IndexedReferencesExtractor : public ObjectVisitor {
     Address field = obj->address() + offset;
     ASSERT(!Memory::Object_at(field)->IsFailure());
     ASSERT(Memory::Object_at(field)->IsHeapObject());
-    *field |= kFailureTag;
+    intptr_t *tagged = reinterpret_cast<intptr_t *>(field);
+    *tagged |= kFailureTag;
   }
 
  private:
