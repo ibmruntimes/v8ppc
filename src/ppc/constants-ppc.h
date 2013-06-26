@@ -55,6 +55,9 @@ const int kConstantPoolLengthMask = 0x001ffff;
 const int kPCRegister = -2;
 const int kNoRegister = -1;
 
+// sign-extend the least significant 16-bit of value <imm>
+#define SIGN_EXT_IMM16(imm) ((static_cast<int>(imm) << 16) >> 16)
+
 // -----------------------------------------------------------------------------
 // Conditions.
 
