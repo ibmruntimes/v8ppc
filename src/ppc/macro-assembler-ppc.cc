@@ -223,7 +223,7 @@ void MacroAssembler::Ret(Condition cond) {
 void MacroAssembler::Drop(int count, Condition cond) {
   ASSERT(cond == al);
   if (count > 0) {
-    addi(sp, sp, Operand(count * kPointerSize));
+    Add(sp, sp, count * kPointerSize, r0);
   }
 }
 
@@ -2462,7 +2462,7 @@ bool MacroAssembler::AllowThisStubCall(CodeStub* stub) {
 
 void MacroAssembler::IllegalOperation(int num_arguments) {
   if (num_arguments > 0) {
-    addi(sp, sp, Operand(num_arguments * kPointerSize));
+    Add(sp, sp, num_arguments * kPointerSize, r0);
   }
   LoadRoot(r0, Heap::kUndefinedValueRootIndex);
 }
@@ -3572,7 +3572,7 @@ void MacroAssembler::CallCFunctionHelper(Register function,
 #endif
   } else {
     // this case appears to never beused on PPC (even simulated)
-    addi(sp, sp, Operand(stack_passed_arguments * sizeof(kPointerSize)));
+    Add(sp, sp, stack_passed_arguments * sizeof(kPointerSize), r0);
   }
 }
 
@@ -3951,6 +3951,16 @@ void MacroAssembler::LoadSignedImmediate(Register dst, int value) {
     } else {
       mov(dst, Operand(value));
     }
+  }
+}
+
+void MacroAssembler::Add(Register dst, Register src,
+                         uint32_t value, Register scratch) {
+  if (is_int16(value)) {
+    addi(dst, dst, Operand(value));
+  } else {
+    mov(scratch, Operand(value));
+    add(dst, dst, scratch);
   }
 }
 

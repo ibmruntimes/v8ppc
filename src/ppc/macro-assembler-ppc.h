@@ -484,6 +484,9 @@ class MacroAssembler: public Assembler {
   void StoreToBaseAndOffset(Opcode opcode,  Register src,
                             Register base, int offset,
                             Register scratch);
+
+  void Add(Register dst, Register src, uint32_t value, Register scratch);
+
   // ---------------------------------------------------------------------------
   // JavaScript invokes
 

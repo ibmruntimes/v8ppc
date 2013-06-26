@@ -458,7 +458,7 @@ void FullCodeGenerator::EmitReturnSequence() {
       masm_->lwz(fp, MemOperand(sp));
       masm_->lwz(r0, MemOperand(sp, kPointerSize));
       masm_->mtlr(r0);
-      masm_->addi(sp, sp, Operand(sp_delta + (2 * kPointerSize)));
+      masm_->Add(sp, sp, (uint32_t)(sp_delta + (2 * kPointerSize)), r0);
       masm_->blr();
     }
 
@@ -749,7 +749,7 @@ MemOperand FullCodeGenerator::VarOperand(Variable* var, Register scratch) {
 void FullCodeGenerator::GetVar(Register dest, Variable* var) {
   // Use destination as scratch.
   MemOperand location = VarOperand(var, dest);
-  __ lwz(dest, location);
+  __ LoadFromBaseAndOffset(LWZ, dest, location.ra(), location.offset(), r0);
 }
 
 
@@ -762,7 +762,7 @@ void FullCodeGenerator::SetVar(Variable* var,
   ASSERT(!scratch0.is(scratch1));
   ASSERT(!scratch1.is(src));
   MemOperand location = VarOperand(var, scratch0);
-  __ stw(src, location);
+  __ StoreToBaseAndOffset(STW, src, location.ra(), location.offset(), r0);
 
   // Emit the write barrier code if the location is in the heap.
   if (var->IsContextSlot()) {
