@@ -5407,10 +5407,10 @@ void RegExpExecStub::Generate(MacroAssembler* masm) {
   __ sub(r4, r4, Operand(1), SetCC);
   __ b(mi, &done);
   // Read the value from the static offsets vector buffer.
-  __ lwz(r6, MemOperand(r5, kPointerSize, PostIndex));
+  __ lwzu(r6, MemOperand(r5, kPointerSize));
   // Store the smi value in the last match info.
   __ SmiTag(r6);
-  __ stw(r6, MemOperand(r3, kPointerSize, PostIndex));
+  __ stwu(r6, MemOperand(r3, kPointerSize));
   __ jmp(&next_capture);
   __ bind(&done);
 
