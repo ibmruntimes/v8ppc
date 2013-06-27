@@ -749,7 +749,7 @@ MemOperand FullCodeGenerator::VarOperand(Variable* var, Register scratch) {
 void FullCodeGenerator::GetVar(Register dest, Variable* var) {
   // Use destination as scratch.
   MemOperand location = VarOperand(var, dest);
-  __ LoadFromBaseAndOffset(LWZ, dest, location.ra(), location.offset(), r0);
+  __ LoadWord(dest, location, r0);
 }
 
 
@@ -762,7 +762,7 @@ void FullCodeGenerator::SetVar(Variable* var,
   ASSERT(!scratch0.is(scratch1));
   ASSERT(!scratch1.is(src));
   MemOperand location = VarOperand(var, scratch0);
-  __ StoreToBaseAndOffset(STW, src, location.ra(), location.offset(), r0);
+  __ StoreWord(src, location, r0);
 
   // Emit the write barrier code if the location is in the heap.
   if (var->IsContextSlot()) {
@@ -2394,7 +2394,7 @@ void FullCodeGenerator::EmitCallWithStub(Call* expr, CallFunctionFlags flags) {
   __ mov(r5, Operand(cell));
 
   CallFunctionStub stub(arg_count, flags);
-  __ LoadFromBaseAndOffset(LWZ, r4, sp, (arg_count + 1) * kPointerSize, r0);
+  __ LoadWord(r4, MemOperand(sp, (arg_count + 1) * kPointerSize), r0);
   __ CallStub(&stub);
   RecordJSReturnSite(expr);
   // Restore context register.
@@ -2582,7 +2582,7 @@ void FullCodeGenerator::VisitCallNew(CallNew* expr) {
 
   // Load function and argument count into r4 and r3.
   __ mov(r3, Operand(arg_count));
-  __ LoadFromBaseAndOffset(LWZ, r4, sp, arg_count * kPointerSize, r0);
+  __ LoadWord(r4, MemOperand(sp, arg_count * kPointerSize), r0);
 
   // Record call targets in unoptimized code.
   Handle<Object> uninitialized =

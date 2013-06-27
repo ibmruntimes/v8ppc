@@ -477,13 +477,15 @@ class MacroAssembler: public Assembler {
 
   void LoadSignedImmediate(Register dst, int value);
 
-  void LoadFromBaseAndOffset(Opcode opcode,  Register dst,
-                             Register base, int offset,
-                             Register scratch);
+  void LoadWord(Register dst,
+                const MemOperand& mem,
+                Register scratch,
+                bool updateForm = false);
 
-  void StoreToBaseAndOffset(Opcode opcode,  Register src,
-                            Register base, int offset,
-                            Register scratch);
+  void StoreWord(Register src,
+                 const MemOperand& mem,
+                 Register scratch,
+                 bool updateForm = false);
 
   void Add(Register dst, Register src, uint32_t value, Register scratch);
 

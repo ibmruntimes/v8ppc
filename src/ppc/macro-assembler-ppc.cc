@@ -3970,66 +3970,58 @@ void MacroAssembler::Add(Register dst, Register src,
 }
 
 // Variable length depending on whether offset fits into immediate field
-void MacroAssembler::LoadFromBaseAndOffset(Opcode opcode,  Register dst,
-                                           Register base, int offset,
-                                           Register scratch) {
+// MemOperand currently only supports d-form
+void MacroAssembler::LoadWord(Register dst, const MemOperand& mem,
+                              Register scratch, bool updateForm) {
+  Register base = mem.ra();
+  int offset = mem.offset();
+
   bool use_dform = true;
   if (!is_int16(offset)) {
     use_dform = false;
     LoadSignedImmediate(scratch, offset);
   }
 
-  switch (opcode) {
-  case LWZ:
+  if (!updateForm) {
     if (use_dform) {
-      lwz(dst, MemOperand(base, offset));
+      lwz(dst, mem);
     } else {
       lwzx(dst, base, scratch);
     }
-    break;
-
-  case LWZU:
+  } else {
     if (use_dform) {
-      lwzu(dst, MemOperand(base, offset));
+      lwzu(dst, mem);
     } else {
       lwzux(dst, base, scratch);
     }
-    break;
-
-  default:
-    ASSERT(false);
   }
 }
 
 // Variable length depending on whether offset fits into immediate field
-void MacroAssembler::StoreToBaseAndOffset(Opcode opcode,  Register src,
-                                          Register base, int offset,
-                                          Register scratch) {
+// MemOperand current only supports d-form
+void MacroAssembler::StoreWord(Register src, const MemOperand& mem,
+                               Register scratch, bool updateForm) {
+  Register base = mem.ra();
+  int offset = mem.offset();
+
   bool use_dform = true;
   if (!is_int16(offset)) {
     use_dform = false;
     LoadSignedImmediate(scratch, offset);
   }
 
-  switch (opcode) {
-  case STW:
+  if (!updateForm) {
     if (use_dform) {
-      stw(src, MemOperand(base, offset));
+      stw(src, mem);
     } else {
       stwx(src, base, scratch);
     }
-    break;
-
-  case STWU:
+  } else {
     if (use_dform) {
-      stwu(src, MemOperand(base, offset));
+      stwu(src, mem);
     } else {
       stwux(src, base, scratch);
     }
-    break;
-
-  default:
-    ASSERT(false);
   }
 }
 
