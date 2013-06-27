@@ -7306,8 +7306,7 @@ void DirectCEntryStub::GenerateCall(MacroAssembler* masm,
 #endif
   __ Jump(target);  // Call the C++ function.
   ASSERT_EQ(Assembler::kInstrSize +
-            (PowerPCAdjustment * Assembler::kInstrSize) +
-            Assembler::kPcLoadDelta,
+            ((6 + PowerPCAdjustment) * Assembler::kInstrSize),
             masm->SizeOfCodeGeneratedSince(&start));
 }
 

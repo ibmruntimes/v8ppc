@@ -185,18 +185,18 @@ void RelocInfo::set_target_cell(JSGlobalPropertyCell* cell,
 
 
 Address RelocInfo::call_address() {
-  // The 2 instructions offset assumes patched debug break slot or return
+  // The 4 instructions offset assumes patched debug break slot or return
   // sequence.
   ASSERT((IsJSReturn(rmode()) && IsPatchedReturnSequence()) ||
          (IsDebugBreakSlot(rmode()) && IsPatchedDebugBreakSlotSequence()));
-  return Memory::Address_at(pc_ + 2 * Assembler::kInstrSize);
+  return Memory::Address_at(pc_ + 4 * Assembler::kInstrSize);
 }
 
 
 void RelocInfo::set_call_address(Address target) {
   ASSERT((IsJSReturn(rmode()) && IsPatchedReturnSequence()) ||
          (IsDebugBreakSlot(rmode()) && IsPatchedDebugBreakSlotSequence()));
-  Memory::Address_at(pc_ + 2 * Assembler::kInstrSize) = target;
+  Memory::Address_at(pc_ + 4 * Assembler::kInstrSize) = target;
   if (host() != NULL) {
     Object* target_code = Code::GetCodeFromTargetAddress(target);
     host()->GetHeap()->incremental_marking()->RecordWriteIntoCode(
@@ -218,7 +218,7 @@ void RelocInfo::set_call_object(Object* target) {
 Object** RelocInfo::call_object_address() {
   ASSERT((IsJSReturn(rmode()) && IsPatchedReturnSequence()) ||
          (IsDebugBreakSlot(rmode()) && IsPatchedDebugBreakSlotSequence()));
-  return reinterpret_cast<Object**>(pc_ + 2 * Assembler::kInstrSize);
+  return reinterpret_cast<Object**>(pc_ + 4 * Assembler::kInstrSize);
 }
 
 
@@ -239,10 +239,10 @@ bool RelocInfo::IsPatchedReturnSequence() {
   Instr instr0 = Assembler::instr_at(pc_);
   Instr instr1 = Assembler::instr_at(pc_ + 1 * Assembler::kInstrSize);
 //  Instr instr2 = Assembler::instr_at(pc_ + 2 * Assembler::kInstrSize);
-  Instr instr4 = Assembler::instr_at(pc_ + 4 * Assembler::kInstrSize);
+  Instr instr5 = Assembler::instr_at(pc_ + 5 * Assembler::kInstrSize);
   bool patched_return = ((instr0 & kOpcodeMask) == ADDIS &&
                          (instr1 & kOpcodeMask) == ADDIC &&
-                         (instr4 == 0x7d821008));
+                         (instr5 == 0x7d821008));
 
 // printf("IsPatchedReturnSequence: %d\n", patched_return);
   return patched_return;

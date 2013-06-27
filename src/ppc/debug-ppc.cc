@@ -72,6 +72,7 @@ void BreakLocationIterator::SetDebugBreakAtReturn() {
                    Isolate::Current()->debug()->debug_break_slot()->entry())));
   patcher.masm()->mtlr(v8::internal::r0);
   patcher.masm()->bclr(BA, SetLK);
+  patcher.Emit(Isolate::Current()->debug()->debug_break_return()->entry());
 #endif
 
   patcher.masm()->bkpt(0);
@@ -108,6 +109,7 @@ void BreakLocationIterator::SetDebugBreakAtSlot() {
   //   ori r3, r3, 0
   //   ori r3, r3, 0
   //   ori r3, r3, 0
+  //   ori r3, r3, 0
   //
   // to a call to the debug break code.
   //
@@ -115,6 +117,7 @@ void BreakLocationIterator::SetDebugBreakAtSlot() {
   //   addic r0, r0, <address lo>
   //   mtlr r0
   //   blrl
+  //   <debug break slot code entry point address>
   //
   CodePatcher patcher(rinfo()->pc(), Assembler::kDebugBreakSlotInstructions);
 // printf("SetDebugBreakAtSlot: pc=%08x\n", (unsigned int)rinfo()->pc());
@@ -123,6 +126,7 @@ void BreakLocationIterator::SetDebugBreakAtSlot() {
                    Isolate::Current()->debug()->debug_break_slot()->entry())));
   patcher.masm()->mtlr(v8::internal::r0);
   patcher.masm()->bclr(BA, SetLK);
+  patcher.Emit(Isolate::Current()->debug()->debug_break_slot()->entry());
 }
 
 
