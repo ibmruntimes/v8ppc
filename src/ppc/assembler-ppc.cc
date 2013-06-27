@@ -57,7 +57,7 @@ unsigned CpuFeatures::found_by_runtime_probing_ = 0;
 
 #define EMIT_FAKE_ARM_INSTR(arm_opcode) fake_asm(arm_opcode);
 
-// #define NEW_IMM_CHECK_CODE
+#define NEW_IMM_CHECK_CODE
 
 // Get the CPU features enabled by the build. For cross compilation the
 // preprocessor symbols CAN_USE_ARMV7_INSTRUCTIONS and CAN_USE_VFP3_INSTRUCTIONS
