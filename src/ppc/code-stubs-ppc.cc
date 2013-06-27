@@ -6244,7 +6244,7 @@ void SubStringStub::Generate(MacroAssembler* masm) {
   // next instruction is not executed and we fall through to bailing out to
   // runtime.  pl is the opposite of mi.
   // Both r5 and r6 are untagged integers.
-  __ cmpl(r5, r6);
+  __ cmpl(r6, r5);
   __ bgt(&runtime);  // Fail if from > to.
   __ sub(r5, r5, r6);
 
