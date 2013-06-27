@@ -642,12 +642,12 @@ void FloatingPointHelper::LoadSmis(MacroAssembler* masm,
   if (destination == kCoreRegisters) {
     __ sub(sp, sp, Operand(8));
 
-    __ stfd(d6, sp, 0);
+    __ stfd(d6, MemOperand(sp, 0));
 // ENDIAN - r3/r4 are in memory order
     __ lwz(r3, MemOperand(sp, 0));
     __ lwz(r4, MemOperand(sp, 4));
 
-    __ stfd(d7, sp, 0);
+    __ stfd(d7, MemOperand(sp, 0));
 // ENDIAN - r5/r6 are in memory order
     __ lwz(r5, MemOperand(sp, 0));
     __ lwz(r6, MemOperand(sp, 4));
@@ -704,7 +704,7 @@ void FloatingPointHelper::LoadNumber(MacroAssembler* masm,
   if (destination == kFPRegisters) {
     // Load the double from tagged HeapNumber to double register.
     __ sub(scratch1, object, Operand(kHeapObjectTag));
-    __ lfd(dst, scratch1, HeapNumber::kValueOffset);
+    __ lfd(dst, MemOperand(scratch1, HeapNumber::kValueOffset));
   } else {
     ASSERT(destination == kCoreRegisters);
     // Load the double from heap number to dst1 and dst2 in double format.
@@ -736,8 +736,8 @@ void FloatingPointHelper::LoadNumber(MacroAssembler* masm,
   __ xor_(r0, scratch1, r0);
   __ stw(r0, MemOperand(sp, 12));
 #endif
-  __ lfd(dst, sp, 0);
-  __ lfd(d3, sp, 8);
+  __ lfd(dst, MemOperand(sp, 0));
+  __ lfd(d3, MemOperand(sp, 8));
   __ addi(sp, sp, Operand(16));  // restore stack
   __ fsub(dst, d3, dst);
 
@@ -817,15 +817,15 @@ void FloatingPointHelper::ConvertIntToDouble(MacroAssembler* masm,
   __ xor_(r0, int_scratch, r0);
   __ stw(r0, MemOperand(sp, 12));
 #endif
-  __ lfd(double_dst, sp, 0);
-  __ lfd(double_scratch, sp, 8);
+  __ lfd(double_dst, MemOperand(sp, 0));
+  __ lfd(double_scratch, MemOperand(sp, 8));
   __ addi(sp, sp, Operand(16));  // restore stack
   __ fsub(double_dst, double_scratch, double_dst);
 
   if (destination == kCoreRegisters) {
     __ fctiwz(double_scratch, double_dst);
     __ sub(sp, sp, Operand(8));
-    __ stfd(double_scratch, sp, 0);
+    __ stfd(double_scratch, MemOperand(sp, 0));
 // ENDIAN - dst1/dst2 are in memory order
     __ lwz(dst1, MemOperand(sp, 0));
     __ lwz(dst2, MemOperand(sp, 4));
@@ -861,15 +861,15 @@ void FloatingPointHelper::ConvertUnsignedIntToDouble(MacroAssembler* masm,
   __ stw(r0, MemOperand(sp, 4));
   __ stw(int_scratch, MemOperand(sp, 12));
 #endif
-  __ lfd(double_dst, sp, 0);
-  __ lfd(double_scratch, sp, 8);
+  __ lfd(double_dst, MemOperand(sp, 0));
+  __ lfd(double_scratch, MemOperand(sp, 8));
   __ addi(sp, sp, Operand(16));  // restore stack
   __ fsub(double_dst, double_scratch, double_dst);
 
   if (destination == kCoreRegisters) {
     __ fctiwz(double_scratch, double_dst);
     __ sub(sp, sp, Operand(8));
-    __ stfd(double_scratch, sp, 0);
+    __ stfd(double_scratch, MemOperand(sp, 0));
 // ENDIAN - dst1/dst2 are in memory order
     __ lwz(dst1, MemOperand(sp, 0));
     __ lwz(dst2, MemOperand(sp, 4));
@@ -895,7 +895,7 @@ void FloatingPointHelper::ConvertIntToFloat(MacroAssembler* masm,
 #endif
 
   // load sign-extended src into FPR
-  __ lfd(dst, sp, 0);
+  __ lfd(dst, MemOperand(sp, 0));
 
   __ addi(sp, sp, Operand(8));  // restore stack
 
@@ -917,7 +917,7 @@ void FloatingPointHelper::ConvertDoubleToInt(MacroAssembler* masm,
 
   // check NaN or +/-Infinity
   // by extracting exponent (mask: 0x7ff00000)
-  __ stfd(double_value, sp, 0);
+  __ stfd(double_value, MemOperand(sp, 0));
 #if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
   __ lwz(r0, MemOperand(sp, kPointerSize));
 #else
@@ -931,7 +931,7 @@ void FloatingPointHelper::ConvertDoubleToInt(MacroAssembler* masm,
 
   // otherwise do the conversion
   __ fctiwz(double_scratch, double_value);
-  __ stfd(double_scratch, sp, 0);
+  __ stfd(double_scratch, MemOperand(sp, 0));
 #if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
   __ lwz(int_dst, MemOperand(sp, 0));
 #else
@@ -957,7 +957,7 @@ void FloatingPointHelper::ConvertDoubleToUnsignedInt(MacroAssembler* masm,
 
   // check for NaN or +/-Infinity
   // by extracting exponent (mask: 0x7ff00000)
-  __ stfd(double_value, sp, 0);
+  __ stfd(double_value, MemOperand(sp, 0));
 #if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
   __ lwz(r0, MemOperand(sp, kPointerSize));
 #else
@@ -971,7 +971,7 @@ void FloatingPointHelper::ConvertDoubleToUnsignedInt(MacroAssembler* masm,
 
   // otherwise do the conversion
   __ fctiwz(double_scratch, double_value);
-  __ stfd(double_scratch, sp, 0);
+  __ stfd(double_scratch, MemOperand(sp, 0));
 #if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
   __ lwz(int_dst, MemOperand(sp, 0));
 #else
@@ -997,11 +997,11 @@ void FloatingPointHelper::ConvertDoubleToUnsignedInt(MacroAssembler* masm,
 #else
   __ stw(r0, MemOperand(sp, kPointerSize));
 #endif
-  __ lfd(double_scratch, sp, 0);
+  __ lfd(double_scratch, MemOperand(sp, 0));
 
   __ fsub(double_scratch, double_value, double_scratch);
   __ fctiwz(double_scratch, double_scratch);
-  __ stfd(double_scratch, sp, 0);
+  __ stfd(double_scratch, MemOperand(sp, 0));
 #if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
   __ lwz(int_dst, MemOperand(sp, 0));
 #else
@@ -1050,7 +1050,7 @@ void FloatingPointHelper::LoadNumberAsInt32Double(MacroAssembler* masm,
   __ JumpIfNotHeapNumber(object, heap_number_map, scratch1, not_int32);
 
   // Load the double value.
-  __ lfd(double_dst, object, HeapNumber::kValueOffset - kHeapObjectTag);
+  __ lfd(double_dst, FieldMemOperand(object, HeapNumber::kValueOffset));
 
   __ EmitVFPTruncate(kRoundToZero,
                      double_scratch,
@@ -1065,7 +1065,7 @@ void FloatingPointHelper::LoadNumberAsInt32Double(MacroAssembler* masm,
   if (destination == kCoreRegisters) {
     __ fctiwz(double_dst, double_dst);
     __ sub(sp, sp, Operand(8));
-    __ stfd(d1, sp, 0);
+    __ stfd(d1, MemOperand(sp, 0));
 // ENDIAN - dst1/dst2 are in memory order
     __ lwz(dst1, MemOperand(sp, 0));
     __ lwz(dst2, MemOperand(sp, 4));
@@ -1198,12 +1198,12 @@ void FloatingPointHelper::CallCCodeForDoubleOperation(
 // ENDIAN - r3/r4 are in memory order
   __ stw(r3, MemOperand(sp, 0));
   __ stw(r4, MemOperand(sp, 4));
-  __ lfd(d1, sp, 0);
+  __ lfd(d1, MemOperand(sp, 0));
 
 // ENDIAN - r5/r6 are in memory order
   __ stw(r5, MemOperand(sp, 0));
   __ stw(r6, MemOperand(sp, 4));
-  __ lfd(d2, sp, 0);
+  __ lfd(d2, MemOperand(sp, 0));
   __ addi(sp, sp, Operand(8));
 
   {
@@ -1217,7 +1217,7 @@ void FloatingPointHelper::CallCCodeForDoubleOperation(
   __ pop(r8);
 
   // Store answer in the overwritable heap number. Double returned in d1
-  __ stfd(d1, heap_number_result, (HeapNumber::kValueOffset - kHeapObjectTag));
+  __ stfd(d1, FieldMemOperand(heap_number_result, HeapNumber::kValueOffset));
 
   // Place heap_number_result in r3 and return to the pushed return address.
   __ mr(r3, heap_number_result);
@@ -1374,7 +1374,7 @@ static void EmitSmiNonsmiComparison(MacroAssembler* masm,
   __ SmiToDoubleFPRegister(lhs, d7, r10, d15);
   // Load the double from rhs, tagged HeapNumber r3, to d6.
   __ sub(r10, rhs, Operand(kHeapObjectTag));
-  __ lfd(d6, r10, HeapNumber::kValueOffset);
+  __ lfd(d6, MemOperand(r10, HeapNumber::kValueOffset));
 
   // We now have both loaded as doubles but we can skip the lhs nan check
   // since it's a smi.
@@ -1403,7 +1403,7 @@ static void EmitSmiNonsmiComparison(MacroAssembler* masm,
   // Rhs is a smi, lhs is a heap number.
   // Load the double from lhs, tagged HeapNumber r4, to d7.
   __ sub(r10, lhs, Operand(kHeapObjectTag));
-  __ lfd(d7, r10, HeapNumber::kValueOffset);
+  __ lfd(d7, MemOperand(r10, HeapNumber::kValueOffset));
   // Convert rhs to a double in d6.
   __ SmiToDoubleFPRegister(rhs, d6, r10, d13);
   // Fall through to both_loaded_as_doubles.
@@ -1526,9 +1526,9 @@ static void EmitCheckForTwoHeapNumbers(MacroAssembler* masm,
   // Both are heap numbers.  Load them up then jump to the code we have
   // for that.
   __ sub(r10, rhs, Operand(kHeapObjectTag));
-  __ lfd(d6, r10, HeapNumber::kValueOffset);
+  __ lfd(d6, MemOperand(r10, HeapNumber::kValueOffset));
   __ sub(r10, lhs, Operand(kHeapObjectTag));
-  __ lfd(d7, r10, HeapNumber::kValueOffset);
+  __ lfd(d7, MemOperand(r10, HeapNumber::kValueOffset));
 
   __ jmp(both_loaded_as_doubles);
 }
@@ -1931,11 +1931,11 @@ void ToBooleanStub::Generate(MacroAssembler* masm) {
     __ CompareRoot(map, Heap::kHeapNumberMapRootIndex);
     __ bne(&not_heap_number);
 
-    __ lfd(d1, tos_, HeapNumber::kValueOffset + kHeapObjectTag);
+    __ lfd(d1, FieldMemOperand(tos_, HeapNumber::kValueOffset));
     __ li(r0, Operand(0));
     __ push(r0);
     __ push(r0);
-    __ lfd(d2, sp, 0);
+    __ lfd(d2, MemOperand(sp, 0));
     __ addi(sp, sp, Operand(8));
     __ fcmpu(d1, d2);
     // "tos_" is a register, and contains a non zero value by default.
@@ -2010,7 +2010,7 @@ void StoreBufferOverflowStub::Generate(MacroAssembler* masm) {
     __ sub(sp, sp, Operand(kDoubleSize * DwVfpRegister::kNumRegisters));
     for (int i = 0; i < DwVfpRegister::kNumRegisters; i++) {
       DwVfpRegister reg = DwVfpRegister::from_code(i);
-        __ stfd(reg, sp, i * kDoubleSize);
+      __ stfd(reg, MemOperand(sp, i * kDoubleSize));
     }
   }
   const int argument_count = 1;
@@ -2027,7 +2027,7 @@ void StoreBufferOverflowStub::Generate(MacroAssembler* masm) {
     CpuFeatures::Scope scope(VFP2);
     for (int i = 0; i < DwVfpRegister::kNumRegisters; i++) {
       DwVfpRegister reg = DwVfpRegister::from_code(i);
-        __ lfd(reg, sp, i * kDoubleSize);
+      __ lfd(reg, MemOperand(sp, i * kDoubleSize));
     }
     __ addi(sp, sp, Operand(kDoubleSize * DwVfpRegister::kNumRegisters));
   }
@@ -2281,7 +2281,7 @@ void UnaryOpStub::GenerateHeapNumberCodeBitNot(
       masm, r4, FloatingPointHelper::kFPRegisters,
       d0, r7, r7,  // r7 unused as we're using kFPRegisters
       d2);
-  __ stfd(d0, r3, HeapNumber::kValueOffset-kHeapObjectTag);
+  __ stfd(d0, FieldMemOperand(r3, HeapNumber::kValueOffset));
   __ Ret();
 
   __ bind(&impossible);
@@ -2659,7 +2659,7 @@ void BinaryOpStub::GenerateFPOperation(MacroAssembler* masm,
             UNREACHABLE();
         }
         __ sub(r3, result, Operand(kHeapObjectTag));
-        __ stfd(d5, r3, HeapNumber::kValueOffset);
+        __ stfd(d5, MemOperand(r3, HeapNumber::kValueOffset));
         __ addi(r3, r3, Operand(kHeapObjectTag));
         __ Ret();
       } else {
@@ -2778,7 +2778,7 @@ void BinaryOpStub::GenerateFPOperation(MacroAssembler* masm,
           d0, r7, r7,  // r7 unused as we're using kFPRegisters
           d2);
       }
-      __ stfd(d0, r3, HeapNumber::kValueOffset-kHeapObjectTag);
+      __ stfd(d0, FieldMemOperand(r3, HeapNumber::kValueOffset));
       __ Ret();
       break;
     }
@@ -2995,7 +2995,7 @@ void BinaryOpStub::GenerateInt32Stub(MacroAssembler* masm) {
           // Check if the result fits in a smi.
           __ fctiwz(single_scratch, single_scratch);
           __ sub(sp, sp, Operand(8));
-          __ stfd(single_scratch, sp, 0);
+          __ stfd(single_scratch, MemOperand(sp, 0));
 #if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
           __ lwz(scratch1, MemOperand(sp, 0));
 #else
@@ -3012,7 +3012,7 @@ void BinaryOpStub::GenerateInt32Stub(MacroAssembler* masm) {
           __ bne(&not_zero);
 
           __ sub(sp, sp, Operand(8));
-          __ stfd(d5, sp, 0);
+          __ stfd(d5, MemOperand(sp, 0));
 #if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
           __ lwz(scratch2, MemOperand(sp, 4));
 #else
@@ -3044,7 +3044,7 @@ void BinaryOpStub::GenerateInt32Stub(MacroAssembler* masm) {
                                        scratch2,
                                        &call_runtime);
           __ sub(r3, heap_number_result, Operand(kHeapObjectTag));
-          __ stfd(d5, r3, HeapNumber::kValueOffset);
+          __ stfd(d5, MemOperand(r3, HeapNumber::kValueOffset));
           __ mr(r3, heap_number_result);
           __ Ret();
         }
@@ -3200,8 +3200,8 @@ void BinaryOpStub::GenerateInt32Stub(MacroAssembler* masm) {
         __ xor_(r0, r5, r0);
         __ stw(r0, MemOperand(sp, 12));
 #endif
-        __ lfd(double_scratch, sp, 0);
-        __ lfd(single_scratch, sp, 8);
+        __ lfd(double_scratch, MemOperand(sp, 0));
+        __ lfd(single_scratch, MemOperand(sp, 8));
         __ addi(sp, sp, Operand(16));  // restore stack
         __ fsub(double_scratch, single_scratch, double_scratch);
       } else {
@@ -3224,15 +3224,15 @@ void BinaryOpStub::GenerateInt32Stub(MacroAssembler* masm) {
         __ stw(r0, MemOperand(sp, 4));
         __ stw(r5, MemOperand(sp, 12));
 #endif
-        __ lfd(double_scratch, sp, 0);
-        __ lfd(single_scratch, sp, 8);
+        __ lfd(double_scratch, MemOperand(sp, 0));
+        __ lfd(single_scratch, MemOperand(sp, 8));
         __ addi(sp, sp, Operand(16));  // restore stack
         __ fsub(double_scratch, single_scratch, double_scratch);
       }
 
       // Store the result.
       __ sub(r3, heap_number_result, Operand(kHeapObjectTag));
-      __ stfd(double_scratch, r3, HeapNumber::kValueOffset);
+      __ stfd(double_scratch, MemOperand(r3, HeapNumber::kValueOffset));
       __ mr(r3, heap_number_result);
       __ Ret();
 
@@ -3457,7 +3457,7 @@ void TranscendentalCacheStub::Generate(MacroAssembler* masm) {
     // of the double into r5, r6.
     __ SmiToDoubleFPRegister(r3, d6, scratch0, d7);
     __ sub(sp, sp, Operand(8));
-    __ stfd(d6, sp, 0);
+    __ stfd(d6, MemOperand(sp, 0));
     // ENDIAN issue here
 #if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
     __ lwz(r5, MemOperand(sp));
@@ -3483,7 +3483,7 @@ void TranscendentalCacheStub::Generate(MacroAssembler* masm) {
   } else {
     // Input is untagged double in d2. Output goes to d2.
     __ sub(sp, sp, Operand(8));
-    __ stfd(d2, sp, 0);
+    __ stfd(d2, MemOperand(sp, 0));
     // ENDIAN issue here
 #if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
     __ lwz(r5, MemOperand(sp));
@@ -3561,7 +3561,7 @@ void TranscendentalCacheStub::Generate(MacroAssembler* masm) {
     __ mr(r3, r9);
   } else {
     // Load result into d2.
-     __ lfd(d2, r9, HeapNumber::kValueOffset);
+    __ lfd(d2, MemOperand(r9, HeapNumber::kValueOffset));
   }
   __ Ret();
 
@@ -3593,7 +3593,7 @@ void TranscendentalCacheStub::Generate(MacroAssembler* masm) {
     __ Pop(r6, r5, cache_entry);
     __ LoadRoot(r8, Heap::kHeapNumberMapRootIndex);
     __ AllocateHeapNumber(r9, scratch0, scratch1, r8, &no_update);
-    __ stfd(d2, r6, HeapNumber::kValueOffset);
+    __ stfd(d2, MemOperand(r6, HeapNumber::kValueOffset));
     __ stw(r5, MemOperand(cache_entry, 0));
     __ stw(r6, MemOperand(cache_entry, 4));
     __ stw(r9, MemOperand(cache_entry, 8));
@@ -3604,13 +3604,13 @@ void TranscendentalCacheStub::Generate(MacroAssembler* masm) {
     // cache.
     __ LoadRoot(r8, Heap::kHeapNumberMapRootIndex);
     __ AllocateHeapNumber(r3, scratch0, scratch1, r8, &skip_cache);
-    __ stfd(d2, r3, HeapNumber::kValueOffset);
+    __ stfd(d2, MemOperand(r3, HeapNumber::kValueOffset));
     {
       FrameScope scope(masm, StackFrame::INTERNAL);
       __ push(r3);
       __ CallRuntime(RuntimeFunction(), 1);
     }
-    __ lfd(d2, r3, HeapNumber::kValueOffset);
+    __ lfd(d2, MemOperand(r3, HeapNumber::kValueOffset));
     __ Ret();
 
     __ bind(&skip_cache);
@@ -6977,9 +6977,9 @@ void ICCompareStub::GenerateHeapNumbers(MacroAssembler* masm) {
   // Load left and right operand
   // likely we can combine the constants to remove the sub
   __ sub(r5, r4, Operand(kHeapObjectTag));
-  __ lfd(d0, r5, HeapNumber::kValueOffset);
+  __ lfd(d0, MemOperand(r5, HeapNumber::kValueOffset));
   __ sub(r5, r3, Operand(kHeapObjectTag));
-  __ lfd(d1, r5, HeapNumber::kValueOffset);
+  __ lfd(d1, MemOperand(r5, HeapNumber::kValueOffset));
 
   // Compare operands
   __ fcmpu(d0, d1);

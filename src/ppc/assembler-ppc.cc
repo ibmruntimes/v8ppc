@@ -1478,14 +1478,18 @@ void Assembler::svc(uint32_t imm24, Condition cond) {
 
 // Floating point support
 
-void Assembler::lfd(const DwVfpRegister frt, const Register ra, int offset) {
+void Assembler::lfd(const DwVfpRegister frt, const MemOperand &src) {
+  int offset = src.offset_;
+  Register ra = src.ra_;
   ASSERT(is_int16(offset));
   int imm16 = offset & kImm16Mask;
   // could be x_form instruction with some casting magic
   emit(LFD | frt.code()*B21 | ra.code()*B16 | imm16);
 }
 
-void Assembler::lfs(const DwVfpRegister frt, const Register ra, int offset) {
+void Assembler::lfs(const DwVfpRegister frt, const MemOperand &src) {
+  int offset = src.offset_;
+  Register ra = src.ra_;
   ASSERT(is_int16(offset));
   ASSERT(!ra.is(r0));
   int imm16 = offset & kImm16Mask;
@@ -1493,7 +1497,9 @@ void Assembler::lfs(const DwVfpRegister frt, const Register ra, int offset) {
   emit(LFS | frt.code()*B21 | ra.code()*B16 | imm16);
 }
 
-void Assembler::stfd(const DwVfpRegister frs, const Register ra, int offset) {
+void Assembler::stfd(const DwVfpRegister frs, const MemOperand &src) {
+  int offset = src.offset_;
+  Register ra = src.ra_;
   ASSERT(is_int16(offset));
   ASSERT(!ra.is(r0));
   int imm16 = offset & kImm16Mask;
@@ -1501,7 +1507,9 @@ void Assembler::stfd(const DwVfpRegister frs, const Register ra, int offset) {
   emit(STFD | frs.code()*B21 | ra.code()*B16 | imm16);
 }
 
-void Assembler::stfs(const DwVfpRegister frs, const Register ra, int offset) {
+void Assembler::stfs(const DwVfpRegister frs, const MemOperand &src) {
+  int offset = src.offset_;
+  Register ra = src.ra_;
   ASSERT(is_int16(offset));
   ASSERT(!ra.is(r0));
   int imm16 = offset & kImm16Mask;

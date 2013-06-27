@@ -36,7 +36,7 @@
 namespace v8 {
 namespace internal {
 
-static const Register kSavedValueRegister = { 9 };
+static const Register kSavedValueRegister = { 11 };
 
 LGapResolver::LGapResolver(LCodeGen* owner)
     : cgen_(owner), moves_(32, owner->zone()), root_index_(0), in_cycle_(false),
@@ -170,13 +170,13 @@ void LGapResolver::BreakCycle(int index) {
   LOperand* source = moves_[index].source();
   saved_destination_ = moves_[index].destination();
   if (source->IsRegister()) {
-    __ mov(kSavedValueRegister, cgen_->ToRegister(source));
+    __ mr(kSavedValueRegister, cgen_->ToRegister(source));
   } else if (source->IsStackSlot()) {
-    __ ldr(kSavedValueRegister, cgen_->ToMemOperand(source));
+    __ lwz(kSavedValueRegister, cgen_->ToMemOperand(source));
   } else if (source->IsDoubleRegister()) {
-    __ vmov(kScratchDoubleReg, cgen_->ToDoubleRegister(source));
+    __ fmr(kScratchDoubleReg, cgen_->ToDoubleRegister(source));
   } else if (source->IsDoubleStackSlot()) {
-    __ vldr(kScratchDoubleReg, cgen_->ToMemOperand(source));
+    __ lfd(kScratchDoubleReg, cgen_->ToMemOperand(source));
   } else {
     UNREACHABLE();
   }
@@ -191,13 +191,13 @@ void LGapResolver::RestoreValue() {
 
   // Spilled value is in kSavedValueRegister or kSavedDoubleValueRegister.
   if (saved_destination_->IsRegister()) {
-    __ mov(cgen_->ToRegister(saved_destination_), kSavedValueRegister);
+    __ mr(cgen_->ToRegister(saved_destination_), kSavedValueRegister);
   } else if (saved_destination_->IsStackSlot()) {
-    __ str(kSavedValueRegister, cgen_->ToMemOperand(saved_destination_));
+    __ stw(kSavedValueRegister, cgen_->ToMemOperand(saved_destination_));
   } else if (saved_destination_->IsDoubleRegister()) {
-    __ vmov(cgen_->ToDoubleRegister(saved_destination_), kScratchDoubleReg);
+    __ fmr(cgen_->ToDoubleRegister(saved_destination_), kScratchDoubleReg);
   } else if (saved_destination_->IsDoubleStackSlot()) {
-    __ vstr(kScratchDoubleReg, cgen_->ToMemOperand(saved_destination_));
+    __ stfd(kScratchDoubleReg, cgen_->ToMemOperand(saved_destination_));
   } else {
     UNREACHABLE();
   }
@@ -217,33 +217,37 @@ void LGapResolver::EmitMove(int index) {
   if (source->IsRegister()) {
     Register source_register = cgen_->ToRegister(source);
     if (destination->IsRegister()) {
-      __ mov(cgen_->ToRegister(destination), source_register);
+      __ mr(cgen_->ToRegister(destination), source_register);
     } else {
       ASSERT(destination->IsStackSlot());
-      __ str(source_register, cgen_->ToMemOperand(destination));
+      __ stw(source_register, cgen_->ToMemOperand(destination));
     }
 
   } else if (source->IsStackSlot()) {
     MemOperand source_operand = cgen_->ToMemOperand(source);
     if (destination->IsRegister()) {
-      __ ldr(cgen_->ToRegister(destination), source_operand);
+      __ lwz(cgen_->ToRegister(destination), source_operand);
     } else {
       ASSERT(destination->IsStackSlot());
       MemOperand destination_operand = cgen_->ToMemOperand(destination);
       if (in_cycle_) {
-        if (!destination_operand.OffsetIsUint12Encodable()) {
+#if 0
+        if (!destination_operand.OffsetIsUint16Encodable()) {
           // ip is overwritten while saving the value to the destination.
           // Therefore we can't use ip.  It is OK if the read from the source
           // destroys ip, since that happens before the value is read.
           __ vldr(kScratchDoubleReg.low(), source_operand);
           __ vstr(kScratchDoubleReg.low(), destination_operand);
         } else {
-          __ ldr(ip, source_operand);
-          __ str(ip, destination_operand);
+#endif
+          __ lwz(ip, source_operand);
+          __ stw(ip, destination_operand);
+#if 0
         }
+#endif
       } else {
-        __ ldr(kSavedValueRegister, source_operand);
-        __ str(kSavedValueRegister, destination_operand);
+        __ lwz(kSavedValueRegister, source_operand);
+        __ stw(kSavedValueRegister, destination_operand);
       }
     }
 
@@ -266,22 +270,22 @@ void LGapResolver::EmitMove(int index) {
         __ LoadObject(kSavedValueRegister,
                       cgen_->ToHandle(constant_source));
       }
-      __ str(kSavedValueRegister, cgen_->ToMemOperand(destination));
+      __ stw(kSavedValueRegister, cgen_->ToMemOperand(destination));
     }
 
   } else if (source->IsDoubleRegister()) {
     DoubleRegister source_register = cgen_->ToDoubleRegister(source);
     if (destination->IsDoubleRegister()) {
-      __ vmov(cgen_->ToDoubleRegister(destination), source_register);
+      __ fmr(cgen_->ToDoubleRegister(destination), source_register);
     } else {
       ASSERT(destination->IsDoubleStackSlot());
-      __ vstr(source_register, cgen_->ToMemOperand(destination));
+      __ stfd(source_register, cgen_->ToMemOperand(destination));
     }
 
   } else if (source->IsDoubleStackSlot()) {
     MemOperand source_operand = cgen_->ToMemOperand(source);
     if (destination->IsDoubleRegister()) {
-      __ vldr(cgen_->ToDoubleRegister(destination), source_operand);
+      __ lfd(cgen_->ToDoubleRegister(destination), source_operand);
     } else {
       ASSERT(destination->IsDoubleStackSlot());
       MemOperand destination_operand = cgen_->ToMemOperand(destination);
@@ -292,13 +296,13 @@ void LGapResolver::EmitMove(int index) {
             cgen_->ToHighMemOperand(source);
         MemOperand destination_high_operand =
             cgen_->ToHighMemOperand(destination);
-        __ ldr(kSavedValueRegister, source_operand);
-        __ str(kSavedValueRegister, destination_operand);
-        __ ldr(kSavedValueRegister, source_high_operand);
-        __ str(kSavedValueRegister, destination_high_operand);
+        __ lwz(kSavedValueRegister, source_operand);
+        __ stw(kSavedValueRegister, destination_operand);
+        __ lwz(kSavedValueRegister, source_high_operand);
+        __ stw(kSavedValueRegister, destination_high_operand);
       } else {
-        __ vldr(kScratchDoubleReg, source_operand);
-        __ vstr(kScratchDoubleReg, destination_operand);
+        __ lfd(kScratchDoubleReg, source_operand);
+        __ stfd(kScratchDoubleReg, destination_operand);
       }
     }
   } else {

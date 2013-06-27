@@ -77,25 +77,23 @@ namespace internal {
 // Core register
 struct Register {
   static const int kNumRegisters = 32;
-  static const int kNumAllocatableRegisters = 12;
+  static const int kNumAllocatableRegisters = 10;  // r3-r12
   static const int kSizeInBytes = 4;
 
   static int ToAllocationIndex(Register reg) {
-    ASSERT(reg.code() < kNumAllocatableRegisters);
-    return reg.code();
+    int index = reg.code() - 3;  // r0-r2 are skipped
+    ASSERT(index < kNumAllocatableRegisters);
+    return index;
   }
 
   static Register FromAllocationIndex(int index) {
     ASSERT(index >= 0 && index < kNumAllocatableRegisters);
-    return from_code(index);
+    return from_code(index + 3);  // r0-r2 are skipped
   }
 
   static const char* AllocationIndexToString(int index) {
     ASSERT(index >= 0 && index < kNumAllocatableRegisters);
     const char* const names[] = {
-      "r0",
-      "r1",
-      "r2",
       "r3",
       "r4",
       "r5",
@@ -105,7 +103,7 @@ struct Register {
       "r9",
       "r10",
       "r11",
-      "r12",
+      "r12",  // currently last allocated register
       "r13",
       "r14",
       "r15",
@@ -124,7 +122,6 @@ struct Register {
       "r28",
       "r29",
       "r30",
-      "fp",
     };
     return names[index];
   }
@@ -840,6 +837,9 @@ class Assembler : public AssemblerBase {
   void b(Condition cond, Label* L, CRegister cr = cr7)  {
     ASSERT(cr.code() >= 0 && cr.code() <= 7);
     switch (cond) {
+      case al:
+        b(L);
+        break;
       case eq:
         bc(branch_offset(L, false), BT, 2 + (cr.code() * 4));
         break;
@@ -1129,10 +1129,10 @@ class Assembler : public AssemblerBase {
   void svc(uint32_t imm24, Condition cond = al);
 
   // Support for floating point
-  void lfd(const DwVfpRegister frt, const Register ra, int offset);
-  void lfs(const DwVfpRegister frt, const Register ra, int offset);
-  void stfd(const DwVfpRegister frs, const Register ra, int offset);
-  void stfs(const DwVfpRegister frs, const Register ra, int offset);
+  void lfd(const DwVfpRegister frt, const MemOperand& src);
+  void lfs(const DwVfpRegister frt, const MemOperand& src);
+  void stfd(const DwVfpRegister frs, const MemOperand& src);
+  void stfs(const DwVfpRegister frs, const MemOperand& src);
   void fadd(const DwVfpRegister frt, const DwVfpRegister fra,
             const DwVfpRegister frb, RCBit rc = LeaveRC);
   void fsub(const DwVfpRegister frt, const DwVfpRegister fra,

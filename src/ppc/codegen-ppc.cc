@@ -226,7 +226,7 @@ void ElementsTransitionGenerator::GenerateSmiToDouble(
     masm, r22, FloatingPointHelper::kFPRegisters,
     d0, r7, r7,  // r7 unused as we're using kFPRegisters
     d2);
-  __ stfd(d0, r10, 0);
+  __ stfd(d0, MemOperand(r10, 0));
   __ addi(r10, r10, Operand(8));
 
   __ b(&entry);

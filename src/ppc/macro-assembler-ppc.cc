@@ -2169,7 +2169,7 @@ void MacroAssembler::StoreNumberToDoubleElements(Register value_reg,
                                           mantissa_reg,
                                           exponent_reg,
                                           d2);
-  stfd(d0, scratch1, 0);
+  stfd(d0, MemOperand(scratch1, 0));
 
   bind(&done);
 }
@@ -2512,8 +2512,8 @@ void MacroAssembler::SmiToDoubleFPRegister(Register smi,
   xor_(r0, scratch1, r0);
   stw(r0, MemOperand(sp, 12));
 #endif
-  lfd(value, sp, 0);
-  lfd(scratch2, sp, 8);
+  lfd(value, MemOperand(sp, 0));
+  lfd(scratch2, MemOperand(sp, 8));
   addi(sp, sp, Operand(16));  // restore stack
   fsub(value, scratch2, value);
 }
@@ -2531,11 +2531,11 @@ void MacroAssembler::ConvertToInt32(Register source,
   addi(sp, sp, Operand(-2 * kPointerSize));
 
   // Retrieve double from heap
-  lfd(double_scratch, source, HeapNumber::kValueOffset-kHeapObjectTag);
+  lfd(double_scratch, FieldMemOperand(source, HeapNumber::kValueOffset));
 
   // Convert
   fctiwz(double_scratch, double_scratch);
-  stfd(double_scratch, sp, 0);
+  stfd(double_scratch, MemOperand(sp, 0));
 #if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
   lwz(dest, MemOperand(sp, 0));
 #else
@@ -3255,7 +3255,7 @@ void MacroAssembler::AllocateHeapNumberWithValue(Register result,
                                                  Register heap_number_map,
                                                  Label* gc_required) {
   AllocateHeapNumber(result, scratch1, scratch2, heap_number_map, gc_required);
-  stfd(value, result, HeapNumber::kValueOffset-kHeapObjectTag);
+  stfd(value, FieldMemOperand(result, HeapNumber::kValueOffset));
 }
 
 

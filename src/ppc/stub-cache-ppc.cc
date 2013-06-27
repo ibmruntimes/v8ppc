@@ -2151,14 +2151,14 @@ Handle<Code> CallStubCompiler::CompileMathFloorCall(
   __ CheckMap(r3, r4, Heap::kHeapNumberMapRootIndex, &slow, DONT_DO_SMI_CHECK);
 
   // Load the HeapNumber value.
-  __ lfd(d1, r3, HeapNumber::kValueOffset - kHeapObjectTag);
+  __ lfd(d1, FieldMemOperand(r3, HeapNumber::kValueOffset));
 
   // Round to integer minus
   __ frim(d1, d1);
   // Convert the argument to an integer.
   __ fctiwz(d1, d1);
   __ sub(sp, sp, Operand(8));
-  __ stfd(d1, sp, 0);
+  __ stfd(d1, MemOperand(sp, 0));
 #if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
   __ lwz(r3, MemOperand(sp, 0));
 #else
@@ -3703,7 +3703,7 @@ static void GenerateSmiKeyCheck(MacroAssembler* masm,
               fail,
               DONT_DO_SMI_CHECK);
   __ sub(ip, key, Operand(kHeapObjectTag));
-  __ lfd(double_scratch0, ip, HeapNumber::kValueOffset);
+  __ lfd(double_scratch0, MemOperand(ip, HeapNumber::kValueOffset));
   __ EmitVFPTruncate(kRoundToZero,
                      d11,
                      double_scratch0,
@@ -3713,7 +3713,7 @@ static void GenerateSmiKeyCheck(MacroAssembler* masm,
   __ boverflow(fail);
   __ fctiwz(double_scratch0, double_scratch0);
   __ sub(sp, sp, Operand(8));
-  __ stfd(double_scratch0, sp, 0);
+  __ stfd(double_scratch0, MemOperand(sp, 0));
 #if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
   __ lwz(scratch0, MemOperand(sp, 0));
 #else
@@ -3795,12 +3795,12 @@ void KeyedLoadStubCompiler::GenerateLoadExternalArray(
     case EXTERNAL_FLOAT_ELEMENTS:
       __ slwi(value, key, Operand(1));
       __ add(value, value, r6);
-      __ lfs(d0, value, 0);
+      __ lfs(d0, MemOperand(value, 0));
       break;
     case EXTERNAL_DOUBLE_ELEMENTS:
       __ slwi(value, key, Operand(2));
       __ add(value, value, r6);
-      __ lfd(d0, value, 0);
+      __ lfd(d0, MemOperand(value, 0));
       break;
     case FAST_ELEMENTS:
     case FAST_SMI_ELEMENTS:
@@ -3848,7 +3848,7 @@ void KeyedLoadStubCompiler::GenerateLoadExternalArray(
       masm, value, FloatingPointHelper::kFPRegisters,
       d0, r7, r7,  // r7 unused as we're using kFPRegisters
       d2);
-    __ stfd(d0, r3, HeapNumber::kValueOffset-kHeapObjectTag);
+    __ stfd(d0, FieldMemOperand(r3, HeapNumber::kValueOffset));
     __ Ret();
 
   } else if (elements_kind == EXTERNAL_UNSIGNED_INT_ELEMENTS) {
@@ -3875,7 +3875,7 @@ void KeyedLoadStubCompiler::GenerateLoadExternalArray(
       masm, value, FloatingPointHelper::kFPRegisters,
       d0, r7, r7,  // r7 unused as we're using kFPRegisters
       d2);
-    __ stfd(d0, r3, HeapNumber::kValueOffset-kHeapObjectTag);
+    __ stfd(d0, FieldMemOperand(r3, HeapNumber::kValueOffset));
     __ Ret();
 
   } else if (elements_kind == EXTERNAL_FLOAT_ELEMENTS) {
@@ -3886,7 +3886,7 @@ void KeyedLoadStubCompiler::GenerateLoadExternalArray(
     // exhausted young space.
     __ LoadRoot(r9, Heap::kHeapNumberMapRootIndex);
     __ AllocateHeapNumber(r5, r6, r7, r9, &slow);
-    __ stfd(d0, r5, HeapNumber::kValueOffset-kHeapObjectTag);
+    __ stfd(d0, FieldMemOperand(r5, HeapNumber::kValueOffset));
     __ mr(r3, r5);
     __ Ret();
 
@@ -3896,7 +3896,7 @@ void KeyedLoadStubCompiler::GenerateLoadExternalArray(
     // exhausted young space.
     __ LoadRoot(r9, Heap::kHeapNumberMapRootIndex);
     __ AllocateHeapNumber(r5, r6, r7, r9, &slow);
-    __ stfd(d0, r5, HeapNumber::kValueOffset-kHeapObjectTag);
+    __ stfd(d0, FieldMemOperand(r5, HeapNumber::kValueOffset));
     __ mr(r3, r5);
     __ Ret();
 
@@ -4008,7 +4008,7 @@ void KeyedStoreStubCompiler::GenerateStoreExternalArray(
       __ add(r10, r6, r10);
       // r10: efective address of the float element
       FloatingPointHelper::ConvertIntToFloat(masm, d0, r8, r9);
-      __ stfs(d0, r10, 0);
+      __ stfs(d0, MemOperand(r10, 0));
       break;
     case EXTERNAL_DOUBLE_ELEMENTS:
       __ slwi(r10, key, Operand(2));
@@ -4018,7 +4018,7 @@ void KeyedStoreStubCompiler::GenerateStoreExternalArray(
           masm, r8, FloatingPointHelper::kFPRegisters,
           d0, r9, r10,  // These are: double_dst, dst1, dst2.
           d2);  // These are: scratch2, single_scratch.
-      __ stfd(d0, r6, 0);
+      __ stfd(d0, MemOperand(r6, 0));
       break;
     case FAST_ELEMENTS:
     case FAST_SMI_ELEMENTS:
@@ -4052,20 +4052,20 @@ void KeyedStoreStubCompiler::GenerateStoreExternalArray(
       if (elements_kind == EXTERNAL_FLOAT_ELEMENTS) {
         // vldr requires offset to be a multiple of 4 so we can not
         // include -kHeapObjectTag into it.
-        __ lfd(d0, r3, HeapNumber::kValueOffset-kHeapObjectTag);
+        __ lfd(d0, FieldMemOperand(r3, HeapNumber::kValueOffset));
         __ slwi(r8, key, Operand(1));
         __ add(r8, r6, r8);
         __ frsp(d0, d0);
-        __ stfs(d0, r8, 0);
+        __ stfs(d0, MemOperand(r8, 0));
       } else if (elements_kind == EXTERNAL_DOUBLE_ELEMENTS) {
-        __ lfd(d0, r3, HeapNumber::kValueOffset-kHeapObjectTag);
+        __ lfd(d0, FieldMemOperand(r3, HeapNumber::kValueOffset));
         __ slwi(r8, key, Operand(2));
         __ add(r8, r6, r8);
-        __ stfd(d0, r8, 0);
+        __ stfd(d0, MemOperand(r8, 0));
       } else {
         // Hoisted load.
         __ mr(r8, value);
-        __ lfd(d0, r8, HeapNumber::kValueOffset-kHeapObjectTag);
+        __ lfd(d0, FieldMemOperand(r8, HeapNumber::kValueOffset));
 
         if (elements_kind == EXTERNAL_UNSIGNED_INT_ELEMENTS) {
             // Perform float-to-uint conversion with truncation (round-to-zero)
