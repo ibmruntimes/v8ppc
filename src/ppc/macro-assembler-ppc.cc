@@ -328,6 +328,7 @@ void MacroAssembler::Sbfx(Register dst, Register src1, int lsb, int width,
 
 void MacroAssembler::Usat(Register dst, int satpos, const Operand& src,
                           Condition cond) {
+#ifdef PENGUIN_CLEANUP
   if (!CpuFeatures::IsSupported(ARMv7) || predictable_code_size()) {
     ASSERT((satpos >= 0) && (satpos <= 31));
 
@@ -354,6 +355,10 @@ void MacroAssembler::Usat(Register dst, int satpos, const Operand& src,
   } else {
     usat(dst, satpos, src, cond);
   }
+#else
+  PPCPORT_UNIMPLEMENTED();
+  fake_asm(fMASM29);
+#endif
 }
 
 void MacroAssembler::MultiPush(RegList regs) {

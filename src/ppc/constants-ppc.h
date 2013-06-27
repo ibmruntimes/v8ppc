@@ -432,6 +432,7 @@ enum FAKE_OPCODE_T {
   fMASM26 = 63,
   fMASM27 = 64,
   fMASM28 = 75,
+  fMASM29 = 76,
   fLastFaker  // can't be more than 128 (2^^7)
 };
 #define FAKE_OPCODE_HIGH_BIT 7  // fake opcode has to fall into bit 0~7
