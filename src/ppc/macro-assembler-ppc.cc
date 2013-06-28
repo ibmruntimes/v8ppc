@@ -878,12 +878,12 @@ void MacroAssembler::EnterFrame(StackFrame::Type type) {
 
 #if 0
   // r0-r3: preserved
-  stm(db_w, sp, cp.bit() | r11.bit() | lr.bit());
+  stm(db_w, sp, cp.bit() | fp.bit() | lr.bit());
   mov(ip, Operand(Smi::FromInt(type)));
   push(ip);
   mov(ip, Operand(CodeObject()));
   push(ip);
-  addi(r11, sp, Operand(3 * kPointerSize));  // Adjust FP to point to saved FP.
+  addi(fp, sp, Operand(3 * kPointerSize));  // Adjust FP to point to saved FP.
 #endif
 }
 
@@ -912,8 +912,8 @@ void MacroAssembler::LeaveFrame(StackFrame::Type type) {
 
   // Drop the execution stack down to the frame pointer and restore
   // the caller frame pointer and return address.
-  mr(sp, r11);
-  ldm(ia_w, sp, r11.bit() | lr.bit());
+  mr(sp, fp);
+  ldm(ia_w, sp, fp.bit() | lr.bit());
 #endif
 }
 
@@ -1039,7 +1039,7 @@ void MacroAssembler::LeaveExitFrame(bool save_doubles,
   if (save_doubles) {
     // Calculate the stack location of the saved doubles and restore them.
     const int offset = 2 * kPointerSize;
-    sub(r3, r11, Operand(offset + DwVfpRegister::kNumRegisters * kDoubleSize));
+    sub(r3, fp, Operand(offset + DwVfpRegister::kNumRegisters * kDoubleSize));
     DwVfpRegister first = d0;
     DwVfpRegister last =
         DwVfpRegister::from_code(DwVfpRegister::kNumRegisters - 1);

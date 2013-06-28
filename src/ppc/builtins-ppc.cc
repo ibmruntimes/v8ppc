@@ -1347,7 +1347,7 @@ void Builtins::Generate_NotifyOSR(MacroAssembler* masm) {
   // pointers. This seems a bit fragile.
   __ mflr(r0);
   RegList saved_regs =
-      (kJSCallerSaved | kCalleeSaved | r0.bit() | r11.bit()) & ~sp.bit();
+      (kJSCallerSaved | kCalleeSaved | r0.bit() | fp.bit()) & ~sp.bit();
   __ MultiPush(saved_regs);
   {
     FrameScope scope(masm, StackFrame::INTERNAL);
