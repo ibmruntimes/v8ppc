@@ -1575,7 +1575,7 @@ void MacroAssembler::GetNumberHash(Register t0, Register scratch) {
   // with ComputeIntegerHash in utils.h.
   //
   // hash = ~hash + (hash << 15);
-  nor(scratch, t0, t0);
+  notx(scratch, t0);
   slwi(t0, t0, Operand(15));
   add(t0, scratch, t0);
   // hash = hash ^ (hash >> 12);
