@@ -182,7 +182,7 @@ class LCodeGen BASE_EMBEDDED {
   Scope* scope() const { return scope_; }
   HGraph* graph() const { return chunk_->graph(); }
 
-  Register scratch0() { return r11; }  // alias register
+  Register scratch0() { return r11; }
   DwVfpRegister double_scratch0() { return kScratchDoubleReg; }
 
   int GetNextEmittedBlock(int block);
@@ -240,18 +240,18 @@ class LCodeGen BASE_EMBEDDED {
                                int argc,
                                LInstruction* instr);
 
-  enum R1State {
-    R1_UNINITIALIZED,
-    R1_CONTAINS_TARGET
+  enum R4State {
+    R4_UNINITIALIZED,
+    R4_CONTAINS_TARGET
   };
 
   // Generate a direct call to a known function.  Expects the function
-  // to be in r1.
+  // to be in r4.
   void CallKnownFunction(Handle<JSFunction> function,
                          int arity,
                          LInstruction* instr,
                          CallKind call_kind,
-                         R1State r1_state);
+                         R4State r4_state);
 
   void LoadHeapObject(Register result, Handle<HeapObject> object);
 
