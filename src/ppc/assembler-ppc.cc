@@ -1027,22 +1027,22 @@ void Assembler::mr(Register dst, Register src) {
 
 void Assembler::lbz(Register dst, const MemOperand &src) {
   ASSERT(!src.ra_.is(r0));
-  d_form(LBZ, dst, src.ra_, src.offset_, true);
+  d_form(LBZ, dst, src.ra(), src.offset(), true);
 }
 
 void Assembler::lhz(Register dst, const MemOperand &src) {
   ASSERT(!src.ra_.is(r0));
-  d_form(LHZ, dst, src.ra_, src.offset_, true);
+  d_form(LHZ, dst, src.ra(), src.offset(), true);
 }
 
 void Assembler::lwz(Register dst, const MemOperand &src) {
   ASSERT(!src.ra_.is(r0));
-  d_form(LWZ, dst, src.ra_, src.offset_, true);
+  d_form(LWZ, dst, src.ra(), src.offset(), true);
 }
 
 void Assembler::lwzu(Register dst, const MemOperand &src) {
   ASSERT(!src.ra_.is(r0));
-  d_form(LWZU, dst, src.ra_, src.offset_, true);
+  d_form(LWZU, dst, src.ra(), src.offset(), true);
 }
 
 void Assembler::lwzx(Register rt, Register ra, Register rb) {
@@ -1057,22 +1057,22 @@ void Assembler::lwzux(Register rt, Register ra, Register rb) {
 
 void Assembler::stb(Register dst, const MemOperand &src) {
   ASSERT(!src.ra_.is(r0));
-  d_form(STB, dst, src.ra_, src.offset_, true);
+  d_form(STB, dst, src.ra(), src.offset(), true);
 }
 
 void Assembler::sth(Register dst, const MemOperand &src) {
   ASSERT(!src.ra_.is(r0));
-  d_form(STH, dst, src.ra_, src.offset_, true);
+  d_form(STH, dst, src.ra(), src.offset(), true);
 }
 
 void Assembler::stw(Register dst, const MemOperand &src) {
   ASSERT(!src.ra_.is(r0));
-  d_form(STW, dst, src.ra_, src.offset_, true);
+  d_form(STW, dst, src.ra(), src.offset(), true);
 }
 
 void Assembler::stwu(Register dst, const MemOperand &src) {
   ASSERT(!src.ra_.is(r0));
-  d_form(STWU, dst, src.ra_, src.offset_, true);
+  d_form(STWU, dst, src.ra(), src.offset(), true);
 }
 
 void Assembler::stwx(Register rs, Register ra, Register rb) {
@@ -1479,8 +1479,8 @@ void Assembler::svc(uint32_t imm24, Condition cond) {
 // Floating point support
 
 void Assembler::lfd(const DwVfpRegister frt, const MemOperand &src) {
-  int offset = src.offset_;
-  Register ra = src.ra_;
+  int offset = src.offset();
+  Register ra = src.ra();
   ASSERT(is_int16(offset));
   int imm16 = offset & kImm16Mask;
   // could be x_form instruction with some casting magic
@@ -1488,8 +1488,8 @@ void Assembler::lfd(const DwVfpRegister frt, const MemOperand &src) {
 }
 
 void Assembler::lfs(const DwVfpRegister frt, const MemOperand &src) {
-  int offset = src.offset_;
-  Register ra = src.ra_;
+  int offset = src.offset();
+  Register ra = src.ra();
   ASSERT(is_int16(offset));
   ASSERT(!ra.is(r0));
   int imm16 = offset & kImm16Mask;
@@ -1498,8 +1498,8 @@ void Assembler::lfs(const DwVfpRegister frt, const MemOperand &src) {
 }
 
 void Assembler::stfd(const DwVfpRegister frs, const MemOperand &src) {
-  int offset = src.offset_;
-  Register ra = src.ra_;
+  int offset = src.offset();
+  Register ra = src.ra();
   ASSERT(is_int16(offset));
   ASSERT(!ra.is(r0));
   int imm16 = offset & kImm16Mask;
@@ -1508,8 +1508,8 @@ void Assembler::stfd(const DwVfpRegister frs, const MemOperand &src) {
 }
 
 void Assembler::stfs(const DwVfpRegister frs, const MemOperand &src) {
-  int offset = src.offset_;
-  Register ra = src.ra_;
+  int offset = src.offset();
+  Register ra = src.ra();
   ASSERT(is_int16(offset));
   ASSERT(!ra.is(r0));
   int imm16 = offset & kImm16Mask;

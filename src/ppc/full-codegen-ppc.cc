@@ -907,7 +907,8 @@ void FullCodeGenerator::VisitFunctionDeclaration(
       Comment cmnt(masm_, "[ FunctionDeclaration");
       EmitDebugCheckDeclarationContext(variable);
       VisitForAccumulatorValue(declaration->fun());
-      __ StoreWord(result_register(), ContextOperand(cp, variable->index()), r0);
+      __ StoreWord(result_register(),
+                   ContextOperand(cp, variable->index()), r0);
       int offset = Context::SlotOffset(variable->index());
       // We know that we have written a function, which is not a smi.
       __ RecordWriteContextSlot(cp,
@@ -3211,7 +3212,7 @@ void FullCodeGenerator::EmitDateField(CallRuntime* expr) {
       __ cmp(scratch1, scratch0);
       __ bne(&runtime);
       __ LoadWord(result, FieldMemOperand(object, JSDate::kValueOffset +
-				     kPointerSize * index->value()), scratch0);
+                  kPointerSize * index->value()), scratch0);
       __ jmp(&done);
     }
     __ bind(&runtime);
@@ -3562,7 +3563,7 @@ void FullCodeGenerator::EmitGetFromCache(CallRuntime* expr) {
   __ lwz(cache, FieldMemOperand(cache, GlobalObject::kNativeContextOffset));
   __ lwz(cache, ContextOperand(cache, Context::JSFUNCTION_RESULT_CACHES_INDEX));
   __ LoadWord(cache,
-	      FieldMemOperand(cache, FixedArray::OffsetOfElementAt(cache_id)), r0);
+         FieldMemOperand(cache, FixedArray::OffsetOfElementAt(cache_id)), r0);
 
   Label done, not_found;
   // tmp now holds finger offset as a smi.
