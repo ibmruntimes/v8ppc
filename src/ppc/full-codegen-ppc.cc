@@ -162,7 +162,7 @@ void FullCodeGenerator::Generate() {
     __ beq(&ok);
     int receiver_offset = info->scope()->num_parameters() * kPointerSize;
     __ LoadRoot(r5, Heap::kUndefinedValueRootIndex);
-    __ stw(r5, MemOperand(sp, receiver_offset));
+    __ StoreWord(r5, MemOperand(sp, receiver_offset), r0);
     __ bind(&ok);
   }
 
@@ -219,10 +219,10 @@ void FullCodeGenerator::Generate() {
         int parameter_offset = StandardFrameConstants::kCallerSPOffset +
             (num_parameters - 1 - i) * kPointerSize;
         // Load parameter from stack.
-        __ lwz(r3, MemOperand(fp, parameter_offset));
+        __ LoadWord(r3, MemOperand(fp, parameter_offset), r0);
         // Store it in the context.
         MemOperand target = ContextOperand(cp, var->index());
-        __ stw(r3, target);
+        __ StoreWord(r3, target, r0);
 
         // Update the write barrier.
         __ RecordWriteContextSlot(
@@ -847,7 +847,7 @@ void FullCodeGenerator::VisitVariableDeclaration(
         Comment cmnt(masm_, "[ VariableDeclaration");
         EmitDebugCheckDeclarationContext(variable);
         __ LoadRoot(ip, Heap::kTheHoleValueRootIndex);
-        __ stw(ip, ContextOperand(cp, variable->index()));
+        __ StoreWord(ip, ContextOperand(cp, variable->index()), r0);
         // No write barrier since the_hole_value is in old space.
         PrepareForBailoutForId(proxy->id(), NO_REGISTERS);
       }
@@ -907,7 +907,7 @@ void FullCodeGenerator::VisitFunctionDeclaration(
       Comment cmnt(masm_, "[ FunctionDeclaration");
       EmitDebugCheckDeclarationContext(variable);
       VisitForAccumulatorValue(declaration->fun());
-      __ stw(result_register(), ContextOperand(cp, variable->index()));
+      __ StoreWord(result_register(), ContextOperand(cp, variable->index()), r0);
       int offset = Context::SlotOffset(variable->index());
       // We know that we have written a function, which is not a smi.
       __ RecordWriteContextSlot(cp,
@@ -956,7 +956,7 @@ void FullCodeGenerator::VisitModuleDeclaration(ModuleDeclaration* declaration) {
       Comment cmnt(masm_, "[ ModuleDeclaration");
       EmitDebugCheckDeclarationContext(variable);
       __ mov(r4, Operand(instance));
-      __ stw(r4, ContextOperand(cp, variable->index()));
+      __ StoreWord(r4, ContextOperand(cp, variable->index()), r0);
       Visit(declaration->module());
       break;
     }
@@ -1566,7 +1566,7 @@ void FullCodeGenerator::VisitRegExpLiteral(RegExpLiteral* expr) {
   __ lwz(r7, FieldMemOperand(r3, JSFunction::kLiteralsOffset));
   int literal_offset =
       FixedArray::kHeaderSize + expr->literal_index() * kPointerSize;
-  __ lwz(r8, FieldMemOperand(r7, literal_offset));
+  __ LoadWord(r8, FieldMemOperand(r7, literal_offset), r0);
   __ LoadRoot(ip, Heap::kUndefinedValueRootIndex);
   __ cmp(r8, ip);
   __ bne(&materialized);
@@ -1799,7 +1799,7 @@ void FullCodeGenerator::VisitArrayLiteral(ArrayLiteral* expr) {
       int offset = FixedArray::kHeaderSize + (i * kPointerSize);
       __ lwz(r8, MemOperand(sp));  // Copy of array literal.
       __ lwz(r4, FieldMemOperand(r8, JSObject::kElementsOffset));
-      __ stw(result_register(), FieldMemOperand(r4, offset));
+      __ StoreWord(result_register(), FieldMemOperand(r4, offset), r0);
       // Update the write barrier for the array store.
       __ RecordWriteField(r4, offset, result_register(), r5,
                           kLRHasBeenSaved, kDontSaveFPRegs,
@@ -2362,7 +2362,7 @@ void FullCodeGenerator::EmitKeyedCallWithIC(Call* expr,
   // Call the IC initialization code.
   Handle<Code> ic =
       isolate()->stub_cache()->ComputeKeyedCallInitialize(arg_count);
-  __ lwz(r5, MemOperand(sp, (arg_count + 1) * kPointerSize));  // Key.
+  __ LoadWord(r5, MemOperand(sp, (arg_count + 1) * kPointerSize), r0);  // Key.
   CallIC(ic, RelocInfo::CODE_TARGET, expr->CallFeedbackId());
   RecordJSReturnSite(expr);
   // Restore context register.
@@ -2407,7 +2407,7 @@ void FullCodeGenerator::EmitResolvePossiblyDirectEval(int arg_count) {
   EMIT_STUB_MARKER(240);
   // Push copy of the first argument or undefined if it doesn't exist.
   if (arg_count > 0) {
-    __ lwz(r4, MemOperand(sp, arg_count * kPointerSize));
+    __ LoadWord(r4, MemOperand(sp, arg_count * kPointerSize), r0);
   } else {
     __ LoadRoot(r4, Heap::kUndefinedValueRootIndex);
   }
@@ -2415,7 +2415,7 @@ void FullCodeGenerator::EmitResolvePossiblyDirectEval(int arg_count) {
 
   // Push the receiver of the enclosing function.
   int receiver_offset = 2 + info_->scope()->num_parameters();
-  __ lwz(r4, MemOperand(fp, receiver_offset * kPointerSize));
+  __ LoadWord(r4, MemOperand(fp, receiver_offset * kPointerSize), r0);
   __ push(r4);
   // Push the language mode.
   __ li(r4, Operand(Smi::FromInt(language_mode())));
@@ -2463,20 +2463,20 @@ void FullCodeGenerator::VisitCall(Call* expr) {
 
       // Push a copy of the function (found below the arguments) and
       // resolve eval.
-      __ lwz(r4, MemOperand(sp, (arg_count + 1) * kPointerSize));
+      __ LoadWord(r4, MemOperand(sp, (arg_count + 1) * kPointerSize), r0);
       __ push(r4);
       EmitResolvePossiblyDirectEval(arg_count);
 
       // The runtime call returns a pair of values in r3 (function) and
       // r4 (receiver). Touch up the stack with the right values.
-      __ stw(r3, MemOperand(sp, (arg_count + 1) * kPointerSize));
-      __ stw(r4, MemOperand(sp, arg_count * kPointerSize));
+      __ StoreWord(r3, MemOperand(sp, (arg_count + 1) * kPointerSize), r0);
+      __ StoreWord(r4, MemOperand(sp, arg_count * kPointerSize), r0);
     }
 
     // Record source position for debugger.
     SetSourcePosition(expr->position());
     CallFunctionStub stub(arg_count, RECEIVER_MIGHT_BE_IMPLICIT);
-    __ lwz(r4, MemOperand(sp, (arg_count + 1) * kPointerSize));
+    __ LoadWord(r4, MemOperand(sp, (arg_count + 1) * kPointerSize), r0);
     __ CallStub(&stub);
     RecordJSReturnSite(expr);
     // Restore context register.
@@ -3210,8 +3210,8 @@ void FullCodeGenerator::EmitDateField(CallRuntime* expr) {
       __ lwz(scratch0, FieldMemOperand(object, JSDate::kCacheStampOffset));
       __ cmp(scratch1, scratch0);
       __ bne(&runtime);
-      __ lwz(result, FieldMemOperand(object, JSDate::kValueOffset +
-                                             kPointerSize * index->value()));
+      __ LoadWord(result, FieldMemOperand(object, JSDate::kValueOffset +
+				     kPointerSize * index->value()), scratch0);
       __ jmp(&done);
     }
     __ bind(&runtime);
@@ -3561,8 +3561,8 @@ void FullCodeGenerator::EmitGetFromCache(CallRuntime* expr) {
   __ lwz(cache, ContextOperand(cp, Context::GLOBAL_OBJECT_INDEX));
   __ lwz(cache, FieldMemOperand(cache, GlobalObject::kNativeContextOffset));
   __ lwz(cache, ContextOperand(cache, Context::JSFUNCTION_RESULT_CACHES_INDEX));
-  __ lwz(cache,
-         FieldMemOperand(cache, FixedArray::OffsetOfElementAt(cache_id)));
+  __ LoadWord(cache,
+	      FieldMemOperand(cache, FixedArray::OffsetOfElementAt(cache_id)), r0);
 
   Label done, not_found;
   // tmp now holds finger offset as a smi.
@@ -4562,12 +4562,12 @@ Register FullCodeGenerator::context_register() {
 
 void FullCodeGenerator::StoreToFrameField(int frame_offset, Register value) {
   ASSERT_EQ(POINTER_SIZE_ALIGN(frame_offset), frame_offset);
-  __ stw(value, MemOperand(fp, frame_offset));
+  __ StoreWord(value, MemOperand(fp, frame_offset), r0);
 }
 
 
 void FullCodeGenerator::LoadContextField(Register dst, int context_index) {
-  __ lwz(dst, ContextOperand(cp, context_index));
+  __ LoadWord(dst, ContextOperand(cp, context_index), r0);
 }
 
 

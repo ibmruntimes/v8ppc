@@ -3517,7 +3517,7 @@ void TranscendentalCacheStub::Generate(MacroAssembler* masm) {
   // cache_entry points to cache array.
   int cache_array_index
       = type_ * sizeof(isolate->transcendental_cache()->caches_[0]);
-  __ lwz(cache_entry, MemOperand(cache_entry, cache_array_index));
+  __ LoadWord(cache_entry, MemOperand(cache_entry, cache_array_index), r0);
   // r3 points to the cache for the type type_.
   // If NULL, the cache hasn't been initialized yet, so go through runtime.
   __ cmpi(cache_entry, Operand(0, RelocInfo::NONE));
