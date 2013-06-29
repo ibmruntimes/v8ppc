@@ -31,7 +31,6 @@
   'variables': {
     'library%': 'static_library',
     'component%': 'static_library',
-    'visibility%': 'hidden',
     'msvs_multi_core_compile%': '1',
     'mac_deployment_target%': '10.5',
     'variables': {
@@ -39,7 +38,7 @@
         'variables': {
           'conditions': [
             ['OS=="linux" or OS=="freebsd" or OS=="openbsd" or \
-               OS=="netbsd" or OS=="mac"', {
+               OS=="netbsd" or OS=="mac" or OS=="aix"', {
               # This handles the Unix platforms we generally deal with.
               # Anything else gets passed through, which probably won't work
               # very well; such hosts should pass an explicit target_arch
@@ -49,7 +48,7 @@
                   s/x86_64/x64/;s/amd64/x64/;s/arm.*/arm/;s/mips.*/mipsel/")',
             }, {
               # OS!="linux" and OS!="freebsd" and OS!="openbsd" and
-              # OS!="netbsd" and OS!="mac"
+              # OS!="netbsd" and OS!="mac" and OS!="aix"
               'host_arch%': 'ia32',
             }],
           ],
@@ -64,7 +63,6 @@
     'host_arch%': '<(host_arch)',
     'target_arch%': '<(target_arch)',
     'v8_target_arch%': '<(v8_target_arch)',
-    'werror%': '-Werror',
     'conditions': [
       ['(v8_target_arch=="arm" and host_arch!="arm") or \
         (v8_target_arch=="mipsel" and host_arch!="mipsel") or \
@@ -73,6 +71,14 @@
         'want_separate_host_toolset': 1,
       }, {
         'want_separate_host_toolset': 0,
+      }],
+      #
+      ['OS=="aix"', {
+        'visibility%': '',
+        'werror%': '',
+      }, {
+        'visibility%': 'hidden',
+        'werror%': '-Werror',
       }],
     ],
     # Default ARM variable settings.
@@ -85,12 +91,17 @@
     'configurations': {
       'Debug': {
         'cflags': [ '-g', '-O0' ],
+        'conditions': [
+          [ 'OS=="aix"', {
+            'cflags': [ '-gxcoff' ],
+          }],
+        ],
       },
     },
   },
   'conditions': [
     ['OS=="linux" or OS=="freebsd" or OS=="openbsd" or OS=="solaris" \
-       or OS=="netbsd"', {
+       or OS=="netbsd" or OS=="aix"', {
       'target_defaults': {
         'cflags': [ '-Wall', '<(werror)', '-W', '-Wno-unused-parameter',
                     '-Wnon-virtual-dtor', '-pthread', '-fno-rtti',
