@@ -1352,6 +1352,13 @@ class BoyerMooreLookahead : public ZoneObject {
 // to match foo is generated only once (the traces have a common prefix).  The
 // code to store the capture is deferred and generated (twice) after the places
 // where baz has been matched.
+
+#ifdef _AIX
+#undef UNKNOWN
+#undef FALSE
+#undef TRUE
+#endif
+
 class Trace {
  public:
   // A value for a property that is either known to be true, know to be false,
