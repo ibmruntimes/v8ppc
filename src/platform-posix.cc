@@ -112,8 +112,14 @@ void* OS::GetRandomMmapAddr() {
     // The range 0x20000000 - 0x60000000 is relatively unpopulated across a
     // variety of ASLR modes (PAE kernel, NX compat mode, etc) and on macos
     // 10.6 and 10.7.
+    // The range 0x30000000 - 0xD0000000 is available on AIX;
+    // choose the upper range.
     raw_addr &= 0x3ffff000;
+#ifdef _AIX
+    raw_addr += 0x90000000;
+#else
     raw_addr += 0x20000000;
+#endif
 #endif
     return reinterpret_cast<void*>(raw_addr);
   }
