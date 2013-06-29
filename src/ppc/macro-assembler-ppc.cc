@@ -3969,6 +3969,26 @@ void MacroAssembler::Add(Register dst, Register src,
   }
 }
 
+void MacroAssembler::Cmpi(Register src1, const Operand& src2, Register scratch, CRegister cr) {
+  int value = src2.immediate();
+  if (is_int16(value)) {
+    cmpi(src1, src2, cr);
+  } else {
+    mov(scratch, src2);
+    cmp(src1, scratch, cr);
+  }
+}
+
+void MacroAssembler::Cmpli(Register src1, const Operand& src2, Register scratch, CRegister cr) {
+  int value = src2.immediate();
+  if (is_uint16(value)) {
+    cmpli(src1, src2, cr);
+  } else {
+    mov(scratch, src2);
+    cmpl(src1, scratch, cr);
+  }
+}
+
 // Variable length depending on whether offset fits into immediate field
 // MemOperand currently only supports d-form
 void MacroAssembler::LoadWord(Register dst, const MemOperand& mem,

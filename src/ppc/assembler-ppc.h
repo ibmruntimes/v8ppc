@@ -859,8 +859,7 @@ class Assembler : public AssemblerBase {
         bc(branch_offset(L, false), BF, 0 + (cr.code() * 4));
         break;
       default:
-        li(r0, Operand(0xeeee));
-        b(L);
+        fake_asm(fBranch);
         // UNIMPLEMENTED();
     }
   }
@@ -892,6 +891,11 @@ class Assembler : public AssemblerBase {
   void bnotoverflow(Label* L, CRegister cr = cr1) {
     ASSERT(cr.code() >= 0 && cr.code() <= 7);
     bc(branch_offset(L, false), BF, 3 + (cr.code() * 4));
+  }
+
+  // Decrement CTR; branch if CTR != 0
+  void bdnz(Label* L) {
+    bc(branch_offset(L, false), DCBNZ, 0);
   }
 
   // end PowerPC

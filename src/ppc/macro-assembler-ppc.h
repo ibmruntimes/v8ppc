@@ -488,6 +488,10 @@ class MacroAssembler: public Assembler {
                  bool updateForm = false);
 
   void Add(Register dst, Register src, uint32_t value, Register scratch);
+  void Cmpi(Register src1, const Operand& src2, Register scratch,
+            CRegister cr = cr7);
+  void Cmpli(Register src1, const Operand& src2, Register scratch,
+             CRegister cr = cr7);
 
   // ---------------------------------------------------------------------------
   // JavaScript invokes
@@ -1153,9 +1157,14 @@ class MacroAssembler: public Assembler {
   // the original value and jump to not_a_smi. Destroys scratch and
   // sets flags.
   void TrySmiTag(Register reg, Label* not_a_smi, Register scratch) {
-    rlwinm(scratch, reg, 1, 31, 31, SetRC);
+    TrySmiTag(reg, reg, not_a_smi, scratch);
+  }
+
+  void TrySmiTag(Register dst, Register src, Label* not_a_smi, Register scratch) {
+    // Todo: this looks incorrect for signed values
+    rlwinm(scratch, src, 1, 31, 31, SetRC);
     bne(not_a_smi, cr0);
-    rlwinm(reg, reg, 1, 0, 30);
+    SmiTag(dst, src);
   }
 
   void SmiUntag(Register reg, RCBit rc = LeaveRC) {

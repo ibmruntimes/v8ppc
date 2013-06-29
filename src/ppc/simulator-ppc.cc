@@ -2239,7 +2239,11 @@ void Simulator::InstructionDecode(Instruction* instr) {
         }
         case DCBNZ:  // Decrement CTR; branch if CTR != 0
         case DCBEZ:  // Decrement CTR; branch if CTR == 0
-          UNIMPLEMENTED();
+          special_reg_ctr_ -= 1;
+          if ((special_reg_ctr_ == 0) == (bo == DCBEZ)) {
+            set_pc(get_pc() + offset);
+          }
+          break;
         case BA: {   // Branch always
           set_pc(get_pc() + offset);
           break;
