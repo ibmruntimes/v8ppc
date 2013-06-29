@@ -86,7 +86,7 @@ namespace internal {
 #elif defined(__MIPSEL__)
 #define V8_HOST_ARCH_MIPS 1
 #define V8_HOST_ARCH_32_BIT 1
-#elif defined(__PPC__)
+#elif defined(__PPC__) || defined(_ARCH_PPC)
 #define V8_HOST_ARCH_PPC 1
 #if defined(__PPC64__)
 #define V8_HOST_ARCH_64_BIT 1
