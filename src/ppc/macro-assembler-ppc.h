@@ -1160,7 +1160,8 @@ class MacroAssembler: public Assembler {
     TrySmiTag(reg, reg, not_a_smi, scratch);
   }
 
-  void TrySmiTag(Register dst, Register src, Label* not_a_smi, Register scratch) {
+  void TrySmiTag(Register dst, Register src, Label* not_a_smi,
+                 Register scratch) {
     // Todo: this looks incorrect for signed values
     rlwinm(scratch, src, 1, 31, 31, SetRC);
     bne(not_a_smi, cr0);

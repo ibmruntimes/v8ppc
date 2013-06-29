@@ -3969,7 +3969,8 @@ void MacroAssembler::Add(Register dst, Register src,
   }
 }
 
-void MacroAssembler::Cmpi(Register src1, const Operand& src2, Register scratch, CRegister cr) {
+void MacroAssembler::Cmpi(Register src1, const Operand& src2, Register scratch,
+                          CRegister cr) {
   int value = src2.immediate();
   if (is_int16(value)) {
     cmpi(src1, src2, cr);
@@ -3979,7 +3980,8 @@ void MacroAssembler::Cmpi(Register src1, const Operand& src2, Register scratch, 
   }
 }
 
-void MacroAssembler::Cmpli(Register src1, const Operand& src2, Register scratch, CRegister cr) {
+void MacroAssembler::Cmpli(Register src1, const Operand& src2, Register scratch,
+                           CRegister cr) {
   int value = src2.immediate();
   if (is_uint16(value)) {
     cmpli(src1, src2, cr);
