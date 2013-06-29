@@ -95,8 +95,8 @@ uint64_t OS::CpuFeaturesImpliedByPlatform() {
 
 
 int OS::ActivationFrameAlignment() {
-  // 16 byte alignment on AIX
-  return 16;
+  // 8 byte alignment on AIX
+  return 8;
 }
 
 
@@ -154,7 +154,7 @@ void* OS::Allocate(const size_t requested,
                    bool executable) {
   const size_t msize = RoundUp(requested, getpagesize());
   int prot = PROT_READ | PROT_WRITE | (executable ? PROT_EXEC : 0);
-  void* mbase = mmap(NULL, msize, prot, MAP_PRIVATE | MAP_ANON, -1, 0);
+  void* mbase = mmap(NULL, msize, prot, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
 
   if (mbase == MAP_FAILED) {
     LOG(ISOLATE, StringEvent("OS::Allocate", "mmap failed"));
@@ -321,7 +321,7 @@ VirtualMemory::VirtualMemory(size_t size, size_t alignment)
   void* reservation = mmap(OS::GetRandomMmapAddr(),
                            request_size,
                            PROT_NONE,
-                           MAP_PRIVATE | MAP_ANON,
+                           MAP_PRIVATE | MAP_ANONYMOUS,
                            kMmapFd,
                            kMmapFdOffset);
   if (reservation == MAP_FAILED) return;
@@ -393,7 +393,7 @@ void* VirtualMemory::ReserveRegion(size_t size) {
   void* result = mmap(OS::GetRandomMmapAddr(),
                       size,
                       PROT_NONE,
-                      MAP_PRIVATE | MAP_ANON,
+                      MAP_PRIVATE | MAP_ANONYMOUS,
                       kMmapFd,
                       kMmapFdOffset);
 
@@ -405,14 +405,7 @@ void* VirtualMemory::ReserveRegion(size_t size) {
 
 bool VirtualMemory::CommitRegion(void* base, size_t size, bool is_executable) {
   int prot = PROT_READ | PROT_WRITE | (is_executable ? PROT_EXEC : 0);
-  if (MAP_FAILED == mmap(base,
-                         size,
-                         prot,
-                         MAP_PRIVATE | MAP_ANON | MAP_FIXED,
-                         kMmapFd,
-                         kMmapFdOffset)) {
-    return false;
-  }
+  if (mprotect(base, size, prot) == -1) return false;
 
   UpdateAllocatedSpaceLimits(base, size);
   return true;
@@ -420,12 +413,7 @@ bool VirtualMemory::CommitRegion(void* base, size_t size, bool is_executable) {
 
 
 bool VirtualMemory::UncommitRegion(void* base, size_t size) {
-  return mmap(base,
-              size,
-              PROT_NONE,
-              MAP_PRIVATE | MAP_ANON | MAP_FIXED,
-              kMmapFd,
-              kMmapFdOffset) != MAP_FAILED;
+  return mprotect(base, size, PROT_NONE) != -1;
 }
 
 
