@@ -2559,8 +2559,7 @@ void BinaryOpStub::GenerateSmiSmiOperation(MacroAssembler* masm) {
       __ srw(scratch1, scratch1, scratch2);
       // Unsigned shift is not allowed to produce a negative number, so
       // check the sign bit and the sign bit after Smi tagging.
-      __ lis(scratch2, Operand(SIGN_EXT_IMM16(0xc0000000u >> 16)));
-      __ and_(r0, scratch1, scratch2, SetRC);
+      __ andis(scratch2, scratch1, Operand(0xc000));
       __ bne(&not_smi_result, cr0);
       // Smi tag result.
       __ SmiTag(right, scratch1);
@@ -4547,8 +4546,7 @@ void InstanceofStub::Generate(MacroAssembler* masm) {
   __ bne(&slow);
 
   // Null is not instance of anything.
-  __ mov(r0, Operand(masm->isolate()->factory()->null_value()));
-  __ cmp(scratch, r0);
+  __ Cmpi(scratch, Operand(masm->isolate()->factory()->null_value()), r0);
   __ bne(&object_not_null);
   __ li(r3, Operand(Smi::FromInt(1)));
   __ Ret(HasArgsInRegisters() ? 0 : 2);
@@ -7175,10 +7173,9 @@ void ICCompareStub::GenerateKnownObjects(MacroAssembler* masm) {
   __ JumpIfSmi(r5, &miss);
   __ lwz(r5, FieldMemOperand(r3, HeapObject::kMapOffset));
   __ lwz(r6, FieldMemOperand(r4, HeapObject::kMapOffset));
-  __ mov(r0, Operand(known_map_));
-  __ cmp(r5, r0);
+  __ Cmpi(r5, Operand(known_map_), r0);
   __ bne(&miss);
-  __ cmp(r6, r0);
+  __ Cmpi(r6, Operand(known_map_), r0);
   __ bne(&miss);
 
   __ sub(r3, r3, r4);
@@ -7355,8 +7352,7 @@ void StringDictionaryLookupStub::GenerateNegativeLookup(MacroAssembler* masm,
       __ LoadRoot(tmp, Heap::kTheHoleValueRootIndex);
 
       // Stop if found the property.
-      __ mov(r0, Operand(Handle<String>(name)));
-      __ cmp(entity_name, r0);
+      __ Cmpi(entity_name, Operand(Handle<String>(name)), r0);
       __ beq(miss);
 
       Label the_hole;

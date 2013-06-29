@@ -318,8 +318,7 @@ void ElementsTransitionGenerator::GenerateDoubleToObject(
   __ addi(r7, r7, Operand(8));
   // ip: current element's upper 32 bit
   // r7: address of next element's upper 32 bit
-  __ mov(r0, Operand(kHoleNanUpper32));
-  __ cmp(r4, r0);
+  __ Cmpi(r4, Operand(kHoleNanUpper32), r0);
   __ beq(&convert_hole);
 
   // Non-hole double, copy value into a heap number.
