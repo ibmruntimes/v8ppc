@@ -1170,6 +1170,15 @@ void Assembler::marker_asm(int mcode) {
     emit(FAKE_OPCODE | MARKER_SUBOPCODE | mcode);
   }
 }
+
+// Function descriptor for AIX.
+// Code address skips the function descriptor "header".
+// TOC and static chain are ignored and set to 0.
+void Assembler::function_descriptor() {
+  dd(reinterpret_cast<int32_t>(pc_) + 3 * kPointerSize);
+  dd(static_cast<int32_t>(0));
+  dd(static_cast<int32_t>(0));
+}
 // end PowerPC
 
 void Assembler::add(Register dst, Register src1, const Operand& src2,

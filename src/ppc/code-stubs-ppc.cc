@@ -4152,6 +4152,9 @@ void JSEntryStub::GenerateBody(MacroAssembler* masm, bool is_construct) {
   Label invoke, handler_entry, exit;
 
   // Called from C
+#ifdef _AIX
+  __ function_descriptor();
+#endif
 
   // PPC LINUX ABI:
   // preserve LR in pre-reserved slot in caller's frame
