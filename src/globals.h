@@ -218,6 +218,16 @@ typedef byte* Address;
 #define V8PRIdPTR V8_PTR_PREFIX "d"
 #define V8PRIuPTR V8_PTR_PREFIX "u"
 
+// Fix for AIX define intptr_t as "long int":
+#ifdef _AIX
+#undef V8_PTR_PREFIX
+#define V8_PTR_PREFIX "l"
+#undef V8PRIdPTR
+#define V8PRIdPTR "ld"
+#undef V8PRIxPTR
+#define V8PRIxPTR "lx"
+#endif
+
 // Fix for Mac OS X defining uintptr_t as "unsigned long":
 #if defined(__APPLE__) && defined(__MACH__)
 #undef V8PRIxPTR
