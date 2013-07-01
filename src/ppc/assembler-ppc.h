@@ -530,9 +530,9 @@ class MemOperand BASE_EMBEDDED {
   }
 
   // PowerPC - base register
-  Register ra() const { 
+  Register ra() const {
       ASSERT(validPPCAddressing_);
-      return ra_; 
+      return ra_;
   }
 
   bool isPPCAddressing() const { return validPPCAddressing_;}
@@ -541,7 +541,7 @@ class MemOperand BASE_EMBEDDED {
   Register ra_;  // base
   int32_t offset_;  // valid if rm_ == no_reg
   bool validPPCAddressing_;
- 
+
   friend class Assembler;
 };
 
@@ -784,7 +784,7 @@ class Assembler : public AssemblerBase {
   static const int kDebugBreakSlotLength =
       kDebugBreakSlotInstructions * kInstrSize;
 
-  static inline int encode_crbit(const CRegister& cr, enum CRBit crbit) const {
+  static inline int encode_crbit(const CRegister& cr, enum CRBit crbit) {
     return ((cr.code() * CRWIDTH) + crbit);
   }
 
