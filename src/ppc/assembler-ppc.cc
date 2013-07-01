@@ -832,14 +832,23 @@ void Assembler::rlwimi(Register ra, Register rs,
   emit(RLWIMIX | rs.code()*B21 | ra.code()*B16 | sh*B11 | mb*B6 | me << 1 | rc);
 }
 
-void Assembler::slwi(Register dst, Register src, const Operand& val) {
+void Assembler::slwi(Register dst, Register src, const Operand& val,
+                     RCBit rc) {
   ASSERT((32 > val.imm32_)&&(val.imm32_ >= 0));
-  rlwinm(dst, src, val.imm32_, 0, 31-val.imm32_);
+  rlwinm(dst, src, val.imm32_, 0, 31-val.imm32_, rc);
 }
-void Assembler::srwi(Register dst, Register src, const Operand& val) {
+void Assembler::srwi(Register dst, Register src, const Operand& val,
+                     RCBit rc) {
   ASSERT((32 > val.imm32_)&&(val.imm32_ >= 0));
-  rlwinm(dst, src, 32-val.imm32_, val.imm32_, 31);
+  rlwinm(dst, src, 32-val.imm32_, val.imm32_, 31, rc);
 }
+void Assembler::clrrwi(Register dst, Register src, const Operand& val,
+                       RCBit rc) {
+  ASSERT((32 > val.imm32_)&&(val.imm32_ >= 0));
+  rlwinm(dst, src, 0, 0, 31-val.imm32_, rc);
+}
+
+
 void Assembler::srawi(Register ra, Register rs, int sh, RCBit r) {
   CheckBuffer();
   emit(EXT2 | SRAWIX | rs.code()*B21 | ra.code()*B16 | sh*B11 | r);
@@ -1435,12 +1444,13 @@ void Assembler::stm(BlockAddrMode am,
 // Exception-generating instructions and debugging support.
 // Stops with a non-negative code less than kNumOfWatchedStops support
 // enabling/disabling and a counter feature. See simulator-arm.h .
-void Assembler::stop(const char* msg, Condition cond, int32_t code) {
+void Assembler::stop(const char* msg, Condition cond, int32_t code,
+                     CRegister cr) {
   // PPCPORT_CHECK(false);
   // EMIT_FAKE_ARM_INSTR(fSTOP);
   if (cond != al) {
     Label skip;
-    b(&skip, NegateCondition(cond));
+    b(NegateCondition(cond), &skip, cr);
     bkpt(0);
     bind(&skip);
   } else {

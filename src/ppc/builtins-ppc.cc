@@ -877,6 +877,7 @@ static void Generate_JSConstructStubHelper(MacroAssembler* masm,
       // r6: object size (in words)
       // r7: JSObject (not tagged)
       // r8: First in-object property of JSObject (not tagged)
+      uint32_t byte;
       __ slwi(r9, r6, Operand(kPointerSizeLog2));
       __ add(r9, r7, r9);  // End of object.
       ASSERT_EQ(3 * kPointerSize, JSObject::kHeaderSize);
@@ -885,13 +886,14 @@ static void Generate_JSConstructStubHelper(MacroAssembler* masm,
         __ lwz(r3, FieldMemOperand(r5, Map::kInstanceSizesOffset));
         // Fetch Map::kPreAllocatedPropertyFieldsByte field from r3
         // and multiply by kPointerSizeLog2
-        STATIC_ASSERT(2 == Map::kPreAllocatedPropertyFieldsByte);
-        STATIC_ASSERT(kPointerSizeLog2 == 2);
-#if defined(V8_HOST_ARCH_PPC)  // ENDIAN
-        __ rlwinm(r3, r3, 26, 22, 29, LeaveRC);
-#else
-        __ rlwinm(r3, r3, 18, 22, 29, LeaveRC);
+        STATIC_ASSERT(Map::kPreAllocatedPropertyFieldsByte < 4);
+        byte = Map::kPreAllocatedPropertyFieldsByte;
+#if !defined(V8_HOST_ARCH_PPC)  // ENDIAN
+        byte = 3 - byte;
 #endif
+        __ ExtractBitRange(r3, r3, byte * CHAR_BIT,
+                           ((byte + 1) * CHAR_BIT) - 1);
+        __ slwi(r3, r3, Operand(kPointerSizeLog2));
         __ add(r3, r8, r3);
         // r3: offset of first field after pre-allocated fields
         if (FLAG_debug_code) {
@@ -920,19 +922,21 @@ static void Generate_JSConstructStubHelper(MacroAssembler* masm,
       // and in-object properties.
       __ lwz(r3, FieldMemOperand(r5, Map::kInstanceSizesOffset));
       // Fetch Map::kPreAllocatedPropertyFieldsByte field from r3
-      STATIC_ASSERT(2 == Map::kPreAllocatedPropertyFieldsByte);
-#if defined(V8_HOST_ARCH_PPC)  // ENDIAN
-      __ rlwinm(r9, r3, 24, 24, 31, LeaveRC);
-#else
-      __ rlwinm(r9, r3, 16, 24, 31, LeaveRC);
+      STATIC_ASSERT(Map::kPreAllocatedPropertyFieldsByte < 4);
+      byte = Map::kPreAllocatedPropertyFieldsByte;
+#if !defined(V8_HOST_ARCH_PPC)  // ENDIAN
+      byte = 3 - byte;
 #endif
+      __ ExtractBitRange(r9, r3, byte * CHAR_BIT,
+                         ((byte + 1) * CHAR_BIT) - 1);
       __ add(r6, r6, r9);
-      STATIC_ASSERT(1 == Map::kInObjectPropertiesByte);
-#if defined(V8_HOST_ARCH_PPC)  // ENDIAN
-      __ rlwinm(r9, r3, 16, 24, 31, LeaveRC);
-#else
-      __ rlwinm(r9, r3, 24, 24, 31, LeaveRC);
+      STATIC_ASSERT(Map::kInObjectPropertiesByte < 4);
+      byte = Map::kInObjectPropertiesByte;
+#if !defined(V8_HOST_ARCH_PPC)  // ENDIAN
+      byte = 3 - byte;
 #endif
+      __ ExtractBitRange(r9, r3, byte * CHAR_BIT,
+                         ((byte + 1) * CHAR_BIT) - 1);
       __ sub(r6, r6, r9);  // roohack - sub order may be incorrect
       __ cmpi(r6, Operand(0));
 

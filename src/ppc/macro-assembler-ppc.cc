@@ -990,7 +990,7 @@ void MacroAssembler::EnterExitFrame(bool save_doubles, int stack_space) {
   sub(sp, sp, Operand((stack_space + 1 + 1) * kPointerSize));
   if (frame_alignment > 0) {
     ASSERT(frame_alignment == 8);
-    rlwinm(sp, sp, 0, 0, 28);  // equivalent to &= -8
+    clrrwi(sp, sp, Operand(3));  // equivalent to &= -8
   }
 
   // Set the exit frame sp value to point just before the return address
@@ -2610,7 +2610,7 @@ void MacroAssembler::EmitOutOfInt32RangeTruncate(Register result,
   // check for NaN or +/-Infinity
   // by extracting exponent (mask: 0x7ff00000)
   STATIC_ASSERT(HeapNumber::kExponentMask == 0x7ff00000u);
-  rlwinm(scratch, input_high, 12, 21, 31, LeaveRC);
+  ExtractBitMask(scratch, input_high, HeapNumber::kExponentMask);
   cmpli(scratch, Operand(0x7ff));
   beq(&done);
 
@@ -2632,7 +2632,7 @@ void MacroAssembler::EmitOutOfInt32RangeTruncate(Register result,
   STATIC_ASSERT(HeapNumber::kSignMask == 0x80000000u);
   Register sign = result;
   result = no_reg;
-  rlwinm(sign, input_high, 0, 0, 0, LeaveRC);
+  ExtractBit(sign, input_high, 0);
 
   // Shifts >= 32 bits should result in zero.
   // slw extracts only the 6 most significant bits of the shift value.
@@ -3119,7 +3119,7 @@ void MacroAssembler::UntagAndJumpIfSmi(
     Register dst, Register src, Label* smi_case) {
   STATIC_ASSERT(kSmiTag == 0);
   STATIC_ASSERT(kSmiTagSize == 1);
-  rlwinm(r0, src, 0, 31, 31, SetRC);
+  TestBit(src, 31, r0);
   srawi(dst, src, kSmiTagSize);
   beq(smi_case, cr0);
 }
@@ -3129,7 +3129,7 @@ void MacroAssembler::UntagAndJumpIfNotSmi(
     Register dst, Register src, Label* non_smi_case) {
   STATIC_ASSERT(kSmiTag == 0);
   STATIC_ASSERT(kSmiTagSize == 1);
-  rlwinm(r0, src, 0, 31, 31, SetRC);
+  TestBit(src, 31, r0);
   srawi(dst, src, kSmiTagSize);
   bne(non_smi_case, cr0);
 }
@@ -3656,7 +3656,7 @@ void MacroAssembler::HasColor(Register object,
   and_(r0, ip, mask_scratch, SetRC);
   b(first_bit == 1 ? eq : ne, &other_color, cr0);
   // Shift left 1
-  rlwinm(mask_scratch, mask_scratch, 1, 0, 30, SetRC);
+  slwi(mask_scratch, mask_scratch, Operand(1), SetRC);
   beq(&word_boundary, cr0);
   and_(r0, ip, mask_scratch, SetRC);
   b(second_bit == 1 ? ne : eq, has_color, cr0);
@@ -3699,10 +3699,13 @@ void MacroAssembler::GetMarkBits(Register addr_reg,
   ASSERT((~Page::kPageAlignmentMask & 0xffff) == 0);
   lis(r0, Operand((~Page::kPageAlignmentMask >> 16)));
   and_(bitmap_reg, addr_reg, r0);
-  rlwinm(mask_reg, addr_reg, 32-kPointerSizeLog2,
-         32-Bitmap::kBitsPerCellLog2, 31);
   const int kLowBits = kPointerSizeLog2 + Bitmap::kBitsPerCellLog2;
-  rlwinm(ip, addr_reg, 32-kLowBits, 32-(kPageSizeBits - kLowBits), 31);
+  ExtractBitRange(mask_reg, addr_reg,
+                  31 - kLowBits + 1,
+                  31 - kPointerSizeLog2);
+  ExtractBitRange(ip, addr_reg,
+                  31 - kPageSizeBits + 1,
+                  31 - kLowBits);
   slwi(ip, ip, Operand(kPointerSizeLog2));
   add(bitmap_reg, bitmap_reg, ip);
   li(ip, Operand(1));

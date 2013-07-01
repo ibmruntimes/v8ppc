@@ -924,7 +924,7 @@ void FloatingPointHelper::ConvertDoubleToInt(MacroAssembler* masm,
   __ lwz(r0, MemOperand(sp, 0));
 #endif
   STATIC_ASSERT(HeapNumber::kExponentMask == 0x7ff00000u);
-  __ rlwinm(r0, r0, 12, 21, 31);
+  __ ExtractBitMask(r0, r0, HeapNumber::kExponentMask);
   __ cmpli(r0, Operand(0x7ff));
   __ li(int_dst, Operand(0));
   __ beq(&done);
@@ -964,7 +964,7 @@ void FloatingPointHelper::ConvertDoubleToUnsignedInt(MacroAssembler* masm,
   __ lwz(r0, MemOperand(sp, 0));
 #endif
   STATIC_ASSERT(HeapNumber::kExponentMask == 0x7ff00000u);
-  __ rlwinm(r0, r0, 12, 21, 31);
+  __ ExtractBitMask(r0, r0, HeapNumber::kExponentMask);
   __ cmpli(r0, Operand(0x7ff));
   __ li(int_dst, Operand(0));
   __ beq(&done);
@@ -1118,7 +1118,7 @@ void FloatingPointHelper::DoubleIs32BitInteger(MacroAssembler* masm,
   EMIT_STUB_MARKER(100);
   // Get exponent alone in scratch.
   STATIC_ASSERT(HeapNumber::kExponentMask == 0x7ff00000u);
-  __ rlwinm(scratch, src1, 12, 21, 31);
+  __ ExtractBitMask(scratch, src1, HeapNumber::kExponentMask);
 
   // Substract the bias from the exponent.
   __ addi(scratch, scratch, Operand(-HeapNumber::kExponentBias));
@@ -1137,12 +1137,12 @@ void FloatingPointHelper::DoubleIs32BitInteger(MacroAssembler* masm,
   // Another way to put it is that if (exponent - signbit) > 30 then the
   // number cannot be represented as an int32.
   Register tmp = dst;
-  __ rlwinm(tmp, scratch, 1, 31, 31);
+  __ ExtractBit(tmp, src1, 0);  // extract sign bit
   __ sub(tmp, scratch, tmp);
   __ cmpi(tmp, Operand(30));
   __ bgt(not_int32);
   // - Check whether bits [21:0] in the mantissa are not null.
-  __ rlwinm(r0, src2, 0, 10, 31, SetRC);
+  __ TestBitRange(src2, 10, 31, r0);
   __ bne(not_int32, cr0);
 
   // Otherwise the exponent needs to be big enough to shift left all the
@@ -1153,7 +1153,8 @@ void FloatingPointHelper::DoubleIs32BitInteger(MacroAssembler* masm,
 
   // Get the 32 higher bits of the mantissa in dst.
   STATIC_ASSERT(HeapNumber::kMantissaBitsInTopWord == 20);
-  __ rlwinm(dst, src2, 12, 20, 31);
+  STATIC_ASSERT(HeapNumber::kNonMantissaBitsInTopWord == 12);
+  __ ExtractBitRange(dst, src2, 0, HeapNumber::kNonMantissaBitsInTopWord - 1);
   __ slwi(src1, src1, Operand(HeapNumber::kNonMantissaBitsInTopWord));
   __ orx(dst, dst, src1);
 
@@ -1301,7 +1302,7 @@ static void EmitIdenticalObjectComparison(MacroAssembler* masm,
       __ lwz(r5, FieldMemOperand(r3, HeapNumber::kExponentOffset));
       // Test that exponent bits are all set.
       STATIC_ASSERT(HeapNumber::kExponentMask == 0x7ff00000u);
-      __ rlwinm(r6, r5, 12, 21, 31);
+      __ ExtractBitMask(r6, r5, HeapNumber::kExponentMask);
       __ cmpli(r6, Operand(0x7ff));
       __ bne(&return_equal);
 
@@ -1415,42 +1416,40 @@ void EmitNanCheck(MacroAssembler* masm, Label* lhs_not_nan, Condition cond) {
   EMIT_STUB_MARKER(104);
 #ifdef PENGUIN_CLEANUP
   bool exp_first = (HeapNumber::kExponentOffset == HeapNumber::kValueOffset);
-  Register rhs_exponent = exp_first ? r0 : r1;
-  Register lhs_exponent = exp_first ? r2 : r3;
-  Register rhs_mantissa = exp_first ? r1 : r0;
-  Register lhs_mantissa = exp_first ? r3 : r2;
+  Register rhs_exponent = exp_first ? r3 : r4;
+  Register lhs_exponent = exp_first ? r5 : r6;
+  Register rhs_mantissa = exp_first ? r4 : r3;
+  Register lhs_mantissa = exp_first ? r6 : r5;
   Label one_is_nan, neither_is_nan;
 
   STATIC_ASSERT(HeapNumber::kExponentMask == 0x7ff00000u);
-  __ rlwinm(r4, lhs_exponent, 12, 21, 31);
-  __ cmpli(r4, Operand(0x7ff));
+  STATIC_ASSERT(HeapNumber::kMantissaMask == 0x000fffffu);
+  __ ExtractBitMask(r0, lhs_exponent, HeapNumber::kExponentMask);
+  __ cmpli(r0, Operand(0x7ff));
   __ b(ne, lhs_not_nan);
 
-  __ rlwinm(r4, lhs_exponent, 0,
-            HeapNumber::kNonMantissaBitsInTopWord, 31, SetRC);
+  __ TestBitMask(lhs_exponent, HeapNumber::kMantissaMask, r0);
   __ bne(&one_is_nan, cr0);
   __ cmpi(lhs_mantissa, Operand(0, RelocInfo::NONE));
   __ bne(&one_is_nan);
 
   __ bind(lhs_not_nan);
-  STATIC_ASSERT(HeapNumber::kExponentMask == 0x7ff00000u);
-  __ rlwinm(r4, rhs_exponent, 12, 21, 31);
-  __ cmpli(r4, Operand(0x7ff));
+  __ ExtractBitMask(r0, lhs_exponent, HeapNumber::kExponentMask);
+  __ cmpli(r0, Operand(0x7ff));
   __ b(ne, &neither_is_nan);
 
-  __ rlwinm(r4, rhs_exponent, 0,
-            HeapNumber::kNonMantissaBitsInTopWord, 31, SetRC);
+  __ TestBitMask(rhs_exponent, HeapNumber::kMantissaMask, r0);
   __ bne(&one_is_nan, cr0);
   __ cmpi(rhs_mantissa, Operand(0, RelocInfo::NONE));
   __ beq(&neither_is_nan);
 
   __ bind(&one_is_nan);
   // NaN comparisons always fail.
-  // Load whatever we need in r0 to make the comparison fail.
+  // Load whatever we need in r3 to make the comparison fail.
   if (cond == lt || cond == le) {
-    __ mov(r0, Operand(GREATER));
+    __ mov(r3, Operand(GREATER));
   } else {
-    __ mov(r0, Operand(LESS));
+    __ mov(r3, Operand(LESS));
   }
   __ Ret();
 
@@ -2126,7 +2125,7 @@ void UnaryOpStub::GenerateSmiCodeSub(MacroAssembler* masm,
   __ JumpIfNotSmi(r3, non_smi);
 
   // The result of negating zero or the smallest negative smi is not a smi.
-  __ rlwinm(r0, r3, 0, 1, 31, SetRC);
+  __ TestBitRange(r3, 1, 31, r0);
   __ beq(slow, cr0);
 
   // Return '- value'.
@@ -2143,7 +2142,7 @@ void UnaryOpStub::GenerateSmiCodeBitNot(MacroAssembler* masm,
   // Flip bits and revert inverted smi-tag.
   ASSERT(kSmiTagMask == 1);
   __ notx(r3, r3);
-  __ rlwinm(r3, r3, 0, 0, 30);
+  __ clrrwi(r3, r3, Operand(1));
   __ Ret();
 }
 
@@ -2440,10 +2439,10 @@ void BinaryOpStub::GenerateSmiSmiOperation(MacroAssembler* masm) {
       __ xor_(r0, left, right);
       __ mr(scratch1, right);
       __ addc(right, left, right);  // Add optimistically.
-      __ rlwinm(r0, r0, 1, 31, 31, SetRC);
+      __ TestBit(r0, 0, r0);  // test sign bit
       __ bne(&add_no_overflow, cr0);
       __ xor_(r0, right, scratch1);
-      __ rlwinm(r0, r0, 1, 31, 31, SetRC);
+      __ TestBit(r0, 0, r0);  // test sign bit
       __ bne(&undo_add, cr0);
       __ bind(&add_no_overflow);
       __ Ret();
@@ -2457,10 +2456,10 @@ void BinaryOpStub::GenerateSmiSmiOperation(MacroAssembler* masm) {
       __ xor_(r0, left, right);
       __ mr(scratch1, right);
       __ subfc(right, left, right);  // Subtract optimistically.
-      __ rlwinm(r0, r0, 1, 31, 31, SetRC);
+      __ TestBit(r0, 0, r0);  // test sign bit
       __ beq(&sub_no_overflow, cr0);
       __ xor_(r0, right, scratch1);
-      __ rlwinm(r0, r0, 1, 31, 31, SetRC);
+      __ TestBit(r0, 0, r0);  // test sign bit
       __ bne(&undo_sub, cr0);
       __ bind(&sub_no_overflow);
       __ Ret();
@@ -3016,7 +3015,7 @@ void BinaryOpStub::GenerateInt32Stub(MacroAssembler* masm) {
 #endif
           __ addi(sp, sp, Operand(8));
 
-          __ rlwinm(r0, scratch2, 1, 31, 31, SetRC);
+          __ TestBit(scratch2, 0, r0);  // test sign bit
           __ bne(&return_heap_number);
           __ bind(&not_zero);
 
@@ -7985,7 +7984,7 @@ void ProfileEntryHookStub::Generate(MacroAssembler* masm) {
     __ mr(r8, sp);
     ASSERT(IsPowerOf2(frame_alignment));
     ASSERT(-frame_alignment == -8);
-    __ rlwinm(sp, sp, 0, 0, 28);
+    __ clrrwi(sp, sp, Operand(3));
   }
 
 #if defined(V8_HOST_ARCH_PPC)

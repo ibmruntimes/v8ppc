@@ -1134,6 +1134,72 @@ class MacroAssembler: public Assembler {
                                        Label* not_power_of_two);
 
   // ---------------------------------------------------------------------------
+  // Bit testing/extraction
+
+  // Extract consecutive bits (defined by rangeStart - rangeEnd) from src
+  // and place them into the least significant bits of dst.
+  inline void ExtractBitRange(Register dst, Register src,
+                              uint32_t rangeStart, uint32_t rangeEnd,
+                              RCBit rc = LeaveRC) {
+    ASSERT(rangeStart <= rangeEnd && rangeEnd <= 31);
+    int rotate = (rangeEnd == 31) ? 0 : rangeEnd + 1;
+    int width  = rangeEnd - rangeStart + 1;
+    rlwinm(dst, src, rotate, 31 - width + 1, 31, rc);
+  }
+
+  inline void ExtractBit(Register dst, Register src, uint32_t bitNumber,
+                         RCBit rc = LeaveRC) {
+    ExtractBitRange(dst, src, bitNumber, bitNumber, SetRC);
+  }
+
+  // Extract consecutive bits (defined by mask) from src and place them
+  // into the least significant bits of dst.
+  inline void ExtractBitMask(Register dst, Register src, uint32_t mask,
+                             RCBit rc = LeaveRC) {
+    uint32_t start = 0;
+    uint32_t end;
+    uint32_t bit = (1 << 31);
+
+    while (bit && (mask & bit) == 0) {
+        start++;
+        bit >>= 1;
+    }
+    end = start;
+    bit >>= 1;
+
+    while (bit && (mask & bit)) {
+        end++;
+        bit >>= 1;
+    }
+
+    // 1-bits in mask must be contiguous
+    ASSERT(bit == 0 || (mask & ((bit << 1) - 1)) == 0);
+
+    ExtractBitRange(dst, src, start, end, rc);
+  }
+
+  // Test single bit in value.  Range is defined by rangeStart - rangeEnd.
+  inline void TestBit(Register value, uint32_t bitNumber,
+                      Register scratch = r0) {
+    ExtractBitRange(scratch, value, bitNumber, bitNumber, SetRC);
+  }
+
+  // Test consecutive bit range in value.  Range is defined by
+  // rangeStart - rangeEnd.
+  inline void TestBitRange(Register value,
+                           uint32_t rangeStart, uint32_t rangeEnd,
+                           Register scratch = r0) {
+    ExtractBitRange(scratch, value, rangeStart, rangeEnd, SetRC);
+  }
+
+  // Test consecutive bit range in value.  Range is defined by mask.
+  inline void TestBitMask(Register value, uint32_t mask,
+                          Register scratch = r0) {
+    ExtractBitMask(scratch, value, mask, SetRC);
+  }
+
+
+  // ---------------------------------------------------------------------------
   // Smi utilities
 
   // Shift left by 1
@@ -1200,14 +1266,18 @@ class MacroAssembler: public Assembler {
   // Souce and destination can be the same register.
   void UntagAndJumpIfNotSmi(Register dst, Register src, Label* non_smi_case);
 
+  inline void TestIfSmi(Register value, Register scratch) {
+    TestBit(value, 31, scratch);  // tst(value, Operand(kSmiTagMask));
+  }
+
   // Jump the register contains a smi.
   inline void JumpIfSmi(Register value, Label* smi_label) {
-    rlwinm(r0, value, 0, 31, 31, SetRC);  // tst(value, Operand(kSmiTagMask));
+    TestIfSmi(value, r0);
     beq(smi_label, cr0);  // branch if SMI
   }
   // Jump if either of the registers contain a non-smi.
   inline void JumpIfNotSmi(Register value, Label* not_smi_label) {
-    rlwinm(r0, value, 0, 31, 31, SetRC);  // tst(value, Operand(kSmiTagMask));
+    TestIfSmi(value, r0);
     bne(not_smi_label, cr0);
   }
   // Jump if either of the registers contain a non-smi.

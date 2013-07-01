@@ -1005,8 +1005,10 @@ class Assembler : public AssemblerBase {
               RCBit rc = LeaveRC);
   void rlwimi(Register ra, Register rs, int sh, int mb, int me,
               RCBit rc = LeaveRC);
-  void slwi(Register dst, Register src, const Operand& val);
-  void srwi(Register dst, Register src, const Operand& val);
+  void slwi(Register dst, Register src, const Operand& val, RCBit rc = LeaveRC);
+  void srwi(Register dst, Register src, const Operand& val, RCBit rc = LeaveRC);
+  void clrrwi(Register dst, Register src, const Operand& val,
+              RCBit rc = LeaveRC);
   void srawi(Register ra, Register rs, int sh, RCBit r = LeaveRC);
   void srw(Register dst, Register src1, Register src2, RCBit r = LeaveRC);
   void slw(Register dst, Register src1, Register src2, RCBit r = LeaveRC);
@@ -1166,7 +1168,8 @@ class Assembler : public AssemblerBase {
   // Exception-generating instructions and debugging support
   void stop(const char* msg,
             Condition cond = al,
-            int32_t code = kDefaultStopCode);
+            int32_t code = kDefaultStopCode,
+            CRegister cr = cr7);
 
   void bkpt(uint32_t imm16);  // v5 and above
   void svc(uint32_t imm24, Condition cond = al);

@@ -1859,7 +1859,7 @@ void PatchInlinedSmiCode(Address address, InlinedSmiCheck check) {
     ASSERT(Assembler::IsCmpRegister(instr_at_patch));
     ASSERT_EQ(Assembler::GetRA(instr_at_patch).code(),
               Assembler::GetRB(instr_at_patch).code());
-    patcher.masm()->rlwinm(r0, reg, 0, 31, 31, SetRC);
+    patcher.masm()->TestBit(reg, 31, r0);
   } else {
     ASSERT(check == DISABLE_INLINED_SMI_CHECK);
     ASSERT(Assembler::IsRlwinm(instr_at_patch));
