@@ -521,42 +521,27 @@ class MemOperand BASE_EMBEDDED {
   explicit MemOperand(Register rn, int32_t offset = 0, AddrMode am = Offset);
 
   // ARM only
-  explicit MemOperand(Register rn, Register rm, AddrMode am = Offset);
-
-  // ARM only
   explicit MemOperand(Register rn, Register rm,
                       ShiftOp shift_op, int shift_imm, AddrMode am = Offset);
 
-  void set_offset(int32_t offset) {
-      ASSERT(rm_.is(no_reg));
-      offset_ = offset;
-  }
-
   uint32_t offset() const {
-      ASSERT(rm_.is(no_reg));
+      ASSERT(validPPCAddressing_);
       return offset_;
   }
 
   // PowerPC - base register
-  Register ra() const { return ra_; }
-
-  // ARM stuff
-  Register rn() const { return ra_; }
-  Register rm() const { return rm_; }
-  AddrMode am() const { return am_; }
-
-  bool OffsetIsUint12Encodable() const {
-    return offset_ >= 0 ? is_uint12(offset_) : is_uint12(-offset_);
+  Register ra() const { 
+      ASSERT(validPPCAddressing_);
+      return ra_; 
   }
+
+  bool isPPCAddressing() const { return validPPCAddressing_;}
 
  private:
   Register ra_;  // base
-  Register rm_;  // register offset
   int32_t offset_;  // valid if rm_ == no_reg
-  ShiftOp shift_op_;
-  int shift_imm_;  // valid if rm_ != no_reg && rs_ == no_reg
-  AddrMode am_;  // bits P, U, and W
-
+  bool validPPCAddressing_;
+ 
   friend class Assembler;
 };
 

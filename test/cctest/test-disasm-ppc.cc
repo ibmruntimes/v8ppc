@@ -566,7 +566,7 @@ TEST(Vfp) {
   VERIFY_RUN();
 }
 
-
+#ifdef PENGUIN_CLEANUP
 TEST(LoadStore) {
   SET_UP();
 
@@ -767,4 +767,5 @@ TEST(LoadStore) {
 
   VERIFY_RUN();
 }
+#endif
 
