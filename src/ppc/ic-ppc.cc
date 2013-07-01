@@ -500,7 +500,7 @@ void CallICBase::GenerateNormal(MacroAssembler* masm, int argc) {
   Label miss;
 
   // Get the receiver of the function from the stack into r4.
-  __ lwz(r4, MemOperand(sp, argc * kPointerSize));
+  __ LoadWord(r4, MemOperand(sp, argc * kPointerSize), r0);
 
   GenerateStringDictionaryReceiverCheck(masm, r4, r3, r6, r7, &miss);
 
@@ -532,7 +532,7 @@ void CallICBase::GenerateMiss(MacroAssembler* masm,
   }
 
   // Get the receiver of the function from the stack.
-  __ lwz(r6, MemOperand(sp, argc * kPointerSize));
+  __ LoadWord(r6, MemOperand(sp, argc * kPointerSize), r0);
 
   {
     FrameScope scope(masm, StackFrame::INTERNAL);
@@ -555,7 +555,7 @@ void CallICBase::GenerateMiss(MacroAssembler* masm,
   // This can happen only for regular CallIC but not KeyedCallIC.
   if (id == IC::kCallIC_Miss) {
     Label invoke, global;
-    __ lwz(r5, MemOperand(sp, argc * kPointerSize));  // receiver
+    __ LoadWord(r5, MemOperand(sp, argc * kPointerSize), r0);  // receiver
     __ JumpIfSmi(r5, &invoke);
     __ CompareObjectType(r5, r6, r6, JS_GLOBAL_OBJECT_TYPE);
     __ beq(&global);
@@ -565,7 +565,7 @@ void CallICBase::GenerateMiss(MacroAssembler* masm,
     // Patch the receiver on the stack.
     __ bind(&global);
     __ lwz(r5, FieldMemOperand(r5, GlobalObject::kGlobalReceiverOffset));
-    __ stw(r5, MemOperand(sp, argc * kPointerSize));
+    __ StoreWord(r5, MemOperand(sp, argc * kPointerSize), r0);
     __ bind(&invoke);
   }
 
@@ -592,7 +592,7 @@ void CallIC::GenerateMegamorphic(MacroAssembler* masm,
   // -----------------------------------
 
   // Get the receiver of the function from the stack into r4.
-  __ lwz(r4, MemOperand(sp, argc * kPointerSize));
+  __ LoadWord(r4, MemOperand(sp, argc * kPointerSize), r0);
   GenerateMonomorphicCacheProbe(masm, argc, Code::CALL_IC, extra_ic_state);
   GenerateMiss(masm, argc, extra_ic_state);
 }
@@ -606,7 +606,7 @@ void KeyedCallIC::GenerateMegamorphic(MacroAssembler* masm, int argc) {
   // -----------------------------------
 
   // Get the receiver of the function from the stack into r4.
-  __ lwz(r4, MemOperand(sp, argc * kPointerSize));
+  __ LoadWord(r4, MemOperand(sp, argc * kPointerSize), r0);
 
   Label do_call, slow_call, slow_load, slow_reload_receiver;
   Label check_number_dictionary, check_string, lookup_monomorphic_cache;
@@ -946,7 +946,7 @@ void KeyedCallIC::GenerateNonStrictArguments(MacroAssembler* masm,
   // -----------------------------------
   Label slow, notin;
   // Load receiver.
-  __ lwz(r4, MemOperand(sp, argc * kPointerSize));
+  __ LoadWord(r4, MemOperand(sp, argc * kPointerSize), r0);
   MemOperand mapped_location =
       GenerateMappedArgumentsLookup(masm, r4, r5, r6, r7, r8, &notin, &slow);
   __ lwz(r4, mapped_location);
