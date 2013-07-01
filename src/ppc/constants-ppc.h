@@ -472,6 +472,15 @@ enum BOfield {  // Bits 25-21
   BA     = 20 << 21   // Branch always
 };
 
+enum CRBit {
+  CR_LT = 0,
+  CR_GT = 1,
+  CR_EQ = 2,
+  CR_OF = 3
+};
+
+#define CRWIDTH 4
+
 #if defined(INCLUDE_ARM)
 // Condition code updating mode.
 enum SBit {
