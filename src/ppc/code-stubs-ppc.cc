@@ -189,8 +189,7 @@ void FastNewClosureStub::Generate(MacroAssembler* masm) {
   __ addi(r8, r4, Operand(FixedArray::kHeaderSize - kHeapObjectTag));
   __ slwi(r9, r7, Operand(kPointerSizeLog2 - kSmiTagSize));
   __ add(r8, r8, r9);
-  __ addi(r8, r8, Operand(kPointerSize));
-  __ lwz(r7, MemOperand(r8));
+  __ lwzu(r7, MemOperand(r8, kPointerSize));
 
   __ bind(&install_optimized);
   __ IncrementCounter(counters->fast_new_closure_install_optimized(),
