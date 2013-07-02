@@ -260,7 +260,8 @@ class LCodeGen BASE_EMBEDDED {
 
   void RegisterEnvironmentForDeoptimization(LEnvironment* environment,
                                             Safepoint::DeoptMode mode);
-  void DeoptimizeIf(Condition cc, LEnvironment* environment);
+  void DeoptimizeIf(Condition cc, LEnvironment* environment,
+                    CRegister cr = cr7);
 
   void AddToTranslation(Translation* translation,
                         LOperand* op,
@@ -303,9 +304,10 @@ class LCodeGen BASE_EMBEDDED {
                                               Safepoint::DeoptMode mode);
   void RecordPosition(int position);
 
-  static Condition TokenToCondition(Token::Value op, bool is_unsigned);
+  static Condition TokenToCondition(Token::Value op);
   void EmitGoto(int block);
-  void EmitBranch(int left_block, int right_block, Condition cc);
+  void EmitBranch(int left_block, int right_block, Condition cc,
+                  CRegister cr = cr7);
   void EmitNumberUntagD(Register input,
                         DoubleRegister result,
                         bool deoptimize_on_undefined,

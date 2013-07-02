@@ -708,7 +708,8 @@ void LCodeGen::RegisterEnvironmentForDeoptimization(LEnvironment* environment,
 }
 
 
-void LCodeGen::DeoptimizeIf(Condition cc, LEnvironment* environment) {
+void LCodeGen::DeoptimizeIf(Condition cond, LEnvironment* environment,
+                            CRegister cr) {
   RegisterEnvironmentForDeoptimization(environment, Safepoint::kNoLazyDeopt);
   ASSERT(environment->HasBeenRegistered());
   int id = environment->deoptimization_index();
@@ -726,9 +727,9 @@ void LCodeGen::DeoptimizeIf(Condition cc, LEnvironment* environment) {
     return;
   }
 
-  if (FLAG_trap_on_deopt) __ stop("trap_on_deopt", cc);
+  if (FLAG_trap_on_deopt) __ stop("trap_on_deopt", cond, kDefaultStopCode, cr);
 
-  if (cc == al) {
+  if (cond == al) {
     __ Jump(entry, RelocInfo::RUNTIME_ENTRY);
   } else {
     // We often have several deopts to the same entry, reuse the last
@@ -737,7 +738,7 @@ void LCodeGen::DeoptimizeIf(Condition cc, LEnvironment* environment) {
         (deopt_jump_table_.last().address != entry)) {
       deopt_jump_table_.Add(JumpTableEntry(entry), zone());
     }
-    __ b(cc, &deopt_jump_table_.last().label);
+    __ b(cond, &deopt_jump_table_.last().label, cr);
   }
 }
 
@@ -978,7 +979,7 @@ void LCodeGen::DoModI(LModI* instr) {
     __ rsb(result, dividend, Operand(0));
     __ and_(result, result, Operand(divisor - 1), SetCC);
     if (instr->hydrogen()->CheckFlag(HValue::kBailoutOnMinusZero)) {
-      DeoptimizeIf(eq, instr->environment());
+      DeoptimizeIf(eq, instr->environment(), cr0);
     }
     __ rsb(result, result, Operand(0));
     __ b(&done);
@@ -1090,7 +1091,7 @@ void LCodeGen::DoModI(LModI* instr) {
     __ sub(scratch2, left, scratch, SetCC);
     __ bne(&ok);
     __ cmpi(left, Operand(0));
-    DeoptimizeIf(mi, instr->environment());
+    DeoptimizeIf(lt, instr->environment());
     __ bind(&ok);
     // Load the result and we are done.
     __ mr(result, scratch2);
@@ -1128,7 +1129,7 @@ void LCodeGen::EmitSignedIntegerDivisionByConstant(
         __ Move(result, dividend);
       } else {
         __ rsb(result, dividend, Operand(0), SetCC);
-        DeoptimizeIf(vs, environment);
+        DeoptimizeIf(vs, environment, cr0);
       }
       // Compute the remainder.
       __ li(remainder, Operand(0));
@@ -1230,7 +1231,7 @@ void LCodeGen::DoDivI(LDivI* instr) {
     __ cmpi(left, Operand(0));
     __ bne(&left_not_zero);
     __ cmpi(right, Operand(0));
-    DeoptimizeIf(mi, instr->environment());
+    DeoptimizeIf(lt, instr->environment());
     __ bind(&left_not_zero);
   }
 
@@ -1372,7 +1373,7 @@ void LCodeGen::DoMulI(LMulI* instr) {
           // If left is strictly negative and the constant is null, the
           // result is -0. Deoptimize if required, otherwise return 0.
           __ cmpi(left, Operand(0));
-          DeoptimizeIf(mi, instr->environment());
+          DeoptimizeIf(lt, instr->environment());
         }
         __ li(result, Operand(0));
         break;
@@ -1431,7 +1432,7 @@ void LCodeGen::DoMulI(LMulI* instr) {
       __ cmpi(result, Operand(0));
       __ bne(&done);
       __ cmpi(ToRegister(instr->temp()), Operand(0));
-      DeoptimizeIf(mi, instr->environment());
+      DeoptimizeIf(lt, instr->environment());
       __ bind(&done);
     }
   }
@@ -1487,7 +1488,7 @@ void LCodeGen::DoShiftI(LShiftI* instr) {
       case Token::SHR:
         if (instr->can_deopt()) {
           __ mov(result, Operand(left, LSR, scratch), SetCC);
-          DeoptimizeIf(mi, instr->environment());
+          DeoptimizeIf(lt, instr->environment(), cr0);
         } else {
           __ mov(result, Operand(left, LSR, scratch));
         }
@@ -1516,8 +1517,8 @@ void LCodeGen::DoShiftI(LShiftI* instr) {
           __ mov(result, Operand(left, LSR, shift_count));
         } else {
           if (instr->can_deopt()) {
-            __ tst(left, Operand(0x80000000));
-            DeoptimizeIf(ne, instr->environment());
+            __ TestBit(left, 0, r0);  // test sign bit
+            DeoptimizeIf(ne, instr->environment(), cr0);
           }
           __ Move(result, left);
         }
@@ -1624,9 +1625,9 @@ void LCodeGen::DoValueOf(LValueOf* instr) {
   Label done;
 
   // If the object is a smi return the object.
-  __ tst(input, Operand(kSmiTagMask));
+  __ TestIfSmi(input, r0);
   __ Move(result, input, eq);
-  __ beq(&done);
+  __ beq(&done, cr0);
 
   // If the object is not a value type, return the object.
   __ CompareObjectType(input, map, map, JS_VALUE_TYPE);
@@ -1649,8 +1650,8 @@ void LCodeGen::DoDateField(LDateField* instr) {
   ASSERT(!scratch.is(scratch0()));
   ASSERT(!scratch.is(object));
 
-  __ tst(object, Operand(kSmiTagMask));
-  DeoptimizeIf(eq, instr->environment());
+  __ TestIfSmi(object, r0);
+  DeoptimizeIf(eq, instr->environment(), cr0);
   __ CompareObjectType(object, scratch, scratch, JS_DATE_TYPE);
   DeoptimizeIf(ne, instr->environment());
 
@@ -1720,7 +1721,7 @@ void LCodeGen::DoMathMinMax(LMathMinMax* instr) {
   LOperand* left = instr->left();
   LOperand* right = instr->right();
   HMathMinMax::Operation operation = instr->hydrogen()->operation();
-  Condition condition = (operation == HMathMinMax::kMathMin) ? le : ge;
+  Condition cond = (operation == HMathMinMax::kMathMin) ? le : ge;
   if (instr->hydrogen()->representation().IsInteger32()) {
     Register left_reg = ToRegister(left);
     Operand right_op = (right->IsRegister() || right->IsConstantOperand())
@@ -1729,9 +1730,9 @@ void LCodeGen::DoMathMinMax(LMathMinMax* instr) {
     Register result_reg = ToRegister(instr->result());
     __ cmp(left_reg, right_op);
     if (!result_reg.is(left_reg)) {
-      __ mov(result_reg, left_reg, LeaveCC, condition);
+      __ mov(result_reg, left_reg, LeaveCC, cond);
     }
-    __ mov(result_reg, right_op, LeaveCC, NegateCondition(condition));
+    __ mov(result_reg, right_op, LeaveCC, NegateCondition(cond));
   } else {
     ASSERT(instr->hydrogen()->representation().IsDouble());
     DoubleRegister left_reg = ToDoubleRegister(left);
@@ -1741,7 +1742,7 @@ void LCodeGen::DoMathMinMax(LMathMinMax* instr) {
     __ VFPCompareAndSetFlags(left_reg, right_reg);
     __ b(vs, &check_nan_left);
     __ beq(&check_zero);
-    __ b(condition, &return_left);
+    __ b(cond, &return_left);
     __ b(&return_right);
 
     __ bind(&check_zero);
@@ -1841,7 +1842,8 @@ int LCodeGen::GetNextEmittedBlock(int block) {
 }
 
 
-void LCodeGen::EmitBranch(int left_block, int right_block, Condition cc) {
+void LCodeGen::EmitBranch(int left_block, int right_block, Condition cond,
+                          CRegister cr) {
   int next_block = GetNextEmittedBlock(current_block_);
   right_block = chunk_->LookupDestination(right_block);
   left_block = chunk_->LookupDestination(left_block);
@@ -1849,11 +1851,11 @@ void LCodeGen::EmitBranch(int left_block, int right_block, Condition cc) {
   if (right_block == left_block) {
     EmitGoto(left_block);
   } else if (left_block == next_block) {
-    __ b(NegateCondition(cc), chunk_->GetAssemblyLabel(right_block));
+    __ b(NegateCondition(cond), chunk_->GetAssemblyLabel(right_block), cr);
   } else if (right_block == next_block) {
-    __ b(cc, chunk_->GetAssemblyLabel(left_block));
+    __ b(cond, chunk_->GetAssemblyLabel(left_block), cr);
   } else {
-    __ b(cc, chunk_->GetAssemblyLabel(left_block));
+    __ b(cond, chunk_->GetAssemblyLabel(left_block), cr);
     __ b(chunk_->GetAssemblyLabel(right_block));
   }
 }
@@ -1920,8 +1922,8 @@ void LCodeGen::DoBranch(LBranch* instr) {
         __ JumpIfSmi(reg, true_label);
       } else if (expected.NeedsMap()) {
         // If we need a map later and have a Smi -> deopt.
-        __ tst(reg, Operand(kSmiTagMask));
-        DeoptimizeIf(eq, instr->environment());
+        __ TestIfSmi(reg, r0);
+        DeoptimizeIf(eq, instr->environment(), cr0);
       }
 
       const Register map = scratch0();
@@ -1931,8 +1933,8 @@ void LCodeGen::DoBranch(LBranch* instr) {
         if (expected.CanBeUndetectable()) {
           // Undetectable -> false.
           __ lbz(ip, FieldMemOperand(map, Map::kBitFieldOffset));
-          __ tst(ip, Operand(1 << Map::kIsUndetectable));
-          __ bne(false_label);
+          __ TestBit(ip, 31 - Map::kIsUndetectable, r0);
+          __ bne(false_label, cr0);
         }
       }
 
@@ -1992,7 +1994,7 @@ void LCodeGen::DoGoto(LGoto* instr) {
 }
 
 
-Condition LCodeGen::TokenToCondition(Token::Value op, bool is_unsigned) {
+Condition LCodeGen::TokenToCondition(Token::Value op) {
   Condition cond = kNoCondition;
   switch (op) {
     case Token::EQ:
@@ -2000,16 +2002,16 @@ Condition LCodeGen::TokenToCondition(Token::Value op, bool is_unsigned) {
       cond = eq;
       break;
     case Token::LT:
-      cond = is_unsigned ? lo : lt;
+      cond =  lt;
       break;
     case Token::GT:
-      cond = is_unsigned ? hi : gt;
+      cond = gt;
       break;
     case Token::LTE:
-      cond = is_unsigned ? ls : le;
+      cond = le;
       break;
     case Token::GTE:
-      cond = is_unsigned ? hs : ge;
+      cond = ge;
       break;
     case Token::IN:
     case Token::INSTANCEOF:
@@ -2025,7 +2027,7 @@ void LCodeGen::DoCmpIDAndBranch(LCmpIDAndBranch* instr) {
   LOperand* right = instr->right();
   int false_block = chunk_->LookupDestination(instr->false_block_id());
   int true_block = chunk_->LookupDestination(instr->true_block_id());
-  Condition cond = TokenToCondition(instr->op(), false);
+  Condition cond = TokenToCondition(instr->op());
 
   if (left->IsConstantOperand() && right->IsConstantOperand()) {
     // We can statically evaluate the comparison.
@@ -2118,8 +2120,8 @@ void LCodeGen::DoIsNilAndBranch(LIsNilAndBranch* instr) {
     // the map. The object has already been smi checked.
     __ lwz(scratch, FieldMemOperand(reg, HeapObject::kMapOffset));
     __ lbz(scratch, FieldMemOperand(scratch, Map::kBitFieldOffset));
-    __ tst(scratch, Operand(1 << Map::kIsUndetectable));
-    EmitBranch(true_block, false_block, ne);
+    __ TestBit(scratch, 31 - Map::kIsUndetectable, r0);
+    EmitBranch(true_block, false_block, ne, cr0);
   }
 }
 
@@ -2139,8 +2141,8 @@ Condition LCodeGen::EmitIsObject(Register input,
   __ lwz(temp1, FieldMemOperand(input, HeapObject::kMapOffset));
   // Undetectable objects behave like undefined.
   __ lbz(temp2, FieldMemOperand(temp1, Map::kBitFieldOffset));
-  __ tst(temp2, Operand(1 << Map::kIsUndetectable));
-  __ bne(is_not_object);
+  __ TestBit(temp2, 31 - Map::kIsUndetectable, r0);
+  __ bne(is_not_object, cr0);
 
   // Load instance type and check that it is in object type range.
   __ lbz(temp2, FieldMemOperand(temp1, Map::kInstanceTypeOffset));
@@ -2197,7 +2199,7 @@ void LCodeGen::DoIsSmiAndBranch(LIsSmiAndBranch* instr) {
   int false_block = chunk_->LookupDestination(instr->false_block_id());
 
   Register input_reg = EmitLoadRegister(instr->value(), ip);
-  __ tst(input_reg, Operand(kSmiTagMask));
+  __ TestIfSmi(input_reg, r0);
   EmitBranch(true_block, false_block, eq);
 }
 
@@ -2212,8 +2214,8 @@ void LCodeGen::DoIsUndetectableAndBranch(LIsUndetectableAndBranch* instr) {
   __ JumpIfSmi(input, chunk_->GetAssemblyLabel(false_block));
   __ lwz(temp, FieldMemOperand(input, HeapObject::kMapOffset));
   __ lbz(temp, FieldMemOperand(temp, Map::kBitFieldOffset));
-  __ tst(temp, Operand(1 << Map::kIsUndetectable));
-  EmitBranch(true_block, false_block, ne);
+  __ TestBit(temp, 31 - Map::kIsUndetectable, r0);
+  EmitBranch(true_block, false_block, ne, cr0);
 }
 
 
@@ -2309,8 +2311,9 @@ void LCodeGen::DoHasCachedArrayIndexAndBranch(
 
   __ lwz(scratch,
          FieldMemOperand(input, String::kHashFieldOffset));
-  __ tst(scratch, Operand(String::kContainsCachedArrayIndexMask));
-  EmitBranch(true_block, false_block, eq);
+  __ mov(r0, Operand(String::kContainsCachedArrayIndexMask));
+  __ and_(r0, scratch, r0, SetRC);
+  EmitBranch(true_block, false_block, eq, cr0);
 }
 
 
@@ -2823,8 +2826,8 @@ void LCodeGen::DoLoadFunctionPrototype(LLoadFunctionPrototype* instr) {
   // Make sure that the function has an instance prototype.
   Label non_instance;
   __ lbz(scratch, FieldMemOperand(result, Map::kBitFieldOffset));
-  __ tst(scratch, Operand(1 << Map::kHasNonInstancePrototype));
-  __ bne(&non_instance);
+  __ TestBit(scratch, 31 - Map::kHasNonInstancePrototype, r0);
+  __ bne(&non_instance, cr0);
 
   // Get the prototype or initial map from the function.
   __ lwz(result,
@@ -2906,7 +2909,7 @@ void LCodeGen::DoAccessArgumentsAt(LAccessArgumentsAt* instr) {
   // Bailout index is not a valid argument index. Use unsigned check to get
   // negative check for free.
   __ sub(length, length, index, SetCC);
-  DeoptimizeIf(ls, instr->environment());
+  DeoptimizeIf(le, instr->environment(), cr0);
 
   // There are two words between the frame pointer and the last argument.
   // Subtracting from length accounts for one of them add one more.
@@ -2946,8 +2949,8 @@ void LCodeGen::DoLoadKeyedFastElement(LLoadKeyedFastElement* instr) {
   // Check for the hole value.
   if (instr->hydrogen()->RequiresHoleCheck()) {
     if (IsFastSmiElementsKind(instr->hydrogen()->elements_kind())) {
-      __ tst(result, Operand(kSmiTagMask));
-      DeoptimizeIf(ne, instr->environment());
+      __ TestIfSmi(result, r0);
+      DeoptimizeIf(ne, instr->environment(), cr0);
     } else {
       __ LoadRoot(scratch, Heap::kTheHoleValueRootIndex);
       __ cmp(result, scratch);
@@ -3098,8 +3101,8 @@ void LCodeGen::DoLoadKeyedSpecializedArrayElement(
         __ lwz(result, mem_operand);
         if (!instr->hydrogen()->CheckFlag(HInstruction::kUint32)) {
           __ lis(r0, Operand(SIGN_EXT_IMM16(0x8000)));
-          __ cmp(result, r0));
-          DeoptimizeIf(cs, instr->environment());
+          __ cmpl(result, r0));
+          DeoptimizeIf(ge, instr->environment());
         }
         break;
       case EXTERNAL_FLOAT_ELEMENTS:
@@ -3190,13 +3193,13 @@ void LCodeGen::DoWrapReceiver(LWrapReceiver* instr) {
          FieldMemOperand(function, JSFunction::kSharedFunctionInfoOffset));
   __ lwz(scratch,
          FieldMemOperand(scratch, SharedFunctionInfo::kCompilerHintsOffset));
-  __ tst(scratch,
-         Operand(1 << (SharedFunctionInfo::kStrictModeFunction + kSmiTagSize)));
-  __ bne(&receiver_ok);
+  __ TestBit(scratch,
+             31 - (SharedFunctionInfo::kStrictModeFunction + kSmiTagSize), r0);
+  __ bne(&receiver_ok, cr0);
 
   // Do not transform the receiver to object for builtins.
-  __ tst(scratch, Operand(1 << (SharedFunctionInfo::kNative + kSmiTagSize)));
-  __ bne(&receiver_ok);
+  __ TestBit(scratch, 31 - (SharedFunctionInfo::kNative + kSmiTagSize), r0);
+  __ bne(&receiver_ok, cr0);
 
   // Normal function. Replace undefined or null with global receiver.
   __ LoadRoot(scratch, Heap::kNullValueRootIndex);
@@ -3207,8 +3210,8 @@ void LCodeGen::DoWrapReceiver(LWrapReceiver* instr) {
   __ beq(&global_object);
 
   // Deoptimize if the receiver is not a JS object.
-  __ tst(receiver, Operand(kSmiTagMask));
-  DeoptimizeIf(eq, instr->environment());
+  __ TestIfSmi(receiver, r0);
+  DeoptimizeIf(eq, instr->environment(), cr0);
   __ CompareObjectType(receiver, scratch, scratch, FIRST_SPEC_OBJECT_TYPE);
   DeoptimizeIf(lt, instr->environment());
   __ b(&receiver_ok);
@@ -3234,8 +3237,8 @@ void LCodeGen::DoApplyArguments(LApplyArguments* instr) {
   // Copy the arguments to this function possibly from the
   // adaptor frame below it.
   const uint32_t kArgumentsLimit = 1 * KB;
-  __ cmpi(length, Operand(kArgumentsLimit));
-  DeoptimizeIf(hi, instr->environment());
+  __ cmpli(length, Operand(kArgumentsLimit));
+  DeoptimizeIf(gt, instr->environment());
 
   // Push the receiver and use the register to keep the original
   // number of arguments.
@@ -3400,10 +3403,10 @@ void LCodeGen::DoDeferredMathAbsTaggedHeapNumber(LUnaryMathOperation* instr) {
   __ lwz(exponent, FieldMemOperand(input, HeapNumber::kExponentOffset));
   // Check the sign of the argument. If the argument is positive, just
   // return it.
-  __ tst(exponent, Operand(HeapNumber::kSignMask));
+  __ TestBit(exponent, 0, r0);  // test sign bit
   // Move the input to the result if necessary.
   __ Move(result, input);
-  __ beq(&done);
+  __ beq(&done, cr0);
 
   // Input is negative. Reverse its sign.
   // Preserve the value of all registers.
@@ -3459,7 +3462,7 @@ void LCodeGen::EmitIntegerMathAbs(LUnaryMathOperation* instr) {
   // if input is positive.
   __ rsb(result, input, Operand(0), SetCC, mi);
   // Deoptimize on overflow.
-  DeoptimizeIf(vs, instr->environment());
+  DeoptimizeIf(vs, instr->environment(), cr0);
 }
 
 
@@ -3522,8 +3525,8 @@ void LCodeGen::DoMathFloor(LUnaryMathOperation* instr) {
     __ cmpi(result, Operand(0));
     __ bne(&done);
     __ vmov(scratch1, input.high());
-    __ tst(scratch1, Operand(HeapNumber::kSignMask));
-    DeoptimizeIf(ne, instr->environment());
+    __ TestBit(scratch1, 0, r0);  // test sign bit
+    DeoptimizeIf(ne, instr->environment(), cr0);
     __ bind(&done);
   }
 }
@@ -3567,10 +3570,10 @@ void LCodeGen::DoMathRound(LUnaryMathOperation* instr) {
   __ vmov(result, double_scratch0().high());
   __ eor(result, result, Operand(scratch), SetCC);
   if (instr->hydrogen()->CheckFlag(HValue::kBailoutOnMinusZero)) {
-    DeoptimizeIf(mi, instr->environment());
+    DeoptimizeIf(lt, instr->environment(), cr0);
   } else {
     __ mov(result, Operand(0), LeaveCC, mi);
-    __ b(mi, &done);
+    __ b(lt, &done);
   }
 
   __ EmitVFPTruncate(kRoundToMinusInf,
@@ -3587,8 +3590,8 @@ void LCodeGen::DoMathRound(LUnaryMathOperation* instr) {
     __ bne(&done);
     __ bind(&check_sign_on_zero);
     __ vmov(scratch, input.high());
-    __ tst(scratch, Operand(HeapNumber::kSignMask));
-    DeoptimizeIf(ne, instr->environment());
+    __ TestBit(scratch, 0, r0);  // test sign bit
+    DeoptimizeIf(ne, instr->environment(), cr0);
   }
   __ bind(&done);
 }
@@ -3974,12 +3977,12 @@ void LCodeGen::DeoptIfTaggedButNotSmi(LEnvironment* environment,
                                       LOperand* operand) {
   if (value->representation().IsTagged() && !value->type().IsSmi()) {
     if (operand->IsRegister()) {
-      __ tst(ToRegister(operand), Operand(kSmiTagMask));
+      __ TestIfSmi(ToRegister(operand), r0);
     } else {
       __ mov(ip, ToOperand(operand));
-      __ tst(ip, Operand(kSmiTagMask));
+      __ TestIfSmi(ip, r0);
     }
-    DeoptimizeIf(ne, environment);
+    DeoptimizeIf(ne, environment, cr0);
   }
 }
 
@@ -3999,11 +4002,11 @@ void LCodeGen::DoBoundsCheck(LBoundsCheck* instr) {
     } else {
       __ mov(ip, Operand(constant_index));
     }
-    __ cmp(ip, ToRegister(instr->length()));
+    __ cmpl(ip, ToRegister(instr->length()));
   } else {
-    __ cmp(ToRegister(instr->index()), ToRegister(instr->length()));
+    __ cmpl(ToRegister(instr->index()), ToRegister(instr->length()));
   }
-  DeoptimizeIf(hs, instr->environment());
+  DeoptimizeIf(ge, instr->environment());
 }
 
 
@@ -4312,8 +4315,8 @@ void LCodeGen::DoStringCharFromCode(LStringCharFromCode* instr) {
   Register result = ToRegister(instr->result());
   ASSERT(!char_code.is(result));
 
-  __ cmpi(char_code, Operand(String::kMaxAsciiCharCode));
-  __ b(hi, deferred->entry());
+  __ cmpli(char_code, Operand(String::kMaxAsciiCharCode));
+  __ b(gt, deferred->entry());
   __ LoadRoot(result, Heap::kSingleCharacterStringCacheRootIndex);
   __ add(result, result, Operand(char_code, LSL, kPointerSizeLog2));
   __ lwz(result, FieldMemOperand(result, FixedArray::kHeaderSize));
@@ -4427,8 +4430,8 @@ void LCodeGen::DoNumberTagU(LNumberTagU* instr) {
   Register reg = ToRegister(input);
 
   DeferredNumberTagU* deferred = new(zone()) DeferredNumberTagU(this, instr);
-  __ Cmpi(reg, Operand(Smi::kMaxValue), r0);
-  __ b(hi, deferred->entry());
+  __ Cmpli(reg, Operand(Smi::kMaxValue), r0);
+  __ b(gt, deferred->entry());
   __ SmiTag(reg, reg);
   __ bind(deferred->exit());
 }
@@ -4549,7 +4552,7 @@ void LCodeGen::DoSmiUntag(LSmiUntag* instr) {
     STATIC_ASSERT(kHeapObjectTag == 1);
     // If the input is a HeapObject, SmiUntag will set the carry flag.
     __ SmiUntag(result, input, SetCC);
-    DeoptimizeIf(cs, instr->environment());
+    DeoptimizeIf(ge, instr->environment(), cr0);
   } else {
     __ SmiUntag(result, input);
   }
@@ -4691,8 +4694,8 @@ void LCodeGen::DoDeferredTaggedToI(LTaggedToI* instr) {
       __ cmpi(input_reg, Operand(0));
       __ bne(&done);
       __ vmov(scratch1, double_scratch.high());
-      __ tst(scratch1, Operand(HeapNumber::kSignMask));
-      DeoptimizeIf(ne, instr->environment());
+      __ TestBit(scratch1, 0, r0);  // test sign bit
+      DeoptimizeIf(ne, instr->environment(), cr0);
     }
   }
   __ bind(&done);
@@ -4779,15 +4782,15 @@ void LCodeGen::DoDoubleToI(LDoubleToI* instr) {
 
 void LCodeGen::DoCheckSmi(LCheckSmi* instr) {
   LOperand* input = instr->value();
-  __ tst(ToRegister(input), Operand(kSmiTagMask));
-  DeoptimizeIf(ne, instr->environment());
+  __ TestIfSmi(ToRegister(input), r0);
+  DeoptimizeIf(ne, instr->environment(), cr0);
 }
 
 
 void LCodeGen::DoCheckNonSmi(LCheckNonSmi* instr) {
   LOperand* input = instr->value();
-  __ tst(ToRegister(input), Operand(kSmiTagMask));
-  DeoptimizeIf(eq, instr->environment());
+  __ TestIfSmi(ToRegister(input), r0);
+  DeoptimizeIf(eq, instr->environment(), cr0);
 }
 
 
@@ -4803,17 +4806,17 @@ void LCodeGen::DoCheckInstanceType(LCheckInstanceType* instr) {
     InstanceType last;
     instr->hydrogen()->GetCheckInterval(&first, &last);
 
-    __ cmpi(scratch, Operand(first));
+    __ cmpli(scratch, Operand(first));
 
     // If there is only one type in the interval check for equality.
     if (first == last) {
       DeoptimizeIf(ne, instr->environment());
     } else {
-      DeoptimizeIf(lo, instr->environment());
+      DeoptimizeIf(lt, instr->environment());
       // Omit check for the last type.
       if (last != LAST_TYPE) {
-        __ cmpi(scratch, Operand(last));
-        DeoptimizeIf(hi, instr->environment());
+        __ cmpli(scratch, Operand(last));
+        DeoptimizeIf(gt, instr->environment());
       }
     }
   } else {
@@ -4823,10 +4826,10 @@ void LCodeGen::DoCheckInstanceType(LCheckInstanceType* instr) {
 
     if (IsPowerOf2(mask)) {
       ASSERT(tag == 0 || IsPowerOf2(tag));
-      __ tst(scratch, Operand(mask));
-      DeoptimizeIf(tag == 0 ? ne : eq, instr->environment());
+      __ andi(r0, scratch, Operand(mask));
+      DeoptimizeIf(tag == 0 ? ne : eq, instr->environment(), cr0);
     } else {
-      __ and_(scratch, scratch, Operand(mask));
+      __ andi(scratch, scratch, Operand(mask));
       __ cmpi(scratch, Operand(tag));
       DeoptimizeIf(ne, instr->environment());
     }
@@ -5393,7 +5396,8 @@ Condition LCodeGen::EmitTypeofIs(Label* true_label,
     __ CompareObjectType(input, input, scratch, FIRST_NONSTRING_TYPE);
     __ bge(false_label);
     __ lbz(ip, FieldMemOperand(input, Map::kBitFieldOffset));
-    __ tst(ip, Operand(1 << Map::kIsUndetectable));
+    __ ExtractBit(r0, ip, 31 - Map::kIsUndetectable);
+    __ cmpi(r0, Operand(0));
     final_branch_condition = eq;
 
   } else if (type_name->Equals(heap()->boolean_symbol())) {
@@ -5413,7 +5417,8 @@ Condition LCodeGen::EmitTypeofIs(Label* true_label,
     // Check for undetectable objects => true.
     __ lwz(input, FieldMemOperand(input, HeapObject::kMapOffset));
     __ lbz(ip, FieldMemOperand(input, Map::kBitFieldOffset));
-    __ tst(ip, Operand(1 << Map::kIsUndetectable));
+    __ ExtractBit(r0, ip, 31 - Map::kIsUndetectable);
+    __ cmpi(r0, Operand(0));
     final_branch_condition = ne;
 
   } else if (type_name->Equals(heap()->function_symbol())) {
@@ -5437,7 +5442,8 @@ Condition LCodeGen::EmitTypeofIs(Label* true_label,
     __ bgt(false_label);
     // Check for undetectable objects => false.
     __ lbz(ip, FieldMemOperand(input, Map::kBitFieldOffset));
-    __ tst(ip, Operand(1 << Map::kIsUndetectable));
+    __ ExtractBit(r0, ip, 31 - Map::kIsUndetectable);
+    __ cmpi(r0, Operand(0));
     final_branch_condition = eq;
 
   } else {
@@ -5621,8 +5627,8 @@ void LCodeGen::DoForInPrepareMap(LForInPrepareMap* instr) {
   __ cmp(r3, null_value);
   DeoptimizeIf(eq, instr->environment());
 
-  __ tst(r3, Operand(kSmiTagMask));
-  DeoptimizeIf(eq, instr->environment());
+  __ TestIfSmi(r3, r0);
+  DeoptimizeIf(eq, instr->environment(), cr0);
 
   STATIC_ASSERT(FIRST_JS_PROXY_TYPE == FIRST_SPEC_OBJECT_TYPE);
   __ CompareObjectType(r3, r4, r4, LAST_JS_PROXY_TYPE);
