@@ -891,8 +891,8 @@ static void Generate_JSConstructStubHelper(MacroAssembler* masm,
 #if !defined(V8_HOST_ARCH_PPC)  // ENDIAN
         byte = 3 - byte;
 #endif
-        __ ExtractBitRange(r3, r3, byte * CHAR_BIT,
-                           ((byte + 1) * CHAR_BIT) - 1);
+        __ ExtractBitRange(r3, r3, byte * kBitsPerByte,
+                           ((byte + 1) * kBitsPerByte) - 1);
         __ slwi(r3, r3, Operand(kPointerSizeLog2));
         __ add(r3, r8, r3);
         // r3: offset of first field after pre-allocated fields
@@ -927,16 +927,16 @@ static void Generate_JSConstructStubHelper(MacroAssembler* masm,
 #if !defined(V8_HOST_ARCH_PPC)  // ENDIAN
       byte = 3 - byte;
 #endif
-      __ ExtractBitRange(r9, r3, byte * CHAR_BIT,
-                         ((byte + 1) * CHAR_BIT) - 1);
+      __ ExtractBitRange(r9, r3, byte * kBitsPerByte,
+                         ((byte + 1) * kBitsPerByte) - 1);
       __ add(r6, r6, r9);
       STATIC_ASSERT(Map::kInObjectPropertiesByte < 4);
       byte = Map::kInObjectPropertiesByte;
 #if !defined(V8_HOST_ARCH_PPC)  // ENDIAN
       byte = 3 - byte;
 #endif
-      __ ExtractBitRange(r9, r3, byte * CHAR_BIT,
-                         ((byte + 1) * CHAR_BIT) - 1);
+      __ ExtractBitRange(r9, r3, byte * kBitsPerByte,
+                         ((byte + 1) * kBitsPerByte) - 1);
       __ sub(r6, r6, r9);  // roohack - sub order may be incorrect
       __ cmpi(r6, Operand(0));
 
