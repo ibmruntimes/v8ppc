@@ -1175,9 +1175,11 @@ void Assembler::marker_asm(int mcode) {
 // Code address skips the function descriptor "header".
 // TOC and static chain are ignored and set to 0.
 void Assembler::function_descriptor() {
-  dd(reinterpret_cast<int32_t>(pc_) + 3 * kPointerSize);
-  dd(static_cast<int32_t>(0));
-  dd(static_cast<int32_t>(0));
+  RecordRelocInfo(RelocInfo::INTERNAL_REFERENCE,
+		  reinterpret_cast<uint32_t>(pc_) + 3 * kPointerSize);
+  emit(reinterpret_cast<Instr>(pc_) + 3 * kPointerSize);
+  emit(static_cast<Instr>(0));
+  emit(static_cast<Instr>(0));
 }
 // end PowerPC
 
