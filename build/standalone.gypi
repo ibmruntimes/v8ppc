@@ -63,6 +63,7 @@
     'host_arch%': '<(host_arch)',
     'target_arch%': '<(target_arch)',
     'v8_target_arch%': '<(v8_target_arch)',
+    'werror%': '-Werror',
     'conditions': [
       ['(v8_target_arch=="arm" and host_arch!="arm") or \
         (v8_target_arch=="mipsel" and host_arch!="mipsel") or \
@@ -75,10 +76,8 @@
       #
       ['OS=="aix"', {
         'visibility%': '',
-        'werror%': '',
       }, {
         'visibility%': 'hidden',
-        'werror%': '-Werror',
       }],
     ],
     # Default ARM variable settings.
