@@ -157,7 +157,7 @@ Register ToRegister(int num) {
 // -----------------------------------------------------------------------------
 // Implementation of RelocInfo
 
-const int RelocInfo::kApplyMask = 0;
+const int RelocInfo::kApplyMask = 1 << RelocInfo::INTERNAL_REFERENCE;
 
 
 bool RelocInfo::IsCodedSpecially() {
@@ -1175,8 +1175,7 @@ void Assembler::marker_asm(int mcode) {
 // Code address skips the function descriptor "header".
 // TOC and static chain are ignored and set to 0.
 void Assembler::function_descriptor() {
-  RecordRelocInfo(RelocInfo::INTERNAL_REFERENCE,
-		  reinterpret_cast<uint32_t>(pc_) + 3 * kPointerSize);
+  RecordRelocInfo(RelocInfo::INTERNAL_REFERENCE);
   emit(reinterpret_cast<Instr>(pc_) + 3 * kPointerSize);
   emit(static_cast<Instr>(0));
   emit(static_cast<Instr>(0));
@@ -2051,6 +2050,19 @@ void Assembler::GrowBuffer() {
   // None of our relocation types are pc relative pointing outside the code
   // buffer nor pc absolute pointing inside the code buffer, so there is no need
   // to relocate any emitted relocation entries.
+
+#if _AIX
+  // Relocate runtime entries.
+  for (RelocIterator it(desc); !it.done(); it.next()) {
+    RelocInfo::Mode rmode = it.rinfo()->rmode();
+    if (rmode == RelocInfo::INTERNAL_REFERENCE) {
+      intptr_t* p = reinterpret_cast<intptr_t*>(it.rinfo()->pc());
+      if (*p != 0) {  // 0 means uninitialized.
+        *p += pc_delta;
+      }
+    }
+  }
+#endif
 }
 
 
