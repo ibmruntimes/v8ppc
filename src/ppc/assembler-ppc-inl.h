@@ -63,6 +63,7 @@ void RelocInfo::apply(intptr_t delta) {
     // absolute code pointer inside code object moves with the code object.
     int32_t* p = reinterpret_cast<int32_t*>(pc_);
     *p += delta;  // relocate entry
+    CPU::FlushICache(p, sizeof(uint32_t));
   }
   // We do not use pc relative addressing on ARM, so there is
   // nothing else to do.
