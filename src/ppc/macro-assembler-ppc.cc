@@ -3967,10 +3967,10 @@ void MacroAssembler::LoadSignedImmediate(Register dst, int value) {
 void MacroAssembler::Add(Register dst, Register src,
                          uint32_t value, Register scratch) {
   if (is_int16(value)) {
-    addi(dst, dst, Operand(value));
+    addi(dst, src, Operand(value));
   } else {
     mov(scratch, Operand(value));
-    add(dst, dst, scratch);
+    add(dst, src, scratch);
   }
 }
 

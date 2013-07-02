@@ -385,11 +385,11 @@ DoubleRegister LCodeGen::EmitLoadDoubleRegister(LOperand* op,
     return dbl_scratch;
   }
   UNREACHABLE();
-  return dbl_scratch;
 #else
   PPCPORT_UNIMPLEMENTED();
-  return dbl_scratch;
+  __ fake_asm(fLITHIUM91);
 #endif
+  return dbl_scratch;
 }
 
 
@@ -976,15 +976,17 @@ void LCodeGen::DoModI(LModI* instr) {
     Label positive_dividend, done;
     __ cmpi(dividend, Operand(0));
     __ bge(&positive_dividend);
-    __ rsb(result, dividend, Operand(0));
-    __ and_(result, result, Operand(divisor - 1), SetCC);
+    __ neg(result, dividend);
+    __ mov(r0, Operand(divisor - 1));
+    __ and_(result, result, r0, SetRC);
     if (instr->hydrogen()->CheckFlag(HValue::kBailoutOnMinusZero)) {
       DeoptimizeIf(eq, instr->environment(), cr0);
     }
-    __ rsb(result, result, Operand(0));
+    __ neg(result, result);
     __ b(&done);
     __ bind(&positive_dividend);
-    __ and_(result, dividend, Operand(divisor - 1));
+    __ mov(r0, Operand(divisor - 1));
+    __ and_(result, dividend, r0);
     __ bind(&done);
     return;
   }
@@ -1034,12 +1036,12 @@ void LCodeGen::DoModI(LModI* instr) {
                                      &right_negative,
                                      &both_positive);
   // Perform modulo operation (scratch contains right - 1).
-  __ and_(result, scratch, Operand(left));
+  __ and_(result, scratch, left);
   __ b(&done);
 
   __ bind(&right_negative);
   // Negate right. The sign of the divisor does not matter.
-  __ rsb(right, right, Operand(0));
+  __ neg(right, right);
 
   __ bind(&both_positive);
   const int kUnfolds = 3;
@@ -1100,6 +1102,7 @@ void LCodeGen::DoModI(LModI* instr) {
   __ bind(&done);
 #else
   PPCPORT_UNIMPLEMENTED();
+  __ fake_asm(fLITHIUM92);
 #endif
 }
 
@@ -1128,7 +1131,7 @@ void LCodeGen::EmitSignedIntegerDivisionByConstant(
       if (divisor > 0) {
         __ Move(result, dividend);
       } else {
-        __ rsb(result, dividend, Operand(0), SetCC);
+        __ neg(result, dividend, SetRC);
         DeoptimizeIf(vs, environment, cr0);
       }
       // Compute the remainder.
@@ -1141,22 +1144,24 @@ void LCodeGen::EmitSignedIntegerDivisionByConstant(
         // of two.
         int32_t power = WhichPowerOf2(divisor_abs);
         if (power > 1) {
-          __ mov(scratch, Operand(dividend, ASR, power - 1));
+          __ srawi(scratch, dividend, power - 1);
         }
-        __ add(scratch, dividend, Operand(scratch, LSR, 32 - power));
-        __ mov(result, Operand(scratch, ASR, power));
+        __ srwi(scratch, scratch, Operand(32 - power));
+        __ add(scratch, dividend, scratch);
+        __ srawi(result, scratch, power);
         // Negate if necessary.
         // We don't need to check for overflow because the case '-1' is
         // handled separately.
         if (divisor < 0) {
           ASSERT(divisor != -1);
-          __ rsb(result, result, Operand(0));
+          __ neg(result, result);
         }
         // Compute the remainder.
+        __ slwi(scratch, result, Operand(power));
         if (divisor > 0) {
-          __ sub(remainder, dividend, Operand(result, LSL, power));
+          __ sub(remainder, dividend, scratch);
         } else {
-          __ add(remainder, dividend, Operand(result, LSL, power));
+          __ add(remainder, dividend, scratch);
         }
         return;
       } else {
@@ -1178,15 +1183,17 @@ void LCodeGen::EmitSignedIntegerDivisionByConstant(
         const int32_t s = magic_numbers.s + power_of_2_factor;
 
         __ mov(ip, Operand(M));
-        __ smull(ip, scratch, dividend, ip);
+        __ mullw(ip, dividend, ip);
+        __ mulhw(scratch, dividend, ip);
         if (M < 0) {
           __ add(scratch, scratch, dividend);
         }
         if (s > 0) {
-          __ mov(scratch, Operand(scratch, ASR, s));
+          __ srawi(scratch, scratch, s);
         }
-        __ add(result, scratch, Operand(dividend, LSR, 31));
-        if (divisor < 0) __ rsb(result, result, Operand(0));
+        __ srwi(result, dividend, Operand(31));
+        __ add(result, scratch, result);
+        if (divisor < 0) __ neg(result, result);
         // Compute the remainder.
         __ mov(ip, Operand(divisor));
         // This sequence could be replaced with 'mls' when
@@ -1246,20 +1253,34 @@ void LCodeGen::DoDivI(LDivI* instr) {
   }
 
   Label done, deoptimize;
+  Label byTwo, byFour, general;
   // Test for a few common cases first.
+
+  // divide by 1
   __ cmpi(right, Operand(1));
-  __ mov(result, left, LeaveCC, eq);
-  __ beq(&done);
+  __ bne(&byTwo);
+  __ mr(result, left);
+  __ b(&done);
 
+  // divide by 2
+  __ bind(&byTwo);
   __ cmpi(right, Operand(2));
-  __ tst(left, Operand(1), eq);
-  __ mov(result, Operand(left, ASR, 1), LeaveCC, eq);
-  __ beq(&done);
+  __ bne(&byFour);
+  __ andi(r0, left, Operand(1));
+  __ bne(&general, cr0);
+  __ srawi(result, left, 1);
+  __ b(&done);
 
+  // divide by 4
+  __ bind(&byFour);
   __ cmpi(right, Operand(4));
-  __ tst(left, Operand(3), eq);
-  __ mov(result, Operand(left, ASR, 2), LeaveCC, eq);
-  __ beq(&done);
+  __ bne(&general);
+  __ andi(r0, left, Operand(3));
+  __ bne(&general, cr0);
+  __ srawi(result, left, 2);
+  __ b(&done);
+
+  __ bind(&general);
 
   // Call the stub. The numbers in r3 and r4 have
   // to be tagged to Smis. If that is not possible, deoptimize.
@@ -1366,7 +1387,7 @@ void LCodeGen::DoMulI(LMulI* instr) {
 
     switch (constant) {
       case -1:
-        __ rsb(result, left, Operand(0));
+        __ neg(result, left);
         break;
       case 0:
         if (bailout_on_minus_zero) {
@@ -1392,17 +1413,19 @@ void LCodeGen::DoMulI(LMulI* instr) {
             IsPowerOf2(constant_abs + 1)) {
           if (IsPowerOf2(constant_abs)) {
             int32_t shift = WhichPowerOf2(constant_abs);
-            __ mov(result, Operand(left, LSL, shift));
+            __ slwi(result, left, Operand(shift));
           } else if (IsPowerOf2(constant_abs - 1)) {
             int32_t shift = WhichPowerOf2(constant_abs - 1);
-            __ add(result, left, Operand(left, LSL, shift));
+            __ slwi(result, left, Operand(shift));
+            __ add(result, result, left);
           } else if (IsPowerOf2(constant_abs + 1)) {
             int32_t shift = WhichPowerOf2(constant_abs + 1);
-            __ rsb(result, left, Operand(left, LSL, shift));
+            __ slwi(result, left, Operand(shift));
+            __ sub(result, result, left);
           }
 
           // Correct the sign of the result is the constant is negative.
-          if (constant < 0)  __ rsb(result, result, Operand(0));
+          if (constant < 0)  __ neg(result, result);
 
         } else {
           // Generate standard code.
@@ -1414,13 +1437,15 @@ void LCodeGen::DoMulI(LMulI* instr) {
   } else {
     Register right = EmitLoadRegister(right_op, scratch);
     if (bailout_on_minus_zero) {
-      __ orr(ToRegister(instr->temp()), left, right);
+      __ orx(ToRegister(instr->temp()), left, right);
     }
 
     if (can_overflow) {
       // scratch:result = left * right.
-      __ smull(result, scratch, left, right);
-      __ cmp(scratch, Operand(result, ASR, 31));
+      __ mullw(result, left, right);
+      __ mulhw(scratch, left, right);
+      __ srawi(r0, result, 31);
+      __ cmp(scratch, r0);
       DeoptimizeIf(ne, instr->environment());
     } else {
       __ mul(result, left, right);
@@ -1440,6 +1465,7 @@ void LCodeGen::DoMulI(LMulI* instr) {
 
 
 void LCodeGen::DoBitI(LBitI* instr) {
+#ifdef PENGUIN_CLEANUP
   LOperand* left_op = instr->left();
   LOperand* right_op = instr->right();
   ASSERT(left_op->IsRegister());
@@ -1459,15 +1485,19 @@ void LCodeGen::DoBitI(LBitI* instr) {
       __ and_(result, left, right);
       break;
     case Token::BIT_OR:
-      __ orr(result, left, right);
+      __ orx(result, left, right);
       break;
     case Token::BIT_XOR:
-      __ eor(result, left, right);
+      __ xor_(result, left, right);
       break;
     default:
       UNREACHABLE();
       break;
   }
+#else
+  PPCPORT_UNIMPLEMENTED();
+  __ fake_asm(fLITHIUM90);
+#endif
 }
 
 
@@ -1480,21 +1510,21 @@ void LCodeGen::DoShiftI(LShiftI* instr) {
   Register scratch = scratch0();
   if (right_op->IsRegister()) {
     // Mask the right_op operand.
-    __ and_(scratch, ToRegister(right_op), Operand(0x1F));
+    __ andi(scratch, ToRegister(right_op), Operand(0x1F));
     switch (instr->op()) {
       case Token::SAR:
-        __ mov(result, Operand(left, ASR, scratch));
+        __ sraw(result, left, scratch);
         break;
       case Token::SHR:
         if (instr->can_deopt()) {
-          __ mov(result, Operand(left, LSR, scratch), SetCC);
+          __ srw(result, left, scratch, SetRC);
           DeoptimizeIf(lt, instr->environment(), cr0);
         } else {
-          __ mov(result, Operand(left, LSR, scratch));
+          __ srw(result, left, scratch);
         }
         break;
       case Token::SHL:
-        __ mov(result, Operand(left, LSL, scratch));
+        __ slw(result, left, scratch);
         break;
       default:
         UNREACHABLE();
@@ -1507,14 +1537,14 @@ void LCodeGen::DoShiftI(LShiftI* instr) {
     switch (instr->op()) {
       case Token::SAR:
         if (shift_count != 0) {
-          __ mov(result, Operand(left, ASR, shift_count));
+          __ srawi(result, left, shift_count);
         } else {
           __ Move(result, left);
         }
         break;
       case Token::SHR:
         if (shift_count != 0) {
-          __ mov(result, Operand(left, LSR, shift_count));
+          __ srwi(result, left, Operand(shift_count));
         } else {
           if (instr->can_deopt()) {
             __ TestBit(left, 0, r0);  // test sign bit
@@ -1525,7 +1555,7 @@ void LCodeGen::DoShiftI(LShiftI* instr) {
         break;
       case Token::SHL:
         if (shift_count != 0) {
-          __ mov(result, Operand(left, LSL, shift_count));
+          __ slwi(result, left, Operand(shift_count));
         } else {
           __ Move(result, left);
         }
@@ -1614,7 +1644,7 @@ void LCodeGen::DoElementsKind(LElementsKind* instr) {
   // Load the map's "bit field 2" into |result|
   __ lbz(result, FieldMemOperand(result, Map::kBitField2Offset));
   // Retrieve elements_kind from bit field 2.
-  __ ubfx(result, result, Map::kElementsKindShift, Map::kElementsKindBitCount);
+  __ ExtractBitMask(result, result, Map::kElementsKindMask);
 }
 
 
@@ -1976,6 +2006,7 @@ void LCodeGen::DoBranch(LBranch* instr) {
   }
 #else
   PPCPORT_UNIMPLEMENTED();
+  __ fake_asm(fLITHIUM93);
 #endif
 }
 
@@ -2874,8 +2905,7 @@ void LCodeGen::DoLoadElements(LLoadElements* instr) {
     __ beq(&done);
     // |scratch| still contains |input|'s map.
     __ lbz(scratch, FieldMemOperand(scratch, Map::kBitField2Offset));
-    __ ubfx(scratch, scratch, Map::kElementsKindShift,
-            Map::kElementsKindBitCount);
+    __ ExtractBitMask(scratch, scratch, Map::kElementsKindMask);
     __ cmpi(scratch, Operand(GetInitialFastElementsKind()));
     __ blt(&fail);
     __ cmpi(scratch, Operand(TERMINAL_FAST_ELEMENTS_KIND));
@@ -2908,13 +2938,14 @@ void LCodeGen::DoAccessArgumentsAt(LAccessArgumentsAt* instr) {
 
   // Bailout index is not a valid argument index. Use unsigned check to get
   // negative check for free.
-  __ sub(length, length, index, SetCC);
+  __ sub(length, length, index, LeaveOE, SetRC);
   DeoptimizeIf(le, instr->environment(), cr0);
 
   // There are two words between the frame pointer and the last argument.
   // Subtracting from length accounts for one of them add one more.
   __ addi(length, length, Operand(1));
-  __ ldr(result, MemOperand(arguments, length, LSL, kPointerSizeLog2));
+  __ slwi(r0, length, Operand(kPointerSizeLog2));
+  __ lwzx(result, arguments, r0);
 }
 
 
@@ -2937,11 +2968,11 @@ void LCodeGen::DoLoadKeyedFastElement(LLoadKeyedFastElement* instr) {
     // during bound check elimination with the index argument to the bounds
     // check, which can be tagged, so that case must be handled here, too.
     if (instr->hydrogen()->key()->representation().IsTagged()) {
-      __ add(scratch, elements,
-             Operand(key, LSL, kPointerSizeLog2 - kSmiTagSize));
+      __ slwi(r0, key, Operand(kPointerSizeLog2 - kSmiTagSize));
     } else {
-      __ add(scratch, elements, Operand(key, LSL, kPointerSizeLog2));
+      __ slwi(r0, key, Operand(kPointerSizeLog2));
     }
+    __ add(scratch, elements, r0);
     offset = FixedArray::OffsetOfElementAt(instr->additional_index());
   }
   __ lwz(result, FieldMemOperand(store_base, offset));
@@ -2981,16 +3012,17 @@ void LCodeGen::DoLoadKeyedFastDoubleElement(
     key = ToRegister(instr->key());
   }
 
-  Operand operand = key_is_constant
-      ? Operand(((constant_key + instr->additional_index()) <<
-                 element_size_shift) +
-                FixedDoubleArray::kHeaderSize - kHeapObjectTag)
-      : Operand(key, LSL, shift_size);
-  __ add(elements, elements, operand);
-  if (!key_is_constant) {
-    __ add(elements, elements,
-           Operand((FixedDoubleArray::kHeaderSize - kHeapObjectTag) +
-                   (instr->additional_index() << element_size_shift)));
+  if (key_is_constant) {
+    __ Add(elements, elements,
+           (FixedDoubleArray::kHeaderSize - kHeapObjectTag) +
+           ((constant_key + instr->additional_index()) << element_size_shift),
+           r0);
+  } else {
+    __ slwi(r0, key, Operand(shift_size));
+    __ add(elements, elements, r0);
+    __ mov(r0, Operand((FixedDoubleArray::kHeaderSize - kHeapObjectTag) +
+                       (instr->additional_index() << element_size_shift)));
+    __ add(elements, elements, r0);
   }
 
   if (instr->hydrogen()->RequiresHoleCheck()) {
@@ -3011,6 +3043,7 @@ MemOperand LCodeGen::PrepareKeyedOperand(Register key,
                                          int shift_size,
                                          int additional_index,
                                          int additional_offset) {
+#ifdef PENGUIN_CLEANUP
   if (additional_index != 0 && !key_is_constant) {
     additional_index *= 1 << (element_size - shift_size);
     __ Add(scratch0(), key, additional_index, r0);
@@ -3036,6 +3069,11 @@ MemOperand LCodeGen::PrepareKeyedOperand(Register key,
     ASSERT_EQ(-1, shift_size);
     return MemOperand(base, scratch0(), LSR, 1);
   }
+#else
+  PPCPORT_UNIMPLEMENTED();
+  __ fake_asm(fLITHIUM100);
+  return MemOperand(base);
+#endif
 }
 
 
@@ -3064,10 +3102,14 @@ void LCodeGen::DoLoadKeyedSpecializedArrayElement(
       elements_kind == EXTERNAL_DOUBLE_ELEMENTS) {
     CpuFeatures::Scope scope(VFP3);
     DwVfpRegister result = ToDoubleRegister(instr->result());
-    Operand operand = key_is_constant
-        ? Operand(constant_key << element_size_shift)
-        : Operand(key, LSL, shift_size);
-    __ add(scratch0(), external_pointer, operand);
+    if (key_is_constant) {
+      __ Add(scratch0(), external_pointer,
+             constant_key << element_size_shift,
+             r0);
+    } else {
+      __ slwi(r0, key, Operand(shift_size));
+      __ add(scratch0(), external_pointer, r0);
+    }
     if (elements_kind == EXTERNAL_FLOAT_ELEMENTS) {
       __ vldr(result.low(), scratch0(), additional_offset);
       __ vcvt_f64_f32(result, result.low());
@@ -3121,6 +3163,7 @@ void LCodeGen::DoLoadKeyedSpecializedArrayElement(
   }
 #else
   PPCPORT_UNIMPLEMENTED();
+  __ fake_asm(fLITHIUM94);
 #endif
 }
 
@@ -3253,11 +3296,13 @@ void LCodeGen::DoApplyArguments(LApplyArguments* instr) {
   // length is a small non-negative integer, due to the test above.
   __ cmpi(length, Operand(0));
   __ beq(&invoke);
+  __ mtctr(length);
   __ bind(&loop);
-  __ ldr(scratch, MemOperand(elements, length, LSL, 2));
+  __ slwi(r0, length, Operand(2));
+  __ lwzx(scratch, elements, r0);
   __ push(scratch);
-  __ sub(length, length, Operand(1), SetCC);
-  __ bne(&loop);
+  __ addi(length, length, Operand(-1));
+  __ bdnz(&loop);
 
   __ bind(&invoke);
   ASSERT(instr->HasPointerMap());
@@ -3440,7 +3485,8 @@ void LCodeGen::DoDeferredMathAbsTaggedHeapNumber(LUnaryMathOperation* instr) {
     __ bind(&allocated);
     // exponent: floating point exponent value.
     // tmp1: allocated heap number.
-    __ bic(exponent, exponent, Operand(HeapNumber::kSignMask));
+    STATIC_ASSERT(HeapNumber::kSignMask == 0x80000000u);
+    __ ExtractBitRange(exponent, exponent, 1, 31);  // clear sign bit
     __ stw(exponent, FieldMemOperand(tmp1, HeapNumber::kExponentOffset));
     __ lwz(tmp2, FieldMemOperand(input, HeapNumber::kMantissaOffset));
     __ stw(tmp2, FieldMemOperand(tmp1, HeapNumber::kMantissaOffset));
@@ -3455,14 +3501,14 @@ void LCodeGen::DoDeferredMathAbsTaggedHeapNumber(LUnaryMathOperation* instr) {
 void LCodeGen::EmitIntegerMathAbs(LUnaryMathOperation* instr) {
   Register input = ToRegister(instr->value());
   Register result = ToRegister(instr->result());
+  Label done;
   __ cmpi(input, Operand(0));
-  __ Move(result, input, pl);
-  // We can make rsb conditional because the previous cmp instruction
-  // will clear the V (overflow) flag and rsb won't set this flag
-  // if input is positive.
-  __ rsb(result, input, Operand(0), SetCC, mi);
+  __ Move(result, input);
+  __ bge(&done);
+  __ neg(result, result, SetRC);
   // Deoptimize on overflow.
   DeoptimizeIf(vs, instr->environment(), cr0);
+  __ bind(&done);
 }
 
 
@@ -3540,10 +3586,7 @@ void LCodeGen::DoMathRound(LUnaryMathOperation* instr) {
 
   // Extract exponent bits.
   __ vmov(result, input.high());
-  __ ubfx(scratch,
-          result,
-          HeapNumber::kExponentShift,
-          HeapNumber::kExponentBits);
+  __ ExtractBitMask(scratch, result, HeapNumber::kExponentMask);
 
   // If the number is in ]-0.5, +0.5[, the result is +/- 0.
   __ cmpi(scratch, Operand(HeapNumber::kExponentBias - 2));
@@ -3563,12 +3606,13 @@ void LCodeGen::DoMathRound(LUnaryMathOperation* instr) {
   __ vadd(double_scratch0(), input, double_scratch0());
 
   // Save the original sign for later comparison.
-  __ and_(scratch, result, Operand(HeapNumber::kSignMask));
+  STATIC_ASSERT(HeapNumber::kSignMask == 0x80000000u);
+  __ clrrwi(scratch, result, Operand(31));
 
   // Check sign of the result: if the sign changed, the input
   // value was in ]0.5, 0[ and the result should be -0.
   __ vmov(result, double_scratch0().high());
-  __ eor(result, result, Operand(scratch), SetCC);
+  __ xor_(result, result, scratch, SetRC);
   if (instr->hydrogen()->CheckFlag(HValue::kBailoutOnMinusZero)) {
     DeoptimizeIf(lt, instr->environment(), cr0);
   } else {
@@ -3694,34 +3738,35 @@ void LCodeGen::DoRandom(LRandom* instr) {
   // r3: state[1].
 
   // state[0] = 18273 * (state[0] & 0xFFFF) + (state[0] >> 16)
-  __ and_(r6, r4, Operand(0xFFFF));
-  __ mov(r7, Operand(18273));
+  __ andi(r6, r4, Operand(0xFFFF));
+  __ li(r7, Operand(18273));
   __ mul(r6, r6, r7);
-  __ add(r4, r6, Operand(r4, LSR, 16));
+  __ srwi(r4, r4, Operand(16));
+  __ add(r4, r6, r4);
   // Save state[0].
   __ stw(r4, FieldMemOperand(r5, ByteArray::kHeaderSize));
 
   // state[1] = 36969 * (state[1] & 0xFFFF) + (state[1] >> 16)
-  __ and_(r6, r3, Operand(0xFFFF));
+  __ andi(r6, r3, Operand(0xFFFF));
   __ mov(r7, Operand(36969));
   __ mul(r6, r6, r7);
-  __ add(r3, r6, Operand(r3, LSR, 16));
+  __ srwi(r3, r3, Operand(16));
+  __ add(r3, r6, r3);
   // Save state[1].
   __ stw(r3, FieldMemOperand(r5, ByteArray::kHeaderSize + kSeedSize));
 
   // Random bit pattern = (state[0] << 14) + (state[1] & 0x3FFFF)
-  __ and_(r3, r3, Operand(0x3FFFF));
-  __ add(r3, r3, Operand(r4, LSL, 14));
+  __ ExtractBitMask(r3, r3, 0x3FFFF);
+  __ slwi(r0, r4, Operand(14));
+  __ add(r3, r3, r0);
 
   __ bind(deferred->exit());
   // 0x41300000 is the top half of 1.0 x 2^20 as a double.
-  // Create this constant using mov/orr to avoid PC relative load.
-  __ mov(r4, Operand(0x41000000));
-  __ orr(r4, r4, Operand(0x300000));
+  __ lis(r4, Operand(0x4130));
   // Move 0x41300000xxxxxxxx (x = random bits) to VFP.
   __ vmov(d7, r3, r4);
   // Move 0x4130000000000000 to VFP.
-  __ mov(r3, Operand(0, RelocInfo::NONE));
+  __ li(r3, Operand(0));
   __ vmov(d8, r3, r4);
   // Subtract and store the result in the heap number.
   __ vsub(d7, d7, d8);
@@ -4031,11 +4076,11 @@ void LCodeGen::DoStoreKeyedFastElement(LStoreKeyedFastElement* instr) {
     // during bound check elimination with the index argument to the bounds
     // check, which can be tagged, so that case must be handled here, too.
     if (instr->hydrogen()->key()->representation().IsTagged()) {
-      __ add(scratch, elements,
-             Operand(key, LSL, kPointerSizeLog2 - kSmiTagSize));
+      __ slwi(scratch, key, Operand(kPointerSizeLog2 - kSmiTagSize));
     } else {
-      __ add(scratch, elements, Operand(key, LSL, kPointerSizeLog2));
+      __ slwi(scratch, key, Operand(kPointerSizeLog2));
     }
+    __ add(scratch, elements, scratch);
     offset = FixedArray::OffsetOfElementAt(instr->additional_index());
   }
   __ stw(value, FieldMemOperand(store_base, offset));
@@ -4079,12 +4124,14 @@ void LCodeGen::DoStoreKeyedFastDoubleElement(
   int element_size_shift = ElementsKindToShiftSize(FAST_DOUBLE_ELEMENTS);
   int shift_size = (instr->hydrogen()->key()->representation().IsTagged())
       ? (element_size_shift - kSmiTagSize) : element_size_shift;
-  Operand operand = key_is_constant
-      ? Operand((constant_key << element_size_shift) +
-                FixedDoubleArray::kHeaderSize - kHeapObjectTag)
-      : Operand(key, LSL, shift_size);
-  __ add(scratch, elements, operand);
-  if (!key_is_constant) {
+  if (key_is_constant) {
+    __ Add(scratch, elements,
+           (constant_key << element_size_shift) +
+           FixedDoubleArray::kHeaderSize - kHeapObjectTag,
+           r0);
+  } else {
+    __ slwi(scratch, key, Operand(shift_size));
+    __ add(scratch, elements, scratch);
     __ addi(scratch, scratch,
             Operand(FixedDoubleArray::kHeaderSize - kHeapObjectTag));
   }
@@ -4127,10 +4174,14 @@ void LCodeGen::DoStoreKeyedSpecializedArrayElement(
       elements_kind == EXTERNAL_DOUBLE_ELEMENTS) {
     CpuFeatures::Scope scope(VFP3);
     DwVfpRegister value(ToDoubleRegister(instr->value()));
-    Operand operand(key_is_constant
-                    ? Operand(constant_key << element_size_shift)
-                    : Operand(key, LSL, shift_size));
-    __ add(scratch0(), external_pointer, operand);
+    if (key_is_constant) {
+      __ Add(scratch0(), external_pointer,
+             constant_key << element_size_shift,
+             r0);
+    } else {
+      __ slwi(r0, key, Operand(shift_size));
+      __ add(scratch0(), external_pointer, r0);
+    }
     if (elements_kind == EXTERNAL_FLOAT_ELEMENTS) {
       __ vcvt_f32_f64(double_scratch0().low(), value);
       __ vstr(double_scratch0().low(), scratch0(), additional_offset);
@@ -4173,6 +4224,7 @@ void LCodeGen::DoStoreKeyedSpecializedArrayElement(
   }
 #else
   PPCPORT_UNIMPLEMENTED();
+  __ fake_asm(fLITHIUM95);
 #endif
 }
 
@@ -4318,7 +4370,8 @@ void LCodeGen::DoStringCharFromCode(LStringCharFromCode* instr) {
   __ cmpli(char_code, Operand(String::kMaxAsciiCharCode));
   __ b(gt, deferred->entry());
   __ LoadRoot(result, Heap::kSingleCharacterStringCacheRootIndex);
-  __ add(result, result, Operand(char_code, LSL, kPointerSizeLog2));
+  __ slwi(r0, char_code, Operand(kPointerSizeLog2));
+  __ add(result, result, r0);
   __ lwz(result, FieldMemOperand(result, FixedArray::kHeaderSize));
   __ LoadRoot(ip, Heap::kUndefinedValueRootIndex);
   __ cmp(result, ip);
@@ -4368,6 +4421,7 @@ void LCodeGen::DoInteger32ToDouble(LInteger32ToDouble* instr) {
   __ vcvt_f64_s32(ToDoubleRegister(output), single_scratch);
 #else
   PPCPORT_UNIMPLEMENTED();
+  __ fake_asm(fLITHIUM96);
 #endif
 }
 
@@ -4382,6 +4436,7 @@ void LCodeGen::DoUint32ToDouble(LUint32ToDouble* instr) {
   __ vcvt_f64_u32(ToDoubleRegister(output), flt_scratch);
 #else
   PPCPORT_UNIMPLEMENTED();
+  __ fake_asm(fLITHIUM97);
 #endif
 }
 
@@ -4457,7 +4512,7 @@ void LCodeGen::DoDeferredNumberTagI(LInstruction* instr,
     // the value in there. If that fails, call the runtime system.
     if (dst.is(src)) {
       __ SmiUntag(src, dst);
-      __ eor(src, src, Operand(0x80000000));
+      __ xoris(src, src, Operand(HeapNumber::kSignMask >> 16));
     }
     __ vmov(flt_scratch, src);
     __ vcvt_f64_s32(dbl_scratch, flt_scratch);
@@ -4492,6 +4547,7 @@ void LCodeGen::DoDeferredNumberTagI(LInstruction* instr,
   __ StoreToSafepointRegisterSlot(dst, dst);
 #else
   PPCPORT_UNIMPLEMENTED();
+  __ fake_asm(fLITHIUM98);
 #endif
 }
 
@@ -4564,9 +4620,10 @@ void LCodeGen::EmitNumberUntagD(Register input_reg,
                                 bool deoptimize_on_undefined,
                                 bool deoptimize_on_minus_zero,
                                 LEnvironment* env) {
-#ifdef PENGUIN_CLEANUP
   Register scratch = scratch0();
+#ifdef PENGUIN_CLEANUP
   SwVfpRegister flt_scratch = double_scratch0().low();
+#endif
   ASSERT(!result_reg.is(double_scratch0()));
 
   Label load_smi, heap_number, done;
@@ -4611,13 +4668,15 @@ void LCodeGen::EmitNumberUntagD(Register input_reg,
 
   // Smi to double register conversion
   __ bind(&load_smi);
+#ifdef PENGUIN_CLEANUP
   // scratch: untagged value of input_reg
   __ vmov(flt_scratch, scratch);
   __ vcvt_f64_s32(result_reg, flt_scratch);
-  __ bind(&done);
 #else
   PPCPORT_UNIMPLEMENTED();
+  __ fake_asm(fLITHIUM99);
 #endif
+  __ bind(&done);
 }
 
 
@@ -5065,7 +5124,7 @@ void LCodeGen::DoArrayLiteral(LArrayLiteral* instr) {
     // Load the map's "bit field 2".
     __ lbz(r5, FieldMemOperand(r5, Map::kBitField2Offset));
     // Retrieve elements_kind from bit field 2.
-    __ ubfx(r5, r5, Map::kElementsKindShift, Map::kElementsKindBitCount);
+    __ ExtractBitMask(r5, r5, Map::kElementsKindMask);
     __ Cmpi(r5, Operand(boilerplate_elements_kind), r0);
     DeoptimizeIf(ne, instr->environment());
   }
@@ -5220,7 +5279,7 @@ void LCodeGen::DoFastLiteral(LFastLiteral* instr) {
     // Load the map's "bit field 2".
     __ lbz(r5, FieldMemOperand(r5, Map::kBitField2Offset));
     // Retrieve elements_kind from bit field 2.
-    __ ubfx(r5, r5, Map::kElementsKindShift, Map::kElementsKindBitCount);
+    __ ExtractBitMask(r5, r5, Map::kElementsKindMask);
     __ Cmpi(r5, Operand(boilerplate_elements_kind), r0);
     DeoptimizeIf(ne, instr->environment());
   }
@@ -5697,7 +5756,8 @@ void LCodeGen::DoLoadFieldByIndex(LLoadFieldByIndex* instr) {
   __ blt(&out_of_object);
 
   STATIC_ASSERT(kPointerSizeLog2 > kSmiTagSize);
-  __ add(scratch, object, Operand(index, LSL, kPointerSizeLog2 - kSmiTagSize));
+  __ slwi(r0, index, Operand(kPointerSizeLog2 - kSmiTagSize));
+  __ add(scratch, object, r0);
   __ lwz(result, FieldMemOperand(scratch, JSObject::kHeaderSize));
 
   __ b(&done);
@@ -5705,7 +5765,8 @@ void LCodeGen::DoLoadFieldByIndex(LLoadFieldByIndex* instr) {
   __ bind(&out_of_object);
   __ lwz(result, FieldMemOperand(object, JSObject::kPropertiesOffset));
   // Index is equal to negated out of object property index plus 1.
-  __ sub(scratch, result, Operand(index, LSL, kPointerSizeLog2 - kSmiTagSize));
+  __ slwi(r0, index, Operand(kPointerSizeLog2 - kSmiTagSize));
+  __ sub(scratch, result, r0);
   __ lwz(result, FieldMemOperand(scratch,
                                  FixedArray::kHeaderSize - kPointerSize));
   __ bind(&done);

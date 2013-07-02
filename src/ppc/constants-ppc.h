@@ -434,6 +434,18 @@ enum FAKE_OPCODE_T {
   fMASM27 = 80,
   fMASM28 = 81,
   fMASM29 = 82,
+
+  fLITHIUM90 = 90,
+  fLITHIUM91 = 91,
+  fLITHIUM92 = 92,
+  fLITHIUM93 = 93,
+  fLITHIUM94 = 94,
+  fLITHIUM95 = 95,
+  fLITHIUM96 = 96,
+  fLITHIUM97 = 97,
+  fLITHIUM98 = 98,
+  fLITHIUM99 = 99,
+  fLITHIUM100 = 100,
   fLastFaker  // can't be more than 128 (2^^7)
 };
 #define FAKE_OPCODE_HIGH_BIT 7  // fake opcode has to fall into bit 0~7

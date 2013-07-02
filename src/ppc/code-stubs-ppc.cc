@@ -2192,7 +2192,7 @@ void UnaryOpStub::GenerateHeapNumberCodeSub(MacroAssembler* masm,
   // r3 is a heap number.  Get a new heap number in r4.
   if (mode_ == UNARY_OVERWRITE) {
     __ lwz(r5, FieldMemOperand(r3, HeapNumber::kExponentOffset));
-    __ xoris(r5, r5, Operand(HeapNumber::kExponentOffset));  // Flip sign.
+    __ xoris(r5, r5, Operand(HeapNumber::kSignMask >> 16));  // Flip sign.
     __ stw(r5, FieldMemOperand(r3, HeapNumber::kExponentOffset));
   } else {
     Label slow_allocate_heapnumber, heapnumber_allocated;
