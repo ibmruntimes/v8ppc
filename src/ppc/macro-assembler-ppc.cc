@@ -4034,13 +4034,13 @@ void MacroAssembler::LoadWord(Register dst, const MemOperand& mem,
     if (use_dform) {
       lwz(dst, mem);
     } else {
-      lwzx(dst, base, scratch);
+      lwzx(dst, MemOperand(base, scratch));
     }
   } else {
     if (use_dform) {
       lwzu(dst, mem);
     } else {
-      lwzux(dst, base, scratch);
+      lwzux(dst, MemOperand(base, scratch));
     }
   }
 }
@@ -4062,13 +4062,13 @@ void MacroAssembler::StoreWord(Register src, const MemOperand& mem,
     if (use_dform) {
       stw(src, mem);
     } else {
-      stwx(src, base, scratch);
+      stwx(src, MemOperand(base, scratch));
     }
   } else {
     if (use_dform) {
       stwu(src, mem);
     } else {
-      stwux(src, base, scratch);
+      stwux(src, MemOperand(base, scratch));
     }
   }
 }

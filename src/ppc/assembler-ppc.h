@@ -520,26 +520,34 @@ class MemOperand BASE_EMBEDDED {
   // PowerPC (remove AddrMode later)
   explicit MemOperand(Register rn, int32_t offset = 0, AddrMode am = Offset);
 
+  explicit MemOperand(Register ra, Register rb);
+
   // ARM only
   explicit MemOperand(Register rn, Register rm,
                       ShiftOp shift_op, int shift_imm, AddrMode am = Offset);
 
   uint32_t offset() const {
-      ASSERT(validPPCAddressing_);
-      return offset_;
+    ASSERT(validPPCAddressing_ && rb_.is(no_reg));
+    return offset_;
   }
 
   // PowerPC - base register
   Register ra() const {
-      ASSERT(validPPCAddressing_);
-      return ra_;
+    ASSERT(validPPCAddressing_ && !ra_.is(no_reg));
+    return ra_;
+  }
+
+  Register rb() const {
+    ASSERT(validPPCAddressing_ && offset_ == 0 && !rb_.is(no_reg));
+    return rb_;
   }
 
   bool isPPCAddressing() const { return validPPCAddressing_;}
 
  private:
   Register ra_;  // base
-  int32_t offset_;  // valid if rm_ == no_reg
+  int32_t offset_;  // offset
+  Register rb_;  // index
   bool validPPCAddressing_;
 
   friend class Assembler;
@@ -984,17 +992,25 @@ class Assembler : public AssemblerBase {
   void mr(Register dst, Register src);
 
   void lbz(Register dst, const MemOperand& src);
+  void lbzx(Register dst, const MemOperand& src);
+  void lbzux(Register dst, const MemOperand& src);
   void lhz(Register dst, const MemOperand& src);
+  void lhzx(Register dst, const MemOperand& src);
+  void lhzux(Register dst, const MemOperand& src);
   void lwz(Register dst, const MemOperand& src);
   void lwzu(Register dst, const MemOperand& src);
-  void lwzx(Register dst, Register ra, Register rb);
-  void lwzux(Register dst, Register ra, Register rb);
+  void lwzx(Register dst, const MemOperand& src);
+  void lwzux(Register dst, const MemOperand& src);
   void stb(Register dst, const MemOperand& src);
+  void stbx(Register dst, const MemOperand& src);
+  void stbux(Register dst, const MemOperand& src);
   void sth(Register dst, const MemOperand& src);
+  void sthx(Register dst, const MemOperand& src);
+  void sthux(Register dst, const MemOperand& src);
   void stw(Register dst, const MemOperand& src);
   void stwu(Register dst, const MemOperand& src);
-  void stwx(Register rs, Register ra, Register rb);
-  void stwux(Register rs, Register ra, Register rb);
+  void stwx(Register rs, const MemOperand& src);
+  void stwux(Register rs, const MemOperand& src);
 
   void extsb(Register rs, Register ra, RCBit r = LeaveRC);
   void extsh(Register rs, Register ra, RCBit r = LeaveRC);
@@ -1176,9 +1192,18 @@ class Assembler : public AssemblerBase {
 
   // Support for floating point
   void lfd(const DwVfpRegister frt, const MemOperand& src);
+  void lfdx(const DwVfpRegister frt, const MemOperand& src);
+  void lfdux(const DwVfpRegister frt, const MemOperand& src);
   void lfs(const DwVfpRegister frt, const MemOperand& src);
+  void lfsx(const DwVfpRegister frt, const MemOperand& src);
+  void lfsux(const DwVfpRegister frt, const MemOperand& src);
   void stfd(const DwVfpRegister frs, const MemOperand& src);
+  void stfdx(const DwVfpRegister frs, const MemOperand& src);
+  void stfdux(const DwVfpRegister frs, const MemOperand& src);
   void stfs(const DwVfpRegister frs, const MemOperand& src);
+  void stfsx(const DwVfpRegister frs, const MemOperand& src);
+  void stfsux(const DwVfpRegister frs, const MemOperand& src);
+
   void fadd(const DwVfpRegister frt, const DwVfpRegister fra,
             const DwVfpRegister frb, RCBit rc = LeaveRC);
   void fsub(const DwVfpRegister frt, const DwVfpRegister fra,

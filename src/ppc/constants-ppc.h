@@ -221,25 +221,25 @@ enum OpcodeExt2 {
   MFCR = 19 << 1,
   LWARX = 20 << 1,
   LDX = 21 << 1,
-  LWZX = 23 << 1,
+  LWZX = 23 << 1,    // load word zero w/ x-form
   SLWX = 24 << 1,
   CNTLZWX = 26 << 1,
   ANDX = 28 << 1,
   CMPL = 32 << 1,
   SUBFX = 40 << 1,
   DCBST = 54 << 1,
-  LWZUX = 55 << 1,
+  LWZUX = 55 << 1,   // load word zero w/ update x-form
   ANDCX = 60 << 1,
   MULHWX = 75 << 1,
   DCBF = 86 << 1,
-  LBZX = 87 << 1,
+  LBZX = 87 << 1,    // load byte zero w/ x-form
   NEGX = 104 << 1,
-  LBZUX = 119 << 1,
+  LBZUX = 119 << 1,  // load byte zero w/ update x-form
   NORX = 124 << 1,
   SUBFEX = 136 << 1,
   ADDEX = 138 << 1,
-  STWX = 151 << 1,
-  STWUX = 183 << 1,
+  STWX = 151 << 1,    // store word w/ x-form
+  STWUX = 183 << 1,   // store word w/ update x-form
 /*
   MTCRF
   MTMSR
@@ -252,19 +252,35 @@ enum OpcodeExt2 {
 /*
   MTSR
 */
+  STBX = 215 << 1,    // store byte w/ x-form
   MULLW  = 235 << 1,  // Multiply Low Word
-  ADDX = 266 << 1,  // Add
-  XORX = 316 << 1,  // Exclusive OR
-  MFSPR = 339 <<1,  // Move from Special-Purpose-Register
-  ORX = 444 << 1,  // Or
-  MTSPR = 467 <<1,  // Move to Special-Purpose-Register
+  STBUX = 247 << 1,   // store byte w/ update x-form
+  ADDX = 266 << 1,    // Add
+  LHZX = 279 << 1,    // load half-word zero w/ x-form
+  LHZUX = 311 << 1,   // load half-word zero w/ update x-form
+  LHAX =343 << 1,     // load half-word algebraic w/ x-form
+  LHAUX = 375 << 1,   // load half-word algebraic w/ update x-form
+  XORX = 316 << 1,    // Exclusive OR
+  MFSPR = 339 <<1,    // Move from Special-Purpose-Register
+  STHX = 407 << 1,    // store half-word w/ x-form
+  STHUX = 439 << 1,   // store half-word w/ update x-form
+  ORX = 444 << 1,     // Or
+  MTSPR = 467 <<1,    // Move to Special-Purpose-Register
 
   // Below represent bits 10-1  (any value >= 512)
-  SRWX = 536 <<1,  // Shift Right Word
-  SRAW = 792 << 1,  // Shift Right Algebraic Word
+  LFSX = 535 << 1,    // load float-single w/ x-form
+  SRWX = 536 <<1,     // Shift Right Word
+  LFSUX = 567 << 1,   // load float-single w/ update x-form
+  LFDX = 599 << 1,    // load float-double w/ x-form
+  LFDUX = 631 << 1,   // load float-double w/ update X-form
+  STFSX = 663 << 1,   // store float-single w/ x-form
+  STFSUX = 695 << 1,  // store float-single w/ update x-form
+  STFDX = 727 << 1,   // store float-double w/ x-form
+  STFDUX = 759 << 1,  // store float-double w/ update x-form
+  SRAW = 792 << 1,    // Shift Right Algebraic Word
   SRAWIX = 824 << 1,  // Shift Right Algebraic Word Immediate
-  EXTSH = 922 << 1,  // Extend Sign Halfword
-  EXTSB = 954 << 1  // Extend Sign Byte
+  EXTSH = 922 << 1,   // Extend Sign Halfword
+  EXTSB = 954 << 1    // Extend Sign Byte
 };
 
 // Some use Bits 10-1 and other only 5-1 for the opcode
