@@ -3712,8 +3712,9 @@ static void GenerateSmiKeyCheck(MacroAssembler* masm,
   __ lwz(scratch0, MemOperand(sp, 4));
 #endif
   __ addi(sp, sp, Operand(8));
-  __ TrySmiTag(scratch0, fail, scratch1);
-  __ mr(key, scratch0);
+  __ SmiTagCheckOverflow(scratch1, scratch0, r0);
+  __ BranchOnOverflow(fail);
+  __ mr(key, scratch1);
   __ bind(&key_ok);
 }
 

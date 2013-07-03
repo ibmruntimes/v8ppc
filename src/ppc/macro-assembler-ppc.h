@@ -1219,20 +1219,9 @@ class MacroAssembler: public Assembler {
     slwi(dst, src, Operand(1));
   }
 
-  // Try to convert int32 to smi. If the value is to large, preserve
-  // the original value and jump to not_a_smi. Destroys scratch and
-  // sets flags.
-  void TrySmiTag(Register reg, Label* not_a_smi, Register scratch) {
-    TrySmiTag(reg, reg, not_a_smi, scratch);
-  }
-
-  void TrySmiTag(Register dst, Register src, Label* not_a_smi,
-                 Register scratch) {
-    // Todo: this looks incorrect for signed values
-    rlwinm(scratch, src, 1, 31, 31, SetRC);
-    bne(not_a_smi, cr0);
-    SmiTag(dst, src);
-  }
+  // Test for overflow < 0: use BranchOnOverflow() or BranchOnNoOverflow().
+  void SmiTagCheckOverflow(Register reg, Register overflow);
+  void SmiTagCheckOverflow(Register dst, Register src, Register overflow);
 
   void SmiUntag(Register reg, RCBit rc = LeaveRC) {
     SmiUntag(reg, reg, rc);

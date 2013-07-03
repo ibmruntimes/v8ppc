@@ -1286,8 +1286,13 @@ void LCodeGen::DoDivI(LDivI* instr) {
   // to be tagged to Smis. If that is not possible, deoptimize.
   DeferredDivI* deferred = new(zone()) DeferredDivI(this, instr);
 
-  __ TrySmiTag(left, &deoptimize, scratch);
-  __ TrySmiTag(right, &deoptimize, scratch);
+  __ SmiTagCheckOverflow(ip, left, scratch);
+  __ BranchOnOverflow(&deoptimize);
+  __ mr(left, ip);
+
+  __ SmiTagCheckOverflow(ip, right, scratch);
+  __ BranchOnOverflow(&deoptimize);
+  __ mr(right, ip);
 
   __ b(deferred->entry());
   __ bind(deferred->exit());
@@ -4460,7 +4465,10 @@ void LCodeGen::DoNumberTagI(LNumberTagI* instr) {
   Register dst = ToRegister(instr->result());
 
   DeferredNumberTagI* deferred = new(zone()) DeferredNumberTagI(this, instr);
-  __ TrySmiTag(dst, src, deferred->entry(), r0);
+  __ SmiTagCheckOverflow(ip, src, r0);
+  __ BranchOnOverflow(deferred->entry());
+  __ mr(dst, ip);
+
   __ bind(deferred->exit());
 }
 
