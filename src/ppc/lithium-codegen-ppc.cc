@@ -35,10 +35,6 @@
 #include "code-stubs.h"
 #include "stub-cache.h"
 
-// todo: fix references to these
-#define lr r14
-#define pc r15
-
 namespace v8 {
 namespace internal {
 
@@ -85,7 +81,9 @@ bool LCodeGen::GenerateCode() {
   return GeneratePrologue() &&
       GenerateBody() &&
       GenerateDeferredCode() &&
-      GenerateDeoptJumpTable() &&
+#if 0
+      GenerateDeoptJumpTable() &&  // not used on PPC
+#endif
       GenerateSafepointTable();
 }
 
@@ -257,41 +255,16 @@ bool LCodeGen::GenerateDeferredCode() {
   // sure that no constant pools are emitted after.
   masm()->CheckConstPool(true, false);
 
+  // Deferred code is the last part of the instruction sequence. Mark
+  // the generated code as done unless we bailed out.
+  if (!is_aborted()) status_ = DONE;
   return !is_aborted();
 }
 
-
+// Currently unused on PPC
 bool LCodeGen::GenerateDeoptJumpTable() {
-  // Check that the jump table is accessible from everywhere in the function
-  // code, i.e. that offsets to the table can be encoded in the 24bit signed
-  // immediate of a branch instruction.
-  // To simplify we consider the code size from the first instruction to the
-  // end of the jump table. We also don't consider the pc load delta.
-  // Each entry in the jump table generates one instruction and inlines one
-  // 32bit data after it.
-  if (!is_int24((masm()->pc_offset() / Assembler::kInstrSize) +
-      deopt_jump_table_.length() * 2)) {
-    Abort("Generated code is too large");
-  }
-
-  // Block the constant pool emission during the jump table emission.
-  __ BlockConstPoolFor(deopt_jump_table_.length());
-  __ RecordComment("[ Deoptimisation jump table");
-  Label table_start;
-  __ bind(&table_start);
-  for (int i = 0; i < deopt_jump_table_.length(); i++) {
-    __ bind(&deopt_jump_table_[i].label);
-    __ ldr(pc, MemOperand(pc, Assembler::kInstrSize - Assembler::kPcLoadDelta));
-    __ dd(reinterpret_cast<uint32_t>(deopt_jump_table_[i].address));
-  }
-  ASSERT(masm()->InstructionsGeneratedSince(&table_start) ==
-      deopt_jump_table_.length() * 2);
-  __ RecordComment("]");
-
-  // The deoptimization jump table is the last part of the instruction
-  // sequence. Mark the generated code as done unless we bailed out.
-  if (!is_aborted()) status_ = DONE;
-  return !is_aborted();
+  Abort("Unimplemented: GenerateDeoptJumpTable");
+  return false;
 }
 
 
@@ -729,17 +702,7 @@ void LCodeGen::DeoptimizeIf(Condition cond, LEnvironment* environment,
 
   if (FLAG_trap_on_deopt) __ stop("trap_on_deopt", cond, kDefaultStopCode, cr);
 
-  if (cond == al) {
-    __ Jump(entry, RelocInfo::RUNTIME_ENTRY);
-  } else {
-    // We often have several deopts to the same entry, reuse the last
-    // jump entry if this is the case.
-    if (deopt_jump_table_.is_empty() ||
-        (deopt_jump_table_.last().address != entry)) {
-      deopt_jump_table_.Add(JumpTableEntry(entry), zone());
-    }
-    __ b(cond, &deopt_jump_table_.last().label, cr);
-  }
+  __ Jump(entry, RelocInfo::RUNTIME_ENTRY, cond, cr);
 }
 
 
@@ -1736,18 +1699,17 @@ void LCodeGen::DoAddI(LAddI* instr) {
   LOperand* right = instr->right();
   LOperand* result = instr->result();
   bool can_overflow = instr->hydrogen()->CheckFlag(HValue::kCanOverflow);
-  SBit set_cond = can_overflow ? SetCC : LeaveCC;
+  Register right_reg = EmitLoadRegister(right, ip);
 
-  if (right->IsStackSlot() || right->IsArgument()) {
-    Register right_reg = EmitLoadRegister(right, ip);
-    __ add(ToRegister(result), ToRegister(left), Operand(right_reg), set_cond);
-  } else {
-    ASSERT(right->IsRegister() || right->IsConstantOperand());
-    __ add(ToRegister(result), ToRegister(left), ToOperand(right), set_cond);
-  }
-
-  if (can_overflow) {
-    DeoptimizeIf(vs, instr->environment());
+  if (!can_overflow) {
+    __ add(ToRegister(result), ToRegister(left), right_reg);
+  } else {  // can_overflow.
+    __ AddAndCheckForOverflow(ToRegister(result),
+                              ToRegister(left),
+                              right_reg,
+                              scratch0(), r0);
+    // Doptimize on overflow
+    DeoptimizeIf(lt, instr->environment(), cr0);
   }
 }
 

@@ -62,22 +62,41 @@ void MacroAssembler::Jump(Register target, Condition cond) {
 
 
 void MacroAssembler::Jump(intptr_t target, RelocInfo::Mode rmode,
-                          Condition cond) {
-  ASSERT(rmode == RelocInfo::CODE_TARGET);
-  ASSERT(cond == al);
-  int addr = *(reinterpret_cast<int*>(target));
-  addr = addr + Code::kHeaderSize - kHeapObjectTag;   // PPC - ugly
-  mov(r0, Operand(addr));
+                          Condition cond, CRegister cr) {
+  Label skip;
+
+#ifndef PENGUIN_CLEANUP
+  if (cond == vs) {
+    PPCPORT_UNIMPLEMENTED();
+    fake_asm(fMASM4);
+    return;
+  }
+#endif
+
+  if (cond != al) b(NegateCondition(cond), &skip, cr);
+
+  if (rmode == RelocInfo::CODE_TARGET) {
+    int addr = *(reinterpret_cast<int*>(target));
+    addr = addr + Code::kHeaderSize - kHeapObjectTag;   // PPC - ugly
+    mov(r0, Operand(addr));
+  } else if (rmode == RelocInfo::RUNTIME_ENTRY) {
+    mov(r0, Operand(target, rmode));
+  } else {
+    ASSERT(false);
+  }
+
   mtctr(r0);
   bcr();
+
+  bind(&skip);
   //  mov(pc, Operand(target, rmode), LeaveCC, cond);
 }
 
 
 void MacroAssembler::Jump(Address target, RelocInfo::Mode rmode,
-                          Condition cond) {
+                          Condition cond, CRegister cr) {
   ASSERT(!RelocInfo::IsCodeTarget(rmode));
-  Jump(reinterpret_cast<intptr_t>(target), rmode, cond);
+  Jump(reinterpret_cast<intptr_t>(target), rmode, cond, cr);
 }
 
 

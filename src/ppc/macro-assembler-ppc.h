@@ -104,7 +104,8 @@ class MacroAssembler: public Assembler {
 
   // Jump, Call, and Ret pseudo instructions implementing inter-working.
   void Jump(Register target, Condition cond = al);
-  void Jump(Address target, RelocInfo::Mode rmode, Condition cond = al);
+  void Jump(Address target, RelocInfo::Mode rmode, Condition cond = al,
+            CRegister cr = cr7);
   void Jump(Handle<Code> code, RelocInfo::Mode rmode, Condition cond = al);
   static int CallSize(Register target, Condition cond = al);
   void Call(Register target, Condition cond = al);
@@ -1373,7 +1374,8 @@ class MacroAssembler: public Assembler {
                            int num_reg_arguments,
                            int num_double_arguments);
 
-  void Jump(intptr_t target, RelocInfo::Mode rmode, Condition cond = al);
+  void Jump(intptr_t target, RelocInfo::Mode rmode,
+            Condition cond = al, CRegister cr = cr7);
 
   // Helper functions for generating invokes.
   void InvokePrologue(const ParameterCount& expected,
