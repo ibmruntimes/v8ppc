@@ -2950,7 +2950,7 @@ void LCodeGen::DoAccessArgumentsAt(LAccessArgumentsAt* instr) {
   // Subtracting from length accounts for one of them add one more.
   __ addi(length, length, Operand(1));
   __ slwi(r0, length, Operand(kPointerSizeLog2));
-  __ lwzx(result, arguments, r0);
+  __ lwzx(result, MemOperand(arguments, r0));
 }
 
 
@@ -3304,7 +3304,7 @@ void LCodeGen::DoApplyArguments(LApplyArguments* instr) {
   __ mtctr(length);
   __ bind(&loop);
   __ slwi(r0, length, Operand(2));
-  __ lwzx(scratch, elements, r0);
+  __ lwzx(scratch, MemOperand(elements, r0));
   __ push(scratch);
   __ addi(length, length, Operand(-1));
   __ bdnz(&loop);
