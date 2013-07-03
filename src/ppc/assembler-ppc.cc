@@ -1188,7 +1188,8 @@ void Assembler::mov(Register dst, const Operand& src, SBit s, Condition cond) {
   }
 #endif
 
-  if (src.rmode_ != RelocInfo::NONE) {
+  if (!(src.rmode_ == RelocInfo::NONE ||
+        src.rmode_ == RelocInfo::EXTERNAL_REFERENCE)) {
     // some form of relocation needed
     RecordRelocInfo(src.rmode_, src.imm32_);
   }
