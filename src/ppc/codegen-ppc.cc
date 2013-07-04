@@ -217,7 +217,8 @@ void ElementsTransitionGenerator::GenerateSmiToDouble(
 
   // Convert and copy elements.
   __ bind(&loop);
-  __ lwz(r22, MemOperand(r6, 4, PostIndex));
+  __ lwz(r22, MemOperand(r6));
+  __ addi(r6, r6, Operand(4));
   // r22: current element
   __ UntagAndJumpIfNotSmi(r22, r22, &convert_hole);
 
