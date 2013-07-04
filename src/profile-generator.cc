@@ -1819,6 +1819,8 @@ class IndexedReferencesExtractor : public ObjectVisitor {
     Address field = obj->address() + offset;
     ASSERT(!Memory::Object_at(field)->IsFailure());
     ASSERT(Memory::Object_at(field)->IsHeapObject());
+    // Address field is a byte pointer, we need to cast it
+    // to avoid setting the wrong bit on big endian platforms
     intptr_t *tagged = reinterpret_cast<intptr_t *>(field);
     *tagged |= kFailureTag;
   }
