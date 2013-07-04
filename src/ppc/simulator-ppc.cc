@@ -1620,7 +1620,8 @@ void Simulator::DecodeExt1(Instruction* instr) {
 
 void Simulator::DecodeExt2(Instruction* instr) {
   // Check first the 10-1 bit versions
-  switch (instr->Bits(10, 1) << 1) {
+  int opcode = instr->Bits(10, 1) << 1;
+  switch (opcode) {
     case SRWX: {
       int rs = instr->RSValue();
       int ra = instr->RAValue();
@@ -1704,7 +1705,7 @@ void Simulator::DecodeExt2(Instruction* instr) {
       int rb = instr->RBValue();
       int32_t ra_val = ra == 0 ? 0 : get_register(ra);
       int32_t rb_val = get_register(rb);
-      double *dfpr = reinterpret_cast<double*>(ReadDW(ra_val + rb_val));
+      double *dptr = reinterpret_cast<double*>(ReadDW(ra_val + rb_val));
       set_d_register_from_double(frt, *dptr);
       if (opcode == LFDUX) {
         ASSERT(ra != 0);
@@ -1737,8 +1738,8 @@ void Simulator::DecodeExt2(Instruction* instr) {
       int32_t rb_val = get_register(rb);
       double frs_val = get_double_from_d_register(frs);
       int32_t *p=  reinterpret_cast<int32_t*>(&frs_val);
-      WriteW(ra_val + rb_val, p[0], p[1], instr);
-      if (opcode == STDSUX) {
+      WriteDW(ra_val + rb_val, p[0], p[1]);
+      if (opcode == STFDUX) {
         ASSERT(ra != 0);
         set_register(ra, ra_val+rb_val);
       }
@@ -1746,7 +1747,7 @@ void Simulator::DecodeExt2(Instruction* instr) {
     }
   }
   // Now look at the lesser encodings
-  int opcode = instr->Bits(9, 1) << 1;
+  opcode = instr->Bits(9, 1) << 1;
   switch (opcode) {
     case CMP: {
       int ra = instr->RAValue();
@@ -2048,7 +2049,7 @@ void Simulator::DecodeExt2(Instruction* instr) {
       int ra = instr->RAValue();
       int rb = instr->RBValue();
       int32_t ra_val = ra == 0 ? 0 : get_register(ra);
-      int32_t rs_val = get_register(rs);
+      int8_t rs_val = get_register(rs);
       int32_t rb_val = get_register(rb);
       WriteB(ra_val+rb_val, rs_val);
       if (opcode == STBUX) {
@@ -2063,9 +2064,9 @@ void Simulator::DecodeExt2(Instruction* instr) {
       int ra = instr->RAValue();
       int rb = instr->RBValue();
       int32_t ra_val = ra == 0 ? 0 : get_register(ra);
-      int32_t rs_val = get_register(rs);
+      int16_t rs_val = get_register(rs);
       int32_t rb_val = get_register(rb);
-      WriteH(ra_val+rb_val, rs_val);
+      WriteH(ra_val+rb_val, rs_val, instr);
       if (opcode == STHUX) {
         ASSERT(ra != 0);
         set_register(ra, ra_val+rb_val);
@@ -2107,7 +2108,7 @@ void Simulator::DecodeExt2(Instruction* instr) {
       int rb = instr->RBValue();
       int32_t ra_val = ra == 0 ? 0 : get_register(ra);
       int32_t rb_val = get_register(rb);
-      set_register(rt, ReadHU(ra_val+rb_val) & 0xFFFF);
+      set_register(rt, ReadHU(ra_val+rb_val, instr) & 0xFFFF);
       if (opcode == LHZUX) {
         ASSERT(ra != 0 && ra != rt);
         set_register(ra, ra_val+rb_val);
