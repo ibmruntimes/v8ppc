@@ -1737,8 +1737,8 @@ void Simulator::DecodeExt2(Instruction* instr) {
       int32_t ra_val = ra == 0 ? 0 : get_register(ra);
       int32_t rb_val = get_register(rb);
       double frs_val = get_double_from_d_register(frs);
-      int32_t *p=  reinterpret_cast<int32_t*>(&frs_val);
-      WriteDW(ra_val + rb_val, p[0], p[1]);
+      int32_t *p = reinterpret_cast<int32_t *>(&frs_val);
+      WriteDW(ra_val + rb_val, (int32_t)(p[0]), (int32_t)(p[1]));
       if (opcode == STFDUX) {
         ASSERT(ra != 0);
         set_register(ra, ra_val+rb_val);
@@ -2674,8 +2674,8 @@ void Simulator::InstructionDecode(Instruction* instr) {
       int32_t offset = SIGN_EXT_IMM16(instr->Bits(15, 0));
       int32_t ra_val = ra == 0 ? 0 : get_register(ra);
       double frs_val = get_double_from_d_register(frs);
-      int32_t *p =  reinterpret_cast<int32_t *>(&frs_val);
-      WriteDW(ra_val + offset, p[0], p[1]);
+      int32_t *p = reinterpret_cast<int32_t *>(&frs_val);
+      WriteDW(ra_val + offset, (int32_t)(p[0]), (int32_t)(p[1]));
       if (opcode == STFDU) {
         ASSERT(ra != 0);
         set_register(ra, ra_val+offset);
