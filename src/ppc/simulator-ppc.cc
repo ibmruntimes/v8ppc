@@ -1681,6 +1681,69 @@ void Simulator::DecodeExt2(Instruction* instr) {
       }
       return;
     }
+    case LFSUX:
+    case LFSX: {
+      int frt = instr->RTValue();
+      int ra = instr->RAValue();
+      int rb = instr->RBValue();
+      int32_t ra_val = ra == 0 ? 0 : get_register(ra);
+      int32_t rb_val = get_register(rb);
+      int32_t val = ReadW(ra_val + rb_val, instr);
+      float *fptr = reinterpret_cast<float*>(&val);
+      set_d_register_from_double(frt, static_cast<double>(*fptr));
+      if (opcode == LFSUX) {
+        ASSERT(ra != 0);
+        set_register(ra, ra_val+rb_val);
+      }
+      return;
+    }
+    case LFDUX:
+    case LFDX: {
+      int frt = instr->RTValue();
+      int ra = instr->RAValue();
+      int rb = instr->RBValue();
+      int32_t ra_val = ra == 0 ? 0 : get_register(ra);
+      int32_t rb_val = get_register(rb);
+      double *dfpr = reinterpret_cast<double*>(ReadDW(ra_val + rb_val));
+      set_d_register_from_double(frt, *dptr);
+      if (opcode == LFDUX) {
+        ASSERT(ra != 0);
+        set_register(ra, ra_val+rb_val);
+      }
+      return;
+    }
+    case STFSUX: {
+    case STFSX:
+      int frs = instr->RSValue();
+      int ra = instr->RAValue();
+      int rb = instr->RBValue();
+      int32_t ra_val = ra == 0 ? 0 : get_register(ra);
+      int32_t rb_val = get_register(rb);
+      float frs_val = static_cast<float>(get_double_from_d_register(frs));
+      int32_t *p=  reinterpret_cast<int32_t*>(&frs_val);
+      WriteW(ra_val + rb_val, *p, instr);
+      if (opcode == STFSUX) {
+        ASSERT(ra != 0);
+        set_register(ra, ra_val+rb_val);
+      }
+      return;
+    }
+    case STFDUX: {
+    case STFDX:
+      int frs = instr->RSValue();
+      int ra = instr->RAValue();
+      int rb = instr->RBValue();
+      int32_t ra_val = ra == 0 ? 0 : get_register(ra);
+      int32_t rb_val = get_register(rb);
+      double frs_val = get_double_from_d_register(frs);
+      int32_t *p=  reinterpret_cast<int32_t*>(&frs_val);
+      WriteW(ra_val + rb_val, p[0], p[1], instr);
+      if (opcode == STDSUX) {
+        ASSERT(ra != 0);
+        set_register(ra, ra_val+rb_val);
+      }
+      return;
+    }
   }
   // Now look at the lesser encodings
   int opcode = instr->Bits(9, 1) << 1;
@@ -1979,6 +2042,36 @@ void Simulator::DecodeExt2(Instruction* instr) {
       }
       break;
     }
+    case STBUX:
+    case STBX: {
+      int rs = instr->RSValue();
+      int ra = instr->RAValue();
+      int rb = instr->RBValue();
+      int32_t ra_val = ra == 0 ? 0 : get_register(ra);
+      int32_t rs_val = get_register(rs);
+      int32_t rb_val = get_register(rb);
+      WriteB(ra_val+rb_val, rs_val);
+      if (opcode == STBUX) {
+        ASSERT(ra != 0);
+        set_register(ra, ra_val+rb_val);
+      }
+      break;
+    }
+    case STHUX:
+    case STHX: {
+      int rs = instr->RSValue();
+      int ra = instr->RAValue();
+      int rb = instr->RBValue();
+      int32_t ra_val = ra == 0 ? 0 : get_register(ra);
+      int32_t rs_val = get_register(rs);
+      int32_t rb_val = get_register(rb);
+      WriteH(ra_val+rb_val, rs_val);
+      if (opcode == STHUX) {
+        ASSERT(ra != 0);
+        set_register(ra, ra_val+rb_val);
+      }
+      break;
+    }
     case LWZX:
     case LWZUX: {
       int rt = instr->RTValue();
@@ -1988,6 +2081,34 @@ void Simulator::DecodeExt2(Instruction* instr) {
       int32_t rb_val = get_register(rb);
       set_register(rt, ReadW(ra_val+rb_val, instr));
       if (opcode == LWZUX) {
+        ASSERT(ra != 0 && ra != rt);
+        set_register(ra, ra_val+rb_val);
+      }
+      break;
+    }
+    case LBZX:
+    case LBZUX: {
+      int rt = instr->RTValue();
+      int ra = instr->RAValue();
+      int rb = instr->RBValue();
+      int32_t ra_val = ra == 0 ? 0 : get_register(ra);
+      int32_t rb_val = get_register(rb);
+      set_register(rt, ReadBU(ra_val+rb_val) & 0xFF);
+      if (opcode == LBZUX) {
+        ASSERT(ra != 0 && ra != rt);
+        set_register(ra, ra_val+rb_val);
+      }
+      break;
+    }
+    case LHZX:
+    case LHZUX: {
+      int rt = instr->RTValue();
+      int ra = instr->RAValue();
+      int rb = instr->RBValue();
+      int32_t ra_val = ra == 0 ? 0 : get_register(ra);
+      int32_t rb_val = get_register(rb);
+      set_register(rt, ReadHU(ra_val+rb_val) & 0xFFFF);
+      if (opcode == LHZUX) {
         ASSERT(ra != 0 && ra != rt);
         set_register(ra, ra_val+rb_val);
       }
@@ -2521,7 +2642,7 @@ void Simulator::InstructionDecode(Instruction* instr) {
       int32_t offset = SIGN_EXT_IMM16(instr->Bits(15, 0));
       int32_t ra_val = ra == 0 ? 0 : get_register(ra);
       double *dptr = reinterpret_cast<double*>(ReadDW(ra_val + offset));
-      set_d_register_from_double(frt, static_cast<double>(*dptr));
+      set_d_register_from_double(frt, *dptr);
       if (opcode == LFDU) {
         ASSERT(ra != 0);
         set_register(ra, ra_val+offset);
@@ -2531,12 +2652,12 @@ void Simulator::InstructionDecode(Instruction* instr) {
 
     case STFSU: {
     case STFS:
-      int frt = instr->RTValue();
+      int frs = instr->RSValue();
       int ra = instr->RAValue();
       int32_t offset = SIGN_EXT_IMM16(instr->Bits(15, 0));
       int32_t ra_val = ra == 0 ? 0 : get_register(ra);
-      float frt_val = static_cast<float>(get_double_from_d_register(frt));
-      int32_t *p=  reinterpret_cast<int32_t*>(&frt_val);
+      float frs_val = static_cast<float>(get_double_from_d_register(frs));
+      int32_t *p=  reinterpret_cast<int32_t*>(&frs_val);
       WriteW(ra_val + offset, *p, instr);
       if (opcode == STFSU) {
         ASSERT(ra != 0);
@@ -2544,15 +2665,16 @@ void Simulator::InstructionDecode(Instruction* instr) {
       }
       break;
     }
+
     case STFDU:
     case STFD: {
-      int frt = instr->RTValue();
+      int frs = instr->RSValue();
       int ra = instr->RAValue();
       int32_t offset = SIGN_EXT_IMM16(instr->Bits(15, 0));
       int32_t ra_val = ra == 0 ? 0 : get_register(ra);
-      double frt_val = get_double_from_d_register(frt);
-      int32_t *p =  reinterpret_cast<int32_t *>(&frt_val);
-      WriteDW(ra_val + offset, (int32_t)(p[0]), (int32_t)(p[1]));
+      double frs_val = get_double_from_d_register(frs);
+      int32_t *p =  reinterpret_cast<int32_t *>(&frs_val);
+      WriteDW(ra_val + offset, p[0], p[1]);
       if (opcode == STFDU) {
         ASSERT(ra != 0);
         set_register(ra, ra_val+offset);

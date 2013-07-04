@@ -819,6 +819,38 @@ void Decoder::DecodeExt2(Instruction* instr) {
       Format(instr, "extsb'.  'ra,'rs");
       return;
     }
+    case LFSX: {
+      Format(instr, "lfsx    'rt, 'ra, 'rb");
+      return;
+    }
+    case LFSUX: {
+      Format(instr, "lfsux   'rt, 'ra, 'rb");
+      return;
+    }
+    case LFDX: {
+      Format(instr, "lfdx    'rt, 'ra, 'rb");
+      return;
+    }
+    case LFDUX: {
+      Format(instr, "lfdux   'rt, 'ra, 'rb");
+      return;
+    }
+    case STFSX: {
+      Format(instr, "stfsx    'rs, 'ra, 'rb");
+      return;
+    }
+    case STFSUX: {
+      Format(instr, "stfsux   'rs, 'ra, 'rb");
+      return;
+    }
+    case STFDX: {
+      Format(instr, "stfdx    'rs, 'ra, 'rb");
+      return;
+    }
+    case STFDUX: {
+      Format(instr, "stfdux   'rs, 'ra, 'rb");
+      return;
+    }
   }
 
   // ?? are all of these xo_form?
@@ -923,12 +955,44 @@ void Decoder::DecodeExt2(Instruction* instr) {
       Format(instr, "stwux   'rs, 'ra, 'rb");
       break;
     }
+    case STBX: {
+      Format(instr, "stbx    'rs, 'ra, 'rb");
+      break;
+    }
+    case STBUX: {
+      Format(instr, "stbux   'rs, 'ra, 'rb");
+      break;
+    }
+    case STHX: {
+      Format(instr, "sthx    'rs, 'ra, 'rb");
+      break;
+    }
+    case STHUX: {
+      Format(instr, "sthux   'rs, 'ra, 'rb");
+      break;
+    }
     case LWZX: {
       Format(instr, "lwzx    'rt, 'ra, 'rb");
       break;
     }
     case LWZUX: {
       Format(instr, "lwzux   'rt, 'ra, 'rb");
+      break;
+    }
+    case LBZX: {
+      Format(instr, "lbzx    'rt, 'ra, 'rb");
+      break;
+    }
+    case LBZUX: {
+      Format(instr, "lbzux   'rt, 'ra, 'rb");
+      break;
+    }
+    case LHZX: {
+      Format(instr, "lhzx    'rt, 'ra, 'rb");
+      break;
+    }
+    case LHZUX: {
+      Format(instr, "lhzux   'rt, 'ra, 'rb");
       break;
     }
     default: {
