@@ -129,8 +129,8 @@ void Deoptimizer::DeoptimizeFunction(JSFunction* function) {
 }
 
 
-static const int32_t kBranchBeforeStackCheck = 0x2a000001;
-static const int32_t kBranchBeforeInterrupt =  0x5a000004;
+static const int32_t kBranchBeforeStackCheck = 0x409c0014;
+static const int32_t kBranchBeforeInterrupt =  0x409c0028;
 
 
 void Deoptimizer::PatchStackCheckCodeAt(Code* unoptimized_code,
@@ -138,53 +138,58 @@ void Deoptimizer::PatchStackCheckCodeAt(Code* unoptimized_code,
                                         Code* check_code,
                                         Code* replacement_code) {
   const int kInstrSize = Assembler::kInstrSize;
+  // There are two 'Stack check' sequences from full-codegen-ppc.cc
+  // both have similar code - and FLAG_count_based_interrupts will
+  // control which we expect to find
+  //
   // The call of the stack guard check has the following form:
-  //  e1 5d 00 0c       cmp sp, <limit>
-  //  2a 00 00 01       bcs ok
-  //  e5 9f c? ??       ldr ip, [pc, <stack guard address>]
-  //  e1 2f ff 3c       blx ip
-#ifdef PENGUIN_CLEANUP
-  ASSERT(Memory::int32_at(pc_after - kInstrSize) == kBlxIp);
-#endif
-  ASSERT(Assembler::IsLdrPcImmediateOffset(
-      Assembler::instr_at(pc_after - 2 * kInstrSize)));
+  // 409c0014       bge +40 -> 876  (0x25535c4c)  ;; (ok)
+  // 3d802553       lis     r12, 9555        ;; two part load
+  // 318c5000       addic   r12, r12, 20480  ;; of stack guard address
+  // 7d8803a6       mtlr    r12
+  // 4e800021       blrl
+
+  // Check we have a branch & link through r12 (ip)
+  ASSERT(Memory::int32_at(pc_after - 2 * kInstrSize) == 0x7d8803a6);
+  ASSERT(Memory::int32_at(pc_after - kInstrSize) == 0x4e800021);
+
+  ASSERT(Assembler::Is32BitLoadIntoR12(
+      Assembler::instr_at(pc_after - 4 * kInstrSize),
+      Assembler::instr_at(pc_after - 3 * kInstrSize)));
   if (FLAG_count_based_interrupts) {
     ASSERT_EQ(kBranchBeforeInterrupt,
-              Memory::int32_at(pc_after - 3 * kInstrSize));
+              Memory::int32_at(pc_after - 5 * kInstrSize));
   } else {
     ASSERT_EQ(kBranchBeforeStackCheck,
-              Memory::int32_at(pc_after - 3 * kInstrSize));
+              Memory::int32_at(pc_after - 5 * kInstrSize));
   }
 
   // We patch the code to the following form:
-  //  e1 5d 00 0c       cmp sp, <limit>
-  //  e1 a0 00 00       mov r3, r3 (NOP)
-  //  e5 9f c? ??       ldr ip, [pc, <on-stack replacement address>]
-  //  e1 2f ff 3c       blx ip
-  // and overwrite the constant containing the
-  // address of the stack check stub.
+  // 60000000       ori     r0, r0, 0        ;; NOP
+  // 3d80NNNN       lis     r12, NNNN        ;; two part load
+  // 318cNNNN       addic   r12, r12, NNNN   ;; of on stack replace address
+  // 7d8803a6       mtlr    r12
+  // 4e800021       blrl
 
   // Replace conditional jump with NOP.
-  CodePatcher patcher(pc_after - 3 * kInstrSize, 1);
+  CodePatcher patcher(pc_after - 5 * kInstrSize, 3);
   patcher.masm()->nop();
 
-  // Replace the stack check address in the constant pool
-  // with the entry address of the replacement code.
-#if defined(V8_HOST_ARCH_PPC)
-  uint32_t stack_check_address_offset = Memory::uint16_at(pc_after -
-      (2 * kInstrSize) + 2) & 0xfff;
-#else
-  uint32_t stack_check_address_offset = Memory::uint16_at(pc_after -
-      2 * kInstrSize) & 0xfff;
-#endif
-  Address stack_check_address_pointer = pc_after + stack_check_address_offset;
-  ASSERT(Memory::uint32_at(stack_check_address_pointer) ==
-         reinterpret_cast<uint32_t>(check_code->entry()));
-  Memory::uint32_at(stack_check_address_pointer) =
-      reinterpret_cast<uint32_t>(replacement_code->entry());
+  // Assemble the 32 bit value from the two part load and verify
+  // that it is the stack guard code
+  uint32_t stack_check_address =
+    (Memory::int32_at(pc_after - 4 * kInstrSize) & 0xffff) << 16;
+  stack_check_address +=
+    ((Memory::int32_at(pc_after - 3 * kInstrSize) << 16) >> 16);
+  ASSERT(stack_check_address ==
+    reinterpret_cast<uint32_t>(check_code->entry()));
+
+  // Now modify the two part load
+  patcher.masm()->mov(ip,
+    Operand(reinterpret_cast<uint32_t>(replacement_code->entry())));
 
   unoptimized_code->GetHeap()->incremental_marking()->RecordCodeTargetPatch(
-      unoptimized_code, pc_after - 2 * kInstrSize, replacement_code);
+      unoptimized_code, pc_after - 4 * kInstrSize, replacement_code);
 }
 
 
@@ -193,43 +198,44 @@ void Deoptimizer::RevertStackCheckCodeAt(Code* unoptimized_code,
                                          Code* check_code,
                                          Code* replacement_code) {
   const int kInstrSize = Assembler::kInstrSize;
-#ifdef PENGUIN_CLEANUP
-  ASSERT(Memory::int32_at(pc_after - kInstrSize) == kBlxIp);
-#endif
-  ASSERT(Assembler::IsLdrPcImmediateOffset(
-      Assembler::instr_at(pc_after - 2 * kInstrSize)));
+
+  // Check we have a branch & link through r12 (ip)
+  ASSERT(Memory::int32_at(pc_after - 2 * kInstrSize) == 0x7d8803a6);
+  ASSERT(Memory::int32_at(pc_after - kInstrSize) == 0x4e800021);
+
+  ASSERT(Assembler::Is32BitLoadIntoR12(
+      Assembler::instr_at(pc_after - 4 * kInstrSize),
+      Assembler::instr_at(pc_after - 3 * kInstrSize)));
 
   // Replace NOP with conditional jump.
-  CodePatcher patcher(pc_after - 3 * kInstrSize, 1);
+  CodePatcher patcher(pc_after - 5 * kInstrSize, 3);
   if (FLAG_count_based_interrupts) {
-      patcher.masm()->bc(+16, BF,
+      patcher.masm()->bc(+40, BF,
                 v8::internal::Assembler::encode_crbit(cr7, CR_LT));  // bge
     ASSERT_EQ(kBranchBeforeInterrupt,
-              Memory::int32_at(pc_after - 3 * kInstrSize));
+              Memory::int32_at(pc_after - 5 * kInstrSize));
   } else {
-    patcher.masm()->bc(+4, BF,
+    patcher.masm()->bc(+20, BF,
                 v8::internal::Assembler::encode_crbit(cr7, CR_LT));  // bge
     ASSERT_EQ(kBranchBeforeStackCheck,
-              Memory::int32_at(pc_after - 3 * kInstrSize));
+              Memory::int32_at(pc_after - 5 * kInstrSize));
   }
 
-  // Replace the stack check address in the constant pool
-  // with the entry address of the replacement code.
-#if defined(V8_HOST_ARCH_PPC)
-  uint32_t stack_check_address_offset = Memory::uint16_at(pc_after -
-      (2 * kInstrSize) +2) & 0xfff;
-#else
-  uint32_t stack_check_address_offset = Memory::uint16_at(pc_after -
-      2 * kInstrSize) & 0xfff;
-#endif
-  Address stack_check_address_pointer = pc_after + stack_check_address_offset;
-  ASSERT(Memory::uint32_at(stack_check_address_pointer) ==
-         reinterpret_cast<uint32_t>(replacement_code->entry()));
-  Memory::uint32_at(stack_check_address_pointer) =
-      reinterpret_cast<uint32_t>(check_code->entry());
+  // Assemble the 32 bit value from the two part load and verify
+  // that it is the replacement code addresS
+  uint32_t stack_check_address =
+    (Memory::int32_at(pc_after - 4 * kInstrSize) & 0xffff) << 16;
+  stack_check_address +=
+    ((Memory::int32_at(pc_after - 3 * kInstrSize) << 16) >> 16);
+  ASSERT(stack_check_address ==
+    reinterpret_cast<uint32_t>(replacement_code->entry()));
+
+  // Now modify the two part load
+  patcher.masm()->mov(ip,
+    Operand(reinterpret_cast<uint32_t>(check_code->entry())));
 
   check_code->GetHeap()->incremental_marking()->RecordCodeTargetPatch(
-      unoptimized_code, pc_after - 2 * kInstrSize, check_code);
+      unoptimized_code, pc_after - 4 * kInstrSize, check_code);
 }
 
 

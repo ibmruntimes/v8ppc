@@ -416,10 +416,11 @@ bool Assembler::IsPop(Instr instr) {
   return ((instr & ~kRdMask) == kPopRegPattern);
 }
 
-bool Assembler::IsLdrPcImmediateOffset(Instr instr) {
-  // Check the instruction is indeed a
-  // ldr<cond> <Rd>, [pc +/- offset_12].
-  return 1;  /// hack
+bool Assembler::Is32BitLoadIntoR12(Instr instr1, Instr instr2) {
+  // Check the instruction is indeed a two part load (into r12)
+  // 3d802553       lis     r12, 9555
+  // 318c5000       addic   r12, r12, 20480
+  return(((instr1 >> 16) == 0x3d80) && ((instr2 >> 16) == 0x318c));
 }
 
 bool Assembler::IsCmpRegister(Instr instr) {

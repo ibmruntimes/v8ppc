@@ -1457,7 +1457,7 @@ class Assembler : public AssemblerBase {
   static Register GetRB(Instr instr);
   static bool IsPush(Instr instr);
   static bool IsPop(Instr instr);
-  static bool IsLdrPcImmediateOffset(Instr instr);
+  static bool Is32BitLoadIntoR12(Instr instr1, Instr instr2);
   static bool IsCmpRegister(Instr instr);
   static bool IsCmpImmediate(Instr instr);
   static bool IsRlwinm(Instr instr);
