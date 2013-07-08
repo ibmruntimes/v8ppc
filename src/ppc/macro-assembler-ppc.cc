@@ -344,41 +344,6 @@ void MacroAssembler::Sbfx(Register dst, Register src1, int lsb, int width,
   }
 }
 
-void MacroAssembler::Usat(Register dst, int satpos, const Operand& src,
-                          Condition cond) {
-#ifdef PENGUIN_CLEANUP
-  if (!CpuFeatures::IsSupported(ARMv7) || predictable_code_size()) {
-    ASSERT((satpos >= 0) && (satpos <= 31));
-
-    // These asserts are required to ensure compatibility with the ARMv7
-    // implementation.
-    ASSERT((src.shift_op() == ASR) || (src.shift_op() == LSL));
-    ASSERT(src.rs().is(no_reg));
-
-    Label done;
-    int satval = (1 << satpos) - 1;
-
-    if (cond != al) {
-      b(NegateCondition(cond), &done);  // Skip saturate if !condition.
-    }
-    if (!(src.is_reg() && dst.is(src.rm()))) {
-      mov(dst, src);
-    }
-    mov(r0, Operand(~satval));
-    and_(r0, dst, r0, SetRC);
-    beq(&done, cr0);
-    mov(dst, Operand(0, RelocInfo::NONE), LeaveCC, mi);  // 0 if negative.
-    mov(dst, Operand(satval), LeaveCC, pl);  // satval if positive.
-    bind(&done);
-  } else {
-    usat(dst, satpos, src, cond);
-  }
-#else
-  PPCPORT_UNIMPLEMENTED();
-  fake_asm(fMASM29);
-#endif
-}
-
 void MacroAssembler::MultiPush(RegList regs) {
   int16_t num_to_push = NumberOfBitsSet(regs);
   int16_t stack_offset = num_to_push * kPointerSize;
@@ -3852,9 +3817,33 @@ void MacroAssembler::EnsureNotWhite(
   bind(&done);
 }
 
-
+// Saturate a value into 8-bit unsigned integer 
+//   if input_value < 0, output_value is 0
+//   if input_value > 255, output_value is 255
+//   otherwise output_value is the input_value  
 void MacroAssembler::ClampUint8(Register output_reg, Register input_reg) {
-  Usat(output_reg, 8, Operand(input_reg));
+  Label done, negative_label, overflow_label;
+  int satval = (1 << 8) - 1;
+  
+  cmpi(input_reg, Operand(0));
+  blt(&negative_label);
+
+  cmpi(input_reg, Operand(satval));
+  bgt(&overflow_label);
+  if (!output_reg.is(input_reg)) {
+    mr(output_reg, input_reg);
+  }
+  jmp(&done);
+
+  bind(&negative_label);
+  li(output_reg, Operand(0)); // set to 0 if negative
+  jmp(&done);
+
+
+  bind(&overflow_label);  // set to satval if > satval
+  li(output_reg, Operand(satval));
+
+  bind(&done);
 }
 
 void MacroAssembler::ClampDoubleToUint8(Register result_reg,

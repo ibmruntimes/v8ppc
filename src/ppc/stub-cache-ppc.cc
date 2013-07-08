@@ -3966,7 +3966,7 @@ void KeyedStoreStubCompiler::GenerateStoreExternalArray(
   switch (elements_kind) {
     case EXTERNAL_PIXEL_ELEMENTS:
       // Clamp the value to [0..255].
-//      __ Usat(r8, 8, Operand(r8));  not needed on PPC
+      __ ClampUint8(r8, r8);
       __ srwi(r10, key, Operand(1));
       __ stbx(r8, MemOperand(r10, r6));
       break;

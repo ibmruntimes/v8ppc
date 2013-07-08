@@ -1121,25 +1121,6 @@ class Assembler : public AssemblerBase {
 
   // Miscellaneous arithmetic instructions
 
-  // Saturating instructions. v6 and above.
-
-  // Unsigned saturate.
-  //
-  // Saturate an optionally shifted signed value to an unsigned range.
-  //
-  //   usat dst, #satpos, src
-  //   usat dst, #satpos, src, lsl #sh
-  //   usat dst, #satpos, src, asr #sh
-  //
-  // Register dst will contain:
-  //
-  //   0,                 if s < 0
-  //   (1 << satpos) - 1, if s > ((1 << satpos) - 1)
-  //   s,                 otherwise
-  //
-  // where s is the contents of src after shifting (if used.)
-  void usat(Register dst, int satpos, const Operand& src, Condition cond = al);
-
   // Bitfield manipulation instructions. v7 and above.
 
   void ubfx(Register dst, Register src, int lsb, int width,
