@@ -3760,40 +3760,33 @@ void KeyedLoadStubCompiler::GenerateLoadExternalArray(
   switch (elements_kind) {
     case EXTERNAL_BYTE_ELEMENTS:
       __ srwi(value, key, Operand(1));
-      __ add(value, r6, value);
-      __ lbz(value, MemOperand(value));
+      __ lbzx(value, MemOperand(value, r6));
       __ extsb(value, value);
       break;
     case EXTERNAL_PIXEL_ELEMENTS:
     case EXTERNAL_UNSIGNED_BYTE_ELEMENTS:
       __ srwi(value, key, Operand(1));
-      __ add(value, r6, value);
-      __ lbz(value, MemOperand(value));
+      __ lbzx(value, MemOperand(value, r6));
       break;
     case EXTERNAL_SHORT_ELEMENTS:
-      __ add(value, r6, key);
-      __ lhz(value, MemOperand(value));
+      __ lhzx(value, MemOperand(r6, key));
       __ extsh(value, value);
       break;
     case EXTERNAL_UNSIGNED_SHORT_ELEMENTS:
-      __ add(value, r6, key);
-      __ lhz(value, MemOperand(value));
+      __ lhzx(value, MemOperand(r6, key));
       break;
     case EXTERNAL_INT_ELEMENTS:
     case EXTERNAL_UNSIGNED_INT_ELEMENTS:
       __ slwi(value, key, Operand(1));
-      __ add(value, value, r6);
-      __ lwz(value, MemOperand(value));
+      __ lwzx(value, MemOperand(value, r6));
       break;
     case EXTERNAL_FLOAT_ELEMENTS:
       __ slwi(value, key, Operand(1));
-      __ add(value, value, r6);
-      __ lfs(d0, MemOperand(value, 0));
+      __ lfsx(d0, MemOperand(value, r6));
       break;
     case EXTERNAL_DOUBLE_ELEMENTS:
       __ slwi(value, key, Operand(2));
-      __ add(value, value, r6);
-      __ lfd(d0, MemOperand(value, 0));
+      __ lfdx(d0, MemOperand(value, r6));
       break;
     case FAST_ELEMENTS:
     case FAST_SMI_ELEMENTS:
@@ -3975,33 +3968,28 @@ void KeyedStoreStubCompiler::GenerateStoreExternalArray(
       // Clamp the value to [0..255].
 //      __ Usat(r8, 8, Operand(r8));  not needed on PPC
       __ srwi(r10, key, Operand(1));
-      __ add(r10, r6, r10);
-      __ stb(r8, MemOperand(r10));
+      __ stbx(r8, MemOperand(r10, r6));
       break;
     case EXTERNAL_BYTE_ELEMENTS:
     case EXTERNAL_UNSIGNED_BYTE_ELEMENTS:
       __ srwi(r10, key, Operand(1));
-      __ add(r10, r6, r10);
-      __ stb(r8, MemOperand(r10));
+      __ stbx(r8, MemOperand(r10, r6));
       break;
     case EXTERNAL_SHORT_ELEMENTS:
     case EXTERNAL_UNSIGNED_SHORT_ELEMENTS:
-      __ add(r10, r6, key);
-      __ sth(r8, MemOperand(r10));
+      __ sthx(r8, MemOperand(r6, key));
       break;
     case EXTERNAL_INT_ELEMENTS:
     case EXTERNAL_UNSIGNED_INT_ELEMENTS:
       __ slwi(r10, key, Operand(1));
-      __ add(r10, r6, r10);
-      __ stw(r8, MemOperand(r10));
+      __ stwx(r8, MemOperand(r10, r6));
       break;
     case EXTERNAL_FLOAT_ELEMENTS:
       // Perform int-to-float conversion and store to memory.
       __ slwi(r10, key, Operand(1));
-      __ add(r10, r6, r10);
       // r10: efective address of the float element
       FloatingPointHelper::ConvertIntToFloat(masm, d0, r8, r9);
-      __ stfs(d0, MemOperand(r10, 0));
+      __ stfsx(d0, MemOperand(r10, r6));
       break;
     case EXTERNAL_DOUBLE_ELEMENTS:
       __ slwi(r10, key, Operand(2));
@@ -4011,7 +3999,9 @@ void KeyedStoreStubCompiler::GenerateStoreExternalArray(
           masm, r8, FloatingPointHelper::kFPRegisters,
           d0, r9, r10,  // These are: double_dst, dst1, dst2.
           d2);  // These are: scratch2, single_scratch.
-      __ stfd(d0, MemOperand(r6, 0));
+      // TODO(penguin): use x-form if r10 is not used for scratch in
+      // ConvertIntToDouble
+      __ stfd(d0, MemOperand(r6));
       break;
     case FAST_ELEMENTS:
     case FAST_SMI_ELEMENTS:
@@ -4047,14 +4037,12 @@ void KeyedStoreStubCompiler::GenerateStoreExternalArray(
         // include -kHeapObjectTag into it.
         __ lfd(d0, FieldMemOperand(r3, HeapNumber::kValueOffset));
         __ slwi(r8, key, Operand(1));
-        __ add(r8, r6, r8);
         __ frsp(d0, d0);
-        __ stfs(d0, MemOperand(r8, 0));
+        __ stfsx(d0, MemOperand(r8, r6));
       } else if (elements_kind == EXTERNAL_DOUBLE_ELEMENTS) {
         __ lfd(d0, FieldMemOperand(r3, HeapNumber::kValueOffset));
         __ slwi(r8, key, Operand(2));
-        __ add(r8, r6, r8);
-        __ stfd(d0, MemOperand(r8, 0));
+        __ stfdx(d0, MemOperand(r8, r6));
       } else {
         // Hoisted load.
         __ mr(r8, value);
@@ -4075,19 +4063,16 @@ void KeyedStoreStubCompiler::GenerateStoreExternalArray(
           case EXTERNAL_BYTE_ELEMENTS:
           case EXTERNAL_UNSIGNED_BYTE_ELEMENTS:
             __ srwi(r10, key, Operand(1));
-            __ add(r10, r6, r10);
-            __ stb(r8, MemOperand(r10));
+            __ stbx(r8, MemOperand(r10, r6));
             break;
           case EXTERNAL_SHORT_ELEMENTS:
           case EXTERNAL_UNSIGNED_SHORT_ELEMENTS:
-            __ add(r10, r6, key);
-            __ sth(r8, MemOperand(r10));
+            __ sthx(r8, MemOperand(r6, key));
             break;
           case EXTERNAL_INT_ELEMENTS:
           case EXTERNAL_UNSIGNED_INT_ELEMENTS:
             __ slwi(r10, key, Operand(1));
-            __ add(r10, r6, r10);
-            __ stw(r8, MemOperand(r10));
+            __ stwx(r8, MemOperand(r10, r6));
             break;
           case EXTERNAL_PIXEL_ELEMENTS:
           case EXTERNAL_FLOAT_ELEMENTS:
@@ -4169,8 +4154,7 @@ void KeyedLoadStubCompiler::GenerateLoadFastElement(MacroAssembler* masm) {
   __ addi(r6, r5, Operand(FixedArray::kHeaderSize - kHeapObjectTag));
   STATIC_ASSERT(kSmiTag == 0 && kSmiTagSize < kPointerSizeLog2);
   __ slwi(r7, r3, Operand(kPointerSizeLog2 - kSmiTagSize));
-  __ add(r7, r6, r7);
-  __ lwz(r7, MemOperand(r7));
+  __ lwzx(r7, MemOperand(r7, r6));
   __ LoadRoot(ip, Heap::kTheHoleValueRootIndex);
   __ cmp(r7, ip);
   __ beq(&miss_force_generic);
@@ -4333,8 +4317,7 @@ void KeyedStoreStubCompiler::GenerateStoreFastElement(
             Operand(FixedArray::kHeaderSize - kHeapObjectTag));
     STATIC_ASSERT(kSmiTag == 0 && kSmiTagSize < kPointerSizeLog2);
     __ slwi(scratch2, key_reg, Operand(kPointerSizeLog2 - kSmiTagSize));
-    __ add(scratch, scratch, scratch2);
-    __ stw(value_reg, MemOperand(scratch));
+    __ stwx(value_reg, MemOperand(scratch, scratch2));
   } else {
     ASSERT(IsFastObjectElementsKind(elements_kind));
     __ addi(scratch,
@@ -4342,8 +4325,7 @@ void KeyedStoreStubCompiler::GenerateStoreFastElement(
             Operand(FixedArray::kHeaderSize - kHeapObjectTag));
     STATIC_ASSERT(kSmiTag == 0 && kSmiTagSize < kPointerSizeLog2);
     __ slwi(scratch2, key_reg, Operand(kPointerSizeLog2 - kSmiTagSize));
-    __ add(scratch, scratch, scratch2);
-    __ stw(value_reg, MemOperand(scratch));
+    __ stwux(value_reg, MemOperand(scratch, scratch2));
     __ mr(receiver_reg, value_reg);
     __ RecordWrite(elements_reg,  // Object.
                    scratch,       // Address.
