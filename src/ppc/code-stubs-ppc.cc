@@ -4061,8 +4061,7 @@ void CEntryStub::GenerateCore(MacroAssembler* masm,
 
   // Special handling of out of memory exceptions.
   Failure* out_of_memory = Failure::OutOfMemoryException();
-  __ mov(r6, Operand(reinterpret_cast<int32_t>(out_of_memory)));
-  __ cmp(r3, r6);
+  __ cmpi(r3, Operand(reinterpret_cast<int32_t>(out_of_memory)));
   __ beq(throw_out_of_memory_exception);
 
   // Retrieve the pending exception and clear the variable.
