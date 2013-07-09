@@ -383,6 +383,9 @@ void Deoptimizer::DoComputeOsrOutputFrame() {
     output_[0]->SetRegister(fp.code(), input_->GetRegister(fp.code()));
     output_[0]->SetRegister(cp.code(), input_->GetRegister(cp.code()));
 
+    // Propagate r2
+    output_[0]->SetRegister(r2.code(), input_->GetRegister(r2.code()));
+
     unsigned pc_offset = data->OsrPcOffset()->value();
     uint32_t pc = reinterpret_cast<uint32_t>(
         optimized_code_->entry() + pc_offset);
@@ -771,6 +774,9 @@ void Deoptimizer::DoComputeJSFrame(TranslationIterator* iterator,
   FrameDescription* output_frame =
       new(output_frame_size) FrameDescription(output_frame_size, function);
   output_frame->SetFrameType(StackFrame::JAVA_SCRIPT);
+
+  // Propagate r2
+  output_frame->SetRegister(r2.code(), input_->GetRegister(r2.code()));
 
   bool is_bottommost = (0 == frame_index);
   bool is_topmost = (output_count_ - 1 == frame_index);
