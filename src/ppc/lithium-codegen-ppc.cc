@@ -1541,18 +1541,17 @@ void LCodeGen::DoSubI(LSubI* instr) {
   LOperand* right = instr->right();
   LOperand* result = instr->result();
   bool can_overflow = instr->hydrogen()->CheckFlag(HValue::kCanOverflow);
-  SBit set_cond = can_overflow ? SetCC : LeaveCC;
+  Register right_reg = EmitLoadRegister(right, ip);
 
-  if (right->IsStackSlot() || right->IsArgument()) {
-    Register right_reg = EmitLoadRegister(right, ip);
-    __ sub(ToRegister(result), ToRegister(left), Operand(right_reg), set_cond);
+  if (!can_overflow) {
+    __ sub(ToRegister(result), ToRegister(left), right_reg);
   } else {
-    ASSERT(right->IsRegister() || right->IsConstantOperand());
-    __ sub(ToRegister(result), ToRegister(left), ToOperand(right), set_cond);
-  }
-
-  if (can_overflow) {
-    DeoptimizeIf(vs, instr->environment());
+    __ SubAndCheckForOverflow(ToRegister(result),
+                              ToRegister(left),
+                              right_reg,
+                              scratch0(), r0);
+    // Doptimize on overflow
+    DeoptimizeIf(lt, instr->environment(), cr0);
   }
 }
 

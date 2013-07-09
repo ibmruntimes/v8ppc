@@ -885,6 +885,15 @@ class MacroAssembler: public Assembler {
                               Register overflow_dst,
                               Register scratch = r0);
 
+  // Compute dst = left - right, setting condition codes. dst may be same as
+  // either left or right (or a unique register). left and right must not be
+  // the same register.
+  void SubAndCheckForOverflow(Register dst,
+                              Register left,
+                              Register right,
+                              Register overflow_dst,
+                              Register scratch = r0);
+
   void BranchOnOverflow(Label* label) {
     blt(label, cr0);
   }
