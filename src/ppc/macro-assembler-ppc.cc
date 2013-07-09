@@ -3408,7 +3408,7 @@ void MacroAssembler::JumpIfInstanceTypeIsNotSequentialAscii(Register type,
   bne(failure);
 }
 
-static const int kRegisterPassedArguments = 4;
+static const int kRegisterPassedArguments = 8;
 
 
 int MacroAssembler::CalculateStackPassedWords(int num_reg_arguments,

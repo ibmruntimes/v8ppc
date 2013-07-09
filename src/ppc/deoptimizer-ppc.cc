@@ -1005,15 +1005,14 @@ void Deoptimizer::EntryGenerator::Generate() {
   __ sub(r7, fp, r7);
 
   // Allocate a new deoptimizer object.
-  // Pass four arguments in r3 to r6 and fifth argument on stack.
+  // Pass six arguments in r3 to r8.
   __ PrepareCallCFunction(6, r8);
   __ lwz(r3, MemOperand(fp, JavaScriptFrameConstants::kFunctionOffset));
   __ li(r4, Operand(type()));  // bailout type,
   // r5: bailout id already loaded.
   // r6: code address or 0 already loaded.
-  __ stw(r7, MemOperand(sp, 0 * kPointerSize));  // Fp-to-sp delta.
+  // r7: Fp-to-sp delta.
   __ mov(r8, Operand(ExternalReference::isolate_address()));
-  __ stw(r8, MemOperand(sp, 1 * kPointerSize));  // Isolate.
   // Call Deoptimizer::New().
   {
     AllowExternalCallThatCantCauseGC scope(masm());
