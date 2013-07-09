@@ -351,10 +351,10 @@ DoubleRegister LCodeGen::EmitLoadDoubleRegister(LOperand* op,
       Abort("unsupported tagged immediate");
     }
   } else if (op->IsStackSlot() || op->IsArgument()) {
-    // TODO(regis): Why is vldr not taking a MemOperand?
-    // __ vldr(dbl_scratch, ToMemOperand(op));
+    // TODO(regis): Why is lfd not taking a MemOperand?
+    // __ lfd(dbl_scratch, ToMemOperand(op));
     MemOperand mem_op = ToMemOperand(op);
-    __ vldr(dbl_scratch, mem_op.rn(), mem_op.offset());
+    __ lfd(dbl_scratch, MemOperand(mem_op.rn(), mem_op.offset()));
     return dbl_scratch;
   }
   UNREACHABLE();
@@ -1959,7 +1959,7 @@ void LCodeGen::DoBranch(LBranch* instr) {
         Label not_heap_number;
         __ CompareRoot(map, Heap::kHeapNumberMapRootIndex);
         __ bne(&not_heap_number);
-        __ vldr(dbl_scratch, FieldMemOperand(reg, HeapNumber::kValueOffset));
+        __ lfd(dbl_scratch, FieldMemOperand(reg, HeapNumber::kValueOffset));
         __ VFPCompareAndSetFlags(dbl_scratch, 0.0);
         __ b(vs, false_label);  // NaN -> false.
         __ beq(false_label);  // +0, -0 -> false.
@@ -2998,7 +2998,7 @@ void LCodeGen::DoLoadKeyedFastDoubleElement(
     DeoptimizeIf(eq, instr->environment());
   }
 
-  __ vldr(result, elements, 0);
+  __ lfd(result, MemOperand(elements, 0));
 }
 
 
@@ -3078,10 +3078,10 @@ void LCodeGen::DoLoadKeyedSpecializedArrayElement(
       __ add(scratch0(), external_pointer, r0);
     }
     if (elements_kind == EXTERNAL_FLOAT_ELEMENTS) {
-      __ vldr(result.low(), scratch0(), additional_offset);
+      __ lfd(result.low(), MemOperand(scratch0(), additional_offset));
       __ vcvt_f64_f32(result, result.low());
     } else  {  // i.e. elements_kind == EXTERNAL_DOUBLE_ELEMENTS
-      __ vldr(result, scratch0(), additional_offset);
+      __ lfd(result, MemOperand(scratch0(), additional_offset));
     }
   } else {
     Register result = ToRegister(instr->result());
@@ -4112,7 +4112,8 @@ void LCodeGen::DoStoreKeyedFastDoubleElement(
             no_reg, vs);
   }
 
-  __ vstr(value, scratch, instr->additional_index() << element_size_shift);
+  __ stfd(value, MemOperand(scratch,
+                            instr->additional_index() << element_size_shift));
 }
 
 
@@ -4151,9 +4152,10 @@ void LCodeGen::DoStoreKeyedSpecializedArrayElement(
     }
     if (elements_kind == EXTERNAL_FLOAT_ELEMENTS) {
       __ vcvt_f32_f64(double_scratch0().low(), value);
-      __ vstr(double_scratch0().low(), scratch0(), additional_offset);
+      __ stfd(double_scratch0().low(), MemOperand(scratch0(),
+                                                  additional_offset));
     } else {  // i.e. elements_kind == EXTERNAL_DOUBLE_ELEMENTS
-      __ vstr(value, scratch0(), additional_offset);
+      __ stfd(value, MemOperand(scratch0(), additional_offset));
     }
   } else {
     Register value(ToRegister(instr->value()));
@@ -4513,7 +4515,7 @@ void LCodeGen::DoDeferredNumberTagI(LInstruction* instr,
   // number.
   __ bind(&done);
   __ sub(ip, dst, Operand(kHeapObjectTag));
-  __ vstr(dbl_scratch, ip, HeapNumber::kValueOffset);
+  __ stfd(dbl_scratch, MemOperand(ip, HeapNumber::kValueOffset));
   __ StoreToSafepointRegisterSlot(dst, dst);
 #else
   PPCPORT_UNIMPLEMENTED();
@@ -4548,7 +4550,7 @@ void LCodeGen::DoNumberTagD(LNumberTagD* instr) {
   }
   __ bind(deferred->exit());
   __ sub(ip, reg, Operand(kHeapObjectTag));
-  __ vstr(input_reg, ip, HeapNumber::kValueOffset);
+  __ stfd(input_reg, MemOperand(ip, HeapNumber::kValueOffset));
 }
 
 
@@ -4618,14 +4620,14 @@ void LCodeGen::EmitNumberUntagD(Register input_reg,
     // Convert undefined to NaN.
     __ LoadRoot(ip, Heap::kNanValueRootIndex);
     __ sub(ip, ip, Operand(kHeapObjectTag));
-    __ vldr(result_reg, ip, HeapNumber::kValueOffset);
+    __ lfd(result_reg, MemOperand(ip, HeapNumber::kValueOffset));
     __ b(&done);
 
     __ bind(&heap_number);
   }
   // Heap number to double register conversion.
   __ sub(ip, input_reg, Operand(kHeapObjectTag));
-  __ vldr(result_reg, ip, HeapNumber::kValueOffset);
+  __ lfd(result_reg, MemOperand(ip, HeapNumber::kValueOffset));
   if (deoptimize_on_minus_zero) {
     __ vmov(ip, result_reg.low());
     __ cmpi(ip, Operand(0));
@@ -4693,7 +4695,7 @@ void LCodeGen::DoDeferredTaggedToI(LTaggedToI* instr) {
 
     __ bind(&heap_number);
     __ sub(scratch1, input_reg, Operand(kHeapObjectTag));
-    __ vldr(double_scratch2, scratch1, HeapNumber::kValueOffset);
+    __ lfd(double_scratch2, MemOperand(scratch1, HeapNumber::kValueOffset));
 
     __ EmitECMATruncate(input_reg,
                         double_scratch2,
@@ -4708,7 +4710,7 @@ void LCodeGen::DoDeferredTaggedToI(LTaggedToI* instr) {
     DeoptimizeIf(ne, instr->environment());
 
     __ sub(ip, input_reg, Operand(kHeapObjectTag));
-    __ vldr(double_scratch, ip, HeapNumber::kValueOffset);
+    __ lfd(double_scratch, MemOperand(ip, HeapNumber::kValueOffset));
     __ EmitVFPTruncate(kRoundToZero,
                        single_scratch,
                        double_scratch,
@@ -4953,8 +4955,8 @@ void LCodeGen::DoClampTToUint8(LClampTToUint8* instr) {
 
   // Heap number
   __ bind(&heap_number);
-  __ vldr(double_scratch0(), FieldMemOperand(input_reg,
-                                             HeapNumber::kValueOffset));
+  __ lfd(double_scratch0(), FieldMemOperand(input_reg,
+                                            HeapNumber::kValueOffset));
   __ ClampDoubleToUint8(result_reg, double_scratch0(), temp_reg);
   __ b(&done);
 

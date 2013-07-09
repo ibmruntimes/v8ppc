@@ -1037,8 +1037,8 @@ void Deoptimizer::EntryGenerator::Generate() {
   for (int i = 0; i < DwVfpRegister::kNumAllocatableRegisters; ++i) {
     int dst_offset = i * kDoubleSize + double_regs_offset;
     int src_offset = i * kDoubleSize + kNumberOfRegisters * kPointerSize;
-    __ vldr(d0, sp, src_offset);
-    __ vstr(d0, r4, dst_offset);
+    __ lfd(d0, MemOperand(sp, src_offset));
+    __ stfd(d0, MemOperand(r4, dst_offset));
   }
 
   // Remove the bailout id, eventually return address, and the saved registers
@@ -1090,13 +1090,15 @@ void Deoptimizer::EntryGenerator::Generate() {
   // Inner loop state: r5 = current FrameDescription*, r6 = loop index.
   __ lwz(r5, MemOperand(r3, 0));  // output_[ix]
   __ lwz(r6, MemOperand(r5, FrameDescription::frame_size_offset()));
+
   __ bind(&inner_push_loop);
   __ addi(r6, r6, Operand(-sizeof(uint32_t)));
   __ add(r9, r5, r6);
   __ lwz(r10, MemOperand(r9, FrameDescription::frame_content_offset()));
   __ push(r10);
-  __ cmp(r6, Operand(0));
+  __ cmpi(r6, Operand(0));
   __ bne(&inner_push_loop);  // test for gt?
+
   __ addi(r3, r3, Operand(kPointerSize));
   __ cmp(r3, r4);
   __ blt(&outer_push_loop);

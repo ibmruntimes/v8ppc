@@ -236,8 +236,8 @@ void LGapResolver::EmitMove(int index) {
           // ip is overwritten while saving the value to the destination.
           // Therefore we can't use ip.  It is OK if the read from the source
           // destroys ip, since that happens before the value is read.
-          __ vldr(kScratchDoubleReg.low(), source_operand);
-          __ vstr(kScratchDoubleReg.low(), destination_operand);
+          __ lfd(kScratchDoubleReg.low(), source_operand);
+          __ stfd(kScratchDoubleReg.low(), destination_operand);
         } else {
 #endif
           __ lwz(ip, source_operand);
