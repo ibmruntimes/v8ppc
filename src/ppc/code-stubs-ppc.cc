@@ -181,11 +181,11 @@ void FastNewClosureStub::Generate(MacroAssembler* masm) {
       Smi::FromInt(SharedFunctionInfo::kEntryLength)));  // Skip an entry.
   __ addi(r8, r4, Operand(FixedArray::kHeaderSize - kHeapObjectTag));
   __ slwi(r9, r7, Operand(kPointerSizeLog2 - kSmiTagSize));
-  __ add(r8, r8, r9);
-  __ lwz(r8, MemOperand(r8));
+  __ lwzx(r8, MemOperand(r8, r9));
   __ cmp(r5, r8);
   __ bne(&loop);
   // Hit: fetch the optimized code.
+  // TODO(penguin): potential to use x-form for this sequence
   __ addi(r8, r4, Operand(FixedArray::kHeaderSize - kHeapObjectTag));
   __ slwi(r9, r7, Operand(kPointerSizeLog2 - kSmiTagSize));
   __ add(r8, r8, r9);
@@ -410,8 +410,7 @@ void FastCloneShallowArrayStub::Generate(MacroAssembler* masm) {
 
   __ mr(r0, r3);
   __ slwi(r3, r3, Operand(kPointerSizeLog2 - kSmiTagSize));
-  __ add(r6, r3, r6);
-  __ lwz(r6, MemOperand(r6, 0));
+  __ lwzx(r6, MemOperand(r6, r3));
   __ mr(r3, r0);
 
   __ CompareRoot(r6, Heap::kUndefinedValueRootIndex);
@@ -494,8 +493,7 @@ void FastCloneShallowObjectStub::Generate(MacroAssembler* masm) {
   __ addi(r6, r6, Operand(FixedArray::kHeaderSize - kHeapObjectTag));
   __ mr(r0, r3);
   __ slwi(r3, r3, Operand(kPointerSizeLog2 - kSmiTagSize));
-  __ add(r6, r3, r6);
-  __ lwz(r6, MemOperand(r6, 0));
+  __ lwzx(r6, MemOperand(r6, r3));
   __ mr(r3, r0);
 
   __ CompareRoot(r6, Heap::kUndefinedValueRootIndex);
@@ -4843,13 +4841,9 @@ void ArgumentsAccessStub::GenerateNewNonStrictFast(MacroAssembler* masm) {
   __ sub(r9, r9, Operand(Smi::FromInt(1)));
   __ slwi(r8, r9, Operand(1));
   __ addi(r8, r8, Operand(kParameterMapHeaderSize - kHeapObjectTag));
-  __ mr(r0, r8);
-  __ add(r8, r7, r8);
-  __ stw(r22, MemOperand(r8));
-  __ mr(r8, r0);
+  __ stwx(r22, MemOperand(r8, r7));
   __ sub(r8, r8, Operand(kParameterMapHeaderSize - FixedArray::kHeaderSize));
-  __ add(r8, r6, r8);
-  __ stw(r10, MemOperand(r8));
+  __ stwx(r10, MemOperand(r8, r6));
   __ addi(r22, r22, Operand(Smi::FromInt(1)));
   __ bind(&parameters_test);
   __ cmpi(r9, Operand(Smi::FromInt(0)));
@@ -5521,8 +5515,7 @@ void RegExpConstructResultStub::Generate(MacroAssembler* masm) {
   __ ble(&done);  // Jump if r8 is negative or zero.
   __ sub(r8, r8, Operand(1));
   __ slwi(ip, r8, Operand(kPointerSizeLog2));
-  __ add(ip, r6, ip);
-  __ stw(r5, MemOperand(ip));
+  __ stwx(r5, MemOperand(ip, r6));
   __ cmpi(r8, Operand(0));
   __ jmp(&loop);
 
@@ -6093,8 +6086,7 @@ void StringHelper::GenerateTwoCharacterSymbolTableProbe(MacroAssembler* masm,
     // Load the entry from the symble table.
     STATIC_ASSERT(SymbolTable::kEntrySize == 1);
     __ slwi(scratch, candidate, Operand(kPointerSizeLog2));
-    __ add(scratch, first_symbol_table_element, scratch);
-    __ lwz(candidate, MemOperand(scratch));
+    __ lwzx(candidate, MemOperand(scratch, first_symbol_table_element));
 
     // If entry is undefined no string with this hash can be found.
     Label is_string;
@@ -6525,10 +6517,8 @@ void StringCompareStub::GenerateAsciiCharsCompareLoop(
   // Compare loop.
   Label loop;
   __ bind(&loop);
-  __ add(scratch2, left, index);
-  __ lbz(scratch1, MemOperand(scratch2));
-  __ add(scratch2, right, index);
-  __ lbz(r0, MemOperand(scratch2));
+  __ lbzx(scratch1, MemOperand(left, index));
+  __ lbzx(r0, MemOperand(right, index));
   __ cmp(scratch1, r0);
   __ bne(chars_not_equal);
   __ addi(index, index, Operand(1));
@@ -7920,8 +7910,7 @@ void StoreArrayLiteralElementStub::Generate(MacroAssembler* masm) {
   __ lwz(r8, FieldMemOperand(r4, JSObject::kElementsOffset));
   __ slwi(r9, r6, Operand(kPointerSizeLog2 - kSmiTagSize));
   __ add(r9, r8, r9);
-  __ addi(r9, r9, Operand(FixedArray::kHeaderSize - kHeapObjectTag));
-  __ stw(r3, MemOperand(r9, 0));
+  __ stwu(r3, MemOperand(r9, FixedArray::kHeaderSize - kHeapObjectTag));
   // Update the write barrier for the array store.
   __ RecordWrite(r8, r9, r3, kLRHasNotBeenSaved, kDontSaveFPRegs,
                  EMIT_REMEMBERED_SET, OMIT_SMI_CHECK);
