@@ -1815,16 +1815,14 @@ void CompareStub::Generate(MacroAssembler* masm) {
                                                      lhs_,
                                                      rhs_,
                                                      r5,
-                                                     r6,
-                                                     r7);
+                                                     r6);
   } else {
     StringCompareStub::GenerateCompareFlatAsciiStrings(masm,
                                                        lhs_,
                                                        rhs_,
                                                        r5,
                                                        r6,
-                                                       r7,
-                                                       r8);
+                                                       r7);
   }
   // Never falls through to here.
 
@@ -6410,8 +6408,7 @@ void StringCompareStub::GenerateFlatAsciiStringEquals(MacroAssembler* masm,
                                                       Register left,
                                                       Register right,
                                                       Register scratch1,
-                                                      Register scratch2,
-                                                      Register scratch3) {
+                                                      Register scratch2) {
   EMIT_STUB_MARKER(174);
   Register length = scratch1;
 
@@ -6437,7 +6434,7 @@ void StringCompareStub::GenerateFlatAsciiStringEquals(MacroAssembler* masm,
   // Compare characters.
   __ bind(&compare_chars);
   GenerateAsciiCharsCompareLoop(masm,
-                                left, right, length, scratch2, scratch3,
+                                left, right, length, scratch2,
                                 &strings_not_equal);
 
   // Characters are equal.
@@ -6451,8 +6448,7 @@ void StringCompareStub::GenerateCompareFlatAsciiStrings(MacroAssembler* masm,
                                                         Register right,
                                                         Register scratch1,
                                                         Register scratch2,
-                                                        Register scratch3,
-                                                        Register scratch4) {
+                                                        Register scratch3) {
   EMIT_STUB_MARKER(175);
   Label skip, result_not_equal, compare_lengths;
   // Find minimum length and length difference.
@@ -6470,7 +6466,7 @@ void StringCompareStub::GenerateCompareFlatAsciiStrings(MacroAssembler* masm,
 
   // Compare loop.
   GenerateAsciiCharsCompareLoop(masm,
-                                left, right, min_length, scratch2, scratch4,
+                                left, right, min_length, scratch2,
                                 &result_not_equal);
 
   // Compare lengths - strings up to min-length are equal.
@@ -6500,7 +6496,6 @@ void StringCompareStub::GenerateAsciiCharsCompareLoop(
     Register right,
     Register length,
     Register scratch1,
-    Register scratch2,
     Label* chars_not_equal) {
   EMIT_STUB_MARKER(176);
   // Change index to run from -length to -1 by adding length to string
@@ -6557,7 +6552,7 @@ void StringCompareStub::Generate(MacroAssembler* masm) {
   // Compare flat ASCII strings natively. Remove arguments from stack first.
   __ IncrementCounter(counters->string_compare_native(), 1, r5, r6);
   __ addi(sp, sp, Operand(2 * kPointerSize));
-  GenerateCompareFlatAsciiStrings(masm, r4, r3, r5, r6, r7, r8);
+  GenerateCompareFlatAsciiStrings(masm, r4, r3, r5, r6, r7);
 
   // Call the runtime; it returns -1 (less), 0 (equal), or 1 (greater)
   // tagged as a small integer.
@@ -7114,10 +7109,10 @@ void ICCompareStub::GenerateStrings(MacroAssembler* masm) {
   // Compare flat ASCII strings. Returns when done.
   if (equality) {
     StringCompareStub::GenerateFlatAsciiStringEquals(
-        masm, left, right, tmp1, tmp2, tmp3);
+        masm, left, right, tmp1, tmp2);
   } else {
     StringCompareStub::GenerateCompareFlatAsciiStrings(
-        masm, left, right, tmp1, tmp2, tmp3, tmp4);
+        masm, left, right, tmp1, tmp2, tmp3);
   }
 
   // Handle more complex cases in runtime.

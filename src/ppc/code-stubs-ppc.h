@@ -372,8 +372,7 @@ class StringCompareStub: public CodeStub {
                                               Register right,
                                               Register scratch1,
                                               Register scratch2,
-                                              Register scratch3,
-                                              Register scratch4);
+                                              Register scratch3);
 
   // Compares two flat ASCII strings for equality and returns result
   // in r0.
@@ -381,8 +380,7 @@ class StringCompareStub: public CodeStub {
                                             Register left,
                                             Register right,
                                             Register scratch1,
-                                            Register scratch2,
-                                            Register scratch3);
+                                            Register scratch2);
 
  private:
   virtual Major MajorKey() { return StringCompare; }
@@ -394,7 +392,6 @@ class StringCompareStub: public CodeStub {
                                             Register right,
                                             Register length,
                                             Register scratch1,
-                                            Register scratch2,
                                             Label* chars_not_equal);
 };
 
