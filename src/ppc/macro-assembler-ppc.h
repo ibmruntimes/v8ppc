@@ -141,7 +141,7 @@ class MacroAssembler: public Assembler {
             Condition cond = al);
   void Sbfx(Register dst, Register src, int lsb, int width,
             Condition cond = al);
-  
+
   void Call(Label* target);
 
   // Register move. May do nothing if the registers are identical.

@@ -1253,9 +1253,8 @@ void Simulator::SoftwareInterrupt(Instruction* instr) {
       int32_t arg1 = get_register(r4);
       int32_t arg2 = get_register(r5);
       int32_t arg3 = get_register(r6);
-      int32_t* stack_pointer = reinterpret_cast<int32_t*>(get_register(sp));
-      int32_t arg4 = stack_pointer[0];
-      int32_t arg5 = stack_pointer[1];
+      int32_t arg4 = get_register(r7);
+      int32_t arg5 = get_register(r8);
       bool fp_call =
          (redirection->type() == ExternalReference::BUILTIN_FP_FP_CALL) ||
          (redirection->type() == ExternalReference::BUILTIN_COMPARE_CALL) ||

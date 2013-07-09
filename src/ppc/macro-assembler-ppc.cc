@@ -3817,14 +3817,14 @@ void MacroAssembler::EnsureNotWhite(
   bind(&done);
 }
 
-// Saturate a value into 8-bit unsigned integer 
+// Saturate a value into 8-bit unsigned integer
 //   if input_value < 0, output_value is 0
 //   if input_value > 255, output_value is 255
-//   otherwise output_value is the input_value  
+//   otherwise output_value is the input_value
 void MacroAssembler::ClampUint8(Register output_reg, Register input_reg) {
   Label done, negative_label, overflow_label;
   int satval = (1 << 8) - 1;
-  
+
   cmpi(input_reg, Operand(0));
   blt(&negative_label);
 
@@ -3836,7 +3836,7 @@ void MacroAssembler::ClampUint8(Register output_reg, Register input_reg) {
   jmp(&done);
 
   bind(&negative_label);
-  li(output_reg, Operand(0)); // set to 0 if negative
+  li(output_reg, Operand(0));  // set to 0 if negative
   jmp(&done);
 
 
