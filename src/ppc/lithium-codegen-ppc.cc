@@ -5204,10 +5204,17 @@ void LCodeGen::EmitDeepCopy(Handle<JSObject> object,
         int32_t value_high = static_cast<int32_t>(value >> 32);
         int total_offset =
             elements_offset + FixedDoubleArray::OffsetOfElementAt(i);
+#if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
         __ mov(r5, Operand(value_low));
         __ stw(r5, FieldMemOperand(result, total_offset));
         __ mov(r5, Operand(value_high));
         __ stw(r5, FieldMemOperand(result, total_offset + 4));
+#else
+        __ mov(r5, Operand(value_high));
+        __ stw(r5, FieldMemOperand(result, total_offset));
+        __ mov(r5, Operand(value_low));
+        __ stw(r5, FieldMemOperand(result, total_offset + 4));
+#endif
       }
     } else if (elements->IsFixedArray()) {
       Handle<FixedArray> fast_elements = Handle<FixedArray>::cast(elements);
