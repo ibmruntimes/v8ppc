@@ -1619,18 +1619,20 @@ void LCodeGen::DoValueOf(LValueOf* instr) {
   Register input = ToRegister(instr->value());
   Register result = ToRegister(instr->result());
   Register map = ToRegister(instr->temp());
-  Label done;
+  Label done, is_smi_or_object;
 
   // If the object is a smi return the object.
-  __ TestIfSmi(input, r0);
-  __ Move(result, input, eq);
-  __ beq(&done, cr0);
+  __ JumpIfSmi(input, &is_smi_or_object);
 
   // If the object is not a value type, return the object.
   __ CompareObjectType(input, map, map, JS_VALUE_TYPE);
-  __ Move(result, input, ne);
-  __ bne(&done);
+  __ bne(&is_smi_or_object);
+
   __ lwz(result, FieldMemOperand(input, JSValue::kValueOffset));
+  __ b(&done);
+
+  __ bind(&is_smi_or_object);
+  __ Move(result, input);
 
   __ bind(&done);
 }
