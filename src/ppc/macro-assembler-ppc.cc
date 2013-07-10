@@ -571,31 +571,23 @@ void MacroAssembler::RememberedSetHelper(Register object,  // For debug tests.
 
 // Push and pop all registers that can hold pointers.
 void MacroAssembler::PushSafepointRegisters() {
-#ifdef PENGUIN_CLEANUP
-  // Safepoints expect a block of contiguous register values starting with r0:
-  ASSERT(((1 << kNumSafepointSavedRegisters) - 1) == kSafepointSavedRegisters);
   // Safepoints expect a block of kNumSafepointRegisters values on the
   // stack, so adjust the stack for unsaved registers.
   const int num_unsaved = kNumSafepointRegisters - kNumSafepointSavedRegisters;
   ASSERT(num_unsaved >= 0);
-  sub(sp, sp, Operand(num_unsaved * kPointerSize));
-  stm(db_w, sp, kSafepointSavedRegisters);
-#else
-  PPCPORT_UNIMPLEMENTED();
-  fake_asm(fMASM20);
-#endif
+  if (num_unsaved > 0) {
+    sub(sp, sp, Operand(num_unsaved * kPointerSize));
+  }
+  MultiPush(kSafepointSavedRegisters);
 }
 
 
 void MacroAssembler::PopSafepointRegisters() {
-#ifdef PENGUIN_CLEANUP
   const int num_unsaved = kNumSafepointRegisters - kNumSafepointSavedRegisters;
-  ldm(ia_w, sp, kSafepointSavedRegisters);
-  addi(sp, sp, Operand(num_unsaved * kPointerSize));
-#else
-  PPCPORT_UNIMPLEMENTED();
-  fake_asm(fMASM21);
-#endif
+  MultiPop(kSafepointSavedRegisters);
+  if (num_unsaved > 0) {
+    addi(sp, sp, Operand(num_unsaved * kPointerSize));
+  }
 }
 
 
