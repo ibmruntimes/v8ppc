@@ -92,7 +92,7 @@ const int kNumDoubleCalleeSaved = 8;
 // Number of registers for which space is reserved in safepoints. Must be a
 // multiple of 8.
 // TODO(regis): Only 8 registers may actually be sufficient. Revisit.
-const int kNumSafepointRegisters = 16;
+const int kNumSafepointRegisters = 32;
 
 // Define the list of registers actually saved at safepoints.
 // Note that the number of saved registers may be smaller than the reserved
