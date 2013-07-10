@@ -150,31 +150,30 @@ int MacroAssembler::CallSize(
 
   size = (2 + movSize) * kInstrSize;
 
-#if 0
-  Instr mov_instr = cond | MOV | LeaveCC;
-  intptr_t immediate = reinterpret_cast<intptr_t>(target);
-  if (!Operand(immediate, rmode).is_single_instruction(this, mov_instr)) {
-    size += kInstrSize;
-  }
-#endif
   return size;
 }
 
 
 int MacroAssembler::CallSizeNotPredictableCodeSize(
     Address target, RelocInfo::Mode rmode, Condition cond) {
-#ifndef PENGUIN_CLEANUP
-  PPCPORT_UNIMPLEMENTED();  // Always fail
-  return 0;
-#else
-  int size = 2 * kInstrSize;
-  Instr mov_instr = cond | MOV | LeaveCC;
-  intptr_t immediate = reinterpret_cast<intptr_t>(target);
-  if (!Operand(immediate, rmode).is_single_instruction(NULL, mov_instr)) {
-    size += kInstrSize;
+  int size;
+  int movSize;
+
+#if 0
+  // Account for variable length Assembler::mov sequence.
+  intptr_t value = reinterpret_cast<intptr_t>(target);
+  if (is_int16(value) || (((value >> 16) << 16) == value)) {
+    movSize = 1;
+  } else {
+    movSize = 2;
   }
-  return size;
+#else
+  movSize = 2;
 #endif
+
+  size = (2 + movSize) * kInstrSize;
+
+  return size;
 }
 
 

@@ -42,7 +42,7 @@ const int Deoptimizer::table_entry_size_ = 20;
 
 
 int Deoptimizer::patch_size() {
-  const int kCallInstructionSizeInWords = 3;
+  const int kCallInstructionSizeInWords = 4;
   return kCallInstructionSizeInWords * Assembler::kInstrSize;
 }
 
