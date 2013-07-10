@@ -630,32 +630,17 @@ void MacroAssembler::PopSafepointRegistersAndDoubles() {
 
 void MacroAssembler::StoreToSafepointRegistersAndDoublesSlot(Register src,
                                                              Register dst) {
-#ifdef PENGUIN_CLEANUP
-  str(src, SafepointRegistersAndDoublesSlot(dst));
-#else
-  PPCPORT_UNIMPLEMENTED();
-  fake_asm(fMASM24);
-#endif
+  stw(src, SafepointRegistersAndDoublesSlot(dst));
 }
 
 
 void MacroAssembler::StoreToSafepointRegisterSlot(Register src, Register dst) {
-#ifdef PENGUIN_CLEANUP
-  str(src, SafepointRegisterSlot(dst));
-#else
-  PPCPORT_UNIMPLEMENTED();
-  fake_asm(fMASM25);
-#endif
+  stw(src, SafepointRegisterSlot(dst));
 }
 
 
 void MacroAssembler::LoadFromSafepointRegisterSlot(Register dst, Register src) {
-#ifdef PENGUIN_CLEANUP
-  ldr(dst, SafepointRegisterSlot(src));
-#else
-  PPCPORT_UNIMPLEMENTED();
-  fake_asm(fMASM26);
-#endif
+  lwz(dst, SafepointRegisterSlot(src));
 }
 
 
@@ -777,53 +762,6 @@ void MacroAssembler::ClearFPSCRBits(const uint32_t bits_to_clear,
   vmsr(scratch, cond);
 }
 #endif
-
-void MacroAssembler::VFPCompareAndSetFlags(const DwVfpRegister src1,
-                                           const DwVfpRegister src2,
-                                           const Condition cond) {
-  // Compare and move FPSCR flags to the normal condition flags.
-  VFPCompareAndLoadFlags(src1, src2,
-                         r15,  // was pc?
-                         cond);
-}
-
-void MacroAssembler::VFPCompareAndSetFlags(const DwVfpRegister src1,
-                                           const double src2,
-                                           const Condition cond) {
-  // Compare and move FPSCR flags to the normal condition flags.
-    VFPCompareAndLoadFlags(src1, src2,
-                           r15,  // was pc?
-                           cond);
-}
-
-
-void MacroAssembler::VFPCompareAndLoadFlags(const DwVfpRegister src1,
-                                            const DwVfpRegister src2,
-                                            const Register fpscr_flags,
-                                            const Condition cond) {
-#ifdef PENGUIN_CLEANUP
-  // Compare and load FPSCR.
-  vcmp(src1, src2, cond);
-  vmrs(fpscr_flags, cond);
-#else
-  PPCPORT_UNIMPLEMENTED();
-  fake_asm(fMASM26);
-#endif
-}
-
-void MacroAssembler::VFPCompareAndLoadFlags(const DwVfpRegister src1,
-                                            const double src2,
-                                            const Register fpscr_flags,
-                                            const Condition cond) {
-#ifdef PENGUIN_CLEANUP
-  // Compare and load FPSCR.
-  vcmp(src1, src2, cond);
-  vmrs(fpscr_flags, cond);
-#else
-  PPCPORT_UNIMPLEMENTED();
-  fake_asm(fMASM27);
-#endif
-}
 
 void MacroAssembler::Vmov(const DwVfpRegister dst,
                           const double imm,

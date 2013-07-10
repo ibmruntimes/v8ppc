@@ -402,24 +402,6 @@ class MacroAssembler: public Assembler {
                       const Condition cond = al);
 #endif
 
-  // Compare double values and move the result to the normal condition flags.
-  void VFPCompareAndSetFlags(const DwVfpRegister src1,
-                             const DwVfpRegister src2,
-                             const Condition cond = al);
-  void VFPCompareAndSetFlags(const DwVfpRegister src1,
-                             const double src2,
-                             const Condition cond = al);
-
-  // Compare double values and then load the fpscr flags to a register.
-  void VFPCompareAndLoadFlags(const DwVfpRegister src1,
-                              const DwVfpRegister src2,
-                              const Register fpscr_flags,
-                              const Condition cond = al);
-  void VFPCompareAndLoadFlags(const DwVfpRegister src1,
-                              const double src2,
-                              const Register fpscr_flags,
-                              const Condition cond = al);
-
   void Vmov(const DwVfpRegister dst,
             const double imm,
             const Register scratch = no_reg,

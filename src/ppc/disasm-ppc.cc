@@ -1015,6 +1015,10 @@ void Decoder::DecodeExt4(Instruction* instr) {
       Format(instr, "fadd    'Dt, 'Da, 'Db");
       return;
     }
+    case FSEL: {
+      Format(instr, "fsel    'Dt, 'Da, 'Dc, 'Db");
+      return;
+    }
     case FMUL: {
       Format(instr, "fmul    'Dt, 'Da, 'Dc");
       return;
@@ -1040,6 +1044,10 @@ void Decoder::DecodeExt4(Instruction* instr) {
     }
     case FRIM: {
       Format(instr, "frim    'Dt, 'Db");
+      break;
+    }
+    case FNEG: {
+      Format(instr, "fneg    'Dt, 'Db");
       break;
     }
     default: {

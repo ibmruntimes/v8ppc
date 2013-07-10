@@ -2151,6 +2151,18 @@ void Simulator::DecodeExt4(Instruction* instr) {
       set_d_register_from_double(frt, frt_val);
       return;
     }
+    case FSEL: {
+      int frt = instr->RTValue();
+      int fra = instr->RAValue();
+      int frb = instr->RBValue();
+      int frc = instr->RCValue();
+      double fra_val = get_double_from_d_register(fra);
+      double frb_val = get_double_from_d_register(frb);
+      double frc_val = get_double_from_d_register(frc);
+      double frt_val = ((fra_val >= 0.0) ? frc_val : frb_val);
+      set_d_register_from_double(frt, frt_val);
+      return;
+    }
     case FMUL: {
       int frt = instr->RTValue();
       int fra = instr->RAValue();
@@ -2211,6 +2223,14 @@ void Simulator::DecodeExt4(Instruction* instr) {
       }
       double *p = reinterpret_cast<double*>(&frt_val);
       set_d_register_from_double(frt, *p);
+      return;
+    }
+    case FNEG: {
+      int frt = instr->RTValue();
+      int frb = instr->RBValue();
+      double frb_val = get_double_from_d_register(frb);
+      double frt_val = -frb_val;
+      set_d_register_from_double(frt, frt_val);
       return;
     }
     case FRIM: {

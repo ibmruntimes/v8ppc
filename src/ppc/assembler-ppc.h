@@ -1202,6 +1202,11 @@ class Assembler : public AssemblerBase {
             RCBit rc = LeaveRC);
   void fcfid(const DwVfpRegister frt, const DwVfpRegister frb,
             RCBit rc = LeaveRC);
+  void fsel(const DwVfpRegister frt, const DwVfpRegister fra,
+            const DwVfpRegister frc, const DwVfpRegister frb,
+            RCBit rc = LeaveRC);
+  void fneg(const DwVfpRegister frt, const DwVfpRegister frb,
+            RCBit rc = LeaveRC);
 
   // Support for VFP.
   // All these APIs support S0 to S31 and D0 to D15.

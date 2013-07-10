@@ -1720,55 +1720,58 @@ void LCodeGen::DoMathMinMax(LMathMinMax* instr) {
   Condition cond = (operation == HMathMinMax::kMathMin) ? le : ge;
   if (instr->hydrogen()->representation().IsInteger32()) {
     Register left_reg = ToRegister(left);
-    Operand right_op = (right->IsRegister() || right->IsConstantOperand())
-        ? ToOperand(right)
-        : Operand(EmitLoadRegister(right, ip));
+    Register right_reg = EmitLoadRegister(right, ip);
     Register result_reg = ToRegister(instr->result());
-    __ cmp(left_reg, right_op);
-    if (!result_reg.is(left_reg)) {
-      __ mov(result_reg, left_reg, LeaveCC, cond);
-    }
-    __ mov(result_reg, right_op, LeaveCC, NegateCondition(cond));
+    Label return_left, done;
+    __ cmp(left_reg, right_reg);
+    __ b(cond, &return_left);
+    __ Move(result_reg, right_reg);
+    __ b(&done);
+    __ bind(&return_left);
+    __ Move(result_reg, right_reg);
+    __ bind(&done);
   } else {
     ASSERT(instr->hydrogen()->representation().IsDouble());
     DoubleRegister left_reg = ToDoubleRegister(left);
     DoubleRegister right_reg = ToDoubleRegister(right);
     DoubleRegister result_reg = ToDoubleRegister(instr->result());
     Label check_nan_left, check_zero, return_left, return_right, done;
-    __ VFPCompareAndSetFlags(left_reg, right_reg);
-    __ b(vs, &check_nan_left);
+    __ fcmpu(left_reg, right_reg);
+    __ bunordered(&check_nan_left);
     __ beq(&check_zero);
     __ b(cond, &return_left);
     __ b(&return_right);
 
     __ bind(&check_zero);
-    __ VFPCompareAndSetFlags(left_reg, 0.0);
+    __ fcmpu(left_reg, kDoubleRegZero);
     __ bne(&return_left);  // left == right != 0.
+
     // At this point, both left and right are either 0 or -0.
+    // N.B. The following works because +0 + -0 == +0
     if (operation == HMathMinMax::kMathMin) {
-      // We could use a single 'vorr' instruction here if we had NEON support.
-      __ vneg(left_reg, left_reg);
-      __ vsub(result_reg, left_reg, right_reg);
-      __ vneg(result_reg, result_reg);
+      // For min we want logical-or of sign bit: -(-L + -R)
+      __ fneg(left_reg, left_reg);
+      __ fsub(result_reg, left_reg, right_reg);
+      __ fneg(result_reg, result_reg);
     } else {
-      // Since we operate on +0 and/or -0, vadd and vand have the same effect;
-      // the decision for vadd is easy because vand is a NEON instruction.
-      __ vadd(result_reg, left_reg, right_reg);
+      // For max we want logical-and of sign bit: (L + R)
+      __ fadd(result_reg, left_reg, right_reg);
     }
     __ b(&done);
 
     __ bind(&check_nan_left);
-    __ VFPCompareAndSetFlags(left_reg, left_reg);
-    __ b(vs, &return_left);  // left == NaN.
+    __ fcmpu(left_reg, left_reg);
+    __ bunordered(&return_left);  // left == NaN.
+
     __ bind(&return_right);
     if (!right_reg.is(result_reg)) {
-      __ vmov(result_reg, right_reg);
+      __ fmr(result_reg, right_reg);
     }
     __ b(&done);
 
     __ bind(&return_left);
     if (!left_reg.is(result_reg)) {
-      __ vmov(result_reg, left_reg);
+      __ fmr(result_reg, left_reg);
     }
     __ bind(&done);
   }
@@ -1858,7 +1861,6 @@ void LCodeGen::EmitBranch(int left_block, int right_block, Condition cond,
 
 
 void LCodeGen::DoBranch(LBranch* instr) {
-#ifdef PENGUIN_CLEANUP
   int true_block = chunk_->LookupDestination(instr->true_block_id());
   int false_block = chunk_->LookupDestination(instr->false_block_id());
 
@@ -1868,6 +1870,7 @@ void LCodeGen::DoBranch(LBranch* instr) {
     __ cmpi(reg, Operand(0));
     EmitBranch(true_block, false_block, ne);
   } else if (r.IsDouble()) {
+#ifdef PENGUIN_CLEANUP
     DoubleRegister reg = ToDoubleRegister(instr->value());
     Register scratch = scratch0();
 
@@ -1875,6 +1878,10 @@ void LCodeGen::DoBranch(LBranch* instr) {
     __ VFPCompareAndLoadFlags(reg, 0.0, scratch);
     __ tst(scratch, Operand(kVFPZConditionFlagBit | kVFPVConditionFlagBit));
     EmitBranch(true_block, false_block, eq);
+#else
+  PPCPORT_UNIMPLEMENTED();
+  __ fake_asm(fLITHIUM93);
+#endif
   } else {
     ASSERT(r.IsTagged());
     Register reg = ToRegister(instr->value());
@@ -1959,8 +1966,8 @@ void LCodeGen::DoBranch(LBranch* instr) {
         __ CompareRoot(map, Heap::kHeapNumberMapRootIndex);
         __ bne(&not_heap_number);
         __ lfd(dbl_scratch, FieldMemOperand(reg, HeapNumber::kValueOffset));
-        __ VFPCompareAndSetFlags(dbl_scratch, 0.0);
-        __ b(vs, false_label);  // NaN -> false.
+        __ fcmpu(dbl_scratch, kDoubleRegZero);
+        __ bunordered(false_label);  // NaN -> false.
         __ beq(false_label);  // +0, -0 -> false.
         __ b(true_label);
         __ bind(&not_heap_number);
@@ -1970,10 +1977,6 @@ void LCodeGen::DoBranch(LBranch* instr) {
       DeoptimizeIf(al, instr->environment());
     }
   }
-#else
-  PPCPORT_UNIMPLEMENTED();
-  __ fake_asm(fLITHIUM93);
-#endif
 }
 
 
@@ -2038,10 +2041,10 @@ void LCodeGen::DoCmpIDAndBranch(LCmpIDAndBranch* instr) {
     if (instr->is_double()) {
       // Compare left and right operands as doubles and load the
       // resulting flags into the normal status register.
-      __ VFPCompareAndSetFlags(ToDoubleRegister(left), ToDoubleRegister(right));
-      // If a NaN is involved, i.e. the result is unordered (V set),
+      __ fcmpu(ToDoubleRegister(left), ToDoubleRegister(right));
+      // If a NaN is involved, i.e. the result is unordered,
       // jump to false block label.
-      __ b(vs, chunk_->GetAssemblyLabel(false_block));
+      __ bunordered(chunk_->GetAssemblyLabel(false_block));
     } else {
       if (right->IsConstantOperand()) {
         __ Cmpi(ToRegister(left),
@@ -2264,8 +2267,8 @@ static Condition BranchCondition(HHasInstanceTypeAndBranch* instr) {
   InstanceType from = instr->from();
   InstanceType to = instr->to();
   if (from == to) return eq;
-  if (to == LAST_TYPE) return hs;
-  if (from == FIRST_TYPE) return ls;
+  if (to == LAST_TYPE) return ge;
+  if (from == FIRST_TYPE) return le;
   UNREACHABLE();
   return eq;
 }
@@ -3615,6 +3618,7 @@ void LCodeGen::DoMathSqrt(LUnaryMathOperation* instr) {
 
 
 void LCodeGen::DoMathPowHalf(LUnaryMathOperation* instr) {
+#ifdef PENGUIN_CLEANUP
   DoubleRegister input = ToDoubleRegister(instr->value());
   DoubleRegister result = ToDoubleRegister(instr->result());
   DoubleRegister temp = ToDoubleRegister(instr->temp());
@@ -3624,7 +3628,7 @@ void LCodeGen::DoMathPowHalf(LUnaryMathOperation* instr) {
   // Math.sqrt(-Infinity) == NaN
   Label done;
   __ vmov(temp, -V8_INFINITY, scratch0());
-  __ VFPCompareAndSetFlags(input, temp);
+  __ fcmpu(input, temp);
   __ vneg(result, temp, eq);
   __ beq(&done);
 
@@ -3632,6 +3636,10 @@ void LCodeGen::DoMathPowHalf(LUnaryMathOperation* instr) {
   __ vadd(result, input, kDoubleRegZero);
   __ vsqrt(result, result);
   __ bind(&done);
+#else
+  PPCPORT_UNIMPLEMENTED();
+  __ fake_asm(fLITHIUM101);
+#endif
 }
 
 
@@ -4103,12 +4111,17 @@ void LCodeGen::DoStoreKeyedFastDoubleElement(
   }
 
   if (instr->NeedsCanonicalization()) {
+#ifdef PENGUIN_CLEANUP
     // Check for NaN. All NaNs must be canonicalized.
-    __ VFPCompareAndSetFlags(value, value);
+    __ fcmpu(value, value);
     // Only load canonical NaN if the comparison above set the overflow.
     __ Vmov(value,
             FixedDoubleArray::canonical_not_the_hole_nan_as_double(),
             no_reg, vs);
+#else
+    PPCPORT_UNIMPLEMENTED();
+    __ fake_asm(fLITHIUM102);
+#endif
   }
 
   __ stfd(value, MemOperand(scratch,

@@ -1693,6 +1693,21 @@ void Assembler::fcfid(const DwVfpRegister frt,
   emit(EXT4 | FCFID | frt.code()*B21 | frb.code()*B11 | rc);
 }
 
+void Assembler::fsel(const DwVfpRegister frt, const DwVfpRegister fra,
+                     const DwVfpRegister frc, const DwVfpRegister frb,
+                     RCBit rc) {
+  CheckBuffer();
+  emit(EXT4 | FSEL | frt.code()*B21 | fra.code()*B16 | frb.code()*B11 |
+       frc.code()*B6 | rc);
+}
+
+void Assembler::fneg(const DwVfpRegister frt,
+                     const DwVfpRegister frb,
+                     RCBit rc) {
+  CheckBuffer();
+  emit(EXT4 | FNEG | frt.code()*B21 | frb.code()*B11 | rc);
+}
+
 // Support for VFP.
 
 void Assembler::vldr(const DwVfpRegister dst,

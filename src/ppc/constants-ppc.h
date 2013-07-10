@@ -289,12 +289,14 @@ enum OpcodeExt4 {
   FDIV = 18 << 1,    // Floating Divide
   FSUB = 20 << 1,    // Floating Subtract
   FADD = 21 << 1,    // Floating Add
+  FSEL = 23 << 1,    // Floating Select
   FMUL = 25 << 1,    // Floating Multiply
 
   // Bits 10-1
   FCMPU = 0 << 1,    // Floating Compare Unordered
   FRSP = 12 << 1,    // Floating-Point Rounding
   FCTIWZ = 15 << 1,  // Floating Convert to Integer Word with Round to Zero
+  FNEG = 40 << 1,    // Floating Negate
   MCRFS = 64 << 1,   // Move to Condition Register from FPSCR
   FMR = 72 << 1,     // Floating Move Register
   FRIM = 488 << 1,   // Floating Round to Integer Minus
@@ -303,6 +305,7 @@ enum OpcodeExt4 {
 
 // Instruction encoding bits and masks.
 enum {
+  B6  = 1 << 6,
   B10 = 1 << 10,
   B11 = 1 << 11,
   B16 = 1 << 16,
@@ -335,7 +338,6 @@ enum {
 
   B4  = 1 << 4,
   B5  = 1 << 5,
-  B6  = 1 << 6,
   B7  = 1 << 7,
   B8  = 1 << 8,
   B9  = 1 << 9,
@@ -444,8 +446,6 @@ enum FAKE_OPCODE_T {
   fMASM21 = 74,
   fMASM22 = 75,
   fMASM23 = 76,
-  fMASM24 = 77,
-  fMASM25 = 78,
   fMASM26 = 79,
   fMASM27 = 80,
   fMASM28 = 81,
@@ -462,6 +462,8 @@ enum FAKE_OPCODE_T {
   fLITHIUM98 = 98,
   fLITHIUM99 = 99,
   fLITHIUM100 = 100,
+  fLITHIUM101 = 101,
+  fLITHIUM102 = 102,
   fLastFaker  // can't be more than 128 (2^^7)
 };
 #define FAKE_OPCODE_HIGH_BIT 7  // fake opcode has to fall into bit 0~7
