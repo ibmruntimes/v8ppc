@@ -1964,6 +1964,20 @@ void Simulator::DecodeExt2(Instruction* instr) {
       // todo - handle OE bit
       break;
     }
+    case DIVW: {
+      int rt = instr->RTValue();
+      int ra = instr->RAValue();
+      int rb = instr->RBValue();
+      int32_t ra_val = get_register(ra);
+      int32_t rb_val = get_register(rb);
+      int32_t alu_out = ra_val / rb_val;
+      set_register(rt, alu_out);
+      if (instr->Bit(0)) {  // RC bit set
+        SetCR0(alu_out);
+      }
+      // todo - handle OE bit
+      break;
+    }
     case ADDX: {
       int rt = instr->RTValue();
       int ra = instr->RAValue();

@@ -911,6 +911,10 @@ void Decoder::DecodeExt2(Instruction* instr) {
       Format(instr, "mullw'o'. 'rt,'ra,'rb");
       break;
     }
+    case DIVW: {
+      Format(instr, "divw'o'.   'rt,'ra,'rb");
+      break;
+    }
     case ADDX: {
       Format(instr, "add'o     'rt,'ra,'rb");
       break;

@@ -926,6 +926,12 @@ void Assembler::mulhw(Register dst, Register src1, Register src2,
   xo_form(EXT2 | MULHWX, dst, src1, src2, o, r);
 }
 
+// Divide word
+void Assembler::divw(Register dst, Register src1, Register src2,
+                     OEBit o, RCBit r) {
+  xo_form(EXT2 | DIVW, dst, src1, src2, o, r);
+}
+
 void Assembler::addi(Register dst, Register src, const Operand& imm) {
   ASSERT(!src.is(r0));  // use li instead to show intent
   d_form(ADDI, dst, src, imm.imm32_, true);
