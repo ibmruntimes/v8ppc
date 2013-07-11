@@ -4678,12 +4678,6 @@ void LCodeGen::DoDeferredTaggedToI(LTaggedToI* instr) {
 
   Label done;
 
-  // The input was optimistically untagged; revert it.
-  // The carry flag is set when we reach this deferred code as we just executed
-  // SmiUntag(heap_object, SetCC)
-  STATIC_ASSERT(kHeapObjectTag == 1);
-  __ adc(input_reg, input_reg, Operand(input_reg));
-
   // Heap number map check.
   __ lwz(scratch1, FieldMemOperand(input_reg, HeapObject::kMapOffset));
   __ LoadRoot(ip, Heap::kHeapNumberMapRootIndex);
