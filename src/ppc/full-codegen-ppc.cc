@@ -1433,10 +1433,10 @@ void FullCodeGenerator::EmitDynamicLookupFastCase(Variable* var,
         local->mode() == CONST_HARMONY ||
         local->mode() == LET) {
       __ CompareRoot(r3, Heap::kTheHoleValueRootIndex);
+      __ bne(done);
       if (local->mode() == CONST) {
-        __ LoadRoot(r3, Heap::kUndefinedValueRootIndex, eq);
+        __ LoadRoot(r3, Heap::kUndefinedValueRootIndex);
       } else {  // LET || CONST_HARMONY
-        __ bne(done);
         __ mov(r3, Operand(var->name()));
         __ push(r3);
         __ CallRuntime(Runtime::kThrowReferenceError, 1);
@@ -1510,23 +1510,23 @@ void FullCodeGenerator::EmitVariableLoad(VariableProxy* proxy) {
         }
 
         if (!skip_init_check) {
+          Label done;
           // Let and const need a read barrier.
           GetVar(r3, var);
           __ CompareRoot(r3, Heap::kTheHoleValueRootIndex);
+          __ bne(&done);
           if (var->mode() == LET || var->mode() == CONST_HARMONY) {
             // Throw a reference error when using an uninitialized let/const
             // binding in harmony mode.
-            Label done;
-            __ bne(&done);
             __ mov(r3, Operand(var->name()));
             __ push(r3);
             __ CallRuntime(Runtime::kThrowReferenceError, 1);
-            __ bind(&done);
           } else {
             // Uninitalized const bindings outside of harmony mode are unholed.
             ASSERT(var->mode() == CONST);
-            __ LoadRoot(r3, Heap::kUndefinedValueRootIndex, eq);
+            __ LoadRoot(r3, Heap::kUndefinedValueRootIndex);
           }
+          __ bind(&done);
           context()->Plug(r3);
           break;
         }

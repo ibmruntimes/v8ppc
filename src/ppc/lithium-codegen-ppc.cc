@@ -2473,12 +2473,17 @@ void LCodeGen::DoCmpT(LCmpT* instr) {
   __ cmpi(r3, Operand(0));  // This instruction also signals no smi code inlined
 
   Condition condition = ComputeCompareCondition(op);
-  __ LoadRoot(ToRegister(instr->result()),
-              Heap::kTrueValueRootIndex,
-              condition);
-  __ LoadRoot(ToRegister(instr->result()),
-              Heap::kFalseValueRootIndex,
-              NegateCondition(condition));
+  Label true_value, done;
+
+  __ b(condition, &true_value);
+
+  __ LoadRoot(ToRegister(instr->result()), Heap::kFalseValueRootIndex);
+  __ b(&done);
+
+  __ bind(&true_value);
+  __ LoadRoot(ToRegister(instr->result()), Heap::kTrueValueRootIndex);
+
+  __ bind(&done);
 }
 
 

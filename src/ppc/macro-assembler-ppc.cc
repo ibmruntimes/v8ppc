@@ -372,6 +372,7 @@ void MacroAssembler::MultiPop(RegList regs) {
 void MacroAssembler::LoadRoot(Register destination,
                               Heap::RootListIndex index,
                               Condition cond) {
+  ASSERT(cond == al);
   LoadWord(destination, MemOperand(kRootRegister,
            index << kPointerSizeLog2), r0);
 }
@@ -380,6 +381,7 @@ void MacroAssembler::LoadRoot(Register destination,
 void MacroAssembler::StoreRoot(Register source,
                                Heap::RootListIndex index,
                                Condition cond) {
+  ASSERT(cond == al);
   StoreWord(source, MemOperand(kRootRegister, index << kPointerSizeLog2), r0);
 }
 

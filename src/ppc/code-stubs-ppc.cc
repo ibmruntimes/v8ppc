@@ -4569,9 +4569,17 @@ void InstanceofStub::Generate(MacroAssembler* masm) {
       __ Push(r3, r4);
       __ InvokeBuiltin(Builtins::INSTANCE_OF, CALL_FUNCTION);
     }
+    Label true_value, done;
     __ cmpi(r3, Operand::Zero());
-    __ LoadRoot(r3, Heap::kTrueValueRootIndex, eq);
-    __ LoadRoot(r3, Heap::kFalseValueRootIndex, ne);
+    __ beq(&true_value);
+
+    __ LoadRoot(r3, Heap::kFalseValueRootIndex);
+    __ b(&done);
+
+    __ bind(&true_value);
+    __ LoadRoot(r3, Heap::kTrueValueRootIndex);
+
+    __ bind(&done);
     __ Ret(HasArgsInRegisters() ? 0 : 2);
   }
 }
