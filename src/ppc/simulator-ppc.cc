@@ -2792,26 +2792,25 @@ int32_t Simulator::Call(byte* entry, int argument_count, ...) {
   va_start(parameters, argument_count);
   // Set up arguments
 
-  // First five arguments passed in registers. << probably wrong for PPC
-  ASSERT(argument_count >= 5);
-  set_register(r3, va_arg(parameters, int32_t));
-  set_register(r4, va_arg(parameters, int32_t));
-  set_register(r5, va_arg(parameters, int32_t));
-  set_register(r6, va_arg(parameters, int32_t));
-  set_register(r7, va_arg(parameters, int32_t));
+  // First eight arguments passed in registers r3-r10.
+  int reg_arg_count   = (argument_count > 8) ? 8 : argument_count;
+  int stack_arg_count = argument_count - reg_arg_count;
+  for (int i = 0; i < reg_arg_count; i++) {
+      set_register(i + 3, va_arg(parameters, int32_t));
+  }
 
   // Remaining arguments passed on stack.
   int original_stack = get_register(sp);
   // Compute position of stack on entry to generated code.
-  int entry_stack = (original_stack - (argument_count - 4) * sizeof(int32_t)
+  int entry_stack = (original_stack - stack_arg_count * sizeof(int32_t)
     - 8);  // -8 extra stack is a hack for the LR slot + old SP on PPC
   if (OS::ActivationFrameAlignment() != 0) {
     entry_stack &= -OS::ActivationFrameAlignment();
   }
   // Store remaining arguments on stack, from low to high memory.
   intptr_t* stack_argument = reinterpret_cast<intptr_t*>(entry_stack);
-  for (int i = 4; i < argument_count; i++) {
-    stack_argument[i - 4] = va_arg(parameters, int32_t);
+  for (int i = 0; i < stack_arg_count; i++) {
+    stack_argument[i] = va_arg(parameters, int32_t);
   }
   va_end(parameters);
   set_register(sp, entry_stack);
@@ -2823,16 +2822,18 @@ int32_t Simulator::Call(byte* entry, int argument_count, ...) {
   // the LR the simulation stops when returning to this call point.
   special_reg_lr_ = end_sim_pc;
 
-  // Remember the values of callee-saved registers.
+  // Remember the values of non-volatile registers.
+  int32_t r2_val = get_register(r2);
+  int32_t r13_val = get_register(r13);
   int32_t r14_val = get_register(r14);
   int32_t r15_val = get_register(r15);
   int32_t r16_val = get_register(r16);
   int32_t r17_val = get_register(r17);
   int32_t r18_val = get_register(r18);
   int32_t r19_val = get_register(r19);
-//  int32_t r20_val = get_register(r20);  -- this is cp
+  int32_t r20_val = get_register(r20);
   int32_t r21_val = get_register(r21);
-//  int32_t r22_val = get_register(r22);  -- hacked for r9
+  int32_t r22_val = get_register(r22);
   int32_t r23_val = get_register(r23);
   int32_t r24_val = get_register(r24);
   int32_t r25_val = get_register(r25);
@@ -2841,20 +2842,22 @@ int32_t Simulator::Call(byte* entry, int argument_count, ...) {
   int32_t r28_val = get_register(r28);
   int32_t r29_val = get_register(r29);
   int32_t r30_val = get_register(r30);
-  int32_t fp_val = get_register(fp);
+  int32_t r31_val = get_register(fp);
 
-  // Set up the callee-saved registers with a known value. To be able to check
+  // Set up the non-volatile registers with a known value. To be able to check
   // that they are preserved properly across JS execution.
   int32_t callee_saved_value = icount_;
+  set_register(r2, callee_saved_value);
+  set_register(r13, callee_saved_value);
   set_register(r14, callee_saved_value);
   set_register(r15, callee_saved_value);
   set_register(r16, callee_saved_value);
   set_register(r17, callee_saved_value);
   set_register(r18, callee_saved_value);
   set_register(r19, callee_saved_value);
-//  set_register(r20, callee_saved_value); -- this is cp
+  set_register(r20, callee_saved_value);
   set_register(r21, callee_saved_value);
-//  set_register(r22, callee_saved_value);
+  set_register(r22, callee_saved_value);
   set_register(r23, callee_saved_value);
   set_register(r24, callee_saved_value);
   set_register(r25, callee_saved_value);
@@ -2868,16 +2871,18 @@ int32_t Simulator::Call(byte* entry, int argument_count, ...) {
   // Start the simulation
   Execute();
 
-  // Check that the callee-saved registers have been preserved.
+  // Check that the non-volatile registers have been preserved.
+  CHECK_EQ(callee_saved_value, get_register(r2));
+  CHECK_EQ(callee_saved_value, get_register(r13));
   CHECK_EQ(callee_saved_value, get_register(r14));
   CHECK_EQ(callee_saved_value, get_register(r15));
   CHECK_EQ(callee_saved_value, get_register(r16));
   CHECK_EQ(callee_saved_value, get_register(r17));
   CHECK_EQ(callee_saved_value, get_register(r18));
   CHECK_EQ(callee_saved_value, get_register(r19));
-  // CHECK_EQ(callee_saved_value, get_register(r20)); -- cp
+  CHECK_EQ(callee_saved_value, get_register(r20));
   CHECK_EQ(callee_saved_value, get_register(r21));
-//  CHECK_EQ(callee_saved_value, get_register(r22));
+  CHECK_EQ(callee_saved_value, get_register(r22));
   CHECK_EQ(callee_saved_value, get_register(r23));
   CHECK_EQ(callee_saved_value, get_register(r24));
   CHECK_EQ(callee_saved_value, get_register(r25));
@@ -2888,16 +2893,18 @@ int32_t Simulator::Call(byte* entry, int argument_count, ...) {
   CHECK_EQ(callee_saved_value, get_register(r30));
   CHECK_EQ(callee_saved_value, get_register(fp));
 
-  // Restore callee-saved registers with the original value.
+  // Restore non-volatile registers with the original value.
+  set_register(r2, r2_val);
+  set_register(r13, r13_val);
   set_register(r14, r14_val);
   set_register(r15, r15_val);
   set_register(r16, r16_val);
   set_register(r17, r17_val);
   set_register(r18, r18_val);
   set_register(r19, r19_val);
-  // set_register(r20, r20_val); -- cp
+  set_register(r20, r20_val);
   set_register(r21, r21_val);
-// set_register(r22, r22_val);
+  set_register(r22, r22_val);
   set_register(r23, r23_val);
   set_register(r24, r24_val);
   set_register(r25, r25_val);
@@ -2906,7 +2913,7 @@ int32_t Simulator::Call(byte* entry, int argument_count, ...) {
   set_register(r28, r28_val);
   set_register(r29, r29_val);
   set_register(r30, r30_val);
-  set_register(fp, fp_val);
+  set_register(fp, r31_val);
 
   // Pop stack passed arguments.
   CHECK_EQ(entry_stack, get_register(sp));
