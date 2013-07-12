@@ -65,8 +65,21 @@ int JSCallerSavedCode(int n);
 //       modifies without saving/restoring inline.
 const RegList kCalleeSaved =
   1 <<  13 |  // r13 (root in Javascript code)
+  1 <<  14 |  // r14 (argument passing in CEntryStub)
+  1 <<  15 |  // r15 (argument passing in CEntryStub)
+  1 <<  16 |  // r16 (argument passing in CEntryStub)
+              // r17-r19 unused
   1 <<  20 |  // r20 (cp in Javascript code)
+              // r21 unused
+  1 <<  22 |  // r22 (r9 hack in Javascript code)
+              // r23-r25 unused
+  1 <<  26 |  // r26 (HandleScope logic in MacroAssembler)
+  1 <<  27 |  // r27 (HandleScope logic in MacroAssembler)
+  1 <<  28 |  // r28 (HandleScope logic in MacroAssembler)
+  1 <<  29 |  // r29 (HandleScope logic in MacroAssembler)
+              // r30 used but saved/restored inline
   1 <<  31;   // r31 (fp in Javascript code)
+
 
 // When calling into C++ (only for C++ calls that can't cause a GC).
 // The call code will take care of lr, fp, etc.
@@ -78,7 +91,7 @@ const RegList kCallerSaved =
   1 <<  7;   // r7
 
 
-const int kNumCalleeSaved = 3;
+const int kNumCalleeSaved = 11;
 
 // Double registers d8 to d15 are callee-saved.
 const int kNumDoubleCalleeSaved = 8;

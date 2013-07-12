@@ -4185,47 +4185,14 @@ void JSEntryStub::GenerateBody(MacroAssembler* masm, bool is_construct) {
   Label invoke, handler_entry, exit;
 
   // Called from C
-  // Registers r0,r3-r12 are volatile
-  // r1 is SP, r2 is TOC, r13 is reserved
-  // r14-r30,fp are nonvolatile and must be preserved
-  // stack must be 8 aligned
 
-  // stack looks like .. 22 * 4 bytes
-
-  // sp     oldSP
-  //        reserved
-  //        <unused>
-  //        <unused>
-  // r14 - r30 (17 slots)
-  //        fp (aka r31)
-  // oldSP  (value)
-  //        LR reserved
-  //
-  __ stwu(sp, MemOperand(sp, -(22*4)));
+  // PPC LINUX ABI:
+  // preserve LR in pre-reserved slot in caller's frame
   __ mflr(r0);
-  __ stw(r0, MemOperand(sp, 92));  // use pre-reserved LR slot
-  __ stw(fp, MemOperand(sp, 84));
-  __ mr(fp, sp);
-  // we may need to remember fp in another saved reg for later
-  // to allow for 'valid' PowerPC stack frames to be created
+  __ stw(r0, MemOperand(sp, 4));
 
-  // Save the non-volatile registers we will be using
-  // r14,r15,r16 (fp aka r31 is already stored)
-  __ stw(r14, MemOperand(sp, 16));
-  __ stw(r15, MemOperand(sp, 20));
-  __ stw(r16, MemOperand(sp, 24));
-
-  __ stw(r20, MemOperand(sp, 40));
-
-  __ stw(r22, MemOperand(sp, 48));
-
-  __ stw(r26, MemOperand(sp, 64));
-  __ stw(r27, MemOperand(sp, 68));
-  __ stw(r28, MemOperand(sp, 72));
-  __ stw(r29, MemOperand(sp, 76));
-
-  // we might want cp and kRootRegister to be preserved regs
-  // see (macro-assembler.h)
+  // Save callee saved registers on the stack.
+  __ MultiPush(kCalleeSaved);
 
   // Floating point regs FPR0 - FRP13 are volatile
   // FPR14-FPR31 are non-volatile, but sub-calls will save them for us
@@ -4374,24 +4341,9 @@ void JSEntryStub::GenerateBody(MacroAssembler* masm, bool is_construct) {
   }
 #endif
 
-  // Restore non-volatile registers
-  __ lwz(r14, MemOperand(sp, 16));
-  __ lwz(r15, MemOperand(sp, 20));
-  __ lwz(r16, MemOperand(sp, 24));
+  __ MultiPop(kCalleeSaved);
 
-  __ lwz(r20, MemOperand(sp, 40));
-
-  __ lwz(r22, MemOperand(sp, 48));
-
-  __ lwz(r26, MemOperand(sp, 64));
-  __ lwz(r27, MemOperand(sp, 68));
-  __ lwz(r28, MemOperand(sp, 72));
-  __ lwz(r29, MemOperand(sp, 76));
-
-  __ lwz(fp, MemOperand(sp, 84));
-  __ lwz(r0, MemOperand(sp, 92));
-
-  __ addi(sp, sp, Operand(22*4));
+  __ lwz(r0, MemOperand(sp, 4));
   __ mtctr(r0);
   __ bcr();
 }

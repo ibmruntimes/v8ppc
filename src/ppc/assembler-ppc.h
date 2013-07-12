@@ -200,7 +200,6 @@ const Register r6  = { kRegister_r6_Code };
 const Register r7  = { kRegister_r7_Code };
 const Register r8  = { kRegister_r8_Code };
 const Register r9  = { kRegister_r9_Code };
-// Used as context register.
 const Register r10 = { kRegister_r10_Code };
 // Used as lithium codegen scratch register.
 const Register r11 = { kRegister_r11_Code };
@@ -214,6 +213,7 @@ const Register r16  = { kRegister_r16_Code };
 const Register r17  = { kRegister_r17_Code };
 const Register r18  = { kRegister_r18_Code };
 const Register r19  = { kRegister_r19_Code };
+// Used as context register.
 const Register r20  = { kRegister_r20_Code };
 const Register r21  = { kRegister_r21_Code };
 const Register r22  = { kRegister_r22_Code };
