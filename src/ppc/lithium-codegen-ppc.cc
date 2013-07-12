@@ -1340,7 +1340,6 @@ void LCodeGen::DoMulI(LMulI* instr) {
 
 
 void LCodeGen::DoBitI(LBitI* instr) {
-#ifdef PENGUIN_CLEANUP
   LOperand* left_op = instr->left();
   LOperand* right_op = instr->right();
   ASSERT(left_op->IsRegister());
@@ -1357,22 +1356,18 @@ void LCodeGen::DoBitI(LBitI* instr) {
 
   switch (instr->op()) {
     case Token::BIT_AND:
-      __ and_(result, left, right);
+      __ And(result, left, right);
       break;
     case Token::BIT_OR:
-      __ orx(result, left, right);
+      __ Or(result, left, right);
       break;
     case Token::BIT_XOR:
-      __ xor_(result, left, right);
+      __ Xor(result, left, right);
       break;
     default:
       UNREACHABLE();
       break;
   }
-#else
-  PPCPORT_UNIMPLEMENTED();
-  __ fake_asm(fLITHIUM90);
-#endif
 }
 
 

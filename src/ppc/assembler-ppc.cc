@@ -777,13 +777,6 @@ void Assembler::bl(int branch_offset, Condition cond) {
 
 // Data-processing instructions.
 
-void Assembler::and_(Register dst, Register src1, const Operand& src2,
-                     SBit s, Condition cond) {
-  PPCPORT_CHECK(false);
-  EMIT_FAKE_ARM_INSTR(fAND);
-}
-
-
 void Assembler::eor(Register dst, Register src1, const Operand& src2,
                     SBit s, Condition cond) {
   PPCPORT_CHECK(false);
@@ -984,8 +977,8 @@ void Assembler::oris(Register dst, Register src, const Operand& imm) {
   d_form(ORIS, dst, src, imm.imm32_, false);
 }
 
-void Assembler::orx(Register dst, Register src1, Register src2, RCBit r) {
-  x_form(EXT2 | ORX, dst, src1, src2, r);
+void Assembler::orx(Register dst, Register src1, Register src2, RCBit rc) {
+  x_form(EXT2 | ORX, dst, src1, src2, rc);
 }
 
 void Assembler::cmpi(Register src1, const Operand& src2, CRegister cr) {

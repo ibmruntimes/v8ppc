@@ -507,6 +507,7 @@ class Operand BASE_EMBEDDED {
   RelocInfo::Mode rmode_;
 
   friend class Assembler;
+  friend class MacroAssembler;
 };
 
 
@@ -980,6 +981,7 @@ class Assembler : public AssemblerBase {
   void addis(Register dst, Register src, const Operand& imm);
   void addic(Register dst, Register src, const Operand& imm);
 
+  void and_(Register dst, Register src1, Register src2, RCBit rc = LeaveRC);
   void andc(Register dst, Register src1, Register src2, RCBit rc = LeaveRC);
   void andi(Register ra, Register rs, const Operand& imm);
   void andis(Register ra, Register rs, const Operand& imm);
@@ -987,7 +989,10 @@ class Assembler : public AssemblerBase {
   void notx(Register dst, Register src, RCBit r = LeaveRC);
   void ori(Register dst, Register src, const Operand& imm);
   void oris(Register dst, Register src, const Operand& imm);
-  void orx(Register dst, Register src1, Register src2, RCBit r = LeaveRC);
+  void orx(Register dst, Register src1, Register src2, RCBit rc = LeaveRC);
+  void xori(Register dst, Register src, const Operand& imm);
+  void xoris(Register ra, Register rs, const Operand& imm);
+  void xor_(Register dst, Register src1, Register src2, RCBit rc = LeaveRC);
   void cmpi(Register src1, const Operand& src2, CRegister cr = cr7);
   void cmpli(Register src1, const Operand& src2, CRegister cr = cr7);
   void li(Register dst, const Operand& src);
@@ -1032,17 +1037,9 @@ class Assembler : public AssemblerBase {
   void srw(Register dst, Register src1, Register src2, RCBit r = LeaveRC);
   void slw(Register dst, Register src1, Register src2, RCBit r = LeaveRC);
   void sraw(Register dst, Register src1, Register src2, RCBit r = LeaveRC);
-  void and_(Register dst, Register src1, Register src2, RCBit rc = LeaveRC);
-
-  void xori(Register dst, Register src, const Operand& imm);
-  void xoris(Register ra, Register rs, const Operand& imm);
-  void xor_(Register dst, Register src1, Register src2, RCBit rc = LeaveRC);
 
   void cntlzw_(Register dst, Register src, RCBit rc = LeaveRC);
   // end PowerPC
-
-  void and_(Register dst, Register src1, const Operand& src2,
-            SBit s = LeaveCC, Condition cond = al);
 
   void eor(Register dst, Register src1, const Operand& src2,
            SBit s = LeaveCC, Condition cond = al);

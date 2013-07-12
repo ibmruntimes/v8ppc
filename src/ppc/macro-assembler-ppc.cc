@@ -311,20 +311,6 @@ void MacroAssembler::Move(DoubleRegister dst, DoubleRegister src) {
 #endif
 }
 
-void MacroAssembler::Ubfx(Register dst, Register src1, int lsb, int width,
-                          Condition cond) {
-  ASSERT(lsb < 32);
-  if (!CpuFeatures::IsSupported(ARMv7) || predictable_code_size()) {
-    int mask = (1 << (width + lsb)) - 1 - ((1 << lsb) - 1);
-    and_(dst, src1, Operand(mask), LeaveCC, cond);
-    if (lsb != 0) {
-      mov(dst, Operand(dst, LSR, lsb), LeaveCC, cond);
-    }
-  } else {
-    ubfx(dst, src1, lsb, width, cond);
-  }
-}
-
 
 void MacroAssembler::Sbfx(Register dst, Register src1, int lsb, int width,
                           Condition cond) {
@@ -3983,6 +3969,54 @@ void MacroAssembler::Cmpli(Register src1, const Operand& src2, Register scratch,
   } else {
     mov(scratch, src2);
     cmpl(src1, scratch, cr);
+  }
+}
+
+void MacroAssembler::And(Register ra, Register rs, const Operand& rb,
+                         RCBit rc) {
+  if (rb.is_reg()) {
+    and_(ra, rs, rb.rm(), rc);
+  } else {
+    if (is_uint16(rb.imm32_) && rb.rmode_ == RelocInfo::NONE
+        && rc == LeaveRC) {
+      andi(ra, rs, rb);
+    } else {
+      // mov handles the relocation.
+      ASSERT(!rs.is(r0));
+      mov(r0, rb);
+      and_(ra, rs, r0, rc);
+    }
+  }
+}
+
+void MacroAssembler::Or(Register ra, Register rs, const Operand& rb, RCBit rc) {
+  if (rb.is_reg()) {
+    orx(ra, rs, rb.rm(), rc);
+  } else {
+    if (is_uint16(rb.imm32_) && rb.rmode_ == RelocInfo::NONE && rc == LeaveRC) {
+      ori(ra, rs, rb);
+    } else {
+      // mov handles the relocation.
+      ASSERT(!rs.is(r0));
+      mov(r0, rb);
+      orx(ra, rs, r0, rc);
+    }
+  }
+}
+
+void MacroAssembler::Xor(Register ra, Register rs, const Operand& rb,
+                         RCBit rc) {
+  if (rb.is_reg()) {
+    xor_(ra, rs, rb.rm(), rc);
+  } else {
+    if (is_uint16(rb.imm32_) && rb.rmode_ == RelocInfo::NONE && rc == LeaveRC) {
+      xori(ra, rs, rb);
+    } else {
+      // mov handles the relocation.
+      ASSERT(!rs.is(r0));
+      mov(r0, rb);
+      xor_(ra, rs, r0, rc);
+    }
   }
 }
 

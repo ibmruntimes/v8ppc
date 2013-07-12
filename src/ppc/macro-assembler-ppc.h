@@ -137,8 +137,6 @@ class MacroAssembler: public Assembler {
             Register scratch = no_reg,
             Condition cond = al);
 
-  void Ubfx(Register dst, Register src, int lsb, int width,
-            Condition cond = al);
   void Sbfx(Register dst, Register src, int lsb, int width,
             Condition cond = al);
 
@@ -473,6 +471,9 @@ class MacroAssembler: public Assembler {
             CRegister cr = cr7);
   void Cmpli(Register src1, const Operand& src2, Register scratch,
              CRegister cr = cr7);
+  void And(Register ra, Register rs, const Operand& rb, RCBit rc = LeaveRC);
+  void Or(Register ra, Register rs, const Operand& rb, RCBit rc = LeaveRC);
+  void Xor(Register ra, Register rs, const Operand& rb, RCBit rc = LeaveRC);
 
   // ---------------------------------------------------------------------------
   // JavaScript invokes
