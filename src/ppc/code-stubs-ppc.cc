@@ -791,7 +791,7 @@ void FloatingPointHelper::ConvertIntToDouble(MacroAssembler* masm,
                                              DwVfpRegister double_dst,
                                              DwVfpRegister double_scratch) {
   EMIT_STUB_MARKER(93);
- 
+
   ASSERT(destination == kFPRegisters);
 
   __ sub(sp, sp, Operand(16));   // reserve two temporary doubles on the stack
@@ -1049,13 +1049,13 @@ void FloatingPointHelper::LoadNumberAsInt32Double(MacroAssembler* masm,
   __ bind(&done);
 }
 
-// convert double floating-point in dreg into floating-point integer using rounding mode to zero,
-// then load the 64-bit integer to dst1 and dst2
+// convert double floating-point in dreg into floating-point integer
+// using rounding mode to zero, then load the 64-bit integer to dst1
+// and dst2
 void FloatingPointHelper::MoveDoubleToTwoIntegerRegisters(MacroAssembler* masm,
                                                           Register dst1,
                                                           Register dst2,
-                                                          DwVfpRegister dreg)
-{
+                                                          DwVfpRegister dreg) {
   __ fctiwz(dreg, dreg);
   // __ stfdu(dreg, MemOperand(sp, -8));
   // TODO(penguin): add stfdu instruction then use it here
@@ -2934,11 +2934,12 @@ void BinaryOpStub::GenerateInt32Stub(MacroAssembler* masm) {
                                                    &transition);
 
       // load double-float into 2 GPRs
-      // TODO(penguin): such conversions are needed for CallCCodeForDoubleOperation
-      //   on ARM, need to investigate if we really need such conversion for ppc 
+      // TODO(penguin): such conversions are needed for
+      // CallCCodeForDoubleOperation on ARM, need to investigate if we
+      // really need such conversion for ppc
       if (destination == FloatingPointHelper::kCoreRegisters) {
-	FloatingPointHelper::MoveDoubleToTwoIntegerRegisters(masm, r5, r6, d7);
-	FloatingPointHelper::MoveDoubleToTwoIntegerRegisters(masm, r7, r8, d6);
+        FloatingPointHelper::MoveDoubleToTwoIntegerRegisters(masm, r5, r6, d7);
+        FloatingPointHelper::MoveDoubleToTwoIntegerRegisters(masm, r7, r8, d6);
       }
 
       if (destination == FloatingPointHelper::kFPRegisters) {
