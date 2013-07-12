@@ -673,6 +673,7 @@ void FloatingPointHelper::LoadOperands(
 
 // needs cleanup for extra parameters that are unused
 // also needs a scratch double register instead of d3
+// TODO(penguin): do we really need dst1 and dst1?
 void FloatingPointHelper::LoadNumber(MacroAssembler* masm,
                                      Destination destination,
                                      Register object,
@@ -788,13 +789,10 @@ void FloatingPointHelper::ConvertIntToDouble(MacroAssembler* masm,
                                              Register int_scratch,
                                              Destination destination,
                                              DwVfpRegister double_dst,
-                                             Register dst1,
-                                             Register dst2,
                                              DwVfpRegister double_scratch) {
   EMIT_STUB_MARKER(93);
-  ASSERT(!int_scratch.is(dst1));
-  ASSERT(!int_scratch.is(dst2));
-
+ 
+  ASSERT(destination == kFPRegisters);
 
   __ sub(sp, sp, Operand(16));   // reserve two temporary doubles on the stack
 #if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
@@ -818,16 +816,6 @@ void FloatingPointHelper::ConvertIntToDouble(MacroAssembler* masm,
   __ lfd(double_scratch, MemOperand(sp, 8));
   __ addi(sp, sp, Operand(16));  // restore stack
   __ fsub(double_dst, double_scratch, double_dst);
-
-  if (destination == kCoreRegisters) {
-    __ fctiwz(double_scratch, double_dst);
-    __ sub(sp, sp, Operand(8));
-    __ stfd(double_scratch, MemOperand(sp, 0));
-// ENDIAN - dst1/dst2 are in memory order
-    __ lwz(dst1, MemOperand(sp, 0));
-    __ lwz(dst2, MemOperand(sp, 4));
-    __ addi(sp, sp, Operand(8));
-  }
 }
 
 
@@ -1016,8 +1004,6 @@ void FloatingPointHelper::LoadNumberAsInt32Double(MacroAssembler* masm,
                                                   Register object,
                                                   Destination destination,
                                                   DwVfpRegister double_dst,
-                                                  Register dst1,
-                                                  Register dst2,
                                                   Register heap_number_map,
                                                   Register scratch1,
                                                   Register scratch2,
@@ -1029,12 +1015,13 @@ void FloatingPointHelper::LoadNumberAsInt32Double(MacroAssembler* masm,
   ASSERT(!heap_number_map.is(object) &&
          !heap_number_map.is(scratch1) &&
          !heap_number_map.is(scratch2));
+  ASSERT(destination == kFPRegisters);
 
   Label done, obj_is_not_smi;
 
   __ JumpIfNotSmi(object, &obj_is_not_smi);
   __ SmiUntag(scratch1, object);
-  ConvertIntToDouble(masm, scratch1, destination, double_dst, dst1, dst2,
+  ConvertIntToDouble(masm, scratch1, destination, double_dst,
                      double_scratch);
   __ b(&done);
 
@@ -1059,19 +1046,26 @@ void FloatingPointHelper::LoadNumberAsInt32Double(MacroAssembler* masm,
   // Jump to not_int32 if the operation did not succeed.
   __ boverflow(not_int32);
 
-  if (destination == kCoreRegisters) {
-    __ fctiwz(double_dst, double_dst);
-    __ sub(sp, sp, Operand(8));
-    __ stfd(d1, MemOperand(sp, 0));
-// ENDIAN - dst1/dst2 are in memory order
-    __ lwz(dst1, MemOperand(sp, 0));
-    __ lwz(dst2, MemOperand(sp, 4));
-    __ addi(sp, sp, Operand(8));
-  }
-
   __ bind(&done);
 }
 
+// convert double floating-point in dreg into floating-point integer using rounding mode to zero,
+// then load the 64-bit integer to dst1 and dst2
+void FloatingPointHelper::MoveDoubleToTwoIntegerRegisters(MacroAssembler* masm,
+                                                          Register dst1,
+                                                          Register dst2,
+                                                          DwVfpRegister dreg)
+{
+  __ fctiwz(dreg, dreg);
+  // __ stfdu(dreg, MemOperand(sp, -8));
+  // TODO(penguin): add stfdu instruction then use it here
+  __ sub(sp, sp, Operand(8));
+  __ stfd(dreg, MemOperand(sp, 0));
+  // ENDIAN - dst1/dst2 are in memory order
+  __ lwz(dst1, MemOperand(sp, 0));
+  __ lwz(dst2, MemOperand(sp, 4));
+  __ addi(sp, sp, Operand(8));
+}
 
 void FloatingPointHelper::LoadNumberAsInt32(MacroAssembler* masm,
                                             Register object,
@@ -2270,8 +2264,7 @@ void UnaryOpStub::GenerateHeapNumberCodeBitNot(
   // Convert the int32 in r4 to the heap number in r3.
   FloatingPointHelper::ConvertIntToDouble(
       masm, r4, FloatingPointHelper::kFPRegisters,
-      d0, r7, r7,  // r7 unused as we're using kFPRegisters
-      d2);
+      d0, d2);
   __ stfd(d0, FieldMemOperand(r3, HeapNumber::kValueOffset));
   __ Ret();
 
@@ -2765,8 +2758,7 @@ void BinaryOpStub::GenerateFPOperation(MacroAssembler* masm,
       } else {
         FloatingPointHelper::ConvertIntToDouble(
           masm, r5, FloatingPointHelper::kFPRegisters,
-          d0, r7, r7,  // r7 unused as we're using kFPRegisters
-          d2);
+          d0, d2);
       }
       __ stfd(d0, FieldMemOperand(r3, HeapNumber::kValueOffset));
       __ Ret();
@@ -2926,8 +2918,6 @@ void BinaryOpStub::GenerateInt32Stub(MacroAssembler* masm) {
                                                    right,
                                                    destination,
                                                    d7,
-                                                   r5,
-                                                   r6,
                                                    heap_number_map,
                                                    scratch1,
                                                    scratch2,
@@ -2937,13 +2927,19 @@ void BinaryOpStub::GenerateInt32Stub(MacroAssembler* masm) {
                                                    left,
                                                    destination,
                                                    d6,
-                                                   r7,
-                                                   r8,
                                                    heap_number_map,
                                                    scratch1,
                                                    scratch2,
                                                    d8,
                                                    &transition);
+
+      // load double-float into 2 GPRs
+      // TODO(penguin): such conversions are needed for CallCCodeForDoubleOperation
+      //   on ARM, need to investigate if we really need such conversion for ppc 
+      if (destination == FloatingPointHelper::kCoreRegisters) {
+	FloatingPointHelper::MoveDoubleToTwoIntegerRegisters(masm, r5, r6, d7);
+	FloatingPointHelper::MoveDoubleToTwoIntegerRegisters(masm, r7, r8, d6);
+      }
 
       if (destination == FloatingPointHelper::kFPRegisters) {
         CpuFeatures::Scope scope(VFP2);

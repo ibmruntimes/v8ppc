@@ -2065,8 +2065,6 @@ void MacroAssembler::StoreNumberToDoubleElements(Register value_reg,
                                           untagged_value,
                                           FloatingPointHelper::kFPRegisters,
                                           d0,
-                                          mantissa_reg,
-                                          exponent_reg,
                                           d2);
   stfd(d0, MemOperand(scratch1, 0));
 

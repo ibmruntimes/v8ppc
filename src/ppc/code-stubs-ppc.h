@@ -730,15 +730,12 @@ class FloatingPointHelper : public AllStatic {
                                    Label* not_int32);
 
   // Converts the integer (untagged smi) in |int_scratch| to a double, storing
-  // the result either in |double_dst| or |dst2:dst1|, depending on
-  // |destination|.
+  // the result either to double_dst|
   // Warning: The value in |int_scratch| will be changed in the process!
   static void ConvertIntToDouble(MacroAssembler* masm,
                                  Register int_scratch,
                                  Destination destination,
                                  DwVfpRegister double_dst,
-                                 Register dst1,
-                                 Register dst2,
                                  DwVfpRegister double_scratch);
 
   // Converts the unsigned integer (untagged smi) in |int_scratch| to
@@ -779,6 +776,12 @@ class FloatingPointHelper : public AllStatic {
                                          Register scratch1,
                                          DwVfpRegister double_scratch);
 
+  // Convert double in dreg into double-integer then load it into dst1 and dst2
+  static void MoveDoubleToTwoIntegerRegisters(MacroAssembler* masm,
+                                              Register dst1,
+                                              Register dst2,
+                                              DwVfpRegister dreg);
+
   // Load the number from object into double_dst in the double format.
   // Control will jump to not_int32 if the value cannot be exactly represented
   // by a 32-bit integer.
@@ -788,8 +791,6 @@ class FloatingPointHelper : public AllStatic {
                                       Register object,
                                       Destination destination,
                                       DwVfpRegister double_dst,
-                                      Register dst1,
-                                      Register dst2,
                                       Register heap_number_map,
                                       Register scratch1,
                                       Register scratch2,
