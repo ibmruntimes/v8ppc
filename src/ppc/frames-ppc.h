@@ -35,12 +35,6 @@ namespace v8 {
 namespace internal {
 
 
-// The ARM ABI does not specify the usage of register r9, which may be reserved
-// as the static base or thread register on some platforms, in which case we
-// leave it alone. Adjust the value of kR9Available accordingly:
-const int kR9Available = 1;  // 1 if available to us, 0 if reserved
-
-
 // Register list in load/store instructions
 // Note that the bit values must match those used in actual instruction encoding
 const int kNumRegs = 32;
@@ -48,12 +42,16 @@ const int kNumRegs = 32;
 
 // Caller-saved/arguments registers
 const RegList kJSCallerSaved =
-  1 << 3 |  // r3 a1
-  1 << 4 |  // r4 a2
-  1 << 5 |  // r5 a3
-  1 << 6;   // r6 a4
+  1 << 3  |  // r3  a1
+  1 << 4  |  // r4  a2
+  1 << 5  |  // r5  a3
+  1 << 6  |  // r6  a4
+  1 << 7  |  // r7  a5
+  1 << 8  |  // r8  a6
+  1 << 9  |  // r9  a7
+  1 << 10;   // r10 a8
 
-const int kNumJSCallerSaved = 4;
+const int kNumJSCallerSaved = 8;
 
 typedef Object* JSCallerSavedBuffer[kNumJSCallerSaved];
 
@@ -63,15 +61,12 @@ int JSCallerSavedCode(int n);
 
 
 // Callee-saved registers preserved when switching from C to JavaScript
+// N.B.  Do not bother saving all non-volatiles -- only those that v8
+//       modifies without saving/restoring inline.
 const RegList kCalleeSaved =
-  1 <<  4 |  //  r4 v1
-  1 <<  5 |  //  r5 v2
-  1 <<  6 |  //  r6 v3
-  1 <<  7 |  //  r7 v4
-  1 <<  8 |  //  r8 v5
-  kR9Available <<  9 |  //  r9 v6
-  1 << 10 |  // r10 v7
-  1 << 11;   // r11 v8
+  1 <<  13 |  // r13 (root in Javascript code)
+  1 <<  20 |  // r20 (cp in Javascript code)
+  1 <<  31;   // r31 (fp in Javascript code)
 
 // When calling into C++ (only for C++ calls that can't cause a GC).
 // The call code will take care of lr, fp, etc.
@@ -83,7 +78,7 @@ const RegList kCallerSaved =
   1 <<  7;   // r7
 
 
-const int kNumCalleeSaved = 7 + kR9Available;
+const int kNumCalleeSaved = 3;
 
 // Double registers d8 to d15 are callee-saved.
 const int kNumDoubleCalleeSaved = 8;

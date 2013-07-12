@@ -383,9 +383,6 @@ void Deoptimizer::DoComputeOsrOutputFrame() {
     output_[0]->SetRegister(fp.code(), input_->GetRegister(fp.code()));
     output_[0]->SetRegister(cp.code(), input_->GetRegister(cp.code()));
 
-    // Propagate r2
-    output_[0]->SetRegister(r2.code(), input_->GetRegister(r2.code()));
-
     unsigned pc_offset = data->OsrPcOffset()->value();
     uint32_t pc = reinterpret_cast<uint32_t>(
         optimized_code_->entry() + pc_offset);
@@ -775,9 +772,6 @@ void Deoptimizer::DoComputeJSFrame(TranslationIterator* iterator,
       new(output_frame_size) FrameDescription(output_frame_size, function);
   output_frame->SetFrameType(StackFrame::JAVA_SCRIPT);
 
-  // Propagate r2
-  output_frame->SetRegister(r2.code(), input_->GetRegister(r2.code()));
-
   bool is_bottommost = (0 == frame_index);
   bool is_topmost = (output_count_ - 1 == frame_index);
   ASSERT(frame_index >= 0 && frame_index < output_count_);
@@ -954,11 +948,12 @@ void Deoptimizer::EntryGenerator::Generate() {
   Isolate* isolate = masm()->isolate();
 
   CpuFeatures::Scope scope(VFP3);
-  // Save all general purpose registers before messing with them.
+  // Unlike on ARM we don't save all the registers, just the useful ones.
+  // For the rest, there are gaps on the stack, so the offsets remain the same.
   const int kNumberOfRegisters = Register::kNumRegisters;
 
-  // All 32 registers
-  RegList restored_regs = 0xffffffffu;
+  RegList restored_regs = kJSCallerSaved | kCalleeSaved;
+  RegList saved_regs = restored_regs | sp.bit();
 
 #if 0  // Todo: save/restore floating point registers
   const int kDoubleRegsSize =
@@ -983,8 +978,14 @@ void Deoptimizer::EntryGenerator::Generate() {
   const int kDoubleRegsSize = 0;
 #endif
 
-  // Push all registers (needed to populate FrameDescription::registers_).
-  __ MultiPush(restored_regs);
+  // Push saved_regs (needed to populate FrameDescription::registers_).
+  // Leave gaps for other registers.
+  __ sub(sp, sp, Operand(kNumberOfRegisters * kPointerSize));
+  for (int16_t i = kNumberOfRegisters - 1; i >= 0; i--) {
+    if ((saved_regs & (1 << i)) != 0) {
+      __ stw(ToRegister(i), MemOperand(sp, kPointerSize * i));
+    }
+  }
 
   const int kSavedRegistersAreaSize =
       (kNumberOfRegisters * kPointerSize) + kDoubleRegsSize;
@@ -1120,17 +1121,15 @@ void Deoptimizer::EntryGenerator::Generate() {
   __ lwz(r9, MemOperand(r5, FrameDescription::continuation_offset()));
   __ push(r9);
 
-  // Push the registers from the last output frame.
+  // Restore the registers from the last output frame.
+  ASSERT(!(ip.bit() & restored_regs));
+  __ mr(ip, r5);
   for (int i = kNumberOfRegisters - 1; i >= 0; i--) {
     int offset = (i * kPointerSize) + FrameDescription::registers_offset();
-    __ lwz(r9, MemOperand(r5, offset));
-    __ push(r9);
+    if ((restored_regs & (1 << i)) != 0) {
+      __ lwz(ToRegister(i), MemOperand(ip, offset));
+    }
   }
-
-  // Restore the registers from the stack.
-  __ pop(r0);
-  __ pop(ip);  // skip stack pointer
-  __ MultiPop(restored_regs & (~(r0.bit() | sp.bit())));  // restore remaining
 
   __ InitializeRootRegister();
 
