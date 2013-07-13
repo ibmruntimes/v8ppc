@@ -2063,7 +2063,6 @@ void MacroAssembler::StoreNumberToDoubleElements(Register value_reg,
   SmiUntag(untagged_value, value_reg);
   FloatingPointHelper::ConvertIntToDouble(this,
                                           untagged_value,
-                                          FloatingPointHelper::kFPRegisters,
                                           d0,
                                           d2);
   stfd(d0, MemOperand(scratch1, 0));

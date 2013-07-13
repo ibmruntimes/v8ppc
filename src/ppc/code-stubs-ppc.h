@@ -734,7 +734,6 @@ class FloatingPointHelper : public AllStatic {
   // Warning: The value in |int_scratch| will be changed in the process!
   static void ConvertIntToDouble(MacroAssembler* masm,
                                  Register int_scratch,
-                                 Destination destination,
                                  DwVfpRegister double_dst,
                                  DwVfpRegister double_scratch);
 
@@ -777,10 +776,11 @@ class FloatingPointHelper : public AllStatic {
                                          DwVfpRegister double_scratch);
 
   // Convert double in dreg into double-integer then load it into dst1 and dst2
-  static void MoveDoubleToTwoIntegerRegisters(MacroAssembler* masm,
-                                              Register dst1,
-                                              Register dst2,
-                                              DwVfpRegister dreg);
+  static void MoveDoubleToTwoIntRegisters(MacroAssembler* masm,
+                                          Register dst1,
+                                          Register dst2,
+                                          DwVfpRegister dreg,
+                                          DwVfpRegister double_scratch);
 
   // Load the number from object into double_dst in the double format.
   // Control will jump to not_int32 if the value cannot be exactly represented
@@ -789,7 +789,6 @@ class FloatingPointHelper : public AllStatic {
   // won't be loaded.
   static void LoadNumberAsInt32Double(MacroAssembler* masm,
                                       Register object,
-                                      Destination destination,
                                       DwVfpRegister double_dst,
                                       Register heap_number_map,
                                       Register scratch1,

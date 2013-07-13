@@ -3831,8 +3831,7 @@ void KeyedLoadStubCompiler::GenerateLoadExternalArray(
     __ mr(r3, r8);
 
     FloatingPointHelper::ConvertIntToDouble(
-      masm, value, FloatingPointHelper::kFPRegisters,
-      d0, d2);
+      masm, value, d0, d2);
     __ stfd(d0, FieldMemOperand(r3, HeapNumber::kValueOffset));
     __ Ret();
 
@@ -3995,9 +3994,7 @@ void KeyedStoreStubCompiler::GenerateStoreExternalArray(
       // __ add(r6, r6, r10);
       // r6: effective address of the double element
       FloatingPointHelper::ConvertIntToDouble(
-          masm, r8, FloatingPointHelper::kFPRegisters,
-          d0,   // These are: double_dst
-          d2);  // These are: scratch2, single_scratch.
+          masm, r8,  d0, d2);
       __ stfdx(d0, MemOperand(r6, r10));
       break;
     case FAST_ELEMENTS:

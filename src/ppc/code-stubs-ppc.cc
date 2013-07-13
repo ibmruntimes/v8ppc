@@ -787,12 +787,9 @@ void FloatingPointHelper::ConvertNumberToInt32(MacroAssembler* masm,
 
 void FloatingPointHelper::ConvertIntToDouble(MacroAssembler* masm,
                                              Register int_scratch,
-                                             Destination destination,
                                              DwVfpRegister double_dst,
                                              DwVfpRegister double_scratch) {
   EMIT_STUB_MARKER(93);
-
-  ASSERT(destination == kFPRegisters);
 
   __ sub(sp, sp, Operand(16));   // reserve two temporary doubles on the stack
 #if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
@@ -1002,7 +999,6 @@ void FloatingPointHelper::ConvertDoubleToUnsignedInt(MacroAssembler* masm,
 
 void FloatingPointHelper::LoadNumberAsInt32Double(MacroAssembler* masm,
                                                   Register object,
-                                                  Destination destination,
                                                   DwVfpRegister double_dst,
                                                   Register heap_number_map,
                                                   Register scratch1,
@@ -1015,14 +1011,12 @@ void FloatingPointHelper::LoadNumberAsInt32Double(MacroAssembler* masm,
   ASSERT(!heap_number_map.is(object) &&
          !heap_number_map.is(scratch1) &&
          !heap_number_map.is(scratch2));
-  ASSERT(destination == kFPRegisters);
 
   Label done, obj_is_not_smi;
 
   __ JumpIfNotSmi(object, &obj_is_not_smi);
   __ SmiUntag(scratch1, object);
-  ConvertIntToDouble(masm, scratch1, destination, double_dst,
-                     double_scratch);
+  ConvertIntToDouble(masm, scratch1, double_dst, double_scratch);
   __ b(&done);
 
   __ bind(&obj_is_not_smi);
@@ -1052,15 +1046,16 @@ void FloatingPointHelper::LoadNumberAsInt32Double(MacroAssembler* masm,
 // convert double floating-point in dreg into floating-point integer
 // using rounding mode to zero, then load the 64-bit integer to dst1
 // and dst2
-void FloatingPointHelper::MoveDoubleToTwoIntegerRegisters(MacroAssembler* masm,
-                                                          Register dst1,
-                                                          Register dst2,
-                                                          DwVfpRegister dreg) {
-  __ fctiwz(dreg, dreg);
+void FloatingPointHelper::MoveDoubleToTwoIntRegisters(MacroAssembler* masm,
+						      Register dst1,
+						      Register dst2,
+						      DwVfpRegister dreg,
+						      DwVfpRegister dscratch) {
+  __ fctiwz(dscratch, dreg);
   // __ stfdu(dreg, MemOperand(sp, -8));
   // TODO(penguin): add stfdu instruction then use it here
   __ sub(sp, sp, Operand(8));
-  __ stfd(dreg, MemOperand(sp, 0));
+  __ stfd(dscratch, MemOperand(sp, 0));
   // ENDIAN - dst1/dst2 are in memory order
   __ lwz(dst1, MemOperand(sp, 0));
   __ lwz(dst2, MemOperand(sp, 4));
@@ -2263,8 +2258,7 @@ void UnaryOpStub::GenerateHeapNumberCodeBitNot(
 
   // Convert the int32 in r4 to the heap number in r3.
   FloatingPointHelper::ConvertIntToDouble(
-      masm, r4, FloatingPointHelper::kFPRegisters,
-      d0, d2);
+      masm, r4, d0, d2);
   __ stfd(d0, FieldMemOperand(r3, HeapNumber::kValueOffset));
   __ Ret();
 
@@ -2609,6 +2603,8 @@ void BinaryOpStub::GenerateFPOperation(MacroAssembler* masm,
           masm, result, heap_number_map, scratch1, scratch2, gc_required);
 
       // Load the operands.
+      // TODO(penguin): after simplified MOD handling, should
+      // remove destination == CoreRegisters case
       if (smi_operands) {
         FloatingPointHelper::LoadSmis(masm, destination, scratch1, scratch2);
       } else {
@@ -2757,8 +2753,7 @@ void BinaryOpStub::GenerateFPOperation(MacroAssembler* masm,
           d2);
       } else {
         FloatingPointHelper::ConvertIntToDouble(
-          masm, r5, FloatingPointHelper::kFPRegisters,
-          d0, d2);
+          masm, r5, d0, d2);
       }
       __ stfd(d0, FieldMemOperand(r3, HeapNumber::kValueOffset));
       __ Ret();
@@ -2916,7 +2911,6 @@ void BinaryOpStub::GenerateInt32Stub(MacroAssembler* masm) {
 
       FloatingPointHelper::LoadNumberAsInt32Double(masm,
                                                    right,
-                                                   destination,
                                                    d7,
                                                    heap_number_map,
                                                    scratch1,
@@ -2925,22 +2919,12 @@ void BinaryOpStub::GenerateInt32Stub(MacroAssembler* masm) {
                                                    &transition);
       FloatingPointHelper::LoadNumberAsInt32Double(masm,
                                                    left,
-                                                   destination,
                                                    d6,
                                                    heap_number_map,
                                                    scratch1,
                                                    scratch2,
                                                    d8,
                                                    &transition);
-
-      // load double-float into 2 GPRs
-      // TODO(penguin): such conversions are needed for
-      // CallCCodeForDoubleOperation on ARM, need to investigate if we
-      // really need such conversion for ppc
-      if (destination == FloatingPointHelper::kCoreRegisters) {
-        FloatingPointHelper::MoveDoubleToTwoIntegerRegisters(masm, r5, r6, d7);
-        FloatingPointHelper::MoveDoubleToTwoIntegerRegisters(masm, r7, r8, d6);
-      }
 
       if (destination == FloatingPointHelper::kFPRegisters) {
         CpuFeatures::Scope scope(VFP2);
@@ -3040,6 +3024,13 @@ void BinaryOpStub::GenerateInt32Stub(MacroAssembler* masm) {
         // to type transition.
 
       } else {
+        // load double-float into 2 GPRs
+        // TODO(penguin): such conversions are needed for
+        // CallCCodeForDoubleOperation on ARM, need to investigate if we
+        // really need such conversion for pp
+        FloatingPointHelper::MoveDoubleToTwoIntRegisters(masm, r5, r6, d7, d8);
+        FloatingPointHelper::MoveDoubleToTwoIntRegisters(masm, r7, r8, d6, d8);
+
         // We preserved r3 and r4 to be able to call runtime.
         // Save the left value on the stack.
         __ Push(r8, r7);
