@@ -1539,6 +1539,15 @@ void Assembler::lfd(const DwVfpRegister frt, const MemOperand &src) {
   emit(LFD | frt.code()*B21 | ra.code()*B16 | imm16);
 }
 
+void Assembler::lfdu(const DwVfpRegister frt, const MemOperand &src) {
+  int offset = src.offset();
+  Register ra = src.ra();
+  ASSERT(is_int16(offset) && src.isPPCAddressing());
+  int imm16 = offset & kImm16Mask;
+  // could be x_form instruction with some casting magic
+  emit(LFDU | frt.code()*B21 | ra.code()*B16 | imm16);
+}
+
 void Assembler::lfdx(const DwVfpRegister frt, const MemOperand &src) {
   Register ra = src.ra();
   Register rb = src.rb();
@@ -1561,6 +1570,16 @@ void Assembler::lfs(const DwVfpRegister frt, const MemOperand &src) {
   int imm16 = offset & kImm16Mask;
   // could be x_form instruction with some casting magic
   emit(LFS | frt.code()*B21 | ra.code()*B16 | imm16);
+}
+
+void Assembler::lfsu(const DwVfpRegister frt, const MemOperand &src) {
+  int offset = src.offset();
+  Register ra = src.ra();
+  ASSERT(is_int16(offset) && src.isPPCAddressing());
+  ASSERT(!ra.is(r0));
+  int imm16 = offset & kImm16Mask;
+  // could be x_form instruction with some casting magic
+  emit(LFSU | frt.code()*B21 | ra.code()*B16 | imm16);
 }
 
 void Assembler::lfsx(const DwVfpRegister frt, const MemOperand &src) {
@@ -1587,6 +1606,16 @@ void Assembler::stfd(const DwVfpRegister frs, const MemOperand &src) {
   emit(STFD | frs.code()*B21 | ra.code()*B16 | imm16);
 }
 
+void Assembler::stfdu(const DwVfpRegister frs, const MemOperand &src) {
+  int offset = src.offset();
+  Register ra = src.ra();
+  ASSERT(is_int16(offset) && src.isPPCAddressing());
+  ASSERT(!ra.is(r0));
+  int imm16 = offset & kImm16Mask;
+  // could be x_form instruction with some casting magic
+  emit(STFDU | frs.code()*B21 | ra.code()*B16 | imm16);
+}
+
 void Assembler::stfdx(const DwVfpRegister frs, const MemOperand &src) {
   Register ra = src.ra();
   Register rb = src.rb();
@@ -1609,6 +1638,16 @@ void Assembler::stfs(const DwVfpRegister frs, const MemOperand &src) {
   int imm16 = offset & kImm16Mask;
   // could be x_form instruction with some casting magic
   emit(STFS | frs.code()*B21 | ra.code()*B16 | imm16);
+}
+
+void Assembler::stfsu(const DwVfpRegister frs, const MemOperand &src) {
+  int offset = src.offset();
+  Register ra = src.ra();
+  ASSERT(is_int16(offset) && src.isPPCAddressing());
+  ASSERT(!ra.is(r0));
+  int imm16 = offset & kImm16Mask;
+  // could be x_form instruction with some casting magic
+  emit(STFSU | frs.code()*B21 | ra.code()*B16 | imm16);
 }
 
 void Assembler::stfsx(const DwVfpRegister frs, const MemOperand &src) {

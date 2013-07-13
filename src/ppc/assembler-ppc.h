@@ -1173,15 +1173,19 @@ class Assembler : public AssemblerBase {
 
   // Support for floating point
   void lfd(const DwVfpRegister frt, const MemOperand& src);
+  void lfdu(const DwVfpRegister frt, const MemOperand& src);
   void lfdx(const DwVfpRegister frt, const MemOperand& src);
   void lfdux(const DwVfpRegister frt, const MemOperand& src);
   void lfs(const DwVfpRegister frt, const MemOperand& src);
+  void lfsu(const DwVfpRegister frt, const MemOperand& src);
   void lfsx(const DwVfpRegister frt, const MemOperand& src);
   void lfsux(const DwVfpRegister frt, const MemOperand& src);
   void stfd(const DwVfpRegister frs, const MemOperand& src);
+  void stfdu(const DwVfpRegister frs, const MemOperand& src);
   void stfdx(const DwVfpRegister frs, const MemOperand& src);
   void stfdux(const DwVfpRegister frs, const MemOperand& src);
   void stfs(const DwVfpRegister frs, const MemOperand& src);
+  void stfsu(const DwVfpRegister frs, const MemOperand& src);
   void stfsx(const DwVfpRegister frs, const MemOperand& src);
   void stfsux(const DwVfpRegister frs, const MemOperand& src);
 
