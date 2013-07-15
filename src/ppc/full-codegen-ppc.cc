@@ -2059,7 +2059,7 @@ void FullCodeGenerator::EmitInlineSmiBinaryOp(BinaryOperation* expr,
       // Go slow on zero result to handle -0.
       __ mr(right, scratch1);
       __ cmpi(scratch1, Operand(0));
-      __ beq(&done);
+      __ bne(&done);
       // We need -0 if we were multiplying a negative number with 0 to get 0.
       // We know one of them was zero.
       __ add(scratch2, right, left);
