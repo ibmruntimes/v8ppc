@@ -4295,24 +4295,17 @@ void LCodeGen::DoStringLength(LStringLength* instr) {
 
 
 void LCodeGen::DoInteger32ToDouble(LInteger32ToDouble* instr) {
-#ifdef PENGUIN_CLEANUP
   LOperand* input = instr->value();
   ASSERT(input->IsRegister() || input->IsStackSlot());
   LOperand* output = instr->result();
   ASSERT(output->IsDoubleRegister());
-  SwVfpRegister single_scratch = double_scratch0().low();
   if (input->IsStackSlot()) {
     Register scratch = scratch0();
+    FloatingPointHelper::ConvertIntToDouble(masm(), scratch, ToDoubleRegister(output), double_scratch0());
     __ lwz(scratch, ToMemOperand(input));
-    __ vmov(single_scratch, scratch);
   } else {
-    __ vmov(single_scratch, ToRegister(input));
+    FloatingPointHelper::ConvertIntToDouble(masm(), ToRegister(input), ToDoubleRegister(output), double_scratch0());
   }
-  __ vcvt_f64_s32(ToDoubleRegister(output), single_scratch);
-#else
-  PPCPORT_UNIMPLEMENTED();
-  __ fake_asm(fLITHIUM96);
-#endif
 }
 
 
