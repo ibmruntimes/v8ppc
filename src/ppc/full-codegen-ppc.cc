@@ -2051,9 +2051,21 @@ void FullCodeGenerator::EmitInlineSmiBinaryOp(BinaryOperation* expr,
       __ SmiUntag(ip, right);
       __ mullw(scratch1, left, ip);
       __ mulhw(scratch2, left, ip);
-      __ cmpi(scratch2, Operand(0));
+      // Check for overflowing the smi range - no overflow if higher 33 bits of
+      // the result are identical.
+      __ srawi(ip, scratch1, 31);
+      __ cmp(ip, scratch2);
       __ bne(&stub_call);
-      __ mr(right, scratch1);  // not sure logic is 100% correct
+      // Go slow on zero result to handle -0.
+      __ mr(right, scratch1);
+      __ cmpi(scratch1, Operand(0));
+      __ beq(&done);
+      // We need -0 if we were multiplying a negative number with 0 to get 0.
+      // We know one of them was zero.
+      __ add(scratch2, right, left);
+      __ cmpi(scratch2, Operand(0));
+      __ blt(&stub_call);
+      __ li(right, Operand(Smi::FromInt(0)));
       break;
     }
     case Token::BIT_OR:
