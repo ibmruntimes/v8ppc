@@ -738,15 +738,11 @@ class FloatingPointHelper : public AllStatic {
                                  DwVfpRegister double_scratch);
 
   // Converts the unsigned integer (untagged smi) in |int_scratch| to
-  // a double, storing the result either in |double_dst| or
-  // |dst2:dst1|, depending on |destination|.
+  // a double, storing the result to |double_dst|
   // Warning: The value in |int_scratch| will be changed in the process!
   static void ConvertUnsignedIntToDouble(MacroAssembler* masm,
                                          Register int_scratch,
-                                         Destination destination,
                                          DwVfpRegister double_dst,
-                                         Register dst1,
-                                         Register dst2,
                                          DwVfpRegister double_scratch);
 
   // Converts the integer (untagged smi) in |src| to

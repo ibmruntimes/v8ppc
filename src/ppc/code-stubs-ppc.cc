@@ -818,15 +818,9 @@ void FloatingPointHelper::ConvertIntToDouble(MacroAssembler* masm,
 
 void FloatingPointHelper::ConvertUnsignedIntToDouble(MacroAssembler* masm,
                                                Register int_scratch,
-                                               Destination destination,
                                                DwVfpRegister double_dst,
-                                               Register dst1,
-                                               Register dst2,
                                                DwVfpRegister double_scratch) {
   EMIT_STUB_MARKER(94);
-  ASSERT(!int_scratch.is(dst1));
-  ASSERT(!int_scratch.is(dst2));
-
   __ sub(sp, sp, Operand(16));   // reserve two temporary doubles on the stack
 #if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
   __ lis(r0, Operand(0x4330));
@@ -847,16 +841,6 @@ void FloatingPointHelper::ConvertUnsignedIntToDouble(MacroAssembler* masm,
   __ lfd(double_scratch, MemOperand(sp, 8));
   __ addi(sp, sp, Operand(16));  // restore stack
   __ fsub(double_dst, double_scratch, double_dst);
-
-  if (destination == kCoreRegisters) {
-    __ fctiwz(double_scratch, double_dst);
-    __ sub(sp, sp, Operand(8));
-    __ stfd(double_scratch, MemOperand(sp, 0));
-// ENDIAN - dst1/dst2 are in memory order
-    __ lwz(dst1, MemOperand(sp, 0));
-    __ lwz(dst2, MemOperand(sp, 4));
-    __ addi(sp, sp, Operand(8));
-  }
 }
 
 void FloatingPointHelper::ConvertIntToFloat(MacroAssembler* masm,
@@ -2745,9 +2729,7 @@ void BinaryOpStub::GenerateFPOperation(MacroAssembler* masm,
       // mentioned above SHR needs to always produce a positive result.
       if (op_ == Token::SHR) {
         FloatingPointHelper::ConvertUnsignedIntToDouble(
-          masm, r5, FloatingPointHelper::kFPRegisters,
-          d0, r7, r7,  // r7 unused as we're using kFPRegisters
-          d2);
+          masm, r5, d0, d2);
       } else {
         FloatingPointHelper::ConvertIntToDouble(
           masm, r5, d0, d2);
