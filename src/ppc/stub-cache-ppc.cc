@@ -2156,8 +2156,7 @@ Handle<Code> CallStubCompiler::CompileMathFloorCall(
   __ frim(d1, d1);
   // Convert the argument to an integer.
   __ fctiwz(d1, d1);
-  __ sub(sp, sp, Operand(8));
-  __ stfd(d1, MemOperand(sp, 0));
+  __ stfdu(d1, MemOperand(sp, -8));
 #if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
   __ lwz(r3, MemOperand(sp, 0));
 #else
@@ -3704,8 +3703,7 @@ static void GenerateSmiKeyCheck(MacroAssembler* masm,
                      kCheckForInexactConversion);
   __ boverflow(fail);
   __ fctiwz(double_scratch0, double_scratch0);
-  __ sub(sp, sp, Operand(8));
-  __ stfd(double_scratch0, MemOperand(sp, 0));
+  __ stfdu(double_scratch0, MemOperand(sp, -8));
 #if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
   __ lwz(scratch0, MemOperand(sp, 0));
 #else

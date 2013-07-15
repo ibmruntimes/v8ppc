@@ -361,8 +361,7 @@ static void GenerateFastArrayLoad(MacroAssembler* masm,
   // The key is a smi.
   STATIC_ASSERT(kSmiTag == 0 && kSmiTagSize < kPointerSizeLog2);
   __ slwi(scratch2, key, Operand(kPointerSizeLog2 - kSmiTagSize));
-  __ add(scratch2, scratch2, scratch1);
-  __ lwz(scratch2, MemOperand(scratch2));
+  __ lwzx(scratch2, MemOperand(scratch2, scratch1));
   __ LoadRoot(ip, Heap::kTheHoleValueRootIndex);
   __ cmp(scratch2, ip);
   // In case the loaded value is the_hole we have to consult GetProperty
@@ -833,8 +832,7 @@ static MemOperand GenerateMappedArgumentsLookup(MacroAssembler* masm,
   __ mul(scratch3, key, scratch3);
   __ addi(scratch3, scratch3, Operand(kOffset));
 
-  __ add(scratch2, scratch1, scratch3);
-  __ lwz(scratch2, MemOperand(scratch2));
+  __ lwzx(scratch2, MemOperand(scratch1, scratch3));
   __ LoadRoot(scratch3, Heap::kTheHoleValueRootIndex);
   __ cmp(scratch2, scratch3);
   __ beq(unmapped_case);
@@ -1134,8 +1132,7 @@ void KeyedLoadIC::GenerateGeneric(MacroAssembler* masm) {
       __ addi(r6, r6, Operand(i));
     }
     __ slwi(r8, r6, Operand(kPointerSizeLog2));
-    __ add(r8, r8, r7);
-    __ lwz(r8, MemOperand(r8));
+    __ lwzx(r8, MemOperand(r8, r7));
     __ lbz(r9, FieldMemOperand(r5, Map::kInObjectPropertiesOffset));
     __ sub(r8, r8, r9);
     __ cmpi(r8, Operand(0));
@@ -1151,8 +1148,7 @@ void KeyedLoadIC::GenerateGeneric(MacroAssembler* masm) {
   __ add(r9, r9, r8);  // Index from start of object.
   __ sub(r4, r4, Operand(kHeapObjectTag));  // Remove the heap tag.
   __ slwi(r3, r9, Operand(kPointerSizeLog2));
-  __ add(r3, r3, r4);
-  __ lwz(r3, MemOperand(r3));
+  __ lwzx(r3, MemOperand(r3, r4));
   __ IncrementCounter(isolate->counters()->keyed_load_generic_lookup_cache(),
                       1, r5, r6);
   __ Ret();
@@ -1162,8 +1158,7 @@ void KeyedLoadIC::GenerateGeneric(MacroAssembler* masm) {
   __ lwz(r4, FieldMemOperand(r4, JSObject::kPropertiesOffset));
   __ addi(r4, r4, Operand(FixedArray::kHeaderSize - kHeapObjectTag));
   __ slwi(r3, r8, Operand(kPointerSizeLog2));
-  __ add(r3, r3, r4);
-  __ lwz(r3, MemOperand(r3));
+  __ lwzx(r3, MemOperand(r3, r4));
   __ IncrementCounter(isolate->counters()->keyed_load_generic_lookup_cache(),
                       1, r5, r6);
   __ Ret();
@@ -1411,8 +1406,7 @@ static void KeyedStoreGenerateGenericHelper(
   // It's irrelevant whether array is smi-only or not when writing a smi.
   __ addi(address, elements, Operand(FixedArray::kHeaderSize - kHeapObjectTag));
   __ slwi(scratch_value, key, Operand(kPointerSizeLog2 - kSmiTagSize));
-  __ add(address, address, scratch_value);
-  __ stw(value, MemOperand(address));
+  __ stwx(value, MemOperand(address, scratch_value));
   __ Ret();
 
   __ bind(&non_smi_value);
@@ -1429,8 +1423,7 @@ static void KeyedStoreGenerateGenericHelper(
   }
   __ addi(address, elements, Operand(FixedArray::kHeaderSize - kHeapObjectTag));
   __ slwi(scratch_value, key, Operand(kPointerSizeLog2 - kSmiTagSize));
-  __ add(address, address, scratch_value);
-  __ stw(value, MemOperand(address));
+  __ stwux(value, MemOperand(address, scratch_value));
   // Update write barrier for the elements array address.
   __ mr(scratch_value, value);  // Preserve the value which is returned.
   __ RecordWrite(elements,

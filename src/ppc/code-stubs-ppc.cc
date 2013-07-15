@@ -1047,15 +1047,12 @@ void FloatingPointHelper::LoadNumberAsInt32Double(MacroAssembler* masm,
 // using rounding mode to zero, then load the 64-bit integer to dst1
 // and dst2
 void FloatingPointHelper::MoveDoubleToTwoIntRegisters(MacroAssembler* masm,
-						      Register dst1,
-						      Register dst2,
-						      DwVfpRegister dreg,
-						      DwVfpRegister dscratch) {
+                                                      Register dst1,
+                                                      Register dst2,
+                                                      DwVfpRegister dreg,
+                                                      DwVfpRegister dscratch) {
   __ fctiwz(dscratch, dreg);
-  // __ stfdu(dreg, MemOperand(sp, -8));
-  // TODO(penguin): add stfdu instruction then use it here
-  __ sub(sp, sp, Operand(8));
-  __ stfd(dscratch, MemOperand(sp, 0));
+  __ stfdu(dscratch, MemOperand(sp, -8));
   // ENDIAN - dst1/dst2 are in memory order
   __ lwz(dst1, MemOperand(sp, 0));
   __ lwz(dst2, MemOperand(sp, 4));

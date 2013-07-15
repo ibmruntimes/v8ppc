@@ -863,12 +863,10 @@ static void Generate_JSConstructStubHelper(MacroAssembler* masm,
       __ mr(r8, r7);
       ASSERT_EQ(0 * kPointerSize, JSObject::kMapOffset);
       __ stw(r5, MemOperand(r8));
-      __ addi(r8, r8, Operand(kPointerSize));
       ASSERT_EQ(1 * kPointerSize, JSObject::kPropertiesOffset);
-      __ stw(r9, MemOperand(r8));
-      __ addi(r8, r8, Operand(kPointerSize));
+      __ stwu(r9, MemOperand(r8, kPointerSize));
       ASSERT_EQ(2 * kPointerSize, JSObject::kElementsOffset);
-      __ stw(r9, MemOperand(r8));
+      __ stwu(r9, MemOperand(r8, kPointerSize));
       __ addi(r8, r8, Operand(kPointerSize));
 
       // Fill all the in-object properties with the appropriate filler.
@@ -968,10 +966,9 @@ static void Generate_JSConstructStubHelper(MacroAssembler* masm,
       __ mr(r5, r8);
       ASSERT_EQ(0 * kPointerSize, JSObject::kMapOffset);
       __ stw(r9, MemOperand(r5));
-      __ addi(r5, r5, Operand(kPointerSize));
       ASSERT_EQ(1 * kPointerSize, FixedArray::kLengthOffset);
       __ slwi(r3, r6, Operand(kSmiTagSize));
-      __ stw(r3, MemOperand(r5));
+      __ stwu(r3, MemOperand(r5, kPointerSize));
       __ addi(r5, r5, Operand(kPointerSize));
 
       // Initialize the fields to undefined.

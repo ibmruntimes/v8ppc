@@ -460,13 +460,11 @@ void StringCharLoadGenerator::Generate(MacroAssembler* masm,
   __ bne(&ascii, cr0);
   // Two-byte string.
   __ slwi(result, index, Operand(1));
-  __ add(result, result, string);
-  __ lhz(result, MemOperand(result));
+  __ lhzx(result, MemOperand(result, string));
   __ jmp(&done);
   __ bind(&ascii);
   // Ascii string.
-  __ add(result, string, index);
-  __ lbz(result, MemOperand(result));
+  __ lbzx(result, MemOperand(string, index));
   __ bind(&done);
 }
 

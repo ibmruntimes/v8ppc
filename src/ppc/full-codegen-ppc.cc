@@ -1222,8 +1222,7 @@ void FullCodeGenerator::VisitForInStatement(ForInStatement* stmt) {
   __ lwz(r5, MemOperand(sp, 2 * kPointerSize));
   __ addi(r5, r5, Operand(FixedArray::kHeaderSize - kHeapObjectTag));
   __ slwi(r6, r3, Operand(kPointerSizeLog2 - kSmiTagSize));
-  __ add(r6, r5, r6);
-  __ lwz(r6, MemOperand(r6));
+  __ lwzx(r6, MemOperand(r6, r5));
 
   // Get the expected map from the stack or a smi in the
   // permanent slow case into register r2.
@@ -3572,8 +3571,7 @@ void FullCodeGenerator::EmitGetFromCache(CallRuntime* expr) {
   __ addi(r6, cache, Operand(FixedArray::kHeaderSize - kHeapObjectTag));
   // r6 now points to the start of fixed array elements.
   __ slwi(r5, r5, Operand(kPointerSizeLog2 - kSmiTagSize));
-  __ add(r6, r6, r5);
-  __ lwz(r5, MemOperand(r6));
+  __ lwzux(r5, MemOperand(r6, r5));
   // r6 now points to the key of the pair.
   __ cmp(key, r5);
   __ bne(&not_found);
