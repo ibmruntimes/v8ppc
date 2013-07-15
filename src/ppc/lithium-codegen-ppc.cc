@@ -4301,10 +4301,12 @@ void LCodeGen::DoInteger32ToDouble(LInteger32ToDouble* instr) {
   ASSERT(output->IsDoubleRegister());
   if (input->IsStackSlot()) {
     Register scratch = scratch0();
-    FloatingPointHelper::ConvertIntToDouble(masm(), scratch, ToDoubleRegister(output), double_scratch0());
     __ lwz(scratch, ToMemOperand(input));
+    FloatingPointHelper::ConvertIntToDouble(masm(), scratch, 
+       ToDoubleRegister(output), double_scratch0());
   } else {
-    FloatingPointHelper::ConvertIntToDouble(masm(), ToRegister(input), ToDoubleRegister(output), double_scratch0());
+    FloatingPointHelper::ConvertIntToDouble(masm(), ToRegister(input), 
+       ToDoubleRegister(output), double_scratch0());
   }
 }
 
