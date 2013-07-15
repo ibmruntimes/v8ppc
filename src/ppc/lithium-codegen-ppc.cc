@@ -4310,17 +4310,10 @@ void LCodeGen::DoInteger32ToDouble(LInteger32ToDouble* instr) {
 
 
 void LCodeGen::DoUint32ToDouble(LUint32ToDouble* instr) {
-#ifdef PENGUIN_CLEANUP
   LOperand* input = instr->value();
   LOperand* output = instr->result();
-
-  SwVfpRegister flt_scratch = double_scratch0().low();
-  __ vmov(flt_scratch, ToRegister(input));
-  __ vcvt_f64_u32(ToDoubleRegister(output), flt_scratch);
-#else
-  PPCPORT_UNIMPLEMENTED();
-  __ fake_asm(fLITHIUM97);
-#endif
+  FloatingPointHelper::ConvertUnsignedIntToDouble(masm(), ToRegister(input), 
+       ToDoubleRegister(output), double_scratch0());
 }
 
 
