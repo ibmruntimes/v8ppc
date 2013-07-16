@@ -1677,7 +1677,7 @@ void CompareStub::Generate(MacroAssembler* masm) {
     __ JumpIfNotSmi(r5, &not_two_smis);
     __ srawi(r4, r4, 1);
     __ srawi(r3, r3, 1);
-    __ sub(r3, r3, r4);
+    __ sub(r3, r4, r3);
     __ Ret();
     __ bind(&not_two_smis);
   } else if (FLAG_debug_code) {

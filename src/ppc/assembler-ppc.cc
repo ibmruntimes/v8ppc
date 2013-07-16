@@ -1746,6 +1746,11 @@ void Assembler::fneg(const DwVfpRegister frt,
   emit(EXT4 | FNEG | frt.code()*B21 | frb.code()*B11 | rc);
 }
 
+void Assembler::mtfsfi(int bf, int immediate, RCBit rc) {
+  CheckBuffer();
+  emit(EXT4 | MTFSFI | bf*B23 | immediate*B12 | rc);
+}
+
 // Support for VFP.
 
 void Assembler::vldr(const DwVfpRegister dst,

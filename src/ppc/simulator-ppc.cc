@@ -763,6 +763,7 @@ Simulator::Simulator(Isolate* isolate) : isolate_(isolate) {
     registers_[i] = 0;
   }
   condition_reg_ = 0;  // PowerPC
+  fp_condition_reg_ = 0;  // PowerPC
   special_reg_pc_ = 0;  // PowerPC
   special_reg_lr_ = 0;  // PowerPC
   special_reg_ctr_ = 0;  // PowerPC
@@ -2212,6 +2213,9 @@ void Simulator::DecodeExt4(Instruction* instr) {
       // frsp round 8-byte double-precision value to 8-byte
       // single-precision value, ignore the round here
       set_d_register_from_double(frt, frb_val);
+      if (instr->Bit(0)) {  // RC bit set
+        //  UNIMPLEMENTED();
+      }
       return;
     }
     case FCFID: {
@@ -2245,6 +2249,18 @@ void Simulator::DecodeExt4(Instruction* instr) {
       double frb_val = get_double_from_d_register(frb);
       double frt_val = -frb_val;
       set_d_register_from_double(frt, frt_val);
+      return;
+    }
+    case MTFSFI: {
+      int bf = instr->Bits(25, 23);
+      int imm = instr->Bits(15, 12);
+      int fp_condition_mask = 0xF0000000 >> (bf*4);
+      fp_condition_reg_ &= ~fp_condition_mask;
+      fp_condition_reg_ |= (imm << (28 - (bf*4)));
+      if (instr->Bit(0)) {  // RC bit set
+        condition_reg_ &= 0xF0FFFFFF;
+        condition_reg_ |= (imm << 23);
+      }
       return;
     }
     case FRIM: {

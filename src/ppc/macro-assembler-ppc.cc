@@ -2515,6 +2515,11 @@ void MacroAssembler::EmitVFPTruncate(VFPRoundingMode rounding_mode,
           || (rounding_mode == kRoundToMinusInf));
   // Actually, Power defaults to round to nearest.. so we will need to
   // fix this eventually
+
+  // Clear FX, FEX, VX, OX in FPSCR, also mirror to cr1 of CR
+  mtfsfi(0, 0, SetRC);
+
+  // Perform the conversion
   frsp(result, double_input, SetRC);
 
   // Special branches must follow if the condition is required

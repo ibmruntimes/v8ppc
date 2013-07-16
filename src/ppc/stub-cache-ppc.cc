@@ -2280,7 +2280,7 @@ Handle<Code> CallStubCompiler::CompileMathAbsCall(
   // just return it.
   Label negative_sign;
   __ andis(r0, r4, Operand(HeapNumber::kSignMask >> 16));
-  __ bne(&negative_sign);
+  __ bne(&negative_sign, cr0);
   __ Drop(argc + 1);
   __ Ret();
 
