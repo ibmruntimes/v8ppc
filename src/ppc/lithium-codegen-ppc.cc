@@ -4302,10 +4302,10 @@ void LCodeGen::DoInteger32ToDouble(LInteger32ToDouble* instr) {
   if (input->IsStackSlot()) {
     Register scratch = scratch0();
     __ lwz(scratch, ToMemOperand(input));
-    FloatingPointHelper::ConvertIntToDouble(masm(), scratch, 
+    FloatingPointHelper::ConvertIntToDouble(masm(), scratch,
        ToDoubleRegister(output), double_scratch0());
   } else {
-    FloatingPointHelper::ConvertIntToDouble(masm(), ToRegister(input), 
+    FloatingPointHelper::ConvertIntToDouble(masm(), ToRegister(input),
        ToDoubleRegister(output), double_scratch0());
   }
 }
@@ -4314,7 +4314,7 @@ void LCodeGen::DoInteger32ToDouble(LInteger32ToDouble* instr) {
 void LCodeGen::DoUint32ToDouble(LUint32ToDouble* instr) {
   LOperand* input = instr->value();
   LOperand* output = instr->result();
-  FloatingPointHelper::ConvertUnsignedIntToDouble(masm(), ToRegister(input), 
+  FloatingPointHelper::ConvertUnsignedIntToDouble(masm(), ToRegister(input),
        ToDoubleRegister(output), double_scratch0());
 }
 
