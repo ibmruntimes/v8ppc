@@ -1465,10 +1465,15 @@ void LCodeGen::DoConstantI(LConstantI* instr) {
 
 
 void LCodeGen::DoConstantD(LConstantD* instr) {
+#ifdef PENGUIN_CLEANUP
   ASSERT(instr->result()->IsDoubleRegister());
   DwVfpRegister result = ToDoubleRegister(instr->result());
   double v = instr->value();
   __ Vmov(result, v, scratch0());
+#else
+  PPCPORT_UNIMPLEMENTED();
+  __ fake_asm(fLITHIUM107);
+#endif
 }
 
 
@@ -1683,6 +1688,7 @@ void LCodeGen::DoMathMinMax(LMathMinMax* instr) {
 
 
 void LCodeGen::DoArithmeticD(LArithmeticD* instr) {
+#ifdef PENGUIN_CLEANUP
   DoubleRegister left = ToDoubleRegister(instr->left());
   DoubleRegister right = ToDoubleRegister(instr->right());
   DoubleRegister result = ToDoubleRegister(instr->result());
@@ -1719,6 +1725,10 @@ void LCodeGen::DoArithmeticD(LArithmeticD* instr) {
       UNREACHABLE();
       break;
   }
+#else
+  PPCPORT_UNIMPLEMENTED();
+  __ fake_asm(fLITHIUM106);
+#endif
 }
 
 
@@ -3427,6 +3437,7 @@ void LCodeGen::DoMathAbs(LUnaryMathOperation* instr) {
 
 
 void LCodeGen::DoMathFloor(LUnaryMathOperation* instr) {
+#ifdef PENGUIN_CLEANUP
   DoubleRegister input = ToDoubleRegister(instr->value());
   Register result = ToRegister(instr->result());
   SwVfpRegister single_scratch = double_scratch0().low();
@@ -3453,10 +3464,15 @@ void LCodeGen::DoMathFloor(LUnaryMathOperation* instr) {
     DeoptimizeIf(ne, instr->environment(), cr0);
     __ bind(&done);
   }
+#else
+  PPCPORT_UNIMPLEMENTED();
+  __ fake_asm(fLITHIUM108);
+#endif
 }
 
 
 void LCodeGen::DoMathRound(LUnaryMathOperation* instr) {
+#ifdef PENGUIN_CLEANUP
   DoubleRegister input = ToDoubleRegister(instr->value());
   Register result = ToRegister(instr->result());
   Register scratch = scratch0();
@@ -3516,13 +3532,22 @@ void LCodeGen::DoMathRound(LUnaryMathOperation* instr) {
     DeoptimizeIf(ne, instr->environment(), cr0);
   }
   __ bind(&done);
+#else
+  PPCPORT_UNIMPLEMENTED();
+  __ fake_asm(fLITHIUM104);
+#endif
 }
 
 
 void LCodeGen::DoMathSqrt(LUnaryMathOperation* instr) {
+#ifdef PENGUIN_CLEANUP
   DoubleRegister input = ToDoubleRegister(instr->value());
   DoubleRegister result = ToDoubleRegister(instr->result());
   __ vsqrt(result, input);
+#else
+  PPCPORT_UNIMPLEMENTED();
+  __ fake_asm(fLITHIUM105);
+#endif
 }
 
 
