@@ -1688,24 +1688,24 @@ void LCodeGen::DoMathMinMax(LMathMinMax* instr) {
 
 
 void LCodeGen::DoArithmeticD(LArithmeticD* instr) {
-#ifdef PENGUIN_CLEANUP
   DoubleRegister left = ToDoubleRegister(instr->left());
   DoubleRegister right = ToDoubleRegister(instr->right());
   DoubleRegister result = ToDoubleRegister(instr->result());
   switch (instr->op()) {
     case Token::ADD:
-      __ vadd(result, left, right);
+      __ fadd(result, left, right);
       break;
     case Token::SUB:
-      __ vsub(result, left, right);
+      __ fsub(result, left, right);
       break;
     case Token::MUL:
-      __ vmul(result, left, right);
+      __ fmul(result, left, right);
       break;
     case Token::DIV:
-      __ vdiv(result, left, right);
+      __ fdiv(result, left, right);
       break;
     case Token::MOD: {
+#ifdef PENGUIN_CLEANUP
       // Save r3-r6 on the stack.
       __ MultiPush(r3.bit() | r4.bit() | r5.bit() | r6.bit());
 
@@ -1720,15 +1720,15 @@ void LCodeGen::DoArithmeticD(LArithmeticD* instr) {
       // Restore r3-r6.
       __ MultiPop(r3.bit() | r4.bit() | r5.bit() | r6.bit());
       break;
+#else
+  PPCPORT_UNIMPLEMENTED();
+  __ fake_asm(fLITHIUM106);
+#endif
     }
     default:
       UNREACHABLE();
       break;
   }
-#else
-  PPCPORT_UNIMPLEMENTED();
-  __ fake_asm(fLITHIUM106);
-#endif
 }
 
 
