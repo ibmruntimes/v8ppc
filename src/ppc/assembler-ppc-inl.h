@@ -85,23 +85,22 @@ Address RelocInfo::target_address_address() {
   // The only architecture-independent user of this function is the serializer.
   // The serializer uses it to find out how many raw bytes of instruction to
   // output before the next target.
-  // For an instruction like LUI/ORI where the target bits are mixed into the
+  // For an instruction like LIS/ADDIC where the target bits are mixed into the
   // instruction bits, the size of the target will be zero, indicating that the
   // serializer should not step forward in memory after a target is resolved
   // and written. In this case the target_address_address function should
   // return the end of the instructions to be patched, allowing the
   // deserializer to deserialize the instructions as raw bytes and put them in
-  // place, ready to be patched with the target. After jump optimization,
-  // that is the address of the instruction that follows J/JAL/JR/JALR
-  // instruction.
+  // place, ready to be patched with the target.
 
   return reinterpret_cast<Address>(
-    pc_ + 3 * Assembler::kInstrSize);
+    pc_ + (Assembler::kInstructionsFor32BitConstant *
+           Assembler::kInstrSize));
 }
 
 
 int RelocInfo::target_address_size() {
-  return kPointerSize;  // roohack needs to be kSpecialTargetSize??
+  return Assembler::kSpecialTargetSize;
 }
 
 
@@ -438,9 +437,14 @@ return (Address)0;
 }
 
 
+// This sets the branch destination (which gets loaded at the call address).
+// This is for calls and branches within generated code.  The serializer
+// has already deserialized the lus/addic instructions etc.
 void Assembler::deserialization_set_special_target_at(
-    Address constant_pool_entry, Address target) {
-  Memory::Address_at(constant_pool_entry) = target;
+    Address instruction_payload, Address target) {
+  set_target_address_at(
+      instruction_payload - kInstructionsFor32BitConstant * kInstrSize,
+      target);
 }
 
 

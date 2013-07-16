@@ -747,13 +747,19 @@ class Assembler : public AssemblerBase {
   inline static void set_external_target_at(Address constant_pool_entry,
                                             Address target);
 
-  // Here we are patching the address in the constant pool, not the actual call
-  // instruction.  The address in the constant pool is the same size as a
-  // pointer.
-  static const int kSpecialTargetSize = kPointerSize;
-
   // Size of an instruction.
   static const int kInstrSize = sizeof(Instr);
+
+  // Here we are patching the address in the LUI/ORI instruction pair.
+  // These values are used in the serialization process and must be zero for
+  // PPC platform, as Code, Embedded Object or External-reference pointers
+  // are split across two consecutive instructions and don't exist separately
+  // in the code, so the serializer should not step forwards in memory after
+  // a target is resolved and written.
+  static const int kSpecialTargetSize = 0;
+
+  // Number of consecutive instructions used to store 32bit constant.
+  static const int kInstructionsFor32BitConstant = 2;
 
   // Distance between the instruction referring to the address of the call
   // target and the return address.

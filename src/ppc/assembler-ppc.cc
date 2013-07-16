@@ -161,10 +161,11 @@ const int RelocInfo::kApplyMask = 0;
 
 
 bool RelocInfo::IsCodedSpecially() {
-  // The deserializer needs to know whether a pointer is specially coded.  Being
-  // specially coded on ARM means that it is a movw/movt instruction.  We don't
-  // generate those yet.
-  return false;
+  // The deserializer needs to know whether a pointer is specially
+  // coded.  Being specially coded on PPC means that it is a lis/addic
+  // instruction sequence, and that is always the case inside code
+  // objects.
+  return true;
 }
 
 
@@ -1263,8 +1264,7 @@ void Assembler::mov(Register dst, const Operand& src, SBit s, Condition cond) {
   }
 #endif
 
-  if (!(src.rmode_ == RelocInfo::NONE ||
-        src.rmode_ == RelocInfo::EXTERNAL_REFERENCE)) {
+  if (src.must_use_constant_pool(this)) {
     // some form of relocation needed
     RecordRelocInfo(src.rmode_, src.imm32_);
   }

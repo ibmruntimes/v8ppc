@@ -75,16 +75,10 @@ void MacroAssembler::Jump(intptr_t target, RelocInfo::Mode rmode,
 
   if (cond != al) b(NegateCondition(cond), &skip, cr);
 
-  if (rmode == RelocInfo::CODE_TARGET) {
-    int addr = *(reinterpret_cast<int*>(target));
-    addr = addr + Code::kHeaderSize - kHeapObjectTag;   // PPC - ugly
-    mov(r0, Operand(addr));
-  } else if (rmode == RelocInfo::RUNTIME_ENTRY) {
-    mov(r0, Operand(target, rmode));
-  } else {
-    ASSERT(false);
-  }
+  ASSERT(rmode == RelocInfo::CODE_TARGET ||
+         rmode == RelocInfo::RUNTIME_ENTRY);
 
+  mov(r0, Operand(target, rmode));
   mtctr(r0);
   bcr();
 
