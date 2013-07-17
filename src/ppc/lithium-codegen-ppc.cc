@@ -1456,19 +1456,14 @@ void LCodeGen::DoConstantI(LConstantI* instr) {
   __ mov(ToRegister(instr->result()), Operand(instr->value()));
 }
 
-
+// TODO(penguin): put const to constant pool instead
+// of storing double to stack
 void LCodeGen::DoConstantD(LConstantD* instr) {
-#ifdef PENGUIN_CLEANUP
   ASSERT(instr->result()->IsDoubleRegister());
   DwVfpRegister result = ToDoubleRegister(instr->result());
   double v = instr->value();
-  __ Vmov(result, v, scratch0());
-#else
-  PPCPORT_UNIMPLEMENTED();
-  __ fake_asm(fLITHIUM107);
-#endif
+  __ LoadDoubleLiteral(result, v, scratch0());
 }
-
 
 void LCodeGen::DoConstantT(LConstantT* instr) {
   Handle<Object> value = instr->value();

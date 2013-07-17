@@ -454,7 +454,13 @@ class MacroAssembler: public Assembler {
   // new PPC macro-assembler interfaces that are slightly higher level
   // than assembler-ppc and may generate variable length sequences
 
-  void LoadSignedImmediate(Register dst, int value);
+  // load a literal signed int value <value> to GPR <dst>
+  void LoadIntLiteral(Register dst, int value);
+
+  // load a literal double value <value> to FPR <result>
+  void LoadDoubleLiteral(DwVfpRegister result, 
+                         double value, 
+                         Register scratch);
 
   void LoadWord(Register dst,
                 const MemOperand& mem,

@@ -3908,7 +3908,7 @@ void MacroAssembler::CheckEnumCache(Register null_value, Label* call_runtime) {
 // New MacroAssembler Interfaces added for PPC
 //
 ////////////////////////////////////////////////////////////////////////////////
-void MacroAssembler::LoadSignedImmediate(Register dst, int value) {
+void MacroAssembler::LoadIntLiteral(Register dst, int value) {
   if (is_int16(value)) {
     li(dst, Operand(value));
   } else {
@@ -3919,6 +3919,21 @@ void MacroAssembler::LoadSignedImmediate(Register dst, int value) {
       mov(dst, Operand(value));
     }
   }
+}
+
+void MacroAssembler::LoadDoubleLiteral(DwVfpRegister result, 
+                                       double value, 
+                                       Register scratch) {  
+  addi(sp, sp, Operand(-8));  // reserve 1 temp double on the stack
+
+  int32_t* iptr = reinterpret_cast<int32_t*>(&value);
+  LoadIntLiteral(scratch, iptr[0]);
+  stw(scratch, MemOperand(sp, 0));
+  LoadIntLiteral(scratch, iptr[1]);
+  stw(scratch, MemOperand(sp, 4));
+  lfd(result, MemOperand(sp, 0));
+
+  addi(sp, sp, Operand(8));  // restore the stack ptr
 }
 
 void MacroAssembler::Add(Register dst, Register src,
@@ -4011,7 +4026,7 @@ void MacroAssembler::LoadWord(Register dst, const MemOperand& mem,
   bool use_dform = true;
   if (!is_int16(offset)) {
     use_dform = false;
-    LoadSignedImmediate(scratch, offset);
+    LoadIntLiteral(scratch, offset);
   }
 
   if (!updateForm) {
@@ -4039,7 +4054,7 @@ void MacroAssembler::StoreWord(Register src, const MemOperand& mem,
   bool use_dform = true;
   if (!is_int16(offset)) {
     use_dform = false;
-    LoadSignedImmediate(scratch, offset);
+    LoadIntLiteral(scratch, offset);
   }
 
   if (!updateForm) {
