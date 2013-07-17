@@ -4527,9 +4527,6 @@ void LCodeGen::EmitNumberUntagD(Register input_reg,
                                 bool deoptimize_on_minus_zero,
                                 LEnvironment* env) {
   Register scratch = scratch0();
-#ifdef PENGUIN_CLEANUP
-  SwVfpRegister flt_scratch = double_scratch0().low();
-#endif
   ASSERT(!result_reg.is(double_scratch0()));
 
   Label load_smi, heap_number, done;
@@ -4553,35 +4550,37 @@ void LCodeGen::EmitNumberUntagD(Register input_reg,
 
     // Convert undefined to NaN.
     __ LoadRoot(ip, Heap::kNanValueRootIndex);
-    __ sub(ip, ip, Operand(kHeapObjectTag));
-    __ lfd(result_reg, MemOperand(ip, HeapNumber::kValueOffset));
+    __ lfd(result_reg, FieldMemOperand(ip, HeapNumber::kValueOffset));
     __ b(&done);
 
     __ bind(&heap_number);
   }
   // Heap number to double register conversion.
-  __ sub(ip, input_reg, Operand(kHeapObjectTag));
-  __ lfd(result_reg, MemOperand(ip, HeapNumber::kValueOffset));
+  __ lfd(result_reg, FieldMemOperand(input_reg, HeapNumber::kValueOffset));
   if (deoptimize_on_minus_zero) {
-    __ vmov(ip, result_reg.low());
+    __ sub(sp, sp, Operand(8));
+    __ stfd(result_reg, MemOperand(sp));
+#if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
+    __ lwz(ip, MemOperand(sp, 0));
+    __ lwz(scratch, MemOperand(sp, 4));
+#else
+    __ lwz(ip, MemOperand(sp, 4));
+    __ lwz(scratch, MemOperand(sp, 0));
+#endif
+    __ addi(sp, sp, Operand(8));
+
     __ cmpi(ip, Operand(0));
     __ bne(&done);
-    __ vmov(ip, result_reg.high());
-    __ Cmpi(ip, Operand(HeapNumber::kSignMask), r0);
+    __ Cmpi(scratch, Operand(HeapNumber::kSignMask), r0);
     DeoptimizeIf(eq, env);
   }
   __ b(&done);
 
   // Smi to double register conversion
   __ bind(&load_smi);
-#ifdef PENGUIN_CLEANUP
   // scratch: untagged value of input_reg
-  __ vmov(flt_scratch, scratch);
-  __ vcvt_f64_s32(result_reg, flt_scratch);
-#else
-  PPCPORT_UNIMPLEMENTED();
-  __ fake_asm(fLITHIUM99);
-#endif
+  FloatingPointHelper::ConvertIntToDouble(masm(), scratch, result_reg,
+                                          double_scratch0());
   __ bind(&done);
 }
 
