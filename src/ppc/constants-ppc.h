@@ -44,13 +44,6 @@ const int kNumFPSingleRegisters = 32;
 const int kNumFPDoubleRegisters = 16;
 const int kNumFPRegisters = kNumFPSingleRegisters + kNumFPDoubleRegisters;
 
-#if defined(INCLUDE_ARM)
-// Constant pool marker.
-const int kConstantPoolMarkerMask = 0xffe00000;
-const int kConstantPoolMarker = 0x0c000000;
-const int kConstantPoolLengthMask = 0x001ffff;
-#endif  // INCLUDE_ARM
-
 // PPC doesn't really have a PC register - assign a fake number for simulation
 const int kPCRegister = -2;
 const int kNoRegister = -1;

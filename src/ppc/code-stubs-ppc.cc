@@ -4208,20 +4208,15 @@ void JSEntryStub::GenerateBody(MacroAssembler* masm, bool is_construct) {
   // block that sets the pending exception.
   __ jmp(&invoke);
 
-  // Block literal pool emission whilst taking the position of the handler
-  // entry. This avoids making the assumption that literal pools are always
-  // emitted after an instruction is emitted, rather than before.
-  {
-    Assembler::BlockConstPoolScope block_const_pool(masm);
-    __ bind(&handler_entry);
-    handler_offset_ = handler_entry.pos();
-    // Caught exception: Store result (exception) in the pending exception
-    // field in the JSEnv and return a failure sentinel.  Coming in here the
-    // fp will be invalid because the PushTryHandler below sets it to 0 to
-    // signal the existence of the JSEntry frame.
-    __ mov(ip, Operand(ExternalReference(Isolate::kPendingExceptionAddress,
-                                         isolate)));
-  }
+  __ bind(&handler_entry);
+  handler_offset_ = handler_entry.pos();
+  // Caught exception: Store result (exception) in the pending exception
+  // field in the JSEnv and return a failure sentinel.  Coming in here the
+  // fp will be invalid because the PushTryHandler below sets it to 0 to
+  // signal the existence of the JSEntry frame.
+  __ mov(ip, Operand(ExternalReference(Isolate::kPendingExceptionAddress,
+                                       isolate)));
+
   __ stw(r3, MemOperand(ip));
   __ mov(r3, Operand(reinterpret_cast<int32_t>(Failure::Exception())));
   __ b(&exit);
@@ -4262,19 +4257,11 @@ void JSEntryStub::GenerateBody(MacroAssembler* masm, bool is_construct) {
   }
   __ lwz(ip, MemOperand(ip));  // deref address
 
-  // Branch and link to JSEntryTrampoline.  We don't use the double underscore
-  // macro for the add instruction because we don't want the coverage tool
-  // inserting instructions here after we read the pc. We block literal pool
-  // emission for the same reason.
-  {
-    // not sure we need const pools at all on PPC, keeping for now
-    Assembler::BlockConstPoolScope block_const_pool(masm);
-
-    // the address points to the start of the code object, skip the header
-    masm->addi(r0, ip, Operand(Code::kHeaderSize - kHeapObjectTag));
-    masm->mtlr(r0);
-    masm->bclr(BA, SetLK);  // make the call
-  }
+  // Branch and link to JSEntryTrampoline.
+  // the address points to the start of the code object, skip the header
+  __ addi(r0, ip, Operand(Code::kHeaderSize - kHeapObjectTag));
+  __ mtlr(r0);
+  __ bclr(BA, SetLK);  // make the call
 
   // Unlink this frame from the handler chain.
   __ PopTryHandler();
@@ -7155,9 +7142,6 @@ void DirectCEntryStub::GenerateCall(MacroAssembler* masm,
   __ mov(r0, Operand(reinterpret_cast<intptr_t>(GetCode().location()),
                      RelocInfo::CODE_TARGET));
 
-  // Prevent literal pool emission during calculation of return address.
-  Assembler::BlockConstPoolScope block_const_pool(masm);
-
 #if defined(V8_HOST_ARCH_PPC)
   int PowerPCAdjustment = ((type == CallType_ScalarArg) ? 3 : 5);
 #else
@@ -7592,15 +7576,11 @@ void RecordWriteStub::Generate(MacroAssembler* masm) {
   // it back and forth between branch condition True and False
   // when we start and stop incremental heap marking.
   // See RecordWriteStub::Patch for details.
-  {
-    // Block literal pool emission, as the position of these three instructions
-    // is assumed by the patching code.
-    Assembler::BlockConstPoolScope block_const_pool(masm);
-    // Clear the bit, branch on True for NOP action initially
-    __ crxor(8, 8, 8);
-    __ bc(&skip_to_incremental_noncompacting, BT, 8);
-    __ bc(&skip_to_incremental_compacting, BT, 8);
-  }
+
+  // Clear the bit, branch on True for NOP action initially
+  __ crxor(8, 8, 8);
+  __ bc(&skip_to_incremental_noncompacting, BT, 8);
+  __ bc(&skip_to_incremental_compacting, BT, 8);
 
   if (remembered_set_action_ == EMIT_REMEMBERED_SET) {
     __ RememberedSetHelper(object_,

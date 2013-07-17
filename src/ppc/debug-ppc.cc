@@ -316,9 +316,6 @@ void Debug::GenerateCallConstructStubRecordDebugBreak(MacroAssembler* masm) {
 
 
 void Debug::GenerateSlot(MacroAssembler* masm) {
-  // Generate enough nop's to make space for a call instruction. Avoid emitting
-  // the constant pool in the debug break slot code.
-  Assembler::BlockConstPoolScope block_const_pool(masm);
   Label check_codesize;
   __ bind(&check_codesize);
   __ RecordDebugBreakSlot();

@@ -251,10 +251,6 @@ bool LCodeGen::GenerateDeferredCode() {
     }
   }
 
-  // Force constant pool emission at the end of the deferred code to make
-  // sure that no constant pools are emitted after.
-  masm()->CheckConstPool(true, false);
-
   // Deferred code is the last part of the instruction sequence. Mark
   // the generated code as done unless we bailed out.
   if (!is_aborted()) status_ = DONE;
@@ -604,9 +600,6 @@ void LCodeGen::CallCodeGeneric(Handle<Code> code,
                                LInstruction* instr,
                                SafepointMode safepoint_mode) {
   ASSERT(instr != NULL);
-  // Block literal pool emission to ensure nop indicating no inlined smi code
-  // is in the correct position.
-  Assembler::BlockConstPoolScope block_const_pool(masm());
   LPointerMap* pointers = instr->pointer_map();
   RecordPosition(pointers->position());
   __ Call(code, mode);
@@ -1738,9 +1731,6 @@ void LCodeGen::DoArithmeticT(LArithmeticT* instr) {
   ASSERT(ToRegister(instr->result()).is(r3));
 
   BinaryOpStub stub(instr->op(), NO_OVERWRITE);
-  // Block literal pool emission to ensure nop indicating no inlined smi code
-  // is in the correct position.
-  Assembler::BlockConstPoolScope block_const_pool(masm());
   CallCode(stub.GetCode(), RelocInfo::CODE_TARGET, instr);
   __ nop();  // Signals no inlined code.
 }
@@ -2378,9 +2368,6 @@ void LCodeGen::DoInstanceOfKnownGlobal(LInstanceOfKnownGlobal* instr) {
   Register map = temp;
   __ lwz(map, FieldMemOperand(object, HeapObject::kMapOffset));
   {
-    // Block constant pool emission to ensure the positions of instructions are
-    // as expected by the patcher. See InstanceofStub::Generate().
-    Assembler::BlockConstPoolScope block_const_pool(masm());
     __ bind(deferred->map_check());  // Label for calculating code patching.
     // We use Factory::the_hole_value() on purpose instead of loading from the
     // root array to force relocation to be able to later patch with
@@ -2449,7 +2436,6 @@ void LCodeGen::DoDeferredInstanceOfKnownGlobal(LInstanceOfKnownGlobal* instr,
   int delta = masm_->InstructionsGeneratedSince(map_check) + kAdditionalDelta;
   Label before_push_delta;
   __ bind(&before_push_delta);
-  __ BlockConstPoolFor(kAdditionalDelta);
   __ mov(temp, Operand(delta * kPointerSize));
   // The mov above can generate one or two instructions. The delta was computed
   // for two instructions, so we need to pad here in case of one instruction.
@@ -5454,8 +5440,6 @@ void LCodeGen::EnsureSpaceForLazyDeopt() {
   int current_pc = masm()->pc_offset();
   int patch_size = Deoptimizer::patch_size();
   if (current_pc < last_lazy_deopt_pc_ + patch_size) {
-    // Block literal pool emission for duration of padding.
-    Assembler::BlockConstPoolScope block_const_pool(masm());
     int padding_size = last_lazy_deopt_pc_ + patch_size - current_pc;
     ASSERT_EQ(0, padding_size % Assembler::kInstrSize);
     while (padding_size > 0) {

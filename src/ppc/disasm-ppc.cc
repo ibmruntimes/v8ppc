@@ -92,9 +92,6 @@ class Decoder {
   // Returns the length of the disassembled machine instruction in bytes.
   int InstructionDecode(byte* instruction);
 
-  static bool IsConstantPoolAt(byte* instr_ptr);
-  static int ConstantPoolSizeAt(byte* instr_ptr);
-
  private:
   // Bottleneck functions to print into the out_buffer.
   void PrintChar(const char ch);
@@ -1066,22 +1063,6 @@ void Decoder::DecodeExt4(Instruction* instr) {
 
 #undef VERIFIY
 
-bool Decoder::IsConstantPoolAt(byte* instr_ptr) {
-  int instruction_bits = *(reinterpret_cast<int*>(instr_ptr));
-  return (instruction_bits & kConstantPoolMarkerMask) == kConstantPoolMarker;
-}
-
-
-int Decoder::ConstantPoolSizeAt(byte* instr_ptr) {
-  if (IsConstantPoolAt(instr_ptr)) {
-    int instruction_bits = *(reinterpret_cast<int*>(instr_ptr));
-    return instruction_bits & kConstantPoolLengthMask;
-  } else {
-    return -1;
-  }
-}
-
-
 // Disassemble the instruction at *instr_ptr into the output buffer.
 int Decoder::InstructionDecode(byte* instr_ptr) {
   Instruction* instr = Instruction::At(instr_ptr);
@@ -1357,14 +1338,6 @@ int Decoder::InstructionDecode(byte* instr_ptr) {
     Unknown(instr);
     return Instruction::kInstrSize;
   }
-  int instruction_bits = *(reinterpret_cast<int*>(instr_ptr));
-  if ((instruction_bits & kConstantPoolMarkerMask) == kConstantPoolMarker) {
-    out_buffer_pos_ += OS::SNPrintF(out_buffer_ + out_buffer_pos_,
-                                    "constant pool begin (length %d)",
-                                    instruction_bits &
-                                    kConstantPoolLengthMask);
-    return Instruction::kInstrSize;
-  }
   switch (instr->TypeValue()) {
     case 0:
     case 1: {
@@ -1465,8 +1438,9 @@ int Disassembler::InstructionDecode(v8::internal::Vector<char> buffer,
 }
 
 
+// The PPC assembler does not currently use constant pools.
 int Disassembler::ConstantPoolSizeAt(byte* instruction) {
-  return v8::internal::Decoder::ConstantPoolSizeAt(instruction);
+  return -1;
 }
 
 

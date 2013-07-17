@@ -108,8 +108,6 @@ int MacroAssembler::CallSize(Register target, Condition cond) {
 
 
 void MacroAssembler::Call(Register target, Condition cond) {
-  // Block constant pool for the call instruction sequence.
-  BlockConstPoolScope block_const_pool(this);
   Label start;
   bind(&start);
   ASSERT(cond == al);  // in prep of removal of condition
@@ -175,8 +173,6 @@ void MacroAssembler::Call(Address target,
                           RelocInfo::Mode rmode,
                           Condition cond) {
   ASSERT(cond == al);
-  // Block constant pool for the call instruction sequence.
-  BlockConstPoolScope block_const_pool(this);
   Label start;
   bind(&start);
 
@@ -2895,17 +2891,6 @@ void MacroAssembler::Abort(const char* msg) {
     CallRuntime(Runtime::kAbort, 2);
   }
   // will not return here
-  if (is_const_pool_blocked()) {
-    // If the calling code cares about the exact number of
-    // instructions generated, we insert padding here to keep the size
-    // of the Abort macro constant.
-    static const int kExpectedAbortInstructions = 10;
-    int abort_instructions = InstructionsGeneratedSince(&abort_start);
-    ASSERT(abort_instructions <= kExpectedAbortInstructions);
-    while (abort_instructions++ < kExpectedAbortInstructions) {
-      nop();
-    }
-  }
 }
 
 

@@ -76,7 +76,6 @@ class JumpPatchSite BASE_EMBEDDED {
   void EmitJumpIfNotSmi(Register reg, Label* target) {
     EMIT_STUB_MARKER(200);
     ASSERT(!patch_site_.is_bound() && !info_emitted_);
-    Assembler::BlockConstPoolScope block_const_pool(masm_);
     __ bind(&patch_site_);
     __ cmp(reg, reg, cr0);
     __ beq(target, cr0);  // Always taken before patched.
@@ -87,15 +86,12 @@ class JumpPatchSite BASE_EMBEDDED {
   void EmitJumpIfSmi(Register reg, Label* target) {
     EMIT_STUB_MARKER(201);
     ASSERT(!patch_site_.is_bound() && !info_emitted_);
-    Assembler::BlockConstPoolScope block_const_pool(masm_);
     __ bind(&patch_site_);
     __ cmp(reg, reg, cr0);
     __ bne(target, cr0);  // Never taken before patched.
   }
 
   void EmitPatchInfo() {
-    // Block literal pool emission whilst recording patch site information.
-    Assembler::BlockConstPoolScope block_const_pool(masm_);
     if (patch_site_.is_bound()) {
       int delta_to_patch_site = masm_->InstructionsGeneratedSince(&patch_site_);
       Register reg;
@@ -316,10 +312,6 @@ void FullCodeGenerator::Generate() {
     __ LoadRoot(r3, Heap::kUndefinedValueRootIndex);
   }
   EmitReturnSequence();
-
-  // Force emit the constant pool, so it doesn't get emitted in the middle
-  // of the stack check table.
-  masm()->CheckConstPool(true, false);
 }
 
 
@@ -359,8 +351,6 @@ void FullCodeGenerator::EmitStackCheck(IterationStatement* stmt,
                                        Label* back_edge_target) {
   EMIT_STUB_MARKER(205);
   Comment cmnt(masm_, "[ Stack check");
-  // Block literal pools whilst emitting stack check code.
-  Assembler::BlockConstPoolScope block_const_pool(masm_);
   Label ok;
 
   if (FLAG_count_based_interrupts) {
@@ -448,7 +438,7 @@ void FullCodeGenerator::EmitReturnSequence() {
 #endif
     // Make sure that the constant pool is not emitted inside of the return
     // sequence.
-    { Assembler::BlockConstPoolScope block_const_pool(masm_);
+    {
       // Here we use masm_-> instead of the __ macro to avoid the code coverage
       // tool from instrumenting as we rely on the code size here.
       int32_t sp_delta = (info_->scope()->num_parameters() + 1) * kPointerSize;

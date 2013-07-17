@@ -347,9 +347,6 @@ void Assembler::CheckBuffer() {
   if (buffer_space() <= kGap) {
     GrowBuffer();
   }
-  if (pc_offset() >= next_buffer_check_) {
-    CheckConstPool(false, true);
-  }
 }
 
 
@@ -445,12 +442,6 @@ void Assembler::deserialization_set_special_target_at(
   set_target_address_at(
       instruction_payload - kInstructionsFor32BitConstant * kInstrSize,
       target);
-}
-
-
-void Assembler::set_external_target_at(Address constant_pool_entry,
-                                       Address target) {
-  Memory::Address_at(constant_pool_entry) = target;
 }
 
 
