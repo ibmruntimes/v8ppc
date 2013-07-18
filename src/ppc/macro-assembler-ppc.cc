@@ -3921,9 +3921,9 @@ void MacroAssembler::LoadIntLiteral(Register dst, int value) {
   }
 }
 
-void MacroAssembler::LoadDoubleLiteral(DwVfpRegister result, 
-                                       double value, 
-                                       Register scratch) {  
+void MacroAssembler::LoadDoubleLiteral(DwVfpRegister result,
+                                       double value,
+                                       Register scratch) {
   addi(sp, sp, Operand(-8));  // reserve 1 temp double on the stack
 
   // avoid gcc strict aliasing error using union cast

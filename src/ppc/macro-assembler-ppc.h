@@ -458,8 +458,8 @@ class MacroAssembler: public Assembler {
   void LoadIntLiteral(Register dst, int value);
 
   // load a literal double value <value> to FPR <result>
-  void LoadDoubleLiteral(DwVfpRegister result, 
-                         double value, 
+  void LoadDoubleLiteral(DwVfpRegister result,
+                         double value,
                          Register scratch);
 
   void LoadWord(Register dst,
