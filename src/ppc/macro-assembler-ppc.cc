@@ -3926,10 +3926,16 @@ void MacroAssembler::LoadDoubleLiteral(DwVfpRegister result,
                                        Register scratch) {  
   addi(sp, sp, Operand(-8));  // reserve 1 temp double on the stack
 
-  int32_t* iptr = reinterpret_cast<int32_t*>(&value);
-  LoadIntLiteral(scratch, iptr[0]);
+  // avoid gcc strict aliasing error using union cast
+  union {
+     double dval;
+     int ival[2];
+  } litVal;
+
+  litVal.dval = value;
+  LoadIntLiteral(scratch, litVal.ival[0]);
   stw(scratch, MemOperand(sp, 0));
-  LoadIntLiteral(scratch, iptr[1]);
+  LoadIntLiteral(scratch, litVal.ival[1]);
   stw(scratch, MemOperand(sp, 4));
   lfd(result, MemOperand(sp, 0));
 
