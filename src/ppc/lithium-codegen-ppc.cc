@@ -3652,6 +3652,7 @@ void LCodeGen::DoRandom(LRandom* instr) {
   __ bind(deferred->exit());
   // 0x41300000 is the top half of 1.0 x 2^20 as a double.
   __ lis(r4, Operand(0x4130));
+#ifdef PENGUIN_CLEANUP
   // Move 0x41300000xxxxxxxx (x = random bits) to VFP.
   __ vmov(d7, r3, r4);
   // Move 0x4130000000000000 to VFP.
@@ -3659,6 +3660,10 @@ void LCodeGen::DoRandom(LRandom* instr) {
   __ vmov(d8, r3, r4);
   // Subtract and store the result in the heap number.
   __ vsub(d7, d7, d8);
+#else
+  PPCPORT_UNIMPLEMENTED();
+  __ fake_asm(fLITHIUM109);
+#endif
 }
 
 
