@@ -142,7 +142,7 @@ void FastNewClosureStub::Generate(MacroAssembler* masm) {
   if (FLAG_cache_optimized_code) {
     __ lwz(r4,
            FieldMemOperand(r6, SharedFunctionInfo::kOptimizedCodeMapOffset));
-    __ cmpi(r4, Operand(0));
+    __ cmpi(r4, Operand::Zero());
     __ bne(&check_optimized);
   }
   __ bind(&install_unoptimized);
@@ -826,14 +826,14 @@ void FloatingPointHelper::ConvertUnsignedIntToDouble(MacroAssembler* masm,
   __ lis(r0, Operand(0x4330));
   __ stw(r0, MemOperand(sp, 4));
   __ stw(r0, MemOperand(sp, 12));
-  __ li(r0, Operand(0));
+  __ li(r0, Operand::Zero());
   __ stw(r0, MemOperand(sp, 0));
   __ stw(int_scratch, MemOperand(sp, 8));
 #else
   __ lis(r0, Operand(0x4330));
   __ stw(r0, MemOperand(sp, 0));
   __ stw(r0, MemOperand(sp, 8));
-  __ li(r0, Operand(0));
+  __ li(r0, Operand::Zero());
   __ stw(r0, MemOperand(sp, 4));
   __ stw(int_scratch, MemOperand(sp, 12));
 #endif
@@ -892,7 +892,7 @@ void FloatingPointHelper::ConvertDoubleToInt(MacroAssembler* masm,
   STATIC_ASSERT(HeapNumber::kExponentMask == 0x7ff00000u);
   __ ExtractBitMask(r0, r0, HeapNumber::kExponentMask);
   __ cmpli(r0, Operand(0x7ff));
-  __ li(int_dst, Operand(0));
+  __ li(int_dst, Operand::Zero());
   __ beq(&done);
 
   // otherwise do the conversion
@@ -932,7 +932,7 @@ void FloatingPointHelper::ConvertDoubleToUnsignedInt(MacroAssembler* masm,
   STATIC_ASSERT(HeapNumber::kExponentMask == 0x7ff00000u);
   __ ExtractBitMask(r0, r0, HeapNumber::kExponentMask);
   __ cmpli(r0, Operand(0x7ff));
-  __ li(int_dst, Operand(0));
+  __ li(int_dst, Operand::Zero());
   __ beq(&done);
 
   // otherwise do the conversion
@@ -957,7 +957,7 @@ void FloatingPointHelper::ConvertDoubleToUnsignedInt(MacroAssembler* masm,
 #else
   __ stw(r0, MemOperand(sp, 0));
 #endif
-  __ li(r0, Operand(0));
+  __ li(r0, Operand::Zero());
 #if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
   __ stw(r0, MemOperand(sp, 0));
 #else
@@ -1096,7 +1096,7 @@ void FloatingPointHelper::DoubleIs32BitInteger(MacroAssembler* masm,
 
   // Fast cases. Check for obvious non 32-bit integer values.
   // Negative exponent cannot yield 32-bit integers.
-  __ cmpi(scratch, Operand(0));
+  __ cmpi(scratch, Operand::Zero());
   __ blt(not_int32);
   // Exponent greater than 31 cannot yield 32-bit integers.
   // Also, a positive value with an exponent equal to 31 is outside of the
@@ -1278,7 +1278,7 @@ static void EmitIdenticalObjectComparison(MacroAssembler* masm,
       // Or with all low-bits of mantissa.
       __ lwz(r6, FieldMemOperand(r3, HeapNumber::kMantissaOffset));
       __ orx(r3, r6, r5);
-      __ cmpi(r3, Operand(0));
+      __ cmpi(r3, Operand::Zero());
       // For equal we already have the right value in r3:  Return zero (equal)
       // if all bits in mantissa are zero (it's an Infinity) and non-zero if
       // not (it's a NaN).  For <= and >= we need to load r0 with the failing
@@ -1896,7 +1896,7 @@ void ToBooleanStub::Generate(MacroAssembler* masm) {
     __ bne(&not_heap_number);
 
     __ lfd(d1, FieldMemOperand(tos_, HeapNumber::kValueOffset));
-    __ li(r0, Operand(0));
+    __ li(r0, Operand::Zero());
     __ push(r0);
     __ push(r0);
     __ lfd(d2, MemOperand(sp, 0));
@@ -1910,7 +1910,7 @@ void ToBooleanStub::Generate(MacroAssembler* masm) {
     __ Ret();
 
     __ bind(&nan_or_zero);
-    __ li(tos_, Operand(0));
+    __ li(tos_, Operand::Zero());
     __ Ret();
 
     __ bind(&not_heap_number);
@@ -2202,7 +2202,7 @@ void UnaryOpStub::GenerateHeapNumberCodeBitNot(
 
   __ lis(r5, Operand(0x40000000 >> 16));
   __ add(r5, r4, r5);
-  __ cmpi(r5, Operand(0));
+  __ cmpi(r5, Operand::Zero());
   __ blt(&try_float);
 
   // Tag the result as a smi and we're done.
@@ -2446,7 +2446,7 @@ void BinaryOpStub::GenerateSmiSmiOperation(MacroAssembler* masm) {
       __ cmp(ip, scratch2);
       __ bne(&not_smi_result);
       // Go slow on zero result to handle -0.
-      __ cmpi(scratch1, Operand(0));
+      __ cmpi(scratch1, Operand::Zero());
       __ beq(&mul_zero);
       __ mr(right, scratch1);
       __ Ret();
@@ -2454,7 +2454,7 @@ void BinaryOpStub::GenerateSmiSmiOperation(MacroAssembler* masm) {
       // We need -0 if we were multiplying a negative number with 0 to get 0.
       // We know one of them was zero.
       __ add(scratch2, right, left);
-      __ cmpi(scratch2, Operand(0));
+      __ cmpi(scratch2, Operand::Zero());
       __ blt(&mul_neg_zero);
       __ li(right, Operand(Smi::FromInt(0)));
       __ Ret();  // Return smi 0 if the non-zero one was positive.
@@ -2534,7 +2534,7 @@ void BinaryOpStub::GenerateSmiSmiOperation(MacroAssembler* masm) {
       __ slw(scratch1, scratch1, scratch2);
       // Check that the signed result fits in a Smi.
       __ addis(scratch2, scratch1, Operand(0x4000));
-      __ cmpi(scratch2, Operand(0));
+      __ cmpi(scratch2, Operand::Zero());
       __ blt(&not_smi_result);
       __ SmiTag(right, scratch1);
       __ Ret();
@@ -2702,7 +2702,7 @@ void BinaryOpStub::GenerateFPOperation(MacroAssembler* masm,
 
       // Check that the *signed* result fits in a smi.
       __ addis(r6, r5, Operand(0x40000000u >> 16));
-      __ cmpi(r6, Operand(0));
+      __ cmpi(r6, Operand::Zero());
       __ blt(&result_not_a_smi);
       __ SmiTag(r3, r5);
       __ Ret();
@@ -2953,7 +2953,7 @@ void BinaryOpStub::GenerateInt32Stub(MacroAssembler* masm) {
 #endif
           __ addi(sp, sp, Operand(8));
           __ addis(scratch2, scratch1, Operand(0x40000000u >> 16));
-          __ cmpi(scratch2, Operand(0));
+          __ cmpi(scratch2, Operand::Zero());
           // If not try to return a heap number.
           __ blt(&return_heap_number);
           // Check for minus zero. Return heap number for minus zero.
@@ -3120,7 +3120,7 @@ void BinaryOpStub::GenerateInt32Stub(MacroAssembler* masm) {
 
       // Check if the result fits in a smi.
       __ addis(scratch1, r5, Operand(0x40000000u >> 16));
-      __ cmpi(scratch1, Operand(0));
+      __ cmpi(scratch1, Operand::Zero());
       // If not try to return a heap number. (We know the result is an int32.)
       __ blt(&return_heap_number);
       // Tag the result and return.
@@ -3170,14 +3170,14 @@ void BinaryOpStub::GenerateInt32Stub(MacroAssembler* masm) {
         __ lis(r0, Operand(0x4330));
         __ stw(r0, MemOperand(sp, 4));
         __ stw(r0, MemOperand(sp, 12));
-        __ li(r0, Operand(0));
+        __ li(r0, Operand::Zero());
         __ stw(r0, MemOperand(sp, 0));
         __ stw(r5, MemOperand(sp, 8));
 #else
         __ lis(r0, Operand(0x4330));
         __ stw(r0, MemOperand(sp, 0));
         __ stw(r0, MemOperand(sp, 8));
-        __ li(r0, Operand(0));
+        __ li(r0, Operand::Zero());
         __ stw(r0, MemOperand(sp, 4));
         __ stw(r5, MemOperand(sp, 12));
 #endif
@@ -3803,8 +3803,8 @@ void MathPowStub::Generate(MacroAssembler* masm) {
   __ vmov(double_result, 1.0, scratch2);
 
   // Get absolute value of exponent.
-  __ cmpi(scratch, Operand(0));
-  __ mov(scratch2, Operand(0), LeaveCC, mi);
+  __ cmpi(scratch, Operand::Zero());
+  __ mov(scratch2, Operand::Zero(), LeaveCC, mi);
   __ sub(scratch, scratch2, scratch, LeaveCC, mi);
 
   Label while_true;
@@ -3814,7 +3814,7 @@ void MathPowStub::Generate(MacroAssembler* masm) {
   __ vmul(double_scratch, double_scratch, double_scratch, ne);
   __ bne(&while_true, cr0);
 
-  __ cmpi(exponent, Operand(0));
+  __ cmpi(exponent, Operand::Zero());
   __ b(ge, &done);
   __ vmov(double_scratch, 1.0, scratch);
   __ vdiv(double_result, double_scratch, double_result);
@@ -4944,7 +4944,7 @@ void RegExpExecStub::Generate(MacroAssembler* masm) {
       ExternalReference::address_of_regexp_stack_memory_size(isolate);
   __ mov(r3, Operand(address_of_regexp_stack_memory_size));
   __ lwz(r3, MemOperand(r3, 0));
-  __ cmpi(r3, Operand(0));
+  __ cmpi(r3, Operand::Zero());
   __ beq(&runtime);
 
   // Check that the first argument is a JSRegExp object.
@@ -5031,7 +5031,7 @@ void RegExpExecStub::Generate(MacroAssembler* masm) {
   __ bgt(&runtime);
 
   // Reset offset for possibly sliced string.
-  __ li(r11, Operand(0));
+  __ li(r11, Operand::Zero());
   // subject: Subject string
   // regexp_data: RegExp data (FixedArray)
   // Check the representation and encoding of the subject string.
@@ -5160,7 +5160,7 @@ void RegExpExecStub::Generate(MacroAssembler* masm) {
 
   // Argument 6: Set the number of capture registers to zero to force global
   // regexps to behave as non-global.  This does not affect non-global regexps.
-  __ mov(r3, Operand(0));
+  __ mov(r3, Operand::Zero());
   __ stw(r3, MemOperand(sp, 2 * kPointerSize));
 
   // Argument 5 (sp[4]): static offsets vector buffer.
@@ -5422,13 +5422,13 @@ void RegExpConstructResultStub::Generate(MacroAssembler* masm) {
   // r6: Start of elements in FixedArray.
   // r8: Number of elements to fill.
   Label loop;
-  __ cmpi(r8, Operand(0));
+  __ cmpi(r8, Operand::Zero());
   __ bind(&loop);
   __ ble(&done);  // Jump if r8 is negative or zero.
   __ sub(r8, r8, Operand(1));
   __ slwi(ip, r8, Operand(kPointerSizeLog2));
   __ stwx(r5, MemOperand(ip, r6));
-  __ cmpi(r8, Operand(0));
+  __ cmpi(r8, Operand::Zero());
   __ jmp(&loop);
 
   __ bind(&done);
@@ -5557,7 +5557,7 @@ void CallFunctionStub::Generate(MacroAssembler* masm) {
   __ bne(&non_function);
   __ push(r4);  // put proxy as additional argument
   __ li(r3, Operand(argc_ + 1));
-  __ li(r5, Operand(0));
+  __ li(r5, Operand::Zero());
   __ GetBuiltinEntry(r6, Builtins::CALL_FUNCTION_PROXY);
   __ SetCallKind(r8, CALL_AS_METHOD);
   {
@@ -5571,7 +5571,7 @@ void CallFunctionStub::Generate(MacroAssembler* masm) {
   __ bind(&non_function);
   __ StoreWord(r4, MemOperand(sp, argc_ * kPointerSize), r0);
   __ li(r3, Operand(argc_));  // Set up the number of arguments.
-  __ li(r5, Operand(0));
+  __ li(r5, Operand::Zero());
   __ GetBuiltinEntry(r6, Builtins::CALL_NON_FUNCTION);
   __ SetCallKind(r8, CALL_AS_METHOD);
   __ Jump(masm->isolate()->builtins()->ArgumentsAdaptorTrampoline(),
@@ -5617,7 +5617,7 @@ void CallConstructStub::Generate(MacroAssembler* masm) {
   __ GetBuiltinEntry(r6, Builtins::CALL_NON_FUNCTION_AS_CONSTRUCTOR);
   __ bind(&do_call);
   // Set expected number of arguments to zero (not changing r3).
-  __ li(r5, Operand(0));
+  __ li(r5, Operand::Zero());
   __ SetCallKind(r8, CALL_AS_METHOD);
   __ Jump(masm->isolate()->builtins()->ArgumentsAdaptorTrampoline(),
           RelocInfo::CODE_TARGET);
@@ -5771,7 +5771,7 @@ void StringCharCodeAtGenerator::GenerateSlow(
   __ li(r0, Operand(kSmiTagMask |
            ((~String::kMaxAsciiCharCode) << kSmiTagSize)));
   __ and_(r0, code_, r0);
-  __ cmpi(r0, Operand(0));
+  __ cmpi(r0, Operand::Zero());
   __ bne(&slow_case_);
 
   __ LoadRoot(result_, Heap::kSingleCharacterStringCacheRootIndex);
@@ -5846,7 +5846,7 @@ void StringHelper::GenerateCopyCharacters(MacroAssembler* masm,
     __ addi(dest, dest, Operand(2));
   }
   __ sub(count, count, Operand(1));
-  __ cmpi(count, Operand(0));
+  __ cmpi(count, Operand::Zero());
   __ bgt(&loop);
 }
 
@@ -6340,7 +6340,7 @@ void StringCompareStub::GenerateFlatAsciiStringEquals(MacroAssembler* masm,
   Label compare_chars;
   __ bind(&check_zero_length);
   STATIC_ASSERT(kSmiTag == 0);
-  __ cmpi(length, Operand(0));
+  __ cmpi(length, Operand::Zero());
   __ bne(&compare_chars);
   __ li(r3, Operand(Smi::FromInt(EQUAL)));
   __ Ret();
@@ -6375,7 +6375,7 @@ void StringCompareStub::GenerateCompareFlatAsciiStrings(MacroAssembler* masm,
   __ bind(&skip);
   Register min_length = scratch1;
   STATIC_ASSERT(kSmiTag == 0);
-  __ cmpi(min_length, Operand(0));
+  __ cmpi(min_length, Operand::Zero());
   __ beq(&compare_lengths);
 
   // Compare loop.
@@ -6388,7 +6388,7 @@ void StringCompareStub::GenerateCompareFlatAsciiStrings(MacroAssembler* masm,
   ASSERT(Smi::FromInt(EQUAL) == static_cast<Smi*>(0));
   // Use length_delta as result if it's zero.
   __ mr(r3, length_delta);
-  __ cmpi(r3, Operand(0));
+  __ cmpi(r3, Operand::Zero());
   __ bind(&result_not_equal);
   // Conditionally update the result based either on length_delta or
   // the last comparion performed in the loop above.
@@ -6431,7 +6431,7 @@ void StringCompareStub::GenerateAsciiCharsCompareLoop(
   __ cmp(scratch1, r0);
   __ bne(chars_not_equal);
   __ addi(index, index, Operand(1));
-  __ cmpi(index, Operand(0));
+  __ cmpi(index, Operand::Zero());
   __ bne(&loop);
 }
 
@@ -7280,7 +7280,7 @@ void StringDictionaryLookupStub::GenerateNegativeLookup(MacroAssembler* masm,
   __ mov(r4, Operand(Handle<String>(name)));
   StringDictionaryLookupStub stub(NEGATIVE_LOOKUP);
   __ CallStub(&stub);
-  __ cmpi(r3, Operand(0));
+  __ cmpi(r3, Operand::Zero());
 
   __ MultiPop(spill_mask);  // MultiPop does not touch condition flags
   __ mtlr(r0);
@@ -7364,7 +7364,7 @@ void StringDictionaryLookupStub::GeneratePositiveLookup(MacroAssembler* masm,
   }
   StringDictionaryLookupStub stub(POSITIVE_LOOKUP);
   __ CallStub(&stub);
-  __ cmpi(r3, Operand(0));
+  __ cmpi(r3, Operand::Zero());
   __ mr(scratch2, r5);
   __ MultiPop(spill_mask);
   __ mtlr(r0);
@@ -7705,7 +7705,7 @@ void RecordWriteStub::CheckNeedsToInformIncrementalMarker(
   __ stw(regs_.scratch1(),
          MemOperand(regs_.scratch0(),
                     MemoryChunk::kWriteBarrierCounterOffset));
-  __ cmpi(regs_.scratch1(), Operand(0));  // PPC, we could do better here
+  __ cmpi(regs_.scratch1(), Operand::Zero());  // PPC, we could do better here
   __ blt(&need_incremental);
 
   // Let's look at the color of the object:  If it is not black we don't have

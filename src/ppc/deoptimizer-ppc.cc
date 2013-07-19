@@ -1001,7 +1001,7 @@ void Deoptimizer::EntryGenerator::Generate() {
   // address for lazy deoptimization) and compute the fp-to-sp delta in
   // register r7.
   if (type() == EAGER) {
-    __ li(r6, Operand(0));
+    __ li(r6, Operand::Zero());
     // Correct one word for bailout id.
     __ addi(r7, sp, Operand(kSavedRegistersAreaSize + (1 * kPointerSize)));
   } else if (type() == OSR) {
@@ -1107,7 +1107,7 @@ void Deoptimizer::EntryGenerator::Generate() {
   __ add(r9, r5, r6);
   __ lwz(r10, MemOperand(r9, FrameDescription::frame_content_offset()));
   __ push(r10);
-  __ cmpi(r6, Operand(0));
+  __ cmpi(r6, Operand::Zero());
   __ bne(&inner_push_loop);  // test for gt?
 
   __ addi(r3, r3, Operand(kPointerSize));

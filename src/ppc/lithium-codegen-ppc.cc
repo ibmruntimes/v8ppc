@@ -143,7 +143,7 @@ bool LCodeGen::GeneratePrologue() {
   // function calls.
   if (!info_->is_classic_mode() || info_->is_native()) {
     Label ok;
-    __ cmpi(r8, Operand(0));
+    __ cmpi(r8, Operand::Zero());
     __ beq(&ok);
     int receiver_offset = scope()->num_parameters() * kPointerSize;
     __ LoadRoot(r5, Heap::kUndefinedValueRootIndex);
@@ -406,11 +406,11 @@ Operand LCodeGen::ToOperand(LOperand* op) {
     return Operand(ToRegister(op));
   } else if (op->IsDoubleRegister()) {
     Abort("ToOperand IsDoubleRegister unimplemented");
-    return Operand(0);
+    return Operand::Zero();
   }
   // Stack slots not implemented, use ToMemOperand instead.
   UNREACHABLE();
-  return Operand(0);
+  return Operand::Zero();
 }
 
 
@@ -932,7 +932,7 @@ void LCodeGen::DoModI(LModI* instr) {
     if (divisor < 0) divisor = -divisor;
 
     Label positive_dividend;
-    __ cmpi(dividend, Operand(0));
+    __ cmpi(dividend, Operand::Zero());
     __ bge(&positive_dividend);
     __ neg(result, dividend);
     __ mov(scratch, Operand(divisor - 1));
@@ -952,7 +952,7 @@ void LCodeGen::DoModI(LModI* instr) {
 
     // Check for x % 0.
     if (instr->hydrogen()->CheckFlag(HValue::kCanBeDivByZero)) {
-        __ cmpi(divisor, Operand(0));
+        __ cmpi(divisor, Operand::Zero());
         DeoptimizeIf(eq, instr->environment());
     }
 
@@ -960,7 +960,7 @@ void LCodeGen::DoModI(LModI* instr) {
     __ sub(result, dividend, scratch, LeaveOE, SetRC);
 
     if (instr->hydrogen()->CheckFlag(HValue::kBailoutOnMinusZero)) {
-      __ cmpi(dividend, Operand(0));
+      __ cmpi(dividend, Operand::Zero());
       __ bge(&done);
       DeoptimizeIf(eq, instr->environment(), cr0);
     }
@@ -998,7 +998,7 @@ void LCodeGen::EmitSignedIntegerDivisionByConstant(
         DeoptimizeIf(vs, environment, cr0);
       }
       // Compute the remainder.
-      __ li(remainder, Operand(0));
+      __ li(remainder, Operand::Zero());
       return;
 
     default:
@@ -1091,16 +1091,16 @@ void LCodeGen::DoDivI(LDivI* instr) {
 
   // Check for x / 0.
   if (instr->hydrogen()->CheckFlag(HValue::kCanBeDivByZero)) {
-    __ cmpi(right, Operand(0));
+    __ cmpi(right, Operand::Zero());
     DeoptimizeIf(eq, instr->environment());
   }
 
   // Check for (0 / -x) that will produce negative zero.
   if (instr->hydrogen()->CheckFlag(HValue::kBailoutOnMinusZero)) {
     Label left_not_zero;
-    __ cmpi(left, Operand(0));
+    __ cmpi(left, Operand::Zero());
     __ bne(&left_not_zero);
-    __ cmpi(right, Operand(0));
+    __ cmpi(right, Operand::Zero());
     DeoptimizeIf(lt, instr->environment());
     __ bind(&left_not_zero);
   }
@@ -1183,7 +1183,7 @@ void LCodeGen::DoMathFloorOfDiv(LMathFloorOfDiv* instr) {
   ASSERT(instr->right()->IsConstantOperand());
   int32_t divisor = ToInteger32(LConstantOperand::cast(instr->right()));
   if (divisor < 0) {
-    __ cmpi(left, Operand(0));
+    __ cmpi(left, Operand::Zero());
     DeoptimizeIf(eq, instr->environment());
   }
   EmitSignedIntegerDivisionByConstant(result,
@@ -1193,7 +1193,7 @@ void LCodeGen::DoMathFloorOfDiv(LMathFloorOfDiv* instr) {
                                       scratch,
                                       instr->environment());
   // We operated a truncating division. Correct the result if necessary.
-  __ cmpi(remainder, Operand(0));
+  __ cmpi(remainder, Operand::Zero());
   __ teq(remainder, Operand(divisor), ne);
   __ sub(result, result, Operand(1), LeaveCC, mi);
 }
@@ -1249,7 +1249,7 @@ void LCodeGen::DoMulI(LMulI* instr) {
     if (bailout_on_minus_zero && (constant < 0)) {
       // The case of a null constant will be handled separately.
       // If constant is negative and left is null, the result should be -0.
-      __ cmpi(left, Operand(0));
+      __ cmpi(left, Operand::Zero());
       DeoptimizeIf(eq, instr->environment());
     }
 
@@ -1261,10 +1261,10 @@ void LCodeGen::DoMulI(LMulI* instr) {
         if (bailout_on_minus_zero) {
           // If left is strictly negative and the constant is null, the
           // result is -0. Deoptimize if required, otherwise return 0.
-          __ cmpi(left, Operand(0));
+          __ cmpi(left, Operand::Zero());
           DeoptimizeIf(lt, instr->environment());
         }
-        __ li(result, Operand(0));
+        __ li(result, Operand::Zero());
         break;
       case 1:
         __ Move(result, left);
@@ -1322,9 +1322,9 @@ void LCodeGen::DoMulI(LMulI* instr) {
     if (bailout_on_minus_zero) {
       // Bail out if the result is supposed to be negative zero.
       Label done;
-      __ cmpi(result, Operand(0));
+      __ cmpi(result, Operand::Zero());
       __ bne(&done);
-      __ cmpi(ToRegister(instr->temp()), Operand(0));
+      __ cmpi(ToRegister(instr->temp()), Operand::Zero());
       DeoptimizeIf(lt, instr->environment());
       __ bind(&done);
     }
@@ -1766,7 +1766,7 @@ void LCodeGen::DoBranch(LBranch* instr) {
   Representation r = instr->hydrogen()->value()->representation();
   if (r.IsInteger32()) {
     Register reg = ToRegister(instr->value());
-    __ cmpi(reg, Operand(0));
+    __ cmpi(reg, Operand::Zero());
     EmitBranch(true_block, false_block, ne);
   } else if (r.IsDouble()) {
 #ifdef PENGUIN_CLEANUP
@@ -1789,7 +1789,7 @@ void LCodeGen::DoBranch(LBranch* instr) {
       __ CompareRoot(reg, Heap::kTrueValueRootIndex);
       EmitBranch(true_block, false_block, eq);
     } else if (type.IsSmi()) {
-      __ cmpi(reg, Operand(0));
+      __ cmpi(reg, Operand::Zero());
       EmitBranch(true_block, false_block, ne);
     } else {
       Label* true_label = chunk_->GetAssemblyLabel(true_block);
@@ -1819,7 +1819,7 @@ void LCodeGen::DoBranch(LBranch* instr) {
 
       if (expected.Contains(ToBooleanStub::SMI)) {
         // Smis: 0 -> false, all other -> true.
-        __ cmpi(reg, Operand(0));
+        __ cmpi(reg, Operand::Zero());
         __ beq(false_label);
         __ JumpIfSmi(reg, true_label);
       } else if (expected.NeedsMap()) {
@@ -1852,7 +1852,7 @@ void LCodeGen::DoBranch(LBranch* instr) {
         __ CompareInstanceType(map, ip, FIRST_NONSTRING_TYPE);
         __ bge(&not_string);
         __ lwz(ip, FieldMemOperand(reg, String::kLengthOffset));
-        __ cmpi(ip, Operand(0));
+        __ cmpi(ip, Operand::Zero());
         __ bne(true_label);
         __ b(false_label);
         __ bind(&not_string);
@@ -2145,7 +2145,7 @@ void LCodeGen::DoStringCompareAndBranch(LStringCompareAndBranch* instr) {
 
   Handle<Code> ic = CompareIC::GetUninitialized(op);
   CallCode(ic, RelocInfo::CODE_TARGET, instr);
-  __ cmpi(r3, Operand(0));  // This instruction also signals no smi code inlined
+  __ cmpi(r3, Operand::Zero());  // This instruction also signals no smi code inlined
 
   Condition condition = ComputeCompareCondition(op);
 
@@ -2320,7 +2320,7 @@ void LCodeGen::DoInstanceOf(LInstanceOf* instr) {
   InstanceofStub stub(InstanceofStub::kArgsInRegisters);
   CallCode(stub.GetCode(), RelocInfo::CODE_TARGET, instr);
 
-  __ cmpi(r3, Operand(0));
+  __ cmpi(r3, Operand::Zero());
   __ mov(r3, Operand(factory()->false_value()), LeaveCC, ne);
   __ mov(r3, Operand(factory()->true_value()), LeaveCC, eq);
 }
@@ -2456,7 +2456,7 @@ void LCodeGen::DoCmpT(LCmpT* instr) {
 
   Handle<Code> ic = CompareIC::GetUninitialized(op);
   CallCode(ic, RelocInfo::CODE_TARGET, instr);
-  __ cmpi(r3, Operand(0));  // This instruction also signals no smi code inlined
+  __ cmpi(r3, Operand::Zero());  // This instruction also signals no smi code inlined
 
   Condition condition = ComputeCompareCondition(op);
   Label true_value, done;
@@ -3163,7 +3163,7 @@ void LCodeGen::DoApplyArguments(LApplyArguments* instr) {
   // stack.
   Label invoke, loop;
   // length is a small non-negative integer, due to the test above.
-  __ cmpi(length, Operand(0));
+  __ cmpi(length, Operand::Zero());
   __ beq(&invoke);
   __ mtctr(length);
   __ bind(&loop);
@@ -3371,7 +3371,7 @@ void LCodeGen::EmitIntegerMathAbs(LUnaryMathOperation* instr) {
   Register input = ToRegister(instr->value());
   Register result = ToRegister(instr->result());
   Label done;
-  __ cmpi(input, Operand(0));
+  __ cmpi(input, Operand::Zero());
   __ Move(result, input);
   __ bge(&done);
   __ neg(result, result, SetRC);
@@ -3438,7 +3438,7 @@ void LCodeGen::DoMathFloor(LUnaryMathOperation* instr) {
   if (instr->hydrogen()->CheckFlag(HValue::kBailoutOnMinusZero)) {
     // Test for -0.
     Label done;
-    __ cmpi(result, Operand(0));
+    __ cmpi(result, Operand::Zero());
     __ bne(&done);
     __ vmov(scratch1, input.high());
     __ TestBit(scratch1, 0, r0);  // test sign bit
@@ -3465,7 +3465,7 @@ void LCodeGen::DoMathRound(LUnaryMathOperation* instr) {
 
   // If the number is in ]-0.5, +0.5[, the result is +/- 0.
   __ cmpi(scratch, Operand(HeapNumber::kExponentBias - 2));
-  __ mov(result, Operand(0), LeaveCC, le);
+  __ mov(result, Operand::Zero(), LeaveCC, le);
   if (instr->hydrogen()->CheckFlag(HValue::kBailoutOnMinusZero)) {
     __ ble(&check_sign_on_zero);
   } else {
@@ -3491,7 +3491,7 @@ void LCodeGen::DoMathRound(LUnaryMathOperation* instr) {
   if (instr->hydrogen()->CheckFlag(HValue::kBailoutOnMinusZero)) {
     DeoptimizeIf(lt, instr->environment(), cr0);
   } else {
-    __ mov(result, Operand(0), LeaveCC, mi);
+    __ mov(result, Operand::Zero(), LeaveCC, mi);
     __ b(lt, &done);
   }
 
@@ -3505,7 +3505,7 @@ void LCodeGen::DoMathRound(LUnaryMathOperation* instr) {
 
   if (instr->hydrogen()->CheckFlag(HValue::kBailoutOnMinusZero)) {
     // Test for -0.
-    __ cmpi(result, Operand(0));
+    __ cmpi(result, Operand::Zero());
     __ bne(&done);
     __ bind(&check_sign_on_zero);
     __ vmov(scratch, input.high());
@@ -3619,7 +3619,7 @@ void LCodeGen::DoRandom(LRandom* instr) {
 
   // Load state[0].
   __ lwz(r4, FieldMemOperand(r5, ByteArray::kHeaderSize));
-  __ cmpi(r4, Operand(0));
+  __ cmpi(r4, Operand::Zero());
   __ beq(deferred->entry());
   // Load state[1].
   __ lwz(r3, FieldMemOperand(r5, ByteArray::kHeaderSize + kSeedSize));
@@ -3656,7 +3656,7 @@ void LCodeGen::DoRandom(LRandom* instr) {
   // Move 0x41300000xxxxxxxx (x = random bits) to VFP.
   __ vmov(d7, r3, r4);
   // Move 0x4130000000000000 to VFP.
-  __ li(r3, Operand(0));
+  __ li(r3, Operand::Zero());
   __ vmov(d8, r3, r4);
   // Subtract and store the result in the heap number.
   __ vsub(d7, d7, d8);
@@ -4225,7 +4225,7 @@ void LCodeGen::DoDeferredStringCharCodeAt(LStringCharCodeAt* instr) {
   // TODO(3095996): Get rid of this. For now, we need to make the
   // result register contain a valid pointer because it is already
   // contained in the register pointer map.
-  __ li(result, Operand(0));
+  __ li(result, Operand::Zero());
 
   PushSafepointRegistersScope scope(this, Safepoint::kWithRegisters);
   __ push(string);
@@ -4288,7 +4288,7 @@ void LCodeGen::DoDeferredStringCharFromCode(LStringCharFromCode* instr) {
   // TODO(3095996): Get rid of this. For now, we need to make the
   // result register contain a valid pointer because it is already
   // contained in the register pointer map.
-  __ li(result, Operand(0));
+  __ li(result, Operand::Zero());
 
   PushSafepointRegistersScope scope(this, Safepoint::kWithRegisters);
   __ SmiTag(char_code);
@@ -4426,7 +4426,7 @@ void LCodeGen::DoDeferredNumberTagI(LInstruction* instr,
   // TODO(3095996): Put a valid pointer value in the stack slot where the result
   // register is stored, as this register is in the pointer map, but contains an
   // integer value.
-  __ li(ip, Operand(0));
+  __ li(ip, Operand::Zero());
   __ StoreToSafepointRegisterSlot(ip, dst);
   CallRuntimeFromDeferred(Runtime::kAllocateHeapNumber, 0, instr);
   __ Move(dst, r3);
@@ -4479,7 +4479,7 @@ void LCodeGen::DoDeferredNumberTagD(LNumberTagD* instr) {
   // result register contain a valid pointer because it is already
   // contained in the register pointer map.
   Register reg = ToRegister(instr->result());
-  __ li(reg, Operand(0));
+  __ li(reg, Operand::Zero());
 
   PushSafepointRegistersScope scope(this, Safepoint::kWithRegisters);
   CallRuntimeFromDeferred(Runtime::kAllocateHeapNumber, 0, instr);
@@ -4555,7 +4555,7 @@ void LCodeGen::EmitNumberUntagD(Register input_reg,
 #endif
     __ addi(sp, sp, Operand(8));
 
-    __ cmpi(ip, Operand(0));
+    __ cmpi(ip, Operand::Zero());
     __ bne(&done);
     __ Cmpi(scratch, Operand(HeapNumber::kSignMask), r0);
     DeoptimizeIf(eq, env);
@@ -4603,7 +4603,7 @@ void LCodeGen::DoDeferredTaggedToI(LTaggedToI* instr) {
     __ LoadRoot(ip, Heap::kUndefinedValueRootIndex);
     __ cmp(input_reg, ip);
     DeoptimizeIf(ne, instr->environment());
-    __ li(input_reg, Operand(0));
+    __ li(input_reg, Operand::Zero());
     __ b(&done);
 
     __ bind(&heap_number);
@@ -4635,7 +4635,7 @@ void LCodeGen::DoDeferredTaggedToI(LTaggedToI* instr) {
     __ vmov(input_reg, single_scratch);
 
     if (instr->hydrogen()->CheckFlag(HValue::kBailoutOnMinusZero)) {
-      __ cmpi(input_reg, Operand(0));
+      __ cmpi(input_reg, Operand::Zero());
       __ bne(&done);
       __ vmov(scratch1, double_scratch.high());
       __ TestBit(scratch1, 0, r0);  // test sign bit
@@ -4863,7 +4863,7 @@ void LCodeGen::DoClampTToUint8(LClampTToUint8* instr) {
   // conversions.
   __ Cmpi(input_reg, Operand(factory()->undefined_value()), r0);
   DeoptimizeIf(ne, instr->environment());
-  __ li(result_reg, Operand(0));
+  __ li(result_reg, Operand::Zero());
   __ b(&done);
 
   // Heap number
@@ -4983,7 +4983,7 @@ void LCodeGen::DoDeferredAllocateObject(LAllocateObject* instr) {
   // TODO(3095996): Get rid of this. For now, we need to make the
   // result register contain a valid pointer because it is already
   // contained in the register pointer map.
-  __ li(result, Operand(0));
+  __ li(result, Operand::Zero());
 
   PushSafepointRegistersScope scope(this, Safepoint::kWithRegisters);
   __ mov(r3, Operand(Smi::FromInt(instance_size)));
@@ -5348,7 +5348,7 @@ Condition LCodeGen::EmitTypeofIs(Label* true_label,
     __ bge(false_label);
     __ lbz(ip, FieldMemOperand(input, Map::kBitFieldOffset));
     __ ExtractBit(r0, ip, 31 - Map::kIsUndetectable);
-    __ cmpi(r0, Operand(0));
+    __ cmpi(r0, Operand::Zero());
     final_branch_condition = eq;
 
   } else if (type_name->Equals(heap()->boolean_symbol())) {
@@ -5369,7 +5369,7 @@ Condition LCodeGen::EmitTypeofIs(Label* true_label,
     __ lwz(input, FieldMemOperand(input, HeapObject::kMapOffset));
     __ lbz(ip, FieldMemOperand(input, Map::kBitFieldOffset));
     __ ExtractBit(r0, ip, 31 - Map::kIsUndetectable);
-    __ cmpi(r0, Operand(0));
+    __ cmpi(r0, Operand::Zero());
     final_branch_condition = ne;
 
   } else if (type_name->Equals(heap()->function_symbol())) {
@@ -5394,7 +5394,7 @@ Condition LCodeGen::EmitTypeofIs(Label* true_label,
     // Check for undetectable objects => false.
     __ lbz(ip, FieldMemOperand(input, Map::kBitFieldOffset));
     __ ExtractBit(r0, ip, 31 - Map::kIsUndetectable);
-    __ cmpi(r0, Operand(0));
+    __ cmpi(r0, Operand::Zero());
     final_branch_condition = eq;
 
   } else {
@@ -5619,7 +5619,7 @@ void LCodeGen::DoForInCacheArray(LForInCacheArray* instr) {
          FieldMemOperand(result, DescriptorArray::kEnumCacheOffset));
   __ lwz(result,
          FieldMemOperand(result, FixedArray::SizeFor(instr->idx())));
-  __ cmpi(result, Operand(0));
+  __ cmpi(result, Operand::Zero());
   DeoptimizeIf(eq, instr->environment());
 
   __ bind(&done);
@@ -5642,7 +5642,7 @@ void LCodeGen::DoLoadFieldByIndex(LLoadFieldByIndex* instr) {
   Register scratch = scratch0();
 
   Label out_of_object, done;
-  __ cmpi(index, Operand(0));
+  __ cmpi(index, Operand::Zero());
   __ blt(&out_of_object);
 
   STATIC_ASSERT(kPointerSizeLog2 > kSmiTagSize);

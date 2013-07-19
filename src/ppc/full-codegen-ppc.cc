@@ -154,7 +154,7 @@ void FullCodeGenerator::Generate() {
   // function calls.
   if (!info->is_classic_mode() || info->is_native()) {
     Label ok;
-    __ cmpi(r8, Operand(0));
+    __ cmpi(r8, Operand::Zero());
     __ beq(&ok);
     int receiver_offset = info->scope()->num_parameters() * kPointerSize;
     __ LoadRoot(r5, Heap::kUndefinedValueRootIndex);
@@ -326,7 +326,7 @@ void FullCodeGenerator::EmitProfilingCounterDecrement(int delta) {
   __ lwz(r6, FieldMemOperand(r5, JSGlobalPropertyCell::kValueOffset));
   __ sub(r6, r6, Operand(Smi::FromInt(delta)));
   __ stw(r6, FieldMemOperand(r5, JSGlobalPropertyCell::kValueOffset));
-  __ cmpi(r6, Operand(0));
+  __ cmpi(r6, Operand::Zero());
 }
 
 
@@ -689,7 +689,7 @@ void FullCodeGenerator::DoTest(Expression* condition,
   EMIT_STUB_MARKER(209);
   ToBooleanStub stub(result_register());
   __ CallStub(&stub);
-  __ cmpi(result_register(), Operand(0));
+  __ cmpi(result_register(), Operand::Zero());
   Split(ne, if_true, if_false, fall_through);
 }
 
@@ -1055,7 +1055,7 @@ void FullCodeGenerator::VisitSwitchStatement(SwitchStatement* stmt) {
     CallIC(ic, RelocInfo::CODE_TARGET, clause->CompareId());
     patch_site.EmitPatchInfo();
 
-    __ cmpi(r3, Operand(0));
+    __ cmpi(r3, Operand::Zero());
     __ bne(&next_test);
     __ Drop(1);  // Switch value is no longer needed.
     __ b(clause->body_target());
@@ -1238,7 +1238,7 @@ void FullCodeGenerator::VisitForInStatement(ForInStatement* stmt) {
   __ push(r6);  // Current entry.
   __ InvokeBuiltin(Builtins::FILTER_KEY, CALL_FUNCTION);
   __ mr(r6, r3);
-  __ cmpi(r6, Operand(0));
+  __ cmpi(r6, Operand::Zero());
   __ beq(loop_statement.continue_label());
 
   // Update the 'each' property or variable from the possibly filtered
@@ -1323,7 +1323,7 @@ void FullCodeGenerator::EmitLoadGlobalCheckExtensions(Variable* var,
       if (s->calls_non_strict_eval()) {
         // Check that extension is NULL.
         __ lwz(temp, ContextOperand(current, Context::EXTENSION_INDEX));
-        __ cmpi(temp, Operand(0));
+        __ cmpi(temp, Operand::Zero());
         __ bne(slow);
       }
       // Load next context in chain.
@@ -1350,7 +1350,7 @@ void FullCodeGenerator::EmitLoadGlobalCheckExtensions(Variable* var,
     __ beq(&fast);
     // Check that extension is NULL.
     __ lwz(temp, ContextOperand(next, Context::EXTENSION_INDEX));
-    __ cmpi(temp, Operand(0));
+    __ cmpi(temp, Operand::Zero());
     __ bne(slow);
     // Load next context in chain.
     __ lwz(next, ContextOperand(next, Context::PREVIOUS_INDEX));
@@ -1382,7 +1382,7 @@ MemOperand FullCodeGenerator::ContextSlotOperandCheckExtensions(Variable* var,
       if (s->calls_non_strict_eval()) {
         // Check that extension is NULL.
         __ lwz(temp, ContextOperand(context, Context::EXTENSION_INDEX));
-        __ cmpi(temp, Operand(0));
+        __ cmpi(temp, Operand::Zero());
         __ bne(slow);
       }
       __ lwz(next, ContextOperand(context, Context::PREVIOUS_INDEX));
@@ -1392,7 +1392,7 @@ MemOperand FullCodeGenerator::ContextSlotOperandCheckExtensions(Variable* var,
   }
   // Check that last extension is NULL.
   __ lwz(temp, ContextOperand(context, Context::EXTENSION_INDEX));
-  __ cmpi(temp, Operand(0));
+  __ cmpi(temp, Operand::Zero());
   __ bne(slow);
 
   // This function is used only for loads, not stores, so it's safe to
@@ -1994,7 +1994,7 @@ void FullCodeGenerator::EmitInlineSmiBinaryOp(BinaryOperation* expr,
       __ slw(scratch1, scratch1, scratch2);
       // Check that the *signed* result fits in a smi
       __ addis(scratch2, scratch1, Operand(0x4000));
-      __ cmpi(scratch2, Operand(0));
+      __ cmpi(scratch2, Operand::Zero());
       __ blt(&stub_call);
       __ SmiTag(right, scratch1);
       break;
@@ -2048,12 +2048,12 @@ void FullCodeGenerator::EmitInlineSmiBinaryOp(BinaryOperation* expr,
       __ bne(&stub_call);
       // Go slow on zero result to handle -0.
       __ mr(right, scratch1);
-      __ cmpi(scratch1, Operand(0));
+      __ cmpi(scratch1, Operand::Zero());
       __ bne(&done);
       // We need -0 if we were multiplying a negative number with 0 to get 0.
       // We know one of them was zero.
       __ add(scratch2, right, left);
-      __ cmpi(scratch2, Operand(0));
+      __ cmpi(scratch2, Operand::Zero());
       __ blt(&stub_call);
       __ li(right, Operand(Smi::FromInt(0)));
       break;
@@ -2616,7 +2616,7 @@ void FullCodeGenerator::EmitIsSmi(CallRuntime* expr) {
 
   PrepareForBailoutBeforeSplit(expr, true, if_true, if_false);
   __ andi(r0, r3, Operand(kSmiTagMask));
-  __ cmpi(r0, Operand(0));
+  __ cmpi(r0, Operand::Zero());
   Split(eq, if_true, if_false, fall_through);
 
   context()->Plug(if_true, if_false);
@@ -2640,7 +2640,7 @@ void FullCodeGenerator::EmitIsNonNegativeSmi(CallRuntime* expr) {
   PrepareForBailoutBeforeSplit(expr, true, if_true, if_false);
   ASSERT((kSmiTagMask | 0x80000000) == 0x80000001);
   __ rlwinm(r0, r3, 1, 30, 31);
-  __ cmpi(r0, Operand(0));
+  __ cmpi(r0, Operand::Zero());
   // was .. __ tst(r3, Operand(kSmiTagMask | 0x80000000));
   Split(eq, if_true, if_false, fall_through);
 
@@ -2723,7 +2723,7 @@ void FullCodeGenerator::EmitIsUndetectableObject(CallRuntime* expr) {
   __ lwz(r4, FieldMemOperand(r3, HeapObject::kMapOffset));
   __ lbz(r4, FieldMemOperand(r4, Map::kBitFieldOffset));
   __ andi(r0, r4, Operand(1 << Map::kIsUndetectable));
-  __ cmpi(r0, Operand(0));
+  __ cmpi(r0, Operand::Zero());
   PrepareForBailoutBeforeSplit(expr, true, if_true, if_false);
   Split(ne, if_true, if_false, fall_through);
 
@@ -2767,7 +2767,7 @@ void FullCodeGenerator::EmitIsStringWrapperSafeForDefaultValueOf(
 
   // Skip loop if no descriptors are valid.
   __ NumberOfOwnDescriptors(r6, r4);
-  __ cmpi(r6, Operand(0));
+  __ cmpi(r6, Operand::Zero());
   __ beq(&done);
 
   __ LoadInstanceDescriptors(r4, r7, r5);
@@ -3649,7 +3649,7 @@ void FullCodeGenerator::EmitHasCachedArrayIndex(CallRuntime* expr) {
   // PPC - assume ip is free
   __ mov(ip, Operand(String::kContainsCachedArrayIndexMask));
   __ and_(r0, r3, ip);
-  __ cmpi(r0, Operand(0));
+  __ cmpi(r0, Operand::Zero());
   PrepareForBailoutBeforeSplit(expr, true, if_true, if_false);
   Split(eq, if_true, if_false, fall_through);
 
@@ -3712,7 +3712,7 @@ void FullCodeGenerator::EmitFastAsciiArrayJoin(CallRuntime* expr) {
   // If the array has length zero, return the empty string.
   __ lwz(array_length, FieldMemOperand(array, JSArray::kLengthOffset));
   __ SmiUntag(array_length);
-  __ cmpi(array_length, Operand(0));
+  __ cmpi(array_length, Operand::Zero());
   __ bne(&non_trivial_array);
   __ LoadRoot(r3, Heap::kEmptyStringRootIndex);
   __ b(&done);
@@ -3726,7 +3726,7 @@ void FullCodeGenerator::EmitFastAsciiArrayJoin(CallRuntime* expr) {
 
   // Check that all array elements are sequential ASCII strings, and
   // accumulate the sum of their lengths, as a smi-encoded value.
-  __ li(string_length, Operand(0));
+  __ li(string_length, Operand::Zero());
   __ addi(element,
           elements, Operand(FixedArray::kHeaderSize - kHeapObjectTag));
   __ slwi(elements_end, array_length, Operand(kPointerSizeLog2));
@@ -3740,7 +3740,7 @@ void FullCodeGenerator::EmitFastAsciiArrayJoin(CallRuntime* expr) {
   //   element: Current array element.
   //   elements_end: Array end.
   if (generate_debug_code_) {
-    __ cmpi(array_length, Operand(0));
+    __ cmpi(array_length, Operand::Zero());
     __ Assert(gt, "No empty arrays here in EmitFastAsciiArrayJoin");
   }
   __ bind(&loop);
@@ -3788,7 +3788,7 @@ void FullCodeGenerator::EmitFastAsciiArrayJoin(CallRuntime* expr) {
   __ mulhw(ip, array_length, scratch1);
   // Check for smi overflow. No overflow if higher 33 bits of 64-bit result are
   // zero.
-  __ cmpi(ip, Operand(0));
+  __ cmpi(ip, Operand::Zero());
   __ bne(&bailout);
   __ TestBit(scratch2, 0, r0);  // test sign bit
   __ bne(&bailout, cr0);
@@ -4355,7 +4355,7 @@ void FullCodeGenerator::EmitLiteralCompareTypeof(Expression* expr,
     __ lbz(r4, FieldMemOperand(r3, Map::kBitFieldOffset));
     STATIC_ASSERT((1 << Map::kIsUndetectable) < 0x8000);
     __ andi(r0, r4, Operand(1 << Map::kIsUndetectable));
-    __ cmpi(r0, Operand(0));
+    __ cmpi(r0, Operand::Zero());
     Split(eq, if_true, if_false, fall_through);
   } else if (check->Equals(isolate()->heap()->boolean_symbol())) {
     __ CompareRoot(r3, Heap::kTrueValueRootIndex);
@@ -4374,7 +4374,7 @@ void FullCodeGenerator::EmitLiteralCompareTypeof(Expression* expr,
     __ lwz(r3, FieldMemOperand(r3, HeapObject::kMapOffset));
     __ lbz(r4, FieldMemOperand(r3, Map::kBitFieldOffset));
     __ andi(r0, r4, Operand(1 << Map::kIsUndetectable));
-    __ cmpi(r0, Operand(0));
+    __ cmpi(r0, Operand::Zero());
     Split(ne, if_true, if_false, fall_through);
 
   } else if (check->Equals(isolate()->heap()->function_symbol())) {
@@ -4398,7 +4398,7 @@ void FullCodeGenerator::EmitLiteralCompareTypeof(Expression* expr,
     // Check for undetectable objects => false.
     __ lbz(r4, FieldMemOperand(r3, Map::kBitFieldOffset));
     __ andi(r0, r4, Operand(1 << Map::kIsUndetectable));
-    __ cmpi(r0, Operand(0));
+    __ cmpi(r0, Operand::Zero());
     Split(eq, if_true, if_false, fall_through);
   } else {
     if (if_false != fall_through) __ jmp(if_false);
@@ -4443,7 +4443,7 @@ void FullCodeGenerator::VisitCompareOperation(CompareOperation* expr) {
       __ CallStub(&stub);
       PrepareForBailoutBeforeSplit(expr, true, if_true, if_false);
       // The stub returns 0 for true.
-      __ cmpi(r3, Operand(0));
+      __ cmpi(r3, Operand::Zero());
       Split(eq, if_true, if_false, fall_through);
       break;
     }
@@ -4492,7 +4492,7 @@ void FullCodeGenerator::VisitCompareOperation(CompareOperation* expr) {
       CallIC(ic, RelocInfo::CODE_TARGET, expr->CompareOperationFeedbackId());
       patch_site.EmitPatchInfo();
       PrepareForBailoutBeforeSplit(expr, true, if_true, if_false);
-      __ cmpi(r3, Operand(0));
+      __ cmpi(r3, Operand::Zero());
       Split(cond, if_true, if_false, fall_through);
     }
   }

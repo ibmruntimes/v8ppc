@@ -1135,7 +1135,7 @@ void KeyedLoadIC::GenerateGeneric(MacroAssembler* masm) {
     __ lwzx(r8, MemOperand(r8, r7));
     __ lbz(r9, FieldMemOperand(r5, Map::kInObjectPropertiesOffset));
     __ sub(r8, r8, r9);
-    __ cmpi(r8, Operand(0));
+    __ cmpi(r8, Operand::Zero());
     __ bge(&property_array_property);
     if (i != 0) {
       __ jmp(&load_in_object_property);
@@ -1233,7 +1233,7 @@ void KeyedLoadIC::GenerateIndexedInterceptor(MacroAssembler* masm) {
   // Check that the key is an array index, that is Uint32.
   ASSERT((uint)(kSmiTagMask | kSmiSignMask) == 0x80000001);
   __ rlwinm(r0, r3, 1, 30, 31);
-  __ cmpi(r0, Operand(0));
+  __ cmpi(r0, Operand::Zero());
   __ bne(&slow);
 
   // Get the map of the receiver.

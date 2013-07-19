@@ -1937,10 +1937,10 @@ void Assembler::vsqrt(const DwVfpRegister dst,
 void Assembler::nop(int type) {
   switch (type) {
     case 0:
-      ori(r0, r0, Operand(0));
+      ori(r0, r0, Operand::Zero());
       break;
     case DEBUG_BREAK_NOP:
-      ori(r3, r3, Operand(0));
+      ori(r3, r3, Operand::Zero());
       break;
     default:
       UNIMPLEMENTED();

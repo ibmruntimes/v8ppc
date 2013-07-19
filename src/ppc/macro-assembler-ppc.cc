@@ -848,7 +848,7 @@ void MacroAssembler::EnterExitFrame(bool save_doubles, int stack_space) {
   sub(sp, sp, Operand(2 * kPointerSize));
 
   if (emit_debug_code()) {
-    li(r8, Operand(0));
+    li(r8, Operand::Zero());
     stw(r8, MemOperand(fp, ExitFrameConstants::kSPOffset));
   }
   mov(r8, Operand(CodeObject()));
@@ -1323,7 +1323,7 @@ void MacroAssembler::Throw(Register value) {
   // If the handler is a JS frame, restore the context to the frame.
   // (kind == ENTRY) == (fp == 0) == (cp == 0), so we could test either fp
   // or cp.
-  cmpi(cp, Operand(0));
+  cmpi(cp, Operand::Zero());
   beq(&skip);
   stw(cp, MemOperand(fp, StandardFrameConstants::kContextOffset));
   bind(&skip);
@@ -2032,7 +2032,7 @@ void MacroAssembler::StoreNumberToDoubleElements(Register value_reg,
   // it's an Infinity, and the non-NaN code path applies.
   b(gt, &is_nan);
   lwz(mantissa_reg, FieldMemOperand(value_reg, HeapNumber::kMantissaOffset));
-  cmpi(mantissa_reg, Operand(0));
+  cmpi(mantissa_reg, Operand::Zero());
   beq(&have_double_value);
   bind(&is_nan);
   // Load canonical NaN for storing into the double array.
@@ -2323,7 +2323,7 @@ void MacroAssembler::CallApiFunctionAndReturn(ExternalReference function,
 
   // If result is non-zero, dereference to get the result value
   // otherwise set it to undefined.
-  cmpi(r3, Operand(0));
+  cmpi(r3, Operand::Zero());
   bne(&skip1);
   LoadRoot(r3, Heap::kUndefinedValueRootIndex);
   b(&skip2);
@@ -2527,7 +2527,7 @@ void MacroAssembler::EmitOutOfInt32RangeTruncate(Register result,
                                                  Register scratch) {
   Label done, high_shift_needed, pos_shift, neg_shift, shift_done;
 
-  li(result, Operand(0));
+  li(result, Operand::Zero());
 
   // check for NaN or +/-Infinity
   // by extracting exponent (mask: 0x7ff00000)
@@ -2543,7 +2543,7 @@ void MacroAssembler::EmitOutOfInt32RangeTruncate(Register result,
 
   // If the delta is strictly positive, all bits would be shifted away,
   // which means that we can return 0.
-  cmpi(scratch, Operand(0));
+  cmpi(scratch, Operand::Zero());
   bgt(&done);
 
   const int kShiftBase = HeapNumber::kNonMantissaBitsInTopWord - 1;
@@ -2560,7 +2560,7 @@ void MacroAssembler::EmitOutOfInt32RangeTruncate(Register result,
   // slw extracts only the 6 most significant bits of the shift value.
   cmpi(scratch, Operand(32));
   blt(&high_shift_needed);
-  li(input_high, Operand(0));
+  li(input_high, Operand::Zero());
   subfic(scratch, scratch, Operand(32));
   b(&neg_shift);
 
@@ -2591,7 +2591,7 @@ void MacroAssembler::EmitOutOfInt32RangeTruncate(Register result,
   orx(input_high, input_high, input_low);
 
   // Restore sign if necessary.
-  cmpi(sign, Operand(0));
+  cmpi(sign, Operand::Zero());
   result = sign;
   sign = no_reg;
   mr(result, input_high);
@@ -2995,7 +2995,7 @@ void MacroAssembler::JumpIfNotPowerOfTwoOrZero(
     Register reg,
     Register scratch,
     Label* not_power_of_two_or_zero) {
-  cmpi(reg, Operand(0));
+  cmpi(reg, Operand::Zero());
   blt(not_power_of_two_or_zero);
   sub(scratch, reg, Operand(1));
   and_(r0, scratch, reg, SetRC);
@@ -3009,7 +3009,7 @@ void MacroAssembler::JumpIfNotPowerOfTwoOrZeroAndNeg(
     Label* zero_and_neg,
     Label* not_power_of_two) {
   sub(scratch, reg, Operand(1));
-  cmpi(reg, Operand(0));
+  cmpi(reg, Operand::Zero());
   blt(zero_and_neg);
   and_(r0, scratch, reg, SetRC);
   bne(not_power_of_two, cr0);
@@ -3229,7 +3229,7 @@ void MacroAssembler::CopyBytes(Register src,
 
   // Align src before copying in word size chunks.
   bind(&align_loop);
-  cmpi(length, Operand(0));
+  cmpi(length, Operand::Zero());
   beq(&done);
   bind(&align_loop_1);
   andi(r0, src, Operand(kPointerSize - 1));
@@ -3239,7 +3239,7 @@ void MacroAssembler::CopyBytes(Register src,
   stb(scratch, MemOperand(dst));
   addi(dst, dst, Operand(1));
   sub(length, length, Operand(1));
-  cmpi(r0, Operand(0));
+  cmpi(r0, Operand::Zero());
   bne(&byte_loop_1);
 
   // Copy bytes in word size chunks.
@@ -3281,7 +3281,7 @@ void MacroAssembler::CopyBytes(Register src,
 
   // Copy the last bytes if any left.
   bind(&byte_loop);
-  cmpi(length, Operand(0));
+  cmpi(length, Operand::Zero());
   beq(&done);
   bind(&byte_loop_1);
   lbz(scratch, MemOperand(src));
@@ -3289,7 +3289,7 @@ void MacroAssembler::CopyBytes(Register src,
   stb(scratch, MemOperand(dst));
   addi(dst, dst, Operand(1));
   sub(length, length, Operand(1));
-  cmpi(length, Operand(0));
+  cmpi(length, Operand::Zero());
   bne(&byte_loop_1);
   bind(&done);
 }
@@ -3755,7 +3755,7 @@ void MacroAssembler::ClampUint8(Register output_reg, Register input_reg) {
   Label done, negative_label, overflow_label;
   int satval = (1 << 8) - 1;
 
-  cmpi(input_reg, Operand(0));
+  cmpi(input_reg, Operand::Zero());
   blt(&negative_label);
 
   cmpi(input_reg, Operand(satval));
@@ -3766,7 +3766,7 @@ void MacroAssembler::ClampUint8(Register output_reg, Register input_reg) {
   jmp(&done);
 
   bind(&negative_label);
-  li(output_reg, Operand(0));  // set to 0 if negative
+  li(output_reg, Operand::Zero());  // set to 0 if negative
   jmp(&done);
 
 
@@ -3790,7 +3790,7 @@ void MacroAssembler::ClampDoubleToUint8(Register result_reg,
   b(gt, &above_zero);
 
   // Double value is less than zero, NaN or Inf, return 0.
-  mov(result_reg, Operand(0));
+  mov(result_reg, Operand::Zero());
   b(al, &done);
 
   // Double value is >= 255, return 255.

@@ -227,7 +227,7 @@ static void AllocateJSArray(MacroAssembler* masm,
                          elements_array_storage, fill_with_hole);
 
   if (FLAG_debug_code) {  // Assert that array size is not zero.
-    __ cmpi(array_size, Operand(0));
+    __ cmpi(array_size, Operand::Zero());
     __ Assert(ne, "array size is unexpectedly 0");
   }
 
@@ -360,10 +360,10 @@ static void ArrayNativeCode(MacroAssembler* masm,
   __ bne(&argc_two_or_more);
   STATIC_ASSERT(kSmiTag == 0);
   __ lwz(r5, MemOperand(sp));  // Get the argument from the stack.
-  __ cmpi(r5, Operand(0));
+  __ cmpi(r5, Operand::Zero());
   __ bne(&not_empty_array);
   __ Drop(1);  // Adjust stack.
-  __ li(r3, Operand(0));  // Treat this as a call with argc of zero.
+  __ li(r3, Operand::Zero());  // Treat this as a call with argc of zero.
   __ b(&empty_array);
 
   __ bind(&not_empty_array);
@@ -803,7 +803,7 @@ static void Generate_JSConstructStubHelper(MacroAssembler* masm,
           ExternalReference::debug_step_in_fp_address(isolate);
       __ mov(r5, Operand(debug_step_in_fp));
       __ lwz(r5, MemOperand(r5));
-      __ cmpi(r5, Operand(0));
+      __ cmpi(r5, Operand::Zero());
       __ bne(&rt_call);
 #endif
 
@@ -831,7 +831,7 @@ static void Generate_JSConstructStubHelper(MacroAssembler* masm,
         __ lbz(r7, constructor_count);
         __ addic(r7, r7, Operand(-1));
         __ stb(r7, constructor_count);
-        __ cmpi(r7, Operand(0));
+        __ cmpi(r7, Operand::Zero());
         __ bne(&allocate);
 
         __ push(r4);
@@ -936,7 +936,7 @@ static void Generate_JSConstructStubHelper(MacroAssembler* masm,
       __ ExtractBitRange(r9, r3, byte * kBitsPerByte,
                          ((byte + 1) * kBitsPerByte) - 1);
       __ sub(r6, r6, r9);  // roohack - sub order may be incorrect
-      __ cmpi(r6, Operand(0));
+      __ cmpi(r6, Operand::Zero());
 
       // Done if no extra properties are to be allocated.
       __ beq(&allocated);
@@ -1066,7 +1066,7 @@ static void Generate_JSConstructStubHelper(MacroAssembler* masm,
     __ push(ip);
     __ bind(&entry);
     __ sub(r6, r6, Operand(2));
-    __ cmpi(r6, Operand(0));
+    __ cmpi(r6, Operand::Zero());
     __ bge(&loop);
 
     // Call the function.
@@ -1401,7 +1401,7 @@ void Builtins::Generate_FunctionCall(MacroAssembler* masm) {
   // 1. Make sure we have at least one argument.
   // r3: actual number of arguments
   { Label done;
-    __ cmpi(r3, Operand(0));
+    __ cmpi(r3, Operand::Zero());
     __ bne(&done);
     __ LoadRoot(r5, Heap::kUndefinedValueRootIndex);
     __ push(r5);
@@ -1553,7 +1553,7 @@ void Builtins::Generate_FunctionCall(MacroAssembler* masm) {
   // r4: function
   // r7: call type (0: JS function, 1: function proxy, 2: non-function)
   { Label function, non_proxy;
-    __ cmpi(r7, Operand(0));
+    __ cmpi(r7, Operand::Zero());
     __ beq(&function);
     // Expected number of arguments is 0 for CALL_NON_FUNCTION.
     __ li(r5, Operand(0, RelocInfo::NONE));

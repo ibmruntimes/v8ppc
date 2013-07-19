@@ -520,7 +520,7 @@ void RegExpMacroAssemblerPPC::CheckBitInTable(
            Operand(ByteArray::kHeaderSize - kHeapObjectTag));
   }
   __ ldrb(r0, MemOperand(r0, r1));
-  __ cmp(r0, Operand(0));
+  __ cmp(r0, Operand::Zero());
   BranchOrBacktrack(ne, on_bit_set);
 }
 
@@ -616,7 +616,7 @@ bool RegExpMacroAssemblerPPC::CheckSpecialCharacterClass(uc16 type,
     ExternalReference map = ExternalReference::re_word_character_map();
     __ mov(r0, Operand(map));
     __ ldrb(r0, MemOperand(r0, current_character()));
-    __ cmp(r0, Operand(0));
+    __ cmp(r0, Operand::Zero());
     BranchOrBacktrack(eq, on_no_match);
     return true;
   }
@@ -630,7 +630,7 @@ bool RegExpMacroAssemblerPPC::CheckSpecialCharacterClass(uc16 type,
     ExternalReference map = ExternalReference::re_word_character_map();
     __ mov(r0, Operand(map));
     __ ldrb(r0, MemOperand(r0, current_character()));
-    __ cmp(r0, Operand(0));
+    __ cmp(r0, Operand::Zero());
     BranchOrBacktrack(ne, on_no_match);
     if (mode_ != ASCII) {
       __ bind(&done);
@@ -837,7 +837,7 @@ Handle<HeapObject> RegExpMacroAssemblerPPC::GetCode(Handle<String> source) {
         // Not a zero-length match, restart.
         __ b(ne, &load_char_start_regexp);
         // Offset from the end is zero if we already reached the end.
-        __ cmp(current_input_offset(), Operand(0));
+        __ cmp(current_input_offset(), Operand::Zero());
         __ b(eq, &exit_label_);
         // Advance current position after a zero-length match.
         __ add(current_input_offset(),

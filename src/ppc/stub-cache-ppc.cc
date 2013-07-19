@@ -767,7 +767,7 @@ static void GenerateFastApiDirectCall(MacroAssembler* masm,
   __ li(ip, Operand(argc));
   __ stw(ip, MemOperand(r3, 2 * kPointerSize));
   // v8::Arguments::is_construct_call = 0
-  __ li(ip, Operand(0));
+  __ li(ip, Operand::Zero());
   __ stw(ip, MemOperand(r3, 3 * kPointerSize));
 
   const int kStackUnwindSpace = argc + kFastApiCallArguments + 1;
@@ -1813,7 +1813,7 @@ Handle<Code> CallStubCompiler::CompileArrayPopCall(
   // Get the array's length into r7 and calculate new length.
   __ lwz(r7, FieldMemOperand(receiver, JSArray::kLengthOffset));
   __ sub(r7, r7, Operand(Smi::FromInt(1)));
-  __ cmpi(r7, Operand(0));
+  __ cmpi(r7, Operand::Zero());
   __ blt(&return_undefined);
 
   // Get the last element.
@@ -2180,7 +2180,7 @@ Handle<Code> CallStubCompiler::CompileMathFloorCall(
   __ slwi(r3, r3, Operand(kSmiTagSize));
 
   // Check for -0
-  __ cmpi(r3, Operand(0));
+  __ cmpi(r3, Operand::Zero());
   __ bne(&drop_arg_return);
 
   __ lwz(r4, MemOperand(sp, 0 * kPointerSize));
