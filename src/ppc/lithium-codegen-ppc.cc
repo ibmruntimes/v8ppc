@@ -2145,7 +2145,8 @@ void LCodeGen::DoStringCompareAndBranch(LStringCompareAndBranch* instr) {
 
   Handle<Code> ic = CompareIC::GetUninitialized(op);
   CallCode(ic, RelocInfo::CODE_TARGET, instr);
-  __ cmpi(r3, Operand::Zero());  // This instruction also signals no smi code inlined
+  // This instruction also signals no smi code inlined
+  __ cmpi(r3, Operand::Zero());
 
   Condition condition = ComputeCompareCondition(op);
 
@@ -2456,7 +2457,8 @@ void LCodeGen::DoCmpT(LCmpT* instr) {
 
   Handle<Code> ic = CompareIC::GetUninitialized(op);
   CallCode(ic, RelocInfo::CODE_TARGET, instr);
-  __ cmpi(r3, Operand::Zero());  // This instruction also signals no smi code inlined
+  // This instruction also signals no smi code inlined
+  __ cmpi(r3, Operand::Zero());
 
   Condition condition = ComputeCompareCondition(op);
   Label true_value, done;
