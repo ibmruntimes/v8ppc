@@ -460,11 +460,19 @@ enum Coprocessor {
 class Operand BASE_EMBEDDED {
  public:
   // immediate
+#if V8_TARGET_ARCH_PPC64
+  INLINE(explicit Operand(int64_t immediate,
+         RelocInfo::Mode rmode = RelocInfo::NONE));
+  INLINE(static Operand Zero()) {
+    return Operand(static_cast<int64_t>(0));
+  }
+#else
   INLINE(explicit Operand(int32_t immediate,
          RelocInfo::Mode rmode = RelocInfo::NONE));
   INLINE(static Operand Zero()) {
     return Operand(static_cast<int32_t>(0));
   }
+#endif
   INLINE(explicit Operand(const ExternalReference& f));
   explicit Operand(Handle<Object> handle);
   INLINE(explicit Operand(Smi* value));

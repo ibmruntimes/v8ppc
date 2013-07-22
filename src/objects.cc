@@ -7070,8 +7070,8 @@ static inline bool CompareRawStringContents(Vector<Char> a, Vector<Char> b) {
   // then we have to check that the strings are aligned before
   // comparing them blockwise.
   const int kAlignmentMask = sizeof(uint32_t) - 1;  // NOLINT
-  uint32_t pa_addr = reinterpret_cast<uint32_t>(pa);
-  uint32_t pb_addr = reinterpret_cast<uint32_t>(pb);
+  uintptr_t pa_addr = reinterpret_cast<uintptr_t>(pa);
+  uintptr_t pb_addr = reinterpret_cast<uintptr_t>(pb);
   if (((pa_addr & kAlignmentMask) | (pb_addr & kAlignmentMask)) == 0) {
 #endif
     const int kStepSize = sizeof(int) / sizeof(Char);  // NOLINT

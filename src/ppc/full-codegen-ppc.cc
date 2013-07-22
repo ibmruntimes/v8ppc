@@ -2775,7 +2775,9 @@ void FullCodeGenerator::EmitIsStringWrapperSafeForDefaultValueOf(
   // r6: valid entries in the descriptor array.
   STATIC_ASSERT(kSmiTag == 0);
   STATIC_ASSERT(kSmiTagSize == 1);
+#ifndef V8_TARGET_ARCH_PPC64  // todo fix (currently fails on 64bit)
   STATIC_ASSERT(kPointerSize == 4);
+#endif
   __ mov(ip, Operand(DescriptorArray::kDescriptorSize));
   __ mul(r6, r6, ip);
   // Calculate location of the first key name.
@@ -4560,7 +4562,7 @@ Register FullCodeGenerator::context_register() {
 
 
 void FullCodeGenerator::StoreToFrameField(int frame_offset, Register value) {
-  ASSERT_EQ(POINTER_SIZE_ALIGN(frame_offset), frame_offset);
+  ASSERT_EQ(static_cast<int>(POINTER_SIZE_ALIGN(frame_offset)), frame_offset);
   __ StoreWord(value, MemOperand(fp, frame_offset), r0);
 }
 

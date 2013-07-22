@@ -186,7 +186,7 @@ void MacroAssembler::Call(Address target,
   // bc( BA, .... offset, LKset);
   //
 
-  mov(ip, Operand(reinterpret_cast<int32_t>(target), rmode));
+  mov(ip, Operand(reinterpret_cast<intptr_t>(target), rmode));
   mtlr(ip);
   bclr(BA, SetLK);
 
@@ -432,8 +432,8 @@ void MacroAssembler::RecordWriteField(
   // Clobber clobbered input registers when running with the debug-code flag
   // turned on to provoke errors.
   if (emit_debug_code()) {
-    mov(value, Operand(BitCast<int32_t>(kZapValue + 4)));
-    mov(dst, Operand(BitCast<int32_t>(kZapValue + 8)));
+    mov(value, Operand(BitCast<intptr_t>(kZapValue + 4)));
+    mov(dst, Operand(BitCast<intptr_t>(kZapValue + 8)));
   }
 }
 
@@ -493,8 +493,8 @@ void MacroAssembler::RecordWrite(Register object,
   // Clobber clobbered registers when running with the debug-code flag
   // turned on to provoke errors.
   if (emit_debug_code()) {
-    mov(address, Operand(BitCast<int32_t>(kZapValue + 12)));
-    mov(value, Operand(BitCast<int32_t>(kZapValue + 16)));
+    mov(address, Operand(BitCast<intptr_t>(kZapValue + 12)));
+    mov(value, Operand(BitCast<intptr_t>(kZapValue + 16)));
   }
 }
 
@@ -1596,7 +1596,7 @@ void MacroAssembler::AllocateInNewSpace(int object_size,
   if ((flags & SIZE_IN_WORDS) != 0) {
     object_size *= kPointerSize;
   }
-  ASSERT_EQ(0, object_size & kObjectAlignmentMask);
+  ASSERT_EQ(0, static_cast<int>(object_size & kObjectAlignmentMask));
 
   // Check relative positions of allocation top and limit addresses.
   // The values must be adjacent in memory to allow the use of LDM.
@@ -3042,7 +3042,7 @@ void MacroAssembler::JumpIfNotBothSmi(Register reg1,
                                       Register reg2,
                                       Label* on_not_both_smi) {
   STATIC_ASSERT(kSmiTag == 0);
-  ASSERT_EQ(1, kSmiTagMask);
+  ASSERT_EQ(1, static_cast<int>(kSmiTagMask));
   orx(r0, reg1, reg2, LeaveRC);
   JumpIfNotSmi(r0, on_not_both_smi);
 }
@@ -4130,9 +4130,15 @@ void CodePatcher::Emit(Instr instr) {
 
 
 void CodePatcher::Emit(Address addr) {
+#ifdef V8_TARGET_ARCH_PPC64
+  uint64_t value = reinterpret_cast<uint64_t>(addr);
+  // Possible endian issue here
+  masm()->emit(static_cast<uint32_t>(value >> 32));
+  masm()->emit(static_cast<uint32_t>(value & 0xFFFFFFFF));
+#else
   masm()->emit(reinterpret_cast<Instr>(addr));
+#endif
 }
-
 
 void CodePatcher::EmitCondition(Condition cond) {
   Instr instr = Assembler::instr_at(masm_.pc_);

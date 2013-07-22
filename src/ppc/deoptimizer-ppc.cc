@@ -124,7 +124,7 @@ void Deoptimizer::DeoptimizeFunction(JSFunction* function) {
   if (FLAG_trace_deopt) {
     PrintF("[forced deoptimization: ");
     function->PrintName();
-    PrintF(" / %x]\n", reinterpret_cast<uint32_t>(function));
+    PrintF(" / %" V8PRIxPTR "]\n", reinterpret_cast<uintptr_t>(function));
   }
 }
 
@@ -182,11 +182,11 @@ void Deoptimizer::PatchStackCheckCodeAt(Code* unoptimized_code,
   stack_check_address +=
     ((Memory::int32_at(pc_after - 3 * kInstrSize) << 16) >> 16);
   ASSERT(stack_check_address ==
-    reinterpret_cast<uint32_t>(check_code->entry()));
+    reinterpret_cast<uintptr_t>(check_code->entry()));
 
   // Now modify the two part load
   patcher.masm()->mov(ip,
-    Operand(reinterpret_cast<uint32_t>(replacement_code->entry())));
+    Operand(reinterpret_cast<uintptr_t>(replacement_code->entry())));
 
   unoptimized_code->GetHeap()->incremental_marking()->RecordCodeTargetPatch(
       unoptimized_code, pc_after - 4 * kInstrSize, replacement_code);
@@ -228,11 +228,11 @@ void Deoptimizer::RevertStackCheckCodeAt(Code* unoptimized_code,
   stack_check_address +=
     ((Memory::int32_at(pc_after - 3 * kInstrSize) << 16) >> 16);
   ASSERT(stack_check_address ==
-    reinterpret_cast<uint32_t>(replacement_code->entry()));
+    reinterpret_cast<uintptr_t>(replacement_code->entry()));
 
   // Now modify the two part load
   patcher.masm()->mov(ip,
-    Operand(reinterpret_cast<uint32_t>(check_code->entry())));
+    Operand(reinterpret_cast<uintptr_t>(check_code->entry())));
 
   check_code->GetHeap()->incremental_marking()->RecordCodeTargetPatch(
       unoptimized_code, pc_after - 4 * kInstrSize, check_code);
@@ -377,20 +377,20 @@ void Deoptimizer::DoComputeOsrOutputFrame() {
   if (!ok) {
     delete output_[0];
     output_[0] = input_;
-    output_[0]->SetPc(reinterpret_cast<uint32_t>(from_));
+    output_[0]->SetPc(reinterpret_cast<uintptr_t>(from_));
   } else {
     // Set up the frame pointer and the context pointer.
     output_[0]->SetRegister(fp.code(), input_->GetRegister(fp.code()));
     output_[0]->SetRegister(cp.code(), input_->GetRegister(cp.code()));
 
     unsigned pc_offset = data->OsrPcOffset()->value();
-    uint32_t pc = reinterpret_cast<uint32_t>(
+    uint32_t pc = reinterpret_cast<uintptr_t>(
         optimized_code_->entry() + pc_offset);
     output_[0]->SetPc(pc);
   }
   Code* continuation = isolate_->builtins()->builtin(Builtins::kNotifyOSR);
   output_[0]->SetContinuation(
-      reinterpret_cast<uint32_t>(continuation->entry()));
+      reinterpret_cast<uintptr_t>(continuation->entry()));
 
   if (FLAG_trace_osr) {
     PrintF("[on-stack replacement translation %s: 0x%08" V8PRIxPTR " ",
@@ -480,7 +480,7 @@ void Deoptimizer::DoComputeArgumentsAdaptorFrame(TranslationIterator* iterator,
 
   // Number of incoming arguments.
   output_offset -= kPointerSize;
-  value = reinterpret_cast<uint32_t>(Smi::FromInt(height - 1));
+  value = reinterpret_cast<uintptr_t>(Smi::FromInt(height - 1));
   output_frame->SetFrameSlot(output_offset, value);
   if (FLAG_trace_deopt) {
     PrintF("    0x%08x: [top + %d] <- 0x%08" V8PRIxPTR " ; argc (%d)\n",
@@ -492,7 +492,7 @@ void Deoptimizer::DoComputeArgumentsAdaptorFrame(TranslationIterator* iterator,
   Builtins* builtins = isolate_->builtins();
   Code* adaptor_trampoline =
       builtins->builtin(Builtins::kArgumentsAdaptorTrampoline);
-  uint32_t pc = reinterpret_cast<uint32_t>(
+  uintptr_t pc = reinterpret_cast<uintptr_t>(
       adaptor_trampoline->instruction_start() +
       isolate_->heap()->arguments_adaptor_deopt_pc_offset()->value());
   output_frame->SetPc(pc);
@@ -587,7 +587,7 @@ void Deoptimizer::DoComputeConstructStubFrame(TranslationIterator* iterator,
 
   // Number of incoming arguments.
   output_offset -= kPointerSize;
-  value = reinterpret_cast<uint32_t>(Smi::FromInt(height - 1));
+  value = reinterpret_cast<uintptr_t>(Smi::FromInt(height - 1));
   output_frame->SetFrameSlot(output_offset, value);
   if (FLAG_trace_deopt) {
     PrintF("    0x%08x: [top + %d] <- 0x%08" V8PRIxPTR " ; argc (%d)\n",
@@ -617,7 +617,7 @@ void Deoptimizer::DoComputeConstructStubFrame(TranslationIterator* iterator,
 
   ASSERT(0 == output_offset);
 
-  uint32_t pc = reinterpret_cast<uint32_t>(
+  uintptr_t pc = reinterpret_cast<uintptr_t>(
       construct_stub->instruction_start() +
       isolate_->heap()->construct_stub_deopt_pc_offset()->value());
   output_frame->SetPc(pc);
@@ -872,7 +872,7 @@ void Deoptimizer::DoComputeJSFrame(TranslationIterator* iterator,
   // The function was mentioned explicitly in the BEGIN_FRAME.
   output_offset -= kPointerSize;
   input_offset -= kPointerSize;
-  value = reinterpret_cast<uint32_t>(function);
+  value = reinterpret_cast<uintptr_t>(function);
   // The function for the bottommost output frame should also agree with the
   // input frame.
   ASSERT(!is_bottommost || input_->GetFrameSlot(input_offset) == value);
@@ -896,7 +896,7 @@ void Deoptimizer::DoComputeJSFrame(TranslationIterator* iterator,
   Address start = non_optimized_code->instruction_start();
   unsigned pc_and_state = GetOutputInfo(data, node_id, function->shared());
   unsigned pc_offset = FullCodeGenerator::PcField::decode(pc_and_state);
-  uint32_t pc_value = reinterpret_cast<uint32_t>(start + pc_offset);
+  uintptr_t pc_value = reinterpret_cast<uintptr_t>(start + pc_offset);
   output_frame->SetPc(pc_value);
 #if 0  // applicable on PPC?
   if (is_topmost) {
@@ -916,7 +916,7 @@ void Deoptimizer::DoComputeJSFrame(TranslationIterator* iterator,
         ? builtins->builtin(Builtins::kNotifyDeoptimized)
         : builtins->builtin(Builtins::kNotifyLazyDeoptimized);
     output_frame->SetContinuation(
-        reinterpret_cast<uint32_t>(continuation->entry()));
+        reinterpret_cast<uintptr_t>(continuation->entry()));
   }
 }
 

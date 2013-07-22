@@ -112,6 +112,56 @@ inline Atomic32 Release_Load(volatile const Atomic32* ptr) {
   return *ptr;
 }
 
+#ifdef V8_TARGET_ARCH_PPC64
+inline Atomic64 NoBarrier_CompareAndSwap(volatile Atomic64* ptr,
+                                         Atomic64 old_value,
+                                         Atomic64 new_value) {
+  return(__sync_val_compare_and_swap( ptr, old_value, new_value));
+}
+
+inline Atomic64 Acquire_CompareAndSwap(volatile Atomic64* ptr,
+                                       Atomic64 old_value,
+                                       Atomic64 new_value) {
+  return NoBarrier_CompareAndSwap(ptr, old_value, new_value);
+}
+
+inline Atomic64 Release_CompareAndSwap(volatile Atomic64* ptr,
+                                       Atomic64 old_value,
+                                       Atomic64 new_value) {
+  return NoBarrier_CompareAndSwap(ptr, old_value, new_value);
+}
+
+inline void NoBarrier_Store(volatile Atomic64* ptr, Atomic64 value) {
+  *ptr = value;
+}
+
+inline void Acquire_Store(volatile Atomic64* ptr, Atomic64 value) {
+  *ptr = value;
+  MemoryBarrier();
+}
+
+inline void Release_Store(volatile Atomic64* ptr, Atomic64 value) {
+  MemoryBarrier();
+  *ptr = value;
+}
+
+inline Atomic64 NoBarrier_Load(volatile const Atomic64* ptr) {
+  return *ptr;
+}
+
+inline Atomic64 Acquire_Load(volatile const Atomic64* ptr) {
+  Atomic64 value = *ptr;
+  MemoryBarrier();
+  return value;
+}
+
+inline Atomic64 Release_Load(volatile const Atomic64* ptr) {
+  MemoryBarrier();
+  return *ptr;
+}
+
+#endif
+
 } }  // namespace v8::internal
 
 #endif  // V8_ATOMICOPS_INTERNALS_PPC_GCC_H_

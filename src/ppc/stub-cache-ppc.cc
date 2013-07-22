@@ -60,9 +60,9 @@ static void ProbeTable(Isolate* isolate,
   ExternalReference value_offset(isolate->stub_cache()->value_reference(table));
   ExternalReference map_offset(isolate->stub_cache()->map_reference(table));
 
-  uint32_t key_off_addr = reinterpret_cast<uint32_t>(key_offset.address());
-  uint32_t value_off_addr = reinterpret_cast<uint32_t>(value_offset.address());
-  uint32_t map_off_addr = reinterpret_cast<uint32_t>(map_offset.address());
+  uintptr_t key_off_addr = reinterpret_cast<uintptr_t>(key_offset.address());
+  uintptr_t value_off_addr = reinterpret_cast<uintptr_t>(value_offset.address());
+  uintptr_t map_off_addr = reinterpret_cast<uintptr_t>(map_offset.address());
 
   // Check the relative positions of the address fields.
   ASSERT(value_off_addr > key_off_addr);
@@ -397,7 +397,7 @@ static void GenerateStringCheck(MacroAssembler* masm,
   __ lbz(scratch1, FieldMemOperand(scratch1, Map::kInstanceTypeOffset));
   __ andi(scratch2, scratch1, Operand(kIsNotStringMask));
   // The cast is to resolve the overload for the argument of 0x0.
-  __ cmpi(scratch2, Operand(static_cast<int32_t>(kStringTag)));
+  __ cmpi(scratch2, Operand(static_cast<intptr_t>(kStringTag)));
   __ bne(non_string_object);
 }
 

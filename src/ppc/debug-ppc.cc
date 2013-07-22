@@ -68,7 +68,7 @@ void BreakLocationIterator::SetDebugBreakAtReturn() {
 #else
 
   patcher.masm()->mov(v8::internal::r0,
-            Operand(reinterpret_cast<int32_t>(
+            Operand(reinterpret_cast<intptr_t>(
                    Isolate::Current()->debug()->debug_break_slot()->entry())));
   patcher.masm()->mtlr(v8::internal::r0);
   patcher.masm()->bclr(BA, SetLK);
@@ -122,7 +122,7 @@ void BreakLocationIterator::SetDebugBreakAtSlot() {
   CodePatcher patcher(rinfo()->pc(), Assembler::kDebugBreakSlotInstructions);
 // printf("SetDebugBreakAtSlot: pc=%08x\n", (unsigned int)rinfo()->pc());
   patcher.masm()->mov(v8::internal::r0,
-            Operand(reinterpret_cast<int32_t>(
+            Operand(reinterpret_cast<intptr_t>(
                    Isolate::Current()->debug()->debug_break_slot()->entry())));
   patcher.masm()->mtlr(v8::internal::r0);
   patcher.masm()->bclr(BA, SetLK);

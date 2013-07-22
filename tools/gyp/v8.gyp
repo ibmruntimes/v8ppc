@@ -531,7 +531,7 @@
                 '../../src/arm/stub-cache-arm.cc',
               ],
             }],
-            ['v8_target_arch=="ppc"', {
+            ['v8_target_arch=="ppc" or v8_target_arch=="ppc64"', {
               'sources': [
                 '../../src/ppc/assembler-ppc-inl.h',
                 '../../src/ppc/assembler-ppc.cc',

@@ -176,6 +176,12 @@
           'V8_TARGET_ARCH_PPC',
         ],
       }],  # v8_target_arch=="ppc"
+      ['v8_target_arch=="ppc64"', {
+        'defines': [
+          'V8_TARGET_ARCH_PPC',
+          'V8_TARGET_ARCH_PPC64',
+        ],
+      }],  # v8_target_arch=="ppc64"
       ['v8_target_arch=="ia32"', {
         'defines': [
           'V8_TARGET_ARCH_IA32',

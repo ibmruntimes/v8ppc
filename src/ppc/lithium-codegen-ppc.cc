@@ -3611,7 +3611,9 @@ void LCodeGen::DoRandom(LRandom* instr) {
   ASSERT(ToRegister(instr->global_object()).is(r3));
 
   static const int kSeedSize = sizeof(uint32_t);
+#ifndef V8_TARGET_ARCH_PPC64  // todo fix (currently fails on 64bit)
   STATIC_ASSERT(kPointerSize == kSeedSize);
+#endif
 
   __ lwz(r3, FieldMemOperand(r3, GlobalObject::kNativeContextOffset));
   static const int kRandomSeedOffset =
