@@ -61,7 +61,8 @@ static void ProbeTable(Isolate* isolate,
   ExternalReference map_offset(isolate->stub_cache()->map_reference(table));
 
   uintptr_t key_off_addr = reinterpret_cast<uintptr_t>(key_offset.address());
-  uintptr_t value_off_addr = reinterpret_cast<uintptr_t>(value_offset.address());
+  uintptr_t value_off_addr =
+                         reinterpret_cast<uintptr_t>(value_offset.address());
   uintptr_t map_off_addr = reinterpret_cast<uintptr_t>(map_offset.address());
 
   // Check the relative positions of the address fields.

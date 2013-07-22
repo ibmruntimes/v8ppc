@@ -438,19 +438,17 @@ void FullCodeGenerator::EmitReturnSequence() {
 #endif
     // Make sure that the constant pool is not emitted inside of the return
     // sequence.
-    {
-      // Here we use masm_-> instead of the __ macro to avoid the code coverage
-      // tool from instrumenting as we rely on the code size here.
-      int32_t sp_delta = (info_->scope()->num_parameters() + 1) * kPointerSize;
-      CodeGenerator::RecordPositions(masm_, function()->end_position() - 1);
-      __ RecordJSReturn();
-      masm_->mr(sp, fp);
-      masm_->lwz(fp, MemOperand(sp));
-      masm_->lwz(r0, MemOperand(sp, kPointerSize));
-      masm_->mtlr(r0);
-      masm_->Add(sp, sp, (uint32_t)(sp_delta + (2 * kPointerSize)), r0);
-      masm_->blr();
-    }
+    // Here we use masm_-> instead of the __ macro to avoid the code coverage
+    // tool from instrumenting as we rely on the code size here.
+    int32_t sp_delta = (info_->scope()->num_parameters() + 1) * kPointerSize;
+    CodeGenerator::RecordPositions(masm_, function()->end_position() - 1);
+    __ RecordJSReturn();
+    masm_->mr(sp, fp);
+    masm_->lwz(fp, MemOperand(sp));
+    masm_->lwz(r0, MemOperand(sp, kPointerSize));
+    masm_->mtlr(r0);
+    masm_->Add(sp, sp, (uint32_t)(sp_delta + (2 * kPointerSize)), r0);
+    masm_->blr();
 
 #ifdef DEBUG
     // Check that the size of the code used for returning is large enough

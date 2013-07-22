@@ -88,12 +88,12 @@ namespace internal {
 #define V8_HOST_ARCH_32_BIT 1
 #elif defined(__PPC__)
 #define V8_HOST_ARCH_PPC 1
-#if defined(__PPC64__) 
+#if defined(__PPC64__)
 #define V8_HOST_ARCH_64_BIT 1
 #else
 #define V8_HOST_ARCH_32_BIT 1
 #endif
-#else  
+#else
 #error Host architecture was not detected as supported by v8
 #endif
 
