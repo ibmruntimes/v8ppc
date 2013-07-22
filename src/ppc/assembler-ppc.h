@@ -1034,6 +1034,8 @@ class Assembler : public AssemblerBase {
   void srwi(Register dst, Register src, const Operand& val, RCBit rc = LeaveRC);
   void clrrwi(Register dst, Register src, const Operand& val,
               RCBit rc = LeaveRC);
+  void clrlwi(Register dst, Register src, const Operand& val,
+              RCBit rc = LeaveRC);
   void srawi(Register ra, Register rs, int sh, RCBit r = LeaveRC);
   void srw(Register dst, Register src1, Register src2, RCBit r = LeaveRC);
   void slw(Register dst, Register src1, Register src2, RCBit r = LeaveRC);
@@ -1171,6 +1173,11 @@ class Assembler : public AssemblerBase {
 
   void bkpt(uint32_t imm16);  // v5 and above
   void svc(uint32_t imm24, Condition cond = al);
+
+  void dcbf(Register ra, Register rb);
+  void sync();
+  void icbi(Register ra, Register rb);
+  void isync();
 
   // Support for floating point
   void lfd(const DwVfpRegister frt, const MemOperand& src);

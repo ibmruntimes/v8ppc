@@ -1593,8 +1593,11 @@ void Simulator::DecodeExt1(Instruction* instr) {
     case CRNOR:
     case RFI:
     case CRANDC:
-    case ISYNC:
       UNIMPLEMENTED();
+    case ISYNC: {
+      // todo - simulate isync
+      break;
+    }
     case CRXOR: {
       int bt = instr->Bits(25, 21);
       int ba = instr->Bits(20, 16);
@@ -1618,8 +1621,9 @@ void Simulator::DecodeExt1(Instruction* instr) {
   }
 }
 
-void Simulator::DecodeExt2(Instruction* instr) {
-  // Check first the 10-1 bit versions
+bool Simulator::DecodeExt2_10bit(Instruction *instr) {
+  bool found = true;
+
   int opcode = instr->Bits(10, 1) << 1;
   switch (opcode) {
     case SRWX: {
@@ -1633,7 +1637,7 @@ void Simulator::DecodeExt2(Instruction* instr) {
       if (instr->Bit(0)) {  // RC bit set
         SetCR0(result);
       }
-      return;
+      break;
     }
     case SRAW: {
       int rs = instr->RSValue();
@@ -1646,7 +1650,7 @@ void Simulator::DecodeExt2(Instruction* instr) {
       if (instr->Bit(0)) {  // RC bit set
         SetCR0(result);
       }
-      return;
+      break;
     }
     case SRAWIX: {
       int ra = instr->RAValue();
@@ -1658,7 +1662,7 @@ void Simulator::DecodeExt2(Instruction* instr) {
       if (instr->Bit(0)) {  // RC bit set
         SetCR0(result);
       }
-      return;
+      break;
     }
     case EXTSH: {
       int ra = instr->RAValue();
@@ -1669,7 +1673,7 @@ void Simulator::DecodeExt2(Instruction* instr) {
       if (instr->Bit(0)) {  // RC bit set
         SetCR0(ra_val);
       }
-      return;
+      break;
     }
     case EXTSB: {
       int ra = instr->RAValue();
@@ -1680,7 +1684,7 @@ void Simulator::DecodeExt2(Instruction* instr) {
       if (instr->Bit(0)) {  // RC bit set
         SetCR0(ra_val);
       }
-      return;
+      break;
     }
     case LFSUX:
     case LFSX: {
@@ -1696,7 +1700,7 @@ void Simulator::DecodeExt2(Instruction* instr) {
         ASSERT(ra != 0);
         set_register(ra, ra_val+rb_val);
       }
-      return;
+      break;
     }
     case LFDUX:
     case LFDX: {
@@ -1711,7 +1715,7 @@ void Simulator::DecodeExt2(Instruction* instr) {
         ASSERT(ra != 0);
         set_register(ra, ra_val+rb_val);
       }
-      return;
+      break;
     }
     case STFSUX: {
     case STFSX:
@@ -1727,7 +1731,7 @@ void Simulator::DecodeExt2(Instruction* instr) {
         ASSERT(ra != 0);
         set_register(ra, ra_val+rb_val);
       }
-      return;
+      break;
     }
     case STFDUX: {
     case STFDX:
@@ -1743,11 +1747,27 @@ void Simulator::DecodeExt2(Instruction* instr) {
         ASSERT(ra != 0);
         set_register(ra, ra_val+rb_val);
       }
-      return;
+      break;
+    }
+    case SYNC: {
+      // todo - simulate sync
+      break;
+    }
+    case ICBI: {
+      // todo - simulate icbi
+      break;
+    }
+    default: {
+      found = false;
+      break;
     }
   }
-  // Now look at the lesser encodings
-  opcode = instr->Bits(9, 1) << 1;
+
+  return found;
+}
+
+void Simulator::DecodeExt2_9bit(Instruction* instr) {
+  int opcode = instr->Bits(9, 1) << 1;
   switch (opcode) {
     case CMP: {
       int ra = instr->RAValue();
@@ -2129,11 +2149,24 @@ void Simulator::DecodeExt2(Instruction* instr) {
       }
       break;
     }
+    case DCBF: {
+      // todo - simulate dcbf
+      break;
+    }
     default: {
       UNIMPLEMENTED();  // Not used by V8.
     }
   }
 }
+
+void Simulator::DecodeExt2(Instruction* instr) {
+    // Check first the 10-1 bit versions
+    if (DecodeExt2_10bit(instr))
+        return;
+    // Now look at the lesser encodings
+    DecodeExt2_9bit(instr);
+}
+
 void Simulator::DecodeExt4(Instruction* instr) {
   switch (instr->Bits(5, 1) << 1) {
     case FDIV: {

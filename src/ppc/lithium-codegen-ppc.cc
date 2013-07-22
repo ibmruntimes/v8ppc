@@ -2428,7 +2428,7 @@ void LCodeGen::DoDeferredInstanceOfKnownGlobal(LInstanceOfKnownGlobal* instr,
   Register temp = ToRegister(instr->temp());
   ASSERT(temp.is(r7));
   __ LoadHeapObject(InstanceofStub::right(), instr->function());
-  static const int kAdditionalDelta = 5;
+  static const int kAdditionalDelta = 7;
   int delta = masm_->InstructionsGeneratedSince(map_check) + kAdditionalDelta;
   Label before_push_delta;
   __ bind(&before_push_delta);

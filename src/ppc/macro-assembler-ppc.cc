@@ -3517,29 +3517,88 @@ void MacroAssembler::CallCFunctionHelper(Register function,
 }
 
 
-void MacroAssembler::GetRelocatedValueLocation(Register lwz_location,
-                               Register result) {
-#ifdef PENGUIN_CLEANUP
-  const uint32_t kLdrOffsetMask = (1 << 12) - 1;
-  const int32_t kPCRegOffset = 2 * kPointerSize;
-  lwz(result, MemOperand(lwz_location));
+void MacroAssembler::FlushICache(Register address, unsigned instructions) {
+    // Todo detect and iterate through cacheline crossings
+    dcbf(r0, address);
+    sync();
+    icbi(r0, address);
+    isync();
+}
+
+void MacroAssembler::PatchRelocatedValue(Register lis_location,
+                                         Register scratch,
+                                         Register new_value) {
+  Label add_one, patch_lis;
+
+  lwz(scratch, MemOperand(lis_location));
+  // At this point scratch is a lis instruction.
   if (emit_debug_code()) {
-    // Check that the instruction is a lwz reg, [pc + offset] .
-    ASSERT((uint32_t)kLwzPCMask == 0xffff0000);
-    srwi(result, result, Operand(16));
-    cmpli(result, Operand((uint32_t)kLwzPCPattern >> 16));
-    Check(eq, "The instruction to patch should be a load from pc.");
-    // Result was clobbered. Restore it.
-    lwz(result, MemOperand(lwz_location));
+    And(scratch, scratch, Operand(kOpcodeMask | (0x1f * B16)));
+    Cmpi(scratch, Operand(ADDIS), r0);
+    Check(eq, "The instruction to patch should be a lis.");
+    lwz(scratch, MemOperand(lis_location));
   }
-  // Get the address of the constant.
-  andi(result, result, Operand(kLdrOffsetMask));
-  addi(result, lwz_location, Operand(result));
-  addi(result, result, Operand(kPCRegOffset));
-#else
-  PPCPORT_UNIMPLEMENTED();
-  fake_asm(fMASM8);
-#endif
+
+  // Check sign of new low word
+  TestBit(new_value, 16, r0);
+  bne(&add_one, cr0);
+
+  // insert new high word as-is into lis instruction
+  rlwimi(scratch, new_value, 16, 16, 31);
+  b(&patch_lis);
+
+  bind(&add_one);
+  // insert new high word + 1 into lis instruction
+  srwi(r0, new_value, Operand(16));
+  addic(r0, r0, Operand(1));
+  rlwimi(scratch, r0, 0, 16, 31);
+
+  bind(&patch_lis);
+  stw(scratch, MemOperand(lis_location));
+
+  lwz(scratch, MemOperand(lis_location, kInstrSize));
+  // scratch is now addic.
+  if (emit_debug_code()) {
+    And(scratch, scratch, Operand(kOpcodeMask));
+    Cmpi(scratch, Operand(ADDIC), r0);
+    Check(eq, "The instruction should be an addic.");
+    lwz(scratch, MemOperand(lis_location, kInstrSize));
+  }
+
+  // insert new low word into addic instruction
+  rlwimi(scratch, new_value, 0, 16, 31);
+  stw(scratch, MemOperand(lis_location, kInstrSize));
+
+  // Update the I-cache so the new lis and addic can be executed.
+  FlushICache(lis_location, 2);
+}
+
+void MacroAssembler::GetRelocatedValueLocation(Register lis_location,
+                                               Register result,
+                                               Register scratch) {
+  lwz(result, MemOperand(lis_location));
+  if (emit_debug_code()) {
+    And(result, result, Operand(kOpcodeMask | (0x1f * B16)));
+    Cmpi(result, Operand(ADDIS), r0);
+    Check(eq, "The instruction should be a lis.");
+    lwz(result, MemOperand(lis_location));
+  }
+
+  // result now holds a lis instruction. Extract the immediate.
+  slwi(result, result, Operand(16));
+
+  lwz(scratch, MemOperand(lis_location, kInstrSize));
+  if (emit_debug_code()) {
+    And(scratch, scratch, Operand(kOpcodeMask));
+    Cmpi(scratch, Operand(ADDIC), r0);
+    Check(eq, "The instruction should be an addic.");
+    lwz(scratch, MemOperand(lis_location, kInstrSize));
+  }
+  // "scratch" now holds an addic instruction. Extract the immediate.
+  extsh(scratch, scratch);
+
+  // Merge the results.
+  add(result, result, scratch);
 }
 
 

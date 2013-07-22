@@ -4326,8 +4326,10 @@ void InstanceofStub::Generate(MacroAssembler* masm) {
   const Register prototype = r7;  // Prototype of the function.
   const Register inline_site = r9;
   const Register scratch = r5;
+  const Register scratch2 = r8;
+  Register scratch3 = no_reg;
 
-  const int32_t kDeltaToLoadBoolResult = 4 * kPointerSize;
+  const int32_t kDeltaToLoadBoolResult = 5 * kPointerSize;
 
   Label slow, loop, is_instance, is_not_instance, not_js_object;
 
@@ -4376,8 +4378,7 @@ void InstanceofStub::Generate(MacroAssembler* masm) {
     __ mflr(inline_site);
     __ sub(inline_site, inline_site, scratch);
     // Get the map location in scratch and patch it.
-    __ GetRelocatedValueLocation(inline_site, scratch);
-    __ lwz(scratch, MemOperand(scratch));
+    __ GetRelocatedValueLocation(inline_site, scratch, scratch2);
     __ stw(map, FieldMemOperand(scratch, JSGlobalPropertyCell::kValueOffset));
   }
 
@@ -4386,15 +4387,15 @@ void InstanceofStub::Generate(MacroAssembler* masm) {
   __ lwz(scratch, FieldMemOperand(map, Map::kPrototypeOffset));
 
   // We don't need map any more. Use it as a scratch register.
-  Register scratch2 = map;
+  scratch3 = map;
   map = no_reg;
 
   // Loop through the prototype chain looking for the function prototype.
-  __ LoadRoot(scratch2, Heap::kNullValueRootIndex);
+  __ LoadRoot(scratch3, Heap::kNullValueRootIndex);
   __ bind(&loop);
   __ cmp(scratch, prototype);
   __ beq(&is_instance);
-  __ cmp(scratch, scratch2);
+  __ cmp(scratch, scratch3);
   __ beq(&is_not_instance);
   __ lwz(scratch, FieldMemOperand(scratch, HeapObject::kMapOffset));
   __ lwz(scratch, FieldMemOperand(scratch, Map::kPrototypeOffset));
@@ -4409,8 +4410,7 @@ void InstanceofStub::Generate(MacroAssembler* masm) {
     __ LoadRoot(r3, Heap::kTrueValueRootIndex);
     __ addi(inline_site, inline_site, Operand(kDeltaToLoadBoolResult));
     // Get the boolean result location in scratch and patch it.
-    __ GetRelocatedValueLocation(inline_site, scratch);
-    __ stw(r3, MemOperand(scratch));
+    __ PatchRelocatedValue(inline_site, scratch, r3);
 
     if (!ReturnTrueFalseObject()) {
       __ li(r3, Operand(Smi::FromInt(0)));
@@ -4427,8 +4427,7 @@ void InstanceofStub::Generate(MacroAssembler* masm) {
     __ LoadRoot(r3, Heap::kFalseValueRootIndex);
     __ addi(inline_site, inline_site, Operand(kDeltaToLoadBoolResult));
     // Get the boolean result location in scratch and patch it.
-    __ GetRelocatedValueLocation(inline_site, scratch);
-    __ stw(r3, MemOperand(scratch));
+    __ PatchRelocatedValue(inline_site, scratch, r3);
 
     if (!ReturnTrueFalseObject()) {
       __ li(r3, Operand(Smi::FromInt(1)));
@@ -4441,7 +4440,7 @@ void InstanceofStub::Generate(MacroAssembler* masm) {
   // Before null, smi and string value checks, check that the rhs is a function
   // as for a non-function rhs an exception needs to be thrown.
   __ JumpIfSmi(function, &slow);
-  __ CompareObjectType(function, scratch2, scratch, JS_FUNCTION_TYPE);
+  __ CompareObjectType(function, scratch3, scratch, JS_FUNCTION_TYPE);
   __ bne(&slow);
 
   // Null is not instance of anything.

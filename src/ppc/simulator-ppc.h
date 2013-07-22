@@ -309,6 +309,8 @@ class Simulator {
   // PowerPC
   void SetCR0(int32_t result);
   void DecodeExt1(Instruction* instr);
+  bool DecodeExt2_10bit(Instruction* instr);
+  void DecodeExt2_9bit(Instruction* instr);
   void DecodeExt2(Instruction* instr);
 
   void DecodeExt4(Instruction* instr);

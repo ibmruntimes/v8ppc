@@ -829,6 +829,11 @@ void Assembler::clrrwi(Register dst, Register src, const Operand& val,
   ASSERT((32 > val.imm32_)&&(val.imm32_ >= 0));
   rlwinm(dst, src, 0, 0, 31-val.imm32_, rc);
 }
+void Assembler::clrlwi(Register dst, Register src, const Operand& val,
+                       RCBit rc) {
+  ASSERT((32 > val.imm32_)&&(val.imm32_ >= 0));
+  rlwinm(dst, src, 0, val.imm32_, 31, rc);
+}
 
 
 void Assembler::srawi(Register ra, Register rs, int sh, RCBit r) {
@@ -1488,6 +1493,23 @@ void Assembler::bkpt(uint32_t imm16) {
 void Assembler::svc(uint32_t imm24, Condition cond) {
   PPCPORT_CHECK(false);
   EMIT_FAKE_ARM_INSTR(fSVC);
+}
+
+
+void Assembler::dcbf(Register ra, Register rb) {
+    emit(EXT2 | DCBF | ra.code()*B16 | rb.code()*B11);
+}
+
+void Assembler::sync() {
+    emit(EXT2 | SYNC);
+}
+
+void Assembler::icbi(Register ra, Register rb) {
+    emit(EXT2 | ICBI | ra.code()*B16 | rb.code()*B11);
+}
+
+void Assembler::isync() {
+    emit(EXT1 | ISYNC);
 }
 
 // Floating point support

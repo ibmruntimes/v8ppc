@@ -381,6 +381,10 @@ class MacroAssembler: public Assembler {
   // into register dst.
   void LoadFromSafepointRegisterSlot(Register dst, Register src);
 
+  // Flush the I-cache from asm code. You should use CPU::FlushICache from C.
+  // Does not handle errors.
+  void FlushICache(Register address, unsigned instructions);
+
   // Load two consecutive registers with two consecutive memory locations.
   void Ldrd(Register dst1,
             Register dst2,
@@ -1329,11 +1333,14 @@ class MacroAssembler: public Assembler {
   // ---------------------------------------------------------------------------
   // Patching helpers.
 
-  // Get the location of a relocated constant (its address in the constant pool)
-  // from its load site.
-  void GetRelocatedValueLocation(Register ldr_location,
-                                 Register result);
-
+  // Patch the relocated value (lis/addic pair).
+  void PatchRelocatedValue(Register lis_location,
+                           Register scratch,
+                           Register new_value);
+  // Get the relocatad value (loaded data) from the lis/addic pair.
+  void GetRelocatedValueLocation(Register lis_location,
+                                 Register result,
+                                 Register scratch);
 
   void ClampUint8(Register output_reg, Register input_reg);
 
