@@ -1176,9 +1176,20 @@ void Assembler::marker_asm(int mcode) {
 // TOC and static chain are ignored and set to 0.
 void Assembler::function_descriptor() {
   RecordRelocInfo(RelocInfo::INTERNAL_REFERENCE);
+#ifdef V8_TARGET_ARCH_PPC64
+  uint64_t value = reinterpret_cast<uint64_t>(pc_) + 3 * kPointerSize;
+  // Possible endian issue here
+  emit(static_cast<uint32_t>(value >> 32));
+  emit(static_cast<uint32_t>(value & 0xFFFFFFFF));
+  emit(static_cast<Instr>(0));
+  emit(static_cast<Instr>(0));
+  emit(static_cast<Instr>(0));
+  emit(static_cast<Instr>(0));
+#else
   emit(reinterpret_cast<Instr>(pc_) + 3 * kPointerSize);
   emit(static_cast<Instr>(0));
   emit(static_cast<Instr>(0));
+#endif
 }
 // end PowerPC
 
