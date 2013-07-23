@@ -411,7 +411,7 @@ void PPCDebugger::Debug() {
         end = cur + words;
 
         while (cur < end) {
-          PrintF("  0x%08x:  0x%08x %10d",
+          PrintF("  0x%08" V8PRIxPTR ":  0x%08x %10d",
                  reinterpret_cast<intptr_t>(cur), *cur, *cur);
           HeapObject* obj = reinterpret_cast<HeapObject*>(*cur);
           int value = *cur;
@@ -472,7 +472,7 @@ void PPCDebugger::Debug() {
         while (cur < end) {
           prev = cur;
           cur += dasm.InstructionDecode(buffer, cur);
-          PrintF("MOO3  0x%08x  %s\n",
+          PrintF("  0x%08" V8PRIxPTR "  %s\n",
                  reinterpret_cast<intptr_t>(prev), buffer.start());
         }
       } else if (strcmp(cmd, "gdb") == 0) {
@@ -673,7 +673,7 @@ void Simulator::FlushICache(v8::internal::HashMap* i_cache,
     FlushOnePage(i_cache, start, bytes_to_flush);
     start += bytes_to_flush;
     size -= bytes_to_flush;
-    ASSERT_EQ(0, start & CachePage::kPageMask);
+    ASSERT_EQ(0, static_cast<int>(start & CachePage::kPageMask));
     offset = 0;
   }
   if (size != 0) {
@@ -794,7 +794,7 @@ Simulator::Simulator(Isolate* isolate) : isolate_(isolate) {
   // The sp is initialized to point to the bottom (high address) of the
   // allocated stack area. To be safe in potential stack underflows we leave
   // some buffer below.
-  registers_[sp] = reinterpret_cast<int32_t>(stack_) + stack_size - 64;
+  registers_[sp] = reinterpret_cast<intptr_t>(stack_) + stack_size - 64;
   InitializeCoverage();
 
   last_debugger_input_ = NULL;
@@ -1106,7 +1106,7 @@ uintptr_t Simulator::StackLimit() const {
 
 // Unsupported instructions use Format to print an error and stop execution.
 void Simulator::Format(Instruction* instr, const char* format) {
-  PrintF("Simulator found unsupported instruction:\n 0x%08x: %s\n",
+  PrintF("Simulator found unsupported instruction:\n 0x%08" V8PRIxPTR ": %s\n",
          reinterpret_cast<intptr_t>(instr), format);
   UNIMPLEMENTED();
 }
@@ -1399,7 +1399,7 @@ void Simulator::SoftwareInterrupt(Instruction* instr) {
         if (::v8::internal::FLAG_trace_sim) {
           PrintF("Returned %p\n", reinterpret_cast<void *>(*result));
         }
-        set_register(r0, (int32_t) *result);
+        set_register(r0, (intptr_t) *result);
       } else if (redirection->type() == ExternalReference::DIRECT_GETTER_CALL) {
         SimulatorRuntimeDirectGetterCall target =
             reinterpret_cast<SimulatorRuntimeDirectGetterCall>(external);
@@ -1416,7 +1416,7 @@ void Simulator::SoftwareInterrupt(Instruction* instr) {
         if (::v8::internal::FLAG_trace_sim) {
           PrintF("Returned %p\n", reinterpret_cast<void *>(*result));
         }
-        set_register(r0, (int32_t) *result);
+        set_register(r0, (intptr_t) *result);
       } else {
         // builtin call.
         ASSERT(redirection->type() == ExternalReference::BUILTIN_CALL);
@@ -2323,7 +2323,7 @@ void Simulator::InstructionDecode(Instruction* instr) {
     // use a reasonably large buffer
     v8::internal::EmbeddedVector<char, 256> buffer;
     dasm.InstructionDecode(buffer, reinterpret_cast<byte*>(instr));
-    PrintF("%05d  0x%08x  %s\n", icount_,
+    PrintF("%05d  0x%08" V8PRIxPTR "  %s\n", icount_,
            reinterpret_cast<intptr_t>(instr), buffer.start());
   }
   int opcode = instr->OpcodeValue() << 26;
@@ -2799,7 +2799,7 @@ void Simulator::InstructionDecode(Instruction* instr) {
     }
   }
   if (!pc_modified_) {
-    set_pc(reinterpret_cast<int32_t>(instr) + Instruction::kInstrSize);
+    set_pc(reinterpret_cast<intptr_t>(instr) + Instruction::kInstrSize);
   }
 }
 
@@ -2865,7 +2865,7 @@ int32_t Simulator::Call(byte* entry, int argument_count, ...) {
   set_register(sp, entry_stack);
 
   // Prepare to execute the code at entry
-  set_pc(reinterpret_cast<int32_t>(entry));
+  set_pc(reinterpret_cast<intptr_t>(entry));
   // Put down marker for end of simulation. The simulator will stop simulation
   // when the PC reaches this value. By saving the "end simulation" value into
   // the LR the simulation stops when returning to this call point.

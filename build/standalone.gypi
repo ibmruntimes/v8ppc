@@ -100,7 +100,7 @@
           [ 'OS=="linux"', {
             'cflags': [ '-ansi' ],
           }],
-          [ 'v8_target_arch=="ppc64"', {
+          [ 'host_arch=="ppc64"', {
             'cflags': [ '-mminimal-toc' ],
           }],
           [ 'visibility=="hidden"', {

@@ -172,7 +172,7 @@ void check(i::Vector<const char> string) {
   v8_string->set_hash_field(String::kEmptyHashField);
 #ifdef USE_SIMULATOR
   uint32_t codegen_hash =
-      reinterpret_cast<uint32_t>(CALL_GENERATED_CODE(hash, 0, 0, 0, 0, 0));
+      reinterpret_cast<uintptr_t>(CALL_GENERATED_CODE(hash, 0, 0, 0, 0, 0));
 #else
   uint32_t codegen_hash = hash();
 #endif
@@ -199,7 +199,7 @@ void check(uint32_t key) {
   HASH_FUNCTION hash = FUNCTION_CAST<HASH_FUNCTION>(code->entry());
 #ifdef USE_SIMULATOR
   uint32_t codegen_hash =
-      reinterpret_cast<uint32_t>(CALL_GENERATED_CODE(hash, 0, 0, 0, 0, 0));
+      reinterpret_cast<uintptr_t>(CALL_GENERATED_CODE(hash, 0, 0, 0, 0, 0));
 #else
   uint32_t codegen_hash = hash();
 #endif
