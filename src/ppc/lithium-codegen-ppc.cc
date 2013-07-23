@@ -4026,6 +4026,7 @@ void LCodeGen::DoStoreKeyedFastDoubleElement(
   Register scratch = scratch0();
   bool key_is_constant = instr->key()->IsConstantOperand();
   int constant_key = 0;
+  Label no_canonicalization, done;
 
   // Calculate the effective address of the slot in the array to store the
   // double value.
@@ -4040,6 +4041,7 @@ void LCodeGen::DoStoreKeyedFastDoubleElement(
   int element_size_shift = ElementsKindToShiftSize(FAST_DOUBLE_ELEMENTS);
   int shift_size = (instr->hydrogen()->key()->representation().IsTagged())
       ? (element_size_shift - kSmiTagSize) : element_size_shift;
+  int dst_offset = instr->additional_index() << element_size_shift;
   if (key_is_constant) {
     __ Add(scratch, elements,
            (constant_key << element_size_shift) +
@@ -4053,21 +4055,31 @@ void LCodeGen::DoStoreKeyedFastDoubleElement(
   }
 
   if (instr->NeedsCanonicalization()) {
-#ifdef PENGUIN_CLEANUP
     // Check for NaN. All NaNs must be canonicalized.
     __ fcmpu(value, value);
-    // Only load canonical NaN if the comparison above set the overflow.
-    __ Vmov(value,
-            FixedDoubleArray::canonical_not_the_hole_nan_as_double(),
-            no_reg, vs);
+    // Only load canonical NaN if the comparison above set unordered.
+    __ bordered(&no_canonicalization);
+
+    uint64_t nan_int64 = BitCast<uint64_t>(
+        FixedDoubleArray::canonical_not_the_hole_nan_as_double());
+    __ mov(r0, Operand(static_cast<uint32_t>(nan_int64)));
+#if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
+    __ stw(r0, MemOperand(scratch, dst_offset));
 #else
-    PPCPORT_UNIMPLEMENTED();
-    __ fake_asm(fLITHIUM102);
+    __ stw(r0, MemOperand(scratch, dst_offset + 4));
 #endif
+    __ mov(r0, Operand(static_cast<uint32_t>(nan_int64 >> 32)));
+#if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
+    __ stw(r0, MemOperand(scratch, dst_offset + 4));
+#else
+    __ stw(r0, MemOperand(scratch, dst_offset));
+#endif
+    __ b(&done);
   }
 
-  __ stfd(value, MemOperand(scratch,
-                            instr->additional_index() << element_size_shift));
+  __ bind(&no_canonicalization);
+  __ stfd(value, MemOperand(scratch, dst_offset));
+  __ bind(&done);
 }
 
 
