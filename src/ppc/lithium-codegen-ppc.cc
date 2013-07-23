@@ -3654,20 +3654,38 @@ void LCodeGen::DoRandom(LRandom* instr) {
   __ add(r3, r3, r0);
 
   __ bind(deferred->exit());
+
+  // Allocate temp stack space to for double
+  __ addi(sp, sp, Operand(-8));
+
   // 0x41300000 is the top half of 1.0 x 2^20 as a double.
   __ lis(r4, Operand(0x4130));
-#ifdef PENGUIN_CLEANUP
+
   // Move 0x41300000xxxxxxxx (x = random bits) to VFP.
-  __ vmov(d7, r3, r4);
+#if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
+  __ stw(r3, MemOperand(sp, 0));
+  __ stw(r4, MemOperand(sp, 4));
+#else
+  __ stw(r4, MemOperand(sp, 0));
+  __ stw(r3, MemOperand(sp, 4));
+#endif
+  __ lfd(d7, MemOperand(sp, 0));
+
   // Move 0x4130000000000000 to VFP.
   __ li(r3, Operand::Zero());
-  __ vmov(d8, r3, r4);
-  // Subtract and store the result in the heap number.
-  __ vsub(d7, d7, d8);
+#if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
+  __ stw(r3, MemOperand(sp, 0));
+  __ stw(r4, MemOperand(sp, 4));
 #else
-  PPCPORT_UNIMPLEMENTED();
-  __ fake_asm(fLITHIUM109);
+  __ stw(r4, MemOperand(sp, 0));
+  __ stw(r3, MemOperand(sp, 4));
 #endif
+  __ lfd(d8, MemOperand(sp, 0));
+
+  __ addi(sp, sp, Operand(8));
+
+  // Subtract and store the result in the heap number.
+  __ fsub(d7, d7, d8);
 }
 
 
