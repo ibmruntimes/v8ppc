@@ -2028,7 +2028,7 @@ void FullCodeGenerator::EmitInlineSmiBinaryOp(BinaryOperation* expr,
       __ subfc(scratch1, left, right);
       __ TestBit(r0, 0, r0);  // test sign bit
       __ beq(&sub_no_overflow, cr0);
-      __ xor_(r0, right, scratch1);
+      __ xor_(r0, scratch1, left);
       __ TestBit(r0, 0, r0);  // test sign bit
       __ bne(&stub_call, cr0);
       __ bind(&sub_no_overflow);

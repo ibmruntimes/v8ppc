@@ -2420,7 +2420,7 @@ void BinaryOpStub::GenerateSmiSmiOperation(MacroAssembler* masm) {
       __ subfc(right, left, right);  // Subtract optimistically.
       __ TestBit(r0, 0, r0);  // test sign bit
       __ beq(&sub_no_overflow, cr0);
-      __ xor_(r0, right, scratch1);
+      __ xor_(r0, right, left);
       __ TestBit(r0, 0, r0);  // test sign bit
       __ bne(&undo_sub, cr0);
       __ bind(&sub_no_overflow);
