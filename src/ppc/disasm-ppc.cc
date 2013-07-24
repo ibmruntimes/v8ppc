@@ -797,11 +797,11 @@ void Decoder::DecodeExt2(Instruction* instr) {
   // Some encodings are 10-1 bits, handle those first
   switch (instr->Bits(10, 1) << 1) {
     case SRWX: {
-      Format(instr, "srw'.    'ra,'rs,'rb");
+      Format(instr, "srw'.    'ra, 'rs, 'rb");
       return;
     }
     case SRAW: {
-      Format(instr, "sraw'.   'ra,'rs,'rb");
+      Format(instr, "sraw'.   'ra, 'rs, 'rb");
       return;
     }
     case SRAWIX: {
@@ -809,11 +809,11 @@ void Decoder::DecodeExt2(Instruction* instr) {
       return;
     }
     case EXTSH: {
-      Format(instr, "extsh'.  'ra,'rs");
+      Format(instr, "extsh'.  'ra, 'rs");
       return;
     }
     case EXTSB: {
-      Format(instr, "extsb'.  'ra,'rs");
+      Format(instr, "extsb'.  'ra, 'rs");
       return;
     }
     case LFSX: {
@@ -853,78 +853,78 @@ void Decoder::DecodeExt2(Instruction* instr) {
   // ?? are all of these xo_form?
   switch (instr->Bits(9, 1) << 1) {
     case CMP: {
-      Format(instr, "cmp     'ra,'rb");
+      Format(instr, "cmp     'ra, 'rb");
       break;
     }
     case SLWX: {
-      Format(instr, "slw'.   'ra,'rs,'rb");
+      Format(instr, "slw'.   'ra, 'rs, 'rb");
       break;
     }
     case SUBFCX: {
-      Format(instr, "subfc'. 'rt,'ra,'rb");
+      Format(instr, "subfc'. 'rt, 'ra, 'rb");
       break;
     }
     case ADDCX: {
-      Format(instr, "addc'.   'rt,'ra,'rb");
+      Format(instr, "addc'.   'rt, 'ra, 'rb");
       break;
     }
     case CNTLZWX: {
-      Format(instr, "cntlzw'. 'ra,'rs");
+      Format(instr, "cntlzw'. 'ra, 'rs");
       break;
     }
     case ANDX: {
-      Format(instr, "and'.    'ra,'rs,'rb");
+      Format(instr, "and'.    'ra, 'rs, 'rb");
       break;
     }
     case ANDCX: {
-      Format(instr, "andc'.   'ra,'rs,'rb");
+      Format(instr, "andc'.   'ra, 'rs, 'rb");
       break;
     }
     case CMPL: {
-      Format(instr, "cmpl    'ra,'rb");
+      Format(instr, "cmpl    'ra, 'rb");
       break;
     }
     case NEGX: {
-      Format(instr, "neg'.    'rt,'ra");
+      Format(instr, "neg'.    'rt, 'ra");
       break;
     }
     case NORX: {
-      Format(instr, "nor'.    'rt,'ra,'rb");
+      Format(instr, "nor'.    'rt, 'ra, 'rb");
       break;
     }
     case SUBFX: {
-      Format(instr, "subf'.   'rt,'ra,'rb");
+      Format(instr, "subf'.   'rt, 'ra, 'rb");
       break;
     }
     case MULHWX: {
-      Format(instr, "mulhw'o'. 'rt,'ra,'rb");
+      Format(instr, "mulhw'o'.  'rt, 'ra, 'rb");
       break;
     }
     case ADDZEX: {
-      Format(instr, "addze'.   'rt,'ra");
+      Format(instr, "addze'.   'rt, 'ra");
       break;
     }
     case MULLW: {
-      Format(instr, "mullw'o'. 'rt,'ra,'rb");
+      Format(instr, "mullw'o'.  'rt, 'ra, 'rb");
       break;
     }
     case DIVW: {
-      Format(instr, "divw'o'.   'rt,'ra,'rb");
+      Format(instr, "divw'o'.   'rt, 'ra, 'rb");
       break;
     }
     case ADDX: {
-      Format(instr, "add'o     'rt,'ra,'rb");
+      Format(instr, "add'o     'rt, 'ra, 'rb");
       break;
     }
     case XORX: {
-      Format(instr, "xor'.    'ra,'rs,'rb");
+      Format(instr, "xor'.    'ra, 'rs, 'rb");
       break;
     }
     case ORX: {
       if ( instr->RTValue() == instr->RBValue() ) {
-        Format(instr, "mr      'ra,'rb");
+        Format(instr, "mr      'ra, 'rb");
       } else {
-        Format(instr, "or      'ra,'rs,'rb");
+        Format(instr, "or      'ra, 'rs, 'rb");
       }
       break;
     }
@@ -1085,11 +1085,11 @@ int Decoder::InstructionDecode(byte* instr_ptr) {
       break;
     }
     case CMPLI: {
-      Format(instr, "cmpli   'ra,'uint16");
+      Format(instr, "cmpli   'ra, 'uint16");
       break;
     }
     case CMPI: {
-      Format(instr, "cmpwi   'ra,'int16");
+      Format(instr, "cmpwi   'ra, 'int16");
       break;
     }
     case ADDIC: {
@@ -1174,11 +1174,11 @@ int Decoder::InstructionDecode(byte* instr_ptr) {
       break;
     }
     case RLWIMIX: {
-      Format(instr, "rlwimi'. 'ra,'rs,'sh,'me,'mb");
+      Format(instr, "rlwimi'. 'ra, 'rs, 'sh, 'me, 'mb");
       break;
     }
     case RLWINMX: {
-      Format(instr, "rlwinm'. 'ra,'rs,'sh,'me,'mb");
+      Format(instr, "rlwinm'. 'ra, 'rs, 'sh, 'me, 'mb");
       break;
     }
     case RLWNMX: {
