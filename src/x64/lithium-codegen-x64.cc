@@ -1993,7 +1993,7 @@ void LCodeGen::DoGetCachedArrayIndex(LGetCachedArrayIndex* instr) {
   Register input = ToRegister(instr->value());
   Register result = ToRegister(instr->result());
 
-  __ AbortIfNotString(input);
+  __ AssertString(input);
 
   __ movl(result, FieldOperand(input, String::kHashFieldOffset));
   ASSERT(String::kHashShift >= kSmiTagSize);
@@ -2601,16 +2601,13 @@ void LCodeGen::DoAccessArgumentsAt(LAccessArgumentsAt* instr) {
   Register arguments = ToRegister(instr->arguments());
   Register length = ToRegister(instr->length());
   Register result = ToRegister(instr->result());
-
+  // There are two words between the frame pointer and the last argument.
+  // Subtracting from length accounts for one of them add one more.
   if (instr->index()->IsRegister()) {
     __ subl(length, ToRegister(instr->index()));
   } else {
     __ subl(length, ToOperand(instr->index()));
   }
-  DeoptimizeIf(below_equal, instr->environment());
-
-  // There are two words between the frame pointer and the last argument.
-  // Subtracting from length accounts for one of them add one more.
   __ movq(result, Operand(arguments, length, times_pointer_size, kPointerSize));
 }
 
@@ -3756,9 +3753,8 @@ void LCodeGen::DoBoundsCheck(LBoundsCheck* instr) {
                          instr->index());
   if (instr->length()->IsRegister()) {
     Register reg = ToRegister(instr->length());
-    if (FLAG_debug_code &&
-        !instr->hydrogen()->length()->representation().IsTagged()) {
-      __ AbortIfNotZeroExtended(reg);
+    if (!instr->hydrogen()->length()->representation().IsTagged()) {
+      __ AssertZeroExtended(reg);
     }
     if (instr->index()->IsConstantOperand()) {
       int constant_index =
@@ -3770,9 +3766,8 @@ void LCodeGen::DoBoundsCheck(LBoundsCheck* instr) {
       }
     } else {
       Register reg2 = ToRegister(instr->index());
-      if (FLAG_debug_code &&
-          !instr->hydrogen()->index()->representation().IsTagged()) {
-        __ AbortIfNotZeroExtended(reg2);
+      if (!instr->hydrogen()->index()->representation().IsTagged()) {
+        __ AssertZeroExtended(reg2);
       }
       __ cmpq(reg, reg2);
     }
@@ -3991,9 +3986,7 @@ void LCodeGen::DoDeferredStringCharCodeAt(LStringCharCodeAt* instr) {
     __ push(index);
   }
   CallRuntimeFromDeferred(Runtime::kStringCharCodeAt, 2, instr);
-  if (FLAG_debug_code) {
-    __ AbortIfNotSmi(rax);
-  }
+  __ AssertSmi(rax);
   __ SmiToInteger32(rax, rax);
   __ StoreToSafepointRegisterSlot(result, rax);
 }
@@ -4208,9 +4201,7 @@ void LCodeGen::DoSmiUntag(LSmiUntag* instr) {
     Condition is_smi = __ CheckSmi(input);
     DeoptimizeIf(NegateCondition(is_smi), instr->environment());
   } else {
-    if (FLAG_debug_code) {
-      __ AbortIfNotSmi(input);
-    }
+    __ AssertSmi(input);
   }
   __ SmiToInteger32(input, input);
 }
@@ -4499,8 +4490,7 @@ void LCodeGen::DoCheckMaps(LCheckMaps* instr) {
 void LCodeGen::DoClampDToUint8(LClampDToUint8* instr) {
   XMMRegister value_reg = ToDoubleRegister(instr->unclamped());
   Register result_reg = ToRegister(instr->result());
-  Register temp_reg = ToRegister(instr->temp());
-  __ ClampDoubleToUint8(value_reg, xmm0, result_reg, temp_reg);
+  __ ClampDoubleToUint8(value_reg, xmm0, result_reg);
 }
 
 
@@ -4514,8 +4504,7 @@ void LCodeGen::DoClampIToUint8(LClampIToUint8* instr) {
 void LCodeGen::DoClampTToUint8(LClampTToUint8* instr) {
   ASSERT(instr->unclamped()->Equals(instr->result()));
   Register input_reg = ToRegister(instr->unclamped());
-  Register temp_reg = ToRegister(instr->temp());
-  XMMRegister temp_xmm_reg = ToDoubleRegister(instr->temp2());
+  XMMRegister temp_xmm_reg = ToDoubleRegister(instr->temp_xmm());
   Label is_smi, done, heap_number;
 
   __ JumpIfSmi(input_reg, &is_smi);
@@ -4535,7 +4524,7 @@ void LCodeGen::DoClampTToUint8(LClampTToUint8* instr) {
   // Heap number
   __ bind(&heap_number);
   __ movsd(xmm0, FieldOperand(input_reg, HeapNumber::kValueOffset));
-  __ ClampDoubleToUint8(xmm0, temp_xmm_reg, input_reg, temp_reg);
+  __ ClampDoubleToUint8(xmm0, temp_xmm_reg, input_reg);
   __ jmp(&done, Label::kNear);
 
   // smi
@@ -4620,7 +4609,7 @@ void LCodeGen::DoAllocateObject(LAllocateObject* instr) {
   __ movq(map, FieldOperand(scratch, JSFunction::kPrototypeOrInitialMapOffset));
 
   if (FLAG_debug_code) {
-    __ AbortIfSmi(map);
+    __ AssertNotSmi(map);
     __ cmpb(FieldOperand(map, Map::kInstanceSizeOffset),
             Immediate(instance_size >> kPointerSizeLog2));
     __ Assert(equal, "Unexpected instance size");

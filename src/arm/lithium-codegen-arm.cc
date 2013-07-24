@@ -608,22 +608,24 @@ void LCodeGen::AddToTranslation(Translation* translation,
 
 void LCodeGen::CallCode(Handle<Code> code,
                         RelocInfo::Mode mode,
-                        LInstruction* instr) {
-  CallCodeGeneric(code, mode, instr, RECORD_SIMPLE_SAFEPOINT);
+                        LInstruction* instr,
+                        TargetAddressStorageMode storage_mode) {
+  CallCodeGeneric(code, mode, instr, RECORD_SIMPLE_SAFEPOINT, storage_mode);
 }
 
 
 void LCodeGen::CallCodeGeneric(Handle<Code> code,
                                RelocInfo::Mode mode,
                                LInstruction* instr,
-                               SafepointMode safepoint_mode) {
+                               SafepointMode safepoint_mode,
+                               TargetAddressStorageMode storage_mode) {
   ASSERT(instr != NULL);
   // Block literal pool emission to ensure nop indicating no inlined smi code
   // is in the correct position.
   Assembler::BlockConstPoolScope block_const_pool(masm());
   LPointerMap* pointers = instr->pointer_map();
   RecordPosition(pointers->position());
-  __ Call(code, mode);
+  __ Call(code, mode, TypeFeedbackId::None(), al, storage_mode);
   RecordSafepointWithLazyDeopt(instr, safepoint_mode);
 
   // Signal that we don't inline smi code before these stubs in the
@@ -979,109 +981,132 @@ void LCodeGen::DoModI(LModI* instr) {
   Register left = ToRegister(instr->left());
   Register right = ToRegister(instr->right());
   Register result = ToRegister(instr->result());
+  Label done;
 
-  Register scratch = scratch0();
-  Register scratch2 = ToRegister(instr->temp());
-  DwVfpRegister dividend = ToDoubleRegister(instr->temp2());
-  DwVfpRegister divisor = ToDoubleRegister(instr->temp3());
-  DwVfpRegister quotient = double_scratch0();
+  if (CpuFeatures::IsSupported(SUDIV)) {
+    CpuFeatures::Scope scope(SUDIV);
+    // Check for x % 0.
+    if (instr->hydrogen()->CheckFlag(HValue::kCanBeDivByZero)) {
+      __ cmp(right, Operand(0));
+      DeoptimizeIf(eq, instr->environment());
+    }
 
-  ASSERT(!dividend.is(divisor));
-  ASSERT(!dividend.is(quotient));
-  ASSERT(!divisor.is(quotient));
-  ASSERT(!scratch.is(left));
-  ASSERT(!scratch.is(right));
-  ASSERT(!scratch.is(result));
+    // For  r3 = r1 % r2; we can have the following ARM code
+    // sdiv r3, r1, r2
+    // mls r3, r3, r2, r1
 
-  Label done, vfp_modulo, both_positive, right_negative;
+    __ sdiv(result, left, right);
+    __ mls(result, result, right, left);
+    __ cmp(result, Operand(0));
+    __ b(ne, &done);
 
-  // Check for x % 0.
-  if (instr->hydrogen()->CheckFlag(HValue::kCanBeDivByZero)) {
-    __ cmp(right, Operand(0));
-    DeoptimizeIf(eq, instr->environment());
-  }
-
-  __ Move(result, left);
-
-  // (0 % x) must yield 0 (if x is finite, which is the case here).
-  __ cmp(left, Operand(0));
-  __ b(eq, &done);
-  // Preload right in a vfp register.
-  __ vmov(divisor.low(), right);
-  __ b(lt, &vfp_modulo);
-
-  __ cmp(left, Operand(right));
-  __ b(lt, &done);
-
-  // Check for (positive) power of two on the right hand side.
-  __ JumpIfNotPowerOfTwoOrZeroAndNeg(right,
-                                     scratch,
-                                     &right_negative,
-                                     &both_positive);
-  // Perform modulo operation (scratch contains right - 1).
-  __ and_(result, scratch, Operand(left));
-  __ b(&done);
-
-  __ bind(&right_negative);
-  // Negate right. The sign of the divisor does not matter.
-  __ rsb(right, right, Operand(0));
-
-  __ bind(&both_positive);
-  const int kUnfolds = 3;
-  // If the right hand side is smaller than the (nonnegative)
-  // left hand side, the left hand side is the result.
-  // Else try a few subtractions of the left hand side.
-  __ mov(scratch, left);
-  for (int i = 0; i < kUnfolds; i++) {
-    // Check if the left hand side is less or equal than the
-    // the right hand side.
-    __ cmp(scratch, Operand(right));
-    __ mov(result, scratch, LeaveCC, lt);
-    __ b(lt, &done);
-    // If not, reduce the left hand side by the right hand
-    // side and check again.
-    if (i < kUnfolds - 1) __ sub(scratch, scratch, right);
-  }
-
-  __ bind(&vfp_modulo);
-  // Load the arguments in VFP registers.
-  // The divisor value is preloaded before. Be careful that 'right' is only live
-  // on entry.
-  __ vmov(dividend.low(), left);
-  // From here on don't use right as it may have been reallocated (for example
-  // to scratch2).
-  right = no_reg;
-
-  __ vcvt_f64_s32(dividend, dividend.low());
-  __ vcvt_f64_s32(divisor, divisor.low());
-
-  // We do not care about the sign of the divisor.
-  __ vabs(divisor, divisor);
-  // Compute the quotient and round it to a 32bit integer.
-  __ vdiv(quotient, dividend, divisor);
-  __ vcvt_s32_f64(quotient.low(), quotient);
-  __ vcvt_f64_s32(quotient, quotient.low());
-
-  // Compute the remainder in result.
-  DwVfpRegister double_scratch = dividend;
-  __ vmul(double_scratch, divisor, quotient);
-  __ vcvt_s32_f64(double_scratch.low(), double_scratch);
-  __ vmov(scratch, double_scratch.low());
-
-  if (!instr->hydrogen()->CheckFlag(HValue::kBailoutOnMinusZero)) {
-    __ sub(result, left, scratch);
+    if (instr->hydrogen()->CheckFlag(HValue::kBailoutOnMinusZero)) {
+       __ cmp(left, Operand(0));
+       DeoptimizeIf(lt, instr->environment());
+    }
   } else {
-    Label ok;
-    // Check for -0.
-    __ sub(scratch2, left, scratch, SetCC);
-    __ b(ne, &ok);
-    __ cmp(left, Operand(0));
-    DeoptimizeIf(mi, instr->environment());
-    __ bind(&ok);
-    // Load the result and we are done.
-    __ mov(result, scratch2);
-  }
+    Register scratch = scratch0();
+    Register scratch2 = ToRegister(instr->temp());
+    DwVfpRegister dividend = ToDoubleRegister(instr->temp2());
+    DwVfpRegister divisor = ToDoubleRegister(instr->temp3());
+    DwVfpRegister quotient = double_scratch0();
 
+    ASSERT(!dividend.is(divisor));
+    ASSERT(!dividend.is(quotient));
+    ASSERT(!divisor.is(quotient));
+    ASSERT(!scratch.is(left));
+    ASSERT(!scratch.is(right));
+    ASSERT(!scratch.is(result));
+
+    Label vfp_modulo, both_positive, right_negative;
+
+    // Check for x % 0.
+    if (instr->hydrogen()->CheckFlag(HValue::kCanBeDivByZero)) {
+      __ cmp(right, Operand(0));
+      DeoptimizeIf(eq, instr->environment());
+    }
+
+    __ Move(result, left);
+
+    // (0 % x) must yield 0 (if x is finite, which is the case here).
+    __ cmp(left, Operand(0));
+    __ b(eq, &done);
+    // Preload right in a vfp register.
+    __ vmov(divisor.low(), right);
+    __ b(lt, &vfp_modulo);
+
+    __ cmp(left, Operand(right));
+    __ b(lt, &done);
+
+    // Check for (positive) power of two on the right hand side.
+    __ JumpIfNotPowerOfTwoOrZeroAndNeg(right,
+                                       scratch,
+                                       &right_negative,
+                                       &both_positive);
+    // Perform modulo operation (scratch contains right - 1).
+    __ and_(result, scratch, Operand(left));
+    __ b(&done);
+
+    __ bind(&right_negative);
+    // Negate right. The sign of the divisor does not matter.
+    __ rsb(right, right, Operand(0));
+
+    __ bind(&both_positive);
+    const int kUnfolds = 3;
+    // If the right hand side is smaller than the (nonnegative)
+    // left hand side, the left hand side is the result.
+    // Else try a few subtractions of the left hand side.
+    __ mov(scratch, left);
+    for (int i = 0; i < kUnfolds; i++) {
+      // Check if the left hand side is less or equal than the
+      // the right hand side.
+      __ cmp(scratch, Operand(right));
+      __ mov(result, scratch, LeaveCC, lt);
+      __ b(lt, &done);
+      // If not, reduce the left hand side by the right hand
+      // side and check again.
+      if (i < kUnfolds - 1) __ sub(scratch, scratch, right);
+    }
+
+    __ bind(&vfp_modulo);
+    // Load the arguments in VFP registers.
+    // The divisor value is preloaded before. Be careful that 'right'
+    // is only live on entry.
+    __ vmov(dividend.low(), left);
+    // From here on don't use right as it may have been reallocated
+    // (for example to scratch2).
+    right = no_reg;
+
+    __ vcvt_f64_s32(dividend, dividend.low());
+    __ vcvt_f64_s32(divisor, divisor.low());
+
+    // We do not care about the sign of the divisor.
+    __ vabs(divisor, divisor);
+    // Compute the quotient and round it to a 32bit integer.
+    __ vdiv(quotient, dividend, divisor);
+    __ vcvt_s32_f64(quotient.low(), quotient);
+    __ vcvt_f64_s32(quotient, quotient.low());
+
+    // Compute the remainder in result.
+    DwVfpRegister double_scratch = dividend;
+    __ vmul(double_scratch, divisor, quotient);
+    __ vcvt_s32_f64(double_scratch.low(), double_scratch);
+    __ vmov(scratch, double_scratch.low());
+
+    if (!instr->hydrogen()->CheckFlag(HValue::kBailoutOnMinusZero)) {
+      __ sub(result, left, scratch);
+    } else {
+      Label ok;
+      // Check for -0.
+      __ sub(scratch2, left, scratch, SetCC);
+      __ b(ne, &ok);
+      __ cmp(left, Operand(0));
+      DeoptimizeIf(mi, instr->environment());
+      __ bind(&ok);
+      // Load the result and we are done.
+      __ mov(result, scratch2);
+    }
+  }
   __ bind(&done);
 }
 
@@ -2271,7 +2296,7 @@ void LCodeGen::DoGetCachedArrayIndex(LGetCachedArrayIndex* instr) {
   Register input = ToRegister(instr->value());
   Register result = ToRegister(instr->result());
 
-  __ AbortIfNotString(input);
+  __ AssertString(input);
 
   __ ldr(result, FieldMemOperand(input, String::kHashFieldOffset));
   __ IndexFromHash(result, result);
@@ -2447,6 +2472,7 @@ void LCodeGen::DoInstanceOfKnownGlobal(LInstanceOfKnownGlobal* instr) {
     // We use Factory::the_hole_value() on purpose instead of loading from the
     // root array to force relocation to be able to later patch with
     // the cached map.
+    PredictableCodeSizeScope predictable(masm_);
     Handle<JSGlobalPropertyCell> cell =
         factory()->NewJSGlobalPropertyCell(factory()->the_hole_value());
     __ mov(ip, Operand(Handle<Object>(cell)));
@@ -2508,6 +2534,9 @@ void LCodeGen::DoDeferredInstanceOfKnownGlobal(LInstanceOfKnownGlobal* instr,
   ASSERT(temp.is(r4));
   __ LoadHeapObject(InstanceofStub::right(), instr->function());
   static const int kAdditionalDelta = 5;
+  // Make sure that code size is predicable, since we use specific constants
+  // offsets in the code to find embedded values..
+  PredictableCodeSizeScope predictable(masm_);
   int delta = masm_->InstructionsGeneratedSince(map_check) + kAdditionalDelta;
   Label before_push_delta;
   __ bind(&before_push_delta);
@@ -2771,7 +2800,7 @@ void LCodeGen::DoLoadNamedFieldPolymorphic(LLoadNamedFieldPolymorphic* instr) {
   if (need_generic) {
     __ mov(r2, Operand(name));
     Handle<Code> ic = isolate()->builtins()->LoadIC_Initialize();
-    CallCode(ic, RelocInfo::CODE_TARGET, instr);
+    CallCode(ic, RelocInfo::CODE_TARGET, instr, NEVER_INLINE_TARGET_ADDRESS);
   }
   __ bind(&done);
 }
@@ -2784,7 +2813,7 @@ void LCodeGen::DoLoadNamedGeneric(LLoadNamedGeneric* instr) {
   // Name is always in r2.
   __ mov(r2, Operand(instr->name()));
   Handle<Code> ic = isolate()->builtins()->LoadIC_Initialize();
-  CallCode(ic, RelocInfo::CODE_TARGET, instr);
+  CallCode(ic, RelocInfo::CODE_TARGET, instr, NEVER_INLINE_TARGET_ADDRESS);
 }
 
 
@@ -2880,14 +2909,9 @@ void LCodeGen::DoAccessArgumentsAt(LAccessArgumentsAt* instr) {
   Register length = ToRegister(instr->length());
   Register index = ToRegister(instr->index());
   Register result = ToRegister(instr->result());
-
-  // Bailout index is not a valid argument index. Use unsigned check to get
-  // negative check for free.
-  __ sub(length, length, index, SetCC);
-  DeoptimizeIf(ls, instr->environment());
-
   // There are two words between the frame pointer and the last argument.
   // Subtracting from length accounts for one of them add one more.
+  __ sub(length, length, index);
   __ add(length, length, Operand(1));
   __ ldr(result, MemOperand(arguments, length, LSL, kPointerSizeLog2));
 }
@@ -3100,7 +3124,7 @@ void LCodeGen::DoLoadKeyedGeneric(LLoadKeyedGeneric* instr) {
   ASSERT(ToRegister(instr->key()).is(r0));
 
   Handle<Code> ic = isolate()->builtins()->KeyedLoadIC_Initialize();
-  CallCode(ic, RelocInfo::CODE_TARGET, instr);
+  CallCode(ic, RelocInfo::CODE_TARGET, instr, NEVER_INLINE_TARGET_ADDRESS);
 }
 
 
@@ -3475,27 +3499,22 @@ void LCodeGen::DoMathAbs(LUnaryMathOperation* instr) {
 void LCodeGen::DoMathFloor(LUnaryMathOperation* instr) {
   DoubleRegister input = ToDoubleRegister(instr->value());
   Register result = ToRegister(instr->result());
-  SwVfpRegister single_scratch = double_scratch0().low();
-  Register scratch1 = scratch0();
-  Register scratch2 = ToRegister(instr->temp());
+  Register scratch = scratch0();
 
   __ EmitVFPTruncate(kRoundToMinusInf,
-                     single_scratch,
+                     result,
                      input,
-                     scratch1,
-                     scratch2);
+                     scratch,
+                     double_scratch0());
   DeoptimizeIf(ne, instr->environment());
-
-  // Move the result back to general purpose register r0.
-  __ vmov(result, single_scratch);
 
   if (instr->hydrogen()->CheckFlag(HValue::kBailoutOnMinusZero)) {
     // Test for -0.
     Label done;
     __ cmp(result, Operand(0));
     __ b(ne, &done);
-    __ vmov(scratch1, input.high());
-    __ tst(scratch1, Operand(HeapNumber::kSignMask));
+    __ vmov(scratch, input.high());
+    __ tst(scratch, Operand(HeapNumber::kSignMask));
     DeoptimizeIf(ne, instr->environment());
     __ bind(&done);
   }
@@ -3505,6 +3524,7 @@ void LCodeGen::DoMathFloor(LUnaryMathOperation* instr) {
 void LCodeGen::DoMathRound(LUnaryMathOperation* instr) {
   DoubleRegister input = ToDoubleRegister(instr->value());
   Register result = ToRegister(instr->result());
+  DwVfpRegister double_scratch1 = ToDoubleRegister(instr->temp());
   Register scratch = scratch0();
   Label done, check_sign_on_zero;
 
@@ -3547,12 +3567,11 @@ void LCodeGen::DoMathRound(LUnaryMathOperation* instr) {
   }
 
   __ EmitVFPTruncate(kRoundToMinusInf,
-                     double_scratch0().low(),
-                     double_scratch0(),
                      result,
-                     scratch);
+                     double_scratch0(),
+                     scratch,
+                     double_scratch1);
   DeoptimizeIf(ne, instr->environment());
-  __ vmov(result, double_scratch0().low());
 
   if (instr->hydrogen()->CheckFlag(HValue::kBailoutOnMinusZero)) {
     // Test for -0.
@@ -3800,7 +3819,7 @@ void LCodeGen::DoCallKeyed(LCallKeyed* instr) {
   int arity = instr->arity();
   Handle<Code> ic =
       isolate()->stub_cache()->ComputeKeyedCallInitialize(arity);
-  CallCode(ic, RelocInfo::CODE_TARGET, instr);
+  CallCode(ic, RelocInfo::CODE_TARGET, instr, NEVER_INLINE_TARGET_ADDRESS);
   __ ldr(cp, MemOperand(fp, StandardFrameConstants::kContextOffset));
 }
 
@@ -3813,7 +3832,7 @@ void LCodeGen::DoCallNamed(LCallNamed* instr) {
   Handle<Code> ic =
       isolate()->stub_cache()->ComputeCallInitialize(arity, mode);
   __ mov(r2, Operand(instr->name()));
-  CallCode(ic, mode, instr);
+  CallCode(ic, mode, instr, NEVER_INLINE_TARGET_ADDRESS);
   // Restore context register.
   __ ldr(cp, MemOperand(fp, StandardFrameConstants::kContextOffset));
 }
@@ -3838,7 +3857,7 @@ void LCodeGen::DoCallGlobal(LCallGlobal* instr) {
   Handle<Code> ic =
       isolate()->stub_cache()->ComputeCallInitialize(arity, mode);
   __ mov(r2, Operand(instr->name()));
-  CallCode(ic, mode, instr);
+  CallCode(ic, mode, instr, NEVER_INLINE_TARGET_ADDRESS);
   __ ldr(cp, MemOperand(fp, StandardFrameConstants::kContextOffset));
 }
 
@@ -3938,7 +3957,7 @@ void LCodeGen::DoStoreNamedGeneric(LStoreNamedGeneric* instr) {
   Handle<Code> ic = (instr->strict_mode_flag() == kStrictMode)
       ? isolate()->builtins()->StoreIC_Initialize_Strict()
       : isolate()->builtins()->StoreIC_Initialize();
-  CallCode(ic, RelocInfo::CODE_TARGET, instr);
+  CallCode(ic, RelocInfo::CODE_TARGET, instr, NEVER_INLINE_TARGET_ADDRESS);
 }
 
 
@@ -4152,7 +4171,7 @@ void LCodeGen::DoStoreKeyedGeneric(LStoreKeyedGeneric* instr) {
   Handle<Code> ic = (instr->strict_mode_flag() == kStrictMode)
       ? isolate()->builtins()->KeyedStoreIC_Initialize_Strict()
       : isolate()->builtins()->KeyedStoreIC_Initialize();
-  CallCode(ic, RelocInfo::CODE_TARGET, instr);
+  CallCode(ic, RelocInfo::CODE_TARGET, instr, NEVER_INLINE_TARGET_ADDRESS);
 }
 
 
@@ -4255,9 +4274,7 @@ void LCodeGen::DoDeferredStringCharCodeAt(LStringCharCodeAt* instr) {
     __ push(index);
   }
   CallRuntimeFromDeferred(Runtime::kStringCharCodeAt, 2, instr);
-  if (FLAG_debug_code) {
-    __ AbortIfNotSmi(r0);
-  }
+  __ AssertSmi(r0);
   __ SmiUntag(r0);
   __ StoreToSafepointRegisterSlot(r0, result);
 }
@@ -4427,7 +4444,7 @@ void LCodeGen::DoDeferredNumberTagI(LInstruction* instr,
 
   if (FLAG_inline_new) {
     __ LoadRoot(r6, Heap::kHeapNumberMapRootIndex);
-    __ AllocateHeapNumber(r5, r3, r4, r6, &slow);
+    __ AllocateHeapNumber(r5, r3, r4, r6, &slow, DONT_TAG_RESULT);
     __ Move(dst, r5);
     __ b(&done);
   }
@@ -4442,12 +4459,13 @@ void LCodeGen::DoDeferredNumberTagI(LInstruction* instr,
   __ StoreToSafepointRegisterSlot(ip, dst);
   CallRuntimeFromDeferred(Runtime::kAllocateHeapNumber, 0, instr);
   __ Move(dst, r0);
+  __ sub(dst, dst, Operand(kHeapObjectTag));
 
   // Done. Put the value in dbl_scratch into the value of the allocated heap
   // number.
   __ bind(&done);
-  __ sub(ip, dst, Operand(kHeapObjectTag));
-  __ vstr(dbl_scratch, ip, HeapNumber::kValueOffset);
+  __ vstr(dbl_scratch, dst, HeapNumber::kValueOffset);
+  __ add(dst, dst, Operand(kHeapObjectTag));
   __ StoreToSafepointRegisterSlot(dst, dst);
 }
 
@@ -4472,13 +4490,16 @@ void LCodeGen::DoNumberTagD(LNumberTagD* instr) {
   DeferredNumberTagD* deferred = new(zone()) DeferredNumberTagD(this, instr);
   if (FLAG_inline_new) {
     __ LoadRoot(scratch, Heap::kHeapNumberMapRootIndex);
-    __ AllocateHeapNumber(reg, temp1, temp2, scratch, deferred->entry());
+    // We want the untagged address first for performance
+    __ AllocateHeapNumber(reg, temp1, temp2, scratch, deferred->entry(),
+                          DONT_TAG_RESULT);
   } else {
     __ jmp(deferred->entry());
   }
   __ bind(deferred->exit());
-  __ sub(ip, reg, Operand(kHeapObjectTag));
-  __ vstr(input_reg, ip, HeapNumber::kValueOffset);
+  __ vstr(input_reg, reg, HeapNumber::kValueOffset);
+  // Now that we have finished with the object's real address tag it
+  __ add(reg, reg, Operand(kHeapObjectTag));
 }
 
 
@@ -4491,6 +4512,7 @@ void LCodeGen::DoDeferredNumberTagD(LNumberTagD* instr) {
 
   PushSafepointRegistersScope scope(this, Safepoint::kWithRegisters);
   CallRuntimeFromDeferred(Runtime::kAllocateHeapNumber, 0, instr);
+  __ sub(r0, r0, Operand(kHeapObjectTag));
   __ StoreToSafepointRegisterSlot(r0, reg);
 }
 
@@ -4578,7 +4600,7 @@ void LCodeGen::DoDeferredTaggedToI(LTaggedToI* instr) {
   Register scratch1 = scratch0();
   Register scratch2 = ToRegister(instr->temp());
   DwVfpRegister double_scratch = double_scratch0();
-  SwVfpRegister single_scratch = double_scratch.low();
+  DwVfpRegister double_scratch2 = ToDoubleRegister(instr->temp3());
 
   ASSERT(!scratch1.is(input_reg) && !scratch1.is(scratch2));
   ASSERT(!scratch2.is(input_reg) && !scratch2.is(scratch1));
@@ -4598,7 +4620,7 @@ void LCodeGen::DoDeferredTaggedToI(LTaggedToI* instr) {
 
   if (instr->truncating()) {
     Register scratch3 = ToRegister(instr->temp2());
-    DwVfpRegister double_scratch2 = ToDoubleRegister(instr->temp3());
+    SwVfpRegister single_scratch = double_scratch.low();
     ASSERT(!scratch3.is(input_reg) &&
            !scratch3.is(scratch1) &&
            !scratch3.is(scratch2));
@@ -4633,14 +4655,12 @@ void LCodeGen::DoDeferredTaggedToI(LTaggedToI* instr) {
     __ sub(ip, input_reg, Operand(kHeapObjectTag));
     __ vldr(double_scratch, ip, HeapNumber::kValueOffset);
     __ EmitVFPTruncate(kRoundToZero,
-                       single_scratch,
+                       input_reg,
                        double_scratch,
                        scratch1,
-                       scratch2,
+                       double_scratch2,
                        kCheckForInexactConversion);
     DeoptimizeIf(ne, instr->environment());
-    // Load the result.
-    __ vmov(input_reg, single_scratch);
 
     if (instr->hydrogen()->CheckFlag(HValue::kBailoutOnMinusZero)) {
       __ cmp(input_reg, Operand(0));
@@ -4704,12 +4724,12 @@ void LCodeGen::DoDoubleToI(LDoubleToI* instr) {
   Register scratch1 = scratch0();
   Register scratch2 = ToRegister(instr->temp());
   DwVfpRegister double_input = ToDoubleRegister(instr->value());
-  SwVfpRegister single_scratch = double_scratch0().low();
 
   Label done;
 
   if (instr->truncating()) {
     Register scratch3 = ToRegister(instr->temp2());
+    SwVfpRegister single_scratch = double_scratch0().low();
     __ EmitECMATruncate(result_reg,
                         double_input,
                         single_scratch,
@@ -4717,18 +4737,17 @@ void LCodeGen::DoDoubleToI(LDoubleToI* instr) {
                         scratch2,
                         scratch3);
   } else {
-    VFPRoundingMode rounding_mode = kRoundToMinusInf;
-    __ EmitVFPTruncate(rounding_mode,
-                       single_scratch,
+    DwVfpRegister double_scratch = double_scratch0();
+    __ EmitVFPTruncate(kRoundToMinusInf,
+                       result_reg,
                        double_input,
                        scratch1,
-                       scratch2,
+                       double_scratch,
                        kCheckForInexactConversion);
+
     // Deoptimize if we had a vfp invalid exception,
     // including inexact operation.
     DeoptimizeIf(ne, instr->environment());
-    // Retrieve the result.
-    __ vmov(result_reg, single_scratch);
   }
     __ bind(&done);
 }
@@ -5527,6 +5546,7 @@ void LCodeGen::DoStackCheck(LStackCheck* instr) {
     __ cmp(sp, Operand(ip));
     __ b(hs, &done);
     StackCheckStub stub;
+    PredictableCodeSizeScope predictable(masm_);
     CallCode(stub.GetCode(), RelocInfo::CODE_TARGET, instr);
     EnsureSpaceForLazyDeopt();
     __ bind(&done);
@@ -5607,7 +5627,6 @@ void LCodeGen::DoForInPrepareMap(LForInPrepareMap* instr) {
 void LCodeGen::DoForInCacheArray(LForInCacheArray* instr) {
   Register map = ToRegister(instr->map());
   Register result = ToRegister(instr->result());
-  Register scratch = ToRegister(instr->scratch());
   Label load_cache, done;
   __ EnumLength(result, map);
   __ cmp(result, Operand(Smi::FromInt(0)));
@@ -5616,7 +5635,7 @@ void LCodeGen::DoForInCacheArray(LForInCacheArray* instr) {
   __ jmp(&done);
 
   __ bind(&load_cache);
-  __ LoadInstanceDescriptors(map, result, scratch);
+  __ LoadInstanceDescriptors(map, result);
   __ ldr(result,
          FieldMemOperand(result, DescriptorArray::kEnumCacheOffset));
   __ ldr(result,

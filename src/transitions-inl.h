@@ -84,30 +84,6 @@ void TransitionArray::set_elements_transition(Map* transition_map,
 }
 
 
-DescriptorArray* TransitionArray::descriptors() {
-  return DescriptorArray::cast(descriptors_pointer()->value());
-}
-
-
-void TransitionArray::set_descriptors(DescriptorArray* descriptors) {
-  ASSERT(!this->descriptors()->IsDescriptorArray() ||
-         descriptors->number_of_descriptors() == 0 ||
-         descriptors->HasEnumCache() ||
-         !this->descriptors()->HasEnumCache());
-  descriptors_pointer()->set_value(descriptors);
-}
-
-
-JSGlobalPropertyCell* TransitionArray::descriptors_pointer() {
-  return JSGlobalPropertyCell::cast(get(kDescriptorsPointerIndex));
-}
-
-
-void TransitionArray::set_descriptors_pointer(JSGlobalPropertyCell* pointer) {
-  set(kDescriptorsPointerIndex, pointer);
-}
-
-
 Object* TransitionArray::back_pointer_storage() {
   return get(kBackPointerStorageIndex);
 }
@@ -215,6 +191,11 @@ PropertyDetails TransitionArray::GetTargetDetails(int transition_number) {
 
 
 int TransitionArray::Search(String* name) {
+  if (IsSimpleTransition()) {
+    String* key = GetKey(kSimpleTransitionIndex);
+    if (key->Equals(name)) return kSimpleTransitionIndex;
+    return kNotFound;
+  }
   return internal::Search<ALL_ENTRIES>(this, name);
 }
 

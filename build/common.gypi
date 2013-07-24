@@ -75,12 +75,14 @@
 
     'v8_enable_extra_ppcchecks%': 0,
 
-    'v8_object_print%': 0,
-
     'v8_enable_gdbjit%': 0,
+
+    'v8_object_print%': 0,
 
     # Enable profiling support. Only required on Windows.
     'v8_enable_prof%': 0,
+
+    'v8_enable_verify_heap%': 0,
 
     # Some versions of GCC 4.5 seem to need -fno-strict-aliasing.
     'v8_no_strict_aliasing%': 0,
@@ -120,11 +122,14 @@
       ['v8_enable_extra_ppcchecks==1', {
         'defines': ['ENABLE_EXTRA_PPCCHECKS',],
       }],
+      ['v8_enable_gdbjit==1', {
+        'defines': ['ENABLE_GDB_JIT_INTERFACE',],
+      }],
       ['v8_object_print==1', {
         'defines': ['OBJECT_PRINT',],
       }],
-      ['v8_enable_gdbjit==1', {
-        'defines': ['ENABLE_GDB_JIT_INTERFACE',],
+      ['v8_enable_verify_heap==1', {
+        'defines': ['VERIFY_HEAP',],
       }],
       ['v8_interpreted_regexp==1', {
         'defines': ['V8_INTERPRETED_REGEXP',],
@@ -157,7 +162,7 @@
           [ 'v8_use_arm_eabi_hardfloat=="true"', {
             'defines': [
               'USE_EABI_HARDFLOAT=1',
-              'CAN_USE_VFP2_INSTRUCTIONS',
+              'CAN_USE_VFP3_INSTRUCTIONS',
             ],
             'target_conditions': [
               ['_toolset=="target"', {
@@ -318,9 +323,14 @@
           ['_toolset=="target"', {
             'variables': {
               'm32flag': '<!((echo | $(echo ${CXX_target:-${CXX:-$(which g++)}}) -m32 -E - > /dev/null 2>&1) && echo "-m32" || true)',
+              'clang%': 0,
             },
-            'cflags': [ '<(m32flag)' ],
-            'ldflags': [ '<(m32flag)' ],
+            'conditions': [
+              ['OS!="android" or clang==1', {
+                'cflags': [ '<(m32flag)' ],
+                'ldflags': [ '<(m32flag)' ],
+              }],
+            ],
             'xcode_settings': {
               'ARCHS': [ 'i386' ],
             },
@@ -341,6 +351,7 @@
           'ENABLE_DISASSEMBLER',
           'V8_ENABLE_CHECKS',
           'OBJECT_PRINT',
+          'VERIFY_HEAP',
         ],
         'msvs_settings': {
           'VCCLCompilerTool': {

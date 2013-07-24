@@ -148,6 +148,9 @@ bool OS::ArmCpuHasFeature(CpuFeature feature) {
     case ARMv7:
       search_string = "ARMv7";
       break;
+    case SUDIV:
+      search_string = "idiva";
+      break;
     default:
       UNREACHABLE();
   }
@@ -168,6 +171,24 @@ bool OS::ArmCpuHasFeature(CpuFeature feature) {
   }
 
   return false;
+}
+
+
+CpuImplementer OS::GetCpuImplementer() {
+  static bool use_cached_value = false;
+  static CpuImplementer cached_value = UNKNOWN_IMPLEMENTER;
+  if (use_cached_value) {
+    return cached_value;
+  }
+  if (CPUInfoContainsString("CPU implementer\t: 0x41")) {
+    cached_value = ARM_IMPLEMENTER;
+  } else if (CPUInfoContainsString("CPU implementer\t: 0x51")) {
+    cached_value = QUALCOMM_IMPLEMENTER;
+  } else {
+    cached_value = UNKNOWN_IMPLEMENTER;
+  }
+  use_cached_value = true;
+  return cached_value;
 }
 
 
@@ -704,24 +725,6 @@ bool VirtualMemory::UncommitRegion(void* base, size_t size) {
 
 bool VirtualMemory::ReleaseRegion(void* base, size_t size) {
   return munmap(base, size) == 0;
-}
-
-
-bool VirtualMemory::CommittedPhysicalSizeInRegion(
-    void* base, size_t size, size_t* physical) {
-  const size_t page_size = sysconf(_SC_PAGESIZE);
-  base = reinterpret_cast<void*>(
-      reinterpret_cast<intptr_t>(base) & ~(page_size - 1));
-  const size_t pages = (size + page_size - 1) / page_size;
-  ScopedVector<unsigned char> buffer(pages);
-  int result = mincore(base, size, buffer.start());
-  if (result) return false;
-  int resident_pages = 0;
-  for (unsigned i = 0; i < pages; ++i) {
-    resident_pages += buffer[i] & 1;
-  }
-  *physical = resident_pages * page_size;
-  return true;
 }
 
 

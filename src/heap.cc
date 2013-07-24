@@ -102,6 +102,7 @@ Heap::Heap()
       linear_allocation_scope_depth_(0),
       contexts_disposed_(0),
       global_ic_age_(0),
+      flush_monomorphic_ics_(false),
       scan_on_scavenge_pages_(0),
       new_space_(this),
       old_pointer_space_(NULL),
@@ -214,20 +215,6 @@ intptr_t Heap::CommittedMemory() {
       cell_space_->CommittedMemory() +
       lo_space_->Size();
 }
-
-
-size_t Heap::CommittedPhysicalMemory() {
-  if (!HasBeenSetUp()) return 0;
-
-  return new_space_.CommittedPhysicalMemory() +
-      old_pointer_space_->CommittedPhysicalMemory() +
-      old_data_space_->CommittedPhysicalMemory() +
-      code_space_->CommittedPhysicalMemory() +
-      map_space_->CommittedPhysicalMemory() +
-      cell_space_->CommittedPhysicalMemory() +
-      lo_space_->CommittedPhysicalMemory();
-}
-
 
 intptr_t Heap::CommittedMemoryExecutable() {
   if (!HasBeenSetUp()) return 0;
@@ -422,18 +409,19 @@ void Heap::GarbageCollectionPrologue() {
   ClearJSFunctionResultCaches();
   gc_count_++;
   unflattened_strings_length_ = 0;
+
+#ifdef VERIFY_HEAP
+  if (FLAG_verify_heap) {
+    Verify();
+  }
+#endif
+
 #ifdef DEBUG
   ASSERT(allocation_allowed_ && gc_state_ == NOT_IN_GC);
   allow_allocation(false);
 
-  if (FLAG_verify_heap) {
-    Verify();
-  }
-
   if (FLAG_gc_verbose) Print();
-#endif  // DEBUG
 
-#if defined(DEBUG)
   ReportStatisticsBeforeGC();
 #endif  // DEBUG
 
@@ -465,14 +453,20 @@ void Heap::RepairFreeListsAfterBoot() {
 void Heap::GarbageCollectionEpilogue() {
   store_buffer()->GCEpilogue();
   LiveObjectList::GCEpilogue();
-#ifdef DEBUG
-  allow_allocation(true);
-  ZapFromSpace();
 
+  // In release mode, we only zap the from space under heap verification.
+  if (Heap::ShouldZapGarbage()) {
+    ZapFromSpace();
+  }
+
+#ifdef VERIFY_HEAP
   if (FLAG_verify_heap) {
     Verify();
   }
+#endif
 
+#ifdef DEBUG
+  allow_allocation(true);
   if (FLAG_print_global_handles) isolate_->global_handles()->Print();
   if (FLAG_print_handles) PrintHandles();
   if (FLAG_gc_verbose) Print();
@@ -669,7 +663,7 @@ void Heap::PerformScavenge() {
 }
 
 
-#ifdef DEBUG
+#ifdef VERIFY_HEAP
 // Helper class for verifying the symbol table.
 class SymbolTableVerifier : public ObjectVisitor {
  public:
@@ -678,20 +672,18 @@ class SymbolTableVerifier : public ObjectVisitor {
     for (Object** p = start; p < end; p++) {
       if ((*p)->IsHeapObject()) {
         // Check that the symbol is actually a symbol.
-        ASSERT((*p)->IsTheHole() || (*p)->IsUndefined() || (*p)->IsSymbol());
+        CHECK((*p)->IsTheHole() || (*p)->IsUndefined() || (*p)->IsSymbol());
       }
     }
   }
 };
-#endif  // DEBUG
 
 
 static void VerifySymbolTable() {
-#ifdef DEBUG
   SymbolTableVerifier verifier;
   HEAP->symbol_table()->IterateElements(&verifier);
-#endif  // DEBUG
 }
+#endif  // VERIFY_HEAP
 
 
 static bool AbortIncrementalMarkingAndCollectGarbage(
@@ -848,9 +840,12 @@ bool Heap::PerformGarbageCollection(GarbageCollector collector,
     PROFILE(isolate_, CodeMovingGCEvent());
   }
 
+#ifdef VERIFY_HEAP
   if (FLAG_verify_heap) {
     VerifySymbolTable();
   }
+#endif
+
   if (collector == MARK_COMPACTOR && global_gc_prologue_callback_) {
     ASSERT(!allocation_allowed_);
     GCTracer::Scope scope(tracer, GCTracer::Scope::EXTERNAL);
@@ -977,9 +972,12 @@ bool Heap::PerformGarbageCollection(GarbageCollector collector,
     GCTracer::Scope scope(tracer, GCTracer::Scope::EXTERNAL);
     global_gc_epilogue_callback_();
   }
+
+#ifdef VERIFY_HEAP
   if (FLAG_verify_heap) {
     VerifySymbolTable();
   }
+#endif
 
   return next_gc_likely_to_collect_more;
 }
@@ -1006,7 +1004,7 @@ void Heap::MarkCompact(GCTracer* tracer) {
 
   contexts_disposed_ = 0;
 
-  isolate_->set_context_exit_happened(false);
+  flush_monomorphic_ics_ = false;
 }
 
 
@@ -1062,7 +1060,7 @@ class ScavengeVisitor: public ObjectVisitor {
 };
 
 
-#ifdef DEBUG
+#ifdef VERIFY_HEAP
 // Visitor class to verify pointers in code or data space do not point into
 // new space.
 class VerifyNonPointerSpacePointersVisitor: public ObjectVisitor {
@@ -1070,7 +1068,7 @@ class VerifyNonPointerSpacePointersVisitor: public ObjectVisitor {
   void VisitPointers(Object** start, Object**end) {
     for (Object** current = start; current < end; current++) {
       if ((*current)->IsHeapObject()) {
-        ASSERT(!HEAP->InNewSpace(HeapObject::cast(*current)));
+        CHECK(!HEAP->InNewSpace(HeapObject::cast(*current)));
       }
     }
   }
@@ -1095,7 +1093,7 @@ static void VerifyNonPointerSpacePointers() {
       object->Iterate(&v);
   }
 }
-#endif
+#endif  // VERIFY_HEAP
 
 
 void Heap::CheckNewSpaceExpansionCriteria() {
@@ -1234,7 +1232,8 @@ class ScavengeWeakObjectRetainer : public WeakObjectRetainer {
 
 void Heap::Scavenge() {
   RelocationLock relocation_lock(this);
-#ifdef DEBUG
+
+#ifdef VERIFY_HEAP
   if (FLAG_verify_heap) VerifyNonPointerSpacePointers();
 #endif
 
@@ -1371,18 +1370,19 @@ String* Heap::UpdateNewSpaceReferenceInExternalStringTableEntry(Heap* heap,
 
 void Heap::UpdateNewSpaceReferencesInExternalStringTable(
     ExternalStringTableUpdaterCallback updater_func) {
+#ifdef VERIFY_HEAP
   if (FLAG_verify_heap) {
     external_string_table_.Verify();
   }
+#endif
 
   if (external_string_table_.new_space_strings_.is_empty()) return;
 
-  Object** start_slot = &external_string_table_.new_space_strings_[0];
-  Object** end_slot =
-        start_slot + external_string_table_.new_space_strings_.length();
-  Object** last = start_slot;
+  Object** start = &external_string_table_.new_space_strings_[0];
+  Object** end = start + external_string_table_.new_space_strings_.length();
+  Object** last = start;
 
-  for (Object** p = start_slot; p < end_slot; ++p) {
+  for (Object** p = start; p < end; ++p) {
     ASSERT(InFromSpace(*p));
     String* target = updater_func(this, p);
 
@@ -1400,8 +1400,8 @@ void Heap::UpdateNewSpaceReferencesInExternalStringTable(
     }
   }
 
-  ASSERT(last <= end_slot);
-  external_string_table_.ShrinkNewStrings(static_cast<int>(last - start_slot));
+  ASSERT(last <= end);
+  external_string_table_.ShrinkNewStrings(static_cast<int>(last - start));
 }
 
 
@@ -1410,10 +1410,9 @@ void Heap::UpdateReferencesInExternalStringTable(
 
   // Update old space string references.
   if (external_string_table_.old_space_strings_.length() > 0) {
-    Object** start_slot = &external_string_table_.old_space_strings_[0];
-    Object** end_slot =
-        start_slot + external_string_table_.old_space_strings_.length();
-    for (Object** p = start_slot; p < end_slot; ++p) *p = updater_func(this, p);
+    Object** start = &external_string_table_.old_space_strings_[0];
+    Object** end = start + external_string_table_.old_space_strings_.length();
+    for (Object** p = start; p < end; ++p) *p = updater_func(this, p);
   }
 
   UpdateNewSpaceReferencesInExternalStringTable(updater_func);
@@ -2107,6 +2106,7 @@ MaybeObject* Heap::AllocateMap(InstanceType instance_type,
   map->set_code_cache(empty_fixed_array(), SKIP_WRITE_BARRIER);
   map->init_back_pointer(undefined_value());
   map->set_unused_property_fields(0);
+  map->set_instance_descriptors(empty_descriptor_array());
   map->set_bit_field(0);
   map->set_bit_field2(1 << Map::kIsExtensible);
   int bit_field3 = Map::EnumLengthBits::encode(Map::kInvalidEnumCache) |
@@ -2114,12 +2114,6 @@ MaybeObject* Heap::AllocateMap(InstanceType instance_type,
   map->set_bit_field3(bit_field3);
   map->set_elements_kind(elements_kind);
 
-  // If the map object is aligned fill the padding area with Smi 0 objects.
-  if (Map::kPadStart < Map::kSize) {
-    memset(reinterpret_cast<byte*>(map) + Map::kPadStart - kHeapObjectTag,
-           0,
-           Map::kSize - Map::kPadStart);
-  }
   return map;
 }
 
@@ -2246,12 +2240,15 @@ bool Heap::CreateInitialMaps() {
   // Fix the instance_descriptors for the existing maps.
   meta_map()->set_code_cache(empty_fixed_array());
   meta_map()->init_back_pointer(undefined_value());
+  meta_map()->set_instance_descriptors(empty_descriptor_array());
 
   fixed_array_map()->set_code_cache(empty_fixed_array());
   fixed_array_map()->init_back_pointer(undefined_value());
+  fixed_array_map()->set_instance_descriptors(empty_descriptor_array());
 
   oddball_map()->set_code_cache(empty_fixed_array());
   oddball_map()->init_back_pointer(undefined_value());
+  oddball_map()->set_instance_descriptors(empty_descriptor_array());
 
   // Fix prototype object for existing maps.
   meta_map()->set_prototype(null_value());
@@ -2720,7 +2717,7 @@ bool Heap::CreateInitialObjects() {
   // hash code in place. The hash code for the hidden_symbol is zero to ensure
   // that it will always be at the first entry in property descriptors.
   { MaybeObject* maybe_obj =
-        AllocateSymbol(CStrVector(""), 0, String::kZeroHash);
+        AllocateSymbol(CStrVector(""), 0, String::kEmptyStringHash);
     if (!maybe_obj->ToObject(&obj)) return false;
   }
   hidden_symbol_ = String::cast(obj);
@@ -3398,7 +3395,7 @@ MaybeObject* Heap::AllocateSubString(String* buffer,
   }
 
   ASSERT(buffer->IsFlat());
-#if DEBUG
+#if VERIFY_HEAP
   if (FLAG_verify_heap) {
     buffer->StringVerify();
   }
@@ -3662,7 +3659,7 @@ MaybeObject* Heap::CreateCode(const CodeDesc& desc,
   // through the self_reference parameter.
   code->CopyFrom(desc);
 
-#ifdef DEBUG
+#ifdef VERIFY_HEAP
   if (FLAG_verify_heap) {
     code->Verify();
   }
@@ -3744,7 +3741,7 @@ MaybeObject* Heap::CopyCode(Code* code, Vector<byte> reloc_info) {
       isolate_->code_range()->contains(code->address()));
   new_code->Relocate(new_addr - old_addr);
 
-#ifdef DEBUG
+#ifdef VERIFY_HEAP
   if (FLAG_verify_heap) {
     code->Verify();
   }
@@ -3961,8 +3958,7 @@ MaybeObject* Heap::AllocateInitialMap(JSFunction* fun) {
       if (HasDuplicates(descriptors)) {
         fun->shared()->ForbidInlineConstructor();
       } else {
-        MaybeObject* maybe_failure = map->InitializeDescriptors(descriptors);
-        if (maybe_failure->IsFailure()) return maybe_failure;
+        map->InitializeDescriptors(descriptors);
         map->set_pre_allocated_property_fields(count);
         map->set_unused_property_fields(in_object_properties - count);
       }
@@ -4436,13 +4432,14 @@ MaybeObject* Heap::AllocateStringFromAscii(Vector<const char> string,
 
 
 MaybeObject* Heap::AllocateStringFromUtf8Slow(Vector<const char> string,
+                                              int non_ascii_start,
                                               PretenureFlag pretenure) {
-  // Count the number of characters in the UTF-8 string and check if
-  // it is an ASCII string.
+  // Continue counting the number of characters in the UTF-8 string, starting
+  // from the first non-ascii character or word.
+  int chars = non_ascii_start;
   Access<UnicodeCache::Utf8Decoder>
       decoder(isolate_->unicode_cache()->utf8_decoder());
-  decoder->Reset(string.start(), string.length());
-  int chars = 0;
+  decoder->Reset(string.start() + non_ascii_start, string.length() - chars);
   while (decoder->has_more()) {
     uint32_t r = decoder->GetNext();
     if (r <= unibrow::Utf16::kMaxNonSurrogateCharCode) {
@@ -4617,14 +4614,14 @@ MaybeObject* Heap::AllocateRawAsciiString(int length, PretenureFlag pretenure) {
   String::cast(result)->set_hash_field(String::kEmptyHashField);
   ASSERT_EQ(size, HeapObject::cast(result)->Size());
 
-#ifdef DEBUG
+#ifdef VERIFY_HEAP
   if (FLAG_verify_heap) {
     // Initialize string's content to ensure ASCII-ness (character range 0-127)
     // as required when verifying the heap.
     char* dest = SeqAsciiString::cast(result)->GetChars();
     memset(dest, 0x0F, length * kCharSize);
   }
-#endif  // DEBUG
+#endif
 
   return result;
 }
@@ -5414,9 +5411,9 @@ bool Heap::InSpace(Address addr, AllocationSpace space) {
 }
 
 
-#ifdef DEBUG
+#ifdef VERIFY_HEAP
 void Heap::Verify() {
-  ASSERT(HasBeenSetUp());
+  CHECK(HasBeenSetUp());
 
   store_buffer()->Verify();
 
@@ -5435,9 +5432,7 @@ void Heap::Verify() {
 
   lo_space_->Verify();
 }
-
-
-#endif  // DEBUG
+#endif
 
 
 MaybeObject* Heap::LookupSymbol(Vector<const char> string) {
@@ -5529,8 +5524,6 @@ bool Heap::LookupSymbolIfExists(String* string, String** symbol) {
   return symbol_table()->LookupSymbolIfExists(string, symbol);
 }
 
-
-#ifdef DEBUG
 void Heap::ZapFromSpace() {
   NewSpacePageIterator it(new_space_.FromSpaceStart(),
                           new_space_.FromSpaceEnd());
@@ -5543,7 +5536,6 @@ void Heap::ZapFromSpace() {
     }
   }
 }
-#endif  // DEBUG
 
 
 void Heap::IterateAndMarkPointersToFromSpace(Address start,
@@ -6280,11 +6272,12 @@ void Heap::SetStackLimits() {
 
 
 void Heap::TearDown() {
-#ifdef DEBUG
+#ifdef VERIFY_HEAP
   if (FLAG_verify_heap) {
     Verify();
   }
 #endif
+
   if (FLAG_print_cumulative_gc_stat) {
     PrintF("\n\n");
     PrintF("gc_count=%d ", gc_count_);
@@ -6810,11 +6803,11 @@ void PathTracer::MarkRecursively(Object** p, MarkVisitor* mark_visitor) {
   // Scan the object body.
   if (is_native_context && (visit_mode_ == VISIT_ONLY_STRONG)) {
     // This is specialized to scan Context's properly.
-    Object** start_slot = reinterpret_cast<Object**>(obj->address() +
-                                                     Context::kHeaderSize);
-    Object** end_slot = reinterpret_cast<Object**>(obj->address() +
+    Object** start = reinterpret_cast<Object**>(obj->address() +
+                                                Context::kHeaderSize);
+    Object** end = reinterpret_cast<Object**>(obj->address() +
         Context::kHeaderSize + Context::FIRST_WEAK_SLOT * kPointerSize);
-    mark_visitor->VisitPointers(start_slot, end_slot);
+    mark_visitor->VisitPointers(start, end);
   } else {
     obj->IterateBody(map_p->instance_type(),
                      obj->SizeFromMap(map_p),
@@ -7214,9 +7207,11 @@ void ExternalStringTable::CleanUp() {
     old_space_strings_[last++] = old_space_strings_[i];
   }
   old_space_strings_.Rewind(last);
+#ifdef VERIFY_HEAP
   if (FLAG_verify_heap) {
     Verify();
   }
+#endif
 }
 
 

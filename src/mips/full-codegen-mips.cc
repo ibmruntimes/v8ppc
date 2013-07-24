@@ -1152,7 +1152,7 @@ void FullCodeGenerator::VisitForInStatement(ForInStatement* stmt) {
   __ EnumLength(a1, v0);
   __ Branch(&no_descriptors, eq, a1, Operand(Smi::FromInt(0)));
 
-  __ LoadInstanceDescriptors(v0, a2, t0);
+  __ LoadInstanceDescriptors(v0, a2);
   __ lw(a2, FieldMemOperand(a2, DescriptorArray::kEnumCacheOffset));
   __ lw(a2, FieldMemOperand(a2, DescriptorArray::kEnumCacheBridgeCacheOffset));
 
@@ -2690,7 +2690,7 @@ void FullCodeGenerator::EmitIsStringWrapperSafeForDefaultValueOf(
   context()->PrepareTest(&materialize_true, &materialize_false,
                          &if_true, &if_false, &fall_through);
 
-  if (generate_debug_code_) __ AbortIfSmi(v0);
+  __ AssertNotSmi(v0);
 
   __ lw(a1, FieldMemOperand(v0, HeapObject::kMapOffset));
   __ lbu(t0, FieldMemOperand(a1, Map::kBitField2Offset));
@@ -2712,14 +2712,14 @@ void FullCodeGenerator::EmitIsStringWrapperSafeForDefaultValueOf(
   __ NumberOfOwnDescriptors(a3, a1);
   __ Branch(&done, eq, a3, Operand(zero_reg));
 
-  __ LoadInstanceDescriptors(a1, t0, a2);
+  __ LoadInstanceDescriptors(a1, t0);
   // t0: descriptor array.
   // a3: valid entries in the descriptor array.
   STATIC_ASSERT(kSmiTag == 0);
   STATIC_ASSERT(kSmiTagSize == 1);
   STATIC_ASSERT(kPointerSize == 4);
   __ li(at, Operand(DescriptorArray::kDescriptorSize));
-  __ Mult(a3, at);
+  __ Mul(a3, a3, at);
   // Calculate location of the first key name.
   __ Addu(t0, t0, Operand(DescriptorArray::kFirstOffset - kHeapObjectTag));
   // Calculate the end of the descriptor array.
@@ -3571,7 +3571,7 @@ void FullCodeGenerator::EmitGetCachedArrayIndex(CallRuntime* expr) {
   ASSERT(args->length() == 1);
   VisitForAccumulatorValue(args->at(0));
 
-  __ AbortIfNotString(v0);
+  __ AssertString(v0);
 
   __ lw(v0, FieldMemOperand(v0, String::kHashFieldOffset));
   __ IndexFromHash(v0, v0);
