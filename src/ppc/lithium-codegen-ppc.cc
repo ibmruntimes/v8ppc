@@ -2921,7 +2921,11 @@ MemOperand LCodeGen::PrepareKeyedOperand(Register key,
                       (constant_key << element_size) + additional_offset);
   }
 
-  if (additional_index != 0) {
+  if (!(additional_index || shift_size)) {
+      return MemOperand(base, key);
+  }
+
+  if (additional_index) {
     additional_index *= 1 << (element_size - shift_size);
     __ Add(scratch, key, additional_index, r0);
   }
