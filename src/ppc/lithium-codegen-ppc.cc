@@ -2914,43 +2914,34 @@ MemOperand LCodeGen::PrepareKeyedOperand(Register key,
                                          int shift_size,
                                          int additional_index,
                                          int additional_offset) {
-#ifdef PENGUIN_CLEANUP
-  if (additional_index != 0 && !key_is_constant) {
-    additional_index *= 1 << (element_size - shift_size);
-    __ Add(scratch0(), key, additional_index, r0);
-  }
+  Register scratch = scratch0();
 
   if (key_is_constant) {
     return MemOperand(base,
                       (constant_key << element_size) + additional_offset);
   }
 
-  if (additional_index == 0) {
-    if (shift_size >= 0) {
-      return MemOperand(base, key, LSL, shift_size);
+  if (additional_index != 0) {
+    additional_index *= 1 << (element_size - shift_size);
+    __ Add(scratch, key, additional_index, r0);
+  }
+
+  if (shift_size) {
+    Register effective_key = (additional_index ? scratch : key);
+    if (shift_size > 0) {
+      __ slwi(scratch, effective_key, Operand(shift_size));
     } else {
       ASSERT_EQ(-1, shift_size);
-      return MemOperand(base, key, LSR, 1);
+      __ srwi(scratch, effective_key, Operand(1));
     }
   }
 
-  if (shift_size >= 0) {
-    return MemOperand(base, scratch0(), LSL, shift_size);
-  } else {
-    ASSERT_EQ(-1, shift_size);
-    return MemOperand(base, scratch0(), LSR, 1);
-  }
-#else
-  PPCPORT_UNIMPLEMENTED();
-  __ fake_asm(fLITHIUM100);
-  return MemOperand(base);
-#endif
+  return MemOperand(base, scratch);
 }
 
 
 void LCodeGen::DoLoadKeyedSpecializedArrayElement(
     LLoadKeyedSpecializedArrayElement* instr) {
-#ifdef PENGUIN_CLEANUP
   Register external_pointer = ToRegister(instr->external_pointer());
   Register key = no_reg;
   ElementsKind elements_kind = instr->elements_kind();
@@ -2982,8 +2973,7 @@ void LCodeGen::DoLoadKeyedSpecializedArrayElement(
       __ add(scratch0(), external_pointer, r0);
     }
     if (elements_kind == EXTERNAL_FLOAT_ELEMENTS) {
-      __ lfd(result.low(), MemOperand(scratch0(), additional_offset));
-      __ vcvt_f64_f32(result, result.low());
+      __ lfs(result, MemOperand(scratch0(), additional_offset));
     } else  {  // i.e. elements_kind == EXTERNAL_DOUBLE_ELEMENTS
       __ lfd(result, MemOperand(scratch0(), additional_offset));
     }
@@ -2995,26 +2985,52 @@ void LCodeGen::DoLoadKeyedSpecializedArrayElement(
         instr->additional_index(), additional_offset);
     switch (elements_kind) {
       case EXTERNAL_BYTE_ELEMENTS:
-        __ ldrsb(result, mem_operand);
+        if (key_is_constant) {
+          __ lbz(result, mem_operand);
+        } else {
+          __ lbzx(result, mem_operand);
+        }
+        __ extsb(result, result);
         break;
       case EXTERNAL_PIXEL_ELEMENTS:
       case EXTERNAL_UNSIGNED_BYTE_ELEMENTS:
-        __ lbz(result, mem_operand);
+        if (key_is_constant) {
+          __ lbz(result, mem_operand);
+        } else {
+          __ lbzx(result, mem_operand);
+        }
         break;
       case EXTERNAL_SHORT_ELEMENTS:
-        __ ldrsh(result, mem_operand);
+        if (key_is_constant) {
+          __ lhz(result, mem_operand);
+        } else {
+          __ lhzx(result, mem_operand);
+        }
+        __ extsh(result, result);
         break;
       case EXTERNAL_UNSIGNED_SHORT_ELEMENTS:
-        __ lhz(result, mem_operand);
+        if (key_is_constant) {
+          __ lhz(result, mem_operand);
+        } else {
+          __ lhzx(result, mem_operand);
+        }
         break;
       case EXTERNAL_INT_ELEMENTS:
-        __ lwz(result, mem_operand);
+        if (key_is_constant) {
+          __ lwz(result, mem_operand);
+        } else {
+          __ lwzx(result, mem_operand);
+        }
         break;
       case EXTERNAL_UNSIGNED_INT_ELEMENTS:
-        __ lwz(result, mem_operand);
+        if (key_is_constant) {
+          __ lwz(result, mem_operand);
+        } else {
+          __ lwzx(result, mem_operand);
+        }
         if (!instr->hydrogen()->CheckFlag(HInstruction::kUint32)) {
           __ lis(r0, Operand(SIGN_EXT_IMM16(0x8000)));
-          __ cmpl(result, r0));
+          __ cmpl(result, r0);
           DeoptimizeIf(ge, instr->environment());
         }
         break;
@@ -3032,10 +3048,6 @@ void LCodeGen::DoLoadKeyedSpecializedArrayElement(
         break;
     }
   }
-#else
-  PPCPORT_UNIMPLEMENTED();
-  __ fake_asm(fLITHIUM94);
-#endif
 }
 
 
@@ -4085,7 +4097,6 @@ void LCodeGen::DoStoreKeyedFastDoubleElement(
 
 void LCodeGen::DoStoreKeyedSpecializedArrayElement(
     LStoreKeyedSpecializedArrayElement* instr) {
-#ifdef PENGUIN_CLEANUP
   Register external_pointer = ToRegister(instr->external_pointer());
   Register key = no_reg;
   ElementsKind elements_kind = instr->elements_kind();
@@ -4117,9 +4128,8 @@ void LCodeGen::DoStoreKeyedSpecializedArrayElement(
       __ add(scratch0(), external_pointer, r0);
     }
     if (elements_kind == EXTERNAL_FLOAT_ELEMENTS) {
-      __ vcvt_f32_f64(double_scratch0().low(), value);
-      __ stfd(double_scratch0().low(), MemOperand(scratch0(),
-                                                  additional_offset));
+      __ frsp(double_scratch0(), value);
+      __ stfs(double_scratch0(), MemOperand(scratch0(), additional_offset));
     } else {  // i.e. elements_kind == EXTERNAL_DOUBLE_ELEMENTS
       __ stfd(value, MemOperand(scratch0(), additional_offset));
     }
@@ -4133,15 +4143,27 @@ void LCodeGen::DoStoreKeyedSpecializedArrayElement(
       case EXTERNAL_PIXEL_ELEMENTS:
       case EXTERNAL_BYTE_ELEMENTS:
       case EXTERNAL_UNSIGNED_BYTE_ELEMENTS:
-        __ stb(value, mem_operand);
+        if (key_is_constant) {
+          __ stb(value, mem_operand);
+        } else {
+          __ stbx(value, mem_operand);
+        }
         break;
       case EXTERNAL_SHORT_ELEMENTS:
       case EXTERNAL_UNSIGNED_SHORT_ELEMENTS:
-        __ sth(value, mem_operand);
+        if (key_is_constant) {
+          __ sth(value, mem_operand);
+        } else {
+          __ sthx(value, mem_operand);
+        }
         break;
       case EXTERNAL_INT_ELEMENTS:
       case EXTERNAL_UNSIGNED_INT_ELEMENTS:
-        __ stw(value, mem_operand);
+        if (key_is_constant) {
+          __ stw(value, mem_operand);
+        } else {
+          __ stwx(value, mem_operand);
+        }
         break;
       case EXTERNAL_FLOAT_ELEMENTS:
       case EXTERNAL_DOUBLE_ELEMENTS:
@@ -4157,10 +4179,6 @@ void LCodeGen::DoStoreKeyedSpecializedArrayElement(
         break;
     }
   }
-#else
-  PPCPORT_UNIMPLEMENTED();
-  __ fake_asm(fLITHIUM95);
-#endif
 }
 
 
