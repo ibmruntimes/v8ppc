@@ -1043,7 +1043,8 @@ LInstruction* LChunkBuilder::DoUnaryMathOperation(HUnaryMathOperation* instr) {
     return DefineFixedDouble(result, d2);
   } else {
     LOperand* input = UseRegisterAtStart(instr->value());
-    LOperand* temp = (op == kMathFloor) ? TempRegister() : NULL;
+
+    LOperand* temp = (op == kMathRound) ? FixedTemp(d3) : NULL;
     LUnaryMathOperation* result = new(zone()) LUnaryMathOperation(input, temp);
     switch (op) {
       case kMathAbs:
@@ -1619,8 +1620,7 @@ LInstruction* LChunkBuilder::DoChange(HChange* instr) {
         LOperand* temp1 = TempRegister();
         LOperand* temp2 = instr->CanTruncateToInt32() ? TempRegister()
                                                       : NULL;
-        LOperand* temp3 = instr->CanTruncateToInt32() ? FixedTemp(d11)
-                                                      : NULL;
+        LOperand* temp3 = FixedTemp(d11);
         res = DefineSameAsFirst(new(zone()) LTaggedToI(value,
                                                        temp1,
                                                        temp2,
@@ -2167,12 +2167,10 @@ LInstruction* LChunkBuilder::DoArgumentsObject(HArgumentsObject* instr) {
 
 
 LInstruction* LChunkBuilder::DoAccessArgumentsAt(HAccessArgumentsAt* instr) {
-  LOperand* arguments = UseRegister(instr->arguments());
+  LOperand* args = UseRegister(instr->arguments());
   LOperand* length = UseTempRegister(instr->length());
   LOperand* index = UseRegister(instr->index());
-  LAccessArgumentsAt* result =
-      new(zone()) LAccessArgumentsAt(arguments, length, index);
-  return AssignEnvironment(DefineAsRegister(result));
+  return DefineAsRegister(new(zone()) LAccessArgumentsAt(args, length, index));
 }
 
 
@@ -2299,9 +2297,7 @@ LInstruction* LChunkBuilder::DoForInPrepareMap(HForInPrepareMap* instr) {
 
 LInstruction* LChunkBuilder::DoForInCacheArray(HForInCacheArray* instr) {
   LOperand* map = UseRegister(instr->map());
-  LOperand* scratch = TempRegister();
-  return AssignEnvironment(DefineAsRegister(
-      new(zone()) LForInCacheArray(map, scratch)));
+  return AssignEnvironment(DefineAsRegister(new(zone()) LForInCacheArray(map)));
 }
 
 

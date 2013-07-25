@@ -786,10 +786,10 @@ class FloatingPointHelper : public AllStatic {
   static void LoadNumberAsInt32Double(MacroAssembler* masm,
                                       Register object,
                                       DwVfpRegister double_dst,
+                                      DwVfpRegister double_scratch,
                                       Register heap_number_map,
                                       Register scratch1,
                                       Register scratch2,
-                                      DwVfpRegister double_scratch,
                                       Label* not_int32);
 
   // Loads the number from object into dst as a 32-bit integer.
@@ -805,7 +805,8 @@ class FloatingPointHelper : public AllStatic {
                                 Register scratch1,
                                 Register scratch2,
                                 Register scratch3,
-                                DwVfpRegister double_scratch,
+                                DwVfpRegister double_scratch0,
+                                DwVfpRegister double_scratch1,
                                 Label* not_int32);
 
   // Generate non VFP3 code to check if a double can be exactly represented by a

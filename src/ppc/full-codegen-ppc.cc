@@ -1157,7 +1157,7 @@ void FullCodeGenerator::VisitForInStatement(ForInStatement* stmt) {
   __ cmpi(r4, Operand(Smi::FromInt(0)));
   __ beq(&no_descriptors);
 
-  __ LoadInstanceDescriptors(r3, r5, r7);
+  __ LoadInstanceDescriptors(r3, r5);
   __ lwz(r5, FieldMemOperand(r5, DescriptorArray::kEnumCacheOffset));
   __ lwz(r5, FieldMemOperand(r5, DescriptorArray::kEnumCacheBridgeCacheOffset));
 
@@ -2744,7 +2744,7 @@ void FullCodeGenerator::EmitIsStringWrapperSafeForDefaultValueOf(
   context()->PrepareTest(&materialize_true, &materialize_false,
                          &if_true, &if_false, &fall_through);
 
-  if (generate_debug_code_) __ AbortIfSmi(r3);
+  __ AssertNotSmi(r3);
 
   __ lwz(r4, FieldMemOperand(r3, HeapObject::kMapOffset));
   __ lbz(ip, FieldMemOperand(r4, Map::kBitField2Offset));
@@ -2768,7 +2768,7 @@ void FullCodeGenerator::EmitIsStringWrapperSafeForDefaultValueOf(
   __ cmpi(r6, Operand::Zero());
   __ beq(&done);
 
-  __ LoadInstanceDescriptors(r4, r7, r5);
+  __ LoadInstanceDescriptors(r4, r7);
   // r7: descriptor array.
   // r6: valid entries in the descriptor array.
   STATIC_ASSERT(kSmiTag == 0);
@@ -3663,8 +3663,7 @@ void FullCodeGenerator::EmitGetCachedArrayIndex(CallRuntime* expr) {
   ASSERT(args->length() == 1);
   VisitForAccumulatorValue(args->at(0));
 
-  __ AbortIfNotString(r3);
-
+  __ AssertString(r3);
 
   __ lwz(r3, FieldMemOperand(r3, String::kHashFieldOffset));
   __ IndexFromHash(r3, r3);

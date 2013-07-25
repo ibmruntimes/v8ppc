@@ -672,7 +672,7 @@ Handle<HeapObject> RegExpMacroAssemblerPPC::GetCode(Handle<String> source) {
   // Store link register in existing stack-cell.
   // Order here should correspond to order of offset constants in header file.
   RegList registers_to_retain = r4.bit() | r5.bit() | r6.bit() |
-      r7.bit() | r8.bit() | r9.bit() | r10.bit() | r11.bit();
+      r7.bit() | r8.bit() | r9.bit() | r10.bit() | fp.bit();
   RegList argument_registers = r0.bit() | r1.bit() | r2.bit() | r3.bit();
   __ stm(db_w, sp, argument_registers | registers_to_retain | lr.bit());
   // Set frame pointer in space for it if this is not a direct call
@@ -1361,6 +1361,11 @@ void RegExpMacroAssemblerPPC::CallCFunctionUsingStub(
 }
 
 
+bool RegExpMacroAssemblerPPC::CanReadUnaligned() {
+  return CpuFeatures::IsSupported(UNALIGNED_ACCESSES) && !slow_safe();
+}
+
+
 void RegExpMacroAssemblerPPC::LoadCurrentCharacterUnchecked(int cp_offset,
                                                             int characters) {
   Register offset = current_input_offset();
@@ -1373,17 +1378,16 @@ void RegExpMacroAssemblerPPC::LoadCurrentCharacterUnchecked(int cp_offset,
   // and the operating system running on the target allow it.
   // If unaligned load/stores are not supported then this function must only
   // be used to load a single character at a time.
-#if !V8_TARGET_CAN_READ_UNALIGNED
-  ASSERT(characters == 1);
-#endif
+  if (!CanReadUnaligned()) {
+    ASSERT(characters == 1);
+  }
 
   if (mode_ == ASCII) {
     if (characters == 4) {
 #if defined(V8_HOST_ARCH_PPC)
       __ push(r3);  // may not need to preserve, but just in case.
       __ add(offset, offset, Operand(3));
-      __ ldrb(current_character(),
-              MemOperand(end_of_input_address(), offset));
+      __ ldrb(current_character(), MemOperand(end_of_input_address(), offset));
       __ sub(offset, offset, Operand(1));
       __ ldrb(r3, MemOperand(end_of_input_address(), offset));
       __ orr(current_character(), r3, Operand(current_character(),
