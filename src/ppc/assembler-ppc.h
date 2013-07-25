@@ -1208,7 +1208,8 @@ class Assembler : public AssemblerBase {
             const DwVfpRegister frc, RCBit rc = LeaveRC);
   void fcmpu(const DwVfpRegister fra, const DwVfpRegister frb,
              CRegister cr = cr7);
-  void fmr(const DwVfpRegister frt, const DwVfpRegister frb);
+  void fmr(const DwVfpRegister frt, const DwVfpRegister frb,
+           RCBit rc = LeaveRC);
   void fctiwz(const DwVfpRegister frt, const DwVfpRegister frb);
   void frim(const DwVfpRegister frt, const DwVfpRegister frb);
   void frsp(const DwVfpRegister frt, const DwVfpRegister frb,
@@ -1223,6 +1224,8 @@ class Assembler : public AssemblerBase {
   void mtfsfi(int bf, int immediate, RCBit rc = LeaveRC);
   void fsqrt(const DwVfpRegister frt, const DwVfpRegister frb,
              RCBit rc = LeaveRC);
+  void fabs(const DwVfpRegister frt, const DwVfpRegister frb,
+            RCBit rc = LeaveRC);
 
   // Support for VFP.
   // All these APIs support S0 to S31 and D0 to D15.

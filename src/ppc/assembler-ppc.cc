@@ -1705,9 +1705,10 @@ void Assembler::fcmpu(const DwVfpRegister fra,
 }
 
 void Assembler::fmr(const DwVfpRegister frt,
-                     const DwVfpRegister frb) {
+                    const DwVfpRegister frb,
+                    RCBit rc) {
   CheckBuffer();
-  emit(EXT4 | FMR | frt.code()*B21 | frb.code()*B11);
+  emit(EXT4 | FMR | frt.code()*B21 | frb.code()*B11 | rc);
 }
 
 void Assembler::fctiwz(const DwVfpRegister frt,
@@ -1761,6 +1762,13 @@ void Assembler::fsqrt(const DwVfpRegister frt,
                       RCBit rc) {
   CheckBuffer();
   emit(EXT4 | FSQRT | frt.code()*B21 | frb.code()*B11 | rc);
+}
+
+void Assembler::fabs(const DwVfpRegister frt,
+                     const DwVfpRegister frb,
+                     RCBit rc) {
+  CheckBuffer();
+  emit(EXT4 | FABS | frt.code()*B21 | frb.code()*B11 | rc);
 }
 
 // Support for VFP.

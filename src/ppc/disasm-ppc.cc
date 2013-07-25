@@ -1036,19 +1036,27 @@ void Decoder::DecodeExt4(Instruction* instr) {
       break;
     }
     case FRSP: {
-      Format(instr, "frsp    'Dt, 'Db");
+      Format(instr, "frsp'.   'Dt, 'Db");
       break;
     }
     case FCFID: {
-      Format(instr, "fcfid   'Dt, 'Db");
+      Format(instr, "fcfid'.  'Dt, 'Db");
       break;
     }
     case FCTIWZ: {
-      Format(instr, "fctiwz  'Dt, 'Db");
+      Format(instr, "fctiwz'. 'Dt, 'Db");
+      break;
+    }
+    case FMR: {
+      Format(instr, "fmr'.    'Dt, 'Db");
       break;
     }
     case MTFSFI: {
       Format(instr, "mtfsfi'.  ?,?");
+      break;
+    }
+    case FABS: {
+      Format(instr, "fabs'.   'Dt, 'Db");
       break;
     }
     case FRIM: {
@@ -1056,7 +1064,7 @@ void Decoder::DecodeExt4(Instruction* instr) {
       break;
     }
     case FNEG: {
-      Format(instr, "fneg    'Dt, 'Db");
+      Format(instr, "fneg'.   'Dt, 'Db");
       break;
     }
     default: {

@@ -297,6 +297,7 @@ enum OpcodeExt4 {
   MCRFS = 64 << 1,    // Move to Condition Register from FPSCR
   FMR = 72 << 1,      // Floating Move Register
   MTFSFI = 134 << 1,  // Move to FPSCR Field Immediate
+  FABS = 264 << 1,    // Floating Absolute Value
   FRIM = 488 << 1,    // Floating Round to Integer Minus
   FCFID = 846 << 1    // Floating convert from integer doubleword
 };

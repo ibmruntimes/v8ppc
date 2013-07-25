@@ -2380,6 +2380,14 @@ void Simulator::DecodeExt4(Instruction* instr) {
       set_d_register_from_double(frt, frt_val);
       return;
     }
+    case FMR: {
+      int frt = instr->RTValue();
+      int frb = instr->RBValue();
+      double frb_val = get_double_from_d_register(frb);
+      double frt_val = frb_val;
+      set_d_register_from_double(frt, frt_val);
+      return;
+    }
     case MTFSFI: {
       int bf = instr->Bits(25, 23);
       int imm = instr->Bits(15, 12);
@@ -2390,6 +2398,14 @@ void Simulator::DecodeExt4(Instruction* instr) {
         condition_reg_ &= 0xF0FFFFFF;
         condition_reg_ |= (imm << 23);
       }
+      return;
+    }
+    case FABS: {
+      int frt = instr->RTValue();
+      int frb = instr->RBValue();
+      double frb_val = get_double_from_d_register(frb);
+      double frt_val = abs(frb_val);
+      set_d_register_from_double(frt, frt_val);
       return;
     }
     case FRIM: {
