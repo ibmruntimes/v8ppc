@@ -3442,11 +3442,11 @@ void TranscendentalCacheStub::Generate(MacroAssembler* masm) {
     __ stfd(d2, MemOperand(sp, 0));
     // ENDIAN issue here
 #if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
-    __ lwz(r5, MemOperand(sp));
-    __ lwz(r6, MemOperand(sp, 4));
-#else
     __ lwz(r5, MemOperand(sp, 4));
     __ lwz(r6, MemOperand(sp));
+#else
+    __ lwz(r5, MemOperand(sp));
+    __ lwz(r6, MemOperand(sp, 4));
 #endif
     __ addi(sp, sp, Operand(8));
   }
@@ -3518,7 +3518,7 @@ void TranscendentalCacheStub::Generate(MacroAssembler* masm) {
     __ mr(r3, r9);
   } else {
     // Load result into d2.
-    __ lfd(d2, MemOperand(r9, HeapNumber::kValueOffset));
+    __ lfd(d2, FieldMemOperand(r9, HeapNumber::kValueOffset));
   }
   __ Ret();
 
@@ -3550,7 +3550,7 @@ void TranscendentalCacheStub::Generate(MacroAssembler* masm) {
     __ Pop(r6, r5, cache_entry);
     __ LoadRoot(r8, Heap::kHeapNumberMapRootIndex);
     __ AllocateHeapNumber(r9, scratch0, scratch1, r8, &no_update);
-    __ stfd(d2, MemOperand(r6, HeapNumber::kValueOffset));
+    __ stfd(d2, FieldMemOperand(r9, HeapNumber::kValueOffset));
     __ stw(r5, MemOperand(cache_entry, 0));
     __ stw(r6, MemOperand(cache_entry, 4));
     __ stw(r9, MemOperand(cache_entry, 8));
@@ -3561,7 +3561,7 @@ void TranscendentalCacheStub::Generate(MacroAssembler* masm) {
     // cache.
     __ LoadRoot(r8, Heap::kHeapNumberMapRootIndex);
     __ AllocateHeapNumber(r3, scratch0, scratch1, r8, &skip_cache);
-    __ stfd(d2, MemOperand(r3, HeapNumber::kValueOffset));
+    __ stfd(d2, FieldMemOperand(r3, HeapNumber::kValueOffset));
     {
       FrameScope scope(masm, StackFrame::INTERNAL);
       __ push(r3);
@@ -3593,20 +3593,31 @@ void TranscendentalCacheStub::Generate(MacroAssembler* masm) {
 }
 
 
-// roohack not converted
 void TranscendentalCacheStub::GenerateCallCFunction(MacroAssembler* masm,
                                                     Register scratch) {
   EMIT_STUB_MARKER(148);
-#ifdef PENGUIN_CLEANUP
   ASSERT(CpuFeatures::IsEnabled(VFP2));
   Isolate* isolate = masm->isolate();
 
-  __ push(lr);
+  __ mflr(r0);
+  __ push(r0);
   __ PrepareCallCFunction(0, 1, scratch);
   if (masm->use_eabi_hardfloat()) {
-    __ vmov(d0, d2);
+    __ fmr(d0, d2);
   } else {
-    __ vmov(r0, r1, d2);
+    __ addi(sp, sp, Operand(-8));
+
+    __ stfd(d2, MemOperand(sp, 0));
+// ENDIAN - r3/r4 are in memory order
+#if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
+    __ lwz(r3, MemOperand(sp, 4));
+    __ lwz(r4, MemOperand(sp, 0));
+#else
+    __ lwz(r3, MemOperand(sp, 0));
+    __ lwz(r4, MemOperand(sp, 4));
+#endif
+
+    __ addi(sp, sp, Operand(8));
   }
   AllowExternalCallThatCantCauseGC scope(masm);
   switch (type_) {
@@ -3630,11 +3641,8 @@ void TranscendentalCacheStub::GenerateCallCFunction(MacroAssembler* masm,
       UNIMPLEMENTED();
       break;
   }
-  __ pop(lr);
-#else
-  PPCPORT_UNIMPLEMENTED();
-  __ fake_asm(fMASM12);
-#endif
+  __ pop(r0);
+  __ mtlr(r0);
 }
 
 
