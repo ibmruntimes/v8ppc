@@ -4485,8 +4485,7 @@ void LCodeGen::DoDeferredNumberTagI(LInstruction* instr,
   // Done. Put the value in dbl_scratch into the value of the allocated heap
   // number.
   __ bind(&done);
-  __ sub(ip, dst, Operand(kHeapObjectTag));
-  __ stfd(dbl_scratch, MemOperand(ip, HeapNumber::kValueOffset));
+  __ stfd(dbl_scratch, FieldMemOperand(dst, HeapNumber::kValueOffset));
   __ StoreToSafepointRegisterSlot(dst, dst);
 #else
   PPCPORT_UNIMPLEMENTED();
@@ -4520,8 +4519,7 @@ void LCodeGen::DoNumberTagD(LNumberTagD* instr) {
     __ b(deferred->entry());
   }
   __ bind(deferred->exit());
-  __ sub(ip, reg, Operand(kHeapObjectTag));
-  __ stfd(input_reg, MemOperand(ip, HeapNumber::kValueOffset));
+  __ stfd(input_reg, FieldMemOperand(reg, HeapNumber::kValueOffset));
 }
 
 
@@ -4658,8 +4656,8 @@ void LCodeGen::DoDeferredTaggedToI(LTaggedToI* instr) {
     __ b(&done);
 
     __ bind(&heap_number);
-    __ sub(scratch1, input_reg, Operand(kHeapObjectTag));
-    __ lfd(double_scratch2, MemOperand(scratch1, HeapNumber::kValueOffset));
+    __ lfd(double_scratch2,
+           FieldMemOperand(input_reg, HeapNumber::kValueOffset));
 
     __ EmitECMATruncate(input_reg,
                         double_scratch2,
@@ -4673,8 +4671,8 @@ void LCodeGen::DoDeferredTaggedToI(LTaggedToI* instr) {
     // Deoptimize if we don't have a heap number.
     DeoptimizeIf(ne, instr->environment());
 
-    __ sub(ip, input_reg, Operand(kHeapObjectTag));
-    __ lfd(double_scratch, MemOperand(ip, HeapNumber::kValueOffset));
+    __ lfd(double_scratch,
+           FieldMemOperand(input_reg, HeapNumber::kValueOffset));
     __ EmitVFPTruncate(kRoundToZero,
                        single_scratch,
                        double_scratch,

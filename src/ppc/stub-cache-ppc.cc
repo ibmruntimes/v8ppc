@@ -3694,8 +3694,7 @@ static void GenerateSmiKeyCheck(MacroAssembler* masm,
               Heap::kHeapNumberMapRootIndex,
               fail,
               DONT_DO_SMI_CHECK);
-  __ sub(ip, key, Operand(kHeapObjectTag));
-  __ lfd(double_scratch0, MemOperand(ip, HeapNumber::kValueOffset));
+  __ lfd(double_scratch0, FieldMemOperand(key, HeapNumber::kValueOffset));
   __ EmitVFPTruncate(kRoundToZero,
                      d11,
                      double_scratch0,
@@ -4024,8 +4023,6 @@ void KeyedStoreStubCompiler::GenerateStoreExternalArray(
       // reproducible behavior, convert these to zero.
 
       if (elements_kind == EXTERNAL_FLOAT_ELEMENTS) {
-        // vldr requires offset to be a multiple of 4 so we can not
-        // include -kHeapObjectTag into it.
         __ lfd(d0, FieldMemOperand(r3, HeapNumber::kValueOffset));
         __ slwi(r8, key, Operand(1));
         __ frsp(d0, d0);

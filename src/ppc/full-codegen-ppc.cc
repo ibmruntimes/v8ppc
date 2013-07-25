@@ -3097,27 +3097,26 @@ void FullCodeGenerator::EmitRandomHeapNumber(CallRuntime* expr) {
   // by computing:
   // ( 1.(20 0s)(32 random bits) x 2^20 ) - (1.0 x 2^20)).
   if (CpuFeatures::IsSupported(VFP2)) {
-    __ PrepareCallCFunction(1, r0);
-    __ lwz(r0,
+    __ PrepareCallCFunction(1, r3);
+    __ lwz(r3,
            ContextOperand(context_register(), Context::GLOBAL_OBJECT_INDEX));
-    __ lwz(r0, FieldMemOperand(r0, GlobalObject::kNativeContextOffset));
+    __ lwz(r3, FieldMemOperand(r0, GlobalObject::kNativeContextOffset));
     __ CallCFunction(ExternalReference::random_uint32_function(isolate()), 1);
 
     CpuFeatures::Scope scope(VFP2);
     // 0x41300000 is the top half of 1.0 x 2^20 as a double.
     // Create this constant using mov/orr to avoid PC relative load.
-    __ mov(r1, Operand(0x41000000));
-    __ orr(r1, r1, Operand(0x300000));
+    __ mov(r4, Operand(0x41000000));
+    __ orr(r4, r4, Operand(0x300000));
     // Move 0x41300000xxxxxxxx (x = random bits) to VFP.
-    __ vmov(d7, r0, r1);
+    __ vmov(d7, r3, r4);
     // Move 0x4130000000000000 to VFP.
-    __ mov(r0, Operand(0, RelocInfo::NONE));
-    __ vmov(d8, r0, r1);
+    __ mov(r3, Operand(0, RelocInfo::NONE));
+    __ vmov(d8, r3, r4);
     // Subtract and store the result in the heap number.
-    __ vsub(d7, d7, d8);
-    __ sub(r0, r4, Operand(kHeapObjectTag));
-    __ vstw(d7, r0, HeapNumber::kValueOffset);
-    __ mr(r0, r4);
+    __ fsub(d7, d7, d8);
+    __ stfd(d7, FieldMemOperand(r7, HeapNumber::kValueOffset));
+    __ mr(r3, r7);
   } else {
 #endif
     __ PrepareCallCFunction(2, r3);

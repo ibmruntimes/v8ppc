@@ -700,8 +700,7 @@ void FloatingPointHelper::LoadNumber(MacroAssembler* masm,
   // Handle loading a double from a heap number
   if (destination == kFPRegisters) {
     // Load the double from tagged HeapNumber to double register.
-    __ sub(scratch1, object, Operand(kHeapObjectTag));
-    __ lfd(dst, MemOperand(scratch1, HeapNumber::kValueOffset));
+    __ lfd(dst, FieldMemOperand(object, HeapNumber::kValueOffset));
   } else {
     ASSERT(destination == kCoreRegisters);
     // Load the double from heap number to dst1 and dst2 in double format.
@@ -1340,8 +1339,7 @@ static void EmitSmiNonsmiComparison(MacroAssembler* masm,
   // Convert lhs to a double in d7.
   __ SmiToDoubleFPRegister(lhs, d7, r10, d15);
   // Load the double from rhs, tagged HeapNumber r3, to d6.
-  __ sub(r10, rhs, Operand(kHeapObjectTag));
-  __ lfd(d6, MemOperand(r10, HeapNumber::kValueOffset));
+  __ lfd(d6, FieldMemOperand(rhs, HeapNumber::kValueOffset));
 
   // We now have both loaded as doubles but we can skip the lhs nan check
   // since it's a smi.
@@ -1369,8 +1367,7 @@ static void EmitSmiNonsmiComparison(MacroAssembler* masm,
 
   // Rhs is a smi, lhs is a heap number.
   // Load the double from lhs, tagged HeapNumber r4, to d7.
-  __ sub(r10, lhs, Operand(kHeapObjectTag));
-  __ lfd(d7, MemOperand(r10, HeapNumber::kValueOffset));
+  __ lfd(d7, FieldMemOperand(lhs, HeapNumber::kValueOffset));
   // Convert rhs to a double in d6.
   __ SmiToDoubleFPRegister(rhs, d6, r10, d13);
   // Fall through to both_loaded_as_doubles.
@@ -1490,10 +1487,8 @@ static void EmitCheckForTwoHeapNumbers(MacroAssembler* masm,
 
   // Both are heap numbers.  Load them up then jump to the code we have
   // for that.
-  __ sub(r10, rhs, Operand(kHeapObjectTag));
-  __ lfd(d6, MemOperand(r10, HeapNumber::kValueOffset));
-  __ sub(r10, lhs, Operand(kHeapObjectTag));
-  __ lfd(d7, MemOperand(r10, HeapNumber::kValueOffset));
+  __ lfd(d6, FieldMemOperand(rhs, HeapNumber::kValueOffset));
+  __ lfd(d7, FieldMemOperand(lhs, HeapNumber::kValueOffset));
 
   __ jmp(both_loaded_as_doubles);
 }
@@ -1600,13 +1595,11 @@ void NumberToStringStub::GenerateLookupNumberStringCache(MacroAssembler* masm,
       __ add(scratch1, number_string_cache, scratch1);
 
       Register probe = mask;
-      __ ldr(probe,
+      __ lwz(probe,
              FieldMemOperand(scratch1, FixedArray::kHeaderSize));
       __ JumpIfSmi(probe, not_found);
-      __ sub(scratch2, object, Operand(kHeapObjectTag));
-      __ vldr(d0, scratch2, HeapNumber::kValueOffset);
-      __ sub(probe, probe, Operand(kHeapObjectTag));
-      __ vldr(d1, probe, HeapNumber::kValueOffset);
+      __ lfd(d0, FieldMemOperand(object, HeapNumber::kValueOffset));
+      __ lfd(d1, FieldMemOperand(probe, HeapNumber::kValueOffset));
       __ VFPCompareAndSetFlags(d0, d1);
       __ b(ne, not_found);  // The cache did not contain this value.
       __ b(&load_result_from_cache);
@@ -2617,9 +2610,8 @@ void BinaryOpStub::GenerateFPOperation(MacroAssembler* masm,
           default:
             UNREACHABLE();
         }
-        __ sub(r3, result, Operand(kHeapObjectTag));
-        __ stfd(d5, MemOperand(r3, HeapNumber::kValueOffset));
-        __ addi(r3, r3, Operand(kHeapObjectTag));
+        __ stfd(d5, FieldMemOperand(result, HeapNumber::kValueOffset));
+        __ mr(r3, result);
         __ Ret();
       } else {
         // Call the C function to handle the double operation.
@@ -2992,8 +2984,8 @@ void BinaryOpStub::GenerateInt32Stub(MacroAssembler* masm) {
                                        scratch1,
                                        scratch2,
                                        &call_runtime);
-          __ sub(r3, heap_number_result, Operand(kHeapObjectTag));
-          __ stfd(d5, MemOperand(r3, HeapNumber::kValueOffset));
+          __ stfd(d5, FieldMemOperand(heap_number_result,
+                                      HeapNumber::kValueOffset));
           __ mr(r3, heap_number_result);
           __ Ret();
         }
@@ -3187,8 +3179,8 @@ void BinaryOpStub::GenerateInt32Stub(MacroAssembler* masm) {
       }
 
       // Store the result.
-      __ sub(r3, heap_number_result, Operand(kHeapObjectTag));
-      __ stfd(double_scratch, MemOperand(r3, HeapNumber::kValueOffset));
+      __ stfd(double_scratch, FieldMemOperand(heap_number_result,
+                                              HeapNumber::kValueOffset));
       __ mr(r3, heap_number_result);
       __ Ret();
 
@@ -3567,7 +3559,7 @@ void TranscendentalCacheStub::Generate(MacroAssembler* masm) {
       __ push(r3);
       __ CallRuntime(RuntimeFunction(), 1);
     }
-    __ lfd(d2, MemOperand(r3, HeapNumber::kValueOffset));
+    __ lfd(d2, FieldMemOperand(r3, HeapNumber::kValueOffset));
     __ Ret();
 
     __ bind(&skip_cache);
@@ -6885,10 +6877,8 @@ void ICCompareStub::GenerateHeapNumbers(MacroAssembler* masm) {
 
   // Load left and right operand
   // likely we can combine the constants to remove the sub
-  __ sub(r5, r4, Operand(kHeapObjectTag));
-  __ lfd(d0, MemOperand(r5, HeapNumber::kValueOffset));
-  __ sub(r5, r3, Operand(kHeapObjectTag));
-  __ lfd(d1, MemOperand(r5, HeapNumber::kValueOffset));
+  __ lfd(d0, FieldMemOperand(r4, HeapNumber::kValueOffset));
+  __ lfd(d1, FieldMemOperand(r3, HeapNumber::kValueOffset));
 
   // Compare operands
   __ fcmpu(d0, d1);
