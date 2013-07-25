@@ -285,6 +285,7 @@ enum OpcodeExt4 {
   FDIV = 18 << 1,    // Floating Divide
   FSUB = 20 << 1,    // Floating Subtract
   FADD = 21 << 1,    // Floating Add
+  FSQRT = 22 << 1,   // Floating Square Root
   FSEL = 23 << 1,    // Floating Select
   FMUL = 25 << 1,    // Floating Multiply
 

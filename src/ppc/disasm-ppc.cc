@@ -1005,23 +1005,27 @@ void Decoder::DecodeExt2(Instruction* instr) {
 void Decoder::DecodeExt4(Instruction* instr) {
   switch (instr->Bits(5, 1) << 1) {
     case FDIV: {
-      Format(instr, "fdiv    'Dt, 'Da, 'Db");
+      Format(instr, "fdiv'.   'Dt, 'Da, 'Db");
       return;
     }
     case FSUB: {
-      Format(instr, "fsub    'Dt, 'Da, 'Db");
+      Format(instr, "fsub'.   'Dt, 'Da, 'Db");
       return;
     }
     case FADD: {
-      Format(instr, "fadd    'Dt, 'Da, 'Db");
+      Format(instr, "fadd'.   'Dt, 'Da, 'Db");
+      return;
+    }
+    case FSQRT: {
+      Format(instr, "fsqrt'.  'Dt, 'Db");
       return;
     }
     case FSEL: {
-      Format(instr, "fsel    'Dt, 'Da, 'Dc, 'Db");
+      Format(instr, "fsel'.   'Dt, 'Da, 'Dc, 'Db");
       return;
     }
     case FMUL: {
-      Format(instr, "fmul    'Dt, 'Da, 'Dc");
+      Format(instr, "fmul'.   'Dt, 'Da, 'Dc");
       return;
     }
   }

@@ -3539,14 +3539,9 @@ void LCodeGen::DoMathRound(LUnaryMathOperation* instr) {
 
 
 void LCodeGen::DoMathSqrt(LUnaryMathOperation* instr) {
-#ifdef PENGUIN_CLEANUP
   DoubleRegister input = ToDoubleRegister(instr->value());
   DoubleRegister result = ToDoubleRegister(instr->result());
-  __ vsqrt(result, input);
-#else
-  PPCPORT_UNIMPLEMENTED();
-  __ fake_asm(fLITHIUM105);
-#endif
+  __ fsqrt(result, input);
 }
 
 
@@ -3567,7 +3562,7 @@ void LCodeGen::DoMathPowHalf(LUnaryMathOperation* instr) {
 
   // Add +0 to convert -0 to +0.
   __ vadd(result, input, kDoubleRegZero);
-  __ vsqrt(result, result);
+  __ fsqrt(result, result);
   __ bind(&done);
 #else
   PPCPORT_UNIMPLEMENTED();

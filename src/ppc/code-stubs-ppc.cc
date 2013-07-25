@@ -3748,7 +3748,7 @@ void MathPowStub::Generate(MacroAssembler* masm) {
 
       // Add +0 to convert -0 to +0.
       __ vadd(double_scratch, double_base, kDoubleRegZero);
-      __ vsqrt(double_result, double_scratch);
+      __ fsqrt(double_result, double_scratch);
       __ jmp(&done);
 
       __ bind(&not_plus_half);
@@ -3766,7 +3766,7 @@ void MathPowStub::Generate(MacroAssembler* masm) {
       // Add +0 to convert -0 to +0.
       __ vadd(double_scratch, double_base, kDoubleRegZero);
       __ vmov(double_result, 1.0, scratch);
-      __ vsqrt(double_scratch, double_scratch);
+      __ fsqrt(double_scratch, double_scratch);
       __ vdiv(double_result, double_result, double_scratch);
       __ jmp(&done);
     }

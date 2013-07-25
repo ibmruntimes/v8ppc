@@ -1756,6 +1756,13 @@ void Assembler::mtfsfi(int bf, int immediate, RCBit rc) {
   emit(EXT4 | MTFSFI | bf*B23 | immediate*B12 | rc);
 }
 
+void Assembler::fsqrt(const DwVfpRegister frt,
+                      const DwVfpRegister frb,
+                      RCBit rc) {
+  CheckBuffer();
+  emit(EXT4 | FSQRT | frt.code()*B21 | frb.code()*B11 | rc);
+}
+
 // Support for VFP.
 
 void Assembler::vldr(const DwVfpRegister dst,
