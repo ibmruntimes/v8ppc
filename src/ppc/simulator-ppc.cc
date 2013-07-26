@@ -2356,6 +2356,40 @@ void Simulator::DecodeExt4(Instruction* instr) {
       set_d_register_from_double(frt, frt_val);
       return;
     }
+    case FCTID: {
+      int frt = instr->RTValue();
+      int frb = instr->RBValue();
+      double frb_val = get_double_from_d_register(frb);
+      int64_t frt_val;
+
+      if (frb_val > 0x7fffffffffffffff) {
+        frt_val = (int64_t)0x7fffffffffffffff;
+      } else if (frb_val < -0x7fffffffffffffff) {
+        frt_val = (int64_t)-0x7fffffffffffffff;
+      } else {
+        frt_val = (int64_t)frb_val;
+      }
+      double *p = reinterpret_cast<double*>(&frt_val);
+      set_d_register_from_double(frt, *p);
+      return;
+    }
+    case FCTIDZ: {
+      int frt = instr->RTValue();
+      int frb = instr->RBValue();
+      double frb_val = get_double_from_d_register(frb);
+      int64_t frt_val;
+
+      if (frb_val > 0x7fffffffffffffff) {
+        frt_val = (int64_t)0x7fffffffffffffff;
+      } else if (frb_val < -0x7fffffffffffffff) {
+        frt_val = (int64_t)-0x7fffffffffffffff;
+      } else {
+        frt_val = (int64_t)frb_val;
+      }
+      double *p = reinterpret_cast<double*>(&frt_val);
+      set_d_register_from_double(frt, *p);
+      return;
+    }
     case FCTIWZ: {
       int frt = instr->RTValue();
       int frb = instr->RBValue();

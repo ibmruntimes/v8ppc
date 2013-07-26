@@ -1737,6 +1737,20 @@ void Assembler::fcfid(const DwVfpRegister frt,
   emit(EXT4 | FCFID | frt.code()*B21 | frb.code()*B11 | rc);
 }
 
+void Assembler::fctid(const DwVfpRegister frt,
+                      const DwVfpRegister frb,
+                      RCBit rc) {
+  CheckBuffer();
+  emit(EXT4 | FCTID | frt.code()*B21 | frb.code()*B11 | rc);
+}
+
+void Assembler::fctidz(const DwVfpRegister frt,
+                      const DwVfpRegister frb,
+                      RCBit rc) {
+  CheckBuffer();
+  emit(EXT4 | FCTIDZ | frt.code()*B21 | frb.code()*B11 | rc);
+}
+
 void Assembler::fsel(const DwVfpRegister frt, const DwVfpRegister fra,
                      const DwVfpRegister frc, const DwVfpRegister frb,
                      RCBit rc) {

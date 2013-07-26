@@ -282,24 +282,26 @@ enum OpcodeExt2 {
 // Some use Bits 10-1 and other only 5-1 for the opcode
 enum OpcodeExt4 {
   // Bits 5-1
-  FDIV = 18 << 1,    // Floating Divide
-  FSUB = 20 << 1,    // Floating Subtract
-  FADD = 21 << 1,    // Floating Add
-  FSQRT = 22 << 1,   // Floating Square Root
-  FSEL = 23 << 1,    // Floating Select
-  FMUL = 25 << 1,    // Floating Multiply
+  FDIV   = 18 << 1,   // Floating Divide
+  FSUB   = 20 << 1,   // Floating Subtract
+  FADD   = 21 << 1,   // Floating Add
+  FSQRT  = 22 << 1,   // Floating Square Root
+  FSEL   = 23 << 1,   // Floating Select
+  FMUL   = 25 << 1,   // Floating Multiply
 
   // Bits 10-1
-  FCMPU = 0 << 1,     // Floating Compare Unordered
-  FRSP = 12 << 1,     // Floating-Point Rounding
-  FCTIWZ = 15 << 1,   // Floating Convert to Integer Word with Round to Zero
-  FNEG = 40 << 1,     // Floating Negate
-  MCRFS = 64 << 1,    // Move to Condition Register from FPSCR
-  FMR = 72 << 1,      // Floating Move Register
+  FCMPU  =   0 << 1,  // Floating Compare Unordered
+  FRSP   =  12 << 1,  // Floating-Point Rounding
+  FCTIWZ =  15 << 1,  // Floating Convert to Integer Word with Round to Zero
+  FNEG   =  40 << 1,  // Floating Negate
+  MCRFS  =  64 << 1,  // Move to Condition Register from FPSCR
+  FMR    =  72 << 1,  // Floating Move Register
   MTFSFI = 134 << 1,  // Move to FPSCR Field Immediate
-  FABS = 264 << 1,    // Floating Absolute Value
-  FRIM = 488 << 1,    // Floating Round to Integer Minus
-  FCFID = 846 << 1    // Floating convert from integer doubleword
+  FABS   = 264 << 1,  // Floating Absolute Value
+  FRIM   = 488 << 1,  // Floating Round to Integer Minus
+  FCFID  = 846 << 1,  // Floating convert from integer doubleword
+  FCTID  = 814 << 1,  // Floating convert from integer doubleword
+  FCTIDZ = 815 << 1   // Floating convert from integer doubleword
 };
 
 // Instruction encoding bits and masks.

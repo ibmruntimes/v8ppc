@@ -1222,6 +1222,10 @@ class Assembler : public AssemblerBase {
             RCBit rc = LeaveRC);
   void fcfid(const DwVfpRegister frt, const DwVfpRegister frb,
             RCBit rc = LeaveRC);
+  void fctid(const DwVfpRegister frt, const DwVfpRegister frb,
+            RCBit rc = LeaveRC);
+  void fctidz(const DwVfpRegister frt, const DwVfpRegister frb,
+            RCBit rc = LeaveRC);
   void fsel(const DwVfpRegister frt, const DwVfpRegister fra,
             const DwVfpRegister frc, const DwVfpRegister frb,
             RCBit rc = LeaveRC);

@@ -1043,6 +1043,14 @@ void Decoder::DecodeExt4(Instruction* instr) {
       Format(instr, "fcfid'.  'Dt, 'Db");
       break;
     }
+    case FCTID: {
+      Format(instr, "fctid   'Dt, 'Db");
+      break;
+    }
+    case FCTIDZ: {
+      Format(instr, "fctidz  'Dt, 'Db");
+      break;
+    }
     case FCTIWZ: {
       Format(instr, "fctiwz'. 'Dt, 'Db");
       break;
