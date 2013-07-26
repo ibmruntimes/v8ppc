@@ -2362,13 +2362,17 @@ void Simulator::DecodeExt4(Instruction* instr) {
       double frb_val = get_double_from_d_register(frb);
       int64_t frt_val;
 
+#if 0
       if (frb_val > 0x7fffffffffffffff) {
         frt_val = (int64_t)0x7fffffffffffffff;
       } else if (frb_val < -0x7fffffffffffffff) {
-        frt_val = (int64_t)-0x7fffffffffffffff;
+        frt_val = (int64_t)0x8000000000000000;
       } else {
         frt_val = (int64_t)frb_val;
       }
+#else
+      frt_val = (int64_t)frb_val;
+#endif
       double *p = reinterpret_cast<double*>(&frt_val);
       set_d_register_from_double(frt, *p);
       return;
@@ -2379,13 +2383,17 @@ void Simulator::DecodeExt4(Instruction* instr) {
       double frb_val = get_double_from_d_register(frb);
       int64_t frt_val;
 
+#if 0
       if (frb_val > 0x7fffffffffffffff) {
         frt_val = (int64_t)0x7fffffffffffffff;
       } else if (frb_val < -0x7fffffffffffffff) {
-        frt_val = (int64_t)-0x7fffffffffffffff;
+        frt_val = (int64_t)0x8000000000000000;
       } else {
         frt_val = (int64_t)frb_val;
       }
+#else
+      frt_val = (int64_t)frb_val;
+#endif
       double *p = reinterpret_cast<double*>(&frt_val);
       set_d_register_from_double(frt, *p);
       return;
