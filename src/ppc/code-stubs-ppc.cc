@@ -684,11 +684,9 @@ void FloatingPointHelper::LoadNumber(MacroAssembler* masm,
                                      Register scratch2,
                                      Label* not_number) {
   EMIT_STUB_MARKER(91);
-  if (FLAG_debug_code) {
-    __ AbortIfNotRootValue(heap_number_map,
-                           Heap::kHeapNumberMapRootIndex,
-                           "HeapNumberMap register clobbered.");
-  }
+  __ AssertRootValue(heap_number_map,
+                     Heap::kHeapNumberMapRootIndex,
+                     "HeapNumberMap register clobbered.");
 
   Label is_smi, done;
 
@@ -751,11 +749,9 @@ void FloatingPointHelper::ConvertNumberToInt32(MacroAssembler* masm,
                                                DwVfpRegister double_scratch,
                                                Label* not_number) {
   EMIT_STUB_MARKER(92);
-  if (FLAG_debug_code) {
-    __ AbortIfNotRootValue(heap_number_map,
-                           Heap::kHeapNumberMapRootIndex,
-                           "HeapNumberMap register clobbered.");
-  }
+  __ AssertRootValue(heap_number_map,
+                     Heap::kHeapNumberMapRootIndex,
+                     "HeapNumberMap register clobbered.");
   Label done;
   Label not_in_int32_range;
 
@@ -982,10 +978,10 @@ void FloatingPointHelper::ConvertDoubleToUnsignedInt(MacroAssembler* masm,
 void FloatingPointHelper::LoadNumberAsInt32Double(MacroAssembler* masm,
                                                   Register object,
                                                   DwVfpRegister double_dst,
+                                                  DwVfpRegister double_scratch,
                                                   Register heap_number_map,
                                                   Register scratch1,
                                                   Register scratch2,
-                                                  DwVfpRegister double_scratch,
                                                   Label* not_int32) {
   EMIT_STUB_MARKER(98);
   ASSERT(!scratch1.is(object) && !scratch2.is(object));
@@ -1002,21 +998,19 @@ void FloatingPointHelper::LoadNumberAsInt32Double(MacroAssembler* masm,
   __ b(&done);
 
   __ bind(&obj_is_not_smi);
-  if (FLAG_debug_code) {
-    __ AbortIfNotRootValue(heap_number_map,
-                           Heap::kHeapNumberMapRootIndex,
-                           "HeapNumberMap register clobbered.");
-  }
+  __ AssertRootValue(heap_number_map,
+                     Heap::kHeapNumberMapRootIndex,
+                     "HeapNumberMap register clobbered.");
   __ JumpIfNotHeapNumber(object, heap_number_map, scratch1, not_int32);
 
   // Load the double value.
   __ lfd(double_dst, FieldMemOperand(object, HeapNumber::kValueOffset));
 
   __ EmitVFPTruncate(kRoundToZero,
-                     double_scratch,
+                     scratch1,
                      double_dst,
                      scratch1,
-                     scratch2,
+                     double_scratch,
                      kCheckForInexactConversion);
 
   // Jump to not_int32 if the operation did not succeed.
@@ -1048,7 +1042,8 @@ void FloatingPointHelper::LoadNumberAsInt32(MacroAssembler* masm,
                                             Register scratch1,
                                             Register scratch2,
                                             Register scratch3,
-                                            DwVfpRegister double_scratch,
+                                            DwVfpRegister double_scratch0,
+                                            DwVfpRegister double_scratch1,
                                             Label* not_int32) {
   EMIT_STUB_MARKER(99);
   ASSERT(!dst.is(object));
@@ -1061,14 +1056,23 @@ void FloatingPointHelper::LoadNumberAsInt32(MacroAssembler* masm,
 
   __ UntagAndJumpIfSmi(dst, object, &done);
 
-  if (FLAG_debug_code) {
-    __ AbortIfNotRootValue(heap_number_map,
-                           Heap::kHeapNumberMapRootIndex,
-                           "HeapNumberMap register clobbered.");
-  }
+  __ AssertRootValue(heap_number_map,
+                     Heap::kHeapNumberMapRootIndex,
+                     "HeapNumberMap register clobbered.");
   __ JumpIfNotHeapNumber(object, heap_number_map, scratch1, not_int32);
 
-  __ ConvertToInt32(object, dst, scratch1, scratch2, double_scratch, not_int32);
+  // Load the double value.
+  __ lfd(double_scratch0, FieldMemOperand(object, HeapNumber::kValueOffset));
+
+  __ EmitVFPTruncate(kRoundToZero,
+                     dst,
+                     double_scratch0,
+                     scratch1,
+                     double_scratch1,
+                     kCheckForInexactConversion);
+
+  // Jump to not_int32 if the operation did not succeed.
+  __ boverflow(not_int32);
 
   __ bind(&done);
 }
@@ -2550,9 +2554,9 @@ void BinaryOpStub::GenerateFPOperation(MacroAssembler* masm,
   Register scratch3 = r7;
 
   ASSERT(smi_operands || (not_numbers != NULL));
-  if (smi_operands && FLAG_debug_code) {
-    __ AbortIfNotSmi(left);
-    __ AbortIfNotSmi(right);
+  if (smi_operands) {
+    __ AssertSmi(left);
+    __ AssertSmi(right);
   }
 
   Register heap_number_map = r9;
@@ -2844,8 +2848,8 @@ void BinaryOpStub::GenerateInt32Stub(MacroAssembler* masm) {
   Register right = r3;
   Register scratch1 = r10;
   Register scratch2 = r11;
-  DwVfpRegister double_scratch = d0;
-  DwVfpRegister single_scratch = d10;
+  DwVfpRegister double_scratch0 = d0;
+  DwVfpRegister double_scratch1 = d1;
 
   Register heap_number_result = no_reg;
   Register heap_number_map = r9;
@@ -2882,18 +2886,18 @@ void BinaryOpStub::GenerateInt32Stub(MacroAssembler* masm) {
       FloatingPointHelper::LoadNumberAsInt32Double(masm,
                                                    right,
                                                    d7,
+                                                   d8,
                                                    heap_number_map,
                                                    scratch1,
                                                    scratch2,
-                                                   d8,
                                                    &transition);
       FloatingPointHelper::LoadNumberAsInt32Double(masm,
                                                    left,
                                                    d6,
+                                                   d8,
                                                    heap_number_map,
                                                    scratch1,
                                                    scratch2,
-                                                   d8,
                                                    &transition);
 
       if (destination == FloatingPointHelper::kFPRegisters) {
@@ -2923,10 +2927,10 @@ void BinaryOpStub::GenerateInt32Stub(MacroAssembler* masm) {
           // transition.
 
           __ EmitVFPTruncate(kRoundToZero,
-                             single_scratch,
-                             d5,
                              scratch1,
-                             scratch2);
+                             d5,
+                             scratch2,
+                             d8);
 
           if (result_type_ <= BinaryOpIC::INT32) {
             // result does not fit in a 32-bit integer.
@@ -2934,15 +2938,6 @@ void BinaryOpStub::GenerateInt32Stub(MacroAssembler* masm) {
           }
 
           // Check if the result fits in a smi.
-          __ fctiwz(single_scratch, single_scratch);
-          __ sub(sp, sp, Operand(8));
-          __ stfd(single_scratch, MemOperand(sp, 0));
-#if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
-          __ lwz(scratch1, MemOperand(sp, 0));
-#else
-          __ lwz(scratch1, MemOperand(sp, 4));
-#endif
-          __ addi(sp, sp, Operand(8));
           __ addis(scratch2, scratch1, Operand(0x40000000u >> 16));
           __ cmpi(scratch2, Operand::Zero());
           // If not try to return a heap number.
@@ -3052,7 +3047,8 @@ void BinaryOpStub::GenerateInt32Stub(MacroAssembler* masm) {
                                              scratch1,
                                              scratch2,
                                              scratch3,
-                                             d0,
+                                             double_scratch0,
+                                             double_scratch1,
                                              &transition);
       FloatingPointHelper::LoadNumberAsInt32(masm,
                                              right,
@@ -3061,7 +3057,8 @@ void BinaryOpStub::GenerateInt32Stub(MacroAssembler* masm) {
                                              scratch1,
                                              scratch2,
                                              scratch3,
-                                             d0,
+                                             double_scratch0,
+                                             double_scratch1,
                                              &transition);
 
       // The ECMA-262 standard specifies that, for shift operations, only the
@@ -3148,10 +3145,10 @@ void BinaryOpStub::GenerateInt32Stub(MacroAssembler* masm) {
         __ xor_(r0, r5, r0);
         __ stw(r0, MemOperand(sp, 12));
 #endif
-        __ lfd(double_scratch, MemOperand(sp, 0));
-        __ lfd(single_scratch, MemOperand(sp, 8));
+        __ lfd(double_scratch0, MemOperand(sp, 0));
+        __ lfd(double_scratch1, MemOperand(sp, 8));
         __ addi(sp, sp, Operand(16));  // restore stack
-        __ fsub(double_scratch, single_scratch, double_scratch);
+        __ fsub(double_scratch0, double_scratch1, double_scratch0);
       } else {
         // The result must be interpreted as an unsigned 32-bit integer.
         // Conversion to unsigned is similar to above signed
@@ -3172,15 +3169,15 @@ void BinaryOpStub::GenerateInt32Stub(MacroAssembler* masm) {
         __ stw(r0, MemOperand(sp, 4));
         __ stw(r5, MemOperand(sp, 12));
 #endif
-        __ lfd(double_scratch, MemOperand(sp, 0));
-        __ lfd(single_scratch, MemOperand(sp, 8));
+        __ lfd(double_scratch0, MemOperand(sp, 0));
+        __ lfd(double_scratch1, MemOperand(sp, 8));
         __ addi(sp, sp, Operand(16));  // restore stack
-        __ fsub(double_scratch, single_scratch, double_scratch);
+        __ fsub(double_scratch0, double_scratch1, double_scratch0);
       }
 
       // Store the result.
-      __ stfd(double_scratch, FieldMemOperand(heap_number_result,
-                                              HeapNumber::kValueOffset));
+      __ stfd(double_scratch0, FieldMemOperand(heap_number_result,
+                                               HeapNumber::kValueOffset));
       __ mr(r3, heap_number_result);
       __ Ret();
 
@@ -7314,7 +7311,7 @@ void StringDictionaryLookupStub::GeneratePositiveLookup(MacroAssembler* masm,
   ASSERT(!name.is(scratch2));
 
   // Assert that name contains a string.
-  if (FLAG_debug_code) __ AbortIfNotString(name);
+  __ AssertString(name);
 
   // Compute the capacity mask.
   __ lwz(scratch1, FieldMemOperand(elements, kCapacityOffset));

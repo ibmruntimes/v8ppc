@@ -3445,7 +3445,7 @@ void MacroAssembler::StoreNumberToDoubleElements(Register value_reg,
     destination = FloatingPointHelper::kCoreRegisters;
   }
 
-  Register untagged_value = receiver_reg;
+  Register untagged_value = elements_reg;
   SmiUntag(untagged_value, value_reg);
   FloatingPointHelper::ConvertIntToDouble(this,
                                           untagged_value,
@@ -4798,38 +4798,46 @@ void MacroAssembler::JumpIfEitherSmi(Register reg1,
 }
 
 
-void MacroAssembler::AbortIfSmi(Register object) {
-  STATIC_ASSERT(kSmiTag == 0);
-  andi(at, object, kSmiTagMask);
-  Assert(ne, "Operand is a smi", at, Operand(zero_reg));
+void MacroAssembler::AssertNotSmi(Register object) {
+  if (emit_debug_code()) {
+    STATIC_ASSERT(kSmiTag == 0);
+    andi(at, object, kSmiTagMask);
+    Check(ne, "Operand is a smi", at, Operand(zero_reg));
+  }
 }
 
 
-void MacroAssembler::AbortIfNotSmi(Register object) {
-  STATIC_ASSERT(kSmiTag == 0);
-  andi(at, object, kSmiTagMask);
-  Assert(eq, "Operand is a smi", at, Operand(zero_reg));
+void MacroAssembler::AssertSmi(Register object) {
+  if (emit_debug_code()) {
+    STATIC_ASSERT(kSmiTag == 0);
+    andi(at, object, kSmiTagMask);
+    Check(eq, "Operand is a smi", at, Operand(zero_reg));
+  }
 }
 
 
-void MacroAssembler::AbortIfNotString(Register object) {
-  STATIC_ASSERT(kSmiTag == 0);
-  And(t0, object, Operand(kSmiTagMask));
-  Assert(ne, "Operand is not a string", t0, Operand(zero_reg));
-  push(object);
-  lw(object, FieldMemOperand(object, HeapObject::kMapOffset));
-  lbu(object, FieldMemOperand(object, Map::kInstanceTypeOffset));
-  Assert(lo, "Operand is not a string", object, Operand(FIRST_NONSTRING_TYPE));
-  pop(object);
+void MacroAssembler::AssertString(Register object) {
+  if (emit_debug_code()) {
+    STATIC_ASSERT(kSmiTag == 0);
+    And(t0, object, Operand(kSmiTagMask));
+    Check(ne, "Operand is a smi and not a string", t0, Operand(zero_reg));
+    push(object);
+    lw(object, FieldMemOperand(object, HeapObject::kMapOffset));
+    lbu(object, FieldMemOperand(object, Map::kInstanceTypeOffset));
+    Check(lo, "Operand is not a string", object, Operand(FIRST_NONSTRING_TYPE));
+    pop(object);
+  }
 }
 
 
-void MacroAssembler::AbortIfNotRootValue(Register src,
-                                         Heap::RootListIndex root_value_index,
-                                         const char* message) {
-  ASSERT(!src.is(at));
-  LoadRoot(at, root_value_index);
-  Assert(eq, message, src, Operand(at));
+void MacroAssembler::AssertRootValue(Register src,
+                                     Heap::RootListIndex root_value_index,
+                                     const char* message) {
+  if (emit_debug_code()) {
+    ASSERT(!src.is(at));
+    LoadRoot(at, root_value_index);
+    Check(eq, message, src, Operand(at));
+  }
 }
 
 
@@ -5294,33 +5302,8 @@ void MacroAssembler::EnsureNotWhite(
 
 
 void MacroAssembler::LoadInstanceDescriptors(Register map,
-                                             Register descriptors,
-                                             Register scratch) {
-  Register temp = descriptors;
-  lw(temp, FieldMemOperand(map, Map::kTransitionsOrBackPointerOffset));
-
-  Label ok, fail, load_from_back_pointer;
-  CheckMap(temp,
-           scratch,
-           isolate()->factory()->fixed_array_map(),
-           &fail,
-           DONT_DO_SMI_CHECK);
-  lw(temp, FieldMemOperand(temp, TransitionArray::kDescriptorsPointerOffset));
-  lw(descriptors, FieldMemOperand(temp, JSGlobalPropertyCell::kValueOffset));
-  jmp(&ok);
-
-  bind(&fail);
-  LoadRoot(scratch, Heap::kUndefinedValueRootIndex);
-  Branch(&load_from_back_pointer, ne, temp, Operand(scratch));
-  LoadRoot(descriptors, Heap::kEmptyDescriptorArrayRootIndex);
-  jmp(&ok);
-
-  bind(&load_from_back_pointer);
-  lw(temp, FieldMemOperand(temp, Map::kTransitionsOrBackPointerOffset));
-  lw(temp, FieldMemOperand(temp, TransitionArray::kDescriptorsPointerOffset));
-  lw(descriptors, FieldMemOperand(temp, JSGlobalPropertyCell::kValueOffset));
-
-  bind(&ok);
+                                             Register descriptors) {
+  lw(descriptors, FieldMemOperand(map, Map::kDescriptorsOffset));
 }
 
 

@@ -287,6 +287,7 @@ void FullCodeGenerator::Generate() {
       __ LoadRoot(ip, Heap::kStackLimitRootIndex);
       __ cmp(sp, Operand(ip));
       __ b(hs, &ok);
+      PredictableCodeSizeScope predictable(masm_);
       StackCheckStub stub;
       __ CallStub(&stub);
       __ bind(&ok);
@@ -364,6 +365,7 @@ void FullCodeGenerator::EmitStackCheck(IterationStatement* stmt,
     __ LoadRoot(ip, Heap::kStackLimitRootIndex);
     __ cmp(sp, Operand(ip));
     __ b(hs, &ok);
+    PredictableCodeSizeScope predictable(masm_);
     StackCheckStub stub;
     __ CallStub(&stub);
   }
@@ -437,6 +439,7 @@ void FullCodeGenerator::EmitReturnSequence() {
       // tool from instrumenting as we rely on the code size here.
       int32_t sp_delta = (info_->scope()->num_parameters() + 1) * kPointerSize;
       CodeGenerator::RecordPositions(masm_, function()->end_position() - 1);
+      PredictableCodeSizeScope predictable(masm_);
       __ RecordJSReturn();
       masm_->mov(sp, fp);
       masm_->ldm(ia_w, sp, fp.bit() | lr.bit());
@@ -1137,7 +1140,7 @@ void FullCodeGenerator::VisitForInStatement(ForInStatement* stmt) {
   __ cmp(r1, Operand(Smi::FromInt(0)));
   __ b(eq, &no_descriptors);
 
-  __ LoadInstanceDescriptors(r0, r2, r4);
+  __ LoadInstanceDescriptors(r0, r2);
   __ ldr(r2, FieldMemOperand(r2, DescriptorArray::kEnumCacheOffset));
   __ ldr(r2, FieldMemOperand(r2, DescriptorArray::kEnumCacheBridgeCacheOffset));
 
@@ -2239,7 +2242,9 @@ void FullCodeGenerator::CallIC(Handle<Code> code,
                                RelocInfo::Mode rmode,
                                TypeFeedbackId ast_id) {
   ic_total_count_++;
-  __ Call(code, rmode, ast_id);
+  // All calls must have a predictable size in full-codegen code to ensure that
+  // the debugger can patch them correctly.
+  __ Call(code, rmode, ast_id, al, NEVER_INLINE_TARGET_ADDRESS);
 }
 
 void FullCodeGenerator::EmitCallWithIC(Call* expr,
@@ -2659,7 +2664,7 @@ void FullCodeGenerator::EmitIsStringWrapperSafeForDefaultValueOf(
   context()->PrepareTest(&materialize_true, &materialize_false,
                          &if_true, &if_false, &fall_through);
 
-  if (generate_debug_code_) __ AbortIfSmi(r0);
+  __ AssertNotSmi(r0);
 
   __ ldr(r1, FieldMemOperand(r0, HeapObject::kMapOffset));
   __ ldrb(ip, FieldMemOperand(r1, Map::kBitField2Offset));
@@ -2683,7 +2688,7 @@ void FullCodeGenerator::EmitIsStringWrapperSafeForDefaultValueOf(
   __ cmp(r3, Operand(0));
   __ b(eq, &done);
 
-  __ LoadInstanceDescriptors(r1, r4, r2);
+  __ LoadInstanceDescriptors(r1, r4);
   // r4: descriptor array.
   // r3: valid entries in the descriptor array.
   STATIC_ASSERT(kSmiTag == 0);
@@ -3534,8 +3539,7 @@ void FullCodeGenerator::EmitGetCachedArrayIndex(CallRuntime* expr) {
   ASSERT(args->length() == 1);
   VisitForAccumulatorValue(args->at(0));
 
-  __ AbortIfNotString(r0);
-
+  __ AssertString(r0);
 
   __ ldr(r0, FieldMemOperand(r0, String::kHashFieldOffset));
   __ IndexFromHash(r0, r0);

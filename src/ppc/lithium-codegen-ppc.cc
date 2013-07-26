@@ -2194,7 +2194,7 @@ void LCodeGen::DoGetCachedArrayIndex(LGetCachedArrayIndex* instr) {
   Register input = ToRegister(instr->value());
   Register result = ToRegister(instr->result());
 
-  __ AbortIfNotString(input);
+  __ AssertString(input);
 
   __ lwz(result, FieldMemOperand(input, String::kHashFieldOffset));
   __ IndexFromHash(result, result);
@@ -2807,13 +2807,9 @@ void LCodeGen::DoAccessArgumentsAt(LAccessArgumentsAt* instr) {
   Register index = ToRegister(instr->index());
   Register result = ToRegister(instr->result());
 
-  // Bailout index is not a valid argument index. Use unsigned check to get
-  // negative check for free.
-  __ sub(length, length, index, LeaveOE, SetRC);
-  DeoptimizeIf(le, instr->environment(), cr0);
-
   // There are two words between the frame pointer and the last argument.
   // Subtracting from length accounts for one of them add one more.
+  __ sub(length, length, index);
   __ addi(length, length, Operand(1));
   __ slwi(r0, length, Operand(kPointerSizeLog2));
   __ lwzx(result, MemOperand(arguments, r0));
@@ -3439,27 +3435,25 @@ void LCodeGen::DoMathFloor(LUnaryMathOperation* instr) {
 #ifdef PENGUIN_CLEANUP
   DoubleRegister input = ToDoubleRegister(instr->value());
   Register result = ToRegister(instr->result());
-  SwVfpRegister single_scratch = double_scratch0().low();
-  Register scratch1 = scratch0();
-  Register scratch2 = ToRegister(instr->temp());
+  Register scratch = scratch0();
+  Label skip;
 
   __ EmitVFPTruncate(kRoundToMinusInf,
-                     single_scratch,
+                     result,
                      input,
-                     scratch1,
-                     scratch2);
-  DeoptimizeIf(ne, instr->environment());
-
-  // Move the result back to general purpose register r3.
-  __ vmov(result, single_scratch);
+                     scratch,
+                     double_scratch0());
+  __ bnotoverflow(&skip);
+  DeoptimizeIf(al, instr->environment());
+  __ bind(&skip);
 
   if (instr->hydrogen()->CheckFlag(HValue::kBailoutOnMinusZero)) {
     // Test for -0.
     Label done;
     __ cmpi(result, Operand::Zero());
     __ bne(&done);
-    __ vmov(scratch1, input.high());
-    __ TestBit(scratch1, 0, r0);  // test sign bit
+    __ vmov(scratch, input.high());
+    __ TestBit(scratch, 0, r0);  // test sign bit
     DeoptimizeIf(ne, instr->environment(), cr0);
     __ bind(&done);
   }
@@ -3474,8 +3468,9 @@ void LCodeGen::DoMathRound(LUnaryMathOperation* instr) {
 #ifdef PENGUIN_CLEANUP
   DoubleRegister input = ToDoubleRegister(instr->value());
   Register result = ToRegister(instr->result());
+  DwVfpRegister double_scratch1 = ToDoubleRegister(instr->temp());
   Register scratch = scratch0();
-  Label done, check_sign_on_zero;
+  Label skip, done, check_sign_on_zero;
 
   // Extract exponent bits.
   __ vmov(result, input.high());
@@ -3514,12 +3509,13 @@ void LCodeGen::DoMathRound(LUnaryMathOperation* instr) {
   }
 
   __ EmitVFPTruncate(kRoundToMinusInf,
-                     double_scratch0().low(),
-                     double_scratch0(),
                      result,
-                     scratch);
-  DeoptimizeIf(ne, instr->environment());
-  __ vmov(result, double_scratch0().low());
+                     double_scratch0(),
+                     scratch,
+                     double_scratch1);
+  __ bnotoverflow(&skip);
+  DeoptimizeIf(al, instr->environment());
+  __ bind(&skip);
 
   if (instr->hydrogen()->CheckFlag(HValue::kBailoutOnMinusZero)) {
     // Test for -0.
@@ -4292,9 +4288,7 @@ void LCodeGen::DoDeferredStringCharCodeAt(LStringCharCodeAt* instr) {
     __ push(index);
   }
   CallRuntimeFromDeferred(Runtime::kStringCharCodeAt, 2, instr);
-  if (FLAG_debug_code) {
-    __ AbortIfNotSmi(r3);
-  }
+  __ AssertSmi(r3);
   __ SmiUntag(r3);
   __ StoreToSafepointRegisterSlot(r3, result);
 }
@@ -4625,7 +4619,7 @@ void LCodeGen::DoDeferredTaggedToI(LTaggedToI* instr) {
   Register scratch1 = scratch0();
   Register scratch2 = ToRegister(instr->temp());
   DwVfpRegister double_scratch = double_scratch0();
-  SwVfpRegister single_scratch = double_scratch.low();
+  DwVfpRegister double_scratch2 = ToDoubleRegister(instr->temp3());
 
   ASSERT(!scratch1.is(input_reg) && !scratch1.is(scratch2));
   ASSERT(!scratch2.is(input_reg) && !scratch2.is(scratch1));
@@ -4639,7 +4633,7 @@ void LCodeGen::DoDeferredTaggedToI(LTaggedToI* instr) {
 
   if (instr->truncating()) {
     Register scratch3 = ToRegister(instr->temp2());
-    DwVfpRegister double_scratch2 = ToDoubleRegister(instr->temp3());
+    SwVfpRegister single_scratch = double_scratch.low();
     ASSERT(!scratch3.is(input_reg) &&
            !scratch3.is(scratch1) &&
            !scratch3.is(scratch2));
@@ -4668,20 +4662,21 @@ void LCodeGen::DoDeferredTaggedToI(LTaggedToI* instr) {
 
   } else {
     CpuFeatures::Scope scope(VFP3);
+    Label skip;
     // Deoptimize if we don't have a heap number.
     DeoptimizeIf(ne, instr->environment());
 
     __ lfd(double_scratch,
            FieldMemOperand(input_reg, HeapNumber::kValueOffset));
     __ EmitVFPTruncate(kRoundToZero,
-                       single_scratch,
+                       input_reg,
                        double_scratch,
                        scratch1,
-                       scratch2,
+                       double_scratch2,
                        kCheckForInexactConversion);
-    DeoptimizeIf(ne, instr->environment());
-    // Load the result.
-    __ vmov(input_reg, single_scratch);
+    __ bnotoverflow(&skip);
+    DeoptimizeIf(al, instr->environment());
+    __ bind(&skip);
 
     if (instr->hydrogen()->CheckFlag(HValue::kBailoutOnMinusZero)) {
       __ cmpi(input_reg, Operand::Zero());
@@ -4743,12 +4738,12 @@ void LCodeGen::DoDoubleToI(LDoubleToI* instr) {
   Register scratch1 = scratch0();
   Register scratch2 = ToRegister(instr->temp());
   DwVfpRegister double_input = ToDoubleRegister(instr->value());
-  SwVfpRegister single_scratch = double_scratch0().low();
 
   Label done;
 
   if (instr->truncating()) {
     Register scratch3 = ToRegister(instr->temp2());
+    SwVfpRegister single_scratch = double_scratch0().low();
     __ EmitECMATruncate(result_reg,
                         double_input,
                         single_scratch,
@@ -4756,18 +4751,18 @@ void LCodeGen::DoDoubleToI(LDoubleToI* instr) {
                         scratch2,
                         scratch3);
   } else {
-    VFPRoundingMode rounding_mode = kRoundToMinusInf;
-    __ EmitVFPTruncate(rounding_mode,
-                       single_scratch,
+    DwVfpRegister double_scratch = double_scratch0();
+    __ EmitVFPTruncate(kRoundToMinusInf,
+                       result_reg,
                        double_input,
                        scratch1,
-                       scratch2,
+                       double_scratch,
                        kCheckForInexactConversion);
+
     // Deoptimize if we had a vfp invalid exception,
     // including inexact operation.
-    DeoptimizeIf(ne, instr->environment());
-    // Retrieve the result.
-    __ vmov(result_reg, single_scratch);
+    __ bnotoverflow(&done);
+    DeoptimizeIf(al, instr->environment());
   }
     __ bind(&done);
 }
@@ -5654,7 +5649,6 @@ void LCodeGen::DoForInPrepareMap(LForInPrepareMap* instr) {
 void LCodeGen::DoForInCacheArray(LForInCacheArray* instr) {
   Register map = ToRegister(instr->map());
   Register result = ToRegister(instr->result());
-  Register scratch = ToRegister(instr->scratch());
   Label load_cache, done;
   __ EnumLength(result, map);
   __ cmpi(result, Operand(Smi::FromInt(0)));
@@ -5663,7 +5657,7 @@ void LCodeGen::DoForInCacheArray(LForInCacheArray* instr) {
   __ b(&done);
 
   __ bind(&load_cache);
-  __ LoadInstanceDescriptors(map, result, scratch);
+  __ LoadInstanceDescriptors(map, result);
   __ lwz(result,
          FieldMemOperand(result, DescriptorArray::kEnumCacheOffset));
   __ lwz(result,

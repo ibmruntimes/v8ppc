@@ -1,3 +1,75 @@
+2012-10-15: Version 3.14.4
+
+        Allow evals for debugger even if they are prohibited in the debugee
+        context. (Chromium issue 154733)
+
+        Enabled --verify-heap in release mode (issue 2120)
+
+        Performance and stability improvements on all platforms.
+
+
+2012-10-11: Version 3.14.3
+
+        Use native context to retrieve ErrorMessageForCodeGenerationFromStrings
+        (Chromium issue 155076).
+
+        Bumped variable limit further to 2^17 (Chromium issue 151625).
+
+        Performance and stability improvements on all platforms.
+
+
+2012-10-10: Version 3.14.2
+
+        ARM: allowed VFP3 instructions when hardfloat is enabled.
+        (Chromium issue 152506)
+
+        Fixed instance_descriptors() and PushStackTraceAndDie regressions.
+        (Chromium issue 151749)
+
+        Made GDBJIT interface compile again. (issue 1804)
+
+        Fixed Accessors::FunctionGetPrototype's proto chain traversal.
+        (Chromium issue 143967)
+
+        Made sure that names of temporaries do not clash with real variables.
+        (issue 2322)
+
+        Rejected local module declarations. (Chromium issue 150628)
+
+        Rejected uses of lexical for-loop variable on the RHS. (issue 2322)
+
+        Fixed slot recording of code target patches.
+        (Chromium issue 152615,chromium:144230)
+
+        Changed the Android makefile to use GCC 4.6 instead of GCC 4.4.3.
+
+        Performance and stability improvements on all platforms.
+
+
+2012-10-01: Version 3.14.1
+
+        Don't set -m32 flag when compiling with Android ARM compiler.
+        (Chromium issue 143889)
+
+        Restore the descriptor array before returning allocation failure.
+        (Chromium issue 151750)
+
+        Lowered kMaxVirtualRegisters (v8 issue 2139, Chromium issues 123822 and
+        128252).
+
+        Pull more recent gyp in 'make dependencies'.
+
+        Made sure that the generic KeyedStoreIC changes length and element_kind
+        atomically (issue 2346).
+
+        Bumped number of allowed variables per scope to 65535, to address GWT.
+        (Chromium issue 151625)
+
+        Support sourceURL for dynamically inserted scripts (issue 2342).
+
+        Performance and stability improvements on all platforms.
+
+
 2012-09-20: Version 3.14.0
 
         Fixed missing slot recording during clearing of CallICs.

@@ -176,6 +176,7 @@ namespace internal {
   V(constructor_symbol, "constructor")                                   \
   V(code_symbol, ".code")                                                \
   V(result_symbol, ".result")                                            \
+  V(dot_for_symbol, ".for.")                                             \
   V(catch_var_symbol, ".catch-var")                                      \
   V(empty_symbol, "")                                                    \
   V(eval_symbol, "eval")                                                 \
@@ -486,9 +487,6 @@ class Heap {
   // Returns the amount of executable memory currently committed for the heap.
   intptr_t CommittedMemoryExecutable();
 
-  // Returns the amount of phyical memory currently committed for the heap.
-  size_t CommittedPhysicalMemory();
-
   // Returns the available bytes in space w/o growing.
   // Heap doesn't guarantee that it can allocate an object that requires
   // all available bytes. Check MaxHeapObjectSize() instead.
@@ -707,6 +705,7 @@ class Heap {
       PretenureFlag pretenure = NOT_TENURED);
   MUST_USE_RESULT MaybeObject* AllocateStringFromUtf8Slow(
       Vector<const char> str,
+      int non_ascii_start,
       PretenureFlag pretenure = NOT_TENURED);
   MUST_USE_RESULT MaybeObject* AllocateStringFromTwoByte(
       Vector<const uc16> str,
@@ -1105,7 +1104,10 @@ class Heap {
   void EnsureHeapIsIterable();
 
   // Notify the heap that a context has been disposed.
-  int NotifyContextDisposed() { return ++contexts_disposed_; }
+  int NotifyContextDisposed() {
+    flush_monomorphic_ics_ = true;
+    return ++contexts_disposed_;
+  }
 
   // Utility to invoke the scavenger. This is needed in test code to
   // ensure correct callback for weak global handles.
@@ -1263,12 +1265,14 @@ class Heap {
     return &native_contexts_list_;
   }
 
+#ifdef VERIFY_HEAP
+  // Verify the heap is in its normal state before or after a GC.
+  void Verify();
+#endif
+
 #ifdef DEBUG
   void Print();
   void PrintHandles();
-
-  // Verify the heap is in its normal state before or after a GC.
-  void Verify();
 
   void OldPointerSpaceCheckStoreBuffer();
   void MapSpaceCheckStoreBuffer();
@@ -1277,10 +1281,23 @@ class Heap {
   // Report heap statistics.
   void ReportHeapStatistics(const char* title);
   void ReportCodeStatistics(const char* title);
+#endif
+
+  // Zapping is needed for verify heap, and always done in debug builds.
+  static inline bool ShouldZapGarbage() {
+#ifdef DEBUG
+    return true;
+#else
+#ifdef VERIFY_HEAP
+    return FLAG_verify_heap;
+#else
+    return false;
+#endif
+#endif
+  }
 
   // Fill in bogus values in from space
   void ZapFromSpace();
-#endif
 
   // Print short heap statistics.
   void PrintShortHeapStatistics();
@@ -1622,6 +1639,8 @@ class Heap {
     global_ic_age_ = (global_ic_age_ + 1) & SharedFunctionInfo::ICAgeBits::kMax;
   }
 
+  bool flush_monomorphic_ics() { return flush_monomorphic_ics_; }
+
   intptr_t amount_of_external_allocated_memory() {
     return amount_of_external_allocated_memory_;
   }
@@ -1706,6 +1725,8 @@ class Heap {
   int contexts_disposed_;
 
   int global_ic_age_;
+
+  bool flush_monomorphic_ics_;
 
   int scan_on_scavenge_pages_;
 
@@ -2203,7 +2224,6 @@ class AlwaysAllocateScope {
 };
 
 
-#ifdef DEBUG
 // Visitor class to verify interior pointers in spaces that do not contain
 // or care about intergenerational references. All heap object pointers have to
 // point into the heap to a location that has a map pointer at its first word.
@@ -2213,7 +2233,6 @@ class VerifyPointersVisitor: public ObjectVisitor {
  public:
   inline void VisitPointers(Object** start, Object** end);
 };
-#endif
 
 
 // Space iterator for iterating over all spaces of the heap.

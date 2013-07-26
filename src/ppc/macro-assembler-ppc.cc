@@ -2505,50 +2505,14 @@ void MacroAssembler::ConvertToInt32(Register source,
 }
 
 
-// Temporary compatibility function
 void MacroAssembler::EmitVFPTruncate(VFPRoundingMode rounding_mode,
-                                     SwVfpRegister result,
+                                     Register result,
                                      DwVfpRegister double_input,
-                                     Register scratch1,
-                                     Register scratch2,
+                                     Register scratch,
+                                     DwVfpRegister double_scratch,
                                      CheckForInexactConversion check_inexact) {
   PPCPORT_UNIMPLEMENTED();
   fake_asm(fMASM5);
-  // Fail (penguin: assert triggered in mjsunit/sparse-array-reverse)
-  // ASSERT(false);
-}
-
-
-
-void MacroAssembler::EmitVFPTruncate(VFPRoundingMode rounding_mode,
-                                     DwVfpRegister result,
-                                     DwVfpRegister double_input,
-                                     Register scratch1,
-                                     Register scratch2,
-                                     CheckForInexactConversion check_inexact) {
-  // Not sure if we need inexact conversion test on PowerPC
-#if 0
-  int32_t check_inexact_conversion =
-    (check_inexact == kCheckForInexactConversion) ? kVFPInexactExceptionBit : 0;
-#endif
-
-  ASSERT((rounding_mode == kRoundToZero)
-          || (rounding_mode == kRoundToMinusInf));
-  // Actually, Power defaults to round to nearest.. so we will need to
-  // fix this eventually
-
-  // Clear FX, FEX, VX, OX in FPSCR, also mirror to cr1 of CR
-  mtfsfi(0, 0, SetRC);
-
-  // Perform the conversion
-  frsp(result, double_input, SetRC);
-
-  // Special branches must follow if the condition is required
-  // CR1 is set as follows: FX,FEX,VX,OX
-  // bit offset 4 - FX Floating-Point Exception
-  // bit offset 5 - FEX Floating-Point Enabled Exception
-  // bit offset 6 - VX Floating-Point Invalid Operation Exception
-  // bit offset 7 - OX Floating-Point Overflow Exception
 }
 
 
@@ -3114,38 +3078,46 @@ void MacroAssembler::JumpIfEitherSmi(Register reg1,
 }
 
 
-void MacroAssembler::AbortIfSmi(Register object) {
-  STATIC_ASSERT(kSmiTag == 0);
-  andi(r0, object, Operand(kSmiTagMask));
-  Assert(ne, "Operand is a smi", cr0);
+void MacroAssembler::AssertNotSmi(Register object) {
+  if (emit_debug_code()) {
+    STATIC_ASSERT(kSmiTag == 0);
+    andi(r0, object, Operand(kSmiTagMask));
+    Check(ne, "Operand is a smi", cr0);
+  }
 }
 
 
-void MacroAssembler::AbortIfNotSmi(Register object) {
-  STATIC_ASSERT(kSmiTag == 0);
-  andi(r0, object, Operand(kSmiTagMask));
-  Assert(eq, "Operand is not smi", cr0);
+void MacroAssembler::AssertSmi(Register object) {
+  if (emit_debug_code()) {
+    STATIC_ASSERT(kSmiTag == 0);
+    andi(r0, object, Operand(kSmiTagMask));
+    Check(eq, "Operand is not smi", cr0);
+  }
 }
 
 
-void MacroAssembler::AbortIfNotString(Register object) {
-  STATIC_ASSERT(kSmiTag == 0);
-  andi(r0, object, Operand(kSmiTagMask));
-  Assert(ne, "Operand is not a string", cr0);
-  push(object);
-  lwz(object, FieldMemOperand(object, HeapObject::kMapOffset));
-  CompareInstanceType(object, object, FIRST_NONSTRING_TYPE);
-  pop(object);
-  Assert(lt, "Operand is not a string");
+void MacroAssembler::AssertString(Register object) {
+  if (emit_debug_code()) {
+    STATIC_ASSERT(kSmiTag == 0);
+    andi(r0, object, Operand(kSmiTagMask));
+    Check(ne, "Operand is not a string", cr0);
+    push(object);
+    lwz(object, FieldMemOperand(object, HeapObject::kMapOffset));
+    CompareInstanceType(object, object, FIRST_NONSTRING_TYPE);
+    pop(object);
+    Check(lt, "Operand is not a string");
+  }
 }
 
 
 
-void MacroAssembler::AbortIfNotRootValue(Register src,
-                                         Heap::RootListIndex root_value_index,
-                                         const char* message) {
-  CompareRoot(src, root_value_index);
-  Assert(eq, message);
+void MacroAssembler::AssertRootValue(Register src,
+                                     Heap::RootListIndex root_value_index,
+                                     const char* message) {
+  if (emit_debug_code()) {
+    CompareRoot(src, root_value_index);
+    Check(eq, message);
+  }
 }
 
 
@@ -3203,7 +3175,8 @@ void MacroAssembler::AllocateHeapNumber(Register result,
                                         Register scratch1,
                                         Register scratch2,
                                         Register heap_number_map,
-                                        Label* gc_required) {
+                                        Label* gc_required,
+                                        TaggingMode tagging_mode) {
   // Allocate an object in the heap for the heap number and tag it as a heap
   // object.
   AllocateInNewSpace(HeapNumber::kSize,
@@ -3211,11 +3184,16 @@ void MacroAssembler::AllocateHeapNumber(Register result,
                      scratch1,
                      scratch2,
                      gc_required,
-                     TAG_OBJECT);
+                     tagging_mode == TAG_RESULT ? TAG_OBJECT :
+                                                  NO_ALLOCATION_FLAGS);
 
   // Store heap number map in the allocated object.
   AssertRegisterIsRoot(heap_number_map, Heap::kHeapNumberMapRootIndex);
-  stw(heap_number_map, FieldMemOperand(result, HeapObject::kMapOffset));
+  if (tagging_mode == TAG_RESULT) {
+    stw(heap_number_map, FieldMemOperand(result, HeapObject::kMapOffset));
+  } else {
+    stw(heap_number_map, MemOperand(result, HeapObject::kMapOffset));
+  }
 }
 
 
@@ -3289,30 +3267,30 @@ void MacroAssembler::CopyBytes(Register src,
   blt(&byte_loop);
   lwz(scratch, MemOperand(src));
   addi(src, src, Operand(kPointerSize));
-#if CAN_USE_UNALIGNED_ACCESSES
-  // currently false for PPC - but possible future opt
-  stw(scratch, MemOperand(dst));
-  addi(dst, dst, Operand(kPointerSize));
-#else
+  if (CpuFeatures::IsSupported(UNALIGNED_ACCESSES)) {
+    // currently false for PPC - but possible future opt
+    stw(scratch, MemOperand(dst));
+    addi(dst, dst, Operand(kPointerSize));
+  } else {
 #if __BYTE_ORDER == __LITTLE_ENDIAN
-  stb(scratch, MemOperand(dst, 0));
-  srwi(scratch, scratch, Operand(8));
-  stb(scratch, MemOperand(dst, 1));
-  srwi(scratch, scratch, Operand(8));
-  stb(scratch, MemOperand(dst, 2));
-  srwi(scratch, scratch, Operand(8));
-  stb(scratch, MemOperand(dst, 3));
+    stb(scratch, MemOperand(dst, 0));
+    srwi(scratch, scratch, Operand(8));
+    stb(scratch, MemOperand(dst, 1));
+    srwi(scratch, scratch, Operand(8));
+    stb(scratch, MemOperand(dst, 2));
+    srwi(scratch, scratch, Operand(8));
+    stb(scratch, MemOperand(dst, 3));
 #else
-  stb(scratch, MemOperand(dst, 3));
-  srwi(scratch, scratch, Operand(8));
-  stb(scratch, MemOperand(dst, 2));
-  srwi(scratch, scratch, Operand(8));
-  stb(scratch, MemOperand(dst, 1));
-  srwi(scratch, scratch, Operand(8));
-  stb(scratch, MemOperand(dst, 0));
+    stb(scratch, MemOperand(dst, 3));
+    srwi(scratch, scratch, Operand(8));
+    stb(scratch, MemOperand(dst, 2));
+    srwi(scratch, scratch, Operand(8));
+    stb(scratch, MemOperand(dst, 1));
+    srwi(scratch, scratch, Operand(8));
+    stb(scratch, MemOperand(dst, 0));
 #endif
-  addi(dst, dst, Operand(4));
-#endif
+    addi(dst, dst, Operand(4));
+  }
   sub(length, length, Operand(kPointerSize));
   b(&word_loop);
 
@@ -3646,9 +3624,7 @@ void MacroAssembler::CheckPageFlag(
     Condition cc,
     Label* condition_met) {
   ASSERT(cc == ne || cc == eq);
-  ASSERT((~Page::kPageAlignmentMask & 0xffff) == 0);
-  lis(r0, Operand((~Page::kPageAlignmentMask >> 16)));
-  and_(scratch, object, r0);
+  clrrwi(scratch, object, Operand(kPageSizeBits));
   lwz(scratch, MemOperand(scratch, MemoryChunk::kFlagsOffset));
   li(r0, Operand(mask));
   and_(r0, r0, scratch, SetRC);
@@ -3917,33 +3893,8 @@ void MacroAssembler::ClampDoubleToUint8(Register result_reg,
 }
 
 void MacroAssembler::LoadInstanceDescriptors(Register map,
-                                             Register descriptors,
-                                             Register scratch) {
-  Register temp = descriptors;
-  lwz(temp, FieldMemOperand(map, Map::kTransitionsOrBackPointerOffset));
-
-  Label ok, fail, load_from_back_pointer;
-  CheckMap(temp,
-           scratch,
-           isolate()->factory()->fixed_array_map(),
-           &fail,
-           DONT_DO_SMI_CHECK);
-  lwz(temp, FieldMemOperand(temp, TransitionArray::kDescriptorsPointerOffset));
-  lwz(descriptors, FieldMemOperand(temp, JSGlobalPropertyCell::kValueOffset));
-  jmp(&ok);
-
-  bind(&fail);
-  CompareRoot(temp, Heap::kUndefinedValueRootIndex);
-  bne(&load_from_back_pointer);
-  mov(descriptors, Operand(FACTORY->empty_descriptor_array()));
-  jmp(&ok);
-
-  bind(&load_from_back_pointer);
-  lwz(temp, FieldMemOperand(temp, Map::kTransitionsOrBackPointerOffset));
-  lwz(temp, FieldMemOperand(temp, TransitionArray::kDescriptorsPointerOffset));
-  lwz(descriptors, FieldMemOperand(temp, JSGlobalPropertyCell::kValueOffset));
-
-  bind(&ok);
+                                             Register descriptors) {
+  lwz(descriptors, FieldMemOperand(map, Map::kDescriptorsOffset));
 }
 
 

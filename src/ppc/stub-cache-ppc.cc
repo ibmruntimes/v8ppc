@@ -3681,6 +3681,7 @@ static void GenerateSmiKeyCheck(MacroAssembler* masm,
                                 Register scratch0,
                                 Register scratch1,
                                 DwVfpRegister double_scratch0,
+                                DwVfpRegister double_scratch1,
                                 Label* fail) {
   EMIT_STUB_MARKER(72);
 
@@ -3696,20 +3697,12 @@ static void GenerateSmiKeyCheck(MacroAssembler* masm,
               DONT_DO_SMI_CHECK);
   __ lfd(double_scratch0, FieldMemOperand(key, HeapNumber::kValueOffset));
   __ EmitVFPTruncate(kRoundToZero,
-                     d11,
-                     double_scratch0,
                      scratch0,
+                     double_scratch0,
                      scratch1,
+                     double_scratch1,
                      kCheckForInexactConversion);
   __ boverflow(fail);
-  __ fctiwz(double_scratch0, double_scratch0);
-  __ stfdu(double_scratch0, MemOperand(sp, -8));
-#if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
-  __ lwz(scratch0, MemOperand(sp, 0));
-#else
-  __ lwz(scratch0, MemOperand(sp, 4));
-#endif
-  __ addi(sp, sp, Operand(8));
   __ SmiTagCheckOverflow(scratch1, scratch0, r0);
   __ BranchOnOverflow(fail);
   __ mr(key, scratch1);
@@ -3736,7 +3729,7 @@ void KeyedLoadStubCompiler::GenerateLoadExternalArray(
   // have been verified by the caller to not be a smi.
 
   // Check that the key is a smi or a heap number convertible to a smi.
-  GenerateSmiKeyCheck(masm, key, r7, r8, d1, &miss_force_generic);
+  GenerateSmiKeyCheck(masm, key, r7, r8, d1, d2, &miss_force_generic);
 
   __ lwz(r6, FieldMemOperand(receiver, JSObject::kElementsOffset));
   // r6: elements array
@@ -3932,7 +3925,7 @@ void KeyedStoreStubCompiler::GenerateStoreExternalArray(
   // have been verified by the caller to not be a smi.
 
   // Check that the key is a smi or a heap number convertible to a smi.
-  GenerateSmiKeyCheck(masm, key, r7, r8, d1, &miss_force_generic);
+  GenerateSmiKeyCheck(masm, key, r7, r8, d1, d2, &miss_force_generic);
 
   __ lwz(r6, FieldMemOperand(receiver, JSObject::kElementsOffset));
 
@@ -4127,7 +4120,7 @@ void KeyedLoadStubCompiler::GenerateLoadFastElement(MacroAssembler* masm) {
   // have been verified by the caller to not be a smi.
 
   // Check that the key is a smi or a heap number convertible to a smi.
-  GenerateSmiKeyCheck(masm, r3, r7, r8, d1, &miss_force_generic);
+  GenerateSmiKeyCheck(masm, r3, r7, r8, d1, d2, &miss_force_generic);
 
   // Get the elements array.
   __ lwz(r5, FieldMemOperand(r4, JSObject::kElementsOffset));
@@ -4181,7 +4174,7 @@ void KeyedLoadStubCompiler::GenerateLoadFastDoubleElement(
   // have been verified by the caller to not be a smi.
 
   // Check that the key is a smi or a heap number convertible to a smi.
-  GenerateSmiKeyCheck(masm, key_reg, r7, r8, d1, &miss_force_generic);
+  GenerateSmiKeyCheck(masm, key_reg, r7, r8, d1, d2, &miss_force_generic);
 
   // Get the elements array.
   __ lwz(elements_reg,
@@ -4269,7 +4262,7 @@ void KeyedStoreStubCompiler::GenerateStoreFastElement(
   // have been verified by the caller to not be a smi.
 
   // Check that the key is a smi or a heap number convertible to a smi.
-  GenerateSmiKeyCheck(masm, key_reg, r7, r8, d1, &miss_force_generic);
+  GenerateSmiKeyCheck(masm, key_reg, r7, r8, d1, d2, &miss_force_generic);
 
   if (IsFastSmiElementsKind(elements_kind)) {
     __ JumpIfNotSmi(value_reg, &transition_elements_kind);
@@ -4436,7 +4429,7 @@ void KeyedStoreStubCompiler::GenerateStoreFastDoubleElement(
   // have been verified by the caller to not be a smi.
 
   // Check that the key is a smi or a heap number convertible to a smi.
-  GenerateSmiKeyCheck(masm, key_reg, r7, r8, d1, &miss_force_generic);
+  GenerateSmiKeyCheck(masm, key_reg, r7, r8, d1, d2, &miss_force_generic);
 
   __ lwz(elements_reg,
          FieldMemOperand(receiver_reg, JSObject::kElementsOffset));

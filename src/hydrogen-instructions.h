@@ -53,6 +53,7 @@ class LChunkBuilder;
 
 
 #define HYDROGEN_ABSTRACT_INSTRUCTION_LIST(V)  \
+  V(BinaryOperation)                           \
   V(BitwiseBinaryOperation)                    \
   V(ControlInstruction)                        \
   V(Instruction)                               \
@@ -1193,7 +1194,7 @@ class HUnaryOperation: public HTemplateInstruction<1> {
     return reinterpret_cast<HUnaryOperation*>(value);
   }
 
-  HValue* value() { return OperandAt(0); }
+  HValue* value() const { return OperandAt(0); }
   virtual void PrintDataTo(StringStream* stream);
 };
 
@@ -1269,8 +1270,8 @@ class HChange: public HUnaryOperation {
   virtual HType CalculateInferredType();
   virtual HValue* Canonicalize();
 
-  Representation from() { return value()->representation(); }
-  Representation to() { return representation(); }
+  Representation from() const { return value()->representation(); }
+  Representation to() const { return representation(); }
   bool deoptimize_on_undefined() const {
     return CheckFlag(kDeoptimizeOnUndefined);
   }
@@ -1291,7 +1292,9 @@ class HChange: public HUnaryOperation {
   virtual bool DataEquals(HValue* other) { return true; }
 
  private:
-  virtual bool IsDeletable() const { return true; }
+  virtual bool IsDeletable() const {
+    return !from().IsTagged() || value()->type().IsSmi();
+  }
 };
 
 
@@ -2120,6 +2123,9 @@ class HLoadElements: public HTemplateInstruction<2> {
   }
 
   HValue* value() { return OperandAt(0); }
+  HValue* typecheck() { return OperandAt(1); }
+
+  virtual void PrintDataTo(StringStream* stream);
 
   virtual Representation RequiredInputRepresentation(int index) {
     return Representation::Tagged();
@@ -2732,6 +2738,8 @@ class HBinaryOperation: public HTemplateInstruction<3> {
   virtual bool IsCommutative() const { return false; }
 
   virtual void PrintDataTo(StringStream* stream);
+
+  DECLARE_ABSTRACT_INSTRUCTION(BinaryOperation)
 };
 
 
@@ -4753,10 +4761,6 @@ class HTransitionElementsKind: public HTemplateInstruction<1> {
         transitioned_map_(transitioned_map) {
     SetOperandAt(0, object);
     SetFlag(kUseGVN);
-    // Don't set GVN DependOn flags here. That would defeat GVN's detection of
-    // congruent HTransitionElementsKind instructions. Instruction hoisting
-    // handles HTransitionElementsKind instruction specially, explicitly adding
-    // DependsOn flags during its dependency calculations.
     SetGVNFlag(kChangesElementsKind);
     if (original_map->has_fast_double_elements()) {
       SetGVNFlag(kChangesElementsPointer);

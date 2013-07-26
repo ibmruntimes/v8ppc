@@ -737,6 +737,10 @@ class Assembler : public AssemblerBase {
   INLINE(static Address target_address_at(Address pc));
   INLINE(static void set_target_address_at(Address pc, Address target));
 
+  // Return the code target address at a call site from the return address
+  // of that call in the instruction stream.
+  inline static Address target_address_from_return_address(Address pc);
+
   // This sets the branch destination.
   // This is for calls and branches within generated code.
   inline static void deserialization_set_special_target_at(
@@ -788,6 +792,8 @@ class Assembler : public AssemblerBase {
   // Difference between address of current opcode and value read from pc
   // register.
   static const int kPcLoadDelta = 0;  // Todo: remove
+
+  static const int kPatchDebugBreakSlotReturnOffset = 4 * kInstrSize;
 
   static const int kJSReturnSequenceInstructions = 6;
   static const int kDebugBreakSlotInstructions = 5;
