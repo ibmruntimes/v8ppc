@@ -3436,16 +3436,13 @@ void LCodeGen::DoMathFloor(LUnaryMathOperation* instr) {
   DoubleRegister input = ToDoubleRegister(instr->value());
   Register result = ToRegister(instr->result());
   Register scratch = scratch0();
-  Label skip;
 
   __ EmitVFPTruncate(kRoundToMinusInf,
                      result,
                      input,
                      scratch,
                      double_scratch0());
-  __ bnotoverflow(&skip);
-  DeoptimizeIf(al, instr->environment());
-  __ bind(&skip);
+  DeoptimizeIf(ne, instr->environment());
 
   if (instr->hydrogen()->CheckFlag(HValue::kBailoutOnMinusZero)) {
     // Test for -0.
@@ -3470,7 +3467,7 @@ void LCodeGen::DoMathRound(LUnaryMathOperation* instr) {
   Register result = ToRegister(instr->result());
   DwVfpRegister double_scratch1 = ToDoubleRegister(instr->temp());
   Register scratch = scratch0();
-  Label skip, done, check_sign_on_zero;
+  Label done, check_sign_on_zero;
 
   // Extract exponent bits.
   __ vmov(result, input.high());
@@ -3513,9 +3510,7 @@ void LCodeGen::DoMathRound(LUnaryMathOperation* instr) {
                      double_scratch0(),
                      scratch,
                      double_scratch1);
-  __ bnotoverflow(&skip);
-  DeoptimizeIf(al, instr->environment());
-  __ bind(&skip);
+  DeoptimizeIf(ne, instr->environment());
 
   if (instr->hydrogen()->CheckFlag(HValue::kBailoutOnMinusZero)) {
     // Test for -0.
@@ -4662,7 +4657,6 @@ void LCodeGen::DoDeferredTaggedToI(LTaggedToI* instr) {
 
   } else {
     CpuFeatures::Scope scope(VFP3);
-    Label skip;
     // Deoptimize if we don't have a heap number.
     DeoptimizeIf(ne, instr->environment());
 
@@ -4674,9 +4668,7 @@ void LCodeGen::DoDeferredTaggedToI(LTaggedToI* instr) {
                        scratch1,
                        double_scratch2,
                        kCheckForInexactConversion);
-    __ bnotoverflow(&skip);
-    DeoptimizeIf(al, instr->environment());
-    __ bind(&skip);
+    DeoptimizeIf(ne, instr->environment());
 
     if (instr->hydrogen()->CheckFlag(HValue::kBailoutOnMinusZero)) {
       __ cmpi(input_reg, Operand::Zero());
@@ -4761,8 +4753,7 @@ void LCodeGen::DoDoubleToI(LDoubleToI* instr) {
 
     // Deoptimize if we had a vfp invalid exception,
     // including inexact operation.
-    __ bnotoverflow(&done);
-    DeoptimizeIf(al, instr->environment());
+    DeoptimizeIf(ne, instr->environment());
   }
     __ bind(&done);
 }

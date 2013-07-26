@@ -2477,31 +2477,28 @@ void MacroAssembler::ConvertToInt32(Register source,
                                     Register scratch2,
                                     DwVfpRegister double_scratch,
                                     Label *not_int32) {
-  addi(sp, sp, Operand(-2 * kPointerSize));
-
   // Retrieve double from heap
   lfd(double_scratch, FieldMemOperand(source, HeapNumber::kValueOffset));
 
   // Convert
-  fctiwz(double_scratch, double_scratch);
+  fctidz(double_scratch, double_scratch);
+
+  addi(sp, sp, Operand(-kDoubleSize));
   stfd(double_scratch, MemOperand(sp, 0));
 #if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
+  lwz(scratch, MemOperand(sp, 4));
   lwz(dest, MemOperand(sp, 0));
 #else
-  lwz(dest, MemOperand(sp, kPointerSize));
+  lwz(scratch, MemOperand(sp, 0));
+  lwz(dest, MemOperand(sp, 4));
 #endif
+  addi(sp, sp, Operand(kDoubleSize));
 
-  addi(sp, sp, Operand(2 * kPointerSize));
-
-  // fctiwz instruction will saturate to the minimum (0x80000000) or
-  // maximum (0x7fffffff) signed 32bits integer when the double is out of
-  // range. When substracting one, the minimum signed integer becomes the
-  // maximun signed integer.
-  addi(scratch, dest, Operand(-1));
-  mov(scratch2, Operand(LONG_MAX - 1));
-  cmp(scratch, scratch2);
-  // If equal then dest was LONG_MAX, if greater dest was LONG_MIN.
-  bge(not_int32);
+  // The result is not a 32-bit integer when the high 33 bits of the
+  // result are not identical.
+  srawi(scratch2, dest, 31);
+  cmp(scratch2, scratch);
+  bne(not_int32);
 }
 
 
@@ -2511,8 +2508,35 @@ void MacroAssembler::EmitVFPTruncate(VFPRoundingMode rounding_mode,
                                      Register scratch,
                                      DwVfpRegister double_scratch,
                                      CheckForInexactConversion check_inexact) {
-  PPCPORT_UNIMPLEMENTED();
-  fake_asm(fMASM5);
+  // Convert
+  // Todo: honor to rounding mode
+  fctidz(double_scratch, double_input);
+
+  addi(sp, sp, Operand(-kDoubleSize));
+  stfd(double_scratch, MemOperand(sp, 0));
+#if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
+  lwz(scratch, MemOperand(sp, 4));
+  lwz(result, MemOperand(sp, 0));
+#else
+  lwz(scratch, MemOperand(sp, 0));
+  lwz(result, MemOperand(sp, 4));
+#endif
+  addi(sp, sp, Operand(kDoubleSize));
+
+  // The result is not a 32-bit integer when the high 33 bits of the
+  // result are not identical.
+  srawi(r0, result, 31);
+  cmp(r0, scratch);
+
+  if (check_inexact == kCheckForInexactConversion) {
+    Label done;
+    bne(&done);
+
+    // convert back and compare
+    fcfid(double_scratch, double_scratch);
+    fcmpu(double_scratch, double_input);
+    bind(&done);
+  }
 }
 
 

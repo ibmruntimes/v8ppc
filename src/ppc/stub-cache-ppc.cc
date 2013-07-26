@@ -3702,7 +3702,7 @@ static void GenerateSmiKeyCheck(MacroAssembler* masm,
                      scratch1,
                      double_scratch1,
                      kCheckForInexactConversion);
-  __ boverflow(fail);
+  __ bne(fail);
   __ SmiTagCheckOverflow(scratch1, scratch0, r0);
   __ BranchOnOverflow(fail);
   __ mr(key, scratch1);

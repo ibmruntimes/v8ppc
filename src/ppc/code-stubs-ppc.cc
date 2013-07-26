@@ -1014,7 +1014,7 @@ void FloatingPointHelper::LoadNumberAsInt32Double(MacroAssembler* masm,
                      kCheckForInexactConversion);
 
   // Jump to not_int32 if the operation did not succeed.
-  __ boverflow(not_int32);
+  __ bne(not_int32);
 
   __ bind(&done);
 }
@@ -1072,7 +1072,7 @@ void FloatingPointHelper::LoadNumberAsInt32(MacroAssembler* masm,
                      kCheckForInexactConversion);
 
   // Jump to not_int32 if the operation did not succeed.
-  __ boverflow(not_int32);
+  __ bne(not_int32);
 
   __ bind(&done);
 }
@@ -2934,7 +2934,7 @@ void BinaryOpStub::GenerateInt32Stub(MacroAssembler* masm) {
 
           if (result_type_ <= BinaryOpIC::INT32) {
             // result does not fit in a 32-bit integer.
-            __ boverflow(&transition);
+            __ bne(&transition);
           }
 
           // Check if the result fits in a smi.
