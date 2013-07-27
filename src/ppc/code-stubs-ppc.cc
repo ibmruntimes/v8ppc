@@ -4060,6 +4060,10 @@ void CEntryStub::Generate(MacroAssembler* masm) {
   // this by performing a garbage collection and retrying the
   // builtin once.
 
+#if defined(_AIX) || defined(__powerpc64__)
+  __ function_descriptor();
+#endif
+
   // Compute the argv pointer in a callee-saved register.
   __ slwi(r16, r3, Operand(kPointerSizeLog2));
   __ add(r16, r16, sp);
@@ -4149,7 +4153,7 @@ void JSEntryStub::GenerateBody(MacroAssembler* masm, bool is_construct) {
   Label invoke, handler_entry, exit;
 
   // Called from C
-#ifdef _AIX
+#if defined(_AIX) || defined(__powerpc64__)
   __ function_descriptor();
 #endif
 
