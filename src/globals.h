@@ -56,6 +56,11 @@
 #define V8_INFINITY HUGE_VAL
 #endif
 
+#ifdef _AIX
+#undef V8_INFINITY
+#define V8_INFINITY (__builtin_inff())
+#endif
+
 
 #include "../include/v8stdint.h"
 
