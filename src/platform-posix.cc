@@ -153,6 +153,11 @@ UNARY_MATH_FUNCTION(sqrt, CreateSqrtFunction())
 #undef MATH_FUNCTION
 
 
+#ifdef _AIX
+#undef NAN
+#define NAN (__builtin_nanf(""))
+#endif
+
 double OS::nan_value() {
   // NAN from math.h is defined in C99 and not in POSIX.
   return NAN;
