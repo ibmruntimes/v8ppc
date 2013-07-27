@@ -2361,18 +2361,17 @@ void Simulator::DecodeExt4(Instruction* instr) {
       int frb = instr->RBValue();
       double frb_val = get_double_from_d_register(frb);
       int64_t frt_val;
+      int64_t one = 1;  // work-around gcc
+      int64_t kMinLongLong = (one << 63);
+      int64_t kMaxLongLong = kMinLongLong - 1;
 
-#if 0
-      if (frb_val > 0x7fffffffffffffff) {
-        frt_val = (int64_t)0x7fffffffffffffff;
-      } else if (frb_val < -0x7fffffffffffffff) {
-        frt_val = (int64_t)0x8000000000000000;
+      if (frb_val > kMaxLongLong) {
+        frt_val = kMaxLongLong;
+      } else if (frb_val < kMinLongLong) {
+        frt_val = kMinLongLong;
       } else {
         frt_val = (int64_t)frb_val;
       }
-#else
-      frt_val = (int64_t)frb_val;
-#endif
       double *p = reinterpret_cast<double*>(&frt_val);
       set_d_register_from_double(frt, *p);
       return;
@@ -2382,18 +2381,17 @@ void Simulator::DecodeExt4(Instruction* instr) {
       int frb = instr->RBValue();
       double frb_val = get_double_from_d_register(frb);
       int64_t frt_val;
+      int64_t one = 1;  // work-around gcc
+      int64_t kMinLongLong = (one << 63);
+      int64_t kMaxLongLong = kMinLongLong - 1;
 
-#if 0
-      if (frb_val > 0x7fffffffffffffff) {
-        frt_val = (int64_t)0x7fffffffffffffff;
-      } else if (frb_val < -0x7fffffffffffffff) {
-        frt_val = (int64_t)0x8000000000000000;
+      if (frb_val > kMaxLongLong) {
+        frt_val = kMaxLongLong;
+      } else if (frb_val < kMinLongLong) {
+        frt_val = kMinLongLong;
       } else {
         frt_val = (int64_t)frb_val;
       }
-#else
-      frt_val = (int64_t)frb_val;
-#endif
       double *p = reinterpret_cast<double*>(&frt_val);
       set_d_register_from_double(frt, *p);
       return;
@@ -2403,10 +2401,10 @@ void Simulator::DecodeExt4(Instruction* instr) {
       int frb = instr->RBValue();
       double frb_val = get_double_from_d_register(frb);
       int64_t frt_val;
-      if (frb_val > 0x7fffffff) {
-        frt_val = 0x7fffffff;
-      } else if (frb_val < -0x7fffffff) {
-        frt_val = 0x80000000;
+      if (frb_val > kMaxInt) {
+        frt_val = kMaxInt;
+      } else if (frb_val < kMinInt) {
+        frt_val = kMinInt;
       } else {
         frt_val = (int64_t)frb_val;
       }
