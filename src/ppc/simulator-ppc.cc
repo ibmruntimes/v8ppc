@@ -2381,6 +2381,7 @@ void Simulator::DecodeExt4(Instruction* instr) {
             frt_val = (int64_t)floor(frb_val);
             break;
           default:
+            frt_val = (int64_t)frb_val;
             UNIMPLEMENTED();  // Not used by V8.
             break;
         }
