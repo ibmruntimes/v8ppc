@@ -3575,28 +3575,41 @@ void LCodeGen::DoMathSqrt(LUnaryMathOperation* instr) {
 
 
 void LCodeGen::DoMathPowHalf(LUnaryMathOperation* instr) {
-#ifdef PENGUIN_CLEANUP
   DoubleRegister input = ToDoubleRegister(instr->value());
   DoubleRegister result = ToDoubleRegister(instr->result());
   DoubleRegister temp = ToDoubleRegister(instr->temp());
+  DoubleRepresentation minusInf(-V8_INFINITY);
 
   // Note that according to ECMA-262 15.8.2.13:
   // Math.pow(-Infinity, 0.5) == Infinity
   // Math.sqrt(-Infinity) == NaN
-  Label done;
-  __ vmov(temp, -V8_INFINITY, scratch0());
+  Label skip, done;
+
+  __ sub(sp, sp, Operand(8));
+#if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
+  __ mov(scratch0(), Operand(minusInf.bits >> 32));
+  __ stw(scratch0(), MemOperand(sp, 4));
+  __ mov(scratch0(), Operand(minusInf.bits & 0xffffffff));
+  __ stw(scratch0(), MemOperand(sp, 0));
+#else
+  __ mov(scratch0(), Operand(minusInf.bits >> 32));
+  __ stw(scratch0(), MemOperand(sp, 0));
+  __ mov(scratch0(), Operand(minusInf.bits & 0xffffffff));
+  __ stw(scratch0(), MemOperand(sp, 4));
+#endif
+  __ lfd(temp, MemOperand(sp, 0));
+  __ addi(sp, sp, Operand(8));
+
   __ fcmpu(input, temp);
-  __ vneg(result, temp, eq);
-  __ beq(&done);
+  __ bne(&skip);
+  __ fneg(result, temp);
+  __ b(&done);
 
   // Add +0 to convert -0 to +0.
-  __ vadd(result, input, kDoubleRegZero);
+  __ bind(&skip);
+  __ fadd(result, input, kDoubleRegZero);
   __ fsqrt(result, result);
   __ bind(&done);
-#else
-  PPCPORT_UNIMPLEMENTED();
-  __ fake_asm(fLITHIUM101);
-#endif
 }
 
 
