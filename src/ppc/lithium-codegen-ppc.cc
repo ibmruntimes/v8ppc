@@ -3432,7 +3432,6 @@ void LCodeGen::DoMathAbs(LUnaryMathOperation* instr) {
 
 
 void LCodeGen::DoMathFloor(LUnaryMathOperation* instr) {
-#ifdef PENGUIN_CLEANUP
   DoubleRegister input = ToDoubleRegister(instr->value());
   Register result = ToRegister(instr->result());
   Register scratch = scratch0();
@@ -3449,15 +3448,19 @@ void LCodeGen::DoMathFloor(LUnaryMathOperation* instr) {
     Label done;
     __ cmpi(result, Operand::Zero());
     __ bne(&done);
-    __ vmov(scratch, input.high());
+    // Move high word to scrach and test sign bit
+    __ sub(sp, sp, Operand(8));
+    __ stfd(input, MemOperand(sp));
+#if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
+    __ lwz(scratch, MemOperand(sp, 4));
+#else
+    __ lwz(scratch, MemOperand(sp, 0));
+#endif
+    __ addi(sp, sp, Operand(8));
     __ TestBit(scratch, 0, r0);  // test sign bit
     DeoptimizeIf(ne, instr->environment(), cr0);
     __ bind(&done);
   }
-#else
-  PPCPORT_UNIMPLEMENTED();
-  __ fake_asm(fLITHIUM108);
-#endif
 }
 
 

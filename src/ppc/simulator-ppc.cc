@@ -2370,7 +2370,20 @@ void Simulator::DecodeExt4(Instruction* instr) {
       } else if (frb_val < kMinLongLong) {
         frt_val = kMinLongLong;
       } else {
-        frt_val = (int64_t)frb_val;
+        switch (fp_condition_reg_ & kVFPRoundingModeMask) {
+          case kRoundToZero:
+            frt_val = (int64_t)frb_val;
+            break;
+          case kRoundToPlusInf:
+            frt_val = (int64_t)ceil(frb_val);
+            break;
+          case kRoundToMinusInf:
+            frt_val = (int64_t)floor(frb_val);
+            break;
+          default:
+            UNIMPLEMENTED();  // Not used by V8.
+            break;
+        }
       }
       double *p = reinterpret_cast<double*>(&frt_val);
       set_d_register_from_double(frt, *p);

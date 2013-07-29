@@ -627,21 +627,21 @@ const uint32_t kStopCodeMask = kStopCode - 1;
 const uint32_t kMaxStopCode = kStopCode - 1;
 const int32_t  kDefaultStopCode = -1;
 
-// VFP rounding modes. See ARM DDI 0406B Page A2-29.
+// VFP rounding modes.
 enum VFPRoundingMode {
-  RN = 0 << 22,   // Round to Nearest.
-  RP = 1 << 22,   // Round towards Plus Infinity.
-  RM = 2 << 22,   // Round towards Minus Infinity.
-  RZ = 3 << 22,   // Round towards zero.
+  RN = 0,   // Round to Nearest.
+  RZ = 1,   // Round towards zero.
+  RP = 2,   // Round towards Plus Infinity.
+  RM = 3,   // Round towards Minus Infinity.
 
   // Aliases.
   kRoundToNearest = RN,
+  kRoundToZero = RZ,
   kRoundToPlusInf = RP,
-  kRoundToMinusInf = RM,
-  kRoundToZero = RZ
+  kRoundToMinusInf = RM
 };
 
-const uint32_t kVFPRoundingModeMask = 3 << 22;
+const uint32_t kVFPRoundingModeMask = 3;
 
 enum CheckForInexactConversion {
   kCheckForInexactConversion,

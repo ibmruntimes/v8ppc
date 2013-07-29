@@ -2509,8 +2509,12 @@ void MacroAssembler::EmitVFPTruncate(VFPRoundingMode rounding_mode,
                                      DwVfpRegister double_scratch,
                                      CheckForInexactConversion check_inexact) {
   // Convert
-  // Todo: honor to rounding mode
-  fctidz(double_scratch, double_input);
+  if (rounding_mode == kRoundToZero) {
+    fctidz(double_scratch, double_input);
+  } else {
+    mtfsfi(7, rounding_mode);
+    fctid(double_scratch, double_input);
+  }
 
   addi(sp, sp, Operand(-kDoubleSize));
   stfd(double_scratch, MemOperand(sp, 0));
