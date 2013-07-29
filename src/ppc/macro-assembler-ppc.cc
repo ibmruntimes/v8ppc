@@ -3912,7 +3912,6 @@ void MacroAssembler::ClampDoubleToUint8(Register result_reg,
 #else
   PPCPORT_UNIMPLEMENTED();
   fake_asm(fMASM7);
-  ASSERT(false);
 #endif
 }
 

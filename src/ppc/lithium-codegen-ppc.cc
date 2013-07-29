@@ -1707,11 +1707,11 @@ void LCodeGen::DoArithmeticD(LArithmeticD* instr) {
 
       // Restore r3-r6.
       __ MultiPop(r3.bit() | r4.bit() | r5.bit() | r6.bit());
-      break;
 #else
-  PPCPORT_UNIMPLEMENTED();
-  __ fake_asm(fLITHIUM106);
+      PPCPORT_UNIMPLEMENTED();
+      __ fake_asm(fLITHIUM106);
 #endif
+      break;
     }
     default:
       UNREACHABLE();
