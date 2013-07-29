@@ -729,21 +729,17 @@ class FloatingPointHelper : public AllStatic {
                                    DwVfpRegister double_scratch,
                                    Label* not_int32);
 
-  // Converts the integer (untagged smi) in |int_scratch| to a double, storing
-  // the result either to double_dst|
-  // Warning: The value in |int_scratch| will be changed in the process!
+  // Converts the integer (untagged smi) in |src| to a double, storing
+  // the result to |double_dst|
   static void ConvertIntToDouble(MacroAssembler* masm,
-                                 Register int_scratch,
-                                 DwVfpRegister double_dst,
-                                 DwVfpRegister double_scratch);
+                                 Register src,
+                                 DwVfpRegister double_dst);
 
-  // Converts the unsigned integer (untagged smi) in |int_scratch| to
+  // Converts the unsigned integer (untagged smi) in |src| to
   // a double, storing the result to |double_dst|
-  // Warning: The value in |int_scratch| will be changed in the process!
   static void ConvertUnsignedIntToDouble(MacroAssembler* masm,
-                                         Register int_scratch,
-                                         DwVfpRegister double_dst,
-                                         DwVfpRegister double_scratch);
+                                         Register src,
+                                         DwVfpRegister double_dst);
 
   // Converts the integer (untagged smi) in |src| to
   // a float, storing the result in |dst|

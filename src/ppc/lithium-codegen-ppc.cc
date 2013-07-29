@@ -4357,10 +4357,10 @@ void LCodeGen::DoInteger32ToDouble(LInteger32ToDouble* instr) {
     Register scratch = scratch0();
     __ lwz(scratch, ToMemOperand(input));
     FloatingPointHelper::ConvertIntToDouble(masm(), scratch,
-       ToDoubleRegister(output), double_scratch0());
+       ToDoubleRegister(output));
   } else {
     FloatingPointHelper::ConvertIntToDouble(masm(), ToRegister(input),
-       ToDoubleRegister(output), double_scratch0());
+       ToDoubleRegister(output));
   }
 }
 
@@ -4369,7 +4369,7 @@ void LCodeGen::DoUint32ToDouble(LUint32ToDouble* instr) {
   LOperand* input = instr->value();
   LOperand* output = instr->result();
   FloatingPointHelper::ConvertUnsignedIntToDouble(masm(), ToRegister(input),
-       ToDoubleRegister(output), double_scratch0());
+       ToDoubleRegister(output));
 }
 
 
@@ -4430,12 +4430,10 @@ void LCodeGen::DoNumberTagU(LNumberTagU* instr) {
 void LCodeGen::DoDeferredNumberTagI(LInstruction* instr,
                                     LOperand* value,
                                     IntegerSignedness signedness) {
-#ifdef PENGUIN_CLEANUP
   Label slow;
   Register src = ToRegister(value);
   Register dst = ToRegister(instr->result());
   DoubleRegister dbl_scratch = double_scratch0();
-  SwVfpRegister flt_scratch = dbl_scratch.low();
 
   // Preserve the value of all registers.
   PushSafepointRegistersScope scope(this, Safepoint::kWithRegisters);
@@ -4449,11 +4447,9 @@ void LCodeGen::DoDeferredNumberTagI(LInstruction* instr,
       __ SmiUntag(src, dst);
       __ xoris(src, src, Operand(HeapNumber::kSignMask >> 16));
     }
-    __ vmov(flt_scratch, src);
-    __ vcvt_f64_s32(dbl_scratch, flt_scratch);
+    FloatingPointHelper::ConvertIntToDouble(masm(), src, dbl_scratch);
   } else {
-    __ vmov(flt_scratch, src);
-    __ vcvt_f64_u32(dbl_scratch, flt_scratch);
+    FloatingPointHelper::ConvertUnsignedIntToDouble(masm(), src, dbl_scratch);
   }
 
   if (FLAG_inline_new) {
@@ -4479,10 +4475,6 @@ void LCodeGen::DoDeferredNumberTagI(LInstruction* instr,
   __ bind(&done);
   __ stfd(dbl_scratch, FieldMemOperand(dst, HeapNumber::kValueOffset));
   __ StoreToSafepointRegisterSlot(dst, dst);
-#else
-  PPCPORT_UNIMPLEMENTED();
-  __ fake_asm(fLITHIUM98);
-#endif
 }
 
 
@@ -4606,8 +4598,7 @@ void LCodeGen::EmitNumberUntagD(Register input_reg,
   // Smi to double register conversion
   __ bind(&load_smi);
   // scratch: untagged value of input_reg
-  FloatingPointHelper::ConvertIntToDouble(masm(), scratch, result_reg,
-                                          double_scratch0());
+  FloatingPointHelper::ConvertIntToDouble(masm(), scratch, result_reg);
   __ bind(&done);
 }
 

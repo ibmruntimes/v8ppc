@@ -780,61 +780,58 @@ void FloatingPointHelper::ConvertNumberToInt32(MacroAssembler* masm,
 
 
 void FloatingPointHelper::ConvertIntToDouble(MacroAssembler* masm,
-                                             Register int_scratch,
-                                             DwVfpRegister double_dst,
-                                             DwVfpRegister double_scratch) {
-  EMIT_STUB_MARKER(93);
+                                             Register src,
+                                             DwVfpRegister double_dst) {
+  ASSERT(!src.is(r0));
 
-  __ sub(sp, sp, Operand(16));   // reserve two temporary doubles on the stack
+  EMIT_STUB_MARKER(93);
+  __ sub(sp, sp, Operand(8));  // reserve one temporary double on the stack
+
+  // sign-extend src to 64-bit and store it to temp double on the stack
+  __ srawi(r0, src, 31);
 #if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
-  __ lis(r0, Operand(0x4330));
   __ stw(r0, MemOperand(sp, 4));
-  __ stw(r0, MemOperand(sp, 12));
-  __ lis(r0, Operand(SIGN_EXT_IMM16(0x8000)));
-  __ stw(r0, MemOperand(sp, 0));
-  __ xor_(r0, int_scratch, r0);
-  __ stw(r0, MemOperand(sp, 8));
+  __ stw(src, MemOperand(sp, 0));
 #else
-  __ lis(r0, Operand(0x4330));
   __ stw(r0, MemOperand(sp, 0));
-  __ stw(r0, MemOperand(sp, 8));
-  __ lis(r0, Operand(SIGN_EXT_IMM16(0x8000)));
-  __ stw(r0, MemOperand(sp, 4));
-  __ xor_(r0, int_scratch, r0);
-  __ stw(r0, MemOperand(sp, 12));
+  __ stw(src, MemOperand(sp, 4));
 #endif
+
+  // load into FPR
   __ lfd(double_dst, MemOperand(sp, 0));
-  __ lfd(double_scratch, MemOperand(sp, 8));
-  __ addi(sp, sp, Operand(16));  // restore stack
-  __ fsub(double_dst, double_scratch, double_dst);
+
+  __ addi(sp, sp, Operand(8));  // restore stack
+
+  // convert to double
+  __ fcfid(double_dst, double_dst);
 }
 
 
 void FloatingPointHelper::ConvertUnsignedIntToDouble(MacroAssembler* masm,
-                                               Register int_scratch,
-                                               DwVfpRegister double_dst,
-                                               DwVfpRegister double_scratch) {
+                                                     Register src,
+                                                     DwVfpRegister double_dst) {
+  ASSERT(!src.is(r0));
+
   EMIT_STUB_MARKER(94);
-  __ sub(sp, sp, Operand(16));   // reserve two temporary doubles on the stack
+  __ sub(sp, sp, Operand(8));  // reserve one temporary double on the stack
+
+  // zero-extend src to 64-bit and store it to temp double on the stack
+  __ li(r0, Operand::Zero());
 #if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
-  __ lis(r0, Operand(0x4330));
   __ stw(r0, MemOperand(sp, 4));
-  __ stw(r0, MemOperand(sp, 12));
-  __ li(r0, Operand::Zero());
-  __ stw(r0, MemOperand(sp, 0));
-  __ stw(int_scratch, MemOperand(sp, 8));
+  __ stw(src, MemOperand(sp, 0));
 #else
-  __ lis(r0, Operand(0x4330));
   __ stw(r0, MemOperand(sp, 0));
-  __ stw(r0, MemOperand(sp, 8));
-  __ li(r0, Operand::Zero());
-  __ stw(r0, MemOperand(sp, 4));
-  __ stw(int_scratch, MemOperand(sp, 12));
+  __ stw(src, MemOperand(sp, 4));
 #endif
+
+  // load into FPR
   __ lfd(double_dst, MemOperand(sp, 0));
-  __ lfd(double_scratch, MemOperand(sp, 8));
-  __ addi(sp, sp, Operand(16));  // restore stack
-  __ fsub(double_dst, double_scratch, double_dst);
+
+  __ addi(sp, sp, Operand(8));  // restore stack
+
+  // convert to double
+  __ fcfid(double_dst, double_dst);
 }
 
 void FloatingPointHelper::ConvertIntToFloat(MacroAssembler* masm,
@@ -994,7 +991,7 @@ void FloatingPointHelper::LoadNumberAsInt32Double(MacroAssembler* masm,
 
   __ JumpIfNotSmi(object, &obj_is_not_smi);
   __ SmiUntag(scratch1, object);
-  ConvertIntToDouble(masm, scratch1, double_dst, double_scratch);
+  ConvertIntToDouble(masm, scratch1, double_dst);
   __ b(&done);
 
   __ bind(&obj_is_not_smi);
@@ -2235,7 +2232,7 @@ void UnaryOpStub::GenerateHeapNumberCodeBitNot(
 
   // Convert the int32 in r4 to the heap number in r3.
   FloatingPointHelper::ConvertIntToDouble(
-      masm, r4, d0, d2);
+      masm, r4, d0);
   __ stfd(d0, FieldMemOperand(r3, HeapNumber::kValueOffset));
   __ Ret();
 
@@ -2724,10 +2721,10 @@ void BinaryOpStub::GenerateFPOperation(MacroAssembler* masm,
       // mentioned above SHR needs to always produce a positive result.
       if (op_ == Token::SHR) {
         FloatingPointHelper::ConvertUnsignedIntToDouble(
-          masm, r5, d0, d2);
+          masm, r5, d0);
       } else {
         FloatingPointHelper::ConvertIntToDouble(
-          masm, r5, d0, d2);
+          masm, r5, d0);
       }
       __ stfd(d0, FieldMemOperand(r3, HeapNumber::kValueOffset));
       __ Ret();
