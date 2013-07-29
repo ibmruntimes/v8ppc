@@ -331,7 +331,6 @@ void FullCodeGenerator::EmitProfilingCounterDecrement(int delta) {
 
 
 void FullCodeGenerator::EmitProfilingCounterReset() {
-  EMIT_STUB_MARKER(204);
   int reset_value = FLAG_interrupt_budget;
   if (info_->ShouldSelfOptimize() && !FLAG_retry_self_opt) {
     // Self-optimization is a one-off thing: if it fails, don't try again.
@@ -347,6 +346,11 @@ void FullCodeGenerator::EmitProfilingCounterReset() {
 }
 
 
+// N.B. Deoptimizer::PatchStackCheckCodeAt manipulates the branch
+// instruction to the ok label below.  Thus a change to this sequence
+// (i.e. change in instruction count between the branch and
+// destination) may require a corresponding change to that logic as
+// well.
 void FullCodeGenerator::EmitStackCheck(IterationStatement* stmt,
                                        Label* back_edge_target) {
   EMIT_STUB_MARKER(205);
