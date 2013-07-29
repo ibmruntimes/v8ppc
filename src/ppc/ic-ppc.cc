@@ -1231,10 +1231,17 @@ void KeyedLoadIC::GenerateIndexedInterceptor(MacroAssembler* masm) {
   __ JumpIfSmi(r4, &slow);
 
   // Check that the key is an array index, that is Uint32.
+#if V8_TARGET_ARCH_PPC64
+  ASSERT((uint64_t)(kSmiTagMask | kSmiSignMask) == 0x8000000000000001);
+  __ rldicl(r0, r3, 1, 62, SetRC);
+  __ bne(&slow, cr0);
+#else
   ASSERT((uint)(kSmiTagMask | kSmiSignMask) == 0x80000001);
+  // Todo - optimize this to use condition bit and correct branch
   __ rlwinm(r0, r3, 1, 30, 31);
   __ cmpi(r0, Operand::Zero());
   __ bne(&slow);
+#endif
 
   // Get the map of the receiver.
   __ lwz(r5, FieldMemOperand(r4, HeapObject::kMapOffset));

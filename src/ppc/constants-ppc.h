@@ -158,6 +158,7 @@ enum Opcode {
   XORIS   = 27 << 26,  // XOR Immediate Shifted
   ANDIx   = 28 << 26,  // AND Immediate
   ANDISx  = 29 << 26,  // AND Immediate Shifted
+  EXT5    = 30 << 26,  // Extended code set 5 - 64bit only
   EXT2    = 31 << 26,  // Extended code set 2
   LWZ     = 32 << 26,  // Load Word and Zero
   LWZU    = 33 << 26,  // Load Word with Zero Update
@@ -183,7 +184,9 @@ enum Opcode {
   STFSU   = 53 << 26,  // Store Floating-Point Single with Update
   STFD    = 54 << 26,  // Store Floating-Point Double
   STFDU   = 55 << 26,  // Store Floating-Point Double with Update
+  LD      = 58 << 26,  // Load Double Word
   EXT3    = 59 << 26,  // Extended code set 3
+  STD     = 62 << 26,  // Store Double Word (optionally with Update)
   EXT4    = 63 << 26   // Extended code set 4
 };
 
@@ -302,6 +305,11 @@ enum OpcodeExt4 {
   FCFID  = 846 << 1,  // Floating convert from integer doubleword
   FCTID  = 814 << 1,  // Floating convert from integer doubleword
   FCTIDZ = 815 << 1   // Floating convert from integer doubleword
+};
+
+// Bits 4-2
+enum OpcodeExt5 {
+  RLDICL = 0          // Rotate Left Double Word Immediate then Clear Left
 };
 
 // Instruction encoding bits and masks.

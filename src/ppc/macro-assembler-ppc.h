@@ -492,6 +492,10 @@ class MacroAssembler: public Assembler {
   void Or(Register ra, Register rs, const Operand& rb, RCBit rc = LeaveRC);
   void Xor(Register ra, Register rs, const Operand& rb, RCBit rc = LeaveRC);
 
+  // These exist to provide portability between 32 and 64bit
+  void LoadP(Register dst, const MemOperand& mem);
+  void StoreP(Register dst, const MemOperand& mem);
+
   // ---------------------------------------------------------------------------
   // JavaScript invokes
 

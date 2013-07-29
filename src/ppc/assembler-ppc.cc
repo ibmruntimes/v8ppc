@@ -853,6 +853,12 @@ void Assembler::sraw(Register ra, Register rs, Register rb, RCBit r) {
   x_form(EXT2 | SRAW, ra, rs, rb, r);
 }
 
+void Assembler::rldicl(Register ra, Register rs, int sh, int mb, RCBit r) {
+  // MD format instruction
+  CheckBuffer();
+  emit(EXT5 | RLDICL | rs.code()*B21 | ra.code()*B16 | sh*B11 | mb*B5 | r);
+}
+
 // delete this later when removing ARM
 void Assembler::sub(Register dst, Register src, const Operand& imm,
     SBit s, Condition cond) {
@@ -1158,6 +1164,23 @@ void Assembler::neg(Register rt, Register ra, RCBit rc) {
 void Assembler::andc(Register dst, Register src1, Register src2, RCBit rc) {
   x_form(EXT2 | ANDCX, dst, src1, src2, rc);
 }
+
+#if V8_TARGET_ARCH_PPC64
+// 64bit specific instructions
+void Assembler::ld(Register rd, const MemOperand &src) {
+  ASSERT(!src.ra_.is(r0) && src.isPPCAddressing());
+  CheckBuffer();
+  // todo - need to do range check on offset
+  emit(LD | rd.code()*B21 | src.ra().code()*B16 | src.offset() << 2);
+}
+void Assembler::std(Register rs, const MemOperand &src) {
+  CheckBuffer();
+  ASSERT(!src.ra_.is(r0) && src.isPPCAddressing());
+  // todo - need to do range check on offset
+  emit(STD | rs.code()*B21 | src.ra().code()*B16 | src.offset() << 2);
+}
+#endif
+
 
 void Assembler::fake_asm(enum FAKE_OPCODE_T fopcode) {
   ASSERT(fopcode < fLastFaker);

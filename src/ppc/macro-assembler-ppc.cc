@@ -4093,6 +4093,24 @@ void MacroAssembler::Xor(Register ra, Register rs, const Operand& rb,
   }
 }
 
+// Load a "pointer" sized value from the memory location
+void MacroAssembler::LoadP(Register dst, const MemOperand& mem) {
+#if V8_TARGET_ARCH_PPC64
+  ld(dst, mem);
+#else
+  lwz(dst, mem);
+#endif
+}
+
+// Store a "pointer" sized value to the memory location
+void MacroAssembler::StoreP(Register dst, const MemOperand& mem) {
+#if V8_TARGET_ARCH_PPC64
+  std(dst, mem);
+#else
+  stw(dst, mem);
+#endif
+}
+
 // Variable length depending on whether offset fits into immediate field
 // MemOperand currently only supports d-form
 void MacroAssembler::LoadWord(Register dst, const MemOperand& mem,
