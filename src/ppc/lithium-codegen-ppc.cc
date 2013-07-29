@@ -3465,33 +3465,56 @@ void LCodeGen::DoMathFloor(LUnaryMathOperation* instr) {
 
 
 void LCodeGen::DoMathRound(LUnaryMathOperation* instr) {
-#ifdef PENGUIN_CLEANUP
   DoubleRegister input = ToDoubleRegister(instr->value());
   Register result = ToRegister(instr->result());
   DwVfpRegister double_scratch1 = ToDoubleRegister(instr->temp());
   Register scratch = scratch0();
-  Label done, check_sign_on_zero;
+  DoubleRepresentation pointFive(0.5);
+  Label done, check_sign_on_zero, skip1, skip2;
+
 
   // Extract exponent bits.
-  __ vmov(result, input.high());
+  __ sub(sp, sp, Operand(8));
+  __ stfd(input, MemOperand(sp));
+#if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
+  __ lwz(result, MemOperand(sp, 4));
+#else
+  __ lwz(result, MemOperand(sp, 0));
+#endif
+  __ addi(sp, sp, Operand(8));
   __ ExtractBitMask(scratch, result, HeapNumber::kExponentMask);
 
   // If the number is in ]-0.5, +0.5[, the result is +/- 0.
   __ cmpi(scratch, Operand(HeapNumber::kExponentBias - 2));
-  __ mov(result, Operand::Zero(), LeaveCC, le);
+  __ bgt(&skip1);
+  __ li(result, Operand::Zero());
   if (instr->hydrogen()->CheckFlag(HValue::kBailoutOnMinusZero)) {
-    __ ble(&check_sign_on_zero);
+    __ b(&check_sign_on_zero);
   } else {
-    __ ble(&done);
+    __ b(&done);
   }
 
   // The following conversion will not work with numbers
   // outside of ]-2^32, 2^32[.
+  __ bind(&skip1);
   __ cmpi(scratch, Operand(HeapNumber::kExponentBias + 32));
   DeoptimizeIf(ge, instr->environment());
 
-  __ Vmov(double_scratch0(), 0.5, scratch);
-  __ vadd(double_scratch0(), input, double_scratch0());
+  __ sub(sp, sp, Operand(8));
+#if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
+  __ mov(scratch, Operand(pointFive.bits >> 32));
+  __ stw(scratch, MemOperand(sp, 4));
+  __ mov(scratch, Operand(pointFive.bits & 0xffffffff));
+  __ stw(scratch, MemOperand(sp, 0));
+#else
+  __ mov(scratch, Operand(pointFive.bits >> 32));
+  __ stw(scratch, MemOperand(sp, 0));
+  __ mov(scratch, Operand(pointFive.bits & 0xffffffff));
+  __ stw(scratch, MemOperand(sp, 4));
+#endif
+  __ lfd(double_scratch0(), MemOperand(sp, 0));
+
+  __ fadd(double_scratch0(), input, double_scratch0());
 
   // Save the original sign for later comparison.
   STATIC_ASSERT(HeapNumber::kSignMask == 0x80000000u);
@@ -3499,13 +3522,21 @@ void LCodeGen::DoMathRound(LUnaryMathOperation* instr) {
 
   // Check sign of the result: if the sign changed, the input
   // value was in ]0.5, 0[ and the result should be -0.
-  __ vmov(result, double_scratch0().high());
+  __ stfd(double_scratch0(), MemOperand(sp, 0));
+#if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
+  __ lwz(result, MemOperand(sp, 4));
+#else
+  __ lwz(result, MemOperand(sp, 0));
+#endif
+  __ addi(sp, sp, Operand(8));
   __ xor_(result, result, scratch, SetRC);
   if (instr->hydrogen()->CheckFlag(HValue::kBailoutOnMinusZero)) {
     DeoptimizeIf(lt, instr->environment(), cr0);
   } else {
-    __ mov(result, Operand::Zero(), LeaveCC, mi);
-    __ b(lt, &done);
+    __ bge(&skip2);
+    __ li(result, Operand::Zero());
+    __ b(&done);
+    __ bind(&skip2);
   }
 
   __ EmitVFPTruncate(kRoundToMinusInf,
@@ -3520,15 +3551,19 @@ void LCodeGen::DoMathRound(LUnaryMathOperation* instr) {
     __ cmpi(result, Operand::Zero());
     __ bne(&done);
     __ bind(&check_sign_on_zero);
-    __ vmov(scratch, input.high());
+    // Move high word to scrach and test sign bit
+    __ sub(sp, sp, Operand(8));
+    __ stfd(input, MemOperand(sp));
+#if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
+    __ lwz(scratch, MemOperand(sp, 4));
+#else
+    __ lwz(scratch, MemOperand(sp, 0));
+#endif
+    __ addi(sp, sp, Operand(8));
     __ TestBit(scratch, 0, r0);  // test sign bit
     DeoptimizeIf(ne, instr->environment(), cr0);
   }
   __ bind(&done);
-#else
-  PPCPORT_UNIMPLEMENTED();
-  __ fake_asm(fLITHIUM104);
-#endif
 }
 
 
