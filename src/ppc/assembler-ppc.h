@@ -77,7 +77,7 @@ namespace internal {
 // Core register
 struct Register {
   static const int kNumRegisters = 32;
-  static const int kNumAllocatableRegisters = 10;  // r3-r12
+  static const int kNumAllocatableRegisters = 8;  // r3-r10
   static const int kSizeInBytes = 4;
 
   static int ToAllocationIndex(Register reg) {
@@ -101,9 +101,9 @@ struct Register {
       "r7",
       "r8",
       "r9",
-      "r10",
-      "r11",
-      "r12",  // currently last allocated register
+      "r10",  // currently last allocated register
+      "r11",  // lithium scratch
+      "r12",  // ip
       "r13",
       "r14",
       "r15",

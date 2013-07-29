@@ -589,7 +589,7 @@ class RecordWriteStub: public CodeStub {
     Register GetRegThatIsNotOneOf(Register r1,
                                   Register r2,
                                   Register r3) {
-      for (int i = 3; i < Register::kNumAllocatableRegisters; i++) {
+      for (int i = 0; i < Register::kNumAllocatableRegisters; i++) {
         Register candidate = Register::FromAllocationIndex(i);
         if (candidate.is(r1)) continue;
         if (candidate.is(r2)) continue;
