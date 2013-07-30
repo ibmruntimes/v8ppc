@@ -52,11 +52,12 @@ namespace internal {
 
 
 int DwVfpRegister::ToAllocationIndex(DwVfpRegister reg) {
+  int index = reg.code() - 1;  // d0 is skipped
+  ASSERT(index < kNumAllocatableRegisters);
   ASSERT(!reg.is(kDoubleRegZero));
   ASSERT(!reg.is(kScratchDoubleReg));
-  return reg.code();
+  return index;
 }
-
 
 void RelocInfo::apply(intptr_t delta) {
   if (RelocInfo::IsInternalReference(rmode_)) {

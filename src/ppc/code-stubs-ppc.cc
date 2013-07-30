@@ -3588,23 +3588,7 @@ void TranscendentalCacheStub::GenerateCallCFunction(MacroAssembler* masm,
   __ mflr(r0);
   __ push(r0);
   __ PrepareCallCFunction(0, 1, scratch);
-  if (masm->use_eabi_hardfloat()) {
-    __ fmr(d0, d2);
-  } else {
-    __ addi(sp, sp, Operand(-8));
-
-    __ stfd(d2, MemOperand(sp, 0));
-// ENDIAN - r3/r4 are in memory order
-#if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
-    __ lwz(r3, MemOperand(sp, 4));
-    __ lwz(r4, MemOperand(sp, 0));
-#else
-    __ lwz(r3, MemOperand(sp, 0));
-    __ lwz(r4, MemOperand(sp, 4));
-#endif
-
-    __ addi(sp, sp, Operand(8));
-  }
+  __ fmr(d1, d2);
   AllowExternalCallThatCantCauseGC scope(masm);
   switch (type_) {
     case TranscendentalCache::SIN:

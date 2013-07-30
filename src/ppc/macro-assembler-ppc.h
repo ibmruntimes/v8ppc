@@ -1108,15 +1108,6 @@ class MacroAssembler: public Assembler {
   bool has_frame() { return has_frame_; }
   inline bool AllowThisStubCall(CodeStub* stub);
 
-  // EABI variant for double arguments in use.
-  bool use_eabi_hardfloat() {
-#if USE_EABI_HARDFLOAT
-    return true;
-#else
-    return false;
-#endif
-  }
-
   // ---------------------------------------------------------------------------
   // Number utilities
 

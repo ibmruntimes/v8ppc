@@ -314,16 +314,9 @@ void MacroAssembler::Move(Register dst, Register src, Condition cond) {
 
 
 void MacroAssembler::Move(DoubleRegister dst, DoubleRegister src) {
-#ifdef PENGUIN_CLEANUP
-  ASSERT(CpuFeatures::IsSupported(VFP2));
-  CpuFeatures::Scope scope(VFP2);
   if (!dst.is(src)) {
-    vmov(dst, src);
+    fmr(dst, src);
   }
-#else
-  PPCPORT_UNIMPLEMENTED();
-  fake_asm(fMASM17);
-#endif
 }
 
 
@@ -988,7 +981,7 @@ void MacroAssembler::LeaveExitFrame(bool save_doubles,
 }
 
 void MacroAssembler::GetCFunctionDoubleResult(const DoubleRegister dst) {
-    fmr(dst, d0);
+  fmr(dst, d1);
 }
 
 
@@ -3386,17 +3379,9 @@ static const int kRegisterPassedArguments = 8;
 int MacroAssembler::CalculateStackPassedWords(int num_reg_arguments,
                                               int num_double_arguments) {
   int stack_passed_words = 0;
-  if (use_eabi_hardfloat()) {
-    // In the hard floating point calling convention, we can use
-    // all double registers to pass doubles.
-    if (num_double_arguments > DoubleRegister::kNumRegisters) {
+  if (num_double_arguments > DoubleRegister::kNumRegisters) {
       stack_passed_words +=
           2 * (num_double_arguments - DoubleRegister::kNumRegisters);
-    }
-  } else {
-    // In the soft floating point calling convention, every double
-    // argument is passed using two registers.
-    num_reg_arguments += 2 * num_double_arguments;
   }
   // Up to four simple arguments are passed in registers r0..r3.
   if (num_reg_arguments > kRegisterPassedArguments) {
@@ -3446,44 +3431,27 @@ void MacroAssembler::PrepareCallCFunction(int num_reg_arguments,
 
 
 void MacroAssembler::SetCallCDoubleArguments(DoubleRegister dreg) {
-  ASSERT(CpuFeatures::IsSupported(VFP2));
-  if (use_eabi_hardfloat()) {
-    Move(d0, dreg);
-  } else {
-    vmov(r0, r1, dreg);
-  }
+  Move(d1, dreg);
 }
 
 
 void MacroAssembler::SetCallCDoubleArguments(DoubleRegister dreg1,
                                              DoubleRegister dreg2) {
-  ASSERT(CpuFeatures::IsSupported(VFP2));
-  if (use_eabi_hardfloat()) {
-    if (dreg2.is(d0)) {
-      ASSERT(!dreg1.is(d1));
-      Move(d1, dreg2);
-      Move(d0, dreg1);
-    } else {
-      Move(d0, dreg1);
-      Move(d1, dreg2);
-    }
+  if (dreg2.is(d1)) {
+    ASSERT(!dreg1.is(d2));
+    Move(d2, dreg2);
+    Move(d1, dreg1);
   } else {
-    vmov(r0, r1, dreg1);
-    vmov(r2, r3, dreg2);
+    Move(d1, dreg1);
+    Move(d2, dreg2);
   }
 }
 
 
 void MacroAssembler::SetCallCDoubleArguments(DoubleRegister dreg,
                                              Register reg) {
-  ASSERT(CpuFeatures::IsSupported(VFP2));
-  if (use_eabi_hardfloat()) {
-    Move(d0, dreg);
-    Move(r0, reg);
-  } else {
-    Move(r2, reg);
-    vmov(r0, r1, dreg);
-  }
+  Move(d1, dreg);
+  Move(r3, reg);
 }
 
 
