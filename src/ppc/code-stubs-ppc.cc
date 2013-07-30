@@ -6282,7 +6282,7 @@ void StringCompareStub::GenerateCompareFlatAsciiStrings(MacroAssembler* masm,
   __ lwz(scratch2, FieldMemOperand(right, String::kLengthOffset));
   __ sub(scratch3, scratch1, scratch2, LeaveOE, SetRC);
   Register length_delta = scratch3;
-  __ ble(&skip);
+  __ ble(&skip, cr0);
   __ mr(scratch1, scratch2);
   __ bind(&skip);
   Register min_length = scratch1;
