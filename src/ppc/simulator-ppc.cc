@@ -70,10 +70,10 @@ class PPCDebugger {
 
   Simulator* sim_;
 
-  int32_t GetRegisterValue(int regnum);
+  intptr_t GetRegisterValue(int regnum);
   double GetRegisterPairDoubleValue(int regnum);
   double GetFPDoubleRegisterValue(int regnum);
-  bool GetValue(const char* desc, int32_t* value);
+  bool GetValue(const char* desc, intptr_t* value);
   bool GetFPSingleValue(const char* desc, float* value);
   bool GetFPDoubleValue(const char* desc, double* value);
 
@@ -160,7 +160,7 @@ void PPCDebugger::Stop(Instruction* instr) {
 #endif
 
 
-int32_t PPCDebugger::GetRegisterValue(int regnum) {
+intptr_t PPCDebugger::GetRegisterValue(int regnum) {
   return sim_->get_register(regnum);
 }
 
@@ -174,8 +174,7 @@ double PPCDebugger::GetFPDoubleRegisterValue(int regnum) {
   return sim_->get_double_from_d_register(regnum);
 }
 
-
-bool PPCDebugger::GetValue(const char* desc, int32_t* value) {
+bool PPCDebugger::GetValue(const char* desc, intptr_t* value) {
   int regnum = Registers::Number(desc);
   if (regnum != kNoRegister) {
     *value = GetRegisterValue(regnum);
@@ -310,7 +309,7 @@ void PPCDebugger::Debug() {
                         "%" XSTR(ARG_SIZE) "s",
                         cmd, arg1, arg2);
       if ((strcmp(cmd, "si") == 0) || (strcmp(cmd, "stepi") == 0)) {
-        int32_t value;
+        intptr_t value;
 
         // If at a breakpoint, proceed past it.
         if ((reinterpret_cast<Instruction*>(sim_->get_pc()))->InstructionBits()
@@ -321,7 +320,8 @@ void PPCDebugger::Debug() {
                   reinterpret_cast<Instruction*>(sim_->get_pc()));
         }
 
-        if (argc == 2 && last_pc != sim_->get_pc() && GetValue(arg1, &value)) {
+        if (argc == 2 && last_pc != sim_->get_pc() &&
+                            GetValue(arg1, &value)) {
           for (int i = 1; i < value; i++) {
             disasm::NameConverter converter;
             disasm::Disassembler dasm(converter);
@@ -348,13 +348,17 @@ void PPCDebugger::Debug() {
         done = true;
       } else if ((strcmp(cmd, "p") == 0) || (strcmp(cmd, "print") == 0)) {
         if (argc == 2 || (argc == 3 && strcmp(arg2, "fp") == 0)) {
-          int32_t value;
+          intptr_t value;
           float svalue;
           double dvalue;
           if (strcmp(arg1, "all") == 0) {
             for (int i = 0; i < kNumRegisters; i++) {
               value = GetRegisterValue(i);
+#if V8_TARGET_ARCH_PPC64
+              PrintF("    %3s: %016lx", Registers::Name(i), value);
+#else
               PrintF("    %3s: %08x", Registers::Name(i), value);
+#endif
               if ((argc == 3 && strcmp(arg2, "fp") == 0) &&
                   i < 8 &&
                   (i % 2) == 0) {
@@ -371,7 +375,12 @@ void PPCDebugger::Debug() {
           } else if (strcmp(arg1, "alld") == 0) {
             for (int i = 0; i < kNumRegisters; i++) {
               value = GetRegisterValue(i);
-              PrintF("     %3s: %08x %11d", Registers::Name(i), value, value);
+#if V8_TARGET_ARCH_PPC64
+              PrintF("     %3s: %016lx"
+#else
+              PrintF("     %3s: %08x"
+#endif
+                     " %11" V8PRIdPTR, Registers::Name(i), value, value);
               if ((argc == 3 && strcmp(arg2, "fp") == 0) &&
                   i < 8 &&
                   (i % 2) == 0) {
@@ -403,13 +412,21 @@ void PPCDebugger::Debug() {
               int regnum = strtoul(&arg1[1], 0, 10);
               if (regnum != kNoRegister) {
                 value = GetRegisterValue(regnum);
+#if V8_TARGET_ARCH_PPC64
+                PrintF("%s: 0x%016lx %ld\n", arg1, value, value);
+#else
                 PrintF("%s: 0x%08x %d\n", arg1, value, value);
+#endif
               } else {
                 PrintF("%s unrecognized\n", arg1);
               }
           } else {
             if (GetValue(arg1, &value)) {
-              PrintF("%s: 0x%08x %d \n", arg1, value, value);
+#if V8_TARGET_ARCH_PPC64
+              PrintF("%s: 0x%016lx %ld\n", arg1, value, value);
+#else
+              PrintF("%s: 0x%08x %d\n", arg1, value, value);
+#endif
             } else if (GetFPSingleValue(arg1, &svalue)) {
               uint32_t as_word = BitCast<uint32_t>(svalue);
               PrintF("%s: %f 0x%08x\n", arg1, svalue, as_word);
@@ -430,7 +447,7 @@ void PPCDebugger::Debug() {
       } else if ((strcmp(cmd, "po") == 0)
                  || (strcmp(cmd, "printobject") == 0)) {
         if (argc == 2) {
-          int32_t value;
+          intptr_t value;
           if (GetValue(arg1, &value)) {
             Object* obj = reinterpret_cast<Object*>(value);
             PrintF("%s: \n", arg1);
@@ -447,7 +464,7 @@ void PPCDebugger::Debug() {
           PrintF("printobject <value>\n");
         }
       } else if (strcmp(cmd, "setpc") == 0) {
-        int32_t value;
+        intptr_t value;
 
         if (!GetValue(arg1, &value)) {
           PrintF("%s unrecognized\n", arg1);
@@ -455,23 +472,23 @@ void PPCDebugger::Debug() {
         }
         sim_->set_pc(value);
       } else if (strcmp(cmd, "stack") == 0 || strcmp(cmd, "mem") == 0) {
-        int32_t* cur = NULL;
-        int32_t* end = NULL;
+        intptr_t* cur = NULL;
+        intptr_t* end = NULL;
         int next_arg = 1;
 
         if (strcmp(cmd, "stack") == 0) {
-          cur = reinterpret_cast<int32_t*>(sim_->get_register(Simulator::sp));
+          cur = reinterpret_cast<intptr_t*>(sim_->get_register(Simulator::sp));
         } else {  // "mem"
-          int32_t value;
+          intptr_t value;
           if (!GetValue(arg1, &value)) {
             PrintF("%s unrecognized\n", arg1);
             continue;
           }
-          cur = reinterpret_cast<int32_t*>(value);
+          cur = reinterpret_cast<intptr_t*>(value);
           next_arg++;
         }
 
-        int32_t words;
+        intptr_t words;  // likely inaccurate variable name for 64bit
         if (argc == next_arg) {
           words = 10;
         } else if (argc == next_arg + 1) {
@@ -482,7 +499,7 @@ void PPCDebugger::Debug() {
         end = cur + words;
 
         while (cur < end) {
-          PrintF("  0x%08" V8PRIxPTR ":  0x%08x %10d",
+          PrintF("  0x%08" V8PRIxPTR ":  0x%08" V8PRIxPTR " %10" V8PRIdPTR,
                  reinterpret_cast<intptr_t>(cur), *cur, *cur);
           HeapObject* obj = reinterpret_cast<HeapObject*>(*cur);
           int value = *cur;
@@ -516,7 +533,7 @@ void PPCDebugger::Debug() {
           int regnum = Registers::Number(arg1);
           if (regnum != kNoRegister || strncmp(arg1, "0x", 2) == 0) {
             // The argument is an address or a register name.
-            int32_t value;
+            intptr_t value;
             if (GetValue(arg1, &value)) {
               cur = reinterpret_cast<byte*>(value);
               // Disassemble 10 instructions at <arg1>.
@@ -524,7 +541,7 @@ void PPCDebugger::Debug() {
             }
           } else {
             // The argument is the number of instructions.
-            int32_t value;
+            intptr_t value;
             if (GetValue(arg1, &value)) {
               cur = reinterpret_cast<byte*>(sim_->get_pc());
               // Disassemble <arg1> instructions.
@@ -532,8 +549,8 @@ void PPCDebugger::Debug() {
             }
           }
         } else {
-          int32_t value1;
-          int32_t value2;
+          intptr_t value1;
+          intptr_t value2;
           if (GetValue(arg1, &value1) && GetValue(arg2, &value2)) {
             cur = reinterpret_cast<byte*>(value1);
             end = cur + (value2 * Instruction::kInstrSize);
@@ -552,7 +569,7 @@ void PPCDebugger::Debug() {
         PrintF("regaining control from gdb\n");
       } else if (strcmp(cmd, "break") == 0) {
         if (argc == 2) {
-          int32_t value;
+          intptr_t value;
           if (GetValue(arg1, &value)) {
             if (!SetBreakpoint(reinterpret_cast<Instruction*>(value))) {
               PrintF("setting breakpoint failed\n");
@@ -567,18 +584,18 @@ void PPCDebugger::Debug() {
         if (!DeleteBreakpoint(NULL)) {
           PrintF("deleting breakpoint failed\n");
         }
-      } else if (strcmp(cmd, "flags") == 0) {
-        PrintF("N flag: %d; ", sim_->n_flag_);
-        PrintF("Z flag: %d; ", sim_->z_flag_);
-        PrintF("C flag: %d; ", sim_->c_flag_);
-        PrintF("V flag: %d\n", sim_->v_flag_);
-        PrintF("INVALID OP flag: %d; ", sim_->inv_op_vfp_flag_);
-        PrintF("DIV BY ZERO flag: %d; ", sim_->div_zero_vfp_flag_);
-        PrintF("OVERFLOW flag: %d; ", sim_->overflow_vfp_flag_);
-        PrintF("UNDERFLOW flag: %d; ", sim_->underflow_vfp_flag_);
-        PrintF("INEXACT flag: %d;\n", sim_->inexact_vfp_flag_);
+      } else if (strcmp(cmd, "cr") == 0) {
+        PrintF("Condition reg: %08x\n", sim_->condition_reg_);
+      } else if (strcmp(cmd, "lr") == 0) {
+        PrintF("Link reg: %08x\n", sim_->special_reg_lr_);
+      } else if (strcmp(cmd, "ctr") == 0) {
+        PrintF("Ctr reg: %08x\n", sim_->special_reg_ctr_);
+      } else if (strcmp(cmd, "xer") == 0) {
+        PrintF("XER: %08x\n", sim_->special_reg_xer_);
+      } else if (strcmp(cmd, "fpscr") == 0) {
+        PrintF("FPSCR: %08x\n", sim_->fp_condition_reg_);
       } else if (strcmp(cmd, "stop") == 0) {
-        int32_t value;
+        intptr_t value;
         intptr_t stop_pc = sim_->get_pc() - 2 * Instruction::kInstrSize;
         Instruction* stop_instr = reinterpret_cast<Instruction*>(stop_pc);
         Instruction* msg_address =
@@ -650,8 +667,16 @@ void PPCDebugger::Debug() {
                "registers\n");
         PrintF("printobject <register>\n");
         PrintF("  print an object from a register (alias 'po')\n");
-        PrintF("flags\n");
-        PrintF("  print flags\n");
+        PrintF("cr\n");
+        PrintF("  print condition register\n");
+        PrintF("lr\n");
+        PrintF("  print link register\n");
+        PrintF("ctr\n");
+        PrintF("  print ctr register\n");
+        PrintF("xer\n");
+        PrintF("  print XER\n");
+        PrintF("fpscr\n");
+        PrintF("  print FPSCR\n");
         PrintF("stack [<num words>]\n");
         PrintF("  dump stack content, default dump 10 words)\n");
         PrintF("mem <address> [<num words>]\n");
@@ -843,10 +868,6 @@ Simulator::Simulator(Isolate* isolate) : isolate_(isolate) {
   special_reg_pc_ = 0;  // PowerPC
   special_reg_lr_ = 0;  // PowerPC
   special_reg_ctr_ = 0;  // PowerPC
-  n_flag_ = false;
-  z_flag_ = false;
-  c_flag_ = false;
-  v_flag_ = false;
 
   // Initializing FP registers.
   // All registers are initialized to zero to start with
@@ -855,10 +876,6 @@ Simulator::Simulator(Isolate* isolate) : isolate_(isolate) {
   for (int i = 0; i < num_s_registers; i++) {
     fp_register[i] = 0;
   }
-  n_flag_FPSCR_ = false;
-  z_flag_FPSCR_ = false;
-  c_flag_FPSCR_ = false;
-  v_flag_FPSCR_ = false;
   FPSCR_rounding_mode_ = RZ;
 
   inv_op_vfp_flag_ = false;
@@ -963,7 +980,7 @@ void Simulator::set_register(int reg, int32_t value) {
 
 
 // Get the register from the architecture state.
-int32_t Simulator::get_register(int reg) const {
+intptr_t Simulator::get_register(int reg) const {
   ASSERT((reg >= 0) && (reg < num_registers));
   // Stupid code added to avoid bug in GCC.
   // See: http://gcc.gnu.org/bugzilla/show_bug.cgi?id=43949
@@ -977,11 +994,13 @@ double Simulator::get_double_from_register_pair(int reg) {
   ASSERT((reg >= 0) && (reg < num_registers) && ((reg % 2) == 0));
 
   double dm_val = 0.0;
+#ifndef V8_TARGET_ARCH_PPC64  // doesn't make sense in 64bit mode
   // Read the bits from the unsigned integer register_[] array
   // into the double precision floating point value and return it.
   char buffer[2 * sizeof(fp_register[0])];
   memcpy(buffer, &registers_[reg], 2 * sizeof(registers_[0]));
   memcpy(&dm_val, buffer, 2 * sizeof(registers_[0]));
+#endif
   return(dm_val);
 }
 
@@ -1187,24 +1206,6 @@ void Simulator::Format(Instruction* instr, const char* format) {
   UNIMPLEMENTED();
 }
 
-// Calculate and set the Negative and Zero flags.
-void Simulator::SetNZFlags(int32_t val) {
-  n_flag_ = (val < 0);
-  z_flag_ = (val == 0);
-}
-
-
-// Set the Carry flag.
-void Simulator::SetCFlag(bool val) {
-  c_flag_ = val;
-}
-
-
-// Set the oVerflow flag.
-void Simulator::SetVFlag(bool val) {
-  v_flag_ = val;
-}
-
 
 // Calculate C flag value for additions.
 bool Simulator::CarryFrom(int32_t left, int32_t right, int32_t carry) {
@@ -1244,41 +1245,6 @@ bool Simulator::OverflowFrom(int32_t alu_out,
   return overflow;
 }
 
-
-// Support for VFP comparisons.
-void Simulator::Compute_FPSCR_Flags(double val1, double val2) {
-  if (isnan(val1) || isnan(val2)) {
-    n_flag_FPSCR_ = false;
-    z_flag_FPSCR_ = false;
-    c_flag_FPSCR_ = true;
-    v_flag_FPSCR_ = true;
-  // All non-NaN cases.
-  } else if (val1 == val2) {
-    n_flag_FPSCR_ = false;
-    z_flag_FPSCR_ = true;
-    c_flag_FPSCR_ = true;
-    v_flag_FPSCR_ = false;
-  } else if (val1 < val2) {
-    n_flag_FPSCR_ = true;
-    z_flag_FPSCR_ = false;
-    c_flag_FPSCR_ = false;
-    v_flag_FPSCR_ = false;
-  } else {
-    // Case when (val1 > val2).
-    n_flag_FPSCR_ = false;
-    z_flag_FPSCR_ = false;
-    c_flag_FPSCR_ = true;
-    v_flag_FPSCR_ = false;
-  }
-}
-
-
-void Simulator::Copy_FPSCR_to_APSR() {
-  n_flag_ = n_flag_FPSCR_;
-  z_flag_ = z_flag_FPSCR_;
-  c_flag_ = c_flag_FPSCR_;
-  v_flag_ = v_flag_FPSCR_;
-}
 
 // Calls into the V8 runtime are based on this very simple interface.
 // Note: To be able to return two values from some calls the code in runtime.cc
@@ -1396,7 +1362,8 @@ void Simulator::SoftwareInterrupt(Instruction* instr) {
             break;
           }
           if (!stack_aligned) {
-            PrintF(" with unaligned stack %08x\n", get_register(sp));
+            PrintF(" with unaligned stack %08" V8PRIxPTR
+                   "\n", get_register(sp));
           }
           PrintF("\n");
         }
@@ -1472,7 +1439,8 @@ void Simulator::SoftwareInterrupt(Instruction* instr) {
           PrintF("Call to host function at %p args %08x",
               FUNCTION_ADDR(target), arg0);
           if (!stack_aligned) {
-            PrintF(" with unaligned stack %08x\n", get_register(sp));
+            PrintF(" with unaligned stack %08" V8PRIxPTR
+                   "\n", get_register(sp));
           }
           PrintF("\n");
         }
@@ -1489,7 +1457,8 @@ void Simulator::SoftwareInterrupt(Instruction* instr) {
           PrintF("Call to host function at %p args %08x %08x",
               FUNCTION_ADDR(target), arg0, arg1);
           if (!stack_aligned) {
-            PrintF(" with unaligned stack %08x\n", get_register(sp));
+            PrintF(" with unaligned stack %08" V8PRIxPTR
+                   "\n", get_register(sp));
           }
           PrintF("\n");
         }
@@ -1516,7 +1485,8 @@ void Simulator::SoftwareInterrupt(Instruction* instr) {
               arg4,
               arg5);
           if (!stack_aligned) {
-            PrintF(" with unaligned stack %08x\n", get_register(sp));
+            PrintF(" with unaligned stack %08" V8PRIxPTR
+                   "\n", get_register(sp));
           }
           PrintF("\n");
         }
@@ -3017,7 +2987,7 @@ int32_t Simulator::Call(byte* entry, int argument_count, ...) {
   // Remaining arguments passed on stack.
   int original_stack = get_register(sp);
   // Compute position of stack on entry to generated code.
-  int entry_stack = (original_stack - stack_arg_count * sizeof(int32_t)
+  intptr_t entry_stack = (original_stack - stack_arg_count * sizeof(intptr_t)
     - 8);  // -8 extra stack is a hack for the LR slot + old SP on PPC
   if (OS::ActivationFrameAlignment() != 0) {
     entry_stack &= -OS::ActivationFrameAlignment();
@@ -3061,7 +3031,7 @@ int32_t Simulator::Call(byte* entry, int argument_count, ...) {
 
   // Set up the non-volatile registers with a known value. To be able to check
   // that they are preserved properly across JS execution.
-  int32_t callee_saved_value = icount_;
+  intptr_t callee_saved_value = icount_;
   set_register(r2, callee_saved_value);
   set_register(r13, callee_saved_value);
   set_register(r14, callee_saved_value);

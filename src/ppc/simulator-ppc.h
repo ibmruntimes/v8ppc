@@ -156,7 +156,7 @@ class Simulator {
 
   // Accessors for register state.
   void set_register(int reg, int32_t value);
-  int32_t get_register(int reg) const;
+  intptr_t get_register(int reg) const;
   double get_double_from_register_pair(int reg);
   void set_dw_register(int dreg, const int* dbl);
 
@@ -249,23 +249,12 @@ class Simulator {
   void Format(Instruction* instr, const char* format);
 
   // Helper functions to set the conditional flags in the architecture state.
-  void SetNZFlags(int32_t val);
-  void SetCFlag(bool val);
-  void SetVFlag(bool val);
   bool CarryFrom(int32_t left, int32_t right, int32_t carry = 0);
   bool BorrowFrom(int32_t left, int32_t right);
   bool OverflowFrom(int32_t alu_out,
                     int32_t left,
                     int32_t right,
                     bool addition);
-
-  inline int GetCarry() {
-    return c_flag_ ? 1 : 0;
-  };
-
-  // Support for VFP.
-  void Compute_FPSCR_Flags(double val1, double val2);
-  void Copy_FPSCR_to_APSR();
 
   // Helper functions to decode common "addressing" modes
   int32_t GetShiftRm(Instruction* instr, bool* carry_out);
@@ -346,25 +335,17 @@ class Simulator {
   // Saturating instructions require a Q flag to indicate saturation.
   // There is currently no way to read the CPSR directly, and thus read the Q
   // flag, so this is left unimplemented.
-  int32_t registers_[32];  // PowerPC
+  intptr_t registers_[32];  // PowerPC
   int32_t condition_reg_;  // PowerPC
   int32_t fp_condition_reg_;  // PowerPC
   int32_t special_reg_lr_;  // PowerPC
   int32_t special_reg_pc_;  // PowerPC
   int32_t special_reg_ctr_;  // PowerPC
   int32_t special_reg_xer_;  // PowerPC
-  bool n_flag_;
-  bool z_flag_;
-  bool c_flag_;
-  bool v_flag_;
 
   // VFP architecture state.
   unsigned int vfp_register[num_s_registers];
   unsigned int fp_register[num_s_registers];
-  bool n_flag_FPSCR_;
-  bool z_flag_FPSCR_;
-  bool c_flag_FPSCR_;
-  bool v_flag_FPSCR_;
 
   // VFP rounding mode. See ARM DDI 0406B Page A2-29.
   VFPRoundingMode FPSCR_rounding_mode_;
