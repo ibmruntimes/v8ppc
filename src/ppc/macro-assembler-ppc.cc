@@ -2432,31 +2432,9 @@ void MacroAssembler::IndexFromHash(Register hash, Register index) {
 
 void MacroAssembler::SmiToDoubleFPRegister(Register smi,
                                             DwVfpRegister value,
-                                            Register scratch1,
-                                            DwVfpRegister scratch2) {
+                                            Register scratch1) {
   srawi(scratch1, smi, kSmiTagSize);
-  sub(sp, sp, Operand(16));   // reserve two temporary doubles on the stack
-#if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
-  lis(r0, Operand(0x4330));
-  stw(r0, MemOperand(sp, 4));
-  stw(r0, MemOperand(sp, 12));
-  lis(r0, Operand(SIGN_EXT_IMM16(0x8000)));
-  stw(r0, MemOperand(sp, 0));
-  xor_(r0, scratch1, r0);
-  stw(r0, MemOperand(sp, 8));
-#else
-  lis(r0, Operand(0x4330));
-  stw(r0, MemOperand(sp, 0));
-  stw(r0, MemOperand(sp, 8));
-  lis(r0, Operand(SIGN_EXT_IMM16(0x8000)));
-  stw(r0, MemOperand(sp, 4));
-  xor_(r0, scratch1, r0);
-  stw(r0, MemOperand(sp, 12));
-#endif
-  lfd(value, MemOperand(sp, 0));
-  lfd(scratch2, MemOperand(sp, 8));
-  addi(sp, sp, Operand(16));  // restore stack
-  fsub(value, scratch2, value);
+  FloatingPointHelper::ConvertIntToDouble(this, scratch1, value);
 }
 
 

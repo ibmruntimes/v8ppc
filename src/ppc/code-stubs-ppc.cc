@@ -633,8 +633,8 @@ void FloatingPointHelper::LoadSmis(MacroAssembler* masm,
                                    Register scratch1,
                                    Register scratch2) {
   EMIT_STUB_MARKER(89);
-  __ SmiToDoubleFPRegister(r3, d7, scratch1, d15);
-  __ SmiToDoubleFPRegister(r4, d6, scratch1, d15);
+  __ SmiToDoubleFPRegister(r3, d7, scratch1);
+  __ SmiToDoubleFPRegister(r4, d6, scratch1);
   if (destination == kCoreRegisters) {
     __ sub(sp, sp, Operand(8));
 
@@ -711,29 +711,7 @@ void FloatingPointHelper::LoadNumber(MacroAssembler* masm,
   __ bind(&is_smi);
 
   // Convert untagged smi to double using FP instructions.
-  // could possibly refactor with SmiToDoubleFPRegister
-  __ sub(sp, sp, Operand(16));   // reserve two temporary doubles on the stack
-#if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
-  __ lis(r0, Operand(0x4330));
-  __ stw(r0, MemOperand(sp, 4));
-  __ stw(r0, MemOperand(sp, 12));
-  __ lis(r0, Operand(SIGN_EXT_IMM16(0x8000)));
-  __ stw(r0, MemOperand(sp, 0));
-  __ xor_(r0, scratch1, r0);
-  __ stw(r0, MemOperand(sp, 8));
-#else
-  __ lis(r0, Operand(0x4330));
-  __ stw(r0, MemOperand(sp, 0));
-  __ stw(r0, MemOperand(sp, 8));
-  __ lis(r0, Operand(SIGN_EXT_IMM16(0x8000)));
-  __ stw(r0, MemOperand(sp, 4));
-  __ xor_(r0, scratch1, r0);
-  __ stw(r0, MemOperand(sp, 12));
-#endif
-  __ lfd(dst, MemOperand(sp, 0));
-  __ lfd(d3, MemOperand(sp, 8));
-  __ addi(sp, sp, Operand(16));  // restore stack
-  __ fsub(dst, d3, dst);
+  FloatingPointHelper::ConvertIntToDouble(masm, scratch1, dst);
 
   __ bind(&done);
 }
@@ -1338,7 +1316,7 @@ static void EmitSmiNonsmiComparison(MacroAssembler* masm,
 
   // Lhs is a smi, rhs is a number.
   // Convert lhs to a double in d7.
-  __ SmiToDoubleFPRegister(lhs, d7, r10, d15);
+  __ SmiToDoubleFPRegister(lhs, d7, r10);
   // Load the double from rhs, tagged HeapNumber r3, to d6.
   __ lfd(d6, FieldMemOperand(rhs, HeapNumber::kValueOffset));
 
@@ -1370,7 +1348,7 @@ static void EmitSmiNonsmiComparison(MacroAssembler* masm,
   // Load the double from lhs, tagged HeapNumber r4, to d7.
   __ lfd(d7, FieldMemOperand(lhs, HeapNumber::kValueOffset));
   // Convert rhs to a double in d6.
-  __ SmiToDoubleFPRegister(rhs, d6, r10, d13);
+  __ SmiToDoubleFPRegister(rhs, d6, r10);
   // Fall through to both_loaded_as_doubles.
 }
 
@@ -3113,53 +3091,11 @@ void BinaryOpStub::GenerateInt32Stub(MacroAssembler* masm) {
 
       if (op_ != Token::SHR) {
         // Convert the result to a floating point value.
-
-        __ sub(sp, sp, Operand(16));   // reserve two temp doubles on the stack
-#if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
-        __ lis(r0, Operand(0x4330));
-        __ stw(r0, MemOperand(sp, 4));
-        __ stw(r0, MemOperand(sp, 12));
-        __ lis(r0, Operand(SIGN_EXT_IMM16(0x8000)));
-        __ stw(r0, MemOperand(sp, 0));
-        __ xor_(r0, r5, r0);
-        __ stw(r0, MemOperand(sp, 8));
-#else
-        __ lis(r0, Operand(0x4330));
-        __ stw(r0, MemOperand(sp, 0));
-        __ stw(r0, MemOperand(sp, 8));
-        __ lis(r0, Operand(SIGN_EXT_IMM16(0x8000)));
-        __ stw(r0, MemOperand(sp, 4));
-        __ xor_(r0, r5, r0);
-        __ stw(r0, MemOperand(sp, 12));
-#endif
-        __ lfd(double_scratch0, MemOperand(sp, 0));
-        __ lfd(double_scratch1, MemOperand(sp, 8));
-        __ addi(sp, sp, Operand(16));  // restore stack
-        __ fsub(double_scratch0, double_scratch1, double_scratch0);
+        FloatingPointHelper::ConvertIntToDouble(masm, r5, double_scratch0);
       } else {
         // The result must be interpreted as an unsigned 32-bit integer.
-        // Conversion to unsigned is similar to above signed
-
-         __ sub(sp, sp, Operand(16));   // reserve two temp doubles on the stack
-#if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
-        __ lis(r0, Operand(0x4330));
-        __ stw(r0, MemOperand(sp, 4));
-        __ stw(r0, MemOperand(sp, 12));
-        __ li(r0, Operand::Zero());
-        __ stw(r0, MemOperand(sp, 0));
-        __ stw(r5, MemOperand(sp, 8));
-#else
-        __ lis(r0, Operand(0x4330));
-        __ stw(r0, MemOperand(sp, 0));
-        __ stw(r0, MemOperand(sp, 8));
-        __ li(r0, Operand::Zero());
-        __ stw(r0, MemOperand(sp, 4));
-        __ stw(r5, MemOperand(sp, 12));
-#endif
-        __ lfd(double_scratch0, MemOperand(sp, 0));
-        __ lfd(double_scratch1, MemOperand(sp, 8));
-        __ addi(sp, sp, Operand(16));  // restore stack
-        __ fsub(double_scratch0, double_scratch1, double_scratch0);
+        FloatingPointHelper::ConvertUnsignedIntToDouble(masm, r5,
+                                                        double_scratch0);
       }
 
       // Store the result.
@@ -3387,7 +3323,7 @@ void TranscendentalCacheStub::Generate(MacroAssembler* masm) {
 
     // Input is a smi. Convert to double and load the low and high words
     // of the double into r5, r6.
-    __ SmiToDoubleFPRegister(r3, d6, scratch0, d7);
+    __ SmiToDoubleFPRegister(r3, d6, scratch0);
     __ sub(sp, sp, Operand(8));
     __ stfd(d6, MemOperand(sp, 0));
     // ENDIAN issue here

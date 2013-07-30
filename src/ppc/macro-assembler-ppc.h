@@ -874,8 +874,7 @@ class MacroAssembler: public Assembler {
   // untagged value afterwards.
   void SmiToDoubleFPRegister(Register smi,
                               DwVfpRegister value,
-                              Register scratch1,
-                              DwVfpRegister scratch2);
+                              Register scratch1);
 
   // Overflow handling functions.
   // Usage: call the appropriate arithmetic function and then call one of the
