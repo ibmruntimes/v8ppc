@@ -62,6 +62,7 @@ class PPCDebugger {
   ~PPCDebugger();
 
   void Stop(Instruction* instr);
+  void Info(Instruction* instr);
   void Debug();
 
  private:
@@ -158,6 +159,15 @@ void PPCDebugger::Stop(Instruction* instr) {
   Debug();
 }
 #endif
+
+
+void PPCDebugger::Info(Instruction* instr) {
+  // Retrieve the encoded address immediately following the Info breakpoint.
+  char* msg = *reinterpret_cast<char**>(sim_->get_pc()
+                                        + Instruction::kInstrSize);
+  PrintF("Simulator info %s\n", msg);
+  sim_->set_pc(sim_->get_pc() + 2 * Instruction::kInstrSize);
+}
 
 
 intptr_t PPCDebugger::GetRegisterValue(int regnum) {
@@ -1465,6 +1475,11 @@ void Simulator::SoftwareInterrupt(Instruction* instr) {
       dbg.Debug();
       break;
     }
+    case kInfo: {
+       PPCDebugger dbg(this);
+       dbg.Info(instr);
+       break;
+     }
     // stop uses all codes greater than 1 << 23.
     default: {
       if (svc >= (1 << 23)) {

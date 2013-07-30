@@ -70,6 +70,8 @@
 
     'v8_enable_disassembler%': 0,
 
+    'v8_native_sim%': 'false',
+
     # Enable extra checks in API functions and other strategic places.
     'v8_enable_extra_checks%': 1,
 
@@ -133,6 +135,12 @@
       }],
       ['v8_interpreted_regexp==1', {
         'defines': ['V8_INTERPRETED_REGEXP',],
+      }],
+      ['v8_native_sim=="true"', {
+        'defines': [
+          'NATIVE_SIMULATION',
+          'USE_SIMULATOR',
+        ],
       }],
       ['v8_target_arch=="arm"', {
         'defines': [

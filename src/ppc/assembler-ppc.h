@@ -1194,6 +1194,13 @@ class Assembler : public AssemblerBase {
             CRegister cr = cr7);
 
   void bkpt(uint32_t imm16);  // v5 and above
+
+  // Informational messages when simulating
+  void info(const char* msg,
+            Condition cond = al,
+            int32_t code = kDefaultStopCode,
+            CRegister cr = cr7);
+
   void svc(uint32_t imm24, Condition cond = al);
 
   void dcbf(Register ra, Register rb);

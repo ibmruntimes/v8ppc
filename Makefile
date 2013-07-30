@@ -119,6 +119,10 @@ endif
 ifeq ($(hardfp), on)
   GYPFLAGS += -Dv8_use_arm_eabi_hardfloat=true
 endif
+# nativesim=true
+ifeq ($(nativesim), true)
+  GYPFLAGS += -Dv8_native_sim=true
+endif
 
 # ----------------- available targets: --------------------
 # - "dependencies": pulls in external dependencies (currently: GYP)

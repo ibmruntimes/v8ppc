@@ -94,7 +94,8 @@ class Debugger;
 class DebuggerAgent;
 #endif
 
-#if !defined(__arm__) && defined(V8_TARGET_ARCH_ARM) || \
+#if NATIVE_SIMULATION || \
+    !defined(__arm__) && defined(V8_TARGET_ARCH_ARM) || \
     !defined(__PPC__) && defined(V8_TARGET_ARCH_PPC) || \
     !defined(__mips__) && defined(V8_TARGET_ARCH_MIPS)
 class Redirection;
@@ -376,7 +377,8 @@ class Isolate {
           thread_id_(thread_id),
           stack_limit_(0),
           thread_state_(NULL),
-#if !defined(__arm__) && defined(V8_TARGET_ARCH_ARM) || \
+#if NATIVE_SIMULATION || \
+    !defined(__arm__) && defined(V8_TARGET_ARCH_ARM) || \
     !defined(__PPC__) && defined(V8_TARGET_ARCH_PPC) || \
     !defined(__mips__) && defined(V8_TARGET_ARCH_MIPS)
           simulator_(NULL),
@@ -390,7 +392,8 @@ class Isolate {
     ThreadState* thread_state() const { return thread_state_; }
     void set_thread_state(ThreadState* value) { thread_state_ = value; }
 
-#if !defined(__arm__) && defined(V8_TARGET_ARCH_ARM) || \
+#if NATIVE_SIMULATION || \
+    !defined(__arm__) && defined(V8_TARGET_ARCH_ARM) || \
     !defined(__PPC__) && defined(V8_TARGET_ARCH_PPC) || \
     !defined(__mips__) && defined(V8_TARGET_ARCH_MIPS)
     Simulator* simulator() const { return simulator_; }
@@ -409,7 +412,8 @@ class Isolate {
     uintptr_t stack_limit_;
     ThreadState* thread_state_;
 
-#if !defined(__arm__) && defined(V8_TARGET_ARCH_ARM) || \
+#if NATIVE_SIMULATION || \
+    !defined(__arm__) && defined(V8_TARGET_ARCH_ARM) || \
     !defined(__PPC__) && defined(V8_TARGET_ARCH_PPC) || \
     !defined(__mips__) && defined(V8_TARGET_ARCH_MIPS)
     Simulator* simulator_;
@@ -974,7 +978,8 @@ class Isolate {
   int* code_kind_statistics() { return code_kind_statistics_; }
 #endif
 
-#if defined(V8_TARGET_ARCH_ARM) && !defined(__arm__) || \
+#if NATIVE_SIMULATION || \
+    defined(V8_TARGET_ARCH_ARM) && !defined(__arm__) || \
     defined(V8_TARGET_ARCH_PPC) && !defined(__PPC__) || \
     defined(V8_TARGET_ARCH_MIPS) && !defined(__mips__)
   bool simulator_initialized() { return simulator_initialized_; }
@@ -1255,7 +1260,8 @@ class Isolate {
   // Time stamp at initialization.
   double time_millis_at_init_;
 
-#if defined(V8_TARGET_ARCH_ARM) && !defined(__arm__) || \
+#if NATIVE_SIMULATION || \
+    defined(V8_TARGET_ARCH_ARM) && !defined(__arm__) || \
     defined(V8_TARGET_ARCH_PPC) && !defined(__PPC__) || \
     defined(V8_TARGET_ARCH_MIPS) && !defined(__mips__)
   bool simulator_initialized_;

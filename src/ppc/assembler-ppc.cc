@@ -1534,6 +1534,15 @@ void Assembler::bkpt(uint32_t imm16) {
 }
 
 
+void Assembler::info(const char* msg, Condition cond, int32_t code,
+                     CRegister cr) {
+  if (::v8::internal::FLAG_trace_sim_stubs) {
+    emit(0x7d9ff808);
+    emit(reinterpret_cast<Instr>(msg));
+  }
+}
+
+
 void Assembler::svc(uint32_t imm24, Condition cond) {
   PPCPORT_CHECK(false);
   EMIT_FAKE_ARM_INSTR(fSVC);
