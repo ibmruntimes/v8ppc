@@ -4063,7 +4063,7 @@ void JSEntryStub::GenerateBody(MacroAssembler* masm, bool is_construct) {
   // PPC LINUX ABI:
   // preserve LR in pre-reserved slot in caller's frame
   __ mflr(r0);
-  __ stw(r0, MemOperand(sp, 4));
+  __ StoreP(r0, MemOperand(sp, 4));
 
   // Save callee saved registers on the stack.
   __ MultiPush(kCalleeSaved);

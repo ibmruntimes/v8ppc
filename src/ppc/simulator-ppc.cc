@@ -984,7 +984,7 @@ Simulator* Simulator::current(Isolate* isolate) {
 
 
 // Sets the register in the architecture state.
-void Simulator::set_register(int reg, int32_t value) {
+void Simulator::set_register(int reg, intptr_t value) {
   ASSERT((reg >= 0) && (reg < num_registers));
   registers_[reg] = value;
 }
@@ -1183,16 +1183,15 @@ void Simulator::WriteB(int32_t addr, int8_t value) {
 }
 
 
-int32_t* Simulator::ReadDW(int32_t addr) {
-  int32_t* ptr = reinterpret_cast<int32_t*>(addr);
+intptr_t* Simulator::ReadDW(intptr_t addr) {
+  intptr_t* ptr = reinterpret_cast<intptr_t*>(addr);
   return ptr;
 }
 
 
-void Simulator::WriteDW(int32_t addr, int32_t value1, int32_t value2) {
-  int32_t* ptr = reinterpret_cast<int32_t*>(addr);
-  *ptr++ = value1;
-  *ptr = value2;
+void Simulator::WriteDW(intptr_t addr, int64_t value) {
+  int64_t* ptr = reinterpret_cast<int64_t*>(addr);
+  *ptr = value;
   return;
 }
 
@@ -1762,8 +1761,8 @@ bool Simulator::DecodeExt2_10bit(Instruction *instr) {
       int32_t ra_val = ra == 0 ? 0 : get_register(ra);
       int32_t rb_val = get_register(rb);
       double frs_val = get_double_from_d_register(frs);
-      int32_t *p = reinterpret_cast<int32_t *>(&frs_val);
-      WriteDW(ra_val + rb_val, (int32_t)(p[0]), (int32_t)(p[1]));
+      int64_t *p = reinterpret_cast<int64_t *>(&frs_val);
+      WriteDW(ra_val + rb_val, *p);
       if (opcode == STFDUX) {
         ASSERT(ra != 0);
         set_register(ra, ra_val+rb_val);
@@ -2871,8 +2870,8 @@ void Simulator::InstructionDecode(Instruction* instr) {
       int32_t offset = SIGN_EXT_IMM16(instr->Bits(15, 0));
       int32_t ra_val = ra == 0 ? 0 : get_register(ra);
       double frs_val = get_double_from_d_register(frs);
-      int32_t *p = reinterpret_cast<int32_t *>(&frs_val);
-      WriteDW(ra_val + offset, (int32_t)(p[0]), (int32_t)(p[1]));
+      int64_t *p = reinterpret_cast<int64_t *>(&frs_val);
+      WriteDW(ra_val + offset, *p);
       if (opcode == STFDU) {
         ASSERT(ra != 0);
         set_register(ra, ra_val+offset);
@@ -2880,11 +2879,46 @@ void Simulator::InstructionDecode(Instruction* instr) {
       break;
     }
 
-    case EXT3:
+    case EXT3: 
+      UNIMPLEMENTED();
     case EXT4: {
       DecodeExt4(instr);
       break;
     }
+
+#if V8_TARGET_ARCH_PPC64
+    case LD: {
+      int ra = instr->RAValue();
+      int rt = instr->RTValue();
+      int64_t ra_val = ra == 0 ? 0 : get_register(ra);
+      int offset = SIGN_EXT_IMM16(instr->Bits(15, 0));
+      int64_t *result = ReadDW(ra_val+offset);
+      set_register(rt, *result);
+#if 0  // temporary until we have LDU
+      if (opcode == LDU) {
+        ASSERT(ra != 0);
+        set_register(ra, ra_val+offset);
+      }
+#endif
+      break;
+    }
+
+    case STD: {
+      int ra = instr->RAValue();
+      int rs = instr->RSValue();
+      int64_t ra_val = ra == 0 ? 0 : get_register(ra);
+      int64_t rs_val = get_register(rs);
+      int offset = SIGN_EXT_IMM16(instr->Bits(15, 0));
+      WriteDW(ra_val+offset, rs_val);
+#if 0
+      if (opcode == STWU) {
+        ASSERT(ra != 0);
+        set_register(ra, ra_val+offset);
+      }
+#endif
+      break;
+    }
+#endif
 
     case FAKE_OPCODE: {
       if (instr->Bits(MARKER_SUBOPCODE_BIT, MARKER_SUBOPCODE_BIT) == 1) {
@@ -2964,7 +2998,7 @@ int32_t Simulator::Call(byte* entry, int argument_count, ...) {
   }
 
   // Remaining arguments passed on stack.
-  int original_stack = get_register(sp);
+  intptr_t original_stack = get_register(sp);
   // Compute position of stack on entry to generated code.
   intptr_t entry_stack = (original_stack - stack_arg_count * sizeof(intptr_t)
     - 8);  // -8 extra stack is a hack for the LR slot + old SP on PPC

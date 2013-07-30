@@ -337,7 +337,7 @@ void MacroAssembler::MultiPush(RegList regs) {
   for (int16_t i = kNumRegisters - 1; i >= 0; i--) {
     if ((regs & (1 << i)) != 0) {
       stack_offset -= kPointerSize;
-      stw(ToRegister(i), MemOperand(sp, stack_offset));
+      StoreP(ToRegister(i), MemOperand(sp, stack_offset));
     }
   }
 }
@@ -347,7 +347,7 @@ void MacroAssembler::MultiPop(RegList regs) {
 
   for (int16_t i = 0; i < kNumRegisters; i++) {
     if ((regs & (1 << i)) != 0) {
-      lwz(ToRegister(i), MemOperand(sp, stack_offset));
+      LoadP(ToRegister(i), MemOperand(sp, stack_offset));
       stack_offset += kPointerSize;
     }
   }

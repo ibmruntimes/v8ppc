@@ -1334,6 +1334,16 @@ int Decoder::InstructionDecode(byte* instr_ptr) {
       DecodeExt4(instr);
       break;
     }
+#if V8_TARGET_ARCH_PPC64
+    case LD: {
+      Format(instr, "ld      'rt, 'int16('ra)");
+      break;
+    }
+    case STD: {
+      Format(instr, "std     'rs, 'int16('ra)");
+      break;
+    }
+#endif
 
     case FAKE_OPCODE: {
       if (instr->Bits(MARKER_SUBOPCODE_BIT, MARKER_SUBOPCODE_BIT) == 1) {

@@ -157,7 +157,7 @@ class Simulator {
   static Simulator* current(v8::internal::Isolate* isolate);
 
   // Accessors for register state.
-  void set_register(int reg, int32_t value);
+  void set_register(int reg, intptr_t value);
   intptr_t get_register(int reg) const;
   double get_double_from_register_pair(int reg);
   void set_dw_register(int dreg, const int* dbl);
@@ -285,8 +285,8 @@ class Simulator {
   inline int ReadW(int32_t addr, Instruction* instr);
   inline void WriteW(int32_t addr, int value, Instruction* instr);
 
-  int32_t* ReadDW(int32_t addr);
-  void WriteDW(int32_t addr, int32_t value1, int32_t value2);
+  intptr_t* ReadDW(intptr_t addr);
+  void WriteDW(intptr_t addr, int64_t value);
 
   // PowerPC
   void SetCR0(int32_t result, bool setSO = false);
