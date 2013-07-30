@@ -251,26 +251,19 @@ struct SwVfpRegister {
 
 // Double word VFP register.
 struct DwVfpRegister {
-  static const int kNumRegisters = 16;
-  // A few double registers are reserved: one as a scratch register and one to
-  // hold 0.0, that does not fit in the immediate field of vmov instructions.
-  //  d14: 0.0
-  //  d15: scratch register.
-  static const int kNumReservedRegisters = 2;
-  static const int kNumAllocatableRegisters = kNumRegisters -
-      kNumReservedRegisters;
+  static const int kNumRegisters = 32;
+  static const int kNumAllocatableRegisters = 12;  // d1-d12
 
   inline static int ToAllocationIndex(DwVfpRegister reg);
 
   static DwVfpRegister FromAllocationIndex(int index) {
     ASSERT(index >= 0 && index < kNumAllocatableRegisters);
-    return from_code(index);
+    return from_code(index + 1);  // d0 is skipped
   }
 
   static const char* AllocationIndexToString(int index) {
     ASSERT(index >= 0 && index < kNumAllocatableRegisters);
     const char* const names[] = {
-      "d0",
       "d1",
       "d2",
       "d3",
@@ -283,7 +276,6 @@ struct DwVfpRegister {
       "d10",
       "d11",
       "d12",
-      "d13"
     };
     return names[index];
   }
@@ -294,7 +286,7 @@ struct DwVfpRegister {
   }
 
   // Supporting d0 to d15, can be later extended to d31.
-  bool is_valid() const { return 0 <= code_ && code_ < 16; }
+  bool is_valid() const { return 0 <= code_ && code_ < kNumRegisters; }
   bool is(DwVfpRegister reg) const { return code_ == reg.code_; }
   SwVfpRegister low() const {
     SwVfpRegister reg;
@@ -383,14 +375,30 @@ const DwVfpRegister d12 = { 12 };
 const DwVfpRegister d13 = { 13 };
 const DwVfpRegister d14 = { 14 };
 const DwVfpRegister d15 = { 15 };
+const DwVfpRegister d16 = { 16 };
+const DwVfpRegister d17 = { 17 };
+const DwVfpRegister d18 = { 18 };
+const DwVfpRegister d19 = { 19 };
+const DwVfpRegister d20 = { 20 };
+const DwVfpRegister d21 = { 21 };
+const DwVfpRegister d22 = { 22 };
+const DwVfpRegister d23 = { 23 };
+const DwVfpRegister d24 = { 24 };
+const DwVfpRegister d25 = { 25 };
+const DwVfpRegister d26 = { 26 };
+const DwVfpRegister d27 = { 27 };
+const DwVfpRegister d28 = { 28 };
+const DwVfpRegister d29 = { 29 };
+const DwVfpRegister d30 = { 30 };
+const DwVfpRegister d31 = { 31 };
 
 // Aliases for double registers.  Defined using #define instead of
 // "static const DwVfpRegister&" because Clang complains otherwise when a
 // compilation unit that includes this header doesn't use the variables.
-#define kFirstCalleeSavedDoubleReg d8
-#define kLastCalleeSavedDoubleReg d15
+#define kFirstCalleeSavedDoubleReg d14
+#define kLastCalleeSavedDoubleReg d31
 #define kDoubleRegZero d14
-#define kScratchDoubleReg d15
+#define kScratchDoubleReg d13
 
 Register ToRegister(int num);
 

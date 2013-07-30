@@ -1693,7 +1693,6 @@ void LCodeGen::DoArithmeticD(LArithmeticD* instr) {
       __ fdiv(result, left, right);
       break;
     case Token::MOD: {
-#ifdef PENGUIN_CLEANUP
       // Save r3-r6 on the stack.
       __ MultiPush(r3.bit() | r4.bit() | r5.bit() | r6.bit());
 
@@ -1707,10 +1706,6 @@ void LCodeGen::DoArithmeticD(LArithmeticD* instr) {
 
       // Restore r3-r6.
       __ MultiPop(r3.bit() | r4.bit() | r5.bit() | r6.bit());
-#else
-      PPCPORT_UNIMPLEMENTED();
-      __ fake_asm(fLITHIUM106);
-#endif
       break;
     }
     default:
