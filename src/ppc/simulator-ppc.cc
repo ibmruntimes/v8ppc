@@ -2879,7 +2879,7 @@ void Simulator::InstructionDecode(Instruction* instr) {
       break;
     }
 
-    case EXT3: 
+    case EXT3:
       UNIMPLEMENTED();
     case EXT4: {
       DecodeExt4(instr);
