@@ -1156,9 +1156,9 @@ void Assembler::extsh(Register rs, Register ra, RCBit rc) {
   emit(EXT2 | EXTSH | rs.code()*B21 | ra.code()*B16 | rc);
 }
 
-void Assembler::neg(Register rt, Register ra, RCBit rc) {
+void Assembler::neg(Register rt, Register ra, OEBit o, RCBit r) {
   CheckBuffer();
-  emit(EXT2 | NEGX| rt.code()*B21 | ra.code()*B16 | rc);
+  emit(EXT2 | NEGX | rt.code()*B21 | ra.code()*B16 | o | r);
 }
 
 void Assembler::andc(Register dst, Register src1, Register src2, RCBit rc) {
@@ -1403,6 +1403,10 @@ void Assembler::mtlr(Register src) {
 
 void Assembler::mtctr(Register src) {
   emit(EXT2 | MTSPR | src.code()*B21 | 288 << 11);   // Ignore RC bit
+}
+
+void Assembler::mtxer(Register src) {
+  emit(EXT2 | MTSPR | src.code()*B21 | 32 << 11);
 }
 
 void Assembler::mcrfs(int bf, int bfa) {

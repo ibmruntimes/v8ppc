@@ -1577,11 +1577,12 @@ void Simulator::PrintStopInfo(uint32_t code) {
 }
 
 
-void Simulator::SetCR0(int32_t result) {
+void Simulator::SetCR0(int32_t result, bool setSO) {
   int bf = 0;
   if (result <  0) { bf |= 0x80000000; }
   if (result >  0) { bf |= 0x40000000; }
   if (result == 0) { bf |= 0x20000000; }
+  if (setSO) { bf |= 0x10000000; }
   condition_reg_ = (condition_reg_ & ~0xF0000000) | bf;
 }
 
@@ -1871,8 +1872,16 @@ void Simulator::DecodeExt2_9bit(Instruction* instr) {
       int32_t ra_val = get_register(ra);
       int32_t alu_out = 1 + ~ra_val;
       set_register(rt, alu_out);
+      if (instr->Bit(10)) {  // OE bit set
+        if (ra_val == kMinInt) {
+            special_reg_xer_ |= 0xC0000000;  // set SO,OV
+        } else {
+            special_reg_xer_ &= ~0x40000000;  // clear OV
+        }
+      }
       if (instr->Bit(0)) {  // RC bit set
-        SetCR0(alu_out);
+        bool setSO = (special_reg_xer_ & 0x80000000);
+        SetCR0(alu_out, setSO);
       }
       break;
     }
@@ -2081,6 +2090,8 @@ void Simulator::DecodeExt2_9bit(Instruction* instr) {
         special_reg_lr_ = rt_val;
       } else if (spr == 288) {
         special_reg_ctr_ = rt_val;
+      } else if (spr == 32) {
+        special_reg_xer_ = rt_val;
       } else {
         UNIMPLEMENTED();  // Only LR supported
       }

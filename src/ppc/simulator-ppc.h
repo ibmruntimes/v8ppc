@@ -289,7 +289,7 @@ class Simulator {
   void WriteDW(int32_t addr, int32_t value1, int32_t value2);
 
   // PowerPC
-  void SetCR0(int32_t result);
+  void SetCR0(int32_t result, bool setSO = false);
   void DecodeExt1(Instruction* instr);
   bool DecodeExt2_10bit(Instruction* instr);
   void DecodeExt2_9bit(Instruction* instr);

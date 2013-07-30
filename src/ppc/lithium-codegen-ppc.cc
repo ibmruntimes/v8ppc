@@ -980,6 +980,7 @@ void LCodeGen::EmitSignedIntegerDivisionByConstant(
   ASSERT(!AreAliased(dividend, scratch, ip));
   ASSERT(LChunkBuilder::HasMagicNumberForDivisor(divisor));
 
+  Label skip;
   uint32_t divisor_abs = abs(divisor);
 
   int32_t power_of_2_factor =
@@ -994,8 +995,12 @@ void LCodeGen::EmitSignedIntegerDivisionByConstant(
       if (divisor > 0) {
         __ Move(result, dividend);
       } else {
-        __ neg(result, dividend, SetRC);
-        DeoptimizeIf(vs, environment, cr0);
+        __ li(r0, Operand::Zero());  // clear xer
+        __ mtxer(r0);
+        __ neg(result, dividend, SetOE, SetRC);
+        __ bnotoverflow(&skip, cr0);
+        DeoptimizeIf(al, environment);
+        __ bind(&skip);
       }
       // Compute the remainder.
       __ li(remainder, Operand::Zero());
@@ -3383,9 +3388,12 @@ void LCodeGen::EmitIntegerMathAbs(LUnaryMathOperation* instr) {
   __ cmpi(input, Operand::Zero());
   __ Move(result, input);
   __ bge(&done);
-  __ neg(result, result, SetRC);
+  __ li(r0, Operand::Zero());  // clear xer
+  __ mtxer(r0);
+  __ neg(result, result, SetOE, SetRC);
   // Deoptimize on overflow.
-  DeoptimizeIf(vs, instr->environment(), cr0);
+  __ bnotoverflow(&done, cr0);
+  DeoptimizeIf(al, instr->environment());
   __ bind(&done);
 }
 

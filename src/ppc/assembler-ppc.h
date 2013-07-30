@@ -1038,7 +1038,7 @@ class Assembler : public AssemblerBase {
   void extsb(Register rs, Register ra, RCBit r = LeaveRC);
   void extsh(Register rs, Register ra, RCBit r = LeaveRC);
 
-  void neg(Register rt, Register ra, RCBit rc = LeaveRC);
+  void neg(Register rt, Register ra, OEBit o = LeaveOE, RCBit c = LeaveRC);
 
 #if V8_TARGET_ARCH_PPC64
   void ld(Register rd, const MemOperand &src);
@@ -1156,6 +1156,7 @@ class Assembler : public AssemblerBase {
   void mflr(Register dst);
   void mtlr(Register src);
   void mtctr(Register src);
+  void mtxer(Register src);
   void mcrfs(int bf, int bfa);
 
   void fake_asm(enum FAKE_OPCODE_T fopcode);

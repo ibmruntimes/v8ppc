@@ -65,14 +65,6 @@ void MacroAssembler::Jump(intptr_t target, RelocInfo::Mode rmode,
                           Condition cond, CRegister cr) {
   Label skip;
 
-#ifndef PENGUIN_CLEANUP
-  if (cond == vs) {
-    PPCPORT_UNIMPLEMENTED();
-    fake_asm(fMASM4);
-    return;
-  }
-#endif
-
   if (cond != al) b(NegateCondition(cond), &skip, cr);
 
   ASSERT(rmode == RelocInfo::CODE_TARGET ||
