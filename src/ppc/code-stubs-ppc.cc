@@ -3076,24 +3076,14 @@ void BinaryOpStub::GenerateInt32Stub(MacroAssembler* masm) {
           break;
         case Token::SHR:
           __ andi(r5, r5, Operand(0x1f));
-          __ srw(r5, r6, r5);
-#if 0  // not clear if PPC needs this logic below
+          __ srw(r5, r6, r5, SetRC);
           // SHR is special because it is required to produce a positive answer.
-          // We only get a negative result if the shift value (r2) is 0.
+          // We only get a negative result if the shift value (r5) is 0.
           // This result cannot be respresented as a signed 32-bit integer, try
           // to return a heap number if we can.
-          // The non vfp2 code does not support this special case, so jump to
-          // runtime if we don't support it.
-          if (CpuFeatures::IsSupported(VFP2)) {
-            __ b(mi, (result_type_ <= BinaryOpIC::INT32)
-                      ? &transition
-                      : &return_heap_number);
-          } else {
-            __ b(mi, (result_type_ <= BinaryOpIC::INT32)
-                      ? &transition
-                      : &call_runtime);
-          }
-#endif
+          __ blt((result_type_ <= BinaryOpIC::INT32)
+                 ? &transition
+                 : &return_heap_number, cr0);
           break;
         case Token::SHL:
           __ andi(r5, r5, Operand(0x1f));
