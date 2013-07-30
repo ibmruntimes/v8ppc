@@ -1542,7 +1542,13 @@ void Assembler::info(const char* msg, Condition cond, int32_t code,
                      CRegister cr) {
   if (::v8::internal::FLAG_trace_sim_stubs) {
     emit(0x7d9ff808);
+#ifdef V8_TARGET_ARCH_PPC64
+    uint64_t value = reinterpret_cast<uint64_t>(msg);
+    emit(static_cast<uint32_t>(value >> 32));
+    emit(static_cast<uint32_t>(value & 0xFFFFFFFF));
+#else
     emit(reinterpret_cast<Instr>(msg));
+#endif
   }
 }
 

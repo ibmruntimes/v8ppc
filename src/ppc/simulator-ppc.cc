@@ -129,7 +129,7 @@ void PPCDebugger::Stop(Instruction* instr) {  // roohack need to fix for PPC
     instr->SetInstructionBits(kNopInstr);
     reinterpret_cast<Instruction*>(msg_address)->SetInstructionBits(kNopInstr);
   }
-  sim_->set_pc(sim_->get_pc() + 2 * Instruction::kInstrSize);
+  sim_->set_pc(sim_->get_pc() + Instruction::kInstrSize + kPointerSize);
 }
 
 #else  // ndef GENERATED_CODE_COVERAGE
@@ -155,7 +155,7 @@ void PPCDebugger::Stop(Instruction* instr) {
   } else {
     PrintF("Simulator hit %s\n", msg);
   }
-  sim_->set_pc(sim_->get_pc() + 2 * Instruction::kInstrSize);
+  sim_->set_pc(sim_->get_pc() + Instruction::kInstrSize + kPointerSize);
   Debug();
 }
 #endif
@@ -166,7 +166,7 @@ void PPCDebugger::Info(Instruction* instr) {
   char* msg = *reinterpret_cast<char**>(sim_->get_pc()
                                         + Instruction::kInstrSize);
   PrintF("Simulator info %s\n", msg);
-  sim_->set_pc(sim_->get_pc() + 2 * Instruction::kInstrSize);
+  sim_->set_pc(sim_->get_pc() + Instruction::kInstrSize + kPointerSize);
 }
 
 
@@ -606,7 +606,8 @@ void PPCDebugger::Debug() {
         PrintF("FPSCR: %08x\n", sim_->fp_condition_reg_);
       } else if (strcmp(cmd, "stop") == 0) {
         intptr_t value;
-        intptr_t stop_pc = sim_->get_pc() - 2 * Instruction::kInstrSize;
+        intptr_t stop_pc = sim_->get_pc() -
+                             (Instruction::kInstrSize + kPointerSize);
         Instruction* stop_instr = reinterpret_cast<Instruction*>(stop_pc);
         Instruction* msg_address =
           reinterpret_cast<Instruction*>(stop_pc + Instruction::kInstrSize);
@@ -1493,7 +1494,7 @@ void Simulator::SoftwareInterrupt(Instruction* instr) {
           PPCDebugger dbg(this);
           dbg.Stop(instr);
         } else {
-          set_pc(get_pc() + 2 * Instruction::kInstrSize);
+          set_pc(get_pc() + Instruction::kInstrSize + kPointerSize);
         }
       } else {
         // This is not a valid svc code.
