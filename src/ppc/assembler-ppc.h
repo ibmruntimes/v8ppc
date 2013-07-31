@@ -1387,9 +1387,9 @@ class Assembler : public AssemblerBase {
 
   void pop(Register dst, Condition cond = al) {
 #if V8_TARGET_ARCH_PPC64
-    lwz(dst, MemOperand(sp));
-#else
     ld(dst, MemOperand(sp));
+#else
+    lwz(dst, MemOperand(sp));
 #endif
     addi(sp, sp, Operand(4));
   }
