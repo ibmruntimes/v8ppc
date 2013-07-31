@@ -41,7 +41,7 @@ const int kNumRegisters = 32;
 
 // FP support.
 const int kNumFPSingleRegisters = 32;
-const int kNumFPDoubleRegisters = 16;
+const int kNumFPDoubleRegisters = 32;
 const int kNumFPRegisters = kNumFPSingleRegisters + kNumFPDoubleRegisters;
 
 // PPC doesn't really have a PC register - assign a fake number for simulation
