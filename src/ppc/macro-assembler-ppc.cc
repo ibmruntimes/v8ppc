@@ -2589,48 +2589,62 @@ void MacroAssembler::EmitOutOfInt32RangeTruncate(Register result,
 
 void MacroAssembler::EmitECMATruncate(Register result,
                                       DwVfpRegister double_input,
-                                      SwVfpRegister single_scratch,
+                                      DwVfpRegister double_scratch,
                                       Register scratch,
                                       Register input_high,
                                       Register input_low) {
-#ifdef PENGUIN_CLEANUP
-  CpuFeatures::Scope scope(VFP2);
   ASSERT(!input_high.is(result));
   ASSERT(!input_low.is(result));
   ASSERT(!input_low.is(input_high));
   ASSERT(!scratch.is(result) &&
          !scratch.is(input_high) &&
          !scratch.is(input_low));
-  ASSERT(!single_scratch.is(double_input.low()) &&
-         !single_scratch.is(double_input.high()));
+  ASSERT(!double_scratch.is(double_input));
 
-  Label done;
+  Label done, truncate;
 
-  // Clear cumulative exception flags.
-  ClearFPSCRBits(kVFPExceptionMask, scratch);
-  // Try a conversion to a signed integer.
-  vcvt_s32_f64(single_scratch, double_input);
-  vmov(result, single_scratch);
-  // Retrieve he FPSCR.
-  vmrs(scratch);
-  // Check for overflow and NaNs.
-  tst(scratch, Operand(kVFPOverflowExceptionBit |
-                       kVFPUnderflowExceptionBit |
-                       kVFPInvalidOpExceptionBit));
-  // If we had no exceptions we are done.
-  beq(&done);
+  fctiwz(double_scratch, double_input);
 
+  // reserve a slot on the stack
+  stfdu(double_scratch, MemOperand(sp, -8));
+#if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
+  lwz(result, MemOperand(sp));
+#else
+  lwz(result, MemOperand(sp, -4));
+#endif
+ 
+  // test if overflow
+  LoadIntLiteral(input_low, 0x7fffffff);
+  cmp(result, input_low);
+  beq(&truncate);
+
+  // test if underflow or NaN
+  LoadIntLiteral(input_low, 0x80000000);
+  cmp(result, input_low);
+  beq(&truncate);
+
+  // If we had no exceptions we are done
+  b(&done);
+
+  bind(&truncate);
   // Load the double value and perform a manual truncation.
-  vmov(input_low, input_high, double_input);
+  stfd(double_input, MemOperand(sp));
+#if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
+  lwz(input_low, MemOperand(sp));
+  lwz(input_high, MemOperand(sp, 4));
+#else
+  lwz(input_high, MemOperand(sp));
+  lwz(input_low, MemOperand(sp, 4));
+#endif
   EmitOutOfInt32RangeTruncate(result,
                               input_high,
                               input_low,
                               scratch);
+
   bind(&done);
-#else
-  PPCPORT_UNIMPLEMENTED();
-  fake_asm(fMASM6);
-#endif
+
+ // restore the stack
+  addi(sp, sp, Operand(8));
 }
 
 

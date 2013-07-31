@@ -964,7 +964,7 @@ class MacroAssembler: public Assembler {
   // Exits with 'result' holding the answer and all other registers clobbered.
   void EmitECMATruncate(Register result,
                         DwVfpRegister double_input,
-                        SwVfpRegister single_scratch,
+                        DwVfpRegister double_scratch,
                         Register scratch,
                         Register scratch2,
                         Register scratch3);
