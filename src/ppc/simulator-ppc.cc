@@ -2506,11 +2506,11 @@ void Simulator::InstructionDecode(Instruction* instr) {
       int rt = instr->RTValue();
       int ra = instr->RAValue();
       int32_t im_val = SIGN_EXT_IMM16(instr->Bits(15, 0));
-      int32_t alu_out;
+      intptr_t alu_out;
       if (ra == 0) {
         alu_out = im_val;
       } else {
-        int32_t ra_val = get_register(ra);
+        intptr_t ra_val = get_register(ra);
         alu_out = ra_val + im_val;
       }
       set_register(rt, alu_out);
@@ -2910,12 +2910,10 @@ void Simulator::InstructionDecode(Instruction* instr) {
       int64_t rs_val = get_register(rs);
       int offset = SIGN_EXT_IMM16(instr->Bits(15, 0));
       WriteDW(ra_val+offset, rs_val);
-#if 0
-      if (opcode == STWU) {
+      if (instr->Bit(0) == 1) {  // This is the STDU form
         ASSERT(ra != 0);
         set_register(ra, ra_val+offset);
       }
-#endif
       break;
     }
 #endif

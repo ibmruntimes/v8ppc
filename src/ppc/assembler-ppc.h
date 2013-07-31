@@ -1043,6 +1043,7 @@ class Assembler : public AssemblerBase {
 #if V8_TARGET_ARCH_PPC64
   void ld(Register rd, const MemOperand &src);
   void std(Register rs, const MemOperand &src);
+  void stdu(Register rs, const MemOperand &src);
 #endif
 
   void rlwinm(Register ra, Register rs, int sh, int mb, int me,
@@ -1377,11 +1378,19 @@ class Assembler : public AssemblerBase {
   void nop(int type = 0);   // 0 is the default non-marking type.
 
   void push(Register src, Condition cond = al) {
+#if V8_TARGET_ARCH_PPC64
+    stdu(src, MemOperand(sp, -4));
+#else
     stwu(src, MemOperand(sp, -4));
+#endif
   }
 
   void pop(Register dst, Condition cond = al) {
+#if V8_TARGET_ARCH_PPC64
     lwz(dst, MemOperand(sp));
+#else
+    ld(dst, MemOperand(sp));
+#endif
     addi(sp, sp, Operand(4));
   }
 

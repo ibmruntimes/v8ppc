@@ -1339,8 +1339,12 @@ int Decoder::InstructionDecode(byte* instr_ptr) {
       Format(instr, "ld      'rt, 'int16('ra)");
       break;
     }
-    case STD: {
-      Format(instr, "std     'rs, 'int16('ra)");
+    case STD: {  // could be STD or STDU
+      if (instr->Bit(0) == 0) {
+        Format(instr, "std     'rs, 'int16('ra)");
+      } else {
+        Format(instr, "stdu    'rs, 'int16('ra)");
+      }
       break;
     }
 #endif

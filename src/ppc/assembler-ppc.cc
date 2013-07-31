@@ -1173,11 +1173,21 @@ void Assembler::ld(Register rd, const MemOperand &src) {
   // todo - need to do range check on offset
   emit(LD | rd.code()*B21 | src.ra().code()*B16 | src.offset() << 2);
 }
+
 void Assembler::std(Register rs, const MemOperand &src) {
   CheckBuffer();
   ASSERT(!src.ra_.is(r0) && src.isPPCAddressing());
   // todo - need to do range check on offset
-  emit(STD | rs.code()*B21 | src.ra().code()*B16 | src.offset() << 2);
+  int offset = kImm16Mask & src.offset();
+  emit(STD | rs.code()*B21 | src.ra().code()*B16 | offset << 2);
+}
+
+void Assembler::stdu(Register rs, const MemOperand &src) {
+  CheckBuffer();
+  ASSERT(!src.ra_.is(r0) && src.isPPCAddressing());
+  // todo - need to do range check on offset
+  int offset = kImm16Mask & src.offset();
+  emit(STD | rs.code()*B21 | src.ra().code()*B16 | offset << 2 | 1);
 }
 #endif
 

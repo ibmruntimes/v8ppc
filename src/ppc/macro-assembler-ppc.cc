@@ -4051,6 +4051,15 @@ void MacroAssembler::StoreP(Register dst, const MemOperand& mem) {
 #endif
 }
 
+// Store a "pointer" sized value to the memory location with update
+void MacroAssembler::StorePU(Register dst, const MemOperand& mem) {
+#if V8_TARGET_ARCH_PPC64
+  stdu(dst, mem);
+#else
+  stwu(dst, mem);
+#endif
+}
+
 // Variable length depending on whether offset fits into immediate field
 // MemOperand currently only supports d-form
 void MacroAssembler::LoadWord(Register dst, const MemOperand& mem,
