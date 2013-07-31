@@ -2612,7 +2612,7 @@ void MacroAssembler::EmitECMATruncate(Register result,
 #else
   lwz(result, MemOperand(sp, -4));
 #endif
- 
+
   // test if overflow
   LoadIntLiteral(input_low, 0x7fffffff);
   cmp(result, input_low);
@@ -2643,7 +2643,7 @@ void MacroAssembler::EmitECMATruncate(Register result,
 
   bind(&done);
 
- // restore the stack
+  // restore the stack
   addi(sp, sp, Operand(8));
 }
 
