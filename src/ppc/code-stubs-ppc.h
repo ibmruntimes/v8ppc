@@ -698,7 +698,6 @@ class FloatingPointHelper : public AllStatic {
   // floating point registers VFP3 must be supported. If core registers are
   // requested when VFP3 is supported d6 and d7 will be scratched.
   static void LoadSmis(MacroAssembler* masm,
-                       Destination destination,
                        Register scratch1,
                        Register scratch2);
 
@@ -710,7 +709,6 @@ class FloatingPointHelper : public AllStatic {
   // either r0 or r1 is not a number (not smi and not heap number object) the
   // not_number label is jumped to with r0 and r1 intact.
   static void LoadOperands(MacroAssembler* masm,
-                           FloatingPointHelper::Destination destination,
                            Register heap_number_map,
                            Register scratch1,
                            Register scratch2,
@@ -844,11 +842,8 @@ class FloatingPointHelper : public AllStatic {
 
  private:
   static void LoadNumber(MacroAssembler* masm,
-                         FloatingPointHelper::Destination destination,
                          Register object,
                          DwVfpRegister dst,
-                         Register dst1,
-                         Register dst2,
                          Register heap_number_map,
                          Register scratch1,
                          Register scratch2,

@@ -629,56 +629,33 @@ void ConvertToDoubleStub::Generate(MacroAssembler* masm) {
 }
 
 void FloatingPointHelper::LoadSmis(MacroAssembler* masm,
-                                   FloatingPointHelper::Destination destination,
                                    Register scratch1,
                                    Register scratch2) {
   EMIT_STUB_MARKER(89);
-  __ SmiToDoubleFPRegister(r3, d7, scratch1);
-  __ SmiToDoubleFPRegister(r4, d6, scratch1);
-  if (destination == kCoreRegisters) {
-    __ sub(sp, sp, Operand(8));
-
-    __ stfd(d6, MemOperand(sp, 0));
-// ENDIAN - r3/r4 are in memory order
-    __ lwz(r3, MemOperand(sp, 0));
-    __ lwz(r4, MemOperand(sp, 4));
-
-    __ stfd(d7, MemOperand(sp, 0));
-// ENDIAN - r5/r6 are in memory order
-    __ lwz(r5, MemOperand(sp, 0));
-    __ lwz(r6, MemOperand(sp, 4));
-
-    __ addi(sp, sp, Operand(8));
-  }
+  __ SmiToDoubleFPRegister(r3, d2, scratch1);
+  __ SmiToDoubleFPRegister(r4, d1, scratch1);
 }
 
 // needs cleanup for extra parameters that are unused
 void FloatingPointHelper::LoadOperands(
     MacroAssembler* masm,
-    FloatingPointHelper::Destination destination,
     Register heap_number_map,
     Register scratch1,
     Register scratch2,
     Label* slow) {
   EMIT_STUB_MARKER(90);
-  // Load right operand (r3) to d7
-  LoadNumber(masm, destination,
-             r3, d7, r5, r6, heap_number_map, scratch1, scratch2, slow);
+  // Load right operand (r3) to d2
+  LoadNumber(masm, r3, d2, heap_number_map, scratch1, scratch2, slow);
 
-  // Load left operand (r4) to d6
-  LoadNumber(masm, destination,
-             r4, d6, r3, r4, heap_number_map, scratch1, scratch2, slow);
+  // Load left operand (r4) to d1
+  LoadNumber(masm, r4, d1, heap_number_map, scratch1, scratch2, slow);
 }
 
 // needs cleanup for extra parameters that are unused
 // also needs a scratch double register instead of d3
-// TODO(penguin): do we really need dst1 and dst1?
 void FloatingPointHelper::LoadNumber(MacroAssembler* masm,
-                                     Destination destination,
                                      Register object,
                                      DwVfpRegister dst,
-                                     Register dst1,
-                                     Register dst2,
                                      Register heap_number_map,
                                      Register scratch1,
                                      Register scratch2,
@@ -696,15 +673,8 @@ void FloatingPointHelper::LoadNumber(MacroAssembler* masm,
   __ JumpIfNotHeapNumber(object, heap_number_map, scratch1, not_number);
 
   // Handle loading a double from a heap number
-  if (destination == kFPRegisters) {
-    // Load the double from tagged HeapNumber to double register.
-    __ lfd(dst, FieldMemOperand(object, HeapNumber::kValueOffset));
-  } else {
-    ASSERT(destination == kCoreRegisters);
-    // Load the double from heap number to dst1 and dst2 in double format.
-    __ lwz(dst1, FieldMemOperand(object, HeapNumber::kValueOffset));
-    __ lwz(dst2, FieldMemOperand(object, HeapNumber::kValueOffset+4));
-  }
+  // Load the double from tagged HeapNumber to double register.
+  __ lfd(dst, FieldMemOperand(object, HeapNumber::kValueOffset));
   __ jmp(&done);
 
   // Handle loading a double from a smi.
@@ -994,21 +964,6 @@ void FloatingPointHelper::LoadNumberAsInt32Double(MacroAssembler* masm,
   __ bind(&done);
 }
 
-// convert double floating-point in dreg into floating-point integer
-// using rounding mode to zero, then load the 64-bit integer to dst1
-// and dst2
-void FloatingPointHelper::MoveDoubleToTwoIntRegisters(MacroAssembler* masm,
-                                                      Register dst1,
-                                                      Register dst2,
-                                                      DwVfpRegister dreg,
-                                                      DwVfpRegister dscratch) {
-  __ fctiwz(dscratch, dreg);
-  __ stfdu(dscratch, MemOperand(sp, -8));
-  // ENDIAN - dst1/dst2 are in memory order
-  __ lwz(dst1, MemOperand(sp, 0));
-  __ lwz(dst2, MemOperand(sp, 4));
-  __ addi(sp, sp, Operand(8));
-}
 
 void FloatingPointHelper::LoadNumberAsInt32(MacroAssembler* masm,
                                             Register object,
@@ -1118,12 +1073,6 @@ void FloatingPointHelper::CallCCodeForDoubleOperation(
     Register heap_number_result,
     Register scratch) {
   EMIT_STUB_MARKER(101);
-  // Using core registers:
-  // r3: Left value (least significant part of mantissa).
-  // r4: Left value (sign, exponent, top of mantissa).
-  // r5: Right value (least significant part of mantissa).
-  // r6: Right value (sign, exponent, top of mantissa).
-
   // d1 - first arg, d2 - second arg
   // d1 return value
 
@@ -1138,18 +1087,6 @@ void FloatingPointHelper::CallCCodeForDoubleOperation(
   __ mflr(r0);
   __ push(r0);
   __ PrepareCallCFunction(0, 2, scratch);
-
-  __ sub(sp, sp, Operand(8));
-// ENDIAN - r3/r4 are in memory order
-  __ stw(r3, MemOperand(sp, 0));
-  __ stw(r4, MemOperand(sp, 4));
-  __ lfd(d1, MemOperand(sp, 0));
-
-// ENDIAN - r5/r6 are in memory order
-  __ stw(r5, MemOperand(sp, 0));
-  __ stw(r6, MemOperand(sp, 4));
-  __ lfd(d2, MemOperand(sp, 0));
-  __ addi(sp, sp, Operand(8));
 
   {
     AllowExternalCallThatCantCauseGC scope(masm);
@@ -2543,25 +2480,17 @@ void BinaryOpStub::GenerateFPOperation(MacroAssembler* masm,
     case Token::MUL:
     case Token::DIV:
     case Token::MOD: {
-      // Load left and right operands into d6 and d7
-      FloatingPointHelper::Destination destination =
-          op_ != Token::MOD ?
-          FloatingPointHelper::kFPRegisters :
-          FloatingPointHelper::kCoreRegisters;
-
+      // Load left and right operands into d1 and d2
       // Allocate new heap number for result.
       Register result = r8;
       GenerateHeapResultAllocation(
           masm, result, heap_number_map, scratch1, scratch2, gc_required);
 
       // Load the operands.
-      // TODO(penguin): after simplified MOD handling, should
-      // remove destination == CoreRegisters case
       if (smi_operands) {
-        FloatingPointHelper::LoadSmis(masm, destination, scratch1, scratch2);
+        FloatingPointHelper::LoadSmis(masm, scratch1, scratch2);
       } else {
         FloatingPointHelper::LoadOperands(masm,
-                                          destination,
                                           heap_number_map,
                                           scratch1,
                                           scratch2,
@@ -2569,39 +2498,38 @@ void BinaryOpStub::GenerateFPOperation(MacroAssembler* masm,
       }
 
       // Calculate the result.
-      if (destination == FloatingPointHelper::kFPRegisters) {
-        // Using FP registers:
-        // d6: Left value
-        // d7: Right value
-        switch (op_) {
-          case Token::ADD:
-            __ fadd(d5, d6, d7);
-            break;
-          case Token::SUB:
-            __ fsub(d5, d6, d7);
-            break;
-          case Token::MUL:
-            __ fmul(d5, d6, d7);
-            break;
-          case Token::DIV:
-            __ fdiv(d5, d6, d7);
-            break;
-          default:
-            UNREACHABLE();
-        }
-        __ stfd(d5, FieldMemOperand(result, HeapNumber::kValueOffset));
-        __ mr(r3, result);
-        __ Ret();
-      } else {
-        // Call the C function to handle the double operation.
-        FloatingPointHelper::CallCCodeForDoubleOperation(masm,
-                                                         op_,
-                                                         result,
-                                                         scratch1);
-        if (FLAG_debug_code) {
-          __ stop("Unreachable code.");
-        }
+      // Using FP registers:
+      //   d1: Left value
+      //   d2: Right value
+      switch (op_) {
+        case Token::ADD:
+          __ fadd(d1, d1, d2);
+          break;
+        case Token::SUB:
+          __ fsub(d1, d1, d2);
+          break;
+        case Token::MUL:
+          __ fmul(d1, d1, d2);
+          break;
+        case Token::DIV:
+          __ fdiv(d1, d1, d2);
+          break;
+        case Token::MOD:
+          // Call the C function to handle the double operation.
+          FloatingPointHelper::CallCCodeForDoubleOperation(masm,
+                                                           op_,
+                                                           result,
+                                                           scratch1);
+          if (FLAG_debug_code) {
+            __ stop("Unreachable code.");
+          }
+          break;
+        default:
+          UNREACHABLE();
       }
+      __ stfd(d1, FieldMemOperand(result, HeapNumber::kValueOffset));
+      __ mr(r3, result);
+      __ Ret();
       break;
     }
     case Token::BIT_OR:
@@ -2853,14 +2781,9 @@ void BinaryOpStub::GenerateInt32Stub(MacroAssembler* masm) {
       // Load both operands and check that they are 32-bit integer.
       // Jump to type transition if they are not. The registers r3 and r4 (right
       // and left) are preserved for the runtime call.
-      FloatingPointHelper::Destination destination =
-          (op_ != Token::MOD)
-              ? FloatingPointHelper::kFPRegisters
-              : FloatingPointHelper::kCoreRegisters;
-
       FloatingPointHelper::LoadNumberAsInt32Double(masm,
                                                    right,
-                                                   d7,
+                                                   d2,
                                                    d8,
                                                    heap_number_map,
                                                    scratch1,
@@ -2868,139 +2791,122 @@ void BinaryOpStub::GenerateInt32Stub(MacroAssembler* masm) {
                                                    &transition);
       FloatingPointHelper::LoadNumberAsInt32Double(masm,
                                                    left,
-                                                   d6,
+                                                   d1,
                                                    d8,
                                                    heap_number_map,
                                                    scratch1,
                                                    scratch2,
                                                    &transition);
 
-      if (destination == FloatingPointHelper::kFPRegisters) {
-        CpuFeatures::Scope scope(VFP2);
-        Label return_heap_number;
-        switch (op_) {
-          case Token::ADD:
-            __ fadd(d5, d6, d7);
-            break;
-          case Token::SUB:
-            __ fsub(d5, d6, d7);
-            break;
-          case Token::MUL:
-            __ fmul(d5, d6, d7);
-            break;
-          case Token::DIV:
-            __ fdiv(d5, d6, d7);
-            break;
-          default:
-            UNREACHABLE();
-        }
+      CpuFeatures::Scope scope(VFP2);
+      Label return_heap_number;
+      switch (op_) {
+        case Token::ADD:
+          __ fadd(d1, d1, d2);
+          break;
+        case Token::SUB:
+          __ fsub(d1, d1, d2);
+          break;
+        case Token::MUL:
+          __ fmul(d1, d1, d2);
+          break;
+        case Token::DIV:
+          __ fdiv(d1, d1, d2);
+          break;
+        case Token::MOD: {
+          Label pop_and_call_runtime;
 
-        if (op_ != Token::DIV) {
-          // These operations produce an integer result.
-          // Try to return a smi if we can.
-          // Otherwise return a heap number if allowed, or jump to type
-          // transition.
-
-          __ EmitVFPTruncate(kRoundToZero,
-                             scratch1,
-                             d5,
-                             scratch2,
-                             d8);
-
-          if (result_type_ <= BinaryOpIC::INT32) {
-            // result does not fit in a 32-bit integer.
-            __ bne(&transition);
-          }
-
-          // Check if the result fits in a smi.
-          __ addis(scratch2, scratch1, Operand(0x40000000u >> 16));
-          __ cmpi(scratch2, Operand::Zero());
-          // If not try to return a heap number.
-          __ blt(&return_heap_number);
-          // Check for minus zero. Return heap number for minus zero.
-          Label not_zero;
-          __ cmpi(scratch1, Operand::Zero());
-          __ bne(&not_zero);
-
-          __ sub(sp, sp, Operand(8));
-          __ stfd(d5, MemOperand(sp, 0));
-#if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
-          __ lwz(scratch2, MemOperand(sp, 4));
-#else
-          __ lwz(scratch2, MemOperand(sp, 0));
-#endif
-          __ addi(sp, sp, Operand(8));
-
-          __ TestBit(scratch2, 0, r0);  // test sign bit
-          __ bne(&return_heap_number);
-          __ bind(&not_zero);
-
-          // Tag the result and return.
-          __ SmiTag(r3, scratch1);
-          __ Ret();
-        } else {
-          // DIV just falls through to allocating a heap number.
-        }
-
-        __ bind(&return_heap_number);
-        // Return a heap number, or fall through to type transition or runtime
-        // call if we can't.
-        if (result_type_ >= ((op_ == Token::DIV) ? BinaryOpIC::HEAP_NUMBER
-                                                 : BinaryOpIC::INT32)) {
+          // Allocate a heap number to store the result.
           heap_number_result = r8;
           GenerateHeapResultAllocation(masm,
                                        heap_number_result,
                                        heap_number_map,
                                        scratch1,
                                        scratch2,
-                                       &call_runtime);
-          __ stfd(d5, FieldMemOperand(heap_number_result,
-                                      HeapNumber::kValueOffset));
-          __ mr(r3, heap_number_result);
-          __ Ret();
+                                       &pop_and_call_runtime);
+
+          // Call the C function to handle the double operation.
+          FloatingPointHelper::CallCCodeForDoubleOperation(
+              masm, op_, heap_number_result, scratch1);
+          if (FLAG_debug_code) {
+            __ stop("Unreachable code.");
+          }
+
+          __ bind(&pop_and_call_runtime);
+          __ b(&call_runtime);
+          break;
+        }
+        default:
+          UNREACHABLE();
+      }
+
+      if (op_ != Token::DIV) {
+        // These operations produce an integer result.
+        // Try to return a smi if we can.
+        // Otherwise return a heap number if allowed, or jump to type
+        // transition.
+
+        __ EmitVFPTruncate(kRoundToZero,
+                           scratch1,
+                           d1,
+                           scratch2,
+                           d8);
+
+        if (result_type_ <= BinaryOpIC::INT32) {
+          // result does not fit in a 32-bit integer.
+          __ bne(&transition);
         }
 
-        // A DIV operation expecting an integer result falls through
-        // to type transition.
+        // Check if the result fits in a smi.
+        __ addis(scratch2, scratch1, Operand(0x40000000u >> 16));
+        __ cmpi(scratch2, Operand::Zero());
+        // If not try to return a heap number.
+        __ blt(&return_heap_number);
+        // Check for minus zero. Return heap number for minus zero.
+        Label not_zero;
+        __ cmpi(scratch1, Operand::Zero());
+        __ bne(&not_zero);
 
+        __ sub(sp, sp, Operand(8));
+        __ stfd(d1, MemOperand(sp, 0));
+#if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
+        __ lwz(scratch2, MemOperand(sp, 4));
+#else
+        __ lwz(scratch2, MemOperand(sp, 0));
+#endif
+        __ addi(sp, sp, Operand(8));
+
+        __ TestBit(scratch2, 0, r0);  // test sign bit
+        __ bne(&return_heap_number);
+        __ bind(&not_zero);
+
+        // Tag the result and return.
+        __ SmiTag(r3, scratch1);
+        __ Ret();
       } else {
-        // load double-float into 2 GPRs
-        // TODO(penguin): such conversions are needed for
-        // CallCCodeForDoubleOperation on ARM, need to investigate if we
-        // really need such conversion for pp
-        FloatingPointHelper::MoveDoubleToTwoIntRegisters(masm, r5, r6, d7, d8);
-        FloatingPointHelper::MoveDoubleToTwoIntRegisters(masm, r7, r8, d6, d8);
+        // DIV just falls through to allocating a heap number.
+      }
 
-        // We preserved r3 and r4 to be able to call runtime.
-        // Save the left value on the stack.
-        __ Push(r8, r7);
-
-        Label pop_and_call_runtime;
-
-        // Allocate a heap number to store the result.
+      __ bind(&return_heap_number);
+      // Return a heap number, or fall through to type transition or runtime
+      // call if we can't.
+      if (result_type_ >= ((op_ == Token::DIV) ? BinaryOpIC::HEAP_NUMBER
+                                               : BinaryOpIC::INT32)) {
         heap_number_result = r8;
         GenerateHeapResultAllocation(masm,
                                      heap_number_result,
                                      heap_number_map,
                                      scratch1,
                                      scratch2,
-                                     &pop_and_call_runtime);
-
-        // Load the left value from the value saved on the stack.
-        __ Pop(r4, r3);
-
-        // Call the C function to handle the double operation.
-        FloatingPointHelper::CallCCodeForDoubleOperation(
-            masm, op_, heap_number_result, scratch1);
-        if (FLAG_debug_code) {
-          __ stop("Unreachable code.");
-        }
-
-        __ bind(&pop_and_call_runtime);
-        __ Drop(2);
-        __ b(&call_runtime);
+                                     &call_runtime);
+        __ stfd(d1, FieldMemOperand(heap_number_result,
+                                    HeapNumber::kValueOffset));
+        __ mr(r3, heap_number_result);
+        __ Ret();
       }
 
+      // A DIV operation expecting an integer result falls through
+      // to type transition.
       break;
     }
 
