@@ -1379,7 +1379,7 @@ class Assembler : public AssemblerBase {
 
   void push(Register src, Condition cond = al) {
 #if V8_TARGET_ARCH_PPC64
-    stdu(src, MemOperand(sp, -4));
+    stdu(src, MemOperand(sp, -8));
 #else
     stwu(src, MemOperand(sp, -4));
 #endif
@@ -1388,10 +1388,11 @@ class Assembler : public AssemblerBase {
   void pop(Register dst, Condition cond = al) {
 #if V8_TARGET_ARCH_PPC64
     ld(dst, MemOperand(sp));
+    addi(sp, sp, Operand(8));
 #else
     lwz(dst, MemOperand(sp));
-#endif
     addi(sp, sp, Operand(4));
+#endif
   }
 
   void pop() {
