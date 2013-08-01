@@ -5502,7 +5502,7 @@ void StringCharCodeAtGenerator::GenerateFast(MacroAssembler* masm) {
 
   // Check for index out of range.
   __ lwz(ip, FieldMemOperand(object_, String::kLengthOffset));
-  __ cmp(ip, index_);
+  __ cmpl(ip, index_);
   __ blt(index_out_of_range_);
 
   __ srawi(index_, index_, kSmiTagSize);
