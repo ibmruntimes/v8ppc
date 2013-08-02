@@ -4039,17 +4039,7 @@ void KeyedStoreStubCompiler::GenerateStoreExternalArray(
         __ mr(r8, value);
         __ lfd(d0, FieldMemOperand(r8, HeapNumber::kValueOffset));
 
-        if (elements_kind == EXTERNAL_UNSIGNED_INT_ELEMENTS) {
-            // Perform float-to-uint conversion with truncation (round-to-zero)
-            // behavior.
-            FloatingPointHelper::ConvertDoubleToUnsignedInt(masm, d0, r8, r9,
-                                                            d1);
-        } else {
-            // Perform float-to-int conversion with truncation (round-to-zero)
-            // behavior.
-            FloatingPointHelper::ConvertDoubleToInt(masm, d0, r8, r9, d1);
-        }
-
+        __ EmitECMATruncate(r8, d0, d1, r10, r7, r9);
         switch (elements_kind) {
           case EXTERNAL_BYTE_ELEMENTS:
           case EXTERNAL_UNSIGNED_BYTE_ELEMENTS:

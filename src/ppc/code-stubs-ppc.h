@@ -747,6 +747,7 @@ class FloatingPointHelper : public AllStatic {
                                 const Register src,
                                 const Register int_scratch);
 
+  /*
   // Converts the double in |double_value| to an integer, storing the
   // result in |int_dst|.
   // Warning: The value in |double_value| will be changed in the process!
@@ -764,13 +765,7 @@ class FloatingPointHelper : public AllStatic {
                                          Register int_dst,
                                          Register scratch1,
                                          DwVfpRegister double_scratch);
-
-  // Convert double in dreg into double-integer then load it into dst1 and dst2
-  static void MoveDoubleToTwoIntRegisters(MacroAssembler* masm,
-                                          Register dst1,
-                                          Register dst2,
-                                          DwVfpRegister dreg,
-                                          DwVfpRegister double_scratch);
+  */
 
   // Load the number from object into double_dst in the double format.
   // Control will jump to not_int32 if the value cannot be exactly represented
