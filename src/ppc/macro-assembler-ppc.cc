@@ -2610,7 +2610,7 @@ void MacroAssembler::EmitECMATruncate(Register result,
 #if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
   lwz(result, MemOperand(sp));
 #else
-  lwz(result, MemOperand(sp, -4));
+  lwz(result, MemOperand(sp, 4));
 #endif
 
   // test if overflow
