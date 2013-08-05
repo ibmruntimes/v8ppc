@@ -89,10 +89,13 @@ class LCodeGen BASE_EMBEDDED {
   // LOperand must be a double register.
   DoubleRegister ToDoubleRegister(LOperand* op) const;
 
+  /*
   // LOperand is loaded into dbl_scratch, unless already a double register.
   DoubleRegister EmitLoadDoubleRegister(LOperand* op,
                                         SwVfpRegister flt_scratch,
                                         DoubleRegister dbl_scratch);
+  */
+
   int ToInteger32(LConstantOperand* op) const;
   double ToDouble(LConstantOperand* op) const;
   Operand ToOperand(LOperand* op);

@@ -1855,24 +1855,6 @@ void Assembler::vldr(const DwVfpRegister dst,
   EMIT_FAKE_ARM_INSTR(fVLDR);
 }
 
-
-void Assembler::vldr(const SwVfpRegister dst,
-                     const Register base,
-                     int offset,
-                     const Condition cond) {
-  PPCPORT_CHECK(false);
-  EMIT_FAKE_ARM_INSTR(fVLDR);
-}
-
-
-void Assembler::vldr(const SwVfpRegister dst,
-                     const MemOperand& operand,
-                     const Condition cond) {
-  PPCPORT_CHECK(false);
-  EMIT_FAKE_ARM_INSTR(fVLDR);
-}
-
-
 void Assembler::vstr(const DwVfpRegister src,
                      const Register base,
                      int offset,
@@ -1883,23 +1865,6 @@ void Assembler::vstr(const DwVfpRegister src,
 
 
 void Assembler::vstr(const DwVfpRegister src,
-                     const MemOperand& operand,
-                     const Condition cond) {
-  PPCPORT_CHECK(false);
-  EMIT_FAKE_ARM_INSTR(fVSTR);
-}
-
-
-void Assembler::vstr(const SwVfpRegister src,
-                     const Register base,
-                     int offset,
-                     const Condition cond) {
-  PPCPORT_CHECK(false);
-  EMIT_FAKE_ARM_INSTR(fVSTR);
-}
-
-
-void Assembler::vstr(const SwVfpRegister src,
                      const MemOperand& operand,
                      const Condition cond) {
   PPCPORT_CHECK(false);
@@ -1913,15 +1878,6 @@ void Assembler::vmov(const DwVfpRegister dst,
   PPCPORT_CHECK(false);
   EMIT_FAKE_ARM_INSTR(fVMOV);
 }
-
-
-void Assembler::vmov(const SwVfpRegister dst,
-                     const SwVfpRegister src,
-                     const Condition cond) {
-  PPCPORT_CHECK(false);
-  EMIT_FAKE_ARM_INSTR(fVMOV);
-}
-
 
 void Assembler::vmov(const DwVfpRegister dst,
                      const DwVfpRegister src,
@@ -1947,23 +1903,6 @@ void Assembler::vmov(const Register dst1,
   PPCPORT_CHECK(false);
   EMIT_FAKE_ARM_INSTR(fVMOV);
 }
-
-
-void Assembler::vmov(const SwVfpRegister dst,
-                     const Register src,
-                     const Condition cond) {
-  PPCPORT_CHECK(false);
-  EMIT_FAKE_ARM_INSTR(fVMOV);
-}
-
-
-void Assembler::vmov(const Register dst,
-                     const SwVfpRegister src,
-                     const Condition cond) {
-  PPCPORT_CHECK(false);
-  EMIT_FAKE_ARM_INSTR(fVMOV);
-}
-
 
 // Type of data to read from or write to VFP register.
 // Used as specifier in generic vcvt instruction.

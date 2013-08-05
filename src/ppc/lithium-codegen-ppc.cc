@@ -323,7 +323,7 @@ DoubleRegister LCodeGen::ToDoubleRegister(LOperand* op) const {
   return ToDoubleRegister(op->index());
 }
 
-
+  /*
 DoubleRegister LCodeGen::EmitLoadDoubleRegister(LOperand* op,
                                                 SwVfpRegister flt_scratch,
                                                 DoubleRegister dbl_scratch) {
@@ -360,6 +360,7 @@ DoubleRegister LCodeGen::EmitLoadDoubleRegister(LOperand* op,
 #endif
   return dbl_scratch;
 }
+  */
 
 
 Handle<Object> LCodeGen::ToHandle(LConstantOperand* op) const {
@@ -4717,7 +4718,12 @@ void LCodeGen::DoDeferredTaggedToI(LTaggedToI* instr) {
     if (instr->hydrogen()->CheckFlag(HValue::kBailoutOnMinusZero)) {
       __ cmpi(input_reg, Operand::Zero());
       __ bne(&done);
+#ifdef PENGUIN_CLEANUP
       __ vmov(scratch1, double_scratch.high());
+#else
+      PPCPORT_UNIMPLEMENTED();
+      __ fake_asm(fLITHIUM91);
+#endif
       __ TestBit(scratch1, 0, r0);  // test sign bit
       DeoptimizeIf(ne, instr->environment(), cr0);
     }

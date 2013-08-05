@@ -227,28 +227,6 @@ const Register r29  = { kRegister_r29_Code };
 const Register r30  = { kRegister_r30_Code };
 const Register fp = { kRegister_fp_Code };
 
-// Single word VFP register.
-struct SwVfpRegister {
-  bool is_valid() const { return 0 <= code_ && code_ < 32; }
-  bool is(SwVfpRegister reg) const { return code_ == reg.code_; }
-  int code() const {
-    ASSERT(is_valid());
-    return code_;
-  }
-  int bit() const {
-    ASSERT(is_valid());
-    return 1 << code_;
-  }
-  void split_code(int* vm, int* m) const {
-    ASSERT(is_valid());
-    *m = code_ & 0x1;
-    *vm = code_ >> 1;
-  }
-
-  int code_;
-};
-
-
 // Double word VFP register.
 struct DwVfpRegister {
   static const int kNumRegisters = 32;
@@ -288,20 +266,7 @@ struct DwVfpRegister {
   // Supporting d0 to d15, can be later extended to d31.
   bool is_valid() const { return 0 <= code_ && code_ < kNumRegisters; }
   bool is(DwVfpRegister reg) const { return code_ == reg.code_; }
-  SwVfpRegister low() const {
-    SwVfpRegister reg;
-    reg.code_ = code_ * 2;
 
-    ASSERT(reg.is_valid());
-    return reg;
-  }
-  SwVfpRegister high() const {
-    SwVfpRegister reg;
-    reg.code_ = (code_ * 2) + 1;
-
-    ASSERT(reg.is_valid());
-    return reg;
-  }
   int code() const {
     ASSERT(is_valid());
     return code_;
@@ -321,42 +286,6 @@ struct DwVfpRegister {
 
 
 typedef DwVfpRegister DoubleRegister;
-
-
-// Support for the VFP registers s0 to s31 (d0 to d15).
-// Note that "s(N):s(N+1)" is the same as "d(N/2)".
-const SwVfpRegister s0  = {  0 };
-const SwVfpRegister s1  = {  1 };
-const SwVfpRegister s2  = {  2 };
-const SwVfpRegister s3  = {  3 };
-const SwVfpRegister s4  = {  4 };
-const SwVfpRegister s5  = {  5 };
-const SwVfpRegister s6  = {  6 };
-const SwVfpRegister s7  = {  7 };
-const SwVfpRegister s8  = {  8 };
-const SwVfpRegister s9  = {  9 };
-const SwVfpRegister s10 = { 10 };
-const SwVfpRegister s11 = { 11 };
-const SwVfpRegister s12 = { 12 };
-const SwVfpRegister s13 = { 13 };
-const SwVfpRegister s14 = { 14 };
-const SwVfpRegister s15 = { 15 };
-const SwVfpRegister s16 = { 16 };
-const SwVfpRegister s17 = { 17 };
-const SwVfpRegister s18 = { 18 };
-const SwVfpRegister s19 = { 19 };
-const SwVfpRegister s20 = { 20 };
-const SwVfpRegister s21 = { 21 };
-const SwVfpRegister s22 = { 22 };
-const SwVfpRegister s23 = { 23 };
-const SwVfpRegister s24 = { 24 };
-const SwVfpRegister s25 = { 25 };
-const SwVfpRegister s26 = { 26 };
-const SwVfpRegister s27 = { 27 };
-const SwVfpRegister s28 = { 28 };
-const SwVfpRegister s29 = { 29 };
-const SwVfpRegister s30 = { 30 };
-const SwVfpRegister s31 = { 31 };
 
 const DwVfpRegister no_dreg = { -1 };
 const DwVfpRegister d0  = {  0 };
@@ -1275,14 +1204,6 @@ class Assembler : public AssemblerBase {
             const MemOperand& src,
             const Condition cond = al);
 
-  void vldr(const SwVfpRegister dst,
-            const Register base,
-            int offset,
-            const Condition cond = al);
-  void vldr(const SwVfpRegister dst,
-            const MemOperand& src,
-            const Condition cond = al);
-
   void vstr(const DwVfpRegister src,
             const Register base,
             int offset,
@@ -1290,22 +1211,12 @@ class Assembler : public AssemblerBase {
   void vstr(const DwVfpRegister src,
             const MemOperand& dst,
             const Condition cond = al);
-
-  void vstr(const SwVfpRegister src,
-            const Register base,
-            int offset,
-            const Condition cond = al);
-  void vstr(const SwVfpRegister src,
-            const MemOperand& dst,
-            const Condition cond = al);
-
+ 
   void vmov(const DwVfpRegister dst,
             double imm,
             const Register scratch = no_reg,
             const Condition cond = al);
-  void vmov(const SwVfpRegister dst,
-            const SwVfpRegister src,
-            const Condition cond = al);
+
   void vmov(const DwVfpRegister dst,
             const DwVfpRegister src,
             const Condition cond = al);
@@ -1316,12 +1227,6 @@ class Assembler : public AssemblerBase {
   void vmov(const Register dst1,
             const Register dst2,
             const DwVfpRegister src,
-            const Condition cond = al);
-  void vmov(const SwVfpRegister dst,
-            const Register src,
-            const Condition cond = al);
-  void vmov(const Register dst,
-            const SwVfpRegister src,
             const Condition cond = al);
   void vneg(const DwVfpRegister dst,
             const DwVfpRegister src,

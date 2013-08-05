@@ -435,7 +435,7 @@ TEST(Type3) {
 }
 
 
-
+#ifdef PENGUIN_CLEANUP
 TEST(Vfp) {
   SET_UP();
 
@@ -547,7 +547,6 @@ TEST(Vfp) {
     COMPARE(vmrs(pc),
             "eef1fa10       vmrs APSR, FPSCR");
 
-#ifdef PENGUIN_CLEANUP
     COMPARE(vstm(ia, r0, d1, d3),
             "ec801b06       vstmia r0, {d1-d3}");
     COMPARE(vldm(ia, r1, d2, d5),
@@ -564,11 +563,11 @@ TEST(Vfp) {
             "ec860a20       vstmia r6, {s0-s31}");
     COMPARE(vldm(ia, r7, s0, s31),
             "ec970a20       vldmia r7, {s0-s31}");
-#endif
   }
 
   VERIFY_RUN();
 }
+#endif
 
 #ifdef PENGUIN_CLEANUP
 TEST(LoadStore) {
