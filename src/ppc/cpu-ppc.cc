@@ -44,11 +44,9 @@ void CPU::SetUp() {
   CpuFeatures::Probe();
 }
 
-
 bool CPU::SupportsCrankshaft() {
-  return CpuFeatures::IsSupported(VFP3);
+  return true;
 }
-
 
 void CPU::FlushICache(void* start, size_t size) {
   // Nothing to do flushing no instructions.

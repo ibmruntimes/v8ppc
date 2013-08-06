@@ -907,7 +907,7 @@ class MacroAssembler: public Assembler {
   // Convert the HeapNumber pointed to by source to a 32bits signed integer
   // dest. If the HeapNumber does not fit into a 32bits signed integer branch
   // to not_int32 label. If VFP3 is available double_scratch is used but not
-  // scratch2.
+  // scratch2
   void ConvertToInt32(Register source,
                       Register dest,
                       Register scratch,

@@ -68,8 +68,6 @@ bool LCodeGen::GenerateCode() {
   HPhase phase("Z_Code generation", chunk());
   ASSERT(is_unused());
   status_ = GENERATING;
-  CpuFeatures::Scope scope1(VFP3);
-  CpuFeatures::Scope scope2(ARMv7);
 
   CodeStub::GenerateFPStubs();
 
@@ -2963,7 +2961,6 @@ void LCodeGen::DoLoadKeyedSpecializedArrayElement(
 
   if (elements_kind == EXTERNAL_FLOAT_ELEMENTS ||
       elements_kind == EXTERNAL_DOUBLE_ELEMENTS) {
-    CpuFeatures::Scope scope(VFP3);
     DwVfpRegister result = ToDoubleRegister(instr->result());
     if (key_is_constant) {
       __ Add(scratch0(), external_pointer,
@@ -4162,7 +4159,6 @@ void LCodeGen::DoStoreKeyedSpecializedArrayElement(
 
   if (elements_kind == EXTERNAL_FLOAT_ELEMENTS ||
       elements_kind == EXTERNAL_DOUBLE_ELEMENTS) {
-    CpuFeatures::Scope scope(VFP3);
     DwVfpRegister value(ToDoubleRegister(instr->value()));
     if (key_is_constant) {
       __ Add(scratch0(), external_pointer,
@@ -4701,7 +4697,6 @@ void LCodeGen::DoDeferredTaggedToI(LTaggedToI* instr) {
                         scratch3);
 
   } else {
-    CpuFeatures::Scope scope(VFP3);
     // Deoptimize if we don't have a heap number.
     DeoptimizeIf(ne, instr->environment());
 

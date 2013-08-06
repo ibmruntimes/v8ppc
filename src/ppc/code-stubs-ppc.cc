@@ -1766,7 +1766,6 @@ void StoreBufferOverflowStub::Generate(MacroAssembler* masm) {
   __ mflr(r0);
   __ MultiPush(kJSCallerSaved | r0.bit());
   if (save_doubles_ == kSaveFPRegs) {
-    CpuFeatures::Scope scope(VFP2);
     __ sub(sp, sp, Operand(kDoubleSize * DwVfpRegister::kNumRegisters));
     for (int i = 0; i < DwVfpRegister::kNumRegisters; i++) {
       DwVfpRegister reg = DwVfpRegister::from_code(i);
@@ -1784,7 +1783,6 @@ void StoreBufferOverflowStub::Generate(MacroAssembler* masm) {
       ExternalReference::store_buffer_overflow_function(masm->isolate()),
       argument_count);
   if (save_doubles_ == kSaveFPRegs) {
-    CpuFeatures::Scope scope(VFP2);
     for (int i = 0; i < DwVfpRegister::kNumRegisters; i++) {
       DwVfpRegister reg = DwVfpRegister::from_code(i);
       __ lfd(reg, MemOperand(sp, i * kDoubleSize));
@@ -2686,7 +2684,6 @@ void BinaryOpStub::GenerateInt32Stub(MacroAssembler* masm) {
                                                    scratch2,
                                                    &transition);
 
-      CpuFeatures::Scope scope(VFP2);
       Label return_heap_number;
       switch (op_) {
         case Token::ADD:
@@ -3237,9 +3234,6 @@ void TranscendentalCacheStub::Generate(MacroAssembler* masm) {
         ExternalReference(RuntimeFunction(), masm->isolate());
     __ TailCallExternalReference(runtime_function, 1, 1);
   } else {
-    ASSERT(CpuFeatures::IsSupported(VFP2));
-    CpuFeatures::Scope scope(VFP2);
-
     Label no_update;
     Label skip_cache;
 
@@ -3302,7 +3296,6 @@ void TranscendentalCacheStub::Generate(MacroAssembler* masm) {
 void TranscendentalCacheStub::GenerateCallCFunction(MacroAssembler* masm,
                                                     Register scratch) {
   EMIT_STUB_MARKER(148);
-  ASSERT(CpuFeatures::IsEnabled(VFP2));
   Isolate* isolate = masm->isolate();
 
   __ mflr(r0);
@@ -3364,7 +3357,6 @@ void InterruptStub::Generate(MacroAssembler* masm) {
 void MathPowStub::Generate(MacroAssembler* masm) {
   EMIT_STUB_MARKER(149);
 #ifdef PENGUIN_CLEANUP
-  CpuFeatures::Scope vfp2_scope(VFP2);
   const Register base = r1;
   const Register exponent = r2;
   const Register heapnumbermap = r5;
@@ -7262,7 +7254,7 @@ void RecordWriteStub::GenerateFixedRegStubsAheadOfTime() {
 
 
 bool CodeStub::CanUseFPRegisters() {
-  return CpuFeatures::IsSupported(VFP2);
+  return true;
 }
 
 

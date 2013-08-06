@@ -480,8 +480,6 @@ class CpuFeatures : public AllStatic {
   // Check whether a feature is supported by the target CPU.
   static bool IsSupported(CpuFeature f) {
     ASSERT(initialized_);
-    if (f == VFP3 && !FLAG_enable_vfp3) return false;
-    if (f == VFP2 && !FLAG_enable_vfp2) return false;
     return (supported_ & (1u << f)) != 0;
   }
 
@@ -507,8 +505,6 @@ class CpuFeatures : public AllStatic {
    public:
     explicit Scope(CpuFeature f) {
       unsigned mask = 1u << f;
-      // VFP2 and ARMv7 are implied by VFP3.
-      if (f == VFP3) mask |= 1u << VFP2 | 1u << ARMv7;
       ASSERT(CpuFeatures::IsSupported(f));
       ASSERT(!Serializer::enabled() ||
              (CpuFeatures::found_by_runtime_probing_ & mask) == 0);
@@ -1054,9 +1050,6 @@ class Assembler : public AssemblerBase {
   // Miscellaneous arithmetic instructions
 
   // Bitfield manipulation instructions. v7 and above.
-
-  void ubfx(Register dst, Register src, int lsb, int width,
-            Condition cond = al);
 
   // Special register access
   // PowerPC
