@@ -2390,8 +2390,9 @@ void MacroAssembler::EmitVFPTruncate(VFPRoundingMode rounding_mode,
   if (rounding_mode == kRoundToZero) {
     fctidz(double_scratch, double_input);
   } else {
-    mtfsfi(7, rounding_mode);
+    mtfsfi(7, rounding_mode);  // set rounding mode in fpscr
     fctid(double_scratch, double_input);
+    mtfsfi(7, kRoundToNearest);  // reset
   }
 
   addi(sp, sp, Operand(-kDoubleSize));
