@@ -609,7 +609,12 @@ void MacroAssembler::PopSafepointRegistersAndDoubles() {
 
 void MacroAssembler::StoreToSafepointRegistersAndDoublesSlot(Register src,
                                                              Register dst) {
+#ifdef PENGUIN_CLEANUP
   stw(src, SafepointRegistersAndDoublesSlot(dst));
+#else
+  PPCPORT_UNIMPLEMENTED();
+  fake_asm(fMASM26);
+#endif
 }
 
 
@@ -626,8 +631,18 @@ void MacroAssembler::LoadFromSafepointRegisterSlot(Register dst, Register src) {
 int MacroAssembler::SafepointRegisterStackIndex(int reg_code) {
   // The registers are pushed starting with the highest encoding,
   // which means that lowest encodings are closest to the stack pointer.
-  ASSERT(reg_code >= 0 && reg_code < kNumSafepointRegisters);
-  return reg_code;
+  RegList regs = kSafepointSavedRegisters;
+  int index = 0;
+
+  ASSERT(reg_code >= 0 && reg_code < kNumRegisters);
+
+  for (int16_t i = 0; i < reg_code; i++) {
+    if ((regs & (1 << i)) != 0) {
+      index++;
+    }
+  }
+
+  return index;
 }
 
 
