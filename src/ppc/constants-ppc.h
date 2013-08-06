@@ -40,9 +40,8 @@ namespace internal {
 const int kNumRegisters = 32;
 
 // FP support.
-const int kNumFPSingleRegisters = 32;
 const int kNumFPDoubleRegisters = 32;
-const int kNumFPRegisters = kNumFPSingleRegisters + kNumFPDoubleRegisters;
+const int kNumFPRegisters = kNumFPDoubleRegisters;
 
 // PPC doesn't really have a PC register - assign a fake number for simulation
 const int kPCRegister = -2;
@@ -829,12 +828,10 @@ class Registers {
 class FPRegisters {
  public:
   // Return the name of the register.
-  static const char* Name(int reg, bool is_double);
+  static const char* Name(int reg);
 
   // Lookup the register number for the name provided.
-  // Set flag pointed by is_double to true if register
-  // is double-precision.
-  static int Number(const char* name, bool* is_double);
+  static int Number(const char* name);
 
  private:
   static const char* names_[kNumFPRegisters];

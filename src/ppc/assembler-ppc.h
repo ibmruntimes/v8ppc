@@ -1203,7 +1203,6 @@ class Assembler : public AssemblerBase {
   void vldr(const DwVfpRegister dst,
             const MemOperand& src,
             const Condition cond = al);
-
   void vstr(const DwVfpRegister src,
             const Register base,
             int offset,
@@ -1211,12 +1210,10 @@ class Assembler : public AssemblerBase {
   void vstr(const DwVfpRegister src,
             const MemOperand& dst,
             const Condition cond = al);
- 
   void vmov(const DwVfpRegister dst,
             double imm,
             const Register scratch = no_reg,
             const Condition cond = al);
-
   void vmov(const DwVfpRegister dst,
             const DwVfpRegister src,
             const Condition cond = al);

@@ -75,7 +75,6 @@ class PPCDebugger {
   double GetRegisterPairDoubleValue(int regnum);
   double GetFPDoubleRegisterValue(int regnum);
   bool GetValue(const char* desc, intptr_t* value);
-  bool GetFPSingleValue(const char* desc, float* value);
   bool GetFPDoubleValue(const char* desc, double* value);
 
   // Set or delete a breakpoint. Returns true if successful.
@@ -199,22 +198,9 @@ bool PPCDebugger::GetValue(const char* desc, intptr_t* value) {
   return false;
 }
 
-
-bool PPCDebugger::GetFPSingleValue(const char* desc, float* value) {
-  bool is_double;
-  int regnum = FPRegisters::Number(desc, &is_double);
-  if (regnum != kNoRegister && !is_double) {
-    *value = sim_->get_float_from_s_register(regnum);
-    return true;
-  }
-  return false;
-}
-
-
 bool PPCDebugger::GetFPDoubleValue(const char* desc, double* value) {
-  bool is_double;
-  int regnum = FPRegisters::Number(desc, &is_double);
-  if (regnum != kNoRegister && is_double) {
+  int regnum = FPRegisters::Number(desc);
+  if (regnum != kNoRegister) {
     *value = sim_->get_double_from_d_register(regnum);
     return true;
   }
@@ -359,7 +345,6 @@ void PPCDebugger::Debug() {
       } else if ((strcmp(cmd, "p") == 0) || (strcmp(cmd, "print") == 0)) {
         if (argc == 2 || (argc == 3 && strcmp(arg2, "fp") == 0)) {
           intptr_t value;
-          float svalue;
           double dvalue;
           if (strcmp(arg1, "all") == 0) {
             for (int i = 0; i < kNumRegisters; i++) {
@@ -409,7 +394,7 @@ void PPCDebugger::Debug() {
               dvalue = GetFPDoubleRegisterValue(i);
               uint64_t as_words = BitCast<uint64_t>(dvalue);
               PrintF("%3s: %f 0x%08x %08x\n",
-                     FPRegisters::Name(i, true),
+                     FPRegisters::Name(i),
                      dvalue,
                      static_cast<uint32_t>(as_words >> 32),
                      static_cast<uint32_t>(as_words & 0xffffffff));
@@ -437,9 +422,6 @@ void PPCDebugger::Debug() {
 #else
               PrintF("%s: 0x%08x %d\n", arg1, value, value);
 #endif
-            } else if (GetFPSingleValue(arg1, &svalue)) {
-              uint32_t as_word = BitCast<uint32_t>(svalue);
-              PrintF("%s: %f 0x%08x\n", arg1, svalue, as_word);
             } else if (GetFPDoubleValue(arg1, &dvalue)) {
               uint64_t as_words = BitCast<uint64_t>(dvalue);
               PrintF("%s: %f 0x%08x %08x\n",
@@ -881,10 +863,7 @@ Simulator::Simulator(Isolate* isolate) : isolate_(isolate) {
   special_reg_ctr_ = 0;  // PowerPC
 
   // Initializing FP registers.
-  // All registers are initialized to zero to start with
-  // even though s_registers_ & d_registers_ share the same
-  // physical registers in the target.
-  for (int i = 0; i < num_s_registers; i++) {
+  for (int i = 0; i < num_d_registers*2; i++) {
     fp_register[i] = 0;
   }
   FPSCR_rounding_mode_ = RZ;
@@ -1040,25 +1019,11 @@ int32_t Simulator::get_pc() const {
   return special_reg_pc_;
 }
 
-
-// Getting from and setting into FP registers.
-void Simulator::set_s_register(int sreg, unsigned int value) {
-  ASSERT((sreg >= 0) && (sreg < num_s_registers));
-  fp_register[sreg] = value;
-}
-
-
-unsigned int Simulator::get_s_register(int sreg) const {
-  ASSERT((sreg >= 0) && (sreg < num_s_registers));
-  return fp_register[sreg];
-}
-
-
 template<class InputType, int register_size>
 void Simulator::SetFPRegister(int reg_index, const InputType& value) {
-  ASSERT(reg_index >= 0);
-  if (register_size == 1) ASSERT(reg_index < num_s_registers);
-  if (register_size == 2) ASSERT(reg_index < num_d_registers);
+  ASSERT(reg_index >= 0 &&
+         register_size == 2 &&
+         reg_index < num_d_registers);
 
   char buffer[register_size * sizeof(fp_register[0])];
   memcpy(buffer, &value, register_size * sizeof(fp_register[0]));
@@ -1069,9 +1034,9 @@ void Simulator::SetFPRegister(int reg_index, const InputType& value) {
 
 template<class ReturnType, int register_size>
 ReturnType Simulator::GetFromFPRegister(int reg_index) {
-  ASSERT(reg_index >= 0);
-  if (register_size == 1) ASSERT(reg_index < num_s_registers);
-  if (register_size == 2) ASSERT(reg_index < num_d_registers);
+  ASSERT(reg_index >= 0 &&
+         register_size == 2 &&
+         reg_index < num_d_registers);
 
   ReturnType value = 0;
   char buffer[register_size * sizeof(fp_register[0])];

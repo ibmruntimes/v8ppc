@@ -99,7 +99,6 @@ class Decoder {
 
   // Printing of common values.
   void PrintRegister(int reg);
-  void PrintSRegister(int reg);
   void PrintDRegister(int reg);
   int FormatFPRegister(Instruction* instr, const char* format);
   void PrintShiftSat(Instruction* instr);
@@ -153,14 +152,9 @@ void Decoder::PrintRegister(int reg) {
   Print(converter_.NameOfCPURegister(reg));
 }
 
-// Print the VFP S register name according to the active name converter.
-void Decoder::PrintSRegister(int reg) {
-  Print(FPRegisters::Name(reg, false));
-}
-
 // Print the  VFP D register name according to the active name converter.
 void Decoder::PrintDRegister(int reg) {
-  Print(FPRegisters::Name(reg, true));
+  Print(FPRegisters::Name(reg));
 }
 
 // Print SoftwareInterrupt codes. Factoring this out reduces the complexity of

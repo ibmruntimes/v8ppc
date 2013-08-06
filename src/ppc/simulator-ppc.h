@@ -137,11 +137,6 @@ class Simulator {
     r16, r17, r18, r19, r20, r21, r22, r23,
     r24, r25, r26, r27, r28, r29, r30, fp,
     num_registers,
-    s0 = 0, s1, s2, s3, s4, s5, s6, s7,
-    s8, s9, s10, s11, s12, s13, s14, s15,
-    s16, s17, s18, s19, s20, s21, s22, s23,
-    s24, s25, s26, s27, s28, s29, s30, s31,
-    num_s_registers = 32,
     d0 = 0, d1, d2, d3, d4, d5, d6, d7,
     d8, d9, d10, d11, d12, d13, d14, d15,
     d16, d17, d18, d19, d20, d21, d22, d23,
@@ -163,9 +158,6 @@ class Simulator {
   void set_dw_register(int dreg, const int* dbl);
 
   // Support for VFP.
-  void set_s_register(int reg, unsigned int value);
-  unsigned int get_s_register(int reg) const;
-
   void set_d_register_from_double(int dreg, const double& dbl) {
     SetFPRegister<double, 2>(dreg, dbl);
   }
@@ -337,8 +329,8 @@ class Simulator {
   int32_t special_reg_xer_;  // PowerPC
 
   // VFP architecture state.
-  unsigned int vfp_register[num_s_registers];
-  unsigned int fp_register[num_s_registers];
+  // TODO(penguin): represent fp_registers as double
+  unsigned int fp_register[num_d_registers*2];
 
   // VFP rounding mode. See ARM DDI 0406B Page A2-29.
   VFPRoundingMode FPSCR_rounding_mode_;
