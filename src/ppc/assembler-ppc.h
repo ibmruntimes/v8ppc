@@ -1364,6 +1364,7 @@ class Assembler : public AssemblerBase {
 
   static bool IsLis(Instr instr);
   static bool IsAddic(Instr instr);
+  static bool IsOri(Instr instr);
 
   static bool IsBranch(Instr instr);
   static Register GetRA(Instr instr);
