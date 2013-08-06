@@ -392,25 +392,6 @@ class MacroAssembler: public Assembler {
   // Does not handle errors.
   void FlushICache(Register address, unsigned instructions);
 
-  // Load two consecutive registers with two consecutive memory locations.
-  void Ldrd(Register dst1,
-            Register dst2,
-            const MemOperand& src,
-            Condition cond = al);
-
-  // Store two consecutive registers to two consecutive memory locations.
-  void Strd(Register src1,
-            Register src2,
-            const MemOperand& dst,
-            Condition cond = al);
-
-#ifdef PENGUIN_CLEANUP
-  // Clear specified FPSCR bits.
-  void ClearFPSCRBits(const uint32_t bits_to_clear,
-                      const Register scratch,
-                      const Condition cond = al);
-#endif
-
   void Vmov(const DwVfpRegister dst,
             const double imm,
             const Register scratch = no_reg,
@@ -926,7 +907,7 @@ class MacroAssembler: public Assembler {
   // Convert the HeapNumber pointed to by source to a 32bits signed integer
   // dest. If the HeapNumber does not fit into a 32bits signed integer branch
   // to not_int32 label. If VFP3 is available double_scratch is used but not
-  // scratch2.
+  // scratch2
   void ConvertToInt32(Register source,
                       Register dest,
                       Register scratch,

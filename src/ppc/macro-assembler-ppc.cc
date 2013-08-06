@@ -609,7 +609,12 @@ void MacroAssembler::PopSafepointRegistersAndDoubles() {
 
 void MacroAssembler::StoreToSafepointRegistersAndDoublesSlot(Register src,
                                                              Register dst) {
+#ifdef PENGUIN_CLEANUP
   stw(src, SafepointRegistersAndDoublesSlot(dst));
+#else
+  PPCPORT_UNIMPLEMENTED();
+  fake_asm(fMASM26);
+#endif
 }
 
 
@@ -626,8 +631,18 @@ void MacroAssembler::LoadFromSafepointRegisterSlot(Register dst, Register src) {
 int MacroAssembler::SafepointRegisterStackIndex(int reg_code) {
   // The registers are pushed starting with the highest encoding,
   // which means that lowest encodings are closest to the stack pointer.
-  ASSERT(reg_code >= 0 && reg_code < kNumSafepointRegisters);
-  return reg_code;
+  RegList regs = kSafepointSavedRegisters;
+  int index = 0;
+
+  ASSERT(reg_code >= 0 && reg_code < kNumRegisters);
+
+  for (int16_t i = 0; i < reg_code; i++) {
+    if ((regs & (1 << i)) != 0) {
+      index++;
+    }
+  }
+
+  return index;
 }
 
 
@@ -642,105 +657,6 @@ MemOperand MacroAssembler::SafepointRegistersAndDoublesSlot(Register reg) {
   int register_offset = SafepointRegisterStackIndex(reg.code()) * kPointerSize;
   return MemOperand(sp, doubles_size + register_offset);
 }
-
-
-void MacroAssembler::Ldrd(Register dst1, Register dst2,
-                          const MemOperand& src, Condition cond) {
-#ifdef PENGUIN_CLEANUP
-  ldr(dst1, MemOperand(dst2), al);  // PPC - bogus instruction to cause error
-#if 0
-  ASSERT(src.rm().is(no_reg));
-  ASSERT(!dst1.is(lr));  // r14.
-  // ASSERT_EQ(0, dst1.code() % 2);
-  ASSERT_EQ(dst1.code() + 1, dst2.code());
-
-  // V8 does not use this addressing mode, so the fallback code
-  // below doesn't support it yet.
-  ASSERT((src.am() != PreIndex) && (src.am() != NegPreIndex));
-
-  // Generate two lwz instructions if lwzd is not available.
-  if (CpuFeatures::IsSupported(ARMv7) && !predictable_code_size()) {
-    CpuFeatures::Scope scope(ARMv7);
-    ldrd(dst1, dst2, src, cond);
-  } else {
-    if ((src.am() == Offset) || (src.am() == NegOffset)) {
-      MemOperand src2(src);
-      src2.set_offset(src2.offset() + 4);
-      if (dst1.is(src.rn())) {
-        ldr(dst2, src2, cond);
-        ldr(dst1, src, cond);
-      } else {
-        ldr(dst1, src, cond);
-        ldr(dst2, src2, cond);
-      }
-    } else {  // PostIndex or NegPostIndex.
-      ASSERT((src.am() == PostIndex) || (src.am() == NegPostIndex));
-      if (dst1.is(src.rn())) {
-        ldr(dst2, MemOperand(src.rn(), 4, Offset), cond);
-        ldr(dst1, src, cond);
-      } else {
-        MemOperand src2(src);
-        src2.set_offset(src2.offset() - 4);
-        ldr(dst1, MemOperand(src.rn(), 4, PostIndex), cond);
-        ldr(dst2, src2, cond);
-      }
-    }
-  }
-#endif
-#else
-  PPCPORT_UNIMPLEMENTED();
-  fake_asm(fMASM18);
-#endif
-}
-
-
-void MacroAssembler::Strd(Register src1, Register src2,
-                          const MemOperand& dst, Condition cond) {
-#ifdef PENGUIN_CLEANUP
-  ldr(src1, MemOperand(src2), al);  // PPC - bogus instruction to cause error
-#if 0
-  ASSERT(dst.rm().is(no_reg));
-  ASSERT(!src1.is(lr));  // r14.
-  ASSERT_EQ(0, src1.code() % 2);
-  ASSERT_EQ(src1.code() + 1, src2.code());
-
-  // V8 does not use this addressing mode, so the fallback code
-  // below doesn't support it yet.
-  ASSERT((dst.am() != PreIndex) && (dst.am() != NegPreIndex));
-
-  // Generate two str instructions if strd is not available.
-  if (CpuFeatures::IsSupported(ARMv7) && !predictable_code_size()) {
-    CpuFeatures::Scope scope(ARMv7);
-    strd(src1, src2, dst, cond);
-  } else {
-    MemOperand dst2(dst);
-    if ((dst.am() == Offset) || (dst.am() == NegOffset)) {
-      dst2.set_offset(dst2.offset() + 4);
-      str(src1, dst, cond);
-      str(src2, dst2, cond);
-    } else {  // PostIndex or NegPostIndex.
-      ASSERT((dst.am() == PostIndex) || (dst.am() == NegPostIndex));
-      dst2.set_offset(dst2.offset() - 4);
-      str(src1, MemOperand(dst.rn(), 4, PostIndex), cond);
-      str(src2, dst2, cond);
-    }
-  }
-#endif
-#else
-  PPCPORT_UNIMPLEMENTED();
-  fake_asm(fMASM19);
-#endif
-}
-
-#ifdef PENGUIN_CLEANUP
-void MacroAssembler::ClearFPSCRBits(const uint32_t bits_to_clear,
-                                    const Register scratch,
-                                    const Condition cond) {
-  vmrs(scratch, cond);
-  bic(scratch, scratch, Operand(bits_to_clear), LeaveCC, cond);
-  vmsr(scratch, cond);
-}
-#endif
 
 void MacroAssembler::Vmov(const DwVfpRegister dst,
                           const double imm,
@@ -2474,8 +2390,9 @@ void MacroAssembler::EmitVFPTruncate(VFPRoundingMode rounding_mode,
   if (rounding_mode == kRoundToZero) {
     fctidz(double_scratch, double_input);
   } else {
-    mtfsfi(7, rounding_mode);
+    mtfsfi(7, rounding_mode);  // set rounding mode in fpscr
     fctid(double_scratch, double_input);
+    mtfsfi(7, kRoundToNearest);  // reset
   }
 
   addi(sp, sp, Operand(-kDoubleSize));

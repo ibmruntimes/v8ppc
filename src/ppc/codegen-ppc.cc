@@ -114,7 +114,6 @@ void ElementsTransitionGenerator::GenerateSmiToDouble(
   //  -- r7    : scratch (elements)
   // -----------------------------------
   Label loop, entry, convert_hole, gc_required, only_change_map, done;
-  bool vfp2_supported = CpuFeatures::IsSupported(VFP2);
 
   // Check for empty arrays, which only require a map transition and no changes
   // to the backing store.
@@ -193,7 +192,6 @@ void ElementsTransitionGenerator::GenerateSmiToDouble(
   // r8: kHoleNanUpper32
   // r9: end of destination FixedDoubleArray, not tagged
   // r10: begin of FixedDoubleArray element fields, not tagged
-  if (!vfp2_supported) __ Push(r4, r3);
 
   __ b(&entry);
 
@@ -247,7 +245,6 @@ void ElementsTransitionGenerator::GenerateSmiToDouble(
   __ cmp(r10, r9);
   __ blt(&loop);
 
-  if (!vfp2_supported) __ Pop(r4, r3);
   __ Pop(r0, r30);
   __ mtlr(r0);
   __ bind(&done);

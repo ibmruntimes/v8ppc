@@ -59,33 +59,9 @@ unsigned CpuFeatures::found_by_runtime_probing_ = 0;
 
 #define NEW_IMM_CHECK_CODE
 
-// Get the CPU features enabled by the build. For cross compilation the
-// preprocessor symbols CAN_USE_ARMV7_INSTRUCTIONS and CAN_USE_VFP3_INSTRUCTIONS
-// can be defined to enable ARMv7 and VFPv3 instructions when building the
-// snapshot.
+// Get the CPU features enabled by the build.
 static unsigned CpuFeaturesImpliedByCompiler() {
   unsigned answer = 0;
-#ifdef CAN_USE_ARMV7_INSTRUCTIONS
-  answer |= 1u << ARMv7;
-#endif  // CAN_USE_ARMV7_INSTRUCTIONS
-#ifdef CAN_USE_VFP3_INSTRUCTIONS
-  answer |= 1u << VFP3 | 1u << VFP2 | 1u << ARMv7;
-#endif  // CAN_USE_VFP3_INSTRUCTIONS
-#ifdef CAN_USE_VFP2_INSTRUCTIONS
-  answer |= 1u << VFP2;
-#endif  // CAN_USE_VFP2_INSTRUCTIONS
-
-#ifdef __arm__
-  // If the compiler is allowed to use VFP then we can use VFP too in our code
-  // generation even when generating snapshots. ARMv7 and hardware floating
-  // point support implies VFPv3, see ARM DDI 0406B, page A1-6.
-#if defined(CAN_USE_ARMV7_INSTRUCTIONS) && defined(__VFP_FP__) \
-    && !defined(__SOFTFP__)
-  answer |= 1u << VFP3 | 1u << ARMv7 | 1u << VFP2;
-#endif  // defined(CAN_USE_ARMV7_INSTRUCTIONS) && defined(__VFP_FP__)
-        // && !defined(__SOFTFP__)
-#endif  // _arm__
-
   return answer;
 }
 
@@ -107,37 +83,6 @@ void CpuFeatures::Probe() {
     // No probing for features if we might serialize (generate snapshot).
     return;
   }
-
-#ifndef __arm__
-  // For the simulator=arm build, use VFP when FLAG_enable_vfp3 is
-  // enabled. VFPv3 implies ARMv7, see ARM DDI 0406B, page A1-6.
-  if (FLAG_enable_vfp3) {
-    supported_ |= 1u << VFP3 | 1u << ARMv7 | 1u << VFP2;
-  }
-  // For the simulator=arm build, use ARMv7 when FLAG_enable_armv7 is enabled
-  if (FLAG_enable_armv7) {
-    supported_ |= 1u << ARMv7;
-  }
-#else  // __arm__
-  // Probe for additional features not already known to be available.
-  if (!IsSupported(VFP3) && OS::ArmCpuHasFeature(VFP3)) {
-    // This implementation also sets the VFP flags if runtime
-    // detection of VFP returns true. VFPv3 implies ARMv7 and VFP2, see ARM DDI
-    // 0406B, page A1-6.
-    found_by_runtime_probing_ |= 1u << VFP3 | 1u << ARMv7 | 1u << VFP2;
-  } else if (!IsSupported(VFP2) && OS::ArmCpuHasFeature(VFP2)) {
-    found_by_runtime_probing_ |= 1u << VFP2;
-  }
-
-  if (!IsSupported(ARMv7) && OS::ArmCpuHasFeature(ARMv7)) {
-    found_by_runtime_probing_ |= 1u << ARMv7;
-  }
-
-  supported_ |= found_by_runtime_probing_;
-#endif
-
-  // Assert that VFP3 implies VFP2 and ARMv7.
-  ASSERT(!IsSupported(VFP3) || (IsSupported(VFP2) && IsSupported(ARMv7)));
 }
 
 Register ToRegister(int num) {
@@ -1378,23 +1323,6 @@ void Assembler::umull(Register dstL,
 }
 
 // Bitfield manipulation instructions.
-
-// Unsigned bit field extract.
-// Extracts #width adjacent bits from position #lsb in a register, and
-// writes them to the low bits of a destination register.
-//   ubfx dst, src, #lsb, #width
-void Assembler::ubfx(Register dst,
-                     Register src,
-                     int lsb,
-                     int width,
-                     Condition cond) {
-  // v7 and above.
-  ASSERT(CpuFeatures::IsSupported(ARMv7));
-  ASSERT((lsb >= 0) && (lsb <= 31));
-  ASSERT((width >= 1) && (width <= (32 - lsb)));
-  emit(cond | 0xf*B23 | B22 | B21 | (width - 1)*B16 | dst.code()*B12 |
-       lsb*B7 | B6 | B4 | src.code());
-}
 
 // Special register instructions
 // PowerPC

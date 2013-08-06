@@ -939,7 +939,6 @@ void Deoptimizer::EntryGenerator::Generate() {
 
   Isolate* isolate = masm()->isolate();
 
-  CpuFeatures::Scope scope(VFP3);
   // Unlike on ARM we don't save all the registers, just the useful ones.
   // For the rest, there are gaps on the stack, so the offsets remain the same.
   const int kNumberOfRegisters = Register::kNumRegisters;

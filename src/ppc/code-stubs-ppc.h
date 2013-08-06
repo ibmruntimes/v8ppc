@@ -151,7 +151,6 @@ class BinaryOpStub: public CodeStub {
         mode_(mode),
         operands_type_(BinaryOpIC::UNINITIALIZED),
         result_type_(BinaryOpIC::UNINITIALIZED) {
-    use_vfp2_ = CpuFeatures::IsSupported(VFP2);
     ASSERT(OpBits::is_valid(Token::NUM_TOKENS));
   }
 
@@ -161,7 +160,6 @@ class BinaryOpStub: public CodeStub {
       BinaryOpIC::TypeInfo result_type = BinaryOpIC::UNINITIALIZED)
       : op_(OpBits::decode(key)),
         mode_(ModeBits::decode(key)),
-        use_vfp2_(VFP2Bits::decode(key)),
         operands_type_(operands_type),
         result_type_(result_type) { }
 
@@ -173,7 +171,6 @@ class BinaryOpStub: public CodeStub {
 
   Token::Value op_;
   OverwriteMode mode_;
-  bool use_vfp2_;
 
   // Operand type information determined at runtime.
   BinaryOpIC::TypeInfo operands_type_;
@@ -184,7 +181,6 @@ class BinaryOpStub: public CodeStub {
   // Minor key encoding in 16 bits RRRTTTVOOOOOOOMM.
   class ModeBits: public BitField<OverwriteMode, 0, 2> {};
   class OpBits: public BitField<Token::Value, 2, 7> {};
-  class VFP2Bits: public BitField<bool, 9, 1> {};
   class OperandTypeInfoBits: public BitField<BinaryOpIC::TypeInfo, 10, 3> {};
   class ResultTypeInfoBits: public BitField<BinaryOpIC::TypeInfo, 13, 3> {};
 
@@ -192,7 +188,6 @@ class BinaryOpStub: public CodeStub {
   int MinorKey() {
     return OpBits::encode(op_)
            | ModeBits::encode(mode_)
-           | VFP2Bits::encode(use_vfp2_)
            | OperandTypeInfoBits::encode(operands_type_)
            | ResultTypeInfoBits::encode(result_type_);
   }
@@ -542,7 +537,6 @@ class RecordWriteStub: public CodeStub {
       masm->MultiPush(kCallerSaved & ~scratch1_.bit());
 #if 0  // roohack - temporarily ignoring doubles
       if (mode == kSaveFPRegs) {
-        CpuFeatures::Scope scope(VFP2);
         masm->sub(sp,
                   sp,
                   Operand(kDoubleSize * (DwVfpRegister::kNumRegisters - 1)));
@@ -559,7 +553,6 @@ class RecordWriteStub: public CodeStub {
                                            SaveFPRegsMode mode) {
 #if 0  // roohack -  temporarily ignoring doubles
       if (mode == kSaveFPRegs) {
-        CpuFeatures::Scope scope(VFP2);
         // Restore all VFP registers except d0.
         for (int i = DwVfpRegister::kNumRegisters - 1; i > 0; i--) {
           DwVfpRegister reg = DwVfpRegister::from_code(i);
