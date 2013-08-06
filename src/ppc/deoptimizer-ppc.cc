@@ -166,9 +166,9 @@ void Deoptimizer::PatchStackCheckCodeAt(Code* unoptimized_code,
   // Assemble the 32 bit value from the two part load and verify
   // that it is the stack guard code
   uint32_t stack_check_address =
-    (Memory::int32_at(pc_after - 4 * kInstrSize) & 0xffff) << 16;
-  stack_check_address +=
-    ((Memory::int32_at(pc_after - 3 * kInstrSize) << 16) >> 16);
+    (Memory::int32_at(pc_after - 4 * kInstrSize) & 0xFFFF) << 16;
+  stack_check_address |=
+    (Memory::int32_at(pc_after - 3 * kInstrSize) & 0xFFFF);
   ASSERT(stack_check_address ==
     reinterpret_cast<uintptr_t>(check_code->entry()));
 
@@ -212,9 +212,9 @@ void Deoptimizer::RevertStackCheckCodeAt(Code* unoptimized_code,
   // Assemble the 32 bit value from the two part load and verify
   // that it is the replacement code addresS
   uint32_t stack_check_address =
-    (Memory::int32_at(pc_after - 4 * kInstrSize) & 0xffff) << 16;
-  stack_check_address +=
-    ((Memory::int32_at(pc_after - 3 * kInstrSize) << 16) >> 16);
+    (Memory::int32_at(pc_after - 4 * kInstrSize) & 0xFFFF) << 16;
+  stack_check_address |=
+    (Memory::int32_at(pc_after - 3 * kInstrSize) & 0xFFFF);
   ASSERT(stack_check_address ==
     reinterpret_cast<uintptr_t>(replacement_code->entry()));
 
