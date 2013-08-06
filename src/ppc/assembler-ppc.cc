@@ -378,6 +378,9 @@ bool Assembler::IsAddic(Instr instr) {
   return (instr & ADDIC) == ADDIC;
 }
 
+bool Assembler::IsOri(Instr instr) {
+  return (instr & ORI) == ORI;
+}
 
 
 bool Assembler::IsBranch(Instr instr) {
@@ -410,8 +413,8 @@ bool Assembler::IsPop(Instr instr) {
 bool Assembler::Is32BitLoadIntoR12(Instr instr1, Instr instr2) {
   // Check the instruction is indeed a two part load (into r12)
   // 3d802553       lis     r12, 9555
-  // 318c5000       addic   r12, r12, 20480
-  return(((instr1 >> 16) == 0x3d80) && ((instr2 >> 16) == 0x318c));
+  // 318c5000       ori   r12, r12, 20480
+  return(((instr1 >> 16) == 0x3d80) && ((instr2 >> 16) == 0x618c));
 }
 
 bool Assembler::IsCmpRegister(Instr instr) {
@@ -1293,14 +1296,10 @@ void Assembler::mov(Register dst, const Operand& src, SBit s, Condition cond) {
 
   int value = src.imm32_;
   int hi_word = static_cast<int>(value) >> 16;
-  int lo_word = SIGN_EXT_IMM16(value);
-  if (lo_word & 0x8000) {
-    // lo word is signed, so increment hi word by one
-    hi_word++;
-  }
+  int lo_word = static_cast<int>(value) & 0XFFFF;
 
   lis(dst, Operand(SIGN_EXT_IMM16(hi_word)));
-  addic(dst, dst, Operand(lo_word));
+  ori(dst, dst, Operand(lo_word));
 }
 
 void Assembler::bic(Register dst, Register src1, const Operand& src2,
