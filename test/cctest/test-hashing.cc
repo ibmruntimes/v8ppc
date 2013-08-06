@@ -117,7 +117,7 @@ void generate(MacroAssembler* masm, i::Vector<const char> string) {
   __ push(kRootRegister);
   __ InitializeRootRegister();
 
-  __ li(r3, Operand(0));
+  __ li(r3, Operand::Zero());
   __ li(ip, Operand(string.at(0)));
   StringHelper::GenerateHashInit(masm, r3, ip, r0);
   for (int i = 1; i < string.length(); i++) {
