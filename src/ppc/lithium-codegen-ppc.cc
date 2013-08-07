@@ -2318,11 +2318,17 @@ void LCodeGen::DoInstanceOf(LInstanceOf* instr) {
   ASSERT(ToRegister(instr->right()).is(r4));  // Function is in r4.
 
   InstanceofStub stub(InstanceofStub::kArgsInRegisters);
+  Label equal, done;
   CallCode(stub.GetCode(), RelocInfo::CODE_TARGET, instr);
 
   __ cmpi(r3, Operand::Zero());
-  __ mov(r3, Operand(factory()->false_value()), LeaveCC, ne);
-  __ mov(r3, Operand(factory()->true_value()), LeaveCC, eq);
+  __ beq(&equal);
+  __ mov(r3, Operand(factory()->false_value()));
+  __ b(&done);
+
+  __ bind(&equal);
+  __ mov(r3, Operand(factory()->true_value()));
+  __ bind(&done);
 }
 
 
@@ -2561,7 +2567,10 @@ void LCodeGen::DoLoadContextSlot(LLoadContextSlot* instr) {
     if (instr->hydrogen()->DeoptimizesOnHole()) {
       DeoptimizeIf(eq, instr->environment());
     } else {
-      __ mov(result, Operand(factory()->undefined_value()), LeaveCC, eq);
+      Label skip;
+      __ bne(&skip);
+      __ mov(result, Operand(factory()->undefined_value()));
+      __ bind(&skip);
     }
   }
 }
@@ -3073,8 +3082,13 @@ void LCodeGen::DoArgumentsElements(LArgumentsElements* instr) {
 
     // Result is the frame pointer for the frame if not adapted and for the real
     // frame below the adaptor frame if adapted.
-    __ mov(result, fp, LeaveCC, ne);
-    __ mov(result, scratch, LeaveCC, eq);
+    __ beq(&adapted);
+    __ mr(result, fp);
+    __ b(&done);
+
+    __ bind(&adapted);
+    __ mr(result, scratch);
+    __ bind(&done);
   }
 }
 

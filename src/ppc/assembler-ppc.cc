@@ -1231,12 +1231,13 @@ void Assembler::orr(Register dst, Register src1, const Operand& src2,
 // This should really move to be in macro-assembler as it
 // is really a pseudo instruction
 void Assembler::mov(Register dst, const Operand& src, SBit s, Condition cond) {
+  ASSERT(cond == al);
   if (MustUseReg(src.rmode_)) {
     // some form of relocation needed
     RecordRelocInfo(src.rmode_, src.imm32_);
   }
 
-  int value = src.imm32_;
+  int value = src.immediate();
   int hi_word = static_cast<int>(value) >> 16;
   int lo_word = SIGN_EXT_IMM16(value);
   if (lo_word & 0x8000) {

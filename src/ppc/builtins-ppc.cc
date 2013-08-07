@@ -1780,8 +1780,8 @@ static void LeaveArgumentsAdaptorFrame(MacroAssembler* masm) {
   __ lwz(fp, MemOperand(sp));
   __ lwz(r0, MemOperand(sp, kPointerSize));
   __ mtlr(r0);
-  __ slwi(r4, r4, Operand(kPointerSizeLog2 - kSmiTagSize));
-  __ add(sp, sp, r4);  // roohack - ok to destroy r4?
+  __ slwi(r0, r4, Operand(kPointerSizeLog2 - kSmiTagSize));
+  __ add(sp, sp, r0);
   __ addi(sp, sp, Operand(3 * kPointerSize));  // adjust for receiver + fp + lr
 }
 
