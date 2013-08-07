@@ -4440,10 +4440,8 @@ void LCodeGen::DoNumberTagI(LNumberTagI* instr) {
   Register dst = ToRegister(instr->result());
 
   DeferredNumberTagI* deferred = new(zone()) DeferredNumberTagI(this, instr);
-  __ SmiTagCheckOverflow(ip, src, r0);
+  __ SmiTagCheckOverflow(dst, src, r0);
   __ BranchOnOverflow(deferred->entry());
-  __ mr(dst, ip);
-
   __ bind(deferred->exit());
 }
 
