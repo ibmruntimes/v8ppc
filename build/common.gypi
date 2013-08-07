@@ -383,6 +383,9 @@
             'cflags': [ '-Wall', '<(werror)', '-W', '-Wno-unused-parameter',
                         '-Wnon-virtual-dtor', '-Woverloaded-virtual' ],
           }],
+          ['OS=="aix"', {
+            'ldflags': [ '-Wl,-bbigtoc' ],
+          }],
           ['OS=="android"', {
             'variables': {
               'android_full_debug%': 1,
