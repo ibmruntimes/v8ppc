@@ -2011,7 +2011,7 @@ void Assembler::GrowBuffer() {
   // buffer nor pc absolute pointing inside the code buffer, so there is no need
   // to relocate any emitted relocation entries.
 
-#if _AIX
+#if defined(_AIX) || defined(__powerpc64__)
   // Relocate runtime entries.
   for (RelocIterator it(desc); !it.done(); it.next()) {
     RelocInfo::Mode rmode = it.rinfo()->rmode();

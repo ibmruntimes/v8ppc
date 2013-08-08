@@ -518,6 +518,12 @@ enum BOfield {  // Bits 25-21
   BA     = 20 << 21   // Branch always
 };
 
+#ifdef _AIX
+#undef CR_LT
+#undef CR_GT
+#undef CR_EQ
+#endif
+
 enum CRBit {
   CR_LT = 0,
   CR_GT = 1,

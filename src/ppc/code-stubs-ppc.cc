@@ -3622,7 +3622,7 @@ void CEntryStub::GenerateCore(MacroAssembler* masm,
     __ stw(r4, MemOperand(r3));
   }
 
-#if defined(V8_HOST_ARCH_PPC)
+#if defined(V8_HOST_ARCH_PPC) && !defined(_AIX) && !defined(__powerpc64__)
   // Use frame storage reserved by calling function
   // PPC passes C++ objects by reference not value
   // This builds an object in the stack frame
@@ -3753,6 +3753,10 @@ void CEntryStub::Generate(MacroAssembler* masm) {
   // this by performing a garbage collection and retrying the
   // builtin once.
 
+#if defined(_AIX) || defined(__powerpc64__)
+  __ function_descriptor();
+#endif
+
   // Compute the argv pointer in a callee-saved register.
   __ slwi(r16, r3, Operand(kPointerSizeLog2));
   __ add(r16, r16, sp);
@@ -3842,7 +3846,7 @@ void JSEntryStub::GenerateBody(MacroAssembler* masm, bool is_construct) {
   Label invoke, handler_entry, exit;
 
   // Called from C
-#ifdef _AIX
+#if defined(_AIX) || defined(__powerpc64__)
   __ function_descriptor();
 #endif
 

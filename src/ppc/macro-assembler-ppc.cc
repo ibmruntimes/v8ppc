@@ -95,7 +95,7 @@ void MacroAssembler::Jump(Handle<Code> code, RelocInfo::Mode rmode,
 
 
 int MacroAssembler::CallSize(Register target, Condition cond) {
-#ifdef _AIX
+#if defined(_AIX) || defined(__powerpc64__)
   return 4 * kInstrSize;
 #else
   return 2 * kInstrSize;
@@ -113,7 +113,7 @@ void MacroAssembler::Call(Register target, Condition cond) {
   positions_recorder()->WriteRecordedPositions();
 
   // branch via link register and set LK bit for return point
-#ifdef _AIX
+#if defined(_AIX) || defined(__powerpc64__)
   lwz(r0, MemOperand(target, 0));
   lwz(ToRegister(2), MemOperand(target, 4));
   mtlr(r0);
@@ -143,7 +143,7 @@ int MacroAssembler::CallSize(
   movSize = 2;
 #endif
 
-#ifdef _AIX
+#if defined(_AIX) || defined(__powerpc64__)
   size = (4 + movSize) * kInstrSize;
 #else
   size = (2 + movSize) * kInstrSize;
@@ -170,7 +170,7 @@ int MacroAssembler::CallSizeNotPredictableCodeSize(
   movSize = 2;
 #endif
 
-#ifdef _AIX
+#if defined(_AIX) || defined(__powerpc64__)
   size = (4 + movSize) * kInstrSize;
 #else
   size = (2 + movSize) * kInstrSize;
@@ -198,7 +198,7 @@ void MacroAssembler::Call(Address target,
   //
 
   mov(ip, Operand(reinterpret_cast<intptr_t>(target), rmode));
-#ifdef _AIX
+#if defined(_AIX) || defined(__powerpc64__)
   lwz(r0, MemOperand(ip, 0));
   lwz(ToRegister(2), MemOperand(ip, 4));
   mtlr(r0);
@@ -1009,7 +1009,7 @@ void MacroAssembler::InvokeCode(Register code,
     if (flag == CALL_FUNCTION) {
       call_wrapper.BeforeCall(CallSize(code));
       SetCallKind(r8, call_kind);
-#ifdef _AIX
+#if defined(_AIX) || defined(__powerpc64__)
       stw(code, MemOperand(sp, 12));
       addi(r11, sp, Operand(12));
       Call(r11);
@@ -2664,7 +2664,7 @@ void MacroAssembler::InvokeBuiltin(Builtins::JavaScript id,
   if (flag == CALL_FUNCTION) {
     call_wrapper.BeforeCall(CallSize(r2));
     SetCallKind(r8, CALL_AS_METHOD);
-#ifdef _AIX
+#if defined(_AIX) || defined(__powerpc64__)
     stw(r5, MemOperand(sp, 12));
     addi(r11, sp, Operand(12));
     Call(r11);
