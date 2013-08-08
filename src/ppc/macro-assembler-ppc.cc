@@ -4099,7 +4099,7 @@ void CodePatcher::Emit(Instr instr) {
 
 
 void CodePatcher::Emit(Address addr) {
-#ifdef V8_TARGET_ARCH_PPC64
+#if V8_TARGET_ARCH_PPC64
   uint64_t value = reinterpret_cast<uint64_t>(addr);
   // Possible endian issue here
   masm()->emit(static_cast<uint32_t>(value >> 32));

@@ -206,7 +206,7 @@ void StubCache::GenerateProbe(MacroAssembler* masm,
   Isolate* isolate = masm->isolate();
   Label miss;
 
-#ifdef V8_TARGET_ARCH_PPC64
+#if V8_TARGET_ARCH_PPC64
   // Make sure that code is valid. The multiplying code relies on the
   // entry size being 24.
   ASSERT(sizeof(Entry) == 24);
@@ -247,7 +247,7 @@ void StubCache::GenerateProbe(MacroAssembler* masm,
   __ lwz(scratch, FieldMemOperand(name, String::kHashFieldOffset));
   __ LoadP(ip, FieldMemOperand(receiver, HeapObject::kMapOffset));
   __ add(scratch, scratch, ip);
-#ifdef V8_TARGET_ARCH_PPC64
+#if V8_TARGET_ARCH_PPC64
   // Use only the low 32 bits of the map pointer.
   __ rldicl(scratch, scratch, 0, 32);
 #endif
