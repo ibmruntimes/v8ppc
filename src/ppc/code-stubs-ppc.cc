@@ -5862,7 +5862,7 @@ void SubStringStub::Generate(MacroAssembler* masm) {
   // r5: result string length
   __ lwz(r7, FieldMemOperand(r3, String::kLengthOffset));
   __ srawi(r0, r7, 1);
-  __ cmp(r5, r0);
+  __ cmpl(r5, r0);
   // Return original string.
   __ beq(&return_r3);
   // Longer than original string's length or negative: unsafe arguments.
