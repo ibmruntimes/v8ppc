@@ -3622,7 +3622,8 @@ void CEntryStub::GenerateCore(MacroAssembler* masm,
     __ stw(r4, MemOperand(r3));
   }
 
-#if defined(V8_HOST_ARCH_PPC) && !defined(_AIX) && !defined(V8_TARGET_ARCH_PPC64)
+#if defined(V8_HOST_ARCH_PPC) && \
+  !defined(_AIX) && !defined(V8_TARGET_ARCH_PPC64)
   // Use frame storage reserved by calling function
   // PPC passes C++ objects by reference not value
   // This builds an object in the stack frame
