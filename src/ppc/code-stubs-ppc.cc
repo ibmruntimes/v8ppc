@@ -3622,7 +3622,8 @@ void CEntryStub::GenerateCore(MacroAssembler* masm,
     __ stw(r4, MemOperand(r3));
   }
 
-#if defined(V8_HOST_ARCH_PPC) && !defined(_AIX) && !defined(V8_TARGET_ARCH_PPC64)
+#if defined(V8_HOST_ARCH_PPC) && \
+  !defined(_AIX) && !defined(V8_TARGET_ARCH_PPC64)
   // Use frame storage reserved by calling function
   // PPC passes C++ objects by reference not value
   // This builds an object in the stack frame
@@ -5861,7 +5862,7 @@ void SubStringStub::Generate(MacroAssembler* masm) {
   // r5: result string length
   __ lwz(r7, FieldMemOperand(r3, String::kLengthOffset));
   __ srawi(r0, r7, 1);
-  __ cmp(r5, r0);
+  __ cmpl(r5, r0);
   // Return original string.
   __ beq(&return_r3);
   // Longer than original string's length or negative: unsafe arguments.

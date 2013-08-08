@@ -1665,7 +1665,7 @@ void MacroAssembler::AllocateInNewSpace(Register object_size,
   }
   addze(r0, r0, LeaveOE, SetRC);
   beq(gc_required, cr0);
-  cmp(scratch2, ip);
+  cmpl(scratch2, ip);
   bgt(gc_required);
 
   // Update allocation top. result temporarily holds the new top.
@@ -1882,7 +1882,7 @@ void MacroAssembler::CheckFastElements(Register map,
   STATIC_ASSERT(FAST_HOLEY_ELEMENTS == 3);
   lbz(scratch, FieldMemOperand(map, Map::kBitField2Offset));
   STATIC_ASSERT(Map::kMaximumBitField2FastHoleyElementValue < 0x8000);
-  cmpi(scratch, Operand(Map::kMaximumBitField2FastHoleyElementValue));
+  cmpli(scratch, Operand(Map::kMaximumBitField2FastHoleyElementValue));
   bgt(fail);
 }
 
@@ -1895,9 +1895,9 @@ void MacroAssembler::CheckFastObjectElements(Register map,
   STATIC_ASSERT(FAST_ELEMENTS == 2);
   STATIC_ASSERT(FAST_HOLEY_ELEMENTS == 3);
   lbz(scratch, FieldMemOperand(map, Map::kBitField2Offset));
-  cmpi(scratch, Operand(Map::kMaximumBitField2FastHoleySmiElementValue));
-  blt(fail);
-  cmpi(scratch, Operand(Map::kMaximumBitField2FastHoleyElementValue));
+  cmpli(scratch, Operand(Map::kMaximumBitField2FastHoleySmiElementValue));
+  ble(fail);
+  cmpli(scratch, Operand(Map::kMaximumBitField2FastHoleyElementValue));
   bgt(fail);
 }
 
