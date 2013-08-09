@@ -373,7 +373,7 @@ enum {
   kOff16Mask  = (1 << 16) - 1,
   kImm16Mask  = (1 << 16) - 1,
   kImm26Mask  = (1 << 26) - 1,
-  kBOfieldMask = 0x1f << 20
+  kBOfieldMask = 0x1f << 21
 };
 
 // the following is to differentiate different faked ARM opcodes for

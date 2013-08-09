@@ -389,11 +389,12 @@ void MacroAssembler::InNewSpace(Register object,
                                 Register scratch,
                                 Condition cond,
                                 Label* branch) {
+  // N.B. scratch may be same register as object
   ASSERT(cond == eq || cond == ne);
-  mov(scratch, Operand(ExternalReference::new_space_mask(isolate())));
-  and_(r0, scratch, object);
-  mov(scratch, Operand(ExternalReference::new_space_start(isolate())));
-  cmp(r0, scratch);
+  mov(r0, Operand(ExternalReference::new_space_mask(isolate())));
+  and_(scratch, object, r0);
+  mov(r0, Operand(ExternalReference::new_space_start(isolate())));
+  cmp(scratch, r0);
   b(cond, branch);
 }
 
