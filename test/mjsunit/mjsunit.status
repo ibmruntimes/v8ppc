@@ -215,3 +215,12 @@ regress/regress-165637: SKIP
 
 # Skip long running test that times out in debug mode and goes OOM on NaCl.
 regress/regress-crbug-160010: SKIP
+
+##############################################################################
+[ $arch == ppc ]
+
+# Stack manipulations in LiveEdit is not implemented for this arch.
+debug-liveedit-check-stack: SKIP
+debug-liveedit-stack-padding: SKIP
+debug-liveedit-restart-frame: SKIP
+debug-liveedit-double-call: SKIP
