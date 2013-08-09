@@ -1289,6 +1289,7 @@ void MacroAssembler::ThrowUncatchable(Register value) {
 
   bind(&check_kind);
   STATIC_ASSERT(StackHandler::JS_ENTRY == 0);
+  lwz(r5, MemOperand(sp, StackHandlerConstants::kStateOffset));
   andi(r0, r5, Operand(StackHandler::KindField::kMask));
   bne(&fetch_next, cr0);
 
