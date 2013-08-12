@@ -2390,6 +2390,31 @@ void Simulator::DecodeExt4(Instruction* instr) {
       }
       return;
     }
+    case MTFSF: {
+      int frb = instr->RBValue();
+      double frb_dval = get_double_from_d_register(frb);
+      int64_t *p =  reinterpret_cast<int64_t*>(&frb_dval);
+      int32_t frb_ival = static_cast<int32_t>((*p) & 0xffffffff);
+      int l = instr->Bits(25, 25);
+      if (l == 1) {
+	fp_condition_reg_ = frb_ival;
+      } else {
+	UNIMPLEMENTED();
+      }
+      if (instr->Bit(0)) {  // RC bit set
+	UNIMPLEMENTED();
+        // int w = instr->Bits(16, 16);
+        // int flm = instr->Bits(24, 17);
+      }
+      return;
+    }
+    case MFFS: {
+      int frt = instr->RTValue();
+      int64_t lval = static_cast<int64_t>(fp_condition_reg_);
+      double* p = reinterpret_cast<double*>(&lval);
+      set_d_register_from_double(frt, *p);
+      return;
+    }
     case FABS: {
       int frt = instr->RTValue();
       int frb = instr->RBValue();
