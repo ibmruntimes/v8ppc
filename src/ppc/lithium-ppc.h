@@ -2205,15 +2205,17 @@ class LClampIToUint8: public LTemplateInstruction<1, 1, 0> {
 };
 
 
-class LClampTToUint8: public LTemplateInstruction<1, 1, 1> {
+class LClampTToUint8: public LTemplateInstruction<1, 1, 2> {
  public:
-  LClampTToUint8(LOperand* unclamped, LOperand* temp) {
+  LClampTToUint8(LOperand* unclamped, LOperand* temp1, LOperand* temp2) {
     inputs_[0] = unclamped;
-    temps_[0] = temp;
+    temps_[0] = temp1;
+    temps_[1] = temp2;
   }
 
   LOperand* unclamped() { return inputs_[0]; }
-  LOperand* temp() { return temps_[0]; }
+  LOperand* temp1() { return temps_[0]; }
+  LOperand* temp2() { return temps_[1]; }
 
   DECLARE_CONCRETE_INSTRUCTION(ClampTToUint8, "clamp-t-to-uint8")
 };

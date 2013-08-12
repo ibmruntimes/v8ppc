@@ -473,6 +473,13 @@ class MacroAssembler: public Assembler {
   void Or(Register ra, Register rs, const Operand& rb, RCBit rc = LeaveRC);
   void Xor(Register ra, Register rs, const Operand& rb, RCBit rc = LeaveRC);
 
+
+  // Set new rounding mode RN to FPSCR and save old FPSCR to old_fpscr
+  void SetRoundingMode(VFPRoundingMode RN, DoubleRegister old_fpscr);
+
+  // restore FPSCR register from old_fpscr
+  void RestoreFPSCR(DoubleRegister old_fpscr);
+
   // These exist to provide portability between 32 and 64bit
   void LoadP(Register dst, const MemOperand& mem);
   void StoreP(Register dst, const MemOperand& mem);
@@ -1320,9 +1327,14 @@ class MacroAssembler: public Assembler {
 
   void ClampUint8(Register output_reg, Register input_reg);
 
+  // Saturate a value into 8-bit unsigned integer
+  //   if input_value < 0, output_value is 0
+  //   if input_value > 255, output_value is 255
+  //   otherwise output_value is the (int)input_value (round to nearest)
   void ClampDoubleToUint8(Register result_reg,
                           DoubleRegister input_reg,
-                          DoubleRegister temp_double_reg);
+                          DoubleRegister temp_double_reg,
+                          DoubleRegister temp_double_reg2);
 
 
   void LoadInstanceDescriptors(Register map, Register descriptors);

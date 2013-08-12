@@ -3743,47 +3743,59 @@ void MacroAssembler::ClampUint8(Register output_reg, Register input_reg) {
   bind(&done);
 }
 
+void MacroAssembler::SetRoundingMode(VFPRoundingMode RN,
+                                     DoubleRegister old_fpscr) {
+  mffs(old_fpscr);
+  mtfsfi(7, RN);
+}
+
+void MacroAssembler::RestoreFPSCR(DoubleRegister old_fpscr) {
+  mtfsf(old_fpscr);
+}
+
 void MacroAssembler::ClampDoubleToUint8(Register result_reg,
                                         DoubleRegister input_reg,
-
-                                        DoubleRegister temp_double_reg) {
-#ifdef PENGUIN_CLEANUP
+                                        DoubleRegister temp_double_reg,
+                                        DoubleRegister temp_double_reg2) {
   Label above_zero;
   Label done;
   Label in_bounds;
 
-  Vmov(temp_double_reg, 0.0);
-  VFPCompareAndSetFlags(input_reg, temp_double_reg);
-  b(gt, &above_zero);
+  LoadDoubleLiteral(temp_double_reg, 0.0, result_reg);
+  fcmpu(input_reg, temp_double_reg);
+  bgt(&above_zero);
 
   // Double value is less than zero, NaN or Inf, return 0.
-  mov(result_reg, Operand::Zero());
-  b(al, &done);
+  LoadIntLiteral(result_reg, 0);
+  b(&done);
 
   // Double value is >= 255, return 255.
   bind(&above_zero);
-  Vmov(temp_double_reg, 255.0, result_reg);
-  VFPCompareAndSetFlags(input_reg, temp_double_reg);
-  b(le, &in_bounds);
-  mov(result_reg, Operand(255));
-  b(al, &done);
+  LoadDoubleLiteral(temp_double_reg, 255.0, result_reg);
+  fcmpu(input_reg, temp_double_reg);
+  ble(&in_bounds);
+  LoadIntLiteral(result_reg, 255);
+  b(&done);
 
   // In 0-255 range, round and truncate.
   bind(&in_bounds);
-  // Save FPSCR.
-  vmrs(ip);
-  // Set rounding mode to round to the nearest integer by clearing bits[23:22].
-  bic(result_reg, ip, Operand(kVFPRoundingModeMask));
-  vmsr(result_reg);
-  vcvt_s32_f64(input_reg.low(), input_reg, kFPSCRRounding);
-  vmov(result_reg, input_reg.low());
-  // Restore FPSCR.
-  vmsr(ip);
-  bind(&done);
+
+  // round to nearest
+  SetRoundingMode(kRoundToNearest, temp_double_reg2);
+  fctiw(temp_double_reg, input_reg);
+  RestoreFPSCR(temp_double_reg2);
+
+  // reserve a slot on the stack
+  stfdu(temp_double_reg, MemOperand(sp, -8));
+#if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
+  lwz(result_reg, MemOperand(sp));
 #else
-  PPCPORT_UNIMPLEMENTED();
-  fake_asm(fMASM7);
+  lwz(result_reg, MemOperand(sp, 4));
 #endif
+  // restore the stack
+  addi(sp, sp, Operand(8));
+
+  bind(&done);
 }
 
 void MacroAssembler::LoadInstanceDescriptors(Register map,

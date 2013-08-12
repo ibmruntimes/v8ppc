@@ -4913,7 +4913,7 @@ void LCodeGen::DoClampDToUint8(LClampDToUint8* instr) {
   DoubleRegister value_reg = ToDoubleRegister(instr->unclamped());
   Register result_reg = ToRegister(instr->result());
   DoubleRegister temp_reg = ToDoubleRegister(instr->temp());
-  __ ClampDoubleToUint8(result_reg, value_reg, temp_reg);
+  __ ClampDoubleToUint8(result_reg, value_reg, temp_reg, double_scratch0());
 }
 
 
@@ -4928,7 +4928,8 @@ void LCodeGen::DoClampTToUint8(LClampTToUint8* instr) {
   Register scratch = scratch0();
   Register input_reg = ToRegister(instr->unclamped());
   Register result_reg = ToRegister(instr->result());
-  DoubleRegister temp_reg = ToDoubleRegister(instr->temp());
+  DoubleRegister temp_reg1 = ToDoubleRegister(instr->temp1());
+  DoubleRegister temp_reg2 = ToDoubleRegister(instr->temp2());
   Label is_smi, done, heap_number;
 
   // Both smi and heap number cases are handled.
@@ -4950,7 +4951,7 @@ void LCodeGen::DoClampTToUint8(LClampTToUint8* instr) {
   __ bind(&heap_number);
   __ lfd(double_scratch0(), FieldMemOperand(input_reg,
                                             HeapNumber::kValueOffset));
-  __ ClampDoubleToUint8(result_reg, double_scratch0(), temp_reg);
+  __ ClampDoubleToUint8(result_reg, double_scratch0(), temp_reg1, temp_reg2);
   __ b(&done);
 
   // smi

@@ -1141,6 +1141,7 @@ class Assembler : public AssemblerBase {
   void fmr(const DwVfpRegister frt, const DwVfpRegister frb,
            RCBit rc = LeaveRC);
   void fctiwz(const DwVfpRegister frt, const DwVfpRegister frb);
+  void fctiw(const DwVfpRegister frt, const DwVfpRegister frb);
   void frim(const DwVfpRegister frt, const DwVfpRegister frb);
   void frsp(const DwVfpRegister frt, const DwVfpRegister frb,
             RCBit rc = LeaveRC);
@@ -1156,6 +1157,9 @@ class Assembler : public AssemblerBase {
   void fneg(const DwVfpRegister frt, const DwVfpRegister frb,
             RCBit rc = LeaveRC);
   void mtfsfi(int bf, int immediate, RCBit rc = LeaveRC);
+  void mffs(const DwVfpRegister frt, RCBit rc = LeaveRC);
+  void mtfsf(const DwVfpRegister frb, bool L = 1, int FLM = 0, bool W = 0,
+             RCBit rc = LeaveRC);
   void fsqrt(const DwVfpRegister frt, const DwVfpRegister frb,
              RCBit rc = LeaveRC);
   void fabs(const DwVfpRegister frt, const DwVfpRegister frb,

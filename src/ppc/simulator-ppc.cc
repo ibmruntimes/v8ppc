@@ -2231,7 +2231,8 @@ void Simulator::DecodeExt4(Instruction* instr) {
       return;
     }
   }
-  switch (instr->Bits(10, 1) << 1) {
+  int opcode = instr->Bits(10, 1) << 1;
+  switch (opcode) {
     case FCMPU: {
       int fra = instr->RAValue();
       int frb = instr->RBValue();
@@ -2323,6 +2324,7 @@ void Simulator::DecodeExt4(Instruction* instr) {
       set_d_register_from_double(frt, *p);
       return;
     }
+    case FCTIW:
     case FCTIWZ: {
       int frt = instr->RTValue();
       int frb = instr->RBValue();
@@ -2333,7 +2335,28 @@ void Simulator::DecodeExt4(Instruction* instr) {
       } else if (frb_val < kMinInt) {
         frt_val = kMinInt;
       } else {
-        frt_val = (int64_t)frb_val;
+        if (opcode == FCTIWZ) {
+          frt_val = (int64_t)frb_val;
+        } else {
+          switch (fp_condition_reg_ & kVFPRoundingModeMask) {
+          case kRoundToZero:
+            frt_val = (int64_t)frb_val;
+            break;
+          case kRoundToPlusInf:
+            frt_val = (int64_t)ceil(frb_val);
+            break;
+          case kRoundToMinusInf:
+            frt_val = (int64_t)floor(frb_val);
+            break;
+          case kRoundToNearest:
+            frt_val = (int64_t)lround(frb_val);
+            break;
+          default:
+            ASSERT(false);
+            frt_val = (int64_t)frb_val;
+            break;
+          }
+        }
       }
       double *p = reinterpret_cast<double*>(&frt_val);
       set_d_register_from_double(frt, *p);

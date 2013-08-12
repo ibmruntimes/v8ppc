@@ -1697,6 +1697,12 @@ void Assembler::fctiwz(const DwVfpRegister frt,
   emit(EXT4 | FCTIWZ | frt.code()*B21 | frb.code()*B11);
 }
 
+void Assembler::fctiw(const DwVfpRegister frt,
+                     const DwVfpRegister frb) {
+  CheckBuffer();
+  emit(EXT4 | FCTIW | frt.code()*B21 | frb.code()*B11);
+}
+
 void Assembler::frim(const DwVfpRegister frt,
                      const DwVfpRegister frb) {
   CheckBuffer();
@@ -1749,6 +1755,17 @@ void Assembler::fneg(const DwVfpRegister frt,
 void Assembler::mtfsfi(int bf, int immediate, RCBit rc) {
   CheckBuffer();
   emit(EXT4 | MTFSFI | bf*B23 | immediate*B12 | rc);
+}
+
+void Assembler::mffs(const DwVfpRegister frt, RCBit rc) {
+  CheckBuffer();
+  emit(EXT4 | MFFS | frt.code()*B21 | rc);
+}
+
+void Assembler::mtfsf(const DwVfpRegister frb, bool L,
+                      int FLM, bool W, RCBit rc) {
+  CheckBuffer();
+  emit(EXT4 | MTFSF | frb.code()*B11 | W*B16 | FLM*B17 | L*B25 | rc);
 }
 
 void Assembler::fsqrt(const DwVfpRegister frt,

@@ -1045,6 +1045,10 @@ void Decoder::DecodeExt4(Instruction* instr) {
       Format(instr, "fctidz  'Dt, 'Db");
       break;
     }
+    case FCTIW: {
+      Format(instr, "fctiw'. 'Dt, 'Db");
+      break;
+    }
     case FCTIWZ: {
       Format(instr, "fctiwz'. 'Dt, 'Db");
       break;
@@ -1055,6 +1059,14 @@ void Decoder::DecodeExt4(Instruction* instr) {
     }
     case MTFSFI: {
       Format(instr, "mtfsfi'.  ?,?");
+      break;
+    }
+    case MFFS: {
+      Format(instr, "mffs'.   'Dt");
+      break;
+    }
+    case MTFSF: {
+      Format(instr, "mtfsf'.  'Db ?,?,?");
       break;
     }
     case FABS: {

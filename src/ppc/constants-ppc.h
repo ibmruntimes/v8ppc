@@ -294,6 +294,7 @@ enum OpcodeExt4 {
   // Bits 10-1
   FCMPU  =   0 << 1,  // Floating Compare Unordered
   FRSP   =  12 << 1,  // Floating-Point Rounding
+  FCTIW  =  14 << 1,  // Floating Convert to Integer Word X-form
   FCTIWZ =  15 << 1,  // Floating Convert to Integer Word with Round to Zero
   FNEG   =  40 << 1,  // Floating Negate
   MCRFS  =  64 << 1,  // Move to Condition Register from FPSCR
@@ -301,6 +302,8 @@ enum OpcodeExt4 {
   MTFSFI = 134 << 1,  // Move to FPSCR Field Immediate
   FABS   = 264 << 1,  // Floating Absolute Value
   FRIM   = 488 << 1,  // Floating Round to Integer Minus
+  MFFS   = 583 << 1,  // move from FPSCR x-form
+  MTFSF  = 711 << 1,  // move to FPSCR fields XFL-form
   FCFID  = 846 << 1,  // Floating convert from integer doubleword
   FCTID  = 814 << 1,  // Floating convert from integer doubleword
   FCTIDZ = 815 << 1   // Floating convert from integer doubleword
@@ -317,6 +320,7 @@ enum {
   B10 = 1 << 10,
   B11 = 1 << 11,
   B16 = 1 << 16,
+  B17 = 1 << 17,
   B21 = 1 << 21,
 
   kOpcodeMask = 0x3f << 26,
