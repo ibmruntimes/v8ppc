@@ -942,6 +942,10 @@ void Decoder::DecodeExt2(Instruction* instr) {
       }
       break;
     }
+    case MFCR: {
+      Format(instr, "mfcr    'rt");
+      break;
+    }
     case STWX: {
       Format(instr, "stwx    'rs, 'ra, 'rb");
       break;

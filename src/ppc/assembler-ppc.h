@@ -843,19 +843,19 @@ class Assembler : public AssemblerBase {
 
   void bunordered(Label* L, CRegister cr = cr7) {
     ASSERT(cr.code() >= 0 && cr.code() <= 7);
-    bc(branch_offset(L, false), BT, 3 + (cr.code() * 4));
+    bc(branch_offset(L, false), BT, encode_crbit(cr, CR_FU));
   }
   void bordered(Label* L, CRegister cr = cr7) {
     ASSERT(cr.code() >= 0 && cr.code() <= 7);
-    bc(branch_offset(L, false), BF, 3 + (cr.code() * 4));
+    bc(branch_offset(L, false), BF, encode_crbit(cr, CR_FU));
   }
   void boverflow(Label* L, CRegister cr = cr1) {
     ASSERT(cr.code() >= 0 && cr.code() <= 7);
-    bc(branch_offset(L, false), BT, 3 + (cr.code() * 4));
+    bc(branch_offset(L, false), BT, encode_crbit(cr, CR_SO));
   }
   void bnotoverflow(Label* L, CRegister cr = cr1) {
     ASSERT(cr.code() >= 0 && cr.code() <= 7);
-    bc(branch_offset(L, false), BF, 3 + (cr.code() * 4));
+    bc(branch_offset(L, false), BF, encode_crbit(cr, CR_SO));
   }
 
   // Decrement CTR; branch if CTR != 0
@@ -1059,6 +1059,7 @@ class Assembler : public AssemblerBase {
   void mtctr(Register src);
   void mtxer(Register src);
   void mcrfs(int bf, int bfa);
+  void mfcr(Register dst);
 
   void fake_asm(enum FAKE_OPCODE_T fopcode);
   void marker_asm(int mcode);

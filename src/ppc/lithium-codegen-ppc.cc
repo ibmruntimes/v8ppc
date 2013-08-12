@@ -1768,18 +1768,16 @@ void LCodeGen::DoBranch(LBranch* instr) {
     __ cmpi(reg, Operand::Zero());
     EmitBranch(true_block, false_block, ne);
   } else if (r.IsDouble()) {
-#ifdef PENGUIN_CLEANUP
     DoubleRegister reg = ToDoubleRegister(instr->value());
     Register scratch = scratch0();
 
     // Test the double value. Zero and NaN are false.
-    __ VFPCompareAndLoadFlags(reg, 0.0, scratch);
-    __ tst(scratch, Operand(kVFPZConditionFlagBit | kVFPVConditionFlagBit));
-    EmitBranch(true_block, false_block, eq);
-#else
-  PPCPORT_UNIMPLEMENTED();
-  __ fake_asm(fLITHIUM93);
-#endif
+    uint crBits = (1 << (31 - Assembler::encode_crbit(cr7, CR_EQ)) |
+                   1 << (31 - Assembler::encode_crbit(cr7, CR_FU)));
+    __ fcmpu(reg, kDoubleRegZero, cr7);
+    __ mfcr(scratch);
+    __ andi(scratch, scratch, Operand(crBits));
+    EmitBranch(true_block, false_block, eq, cr0);
   } else {
     ASSERT(r.IsTagged());
     Register reg = ToRegister(instr->value());

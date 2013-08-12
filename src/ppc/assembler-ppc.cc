@@ -1351,6 +1351,11 @@ void Assembler::mtxer(Register src) {
 void Assembler::mcrfs(int bf, int bfa) {
   emit(EXT4 | MCRFS | bf*B23 | bfa*B18);
 }
+
+void Assembler::mfcr(Register dst) {
+  emit(EXT2 | MFCR | dst.code()*B21);
+}
+
 // end PowerPC
 
 // Status register access instructions.
