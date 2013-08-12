@@ -857,6 +857,8 @@ enum FunctionCallType {
   CallType_NonScalarArg
 };
 
+const int kCArgSlotCount = 4;
+const int kCArgsSlotsSize = kCArgSlotCount * Instruction::kInstrSize;
 
 } }  // namespace v8::internal
 

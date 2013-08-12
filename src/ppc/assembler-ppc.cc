@@ -407,14 +407,34 @@ int Assembler::target_at(int pos)  {
     if (imm26 == 0)
         return kEndOfChain;
     return pos + imm26;
-  }
-  if (BCX == opcode) {
+  } else if (BCX == opcode) {
     int imm16 = SIGN_EXT_IMM16((instr & kImm16Mask));
     imm16 &= ~(kAAMask|kLKMask);  // discard AA|LK bits if present
     if (imm16 == 0)
         return kEndOfChain;
     return pos + imm16;
+  } else if ((instr & ~kImm16Mask) == 0) {
+    // Emitted label constant, not part of a branch (regexp PushBacktrack).
+     if (instr == 0) {
+       return kEndOfChain;
+     } else {
+       int32_t imm26 =((instr & static_cast<int32_t>(kImm16Mask)) << 16) >> 16;
+       return (imm26 + pos);
+     }
+  } else {
+    int32_t imm16 = (instr & static_cast<int32_t>(kImm16Mask));
+    if (imm16 == kEndOfChain) {
+      // EndOfChain sentinel is returned directly, not relative to pc or pos.
+      return kEndOfChain;
+    } else {
+      uint32_t instr_address = reinterpret_cast<int32_t>(buffer_ + pos) << 2;
+      instr_address &= kImm16Mask;
+      int32_t delta = instr_address - imm16;
+      ASSERT(pos > delta);
+      return pos - delta;
+    }
   }
+
   PPCPORT_UNIMPLEMENTED();
   ASSERT(false);
   return -1;
@@ -439,8 +459,17 @@ int Assembler::target_at(int pos)  {
 
 void Assembler::target_at_put(int pos, int target_pos) {
   Instr instr = instr_at(pos);
-  // check which type of branch this is 16 or 26 bit offset
   int opcode = instr & kOpcodeMask;
+
+  if ((instr & ~kImm16Mask) == 0) {
+    ASSERT(target_pos == kEndOfChain || target_pos >= 0);
+    // Emitted label constant, not part of a branch.
+    // Make label relative to Code* of generated Code object.
+    instr_at_put(pos, target_pos + (Code::kHeaderSize - kHeapObjectTag));
+    return;
+  }
+
+  // check which type of branch this is 16 or 26 bit offset
   if (BX == opcode) {
     int imm26 = target_pos - pos;
     int lk = instr & kLKMask;
@@ -450,14 +479,24 @@ void Assembler::target_at_put(int pos, int target_pos) {
     // todo add AA and LK bits
     instr_at_put(pos, instr | (imm26 & kImm26Mask) | lk);
     return;
-  }
-  if (BCX == opcode) {
+  } else if (BCX == opcode) {
     int imm16 = target_pos - pos;
     ASSERT((imm16 & 3) == 0);
     instr &= ~kImm16Mask;
     ASSERT(is_int16(imm16));
     // todo add AA and LK bits
     instr_at_put(pos, instr | (imm16 & kImm16Mask));
+    return;
+  } else {
+    uint32_t imm28 = (uint32_t)buffer_ + target_pos;
+    imm28 &= kImm26Mask;
+    ASSERT((imm28 & 3) == 0);
+
+    instr &= ~kImm26Mask;
+    uint32_t imm26 = imm28 >> 2;
+    ASSERT(is_uint26(imm26));
+
+    instr_at_put(pos, instr | (imm26 & kImm26Mask));
     return;
   }
   ASSERT(false);
@@ -631,6 +670,7 @@ void Assembler::label_at_put(Label* L, int at_offset) {
   int target_pos;
   if (L->is_bound()) {
     target_pos = L->pos();
+    instr_at_put(at_offset, target_pos + (Code::kHeaderSize - kHeapObjectTag));
   } else {
     if (L->is_linked()) {
       target_pos = L->pos();  // L's link
