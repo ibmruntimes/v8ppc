@@ -3353,21 +3353,18 @@ void InterruptStub::Generate(MacroAssembler* masm) {
 }
 
 
-// roohack - not converted
 void MathPowStub::Generate(MacroAssembler* masm) {
   EMIT_STUB_MARKER(149);
-#ifdef PENGUIN_CLEANUP
-  const Register base = r1;
-  const Register exponent = r2;
-  const Register heapnumbermap = r5;
-  const Register heapnumber = r0;
+  const Register base = r4;
+  const Register exponent = r5;
+  const Register heapnumbermap = r8;
+  const Register heapnumber = r3;
   const DoubleRegister double_base = d1;
   const DoubleRegister double_exponent = d2;
   const DoubleRegister double_result = d3;
   const DoubleRegister double_scratch = d0;
-  const DwVfpRegister single_scratch = d8;
-  const Register scratch = r9;
-  const Register scratch2 = r7;
+  const Register scratch = r22;
+  const Register scratch2 = r10;
 
   Label call_runtime, done, int_exponent;
   if (exponent_type_ == ON_STACK) {
@@ -3383,42 +3380,42 @@ void MathPowStub::Generate(MacroAssembler* masm) {
     __ UntagAndJumpIfSmi(scratch, base, &base_is_smi);
     __ lwz(scratch, FieldMemOperand(base, JSObject::kMapOffset));
     __ cmp(scratch, heapnumbermap);
-    __ b(ne, &call_runtime);
+    __ bne(&call_runtime);
 
-    __ vldr(double_base, FieldMemOperand(base, HeapNumber::kValueOffset));
-    __ jmp(&unpack_exponent);
+    __ lfd(double_base, FieldMemOperand(base, HeapNumber::kValueOffset));
+    __ b(&unpack_exponent);
 
     __ bind(&base_is_smi);
-    __ vmov(single_scratch.low(), scratch);  // roohack
-    __ vcvt_f64_s32(double_base, single_scratch.low());  // roohack
+    FloatingPointHelper::ConvertIntToDouble(masm, scratch, double_base);
     __ bind(&unpack_exponent);
 
     __ UntagAndJumpIfSmi(scratch, exponent, &int_exponent);
-
     __ lwz(scratch, FieldMemOperand(exponent, JSObject::kMapOffset));
     __ cmp(scratch, heapnumbermap);
-    __ b(ne, &call_runtime);
-    __ vldr(double_exponent,
-            FieldMemOperand(exponent, HeapNumber::kValueOffset));
+    __ bne(&call_runtime);
+
+    __ lfd(double_exponent,
+           FieldMemOperand(exponent, HeapNumber::kValueOffset));
   } else if (exponent_type_ == TAGGED) {
     // Base is already in double_base.
     __ UntagAndJumpIfSmi(scratch, exponent, &int_exponent);
 
-    __ vldr(double_exponent,
-            FieldMemOperand(exponent, HeapNumber::kValueOffset));
+    __ lfd(double_exponent,
+           FieldMemOperand(exponent, HeapNumber::kValueOffset));
   }
 
   if (exponent_type_ != INTEGER) {
-    Label int_exponent_convert;
     // Detect integer exponents stored as double.
-    __ vcvt_u32_f64(single_scratch.low(), double_exponent);  // roohack
-    // We do not check for NaN or Infinity here because comparing numbers on
-    // ARM correctly distinguishes NaNs.  We end up calling the built-in.
-    __ vcvt_f64_u32(double_scratch, single_scratch.low());  // roohack
-    __ VFPCompareAndSetFlags(double_scratch, double_exponent);
-    __ b(eq, &int_exponent_convert);
+    __ EmitVFPTruncate(kRoundToZero,
+                       scratch,
+                       double_exponent,
+                       scratch2,
+                       double_scratch,
+                       kCheckForInexactConversion);
+    __ beq(&int_exponent);
 
     if (exponent_type_ == ON_STACK) {
+#ifdef PENGUIN_CLEANUP
       // Detect square root case.  Crankshaft detects constant +/-0.5 at
       // compile time and uses DoMathPowHalf instead.  We then skip this check
       // for non-constant cases of +/-0.5 as these hardly occur.
@@ -3459,9 +3456,14 @@ void MathPowStub::Generate(MacroAssembler* masm) {
       __ fsqrt(double_scratch, double_scratch);
       __ vdiv(double_result, double_result, double_scratch);
       __ jmp(&done);
+#else
+      PPCPORT_UNIMPLEMENTED();
+      __ fake_asm(fMASM3);
+#endif
     }
 
-    __ push(lr);
+    __ mflr(r0);
+    __ push(r0);
     {
       AllowExternalCallThatCantCauseGC scope(masm);
       __ PrepareCallCFunction(0, 2, scratch);
@@ -3470,13 +3472,10 @@ void MathPowStub::Generate(MacroAssembler* masm) {
           ExternalReference::power_double_double_function(masm->isolate()),
           0, 2);
     }
-    __ pop(lr);
+    __ pop(r0);
+    __ mtlr(r0);
     __ GetCFunctionDoubleResult(double_result);
     __ jmp(&done);
-
-    __ bind(&int_exponent_convert);
-    __ vcvt_u32_f64(single_scratch.low(), double_exponent);  // roohack
-    __ vmov(scratch, single_scratch.low());  // roohack
   }
 
   // Calculate power with integer exponent.
@@ -3489,33 +3488,42 @@ void MathPowStub::Generate(MacroAssembler* masm) {
     // Exponent has previously been stored into scratch as untagged integer.
     __ mr(exponent, scratch);
   }
-  __ vmov(double_scratch, double_base);  // Back up base.
-  __ vmov(double_result, 1.0, scratch2);
+  __ fmr(double_scratch, double_base);  // Back up base.
+  __ li(scratch2, Operand(1));
+  FloatingPointHelper::ConvertIntToDouble(masm, scratch2, double_result);
 
   // Get absolute value of exponent.
+  Label positive_exponent;
   __ cmpi(scratch, Operand::Zero());
-  __ mov(scratch2, Operand::Zero(), LeaveCC, mi);
-  __ sub(scratch, scratch2, scratch, LeaveCC, mi);
+  __ bge(&positive_exponent);
+  __ neg(scratch, scratch);
+  __ bind(&positive_exponent);
 
-  Label while_true;
+  Label while_true, no_carry, loop_end;
   __ bind(&while_true);
+  __ andi(scratch2, scratch, Operand(1));
+  __ beq(&no_carry, cr0);
+  __ fmul(double_result, double_result, double_scratch);
+  __ bind(&no_carry);
   __ srawi(scratch, scratch, 1, SetRC);
-  __ vmul(double_result, double_result, double_scratch, cs);
-  __ vmul(double_scratch, double_scratch, double_scratch, ne);
-  __ bne(&while_true, cr0);
+  __ beq(&loop_end, cr0);
+  __ fmul(double_scratch, double_scratch, double_scratch);
+  __ b(&while_true);
+  __ bind(&loop_end);
 
   __ cmpi(exponent, Operand::Zero());
-  __ b(ge, &done);
-  __ vmov(double_scratch, 1.0, scratch);
-  __ vdiv(double_result, double_scratch, double_result);
+  __ bge(&done);
+
+  __ li(scratch2, Operand(1));
+  FloatingPointHelper::ConvertIntToDouble(masm, scratch2, double_result);
+  __ fdiv(double_result, double_scratch, double_result);
   // Test whether result is zero.  Bail out to check for subnormal result.
   // Due to subnormals, x^-y == (1/x)^y does not hold in all cases.
-  __ VFPCompareAndSetFlags(double_result, 0.0);
-  __ b(ne, &done);
+  __ fcmpu(double_result, kDoubleRegZero);
+  __ bne(&done);
   // double_exponent may not containe the exponent value if the input was a
   // smi.  We set it with exponent value before bailing out.
-  __ vmov(single_scratch.low(), exponent);  // roohack
-  __ vcvt_f64_s32(double_exponent, single_scratch.low());  // roohack
+  FloatingPointHelper::ConvertIntToDouble(masm, exponent, double_exponent);
 
   // Returning or bailing out.
   Counters* counters = masm->isolate()->counters();
@@ -3529,13 +3537,14 @@ void MathPowStub::Generate(MacroAssembler* masm) {
     __ bind(&done);
     __ AllocateHeapNumber(
         heapnumber, scratch, scratch2, heapnumbermap, &call_runtime);
-    __ vstr(double_result,
+    __ stfd(double_result,
             FieldMemOperand(heapnumber, HeapNumber::kValueOffset));
-    ASSERT(heapnumber.is(r0));
+    ASSERT(heapnumber.is(r3));
     __ IncrementCounter(counters->math_pow(), 1, scratch, scratch2);
     __ Ret(2);
   } else {
-    __ push(lr);
+    __ mflr(r0);
+    __ push(r0);
     {
       AllowExternalCallThatCantCauseGC scope(masm);
       __ PrepareCallCFunction(0, 2, scratch);
@@ -3544,17 +3553,14 @@ void MathPowStub::Generate(MacroAssembler* masm) {
           ExternalReference::power_double_double_function(masm->isolate()),
           0, 2);
     }
-    __ pop(lr);
+    __ pop(r0);
+    __ mtlr(r0);
     __ GetCFunctionDoubleResult(double_result);
 
     __ bind(&done);
     __ IncrementCounter(counters->math_pow(), 1, scratch, scratch2);
     __ Ret();
   }
-#else
-  PPCPORT_UNIMPLEMENTED();
-  __ fake_asm(fMASM3);
-#endif
 }
 
 
