@@ -3684,7 +3684,7 @@ void CEntryStub::GenerateCore(MacroAssembler* masm,
     // AIX uses a function descriptor. When calling C code be aware
     // of this descriptor and pick up values from it
     __ lwz(ToRegister(2), MemOperand(r15, 4));
-    __ lwz(r15, MemOperand(r15,0));
+    __ lwz(r15, MemOperand(r15, 0));
 #endif
 
     __ b(&here, SetLK);
