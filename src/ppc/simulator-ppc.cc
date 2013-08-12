@@ -2397,12 +2397,12 @@ void Simulator::DecodeExt4(Instruction* instr) {
       int32_t frb_ival = static_cast<int32_t>((*p) & 0xffffffff);
       int l = instr->Bits(25, 25);
       if (l == 1) {
-	fp_condition_reg_ = frb_ival;
+        fp_condition_reg_ = frb_ival;
       } else {
-	UNIMPLEMENTED();
+        UNIMPLEMENTED();
       }
       if (instr->Bit(0)) {  // RC bit set
-	UNIMPLEMENTED();
+        UNIMPLEMENTED();
         // int w = instr->Bits(16, 16);
         // int flm = instr->Bits(24, 17);
       }
