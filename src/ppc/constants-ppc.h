@@ -377,7 +377,7 @@ enum {
   kOff16Mask  = (1 << 16) - 1,
   kImm16Mask  = (1 << 16) - 1,
   kImm26Mask  = (1 << 26) - 1,
-  kBOfieldMask = 0x1f << 20
+  kBOfieldMask = 0x1f << 21
 };
 
 // the following is to differentiate different faked ARM opcodes for
@@ -521,6 +521,12 @@ enum BOfield {  // Bits 25-21
   DCBEZ  = 18 << 21,  // Decrement CTR; branch if CTR == 0
   BA     = 20 << 21   // Branch always
 };
+
+#ifdef _AIX
+#undef CR_LT
+#undef CR_GT
+#undef CR_EQ
+#endif
 
 enum CRBit {
   CR_LT = 0,

@@ -1154,7 +1154,7 @@ void Assembler::marker_asm(int mcode) {
 // TOC and static chain are ignored and set to 0.
 void Assembler::function_descriptor() {
   RecordRelocInfo(RelocInfo::INTERNAL_REFERENCE);
-#ifdef V8_TARGET_ARCH_PPC64
+#if V8_TARGET_ARCH_PPC64
   uint64_t value = reinterpret_cast<uint64_t>(pc_) + 3 * kPointerSize;
   // Possible endian issue here
   emit(static_cast<uint32_t>(value >> 32));
@@ -1231,12 +1231,13 @@ void Assembler::orr(Register dst, Register src1, const Operand& src2,
 // This should really move to be in macro-assembler as it
 // is really a pseudo instruction
 void Assembler::mov(Register dst, const Operand& src, SBit s, Condition cond) {
+  ASSERT(cond == al);
   if (MustUseReg(src.rmode_)) {
     // some form of relocation needed
     RecordRelocInfo(src.rmode_, src.imm32_);
   }
 
-  int value = src.imm32_;
+  int value = src.immediate();
   int hi_word = static_cast<int>(value) >> 16;
   int lo_word = SIGN_EXT_IMM16(value);
   if (lo_word & 0x8000) {
@@ -1480,7 +1481,7 @@ void Assembler::info(const char* msg, Condition cond, int32_t code,
                      CRegister cr) {
   if (::v8::internal::FLAG_trace_sim_stubs) {
     emit(0x7d9ff808);
-#ifdef V8_TARGET_ARCH_PPC64
+#if V8_TARGET_ARCH_PPC64
     uint64_t value = reinterpret_cast<uint64_t>(msg);
     emit(static_cast<uint32_t>(value >> 32));
     emit(static_cast<uint32_t>(value & 0xFFFFFFFF));
@@ -2027,7 +2028,7 @@ void Assembler::GrowBuffer() {
   // buffer nor pc absolute pointing inside the code buffer, so there is no need
   // to relocate any emitted relocation entries.
 
-#if _AIX
+#if defined(_AIX) || defined(V8_TARGET_ARCH_PPC64)
   // Relocate runtime entries.
   for (RelocIterator it(desc); !it.done(); it.next()) {
     RelocInfo::Mode rmode = it.rinfo()->rmode();

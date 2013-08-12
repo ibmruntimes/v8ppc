@@ -95,7 +95,7 @@ void MacroAssembler::Jump(Handle<Code> code, RelocInfo::Mode rmode,
 
 
 int MacroAssembler::CallSize(Register target, Condition cond) {
-#ifdef _AIX
+#if defined(_AIX) || defined(V8_TARGET_ARCH_PPC64)
   return 4 * kInstrSize;
 #else
   return 2 * kInstrSize;
@@ -113,7 +113,7 @@ void MacroAssembler::Call(Register target, Condition cond) {
   positions_recorder()->WriteRecordedPositions();
 
   // branch via link register and set LK bit for return point
-#ifdef _AIX
+#if defined(_AIX) || defined(V8_TARGET_ARCH_PPC64)
   lwz(r0, MemOperand(target, 0));
   lwz(ToRegister(2), MemOperand(target, 4));
   mtlr(r0);
@@ -143,7 +143,7 @@ int MacroAssembler::CallSize(
   movSize = 2;
 #endif
 
-#ifdef _AIX
+#if defined(_AIX) || defined(V8_TARGET_ARCH_PPC64)
   size = (4 + movSize) * kInstrSize;
 #else
   size = (2 + movSize) * kInstrSize;
@@ -170,7 +170,7 @@ int MacroAssembler::CallSizeNotPredictableCodeSize(
   movSize = 2;
 #endif
 
-#ifdef _AIX
+#if defined(_AIX) || defined(V8_TARGET_ARCH_PPC64)
   size = (4 + movSize) * kInstrSize;
 #else
   size = (2 + movSize) * kInstrSize;
@@ -198,7 +198,7 @@ void MacroAssembler::Call(Address target,
   //
 
   mov(ip, Operand(reinterpret_cast<intptr_t>(target), rmode));
-#ifdef _AIX
+#if defined(_AIX) || defined(V8_TARGET_ARCH_PPC64)
   lwz(r0, MemOperand(ip, 0));
   lwz(ToRegister(2), MemOperand(ip, 4));
   mtlr(r0);
@@ -389,11 +389,12 @@ void MacroAssembler::InNewSpace(Register object,
                                 Register scratch,
                                 Condition cond,
                                 Label* branch) {
+  // N.B. scratch may be same register as object
   ASSERT(cond == eq || cond == ne);
-  mov(scratch, Operand(ExternalReference::new_space_mask(isolate())));
-  and_(r0, scratch, object);
-  mov(scratch, Operand(ExternalReference::new_space_start(isolate())));
-  cmp(r0, scratch);
+  mov(r0, Operand(ExternalReference::new_space_mask(isolate())));
+  and_(scratch, object, r0);
+  mov(r0, Operand(ExternalReference::new_space_start(isolate())));
+  cmp(scratch, r0);
   b(cond, branch);
 }
 
@@ -1009,7 +1010,7 @@ void MacroAssembler::InvokeCode(Register code,
     if (flag == CALL_FUNCTION) {
       call_wrapper.BeforeCall(CallSize(code));
       SetCallKind(r8, call_kind);
-#ifdef _AIX
+#if defined(_AIX) || defined(V8_TARGET_ARCH_PPC64)
       stw(code, MemOperand(sp, 12));
       addi(r11, sp, Operand(12));
       Call(r11);
@@ -1289,6 +1290,7 @@ void MacroAssembler::ThrowUncatchable(Register value) {
 
   bind(&check_kind);
   STATIC_ASSERT(StackHandler::JS_ENTRY == 0);
+  lwz(r5, MemOperand(sp, StackHandlerConstants::kStateOffset));
   andi(r0, r5, Operand(StackHandler::KindField::kMask));
   bne(&fetch_next, cr0);
 
@@ -1665,7 +1667,7 @@ void MacroAssembler::AllocateInNewSpace(Register object_size,
   }
   addze(r0, r0, LeaveOE, SetRC);
   beq(gc_required, cr0);
-  cmp(scratch2, ip);
+  cmpl(scratch2, ip);
   bgt(gc_required);
 
   // Update allocation top. result temporarily holds the new top.
@@ -1882,7 +1884,7 @@ void MacroAssembler::CheckFastElements(Register map,
   STATIC_ASSERT(FAST_HOLEY_ELEMENTS == 3);
   lbz(scratch, FieldMemOperand(map, Map::kBitField2Offset));
   STATIC_ASSERT(Map::kMaximumBitField2FastHoleyElementValue < 0x8000);
-  cmpi(scratch, Operand(Map::kMaximumBitField2FastHoleyElementValue));
+  cmpli(scratch, Operand(Map::kMaximumBitField2FastHoleyElementValue));
   bgt(fail);
 }
 
@@ -1895,9 +1897,9 @@ void MacroAssembler::CheckFastObjectElements(Register map,
   STATIC_ASSERT(FAST_ELEMENTS == 2);
   STATIC_ASSERT(FAST_HOLEY_ELEMENTS == 3);
   lbz(scratch, FieldMemOperand(map, Map::kBitField2Offset));
-  cmpi(scratch, Operand(Map::kMaximumBitField2FastHoleySmiElementValue));
-  blt(fail);
-  cmpi(scratch, Operand(Map::kMaximumBitField2FastHoleyElementValue));
+  cmpli(scratch, Operand(Map::kMaximumBitField2FastHoleySmiElementValue));
+  ble(fail);
+  cmpli(scratch, Operand(Map::kMaximumBitField2FastHoleyElementValue));
   bgt(fail);
 }
 
@@ -2390,8 +2392,9 @@ void MacroAssembler::EmitVFPTruncate(VFPRoundingMode rounding_mode,
   if (rounding_mode == kRoundToZero) {
     fctidz(double_scratch, double_input);
   } else {
-    mtfsfi(7, rounding_mode);
+    mtfsfi(7, rounding_mode);  // set rounding mode in fpscr
     fctid(double_scratch, double_input);
+    mtfsfi(7, kRoundToNearest);  // reset
   }
 
   addi(sp, sp, Operand(-kDoubleSize));
@@ -2663,7 +2666,7 @@ void MacroAssembler::InvokeBuiltin(Builtins::JavaScript id,
   if (flag == CALL_FUNCTION) {
     call_wrapper.BeforeCall(CallSize(r2));
     SetCallKind(r8, CALL_AS_METHOD);
-#ifdef _AIX
+#if defined(_AIX) || defined(V8_TARGET_ARCH_PPC64)
     stw(r5, MemOperand(sp, 12));
     addi(r11, sp, Operand(12));
     Call(r11);
@@ -4110,7 +4113,7 @@ void CodePatcher::Emit(Instr instr) {
 
 
 void CodePatcher::Emit(Address addr) {
-#ifdef V8_TARGET_ARCH_PPC64
+#if V8_TARGET_ARCH_PPC64
   uint64_t value = reinterpret_cast<uint64_t>(addr);
   // Possible endian issue here
   masm()->emit(static_cast<uint32_t>(value >> 32));
