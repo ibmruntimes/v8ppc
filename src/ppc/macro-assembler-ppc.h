@@ -1133,7 +1133,7 @@ class MacroAssembler: public Assembler {
 
   inline void ExtractBit(Register dst, Register src, uint32_t bitNumber,
                          RCBit rc = LeaveRC) {
-    ExtractBitRange(dst, src, bitNumber, bitNumber, SetRC);
+    ExtractBitRange(dst, src, bitNumber, bitNumber, rc);
   }
 
   // Extract consecutive bits (defined by mask) from src and place them
@@ -1187,19 +1187,10 @@ class MacroAssembler: public Assembler {
   // Smi utilities
 
   // Shift left by 1
-  void SmiTag(Register reg, RCBit rc = LeaveRC) {
-    SmiTag(reg, reg, rc);
+  void SmiTag(Register reg) {
+    SmiTag(reg, reg);
   }
-  void SmiTag(Register dst, Register src, RCBit rc = LeaveRC) {
-    rlwinm(dst, src, 1, 0, 30, rc);
-  }
-
-  // temporary
-  void SmiTag(Register reg, SBit s) {
-    slwi(reg, reg, Operand(1));
-  }
-  // temporary
-  void SmiTag(Register dst, Register src, SBit s) {
+  void SmiTag(Register dst, Register src) {
     slwi(dst, src, Operand(1));
   }
 
@@ -1214,21 +1205,6 @@ class MacroAssembler: public Assembler {
   void SmiUntag(Register dst, Register src, RCBit rc = LeaveRC) {
     ASSERT(kSmiTagSize == 1);
     srawi(dst, src, 1, rc);
-  }
-
-  // temporary
-  void SmiUntag(Register reg, SBit s) {
-    SmiUntag(reg, reg, s);
-  }
-
-  // temporary
-  void SmiUntag(Register dst, Register src, SBit s) {
-    ASSERT(kSmiTagSize == 1);
-    // Temporary - map SBit to RCBit
-    RCBit r = LeaveRC;
-    if (s == SetCC) { r = SetRC; }
-
-    srawi(dst, src, 1, r);
   }
 
   // Untag the source value into destination and jump if source is a smi.

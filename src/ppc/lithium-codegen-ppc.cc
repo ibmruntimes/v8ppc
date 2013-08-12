@@ -4585,13 +4585,15 @@ void LCodeGen::DoSmiTag(LSmiTag* instr) {
 
 
 void LCodeGen::DoSmiUntag(LSmiUntag* instr) {
+  Register scratch = scratch0();
   Register input = ToRegister(instr->value());
   Register result = ToRegister(instr->result());
   if (instr->needs_check()) {
     STATIC_ASSERT(kHeapObjectTag == 1);
-    // If the input is a HeapObject, SmiUntag will set the carry flag.
-    __ SmiUntag(result, input, SetCC);
-    DeoptimizeIf(ge, instr->environment(), cr0);
+    // If the input is a HeapObject, value of scratch won't be zero.
+    __ andi(scratch, input, Operand(kHeapObjectTag));
+    __ SmiUntag(result, input);
+    DeoptimizeIf(ne, instr->environment(), cr0);
   } else {
     __ SmiUntag(result, input);
   }

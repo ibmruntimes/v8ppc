@@ -5844,13 +5844,13 @@ void SubStringStub::Generate(MacroAssembler* masm) {
   // If either to or from had the smi tag bit set, then fail to generic runtime
   __ JumpIfNotSmi(r5, &runtime);
   __ JumpIfNotSmi(r6, &runtime);
-  // I.e., arithmetic shift right by one un-smi-tags.
-  __ srawi(r5, r5, 1);
-  __ srawi(r6, r6, 1);
-  // We want to bailout to runtime here if From is negative.  In that case, the
-  // next instruction is not executed and we fall through to bailing out to
-  // runtime.  pl is the opposite of mi.
+  __ SmiUntag(r5);
+  __ SmiUntag(r6, SetRC);
   // Both r5 and r6 are untagged integers.
+
+  // We want to bailout to runtime here if From is negative.
+  __ blt(&runtime, cr0);  // From < 0.
+
   __ cmpl(r6, r5);
   __ bgt(&runtime);  // Fail if from > to.
   __ sub(r5, r5, r6);
