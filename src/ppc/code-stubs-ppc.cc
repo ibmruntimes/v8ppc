@@ -3661,7 +3661,8 @@ void CEntryStub::GenerateCore(MacroAssembler* masm,
 #endif
 
 
-#if defined(V8_HOST_ARCH_PPC)
+// This likely needs to be changed for 64bit
+#if defined(V8_HOST_ARCH_PPC) && !defined(_AIX)
   // PPC passes C++ objects by reference not value
   // Thus argument 2 (r4) should be the isolate
   __ mov(r4, Operand(ExternalReference::isolate_address()));
@@ -3678,10 +3679,21 @@ void CEntryStub::GenerateCore(MacroAssembler* masm,
   // instructions so add another 4 to pc to get the return address.
   // {
     Label here;
+
+#if _AIX
+    // AIX uses a function descriptor. When calling C code be aware
+    // of this descriptor and pick up values from it
+    __ lwz(ToRegister(2), MemOperand(r15, 4));
+    __ lwz(r15, MemOperand(r15,0));
+#endif
+
     __ b(&here, SetLK);
     __ bind(&here);
     __ mflr(r8);
+
+// Constant used below is dependent on size of Call() macro instructions
     __ addi(r0, r8, Operand(20));
+
     __ stw(r0, MemOperand(sp, 0));
     __ Call(r15);
   // }
@@ -3760,10 +3772,6 @@ void CEntryStub::Generate(MacroAssembler* masm) {
   // this by performing a garbage collection and retrying the
   // builtin once.
 
-#if defined(_AIX) || defined(V8_TARGET_ARCH_PPC64)
-  __ function_descriptor();
-#endif
-
   // Compute the argv pointer in a callee-saved register.
   __ slwi(r16, r3, Operand(kPointerSizeLog2));
   __ add(r16, r16, sp);
@@ -3772,6 +3780,7 @@ void CEntryStub::Generate(MacroAssembler* masm) {
   // Enter the exit frame that transitions from JavaScript to C++.
   FrameScope scope(masm, StackFrame::MANUAL);
 #if defined(V8_HOST_ARCH_PPC)
+  // The comment below may be wrong/mis-leading now
   // PPC needs extra frame space to fake out a C++ object
   // probably not right on real PPC -- this was for simulation hack
   __ EnterExitFrame(save_doubles_, 2);
