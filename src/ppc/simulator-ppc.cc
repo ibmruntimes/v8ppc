@@ -853,7 +853,7 @@ Simulator::Simulator(Isolate* isolate) : isolate_(isolate) {
 
   // Set up architecture state.
   // All registers are initialized to zero to start with.
-  for (int i = 0; i < num_registers; i++) {
+  for (int i = 0; i < kNumGPRs; i++) {
     registers_[i] = 0;
   }
   condition_reg_ = 0;  // PowerPC
@@ -863,7 +863,7 @@ Simulator::Simulator(Isolate* isolate) : isolate_(isolate) {
   special_reg_ctr_ = 0;  // PowerPC
 
   // Initializing FP registers.
-  for (int i = 0; i < num_d_registers; i++) {
+  for (int i = 0; i < kNumFPRs; i++) {
     fp_register[i] = 0.0;
   }
   FPSCR_rounding_mode_ = RZ;
@@ -964,24 +964,24 @@ Simulator* Simulator::current(Isolate* isolate) {
 
 // Sets the register in the architecture state.
 void Simulator::set_register(int reg, intptr_t value) {
-  ASSERT((reg >= 0) && (reg < num_registers));
+  ASSERT((reg >= 0) && (reg < kNumGPRs));
   registers_[reg] = value;
 }
 
 
 // Get the register from the architecture state.
 intptr_t Simulator::get_register(int reg) const {
-  ASSERT((reg >= 0) && (reg < num_registers));
+  ASSERT((reg >= 0) && (reg < kNumGPRs));
   // Stupid code added to avoid bug in GCC.
   // See: http://gcc.gnu.org/bugzilla/show_bug.cgi?id=43949
-  if (reg >= num_registers) return 0;
+  if (reg >= kNumGPRs) return 0;
   // End stupid code.
   return registers_[reg];
 }
 
 
 double Simulator::get_double_from_register_pair(int reg) {
-  ASSERT((reg >= 0) && (reg < num_registers) && ((reg % 2) == 0));
+  ASSERT((reg >= 0) && (reg < kNumGPRs) && ((reg % 2) == 0));
 
   double dm_val = 0.0;
 #ifndef V8_TARGET_ARCH_PPC64  // doesn't make sense in 64bit mode
