@@ -2027,6 +2027,11 @@ void Simulator::DecodeExt2_9bit(Instruction* instr) {
       }
       break;
     }
+    case MFCR: {
+      int rt = instr->RTValue();
+      set_register(rt, condition_reg_);
+      break;
+    }
     case STWUX:
     case STWX: {
       int rs = instr->RSValue();

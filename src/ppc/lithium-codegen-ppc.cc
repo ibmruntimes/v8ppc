@@ -1768,18 +1768,16 @@ void LCodeGen::DoBranch(LBranch* instr) {
     __ cmpi(reg, Operand::Zero());
     EmitBranch(true_block, false_block, ne);
   } else if (r.IsDouble()) {
-#ifdef PENGUIN_CLEANUP
     DoubleRegister reg = ToDoubleRegister(instr->value());
     Register scratch = scratch0();
 
     // Test the double value. Zero and NaN are false.
-    __ VFPCompareAndLoadFlags(reg, 0.0, scratch);
-    __ tst(scratch, Operand(kVFPZConditionFlagBit | kVFPVConditionFlagBit));
-    EmitBranch(true_block, false_block, eq);
-#else
-  PPCPORT_UNIMPLEMENTED();
-  __ fake_asm(fLITHIUM93);
-#endif
+    uint crBits = (1 << (31 - Assembler::encode_crbit(cr7, CR_EQ)) |
+                   1 << (31 - Assembler::encode_crbit(cr7, CR_FU)));
+    __ fcmpu(reg, kDoubleRegZero, cr7);
+    __ mfcr(scratch);
+    __ andi(scratch, scratch, Operand(crBits));
+    EmitBranch(true_block, false_block, eq, cr0);
   } else {
     ASSERT(r.IsTagged());
     Register reg = ToRegister(instr->value());
@@ -4587,13 +4585,15 @@ void LCodeGen::DoSmiTag(LSmiTag* instr) {
 
 
 void LCodeGen::DoSmiUntag(LSmiUntag* instr) {
+  Register scratch = scratch0();
   Register input = ToRegister(instr->value());
   Register result = ToRegister(instr->result());
   if (instr->needs_check()) {
     STATIC_ASSERT(kHeapObjectTag == 1);
-    // If the input is a HeapObject, SmiUntag will set the carry flag.
-    __ SmiUntag(result, input, SetCC);
-    DeoptimizeIf(ge, instr->environment(), cr0);
+    // If the input is a HeapObject, value of scratch won't be zero.
+    __ andi(scratch, input, Operand(kHeapObjectTag));
+    __ SmiUntag(result, input);
+    DeoptimizeIf(ne, instr->environment(), cr0);
   } else {
     __ SmiUntag(result, input);
   }

@@ -526,13 +526,15 @@ enum BOfield {  // Bits 25-21
 #undef CR_LT
 #undef CR_GT
 #undef CR_EQ
+#undef CR_SO
 #endif
 
 enum CRBit {
   CR_LT = 0,
   CR_GT = 1,
   CR_EQ = 2,
-  CR_OF = 3
+  CR_SO = 3,
+  CR_FU = 3
 };
 
 #define CRWIDTH 4
