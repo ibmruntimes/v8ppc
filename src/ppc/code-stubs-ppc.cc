@@ -7571,7 +7571,7 @@ void ProfileEntryHookStub::Generate(MacroAssembler* masm) {
   EMIT_STUB_MARKER(198);
   // The entry hook is a "push lr" instruction, followed by a call.
   const int32_t kReturnAddressDistanceFromFunctionStart =
-      Assembler::kCallTargetAddressOffset + Assembler::kInstrSize;
+      Assembler::kCallTargetAddressOffset + 2 * Assembler::kInstrSize;
 
   // Save live volatile registers.
   __ mflr(r3);
