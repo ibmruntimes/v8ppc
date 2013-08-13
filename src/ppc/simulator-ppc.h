@@ -156,7 +156,7 @@ class Simulator {
   intptr_t get_register(int reg) const;
   double get_double_from_register_pair(int reg);
   void set_d_register_from_double(int dreg, const double dbl) {
-    ASSERT(dreg >= 0 && dreg < kNumFPRS);
+    ASSERT(dreg >= 0 && dreg < kNumFPRs);
     fp_register[dreg] = dbl;
   }
   double get_double_from_d_register(int dreg) {
