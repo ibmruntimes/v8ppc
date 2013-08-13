@@ -706,8 +706,8 @@ class Assembler : public AssemblerBase {
 
   static const int kPatchDebugBreakSlotReturnOffset = 4 * kInstrSize;
 
-  static const int kJSReturnSequenceInstructions = 6;
-  static const int kDebugBreakSlotInstructions = 5;
+  static const int kJSReturnSequenceInstructions = 5;
+  static const int kDebugBreakSlotInstructions = 4;
   static const int kDebugBreakSlotLength =
       kDebugBreakSlotInstructions * kInstrSize;
 
