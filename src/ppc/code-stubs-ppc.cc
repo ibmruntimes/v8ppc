@@ -7597,6 +7597,14 @@ void ProfileEntryHookStub::Generate(MacroAssembler* masm) {
 #if defined(V8_HOST_ARCH_PPC)
   __ mov(ip, Operand(reinterpret_cast<intptr_t>(&entry_hook_)));
   __ lwz(ip, MemOperand(ip));
+
+  // PPC LINUX ABI:
+  //
+  // Create 2 extra slots on stack:
+  //    [0] backchain
+  //    [1] link register save area
+  //
+  __ addi(sp, sp, Operand(-2 * kPointerSize));
 #else
   // Under the simulator we need to indirect the entry hook through a
   // trampoline function at a known address.
@@ -7608,6 +7616,10 @@ void ProfileEntryHookStub::Generate(MacroAssembler* masm) {
                                        masm->isolate())));
 #endif
   __ Call(ip);
+
+#if defined(V8_HOST_ARCH_PPC)
+  __ addi(sp, sp, Operand(2 * kPointerSize));
+#endif
 
   // Restore the stack pointer if needed.
   if (frame_alignment > kPointerSize) {
