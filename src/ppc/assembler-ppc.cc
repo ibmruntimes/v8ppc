@@ -427,9 +427,15 @@ int Assembler::target_at(int pos)  {
       // EndOfChain sentinel is returned directly, not relative to pc or pos.
       return kEndOfChain;
     } else {
+#ifdef V8_TARGET_ARCH_PPC64
+      uint64_t instr_address = reinterpret_cast<int64_t>(buffer_ + pos) << 2;
+      instr_address &= kImm16Mask;
+      int64_t delta = instr_address - imm16;
+#else
       uint32_t instr_address = reinterpret_cast<int32_t>(buffer_ + pos) << 2;
       instr_address &= kImm16Mask;
       int32_t delta = instr_address - imm16;
+#endif
       ASSERT(pos > delta);
       return pos - delta;
     }
@@ -488,7 +494,11 @@ void Assembler::target_at_put(int pos, int target_pos) {
     instr_at_put(pos, instr | (imm16 & kImm16Mask));
     return;
   } else {
+#ifdef V8_TARGET_ARCH_PPC64
+    uint64_t imm28 = (uint64_t)buffer_ + target_pos;
+#else
     uint32_t imm28 = (uint32_t)buffer_ + target_pos;
+#endif
     imm28 &= kImm26Mask;
     ASSERT((imm28 & 3) == 0);
 
