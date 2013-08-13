@@ -274,7 +274,7 @@ void StubCache::GenerateProbe(MacroAssembler* masm,
              extra3);
 
   // Primary miss: Compute hash for secondary probe.
-  __ srwi(extra, scratch, Operand(kHeapObjectTagSize));
+  __ srwi(extra, name, Operand(kHeapObjectTagSize));
   __ sub(scratch, scratch, extra);
   uint32_t mask2 = kSecondaryTableSize - 1;
   __ addi(scratch, scratch, Operand((flags >> kHeapObjectTagSize) & mask2));
