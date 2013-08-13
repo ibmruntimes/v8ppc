@@ -863,8 +863,8 @@ Simulator::Simulator(Isolate* isolate) : isolate_(isolate) {
   special_reg_ctr_ = 0;  // PowerPC
 
   // Initializing FP registers.
-  for (int i = 0; i < num_d_registers*2; i++) {
-    fp_register[i] = 0;
+  for (int i = 0; i < num_d_registers; i++) {
+    fp_register[i] = 0.0;
   }
   FPSCR_rounding_mode_ = RZ;
 
@@ -987,20 +987,12 @@ double Simulator::get_double_from_register_pair(int reg) {
 #ifndef V8_TARGET_ARCH_PPC64  // doesn't make sense in 64bit mode
   // Read the bits from the unsigned integer register_[] array
   // into the double precision floating point value and return it.
-  char buffer[2 * sizeof(fp_register[0])];
-  memcpy(buffer, &registers_[reg], 2 * sizeof(registers_[0]));
-  memcpy(&dm_val, buffer, 2 * sizeof(registers_[0]));
+  char buffer[sizeof(fp_register[0])];
+  memcpy(buffer, &registers_[reg], sizeof(registers_[0]));
+  memcpy(&dm_val, buffer, sizeof(registers_[0]));
 #endif
   return(dm_val);
 }
-
-
-void Simulator::set_dw_register(int dreg, const int* dbl) {
-  ASSERT((dreg >= 0) && (dreg < num_d_registers));
-  registers_[dreg] = dbl[0];
-  registers_[dreg + 1] = dbl[1];
-}
-
 
 // Raw access to the PC register.
 void Simulator::set_pc(int32_t value) {
@@ -1017,33 +1009,6 @@ bool Simulator::has_bad_pc() const {
 // Raw access to the PC register without the special adjustment when reading.
 int32_t Simulator::get_pc() const {
   return special_reg_pc_;
-}
-
-template<class InputType, int register_size>
-void Simulator::SetFPRegister(int reg_index, const InputType& value) {
-  ASSERT(reg_index >= 0 &&
-         register_size == 2 &&
-         reg_index < num_d_registers);
-
-  char buffer[register_size * sizeof(fp_register[0])];
-  memcpy(buffer, &value, register_size * sizeof(fp_register[0]));
-  memcpy(&fp_register[reg_index * register_size], buffer,
-         register_size * sizeof(fp_register[0]));
-}
-
-
-template<class ReturnType, int register_size>
-ReturnType Simulator::GetFromFPRegister(int reg_index) {
-  ASSERT(reg_index >= 0 &&
-         register_size == 2 &&
-         reg_index < num_d_registers);
-
-  ReturnType value = 0;
-  char buffer[register_size * sizeof(fp_register[0])];
-  memcpy(buffer, &fp_register[register_size * reg_index],
-         register_size * sizeof(fp_register[0]));
-  memcpy(&value, buffer, register_size * sizeof(fp_register[0]));
-  return value;
 }
 
 // For use in calls that take two double values which are currently
@@ -2397,12 +2362,12 @@ void Simulator::DecodeExt4(Instruction* instr) {
       int32_t frb_ival = static_cast<int32_t>((*p) & 0xffffffff);
       int l = instr->Bits(25, 25);
       if (l == 1) {
-	fp_condition_reg_ = frb_ival;
+        fp_condition_reg_ = frb_ival;
       } else {
-	UNIMPLEMENTED();
+        UNIMPLEMENTED();
       }
       if (instr->Bit(0)) {  // RC bit set
-	UNIMPLEMENTED();
+        UNIMPLEMENTED();
         // int w = instr->Bits(16, 16);
         // int flm = instr->Bits(24, 17);
       }

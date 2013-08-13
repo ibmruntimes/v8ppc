@@ -155,31 +155,12 @@ class Simulator {
   void set_register(int reg, intptr_t value);
   intptr_t get_register(int reg) const;
   double get_double_from_register_pair(int reg);
-  void set_dw_register(int dreg, const int* dbl);
-
-  // Support for VFP.
-  void set_d_register_from_double(int dreg, const double& dbl) {
-    SetFPRegister<double, 2>(dreg, dbl);
+  void set_d_register_from_double(int dreg, const double dbl) {
+    ASSERT(dreg >= 0 && dreg < num_d_registers);
+    fp_register[dreg] = dbl;
   }
-
   double get_double_from_d_register(int dreg) {
-    return GetFromFPRegister<double, 2>(dreg);
-  }
-
-  void set_s_register_from_float(int sreg, const float flt) {
-    SetFPRegister<float, 1>(sreg, flt);
-  }
-
-  float get_float_from_s_register(int sreg) {
-    return GetFromFPRegister<float, 1>(sreg);
-  }
-
-  void set_s_register_from_sinteger(int sreg, const int sint) {
-    SetFPRegister<int, 1>(sreg, sint);
-  }
-
-  int get_sinteger_from_s_register(int sreg) {
-    return GetFromFPRegister<int, 1>(sreg);
+    return fp_register[dreg];
   }
 
   // Special case of set_register and get_register to access the raw PC value.
@@ -329,8 +310,7 @@ class Simulator {
   int32_t special_reg_xer_;  // PowerPC
 
   // VFP architecture state.
-  // TODO(penguin): represent fp_registers as double
-  unsigned int fp_register[num_d_registers*2];
+  double fp_register[num_d_registers*1];
 
   // VFP rounding mode. See ARM DDI 0406B Page A2-29.
   VFPRoundingMode FPSCR_rounding_mode_;
