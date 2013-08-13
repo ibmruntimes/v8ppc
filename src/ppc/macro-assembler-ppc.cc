@@ -3395,7 +3395,7 @@ void MacroAssembler::CallCFunctionHelper(Register function,
 
   Call(function);
   // roohack - restore the reserved space
-  addi(sp,sp, Operand(256));
+  addi(sp, sp, Operand(256));
 #else
   Call(function);
 #endif
