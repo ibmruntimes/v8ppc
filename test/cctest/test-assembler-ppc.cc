@@ -62,6 +62,10 @@ TEST(0) {
 
   Assembler assm(Isolate::Current(), NULL, 0);
 
+#if _AIX
+  __ function_descriptor();
+#endif
+
   __ add(r3, r3, r4);
   __ blr();
 
@@ -88,6 +92,10 @@ TEST(1) {
 
   Assembler assm(Isolate::Current(), NULL, 0);
   Label L, C;
+
+#if _AIX
+  __ function_descriptor();
+#endif
 
   __ mr(r4, r3);
   __ li(r3, Operand(0, RelocInfo::NONE));
@@ -125,6 +133,10 @@ TEST(2) {
 
   Assembler assm(Isolate::Current(), NULL, 0);
   Label L, C;
+
+#if _AIX
+  __ function_descriptor();
+#endif
 
   __ mr(r4, r3);
   __ li(r3, Operand(1));
@@ -179,6 +191,10 @@ TEST(3) {
 
   Assembler assm(Isolate::Current(), NULL, 0);
   Label L, C;
+
+#if _AIX
+  __ function_descriptor();
+#endif
 
   // build a frame
   __ stwu(sp, MemOperand(sp, -16));
@@ -260,7 +276,6 @@ TEST(4) {
   // the doubles and floats.
   Assembler assm(Isolate::Current(), NULL, 0);
   Label L, C;
-
 
   if (CpuFeatures::IsSupported(VFP3)) {
     CpuFeatures::Scope scope(VFP3);

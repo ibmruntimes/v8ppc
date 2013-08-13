@@ -3385,7 +3385,20 @@ void MacroAssembler::CallCFunctionHelper(Register function,
   // Just call directly. The function called cannot cause a GC, or
   // allow preemption, so the return address in the link register
   // stays correct.
+#if _AIX
+  // roohack - too much reserved space, need to fix for proper ABI
+  sub(sp, sp, Operand(256));
+  // AIX uses a function descriptor. When calling C code be aware
+  // of this descriptor and pick up values from it
+  lwz(ToRegister(2), MemOperand(function, 4));
+  lwz(function, MemOperand(function, 0));
+
   Call(function);
+  // roohack - restore the reserved space
+  addi(sp,sp, Operand(256));
+#else
+  Call(function);
+#endif
   int stack_passed_arguments = CalculateStackPassedWords(
       num_reg_arguments, num_double_arguments);
   if (ActivationFrameAlignment() > kPointerSize) {
