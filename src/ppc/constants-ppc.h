@@ -316,38 +316,7 @@ enum OpcodeExt5 {
 
 // Instruction encoding bits and masks.
 enum {
-  B6  = 1 << 6,
-  B10 = 1 << 10,
-  B11 = 1 << 11,
-  B16 = 1 << 16,
-  B17 = 1 << 17,
-  B21 = 1 << 21,
-
-  kOpcodeMask = 0x3f << 26,
-  kExt2OpcodeMask = 0x1f << 1,
-  kBOMask = 0x1f << 21,
-  kBIMask = 0x1F << 16,
-  kBDMask = 0x14 << 2,
-  kAAMask = 0x01 << 1,
-  kLKMask = 0x01,
-  kRCMask = 0x01,
-  kTOMask = 0x1f << 21,
-
-
-#if defined(INCLUDE_ARM)
-// Instruction encoding bits and masks.
-  H   = 1 << 5,   // Halfword (or byte).
-  S6  = 1 << 6,   // Signed (or unsigned).
-  L   = 1 << 20,  // Load (or store).
-  S   = 1 << 20,  // Set condition code (or leave unchanged).
-  W   = 1 << 21,  // Writeback base register (or leave unchanged).
-  A   = 1 << 21,  // Accumulate in multiply instruction (or not).
-  B   = 1 << 22,  // Unsigned byte (or word).
-  N   = 1 << 22,  // Long (or short).
-  U   = 1 << 23,  // Positive (or negative) offset/index.
-  P   = 1 << 24,  // Offset/pre-indexed addressing (or post-indexed addressing).
-  I   = 1 << 25,  // Immediate shifter operand (or not).
-
+  // Instruction encoding bit
   B4  = 1 << 4,
   B5  = 1 << 5,
   B7  = 1 << 7,
@@ -365,19 +334,30 @@ enum {
   B27 = 1 << 27,
   B28 = 1 << 28,
 
-  // Instruction bit masks.
-  kCondMask   = 0x1F << 21,  // changed for PowerPC
-  kALUMask    = 0x6f << 21,
-  kRdMask     = 15 << 12,  // In str instruction.
-  kCoprocessorMask = 15 << 8,
-  kOpCodeMask = 15 << 21,  // In data-processing instructions.
+  B6  = 1 << 6,
+  B10 = 1 << 10,
+  B11 = 1 << 11,
+  B16 = 1 << 16,
+  B17 = 1 << 17,
+  B21 = 1 << 21,
+
+  // Instruction bit masks
+  kCondMask   = 0x1F << 21,
   kOff12Mask  = (1 << 12) - 1,
   kImm24Mask  = (1 << 24) - 1,
-#endif  // INCLUDE_ARM
   kOff16Mask  = (1 << 16) - 1,
   kImm16Mask  = (1 << 16) - 1,
   kImm26Mask  = (1 << 26) - 1,
-  kBOfieldMask = 0x1f << 21
+  kBOfieldMask = 0x1f << 21,
+  kOpcodeMask = 0x3f << 26,
+  kExt2OpcodeMask = 0x1f << 1,
+  kBOMask = 0x1f << 21,
+  kBIMask = 0x1F << 16,
+  kBDMask = 0x14 << 2,
+  kAAMask = 0x01 << 1,
+  kLKMask = 0x01,
+  kRCMask = 0x01,
+  kTOMask = 0x1f << 21
 };
 
 // the following is to differentiate different faked ARM opcodes for

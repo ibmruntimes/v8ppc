@@ -206,19 +206,6 @@ MemOperand::MemOperand(Register rn, Register rm,
 // -----------------------------------------------------------------------------
 // Specific instructions, constants, and masks.
 
-// add(sp, sp, 4) instruction (aka Pop())
-const Instr kPopInstruction =
-    al | PostIndex | 4 | LeaveCC | I | kRegister_sp_Code * B16 |
-        kRegister_sp_Code * B12;
-// str(r, MemOperand(sp, 4, NegPreIndex), al) instruction (aka push(r))
-// register r is not encoded.
-const Instr kPushRegPattern =
-    al | B26 | 4 | NegPreIndex | kRegister_sp_Code * B16;
-// ldr(r, MemOperand(sp, 4, PostIndex), al) instruction (aka pop(r))
-// register r is not encoded.
-const Instr kPopRegPattern =
-    al | B26 | L | 4 | PostIndex | kRegister_sp_Code * B16;
-
 // Spare buffer.
 static const int kMinimalBufferSize = 4*KB;
 
@@ -339,15 +326,6 @@ Register Assembler::GetRB(Instr instr) {
   Register reg;
   reg.code_ = Instruction::RBValue(instr);
   return reg;
-}
-
-bool Assembler::IsPush(Instr instr) {
-  return ((instr & ~kRdMask) == kPushRegPattern);
-}
-
-
-bool Assembler::IsPop(Instr instr) {
-  return ((instr & ~kRdMask) == kPopRegPattern);
 }
 
 bool Assembler::Is32BitLoadIntoR12(Instr instr1, Instr instr2) {
@@ -1173,73 +1151,12 @@ void Assembler::mvn(Register dst, const Operand& src, SBit s, Condition cond) {
   EMIT_FAKE_ARM_INSTR(fMVN);
 }
 
-
-// Multiply instructions.
-void Assembler::mla(Register dst, Register src1, Register src2, Register srcA,
-                    SBit s, Condition cond) {
-  emit(cond | A | s | dst.code()*B16 | srcA.code()*B12 |
-       src2.code()*B8 | B7 | B4 | src1.code());
-}
-
-
 // PowerPC
 void Assembler::mul(Register dst, Register src1, Register src2,
                     OEBit o, RCBit r) {
   xo_form(EXT2 | MULLW, dst, src1, src2, o, r);
 }
-// end PowerPC
-
-void Assembler::smlal(Register dstL,
-                      Register dstH,
-                      Register src1,
-                      Register src2,
-                      SBit s,
-                      Condition cond) {
-  ASSERT(!dstL.is(dstH));
-  emit(cond | B23 | B22 | A | s | dstH.code()*B16 | dstL.code()*B12 |
-       src2.code()*B8 | B7 | B4 | src1.code());
-}
-
-
-void Assembler::smull(Register dstL,
-                      Register dstH,
-                      Register src1,
-                      Register src2,
-                      SBit s,
-                      Condition cond) {
-  ASSERT(!dstL.is(dstH));
-  emit(cond | B23 | B22 | s | dstH.code()*B16 | dstL.code()*B12 |
-       src2.code()*B8 | B7 | B4 | src1.code());
-}
-
-
-void Assembler::umlal(Register dstL,
-                      Register dstH,
-                      Register src1,
-                      Register src2,
-                      SBit s,
-                      Condition cond) {
-  ASSERT(!dstL.is(dstH));
-  emit(cond | B23 | A | s | dstH.code()*B16 | dstL.code()*B12 |
-       src2.code()*B8 | B7 | B4 | src1.code());
-}
-
-
-void Assembler::umull(Register dstL,
-                      Register dstH,
-                      Register src1,
-                      Register src2,
-                      SBit s,
-                      Condition cond) {
-  ASSERT(!dstL.is(dstH));
-  emit(cond | B23 | s | dstH.code()*B16 | dstL.code()*B12 |
-       src2.code()*B8 | B7 | B4 | src1.code());
-}
-
-// Bitfield manipulation instructions.
-
 // Special register instructions
-// PowerPC
 void Assembler::crxor(int bt, int ba, int bb) {
   emit(EXT1 | CRXOR | bt*B21 | ba*B16 | bb*B11);
 }

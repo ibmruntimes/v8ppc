@@ -1028,24 +1028,9 @@ class Assembler : public AssemblerBase {
 
   // Multiply instructions
 
-  void mla(Register dst, Register src1, Register src2, Register srcA,
-           SBit s = LeaveCC, Condition cond = al);
-
   // PowerPC
   void mul(Register dst, Register src1, Register src2,
            OEBit s = LeaveOE, RCBit r = LeaveRC);
-
-  void smlal(Register dstL, Register dstH, Register src1, Register src2,
-             SBit s = LeaveCC, Condition cond = al);
-
-  void smull(Register dstL, Register dstH, Register src1, Register src2,
-             SBit s = LeaveCC, Condition cond = al);
-
-  void umlal(Register dstL, Register dstH, Register src1, Register src2,
-             SBit s = LeaveCC, Condition cond = al);
-
-  void umull(Register dstL, Register dstH, Register src1, Register src2,
-             SBit s = LeaveCC, Condition cond = al);
 
   // Miscellaneous arithmetic instructions
 
@@ -1344,8 +1329,6 @@ class Assembler : public AssemblerBase {
   static bool IsBranch(Instr instr);
   static Register GetRA(Instr instr);
   static Register GetRB(Instr instr);
-  static bool IsPush(Instr instr);
-  static bool IsPop(Instr instr);
   static bool Is32BitLoadIntoR12(Instr instr1, Instr instr2);
   static bool IsCmpRegister(Instr instr);
   static bool IsCmpImmediate(Instr instr);
