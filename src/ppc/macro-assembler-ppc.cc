@@ -2371,9 +2371,9 @@ void MacroAssembler::EmitVFPTruncate(VFPRoundingMode rounding_mode,
   if (rounding_mode == kRoundToZero) {
     fctidz(double_scratch, double_input);
   } else {
-    mtfsfi(7, rounding_mode);  // set rounding mode in fpscr
+    SetRoundingMode(rounding_mode);
     fctid(double_scratch, double_input);
-    mtfsfi(7, kRoundToNearest);  // reset
+    ResetRoundingMode();
   }
 
   addi(sp, sp, Operand(-kDoubleSize));
@@ -3732,14 +3732,12 @@ void MacroAssembler::ClampUint8(Register output_reg, Register input_reg) {
   bind(&done);
 }
 
-void MacroAssembler::SetRoundingMode(VFPRoundingMode RN,
-                                     DoubleRegister old_fpscr) {
-  mffs(old_fpscr);
+void MacroAssembler::SetRoundingMode(VFPRoundingMode RN) {
   mtfsfi(7, RN);
 }
 
-void MacroAssembler::RestoreFPSCR(DoubleRegister old_fpscr) {
-  mtfsf(old_fpscr);
+void MacroAssembler::ResetRoundingMode() {
+  mtfsfi(7, kRoundToNearest);  // reset (default is kRoundToNearest)
 }
 
 void MacroAssembler::ClampDoubleToUint8(Register result_reg,
@@ -3769,10 +3767,8 @@ void MacroAssembler::ClampDoubleToUint8(Register result_reg,
   // In 0-255 range, round and truncate.
   bind(&in_bounds);
 
-  // round to nearest
-  SetRoundingMode(kRoundToNearest, temp_double_reg2);
+  // round to nearest (default rounding mode)
   fctiw(temp_double_reg, input_reg);
-  RestoreFPSCR(temp_double_reg2);
 
   // reserve a slot on the stack
   stfdu(temp_double_reg, MemOperand(sp, -8));

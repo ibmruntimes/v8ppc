@@ -474,11 +474,11 @@ class MacroAssembler: public Assembler {
   void Xor(Register ra, Register rs, const Operand& rb, RCBit rc = LeaveRC);
 
 
-  // Set new rounding mode RN to FPSCR and save old FPSCR to old_fpscr
-  void SetRoundingMode(VFPRoundingMode RN, DoubleRegister old_fpscr);
+  // Set new rounding mode RN to FPSCR
+  void SetRoundingMode(VFPRoundingMode RN);
 
-  // restore FPSCR register from old_fpscr
-  void RestoreFPSCR(DoubleRegister old_fpscr);
+  // reset rounding mode to default (kRoundToNearest)
+  void ResetRoundingMode();
 
   // These exist to provide portability between 32 and 64bit
   void LoadP(Register dst, const MemOperand& mem);
