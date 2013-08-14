@@ -416,62 +416,19 @@ int Assembler::target_at(int pos)  {
      if (instr == 0) {
        return kEndOfChain;
      } else {
-       int32_t imm26 =((instr & static_cast<int32_t>(kImm16Mask)) << 16) >> 16;
-       return (imm26 + pos);
+       int32_t imm16 = SIGN_EXT_IMM16(instr);
+       return (imm16 + pos);
      }
-  } else {
-    int32_t imm16 = (instr & static_cast<int32_t>(kImm16Mask));
-    if (imm16 == kEndOfChain) {
-      // EndOfChain sentinel is returned directly, not relative to pc or pos.
-      return kEndOfChain;
-    } else {
-#ifdef V8_TARGET_ARCH_PPC64
-      uint64_t instr_address = reinterpret_cast<int64_t>(buffer_ + pos) << 2;
-      instr_address &= kImm16Mask;
-      int64_t delta = instr_address - imm16;
-#else
-      uint32_t instr_address = reinterpret_cast<int32_t>(buffer_ + pos) << 2;
-      instr_address &= kImm16Mask;
-      int32_t delta = instr_address - imm16;
-#endif
-      ASSERT(pos > delta);
-      return pos - delta;
-    }
   }
 
   PPCPORT_UNIMPLEMENTED();
   ASSERT(false);
   return -1;
-
-#if 0
-  // else we fall into the ARM code.. which is busted
-  if ((instr & ~kImm26Mask) == 0) {  // todo - handle AA and LK bits if present
-    // Emitted label constant, not part of a branch.
-    return instr - (Code::kHeaderSize - kHeapObjectTag);
-  }
-  // ignore for now with mixed branches
-  ASSERT((instr & 7*B25) == 5*B25);  // b, bl, or blx imm24
-  int imm26 = ((instr & kImm26Mask) << 6) >> 6;
-  if ((Instruction::ConditionField(instr) == kSpecialCondition) &&
-      ((instr & B24) != 0)) {
-    // blx uses bit 24 to encode bit 2 of imm26
-    imm26 += 2;
-  }
-  return pos + imm26;
-#endif
 }
 
 void Assembler::target_at_put(int pos, int target_pos) {
   Instr instr = instr_at(pos);
   int opcode = instr & kOpcodeMask;
-
-  if ((instr & ~kImm16Mask) == 0) {
-    ASSERT(target_pos == kEndOfChain || target_pos >= 0);
-    // Emitted label constant, not part of a branch.
-    // Make label relative to Code* of generated Code object.
-    instr_at_put(pos, target_pos + (Code::kHeaderSize - kHeapObjectTag));
-    return;
-  }
 
   // check which type of branch this is 16 or 26 bit offset
   if (BX == opcode) {
@@ -491,53 +448,15 @@ void Assembler::target_at_put(int pos, int target_pos) {
     // todo add AA and LK bits
     instr_at_put(pos, instr | (imm16 & kImm16Mask));
     return;
-  } else {
-#ifdef V8_TARGET_ARCH_PPC64
-    uint64_t imm28 = (uint64_t)buffer_ + target_pos;
-#else
-    uint32_t imm28 = (uint32_t)buffer_ + target_pos;
-#endif
-    imm28 &= kImm26Mask;
-    ASSERT((imm28 & 3) == 0);
-
-    instr &= ~kImm26Mask;
-    uint32_t imm26 = imm28 >> 2;
-    ASSERT(is_uint26(imm26));
-
-    instr_at_put(pos, instr | (imm26 & kImm26Mask));
-    return;
-  }
-  ASSERT(false);
-
-#if 0
-  // else we fall into the ARM code.. which is busted
-  if ((instr & ~kImm26Mask) == 0) {  // todo - handle AA and LK bits
+  } else if ((instr & ~kImm16Mask) == 0) {
     ASSERT(target_pos == kEndOfChain || target_pos >= 0);
     // Emitted label constant, not part of a branch.
     // Make label relative to Code* of generated Code object.
     instr_at_put(pos, target_pos + (Code::kHeaderSize - kHeapObjectTag));
     return;
   }
-  int imm26 = target_pos - pos;
-  ASSERT((imm26 & 3) == 0);
-  instr &= ~kImm26Mask;
-  ASSERT(is_int26(imm26));
-  // todo add AA and LK bits
-  instr_at_put(pos, instr | (imm26 & kImm26Mask));
 
-  ASSERT((instr & 7*B25) == 5*B25);  // b, bl, or blx imm24
-  if (Instruction::ConditionField(instr) == kSpecialCondition) {
-    // blx uses bit 24 to encode bit 2 of imm26
-    ASSERT((imm26 & 1) == 0);
-    instr = (instr & ~(B24 | kImm24Mask)) | ((imm26 & 2) >> 1)*B24;
-  } else {
-    ASSERT((imm26 & 3) == 0);
-    instr &= ~kImm24Mask;
-  }
-  int imm24 = imm26 >> 2;
-  ASSERT(is_int24(imm24));
-  instr_at_put(pos, instr | (imm24 & kImm24Mask));
-#endif
+  ASSERT(false);
 }
 
 void Assembler::bind_to(Label* L, int pos) {
@@ -554,28 +473,6 @@ void Assembler::bind_to(Label* L, int pos) {
   if (pos > last_bound_pos_)
     last_bound_pos_ = pos;
 }
-
-
-void Assembler::link_to(Label* L, Label* appendix) {
-  if (appendix->is_linked()) {
-    if (L->is_linked()) {
-      // Append appendix to L's list.
-      int fixup_pos;
-      int link = L->pos();
-      do {
-        fixup_pos = link;
-        link = target_at(fixup_pos);
-      } while (link > 0);
-      ASSERT(link == kEndOfChain);
-      target_at_put(fixup_pos, appendix->pos());
-    } else {
-      // L is empty, simply use appendix.
-      *L = *appendix;
-    }
-  }
-  appendix->Unuse();  // appendix should not be used anymore
-}
-
 
 void Assembler::bind(Label* L) {
   ASSERT(!L->is_bound());  // label can only be bound once
@@ -681,10 +578,17 @@ void Assembler::label_at_put(Label* L, int at_offset) {
     if (L->is_linked()) {
       target_pos = L->pos();  // L's link
     } else {
-      target_pos = kEndOfChain;
+      // was: target_pos = kEndOfChain;
+      // However, using branch to self to mark the first reference
+      // should avoid most instances of branch offset overflow.  See
+      // target_at() for where this is converted back to kEndOfChain.
+      target_pos = at_offset;
     }
     L->link_to(at_offset);
-    instr_at_put(at_offset, target_pos + (Code::kHeaderSize - kHeapObjectTag));
+
+    Instr constant = target_pos - at_offset;
+    ASSERT(is_int16(constant));
+    instr_at_put(at_offset, constant);
   }
 }
 

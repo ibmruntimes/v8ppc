@@ -4867,7 +4867,7 @@ void RegExpExecStub::Generate(MacroAssembler* masm) {
   __ lwz(r3, MemOperand(r3, 0));
   __ mov(r5, Operand(address_of_regexp_stack_memory_size));
   __ lwz(r5, MemOperand(r5, 0));
-  __ add(r3, r3, Operand(r5));
+  __ add(r3, r3, r5);
   __ stw(r3, MemOperand(sp, 3 * kPointerSize));
 
   // Argument 6: Set the number of capture registers to zero to force global
