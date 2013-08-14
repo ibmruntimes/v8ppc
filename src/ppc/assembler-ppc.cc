@@ -57,8 +57,6 @@ unsigned CpuFeatures::found_by_runtime_probing_ = 0;
 
 #define EMIT_FAKE_ARM_INSTR(arm_opcode) fake_asm(arm_opcode);
 
-#define NEW_IMM_CHECK_CODE
-
 // Get the CPU features enabled by the build.
 static unsigned CpuFeaturesImpliedByCompiler() {
   unsigned answer = 0;
@@ -619,7 +617,6 @@ void Assembler::d_form(Instr instr,
                         const int val,
                         bool signed_disp) {
   CheckBuffer();
-#ifdef NEW_IMM_CHECK_CODE
   if (signed_disp) {
     if (!is_int16(val)) {
       PrintF("val = %d, 0x%x\n", val, val);
@@ -632,7 +629,6 @@ void Assembler::d_form(Instr instr,
     }
     ASSERT(is_uint16(val));
   }
-#endif
   emit(instr | rt.code()*B21 | ra.code()*B16 | (kImm16Mask & val));
 }
 
@@ -718,12 +714,7 @@ void Assembler::bcr() {
 
 void Assembler::bc(int branch_offset, BOfield bo, int condition_bit) {
   positions_recorder()->WriteRecordedPositions();
-#ifndef NEW_IMM_CHECK_CODE
-  // currently assumes AA and LK are always zero
-  ASSERT(is_int16(branch_offset) || is_uint16(branch_offset));
-#else
   ASSERT(is_int16(branch_offset));
-#endif
   emit(BCX | bo | condition_bit*B16 | (kImm16Mask & branch_offset));
 }
 
@@ -768,14 +759,7 @@ void Assembler::xori(Register dst, Register src, const Operand& imm) {
 }
 
 void Assembler::xoris(Register ra, Register rs, const Operand& imm) {
-#ifndef NEW_IMM_CHECK_CODE
-  int imm16 = imm.imm32_;
-  ASSERT(is_int16(imm16) || is_uint16(imm16));
-  imm16 &= kImm16Mask;
-  d_form(XORIS, rs, ra, imm16, false);
-#else
   d_form(XORIS, rs, ra, imm.imm32_, false);
-#endif
 }
 
 void Assembler::xor_(Register dst, Register src1, Register src2, RCBit rc) {
@@ -923,25 +907,11 @@ void Assembler::addic(Register dst, Register src, const Operand& imm) {
 }
 
 void  Assembler::andi(Register ra, Register rs, const Operand& imm) {
-#ifndef NEW_IMM_CHECK_CODE
-  int imm16 = imm.imm32_;
-  ASSERT(is_int16(imm16));
-  imm16 &= kImm16Mask;
-  d_form(ANDIx, rs, ra, imm16, false);
-#else
   d_form(ANDIx, rs, ra, imm.imm32_, false);
-#endif
 }
 
 void Assembler::andis(Register ra, Register rs, const Operand& imm) {
-#ifndef NEW_IMM_CHECK_CODE
-  int imm16 = imm.imm32_;
-  ASSERT(is_int16(imm16) || is_uint16(imm16));
-  imm16 &= kImm16Mask;
-  d_form(ANDISx, rs, ra, imm16, false);
-#else
   d_form(ANDISx, rs, ra, imm.imm32_, false);
-#endif
 }
 
 void Assembler::nor(Register dst, Register src1, Register src2, RCBit r) {
@@ -992,23 +962,11 @@ void Assembler::cmpl(Register src1, Register src2, CRegister cr) {
 
 // Pseudo op - load immediate
 void Assembler::li(Register dst, const Operand &imm) {
-  // this should only be signed 16bit values, the uint16 is a hack for now
-  // it may not work correctly on an actual PowerPC
-#ifndef NEW_IMM_CHECK_CODE
-  ASSERT(is_int16(imm.imm32_) || is_uint16(imm.imm32_));
-#endif
   d_form(ADDI, dst, r0, imm.imm32_, true);
 }
 
 void  Assembler::lis(Register dst, const Operand& imm) {
-#ifndef NEW_IMM_CHECK_CODE
-  int imm16 = imm.imm32_;
-  ASSERT(is_int16(imm16) || is_uint16(imm16));
-  imm16 &= kImm16Mask;
-  d_form(ADDIS, dst, r0, imm16, true);
-#else
   d_form(ADDIS, dst, r0, imm.imm32_, true);
-#endif
 }
 
 // Pseudo op - move register
