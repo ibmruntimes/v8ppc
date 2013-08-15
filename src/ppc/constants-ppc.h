@@ -31,8 +31,6 @@
 #ifndef V8_PPC_CONSTANTS_PPC_H_
 #define V8_PPC_CONSTANTS_PPC_H_
 
-#define INCLUDE_ARM 1
-
 namespace v8 {
 namespace internal {
 
@@ -493,21 +491,6 @@ enum CRBit {
 
 #define CRWIDTH 4
 
-#if defined(INCLUDE_ARM)
-// Memory operand addressing mode.
-enum AddrMode {
-  // Bit encoding P U W.
-  Offset       = (8|4|0) << 21,  // Offset (without writeback to base).
-  PreIndex     = (8|4|1) << 21,  // Pre-indexed addressing with writeback.
-  PostIndex    = (0|4|0) << 21,  // Post-indexed addressing with writeback.
-  NegOffset    = (8|0|0) << 21,  // Negative offset (without writeback to base).
-  NegPreIndex  = (8|0|1) << 21,  // Negative pre-indexed with writeback.
-  NegPostIndex = (0|0|0) << 21   // Negative post-indexed with writeback.
-};
-
-#endif  // INCLUDE_ARM
-
-
 // -----------------------------------------------------------------------------
 // Supervisor Call (svc) specific support.
 
@@ -731,5 +714,4 @@ class FPRegisters {
 
 } }  // namespace v8::internal
 
-#undef INCLUDE_ARM
 #endif  // V8_PPC_CONSTANTS_PPC_H_

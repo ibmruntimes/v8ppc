@@ -421,8 +421,7 @@ class MemOperand BASE_EMBEDDED {
  public:
   // Contains cruft left to allow ARM to continue to work
 
-  // PowerPC (remove AddrMode later)
-  explicit MemOperand(Register rn, int32_t offset = 0, AddrMode am = Offset);
+  explicit MemOperand(Register rn, int32_t offset = 0);
 
   explicit MemOperand(Register ra, Register rb);
 
@@ -551,24 +550,6 @@ class CpuFeatures : public AllStatic {
 
   DISALLOW_COPY_AND_ASSIGN(CpuFeatures);
 };
-
-
-extern const Instr kMovMvnMask;
-extern const Instr kMovMvnPattern;
-extern const Instr kMovMvnFlip;
-
-extern const Instr kMovLeaveCCMask;
-extern const Instr kMovLeaveCCPattern;
-extern const Instr kMovwMask;
-extern const Instr kMovwPattern;
-extern const Instr kMovwLeaveCCFlip;
-
-extern const Instr kCmpCmnMask;
-extern const Instr kCmpCmnPattern;
-extern const Instr kCmpCmnFlip;
-extern const Instr kAddSubFlip;
-extern const Instr kAndBicFlip;
-
 
 
 class Assembler : public AssemblerBase {
@@ -959,8 +940,6 @@ class Assembler : public AssemblerBase {
 
   // Miscellaneous arithmetic instructions
 
-  // Bitfield manipulation instructions. v7 and above.
-
   // Special register access
   // PowerPC
   void crxor(int bt, int ba, int bb);
@@ -975,22 +954,6 @@ class Assembler : public AssemblerBase {
   void marker_asm(int mcode);
   void function_descriptor();
   // end PowerPC
-
-  // Load/Store instructions
-  void ldr(Register dst, const MemOperand& src, Condition cond = al);
-  void str(Register src, const MemOperand& dst, Condition cond = al);
-  void ldrb(Register dst, const MemOperand& src, Condition cond = al);
-  void strb(Register src, const MemOperand& dst, Condition cond = al);
-  void ldrh(Register dst, const MemOperand& src, Condition cond = al);
-  void strh(Register src, const MemOperand& dst, Condition cond = al);
-  void ldrsb(Register dst, const MemOperand& src, Condition cond = al);
-  void ldrsh(Register dst, const MemOperand& src, Condition cond = al);
-  void ldrd(Register dst1,
-            Register dst2,
-            const MemOperand& src, Condition cond = al);
-  void strd(Register src1,
-            Register src2,
-            const MemOperand& dst, Condition cond = al);
 
   // Exception-generating instructions and debugging support
   void stop(const char* msg,

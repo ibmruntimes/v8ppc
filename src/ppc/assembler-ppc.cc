@@ -152,7 +152,7 @@ Operand::Operand(Handle<Object> handle) {
   }
 }
 
-MemOperand::MemOperand(Register rn, int32_t offset, AddrMode am) {
+MemOperand::MemOperand(Register rn, int32_t offset) {
   ra_ = rn;
   rb_ = no_reg;
   offset_ = offset;
@@ -1077,68 +1077,6 @@ void Assembler::mfcr(Register dst) {
 }
 
 // end PowerPC
-
-// Load/Store instructions.
-void Assembler::ldr(Register dst, const MemOperand& src, Condition cond) {
-  PPCPORT_CHECK(false);
-  EMIT_FAKE_ARM_INSTR(fLDR);
-}
-
-
-void Assembler::str(Register src, const MemOperand& dst, Condition cond) {
-  PPCPORT_CHECK(false);
-  EMIT_FAKE_ARM_INSTR(fSTR);
-}
-
-
-void Assembler::ldrb(Register dst, const MemOperand& src, Condition cond) {
-  PPCPORT_CHECK(false);
-  EMIT_FAKE_ARM_INSTR(fLDRB);
-}
-
-
-void Assembler::strb(Register src, const MemOperand& dst, Condition cond) {
-  PPCPORT_CHECK(false);
-  EMIT_FAKE_ARM_INSTR(fSTRB);
-}
-
-
-void Assembler::ldrh(Register dst, const MemOperand& src, Condition cond) {
-  PPCPORT_CHECK(false);
-  EMIT_FAKE_ARM_INSTR(fLDRH);
-}
-
-
-void Assembler::strh(Register src, const MemOperand& dst, Condition cond) {
-  PPCPORT_CHECK(false);
-  EMIT_FAKE_ARM_INSTR(fSTRH);
-}
-
-
-void Assembler::ldrsb(Register dst, const MemOperand& src, Condition cond) {
-  PPCPORT_CHECK(false);
-  EMIT_FAKE_ARM_INSTR(fLDRSB);
-}
-
-
-void Assembler::ldrsh(Register dst, const MemOperand& src, Condition cond) {
-  PPCPORT_CHECK(false);
-  EMIT_FAKE_ARM_INSTR(fLDRSH);
-}
-
-
-void Assembler::ldrd(Register dst1, Register dst2,
-                     const MemOperand& src, Condition cond) {
-  PPCPORT_CHECK(false);
-  EMIT_FAKE_ARM_INSTR(fLDRD);
-}
-
-
-void Assembler::strd(Register src1, Register src2,
-                     const MemOperand& dst, Condition cond) {
-  PPCPORT_CHECK(false);
-  EMIT_FAKE_ARM_INSTR(fSTRD);
-}
 
 // Exception-generating instructions and debugging support.
 // Stops with a non-negative code less than kNumOfWatchedStops support
