@@ -404,7 +404,7 @@ class Operand BASE_EMBEDDED {
   }
 
   Register rm() const { return rm_; }
-  
+
  private:
   Register rm_;
   int32_t imm32_;  // valid if rm_ == no_reg
@@ -1013,7 +1013,7 @@ class Assembler : public AssemblerBase {
   void marker_asm(int mcode);
   void function_descriptor();
   // end PowerPC
-  
+
   // Load/Store instructions
   void ldr(Register dst, const MemOperand& src, Condition cond = al);
   void str(Register src, const MemOperand& dst, Condition cond = al);
