@@ -737,9 +737,13 @@ class FPRegisters {
 
 // Argument encoding for function calls
 enum FunctionCallType {
-  // First arg passed by value
+  // No special handling required (all scalar)
+  CallType_Generic,
+  // First excplicit arg passed by value.
+  // Return slot passed as implicit first arg.
   CallType_ScalarArg,
-  // First arg passed by reference
+  // First explicit arg passed by reference.
+  // Return slot passed as implicit first arg.
   CallType_NonScalarArg
 };
 

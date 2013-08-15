@@ -34,6 +34,7 @@
 #include "bootstrapper.h"
 #include "code-stubs.h"
 #include "regexp-macro-assembler.h"
+#include "ppc/regexp-macro-assembler-ppc.h"
 
 namespace v8 {
 namespace internal {
@@ -4644,9 +4645,16 @@ void RegExpExecStub::Generate(MacroAssembler* masm) {
   // this code is called using the normal C calling convention. When calling
   // directly from generated code the native RegExp code will not do a GC and
   // therefore the content of these registers are safe to use after the call.
-  Register subject = r7;
-  Register regexp_data = r8;
-  Register last_match_info_elements = r9;
+  Register subject = r26;
+  Register regexp_data = r27;
+  Register last_match_info_elements = r28;
+  Register code = r29;
+
+  // Ensure register assigments are consistent with callee save masks
+  ASSERT(subject.bit() & (kCalleeSaved & kRegExpCalleeSaved));
+  ASSERT(regexp_data.bit() & (kCalleeSaved & kRegExpCalleeSaved));
+  ASSERT(last_match_info_elements.bit() & (kCalleeSaved & kRegExpCalleeSaved));
+  ASSERT(code.bit() & (kCalleeSaved & kRegExpCalleeSaved));
 
   // Ensure that a RegExp stack is allocated.
   Isolate* isolate = masm->isolate();
@@ -4716,7 +4724,7 @@ void RegExpExecStub::Generate(MacroAssembler* masm) {
   __ lwz(r3, MemOperand(sp, kPreviousIndexOffset));
   __ JumpIfNotSmi(r3, &runtime);
   __ cmpl(r6, r3);
-  __ blt(&runtime);
+  __ ble(&runtime);
 
   // r5: Number of capture registers
   // subject: Subject string
@@ -4818,19 +4826,19 @@ void RegExpExecStub::Generate(MacroAssembler* masm) {
   __ andi(r3, r3, Operand(kStringEncodingMask));
   __ srawi(r6, r3, 2, SetRC);
   __ beq(&encoding_type_UC16, cr0);
-  __ lwz(r10, FieldMemOperand(regexp_data, JSRegExp::kDataAsciiCodeOffset));
+  __ lwz(code, FieldMemOperand(regexp_data, JSRegExp::kDataAsciiCodeOffset));
   __ jmp(&br_over);
   __ bind(&encoding_type_UC16);
-  __ lwz(r10, FieldMemOperand(regexp_data, JSRegExp::kDataUC16CodeOffset));
+  __ lwz(code, FieldMemOperand(regexp_data, JSRegExp::kDataUC16CodeOffset));
   __ bind(&br_over);
 
   // Check that the irregexp code has been generated for the actual string
   // encoding. If it has, the field contains a code object otherwise it contains
   // a smi (code flushing support).
-  __ JumpIfSmi(r10, &runtime);
+  __ JumpIfSmi(code, &runtime);
 
   // r6: encoding of subject string (1 if ASCII, 0 if two_byte);
-  // r10: code
+  // code: Address of generated regexp code
   // subject: Subject string
   // regexp_data: RegExp data (FixedArray)
   // Load used arguments before starting to push arguments for call to native
@@ -4840,7 +4848,7 @@ void RegExpExecStub::Generate(MacroAssembler* masm) {
 
   // r4: previous index
   // r6: encoding of subject string (1 if ASCII, 0 if two_byte);
-  // r10: code
+  // code: Address of generated regexp code
   // subject: Subject string
   // regexp_data: RegExp data (FixedArray)
   // All checks done. Now push arguments for native regexp code.
@@ -4848,40 +4856,38 @@ void RegExpExecStub::Generate(MacroAssembler* masm) {
 
   // Isolates: note we add an additional parameter here (isolate pointer).
   const int kRegExpExecuteArguments = 9;
-  const int kParameterRegisters = 4;
+  const int kParameterRegisters = 8;
   __ EnterExitFrame(false, kRegExpExecuteArguments - kParameterRegisters);
 
   // Stack pointer now points to cell where return address is to be written.
   // Arguments are before that on the stack or in registers.
 
-  // Argument 9 (sp[20]): Pass current isolate address.
+  // Argument 9 (sp[4]): Pass current isolate address.
   __ mov(r3, Operand(ExternalReference::isolate_address()));
-  __ stw(r3, MemOperand(sp, 5 * kPointerSize));
+  __ stw(r3, MemOperand(sp, 1 * kPointerSize));
 
-  // Argument 8 (sp[16]): Indicate that this is a direct call from JavaScript.
-  __ mov(r3, Operand(1));
-  __ stw(r3, MemOperand(sp, 4 * kPointerSize));
+  // Argument 8 (r10): Indicate that this is a direct call from JavaScript.
+  __ li(r10, Operand(1));
 
-  // Argument 7 (sp[12]): Start (high end) of backtracking stack memory area.
+  // Argument 7 (r9): Start (high end) of backtracking stack memory area.
   __ mov(r3, Operand(address_of_regexp_stack_memory_address));
   __ lwz(r3, MemOperand(r3, 0));
   __ mov(r5, Operand(address_of_regexp_stack_memory_size));
   __ lwz(r5, MemOperand(r5, 0));
-  __ add(r3, r3, r5);
-  __ stw(r3, MemOperand(sp, 3 * kPointerSize));
+  __ add(r9, r3, r5);
 
-  // Argument 6: Set the number of capture registers to zero to force global
-  // regexps to behave as non-global.  This does not affect non-global regexps.
-  __ mov(r3, Operand::Zero());
-  __ stw(r3, MemOperand(sp, 2 * kPointerSize));
+  // Argument 6 (r8): Set the number of capture registers to zero to force
+  // global egexps to behave as non-global.  This does not affect non-global
+  // regexps.
+  __ li(r8, Operand::Zero());
 
-  // Argument 5 (sp[4]): static offsets vector buffer.
-  __ mov(r3,
+  // Argument 5 (r7): static offsets vector buffer.
+  __ mov(r7,
          Operand(ExternalReference::address_of_static_offsets_vector(isolate)));
-  __ stw(r3, MemOperand(sp, 1 * kPointerSize));
 
-  // For arguments 4 and 3 get string length, calculate start of string data and
-  // calculate the shift of the index (0 for ASCII and 1 for two byte).
+  // For arguments 4 (r6) and 3 (r5) get string length, calculate start of
+  // string data and calculate the shift of the index (0 for ASCII and 1 for
+  // two byte).
   __ addi(r22, subject, Operand(SeqString::kHeaderSize - kHeapObjectTag));
   __ xori(r6, r6, Operand(1));
   // Load the length from the original subject string from the previous stack
@@ -4910,9 +4916,9 @@ void RegExpExecStub::Generate(MacroAssembler* masm) {
   __ mr(r3, subject);
 
   // Locate the code entry and call it.
-  __ addi(r10, r10, Operand(Code::kHeaderSize - kHeapObjectTag));
+  __ addi(code, code, Operand(Code::kHeaderSize - kHeapObjectTag));
   DirectCEntryStub stub;
-  stub.GenerateCall(masm, r10, CallType_ScalarArg);
+  stub.GenerateCall(masm, code, CallType_Generic);
 
   __ LeaveExitFrame(false, no_reg);
 
@@ -4974,7 +4980,7 @@ void RegExpExecStub::Generate(MacroAssembler* masm) {
   __ addi(r4, r4, Operand(2));  // r4 was a smi.
 
   // r4: number of capture registers
-  // r7: subject string
+  // r26: subject string
   // Store the capture count.
   __ SmiTag(r5, r4);
   __ stw(r5, FieldMemOperand(last_match_info_elements,
@@ -5007,25 +5013,22 @@ void RegExpExecStub::Generate(MacroAssembler* masm) {
 
   // r4: number of capture registers
   // r5: offsets vector
-  Label next_capture, done;
+  Label next_capture;
   // Capture register counter starts from number of capture registers and
   // counts down until wraping after zero.
   __ addi(r3,
           last_match_info_elements,
-          Operand(RegExpImpl::kFirstCaptureOffset - kHeapObjectTag));
+          Operand(RegExpImpl::kFirstCaptureOffset - kHeapObjectTag -
+                  kPointerSize));
+  __ addi(r5, r5, Operand(-kPointerSize));  // bias down for lwzu
+  __ mtctr(r4);
   __ bind(&next_capture);
-  __ addi(r4, r4, Operand(-1));
-  __ cmpi(r4, Operand::Zero());
-  __ blt(&done);
   // Read the value from the static offsets vector buffer.
-  __ lwz(r6, MemOperand(r5));
-  __ addi(r5, r5, Operand(kPointerSize));
+  __ lwzu(r6, MemOperand(r5, kPointerSize));
   // Store the smi value in the last match info.
   __ SmiTag(r6);
-  __ stw(r6, MemOperand(r3));
-  __ addi(r3, r3, Operand(kPointerSize));
-  __ jmp(&next_capture);
-  __ bind(&done);
+  __ stwu(r6, MemOperand(r3, kPointerSize));
+  __ bdnz(&next_capture);
 
   // Return last match info.
   __ lwz(r3, MemOperand(sp, kLastMatchInfoOffset));
@@ -6832,14 +6835,12 @@ void ICCompareStub::GenerateMiss(MacroAssembler* masm) {
 // This stub is paired with DirectCEntryStub::GenerateCall
 void DirectCEntryStub::Generate(MacroAssembler* masm) {
   EMIT_STUB_MARKER(187);
-#if defined(V8_HOST_ARCH_PPC)
-  // Retrieve return value and restore sp
-  // See PPC LINUX ABI notes in GenerateCall
-  __ lwz(r3, MemOperand(sp, 3 * kPointerSize));
-  __ addi(sp, sp, Operand(4 * kPointerSize));
-#endif
   // Retrieve return address
+#if defined(V8_HOST_ARCH_PPC)
+  __ lwz(r0, MemOperand(sp, 2 * kPointerSize));
+#else
   __ lwz(r0, MemOperand(sp, 0));
+#endif
   __ Jump(r0);
 }
 
@@ -6856,16 +6857,72 @@ void DirectCEntryStub::GenerateCall(MacroAssembler* masm,
                                     Register target,
                                     FunctionCallType type) {
   EMIT_STUB_MARKER(188);
+#if defined(V8_HOST_ARCH_PPC)
+  int extra_stack_slots = 0;
+#endif
+
+  // N.B. EnterExitFrame has already allocated a slot at the top of the
+  // stack to save the return address.
+
+#if defined(V8_HOST_ARCH_PPC)
+  if (type == CallType_NonScalarArg) {
+    // This type implies that there are at most two arguments passed --
+    //      - a pointer-sized non-scalar first argument in r3
+    //      - a scalar second argument in r4
+    //      It also implies a pointer-sized non-scalar return value.
+
+    // PPC LINUX ABI:
+    //
+    // Create 2 extra slots on stack:
+    //    [0] copy of pointer-sized non-scalar first arg
+    //    [1] space for pointer-sized non-scalar return value (r3)
+    //
+    // We shift the arguments over a register (e.g. r3 -> r4) to allow
+    // for the return value buffer in implicit first arg.
+
+    extra_stack_slots = 2;
+    __ addi(sp, sp, Operand(-extra_stack_slots * kPointerSize));
+
+    // 2nd arg by value
+    __ mr(r5, r4);
+    // 1st arg by reference
+    __ addi(r4, sp, Operand(2 * kPointerSize));
+    __ stw(r3, MemOperand(r4, 0));
+
+    // return value buffer as implicit first arg
+    __ addi(r3, sp, Operand(1 * kPointerSize));
+  } else if (type == CallType_ScalarArg) {
+    // This type implies that there is a single scalar argument passed and
+    // a pointer-sized non-scalar return value.
+
+    // PPC LINUX ABI:
+    //
+    // Create 1 extra slot on stack:
+    //    [0] space for pointer-sized non-scalar return value (r3)
+    //
+    // We shift the arguments over a register (e.g. r3 -> r4) to allow
+    // for the return value buffer in implicit first arg.
+
+    extra_stack_slots = 1;
+    __ addi(sp, sp, Operand(-extra_stack_slots * kPointerSize));
+
+    // 1st arg by value
+    __ mr(r4, r3);
+
+    // return value buffer as implicit first arg
+    __ addi(r3, sp, Operand(1 * kPointerSize));
+  }
+#endif
+
   __ mov(r0, Operand(reinterpret_cast<intptr_t>(GetCode().location()),
                      RelocInfo::CODE_TARGET));
 
 #if defined(V8_HOST_ARCH_PPC)
-  int PowerPCAdjustment = ((type == CallType_ScalarArg) ? 3 : 5);
+#define PowerPCAdjustment 1
 #else
 #define PowerPCAdjustment 0
 #endif
   // Push return address (accessible to GC through exit frame pc).
-  // Note that using pc with str is deprecated.
   Label start, here;
   __ bind(&start);
   __ b(&here, SetLK);
@@ -6877,43 +6934,25 @@ void DirectCEntryStub::GenerateCall(MacroAssembler* masm,
 #if defined(V8_HOST_ARCH_PPC)
   // PPC LINUX ABI:
   //
-  // Create 4 extra slots on stack:
+  // Create 2 extra slots on stack:
   //    [0] backchain
   //    [1] link register save area
-  //    [2] copy of pointer-sized non-scalar first arg (if needed)
-  //    [3] space for pointer-sized non-scalar return value (r3)
   //
-  // We shift the arguments over a register (e.g. r3 -> r4) to allow
-  // for the return value buffer in implicit first arg.
-  __ addi(sp, sp, Operand(-4 * kPointerSize));
-
-  if (type == CallType_NonScalarArg) {
-      // This type implies that there are at most two arguments passed --
-      //      - a pointer-sized non-scalar first argument in r3
-      //      - a scalar second argument in r4
-      //      It also implies a pointer-sized non-scalar return value.
-
-      // 2nd arg by value
-      __ mr(r5, r4);
-      // 1st arg by reference
-      __ addi(r4, sp, Operand(2 * kPointerSize));
-      __ stw(r3, MemOperand(r4, 0));
-  } else {
-      ASSERT(type == CallType_ScalarArg);
-      // This type implies that there is a single scalar arguments passed and
-      // a pointer-sized non-scalar return value.
-
-      // 1st arg by value
-      __ mr(r4, r3);
-  }
-
-  // return value buffer as implicit first arg
-  __ addi(r3, sp, Operand(3 * kPointerSize));
+  __ addi(sp, sp, Operand(-2 * kPointerSize));
 #endif
   __ Jump(target);  // Call the C++ function.
   ASSERT_EQ(Assembler::kInstrSize +
             ((6 + PowerPCAdjustment) * Assembler::kInstrSize),
             masm->SizeOfCodeGeneratedSince(&start));
+
+#if defined(V8_HOST_ARCH_PPC)
+  // Retrieve return value and restore sp
+  // See PPC LINUX ABI notes in GenerateCall
+  if (type == CallType_NonScalarArg || type == CallType_ScalarArg) {
+    __ lwz(r3, MemOperand(sp, 3 * kPointerSize));
+  }
+  __ addi(sp, sp, Operand((2 + extra_stack_slots) * kPointerSize));
+#endif
 }
 
 
@@ -7197,8 +7236,8 @@ struct AheadOfTimeWriteBarrierStubList {
 
 static const AheadOfTimeWriteBarrierStubList kAheadOfTime[] = {
   // Used in RegExpExecStub.
-  { REG(r9), REG(r7), REG(r10), EMIT_REMEMBERED_SET },
-  { REG(r9), REG(r5), REG(r10), EMIT_REMEMBERED_SET },
+  { REG(r28), REG(r26), REG(r10), EMIT_REMEMBERED_SET },
+  { REG(r28), REG(r5), REG(r10), EMIT_REMEMBERED_SET },
   // Used in CompileArrayPushCall.
   // Also used in StoreIC::GenerateNormal via GenerateDictionaryStore.
   // Also used in KeyedStoreIC::GenerateGeneric.

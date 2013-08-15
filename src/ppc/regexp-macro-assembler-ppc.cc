@@ -541,7 +541,7 @@ void RegExpMacroAssemblerPPC::CheckBitInTable(
             current_character(),
             Operand(ByteArray::kHeaderSize - kHeapObjectTag));
   }
-  __ lbz(r3, MemOperand(r3, r4));
+  __ lbzx(r3, MemOperand(r3, r4));
   __ cmpi(r3, Operand::Zero());
   BranchOrBacktrack(ne, on_bit_set);
 }
@@ -637,7 +637,7 @@ bool RegExpMacroAssemblerPPC::CheckSpecialCharacterClass(uc16 type,
     }
     ExternalReference map = ExternalReference::re_word_character_map();
     __ mov(r3, Operand(map));
-    __ lbz(r3, MemOperand(r3, current_character()));
+    __ lbzx(r3, MemOperand(r3, current_character()));
     __ cmpli(r3, Operand::Zero());
     BranchOrBacktrack(eq, on_no_match);
     return true;
@@ -651,7 +651,7 @@ bool RegExpMacroAssemblerPPC::CheckSpecialCharacterClass(uc16 type,
     }
     ExternalReference map = ExternalReference::re_word_character_map();
     __ mov(r3, Operand(map));
-    __ lbz(r3, MemOperand(r3, current_character()));
+    __ lbzx(r3, MemOperand(r3, current_character()));
     __ cmpli(r3, Operand::Zero());
     BranchOrBacktrack(ne, on_no_match);
     if (mode_ != ASCII) {
@@ -687,14 +687,22 @@ Handle<HeapObject> RegExpMacroAssemblerPPC::GetCode(Handle<String> source) {
   // is generated.
   FrameScope scope(masm_, StackFrame::MANUAL);
 
+  // Ensure register assigments are consistent with callee save mask
+  ASSERT(r25.bit() & kRegExpCalleeSaved);
+  ASSERT(code_pointer().bit() & kRegExpCalleeSaved);
+  ASSERT(current_input_offset().bit() & kRegExpCalleeSaved);
+  ASSERT(current_character().bit() & kRegExpCalleeSaved);
+  ASSERT(backtrack_stackpointer().bit() & kRegExpCalleeSaved);
+  ASSERT(end_of_input_address().bit() & kRegExpCalleeSaved);
+  ASSERT(frame_pointer().bit() & kRegExpCalleeSaved);
+
   // Actually emit code to start a new stack frame.
   // Push arguments
   // Save callee-save registers.
   // Start new stack frame.
   // Store link register in existing stack-cell.
   // Order here should correspond to order of offset constants in header file.
-  RegList registers_to_retain = r25.bit() | r26.bit() | r27.bit() | r28.bit() |
-      r29.bit() | r30.bit() | fp.bit();
+  RegList registers_to_retain = kRegExpCalleeSaved;
   RegList argument_registers = r3.bit() | r4.bit() | r5.bit() | r6.bit() |
       r7.bit() | r8.bit() | r9.bit() | r10.bit();
   __ mflr(r0);
@@ -720,7 +728,7 @@ Handle<HeapObject> RegExpMacroAssemblerPPC::GetCode(Handle<String> source) {
   // Check if there is room for the variable number of registers above
   // the stack limit.
   __ cmpli(r3, Operand(num_registers_ * kPointerSize));
-  __ bgt(&stack_ok);
+  __ bge(&stack_ok);
   // Exit with OutOfMemory exception. There is not enough space on the stack
   // for our working registers.
   __ li(r3, Operand(EXCEPTION));

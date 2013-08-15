@@ -254,6 +254,16 @@ class RegExpMacroAssemblerPPC: public NativeRegExpMacroAssembler {
   Label stack_overflow_label_;
 };
 
+// Set of non-volatile registers saved/restored by generated regexp code.
+const RegList kRegExpCalleeSaved =
+  1 <<  25 |
+  1 <<  26 |
+  1 <<  27 |
+  1 <<  28 |
+  1 <<  29 |
+  1 <<  30 |
+  1 <<  31;
+
 #endif  // V8_INTERPRETED_REGEXP
 
 
