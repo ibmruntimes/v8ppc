@@ -5014,7 +5014,8 @@ void RegExpExecStub::Generate(MacroAssembler* masm) {
           last_match_info_elements,
           Operand(RegExpImpl::kFirstCaptureOffset - kHeapObjectTag));
   __ bind(&next_capture);
-  __ sub(r4, r4, Operand(1), SetCC);
+  __ addi(r4, r4, Operand(-1));
+  __ cmpi(r4, Operand::Zero());
   __ blt(&done);
   // Read the value from the static offsets vector buffer.
   __ lwz(r6, MemOperand(r5));

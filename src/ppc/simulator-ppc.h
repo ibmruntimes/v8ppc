@@ -52,16 +52,16 @@ namespace internal {
   (entry(p0, p1, p2, p3, p4))
 
 typedef int (*arm_regexp_matcher)(String*, int, const byte*, const byte*,
-                                  void*, int*, int, Address, int, Isolate*);
+                                  int*, int, Address, int, void*, Isolate*);
 
 
 // Call the generated regexp code directly. The code at the entry address
 // should act as a function matching the type arm_regexp_matcher.
-// The fifth argument is a dummy that reserves the space used for
+// The ninth argument is a dummy that reserves the space used for
 // the return address added by the ExitFrame in native calls.
 #define CALL_GENERATED_REGEXP_CODE(entry, p0, p1, p2, p3, p4, p5, p6, p7, p8) \
   (FUNCTION_CAST<arm_regexp_matcher>(entry)(                              \
-      p0, p1, p2, p3, NULL, p4, p5, p6, p7, p8))
+      p0, p1, p2, p3, p4, p5, p6, p7, NULL, p8))
 
 #define TRY_CATCH_FROM_ADDRESS(try_catch_address) \
   reinterpret_cast<TryCatch*>(try_catch_address)
@@ -263,6 +263,7 @@ class Simulator {
 
   // PowerPC
   void SetCR0(int32_t result, bool setSO = false);
+  void DecodeBranchConditional(Instruction* instr);
   void DecodeExt1(Instruction* instr);
   bool DecodeExt2_10bit(Instruction* instr);
   void DecodeExt2_9bit(Instruction* instr);

@@ -594,10 +594,10 @@ void Assembler::bcr() {
   bcctr(BA, LeaveLK);
 }
 
-void Assembler::bc(int branch_offset, BOfield bo, int condition_bit) {
+void Assembler::bc(int branch_offset, BOfield bo, int condition_bit, LKBit lk) {
   positions_recorder()->WriteRecordedPositions();
   ASSERT(is_int16(branch_offset));
-  emit(BCX | bo | condition_bit*B16 | (kImm16Mask & branch_offset));
+  emit(BCX | bo | condition_bit*B16 | (kImm16Mask & branch_offset) | lk);
 }
 
 void Assembler::b(int branch_offset, LKBit lk) {

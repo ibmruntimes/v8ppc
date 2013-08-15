@@ -72,7 +72,6 @@ const RegList kCalleeSaved =
   1 <<  20 |  // r20 (cp in Javascript code)
               // r21 unused
   1 <<  22 |  // r22 (r9 hack in Javascript code)
-  1 <<  23 |  // r23 (regexp address of end of input string)
               // r23-r25 unused
   1 <<  26 |  // r26 (HandleScope logic in MacroAssembler)
   1 <<  27 |  // r27 (HandleScope logic in MacroAssembler)
@@ -92,7 +91,7 @@ const RegList kCallerSaved =
   1 <<  7;   // r7
 
 
-const int kNumCalleeSaved = 12;
+const int kNumCalleeSaved = 11;
 
 // Double registers d8 to d15 are callee-saved.
 const int kNumDoubleCalleeSaved = 8;

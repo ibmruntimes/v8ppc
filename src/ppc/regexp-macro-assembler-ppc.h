@@ -126,21 +126,21 @@ class RegExpMacroAssemblerPPC: public NativeRegExpMacroAssembler {
   static const int kFramePointer = 0;
 
   // Above the frame pointer - Stored registers and stack passed parameters.
-  // Register 4..11.
+  // Register 23..31.
   static const int kStoredRegisters = kFramePointer;
   // Return address (stored from link register, read into pc on return).
-  static const int kReturnAddress = kStoredRegisters + 8 * kPointerSize;
-  static const int kSecondaryReturnAddress = kReturnAddress + kPointerSize;
+  static const int kReturnAddress = kStoredRegisters + 7 * kPointerSize;
+  static const int kSecondaryReturnAddress = kReturnAddress + 3 * kPointerSize;
   // Stack parameters placed by caller.
-  static const int kRegisterOutput = kSecondaryReturnAddress + kPointerSize;
-  static const int kNumOutputRegisters = kRegisterOutput + kPointerSize;
-  static const int kStackHighEnd = kNumOutputRegisters + kPointerSize;
-  static const int kDirectCall = kStackHighEnd + kPointerSize;
-  static const int kIsolate = kDirectCall + kPointerSize;
+  static const int kIsolate = kSecondaryReturnAddress + kPointerSize;
 
   // Below the frame pointer.
   // Register parameters stored by setup code.
-  static const int kInputEnd = kFramePointer - kPointerSize;
+  static const int kDirectCall = kFramePointer - kPointerSize;
+  static const int kStackHighEnd = kDirectCall - kPointerSize;
+  static const int kNumOutputRegisters = kStackHighEnd - kPointerSize;
+  static const int kRegisterOutput = kNumOutputRegisters - kPointerSize;
+  static const int kInputEnd = kRegisterOutput - kPointerSize;
   static const int kInputStart = kInputEnd - kPointerSize;
   static const int kStartIndex = kInputStart - kPointerSize;
   static const int kInputString = kStartIndex - kPointerSize;
@@ -178,13 +178,13 @@ class RegExpMacroAssemblerPPC: public NativeRegExpMacroAssembler {
 
   // Register holding the current input position as negative offset from
   // the end of the string.
-  inline Register current_input_offset() { return r9; }
+  inline Register current_input_offset() { return r27; }
 
   // The register containing the current character after LoadCurrentCharacter.
-  inline Register current_character() { return r10; }
+  inline Register current_character() { return r28; }
 
   // Register holding address of the end of the input string.
-  inline Register end_of_input_address() { return r23; }
+  inline Register end_of_input_address() { return r30; }
 
   // Register holding the frame address. Local variables, parameters and
   // regexp registers are addressed relative to this.
@@ -192,10 +192,10 @@ class RegExpMacroAssemblerPPC: public NativeRegExpMacroAssembler {
 
   // The register containing the backtrack stack top. Provides a meaningful
   // name to the register.
-  inline Register backtrack_stackpointer() { return r11; }
+  inline Register backtrack_stackpointer() { return r29; }
 
   // Register holding pointer to the current code object.
-  inline Register code_pointer() { return r8; }
+  inline Register code_pointer() { return r26; }
 
   // Byte size of chars in the string to match (decided by the Mode argument)
   inline int char_size() { return static_cast<int>(mode_); }

@@ -46,49 +46,50 @@ namespace internal {
 #ifndef V8_INTERPRETED_REGEXP
 /*
  * This assembler uses the following register assignment convention
- * - r4 : Temporarily stores the index of capture start after a matching pass
+ * - r25: Temporarily stores the index of capture start after a matching pass
  *        for a global regexp.
- * - r5 : Pointer to current code object (Code*) including heap object tag.
- * - r6 : Current position in input, as negative offset from end of string.
+ * - r26: Pointer to current code object (Code*) including heap object tag.
+ * - r27: Current position in input, as negative offset from end of string.
  *        Please notice that this is the byte offset, not the character offset!
- * - r7 : Currently loaded character. Must be loaded using
+ * - r28: Currently loaded character. Must be loaded using
  *        LoadCurrentCharacter before using any of the dispatch methods.
- * - r8 : Points to tip of backtrack stack
- * - r9 : Unused, might be used by C code and expected unchanged.
- * - r10 : End of input (points to byte after last character in input).
- * - r11 : Frame pointer. Used to access arguments, local variables and
+ * - r29: Points to tip of backtrack stack
+ * - r30: End of input (points to byte after last character in input).
+ * - r31: Frame pointer. Used to access arguments, local variables and
  *         RegExp registers.
- * - r12 : IP register, used by assembler. Very volatile.
- * - r13/sp : Points to tip of C stack.
+ * - r12: IP register, used by assembler. Very volatile.
+ * - r1/sp : Points to tip of C stack.
  *
  * The remaining registers are free for computations.
  * Each call to a public method should retain this convention.
  *
  * The stack will have the following structure:
- *  - fp[56]  Isolate* isolate   (address of the current isolate)
- *  - fp[52]  direct_call        (if 1, direct call from JavaScript code,
- *                                if 0, call through the runtime system).
- *  - fp[48]  stack_area_base    (high end of the memory area to use as
- *                                backtracking stack).
- *  - fp[44]  capture array size (may fit multiple sets of matches)
- *  - fp[40]  int* capture_array (int[num_saved_registers_], for output).
- *  - fp[36]  secondary link/return address used by native call.
+ *  - fp[44]  Isolate* isolate   (address of the current isolate)
+ *  - fp[40]  secondary link/return address used by native call.
+ *  - fp[36]  lr save area (currently unused)
+ *  - fp[32]  backchain    (currently unused)
  *  --- sp when called ---
- *  - fp[32]  return address     (lr).
- *  - fp[28]  old frame pointer  (r11).
- *  - fp[0..24]  backup of registers r4..r10.
+ *  - fp[28]  return address     (lr).
+ *  - fp[24]  old frame pointer  (r31).
+ *  - fp[0..20]  backup of registers r25..r30
  *  --- frame pointer ----
- *  - fp[-4]  end of input       (address of end of string).
- *  - fp[-8]  start of input     (address of first character in string).
- *  - fp[-12] start index        (character index of start).
- *  - fp[-16] void* input_string (location of a handle containing the string).
- *  - fp[-20] success counter    (only for global regexps to count matches).
- *  - fp[-24] Offset of location before start of input (effectively character
+ *  - fp[-4]  direct_call        (if 1, direct call from JavaScript code,
+ *                                if 0, call through the runtime system).
+ *  - fp[-8]  stack_area_base    (high end of the memory area to use as
+ *                                backtracking stack).
+ *  - fp[-12] capture array size (may fit multiple sets of matches)
+ *  - fp[-16] int* capture_array (int[num_saved_registers_], for output).
+ *  - fp[-20] end of input       (address of end of string).
+ *  - fp[-24] start of input     (address of first character in string).
+ *  - fp[-28] start index        (character index of start).
+ *  - fp[-32] void* input_string (location of a handle containing the string).
+ *  - fp[-36] success counter    (only for global regexps to count matches).
+ *  - fp[-40] Offset of location before start of input (effectively character
  *            position -1). Used to initialize capture registers to a
  *            non-position.
- *  - fp[-28] At start (if 1, we are starting at the start of the
+ *  - fp[-44] At start (if 1, we are starting at the start of the
  *    string, otherwise 0)
- *  - fp[-32] register 0         (Only positions must be stored in the first
+ *  - fp[-48] register 0         (Only positions must be stored in the first
  *  -         register 1          num_saved_registers_ registers)
  *  -         ...
  *  -         register num_registers-1
@@ -105,13 +106,13 @@ namespace internal {
  *              int start_index,
  *              Address start,
  *              Address end,
- *              Address secondary_return_address,  // Only used by native call.
  *              int* capture_output_array,
  *              byte* stack_area_base,
+ *              Address secondary_return_address,  // Only used by native call.
  *              bool direct_call = false)
  * The call is performed by NativeRegExpMacroAssembler::Execute()
  * (in regexp-macro-assembler.cc) via the CALL_GENERATED_REGEXP_CODE macro
- * in arm/simulator-arm.h.
+ * in ppc/simulator-ppc.h.
  * When calling as a non-direct call (i.e., from C++ code), the return address
  * area is overwritten with the LR register by the RegExp code. When doing a
  * direct call from generated code, the return address is placed there by
@@ -340,15 +341,15 @@ void RegExpMacroAssemblerPPC::CheckNotBackReferenceIgnoreCase(
     __ bind(&loop);
     __ lbz(r6, MemOperand(r3));
     __ addi(r3, r3, Operand(char_size()));
-    __ lbz(r7, MemOperand(r5));
+    __ lbz(r25, MemOperand(r5));
     __ addi(r5, r5, Operand(char_size()));
-    __ cmp(r7, r6);
+    __ cmp(r25, r6);
     __ beq(&loop_check);
 
     // Mismatch, try case-insensitive match (converting letters to lower-case).
     __ ori(r6, r6, Operand(0x20));  // Convert capture character to lower-case.
-    __ ori(r7, r7, Operand(0x20));  // Also convert input character.
-    __ cmp(r7, r6);
+    __ ori(r25, r25, Operand(0x20));  // Also convert input character.
+    __ cmp(r25, r6);
     __ bne(&fail);
     __ sub(r6, r6, Operand('a'));
     __ cmpli(r6, Operand('z' - 'a'));  // Is r6 a lowercase letter?
@@ -386,7 +387,7 @@ void RegExpMacroAssemblerPPC::CheckNotBackReferenceIgnoreCase(
     // Length of capture.
     __ mr(r5, r4);
     // Save length in callee-save register for use on return.
-    __ mr(r7, r4);
+    __ mr(r25, r4);
     // Address of current input position.
     __ add(r4, current_input_offset(), end_of_input_address());
     // Isolate.
@@ -403,7 +404,7 @@ void RegExpMacroAssemblerPPC::CheckNotBackReferenceIgnoreCase(
     __ cmpi(r3, Operand::Zero());
     BranchOrBacktrack(eq, on_no_match);
     // On success, increment position by length of capture.
-    __ add(current_input_offset(), current_input_offset(), r7);
+    __ add(current_input_offset(), current_input_offset(), r25);
   }
 
   __ bind(&fallthrough);
@@ -437,16 +438,16 @@ void RegExpMacroAssemblerPPC::CheckNotBackReference(
   if (mode_ == ASCII) {
     __ lbz(r6, MemOperand(r3));
     __ addi(r3, r3, Operand(char_size()));
-    __ lbz(r7, MemOperand(r5));
+    __ lbz(r25, MemOperand(r5));
     __ addi(r5, r5, Operand(char_size()));
   } else {
     ASSERT(mode_ == UC16);
     __ lhz(r6, MemOperand(r3));
     __ addi(r6, r6, Operand(char_size()));
-    __ lhz(r7, MemOperand(r5));
+    __ lhz(r25, MemOperand(r5));
     __ addi(r5, r5, Operand(char_size()));
   }
-  __ cmp(r6, r7);
+  __ cmp(r6, r25);
   BranchOrBacktrack(ne, on_no_match);
   __ cmp(r3, r4);
   __ blt(&loop);
@@ -692,15 +693,16 @@ Handle<HeapObject> RegExpMacroAssemblerPPC::GetCode(Handle<String> source) {
   // Start new stack frame.
   // Store link register in existing stack-cell.
   // Order here should correspond to order of offset constants in header file.
-  RegList registers_to_retain = r7.bit() | r8.bit() | r9.bit() | r10.bit() |
-      r11.bit() | r22.bit() | r23.bit() | fp.bit();
-  RegList argument_registers = r3.bit() | r4.bit() | r5.bit() | r6.bit();
+  RegList registers_to_retain = r25.bit() | r26.bit() | r27.bit() | r28.bit() |
+      r29.bit() | r30.bit() | fp.bit();
+  RegList argument_registers = r3.bit() | r4.bit() | r5.bit() | r6.bit() |
+      r7.bit() | r8.bit() | r9.bit() | r10.bit();
   __ mflr(r0);
   __ push(r0);
   __ MultiPush(argument_registers | registers_to_retain);
   // Set frame pointer in space for it if this is not a direct call
   // from generated code.
-  __ addi(frame_pointer(), sp, Operand(4 * kPointerSize));
+  __ addi(frame_pointer(), sp, Operand(8 * kPointerSize));
   __ li(r3, Operand::Zero());
   __ push(r3);  // Make room for success counter and initialize it to 0.
   __ push(r3);  // Make room for "position - 1" constant (value is irrelevant).
@@ -818,8 +820,8 @@ Handle<HeapObject> RegExpMacroAssemblerPPC::GetCode(Handle<String> source) {
         __ lwz(r5, register_location(i));
         __ lwz(r6, register_location(i + 1));
         if (i == 0 && global_with_zero_length_check()) {
-          // Keep capture start in r7 for the zero-length check later.
-          __ mr(r7, r5);
+          // Keep capture start in r25 for the zero-length check later.
+          __ mr(r25, r5);
         }
         if (mode_ == UC16) {
           __ srawi(r5, r5, 1);
@@ -862,8 +864,8 @@ Handle<HeapObject> RegExpMacroAssemblerPPC::GetCode(Handle<String> source) {
 
       if (global_with_zero_length_check()) {
         // Special case for zero-length matches.
-        // r7: capture start index
-        __ cmp(current_input_offset(), r7);
+        // r25: capture start index
+        __ cmp(current_input_offset(), r25);
         // Not a zero-length match, restart.
         __ bne(&load_char_start_regexp);
         // Offset from the end is zero if we already reached the end.
@@ -890,7 +892,7 @@ Handle<HeapObject> RegExpMacroAssemblerPPC::GetCode(Handle<String> source) {
   __ bind(&return_r3);
   // Skip sp past regexp registers and local variables..
   __ mr(sp, frame_pointer());
-  // Restore registers r4..r11 and return (restoring lr to pc).
+  // Restore registers r25..r31 and return (restoring lr to pc).
   __ MultiPop(registers_to_retain);
   __ pop(r0);
   __ mtctr(r0);
@@ -1286,7 +1288,7 @@ void RegExpMacroAssemblerPPC::BranchOrBacktrack(Condition condition,
 
 
 void RegExpMacroAssemblerPPC::SafeCall(Label* to, Condition cond) {
-  __ bl(to, cond);
+  __ b(cond, to, cr7, SetLK);
 }
 
 
@@ -1399,9 +1401,9 @@ void RegExpMacroAssemblerPPC::LoadCurrentCharacterUnchecked(int cp_offset,
                                                             int characters) {
   Register offset = current_input_offset();
   if (cp_offset != 0) {
-    // r7 is not being used to store the capture start index at this point.
-    __ addi(r7, current_input_offset(), Operand(cp_offset * char_size()));
-    offset = r7;
+    // r25 is not being used to store the capture start index at this point.
+    __ addi(r25, current_input_offset(), Operand(cp_offset * char_size()));
+    offset = r25;
   }
   // The lwz, stw, lhz, sth instructions can do unaligned accesses, if the CPU
   // and the operating system running on the target allow it.
@@ -1420,20 +1422,36 @@ void RegExpMacroAssemblerPPC::LoadCurrentCharacterUnchecked(int cp_offset,
 
 
 void RegExpCEntryStub::Generate(MacroAssembler* masm_) {
+#if defined(V8_HOST_ARCH_PPC) && defined(DEBUG)
   int stack_alignment = OS::ActivationFrameAlignment();
-  if (stack_alignment < kPointerSize) stack_alignment = kPointerSize;
-  // Stack is already aligned for call, so decrement by alignment
-  // to make room for storing the link register.
-  __ sub(sp, sp, Operand(stack_alignment + kCArgsSlotsSize));
-  const int return_address_offset = kCArgsSlotsSize;
+#endif
+
+  // Stack is already aligned for call
   __ mflr(r0);
-  __ stw(r0, MemOperand(sp, return_address_offset));
+  __ push(r0);
+
+#if defined(V8_HOST_ARCH_PPC)
+  ASSERT(stack_alignment == 8);
+  // PPC LINUX ABI:
+  //
+  // Create 3 extra slots on stack:
+  //    [0] backchain
+  //    [1] link register save area
+  //    [2] extra for alignment
+  //
+  __ addi(sp, sp, Operand(-3 * kPointerSize));
+#endif
+
   __ mr(r3, sp);
-  __ Call(r8);
-  __ lwz(r0, MemOperand(sp, stack_alignment));
-  __ addi(sp, sp, Operand(stack_alignment + kCArgsSlotsSize));
-  __ mtctr(r0);
-  __ bcr();
+  __ Call(r26);
+
+#if defined(V8_HOST_ARCH_PPC)
+  __ addi(sp, sp, Operand(3 * kPointerSize));
+#endif
+
+  __ pop(r0);
+  __ mtlr(r0);
+  __ blr();
 }
 
 #undef __

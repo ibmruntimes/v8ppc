@@ -729,7 +729,7 @@ class Assembler : public AssemblerBase {
   // PowerPC
   void bclr(BOfield bo, LKBit lk);
   void blr();
-  void bc(int branch_offset, BOfield bo, int condition_bit);
+  void bc(int branch_offset, BOfield bo, int condition_bit, LKBit lk = LeaveLK);
   void b(int branch_offset, LKBit lk);
   void b(int branch_offset, Condition cond = al);
 
@@ -747,10 +747,10 @@ class Assembler : public AssemblerBase {
     b(branch_offset(L, false), lk);
   }
   // PowerPC
-  void bc(Label* L, BOfield bo, int bit)  {
-    bc(branch_offset(L, false), bo, bit);
+  void bc(Label* L, BOfield bo, int bit, LKBit lk = LeaveLK)  {
+    bc(branch_offset(L, false), bo, bit, lk);
   }
-  void b(Condition cond, Label* L, CRegister cr = cr7)  {
+  void b(Condition cond, Label* L, CRegister cr = cr7, LKBit lk = LeaveLK)  {
     ASSERT(cr.code() >= 0 && cr.code() <= 7);
     int b_offset = branch_offset(L, (cond == al));
     // if the offset fits in the 16-bit immediate
@@ -760,25 +760,25 @@ class Assembler : public AssemblerBase {
     if (is_int16(b_offset)) {
       switch (cond) {
         case al:
-          b(L);
+          b(L, lk);
           break;
         case eq:
-          bc(b_offset, BT, encode_crbit(cr, CR_EQ));
+          bc(b_offset, BT, encode_crbit(cr, CR_EQ), lk);
           break;
         case ne:
-          bc(b_offset, BF, encode_crbit(cr, CR_EQ));
+          bc(b_offset, BF, encode_crbit(cr, CR_EQ), lk);
           break;
         case gt:
-          bc(b_offset, BT, encode_crbit(cr, CR_GT));
+          bc(b_offset, BT, encode_crbit(cr, CR_GT), lk);
           break;
         case le:
-          bc(b_offset, BF, encode_crbit(cr, CR_GT));
+          bc(b_offset, BF, encode_crbit(cr, CR_GT), lk);
           break;
         case lt:
-          bc(b_offset, BT, encode_crbit(cr, CR_LT));
+          bc(b_offset, BT, encode_crbit(cr, CR_LT), lk);
           break;
         case ge:
-          bc(b_offset, BF, encode_crbit(cr, CR_LT));
+          bc(b_offset, BF, encode_crbit(cr, CR_LT), lk);
           break;
         default:
           fake_asm(fBranch);
@@ -790,37 +790,37 @@ class Assembler : public AssemblerBase {
       // else fall through and branch over it
       switch (cond) {
         case al:
-          b(b_offset, LeaveLK);
+          b(b_offset, lk);
           break;
         case eq:
-          bc(kInstrSize*2, BT, encode_crbit(cr, CR_EQ));
+          bc(kInstrSize*2, BT, encode_crbit(cr, CR_EQ), LeaveLK);
           b(kInstrSize*2, LeaveLK);
-          b(b_offset, LeaveLK);
+          b(b_offset, lk);
           break;
         case ne:
-          bc(kInstrSize*2, BF, encode_crbit(cr, CR_EQ));
+          bc(kInstrSize*2, BF, encode_crbit(cr, CR_EQ), LeaveLK);
           b(kInstrSize*2, LeaveLK);
-          b(b_offset, LeaveLK);
+          b(b_offset, lk);
           break;
         case gt:
-          bc(kInstrSize*2, BT, encode_crbit(cr, CR_GT));
+          bc(kInstrSize*2, BT, encode_crbit(cr, CR_GT), LeaveLK);
           b(kInstrSize*2, LeaveLK);
-          b(b_offset, LeaveLK);
+          b(b_offset, lk);
           break;
         case le:
-          bc(kInstrSize*2, BF, encode_crbit(cr, CR_GT));
+          bc(kInstrSize*2, BF, encode_crbit(cr, CR_GT), LeaveLK);
           b(kInstrSize*2, LeaveLK);
-          b(b_offset, LeaveLK);
+          b(b_offset, lk);
           break;
         case lt:
-          bc(kInstrSize*2, BT, encode_crbit(cr, CR_LT));
+          bc(kInstrSize*2, BT, encode_crbit(cr, CR_LT), LeaveLK);
           b(kInstrSize*2, LeaveLK);
-          b(b_offset, LeaveLK);
+          b(b_offset, lk);
           break;
         case ge:
-          bc(kInstrSize*2, BF, encode_crbit(cr, CR_LT));
+          bc(kInstrSize*2, BF, encode_crbit(cr, CR_LT), LeaveLK);
           b(kInstrSize*2, LeaveLK);
-          b(b_offset, LeaveLK);
+          b(b_offset, lk);
           break;
         default:
           fake_asm(fBranch);
@@ -828,39 +828,39 @@ class Assembler : public AssemblerBase {
       }
     }
   }
-  void bne(Label* L, CRegister cr = cr7) {
-    b(ne, L, cr); }
-  void beq(Label* L, CRegister cr = cr7) {
-    b(eq, L, cr); }
-  void blt(Label* L, CRegister cr = cr7) {
-    b(lt, L, cr); }
-  void bge(Label* L, CRegister cr = cr7) {
-    b(ge, L, cr); }
-  void ble(Label* L, CRegister cr = cr7) {
-    b(le, L, cr); }
-  void bgt(Label* L, CRegister cr = cr7) {
-    b(gt, L, cr); }
+  void bne(Label* L, CRegister cr = cr7, LKBit lk = LeaveLK) {
+    b(ne, L, cr, lk); }
+  void beq(Label* L, CRegister cr = cr7, LKBit lk = LeaveLK) {
+    b(eq, L, cr, lk); }
+  void blt(Label* L, CRegister cr = cr7, LKBit lk = LeaveLK) {
+    b(lt, L, cr, lk); }
+  void bge(Label* L, CRegister cr = cr7, LKBit lk = LeaveLK) {
+    b(ge, L, cr, lk); }
+  void ble(Label* L, CRegister cr = cr7, LKBit lk = LeaveLK) {
+    b(le, L, cr, lk); }
+  void bgt(Label* L, CRegister cr = cr7, LKBit lk = LeaveLK) {
+    b(gt, L, cr, lk); }
 
-  void bunordered(Label* L, CRegister cr = cr7) {
+  void bunordered(Label* L, CRegister cr = cr7, LKBit lk = LeaveLK) {
     ASSERT(cr.code() >= 0 && cr.code() <= 7);
-    bc(branch_offset(L, false), BT, encode_crbit(cr, CR_FU));
+    bc(branch_offset(L, false), BT, encode_crbit(cr, CR_FU), lk);
   }
-  void bordered(Label* L, CRegister cr = cr7) {
+  void bordered(Label* L, CRegister cr = cr7, LKBit lk = LeaveLK) {
     ASSERT(cr.code() >= 0 && cr.code() <= 7);
-    bc(branch_offset(L, false), BF, encode_crbit(cr, CR_FU));
+    bc(branch_offset(L, false), BF, encode_crbit(cr, CR_FU), lk);
   }
-  void boverflow(Label* L, CRegister cr = cr1) {
+  void boverflow(Label* L, CRegister cr = cr1, LKBit lk = LeaveLK) {
     ASSERT(cr.code() >= 0 && cr.code() <= 7);
-    bc(branch_offset(L, false), BT, encode_crbit(cr, CR_SO));
+    bc(branch_offset(L, false), BT, encode_crbit(cr, CR_SO), lk);
   }
-  void bnotoverflow(Label* L, CRegister cr = cr1) {
+  void bnotoverflow(Label* L, CRegister cr = cr1, LKBit lk = LeaveLK) {
     ASSERT(cr.code() >= 0 && cr.code() <= 7);
-    bc(branch_offset(L, false), BF, encode_crbit(cr, CR_SO));
+    bc(branch_offset(L, false), BF, encode_crbit(cr, CR_SO), lk);
   }
 
   // Decrement CTR; branch if CTR != 0
-  void bdnz(Label* L) {
-    bc(branch_offset(L, false), DCBNZ, 0);
+  void bdnz(Label* L, LKBit lk = LeaveLK) {
+    bc(branch_offset(L, false), DCBNZ, 0, lk);
   }
 
   // end PowerPC
@@ -972,7 +972,7 @@ class Assembler : public AssemblerBase {
   void eor(Register dst, Register src1, const Operand& src2,
            SBit s = LeaveCC, Condition cond = al);
   void sub(Register dst, Register src1, const Operand& src2);
-  
+
   void rsb(Register dst, Register src1, const Operand& src2,
            SBit s = LeaveCC, Condition cond = al);
 

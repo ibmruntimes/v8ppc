@@ -1516,6 +1516,57 @@ void Simulator::SetCR0(int32_t result, bool setSO) {
   condition_reg_ = (condition_reg_ & ~0xF0000000) | bf;
 }
 
+void Simulator::DecodeBranchConditional(Instruction* instr) {
+  int bo = instr->Bits(25, 21) << 21;
+  int offset = (instr->Bits(15, 2) << 18) >> 16;
+  int condition_bit = instr->Bits(20, 16);
+  int condition_mask = 0x80000000 >> condition_bit;
+  switch (bo) {
+    case DCBNZF:  // Decrement CTR; branch if CTR != 0 and condition false
+    case DCBEZF:  // Decrement CTR; branch if CTR == 0 and condition false
+      UNIMPLEMENTED();
+    case BF: {   // Branch if condition false
+      if (!(condition_reg_ & condition_mask)) {
+        if (instr->Bit(0) == 1) {  // LK flag set
+          special_reg_lr_ = get_pc() + 4;
+        }
+        set_pc(get_pc() + offset);
+      }
+      break;
+    }
+    case DCBNZT:  // Decrement CTR; branch if CTR != 0 and condition true
+    case DCBEZT:  // Decrement CTR; branch if CTR == 0 and condition true
+      UNIMPLEMENTED();
+    case BT: {   // Branch if condition true
+      if (condition_reg_ & condition_mask) {
+        if (instr->Bit(0) == 1) {  // LK flag set
+          special_reg_lr_ = get_pc() + 4;
+        }
+        set_pc(get_pc() + offset);
+      }
+      break;
+    }
+    case DCBNZ:  // Decrement CTR; branch if CTR != 0
+    case DCBEZ:  // Decrement CTR; branch if CTR == 0
+      special_reg_ctr_ -= 1;
+      if ((special_reg_ctr_ == 0) == (bo == DCBEZ)) {
+        if (instr->Bit(0) == 1) {  // LK flag set
+          special_reg_lr_ = get_pc() + 4;
+        }
+        set_pc(get_pc() + offset);
+      }
+      break;
+    case BA: {   // Branch always
+      if (instr->Bit(0) == 1) {  // LK flag set
+        special_reg_lr_ = get_pc() + 4;
+      }
+      set_pc(get_pc() + offset);
+      break;
+    }
+    default:
+      UNIMPLEMENTED();  // Invalid encoding
+  }
+}
 
 // Handle execution based on instruction types.
 void Simulator::DecodeExt1(Instruction* instr) {
@@ -2515,43 +2566,7 @@ void Simulator::InstructionDecode(Instruction* instr) {
       break;
     }
     case BCX: {
-      int bo = instr->Bits(25, 21) << 21;
-      int offset = (instr->Bits(15, 2) << 18) >> 16;
-      int condition_bit = instr->Bits(20, 16);
-      int condition_mask = 0x80000000 >> condition_bit;
-      switch (bo) {
-        case DCBNZF:  // Decrement CTR; branch if CTR != 0 and condition false
-        case DCBEZF:  // Decrement CTR; branch if CTR == 0 and condition false
-          UNIMPLEMENTED();
-        case BF: {   // Branch if condition false
-          if (!(condition_reg_ & condition_mask)) {
-            set_pc(get_pc() + offset);
-          }
-          break;
-        }
-        case DCBNZT:  // Decrement CTR; branch if CTR != 0 and condition true
-        case DCBEZT:  // Decrement CTR; branch if CTR == 0 and condition true
-          UNIMPLEMENTED();
-        case BT: {   // Branch if condition true
-          if (condition_reg_ & condition_mask) {
-            set_pc(get_pc() + offset);
-          }
-          break;
-        }
-        case DCBNZ:  // Decrement CTR; branch if CTR != 0
-        case DCBEZ:  // Decrement CTR; branch if CTR == 0
-          special_reg_ctr_ -= 1;
-          if ((special_reg_ctr_ == 0) == (bo == DCBEZ)) {
-            set_pc(get_pc() + offset);
-          }
-          break;
-        case BA: {   // Branch always
-          set_pc(get_pc() + offset);
-          break;
-        }
-        default:
-          UNIMPLEMENTED();  // Invalid encoding
-      }
+      DecodeBranchConditional(instr);
       break;
     }
     case BX: {
