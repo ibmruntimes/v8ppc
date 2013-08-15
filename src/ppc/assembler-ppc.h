@@ -1044,11 +1044,7 @@ class Assembler : public AssemblerBase {
   void marker_asm(int mcode);
   void function_descriptor();
   // end PowerPC
-  // Status register access instructions
-
-  void mrs(Register dst, SRegister s, Condition cond = al);
-  void msr(SRegisterFieldMask fields, const Operand& src, Condition cond = al);
-
+  
   // Load/Store instructions
   void ldr(Register dst, const MemOperand& src, Condition cond = al);
   void str(Register src, const MemOperand& dst, Condition cond = al);
@@ -1064,10 +1060,6 @@ class Assembler : public AssemblerBase {
   void strd(Register src1,
             Register src2,
             const MemOperand& dst, Condition cond = al);
-
-  // Load/Store multiple instructions
-  void ldm(BlockAddrMode am, Register base, RegList dst, Condition cond = al);
-  void stm(BlockAddrMode am, Register base, RegList src, Condition cond = al);
 
   // Exception-generating instructions and debugging support
   void stop(const char* msg,

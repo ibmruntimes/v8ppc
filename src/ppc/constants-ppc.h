@@ -501,13 +501,6 @@ enum SBit {
 };
 
 
-// Status register selection.
-enum SRegister {
-  CPSR = 0 << 22,
-  SPSR = 1 << 22
-};
-
-
 // Shifter types for Data-processing operands as defined in section A5.1.2.
 enum ShiftOp {
   LSL = 0 << 5,   // Logical shift left.
@@ -523,23 +516,6 @@ enum ShiftOp {
   kNumberOfShifts = 4
 };
 
-
-// Status register fields.
-enum SRegisterField {
-  CPSR_c = CPSR | 1 << 16,
-  CPSR_x = CPSR | 1 << 17,
-  CPSR_s = CPSR | 1 << 18,
-  CPSR_f = CPSR | 1 << 19,
-  SPSR_c = SPSR | 1 << 16,
-  SPSR_x = SPSR | 1 << 17,
-  SPSR_s = SPSR | 1 << 18,
-  SPSR_f = SPSR | 1 << 19
-};
-
-// Status register field mask (or'ed SRegisterField enum values).
-typedef uint32_t SRegisterFieldMask;
-
-
 // Memory operand addressing mode.
 enum AddrMode {
   // Bit encoding P U W.
@@ -551,34 +527,6 @@ enum AddrMode {
   NegPostIndex = (0|0|0) << 21   // Negative post-indexed with writeback.
 };
 
-
-// Load/store multiple addressing mode.
-enum BlockAddrMode {
-  // Bit encoding P U W .
-  da           = (0|0|0) << 21,  // Decrement after.
-  ia           = (0|4|0) << 21,  // Increment after.
-  db           = (8|0|0) << 21,  // Decrement before.
-  ib           = (8|4|0) << 21,  // Increment before.
-  da_w         = (0|0|1) << 21,  // Decrement after with writeback to base.
-  ia_w         = (0|4|1) << 21,  // Increment after with writeback to base.
-  db_w         = (8|0|1) << 21,  // Decrement before with writeback to base.
-  ib_w         = (8|4|1) << 21,  // Increment before with writeback to base.
-
-  // Alias modes for comparison when writeback does not matter.
-  da_x         = (0|0|0) << 21,  // Decrement after.
-  ia_x         = (0|4|0) << 21,  // Increment after.
-  db_x         = (8|0|0) << 21,  // Decrement before.
-  ib_x         = (8|4|0) << 21,  // Increment before.
-
-  kBlockAddrModeMask = (8|4|1) << 21
-};
-
-
-// Coprocessor load/store operand size.
-enum LFlag {
-  Long  = 1 << 22,  // Long load/store coprocessor.
-  Short = 0 << 22   // Short load/store coprocessor.
-};
 #endif  // INCLUDE_ARM
 
 

@@ -1186,20 +1186,6 @@ void Assembler::mfcr(Register dst) {
 
 // end PowerPC
 
-// Status register access instructions.
-void Assembler::mrs(Register dst, SRegister s, Condition cond) {
-  PPCPORT_CHECK(false);
-  EMIT_FAKE_ARM_INSTR(fMRS);
-}
-
-
-void Assembler::msr(SRegisterFieldMask fields, const Operand& src,
-                    Condition cond) {
-  PPCPORT_CHECK(false);
-  EMIT_FAKE_ARM_INSTR(fMSR);
-}
-
-
 // Load/Store instructions.
 void Assembler::ldr(Register dst, const MemOperand& src, Condition cond) {
   PPCPORT_CHECK(false);
@@ -1262,25 +1248,6 @@ void Assembler::strd(Register src1, Register src2,
   EMIT_FAKE_ARM_INSTR(fSTRD);
 }
 
-// Load/Store multiple instructions.
-void Assembler::ldm(BlockAddrMode am,
-                    Register base,
-                    RegList dst,
-                    Condition cond) {
-  PPCPORT_CHECK(false);
-  EMIT_FAKE_ARM_INSTR(fLDM);
-}
-
-
-void Assembler::stm(BlockAddrMode am,
-                    Register base,
-                    RegList src,
-                    Condition cond) {
-  PPCPORT_CHECK(false);
-  EMIT_FAKE_ARM_INSTR(fSTM);
-}
-
-
 // Exception-generating instructions and debugging support.
 // Stops with a non-negative code less than kNumOfWatchedStops support
 // enabling/disabling and a counter feature. See simulator-arm.h .
@@ -1297,7 +1264,6 @@ void Assembler::stop(const char* msg, Condition cond, int32_t code,
     bkpt(0);
   }
 }
-
 
 void Assembler::bkpt(uint32_t imm16) {
   emit(0x7d821008);
