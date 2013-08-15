@@ -315,12 +315,12 @@ void RegExpMacroAssemblerPPC::CheckNotBackReferenceIgnoreCase(
 
   // If length is zero, either the capture is empty or it is not participating.
   // In either case succeed immediately.
-  __ beq(&fallthrough);
+  __ beq(&fallthrough, cr0);
 
   // Check that there are enough characters left in the input.
   __ add(r0, r4, current_input_offset(), LeaveOE, SetRC);
 //  __ cmn(r1, Operand(current_input_offset()));
-  BranchOrBacktrack(gt, on_no_match);
+  BranchOrBacktrack(gt, on_no_match, cr0);
 
   if (mode_ == ASCII) {
     Label success;
@@ -422,11 +422,11 @@ void RegExpMacroAssemblerPPC::CheckNotBackReference(
   __ lwz(r4, register_location(start_reg + 1));
   __ sub(r4, r4, r3, LeaveOE, SetRC);  // Length to check.
   // Succeed on empty capture (including no capture).
-  __ beq(&fallthrough);
+  __ beq(&fallthrough, cr0);
 
   // Check that there are enough characters left in the input.
-  __ add(r4, r4, current_input_offset(), LeaveOE, SetRC);
-  BranchOrBacktrack(gt, on_no_match);
+  __ add(r0, r4, current_input_offset(), LeaveOE, SetRC);
+  BranchOrBacktrack(gt, on_no_match, cr0);
 
   // Compute pointers to match string and capture string
   __ add(r3, r3, end_of_input_address());
@@ -443,7 +443,7 @@ void RegExpMacroAssemblerPPC::CheckNotBackReference(
   } else {
     ASSERT(mode_ == UC16);
     __ lhz(r6, MemOperand(r3));
-    __ addi(r6, r6, Operand(char_size()));
+    __ addi(r3, r3, Operand(char_size()));
     __ lhz(r25, MemOperand(r5));
     __ addi(r5, r5, Operand(char_size()));
   }
@@ -473,9 +473,9 @@ void RegExpMacroAssemblerPPC::CheckCharacterAfterAnd(uint32_t c,
     __ and_(r3, current_character(), r0, SetRC);
   } else {
     __ and_(r3, current_character(), r0);
-    __ Cmpli(r3, Operand(c), r0);
+    __ Cmpli(r3, Operand(c), r0, cr0);
   }
-  BranchOrBacktrack(eq, on_equal);
+  BranchOrBacktrack(eq, on_equal, cr0);
 }
 
 
@@ -487,9 +487,9 @@ void RegExpMacroAssemblerPPC::CheckNotCharacterAfterAnd(unsigned c,
     __ and_(r3, current_character(), r0, SetRC);
   } else {
     __ and_(r3, current_character(), r0);
-    __ Cmpli(r3, Operand(c), r0);
+    __ Cmpli(r3, Operand(c), r0, cr0);
   }
-  BranchOrBacktrack(ne, on_not_equal);
+  BranchOrBacktrack(ne, on_not_equal, cr0);
 }
 
 
@@ -716,7 +716,7 @@ Handle<HeapObject> RegExpMacroAssemblerPPC::GetCode(Handle<String> source) {
   __ lwz(r3, MemOperand(r3));
   __ sub(r3, sp, r3, LeaveOE, SetRC);
   // Handle it if the stack pointer is already below the stack limit.
-  __ ble(&stack_limit_hit);
+  __ ble(&stack_limit_hit, cr0);
   // Check if there is room for the variable number of registers above
   // the stack limit.
   __ cmpli(r3, Operand(num_registers_ * kPointerSize));
@@ -772,16 +772,14 @@ Handle<HeapObject> RegExpMacroAssemblerPPC::GetCode(Handle<String> source) {
   if (num_saved_registers_ > 0) {  // Always is, if generated from a regexp.
     // Fill saved registers with initial value = start offset - 1
     if (num_saved_registers_ > 8) {
-      // Address of register 0.
-      __ addi(r4, frame_pointer(), Operand(kRegisterZero));
+      // One slot beyond address of register 0.
+      __ addi(r4, frame_pointer(), Operand(kRegisterZero + kPointerSize));
       __ li(r5, Operand(num_saved_registers_));
+      __ mtctr(r5);
       Label init_loop;
       __ bind(&init_loop);
-      __ stw(r3, MemOperand(r4));
-      __ sub(r4, r4, Operand(kPointerSize));
-      __ li(r0, Operand(-1));
-      __ add(r5, r5, r0, LeaveOE, SetRC);
-      __ bne(&init_loop);
+      __ stwu(r3, MemOperand(r4, -kPointerSize));
+      __ bdnz(&init_loop);
     } else {
       for (int i = 0; i < num_saved_registers_; i++) {
         __ stw(r3, register_location(i));
@@ -1270,7 +1268,8 @@ void RegExpMacroAssemblerPPC::CheckPosition(int cp_offset,
 
 
 void RegExpMacroAssemblerPPC::BranchOrBacktrack(Condition condition,
-                                                Label* to) {
+                                                Label* to,
+                                                CRegister cr) {
   if (condition == al) {  // Unconditional.
     if (to == NULL) {
       Backtrack();
@@ -1280,15 +1279,15 @@ void RegExpMacroAssemblerPPC::BranchOrBacktrack(Condition condition,
     return;
   }
   if (to == NULL) {
-    __ b(condition, &backtrack_label_);
+    __ b(condition, &backtrack_label_, cr);
     return;
   }
-  __ b(condition, to);
+  __ b(condition, to, cr);
 }
 
 
-void RegExpMacroAssemblerPPC::SafeCall(Label* to, Condition cond) {
-  __ b(cond, to, cr7, SetLK);
+void RegExpMacroAssemblerPPC::SafeCall(Label* to, Condition cond, CRegister cr) {
+  __ b(cond, to, cr, SetLK);
 }
 
 
