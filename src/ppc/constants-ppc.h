@@ -494,12 +494,6 @@ enum CRBit {
 #define CRWIDTH 4
 
 #if defined(INCLUDE_ARM)
-// Condition code updating mode.
-enum SBit {
-  SetCC   = 1 << 20,  // Set condition code.
-  LeaveCC = 0 << 20   // Leave condition code unchanged.
-};
-
 // Memory operand addressing mode.
 enum AddrMode {
   // Bit encoding P U W.

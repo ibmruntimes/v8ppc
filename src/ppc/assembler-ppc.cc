@@ -587,24 +587,6 @@ void Assembler::bl(int branch_offset, Condition cond) {
   b(branch_offset, SetLK);
 }
 
-// end PowerPC
-
-// Data-processing instructions.
-
-void Assembler::eor(Register dst, Register src1, const Operand& src2,
-                    SBit s, Condition cond) {
-  PPCPORT_CHECK(false);
-  EMIT_FAKE_ARM_INSTR(fEOR);
-}
-
-void Assembler::rsb(Register dst, Register src1, const Operand& src2,
-                    SBit s, Condition cond) {
-  PPCPORT_CHECK(false);
-  EMIT_FAKE_ARM_INSTR(fRSB);
-}
-
-// PowerPC
-
 void Assembler::xori(Register dst, Register src, const Operand& imm) {
   d_form(XORI, src, dst, imm.imm32_, false);
 }
@@ -1029,39 +1011,6 @@ void Assembler::function_descriptor() {
 }
 // end PowerPC
 
-void Assembler::add(Register dst, Register src1, const Operand& src2,
-                    SBit s, Condition cond) {
-  PPCPORT_CHECK(false);
-  EMIT_FAKE_ARM_INSTR(fADD);
-}
-
-void Assembler::adc(Register dst, Register src1, const Operand& src2,
-                    SBit s, Condition cond) {
-  PPCPORT_CHECK(false);
-  EMIT_FAKE_ARM_INSTR(fADC);
-}
-
-
-void Assembler::sbc(Register dst, Register src1, const Operand& src2,
-                    SBit s, Condition cond) {
-  PPCPORT_CHECK(false);
-  EMIT_FAKE_ARM_INSTR(fSBC);
-}
-
-
-void Assembler::rsc(Register dst, Register src1, const Operand& src2,
-                    SBit s, Condition cond) {
-  PPCPORT_CHECK(false);
-  EMIT_FAKE_ARM_INSTR(fRSC);
-}
-
-
-void Assembler::teq(Register src1, const Operand& src2, Condition cond) {
-  PPCPORT_CHECK(false);
-  EMIT_FAKE_ARM_INSTR(fTEQ);
-}
-
-
 void Assembler::cmp(Register src1, const Operand& src2, Condition cond) {
   PPCPORT_CHECK(false);
   EMIT_FAKE_ARM_INSTR(fCMP);
@@ -1075,8 +1024,7 @@ void Assembler::cmn(Register src1, const Operand& src2, Condition cond) {
 // Primarily used for loading constants
 // This should really move to be in macro-assembler as it
 // is really a pseudo instruction
-void Assembler::mov(Register dst, const Operand& src, SBit s, Condition cond) {
-  ASSERT(cond == al);
+void Assembler::mov(Register dst, const Operand& src) {
   if (MustUseReg(src.rmode_)) {
     // some form of relocation needed
     RecordRelocInfo(src.rmode_, src.imm32_);
@@ -1092,18 +1040,6 @@ void Assembler::mov(Register dst, const Operand& src, SBit s, Condition cond) {
 
   lis(dst, Operand(SIGN_EXT_IMM16(hi_word)));
   addic(dst, dst, Operand(lo_word));
-}
-
-void Assembler::bic(Register dst, Register src1, const Operand& src2,
-                    SBit s, Condition cond) {
-  PPCPORT_CHECK(false);
-  EMIT_FAKE_ARM_INSTR(fBIC);
-}
-
-
-void Assembler::mvn(Register dst, const Operand& src, SBit s, Condition cond) {
-  PPCPORT_CHECK(false);
-  EMIT_FAKE_ARM_INSTR(fMVN);
 }
 
 // PowerPC

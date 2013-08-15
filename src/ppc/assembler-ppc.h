@@ -941,26 +941,7 @@ class Assembler : public AssemblerBase {
   void cntlzw_(Register dst, Register src, RCBit rc = LeaveRC);
   // end PowerPC
 
-  void eor(Register dst, Register src1, const Operand& src2,
-           SBit s = LeaveCC, Condition cond = al);
   void sub(Register dst, Register src1, const Operand& src2);
-
-  void rsb(Register dst, Register src1, const Operand& src2,
-           SBit s = LeaveCC, Condition cond = al);
-
-  void add(Register dst, Register src1, const Operand& src2,
-           SBit s = LeaveCC, Condition cond = al);
-
-  void adc(Register dst, Register src1, const Operand& src2,
-           SBit s = LeaveCC, Condition cond = al);
-
-  void sbc(Register dst, Register src1, const Operand& src2,
-           SBit s = LeaveCC, Condition cond = al);
-
-  void rsc(Register dst, Register src1, const Operand& src2,
-           SBit s = LeaveCC, Condition cond = al);
-
-  void teq(Register src1, const Operand& src2, Condition cond = al);
 
   void cmp(Register src1, const Operand& src2, Condition cond = al);
   void cmp(Register src1, Register src2, CRegister cr = cr7);
@@ -968,13 +949,7 @@ class Assembler : public AssemblerBase {
 
   void cmn(Register src1, const Operand& src2, Condition cond = al);
 
-  void mov(Register dst, const Operand& src,
-           SBit s = LeaveCC, Condition cond = al);
-  void bic(Register dst, Register src1, const Operand& src2,
-           SBit s = LeaveCC, Condition cond = al);
-
-  void mvn(Register dst, const Operand& src,
-           SBit s = LeaveCC, Condition cond = al);
+  void mov(Register dst, const Operand& src);
 
   // Multiply instructions
 
