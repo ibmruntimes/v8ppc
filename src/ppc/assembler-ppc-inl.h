@@ -329,23 +329,10 @@ Operand::Operand(Smi* value) {
   rmode_ = RelocInfo::NONE;
 }
 
-
 Operand::Operand(Register rm) {
   rm_ = rm;
-  rs_ = no_reg;
-  shift_op_ = LSL;
-  shift_imm_ = 0;
   rmode_ = RelocInfo::NONE;  // PPC -why doesn't ARM do this?
 }
-
-
-bool Operand::is_reg() const {
-  return rm_.is_valid() &&
-         rs_.is(no_reg) &&
-         shift_op_ == LSL &&
-         shift_imm_ == 0;
-}
-
 
 void Assembler::CheckBuffer() {
   if (buffer_space() <= kGap) {
@@ -360,6 +347,9 @@ void Assembler::emit(Instr x) {
   pc_ += kInstrSize;
 }
 
+bool Operand::is_reg() const {
+  return rm_.is_valid();
+}
 
 #if 0
 Address Assembler::target_address_address_at(Address pc) {

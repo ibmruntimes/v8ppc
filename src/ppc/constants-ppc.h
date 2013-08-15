@@ -500,22 +500,6 @@ enum SBit {
   LeaveCC = 0 << 20   // Leave condition code unchanged.
 };
 
-
-// Shifter types for Data-processing operands as defined in section A5.1.2.
-enum ShiftOp {
-  LSL = 0 << 5,   // Logical shift left.
-  LSR = 1 << 5,   // Logical shift right.
-  ASR = 2 << 5,   // Arithmetic shift right.
-  ROR = 3 << 5,   // Rotate right.
-
-  // RRX is encoded as ROR with shift_imm == 0.
-  // Use a special code to make the distinction. The RRX ShiftOp is only used
-  // as an argument, and will never actually be encoded. The Assembler will
-  // detect it and emit the correct ROR shift operand with shift_imm == 0.
-  RRX = -1,
-  kNumberOfShifts = 4
-};
-
 // Memory operand addressing mode.
 enum AddrMode {
   // Bit encoding P U W.

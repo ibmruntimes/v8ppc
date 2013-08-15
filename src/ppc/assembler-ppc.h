@@ -395,12 +395,6 @@ class Operand BASE_EMBEDDED {
   // rm
   INLINE(explicit Operand(Register rm));
 
-  // rm <shift_op> shift_imm
-  explicit Operand(Register rm, ShiftOp shift_op, int shift_imm);
-
-  // rm <shift_op> rs
-  explicit Operand(Register rm, ShiftOp shift_op, Register rs);
-
   // Return true if this is a register operand.
   INLINE(bool is_reg() const);
 
@@ -410,14 +404,9 @@ class Operand BASE_EMBEDDED {
   }
 
   Register rm() const { return rm_; }
-  Register rs() const { return rs_; }
-  ShiftOp shift_op() const { return shift_op_; }
-
+  
  private:
   Register rm_;
-  Register rs_;
-  ShiftOp shift_op_;
-  int shift_imm_;  // valid if rm_ != no_reg && rs_ == no_reg
   int32_t imm32_;  // valid if rm_ == no_reg
   RelocInfo::Mode rmode_;
 
@@ -437,10 +426,6 @@ class MemOperand BASE_EMBEDDED {
   explicit MemOperand(Register rn, int32_t offset = 0, AddrMode am = Offset);
 
   explicit MemOperand(Register ra, Register rb);
-
-  // ARM only
-  explicit MemOperand(Register rn, Register rm,
-                      ShiftOp shift_op, int shift_imm, AddrMode am = Offset);
 
   uint32_t offset() const {
     ASSERT(validPPCAddressing_ && rb_.is(no_reg));
@@ -988,11 +973,6 @@ class Assembler : public AssemblerBase {
   void rsc(Register dst, Register src1, const Operand& src2,
            SBit s = LeaveCC, Condition cond = al);
 
-  void tst(Register src1, const Operand& src2, Condition cond = al);
-  void tst(Register src1, Register src2, Condition cond = al) {
-    tst(src1, Operand(src2), cond);
-  }
-
   void teq(Register src1, const Operand& src2, Condition cond = al);
 
   void cmp(Register src1, const Operand& src2, Condition cond = al);
@@ -1001,19 +981,8 @@ class Assembler : public AssemblerBase {
 
   void cmn(Register src1, const Operand& src2, Condition cond = al);
 
-  void orr(Register dst, Register src1, const Operand& src2,
-           SBit s = LeaveCC, Condition cond = al);
-  void orr(Register dst, Register src1, Register src2,
-           SBit s = LeaveCC, Condition cond = al) {
-    orr(dst, src1, Operand(src2), s, cond);
-  }
-
   void mov(Register dst, const Operand& src,
            SBit s = LeaveCC, Condition cond = al);
-  void mov(Register dst, Register src, SBit s = LeaveCC, Condition cond = al) {
-    mov(dst, Operand(src), s, cond);
-  }
-
   void bic(Register dst, Register src1, const Operand& src2,
            SBit s = LeaveCC, Condition cond = al);
 

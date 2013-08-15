@@ -152,34 +152,6 @@ Operand::Operand(Handle<Object> handle) {
   }
 }
 
-
-Operand::Operand(Register rm, ShiftOp shift_op, int shift_imm) {
-  ASSERT(is_uint5(shift_imm));
-  ASSERT(shift_op != ROR || shift_imm != 0);  // use RRX if you mean it
-  rm_ = rm;
-  rs_ = no_reg;
-  shift_op_ = shift_op;
-  shift_imm_ = shift_imm & 31;
-  if (shift_op == RRX) {
-    // encoded as ROR with shift_imm == 0
-    ASSERT(shift_imm == 0);
-    shift_op_ = ROR;
-    shift_imm_ = 0;
-  }
-  rmode_ = RelocInfo::NONE;  // ?? again why not needed on ARM
-}
-
-
-Operand::Operand(Register rm, ShiftOp shift_op, Register rs) {
-  ASSERT(shift_op != RRX);
-  rm_ = rm;
-  rs_ = no_reg;
-  shift_op_ = shift_op;
-  rs_ = rs;
-  rmode_ = RelocInfo::NONE;  // ?? again why not needed on ARM
-}
-
-
 MemOperand::MemOperand(Register rn, int32_t offset, AddrMode am) {
   ra_ = rn;
   rb_ = no_reg;
@@ -192,15 +164,6 @@ MemOperand::MemOperand(Register ra, Register rb) {
   rb_ = rb;
   offset_ = 0;
   validPPCAddressing_ = true;
-}
-
-// todo (penguin): arm-addressing, remove after all arm codes are converted
-MemOperand::MemOperand(Register rn, Register rm,
-                       ShiftOp shift_op, int shift_imm, AddrMode am) {
-  validPPCAddressing_ = false;
-  ra_ = no_reg;
-  rb_ = no_reg;
-  offset_ = 0;
 }
 
 // -----------------------------------------------------------------------------
@@ -1087,12 +1050,6 @@ void Assembler::rsc(Register dst, Register src1, const Operand& src2,
 }
 
 
-void Assembler::tst(Register src1, const Operand& src2, Condition cond) {
-  PPCPORT_CHECK(false);
-  EMIT_FAKE_ARM_INSTR(fTST);
-}
-
-
 void Assembler::teq(Register src1, const Operand& src2, Condition cond) {
   PPCPORT_CHECK(false);
   EMIT_FAKE_ARM_INSTR(fTEQ);
@@ -1107,13 +1064,6 @@ void Assembler::cmp(Register src1, const Operand& src2, Condition cond) {
 void Assembler::cmn(Register src1, const Operand& src2, Condition cond) {
   PPCPORT_CHECK(false);
   EMIT_FAKE_ARM_INSTR(fCMN);
-}
-
-
-void Assembler::orr(Register dst, Register src1, const Operand& src2,
-                    SBit s, Condition cond) {
-  PPCPORT_CHECK(false);
-  EMIT_FAKE_ARM_INSTR(fORR);
 }
 
 // Primarily used for loading constants
