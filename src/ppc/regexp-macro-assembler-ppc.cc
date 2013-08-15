@@ -1286,7 +1286,8 @@ void RegExpMacroAssemblerPPC::BranchOrBacktrack(Condition condition,
 }
 
 
-void RegExpMacroAssemblerPPC::SafeCall(Label* to, Condition cond, CRegister cr) {
+void RegExpMacroAssemblerPPC::SafeCall(Label* to, Condition cond,
+                                       CRegister cr) {
   __ b(cond, to, cr, SetLK);
 }
 
