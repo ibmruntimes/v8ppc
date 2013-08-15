@@ -720,9 +720,8 @@ void Assembler::rldicl(Register ra, Register rs, int sh, int mb, RCBit r) {
   emit(EXT5 | RLDICL | rs.code()*B21 | ra.code()*B16 | sh*B11 | mb*B5 | r);
 }
 
-// delete this later when removing ARM
-void Assembler::sub(Register dst, Register src, const Operand& imm,
-    SBit s, Condition cond) {
+// TODO(penguin): rename sub to subi to be consistent w/ addi
+void Assembler::sub(Register dst, Register src, const Operand& imm) {
   addi(dst, src, Operand(-(imm.imm32_)));
 }
 

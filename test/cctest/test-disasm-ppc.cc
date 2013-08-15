@@ -108,7 +108,7 @@ if (failure) { \
     V8_Fatal(__FILE__, __LINE__, "ARM Disassembler tests failed.\n"); \
   }
 
-
+#ifdef PENGUIN_CLEANUP
 TEST(Type0) {
   SET_UP();
 
@@ -116,12 +116,10 @@ TEST(Type0) {
           "e0010002       and r0, r1, r2");
   COMPARE(and_(r1, r2, r3, LeaveRC),
           "e0021003       and r1, r2, r3");
-#ifdef PENGUIN_CLEANUP
   COMPARE(and_(r2, r3, Operand(r4), SetCC),
           "e0132004       ands r2, r3, r4");
   COMPARE(and_(r3, r4, Operand(r5), LeaveCC, eq),
           "00043005       andeq r3, r4, r5");
-#endif
 
   COMPARE(eor(r4, r5, Operand(r6, LSL, 0)),
           "e0254006       eor r4, r5, r6");
@@ -279,7 +277,6 @@ TEST(Type0) {
   COMPARE(mvn(r6, Operand(-1), LeaveCC, ne),
           "13a06000       movne r6, #0");
 
-#ifdef PENGUIN_CLEANUP
   // mov -> movw.
   if (CpuFeatures::IsSupported(ARMv7)) {
     COMPARE(mov(r5, Operand(0x01234), LeaveCC, ne),
@@ -305,7 +302,6 @@ TEST(Type0) {
     COMPARE(movw(r5, 0xabcd, eq),
             "030a5bcd       movweq r5, #43981");
   }
-#endif
 
   // Eor doesn't have an eor-negative variant, but we can do an mvn followed by
   // an eor to get the same effect.
@@ -331,18 +327,14 @@ TEST(Type0) {
           "e3530b01       cmp r3, #1024");
 
   // Miscellaneous instructions encoded as type 0.
-#ifdef PENGUIN_CLEANUP
   COMPARE(blx(ip),
           "e12fff3c       blx ip");
-#endif
   COMPARE(bkpt(0),
           "e1200070       bkpt 0");
   COMPARE(bkpt(0xffff),
           "e12fff7f       bkpt 65535");
-#ifdef PENGUIN_CLEANUP
   COMPARE(clz(r6, r7),
           "e16f6f17       clz r6, r7");
-#endif
 
   VERIFY_RUN();
 }
@@ -353,7 +345,6 @@ TEST(Type1) {
 
   COMPARE(andi(r0, r1, Operand(0x00000000)),
           "e2010000       andi r0, r1, #0");
-#ifdef PENGUIN_CLEANUP
   COMPARE(andi(r1, r2, Operand(0x00000001), LeaveRC),
           "e2021001       andi r1, r2, #1");
   COMPARE(and_(r2, r3, Operand(0x00000010), SetCC),
@@ -362,7 +353,6 @@ TEST(Type1) {
           "02043c01       andeq r3, r4, #256");
   COMPARE(and_(r4, r5, Operand(0x00001000), SetCC, ne),
           "12154a01       andnes r4, r5, #4096");
-#endif
 
   COMPARE(eor(r4, r5, Operand(0x00001000)),
           "e2254a01       eor r4, r5, #4096");
@@ -377,6 +367,7 @@ TEST(Type1) {
 
   VERIFY_RUN();
 }
+#endif
 
 
 TEST(Type3) {

@@ -60,36 +60,18 @@ const int kNoRegister = -1;
 // Family: The Programmer.s Reference Guide" from 10/95
 // https://www-01.ibm.com/chips/techlib/techlib.nsf/techdocs/852569B20050FF778525699600741775/$file/prg.pdf
 //
-#if defined(INCLUDE_ARM)
+
 // Constants for specific fields are defined in their respective named enums.
 // General constants are in an anonymous enum in class Instr.
-
-// Values for the condition field as defined in section A3.2
 enum Condition {
   kNoCondition = -1,
-
-  eq =  0 << 28,                 // Z set            Equal.
-  ne =  1 << 28,                 // Z clear          Not equal.
-  cs =  2 << 28,                 // C set            Unsigned higher or same.
-  cc =  3 << 28,                 // C clear          Unsigned lower.
-  mi =  4 << 28,                 // N set            Negative.
-  pl =  5 << 28,                 // N clear          Positive or zero.
-  vs =  6 << 28,                 // V set            Overflow.
-  vc =  7 << 28,                 // V clear          No overflow.
-  hi =  8 << 28,                 // C set, Z clear   Unsigned higher.
-  ls =  9 << 28,                 // C clear or Z set Unsigned lower or same.
-  ge = 10 << 28,                 // N == V           Greater or equal.
-  lt = 11 << 28,                 // N != V           Less than.
-  gt = 12 << 28,                 // Z clear, N == V  Greater than.
-  le = 13 << 28,                 // Z set or N != V  Less then or equal
-  al = 14 << 28,                 //                  Always.
-
-  kSpecialCondition = 15 << 28,  // Special condition (refer to section A3.2.1).
-  kNumberOfConditions = 16,
-
-  // Aliases.
-  hs = cs,                       // C set            Unsigned higher or same.
-  lo = cc                        // C clear          Unsigned lower.
+  eq =  0,                 // Equal.
+  ne =  1,                 // Not equal.
+  ge = 10,                 // Greater or equal.
+  lt = 11,                 // Less than.
+  gt = 12,                 // Greater than.
+  le = 13,                 // Less then or equal
+  al = 14                  // Always.
 };
 
 
@@ -102,14 +84,6 @@ inline Condition NegateCondition(Condition cond) {
 // Corresponds to transposing the operands of a comparison.
 inline Condition ReverseCondition(Condition cond) {
   switch (cond) {
-    case lo:
-      return hi;
-    case hi:
-      return lo;
-    case hs:
-      return ls;
-    case ls:
-      return hs;
     case lt:
       return gt;
     case gt:
@@ -122,7 +96,6 @@ inline Condition ReverseCondition(Condition cond) {
       return cond;
   };
 }
-#endif  // INCLUDE_ARM
 
 // -----------------------------------------------------------------------------
 // Instructions encoding.
@@ -464,6 +437,7 @@ enum FAKE_OPCODE_T {
   fLITHIUM108 = 108,
   fLITHIUM109 = 109,
   fLITHIUM110 = 110,
+  fLITHIUM111 = 111,
   fLastFaker  // can't be more than 128 (2^^7)
 };
 #define FAKE_OPCODE_HIGH_BIT 7  // fake opcode has to fall into bit 0~7

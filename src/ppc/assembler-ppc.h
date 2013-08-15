@@ -971,14 +971,8 @@ class Assembler : public AssemblerBase {
 
   void eor(Register dst, Register src1, const Operand& src2,
            SBit s = LeaveCC, Condition cond = al);
-
-  void sub(Register dst, Register src1, const Operand& src2,
-           SBit s = LeaveCC, Condition cond = al);
-  void sub(Register dst, Register src1, Register src2,
-           SBit s, Condition cond = al) {
-    sub(dst, src1, Operand(src2), s, cond);
-  }
-
+  void sub(Register dst, Register src1, const Operand& src2);
+  
   void rsb(Register dst, Register src1, const Operand& src2,
            SBit s = LeaveCC, Condition cond = al);
 

@@ -1198,8 +1198,13 @@ void LCodeGen::DoMathFloorOfDiv(LMathFloorOfDiv* instr) {
                                       instr->environment());
   // We operated a truncating division. Correct the result if necessary.
   __ cmpi(remainder, Operand::Zero());
+#ifdef PENGUIN_CLEANUP
   __ teq(remainder, Operand(divisor), ne);
   __ sub(result, result, Operand(1), LeaveCC, mi);
+#else
+  PPCPORT_UNIMPLEMENTED();
+  __ fake_asm(fLITHIUM111);
+#endif
 }
 
 
