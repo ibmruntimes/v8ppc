@@ -1343,7 +1343,7 @@ void Simulator::SoftwareInterrupt(Instruction* instr) {
         if (::v8::internal::FLAG_trace_sim) {
           PrintF("Returned %p\n", reinterpret_cast<void *>(*result));
         }
-        *(reinterpret_cast<int*>(arg0)) = (int32_t) *result;
+        *(reinterpret_cast<intptr_t*>(arg0)) = (intptr_t) *result;
         set_register(r3, arg0);
       } else if (redirection->type() == ExternalReference::DIRECT_GETTER_CALL) {
         // See callers of MacroAssembler::CallApiFunctionAndReturn for
@@ -1360,11 +1360,12 @@ void Simulator::SoftwareInterrupt(Instruction* instr) {
           PrintF("\n");
         }
         CHECK(stack_aligned);
-        v8::Handle<v8::Value> result = target(*(int32_t *)arg1, arg2);
+        arg1 = *(reinterpret_cast<intptr_t *>(arg1));
+        v8::Handle<v8::Value> result = target(arg1, arg2);
         if (::v8::internal::FLAG_trace_sim) {
           PrintF("Returned %p\n", reinterpret_cast<void *>(*result));
         }
-        *(reinterpret_cast<int*>(arg0)) = (int32_t) *result;
+        *(reinterpret_cast<intptr_t*>(arg0)) = (intptr_t) *result;
         set_register(r3, arg0);
       } else {
         // builtin call.
