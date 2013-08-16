@@ -1441,7 +1441,6 @@ void RegExpCEntryStub::Generate(MacroAssembler* masm_) {
   __ mflr(r0);
   __ stw(r0, MemOperand(r3, 0));
 
-#if defined(V8_HOST_ARCH_PPC)
   // PPC LINUX ABI:
   //
   // Create 2 extra slots on stack:
@@ -1449,7 +1448,6 @@ void RegExpCEntryStub::Generate(MacroAssembler* masm_) {
   //    [1] link register save area
   //
   extra_stack_slots += 2;
-#endif
   __ addi(sp, sp, Operand(-extra_stack_slots * kPointerSize));
 
   __ Call(r26);

@@ -2221,13 +2221,11 @@ void MacroAssembler::CallApiFunctionAndReturn(ExternalReference function,
   addi(r29, r29, Operand(1));
   stw(r29, MemOperand(r26, kLevelOffset));
 
-#if defined(V8_HOST_ARCH_PPC)
   // PPC LINUX ABI
   // The return value is pointer-sized non-scalar value.
   // Space has already been allocated on the stack which will pass as an
   // implicity first argument.
   addi(r3, sp, Operand(kPointerSize));
-#endif
 
   // Native call returns to the DirectCEntry stub which redirects to the
   // return address pushed on stack (could have moved after GC).
@@ -2235,10 +2233,8 @@ void MacroAssembler::CallApiFunctionAndReturn(ExternalReference function,
   DirectCEntryStub stub;
   stub.GenerateCall(this, function);
 
-#if defined(V8_HOST_ARCH_PPC)
   // Retrieve return value from stack buffer
-  lwz(r3, MemOperand(sp, kPointerSize));
-#endif
+  lwz(r3, MemOperand(r3));
 
   Label promote_scheduled_exception;
   Label delete_allocated_handles;

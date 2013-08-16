@@ -765,7 +765,6 @@ static void GenerateFastApiDirectCall(MacroAssembler* masm,
 
   // Allocate the v8::Arguments structure in the arguments' space since
   // it's not controlled by GC.
-#if defined(V8_HOST_ARCH_PPC)
   // PPC LINUX ABI:
   //
   // Create 1 extra slots on stack:
@@ -776,10 +775,6 @@ static void GenerateFastApiDirectCall(MacroAssembler* masm,
   // CallApiFunctionAndReturn will setup r3.
   const int kApiStackSpace = 5;
   Register arg0 = r4;
-#else
-  const int kApiStackSpace = 4;
-  Register arg0 = r3;
-#endif
 
   FrameScope frame_scope(masm, StackFrame::MANUAL);
   __ EnterExitFrame(false, kApiStackSpace);
@@ -1277,7 +1272,7 @@ void StubCompiler::GenerateLoadCallback(Handle<JSObject> object,
   // Build AccessorInfo::args_ list on the stack and push property name below
   // the exit frame to make GC aware of them and store pointers to them.
   __ push(receiver);
-  __ mr(ip, sp);  // ip = AccessorInfo::args_
+  __ mr(scratch2, sp);  // ip = AccessorInfo::args_
   if (heap()->InNewSpace(callback->data())) {
     __ Move(scratch3, callback);
     __ lwz(scratch3, FieldMemOperand(scratch3, AccessorInfo::kDataOffset));
@@ -1288,7 +1283,6 @@ void StubCompiler::GenerateLoadCallback(Handle<JSObject> object,
   __ mov(scratch3, Operand(ExternalReference::isolate_address()));
   __ Push(scratch3, name_reg);
 
-#if defined(V8_HOST_ARCH_PPC)
   // PPC LINUX ABI:
   //
   // Create 2 extra slots on stack:
@@ -1301,26 +1295,20 @@ void StubCompiler::GenerateLoadCallback(Handle<JSObject> object,
   const int kApiStackSpace = 3;
   Register arg0 = r4;
   Register arg1 = r5;
-#else
-  const int kApiStackSpace = 1;
-  Register arg0 = r3;
-  Register arg1 = r4;
-#endif
 
+  __ mr(arg1, scratch2);  // Saved in case scratch2 == arg0.
   __ mr(arg0, sp);  // arg0 = Handle<String>
 
   FrameScope frame_scope(masm(), StackFrame::MANUAL);
   __ EnterExitFrame(false, kApiStackSpace);
 
-#if defined(V8_HOST_ARCH_PPC)
   // pass 1st arg by reference
   __ stw(arg0, MemOperand(sp, 2 * kPointerSize));
   __ addi(arg0, sp, Operand(2 * kPointerSize));
-#endif
 
   // Create AccessorInfo instance on the stack above the exit frame with
   // ip (internal::Object** args_) as the data.
-  __ stw(ip, MemOperand(sp, kApiStackSpace * kPointerSize));
+  __ stw(arg1, MemOperand(sp, kApiStackSpace * kPointerSize));
   // arg1 = AccessorInfo&
   __ addi(arg1, sp, Operand(kApiStackSpace * kPointerSize));
 

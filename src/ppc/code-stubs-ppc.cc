@@ -6836,9 +6836,7 @@ void ICCompareStub::GenerateMiss(MacroAssembler* masm) {
 void DirectCEntryStub::Generate(MacroAssembler* masm) {
   EMIT_STUB_MARKER(187);
   // Retrieve return address
-#if defined(V8_HOST_ARCH_PPC)
   __ addi(sp, sp, Operand(2 * kPointerSize));
-#endif
   __ lwz(r0, MemOperand(sp, 0));
   __ Jump(r0);
 }
@@ -6858,11 +6856,6 @@ void DirectCEntryStub::GenerateCall(MacroAssembler* masm,
   __ mov(r0, Operand(reinterpret_cast<intptr_t>(GetCode().location()),
                      RelocInfo::CODE_TARGET));
 
-#if defined(V8_HOST_ARCH_PPC)
-#define PowerPCAdjustment 1
-#else
-#define PowerPCAdjustment 0
-#endif
   // Push return address (accessible to GC through exit frame pc).
   Label start, here;
   __ bind(&start);
@@ -6870,9 +6863,8 @@ void DirectCEntryStub::GenerateCall(MacroAssembler* masm,
   __ bind(&here);
   __ mflr(ip);
   __ mtlr(r0);  // from above, so we know where to return
-  __ addi(ip, ip, Operand((6+PowerPCAdjustment) * Assembler::kInstrSize));
+  __ addi(ip, ip, Operand(7 * Assembler::kInstrSize));
   __ stw(ip, MemOperand(sp, 0));
-#if defined(V8_HOST_ARCH_PPC)
   // PPC LINUX ABI:
   //
   // Create 2 extra slots on stack:
@@ -6880,10 +6872,9 @@ void DirectCEntryStub::GenerateCall(MacroAssembler* masm,
   //    [1] link register save area
   //
   __ addi(sp, sp, Operand(-2 * kPointerSize));
-#endif
   __ Jump(target);  // Call the C++ function.
   ASSERT_EQ(Assembler::kInstrSize +
-            ((6 + PowerPCAdjustment) * Assembler::kInstrSize),
+            (7 * Assembler::kInstrSize),
             masm->SizeOfCodeGeneratedSince(&start));
 }
 

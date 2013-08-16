@@ -1325,6 +1325,8 @@ void Simulator::SoftwareInterrupt(Instruction* instr) {
             break;
         }
       } else if (redirection->type() == ExternalReference::DIRECT_API_CALL) {
+        // See callers of MacroAssembler::CallApiFunctionAndReturn for
+        // explanation of register usage.
         SimulatorRuntimeDirectApiCall target =
             reinterpret_cast<SimulatorRuntimeDirectApiCall>(external);
         if (::v8::internal::FLAG_trace_sim || !stack_aligned) {
@@ -1337,12 +1339,15 @@ void Simulator::SoftwareInterrupt(Instruction* instr) {
           PrintF("\n");
         }
         CHECK(stack_aligned);
-        v8::Handle<v8::Value> result = target(arg0);
+        v8::Handle<v8::Value> result = target(arg1);
         if (::v8::internal::FLAG_trace_sim) {
           PrintF("Returned %p\n", reinterpret_cast<void *>(*result));
         }
-        set_register(r3, (intptr_t) *result);
+        *(reinterpret_cast<int*>(arg0)) = (int32_t) *result;
+        set_register(r3, arg0);
       } else if (redirection->type() == ExternalReference::DIRECT_GETTER_CALL) {
+        // See callers of MacroAssembler::CallApiFunctionAndReturn for
+        // explanation of register usage.
         SimulatorRuntimeDirectGetterCall target =
             reinterpret_cast<SimulatorRuntimeDirectGetterCall>(external);
         if (::v8::internal::FLAG_trace_sim || !stack_aligned) {
@@ -1355,11 +1360,12 @@ void Simulator::SoftwareInterrupt(Instruction* instr) {
           PrintF("\n");
         }
         CHECK(stack_aligned);
-        v8::Handle<v8::Value> result = target(arg0, arg1);
+        v8::Handle<v8::Value> result = target(*(int32_t *)arg1, arg2);
         if (::v8::internal::FLAG_trace_sim) {
           PrintF("Returned %p\n", reinterpret_cast<void *>(*result));
         }
-        set_register(r3, (intptr_t) *result);
+        *(reinterpret_cast<int*>(arg0)) = (int32_t) *result;
+        set_register(r3, arg0);
       } else {
         // builtin call.
         ASSERT(redirection->type() == ExternalReference::BUILTIN_CALL);
@@ -3004,7 +3010,8 @@ int32_t Simulator::Call(byte* entry, int argument_count, ...) {
   // Store remaining arguments on stack, from low to high memory.
   intptr_t* stack_argument = reinterpret_cast<intptr_t*>(entry_stack);
   for (int i = 0; i < stack_arg_count; i++) {
-    stack_argument[i] = va_arg(parameters, int32_t);
+    // +2 extra stack is a hack for the LR slot + old SP on PPC
+    stack_argument[i + 2] = va_arg(parameters, int32_t);
   }
   va_end(parameters);
   set_register(sp, entry_stack);
