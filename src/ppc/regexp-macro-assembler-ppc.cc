@@ -979,7 +979,7 @@ void RegExpMacroAssemblerPPC::IfRegisterGE(int reg,
                                            int comparand,
                                            Label* if_ge) {
   __ lwz(r3, register_location(reg));
-  __ cmpi(r3, Operand(comparand));
+  __ Cmpi(r3, Operand(comparand), r0);
   BranchOrBacktrack(ge, if_ge);
 }
 
@@ -988,7 +988,7 @@ void RegExpMacroAssemblerPPC::IfRegisterLT(int reg,
                                            int comparand,
                                            Label* if_lt) {
   __ lwz(r3, register_location(reg));
-  __ cmpi(r3, Operand(comparand));
+  __ Cmpi(r3, Operand(comparand), r0);
   BranchOrBacktrack(lt, if_lt);
 }
 
