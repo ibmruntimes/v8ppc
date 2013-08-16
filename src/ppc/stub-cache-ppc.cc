@@ -765,25 +765,41 @@ static void GenerateFastApiDirectCall(MacroAssembler* masm,
 
   // Allocate the v8::Arguments structure in the arguments' space since
   // it's not controlled by GC.
+#if defined(V8_HOST_ARCH_PPC)
+  // PPC LINUX ABI:
+  //
+  // Create 1 extra slots on stack:
+  //    [1] space for pointer-sized non-scalar return value (r3)
+  //
+  // We shift the arguments over a register (e.g. r3 -> r4) to allow
+  // for the return value buffer in implicit first arg.
+  // CallApiFunctionAndReturn will setup r3.
+  const int kApiStackSpace = 5;
+  Register arg0 = r4;
+#else
   const int kApiStackSpace = 4;
+  Register arg0 = r3;
+#endif
 
   FrameScope frame_scope(masm, StackFrame::MANUAL);
   __ EnterExitFrame(false, kApiStackSpace);
 
-  // r3 = v8::Arguments&
+  // scalar and return
+
+  // arg0 = v8::Arguments&
   // Arguments is after the return address.
-  __ addi(r3, sp, Operand(1 * kPointerSize));
+  __ addi(arg0, sp, Operand((kApiStackSpace - 3) * kPointerSize));
   // v8::Arguments::implicit_args_
-  __ stw(r5, MemOperand(r3, 0 * kPointerSize));
+  __ stw(r5, MemOperand(arg0, 0 * kPointerSize));
   // v8::Arguments::values_
   __ addi(ip, r5, Operand(argc * kPointerSize));
-  __ stw(ip, MemOperand(r3, 1 * kPointerSize));
+  __ stw(ip, MemOperand(arg0, 1 * kPointerSize));
   // v8::Arguments::length_ = argc
   __ li(ip, Operand(argc));
-  __ stw(ip, MemOperand(r3, 2 * kPointerSize));
+  __ stw(ip, MemOperand(arg0, 2 * kPointerSize));
   // v8::Arguments::is_construct_call = 0
   __ li(ip, Operand::Zero());
-  __ stw(ip, MemOperand(r3, 3 * kPointerSize));
+  __ stw(ip, MemOperand(arg0, 3 * kPointerSize));
 
   const int kStackUnwindSpace = argc + kFastApiCallArguments + 1;
   Address function_address = v8::ToCData<Address>(api_call_info->callback());
@@ -793,7 +809,7 @@ static void GenerateFastApiDirectCall(MacroAssembler* masm,
                                             masm->isolate());
   AllowExternalCallThatCantCauseGC scope(masm);
 
-  __ CallApiFunctionAndReturn(ref, kStackUnwindSpace, CallType_ScalarArg);
+  __ CallApiFunctionAndReturn(ref, kStackUnwindSpace);
 }
 
 
@@ -1261,7 +1277,7 @@ void StubCompiler::GenerateLoadCallback(Handle<JSObject> object,
   // Build AccessorInfo::args_ list on the stack and push property name below
   // the exit frame to make GC aware of them and store pointers to them.
   __ push(receiver);
-  __ mr(scratch2, sp);  // scratch2 = AccessorInfo::args_
+  __ mr(ip, sp);  // ip = AccessorInfo::args_
   if (heap()->InNewSpace(callback->data())) {
     __ Move(scratch3, callback);
     __ lwz(scratch3, FieldMemOperand(scratch3, AccessorInfo::kDataOffset));
@@ -1271,16 +1287,42 @@ void StubCompiler::GenerateLoadCallback(Handle<JSObject> object,
   __ Push(reg, scratch3);
   __ mov(scratch3, Operand(ExternalReference::isolate_address()));
   __ Push(scratch3, name_reg);
-  __ mr(r3, sp);  // r3 = Handle<String>
 
+#if defined(V8_HOST_ARCH_PPC)
+  // PPC LINUX ABI:
+  //
+  // Create 2 extra slots on stack:
+  //    [0] copy of pointer-sized non-scalar first arg
+  //    [1] space for pointer-sized non-scalar return value (r3)
+  //
+  // We shift the arguments over a register (e.g. r3 -> r4) to allow
+  // for the return value buffer in implicit first arg.
+  // CallApiFunctionAndReturn will setup r3.
+  const int kApiStackSpace = 3;
+  Register arg0 = r4;
+  Register arg1 = r5;
+#else
   const int kApiStackSpace = 1;
+  Register arg0 = r3;
+  Register arg1 = r4;
+#endif
+
+  __ mr(arg0, sp);  // arg0 = Handle<String>
+
   FrameScope frame_scope(masm(), StackFrame::MANUAL);
   __ EnterExitFrame(false, kApiStackSpace);
 
+#if defined(V8_HOST_ARCH_PPC)
+  // pass 1st arg by reference
+  __ stw(arg0, MemOperand(sp, 2 * kPointerSize));
+  __ addi(arg0, sp, Operand(2 * kPointerSize));
+#endif
+
   // Create AccessorInfo instance on the stack above the exit frame with
-  // scratch2 (internal::Object** args_) as the data.
-  __ stw(scratch2, MemOperand(sp, 1 * kPointerSize));
-  __ addi(r4, sp, Operand(1 * kPointerSize));  // r4 = AccessorInfo&
+  // ip (internal::Object** args_) as the data.
+  __ stw(ip, MemOperand(sp, kApiStackSpace * kPointerSize));
+  // arg1 = AccessorInfo&
+  __ addi(arg1, sp, Operand(kApiStackSpace * kPointerSize));
 
   const int kStackUnwindSpace = 5;
   Address getter_address = v8::ToCData<Address>(callback->getter());
@@ -1289,7 +1331,7 @@ void StubCompiler::GenerateLoadCallback(Handle<JSObject> object,
       ExternalReference(&fun,
                         ExternalReference::DIRECT_GETTER_CALL,
                         masm()->isolate());
-  __ CallApiFunctionAndReturn(ref, kStackUnwindSpace, CallType_NonScalarArg);
+  __ CallApiFunctionAndReturn(ref, kStackUnwindSpace);
 }
 
 

@@ -2198,8 +2198,7 @@ static int AddressOffset(ExternalReference ref0, ExternalReference ref1) {
 
 
 void MacroAssembler::CallApiFunctionAndReturn(ExternalReference function,
-                                              int stack_space,
-                                              FunctionCallType type) {
+                                              int stack_space) {
   ExternalReference next_address =
       ExternalReference::handle_scope_next_address();
   const int kNextOffset = 0;
@@ -2222,11 +2221,24 @@ void MacroAssembler::CallApiFunctionAndReturn(ExternalReference function,
   addi(r29, r29, Operand(1));
   stw(r29, MemOperand(r26, kLevelOffset));
 
+#if defined(V8_HOST_ARCH_PPC)
+  // PPC LINUX ABI
+  // The return value is pointer-sized non-scalar value.
+  // Space has already been allocated on the stack which will pass as an
+  // implicity first argument.
+  addi(r3, sp, Operand(kPointerSize));
+#endif
+
   // Native call returns to the DirectCEntry stub which redirects to the
   // return address pushed on stack (could have moved after GC).
   // DirectCEntry stub itself is generated early and never moves.
   DirectCEntryStub stub;
-  stub.GenerateCall(this, function, type);
+  stub.GenerateCall(this, function);
+
+#if defined(V8_HOST_ARCH_PPC)
+  // Retrieve return value from stack buffer
+  lwz(r3, MemOperand(sp, kPointerSize));
+#endif
 
   Label promote_scheduled_exception;
   Label delete_allocated_handles;

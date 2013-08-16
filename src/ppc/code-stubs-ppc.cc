@@ -4918,7 +4918,7 @@ void RegExpExecStub::Generate(MacroAssembler* masm) {
   // Locate the code entry and call it.
   __ addi(code, code, Operand(Code::kHeaderSize - kHeapObjectTag));
   DirectCEntryStub stub;
-  stub.GenerateCall(masm, code, CallType_Generic);
+  stub.GenerateCall(masm, code);
 
   __ LeaveExitFrame(false, no_reg);
 
@@ -6837,82 +6837,23 @@ void DirectCEntryStub::Generate(MacroAssembler* masm) {
   EMIT_STUB_MARKER(187);
   // Retrieve return address
 #if defined(V8_HOST_ARCH_PPC)
-  __ lwz(r0, MemOperand(sp, 2 * kPointerSize));
-#else
-  __ lwz(r0, MemOperand(sp, 0));
+  __ addi(sp, sp, Operand(2 * kPointerSize));
 #endif
+  __ lwz(r0, MemOperand(sp, 0));
   __ Jump(r0);
 }
 
 
 void DirectCEntryStub::GenerateCall(MacroAssembler* masm,
-                                    ExternalReference function,
-                                    FunctionCallType type) {
+                                    ExternalReference function) {
   __ mov(r6, Operand(function));
-  GenerateCall(masm, r6, type);
+  GenerateCall(masm, r6);
 }
 
 
 void DirectCEntryStub::GenerateCall(MacroAssembler* masm,
-                                    Register target,
-                                    FunctionCallType type) {
+                                    Register target) {
   EMIT_STUB_MARKER(188);
-#if defined(V8_HOST_ARCH_PPC)
-  int extra_stack_slots = 0;
-#endif
-
-  // N.B. EnterExitFrame has already allocated a slot at the top of the
-  // stack to save the return address.
-
-#if defined(V8_HOST_ARCH_PPC)
-  if (type == CallType_NonScalarArg) {
-    // This type implies that there are at most two arguments passed --
-    //      - a pointer-sized non-scalar first argument in r3
-    //      - a scalar second argument in r4
-    //      It also implies a pointer-sized non-scalar return value.
-
-    // PPC LINUX ABI:
-    //
-    // Create 2 extra slots on stack:
-    //    [0] copy of pointer-sized non-scalar first arg
-    //    [1] space for pointer-sized non-scalar return value (r3)
-    //
-    // We shift the arguments over a register (e.g. r3 -> r4) to allow
-    // for the return value buffer in implicit first arg.
-
-    extra_stack_slots = 2;
-    __ addi(sp, sp, Operand(-extra_stack_slots * kPointerSize));
-
-    // 2nd arg by value
-    __ mr(r5, r4);
-    // 1st arg by reference
-    __ addi(r4, sp, Operand(2 * kPointerSize));
-    __ stw(r3, MemOperand(r4, 0));
-
-    // return value buffer as implicit first arg
-    __ addi(r3, sp, Operand(1 * kPointerSize));
-  } else if (type == CallType_ScalarArg) {
-    // This type implies that there is a single scalar argument passed and
-    // a pointer-sized non-scalar return value.
-
-    // PPC LINUX ABI:
-    //
-    // Create 1 extra slot on stack:
-    //    [0] space for pointer-sized non-scalar return value (r3)
-    //
-    // We shift the arguments over a register (e.g. r3 -> r4) to allow
-    // for the return value buffer in implicit first arg.
-
-    extra_stack_slots = 1;
-    __ addi(sp, sp, Operand(-extra_stack_slots * kPointerSize));
-
-    // 1st arg by value
-    __ mr(r4, r3);
-
-    // return value buffer as implicit first arg
-    __ addi(r3, sp, Operand(1 * kPointerSize));
-  }
-#endif
 
   __ mov(r0, Operand(reinterpret_cast<intptr_t>(GetCode().location()),
                      RelocInfo::CODE_TARGET));
@@ -6944,15 +6885,6 @@ void DirectCEntryStub::GenerateCall(MacroAssembler* masm,
   ASSERT_EQ(Assembler::kInstrSize +
             ((6 + PowerPCAdjustment) * Assembler::kInstrSize),
             masm->SizeOfCodeGeneratedSince(&start));
-
-#if defined(V8_HOST_ARCH_PPC)
-  // Retrieve return value and restore sp
-  // See PPC LINUX ABI notes in GenerateCall
-  if (type == CallType_NonScalarArg || type == CallType_ScalarArg) {
-    __ lwz(r3, MemOperand(sp, 3 * kPointerSize));
-  }
-  __ addi(sp, sp, Operand((2 + extra_stack_slots) * kPointerSize));
-#endif
 }
 
 

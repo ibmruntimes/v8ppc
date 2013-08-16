@@ -735,18 +735,6 @@ class FPRegisters {
   static const char* names_[kNumFPRegisters];
 };
 
-// Argument encoding for function calls
-enum FunctionCallType {
-  // No special handling required (all scalar)
-  CallType_Generic,
-  // First excplicit arg passed by value.
-  // Return slot passed as implicit first arg.
-  CallType_ScalarArg,
-  // First explicit arg passed by reference.
-  // Return slot passed as implicit first arg.
-  CallType_NonScalarArg
-};
-
 } }  // namespace v8::internal
 
 #undef INCLUDE_ARM
