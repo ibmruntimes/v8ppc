@@ -1026,7 +1026,7 @@ void RegExpMacroAssemblerPPC::PopCurrentPosition() {
 
 
 void RegExpMacroAssemblerPPC::PopRegister(int register_index) {
-  Pop(r0);
+  Pop(r3);
   __ stw(r3, register_location(register_index));
 }
 
