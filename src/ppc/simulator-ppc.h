@@ -29,12 +29,12 @@
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 
-// Declares a Simulator for ARM instructions if we are not generating a native
-// ARM binary. This Simulator allows us to run and debug ARM code generation on
+// Declares a Simulator for PPC instructions if we are not generating a native
+// PPC binary. This Simulator allows us to run and debug PPC code generation on
 // regular desktop machines.
 // V8 calls into generated code by "calling" the CALL_GENERATED_CODE macro,
 // which will start execution in the Simulator or forwards to the real entry
-// on a ARM HW platform.
+// on a PPC HW platform.
 
 #ifndef V8_PPC_SIMULATOR_PPC_H_
 #define V8_PPC_SIMULATOR_PPC_H_
@@ -42,7 +42,7 @@
 #include "allocation.h"
 
 #if !defined(USE_SIMULATOR)
-// Running without a simulator on a native arm platform.
+// Running without a simulator on a native ppc platform.
 
 namespace v8 {
 namespace internal {
@@ -51,23 +51,23 @@ namespace internal {
 #define CALL_GENERATED_CODE(entry, p0, p1, p2, p3, p4) \
   (entry(p0, p1, p2, p3, p4))
 
-typedef int (*arm_regexp_matcher)(String*, int, const byte*, const byte*,
+typedef int (*ppc_regexp_matcher)(String*, int, const byte*, const byte*,
                                   int*, int, Address, int, void*, Isolate*);
 
 
 // Call the generated regexp code directly. The code at the entry address
-// should act as a function matching the type arm_regexp_matcher.
+// should act as a function matching the type ppc_regexp_matcher.
 // The ninth argument is a dummy that reserves the space used for
 // the return address added by the ExitFrame in native calls.
 #define CALL_GENERATED_REGEXP_CODE(entry, p0, p1, p2, p3, p4, p5, p6, p7, p8) \
-  (FUNCTION_CAST<arm_regexp_matcher>(entry)(                              \
+  (FUNCTION_CAST<ppc_regexp_matcher>(entry)(                              \
       p0, p1, p2, p3, p4, p5, p6, p7, NULL, p8))
 
 #define TRY_CATCH_FROM_ADDRESS(try_catch_address) \
   reinterpret_cast<TryCatch*>(try_catch_address)
 
 // The stack limit beyond which we will throw stack overflow errors in
-// generated code. Because generated code on arm uses the C stack, we
+// generated code. Because generated code on ppc uses the C stack, we
 // just use the C stack limit.
 class SimulatorStack : public v8::internal::AllStatic {
  public:
@@ -366,7 +366,7 @@ class Simulator {
 
 #define CALL_GENERATED_REGEXP_CODE(entry, p0, p1, p2, p3, p4, p5, p6, p7, p8) \
   Simulator::current(Isolate::Current())->Call( \
-      entry, 10, p0, p1, p2, p3, NULL, p4, p5, p6, p7, p8)
+      entry, 10, p0, p1, p2, p3, p4, p5, p6, p7, NULL, p8)
 
 #define TRY_CATCH_FROM_ADDRESS(try_catch_address)                              \
   try_catch_address == NULL ?                                                  \

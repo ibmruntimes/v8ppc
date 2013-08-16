@@ -809,7 +809,7 @@ Handle<HeapObject> RegExpMacroAssemblerPPC::GetCode(Handle<String> source) {
       __ lwz(r4, MemOperand(frame_pointer(), kInputStart));
       __ lwz(r3, MemOperand(frame_pointer(), kRegisterOutput));
       __ lwz(r5, MemOperand(frame_pointer(), kStartIndex));
-      __ sub(r1, end_of_input_address(), r1);
+      __ sub(r4, end_of_input_address(), r4);
       // r4 is length of input in bytes.
       if (mode_ == UC16) {
         __ srwi(r4, r4, Operand(1));
