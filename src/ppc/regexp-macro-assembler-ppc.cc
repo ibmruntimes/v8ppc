@@ -1430,34 +1430,33 @@ void RegExpMacroAssemblerPPC::LoadCurrentCharacterUnchecked(int cp_offset,
 
 
 void RegExpCEntryStub::Generate(MacroAssembler* masm_) {
-#if defined(V8_HOST_ARCH_PPC) && defined(DEBUG)
   int stack_alignment = OS::ActivationFrameAlignment();
-#endif
+  if (stack_alignment < kPointerSize) stack_alignment = kPointerSize;
 
-  // Stack is already aligned for call
+  // Stack is already aligned for call, so decrement by alignment
+  // to make room for storing the return address.
+  int extra_stack_slots = stack_alignment >> kPointerSizeLog2;
+
+  __ addi(r3, sp, Operand(-stack_alignment));
   __ mflr(r0);
-  __ push(r0);
+  __ stw(r0, MemOperand(r3, 0));
 
 #if defined(V8_HOST_ARCH_PPC)
-  ASSERT(stack_alignment == 8);
   // PPC LINUX ABI:
   //
-  // Create 3 extra slots on stack:
+  // Create 2 extra slots on stack:
   //    [0] backchain
   //    [1] link register save area
-  //    [2] extra for alignment
   //
-  __ addi(sp, sp, Operand(-3 * kPointerSize));
+  extra_stack_slots += 2;
 #endif
+  __ addi(sp, sp, Operand(-extra_stack_slots * kPointerSize));
 
-  __ mr(r3, sp);
   __ Call(r26);
 
-#if defined(V8_HOST_ARCH_PPC)
-  __ addi(sp, sp, Operand(3 * kPointerSize));
-#endif
+  __ addi(sp, sp, Operand(extra_stack_slots * kPointerSize));
 
-  __ pop(r0);
+  __ lwz(r0, MemOperand(sp, -stack_alignment));
   __ mtlr(r0);
   __ blr();
 }
