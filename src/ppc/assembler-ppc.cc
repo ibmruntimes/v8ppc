@@ -342,7 +342,7 @@ int Assembler::target_at(int pos)  {
   int opcode = instr & kOpcodeMask;
   if (BX == opcode) {
     int imm26 = ((instr & kImm26Mask) << 6) >> 6;
-    imm26 &= ~kLKMask;  // discard LK bit if present
+    imm26 &= ~(kAAMask|kLKMask);  // discard AA|LK bits if present
     if (imm26 == 0)
         return kEndOfChain;
     return pos + imm26;
@@ -374,19 +374,16 @@ void Assembler::target_at_put(int pos, int target_pos) {
   // check which type of branch this is 16 or 26 bit offset
   if (BX == opcode) {
     int imm26 = target_pos - pos;
-    int lk = instr & kLKMask;
-    // ASSERT((imm26 & 3) == 0); .. LK may or may not be set
-    instr &= ~kImm26Mask;
+    ASSERT((imm26 & (kAAMask|kLKMask)) == 0);
+    instr &= ((~kImm26Mask)|kAAMask|kLKMask);
     ASSERT(is_int26(imm26));
-    // todo add AA and LK bits
-    instr_at_put(pos, instr | (imm26 & kImm26Mask) | lk);
+    instr_at_put(pos, instr | (imm26 & kImm26Mask));
     return;
   } else if (BCX == opcode) {
     int imm16 = target_pos - pos;
-    ASSERT((imm16 & 3) == 0);
-    instr &= ~kImm16Mask;
+    ASSERT((imm16 & (kAAMask|kLKMask)) == 0);
+    instr &= ((~kImm16Mask)|kAAMask|kLKMask);
     ASSERT(is_int16(imm16));
-    // todo add AA and LK bits
     instr_at_put(pos, instr | (imm16 & kImm16Mask));
     return;
   } else if ((instr & ~kImm16Mask) == 0) {
