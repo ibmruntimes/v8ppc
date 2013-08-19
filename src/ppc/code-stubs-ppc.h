@@ -534,7 +534,7 @@ class RecordWriteStub: public CodeStub {
     void SaveCallerSaveRegisters(MacroAssembler* masm, SaveFPRegsMode mode) {
       masm->mflr(r0);
       masm->push(r0);
-      masm->MultiPush(kCallerSaved & ~scratch1_.bit());
+      masm->MultiPush(kJSCallerSaved & ~scratch1_.bit());
 #if 0  // roohack - temporarily ignoring doubles
       if (mode == kSaveFPRegs) {
         masm->sub(sp,
@@ -563,7 +563,7 @@ class RecordWriteStub: public CodeStub {
                   Operand(kDoubleSize * (DwVfpRegister::kNumRegisters - 1)));
       }
 #endif
-      masm->MultiPop(kCallerSaved & ~scratch1_.bit());
+      masm->MultiPop(kJSCallerSaved & ~scratch1_.bit());
       masm->pop(r0);
       masm->mtlr(r0);
     }
