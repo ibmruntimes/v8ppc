@@ -597,7 +597,7 @@ void Assembler::rsb(Register dst, Register src1, const Operand& src2,
 // PowerPC
 
 void Assembler::xori(Register dst, Register src, const Operand& imm) {
-  d_form(XORI, dst, src, imm.imm32_, false);
+  d_form(XORI, src, dst, imm.imm32_, false);
 }
 
 void Assembler::xoris(Register ra, Register rs, const Operand& imm) {

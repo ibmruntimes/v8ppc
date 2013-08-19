@@ -1082,8 +1082,7 @@ void RegExpMacroAssemblerPPC::ReadStackPointerFromRegister(int reg) {
 
 void RegExpMacroAssemblerPPC::SetCurrentPositionFromEnd(int by) {
   Label after_position;
-  __ mov(r0, Operand(-by * char_size()));
-  __ cmp(current_input_offset(), r0);
+  __ Cmpi(current_input_offset(), Operand(-by * char_size()), r0);
   __ bge(&after_position);
   __ mov(current_input_offset(), Operand(-by * char_size()));
   // On RegExp code entry (where this operation is used), the character before
@@ -1269,8 +1268,7 @@ MemOperand RegExpMacroAssemblerPPC::register_location(int register_index) {
 
 void RegExpMacroAssemblerPPC::CheckPosition(int cp_offset,
                                             Label* on_outside_input) {
-  __ mov(r0, Operand(-cp_offset * char_size()));
-  __ cmp(current_input_offset(), r0);
+  __ Cmpi(current_input_offset(), Operand(-cp_offset * char_size()), r0);
   BranchOrBacktrack(ge, on_outside_input);
 }
 
