@@ -1216,7 +1216,7 @@ int Decoder::InstructionDecode(byte* instr_ptr) {
       break;
     }
     case ORI: {
-      Format(instr, "ori.    'ra, 'rs, 'uint16");
+      Format(instr, "ori     'ra, 'rs, 'uint16");
       break;
     }
     case ORIS: {

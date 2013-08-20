@@ -840,8 +840,9 @@ void MacroAssembler::LeaveExitFrame(bool save_doubles,
   // Optionally restore all double registers.
   if (save_doubles) {
     // Calculate the stack location of the saved doubles and restore them.
-    const int offset = 2 * kPointerSize;
-    addi(r6, fp, Operand(-(offset + DwVfpRegister::kNumRegisters * kDoubleSize)));
+    const int offset = (2 * kPointerSize +
+                        DwVfpRegister::kNumRegisters * kDoubleSize);
+    addi(r6, fp, Operand(-offset));
     for (int i = 0; i < DwVfpRegister::kNumRegisters; i++) {
       DwVfpRegister reg = DwVfpRegister::from_code(i);
       lfd(reg, MemOperand(r6, i * kDoubleSize));
@@ -2507,25 +2508,23 @@ void MacroAssembler::EmitECMATruncate(Register result,
 
   Label done, truncate;
 
-  fctiwz(double_scratch, double_input);
+  fctidz(double_scratch, double_input);
 
   // reserve a slot on the stack
   stfdu(double_scratch, MemOperand(sp, -8));
 #if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
+  lwz(scratch, MemOperand(sp, 4));
   lwz(result, MemOperand(sp));
 #else
+  lwz(scratch, MemOperand(sp, 0));
   lwz(result, MemOperand(sp, 4));
 #endif
 
-  // test if overflow
-  LoadIntLiteral(input_low, 0x7fffffff);
-  cmp(result, input_low);
-  beq(&truncate);
-
-  // test if underflow or NaN
-  LoadIntLiteral(input_low, 0x80000000);
-  cmp(result, input_low);
-  beq(&truncate);
+  // The result is not a 32-bit integer when the high 33 bits of the
+  // result are not identical.
+  srawi(r0, result, 31);
+  cmp(r0, scratch);
+  bne(&truncate);
 
   // If we had no exceptions we are done
   b(&done);

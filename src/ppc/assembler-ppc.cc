@@ -764,11 +764,11 @@ void Assembler::notx(Register dst, Register src, RCBit r) {
 }
 
 void Assembler::ori(Register ra, Register rs, const Operand& imm) {
-  d_form(ORI, ra, rs, imm.imm32_, false);
+  d_form(ORI, rs, ra, imm.imm32_, false);
 }
 
 void Assembler::oris(Register dst, Register src, const Operand& imm) {
-  d_form(ORIS, dst, src, imm.imm32_, false);
+  d_form(ORIS, src, dst, imm.imm32_, false);
 }
 
 void Assembler::orx(Register dst, Register src1, Register src2, RCBit rc) {
