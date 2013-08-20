@@ -735,17 +735,20 @@ class Assembler : public AssemblerBase {
     bc(branch_offset(L, false), bo, bit, lk);
   }
   void b(Condition cond, Label* L, CRegister cr = cr7, LKBit lk = LeaveLK)  {
+    if (cond == al) {
+        b(L, lk);
+        return;
+    }
+
     ASSERT(cr.code() >= 0 && cr.code() <= 7);
     int b_offset = branch_offset(L, (cond == al));
+
     // if the offset fits in the 16-bit immediate
     // field (b-form) we use that, otherwise use a
     // branch conditional to the i-form which gives
     // us 26 bits
     if (is_int16(b_offset)) {
       switch (cond) {
-        case al:
-          b(L, lk);
-          break;
         case eq:
           bc(b_offset, BT, encode_crbit(cr, CR_EQ), lk);
           break;
@@ -769,47 +772,32 @@ class Assembler : public AssemblerBase {
           // UNIMPLEMENTED();
       }
     } else {
-      // as mentioned above, somewhat of a hack here:
-      // use the bc to branch to the i-form instruction
-      // else fall through and branch over it
-      switch (cond) {
-        case al:
-          b(b_offset, lk);
-          break;
+      // as mentioned above, somewhat of a hack here: use the bc of
+      // the negated condition to branch around the i-form instruction
+      switch (NegateCondition(cond)) {
         case eq:
           bc(kInstrSize*2, BT, encode_crbit(cr, CR_EQ), LeaveLK);
-          b(kInstrSize*2, LeaveLK);
-          b(b_offset, lk);
           break;
         case ne:
           bc(kInstrSize*2, BF, encode_crbit(cr, CR_EQ), LeaveLK);
-          b(kInstrSize*2, LeaveLK);
-          b(b_offset, lk);
           break;
         case gt:
           bc(kInstrSize*2, BT, encode_crbit(cr, CR_GT), LeaveLK);
-          b(kInstrSize*2, LeaveLK);
-          b(b_offset, lk);
           break;
         case le:
           bc(kInstrSize*2, BF, encode_crbit(cr, CR_GT), LeaveLK);
-          b(kInstrSize*2, LeaveLK);
-          b(b_offset, lk);
           break;
         case lt:
           bc(kInstrSize*2, BT, encode_crbit(cr, CR_LT), LeaveLK);
-          b(kInstrSize*2, LeaveLK);
-          b(b_offset, lk);
           break;
         case ge:
           bc(kInstrSize*2, BF, encode_crbit(cr, CR_LT), LeaveLK);
-          b(kInstrSize*2, LeaveLK);
-          b(b_offset, lk);
           break;
         default:
           fake_asm(fBranch);
           // UNIMPLEMENTED();
       }
+      b(b_offset - kInstrSize, lk);
     }
   }
   void bne(Label* L, CRegister cr = cr7, LKBit lk = LeaveLK) {
