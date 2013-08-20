@@ -763,18 +763,18 @@ void MacroAssembler::EnterExitFrame(bool save_doubles, int stack_space) {
   mov(r8, Operand(ExternalReference(Isolate::kContextAddress, isolate())));
   stw(cp, MemOperand(r8));
 
-#if 0  // no double support yet on power
   // Optionally save all double registers.
   if (save_doubles) {
-    DwVfpRegister first = d0;
-    DwVfpRegister last =
-        DwVfpRegister::from_code(DwVfpRegister::kNumRegisters - 1);
-    vstm(db_w, sp, first, last);
+    int space = DwVfpRegister::kNumRegisters * kDoubleSize;
+    addi(sp, sp, Operand(-space));
+    for (int i = 0; i < DwVfpRegister::kNumRegisters; i++) {
+      DwVfpRegister reg = DwVfpRegister::from_code(i);
+      stfd(reg, MemOperand(sp, i * kDoubleSize));
+    }
     // Note that d0 will be accessible at
     //   fp - 2 * kPointerSize - DwVfpRegister::kNumRegisters * kDoubleSize,
     // since the sp slot and code slot were pushed after the fp.
   }
-#endif
 
   // Reserve place for the return address and stack space and align the frame
   // preparing for calling the runtime function.
@@ -837,18 +837,16 @@ void MacroAssembler::LeaveExitFrame(bool save_doubles,
   // roohack - too much reserved space, need to fix for proper ABI
   addi(sp, sp, Operand(256));
 #endif
-#if 0  // no double support on PPC yet
   // Optionally restore all double registers.
   if (save_doubles) {
     // Calculate the stack location of the saved doubles and restore them.
     const int offset = 2 * kPointerSize;
-    sub(r3, fp, Operand(offset + DwVfpRegister::kNumRegisters * kDoubleSize));
-    DwVfpRegister first = d0;
-    DwVfpRegister last =
-        DwVfpRegister::from_code(DwVfpRegister::kNumRegisters - 1);
-    vldm(ia, r3, first, last);
+    addi(r6, fp, Operand(-(offset + DwVfpRegister::kNumRegisters * kDoubleSize)));
+    for (int i = 0; i < DwVfpRegister::kNumRegisters; i++) {
+      DwVfpRegister reg = DwVfpRegister::from_code(i);
+      lfd(reg, MemOperand(r6, i * kDoubleSize));
+    }
   }
-#endif
 
   // Clear top frame.
   li(r6, Operand(0, RelocInfo::NONE));
