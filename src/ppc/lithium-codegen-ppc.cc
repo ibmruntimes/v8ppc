@@ -1634,7 +1634,7 @@ void LCodeGen::DoMathMinMax(LMathMinMax* instr) {
     __ Move(result_reg, right_reg);
     __ b(&done);
     __ bind(&return_left);
-    __ Move(result_reg, right_reg);
+    __ Move(result_reg, left_reg);
     __ bind(&done);
   } else {
     ASSERT(instr->hydrogen()->representation().IsDouble());
