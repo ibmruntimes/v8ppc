@@ -2378,6 +2378,13 @@ void Simulator::DecodeExt4(Instruction* instr) {
             break;
           case kRoundToNearest:
             frt_val = (int64_t)lround(frb_val);
+
+            // Round to even if exactly halfway.  (lround rounds up)
+            if (fabs(static_cast<double>(frt_val) - frb_val) == 0.5 &&
+                (frt_val % 2)) {
+                frt_val += ((frt_val > 0) ? -1 : 1);
+            }
+
             break;
           default:
             ASSERT(false);
