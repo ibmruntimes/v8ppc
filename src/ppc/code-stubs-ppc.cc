@@ -2278,7 +2278,7 @@ void BinaryOpStub::GenerateSmiSmiOperation(MacroAssembler* masm) {
       __ orx(scratch1, left, right);
       ASSERT((0x80000000u | kSmiTagMask) == 0x80000001);
       __ rlwinm(r0, scratch1, 1, 30, 31, SetRC);
-      __ bne(&not_smi_result);
+      __ bne(&not_smi_result, cr0);
 
       // Check for power of two on the right hand side.
       __ JumpIfNotPowerOfTwoOrZero(right, scratch1, &not_smi_result);
