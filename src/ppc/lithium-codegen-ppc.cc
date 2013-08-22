@@ -2101,7 +2101,7 @@ void LCodeGen::DoIsSmiAndBranch(LIsSmiAndBranch* instr) {
 
   Register input_reg = EmitLoadRegister(instr->value(), ip);
   __ TestIfSmi(input_reg, r0);
-  EmitBranch(true_block, false_block, eq);
+  EmitBranch(true_block, false_block, eq, cr0);
 }
 
 

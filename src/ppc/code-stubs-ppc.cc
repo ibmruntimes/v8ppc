@@ -2763,7 +2763,7 @@ void BinaryOpStub::GenerateInt32Stub(MacroAssembler* masm) {
         __ addi(sp, sp, Operand(8));
 
         __ TestBit(scratch2, 0, r0);  // test sign bit
-        __ bne(&return_heap_number);
+        __ bne(&return_heap_number, cr0);
         __ bind(&not_zero);
 
         // Tag the result and return.
