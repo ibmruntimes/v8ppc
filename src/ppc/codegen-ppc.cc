@@ -237,8 +237,13 @@ void ElementsTransitionGenerator::GenerateSmiToDouble(
     __ CompareRoot(r22, Heap::kTheHoleValueRootIndex);
     __ Assert(eq, "object found in smi-only array");
   }
+#if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
   __ stw(r7, MemOperand(r10, 0));
   __ stw(r8, MemOperand(r10, 4));
+#else
+  __ stw(r8, MemOperand(r10, 0));
+  __ stw(r7, MemOperand(r10, 4));
+#endif
   __ addi(r10, r10, Operand(8));
 
   __ bind(&entry);
@@ -288,7 +293,7 @@ void ElementsTransitionGenerator::GenerateDoubleToObject(
   __ stw(r22, MemOperand(r9, HeapObject::kMapOffset));
 
   // Prepare for conversion loop.
-  __ addi(r7, r7, Operand(FixedDoubleArray::kHeaderSize - kHeapObjectTag + 4));
+  __ addi(r7, r7, Operand(FixedDoubleArray::kHeaderSize - kHeapObjectTag));
   __ addi(r6, r9, Operand(FixedArray::kHeaderSize));
   __ addi(r9, r9, Operand(kHeapObjectTag));
   __ slwi(r8, r8, Operand(1));
@@ -297,7 +302,7 @@ void ElementsTransitionGenerator::GenerateDoubleToObject(
   __ LoadRoot(r22, Heap::kHeapNumberMapRootIndex);
   // Using offsetted addresses in r7 to fully take advantage of post-indexing.
   // r6: begin of destination FixedArray element fields, not tagged
-  // r7: begin of source FixedDoubleArray element fields, not tagged, +4
+  // r7: begin of source FixedDoubleArray element fields, not tagged
   // r8: end of destination FixedArray, not tagged
   // r9: destination FixedArray
   // r10: the-hole pointer
@@ -310,7 +315,11 @@ void ElementsTransitionGenerator::GenerateDoubleToObject(
   __ b(fail);
 
   __ bind(&loop);
+#if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
+  __ lwz(r4, MemOperand(r7, 4));
+#else
   __ lwz(r4, MemOperand(r7));
+#endif
   __ addi(r7, r7, Operand(8));
   // ip: current element's upper 32 bit
   // r7: address of next element's upper 32 bit
@@ -324,9 +333,15 @@ void ElementsTransitionGenerator::GenerateDoubleToObject(
   __ mr(ip, r4);
   __ pop(r4);
   // r5: new heap number
-  __ lwz(r3, MemOperand(r7, -12));
+#if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
+  __ lwz(r3, MemOperand(r7, -8));
   __ stw(r3, FieldMemOperand(r5, HeapNumber::kValueOffset));
   __ stw(r4, FieldMemOperand(r5, HeapNumber::kValueOffset+4));
+#else
+  __ lwz(r3, MemOperand(r7, -4));
+  __ stw(r3, FieldMemOperand(r5, HeapNumber::kValueOffset+4));
+  __ stw(r4, FieldMemOperand(r5, HeapNumber::kValueOffset));
+#endif
   __ mr(r3, r6);
   __ stw(r5, MemOperand(r6));
   __ addi(r6, r6, Operand(4));

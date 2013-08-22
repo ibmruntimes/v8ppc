@@ -4223,10 +4223,10 @@ void KeyedLoadStubCompiler::GenerateLoadFastDoubleElement(
   __ slwi(indexed_double_offset, key_reg,
          Operand(kDoubleSizeLog2 - kSmiTagSize));
   __ add(indexed_double_offset, elements_reg, indexed_double_offset);
-#if defined(V8_HOST_ARCH_PPC)
-  uint32_t upper_32_offset = FixedArray::kHeaderSize;
-#else
+#if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
   uint32_t upper_32_offset = FixedArray::kHeaderSize + sizeof(kHoleNanLower32);
+#else
+  uint32_t upper_32_offset = FixedArray::kHeaderSize;
 #endif
   __ lwz(scratch, FieldMemOperand(indexed_double_offset, upper_32_offset));
   __ Cmpi(scratch, Operand(kHoleNanUpper32), r0);

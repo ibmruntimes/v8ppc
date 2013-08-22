@@ -2904,7 +2904,11 @@ void LCodeGen::DoLoadKeyedFastDoubleElement(
   }
 
   if (instr->hydrogen()->RequiresHoleCheck()) {
+#if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
     __ lwz(scratch, MemOperand(elements, sizeof(kHoleNanLower32)));
+#else
+    __ lwz(scratch, MemOperand(elements));
+#endif
     __ Cmpi(scratch, Operand(kHoleNanUpper32), r0);
     DeoptimizeIf(eq, instr->environment());
   }
