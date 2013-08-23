@@ -383,7 +383,16 @@ void Assembler::target_at_put(int pos, int target_pos) {
     int imm16 = target_pos - pos;
     ASSERT((imm16 & (kAAMask|kLKMask)) == 0);
     instr &= ((~kImm16Mask)|kAAMask|kLKMask);
+#ifdef PENGUIN_CLEANUP
     ASSERT(is_int16(imm16));
+#else
+    // display descriptive message until trampoline logic is complete
+    if (!is_int16(imm16)) {
+        PrintF("Overflow branching from %X -> %X (displacement=%X)\n",
+               pos, target_pos, imm16);
+        abort();
+    }
+#endif
     instr_at_put(pos, instr | (imm16 & kImm16Mask));
     return;
   } else if ((instr & ~kImm16Mask) == 0) {
