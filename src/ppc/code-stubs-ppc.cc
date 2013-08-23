@@ -7537,8 +7537,8 @@ void ProfileEntryHookStub::Generate(MacroAssembler* masm) {
       Assembler::kCallTargetAddressOffset + 2 * Assembler::kInstrSize;
 
   // Save live volatile registers.
-  __ mflr(r0);
-  __ Push(r0, r30, r4);
+  __ mflr(r3);
+  __ Push(r3, r30, r4);
   const int32_t kNumSavedRegs = 3;
 
   // Compute the function's address for the first argument.
