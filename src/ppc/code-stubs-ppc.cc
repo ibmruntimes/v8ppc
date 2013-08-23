@@ -2738,10 +2738,10 @@ void BinaryOpStub::GenerateInt32Stub(MacroAssembler* masm) {
                            scratch2,
                            d8);
 
-        if (result_type_ <= BinaryOpIC::INT32) {
-          // result does not fit in a 32-bit integer.
-          __ bne(&transition);
-        }
+        // result does not fit in a 32-bit integer.
+        Label *not_int32 = ((result_type_ <= BinaryOpIC::INT32) ?
+                            &transition : &return_heap_number);
+        __ bne(not_int32);
 
         // Check if the result fits in a smi.
         __ addis(scratch2, scratch1, Operand(0x40000000u >> 16));
