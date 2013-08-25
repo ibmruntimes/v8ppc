@@ -2897,9 +2897,9 @@ void MacroAssembler::JumpIfNotPowerOfTwoOrZero(
     Register reg,
     Register scratch,
     Label* not_power_of_two_or_zero) {
-  cmpi(reg, Operand::Zero());
-  blt(not_power_of_two_or_zero);
   sub(scratch, reg, Operand(1));
+  cmpi(scratch, Operand::Zero());
+  blt(not_power_of_two_or_zero);
   and_(r0, scratch, reg, SetRC);
   bne(not_power_of_two_or_zero, cr0);
 }
@@ -2911,7 +2911,7 @@ void MacroAssembler::JumpIfNotPowerOfTwoOrZeroAndNeg(
     Label* zero_and_neg,
     Label* not_power_of_two) {
   sub(scratch, reg, Operand(1));
-  cmpi(reg, Operand::Zero());
+  cmpi(scratch, Operand::Zero());
   blt(zero_and_neg);
   and_(r0, scratch, reg, SetRC);
   bne(not_power_of_two, cr0);
