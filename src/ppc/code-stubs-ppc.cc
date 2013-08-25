@@ -3516,7 +3516,7 @@ void MathPowStub::Generate(MacroAssembler* masm) {
   __ bge(&done);
 
   __ li(scratch2, Operand(1));
-  FloatingPointHelper::ConvertIntToDouble(masm, scratch2, double_result);
+  FloatingPointHelper::ConvertIntToDouble(masm, scratch2, double_scratch);
   __ fdiv(double_result, double_scratch, double_result);
   // Test whether result is zero.  Bail out to check for subnormal result.
   // Due to subnormals, x^-y == (1/x)^y does not hold in all cases.
