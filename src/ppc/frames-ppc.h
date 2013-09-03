@@ -49,9 +49,10 @@ const RegList kJSCallerSaved =
   1 << 7  |  // r7  a5
   1 << 8  |  // r8  a6
   1 << 9  |  // r9  a7
-  1 << 10;   // r10 a8
+  1 << 10 |  // r10 a8
+  1 << 11;
 
-const int kNumJSCallerSaved = 8;
+const int kNumJSCallerSaved = 9;
 
 typedef Object* JSCallerSavedBuffer[kNumJSCallerSaved];
 
