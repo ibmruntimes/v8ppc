@@ -643,7 +643,7 @@ void KeyedCallIC::GenerateMegamorphic(MacroAssembler* masm, int argc) {
   // r3: untagged index
   __ LoadFromNumberDictionary(&slow_load, r7, r5, r4, r3, r6, r8);
   __ IncrementCounter(counters->keyed_call_generic_smi_dict(), 1, r3, r6);
-  __ jmp(&do_call);
+  __ b(&do_call);
 
   __ bind(&slow_load);
   // This branch is taken when calling KeyedCallIC_Miss is neither required
@@ -657,7 +657,7 @@ void KeyedCallIC::GenerateMegamorphic(MacroAssembler* masm, int argc) {
     __ pop(r5);  // restore the key
   }
   __ mr(r4, r3);
-  __ jmp(&do_call);
+  __ b(&do_call);
 
   __ bind(&check_string);
   GenerateKeyStringCheck(masm, r5, r3, r6, &index_string, &slow_call);
@@ -677,7 +677,7 @@ void KeyedCallIC::GenerateMegamorphic(MacroAssembler* masm, int argc) {
 
   GenerateDictionaryLoad(masm, &slow_load, r3, r5, r4, r6, r7);
   __ IncrementCounter(counters->keyed_call_generic_lookup_dict(), 1, r3, r6);
-  __ jmp(&do_call);
+  __ b(&do_call);
 
   __ bind(&lookup_monomorphic_cache);
   __ IncrementCounter(counters->keyed_call_generic_lookup_cache(), 1, r3, r6);
@@ -700,7 +700,7 @@ void KeyedCallIC::GenerateMegamorphic(MacroAssembler* masm, int argc) {
   __ bind(&index_string);
   __ IndexFromHash(r6, r5);
   // Now jump to the place where smi keys are handled.
-  __ jmp(&index_smi);
+  __ b(&index_smi);
 }
 
 
@@ -1138,7 +1138,7 @@ void KeyedLoadIC::GenerateGeneric(MacroAssembler* masm) {
     __ cmpi(r8, Operand::Zero());
     __ bge(&property_array_property);
     if (i != 0) {
-      __ jmp(&load_in_object_property);
+      __ b(&load_in_object_property);
     }
   }
 
@@ -1181,7 +1181,7 @@ void KeyedLoadIC::GenerateGeneric(MacroAssembler* masm) {
   __ bind(&index_string);
   __ IndexFromHash(r6, key);
   // Now jump to the place where smi keys are handled.
-  __ jmp(&index_smi);
+  __ b(&index_smi);
 }
 
 
@@ -1482,7 +1482,7 @@ static void KeyedStoreGenerateGenericHelper(
   ASSERT(receiver_map.is(r6));  // Transition code expects map in r6
   ElementsTransitionGenerator::GenerateSmiToDouble(masm, slow);
   __ lwz(elements, FieldMemOperand(receiver, JSObject::kElementsOffset));
-  __ jmp(&fast_double_without_map_check);
+  __ b(&fast_double_without_map_check);
 
   __ bind(&non_double_value);
   // Value is not a double, FAST_SMI_ELEMENTS -> FAST_ELEMENTS
@@ -1494,7 +1494,7 @@ static void KeyedStoreGenerateGenericHelper(
   ASSERT(receiver_map.is(r6));  // Transition code expects map in r6
   ElementsTransitionGenerator::GenerateMapChangeElementsTransition(masm);
   __ lwz(elements, FieldMemOperand(receiver, JSObject::kElementsOffset));
-  __ jmp(&finish_object_store);
+  __ b(&finish_object_store);
 
   __ bind(&transition_double_elements);
   // Elements are FAST_DOUBLE_ELEMENTS, but value is an Object that's not a
@@ -1508,7 +1508,7 @@ static void KeyedStoreGenerateGenericHelper(
   ASSERT(receiver_map.is(r6));  // Transition code expects map in r6
   ElementsTransitionGenerator::GenerateDoubleToObject(masm, slow);
   __ lwz(elements, FieldMemOperand(receiver, JSObject::kElementsOffset));
-  __ jmp(&finish_object_store);
+  __ b(&finish_object_store);
 }
 
 
@@ -1583,13 +1583,13 @@ void KeyedStoreIC::GenerateGeneric(MacroAssembler* masm,
   __ mov(ip, Operand(masm->isolate()->factory()->fixed_array_map()));
   __ cmp(elements_map, ip);  // PPC - I think I can re-use ip here
   __ bne(&check_if_double_array);
-  __ jmp(&fast_object_grow);
+  __ b(&fast_object_grow);
 
   __ bind(&check_if_double_array);
   __ mov(ip, Operand(masm->isolate()->factory()->fixed_double_array_map()));
   __ cmp(elements_map, ip);  // PPC - another ip re-use
   __ bne(&slow);
-  __ jmp(&fast_double_grow);
+  __ b(&fast_double_grow);
 
   // Array case: Get the length and the elements array from the JS
   // array. Check that the array is in fast mode (and writable); if it

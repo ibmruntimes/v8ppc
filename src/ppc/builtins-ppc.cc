@@ -302,7 +302,7 @@ static void AllocateJSArray(MacroAssembler* masm,
   if (fill_with_hole) {
     Label loop, entry;
     __ LoadRoot(scratch1, Heap::kTheHoleValueRootIndex);
-    __ jmp(&entry);
+    __ b(&entry);
     __ bind(&loop);
     __ stw(scratch1, MemOperand(elements_array_storage));
     __ addi(elements_array_storage, elements_array_storage,
@@ -430,7 +430,7 @@ static void ArrayNativeCode(MacroAssembler* masm,
   // sp[0]: last argument
   Label loop, entry;
   __ mr(r10, sp);
-  __ jmp(&entry);
+  __ b(&entry);
   __ bind(&loop);
   __ lwz(r5, MemOperand(r10));
   __ addi(r10, r10, Operand(kPointerSize));
@@ -1008,7 +1008,7 @@ static void Generate_JSConstructStubHelper(MacroAssembler* masm,
       // Continue with JSObject being successfully allocated
       // r4: constructor function
       // r7: JSObject
-      __ jmp(&allocated);
+      __ b(&allocated);
 
       // Undo the setting of the new top so that the heap is verifiable. For
       // example, the map's unused properties potentially do not match the
@@ -1479,7 +1479,7 @@ void Builtins::Generate_FunctionCall(MacroAssembler* masm) {
     __ add(r7, sp, r7);
     __ lwz(r4, MemOperand(r7));
     __ li(r7, Operand(0, RelocInfo::NONE));
-    __ jmp(&patch_receiver);
+    __ b(&patch_receiver);
 
     // Use the global receiver object from the called function as the
     // receiver.
@@ -1496,7 +1496,7 @@ void Builtins::Generate_FunctionCall(MacroAssembler* masm) {
     __ add(r6, sp, ip);
     __ stw(r5, MemOperand(r6, -kPointerSize));
 
-    __ jmp(&shift_arguments);
+    __ b(&shift_arguments);
   }
 
   // 3b. Check for function proxy.

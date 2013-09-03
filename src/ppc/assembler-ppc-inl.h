@@ -340,11 +340,17 @@ void Assembler::CheckBuffer() {
   }
 }
 
+void Assembler::CheckTrampolinePoolQuick() {
+  if (pc_offset() >= next_buffer_check_) {
+    CheckTrampolinePool();
+  }
+}
 
 void Assembler::emit(Instr x) {
   CheckBuffer();
   *reinterpret_cast<Instr*>(pc_) = x;
   pc_ += kInstrSize;
+  CheckTrampolinePoolQuick();
 }
 
 bool Operand::is_reg() const {

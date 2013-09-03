@@ -417,7 +417,7 @@ void StringCharLoadGenerator::Generate(MacroAssembler* masm,
   __ lwz(string, FieldMemOperand(string, SlicedString::kParentOffset));
   __ srawi(ip, result, kSmiTagSize);
   __ add(index, index, ip);
-  __ jmp(&indirect_string_loaded);
+  __ b(&indirect_string_loaded);
 
   // Handle cons strings.
   // Check whether the right hand side is the empty string (i.e. if
@@ -449,7 +449,7 @@ void StringCharLoadGenerator::Generate(MacroAssembler* masm,
   __ addi(string,
           string,
           Operand(SeqTwoByteString::kHeaderSize - kHeapObjectTag));
-  __ jmp(&check_encoding);
+  __ b(&check_encoding);
 
   // Handle external strings.
   __ bind(&external_string);
@@ -473,7 +473,7 @@ void StringCharLoadGenerator::Generate(MacroAssembler* masm,
   // Two-byte string.
   __ slwi(result, index, Operand(1));
   __ lhzx(result, MemOperand(result, string));
-  __ jmp(&done);
+  __ b(&done);
   __ bind(&ascii);
   // Ascii string.
   __ lbzx(result, MemOperand(string, index));

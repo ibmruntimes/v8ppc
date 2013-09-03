@@ -2372,6 +2372,9 @@ void LCodeGen::DoInstanceOfKnownGlobal(LInstanceOfKnownGlobal* instr) {
   Register map = temp;
   __ lwz(map, FieldMemOperand(object, HeapObject::kMapOffset));
   {
+    // Block constant pool emission to ensure the positions of instructions are
+    // as expected by the patcher. See InstanceofStub::Generate().
+    Assembler::BlockTrampolinePoolScope block_trampoline_pool(masm_);
     __ bind(deferred->map_check());  // Label for calculating code patching.
     // We use Factory::the_hole_value() on purpose instead of loading from the
     // root array to force relocation to be able to later patch with
@@ -2440,14 +2443,18 @@ void LCodeGen::DoDeferredInstanceOfKnownGlobal(LInstanceOfKnownGlobal* instr,
   int delta = masm_->InstructionsGeneratedSince(map_check) + kAdditionalDelta;
   Label before_push_delta;
   __ bind(&before_push_delta);
-  __ mov(temp, Operand(delta * kPointerSize));
-  // The mov above can generate one or two instructions. The delta was computed
-  // for two instructions, so we need to pad here in case of one instruction.
-  if (masm_->InstructionsGeneratedSince(&before_push_delta) != 2) {
-    ASSERT_EQ(1, masm_->InstructionsGeneratedSince(&before_push_delta));
-    __ nop();
+  {
+    Assembler::BlockTrampolinePoolScope block_trampoline_pool(masm_);
+    __ mov(temp, Operand(delta * kPointerSize));
+    // The mov above can generate one or two instructions. The delta
+    // was computed for two instructions, so we need to pad here in
+    // case of one instruction.
+    if (masm_->InstructionsGeneratedSince(&before_push_delta) != 2) {
+      ASSERT_EQ(1, masm_->InstructionsGeneratedSince(&before_push_delta));
+      __ nop();
+    }
+    __ StoreToSafepointRegisterSlot(temp, temp);
   }
-  __ StoreToSafepointRegisterSlot(temp, temp);
   CallCodeGeneric(stub.GetCode(),
                   RelocInfo::CODE_TARGET,
                   instr,
@@ -4381,7 +4388,7 @@ void LCodeGen::DoStringCharFromCode(LStringCharFromCode* instr) {
   ASSERT(!char_code.is(result));
 
   __ cmpli(char_code, Operand(String::kMaxAsciiCharCode));
-  __ b(gt, deferred->entry());
+  __ bgt(deferred->entry());
   __ LoadRoot(result, Heap::kSingleCharacterStringCacheRootIndex);
   __ slwi(r0, char_code, Operand(kPointerSizeLog2));
   __ add(result, result, r0);
@@ -4488,7 +4495,7 @@ void LCodeGen::DoNumberTagU(LNumberTagU* instr) {
 
   DeferredNumberTagU* deferred = new(zone()) DeferredNumberTagU(this, instr);
   __ Cmpli(reg, Operand(Smi::kMaxValue), r0);
-  __ b(gt, deferred->entry());
+  __ bgt(deferred->entry());
   __ SmiTag(reg, reg);
   __ bind(deferred->exit());
 }

@@ -209,7 +209,18 @@ Assembler::Assembler(Isolate* arg_isolate, void* buffer, int buffer_size)
   ASSERT(buffer_ != NULL);
   pc_ = buffer_;
   reloc_info_writer.Reposition(buffer_ + buffer_size, pc_);
+
+  no_trampoline_pool_before_ = 0;
+  trampoline_pool_blocked_nesting_ = 0;
+  // We leave space (kMaxBlockTrampolineSectionSize)
+  // for BlockTrampolinePoolScope buffer.
+  next_buffer_check_ = kMaxCondBranchReach - kMaxBlockTrampolineSectionSize;
+  internal_trampoline_exception_ = false;
   last_bound_pos_ = 0;
+
+  trampoline_emitted_ = false;
+  unbound_labels_count_ = 0;
+
   ClearRecordedAstId();
 }
 
@@ -383,16 +394,7 @@ void Assembler::target_at_put(int pos, int target_pos) {
     int imm16 = target_pos - pos;
     ASSERT((imm16 & (kAAMask|kLKMask)) == 0);
     instr &= ((~kImm16Mask)|kAAMask|kLKMask);
-#ifdef PENGUIN_CLEANUP
     ASSERT(is_int16(imm16));
-#else
-    // display descriptive message until trampoline logic is complete
-    if (!is_int16(imm16)) {
-        PrintF("Overflow branching from %X -> %X (displacement=%X)\n",
-               pos, target_pos, imm16);
-        abort();
-    }
-#endif
     instr_at_put(pos, instr | (imm16 & kImm16Mask));
     return;
   } else if ((instr & ~kImm16Mask) == 0) {
@@ -406,12 +408,47 @@ void Assembler::target_at_put(int pos, int target_pos) {
   ASSERT(false);
 }
 
+int Assembler::max_reach_from(int pos) {
+  Instr instr = instr_at(pos);
+  int opcode = instr & kOpcodeMask;
+
+  // check which type of branch this is 16 or 26 bit offset
+  if (BX == opcode) {
+    return 26;
+  } else if (BCX == opcode) {
+    return 16;
+  } else if ((instr & ~kImm16Mask) == 0) {
+    // Emitted label constant, not part of a branch (regexp PushBacktrack).
+    return 16;
+  }
+
+  ASSERT(false);
+  return 0;
+}
+
 void Assembler::bind_to(Label* L, int pos) {
   ASSERT(0 <= pos && pos <= pc_offset());  // must have a valid binding position
+  int32_t trampoline_pos = kInvalidSlotPos;
+  if (L->is_linked() && !trampoline_emitted_) {
+    unbound_labels_count_--;
+    next_buffer_check_ += kTrampolineSlotsSize;
+  }
+
   while (L->is_linked()) {
     int fixup_pos = L->pos();
+    int32_t offset = pos - fixup_pos;
+    int maxReach = max_reach_from(fixup_pos);
     next(L);  // call next before overwriting link with target at fixup_pos
-    target_at_put(fixup_pos, pos);
+    if (is_intn(offset, maxReach) == false) {
+      if (trampoline_pos == kInvalidSlotPos) {
+        trampoline_pos = get_trampoline_entry();
+        CHECK(trampoline_pos != kInvalidSlotPos);
+        target_at_put(trampoline_pos, pos);
+      }
+      target_at_put(fixup_pos, trampoline_pos);
+    } else {
+      target_at_put(fixup_pos, pos);
+    }
   }
   L->bind_to(pos);
 
@@ -438,6 +475,17 @@ void Assembler::next(Label* L) {
   }
 }
 
+bool Assembler::is_near(Label* L, Condition cond) {
+  ASSERT(L->is_bound());
+  if (L->is_bound() == false)
+    return false;
+
+  int maxReach = ((cond == al) ? 26 : 16);
+  int offset = L->pos() - pc_offset();
+
+  return is_intn(offset, maxReach);
+}
+
 // We have to use a temporary register for things that can be relocated even
 // if they can be encoded in the 16 bits of immediate-offset instruction
 // space.  There is no guarantee that the relocated location can be similarly
@@ -451,7 +499,6 @@ void Assembler::a_form(Instr instr,
                        DwVfpRegister fra,
                        DwVfpRegister frb,
                        RCBit r) {
-  CheckBuffer();
   emit(instr | frt.code()*B21 | fra.code()*B16 | frb.code()*B11 | r);
 }
 
@@ -460,7 +507,6 @@ void Assembler::d_form(Instr instr,
                         Register ra,
                         const int val,
                         bool signed_disp) {
-  CheckBuffer();
   if (signed_disp) {
     if (!is_int16(val)) {
       PrintF("val = %d, 0x%x\n", val, val);
@@ -481,7 +527,6 @@ void Assembler::x_form(Instr instr,
                          Register rs,
                          Register rb,
                          RCBit r) {
-  CheckBuffer();
   emit(instr | rs.code()*B21 | ra.code()*B16 | rb.code()*B11 | r);
 }
 
@@ -491,8 +536,21 @@ void Assembler::xo_form(Instr instr,
                          Register rb,
                          OEBit o,
                          RCBit r) {
-  CheckBuffer();
   emit(instr | rt.code()*B21 | ra.code()*B16 | rb.code()*B11 | o | r);
+}
+
+// Returns the next free trampoline entry.
+int32_t Assembler::get_trampoline_entry() {
+  int32_t trampoline_entry = kInvalidSlotPos;
+
+  if (!internal_trampoline_exception_) {
+    trampoline_entry = trampoline_.take_slot();
+
+    if (kInvalidSlotPos == trampoline_entry) {
+      internal_trampoline_exception_ = true;
+    }
+  }
+  return trampoline_entry;
 }
 
 int Assembler::branch_offset(Label* L, bool jump_elimination_allowed) {
@@ -508,6 +566,10 @@ int Assembler::branch_offset(Label* L, bool jump_elimination_allowed) {
       // should avoid most instances of branch offset overflow.  See
       // target_at() for where this is converted back to kEndOfChain.
       target_pos = pc_offset();
+      if (!trampoline_emitted_) {
+        unbound_labels_count_++;
+        next_buffer_check_ -= kTrampolineSlotsSize;
+      }
     }
     L->link_to(pc_offset());
   }
@@ -530,6 +592,10 @@ void Assembler::label_at_put(Label* L, int at_offset) {
       // should avoid most instances of branch offset overflow.  See
       // target_at() for where this is converted back to kEndOfChain.
       target_pos = at_offset;
+      if (!trampoline_emitted_) {
+        unbound_labels_count_++;
+        next_buffer_check_ -= kTrampolineSlotsSize;
+      }
     }
     L->link_to(at_offset);
 
@@ -578,15 +644,6 @@ void Assembler::b(int branch_offset, LKBit lk) {
   emit(BX | (imm26 & kImm26Mask) | lk);
 }
 
-void Assembler::b(int branch_offset, Condition cond) {
-  b(branch_offset, LeaveLK);
-}
-
-
-void Assembler::bl(int branch_offset, Condition cond) {
-  b(branch_offset, SetLK);
-}
-
 void Assembler::xori(Register dst, Register src, const Operand& imm) {
   d_form(XORI, src, dst, imm.imm32_, false);
 }
@@ -613,7 +670,6 @@ void Assembler::rlwinm(Register ra, Register rs,
   sh &= 0x1f;
   mb &= 0x1f;
   me &= 0x1f;
-  CheckBuffer();
   emit(RLWINMX | rs.code()*B21 | ra.code()*B16 | sh*B11 | mb*B6 | me << 1 | rc);
 }
 
@@ -622,7 +678,6 @@ void Assembler::rlwimi(Register ra, Register rs,
   sh &= 0x1f;
   mb &= 0x1f;
   me &= 0x1f;
-  CheckBuffer();
   emit(RLWIMIX | rs.code()*B21 | ra.code()*B16 | sh*B11 | mb*B6 | me << 1 | rc);
 }
 
@@ -649,7 +704,6 @@ void Assembler::clrlwi(Register dst, Register src, const Operand& val,
 
 
 void Assembler::srawi(Register ra, Register rs, int sh, RCBit r) {
-  CheckBuffer();
   emit(EXT2 | SRAWIX | rs.code()*B21 | ra.code()*B16 | sh*B11 | r);
 }
 
@@ -667,7 +721,6 @@ void Assembler::sraw(Register ra, Register rs, Register rb, RCBit r) {
 
 void Assembler::rldicl(Register ra, Register rs, int sh, int mb, RCBit r) {
   // MD format instruction
-  CheckBuffer();
   emit(EXT5 | RLDICL | rs.code()*B21 | ra.code()*B16 | sh*B11 | mb*B5 | r);
 }
 
@@ -683,7 +736,6 @@ void Assembler::addc(Register dst, Register src1, Register src2,
 
 void Assembler::addze(Register dst, Register src1, OEBit o, RCBit r) {
   // a special xo_form
-  CheckBuffer();
   emit(EXT2 | ADDZEX | dst.code()*B21 | src1.code()*B16 | o | r);
 }
 
@@ -932,17 +984,14 @@ void Assembler::stwux(Register rs, const MemOperand &src) {
 }
 
 void Assembler::extsb(Register rs, Register ra, RCBit rc) {
-  CheckBuffer();
   emit(EXT2 | EXTSB | rs.code()*B21 | ra.code()*B16 | rc);
 }
 
 void Assembler::extsh(Register rs, Register ra, RCBit rc) {
-  CheckBuffer();
   emit(EXT2 | EXTSH | rs.code()*B21 | ra.code()*B16 | rc);
 }
 
 void Assembler::neg(Register rt, Register ra, OEBit o, RCBit r) {
-  CheckBuffer();
   emit(EXT2 | NEGX | rt.code()*B21 | ra.code()*B16 | o | r);
 }
 
@@ -954,13 +1003,11 @@ void Assembler::andc(Register dst, Register src1, Register src2, RCBit rc) {
 // 64bit specific instructions
 void Assembler::ld(Register rd, const MemOperand &src) {
   ASSERT(!src.ra_.is(r0) && src.isPPCAddressing());
-  CheckBuffer();
   // todo - need to do range check on offset
   emit(LD | rd.code()*B21 | src.ra().code()*B16 | src.offset() << 2);
 }
 
 void Assembler::std(Register rs, const MemOperand &src) {
-  CheckBuffer();
   ASSERT(!src.ra_.is(r0) && src.isPPCAddressing());
   // todo - need to do range check on offset
   int offset = kImm16Mask & src.offset();
@@ -968,7 +1015,6 @@ void Assembler::std(Register rs, const MemOperand &src) {
 }
 
 void Assembler::stdu(Register rs, const MemOperand &src) {
-  CheckBuffer();
   ASSERT(!src.ra_.is(r0) && src.isPPCAddressing());
   // todo - need to do range check on offset
   int offset = kImm16Mask & src.offset();
@@ -1025,6 +1071,7 @@ void Assembler::cmn(Register src1, const Operand& src2, Condition cond) {
 // This should really move to be in macro-assembler as it
 // is really a pseudo instruction
 void Assembler::mov(Register dst, const Operand& src) {
+  BlockTrampolinePoolScope block_trampoline_pool(this);
   if (MustUseReg(src.rmode_)) {
     // some form of relocation needed
     RecordRelocInfo(src.rmode_, src.imm32_);
@@ -1296,7 +1343,6 @@ void Assembler::fmul(const DwVfpRegister frt,
                      const DwVfpRegister fra,
                      const DwVfpRegister frc,
                      RCBit rc) {
-  CheckBuffer();
   emit(EXT4 | FMUL | frt.code()*B21 | fra.code()*B16 | frc.code()*B6 | rc);
 }
 void Assembler::fdiv(const DwVfpRegister frt,
@@ -1309,7 +1355,6 @@ void Assembler::fdiv(const DwVfpRegister frt,
 void Assembler::fcmpu(const DwVfpRegister fra,
                       const DwVfpRegister frb,
                       CRegister cr) {
-  CheckBuffer();
   ASSERT(cr.code() >= 0 && cr.code() <= 7);
   emit(EXT4 | FCMPU | cr.code()*B23 | fra.code()*B16 | frb.code()*B11);
 }
@@ -1317,60 +1362,51 @@ void Assembler::fcmpu(const DwVfpRegister fra,
 void Assembler::fmr(const DwVfpRegister frt,
                     const DwVfpRegister frb,
                     RCBit rc) {
-  CheckBuffer();
   emit(EXT4 | FMR | frt.code()*B21 | frb.code()*B11 | rc);
 }
 
 void Assembler::fctiwz(const DwVfpRegister frt,
                      const DwVfpRegister frb) {
-  CheckBuffer();
   emit(EXT4 | FCTIWZ | frt.code()*B21 | frb.code()*B11);
 }
 
 void Assembler::fctiw(const DwVfpRegister frt,
                      const DwVfpRegister frb) {
-  CheckBuffer();
   emit(EXT4 | FCTIW | frt.code()*B21 | frb.code()*B11);
 }
 
 void Assembler::frim(const DwVfpRegister frt,
                      const DwVfpRegister frb) {
-  CheckBuffer();
   emit(EXT4 | FRIM | frt.code()*B21 | frb.code()*B11);
 }
 
 void Assembler::frsp(const DwVfpRegister frt,
                      const DwVfpRegister frb,
                      RCBit rc) {
-  CheckBuffer();
   emit(EXT4 | FRSP | frt.code()*B21 | frb.code()*B11 | rc);
 }
 
 void Assembler::fcfid(const DwVfpRegister frt,
                       const DwVfpRegister frb,
                       RCBit rc) {
-  CheckBuffer();
   emit(EXT4 | FCFID | frt.code()*B21 | frb.code()*B11 | rc);
 }
 
 void Assembler::fctid(const DwVfpRegister frt,
                       const DwVfpRegister frb,
                       RCBit rc) {
-  CheckBuffer();
   emit(EXT4 | FCTID | frt.code()*B21 | frb.code()*B11 | rc);
 }
 
 void Assembler::fctidz(const DwVfpRegister frt,
                       const DwVfpRegister frb,
                       RCBit rc) {
-  CheckBuffer();
   emit(EXT4 | FCTIDZ | frt.code()*B21 | frb.code()*B11 | rc);
 }
 
 void Assembler::fsel(const DwVfpRegister frt, const DwVfpRegister fra,
                      const DwVfpRegister frc, const DwVfpRegister frb,
                      RCBit rc) {
-  CheckBuffer();
   emit(EXT4 | FSEL | frt.code()*B21 | fra.code()*B16 | frb.code()*B11 |
        frc.code()*B6 | rc);
 }
@@ -1378,37 +1414,31 @@ void Assembler::fsel(const DwVfpRegister frt, const DwVfpRegister fra,
 void Assembler::fneg(const DwVfpRegister frt,
                      const DwVfpRegister frb,
                      RCBit rc) {
-  CheckBuffer();
   emit(EXT4 | FNEG | frt.code()*B21 | frb.code()*B11 | rc);
 }
 
 void Assembler::mtfsfi(int bf, int immediate, RCBit rc) {
-  CheckBuffer();
   emit(EXT4 | MTFSFI | bf*B23 | immediate*B12 | rc);
 }
 
 void Assembler::mffs(const DwVfpRegister frt, RCBit rc) {
-  CheckBuffer();
   emit(EXT4 | MFFS | frt.code()*B21 | rc);
 }
 
 void Assembler::mtfsf(const DwVfpRegister frb, bool L,
                       int FLM, bool W, RCBit rc) {
-  CheckBuffer();
   emit(EXT4 | MTFSF | frb.code()*B11 | W*B16 | FLM*B17 | L*B25 | rc);
 }
 
 void Assembler::fsqrt(const DwVfpRegister frt,
                       const DwVfpRegister frb,
                       RCBit rc) {
-  CheckBuffer();
   emit(EXT4 | FSQRT | frt.code()*B21 | frb.code()*B11 | rc);
 }
 
 void Assembler::fabs(const DwVfpRegister frt,
                      const DwVfpRegister frb,
                      RCBit rc) {
-  CheckBuffer();
   emit(EXT4 | FABS | frt.code()*B21 | frb.code()*B11 | rc);
 }
 
@@ -1719,6 +1749,59 @@ void Assembler::RecordRelocInfo(RelocInfo::Mode rmode, intptr_t data) {
       reloc_info_writer.Write(&rinfo);
     }
   }
+}
+
+
+void Assembler::BlockTrampolinePoolFor(int instructions) {
+  BlockTrampolinePoolBefore(pc_offset() + instructions * kInstrSize);
+}
+
+
+void Assembler::CheckTrampolinePool() {
+  // Some small sequences of instructions must not be broken up by the
+  // insertion of a trampoline pool; such sequences are protected by setting
+  // either trampoline_pool_blocked_nesting_ or no_trampoline_pool_before_,
+  // which are both checked here. Also, recursive calls to CheckTrampolinePool
+  // are blocked by trampoline_pool_blocked_nesting_.
+  if ((trampoline_pool_blocked_nesting_ > 0) ||
+      (pc_offset() < no_trampoline_pool_before_)) {
+    // Emission is currently blocked; make sure we try again as soon as
+    // possible.
+    if (trampoline_pool_blocked_nesting_ > 0) {
+      next_buffer_check_ = pc_offset() + kInstrSize;
+    } else {
+      next_buffer_check_ = no_trampoline_pool_before_;
+    }
+    return;
+  }
+
+  ASSERT(!trampoline_emitted_);
+  ASSERT(unbound_labels_count_ >= 0);
+  if (unbound_labels_count_ > 0) {
+    // First we emit jump, then we emit trampoline pool.
+    { BlockTrampolinePoolScope block_trampoline_pool(this);
+      Label after_pool;
+      b(&after_pool);
+
+      int pool_start = pc_offset();
+      for (int i = 0; i < unbound_labels_count_; i++) {
+        b(&after_pool);
+      }
+      bind(&after_pool);
+      trampoline_ = Trampoline(pool_start, unbound_labels_count_);
+
+      trampoline_emitted_ = true;
+      // As we are only going to emit trampoline once, we need to prevent any
+      // further emission.
+      next_buffer_check_ = kMaxInt;
+    }
+  } else {
+    // Number of branches to unbound label at this point is zero, so we can
+    // move next buffer check to maximum.
+    next_buffer_check_ = pc_offset() +
+      kMaxCondBranchReach - kMaxBlockTrampolineSectionSize;
+  }
+  return;
 }
 
 #undef INCLUDE_ARM

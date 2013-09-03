@@ -1121,6 +1121,8 @@ void Deoptimizer::EntryGenerator::Generate() {
 
 
 void Deoptimizer::TableEntryGenerator::GeneratePrologue() {
+  Assembler::BlockTrampolinePoolScope block_trampoline_pool(masm());
+
   // Create a sequence of deoptimization entries. Note that any
   // registers may be still live.
   Label done;

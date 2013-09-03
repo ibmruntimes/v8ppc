@@ -599,6 +599,9 @@ class Assembler : public AssemblerBase {
   // but it may be bound only once.
 
   void bind(Label* L);  // binds an unbound label L to the current code position
+  // Determines if Label is bound and near enough so that a single
+  // branch instruction can be used to reach it.
+  bool is_near(Label* L, Condition cond);
 
   // Returns the branch offset to the given label from the current code position
   // Links the label to the current position if it is still unbound
@@ -691,96 +694,70 @@ class Assembler : public AssemblerBase {
   void CodeTargetAlign();
 
   // Branch instructions
-  // PowerPC
   void bclr(BOfield bo, LKBit lk);
   void blr();
   void bc(int branch_offset, BOfield bo, int condition_bit, LKBit lk = LeaveLK);
   void b(int branch_offset, LKBit lk);
-  void b(int branch_offset, Condition cond = al);
 
   void bcctr(BOfield bo, LKBit lk);
   void bcr();
 
-  // end PowerPC
-  void bl(int branch_offset, Condition cond = al);
-
   // Convenience branch instructions using labels
-  void b(Label* L, Condition cond = al)  {
-    b(branch_offset(L, cond == al), cond);
-  }
-  void b(Label* L, LKBit lk)  {
+  void b(Label* L, LKBit lk = LeaveLK)  {
     b(branch_offset(L, false), lk);
   }
-  // PowerPC
-  void bc(Label* L, BOfield bo, int bit, LKBit lk = LeaveLK)  {
-    bc(branch_offset(L, false), bo, bit, lk);
+
+  void bc_helper(Condition cond, Label* L, CRegister cr = cr7,
+                 LKBit lk = LeaveLK)  {
+    ASSERT(cond != al);
+    ASSERT(cr.code() >= 0 && cr.code() <= 7);
+
+    int b_offset = branch_offset(L, false);
+
+    switch (cond) {
+      case eq:
+        bc(b_offset, BT, encode_crbit(cr, CR_EQ), lk);
+        break;
+      case ne:
+        bc(b_offset, BF, encode_crbit(cr, CR_EQ), lk);
+        break;
+      case gt:
+        bc(b_offset, BT, encode_crbit(cr, CR_GT), lk);
+        break;
+      case le:
+        bc(b_offset, BF, encode_crbit(cr, CR_GT), lk);
+        break;
+      case lt:
+        bc(b_offset, BT, encode_crbit(cr, CR_LT), lk);
+        break;
+      case ge:
+        bc(b_offset, BF, encode_crbit(cr, CR_LT), lk);
+        break;
+      default:
+        fake_asm(fBranch);
+        // UNIMPLEMENTED();
+    }
   }
+
   void b(Condition cond, Label* L, CRegister cr = cr7, LKBit lk = LeaveLK)  {
     if (cond == al) {
         b(L, lk);
         return;
     }
 
-    ASSERT(cr.code() >= 0 && cr.code() <= 7);
-    int b_offset = branch_offset(L, (cond == al));
-
-    // if the offset fits in the 16-bit immediate
-    // field (b-form) we use that, otherwise use a
-    // branch conditional to the i-form which gives
-    // us 26 bits
-    if (is_int16(b_offset)) {
-      switch (cond) {
-        case eq:
-          bc(b_offset, BT, encode_crbit(cr, CR_EQ), lk);
-          break;
-        case ne:
-          bc(b_offset, BF, encode_crbit(cr, CR_EQ), lk);
-          break;
-        case gt:
-          bc(b_offset, BT, encode_crbit(cr, CR_GT), lk);
-          break;
-        case le:
-          bc(b_offset, BF, encode_crbit(cr, CR_GT), lk);
-          break;
-        case lt:
-          bc(b_offset, BT, encode_crbit(cr, CR_LT), lk);
-          break;
-        case ge:
-          bc(b_offset, BF, encode_crbit(cr, CR_LT), lk);
-          break;
-        default:
-          fake_asm(fBranch);
-          // UNIMPLEMENTED();
-      }
-    } else {
-      // as mentioned above, somewhat of a hack here: use the bc of
-      // the negated condition to branch around the i-form instruction
-      switch (NegateCondition(cond)) {
-        case eq:
-          bc(kInstrSize*2, BT, encode_crbit(cr, CR_EQ), LeaveLK);
-          break;
-        case ne:
-          bc(kInstrSize*2, BF, encode_crbit(cr, CR_EQ), LeaveLK);
-          break;
-        case gt:
-          bc(kInstrSize*2, BT, encode_crbit(cr, CR_GT), LeaveLK);
-          break;
-        case le:
-          bc(kInstrSize*2, BF, encode_crbit(cr, CR_GT), LeaveLK);
-          break;
-        case lt:
-          bc(kInstrSize*2, BT, encode_crbit(cr, CR_LT), LeaveLK);
-          break;
-        case ge:
-          bc(kInstrSize*2, BF, encode_crbit(cr, CR_LT), LeaveLK);
-          break;
-        default:
-          fake_asm(fBranch);
-          // UNIMPLEMENTED();
-      }
-      b(b_offset - kInstrSize, lk);
+    if ((L->is_bound() && is_near(L, cond)) ||
+        !is_trampoline_emitted()) {
+      bc_helper(cond, L, cr, lk);
+      return;
     }
+
+    Label skip;
+    Condition neg_cond = NegateCondition(cond);
+    bc_helper(neg_cond, &skip, cr);
+    b(L, lk);
+    bind(&skip);
   }
+
   void bne(Label* L, CRegister cr = cr7, LKBit lk = LeaveLK) {
     b(ne, L, cr, lk); }
   void beq(Label* L, CRegister cr = cr7, LKBit lk = LeaveLK) {
@@ -815,10 +792,6 @@ class Assembler : public AssemblerBase {
   void bdnz(Label* L, LKBit lk = LeaveLK) {
     bc(branch_offset(L, false), DCBNZ, 0, lk);
   }
-
-  // end PowerPC
-  void bl(Label* L, Condition cond = al)  { bl(branch_offset(L, false), cond); }
-  void bl(Condition cond, Label* L)  { bl(branch_offset(L, false), cond); }
 
   // Data-processing instructions
 
@@ -1143,7 +1116,7 @@ class Assembler : public AssemblerBase {
   }
 
   // Jump unconditionally to given label.
-  void jmp(Label* L) { b(L, al); }
+  void jmp(Label* L) { b(L); }
 
   bool predictable_code_size() const { return predictable_code_size_; }
 
@@ -1156,6 +1129,22 @@ class Assembler : public AssemblerBase {
   int InstructionsGeneratedSince(Label* label) {
     return SizeOfCodeGeneratedSince(label) / kInstrSize;
   }
+
+  // Class for scoping postponing the trampoline pool generation.
+  class BlockTrampolinePoolScope {
+   public:
+    explicit BlockTrampolinePoolScope(Assembler* assem) : assem_(assem) {
+      assem_->StartBlockTrampolinePool();
+    }
+    ~BlockTrampolinePoolScope() {
+      assem_->EndBlockTrampolinePool();
+    }
+
+   private:
+    Assembler* assem_;
+
+    DISALLOW_IMPLICIT_CONSTRUCTORS(BlockTrampolinePoolScope);
+  };
 
   // Debugging
 
@@ -1217,6 +1206,11 @@ class Assembler : public AssemblerBase {
   static int GetCmpImmediateRawImmediate(Instr instr);
   static bool IsNop(Instr instr, int type = NON_MARKING_NOP);
 
+  // Postpone the generation of the trampoline pool for the specified number of
+  // instructions.
+  void BlockTrampolinePoolFor(int instructions);
+  void CheckTrampolinePool();
+
  protected:
   // Relocation for a type-recording IC has the AST id added to it.  This
   // member variable is a way to pass the information from the call site to
@@ -1232,6 +1226,39 @@ class Assembler : public AssemblerBase {
 
   // Patch branch instruction at pos to branch to given branch target pos
   void target_at_put(int pos, int target_pos);
+
+  // Say if we need to relocate with this mode.
+  bool MustUseReg(RelocInfo::Mode rmode);
+
+  // Record reloc info for current pc_
+  void RecordRelocInfo(RelocInfo::Mode rmode, intptr_t data = 0);
+
+  // Block the emission of the trampoline pool before pc_offset.
+  void BlockTrampolinePoolBefore(int pc_offset) {
+    if (no_trampoline_pool_before_ < pc_offset)
+      no_trampoline_pool_before_ = pc_offset;
+  }
+
+  void StartBlockTrampolinePool() {
+    trampoline_pool_blocked_nesting_++;
+  }
+
+  void EndBlockTrampolinePool() {
+    trampoline_pool_blocked_nesting_--;
+  }
+
+  bool is_trampoline_pool_blocked() const {
+    return trampoline_pool_blocked_nesting_ > 0;
+  }
+
+  bool has_exception() const {
+    return internal_trampoline_exception_;
+  }
+
+  bool is_trampoline_emitted() const {
+    return trampoline_emitted_;
+  }
+
 
  private:
   // Code buffer:
@@ -1249,6 +1276,15 @@ class Assembler : public AssemblerBase {
   static const int kGap = 32;
   byte* pc_;  // the program counter; moves forward
 
+  // Repeated checking whether the trampoline pool should be emitted is rather
+  // expensive. By default we only check again once a number of instructions
+  // has been generated.
+  int next_buffer_check_;  // pc offset of next buffer check.
+
+  // Emission of the trampoline pool may be blocked in some code sequences.
+  int trampoline_pool_blocked_nesting_;  // Block emission if this is not zero.
+  int no_trampoline_pool_before_;  // Block emission before this pc offset.
+
   // Relocation info generation
   // Each relocation is encoded as a variable size value
   static const int kMaxRelocSize = RelocInfoWriter::kMaxSize;
@@ -1261,6 +1297,7 @@ class Assembler : public AssemblerBase {
   inline void CheckBuffer();
   void GrowBuffer();
   inline void emit(Instr x);
+  inline void CheckTrampolinePoolQuick();
 
   // Instruction generation
   void a_form(Instr instr, DwVfpRegister frt, DwVfpRegister fra,
@@ -1273,18 +1310,61 @@ class Assembler : public AssemblerBase {
 
   // Labels
   void print(Label* L);
+  int  max_reach_from(int pos);
   void bind_to(Label* L, int pos);
   void next(Label* L);
 
-  // Say if we need to relocate with this mode.
-  bool MustUseReg(RelocInfo::Mode rmode);
+  class Trampoline {
+   public:
+    Trampoline() {
+      next_slot_ = 0;
+      free_slot_count_ = 0;
+    }
+    Trampoline(int start, int slot_count) {
+      next_slot_ = start;
+      free_slot_count_ = slot_count;
+    }
+    int take_slot() {
+      int trampoline_slot = kInvalidSlotPos;
+      if (free_slot_count_ <= 0) {
+        // We have run out of space on trampolines.
+        // Make sure we fail in debug mode, so we become aware of each case
+        // when this happens.
+        ASSERT(0);
+        // Internal exception will be caught.
+      } else {
+        trampoline_slot = next_slot_;
+        free_slot_count_--;
+        next_slot_ += kTrampolineSlotsSize;
+      }
+      return trampoline_slot;
+    }
 
-  // Record reloc info for current pc_
-  void RecordRelocInfo(RelocInfo::Mode rmode, intptr_t data = 0);
+   private:
+    int next_slot_;
+    int free_slot_count_;
+  };
+
+  int32_t get_trampoline_entry();
+  int unbound_labels_count_;
+  // If trampoline is emitted, generated code is becoming large. As
+  // this is already a slow case which can possibly break our code
+  // generation for the extreme case, we use this information to
+  // trigger different mode of branch instruction generation, where we
+  // no longer use a single branch instruction.
+  bool trampoline_emitted_;
+  static const int kTrampolineSlotsSize = kInstrSize;
+  static const int kMaxCondBranchReach = (1 << (16 - 1)) - 1;
+  static const int kMaxBlockTrampolineSectionSize = 64 * kInstrSize;
+  static const int kInvalidSlotPos = -1;
+
+  Trampoline trampoline_;
+  bool internal_trampoline_exception_;
 
   friend class RegExpMacroAssemblerPPC;
   friend class RelocInfo;
   friend class CodePatcher;
+  friend class BlockTrampolinePoolScope;
 
   PositionsRecorder positions_recorder_;
 

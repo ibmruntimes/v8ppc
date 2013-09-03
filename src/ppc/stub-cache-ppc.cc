@@ -116,9 +116,9 @@ static void ProbeTable(Isolate* isolate,
 
 #ifdef DEBUG
     if (FLAG_test_secondary_stub_cache && table == StubCache::kPrimary) {
-      __ jmp(&miss);
+      __ b(&miss);
     } else if (FLAG_test_primary_stub_cache && table == StubCache::kSecondary) {
-      __ jmp(&miss);
+      __ b(&miss);
     }
 #endif
 
@@ -492,7 +492,7 @@ void StubCompiler::GenerateStoreField(MacroAssembler* masm,
     // In sloppy mode, we could just return the value and be done. However, we
     // might be in strict mode, where we have to throw. Since we cannot tell,
     // go into slow case unconditionally.
-    __ jmp(miss_label);
+    __ b(miss_label);
     return;
   }
 
@@ -524,10 +524,10 @@ void StubCompiler::GenerateStoreField(MacroAssembler* masm,
     Label miss_pop, done_check;
     CheckPrototypes(object, receiver_reg, Handle<JSObject>(holder), name_reg,
                     scratch1, scratch2, name, &miss_pop);
-    __ jmp(&done_check);
+    __ b(&done_check);
     __ bind(&miss_pop);
     __ pop(name_reg);
-    __ jmp(miss_label);
+    __ b(miss_label);
     __ bind(&done_check);
     __ pop(name_reg);
   }
@@ -1684,7 +1684,7 @@ Handle<Code> CallStubCompiler::CompileArrayPushCall(
       if (FLAG_smi_only_arrays  && !FLAG_trace_elements_transitions) {
         Label fast_object, not_fast_object;
         __ CheckFastObjectElements(r6, r10, &not_fast_object);
-        __ jmp(&fast_object);
+        __ b(&fast_object);
         // In case of fast smi-only, convert to fast object, otherwise bail out.
         __ bind(&not_fast_object);
         __ CheckFastSmiElements(r6, r10, &call_builtin);
@@ -1699,7 +1699,7 @@ Handle<Code> CallStubCompiler::CompileArrayPushCall(
         __ mr(r5, receiver);
         ElementsTransitionGenerator::
             GenerateMapChangeElementsTransition(masm());
-        __ jmp(&fast_object);
+        __ b(&fast_object);
 
         __ bind(&try_holey_map);
         __ LoadTransitionedArrayMapConditional(FAST_HOLEY_SMI_ELEMENTS,
@@ -2481,7 +2481,7 @@ Handle<Code> CallStubCompiler::CompileCallConstant(Handle<Object> object,
       } else {
         // Calling non-strict non-builtins with a value as the receiver
         // requires boxing.
-        __ jmp(&miss);
+        __ b(&miss);
       }
       break;
 
@@ -2502,7 +2502,7 @@ Handle<Code> CallStubCompiler::CompileCallConstant(Handle<Object> object,
       } else {
         // Calling non-strict non-builtins with a value as the receiver
         // requires boxing.
-        __ jmp(&miss);
+        __ b(&miss);
       }
       break;
 
@@ -2526,7 +2526,7 @@ Handle<Code> CallStubCompiler::CompileCallConstant(Handle<Object> object,
       } else {
         // Calling non-strict non-builtins with a value as the receiver
         // requires boxing.
-        __ jmp(&miss);
+        __ b(&miss);
       }
       break;
   }
@@ -4422,7 +4422,7 @@ void KeyedStoreStubCompiler::GenerateStoreFastElement(
     // Grow the array and finish the store.
     __ addi(length_reg, length_reg, Operand(Smi::FromInt(1)));
     __ stw(length_reg, FieldMemOperand(receiver_reg, JSArray::kLengthOffset));
-    __ jmp(&finish_store);
+    __ b(&finish_store);
 
     __ bind(&slow);
     Handle<Code> ic_slow = masm->isolate()->builtins()->KeyedStoreIC_Slow();
@@ -4557,7 +4557,7 @@ void KeyedStoreStubCompiler::GenerateStoreFastDoubleElement(
     __ stw(length_reg, FieldMemOperand(receiver_reg, JSArray::kLengthOffset));
     __ lwz(elements_reg,
            FieldMemOperand(receiver_reg, JSObject::kElementsOffset));
-    __ jmp(&finish_store);
+    __ b(&finish_store);
 
     __ bind(&check_capacity);
     // Make sure that the backing store can hold additional elements.
@@ -4569,7 +4569,7 @@ void KeyedStoreStubCompiler::GenerateStoreFastDoubleElement(
     // Grow the array and finish the store.
     __ addi(length_reg, length_reg, Operand(Smi::FromInt(1)));
     __ stw(length_reg, FieldMemOperand(receiver_reg, JSArray::kLengthOffset));
-    __ jmp(&finish_store);
+    __ b(&finish_store);
 
     __ bind(&slow);
     Handle<Code> ic_slow = masm->isolate()->builtins()->KeyedStoreIC_Slow();

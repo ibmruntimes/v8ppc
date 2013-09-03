@@ -258,7 +258,7 @@ void MacroAssembler::Swap(Register reg1,
 
 
 void MacroAssembler::Call(Label* target) {
-  bl(target);
+  b(target, SetLK);
 }
 
 
@@ -1262,7 +1262,7 @@ void MacroAssembler::ThrowUncatchable(Register value) {
 
   // Unwind the handlers until the ENTRY handler is found.
   Label fetch_next, check_kind;
-  jmp(&check_kind);
+  b(&check_kind);
   bind(&fetch_next);
   lwz(sp, MemOperand(sp, StackHandlerConstants::kNextOffset));
 
@@ -1494,7 +1494,7 @@ void MacroAssembler::AllocateInNewSpace(int object_size,
       li(scratch1, Operand(0x7191));
       li(scratch2, Operand(0x7291));
     }
-    jmp(gc_required);
+    b(gc_required);
     return;
   }
 
@@ -1581,7 +1581,7 @@ void MacroAssembler::AllocateInNewSpace(Register object_size,
       li(scratch1, Operand(0x7191));
       li(scratch2, Operand(0x7291));
     }
-    jmp(gc_required);
+    b(gc_required);
     return;
   }
 
@@ -1937,12 +1937,12 @@ void MacroAssembler::StoreNumberToDoubleElements(Register value_reg,
   uint32_t offset = FixedDoubleArray::kHeaderSize + sizeof(kHoleNanLower32);
   stw(mantissa_reg, FieldMemOperand(scratch1, offset));
 #endif
-  jmp(&done);
+  b(&done);
 
   bind(&maybe_nan);
   // Could be NaN or Infinity. If fraction is not zero, it's NaN, otherwise
   // it's an Infinity, and the non-NaN code path applies.
-  b(gt, &is_nan);
+  bgt(&is_nan);
   lwz(mantissa_reg, FieldMemOperand(value_reg, HeapNumber::kMantissaOffset));
   cmpi(mantissa_reg, Operand::Zero());
   beq(&have_double_value);
@@ -1952,7 +1952,7 @@ void MacroAssembler::StoreNumberToDoubleElements(Register value_reg,
       FixedDoubleArray::canonical_not_the_hole_nan_as_double());
   mov(mantissa_reg, Operand(static_cast<uint32_t>(nan_int64)));
   mov(exponent_reg, Operand(static_cast<uint32_t>(nan_int64 >> 32)));
-  jmp(&have_double_value);
+  b(&have_double_value);
 
   bind(&smi_value);
   addi(scratch1, elements_reg,
@@ -2167,7 +2167,7 @@ void MacroAssembler::TryGetFunctionPrototype(Register function,
 
   // Get the prototype from the initial map.
   lwz(result, FieldMemOperand(result, Map::kPrototypeOffset));
-  jmp(&done);
+  b(&done);
 
   // Non-instance prototype: Fetch prototype from constructor field
   // in initial map.
@@ -2292,7 +2292,7 @@ void MacroAssembler::CallApiFunctionAndReturn(ExternalReference function,
   CallCFunction(
       ExternalReference::delete_handle_scope_extensions(isolate()), 1);
   mr(r3, r27);
-  jmp(&leave_exit_frame);
+  b(&leave_exit_frame);
 }
 
 
@@ -3554,7 +3554,7 @@ void MacroAssembler::HasColor(Register object,
   beq(&word_boundary, cr0);
   and_(r0, ip, mask_scratch, SetRC);
   b(second_bit == 1 ? ne : eq, has_color, cr0);
-  jmp(&other_color);
+  b(&other_color);
 
   bind(&word_boundary);
   lwz(ip, MemOperand(bitmap_scratch, MemoryChunk::kHeaderSize + kPointerSize));
@@ -3724,11 +3724,11 @@ void MacroAssembler::ClampUint8(Register output_reg, Register input_reg) {
   if (!output_reg.is(input_reg)) {
     mr(output_reg, input_reg);
   }
-  jmp(&done);
+  b(&done);
 
   bind(&negative_label);
   li(output_reg, Operand::Zero());  // set to 0 if negative
-  jmp(&done);
+  b(&done);
 
 
   bind(&overflow_label);  // set to satval if > satval
@@ -3822,7 +3822,7 @@ void MacroAssembler::CheckEnumCache(Register null_value, Label* call_runtime) {
   cmpi(r6, Operand(Smi::FromInt(Map::kInvalidEnumCache)));
   beq(call_runtime);
 
-  jmp(&start);
+  b(&start);
 
   bind(&next);
   lwz(r4, FieldMemOperand(r5, HeapObject::kMapOffset));

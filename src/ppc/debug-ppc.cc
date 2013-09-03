@@ -308,6 +308,9 @@ void Debug::GenerateCallConstructStubRecordDebugBreak(MacroAssembler* masm) {
 
 
 void Debug::GenerateSlot(MacroAssembler* masm) {
+  // Generate enough nop's to make space for a call instruction. Avoid emitting
+  // the trampoline pool in the debug break slot code.
+  Assembler::BlockTrampolinePoolScope block_trampoline_pool(masm);
   Label check_codesize;
   __ bind(&check_codesize);
   __ RecordDebugBreakSlot();

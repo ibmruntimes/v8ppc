@@ -252,6 +252,7 @@ class RegExpMacroAssemblerPPC: public NativeRegExpMacroAssembler {
   Label exit_label_;
   Label check_preempt_label_;
   Label stack_overflow_label_;
+  Label internal_failure_label_;
 };
 
 // Set of non-volatile registers saved/restored by generated regexp code.
