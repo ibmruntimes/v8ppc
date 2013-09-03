@@ -40,11 +40,9 @@
 #include "ppc/constants-ppc.h"
 #include "ppc/simulator-ppc.h"
 
-#define INCLUDE_ARM
-
 #if defined(USE_SIMULATOR)
 
-// Only build the simulator if not compiling for real ARM hardware.
+// Only build the simulator if not compiling for real PPC hardware.
 namespace v8 {
 namespace internal {
 
@@ -866,13 +864,6 @@ Simulator::Simulator(Isolate* isolate) : isolate_(isolate) {
   for (int i = 0; i < kNumFPRs; i++) {
     fp_register[i] = 0.0;
   }
-  FPSCR_rounding_mode_ = RZ;
-
-  inv_op_vfp_flag_ = false;
-  div_zero_vfp_flag_ = false;
-  overflow_vfp_flag_ = false;
-  underflow_vfp_flag_ = false;
-  inexact_vfp_flag_ = false;
 
   // The sp is initialized to point to the bottom (high address) of the
   // allocated stack area. To be safe in potential stack underflows we leave
@@ -3153,5 +3144,4 @@ uintptr_t Simulator::PopAddress() {
 } }  // namespace v8::internal
 
 #endif  // USE_SIMULATOR
-#undef INCLUDE_ARM
 #endif  // V8_TARGET_ARCH_PPC

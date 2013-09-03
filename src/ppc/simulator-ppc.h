@@ -312,16 +312,6 @@ class Simulator {
 
   double fp_register[kNumFPRs];
 
-  // VFP rounding mode. See ARM DDI 0406B Page A2-29.
-  VFPRoundingMode FPSCR_rounding_mode_;
-
-  // VFP FP exception flags architecture state.
-  bool inv_op_vfp_flag_;
-  bool div_zero_vfp_flag_;
-  bool overflow_vfp_flag_;
-  bool underflow_vfp_flag_;
-  bool inexact_vfp_flag_;
-
   // Simulator support.
   char* stack_;
   bool pc_modified_;
