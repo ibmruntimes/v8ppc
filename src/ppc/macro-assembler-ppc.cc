@@ -100,6 +100,7 @@ int MacroAssembler::CallSize(Register target, Condition cond) {
 
 
 void MacroAssembler::Call(Register target, Condition cond) {
+  BlockTrampolinePoolScope block_trampoline_pool(this);
   Label start;
   bind(&start);
   ASSERT(cond == al);  // in prep of removal of condition
@@ -165,6 +166,7 @@ int MacroAssembler::CallSizeNotPredictableCodeSize(
 void MacroAssembler::Call(Address target,
                           RelocInfo::Mode rmode,
                           Condition cond) {
+  BlockTrampolinePoolScope block_trampoline_pool(this);
   ASSERT(cond == al);
   Label start;
   bind(&start);
@@ -200,6 +202,7 @@ void MacroAssembler::Call(Handle<Code> code,
                           RelocInfo::Mode rmode,
                           TypeFeedbackId ast_id,
                           Condition cond) {
+  BlockTrampolinePoolScope block_trampoline_pool(this);
   Label start;
   bind(&start);
   ASSERT(RelocInfo::IsCodeTarget(rmode));

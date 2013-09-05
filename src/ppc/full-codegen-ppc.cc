@@ -295,7 +295,7 @@ void FullCodeGenerator::Generate() {
       Label ok;
       __ LoadRoot(ip, Heap::kStackLimitRootIndex);
       __ cmpl(sp, ip);
-      __ bge(&ok);
+      __ bc_short(ge, &ok);
       StackCheckStub stub;
       __ CallStub(&stub);
       __ bind(&ok);
@@ -369,13 +369,13 @@ void FullCodeGenerator::EmitStackCheck(IterationStatement* stmt,
                    Max(1, distance / kBackEdgeDistanceUnit));
     }
     EmitProfilingCounterDecrement(weight);
-    __ bge(&ok);
+    __ bc_short(ge, &ok);
     InterruptStub stub;
     __ CallStub(&stub);
   } else {
     __ LoadRoot(ip, Heap::kStackLimitRootIndex);
     __ cmpl(sp, ip);
-    __ bge(&ok);
+    __ bc_short(ge, &ok);
     StackCheckStub stub;
     __ CallStub(&stub);
   }

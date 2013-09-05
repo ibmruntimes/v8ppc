@@ -707,8 +707,8 @@ class Assembler : public AssemblerBase {
     b(branch_offset(L, false), lk);
   }
 
-  void bc_helper(Condition cond, Label* L, CRegister cr = cr7,
-                 LKBit lk = LeaveLK)  {
+  void bc_short(Condition cond, Label* L, CRegister cr = cr7,
+                LKBit lk = LeaveLK)  {
     ASSERT(cond != al);
     ASSERT(cr.code() >= 0 && cr.code() <= 7);
 
@@ -747,13 +747,13 @@ class Assembler : public AssemblerBase {
 
     if ((L->is_bound() && is_near(L, cond)) ||
         !is_trampoline_emitted()) {
-      bc_helper(cond, L, cr, lk);
+      bc_short(cond, L, cr, lk);
       return;
     }
 
     Label skip;
     Condition neg_cond = NegateCondition(cond);
-    bc_helper(neg_cond, &skip, cr);
+    bc_short(neg_cond, &skip, cr);
     b(L, lk);
     bind(&skip);
   }
