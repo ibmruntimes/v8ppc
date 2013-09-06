@@ -267,7 +267,6 @@ void ElementsTransitionGenerator::GenerateDoubleToObject(
   //  -- r6    : target map, scratch for subsequent call
   //  -- r7    : scratch (elements)
   // -----------------------------------
-  // we also use ip as a scratch register
   Label entry, loop, convert_hole, gc_required, only_change_map;
 
   // Check for empty arrays, which only require a map transition and no changes
@@ -283,8 +282,8 @@ void ElementsTransitionGenerator::GenerateDoubleToObject(
 
   // Allocate new FixedArray.
   __ li(r3, Operand(FixedDoubleArray::kHeaderSize));
-  __ slwi(ip, r8, Operand(1));
-  __ add(r3, r3, ip);
+  __ slwi(r0, r8, Operand(1));
+  __ add(r3, r3, r0);
   __ AllocateInNewSpace(r3, r9, r10, r22, &gc_required, NO_ALLOCATION_FLAGS);
   // r9: destination FixedArray, not tagged as heap object
   // Set destination FixedDoubleArray's length and map.
@@ -321,24 +320,22 @@ void ElementsTransitionGenerator::GenerateDoubleToObject(
   __ lwz(r4, MemOperand(r7));
 #endif
   __ addi(r7, r7, Operand(8));
-  // ip: current element's upper 32 bit
+  // r4: current element's upper 32 bit
   // r7: address of next element's upper 32 bit
   __ Cmpi(r4, Operand(kHoleNanUpper32), r0);
   __ beq(&convert_hole);
 
   // Non-hole double, copy value into a heap number.
-  __ push(r4);
-  __ mr(r4, ip);
   __ AllocateHeapNumber(r5, r3, r4, r22, &gc_required);
-  __ mr(ip, r4);
-  __ pop(r4);
   // r5: new heap number
 #if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
   __ lwz(r3, MemOperand(r7, -8));
+  __ lwz(r4, MemOperand(r7, -4));
   __ stw(r3, FieldMemOperand(r5, HeapNumber::kValueOffset));
   __ stw(r4, FieldMemOperand(r5, HeapNumber::kValueOffset+4));
 #else
   __ lwz(r3, MemOperand(r7, -4));
+  __ lwz(r4, MemOperand(r7, -8));
   __ stw(r3, FieldMemOperand(r5, HeapNumber::kValueOffset+4));
   __ stw(r4, FieldMemOperand(r5, HeapNumber::kValueOffset));
 #endif
