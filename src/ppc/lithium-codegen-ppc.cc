@@ -3007,7 +3007,7 @@ void LCodeGen::DoLoadKeyedSpecializedArrayElement(
     switch (elements_kind) {
       case EXTERNAL_BYTE_ELEMENTS:
         if (key_is_constant) {
-          __ lbz(result, mem_operand);
+          __ LoadByte(result, mem_operand, r0);
         } else {
           __ lbzx(result, mem_operand);
         }
@@ -3016,14 +3016,14 @@ void LCodeGen::DoLoadKeyedSpecializedArrayElement(
       case EXTERNAL_PIXEL_ELEMENTS:
       case EXTERNAL_UNSIGNED_BYTE_ELEMENTS:
         if (key_is_constant) {
-          __ lbz(result, mem_operand);
+          __ LoadByte(result, mem_operand, r0);
         } else {
           __ lbzx(result, mem_operand);
         }
         break;
       case EXTERNAL_SHORT_ELEMENTS:
         if (key_is_constant) {
-          __ lhz(result, mem_operand);
+          __ LoadHalfWord(result, mem_operand, r0);
         } else {
           __ lhzx(result, mem_operand);
         }
@@ -3031,21 +3031,21 @@ void LCodeGen::DoLoadKeyedSpecializedArrayElement(
         break;
       case EXTERNAL_UNSIGNED_SHORT_ELEMENTS:
         if (key_is_constant) {
-          __ lhz(result, mem_operand);
+          __ LoadHalfWord(result, mem_operand, r0);
         } else {
           __ lhzx(result, mem_operand);
         }
         break;
       case EXTERNAL_INT_ELEMENTS:
         if (key_is_constant) {
-          __ lwz(result, mem_operand);
+          __ LoadWord(result, mem_operand, r0);
         } else {
           __ lwzx(result, mem_operand);
         }
         break;
       case EXTERNAL_UNSIGNED_INT_ELEMENTS:
         if (key_is_constant) {
-          __ lwz(result, mem_operand);
+          __ LoadWord(result, mem_operand, r0);
         } else {
           __ lwzx(result, mem_operand);
         }
@@ -4213,7 +4213,7 @@ void LCodeGen::DoStoreKeyedSpecializedArrayElement(
       case EXTERNAL_BYTE_ELEMENTS:
       case EXTERNAL_UNSIGNED_BYTE_ELEMENTS:
         if (key_is_constant) {
-          __ stb(value, mem_operand);
+          __ StoreByte(value, mem_operand, r0);
         } else {
           __ stbx(value, mem_operand);
         }
@@ -4221,7 +4221,7 @@ void LCodeGen::DoStoreKeyedSpecializedArrayElement(
       case EXTERNAL_SHORT_ELEMENTS:
       case EXTERNAL_UNSIGNED_SHORT_ELEMENTS:
         if (key_is_constant) {
-          __ sth(value, mem_operand);
+          __ StoreHalfWord(value, mem_operand, r0);
         } else {
           __ sthx(value, mem_operand);
         }
@@ -4229,7 +4229,7 @@ void LCodeGen::DoStoreKeyedSpecializedArrayElement(
       case EXTERNAL_INT_ELEMENTS:
       case EXTERNAL_UNSIGNED_INT_ELEMENTS:
         if (key_is_constant) {
-          __ stw(value, mem_operand);
+          __ StoreWord(value, mem_operand, r0);
         } else {
           __ stwx(value, mem_operand);
         }

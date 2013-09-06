@@ -464,6 +464,28 @@ class MacroAssembler: public Assembler {
                  Register scratch,
                  bool updateForm = false);
 
+  void LoadHalfWord(Register dst,
+                    const MemOperand& mem,
+                    Register scratch,
+                    bool updateForm = false);
+
+  void StoreHalfWord(Register src,
+                     const MemOperand& mem,
+                     Register scratch,
+                     bool updateForm = false);
+
+  void LoadByte(Register dst,
+                const MemOperand& mem,
+                Register scratch,
+                bool updateForm = false);
+
+  void StoreByte(Register src,
+                 const MemOperand& mem,
+                 Register scratch,
+                 bool updateForm = false);
+
+
+
   void Add(Register dst, Register src, uint32_t value, Register scratch);
   void Cmpi(Register src1, const Operand& src2, Register scratch,
             CRegister cr = cr7);
