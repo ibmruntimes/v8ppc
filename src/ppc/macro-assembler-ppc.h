@@ -303,8 +303,8 @@ class MacroAssembler: public Assembler {
   // Push two registers.  Pushes leftmost register first (to highest address).
   void Push(Register src1, Register src2, Condition cond = al) {
     ASSERT(!src1.is(src2));
-    stwu(src1, MemOperand(sp, -4));
-    stwu(src2, MemOperand(sp, -4));
+    StorePU(src1, MemOperand(sp, -4));
+    StorePU(src2, MemOperand(sp, -4));
   }
 
   // Push three registers.  Pushes leftmost register first (to highest address).
@@ -312,7 +312,7 @@ class MacroAssembler: public Assembler {
     ASSERT(!src1.is(src2));
     ASSERT(!src2.is(src3));
     ASSERT(!src1.is(src3));
-    stwu(src1, MemOperand(sp, -4));
+    StorePU(src1, MemOperand(sp, -4));
     Push(src2, src3, cond);
   }
 
@@ -329,7 +329,7 @@ class MacroAssembler: public Assembler {
     ASSERT(!src2.is(src4));
     ASSERT(!src3.is(src4));
 
-    stwu(src1, MemOperand(sp, -4));
+    StorePU(src1, MemOperand(sp, -4));
     Push(src2, src3, src4, cond);
   }
 
@@ -337,8 +337,8 @@ class MacroAssembler: public Assembler {
   void Pop(Register src1, Register src2, Condition cond = al) {
     ASSERT(!src1.is(src2));
     ASSERT(cond == al);
-    lwz(src2, MemOperand(sp, 0));
-    lwz(src1, MemOperand(sp, 4));
+    LoadP(src2, MemOperand(sp, 0));
+    LoadP(src1, MemOperand(sp, 4));
     addi(sp, sp, Operand(8));
   }
 
@@ -348,9 +348,9 @@ class MacroAssembler: public Assembler {
     ASSERT(!src2.is(src3));
     ASSERT(!src1.is(src3));
     ASSERT(cond == al);
-    lwz(src3, MemOperand(sp, 0));
-    lwz(src2, MemOperand(sp, 4));
-    lwz(src1, MemOperand(sp, 8));
+    LoadP(src3, MemOperand(sp, 0));
+    LoadP(src2, MemOperand(sp, 4));
+    LoadP(src1, MemOperand(sp, 8));
     addi(sp, sp, Operand(12));
   }
 
@@ -367,10 +367,10 @@ class MacroAssembler: public Assembler {
     ASSERT(!src2.is(src4));
     ASSERT(!src3.is(src4));
     ASSERT(cond == al);
-    lwz(src4, MemOperand(sp, 0));
-    lwz(src3, MemOperand(sp, 4));
-    lwz(src2, MemOperand(sp, 8));
-    lwz(src1, MemOperand(sp, 12));
+    LoadP(src4, MemOperand(sp, 0));
+    LoadP(src3, MemOperand(sp, 4));
+    LoadP(src2, MemOperand(sp, 8));
+    LoadP(src1, MemOperand(sp, 12));
     addi(sp, sp, Operand(16));
   }
 

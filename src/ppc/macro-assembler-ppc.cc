@@ -1155,28 +1155,28 @@ void MacroAssembler::PushTryHandler(StackHandler::Kind kind,
 
   // Link the current handler as the next handler.
   mov(r8, Operand(ExternalReference(Isolate::kHandlerAddress, isolate())));
-  lwz(r0, MemOperand(r8));
-  stwu(r0, MemOperand(sp, -StackHandlerConstants::kSize));
+  LoadP(r0, MemOperand(r8));
+  StorePU(r0, MemOperand(sp, -StackHandlerConstants::kSize));
   // Set this new handler as the current one.
-  stw(sp, MemOperand(r8));
+  StoreP(sp, MemOperand(r8));
 
   if (kind == StackHandler::JS_ENTRY) {
     li(r8, Operand(0, RelocInfo::NONE));  // NULL frame pointer.
-    stw(r8, MemOperand(sp, StackHandlerConstants::kFPOffset));
+    StoreP(r8, MemOperand(sp, StackHandlerConstants::kFPOffset));
     li(r8, Operand(Smi::FromInt(0)));    // Indicates no context.
-    stw(r8, MemOperand(sp, StackHandlerConstants::kContextOffset));
+    StoreP(r8, MemOperand(sp, StackHandlerConstants::kContextOffset));
   } else {
     // still not sure if fp is right
-    stw(fp, MemOperand(sp, StackHandlerConstants::kFPOffset));
-    stw(cp, MemOperand(sp, StackHandlerConstants::kContextOffset));
+    StoreP(fp, MemOperand(sp, StackHandlerConstants::kFPOffset));
+    StoreP(cp, MemOperand(sp, StackHandlerConstants::kContextOffset));
   }
   unsigned state =
       StackHandler::IndexField::encode(handler_index) |
       StackHandler::KindField::encode(kind);
   mov(r8, Operand(state));
-  stw(r8, MemOperand(sp, StackHandlerConstants::kStateOffset));
+  StoreP(r8, MemOperand(sp, StackHandlerConstants::kStateOffset));
   mov(r8, Operand(CodeObject()));
-  stw(r8, MemOperand(sp, StackHandlerConstants::kCodeOffset));
+  StoreP(r8, MemOperand(sp, StackHandlerConstants::kCodeOffset));
 }
 
 
@@ -1185,7 +1185,7 @@ void MacroAssembler::PopTryHandler() {
   pop(r4);
   mov(ip, Operand(ExternalReference(Isolate::kHandlerAddress, isolate())));
   addi(sp, sp, Operand(StackHandlerConstants::kSize - kPointerSize));
-  stw(r4, MemOperand(ip));
+  StoreP(r4, MemOperand(ip));
 }
 
 // PPC - make use of ip as a temporary register

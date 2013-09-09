@@ -1017,8 +1017,8 @@ void Assembler::std(Register rs, const MemOperand &src) {
 void Assembler::stdu(Register rs, const MemOperand &src) {
   ASSERT(!src.ra_.is(r0) && src.isPPCAddressing());
   // todo - need to do range check on offset
-  int offset = kImm16Mask & src.offset();
-  emit(STD | rs.code()*B21 | src.ra().code()*B16 | offset << 2 | 1);
+  int offset = kImm16Mask & (src.offset() << 2);
+  emit(STD | rs.code()*B21 | src.ra().code()*B16 | offset | 1);
 }
 #endif
 

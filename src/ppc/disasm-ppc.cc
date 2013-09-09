@@ -366,6 +366,14 @@ int Decoder::FormatOption(Instruction* instr, const char* format) {
        return 2;
      }
     }
+#if V8_TARGET_ARCH_PPC64
+    case 'd': {  // ds value for offset
+      int32_t value = (instr->Bits(15, 2) << 18) >> 18;
+      out_buffer_pos_ += OS::SNPrintF(out_buffer_ + out_buffer_pos_,
+                                      "%d", value);
+      return 1;
+    }
+#endif
     default: {
       UNREACHABLE();
       break;
@@ -1346,14 +1354,14 @@ int Decoder::InstructionDecode(byte* instr_ptr) {
     }
 #if V8_TARGET_ARCH_PPC64
     case LD: {
-      Format(instr, "ld      'rt, 'int16('ra)");
+      Format(instr, "ld      'rt, 'd('ra)");
       break;
     }
     case STD: {  // could be STD or STDU
       if (instr->Bit(0) == 0) {
-        Format(instr, "std     'rs, 'int16('ra)");
+        Format(instr, "std     'rs, 'd('ra)");
       } else {
-        Format(instr, "stdu    'rs, 'int16('ra)");
+        Format(instr, "stdu    'rs, 'd('ra)");
       }
       break;
     }

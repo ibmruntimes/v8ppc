@@ -2894,7 +2894,7 @@ void Simulator::InstructionDecode(Instruction* instr) {
       int ra = instr->RAValue();
       int rt = instr->RTValue();
       int64_t ra_val = ra == 0 ? 0 : get_register(ra);
-      int offset = SIGN_EXT_IMM16(instr->Bits(15, 0));
+      int offset = SIGN_EXT_IMM16(instr->Bits(15, 2));
       int64_t *result = ReadDW(ra_val+offset);
       set_register(rt, *result);
 #if 0  // temporary until we have LDU
