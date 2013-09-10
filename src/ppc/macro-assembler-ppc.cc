@@ -1057,14 +1057,14 @@ void MacroAssembler::InvokeFunction(Register fun,
   Register expected_reg = r5;
   Register code_reg = r6;
 
-  lwz(code_reg, FieldMemOperand(r4, JSFunction::kSharedFunctionInfoOffset));
-  lwz(cp, FieldMemOperand(r4, JSFunction::kContextOffset));
+  LoadP(code_reg, FieldMemOperand(r4, JSFunction::kSharedFunctionInfoOffset));
+  LoadP(cp, FieldMemOperand(r4, JSFunction::kContextOffset));
   lwz(expected_reg,
       FieldMemOperand(code_reg,
                       SharedFunctionInfo::kFormalParameterCountOffset));
   srawi(expected_reg, expected_reg, kSmiTagSize);
-  lwz(code_reg,
-      FieldMemOperand(r4, JSFunction::kCodeEntryOffset));
+  LoadP(code_reg,
+        FieldMemOperand(r4, JSFunction::kCodeEntryOffset));
 
   ParameterCount expected(expected_reg);
   InvokeCode(code_reg, expected, actual, flag, call_wrapper, call_kind);
@@ -3972,7 +3972,16 @@ void MacroAssembler::Xor(Register ra, Register rs, const Operand& rb,
 // Load a "pointer" sized value from the memory location
 void MacroAssembler::LoadP(Register dst, const MemOperand& mem) {
 #if V8_TARGET_ARCH_PPC64
-  ld(dst, mem);
+  int offset = mem.offset();
+  int misaligned = (offset & 3);
+  if (misaligned) {
+    // adjust base to conform to offset alignment requirements
+    ASSERT(!(dst.is(mem.ra()) || dst.is(r0)));
+    addi(dst, mem.ra(), Operand((offset & 3) - 4));
+    ld(dst, MemOperand(dst, (offset & ~3) + 4));
+  } else {
+    ld(dst, mem);
+  }
 #else
   lwz(dst, mem);
 #endif

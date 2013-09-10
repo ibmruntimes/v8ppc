@@ -368,7 +368,7 @@ int Decoder::FormatOption(Instruction* instr, const char* format) {
     }
 #if V8_TARGET_ARCH_PPC64
     case 'd': {  // ds value for offset
-      int32_t value = (instr->Bits(15, 2) << 18) >> 18;
+      int32_t value = SIGN_EXT_IMM16(instr->Bits(15, 0) & ~3);
       out_buffer_pos_ += OS::SNPrintF(out_buffer_ + out_buffer_pos_,
                                       "%d", value);
       return 1;

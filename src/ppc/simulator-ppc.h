@@ -164,8 +164,8 @@ class Simulator {
   }
 
   // Special case of set_register and get_register to access the raw PC value.
-  void set_pc(int32_t value);
-  int32_t get_pc() const;
+  void set_pc(intptr_t value);
+  intptr_t get_pc() const;
 
   // Accessor to the internal simulator stack area.
   uintptr_t StackLimit() const;
@@ -179,7 +179,7 @@ class Simulator {
   // V8 generally calls into generated JS code with 5 parameters and into
   // generated RegExp code with 7 parameters. This is a convenience function,
   // which sets up the simulator state and grabs the result on return.
-  int32_t Call(byte* entry, int argument_count, ...);
+  intptr_t Call(byte* entry, int argument_count, ...);
 
   // Push an address onto the JS stack.
   uintptr_t PushAddress(uintptr_t address);
@@ -244,25 +244,25 @@ class Simulator {
   void PrintStopInfo(uint32_t code);
 
   // Read and write memory.
-  inline uint8_t ReadBU(int32_t addr);
-  inline int8_t ReadB(int32_t addr);
-  inline void WriteB(int32_t addr, uint8_t value);
-  inline void WriteB(int32_t addr, int8_t value);
+  inline uint8_t ReadBU(intptr_t addr);
+  inline int8_t ReadB(intptr_t addr);
+  inline void WriteB(intptr_t addr, uint8_t value);
+  inline void WriteB(intptr_t addr, int8_t value);
 
-  inline uint16_t ReadHU(int32_t addr, Instruction* instr);
-  inline int16_t ReadH(int32_t addr, Instruction* instr);
+  inline uint16_t ReadHU(intptr_t addr, Instruction* instr);
+  inline int16_t ReadH(intptr_t addr, Instruction* instr);
   // Note: Overloaded on the sign of the value.
-  inline void WriteH(int32_t addr, uint16_t value, Instruction* instr);
-  inline void WriteH(int32_t addr, int16_t value, Instruction* instr);
+  inline void WriteH(intptr_t addr, uint16_t value, Instruction* instr);
+  inline void WriteH(intptr_t addr, int16_t value, Instruction* instr);
 
-  inline int ReadW(int32_t addr, Instruction* instr);
-  inline void WriteW(int32_t addr, int value, Instruction* instr);
+  inline int ReadW(intptr_t addr, Instruction* instr);
+  inline void WriteW(intptr_t addr, int value, Instruction* instr);
 
   intptr_t* ReadDW(intptr_t addr);
   void WriteDW(intptr_t addr, int64_t value);
 
   // PowerPC
-  void SetCR0(int32_t result, bool setSO = false);
+  void SetCR0(intptr_t result, bool setSO = false);
   void DecodeBranchConditional(Instruction* instr);
   void DecodeExt1(Instruction* instr);
   bool DecodeExt2_10bit(Instruction* instr);
@@ -288,7 +288,7 @@ class Simulator {
   // For use in calls that take double value arguments.
   void GetFpArgs(double* x, double* y);
   void GetFpArgs(double* x);
-  void GetFpArgs(double* x, int32_t* y);
+  void GetFpArgs(double* x, intptr_t* y);
   void SetFpResult(const double& result);
   void TrashCallerSaveRegisters();
 
@@ -305,9 +305,9 @@ class Simulator {
   intptr_t registers_[kNumGPRs];  // PowerPC
   int32_t condition_reg_;  // PowerPC
   int32_t fp_condition_reg_;  // PowerPC
-  int32_t special_reg_lr_;  // PowerPC
-  int32_t special_reg_pc_;  // PowerPC
-  int32_t special_reg_ctr_;  // PowerPC
+  intptr_t special_reg_lr_;  // PowerPC
+  intptr_t special_reg_pc_;  // PowerPC
+  intptr_t special_reg_ctr_;  // PowerPC
   int32_t special_reg_xer_;  // PowerPC
 
   double fp_register[kNumFPRs];

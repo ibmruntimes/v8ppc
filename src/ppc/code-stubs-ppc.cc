@@ -3863,14 +3863,14 @@ void JSEntryStub::GenerateBody(MacroAssembler* masm, bool is_construct) {
   Label invoke, handler_entry, exit;
 
   // Called from C
-#if defined(_AIX)
+#if defined(_AIX) || defined(V8_TARGET_ARCH_PPC64)
   __ function_descriptor();
 #endif
 
   // PPC LINUX ABI:
   // preserve LR in pre-reserved slot in caller's frame
   __ mflr(r0);
-  __ StoreP(r0, MemOperand(sp, 4));
+  __ StoreP(r0, MemOperand(sp, kPointerSize));
 
   // Save callee saved registers on the stack.
   __ MultiPush(kCalleeSaved);
@@ -3969,7 +3969,7 @@ void JSEntryStub::GenerateBody(MacroAssembler* masm, bool is_construct) {
     ExternalReference entry(Builtins::kJSEntryTrampoline, isolate);
     __ mov(ip, Operand(entry));
   }
-  __ lwz(ip, MemOperand(ip));  // deref address
+  __ LoadP(ip, MemOperand(ip));  // deref address
 
   // Branch and link to JSEntryTrampoline.
   // the address points to the start of the code object, skip the header

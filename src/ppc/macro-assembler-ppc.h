@@ -303,8 +303,8 @@ class MacroAssembler: public Assembler {
   // Push two registers.  Pushes leftmost register first (to highest address).
   void Push(Register src1, Register src2, Condition cond = al) {
     ASSERT(!src1.is(src2));
-    StorePU(src1, MemOperand(sp, -4));
-    StorePU(src2, MemOperand(sp, -4));
+    StorePU(src1, MemOperand(sp, -kPointerSize));
+    StorePU(src2, MemOperand(sp, -kPointerSize));
   }
 
   // Push three registers.  Pushes leftmost register first (to highest address).
@@ -312,7 +312,7 @@ class MacroAssembler: public Assembler {
     ASSERT(!src1.is(src2));
     ASSERT(!src2.is(src3));
     ASSERT(!src1.is(src3));
-    StorePU(src1, MemOperand(sp, -4));
+    StorePU(src1, MemOperand(sp, -kPointerSize));
     Push(src2, src3, cond);
   }
 
@@ -329,7 +329,7 @@ class MacroAssembler: public Assembler {
     ASSERT(!src2.is(src4));
     ASSERT(!src3.is(src4));
 
-    StorePU(src1, MemOperand(sp, -4));
+    StorePU(src1, MemOperand(sp, -kPointerSize));
     Push(src2, src3, src4, cond);
   }
 
@@ -338,8 +338,8 @@ class MacroAssembler: public Assembler {
     ASSERT(!src1.is(src2));
     ASSERT(cond == al);
     LoadP(src2, MemOperand(sp, 0));
-    LoadP(src1, MemOperand(sp, 4));
-    addi(sp, sp, Operand(8));
+    LoadP(src1, MemOperand(sp, kPointerSize));
+    addi(sp, sp, Operand(2 * kPointerSize));
   }
 
   // Pop three registers.  Pops rightmost register first (from lower address).
@@ -349,9 +349,9 @@ class MacroAssembler: public Assembler {
     ASSERT(!src1.is(src3));
     ASSERT(cond == al);
     LoadP(src3, MemOperand(sp, 0));
-    LoadP(src2, MemOperand(sp, 4));
-    LoadP(src1, MemOperand(sp, 8));
-    addi(sp, sp, Operand(12));
+    LoadP(src2, MemOperand(sp, kPointerSize));
+    LoadP(src1, MemOperand(sp, 2 * kPointerSize));
+    addi(sp, sp, Operand(3 * kPointerSize));
   }
 
   // Pop four registers.  Pops rightmost register first (from lower address).
@@ -368,10 +368,10 @@ class MacroAssembler: public Assembler {
     ASSERT(!src3.is(src4));
     ASSERT(cond == al);
     LoadP(src4, MemOperand(sp, 0));
-    LoadP(src3, MemOperand(sp, 4));
-    LoadP(src2, MemOperand(sp, 8));
-    LoadP(src1, MemOperand(sp, 12));
-    addi(sp, sp, Operand(16));
+    LoadP(src3, MemOperand(sp, kPointerSize));
+    LoadP(src2, MemOperand(sp, 2 * kPointerSize));
+    LoadP(src1, MemOperand(sp, 3 * kPointerSize));
+    addi(sp, sp, Operand(4 * kPointerSize));
   }
 
   // Push and pop the registers that can hold pointers, as defined by the

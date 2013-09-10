@@ -1002,22 +1002,26 @@ void Assembler::andc(Register dst, Register src1, Register src2, RCBit rc) {
 #if V8_TARGET_ARCH_PPC64
 // 64bit specific instructions
 void Assembler::ld(Register rd, const MemOperand &src) {
+  int offset = src.offset();
   ASSERT(!src.ra_.is(r0) && src.isPPCAddressing());
-  // todo - need to do range check on offset
-  emit(LD | rd.code()*B21 | src.ra().code()*B16 | src.offset() << 2);
+  ASSERT(!(offset & 3) && is_int16(offset));
+  offset = kImm16Mask & offset;
+  emit(LD | rd.code()*B21 | src.ra().code()*B16 | offset);
 }
 
 void Assembler::std(Register rs, const MemOperand &src) {
+  int offset = src.offset();
   ASSERT(!src.ra_.is(r0) && src.isPPCAddressing());
-  // todo - need to do range check on offset
-  int offset = kImm16Mask & src.offset();
-  emit(STD | rs.code()*B21 | src.ra().code()*B16 | offset << 2);
+  ASSERT(!(offset & 3) && is_int16(offset));
+  offset = kImm16Mask & offset;
+  emit(STD | rs.code()*B21 | src.ra().code()*B16 | offset);
 }
 
 void Assembler::stdu(Register rs, const MemOperand &src) {
+  int offset = src.offset();
   ASSERT(!src.ra_.is(r0) && src.isPPCAddressing());
-  // todo - need to do range check on offset
-  int offset = kImm16Mask & (src.offset() << 2);
+  ASSERT(!(offset & 3) && is_int16(offset));
+  offset = kImm16Mask & offset;
   emit(STD | rs.code()*B21 | src.ra().code()*B16 | offset | 1);
 }
 #endif
@@ -1042,9 +1046,13 @@ void Assembler::function_descriptor() {
   RecordRelocInfo(RelocInfo::INTERNAL_REFERENCE);
 #if V8_TARGET_ARCH_PPC64
   uint64_t value = reinterpret_cast<uint64_t>(pc_) + 3 * kPointerSize;
-  // Possible endian issue here
+#if __BYTE_ORDER == __LITTLE_ENDIAN
+  emit(static_cast<uint32_t>(value & 0xFFFFFFFF));
+  emit(static_cast<uint32_t>(value >> 32));
+#else
   emit(static_cast<uint32_t>(value >> 32));
   emit(static_cast<uint32_t>(value & 0xFFFFFFFF));
+#endif
   emit(static_cast<Instr>(0));
   emit(static_cast<Instr>(0));
   emit(static_cast<Instr>(0));

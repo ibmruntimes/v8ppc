@@ -1173,7 +1173,7 @@ static void Generate_JSEntryTrampolineHelper(MacroAssembler* masm,
     FrameScope scope(masm, StackFrame::INTERNAL);
 
     // Set up the context from the function argument.
-    __ lwz(cp, FieldMemOperand(r4, JSFunction::kContextOffset));
+    __ LoadP(cp, FieldMemOperand(r4, JSFunction::kContextOffset));
 
     __ InitializeRootRegister();
 
@@ -1191,9 +1191,9 @@ static void Generate_JSEntryTrampolineHelper(MacroAssembler* masm,
     // r5 points past last arg.
     __ b(&entry);
     __ bind(&loop);
-    __ lwz(r8, MemOperand(r7));  // read next parameter
+    __ LoadP(r8, MemOperand(r7));  // read next parameter
     __ addi(r7, r7, Operand(kPointerSize));
-    __ lwz(r0, MemOperand(r8));  // dereference handle
+    __ LoadP(r0, MemOperand(r8));  // dereference handle
     __ push(r0);  // push parameter
     __ bind(&entry);
     __ cmp(r7, r5);
@@ -1775,10 +1775,10 @@ static void LeaveArgumentsAdaptorFrame(MacroAssembler* masm) {
   // -----------------------------------
   // Get the number of arguments passed (as a smi), tear down the frame and
   // then tear down the parameters.
-  __ lwz(r4, MemOperand(fp, -3 * kPointerSize));
+  __ LoadP(r4, MemOperand(fp, -3 * kPointerSize));
   __ mr(sp, fp);
-  __ lwz(fp, MemOperand(sp));
-  __ lwz(r0, MemOperand(sp, kPointerSize));
+  __ LoadP(fp, MemOperand(sp));
+  __ LoadP(r0, MemOperand(sp, kPointerSize));
   __ mtlr(r0);
   __ slwi(r0, r4, Operand(kPointerSizeLog2 - kSmiTagSize));
   __ add(sp, sp, r0);
