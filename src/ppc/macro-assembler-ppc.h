@@ -50,7 +50,7 @@ inline MemOperand FieldMemOperand(Register object, int offset) {
 
 // Give alias names to registers
 const Register cp = { 20 };  // JavaScript context pointer
-const Register kRootRegister = { 13 };  // Roots array pointer.
+const Register kRootRegister = { 21 };  // Roots array pointer.
 
 // Flags used for the AllocateInNewSpace functions.
 enum AllocationFlags {

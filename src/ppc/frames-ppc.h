@@ -65,13 +65,12 @@ int JSCallerSavedCode(int n);
 // N.B.  Do not bother saving all non-volatiles -- only those that v8
 //       modifies without saving/restoring inline.
 const RegList kCalleeSaved =
-  1 <<  13 |  // r13 (root in Javascript code)
   1 <<  14 |  // r14 (argument passing in CEntryStub)
   1 <<  15 |  // r15 (argument passing in CEntryStub)
   1 <<  16 |  // r16 (argument passing in CEntryStub)
               // r17-r19 unused
   1 <<  20 |  // r20 (cp in Javascript code)
-              // r21 unused
+  1 <<  21 |  // r21 (roots array in Javascript code)
   1 <<  22 |  // r22 (r9 hack in Javascript code)
               // r23-r25 unused
   1 <<  26 |  // r26 (HandleScope logic in MacroAssembler)
