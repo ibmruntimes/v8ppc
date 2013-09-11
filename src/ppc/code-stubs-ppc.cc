@@ -3629,16 +3629,26 @@ void CEntryStub::GenerateCore(MacroAssembler* masm,
     __ stw(r4, MemOperand(r3));
   }
 
-#if defined(V8_HOST_ARCH_PPC) && \
-  !defined(_AIX) && !defined(V8_TARGET_ARCH_PPC64)
+#if defined(V8_HOST_ARCH_PPC)
+  // Call C built-in on native hardware.
+#if defined(V8_TARGET_ARCH_PPC64)
+  // r3 = argc << 32 (for alignment), r4 = argv
+  __ ShiftLeftImm(r3, r14, Operand(32));
+  __ mr(r4, r16);
+#elif defined(_AIX)  // 32-bit AIX
+  // r3 = argc, r4 = argv
+  __ mr(r3, r14);
+  __ mr(r4, r16);
+#else  // 32-bit linux
   // Use frame storage reserved by calling function
   // PPC passes C++ objects by reference not value
   // This builds an object in the stack frame
   __ stw(r14, MemOperand(sp, 2 * kPointerSize));
   __ stw(r16, MemOperand(sp, 3 * kPointerSize));
   __ addi(r3, sp, Operand(2 * kPointerSize));
-#else
-  // Call C built-in.
+#endif
+#else  // Simulated
+  // Call C built-in using simulator.
   // r3 = argc, r4 = argv
   __ mr(r3, r14);
   __ mr(r4, r16);
@@ -3662,13 +3672,20 @@ void CEntryStub::GenerateCore(MacroAssembler* masm,
 #endif
 
 
-// This likely needs to be changed for 64bit
-#if defined(V8_HOST_ARCH_PPC) && !defined(_AIX)
+#if defined(V8_HOST_ARCH_PPC) && \
+  !defined(_AIX) && !defined(V8_TARGET_ARCH_PPC64)
   // PPC passes C++ objects by reference not value
   // Thus argument 2 (r4) should be the isolate
   __ mov(r4, Operand(ExternalReference::isolate_address()));
 #else
   __ mov(r5, Operand(ExternalReference::isolate_address()));
+#endif
+
+#if defined(V8_HOST_ARCH_PPC) && \
+  (defined(_AIX) || defined(V8_TARGET_ARCH_PPC64))
+  // Native AIX/PPC64 Linux use a function descriptor.
+  __ LoadP(ToRegister(2), MemOperand(r15, kPointerSize));  // TOC
+  __ LoadP(r15, MemOperand(r15, 0));  // Instruction address
 #endif
 
   // To let the GC traverse the return address of the exit frames, we need to
@@ -3680,14 +3697,6 @@ void CEntryStub::GenerateCore(MacroAssembler* masm,
   // instructions so add another 4 to pc to get the return address.
   { Assembler::BlockTrampolinePoolScope block_trampoline_pool(masm);
     Label here;
-
-#if _AIX
-    // AIX uses a function descriptor. When calling C code be aware
-    // of this descriptor and pick up values from it
-    __ lwz(ToRegister(2), MemOperand(r15, 4));
-    __ lwz(r15, MemOperand(r15, 0));
-#endif
-
     __ b(&here, SetLK);
     __ bind(&here);
     __ mflr(r8);
