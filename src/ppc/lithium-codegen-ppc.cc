@@ -193,10 +193,10 @@ bool LCodeGen::GeneratePrologue() {
         int parameter_offset = StandardFrameConstants::kCallerSPOffset +
             (num_parameters - 1 - i) * kPointerSize;
         // Load parameter from stack.
-        __ lwz(r3, MemOperand(fp, parameter_offset));
+        __ LoadP(r3, MemOperand(fp, parameter_offset));
         // Store it in the context.
         MemOperand target = ContextOperand(cp, var->index());
-        __ stw(r3, target);
+        __ StoreP(r3, target);
         // Update the write barrier. This clobbers r6 and r3.
         __ RecordWriteContextSlot(
             cp, target.offset(), r3, r6, kLRHasBeenSaved, kSaveFPRegs);
@@ -3169,9 +3169,9 @@ void LCodeGen::DoWrapReceiver(LWrapReceiver* instr) {
   __ b(&receiver_ok);
 
   __ bind(&global_object);
-  __ lwz(receiver, GlobalObjectOperand());
-  __ lwz(receiver,
-         FieldMemOperand(receiver, JSGlobalObject::kGlobalReceiverOffset));
+  __ LoadP(receiver, GlobalObjectOperand());
+  __ LoadP(receiver,
+           FieldMemOperand(receiver, JSGlobalObject::kGlobalReceiverOffset));
   __ bind(&receiver_ok);
 }
 
@@ -3276,7 +3276,7 @@ void LCodeGen::DoDeclareGlobals(LDeclareGlobals* instr) {
 
 void LCodeGen::DoGlobalObject(LGlobalObject* instr) {
   Register result = ToRegister(instr->result());
-  __ lwz(result, ContextOperand(cp, Context::GLOBAL_OBJECT_INDEX));
+  __ LoadP(result, ContextOperand(cp, Context::GLOBAL_OBJECT_INDEX));
 }
 
 

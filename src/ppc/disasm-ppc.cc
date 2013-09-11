@@ -1022,6 +1022,14 @@ void Decoder::DecodeExt2(Instruction* instr) {
       Format(instr, "lhzux   'rt, 'ra, 'rb");
       break;
     }
+    case LDX: {
+      Format(instr, "ldx     'rt, 'ra, 'rb");
+      break;
+    }
+    case STDX: {
+      Format(instr, "stdx    'rt, 'ra, 'rb");
+      break;
+    }
     default: {
       Unknown(instr);  // not used by V8
     }
@@ -1167,7 +1175,7 @@ int Decoder::InstructionDecode(byte* instr_ptr) {
       break;
     }
     case CMPI: {
-      Format(instr, "cmpwi   'ra, 'int16");
+      Format(instr, "cmpi    'ra, 'int16");
       break;
     }
     case ADDIC: {

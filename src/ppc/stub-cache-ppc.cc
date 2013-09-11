@@ -306,18 +306,19 @@ void StubCompiler::GenerateLoadGlobalFunctionPrototype(MacroAssembler* masm,
   EMIT_STUB_MARKER(3);
 
   // Load the global or builtins object from the current context.
-  __ lwz(prototype,
-         MemOperand(cp, Context::SlotOffset(Context::GLOBAL_OBJECT_INDEX)));
+  __ LoadP(prototype,
+           MemOperand(cp, Context::SlotOffset(Context::GLOBAL_OBJECT_INDEX)));
   // Load the native context from the global or builtins object.
-  __ lwz(prototype,
-         FieldMemOperand(prototype, GlobalObject::kNativeContextOffset));
+  __ LoadP(prototype,
+           FieldMemOperand(prototype, GlobalObject::kNativeContextOffset));
   // Load the function from the native context.
-  __ LoadWord(prototype, MemOperand(prototype, Context::SlotOffset(index)), r0);
+  __ LoadP(prototype, MemOperand(prototype, Context::SlotOffset(index)), r0);
   // Load the initial map.  The global functions all have initial maps.
-  __ lwz(prototype,
-         FieldMemOperand(prototype, JSFunction::kPrototypeOrInitialMapOffset));
+  __ LoadP(prototype,
+           FieldMemOperand(prototype,
+                           JSFunction::kPrototypeOrInitialMapOffset));
   // Load the prototype from the initial map.
-  __ lwz(prototype, FieldMemOperand(prototype, Map::kPrototypeOffset));
+  __ LoadP(prototype, FieldMemOperand(prototype, Map::kPrototypeOffset));
 }
 
 
@@ -330,8 +331,8 @@ void StubCompiler::GenerateDirectLoadGlobalFunctionPrototype(
 
   Isolate* isolate = masm->isolate();
   // Check we're still in the same context.
-  __ lwz(prototype,
-         MemOperand(cp, Context::SlotOffset(Context::GLOBAL_OBJECT_INDEX)));
+  __ LoadP(prototype,
+           MemOperand(cp, Context::SlotOffset(Context::GLOBAL_OBJECT_INDEX)));
   __ Move(ip, isolate->global_object());
   __ cmp(prototype, ip);
   __ bne(miss);
@@ -341,7 +342,7 @@ void StubCompiler::GenerateDirectLoadGlobalFunctionPrototype(
   // Load its initial map. The global functions all have initial maps.
   __ Move(prototype, Handle<Map>(function->initial_map()));
   // Load the prototype from the initial map.
-  __ lwz(prototype, FieldMemOperand(prototype, Map::kPrototypeOffset));
+  __ LoadP(prototype, FieldMemOperand(prototype, Map::kPrototypeOffset));
 }
 
 

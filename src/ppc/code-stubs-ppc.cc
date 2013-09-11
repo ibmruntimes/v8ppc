@@ -118,10 +118,11 @@ void FastNewClosureStub::Generate(MacroAssembler* masm) {
 
   // Compute the function map in the current native context and set that
   // as the map of the allocated object.
-  __ lwz(r5, MemOperand(cp, Context::SlotOffset(Context::GLOBAL_OBJECT_INDEX)));
-  __ lwz(r5, FieldMemOperand(r5, GlobalObject::kNativeContextOffset));
-  __ lwz(r8, MemOperand(r5, Context::SlotOffset(map_index)));
-  __ stw(r8, FieldMemOperand(r3, HeapObject::kMapOffset));
+  __ LoadP(r5,
+           MemOperand(cp, Context::SlotOffset(Context::GLOBAL_OBJECT_INDEX)));
+  __ LoadP(r5, FieldMemOperand(r5, GlobalObject::kNativeContextOffset));
+  __ LoadP(r8, MemOperand(r5, Context::SlotOffset(map_index)));
+  __ StoreP(r8, FieldMemOperand(r3, HeapObject::kMapOffset));
 
   // Initialize the rest of the function. We don't have to update the
   // write barrier because the allocated object is in new space.
@@ -254,17 +255,19 @@ void FastNewContextStub::Generate(MacroAssembler* masm) {
   __ stw(r4, FieldMemOperand(r3, HeapObject::kMapOffset));
 
   // Set up the fixed slots, copy the global object from the previous context.
-  __ lwz(r5, MemOperand(cp, Context::SlotOffset(Context::GLOBAL_OBJECT_INDEX)));
+  __ LoadP(r5,
+           MemOperand(cp, Context::SlotOffset(Context::GLOBAL_OBJECT_INDEX)));
   __ li(r4, Operand(Smi::FromInt(0)));
-  __ stw(r6, MemOperand(r3, Context::SlotOffset(Context::CLOSURE_INDEX)));
-  __ stw(cp, MemOperand(r3, Context::SlotOffset(Context::PREVIOUS_INDEX)));
-  __ stw(r4, MemOperand(r3, Context::SlotOffset(Context::EXTENSION_INDEX)));
-  __ stw(r5, MemOperand(r3, Context::SlotOffset(Context::GLOBAL_OBJECT_INDEX)));
+  __ StoreP(r6, MemOperand(r3, Context::SlotOffset(Context::CLOSURE_INDEX)));
+  __ StoreP(cp, MemOperand(r3, Context::SlotOffset(Context::PREVIOUS_INDEX)));
+  __ StoreP(r4, MemOperand(r3, Context::SlotOffset(Context::EXTENSION_INDEX)));
+  __ StoreP(r5,
+            MemOperand(r3, Context::SlotOffset(Context::GLOBAL_OBJECT_INDEX)));
 
   // Initialize the rest of the slots to undefined.
   __ LoadRoot(r4, Heap::kUndefinedValueRootIndex);
   for (int i = Context::MIN_CONTEXT_SLOTS; i < length; i++) {
-    __ stw(r4, MemOperand(r3, Context::SlotOffset(i)));
+    __ StoreP(r4, MemOperand(r3, Context::SlotOffset(i)));
   }
 
   // Remove the on-stack argument and return.
@@ -292,16 +295,16 @@ void FastNewBlockContextStub::Generate(MacroAssembler* masm) {
                         r3, r4, r5, &gc, TAG_OBJECT);
 
   // Load the function from the stack.
-  __ lwz(r6, MemOperand(sp, 0));
+  __ LoadP(r6, MemOperand(sp, 0));
 
   // Load the serialized scope info from the stack.
-  __ lwz(r4, MemOperand(sp, 1 * kPointerSize));
+  __ LoadP(r4, MemOperand(sp, 1 * kPointerSize));
 
   // Set up the object header.
   __ LoadRoot(r5, Heap::kBlockContextMapRootIndex);
-  __ stw(r5, FieldMemOperand(r3, HeapObject::kMapOffset));
+  __ StoreP(r5, FieldMemOperand(r3, HeapObject::kMapOffset));
   __ li(r5, Operand(Smi::FromInt(length)));
-  __ stw(r5, FieldMemOperand(r3, FixedArray::kLengthOffset));
+  __ StoreP(r5, FieldMemOperand(r3, FixedArray::kLengthOffset));
 
   // If this block context is nested in the native context we get a smi
   // sentinel instead of a function. The block context should get the
@@ -314,22 +317,22 @@ void FastNewBlockContextStub::Generate(MacroAssembler* masm) {
     __ cmpi(r6, Operand::Zero());
     __ Assert(eq, message);
   }
-  __ lwz(r6, GlobalObjectOperand());
-  __ lwz(r6, FieldMemOperand(r6, GlobalObject::kNativeContextOffset));
-  __ lwz(r6, ContextOperand(r6, Context::CLOSURE_INDEX));
+  __ LoadP(r6, GlobalObjectOperand());
+  __ LoadP(r6, FieldMemOperand(r6, GlobalObject::kNativeContextOffset));
+  __ LoadP(r6, ContextOperand(r6, Context::CLOSURE_INDEX));
   __ bind(&after_sentinel);
 
   // Set up the fixed slots, copy the global object from the previous context.
-  __ lwz(r5, ContextOperand(cp, Context::GLOBAL_OBJECT_INDEX));
-  __ stw(r6, ContextOperand(r3, Context::CLOSURE_INDEX));
-  __ stw(cp, ContextOperand(r3, Context::PREVIOUS_INDEX));
-  __ stw(r4, ContextOperand(r3, Context::EXTENSION_INDEX));
-  __ stw(r5, ContextOperand(r3, Context::GLOBAL_OBJECT_INDEX));
+  __ LoadP(r5, ContextOperand(cp, Context::GLOBAL_OBJECT_INDEX));
+  __ StoreP(r6, ContextOperand(r3, Context::CLOSURE_INDEX));
+  __ StoreP(cp, ContextOperand(r3, Context::PREVIOUS_INDEX));
+  __ StoreP(r4, ContextOperand(r3, Context::EXTENSION_INDEX));
+  __ StoreP(r5, ContextOperand(r3, Context::GLOBAL_OBJECT_INDEX));
 
   // Initialize the rest of the slots to the hole value.
   __ LoadRoot(r4, Heap::kTheHoleValueRootIndex);
   for (int i = 0; i < slots_; i++) {
-    __ stw(r4, ContextOperand(r3, i + Context::MIN_CONTEXT_SLOTS));
+    __ StoreP(r4, ContextOperand(r3, i + Context::MIN_CONTEXT_SLOTS));
   }
 
   // Remove the on-stack argument and return.
@@ -3704,7 +3707,7 @@ void CEntryStub::GenerateCore(MacroAssembler* masm,
 // Constant used below is dependent on size of Call() macro instructions
     __ addi(r0, r8, Operand(20));
 
-    __ stw(r0, MemOperand(sp, 0));
+    __ StoreP(r0, MemOperand(sp, 0));
     __ Call(r15);
   }
 
@@ -3905,7 +3908,7 @@ void JSEntryStub::GenerateBody(MacroAssembler* masm, bool is_construct) {
   __ push(r0);
   // Save copies of the top frame descriptor on the stack.
   __ mov(r8, Operand(ExternalReference(Isolate::kCEntryFPAddress, isolate)));
-  __ lwz(r0, MemOperand(r8));
+  __ LoadP(r0, MemOperand(r8));
   __ push(r0);
 
   // Set up frame pointer for the frame to be pushed.
@@ -3915,10 +3918,10 @@ void JSEntryStub::GenerateBody(MacroAssembler* masm, bool is_construct) {
   Label non_outermost_js;
   ExternalReference js_entry_sp(Isolate::kJSEntrySPAddress, isolate);
   __ mov(r8, Operand(ExternalReference(js_entry_sp)));
-  __ lwz(r9, MemOperand(r8));
+  __ LoadP(r9, MemOperand(r8));
   __ cmpi(r9, Operand::Zero());
   __ bne(&non_outermost_js);
-  __ stw(fp, MemOperand(r8));
+  __ StoreP(fp, MemOperand(r8));
   __ mov(ip, Operand(Smi::FromInt(StackFrame::OUTERMOST_JSENTRY_FRAME)));
   Label cont;
   __ b(&cont);
@@ -3940,7 +3943,7 @@ void JSEntryStub::GenerateBody(MacroAssembler* masm, bool is_construct) {
   __ mov(ip, Operand(ExternalReference(Isolate::kPendingExceptionAddress,
                                        isolate)));
 
-  __ stw(r3, MemOperand(ip));
+  __ StoreP(r3, MemOperand(ip));
   __ mov(r3, Operand(reinterpret_cast<intptr_t>(Failure::Exception())));
   __ b(&exit);
 
@@ -3958,7 +3961,7 @@ void JSEntryStub::GenerateBody(MacroAssembler* masm, bool is_construct) {
   __ mov(r8, Operand(isolate->factory()->the_hole_value()));
   __ mov(ip, Operand(ExternalReference(Isolate::kPendingExceptionAddress,
                                        isolate)));
-  __ stw(r8, MemOperand(ip));
+  __ StoreP(r8, MemOperand(ip));
 
   // Invoke the function by calling through JS entry trampoline builtin.
   // Notice that we cannot store a reference to the trampoline code directly in
@@ -3997,14 +4000,14 @@ void JSEntryStub::GenerateBody(MacroAssembler* masm, bool is_construct) {
   __ bne(&non_outermost_js_2);
   __ mov(r9, Operand::Zero());
   __ mov(r8, Operand(ExternalReference(js_entry_sp)));
-  __ stw(r9, MemOperand(r8));
+  __ StoreP(r9, MemOperand(r8));
   __ bind(&non_outermost_js_2);
 
   // Restore the top frame descriptors from the stack.
   __ pop(r6);
   __ mov(ip,
          Operand(ExternalReference(Isolate::kCEntryFPAddress, isolate)));
-  __ stw(r6, MemOperand(ip));
+  __ StoreP(r6, MemOperand(ip));
 
   // Reset the stack to the callee saved registers.
   __ addi(sp, sp, Operand(-EntryFrameConstants::kCallerFPOffset));
@@ -4020,7 +4023,7 @@ void JSEntryStub::GenerateBody(MacroAssembler* masm, bool is_construct) {
 
   __ MultiPop(kCalleeSaved);
 
-  __ lwz(r0, MemOperand(sp, 4));
+  __ LoadP(r0, MemOperand(sp, kPointerSize));
   __ mtctr(r0);
   __ bcr();
 }
@@ -4569,9 +4572,10 @@ void ArgumentsAccessStub::GenerateNewStrict(MacroAssembler* masm) {
                                                      SIZE_IN_WORDS));
 
   // Get the arguments boilerplate from the current native context.
-  __ lwz(r7, MemOperand(cp, Context::SlotOffset(Context::GLOBAL_OBJECT_INDEX)));
-  __ lwz(r7, FieldMemOperand(r7, GlobalObject::kNativeContextOffset));
-  __ lwz(r7, MemOperand(r7, Context::SlotOffset(
+  __ LoadP(r7,
+           MemOperand(cp, Context::SlotOffset(Context::GLOBAL_OBJECT_INDEX)));
+  __ LoadP(r7, FieldMemOperand(r7, GlobalObject::kNativeContextOffset));
+  __ LoadP(r7, MemOperand(r7, Context::SlotOffset(
       Context::STRICT_MODE_ARGUMENTS_BOILERPLATE_INDEX)));
 
   // Copy the JS object part.
@@ -5114,22 +5118,22 @@ void RegExpConstructResultStub::Generate(MacroAssembler* masm) {
   // Set empty properties FixedArray.
   // Set elements to point to FixedArray allocated right after the JSArray.
   // Interleave operations for better latency.
-  __ lwz(r5, ContextOperand(cp, Context::GLOBAL_OBJECT_INDEX));
+  __ LoadP(r5, ContextOperand(cp, Context::GLOBAL_OBJECT_INDEX));
   __ addi(r6, r3, Operand(JSRegExpResult::kSize));
   __ mov(r7, Operand(factory->empty_fixed_array()));
-  __ lwz(r5, FieldMemOperand(r5, GlobalObject::kNativeContextOffset));
-  __ stw(r6, FieldMemOperand(r3, JSObject::kElementsOffset));
-  __ lwz(r5, ContextOperand(r5, Context::REGEXP_RESULT_MAP_INDEX));
-  __ stw(r7, FieldMemOperand(r3, JSObject::kPropertiesOffset));
-  __ stw(r5, FieldMemOperand(r3, HeapObject::kMapOffset));
+  __ LoadP(r5, FieldMemOperand(r5, GlobalObject::kNativeContextOffset));
+  __ StoreP(r6, FieldMemOperand(r3, JSObject::kElementsOffset));
+  __ LoadP(r5, ContextOperand(r5, Context::REGEXP_RESULT_MAP_INDEX));
+  __ StoreP(r7, FieldMemOperand(r3, JSObject::kPropertiesOffset));
+  __ StoreP(r5, FieldMemOperand(r3, HeapObject::kMapOffset));
 
   // Set input, index and length fields from arguments.
-  __ lwz(r4, MemOperand(sp, kPointerSize * 0));
-  __ lwz(r5, MemOperand(sp, kPointerSize * 1));
-  __ lwz(r9, MemOperand(sp, kPointerSize * 2));
-  __ stw(r4, FieldMemOperand(r3, JSRegExpResult::kInputOffset));
-  __ stw(r5, FieldMemOperand(r3, JSRegExpResult::kIndexOffset));
-  __ stw(r9, FieldMemOperand(r3, JSArray::kLengthOffset));
+  __ LoadP(r4, MemOperand(sp, kPointerSize * 0));
+  __ LoadP(r5, MemOperand(sp, kPointerSize * 1));
+  __ LoadP(r9, MemOperand(sp, kPointerSize * 2));
+  __ StoreP(r4, FieldMemOperand(r3, JSRegExpResult::kInputOffset));
+  __ StoreP(r5, FieldMemOperand(r3, JSRegExpResult::kIndexOffset));
+  __ StoreP(r9, FieldMemOperand(r3, JSArray::kLengthOffset));
 
   // Fill out the elements FixedArray.
   // r3: JSArray, tagged.
@@ -5177,35 +5181,38 @@ static void GenerateRecordCallTarget(MacroAssembler* masm) {
   // r4 : the function to call
   // r5 : cache cell for call target
   Label initialize, done;
+  const Register scratch = r6;
 
   ASSERT_EQ(*TypeFeedbackCells::MegamorphicSentinel(masm->isolate()),
             masm->isolate()->heap()->undefined_value());
   ASSERT_EQ(*TypeFeedbackCells::UninitializedSentinel(masm->isolate()),
             masm->isolate()->heap()->the_hole_value());
 
-  // Load the cache state into r6.
-  __ lwz(r6, FieldMemOperand(r5, JSGlobalPropertyCell::kValueOffset));
+  // Load the cache state into scratch.
+  __ LoadP(scratch, FieldMemOperand(r5, JSGlobalPropertyCell::kValueOffset));
 
   // A monomorphic cache hit or an already megamorphic state: invoke the
   // function without changing the state.
-  __ cmp(r6, r4);
+  __ cmp(scratch, r4);
   __ beq(&done);
-  __ CompareRoot(r6, Heap::kUndefinedValueRootIndex);
+  __ CompareRoot(scratch, Heap::kUndefinedValueRootIndex);
   __ beq(&done);
 
   // A monomorphic miss (i.e, here the cache is not uninitialized) goes
   // megamorphic.
-  __ CompareRoot(r6, Heap::kTheHoleValueRootIndex);
+  __ CompareRoot(scratch, Heap::kTheHoleValueRootIndex);
   __ beq(&initialize);
   // MegamorphicSentinel is an immortal immovable object (undefined) so no
   // write-barrier is needed.
   __ LoadRoot(ip, Heap::kUndefinedValueRootIndex);
-  __ stw(ip, FieldMemOperand(r5, JSGlobalPropertyCell::kValueOffset));
+  __ StoreP(ip, FieldMemOperand(r5, JSGlobalPropertyCell::kValueOffset),
+            scratch);
   __ b(&done);
 
   // An uninitialized cache is patched with the function.
   __ bind(&initialize);
-  __ stw(r4, FieldMemOperand(r5, JSGlobalPropertyCell::kValueOffset));
+  __ StoreP(r4, FieldMemOperand(r5, JSGlobalPropertyCell::kValueOffset),
+            scratch);
   // No need for a write barrier here - cells are rescanned.
 
   __ bind(&done);
@@ -5230,10 +5237,10 @@ void CallFunctionStub::Generate(MacroAssembler* masm) {
     __ CompareRoot(r7, Heap::kTheHoleValueRootIndex);
     __ bne(&call);
     // Patch the receiver on the stack with the global receiver object.
-    __ lwz(r6,
-           MemOperand(cp, Context::SlotOffset(Context::GLOBAL_OBJECT_INDEX)));
-    __ lwz(r6, FieldMemOperand(r6, GlobalObject::kGlobalReceiverOffset));
-    __ StoreWord(r6, MemOperand(sp, argc_ * kPointerSize), r0);
+    __ LoadP(r6,
+             MemOperand(cp, Context::SlotOffset(Context::GLOBAL_OBJECT_INDEX)));
+    __ LoadP(r6, FieldMemOperand(r6, GlobalObject::kGlobalReceiverOffset));
+    __ StoreP(r6, MemOperand(sp, argc_ * kPointerSize), r0);
     __ bind(&call);
   }
 
@@ -5326,8 +5333,8 @@ void CallConstructStub::Generate(MacroAssembler* masm) {
   }
 
   // Jump to the function-specific construct stub.
-  __ lwz(r5, FieldMemOperand(r4, JSFunction::kSharedFunctionInfoOffset));
-  __ lwz(r5, FieldMemOperand(r5, SharedFunctionInfo::kConstructStubOffset));
+  __ LoadP(r5, FieldMemOperand(r4, JSFunction::kSharedFunctionInfoOffset));
+  __ LoadP(r5, FieldMemOperand(r5, SharedFunctionInfo::kConstructStubOffset));
   __ addi(r0, r5, Operand(Code::kHeaderSize - kHeapObjectTag));
   __ Jump(r0);
 
@@ -6850,7 +6857,7 @@ void DirectCEntryStub::Generate(MacroAssembler* masm) {
   EMIT_STUB_MARKER(187);
   // Retrieve return address
   __ addi(sp, sp, Operand(2 * kPointerSize));
-  __ lwz(r0, MemOperand(sp, 0));
+  __ LoadP(r0, MemOperand(sp, 0));
   __ Jump(r0);
 }
 
@@ -6881,7 +6888,7 @@ void DirectCEntryStub::GenerateCall(MacroAssembler* masm,
   __ mflr(ip);
   __ mtlr(r0);  // from above, so we know where to return
   __ addi(ip, ip, Operand(7 * Assembler::kInstrSize));
-  __ stw(ip, MemOperand(sp, 0));
+  __ StoreP(ip, MemOperand(sp, 0));
   // PPC LINUX ABI:
   //
   // Create 2 extra slots on stack:

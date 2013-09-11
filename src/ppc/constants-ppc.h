@@ -204,6 +204,7 @@ enum OpcodeExt2 {
   NORX = 124 << 1,
   SUBFEX = 136 << 1,
   ADDEX = 138 << 1,
+  STDX = 149 << 1,
   STWX = 151 << 1,    // store word w/ x-form
   STWUX = 183 << 1,   // store word w/ update x-form
 /*

@@ -1019,12 +1019,26 @@ void Assembler::ld(Register rd, const MemOperand &src) {
   emit(LD | rd.code()*B21 | src.ra().code()*B16 | offset);
 }
 
+void Assembler::ldx(Register rd, const MemOperand &src) {
+  Register ra = src.ra();
+  Register rb = src.rb();
+  ASSERT(!ra.is(r0));
+  emit(EXT2 | LDX | rd.code()*B21 | ra.code()*B16 | rb.code()*B11);
+}
+
 void Assembler::std(Register rs, const MemOperand &src) {
   int offset = src.offset();
   ASSERT(!src.ra_.is(r0) && src.isPPCAddressing());
   ASSERT(!(offset & 3) && is_int16(offset));
   offset = kImm16Mask & offset;
   emit(STD | rs.code()*B21 | src.ra().code()*B16 | offset);
+}
+
+void Assembler::stdx(Register rs, const MemOperand &src) {
+  Register ra = src.ra();
+  Register rb = src.rb();
+  ASSERT(!ra.is(r0));
+  emit(EXT2 | STDX | rs.code()*B21 | ra.code()*B16 | rb.code()*B11);
 }
 
 void Assembler::stdu(Register rs, const MemOperand &src) {

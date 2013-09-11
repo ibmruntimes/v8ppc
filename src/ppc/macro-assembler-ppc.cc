@@ -339,8 +339,8 @@ void MacroAssembler::LoadRoot(Register destination,
                               Heap::RootListIndex index,
                               Condition cond) {
   ASSERT(cond == al);
-  LoadWord(destination, MemOperand(kRootRegister,
-           index << kPointerSizeLog2), r0);
+  LoadP(destination, MemOperand(kRootRegister,
+                                index << kPointerSizeLog2), r0);
 }
 
 
@@ -348,7 +348,7 @@ void MacroAssembler::StoreRoot(Register source,
                                Heap::RootListIndex index,
                                Condition cond) {
   ASSERT(cond == al);
-  StoreWord(source, MemOperand(kRootRegister, index << kPointerSizeLog2), r0);
+  StoreP(source, MemOperand(kRootRegister, index << kPointerSizeLog2), r0);
 }
 
 
@@ -689,8 +689,8 @@ void MacroAssembler::EnterFrame(StackFrame::Type type) {
 void MacroAssembler::LeaveFrame(StackFrame::Type type) {
   // clean things up but don't perform return
   mr(sp, fp);
-  lwz(fp, MemOperand(sp));
-  lwz(r0, MemOperand(sp, kPointerSize));
+  LoadP(fp, MemOperand(sp));
+  LoadP(r0, MemOperand(sp, kPointerSize));
   mtlr(r0);
   addi(sp, sp, Operand(2*kPointerSize));
 
@@ -756,16 +756,16 @@ void MacroAssembler::EnterExitFrame(bool save_doubles, int stack_space) {
 
   if (emit_debug_code()) {
     li(r8, Operand::Zero());
-    stw(r8, MemOperand(fp, ExitFrameConstants::kSPOffset));
+    StoreP(r8, MemOperand(fp, ExitFrameConstants::kSPOffset));
   }
   mov(r8, Operand(CodeObject()));
-  stw(r8, MemOperand(fp, ExitFrameConstants::kCodeOffset));
+  StoreP(r8, MemOperand(fp, ExitFrameConstants::kCodeOffset));
 
   // Save the frame pointer and the context in top.
   mov(r8, Operand(ExternalReference(Isolate::kCEntryFPAddress, isolate())));
-  stw(fp, MemOperand(r8));
+  StoreP(fp, MemOperand(r8));
   mov(r8, Operand(ExternalReference(Isolate::kContextAddress, isolate())));
-  stw(cp, MemOperand(r8));
+  StoreP(cp, MemOperand(r8));
 
   // Optionally save all double registers.
   if (save_doubles) {
@@ -790,7 +790,8 @@ void MacroAssembler::EnterExitFrame(bool save_doubles, int stack_space) {
     ClearRightImm(sp, sp, Operand(3));  // equivalent to &= -8
   }
 
-#if _AIX
+#if defined(V8_HOST_ARCH_PPC) && \
+  (defined(_AIX) || defined(V8_TARGET_ARCH_PPC64))
   // roohack - too much reserved space, need to fix for proper ABI
   sub(sp, sp, Operand(256));
 #endif
@@ -800,7 +801,7 @@ void MacroAssembler::EnterExitFrame(bool save_doubles, int stack_space) {
   // this is wrong on PowerPC, but we'll leave it for now
   // on PowerPC we might want to just have a SP + LR slot
   addi(r8, sp, Operand(kPointerSize));
-  stw(r8, MemOperand(fp, ExitFrameConstants::kSPOffset));
+  StoreP(r8, MemOperand(fp, ExitFrameConstants::kSPOffset));
 }
 
 
@@ -837,7 +838,8 @@ int MacroAssembler::ActivationFrameAlignment() {
 
 void MacroAssembler::LeaveExitFrame(bool save_doubles,
                                     Register argument_count) {
-#if _AIX
+#if defined(V8_HOST_ARCH_PPC) && \
+  (defined(_AIX) || defined(V8_TARGET_ARCH_PPC64))
   // roohack - too much reserved space, need to fix for proper ABI
   addi(sp, sp, Operand(256));
 #endif
@@ -856,13 +858,13 @@ void MacroAssembler::LeaveExitFrame(bool save_doubles,
   // Clear top frame.
   li(r6, Operand(0, RelocInfo::NONE));
   mov(ip, Operand(ExternalReference(Isolate::kCEntryFPAddress, isolate())));
-  stw(r6, MemOperand(ip));
+  StoreP(r6, MemOperand(ip));
 
   // Restore current context from top and clear it in debug mode.
   mov(ip, Operand(ExternalReference(Isolate::kContextAddress, isolate())));
-  lwz(cp, MemOperand(ip));
+  LoadP(cp, MemOperand(ip));
 #ifdef DEBUG
-  stw(r6, MemOperand(ip));
+  StoreP(r6, MemOperand(ip));
 #endif
 
   // Tear down the exit frame, pop the arguments, and return.
@@ -1540,8 +1542,8 @@ void MacroAssembler::AllocateInNewSpace(int object_size,
   // does not need ip for implicit literal generation.
   if ((flags & RESULT_CONTAINS_TOP) == 0) {
     // Load allocation top into result and allocation limit into ip.
-    lwz(result, MemOperand(topaddr));
-    lwz(ip, MemOperand(topaddr, kPointerSize));
+    LoadP(result, MemOperand(topaddr));
+    LoadP(ip, MemOperand(topaddr, kPointerSize));
   } else {
     if (emit_debug_code()) {
       // Assert that result actually contains top on entry. ip is used
@@ -1563,7 +1565,7 @@ void MacroAssembler::AllocateInNewSpace(int object_size,
   beq(gc_required, cr0);
   cmpl(scratch2, ip);
   bgt(gc_required);
-  stw(scratch2, MemOperand(topaddr));
+  StoreP(scratch2, MemOperand(topaddr));
 
   // Tag object if requested.
   if ((flags & TAG_OBJECT) != 0) {
@@ -1836,7 +1838,7 @@ void MacroAssembler::CompareObjectType(Register object,
                                        Register map,
                                        Register type_reg,
                                        InstanceType type) {
-  lwz(map, FieldMemOperand(object, HeapObject::kMapOffset));
+  LoadP(map, FieldMemOperand(object, HeapObject::kMapOffset));
   CompareInstanceType(map, type_reg, type);
 }
 
@@ -2667,12 +2669,13 @@ void MacroAssembler::InvokeBuiltin(Builtins::JavaScript id,
 void MacroAssembler::GetBuiltinFunction(Register target,
                                         Builtins::JavaScript id) {
   // Load the builtins object into target register.
-  lwz(target,
-      MemOperand(cp, Context::SlotOffset(Context::GLOBAL_OBJECT_INDEX)));
-  lwz(target, FieldMemOperand(target, GlobalObject::kBuiltinsOffset));
+  LoadP(target,
+        MemOperand(cp, Context::SlotOffset(Context::GLOBAL_OBJECT_INDEX)));
+  LoadP(target, FieldMemOperand(target, GlobalObject::kBuiltinsOffset));
   // Load the JavaScript builtin function from the builtins object.
-  LoadWord(target, FieldMemOperand(target,
-                   JSBuiltinsObject::OffsetOfFunctionWithId(id)), r0);
+  LoadP(target,
+        FieldMemOperand(target,
+                        JSBuiltinsObject::OffsetOfFunctionWithId(id)), r0);
 }
 
 
@@ -2803,9 +2806,9 @@ void MacroAssembler::Abort(const char* msg) {
 void MacroAssembler::LoadContext(Register dst, int context_chain_length) {
   if (context_chain_length > 0) {
     // Move up the chain of contexts to the context containing the slot.
-    lwz(dst, MemOperand(cp, Context::SlotOffset(Context::PREVIOUS_INDEX)));
+    LoadP(dst, MemOperand(cp, Context::SlotOffset(Context::PREVIOUS_INDEX)));
     for (int i = 1; i < context_chain_length; i++) {
-      lwz(dst, MemOperand(dst, Context::SlotOffset(Context::PREVIOUS_INDEX)));
+      LoadP(dst, MemOperand(dst, Context::SlotOffset(Context::PREVIOUS_INDEX)));
     }
   } else {
     // Slot is in the current function context.  Move it into the
@@ -2823,24 +2826,24 @@ void MacroAssembler::LoadTransitionedArrayMapConditional(
     Register scratch,
     Label* no_map_match) {
   // Load the global or builtins object from the current context.
-  lwz(scratch,
+  LoadP(scratch,
       MemOperand(cp, Context::SlotOffset(Context::GLOBAL_OBJECT_INDEX)));
-  lwz(scratch, FieldMemOperand(scratch, GlobalObject::kNativeContextOffset));
+  LoadP(scratch, FieldMemOperand(scratch, GlobalObject::kNativeContextOffset));
 
   // Check that the function's map is the same as the expected cached map.
-  lwz(scratch,
+  LoadP(scratch,
       MemOperand(scratch,
                  Context::SlotOffset(Context::JS_ARRAY_MAPS_INDEX)));
   size_t offset = expected_kind * kPointerSize +
       FixedArrayBase::kHeaderSize;
-  lwz(ip, FieldMemOperand(scratch, offset));
+  LoadP(ip, FieldMemOperand(scratch, offset));
   cmp(map_in_out, ip);
   bne(no_map_match);
 
   // Use the transitioned cached map.
   offset = transitioned_kind * kPointerSize +
       FixedArrayBase::kHeaderSize;
-  lwz(map_in_out, FieldMemOperand(scratch, offset));
+  LoadP(map_in_out, FieldMemOperand(scratch, offset));
 }
 
 
@@ -2849,8 +2852,8 @@ void MacroAssembler::LoadInitialArrayMap(
     Register map_out, bool can_have_holes) {
   ASSERT(!function_in.is(map_out));
   Label done;
-  lwz(map_out, FieldMemOperand(function_in,
-                               JSFunction::kPrototypeOrInitialMapOffset));
+  LoadP(map_out, FieldMemOperand(function_in,
+                                 JSFunction::kPrototypeOrInitialMapOffset));
   if (!FLAG_smi_only_arrays) {
     ElementsKind kind = can_have_holes ? FAST_HOLEY_ELEMENTS : FAST_ELEMENTS;
     LoadTransitionedArrayMapConditional(FAST_SMI_ELEMENTS,
@@ -2871,13 +2874,13 @@ void MacroAssembler::LoadInitialArrayMap(
 
 void MacroAssembler::LoadGlobalFunction(int index, Register function) {
   // Load the global or builtins object from the current context.
-  lwz(function,
-      MemOperand(cp, Context::SlotOffset(Context::GLOBAL_OBJECT_INDEX)));
+  LoadP(function,
+        MemOperand(cp, Context::SlotOffset(Context::GLOBAL_OBJECT_INDEX)));
   // Load the native context from the global or builtins object.
-  lwz(function, FieldMemOperand(function,
-                                GlobalObject::kNativeContextOffset));
+  LoadP(function, FieldMemOperand(function,
+                                  GlobalObject::kNativeContextOffset));
   // Load the function from the native context.
-  LoadWord(function, MemOperand(function, Context::SlotOffset(index)), r0);
+  LoadP(function, MemOperand(function, Context::SlotOffset(index)), r0);
 }
 
 
@@ -3394,13 +3397,14 @@ void MacroAssembler::CallCFunctionHelper(Register function,
   // Just call directly. The function called cannot cause a GC, or
   // allow preemption, so the return address in the link register
   // stays correct.
-#if _AIX
+#if defined(V8_HOST_ARCH_PPC) && \
+  (defined(_AIX) || defined(V8_TARGET_ARCH_PPC64))
   // roohack - too much reserved space, need to fix for proper ABI
   sub(sp, sp, Operand(256));
   // AIX uses a function descriptor. When calling C code be aware
   // of this descriptor and pick up values from it
-  lwz(ToRegister(2), MemOperand(function, 4));
-  lwz(function, MemOperand(function, 0));
+  LoadP(ToRegister(2), MemOperand(function, kPointerSize));
+  LoadP(function, MemOperand(function, 0));
 
   Call(function);
   // roohack - restore the reserved space
@@ -3970,38 +3974,73 @@ void MacroAssembler::Xor(Register ra, Register rs, const Operand& rb,
 }
 
 // Load a "pointer" sized value from the memory location
-void MacroAssembler::LoadP(Register dst, const MemOperand& mem) {
-#if V8_TARGET_ARCH_PPC64
+void MacroAssembler::LoadP(Register dst, const MemOperand& mem,
+                           Register scratch) {
   int offset = mem.offset();
-  int misaligned = (offset & 3);
-  if (misaligned) {
-    // adjust base to conform to offset alignment requirements
-    ASSERT(!(dst.is(mem.ra()) || dst.is(r0)));
-    addi(dst, mem.ra(), Operand((offset & 3) - 4));
-    ld(dst, MemOperand(dst, (offset & ~3) + 4));
-  } else {
-    ld(dst, mem);
-  }
+
+  if (!scratch.is(no_reg) && !is_int16(offset)) {
+    /* cannot use d-form */
+    LoadIntLiteral(scratch, offset);
+#if V8_TARGET_ARCH_PPC64
+    ldx(dst, MemOperand(mem.ra(), scratch));
 #else
-  lwz(dst, mem);
+    lwzx(dst, MemOperand(mem.ra(), scratch));
 #endif
+  } else {
+#if V8_TARGET_ARCH_PPC64
+    int misaligned = (offset & 3);
+    if (misaligned) {
+      // adjust base to conform to offset alignment requirements
+      // Todo: enhance to use scratch if dst is unsuitable
+      ASSERT(!dst.is(r0));
+      addi(dst, mem.ra(), Operand((offset & 3) - 4));
+      ld(dst, MemOperand(dst, (offset & ~3) + 4));
+    } else {
+      ld(dst, mem);
+    }
+#else
+    lwz(dst, mem);
+#endif
+  }
 }
 
 // Store a "pointer" sized value to the memory location
-void MacroAssembler::StoreP(Register dst, const MemOperand& mem) {
+void MacroAssembler::StoreP(Register src, const MemOperand& mem,
+                            Register scratch) {
+  int offset = mem.offset();
+
+  if (!scratch.is(no_reg) && !is_int16(offset)) {
+    /* cannot use d-form */
+    LoadIntLiteral(scratch, offset);
 #if V8_TARGET_ARCH_PPC64
-  std(dst, mem);
+    stdx(src, MemOperand(mem.ra(), scratch));
 #else
-  stw(dst, mem);
+    stwx(src, MemOperand(mem.ra(), scratch));
 #endif
+  } else {
+#if V8_TARGET_ARCH_PPC64
+    int misaligned = (offset & 3);
+    if (misaligned) {
+      // adjust base to conform to offset alignment requirements
+      // a suitable scratch is required here
+      ASSERT(!scratch.is(no_reg) && !scratch.is(r0));
+      addi(scratch, mem.ra(), Operand((offset & 3) - 4));
+      std(src, MemOperand(scratch, (offset & ~3) + 4));
+    } else {
+      std(src, mem);
+    }
+#else
+    stw(src, mem);
+#endif
+  }
 }
 
 // Store a "pointer" sized value to the memory location with update
-void MacroAssembler::StorePU(Register dst, const MemOperand& mem) {
+void MacroAssembler::StorePU(Register src, const MemOperand& mem) {
 #if V8_TARGET_ARCH_PPC64
-  stdu(dst, mem);
+  stdu(src, mem);
 #else
-  stwu(dst, mem);
+  stwu(src, mem);
 #endif
 }
 

@@ -871,7 +871,9 @@ class Assembler : public AssemblerBase {
 
 #if V8_TARGET_ARCH_PPC64
   void ld(Register rd, const MemOperand &src);
+  void ldx(Register rd, const MemOperand &src);
   void std(Register rs, const MemOperand &src);
+  void stdx(Register rs, const MemOperand &src);
   void stdu(Register rs, const MemOperand &src);
   void rldic(Register dst, Register src, int sh, int mb, RCBit r = LeaveRC);
   void rldicl(Register dst, Register src, int sh, int mb, RCBit r = LeaveRC);

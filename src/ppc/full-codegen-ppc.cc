@@ -217,10 +217,10 @@ void FullCodeGenerator::Generate() {
         int parameter_offset = StandardFrameConstants::kCallerSPOffset +
             (num_parameters - 1 - i) * kPointerSize;
         // Load parameter from stack.
-        __ LoadWord(r3, MemOperand(fp, parameter_offset), r0);
+        __ LoadP(r3, MemOperand(fp, parameter_offset), r0);
         // Store it in the context.
         MemOperand target = ContextOperand(cp, var->index());
-        __ StoreWord(r3, target, r0);
+        __ StoreP(r3, target, r0);
 
         // Update the write barrier.
         __ RecordWriteContextSlot(
@@ -426,7 +426,7 @@ void FullCodeGenerator::EmitReturnSequence() {
       __ bge(&ok);
       __ push(r3);
       if (info_->ShouldSelfOptimize() && FLAG_direct_self_opt) {
-        __ lwz(r5, MemOperand(fp, JavaScriptFrameConstants::kFunctionOffset));
+        __ LoadP(r5, MemOperand(fp, JavaScriptFrameConstants::kFunctionOffset));
         __ push(r5);
         __ CallRuntime(Runtime::kOptimizeFunctionOnNextCall, 1);
       } else {
@@ -452,8 +452,8 @@ void FullCodeGenerator::EmitReturnSequence() {
       CodeGenerator::RecordPositions(masm_, function()->end_position() - 1);
       __ RecordJSReturn();
       masm_->mr(sp, fp);
-      masm_->lwz(fp, MemOperand(sp));
-      masm_->lwz(r0, MemOperand(sp, kPointerSize));
+      masm_->LoadP(fp, MemOperand(sp));
+      masm_->LoadP(r0, MemOperand(sp, kPointerSize));
       masm_->mtlr(r0);
       masm_->Add(sp, sp, (uint32_t)(sp_delta + (2 * kPointerSize)), r0);
       masm_->blr();
@@ -802,7 +802,7 @@ void FullCodeGenerator::EmitDebugCheckDeclarationContext(Variable* variable) {
   ASSERT_EQ(0, scope()->ContextChainLength(variable->scope()));
   if (generate_debug_code_) {
     // Check that we're not inside a with or catch context.
-    __ lwz(r4, FieldMemOperand(cp, HeapObject::kMapOffset));
+    __ LoadP(r4, FieldMemOperand(cp, HeapObject::kMapOffset));
     __ CompareRoot(r4, Heap::kWithContextMapRootIndex);
     __ Check(ne, "Declaration in with context.");
     __ CompareRoot(r4, Heap::kCatchContextMapRootIndex);
@@ -844,7 +844,7 @@ void FullCodeGenerator::VisitVariableDeclaration(
         Comment cmnt(masm_, "[ VariableDeclaration");
         EmitDebugCheckDeclarationContext(variable);
         __ LoadRoot(ip, Heap::kTheHoleValueRootIndex);
-        __ StoreWord(ip, ContextOperand(cp, variable->index()), r0);
+        __ StoreP(ip, ContextOperand(cp, variable->index()), r0);
         // No write barrier since the_hole_value is in old space.
         PrepareForBailoutForId(proxy->id(), NO_REGISTERS);
       }
@@ -904,8 +904,8 @@ void FullCodeGenerator::VisitFunctionDeclaration(
       Comment cmnt(masm_, "[ FunctionDeclaration");
       EmitDebugCheckDeclarationContext(variable);
       VisitForAccumulatorValue(declaration->fun());
-      __ StoreWord(result_register(),
-                   ContextOperand(cp, variable->index()), r0);
+      __ StoreP(result_register(),
+                ContextOperand(cp, variable->index()), r0);
       int offset = Context::SlotOffset(variable->index());
       // We know that we have written a function, which is not a smi.
       __ RecordWriteContextSlot(cp,
@@ -954,7 +954,7 @@ void FullCodeGenerator::VisitModuleDeclaration(ModuleDeclaration* declaration) {
       Comment cmnt(masm_, "[ ModuleDeclaration");
       EmitDebugCheckDeclarationContext(variable);
       __ mov(r4, Operand(instance));
-      __ StoreWord(r4, ContextOperand(cp, variable->index()), r0);
+      __ StoreP(r4, ContextOperand(cp, variable->index()), r0);
       Visit(declaration->module());
       break;
     }
@@ -1365,7 +1365,7 @@ void FullCodeGenerator::EmitLoadGlobalCheckExtensions(Variable* var,
     __ bind(&fast);
   }
 
-  __ lwz(r3, GlobalObjectOperand());
+  __ LoadP(r3, GlobalObjectOperand());
   __ mov(r5, Operand(var->name()));
   RelocInfo::Mode mode = (typeof_state == INSIDE_TYPEOF)
       ? RelocInfo::CODE_TARGET
@@ -1456,7 +1456,7 @@ void FullCodeGenerator::EmitVariableLoad(VariableProxy* proxy) {
       Comment cmnt(masm_, "Global variable");
       // Use inline caching. Variable name is passed in r5 and the global
       // object (receiver) in r3.
-      __ lwz(r3, GlobalObjectOperand());
+      __ LoadP(r3, GlobalObjectOperand());
       __ mov(r5, Operand(var->name()));
       Handle<Code> ic = isolate()->builtins()->LoadIC_Initialize();
       CallIC(ic, RelocInfo::CODE_TARGET_CONTEXT);
@@ -2160,7 +2160,7 @@ void FullCodeGenerator::EmitVariableAssignment(Variable* var,
   if (var->IsUnallocated()) {
     // Global var, const, or let.
     __ mov(r5, Operand(var->name()));
-    __ lwz(r4, GlobalObjectOperand());
+    __ LoadP(r4, GlobalObjectOperand());
     Handle<Code> ic = is_classic_mode()
         ? isolate()->builtins()->StoreIC_Initialize()
         : isolate()->builtins()->StoreIC_Initialize_Strict();
@@ -2471,28 +2471,28 @@ void FullCodeGenerator::VisitCall(Call* expr) {
 
       // Push a copy of the function (found below the arguments) and
       // resolve eval.
-      __ LoadWord(r4, MemOperand(sp, (arg_count + 1) * kPointerSize), r0);
+      __ LoadP(r4, MemOperand(sp, (arg_count + 1) * kPointerSize), r0);
       __ push(r4);
       EmitResolvePossiblyDirectEval(arg_count);
 
       // The runtime call returns a pair of values in r3 (function) and
       // r4 (receiver). Touch up the stack with the right values.
-      __ StoreWord(r3, MemOperand(sp, (arg_count + 1) * kPointerSize), r0);
-      __ StoreWord(r4, MemOperand(sp, arg_count * kPointerSize), r0);
+      __ StoreP(r3, MemOperand(sp, (arg_count + 1) * kPointerSize), r0);
+      __ StoreP(r4, MemOperand(sp, arg_count * kPointerSize), r0);
     }
 
     // Record source position for debugger.
     SetSourcePosition(expr->position());
     CallFunctionStub stub(arg_count, RECEIVER_MIGHT_BE_IMPLICIT);
-    __ LoadWord(r4, MemOperand(sp, (arg_count + 1) * kPointerSize), r0);
+    __ LoadP(r4, MemOperand(sp, (arg_count + 1) * kPointerSize), r0);
     __ CallStub(&stub);
     RecordJSReturnSite(expr);
     // Restore context register.
-    __ lwz(cp, MemOperand(fp, StandardFrameConstants::kContextOffset));
+    __ LoadP(cp, MemOperand(fp, StandardFrameConstants::kContextOffset));
     context()->DropAndPlug(1, r3);
   } else if (proxy != NULL && proxy->var()->IsUnallocated()) {
     // Push global object as receiver for the call IC.
-    __ lwz(r3, GlobalObjectOperand());
+    __ LoadP(r3, GlobalObjectOperand());
     __ push(r3);
     EmitCallWithIC(expr, proxy->name(), RelocInfo::CODE_TARGET_CONTEXT);
   } else if (proxy != NULL && proxy->var()->IsLookupSlot()) {
@@ -2551,8 +2551,8 @@ void FullCodeGenerator::VisitCall(Call* expr) {
       VisitForStackValue(callee);
     }
     // Load global receiver object.
-    __ lwz(r4, GlobalObjectOperand());
-    __ lwz(r4, FieldMemOperand(r4, GlobalObject::kGlobalReceiverOffset));
+    __ LoadP(r4, GlobalObjectOperand());
+    __ LoadP(r4, FieldMemOperand(r4, GlobalObject::kGlobalReceiverOffset));
     __ push(r4);
     // Emit function call.
     EmitCallWithStub(expr, NO_CALL_FUNCTION_FLAGS);
@@ -2590,7 +2590,7 @@ void FullCodeGenerator::VisitCallNew(CallNew* expr) {
 
   // Load function and argument count into r4 and r3.
   __ mov(r3, Operand(arg_count));
-  __ LoadWord(r4, MemOperand(sp, arg_count * kPointerSize), r0);
+  __ LoadP(r4, MemOperand(sp, arg_count * kPointerSize), r0);
 
   // Record call targets in unoptimized code.
   Handle<Object> uninitialized =
@@ -2812,12 +2812,13 @@ void FullCodeGenerator::EmitIsStringWrapperSafeForDefaultValueOf(
   __ bind(&done);
   // If a valueOf property is not found on the object check that its
   // prototype is the un-modified String prototype. If not result is false.
-  __ lwz(r5, FieldMemOperand(r4, Map::kPrototypeOffset));
+  __ LoadP(r5, FieldMemOperand(r4, Map::kPrototypeOffset));
   __ JumpIfSmi(r5, if_false);
-  __ lwz(r5, FieldMemOperand(r5, HeapObject::kMapOffset));
-  __ lwz(r6, ContextOperand(cp, Context::GLOBAL_OBJECT_INDEX));
-  __ lwz(r6, FieldMemOperand(r6, GlobalObject::kNativeContextOffset));
-  __ lwz(r6, ContextOperand(r6, Context::STRING_FUNCTION_PROTOTYPE_MAP_INDEX));
+  __ LoadP(r5, FieldMemOperand(r5, HeapObject::kMapOffset));
+  __ LoadP(r6, ContextOperand(cp, Context::GLOBAL_OBJECT_INDEX));
+  __ LoadP(r6, FieldMemOperand(r6, GlobalObject::kNativeContextOffset));
+  __ LoadP(r6, ContextOperand(r6,
+                              Context::STRING_FUNCTION_PROTOTYPE_MAP_INDEX));
   __ cmp(r5, r6);
   __ bne(if_false);
 
@@ -3567,11 +3568,12 @@ void FullCodeGenerator::EmitGetFromCache(CallRuntime* expr) {
 
   Register key = r3;
   Register cache = r4;
-  __ lwz(cache, ContextOperand(cp, Context::GLOBAL_OBJECT_INDEX));
-  __ lwz(cache, FieldMemOperand(cache, GlobalObject::kNativeContextOffset));
-  __ lwz(cache, ContextOperand(cache, Context::JSFUNCTION_RESULT_CACHES_INDEX));
-  __ LoadWord(cache,
-         FieldMemOperand(cache, FixedArray::OffsetOfElementAt(cache_id)), r0);
+  __ LoadP(cache, ContextOperand(cp, Context::GLOBAL_OBJECT_INDEX));
+  __ LoadP(cache, FieldMemOperand(cache, GlobalObject::kNativeContextOffset));
+  __ LoadP(cache,
+           ContextOperand(cache, Context::JSFUNCTION_RESULT_CACHES_INDEX));
+  __ LoadP(cache,
+           FieldMemOperand(cache, FixedArray::OffsetOfElementAt(cache_id)), r0);
 
   Label done, not_found;
   // tmp now holds finger offset as a smi.
@@ -3943,8 +3945,8 @@ void FullCodeGenerator::VisitCallRuntime(CallRuntime* expr) {
 
   if (expr->is_jsruntime()) {
     // Prepare for calling JS runtime function.
-    __ lwz(r3, GlobalObjectOperand());
-    __ lwz(r3, FieldMemOperand(r3, GlobalObject::kBuiltinsOffset));
+    __ LoadP(r3, GlobalObjectOperand());
+    __ LoadP(r3, FieldMemOperand(r3, GlobalObject::kBuiltinsOffset));
     __ push(r3);
   }
 
@@ -3962,7 +3964,7 @@ void FullCodeGenerator::VisitCallRuntime(CallRuntime* expr) {
         isolate()->stub_cache()->ComputeCallInitialize(arg_count, mode);
     CallIC(ic, mode, expr->CallRuntimeFeedbackId());
     // Restore context register.
-    __ lwz(cp, MemOperand(fp, StandardFrameConstants::kContextOffset));
+    __ LoadP(cp, MemOperand(fp, StandardFrameConstants::kContextOffset));
   } else {
     // Call the C runtime function.
     __ CallRuntime(expr->function(), arg_count);
@@ -3994,7 +3996,7 @@ void FullCodeGenerator::VisitUnaryOperation(UnaryOperation* expr) {
         // but "delete this" is allowed.
         ASSERT(language_mode() == CLASSIC_MODE || var->is_this());
         if (var->IsUnallocated()) {
-          __ lwz(r5, GlobalObjectOperand());
+          __ LoadP(r5, GlobalObjectOperand());
           __ mov(r4, Operand(var->name()));
           __ li(r3, Operand(Smi::FromInt(kNonStrictMode)));
           __ Push(r5, r4, r3);
@@ -4302,7 +4304,7 @@ void FullCodeGenerator::VisitForTypeofValue(Expression* expr) {
   VariableProxy* proxy = expr->AsVariableProxy();
   if (proxy != NULL && proxy->var()->IsUnallocated()) {
     Comment cmnt(masm_, "Global variable");
-    __ lwz(r3, GlobalObjectOperand());
+    __ LoadP(r3, GlobalObjectOperand());
     __ mov(r5, Operand(proxy->name()));
     Handle<Code> ic = isolate()->builtins()->LoadIC_Initialize();
     // Use a regular load, not a contextual load, to avoid a reference
@@ -4568,12 +4570,12 @@ Register FullCodeGenerator::context_register() {
 
 void FullCodeGenerator::StoreToFrameField(int frame_offset, Register value) {
   ASSERT_EQ(static_cast<int>(POINTER_SIZE_ALIGN(frame_offset)), frame_offset);
-  __ StoreWord(value, MemOperand(fp, frame_offset), r0);
+  __ StoreP(value, MemOperand(fp, frame_offset), r0);
 }
 
 
 void FullCodeGenerator::LoadContextField(Register dst, int context_index) {
-  __ LoadWord(dst, ContextOperand(cp, context_index), r0);
+  __ LoadP(dst, ContextOperand(cp, context_index), r0);
 }
 
 
@@ -4591,10 +4593,10 @@ void FullCodeGenerator::PushFunctionArgumentForContextAllocation() {
     // Contexts created by a call to eval have the same closure as the
     // context calling eval, not the anonymous closure containing the eval
     // code.  Fetch it from the context.
-    __ lwz(ip, ContextOperand(cp, Context::CLOSURE_INDEX));
+    __ LoadP(ip, ContextOperand(cp, Context::CLOSURE_INDEX));
   } else {
     ASSERT(declaration_scope->is_function_scope());
-    __ lwz(ip, MemOperand(fp, JavaScriptFrameConstants::kFunctionOffset));
+    __ LoadP(ip, MemOperand(fp, JavaScriptFrameConstants::kFunctionOffset));
   }
   __ push(ip);
 }

@@ -503,8 +503,8 @@ class MacroAssembler: public Assembler {
   void ResetRoundingMode();
 
   // These exist to provide portability between 32 and 64bit
-  void LoadP(Register dst, const MemOperand& mem);
-  void StoreP(Register dst, const MemOperand& mem);
+  void LoadP(Register dst, const MemOperand& mem, Register scratch = no_reg);
+  void StoreP(Register dst, const MemOperand& mem, Register scratch = no_reg);
   void StorePU(Register dst, const MemOperand& mem);
 
   // ---------------------------------------------------------------------------
