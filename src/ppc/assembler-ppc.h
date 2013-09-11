@@ -873,6 +873,15 @@ class Assembler : public AssemblerBase {
   void ld(Register rd, const MemOperand &src);
   void std(Register rs, const MemOperand &src);
   void stdu(Register rs, const MemOperand &src);
+  void rldic(Register dst, Register src, int sh, int mb, RCBit r = LeaveRC);
+  void rldicl(Register dst, Register src, int sh, int mb, RCBit r = LeaveRC);
+  void rldicr(Register dst, Register src, int sh, int me, RCBit r = LeaveRC);
+  void sldi(Register dst, Register src, const Operand& val, RCBit rc = LeaveRC);
+  void srdi(Register dst, Register src, const Operand& val, RCBit rc = LeaveRC);
+  void clrrdi(Register dst, Register src, const Operand& val,
+              RCBit rc = LeaveRC);
+  void clrldi(Register dst, Register src, const Operand& val,
+              RCBit rc = LeaveRC);
 #endif
 
   void rlwinm(Register ra, Register rs, int sh, int mb, int me,
@@ -889,8 +898,6 @@ class Assembler : public AssemblerBase {
   void srw(Register dst, Register src1, Register src2, RCBit r = LeaveRC);
   void slw(Register dst, Register src1, Register src2, RCBit r = LeaveRC);
   void sraw(Register dst, Register src1, Register src2, RCBit r = LeaveRC);
-  // 64bit PowerPC
-  void rldicl(Register dst, Register src, int sh, int mb, RCBit r = LeaveRC);
 
   void cntlzw_(Register dst, Register src, RCBit rc = LeaveRC);
   // end PowerPC
@@ -1307,6 +1314,8 @@ class Assembler : public AssemblerBase {
   void x_form(Instr instr, Register ra, Register rs, Register rb, RCBit r);
   void xo_form(Instr instr, Register rt, Register ra, Register rb,
                OEBit o, RCBit r);
+  void md_form(Instr instr, Register ra, Register rs, int shift, int maskbit,
+               RCBit r);
 
   // Labels
   void print(Label* L);

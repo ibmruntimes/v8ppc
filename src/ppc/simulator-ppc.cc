@@ -2473,6 +2473,68 @@ void Simulator::DecodeExt4(Instruction* instr) {
   UNIMPLEMENTED();  // Not used by V8.
 }
 
+#if V8_TARGET_ARCH_PPC64
+void Simulator::DecodeExt5(Instruction* instr) {
+  switch (instr->Bits(4, 2) << 2) {
+    case RLDICL: {
+      int ra = instr->RAValue();
+      int rs = instr->RSValue();
+      uintptr_t rs_val = get_register(rs);
+      int sh = (instr->Bits(15, 11) | (instr->Bit(1) << 5));
+      int mb = (instr->Bits(10, 6) | (instr->Bit(5) << 5));
+      ASSERT(sh >=0 && sh <= 63);
+      ASSERT(mb >=0 && mb <= 63);
+      // rotate left
+      uintptr_t result = (rs_val << sh) | (rs_val >> (64-sh));
+      uintptr_t mask = 0xffffffffffffffff >> mb;
+      result &= mask;
+      set_register(ra, result);
+      if (instr->Bit(0)) {  // RC bit set
+        SetCR0(result);
+      }
+      return;
+    }
+    case RLDICR: {
+      int ra = instr->RAValue();
+      int rs = instr->RSValue();
+      uintptr_t rs_val = get_register(rs);
+      int sh = (instr->Bits(15, 11) | (instr->Bit(1) << 5));
+      int me = (instr->Bits(10, 6) | (instr->Bit(5) << 5));
+      ASSERT(sh >=0 && sh <= 63);
+      ASSERT(me >=0 && me <= 63);
+      // rotate left
+      uintptr_t result = (rs_val << sh) | (rs_val >> (64-sh));
+      uintptr_t mask = 0xffffffffffffffff << (63-me);
+      result &= mask;
+      set_register(ra, result);
+      if (instr->Bit(0)) {  // RC bit set
+        SetCR0(result);
+      }
+      return;
+    }
+    case RLDIC: {
+      int ra = instr->RAValue();
+      int rs = instr->RSValue();
+      uintptr_t rs_val = get_register(rs);
+      int sh = (instr->Bits(15, 11) | (instr->Bit(1) << 5));
+      int mb = (instr->Bits(10, 6) | (instr->Bit(5) << 5));
+      ASSERT(sh >=0 && sh <= 63);
+      ASSERT(mb >=0 && mb <= 63);
+      // rotate left
+      uintptr_t result = (rs_val << sh) | (rs_val >> (64-sh));
+      uintptr_t mask = (0xffffffffffffffff >> mb) & (0xffffffffffffffff << sh);
+      result &= mask;
+      set_register(ra, result);
+      if (instr->Bit(0)) {  // RC bit set
+        SetCR0(result);
+      }
+      return;
+    }
+  }
+  UNIMPLEMENTED();  // Not used by V8.
+}
+#endif
+
 // Executes the current instruction.
 void Simulator::InstructionDecode(Instruction* instr) {
   if (v8::internal::FLAG_check_icache) {
@@ -2599,13 +2661,13 @@ void Simulator::InstructionDecode(Instruction* instr) {
     case RLWIMIX: {
       int ra = instr->RAValue();
       int rs = instr->RSValue();
-      int32_t rs_val = get_register(rs);
+      uint32_t rs_val = get_register(rs);
       int32_t ra_val = get_register(ra);
       int sh = instr->Bits(15, 11);
       int mb = instr->Bits(10, 6);
       int me = instr->Bits(5, 1);
       // rotate left
-      int result = (rs_val << sh) | (((unsigned int)rs_val) >> (32-sh));
+      uint32_t result = (rs_val << sh) | (rs_val >> (32-sh));
       int mask = 0;
       if (mb < me+1) {
         int bit = 0x80000000 >> mb;
@@ -2635,12 +2697,12 @@ void Simulator::InstructionDecode(Instruction* instr) {
     case RLWINMX: {
       int ra = instr->RAValue();
       int rs = instr->RSValue();
-      int32_t rs_val = get_register(rs);
+      uint32_t rs_val = get_register(rs);
       int sh = instr->Bits(15, 11);
       int mb = instr->Bits(10, 6);
       int me = instr->Bits(5, 1);
       // rotate left
-      int result = (rs_val << sh) | (((unsigned int)rs_val) >> (32-sh));
+      uint32_t result = (rs_val << sh) | (rs_val >> (32-sh));
       int mask = 0;
       if (mb < me+1) {
         int bit = 0x80000000 >> mb;
@@ -2899,6 +2961,10 @@ void Simulator::InstructionDecode(Instruction* instr) {
     }
 
 #if V8_TARGET_ARCH_PPC64
+    case EXT5: {
+      DecodeExt5(instr);
+      break;
+    }
     case LD: {
       int ra = instr->RAValue();
       int rt = instr->RTValue();
@@ -2966,7 +3032,7 @@ void Simulator::InstructionDecode(Instruction* instr) {
 void Simulator::Execute() {
   // Get the PC to simulate. Cannot use the accessor here as we need the
   // raw PC value and not the one used as input to arithmetic instructions.
-  int program_counter = get_pc();
+  intptr_t program_counter = get_pc();
 
   if (::v8::internal::FLAG_stop_sim_at == 0) {
     // Fast version of the dispatch loop without checking whether the simulator

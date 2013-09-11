@@ -539,6 +539,21 @@ void Assembler::xo_form(Instr instr,
   emit(instr | rt.code()*B21 | ra.code()*B16 | rb.code()*B11 | o | r);
 }
 
+void Assembler::md_form(Instr instr,
+                        Register ra,
+                        Register rs,
+                        int shift,
+                        int maskbit,
+                        RCBit r) {
+  int sh0_4 = shift & 0x1f;
+  int sh5   = (shift >> 5) & 0x1;
+  int m0_4  = maskbit & 0x1f;
+  int m5    = (maskbit >> 5) & 0x1;
+
+  emit(instr | rs.code()*B21 | ra.code()*B16 |
+       sh0_4*B11 | m0_4*B6 | m5*B5 | sh5*B1 | r);
+}
+
 // Returns the next free trampoline entry.
 int32_t Assembler::get_trampoline_entry() {
   int32_t trampoline_entry = kInvalidSlotPos;
@@ -717,11 +732,6 @@ void Assembler::slw(Register dst, Register src1, Register src2, RCBit r) {
 
 void Assembler::sraw(Register ra, Register rs, Register rb, RCBit r) {
   x_form(EXT2 | SRAW, ra, rs, rb, r);
-}
-
-void Assembler::rldicl(Register ra, Register rs, int sh, int mb, RCBit r) {
-  // MD format instruction
-  emit(EXT5 | RLDICL | rs.code()*B21 | ra.code()*B16 | sh*B11 | mb*B5 | r);
 }
 
 // TODO(penguin): rename sub to subi to be consistent w/ addi
@@ -1024,6 +1034,40 @@ void Assembler::stdu(Register rs, const MemOperand &src) {
   offset = kImm16Mask & offset;
   emit(STD | rs.code()*B21 | src.ra().code()*B16 | offset | 1);
 }
+
+void Assembler::rldic(Register ra, Register rs, int sh, int mb, RCBit r) {
+  md_form(EXT5 | RLDIC, ra, rs, sh, mb, r);
+}
+
+void Assembler::rldicl(Register ra, Register rs, int sh, int mb, RCBit r) {
+  md_form(EXT5 | RLDICL, ra, rs, sh, mb, r);
+}
+
+void Assembler::rldicr(Register ra, Register rs, int sh, int me, RCBit r) {
+  md_form(EXT5 | RLDICR, ra, rs, sh, me, r);
+}
+
+void Assembler::sldi(Register dst, Register src, const Operand& val,
+                     RCBit rc) {
+  ASSERT((64 > val.imm32_)&&(val.imm32_ >= 0));
+  rldicr(dst, src, val.imm32_, 63-val.imm32_, rc);
+}
+void Assembler::srdi(Register dst, Register src, const Operand& val,
+                     RCBit rc) {
+  ASSERT((64 > val.imm32_)&&(val.imm32_ >= 0));
+  rldicl(dst, src, 64-val.imm32_, val.imm32_, rc);
+}
+void Assembler::clrrdi(Register dst, Register src, const Operand& val,
+                       RCBit rc) {
+  ASSERT((64 > val.imm32_)&&(val.imm32_ >= 0));
+  rldicr(dst, src, 0, 63-val.imm32_, rc);
+}
+void Assembler::clrldi(Register dst, Register src, const Operand& val,
+                       RCBit rc) {
+  ASSERT((64 > val.imm32_)&&(val.imm32_ >= 0));
+  rldicl(dst, src, 0, val.imm32_, rc);
+}
+
 #endif
 
 

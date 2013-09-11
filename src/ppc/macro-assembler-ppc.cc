@@ -787,7 +787,7 @@ void MacroAssembler::EnterExitFrame(bool save_doubles, int stack_space) {
   sub(sp, sp, Operand((stack_space + 1 + 1) * kPointerSize));
   if (frame_alignment > 0) {
     ASSERT(frame_alignment == 8);
-    clrrwi(sp, sp, Operand(3));  // equivalent to &= -8
+    ClearRightImm(sp, sp, Operand(3));  // equivalent to &= -8
   }
 
 #if _AIX
@@ -3517,7 +3517,7 @@ void MacroAssembler::CheckPageFlag(
     Condition cc,
     Label* condition_met) {
   ASSERT(cc == ne || cc == eq);
-  clrrwi(scratch, object, Operand(kPageSizeBits));
+  ClearRightImm(scratch, object, Operand(kPageSizeBits));
   lwz(scratch, MemOperand(scratch, MemoryChunk::kFlagsOffset));
   li(r0, Operand(mask));
   and_(r0, r0, scratch, SetRC);

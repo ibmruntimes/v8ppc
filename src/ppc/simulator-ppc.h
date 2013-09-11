@@ -268,8 +268,10 @@ class Simulator {
   bool DecodeExt2_10bit(Instruction* instr);
   void DecodeExt2_9bit(Instruction* instr);
   void DecodeExt2(Instruction* instr);
-
   void DecodeExt4(Instruction* instr);
+#if V8_TARGET_ARCH_PPC64
+  void DecodeExt5(Instruction* instr);
+#endif
 
   // Executes one instruction.
   void InstructionDecode(Instruction* instr);

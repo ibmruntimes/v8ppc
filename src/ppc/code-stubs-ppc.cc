@@ -1902,7 +1902,7 @@ void UnaryOpStub::GenerateSmiCodeBitNot(MacroAssembler* masm,
   // Flip bits and revert inverted smi-tag.
   ASSERT(kSmiTagMask == 1);
   __ notx(r3, r3);
-  __ clrrwi(r3, r3, Operand(kSmiTagMask));
+  __ ClearRightImm(r3, r3, Operand(kSmiTagMask));
   __ Ret();
 }
 
@@ -7563,7 +7563,7 @@ void ProfileEntryHookStub::Generate(MacroAssembler* masm) {
     __ mr(r30, sp);
     ASSERT(IsPowerOf2(frame_alignment));
     ASSERT(-frame_alignment == -8);
-    __ clrrwi(sp, sp, Operand(3));
+    __ ClearRightImm(sp, sp, Operand(3));
   }
 
 #if defined(V8_HOST_ARCH_PPC)

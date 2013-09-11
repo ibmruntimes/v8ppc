@@ -282,12 +282,15 @@ enum OpcodeExt4 {
 
 // Bits 4-2
 enum OpcodeExt5 {
-  RLDICL = 0          // Rotate Left Double Word Immediate then Clear Left
+  RLDICL = 0 << 2,    // Rotate Left Double Word Immediate then Clear Left
+  RLDICR = 1 << 2,    // Rotate Left Double Word Immediate then Clear Right
+  RLDIC  = 2 << 2     // Rotate Left Double Word Immediate then Clear
 };
 
 // Instruction encoding bits and masks.
 enum {
   // Instruction encoding bit
+  B1  = 1 << 1,
   B4  = 1 << 4,
   B5  = 1 << 5,
   B7  = 1 << 7,

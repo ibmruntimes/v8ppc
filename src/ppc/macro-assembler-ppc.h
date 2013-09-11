@@ -1203,6 +1203,17 @@ class MacroAssembler: public Assembler {
     ExtractBitMask(scratch, value, mask, SetRC);
   }
 
+#if V8_TARGET_ARCH_PPC64
+#define ShiftLeftImm  sldi
+#define ShiftRightImm srdi
+#define ClearLeftImm  clrldi
+#define ClearRightImm clrrdi
+#else
+#define ShiftLeftImm  slwi
+#define ShiftRightImm srwi
+#define ClearLeftImm  clrlwi
+#define ClearRightImm clrrwi
+#endif
 
   // ---------------------------------------------------------------------------
   // Smi utilities

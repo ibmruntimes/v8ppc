@@ -117,6 +117,7 @@ class Decoder {
   void DecodeExt1(Instruction* instr);
   void DecodeExt2(Instruction* instr);
   void DecodeExt4(Instruction* instr);
+  void DecodeExt5(Instruction* instr);
 
   const disasm::NameConverter& converter_;
   Vector<char> out_buffer_;
@@ -345,19 +346,38 @@ int Decoder::FormatOption(Instruction* instr, const char* format) {
                                         reinterpret_cast<byte*>(instr) + off));
         return 8;
       }
-     case 's': {  // SH Bits 15-11
+     case 's': {
        ASSERT(format[1] == 'h');
-       int32_t value = (instr->Bits(15, 11) << 26) >> 26;
+       int32_t value = 0;
+       if (instr->OpcodeValue() << 26 != EXT5) {
+         // SH Bits 15-11
+         value = (instr->Bits(15, 11) << 26) >> 26;
+       } else {
+         // SH Bits 1 and 15-11 (split field)
+         value = (instr->Bits(15, 11) | (instr->Bit(1) << 5));
+       }
        out_buffer_pos_ += OS::SNPrintF(out_buffer_ + out_buffer_pos_,
                                      "%d", value);
        return 2;
      }
      case 'm': {
        int32_t value = 0;
-       if (format[1] == 'e') {  // ME Bits 10-6
-         value = (instr->Bits(10, 6) << 26) >> 26;
-       } else if (format[1] == 'b') {  // MB Bits 5-1
-         value = (instr->Bits(5, 1) << 26) >> 26;
+       if (format[1] == 'e') {
+         if (instr->OpcodeValue() << 26 != EXT5) {
+           // ME Bits 10-6
+           value = (instr->Bits(10, 6) << 26) >> 26;
+         } else {
+           // ME Bits 5 and 10-6 (split field)
+           value = (instr->Bits(10, 6) | (instr->Bit(5) << 5));
+         }
+       } else if (format[1] == 'b') {
+         if (instr->OpcodeValue() << 26 != EXT5) {
+           // MB Bits 5-1
+           value = (instr->Bits(5, 1) << 26) >> 26;
+         } else {
+           // MB Bits 5 and 10-6 (split field)
+           value = (instr->Bits(10, 6) | (instr->Bit(5) << 5));
+         }
        } else {
          UNREACHABLE();  // bad format
        }
@@ -1099,6 +1119,26 @@ void Decoder::DecodeExt4(Instruction* instr) {
   }
 }
 
+void Decoder::DecodeExt5(Instruction* instr) {
+  switch (instr->Bits(4, 2) << 2) {
+    case RLDICL: {
+      Format(instr, "rldicl'. 'ra, 'rs, 'sh, 'mb");
+      break;
+    }
+    case RLDICR: {
+      Format(instr, "rldicr'. 'ra, 'rs, 'sh, 'me");
+      break;
+    }
+    case RLDIC: {
+      Format(instr, "rldic'.  'ra, 'rs, 'sh, 'mb");
+      break;
+    }
+    default: {
+      Unknown(instr);  // not used by V8
+    }
+  }
+}
+
 #undef VERIFIY
 
 // Disassemble the instruction at *instr_ptr into the output buffer.
@@ -1350,6 +1390,10 @@ int Decoder::InstructionDecode(byte* instr_ptr) {
     case EXT3:
     case EXT4: {
       DecodeExt4(instr);
+      break;
+    }
+    case EXT5: {
+      DecodeExt5(instr);
       break;
     }
 #if V8_TARGET_ARCH_PPC64
