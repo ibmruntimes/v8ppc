@@ -874,7 +874,7 @@ void MacroAssembler::LeaveExitFrame(bool save_doubles,
   mtlr(r0);
 
   if (argument_count.is_valid()) {
-    slwi(argument_count, argument_count, Operand(kPointerSizeLog2));
+    ShiftLeftImm(argument_count, argument_count, Operand(kPointerSizeLog2));
     add(sp, sp, argument_count);
   }
 }

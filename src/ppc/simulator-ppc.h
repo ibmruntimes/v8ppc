@@ -354,7 +354,7 @@ class Simulator {
 // point.
 #define CALL_GENERATED_CODE(entry, p0, p1, p2, p3, p4) \
   reinterpret_cast<Object*>(Simulator::current(Isolate::Current())->Call( \
-      FUNCTION_ADDR(entry), 5, p0, p1, p2, p3, p4))
+      FUNCTION_ADDR(entry), 5, p0, p1, p2, (uintptr_t)p3, p4))
 
 #define CALL_GENERATED_REGEXP_CODE(entry, p0, p1, p2, p3, p4, p5, p6, p7, p8) \
   Simulator::current(Isolate::Current())->Call( \

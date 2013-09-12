@@ -3786,7 +3786,7 @@ void CEntryStub::Generate(MacroAssembler* masm) {
   // builtin once.
 
   // Compute the argv pointer in a callee-saved register.
-  __ slwi(r16, r3, Operand(kPointerSizeLog2));
+  __ ShiftLeftImm(r16, r3, Operand(kPointerSizeLog2));
   __ add(r16, r16, sp);
   __ sub(r16, r16, Operand(kPointerSize));
 

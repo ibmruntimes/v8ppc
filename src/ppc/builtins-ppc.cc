@@ -1191,7 +1191,7 @@ static void Generate_JSEntryTrampolineHelper(MacroAssembler* masm,
     // r6: argc
     // r7: argv, i.e. points to first arg
     Label loop, entry;
-    __ slwi(r0, r6, Operand(kPointerSizeLog2));
+    __ ShiftLeftImm(r0, r6, Operand(kPointerSizeLog2));
     __ add(r5, r7, r0);
     // r5 points past last arg.
     __ b(&entry);
