@@ -235,7 +235,7 @@ enum OpcodeExt2 {
 
   // Below represent bits 10-1  (any value >= 512)
   LFSX = 535 << 1,    // load float-single w/ x-form
-  SRWX = 536 <<1,     // Shift Right Word
+  SRWX = 536 << 1,    // Shift Right Word
   LFSUX = 567 << 1,   // load float-single w/ update x-form
   SYNC = 598 << 1,    // Synchronize
   LFDX = 599 << 1,    // load float-double w/ x-form
@@ -246,6 +246,7 @@ enum OpcodeExt2 {
   STFDUX = 759 << 1,  // store float-double w/ update x-form
   SRAW = 792 << 1,    // Shift Right Algebraic Word
   SRAWIX = 824 << 1,  // Shift Right Algebraic Word Immediate
+  SRADIX = 413 << 2,  // Shift Right Algebraic Double Word Immediate
   EXTSH = 922 << 1,   // Extend Sign Halfword
   EXTSB = 954 << 1,   // Extend Sign Byte
   ICBI = 982 << 1     // Instruction Cache Block Invalidate

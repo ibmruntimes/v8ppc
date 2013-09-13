@@ -2853,7 +2853,7 @@ void LCodeGen::DoLoadKeyedFastElement(LLoadKeyedFastElement* instr) {
     // during bound check elimination with the index argument to the bounds
     // check, which can be tagged, so that case must be handled here, too.
     if (instr->hydrogen()->key()->representation().IsTagged()) {
-      __ slwi(r0, key, Operand(kPointerSizeLog2 - kSmiTagSize));
+      __ SmiToPtrArrayOffset(r0, key);
     } else {
       __ slwi(r0, key, Operand(kPointerSizeLog2));
     }
@@ -3092,7 +3092,7 @@ void LCodeGen::DoArgumentsElements(LArgumentsElements* instr) {
     Label done, adapted;
     __ lwz(scratch, MemOperand(fp, StandardFrameConstants::kCallerFPOffset));
     __ lwz(result, MemOperand(scratch, StandardFrameConstants::kContextOffset));
-    __ Cmpi(result, Operand(Smi::FromInt(StackFrame::ARGUMENTS_ADAPTOR)), r0);
+    __ CmpSmiLiteral(result, Smi::FromInt(StackFrame::ARGUMENTS_ADAPTOR), r0);
 
     // Result is the frame pointer for the frame if not adapted and for the real
     // frame below the adaptor frame if adapted.
@@ -3268,7 +3268,7 @@ void LCodeGen::DoDeclareGlobals(LDeclareGlobals* instr) {
   __ push(cp);  // The context is the first argument.
   __ LoadHeapObject(scratch0(), instr->hydrogen()->pairs());
   __ push(scratch0());
-  __ mov(scratch0(), Operand(Smi::FromInt(instr->hydrogen()->flags())));
+  __ LoadSmiLiteral(scratch0(), Smi::FromInt(instr->hydrogen()->flags()));
   __ push(scratch0());
   CallRuntime(Runtime::kDeclareGlobals, 3, instr);
 }
@@ -4041,7 +4041,7 @@ void LCodeGen::DoBoundsCheck(LBoundsCheck* instr) {
     int constant_index =
         ToInteger32(LConstantOperand::cast(instr->index()));
     if (instr->hydrogen()->length()->representation().IsTagged()) {
-      __ mov(ip, Operand(Smi::FromInt(constant_index)));
+      __ LoadSmiLiteral(ip, Smi::FromInt(constant_index));
     } else {
       __ mov(ip, Operand(constant_index));
     }
@@ -4074,7 +4074,7 @@ void LCodeGen::DoStoreKeyedFastElement(LStoreKeyedFastElement* instr) {
     // during bound check elimination with the index argument to the bounds
     // check, which can be tagged, so that case must be handled here, too.
     if (instr->hydrogen()->key()->representation().IsTagged()) {
-      __ slwi(scratch, key, Operand(kPointerSizeLog2 - kSmiTagSize));
+      __ SmiToPtrArrayOffset(scratch, key);
     } else {
       __ slwi(scratch, key, Operand(kPointerSizeLog2));
     }
@@ -4354,7 +4354,7 @@ void LCodeGen::DoDeferredStringCharCodeAt(LStringCharCodeAt* instr) {
   // DoStringCharCodeAt above.
   if (instr->index()->IsConstantOperand()) {
     int const_index = ToInteger32(LConstantOperand::cast(instr->index()));
-    __ mov(scratch, Operand(Smi::FromInt(const_index)));
+    __ LoadSmiLiteral(scratch, Smi::FromInt(const_index));
     __ push(scratch);
   } else {
     Register index = ToRegister(instr->index());
@@ -5098,7 +5098,7 @@ void LCodeGen::DoDeferredAllocateObject(LAllocateObject* instr) {
   __ li(result, Operand::Zero());
 
   PushSafepointRegistersScope scope(this, Safepoint::kWithRegisters);
-  __ mov(r3, Operand(Smi::FromInt(instance_size)));
+  __ LoadSmiLiteral(r3, Smi::FromInt(instance_size));
   __ push(r3);
   CallRuntimeFromDeferred(Runtime::kAllocateInNewSpace, 1, instr);
   __ StoreToSafepointRegisterSlot(r3, result);
@@ -5128,7 +5128,7 @@ void LCodeGen::DoArrayLiteral(LArrayLiteral* instr) {
 
   // Set up the parameters to the stub/runtime call.
   __ LoadHeapObject(r6, literals);
-  __ mov(r5, Operand(Smi::FromInt(instr->hydrogen()->literal_index())));
+  __ LoadSmiLiteral(r5, Smi::FromInt(instr->hydrogen()->literal_index()));
   // Boilerplate already exists, constant elements are never accessed.
   // Pass an empty fixed array.
   __ mov(r4, Operand(isolate()->factory()->empty_fixed_array()));
@@ -5295,7 +5295,7 @@ void LCodeGen::DoFastLiteral(LFastLiteral* instr) {
   __ b(&allocated);
 
   __ bind(&runtime_allocate);
-  __ mov(r3, Operand(Smi::FromInt(size)));
+  __ LoadSmiLiteral(r3, Smi::FromInt(size));
   __ push(r3);
   CallRuntime(Runtime::kAllocateInNewSpace, 1, instr);
 
@@ -5314,12 +5314,12 @@ void LCodeGen::DoObjectLiteral(LObjectLiteral* instr) {
 
   // Set up the parameters to the stub/runtime call.
   __ LoadHeapObject(r7, literals);
-  __ mov(r6, Operand(Smi::FromInt(instr->hydrogen()->literal_index())));
+  __ LoadSmiLiteral(r6, Smi::FromInt(instr->hydrogen()->literal_index()));
   __ mov(r5, Operand(constant_properties));
   int flags = instr->hydrogen()->fast_elements()
       ? ObjectLiteral::kFastElements
       : ObjectLiteral::kNoFlags;
-  __ mov(r4, Operand(Smi::FromInt(flags)));
+  __ LoadSmiLiteral(r4, Smi::FromInt(flags));
   __ Push(r7, r6, r5, r4);
 
   // Pick the right runtime function or stub to call.
@@ -5360,7 +5360,7 @@ void LCodeGen::DoRegExpLiteral(LRegExpLiteral* instr) {
 
   // Create regexp literal using runtime function
   // Result will be in r3.
-  __ mov(r9, Operand(Smi::FromInt(instr->hydrogen()->literal_index())));
+  __ LoadSmiLiteral(r9, Smi::FromInt(instr->hydrogen()->literal_index()));
   __ mov(r8, Operand(instr->hydrogen()->pattern()));
   __ mov(r7, Operand(instr->hydrogen()->flags()));
   __ Push(r10, r9, r8, r7);
@@ -5375,7 +5375,7 @@ void LCodeGen::DoRegExpLiteral(LRegExpLiteral* instr) {
   __ b(&allocated);
 
   __ bind(&runtime_allocate);
-  __ mov(r3, Operand(Smi::FromInt(size)));
+  __ LoadSmiLiteral(r3, Smi::FromInt(size));
   __ Push(r4, r3);
   CallRuntime(Runtime::kAllocateInNewSpace, 1, instr);
   __ pop(r4);
@@ -5535,14 +5535,14 @@ void LCodeGen::EmitIsConstructCall(Register temp1, Register temp2) {
   // Skip the arguments adaptor frame if it exists.
   Label check_frame_marker;
   __ lwz(temp2, MemOperand(temp1, StandardFrameConstants::kContextOffset));
-  __ cmpi(temp2, Operand(Smi::FromInt(StackFrame::ARGUMENTS_ADAPTOR)));
+  __ CmpSmiLiteral(temp2, Smi::FromInt(StackFrame::ARGUMENTS_ADAPTOR), r0);
   __ bne(&check_frame_marker);
   __ lwz(temp1, MemOperand(temp1, StandardFrameConstants::kCallerFPOffset));
 
   // Check the marker in the calling frame.
   __ bind(&check_frame_marker);
   __ lwz(temp1, MemOperand(temp1, StandardFrameConstants::kMarkerOffset));
-  __ cmpi(temp1, Operand(Smi::FromInt(StackFrame::CONSTRUCT)));
+  __ CmpSmiLiteral(temp1, Smi::FromInt(StackFrame::CONSTRUCT), r0);
 }
 
 
@@ -5581,7 +5581,7 @@ void LCodeGen::DoDeleteProperty(LDeleteProperty* instr) {
   Register object = ToRegister(instr->object());
   Register key = ToRegister(instr->key());
   Register strict = scratch0();
-  __ mov(strict, Operand(Smi::FromInt(strict_mode_flag())));
+  __ LoadSmiLiteral(strict, Smi::FromInt(strict_mode_flag()));
   __ Push(object, key, strict);
   ASSERT(instr->HasPointerMap());
   LPointerMap* pointers = instr->pointer_map();
@@ -5719,7 +5719,7 @@ void LCodeGen::DoForInCacheArray(LForInCacheArray* instr) {
   Register result = ToRegister(instr->result());
   Label load_cache, done;
   __ EnumLength(result, map);
-  __ cmpi(result, Operand(Smi::FromInt(0)));
+  __ CmpSmiLiteral(result, Smi::FromInt(0), r0);
   __ bne(&load_cache);
   __ mov(result, Operand(isolate()->factory()->empty_fixed_array()));
   __ b(&done);
@@ -5756,8 +5756,7 @@ void LCodeGen::DoLoadFieldByIndex(LLoadFieldByIndex* instr) {
   __ cmpi(index, Operand::Zero());
   __ blt(&out_of_object);
 
-  STATIC_ASSERT(kPointerSizeLog2 > kSmiTagSize);
-  __ slwi(r0, index, Operand(kPointerSizeLog2 - kSmiTagSize));
+  __ SmiToPtrArrayOffset(r0, index);
   __ add(scratch, object, r0);
   __ lwz(result, FieldMemOperand(scratch, JSObject::kHeaderSize));
 
@@ -5766,7 +5765,7 @@ void LCodeGen::DoLoadFieldByIndex(LLoadFieldByIndex* instr) {
   __ bind(&out_of_object);
   __ lwz(result, FieldMemOperand(object, JSObject::kPropertiesOffset));
   // Index is equal to negated out of object property index plus 1.
-  __ slwi(r0, index, Operand(kPointerSizeLog2 - kSmiTagSize));
+  __ SmiToPtrArrayOffset(r0, index);
   __ sub(scratch, result, r0);
   __ lwz(result, FieldMemOperand(scratch,
                                  FixedArray::kHeaderSize - kPointerSize));

@@ -349,12 +349,16 @@ int Decoder::FormatOption(Instruction* instr, const char* format) {
      case 's': {
        ASSERT(format[1] == 'h');
        int32_t value = 0;
-       if (instr->OpcodeValue() << 26 != EXT5) {
-         // SH Bits 15-11
-         value = (instr->Bits(15, 11) << 26) >> 26;
-       } else {
+       int32_t opcode = instr->OpcodeValue() << 26;
+       int32_t sh = instr->Bits(15, 11);
+       if (opcode == EXT5 ||
+           (opcode == EXT2 &&
+            instr->Bits(10, 2) << 2 == SRADIX)) {
          // SH Bits 1 and 15-11 (split field)
-         value = (instr->Bits(15, 11) | (instr->Bit(1) << 5));
+         value = (sh | (instr->Bit(1) << 5));
+       } else {
+         // SH Bits 15-11
+         value = (sh << 26) >> 26;
        }
        out_buffer_pos_ += OS::SNPrintF(out_buffer_ + out_buffer_pos_,
                                      "%d", value);
@@ -868,6 +872,13 @@ void Decoder::DecodeExt2(Instruction* instr) {
     }
     case STFDUX: {
       Format(instr, "stfdux   'rs, 'ra, 'rb");
+      return;
+    }
+  }
+
+  switch (instr->Bits(10, 2) << 2) {
+    case SRADIX: {
+      Format(instr, "sradi'.  'ra,'rs,'sh");
       return;
     }
   }

@@ -877,6 +877,7 @@ class Assembler : public AssemblerBase {
               RCBit rc = LeaveRC);
   void clrldi(Register dst, Register src, const Operand& val,
               RCBit rc = LeaveRC);
+  void sradi(Register ra, Register rs, int sh, RCBit r = LeaveRC);
 #endif
 
   void rlwinm(Register ra, Register rs, int sh, int mb, int me,

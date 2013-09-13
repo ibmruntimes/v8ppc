@@ -449,6 +449,9 @@ class MacroAssembler: public Assembler {
   // load a literal signed int value <value> to GPR <dst>
   void LoadIntLiteral(Register dst, int value);
 
+  // load an SMI value <value> to GPR <dst>
+  void LoadSmiLiteral(Register dst, Smi *smi);
+
   // load a literal double value <value> to FPR <result>
   void LoadDoubleLiteral(DwVfpRegister result,
                          double value,
@@ -495,6 +498,14 @@ class MacroAssembler: public Assembler {
   void Or(Register ra, Register rs, const Operand& rb, RCBit rc = LeaveRC);
   void Xor(Register ra, Register rs, const Operand& rb, RCBit rc = LeaveRC);
 
+  void AddSmiLiteral(Register dst, Register src, Smi *smi, Register scratch);
+  void SubSmiLiteral(Register dst, Register src, Smi *smi, Register scratch);
+  void CmpSmiLiteral(Register src1, Smi *smi, Register scratch,
+                     CRegister cr = cr7);
+  void CmplSmiLiteral(Register src1, Smi *smi, Register scratch,
+                      CRegister cr = cr7);
+  void AndSmiLiteral(Register dst, Register src, Smi *smi, Register scratch,
+                     RCBit rc = LeaveRC);
 
   // Set new rounding mode RN to FPSCR
   void SetRoundingMode(VFPRoundingMode RN);
@@ -1208,11 +1219,13 @@ class MacroAssembler: public Assembler {
 #define ShiftRightImm srdi
 #define ClearLeftImm  clrldi
 #define ClearRightImm clrrdi
+#define ShiftRightArithImm sradi
 #else
 #define ShiftLeftImm  slwi
 #define ShiftRightImm srwi
 #define ClearLeftImm  clrlwi
 #define ClearRightImm clrrwi
+#define ShiftRightArithImm srawi
 #endif
 
   // ---------------------------------------------------------------------------
@@ -1223,7 +1236,7 @@ class MacroAssembler: public Assembler {
     SmiTag(reg, reg);
   }
   void SmiTag(Register dst, Register src) {
-    slwi(dst, src, Operand(1));
+    ShiftLeftImm(dst, src, Operand(kSmiShift));
   }
 
   // Test for overflow < 0: use BranchOnOverflow() or BranchOnNoOverflow().
@@ -1235,8 +1248,55 @@ class MacroAssembler: public Assembler {
   }
 
   void SmiUntag(Register dst, Register src, RCBit rc = LeaveRC) {
-    ASSERT(kSmiTagSize == 1);
-    srawi(dst, src, 1, rc);
+    ShiftRightArithImm(dst, src, kSmiShift, rc);
+  }
+
+  void SmiToPtrArrayOffset(Register dst, Register src) {
+#if V8_TARGET_ARCH_PPC64
+    STATIC_ASSERT(kSmiTag == 0 && kSmiShift > kPointerSizeLog2);
+    ShiftRightArithImm(dst, src, kSmiShift - kPointerSizeLog2);
+#else
+    STATIC_ASSERT(kSmiTag == 0 && kSmiShift < kPointerSizeLog2);
+    ShiftLeftImm(dst, src, Operand(kPointerSizeLog2 - kSmiShift));
+#endif
+  }
+
+  void SmiToByteArrayOffset(Register dst, Register src) {
+    SmiUntag(dst, src);
+  }
+
+  void SmiToShortArrayOffset(Register dst, Register src) {
+#if V8_TARGET_ARCH_PPC64
+    STATIC_ASSERT(kSmiTag == 0 && kSmiShift > 1);
+    ShiftRightArithImm(dst, src, kSmiShift - 1);
+#else
+    STATIC_ASSERT(kSmiTag == 0 && kSmiShift == 1);
+    if (!dst.is(src)) {
+      mr(dst, src);
+    }
+#endif
+  }
+
+  void SmiToIntArrayOffset(Register dst, Register src) {
+#if V8_TARGET_ARCH_PPC64
+    STATIC_ASSERT(kSmiTag == 0 && kSmiShift > 2);
+    ShiftRightArithImm(dst, src, kSmiShift - 2);
+#else
+    STATIC_ASSERT(kSmiTag == 0 && kSmiShift < 2);
+    ShiftLeftImm(dst, src, Operand(2 - kSmiShift));
+#endif
+  }
+
+#define SmiToFloatArrayOffset SmiToIntArrayOffset
+
+  void SmiToDoubleArrayOffset(Register dst, Register src) {
+#if V8_TARGET_ARCH_PPC64
+    STATIC_ASSERT(kSmiTag == 0 && kSmiShift > kDoubleSizeLog2);
+    ShiftRightArithImm(dst, src, kSmiShift - kDoubleSizeLog2);
+#else
+    STATIC_ASSERT(kSmiTag == 0 && kSmiShift < kDoubleSizeLog2);
+    ShiftLeftImm(dst, src, Operand(kDoubleSizeLog2 - kSmiShift));
+#endif
   }
 
   // Untag the source value into destination and jump if source is a smi.
@@ -1367,6 +1427,8 @@ class MacroAssembler: public Assembler {
   void CheckEnumCache(Register null_value, Label* call_runtime);
 
  private:
+  static const int kSmiShift = kSmiTagSize + kSmiShiftSize;
+
   void CallCFunctionHelper(Register function,
                            int num_reg_arguments,
                            int num_double_arguments);

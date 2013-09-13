@@ -118,7 +118,7 @@ void Deoptimizer::DeoptimizeFunction(JSFunction* function) {
 
 
 static const int32_t kBranchBeforeStackCheck = 0x409c0014;
-static const int32_t kBranchBeforeInterrupt =  0x409c0028;
+static const int32_t kBranchBeforeInterrupt =  0x409c0024;
 
 
 void Deoptimizer::PatchStackCheckCodeAt(Code* unoptimized_code,
@@ -198,7 +198,7 @@ void Deoptimizer::RevertStackCheckCodeAt(Code* unoptimized_code,
   // Replace NOP with conditional jump.
   CodePatcher patcher(pc_after - 5 * kInstrSize, 3);
   if (FLAG_count_based_interrupts) {
-      patcher.masm()->bc(+40, BF,
+      patcher.masm()->bc(+36, BF,
                 v8::internal::Assembler::encode_crbit(cr7, CR_LT));  // bge
     ASSERT_EQ(kBranchBeforeInterrupt,
               Memory::int32_at(pc_after - 5 * kInstrSize));

@@ -1076,6 +1076,13 @@ void Assembler::clrldi(Register dst, Register src, const Operand& val,
   rldicl(dst, src, 0, val.imm32_, rc);
 }
 
+void Assembler::sradi(Register ra, Register rs, int sh, RCBit r) {
+  int sh0_4 = sh & 0x1f;
+  int sh5   = (sh >> 5) & 0x1;
+
+  emit(EXT2 | SRADIX | rs.code()*B21 | ra.code()*B16 | sh0_4*B11 | sh5*B1 | r);
+}
+
 #endif
 
 

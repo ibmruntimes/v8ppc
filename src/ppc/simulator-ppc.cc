@@ -1771,6 +1771,30 @@ bool Simulator::DecodeExt2_10bit(Instruction *instr) {
     }
   }
 
+  if (found)
+    return found;
+
+  found = true;
+  opcode = instr->Bits(10, 2) << 2;
+  switch (opcode) {
+    case SRADIX: {
+      int ra = instr->RAValue();
+      int rs = instr->RSValue();
+      int sh = (instr->Bits(15, 11) | (instr->Bit(1) << 5));
+      intptr_t rs_val = get_register(rs);
+      intptr_t result = rs_val >> sh;
+      set_register(ra, result);
+      if (instr->Bit(0)) {  // RC bit set
+        SetCR0(result);
+      }
+      break;
+    }
+    default: {
+      found = false;
+      break;
+    }
+  }
+
   return found;
 }
 

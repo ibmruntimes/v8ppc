@@ -668,21 +668,11 @@ void MacroAssembler::EnterFrame(StackFrame::Type type) {
   push(r0);
   push(fp);
   push(cp);
-  mov(r0, Operand(Smi::FromInt(type)));
+  LoadSmiLiteral(r0, Smi::FromInt(type));
   push(r0);
   mov(r0, Operand(CodeObject()));
   push(r0);
   addi(fp, sp, Operand(3 * kPointerSize));  // Adjust FP to point to saved FP
-
-#if 0
-  // r0-r3: preserved
-  stm(db_w, sp, cp.bit() | fp.bit() | lr.bit());
-  mov(ip, Operand(Smi::FromInt(type)));
-  push(ip);
-  mov(ip, Operand(CodeObject()));
-  push(ip);
-  addi(fp, sp, Operand(3 * kPointerSize));  // Adjust FP to point to saved FP.
-#endif
 }
 
 
@@ -810,7 +800,7 @@ void MacroAssembler::InitializeNewString(Register string,
                                          Heap::RootListIndex map_index,
                                          Register scratch1,
                                          Register scratch2) {
-  slwi(scratch1, length, Operand(kSmiTagSize));
+  SmiTag(scratch1, length);
   LoadRoot(scratch2, map_index);
   stw(scratch1, FieldMemOperand(string, String::kLengthOffset));
   li(scratch1, Operand(String::kEmptyHashField));
@@ -891,9 +881,9 @@ void MacroAssembler::SetCallKind(Register dst, CallKind call_kind) {
   // in r8.
   ASSERT(dst.is(r8));
   if (call_kind == CALL_AS_FUNCTION) {
-    li(dst, Operand(Smi::FromInt(1)));
+    LoadSmiLiteral(dst, Smi::FromInt(1));
   } else {
-    li(dst, Operand(Smi::FromInt(0)));
+    LoadSmiLiteral(dst, Smi::FromInt(0));
   }
 }
 
@@ -1064,7 +1054,7 @@ void MacroAssembler::InvokeFunction(Register fun,
   lwz(expected_reg,
       FieldMemOperand(code_reg,
                       SharedFunctionInfo::kFormalParameterCountOffset));
-  srawi(expected_reg, expected_reg, kSmiTagSize);
+  SmiUntag(expected_reg);
   LoadP(code_reg,
         FieldMemOperand(r4, JSFunction::kCodeEntryOffset));
 
@@ -1165,7 +1155,7 @@ void MacroAssembler::PushTryHandler(StackHandler::Kind kind,
   if (kind == StackHandler::JS_ENTRY) {
     li(r8, Operand(0, RelocInfo::NONE));  // NULL frame pointer.
     StoreP(r8, MemOperand(sp, StackHandlerConstants::kFPOffset));
-    li(r8, Operand(Smi::FromInt(0)));    // Indicates no context.
+    LoadSmiLiteral(r8, Smi::FromInt(0));    // Indicates no context.
     StoreP(r8, MemOperand(sp, StackHandlerConstants::kContextOffset));
   } else {
     // still not sure if fp is right
@@ -1202,7 +1192,7 @@ void MacroAssembler::JumpToHandlerEntry() {
   add(ip, r6, ip);
   lwz(r5, MemOperand(ip));  // Smi-tagged offset.
   addi(r4, r4, Operand(Code::kHeaderSize - kHeapObjectTag));  // Code start.
-  srawi(ip, r5, kSmiTagSize);
+  SmiUntag(ip, r5);
   add(r0, r4, ip);
   mtctr(r0);
   bcr();
@@ -1439,7 +1429,7 @@ void MacroAssembler::LoadFromNumberDictionary(Label* miss,
 
   // Compute the capacity mask.
   lwz(t1, FieldMemOperand(elements, SeededNumberDictionary::kCapacityOffset));
-  srawi(t1, t1, kSmiTagSize);  // convert smi to int
+  SmiUntag(t1);
   sub(t1, t1, Operand(1));
 
   // Generate an unrolled loop that performs a few probes before giving up.
@@ -1476,7 +1466,7 @@ void MacroAssembler::LoadFromNumberDictionary(Label* miss,
   const int kDetailsOffset =
       SeededNumberDictionary::kElementsStartOffset + 2 * kPointerSize;
   lwz(t1, FieldMemOperand(t2, kDetailsOffset));
-  mov(ip, Operand(Smi::FromInt(PropertyDetails::TypeField::kMask)));
+  LoadSmiLiteral(ip, Smi::FromInt(PropertyDetails::TypeField::kMask));
   and_(r0, t1, ip, SetRC);
   bne(miss, cr0);
 
@@ -1624,19 +1614,19 @@ void MacroAssembler::AllocateInNewSpace(Register object_size,
   // does not need ip for implicit literal generation.
   if ((flags & RESULT_CONTAINS_TOP) == 0) {
     // Load allocation top into result and allocation limit into ip.
-    lwz(result, MemOperand(topaddr));
-    lwz(ip, MemOperand(topaddr, kPointerSize));
+    LoadP(result, MemOperand(topaddr));
+    LoadP(ip, MemOperand(topaddr, kPointerSize));
   } else {
     if (emit_debug_code()) {
       // Assert that result actually contains top on entry. ip is used
       // immediately below so this use of ip does not cause difference with
       // respect to register content between debug and release mode.
-      lwz(ip, MemOperand(topaddr));
+      LoadP(ip, MemOperand(topaddr));
       cmp(result, ip);
       Check(eq, "Unexpected allocation top");
     }
     // Load allocation limit into ip. Result already contains allocation top.
-    lwz(ip, MemOperand(topaddr, limit - top));
+    LoadP(ip, MemOperand(topaddr, limit - top));
   }
 
   // Calculate new top and bail out if new space is exhausted. Use result
@@ -1644,7 +1634,7 @@ void MacroAssembler::AllocateInNewSpace(Register object_size,
   // required to get the number of bytes.
   li(r0, Operand(-1));
   if ((flags & SIZE_IN_WORDS) != 0) {
-    slwi(scratch2, object_size, Operand(kPointerSizeLog2));
+    ShiftLeftImm(scratch2, object_size, Operand(kPointerSizeLog2));
     addc(scratch2, result, scratch2);
   } else {
     addc(scratch2, result, object_size);
@@ -1659,7 +1649,7 @@ void MacroAssembler::AllocateInNewSpace(Register object_size,
     andi(r0, scratch2, Operand(kObjectAlignmentMask));
     Check(eq, "Unaligned allocation in new space", cr0);
   }
-  stw(scratch2, MemOperand(topaddr));
+  StoreP(scratch2, MemOperand(topaddr));
 
   // Tag object if requested.
   if ((flags & TAG_OBJECT) != 0) {
@@ -1932,7 +1922,7 @@ void MacroAssembler::StoreNumberToDoubleElements(Register value_reg,
   lwz(mantissa_reg, FieldMemOperand(value_reg, HeapNumber::kMantissaOffset));
 
   bind(&have_double_value);
-  slwi(scratch1, key_reg, Operand(kDoubleSizeLog2 - kSmiTagSize));
+  SmiToDoubleArrayOffset(scratch1, key_reg);
   add(scratch1, elements_reg, scratch1);
 #if __BYTE_ORDER == __LITTLE_ENDIAN
   stw(mantissa_reg, FieldMemOperand(scratch1, FixedDoubleArray::kHeaderSize));
@@ -1963,7 +1953,7 @@ void MacroAssembler::StoreNumberToDoubleElements(Register value_reg,
   bind(&smi_value);
   addi(scratch1, elements_reg,
        Operand(FixedDoubleArray::kHeaderSize - kHeapObjectTag));
-  slwi(scratch4, key_reg, Operand(kDoubleSizeLog2 - kSmiTagSize));
+  SmiToDoubleArrayOffset(scratch4, key_reg);
   add(scratch1, scratch1, scratch4);
   // scratch1 is now effective address of the double element
 
@@ -2048,7 +2038,7 @@ void MacroAssembler::CompareMap(Register obj,
                                 Handle<Map> map,
                                 Label* early_success,
                                 CompareMapMode mode) {
-  lwz(scratch, FieldMemOperand(obj, HeapObject::kMapOffset));
+  LoadP(scratch, FieldMemOperand(obj, HeapObject::kMapOffset));
   CompareMap(scratch, map, early_success, mode);
 }
 
@@ -2102,7 +2092,7 @@ void MacroAssembler::CheckMap(Register obj,
   if (smi_check_type == DO_SMI_CHECK) {
     JumpIfSmi(obj, fail);
   }
-  lwz(scratch, FieldMemOperand(obj, HeapObject::kMapOffset));
+  LoadP(scratch, FieldMemOperand(obj, HeapObject::kMapOffset));
   LoadRoot(ip, index);
   cmp(scratch, ip);
   bne(fail);
@@ -2144,8 +2134,9 @@ void MacroAssembler::TryGetFunctionPrototype(Register function,
         FieldMemOperand(function, JSFunction::kSharedFunctionInfoOffset));
     lwz(scratch,
         FieldMemOperand(scratch, SharedFunctionInfo::kCompilerHintsOffset));
-    andi(r0, scratch,
-        Operand(Smi::FromInt(1 << SharedFunctionInfo::kBoundFunction)));
+    AndSmiLiteral(r0, scratch,
+                  Smi::FromInt(1 << SharedFunctionInfo::kBoundFunction),
+                  r0, SetRC);
     bne(miss, cr0);
   }
 
@@ -2335,7 +2326,7 @@ void MacroAssembler::IndexFromHash(Register hash, Register index) {
 void MacroAssembler::SmiToDoubleFPRegister(Register smi,
                                             DwVfpRegister value,
                                             Register scratch1) {
-  srawi(scratch1, smi, kSmiTagSize);
+  SmiUntag(scratch1, smi);
   FloatingPointHelper::ConvertIntToDouble(this, scratch1, value);
 }
 
@@ -2683,7 +2674,7 @@ void MacroAssembler::GetBuiltinEntry(Register target, Builtins::JavaScript id) {
   ASSERT(!target.is(r4));
   GetBuiltinFunction(r4, id);
   // Load the code entry point from the builtins object.
-  lwz(target, FieldMemOperand(r4, JSFunction::kCodeEntryOffset));
+  LoadP(target, FieldMemOperand(r4, JSFunction::kCodeEntryOffset));
 }
 
 
@@ -2788,7 +2779,7 @@ void MacroAssembler::Abort(const char* msg) {
 
   mov(r0, Operand(p0));
   push(r0);
-  mov(r0, Operand(Smi::FromInt(p1 - p0)));
+  LoadSmiLiteral(r0, Smi::FromInt(p1 - p0));
   push(r0);
   // Disable stub call restrictions to always allow calls to abort.
   if (!has_frame_) {
@@ -2962,7 +2953,7 @@ void MacroAssembler::UntagAndJumpIfSmi(
   STATIC_ASSERT(kSmiTag == 0);
   STATIC_ASSERT(kSmiTagSize == 1);
   TestBit(src, 31, r0);
-  srawi(dst, src, kSmiTagSize);
+  SmiUntag(dst, src);
   beq(smi_case, cr0);
 }
 
@@ -2972,7 +2963,7 @@ void MacroAssembler::UntagAndJumpIfNotSmi(
   STATIC_ASSERT(kSmiTag == 0);
   STATIC_ASSERT(kSmiTagSize == 1);
   TestBit(src, 31, r0);
-  srawi(dst, src, kSmiTagSize);
+  SmiUntag(dst, src);
   bne(non_smi_case, cr0);
 }
 
@@ -3522,7 +3513,7 @@ void MacroAssembler::CheckPageFlag(
     Label* condition_met) {
   ASSERT(cc == ne || cc == eq);
   ClearRightImm(scratch, object, Operand(kPageSizeBits));
-  lwz(scratch, MemOperand(scratch, MemoryChunk::kFlagsOffset));
+  LoadP(scratch, MemOperand(scratch, MemoryChunk::kFlagsOffset));
   li(r0, Operand(mask));
   and_(r0, r0, scratch, SetRC);
   if (cc == ne) {
@@ -3654,6 +3645,10 @@ void MacroAssembler::EnsureNotWhite(
   Register map = load_scratch;  // Holds map while checking type.
   Register length = load_scratch;  // Holds length of object after testing type.
   Label is_data_object, maybe_string_object, is_string_object, is_encoded;
+#if V8_TARGET_ARCH_PPC64
+  Label length_computed;
+#endif
+
 
   // Check for heap-number
   lwz(map, FieldMemOperand(value, HeapObject::kMapOffset));
@@ -3686,16 +3681,26 @@ void MacroAssembler::EnsureNotWhite(
   bind(&is_string_object);
 
   // Sequential string, either ASCII or UC16.
-  // For ASCII (char-size of 1) we shift the smi tag away to get the length.
-  // For UC16 (char-size of 2) we just leave the smi tag in place, thereby
-  // getting the length multiplied by 2.
+  // For ASCII (char-size of 1) we untag the smi to get the length.
+  // For UC16 (char-size of 2):
+  //   - (32-bit) we just leave the smi tag in place, thereby getting
+  //              the length multiplied by 2.
+  //   - (64-bit) we compute the offset in the 2-byte array
   ASSERT(kAsciiStringTag == 4 && kStringEncodingMask == 4);
-  ASSERT(kSmiTag == 0 && kSmiTagSize == 1);
   lwz(ip, FieldMemOperand(value, String::kLengthOffset));
   andi(r0, instance_type, Operand(kStringEncodingMask));
   beq(&is_encoded, cr0);
-  slwi(ip, ip, Operand(1));
+  SmiUntag(ip);
+#if V8_TARGET_ARCH_PPC64
+  b(&length_computed);
+#endif
   bind(&is_encoded);
+#if V8_TARGET_ARCH_PPC64
+  SmiToShortArrayOffset(ip, ip);
+  bind(&length_computed);
+#else
+  ASSERT(kSmiShift == 1);
+#endif
   addi(length, ip, Operand(SeqString::kHeaderSize + kObjectAlignmentMask));
   li(r0, Operand(~kObjectAlignmentMask));
   and_(length, length, r0);
@@ -3811,7 +3816,7 @@ void MacroAssembler::NumberOfOwnDescriptors(Register dst, Register map) {
 void MacroAssembler::EnumLength(Register dst, Register map) {
   STATIC_ASSERT(Map::EnumLengthBits::kShift == 0);
   lwz(dst, FieldMemOperand(map, Map::kBitField3Offset));
-  mov(r0, Operand(Smi::FromInt(Map::EnumLengthBits::kMask)));
+  LoadSmiLiteral(r0, Smi::FromInt(Map::EnumLengthBits::kMask));
   and_(dst, dst, r0);
 }
 
@@ -3827,7 +3832,7 @@ void MacroAssembler::CheckEnumCache(Register null_value, Label* call_runtime) {
   lwz(r4, FieldMemOperand(r5, HeapObject::kMapOffset));
 
   EnumLength(r6, r4);
-  cmpi(r6, Operand(Smi::FromInt(Map::kInvalidEnumCache)));
+  CmpSmiLiteral(r6, Smi::FromInt(Map::kInvalidEnumCache), r0);
   beq(call_runtime);
 
   b(&start);
@@ -3837,7 +3842,7 @@ void MacroAssembler::CheckEnumCache(Register null_value, Label* call_runtime) {
 
   // For all objects but the receiver, check that the cache is empty.
   EnumLength(r6, r4);
-  cmpi(r6, Operand(Smi::FromInt(0)));
+  CmpSmiLiteral(r6, Smi::FromInt(0), r0);
   bne(call_runtime);
 
   bind(&start);
@@ -3870,6 +3875,17 @@ void MacroAssembler::LoadIntLiteral(Register dst, int value) {
       mov(dst, Operand(value));
     }
   }
+}
+
+void MacroAssembler::LoadSmiLiteral(Register dst, Smi *smi) {
+  intptr_t value = reinterpret_cast<intptr_t>(smi);
+#if V8_TARGET_ARCH_PPC64
+  ASSERT((value & 0xffffffff) == 0);
+  LoadIntLiteral(dst, value >> 32);
+  ShiftLeftImm(dst, dst, Operand(32));
+#else
+  LoadIntLiteral(dst, value);
+#endif
 }
 
 void MacroAssembler::LoadDoubleLiteral(DwVfpRegister result,
@@ -3931,7 +3947,7 @@ void MacroAssembler::And(Register ra, Register rs, const Operand& rb,
     and_(ra, rs, rb.rm(), rc);
   } else {
     if (is_uint16(rb.imm32_) && rb.rmode_ == RelocInfo::NONE
-        && rc == LeaveRC) {
+        && rc == SetRC) {
       andi(ra, rs, rb);
     } else {
       // mov handles the relocation.
@@ -3972,6 +3988,57 @@ void MacroAssembler::Xor(Register ra, Register rs, const Operand& rb,
     }
   }
 }
+
+void MacroAssembler::CmpSmiLiteral(Register src1, Smi *smi, Register scratch,
+                                   CRegister cr) {
+#if V8_TARGET_ARCH_PPC64
+  LoadSmiLiteral(scratch, smi);
+  cmp(src1, scratch, cr);
+#else
+  Cmpi(src1, Operand(smi), scratch, cr);
+#endif
+}
+
+void MacroAssembler::CmplSmiLiteral(Register src1, Smi *smi, Register scratch,
+                                   CRegister cr) {
+#if V8_TARGET_ARCH_PPC64
+  LoadSmiLiteral(scratch, smi);
+  cmpl(src1, scratch, cr);
+#else
+  Cmpli(src1, Operand(smi), scratch, cr);
+#endif
+}
+
+void MacroAssembler::AddSmiLiteral(Register dst, Register src, Smi *smi,
+                                   Register scratch) {
+#if V8_TARGET_ARCH_PPC64
+  LoadSmiLiteral(scratch, smi);
+  add(dst, src, scratch);
+#else
+  Add(dst, src, reinterpret_cast<intptr_t>(smi), scratch);
+#endif
+}
+
+void MacroAssembler::SubSmiLiteral(Register dst, Register src, Smi *smi,
+                                   Register scratch) {
+#if V8_TARGET_ARCH_PPC64
+  LoadSmiLiteral(scratch, smi);
+  sub(dst, src, scratch);
+#else
+  Add(dst, src, -(reinterpret_cast<intptr_t>(smi)), scratch);
+#endif
+}
+
+void MacroAssembler::AndSmiLiteral(Register dst, Register src, Smi *smi,
+                                   Register scratch, RCBit rc) {
+#if V8_TARGET_ARCH_PPC64
+  LoadSmiLiteral(scratch, smi);
+  and_(dst, src, scratch, rc);
+#else
+  And(dst, src, Operand(smi), rc);
+#endif
+}
+
 
 // Load a "pointer" sized value from the memory location
 void MacroAssembler::LoadP(Register dst, const MemOperand& mem,

@@ -713,7 +713,7 @@ static const int kFastApiCallArguments = 4;
 static void ReserveSpaceForFastApiCall(MacroAssembler* masm,
                                        Register scratch) {
   EMIT_STUB_MARKER(15);
-  __ li(scratch, Operand(Smi::FromInt(0)));
+  __ LoadSmiLiteral(scratch, Smi::FromInt(0));
   for (int i = 0; i < kFastApiCallArguments; i++) {
     __ push(scratch);
   }
@@ -1645,9 +1645,7 @@ Handle<Code> CallStubCompiler::CompileArrayPushCall(
 
       // Get the array's length into r3 and calculate new length.
       __ lwz(r3, FieldMemOperand(receiver, JSArray::kLengthOffset));
-      STATIC_ASSERT(kSmiTagSize == 1);
-      STATIC_ASSERT(kSmiTag == 0);
-      __ addi(r3, r3, Operand(Smi::FromInt(argc)));
+      __ AddSmiLiteral(r3, r3, Smi::FromInt(argc), r0);
 
       // Get the elements' length.
       __ lwz(r7, FieldMemOperand(elements, FixedArray::kLengthOffset));
@@ -1667,7 +1665,7 @@ Handle<Code> CallStubCompiler::CompileArrayPushCall(
       // Store the value.
       // We may need a register containing the address end_elements below,
       // so write back the value in end_elements.
-      __ slwi(end_elements, r3, Operand(kPointerSizeLog2 - kSmiTagSize));
+      __ SmiToPtrArrayOffset(end_elements, r3);
       __ add(end_elements, elements, end_elements);
       const int kEndElementsOffset =
           FixedArray::kHeaderSize - kHeapObjectTag - argc * kPointerSize;
@@ -1722,7 +1720,7 @@ Handle<Code> CallStubCompiler::CompileArrayPushCall(
       // Store the value.
       // We may need a register containing the address end_elements below,
       // so write back the value in end_elements.
-      __ slwi(end_elements, r3, Operand(kPointerSizeLog2 - kSmiTagSize));
+      __ SmiToPtrArrayOffset(end_elements, r3);
       __ add(end_elements, elements, end_elements);
       __ Add(end_elements, end_elements, kEndElementsOffset, r0);
       __ stw(r7, MemOperand(end_elements));
@@ -1762,7 +1760,7 @@ Handle<Code> CallStubCompiler::CompileArrayPushCall(
 
       const int kAllocationDelta = 4;
       // Load top and check if it is the end of elements.
-      __ slwi(end_elements, r3, Operand(kPointerSizeLog2 - kSmiTagSize));
+      __ SmiToPtrArrayOffset(end_elements, r3);
       __ add(end_elements, elements, end_elements);
       __ Add(end_elements, end_elements, kEndElementsOffset, r0);
       __ mov(r10, Operand(new_space_allocation_top));
@@ -1789,7 +1787,7 @@ Handle<Code> CallStubCompiler::CompileArrayPushCall(
 
       // Update elements' and array's sizes.
       __ stw(r3, FieldMemOperand(receiver, JSArray::kLengthOffset));
-      __ addi(r7, r7, Operand(Smi::FromInt(kAllocationDelta)));
+      __ AddSmiLiteral(r7, r7, Smi::FromInt(kAllocationDelta), r0);
       __ stw(r7, FieldMemOperand(elements, FixedArray::kLengthOffset));
 
       // Elements are in new space, so write barrier is not required.
@@ -1858,17 +1856,15 @@ Handle<Code> CallStubCompiler::CompileArrayPopCall(
 
   // Get the array's length into r7 and calculate new length.
   __ lwz(r7, FieldMemOperand(receiver, JSArray::kLengthOffset));
-  __ sub(r7, r7, Operand(Smi::FromInt(1)));
+  __ SubSmiLiteral(r7, r7, Smi::FromInt(1), r0);
   __ cmpi(r7, Operand::Zero());
   __ blt(&return_undefined);
 
   // Get the last element.
   __ LoadRoot(r9, Heap::kTheHoleValueRootIndex);
-  STATIC_ASSERT(kSmiTagSize == 1);
-  STATIC_ASSERT(kSmiTag == 0);
   // We can't address the last element in one operation. Compute the more
   // expensive shift first, and use an offset later on.
-  __ slwi(r3, r7, Operand(kPointerSizeLog2 - kSmiTagSize));
+  __ SmiToPtrArrayOffset(r3, r7);
   __ add(elements, elements, r3);
   __ lwz(r3, FieldMemOperand(elements, FixedArray::kHeaderSize));
   __ cmp(r3, r9);
@@ -2119,7 +2115,7 @@ Handle<Code> CallStubCompiler::CompileStringFromCharCodeCall(
   __ JumpIfNotSmi(code, &slow);
 
   // Convert the smi code to uint16.
-  __ mov(r0, Operand(Smi::FromInt(0xffff)));
+  __ LoadSmiLiteral(r0, Smi::FromInt(0xffff));
   __ and_(code, code, r0);
 
   StringCharFromCodeGenerator generator(code, r3);
@@ -2223,7 +2219,7 @@ Handle<Code> CallStubCompiler::CompileMathFloorCall(
 
   // Tag the result.
   STATIC_ASSERT(kSmiTag == 0);
-  __ slwi(r3, r3, Operand(kSmiTagSize));
+  __ SmiTag(r3);
 
   // Check for -0
   __ cmpi(r3, Operand::Zero());
@@ -2825,7 +2821,7 @@ Handle<Code> StoreStubCompiler::CompileStoreInterceptor(
 
   __ Push(r4, r5, r3);  // Receiver, name, value.
 
-  __ li(r3, Operand(Smi::FromInt(strict_mode_)));
+  __ LoadSmiLiteral(r3, Smi::FromInt(strict_mode_));
   __ push(r3);  // strict mode
 
   // Do tail-call to the runtime system.
@@ -3655,7 +3651,7 @@ void KeyedLoadStubCompiler::GenerateLoadDictionaryElement(
   Register receiver = r4;
 
   __ JumpIfNotSmi(key, &miss_force_generic);
-  __ srawi(r5, key, kSmiTagSize);
+  __ SmiUntag(r5, key);
   __ lwz(r7, FieldMemOperand(receiver, JSObject::kElementsOffset));
   __ LoadFromNumberDictionary(&slow, r7, key, r3, r5, r6, r8);
   __ Ret();
@@ -3788,40 +3784,41 @@ void KeyedLoadStubCompiler::GenerateLoadExternalArray(
   __ lwz(r6, FieldMemOperand(r6, ExternalArray::kExternalPointerOffset));
   // r6: base pointer of external storage
 
-  // We are not untagging smi key and instead work with it
-  // as if it was premultiplied by 2.
-  STATIC_ASSERT((kSmiTag == 0) && (kSmiTagSize == 1));
+  // We are not untagging smi key since an additional shift operation
+  // may be required to compute the array element's offset.
 
   Register value = r5;
   switch (elements_kind) {
     case EXTERNAL_BYTE_ELEMENTS:
-      __ srwi(value, key, Operand(1));
+      __ SmiToByteArrayOffset(value, key);
       __ lbzx(value, MemOperand(value, r6));
       __ extsb(value, value);
       break;
     case EXTERNAL_PIXEL_ELEMENTS:
     case EXTERNAL_UNSIGNED_BYTE_ELEMENTS:
-      __ srwi(value, key, Operand(1));
+      __ SmiToByteArrayOffset(value, key);
       __ lbzx(value, MemOperand(value, r6));
       break;
     case EXTERNAL_SHORT_ELEMENTS:
-      __ lhzx(value, MemOperand(r6, key));
+      __ SmiToShortArrayOffset(value, key);
+      __ lhzx(value, MemOperand(r6, value));
       __ extsh(value, value);
       break;
     case EXTERNAL_UNSIGNED_SHORT_ELEMENTS:
-      __ lhzx(value, MemOperand(r6, key));
+      __ SmiToShortArrayOffset(value, key);
+      __ lhzx(value, MemOperand(r6, value));
       break;
     case EXTERNAL_INT_ELEMENTS:
     case EXTERNAL_UNSIGNED_INT_ELEMENTS:
-      __ slwi(value, key, Operand(1));
+      __ SmiToIntArrayOffset(value, key);
       __ lwzx(value, MemOperand(value, r6));
       break;
     case EXTERNAL_FLOAT_ELEMENTS:
-      __ slwi(value, key, Operand(1));
+      __ SmiToFloatArrayOffset(value, key);
       __ lfsx(d0, MemOperand(value, r6));
       break;
     case EXTERNAL_DOUBLE_ELEMENTS:
-      __ slwi(value, key, Operand(2));
+      __ SmiToDoubleArrayOffset(value, key);
       __ lfdx(d0, MemOperand(value, r6));
       break;
     case FAST_ELEMENTS:
@@ -3854,7 +3851,7 @@ void KeyedLoadStubCompiler::GenerateLoadExternalArray(
     __ bne(&box_int);         // If both high bits are not set, we box it
     __ bind(&smi_ok);
     // Tag integer as smi and return it.
-    __ slwi(r3, value, Operand(kSmiTagSize));
+    __ SmiTag(r3, value);
     __ Ret();
 
     __ bind(&box_int);
@@ -3880,7 +3877,7 @@ void KeyedLoadStubCompiler::GenerateLoadExternalArray(
     __ bne(&box_int, cr0);   // If either two high bits are set, box
 
     // Tag integer as smi and return it.
-    __ slwi(r3, value, Operand(kSmiTagSize));
+    __ SmiTag(r3, value);
     __ Ret();
 
     __ bind(&box_int);
@@ -3920,7 +3917,7 @@ void KeyedLoadStubCompiler::GenerateLoadExternalArray(
 
   } else {
     // Tag integer as smi and return it.
-    __ slwi(r3, value, Operand(kSmiTagSize));
+    __ SmiTag(r3, value);
     __ Ret();
   }
 
@@ -4168,8 +4165,7 @@ void KeyedLoadStubCompiler::GenerateLoadFastElement(MacroAssembler* masm) {
 
   // Load the result and make sure it's not the hole.
   __ addi(r6, r5, Operand(FixedArray::kHeaderSize - kHeapObjectTag));
-  STATIC_ASSERT(kSmiTag == 0 && kSmiTagSize < kPointerSizeLog2);
-  __ slwi(r7, r3, Operand(kPointerSizeLog2 - kSmiTagSize));
+  __ SmiToPtrArrayOffset(r7, r3);
   __ lwzx(r7, MemOperand(r7, r6));
   __ LoadRoot(ip, Heap::kTheHoleValueRootIndex);
   __ cmp(r7, ip);
@@ -4221,8 +4217,7 @@ void KeyedLoadStubCompiler::GenerateLoadFastDoubleElement(
   __ bge(&miss_force_generic);
 
   // Load the upper word of the double in the fixed array and test for NaN.
-  __ slwi(indexed_double_offset, key_reg,
-         Operand(kDoubleSizeLog2 - kSmiTagSize));
+  __ SmiToDoubleArrayOffset(indexed_double_offset, key_reg);
   __ add(indexed_double_offset, elements_reg, indexed_double_offset);
 #if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
   uint32_t upper_32_offset = FixedArray::kHeaderSize + sizeof(kHoleNanLower32);
@@ -4331,16 +4326,14 @@ void KeyedStoreStubCompiler::GenerateStoreFastElement(
     __ addi(scratch,
             elements_reg,
             Operand(FixedArray::kHeaderSize - kHeapObjectTag));
-    STATIC_ASSERT(kSmiTag == 0 && kSmiTagSize < kPointerSizeLog2);
-    __ slwi(scratch2, key_reg, Operand(kPointerSizeLog2 - kSmiTagSize));
+    __ SmiToPtrArrayOffset(scratch2, key_reg);
     __ stwx(value_reg, MemOperand(scratch, scratch2));
   } else {
     ASSERT(IsFastObjectElementsKind(elements_kind));
     __ addi(scratch,
             elements_reg,
             Operand(FixedArray::kHeaderSize - kHeapObjectTag));
-    STATIC_ASSERT(kSmiTag == 0 && kSmiTagSize < kPointerSizeLog2);
-    __ slwi(scratch2, key_reg, Operand(kPointerSizeLog2 - kSmiTagSize));
+    __ SmiToPtrArrayOffset(scratch2, key_reg);
     __ stwux(value_reg, MemOperand(scratch, scratch2));
     __ mr(receiver_reg, value_reg);
     __ RecordWrite(elements_reg,  // Object.
@@ -4385,7 +4378,8 @@ void KeyedStoreStubCompiler::GenerateStoreFastElement(
 
     __ LoadRoot(scratch, Heap::kFixedArrayMapRootIndex);
     __ stw(scratch, FieldMemOperand(elements_reg, JSObject::kMapOffset));
-    __ mov(scratch, Operand(Smi::FromInt(JSArray::kPreallocatedArrayElements)));
+    __ LoadSmiLiteral(scratch,
+                      Smi::FromInt(JSArray::kPreallocatedArrayElements));
     __ stw(scratch, FieldMemOperand(elements_reg, FixedArray::kLengthOffset));
     __ LoadRoot(scratch, Heap::kTheHoleValueRootIndex);
     for (int i = 1; i < JSArray::kPreallocatedArrayElements; ++i) {
@@ -4404,7 +4398,7 @@ void KeyedStoreStubCompiler::GenerateStoreFastElement(
                         EMIT_REMEMBERED_SET, OMIT_SMI_CHECK);
 
     // Increment the length of the array.
-    __ li(length_reg, Operand(Smi::FromInt(1)));
+    __ LoadSmiLiteral(length_reg, Smi::FromInt(1));
     __ stw(length_reg, FieldMemOperand(receiver_reg, JSArray::kLengthOffset));
     __ Ret();
 
@@ -4421,7 +4415,7 @@ void KeyedStoreStubCompiler::GenerateStoreFastElement(
     __ bge(&slow);
 
     // Grow the array and finish the store.
-    __ addi(length_reg, length_reg, Operand(Smi::FromInt(1)));
+    __ AddSmiLiteral(length_reg, length_reg, Smi::FromInt(1), r0);
     __ stw(length_reg, FieldMemOperand(receiver_reg, JSArray::kLengthOffset));
     __ b(&finish_store);
 
@@ -4541,8 +4535,8 @@ void KeyedStoreStubCompiler::GenerateStoreFastDoubleElement(
     // efficiency, they are guaranteed to be initialized before use.
     __ LoadRoot(scratch1, Heap::kFixedDoubleArrayMapRootIndex);
     __ stw(scratch1, FieldMemOperand(elements_reg, JSObject::kMapOffset));
-    __ mov(scratch1,
-           Operand(Smi::FromInt(JSArray::kPreallocatedArrayElements)));
+    __ LoadSmiLiteral(scratch1,
+                      Smi::FromInt(JSArray::kPreallocatedArrayElements));
     __ stw(scratch1,
            FieldMemOperand(elements_reg, FixedDoubleArray::kLengthOffset));
 
@@ -4554,7 +4548,7 @@ void KeyedStoreStubCompiler::GenerateStoreFastDoubleElement(
                         EMIT_REMEMBERED_SET, OMIT_SMI_CHECK);
 
     // Increment the length of the array.
-    __ li(length_reg, Operand(Smi::FromInt(1)));
+    __ LoadSmiLiteral(length_reg, Smi::FromInt(1));
     __ stw(length_reg, FieldMemOperand(receiver_reg, JSArray::kLengthOffset));
     __ lwz(elements_reg,
            FieldMemOperand(receiver_reg, JSObject::kElementsOffset));
@@ -4568,7 +4562,7 @@ void KeyedStoreStubCompiler::GenerateStoreFastDoubleElement(
     __ bge(&slow);
 
     // Grow the array and finish the store.
-    __ addi(length_reg, length_reg, Operand(Smi::FromInt(1)));
+    __ AddSmiLiteral(length_reg, length_reg, Smi::FromInt(1), r0);
     __ stw(length_reg, FieldMemOperand(receiver_reg, JSArray::kLengthOffset));
     __ b(&finish_store);
 

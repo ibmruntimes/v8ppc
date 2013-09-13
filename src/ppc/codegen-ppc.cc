@@ -412,7 +412,7 @@ void StringCharLoadGenerator::Generate(MacroAssembler* masm,
   Label indirect_string_loaded;
   __ lwz(result, FieldMemOperand(string, SlicedString::kOffsetOffset));
   __ lwz(string, FieldMemOperand(string, SlicedString::kParentOffset));
-  __ srawi(ip, result, kSmiTagSize);
+  __ SmiUntag(ip, result);
   __ add(index, index, ip);
   __ b(&indirect_string_loaded);
 
