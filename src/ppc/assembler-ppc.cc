@@ -105,7 +105,7 @@ const int RelocInfo::kApplyMask = 1 << RelocInfo::INTERNAL_REFERENCE;
 
 bool RelocInfo::IsCodedSpecially() {
   // The deserializer needs to know whether a pointer is specially
-  // coded.  Being specially coded on PPC means that it is a lis/addic
+  // coded.  Being specially coded on PPC means that it is a lis/ori
   // instruction sequence, and that is always the case inside code
   // objects.
   return true;

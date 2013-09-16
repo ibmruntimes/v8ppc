@@ -644,7 +644,7 @@ class Assembler : public AssemblerBase {
 
   // Call sequence is:
   // lis     r8, 2148      @ call address hi
-  // addic   r8, r8, 5728  @ call address lo
+  // ori     r8, r8, 5728  @ call address lo
   // mtlr    r8
   // blrl
   //                      @ return address
@@ -654,7 +654,7 @@ class Assembler : public AssemblerBase {
   // to jump to.
   // Patched return sequence is:
   //   lis r0, <address hi>
-  //   addic r0, r0, <address lo>
+  //   ori r0, r0, <address lo>
   //   mtlr r0
   //   blrl
   static const int kPatchReturnSequenceAddressOffset =  0 * kInstrSize;
@@ -663,7 +663,7 @@ class Assembler : public AssemblerBase {
   // to jump to.
   // Patched debug break slot code is:
   //   lis r0, <address hi>
-  //   addic r0, r0, <address lo>
+  //   ori r0, r0, <address lo>
   //   mtlr r0
   //   blrl
   static const int kPatchDebugBreakSlotAddressOffset =  0 * kInstrSize;

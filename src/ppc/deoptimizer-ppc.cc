@@ -133,7 +133,7 @@ void Deoptimizer::PatchStackCheckCodeAt(Code* unoptimized_code,
   // The call of the stack guard check has the following form:
   // 409c0014       bge +40 -> 876  (0x25535c4c)  ;; (ok)
   // 3d802553       lis     r12, 9555        ;; two part load
-  // 318c5000       addic   r12, r12, 20480  ;; of stack guard address
+  // 318c5000       ori     r12, r12, 20480  ;; of stack guard address
   // 7d8803a6       mtlr    r12
   // 4e800021       blrl
 
@@ -155,7 +155,7 @@ void Deoptimizer::PatchStackCheckCodeAt(Code* unoptimized_code,
   // We patch the code to the following form:
   // 60000000       ori     r0, r0, 0        ;; NOP
   // 3d80NNNN       lis     r12, NNNN        ;; two part load
-  // 318cNNNN       addic   r12, r12, NNNN   ;; of on stack replace address
+  // 318cNNNN       ori     r12, r12, NNNN   ;; of on stack replace address
   // 7d8803a6       mtlr    r12
   // 4e800021       blrl
 

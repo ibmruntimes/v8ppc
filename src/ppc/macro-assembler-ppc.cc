@@ -3440,8 +3440,6 @@ void MacroAssembler::FlushICache(Register address, unsigned instructions) {
 void MacroAssembler::PatchRelocatedValue(Register lis_location,
                                          Register scratch,
                                          Register new_value) {
-  Label add_one, patch_lis;
-
   lwz(scratch, MemOperand(lis_location));
   // At this point scratch is a lis instruction.
   if (emit_debug_code()) {
@@ -3451,33 +3449,21 @@ void MacroAssembler::PatchRelocatedValue(Register lis_location,
     lwz(scratch, MemOperand(lis_location));
   }
 
-  // Check sign of new low word
-  TestBit(new_value, 16, r0);
-  bne(&add_one, cr0);
-
-  // insert new high word as-is into lis instruction
+  // insert new high word into lis instruction
   rlwimi(scratch, new_value, 16, 16, 31);
-  b(&patch_lis);
 
-  bind(&add_one);
-  // insert new high word + 1 into lis instruction
-  srwi(r0, new_value, Operand(16));
-  addic(r0, r0, Operand(1));
-  rlwimi(scratch, r0, 0, 16, 31);
-
-  bind(&patch_lis);
   stw(scratch, MemOperand(lis_location));
 
   lwz(scratch, MemOperand(lis_location, kInstrSize));
-  // scratch is now addic.
+  // scratch is now ori.
   if (emit_debug_code()) {
     And(scratch, scratch, Operand(kOpcodeMask));
-    Cmpi(scratch, Operand(ADDIC), r0);
-    Check(eq, "The instruction should be an addic.");
+    Cmpi(scratch, Operand(ORI), r0);
+    Check(eq, "The instruction should be an ori");
     lwz(scratch, MemOperand(lis_location, kInstrSize));
   }
 
-  // insert new low word into addic instruction
+  // insert new low word into ori instruction
   rlwimi(scratch, new_value, 0, 16, 31);
   stw(scratch, MemOperand(lis_location, kInstrSize));
 
@@ -3502,15 +3488,12 @@ void MacroAssembler::GetRelocatedValueLocation(Register lis_location,
   lwz(scratch, MemOperand(lis_location, kInstrSize));
   if (emit_debug_code()) {
     And(scratch, scratch, Operand(kOpcodeMask));
-    Cmpi(scratch, Operand(ADDIC), r0);
-    Check(eq, "The instruction should be an addic.");
+    Cmpi(scratch, Operand(ORI), r0);
+    Check(eq, "The instruction should be an ori");
     lwz(scratch, MemOperand(lis_location, kInstrSize));
   }
-  // "scratch" now holds an addic instruction. Extract the immediate.
-  extsh(scratch, scratch);
-
-  // Merge the results.
-  add(result, result, scratch);
+  // Copy the low 16bits from ori instruction into result
+  rlwimi(result, scratch, 0, 16, 31);
 }
 
 
