@@ -275,14 +275,12 @@ Condition Assembler::GetCondition(Instr instr) {
 // PowerPC
 
 bool Assembler::IsLis(Instr instr) {
-  return (instr & ADDIS) == ADDIS;
+  return (instr & kOpcodeMask) == ADDIS;
 }
 
 bool Assembler::IsAddic(Instr instr) {
-  return (instr & ADDIC) == ADDIC;
+  return (instr & kOpcodeMask) == ADDIC;
 }
-
-
 
 bool Assembler::IsBranch(Instr instr) {
   return ((instr & kOpcodeMask) == BCX);
