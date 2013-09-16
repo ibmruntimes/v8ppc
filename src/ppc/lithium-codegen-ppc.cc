@@ -193,10 +193,10 @@ bool LCodeGen::GeneratePrologue() {
         int parameter_offset = StandardFrameConstants::kCallerSPOffset +
             (num_parameters - 1 - i) * kPointerSize;
         // Load parameter from stack.
-        __ lwz(r3, MemOperand(fp, parameter_offset));
+        __ LoadP(r3, MemOperand(fp, parameter_offset));
         // Store it in the context.
         MemOperand target = ContextOperand(cp, var->index());
-        __ stw(r3, target);
+        __ StoreP(r3, target);
         // Update the write barrier. This clobbers r6 and r3.
         __ RecordWriteContextSlot(
             cp, target.offset(), r3, r6, kLRHasBeenSaved, kSaveFPRegs);
@@ -1198,8 +1198,13 @@ void LCodeGen::DoMathFloorOfDiv(LMathFloorOfDiv* instr) {
                                       instr->environment());
   // We operated a truncating division. Correct the result if necessary.
   __ cmpi(remainder, Operand::Zero());
+#ifdef PENGUIN_CLEANUP
   __ teq(remainder, Operand(divisor), ne);
   __ sub(result, result, Operand(1), LeaveCC, mi);
+#else
+  PPCPORT_UNIMPLEMENTED();
+  __ fake_asm(fLITHIUM111);
+#endif
 }
 
 
@@ -1629,7 +1634,7 @@ void LCodeGen::DoMathMinMax(LMathMinMax* instr) {
     __ Move(result_reg, right_reg);
     __ b(&done);
     __ bind(&return_left);
-    __ Move(result_reg, right_reg);
+    __ Move(result_reg, left_reg);
     __ bind(&done);
   } else {
     ASSERT(instr->hydrogen()->representation().IsDouble());
@@ -1768,18 +1773,16 @@ void LCodeGen::DoBranch(LBranch* instr) {
     __ cmpi(reg, Operand::Zero());
     EmitBranch(true_block, false_block, ne);
   } else if (r.IsDouble()) {
-#ifdef PENGUIN_CLEANUP
     DoubleRegister reg = ToDoubleRegister(instr->value());
     Register scratch = scratch0();
 
     // Test the double value. Zero and NaN are false.
-    __ VFPCompareAndLoadFlags(reg, 0.0, scratch);
-    __ tst(scratch, Operand(kVFPZConditionFlagBit | kVFPVConditionFlagBit));
-    EmitBranch(true_block, false_block, eq);
-#else
-  PPCPORT_UNIMPLEMENTED();
-  __ fake_asm(fLITHIUM93);
-#endif
+    uint crBits = (1 << (31 - Assembler::encode_crbit(cr7, CR_EQ)) |
+                   1 << (31 - Assembler::encode_crbit(cr7, CR_FU)));
+    __ fcmpu(reg, kDoubleRegZero, cr7);
+    __ mfcr(scratch);
+    __ andi(scratch, scratch, Operand(crBits));
+    EmitBranch(true_block, false_block, eq, cr0);
   } else {
     ASSERT(r.IsTagged());
     Register reg = ToRegister(instr->value());
@@ -2098,7 +2101,7 @@ void LCodeGen::DoIsSmiAndBranch(LIsSmiAndBranch* instr) {
 
   Register input_reg = EmitLoadRegister(instr->value(), ip);
   __ TestIfSmi(input_reg, r0);
-  EmitBranch(true_block, false_block, eq);
+  EmitBranch(true_block, false_block, eq, cr0);
 }
 
 
@@ -2318,11 +2321,17 @@ void LCodeGen::DoInstanceOf(LInstanceOf* instr) {
   ASSERT(ToRegister(instr->right()).is(r4));  // Function is in r4.
 
   InstanceofStub stub(InstanceofStub::kArgsInRegisters);
+  Label equal, done;
   CallCode(stub.GetCode(), RelocInfo::CODE_TARGET, instr);
 
   __ cmpi(r3, Operand::Zero());
-  __ mov(r3, Operand(factory()->false_value()), LeaveCC, ne);
-  __ mov(r3, Operand(factory()->true_value()), LeaveCC, eq);
+  __ beq(&equal);
+  __ mov(r3, Operand(factory()->false_value()));
+  __ b(&done);
+
+  __ bind(&equal);
+  __ mov(r3, Operand(factory()->true_value()));
+  __ bind(&done);
 }
 
 
@@ -2363,6 +2372,9 @@ void LCodeGen::DoInstanceOfKnownGlobal(LInstanceOfKnownGlobal* instr) {
   Register map = temp;
   __ lwz(map, FieldMemOperand(object, HeapObject::kMapOffset));
   {
+    // Block constant pool emission to ensure the positions of instructions are
+    // as expected by the patcher. See InstanceofStub::Generate().
+    Assembler::BlockTrampolinePoolScope block_trampoline_pool(masm_);
     __ bind(deferred->map_check());  // Label for calculating code patching.
     // We use Factory::the_hole_value() on purpose instead of loading from the
     // root array to force relocation to be able to later patch with
@@ -2431,14 +2443,18 @@ void LCodeGen::DoDeferredInstanceOfKnownGlobal(LInstanceOfKnownGlobal* instr,
   int delta = masm_->InstructionsGeneratedSince(map_check) + kAdditionalDelta;
   Label before_push_delta;
   __ bind(&before_push_delta);
-  __ mov(temp, Operand(delta * kPointerSize));
-  // The mov above can generate one or two instructions. The delta was computed
-  // for two instructions, so we need to pad here in case of one instruction.
-  if (masm_->InstructionsGeneratedSince(&before_push_delta) != 2) {
-    ASSERT_EQ(1, masm_->InstructionsGeneratedSince(&before_push_delta));
-    __ nop();
+  {
+    Assembler::BlockTrampolinePoolScope block_trampoline_pool(masm_);
+    __ mov(temp, Operand(delta * kPointerSize));
+    // The mov above can generate one or two instructions. The delta
+    // was computed for two instructions, so we need to pad here in
+    // case of one instruction.
+    if (masm_->InstructionsGeneratedSince(&before_push_delta) != 2) {
+      ASSERT_EQ(1, masm_->InstructionsGeneratedSince(&before_push_delta));
+      __ nop();
+    }
+    __ StoreToSafepointRegisterSlot(temp, temp);
   }
-  __ StoreToSafepointRegisterSlot(temp, temp);
   CallCodeGeneric(stub.GetCode(),
                   RelocInfo::CODE_TARGET,
                   instr,
@@ -2561,7 +2577,10 @@ void LCodeGen::DoLoadContextSlot(LLoadContextSlot* instr) {
     if (instr->hydrogen()->DeoptimizesOnHole()) {
       DeoptimizeIf(eq, instr->environment());
     } else {
-      __ mov(result, Operand(factory()->undefined_value()), LeaveCC, eq);
+      Label skip;
+      __ bne(&skip);
+      __ mov(result, Operand(factory()->undefined_value()));
+      __ bind(&skip);
     }
   }
 }
@@ -2892,7 +2911,11 @@ void LCodeGen::DoLoadKeyedFastDoubleElement(
   }
 
   if (instr->hydrogen()->RequiresHoleCheck()) {
+#if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
     __ lwz(scratch, MemOperand(elements, sizeof(kHoleNanLower32)));
+#else
+    __ lwz(scratch, MemOperand(elements));
+#endif
     __ Cmpi(scratch, Operand(kHoleNanUpper32), r0);
     DeoptimizeIf(eq, instr->environment());
   }
@@ -2984,7 +3007,7 @@ void LCodeGen::DoLoadKeyedSpecializedArrayElement(
     switch (elements_kind) {
       case EXTERNAL_BYTE_ELEMENTS:
         if (key_is_constant) {
-          __ lbz(result, mem_operand);
+          __ LoadByte(result, mem_operand, r0);
         } else {
           __ lbzx(result, mem_operand);
         }
@@ -2993,14 +3016,14 @@ void LCodeGen::DoLoadKeyedSpecializedArrayElement(
       case EXTERNAL_PIXEL_ELEMENTS:
       case EXTERNAL_UNSIGNED_BYTE_ELEMENTS:
         if (key_is_constant) {
-          __ lbz(result, mem_operand);
+          __ LoadByte(result, mem_operand, r0);
         } else {
           __ lbzx(result, mem_operand);
         }
         break;
       case EXTERNAL_SHORT_ELEMENTS:
         if (key_is_constant) {
-          __ lhz(result, mem_operand);
+          __ LoadHalfWord(result, mem_operand, r0);
         } else {
           __ lhzx(result, mem_operand);
         }
@@ -3008,21 +3031,21 @@ void LCodeGen::DoLoadKeyedSpecializedArrayElement(
         break;
       case EXTERNAL_UNSIGNED_SHORT_ELEMENTS:
         if (key_is_constant) {
-          __ lhz(result, mem_operand);
+          __ LoadHalfWord(result, mem_operand, r0);
         } else {
           __ lhzx(result, mem_operand);
         }
         break;
       case EXTERNAL_INT_ELEMENTS:
         if (key_is_constant) {
-          __ lwz(result, mem_operand);
+          __ LoadWord(result, mem_operand, r0);
         } else {
           __ lwzx(result, mem_operand);
         }
         break;
       case EXTERNAL_UNSIGNED_INT_ELEMENTS:
         if (key_is_constant) {
-          __ lwz(result, mem_operand);
+          __ LoadWord(result, mem_operand, r0);
         } else {
           __ lwzx(result, mem_operand);
         }
@@ -3073,8 +3096,13 @@ void LCodeGen::DoArgumentsElements(LArgumentsElements* instr) {
 
     // Result is the frame pointer for the frame if not adapted and for the real
     // frame below the adaptor frame if adapted.
-    __ mov(result, fp, LeaveCC, ne);
-    __ mov(result, scratch, LeaveCC, eq);
+    __ beq(&adapted);
+    __ mr(result, fp);
+    __ b(&done);
+
+    __ bind(&adapted);
+    __ mr(result, scratch);
+    __ bind(&done);
   }
 }
 
@@ -3141,9 +3169,9 @@ void LCodeGen::DoWrapReceiver(LWrapReceiver* instr) {
   __ b(&receiver_ok);
 
   __ bind(&global_object);
-  __ lwz(receiver, GlobalObjectOperand());
-  __ lwz(receiver,
-         FieldMemOperand(receiver, JSGlobalObject::kGlobalReceiverOffset));
+  __ LoadP(receiver, GlobalObjectOperand());
+  __ LoadP(receiver,
+           FieldMemOperand(receiver, JSGlobalObject::kGlobalReceiverOffset));
   __ bind(&receiver_ok);
 }
 
@@ -3248,7 +3276,7 @@ void LCodeGen::DoDeclareGlobals(LDeclareGlobals* instr) {
 
 void LCodeGen::DoGlobalObject(LGlobalObject* instr) {
   Register result = ToRegister(instr->result());
-  __ lwz(result, ContextOperand(cp, Context::GLOBAL_OBJECT_INDEX));
+  __ LoadP(result, ContextOperand(cp, Context::GLOBAL_OBJECT_INDEX));
 }
 
 
@@ -4185,7 +4213,7 @@ void LCodeGen::DoStoreKeyedSpecializedArrayElement(
       case EXTERNAL_BYTE_ELEMENTS:
       case EXTERNAL_UNSIGNED_BYTE_ELEMENTS:
         if (key_is_constant) {
-          __ stb(value, mem_operand);
+          __ StoreByte(value, mem_operand, r0);
         } else {
           __ stbx(value, mem_operand);
         }
@@ -4193,7 +4221,7 @@ void LCodeGen::DoStoreKeyedSpecializedArrayElement(
       case EXTERNAL_SHORT_ELEMENTS:
       case EXTERNAL_UNSIGNED_SHORT_ELEMENTS:
         if (key_is_constant) {
-          __ sth(value, mem_operand);
+          __ StoreHalfWord(value, mem_operand, r0);
         } else {
           __ sthx(value, mem_operand);
         }
@@ -4201,7 +4229,7 @@ void LCodeGen::DoStoreKeyedSpecializedArrayElement(
       case EXTERNAL_INT_ELEMENTS:
       case EXTERNAL_UNSIGNED_INT_ELEMENTS:
         if (key_is_constant) {
-          __ stw(value, mem_operand);
+          __ StoreWord(value, mem_operand, r0);
         } else {
           __ stwx(value, mem_operand);
         }
@@ -4360,7 +4388,7 @@ void LCodeGen::DoStringCharFromCode(LStringCharFromCode* instr) {
   ASSERT(!char_code.is(result));
 
   __ cmpli(char_code, Operand(String::kMaxAsciiCharCode));
-  __ b(gt, deferred->entry());
+  __ bgt(deferred->entry());
   __ LoadRoot(result, Heap::kSingleCharacterStringCacheRootIndex);
   __ slwi(r0, char_code, Operand(kPointerSizeLog2));
   __ add(result, result, r0);
@@ -4440,10 +4468,8 @@ void LCodeGen::DoNumberTagI(LNumberTagI* instr) {
   Register dst = ToRegister(instr->result());
 
   DeferredNumberTagI* deferred = new(zone()) DeferredNumberTagI(this, instr);
-  __ SmiTagCheckOverflow(ip, src, r0);
+  __ SmiTagCheckOverflow(dst, src, r0);
   __ BranchOnOverflow(deferred->entry());
-  __ mr(dst, ip);
-
   __ bind(deferred->exit());
 }
 
@@ -4469,7 +4495,7 @@ void LCodeGen::DoNumberTagU(LNumberTagU* instr) {
 
   DeferredNumberTagU* deferred = new(zone()) DeferredNumberTagU(this, instr);
   __ Cmpli(reg, Operand(Smi::kMaxValue), r0);
-  __ b(gt, deferred->entry());
+  __ bgt(deferred->entry());
   __ SmiTag(reg, reg);
   __ bind(deferred->exit());
 }
@@ -4575,13 +4601,15 @@ void LCodeGen::DoSmiTag(LSmiTag* instr) {
 
 
 void LCodeGen::DoSmiUntag(LSmiUntag* instr) {
+  Register scratch = scratch0();
   Register input = ToRegister(instr->value());
   Register result = ToRegister(instr->result());
   if (instr->needs_check()) {
     STATIC_ASSERT(kHeapObjectTag == 1);
-    // If the input is a HeapObject, SmiUntag will set the carry flag.
-    __ SmiUntag(result, input, SetCC);
-    DeoptimizeIf(ge, instr->environment(), cr0);
+    // If the input is a HeapObject, value of scratch won't be zero.
+    __ andi(scratch, input, Operand(kHeapObjectTag));
+    __ SmiUntag(result, input);
+    DeoptimizeIf(ne, instr->environment(), cr0);
   } else {
     __ SmiUntag(result, input);
   }
@@ -4702,6 +4730,10 @@ void LCodeGen::DoDeferredTaggedToI(LTaggedToI* instr) {
 
     __ lfd(double_scratch,
            FieldMemOperand(input_reg, HeapNumber::kValueOffset));
+    if (instr->hydrogen()->CheckFlag(HValue::kBailoutOnMinusZero)) {
+      // preserve heap number pointer in scratch2 for minus zero check below
+      __ mr(scratch2, input_reg);
+    }
     __ EmitVFPTruncate(kRoundToZero,
                        input_reg,
                        double_scratch,
@@ -4713,11 +4745,10 @@ void LCodeGen::DoDeferredTaggedToI(LTaggedToI* instr) {
     if (instr->hydrogen()->CheckFlag(HValue::kBailoutOnMinusZero)) {
       __ cmpi(input_reg, Operand::Zero());
       __ bne(&done);
-#ifdef PENGUIN_CLEANUP
-      __ vmov(scratch1, double_scratch.high());
+#if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
+      __ lwz(scratch1, FieldMemOperand(scratch2, HeapNumber::kValueOffset + 4));
 #else
-      PPCPORT_UNIMPLEMENTED();
-      __ fake_asm(fLITHIUM91);
+      __ lwz(scratch1, FieldMemOperand(scratch2, HeapNumber::kValueOffset));
 #endif
       __ TestBit(scratch1, 0, r0);  // test sign bit
       DeoptimizeIf(ne, instr->environment(), cr0);
@@ -4913,7 +4944,7 @@ void LCodeGen::DoClampDToUint8(LClampDToUint8* instr) {
   DoubleRegister value_reg = ToDoubleRegister(instr->unclamped());
   Register result_reg = ToRegister(instr->result());
   DoubleRegister temp_reg = ToDoubleRegister(instr->temp());
-  __ ClampDoubleToUint8(result_reg, value_reg, temp_reg);
+  __ ClampDoubleToUint8(result_reg, value_reg, temp_reg, double_scratch0());
 }
 
 
@@ -4928,7 +4959,8 @@ void LCodeGen::DoClampTToUint8(LClampTToUint8* instr) {
   Register scratch = scratch0();
   Register input_reg = ToRegister(instr->unclamped());
   Register result_reg = ToRegister(instr->result());
-  DoubleRegister temp_reg = ToDoubleRegister(instr->temp());
+  DoubleRegister temp_reg1 = ToDoubleRegister(instr->temp1());
+  DoubleRegister temp_reg2 = ToDoubleRegister(instr->temp2());
   Label is_smi, done, heap_number;
 
   // Both smi and heap number cases are handled.
@@ -4950,7 +4982,7 @@ void LCodeGen::DoClampTToUint8(LClampTToUint8* instr) {
   __ bind(&heap_number);
   __ lfd(double_scratch0(), FieldMemOperand(input_reg,
                                             HeapNumber::kValueOffset));
-  __ ClampDoubleToUint8(result_reg, double_scratch0(), temp_reg);
+  __ ClampDoubleToUint8(result_reg, double_scratch0(), temp_reg1, temp_reg2);
   __ b(&done);
 
   // smi

@@ -56,6 +56,17 @@
 #define V8_INFINITY HUGE_VAL
 #endif
 
+#ifdef _AIX
+#undef V8_INFINITY
+#define V8_INFINITY (__builtin_inff())
+
+// AIX is missing /usr/include/endian.h
+#define __LITTLE_ENDIAN 1234
+#define __BIG_ENDIAN    4321
+#define __BYTE_ORDER    __BIG_ENDIAN
+
+#endif
+
 
 #include "../include/v8stdint.h"
 
@@ -86,7 +97,7 @@ namespace internal {
 #elif defined(__MIPSEL__)
 #define V8_HOST_ARCH_MIPS 1
 #define V8_HOST_ARCH_32_BIT 1
-#elif defined(__PPC__)
+#elif defined(__PPC__) || defined(_ARCH_PPC)
 #define V8_HOST_ARCH_PPC 1
 #if defined(__PPC64__)
 #define V8_HOST_ARCH_64_BIT 1

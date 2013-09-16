@@ -29,12 +29,12 @@
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 
-// Declares a Simulator for ARM instructions if we are not generating a native
-// ARM binary. This Simulator allows us to run and debug ARM code generation on
+// Declares a Simulator for PPC instructions if we are not generating a native
+// PPC binary. This Simulator allows us to run and debug PPC code generation on
 // regular desktop machines.
 // V8 calls into generated code by "calling" the CALL_GENERATED_CODE macro,
 // which will start execution in the Simulator or forwards to the real entry
-// on a ARM HW platform.
+// on a PPC HW platform.
 
 #ifndef V8_PPC_SIMULATOR_PPC_H_
 #define V8_PPC_SIMULATOR_PPC_H_
@@ -42,7 +42,7 @@
 #include "allocation.h"
 
 #if !defined(USE_SIMULATOR)
-// Running without a simulator on a native arm platform.
+// Running without a simulator on a native ppc platform.
 
 namespace v8 {
 namespace internal {
@@ -51,23 +51,23 @@ namespace internal {
 #define CALL_GENERATED_CODE(entry, p0, p1, p2, p3, p4) \
   (entry(p0, p1, p2, p3, p4))
 
-typedef int (*arm_regexp_matcher)(String*, int, const byte*, const byte*,
-                                  void*, int*, int, Address, int, Isolate*);
+typedef int (*ppc_regexp_matcher)(String*, int, const byte*, const byte*,
+                                  int*, int, Address, int, void*, Isolate*);
 
 
 // Call the generated regexp code directly. The code at the entry address
-// should act as a function matching the type arm_regexp_matcher.
-// The fifth argument is a dummy that reserves the space used for
+// should act as a function matching the type ppc_regexp_matcher.
+// The ninth argument is a dummy that reserves the space used for
 // the return address added by the ExitFrame in native calls.
 #define CALL_GENERATED_REGEXP_CODE(entry, p0, p1, p2, p3, p4, p5, p6, p7, p8) \
-  (FUNCTION_CAST<arm_regexp_matcher>(entry)(                              \
-      p0, p1, p2, p3, NULL, p4, p5, p6, p7, p8))
+  (FUNCTION_CAST<ppc_regexp_matcher>(entry)(                              \
+      p0, p1, p2, p3, p4, p5, p6, p7, NULL, p8))
 
 #define TRY_CATCH_FROM_ADDRESS(try_catch_address) \
   reinterpret_cast<TryCatch*>(try_catch_address)
 
 // The stack limit beyond which we will throw stack overflow errors in
-// generated code. Because generated code on arm uses the C stack, we
+// generated code. Because generated code on ppc uses the C stack, we
 // just use the C stack limit.
 class SimulatorStack : public v8::internal::AllStatic {
  public:
@@ -136,12 +136,12 @@ class Simulator {
     r8, r9, r10, r11, r12, r13, r14, r15,
     r16, r17, r18, r19, r20, r21, r22, r23,
     r24, r25, r26, r27, r28, r29, r30, fp,
-    num_registers,
+    kNumGPRs = 32,
     d0 = 0, d1, d2, d3, d4, d5, d6, d7,
     d8, d9, d10, d11, d12, d13, d14, d15,
     d16, d17, d18, d19, d20, d21, d22, d23,
     d24, d25, d26, d27, d28, d29, d30, d31,
-    num_d_registers = 32
+    kNumFPRs = 32
   };
 
   explicit Simulator(Isolate* isolate);
@@ -155,36 +155,17 @@ class Simulator {
   void set_register(int reg, intptr_t value);
   intptr_t get_register(int reg) const;
   double get_double_from_register_pair(int reg);
-  void set_dw_register(int dreg, const int* dbl);
-
-  // Support for VFP.
-  void set_d_register_from_double(int dreg, const double& dbl) {
-    SetFPRegister<double, 2>(dreg, dbl);
+  void set_d_register_from_double(int dreg, const double dbl) {
+    ASSERT(dreg >= 0 && dreg < kNumFPRs);
+    fp_register[dreg] = dbl;
   }
-
   double get_double_from_d_register(int dreg) {
-    return GetFromFPRegister<double, 2>(dreg);
-  }
-
-  void set_s_register_from_float(int sreg, const float flt) {
-    SetFPRegister<float, 1>(sreg, flt);
-  }
-
-  float get_float_from_s_register(int sreg) {
-    return GetFromFPRegister<float, 1>(sreg);
-  }
-
-  void set_s_register_from_sinteger(int sreg, const int sint) {
-    SetFPRegister<int, 1>(sreg, sint);
-  }
-
-  int get_sinteger_from_s_register(int sreg) {
-    return GetFromFPRegister<int, 1>(sreg);
+    return fp_register[dreg];
   }
 
   // Special case of set_register and get_register to access the raw PC value.
-  void set_pc(int32_t value);
-  int32_t get_pc() const;
+  void set_pc(intptr_t value);
+  intptr_t get_pc() const;
 
   // Accessor to the internal simulator stack area.
   uintptr_t StackLimit() const;
@@ -198,7 +179,7 @@ class Simulator {
   // V8 generally calls into generated JS code with 5 parameters and into
   // generated RegExp code with 7 parameters. This is a convenience function,
   // which sets up the simulator state and grabs the result on return.
-  int32_t Call(byte* entry, int argument_count, ...);
+  intptr_t Call(byte* entry, int argument_count, ...);
 
   // Push an address onto the JS stack.
   uintptr_t PushAddress(uintptr_t address);
@@ -263,31 +244,34 @@ class Simulator {
   void PrintStopInfo(uint32_t code);
 
   // Read and write memory.
-  inline uint8_t ReadBU(int32_t addr);
-  inline int8_t ReadB(int32_t addr);
-  inline void WriteB(int32_t addr, uint8_t value);
-  inline void WriteB(int32_t addr, int8_t value);
+  inline uint8_t ReadBU(intptr_t addr);
+  inline int8_t ReadB(intptr_t addr);
+  inline void WriteB(intptr_t addr, uint8_t value);
+  inline void WriteB(intptr_t addr, int8_t value);
 
-  inline uint16_t ReadHU(int32_t addr, Instruction* instr);
-  inline int16_t ReadH(int32_t addr, Instruction* instr);
+  inline uint16_t ReadHU(intptr_t addr, Instruction* instr);
+  inline int16_t ReadH(intptr_t addr, Instruction* instr);
   // Note: Overloaded on the sign of the value.
-  inline void WriteH(int32_t addr, uint16_t value, Instruction* instr);
-  inline void WriteH(int32_t addr, int16_t value, Instruction* instr);
+  inline void WriteH(intptr_t addr, uint16_t value, Instruction* instr);
+  inline void WriteH(intptr_t addr, int16_t value, Instruction* instr);
 
-  inline int ReadW(int32_t addr, Instruction* instr);
-  inline void WriteW(int32_t addr, int value, Instruction* instr);
+  inline int ReadW(intptr_t addr, Instruction* instr);
+  inline void WriteW(intptr_t addr, int value, Instruction* instr);
 
   intptr_t* ReadDW(intptr_t addr);
   void WriteDW(intptr_t addr, int64_t value);
 
   // PowerPC
-  void SetCR0(int32_t result, bool setSO = false);
+  void SetCR0(intptr_t result, bool setSO = false);
+  void DecodeBranchConditional(Instruction* instr);
   void DecodeExt1(Instruction* instr);
   bool DecodeExt2_10bit(Instruction* instr);
   void DecodeExt2_9bit(Instruction* instr);
   void DecodeExt2(Instruction* instr);
-
   void DecodeExt4(Instruction* instr);
+#if V8_TARGET_ARCH_PPC64
+  void DecodeExt5(Instruction* instr);
+#endif
 
   // Executes one instruction.
   void InstructionDecode(Instruction* instr);
@@ -306,7 +290,7 @@ class Simulator {
   // For use in calls that take double value arguments.
   void GetFpArgs(double* x, double* y);
   void GetFpArgs(double* x);
-  void GetFpArgs(double* x, int32_t* y);
+  void GetFpArgs(double* x, intptr_t* y);
   void SetFpResult(const double& result);
   void TrashCallerSaveRegisters();
 
@@ -320,27 +304,15 @@ class Simulator {
   // Saturating instructions require a Q flag to indicate saturation.
   // There is currently no way to read the CPSR directly, and thus read the Q
   // flag, so this is left unimplemented.
-  intptr_t registers_[32];  // PowerPC
+  intptr_t registers_[kNumGPRs];  // PowerPC
   int32_t condition_reg_;  // PowerPC
   int32_t fp_condition_reg_;  // PowerPC
-  int32_t special_reg_lr_;  // PowerPC
-  int32_t special_reg_pc_;  // PowerPC
-  int32_t special_reg_ctr_;  // PowerPC
+  intptr_t special_reg_lr_;  // PowerPC
+  intptr_t special_reg_pc_;  // PowerPC
+  intptr_t special_reg_ctr_;  // PowerPC
   int32_t special_reg_xer_;  // PowerPC
 
-  // VFP architecture state.
-  // TODO(penguin): represent fp_registers as double
-  unsigned int fp_register[num_d_registers*2];
-
-  // VFP rounding mode. See ARM DDI 0406B Page A2-29.
-  VFPRoundingMode FPSCR_rounding_mode_;
-
-  // VFP FP exception flags architecture state.
-  bool inv_op_vfp_flag_;
-  bool div_zero_vfp_flag_;
-  bool overflow_vfp_flag_;
-  bool underflow_vfp_flag_;
-  bool inexact_vfp_flag_;
+  double fp_register[kNumFPRs];
 
   // Simulator support.
   char* stack_;
@@ -382,11 +354,11 @@ class Simulator {
 // point.
 #define CALL_GENERATED_CODE(entry, p0, p1, p2, p3, p4) \
   reinterpret_cast<Object*>(Simulator::current(Isolate::Current())->Call( \
-      FUNCTION_ADDR(entry), 5, p0, p1, p2, p3, p4))
+      FUNCTION_ADDR(entry), 5, p0, p1, p2, (uintptr_t)p3, p4))
 
 #define CALL_GENERATED_REGEXP_CODE(entry, p0, p1, p2, p3, p4, p5, p6, p7, p8) \
   Simulator::current(Isolate::Current())->Call( \
-      entry, 10, p0, p1, p2, p3, NULL, p4, p5, p6, p7, p8)
+      entry, 10, p0, p1, p2, p3, p4, p5, p6, p7, NULL, p8)
 
 #define TRY_CATCH_FROM_ADDRESS(try_catch_address)                              \
   try_catch_address == NULL ?                                                  \

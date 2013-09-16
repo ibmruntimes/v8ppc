@@ -1730,7 +1730,8 @@ LInstruction* LChunkBuilder::DoClampToUint8(HClampToUint8* instr) {
     ASSERT(input_rep.IsTagged());
     // Register allocator doesn't (yet) support allocation of double
     // temps. Reserve d1 explicitly.
-    LClampTToUint8* result = new(zone()) LClampTToUint8(reg, FixedTemp(d11));
+    LClampTToUint8* result = new(zone()) LClampTToUint8(reg, FixedTemp(d10),
+                                                        FixedTemp(d11));
     return AssignEnvironment(DefineAsRegister(result));
   }
 }

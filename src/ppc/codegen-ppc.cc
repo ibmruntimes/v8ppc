@@ -237,8 +237,13 @@ void ElementsTransitionGenerator::GenerateSmiToDouble(
     __ CompareRoot(r22, Heap::kTheHoleValueRootIndex);
     __ Assert(eq, "object found in smi-only array");
   }
+#if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
   __ stw(r7, MemOperand(r10, 0));
   __ stw(r8, MemOperand(r10, 4));
+#else
+  __ stw(r8, MemOperand(r10, 0));
+  __ stw(r7, MemOperand(r10, 4));
+#endif
   __ addi(r10, r10, Operand(8));
 
   __ bind(&entry);
@@ -262,7 +267,6 @@ void ElementsTransitionGenerator::GenerateDoubleToObject(
   //  -- r6    : target map, scratch for subsequent call
   //  -- r7    : scratch (elements)
   // -----------------------------------
-  // we also use ip as a scratch register
   Label entry, loop, convert_hole, gc_required, only_change_map;
 
   // Check for empty arrays, which only require a map transition and no changes
@@ -278,8 +282,8 @@ void ElementsTransitionGenerator::GenerateDoubleToObject(
 
   // Allocate new FixedArray.
   __ li(r3, Operand(FixedDoubleArray::kHeaderSize));
-  __ slwi(ip, r8, Operand(1));
-  __ add(r3, r3, ip);
+  __ slwi(r0, r8, Operand(1));
+  __ add(r3, r3, r0);
   __ AllocateInNewSpace(r3, r9, r10, r22, &gc_required, NO_ALLOCATION_FLAGS);
   // r9: destination FixedArray, not tagged as heap object
   // Set destination FixedDoubleArray's length and map.
@@ -288,7 +292,7 @@ void ElementsTransitionGenerator::GenerateDoubleToObject(
   __ stw(r22, MemOperand(r9, HeapObject::kMapOffset));
 
   // Prepare for conversion loop.
-  __ addi(r7, r7, Operand(FixedDoubleArray::kHeaderSize - kHeapObjectTag + 4));
+  __ addi(r7, r7, Operand(FixedDoubleArray::kHeaderSize - kHeapObjectTag));
   __ addi(r6, r9, Operand(FixedArray::kHeaderSize));
   __ addi(r9, r9, Operand(kHeapObjectTag));
   __ slwi(r8, r8, Operand(1));
@@ -297,7 +301,7 @@ void ElementsTransitionGenerator::GenerateDoubleToObject(
   __ LoadRoot(r22, Heap::kHeapNumberMapRootIndex);
   // Using offsetted addresses in r7 to fully take advantage of post-indexing.
   // r6: begin of destination FixedArray element fields, not tagged
-  // r7: begin of source FixedDoubleArray element fields, not tagged, +4
+  // r7: begin of source FixedDoubleArray element fields, not tagged
   // r8: end of destination FixedArray, not tagged
   // r9: destination FixedArray
   // r10: the-hole pointer
@@ -310,23 +314,31 @@ void ElementsTransitionGenerator::GenerateDoubleToObject(
   __ b(fail);
 
   __ bind(&loop);
+#if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
+  __ lwz(r4, MemOperand(r7, 4));
+#else
   __ lwz(r4, MemOperand(r7));
+#endif
   __ addi(r7, r7, Operand(8));
-  // ip: current element's upper 32 bit
+  // r4: current element's upper 32 bit
   // r7: address of next element's upper 32 bit
   __ Cmpi(r4, Operand(kHoleNanUpper32), r0);
   __ beq(&convert_hole);
 
   // Non-hole double, copy value into a heap number.
-  __ push(r4);
-  __ mr(r4, ip);
   __ AllocateHeapNumber(r5, r3, r4, r22, &gc_required);
-  __ mr(ip, r4);
-  __ pop(r4);
   // r5: new heap number
-  __ lwz(r3, MemOperand(r7, -12));
+#if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
+  __ lwz(r3, MemOperand(r7, -8));
+  __ lwz(r4, MemOperand(r7, -4));
   __ stw(r3, FieldMemOperand(r5, HeapNumber::kValueOffset));
   __ stw(r4, FieldMemOperand(r5, HeapNumber::kValueOffset+4));
+#else
+  __ lwz(r3, MemOperand(r7, -4));
+  __ lwz(r4, MemOperand(r7, -8));
+  __ stw(r3, FieldMemOperand(r5, HeapNumber::kValueOffset+4));
+  __ stw(r4, FieldMemOperand(r5, HeapNumber::kValueOffset));
+#endif
   __ mr(r3, r6);
   __ stw(r5, MemOperand(r6));
   __ addi(r6, r6, Operand(4));
@@ -402,7 +414,7 @@ void StringCharLoadGenerator::Generate(MacroAssembler* masm,
   __ lwz(string, FieldMemOperand(string, SlicedString::kParentOffset));
   __ srawi(ip, result, kSmiTagSize);
   __ add(index, index, ip);
-  __ jmp(&indirect_string_loaded);
+  __ b(&indirect_string_loaded);
 
   // Handle cons strings.
   // Check whether the right hand side is the empty string (i.e. if
@@ -434,7 +446,7 @@ void StringCharLoadGenerator::Generate(MacroAssembler* masm,
   __ addi(string,
           string,
           Operand(SeqTwoByteString::kHeaderSize - kHeapObjectTag));
-  __ jmp(&check_encoding);
+  __ b(&check_encoding);
 
   // Handle external strings.
   __ bind(&external_string);
@@ -458,7 +470,7 @@ void StringCharLoadGenerator::Generate(MacroAssembler* masm,
   // Two-byte string.
   __ slwi(result, index, Operand(1));
   __ lhzx(result, MemOperand(result, string));
-  __ jmp(&done);
+  __ b(&done);
   __ bind(&ascii);
   // Ascii string.
   __ lbzx(result, MemOperand(string, index));

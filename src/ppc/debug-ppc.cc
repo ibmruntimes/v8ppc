@@ -46,35 +46,29 @@ bool BreakLocationIterator::IsDebugBreakAtReturn() {
 
 void BreakLocationIterator::SetDebugBreakAtReturn() {
   // Patch the code changing the return from JS function sequence from
-  //   mov sp, fp
-  //   ldmia sp!, {fp, lr}
-  //   add sp, sp, #4
-  //   bx lr
+  //
+  //   mr sp, fp
+  //   lwz fp, 0(sp)
+  //   lwz r0, 4(sp)
+  //   mtlr r0
+  //   addi sp, sp, <delta>
+  //   blr
+  //
   // to a call to the debug break return code.
-  //   mov lr, pc
-  //   ldr pc, [pc, #-4]
-  //   <debug break return code entry point address>
-  //   bktp 0
+  //
+  //   lis r0, <address hi>
+  //   addic r0, r0, <address lo>
+  //   mtlr r0
+  //   blrl
+  //   bkpt
+  //
   CodePatcher patcher(rinfo()->pc(), Assembler::kJSReturnSequenceInstructions);
 // printf("SetDebugBreakAtReturn: pc=%08x\n", (unsigned int)rinfo()->pc());
-#if 0
-  // This code sequence is checked for in assembler-ppc-inl.h
-  // by the function IsPatchedReturnSequence()
-  patcher.masm()->mr(v8::internal::lr, v8::internal::pc);
-//  patcher.masm()->lwz(v8::internal::pc, MemOperand(v8::internal::pc, -4));
-  patcher.masm()->lwz(v8::internal::pc, MemOperand(v8::internal::pc, 0));
-  patcher.Emit(Isolate::Current()->debug()->debug_break_return()->entry());
-
-#else
-
   patcher.masm()->mov(v8::internal::r0,
-            Operand(reinterpret_cast<intptr_t>(
-                   Isolate::Current()->debug()->debug_break_slot()->entry())));
+    Operand(reinterpret_cast<intptr_t>(
+      Isolate::Current()->debug()->debug_break_return()->entry())));
   patcher.masm()->mtlr(v8::internal::r0);
   patcher.masm()->bclr(BA, SetLK);
-  patcher.Emit(Isolate::Current()->debug()->debug_break_return()->entry());
-#endif
-
   patcher.masm()->bkpt(0);
 }
 
@@ -117,7 +111,6 @@ void BreakLocationIterator::SetDebugBreakAtSlot() {
   //   addic r0, r0, <address lo>
   //   mtlr r0
   //   blrl
-  //   <debug break slot code entry point address>
   //
   CodePatcher patcher(rinfo()->pc(), Assembler::kDebugBreakSlotInstructions);
 // printf("SetDebugBreakAtSlot: pc=%08x\n", (unsigned int)rinfo()->pc());
@@ -126,7 +119,6 @@ void BreakLocationIterator::SetDebugBreakAtSlot() {
                    Isolate::Current()->debug()->debug_break_slot()->entry())));
   patcher.masm()->mtlr(v8::internal::r0);
   patcher.masm()->bclr(BA, SetLK);
-  patcher.Emit(Isolate::Current()->debug()->debug_break_slot()->entry());
 }
 
 
@@ -152,7 +144,7 @@ static void Generate_DebugBreakCallHelper(MacroAssembler* masm,
     // Store the registers containing live values on the expression stack to
     // make sure that these are correctly updated during GC. Non object values
     // are stored as a smi causing it to be untouched by GC.
-// roohack temporary removal   ASSERT((object_regs & ~kJSCallerSaved) == 0);
+    ASSERT((object_regs & ~kJSCallerSaved) == 0);
     ASSERT((non_object_regs & ~kJSCallerSaved) == 0);
     ASSERT((object_regs & non_object_regs) == 0);
     if ((object_regs | non_object_regs) != 0) {
@@ -316,6 +308,9 @@ void Debug::GenerateCallConstructStubRecordDebugBreak(MacroAssembler* masm) {
 
 
 void Debug::GenerateSlot(MacroAssembler* masm) {
+  // Generate enough nop's to make space for a call instruction. Avoid emitting
+  // the trampoline pool in the debug break slot code.
+  Assembler::BlockTrampolinePoolScope block_trampoline_pool(masm);
   Label check_codesize;
   __ bind(&check_codesize);
   __ RecordDebugBreakSlot();

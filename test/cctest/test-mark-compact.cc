@@ -525,6 +525,18 @@ static intptr_t MemoryInUse() {
   return memory_use;
 }
 
+#if defined(V8_TARGET_ARCH_PPC)
+const intptr_t maxSnap64 = 3600;  // ???
+const intptr_t max64     = 4000;  // ???
+const intptr_t maxSnap32 = 2800;  // 2624
+const intptr_t max32     = 3300;  // 3136
+#else
+const intptr_t maxSnap64 = 3600;  // 3396
+const intptr_t max64     = 4000;  // 3948
+const intptr_t maxSnap32 = 2500;  // 2400
+const intptr_t max32     = 2860;  // 2760
+#endif
+
 
 TEST(BootUpMemoryUse) {
   intptr_t initial_memory = MemoryInUse();
@@ -539,15 +551,15 @@ TEST(BootUpMemoryUse) {
     intptr_t delta = MemoryInUse() - initial_memory;
     if (sizeof(initial_memory) == 8) {
       if (v8::internal::Snapshot::IsEnabled()) {
-        CHECK_LE(delta, 3600 * 1024);  // 3396.
+        CHECK_LE(delta, maxSnap64 * 1024);
       } else {
-        CHECK_LE(delta, 4000 * 1024);  // 3948.
+        CHECK_LE(delta, max64 * 1024);
       }
     } else {
       if (v8::internal::Snapshot::IsEnabled()) {
-        CHECK_LE(delta, 2500 * 1024);  // 2400.
+        CHECK_LE(delta, maxSnap32 * 1024);
       } else {
-        CHECK_LE(delta, 2860 * 1024);  // 2760.
+        CHECK_LE(delta, max32 * 1024);
       }
     }
   }

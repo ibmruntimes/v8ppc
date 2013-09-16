@@ -191,7 +191,6 @@ const Register no_reg = { kRegister_no_reg_Code };
 
 const Register r0  = { kRegister_r0_Code };
 const Register sp  = { kRegister_sp_Code };
-const Register r1  = { kRegister_r18_Code };  // hack for ARM
 const Register r2  = { kRegister_r2_Code };
 const Register r3  = { kRegister_r3_Code };
 const Register r4  = { kRegister_r4_Code };
@@ -395,12 +394,6 @@ class Operand BASE_EMBEDDED {
   // rm
   INLINE(explicit Operand(Register rm));
 
-  // rm <shift_op> shift_imm
-  explicit Operand(Register rm, ShiftOp shift_op, int shift_imm);
-
-  // rm <shift_op> rs
-  explicit Operand(Register rm, ShiftOp shift_op, Register rs);
-
   // Return true if this is a register operand.
   INLINE(bool is_reg() const);
 
@@ -410,14 +403,9 @@ class Operand BASE_EMBEDDED {
   }
 
   Register rm() const { return rm_; }
-  Register rs() const { return rs_; }
-  ShiftOp shift_op() const { return shift_op_; }
 
  private:
   Register rm_;
-  Register rs_;
-  ShiftOp shift_op_;
-  int shift_imm_;  // valid if rm_ != no_reg && rs_ == no_reg
   int32_t imm32_;  // valid if rm_ == no_reg
   RelocInfo::Mode rmode_;
 
@@ -433,14 +421,9 @@ class MemOperand BASE_EMBEDDED {
  public:
   // Contains cruft left to allow ARM to continue to work
 
-  // PowerPC (remove AddrMode later)
-  explicit MemOperand(Register rn, int32_t offset = 0, AddrMode am = Offset);
+  explicit MemOperand(Register rn, int32_t offset = 0);
 
   explicit MemOperand(Register ra, Register rb);
-
-  // ARM only
-  explicit MemOperand(Register rn, Register rm,
-                      ShiftOp shift_op, int shift_imm, AddrMode am = Offset);
 
   uint32_t offset() const {
     ASSERT(validPPCAddressing_ && rb_.is(no_reg));
@@ -569,24 +552,6 @@ class CpuFeatures : public AllStatic {
 };
 
 
-extern const Instr kMovMvnMask;
-extern const Instr kMovMvnPattern;
-extern const Instr kMovMvnFlip;
-
-extern const Instr kMovLeaveCCMask;
-extern const Instr kMovLeaveCCPattern;
-extern const Instr kMovwMask;
-extern const Instr kMovwPattern;
-extern const Instr kMovwLeaveCCFlip;
-
-extern const Instr kCmpCmnMask;
-extern const Instr kCmpCmnPattern;
-extern const Instr kCmpCmnFlip;
-extern const Instr kAddSubFlip;
-extern const Instr kAndBicFlip;
-
-
-
 class Assembler : public AssemblerBase {
  public:
   // Create an assembler. Instructions and relocation information are emitted
@@ -634,6 +599,9 @@ class Assembler : public AssemblerBase {
   // but it may be bound only once.
 
   void bind(Label* L);  // binds an unbound label L to the current code position
+  // Determines if Label is bound and near enough so that a single
+  // branch instruction can be used to reach it.
+  bool is_near(Label* L, Condition cond);
 
   // Returns the branch offset to the given label from the current code position
   // Links the label to the current position if it is still unbound
@@ -706,8 +674,8 @@ class Assembler : public AssemblerBase {
 
   static const int kPatchDebugBreakSlotReturnOffset = 4 * kInstrSize;
 
-  static const int kJSReturnSequenceInstructions = 6;
-  static const int kDebugBreakSlotInstructions = 5;
+  static const int kJSReturnSequenceInstructions = 5;
+  static const int kDebugBreakSlotInstructions = 4;
   static const int kDebugBreakSlotLength =
       kDebugBreakSlotInstructions * kInstrSize;
 
@@ -726,146 +694,104 @@ class Assembler : public AssemblerBase {
   void CodeTargetAlign();
 
   // Branch instructions
-  // PowerPC
   void bclr(BOfield bo, LKBit lk);
   void blr();
-  void bc(int branch_offset, BOfield bo, int condition_bit);
+  void bc(int branch_offset, BOfield bo, int condition_bit, LKBit lk = LeaveLK);
   void b(int branch_offset, LKBit lk);
-  void b(int branch_offset, Condition cond = al);
 
   void bcctr(BOfield bo, LKBit lk);
   void bcr();
 
-  // end PowerPC
-  void bl(int branch_offset, Condition cond = al);
-
   // Convenience branch instructions using labels
-  void b(Label* L, Condition cond = al)  {
-    b(branch_offset(L, cond == al), cond);
-  }
-  void b(Label* L, LKBit lk)  {
+  void b(Label* L, LKBit lk = LeaveLK)  {
     b(branch_offset(L, false), lk);
   }
-  // PowerPC
-  void bc(Label* L, BOfield bo, int bit)  {
-    bc(branch_offset(L, false), bo, bit);
-  }
-  void b(Condition cond, Label* L, CRegister cr = cr7)  {
+
+  void bc_short(Condition cond, Label* L, CRegister cr = cr7,
+                LKBit lk = LeaveLK)  {
+    ASSERT(cond != al);
     ASSERT(cr.code() >= 0 && cr.code() <= 7);
-    int b_offset = branch_offset(L, (cond == al));
-    // if the offset fits in the 16-bit immediate
-    // field (b-form) we use that, otherwise use a
-    // branch conditional to the i-form which gives
-    // us 26 bits
-    if (is_int16(b_offset)) {
-      switch (cond) {
-        case al:
-          b(L);
-          break;
-        case eq:
-          bc(b_offset, BT, encode_crbit(cr, CR_EQ));
-          break;
-        case ne:
-          bc(b_offset, BF, encode_crbit(cr, CR_EQ));
-          break;
-        case gt:
-          bc(b_offset, BT, encode_crbit(cr, CR_GT));
-          break;
-        case le:
-          bc(b_offset, BF, encode_crbit(cr, CR_GT));
-          break;
-        case lt:
-          bc(b_offset, BT, encode_crbit(cr, CR_LT));
-          break;
-        case ge:
-          bc(b_offset, BF, encode_crbit(cr, CR_LT));
-          break;
-        default:
-          fake_asm(fBranch);
-          // UNIMPLEMENTED();
-      }
-    } else {
-      // as mentioned above, somewhat of a hack here:
-      // use the bc to branch to the i-form instruction
-      // else fall through and branch over it
-      switch (cond) {
-        case al:
-          b(b_offset, LeaveLK);
-          break;
-        case eq:
-          bc(kInstrSize*2, BT, encode_crbit(cr, CR_EQ));
-          b(kInstrSize*2, LeaveLK);
-          b(b_offset, LeaveLK);
-          break;
-        case ne:
-          bc(kInstrSize*2, BF, encode_crbit(cr, CR_EQ));
-          b(kInstrSize*2, LeaveLK);
-          b(b_offset, LeaveLK);
-          break;
-        case gt:
-          bc(kInstrSize*2, BT, encode_crbit(cr, CR_GT));
-          b(kInstrSize*2, LeaveLK);
-          b(b_offset, LeaveLK);
-          break;
-        case le:
-          bc(kInstrSize*2, BF, encode_crbit(cr, CR_GT));
-          b(kInstrSize*2, LeaveLK);
-          b(b_offset, LeaveLK);
-          break;
-        case lt:
-          bc(kInstrSize*2, BT, encode_crbit(cr, CR_LT));
-          b(kInstrSize*2, LeaveLK);
-          b(b_offset, LeaveLK);
-          break;
-        case ge:
-          bc(kInstrSize*2, BF, encode_crbit(cr, CR_LT));
-          b(kInstrSize*2, LeaveLK);
-          b(b_offset, LeaveLK);
-          break;
-        default:
-          fake_asm(fBranch);
-          // UNIMPLEMENTED();
-      }
+
+    int b_offset = branch_offset(L, false);
+
+    switch (cond) {
+      case eq:
+        bc(b_offset, BT, encode_crbit(cr, CR_EQ), lk);
+        break;
+      case ne:
+        bc(b_offset, BF, encode_crbit(cr, CR_EQ), lk);
+        break;
+      case gt:
+        bc(b_offset, BT, encode_crbit(cr, CR_GT), lk);
+        break;
+      case le:
+        bc(b_offset, BF, encode_crbit(cr, CR_GT), lk);
+        break;
+      case lt:
+        bc(b_offset, BT, encode_crbit(cr, CR_LT), lk);
+        break;
+      case ge:
+        bc(b_offset, BF, encode_crbit(cr, CR_LT), lk);
+        break;
+      default:
+        fake_asm(fBranch);
+        // UNIMPLEMENTED();
     }
   }
-  void bne(Label* L, CRegister cr = cr7) {
-    b(ne, L, cr); }
-  void beq(Label* L, CRegister cr = cr7) {
-    b(eq, L, cr); }
-  void blt(Label* L, CRegister cr = cr7) {
-    b(lt, L, cr); }
-  void bge(Label* L, CRegister cr = cr7) {
-    b(ge, L, cr); }
-  void ble(Label* L, CRegister cr = cr7) {
-    b(le, L, cr); }
-  void bgt(Label* L, CRegister cr = cr7) {
-    b(gt, L, cr); }
 
-  void bunordered(Label* L, CRegister cr = cr7) {
-    ASSERT(cr.code() >= 0 && cr.code() <= 7);
-    bc(branch_offset(L, false), BT, 3 + (cr.code() * 4));
+  void b(Condition cond, Label* L, CRegister cr = cr7, LKBit lk = LeaveLK)  {
+    if (cond == al) {
+        b(L, lk);
+        return;
+    }
+
+    if ((L->is_bound() && is_near(L, cond)) ||
+        !is_trampoline_emitted()) {
+      bc_short(cond, L, cr, lk);
+      return;
+    }
+
+    Label skip;
+    Condition neg_cond = NegateCondition(cond);
+    bc_short(neg_cond, &skip, cr);
+    b(L, lk);
+    bind(&skip);
   }
-  void bordered(Label* L, CRegister cr = cr7) {
+
+  void bne(Label* L, CRegister cr = cr7, LKBit lk = LeaveLK) {
+    b(ne, L, cr, lk); }
+  void beq(Label* L, CRegister cr = cr7, LKBit lk = LeaveLK) {
+    b(eq, L, cr, lk); }
+  void blt(Label* L, CRegister cr = cr7, LKBit lk = LeaveLK) {
+    b(lt, L, cr, lk); }
+  void bge(Label* L, CRegister cr = cr7, LKBit lk = LeaveLK) {
+    b(ge, L, cr, lk); }
+  void ble(Label* L, CRegister cr = cr7, LKBit lk = LeaveLK) {
+    b(le, L, cr, lk); }
+  void bgt(Label* L, CRegister cr = cr7, LKBit lk = LeaveLK) {
+    b(gt, L, cr, lk); }
+
+  void bunordered(Label* L, CRegister cr = cr7, LKBit lk = LeaveLK) {
     ASSERT(cr.code() >= 0 && cr.code() <= 7);
-    bc(branch_offset(L, false), BF, 3 + (cr.code() * 4));
+    bc(branch_offset(L, false), BT, encode_crbit(cr, CR_FU), lk);
   }
-  void boverflow(Label* L, CRegister cr = cr1) {
+  void bordered(Label* L, CRegister cr = cr7, LKBit lk = LeaveLK) {
     ASSERT(cr.code() >= 0 && cr.code() <= 7);
-    bc(branch_offset(L, false), BT, 3 + (cr.code() * 4));
+    bc(branch_offset(L, false), BF, encode_crbit(cr, CR_FU), lk);
   }
-  void bnotoverflow(Label* L, CRegister cr = cr1) {
+  void boverflow(Label* L, CRegister cr = cr1, LKBit lk = LeaveLK) {
     ASSERT(cr.code() >= 0 && cr.code() <= 7);
-    bc(branch_offset(L, false), BF, 3 + (cr.code() * 4));
+    bc(branch_offset(L, false), BT, encode_crbit(cr, CR_SO), lk);
+  }
+  void bnotoverflow(Label* L, CRegister cr = cr1, LKBit lk = LeaveLK) {
+    ASSERT(cr.code() >= 0 && cr.code() <= 7);
+    bc(branch_offset(L, false), BF, encode_crbit(cr, CR_SO), lk);
   }
 
   // Decrement CTR; branch if CTR != 0
-  void bdnz(Label* L) {
-    bc(branch_offset(L, false), DCBNZ, 0);
+  void bdnz(Label* L, LKBit lk = LeaveLK) {
+    bc(branch_offset(L, false), DCBNZ, 0, lk);
   }
-
-  // end PowerPC
-  void bl(Label* L, Condition cond = al)  { bl(branch_offset(L, false), cond); }
-  void bl(Condition cond, Label* L)  { bl(branch_offset(L, false), cond); }
 
   // Data-processing instructions
 
@@ -945,8 +871,19 @@ class Assembler : public AssemblerBase {
 
 #if V8_TARGET_ARCH_PPC64
   void ld(Register rd, const MemOperand &src);
+  void ldx(Register rd, const MemOperand &src);
   void std(Register rs, const MemOperand &src);
+  void stdx(Register rs, const MemOperand &src);
   void stdu(Register rs, const MemOperand &src);
+  void rldic(Register dst, Register src, int sh, int mb, RCBit r = LeaveRC);
+  void rldicl(Register dst, Register src, int sh, int mb, RCBit r = LeaveRC);
+  void rldicr(Register dst, Register src, int sh, int me, RCBit r = LeaveRC);
+  void sldi(Register dst, Register src, const Operand& val, RCBit rc = LeaveRC);
+  void srdi(Register dst, Register src, const Operand& val, RCBit rc = LeaveRC);
+  void clrrdi(Register dst, Register src, const Operand& val,
+              RCBit rc = LeaveRC);
+  void clrldi(Register dst, Register src, const Operand& val,
+              RCBit rc = LeaveRC);
 #endif
 
   void rlwinm(Register ra, Register rs, int sh, int mb, int me,
@@ -963,43 +900,11 @@ class Assembler : public AssemblerBase {
   void srw(Register dst, Register src1, Register src2, RCBit r = LeaveRC);
   void slw(Register dst, Register src1, Register src2, RCBit r = LeaveRC);
   void sraw(Register dst, Register src1, Register src2, RCBit r = LeaveRC);
-  // 64bit PowerPC
-  void rldicl(Register dst, Register src, int sh, int mb, RCBit r = LeaveRC);
 
   void cntlzw_(Register dst, Register src, RCBit rc = LeaveRC);
   // end PowerPC
 
-  void eor(Register dst, Register src1, const Operand& src2,
-           SBit s = LeaveCC, Condition cond = al);
-
-  void sub(Register dst, Register src1, const Operand& src2,
-           SBit s = LeaveCC, Condition cond = al);
-  void sub(Register dst, Register src1, Register src2,
-           SBit s, Condition cond = al) {
-    sub(dst, src1, Operand(src2), s, cond);
-  }
-
-  void rsb(Register dst, Register src1, const Operand& src2,
-           SBit s = LeaveCC, Condition cond = al);
-
-  void add(Register dst, Register src1, const Operand& src2,
-           SBit s = LeaveCC, Condition cond = al);
-
-  void adc(Register dst, Register src1, const Operand& src2,
-           SBit s = LeaveCC, Condition cond = al);
-
-  void sbc(Register dst, Register src1, const Operand& src2,
-           SBit s = LeaveCC, Condition cond = al);
-
-  void rsc(Register dst, Register src1, const Operand& src2,
-           SBit s = LeaveCC, Condition cond = al);
-
-  void tst(Register src1, const Operand& src2, Condition cond = al);
-  void tst(Register src1, Register src2, Condition cond = al) {
-    tst(src1, Operand(src2), cond);
-  }
-
-  void teq(Register src1, const Operand& src2, Condition cond = al);
+  void sub(Register dst, Register src1, const Operand& src2);
 
   void cmp(Register src1, const Operand& src2, Condition cond = al);
   void cmp(Register src1, Register src2, CRegister cr = cr7);
@@ -1007,49 +912,15 @@ class Assembler : public AssemblerBase {
 
   void cmn(Register src1, const Operand& src2, Condition cond = al);
 
-  void orr(Register dst, Register src1, const Operand& src2,
-           SBit s = LeaveCC, Condition cond = al);
-  void orr(Register dst, Register src1, Register src2,
-           SBit s = LeaveCC, Condition cond = al) {
-    orr(dst, src1, Operand(src2), s, cond);
-  }
-
-  void mov(Register dst, const Operand& src,
-           SBit s = LeaveCC, Condition cond = al);
-  void mov(Register dst, Register src, SBit s = LeaveCC, Condition cond = al) {
-    mov(dst, Operand(src), s, cond);
-  }
-
-  void bic(Register dst, Register src1, const Operand& src2,
-           SBit s = LeaveCC, Condition cond = al);
-
-  void mvn(Register dst, const Operand& src,
-           SBit s = LeaveCC, Condition cond = al);
+  void mov(Register dst, const Operand& src);
 
   // Multiply instructions
-
-  void mla(Register dst, Register src1, Register src2, Register srcA,
-           SBit s = LeaveCC, Condition cond = al);
 
   // PowerPC
   void mul(Register dst, Register src1, Register src2,
            OEBit s = LeaveOE, RCBit r = LeaveRC);
 
-  void smlal(Register dstL, Register dstH, Register src1, Register src2,
-             SBit s = LeaveCC, Condition cond = al);
-
-  void smull(Register dstL, Register dstH, Register src1, Register src2,
-             SBit s = LeaveCC, Condition cond = al);
-
-  void umlal(Register dstL, Register dstH, Register src1, Register src2,
-             SBit s = LeaveCC, Condition cond = al);
-
-  void umull(Register dstL, Register dstH, Register src1, Register src2,
-             SBit s = LeaveCC, Condition cond = al);
-
   // Miscellaneous arithmetic instructions
-
-  // Bitfield manipulation instructions. v7 and above.
 
   // Special register access
   // PowerPC
@@ -1059,35 +930,12 @@ class Assembler : public AssemblerBase {
   void mtctr(Register src);
   void mtxer(Register src);
   void mcrfs(int bf, int bfa);
+  void mfcr(Register dst);
 
   void fake_asm(enum FAKE_OPCODE_T fopcode);
   void marker_asm(int mcode);
   void function_descriptor();
   // end PowerPC
-  // Status register access instructions
-
-  void mrs(Register dst, SRegister s, Condition cond = al);
-  void msr(SRegisterFieldMask fields, const Operand& src, Condition cond = al);
-
-  // Load/Store instructions
-  void ldr(Register dst, const MemOperand& src, Condition cond = al);
-  void str(Register src, const MemOperand& dst, Condition cond = al);
-  void ldrb(Register dst, const MemOperand& src, Condition cond = al);
-  void strb(Register src, const MemOperand& dst, Condition cond = al);
-  void ldrh(Register dst, const MemOperand& src, Condition cond = al);
-  void strh(Register src, const MemOperand& dst, Condition cond = al);
-  void ldrsb(Register dst, const MemOperand& src, Condition cond = al);
-  void ldrsh(Register dst, const MemOperand& src, Condition cond = al);
-  void ldrd(Register dst1,
-            Register dst2,
-            const MemOperand& src, Condition cond = al);
-  void strd(Register src1,
-            Register src2,
-            const MemOperand& dst, Condition cond = al);
-
-  // Load/Store multiple instructions
-  void ldm(BlockAddrMode am, Register base, RegList dst, Condition cond = al);
-  void stm(BlockAddrMode am, Register base, RegList src, Condition cond = al);
 
   // Exception-generating instructions and debugging support
   void stop(const char* msg,
@@ -1141,6 +989,7 @@ class Assembler : public AssemblerBase {
   void fmr(const DwVfpRegister frt, const DwVfpRegister frb,
            RCBit rc = LeaveRC);
   void fctiwz(const DwVfpRegister frt, const DwVfpRegister frb);
+  void fctiw(const DwVfpRegister frt, const DwVfpRegister frb);
   void frim(const DwVfpRegister frt, const DwVfpRegister frb);
   void frsp(const DwVfpRegister frt, const DwVfpRegister frb,
             RCBit rc = LeaveRC);
@@ -1156,6 +1005,9 @@ class Assembler : public AssemblerBase {
   void fneg(const DwVfpRegister frt, const DwVfpRegister frb,
             RCBit rc = LeaveRC);
   void mtfsfi(int bf, int immediate, RCBit rc = LeaveRC);
+  void mffs(const DwVfpRegister frt, RCBit rc = LeaveRC);
+  void mtfsf(const DwVfpRegister frb, bool L = 1, int FLM = 0, bool W = 0,
+             RCBit rc = LeaveRC);
   void fsqrt(const DwVfpRegister frt, const DwVfpRegister frb,
              RCBit rc = LeaveRC);
   void fabs(const DwVfpRegister frt, const DwVfpRegister frb,
@@ -1273,7 +1125,7 @@ class Assembler : public AssemblerBase {
   }
 
   // Jump unconditionally to given label.
-  void jmp(Label* L) { b(L, al); }
+  void jmp(Label* L) { b(L); }
 
   bool predictable_code_size() const { return predictable_code_size_; }
 
@@ -1286,6 +1138,22 @@ class Assembler : public AssemblerBase {
   int InstructionsGeneratedSince(Label* label) {
     return SizeOfCodeGeneratedSince(label) / kInstrSize;
   }
+
+  // Class for scoping postponing the trampoline pool generation.
+  class BlockTrampolinePoolScope {
+   public:
+    explicit BlockTrampolinePoolScope(Assembler* assem) : assem_(assem) {
+      assem_->StartBlockTrampolinePool();
+    }
+    ~BlockTrampolinePoolScope() {
+      assem_->EndBlockTrampolinePool();
+    }
+
+   private:
+    Assembler* assem_;
+
+    DISALLOW_IMPLICIT_CONSTRUCTORS(BlockTrampolinePoolScope);
+  };
 
   // Debugging
 
@@ -1340,8 +1208,6 @@ class Assembler : public AssemblerBase {
   static bool IsBranch(Instr instr);
   static Register GetRA(Instr instr);
   static Register GetRB(Instr instr);
-  static bool IsPush(Instr instr);
-  static bool IsPop(Instr instr);
   static bool Is32BitLoadIntoR12(Instr instr1, Instr instr2);
   static bool IsCmpRegister(Instr instr);
   static bool IsCmpImmediate(Instr instr);
@@ -1349,6 +1215,11 @@ class Assembler : public AssemblerBase {
   static Register GetCmpImmediateRegister(Instr instr);
   static int GetCmpImmediateRawImmediate(Instr instr);
   static bool IsNop(Instr instr, int type = NON_MARKING_NOP);
+
+  // Postpone the generation of the trampoline pool for the specified number of
+  // instructions.
+  void BlockTrampolinePoolFor(int instructions);
+  void CheckTrampolinePool();
 
  protected:
   // Relocation for a type-recording IC has the AST id added to it.  This
@@ -1366,6 +1237,39 @@ class Assembler : public AssemblerBase {
   // Patch branch instruction at pos to branch to given branch target pos
   void target_at_put(int pos, int target_pos);
 
+  // Say if we need to relocate with this mode.
+  bool MustUseReg(RelocInfo::Mode rmode);
+
+  // Record reloc info for current pc_
+  void RecordRelocInfo(RelocInfo::Mode rmode, intptr_t data = 0);
+
+  // Block the emission of the trampoline pool before pc_offset.
+  void BlockTrampolinePoolBefore(int pc_offset) {
+    if (no_trampoline_pool_before_ < pc_offset)
+      no_trampoline_pool_before_ = pc_offset;
+  }
+
+  void StartBlockTrampolinePool() {
+    trampoline_pool_blocked_nesting_++;
+  }
+
+  void EndBlockTrampolinePool() {
+    trampoline_pool_blocked_nesting_--;
+  }
+
+  bool is_trampoline_pool_blocked() const {
+    return trampoline_pool_blocked_nesting_ > 0;
+  }
+
+  bool has_exception() const {
+    return internal_trampoline_exception_;
+  }
+
+  bool is_trampoline_emitted() const {
+    return trampoline_emitted_;
+  }
+
+
  private:
   // Code buffer:
   // The buffer into which code and relocation info are generated.
@@ -1382,6 +1286,15 @@ class Assembler : public AssemblerBase {
   static const int kGap = 32;
   byte* pc_;  // the program counter; moves forward
 
+  // Repeated checking whether the trampoline pool should be emitted is rather
+  // expensive. By default we only check again once a number of instructions
+  // has been generated.
+  int next_buffer_check_;  // pc offset of next buffer check.
+
+  // Emission of the trampoline pool may be blocked in some code sequences.
+  int trampoline_pool_blocked_nesting_;  // Block emission if this is not zero.
+  int no_trampoline_pool_before_;  // Block emission before this pc offset.
+
   // Relocation info generation
   // Each relocation is encoded as a variable size value
   static const int kMaxRelocSize = RelocInfoWriter::kMaxSize;
@@ -1394,6 +1307,7 @@ class Assembler : public AssemblerBase {
   inline void CheckBuffer();
   void GrowBuffer();
   inline void emit(Instr x);
+  inline void CheckTrampolinePoolQuick();
 
   // Instruction generation
   void a_form(Instr instr, DwVfpRegister frt, DwVfpRegister fra,
@@ -1403,22 +1317,66 @@ class Assembler : public AssemblerBase {
   void x_form(Instr instr, Register ra, Register rs, Register rb, RCBit r);
   void xo_form(Instr instr, Register rt, Register ra, Register rb,
                OEBit o, RCBit r);
+  void md_form(Instr instr, Register ra, Register rs, int shift, int maskbit,
+               RCBit r);
 
   // Labels
   void print(Label* L);
+  int  max_reach_from(int pos);
   void bind_to(Label* L, int pos);
-  void link_to(Label* L, Label* appendix);
   void next(Label* L);
 
-  // Say if we need to relocate with this mode.
-  bool MustUseReg(RelocInfo::Mode rmode);
+  class Trampoline {
+   public:
+    Trampoline() {
+      next_slot_ = 0;
+      free_slot_count_ = 0;
+    }
+    Trampoline(int start, int slot_count) {
+      next_slot_ = start;
+      free_slot_count_ = slot_count;
+    }
+    int take_slot() {
+      int trampoline_slot = kInvalidSlotPos;
+      if (free_slot_count_ <= 0) {
+        // We have run out of space on trampolines.
+        // Make sure we fail in debug mode, so we become aware of each case
+        // when this happens.
+        ASSERT(0);
+        // Internal exception will be caught.
+      } else {
+        trampoline_slot = next_slot_;
+        free_slot_count_--;
+        next_slot_ += kTrampolineSlotsSize;
+      }
+      return trampoline_slot;
+    }
 
-  // Record reloc info for current pc_
-  void RecordRelocInfo(RelocInfo::Mode rmode, intptr_t data = 0);
+   private:
+    int next_slot_;
+    int free_slot_count_;
+  };
+
+  int32_t get_trampoline_entry();
+  int unbound_labels_count_;
+  // If trampoline is emitted, generated code is becoming large. As
+  // this is already a slow case which can possibly break our code
+  // generation for the extreme case, we use this information to
+  // trigger different mode of branch instruction generation, where we
+  // no longer use a single branch instruction.
+  bool trampoline_emitted_;
+  static const int kTrampolineSlotsSize = kInstrSize;
+  static const int kMaxCondBranchReach = (1 << (16 - 1)) - 1;
+  static const int kMaxBlockTrampolineSectionSize = 64 * kInstrSize;
+  static const int kInvalidSlotPos = -1;
+
+  Trampoline trampoline_;
+  bool internal_trampoline_exception_;
 
   friend class RegExpMacroAssemblerPPC;
   friend class RelocInfo;
   friend class CodePatcher;
+  friend class BlockTrampolinePoolScope;
 
   PositionsRecorder positions_recorder_;
 

@@ -117,6 +117,7 @@ class Decoder {
   void DecodeExt1(Instruction* instr);
   void DecodeExt2(Instruction* instr);
   void DecodeExt4(Instruction* instr);
+  void DecodeExt5(Instruction* instr);
 
   const disasm::NameConverter& converter_;
   Vector<char> out_buffer_;
@@ -345,19 +346,38 @@ int Decoder::FormatOption(Instruction* instr, const char* format) {
                                         reinterpret_cast<byte*>(instr) + off));
         return 8;
       }
-     case 's': {  // SH Bits 15-11
+     case 's': {
        ASSERT(format[1] == 'h');
-       int32_t value = (instr->Bits(15, 11) << 26) >> 26;
+       int32_t value = 0;
+       if (instr->OpcodeValue() << 26 != EXT5) {
+         // SH Bits 15-11
+         value = (instr->Bits(15, 11) << 26) >> 26;
+       } else {
+         // SH Bits 1 and 15-11 (split field)
+         value = (instr->Bits(15, 11) | (instr->Bit(1) << 5));
+       }
        out_buffer_pos_ += OS::SNPrintF(out_buffer_ + out_buffer_pos_,
                                      "%d", value);
        return 2;
      }
      case 'm': {
        int32_t value = 0;
-       if (format[1] == 'e') {  // ME Bits 10-6
-         value = (instr->Bits(10, 6) << 26) >> 26;
-       } else if (format[1] == 'b') {  // MB Bits 5-1
-         value = (instr->Bits(5, 1) << 26) >> 26;
+       if (format[1] == 'e') {
+         if (instr->OpcodeValue() << 26 != EXT5) {
+           // ME Bits 10-6
+           value = (instr->Bits(10, 6) << 26) >> 26;
+         } else {
+           // ME Bits 5 and 10-6 (split field)
+           value = (instr->Bits(10, 6) | (instr->Bit(5) << 5));
+         }
+       } else if (format[1] == 'b') {
+         if (instr->OpcodeValue() << 26 != EXT5) {
+           // MB Bits 5-1
+           value = (instr->Bits(5, 1) << 26) >> 26;
+         } else {
+           // MB Bits 5 and 10-6 (split field)
+           value = (instr->Bits(10, 6) | (instr->Bit(5) << 5));
+         }
        } else {
          UNREACHABLE();  // bad format
        }
@@ -366,6 +386,14 @@ int Decoder::FormatOption(Instruction* instr, const char* format) {
        return 2;
      }
     }
+#if V8_TARGET_ARCH_PPC64
+    case 'd': {  // ds value for offset
+      int32_t value = SIGN_EXT_IMM16(instr->Bits(15, 0) & ~3);
+      out_buffer_pos_ += OS::SNPrintF(out_buffer_ + out_buffer_pos_,
+                                      "%d", value);
+      return 1;
+    }
+#endif
     default: {
       UNREACHABLE();
       break;
@@ -942,6 +970,10 @@ void Decoder::DecodeExt2(Instruction* instr) {
       }
       break;
     }
+    case MFCR: {
+      Format(instr, "mfcr    'rt");
+      break;
+    }
     case STWX: {
       Format(instr, "stwx    'rs, 'ra, 'rb");
       break;
@@ -988,6 +1020,14 @@ void Decoder::DecodeExt2(Instruction* instr) {
     }
     case LHZUX: {
       Format(instr, "lhzux   'rt, 'ra, 'rb");
+      break;
+    }
+    case LDX: {
+      Format(instr, "ldx     'rt, 'ra, 'rb");
+      break;
+    }
+    case STDX: {
+      Format(instr, "stdx    'rt, 'ra, 'rb");
       break;
     }
     default: {
@@ -1045,6 +1085,10 @@ void Decoder::DecodeExt4(Instruction* instr) {
       Format(instr, "fctidz  'Dt, 'Db");
       break;
     }
+    case FCTIW: {
+      Format(instr, "fctiw'. 'Dt, 'Db");
+      break;
+    }
     case FCTIWZ: {
       Format(instr, "fctiwz'. 'Dt, 'Db");
       break;
@@ -1057,6 +1101,14 @@ void Decoder::DecodeExt4(Instruction* instr) {
       Format(instr, "mtfsfi'.  ?,?");
       break;
     }
+    case MFFS: {
+      Format(instr, "mffs'.   'Dt");
+      break;
+    }
+    case MTFSF: {
+      Format(instr, "mtfsf'.  'Db ?,?,?");
+      break;
+    }
     case FABS: {
       Format(instr, "fabs'.   'Dt, 'Db");
       break;
@@ -1067,6 +1119,26 @@ void Decoder::DecodeExt4(Instruction* instr) {
     }
     case FNEG: {
       Format(instr, "fneg'.   'Dt, 'Db");
+      break;
+    }
+    default: {
+      Unknown(instr);  // not used by V8
+    }
+  }
+}
+
+void Decoder::DecodeExt5(Instruction* instr) {
+  switch (instr->Bits(4, 2) << 2) {
+    case RLDICL: {
+      Format(instr, "rldicl'. 'ra, 'rs, 'sh, 'mb");
+      break;
+    }
+    case RLDICR: {
+      Format(instr, "rldicr'. 'ra, 'rs, 'sh, 'me");
+      break;
+    }
+    case RLDIC: {
+      Format(instr, "rldic'.  'ra, 'rs, 'sh, 'mb");
       break;
     }
     default: {
@@ -1103,7 +1175,7 @@ int Decoder::InstructionDecode(byte* instr_ptr) {
       break;
     }
     case CMPI: {
-      Format(instr, "cmpwi   'ra, 'int16");
+      Format(instr, "cmpi    'ra, 'int16");
       break;
     }
     case ADDIC: {
@@ -1200,7 +1272,7 @@ int Decoder::InstructionDecode(byte* instr_ptr) {
       break;
     }
     case ORI: {
-      Format(instr, "ori.    'ra, 'rs, 'uint16");
+      Format(instr, "ori     'ra, 'rs, 'uint16");
       break;
     }
     case ORIS: {
@@ -1208,7 +1280,7 @@ int Decoder::InstructionDecode(byte* instr_ptr) {
       break;
     }
     case XORI: {
-      Format(instr, "xori.   'ra, 'rs, 'uint16");
+      Format(instr, "xori    'ra, 'rs, 'uint16");
       break;
     }
     case XORIS: {
@@ -1328,16 +1400,20 @@ int Decoder::InstructionDecode(byte* instr_ptr) {
       DecodeExt4(instr);
       break;
     }
+    case EXT5: {
+      DecodeExt5(instr);
+      break;
+    }
 #if V8_TARGET_ARCH_PPC64
     case LD: {
-      Format(instr, "ld      'rt, 'int16('ra)");
+      Format(instr, "ld      'rt, 'd('ra)");
       break;
     }
     case STD: {  // could be STD or STDU
       if (instr->Bit(0) == 0) {
-        Format(instr, "std     'rs, 'int16('ra)");
+        Format(instr, "std     'rs, 'd('ra)");
       } else {
-        Format(instr, "stdu    'rs, 'int16('ra)");
+        Format(instr, "stdu    'rs, 'd('ra)");
       }
       break;
     }

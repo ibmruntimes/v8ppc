@@ -116,9 +116,9 @@ static void ProbeTable(Isolate* isolate,
 
 #ifdef DEBUG
     if (FLAG_test_secondary_stub_cache && table == StubCache::kPrimary) {
-      __ jmp(&miss);
+      __ b(&miss);
     } else if (FLAG_test_primary_stub_cache && table == StubCache::kSecondary) {
-      __ jmp(&miss);
+      __ b(&miss);
     }
 #endif
 
@@ -206,7 +206,7 @@ void StubCache::GenerateProbe(MacroAssembler* masm,
   Isolate* isolate = masm->isolate();
   Label miss;
 
-#ifdef V8_TARGET_ARCH_PPC64
+#if V8_TARGET_ARCH_PPC64
   // Make sure that code is valid. The multiplying code relies on the
   // entry size being 24.
   ASSERT(sizeof(Entry) == 24);
@@ -247,7 +247,7 @@ void StubCache::GenerateProbe(MacroAssembler* masm,
   __ lwz(scratch, FieldMemOperand(name, String::kHashFieldOffset));
   __ LoadP(ip, FieldMemOperand(receiver, HeapObject::kMapOffset));
   __ add(scratch, scratch, ip);
-#ifdef V8_TARGET_ARCH_PPC64
+#if V8_TARGET_ARCH_PPC64
   // Use only the low 32 bits of the map pointer.
   __ rldicl(scratch, scratch, 0, 32);
 #endif
@@ -274,7 +274,7 @@ void StubCache::GenerateProbe(MacroAssembler* masm,
              extra3);
 
   // Primary miss: Compute hash for secondary probe.
-  __ srwi(extra, scratch, Operand(kHeapObjectTagSize));
+  __ srwi(extra, name, Operand(kHeapObjectTagSize));
   __ sub(scratch, scratch, extra);
   uint32_t mask2 = kSecondaryTableSize - 1;
   __ addi(scratch, scratch, Operand((flags >> kHeapObjectTagSize) & mask2));
@@ -306,18 +306,19 @@ void StubCompiler::GenerateLoadGlobalFunctionPrototype(MacroAssembler* masm,
   EMIT_STUB_MARKER(3);
 
   // Load the global or builtins object from the current context.
-  __ lwz(prototype,
-         MemOperand(cp, Context::SlotOffset(Context::GLOBAL_OBJECT_INDEX)));
+  __ LoadP(prototype,
+           MemOperand(cp, Context::SlotOffset(Context::GLOBAL_OBJECT_INDEX)));
   // Load the native context from the global or builtins object.
-  __ lwz(prototype,
-         FieldMemOperand(prototype, GlobalObject::kNativeContextOffset));
+  __ LoadP(prototype,
+           FieldMemOperand(prototype, GlobalObject::kNativeContextOffset));
   // Load the function from the native context.
-  __ LoadWord(prototype, MemOperand(prototype, Context::SlotOffset(index)), r0);
+  __ LoadP(prototype, MemOperand(prototype, Context::SlotOffset(index)), r0);
   // Load the initial map.  The global functions all have initial maps.
-  __ lwz(prototype,
-         FieldMemOperand(prototype, JSFunction::kPrototypeOrInitialMapOffset));
+  __ LoadP(prototype,
+           FieldMemOperand(prototype,
+                           JSFunction::kPrototypeOrInitialMapOffset));
   // Load the prototype from the initial map.
-  __ lwz(prototype, FieldMemOperand(prototype, Map::kPrototypeOffset));
+  __ LoadP(prototype, FieldMemOperand(prototype, Map::kPrototypeOffset));
 }
 
 
@@ -330,8 +331,8 @@ void StubCompiler::GenerateDirectLoadGlobalFunctionPrototype(
 
   Isolate* isolate = masm->isolate();
   // Check we're still in the same context.
-  __ lwz(prototype,
-         MemOperand(cp, Context::SlotOffset(Context::GLOBAL_OBJECT_INDEX)));
+  __ LoadP(prototype,
+           MemOperand(cp, Context::SlotOffset(Context::GLOBAL_OBJECT_INDEX)));
   __ Move(ip, isolate->global_object());
   __ cmp(prototype, ip);
   __ bne(miss);
@@ -341,7 +342,7 @@ void StubCompiler::GenerateDirectLoadGlobalFunctionPrototype(
   // Load its initial map. The global functions all have initial maps.
   __ Move(prototype, Handle<Map>(function->initial_map()));
   // Load the prototype from the initial map.
-  __ lwz(prototype, FieldMemOperand(prototype, Map::kPrototypeOffset));
+  __ LoadP(prototype, FieldMemOperand(prototype, Map::kPrototypeOffset));
 }
 
 
@@ -408,7 +409,11 @@ static void GenerateStringCheck(MacroAssembler* masm,
   __ lbz(scratch1, FieldMemOperand(scratch1, Map::kInstanceTypeOffset));
   __ andi(scratch2, scratch1, Operand(kIsNotStringMask));
   // The cast is to resolve the overload for the argument of 0x0.
-  __ cmpi(scratch2, Operand(static_cast<intptr_t>(kStringTag)));
+#if V8_TARGET_ARCH_PPC64
+  __ cmpi(scratch2, Operand(static_cast<int64_t>(kStringTag)));
+#else
+  __ cmpi(scratch2, Operand(static_cast<int32_t>(kStringTag)));
+#endif
   __ bne(non_string_object);
 }
 
@@ -488,7 +493,7 @@ void StubCompiler::GenerateStoreField(MacroAssembler* masm,
     // In sloppy mode, we could just return the value and be done. However, we
     // might be in strict mode, where we have to throw. Since we cannot tell,
     // go into slow case unconditionally.
-    __ jmp(miss_label);
+    __ b(miss_label);
     return;
   }
 
@@ -520,10 +525,10 @@ void StubCompiler::GenerateStoreField(MacroAssembler* masm,
     Label miss_pop, done_check;
     CheckPrototypes(object, receiver_reg, Handle<JSObject>(holder), name_reg,
                     scratch1, scratch2, name, &miss_pop);
-    __ jmp(&done_check);
+    __ b(&done_check);
     __ bind(&miss_pop);
     __ pop(name_reg);
-    __ jmp(miss_label);
+    __ b(miss_label);
     __ bind(&done_check);
     __ pop(name_reg);
   }
@@ -761,25 +766,36 @@ static void GenerateFastApiDirectCall(MacroAssembler* masm,
 
   // Allocate the v8::Arguments structure in the arguments' space since
   // it's not controlled by GC.
-  const int kApiStackSpace = 4;
+  // PPC LINUX ABI:
+  //
+  // Create 1 extra slots on stack:
+  //    [1] space for pointer-sized non-scalar return value (r3)
+  //
+  // We shift the arguments over a register (e.g. r3 -> r4) to allow
+  // for the return value buffer in implicit first arg.
+  // CallApiFunctionAndReturn will setup r3.
+  const int kApiStackSpace = 5;
+  Register arg0 = r4;
 
   FrameScope frame_scope(masm, StackFrame::MANUAL);
   __ EnterExitFrame(false, kApiStackSpace);
 
-  // r3 = v8::Arguments&
+  // scalar and return
+
+  // arg0 = v8::Arguments&
   // Arguments is after the return address.
-  __ addi(r3, sp, Operand(1 * kPointerSize));
+  __ addi(arg0, sp, Operand((kApiStackSpace - 3) * kPointerSize));
   // v8::Arguments::implicit_args_
-  __ stw(r5, MemOperand(r3, 0 * kPointerSize));
+  __ stw(r5, MemOperand(arg0, 0 * kPointerSize));
   // v8::Arguments::values_
   __ addi(ip, r5, Operand(argc * kPointerSize));
-  __ stw(ip, MemOperand(r3, 1 * kPointerSize));
+  __ stw(ip, MemOperand(arg0, 1 * kPointerSize));
   // v8::Arguments::length_ = argc
   __ li(ip, Operand(argc));
-  __ stw(ip, MemOperand(r3, 2 * kPointerSize));
+  __ stw(ip, MemOperand(arg0, 2 * kPointerSize));
   // v8::Arguments::is_construct_call = 0
   __ li(ip, Operand::Zero());
-  __ stw(ip, MemOperand(r3, 3 * kPointerSize));
+  __ stw(ip, MemOperand(arg0, 3 * kPointerSize));
 
   const int kStackUnwindSpace = argc + kFastApiCallArguments + 1;
   Address function_address = v8::ToCData<Address>(api_call_info->callback());
@@ -789,7 +805,7 @@ static void GenerateFastApiDirectCall(MacroAssembler* masm,
                                             masm->isolate());
   AllowExternalCallThatCantCauseGC scope(masm);
 
-  __ CallApiFunctionAndReturn(ref, kStackUnwindSpace, CallType_ScalarArg);
+  __ CallApiFunctionAndReturn(ref, kStackUnwindSpace);
 }
 
 
@@ -1257,7 +1273,7 @@ void StubCompiler::GenerateLoadCallback(Handle<JSObject> object,
   // Build AccessorInfo::args_ list on the stack and push property name below
   // the exit frame to make GC aware of them and store pointers to them.
   __ push(receiver);
-  __ mr(scratch2, sp);  // scratch2 = AccessorInfo::args_
+  __ mr(scratch2, sp);  // ip = AccessorInfo::args_
   if (heap()->InNewSpace(callback->data())) {
     __ Move(scratch3, callback);
     __ lwz(scratch3, FieldMemOperand(scratch3, AccessorInfo::kDataOffset));
@@ -1267,16 +1283,35 @@ void StubCompiler::GenerateLoadCallback(Handle<JSObject> object,
   __ Push(reg, scratch3);
   __ mov(scratch3, Operand(ExternalReference::isolate_address()));
   __ Push(scratch3, name_reg);
-  __ mr(r3, sp);  // r3 = Handle<String>
 
-  const int kApiStackSpace = 1;
+  // PPC LINUX ABI:
+  //
+  // Create 2 extra slots on stack:
+  //    [0] copy of pointer-sized non-scalar first arg
+  //    [1] space for pointer-sized non-scalar return value (r3)
+  //
+  // We shift the arguments over a register (e.g. r3 -> r4) to allow
+  // for the return value buffer in implicit first arg.
+  // CallApiFunctionAndReturn will setup r3.
+  const int kApiStackSpace = 3;
+  Register arg0 = r4;
+  Register arg1 = r5;
+
+  __ mr(arg1, scratch2);  // Saved in case scratch2 == arg0.
+  __ mr(arg0, sp);  // arg0 = Handle<String>
+
   FrameScope frame_scope(masm(), StackFrame::MANUAL);
   __ EnterExitFrame(false, kApiStackSpace);
 
+  // pass 1st arg by reference
+  __ stw(arg0, MemOperand(sp, 2 * kPointerSize));
+  __ addi(arg0, sp, Operand(2 * kPointerSize));
+
   // Create AccessorInfo instance on the stack above the exit frame with
-  // scratch2 (internal::Object** args_) as the data.
-  __ stw(scratch2, MemOperand(sp, 1 * kPointerSize));
-  __ addi(r4, sp, Operand(1 * kPointerSize));  // r4 = AccessorInfo&
+  // ip (internal::Object** args_) as the data.
+  __ stw(arg1, MemOperand(sp, kApiStackSpace * kPointerSize));
+  // arg1 = AccessorInfo&
+  __ addi(arg1, sp, Operand(kApiStackSpace * kPointerSize));
 
   const int kStackUnwindSpace = 5;
   Address getter_address = v8::ToCData<Address>(callback->getter());
@@ -1285,7 +1320,7 @@ void StubCompiler::GenerateLoadCallback(Handle<JSObject> object,
       ExternalReference(&fun,
                         ExternalReference::DIRECT_GETTER_CALL,
                         masm()->isolate());
-  __ CallApiFunctionAndReturn(ref, kStackUnwindSpace, CallType_NonScalarArg);
+  __ CallApiFunctionAndReturn(ref, kStackUnwindSpace);
 }
 
 
@@ -1650,7 +1685,7 @@ Handle<Code> CallStubCompiler::CompileArrayPushCall(
       if (FLAG_smi_only_arrays  && !FLAG_trace_elements_transitions) {
         Label fast_object, not_fast_object;
         __ CheckFastObjectElements(r6, r10, &not_fast_object);
-        __ jmp(&fast_object);
+        __ b(&fast_object);
         // In case of fast smi-only, convert to fast object, otherwise bail out.
         __ bind(&not_fast_object);
         __ CheckFastSmiElements(r6, r10, &call_builtin);
@@ -1665,7 +1700,7 @@ Handle<Code> CallStubCompiler::CompileArrayPushCall(
         __ mr(r5, receiver);
         ElementsTransitionGenerator::
             GenerateMapChangeElementsTransition(masm());
-        __ jmp(&fast_object);
+        __ b(&fast_object);
 
         __ bind(&try_holey_map);
         __ LoadTransitionedArrayMapConditional(FAST_HOLEY_SMI_ELEMENTS,
@@ -2447,7 +2482,7 @@ Handle<Code> CallStubCompiler::CompileCallConstant(Handle<Object> object,
       } else {
         // Calling non-strict non-builtins with a value as the receiver
         // requires boxing.
-        __ jmp(&miss);
+        __ b(&miss);
       }
       break;
 
@@ -2468,7 +2503,7 @@ Handle<Code> CallStubCompiler::CompileCallConstant(Handle<Object> object,
       } else {
         // Calling non-strict non-builtins with a value as the receiver
         // requires boxing.
-        __ jmp(&miss);
+        __ b(&miss);
       }
       break;
 
@@ -2492,7 +2527,7 @@ Handle<Code> CallStubCompiler::CompileCallConstant(Handle<Object> object,
       } else {
         // Calling non-strict non-builtins with a value as the receiver
         // requires boxing.
-        __ jmp(&miss);
+        __ b(&miss);
       }
       break;
   }
@@ -4189,10 +4224,10 @@ void KeyedLoadStubCompiler::GenerateLoadFastDoubleElement(
   __ slwi(indexed_double_offset, key_reg,
          Operand(kDoubleSizeLog2 - kSmiTagSize));
   __ add(indexed_double_offset, elements_reg, indexed_double_offset);
-#if defined(V8_HOST_ARCH_PPC)
-  uint32_t upper_32_offset = FixedArray::kHeaderSize;
-#else
+#if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
   uint32_t upper_32_offset = FixedArray::kHeaderSize + sizeof(kHoleNanLower32);
+#else
+  uint32_t upper_32_offset = FixedArray::kHeaderSize;
 #endif
   __ lwz(scratch, FieldMemOperand(indexed_double_offset, upper_32_offset));
   __ Cmpi(scratch, Operand(kHoleNanUpper32), r0);
@@ -4388,7 +4423,7 @@ void KeyedStoreStubCompiler::GenerateStoreFastElement(
     // Grow the array and finish the store.
     __ addi(length_reg, length_reg, Operand(Smi::FromInt(1)));
     __ stw(length_reg, FieldMemOperand(receiver_reg, JSArray::kLengthOffset));
-    __ jmp(&finish_store);
+    __ b(&finish_store);
 
     __ bind(&slow);
     Handle<Code> ic_slow = masm->isolate()->builtins()->KeyedStoreIC_Slow();
@@ -4523,7 +4558,7 @@ void KeyedStoreStubCompiler::GenerateStoreFastDoubleElement(
     __ stw(length_reg, FieldMemOperand(receiver_reg, JSArray::kLengthOffset));
     __ lwz(elements_reg,
            FieldMemOperand(receiver_reg, JSObject::kElementsOffset));
-    __ jmp(&finish_store);
+    __ b(&finish_store);
 
     __ bind(&check_capacity);
     // Make sure that the backing store can hold additional elements.
@@ -4535,7 +4570,7 @@ void KeyedStoreStubCompiler::GenerateStoreFastDoubleElement(
     // Grow the array and finish the store.
     __ addi(length_reg, length_reg, Operand(Smi::FromInt(1)));
     __ stw(length_reg, FieldMemOperand(receiver_reg, JSArray::kLengthOffset));
-    __ jmp(&finish_store);
+    __ b(&finish_store);
 
     __ bind(&slow);
     Handle<Code> ic_slow = masm->isolate()->builtins()->KeyedStoreIC_Slow();

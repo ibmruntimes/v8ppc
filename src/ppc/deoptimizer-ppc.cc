@@ -946,28 +946,16 @@ void Deoptimizer::EntryGenerator::Generate() {
   RegList restored_regs = kJSCallerSaved | kCalleeSaved;
   RegList saved_regs = restored_regs | sp.bit();
 
-#if 0  // Todo: save/restore floating point registers
   const int kDoubleRegsSize =
       kDoubleSize * DwVfpRegister::kNumAllocatableRegisters;
 
-  // Save all VFP registers before messing with them.
-  DwVfpRegister first = DwVfpRegister::FromAllocationIndex(0);
-  DwVfpRegister last =
-      DwVfpRegister::FromAllocationIndex(
-          DwVfpRegister::kNumAllocatableRegisters - 1);
-  ASSERT(last.code() > first.code());
-  ASSERT((last.code() - first.code()) ==
-      (DwVfpRegister::kNumAllocatableRegisters - 1));
-#ifdef DEBUG
-  for (int i = 0; i <= (DwVfpRegister::kNumAllocatableRegisters - 1); i++) {
-    ASSERT((DwVfpRegister::FromAllocationIndex(i).code() <= last.code()) &&
-           (DwVfpRegister::FromAllocationIndex(i).code() >= first.code()));
+  // Save all FPU registers before messing with them.
+  __ sub(sp, sp, Operand(kDoubleRegsSize));
+  for (int i = 0; i < DwVfpRegister::kNumAllocatableRegisters; ++i) {
+    DwVfpRegister fpu_reg = DwVfpRegister::FromAllocationIndex(i);
+    int offset = i * kDoubleSize;
+    __ stfd(fpu_reg, MemOperand(sp, offset));
   }
-#endif
-  __ vstm(db_w, sp, first, last);
-#else
-  const int kDoubleRegsSize = 0;
-#endif
 
   // Push saved_regs (needed to populate FrameDescription::registers_).
   // Leave gaps for other registers.
@@ -1133,6 +1121,8 @@ void Deoptimizer::EntryGenerator::Generate() {
 
 
 void Deoptimizer::TableEntryGenerator::GeneratePrologue() {
+  Assembler::BlockTrampolinePoolScope block_trampoline_pool(masm());
+
   // Create a sequence of deoptimization entries. Note that any
   // registers may be still live.
   Label done;

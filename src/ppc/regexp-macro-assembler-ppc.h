@@ -126,21 +126,21 @@ class RegExpMacroAssemblerPPC: public NativeRegExpMacroAssembler {
   static const int kFramePointer = 0;
 
   // Above the frame pointer - Stored registers and stack passed parameters.
-  // Register 4..11.
+  // Register 25..31.
   static const int kStoredRegisters = kFramePointer;
   // Return address (stored from link register, read into pc on return).
-  static const int kReturnAddress = kStoredRegisters + 8 * kPointerSize;
-  static const int kSecondaryReturnAddress = kReturnAddress + kPointerSize;
+  static const int kReturnAddress = kStoredRegisters + 7 * kPointerSize;
+  static const int kSecondaryReturnAddress = kReturnAddress + 3 * kPointerSize;
   // Stack parameters placed by caller.
-  static const int kRegisterOutput = kSecondaryReturnAddress + kPointerSize;
-  static const int kNumOutputRegisters = kRegisterOutput + kPointerSize;
-  static const int kStackHighEnd = kNumOutputRegisters + kPointerSize;
-  static const int kDirectCall = kStackHighEnd + kPointerSize;
-  static const int kIsolate = kDirectCall + kPointerSize;
+  static const int kIsolate = kSecondaryReturnAddress + kPointerSize;
 
   // Below the frame pointer.
   // Register parameters stored by setup code.
-  static const int kInputEnd = kFramePointer - kPointerSize;
+  static const int kDirectCall = kFramePointer - kPointerSize;
+  static const int kStackHighEnd = kDirectCall - kPointerSize;
+  static const int kNumOutputRegisters = kStackHighEnd - kPointerSize;
+  static const int kRegisterOutput = kNumOutputRegisters - kPointerSize;
+  static const int kInputEnd = kRegisterOutput - kPointerSize;
   static const int kInputStart = kInputEnd - kPointerSize;
   static const int kStartIndex = kInputStart - kPointerSize;
   static const int kInputString = kStartIndex - kPointerSize;
@@ -178,13 +178,13 @@ class RegExpMacroAssemblerPPC: public NativeRegExpMacroAssembler {
 
   // Register holding the current input position as negative offset from
   // the end of the string.
-  inline Register current_input_offset() { return r6; }
+  inline Register current_input_offset() { return r27; }
 
   // The register containing the current character after LoadCurrentCharacter.
-  inline Register current_character() { return r7; }
+  inline Register current_character() { return r28; }
 
   // Register holding address of the end of the input string.
-  inline Register end_of_input_address() { return r10; }
+  inline Register end_of_input_address() { return r30; }
 
   // Register holding the frame address. Local variables, parameters and
   // regexp registers are addressed relative to this.
@@ -192,21 +192,21 @@ class RegExpMacroAssemblerPPC: public NativeRegExpMacroAssembler {
 
   // The register containing the backtrack stack top. Provides a meaningful
   // name to the register.
-  inline Register backtrack_stackpointer() { return r8; }
+  inline Register backtrack_stackpointer() { return r29; }
 
   // Register holding pointer to the current code object.
-  inline Register code_pointer() { return r5; }
+  inline Register code_pointer() { return r26; }
 
   // Byte size of chars in the string to match (decided by the Mode argument)
   inline int char_size() { return static_cast<int>(mode_); }
 
   // Equivalent to a conditional branch to the label, unless the label
   // is NULL, in which case it is a conditional Backtrack.
-  void BranchOrBacktrack(Condition condition, Label* to);
+  void BranchOrBacktrack(Condition condition, Label* to, CRegister cr = cr7);
 
   // Call and return internally in the generated code in a way that
   // is GC-safe (i.e., doesn't leave absolute code addresses on the stack)
-  inline void SafeCall(Label* to, Condition cond = al);
+  inline void SafeCall(Label* to, Condition cond = al, CRegister cr = cr7);
   inline void SafeReturn();
   inline void SafeCallTarget(Label* name);
 
@@ -252,7 +252,18 @@ class RegExpMacroAssemblerPPC: public NativeRegExpMacroAssembler {
   Label exit_label_;
   Label check_preempt_label_;
   Label stack_overflow_label_;
+  Label internal_failure_label_;
 };
+
+// Set of non-volatile registers saved/restored by generated regexp code.
+const RegList kRegExpCalleeSaved =
+  1 <<  25 |
+  1 <<  26 |
+  1 <<  27 |
+  1 <<  28 |
+  1 <<  29 |
+  1 <<  30 |
+  1 <<  31;
 
 #endif  // V8_INTERPRETED_REGEXP
 

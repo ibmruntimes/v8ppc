@@ -31,8 +31,6 @@
 #ifndef V8_PPC_CONSTANTS_PPC_H_
 #define V8_PPC_CONSTANTS_PPC_H_
 
-#define INCLUDE_ARM 1
-
 namespace v8 {
 namespace internal {
 
@@ -60,36 +58,18 @@ const int kNoRegister = -1;
 // Family: The Programmer.s Reference Guide" from 10/95
 // https://www-01.ibm.com/chips/techlib/techlib.nsf/techdocs/852569B20050FF778525699600741775/$file/prg.pdf
 //
-#if defined(INCLUDE_ARM)
+
 // Constants for specific fields are defined in their respective named enums.
 // General constants are in an anonymous enum in class Instr.
-
-// Values for the condition field as defined in section A3.2
 enum Condition {
   kNoCondition = -1,
-
-  eq =  0 << 28,                 // Z set            Equal.
-  ne =  1 << 28,                 // Z clear          Not equal.
-  cs =  2 << 28,                 // C set            Unsigned higher or same.
-  cc =  3 << 28,                 // C clear          Unsigned lower.
-  mi =  4 << 28,                 // N set            Negative.
-  pl =  5 << 28,                 // N clear          Positive or zero.
-  vs =  6 << 28,                 // V set            Overflow.
-  vc =  7 << 28,                 // V clear          No overflow.
-  hi =  8 << 28,                 // C set, Z clear   Unsigned higher.
-  ls =  9 << 28,                 // C clear or Z set Unsigned lower or same.
-  ge = 10 << 28,                 // N == V           Greater or equal.
-  lt = 11 << 28,                 // N != V           Less than.
-  gt = 12 << 28,                 // Z clear, N == V  Greater than.
-  le = 13 << 28,                 // Z set or N != V  Less then or equal
-  al = 14 << 28,                 //                  Always.
-
-  kSpecialCondition = 15 << 28,  // Special condition (refer to section A3.2.1).
-  kNumberOfConditions = 16,
-
-  // Aliases.
-  hs = cs,                       // C set            Unsigned higher or same.
-  lo = cc                        // C clear          Unsigned lower.
+  eq =  0 << 28,                 // Equal.
+  ne =  1 << 28,                 // Not equal.
+  ge = 10 << 28,                 // Greater or equal.
+  lt = 11 << 28,                 // Less than.
+  gt = 12 << 28,                 // Greater than.
+  le = 13 << 28,                 // Less then or equal
+  al = 14 << 28                  // Always.
 };
 
 
@@ -102,14 +82,6 @@ inline Condition NegateCondition(Condition cond) {
 // Corresponds to transposing the operands of a comparison.
 inline Condition ReverseCondition(Condition cond) {
   switch (cond) {
-    case lo:
-      return hi;
-    case hi:
-      return lo;
-    case hs:
-      return ls;
-    case ls:
-      return hs;
     case lt:
       return gt;
     case gt:
@@ -122,7 +94,6 @@ inline Condition ReverseCondition(Condition cond) {
       return cond;
   };
 }
-#endif  // INCLUDE_ARM
 
 // -----------------------------------------------------------------------------
 // Instructions encoding.
@@ -233,6 +204,7 @@ enum OpcodeExt2 {
   NORX = 124 << 1,
   SUBFEX = 136 << 1,
   ADDEX = 138 << 1,
+  STDX = 149 << 1,
   STWX = 151 << 1,    // store word w/ x-form
   STWUX = 183 << 1,   // store word w/ update x-form
 /*
@@ -294,6 +266,7 @@ enum OpcodeExt4 {
   // Bits 10-1
   FCMPU  =   0 << 1,  // Floating Compare Unordered
   FRSP   =  12 << 1,  // Floating-Point Rounding
+  FCTIW  =  14 << 1,  // Floating Convert to Integer Word X-form
   FCTIWZ =  15 << 1,  // Floating Convert to Integer Word with Round to Zero
   FNEG   =  40 << 1,  // Floating Negate
   MCRFS  =  64 << 1,  // Move to Condition Register from FPSCR
@@ -301,6 +274,8 @@ enum OpcodeExt4 {
   MTFSFI = 134 << 1,  // Move to FPSCR Field Immediate
   FABS   = 264 << 1,  // Floating Absolute Value
   FRIM   = 488 << 1,  // Floating Round to Integer Minus
+  MFFS   = 583 << 1,  // move from FPSCR x-form
+  MTFSF  = 711 << 1,  // move to FPSCR fields XFL-form
   FCFID  = 846 << 1,  // Floating convert from integer doubleword
   FCTID  = 814 << 1,  // Floating convert from integer doubleword
   FCTIDZ = 815 << 1   // Floating convert from integer doubleword
@@ -308,42 +283,15 @@ enum OpcodeExt4 {
 
 // Bits 4-2
 enum OpcodeExt5 {
-  RLDICL = 0          // Rotate Left Double Word Immediate then Clear Left
+  RLDICL = 0 << 2,    // Rotate Left Double Word Immediate then Clear Left
+  RLDICR = 1 << 2,    // Rotate Left Double Word Immediate then Clear Right
+  RLDIC  = 2 << 2     // Rotate Left Double Word Immediate then Clear
 };
 
 // Instruction encoding bits and masks.
 enum {
-  B6  = 1 << 6,
-  B10 = 1 << 10,
-  B11 = 1 << 11,
-  B16 = 1 << 16,
-  B21 = 1 << 21,
-
-  kOpcodeMask = 0x3f << 26,
-  kExt2OpcodeMask = 0x1f << 1,
-  kBOMask = 0x1f << 21,
-  kBIMask = 0x1F << 16,
-  kBDMask = 0x14 << 2,
-  kAAMask = 0x01 << 1,
-  kLKMask = 0x01,
-  kRCMask = 0x01,
-  kTOMask = 0x1f << 21,
-
-
-#if defined(INCLUDE_ARM)
-// Instruction encoding bits and masks.
-  H   = 1 << 5,   // Halfword (or byte).
-  S6  = 1 << 6,   // Signed (or unsigned).
-  L   = 1 << 20,  // Load (or store).
-  S   = 1 << 20,  // Set condition code (or leave unchanged).
-  W   = 1 << 21,  // Writeback base register (or leave unchanged).
-  A   = 1 << 21,  // Accumulate in multiply instruction (or not).
-  B   = 1 << 22,  // Unsigned byte (or word).
-  N   = 1 << 22,  // Long (or short).
-  U   = 1 << 23,  // Positive (or negative) offset/index.
-  P   = 1 << 24,  // Offset/pre-indexed addressing (or post-indexed addressing).
-  I   = 1 << 25,  // Immediate shifter operand (or not).
-
+  // Instruction encoding bit
+  B1  = 1 << 1,
   B4  = 1 << 4,
   B5  = 1 << 5,
   B7  = 1 << 7,
@@ -361,19 +309,30 @@ enum {
   B27 = 1 << 27,
   B28 = 1 << 28,
 
-  // Instruction bit masks.
-  kCondMask   = 0x1F << 21,  // changed for PowerPC
-  kALUMask    = 0x6f << 21,
-  kRdMask     = 15 << 12,  // In str instruction.
-  kCoprocessorMask = 15 << 8,
-  kOpCodeMask = 15 << 21,  // In data-processing instructions.
+  B6  = 1 << 6,
+  B10 = 1 << 10,
+  B11 = 1 << 11,
+  B16 = 1 << 16,
+  B17 = 1 << 17,
+  B21 = 1 << 21,
+
+  // Instruction bit masks
+  kCondMask   = 0x1F << 21,
   kOff12Mask  = (1 << 12) - 1,
   kImm24Mask  = (1 << 24) - 1,
-#endif  // INCLUDE_ARM
   kOff16Mask  = (1 << 16) - 1,
   kImm16Mask  = (1 << 16) - 1,
   kImm26Mask  = (1 << 26) - 1,
-  kBOfieldMask = 0x1f << 20
+  kBOfieldMask = 0x1f << 21,
+  kOpcodeMask = 0x3f << 26,
+  kExt2OpcodeMask = 0x1f << 1,
+  kBOMask = 0x1f << 21,
+  kBIMask = 0x1F << 16,
+  kBDMask = 0x14 << 2,
+  kAAMask = 0x01 << 1,
+  kLKMask = 0x01,
+  kRCMask = 0x01,
+  kTOMask = 0x1f << 21
 };
 
 // the following is to differentiate different faked ARM opcodes for
@@ -480,6 +439,7 @@ enum FAKE_OPCODE_T {
   fLITHIUM108 = 108,
   fLITHIUM109 = 109,
   fLITHIUM110 = 110,
+  fLITHIUM111 = 111,
   fLastFaker  // can't be more than 128 (2^^7)
 };
 #define FAKE_OPCODE_HIGH_BIT 7  // fake opcode has to fall into bit 0~7
@@ -518,103 +478,22 @@ enum BOfield {  // Bits 25-21
   BA     = 20 << 21   // Branch always
 };
 
+#ifdef _AIX
+#undef CR_LT
+#undef CR_GT
+#undef CR_EQ
+#undef CR_SO
+#endif
+
 enum CRBit {
   CR_LT = 0,
   CR_GT = 1,
   CR_EQ = 2,
-  CR_OF = 3
+  CR_SO = 3,
+  CR_FU = 3
 };
 
 #define CRWIDTH 4
-
-#if defined(INCLUDE_ARM)
-// Condition code updating mode.
-enum SBit {
-  SetCC   = 1 << 20,  // Set condition code.
-  LeaveCC = 0 << 20   // Leave condition code unchanged.
-};
-
-
-// Status register selection.
-enum SRegister {
-  CPSR = 0 << 22,
-  SPSR = 1 << 22
-};
-
-
-// Shifter types for Data-processing operands as defined in section A5.1.2.
-enum ShiftOp {
-  LSL = 0 << 5,   // Logical shift left.
-  LSR = 1 << 5,   // Logical shift right.
-  ASR = 2 << 5,   // Arithmetic shift right.
-  ROR = 3 << 5,   // Rotate right.
-
-  // RRX is encoded as ROR with shift_imm == 0.
-  // Use a special code to make the distinction. The RRX ShiftOp is only used
-  // as an argument, and will never actually be encoded. The Assembler will
-  // detect it and emit the correct ROR shift operand with shift_imm == 0.
-  RRX = -1,
-  kNumberOfShifts = 4
-};
-
-
-// Status register fields.
-enum SRegisterField {
-  CPSR_c = CPSR | 1 << 16,
-  CPSR_x = CPSR | 1 << 17,
-  CPSR_s = CPSR | 1 << 18,
-  CPSR_f = CPSR | 1 << 19,
-  SPSR_c = SPSR | 1 << 16,
-  SPSR_x = SPSR | 1 << 17,
-  SPSR_s = SPSR | 1 << 18,
-  SPSR_f = SPSR | 1 << 19
-};
-
-// Status register field mask (or'ed SRegisterField enum values).
-typedef uint32_t SRegisterFieldMask;
-
-
-// Memory operand addressing mode.
-enum AddrMode {
-  // Bit encoding P U W.
-  Offset       = (8|4|0) << 21,  // Offset (without writeback to base).
-  PreIndex     = (8|4|1) << 21,  // Pre-indexed addressing with writeback.
-  PostIndex    = (0|4|0) << 21,  // Post-indexed addressing with writeback.
-  NegOffset    = (8|0|0) << 21,  // Negative offset (without writeback to base).
-  NegPreIndex  = (8|0|1) << 21,  // Negative pre-indexed with writeback.
-  NegPostIndex = (0|0|0) << 21   // Negative post-indexed with writeback.
-};
-
-
-// Load/store multiple addressing mode.
-enum BlockAddrMode {
-  // Bit encoding P U W .
-  da           = (0|0|0) << 21,  // Decrement after.
-  ia           = (0|4|0) << 21,  // Increment after.
-  db           = (8|0|0) << 21,  // Decrement before.
-  ib           = (8|4|0) << 21,  // Increment before.
-  da_w         = (0|0|1) << 21,  // Decrement after with writeback to base.
-  ia_w         = (0|4|1) << 21,  // Increment after with writeback to base.
-  db_w         = (8|0|1) << 21,  // Decrement before with writeback to base.
-  ib_w         = (8|4|1) << 21,  // Increment before with writeback to base.
-
-  // Alias modes for comparison when writeback does not matter.
-  da_x         = (0|0|0) << 21,  // Decrement after.
-  ia_x         = (0|4|0) << 21,  // Increment after.
-  db_x         = (8|0|0) << 21,  // Decrement before.
-  ib_x         = (8|4|0) << 21,  // Increment before.
-
-  kBlockAddrModeMask = (8|4|1) << 21
-};
-
-
-// Coprocessor load/store operand size.
-enum LFlag {
-  Long  = 1 << 22,  // Long load/store coprocessor.
-  Short = 0 << 22   // Short load/store coprocessor.
-};
-#endif  // INCLUDE_ARM
-
 
 // -----------------------------------------------------------------------------
 // Supervisor Call (svc) specific support.
@@ -837,16 +716,6 @@ class FPRegisters {
   static const char* names_[kNumFPRegisters];
 };
 
-// Argument encoding for function calls
-enum FunctionCallType {
-  // First arg passed by value
-  CallType_ScalarArg,
-  // First arg passed by reference
-  CallType_NonScalarArg
-};
-
-
 } }  // namespace v8::internal
 
-#undef INCLUDE_ARM
 #endif  // V8_PPC_CONSTANTS_PPC_H_

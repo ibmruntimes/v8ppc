@@ -50,7 +50,7 @@ inline MemOperand FieldMemOperand(Register object, int offset) {
 
 // Give alias names to registers
 const Register cp = { 20 };  // JavaScript context pointer
-const Register kRootRegister = { 13 };  // Roots array pointer.
+const Register kRootRegister = { 21 };  // Roots array pointer.
 
 // Flags used for the AllocateInNewSpace functions.
 enum AllocationFlags {
@@ -303,8 +303,8 @@ class MacroAssembler: public Assembler {
   // Push two registers.  Pushes leftmost register first (to highest address).
   void Push(Register src1, Register src2, Condition cond = al) {
     ASSERT(!src1.is(src2));
-    stwu(src1, MemOperand(sp, -4));
-    stwu(src2, MemOperand(sp, -4));
+    StorePU(src1, MemOperand(sp, -kPointerSize));
+    StorePU(src2, MemOperand(sp, -kPointerSize));
   }
 
   // Push three registers.  Pushes leftmost register first (to highest address).
@@ -312,7 +312,7 @@ class MacroAssembler: public Assembler {
     ASSERT(!src1.is(src2));
     ASSERT(!src2.is(src3));
     ASSERT(!src1.is(src3));
-    stwu(src1, MemOperand(sp, -4));
+    StorePU(src1, MemOperand(sp, -kPointerSize));
     Push(src2, src3, cond);
   }
 
@@ -329,7 +329,7 @@ class MacroAssembler: public Assembler {
     ASSERT(!src2.is(src4));
     ASSERT(!src3.is(src4));
 
-    stwu(src1, MemOperand(sp, -4));
+    StorePU(src1, MemOperand(sp, -kPointerSize));
     Push(src2, src3, src4, cond);
   }
 
@@ -337,9 +337,9 @@ class MacroAssembler: public Assembler {
   void Pop(Register src1, Register src2, Condition cond = al) {
     ASSERT(!src1.is(src2));
     ASSERT(cond == al);
-    lwz(src2, MemOperand(sp, 0));
-    lwz(src1, MemOperand(sp, 4));
-    addi(sp, sp, Operand(8));
+    LoadP(src2, MemOperand(sp, 0));
+    LoadP(src1, MemOperand(sp, kPointerSize));
+    addi(sp, sp, Operand(2 * kPointerSize));
   }
 
   // Pop three registers.  Pops rightmost register first (from lower address).
@@ -348,10 +348,10 @@ class MacroAssembler: public Assembler {
     ASSERT(!src2.is(src3));
     ASSERT(!src1.is(src3));
     ASSERT(cond == al);
-    lwz(src3, MemOperand(sp, 0));
-    lwz(src2, MemOperand(sp, 4));
-    lwz(src1, MemOperand(sp, 8));
-    addi(sp, sp, Operand(12));
+    LoadP(src3, MemOperand(sp, 0));
+    LoadP(src2, MemOperand(sp, kPointerSize));
+    LoadP(src1, MemOperand(sp, 2 * kPointerSize));
+    addi(sp, sp, Operand(3 * kPointerSize));
   }
 
   // Pop four registers.  Pops rightmost register first (from lower address).
@@ -367,11 +367,11 @@ class MacroAssembler: public Assembler {
     ASSERT(!src2.is(src4));
     ASSERT(!src3.is(src4));
     ASSERT(cond == al);
-    lwz(src4, MemOperand(sp, 0));
-    lwz(src3, MemOperand(sp, 4));
-    lwz(src2, MemOperand(sp, 8));
-    lwz(src1, MemOperand(sp, 12));
-    addi(sp, sp, Operand(16));
+    LoadP(src4, MemOperand(sp, 0));
+    LoadP(src3, MemOperand(sp, kPointerSize));
+    LoadP(src2, MemOperand(sp, 2 * kPointerSize));
+    LoadP(src1, MemOperand(sp, 3 * kPointerSize));
+    addi(sp, sp, Operand(4 * kPointerSize));
   }
 
   // Push and pop the registers that can hold pointers, as defined by the
@@ -464,6 +464,28 @@ class MacroAssembler: public Assembler {
                  Register scratch,
                  bool updateForm = false);
 
+  void LoadHalfWord(Register dst,
+                    const MemOperand& mem,
+                    Register scratch,
+                    bool updateForm = false);
+
+  void StoreHalfWord(Register src,
+                     const MemOperand& mem,
+                     Register scratch,
+                     bool updateForm = false);
+
+  void LoadByte(Register dst,
+                const MemOperand& mem,
+                Register scratch,
+                bool updateForm = false);
+
+  void StoreByte(Register src,
+                 const MemOperand& mem,
+                 Register scratch,
+                 bool updateForm = false);
+
+
+
   void Add(Register dst, Register src, uint32_t value, Register scratch);
   void Cmpi(Register src1, const Operand& src2, Register scratch,
             CRegister cr = cr7);
@@ -473,9 +495,16 @@ class MacroAssembler: public Assembler {
   void Or(Register ra, Register rs, const Operand& rb, RCBit rc = LeaveRC);
   void Xor(Register ra, Register rs, const Operand& rb, RCBit rc = LeaveRC);
 
+
+  // Set new rounding mode RN to FPSCR
+  void SetRoundingMode(VFPRoundingMode RN);
+
+  // reset rounding mode to default (kRoundToNearest)
+  void ResetRoundingMode();
+
   // These exist to provide portability between 32 and 64bit
-  void LoadP(Register dst, const MemOperand& mem);
-  void StoreP(Register dst, const MemOperand& mem);
+  void LoadP(Register dst, const MemOperand& mem, Register scratch = no_reg);
+  void StoreP(Register dst, const MemOperand& mem, Register scratch = no_reg);
   void StorePU(Register dst, const MemOperand& mem);
 
   // ---------------------------------------------------------------------------
@@ -1029,8 +1058,7 @@ class MacroAssembler: public Assembler {
   // from handle and propagates exceptions.  Restores context.  stack_space
   // - space to be unwound on exit (includes the call JS arguments space and
   // the additional space allocated for the fast call).
-  void CallApiFunctionAndReturn(ExternalReference function, int stack_space,
-                                FunctionCallType type);
+  void CallApiFunctionAndReturn(ExternalReference function, int stack_space);
 
   // Jump to a runtime routine.
   void JumpToExternalReference(const ExternalReference& builtin);
@@ -1126,7 +1154,7 @@ class MacroAssembler: public Assembler {
 
   inline void ExtractBit(Register dst, Register src, uint32_t bitNumber,
                          RCBit rc = LeaveRC) {
-    ExtractBitRange(dst, src, bitNumber, bitNumber, SetRC);
+    ExtractBitRange(dst, src, bitNumber, bitNumber, rc);
   }
 
   // Extract consecutive bits (defined by mask) from src and place them
@@ -1175,24 +1203,26 @@ class MacroAssembler: public Assembler {
     ExtractBitMask(scratch, value, mask, SetRC);
   }
 
+#if V8_TARGET_ARCH_PPC64
+#define ShiftLeftImm  sldi
+#define ShiftRightImm srdi
+#define ClearLeftImm  clrldi
+#define ClearRightImm clrrdi
+#else
+#define ShiftLeftImm  slwi
+#define ShiftRightImm srwi
+#define ClearLeftImm  clrlwi
+#define ClearRightImm clrrwi
+#endif
 
   // ---------------------------------------------------------------------------
   // Smi utilities
 
   // Shift left by 1
-  void SmiTag(Register reg, RCBit rc = LeaveRC) {
-    SmiTag(reg, reg, rc);
+  void SmiTag(Register reg) {
+    SmiTag(reg, reg);
   }
-  void SmiTag(Register dst, Register src, RCBit rc = LeaveRC) {
-    rlwinm(dst, src, 1, 0, 30, rc);
-  }
-
-  // temporary
-  void SmiTag(Register reg, SBit s) {
-    slwi(reg, reg, Operand(1));
-  }
-  // temporary
-  void SmiTag(Register dst, Register src, SBit s) {
+  void SmiTag(Register dst, Register src) {
     slwi(dst, src, Operand(1));
   }
 
@@ -1207,21 +1237,6 @@ class MacroAssembler: public Assembler {
   void SmiUntag(Register dst, Register src, RCBit rc = LeaveRC) {
     ASSERT(kSmiTagSize == 1);
     srawi(dst, src, 1, rc);
-  }
-
-  // temporary
-  void SmiUntag(Register reg, SBit s) {
-    SmiUntag(reg, reg, s);
-  }
-
-  // temporary
-  void SmiUntag(Register dst, Register src, SBit s) {
-    ASSERT(kSmiTagSize == 1);
-    // Temporary - map SBit to RCBit
-    RCBit r = LeaveRC;
-    if (s == SetCC) { r = SetRC; }
-
-    srawi(dst, src, 1, r);
   }
 
   // Untag the source value into destination and jump if source is a smi.
@@ -1320,9 +1335,14 @@ class MacroAssembler: public Assembler {
 
   void ClampUint8(Register output_reg, Register input_reg);
 
+  // Saturate a value into 8-bit unsigned integer
+  //   if input_value < 0, output_value is 0
+  //   if input_value > 255, output_value is 255
+  //   otherwise output_value is the (int)input_value (round to nearest)
   void ClampDoubleToUint8(Register result_reg,
                           DoubleRegister input_reg,
-                          DoubleRegister temp_double_reg);
+                          DoubleRegister temp_double_reg,
+                          DoubleRegister temp_double_reg2);
 
 
   void LoadInstanceDescriptors(Register map, Register descriptors);

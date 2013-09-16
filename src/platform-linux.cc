@@ -819,7 +819,11 @@ void Thread::SetThreadLocal(LocalStorageKey key, void* value) {
 
 
 void Thread::YieldCPU() {
+#ifdef V8_TARGET_ARCH_PPC
+  i::OS::Sleep(0);
+#else
   sched_yield();
+#endif
 }
 
 
