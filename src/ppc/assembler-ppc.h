@@ -426,28 +426,25 @@ class MemOperand BASE_EMBEDDED {
   explicit MemOperand(Register ra, Register rb);
 
   uint32_t offset() const {
-    ASSERT(validPPCAddressing_ && rb_.is(no_reg));
+    ASSERT(rb_.is(no_reg));
     return offset_;
   }
 
   // PowerPC - base register
   Register ra() const {
-    ASSERT(validPPCAddressing_ && !ra_.is(no_reg));
+    ASSERT(!ra_.is(no_reg));
     return ra_;
   }
 
   Register rb() const {
-    ASSERT(validPPCAddressing_ && offset_ == 0 && !rb_.is(no_reg));
+    ASSERT(offset_ == 0 && !rb_.is(no_reg));
     return rb_;
   }
-
-  bool isPPCAddressing() const { return validPPCAddressing_;}
 
  private:
   Register ra_;  // base
   int32_t offset_;  // offset
   Register rb_;  // index
-  bool validPPCAddressing_;
 
   friend class Assembler;
 };

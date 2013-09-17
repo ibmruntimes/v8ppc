@@ -156,14 +156,12 @@ MemOperand::MemOperand(Register rn, int32_t offset) {
   ra_ = rn;
   rb_ = no_reg;
   offset_ = offset;
-  validPPCAddressing_ = true;
 }
 
 MemOperand::MemOperand(Register ra, Register rb) {
   ra_ = ra;
   rb_ = rb;
   offset_ = 0;
-  validPPCAddressing_ = true;
 }
 
 // -----------------------------------------------------------------------------
