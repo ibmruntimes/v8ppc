@@ -51,8 +51,6 @@
 namespace v8 {
 namespace internal {
 
-#define INCLUDE_ARM 1
-
 // CPU Registers.
 //
 // 1) We would prefer to use an enum, but enum values are assignment-
@@ -226,7 +224,7 @@ const Register r29  = { kRegister_r29_Code };
 const Register r30  = { kRegister_r30_Code };
 const Register fp = { kRegister_fp_Code };
 
-// Double word VFP register.
+// Double word FP register.
 struct DwVfpRegister {
   static const int kNumRegisters = 32;
   static const int kNumAllocatableRegisters = 12;  // d1-d12
@@ -1021,7 +1019,7 @@ class Assembler : public AssemblerBase {
 
   void nop(int type = 0);   // 0 is the default non-marking type.
 
-  void push(Register src, Condition cond = al) {
+  void push(Register src) {
 #if V8_TARGET_ARCH_PPC64
     stdu(src, MemOperand(sp, -8));
 #else
@@ -1029,7 +1027,7 @@ class Assembler : public AssemblerBase {
 #endif
   }
 
-  void pop(Register dst, Condition cond = al) {
+  void pop(Register dst) {
 #if V8_TARGET_ARCH_PPC64
     ld(dst, MemOperand(sp));
     addi(sp, sp, Operand(8));
@@ -1313,7 +1311,6 @@ class EnsureSpace BASE_EMBEDDED {
   }
 };
 
-#undef INCLUDE_ARM
 } }  // namespace v8::internal
 
 #endif  // V8_PPC_ASSEMBLER_PPC_H_

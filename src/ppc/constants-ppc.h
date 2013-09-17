@@ -42,7 +42,7 @@ const int kNumFPDoubleRegisters = 32;
 const int kNumFPRegisters = kNumFPDoubleRegisters;
 
 // PPC doesn't really have a PC register - assign a fake number for simulation
-const int kPCRegister = -2;
+//const int kPCRegister = -2;
 const int kNoRegister = -1;
 
 // sign-extend the least significant 16-bit of value <imm>
@@ -473,7 +473,7 @@ const uint32_t kStopCodeMask = kStopCode - 1;
 const uint32_t kMaxStopCode = kStopCode - 1;
 const int32_t  kDefaultStopCode = -1;
 
-// VFP rounding modes.
+// FP rounding modes.
 enum VFPRoundingMode {
   RN = 0,   // Round to Nearest.
   RZ = 1,   // Round towards zero.

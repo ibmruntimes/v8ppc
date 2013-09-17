@@ -47,7 +47,6 @@
 
 namespace v8 {
 namespace internal {
-#define INCLUDE_ARM 1
 
 #ifdef DEBUG
 bool CpuFeatures::initialized_ = false;
@@ -1686,8 +1685,6 @@ void Assembler::CheckTrampolinePool() {
   }
   return;
 }
-
-#undef INCLUDE_ARM
 
 } }  // namespace v8::internal
 
