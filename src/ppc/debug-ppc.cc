@@ -57,7 +57,7 @@ void BreakLocationIterator::SetDebugBreakAtReturn() {
   // to a call to the debug break return code.
   //
   //   lis r0, <address hi>
-  //   addic r0, r0, <address lo>
+  //   ori r0, r0, <address lo>
   //   mtlr r0
   //   blrl
   //   bkpt
@@ -108,7 +108,7 @@ void BreakLocationIterator::SetDebugBreakAtSlot() {
   // to a call to the debug break code.
   //
   //   lis r0, <address hi>
-  //   addic r0, r0, <address lo>
+  //   ori r0, r0, <address lo>
   //   mtlr r0
   //   blrl
   //

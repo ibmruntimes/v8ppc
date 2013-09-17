@@ -238,7 +238,7 @@ bool RelocInfo::IsPatchedReturnSequence() {
   Instr instr1 = Assembler::instr_at(pc_ + 1 * Assembler::kInstrSize);
   Instr instr4 = Assembler::instr_at(pc_ + 4 * Assembler::kInstrSize);
   bool patched_return = ((instr0 & kOpcodeMask) == ADDIS &&
-                         (instr1 & kOpcodeMask) == ADDIC &&
+                         (instr1 & kOpcodeMask) == ORI &&
                          (instr4 == 0x7d821008));
 
 // printf("IsPatchedReturnSequence: %d\n", patched_return);
