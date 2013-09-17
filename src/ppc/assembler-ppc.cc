@@ -253,7 +253,6 @@ void Assembler::Align(int m) {
 
 
 void Assembler::CodeTargetAlign() {
-  // Preferred alignment of jump targets on some ARM chips.
   Align(8);
 }
 
@@ -1119,16 +1118,6 @@ void Assembler::function_descriptor() {
 }
 // end PowerPC
 
-void Assembler::cmp(Register src1, const Operand& src2, Condition cond) {
-  PPCPORT_CHECK(false);
-  EMIT_FAKE_ARM_INSTR(fCMP);
-}
-
-void Assembler::cmn(Register src1, const Operand& src2, Condition cond) {
-  PPCPORT_CHECK(false);
-  EMIT_FAKE_ARM_INSTR(fCMN);
-}
-
 // Primarily used for loading constants
 // This should really move to be in macro-assembler as it
 // is really a pseudo instruction
@@ -1192,8 +1181,6 @@ void Assembler::mfcr(Register dst) {
 // enabling/disabling and a counter feature. See simulator-arm.h .
 void Assembler::stop(const char* msg, Condition cond, int32_t code,
                      CRegister cr) {
-  // PPCPORT_CHECK(false);
-  // EMIT_FAKE_ARM_INSTR(fSTOP);
   if (cond != al) {
     Label skip;
     b(NegateCondition(cond), &skip, cr);
@@ -1228,13 +1215,6 @@ void Assembler::info(const char* msg, Condition cond, int32_t code,
 #endif
   }
 }
-
-
-void Assembler::svc(uint32_t imm24, Condition cond) {
-  PPCPORT_CHECK(false);
-  EMIT_FAKE_ARM_INSTR(fSVC);
-}
-
 
 void Assembler::dcbf(Register ra, Register rb) {
     emit(EXT2 | DCBF | ra.code()*B16 | rb.code()*B11);
@@ -1503,165 +1483,6 @@ void Assembler::fabs(const DwVfpRegister frt,
                      RCBit rc) {
   emit(EXT4 | FABS | frt.code()*B21 | frb.code()*B11 | rc);
 }
-
-// Support for VFP.
-
-void Assembler::vldr(const DwVfpRegister dst,
-                     const Register base,
-                     int offset,
-                     const Condition cond) {
-  PPCPORT_CHECK(false);
-  EMIT_FAKE_ARM_INSTR(fVLDR);
-}
-
-
-void Assembler::vldr(const DwVfpRegister dst,
-                     const MemOperand& operand,
-                     const Condition cond) {
-  PPCPORT_CHECK(false);
-  EMIT_FAKE_ARM_INSTR(fVLDR);
-}
-
-void Assembler::vstr(const DwVfpRegister src,
-                     const Register base,
-                     int offset,
-                     const Condition cond) {
-  PPCPORT_CHECK(false);
-  EMIT_FAKE_ARM_INSTR(fVSTR);
-}
-
-
-void Assembler::vstr(const DwVfpRegister src,
-                     const MemOperand& operand,
-                     const Condition cond) {
-  PPCPORT_CHECK(false);
-  EMIT_FAKE_ARM_INSTR(fVSTR);
-}
-
-void Assembler::vmov(const DwVfpRegister dst,
-                     double imm,
-                     const Register scratch,
-                     const Condition cond) {
-  PPCPORT_CHECK(false);
-  EMIT_FAKE_ARM_INSTR(fVMOV);
-}
-
-void Assembler::vmov(const DwVfpRegister dst,
-                     const DwVfpRegister src,
-                     const Condition cond) {
-  PPCPORT_CHECK(false);
-  EMIT_FAKE_ARM_INSTR(fVMOV);
-}
-
-
-void Assembler::vmov(const DwVfpRegister dst,
-                     const Register src1,
-                     const Register src2,
-                     const Condition cond) {
-  PPCPORT_CHECK(false);
-  EMIT_FAKE_ARM_INSTR(fVMOV);
-}
-
-
-void Assembler::vmov(const Register dst1,
-                     const Register dst2,
-                     const DwVfpRegister src,
-                     const Condition cond) {
-  PPCPORT_CHECK(false);
-  EMIT_FAKE_ARM_INSTR(fVMOV);
-}
-
-// Type of data to read from or write to VFP register.
-// Used as specifier in generic vcvt instruction.
-enum VFPType { S32, U32, F32, F64 };
-
-void Assembler::vneg(const DwVfpRegister dst,
-                     const DwVfpRegister src,
-                     const Condition cond) {
-  PPCPORT_CHECK(false);
-  EMIT_FAKE_ARM_INSTR(fVNEG);
-}
-
-
-void Assembler::vabs(const DwVfpRegister dst,
-                     const DwVfpRegister src,
-                     const Condition cond) {
-  PPCPORT_CHECK(false);
-  EMIT_FAKE_ARM_INSTR(fVABS);
-}
-
-
-void Assembler::vadd(const DwVfpRegister dst,
-                     const DwVfpRegister src1,
-                     const DwVfpRegister src2,
-                     const Condition cond) {
-  PPCPORT_CHECK(false);
-  EMIT_FAKE_ARM_INSTR(fVADD);
-}
-
-
-void Assembler::vsub(const DwVfpRegister dst,
-                     const DwVfpRegister src1,
-                     const DwVfpRegister src2,
-                     const Condition cond) {
-  PPCPORT_CHECK(false);
-  EMIT_FAKE_ARM_INSTR(fVSUB);
-}
-
-
-void Assembler::vmul(const DwVfpRegister dst,
-                     const DwVfpRegister src1,
-                     const DwVfpRegister src2,
-                     const Condition cond) {
-  PPCPORT_CHECK(false);
-  EMIT_FAKE_ARM_INSTR(fVMUL);
-}
-
-
-void Assembler::vdiv(const DwVfpRegister dst,
-                     const DwVfpRegister src1,
-                     const DwVfpRegister src2,
-                     const Condition cond) {
-  PPCPORT_CHECK(false);
-  EMIT_FAKE_ARM_INSTR(fVDIV);
-}
-
-
-void Assembler::vcmp(const DwVfpRegister src1,
-                     const DwVfpRegister src2,
-                     const Condition cond) {
-  PPCPORT_CHECK(false);
-  EMIT_FAKE_ARM_INSTR(fVCMP);
-}
-
-
-void Assembler::vcmp(const DwVfpRegister src1,
-                     const double src2,
-                     const Condition cond) {
-  PPCPORT_CHECK(false);
-  EMIT_FAKE_ARM_INSTR(fVCMP);
-}
-
-
-void Assembler::vmsr(Register dst, Condition cond) {
-  PPCPORT_CHECK(false);
-  EMIT_FAKE_ARM_INSTR(fVMSR);
-}
-
-
-void Assembler::vmrs(Register dst, Condition cond) {
-  PPCPORT_CHECK(false);
-  EMIT_FAKE_ARM_INSTR(fVMRS);
-}
-
-
-void Assembler::vsqrt(const DwVfpRegister dst,
-                      const DwVfpRegister src,
-                      const Condition cond) {
-  PPCPORT_CHECK(false);
-  EMIT_FAKE_ARM_INSTR(fVSQRT);
-}
-
 
 // Pseudo instructions.
 void Assembler::nop(int type) {

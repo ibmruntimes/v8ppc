@@ -52,7 +52,7 @@ const int kNoRegister = -1;
 // Conditions.
 
 // Defines constants and accessor classes to assemble, disassemble and
-// simulate ARM instructions.
+// simulate PPC instructions.
 //
 // Section references in the code refer to the "PowerPC Microprocessor
 // Family: The Programmer.s Reference Guide" from 10/95
@@ -335,7 +335,7 @@ enum {
   kTOMask = 0x1f << 21
 };
 
-// the following is to differentiate different faked ARM opcodes for
+// the following is to differentiate different faked opcodes for
 // the BOGUS PPC instruction we invented (when bit 25 is 0) or to mark
 // different stub code (when bit 25 is 1)
 //   - use primary opcode 1 for undefined instruction
@@ -349,6 +349,7 @@ enum {
 #define FAKER_SUBOPCODE 0 << MARKER_SUBOPCODE_BIT
 
 enum FAKE_OPCODE_T {
+  /*
   fMRS = 0,
   fMSR = 1,
   fLDR = 2,
@@ -393,6 +394,7 @@ enum FAKE_OPCODE_T {
   fMVN = 41,
   fLDRSB = 42,
   fADD = 43,
+  */
   fBranch = 44,
   // the following is the marker for ARM instruction sequences outside
   // assembler.cc that we have removed (marked by PPCPORT_UNIMPLEMENTED)
@@ -498,7 +500,7 @@ enum CRBit {
 // -----------------------------------------------------------------------------
 // Supervisor Call (svc) specific support.
 
-// Special Software Interrupt codes when used in the presence of the ARM
+// Special Software Interrupt codes when used in the presence of the PPC
 // simulator.
 // svc (formerly swi) provides a 24bit immediate value. Use bits 22:0 for
 // standard SoftwareInterrupCode. Bit 23 is reserved for the stop feature.
@@ -572,8 +574,8 @@ const Instr rtCallRedirInstr = TWI;
 // -----------------------------------------------------------------------------
 // Instruction abstraction.
 
-// The class Instruction enables access to individual fields defined in the ARM
-// architecture instruction set encoding as described in figure A3-1.
+// The class Instruction enables access to individual fields defined in the PPC
+// architecture instruction set encoding.
 // Note that the Assembler uses typedef int32_t Instr.
 //
 // Example: Test whether the instruction at ptr does set the condition code

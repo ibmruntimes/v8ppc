@@ -66,7 +66,7 @@ void RelocInfo::apply(intptr_t delta) {
     *p += delta;  // relocate entry
     CPU::FlushICache(p, sizeof(uintptr_t));
   }
-  // We do not use pc relative addressing on ARM, so there is
+  // We do not use pc relative addressing on PPC, so there is
   // nothing else to do.
 }
 

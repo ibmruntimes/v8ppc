@@ -640,7 +640,6 @@ class RecordWriteStub: public CodeStub {
 
 // Enter C code from generated RegExp code in a way that allows
 // the C code to fix the return address in case of a GC.
-// Currently only needed on ARM.
 class RegExpCEntryStub: public CodeStub {
  public:
   RegExpCEntryStub() {}

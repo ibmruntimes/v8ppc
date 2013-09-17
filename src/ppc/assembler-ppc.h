@@ -38,8 +38,8 @@
 // Copyright IBM Corp. 2012, 2013. All rights reserved.
 //
 
-// A light-weight ARM Assembler
-// Generates user mode instructions for the ARM architecture up to version 5
+// A light-weight PPC Assembler
+// Generates user mode instructions for the PPC architecture up
 
 #ifndef V8_PPC_ASSEMBLER_PPC_H_
 #define V8_PPC_ASSEMBLER_PPC_H_
@@ -419,8 +419,6 @@ class Operand BASE_EMBEDDED {
 // Alternatively we can have a 16bit signed value immediate
 class MemOperand BASE_EMBEDDED {
  public:
-  // Contains cruft left to allow ARM to continue to work
-
   explicit MemOperand(Register rn, int32_t offset = 0);
 
   explicit MemOperand(Register ra, Register rb);
@@ -903,11 +901,8 @@ class Assembler : public AssemblerBase {
 
   void sub(Register dst, Register src1, const Operand& src2);
 
-  void cmp(Register src1, const Operand& src2, Condition cond = al);
   void cmp(Register src1, Register src2, CRegister cr = cr7);
   void cmpl(Register src1, Register src2, CRegister cr = cr7);
-
-  void cmn(Register src1, const Operand& src2, Condition cond = al);
 
   void mov(Register dst, const Operand& src);
 
@@ -947,8 +942,6 @@ class Assembler : public AssemblerBase {
             Condition cond = al,
             int32_t code = kDefaultStopCode,
             CRegister cr = cr7);
-
-  void svc(uint32_t imm24, Condition cond = al);
 
   void dcbf(Register ra, Register rb);
   void sync();
@@ -1009,77 +1002,6 @@ class Assembler : public AssemblerBase {
              RCBit rc = LeaveRC);
   void fabs(const DwVfpRegister frt, const DwVfpRegister frb,
             RCBit rc = LeaveRC);
-
-  // Support for VFP.
-  // All these APIs support S0 to S31 and D0 to D15.
-  // Currently these APIs do not support extended D registers, i.e, D16 to D31.
-  // However, some simple modifications can allow
-  // these APIs to support D16 to D31.
-
-  void vldr(const DwVfpRegister dst,
-            const Register base,
-            int offset,
-            const Condition cond = al);
-  void vldr(const DwVfpRegister dst,
-            const MemOperand& src,
-            const Condition cond = al);
-  void vstr(const DwVfpRegister src,
-            const Register base,
-            int offset,
-            const Condition cond = al);
-  void vstr(const DwVfpRegister src,
-            const MemOperand& dst,
-            const Condition cond = al);
-  void vmov(const DwVfpRegister dst,
-            double imm,
-            const Register scratch = no_reg,
-            const Condition cond = al);
-  void vmov(const DwVfpRegister dst,
-            const DwVfpRegister src,
-            const Condition cond = al);
-  void vmov(const DwVfpRegister dst,
-            const Register src1,
-            const Register src2,
-            const Condition cond = al);
-  void vmov(const Register dst1,
-            const Register dst2,
-            const DwVfpRegister src,
-            const Condition cond = al);
-  void vneg(const DwVfpRegister dst,
-            const DwVfpRegister src,
-            const Condition cond = al);
-  void vabs(const DwVfpRegister dst,
-            const DwVfpRegister src,
-            const Condition cond = al);
-  void vadd(const DwVfpRegister dst,
-            const DwVfpRegister src1,
-            const DwVfpRegister src2,
-            const Condition cond = al);
-  void vsub(const DwVfpRegister dst,
-            const DwVfpRegister src1,
-            const DwVfpRegister src2,
-            const Condition cond = al);
-  void vmul(const DwVfpRegister dst,
-            const DwVfpRegister src1,
-            const DwVfpRegister src2,
-            const Condition cond = al);
-  void vdiv(const DwVfpRegister dst,
-            const DwVfpRegister src1,
-            const DwVfpRegister src2,
-            const Condition cond = al);
-  void vcmp(const DwVfpRegister src1,
-            const DwVfpRegister src2,
-            const Condition cond = al);
-  void vcmp(const DwVfpRegister src1,
-            const double src2,
-            const Condition cond = al);
-  void vmrs(const Register dst,
-            const Condition cond = al);
-  void vmsr(const Register dst,
-            const Condition cond = al);
-  void vsqrt(const DwVfpRegister dst,
-             const DwVfpRegister src,
-             const Condition cond = al);
 
   // Pseudo instructions
 
