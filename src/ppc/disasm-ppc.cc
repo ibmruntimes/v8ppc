@@ -1417,7 +1417,17 @@ int Decoder::InstructionDecode(byte* instr_ptr) {
     }
 #if V8_TARGET_ARCH_PPC64
     case LD: {
-      Format(instr, "ld      'rt, 'd('ra)");
+      switch (instr->Bits(1, 0)) {
+        case 0:
+          Format(instr, "ld      'rt, 'd('ra)");
+          break;
+        case 1:
+          Format(instr, "ldu     'rt, 'd('ra)");
+          break;
+        case 2:
+          Format(instr, "lwa     'rt, 'd('ra)");
+          break;
+      }
       break;
     }
     case STD: {  // could be STD or STDU

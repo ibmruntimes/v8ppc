@@ -1417,9 +1417,9 @@ void Builtins::Generate_FunctionCall(MacroAssembler* masm) {
   //    if it is a function.
   // r3: actual number of arguments
   Label slow, non_function;
-  __ slwi(r4, r3, Operand(kPointerSizeLog2));
+  __ ShiftLeftImm(r4, r3, Operand(kPointerSizeLog2));
   __ add(r4, sp, r4);
-  __ lwz(r4, MemOperand(r4));
+  __ LoadP(r4, MemOperand(r4));
   __ JumpIfSmi(r4, &non_function);
   __ CompareObjectType(r4, r5, r5, JS_FUNCTION_TYPE);
   __ bne(&slow);
@@ -1431,25 +1431,34 @@ void Builtins::Generate_FunctionCall(MacroAssembler* masm) {
   __ li(r7, Operand(0, RelocInfo::NONE));  // indicate regular JS_FUNCTION
   { Label convert_to_object, use_global_receiver, patch_receiver;
     // Change context eagerly in case we need the global receiver.
-    __ lwz(cp, FieldMemOperand(r4, JSFunction::kContextOffset));
+    __ LoadP(cp, FieldMemOperand(r4, JSFunction::kContextOffset));
 
     // Do not transform the receiver for strict mode functions.
-    __ lwz(r5, FieldMemOperand(r4, JSFunction::kSharedFunctionInfoOffset));
+    __ LoadP(r5, FieldMemOperand(r4, JSFunction::kSharedFunctionInfoOffset));
     __ lwz(r6, FieldMemOperand(r5, SharedFunctionInfo::kCompilerHintsOffset));
-    __ AndSmiLiteral(r0, r6,
-                     Smi::FromInt(1 << SharedFunctionInfo::kStrictModeFunction),
-                     r0, SetRC);
+    __ TestBit(r6,
+#if V8_TARGET_ARCH_PPC64
+               31 - (SharedFunctionInfo::kStrictModeFunction),
+#else
+               31 - (SharedFunctionInfo::kStrictModeFunction + kSmiTagSize),
+#endif
+               r0);
     __ bne(&shift_arguments, cr0);
 
     // Do not transform the receiver for native (Compilerhints already in r6).
-    __ AndSmiLiteral(r0, r6,
-                     Smi::FromInt(1 << SharedFunctionInfo::kNative), r0, SetRC);
+    __ TestBit(r6,
+#if V8_TARGET_ARCH_PPC64
+               31 - (SharedFunctionInfo::kNative),
+#else
+               31 - (SharedFunctionInfo::kNative + kSmiTagSize),
+#endif
+               r0);
     __ bne(&shift_arguments, cr0);
 
     // Compute the receiver in non-strict mode.
-    __ slwi(ip, r3, Operand(kPointerSizeLog2));
+    __ ShiftLeftImm(ip, r3, Operand(kPointerSizeLog2));
     __ add(r5, sp, ip);
-    __ lwz(r5, MemOperand(r5, -kPointerSize));
+    __ LoadP(r5, MemOperand(r5, -kPointerSize));
     // r3: actual number of arguments
     // r4: function
     // r5: first argument
@@ -1485,9 +1494,9 @@ void Builtins::Generate_FunctionCall(MacroAssembler* masm) {
     }
 
     // Restore the function to r4, and the flag to r7.
-    __ slwi(r7, r3, Operand(kPointerSizeLog2));
+    __ ShiftLeftImm(r7, r3, Operand(kPointerSizeLog2));
     __ add(r7, sp, r7);
-    __ lwz(r4, MemOperand(r7));
+    __ LoadP(r4, MemOperand(r7));
     __ li(r7, Operand(0, RelocInfo::NONE));
     __ b(&patch_receiver);
 
@@ -1502,9 +1511,9 @@ void Builtins::Generate_FunctionCall(MacroAssembler* masm) {
     __ LoadP(r5, FieldMemOperand(r5, GlobalObject::kGlobalReceiverOffset));
 
     __ bind(&patch_receiver);
-    __ slwi(ip, r3, Operand(kPointerSizeLog2));
+    __ ShiftLeftImm(ip, r3, Operand(kPointerSizeLog2));
     __ add(r6, sp, ip);
-    __ stw(r5, MemOperand(r6, -kPointerSize));
+    __ StoreP(r5, MemOperand(r6, -kPointerSize));
 
     __ b(&shift_arguments);
   }
@@ -1524,9 +1533,9 @@ void Builtins::Generate_FunctionCall(MacroAssembler* masm) {
   // r3: actual number of arguments
   // r4: function
   // r7: call type (0: JS function, 1: function proxy, 2: non-function)
-  __ slwi(ip, r3, Operand(kPointerSizeLog2));
+  __ ShiftLeftImm(ip, r3, Operand(kPointerSizeLog2));
   __ add(r5, sp, ip);
-  __ stw(r4, MemOperand(r5, -kPointerSize));
+  __ StoreP(r4, MemOperand(r5, -kPointerSize));
 
   // 4. Shift arguments and return address one slot down on the stack
   //    (overwriting the original receiver).  Adjust argument count to make
@@ -1537,12 +1546,12 @@ void Builtins::Generate_FunctionCall(MacroAssembler* masm) {
   __ bind(&shift_arguments);
   { Label loop;
     // Calculate the copy start address (destination). Copy end address is sp.
-    __ slwi(ip, r3, Operand(kPointerSizeLog2));
+    __ ShiftLeftImm(ip, r3, Operand(kPointerSizeLog2));
     __ add(r5, sp, ip);
 
     __ bind(&loop);
-    __ lwz(ip, MemOperand(r5, -kPointerSize));
-    __ stw(ip, MemOperand(r5));
+    __ LoadP(ip, MemOperand(r5, -kPointerSize));
+    __ StoreP(ip, MemOperand(r5));
     __ sub(r5, r5, Operand(kPointerSize));
     __ cmp(r5, sp);
     __ bne(&loop);
@@ -1584,11 +1593,13 @@ void Builtins::Generate_FunctionCall(MacroAssembler* masm) {
   //     (tail-call) to the code in register edx without checking arguments.
   // r3: actual number of arguments
   // r4: function
-  __ lwz(r6, FieldMemOperand(r4, JSFunction::kSharedFunctionInfoOffset));
-  __ lwz(r5,
+  __ LoadP(r6, FieldMemOperand(r4, JSFunction::kSharedFunctionInfoOffset));
+  __ LoadWordArith(r5,
          FieldMemOperand(r6, SharedFunctionInfo::kFormalParameterCountOffset));
+#if !defined(V8_TARGET_ARCH_PPC64)
   __ SmiUntag(r5);
-  __ lwz(r6, FieldMemOperand(r4, JSFunction::kCodeEntryOffset));
+#endif
+  __ LoadP(r6, FieldMemOperand(r4, JSFunction::kCodeEntryOffset));
   __ SetCallKind(r8, CALL_AS_METHOD);
   __ cmp(r5, r3);  // Check formal and actual parameter counts.
   Label skip;
@@ -1664,14 +1675,23 @@ void Builtins::Generate_FunctionApply(MacroAssembler* masm) {
     // Do not transform the receiver for strict mode functions.
     Label call_to_object, use_global_receiver;
     __ lwz(r5, FieldMemOperand(r5, SharedFunctionInfo::kCompilerHintsOffset));
-    __ AndSmiLiteral(r0, r5,
-                     Smi::FromInt(1 << SharedFunctionInfo::kStrictModeFunction),
-                     r0, SetRC);
+    __ TestBit(r5,
+#if V8_TARGET_ARCH_PPC64
+               31 - (SharedFunctionInfo::kStrictModeFunction),
+#else
+               31 - (SharedFunctionInfo::kStrictModeFunction + kSmiTagSize),
+#endif
+               r0);
     __ bne(&push_receiver, cr0);
 
     // Do not transform the receiver for strict mode functions.
-    __ AndSmiLiteral(r0, r5, Smi::FromInt(1 << SharedFunctionInfo::kNative),
-                     r0, SetRC);
+    __ TestBit(r5,
+#if V8_TARGET_ARCH_PPC64
+               31 - (SharedFunctionInfo::kNative),
+#else
+               31 - (SharedFunctionInfo::kNative + kSmiTagSize),
+#endif
+               r0);
     __ bne(&push_receiver, cr0);
 
     // Compute the receiver in non-strict mode.

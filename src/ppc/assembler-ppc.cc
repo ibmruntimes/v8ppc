@@ -953,6 +953,18 @@ void Assembler::lwzux(Register rt, const MemOperand & src) {
   emit(EXT2 | LWZUX | rt.code()*B21 | ra.code()*B16 | rb.code()*B11 | LeaveRC);
 }
 
+void Assembler::lwa(Register dst, const MemOperand &src) {
+#if V8_TARGET_ARCH_PPC64
+  int offset = src.offset();
+  ASSERT(!src.ra_.is(r0));
+  ASSERT(!(offset & 3) && is_int16(offset));
+  offset = kImm16Mask & offset;
+  emit(LD | dst.code()*B21 | src.ra().code()*B16 | offset | 2);
+#else
+  lwz(dst, src);
+#endif
+}
+
 void Assembler::stb(Register dst, const MemOperand &src) {
   ASSERT(!src.ra_.is(r0));
   d_form(STB, dst, src.ra(), src.offset(), true);

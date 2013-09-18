@@ -462,6 +462,10 @@ class MacroAssembler: public Assembler {
                 Register scratch,
                 bool updateForm = false);
 
+  void LoadWordArith(Register dst,
+                     const MemOperand& mem,
+                     Register scratch = no_reg);
+
   void StoreWord(Register src,
                  const MemOperand& mem,
                  Register scratch,

@@ -846,6 +846,7 @@ class Assembler : public AssemblerBase {
   void lwzu(Register dst, const MemOperand& src);
   void lwzx(Register dst, const MemOperand& src);
   void lwzux(Register dst, const MemOperand& src);
+  void lwa(Register dst, const MemOperand& src);
   void stb(Register dst, const MemOperand& src);
   void stbx(Register dst, const MemOperand& src);
   void stbux(Register dst, const MemOperand& src);

@@ -255,8 +255,10 @@ class Simulator {
   inline void WriteH(intptr_t addr, uint16_t value, Instruction* instr);
   inline void WriteH(intptr_t addr, int16_t value, Instruction* instr);
 
-  inline int ReadW(intptr_t addr, Instruction* instr);
-  inline void WriteW(intptr_t addr, int value, Instruction* instr);
+  inline uint32_t ReadWU(intptr_t addr, Instruction* instr);
+  inline int32_t ReadW(intptr_t addr, Instruction* instr);
+  inline void WriteW(intptr_t addr, uint32_t value, Instruction* instr);
+  inline void WriteW(intptr_t addr, int32_t value, Instruction* instr);
 
   intptr_t* ReadDW(intptr_t addr);
   void WriteDW(intptr_t addr, int64_t value);

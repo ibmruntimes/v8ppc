@@ -1044,14 +1044,25 @@ A good idea to trash volatile registers, needs to be done
 }
 
 
-int Simulator::ReadW(intptr_t addr, Instruction* instr) {
-  intptr_t* ptr = reinterpret_cast<intptr_t*>(addr);
+uint32_t Simulator::ReadWU(intptr_t addr, Instruction* instr) {
+  uint32_t* ptr = reinterpret_cast<uint32_t*>(addr);
+  return *ptr;
+}
+
+int32_t Simulator::ReadW(intptr_t addr, Instruction* instr) {
+  int32_t* ptr = reinterpret_cast<int32_t*>(addr);
   return *ptr;
 }
 
 
-void Simulator::WriteW(intptr_t addr, int value, Instruction* instr) {
-  intptr_t* ptr = reinterpret_cast<intptr_t*>(addr);
+void Simulator::WriteW(intptr_t addr, uint32_t value, Instruction* instr) {
+  uint32_t* ptr = reinterpret_cast<uint32_t*>(addr);
+  *ptr = value;
+  return;
+}
+
+void Simulator::WriteW(intptr_t addr, int32_t value, Instruction* instr) {
+  int32_t* ptr = reinterpret_cast<int32_t*>(addr);
   *ptr = value;
   return;
 }
@@ -2120,7 +2131,7 @@ void Simulator::DecodeExt2_9bit(Instruction* instr) {
       int ra = instr->RAValue();
       int rb = instr->RBValue();
       intptr_t ra_val = ra == 0 ? 0 : get_register(ra);
-      intptr_t rs_val = get_register(rs);
+      int32_t rs_val = get_register(rs);
       intptr_t rb_val = get_register(rb);
       WriteW(ra_val+rb_val, rs_val, instr);
       if (opcode == STWUX) {
@@ -2166,7 +2177,7 @@ void Simulator::DecodeExt2_9bit(Instruction* instr) {
       int rb = instr->RBValue();
       intptr_t ra_val = ra == 0 ? 0 : get_register(ra);
       intptr_t rb_val = get_register(rb);
-      set_register(rt, ReadW(ra_val+rb_val, instr));
+      set_register(rt, ReadWU(ra_val+rb_val, instr));
       if (opcode == LWZUX) {
         ASSERT(ra != 0 && ra != rt);
         set_register(ra, ra_val+rb_val);
@@ -2819,7 +2830,7 @@ void Simulator::InstructionDecode(Instruction* instr) {
       int rt = instr->RTValue();
       intptr_t ra_val = ra == 0 ? 0 : get_register(ra);
       int offset = SIGN_EXT_IMM16(instr->Bits(15, 0));
-      set_register(rt, ReadW(ra_val+offset, instr));
+      set_register(rt, ReadWU(ra_val+offset, instr));
       if (opcode == LWZU) {
         ASSERT(ra != 0);
         set_register(ra, ra_val+offset);
@@ -2994,8 +3005,19 @@ void Simulator::InstructionDecode(Instruction* instr) {
       int rt = instr->RTValue();
       int64_t ra_val = ra == 0 ? 0 : get_register(ra);
       int offset = SIGN_EXT_IMM16(instr->Bits(15, 0) & ~3);
-      int64_t *result = ReadDW(ra_val+offset);
-      set_register(rt, *result);
+      switch  (instr->Bits(1, 0)) {
+        case 0:  // ld
+        case 1: {  // ldu
+          intptr_t *result = ReadDW(ra_val+offset);
+          set_register(rt, *result);
+          break;
+        }
+        case 2: {  // lwa
+          intptr_t result = ReadW(ra_val+offset, instr);
+          set_register(rt, result);
+          break;
+        }
+      }
 #if 0  // temporary until we have LDU
       if (opcode == LDU) {
         ASSERT(ra != 0);

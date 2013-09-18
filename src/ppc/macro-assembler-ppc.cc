@@ -1051,10 +1051,12 @@ void MacroAssembler::InvokeFunction(Register fun,
 
   LoadP(code_reg, FieldMemOperand(r4, JSFunction::kSharedFunctionInfoOffset));
   LoadP(cp, FieldMemOperand(r4, JSFunction::kContextOffset));
-  lwz(expected_reg,
+  LoadWordArith(expected_reg,
       FieldMemOperand(code_reg,
                       SharedFunctionInfo::kFormalParameterCountOffset));
+#if !defined(V8_TARGET_ARCH_PPC64)
   SmiUntag(expected_reg);
+#endif
   LoadP(code_reg,
         FieldMemOperand(r4, JSFunction::kCodeEntryOffset));
 
@@ -2134,9 +2136,13 @@ void MacroAssembler::TryGetFunctionPrototype(Register function,
         FieldMemOperand(function, JSFunction::kSharedFunctionInfoOffset));
     lwz(scratch,
         FieldMemOperand(scratch, SharedFunctionInfo::kCompilerHintsOffset));
-    AndSmiLiteral(r0, scratch,
-                  Smi::FromInt(1 << SharedFunctionInfo::kBoundFunction),
-                  r0, SetRC);
+    TestBit(scratch,
+#if V8_TARGET_ARCH_PPC64
+            31 - (SharedFunctionInfo::kBoundFunction),
+#else
+            31 - (SharedFunctionInfo::kBoundFunction + kSmiTagSize),
+#endif
+            r0);
     bne(miss, cr0);
   }
 
@@ -4094,6 +4100,37 @@ void MacroAssembler::StorePU(Register src, const MemOperand& mem) {
 #else
   stwu(src, mem);
 #endif
+}
+
+void MacroAssembler::LoadWordArith(Register dst, const MemOperand& mem,
+                                   Register scratch) {
+  int offset = mem.offset();
+
+  if (!scratch.is(no_reg) && !is_int16(offset)) {
+    /* cannot use d-form */
+    LoadIntLiteral(scratch, offset);
+#if V8_TARGET_ARCH_PPC64
+    // lwax(dst, MemOperand(mem.ra(), scratch));
+    ASSERT(0);  // lwax not yet implemented
+#else
+    lwzx(dst, MemOperand(mem.ra(), scratch));
+#endif
+  } else {
+#if V8_TARGET_ARCH_PPC64
+    int misaligned = (offset & 3);
+    if (misaligned) {
+      // adjust base to conform to offset alignment requirements
+      // Todo: enhance to use scratch if dst is unsuitable
+      ASSERT(!dst.is(r0));
+      addi(dst, mem.ra(), Operand((offset & 3) - 4));
+      lwa(dst, MemOperand(dst, (offset & ~3) + 4));
+    } else {
+      lwa(dst, mem);
+    }
+#else
+    lwz(dst, mem);
+#endif
+  }
 }
 
 // Variable length depending on whether offset fits into immediate field
