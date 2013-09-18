@@ -1384,11 +1384,11 @@ class MacroAssembler: public Assembler {
   // ---------------------------------------------------------------------------
   // Patching helpers.
 
-  // Patch the relocated value (lis/addic pair).
+  // Patch the relocated value (lis/ori pair).
   void PatchRelocatedValue(Register lis_location,
                            Register scratch,
                            Register new_value);
-  // Get the relocatad value (loaded data) from the lis/addic pair.
+  // Get the relocatad value (loaded data) from the lis/ori pair.
   void GetRelocatedValueLocation(Register lis_location,
                                  Register result,
                                  Register scratch);
