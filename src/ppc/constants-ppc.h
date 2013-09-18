@@ -41,8 +41,6 @@ const int kNumRegisters = 32;
 const int kNumFPDoubleRegisters = 32;
 const int kNumFPRegisters = kNumFPDoubleRegisters;
 
-// PPC doesn't really have a PC register - assign a fake number for simulation
-//const int kPCRegister = -2;
 const int kNoRegister = -1;
 
 // sign-extend the least significant 16-bit of value <imm>
