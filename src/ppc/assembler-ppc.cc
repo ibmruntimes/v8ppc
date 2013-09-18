@@ -309,7 +309,7 @@ Register Assembler::GetRB(Instr instr) {
 bool Assembler::Is32BitLoadIntoR12(Instr instr1, Instr instr2) {
   // Check the instruction is indeed a two part load (into r12)
   // 3d802553       lis     r12, 9555
-  // 318c5000       ori   r12, r12, 20480
+  // 618c5000       ori   r12, r12, 20480
   return(((instr1 >> 16) == 0x3d80) && ((instr2 >> 16) == 0x618c));
 }
 
