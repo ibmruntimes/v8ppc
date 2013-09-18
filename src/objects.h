@@ -5851,10 +5851,11 @@ class SharedFunctionInfo: public HeapObject {
   // garbage collections.
   // To avoid wasting space on 64-bit architectures we use
   // the following trick: we group integer fields into pairs
-  // First integer in each pair is shifted left by 1.
+  // The least significant integer in each pair is shifted left by 1.
   // By doing this we guarantee that LSB of each kPointerSize aligned
   // word is not set and thus this word cannot be treated as pointer
   // to HeapObject during old space traversal.
+#if __BYTE_ORDER == __LITTLE_ENDIAN
   static const int kLengthOffset =
       kAstNodeCountOffset + kPointerSize;
   static const int kFormalParameterCountOffset =
@@ -5882,6 +5883,38 @@ class SharedFunctionInfo: public HeapObject {
 
   static const int kCountersOffset = kOptCountOffset + kIntSize;
   static const int kStressDeoptCounterOffset = kCountersOffset + kIntSize;
+#elif __BYTE_ORDER == __BIG_ENDIAN
+  static const int kFormalParameterCountOffset =
+      kAstNodeCountOffset + kPointerSize;
+  static const int kLengthOffset =
+      kFormalParameterCountOffset + kIntSize;
+
+  static const int kNumLiteralsOffset =
+      kLengthOffset + kIntSize;
+  static const int kExpectedNofPropertiesOffset =
+      kNumLiteralsOffset + kIntSize;
+
+  static const int kStartPositionAndTypeOffset =
+      kExpectedNofPropertiesOffset + kIntSize;
+  static const int kEndPositionOffset =
+      kStartPositionAndTypeOffset + kIntSize;
+
+  static const int kCompilerHintsOffset =
+      kEndPositionOffset + kIntSize;
+  static const int kFunctionTokenPositionOffset =
+      kCompilerHintsOffset + kIntSize;
+
+  static const int kOptCountOffset =
+      kFunctionTokenPositionOffset + kIntSize;
+  static const int kThisPropertyAssignmentsCountOffset =
+      kOptCountOffset + kIntSize;
+
+  static const int kStressDeoptCounterOffset =
+      kThisPropertyAssignmentsCountOffset + kIntSize;
+  static const int kCountersOffset = kStressDeoptCounterOffset + kIntSize;
+#else
+#error Unknown byte ordering
+#endif
 
   // Total size.
   static const int kSize = kStressDeoptCounterOffset + kIntSize;
