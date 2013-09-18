@@ -3437,6 +3437,7 @@ void MacroAssembler::FlushICache(Register address, unsigned instructions) {
     isync();
 }
 
+// This code assumes a FIXED_SEQUENCE for lis/ori
 void MacroAssembler::PatchRelocatedValue(Register lis_location,
                                          Register scratch,
                                          Register new_value) {
@@ -3471,6 +3472,7 @@ void MacroAssembler::PatchRelocatedValue(Register lis_location,
   FlushICache(lis_location, 2);
 }
 
+// This code assumes a FIXED_SEQUENCE for lis/ori
 void MacroAssembler::GetRelocatedValueLocation(Register lis_location,
                                                Register result,
                                                Register scratch) {

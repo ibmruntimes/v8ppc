@@ -305,6 +305,7 @@ Register Assembler::GetRB(Instr instr) {
   return reg;
 }
 
+// This code assumes a FIXED_SEQUENCE for 32bit loads (lis/ori)
 bool Assembler::Is32BitLoadIntoR12(Instr instr1, Instr instr2) {
   // Check the instruction is indeed a two part load (into r12)
   // 3d802553       lis     r12, 9555
@@ -1139,6 +1140,9 @@ void Assembler::cmn(Register src1, const Operand& src2, Condition cond) {
 // Primarily used for loading constants
 // This should really move to be in macro-assembler as it
 // is really a pseudo instruction
+// Some usages of this intend for a FIXED_SEQUENCE to be used
+// Todo - break this dependency so we can optimize mov() in general
+// and only use the generic version when we require a fixed sequence
 void Assembler::mov(Register dst, const Operand& src) {
   BlockTrampolinePoolScope block_trampoline_pool(this);
   if (MustUseReg(src.rmode_)) {

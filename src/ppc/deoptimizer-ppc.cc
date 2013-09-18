@@ -121,6 +121,7 @@ static const int32_t kBranchBeforeStackCheck = 0x409c0014;
 static const int32_t kBranchBeforeInterrupt =  0x409c0028;
 
 
+// This code has some dependency on the FIXED_SEQUENCE lis/ori
 void Deoptimizer::PatchStackCheckCodeAt(Code* unoptimized_code,
                                         Address pc_after,
                                         Code* check_code,
@@ -210,7 +211,8 @@ void Deoptimizer::RevertStackCheckCodeAt(Code* unoptimized_code,
   }
 
   // Assemble the 32 bit value from the two part load and verify
-  // that it is the replacement code addresS
+  // that it is the replacement code address
+  // This assumes a FIXED_SEQUENCE for lis/ori
   uint32_t stack_check_address =
     (Memory::int32_at(pc_after - 4 * kInstrSize) & 0xFFFF) << 16;
   stack_check_address |=

@@ -642,7 +642,7 @@ class Assembler : public AssemblerBase {
   // Distance between the instruction referring to the address of the call
   // target and the return address.
 
-  // Call sequence is:
+  // Call sequence is a FIXED_SEQUENCE:
   // lis     r8, 2148      @ call address hi
   // ori     r8, r8, 5728  @ call address lo
   // mtlr    r8
@@ -652,7 +652,7 @@ class Assembler : public AssemblerBase {
 
   // Distance between start of patched return sequence and the emitted address
   // to jump to.
-  // Patched return sequence is:
+  // Patched return sequence is a FIXED_SEQUENCE:
   //   lis r0, <address hi>
   //   ori r0, r0, <address lo>
   //   mtlr r0
@@ -661,7 +661,7 @@ class Assembler : public AssemblerBase {
 
   // Distance between start of patched debug break slot and the emitted address
   // to jump to.
-  // Patched debug break slot code is:
+  // Patched debug break slot code is a FIXED_SEQUENCE:
   //   lis r0, <address hi>
   //   ori r0, r0, <address lo>
   //   mtlr r0

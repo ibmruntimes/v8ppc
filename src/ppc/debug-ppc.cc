@@ -55,6 +55,7 @@ void BreakLocationIterator::SetDebugBreakAtReturn() {
   //   blr
   //
   // to a call to the debug break return code.
+  // this uses a FIXED_SEQUENCE to load a 32bit constant
   //
   //   lis r0, <address hi>
   //   ori r0, r0, <address lo>
@@ -105,7 +106,7 @@ void BreakLocationIterator::SetDebugBreakAtSlot() {
   //   ori r3, r3, 0
   //   ori r3, r3, 0
   //
-  // to a call to the debug break code.
+  // to a call to the debug break code, using a FIXED_SEQUENCE.
   //
   //   lis r0, <address hi>
   //   ori r0, r0, <address lo>

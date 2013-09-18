@@ -233,6 +233,7 @@ bool RelocInfo::IsPatchedReturnSequence() {
   //
   // The patched return sequence is defined by
   // BreakLocationIterator::SetDebugBreakAtReturn()
+  // FIXED_SEQUENCE
 
   Instr instr0 = Assembler::instr_at(pc_);
   Instr instr1 = Assembler::instr_at(pc_ + 1 * Assembler::kInstrSize);
@@ -380,8 +381,7 @@ Address Assembler::target_address_address_at(Address pc) {
 #endif
 
 
-// This is functional, but potentially wrong
-// Needs to be reviewed (roohack)
+// Fetch the 32bit value from the FIXED_SEQUENCE lis/ori
 Address Assembler::target_address_at(Address pc) {
   Instr instr1 = instr_at(pc);
   Instr instr2 = instr_at(pc + kInstrSize);
@@ -436,6 +436,7 @@ return (Address)0;
 // This sets the branch destination (which gets loaded at the call address).
 // This is for calls and branches within generated code.  The serializer
 // has already deserialized the lis/ori instructions etc.
+// There is a FIXED_SEQUENCE assumption here
 void Assembler::deserialization_set_special_target_at(
     Address instruction_payload, Address target) {
   set_target_address_at(
@@ -443,7 +444,7 @@ void Assembler::deserialization_set_special_target_at(
       target);
 }
 
-
+// This code assumes the FIXED_SEQUENCE of lis/ori
 void Assembler::set_target_address_at(Address pc, Address target) {
   Instr instr1 = instr_at(pc);
   Instr instr2 = instr_at(pc + kInstrSize);
