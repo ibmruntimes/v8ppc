@@ -830,28 +830,50 @@ void Assembler::orx(Register dst, Register src1, Register src2, RCBit rc) {
 
 void Assembler::cmpi(Register src1, const Operand& src2, CRegister cr) {
   int imm16 = src2.imm32_;
+#if V8_TARGET_ARCH_PPC64
+  int L = 1;
+#else
+  int L = 0;
+#endif
   ASSERT(is_int16(imm16));
   ASSERT(cr.code() >= 0 && cr.code() <= 7);
   imm16 &= kImm16Mask;
-  emit(CMPI | cr.code()*B23 | src1.code()*B16 | imm16);
+  emit(CMPI | cr.code()*B23 | L*B21 | src1.code()*B16 | imm16);
 }
 
 void Assembler::cmpli(Register src1, const Operand& src2, CRegister cr) {
   uint uimm16 = src2.imm32_;
+#if V8_TARGET_ARCH_PPC64
+  int L = 1;
+#else
+  int L = 0;
+#endif
   ASSERT(is_uint16(uimm16));
   ASSERT(cr.code() >= 0 && cr.code() <= 7);
   uimm16 &= kImm16Mask;
-  emit(CMPLI | cr.code()*B23 | src1.code()*B16 | uimm16);
+  emit(CMPLI | cr.code()*B23 | L*B21 | src1.code()*B16 | uimm16);
 }
 
 void Assembler::cmp(Register src1, Register src2, CRegister cr) {
+#if V8_TARGET_ARCH_PPC64
+  int L = 1;
+#else
+  int L = 0;
+#endif
   ASSERT(cr.code() >= 0 && cr.code() <= 7);
-  emit(EXT2 | CMP | cr.code()*B23 | src1.code()*B16 | src2.code()*B11);
+  emit(EXT2 | CMP | cr.code()*B23 | L*B21 | src1.code()*B16 |
+       src2.code()*B11);
 }
 
 void Assembler::cmpl(Register src1, Register src2, CRegister cr) {
+#if V8_TARGET_ARCH_PPC64
+  int L = 1;
+#else
+  int L = 0;
+#endif
   ASSERT(cr.code() >= 0 && cr.code() <= 7);
-  emit(EXT2 | CMPL | cr.code()*B23 | src1.code()*B16 | src2.code()*B11);
+  emit(EXT2 | CMPL | cr.code()*B23 | L*B21 | src1.code()*B16 |
+       src2.code()*B11);
 }
 
 // Pseudo op - load immediate
