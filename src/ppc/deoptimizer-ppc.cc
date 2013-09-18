@@ -121,6 +121,7 @@ static const int32_t kBranchBeforeStackCheck = 0x409c0014;
 static const int32_t kBranchBeforeInterrupt =  0x409c0024;
 
 
+// This code has some dependency on the FIXED_SEQUENCE lis/ori
 void Deoptimizer::PatchStackCheckCodeAt(Code* unoptimized_code,
                                         Address pc_after,
                                         Code* check_code,
@@ -133,7 +134,7 @@ void Deoptimizer::PatchStackCheckCodeAt(Code* unoptimized_code,
   // The call of the stack guard check has the following form:
   // 409c0014       bge +40 -> 876  (0x25535c4c)  ;; (ok)
   // 3d802553       lis     r12, 9555        ;; two part load
-  // 318c5000       addic   r12, r12, 20480  ;; of stack guard address
+  // 618c5000       ori     r12, r12, 20480  ;; of stack guard address
   // 7d8803a6       mtlr    r12
   // 4e800021       blrl
 
@@ -155,7 +156,7 @@ void Deoptimizer::PatchStackCheckCodeAt(Code* unoptimized_code,
   // We patch the code to the following form:
   // 60000000       ori     r0, r0, 0        ;; NOP
   // 3d80NNNN       lis     r12, NNNN        ;; two part load
-  // 318cNNNN       addic   r12, r12, NNNN   ;; of on stack replace address
+  // 618cNNNN       ori     r12, r12, NNNN   ;; of on stack replace address
   // 7d8803a6       mtlr    r12
   // 4e800021       blrl
 
@@ -166,9 +167,9 @@ void Deoptimizer::PatchStackCheckCodeAt(Code* unoptimized_code,
   // Assemble the 32 bit value from the two part load and verify
   // that it is the stack guard code
   uint32_t stack_check_address =
-    (Memory::int32_at(pc_after - 4 * kInstrSize) & 0xffff) << 16;
-  stack_check_address +=
-    ((Memory::int32_at(pc_after - 3 * kInstrSize) << 16) >> 16);
+    (Memory::int32_at(pc_after - 4 * kInstrSize) & 0xFFFF) << 16;
+  stack_check_address |=
+    (Memory::int32_at(pc_after - 3 * kInstrSize) & 0xFFFF);
   ASSERT(stack_check_address ==
     reinterpret_cast<uintptr_t>(check_code->entry()));
 
@@ -210,11 +211,12 @@ void Deoptimizer::RevertStackCheckCodeAt(Code* unoptimized_code,
   }
 
   // Assemble the 32 bit value from the two part load and verify
-  // that it is the replacement code addresS
+  // that it is the replacement code address
+  // This assumes a FIXED_SEQUENCE for lis/ori
   uint32_t stack_check_address =
-    (Memory::int32_at(pc_after - 4 * kInstrSize) & 0xffff) << 16;
-  stack_check_address +=
-    ((Memory::int32_at(pc_after - 3 * kInstrSize) << 16) >> 16);
+    (Memory::int32_at(pc_after - 4 * kInstrSize) & 0xFFFF) << 16;
+  stack_check_address |=
+    (Memory::int32_at(pc_after - 3 * kInstrSize) & 0xFFFF);
   ASSERT(stack_check_address ==
     reinterpret_cast<uintptr_t>(replacement_code->entry()));
 
