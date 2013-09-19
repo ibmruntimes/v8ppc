@@ -1400,6 +1400,12 @@ void Simulator::SoftwareInterrupt(Instruction* instr) {
         }
         CHECK(stack_aligned);
         int64_t result = target(arg0, arg1, arg2, arg3, arg4, arg5);
+#if V8_TARGET_ARCH_PPC64
+        if (::v8::internal::FLAG_trace_sim) {
+          PrintF("Returned %08" V8PRIxPTR "\n", result);
+        }
+        set_register(r3, result);
+#else
 #if V8_HOST_ARCH_PPC
         int32_t hi_res = static_cast<int32_t>(result);
         int32_t lo_res = static_cast<int32_t>(result >> 32);
@@ -1412,6 +1418,7 @@ void Simulator::SoftwareInterrupt(Instruction* instr) {
         }
         set_register(r3, lo_res);
         set_register(r4, hi_res);
+#endif
       }
       set_pc(saved_lr);
       break;
