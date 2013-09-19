@@ -5645,11 +5645,11 @@ void StringHelper::GenerateTwoCharacterSymbolTableProbe(MacroAssembler* masm,
   // Make sure that both characters are not digits as such strings has a
   // different hash algorithm. Don't try to look for these in the symbol table.
   Label not_array_index;
-  __ sub(scratch, c1, Operand(static_cast<int>('0')));
-  __ cmpli(scratch, Operand(static_cast<int>('9' - '0')));
+  __ sub(scratch, c1, Operand(static_cast<intptr_t>('0')));
+  __ cmpli(scratch, Operand(static_cast<intptr_t>('9' - '0')));
   __ bgt(&not_array_index);
-  __ sub(scratch, c2, Operand(static_cast<int>('0')));
-  __ cmpli(scratch, Operand(static_cast<int>('9' - '0')));
+  __ sub(scratch, c2, Operand(static_cast<intptr_t>('0')));
+  __ cmpli(scratch, Operand(static_cast<intptr_t>('9' - '0')));
   __ bgt(&not_array_index);
 
   // If check failed combine both characters into single halfword.

@@ -295,7 +295,7 @@ Register LCodeGen::EmitLoadRegister(LOperand* op, Register scratch) {
     Representation r = chunk_->LookupLiteralRepresentation(const_op);
     if (r.IsInteger32()) {
       ASSERT(literal->IsNumber());
-      __ mov(scratch, Operand(static_cast<int32_t>(literal->Number())));
+      __ mov(scratch, Operand(static_cast<intptr_t>(literal->Number())));
     } else if (r.IsDouble()) {
       Abort("EmitLoadRegister: Unsupported double immediate.");
     } else {
@@ -335,7 +335,7 @@ DoubleRegister LCodeGen::EmitLoadDoubleRegister(LOperand* op,
     Representation r = chunk_->LookupLiteralRepresentation(const_op);
     if (r.IsInteger32()) {
       ASSERT(literal->IsNumber());
-      __ mov(ip, Operand(static_cast<int32_t>(literal->Number())));
+      __ mov(ip, Operand(static_cast<intptr_t>(literal->Number())));
       __ vmov(flt_scratch, ip);
       __ vcvt_f64_s32(dbl_scratch, flt_scratch);
       return dbl_scratch;
@@ -4149,13 +4149,13 @@ void LCodeGen::DoStoreKeyedFastDoubleElement(
 
     uint64_t nan_int64 = BitCast<uint64_t>(
         FixedDoubleArray::canonical_not_the_hole_nan_as_double());
-    __ mov(r0, Operand(static_cast<uint32_t>(nan_int64)));
+    __ mov(r0, Operand(static_cast<intptr_t>(nan_int64)));
 #if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
     __ stw(r0, MemOperand(scratch, dst_offset));
 #else
     __ stw(r0, MemOperand(scratch, dst_offset + 4));
 #endif
-    __ mov(r0, Operand(static_cast<uint32_t>(nan_int64 >> 32)));
+    __ mov(r0, Operand(static_cast<intptr_t>(nan_int64 >> 32)));
 #if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
     __ stw(r0, MemOperand(scratch, dst_offset + 4));
 #else

@@ -1957,8 +1957,8 @@ void MacroAssembler::StoreNumberToDoubleElements(Register value_reg,
   // Load canonical NaN for storing into the double array.
   uint64_t nan_int64 = BitCast<uint64_t>(
       FixedDoubleArray::canonical_not_the_hole_nan_as_double());
-  mov(mantissa_reg, Operand(static_cast<uint32_t>(nan_int64)));
-  mov(exponent_reg, Operand(static_cast<uint32_t>(nan_int64 >> 32)));
+  mov(mantissa_reg, Operand(static_cast<intptr_t>(nan_int64)));
+  mov(exponent_reg, Operand(static_cast<intptr_t>(nan_int64 >> 32)));
   b(&have_double_value);
 
   bind(&smi_value);
@@ -2119,7 +2119,7 @@ void MacroAssembler::DispatchMap(Register obj,
   if (smi_check_type == DO_SMI_CHECK) {
     JumpIfSmi(obj, &fail);
   }
-  lwz(scratch, FieldMemOperand(obj, HeapObject::kMapOffset));
+  LoadP(scratch, FieldMemOperand(obj, HeapObject::kMapOffset));
   mov(ip, Operand(map));
   cmp(scratch, ip);
   bne(&fail);

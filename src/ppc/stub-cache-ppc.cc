@@ -409,11 +409,7 @@ static void GenerateStringCheck(MacroAssembler* masm,
   __ lbz(scratch1, FieldMemOperand(scratch1, Map::kInstanceTypeOffset));
   __ andi(scratch2, scratch1, Operand(kIsNotStringMask));
   // The cast is to resolve the overload for the argument of 0x0.
-#if V8_TARGET_ARCH_PPC64
-  __ cmpi(scratch2, Operand(static_cast<int64_t>(kStringTag)));
-#else
-  __ cmpi(scratch2, Operand(static_cast<int32_t>(kStringTag)));
-#endif
+  __ cmpi(scratch2, Operand(static_cast<intptr_t>(kStringTag)));
   __ bne(non_string_object);
 }
 
@@ -4155,11 +4151,11 @@ void KeyedLoadStubCompiler::GenerateLoadFastElement(MacroAssembler* masm) {
   GenerateSmiKeyCheck(masm, r3, r7, r8, d1, d2, &miss_force_generic);
 
   // Get the elements array.
-  __ lwz(r5, FieldMemOperand(r4, JSObject::kElementsOffset));
+  __ LoadP(r5, FieldMemOperand(r4, JSObject::kElementsOffset));
   __ AssertFastElements(r5);
 
   // Check that the key is within bounds.
-  __ lwz(r6, FieldMemOperand(r5, FixedArray::kLengthOffset));
+  __ LoadP(r6, FieldMemOperand(r5, FixedArray::kLengthOffset));
   __ cmpl(r3, r6);
   __ bge(&miss_force_generic);
 
