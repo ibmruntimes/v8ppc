@@ -735,8 +735,7 @@ void Assembler::sraw(Register ra, Register rs, Register rb, RCBit r) {
   x_form(EXT2 | SRAW, ra, rs, rb, r);
 }
 
-// TODO(penguin): rename sub to subi to be consistent w/ addi
-void Assembler::sub(Register dst, Register src, const Operand& imm) {
+void Assembler::subi(Register dst, Register src, const Operand& imm) {
   addi(dst, src, Operand(-(imm.imm_)));
 }
 

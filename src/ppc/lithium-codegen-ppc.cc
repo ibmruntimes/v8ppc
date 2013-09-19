@@ -2252,7 +2252,7 @@ void LCodeGen::EmitClassOfTest(Label* is_true,
     // actual type and do a signed compare with the width of the type range.
     __ lwz(temp, FieldMemOperand(input, HeapObject::kMapOffset));
     __ lbz(temp2, FieldMemOperand(temp, Map::kInstanceTypeOffset));
-    __ sub(temp2, temp2, Operand(FIRST_NONCALLABLE_SPEC_OBJECT_TYPE));
+    __ subi(temp2, temp2, Operand(FIRST_NONCALLABLE_SPEC_OBJECT_TYPE));
     __ cmpi(temp2, Operand(LAST_NONCALLABLE_SPEC_OBJECT_TYPE -
                           FIRST_NONCALLABLE_SPEC_OBJECT_TYPE));
     __ bgt(is_false);
@@ -3086,7 +3086,7 @@ void LCodeGen::DoArgumentsElements(LArgumentsElements* instr) {
   Register result = ToRegister(instr->result());
 
   if (instr->hydrogen()->from_inlined()) {
-    __ sub(result, sp, Operand(2 * kPointerSize));
+    __ subi(result, sp, Operand(2 * kPointerSize));
   } else {
     // Check if the calling frame is an arguments adaptor frame.
     Label done, adapted;
@@ -3489,7 +3489,7 @@ void LCodeGen::DoMathFloor(LUnaryMathOperation* instr) {
     __ cmpi(result, Operand::Zero());
     __ bne(&done);
     // Move high word to scrach and test sign bit
-    __ sub(sp, sp, Operand(8));
+    __ subi(sp, sp, Operand(8));
     __ stfd(input, MemOperand(sp));
 #if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
     __ lwz(scratch, MemOperand(sp, 4));
@@ -3514,7 +3514,7 @@ void LCodeGen::DoMathRound(LUnaryMathOperation* instr) {
 
 
   // Extract exponent bits.
-  __ sub(sp, sp, Operand(8));
+  __ subi(sp, sp, Operand(8));
   __ stfd(input, MemOperand(sp));
 #if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
   __ lwz(result, MemOperand(sp, 4));
@@ -3540,7 +3540,7 @@ void LCodeGen::DoMathRound(LUnaryMathOperation* instr) {
   __ cmpi(scratch, Operand(HeapNumber::kExponentBias + 32));
   DeoptimizeIf(ge, instr->environment());
 
-  __ sub(sp, sp, Operand(8));
+  __ subi(sp, sp, Operand(8));
 #if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
   __ mov(scratch, Operand(pointFive.bits >> 32));
   __ stw(scratch, MemOperand(sp, 4));
@@ -3592,7 +3592,7 @@ void LCodeGen::DoMathRound(LUnaryMathOperation* instr) {
     __ bne(&done);
     __ bind(&check_sign_on_zero);
     // Move high word to scrach and test sign bit
-    __ sub(sp, sp, Operand(8));
+    __ subi(sp, sp, Operand(8));
     __ stfd(input, MemOperand(sp));
 #if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
     __ lwz(scratch, MemOperand(sp, 4));
@@ -3625,7 +3625,7 @@ void LCodeGen::DoMathPowHalf(LUnaryMathOperation* instr) {
   // Math.sqrt(-Infinity) == NaN
   Label skip, done;
 
-  __ sub(sp, sp, Operand(8));
+  __ subi(sp, sp, Operand(8));
 #if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
   __ mov(scratch0(), Operand(minusInf.bits >> 32));
   __ stw(scratch0(), MemOperand(sp, 4));
@@ -4664,7 +4664,7 @@ void LCodeGen::EmitNumberUntagD(Register input_reg,
   // Heap number to double register conversion.
   __ lfd(result_reg, FieldMemOperand(input_reg, HeapNumber::kValueOffset));
   if (deoptimize_on_minus_zero) {
-    __ sub(sp, sp, Operand(8));
+    __ subi(sp, sp, Operand(8));
     __ stfd(result_reg, MemOperand(sp));
 #if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
     __ lwz(ip, MemOperand(sp, 0));

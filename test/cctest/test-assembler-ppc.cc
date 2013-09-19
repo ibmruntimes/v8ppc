@@ -103,7 +103,7 @@ TEST(1) {
 
   __ bind(&L);
   __ add(r3, r3, r4);
-  __ sub(r4, r4, Operand(1));
+  __ subi(r4, r4, Operand(1));
 
   __ bind(&C);
   __ cmpi(r4, Operand(0, RelocInfo::NONE));
@@ -144,7 +144,7 @@ TEST(2) {
 
   __ bind(&L);
   __ mul(r3, r4, r3);
-  __ sub(r4, r4, Operand(1));
+  __ subi(r4, r4, Operand(1));
 
   __ bind(&C);
   __ cmpi(r4, Operand(0, RelocInfo::NONE));

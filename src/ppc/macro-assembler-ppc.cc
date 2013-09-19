@@ -322,7 +322,7 @@ void MacroAssembler::MultiPush(RegList regs) {
   int16_t num_to_push = NumberOfBitsSet(regs);
   int16_t stack_offset = num_to_push * kPointerSize;
 
-  sub(sp, sp, Operand(stack_offset));
+  subi(sp, sp, Operand(stack_offset));
   for (int16_t i = kNumRegisters - 1; i >= 0; i--) {
     if ((regs & (1 << i)) != 0) {
       stack_offset -= kPointerSize;
@@ -553,7 +553,7 @@ void MacroAssembler::PushSafepointRegisters() {
   const int num_unsaved = kNumSafepointRegisters - kNumSafepointSavedRegisters;
   ASSERT(num_unsaved >= 0);
   if (num_unsaved > 0) {
-    sub(sp, sp, Operand(num_unsaved * kPointerSize));
+    subi(sp, sp, Operand(num_unsaved * kPointerSize));
   }
   MultiPush(kSafepointSavedRegisters);
 }
@@ -751,7 +751,7 @@ void MacroAssembler::EnterExitFrame(bool save_doubles, int stack_space) {
   Push(r0, fp);
   mr(fp, sp);
   // Reserve room for saved entry sp and code object.
-  sub(sp, sp, Operand(2 * kPointerSize));
+  subi(sp, sp, Operand(2 * kPointerSize));
 
   if (emit_debug_code()) {
     li(r8, Operand::Zero());
@@ -783,7 +783,7 @@ void MacroAssembler::EnterExitFrame(bool save_doubles, int stack_space) {
   // preparing for calling the runtime function.
   // Also - add 1 more for the LR storage
   const int frame_alignment = MacroAssembler::ActivationFrameAlignment();
-  sub(sp, sp, Operand((stack_space + 1 + 1) * kPointerSize));
+  subi(sp, sp, Operand((stack_space + 1 + 1) * kPointerSize));
   if (frame_alignment > 0) {
     ASSERT(frame_alignment == 8);
     ClearRightImm(sp, sp, Operand(3));  // equivalent to &= -8
@@ -1441,7 +1441,7 @@ void MacroAssembler::LoadFromNumberDictionary(Label* miss,
   // Compute the capacity mask.
   lwz(t1, FieldMemOperand(elements, SeededNumberDictionary::kCapacityOffset));
   SmiUntag(t1);
-  sub(t1, t1, Operand(1));
+  subi(t1, t1, Operand(1));
 
   // Generate an unrolled loop that performs a few probes before giving up.
   static const int kProbes = 4;
@@ -2270,7 +2270,7 @@ void MacroAssembler::CallApiFunctionAndReturn(ExternalReference function,
     cmp(r4, r29);
     Check(eq, "Unexpected level after return from api call");
   }
-  sub(r29, r29, Operand(1));
+  subi(r29, r29, Operand(1));
   stw(r29, MemOperand(r26, kLevelOffset));
   lwz(ip, MemOperand(r26, kLimitOffset));
   cmp(r28, ip);
@@ -2721,7 +2721,7 @@ void MacroAssembler::DecrementCounter(StatsCounter* counter, int value,
   if (FLAG_native_code_counters && counter->Enabled()) {
     mov(scratch2, Operand(ExternalReference(counter)));
     lwz(scratch1, MemOperand(scratch2));
-    sub(scratch1, scratch1, Operand(value));
+    subi(scratch1, scratch1, Operand(value));
     stw(scratch1, MemOperand(scratch2));
   }
 }
@@ -2910,7 +2910,7 @@ void MacroAssembler::JumpIfNotPowerOfTwoOrZero(
     Register reg,
     Register scratch,
     Label* not_power_of_two_or_zero) {
-  sub(scratch, reg, Operand(1));
+  subi(scratch, reg, Operand(1));
   cmpi(scratch, Operand::Zero());
   blt(not_power_of_two_or_zero);
   and_(r0, scratch, reg, SetRC);
@@ -2923,7 +2923,7 @@ void MacroAssembler::JumpIfNotPowerOfTwoOrZeroAndNeg(
     Register scratch,
     Label* zero_and_neg,
     Label* not_power_of_two) {
-  sub(scratch, reg, Operand(1));
+  subi(scratch, reg, Operand(1));
   cmpi(scratch, Operand::Zero());
   blt(zero_and_neg);
   and_(r0, scratch, reg, SetRC);
@@ -3167,7 +3167,7 @@ void MacroAssembler::CopyBytes(Register src,
   addi(src, src, Operand(1));
   stb(scratch, MemOperand(dst));
   addi(dst, dst, Operand(1));
-  sub(length, length, Operand(1));
+  subi(length, length, Operand(1));
   cmpi(r0, Operand::Zero());
   bne(&byte_loop_1);
 
@@ -3205,7 +3205,7 @@ void MacroAssembler::CopyBytes(Register src,
 #endif
     addi(dst, dst, Operand(4));
   }
-  sub(length, length, Operand(kPointerSize));
+  subi(length, length, Operand(kPointerSize));
   b(&word_loop);
 
   // Copy the last bytes if any left.
@@ -3217,7 +3217,7 @@ void MacroAssembler::CopyBytes(Register src,
   addi(src, src, Operand(1));
   stb(scratch, MemOperand(dst));
   addi(dst, dst, Operand(1));
-  sub(length, length, Operand(1));
+  subi(length, length, Operand(1));
   cmpi(length, Operand::Zero());
   bne(&byte_loop_1);
   bind(&done);
@@ -3296,7 +3296,7 @@ void MacroAssembler::PrepareCallCFunction(int num_reg_arguments,
     // and the original value of sp (on native +2 empty slots to make ABI work)
     mr(scratch, sp);
 #if defined(V8_HOST_ARCH_PPC)
-    sub(sp, sp, Operand((stack_passed_arguments + 1 + 2) * kPointerSize));
+    subi(sp, sp, Operand((stack_passed_arguments + 1 + 2) * kPointerSize));
 #else
     sub(sp, sp, Operand((stack_passed_arguments + 1) * kPointerSize));
 #endif
@@ -3313,7 +3313,7 @@ void MacroAssembler::PrepareCallCFunction(int num_reg_arguments,
 #endif
   } else {
     // this case appears to never beused on PPC (even simulated)
-    sub(sp, sp, Operand(stack_passed_arguments * kPointerSize));
+    subi(sp, sp, Operand(stack_passed_arguments * kPointerSize));
   }
 }
 
