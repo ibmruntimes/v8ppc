@@ -2147,9 +2147,9 @@ void MacroAssembler::TryGetFunctionPrototype(Register function,
         FieldMemOperand(scratch, SharedFunctionInfo::kCompilerHintsOffset));
     TestBit(scratch,
 #if V8_TARGET_ARCH_PPC64
-            31 - (SharedFunctionInfo::kBoundFunction),
+            SharedFunctionInfo::kBoundFunction,
 #else
-            31 - (SharedFunctionInfo::kBoundFunction + kSmiTagSize),
+            SharedFunctionInfo::kBoundFunction + kSmiTagSize,
 #endif
             r0);
     bne(miss, cr0);
@@ -2456,7 +2456,7 @@ void MacroAssembler::EmitOutOfInt32RangeTruncate(Register result,
   STATIC_ASSERT(HeapNumber::kSignMask == 0x80000000u);
   Register sign = result;
   result = no_reg;
-  ExtractBit(sign, input_high, 0);
+  ExtractSignBit(sign, input_high);
 
   // Shifts >= 32 bits should result in zero.
   // slw extracts only the 6 most significant bits of the shift value.
@@ -2967,7 +2967,7 @@ void MacroAssembler::UntagAndJumpIfSmi(
     Register dst, Register src, Label* smi_case) {
   STATIC_ASSERT(kSmiTag == 0);
   STATIC_ASSERT(kSmiTagSize == 1);
-  TestBit(src, 31, r0);
+  TestBit(src, 0, r0);
   SmiUntag(dst, src);
   beq(smi_case, cr0);
 }
@@ -2977,7 +2977,7 @@ void MacroAssembler::UntagAndJumpIfNotSmi(
     Register dst, Register src, Label* non_smi_case) {
   STATIC_ASSERT(kSmiTag == 0);
   STATIC_ASSERT(kSmiTagSize == 1);
-  TestBit(src, 31, r0);
+  TestBit(src, 0, r0);
   SmiUntag(dst, src);
   bne(non_smi_case, cr0);
 }
@@ -3594,11 +3594,11 @@ void MacroAssembler::GetMarkBits(Register addr_reg,
   and_(bitmap_reg, addr_reg, r0);
   const int kLowBits = kPointerSizeLog2 + Bitmap::kBitsPerCellLog2;
   ExtractBitRange(mask_reg, addr_reg,
-                  31 - kLowBits + 1,
-                  31 - kPointerSizeLog2);
+                  kLowBits - 1,
+                  kPointerSizeLog2);
   ExtractBitRange(ip, addr_reg,
-                  31 - kPageSizeBits + 1,
-                  31 - kLowBits);
+                  kPageSizeBits - 1,
+                  kLowBits);
   slwi(ip, ip, Operand(kPointerSizeLog2));
   add(bitmap_reg, bitmap_reg, ip);
   li(ip, Operand(1));

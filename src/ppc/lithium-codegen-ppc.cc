@@ -1419,7 +1419,7 @@ void LCodeGen::DoShiftI(LShiftI* instr) {
           __ srwi(result, left, Operand(shift_count));
         } else {
           if (instr->can_deopt()) {
-            __ TestBit(left, 0, r0);  // test sign bit
+            __ TestSignBit(left, r0);
             DeoptimizeIf(ne, instr->environment(), cr0);
           }
           __ Move(result, left);
@@ -1837,7 +1837,7 @@ void LCodeGen::DoBranch(LBranch* instr) {
         if (expected.CanBeUndetectable()) {
           // Undetectable -> false.
           __ lbz(ip, FieldMemOperand(map, Map::kBitFieldOffset));
-          __ TestBit(ip, 31 - Map::kIsUndetectable, r0);
+          __ TestBit(ip, Map::kIsUndetectable, r0);
           __ bne(false_label, cr0);
         }
       }
@@ -2021,7 +2021,7 @@ void LCodeGen::DoIsNilAndBranch(LIsNilAndBranch* instr) {
     // the map. The object has already been smi checked.
     __ lwz(scratch, FieldMemOperand(reg, HeapObject::kMapOffset));
     __ lbz(scratch, FieldMemOperand(scratch, Map::kBitFieldOffset));
-    __ TestBit(scratch, 31 - Map::kIsUndetectable, r0);
+    __ TestBit(scratch, Map::kIsUndetectable, r0);
     EmitBranch(true_block, false_block, ne, cr0);
   }
 }
@@ -2042,7 +2042,7 @@ Condition LCodeGen::EmitIsObject(Register input,
   __ lwz(temp1, FieldMemOperand(input, HeapObject::kMapOffset));
   // Undetectable objects behave like undefined.
   __ lbz(temp2, FieldMemOperand(temp1, Map::kBitFieldOffset));
-  __ TestBit(temp2, 31 - Map::kIsUndetectable, r0);
+  __ TestBit(temp2, Map::kIsUndetectable, r0);
   __ bne(is_not_object, cr0);
 
   // Load instance type and check that it is in object type range.
@@ -2115,7 +2115,7 @@ void LCodeGen::DoIsUndetectableAndBranch(LIsUndetectableAndBranch* instr) {
   __ JumpIfSmi(input, chunk_->GetAssemblyLabel(false_block));
   __ lwz(temp, FieldMemOperand(input, HeapObject::kMapOffset));
   __ lbz(temp, FieldMemOperand(temp, Map::kBitFieldOffset));
-  __ TestBit(temp, 31 - Map::kIsUndetectable, r0);
+  __ TestBit(temp, Map::kIsUndetectable, r0);
   EmitBranch(true_block, false_block, ne, cr0);
 }
 
@@ -2746,7 +2746,7 @@ void LCodeGen::DoLoadFunctionPrototype(LLoadFunctionPrototype* instr) {
   // Make sure that the function has an instance prototype.
   Label non_instance;
   __ lbz(scratch, FieldMemOperand(result, Map::kBitFieldOffset));
-  __ TestBit(scratch, 31 - Map::kHasNonInstancePrototype, r0);
+  __ TestBit(scratch, Map::kHasNonInstancePrototype, r0);
   __ bne(&non_instance, cr0);
 
   // Get the prototype or initial map from the function.
@@ -3147,15 +3147,21 @@ void LCodeGen::DoWrapReceiver(LWrapReceiver* instr) {
          FieldMemOperand(scratch, SharedFunctionInfo::kCompilerHintsOffset));
   __ TestBit(scratch,
 #if V8_TARGET_ARCH_PPC64
-             31 - (SharedFunctionInfo::kStrictModeFunction),
+             SharedFunctionInfo::kStrictModeFunction,
 #else
-             31 - (SharedFunctionInfo::kStrictModeFunction + kSmiTagSize),
+             SharedFunctionInfo::kStrictModeFunction + kSmiTagSize,
 #endif
              r0);
   __ bne(&receiver_ok, cr0);
 
   // Do not transform the receiver to object for builtins.
-  __ TestBit(scratch, 31 - (SharedFunctionInfo::kNative + kSmiTagSize), r0);
+  __ TestBit(scratch,
+#if V8_TARGET_ARCH_PPC64
+             SharedFunctionInfo::kNative,
+#else
+             SharedFunctionInfo::kNative + kSmiTagSize,
+#endif
+             r0);
   __ bne(&receiver_ok, cr0);
 
   // Normal function. Replace undefined or null with global receiver.
@@ -3362,7 +3368,7 @@ void LCodeGen::DoDeferredMathAbsTaggedHeapNumber(LUnaryMathOperation* instr) {
   __ lwz(exponent, FieldMemOperand(input, HeapNumber::kExponentOffset));
   // Check the sign of the argument. If the argument is positive, just
   // return it.
-  __ TestBit(exponent, 0, r0);  // test sign bit
+  __ TestSignBit(exponent, r0);
   // Move the input to the result if necessary.
   __ Move(result, input);
   __ beq(&done, cr0);
@@ -3400,7 +3406,7 @@ void LCodeGen::DoDeferredMathAbsTaggedHeapNumber(LUnaryMathOperation* instr) {
     // exponent: floating point exponent value.
     // tmp1: allocated heap number.
     STATIC_ASSERT(HeapNumber::kSignMask == 0x80000000u);
-    __ ExtractBitRange(exponent, exponent, 1, 31);  // clear sign bit
+    __ ClearLeftImm(exponent, exponent, Operand(1));  // clear sign bit
     __ stw(exponent, FieldMemOperand(tmp1, HeapNumber::kExponentOffset));
     __ lwz(tmp2, FieldMemOperand(input, HeapNumber::kMantissaOffset));
     __ stw(tmp2, FieldMemOperand(tmp1, HeapNumber::kMantissaOffset));
@@ -3491,7 +3497,7 @@ void LCodeGen::DoMathFloor(LUnaryMathOperation* instr) {
     __ lwz(scratch, MemOperand(sp, 0));
 #endif
     __ addi(sp, sp, Operand(8));
-    __ TestBit(scratch, 0, r0);  // test sign bit
+    __ TestSignBit(scratch, r0);
     DeoptimizeIf(ne, instr->environment(), cr0);
     __ bind(&done);
   }
@@ -3594,7 +3600,7 @@ void LCodeGen::DoMathRound(LUnaryMathOperation* instr) {
     __ lwz(scratch, MemOperand(sp, 0));
 #endif
     __ addi(sp, sp, Operand(8));
-    __ TestBit(scratch, 0, r0);  // test sign bit
+    __ TestSignBit(scratch, r0);
     DeoptimizeIf(ne, instr->environment(), cr0);
   }
   __ bind(&done);
@@ -4755,7 +4761,7 @@ void LCodeGen::DoDeferredTaggedToI(LTaggedToI* instr) {
 #else
       __ lwz(scratch1, FieldMemOperand(scratch2, HeapNumber::kValueOffset));
 #endif
-      __ TestBit(scratch1, 0, r0);  // test sign bit
+      __ TestSignBit(scratch1, r0);
       DeoptimizeIf(ne, instr->environment(), cr0);
     }
   }
@@ -5464,7 +5470,7 @@ Condition LCodeGen::EmitTypeofIs(Label* true_label,
     __ CompareObjectType(input, input, scratch, FIRST_NONSTRING_TYPE);
     __ bge(false_label);
     __ lbz(ip, FieldMemOperand(input, Map::kBitFieldOffset));
-    __ ExtractBit(r0, ip, 31 - Map::kIsUndetectable);
+    __ ExtractBit(r0, ip, Map::kIsUndetectable);
     __ cmpi(r0, Operand::Zero());
     final_branch_condition = eq;
 
@@ -5485,7 +5491,7 @@ Condition LCodeGen::EmitTypeofIs(Label* true_label,
     // Check for undetectable objects => true.
     __ lwz(input, FieldMemOperand(input, HeapObject::kMapOffset));
     __ lbz(ip, FieldMemOperand(input, Map::kBitFieldOffset));
-    __ ExtractBit(r0, ip, 31 - Map::kIsUndetectable);
+    __ ExtractBit(r0, ip, Map::kIsUndetectable);
     __ cmpi(r0, Operand::Zero());
     final_branch_condition = ne;
 
@@ -5510,7 +5516,7 @@ Condition LCodeGen::EmitTypeofIs(Label* true_label,
     __ bgt(false_label);
     // Check for undetectable objects => false.
     __ lbz(ip, FieldMemOperand(input, Map::kBitFieldOffset));
-    __ ExtractBit(r0, ip, 31 - Map::kIsUndetectable);
+    __ ExtractBit(r0, ip, Map::kIsUndetectable);
     __ cmpi(r0, Operand::Zero());
     final_branch_condition = eq;
 

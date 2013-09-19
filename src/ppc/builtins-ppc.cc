@@ -895,11 +895,12 @@ static void Generate_JSConstructStubHelper(MacroAssembler* masm,
         // and multiply by kPointerSizeLog2
         STATIC_ASSERT(Map::kPreAllocatedPropertyFieldsByte < 4);
         byte = Map::kPreAllocatedPropertyFieldsByte;
-#if !defined(V8_HOST_ARCH_PPC)  // ENDIAN
+#if defined(V8_HOST_ARCH_PPC)  // ENDIAN
         byte = 3 - byte;
 #endif
-        __ ExtractBitRange(r3, r3, byte * kBitsPerByte,
-                           ((byte + 1) * kBitsPerByte) - 1);
+        __ ExtractBitRange(r3, r3,
+                           ((byte + 1) * kBitsPerByte) - 1,
+                           byte * kBitsPerByte);
         __ slwi(r3, r3, Operand(kPointerSizeLog2));
         __ add(r3, r8, r3);
         // r3: offset of first field after pre-allocated fields
@@ -931,19 +932,21 @@ static void Generate_JSConstructStubHelper(MacroAssembler* masm,
       // Fetch Map::kPreAllocatedPropertyFieldsByte field from r3
       STATIC_ASSERT(Map::kPreAllocatedPropertyFieldsByte < 4);
       byte = Map::kPreAllocatedPropertyFieldsByte;
-#if !defined(V8_HOST_ARCH_PPC)  // ENDIAN
+#if defined(V8_HOST_ARCH_PPC)  // ENDIAN
       byte = 3 - byte;
 #endif
-      __ ExtractBitRange(r9, r3, byte * kBitsPerByte,
-                         ((byte + 1) * kBitsPerByte) - 1);
+      __ ExtractBitRange(r9, r3,
+                         ((byte + 1) * kBitsPerByte) - 1,
+                         byte * kBitsPerByte);
       __ add(r6, r6, r9);
       STATIC_ASSERT(Map::kInObjectPropertiesByte < 4);
       byte = Map::kInObjectPropertiesByte;
-#if !defined(V8_HOST_ARCH_PPC)  // ENDIAN
+#if defined(V8_HOST_ARCH_PPC)  // ENDIAN
       byte = 3 - byte;
 #endif
-      __ ExtractBitRange(r9, r3, byte * kBitsPerByte,
-                         ((byte + 1) * kBitsPerByte) - 1);
+      __ ExtractBitRange(r9, r3,
+                         ((byte + 1) * kBitsPerByte) - 1,
+                         byte * kBitsPerByte);
       __ sub(r6, r6, r9);  // roohack - sub order may be incorrect
       __ cmpi(r6, Operand::Zero());
 
@@ -1438,9 +1441,9 @@ void Builtins::Generate_FunctionCall(MacroAssembler* masm) {
     __ lwz(r6, FieldMemOperand(r5, SharedFunctionInfo::kCompilerHintsOffset));
     __ TestBit(r6,
 #if V8_TARGET_ARCH_PPC64
-               31 - (SharedFunctionInfo::kStrictModeFunction),
+               SharedFunctionInfo::kStrictModeFunction,
 #else
-               31 - (SharedFunctionInfo::kStrictModeFunction + kSmiTagSize),
+               SharedFunctionInfo::kStrictModeFunction + kSmiTagSize,
 #endif
                r0);
     __ bne(&shift_arguments, cr0);
@@ -1448,9 +1451,9 @@ void Builtins::Generate_FunctionCall(MacroAssembler* masm) {
     // Do not transform the receiver for native (Compilerhints already in r6).
     __ TestBit(r6,
 #if V8_TARGET_ARCH_PPC64
-               31 - (SharedFunctionInfo::kNative),
+               SharedFunctionInfo::kNative,
 #else
-               31 - (SharedFunctionInfo::kNative + kSmiTagSize),
+               SharedFunctionInfo::kNative + kSmiTagSize,
 #endif
                r0);
     __ bne(&shift_arguments, cr0);
@@ -1677,9 +1680,9 @@ void Builtins::Generate_FunctionApply(MacroAssembler* masm) {
     __ lwz(r5, FieldMemOperand(r5, SharedFunctionInfo::kCompilerHintsOffset));
     __ TestBit(r5,
 #if V8_TARGET_ARCH_PPC64
-               31 - (SharedFunctionInfo::kStrictModeFunction),
+               SharedFunctionInfo::kStrictModeFunction,
 #else
-               31 - (SharedFunctionInfo::kStrictModeFunction + kSmiTagSize),
+               SharedFunctionInfo::kStrictModeFunction + kSmiTagSize,
 #endif
                r0);
     __ bne(&push_receiver, cr0);
@@ -1687,9 +1690,9 @@ void Builtins::Generate_FunctionApply(MacroAssembler* masm) {
     // Do not transform the receiver for strict mode functions.
     __ TestBit(r5,
 #if V8_TARGET_ARCH_PPC64
-               31 - (SharedFunctionInfo::kNative),
+               SharedFunctionInfo::kNative,
 #else
-               31 - (SharedFunctionInfo::kNative + kSmiTagSize),
+               SharedFunctionInfo::kNative + kSmiTagSize,
 #endif
                r0);
     __ bne(&push_receiver, cr0);

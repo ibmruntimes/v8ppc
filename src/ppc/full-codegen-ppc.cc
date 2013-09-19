@@ -2028,10 +2028,10 @@ void FullCodeGenerator::EmitInlineSmiBinaryOp(BinaryOperation* expr,
       // C = A+B; C overflows if A/B have same sign and C has diff sign than A
       __ xor_(r0, left, right);
       __ addc(scratch1, left, right);
-      __ TestBit(r0, 0, r0);  // test sign bit
+      __ TestSignBit(r0, r0);
       __ bne(&add_no_overflow, cr0);
       __ xor_(r0, right, scratch1);
-      __ TestBit(r0, 0, r0);  // test sign bit
+      __ TestSignBit(r0, r0);
       __ bne(&stub_call, cr0);
       __ bind(&add_no_overflow);
       __ mr(right, scratch1);
@@ -2042,10 +2042,10 @@ void FullCodeGenerator::EmitInlineSmiBinaryOp(BinaryOperation* expr,
       // C = A-B; C overflows if A/B have diff signs and C has diff sign than A
       __ xor_(r0, left, right);
       __ subfc(scratch1, left, right);
-      __ TestBit(r0, 0, r0);  // test sign bit
+      __ TestSignBit(r0, r0);
       __ beq(&sub_no_overflow, cr0);
       __ xor_(r0, scratch1, left);
-      __ TestBit(r0, 0, r0);  // test sign bit
+      __ TestSignBit(r0, r0);
       __ bne(&stub_call, cr0);
       __ bind(&sub_no_overflow);
       __ mr(right, scratch1);
@@ -3802,7 +3802,7 @@ void FullCodeGenerator::EmitFastAsciiArrayJoin(CallRuntime* expr) {
   // zero.
   __ cmpi(ip, Operand::Zero());
   __ bne(&bailout);
-  __ TestBit(scratch2, 0, r0);  // test sign bit
+  __ TestSignBit(scratch2, r0);
   __ bne(&bailout, cr0);
 
   __ AddAndCheckForOverflow(string_length, string_length, scratch2,

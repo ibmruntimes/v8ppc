@@ -1155,16 +1155,23 @@ class MacroAssembler: public Assembler {
 
   // ---------------------------------------------------------------------------
   // Bit testing/extraction
+  //
+  // Bit numbering is such that the least significant bit is bit 0
+  // (for consistency between 32/64-bit).
 
   // Extract consecutive bits (defined by rangeStart - rangeEnd) from src
   // and place them into the least significant bits of dst.
   inline void ExtractBitRange(Register dst, Register src,
-                              uint32_t rangeStart, uint32_t rangeEnd,
+                              int rangeStart, int rangeEnd,
                               RCBit rc = LeaveRC) {
-    ASSERT(rangeStart <= rangeEnd && rangeEnd <= 31);
-    int rotate = (rangeEnd == 31) ? 0 : rangeEnd + 1;
-    int width  = rangeEnd - rangeStart + 1;
-    rlwinm(dst, src, rotate, 31 - width + 1, 31, rc);
+    ASSERT(rangeStart >= rangeEnd && rangeStart < kBitsPerPointer);
+    int rotate = (rangeEnd == 0) ? 0 : kBitsPerPointer - rangeEnd;
+    int width  = rangeStart - rangeEnd + 1;
+#if V8_TARGET_ARCH_PPC64
+    rldicl(dst, src, rotate, width - 1, rc);
+#else
+    rlwinm(dst, src, rotate, kBitsPerPointer - width, kBitsPerPointer - 1, rc);
+#endif
   }
 
   inline void ExtractBit(Register dst, Register src, uint32_t bitNumber,
@@ -1174,21 +1181,21 @@ class MacroAssembler: public Assembler {
 
   // Extract consecutive bits (defined by mask) from src and place them
   // into the least significant bits of dst.
-  inline void ExtractBitMask(Register dst, Register src, uint32_t mask,
+  inline void ExtractBitMask(Register dst, Register src, uintptr_t mask,
                              RCBit rc = LeaveRC) {
-    uint32_t start = 0;
-    uint32_t end;
-    uint32_t bit = (1 << 31);
+    int start = kBitsPerPointer - 1;
+    int end;
+    uintptr_t bit = (1 << start);
 
     while (bit && (mask & bit) == 0) {
-        start++;
+        start--;
         bit >>= 1;
     }
     end = start;
     bit >>= 1;
 
     while (bit && (mask & bit)) {
-        end++;
+        end--;
         bit >>= 1;
     }
 
@@ -1198,8 +1205,8 @@ class MacroAssembler: public Assembler {
     ExtractBitRange(dst, src, start, end, rc);
   }
 
-  // Test single bit in value.  Range is defined by rangeStart - rangeEnd.
-  inline void TestBit(Register value, uint32_t bitNumber,
+  // Test single bit in value.
+  inline void TestBit(Register value, int bitNumber,
                       Register scratch = r0) {
     ExtractBitRange(scratch, value, bitNumber, bitNumber, SetRC);
   }
@@ -1207,15 +1214,27 @@ class MacroAssembler: public Assembler {
   // Test consecutive bit range in value.  Range is defined by
   // rangeStart - rangeEnd.
   inline void TestBitRange(Register value,
-                           uint32_t rangeStart, uint32_t rangeEnd,
+                           int rangeStart, int rangeEnd,
                            Register scratch = r0) {
     ExtractBitRange(scratch, value, rangeStart, rangeEnd, SetRC);
   }
 
   // Test consecutive bit range in value.  Range is defined by mask.
-  inline void TestBitMask(Register value, uint32_t mask,
+  inline void TestBitMask(Register value, uintptr_t mask,
                           Register scratch = r0) {
     ExtractBitMask(scratch, value, mask, SetRC);
+  }
+
+  inline void ExtractSignBit(Register dst, Register src,
+                             RCBit rc = LeaveRC) {
+    int bitNumber = kBitsPerPointer - 1;
+    ExtractBitRange(dst, src, bitNumber, bitNumber, rc);
+  }
+
+  inline void TestSignBit(Register value,
+                          Register scratch = r0) {
+    int bitNumber = kBitsPerPointer - 1;
+    ExtractBitRange(scratch, value, bitNumber, bitNumber, SetRC);
   }
 
 #if V8_TARGET_ARCH_PPC64
@@ -1312,7 +1331,7 @@ class MacroAssembler: public Assembler {
   void UntagAndJumpIfNotSmi(Register dst, Register src, Label* non_smi_case);
 
   inline void TestIfSmi(Register value, Register scratch) {
-    TestBit(value, 31, scratch);  // tst(value, Operand(kSmiTagMask));
+    TestBit(value, 0, scratch);  // tst(value, Operand(kSmiTagMask));
   }
 
   // Jump the register contains a smi.

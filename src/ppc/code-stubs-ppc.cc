@@ -928,12 +928,12 @@ void FloatingPointHelper::DoubleIs32BitInteger(MacroAssembler* masm,
   // Another way to put it is that if (exponent - signbit) > 30 then the
   // number cannot be represented as an int32.
   Register tmp = dst;
-  __ ExtractBit(tmp, src1, 0);  // extract sign bit
+  __ ExtractSignBit(tmp, src1);  // extract sign bit
   __ sub(tmp, scratch, tmp);
   __ cmpi(tmp, Operand(30));
   __ bgt(not_int32);
   // - Check whether bits [21:0] in the mantissa are not null.
-  __ TestBitRange(src2, 10, 31, r0);
+  __ TestBitRange(src2, 21, 0, r0);
   __ bne(not_int32, cr0);
 
   // Otherwise the exponent needs to be big enough to shift left all the
@@ -945,7 +945,7 @@ void FloatingPointHelper::DoubleIs32BitInteger(MacroAssembler* masm,
   // Get the 32 higher bits of the mantissa in dst.
   STATIC_ASSERT(HeapNumber::kMantissaBitsInTopWord == 20);
   STATIC_ASSERT(HeapNumber::kNonMantissaBitsInTopWord == 12);
-  __ ExtractBitRange(dst, src2, 0, HeapNumber::kNonMantissaBitsInTopWord - 1);
+  __ ExtractBitRange(dst, src2, 31, HeapNumber::kMantissaBitsInTopWord);
   __ slwi(src1, src1, Operand(HeapNumber::kNonMantissaBitsInTopWord));
   __ orx(dst, dst, src1);
 
@@ -1888,7 +1888,7 @@ void UnaryOpStub::GenerateSmiCodeSub(MacroAssembler* masm,
   __ JumpIfNotSmi(r3, non_smi);
 
   // The result of negating zero or the smallest negative smi is not a smi.
-  __ TestBitRange(r3, 1, 31, r0);
+  __ TestBitRange(r3, kBitsPerPointer - 2, 0, r0);
   __ beq(slow, cr0);
 
   // Return '- value'.
@@ -2200,10 +2200,10 @@ void BinaryOpStub::GenerateSmiSmiOperation(MacroAssembler* masm) {
       __ xor_(r0, left, right);
       __ mr(scratch1, right);
       __ addc(right, left, right);  // Add optimistically.
-      __ TestBit(r0, 0, r0);  // test sign bit
+      __ TestSignBit(r0, r0);
       __ bne(&add_no_overflow, cr0);
       __ xor_(r0, right, scratch1);
-      __ TestBit(r0, 0, r0);  // test sign bit
+      __ TestSignBit(r0, r0);
       __ bne(&undo_add, cr0);
       __ bind(&add_no_overflow);
       __ Ret();
@@ -2217,10 +2217,10 @@ void BinaryOpStub::GenerateSmiSmiOperation(MacroAssembler* masm) {
       __ xor_(r0, left, right);
       __ mr(scratch1, right);
       __ subfc(right, left, right);  // Subtract optimistically.
-      __ TestBit(r0, 0, r0);  // test sign bit
+      __ TestSignBit(r0, r0);
       __ beq(&sub_no_overflow, cr0);
       __ xor_(r0, right, left);
-      __ TestBit(r0, 0, r0);  // test sign bit
+      __ TestSignBit(r0, r0);
       __ bne(&undo_sub, cr0);
       __ bind(&sub_no_overflow);
       __ Ret();
@@ -2765,7 +2765,7 @@ void BinaryOpStub::GenerateInt32Stub(MacroAssembler* masm) {
 #endif
         __ addi(sp, sp, Operand(8));
 
-        __ TestBit(scratch2, 0, r0);  // test sign bit
+        __ TestSignBit(scratch2, r0);
         __ bne(&return_heap_number, cr0);
         __ bind(&not_zero);
 
