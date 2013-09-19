@@ -792,7 +792,7 @@ void MacroAssembler::EnterExitFrame(bool save_doubles, int stack_space) {
 #if defined(V8_HOST_ARCH_PPC) && \
   (defined(_AIX) || defined(V8_TARGET_ARCH_PPC64))
   // roohack - too much reserved space, need to fix for proper ABI
-  sub(sp, sp, Operand(256));
+  subi(sp, sp, Operand(256));
 #endif
 
   // Set the exit frame sp value to point just before the return address
@@ -3298,7 +3298,7 @@ void MacroAssembler::PrepareCallCFunction(int num_reg_arguments,
 #if defined(V8_HOST_ARCH_PPC)
     subi(sp, sp, Operand((stack_passed_arguments + 1 + 2) * kPointerSize));
 #else
-    sub(sp, sp, Operand((stack_passed_arguments + 1) * kPointerSize));
+    subi(sp, sp, Operand((stack_passed_arguments + 1) * kPointerSize));
 #endif
     ASSERT(IsPowerOf2(frame_alignment));
     li(r0, Operand(-frame_alignment));
@@ -3406,7 +3406,7 @@ void MacroAssembler::CallCFunctionHelper(Register function,
 #if defined(V8_HOST_ARCH_PPC) && \
   (defined(_AIX) || defined(V8_TARGET_ARCH_PPC64))
   // roohack - too much reserved space, need to fix for proper ABI
-  sub(sp, sp, Operand(256));
+  subi(sp, sp, Operand(256));
   // AIX uses a function descriptor. When calling C code be aware
   // of this descriptor and pick up values from it
   LoadP(ToRegister(2), MemOperand(function, kPointerSize));
