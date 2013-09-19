@@ -151,7 +151,7 @@ void Decoder::PrintRegister(int reg) {
   Print(converter_.NameOfCPURegister(reg));
 }
 
-// Print the double-precision FP register name according to the active name converter.
+// Print the double FP register name according to the active name converter.
 void Decoder::PrintDRegister(int reg) {
   Print(FPRegisters::Name(reg));
 }
