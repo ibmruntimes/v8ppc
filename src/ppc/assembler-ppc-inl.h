@@ -302,31 +302,21 @@ void RelocInfo::Visit(Heap* heap) {
   }
 }
 
-#if V8_TARGET_ARCH_PPC64
-Operand::Operand(int64_t immediate, RelocInfo::Mode rmode)  {
+Operand::Operand(intptr_t immediate, RelocInfo::Mode rmode)  {
   rm_ = no_reg;
-  imm32_ = immediate;
+  imm_ = immediate;
   rmode_ = rmode;
 }
-#else
-Operand::Operand(int32_t immediate, RelocInfo::Mode rmode)  {
-  rm_ = no_reg;
-  imm32_ = immediate;
-  rmode_ = rmode;
-}
-#endif
-
 
 Operand::Operand(const ExternalReference& f)  {
   rm_ = no_reg;
-  imm32_ = reinterpret_cast<intptr_t>(f.address());
+  imm_ = reinterpret_cast<intptr_t>(f.address());
   rmode_ = RelocInfo::EXTERNAL_REFERENCE;
 }
 
-
 Operand::Operand(Smi* value) {
   rm_ = no_reg;
-  imm32_ =  reinterpret_cast<intptr_t>(value);
+  imm_ =  reinterpret_cast<intptr_t>(value);
   rmode_ = RelocInfo::NONE;
 }
 

@@ -178,7 +178,7 @@ void MacroAssembler::Call(Address target,
 
   // This can likely be optimized to make use of bc() with 24bit relative
   //
-  // RecordRelocInfo(x.rmode_, x.imm32_);
+  // RecordRelocInfo(x.rmode_, x.imm_);
   // bc( BA, .... offset, LKset);
   //
 
@@ -3912,7 +3912,7 @@ void MacroAssembler::Add(Register dst, Register src,
 
 void MacroAssembler::Cmpi(Register src1, const Operand& src2, Register scratch,
                           CRegister cr) {
-  int value = src2.immediate();
+  intptr_t value = src2.immediate();
   if (is_int16(value)) {
     cmpi(src1, src2, cr);
   } else {
@@ -3923,7 +3923,7 @@ void MacroAssembler::Cmpi(Register src1, const Operand& src2, Register scratch,
 
 void MacroAssembler::Cmpli(Register src1, const Operand& src2, Register scratch,
                            CRegister cr) {
-  int value = src2.immediate();
+  intptr_t value = src2.immediate();
   if (is_uint16(value)) {
     cmpli(src1, src2, cr);
   } else {
@@ -3937,7 +3937,7 @@ void MacroAssembler::And(Register ra, Register rs, const Operand& rb,
   if (rb.is_reg()) {
     and_(ra, rs, rb.rm(), rc);
   } else {
-    if (is_uint16(rb.imm32_) && rb.rmode_ == RelocInfo::NONE
+    if (is_uint16(rb.imm_) && rb.rmode_ == RelocInfo::NONE
         && rc == SetRC) {
       andi(ra, rs, rb);
     } else {
@@ -3953,7 +3953,7 @@ void MacroAssembler::Or(Register ra, Register rs, const Operand& rb, RCBit rc) {
   if (rb.is_reg()) {
     orx(ra, rs, rb.rm(), rc);
   } else {
-    if (is_uint16(rb.imm32_) && rb.rmode_ == RelocInfo::NONE && rc == LeaveRC) {
+    if (is_uint16(rb.imm_) && rb.rmode_ == RelocInfo::NONE && rc == LeaveRC) {
       ori(ra, rs, rb);
     } else {
       // mov handles the relocation.
@@ -3969,7 +3969,7 @@ void MacroAssembler::Xor(Register ra, Register rs, const Operand& rb,
   if (rb.is_reg()) {
     xor_(ra, rs, rb.rm(), rc);
   } else {
-    if (is_uint16(rb.imm32_) && rb.rmode_ == RelocInfo::NONE && rc == LeaveRC) {
+    if (is_uint16(rb.imm_) && rb.rmode_ == RelocInfo::NONE && rc == LeaveRC) {
       xori(ra, rs, rb);
     } else {
       // mov handles the relocation.

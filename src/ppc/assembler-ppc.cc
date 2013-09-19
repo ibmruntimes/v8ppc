@@ -142,11 +142,11 @@ Operand::Operand(Handle<Object> handle) {
   Object* obj = *handle;
   ASSERT(!HEAP->InNewSpace(obj));
   if (obj->IsHeapObject()) {
-    imm32_ = reinterpret_cast<intptr_t>(handle.location());
+    imm_ = reinterpret_cast<intptr_t>(handle.location());
     rmode_ = RelocInfo::EMBEDDED_OBJECT;
   } else {
     // no relocation needed
-    imm32_ =  reinterpret_cast<intptr_t>(obj);
+    imm_ =  reinterpret_cast<intptr_t>(obj);
     rmode_ = RelocInfo::NONE;
   }
 }
@@ -505,16 +505,17 @@ void Assembler::a_form(Instr instr,
 void Assembler::d_form(Instr instr,
                         Register rt,
                         Register ra,
-                        const int val,
+                        const intptr_t val,
                         bool signed_disp) {
   if (signed_disp) {
     if (!is_int16(val)) {
-      PrintF("val = %d, 0x%x\n", val, val);
+      PrintF("val = %" V8PRIdPTR ", 0x%" V8PRIxPTR "\n", val, val);
     }
     ASSERT(is_int16(val));
   } else {
     if (!is_uint16(val)) {
-      PrintF("val = %d, 0x%x, is_unsigned_imm16(val)=%d, kImm16Mask=0x%x\n",
+      PrintF("val = %" V8PRIdPTR ", 0x%" V8PRIxPTR
+             ", is_unsigned_imm16(val)=%d, kImm16Mask=0x%x\n",
              val, val, is_uint16(val), kImm16Mask);
     }
     ASSERT(is_uint16(val));
@@ -660,11 +661,11 @@ void Assembler::b(int branch_offset, LKBit lk) {
 }
 
 void Assembler::xori(Register dst, Register src, const Operand& imm) {
-  d_form(XORI, src, dst, imm.imm32_, false);
+  d_form(XORI, src, dst, imm.imm_, false);
 }
 
 void Assembler::xoris(Register ra, Register rs, const Operand& imm) {
-  d_form(XORIS, rs, ra, imm.imm32_, false);
+  d_form(XORIS, rs, ra, imm.imm_, false);
 }
 
 void Assembler::xor_(Register dst, Register src1, Register src2, RCBit rc) {
@@ -698,23 +699,23 @@ void Assembler::rlwimi(Register ra, Register rs,
 
 void Assembler::slwi(Register dst, Register src, const Operand& val,
                      RCBit rc) {
-  ASSERT((32 > val.imm32_)&&(val.imm32_ >= 0));
-  rlwinm(dst, src, val.imm32_, 0, 31-val.imm32_, rc);
+  ASSERT((32 > val.imm_)&&(val.imm_ >= 0));
+  rlwinm(dst, src, val.imm_, 0, 31-val.imm_, rc);
 }
 void Assembler::srwi(Register dst, Register src, const Operand& val,
                      RCBit rc) {
-  ASSERT((32 > val.imm32_)&&(val.imm32_ >= 0));
-  rlwinm(dst, src, 32-val.imm32_, val.imm32_, 31, rc);
+  ASSERT((32 > val.imm_)&&(val.imm_ >= 0));
+  rlwinm(dst, src, 32-val.imm_, val.imm_, 31, rc);
 }
 void Assembler::clrrwi(Register dst, Register src, const Operand& val,
                        RCBit rc) {
-  ASSERT((32 > val.imm32_)&&(val.imm32_ >= 0));
-  rlwinm(dst, src, 0, 0, 31-val.imm32_, rc);
+  ASSERT((32 > val.imm_)&&(val.imm_ >= 0));
+  rlwinm(dst, src, 0, 0, 31-val.imm_, rc);
 }
 void Assembler::clrlwi(Register dst, Register src, const Operand& val,
                        RCBit rc) {
-  ASSERT((32 > val.imm32_)&&(val.imm32_ >= 0));
-  rlwinm(dst, src, 0, val.imm32_, 31, rc);
+  ASSERT((32 > val.imm_)&&(val.imm_ >= 0));
+  rlwinm(dst, src, 0, val.imm_, 31, rc);
 }
 
 
@@ -736,7 +737,7 @@ void Assembler::sraw(Register ra, Register rs, Register rb, RCBit r) {
 
 // TODO(penguin): rename sub to subi to be consistent w/ addi
 void Assembler::sub(Register dst, Register src, const Operand& imm) {
-  addi(dst, src, Operand(-(imm.imm32_)));
+  addi(dst, src, Operand(-(imm.imm_)));
 }
 
 void Assembler::addc(Register dst, Register src1, Register src2,
@@ -760,7 +761,7 @@ void Assembler::subfc(Register dst, Register src1, Register src2,
 }
 
 void Assembler::subfic(Register dst, Register src, const Operand& imm) {
-  d_form(SUBFIC, dst, src, imm.imm32_, true);
+  d_form(SUBFIC, dst, src, imm.imm_, true);
 }
 
 void Assembler::add(Register dst, Register src1, Register src2,
@@ -788,24 +789,24 @@ void Assembler::divw(Register dst, Register src1, Register src2,
 
 void Assembler::addi(Register dst, Register src, const Operand& imm) {
   ASSERT(!src.is(r0));  // use li instead to show intent
-  d_form(ADDI, dst, src, imm.imm32_, true);
+  d_form(ADDI, dst, src, imm.imm_, true);
 }
 
 void  Assembler::addis(Register dst, Register src, const Operand& imm) {
   ASSERT(!src.is(r0));  // use lis instead to show intent
-  d_form(ADDIS, dst, src, imm.imm32_, true);
+  d_form(ADDIS, dst, src, imm.imm_, true);
 }
 
 void Assembler::addic(Register dst, Register src, const Operand& imm) {
-  d_form(ADDIC, dst, src, imm.imm32_, true);
+  d_form(ADDIC, dst, src, imm.imm_, true);
 }
 
 void  Assembler::andi(Register ra, Register rs, const Operand& imm) {
-  d_form(ANDIx, rs, ra, imm.imm32_, false);
+  d_form(ANDIx, rs, ra, imm.imm_, false);
 }
 
 void Assembler::andis(Register ra, Register rs, const Operand& imm) {
-  d_form(ANDISx, rs, ra, imm.imm32_, false);
+  d_form(ANDISx, rs, ra, imm.imm_, false);
 }
 
 void Assembler::nor(Register dst, Register src1, Register src2, RCBit r) {
@@ -817,11 +818,11 @@ void Assembler::notx(Register dst, Register src, RCBit r) {
 }
 
 void Assembler::ori(Register ra, Register rs, const Operand& imm) {
-  d_form(ORI, rs, ra, imm.imm32_, false);
+  d_form(ORI, rs, ra, imm.imm_, false);
 }
 
 void Assembler::oris(Register dst, Register src, const Operand& imm) {
-  d_form(ORIS, src, dst, imm.imm32_, false);
+  d_form(ORIS, src, dst, imm.imm_, false);
 }
 
 void Assembler::orx(Register dst, Register src1, Register src2, RCBit rc) {
@@ -829,7 +830,7 @@ void Assembler::orx(Register dst, Register src1, Register src2, RCBit rc) {
 }
 
 void Assembler::cmpi(Register src1, const Operand& src2, CRegister cr) {
-  int imm16 = src2.imm32_;
+  intptr_t imm16 = src2.imm_;
 #if V8_TARGET_ARCH_PPC64
   int L = 1;
 #else
@@ -842,7 +843,7 @@ void Assembler::cmpi(Register src1, const Operand& src2, CRegister cr) {
 }
 
 void Assembler::cmpli(Register src1, const Operand& src2, CRegister cr) {
-  uint uimm16 = src2.imm32_;
+  uintptr_t uimm16 = src2.imm_;
 #if V8_TARGET_ARCH_PPC64
   int L = 1;
 #else
@@ -878,11 +879,11 @@ void Assembler::cmpl(Register src1, Register src2, CRegister cr) {
 
 // Pseudo op - load immediate
 void Assembler::li(Register dst, const Operand &imm) {
-  d_form(ADDI, dst, r0, imm.imm32_, true);
+  d_form(ADDI, dst, r0, imm.imm_, true);
 }
 
 void  Assembler::lis(Register dst, const Operand& imm) {
-  d_form(ADDIS, dst, r0, imm.imm32_, true);
+  d_form(ADDIS, dst, r0, imm.imm_, true);
 }
 
 // Pseudo op - move register
@@ -1097,23 +1098,23 @@ void Assembler::rldicr(Register ra, Register rs, int sh, int me, RCBit r) {
 
 void Assembler::sldi(Register dst, Register src, const Operand& val,
                      RCBit rc) {
-  ASSERT((64 > val.imm32_)&&(val.imm32_ >= 0));
-  rldicr(dst, src, val.imm32_, 63-val.imm32_, rc);
+  ASSERT((64 > val.imm_)&&(val.imm_ >= 0));
+  rldicr(dst, src, val.imm_, 63-val.imm_, rc);
 }
 void Assembler::srdi(Register dst, Register src, const Operand& val,
                      RCBit rc) {
-  ASSERT((64 > val.imm32_)&&(val.imm32_ >= 0));
-  rldicl(dst, src, 64-val.imm32_, val.imm32_, rc);
+  ASSERT((64 > val.imm_)&&(val.imm_ >= 0));
+  rldicl(dst, src, 64-val.imm_, val.imm_, rc);
 }
 void Assembler::clrrdi(Register dst, Register src, const Operand& val,
                        RCBit rc) {
-  ASSERT((64 > val.imm32_)&&(val.imm32_ >= 0));
-  rldicr(dst, src, 0, 63-val.imm32_, rc);
+  ASSERT((64 > val.imm_)&&(val.imm_ >= 0));
+  rldicr(dst, src, 0, 63-val.imm_, rc);
 }
 void Assembler::clrldi(Register dst, Register src, const Operand& val,
                        RCBit rc) {
-  ASSERT((64 > val.imm32_)&&(val.imm32_ >= 0));
-  rldicl(dst, src, 0, val.imm32_, rc);
+  ASSERT((64 > val.imm_)&&(val.imm_ >= 0));
+  rldicl(dst, src, 0, val.imm_, rc);
 }
 
 void Assembler::sradi(Register ra, Register rs, int sh, RCBit r) {
@@ -1174,7 +1175,7 @@ void Assembler::mov(Register dst, const Operand& src) {
   BlockTrampolinePoolScope block_trampoline_pool(this);
   if (MustUseReg(src.rmode_)) {
     // some form of relocation needed
-    RecordRelocInfo(src.rmode_, src.imm32_);
+    RecordRelocInfo(src.rmode_, src.imm_);
   }
 
   int value = src.immediate();

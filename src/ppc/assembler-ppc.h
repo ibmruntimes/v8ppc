@@ -372,19 +372,11 @@ const CRegister cr15 = { 15 };
 class Operand BASE_EMBEDDED {
  public:
   // immediate
-#if V8_TARGET_ARCH_PPC64
-  INLINE(explicit Operand(int64_t immediate,
+  INLINE(explicit Operand(intptr_t immediate,
          RelocInfo::Mode rmode = RelocInfo::NONE));
   INLINE(static Operand Zero()) {
-    return Operand(static_cast<int64_t>(0));
+    return Operand(static_cast<intptr_t>(0));
   }
-#else
-  INLINE(explicit Operand(int32_t immediate,
-         RelocInfo::Mode rmode = RelocInfo::NONE));
-  INLINE(static Operand Zero()) {
-    return Operand(static_cast<int32_t>(0));
-  }
-#endif
   INLINE(explicit Operand(const ExternalReference& f));
   explicit Operand(Handle<Object> handle);
   INLINE(explicit Operand(Smi* value));
@@ -395,16 +387,16 @@ class Operand BASE_EMBEDDED {
   // Return true if this is a register operand.
   INLINE(bool is_reg() const);
 
-  inline int32_t immediate() const {
+  inline intptr_t immediate() const {
     ASSERT(!rm_.is_valid());
-    return imm32_;
+    return imm_;
   }
 
   Register rm() const { return rm_; }
 
  private:
   Register rm_;
-  int32_t imm32_;  // valid if rm_ == no_reg
+  intptr_t imm_;  // valid if rm_ == no_reg
   RelocInfo::Mode rmode_;
 
   friend class Assembler;
@@ -1231,7 +1223,7 @@ class Assembler : public AssemblerBase {
   // Instruction generation
   void a_form(Instr instr, DwVfpRegister frt, DwVfpRegister fra,
               DwVfpRegister frb, RCBit r);
-  void d_form(Instr instr, Register rt, Register ra, const int val,
+  void d_form(Instr instr, Register rt, Register ra, const intptr_t val,
               bool signed_disp);
   void x_form(Instr instr, Register ra, Register rs, Register rb, RCBit r);
   void xo_form(Instr instr, Register rt, Register ra, Register rb,
