@@ -1178,12 +1178,27 @@ void Assembler::mov(Register dst, const Operand& src) {
     RecordRelocInfo(src.rmode_, src.imm_);
   }
 
+#if V8_TARGET_ARCH_PPC64
+  int64_t value = src.immediate();
+  int32_t hi_32 = static_cast<int64_t>(value) >> 32;
+  int32_t lo_32 = static_cast<int32_t>(value);
+  int hi_word = static_cast<int>(hi_32) >> 16;
+  int lo_word = static_cast<int>(hi_32) & 0xFFFF;
+  lis(dst, Operand(SIGN_EXT_IMM16(hi_word)));
+  ori(dst, dst, Operand(lo_word));
+  sldi(dst, dst, Operand(32));
+  hi_word = static_cast<int>(lo_32) >> 16;
+  lo_word = static_cast<int>(lo_32) & 0xFFFF;
+  lis(dst, Operand(SIGN_EXT_IMM16(hi_word)));
+  ori(dst, dst, Operand(lo_word));
+#else
   int value = src.immediate();
   int hi_word = static_cast<int>(value) >> 16;
   int lo_word = static_cast<int>(value) & 0XFFFF;
 
   lis(dst, Operand(SIGN_EXT_IMM16(hi_word)));
   ori(dst, dst, Operand(lo_word));
+#endif
 }
 
 // PowerPC

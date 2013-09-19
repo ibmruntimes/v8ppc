@@ -633,7 +633,11 @@ class Assembler : public AssemblerBase {
   // mtlr    r8
   // blrl
   //                      @ return address
+#if V8_TARGET_ARCH_PPC64
+  static const int kCallTargetAddressOffset = 7 * kInstrSize;
+#else
   static const int kCallTargetAddressOffset = 4 * kInstrSize;
+#endif
 
   // Distance between start of patched return sequence and the emitted address
   // to jump to.

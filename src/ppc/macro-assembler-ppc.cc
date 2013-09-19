@@ -132,7 +132,13 @@ int MacroAssembler::CallSize(
     movSize = 2;
   }
 #else
+
+#if V8_TARGET_ARCH_PPC64
+  movSize = 5;
+#else
   movSize = 2;
+#endif
+
 #endif
 
   size = (2 + movSize) * kInstrSize;
@@ -186,7 +192,11 @@ void MacroAssembler::Call(Address target,
   mtlr(ip);
   bclr(BA, SetLK);
 
+#if V8_TARGET_ARCH_PPC64
+  ASSERT(kCallTargetAddressOffset == 7 * kInstrSize);
+#else
   ASSERT(kCallTargetAddressOffset == 4 * kInstrSize);
+#endif
   ASSERT_EQ(CallSize(target, rmode, cond), SizeOfCodeGeneratedSince(&start));
 }
 
@@ -211,7 +221,6 @@ void MacroAssembler::Call(Handle<Code> code,
     SetRecordedAstId(ast_id);
     rmode = RelocInfo::CODE_TARGET_WITH_ID;
   }
-  // 'code' is always generated ARM code, never THUMB code
   Call(reinterpret_cast<Address>(code.location()), rmode, cond);
   ASSERT_EQ(CallSize(code, rmode, ast_id, cond),
             SizeOfCodeGeneratedSince(&start));
