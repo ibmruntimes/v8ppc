@@ -28,7 +28,7 @@
 // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-// CPU specific code for arm independent of OS goes here.
+// CPU specific code for ppc independent of OS goes here.
 #include "v8.h"
 
 #if defined(V8_TARGET_ARCH_PPC)

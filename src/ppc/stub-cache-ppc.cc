@@ -256,7 +256,7 @@ void StubCache::GenerateProbe(MacroAssembler* masm,
   // they are always 01 for maps.
   __ srwi(scratch, scratch, Operand(kHeapObjectTagSize));
   // Mask down the eor argument to the minimum to keep the immediate
-  // ARM-encodable.
+  // encodable.
   __ xori(scratch, scratch, Operand((flags >> kHeapObjectTagSize) & mask));
   // Prefer and_ to ubfx here because ubfx takes 2 cycles.
   __ andi(scratch, scratch, Operand(mask));

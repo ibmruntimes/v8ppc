@@ -203,7 +203,7 @@ static void Generate_DebugBreakCallHelper(MacroAssembler* masm,
 
 
 void Debug::GenerateLoadICDebugBreak(MacroAssembler* masm) {
-  // Calling convention for IC load (from ic-arm.cc).
+  // Calling convention for IC load (from ic-ppc.cc).
   // ----------- S t a t e -------------
   //  -- r5    : name
   //  -- lr    : return address
@@ -217,7 +217,7 @@ void Debug::GenerateLoadICDebugBreak(MacroAssembler* masm) {
 
 
 void Debug::GenerateStoreICDebugBreak(MacroAssembler* masm) {
-  // Calling convention for IC store (from ic-arm.cc).
+  // Calling convention for IC store (from ic-ppc.cc).
   // ----------- S t a t e -------------
   //  -- r3    : value
   //  -- r4    : receiver
@@ -250,7 +250,7 @@ void Debug::GenerateKeyedStoreICDebugBreak(MacroAssembler* masm) {
 
 
 void Debug::GenerateCallICDebugBreak(MacroAssembler* masm) {
-  // Calling convention for IC call (from ic-arm.cc)
+  // Calling convention for IC call (from ic-ppc.cc)
   // ----------- S t a t e -------------
   //  -- r5     : name
   // -----------------------------------
@@ -267,7 +267,7 @@ void Debug::GenerateReturnDebugBreak(MacroAssembler* masm) {
 
 
 void Debug::GenerateCallFunctionStubDebugBreak(MacroAssembler* masm) {
-  // Register state for CallFunctionStub (from code-stubs-arm.cc).
+  // Register state for CallFunctionStub (from code-stubs-ppc.cc).
   // ----------- S t a t e -------------
   //  -- r4 : function
   // -----------------------------------
@@ -276,7 +276,7 @@ void Debug::GenerateCallFunctionStubDebugBreak(MacroAssembler* masm) {
 
 
 void Debug::GenerateCallFunctionStubRecordDebugBreak(MacroAssembler* masm) {
-  // Register state for CallFunctionStub (from code-stubs-arm.cc).
+  // Register state for CallFunctionStub (from code-stubs-ppc.cc).
   // ----------- S t a t e -------------
   //  -- r4 : function
   //  -- r5 : cache cell for call target
@@ -286,7 +286,7 @@ void Debug::GenerateCallFunctionStubRecordDebugBreak(MacroAssembler* masm) {
 
 
 void Debug::GenerateCallConstructStubDebugBreak(MacroAssembler* masm) {
-  // Calling convention for CallConstructStub (from code-stubs-arm.cc)
+  // Calling convention for CallConstructStub (from code-stubs-ppc.cc)
   // ----------- S t a t e -------------
   //  -- r3     : number of arguments (not smi)
   //  -- r4     : constructor function
@@ -296,7 +296,7 @@ void Debug::GenerateCallConstructStubDebugBreak(MacroAssembler* masm) {
 
 
 void Debug::GenerateCallConstructStubRecordDebugBreak(MacroAssembler* masm) {
-  // Calling convention for CallConstructStub (from code-stubs-arm.cc)
+  // Calling convention for CallConstructStub (from code-stubs-ppc.cc)
   // ----------- S t a t e -------------
   //  -- r3     : number of arguments (not smi)
   //  -- r4     : constructor function
@@ -329,12 +329,12 @@ void Debug::GenerateSlotDebugBreak(MacroAssembler* masm) {
 
 
 void Debug::GeneratePlainReturnLiveEdit(MacroAssembler* masm) {
-  masm->Abort("LiveEdit frame dropping is not supported on arm");
+  masm->Abort("LiveEdit frame dropping is not supported on ppc");
 }
 
 
 void Debug::GenerateFrameDropperLiveEdit(MacroAssembler* masm) {
-  masm->Abort("LiveEdit frame dropping is not supported on arm");
+  masm->Abort("LiveEdit frame dropping is not supported on ppc");
 }
 
 const bool Debug::kFrameDropperSupported = false;

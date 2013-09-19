@@ -90,7 +90,7 @@ void MacroAssembler::Jump(Address target, RelocInfo::Mode rmode,
 void MacroAssembler::Jump(Handle<Code> code, RelocInfo::Mode rmode,
                           Condition cond) {
   ASSERT(RelocInfo::IsCodeTarget(rmode));
-  // 'code' is always generated ARM code, never THUMB code
+  // 'code' is always generated ppc code, never THUMB code
   Jump(reinterpret_cast<intptr_t>(code.location()), rmode, cond);
 }
 

@@ -394,10 +394,6 @@ Address Assembler::target_address_at(Address pc) {
   }
 
 #ifdef PENGUIN_CLEANUP
-  // We should never get here, force a bad address if we do.
-  // UNREACHABLE();  -- temporary removal for ARM code..
-  // return (Address)0xdeadbeef;
-
 // for now fall into ARM code.. for compatibility
 
   Address target_pc = pc;

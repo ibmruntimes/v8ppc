@@ -1457,48 +1457,6 @@ int Decoder::InstructionDecode(byte* instr_ptr) {
     }
   }
 
-
-#if 0
-  if (instr->ConditionField() == kSpecialCondition) {
-    Unknown(instr);
-    return Instruction::kInstrSize;
-  }
-  switch (instr->TypeValue()) {
-    case 0:
-    case 1: {
-      DecodeType01(instr);
-      break;
-    }
-    case 2: {
-      DecodeType2(instr);
-      break;
-    }
-    case 3: {
-      DecodeType3(instr);
-      break;
-    }
-    case 4: {
-      DecodeType4(instr);
-      break;
-    }
-    case 5: {
-      DecodeType5(instr);
-      break;
-    }
-    case 6: {
-      DecodeType6(instr);
-      break;
-    }
-    case 7: {
-      return DecodeType7(instr);
-    }
-    default: {
-      // The type field is 3-bits in the ARM encoding.
-      UNREACHABLE();
-      break;
-    }
-  }
-#endif
   return Instruction::kInstrSize;
 }
 
@@ -1527,18 +1485,16 @@ const char* NameConverter::NameOfCPURegister(int reg) const {
   return v8::internal::Registers::Name(reg);
 }
 
-
 const char* NameConverter::NameOfByteCPURegister(int reg) const {
-  UNREACHABLE();  // ARM does not have the concept of a byte register
+  UNREACHABLE();  // PPC does not have the concept of a byte register
   return "nobytereg";
 }
 
 
 const char* NameConverter::NameOfXMMRegister(int reg) const {
-  UNREACHABLE();  // ARM does not have any XMM registers
+  UNREACHABLE();  // PPC does not have any XMM registers
   return "noxmmreg";
 }
-
 
 const char* NameConverter::NameInCode(byte* addr) const {
   // The default name converter is called for unknown code. So we will not try

@@ -134,7 +134,7 @@ void RelocInfo::PatchCodeWithCall(Address target, int guard_bytes) {
 
 // -----------------------------------------------------------------------------
 // Implementation of Operand and MemOperand
-// See assembler-arm-inl.h for inlined constructors
+// See assembler-ppc-inl.h for inlined constructors
 
 Operand::Operand(Handle<Object> handle) {
   rm_ = no_reg;
@@ -1239,7 +1239,7 @@ void Assembler::mfcr(Register dst) {
 
 // Exception-generating instructions and debugging support.
 // Stops with a non-negative code less than kNumOfWatchedStops support
-// enabling/disabling and a counter feature. See simulator-arm.h .
+// enabling/disabling and a counter feature. See simulator-ppc.h .
 void Assembler::stop(const char* msg, Condition cond, int32_t code,
                      CRegister cr) {
   if (cond != al) {
