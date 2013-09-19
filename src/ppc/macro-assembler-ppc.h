@@ -1168,7 +1168,7 @@ class MacroAssembler: public Assembler {
     int rotate = (rangeEnd == 0) ? 0 : kBitsPerPointer - rangeEnd;
     int width  = rangeStart - rangeEnd + 1;
 #if V8_TARGET_ARCH_PPC64
-    rldicl(dst, src, rotate, width - 1, rc);
+    rldicl(dst, src, rotate, kBitsPerPointer - width, rc);
 #else
     rlwinm(dst, src, rotate, kBitsPerPointer - width, kBitsPerPointer - 1, rc);
 #endif
@@ -1185,7 +1185,7 @@ class MacroAssembler: public Assembler {
                              RCBit rc = LeaveRC) {
     int start = kBitsPerPointer - 1;
     int end;
-    uintptr_t bit = (1 << start);
+    uintptr_t bit = (1L << start);
 
     while (bit && (mask & bit) == 0) {
         start--;
