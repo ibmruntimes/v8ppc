@@ -1187,9 +1187,9 @@ void Assembler::mov(Register dst, const Operand& src) {
   lis(dst, Operand(SIGN_EXT_IMM16(hi_word)));
   ori(dst, dst, Operand(lo_word));
   sldi(dst, dst, Operand(32));
-  hi_word = static_cast<int>(lo_32) >> 16;
+  hi_word = (static_cast<int>(lo_32) >> 16) & 0xFFFF;
   lo_word = static_cast<int>(lo_32) & 0xFFFF;
-  lis(dst, Operand(SIGN_EXT_IMM16(hi_word)));
+  oris(dst, dst, Operand(hi_word));
   ori(dst, dst, Operand(lo_word));
 #else
   int value = src.immediate();
