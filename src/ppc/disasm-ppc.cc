@@ -101,8 +101,6 @@ class Decoder {
   void PrintRegister(int reg);
   void PrintDRegister(int reg);
   int FormatFPRegister(Instruction* instr, const char* format);
-  void PrintShiftSat(Instruction* instr);
-  void PrintPU(Instruction* instr);
   void PrintSoftwareInterrupt(SoftwareInterruptCodes svc);
 
   // Handle formatting of instructions and their options.
@@ -153,7 +151,7 @@ void Decoder::PrintRegister(int reg) {
   Print(converter_.NameOfCPURegister(reg));
 }
 
-// Print the  VFP D register name according to the active name converter.
+// Print the double-precision FP register name according to the active name converter.
 void Decoder::PrintDRegister(int reg) {
   Print(FPRegisters::Name(reg));
 }
@@ -202,48 +200,6 @@ int Decoder::FormatRegister(Instruction* instr, const char* format) {
     return 2;
   }
 
-#if 0
-  if (format[1] == 'n') {  // 'rn: Rn register
-    int reg = instr->RnValue();
-    PrintRegister(reg);
-    return 2;
-  } else if (format[1] == 'd') {  // 'rd: Rd register
-    int reg = instr->RdValue();
-    PrintRegister(reg);
-    return 2;
-  } else if (format[1] == 's') {  // 'rs: Rs register
-    int reg = instr->RsValue();
-    PrintRegister(reg);
-    return 2;
-  } else if (format[1] == 'm') {  // 'rm: Rm register
-    int reg = instr->RmValue();
-    PrintRegister(reg);
-    return 2;
-  } else if (format[1] == 't') {  // 'rt: Rt register
-    int reg = instr->RtValue();
-    PrintRegister(reg);
-    return 2;
-  } else if (format[1] == 'l') {
-    // 'rlist: register list for load and store multiple instructions
-    ASSERT(STRING_STARTS_WITH(format, "rlist"));
-    int rlist = instr->RlistValue();
-    int reg = 0;
-    Print("{");
-    // Print register list in ascending order, by scanning the bit mask.
-    while (rlist != 0) {
-      if ((rlist & 1) != 0) {
-        PrintRegister(reg);
-        if ((rlist >> 1) != 0) {
-          Print(", ");
-        }
-      }
-      reg++;
-      rlist >>= 1;
-    }
-    Print("}");
-    return 5;
-  }
-#endif
   UNREACHABLE();
   return -1;
 }
@@ -403,224 +359,7 @@ int Decoder::FormatOption(Instruction* instr, const char* format) {
       break;
     }
   }
-#if 0
-  switch (format[0]) {
-    case 'a': {  // 'a: accumulate multiplies
-      if (instr->Bit(21) == 0) {
-        Print("ul");
-      } else {
-        Print("la");
-      }
-      return 1;
-    }
-    case 'b': {  // 'b: byte loads or stores
-      if (instr->HasB()) {
-        Print("b");
-      }
-      return 1;
-    }
-    case 'c': {  // 'cond: conditional execution
-      ASSERT(STRING_STARTS_WITH(format, "cond"));
-      PrintCondition(instr);
-      return 4;
-    }
-    case 'd': {  // 'd: vmov double immediate.
-      double d = instr->DoubleImmedVmov();
-      out_buffer_pos_ += OS::SNPrintF(out_buffer_ + out_buffer_pos_,
-                                      "#%g", d);
-      return 1;
-    }
-    case 'f': {  // 'f: bitfield instructions - v7 and above.
-      uint32_t lsbit = instr->Bits(11, 7);
-      uint32_t width = instr->Bits(20, 16) + 1;
-      if (instr->Bit(21) == 0) {
-        // BFC/BFI:
-        // Bits 20-16 represent most-significant bit. Covert to width.
-        width -= lsbit;
-        ASSERT(width > 0);
-      }
-      ASSERT((width + lsbit) <= 32);
-      out_buffer_pos_ += OS::SNPrintF(out_buffer_ + out_buffer_pos_,
-                                      "#%d, #%d", lsbit, width);
-      return 1;
-    }
-    case 'h': {  // 'h: halfword operation for extra loads and stores
-      if (instr->HasH()) {
-        Print("h");
-      } else {
-        Print("b");
-      }
-      return 1;
-    }
-    case 'i': {  // 'i: immediate value from adjacent bits.
-      // Expects tokens in the form imm%02d@%02d, i.e. imm05@07, imm10@16
-      int width = (format[3] - '0') * 10 + (format[4] - '0');
-      int lsb   = (format[6] - '0') * 10 + (format[7] - '0');
 
-      ASSERT((width >= 1) && (width <= 32));
-      ASSERT((lsb >= 0) && (lsb <= 31));
-      ASSERT((width + lsb) <= 32);
-
-      out_buffer_pos_ += OS::SNPrintF(out_buffer_ + out_buffer_pos_,
-                                      "%d",
-                                      instr->Bits(width + lsb - 1, lsb));
-      return 8;
-    }
-    case 'l': {  // 'l: branch and link
-      if (instr->HasLink()) {
-        Print("l");
-      }
-      return 1;
-    }
-    case 'm': {
-      if (format[1] == 'w') {
-        // 'mw: movt/movw instructions.
-        PrintMovwMovt(instr);
-        return 2;
-      }
-      if (format[1] == 'e') {  // 'memop: load/store instructions.
-        ASSERT(STRING_STARTS_WITH(format, "memop"));
-        if (instr->HasL()) {
-          Print("ldr");
-        } else {
-          if ((instr->Bits(27, 25) == 0) && (instr->Bit(20) == 0) &&
-              (instr->Bits(7, 6) == 3) && (instr->Bit(4) == 1)) {
-            if (instr->Bit(5) == 1) {
-              Print("strd");
-            } else {
-              Print("ldrd");
-            }
-            return 5;
-          }
-          Print("str");
-        }
-        return 5;
-      }
-      // 'msg: for simulator break instructions
-      ASSERT(STRING_STARTS_WITH(format, "msg"));
-      byte* str =
-          reinterpret_cast<byte*>(instr->InstructionBits() & 0x0fffffff);
-      out_buffer_pos_ += OS::SNPrintF(out_buffer_ + out_buffer_pos_,
-                                      "%s", converter_.NameInCode(str));
-      return 3;
-    }
-    case 'o': {
-      if ((format[3] == '1') && (format[4] == '2')) {
-        // 'off12: 12-bit offset for load and store instructions
-        ASSERT(STRING_STARTS_WITH(format, "off12"));
-        out_buffer_pos_ += OS::SNPrintF(out_buffer_ + out_buffer_pos_,
-                                        "%d", instr->Offset12Value());
-        return 5;
-      } else if (format[3] == '0') {
-        // 'off0to3and8to19 16-bit immediate encoded in bits 19-8 and 3-0.
-        ASSERT(STRING_STARTS_WITH(format, "off0to3and8to19"));
-        out_buffer_pos_ += OS::SNPrintF(out_buffer_ + out_buffer_pos_,
-                                        "%d",
-                                        (instr->Bits(19, 8) << 4) +
-                                        instr->Bits(3, 0));
-        return 15;
-      }
-      // 'off8: 8-bit offset for extra load and store instructions
-      ASSERT(STRING_STARTS_WITH(format, "off8"));
-      int offs8 = (instr->ImmedHValue() << 4) | instr->ImmedLValue();
-      out_buffer_pos_ += OS::SNPrintF(out_buffer_ + out_buffer_pos_,
-                                      "%d", offs8);
-      return 4;
-    }
-    case 'p': {  // 'pu: P and U bits for load and store instructions
-      ASSERT(STRING_STARTS_WITH(format, "pu"));
-      PrintPU(instr);
-      return 2;
-    }
-    case 'r': {
-      return FormatRegister(instr, format);
-    }
-    case 's': {
-      if (format[1] == 'h') {  // 'shift_op or 'shift_rm or 'shift_sat.
-        if (format[6] == 'o') {  // 'shift_op
-          ASSERT(STRING_STARTS_WITH(format, "shift_op"));
-          if (instr->TypeValue() == 0) {
-            PrintShiftRm(instr);
-          } else {
-            ASSERT(instr->TypeValue() == 1);
-            PrintShiftImm(instr);
-          }
-          return 8;
-        } else if (format[6] == 's') {  // 'shift_sat.
-          ASSERT(STRING_STARTS_WITH(format, "shift_sat"));
-          PrintShiftSat(instr);
-          return 9;
-        } else {  // 'shift_rm
-          ASSERT(STRING_STARTS_WITH(format, "shift_rm"));
-          PrintShiftRm(instr);
-          return 8;
-        }
-      } else if (format[1] == 'v') {  // 'svc
-        ASSERT(STRING_STARTS_WITH(format, "svc"));
-        PrintSoftwareInterrupt(instr->SvcValue());
-        return 3;
-      } else if (format[1] == 'i') {  // 'sign: signed extra loads and stores
-        ASSERT(STRING_STARTS_WITH(format, "sign"));
-        if (instr->HasSign()) {
-          Print("s");
-        }
-        return 4;
-      }
-      // 's: S field of data processing instructions
-      if (instr->HasS()) {
-        Print("s");
-      }
-      return 1;
-    }
-    case 't': {  // 'target: target of branch instructions
-      ASSERT(STRING_STARTS_WITH(format, "target"));
-      int off = (instr->SImmed24Value() << 2) + 8;
-      out_buffer_pos_ += OS::SNPrintF(out_buffer_ + out_buffer_pos_,
-                                      "%+d -> %s",
-                                      off,
-                                      converter_.NameOfAddress(
-                                        reinterpret_cast<byte*>(instr) + off));
-      return 6;
-    }
-    case 'u': {  // 'u: signed or unsigned multiplies
-      // The manual gets the meaning of bit 22 backwards in the multiply
-      // instruction overview on page A3.16.2.  The instructions that
-      // exist in u and s variants are the following:
-      // smull A4.1.87
-      // umull A4.1.129
-      // umlal A4.1.128
-      // smlal A4.1.76
-      // For these 0 means u and 1 means s.  As can be seen on their individual
-      // pages.  The other 18 mul instructions have the bit set or unset in
-      // arbitrary ways that are unrelated to the signedness of the instruction.
-      // None of these 18 instructions exist in both a 'u' and an 's' variant.
-
-      if (instr->Bit(22) == 0) {
-        Print("u");
-      } else {
-        Print("s");
-      }
-      return 1;
-    }
-    case 'v': {
-      return FormatVFPinstruction(instr, format);
-    }
-    case 'S':
-    case 'D': {
-      return FormatFPRegister(instr, format);
-    }
-    case 'w': {  // 'w: W field of load and store instructions
-      if (instr->HasW()) {
-        Print("!");
-      }
-      return 1;
-    }
-    default: {
-      UNREACHABLE();
-      break;
-    }
-  }
-#endif
   UNREACHABLE();
   return -1;
 }
