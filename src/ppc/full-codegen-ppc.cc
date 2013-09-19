@@ -325,15 +325,9 @@ void FullCodeGenerator::ClearAccumulator() {
 void FullCodeGenerator::EmitProfilingCounterDecrement(int delta) {
   EMIT_STUB_MARKER(203);
   __ mov(r5, Operand(profiling_counter_));
-#if V8_TARGET_ARCH_PPC64
-  __ addi(r5, r5, Operand(-kHeapObjectTag));
-  MemOperand mem = MemOperand(r5, JSGlobalPropertyCell::kValueOffset);
-#else
-  MemOperand mem = FieldMemOperand(r5, JSGlobalPropertyCell::kValueOffset);
-#endif
-  __ LoadP(r6, mem);
+  __ LoadP(r6, FieldMemOperand(r5, JSGlobalPropertyCell::kValueOffset));
   __ SubSmiLiteral(r6, r6, Smi::FromInt(delta), r0);
-  __ StoreP(r6, mem);
+  __ StoreP(r6, FieldMemOperand(r5, JSGlobalPropertyCell::kValueOffset), r0);
   __ cmpi(r6, Operand::Zero());
 }
 
@@ -350,7 +344,7 @@ void FullCodeGenerator::EmitProfilingCounterReset() {
   }
   __ mov(r5, Operand(profiling_counter_));
   __ LoadSmiLiteral(r6, Smi::FromInt(reset_value));
-  __ StoreP(r6, FieldMemOperand(r5, JSGlobalPropertyCell::kValueOffset), r7);
+  __ StoreP(r6, FieldMemOperand(r5, JSGlobalPropertyCell::kValueOffset), r0);
 }
 
 
@@ -1199,7 +1193,7 @@ void FullCodeGenerator::VisitForInStatement(ForInStatement* stmt) {
   RecordTypeFeedbackCell(stmt->ForInFeedbackId(), cell);
   __ LoadHeapObject(r4, cell);
   __ LoadSmiLiteral(r5, Smi::FromInt(TypeFeedbackCells::kForInSlowCaseMarker));
-  __ StoreP(r5, FieldMemOperand(r4, JSGlobalPropertyCell::kValueOffset));
+  __ StoreP(r5, FieldMemOperand(r4, JSGlobalPropertyCell::kValueOffset), r0);
 
   __ LoadSmiLiteral(r4, Smi::FromInt(1));  // Smi indicates slow check
   __ LoadP(r5, MemOperand(sp, 0 * kPointerSize));  // Get enumerated object
@@ -1803,7 +1797,7 @@ void FullCodeGenerator::VisitArrayLiteral(ArrayLiteral* expr) {
       int offset = FixedArray::kHeaderSize + (i * kPointerSize);
       __ LoadP(r8, MemOperand(sp));  // Copy of array literal.
       __ LoadP(r4, FieldMemOperand(r8, JSObject::kElementsOffset));
-      __ StoreP(result_register(), FieldMemOperand(r4, offset), ip);
+      __ StoreP(result_register(), FieldMemOperand(r4, offset), r0);
       // Update the write barrier for the array store.
       __ RecordWriteField(r4, offset, result_register(), r5,
                           kLRHasBeenSaved, kDontSaveFPRegs,
@@ -2027,7 +2021,7 @@ void FullCodeGenerator::EmitInlineSmiBinaryOp(BinaryOperation* expr,
       Label add_no_overflow;
       // C = A+B; C overflows if A/B have same sign and C has diff sign than A
       __ xor_(r0, left, right);
-      __ addc(scratch1, left, right);
+      __ add(scratch1, left, right);
       __ TestSignBit(r0, r0);
       __ bne(&add_no_overflow, cr0);
       __ xor_(r0, right, scratch1);
@@ -2041,7 +2035,7 @@ void FullCodeGenerator::EmitInlineSmiBinaryOp(BinaryOperation* expr,
       Label sub_no_overflow;
       // C = A-B; C overflows if A/B have diff signs and C has diff sign than A
       __ xor_(r0, left, right);
-      __ subfc(scratch1, left, right);
+      __ sub(scratch1, left, right);
       __ TestSignBit(r0, r0);
       __ beq(&sub_no_overflow, cr0);
       __ xor_(r0, scratch1, left);
@@ -2216,7 +2210,7 @@ void FullCodeGenerator::EmitVariableAssignment(Variable* var,
       __ CallRuntime(Runtime::kThrowReferenceError, 1);
       // Perform the assignment.
       __ bind(&assign);
-      __ StoreP(result_register(), location);
+      __ StoreP(result_register(), location, r0);
       if (var->IsContextSlot()) {
         // RecordWrite may destroy all its register arguments.
         __ mr(r6, result_register());
@@ -2238,7 +2232,7 @@ void FullCodeGenerator::EmitVariableAssignment(Variable* var,
         __ Check(eq, "Let binding re-initialization.");
       }
       // Perform the assignment.
-      __ StoreP(r3, location);
+      __ StoreP(r3, location, r0);
       if (var->IsContextSlot()) {
         __ mr(r6, r3);
         int offset = Context::SlotOffset(var->index());
@@ -3278,7 +3272,7 @@ void FullCodeGenerator::EmitSetValueOf(CallRuntime* expr) {
   __ bne(&done);
 
   // Store the value.
-  __ StoreP(r3, FieldMemOperand(r4, JSValue::kValueOffset));
+  __ StoreP(r3, FieldMemOperand(r4, JSValue::kValueOffset), r0);
   // Update the write barrier.  Save the value as it will be
   // overwritten by the write barrier code and is needed afterward.
   __ mr(r5, r3);

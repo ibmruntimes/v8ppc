@@ -385,7 +385,7 @@ void StubCompiler::GenerateLoadArrayLength(MacroAssembler* masm,
   __ bne(miss_label);
 
   // Load length directly from the JS array.
-  __ lwz(r3, FieldMemOperand(receiver, JSArray::kLengthOffset));
+  __ LoadP(r3, FieldMemOperand(receiver, JSArray::kLengthOffset));
   __ Ret();
 }
 
@@ -4171,7 +4171,7 @@ void KeyedLoadStubCompiler::GenerateLoadFastElement(MacroAssembler* masm) {
   // Load the result and make sure it's not the hole.
   __ addi(r6, r5, Operand(FixedArray::kHeaderSize - kHeapObjectTag));
   __ SmiToPtrArrayOffset(r7, r3);
-  __ lwzx(r7, MemOperand(r7, r6));
+  __ LoadPX(r7, MemOperand(r7, r6));
   __ LoadRoot(ip, Heap::kTheHoleValueRootIndex);
   __ cmp(r7, ip);
   __ beq(&miss_force_generic);

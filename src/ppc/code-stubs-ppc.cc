@@ -122,7 +122,7 @@ void FastNewClosureStub::Generate(MacroAssembler* masm) {
            MemOperand(cp, Context::SlotOffset(Context::GLOBAL_OBJECT_INDEX)));
   __ LoadP(r5, FieldMemOperand(r5, GlobalObject::kNativeContextOffset));
   __ LoadP(r8, MemOperand(r5, Context::SlotOffset(map_index)));
-  __ StoreP(r8, FieldMemOperand(r3, HeapObject::kMapOffset));
+  __ StoreP(r8, FieldMemOperand(r3, HeapObject::kMapOffset), r0);
 
   // Initialize the rest of the function. We don't have to update the
   // write barrier because the allocated object is in new space.
@@ -246,28 +246,32 @@ void FastNewContextStub::Generate(MacroAssembler* masm) {
                         TAG_OBJECT);
 
   // Load the function from the stack.
-  __ lwz(r6, MemOperand(sp, 0));
+  __ LoadP(r6, MemOperand(sp, 0));
 
   // Set up the object header.
   __ LoadRoot(r4, Heap::kFunctionContextMapRootIndex);
   __ LoadSmiLiteral(r5, Smi::FromInt(length));
-  __ stw(r5, FieldMemOperand(r3, FixedArray::kLengthOffset));
-  __ stw(r4, FieldMemOperand(r3, HeapObject::kMapOffset));
+  __ StoreP(r5, FieldMemOperand(r3, FixedArray::kLengthOffset), r0);
+  __ StoreP(r4, FieldMemOperand(r3, HeapObject::kMapOffset), r0);
 
   // Set up the fixed slots, copy the global object from the previous context.
   __ LoadP(r5,
            MemOperand(cp, Context::SlotOffset(Context::GLOBAL_OBJECT_INDEX)));
   __ LoadSmiLiteral(r4, Smi::FromInt(0));
-  __ StoreP(r6, MemOperand(r3, Context::SlotOffset(Context::CLOSURE_INDEX)));
-  __ StoreP(cp, MemOperand(r3, Context::SlotOffset(Context::PREVIOUS_INDEX)));
-  __ StoreP(r4, MemOperand(r3, Context::SlotOffset(Context::EXTENSION_INDEX)));
+  __ StoreP(r6, MemOperand(r3, Context::SlotOffset(Context::CLOSURE_INDEX)),
+            r0);
+  __ StoreP(cp, MemOperand(r3, Context::SlotOffset(Context::PREVIOUS_INDEX)),
+            r0);
+  __ StoreP(r4, MemOperand(r3, Context::SlotOffset(Context::EXTENSION_INDEX)),
+            r0);
   __ StoreP(r5,
-            MemOperand(r3, Context::SlotOffset(Context::GLOBAL_OBJECT_INDEX)));
+            MemOperand(r3, Context::SlotOffset(Context::GLOBAL_OBJECT_INDEX)),
+            r0);
 
   // Initialize the rest of the slots to undefined.
   __ LoadRoot(r4, Heap::kUndefinedValueRootIndex);
   for (int i = Context::MIN_CONTEXT_SLOTS; i < length; i++) {
-    __ StoreP(r4, MemOperand(r3, Context::SlotOffset(i)));
+    __ StoreP(r4, MemOperand(r3, Context::SlotOffset(i)), r0);
   }
 
   // Remove the on-stack argument and return.
@@ -302,9 +306,9 @@ void FastNewBlockContextStub::Generate(MacroAssembler* masm) {
 
   // Set up the object header.
   __ LoadRoot(r5, Heap::kBlockContextMapRootIndex);
-  __ StoreP(r5, FieldMemOperand(r3, HeapObject::kMapOffset));
+  __ StoreP(r5, FieldMemOperand(r3, HeapObject::kMapOffset), r0);
   __ LoadSmiLiteral(r5, Smi::FromInt(length));
-  __ StoreP(r5, FieldMemOperand(r3, FixedArray::kLengthOffset));
+  __ StoreP(r5, FieldMemOperand(r3, FixedArray::kLengthOffset), r0);
 
   // If this block context is nested in the native context we get a smi
   // sentinel instead of a function. The block context should get the
@@ -2199,7 +2203,7 @@ void BinaryOpStub::GenerateSmiSmiOperation(MacroAssembler* masm) {
       // C = A+B; C overflows if A/B have same sign and C has diff sign than A
       __ xor_(r0, left, right);
       __ mr(scratch1, right);
-      __ addc(right, left, right);  // Add optimistically.
+      __ add(right, left, right);  // Add optimistically.
       __ TestSignBit(r0, r0);
       __ bne(&add_no_overflow, cr0);
       __ xor_(r0, right, scratch1);
@@ -2216,7 +2220,7 @@ void BinaryOpStub::GenerateSmiSmiOperation(MacroAssembler* masm) {
       // C = A-B; C overflows if A/B have diff signs and C has diff sign than A
       __ xor_(r0, left, right);
       __ mr(scratch1, right);
-      __ subfc(right, left, right);  // Subtract optimistically.
+      __ sub(right, left, right);  // Subtract optimistically.
       __ TestSignBit(r0, r0);
       __ beq(&sub_no_overflow, cr0);
       __ xor_(r0, right, left);
@@ -5092,6 +5096,9 @@ void RegExpConstructResultStub::Generate(MacroAssembler* masm) {
       (JSRegExpResult::kSize + FixedArray::kHeaderSize) / kPointerSize;
   __ SmiUntag(r8, r4);
   __ addi(r5, r8, Operand(objects_size));
+  // Future optimization: defer tagging the result pointer for more
+  // efficient 64-bit memory accesses (due to alignment requirements
+  // on the memoperand offset).
   __ AllocateInNewSpace(
       r5,  // In: Size, in words.
       r3,  // Out: Start of allocation (tagged).
@@ -5111,18 +5118,18 @@ void RegExpConstructResultStub::Generate(MacroAssembler* masm) {
   __ addi(r6, r3, Operand(JSRegExpResult::kSize));
   __ mov(r7, Operand(factory->empty_fixed_array()));
   __ LoadP(r5, FieldMemOperand(r5, GlobalObject::kNativeContextOffset));
-  __ StoreP(r6, FieldMemOperand(r3, JSObject::kElementsOffset));
+  __ StoreP(r6, FieldMemOperand(r3, JSObject::kElementsOffset), r0);
   __ LoadP(r5, ContextOperand(r5, Context::REGEXP_RESULT_MAP_INDEX));
-  __ StoreP(r7, FieldMemOperand(r3, JSObject::kPropertiesOffset));
-  __ StoreP(r5, FieldMemOperand(r3, HeapObject::kMapOffset));
+  __ StoreP(r7, FieldMemOperand(r3, JSObject::kPropertiesOffset), r0);
+  __ StoreP(r5, FieldMemOperand(r3, HeapObject::kMapOffset), r0);
 
   // Set input, index and length fields from arguments.
   __ LoadP(r4, MemOperand(sp, kPointerSize * 0));
   __ LoadP(r5, MemOperand(sp, kPointerSize * 1));
   __ LoadP(r9, MemOperand(sp, kPointerSize * 2));
-  __ StoreP(r4, FieldMemOperand(r3, JSRegExpResult::kInputOffset));
-  __ StoreP(r5, FieldMemOperand(r3, JSRegExpResult::kIndexOffset));
-  __ StoreP(r9, FieldMemOperand(r3, JSArray::kLengthOffset));
+  __ StoreP(r4, FieldMemOperand(r3, JSRegExpResult::kInputOffset), r0);
+  __ StoreP(r5, FieldMemOperand(r3, JSRegExpResult::kIndexOffset), r0);
+  __ StoreP(r9, FieldMemOperand(r3, JSArray::kLengthOffset), r0);
 
   // Fill out the elements FixedArray.
   // r3: JSArray, tagged.
@@ -5194,14 +5201,12 @@ static void GenerateRecordCallTarget(MacroAssembler* masm) {
   // MegamorphicSentinel is an immortal immovable object (undefined) so no
   // write-barrier is needed.
   __ LoadRoot(ip, Heap::kUndefinedValueRootIndex);
-  __ StoreP(ip, FieldMemOperand(r5, JSGlobalPropertyCell::kValueOffset),
-            scratch);
+  __ StoreP(ip, FieldMemOperand(r5, JSGlobalPropertyCell::kValueOffset), r0);
   __ b(&done);
 
   // An uninitialized cache is patched with the function.
   __ bind(&initialize);
-  __ StoreP(r4, FieldMemOperand(r5, JSGlobalPropertyCell::kValueOffset),
-            scratch);
+  __ StoreP(r4, FieldMemOperand(r5, JSGlobalPropertyCell::kValueOffset), r0);
   // No need for a write barrier here - cells are rescanned.
 
   __ bind(&done);
@@ -5951,8 +5956,8 @@ void SubStringStub::Generate(MacroAssembler* masm) {
     __ AllocateTwoByteSlicedString(r3, r5, r9, r10, &runtime);
     __ bind(&set_slice_header);
     __ SmiTag(r6);
-    __ StoreP(r8, FieldMemOperand(r3, SlicedString::kParentOffset));
-    __ StoreP(r6, FieldMemOperand(r3, SlicedString::kOffsetOffset));
+    __ StoreP(r8, FieldMemOperand(r3, SlicedString::kParentOffset), r0);
+    __ StoreP(r6, FieldMemOperand(r3, SlicedString::kOffsetOffset), r0);
     __ b(&return_r3);
 
     __ bind(&copy_routine);

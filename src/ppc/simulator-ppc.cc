@@ -1865,11 +1865,11 @@ void Simulator::DecodeExt2_9bit(Instruction* instr) {
       int ra = instr->RAValue();
       int rb = instr->RBValue();
       // int oe = instr->Bit(10);
-      intptr_t ra_val = get_register(ra);
-      intptr_t rb_val = get_register(rb);
-      int64_t alu_out = ra_val + rb_val;
-      if (alu_out >> 32) {
-        alu_out &= 0xFFFFFFFF;
+      uintptr_t ra_val = get_register(ra);
+      uintptr_t rb_val = get_register(rb);
+      uintptr_t alu_out = ra_val + rb_val;
+      // Check overflow
+      if (~ra_val < rb_val) {
         special_reg_xer_ = (special_reg_xer_ & ~0xF0000000) | 0x20000000;
       } else {
         special_reg_xer_ &= ~0xF0000000;
@@ -2191,6 +2191,28 @@ void Simulator::DecodeExt2_9bit(Instruction* instr) {
       }
       break;
     }
+#if V8_TARGET_ARCH_PPC64
+    case LDX: {
+      int rt = instr->RTValue();
+      int ra = instr->RAValue();
+      int rb = instr->RBValue();
+      intptr_t ra_val = ra == 0 ? 0 : get_register(ra);
+      intptr_t rb_val = get_register(rb);
+      intptr_t *result = ReadDW(ra_val+rb_val);
+      set_register(rt, *result);
+      break;
+    }
+    case STDX: {
+      int rs = instr->RSValue();
+      int ra = instr->RAValue();
+      int rb = instr->RBValue();
+      intptr_t ra_val = ra == 0 ? 0 : get_register(ra);
+      intptr_t rs_val = get_register(rs);
+      intptr_t rb_val = get_register(rb);
+      WriteDW(ra_val+rb_val, rs_val);
+      break;
+    }
+#endif
     case LBZX:
     case LBZUX: {
       int rt = instr->RTValue();
@@ -2642,11 +2664,11 @@ void Simulator::InstructionDecode(Instruction* instr) {
     case ADDIC: {
       int rt = instr->RTValue();
       int ra = instr->RAValue();
-      intptr_t ra_val = get_register(ra);
-      int32_t im_val = SIGN_EXT_IMM16(instr->Bits(15, 0));
-      int64_t alu_out = ra_val + im_val;
-      if (alu_out >> 32) {
-        alu_out &= 0xFFFFFFFF;
+      uintptr_t ra_val = get_register(ra);
+      uintptr_t im_val = SIGN_EXT_IMM16(instr->Bits(15, 0));
+      uintptr_t alu_out = ra_val + im_val;
+      // Check overflow
+      if (~ra_val < im_val) {
         special_reg_xer_ = (special_reg_xer_ & ~0xF0000000) | 0x20000000;
       } else {
         special_reg_xer_ &= ~0xF0000000;

@@ -3230,7 +3230,7 @@ void MacroAssembler::InitializeFieldsWithFiller(Register start_offset,
   Label loop, entry;
   b(&entry);
   bind(&loop);
-  StoreWord(filler, MemOperand(start_offset), r0);
+  StoreP(filler, MemOperand(start_offset), r0);
   addi(start_offset, start_offset, Operand(kPointerSize));
   bind(&entry);
   cmp(start_offset, end_offset);
@@ -4090,9 +4090,14 @@ void MacroAssembler::StoreP(Register src, const MemOperand& mem,
     if (misaligned) {
       // adjust base to conform to offset alignment requirements
       // a suitable scratch is required here
-      ASSERT(!scratch.is(no_reg) && !scratch.is(r0));
-      addi(scratch, mem.ra(), Operand((offset & 3) - 4));
-      std(src, MemOperand(scratch, (offset & ~3) + 4));
+      ASSERT(!scratch.is(no_reg));
+      if (scratch.is(r0)) {
+        LoadIntLiteral(scratch, offset);
+        stdx(src, MemOperand(mem.ra(), scratch));
+      } else {
+        addi(scratch, mem.ra(), Operand((offset & 3) - 4));
+        std(src, MemOperand(scratch, (offset & ~3) + 4));
+      }
     } else {
       std(src, mem);
     }
@@ -4108,6 +4113,14 @@ void MacroAssembler::StorePU(Register src, const MemOperand& mem) {
   stdu(src, mem);
 #else
   stwu(src, mem);
+#endif
+}
+
+void MacroAssembler::LoadPX(Register src, const MemOperand& mem) {
+#if V8_TARGET_ARCH_PPC64
+  ldx(src, mem);
+#else
+  lwzx(src, mem);
 #endif
 }
 

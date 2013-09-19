@@ -123,7 +123,6 @@ static void AllocateEmptyJSArray(MacroAssembler* masm,
                                  Label* gc_required) {
   EMIT_STUB_MARKER(303);
   const int initial_capacity = JSArray::kPreallocatedArrayElements;
-  const Register scratch4 = ip;
   STATIC_ASSERT(initial_capacity >= 0);
   __ LoadInitialArrayMap(array_function, scratch2, scratch1, false);
 
@@ -140,23 +139,24 @@ static void AllocateEmptyJSArray(MacroAssembler* masm,
                         gc_required,
                         TAG_OBJECT);
 
+  // Future optimization: defer tagging the result pointer for more
+  // efficient 64-bit memory accesses (due to alignment requirements
+  // on the memoperand offset).
+
   // Allocated the JSArray. Now initialize the fields except for the elements
   // array.
   // result: JSObject
   // scratch1: initial map
   // scratch2: start of next object
-  __ StoreP(scratch1, FieldMemOperand(result, JSObject::kMapOffset), scratch4);
+  __ StoreP(scratch1, FieldMemOperand(result, JSObject::kMapOffset), r0);
   __ LoadRoot(scratch1, Heap::kEmptyFixedArrayRootIndex);
-  __ StoreP(scratch1, FieldMemOperand(result, JSArray::kPropertiesOffset),
-            scratch4);
+  __ StoreP(scratch1, FieldMemOperand(result, JSArray::kPropertiesOffset), r0);
   // Field JSArray::kElementsOffset is initialized later.
   __ li(scratch3,  Operand(0, RelocInfo::NONE));
-  __ StoreP(scratch3, FieldMemOperand(result, JSArray::kLengthOffset),
-            scratch4);
+  __ StoreP(scratch3, FieldMemOperand(result, JSArray::kLengthOffset), r0);
 
   if (initial_capacity == 0) {
-    __ StoreP(scratch1, FieldMemOperand(result, JSArray::kElementsOffset),
-              scratch4);
+    __ StoreP(scratch1, FieldMemOperand(result, JSArray::kElementsOffset), r0);
     return;
   }
 
@@ -165,8 +165,7 @@ static void AllocateEmptyJSArray(MacroAssembler* masm,
   // result: JSObject
   // scratch2: start of next object
   __ addi(scratch1, result, Operand(JSArray::kSize));
-  __ StoreP(scratch1, FieldMemOperand(result, JSArray::kElementsOffset),
-            scratch4);
+  __ StoreP(scratch1, FieldMemOperand(result, JSArray::kElementsOffset), r0);
 
   // Clear the heap tag on the elements array.
   __ subi(scratch1, scratch1, Operand(kHeapObjectTag));
@@ -480,7 +479,7 @@ static void ArrayNativeCode(MacroAssembler* masm,
                                          r5,
                                          r22,
                                          &cant_transition_map);
-  __ StoreP(r5, FieldMemOperand(r6, HeapObject::kMapOffset), r22);
+  __ StoreP(r5, FieldMemOperand(r6, HeapObject::kMapOffset), r0);
   __ RecordWriteField(r6,
                       HeapObject::kMapOffset,
                       r5,
@@ -811,14 +810,15 @@ static void Generate_JSConstructStubHelper(MacroAssembler* masm,
       ExternalReference debug_step_in_fp =
           ExternalReference::debug_step_in_fp_address(isolate);
       __ mov(r5, Operand(debug_step_in_fp));
-      __ lwz(r5, MemOperand(r5));
+      __ LoadP(r5, MemOperand(r5));
       __ cmpi(r5, Operand::Zero());
       __ bne(&rt_call);
 #endif
 
       // Load the initial map and verify that it is in fact a map.
       // r4: constructor function
-      __ lwz(r5, FieldMemOperand(r4, JSFunction::kPrototypeOrInitialMapOffset));
+      __ LoadP(r5, FieldMemOperand(r4,
+                                   JSFunction::kPrototypeOrInitialMapOffset));
       __ JumpIfSmi(r5, &rt_call);
       __ CompareObjectType(r5, r6, r7, MAP_TYPE);
       __ bne(&rt_call);
@@ -834,11 +834,12 @@ static void Generate_JSConstructStubHelper(MacroAssembler* masm,
       if (count_constructions) {
         Label allocate;
         // Decrease generous allocation count.
-        __ lwz(r6, FieldMemOperand(r4, JSFunction::kSharedFunctionInfoOffset));
+        __ LoadP(r6, FieldMemOperand(r4,
+                                     JSFunction::kSharedFunctionInfoOffset));
         MemOperand constructor_count =
             FieldMemOperand(r6, SharedFunctionInfo::kConstructionCountOffset);
         __ lbz(r7, constructor_count);
-        __ addic(r7, r7, Operand(-1));
+        __ addi(r7, r7, Operand(-1));
         __ stb(r7, constructor_count);
         __ cmpi(r7, Operand::Zero());
         __ bne(&allocate);
@@ -871,11 +872,11 @@ static void Generate_JSConstructStubHelper(MacroAssembler* masm,
       __ LoadRoot(r9, Heap::kEmptyFixedArrayRootIndex);
       __ mr(r8, r7);
       ASSERT_EQ(0 * kPointerSize, JSObject::kMapOffset);
-      __ stw(r5, MemOperand(r8));
+      __ StoreP(r5, MemOperand(r8));
       ASSERT_EQ(1 * kPointerSize, JSObject::kPropertiesOffset);
-      __ stwu(r9, MemOperand(r8, kPointerSize));
+      __ StorePU(r9, MemOperand(r8, kPointerSize));
       ASSERT_EQ(2 * kPointerSize, JSObject::kElementsOffset);
-      __ stwu(r9, MemOperand(r8, kPointerSize));
+      __ StorePU(r9, MemOperand(r8, kPointerSize));
       __ addi(r8, r8, Operand(kPointerSize));
 
       // Fill all the in-object properties with the appropriate filler.
@@ -885,7 +886,7 @@ static void Generate_JSConstructStubHelper(MacroAssembler* masm,
       // r7: JSObject (not tagged)
       // r8: First in-object property of JSObject (not tagged)
       uint32_t byte;
-      __ slwi(r9, r6, Operand(kPointerSizeLog2));
+      __ ShiftLeftImm(r9, r6, Operand(kPointerSizeLog2));
       __ add(r9, r7, r9);  // End of object.
       ASSERT_EQ(3 * kPointerSize, JSObject::kHeaderSize);
       __ LoadRoot(r10, Heap::kUndefinedValueRootIndex);
@@ -901,7 +902,7 @@ static void Generate_JSConstructStubHelper(MacroAssembler* masm,
         __ ExtractBitRange(r3, r3,
                            ((byte + 1) * kBitsPerByte) - 1,
                            byte * kBitsPerByte);
-        __ slwi(r3, r3, Operand(kPointerSizeLog2));
+        __ ShiftLeftImm(r3, r3, Operand(kPointerSizeLog2));
         __ add(r3, r8, r3);
         // r3: offset of first field after pre-allocated fields
         if (FLAG_debug_code) {
@@ -977,10 +978,10 @@ static void Generate_JSConstructStubHelper(MacroAssembler* masm,
       __ LoadRoot(r9, Heap::kFixedArrayMapRootIndex);
       __ mr(r5, r8);
       ASSERT_EQ(0 * kPointerSize, JSObject::kMapOffset);
-      __ stw(r9, MemOperand(r5));
+      __ StoreP(r9, MemOperand(r5));
       ASSERT_EQ(1 * kPointerSize, FixedArray::kLengthOffset);
       __ SmiTag(r3, r6);
-      __ stwu(r3, MemOperand(r5, kPointerSize));
+      __ StorePU(r3, MemOperand(r5, kPointerSize));
       __ addi(r5, r5, Operand(kPointerSize));
 
       // Initialize the fields to undefined.
@@ -989,7 +990,7 @@ static void Generate_JSConstructStubHelper(MacroAssembler* masm,
       // r6: number of elements in properties array
       // r7: JSObject
       // r8: FixedArray (not tagged)
-      __ slwi(r9, r6, Operand(kPointerSizeLog2));
+      __ ShiftLeftImm(r9, r6, Operand(kPointerSizeLog2));
       __ add(r9, r5, r9);  // End of object.
       ASSERT_EQ(2 * kPointerSize, FixedArray::kHeaderSize);
       { Label loop, entry;
@@ -1002,7 +1003,7 @@ static void Generate_JSConstructStubHelper(MacroAssembler* masm,
         }
         __ b(&entry);
         __ bind(&loop);
-        __ stw(r10, MemOperand(r5));
+        __ StoreP(r10, MemOperand(r5));
         __ addi(r5, r5, Operand(kPointerSize));
         __ bind(&entry);
         __ cmp(r5, r9);
@@ -1015,7 +1016,7 @@ static void Generate_JSConstructStubHelper(MacroAssembler* masm,
       // r7: JSObject
       // r8: FixedArray (not tagged)
       __ addi(r8, r8, Operand(kHeapObjectTag));  // Add the heap tag.
-      __ stw(r8, FieldMemOperand(r7, JSObject::kPropertiesOffset));
+      __ StoreP(r8, FieldMemOperand(r7, JSObject::kPropertiesOffset), r0);
 
       // Continue with JSObject being successfully allocated
       // r4: constructor function
@@ -1048,8 +1049,8 @@ static void Generate_JSConstructStubHelper(MacroAssembler* masm,
     // sp[1]: receiver
     // sp[2]: constructor function
     // sp[3]: number of arguments (smi-tagged)
-    __ lwz(r4, MemOperand(sp, 2 * kPointerSize));
-    __ lwz(r6, MemOperand(sp, 3 * kPointerSize));
+    __ LoadP(r4, MemOperand(sp, 2 * kPointerSize));
+    __ LoadP(r6, MemOperand(sp, 3 * kPointerSize));
 
     // Set up pointer to last argument.
     __ addi(r5, fp, Operand(StandardFrameConstants::kCallerSPOffset));
@@ -1066,26 +1067,23 @@ static void Generate_JSConstructStubHelper(MacroAssembler* masm,
     // sp[1]: receiver
     // sp[2]: constructor function
     // sp[3]: number of arguments (smi-tagged)
-    Label loop, entry;
-    __ b(&entry);
+    Label loop, no_args;
+    __ cmpi(r3, Operand::Zero());
+    __ beq(&no_args);
+    __ ShiftLeftImm(ip, r3, Operand(kPointerSizeLog2));
+    __ mtctr(r3);
     __ bind(&loop);
-
-    __ SmiToPtrArrayOffset(ip, r6);
-    __ add(ip, r5, ip);
-    __ lwz(ip, MemOperand(ip));
-// was   __ lwz(ip, MemOperand(r5, r6, LSL, kPointerSizeLog2 - 1));
-
-    __ push(ip);
-    __ bind(&entry);
-    __ subi(r6, r6, Operand(2));
-    __ cmpi(r6, Operand::Zero());
-    __ bge(&loop);
+    __ subi(ip, ip, Operand(kPointerSize));
+    __ LoadPX(r0, MemOperand(r5, ip));
+    __ push(r0);
+    __ bdnz(&loop);
+    __ bind(&no_args);
 
     // Call the function.
     // r3: number of arguments
     // r4: constructor function
     if (is_api_function) {
-      __ lwz(cp, FieldMemOperand(r4, JSFunction::kContextOffset));
+      __ LoadP(cp, FieldMemOperand(r4, JSFunction::kContextOffset));
       Handle<Code> code =
           masm->isolate()->builtins()->HandleApiCallConstruct();
       ParameterCount expected(0);
@@ -1107,7 +1105,7 @@ static void Generate_JSConstructStubHelper(MacroAssembler* masm,
     // sp[0]: receiver
     // sp[1]: constructor function
     // sp[2]: number of arguments (smi-tagged)
-    __ lwz(cp, MemOperand(fp, StandardFrameConstants::kContextOffset));
+    __ LoadP(cp, MemOperand(fp, StandardFrameConstants::kContextOffset));
 
     // If the result is an object (in the ECMA sense), we should get rid
     // of the receiver and use the result; see ECMA-262 section 13.2.2-7
@@ -1129,7 +1127,7 @@ static void Generate_JSConstructStubHelper(MacroAssembler* masm,
     // Throw away the result of the constructor invocation and use the
     // on-stack receiver as the result.
     __ bind(&use_receiver);
-    __ lwz(r3, MemOperand(sp));
+    __ LoadP(r3, MemOperand(sp));
 
     // Remove receiver from the stack, remove caller arguments, and
     // return.
@@ -1138,7 +1136,7 @@ static void Generate_JSConstructStubHelper(MacroAssembler* masm,
     // sp[0]: receiver (newly allocated object)
     // sp[1]: constructor function
     // sp[2]: number of arguments (smi-tagged)
-    __ lwz(r4, MemOperand(sp, 2 * kPointerSize));
+    __ LoadP(r4, MemOperand(sp, 2 * kPointerSize));
 
     // Leave construct frame.
   }
