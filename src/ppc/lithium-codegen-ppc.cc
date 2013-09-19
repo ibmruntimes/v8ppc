@@ -321,45 +321,6 @@ DoubleRegister LCodeGen::ToDoubleRegister(LOperand* op) const {
   return ToDoubleRegister(op->index());
 }
 
-  /*
-DoubleRegister LCodeGen::EmitLoadDoubleRegister(LOperand* op,
-                                                SwVfpRegister flt_scratch,
-                                                DoubleRegister dbl_scratch) {
-#ifdef PENGUIN_CLEANUP
-  if (op->IsDoubleRegister()) {
-    return ToDoubleRegister(op->index());
-  } else if (op->IsConstantOperand()) {
-    LConstantOperand* const_op = LConstantOperand::cast(op);
-    HConstant* constant = chunk_->LookupConstant(const_op);
-    Handle<Object> literal = constant->handle();
-    Representation r = chunk_->LookupLiteralRepresentation(const_op);
-    if (r.IsInteger32()) {
-      ASSERT(literal->IsNumber());
-      __ mov(ip, Operand(static_cast<intptr_t>(literal->Number())));
-      __ vmov(flt_scratch, ip);
-      __ vcvt_f64_s32(dbl_scratch, flt_scratch);
-      return dbl_scratch;
-    } else if (r.IsDouble()) {
-      Abort("unsupported double immediate");
-    } else if (r.IsTagged()) {
-      Abort("unsupported tagged immediate");
-    }
-  } else if (op->IsStackSlot() || op->IsArgument()) {
-    // TODO(regis): Why is lfd not taking a MemOperand?
-    // __ lfd(dbl_scratch, ToMemOperand(op));
-    MemOperand mem_op = ToMemOperand(op);
-    __ lfd(dbl_scratch, MemOperand(mem_op.rn(), mem_op.offset()));
-    return dbl_scratch;
-  }
-  UNREACHABLE();
-#else
-  PPCPORT_UNIMPLEMENTED();
-  __ fake_asm(fLITHIUM91);
-#endif
-  return dbl_scratch;
-}
-  */
-
 
 Handle<Object> LCodeGen::ToHandle(LConstantOperand* op) const {
   HConstant* constant = chunk_->LookupConstant(op);

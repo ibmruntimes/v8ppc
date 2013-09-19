@@ -569,73 +569,6 @@ class ConvertToDoubleStub : public CodeStub {
   void Generate(MacroAssembler* masm);
 };
 
-
-// roohack - not converted
-void ConvertToDoubleStub::Generate(MacroAssembler* masm) {
-  EMIT_STUB_MARKER(88);
-#ifdef PENGUIN_CLEANUP
-  Register exponent = result1_;
-  Register mantissa = result2_;
-
-  Label positive, not_special;
-  // Convert from Smi to integer.
-  __ SmiUntag(source_);
-
-  // Move sign bit from source to destination.  This works because the sign bit
-  // in the exponent word of the double has the same position and polarity as
-  // the 2's complement sign bit in a Smi.
-  STATIC_ASSERT(HeapNumber::kSignMask == 0x80000000u);
-  __ andis(exponent, source_, Operand(SIGN_EXT_IMM16(0x8000)));
-
-  // Negate if source was negative.
-  __ beq(&positive, cr0);
-  __ neg(source_, source_);
-  __ bind(&positive);
-
-  // We have -1, 0 or 1, which we treat specially. Register source_ contains
-  // absolute value: it is either equal to 1 (special case of -1 and 1),
-  // greater than 1 (not a special case) or less than 1 (special case of 0).
-  __ cmpi(source_, Operand(1));
-  __ bgt(&not_special);
-
-  // For 1 or -1 we need to or in the 0 exponent (biased to 1023).
-  const uint32_t exponent_word_for_1 =
-      HeapNumber::kExponentBias << HeapNumber::kExponentShift;
-  __ orr(exponent, exponent, Operand(exponent_word_for_1), LeaveCC, eq);
-  // 1, 0 and -1 all have 0 for the second word.
-  __ mov(mantissa, Operand(0, RelocInfo::NONE));
-  __ Ret();
-
-  __ bind(&not_special);
-  // Count leading zeros.
-  __ cntlzw_(zeros_, source_);
-  // Compute exponent and or it into the exponent register.
-  // We use mantissa as a scratch register here.  Use a fudge factor to
-  // divide the constant 31 + HeapNumber::kExponentBias, 0x41d, into two parts
-  // that fit in the ARM's constant field.
-  int fudge = 0x400;
-  __ rsb(mantissa, zeros_, Operand(31 + HeapNumber::kExponentBias - fudge));
-  __ addi(mantissa, mantissa, Operand(fudge));
-  __ orr(exponent,
-         exponent,
-         Operand(mantissa, LSL, HeapNumber::kExponentShift));
-  // Shift up the source chopping the top bit off.
-  __ addi(zeros_, zeros_, Operand(1));
-  // This wouldn't work for 1.0 or -1.0 as the shift would be 32 which means 0.
-  __ slw(source_, source_, zeros_);
-  // Compute lower part of fraction (last 12 bits).
-  __ slwi(mantissa_, source_, Operand(HeapNumber::kMantissaBitsInTopWord));
-  // And the top (top 20 bits).
-  __ orr(exponent,
-         exponent,
-         Operand(source_, LSR, 32 - HeapNumber::kMantissaBitsInTopWord));
-  __ Ret();
-#else
-  PPCPORT_UNIMPLEMENTED();
-  __ fake_asm(fMASM13);
-#endif
-}
-
 void FloatingPointHelper::LoadSmis(MacroAssembler* masm,
                                    Register scratch1,
                                    Register scratch2) {
@@ -1184,57 +1117,6 @@ static void EmitSmiNonsmiComparison(MacroAssembler* masm,
   __ SmiToDoubleFPRegister(rhs, d6, r10);
   // Fall through to both_loaded_as_doubles.
 }
-
-
-// roohack - not converted
-void EmitNanCheck(MacroAssembler* masm, Label* lhs_not_nan, Condition cond) {
-  EMIT_STUB_MARKER(104);
-#ifdef PENGUIN_CLEANUP
-  bool exp_first = (HeapNumber::kExponentOffset == HeapNumber::kValueOffset);
-  Register rhs_exponent = exp_first ? r3 : r4;
-  Register lhs_exponent = exp_first ? r5 : r6;
-  Register rhs_mantissa = exp_first ? r4 : r3;
-  Register lhs_mantissa = exp_first ? r6 : r5;
-  Label one_is_nan, neither_is_nan;
-
-  STATIC_ASSERT(HeapNumber::kExponentMask == 0x7ff00000u);
-  STATIC_ASSERT(HeapNumber::kMantissaMask == 0x000fffffu);
-  __ ExtractBitMask(r0, lhs_exponent, HeapNumber::kExponentMask);
-  __ cmpli(r0, Operand(0x7ff));
-  __ bne(lhs_not_nan);
-
-  __ TestBitMask(lhs_exponent, HeapNumber::kMantissaMask, r0);
-  __ bne(&one_is_nan, cr0);
-  __ cmpi(lhs_mantissa, Operand(0, RelocInfo::NONE));
-  __ bne(&one_is_nan);
-
-  __ bind(lhs_not_nan);
-  __ ExtractBitMask(r0, lhs_exponent, HeapNumber::kExponentMask);
-  __ cmpli(r0, Operand(0x7ff));
-  __ bne(&neither_is_nan);
-
-  __ TestBitMask(rhs_exponent, HeapNumber::kMantissaMask, r0);
-  __ bne(&one_is_nan, cr0);
-  __ cmpi(rhs_mantissa, Operand(0, RelocInfo::NONE));
-  __ beq(&neither_is_nan);
-
-  __ bind(&one_is_nan);
-  // NaN comparisons always fail.
-  // Load whatever we need in r3 to make the comparison fail.
-  if (cond == lt || cond == le) {
-    __ mov(r3, Operand(GREATER));
-  } else {
-    __ mov(r3, Operand(LESS));
-  }
-  __ Ret();
-
-  __ bind(&neither_is_nan);
-#else
-  PPCPORT_UNIMPLEMENTED();
-  __ fake_asm(fMASM1);
-#endif
-}
-
 
 // See comment at call site.
 static void EmitStrictTwoHeapObjectCompare(MacroAssembler* masm,

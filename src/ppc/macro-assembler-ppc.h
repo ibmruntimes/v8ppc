@@ -392,11 +392,6 @@ class MacroAssembler: public Assembler {
   // Does not handle errors.
   void FlushICache(Register address, unsigned instructions);
 
-  void Vmov(const DwVfpRegister dst,
-            const double imm,
-            const Register scratch = no_reg,
-            const Condition cond = al);
-
   // Enter exit frame.
   // stack_space - extra stack space, used for alignment before call to C.
   void EnterExitFrame(bool save_doubles, int stack_space = 0);
