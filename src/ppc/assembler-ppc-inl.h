@@ -383,8 +383,10 @@ Address Assembler::target_address_at(Address pc) {
   if (IsLis(instr1) && IsOri(instr2)) {
 #if V8_TARGET_ARCH_PPC64
     // Assemble the 64 bit value.
-    int64_t hi = ((instr1 & kImm16Mask) << 16) | (instr2 & kImm16Mask);
-    int64_t lo = ((instr4 & kImm16Mask) << 16) | (instr5 & kImm16Mask);
+    uint64_t hi = (static_cast<uint32_t>((instr1 & kImm16Mask) << 16) |
+                   static_cast<uint32_t>(instr2 & kImm16Mask));
+    uint64_t lo = (static_cast<uint32_t>((instr4 & kImm16Mask) << 16) |
+                   static_cast<uint32_t>(instr5 & kImm16Mask));
     return reinterpret_cast<Address>((hi << 32) | lo);
 #else
     // Assemble the 32 bit value.
