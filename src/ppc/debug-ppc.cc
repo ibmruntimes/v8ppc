@@ -63,6 +63,16 @@ void BreakLocationIterator::SetDebugBreakAtReturn() {
   //   blrl
   //   bkpt
   //
+  // The 64bit sequence is a bit longer
+  //   lis r0, <address bits 63-48>
+  //   ori r0, r0, <address bits 47-32>
+  //   sldi r0, r0, 32
+  //   oris r0, r0, <address bits 31-16>
+  //   ori  r0, r0, <address bits 15-0>
+  //   mtlr r0
+  //   blrl
+  //   bkpt
+  //
   CodePatcher patcher(rinfo()->pc(), Assembler::kJSReturnSequenceInstructions);
 // printf("SetDebugBreakAtReturn: pc=%08x\n", (unsigned int)rinfo()->pc());
   patcher.masm()->mov(v8::internal::r0,
@@ -112,6 +122,8 @@ void BreakLocationIterator::SetDebugBreakAtSlot() {
   //   ori r0, r0, <address lo>
   //   mtlr r0
   //   blrl
+  //
+  // The 64bit sequence is +3 instructions longer for the load
   //
   CodePatcher patcher(rinfo()->pc(), Assembler::kDebugBreakSlotInstructions);
 // printf("SetDebugBreakAtSlot: pc=%08x\n", (unsigned int)rinfo()->pc());

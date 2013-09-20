@@ -301,6 +301,21 @@ Register Assembler::GetRB(Instr instr) {
   return reg;
 }
 
+#if V8_TARGET_ARCH_PPC64
+// This code assumes a FIXED_SEQUENCE for 64bit loads (lis/ori)
+bool Assembler::Is64BitLoadIntoR12(Instr instr1, Instr instr2,
+                             Instr instr3, Instr instr4, Instr instr5) {
+  // Check the instructions are indeed a five part load (into r12)
+  // 3d800000       lis     r12, 0
+  // 618c0000       ori     r12, r12, 0
+  // 798c07c6       rldicr  r12, r12, 32, 31
+  // 658c00c3       oris    r12, r12, 195
+  // 618ccd40       ori     r12, r12, 52544
+  return(((instr1 >> 16) == 0x3d80) && ((instr2 >> 16) == 0x618c) &&
+         (instr3 == 0x798c07c6) &&
+         ((instr4 >> 16) == 0x658c) && ((instr5 >> 16) == 0x618c));
+}
+#else
 // This code assumes a FIXED_SEQUENCE for 32bit loads (lis/ori)
 bool Assembler::Is32BitLoadIntoR12(Instr instr1, Instr instr2) {
   // Check the instruction is indeed a two part load (into r12)
@@ -308,6 +323,7 @@ bool Assembler::Is32BitLoadIntoR12(Instr instr1, Instr instr2) {
   // 618c5000       ori   r12, r12, 20480
   return(((instr1 >> 16) == 0x3d80) && ((instr2 >> 16) == 0x618c));
 }
+#endif
 
 bool Assembler::IsCmpRegister(Instr instr) {
   return (((instr & kOpcodeMask) == EXT2) &&

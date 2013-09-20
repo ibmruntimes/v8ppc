@@ -633,6 +633,7 @@ class Assembler : public AssemblerBase {
   // mtlr    r8
   // blrl
   //                      @ return address
+  // in 64bit mode, the addres load is a 5 instruction sequence
 #if V8_TARGET_ARCH_PPC64
   static const int kCallTargetAddressOffset = 7 * kInstrSize;
 #else
@@ -663,8 +664,21 @@ class Assembler : public AssemblerBase {
 
   static const int kPatchDebugBreakSlotReturnOffset = 4 * kInstrSize;
 
+  // This is the length of the BreakLocationIterator::SetDebugBreakAtReturn()
+  // code patch FIXED_SEQUENCE
+#if V8_TARGET_ARCH_PPC64
+  static const int kJSReturnSequenceInstructions = 8;
+#else
   static const int kJSReturnSequenceInstructions = 5;
+#endif
+
+  // This is the length of the code sequence from SetDebugBreakAtSlot()
+  // FIXED_SEQUENCE
+#if V8_TARGET_ARCH_PPC64
+  static const int kDebugBreakSlotInstructions = 7;
+#else
   static const int kDebugBreakSlotInstructions = 4;
+#endif
   static const int kDebugBreakSlotLength =
       kDebugBreakSlotInstructions * kInstrSize;
 
@@ -1123,7 +1137,13 @@ class Assembler : public AssemblerBase {
   static bool IsBranch(Instr instr);
   static Register GetRA(Instr instr);
   static Register GetRB(Instr instr);
+#if V8_TARGET_ARCH_PPC64
+  static bool Is64BitLoadIntoR12(Instr instr1, Instr instr2,
+                                 Instr instr3, Instr instr4, Instr instr5);
+#else
   static bool Is32BitLoadIntoR12(Instr instr1, Instr instr2);
+#endif
+
   static bool IsCmpRegister(Instr instr);
   static bool IsCmpImmediate(Instr instr);
   static bool IsRlwinm(Instr instr);

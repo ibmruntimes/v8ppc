@@ -3433,7 +3433,12 @@ void MacroAssembler::PatchRelocatedValue(Register lis_location,
   }
 
   // insert new high word into lis instruction
+#if V8_TARGET_ARCH_PPC64
+  srdi(ip, new_value, Operand(32));
+  rlwimi(scratch, ip, 16, 16, 31);
+#else
   rlwimi(scratch, new_value, 16, 16, 31);
+#endif
 
   stw(scratch, MemOperand(lis_location));
 
@@ -3447,11 +3452,53 @@ void MacroAssembler::PatchRelocatedValue(Register lis_location,
   }
 
   // insert new low word into ori instruction
+#if V8_TARGET_ARCH_PPC64
+  rlwimi(scratch, ip, 0, 16, 31);
+#else
   rlwimi(scratch, new_value, 0, 16, 31);
+#endif
   stw(scratch, MemOperand(lis_location, kInstrSize));
 
+#if V8_TARGET_ARCH_PPC64
+  lwz(scratch, MemOperand(lis_location, 2*kInstrSize));
+  // scratch is now sldi.
+  if (emit_debug_code()) {
+    And(scratch, scratch, Operand(kOpcodeMask));
+    Cmpi(scratch, Operand(RLDICR), r0);
+    Check(eq, "The instruction should be an sldi");
+    lwz(scratch, MemOperand(lis_location, 2*kInstrSize));
+  }
+
+  lwz(scratch, MemOperand(lis_location, 3*kInstrSize));
+  // scratch is now ori.
+  if (emit_debug_code()) {
+    And(scratch, scratch, Operand(kOpcodeMask));
+    Cmpi(scratch, Operand(ORIS), r0);
+    Check(eq, "The instruction should be an oris");
+    lwz(scratch, MemOperand(lis_location, 3*kInstrSize));
+  }
+
+  rlwimi(scratch, new_value, 16, 16, 31);
+  stw(scratch, MemOperand(lis_location, 3*kInstrSize));
+
+  lwz(scratch, MemOperand(lis_location, 4*kInstrSize));
+  // scratch is now ori.
+  if (emit_debug_code()) {
+    And(scratch, scratch, Operand(kOpcodeMask));
+    Cmpi(scratch, Operand(ORI), r0);
+    Check(eq, "The instruction should be an ori");
+    lwz(scratch, MemOperand(lis_location, 4*kInstrSize));
+  }
+  rlwimi(scratch, new_value, 0, 16, 31);
+  stw(scratch, MemOperand(lis_location, 4*kInstrSize));
+#endif
+
   // Update the I-cache so the new lis and addic can be executed.
+#if V8_TARGET_ARCH_PPC64
+  FlushICache(lis_location, 5);
+#else
   FlushICache(lis_location, 2);
+#endif
 }
 
 // This code assumes a FIXED_SEQUENCE for lis/ori
@@ -3478,6 +3525,39 @@ void MacroAssembler::GetRelocatedValueLocation(Register lis_location,
   }
   // Copy the low 16bits from ori instruction into result
   rlwimi(result, scratch, 0, 16, 31);
+
+#if V8_TARGET_ARCH_PPC64
+  lwz(scratch, MemOperand(lis_location, 2*kInstrSize));
+  // scratch is now sldi.
+  if (emit_debug_code()) {
+    And(scratch, scratch, Operand(kOpcodeMask));
+    Cmpi(scratch, Operand(RLDICR), r0);
+    Check(eq, "The instruction should be an sldi");
+    lwz(scratch, MemOperand(lis_location, 2*kInstrSize));
+  }
+
+  lwz(scratch, MemOperand(lis_location, 3*kInstrSize));
+  // scratch is now ori.
+  if (emit_debug_code()) {
+    And(scratch, scratch, Operand(kOpcodeMask));
+    Cmpi(scratch, Operand(ORIS), r0);
+    Check(eq, "The instruction should be an oris");
+    lwz(scratch, MemOperand(lis_location, 3*kInstrSize));
+  }
+  sldi(result, result, Operand(16));
+  rlwimi(result, scratch, 0, 16, 31);
+
+  lwz(scratch, MemOperand(lis_location, 4*kInstrSize));
+  // scratch is now ori.
+  if (emit_debug_code()) {
+    And(scratch, scratch, Operand(kOpcodeMask));
+    Cmpi(scratch, Operand(ORI), r0);
+    Check(eq, "The instruction should be an ori");
+    lwz(scratch, MemOperand(lis_location, 4*kInstrSize));
+  }
+  sldi(result, result, Operand(16));
+  rlwimi(result, scratch, 0, 16, 31);
+#endif
 }
 
 

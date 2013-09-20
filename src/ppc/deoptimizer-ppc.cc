@@ -137,11 +137,29 @@ void Deoptimizer::PatchStackCheckCodeAt(Code* unoptimized_code,
   // 618c5000       ori     r12, r12, 20480  ;; of stack guard address
   // 7d8803a6       mtlr    r12
   // 4e800021       blrl
+  //    <-- pc_after
+  //
+  // 64bit will have an expanded mov() [lis/ori] sequence
 
   // Check we have a branch & link through r12 (ip)
   ASSERT(Memory::int32_at(pc_after - 2 * kInstrSize) == 0x7d8803a6);
   ASSERT(Memory::int32_at(pc_after - kInstrSize) == 0x4e800021);
 
+#if V8_TARGET_ARCH_PPC64
+  ASSERT(Assembler::Is64BitLoadIntoR12(
+      Assembler::instr_at(pc_after - 7 * kInstrSize),
+      Assembler::instr_at(pc_after - 6 * kInstrSize),
+      Assembler::instr_at(pc_after - 5 * kInstrSize),
+      Assembler::instr_at(pc_after - 4 * kInstrSize),
+      Assembler::instr_at(pc_after - 3 * kInstrSize)));
+  if (FLAG_count_based_interrupts) {
+    ASSERT_EQ(kBranchBeforeInterrupt,
+              Memory::int32_at(pc_after - 8 * kInstrSize));
+  } else {
+    ASSERT_EQ(kBranchBeforeStackCheck,
+              Memory::int32_at(pc_after - 8 * kInstrSize));
+  }
+#else
   ASSERT(Assembler::Is32BitLoadIntoR12(
       Assembler::instr_at(pc_after - 4 * kInstrSize),
       Assembler::instr_at(pc_after - 3 * kInstrSize)));
@@ -152,6 +170,7 @@ void Deoptimizer::PatchStackCheckCodeAt(Code* unoptimized_code,
     ASSERT_EQ(kBranchBeforeStackCheck,
               Memory::int32_at(pc_after - 5 * kInstrSize));
   }
+#endif
 
   // We patch the code to the following form:
   // 60000000       ori     r0, r0, 0        ;; NOP
@@ -160,9 +179,22 @@ void Deoptimizer::PatchStackCheckCodeAt(Code* unoptimized_code,
   // 7d8803a6       mtlr    r12
   // 4e800021       blrl
 
-  // Replace conditional jump with NOP.
+#if V8_TARGET_ARCH_PPC64
+  CodePatcher patcher(pc_after - 8 * kInstrSize, 6);
+
+  // Assemble the 64 bit value from the five part load and verify
+  // that it is the stack guard code
+  uint64_t stack_check_address =
+    (Memory::uint32_at(pc_after - 7 * kInstrSize) & 0xFFFF) << 16;
+  stack_check_address |=
+    (Memory::uint32_at(pc_after - 6 * kInstrSize) & 0xFFFF);
+  stack_check_address <<= 32;
+  stack_check_address |=
+    (Memory::uint32_at(pc_after - 4 * kInstrSize) & 0xFFFF) << 16;
+  stack_check_address |=
+    (Memory::uint32_at(pc_after - 3 * kInstrSize) & 0xFFFF);
+#else
   CodePatcher patcher(pc_after - 5 * kInstrSize, 3);
-  patcher.masm()->nop();
 
   // Assemble the 32 bit value from the two part load and verify
   // that it is the stack guard code
@@ -170,15 +202,24 @@ void Deoptimizer::PatchStackCheckCodeAt(Code* unoptimized_code,
     (Memory::int32_at(pc_after - 4 * kInstrSize) & 0xFFFF) << 16;
   stack_check_address |=
     (Memory::int32_at(pc_after - 3 * kInstrSize) & 0xFFFF);
+#endif
   ASSERT(stack_check_address ==
     reinterpret_cast<uintptr_t>(check_code->entry()));
 
-  // Now modify the two part load
+  // Replace conditional jump with NOP.
+  patcher.masm()->nop();
+
+  // Now modify the two part load (or 5 part on 64bit)
   patcher.masm()->mov(ip,
     Operand(reinterpret_cast<uintptr_t>(replacement_code->entry())));
 
+#if V8_TARGET_ARCH_PPC64
+  unoptimized_code->GetHeap()->incremental_marking()->RecordCodeTargetPatch(
+      unoptimized_code, pc_after - 7 * kInstrSize, replacement_code);
+#else
   unoptimized_code->GetHeap()->incremental_marking()->RecordCodeTargetPatch(
       unoptimized_code, pc_after - 4 * kInstrSize, replacement_code);
+#endif
 }
 
 
@@ -192,10 +233,34 @@ void Deoptimizer::RevertStackCheckCodeAt(Code* unoptimized_code,
   ASSERT(Memory::int32_at(pc_after - 2 * kInstrSize) == 0x7d8803a6);
   ASSERT(Memory::int32_at(pc_after - kInstrSize) == 0x4e800021);
 
+#if V8_TARGET_ARCH_PPC64
+  ASSERT(Assembler::Is64BitLoadIntoR12(
+      Assembler::instr_at(pc_after - 7 * kInstrSize),
+      Assembler::instr_at(pc_after - 6 * kInstrSize),
+      Assembler::instr_at(pc_after - 5 * kInstrSize),
+      Assembler::instr_at(pc_after - 4 * kInstrSize),
+      Assembler::instr_at(pc_after - 3 * kInstrSize)));
+#else
   ASSERT(Assembler::Is32BitLoadIntoR12(
       Assembler::instr_at(pc_after - 4 * kInstrSize),
       Assembler::instr_at(pc_after - 3 * kInstrSize)));
+#endif
 
+#if V8_TARGET_ARCH_PPC64
+  // Replace NOP with conditional jump.
+  CodePatcher patcher(pc_after - 8 * kInstrSize, 6);
+  if (FLAG_count_based_interrupts) {
+      patcher.masm()->bc(+48, BF,
+                v8::internal::Assembler::encode_crbit(cr7, CR_LT));  // bge
+    ASSERT_EQ(kBranchBeforeInterrupt,
+              Memory::int32_at(pc_after - 8 * kInstrSize));
+  } else {
+    patcher.masm()->bc(+32, BF,
+                v8::internal::Assembler::encode_crbit(cr7, CR_LT));  // bge
+    ASSERT_EQ(kBranchBeforeStackCheck,
+              Memory::int32_at(pc_after - 8 * kInstrSize));
+  }
+#else
   // Replace NOP with conditional jump.
   CodePatcher patcher(pc_after - 5 * kInstrSize, 3);
   if (FLAG_count_based_interrupts) {
@@ -209,7 +274,21 @@ void Deoptimizer::RevertStackCheckCodeAt(Code* unoptimized_code,
     ASSERT_EQ(kBranchBeforeStackCheck,
               Memory::int32_at(pc_after - 5 * kInstrSize));
   }
+#endif
 
+#if V8_TARGET_ARCH_PPC64
+  // Assemble the 64 bit value from the five part load and verify
+  // that it is the stack guard code
+  uint64_t stack_check_address =
+    (Memory::uint32_at(pc_after - 7 * kInstrSize) & 0xFFFF) << 16;
+  stack_check_address |=
+    (Memory::uint32_at(pc_after - 6 * kInstrSize) & 0xFFFF);
+  stack_check_address <<= 32;
+  stack_check_address |=
+    (Memory::uint32_at(pc_after - 4 * kInstrSize) & 0xFFFF) << 16;
+  stack_check_address |=
+    (Memory::uint32_at(pc_after - 3 * kInstrSize) & 0xFFFF);
+#else
   // Assemble the 32 bit value from the two part load and verify
   // that it is the replacement code address
   // This assumes a FIXED_SEQUENCE for lis/ori
@@ -217,15 +296,21 @@ void Deoptimizer::RevertStackCheckCodeAt(Code* unoptimized_code,
     (Memory::int32_at(pc_after - 4 * kInstrSize) & 0xFFFF) << 16;
   stack_check_address |=
     (Memory::int32_at(pc_after - 3 * kInstrSize) & 0xFFFF);
+#endif
   ASSERT(stack_check_address ==
     reinterpret_cast<uintptr_t>(replacement_code->entry()));
 
-  // Now modify the two part load
+  // Now modify the two part load (or 5 part on 64bit)
   patcher.masm()->mov(ip,
     Operand(reinterpret_cast<uintptr_t>(check_code->entry())));
 
+#if V8_TARGET_ARCH_PPC64
+  check_code->GetHeap()->incremental_marking()->RecordCodeTargetPatch(
+      unoptimized_code, pc_after - 7 * kInstrSize, check_code);
+#else
   check_code->GetHeap()->incremental_marking()->RecordCodeTargetPatch(
       unoptimized_code, pc_after - 4 * kInstrSize, check_code);
+#endif
 }
 
 

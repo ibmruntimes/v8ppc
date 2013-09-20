@@ -295,6 +295,7 @@ void FullCodeGenerator::Generate() {
       Label ok;
       __ LoadRoot(ip, Heap::kStackLimitRootIndex);
       __ cmpl(sp, ip);
+      // This is a FIXED_SEQUENCE and must match the other StackCheck code
       __ bc_short(ge, &ok);
       StackCheckStub stub;
       __ CallStub(&stub);
@@ -375,6 +376,7 @@ void FullCodeGenerator::EmitStackCheck(IterationStatement* stmt,
   } else {
     __ LoadRoot(ip, Heap::kStackLimitRootIndex);
     __ cmpl(sp, ip);
+    // This is a FIXED_SEQUENCE and must match the other StackCheck code
     __ bc_short(ge, &ok);
     StackCheckStub stub;
     __ CallStub(&stub);
@@ -457,6 +459,12 @@ void FullCodeGenerator::EmitReturnSequence() {
       masm_->mtlr(r0);
       masm_->Add(sp, sp, (uint32_t)(sp_delta + (2 * kPointerSize)), r0);
       masm_->blr();
+#if V8_TARGET_ARCH_PPC64
+      // With 64bit we need a couple of nop() instructions to ensure we have
+      // enough space to SetDebugBreakAtReturn()
+      masm_->nop();
+      masm_->nop();
+#endif
     }
 
 #ifdef DEBUG
