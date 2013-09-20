@@ -2542,7 +2542,13 @@ void MacroAssembler::EmitECMATruncate(Register result,
 void MacroAssembler::GetLeastBitsFromSmi(Register dst,
                                          Register src,
                                          int num_least_bits) {
-  rlwinm(dst, src, 31, 32 - num_least_bits, 31);
+#if V8_TARGET_ARCH_PPC64
+  rldicl(dst, src, kBitsPerPointer - kSmiShift,
+         kBitsPerPointer - num_least_bits);
+#else
+  rlwinm(dst, src, kBitsPerPointer - kSmiShift,
+         kBitsPerPointer - num_least_bits, 31);
+#endif
 }
 
 
@@ -2906,6 +2912,7 @@ void MacroAssembler::JumpIfNotPowerOfTwoOrZeroAndNeg(
   bne(not_power_of_two, cr0);
 }
 
+#if !V8_TARGET_ARCH_PPC64
 void MacroAssembler::SmiTagCheckOverflow(Register reg, Register overflow) {
   ASSERT(!reg.is(overflow));
   mr(overflow, reg);  // Save original value.
@@ -2928,6 +2935,7 @@ void MacroAssembler::SmiTagCheckOverflow(Register dst,
     xor_(overflow, dst, src, SetRC);  // Overflow if (value ^ 2 * value) < 0.
   }
 }
+#endif
 
 void MacroAssembler::JumpIfNotBothSmi(Register reg1,
                                       Register reg2,

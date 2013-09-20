@@ -2000,18 +2000,20 @@ void FullCodeGenerator::EmitInlineSmiBinaryOp(BinaryOperation* expr,
     case Token::SAR:
       __ b(&stub_call);
       __ GetLeastBitsFromSmi(scratch1, right, 5);
-      __ sraw(right, left, scratch1);
-      __ ClearRightImm(right, right, Operand(kSmiTagMask));
+      __ ShiftRightArith(right, left, scratch1);
+      __ ClearRightImm(right, right, Operand(kSmiTagSize + kSmiShiftSize));
       break;
     case Token::SHL: {
       __ b(&stub_call);
       __ SmiUntag(scratch1, left);
       __ GetLeastBitsFromSmi(scratch2, right, 5);
-      __ slw(scratch1, scratch1, scratch2);
+      __ ShiftLeft(scratch1, scratch1, scratch2);
+#if !V8_TARGET_ARCH_PPC64
       // Check that the *signed* result fits in a smi
       __ addis(scratch2, scratch1, Operand(0x4000));
       __ cmpi(scratch2, Operand::Zero());
       __ blt(&stub_call);
+#endif
       __ SmiTag(right, scratch1);
       break;
     }
@@ -2019,8 +2021,16 @@ void FullCodeGenerator::EmitInlineSmiBinaryOp(BinaryOperation* expr,
       __ b(&stub_call);
       __ SmiUntag(scratch1, left);
       __ GetLeastBitsFromSmi(scratch2, right, 5);
-      __ srw(scratch1, scratch1, scratch2);
-      __ andis(scratch2, scratch1, Operand(0xc000));
+      __ ShiftRight(scratch1, scratch1, scratch2);
+      // Unsigned shift is not allowed to produce a negative number, so
+      // check the sign bit and, for 32-bit, the sign bit after Smi tagging.
+      __ TestBitRange(scratch1, 31,
+#if V8_TARGET_ARCH_PPC64
+                      31,
+#else
+                      30,
+#endif
+                      r0);
       __ bne(&stub_call, cr0);
       __ SmiTag(right, scratch1);
       break;

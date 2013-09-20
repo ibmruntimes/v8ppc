@@ -1239,12 +1239,18 @@ class MacroAssembler: public Assembler {
 #define ClearLeftImm  clrldi
 #define ClearRightImm clrrdi
 #define ShiftRightArithImm sradi
+#define ShiftLeft sld
+#define ShiftRight srd
+#define ShiftRightArith srad
 #else
 #define ShiftLeftImm  slwi
 #define ShiftRightImm srwi
 #define ClearLeftImm  clrlwi
 #define ClearRightImm clrrwi
 #define ShiftRightArithImm srawi
+#define ShiftLeft slw
+#define ShiftRight srw
+#define ShiftRightArith sraw
 #endif
 
   // ---------------------------------------------------------------------------
@@ -1258,9 +1264,11 @@ class MacroAssembler: public Assembler {
     ShiftLeftImm(dst, src, Operand(kSmiShift));
   }
 
+#if !V8_TARGET_ARCH_PPC64
   // Test for overflow < 0: use BranchOnOverflow() or BranchOnNoOverflow().
   void SmiTagCheckOverflow(Register reg, Register overflow);
   void SmiTagCheckOverflow(Register dst, Register src, Register overflow);
+#endif
 
   void SmiUntag(Register reg, RCBit rc = LeaveRC) {
     SmiUntag(reg, reg, rc);

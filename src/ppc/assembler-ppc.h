@@ -889,6 +889,9 @@ class Assembler : public AssemblerBase {
   void clrldi(Register dst, Register src, const Operand& val,
               RCBit rc = LeaveRC);
   void sradi(Register ra, Register rs, int sh, RCBit r = LeaveRC);
+  void srd(Register dst, Register src1, Register src2, RCBit r = LeaveRC);
+  void sld(Register dst, Register src1, Register src2, RCBit r = LeaveRC);
+  void srad(Register dst, Register src1, Register src2, RCBit r = LeaveRC);
 #endif
 
   void rlwinm(Register ra, Register rs, int sh, int mb, int me,

@@ -1654,28 +1654,58 @@ bool Simulator::DecodeExt2_10bit(Instruction *instr) {
       int rs = instr->RSValue();
       int ra = instr->RAValue();
       int rb = instr->RBValue();
-      uintptr_t rs_val = get_register(rs);
+      uint32_t rs_val = get_register(rs);
       uintptr_t rb_val = get_register(rb);
-      intptr_t  result = rs_val >> rb_val;
+      intptr_t  result = rs_val >> (rb_val & 0x3f);
       set_register(ra, result);
       if (instr->Bit(0)) {  // RC bit set
         SetCR0(result);
       }
       break;
     }
+#if V8_TARGET_ARCH_PPC64
+    case SRDX: {
+      int rs = instr->RSValue();
+      int ra = instr->RAValue();
+      int rb = instr->RBValue();
+      uintptr_t rs_val = get_register(rs);
+      uintptr_t rb_val = get_register(rb);
+      intptr_t  result = rs_val >> (rb_val & 0x7f);
+      set_register(ra, result);
+      if (instr->Bit(0)) {  // RC bit set
+        SetCR0(result);
+      }
+      break;
+    }
+#endif
     case SRAW: {
+      int rs = instr->RSValue();
+      int ra = instr->RAValue();
+      int rb = instr->RBValue();
+      int32_t rs_val = get_register(rs);
+      intptr_t rb_val = get_register(rb);
+      intptr_t result = rs_val >> (rb_val & 0x3f);
+      set_register(ra, result);
+      if (instr->Bit(0)) {  // RC bit set
+        SetCR0(result);
+      }
+      break;
+    }
+#if V8_TARGET_ARCH_PPC64
+    case SRAD: {
       int rs = instr->RSValue();
       int ra = instr->RAValue();
       int rb = instr->RBValue();
       intptr_t rs_val = get_register(rs);
       intptr_t rb_val = get_register(rb);
-      intptr_t result = rs_val >> rb_val;
+      intptr_t result = rs_val >> (rb_val & 0x7f);
       set_register(ra, result);
       if (instr->Bit(0)) {  // RC bit set
         SetCR0(result);
       }
       break;
     }
+#endif
     case SRAWIX: {
       int ra = instr->RAValue();
       int rs = instr->RSValue();
@@ -1919,15 +1949,30 @@ void Simulator::DecodeExt2_9bit(Instruction* instr) {
       int rs = instr->RSValue();
       int ra = instr->RAValue();
       int rb = instr->RBValue();
-      uintptr_t rs_val = get_register(rs);
+      uint32_t rs_val = get_register(rs);
       uintptr_t rb_val = get_register(rb);
-      uintptr_t result = rs_val << rb_val;
+      uint32_t result = rs_val << (rb_val & 0x3f);
       set_register(ra, result);
       if (instr->Bit(0)) {  // RC bit set
         SetCR0(result);
       }
       break;
     }
+#if V8_TARGET_ARCH_PPC64
+    case SLDX: {
+      int rs = instr->RSValue();
+      int ra = instr->RAValue();
+      int rb = instr->RBValue();
+      uintptr_t rs_val = get_register(rs);
+      uintptr_t rb_val = get_register(rb);
+      uintptr_t result = rs_val << (rb_val & 0x7f);
+      set_register(ra, result);
+      if (instr->Bit(0)) {  // RC bit set
+        SetCR0(result);
+      }
+      break;
+    }
+#endif
     case CNTLZWX: {
       int rs = instr->RSValue();
       int ra = instr->RAValue();

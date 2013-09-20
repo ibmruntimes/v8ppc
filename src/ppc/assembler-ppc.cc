@@ -1139,6 +1139,18 @@ void Assembler::sradi(Register ra, Register rs, int sh, RCBit r) {
   emit(EXT2 | SRADIX | rs.code()*B21 | ra.code()*B16 | sh0_4*B11 | sh5*B1 | r);
 }
 
+void Assembler::srd(Register dst, Register src1, Register src2, RCBit r) {
+  x_form(EXT2 | SRDX, dst, src1, src2, r);
+}
+
+void Assembler::sld(Register dst, Register src1, Register src2, RCBit r) {
+  x_form(EXT2 | SLDX, dst, src1, src2, r);
+}
+
+void Assembler::srad(Register ra, Register rs, Register rb, RCBit r) {
+  x_form(EXT2 | SRAD, ra, rs, rb, r);
+}
+
 #endif
 
 

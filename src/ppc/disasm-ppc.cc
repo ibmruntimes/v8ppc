@@ -565,10 +565,22 @@ void Decoder::DecodeExt2(Instruction* instr) {
       Format(instr, "srw'.    'ra, 'rs, 'rb");
       return;
     }
+#if V8_TARGET_ARCH_PPC64
+    case SRDX: {
+      Format(instr, "srd'.    'ra, 'rs, 'rb");
+      return;
+    }
+#endif
     case SRAW: {
       Format(instr, "sraw'.   'ra, 'rs, 'rb");
       return;
     }
+#if V8_TARGET_ARCH_PPC64
+    case SRAD: {
+      Format(instr, "srad'.   'ra, 'rs, 'rb");
+      return;
+    }
+#endif
     case SRAWIX: {
       Format(instr, "srawi'.  'ra,'rs,'sh");
       return;
@@ -632,6 +644,12 @@ void Decoder::DecodeExt2(Instruction* instr) {
       Format(instr, "slw'.   'ra, 'rs, 'rb");
       break;
     }
+#if V8_TARGET_ARCH_PPC64
+    case SLDX: {
+      Format(instr, "sld'.   'ra, 'rs, 'rb");
+      break;
+    }
+#endif
     case SUBFCX: {
       Format(instr, "subfc'. 'rt, 'ra, 'rb");
       break;

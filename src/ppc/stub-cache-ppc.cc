@@ -3743,9 +3743,13 @@ static void GenerateSmiKeyCheck(MacroAssembler* masm,
                      double_scratch1,
                      kCheckForInexactConversion);
   __ bne(fail);
+#if V8_TARGET_ARCH_PPC64
+  __ SmiTag(key, scratch0);
+#else
   __ SmiTagCheckOverflow(scratch1, scratch0, r0);
   __ BranchOnOverflow(fail);
   __ mr(key, scratch1);
+#endif
   __ bind(&key_ok);
 }
 
