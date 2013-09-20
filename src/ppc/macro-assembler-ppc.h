@@ -868,7 +868,7 @@ class MacroAssembler: public Assembler {
   // Returns a condition that will be enabled if the object was a string.
   Condition IsObjectStringType(Register obj,
                                Register type) {
-    lwz(type, FieldMemOperand(obj, HeapObject::kMapOffset));
+    LoadP(type, FieldMemOperand(obj, HeapObject::kMapOffset));
     lbz(type, FieldMemOperand(type, Map::kInstanceTypeOffset));
     andi(r0, type, Operand(kIsNotStringMask));
     cmpi(r0, Operand::Zero());

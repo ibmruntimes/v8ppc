@@ -367,7 +367,7 @@ void MacroAssembler::LoadHeapObject(Register result,
     Handle<JSGlobalPropertyCell> cell =
         isolate()->factory()->NewJSGlobalPropertyCell(object);
     mov(result, Operand(cell));
-    lwz(result, FieldMemOperand(result, JSGlobalPropertyCell::kValueOffset));
+    LoadP(result, FieldMemOperand(result, JSGlobalPropertyCell::kValueOffset));
   } else {
     mov(result, Operand(object));
   }
@@ -454,7 +454,7 @@ void MacroAssembler::RecordWrite(Register object,
   ASSERT(!address.is(cp) && !value.is(cp));
 
   if (emit_debug_code()) {
-    lwz(ip, MemOperand(address));
+    LoadP(ip, MemOperand(address));
     cmp(ip, value);
     Check(eq, "Wrong address or value passed to RecordWrite");
   }
@@ -515,12 +515,12 @@ void MacroAssembler::RememberedSetHelper(Register object,  // For debug tests.
   ExternalReference store_buffer =
       ExternalReference::store_buffer_top(isolate());
   mov(ip, Operand(store_buffer));
-  lwz(scratch, MemOperand(ip));
+  LoadP(scratch, MemOperand(ip));
   // Store pointer to buffer and increment buffer top.
-  stw(address, MemOperand(scratch));
+  StoreP(address, MemOperand(scratch));
   addi(scratch, scratch, Operand(kPointerSize));
   // Write back new top of buffer.
-  stw(scratch, MemOperand(ip));
+  StoreP(scratch, MemOperand(ip));
   // Call stub on end of buffer.
   // Check for end of buffer.
   mov(r0, Operand(StoreBuffer::kStoreBufferOverflowBit));
@@ -600,7 +600,7 @@ void MacroAssembler::PopSafepointRegistersAndDoubles() {
 void MacroAssembler::StoreToSafepointRegistersAndDoublesSlot(Register src,
                                                              Register dst) {
 #ifdef PENGUIN_CLEANUP
-  stw(src, SafepointRegistersAndDoublesSlot(dst));
+  StoreP(src, SafepointRegistersAndDoublesSlot(dst));
 #else
   PPCPORT_UNIMPLEMENTED();
   fake_asm(fMASM26);
@@ -609,12 +609,12 @@ void MacroAssembler::StoreToSafepointRegistersAndDoublesSlot(Register src,
 
 
 void MacroAssembler::StoreToSafepointRegisterSlot(Register src, Register dst) {
-  stw(src, SafepointRegisterSlot(dst));
+  StoreP(src, SafepointRegisterSlot(dst));
 }
 
 
 void MacroAssembler::LoadFromSafepointRegisterSlot(Register dst, Register src) {
-  lwz(dst, SafepointRegisterSlot(src));
+  LoadP(dst, SafepointRegisterSlot(src));
 }
 
 
@@ -787,10 +787,10 @@ void MacroAssembler::InitializeNewString(Register string,
                                          Register scratch2) {
   SmiTag(scratch1, length);
   LoadRoot(scratch2, map_index);
-  stw(scratch1, FieldMemOperand(string, String::kLengthOffset));
+  StoreP(scratch1, FieldMemOperand(string, String::kLengthOffset), r0);
   li(scratch1, Operand(String::kEmptyHashField));
-  stw(scratch2, FieldMemOperand(string, HeapObject::kMapOffset));
-  stw(scratch1, FieldMemOperand(string, String::kHashFieldOffset));
+  StoreP(scratch2, FieldMemOperand(string, HeapObject::kMapOffset), r0);
+  StoreP(scratch1, FieldMemOperand(string, String::kHashFieldOffset), r0);
 }
 
 
@@ -1060,13 +1060,13 @@ void MacroAssembler::InvokeFunction(Handle<JSFunction> function,
 
   // Get the function and setup the context.
   LoadHeapObject(r4, function);
-  lwz(cp, FieldMemOperand(r4, JSFunction::kContextOffset));
+  LoadP(cp, FieldMemOperand(r4, JSFunction::kContextOffset));
 
   ParameterCount expected(function->shared()->formal_parameter_count());
   // We call indirectly through the code field in the function to
   // allow recompilation to take effect without changing any of the
   // call sites.
-  lwz(r6, FieldMemOperand(r4, JSFunction::kCodeEntryOffset));
+  LoadP(r6, FieldMemOperand(r4, JSFunction::kCodeEntryOffset));
   InvokeCode(r6, expected, actual, flag, call_wrapper, call_kind);
 }
 
@@ -1075,7 +1075,7 @@ void MacroAssembler::IsObjectJSObjectType(Register heap_object,
                                           Register map,
                                           Register scratch,
                                           Label* fail) {
-  lwz(map, FieldMemOperand(heap_object, HeapObject::kMapOffset));
+  LoadP(map, FieldMemOperand(heap_object, HeapObject::kMapOffset));
   IsInstanceJSObjectType(map, scratch, fail);
 }
 
@@ -1096,7 +1096,7 @@ void MacroAssembler::IsObjectJSStringType(Register object,
                                           Label* fail) {
   ASSERT(kNotStringTag != 0);
 
-  lwz(scratch, FieldMemOperand(object, HeapObject::kMapOffset));
+  LoadP(scratch, FieldMemOperand(object, HeapObject::kMapOffset));
   lbz(scratch, FieldMemOperand(scratch, Map::kInstanceTypeOffset));
   andi(r0, scratch, Operand(kIsNotStringMask));
   bne(fail, cr0);
@@ -1172,12 +1172,12 @@ void MacroAssembler::JumpToHandlerEntry() {
   // Compute the handler entry address and jump to it.  The handler table is
   // a fixed array of (smi-tagged) code offsets.
   // r3 = exception, r4 = code object, r5 = state.
-  lwz(r6, FieldMemOperand(r4, Code::kHandlerTableOffset));  // Handler table.
+  LoadP(r6, FieldMemOperand(r4, Code::kHandlerTableOffset));  // Handler table.
   addi(r6, r6, Operand(FixedArray::kHeaderSize - kHeapObjectTag));
   srwi(r5, r5, Operand(StackHandler::kKindWidth));  // Handler index.
   slwi(ip, r5, Operand(kPointerSizeLog2));
   add(ip, r6, ip);
-  lwz(r5, MemOperand(ip));  // Smi-tagged offset.
+  LoadP(r5, MemOperand(ip));  // Smi-tagged offset.
   addi(r4, r4, Operand(Code::kHeaderSize - kHeapObjectTag));  // Code start.
   SmiUntag(ip, r5);
   add(r0, r4, ip);
@@ -1202,10 +1202,10 @@ void MacroAssembler::Throw(Register value) {
   }
   // Drop the stack pointer to the top of the top handler.
   mov(r6, Operand(ExternalReference(Isolate::kHandlerAddress, isolate())));
-  lwz(sp, MemOperand(r6));
+  LoadP(sp, MemOperand(r6));
   // Restore the next handler.
   pop(r5);
-  stw(r5, MemOperand(r6));
+  StoreP(r5, MemOperand(r6));
 
   // Get the code object (r1) and state (r2).  Restore the context and frame
   // pointer.
@@ -1219,7 +1219,7 @@ void MacroAssembler::Throw(Register value) {
   // or cp.
   cmpi(cp, Operand::Zero());
   beq(&skip);
-  stw(cp, MemOperand(fp, StandardFrameConstants::kContextOffset));
+  StoreP(cp, MemOperand(fp, StandardFrameConstants::kContextOffset));
   bind(&skip);
 
   JumpToHandlerEntry();
@@ -1241,23 +1241,23 @@ void MacroAssembler::ThrowUncatchable(Register value) {
   }
   // Drop the stack pointer to the top of the top stack handler.
   mov(r6, Operand(ExternalReference(Isolate::kHandlerAddress, isolate())));
-  lwz(sp, MemOperand(r6));
+  LoadP(sp, MemOperand(r6));
 
   // Unwind the handlers until the ENTRY handler is found.
   Label fetch_next, check_kind;
   b(&check_kind);
   bind(&fetch_next);
-  lwz(sp, MemOperand(sp, StackHandlerConstants::kNextOffset));
+  LoadP(sp, MemOperand(sp, StackHandlerConstants::kNextOffset));
 
   bind(&check_kind);
   STATIC_ASSERT(StackHandler::JS_ENTRY == 0);
-  lwz(r5, MemOperand(sp, StackHandlerConstants::kStateOffset));
+  LoadP(r5, MemOperand(sp, StackHandlerConstants::kStateOffset));
   andi(r0, r5, Operand(StackHandler::KindField::kMask));
   bne(&fetch_next, cr0);
 
   // Set the top handler address to next handler past the top ENTRY handler.
   pop(r5);
-  stw(r5, MemOperand(r6));
+  StoreP(r5, MemOperand(r6));
   // Get the code object (r4) and state (r5).  Clear the context and frame
   // pointer (0 was saved in the handler).
   pop(r4);
@@ -1279,7 +1279,7 @@ void MacroAssembler::CheckAccessGlobalProxy(Register holder_reg,
   ASSERT(!scratch.is(ip));
 
   // Load current lexical context from the stack frame.
-  lwz(scratch, MemOperand(fp, StandardFrameConstants::kContextOffset));
+  LoadP(scratch, MemOperand(fp, StandardFrameConstants::kContextOffset));
   // In debug mode, make sure the lexical context is set.
 #ifdef DEBUG
   cmpi(scratch, Operand(0, RelocInfo::NONE));
@@ -1289,8 +1289,8 @@ void MacroAssembler::CheckAccessGlobalProxy(Register holder_reg,
   // Load the native context of the current context.
   int offset =
       Context::kHeaderSize + Context::GLOBAL_OBJECT_INDEX * kPointerSize;
-  lwz(scratch, FieldMemOperand(scratch, offset));
-  lwz(scratch, FieldMemOperand(scratch, GlobalObject::kNativeContextOffset));
+  LoadP(scratch, FieldMemOperand(scratch, offset));
+  LoadP(scratch, FieldMemOperand(scratch, GlobalObject::kNativeContextOffset));
 
   // Check the context is a native context.
   if (emit_debug_code()) {
@@ -1299,7 +1299,7 @@ void MacroAssembler::CheckAccessGlobalProxy(Register holder_reg,
     // that ip is clobbered as part of cmp with an object Operand.
     push(holder_reg);  // Temporarily save holder on the stack.
     // Read the first word and compare to the native_context_map.
-    lwz(holder_reg, FieldMemOperand(scratch, HeapObject::kMapOffset));
+    LoadP(holder_reg, FieldMemOperand(scratch, HeapObject::kMapOffset));
     LoadRoot(ip, Heap::kNativeContextMapRootIndex);
     cmp(holder_reg, ip);
     Check(eq, "JSGlobalObject::native_context should be a native context.");
@@ -1307,7 +1307,7 @@ void MacroAssembler::CheckAccessGlobalProxy(Register holder_reg,
   }
 
   // Check if both contexts are the same.
-  lwz(ip, FieldMemOperand(holder_reg, JSGlobalProxy::kNativeContextOffset));
+  LoadP(ip, FieldMemOperand(holder_reg, JSGlobalProxy::kNativeContextOffset));
   cmp(scratch, ip);
   beq(&same_contexts);
 
@@ -1322,14 +1322,14 @@ void MacroAssembler::CheckAccessGlobalProxy(Register holder_reg,
     cmp(holder_reg, ip);
     Check(ne, "JSGlobalProxy::context() should not be null.");
 
-    lwz(holder_reg, FieldMemOperand(holder_reg, HeapObject::kMapOffset));
+    LoadP(holder_reg, FieldMemOperand(holder_reg, HeapObject::kMapOffset));
     LoadRoot(ip, Heap::kNativeContextMapRootIndex);
     cmp(holder_reg, ip);
     Check(eq, "JSGlobalObject::native_context should be a native context.");
     // Restore ip is not needed. ip is reloaded below.
     pop(holder_reg);  // Restore holder.
     // Restore ip to holder's context.
-    lwz(ip, FieldMemOperand(holder_reg, JSGlobalProxy::kNativeContextOffset));
+    LoadP(ip, FieldMemOperand(holder_reg, JSGlobalProxy::kNativeContextOffset));
   }
 
   // Check that the security token in the calling global object is
@@ -1338,8 +1338,8 @@ void MacroAssembler::CheckAccessGlobalProxy(Register holder_reg,
   int token_offset = Context::kHeaderSize +
                      Context::SECURITY_TOKEN_INDEX * kPointerSize;
 
-  lwz(scratch, FieldMemOperand(scratch, token_offset));
-  lwz(ip, FieldMemOperand(ip, token_offset));
+  LoadP(scratch, FieldMemOperand(scratch, token_offset));
+  LoadP(ip, FieldMemOperand(ip, token_offset));
   cmp(scratch, ip);
   bne(miss);
 
@@ -1415,7 +1415,7 @@ void MacroAssembler::LoadFromNumberDictionary(Label* miss,
   GetNumberHash(t0, t1);
 
   // Compute the capacity mask.
-  lwz(t1, FieldMemOperand(elements, SeededNumberDictionary::kCapacityOffset));
+  LoadP(t1, FieldMemOperand(elements, SeededNumberDictionary::kCapacityOffset));
   SmiUntag(t1);
   subi(t1, t1, Operand(1));
 
@@ -1438,7 +1438,8 @@ void MacroAssembler::LoadFromNumberDictionary(Label* miss,
     // Check if the key is identical to the name.
     slwi(t2, t2, Operand(kPointerSizeLog2));
     add(t2, elements, t2);
-    lwz(ip, FieldMemOperand(t2, SeededNumberDictionary::kElementsStartOffset));
+    LoadP(ip,
+          FieldMemOperand(t2, SeededNumberDictionary::kElementsStartOffset));
     cmp(key, ip);
     if (i != kProbes - 1) {
       beq(&done);
@@ -1452,7 +1453,7 @@ void MacroAssembler::LoadFromNumberDictionary(Label* miss,
   // t2: elements + (index * kPointerSize)
   const int kDetailsOffset =
       SeededNumberDictionary::kElementsStartOffset + 2 * kPointerSize;
-  lwz(t1, FieldMemOperand(t2, kDetailsOffset));
+  LoadP(t1, FieldMemOperand(t2, kDetailsOffset));
   LoadSmiLiteral(ip, Smi::FromInt(PropertyDetails::TypeField::kMask));
   and_(r0, t1, ip, SetRC);
   bne(miss, cr0);
@@ -1460,7 +1461,7 @@ void MacroAssembler::LoadFromNumberDictionary(Label* miss,
   // Get the value at the masked, scaled index and return.
   const int kValueOffset =
       SeededNumberDictionary::kElementsStartOffset + kPointerSize;
-  lwz(result, FieldMemOperand(t2, kValueOffset));
+  LoadP(result, FieldMemOperand(t2, kValueOffset));
 }
 
 
@@ -1526,12 +1527,12 @@ void MacroAssembler::AllocateInNewSpace(int object_size,
       // Assert that result actually contains top on entry. ip is used
       // immediately below so this use of ip does not cause difference with
       // respect to register content between debug and release mode.
-      lwz(ip, MemOperand(topaddr));
+      LoadP(ip, MemOperand(topaddr));
       cmp(result, ip);
       Check(eq, "Unexpected allocation top");
     }
     // Load allocation limit into ip. Result already contains allocation top.
-    LoadWord(ip, MemOperand(topaddr, limit - top), r0);
+    LoadP(ip, MemOperand(topaddr, limit - top), r0);
   }
 
   // Calculate new top and bail out if new space is exhausted. Use result
@@ -1657,13 +1658,13 @@ void MacroAssembler::UndoAllocationInNewSpace(Register object,
 #ifdef DEBUG
   // Check that the object un-allocated is below the current top.
   mov(scratch, Operand(new_space_allocation_top));
-  lwz(scratch, MemOperand(scratch));
+  LoadP(scratch, MemOperand(scratch));
   cmp(object, scratch);
   Check(lt, "Undo allocation of non allocated memory");
 #endif
   // Write the address of the object to un-allocate as the current top.
   mov(scratch, Operand(new_space_allocation_top));
-  stw(object, MemOperand(scratch));
+  StoreP(object, MemOperand(scratch));
 }
 
 
@@ -2117,8 +2118,8 @@ void MacroAssembler::TryGetFunctionPrototype(Register function,
   bne(miss);
 
   if (miss_on_bound_function) {
-    lwz(scratch,
-        FieldMemOperand(function, JSFunction::kSharedFunctionInfoOffset));
+    LoadP(scratch,
+          FieldMemOperand(function, JSFunction::kSharedFunctionInfoOffset));
     lwz(scratch,
         FieldMemOperand(scratch, SharedFunctionInfo::kCompilerHintsOffset));
     TestBit(scratch,
@@ -2138,8 +2139,8 @@ void MacroAssembler::TryGetFunctionPrototype(Register function,
   bne(&non_instance, cr0);
 
   // Get the prototype or initial map from the function.
-  lwz(result,
-      FieldMemOperand(function, JSFunction::kPrototypeOrInitialMapOffset));
+  LoadP(result,
+        FieldMemOperand(function, JSFunction::kPrototypeOrInitialMapOffset));
 
   // If the prototype or initial map is the hole, don't return it and
   // simply miss the cache instead. This will allow us to allocate a
@@ -2154,13 +2155,13 @@ void MacroAssembler::TryGetFunctionPrototype(Register function,
   bne(&done);
 
   // Get the prototype from the initial map.
-  lwz(result, FieldMemOperand(result, Map::kPrototypeOffset));
+  LoadP(result, FieldMemOperand(result, Map::kPrototypeOffset));
   b(&done);
 
   // Non-instance prototype: Fetch prototype from constructor field
   // in initial map.
   bind(&non_instance);
-  lwz(result, FieldMemOperand(result, Map::kConstructorOffset));
+  LoadP(result, FieldMemOperand(result, Map::kConstructorOffset));
 
   // All done.
   bind(&done);
@@ -2202,11 +2203,11 @@ void MacroAssembler::CallApiFunctionAndReturn(ExternalReference function,
   // r28 - next_address->kLimitOffset
   // r29 - next_address->kLevelOffset
   mov(r26, Operand(next_address));
-  lwz(r27, MemOperand(r26, kNextOffset));
-  lwz(r28, MemOperand(r26, kLimitOffset));
-  lwz(r29, MemOperand(r26, kLevelOffset));
+  LoadP(r27, MemOperand(r26, kNextOffset));
+  LoadP(r28, MemOperand(r26, kLimitOffset));
+  LoadP(r29, MemOperand(r26, kLevelOffset));
   addi(r29, r29, Operand(1));
-  stw(r29, MemOperand(r26, kLevelOffset));
+  StoreP(r29, MemOperand(r26, kLevelOffset));
 
   // PPC LINUX ABI
   // The return value is pointer-sized non-scalar value.
@@ -2221,7 +2222,7 @@ void MacroAssembler::CallApiFunctionAndReturn(ExternalReference function,
   stub.GenerateCall(this, function);
 
   // Retrieve return value from stack buffer
-  lwz(r3, MemOperand(r3));
+  LoadP(r3, MemOperand(r3));
 
   Label promote_scheduled_exception;
   Label delete_allocated_handles;
@@ -2235,20 +2236,20 @@ void MacroAssembler::CallApiFunctionAndReturn(ExternalReference function,
   LoadRoot(r3, Heap::kUndefinedValueRootIndex);
   b(&skip2);
   bind(&skip1);
-  lwz(r3, MemOperand(r3));
+  LoadP(r3, MemOperand(r3));
   bind(&skip2);
 
   // No more valid handles (the result handle was the last one). Restore
   // previous handle scope.
-  stw(r27, MemOperand(r26, kNextOffset));
+  StoreP(r27, MemOperand(r26, kNextOffset));
   if (emit_debug_code()) {
-    lwz(r4, MemOperand(r26, kLevelOffset));
+    LoadP(r4, MemOperand(r26, kLevelOffset));
     cmp(r4, r29);
     Check(eq, "Unexpected level after return from api call");
   }
   subi(r29, r29, Operand(1));
-  stw(r29, MemOperand(r26, kLevelOffset));
-  lwz(ip, MemOperand(r26, kLimitOffset));
+  StoreP(r29, MemOperand(r26, kLevelOffset));
+  LoadP(ip, MemOperand(r26, kLimitOffset));
   cmp(r28, ip);
   bne(&delete_allocated_handles);
 
@@ -2256,7 +2257,7 @@ void MacroAssembler::CallApiFunctionAndReturn(ExternalReference function,
   bind(&leave_exit_frame);
   LoadRoot(r27, Heap::kTheHoleValueRootIndex);
   mov(ip, Operand(ExternalReference::scheduled_exception_address(isolate())));
-  lwz(r28, MemOperand(ip));
+  LoadP(r28, MemOperand(ip));
   cmp(r27, r28);
   bne(&promote_scheduled_exception);
 
@@ -2273,7 +2274,7 @@ void MacroAssembler::CallApiFunctionAndReturn(ExternalReference function,
 
   // HandleScope limit has changed. Delete allocated extensions.
   bind(&delete_allocated_handles);
-  stw(r28, MemOperand(r26, kLimitOffset));
+  StoreP(r28, MemOperand(r26, kLimitOffset));
   mr(r27, r3);
   PrepareCallCFunction(1, r28);
   mov(r3, Operand(ExternalReference::isolate_address()));
@@ -2730,7 +2731,7 @@ void MacroAssembler::AssertFastElements(Register elements) {
     ASSERT(!elements.is(ip));
     Label ok;
     push(elements);
-    lwz(elements, FieldMemOperand(elements, HeapObject::kMapOffset));
+    LoadP(elements, FieldMemOperand(elements, HeapObject::kMapOffset));
     LoadRoot(ip, Heap::kFixedArrayMapRootIndex);
     cmp(elements, ip);
     beq(&ok);
@@ -2876,7 +2877,8 @@ void MacroAssembler::LoadGlobalFunctionInitialMap(Register function,
                                                   Register map,
                                                   Register scratch) {
   // Load the initial map. The global functions all have initial maps.
-  lwz(map, FieldMemOperand(function, JSFunction::kPrototypeOrInitialMapOffset));
+  LoadP(map,
+        FieldMemOperand(function, JSFunction::kPrototypeOrInitialMapOffset));
   if (emit_debug_code()) {
     Label ok, fail;
     CheckMap(map, scratch, Heap::kMetaMapRootIndex, &fail, DO_SMI_CHECK);
@@ -3000,7 +3002,7 @@ void MacroAssembler::AssertString(Register object) {
     andi(r0, object, Operand(kSmiTagMask));
     Check(ne, "Operand is not a string", cr0);
     push(object);
-    lwz(object, FieldMemOperand(object, HeapObject::kMapOffset));
+    LoadP(object, FieldMemOperand(object, HeapObject::kMapOffset));
     CompareInstanceType(object, object, FIRST_NONSTRING_TYPE);
     pop(object);
     Check(lt, "Operand is not a string");
@@ -3023,7 +3025,7 @@ void MacroAssembler::JumpIfNotHeapNumber(Register object,
                                          Register heap_number_map,
                                          Register scratch,
                                          Label* on_not_heap_number) {
-  lwz(scratch, FieldMemOperand(object, HeapObject::kMapOffset));
+  LoadP(scratch, FieldMemOperand(object, HeapObject::kMapOffset));
   AssertRegisterIsRoot(heap_number_map, Heap::kHeapNumberMapRootIndex);
   cmp(scratch, heap_number_map);
   bne(on_not_heap_number);
@@ -3038,8 +3040,8 @@ void MacroAssembler::JumpIfNonSmisNotBothSequentialAsciiStrings(
     Label* failure) {
   // Test that both first and second are sequential ASCII strings.
   // Assume that they are non-smis.
-  lwz(scratch1, FieldMemOperand(first, HeapObject::kMapOffset));
-  lwz(scratch2, FieldMemOperand(second, HeapObject::kMapOffset));
+  LoadP(scratch1, FieldMemOperand(first, HeapObject::kMapOffset));
+  LoadP(scratch2, FieldMemOperand(second, HeapObject::kMapOffset));
   lbz(scratch1, FieldMemOperand(scratch1, Map::kInstanceTypeOffset));
   lbz(scratch2, FieldMemOperand(scratch2, Map::kInstanceTypeOffset));
 
@@ -3088,9 +3090,10 @@ void MacroAssembler::AllocateHeapNumber(Register result,
   // Store heap number map in the allocated object.
   AssertRegisterIsRoot(heap_number_map, Heap::kHeapNumberMapRootIndex);
   if (tagging_mode == TAG_RESULT) {
-    stw(heap_number_map, FieldMemOperand(result, HeapObject::kMapOffset));
+    StoreP(heap_number_map, FieldMemOperand(result, HeapObject::kMapOffset),
+           r0);
   } else {
-    stw(heap_number_map, MemOperand(result, HeapObject::kMapOffset));
+    StoreP(heap_number_map, MemOperand(result, HeapObject::kMapOffset));
   }
 }
 
@@ -3128,8 +3131,8 @@ void MacroAssembler::CopyFields(Register dst,
   ASSERT(!tmp.is(no_reg));
 
   for (int i = 0; i < field_count; i++) {
-    LoadWord(tmp, FieldMemOperand(src, i * kPointerSize), r0);
-    StoreWord(tmp, FieldMemOperand(dst, i * kPointerSize), r0);
+    LoadP(tmp, FieldMemOperand(src, i * kPointerSize), r0);
+    StoreP(tmp, FieldMemOperand(dst, i * kPointerSize), r0);
   }
 }
 
@@ -3163,11 +3166,11 @@ void MacroAssembler::CopyBytes(Register src,
   }
   cmpi(length, Operand(kPointerSize));
   blt(&byte_loop);
-  lwz(scratch, MemOperand(src));
+  LoadP(scratch, MemOperand(src));
   addi(src, src, Operand(kPointerSize));
   if (CpuFeatures::IsSupported(UNALIGNED_ACCESSES)) {
     // currently false for PPC - but possible future opt
-    stw(scratch, MemOperand(dst));
+    StoreP(scratch, MemOperand(dst));
     addi(dst, dst, Operand(kPointerSize));
   } else {
 #if __BYTE_ORDER == __LITTLE_ENDIAN
@@ -3289,11 +3292,11 @@ void MacroAssembler::PrepareCallCFunction(int num_reg_arguments,
     and_(sp, sp, r0);
 #if defined(V8_HOST_ARCH_PPC)
     // On the simulator we pass args on the stack
-    stw(scratch, MemOperand(sp));
+    StoreP(scratch, MemOperand(sp));
 #else
     // On the simulator we pass args on the stack
-    StoreWord(scratch,
-              MemOperand(sp, stack_passed_arguments * kPointerSize), r0);
+    StoreP(scratch,
+           MemOperand(sp, stack_passed_arguments * kPointerSize), r0);
 #endif
   } else {
     // this case appears to never beused on PPC (even simulated)
@@ -3407,10 +3410,10 @@ void MacroAssembler::CallCFunctionHelper(Register function,
   if (ActivationFrameAlignment() > kPointerSize) {
 #if defined(V8_HOST_ARCH_PPC)
     // On real hardware we follow the ABI
-    lwz(sp, MemOperand(sp));
+    LoadP(sp, MemOperand(sp));
 #else
     // On the simulator we pass args on the stack
-    LoadWord(sp, MemOperand(sp, stack_passed_arguments * kPointerSize), r0);
+    LoadP(sp, MemOperand(sp, stack_passed_arguments * kPointerSize), r0);
 #endif
   } else {
     // this case appears to never beused on PPC (even simulated)
@@ -3609,7 +3612,7 @@ void MacroAssembler::HasColor(Register object,
   GetMarkBits(object, bitmap_scratch, mask_scratch);
 
   Label other_color, word_boundary;
-  lwz(ip, MemOperand(bitmap_scratch, MemoryChunk::kHeaderSize));
+  LoadP(ip, MemOperand(bitmap_scratch, MemoryChunk::kHeaderSize));
   and_(r0, ip, mask_scratch, SetRC);
   b(first_bit == 1 ? eq : ne, &other_color, cr0);
   // Shift left 1
@@ -3620,7 +3623,8 @@ void MacroAssembler::HasColor(Register object,
   b(&other_color);
 
   bind(&word_boundary);
-  lwz(ip, MemOperand(bitmap_scratch, MemoryChunk::kHeaderSize + kPointerSize));
+  LoadP(ip, MemOperand(bitmap_scratch,
+                       MemoryChunk::kHeaderSize + kPointerSize));
   andi(r0, ip, Operand(1));
   b(second_bit == 1 ? ne : eq, has_color, cr0);
   bind(&other_color);
@@ -3634,7 +3638,7 @@ void MacroAssembler::JumpIfDataObject(Register value,
                                       Register scratch,
                                       Label* not_data_object) {
   Label is_data_object;
-  lwz(scratch, FieldMemOperand(value, HeapObject::kMapOffset));
+  LoadP(scratch, FieldMemOperand(value, HeapObject::kMapOffset));
   CompareRoot(scratch, Heap::kHeapNumberMapRootIndex);
   beq(&is_data_object);
   ASSERT(kIsIndirectStringTag == 1 && kIsIndirectStringMask == 1);
@@ -3689,7 +3693,7 @@ void MacroAssembler::EnsureNotWhite(
 
   // Since both black and grey have a 1 in the first position and white does
   // not have a 1 there we only need to check one bit.
-  lwz(load_scratch, MemOperand(bitmap_scratch, MemoryChunk::kHeaderSize));
+  LoadP(load_scratch, MemOperand(bitmap_scratch, MemoryChunk::kHeaderSize));
   and_(r0, mask_scratch, load_scratch, SetRC);
   bne(&done, cr0);
 
@@ -3715,7 +3719,7 @@ void MacroAssembler::EnsureNotWhite(
 
 
   // Check for heap-number
-  lwz(map, FieldMemOperand(value, HeapObject::kMapOffset));
+  LoadP(map, FieldMemOperand(value, HeapObject::kMapOffset));
   CompareRoot(map, Heap::kHeapNumberMapRootIndex);
   bne(&maybe_string_object);
   li(length, Operand(HeapNumber::kSize));
@@ -3751,7 +3755,7 @@ void MacroAssembler::EnsureNotWhite(
   //              the length multiplied by 2.
   //   - (64-bit) we compute the offset in the 2-byte array
   ASSERT(kAsciiStringTag == 4 && kStringEncodingMask == 4);
-  lwz(ip, FieldMemOperand(value, String::kLengthOffset));
+  LoadP(ip, FieldMemOperand(value, String::kLengthOffset));
   andi(r0, instance_type, Operand(kStringEncodingMask));
   beq(&is_encoded, cr0);
   SmiUntag(ip);
@@ -3772,9 +3776,9 @@ void MacroAssembler::EnsureNotWhite(
   bind(&is_data_object);
   // Value is a data object, and it is white.  Mark it black.  Since we know
   // that the object is white we can make it black by flipping one bit.
-  lwz(ip, MemOperand(bitmap_scratch, MemoryChunk::kHeaderSize));
+  LoadP(ip, MemOperand(bitmap_scratch, MemoryChunk::kHeaderSize));
   orx(ip, ip, mask_scratch);
-  stw(ip, MemOperand(bitmap_scratch, MemoryChunk::kHeaderSize));
+  StoreP(ip, MemOperand(bitmap_scratch, MemoryChunk::kHeaderSize));
 
   mov(ip, Operand(~Page::kPageAlignmentMask));
   and_(bitmap_scratch, bitmap_scratch, ip);
@@ -3867,19 +3871,19 @@ void MacroAssembler::ClampDoubleToUint8(Register result_reg,
 
 void MacroAssembler::LoadInstanceDescriptors(Register map,
                                              Register descriptors) {
-  lwz(descriptors, FieldMemOperand(map, Map::kDescriptorsOffset));
+  LoadP(descriptors, FieldMemOperand(map, Map::kDescriptorsOffset));
 }
 
 
 void MacroAssembler::NumberOfOwnDescriptors(Register dst, Register map) {
-  lwz(dst, FieldMemOperand(map, Map::kBitField3Offset));
+  LoadP(dst, FieldMemOperand(map, Map::kBitField3Offset));
   DecodeField<Map::NumberOfOwnDescriptorsBits>(dst);
 }
 
 
 void MacroAssembler::EnumLength(Register dst, Register map) {
   STATIC_ASSERT(Map::EnumLengthBits::kShift == 0);
-  lwz(dst, FieldMemOperand(map, Map::kBitField3Offset));
+  LoadP(dst, FieldMemOperand(map, Map::kBitField3Offset));
   LoadSmiLiteral(r0, Smi::FromInt(Map::EnumLengthBits::kMask));
   and_(dst, dst, r0);
 }
@@ -3893,7 +3897,7 @@ void MacroAssembler::CheckEnumCache(Register null_value, Label* call_runtime) {
 
   // Check if the enum length field is properly initialized, indicating that
   // there is an enum cache.
-  lwz(r4, FieldMemOperand(r5, HeapObject::kMapOffset));
+  LoadP(r4, FieldMemOperand(r5, HeapObject::kMapOffset));
 
   EnumLength(r6, r4);
   CmpSmiLiteral(r6, Smi::FromInt(Map::kInvalidEnumCache), r0);
@@ -3902,7 +3906,7 @@ void MacroAssembler::CheckEnumCache(Register null_value, Label* call_runtime) {
   b(&start);
 
   bind(&next);
-  lwz(r4, FieldMemOperand(r5, HeapObject::kMapOffset));
+  LoadP(r4, FieldMemOperand(r5, HeapObject::kMapOffset));
 
   // For all objects but the receiver, check that the cache is empty.
   EnumLength(r6, r4);
@@ -3913,11 +3917,11 @@ void MacroAssembler::CheckEnumCache(Register null_value, Label* call_runtime) {
 
   // Check that there are no elements. Register r5 contains the current JS
   // object we've reached through the prototype chain.
-  lwz(r5, FieldMemOperand(r5, JSObject::kElementsOffset));
+  LoadP(r5, FieldMemOperand(r5, JSObject::kElementsOffset));
   cmp(r5, empty_fixed_array_value);
   bne(call_runtime);
 
-  lwz(r5, FieldMemOperand(r4, Map::kPrototypeOffset));
+  LoadP(r5, FieldMemOperand(r4, Map::kPrototypeOffset));
   cmp(r5, null_value);
   bne(&next);
 }
