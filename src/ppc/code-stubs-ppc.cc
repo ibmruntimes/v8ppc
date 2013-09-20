@@ -1541,7 +1541,7 @@ void ToBooleanStub::Generate(MacroAssembler* masm) {
   }
 
   if (types_.NeedsMap()) {
-    __ lwz(map, FieldMemOperand(tos_, HeapObject::kMapOffset));
+    __ LoadP(map, FieldMemOperand(tos_, HeapObject::kMapOffset));
 
     if (types_.CanBeUndetectable()) {
       Label not_undetectable;
@@ -1571,7 +1571,7 @@ void ToBooleanStub::Generate(MacroAssembler* masm) {
     Label not_string;
     __ CompareInstanceType(map, ip, FIRST_NONSTRING_TYPE);
     __ bge(&not_string);
-    __ lwz(tos_, FieldMemOperand(tos_, String::kLengthOffset));
+    __ LoadP(tos_, FieldMemOperand(tos_, String::kLengthOffset));
     __ Ret();  // the string length is OK as the return value
     __ bind(&not_string);
   }

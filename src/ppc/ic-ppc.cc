@@ -288,7 +288,7 @@ static void GenerateKeyedLoadReceiverCheck(MacroAssembler* masm,
   // Check that the object isn't a smi.
   __ JumpIfSmi(receiver, slow);
   // Get the map of the receiver.
-  __ lwz(map, FieldMemOperand(receiver, HeapObject::kMapOffset));
+  __ LoadP(map, FieldMemOperand(receiver, HeapObject::kMapOffset));
   // Check bit field.
   __ lbz(scratch, FieldMemOperand(map, Map::kBitFieldOffset));
   ASSERT(((1 << Map::kIsAccessCheckNeeded) | (1 << interceptor_bit)) < 0x8000);
@@ -1033,8 +1033,8 @@ void KeyedLoadIC::GenerateGeneric(MacroAssembler* masm) {
   __ Ret();
 
   __ bind(&check_number_dictionary);
-  __ lwz(r7, FieldMemOperand(receiver, JSObject::kElementsOffset));
-  __ lwz(r6, FieldMemOperand(r7, JSObject::kMapOffset));
+  __ LoadP(r7, FieldMemOperand(receiver, JSObject::kElementsOffset));
+  __ LoadP(r6, FieldMemOperand(r7, JSObject::kMapOffset));
 
   // Check whether the elements is a number dictionary.
   // r3: key
@@ -1061,15 +1061,15 @@ void KeyedLoadIC::GenerateGeneric(MacroAssembler* masm) {
 
   // If the receiver is a fast-case object, check the keyed lookup
   // cache. Otherwise probe the dictionary.
-  __ lwz(r6, FieldMemOperand(r4, JSObject::kPropertiesOffset));
-  __ lwz(r7, FieldMemOperand(r6, HeapObject::kMapOffset));
+  __ LoadP(r6, FieldMemOperand(r4, JSObject::kPropertiesOffset));
+  __ LoadP(r7, FieldMemOperand(r6, HeapObject::kMapOffset));
   __ LoadRoot(ip, Heap::kHashTableMapRootIndex);
   __ cmp(r7, ip);
   __ beq(&probe_dictionary);
 
   // Load the map of the receiver, compute the keyed lookup cache hash
   // based on 32 bits of the map pointer and the string hash.
-  __ lwz(r5, FieldMemOperand(r4, HeapObject::kMapOffset));
+  __ LoadP(r5, FieldMemOperand(r4, HeapObject::kMapOffset));
   __ srawi(r6, r5, KeyedLookupCache::kMapHashShift);
   __ lwz(r7, FieldMemOperand(r3, String::kHashFieldOffset));
   __ srawi(r7, r7, String::kHashShift);
@@ -1095,22 +1095,22 @@ void KeyedLoadIC::GenerateGeneric(MacroAssembler* masm) {
   for (int i = 0; i < kEntriesPerBucket - 1; i++) {
     Label try_next_entry;
     // Load map and move r7 to next entry.
-    __ lwz(r8, MemOperand(r7));
+    __ LoadP(r8, MemOperand(r7));
     __ addi(r7, r7, Operand(kPointerSize * 2));
     __ cmp(r5, r8);
     __ bne(&try_next_entry);
-    __ lwz(r8, MemOperand(r7, -kPointerSize));  // Load symbol
+    __ LoadP(r8, MemOperand(r7, -kPointerSize));  // Load symbol
     __ cmp(r3, r8);
     __ beq(&hit_on_nth_entry[i]);
     __ bind(&try_next_entry);
   }
 
   // Last entry: Load map and move r7 to symbol.
-  __ lwz(r8, MemOperand(r7));
+  __ LoadP(r8, MemOperand(r7));
   __ addi(r7, r7, Operand(kPointerSize));
   __ cmp(r5, r8);
   __ bne(&slow);
-  __ lwz(r8, MemOperand(r7));
+  __ LoadP(r8, MemOperand(r7));
   __ cmp(r3, r8);
   __ bne(&slow);
 

@@ -631,7 +631,7 @@ void Builtins::Generate_StringConstructCode(MacroAssembler* masm) {
   __ subi(r3, r3, Operand(1));
   __ slwi(r3, r3, Operand(kPointerSizeLog2));
   __ add(sp, sp, r3);
-  __ lwz(r3, MemOperand(sp));
+  __ LoadP(r3, MemOperand(sp));
   // sp now point to args[0], drop args[0] + receiver.
   __ Drop(2);
 
@@ -674,13 +674,13 @@ void Builtins::Generate_StringConstructCode(MacroAssembler* masm) {
     __ cmpi(r7, Operand(0, RelocInfo::NONE));
     __ Assert(eq, "Unexpected unused properties of string wrapper");
   }
-  __ stw(map, FieldMemOperand(r3, HeapObject::kMapOffset));
+  __ StoreP(map, FieldMemOperand(r3, HeapObject::kMapOffset), r0);
 
   __ LoadRoot(r6, Heap::kEmptyFixedArrayRootIndex);
-  __ stw(r6, FieldMemOperand(r3, JSObject::kPropertiesOffset));
-  __ stw(r6, FieldMemOperand(r3, JSObject::kElementsOffset));
+  __ StoreP(r6, FieldMemOperand(r3, JSObject::kPropertiesOffset), r0);
+  __ StoreP(r6, FieldMemOperand(r3, JSObject::kElementsOffset), r0);
 
-  __ stw(argument, FieldMemOperand(r3, JSValue::kValueOffset));
+  __ StoreP(argument, FieldMemOperand(r3, JSValue::kValueOffset), r0);
 
   // Ensure the object is fully initialized.
   STATIC_ASSERT(JSValue::kSize == 4 * kPointerSize);
@@ -694,7 +694,7 @@ void Builtins::Generate_StringConstructCode(MacroAssembler* masm) {
   __ JumpIfSmi(r3, &convert_argument);
 
   // Is it a String?
-  __ lwz(r5, FieldMemOperand(r3, HeapObject::kMapOffset));
+  __ LoadP(r5, FieldMemOperand(r3, HeapObject::kMapOffset));
   __ lbz(r6, FieldMemOperand(r5, Map::kInstanceTypeOffset));
   STATIC_ASSERT(kNotStringTag != 0);
   __ andi(r0, r6, Operand(kIsNotStringMask));

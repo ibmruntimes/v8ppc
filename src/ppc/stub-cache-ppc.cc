@@ -2436,7 +2436,7 @@ Handle<Code> CallStubCompiler::CompileCallConstant(Handle<Object> object,
 
   // Get the receiver from the stack
   const int argc = arguments().immediate();
-  __ LoadWord(r4, MemOperand(sp, argc * kPointerSize), r0);
+  __ LoadP(r4, MemOperand(sp, argc * kPointerSize), r0);
 
   // Check that the receiver isn't a smi.
   if (check != NUMBER_CHECK) {
