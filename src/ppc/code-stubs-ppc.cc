@@ -128,12 +128,13 @@ void FastNewClosureStub::Generate(MacroAssembler* masm) {
   // write barrier because the allocated object is in new space.
   __ LoadRoot(r4, Heap::kEmptyFixedArrayRootIndex);
   __ LoadRoot(r8, Heap::kTheHoleValueRootIndex);
-  __ stw(r4, FieldMemOperand(r3, JSObject::kPropertiesOffset));
-  __ stw(r4, FieldMemOperand(r3, JSObject::kElementsOffset));
-  __ stw(r8, FieldMemOperand(r3, JSFunction::kPrototypeOrInitialMapOffset));
-  __ stw(r6, FieldMemOperand(r3, JSFunction::kSharedFunctionInfoOffset));
-  __ stw(cp, FieldMemOperand(r3, JSFunction::kContextOffset));
-  __ stw(r4, FieldMemOperand(r3, JSFunction::kLiteralsOffset));
+  __ StoreP(r4, FieldMemOperand(r3, JSObject::kPropertiesOffset), r0);
+  __ StoreP(r4, FieldMemOperand(r3, JSObject::kElementsOffset), r0);
+  __ StoreP(r8, FieldMemOperand(r3, JSFunction::kPrototypeOrInitialMapOffset),
+            r0);
+  __ StoreP(r6, FieldMemOperand(r3, JSFunction::kSharedFunctionInfoOffset), r0);
+  __ StoreP(cp, FieldMemOperand(r3, JSFunction::kContextOffset), r0);
+  __ StoreP(r4, FieldMemOperand(r3, JSFunction::kLiteralsOffset), r0);
 
   // Initialize the code pointer in the function to be the one
   // found in the shared function info object.
@@ -141,17 +142,17 @@ void FastNewClosureStub::Generate(MacroAssembler* masm) {
   Label check_optimized;
   Label install_unoptimized;
   if (FLAG_cache_optimized_code) {
-    __ lwz(r4,
-           FieldMemOperand(r6, SharedFunctionInfo::kOptimizedCodeMapOffset));
+    __ LoadP(r4,
+             FieldMemOperand(r6, SharedFunctionInfo::kOptimizedCodeMapOffset));
     __ cmpi(r4, Operand::Zero());
     __ bne(&check_optimized);
   }
   __ bind(&install_unoptimized);
   __ LoadRoot(r7, Heap::kUndefinedValueRootIndex);
-  __ stw(r7, FieldMemOperand(r3, JSFunction::kNextFunctionLinkOffset));
-  __ lwz(r6, FieldMemOperand(r6, SharedFunctionInfo::kCodeOffset));
+  __ StoreP(r7, FieldMemOperand(r3, JSFunction::kNextFunctionLinkOffset), r0);
+  __ LoadP(r6, FieldMemOperand(r6, SharedFunctionInfo::kCodeOffset));
   __ addi(r6, r6, Operand(Code::kHeaderSize - kHeapObjectTag));
-  __ stw(r6, FieldMemOperand(r3, JSFunction::kCodeEntryOffset));
+  __ StoreP(r6, FieldMemOperand(r3, JSFunction::kCodeEntryOffset), r0);
 
   // Return result. The argument function info has been popped already.
   __ Ret();
@@ -165,14 +166,14 @@ void FastNewClosureStub::Generate(MacroAssembler* masm) {
   // The optimized code map must never be empty, so check the first elements.
   Label install_optimized;
   // Speculatively move code object into r7
-  __ lwz(r7, FieldMemOperand(r4, FixedArray::kHeaderSize + kPointerSize));
-  __ lwz(r8, FieldMemOperand(r4, FixedArray::kHeaderSize));
+  __ LoadP(r7, FieldMemOperand(r4, FixedArray::kHeaderSize + kPointerSize));
+  __ LoadP(r8, FieldMemOperand(r4, FixedArray::kHeaderSize));
   __ cmp(r5, r8);
   __ beq(&install_optimized);
 
   // Iterate through the rest of map backwards.  r7 holds an index as a Smi.
   Label loop;
-  __ lwz(r7, FieldMemOperand(r4, FixedArray::kLengthOffset));
+  __ LoadP(r7, FieldMemOperand(r4, FixedArray::kLengthOffset));
   __ bind(&loop);
   // Do not double check first entry.
 
@@ -182,7 +183,7 @@ void FastNewClosureStub::Generate(MacroAssembler* masm) {
   __ SubSmiLiteral(r7, r7, Smi::FromInt(SharedFunctionInfo::kEntryLength), r0);
   __ addi(r8, r4, Operand(FixedArray::kHeaderSize - kHeapObjectTag));
   __ SmiToPtrArrayOffset(r9, r7);
-  __ lwzx(r8, MemOperand(r8, r9));
+  __ LoadPX(r8, MemOperand(r8, r9));
   __ cmp(r5, r8);
   __ bne(&loop);
   // Hit: fetch the optimized code.
@@ -200,15 +201,15 @@ void FastNewClosureStub::Generate(MacroAssembler* masm) {
   // unmangle them on marking or do nothing as the whole map is discarded on
   // major GC anyway.
   __ addi(r7, r7, Operand(Code::kHeaderSize - kHeapObjectTag));
-  __ stw(r7, FieldMemOperand(r3, JSFunction::kCodeEntryOffset));
+  __ StoreP(r7, FieldMemOperand(r3, JSFunction::kCodeEntryOffset), r0);
 
   // Now link a function into a list of optimized functions.
-  __ lwz(r7, ContextOperand(r5, Context::OPTIMIZED_FUNCTIONS_LIST));
+  __ LoadP(r7, ContextOperand(r5, Context::OPTIMIZED_FUNCTIONS_LIST));
 
-  __ stw(r7, FieldMemOperand(r3, JSFunction::kNextFunctionLinkOffset));
+  __ StoreP(r7, FieldMemOperand(r3, JSFunction::kNextFunctionLinkOffset), r0);
   // No need for write barrier as JSFunction (eax) is in the new space.
 
-  __ stw(r3, ContextOperand(r5, Context::OPTIMIZED_FUNCTIONS_LIST));
+  __ StoreP(r3, ContextOperand(r5, Context::OPTIMIZED_FUNCTIONS_LIST), r0);
   // Store JSFunction (eax) into edx before issuing write barrier as
   // it clobbers all the registers passed.
   __ mr(r7, r3);
@@ -411,13 +412,13 @@ void FastCloneShallowArrayStub::Generate(MacroAssembler* masm) {
   // Load boilerplate object into r3 and check if we need to create a
   // boilerplate.
   Label slow_case;
-  __ lwz(r6, MemOperand(sp, 2 * kPointerSize));
-  __ lwz(r3, MemOperand(sp, 1 * kPointerSize));
+  __ LoadP(r6, MemOperand(sp, 2 * kPointerSize));
+  __ LoadP(r3, MemOperand(sp, 1 * kPointerSize));
   __ addi(r6, r6, Operand(FixedArray::kHeaderSize - kHeapObjectTag));
 
   __ mr(r0, r3);
   __ SmiToPtrArrayOffset(r3, r3);
-  __ lwzx(r6, MemOperand(r6, r3));
+  __ LoadPX(r6, MemOperand(r6, r3));
   __ mr(r3, r0);
 
   __ CompareRoot(r6, Heap::kUndefinedValueRootIndex);
@@ -426,8 +427,8 @@ void FastCloneShallowArrayStub::Generate(MacroAssembler* masm) {
   FastCloneShallowArrayStub::Mode mode = mode_;
   if (mode == CLONE_ANY_ELEMENTS) {
     Label double_elements, check_fast_elements;
-    __ lwz(r3, FieldMemOperand(r6, JSArray::kElementsOffset));
-    __ lwz(r3, FieldMemOperand(r3, HeapObject::kMapOffset));
+    __ LoadP(r3, FieldMemOperand(r6, JSArray::kElementsOffset));
+    __ LoadP(r3, FieldMemOperand(r3, HeapObject::kMapOffset));
     __ CompareRoot(r3, Heap::kFixedCOWArrayMapRootIndex);
     __ bne(&check_fast_elements);
     GenerateFastCloneShallowArrayCommon(masm, 0,
@@ -465,8 +466,8 @@ void FastCloneShallowArrayStub::Generate(MacroAssembler* masm) {
       expected_map_index = Heap::kFixedCOWArrayMapRootIndex;
     }
     __ push(r6);
-    __ lwz(r6, FieldMemOperand(r6, JSArray::kElementsOffset));
-    __ lwz(r6, FieldMemOperand(r6, HeapObject::kMapOffset));
+    __ LoadP(r6, FieldMemOperand(r6, JSArray::kElementsOffset));
+    __ LoadP(r6, FieldMemOperand(r6, HeapObject::kMapOffset));
     __ CompareRoot(r6, expected_map_index);
     __ Assert(eq, message);
     __ pop(r6);
@@ -495,12 +496,12 @@ void FastCloneShallowObjectStub::Generate(MacroAssembler* masm) {
   // Load boilerplate object into r3 and check if we need to create a
   // boilerplate.
   Label slow_case;
-  __ lwz(r6, MemOperand(sp, 3 * kPointerSize));
-  __ lwz(r3, MemOperand(sp, 2 * kPointerSize));
+  __ LoadP(r6, MemOperand(sp, 3 * kPointerSize));
+  __ LoadP(r3, MemOperand(sp, 2 * kPointerSize));
   __ addi(r6, r6, Operand(FixedArray::kHeaderSize - kHeapObjectTag));
   __ mr(r0, r3);
   __ SmiToPtrArrayOffset(r3, r3);
-  __ lwzx(r6, MemOperand(r6, r3));
+  __ LoadPX(r6, MemOperand(r6, r3));
   __ mr(r3, r0);
 
   __ CompareRoot(r6, Heap::kUndefinedValueRootIndex);
@@ -509,7 +510,7 @@ void FastCloneShallowObjectStub::Generate(MacroAssembler* masm) {
   // Check that the boilerplate contains only fast properties and we can
   // statically determine the instance size.
   int size = JSObject::kHeaderSize + length_ * kPointerSize;
-  __ lwz(r3, FieldMemOperand(r6, HeapObject::kMapOffset));
+  __ LoadP(r3, FieldMemOperand(r6, HeapObject::kMapOffset));
   __ lbz(r3, FieldMemOperand(r3, Map::kInstanceSizeOffset));
   __ cmpi(r3, Operand(size >> kPointerSizeLog2));
   __ bne(&slow_case);
@@ -518,8 +519,8 @@ void FastCloneShallowObjectStub::Generate(MacroAssembler* masm) {
   // properties from the boilerplate.
   __ AllocateInNewSpace(size, r3, r4, r5, &slow_case, TAG_OBJECT);
   for (int i = 0; i < size; i += kPointerSize) {
-    __ lwz(r4, FieldMemOperand(r6, i));
-    __ stw(r4, FieldMemOperand(r3, i));
+    __ LoadP(r4, FieldMemOperand(r6, i));
+    __ StoreP(r4, FieldMemOperand(r3, i), r0);
   }
 
   // Return and remove the on-stack parameters.
