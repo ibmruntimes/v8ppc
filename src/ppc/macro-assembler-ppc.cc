@@ -4175,47 +4175,6 @@ void MacroAssembler::StoreP(Register src, const MemOperand& mem,
   }
 }
 
-void MacroAssembler::LoadPU(Register dst, const MemOperand& mem) {
-#if V8_TARGET_ARCH_PPC64
-  ldu(dst, mem);
-#else
-  lwzu(dst, mem);
-#endif
-}
-
-void MacroAssembler::LoadPUX(Register dst, const MemOperand& mem) {
-#if V8_TARGET_ARCH_PPC64
-  ldux(dst, mem);
-#else
-  lwzux(dst, mem);
-#endif
-}
-
-// Store a "pointer" sized value to the memory location with update
-void MacroAssembler::StorePU(Register src, const MemOperand& mem) {
-#if V8_TARGET_ARCH_PPC64
-  stdu(src, mem);
-#else
-  stwu(src, mem);
-#endif
-}
-
-void MacroAssembler::LoadPX(Register dst, const MemOperand& mem) {
-#if V8_TARGET_ARCH_PPC64
-  ldx(dst, mem);
-#else
-  lwzx(dst, mem);
-#endif
-}
-
-void MacroAssembler::StorePX(Register src, const MemOperand& mem) {
-#if V8_TARGET_ARCH_PPC64
-  stdx(src, mem);
-#else
-  stwx(src, mem);
-#endif
-}
-
 void MacroAssembler::LoadWordArith(Register dst, const MemOperand& mem,
                                    Register scratch) {
   int offset = mem.offset();
