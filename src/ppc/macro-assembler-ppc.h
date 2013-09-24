@@ -514,9 +514,11 @@ class MacroAssembler: public Assembler {
 
   // These exist to provide portability between 32 and 64bit
   void LoadP(Register dst, const MemOperand& mem, Register scratch = no_reg);
-  void LoadPX(Register src, const MemOperand& mem);
-  void StoreP(Register dst, const MemOperand& mem, Register scratch = no_reg);
-  void StorePU(Register dst, const MemOperand& mem);
+  void LoadPU(Register dst, const MemOperand& mem);
+  void LoadPX(Register dst, const MemOperand& mem);
+  void StoreP(Register src, const MemOperand& mem, Register scratch = no_reg);
+  void StorePU(Register src, const MemOperand& mem);
+  void StorePX(Register src, const MemOperand& mem);
 
   // ---------------------------------------------------------------------------
   // JavaScript invokes

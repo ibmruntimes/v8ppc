@@ -790,7 +790,7 @@ void MacroAssembler::InitializeNewString(Register string,
   StoreP(scratch1, FieldMemOperand(string, String::kLengthOffset), r0);
   li(scratch1, Operand(String::kEmptyHashField));
   StoreP(scratch2, FieldMemOperand(string, HeapObject::kMapOffset), r0);
-  StoreP(scratch1, FieldMemOperand(string, String::kHashFieldOffset), r0);
+  stw(scratch1, FieldMemOperand(string, String::kHashFieldOffset));
 }
 
 
@@ -4175,6 +4175,14 @@ void MacroAssembler::StoreP(Register src, const MemOperand& mem,
   }
 }
 
+void MacroAssembler::LoadPU(Register dst, const MemOperand& mem) {
+#if V8_TARGET_ARCH_PPC64
+  ldu(dst, mem);
+#else
+  lwzu(dst, mem);
+#endif
+}
+
 // Store a "pointer" sized value to the memory location with update
 void MacroAssembler::StorePU(Register src, const MemOperand& mem) {
 #if V8_TARGET_ARCH_PPC64
@@ -4184,11 +4192,19 @@ void MacroAssembler::StorePU(Register src, const MemOperand& mem) {
 #endif
 }
 
-void MacroAssembler::LoadPX(Register src, const MemOperand& mem) {
+void MacroAssembler::LoadPX(Register dst, const MemOperand& mem) {
 #if V8_TARGET_ARCH_PPC64
-  ldx(src, mem);
+  ldx(dst, mem);
 #else
-  lwzx(src, mem);
+  lwzx(dst, mem);
+#endif
+}
+
+void MacroAssembler::StorePX(Register src, const MemOperand& mem) {
+#if V8_TARGET_ARCH_PPC64
+  stdx(src, mem);
+#else
+  stwx(src, mem);
 #endif
 }
 

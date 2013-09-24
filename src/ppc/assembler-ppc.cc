@@ -1068,6 +1068,14 @@ void Assembler::ldx(Register rd, const MemOperand &src) {
   emit(EXT2 | LDX | rd.code()*B21 | ra.code()*B16 | rb.code()*B11);
 }
 
+void Assembler::ldu(Register rd, const MemOperand &src) {
+  int offset = src.offset();
+  ASSERT(!src.ra_.is(r0));
+  ASSERT(!(offset & 3) && is_int16(offset));
+  offset = kImm16Mask & offset;
+  emit(LD | rd.code()*B21 | src.ra().code()*B16 | offset | 1);
+}
+
 void Assembler::std(Register rs, const MemOperand &src) {
   int offset = src.offset();
   ASSERT(!src.ra_.is(r0));

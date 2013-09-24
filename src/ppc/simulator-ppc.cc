@@ -3080,10 +3080,16 @@ void Simulator::InstructionDecode(Instruction* instr) {
       int64_t ra_val = ra == 0 ? 0 : get_register(ra);
       int offset = SIGN_EXT_IMM16(instr->Bits(15, 0) & ~3);
       switch  (instr->Bits(1, 0)) {
-        case 0:  // ld
+        case 0:  {  // ld
+          intptr_t *result = ReadDW(ra_val+offset);
+          set_register(rt, *result);
+          break;
+        }
         case 1: {  // ldu
           intptr_t *result = ReadDW(ra_val+offset);
           set_register(rt, *result);
+          ASSERT(ra != 0);
+          set_register(ra, ra_val+offset);
           break;
         }
         case 2: {  // lwa
@@ -3092,12 +3098,6 @@ void Simulator::InstructionDecode(Instruction* instr) {
           break;
         }
       }
-#if 0  // temporary until we have LDU
-      if (opcode == LDU) {
-        ASSERT(ra != 0);
-        set_register(ra, ra_val+offset);
-      }
-#endif
       break;
     }
 
@@ -3329,7 +3329,7 @@ intptr_t Simulator::Call(byte* entry, int argument_count, ...) {
 
 
 uintptr_t Simulator::PushAddress(uintptr_t address) {
-  int new_sp = get_register(sp) - sizeof(uintptr_t);
+  uintptr_t new_sp = get_register(sp) - sizeof(uintptr_t);
   uintptr_t* stack_slot = reinterpret_cast<uintptr_t*>(new_sp);
   *stack_slot = address;
   set_register(sp, new_sp);
@@ -3338,7 +3338,7 @@ uintptr_t Simulator::PushAddress(uintptr_t address) {
 
 
 uintptr_t Simulator::PopAddress() {
-  int current_sp = get_register(sp);
+  uintptr_t current_sp = get_register(sp);
   uintptr_t* stack_slot = reinterpret_cast<uintptr_t*>(current_sp);
   uintptr_t address = *stack_slot;
   set_register(sp, current_sp + sizeof(uintptr_t));
