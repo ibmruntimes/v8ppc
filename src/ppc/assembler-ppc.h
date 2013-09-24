@@ -1175,9 +1175,6 @@ class Assembler : public AssemblerBase {
   // Patch branch instruction at pos to branch to given branch target pos
   void target_at_put(int pos, int target_pos);
 
-  // Say if we need to relocate with this mode.
-  bool MustUseReg(RelocInfo::Mode rmode);
-
   // Record reloc info for current pc_
   void RecordRelocInfo(RelocInfo::Mode rmode, intptr_t data = 0);
 

@@ -502,14 +502,6 @@ bool Assembler::is_near(Label* L, Condition cond) {
   return is_intn(offset, maxReach);
 }
 
-// We have to use a temporary register for things that can be relocated even
-// if they can be encoded in the 16 bits of immediate-offset instruction
-// space.  There is no guarantee that the relocated location can be similarly
-// encoded.
-bool Assembler::MustUseReg(RelocInfo::Mode rmode) {
-  return rmode != RelocInfo::NONE;
-}
-
 void Assembler::a_form(Instr instr,
                        DwVfpRegister frt,
                        DwVfpRegister fra,
@@ -1200,7 +1192,7 @@ void Assembler::function_descriptor() {
 // and only use the generic version when we require a fixed sequence
 void Assembler::mov(Register dst, const Operand& src) {
   BlockTrampolinePoolScope block_trampoline_pool(this);
-  if (MustUseReg(src.rmode_)) {
+  if (src.rmode_ != RelocInfo::NONE) {
     // some form of relocation needed
     RecordRelocInfo(src.rmode_, src.imm_);
   }
@@ -1220,10 +1212,20 @@ void Assembler::mov(Register dst, const Operand& src) {
   ori(dst, dst, Operand(lo_word));
 #else
   int value = src.immediate();
+  if (src.rmode_ == RelocInfo::NONE) {
+    // No relocation requirement, so we can do something optimal
+    if (is_int16(value)) {
+      li(dst, Operand(value));
+      return;
+    }
+  }
   int hi_word = static_cast<int>(value) >> 16;
   int lo_word = static_cast<int>(value) & 0XFFFF;
 
   lis(dst, Operand(SIGN_EXT_IMM16(hi_word)));
+  if ((src.rmode_ == RelocInfo::NONE) && (lo_word == 0)) {
+    return;
+  }
   ori(dst, dst, Operand(lo_word));
 #endif
 }
