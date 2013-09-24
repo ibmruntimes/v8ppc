@@ -3104,9 +3104,9 @@ void TranscendentalCacheStub::Generate(MacroAssembler* masm) {
     char* elem_out = reinterpret_cast<char*>(&(test_elem[0].output));
     // Two uint_32's and a pointer.
 #if V8_TARGET_ARCH_PPC64
-    CHECK_EQ(12, static_cast<int>(elem2_start - elem_start));
-#else
     CHECK_EQ(16, static_cast<int>(elem2_start - elem_start));
+#else
+    CHECK_EQ(12, static_cast<int>(elem2_start - elem_start));
 #endif
     CHECK_EQ(0, static_cast<int>(elem_in0 - elem_start));
     CHECK_EQ(kIntSize, static_cast<int>(elem_in1 - elem_start));

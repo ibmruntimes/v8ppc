@@ -1076,6 +1076,13 @@ void Assembler::ldu(Register rd, const MemOperand &src) {
   emit(LD | rd.code()*B21 | src.ra().code()*B16 | offset | 1);
 }
 
+void Assembler::ldux(Register rd, const MemOperand &src) {
+  Register ra = src.ra();
+  Register rb = src.rb();
+  ASSERT(!ra.is(r0));
+  emit(EXT2 | LDUX | rd.code()*B21 | ra.code()*B16 | rb.code()*B11);
+}
+
 void Assembler::std(Register rs, const MemOperand &src) {
   int offset = src.offset();
   ASSERT(!src.ra_.is(r0));

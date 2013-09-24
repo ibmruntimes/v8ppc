@@ -4183,6 +4183,14 @@ void MacroAssembler::LoadPU(Register dst, const MemOperand& mem) {
 #endif
 }
 
+void MacroAssembler::LoadPUX(Register dst, const MemOperand& mem) {
+#if V8_TARGET_ARCH_PPC64
+  ldux(dst, mem);
+#else
+  lwzux(dst, mem);
+#endif
+}
+
 // Store a "pointer" sized value to the memory location with update
 void MacroAssembler::StorePU(Register src, const MemOperand& mem) {
 #if V8_TARGET_ARCH_PPC64

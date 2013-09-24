@@ -2237,7 +2237,8 @@ void Simulator::DecodeExt2_9bit(Instruction* instr) {
       break;
     }
 #if V8_TARGET_ARCH_PPC64
-    case LDX: {
+    case LDX:
+    case LDUX: {
       int rt = instr->RTValue();
       int ra = instr->RAValue();
       int rb = instr->RBValue();
@@ -2245,6 +2246,10 @@ void Simulator::DecodeExt2_9bit(Instruction* instr) {
       intptr_t rb_val = get_register(rb);
       intptr_t *result = ReadDW(ra_val+rb_val);
       set_register(rt, *result);
+      if (opcode == LDUX) {
+        ASSERT(ra != 0 && ra != rt);
+        set_register(ra, ra_val+rb_val);
+      }
       break;
     }
     case STDX: {

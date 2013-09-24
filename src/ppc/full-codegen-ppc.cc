@@ -1228,7 +1228,7 @@ void FullCodeGenerator::VisitForInStatement(ForInStatement* stmt) {
   __ LoadP(r5, MemOperand(sp, 2 * kPointerSize));
   __ addi(r5, r5, Operand(FixedArray::kHeaderSize - kHeapObjectTag));
   __ SmiToPtrArrayOffset(r6, r3);
-  __ lwzx(r6, MemOperand(r6, r5));
+  __ LoadPX(r6, MemOperand(r6, r5));
 
   // Get the expected map from the stack or a smi in the
   // permanent slow case into register r2.
@@ -2664,10 +2664,14 @@ void FullCodeGenerator::EmitIsNonNegativeSmi(CallRuntime* expr) {
                          &if_true, &if_false, &fall_through);
 
   PrepareForBailoutBeforeSplit(expr, true, if_true, if_false);
-  ASSERT((kSmiTagMask | 0x80000000) == 0x80000001);
-  __ rlwinm(r0, r3, 1, 30, 31);
-  __ cmpi(r0, Operand::Zero());
   // was .. __ tst(r3, Operand(kSmiTagMask | 0x80000000));
+  ASSERT(kSmiTagMask == 1);
+#if V8_TARGET_ARCH_PPC64
+  __ rldicl(r0, r3, 1, kBitsPerPointer - 2);
+#else
+  __ rlwinm(r0, r3, 1, kBitsPerPointer - 2, kBitsPerPointer - 1);
+#endif
+  __ cmpi(r0, Operand::Zero());
   Split(eq, if_true, if_false, fall_through);
 
   context()->Plug(if_true, if_false);
@@ -3598,7 +3602,7 @@ void FullCodeGenerator::EmitGetFromCache(CallRuntime* expr) {
   __ addi(r6, cache, Operand(FixedArray::kHeaderSize - kHeapObjectTag));
   // r6 now points to the start of fixed array elements.
   __ SmiToPtrArrayOffset(r5, r5);
-  __ lwzux(r5, MemOperand(r6, r5));
+  __ LoadPUX(r5, MemOperand(r6, r5));
   // r6 now points to the key of the pair.
   __ cmp(key, r5);
   __ bne(&not_found);
@@ -3753,7 +3757,7 @@ void FullCodeGenerator::EmitFastAsciiArrayJoin(CallRuntime* expr) {
   __ li(string_length, Operand::Zero());
   __ addi(element,
           elements, Operand(FixedArray::kHeaderSize - kHeapObjectTag));
-  __ slwi(elements_end, array_length, Operand(kPointerSizeLog2));
+  __ ShiftLeftImm(elements_end, array_length, Operand(kPointerSizeLog2));
   __ add(elements_end, element, elements_end);
   // Loop condition: while (element < elements_end).
   // Live values in registers:
@@ -3842,7 +3846,7 @@ void FullCodeGenerator::EmitFastAsciiArrayJoin(CallRuntime* expr) {
   // Prepare for looping. Set up elements_end to end of the array. Set
   // result_pos to the position of the result where to write the first
   // character.
-  __ slwi(elements_end, array_length, Operand(kPointerSizeLog2));
+  __ ShiftLeftImm(elements_end, array_length, Operand(kPointerSizeLog2));
   __ add(elements_end, element, elements_end);
   result_pos = array_length;  // End of live range for array_length.
   array_length = no_reg;

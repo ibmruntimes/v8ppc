@@ -877,6 +877,7 @@ class Assembler : public AssemblerBase {
   void ld(Register rd, const MemOperand &src);
   void ldx(Register rd, const MemOperand &src);
   void ldu(Register rd, const MemOperand &src);
+  void ldux(Register rd, const MemOperand &src);
   void std(Register rs, const MemOperand &src);
   void stdx(Register rs, const MemOperand &src);
   void stdu(Register rs, const MemOperand &src);

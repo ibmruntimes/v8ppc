@@ -790,14 +790,20 @@ void Decoder::DecodeExt2(Instruction* instr) {
       Format(instr, "lhzux   'rt, 'ra, 'rb");
       break;
     }
+#if V8_TARGET_ARCH_PPC64
     case LDX: {
       Format(instr, "ldx     'rt, 'ra, 'rb");
+      break;
+    }
+    case LDUX: {
+      Format(instr, "ldux    'rt, 'ra, 'rb");
       break;
     }
     case STDX: {
       Format(instr, "stdx    'rt, 'ra, 'rb");
       break;
     }
+#endif
     default: {
       Unknown(instr);  // not used by V8
     }

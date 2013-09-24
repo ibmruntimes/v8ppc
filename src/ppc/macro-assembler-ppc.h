@@ -516,6 +516,7 @@ class MacroAssembler: public Assembler {
   void LoadP(Register dst, const MemOperand& mem, Register scratch = no_reg);
   void LoadPU(Register dst, const MemOperand& mem);
   void LoadPX(Register dst, const MemOperand& mem);
+  void LoadPUX(Register dst, const MemOperand& mem);
   void StoreP(Register src, const MemOperand& mem, Register scratch = no_reg);
   void StorePU(Register src, const MemOperand& mem);
   void StorePX(Register src, const MemOperand& mem);

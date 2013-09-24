@@ -192,6 +192,7 @@ enum OpcodeExt2 {
   ANDX = 28 << 1,
   CMPL = 32 << 1,
   SUBFX = 40 << 1,
+  LDUX = 53 << 1,
   DCBST = 54 << 1,
   LWZUX = 55 << 1,   // load word zero w/ update x-form
   ANDCX = 60 << 1,
