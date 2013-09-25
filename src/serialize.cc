@@ -941,7 +941,8 @@ void Deserializer::ReadChunk(Object** current,
       // allocation point and write a pointer to it to the current object.
       ALL_SPACES(kBackref, kPlain, kStartOfObject)
       ALL_SPACES(kBackrefWithSkip, kPlain, kStartOfObject)
-#if defined(V8_TARGET_ARCH_MIPS) || defined(V8_TARGET_ARCH_PPC)
+#if defined(V8_TARGET_ARCH_MIPS) || \
+    defined(V8_TARGET_ARCH_PPC) || defined(V8_TARGET_ARCH_PPC64)
       // Deserialize a new object from pointer found in code and write
       // a pointer to it to the current object. Required only for MIPS/PPC, and
       // omitted on the other architectures because it is fully unrolled and
@@ -1164,7 +1165,8 @@ int Serializer::RootIndex(HeapObject* heap_object, HowToCode from) {
   for (int i = 0; i < root_index_wave_front_; i++) {
     Object* root = heap->roots_array_start()[i];
     if (!root->IsSmi() && root == heap_object) {
-#if defined(V8_TARGET_ARCH_MIPS) || defined(V8_TARGET_ARCH_PPC)
+#if defined(V8_TARGET_ARCH_MIPS) || \
+    defined(V8_TARGET_ARCH_PPC) || defined(V8_TARGET_ARCH_PPC64)
       if (from == kFromCode) {
         // In order to avoid code bloat in the deserializer we don't
         // have support for the encoding that specifies a particular

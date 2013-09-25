@@ -3207,7 +3207,8 @@ intptr_t Simulator::Call(byte* entry, int argument_count, ...) {
   intptr_t original_stack = get_register(sp);
   // Compute position of stack on entry to generated code.
   // +2 is a hack for the LR slot + old SP on PPC
-  intptr_t entry_stack = (original_stack - (2 + stack_arg_count) * sizeof(intptr_t));
+  intptr_t entry_stack = (original_stack -
+                          (2 + stack_arg_count) * sizeof(intptr_t));
   if (OS::ActivationFrameAlignment() != 0) {
     entry_stack &= -OS::ActivationFrameAlignment();
   }

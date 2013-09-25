@@ -621,8 +621,12 @@ class Assembler : public AssemblerBase {
   // a target is resolved and written.
   static const int kSpecialTargetSize = 0;
 
-  // Number of consecutive instructions used to store 32bit constant.
-  static const int kInstructionsFor32BitConstant = 2;
+  // Number of consecutive instructions used to store pointer sized constant.
+#if V8_TARGET_ARCH_PPC64
+  static const int kInstructionsForPtrConstant = 5;
+#else
+  static const int kInstructionsForPtrConstant = 2;
+#endif
 
   // Distance between the instruction referring to the address of the call
   // target and the return address.

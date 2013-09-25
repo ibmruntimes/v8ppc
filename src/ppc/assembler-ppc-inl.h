@@ -96,7 +96,7 @@ Address RelocInfo::target_address_address() {
   // place, ready to be patched with the target.
 
   return reinterpret_cast<Address>(
-    pc_ + (Assembler::kInstructionsFor32BitConstant *
+    pc_ + (Assembler::kInstructionsForPtrConstant *
            Assembler::kInstrSize));
 }
 
@@ -449,7 +449,7 @@ return (Address)0;
 void Assembler::deserialization_set_special_target_at(
     Address instruction_payload, Address target) {
   set_target_address_at(
-      instruction_payload - kInstructionsFor32BitConstant * kInstrSize,
+      instruction_payload - kInstructionsForPtrConstant * kInstrSize,
       target);
 }
 
