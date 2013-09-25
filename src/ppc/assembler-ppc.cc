@@ -1227,8 +1227,7 @@ void Assembler::mov(Register dst, const Operand& src) {
   ori(dst, dst, Operand(lo_word));
 #else
   int value = src.immediate();
-  if (src.rmode_ == RelocInfo::NONE) {
-    // No relocation requirement, so we can do something optimal
+  if (!is_trampoline_pool_blocked()) {
     if (is_int16(value)) {
       li(dst, Operand(value));
       return;
@@ -1238,7 +1237,7 @@ void Assembler::mov(Register dst, const Operand& src) {
   int lo_word = static_cast<int>(value) & 0XFFFF;
 
   lis(dst, Operand(SIGN_EXT_IMM16(hi_word)));
-  if ((src.rmode_ == RelocInfo::NONE) && (lo_word == 0)) {
+  if ((!is_trampoline_pool_blocked()) && (lo_word == 0)) {
     return;
   }
   ori(dst, dst, Operand(lo_word));
