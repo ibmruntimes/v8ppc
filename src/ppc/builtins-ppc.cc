@@ -375,9 +375,11 @@ static void ArrayNativeCode(MacroAssembler* masm,
   __ b(&empty_array);
 
   __ bind(&not_empty_array);
-  // Posible optimization using rlwinm
-  __ mov(r0, Operand(kIntptrSignBit | kSmiTagMask));
-  __ and_(r6, r5, r0, SetRC);
+#if V8_TARGET_ARCH_PPC64
+  __ rldicl(r6, r5, 1, kBitsPerPointer - 2, SetRC);
+#else
+  __ rlwinm(r6, r5, 1, kBitsPerPointer - 2, kBitsPerPointer - 1, SetRC);
+#endif
   __ bne(call_generic_code, cr0);
 
   // Handle construction of an empty array of a certain size. Bail out if size
@@ -514,7 +516,7 @@ void Builtins::Generate_InternalArrayCode(MacroAssembler* masm) {
 
   if (FLAG_debug_code) {
     // Initial map for the builtin InternalArray functions should be maps.
-    __ lwz(r5, FieldMemOperand(r4, JSFunction::kPrototypeOrInitialMapOffset));
+    __ LoadP(r5, FieldMemOperand(r4, JSFunction::kPrototypeOrInitialMapOffset));
     STATIC_ASSERT(kSmiTagMask < 0x8000);
     __ andi(r0, r5, Operand(kSmiTagMask));
     __ Assert(ne, "Unexpected initial map for InternalArray function", cr0);
@@ -550,7 +552,7 @@ void Builtins::Generate_ArrayCode(MacroAssembler* masm) {
 
   if (FLAG_debug_code) {
     // Initial map for the builtin Array functions should be maps.
-    __ lwz(r5, FieldMemOperand(r4, JSFunction::kPrototypeOrInitialMapOffset));
+    __ LoadP(r5, FieldMemOperand(r4, JSFunction::kPrototypeOrInitialMapOffset));
     STATIC_ASSERT(kSmiTagMask < 0x8000);
     __ andi(r0, r5, Operand(kSmiTagMask));
     __ Assert(ne, "Unexpected initial map for Array function", cr0);
@@ -585,7 +587,7 @@ void Builtins::Generate_ArrayConstructCode(MacroAssembler* masm) {
     // The array construct code is only set for the builtin and internal
     // Array functions which always have a map.
     // Initial map for the builtin Array function should be a map.
-    __ lwz(r5, FieldMemOperand(r4, JSFunction::kPrototypeOrInitialMapOffset));
+    __ LoadP(r5, FieldMemOperand(r4, JSFunction::kPrototypeOrInitialMapOffset));
     __ andi(r0, r5, Operand(kSmiTagMask));
     __ Assert(ne, "Unexpected initial map for Array function", cr0);
     __ CompareObjectType(r5, r6, r7, MAP_TYPE);
@@ -629,7 +631,7 @@ void Builtins::Generate_StringConstructCode(MacroAssembler* masm) {
   __ beq(&no_arguments);
   // First args = sp[(argc - 1) * 4].
   __ subi(r3, r3, Operand(1));
-  __ slwi(r3, r3, Operand(kPointerSizeLog2));
+  __ ShiftLeftImm(r3, r3, Operand(kPointerSizeLog2));
   __ add(sp, sp, r3);
   __ LoadP(r3, MemOperand(sp));
   // sp now point to args[0], drop args[0] + receiver.
@@ -1319,7 +1321,7 @@ static void Generate_NotifyDeoptimizedHelper(MacroAssembler* masm,
   }
 
   // Get the full codegen state from the stack and untag it -> r9.
-  __ lwz(r9, MemOperand(sp, 0 * kPointerSize));
+  __ LoadP(r9, MemOperand(sp, 0 * kPointerSize));
   __ SmiUntag(r9);
   // Switch on the state.
   Label with_tos_register, unknown_state;
@@ -1329,7 +1331,7 @@ static void Generate_NotifyDeoptimizedHelper(MacroAssembler* masm,
   __ Ret();
 
   __ bind(&with_tos_register);
-  __ lwz(r3, MemOperand(sp, 1 * kPointerSize));
+  __ LoadP(r3, MemOperand(sp, 1 * kPointerSize));
   __ cmpi(r9, Operand(FullCodeGenerator::TOS_REG));
   __ bne(&unknown_state);
   __ addi(sp, sp, Operand(2 * kPointerSize));  // Remove state.
@@ -1375,7 +1377,7 @@ void Builtins::Generate_OnStackReplacement(MacroAssembler* masm) {
 
   // Lookup the function in the JavaScript frame and push it as an
   // argument to the on-stack replacement function.
-  __ lwz(r3, MemOperand(fp, JavaScriptFrameConstants::kFunctionOffset));
+  __ LoadP(r3, MemOperand(fp, JavaScriptFrameConstants::kFunctionOffset));
   {
     FrameScope scope(masm, StackFrame::INTERNAL);
     __ push(r3);
@@ -1626,9 +1628,9 @@ void Builtins::Generate_FunctionApply(MacroAssembler* masm) {
     EMIT_STUB_MARKER(320);
     FrameScope frame_scope(masm, StackFrame::INTERNAL);
 
-    __ lwz(r3, MemOperand(fp, kFunctionOffset));  // get the function
+    __ LoadP(r3, MemOperand(fp, kFunctionOffset));  // get the function
     __ push(r3);
-    __ lwz(r3, MemOperand(fp, kArgsOffset));  // get the args array
+    __ LoadP(r3, MemOperand(fp, kArgsOffset));  // get the args array
     __ push(r3);
     __ InvokeBuiltin(Builtins::APPLY_PREPARE, CALL_FUNCTION);
 
@@ -1646,7 +1648,7 @@ void Builtins::Generate_FunctionApply(MacroAssembler* masm) {
     __ bgt(&okay);  // Signed comparison.
 
     // Out of stack space.
-    __ lwz(r4, MemOperand(fp, kFunctionOffset));
+    __ LoadP(r4, MemOperand(fp, kFunctionOffset));
     __ push(r4);
     __ push(r3);
     __ InvokeBuiltin(Builtins::APPLY_OVERFLOW, CALL_FUNCTION);
@@ -1659,18 +1661,18 @@ void Builtins::Generate_FunctionApply(MacroAssembler* masm) {
     __ push(r4);
 
     // Get the receiver.
-    __ lwz(r3, MemOperand(fp, kRecvOffset));
+    __ LoadP(r3, MemOperand(fp, kRecvOffset));
 
     // Check that the function is a JS function (otherwise it must be a proxy).
     Label push_receiver;
-    __ lwz(r4, MemOperand(fp, kFunctionOffset));
+    __ LoadP(r4, MemOperand(fp, kFunctionOffset));
     __ CompareObjectType(r4, r5, r5, JS_FUNCTION_TYPE);
     __ bne(&push_receiver);
 
     // Change context eagerly to get the right global object if necessary.
-    __ lwz(cp, FieldMemOperand(r4, JSFunction::kContextOffset));
+    __ LoadP(cp, FieldMemOperand(r4, JSFunction::kContextOffset));
     // Load the shared function info while the function is still in r4.
-    __ lwz(r5, FieldMemOperand(r4, JSFunction::kSharedFunctionInfoOffset));
+    __ LoadP(r5, FieldMemOperand(r4, JSFunction::kSharedFunctionInfoOffset));
 
     // Compute the receiver.
     // Do not transform the receiver for strict mode functions.
@@ -1733,14 +1735,14 @@ void Builtins::Generate_FunctionApply(MacroAssembler* masm) {
 
     // Copy all arguments from the array to the stack.
     Label entry, loop;
-    __ lwz(r3, MemOperand(fp, kIndexOffset));
+    __ LoadP(r3, MemOperand(fp, kIndexOffset));
     __ b(&entry);
 
     // Load the current argument from the arguments array and push it to the
     // stack.
     // r3: current argument index
     __ bind(&loop);
-    __ lwz(r4, MemOperand(fp, kArgsOffset));
+    __ LoadP(r4, MemOperand(fp, kArgsOffset));
     __ push(r4);
     __ push(r3);
 
@@ -1749,14 +1751,14 @@ void Builtins::Generate_FunctionApply(MacroAssembler* masm) {
     __ push(r3);
 
     // Use inline caching to access the arguments.
-    __ lwz(r3, MemOperand(fp, kIndexOffset));
+    __ LoadP(r3, MemOperand(fp, kIndexOffset));
     __ AddSmiLiteral(r3, r3, Smi::FromInt(1), r0);
-    __ stw(r3, MemOperand(fp, kIndexOffset));
+    __ StoreP(r3, MemOperand(fp, kIndexOffset));
 
     // Test if the copy loop has finished copying all the elements from the
     // arguments object.
     __ bind(&entry);
-    __ lwz(r4, MemOperand(fp, kLimitOffset));
+    __ LoadP(r4, MemOperand(fp, kLimitOffset));
     __ cmp(r3, r4);
     __ bne(&loop);
 
@@ -1764,7 +1766,7 @@ void Builtins::Generate_FunctionApply(MacroAssembler* masm) {
     Label call_proxy;
     ParameterCount actual(r3);
     __ SmiUntag(r3);
-    __ lwz(r4, MemOperand(fp, kFunctionOffset));
+    __ LoadP(r4, MemOperand(fp, kFunctionOffset));
     __ CompareObjectType(r4, r5, r5, JS_FUNCTION_TYPE);
     __ bne(&call_proxy);
     __ InvokeFunction(r4, actual, CALL_FUNCTION,
