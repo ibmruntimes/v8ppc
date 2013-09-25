@@ -881,6 +881,7 @@ class Assembler : public AssemblerBase {
   void std(Register rs, const MemOperand &src);
   void stdx(Register rs, const MemOperand &src);
   void stdu(Register rs, const MemOperand &src);
+  void stdux(Register rs, const MemOperand &src);
   void rldic(Register dst, Register src, int sh, int mb, RCBit r = LeaveRC);
   void rldicl(Register dst, Register src, int sh, int mb, RCBit r = LeaveRC);
   void rldicr(Register dst, Register src, int sh, int me, RCBit r = LeaveRC);

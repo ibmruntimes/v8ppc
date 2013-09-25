@@ -99,6 +99,39 @@ bool AreAliased(Register reg1,
                 Register reg6 = no_reg);
 #endif
 
+// These exist to provide portability between 32 and 64bit
+#if V8_TARGET_ARCH_PPC64
+#define LoadPU             ldu
+#define LoadPX             ldx
+#define LoadPUX            ldux
+#define StorePU            stdu
+#define StorePX            stdx
+#define StorePUX           stdux
+#define ShiftLeftImm       sldi
+#define ShiftRightImm      srdi
+#define ClearLeftImm       clrldi
+#define ClearRightImm      clrrdi
+#define ShiftRightArithImm sradi
+#define ShiftLeft          sld
+#define ShiftRight         srd
+#define ShiftRightArith    srad
+#else
+#define LoadPU             lwzu
+#define LoadPX             lwzx
+#define LoadPUX            lwzux
+#define StorePU            stwu
+#define StorePX            stwx
+#define StorePUX           stwux
+#define ShiftLeftImm       slwi
+#define ShiftRightImm      srwi
+#define ClearLeftImm       clrlwi
+#define ClearRightImm      clrrwi
+#define ShiftRightArithImm srawi
+#define ShiftLeft          slw
+#define ShiftRight         srw
+#define ShiftRightArith    sraw
+#endif
+
 
 // MacroAssembler implements a collection of frequently used macros.
 class MacroAssembler: public Assembler {
@@ -514,12 +547,7 @@ class MacroAssembler: public Assembler {
 
   // These exist to provide portability between 32 and 64bit
   void LoadP(Register dst, const MemOperand& mem, Register scratch = no_reg);
-  void LoadPU(Register dst, const MemOperand& mem);
-  void LoadPX(Register dst, const MemOperand& mem);
-  void LoadPUX(Register dst, const MemOperand& mem);
   void StoreP(Register src, const MemOperand& mem, Register scratch = no_reg);
-  void StorePU(Register src, const MemOperand& mem);
-  void StorePX(Register src, const MemOperand& mem);
 
   // ---------------------------------------------------------------------------
   // JavaScript invokes
@@ -1236,25 +1264,6 @@ class MacroAssembler: public Assembler {
     ExtractBitRange(scratch, value, bitNumber, bitNumber, SetRC);
   }
 
-#if V8_TARGET_ARCH_PPC64
-#define ShiftLeftImm  sldi
-#define ShiftRightImm srdi
-#define ClearLeftImm  clrldi
-#define ClearRightImm clrrdi
-#define ShiftRightArithImm sradi
-#define ShiftLeft sld
-#define ShiftRight srd
-#define ShiftRightArith srad
-#else
-#define ShiftLeftImm  slwi
-#define ShiftRightImm srwi
-#define ClearLeftImm  clrlwi
-#define ClearRightImm clrrwi
-#define ShiftRightArithImm srawi
-#define ShiftLeft slw
-#define ShiftRight srw
-#define ShiftRightArith sraw
-#endif
 
   // ---------------------------------------------------------------------------
   // Smi utilities

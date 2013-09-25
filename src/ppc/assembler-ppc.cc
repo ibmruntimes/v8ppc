@@ -1106,6 +1106,13 @@ void Assembler::stdu(Register rs, const MemOperand &src) {
   emit(STD | rs.code()*B21 | src.ra().code()*B16 | offset | 1);
 }
 
+void Assembler::stdux(Register rs, const MemOperand &src) {
+  Register ra = src.ra();
+  Register rb = src.rb();
+  ASSERT(!ra.is(r0));
+  emit(EXT2 | STDUX | rs.code()*B21 | ra.code()*B16 | rb.code()*B11);
+}
+
 void Assembler::rldic(Register ra, Register rs, int sh, int mb, RCBit r) {
   md_form(EXT5 | RLDIC, ra, rs, sh, mb, r);
 }

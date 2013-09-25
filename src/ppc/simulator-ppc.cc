@@ -2252,7 +2252,8 @@ void Simulator::DecodeExt2_9bit(Instruction* instr) {
       }
       break;
     }
-    case STDX: {
+    case STDX:
+    case STDUX: {
       int rs = instr->RSValue();
       int ra = instr->RAValue();
       int rb = instr->RBValue();
@@ -2260,6 +2261,10 @@ void Simulator::DecodeExt2_9bit(Instruction* instr) {
       intptr_t rs_val = get_register(rs);
       intptr_t rb_val = get_register(rb);
       WriteDW(ra_val+rb_val, rs_val);
+      if (opcode == STDUX) {
+        ASSERT(ra != 0);
+        set_register(ra, ra_val+rb_val);
+      }
       break;
     }
 #endif

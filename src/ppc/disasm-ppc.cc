@@ -803,6 +803,10 @@ void Decoder::DecodeExt2(Instruction* instr) {
       Format(instr, "stdx    'rt, 'ra, 'rb");
       break;
     }
+    case STDUX: {
+      Format(instr, "stdux   'rt, 'ra, 'rb");
+      break;
+    }
 #endif
     default: {
       Unknown(instr);  // not used by V8

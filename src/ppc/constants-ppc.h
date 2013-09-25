@@ -206,13 +206,12 @@ enum OpcodeExt2 {
   ADDEX = 138 << 1,
   STDX = 149 << 1,
   STWX = 151 << 1,    // store word w/ x-form
+  STDUX = 181 << 1,
   STWUX = 183 << 1,   // store word w/ update x-form
 /*
   MTCRF
   MTMSR
-  STDX
   STWCXx
-  STDUX
   SUBFZEX
 */
   ADDZEX = 202 << 1,  // Add to Zero Extended
