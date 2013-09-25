@@ -3206,16 +3206,16 @@ intptr_t Simulator::Call(byte* entry, int argument_count, ...) {
   // Remaining arguments passed on stack.
   intptr_t original_stack = get_register(sp);
   // Compute position of stack on entry to generated code.
-  intptr_t entry_stack = (original_stack - stack_arg_count * sizeof(intptr_t)
-    - 8);  // -8 extra stack is a hack for the LR slot + old SP on PPC
+  // +2 is a hack for the LR slot + old SP on PPC
+  intptr_t entry_stack = (original_stack - (2 + stack_arg_count) * sizeof(intptr_t));
   if (OS::ActivationFrameAlignment() != 0) {
     entry_stack &= -OS::ActivationFrameAlignment();
   }
   // Store remaining arguments on stack, from low to high memory.
-  intptr_t* stack_argument = reinterpret_cast<intptr_t*>(entry_stack);
+  // +2 is a hack for the LR slot + old SP on PPC
+  intptr_t* stack_argument = reinterpret_cast<intptr_t*>(entry_stack) + 2;
   for (int i = 0; i < stack_arg_count; i++) {
-    // +2 extra stack is a hack for the LR slot + old SP on PPC
-    stack_argument[i + 2] = va_arg(parameters, intptr_t);
+    stack_argument[i] = va_arg(parameters, intptr_t);
   }
   va_end(parameters);
   set_register(sp, entry_stack);

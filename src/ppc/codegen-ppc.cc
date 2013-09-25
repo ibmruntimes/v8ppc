@@ -460,7 +460,8 @@ void StringCharLoadGenerator::Generate(MacroAssembler* masm,
   STATIC_CHECK(kShortExternalStringTag != 0);
   __ andi(r0, result, Operand(kShortExternalStringMask));
   __ bne(call_runtime, cr0);
-  __ LoadP(string, FieldMemOperand(string, ExternalString::kResourceDataOffset));
+  __ LoadP(string,
+           FieldMemOperand(string, ExternalString::kResourceDataOffset));
 
   Label ascii, done;
   __ bind(&check_encoding);
