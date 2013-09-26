@@ -1460,11 +1460,9 @@ class MacroAssembler: public Assembler {
 
   template<typename Field>
   void DecodeField(Register reg) {
-    static const int shift = Field::kShift;
-    static const int mask = (Field::kMask >> shift) << kSmiTagSize;
-    STATIC_ASSERT((mask & kImm16Mask) == mask);
-    srwi(reg, reg, Operand(shift));
-    andi(reg, reg, Operand(mask));
+    uintptr_t mask = reinterpret_cast<intptr_t>(Smi::FromInt(Field::kMask));
+    ExtractBitMask(reg, reg, mask);
+    SmiTag(reg);
   }
 
   // Activation support.
