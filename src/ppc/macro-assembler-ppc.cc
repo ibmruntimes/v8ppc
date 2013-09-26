@@ -711,6 +711,7 @@ void MacroAssembler::EnterExitFrame(bool save_doubles, int stack_space) {
   ASSERT_EQ(2 * kPointerSize, ExitFrameConstants::kCallerSPDisplacement);
   ASSERT_EQ(1 * kPointerSize, ExitFrameConstants::kCallerPCOffset);
   ASSERT_EQ(0 * kPointerSize, ExitFrameConstants::kCallerFPOffset);
+  ASSERT(stack_space > 0);
 
 #if 0
   // This is an opportunity to build a frame to wrap
@@ -755,27 +756,19 @@ void MacroAssembler::EnterExitFrame(bool save_doubles, int stack_space) {
     // since the sp slot and code slot were pushed after the fp.
   }
 
-  // Reserve place for the return address and stack space and align the frame
-  // preparing for calling the runtime function.
-  // Also - add 1 more for the LR storage
+  // Allocate and align the frame preparing for calling the runtime
+  // function.
+  stack_space += kNumRequiredStackFrameSlots;
+  subi(sp, sp, Operand(stack_space * kPointerSize));
   const int frame_alignment = MacroAssembler::ActivationFrameAlignment();
-  subi(sp, sp, Operand((stack_space + 1 + 1) * kPointerSize));
   if (frame_alignment > 0) {
     ASSERT(frame_alignment == 8);
     ClearRightImm(sp, sp, Operand(3));  // equivalent to &= -8
   }
 
-#if defined(V8_HOST_ARCH_PPC) && \
-  (defined(_AIX) || defined(V8_TARGET_ARCH_PPC64))
-  // roohack - too much reserved space, need to fix for proper ABI
-  subi(sp, sp, Operand(256));
-#endif
-
   // Set the exit frame sp value to point just before the return address
   // location.
-  // this is wrong on PowerPC, but we'll leave it for now
-  // on PowerPC we might want to just have a SP + LR slot
-  addi(r8, sp, Operand(kPointerSize));
+  addi(r8, sp, Operand((kStackFrameExtraParamSlot + 1) * kPointerSize));
   StoreP(r8, MemOperand(fp, ExitFrameConstants::kSPOffset));
 }
 
@@ -813,11 +806,6 @@ int MacroAssembler::ActivationFrameAlignment() {
 
 void MacroAssembler::LeaveExitFrame(bool save_doubles,
                                     Register argument_count) {
-#if defined(V8_HOST_ARCH_PPC) && \
-  (defined(_AIX) || defined(V8_TARGET_ARCH_PPC64))
-  // roohack - too much reserved space, need to fix for proper ABI
-  addi(sp, sp, Operand(256));
-#endif
   // Optionally restore all double registers.
   if (save_doubles) {
     // Calculate the stack location of the saved doubles and restore them.
@@ -2213,7 +2201,7 @@ void MacroAssembler::CallApiFunctionAndReturn(ExternalReference function,
   // The return value is pointer-sized non-scalar value.
   // Space has already been allocated on the stack which will pass as an
   // implicity first argument.
-  addi(r3, sp, Operand(kPointerSize));
+  addi(r3, sp, Operand((kStackFrameExtraParamSlot + 1) * kPointerSize));
 
   // Native call returns to the DirectCEntry stub which redirects to the
   // return address pushed on stack (could have moved after GC).
@@ -2578,7 +2566,11 @@ void MacroAssembler::CallRuntime(const Runtime::Function* f,
   // smarter.
   mov(r3, Operand(num_arguments));
   mov(r4, Operand(ExternalReference(f, isolate())));
+#if V8_TARGET_ARCH_PPC64
+  CEntryStub stub(f->result_size);
+#else
   CEntryStub stub(1);
+#endif
   CallStub(&stub);
 }
 
@@ -3279,11 +3271,13 @@ void MacroAssembler::PrepareCallCFunction(int num_reg_arguments,
   int stack_passed_arguments = CalculateStackPassedWords(
       num_reg_arguments, num_double_arguments);
   if (frame_alignment > kPointerSize) {
-    // Make stack end at alignment and make room for num_arguments - 4 words
-    // and the original value of sp (on native +2 empty slots to make ABI work)
+    // Make stack end at alignment and make room for stack arguments,
+    // the original value of sp and, on native, the required slots to
+    // make ABI work.
     mr(scratch, sp);
 #if defined(V8_HOST_ARCH_PPC)
-    subi(sp, sp, Operand((stack_passed_arguments + 1 + 2) * kPointerSize));
+    subi(sp, sp, Operand((stack_passed_arguments +
+                          kNumRequiredStackFrameSlots) * kPointerSize));
 #else
     subi(sp, sp, Operand((stack_passed_arguments + 1) * kPointerSize));
 #endif
@@ -3392,19 +3386,14 @@ void MacroAssembler::CallCFunctionHelper(Register function,
   // stays correct.
 #if defined(V8_HOST_ARCH_PPC) && \
   (defined(_AIX) || defined(V8_TARGET_ARCH_PPC64))
-  // roohack - too much reserved space, need to fix for proper ABI
-  subi(sp, sp, Operand(256));
   // AIX uses a function descriptor. When calling C code be aware
   // of this descriptor and pick up values from it
   LoadP(ToRegister(2), MemOperand(function, kPointerSize));
   LoadP(function, MemOperand(function, 0));
+#endif
 
   Call(function);
-  // roohack - restore the reserved space
-  addi(sp, sp, Operand(256));
-#else
-  Call(function);
-#endif
+
   int stack_passed_arguments = CalculateStackPassedWords(
       num_reg_arguments, num_double_arguments);
   if (ActivationFrameAlignment() > kPointerSize) {

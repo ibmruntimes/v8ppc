@@ -39,6 +39,7 @@
 #include "assembler.h"
 #include "ppc/constants-ppc.h"
 #include "ppc/simulator-ppc.h"
+#include "ppc/frames-ppc.h"
 
 #if defined(USE_SIMULATOR)
 
@@ -3206,15 +3207,16 @@ intptr_t Simulator::Call(byte* entry, int argument_count, ...) {
   // Remaining arguments passed on stack.
   intptr_t original_stack = get_register(sp);
   // Compute position of stack on entry to generated code.
-  // +2 is a hack for the LR slot + old SP on PPC
   intptr_t entry_stack = (original_stack -
-                          (2 + stack_arg_count) * sizeof(intptr_t));
+                          (kNumRequiredStackFrameSlots + stack_arg_count) *
+                          sizeof(intptr_t));
   if (OS::ActivationFrameAlignment() != 0) {
     entry_stack &= -OS::ActivationFrameAlignment();
   }
   // Store remaining arguments on stack, from low to high memory.
   // +2 is a hack for the LR slot + old SP on PPC
-  intptr_t* stack_argument = reinterpret_cast<intptr_t*>(entry_stack) + 2;
+  intptr_t* stack_argument = reinterpret_cast<intptr_t*>(entry_stack) +
+    kStackFrameExtraParamSlot;
   for (int i = 0; i < stack_arg_count; i++) {
     stack_argument[i] = va_arg(parameters, intptr_t);
   }

@@ -3532,6 +3532,7 @@ void CEntryStub::GenerateCore(MacroAssembler* masm,
   // r15: pointer to builtin function  (C callee-saved)
   // r16: pointer to the first argument (C callee-saved)
   Isolate* isolate = masm->isolate();
+  Register isolate_reg = no_reg;
 
   if (do_gc) {
     // Passing r3.
@@ -3549,57 +3550,49 @@ void CEntryStub::GenerateCore(MacroAssembler* masm,
     __ StoreP(r4, MemOperand(r3));
   }
 
+  // PPC LINUX ABI:
 #if defined(V8_HOST_ARCH_PPC)
   // Call C built-in on native hardware.
 #if defined(V8_TARGET_ARCH_PPC64)
-  // r3 = argc << 32 (for alignment), r4 = argv
-  __ ShiftLeftImm(r3, r14, Operand(32));
-  __ mr(r4, r16);
+  if (result_size_ < 2) {
+    // r3 = argc << 32 (for alignment), r4 = argv
+    __ ShiftLeftImm(r3, r14, Operand(32));
+    __ mr(r4, r16);
+    isolate_reg = r5;
+  } else {
+    ASSERT_EQ(2, result_size_);
+    // The return value is 16-byte non-scalar value.
+    // Use frame storage reserved by calling function to pass return
+    // buffer as implicit first argument.
+    __ addi(r3, sp, Operand((kStackFrameExtraParamSlot + 1) * kPointerSize));
+    // r4 = argc << 32 (for alignment), r5 = argv
+    __ ShiftLeftImm(r4, r14, Operand(32));
+    __ mr(r5, r16);
+    isolate_reg = r6;
+  }
 #elif defined(_AIX)  // 32-bit AIX
   // r3 = argc, r4 = argv
   __ mr(r3, r14);
   __ mr(r4, r16);
+  isolate_reg = r5;
 #else  // 32-bit linux
   // Use frame storage reserved by calling function
   // PPC passes C++ objects by reference not value
   // This builds an object in the stack frame
-  __ StoreP(r14, MemOperand(sp, 2 * kPointerSize));
-  __ StoreP(r16, MemOperand(sp, 3 * kPointerSize));
-  __ addi(r3, sp, Operand(2 * kPointerSize));
+  __ addi(r3, sp, Operand((kStackFrameExtraParamSlot + 1) * kPointerSize));
+  __ StoreP(r14, MemOperand(r3));
+  __ StoreP(r16, MemOperand(r3, kPointerSize));
+  isolate_reg = r4;
 #endif
 #else  // Simulated
   // Call C built-in using simulator.
   // r3 = argc, r4 = argv
   __ mr(r3, r14);
   __ mr(r4, r16);
+  isolate_reg = r5;
 #endif
 
-#if defined(V8_HOST_ARCH_ARM)  // this is never used -- may need
-                               // something similar for PPC?
-  int frame_alignment = MacroAssembler::ActivationFrameAlignment();
-  int frame_alignment_mask = frame_alignment - 1;
-  if (FLAG_debug_code) {
-    if (frame_alignment > kPointerSize) {
-      Label alignment_as_expected;
-      ASSERT(IsPowerOf2(frame_alignment));
-      __ tst(sp, Operand(frame_alignment_mask));
-      __ beq(&alignment_as_expected);
-      // Don't use Check here, as it will call Runtime_Abort re-entering here.
-      __ stop("Unexpected alignment");
-      __ bind(&alignment_as_expected);
-    }
-  }
-#endif
-
-
-#if defined(V8_HOST_ARCH_PPC) && \
-  !defined(_AIX) && !defined(V8_TARGET_ARCH_PPC64)
-  // PPC passes C++ objects by reference not value
-  // Thus argument 2 (r4) should be the isolate
-  __ mov(r4, Operand(ExternalReference::isolate_address()));
-#else
-  __ mov(r5, Operand(ExternalReference::isolate_address()));
-#endif
+  __ mov(isolate_reg, Operand(ExternalReference::isolate_address()));
 
 #if defined(V8_HOST_ARCH_PPC) && \
   (defined(_AIX) || defined(V8_TARGET_ARCH_PPC64))
@@ -3624,7 +3617,7 @@ void CEntryStub::GenerateCore(MacroAssembler* masm,
 // Constant used below is dependent on size of Call() macro instructions
     __ addi(r0, r8, Operand(20));
 
-    __ StoreP(r0, MemOperand(sp, 0));
+    __ StoreP(r0, MemOperand(sp, kStackFrameExtraParamSlot * kPointerSize));
     __ Call(r15);
   }
 
@@ -3640,6 +3633,14 @@ void CEntryStub::GenerateCore(MacroAssembler* masm,
   // check for failure result
   Label failure_returned;
   STATIC_ASSERT(((kFailureTag + 1) & kFailureTagMask) == 0);
+#if defined(V8_HOST_ARCH_PPC) && defined(V8_TARGET_ARCH_PPC64)
+  // If return value is on the stack, pop it to registers.
+  if (result_size_ > 1) {
+    ASSERT_EQ(2, result_size_);
+    __ LoadP(r4, MemOperand(r3, kPointerSize));
+    __ LoadP(r3, MemOperand(r3));
+  }
+#endif
   // Lower 2 bits of r5 are 0 iff r3 has failure tag.
   __ addi(r5, r3, Operand(1));
   STATIC_ASSERT(kFailureTagMask < 0x8000);
@@ -3709,14 +3710,26 @@ void CEntryStub::Generate(MacroAssembler* masm) {
 
   // Enter the exit frame that transitions from JavaScript to C++.
   FrameScope scope(masm, StackFrame::MANUAL);
+
+  // Need at least one extra slot for return address location.
+  int arg_stack_space = 1;
+
+  // PPC LINUX ABI:
 #if defined(V8_HOST_ARCH_PPC)
-  // The comment below may be wrong/mis-leading now
-  // PPC needs extra frame space to fake out a C++ object
-  // probably not right on real PPC -- this was for simulation hack
-  __ EnterExitFrame(save_doubles_, 2);
-#else
-  __ EnterExitFrame(save_doubles_);
+#if defined(V8_TARGET_ARCH_PPC64)
+  // Pass buffer for return value on stack if necessary
+  if (result_size_ > 1) {
+    ASSERT_EQ(2, result_size_);
+    arg_stack_space += 2;
+  }
+#elif !defined(_AIX)
+  // 32-bit linux
+  // Pass C++ objects by reference not value
+  arg_stack_space += 2;
 #endif
+#endif
+
+  __ EnterExitFrame(save_doubles_, arg_stack_space);
 
   // Set up argc and the builtin function in callee-saved registers.
   __ mr(r14, r3);
@@ -3799,7 +3812,7 @@ void JSEntryStub::GenerateBody(MacroAssembler* masm, bool is_construct) {
   // PPC LINUX ABI:
   // preserve LR in pre-reserved slot in caller's frame
   __ mflr(r0);
-  __ StoreP(r0, MemOperand(sp, kPointerSize));
+  __ StoreP(r0, MemOperand(sp, kStackFrameLRSlot * kPointerSize));
 
   // Save callee saved registers on the stack.
   __ MultiPush(kCalleeSaved);
@@ -3940,7 +3953,7 @@ void JSEntryStub::GenerateBody(MacroAssembler* masm, bool is_construct) {
 
   __ MultiPop(kCalleeSaved);
 
-  __ LoadP(r0, MemOperand(sp, kPointerSize));
+  __ LoadP(r0, MemOperand(sp, kStackFrameLRSlot * kPointerSize));
   __ mtctr(r0);
   __ bcr();
 }
@@ -4788,16 +4801,19 @@ void RegExpExecStub::Generate(MacroAssembler* masm) {
   __ IncrementCounter(isolate->counters()->regexp_entry_native(), 1, r3, r5);
 
   // Isolates: note we add an additional parameter here (isolate pointer).
-  const int kRegExpExecuteArguments = 9;
+  const int kRegExpExecuteArguments = 10;
   const int kParameterRegisters = 8;
   __ EnterExitFrame(false, kRegExpExecuteArguments - kParameterRegisters);
 
   // Stack pointer now points to cell where return address is to be written.
   // Arguments are before that on the stack or in registers.
 
-  // Argument 9 (sp[4]): Pass current isolate address.
+  // Argument 10 (in stack parameter area): Pass current isolate address.
   __ mov(r3, Operand(ExternalReference::isolate_address()));
-  __ StoreP(r3, MemOperand(sp, 1 * kPointerSize));
+  __ StoreP(r3, MemOperand(sp, (kStackFrameExtraParamSlot + 1) * kPointerSize));
+
+  // Argument 9 is a dummy that reserves the space used for
+  // the return address added by the ExitFrame in native calls.
 
   // Argument 8 (r10): Indicate that this is a direct call from JavaScript.
   __ li(r10, Operand(1));
@@ -6756,8 +6772,7 @@ void ICCompareStub::GenerateMiss(MacroAssembler* masm) {
 void DirectCEntryStub::Generate(MacroAssembler* masm) {
   EMIT_STUB_MARKER(187);
   // Retrieve return address
-  __ addi(sp, sp, Operand(2 * kPointerSize));
-  __ LoadP(r0, MemOperand(sp, 0));
+  __ LoadP(r0, MemOperand(sp, kStackFrameExtraParamSlot * kPointerSize));
   __ Jump(r0);
 }
 
@@ -6787,18 +6802,11 @@ void DirectCEntryStub::GenerateCall(MacroAssembler* masm,
   __ bind(&here);
   __ mflr(ip);
   __ mtlr(r0);  // from above, so we know where to return
-  __ addi(ip, ip, Operand(7 * Assembler::kInstrSize));
-  __ StoreP(ip, MemOperand(sp, 0));
-  // PPC LINUX ABI:
-  //
-  // Create 2 extra slots on stack:
-  //    [0] backchain
-  //    [1] link register save area
-  //
-  __ addi(sp, sp, Operand(-2 * kPointerSize));
+  __ addi(ip, ip, Operand(6 * Assembler::kInstrSize));
+  __ StoreP(ip, MemOperand(sp, kStackFrameExtraParamSlot * kPointerSize));
   __ Jump(target);  // Call the C++ function.
   ASSERT_EQ(Assembler::kInstrSize +
-            (7 * Assembler::kInstrSize),
+            (6 * Assembler::kInstrSize),
             masm->SizeOfCodeGeneratedSince(&start));
 }
 
@@ -7487,12 +7495,7 @@ void ProfileEntryHookStub::Generate(MacroAssembler* masm) {
   __ LoadP(ip, MemOperand(ip));
 
   // PPC LINUX ABI:
-  //
-  // Create 2 extra slots on stack:
-  //    [0] backchain
-  //    [1] link register save area
-  //
-  __ addi(sp, sp, Operand(-2 * kPointerSize));
+  __ addi(sp, sp, Operand(-kNumRequiredStackFrameSlots * kPointerSize));
 #else
   // Under the simulator we need to indirect the entry hook through a
   // trampoline function at a known address.
@@ -7506,7 +7509,7 @@ void ProfileEntryHookStub::Generate(MacroAssembler* masm) {
   __ Call(ip);
 
 #if defined(V8_HOST_ARCH_PPC)
-  __ addi(sp, sp, Operand(2 * kPointerSize));
+  __ addi(sp, sp, Operand(kNumRequiredStackFrameSlots * kPointerSize));
 #endif
 
   // Restore the stack pointer if needed.

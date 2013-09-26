@@ -98,6 +98,33 @@ const int kNumSafepointRegisters = 32;
 const RegList kSafepointSavedRegisters = kJSCallerSaved | kCalleeSaved;
 const int kNumSafepointSavedRegisters = kNumJSCallerSaved + kNumCalleeSaved;
 
+// The following constants describe the stack frame linkage area as
+// defined by the ABI.
+#if defined(_AIX) || defined(V8_TARGET_ARCH_PPC64)
+// [0] back chain
+// [1] condition register save area
+// [2] link register save area
+// [3] reserved for compiler
+// [4] reserved by binder
+// [5] TOC save area
+// [6] Parameter1 save area
+// ...
+// [13] Parameter8 save area
+// [14] Parameter9 slot (if necessary)
+// ...
+const int kNumRequiredStackFrameSlots = 14;
+const int kStackFrameLRSlot = 2;
+const int kStackFrameExtraParamSlot = 14;
+#else
+// [0] back chain
+// [1] link register save area
+// [2] Parameter9 slot (if necessary)
+// ...
+const int kNumRequiredStackFrameSlots = 2;
+const int kStackFrameLRSlot = 1;
+const int kStackFrameExtraParamSlot = 2;
+#endif
+
 // ----------------------------------------------------
 
 
