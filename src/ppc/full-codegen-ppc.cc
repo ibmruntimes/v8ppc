@@ -712,14 +712,15 @@ void FullCodeGenerator::DoTest(Expression* condition,
 void FullCodeGenerator::Split(Condition cond,
                               Label* if_true,
                               Label* if_false,
-                              Label* fall_through) {
+                              Label* fall_through,
+                              CRegister cr) {
   EMIT_STUB_MARKER(210);
   if (if_false == fall_through) {
-    __ b(cond, if_true);
+    __ b(cond, if_true, cr);
   } else if (if_true == fall_through) {
-    __ b(NegateCondition(cond), if_false);
+    __ b(NegateCondition(cond), if_false, cr);
   } else {
-    __ b(cond, if_true);
+    __ b(cond, if_true, cr);
     __ b(if_false);
   }
 }
@@ -2664,15 +2665,8 @@ void FullCodeGenerator::EmitIsNonNegativeSmi(CallRuntime* expr) {
                          &if_true, &if_false, &fall_through);
 
   PrepareForBailoutBeforeSplit(expr, true, if_true, if_false);
-  // was .. __ tst(r3, Operand(kSmiTagMask | 0x80000000));
-  ASSERT(kSmiTagMask == 1);
-#if V8_TARGET_ARCH_PPC64
-  __ rldicl(r0, r3, 1, kBitsPerPointer - 2);
-#else
-  __ rlwinm(r0, r3, 1, kBitsPerPointer - 2, kBitsPerPointer - 1);
-#endif
-  __ cmpi(r0, Operand::Zero());
-  Split(eq, if_true, if_false, fall_through);
+  __ TestIfPositiveSmi(r3, r0);
+  Split(eq, if_true, if_false, fall_through, cr0);
 
   context()->Plug(if_true, if_false);
 }

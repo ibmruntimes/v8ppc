@@ -1157,6 +1157,9 @@ class Assembler : public AssemblerBase {
   static bool IsCmpRegister(Instr instr);
   static bool IsCmpImmediate(Instr instr);
   static bool IsRlwinm(Instr instr);
+#if V8_TARGET_ARCH_PPC64
+  static bool IsRldicl(Instr instr);
+#endif
   static Register GetCmpImmediateRegister(Instr instr);
   static int GetCmpImmediateRawImmediate(Instr instr);
   static bool IsNop(Instr instr, int type = NON_MARKING_NOP);

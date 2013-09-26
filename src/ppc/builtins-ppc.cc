@@ -375,11 +375,7 @@ static void ArrayNativeCode(MacroAssembler* masm,
   __ b(&empty_array);
 
   __ bind(&not_empty_array);
-#if V8_TARGET_ARCH_PPC64
-  __ rldicl(r6, r5, 1, kBitsPerPointer - 2, SetRC);
-#else
-  __ rlwinm(r6, r5, 1, kBitsPerPointer - 2, kBitsPerPointer - 1, SetRC);
-#endif
+  __ TestIfPositiveSmi(r5, r6);
   __ bne(call_generic_code, cr0);
 
   // Handle construction of an empty array of a certain size. Bail out if size

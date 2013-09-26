@@ -334,6 +334,13 @@ bool Assembler::IsRlwinm(Instr instr) {
   return ((instr & kOpcodeMask) == RLWINMX);
 }
 
+#if V8_TARGET_ARCH_PPC64
+bool Assembler::IsRldicl(Instr instr) {
+  return (((instr & kOpcodeMask) == EXT5) &&
+          ((instr & kExt5OpcodeMask) == RLDICL));
+}
+#endif
+
 bool Assembler::IsCmpImmediate(Instr instr) {
   return ((instr & kOpcodeMask) == CMPI);
 }

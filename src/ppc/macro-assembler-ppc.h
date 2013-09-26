@@ -1350,6 +1350,16 @@ class MacroAssembler: public Assembler {
     TestBit(value, 0, scratch);  // tst(value, Operand(kSmiTagMask));
   }
 
+  inline void TestIfPositiveSmi(Register value, Register scratch) {
+    STATIC_ASSERT((kSmiTagMask | kSmiSignMask) ==
+                  (intptr_t)(1UL << (kBitsPerPointer - 1) | 1));
+#if V8_TARGET_ARCH_PPC64
+    rldicl(scratch, value, 1, kBitsPerPointer - 2, SetRC);
+#else
+    rlwinm(scratch, value, 1, kBitsPerPointer - 2, kBitsPerPointer - 1, SetRC);
+#endif
+  }
+
   // Jump the register contains a smi.
   inline void JumpIfSmi(Register value, Label* smi_label) {
     TestIfSmi(value, r0);
