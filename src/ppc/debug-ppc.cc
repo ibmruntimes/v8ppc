@@ -209,7 +209,7 @@ static void Generate_DebugBreakCallHelper(MacroAssembler* masm,
   ExternalReference after_break_target =
       ExternalReference(Debug_Address::AfterBreakTarget(), masm->isolate());
   __ mov(ip, Operand(after_break_target));
-  __ lwz(ip, MemOperand(ip));
+  __ LoadP(ip, MemOperand(ip));
   __ Jump(ip);
 }
 
