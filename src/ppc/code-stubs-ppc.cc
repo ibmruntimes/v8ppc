@@ -4869,6 +4869,18 @@ void RegExpExecStub::Generate(MacroAssembler* masm) {
 
   // Locate the code entry and call it.
   __ addi(code, code, Operand(Code::kHeaderSize - kHeapObjectTag));
+
+
+#if !defined(V8_HOST_ARCH_PPC) && \
+  (defined(_AIX) || defined(V8_TARGET_ARCH_PPC64))
+  // Even Simulated AIX/PPC64 Linux uses a function descriptor for the
+  // RegExp routine.  Extract the instruction address here since
+  // DirectCEntryStub::GenerateCall will not do it for calls out to
+  // what it thinks is C code compiled for the simulator/host
+  // platform.
+  __ LoadP(code, MemOperand(code, 0));  // Instruction address
+#endif
+
   DirectCEntryStub stub;
   stub.GenerateCall(masm, code);
 
@@ -4971,11 +4983,11 @@ void RegExpExecStub::Generate(MacroAssembler* masm) {
           last_match_info_elements,
           Operand(RegExpImpl::kFirstCaptureOffset - kHeapObjectTag -
                   kPointerSize));
-  __ addi(r5, r5, Operand(-kPointerSize));  // bias down for LoadPU
+  __ addi(r5, r5, Operand(-kIntSize));  // bias down for lwzu
   __ mtctr(r4);
   __ bind(&next_capture);
   // Read the value from the static offsets vector buffer.
-  __ LoadPU(r6, MemOperand(r5, kPointerSize));
+  __ lwzu(r6, MemOperand(r5, kIntSize));
   // Store the smi value in the last match info.
   __ SmiTag(r6);
   __ StorePU(r6, MemOperand(r3, kPointerSize));

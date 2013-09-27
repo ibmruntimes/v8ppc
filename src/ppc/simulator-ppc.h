@@ -356,11 +356,26 @@ class Simulator {
 // point.
 #define CALL_GENERATED_CODE(entry, p0, p1, p2, p3, p4) \
   reinterpret_cast<Object*>(Simulator::current(Isolate::Current())->Call( \
-      FUNCTION_ADDR(entry), 5, p0, p1, p2, (uintptr_t)p3, p4))
+                              FUNCTION_ADDR(entry), 5,                  \
+                              (intptr_t)p0,                             \
+                              (intptr_t)p1,                             \
+                              (intptr_t)p2,                             \
+                              (intptr_t)p3,                             \
+                              (intptr_t)p4))
 
 #define CALL_GENERATED_REGEXP_CODE(entry, p0, p1, p2, p3, p4, p5, p6, p7, p8) \
-  Simulator::current(Isolate::Current())->Call( \
-      entry, 10, p0, p1, p2, p3, p4, p5, p6, p7, NULL, p8)
+  Simulator::current(Isolate::Current())->Call(                         \
+    entry, 10,                                                          \
+    (intptr_t)p0,                                                       \
+    (intptr_t)p1,                                                       \
+    (intptr_t)p2,                                                       \
+    (intptr_t)p3,                                                       \
+    (intptr_t)p4,                                                       \
+    (intptr_t)p5,                                                       \
+    (intptr_t)p6,                                                       \
+    (intptr_t)p7,                                                       \
+    (intptr_t)NULL,                                                     \
+    (intptr_t)p8)
 
 #define TRY_CATCH_FROM_ADDRESS(try_catch_address)                              \
   try_catch_address == NULL ?                                                  \

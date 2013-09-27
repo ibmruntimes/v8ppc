@@ -863,10 +863,10 @@ Handle<HeapObject> RegExpMacroAssemblerPPC::GetCode(Handle<String> source) {
             __ add(r5, r4, r5);
             __ add(r6, r4, r6);
           }
-          __ StoreP(r5, MemOperand(r3));
-          __ addi(r3, r3, Operand(kPointerSize));
-          __ StoreP(r6, MemOperand(r3));
-          __ addi(r3, r3, Operand(kPointerSize));
+          __ stw(r5, MemOperand(r3));
+          __ addi(r3, r3, Operand(kIntSize));
+          __ stw(r6, MemOperand(r3));
+          __ addi(r3, r3, Operand(kIntSize));
         }
       }
 
@@ -887,7 +887,7 @@ Handle<HeapObject> RegExpMacroAssemblerPPC::GetCode(Handle<String> source) {
 
         __ StoreP(r4, MemOperand(frame_pointer(), kNumOutputRegisters));
         // Advance the location for output.
-        __ addi(r5, r5, Operand(num_saved_registers_ * kPointerSize));
+        __ addi(r5, r5, Operand(num_saved_registers_ * kIntSize));
         __ StoreP(r5, MemOperand(frame_pointer(), kRegisterOutput));
 
         // Prepare r3 to initialize registers with its value in the next run.
@@ -1069,7 +1069,7 @@ void RegExpMacroAssemblerPPC::PushBacktrack(Label* label) {
     __ emit(0);
     masm_->label_at_put(label, offset);
     __ bind(&after_constant);
-    __ LoadP(r3, MemOperand(code_pointer(), cp_offset), r0);
+    __ LoadWord(r3, MemOperand(code_pointer(), cp_offset), r0);
   }
   Push(r3);
   CheckStackLimit();
