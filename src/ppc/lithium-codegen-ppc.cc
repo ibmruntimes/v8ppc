@@ -1411,6 +1411,13 @@ void LCodeGen::DoSubI(LSubI* instr) {
   LOperand* right = instr->right();
   LOperand* result = instr->result();
   bool can_overflow = instr->hydrogen()->CheckFlag(HValue::kCanOverflow);
+  if (!can_overflow && right->IsConstantOperand()) {
+    if (is_int16(ToInteger32(LConstantOperand::cast(right)))) {
+      __ subi(ToRegister(result), ToRegister(left),
+              Operand(ToInteger32(LConstantOperand::cast(right))));
+      return;
+    }
+  }
   Register right_reg = EmitLoadRegister(right, ip);
 
   if (!can_overflow) {
