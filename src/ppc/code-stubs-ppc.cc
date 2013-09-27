@@ -3598,7 +3598,10 @@ void CEntryStub::GenerateCore(MacroAssembler* masm,
   (defined(_AIX) || defined(V8_TARGET_ARCH_PPC64))
   // Native AIX/PPC64 Linux use a function descriptor.
   __ LoadP(ToRegister(2), MemOperand(r15, kPointerSize));  // TOC
-  __ LoadP(r15, MemOperand(r15, 0));  // Instruction address
+  __ LoadP(ip, MemOperand(r15, 0));  // Instruction address
+  Register target = ip;
+#else
+  Register target = r15;
 #endif
 
   // To let the GC traverse the return address of the exit frames, we need to
@@ -3618,7 +3621,7 @@ void CEntryStub::GenerateCore(MacroAssembler* masm,
     __ addi(r0, r8, Operand(20));
 
     __ StoreP(r0, MemOperand(sp, kStackFrameExtraParamSlot * kPointerSize));
-    __ Call(r15);
+    __ Call(target);
   }
 
   if (always_allocate) {

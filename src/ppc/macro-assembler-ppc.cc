@@ -3293,8 +3293,8 @@ void MacroAssembler::PrepareCallCFunction(int num_reg_arguments,
            MemOperand(sp, stack_passed_arguments * kPointerSize), r0);
 #endif
   } else {
-    // this case appears to never beused on PPC (even simulated)
-    subi(sp, sp, Operand(stack_passed_arguments * kPointerSize));
+    subi(sp, sp, Operand((stack_passed_arguments +
+                          kNumRequiredStackFrameSlots) * kPointerSize));
   }
 }
 
@@ -3405,8 +3405,8 @@ void MacroAssembler::CallCFunctionHelper(Register function,
     LoadP(sp, MemOperand(sp, stack_passed_arguments * kPointerSize), r0);
 #endif
   } else {
-    // this case appears to never beused on PPC (even simulated)
-    Add(sp, sp, stack_passed_arguments * sizeof(kPointerSize), r0);
+    addi(sp, sp, Operand((stack_passed_arguments +
+                          kNumRequiredStackFrameSlots) * kPointerSize));
   }
 }
 

@@ -1305,12 +1305,14 @@ void StubCompiler::GenerateLoadCallback(Handle<JSObject> object,
   __ EnterExitFrame(false, kApiStackSpace);
 
   // pass 1st arg by reference
-  __ StoreP(arg0, MemOperand(sp, (kStackFrameExtraParamSlot + 2) * kPointerSize));
+  __ StoreP(arg0,
+            MemOperand(sp, (kStackFrameExtraParamSlot + 2) * kPointerSize));
   __ addi(arg0, sp, Operand((kStackFrameExtraParamSlot + 2) * kPointerSize));
 
   // Create AccessorInfo instance on the stack above the exit frame with
   // ip (internal::Object** args_) as the data.
-  __ StoreP(arg1, MemOperand(sp, (kStackFrameExtraParamSlot + 3) * kPointerSize));
+  __ StoreP(arg1,
+            MemOperand(sp, (kStackFrameExtraParamSlot + 3) * kPointerSize));
   // arg1 = AccessorInfo&
   __ addi(arg1, sp, Operand((kStackFrameExtraParamSlot + 3) * kPointerSize));
 
