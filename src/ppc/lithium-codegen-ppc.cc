@@ -3298,8 +3298,12 @@ void LCodeGen::CallKnownFunction(Handle<JSFunction> function,
 
     // Invoke function.
     __ SetCallKind(r8, call_kind);
-    __ lwz(ip, FieldMemOperand(r4, JSFunction::kCodeEntryOffset));
-    __ Call(ip);
+    if (*function == *info()->closure()) {
+      __ CallSelf();
+    } else {
+      __ lwz(ip, FieldMemOperand(r4, JSFunction::kCodeEntryOffset));
+      __ Call(ip);
+    }
 
     // Set up deoptimization.
     RecordSafepointWithLazyDeopt(instr, RECORD_SIMPLE_SAFEPOINT);
