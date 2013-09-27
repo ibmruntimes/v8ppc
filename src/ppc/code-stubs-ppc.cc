@@ -7434,7 +7434,13 @@ void StoreArrayLiteralElementStub::Generate(MacroAssembler* masm) {
   __ LoadP(r8, FieldMemOperand(r4, JSObject::kElementsOffset));
   __ SmiToPtrArrayOffset(r9, r6);
   __ add(r9, r8, r9);
+#if V8_TARGET_ARCH_PPC64
+  // add due to offset alignment requirements of StorePU
+  __ addi(r9, r9, Operand(FixedArray::kHeaderSize - kHeapObjectTag));
+  __ StoreP(r3, MemOperand(r9));
+#else
   __ StorePU(r3, MemOperand(r9, FixedArray::kHeaderSize - kHeapObjectTag));
+#endif
   // Update the write barrier for the array store.
   __ RecordWrite(r8, r9, r3, kLRHasNotBeenSaved, kDontSaveFPRegs,
                  EMIT_REMEMBERED_SET, OMIT_SMI_CHECK);
