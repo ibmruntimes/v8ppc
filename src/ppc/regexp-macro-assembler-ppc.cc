@@ -137,6 +137,12 @@ RegExpMacroAssemblerPPC::RegExpMacroAssemblerPPC(
       exit_label_(),
       internal_failure_label_() {
   ASSERT_EQ(0, registers_to_save % 2);
+
+  // Called from C
+#if defined(_AIX) || defined(V8_TARGET_ARCH_PPC64)
+  __ function_descriptor();
+#endif
+
   __ b(&entry_label_);   // We'll write the entry code later.
   // If the code gets too big or corrupted, an internal exception will be
   // raised, and we will exit right away.
@@ -1459,7 +1465,17 @@ void RegExpCEntryStub::Generate(MacroAssembler* masm_) {
   extra_stack_slots += kNumRequiredStackFrameSlots;
   __ addi(sp, sp, Operand(-extra_stack_slots * kPointerSize));
 
-  __ Call(r26);
+#if defined(V8_HOST_ARCH_PPC) && \
+  (defined(_AIX) || defined(V8_TARGET_ARCH_PPC64))
+  // Native AIX/PPC64 Linux use a function descriptor.
+  __ LoadP(ToRegister(2), MemOperand(r26, kPointerSize));  // TOC
+  __ LoadP(ip, MemOperand(r26, 0));  // Instruction address
+  Register target = ip;
+#else
+  Register target = r26;
+#endif
+
+  __ Call(target);
 
   __ addi(sp, sp, Operand(extra_stack_slots * kPointerSize));
 

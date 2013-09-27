@@ -6791,6 +6791,13 @@ void DirectCEntryStub::GenerateCall(MacroAssembler* masm,
                                     Register target) {
   EMIT_STUB_MARKER(188);
 
+#if defined(V8_HOST_ARCH_PPC) && \
+  (defined(_AIX) || defined(V8_TARGET_ARCH_PPC64))
+  // Native AIX/PPC64 Linux use a function descriptor.
+  __ LoadP(ToRegister(2), MemOperand(target, kPointerSize));  // TOC
+  __ LoadP(target, MemOperand(target, 0));  // Instruction address
+#endif
+
   __ mov(r0, Operand(reinterpret_cast<intptr_t>(GetCode().location()),
                      RelocInfo::CODE_TARGET));
 
