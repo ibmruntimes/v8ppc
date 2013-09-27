@@ -1617,10 +1617,15 @@ void Builtins::SetUp(bool create_heap_objects) {
 
   const BuiltinDesc* functions = builtin_function_table.functions();
 
+#if V8_TARGET_ARCH_PPC64
+  const int kBufferSize = 9 * KB;
+#else
+  const int kBufferSize = 8 * KB;
+#endif
   // For now we generate builtin adaptor code into a stack-allocated
   // buffer, before copying it into individual code objects. Be careful
   // with alignment, some platforms don't like unaligned code.
-  union { int force_alignment; byte buffer[8*KB]; } u;
+  union { int force_alignment; byte buffer[kBufferSize]; } u;
 
   // Traverse the list of builtins and generate an adaptor in a
   // separate code object for each one.
