@@ -1408,12 +1408,14 @@ void RegExpMacroAssemblerPPC::CallCFunctionUsingStub(
     ExternalReference function,
     int num_arguments) {
   // Must pass all arguments in registers. The stub pushes on the stack.
-  ASSERT(num_arguments <= 4);
+  ASSERT(num_arguments <= 8);
   __ mov(code_pointer(), Operand(function));
   RegExpCEntryStub stub;
   __ CallStub(&stub);
-  if (OS::ActivationFrameAlignment() != 0) {
+  if (OS::ActivationFrameAlignment() > kPointerSize) {
     __ LoadP(sp, MemOperand(sp, 0));
+  } else {
+    __ addi(sp, sp, Operand(kNumRequiredStackFrameSlots * kPointerSize));
   }
   __ mov(code_pointer(), Operand(masm_->CodeObject()));
 }
