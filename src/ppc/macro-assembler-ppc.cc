@@ -3135,19 +3135,21 @@ void MacroAssembler::CopyBytes(Register src,
                                Register scratch) {
   Label align_loop, aligned, word_loop, byte_loop, byte_loop_1, done;
 
+  ASSERT(!scratch.is(r0));
+
   cmpi(length, Operand::Zero());
   beq(&done);
 
   // Check src alignment and length to see whether word_loop is possible
-  andi(r0, src, Operand(kPointerSize - 1));
+  andi(scratch, src, Operand(kPointerSize - 1));
   beq(&aligned, cr0);
-  subfic(r0, r0, Operand(kPointerSize * 2));
-  cmp(length, r0);
+  subfic(scratch, scratch, Operand(kPointerSize * 2));
+  cmp(length, scratch);
   blt(&byte_loop);
 
   // Align src before copying in word size chunks.
-  subi(r0, r0, Operand(kPointerSize));
-  mtctr(r0);
+  subi(scratch, scratch, Operand(kPointerSize));
+  mtctr(scratch);
   bind(&align_loop);
   lbz(scratch, MemOperand(src));
   addi(src, src, Operand(1));
@@ -3164,11 +3166,11 @@ void MacroAssembler::CopyBytes(Register src,
     Assert(eq, "Expecting alignment for CopyBytes", cr0);
   }
 
-  ShiftRightImm(r0, length, Operand(kPointerSizeLog2));
-  cmpi(r0, Operand::Zero());
+  ShiftRightImm(scratch, length, Operand(kPointerSizeLog2));
+  cmpi(scratch, Operand::Zero());
   beq(&byte_loop);
 
-  mtctr(r0);
+  mtctr(scratch);
   bind(&word_loop);
   LoadP(scratch, MemOperand(src));
   addi(src, src, Operand(kPointerSize));
