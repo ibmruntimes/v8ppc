@@ -7532,6 +7532,12 @@ void ProfileEntryHookStub::Generate(MacroAssembler* masm) {
   __ mov(ip, Operand(reinterpret_cast<intptr_t>(&entry_hook_)));
   __ LoadP(ip, MemOperand(ip));
 
+#if (defined(_AIX) || defined(V8_TARGET_ARCH_PPC64))
+  // Function descriptor
+  __ LoadP(ToRegister(2), MemOperand(ip, kPointerSize));
+  __ LoadP(ip, MemOperand(ip, 0));
+#endif
+
   // PPC LINUX ABI:
   __ addi(sp, sp, Operand(-kNumRequiredStackFrameSlots * kPointerSize));
 #else
