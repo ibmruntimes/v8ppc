@@ -1916,8 +1916,8 @@ void Simulator::DecodeExt2_9bit(Instruction* instr) {
       int rt = instr->RTValue();
       int ra = instr->RAValue();
       int rb = instr->RBValue();
-      int64_t ra_val = get_register(ra);
-      int64_t rb_val = get_register(rb);
+      int32_t ra_val = (get_register(ra) & 0xFFFFFFFF);
+      int32_t rb_val = (get_register(rb) & 0xFFFFFFFF);
       int64_t alu_out = ra_val * rb_val;
       alu_out >>= 32;
       set_register(rt, alu_out);
@@ -2108,9 +2108,9 @@ void Simulator::DecodeExt2_9bit(Instruction* instr) {
       int rt = instr->RTValue();
       int ra = instr->RAValue();
       int rb = instr->RBValue();
-      intptr_t ra_val = get_register(ra);
-      intptr_t rb_val = get_register(rb);
-      intptr_t alu_out = ra_val * rb_val;
+      int32_t ra_val = (get_register(ra) & 0xFFFFFFFF);
+      int32_t rb_val = (get_register(rb) & 0xFFFFFFFF);
+      int32_t alu_out = ra_val * rb_val;
       set_register(rt, alu_out);
       if (instr->Bit(0)) {  // RC bit set
         SetCR0(alu_out);
