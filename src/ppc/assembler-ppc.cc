@@ -1172,6 +1172,10 @@ void Assembler::srad(Register ra, Register rs, Register rb, RCBit r) {
   x_form(EXT2 | SRAD, ra, rs, rb, r);
 }
 
+void Assembler::cntlzd_(Register ra, Register rs, RCBit rc) {
+  x_form(EXT2 | CNTLZDX, ra, rs, r0, rc);
+}
+
 #endif
 
 

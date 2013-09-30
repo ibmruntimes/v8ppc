@@ -2156,32 +2156,29 @@ void BinaryOpStub::GenerateSmiSmiOperation(MacroAssembler* masm) {
       __ JumpIfNotPowerOfTwoOrZero(right, scratch1, &not_smi_result);
       // Check for positive and no remainder (scratch1 contains right - 1).
       __ lis(r0, Operand(SIGN_EXT_IMM16(0x8000)));
+#if V8_TARGET_ARCH_PPC64
+      __ ShiftLeftImm(r0, r0, Operand(32));
+#endif
       __ orx(scratch2, scratch1, r0);
       __ and_(r0, left, scratch2, SetRC);
       __ bne(&not_smi_result, cr0);
 
       // Perform division by shifting.
-      __ cntlzw_(scratch1, scratch1);
-      __ subfic(scratch1, scratch1, Operand(31));
-      __ sraw(right, left, scratch1);
+      __ CountLeadingZeros(scratch1, scratch1);
+      __ subfic(scratch1, scratch1, Operand(kSmiValueSize));
+      __ ShiftRightArith(right, left, scratch1);
       __ Ret();
       break;
     case Token::MOD:
       // Check for two positive smis.
       __ orx(scratch1, left, right);
-      ASSERT(kSmiTagMask == 1);
-#if V8_TARGET_ARCH_PPC64
-      __ rldicl(r0, scratch1, 1, kBitsPerPointer - 2, SetRC);
-#else
-      __ rlwinm(r0, scratch1, 1, kBitsPerPointer - 2, kBitsPerPointer - 1,
-                SetRC);
-#endif
+      __ TestIfPositiveSmi(scratch1, r0);
       __ bne(&not_smi_result, cr0);
 
       // Check for power of two on the right hand side.
       __ JumpIfNotPowerOfTwoOrZero(right, scratch1, &not_smi_result);
 
-      // Perform modulus by masking.
+      // Perform modulus by masking (scratch1 contains right - 1).
       __ and_(right, left, scratch1);
       __ Ret();
       break;

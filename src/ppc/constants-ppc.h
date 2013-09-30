@@ -195,6 +195,7 @@ enum OpcodeExt2 {
   LDUX = 53 << 1,
   DCBST = 54 << 1,
   LWZUX = 55 << 1,   // load word zero w/ update x-form
+  CNTLZDX = 58 << 1,
   ANDCX = 60 << 1,
   MULHWX = 75 << 1,
   DCBF = 86 << 1,

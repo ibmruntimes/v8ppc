@@ -662,6 +662,12 @@ void Decoder::DecodeExt2(Instruction* instr) {
       Format(instr, "cntlzw'. 'ra, 'rs");
       break;
     }
+#if V8_TARGET_ARCH_PPC64
+    case CNTLZDX: {
+      Format(instr, "cntlzd'. 'ra, 'rs");
+      break;
+    }
+#endif
     case ANDX: {
       Format(instr, "and'.    'ra, 'rs, 'rb");
       break;

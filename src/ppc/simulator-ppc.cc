@@ -1996,6 +1996,30 @@ void Simulator::DecodeExt2_9bit(Instruction* instr) {
       }
       break;
     }
+#if V8_TARGET_ARCH_PPC64
+    case CNTLZDX: {
+      int rs = instr->RSValue();
+      int ra = instr->RAValue();
+      uintptr_t rs_val = get_register(rs);
+      uintptr_t count  = 0;
+      int      n      = 0;
+      uintptr_t bit    = 0x8000000000000000UL;
+      for (; n < 64; n++) {
+          if (bit & rs_val)
+              break;
+          count++;
+          bit >>= 1;
+      }
+      set_register(ra, count);
+      if (instr->Bit(0)) {  // RC Bit set
+        int bf = 0;
+        if (count > 0)  { bf |= 0x40000000; }
+        if (count == 0) { bf |= 0x20000000; }
+        condition_reg_ = (condition_reg_ & ~0xF0000000) | bf;
+      }
+      break;
+    }
+#endif
     case ANDX: {
       int rs = instr->RSValue();
       int ra = instr->RAValue();
