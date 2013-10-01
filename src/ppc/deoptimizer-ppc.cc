@@ -42,7 +42,11 @@ const int Deoptimizer::table_entry_size_ = 20;
 
 
 int Deoptimizer::patch_size() {
+#if V8_TARGET_ARCH_PPC64
+  const int kCallInstructionSizeInWords = 7;
+#else
   const int kCallInstructionSizeInWords = 4;
+#endif
   return kCallInstructionSizeInWords * Assembler::kInstrSize;
 }
 
@@ -117,8 +121,13 @@ void Deoptimizer::DeoptimizeFunction(JSFunction* function) {
 }
 
 
+#if V8_TARGET_ARCH_PPC64
+static const int32_t kBranchBeforeStackCheck = 0x409c0020;
+static const int32_t kBranchBeforeInterrupt =  0x409c0044;
+#else
 static const int32_t kBranchBeforeStackCheck = 0x409c0014;
 static const int32_t kBranchBeforeInterrupt =  0x409c0024;
+#endif
 
 
 // This code has some dependency on the FIXED_SEQUENCE lis/ori
@@ -250,7 +259,7 @@ void Deoptimizer::RevertStackCheckCodeAt(Code* unoptimized_code,
   // Replace NOP with conditional jump.
   CodePatcher patcher(pc_after - 8 * kInstrSize, 6);
   if (FLAG_count_based_interrupts) {
-      patcher.masm()->bc(+48, BF,
+      patcher.masm()->bc(+68, BF,
                 v8::internal::Assembler::encode_crbit(cr7, CR_LT));  // bge
     ASSERT_EQ(kBranchBeforeInterrupt,
               Memory::int32_at(pc_after - 8 * kInstrSize));
@@ -414,7 +423,7 @@ void Deoptimizer::DoComputeOsrOutputFrame() {
   for (int i =  StandardFrameConstants::kCallerPCOffset;
        ok && i >=  StandardFrameConstants::kMarkerOffset;
        i -= kPointerSize) {
-    uint32_t input_value = input_->GetFrameSlot(input_offset);
+    uintptr_t input_value = input_->GetFrameSlot(input_offset);
     if (FLAG_trace_osr) {
       const char* name = "UNKNOWN";
       switch (i) {
@@ -431,7 +440,8 @@ void Deoptimizer::DoComputeOsrOutputFrame() {
           name = "function";
           break;
       }
-      PrintF("    [sp + %d] <- 0x%08x ; [sp + %d] (fixed part - %s)\n",
+      PrintF("    [sp + %d] <- 0x%08" V8PRIxPTR " ;"
+             " [sp + %d] (fixed part - %s)\n",
              output_offset,
              input_value,
              input_offset,
@@ -459,7 +469,7 @@ void Deoptimizer::DoComputeOsrOutputFrame() {
     output_[0]->SetRegister(cp.code(), input_->GetRegister(cp.code()));
 
     unsigned pc_offset = data->OsrPcOffset()->value();
-    uint32_t pc = reinterpret_cast<uintptr_t>(
+    uintptr_t pc = reinterpret_cast<uintptr_t>(
         optimized_code_->entry() + pc_offset);
     output_[0]->SetPc(pc);
   }
@@ -501,7 +511,7 @@ void Deoptimizer::DoComputeArgumentsAdaptorFrame(TranslationIterator* iterator,
 
   // The top address of the frame is computed from the previous
   // frame's top and this frame's size.
-  uint32_t top_address;
+  uintptr_t top_address;
   top_address = output_[frame_index - 1]->GetTop() - output_frame_size;
   output_frame->SetTop(top_address);
 
@@ -518,7 +528,8 @@ void Deoptimizer::DoComputeArgumentsAdaptorFrame(TranslationIterator* iterator,
   intptr_t callers_pc = output_[frame_index - 1]->GetPc();
   output_frame->SetFrameSlot(output_offset, callers_pc);
   if (FLAG_trace_deopt) {
-    PrintF("    0x%08x: [top + %d] <- 0x%08" V8PRIxPTR " ; caller's pc\n",
+    PrintF("    0x%08" V8PRIxPTR ": [top + %d] <- 0x%08" V8PRIxPTR
+           " ; caller's pc\n",
            top_address + output_offset, output_offset, callers_pc);
   }
 
@@ -539,7 +550,7 @@ void Deoptimizer::DoComputeArgumentsAdaptorFrame(TranslationIterator* iterator,
       Smi::FromInt(StackFrame::ARGUMENTS_ADAPTOR));
   output_frame->SetFrameSlot(output_offset, context);
   if (FLAG_trace_deopt) {
-    PrintF("    0x%08x: [top + %d] <- 0x%08" V8PRIxPTR
+    PrintF("    0x%08" V8PRIxPTR ": [top + %d] <- 0x%08" V8PRIxPTR
            " ; context (adaptor sentinel)\n",
            top_address + output_offset, output_offset, context);
   }
@@ -549,7 +560,8 @@ void Deoptimizer::DoComputeArgumentsAdaptorFrame(TranslationIterator* iterator,
   value = reinterpret_cast<intptr_t>(function);
   output_frame->SetFrameSlot(output_offset, value);
   if (FLAG_trace_deopt) {
-    PrintF("    0x%08x: [top + %d] <- 0x%08" V8PRIxPTR " ; function\n",
+    PrintF("    0x%08" V8PRIxPTR ": [top + %d] <- 0x%08" V8PRIxPTR
+           " ; function\n",
            top_address + output_offset, output_offset, value);
   }
 
@@ -558,7 +570,8 @@ void Deoptimizer::DoComputeArgumentsAdaptorFrame(TranslationIterator* iterator,
   value = reinterpret_cast<uintptr_t>(Smi::FromInt(height - 1));
   output_frame->SetFrameSlot(output_offset, value);
   if (FLAG_trace_deopt) {
-    PrintF("    0x%08x: [top + %d] <- 0x%08" V8PRIxPTR " ; argc (%d)\n",
+    PrintF("    0x%08" V8PRIxPTR ": [top + %d] <- 0x%08" V8PRIxPTR
+           " ; argc (%d)\n",
            top_address + output_offset, output_offset, value, height - 1);
   }
 
@@ -600,7 +613,7 @@ void Deoptimizer::DoComputeConstructStubFrame(TranslationIterator* iterator,
 
   // The top address of the frame is computed from the previous
   // frame's top and this frame's size.
-  uint32_t top_address;
+  uintptr_t top_address;
   top_address = output_[frame_index - 1]->GetTop() - output_frame_size;
   output_frame->SetTop(top_address);
 
@@ -617,7 +630,8 @@ void Deoptimizer::DoComputeConstructStubFrame(TranslationIterator* iterator,
   intptr_t callers_pc = output_[frame_index - 1]->GetPc();
   output_frame->SetFrameSlot(output_offset, callers_pc);
   if (FLAG_trace_deopt) {
-    PrintF("    0x%08x: [top + %d] <- 0x%08" V8PRIxPTR " ; caller's pc\n",
+    PrintF("    0x%08" V8PRIxPTR ": [top + %d] <- 0x%08" V8PRIxPTR
+           " ; caller's pc\n",
            top_address + output_offset, output_offset, callers_pc);
   }
 
@@ -637,7 +651,8 @@ void Deoptimizer::DoComputeConstructStubFrame(TranslationIterator* iterator,
   value = output_[frame_index - 1]->GetContext();
   output_frame->SetFrameSlot(output_offset, value);
   if (FLAG_trace_deopt) {
-    PrintF("    0x%08x: [top + %d] <- 0x%08" V8PRIxPTR " ; context\n",
+    PrintF("    0x%08" V8PRIxPTR ": [top + %d] <- 0x%08" V8PRIxPTR
+           " ; context\n",
            top_address + output_offset, output_offset, value);
   }
 
@@ -646,7 +661,7 @@ void Deoptimizer::DoComputeConstructStubFrame(TranslationIterator* iterator,
   value = reinterpret_cast<intptr_t>(Smi::FromInt(StackFrame::CONSTRUCT));
   output_frame->SetFrameSlot(output_offset, value);
   if (FLAG_trace_deopt) {
-    PrintF("    0x%08x: [top + %d] <- 0x%08" V8PRIxPTR
+    PrintF("    0x%08" V8PRIxPTR ": [top + %d] <- 0x%08" V8PRIxPTR
            " ; function (construct sentinel)\n",
            top_address + output_offset, output_offset, value);
   }
@@ -656,7 +671,8 @@ void Deoptimizer::DoComputeConstructStubFrame(TranslationIterator* iterator,
   value = reinterpret_cast<intptr_t>(construct_stub);
   output_frame->SetFrameSlot(output_offset, value);
   if (FLAG_trace_deopt) {
-    PrintF("    0x%08x: [top + %d] <- 0x%08" V8PRIxPTR " ; code object\n",
+    PrintF("    0x%08" V8PRIxPTR ": [top + %d] <- 0x%08" V8PRIxPTR
+           " ; code object\n",
            top_address + output_offset, output_offset, value);
   }
 
@@ -665,7 +681,8 @@ void Deoptimizer::DoComputeConstructStubFrame(TranslationIterator* iterator,
   value = reinterpret_cast<uintptr_t>(Smi::FromInt(height - 1));
   output_frame->SetFrameSlot(output_offset, value);
   if (FLAG_trace_deopt) {
-    PrintF("    0x%08x: [top + %d] <- 0x%08" V8PRIxPTR " ; argc (%d)\n",
+    PrintF("    0x%08" V8PRIxPTR ": [top + %d] <- 0x%08" V8PRIxPTR
+           " ; argc (%d)\n",
            top_address + output_offset, output_offset, value, height - 1);
   }
 
@@ -674,7 +691,7 @@ void Deoptimizer::DoComputeConstructStubFrame(TranslationIterator* iterator,
   value = reinterpret_cast<intptr_t>(function);
   output_frame->SetFrameSlot(output_offset, value);
   if (FLAG_trace_deopt) {
-    PrintF("    0x%08x: [top + %d] <- 0x%08" V8PRIxPTR
+    PrintF("    0x%08" V8PRIxPTR ": [top + %d] <- 0x%08" V8PRIxPTR
            " ; constructor function\n",
            top_address + output_offset, output_offset, value);
   }
@@ -685,7 +702,7 @@ void Deoptimizer::DoComputeConstructStubFrame(TranslationIterator* iterator,
   value = output_frame->GetFrameSlot(output_frame_size - kPointerSize);
   output_frame->SetFrameSlot(output_offset, value);
   if (FLAG_trace_deopt) {
-    PrintF("    0x%08x: [top + %d] <- 0x%08" V8PRIxPTR
+    PrintF("    0x%08" V8PRIxPTR ": [top + %d] <- 0x%08" V8PRIxPTR
            " ; allocated receiver\n",
            top_address + output_offset, output_offset, value);
   }
@@ -733,7 +750,8 @@ void Deoptimizer::DoComputeAccessorStubFrame(TranslationIterator* iterator,
 
   // The top address of the frame is computed from the previous frame's top and
   // this frame's size.
-  uint32_t top_address = output_[frame_index - 1]->GetTop() - output_frame_size;
+  uintptr_t top_address = (output_[frame_index - 1]->GetTop() -
+                           output_frame_size);
   output_frame->SetTop(top_address);
 
   unsigned output_offset = output_frame_size;
@@ -743,7 +761,7 @@ void Deoptimizer::DoComputeAccessorStubFrame(TranslationIterator* iterator,
   intptr_t callers_pc = output_[frame_index - 1]->GetPc();
   output_frame->SetFrameSlot(output_offset, callers_pc);
   if (FLAG_trace_deopt) {
-    PrintF("    0x%08x: [top + %u] <- 0x%08" V8PRIxPTR
+    PrintF("    0x%08" V8PRIxPTR ": [top + %u] <- 0x%08" V8PRIxPTR
            " ; caller's pc\n",
            top_address + output_offset, output_offset, callers_pc);
   }
@@ -765,7 +783,7 @@ void Deoptimizer::DoComputeAccessorStubFrame(TranslationIterator* iterator,
   value = output_[frame_index - 1]->GetContext();
   output_frame->SetFrameSlot(output_offset, value);
   if (FLAG_trace_deopt) {
-    PrintF("    0x%08x: [top + %u] <- 0x%08" V8PRIxPTR
+    PrintF("    0x%08" V8PRIxPTR ": [top + %u] <- 0x%08" V8PRIxPTR
            " ; context\n",
            top_address + output_offset, output_offset, value);
   }
@@ -775,7 +793,7 @@ void Deoptimizer::DoComputeAccessorStubFrame(TranslationIterator* iterator,
   value = reinterpret_cast<intptr_t>(Smi::FromInt(StackFrame::INTERNAL));
   output_frame->SetFrameSlot(output_offset, value);
   if (FLAG_trace_deopt) {
-    PrintF("    0x%08x: [top + %u] <- 0x%08" V8PRIxPTR
+    PrintF("    0x%08" V8PRIxPTR ": [top + %u] <- 0x%08" V8PRIxPTR
            " ; function (%s sentinel)\n",
            top_address + output_offset, output_offset, value, kind);
   }
@@ -789,7 +807,7 @@ void Deoptimizer::DoComputeAccessorStubFrame(TranslationIterator* iterator,
   value = reinterpret_cast<intptr_t>(accessor_stub);
   output_frame->SetFrameSlot(output_offset, value);
   if (FLAG_trace_deopt) {
-    PrintF("    0x%08x: [top + %u] <- 0x%08" V8PRIxPTR
+    PrintF("    0x%08" V8PRIxPTR ": [top + %u] <- 0x%08" V8PRIxPTR
            " ; code object\n",
            top_address + output_offset, output_offset, value);
   }
@@ -861,7 +879,7 @@ void Deoptimizer::DoComputeJSFrame(TranslationIterator* iterator,
   // the input frame pointer and the output frame's height.  For all
   // subsequent output frames, it can be computed from the previous one's
   // top address and the current frame's size.
-  uint32_t top_address;
+  uintptr_t top_address;
   if (is_bottommost) {
     // 2 = context and function in the frame.
     top_address =
@@ -899,7 +917,8 @@ void Deoptimizer::DoComputeJSFrame(TranslationIterator* iterator,
   }
   output_frame->SetFrameSlot(output_offset, value);
   if (FLAG_trace_deopt) {
-    PrintF("    0x%08x: [top + %d] <- 0x%08" V8PRIxPTR " ; caller's pc\n",
+    PrintF("    0x%08" V8PRIxPTR ": [top + %d] <- 0x%08" V8PRIxPTR
+           " ; caller's pc\n",
            top_address + output_offset, output_offset, value);
   }
 
@@ -940,7 +959,8 @@ void Deoptimizer::DoComputeJSFrame(TranslationIterator* iterator,
   output_frame->SetContext(value);
   if (is_topmost) output_frame->SetRegister(cp.code(), value);
   if (FLAG_trace_deopt) {
-    PrintF("    0x%08x: [top + %d] <- 0x%08" V8PRIxPTR " ; context\n",
+    PrintF("    0x%08" V8PRIxPTR ": [top + %d] <- 0x%08" V8PRIxPTR
+           " ; context\n",
            top_address + output_offset, output_offset, value);
   }
 
@@ -953,7 +973,8 @@ void Deoptimizer::DoComputeJSFrame(TranslationIterator* iterator,
   ASSERT(!is_bottommost || input_->GetFrameSlot(input_offset) == value);
   output_frame->SetFrameSlot(output_offset, value);
   if (FLAG_trace_deopt) {
-    PrintF("    0x%08x: [top + %d] <- 0x%08" V8PRIxPTR " ; function\n",
+    PrintF("    0x%08" V8PRIxPTR ": [top + %d] <- 0x%08" V8PRIxPTR
+           " ; function\n",
            top_address + output_offset, output_offset, value);
   }
 
@@ -1012,7 +1033,8 @@ void Deoptimizer::FillInputFrame(Address tos, JavaScriptFrame* frame) {
 
   // Fill the frame content from the actual data on the frame.
   for (unsigned i = 0; i < input_->GetFrameSize(); i += kPointerSize) {
-    input_->SetFrameSlot(i, Memory::uint32_at(tos + i));
+    input_->SetFrameSlot(i, reinterpret_cast<intptr_t>(
+                           Memory::Address_at(tos + i)));
   }
 }
 
@@ -1165,7 +1187,7 @@ void Deoptimizer::EntryGenerator::Generate() {
   __ LoadP(r6, MemOperand(r5, FrameDescription::frame_size_offset()));
 
   __ bind(&inner_push_loop);
-  __ addi(r6, r6, Operand(-sizeof(uint32_t)));
+  __ addi(r6, r6, Operand(-sizeof(intptr_t)));
   __ add(r9, r5, r6);
   __ LoadP(r10, MemOperand(r9, FrameDescription::frame_content_offset()));
   __ push(r10);

@@ -1719,6 +1719,20 @@ bool Simulator::DecodeExt2_10bit(Instruction *instr) {
       }
       break;
     }
+#if V8_TARGET_ARCH_PPC64
+    case EXTSW: {
+      const int shift = kBitsPerPointer - 32;
+      int ra = instr->RAValue();
+      int rs = instr->RSValue();
+      intptr_t rs_val = get_register(rs);
+      intptr_t ra_val = (rs_val << shift) >> shift;
+      set_register(ra, ra_val);
+      if (instr->Bit(0)) {  // RC bit set
+        SetCR0(ra_val);
+      }
+      break;
+    }
+#endif
     case EXTSH: {
       const int shift = kBitsPerPointer - 16;
       int ra = instr->RAValue();

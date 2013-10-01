@@ -1346,6 +1346,25 @@ class MacroAssembler: public Assembler {
 #endif
   }
 
+  void SmiToArrayOffset(Register dst, Register src, int elementSizeLog2) {
+    if (kSmiShift < elementSizeLog2) {
+      ShiftLeftImm(dst, src, Operand(elementSizeLog2 - kSmiShift));
+    } else if (kSmiShift > elementSizeLog2) {
+      ShiftRightArithImm(dst, src, kSmiShift - elementSizeLog2);
+    } else if (!dst.is(src)) {
+      mr(dst, src);
+    }
+  }
+
+  void IndexToArrayOffset(Register dst, Register src, int elementSizeLog2,
+                          bool isSmi) {
+    if (isSmi) {
+      SmiToArrayOffset(dst, src, elementSizeLog2);
+    } else {
+      ShiftLeftImm(dst, src, Operand(elementSizeLog2));
+    }
+  }
+
   // Untag the source value into destination and jump if source is a smi.
   // Souce and destination can be the same register.
   void UntagAndJumpIfSmi(Register dst, Register src, Label* smi_case);

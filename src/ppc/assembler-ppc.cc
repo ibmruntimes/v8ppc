@@ -1176,6 +1176,9 @@ void Assembler::cntlzd_(Register ra, Register rs, RCBit rc) {
   x_form(EXT2 | CNTLZDX, ra, rs, r0, rc);
 }
 
+void Assembler::extsw(Register rs, Register ra, RCBit rc) {
+  emit(EXT2 | EXTSW | rs.code()*B21 | ra.code()*B16 | rc);
+}
 #endif
 
 

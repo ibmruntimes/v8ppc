@@ -161,7 +161,13 @@ int MacroAssembler::CallSizeNotPredictableCodeSize(
     movSize = 2;
   }
 #else
+
+#if V8_TARGET_ARCH_PPC64
+  movSize = 5;
+#else
   movSize = 2;
+#endif
+
 #endif
 
   size = (2 + movSize) * kInstrSize;

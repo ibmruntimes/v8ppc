@@ -147,9 +147,9 @@ class LCodeGen BASE_EMBEDDED {
   MemOperand PrepareKeyedOperand(Register key,
                                  Register base,
                                  bool key_is_constant,
+                                 bool key_is_tagged,
                                  int constant_key,
-                                 int element_size,
-                                 int shift_size,
+                                 int element_size_shift,
                                  int additional_index,
                                  int additional_offset);
 

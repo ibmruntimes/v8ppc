@@ -253,7 +253,8 @@ enum OpcodeExt2 {
   SRADIX = 413 << 2,  // Shift Right Algebraic Double Word Immediate
   EXTSH = 922 << 1,   // Extend Sign Halfword
   EXTSB = 954 << 1,   // Extend Sign Byte
-  ICBI = 982 << 1     // Instruction Cache Block Invalidate
+  ICBI = 982 << 1,    // Instruction Cache Block Invalidate
+  EXTSW = 986 << 1    // Extend Sign Word
 };
 
 // Some use Bits 10-1 and other only 5-1 for the opcode
