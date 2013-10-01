@@ -62,7 +62,7 @@ TEST(0) {
 
   Assembler assm(Isolate::Current(), NULL, 0);
 
-#if _AIX
+#if defined(_AIX) || defined(V8_TARGET_ARCH_PPC64)
   __ function_descriptor();
 #endif
 
@@ -80,9 +80,10 @@ TEST(0) {
   Code::cast(code)->Print();
 #endif
   F2 f = FUNCTION_CAST<F2>(Code::cast(code)->entry());
-  int res = reinterpret_cast<int>(CALL_GENERATED_CODE(f, 3, 4, 0, 0, 0));
-  ::printf("f() = %d\n", res);
-  CHECK_EQ(7, res);
+  intptr_t res =
+    reinterpret_cast<intptr_t>(CALL_GENERATED_CODE(f, 3, 4, 0, 0, 0));
+  ::printf("f() = %" V8PRIdPTR "\n", res);
+  CHECK_EQ(7, static_cast<int>(res));
 }
 
 // Loop 100 times, adding loop counter to result
@@ -93,7 +94,7 @@ TEST(1) {
   Assembler assm(Isolate::Current(), NULL, 0);
   Label L, C;
 
-#if _AIX
+#if defined(_AIX) || defined(V8_TARGET_ARCH_PPC64)
   __ function_descriptor();
 #endif
 
@@ -121,9 +122,10 @@ TEST(1) {
   Code::cast(code)->Print();
 #endif
   F1 f = FUNCTION_CAST<F1>(Code::cast(code)->entry());
-  int res = reinterpret_cast<int>(CALL_GENERATED_CODE(f, 100, 0, 0, 0, 0));
-  ::printf("f() = %d\n", res);
-  CHECK_EQ(5050, res);
+  intptr_t res =
+    reinterpret_cast<intptr_t>(CALL_GENERATED_CODE(f, 100, 0, 0, 0, 0));
+  ::printf("f() = %" V8PRIdPTR  "\n", res);
+  CHECK_EQ(5050, static_cast<int>(res));
 }
 
 
@@ -134,7 +136,7 @@ TEST(2) {
   Assembler assm(Isolate::Current(), NULL, 0);
   Label L, C;
 
-#if _AIX
+#if defined(_AIX) || defined(V8_TARGET_ARCH_PPC64)
   __ function_descriptor();
 #endif
 
@@ -171,9 +173,10 @@ TEST(2) {
   Code::cast(code)->Print();
 #endif
   F1 f = FUNCTION_CAST<F1>(Code::cast(code)->entry());
-  int res = reinterpret_cast<int>(CALL_GENERATED_CODE(f, 10, 0, 0, 0, 0));
-  ::printf("f() = %d\n", res);
-  CHECK_EQ(3628800, res);
+  intptr_t res =
+    reinterpret_cast<intptr_t>(CALL_GENERATED_CODE(f, 10, 0, 0, 0, 0));
+  ::printf("f() = %" V8PRIdPTR "\n", res);
+  CHECK_EQ(3628800, static_cast<int>(res));
 }
 
 
@@ -192,13 +195,18 @@ TEST(3) {
   Assembler assm(Isolate::Current(), NULL, 0);
   Label L, C;
 
-#if _AIX
+#if defined(_AIX) || defined(V8_TARGET_ARCH_PPC64)
   __ function_descriptor();
 #endif
 
   // build a frame
+#if V8_TARGET_ARCH_PPC64
+  __ stdu(sp, MemOperand(sp, -32));
+  __ std(fp, MemOperand(sp, 24));
+#else
   __ stwu(sp, MemOperand(sp, -16));
   __ stw(fp, MemOperand(sp, 12));
+#endif
   __ mr(fp, sp);
 
   // r4 points to our struct
@@ -222,8 +230,13 @@ TEST(3) {
   __ sth(r5, MemOperand(r4, OFFSET_OF(T, s)));
 
   // restore frame
+#if V8_TARGET_ARCH_PPC64
+  __ addi(r11, fp, Operand(32));
+  __ ld(fp, MemOperand(r11, -8));
+#else
   __ addi(r11, fp, Operand(16));
   __ lwz(fp, MemOperand(r11, -4));
+#endif
   __ mr(sp, r11);
   __ blr();
 
@@ -241,15 +254,16 @@ TEST(3) {
   t.i = 100000;
   t.c = 10;
   t.s = 1000;
-  int res = reinterpret_cast<int>(CALL_GENERATED_CODE(f, &t, 0, 0, 0, 0));
-  ::printf("f() = %d\n", res);
-  CHECK_EQ(101010, res);
+  intptr_t res =
+    reinterpret_cast<intptr_t>(CALL_GENERATED_CODE(f, &t, 0, 0, 0, 0));
+  ::printf("f() = %" V8PRIdPTR "\n", res);
+  CHECK_EQ(101010, static_cast<int>(res));
   CHECK_EQ(100000/2, t.i);
   CHECK_EQ(10*4, t.c);
   CHECK_EQ(1000/8, t.s);
 }
-#if 0
 
+#if 0
 TEST(4) {
   // Test the VFP floating point instructions.
   InitializeVM();

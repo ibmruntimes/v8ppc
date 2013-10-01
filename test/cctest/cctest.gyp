@@ -118,7 +118,7 @@
             'test-disasm-arm.cc'
           ],
         }],
-        ['v8_target_arch=="ppc"', {
+        ['v8_target_arch=="ppc" or v8_target_arch=="ppc64"', {
           'sources': [
             'test-assembler-ppc.cc',
             'test-disasm-ppc.cc'
