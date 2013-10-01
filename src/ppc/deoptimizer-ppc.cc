@@ -1049,7 +1049,7 @@ void Deoptimizer::EntryGenerator::Generate() {
   __ subi(sp, sp, Operand(kNumberOfRegisters * kPointerSize));
   for (int16_t i = kNumberOfRegisters - 1; i >= 0; i--) {
     if ((saved_regs & (1 << i)) != 0) {
-      __ stw(ToRegister(i), MemOperand(sp, kPointerSize * i));
+      __ StoreP(ToRegister(i), MemOperand(sp, kPointerSize * i));
     }
   }
 
@@ -1057,7 +1057,7 @@ void Deoptimizer::EntryGenerator::Generate() {
       (kNumberOfRegisters * kPointerSize) + kDoubleRegsSize;
 
   // Get the bailout id from the stack.
-  __ lwz(r5, MemOperand(sp, kSavedRegistersAreaSize));
+  __ LoadP(r5, MemOperand(sp, kSavedRegistersAreaSize));
 
   // Get the address of the location in the code object if possible (r6) (return
   // address for lazy deoptimization) and compute the fp-to-sp delta in
@@ -1080,7 +1080,7 @@ void Deoptimizer::EntryGenerator::Generate() {
   // Allocate a new deoptimizer object.
   // Pass six arguments in r3 to r8.
   __ PrepareCallCFunction(6, r8);
-  __ lwz(r3, MemOperand(fp, JavaScriptFrameConstants::kFunctionOffset));
+  __ LoadP(r3, MemOperand(fp, JavaScriptFrameConstants::kFunctionOffset));
   __ li(r4, Operand(type()));  // bailout type,
   // r5: bailout id already loaded.
   // r6: code address or 0 already loaded.
@@ -1094,14 +1094,14 @@ void Deoptimizer::EntryGenerator::Generate() {
 
   // Preserve "deoptimizer" object in register r3 and get the input
   // frame descriptor pointer to r4 (deoptimizer->input_);
-  __ lwz(r4, MemOperand(r3, Deoptimizer::input_offset()));
+  __ LoadP(r4, MemOperand(r3, Deoptimizer::input_offset()));
 
   // Copy core registers into FrameDescription::registers_[kNumRegisters].
   ASSERT(Register::kNumRegisters == kNumberOfRegisters);
   for (int i = 0; i < kNumberOfRegisters; i++) {
     int offset = (i * kPointerSize) + FrameDescription::registers_offset();
-    __ lwz(r5, MemOperand(sp, i * kPointerSize));
-    __ stw(r5, MemOperand(r4, offset));
+    __ LoadP(r5, MemOperand(sp, i * kPointerSize));
+    __ StoreP(r5, MemOperand(r4, offset));
   }
 
   // Copy VFP registers to
@@ -1124,7 +1124,7 @@ void Deoptimizer::EntryGenerator::Generate() {
 
   // Compute a pointer to the unwinding limit in register r5; that is
   // the first stack slot not part of the input frame.
-  __ lwz(r5, MemOperand(r4, FrameDescription::frame_size_offset()));
+  __ LoadP(r5, MemOperand(r4, FrameDescription::frame_size_offset()));
   __ add(r5, r5, sp);
 
   // Unwind the stack down to - but not including - the unwinding
@@ -1134,8 +1134,8 @@ void Deoptimizer::EntryGenerator::Generate() {
   Label pop_loop;
   __ bind(&pop_loop);
   __ pop(r7);
-  __ stw(r7, MemOperand(r6, 0));
-  __ addi(r6, r6, Operand(sizeof(uint32_t)));
+  __ StoreP(r7, MemOperand(r6, 0));
+  __ addi(r6, r6, Operand(sizeof(intptr_t)));
   __ cmp(r5, sp);
   __ bne(&pop_loop);
 
@@ -1156,18 +1156,18 @@ void Deoptimizer::EntryGenerator::Generate() {
   // Outer loop state: r3 = current "FrameDescription** output_",
   // r4 = one past the last FrameDescription**.
   __ lwz(r4, MemOperand(r3, Deoptimizer::output_count_offset()));
-  __ lwz(r3, MemOperand(r3, Deoptimizer::output_offset()));  // r3 is output_.
-  __ slwi(r4, r4, Operand(2));
+  __ LoadP(r3, MemOperand(r3, Deoptimizer::output_offset()));  // r3 is output_.
+  __ ShiftLeftImm(r4, r4, Operand(kPointerSizeLog2));
   __ add(r4, r3, r4);
   __ bind(&outer_push_loop);
   // Inner loop state: r5 = current FrameDescription*, r6 = loop index.
-  __ lwz(r5, MemOperand(r3, 0));  // output_[ix]
-  __ lwz(r6, MemOperand(r5, FrameDescription::frame_size_offset()));
+  __ LoadP(r5, MemOperand(r3, 0));  // output_[ix]
+  __ LoadP(r6, MemOperand(r5, FrameDescription::frame_size_offset()));
 
   __ bind(&inner_push_loop);
   __ addi(r6, r6, Operand(-sizeof(uint32_t)));
   __ add(r9, r5, r6);
-  __ lwz(r10, MemOperand(r9, FrameDescription::frame_content_offset()));
+  __ LoadP(r10, MemOperand(r9, FrameDescription::frame_content_offset()));
   __ push(r10);
   __ cmpi(r6, Operand::Zero());
   __ bne(&inner_push_loop);  // test for gt?
@@ -1178,13 +1178,13 @@ void Deoptimizer::EntryGenerator::Generate() {
 
   // Push state, pc, and continuation from the last output frame.
   if (type() != OSR) {
-    __ lwz(r9, MemOperand(r5, FrameDescription::state_offset()));
+    __ LoadP(r9, MemOperand(r5, FrameDescription::state_offset()));
     __ push(r9);
   }
 
-  __ lwz(r9, MemOperand(r5, FrameDescription::pc_offset()));
+  __ LoadP(r9, MemOperand(r5, FrameDescription::pc_offset()));
   __ push(r9);
-  __ lwz(r9, MemOperand(r5, FrameDescription::continuation_offset()));
+  __ LoadP(r9, MemOperand(r5, FrameDescription::continuation_offset()));
   __ push(r9);
 
   // Restore the registers from the last output frame.
@@ -1193,7 +1193,7 @@ void Deoptimizer::EntryGenerator::Generate() {
   for (int i = kNumberOfRegisters - 1; i >= 0; i--) {
     int offset = (i * kPointerSize) + FrameDescription::registers_offset();
     if ((restored_regs & (1 << i)) != 0) {
-      __ lwz(ToRegister(i), MemOperand(ip, offset));
+      __ LoadP(ToRegister(i), MemOperand(ip, offset));
     }
   }
 
