@@ -2065,16 +2065,28 @@ void FullCodeGenerator::EmitInlineSmiBinaryOp(BinaryOperation* expr,
       break;
     }
     case Token::MUL: {
+#if V8_TARGET_ARCH_PPC64
+      // Remove tag from both operands.
+      __ SmiUntag(ip, right);
+      __ SmiUntag(r0, left);
+      __ mullw(scratch1, r0, ip);
+      __ mulhw(scratch2, r0, ip);
+#else
       __ SmiUntag(ip, right);
       __ mullw(scratch1, left, ip);
       __ mulhw(scratch2, left, ip);
+#endif
       // Check for overflowing the smi range - no overflow if higher 33 bits of
       // the result are identical.
       __ srawi(ip, scratch1, 31);
       __ cmp(ip, scratch2);
       __ bne(&stub_call);
       // Go slow on zero result to handle -0.
+#if V8_TARGET_ARCH_PPC64
+      __ SmiTag(right, scratch1);
+#else
       __ mr(right, scratch1);
+#endif
       __ cmpi(scratch1, Operand::Zero());
       __ bne(&done);
       // We need -0 if we were multiplying a negative number with 0 to get 0.
@@ -3802,10 +3814,14 @@ void FullCodeGenerator::EmitFastAsciiArrayJoin(CallRuntime* expr) {
   __ JumpIfInstanceTypeIsNotSequentialAscii(scratch1, scratch2, &bailout);
 
   // Add (separator length times array_length) - separator length to the
-  // string_length to get the length of the result string. array_length is not
-  // smi but the other values are, so the result is a smi
+  // string_length to get the length of the result string.
   __ LoadP(scratch1, FieldMemOperand(separator, SeqAsciiString::kLengthOffset));
   __ sub(string_length, string_length, scratch1);
+#if V8_TARGET_ARCH_PPC64
+  __ SmiUntag(scratch1, scratch1);
+#else
+  // array_length is not smi but the other values are, so the result is a smi
+#endif
   __ mullw(scratch2, array_length, scratch1);
   __ mulhw(ip, array_length, scratch1);
   // Check for smi overflow. No overflow if higher 33 bits of 64-bit result are
@@ -3815,6 +3831,9 @@ void FullCodeGenerator::EmitFastAsciiArrayJoin(CallRuntime* expr) {
   __ TestSignBit(scratch2, r0);
   __ bne(&bailout, cr0);
 
+#if V8_TARGET_ARCH_PPC64
+  __ SmiTag(scratch2, scratch2);
+#endif
   __ AddAndCheckForOverflow(string_length, string_length, scratch2,
                             scratch1, r0);
   __ BranchOnOverflow(&bailout);

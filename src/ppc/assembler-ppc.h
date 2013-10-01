@@ -666,7 +666,11 @@ class Assembler : public AssemblerBase {
   // register.
   static const int kPcLoadDelta = 0;  // Todo: remove
 
+#if V8_TARGET_ARCH_PPC64
+  static const int kPatchDebugBreakSlotReturnOffset = 7 * kInstrSize;
+#else
   static const int kPatchDebugBreakSlotReturnOffset = 4 * kInstrSize;
+#endif
 
   // This is the length of the BreakLocationIterator::SetDebugBreakAtReturn()
   // code patch FIXED_SEQUENCE

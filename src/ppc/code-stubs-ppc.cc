@@ -2120,14 +2120,23 @@ void BinaryOpStub::GenerateSmiSmiOperation(MacroAssembler* masm) {
     }
     case Token::MUL: {
       Label mul_zero, mul_neg_zero;
+#if V8_TARGET_ARCH_PPC64
+      // Remove tag from both operands.
+      __ SmiUntag(ip, right);
+      __ SmiUntag(r0, left);
+      // Do multiplication
+      // scratch1 = lower 32 bits of product.
+      // scratch2 = higher 32 bits of product.
+      __ mullw(scratch1, r0, ip);
+      __ mulhw(scratch2, r0, ip);
+#else
       // Remove tag from one of the operands. This way the multiplication result
       // will be a smi if it fits the smi range.
       __ SmiUntag(ip, right);
       // Do multiplication
-      // scratch1 = lower 32 bits of ip * left.
-      // scratch2 = higher 32 bits of ip * left.
       __ mullw(scratch1, left, ip);
       __ mulhw(scratch2, left, ip);
+#endif
       // Check for overflowing the smi range - no overflow if higher 33 bits of
       // the result are identical.
       __ srawi(ip, scratch1, 31);
@@ -2136,7 +2145,11 @@ void BinaryOpStub::GenerateSmiSmiOperation(MacroAssembler* masm) {
       // Go slow on zero result to handle -0.
       __ cmpi(scratch1, Operand::Zero());
       __ beq(&mul_zero);
+#if V8_TARGET_ARCH_PPC64
+      __ SmiTag(right, scratch1);
+#else
       __ mr(right, scratch1);
+#endif
       __ Ret();
       __ bind(&mul_zero);
       // We need -0 if we were multiplying a negative number with 0 to get 0.
@@ -7518,6 +7531,12 @@ void ProfileEntryHookStub::Generate(MacroAssembler* masm) {
 #if defined(V8_HOST_ARCH_PPC)
   __ mov(ip, Operand(reinterpret_cast<intptr_t>(&entry_hook_)));
   __ LoadP(ip, MemOperand(ip));
+
+#if (defined(_AIX) || defined(V8_TARGET_ARCH_PPC64))
+  // Function descriptor
+  __ LoadP(ToRegister(2), MemOperand(ip, kPointerSize));
+  __ LoadP(ip, MemOperand(ip, 0));
+#endif
 
   // PPC LINUX ABI:
   __ addi(sp, sp, Operand(-kNumRequiredStackFrameSlots * kPointerSize));

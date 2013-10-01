@@ -3133,33 +3133,48 @@ void MacroAssembler::CopyBytes(Register src,
                                Register dst,
                                Register length,
                                Register scratch) {
-  Label align_loop, align_loop_1, word_loop, byte_loop, byte_loop_1, done;
+  Label align_loop, aligned, word_loop, byte_loop, byte_loop_1, done;
 
-  // Align src before copying in word size chunks.
-  bind(&align_loop);
+  ASSERT(!scratch.is(r0));
+
   cmpi(length, Operand::Zero());
   beq(&done);
-  bind(&align_loop_1);
-  andi(r0, src, Operand(kPointerSize - 1));
-  beq(&word_loop, cr0);
+
+  // Check src alignment and length to see whether word_loop is possible
+  andi(scratch, src, Operand(kPointerSize - 1));
+  beq(&aligned, cr0);
+  subfic(scratch, scratch, Operand(kPointerSize * 2));
+  cmp(length, scratch);
+  blt(&byte_loop);
+
+  // Align src before copying in word size chunks.
+  subi(scratch, scratch, Operand(kPointerSize));
+  mtctr(scratch);
+  bind(&align_loop);
   lbz(scratch, MemOperand(src));
   addi(src, src, Operand(1));
+  subi(length, length, Operand(1));
   stb(scratch, MemOperand(dst));
   addi(dst, dst, Operand(1));
-  subi(length, length, Operand(1));
-  cmpi(r0, Operand::Zero());
-  bne(&byte_loop_1);
+  bdnz(&align_loop);
+
+  bind(&aligned);
 
   // Copy bytes in word size chunks.
-  bind(&word_loop);
   if (emit_debug_code()) {
     andi(r0, src, Operand(kPointerSize - 1));
     Assert(eq, "Expecting alignment for CopyBytes", cr0);
   }
-  cmpi(length, Operand(kPointerSize));
-  blt(&byte_loop);
+
+  ShiftRightImm(scratch, length, Operand(kPointerSizeLog2));
+  cmpi(scratch, Operand::Zero());
+  beq(&byte_loop);
+
+  mtctr(scratch);
+  bind(&word_loop);
   LoadP(scratch, MemOperand(src));
   addi(src, src, Operand(kPointerSize));
+  subi(length, length, Operand(kPointerSize));
   if (CpuFeatures::IsSupported(UNALIGNED_ACCESSES)) {
     // currently false for PPC - but possible future opt
     StoreP(scratch, MemOperand(dst));
@@ -3167,38 +3182,58 @@ void MacroAssembler::CopyBytes(Register src,
   } else {
 #if __BYTE_ORDER == __LITTLE_ENDIAN
     stb(scratch, MemOperand(dst, 0));
-    srwi(scratch, scratch, Operand(8));
+    ShiftRightImm(scratch, scratch, Operand(8));
     stb(scratch, MemOperand(dst, 1));
-    srwi(scratch, scratch, Operand(8));
+    ShiftRightImm(scratch, scratch, Operand(8));
     stb(scratch, MemOperand(dst, 2));
-    srwi(scratch, scratch, Operand(8));
+    ShiftRightImm(scratch, scratch, Operand(8));
     stb(scratch, MemOperand(dst, 3));
+#if V8_TARGET_ARCH_PPC64
+    ShiftRightImm(scratch, scratch, Operand(8));
+    stb(scratch, MemOperand(dst, 4));
+    ShiftRightImm(scratch, scratch, Operand(8));
+    stb(scratch, MemOperand(dst, 5));
+    ShiftRightImm(scratch, scratch, Operand(8));
+    stb(scratch, MemOperand(dst, 6));
+    ShiftRightImm(scratch, scratch, Operand(8));
+    stb(scratch, MemOperand(dst, 7));
+#endif
 #else
+#if V8_TARGET_ARCH_PPC64
+    stb(scratch, MemOperand(dst, 7));
+    ShiftRightImm(scratch, scratch, Operand(8));
+    stb(scratch, MemOperand(dst, 6));
+    ShiftRightImm(scratch, scratch, Operand(8));
+    stb(scratch, MemOperand(dst, 5));
+    ShiftRightImm(scratch, scratch, Operand(8));
+    stb(scratch, MemOperand(dst, 4));
+    ShiftRightImm(scratch, scratch, Operand(8));
+#endif
     stb(scratch, MemOperand(dst, 3));
-    srwi(scratch, scratch, Operand(8));
+    ShiftRightImm(scratch, scratch, Operand(8));
     stb(scratch, MemOperand(dst, 2));
-    srwi(scratch, scratch, Operand(8));
+    ShiftRightImm(scratch, scratch, Operand(8));
     stb(scratch, MemOperand(dst, 1));
-    srwi(scratch, scratch, Operand(8));
+    ShiftRightImm(scratch, scratch, Operand(8));
     stb(scratch, MemOperand(dst, 0));
 #endif
-    addi(dst, dst, Operand(4));
+    addi(dst, dst, Operand(kPointerSize));
   }
-  subi(length, length, Operand(kPointerSize));
-  b(&word_loop);
+  bdnz(&word_loop);
 
   // Copy the last bytes if any left.
-  bind(&byte_loop);
   cmpi(length, Operand::Zero());
   beq(&done);
+
+  bind(&byte_loop);
+  mtctr(length);
   bind(&byte_loop_1);
   lbz(scratch, MemOperand(src));
   addi(src, src, Operand(1));
   stb(scratch, MemOperand(dst));
   addi(dst, dst, Operand(1));
-  subi(length, length, Operand(1));
-  cmpi(length, Operand::Zero());
-  bne(&byte_loop_1);
+  bdnz(&byte_loop_1);
+
   bind(&done);
 }
 
