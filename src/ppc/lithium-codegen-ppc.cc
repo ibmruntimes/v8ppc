@@ -2412,26 +2412,24 @@ void LCodeGen::DoDeferredInstanceOfKnownGlobal(LInstanceOfKnownGlobal* instr,
   Register temp = ToRegister(instr->temp());
   ASSERT(temp.is(r7));
   __ LoadHeapObject(InstanceofStub::right(), instr->function());
+#if V8_TARGET_ARCH_PPC64
+  static const int kAdditionalDelta = 13;
+#else
   static const int kAdditionalDelta = 7;
+#endif
   int delta = masm_->InstructionsGeneratedSince(map_check) + kAdditionalDelta;
   Label before_push_delta;
   __ bind(&before_push_delta);
   {
     Assembler::BlockTrampolinePoolScope block_trampoline_pool(masm_);
-    __ mov(temp, Operand(delta * kPointerSize));
-    // The mov above can generate one or two instructions. The delta
-    // was computed for two instructions, so we need to pad here in
-    // case of one instruction.
-    if (masm_->InstructionsGeneratedSince(&before_push_delta) != 2) {
-      ASSERT_EQ(1, masm_->InstructionsGeneratedSince(&before_push_delta));
-      __ nop();
-    }
+    __ mov(temp, Operand(delta * Instruction::kInstrSize));
     __ StoreToSafepointRegisterSlot(temp, temp);
   }
   CallCodeGeneric(stub.GetCode(),
                   RelocInfo::CODE_TARGET,
                   instr,
                   RECORD_SAFEPOINT_WITH_REGISTERS_AND_NO_ARGUMENTS);
+  ASSERT(delta == masm_->InstructionsGeneratedSince(map_check));
   LEnvironment* env = instr->GetDeferredLazyDeoptimizationEnvironment();
   safepoints_.RecordLazyDeoptimizationIndex(env->deoptimization_index());
   // Put the result value into the result register slot and

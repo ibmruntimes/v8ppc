@@ -3501,13 +3501,12 @@ void MacroAssembler::PatchRelocatedValue(Register lis_location,
   stw(scratch, MemOperand(lis_location, kInstrSize));
 
 #if V8_TARGET_ARCH_PPC64
-  lwz(scratch, MemOperand(lis_location, 2*kInstrSize));
-  // scratch is now sldi.
   if (emit_debug_code()) {
-    And(scratch, scratch, Operand(kOpcodeMask));
-    Cmpi(scratch, Operand(RLDICR), r0);
-    Check(eq, "The instruction should be an sldi");
     lwz(scratch, MemOperand(lis_location, 2*kInstrSize));
+    // scratch is now sldi.
+    And(scratch, scratch, Operand(kOpcodeMask|kExt5OpcodeMask));
+    Cmpi(scratch, Operand(EXT5|RLDICR), r0);
+    Check(eq, "The instruction should be an sldi");
   }
 
   lwz(scratch, MemOperand(lis_location, 3*kInstrSize));
@@ -3568,13 +3567,12 @@ void MacroAssembler::GetRelocatedValueLocation(Register lis_location,
   rlwimi(result, scratch, 0, 16, 31);
 
 #if V8_TARGET_ARCH_PPC64
-  lwz(scratch, MemOperand(lis_location, 2*kInstrSize));
-  // scratch is now sldi.
   if (emit_debug_code()) {
-    And(scratch, scratch, Operand(kOpcodeMask));
-    Cmpi(scratch, Operand(RLDICR), r0);
-    Check(eq, "The instruction should be an sldi");
     lwz(scratch, MemOperand(lis_location, 2*kInstrSize));
+    // scratch is now sldi.
+    And(scratch, scratch, Operand(kOpcodeMask|kExt5OpcodeMask));
+    Cmpi(scratch, Operand(EXT5|RLDICR), r0);
+    Check(eq, "The instruction should be an sldi");
   }
 
   lwz(scratch, MemOperand(lis_location, 3*kInstrSize));

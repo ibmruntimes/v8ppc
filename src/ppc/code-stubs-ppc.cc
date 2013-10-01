@@ -3998,7 +3998,11 @@ void InstanceofStub::Generate(MacroAssembler* masm) {
   const Register scratch2 = r8;
   Register scratch3 = no_reg;
 
-  const int32_t kDeltaToLoadBoolResult = 5 * kPointerSize;
+#if V8_TARGET_ARCH_PPC64
+  const int32_t kDeltaToLoadBoolResult = 9 * Assembler::kInstrSize;
+#else
+  const int32_t kDeltaToLoadBoolResult = 5 * Assembler::kInstrSize;
+#endif
 
   Label slow, loop, is_instance, is_not_instance, not_js_object;
 
