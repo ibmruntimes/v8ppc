@@ -172,7 +172,7 @@ void LGapResolver::BreakCycle(int index) {
   if (source->IsRegister()) {
     __ mr(kSavedValueRegister, cgen_->ToRegister(source));
   } else if (source->IsStackSlot()) {
-    __ lwz(kSavedValueRegister, cgen_->ToMemOperand(source));
+    __ LoadP(kSavedValueRegister, cgen_->ToMemOperand(source));
   } else if (source->IsDoubleRegister()) {
     __ fmr(kScratchDoubleReg, cgen_->ToDoubleRegister(source));
   } else if (source->IsDoubleStackSlot()) {
@@ -193,7 +193,7 @@ void LGapResolver::RestoreValue() {
   if (saved_destination_->IsRegister()) {
     __ mr(cgen_->ToRegister(saved_destination_), kSavedValueRegister);
   } else if (saved_destination_->IsStackSlot()) {
-    __ stw(kSavedValueRegister, cgen_->ToMemOperand(saved_destination_));
+    __ StoreP(kSavedValueRegister, cgen_->ToMemOperand(saved_destination_));
   } else if (saved_destination_->IsDoubleRegister()) {
     __ fmr(cgen_->ToDoubleRegister(saved_destination_), kScratchDoubleReg);
   } else if (saved_destination_->IsDoubleStackSlot()) {
@@ -220,13 +220,13 @@ void LGapResolver::EmitMove(int index) {
       __ mr(cgen_->ToRegister(destination), source_register);
     } else {
       ASSERT(destination->IsStackSlot());
-      __ stw(source_register, cgen_->ToMemOperand(destination));
+      __ StoreP(source_register, cgen_->ToMemOperand(destination));
     }
 
   } else if (source->IsStackSlot()) {
     MemOperand source_operand = cgen_->ToMemOperand(source);
     if (destination->IsRegister()) {
-      __ lwz(cgen_->ToRegister(destination), source_operand);
+      __ LoadP(cgen_->ToRegister(destination), source_operand);
     } else {
       ASSERT(destination->IsStackSlot());
       MemOperand destination_operand = cgen_->ToMemOperand(destination);
@@ -240,14 +240,14 @@ void LGapResolver::EmitMove(int index) {
           __ stfd(kScratchDoubleReg.low(), destination_operand);
         } else {
 #endif
-          __ lwz(ip, source_operand);
-          __ stw(ip, destination_operand);
+          __ LoadP(ip, source_operand);
+          __ StoreP(ip, destination_operand);
 #if 0
         }
 #endif
       } else {
-        __ lwz(kSavedValueRegister, source_operand);
-        __ stw(kSavedValueRegister, destination_operand);
+        __ LoadP(kSavedValueRegister, source_operand);
+        __ StoreP(kSavedValueRegister, destination_operand);
       }
     }
 
@@ -270,7 +270,7 @@ void LGapResolver::EmitMove(int index) {
         __ LoadObject(kSavedValueRegister,
                       cgen_->ToHandle(constant_source));
       }
-      __ stw(kSavedValueRegister, cgen_->ToMemOperand(destination));
+      __ StoreP(kSavedValueRegister, cgen_->ToMemOperand(destination));
     }
 
   } else if (source->IsDoubleRegister()) {
@@ -292,6 +292,10 @@ void LGapResolver::EmitMove(int index) {
       if (in_cycle_) {
         // kSavedDoubleValueRegister was used to break the cycle,
         // but kSavedValueRegister is free.
+#if V8_TARGET_ARCH_PPC64
+        __ ld(kSavedValueRegister, source_operand);
+        __ std(kSavedValueRegister, destination_operand);
+#else
         MemOperand source_high_operand =
             cgen_->ToHighMemOperand(source);
         MemOperand destination_high_operand =
@@ -300,6 +304,7 @@ void LGapResolver::EmitMove(int index) {
         __ stw(kSavedValueRegister, destination_operand);
         __ lwz(kSavedValueRegister, source_high_operand);
         __ stw(kSavedValueRegister, destination_high_operand);
+#endif
       } else {
         __ lfd(kScratchDoubleReg, source_operand);
         __ stfd(kScratchDoubleReg, destination_operand);
