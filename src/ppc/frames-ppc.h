@@ -132,7 +132,12 @@ class StackHandlerConstants : public AllStatic {
  public:
   static const int kNextOffset     = 0 * kPointerSize;
   static const int kCodeOffset     = 1 * kPointerSize;
+#if defined(V8_TARGET_ARCH_PPC64) && (__BYTE_ORDER == __BIG_ENDIAN)
+  static const int kStateOffset    = 2 * kPointerSize + kIntSize;
+#else
   static const int kStateOffset    = 2 * kPointerSize;
+#endif
+  static const int kStateSlot      = 2 * kPointerSize;
   static const int kContextOffset  = 3 * kPointerSize;
   static const int kFPOffset       = 4 * kPointerSize;
 

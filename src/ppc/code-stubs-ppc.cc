@@ -329,15 +329,15 @@ void FastNewBlockContextStub::Generate(MacroAssembler* masm) {
 
   // Set up the fixed slots, copy the global object from the previous context.
   __ LoadP(r5, ContextOperand(cp, Context::GLOBAL_OBJECT_INDEX));
-  __ StoreP(r6, ContextOperand(r3, Context::CLOSURE_INDEX));
-  __ StoreP(cp, ContextOperand(r3, Context::PREVIOUS_INDEX));
-  __ StoreP(r4, ContextOperand(r3, Context::EXTENSION_INDEX));
-  __ StoreP(r5, ContextOperand(r3, Context::GLOBAL_OBJECT_INDEX));
+  __ StoreP(r6, ContextOperand(r3, Context::CLOSURE_INDEX), r0);
+  __ StoreP(cp, ContextOperand(r3, Context::PREVIOUS_INDEX), r0);
+  __ StoreP(r4, ContextOperand(r3, Context::EXTENSION_INDEX), r0);
+  __ StoreP(r5, ContextOperand(r3, Context::GLOBAL_OBJECT_INDEX), r0);
 
   // Initialize the rest of the slots to the hole value.
   __ LoadRoot(r4, Heap::kTheHoleValueRootIndex);
   for (int i = 0; i < slots_; i++) {
-    __ StoreP(r4, ContextOperand(r3, i + Context::MIN_CONTEXT_SLOTS));
+    __ StoreP(r4, ContextOperand(r3, i + Context::MIN_CONTEXT_SLOTS), r0);
   }
 
   // Remove the on-stack argument and return.
