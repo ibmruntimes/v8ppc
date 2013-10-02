@@ -3252,7 +3252,7 @@ void FullCodeGenerator::EmitDateField(CallRuntime* expr) {
     }
     __ bind(&runtime);
     __ PrepareCallCFunction(2, scratch1);
-    __ li(r4, Operand(index));
+    __ LoadSmiLiteral(r4, index);
     __ CallCFunction(ExternalReference::get_date_field_function(isolate()), 2);
     __ b(&done);
   }

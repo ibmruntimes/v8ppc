@@ -1547,7 +1547,7 @@ void LCodeGen::DoDateField(LDateField* instr) {
     }
     __ bind(&runtime);
     __ PrepareCallCFunction(2, scratch);
-    __ mov(r4, Operand(index));
+    __ LoadSmiLiteral(r4, index);
     __ CallCFunction(ExternalReference::get_date_field_function(isolate()), 2);
     __ bind(&done);
   }
