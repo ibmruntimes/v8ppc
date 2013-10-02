@@ -2199,9 +2199,9 @@ void MacroAssembler::CallApiFunctionAndReturn(ExternalReference function,
   mov(r26, Operand(next_address));
   LoadP(r27, MemOperand(r26, kNextOffset));
   LoadP(r28, MemOperand(r26, kLimitOffset));
-  LoadP(r29, MemOperand(r26, kLevelOffset));
+  lwz(r29, MemOperand(r26, kLevelOffset));
   addi(r29, r29, Operand(1));
-  StoreP(r29, MemOperand(r26, kLevelOffset));
+  stw(r29, MemOperand(r26, kLevelOffset));
 
   // PPC LINUX ABI
   // The return value is pointer-sized non-scalar value.
@@ -2237,12 +2237,12 @@ void MacroAssembler::CallApiFunctionAndReturn(ExternalReference function,
   // previous handle scope.
   StoreP(r27, MemOperand(r26, kNextOffset));
   if (emit_debug_code()) {
-    LoadP(r4, MemOperand(r26, kLevelOffset));
+    lwz(r4, MemOperand(r26, kLevelOffset));
     cmp(r4, r29);
     Check(eq, "Unexpected level after return from api call");
   }
   subi(r29, r29, Operand(1));
-  StoreP(r29, MemOperand(r26, kLevelOffset));
+  stw(r29, MemOperand(r26, kLevelOffset));
   LoadP(ip, MemOperand(r26, kLimitOffset));
   cmp(r28, ip);
   bne(&delete_allocated_handles);
