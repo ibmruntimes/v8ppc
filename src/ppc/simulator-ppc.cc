@@ -1369,7 +1369,9 @@ void Simulator::SoftwareInterrupt(Instruction* instr) {
           PrintF("\n");
         }
         CHECK(stack_aligned);
+#if !(defined(_AIX) || defined(V8_TARGET_ARCH_PPC64))
         arg1 = *(reinterpret_cast<intptr_t *>(arg1));
+#endif
         v8::Handle<v8::Value> result = target(arg1, arg2);
         if (::v8::internal::FLAG_trace_sim) {
           PrintF("Returned %p\n", reinterpret_cast<void *>(*result));
