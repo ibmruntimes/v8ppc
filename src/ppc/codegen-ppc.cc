@@ -232,8 +232,7 @@ void ElementsTransitionGenerator::GenerateSmiToDouble(
   __ bind(&convert_hole);
   if (FLAG_debug_code) {
     // Restore a "smi-untagged" heap object.
-    __ SmiTag(r22);
-    __ ori(r22, r22, Operand(1));
+    __ LoadP(r22, MemOperand(r6, -kPointerSize));
     __ CompareRoot(r22, Heap::kTheHoleValueRootIndex);
     __ Assert(eq, "object found in smi-only array");
   }
