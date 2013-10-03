@@ -3640,19 +3640,22 @@ void MacroAssembler::HasColor(Register object,
   GetMarkBits(object, bitmap_scratch, mask_scratch);
 
   Label other_color, word_boundary;
-  LoadP(ip, MemOperand(bitmap_scratch, MemoryChunk::kHeaderSize));
+  lwz(ip, MemOperand(bitmap_scratch, MemoryChunk::kHeaderSize));
+  // Test the first bit
   and_(r0, ip, mask_scratch, SetRC);
   b(first_bit == 1 ? eq : ne, &other_color, cr0);
   // Shift left 1
+  // May need to load the next cell
   slwi(mask_scratch, mask_scratch, Operand(1), SetRC);
   beq(&word_boundary, cr0);
+  // Test the second bit
   and_(r0, ip, mask_scratch, SetRC);
   b(second_bit == 1 ? ne : eq, has_color, cr0);
   b(&other_color);
 
   bind(&word_boundary);
-  LoadP(ip, MemOperand(bitmap_scratch,
-                       MemoryChunk::kHeaderSize + kPointerSize));
+  lwz(ip, MemOperand(bitmap_scratch,
+                     MemoryChunk::kHeaderSize + kIntSize));
   andi(r0, ip, Operand(1));
   b(second_bit == 1 ? ne : eq, has_color, cr0);
   bind(&other_color);
@@ -3695,7 +3698,7 @@ void MacroAssembler::GetMarkBits(Register addr_reg,
   ExtractBitRange(ip, addr_reg,
                   kPageSizeBits - 1,
                   kLowBits);
-  slwi(ip, ip, Operand(kPointerSizeLog2));
+  ShiftLeftImm(ip, ip, Operand(Bitmap::kBytesPerCellLog2));
   add(bitmap_reg, bitmap_reg, ip);
   li(ip, Operand(1));
   slw(mask_reg, ip, mask_reg);
@@ -3721,7 +3724,7 @@ void MacroAssembler::EnsureNotWhite(
 
   // Since both black and grey have a 1 in the first position and white does
   // not have a 1 there we only need to check one bit.
-  LoadP(load_scratch, MemOperand(bitmap_scratch, MemoryChunk::kHeaderSize));
+  lwz(load_scratch, MemOperand(bitmap_scratch, MemoryChunk::kHeaderSize));
   and_(r0, mask_scratch, load_scratch, SetRC);
   bne(&done, cr0);
 
@@ -3804,9 +3807,9 @@ void MacroAssembler::EnsureNotWhite(
   bind(&is_data_object);
   // Value is a data object, and it is white.  Mark it black.  Since we know
   // that the object is white we can make it black by flipping one bit.
-  LoadP(ip, MemOperand(bitmap_scratch, MemoryChunk::kHeaderSize));
+  lwz(ip, MemOperand(bitmap_scratch, MemoryChunk::kHeaderSize));
   orx(ip, ip, mask_scratch);
-  StoreP(ip, MemOperand(bitmap_scratch, MemoryChunk::kHeaderSize));
+  stw(ip, MemOperand(bitmap_scratch, MemoryChunk::kHeaderSize));
 
   mov(ip, Operand(~Page::kPageAlignmentMask));
   and_(bitmap_scratch, bitmap_scratch, ip);
