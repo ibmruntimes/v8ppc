@@ -1043,11 +1043,11 @@ void Assembler::stwux(Register rs, const MemOperand &src) {
 }
 
 void Assembler::extsb(Register rs, Register ra, RCBit rc) {
-  emit(EXT2 | EXTSB | rs.code()*B21 | ra.code()*B16 | rc);
+  emit(EXT2 | EXTSB | ra.code()*B21 | rs.code()*B16 | rc);
 }
 
 void Assembler::extsh(Register rs, Register ra, RCBit rc) {
-  emit(EXT2 | EXTSH | rs.code()*B21 | ra.code()*B16 | rc);
+  emit(EXT2 | EXTSH | ra.code()*B21 | rs.code()*B16 | rc);
 }
 
 void Assembler::neg(Register rt, Register ra, OEBit o, RCBit r) {
@@ -1177,7 +1177,7 @@ void Assembler::cntlzd_(Register ra, Register rs, RCBit rc) {
 }
 
 void Assembler::extsw(Register rs, Register ra, RCBit rc) {
-  emit(EXT2 | EXTSW | rs.code()*B21 | ra.code()*B16 | rc);
+  emit(EXT2 | EXTSW | ra.code()*B21 | rs.code()*B16 | rc);
 }
 #endif
 

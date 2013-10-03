@@ -2225,8 +2225,9 @@ Handle<Code> CallStubCompiler::CompileMathFloorCall(
 #endif
   __ addi(sp, sp, Operand(8));
 
+#if !V8_TARGET_ARCH_PPC64
   // if resulting conversion is negative, invert for bit tests
-  __ TestSignBit(r3, r0);
+  __ TestSignBit32(r3, r0);
   __ mr(r0, r3);
   __ beq(&positive, cr0);
   __ neg(r0, r3);
@@ -2238,6 +2239,7 @@ Handle<Code> CallStubCompiler::CompileMathFloorCall(
                   kBitsPerPointer - 1 - (kSmiTagSize + kSmiShiftSize),
                   r0);
   __ bne(&slow, cr0);
+#endif
 
   // Tag the result.
   STATIC_ASSERT(kSmiTag == 0);
@@ -2249,7 +2251,7 @@ Handle<Code> CallStubCompiler::CompileMathFloorCall(
 
   __ LoadP(r4, MemOperand(sp, 0 * kPointerSize));
   __ lwz(r4, FieldMemOperand(r4, HeapNumber::kExponentOffset));
-  __ TestSignBit(r4, r0);
+  __ TestSignBit32(r4, r0);
   __ beq(&drop_arg_return, cr0);
   // If our HeapNumber is negative it was -0, so load its address and return.
   __ LoadP(r3, MemOperand(sp));

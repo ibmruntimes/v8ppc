@@ -1262,13 +1262,25 @@ class MacroAssembler: public Assembler {
 
   inline void ExtractSignBit(Register dst, Register src,
                              RCBit rc = LeaveRC) {
-    int bitNumber = kBitsPerPointer - 1;
+    const int bitNumber = kBitsPerPointer - 1;
+    ExtractBitRange(dst, src, bitNumber, bitNumber, rc);
+  }
+
+  inline void ExtractSignBit32(Register dst, Register src,
+                               RCBit rc = LeaveRC) {
+    const int bitNumber = 31;
     ExtractBitRange(dst, src, bitNumber, bitNumber, rc);
   }
 
   inline void TestSignBit(Register value,
                           Register scratch = r0) {
-    int bitNumber = kBitsPerPointer - 1;
+    const int bitNumber = kBitsPerPointer - 1;
+    ExtractBitRange(scratch, value, bitNumber, bitNumber, SetRC);
+  }
+
+  inline void TestSignBit32(Register value,
+                            Register scratch = r0) {
+    const int bitNumber = 31;
     ExtractBitRange(scratch, value, bitNumber, bitNumber, SetRC);
   }
 

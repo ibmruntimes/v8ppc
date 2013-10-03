@@ -3828,7 +3828,7 @@ void FullCodeGenerator::EmitFastAsciiArrayJoin(CallRuntime* expr) {
   // zero.
   __ cmpi(ip, Operand::Zero());
   __ bne(&bailout);
-  __ TestSignBit(scratch2, r0);
+  __ TestSignBit32(scratch2, r0);
   __ bne(&bailout, cr0);
 
 #if V8_TARGET_ARCH_PPC64

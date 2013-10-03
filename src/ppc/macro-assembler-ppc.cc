@@ -2441,7 +2441,7 @@ void MacroAssembler::EmitOutOfInt32RangeTruncate(Register result,
   STATIC_ASSERT(HeapNumber::kSignMask == 0x80000000u);
   Register sign = result;
   result = no_reg;
-  ExtractSignBit(sign, input_high);
+  ExtractSignBit32(sign, input_high);
 
   // Shifts >= 32 bits should result in zero.
   // slw extracts only the 6 most significant bits of the shift value.

@@ -185,8 +185,12 @@ void ElementsTransitionGenerator::GenerateSmiToDouble(
   __ addi(r10, r9, Operand(FixedDoubleArray::kHeaderSize));
   __ SmiToDoubleArrayOffset(r9, r8);
   __ add(r9, r10, r9);
+#if V8_TARGET_ARCH_PPC64
+  __ mov(r7, Operand(kHoleNanInt64));
+#else
   __ mov(r7, Operand(kHoleNanLower32));
   __ mov(r8, Operand(kHoleNanUpper32));
+#endif
   // r6: begin of source FixedArray element fields, not tagged
   // r7: kHoleNanLower32
   // r8: kHoleNanUpper32
@@ -236,12 +240,16 @@ void ElementsTransitionGenerator::GenerateSmiToDouble(
     __ CompareRoot(r22, Heap::kTheHoleValueRootIndex);
     __ Assert(eq, "object found in smi-only array");
   }
+#if V8_TARGET_ARCH_PPC64
+  __ std(r7, MemOperand(r10, 0));
+#else
 #if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
   __ stw(r7, MemOperand(r10, 0));
   __ stw(r8, MemOperand(r10, 4));
 #else
   __ stw(r8, MemOperand(r10, 0));
   __ stw(r7, MemOperand(r10, 4));
+#endif
 #endif
   __ addi(r10, r10, Operand(8));
 
@@ -327,6 +335,11 @@ void ElementsTransitionGenerator::GenerateDoubleToObject(
   // Non-hole double, copy value into a heap number.
   __ AllocateHeapNumber(r5, r3, r4, r22, &gc_required);
   // r5: new heap number
+#if V8_TARGET_ARCH_PPC64
+  __ ld(r3, MemOperand(r7, -8));
+  __ addi(r4, r5, Operand(-1));  // subtract tag for std
+  __ std(r3, MemOperand(r4, HeapNumber::kValueOffset));
+#else
 #if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
   __ lwz(r3, MemOperand(r7, -8));
   __ lwz(r4, MemOperand(r7, -4));
@@ -337,6 +350,7 @@ void ElementsTransitionGenerator::GenerateDoubleToObject(
   __ lwz(r4, MemOperand(r7, -8));
   __ stw(r3, FieldMemOperand(r5, HeapNumber::kValueOffset+4));
   __ stw(r4, FieldMemOperand(r5, HeapNumber::kValueOffset));
+#endif
 #endif
   __ mr(r3, r6);
   __ StoreP(r5, MemOperand(r6));

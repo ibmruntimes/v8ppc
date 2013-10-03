@@ -678,6 +678,10 @@ void FloatingPointHelper::ConvertIntToDouble(MacroAssembler* masm,
   __ subi(sp, sp, Operand(8));  // reserve one temporary double on the stack
 
   // sign-extend src to 64-bit and store it to temp double on the stack
+#if V8_TARGET_ARCH_PPC64
+  __ extsw(r0, src);
+  __ std(r0, MemOperand(sp, 0));
+#else
   __ srawi(r0, src, 31);
 #if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
   __ stw(r0, MemOperand(sp, 4));
@@ -685,6 +689,7 @@ void FloatingPointHelper::ConvertIntToDouble(MacroAssembler* masm,
 #else
   __ stw(r0, MemOperand(sp, 0));
   __ stw(src, MemOperand(sp, 4));
+#endif
 #endif
 
   // load into FPR
@@ -706,6 +711,10 @@ void FloatingPointHelper::ConvertUnsignedIntToDouble(MacroAssembler* masm,
   __ subi(sp, sp, Operand(8));  // reserve one temporary double on the stack
 
   // zero-extend src to 64-bit and store it to temp double on the stack
+#if V8_TARGET_ARCH_PPC64
+  __ clrldi(r0, src, Operand(32));
+  __ std(r0, MemOperand(sp, 0));
+#else
   __ li(r0, Operand::Zero());
 #if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
   __ stw(r0, MemOperand(sp, 4));
@@ -713,6 +722,7 @@ void FloatingPointHelper::ConvertUnsignedIntToDouble(MacroAssembler* masm,
 #else
   __ stw(r0, MemOperand(sp, 0));
   __ stw(src, MemOperand(sp, 4));
+#endif
 #endif
 
   // load into FPR
@@ -732,6 +742,10 @@ void FloatingPointHelper::ConvertIntToFloat(MacroAssembler* masm,
   __ subi(sp, sp, Operand(8));  // reserve one temporary double on the stack
 
   // sign-extend src to 64-bit and store it to temp double on the stack
+#if V8_TARGET_ARCH_PPC64
+  __ extsw(int_scratch, src);
+  __ std(int_scratch, MemOperand(sp, 0));
+#else
   __ srawi(int_scratch, src, 31);
 #if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
   __ stw(int_scratch, MemOperand(sp, 4));
@@ -739,6 +753,7 @@ void FloatingPointHelper::ConvertIntToFloat(MacroAssembler* masm,
 #else
   __ stw(int_scratch, MemOperand(sp, 0));
   __ stw(src, MemOperand(sp, 4));
+#endif
 #endif
 
   // load sign-extended src into FPR
@@ -866,7 +881,7 @@ void FloatingPointHelper::DoubleIs32BitInteger(MacroAssembler* masm,
   // Another way to put it is that if (exponent - signbit) > 30 then the
   // number cannot be represented as an int32.
   Register tmp = dst;
-  __ ExtractSignBit(tmp, src1);  // extract sign bit
+  __ ExtractSignBit32(tmp, src1);
   __ sub(tmp, scratch, tmp);
   __ cmpi(tmp, Operand(30));
   __ bgt(not_int32);
@@ -2674,10 +2689,14 @@ void BinaryOpStub::GenerateInt32Stub(MacroAssembler* masm) {
 
         __ subi(sp, sp, Operand(8));
         __ stfd(d1, MemOperand(sp, 0));
+#if V8_TARGET_ARCH_PPC64
+        __ ld(scratch2, MemOperand(sp, 0));
+#else
 #if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
         __ lwz(scratch2, MemOperand(sp, 4));
 #else
         __ lwz(scratch2, MemOperand(sp, 0));
+#endif
 #endif
         __ addi(sp, sp, Operand(8));
 

@@ -3361,7 +3361,7 @@ void LCodeGen::DoDeferredMathAbsTaggedHeapNumber(LUnaryMathOperation* instr) {
   __ lwz(exponent, FieldMemOperand(input, HeapNumber::kExponentOffset));
   // Check the sign of the argument. If the argument is positive, just
   // return it.
-  __ TestSignBit(exponent, r0);
+  __ TestSignBit32(exponent, r0);
   // Move the input to the result if necessary.
   __ Move(result, input);
   __ beq(&done, cr0);
@@ -3490,7 +3490,7 @@ void LCodeGen::DoMathFloor(LUnaryMathOperation* instr) {
     __ lwz(scratch, MemOperand(sp, 0));
 #endif
     __ addi(sp, sp, Operand(8));
-    __ TestSignBit(scratch, r0);
+    __ TestSignBit32(scratch, r0);
     DeoptimizeIf(ne, instr->environment(), cr0);
     __ bind(&done);
   }
@@ -3593,7 +3593,7 @@ void LCodeGen::DoMathRound(LUnaryMathOperation* instr) {
     __ lwz(scratch, MemOperand(sp, 0));
 #endif
     __ addi(sp, sp, Operand(8));
-    __ TestSignBit(scratch, r0);
+    __ TestSignBit32(scratch, r0);
     DeoptimizeIf(ne, instr->environment(), cr0);
   }
   __ bind(&done);
@@ -4756,7 +4756,7 @@ void LCodeGen::DoDeferredTaggedToI(LTaggedToI* instr) {
 #else
       __ lwz(scratch1, FieldMemOperand(scratch2, HeapNumber::kValueOffset));
 #endif
-      __ TestSignBit(scratch1, r0);
+      __ TestSignBit32(scratch1, r0);
       DeoptimizeIf(ne, instr->environment(), cr0);
     }
   }
