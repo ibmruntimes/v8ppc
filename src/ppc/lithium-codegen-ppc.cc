@@ -1051,7 +1051,9 @@ void LCodeGen::DoDivI(LDivI* instr) {
 
   const Register left = ToRegister(instr->left());
   const Register right = ToRegister(instr->right());
+#ifndef V8_TARGET_ARCH_PPC64
   const Register scratch = scratch0();
+#endif
   const Register result = ToRegister(instr->result());
 
   // Check for x / 0.
