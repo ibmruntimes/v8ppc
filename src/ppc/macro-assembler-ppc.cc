@@ -2334,6 +2334,9 @@ void MacroAssembler::ConvertToInt32(Register source,
 
   addi(sp, sp, Operand(-kDoubleSize));
   stfd(double_scratch, MemOperand(sp, 0));
+#if V8_TARGET_ARCH_PPC64
+  ld(dest, MemOperand(sp, 0));
+#else
 #if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
   lwz(scratch, MemOperand(sp, 4));
   lwz(dest, MemOperand(sp, 0));
@@ -2341,11 +2344,15 @@ void MacroAssembler::ConvertToInt32(Register source,
   lwz(scratch, MemOperand(sp, 0));
   lwz(dest, MemOperand(sp, 4));
 #endif
+#endif
   addi(sp, sp, Operand(kDoubleSize));
 
   // The result is not a 32-bit integer when the high 33 bits of the
   // result are not identical.
   srawi(scratch2, dest, 31);
+#if V8_TARGET_ARCH_PPC64
+  sradi(scratch, dest, 32);
+#endif
   cmp(scratch2, scratch);
   bne(not_int32);
 }
@@ -2368,6 +2375,9 @@ void MacroAssembler::EmitVFPTruncate(VFPRoundingMode rounding_mode,
 
   addi(sp, sp, Operand(-kDoubleSize));
   stfd(double_scratch, MemOperand(sp, 0));
+#if V8_TARGET_ARCH_PPC64
+  ld(result, MemOperand(sp, 0));
+#else
 #if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
   lwz(scratch, MemOperand(sp, 4));
   lwz(result, MemOperand(sp, 0));
@@ -2375,11 +2385,15 @@ void MacroAssembler::EmitVFPTruncate(VFPRoundingMode rounding_mode,
   lwz(scratch, MemOperand(sp, 0));
   lwz(result, MemOperand(sp, 4));
 #endif
+#endif
   addi(sp, sp, Operand(kDoubleSize));
 
   // The result is not a 32-bit integer when the high 33 bits of the
   // result are not identical.
   srawi(r0, result, 31);
+#if V8_TARGET_ARCH_PPC64
+  sradi(scratch, result, 32);
+#endif
   cmp(r0, scratch);
 
   if (check_inexact == kCheckForInexactConversion) {
@@ -2495,6 +2509,9 @@ void MacroAssembler::EmitECMATruncate(Register result,
 
   // reserve a slot on the stack
   stfdu(double_scratch, MemOperand(sp, -8));
+#if V8_TARGET_ARCH_PPC64
+  ld(result, MemOperand(sp, 0));
+#else
 #if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
   lwz(scratch, MemOperand(sp, 4));
   lwz(result, MemOperand(sp));
@@ -2502,10 +2519,14 @@ void MacroAssembler::EmitECMATruncate(Register result,
   lwz(scratch, MemOperand(sp, 0));
   lwz(result, MemOperand(sp, 4));
 #endif
+#endif
 
   // The result is not a 32-bit integer when the high 33 bits of the
   // result are not identical.
   srawi(r0, result, 31);
+#if V8_TARGET_ARCH_PPC64
+  sradi(scratch, result, 32);
+#endif
   cmp(r0, scratch);
   bne(&truncate);
 

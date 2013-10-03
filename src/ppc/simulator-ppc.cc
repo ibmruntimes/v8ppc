@@ -1713,7 +1713,7 @@ bool Simulator::DecodeExt2_10bit(Instruction *instr) {
       int ra = instr->RAValue();
       int rs = instr->RSValue();
       int sh = instr->Bits(15, 11);
-      intptr_t rs_val = get_register(rs);
+      int32_t rs_val = get_register(rs);
       intptr_t result = rs_val >> sh;
       set_register(ra, result);
       if (instr->Bit(0)) {  // RC bit set
