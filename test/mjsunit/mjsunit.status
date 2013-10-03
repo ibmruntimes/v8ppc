@@ -217,7 +217,7 @@ regress/regress-165637: SKIP
 regress/regress-crbug-160010: SKIP
 
 ##############################################################################
-[ $arch == ppc ]
+[ $arch == ppc || $arch == ppc64 ]
 
 # Stack manipulations in LiveEdit is not implemented for this arch.
 debug-liveedit-check-stack: SKIP

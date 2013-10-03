@@ -107,7 +107,7 @@ test-debug/DebuggerAgentProtocolOverflowHeader: SKIP
 test-sockets/Socket: SKIP
 
 ##############################################################################
-[ $arch == ppc ]
+[ $arch == ppc || $arch == ppc64 ]
 # penguin - remove disasm tests for PPC as they are not
 # converted to test PPC ISA yet
 test-disasm-ppc/*: SKIP
