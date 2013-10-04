@@ -3565,8 +3565,12 @@ void CEntryStub::GenerateCore(MacroAssembler* masm,
   // Call C built-in on native hardware.
 #if defined(V8_TARGET_ARCH_PPC64)
   if (result_size_ < 2) {
+#if __BYTE_ORDER == __LITTLE_ENDIAN
+    __ mr(r3, r14);
+#else
     // r3 = argc << 32 (for alignment), r4 = argv
     __ ShiftLeftImm(r3, r14, Operand(32));
+#endif
     __ mr(r4, r16);
     isolate_reg = r5;
   } else {
@@ -3575,8 +3579,12 @@ void CEntryStub::GenerateCore(MacroAssembler* masm,
     // Use frame storage reserved by calling function to pass return
     // buffer as implicit first argument.
     __ addi(r3, sp, Operand((kStackFrameExtraParamSlot + 1) * kPointerSize));
+#if __BYTE_ORDER == __LITTLE_ENDIAN
+    __ mr(r4, r14);
+#else
     // r4 = argc << 32 (for alignment), r5 = argv
     __ ShiftLeftImm(r4, r14, Operand(32));
+#endif
     __ mr(r5, r16);
     isolate_reg = r6;
   }
