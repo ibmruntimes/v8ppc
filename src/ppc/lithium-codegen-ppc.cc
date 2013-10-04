@@ -2377,7 +2377,7 @@ void LCodeGen::DoInstanceOfKnownGlobal(LInstanceOfKnownGlobal* instr) {
 
   // String values is not instance of anything.
   Condition is_string = masm_->IsObjectStringType(object, temp);
-  __ b(is_string, &false_result);
+  __ b(is_string, &false_result, cr0);
 
   // Go to the deferred code.
   __ b(deferred->entry());

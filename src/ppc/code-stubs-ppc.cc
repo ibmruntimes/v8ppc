@@ -4702,7 +4702,7 @@ void RegExpExecStub::Generate(MacroAssembler* masm) {
   __ LoadP(subject, MemOperand(sp, kSubjectOffset));
   __ JumpIfSmi(subject, &runtime);
   Condition is_string = masm->IsObjectStringType(subject, r3);
-  __ b(NegateCondition(is_string), &runtime);
+  __ b(NegateCondition(is_string), &runtime, cr0);
   // Get the length of the string to r6.
   __ LoadP(r6, FieldMemOperand(subject, String::kLengthOffset));
 
@@ -5865,7 +5865,7 @@ void SubStringStub::Generate(MacroAssembler* masm) {
   __ LoadP(r3, MemOperand(sp, kStringOffset));
   __ JumpIfSmi(r3, &runtime);
   Condition is_string = masm->IsObjectStringType(r3, r4);
-  __ b(NegateCondition(is_string), &runtime);
+  __ b(NegateCondition(is_string), &runtime, cr0);
 
   // Short-cut for the case of trivial substring.
   Label return_r3;

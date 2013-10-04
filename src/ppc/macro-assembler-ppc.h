@@ -910,7 +910,6 @@ class MacroAssembler: public Assembler {
     LoadP(type, FieldMemOperand(obj, HeapObject::kMapOffset));
     lbz(type, FieldMemOperand(type, Map::kInstanceTypeOffset));
     andi(r0, type, Operand(kIsNotStringMask));
-    cmpi(r0, Operand::Zero());
     ASSERT_EQ(0, kStringTag);
     return eq;
   }

@@ -2655,8 +2655,7 @@ void FullCodeGenerator::EmitIsSmi(CallRuntime* expr) {
 
   PrepareForBailoutBeforeSplit(expr, true, if_true, if_false);
   __ andi(r0, r3, Operand(kSmiTagMask));
-  __ cmpi(r0, Operand::Zero());
-  Split(eq, if_true, if_false, fall_through);
+  Split(eq, if_true, if_false, fall_through, cr0);
 
   context()->Plug(if_true, if_false);
 }
@@ -2759,9 +2758,8 @@ void FullCodeGenerator::EmitIsUndetectableObject(CallRuntime* expr) {
   __ LoadP(r4, FieldMemOperand(r3, HeapObject::kMapOffset));
   __ lbz(r4, FieldMemOperand(r4, Map::kBitFieldOffset));
   __ andi(r0, r4, Operand(1 << Map::kIsUndetectable));
-  __ cmpi(r0, Operand::Zero());
   PrepareForBailoutBeforeSplit(expr, true, if_true, if_false);
-  Split(ne, if_true, if_false, fall_through);
+  Split(ne, if_true, if_false, fall_through, cr0);
 
   context()->Plug(if_true, if_false);
 }
@@ -4396,8 +4394,7 @@ void FullCodeGenerator::EmitLiteralCompareTypeof(Expression* expr,
     __ lbz(r4, FieldMemOperand(r3, Map::kBitFieldOffset));
     STATIC_ASSERT((1 << Map::kIsUndetectable) < 0x8000);
     __ andi(r0, r4, Operand(1 << Map::kIsUndetectable));
-    __ cmpi(r0, Operand::Zero());
-    Split(eq, if_true, if_false, fall_through);
+    Split(eq, if_true, if_false, fall_through, cr0);
   } else if (check->Equals(isolate()->heap()->boolean_symbol())) {
     __ CompareRoot(r3, Heap::kTrueValueRootIndex);
     __ beq(if_true);
@@ -4415,8 +4412,7 @@ void FullCodeGenerator::EmitLiteralCompareTypeof(Expression* expr,
     __ LoadP(r3, FieldMemOperand(r3, HeapObject::kMapOffset));
     __ lbz(r4, FieldMemOperand(r3, Map::kBitFieldOffset));
     __ andi(r0, r4, Operand(1 << Map::kIsUndetectable));
-    __ cmpi(r0, Operand::Zero());
-    Split(ne, if_true, if_false, fall_through);
+    Split(ne, if_true, if_false, fall_through, cr0);
 
   } else if (check->Equals(isolate()->heap()->function_symbol())) {
     __ JumpIfSmi(r3, if_false);
@@ -4439,8 +4435,7 @@ void FullCodeGenerator::EmitLiteralCompareTypeof(Expression* expr,
     // Check for undetectable objects => false.
     __ lbz(r4, FieldMemOperand(r3, Map::kBitFieldOffset));
     __ andi(r0, r4, Operand(1 << Map::kIsUndetectable));
-    __ cmpi(r0, Operand::Zero());
-    Split(eq, if_true, if_false, fall_through);
+    Split(eq, if_true, if_false, fall_through, cr0);
   } else {
     if (if_false != fall_through) __ b(if_false);
   }
