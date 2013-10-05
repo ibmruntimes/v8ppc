@@ -2394,18 +2394,27 @@ void BinaryOpStub::GenerateFPOperation(MacroAssembler* masm,
         case Token::SAR:
           // Use only the 5 least significant bits of the shift count.
           __ GetLeastBitsFromInt32(r5, r5, 5);
-          __ ShiftRightArith(r5, r6, r5);
+          __ sraw(r5, r6, r5);
           break;
         case Token::SHR:
+        {
           // Use only the 5 least significant bits of the shift count.
           __ GetLeastBitsFromInt32(r5, r5, 5);
-          __ ShiftRight(r5, r6, r5, SetRC);
           // SHR is special because it is required to produce a positive answer.
           // The code below for writing into heap numbers isn't capable of
           // writing the register as an unsigned int so we go to slow case if we
           // hit this case.
-          __ blt(&result_not_a_smi, cr0);
+#if V8_TARGET_ARCH_PPC64
+          const Condition cond = ne;
+          __ srw(r5, r6, r5);
+          __ TestSignBit32(r5, r0);
+#else
+          const Condition cond = lt;
+          __ srw(r5, r6, r5, SetRC);
+#endif
+          __ b(cond, &result_not_a_smi, cr0);
           break;
+        }
         case Token::SHL:
           // Use only the 5 least significant bits of the shift count.
           __ GetLeastBitsFromInt32(r5, r5, 5);
@@ -2779,20 +2788,29 @@ void BinaryOpStub::GenerateInt32Stub(MacroAssembler* masm) {
           __ and_(r5, r6, r5);
           break;
         case Token::SAR:
-          __ andi(r5, r5, Operand(0x1f));
-          __ ShiftRightArith(r5, r6, r5);
+          __ GetLeastBitsFromInt32(r5, r5, 5);
+          __ sraw(r5, r6, r5);
           break;
         case Token::SHR:
-          __ andi(r5, r5, Operand(0x1f));
-          __ ShiftRight(r5, r6, r5, SetRC);
+        {
+          __ GetLeastBitsFromInt32(r5, r5, 5);
           // SHR is special because it is required to produce a positive answer.
           // We only get a negative result if the shift value (r5) is 0.
           // This result cannot be respresented as a signed 32-bit integer, try
           // to return a heap number if we can.
-          __ blt((result_type_ <= BinaryOpIC::INT32)
-                 ? &transition
-                 : &return_heap_number, cr0);
+#if V8_TARGET_ARCH_PPC64
+          const Condition cond = ne;
+          __ srw(r5, r6, r5);
+          __ TestSignBit32(r5, r0);
+#else
+          const Condition cond = lt;
+          __ srw(r5, r6, r5, SetRC);
+#endif
+          __ b(cond, ((result_type_ <= BinaryOpIC::INT32)
+                      ? &transition
+                      : &return_heap_number), cr0);
           break;
+        }
         case Token::SHL:
           __ andi(r5, r5, Operand(0x1f));
           __ ShiftLeft(r5, r6, r5);

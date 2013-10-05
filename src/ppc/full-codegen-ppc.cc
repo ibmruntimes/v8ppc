@@ -2022,7 +2022,7 @@ void FullCodeGenerator::EmitInlineSmiBinaryOp(BinaryOperation* expr,
       __ b(&stub_call);
       __ SmiUntag(scratch1, left);
       __ GetLeastBitsFromSmi(scratch2, right, 5);
-      __ ShiftRight(scratch1, scratch1, scratch2);
+      __ srw(scratch1, scratch1, scratch2);
       // Unsigned shift is not allowed to produce a negative number, so
       // check the sign bit and, for 32-bit, the sign bit after Smi tagging.
       __ TestBitRange(scratch1, 31,
