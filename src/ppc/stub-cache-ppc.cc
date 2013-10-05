@@ -2216,18 +2216,25 @@ Handle<Code> CallStubCompiler::CompileMathFloorCall(
   // Round to integer minus
   __ frim(d1, d1);
   // Convert the argument to an integer.
+#if V8_TARGET_ARCH_PPC64
+  __ fctidz(d1, d1);
+#else
   __ fctiwz(d1, d1);
+#endif
   __ stfdu(d1, MemOperand(sp, -8));
+#if V8_TARGET_ARCH_PPC64
+  __ ld(r3, MemOperand(sp, 0));
+#else
 #if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
   __ lwz(r3, MemOperand(sp, 0));
 #else
   __ lwz(r3, MemOperand(sp, 4));
 #endif
+#endif
   __ addi(sp, sp, Operand(8));
 
-#if !V8_TARGET_ARCH_PPC64
   // if resulting conversion is negative, invert for bit tests
-  __ TestSignBit32(r3, r0);
+  __ TestSignBit(r3, r0);
   __ mr(r0, r3);
   __ beq(&positive, cr0);
   __ neg(r0, r3);
@@ -2239,7 +2246,6 @@ Handle<Code> CallStubCompiler::CompileMathFloorCall(
                   kBitsPerPointer - 1 - (kSmiTagSize + kSmiShiftSize),
                   r0);
   __ bne(&slow, cr0);
-#endif
 
   // Tag the result.
   STATIC_ASSERT(kSmiTag == 0);
