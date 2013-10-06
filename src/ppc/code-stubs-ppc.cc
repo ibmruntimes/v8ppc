@@ -7018,7 +7018,7 @@ void StringDictionaryLookupStub::GeneratePositiveLookup(MacroAssembler* masm,
       // the hash in a separate instruction. The value hash + i + i * i is right
       // shifted in the following and instruction.
       ASSERT(StringDictionary::GetProbeOffset(i) <
-             1 << (32 - String::kHashFieldOffset));
+             1 << (32 - String::kHashFieldSlot));
       __ addi(scratch2, scratch2, Operand(
                   StringDictionary::GetProbeOffset(i) << String::kHashShift));
     }
@@ -7107,7 +7107,7 @@ void StringDictionaryLookupStub::Generate(MacroAssembler* masm) {
       // the hash in a separate instruction. The value hash + i + i * i is right
       // shifted in the following and instruction.
       ASSERT(StringDictionary::GetProbeOffset(i) <
-             1 << (32 - String::kHashFieldOffset));
+             1 << (32 - String::kHashFieldSlot));
       __ addi(index, hash, Operand(
                   StringDictionary::GetProbeOffset(i) << String::kHashShift));
     } else {

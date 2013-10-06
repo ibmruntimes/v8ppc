@@ -7356,8 +7356,13 @@ class String: public HeapObject {
 
   // Layout description.
   static const int kLengthOffset = HeapObject::kHeaderSize;
-  static const int kHashFieldOffset = kLengthOffset + kPointerSize;
-  static const int kSize = kHashFieldOffset + kPointerSize;
+  static const int kHashFieldSlot = kLengthOffset + kPointerSize;
+#if __BYTE_ORDER == __LITTLE_ENDIAN || !V8_HOST_ARCH_64_BIT
+  static const int kHashFieldOffset = kHashFieldSlot;
+#else
+  static const int kHashFieldOffset = kHashFieldSlot + kIntSize;
+#endif
+  static const int kSize = kHashFieldSlot + kPointerSize;
 
   // Maximum number of characters to consider when trying to convert a string
   // value into an array index.

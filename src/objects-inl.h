@@ -2409,10 +2409,7 @@ uint32_t String::hash_field() {
 
 
 void String::set_hash_field(uint32_t value) {
-  WRITE_UINT32_FIELD(this, kHashFieldOffset, value);
-#if V8_HOST_ARCH_64_BIT
-  WRITE_UINT32_FIELD(this, kHashFieldOffset + kIntSize, 0);
-#endif
+  WRITE_INTPTR_FIELD(this, kHashFieldSlot, value);
 }
 
 

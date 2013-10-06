@@ -789,7 +789,7 @@ void MacroAssembler::InitializeNewString(Register string,
   StoreP(scratch1, FieldMemOperand(string, String::kLengthOffset), r0);
   li(scratch1, Operand(String::kEmptyHashField));
   StoreP(scratch2, FieldMemOperand(string, HeapObject::kMapOffset), r0);
-  stw(scratch1, FieldMemOperand(string, String::kHashFieldOffset));
+  StoreP(scratch1, FieldMemOperand(string, String::kHashFieldSlot), r0);
 }
 
 
