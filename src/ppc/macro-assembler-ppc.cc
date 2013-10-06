@@ -2302,11 +2302,18 @@ void MacroAssembler::IndexFromHash(Register hash, Register index) {
          (1 << String::kArrayIndexValueBits));
   // We want the smi-tagged index in key.  kArrayIndexValueMask has zeros in
   // the low kHashShift bits.
-  STATIC_ASSERT(kSmiTag == 0);
   STATIC_ASSERT(String::kHashShift == 2);
   STATIC_ASSERT(String::kArrayIndexValueBits == 24);
-  // This function is performing the logic: index = (hash & 0x03FFFFFC) >> 1;
+  // index = SmiTag((hash >> 2) & 0x00FFFFFF);
+#if V8_TARGET_ARCH_PPC64
+  ExtractBitRange(index, hash, 25, 2);
+  SmiTag(index);
+#else
+  STATIC_ASSERT(kSmiShift == 1);
+  // 32-bit can do this in one instruction:
+  //    index = (hash & 0x03FFFFFC) >> 1;
   rlwinm(index, hash, 31, 7, 30);
+#endif
 }
 
 void MacroAssembler::SmiToDoubleFPRegister(Register smi,
