@@ -1881,8 +1881,12 @@ void MacroAssembler::StoreNumberToDoubleElements(Register value_reg,
                                                  Register scratch4,
                                                  Label* fail) {
   Label smi_value, maybe_nan, have_double_value, is_nan, done;
+#if V8_TARGET_ARCH_PPC64
+  Register double_reg = scratch2;
+#else
   Register mantissa_reg = scratch2;
   Register exponent_reg = scratch3;
+#endif
 
   // Handle smi values specially.
   JumpIfSmi(value_reg, &smi_value);
@@ -1896,16 +1900,29 @@ void MacroAssembler::StoreNumberToDoubleElements(Register value_reg,
 
   // Check for nan: all NaN values have a value greater (signed) than 0x7ff00000
   // in the exponent.
+#if V8_TARGET_ARCH_PPC64
+  mov(scratch1, Operand(kLastNonNaNInt64));
+  addi(scratch3, value_reg, Operand(-kHeapObjectTag));
+  ld(double_reg, MemOperand(scratch3, HeapNumber::kValueOffset));
+  cmp(double_reg, scratch1);
+#else
   mov(scratch1, Operand(kNaNOrInfinityLowerBoundUpper32));
   lwz(exponent_reg, FieldMemOperand(value_reg, HeapNumber::kExponentOffset));
   cmp(exponent_reg, scratch1);
+#endif
   bge(&maybe_nan);
 
+#if !V8_TARGET_ARCH_PPC64
   lwz(mantissa_reg, FieldMemOperand(value_reg, HeapNumber::kMantissaOffset));
+#endif
 
   bind(&have_double_value);
   SmiToDoubleArrayOffset(scratch1, key_reg);
   add(scratch1, elements_reg, scratch1);
+#if V8_TARGET_ARCH_PPC64
+  addi(scratch1, scratch1, Operand(-kHeapObjectTag));
+  std(double_reg, MemOperand(scratch1, FixedDoubleArray::kHeaderSize));
+#else
 #if __BYTE_ORDER == __LITTLE_ENDIAN
   stw(mantissa_reg, FieldMemOperand(scratch1, FixedDoubleArray::kHeaderSize));
   uint32_t offset = FixedDoubleArray::kHeaderSize + sizeof(kHoleNanLower32);
@@ -1915,21 +1932,31 @@ void MacroAssembler::StoreNumberToDoubleElements(Register value_reg,
   uint32_t offset = FixedDoubleArray::kHeaderSize + sizeof(kHoleNanLower32);
   stw(mantissa_reg, FieldMemOperand(scratch1, offset));
 #endif
+#endif
   b(&done);
 
   bind(&maybe_nan);
   // Could be NaN or Infinity. If fraction is not zero, it's NaN, otherwise
   // it's an Infinity, and the non-NaN code path applies.
   bgt(&is_nan);
+#if V8_TARGET_ARCH_PPC64
+  clrldi(r0, double_reg, Operand(32), SetRC);
+  beq(&have_double_value, cr0);
+#else
   lwz(mantissa_reg, FieldMemOperand(value_reg, HeapNumber::kMantissaOffset));
   cmpi(mantissa_reg, Operand::Zero());
   beq(&have_double_value);
+#endif
   bind(&is_nan);
   // Load canonical NaN for storing into the double array.
   uint64_t nan_int64 = BitCast<uint64_t>(
       FixedDoubleArray::canonical_not_the_hole_nan_as_double());
+#if V8_TARGET_ARCH_PPC64
+  mov(double_reg, Operand(nan_int64));
+#else
   mov(mantissa_reg, Operand(static_cast<intptr_t>(nan_int64)));
   mov(exponent_reg, Operand(static_cast<intptr_t>(nan_int64 >> 32)));
+#endif
   b(&have_double_value);
 
   bind(&smi_value);
