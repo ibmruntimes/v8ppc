@@ -710,6 +710,12 @@ void Decoder::DecodeExt2(Instruction* instr) {
       Format(instr, "mullw'o'.  'rt, 'ra, 'rb");
       break;
     }
+#if V8_TARGET_ARCH_PPC64
+    case MULLD: {
+      Format(instr, "mulld'o'.  'rt, 'ra, 'rb");
+      break;
+    }
+#endif
     case DIVW: {
       Format(instr, "divw'o'.   'rt, 'ra, 'rb");
       break;

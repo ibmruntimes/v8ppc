@@ -116,6 +116,7 @@ bool AreAliased(Register reg1,
 #define ShiftRight         srd
 #define ShiftRightArith    srad
 #define CountLeadingZeros  cntlzd_
+#define Mul                mulld
 #else
 #define LoadPU             lwzu
 #define LoadPX             lwzx
@@ -132,6 +133,7 @@ bool AreAliased(Register reg1,
 #define ShiftRight         srw
 #define ShiftRightArith    sraw
 #define CountLeadingZeros  cntlzw_
+#define Mul                mullw
 #endif
 
 

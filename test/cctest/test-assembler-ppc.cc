@@ -145,7 +145,11 @@ TEST(2) {
   __ b(&C);
 
   __ bind(&L);
-  __ mul(r3, r4, r3);
+#if defined(V8_TARGET_ARCH_PPC64)
+  __ mulld(r3, r4, r3);
+#else
+  __ mullw(r3, r4, r3);
+#endif
   __ subi(r4, r4, Operand(1));
 
   __ bind(&C);

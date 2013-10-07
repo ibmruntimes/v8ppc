@@ -826,8 +826,7 @@ static MemOperand GenerateMappedArgumentsLookup(MacroAssembler* masm,
   const int kOffset =
       FixedArray::kHeaderSize + 2 * kPointerSize - kHeapObjectTag;
 
-  __ li(scratch3, Operand(kPointerSize >> 1));
-  __ mul(scratch3, key, scratch3);
+  __ SmiToPtrArrayOffset(scratch3, key);
   __ addi(scratch3, scratch3, Operand(kOffset));
 
   __ LoadPX(scratch2, MemOperand(scratch1, scratch3));
@@ -839,8 +838,7 @@ static MemOperand GenerateMappedArgumentsLookup(MacroAssembler* masm,
   // we do not jump to the unmapped lookup (which requires the parameter
   // map in scratch1).
   __ LoadP(scratch1, FieldMemOperand(scratch1, FixedArray::kHeaderSize));
-  __ li(scratch3, Operand(kPointerSize >> 1));
-  __ mul(scratch3, scratch2, scratch3);
+  __ SmiToPtrArrayOffset(scratch3, scratch2);
   __ addi(scratch3, scratch3, Operand(Context::kHeaderSize - kHeapObjectTag));
   __ add(scratch1, scratch1, scratch3);
   return MemOperand(scratch1);
@@ -866,8 +864,7 @@ static MemOperand GenerateUnmappedArgumentsLookup(MacroAssembler* masm,
   __ LoadP(scratch, FieldMemOperand(backing_store, FixedArray::kLengthOffset));
   __ cmpl(key, scratch);
   __ bge(slow_case);
-  __ mov(scratch, Operand(kPointerSize >> 1));
-  __ mul(scratch, key, scratch);
+  __ SmiToPtrArrayOffset(scratch, key);
   __ addi(scratch,
           scratch,
           Operand(FixedArray::kHeaderSize - kHeapObjectTag));

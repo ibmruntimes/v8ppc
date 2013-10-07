@@ -2069,8 +2069,8 @@ void FullCodeGenerator::EmitInlineSmiBinaryOp(BinaryOperation* expr,
       // Remove tag from both operands.
       __ SmiUntag(ip, right);
       __ SmiUntag(r0, left);
-      __ mullw(scratch1, r0, ip);
-      __ mulhw(scratch2, r0, ip);
+      __ Mul(scratch1, r0, ip);
+      __ ShiftRightArithImm(scratch2, scratch1, 32);
 #else
       __ SmiUntag(ip, right);
       __ mullw(scratch1, left, ip);
@@ -2808,7 +2808,7 @@ void FullCodeGenerator::EmitIsStringWrapperSafeForDefaultValueOf(
   // r7: descriptor array.
   // r6: valid entries in the descriptor array.
   __ mov(ip, Operand(DescriptorArray::kDescriptorSize));
-  __ mul(r6, r6, ip);
+  __ Mul(r6, r6, ip);
   // Calculate location of the first key name.
   __ addi(r7, r7, Operand(DescriptorArray::kFirstOffset - kHeapObjectTag));
   // Calculate the end of the descriptor array.
@@ -3817,9 +3817,14 @@ void FullCodeGenerator::EmitFastAsciiArrayJoin(CallRuntime* expr) {
   __ sub(string_length, string_length, scratch1);
 #if V8_TARGET_ARCH_PPC64
   __ SmiUntag(scratch1, scratch1);
+  __ Mul(scratch2, array_length, scratch1);
+  // Check for smi overflow. No overflow if higher 33 bits of 64-bit result are
+  // zero.
+  __ ShiftRightImm(ip, scratch2, Operand(31), SetRC);
+  __ bne(&bailout, cr0);
+  __ SmiTag(scratch2, scratch2);
 #else
   // array_length is not smi but the other values are, so the result is a smi
-#endif
   __ mullw(scratch2, array_length, scratch1);
   __ mulhw(ip, array_length, scratch1);
   // Check for smi overflow. No overflow if higher 33 bits of 64-bit result are
@@ -3828,10 +3833,8 @@ void FullCodeGenerator::EmitFastAsciiArrayJoin(CallRuntime* expr) {
   __ bne(&bailout);
   __ TestSignBit32(scratch2, r0);
   __ bne(&bailout, cr0);
-
-#if V8_TARGET_ARCH_PPC64
-  __ SmiTag(scratch2, scratch2);
 #endif
+
   __ AddAndCheckForOverflow(string_length, string_length, scratch2,
                             scratch1, r0);
   __ BranchOnOverflow(&bailout);

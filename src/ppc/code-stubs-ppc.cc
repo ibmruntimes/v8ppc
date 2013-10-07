@@ -2140,15 +2140,17 @@ void BinaryOpStub::GenerateSmiSmiOperation(MacroAssembler* masm) {
       __ SmiUntag(ip, right);
       __ SmiUntag(r0, left);
       // Do multiplication
-      // scratch1 = lower 32 bits of product.
-      // scratch2 = higher 32 bits of product.
-      __ mullw(scratch1, r0, ip);
-      __ mulhw(scratch2, r0, ip);
+      // scratch1 = product (untagged)
+      // scratch2 = sign-extended higher 32 bits of product.
+      __ Mul(scratch1, r0, ip);
+      __ ShiftRightArithImm(scratch2, scratch1, 32);
 #else
       // Remove tag from one of the operands. This way the multiplication result
       // will be a smi if it fits the smi range.
       __ SmiUntag(ip, right);
       // Do multiplication
+      // scratch1 = lower 32 bits of product.
+      // scratch2 = higher 32 bits of product.
       __ mullw(scratch1, left, ip);
       __ mulhw(scratch2, left, ip);
 #endif

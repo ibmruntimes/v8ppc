@@ -916,7 +916,7 @@ void LCodeGen::DoModI(LModI* instr) {
         DeoptimizeIf(eq, instr->environment());
     }
 
-    __ mullw(scratch, divisor, scratch);
+    __ Mul(scratch, divisor, scratch);
     __ sub(result, dividend, scratch, LeaveOE, SetRC);
 
     if (instr->hydrogen()->CheckFlag(HValue::kBailoutOnMinusZero)) {
@@ -1011,8 +1011,12 @@ void LCodeGen::EmitSignedIntegerDivisionByConstant(
         const int32_t s = magic_numbers.s + power_of_2_factor;
 
         __ mov(ip, Operand(M));
-        __ mullw(ip, dividend, ip);
+#if V8_TARGET_ARCH_PPC64
+        __ Mul(scratch, dividend, ip);
+        __ ShiftRightArithImm(scratch, scratch, 32);
+#else
         __ mulhw(scratch, dividend, ip);
+#endif
         if (M < 0) {
           __ add(scratch, scratch, dividend);
         }
@@ -1026,7 +1030,7 @@ void LCodeGen::EmitSignedIntegerDivisionByConstant(
         __ mov(ip, Operand(divisor));
         // This sequence could be replaced with 'mls' when
         // it gets implemented.
-        __ mul(scratch, result, ip);
+        __ Mul(scratch, result, ip);
         __ sub(remainder, dividend, scratch);
       }
   }
@@ -1275,7 +1279,7 @@ void LCodeGen::DoMulI(LMulI* instr) {
         } else {
           // Generate standard code.
           __ mov(ip, Operand(constant));
-          __ mul(result, left, ip);
+          __ Mul(result, left, ip);
         }
     }
 
@@ -1287,13 +1291,18 @@ void LCodeGen::DoMulI(LMulI* instr) {
 
     if (can_overflow) {
       // scratch:result = left * right.
+#if V8_TARGET_ARCH_PPC64
+      __ Mul(result, left, right);
+      __ ShiftRightArithImm(scratch, result, 32);
+#else
       __ mullw(result, left, right);
       __ mulhw(scratch, left, right);
+#endif
       __ srawi(r0, result, 31);
       __ cmp(scratch, r0);
       DeoptimizeIf(ne, instr->environment());
     } else {
-      __ mul(result, left, right);
+      __ Mul(result, left, right);
     }
 
     if (bailout_on_minus_zero) {
@@ -3719,7 +3728,7 @@ void LCodeGen::DoRandom(LRandom* instr) {
   // state[0] = 18273 * (state[0] & 0xFFFF) + (state[0] >> 16)
   __ andi(r6, r4, Operand(0xFFFF));
   __ li(r7, Operand(18273));
-  __ mul(r6, r6, r7);
+  __ Mul(r6, r6, r7);
   __ srwi(r4, r4, Operand(16));
   __ add(r4, r6, r4);
   // Save state[0].
@@ -3728,7 +3737,7 @@ void LCodeGen::DoRandom(LRandom* instr) {
   // state[1] = 36969 * (state[1] & 0xFFFF) + (state[1] >> 16)
   __ andi(r6, r3, Operand(0xFFFF));
   __ mov(r7, Operand(36969));
-  __ mul(r6, r6, r7);
+  __ Mul(r6, r6, r7);
   __ srwi(r3, r3, Operand(16));
   __ add(r3, r6, r3);
   // Save state[1].

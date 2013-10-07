@@ -2134,6 +2134,22 @@ void Simulator::DecodeExt2_9bit(Instruction* instr) {
       // todo - handle OE bit
       break;
     }
+#if V8_TARGET_ARCH_PPC64
+    case MULLD: {
+      int rt = instr->RTValue();
+      int ra = instr->RAValue();
+      int rb = instr->RBValue();
+      int64_t ra_val = get_register(ra);
+      int64_t rb_val = get_register(rb);
+      int64_t alu_out = ra_val * rb_val;
+      set_register(rt, alu_out);
+      if (instr->Bit(0)) {  // RC bit set
+        SetCR0(alu_out);
+      }
+      // todo - handle OE bit
+      break;
+    }
+#endif
     case DIVW: {
       int rt = instr->RTValue();
       int ra = instr->RAValue();

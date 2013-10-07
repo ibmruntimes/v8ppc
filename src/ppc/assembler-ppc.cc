@@ -1179,6 +1179,11 @@ void Assembler::cntlzd_(Register ra, Register rs, RCBit rc) {
 void Assembler::extsw(Register rs, Register ra, RCBit rc) {
   emit(EXT2 | EXTSW | ra.code()*B21 | rs.code()*B16 | rc);
 }
+
+void Assembler::mulld(Register dst, Register src1, Register src2,
+                      OEBit o, RCBit r) {
+  xo_form(EXT2 | MULLD, dst, src1, src2, o, r);
+}
 #endif
 
 
@@ -1265,11 +1270,6 @@ void Assembler::mov(Register dst, const Operand& src) {
 #endif
 }
 
-// PowerPC
-void Assembler::mul(Register dst, Register src1, Register src2,
-                    OEBit o, RCBit r) {
-  xo_form(EXT2 | MULLW, dst, src1, src2, o, r);
-}
 // Special register instructions
 void Assembler::crxor(int bt, int ba, int bb) {
   emit(EXT1 | CRXOR | bt*B21 | ba*B16 | bb*B11);

@@ -905,6 +905,8 @@ class Assembler : public AssemblerBase {
   void srad(Register dst, Register src1, Register src2, RCBit r = LeaveRC);
   void cntlzd_(Register dst, Register src, RCBit rc = LeaveRC);
   void extsw(Register rs, Register ra, RCBit r = LeaveRC);
+  void mulld(Register dst, Register src1, Register src2,
+             OEBit o = LeaveOE, RCBit r = LeaveRC);
 #endif
 
   void rlwinm(Register ra, Register rs, int sh, int mb, int me,

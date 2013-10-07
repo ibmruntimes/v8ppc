@@ -220,6 +220,7 @@ enum OpcodeExt2 {
   MTSR
 */
   STBX = 215 << 1,    // store byte w/ x-form
+  MULLD  = 233 << 1,  // Multiply Low Double Word
   MULLW  = 235 << 1,  // Multiply Low Word
   STBUX = 247 << 1,   // store byte w/ update x-form
   ADDX = 266 << 1,    // Add
