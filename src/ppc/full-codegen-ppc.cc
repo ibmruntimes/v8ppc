@@ -50,8 +50,6 @@ namespace internal {
 
 #define __ ACCESS_MASM(masm_)
 
-#define EMIT_STUB_MARKER(stub_marker) __ marker_asm(stub_marker)
-
 // A patch site is a location in the code which it is possible to patch. This
 // class has a number of methods to emit the code which is patchable and the
 // method EmitPatchInfo to record a marker back to the patchable code. This
@@ -74,7 +72,6 @@ class JumpPatchSite BASE_EMBEDDED {
   // When initially emitting this ensure that a jump is always generated to skip
   // the inlined smi code.
   void EmitJumpIfNotSmi(Register reg, Label* target) {
-    EMIT_STUB_MARKER(200);
     ASSERT(!patch_site_.is_bound() && !info_emitted_);
     Assembler::BlockTrampolinePoolScope block_trampoline_pool(masm_);
     __ bind(&patch_site_);
@@ -85,7 +82,6 @@ class JumpPatchSite BASE_EMBEDDED {
   // When initially emitting this ensure that a jump is never generated to skip
   // the inlined smi code.
   void EmitJumpIfSmi(Register reg, Label* target) {
-    EMIT_STUB_MARKER(201);
     Assembler::BlockTrampolinePoolScope block_trampoline_pool(masm_);
     ASSERT(!patch_site_.is_bound() && !info_emitted_);
     __ bind(&patch_site_);
@@ -132,7 +128,6 @@ class JumpPatchSite BASE_EMBEDDED {
 // The function builds a JS frame.  Please see JavaScriptFrameConstants in
 // frames-ppc.h for its layout.
 void FullCodeGenerator::Generate() {
-  EMIT_STUB_MARKER(202);
   CompilationInfo* info = info_;
   handler_table_ =
       isolate()->factory()->NewFixedArray(function()->handler_count(), TENURED);
@@ -324,7 +319,6 @@ void FullCodeGenerator::ClearAccumulator() {
 
 
 void FullCodeGenerator::EmitProfilingCounterDecrement(int delta) {
-  EMIT_STUB_MARKER(203);
   __ mov(r5, Operand(profiling_counter_));
   __ LoadP(r6, FieldMemOperand(r5, JSGlobalPropertyCell::kValueOffset));
   __ SubSmiLiteral(r6, r6, Smi::FromInt(delta), r0);
@@ -356,7 +350,6 @@ void FullCodeGenerator::EmitProfilingCounterReset() {
 // well.
 void FullCodeGenerator::EmitStackCheck(IterationStatement* stmt,
                                        Label* back_edge_target) {
-  EMIT_STUB_MARKER(205);
   Assembler::BlockTrampolinePoolScope block_trampoline_pool(masm_);
   Comment cmnt(masm_, "[ Stack check");
   Label ok;
@@ -401,7 +394,6 @@ void FullCodeGenerator::EmitStackCheck(IterationStatement* stmt,
 
 
 void FullCodeGenerator::EmitReturnSequence() {
-  EMIT_STUB_MARKER(206);
   Comment cmnt(masm_, "[ Return sequence");
   if (return_label_.is_bound()) {
     __ b(&return_label_);
@@ -631,7 +623,6 @@ void FullCodeGenerator::EffectContext::Plug(Label* materialize_true,
 void FullCodeGenerator::AccumulatorValueContext::Plug(
     Label* materialize_true,
     Label* materialize_false) const {
-  EMIT_STUB_MARKER(207);
   Label done;
   __ bind(materialize_true);
   __ LoadRoot(result_register(), Heap::kTrueValueRootIndex);
@@ -645,7 +636,6 @@ void FullCodeGenerator::AccumulatorValueContext::Plug(
 void FullCodeGenerator::StackValueContext::Plug(
     Label* materialize_true,
     Label* materialize_false) const {
-  EMIT_STUB_MARKER(208);
   Label done;
   __ bind(materialize_true);
   __ LoadRoot(ip, Heap::kTrueValueRootIndex);
@@ -701,7 +691,6 @@ void FullCodeGenerator::DoTest(Expression* condition,
                                Label* if_true,
                                Label* if_false,
                                Label* fall_through) {
-  EMIT_STUB_MARKER(209);
   ToBooleanStub stub(result_register());
   __ CallStub(&stub);
   __ cmpi(result_register(), Operand::Zero());
@@ -714,7 +703,6 @@ void FullCodeGenerator::Split(Condition cond,
                               Label* if_false,
                               Label* fall_through,
                               CRegister cr) {
-  EMIT_STUB_MARKER(210);
   if (if_false == fall_through) {
     __ b(cond, if_true, cr);
   } else if (if_true == fall_through) {
@@ -786,7 +774,6 @@ void FullCodeGenerator::PrepareForBailoutBeforeSplit(Expression* expr,
                                                      bool should_normalize,
                                                      Label* if_true,
                                                      Label* if_false) {
-  EMIT_STUB_MARKER(211);
   // Only prepare for bailouts before splits if we're in a test
   // context. Otherwise, we let the Visit function deal with the
   // preparation to avoid preparing with the same AST id twice.
@@ -805,7 +792,6 @@ void FullCodeGenerator::PrepareForBailoutBeforeSplit(Expression* expr,
 
 
 void FullCodeGenerator::EmitDebugCheckDeclarationContext(Variable* variable) {
-  EMIT_STUB_MARKER(212);
   // The variable in the declaration always resides in the current function
   // context.
   ASSERT_EQ(0, scope()->ContextChainLength(variable->scope()));
@@ -822,7 +808,6 @@ void FullCodeGenerator::EmitDebugCheckDeclarationContext(Variable* variable) {
 
 void FullCodeGenerator::VisitVariableDeclaration(
     VariableDeclaration* declaration) {
-  EMIT_STUB_MARKER(213);
   // If it was not possible to allocate the variable at compile time, we
   // need to "declare" it at runtime to make sure it actually exists in the
   // local context.
@@ -887,7 +872,6 @@ void FullCodeGenerator::VisitVariableDeclaration(
 
 void FullCodeGenerator::VisitFunctionDeclaration(
     FunctionDeclaration* declaration) {
-  EMIT_STUB_MARKER(214);
   VariableProxy* proxy = declaration->proxy();
   Variable* variable = proxy->var();
   switch (variable->location()) {
@@ -944,7 +928,6 @@ void FullCodeGenerator::VisitFunctionDeclaration(
 
 
 void FullCodeGenerator::VisitModuleDeclaration(ModuleDeclaration* declaration) {
-  EMIT_STUB_MARKER(215);
   VariableProxy* proxy = declaration->proxy();
   Variable* variable = proxy->var();
   Handle<JSModule> instance = declaration->module()->interface()->Instance();
@@ -977,7 +960,6 @@ void FullCodeGenerator::VisitModuleDeclaration(ModuleDeclaration* declaration) {
 
 
 void FullCodeGenerator::VisitImportDeclaration(ImportDeclaration* declaration) {
-  EMIT_STUB_MARKER(216);
   VariableProxy* proxy = declaration->proxy();
   Variable* variable = proxy->var();
   switch (variable->location()) {
@@ -1006,7 +988,6 @@ void FullCodeGenerator::VisitExportDeclaration(ExportDeclaration* declaration) {
 
 
 void FullCodeGenerator::DeclareGlobals(Handle<FixedArray> pairs) {
-  EMIT_STUB_MARKER(217);
   // Call the runtime to declare the globals.
   // The context is the first argument.
   __ mov(r4, Operand(pairs));
@@ -1018,7 +999,6 @@ void FullCodeGenerator::DeclareGlobals(Handle<FixedArray> pairs) {
 
 
 void FullCodeGenerator::VisitSwitchStatement(SwitchStatement* stmt) {
-  EMIT_STUB_MARKER(218);
   Comment cmnt(masm_, "[ SwitchStatement");
   Breakable nested_statement(this, stmt);
   SetStatementPosition(stmt);
@@ -1102,7 +1082,6 @@ void FullCodeGenerator::VisitSwitchStatement(SwitchStatement* stmt) {
 
 
 void FullCodeGenerator::VisitForInStatement(ForInStatement* stmt) {
-  EMIT_STUB_MARKER(219);
   Comment cmnt(masm_, "[ ForInStatement");
   SetStatementPosition(stmt);
 
@@ -1293,7 +1272,6 @@ void FullCodeGenerator::VisitForInStatement(ForInStatement* stmt) {
 
 void FullCodeGenerator::EmitNewClosure(Handle<SharedFunctionInfo> info,
                                        bool pretenure) {
-  EMIT_STUB_MARKER(220);
   // Use the fast case closure allocation code that allocates in new
   // space for nested functions that don't need literals cloning. If
   // we're running with the --always-opt or the --prepare-always-opt
@@ -1329,7 +1307,6 @@ void FullCodeGenerator::VisitVariableProxy(VariableProxy* expr) {
 void FullCodeGenerator::EmitLoadGlobalCheckExtensions(Variable* var,
                                                       TypeofState typeof_state,
                                                       Label* slow) {
-  EMIT_STUB_MARKER(221);
   Register current = cp;
   Register next = r4;
   Register temp = r5;
@@ -1387,8 +1364,6 @@ void FullCodeGenerator::EmitLoadGlobalCheckExtensions(Variable* var,
 
 MemOperand FullCodeGenerator::ContextSlotOperandCheckExtensions(Variable* var,
                                                                 Label* slow) {
-  EMIT_STUB_MARKER(222);
-
   ASSERT(var->IsContextSlot());
   Register context = cp;
   Register next = r6;
@@ -1423,7 +1398,6 @@ void FullCodeGenerator::EmitDynamicLookupFastCase(Variable* var,
                                                   TypeofState typeof_state,
                                                   Label* slow,
                                                   Label* done) {
-  EMIT_STUB_MARKER(223);
   // Generate fast-case code for variables that might be shadowed by
   // eval-introduced variables.  Eval is used a lot without
   // introducing variables.  In those cases, we do not want to
@@ -1454,7 +1428,6 @@ void FullCodeGenerator::EmitDynamicLookupFastCase(Variable* var,
 
 
 void FullCodeGenerator::EmitVariableLoad(VariableProxy* proxy) {
-  EMIT_STUB_MARKER(224);
   // Record position before possible IC call.
   SetSourcePosition(proxy->position());
   Variable* var = proxy->var();
@@ -1559,7 +1532,6 @@ void FullCodeGenerator::EmitVariableLoad(VariableProxy* proxy) {
 
 
 void FullCodeGenerator::VisitRegExpLiteral(RegExpLiteral* expr) {
-  EMIT_STUB_MARKER(225);
   Comment cmnt(masm_, "[ RegExpLiteral");
   Label materialized;
   // Registers will be used as follows:
@@ -1621,7 +1593,6 @@ void FullCodeGenerator::EmitAccessor(Expression* expression) {
 
 
 void FullCodeGenerator::VisitObjectLiteral(ObjectLiteral* expr) {
-  EMIT_STUB_MARKER(226);
   Comment cmnt(masm_, "[ ObjectLiteral");
   Handle<FixedArray> constant_properties = expr->constant_properties();
   __ LoadP(r6, MemOperand(fp,  JavaScriptFrameConstants::kFunctionOffset));
@@ -1744,7 +1715,6 @@ void FullCodeGenerator::VisitObjectLiteral(ObjectLiteral* expr) {
 
 
 void FullCodeGenerator::VisitArrayLiteral(ArrayLiteral* expr) {
-  EMIT_STUB_MARKER(227);
   Comment cmnt(masm_, "[ ArrayLiteral");
 
   ZoneList<Expression*>* subexprs = expr->values();
@@ -1832,7 +1802,6 @@ void FullCodeGenerator::VisitArrayLiteral(ArrayLiteral* expr) {
 
 
 void FullCodeGenerator::VisitAssignment(Assignment* expr) {
-  EMIT_STUB_MARKER(228);
   Comment cmnt(masm_, "[ Assignment");
   // Invalid left-hand sides are rewritten to have a 'throw ReferenceError'
   // on the left-hand side.
@@ -1946,7 +1915,6 @@ void FullCodeGenerator::VisitAssignment(Assignment* expr) {
 
 
 void FullCodeGenerator::EmitNamedPropertyLoad(Property* prop) {
-  EMIT_STUB_MARKER(229);
   SetSourcePosition(prop->position());
   Literal* key = prop->key()->AsLiteral();
   __ mov(r5, Operand(key->handle()));
@@ -1969,7 +1937,6 @@ void FullCodeGenerator::EmitInlineSmiBinaryOp(BinaryOperation* expr,
                                               OverwriteMode mode,
                                               Expression* left_expr,
                                               Expression* right_expr) {
-  EMIT_STUB_MARKER(230);
   Label done, smi_case, stub_call;
 
   Register scratch1 = r5;
@@ -2118,7 +2085,6 @@ void FullCodeGenerator::EmitInlineSmiBinaryOp(BinaryOperation* expr,
 void FullCodeGenerator::EmitBinaryOp(BinaryOperation* expr,
                                      Token::Value op,
                                      OverwriteMode mode) {
-  EMIT_STUB_MARKER(231);
   __ pop(r4);
   BinaryOpStub stub(op, mode);
   JumpPatchSite patch_site(masm_);    // unbound, signals no inlined smi code.
@@ -2130,7 +2096,6 @@ void FullCodeGenerator::EmitBinaryOp(BinaryOperation* expr,
 
 
 void FullCodeGenerator::EmitAssignment(Expression* expr) {
-  EMIT_STUB_MARKER(232);
   // Invalid left-hand sides are rewritten to have a 'throw
   // ReferenceError' on the left-hand side.
   if (!expr->IsValidLeftHandSide()) {
@@ -2188,7 +2153,6 @@ void FullCodeGenerator::EmitAssignment(Expression* expr) {
 
 void FullCodeGenerator::EmitVariableAssignment(Variable* var,
                                                Token::Value op) {
-  EMIT_STUB_MARKER(233);
   if (var->IsUnallocated()) {
     // Global var, const, or let.
     __ mov(r5, Operand(var->name()));
@@ -2284,7 +2248,6 @@ void FullCodeGenerator::EmitVariableAssignment(Variable* var,
 
 
 void FullCodeGenerator::EmitNamedPropertyAssignment(Assignment* expr) {
-  EMIT_STUB_MARKER(234);
   // Assignment to a property, using a named store IC.
   Property* prop = expr->target()->AsProperty();
   ASSERT(prop != NULL);
@@ -2306,7 +2269,6 @@ void FullCodeGenerator::EmitNamedPropertyAssignment(Assignment* expr) {
 
 
 void FullCodeGenerator::EmitKeyedPropertyAssignment(Assignment* expr) {
-  EMIT_STUB_MARKER(235);
   // Assignment to a property, using a keyed store IC.
 
   // Record source code position before IC call.
@@ -2325,7 +2287,6 @@ void FullCodeGenerator::EmitKeyedPropertyAssignment(Assignment* expr) {
 
 
 void FullCodeGenerator::VisitProperty(Property* expr) {
-  EMIT_STUB_MARKER(236);
   Comment cmnt(masm_, "[ Property");
   Expression* key = expr->key();
 
@@ -2354,7 +2315,6 @@ void FullCodeGenerator::CallIC(Handle<Code> code,
 void FullCodeGenerator::EmitCallWithIC(Call* expr,
                                        Handle<Object> name,
                                        RelocInfo::Mode mode) {
-  EMIT_STUB_MARKER(237);
   // Code common for calls using the IC.
   ZoneList<Expression*>* args = expr->arguments();
   int arg_count = args->length();
@@ -2379,7 +2339,6 @@ void FullCodeGenerator::EmitCallWithIC(Call* expr,
 
 void FullCodeGenerator::EmitKeyedCallWithIC(Call* expr,
                                             Expression* key) {
-  EMIT_STUB_MARKER(238);
   // Load the key.
   VisitForAccumulatorValue(key);
 
@@ -2412,7 +2371,6 @@ void FullCodeGenerator::EmitKeyedCallWithIC(Call* expr,
 
 
 void FullCodeGenerator::EmitCallWithStub(Call* expr, CallFunctionFlags flags) {
-  EMIT_STUB_MARKER(239);
   // Code common for calls using the call stub.
   ZoneList<Expression*>* args = expr->arguments();
   int arg_count = args->length();
@@ -2444,7 +2402,6 @@ void FullCodeGenerator::EmitCallWithStub(Call* expr, CallFunctionFlags flags) {
 
 
 void FullCodeGenerator::EmitResolvePossiblyDirectEval(int arg_count) {
-  EMIT_STUB_MARKER(240);
   // Push copy of the first argument or undefined if it doesn't exist.
   if (arg_count > 0) {
     __ LoadP(r4, MemOperand(sp, arg_count * kPointerSize), r0);
@@ -2471,7 +2428,6 @@ void FullCodeGenerator::EmitResolvePossiblyDirectEval(int arg_count) {
 
 
 void FullCodeGenerator::VisitCall(Call* expr) {
-  EMIT_STUB_MARKER(241);
 #ifdef DEBUG
   // We want to verify that RecordJSReturnSite gets called on all paths
   // through this function.  Avoid early returns.
@@ -2598,7 +2554,6 @@ void FullCodeGenerator::VisitCall(Call* expr) {
 
 
 void FullCodeGenerator::VisitCallNew(CallNew* expr) {
-  EMIT_STUB_MARKER(242);
   Comment cmnt(masm_, "[ CallNew");
   // According to ECMA-262, section 11.2.2, page 44, the function
   // expression in new calls must be evaluated before the
@@ -2640,7 +2595,6 @@ void FullCodeGenerator::VisitCallNew(CallNew* expr) {
 
 
 void FullCodeGenerator::EmitIsSmi(CallRuntime* expr) {
-  EMIT_STUB_MARKER(243);
   ZoneList<Expression*>* args = expr->arguments();
   ASSERT(args->length() == 1);
 
@@ -2662,7 +2616,6 @@ void FullCodeGenerator::EmitIsSmi(CallRuntime* expr) {
 
 
 void FullCodeGenerator::EmitIsNonNegativeSmi(CallRuntime* expr) {
-  EMIT_STUB_MARKER(244);
   ZoneList<Expression*>* args = expr->arguments();
   ASSERT(args->length() == 1);
 
@@ -2684,7 +2637,6 @@ void FullCodeGenerator::EmitIsNonNegativeSmi(CallRuntime* expr) {
 
 
 void FullCodeGenerator::EmitIsObject(CallRuntime* expr) {
-  EMIT_STUB_MARKER(245);
   ZoneList<Expression*>* args = expr->arguments();
   ASSERT(args->length() == 1);
 
@@ -2718,7 +2670,6 @@ void FullCodeGenerator::EmitIsObject(CallRuntime* expr) {
 
 
 void FullCodeGenerator::EmitIsSpecObject(CallRuntime* expr) {
-  EMIT_STUB_MARKER(246);
   ZoneList<Expression*>* args = expr->arguments();
   ASSERT(args->length() == 1);
 
@@ -2741,7 +2692,6 @@ void FullCodeGenerator::EmitIsSpecObject(CallRuntime* expr) {
 
 
 void FullCodeGenerator::EmitIsUndetectableObject(CallRuntime* expr) {
-  EMIT_STUB_MARKER(247);
   ZoneList<Expression*>* args = expr->arguments();
   ASSERT(args->length() == 1);
 
@@ -2767,7 +2717,6 @@ void FullCodeGenerator::EmitIsUndetectableObject(CallRuntime* expr) {
 
 void FullCodeGenerator::EmitIsStringWrapperSafeForDefaultValueOf(
     CallRuntime* expr) {
-  EMIT_STUB_MARKER(248);
   ZoneList<Expression*>* args = expr->arguments();
   ASSERT(args->length() == 1);
 
@@ -2857,7 +2806,6 @@ void FullCodeGenerator::EmitIsStringWrapperSafeForDefaultValueOf(
 
 
 void FullCodeGenerator::EmitIsFunction(CallRuntime* expr) {
-  EMIT_STUB_MARKER(249);
   ZoneList<Expression*>* args = expr->arguments();
   ASSERT(args->length() == 1);
 
@@ -2880,7 +2828,6 @@ void FullCodeGenerator::EmitIsFunction(CallRuntime* expr) {
 
 
 void FullCodeGenerator::EmitIsArray(CallRuntime* expr) {
-  EMIT_STUB_MARKER(250);
   ZoneList<Expression*>* args = expr->arguments();
   ASSERT(args->length() == 1);
 
@@ -2903,7 +2850,6 @@ void FullCodeGenerator::EmitIsArray(CallRuntime* expr) {
 
 
 void FullCodeGenerator::EmitIsRegExp(CallRuntime* expr) {
-  EMIT_STUB_MARKER(251);
   ZoneList<Expression*>* args = expr->arguments();
   ASSERT(args->length() == 1);
 
@@ -2927,7 +2873,6 @@ void FullCodeGenerator::EmitIsRegExp(CallRuntime* expr) {
 
 
 void FullCodeGenerator::EmitIsConstructCall(CallRuntime* expr) {
-  EMIT_STUB_MARKER(252);
   ASSERT(expr->arguments()->length() == 0);
 
   Label materialize_true, materialize_false;
@@ -2960,7 +2905,6 @@ void FullCodeGenerator::EmitIsConstructCall(CallRuntime* expr) {
 
 
 void FullCodeGenerator::EmitObjectEquals(CallRuntime* expr) {
-  EMIT_STUB_MARKER(253);
   ZoneList<Expression*>* args = expr->arguments();
   ASSERT(args->length() == 2);
 
@@ -2985,7 +2929,6 @@ void FullCodeGenerator::EmitObjectEquals(CallRuntime* expr) {
 
 
 void FullCodeGenerator::EmitArguments(CallRuntime* expr) {
-  EMIT_STUB_MARKER(254);
   ZoneList<Expression*>* args = expr->arguments();
   ASSERT(args->length() == 1);
 
@@ -3001,7 +2944,6 @@ void FullCodeGenerator::EmitArguments(CallRuntime* expr) {
 
 
 void FullCodeGenerator::EmitArgumentsLength(CallRuntime* expr) {
-  EMIT_STUB_MARKER(255);
   ASSERT(expr->arguments()->length() == 0);
   Label exit;
   // Get the number of formal parameters.
@@ -3023,7 +2965,6 @@ void FullCodeGenerator::EmitArgumentsLength(CallRuntime* expr) {
 
 
 void FullCodeGenerator::EmitClassOf(CallRuntime* expr) {
-  EMIT_STUB_MARKER(256);
   ZoneList<Expression*>* args = expr->arguments();
   ASSERT(args->length() == 1);
   Label done, null, function, non_function_constructor;
@@ -3086,7 +3027,6 @@ void FullCodeGenerator::EmitClassOf(CallRuntime* expr) {
 
 
 void FullCodeGenerator::EmitLog(CallRuntime* expr) {
-  EMIT_STUB_MARKER(257);
   // Conditionally generate a log call.
   // Args:
   //   0 (literal string): The type of logging (corresponds to the flags).
@@ -3109,7 +3049,6 @@ void FullCodeGenerator::EmitLog(CallRuntime* expr) {
 
 
 void FullCodeGenerator::EmitRandomHeapNumber(CallRuntime* expr) {
-  EMIT_STUB_MARKER(258);
   ASSERT(expr->arguments()->length() == 0);
   Label slow_allocate_heapnumber;
   Label heapnumber_allocated;
@@ -3166,7 +3105,6 @@ void FullCodeGenerator::EmitRandomHeapNumber(CallRuntime* expr) {
 
 
 void FullCodeGenerator::EmitSubString(CallRuntime* expr) {
-  EMIT_STUB_MARKER(259);
   // Load the arguments on the stack and call the stub.
   SubStringStub stub;
   ZoneList<Expression*>* args = expr->arguments();
@@ -3180,7 +3118,6 @@ void FullCodeGenerator::EmitSubString(CallRuntime* expr) {
 
 
 void FullCodeGenerator::EmitRegExpExec(CallRuntime* expr) {
-  EMIT_STUB_MARKER(260);
   // Load the arguments on the stack and call the stub.
   RegExpExecStub stub;
   ZoneList<Expression*>* args = expr->arguments();
@@ -3195,7 +3132,6 @@ void FullCodeGenerator::EmitRegExpExec(CallRuntime* expr) {
 
 
 void FullCodeGenerator::EmitValueOf(CallRuntime* expr) {
-  EMIT_STUB_MARKER(261);
   ZoneList<Expression*>* args = expr->arguments();
   ASSERT(args->length() == 1);
   VisitForAccumulatorValue(args->at(0));  // Load the object.
@@ -3214,7 +3150,6 @@ void FullCodeGenerator::EmitValueOf(CallRuntime* expr) {
 
 
 void FullCodeGenerator::EmitDateField(CallRuntime* expr) {
-  EMIT_STUB_MARKER(262);
   ZoneList<Expression*>* args = expr->arguments();
   ASSERT(args->length() == 2);
   ASSERT_NE(NULL, args->at(1)->AsLiteral());
@@ -3263,7 +3198,6 @@ void FullCodeGenerator::EmitDateField(CallRuntime* expr) {
 
 
 void FullCodeGenerator::EmitMathPow(CallRuntime* expr) {
-  EMIT_STUB_MARKER(263);
   // Load the arguments on the stack and call the runtime function.
   ZoneList<Expression*>* args = expr->arguments();
   ASSERT(args->length() == 2);
@@ -3282,7 +3216,6 @@ void FullCodeGenerator::EmitMathPow(CallRuntime* expr) {
 
 
 void FullCodeGenerator::EmitSetValueOf(CallRuntime* expr) {
-  EMIT_STUB_MARKER(264);
   ZoneList<Expression*>* args = expr->arguments();
   ASSERT(args->length() == 2);
   VisitForStackValue(args->at(0));  // Load the object.
@@ -3311,7 +3244,6 @@ void FullCodeGenerator::EmitSetValueOf(CallRuntime* expr) {
 
 
 void FullCodeGenerator::EmitNumberToString(CallRuntime* expr) {
-  EMIT_STUB_MARKER(265);
   ZoneList<Expression*>* args = expr->arguments();
   ASSERT_EQ(args->length(), 1);
   // Load the argument on the stack and call the stub.
@@ -3324,7 +3256,6 @@ void FullCodeGenerator::EmitNumberToString(CallRuntime* expr) {
 
 
 void FullCodeGenerator::EmitStringCharFromCode(CallRuntime* expr) {
-  EMIT_STUB_MARKER(266);
   ZoneList<Expression*>* args = expr->arguments();
   ASSERT(args->length() == 1);
   VisitForAccumulatorValue(args->at(0));
@@ -3343,7 +3274,6 @@ void FullCodeGenerator::EmitStringCharFromCode(CallRuntime* expr) {
 
 
 void FullCodeGenerator::EmitStringCharCodeAt(CallRuntime* expr) {
-  EMIT_STUB_MARKER(267);
   ZoneList<Expression*>* args = expr->arguments();
   ASSERT(args->length() == 2);
   VisitForStackValue(args->at(0));
@@ -3389,7 +3319,6 @@ void FullCodeGenerator::EmitStringCharCodeAt(CallRuntime* expr) {
 
 
 void FullCodeGenerator::EmitStringCharAt(CallRuntime* expr) {
-  EMIT_STUB_MARKER(268);
   ZoneList<Expression*>* args = expr->arguments();
   ASSERT(args->length() == 2);
   VisitForStackValue(args->at(0));
@@ -3437,7 +3366,6 @@ void FullCodeGenerator::EmitStringCharAt(CallRuntime* expr) {
 
 
 void FullCodeGenerator::EmitStringAdd(CallRuntime* expr) {
-  EMIT_STUB_MARKER(269);
   ZoneList<Expression*>* args = expr->arguments();
   ASSERT_EQ(2, args->length());
   VisitForStackValue(args->at(0));
@@ -3450,7 +3378,6 @@ void FullCodeGenerator::EmitStringAdd(CallRuntime* expr) {
 
 
 void FullCodeGenerator::EmitStringCompare(CallRuntime* expr) {
-  EMIT_STUB_MARKER(270);
   ZoneList<Expression*>* args = expr->arguments();
   ASSERT_EQ(2, args->length());
   VisitForStackValue(args->at(0));
@@ -3463,7 +3390,6 @@ void FullCodeGenerator::EmitStringCompare(CallRuntime* expr) {
 
 
 void FullCodeGenerator::EmitMathSin(CallRuntime* expr) {
-  EMIT_STUB_MARKER(271);
   // Load the argument on the stack and call the stub.
   TranscendentalCacheStub stub(TranscendentalCache::SIN,
                                TranscendentalCacheStub::TAGGED);
@@ -3476,7 +3402,6 @@ void FullCodeGenerator::EmitMathSin(CallRuntime* expr) {
 
 
 void FullCodeGenerator::EmitMathCos(CallRuntime* expr) {
-  EMIT_STUB_MARKER(272);
   // Load the argument on the stack and call the stub.
   TranscendentalCacheStub stub(TranscendentalCache::COS,
                                TranscendentalCacheStub::TAGGED);
@@ -3489,7 +3414,6 @@ void FullCodeGenerator::EmitMathCos(CallRuntime* expr) {
 
 
 void FullCodeGenerator::EmitMathTan(CallRuntime* expr) {
-  EMIT_STUB_MARKER(273);
   // Load the argument on the stack and call the stub.
   TranscendentalCacheStub stub(TranscendentalCache::TAN,
                                TranscendentalCacheStub::TAGGED);
@@ -3502,7 +3426,6 @@ void FullCodeGenerator::EmitMathTan(CallRuntime* expr) {
 
 
 void FullCodeGenerator::EmitMathLog(CallRuntime* expr) {
-  EMIT_STUB_MARKER(274);
   // Load the argument on the stack and call the stub.
   TranscendentalCacheStub stub(TranscendentalCache::LOG,
                                TranscendentalCacheStub::TAGGED);
@@ -3515,7 +3438,6 @@ void FullCodeGenerator::EmitMathLog(CallRuntime* expr) {
 
 
 void FullCodeGenerator::EmitMathSqrt(CallRuntime* expr) {
-  EMIT_STUB_MARKER(275);
   // Load the argument on the stack and call the runtime function.
   ZoneList<Expression*>* args = expr->arguments();
   ASSERT(args->length() == 1);
@@ -3526,7 +3448,6 @@ void FullCodeGenerator::EmitMathSqrt(CallRuntime* expr) {
 
 
 void FullCodeGenerator::EmitCallFunction(CallRuntime* expr) {
-  EMIT_STUB_MARKER(276);
   ZoneList<Expression*>* args = expr->arguments();
   ASSERT(args->length() >= 2);
 
@@ -3560,7 +3481,6 @@ void FullCodeGenerator::EmitCallFunction(CallRuntime* expr) {
 
 
 void FullCodeGenerator::EmitRegExpConstructResult(CallRuntime* expr) {
-  EMIT_STUB_MARKER(277);
   RegExpConstructResultStub stub;
   ZoneList<Expression*>* args = expr->arguments();
   ASSERT(args->length() == 3);
@@ -3573,7 +3493,6 @@ void FullCodeGenerator::EmitRegExpConstructResult(CallRuntime* expr) {
 
 
 void FullCodeGenerator::EmitGetFromCache(CallRuntime* expr) {
-  EMIT_STUB_MARKER(278);
   ZoneList<Expression*>* args = expr->arguments();
   ASSERT_EQ(2, args->length());
   ASSERT_NE(NULL, args->at(0)->AsLiteral());
@@ -3625,7 +3544,6 @@ void FullCodeGenerator::EmitGetFromCache(CallRuntime* expr) {
 
 
 void FullCodeGenerator::EmitIsRegExpEquivalent(CallRuntime* expr) {
-  EMIT_STUB_MARKER(279);
   ZoneList<Expression*>* args = expr->arguments();
   ASSERT_EQ(2, args->length());
 
@@ -3667,7 +3585,6 @@ void FullCodeGenerator::EmitIsRegExpEquivalent(CallRuntime* expr) {
 
 
 void FullCodeGenerator::EmitHasCachedArrayIndex(CallRuntime* expr) {
-  EMIT_STUB_MARKER(280);
   ZoneList<Expression*>* args = expr->arguments();
   VisitForAccumulatorValue(args->at(0));
 
@@ -3691,7 +3608,6 @@ void FullCodeGenerator::EmitHasCachedArrayIndex(CallRuntime* expr) {
 
 
 void FullCodeGenerator::EmitGetCachedArrayIndex(CallRuntime* expr) {
-  EMIT_STUB_MARKER(281);
   ZoneList<Expression*>* args = expr->arguments();
   ASSERT(args->length() == 1);
   VisitForAccumulatorValue(args->at(0));
@@ -3706,7 +3622,6 @@ void FullCodeGenerator::EmitGetCachedArrayIndex(CallRuntime* expr) {
 
 
 void FullCodeGenerator::EmitFastAsciiArrayJoin(CallRuntime* expr) {
-  EMIT_STUB_MARKER(282);
   Label bailout, done, one_char_separator, long_separator,
       non_trivial_array, not_size_one_array, loop,
       empty_separator_loop, one_char_separator_loop,
@@ -3965,7 +3880,6 @@ void FullCodeGenerator::EmitFastAsciiArrayJoin(CallRuntime* expr) {
 
 
 void FullCodeGenerator::VisitCallRuntime(CallRuntime* expr) {
-  EMIT_STUB_MARKER(283);
   Handle<String> name = expr->name();
   if (name->length() > 0 && name->Get(0) == '_') {
     Comment cmnt(masm_, "[ InlineRuntimeCall");
@@ -4007,7 +3921,6 @@ void FullCodeGenerator::VisitCallRuntime(CallRuntime* expr) {
 
 
 void FullCodeGenerator::VisitUnaryOperation(UnaryOperation* expr) {
-  EMIT_STUB_MARKER(284);
   switch (expr->op()) {
     case Token::DELETE: {
       Comment cmnt(masm_, "[ UnaryOperation (DELETE)");
@@ -4141,7 +4054,6 @@ void FullCodeGenerator::VisitUnaryOperation(UnaryOperation* expr) {
 
 void FullCodeGenerator::EmitUnaryOperation(UnaryOperation* expr,
                                            const char* comment) {
-  EMIT_STUB_MARKER(285);
   // TODO(svenpanne): Allowing format strings in Comment would be nice here...
   Comment cmt(masm_, comment);
   bool can_overwrite = expr->expression()->ResultOverwriteAllowed();
@@ -4159,7 +4071,6 @@ void FullCodeGenerator::EmitUnaryOperation(UnaryOperation* expr,
 
 
 void FullCodeGenerator::VisitCountOperation(CountOperation* expr) {
-  EMIT_STUB_MARKER(286);
   Comment cmnt(masm_, "[ CountOperation");
   SetSourcePosition(expr->position());
 
@@ -4331,7 +4242,6 @@ void FullCodeGenerator::VisitCountOperation(CountOperation* expr) {
 
 
 void FullCodeGenerator::VisitForTypeofValue(Expression* expr) {
-  EMIT_STUB_MARKER(287);
   ASSERT(!context()->IsEffect());
   ASSERT(!context()->IsTest());
   VariableProxy* proxy = expr->AsVariableProxy();
@@ -4370,7 +4280,6 @@ void FullCodeGenerator::VisitForTypeofValue(Expression* expr) {
 void FullCodeGenerator::EmitLiteralCompareTypeof(Expression* expr,
                                                  Expression* sub_expr,
                                                  Handle<String> check) {
-  EMIT_STUB_MARKER(288);
   Label materialize_true, materialize_false;
   Label* if_true = NULL;
   Label* if_false = NULL;
@@ -4447,7 +4356,6 @@ void FullCodeGenerator::EmitLiteralCompareTypeof(Expression* expr,
 
 
 void FullCodeGenerator::VisitCompareOperation(CompareOperation* expr) {
-  EMIT_STUB_MARKER(289);
   Comment cmnt(masm_, "[ CompareOperation");
   SetSourcePosition(expr->position());
 
@@ -4545,7 +4453,6 @@ void FullCodeGenerator::VisitCompareOperation(CompareOperation* expr) {
 void FullCodeGenerator::EmitLiteralCompareNil(CompareOperation* expr,
                                               Expression* sub_expr,
                                               NilValue nil) {
-  EMIT_STUB_MARKER(290);
   Label materialize_true, materialize_false;
   Label* if_true = NULL;
   Label* if_false = NULL;
@@ -4610,7 +4517,6 @@ void FullCodeGenerator::LoadContextField(Register dst, int context_index) {
 
 
 void FullCodeGenerator::PushFunctionArgumentForContextAllocation() {
-  EMIT_STUB_MARKER(291);
   Scope* declaration_scope = scope()->DeclarationScope();
   if (declaration_scope->is_global_scope() ||
       declaration_scope->is_module_scope()) {
@@ -4636,7 +4542,6 @@ void FullCodeGenerator::PushFunctionArgumentForContextAllocation() {
 // Non-local control flow support.
 
 void FullCodeGenerator::EnterFinallyBlock() {
-  EMIT_STUB_MARKER(292);
   ASSERT(!result_register().is(r4));
   // Store result register while executing finally block.
   __ push(result_register());
@@ -4672,7 +4577,6 @@ void FullCodeGenerator::EnterFinallyBlock() {
 
 
 void FullCodeGenerator::ExitFinallyBlock() {
-  EMIT_STUB_MARKER(293);
   ASSERT(!result_register().is(r4));
   // Restore pending message from stack.
   __ pop(r4);
@@ -4714,7 +4618,6 @@ void FullCodeGenerator::ExitFinallyBlock() {
 FullCodeGenerator::NestedStatement* FullCodeGenerator::TryFinally::Exit(
     int* stack_depth,
     int* context_length) {
-  EMIT_STUB_MARKER(294);
   // The macros used here must preserve the result register.
 
   // Because the handler block contains the context of the finally

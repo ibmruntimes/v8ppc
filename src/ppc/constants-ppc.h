@@ -359,14 +359,11 @@ enum FAKE_OPCODE_T {
   fBranch = 44,
   // the following is the marker for ARM instruction sequences outside
   // assembler.cc that we have removed (marked by PPCPORT_UNIMPLEMENTED)
-  fMASM1 = 60,
   fMASM3 = 61,
-  fMASM13 = 68,
   fMASM16 = 69,
   fMASM22 = 75,
   fMASM23 = 76,
   fMASM26 = 79,
-  fMASM28 = 81,
 
   fLITHIUM91 = 91,
   fLITHIUM111 = 111,

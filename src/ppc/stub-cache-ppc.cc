@@ -41,8 +41,6 @@ namespace internal {
 
 #define __ ACCESS_MASM(masm)
 
-#define EMIT_STUB_MARKER(stub_marker) __ marker_asm(stub_marker)
-
 static void ProbeTable(Isolate* isolate,
                        MacroAssembler* masm,
                        Code::Flags flags,
@@ -54,8 +52,6 @@ static void ProbeTable(Isolate* isolate,
                        Register scratch,
                        Register scratch2,
                        Register offset_scratch) {
-  EMIT_STUB_MARKER(0);
-
   ExternalReference key_offset(isolate->stub_cache()->key_reference(table));
   ExternalReference value_offset(isolate->stub_cache()->value_reference(table));
   ExternalReference map_offset(isolate->stub_cache()->map_reference(table));
@@ -143,8 +139,6 @@ static void GenerateDictionaryNegativeLookup(MacroAssembler* masm,
                                              Handle<String> name,
                                              Register scratch0,
                                              Register scratch1) {
-  EMIT_STUB_MARKER(1);
-
   ASSERT(name->IsSymbol());
   Counters* counters = masm->isolate()->counters();
   __ IncrementCounter(counters->negative_lookups(), 1, scratch0, scratch1);
@@ -201,8 +195,6 @@ void StubCache::GenerateProbe(MacroAssembler* masm,
                               Register extra,
                               Register extra2,
                               Register extra3) {
-  EMIT_STUB_MARKER(2);
-
   Isolate* isolate = masm->isolate();
   Label miss;
 
@@ -303,8 +295,6 @@ void StubCache::GenerateProbe(MacroAssembler* masm,
 void StubCompiler::GenerateLoadGlobalFunctionPrototype(MacroAssembler* masm,
                                                        int index,
                                                        Register prototype) {
-  EMIT_STUB_MARKER(3);
-
   // Load the global or builtins object from the current context.
   __ LoadP(prototype,
            MemOperand(cp, Context::SlotOffset(Context::GLOBAL_OBJECT_INDEX)));
@@ -327,8 +317,6 @@ void StubCompiler::GenerateDirectLoadGlobalFunctionPrototype(
     int index,
     Register prototype,
     Label* miss) {
-  EMIT_STUB_MARKER(4);
-
   Isolate* isolate = masm->isolate();
   // Check we're still in the same context.
   __ LoadP(prototype,
@@ -354,8 +342,6 @@ void StubCompiler::GenerateFastPropertyLoad(MacroAssembler* masm,
                                             Register src,
                                             Handle<JSObject> holder,
                                             int index) {
-  EMIT_STUB_MARKER(5);
-
   // Adjust for the number of properties stored in the holder.
   index -= holder->map()->inobject_properties();
   if (index < 0) {
@@ -375,8 +361,6 @@ void StubCompiler::GenerateLoadArrayLength(MacroAssembler* masm,
                                            Register receiver,
                                            Register scratch,
                                            Label* miss_label) {
-  EMIT_STUB_MARKER(6);
-
   // Check that the receiver isn't a smi.
   __ JumpIfSmi(receiver, miss_label);
 
@@ -399,8 +383,6 @@ static void GenerateStringCheck(MacroAssembler* masm,
                                 Register scratch2,
                                 Label* smi,
                                 Label* non_string_object) {
-  EMIT_STUB_MARKER(7);
-
   // Check that the receiver isn't a smi.
   __ JumpIfSmi(receiver, smi);
 
@@ -424,8 +406,6 @@ void StubCompiler::GenerateLoadStringLength(MacroAssembler* masm,
                                             Register scratch2,
                                             Label* miss,
                                             bool support_wrappers) {
-  EMIT_STUB_MARKER(8);
-
   Label check_wrapper;
 
   // Check if the object is a string leaving the instance type in the
@@ -457,7 +437,6 @@ void StubCompiler::GenerateLoadFunctionPrototype(MacroAssembler* masm,
                                                  Register scratch1,
                                                  Register scratch2,
                                                  Label* miss_label) {
-  EMIT_STUB_MARKER(9);
   __ TryGetFunctionPrototype(receiver, scratch1, scratch2, miss_label);
   __ mr(r3, scratch1);
   __ Ret();
@@ -478,8 +457,6 @@ void StubCompiler::GenerateStoreField(MacroAssembler* masm,
                                       Register scratch1,
                                       Register scratch2,
                                       Label* miss_label) {
-  EMIT_STUB_MARKER(10);
-
   // r3 : value
   Label exit;
 
@@ -617,7 +594,6 @@ void StubCompiler::GenerateStoreField(MacroAssembler* masm,
 
 
 void StubCompiler::GenerateLoadMiss(MacroAssembler* masm, Code::Kind kind) {
-  EMIT_STUB_MARKER(11);
   ASSERT(kind == Code::LOAD_IC || kind == Code::KEYED_LOAD_IC);
   Handle<Code> code = (kind == Code::LOAD_IC)
       ? masm->isolate()->builtins()->LoadIC_Miss()
@@ -631,8 +607,6 @@ static void GenerateCallFunction(MacroAssembler* masm,
                                  const ParameterCount& arguments,
                                  Label* miss,
                                  Code::ExtraICState extra_ic_state) {
-  EMIT_STUB_MARKER(12);
-
   // ----------- S t a t e -------------
   //  -- r3: receiver
   //  -- r4: function to call
@@ -663,8 +637,6 @@ static void PushInterceptorArguments(MacroAssembler* masm,
                                      Register holder,
                                      Register name,
                                      Handle<JSObject> holder_obj) {
-  EMIT_STUB_MARKER(13);
-
   __ push(name);
   Handle<InterceptorInfo> interceptor(holder_obj->GetNamedInterceptor());
   ASSERT(!masm->isolate()->heap()->InNewSpace(*interceptor));
@@ -686,8 +658,6 @@ static void CompileCallLoadPropertyWithInterceptor(
     Register holder,
     Register name,
     Handle<JSObject> holder_obj) {
-  EMIT_STUB_MARKER(14);
-
   PushInterceptorArguments(masm, receiver, holder, name, holder_obj);
 
   ExternalReference ref =
@@ -709,7 +679,6 @@ static const int kFastApiCallArguments = 4;
 // These arguments are set by CheckPrototypes and GenerateFastApiDirectCall.
 static void ReserveSpaceForFastApiCall(MacroAssembler* masm,
                                        Register scratch) {
-  EMIT_STUB_MARKER(15);
   __ LoadSmiLiteral(scratch, Smi::FromInt(0));
   for (int i = 0; i < kFastApiCallArguments; i++) {
     __ push(scratch);
@@ -719,7 +688,6 @@ static void ReserveSpaceForFastApiCall(MacroAssembler* masm,
 
 // Undoes the effects of ReserveSpaceForFastApiCall.
 static void FreeSpaceForFastApiCall(MacroAssembler* masm) {
-  EMIT_STUB_MARKER(16);
   __ Drop(kFastApiCallArguments);
 }
 
@@ -727,7 +695,6 @@ static void FreeSpaceForFastApiCall(MacroAssembler* masm) {
 static void GenerateFastApiDirectCall(MacroAssembler* masm,
                                       const CallOptimization& optimization,
                                       int argc) {
-  EMIT_STUB_MARKER(17);
   // ----------- S t a t e -------------
   //  -- sp[0]              : holder (set by CheckPrototypes)
   //  -- sp[4]              : callee JS function
@@ -950,8 +917,6 @@ class CallInterceptorCompiler BASE_EMBEDDED {
                       Handle<String> name,
                       Handle<JSObject> interceptor_holder,
                       Label* miss_label) {
-    EMIT_STUB_MARKER(18);
-
     Register holder =
         stub_compiler_->CheckPrototypes(object, receiver, interceptor_holder,
                                         scratch1, scratch2, scratch3,
@@ -977,8 +942,6 @@ class CallInterceptorCompiler BASE_EMBEDDED {
                            Handle<JSObject> holder_obj,
                            Register scratch,
                            Label* interceptor_succeeded) {
-    EMIT_STUB_MARKER(19);
-
     {
       FrameScope scope(masm, StackFrame::INTERNAL);
       __ Push(holder, name_);
@@ -1011,8 +974,6 @@ static void GenerateCheckPropertyCell(MacroAssembler* masm,
                                       Handle<String> name,
                                       Register scratch,
                                       Label* miss) {
-  EMIT_STUB_MARKER(20);
-
   Handle<JSGlobalPropertyCell> cell =
       GlobalObject::EnsurePropertyCell(global, name);
   ASSERT(cell->value()->IsTheHole());
@@ -1033,8 +994,6 @@ static void GenerateCheckPropertyCells(MacroAssembler* masm,
                                        Handle<String> name,
                                        Register scratch,
                                        Label* miss) {
-  EMIT_STUB_MARKER(21);
-
   Handle<JSObject> current = object;
   while (!current.is_identical_to(holder)) {
     if (current->IsGlobalObject()) {
@@ -1061,8 +1020,6 @@ Register StubCompiler::CheckPrototypes(Handle<JSObject> object,
                                        Handle<String> name,
                                        int save_at_depth,
                                        Label* miss) {
-  EMIT_STUB_MARKER(22);
-
   // Make sure there's no overlap between holder and object registers.
   ASSERT(!scratch1.is(object_reg) && !scratch1.is(holder_reg));
   ASSERT(!scratch2.is(object_reg) && !scratch2.is(holder_reg)
@@ -1165,8 +1122,6 @@ void StubCompiler::GenerateLoadField(Handle<JSObject> object,
                                      int index,
                                      Handle<String> name,
                                      Label* miss) {
-  EMIT_STUB_MARKER(23);
-
   // Check that the receiver isn't a smi.
   __ JumpIfSmi(receiver, miss);
 
@@ -1187,8 +1142,6 @@ void StubCompiler::GenerateLoadConstant(Handle<JSObject> object,
                                         Handle<JSFunction> value,
                                         Handle<String> name,
                                         Label* miss) {
-  EMIT_STUB_MARKER(24);
-
   // Check that the receiver isn't a smi.
   __ JumpIfSmi(receiver, miss);
 
@@ -1210,8 +1163,6 @@ void StubCompiler::GenerateDictionaryLoadCallback(Register receiver,
                                                   Handle<AccessorInfo> callback,
                                                   Handle<String> name,
                                                   Label* miss) {
-  EMIT_STUB_MARKER(25);
-
   ASSERT(!receiver.is(scratch1));
   ASSERT(!receiver.is(scratch2));
   ASSERT(!receiver.is(scratch3));
@@ -1255,8 +1206,6 @@ void StubCompiler::GenerateLoadCallback(Handle<JSObject> object,
                                         Handle<AccessorInfo> callback,
                                         Handle<String> name,
                                         Label* miss) {
-  EMIT_STUB_MARKER(26);
-
   // Check that the receiver isn't a smi.
   __ JumpIfSmi(receiver, miss);
 
@@ -1353,8 +1302,6 @@ void StubCompiler::GenerateLoadInterceptor(Handle<JSObject> object,
                                            Register scratch3,
                                            Handle<String> name,
                                            Label* miss) {
-  EMIT_STUB_MARKER(27);
-
   ASSERT(interceptor_holder->HasNamedInterceptor());
   ASSERT(!interceptor_holder->GetNamedInterceptor()->getter()->IsUndefined());
 
@@ -1495,8 +1442,6 @@ void StubCompiler::GenerateLoadInterceptor(Handle<JSObject> object,
 
 
 void CallStubCompiler::GenerateNameCheck(Handle<String> name, Label* miss) {
-  EMIT_STUB_MARKER(28);
-
   if (kind_ == Code::KEYED_CALL_IC) {
     __ Cmpi(r5, Operand(name), r0);
     __ bne(miss);
@@ -1508,8 +1453,6 @@ void CallStubCompiler::GenerateGlobalReceiverCheck(Handle<JSObject> object,
                                                    Handle<JSObject> holder,
                                                    Handle<String> name,
                                                    Label* miss) {
-  EMIT_STUB_MARKER(29);
-
   ASSERT(holder->IsGlobalObject());
 
   // Get the number of arguments.
@@ -1528,8 +1471,6 @@ void CallStubCompiler::GenerateLoadFunctionFromCell(
     Handle<JSGlobalPropertyCell> cell,
     Handle<JSFunction> function,
     Label* miss) {
-  EMIT_STUB_MARKER(30);
-
   // Get the value from the cell.
   __ mov(r6, Operand(cell));
   __ LoadP(r4, FieldMemOperand(r6, JSGlobalPropertyCell::kValueOffset));
@@ -1558,8 +1499,6 @@ void CallStubCompiler::GenerateLoadFunctionFromCell(
 
 
 void CallStubCompiler::GenerateMissBranch() {
-  EMIT_STUB_MARKER(31);
-
   Handle<Code> code =
       isolate()->stub_cache()->ComputeCallMiss(arguments().immediate(),
                                                kind_,
@@ -1572,8 +1511,6 @@ Handle<Code> CallStubCompiler::CompileCallField(Handle<JSObject> object,
                                                 Handle<JSObject> holder,
                                                 int index,
                                                 Handle<String> name) {
-  EMIT_STUB_MARKER(32);
-
   // ----------- S t a t e -------------
   //  -- r5    : name
   //  -- lr    : return address
@@ -1610,8 +1547,6 @@ Handle<Code> CallStubCompiler::CompileArrayPushCall(
     Handle<JSGlobalPropertyCell> cell,
     Handle<JSFunction> function,
     Handle<String> name) {
-  EMIT_STUB_MARKER(33);
-
   // ----------- S t a t e -------------
   //  -- r5    : name
   //  -- lr    : return address
@@ -1835,8 +1770,6 @@ Handle<Code> CallStubCompiler::CompileArrayPopCall(
     Handle<JSGlobalPropertyCell> cell,
     Handle<JSFunction> function,
     Handle<String> name) {
-  EMIT_STUB_MARKER(34);
-
   // ----------- S t a t e -------------
   //  -- r5    : name
   //  -- lr    : return address
@@ -1923,8 +1856,6 @@ Handle<Code> CallStubCompiler::CompileStringCharCodeAtCall(
     Handle<JSGlobalPropertyCell> cell,
     Handle<JSFunction> function,
     Handle<String> name) {
-  EMIT_STUB_MARKER(35);
-
   // ----------- S t a t e -------------
   //  -- r5                     : function name
   //  -- lr                     : return address
@@ -2006,8 +1937,6 @@ Handle<Code> CallStubCompiler::CompileStringCharAtCall(
     Handle<JSGlobalPropertyCell> cell,
     Handle<JSFunction> function,
     Handle<String> name) {
-  EMIT_STUB_MARKER(36);
-
   // ----------- S t a t e -------------
   //  -- r5                     : function name
   //  -- lr                     : return address
@@ -2090,8 +2019,6 @@ Handle<Code> CallStubCompiler::CompileStringFromCharCodeCall(
     Handle<JSGlobalPropertyCell> cell,
     Handle<JSFunction> function,
     Handle<String> name) {
-  EMIT_STUB_MARKER(37);
-
   // ----------- S t a t e -------------
   //  -- r5                     : function name
   //  -- lr                     : return address
@@ -2166,8 +2093,6 @@ Handle<Code> CallStubCompiler::CompileMathFloorCall(
     Handle<JSGlobalPropertyCell> cell,
     Handle<JSFunction> function,
     Handle<String> name) {
-  EMIT_STUB_MARKER(38);
-
   // ----------- S t a t e -------------
   //  -- r5                     : function name
   //  -- lr                     : return address
@@ -2287,8 +2212,6 @@ Handle<Code> CallStubCompiler::CompileMathAbsCall(
     Handle<JSGlobalPropertyCell> cell,
     Handle<JSFunction> function,
     Handle<String> name) {
-  EMIT_STUB_MARKER(39);
-
   // ----------- S t a t e -------------
   //  -- r5                     : function name
   //  -- lr                     : return address
@@ -2391,8 +2314,6 @@ Handle<Code> CallStubCompiler::CompileFastApiCall(
     Handle<JSGlobalPropertyCell> cell,
     Handle<JSFunction> function,
     Handle<String> name) {
-  EMIT_STUB_MARKER(40);
-
   Counters* counters = isolate()->counters();
 
   ASSERT(optimization.is_simple_api_call());
@@ -2448,8 +2369,6 @@ Handle<Code> CallStubCompiler::CompileCallConstant(Handle<Object> object,
                                                    Handle<JSFunction> function,
                                                    Handle<String> name,
                                                    CheckType check) {
-  EMIT_STUB_MARKER(41);
-
   // ----------- S t a t e -------------
   //  -- r5    : name
   //  -- lr    : return address
@@ -2576,8 +2495,6 @@ Handle<Code> CallStubCompiler::CompileCallConstant(Handle<Object> object,
 Handle<Code> CallStubCompiler::CompileCallInterceptor(Handle<JSObject> object,
                                                       Handle<JSObject> holder,
                                                       Handle<String> name) {
-  EMIT_STUB_MARKER(42);
-
   // ----------- S t a t e -------------
   //  -- r5    : name
   //  -- lr    : return address
@@ -2619,8 +2536,6 @@ Handle<Code> CallStubCompiler::CompileCallGlobal(
     Handle<JSGlobalPropertyCell> cell,
     Handle<JSFunction> function,
     Handle<String> name) {
-  EMIT_STUB_MARKER(43);
-
   // ----------- S t a t e -------------
   //  -- r5    : name
   //  -- lr    : return address
@@ -2677,8 +2592,6 @@ Handle<Code> StoreStubCompiler::CompileStoreField(Handle<JSObject> object,
                                                   int index,
                                                   Handle<Map> transition,
                                                   Handle<String> name) {
-  EMIT_STUB_MARKER(44);
-
   // ----------- S t a t e -------------
   //  -- r3    : value
   //  -- r4    : receiver
@@ -2710,8 +2623,6 @@ Handle<Code> StoreStubCompiler::CompileStoreCallback(
     Handle<JSObject> receiver,
     Handle<JSObject> holder,
     Handle<AccessorInfo> callback) {
-  EMIT_STUB_MARKER(45);
-
   // ----------- S t a t e -------------
   //  -- r3    : value
   //  -- r4    : receiver
@@ -2753,8 +2664,6 @@ Handle<Code> StoreStubCompiler::CompileStoreCallback(
 void StoreStubCompiler::GenerateStoreViaSetter(
     MacroAssembler* masm,
     Handle<JSFunction> setter) {
-  EMIT_STUB_MARKER(46);
-
   // ----------- S t a t e -------------
   //  -- r3    : value
   //  -- r4    : receiver
@@ -2798,8 +2707,6 @@ Handle<Code> StoreStubCompiler::CompileStoreViaSetter(
     Handle<JSObject> receiver,
     Handle<JSObject> holder,
     Handle<JSFunction> setter) {
-  EMIT_STUB_MARKER(47);
-
   // ----------- S t a t e -------------
   //  -- r3    : value
   //  -- r4    : receiver
@@ -2826,8 +2733,6 @@ Handle<Code> StoreStubCompiler::CompileStoreViaSetter(
 Handle<Code> StoreStubCompiler::CompileStoreInterceptor(
     Handle<JSObject> receiver,
     Handle<String> name) {
-  EMIT_STUB_MARKER(48);
-
   // ----------- S t a t e -------------
   //  -- r3    : value
   //  -- r4    : receiver
@@ -2874,8 +2779,6 @@ Handle<Code> StoreStubCompiler::CompileStoreGlobal(
     Handle<GlobalObject> object,
     Handle<JSGlobalPropertyCell> cell,
     Handle<String> name) {
-  EMIT_STUB_MARKER(49);
-
   // ----------- S t a t e -------------
   //  -- r3    : value
   //  -- r4    : receiver
@@ -2922,8 +2825,6 @@ Handle<Code> StoreStubCompiler::CompileStoreGlobal(
 Handle<Code> LoadStubCompiler::CompileLoadNonexistent(Handle<String> name,
                                                       Handle<JSObject> object,
                                                       Handle<JSObject> last) {
-  EMIT_STUB_MARKER(50);
-
   // ----------- S t a t e -------------
   //  -- r3    : receiver
   //  -- lr    : return address
@@ -2960,8 +2861,6 @@ Handle<Code> LoadStubCompiler::CompileLoadField(Handle<JSObject> object,
                                                 Handle<JSObject> holder,
                                                 int index,
                                                 Handle<String> name) {
-  EMIT_STUB_MARKER(51);
-
   // ----------- S t a t e -------------
   //  -- r3    : receiver
   //  -- r5    : name
@@ -2983,8 +2882,6 @@ Handle<Code> LoadStubCompiler::CompileLoadCallback(
     Handle<JSObject> object,
     Handle<JSObject> holder,
     Handle<AccessorInfo> callback) {
-  EMIT_STUB_MARKER(52);
-
   // ----------- S t a t e -------------
   //  -- r3    : receiver
   //  -- r5    : name
@@ -3007,8 +2904,6 @@ Handle<Code> LoadStubCompiler::CompileLoadCallback(
 
 void LoadStubCompiler::GenerateLoadViaGetter(MacroAssembler* masm,
                                              Handle<JSFunction> getter) {
-  EMIT_STUB_MARKER(53);
-
   // ----------- S t a t e -------------
   //  -- r3    : receiver
   //  -- r5    : name
@@ -3045,8 +2940,6 @@ Handle<Code> LoadStubCompiler::CompileLoadViaGetter(
     Handle<JSObject> receiver,
     Handle<JSObject> holder,
     Handle<JSFunction> getter) {
-  EMIT_STUB_MARKER(54);
-
   // ----------- S t a t e -------------
   //  -- r3    : receiver
   //  -- r5    : name
@@ -3072,8 +2965,6 @@ Handle<Code> LoadStubCompiler::CompileLoadConstant(Handle<JSObject> object,
                                                    Handle<JSObject> holder,
                                                    Handle<JSFunction> value,
                                                    Handle<String> name) {
-  EMIT_STUB_MARKER(55);
-
   // ----------- S t a t e -------------
   //  -- r3    : receiver
   //  -- r5    : name
@@ -3093,8 +2984,6 @@ Handle<Code> LoadStubCompiler::CompileLoadConstant(Handle<JSObject> object,
 Handle<Code> LoadStubCompiler::CompileLoadInterceptor(Handle<JSObject> object,
                                                       Handle<JSObject> holder,
                                                       Handle<String> name) {
-  EMIT_STUB_MARKER(56);
-
   // ----------- S t a t e -------------
   //  -- r3    : receiver
   //  -- r5    : name
@@ -3120,8 +3009,6 @@ Handle<Code> LoadStubCompiler::CompileLoadGlobal(
     Handle<JSGlobalPropertyCell> cell,
     Handle<String> name,
     bool is_dont_delete) {
-  EMIT_STUB_MARKER(57);
-
   // ----------- S t a t e -------------
   //  -- r3    : receiver
   //  -- r5    : name
@@ -3162,8 +3049,6 @@ Handle<Code> KeyedLoadStubCompiler::CompileLoadField(Handle<String> name,
                                                      Handle<JSObject> receiver,
                                                      Handle<JSObject> holder,
                                                      int index) {
-  EMIT_STUB_MARKER(58);
-
   // ----------- S t a t e -------------
   //  -- lr    : return address
   //  -- r3    : key
@@ -3188,8 +3073,6 @@ Handle<Code> KeyedLoadStubCompiler::CompileLoadCallback(
     Handle<JSObject> receiver,
     Handle<JSObject> holder,
     Handle<AccessorInfo> callback) {
-  EMIT_STUB_MARKER(59);
-
   // ----------- S t a t e -------------
   //  -- lr    : return address
   //  -- r3    : key
@@ -3215,8 +3098,6 @@ Handle<Code> KeyedLoadStubCompiler::CompileLoadConstant(
     Handle<JSObject> receiver,
     Handle<JSObject> holder,
     Handle<JSFunction> value) {
-  EMIT_STUB_MARKER(60);
-
   // ----------- S t a t e -------------
   //  -- lr    : return address
   //  -- r3    : key
@@ -3242,8 +3123,6 @@ Handle<Code> KeyedLoadStubCompiler::CompileLoadInterceptor(
     Handle<JSObject> receiver,
     Handle<JSObject> holder,
     Handle<String> name) {
-  EMIT_STUB_MARKER(61);
-
   // ----------- S t a t e -------------
   //  -- lr    : return address
   //  -- r3    : key
@@ -3268,8 +3147,6 @@ Handle<Code> KeyedLoadStubCompiler::CompileLoadInterceptor(
 
 Handle<Code> KeyedLoadStubCompiler::CompileLoadArrayLength(
     Handle<String> name) {
-  EMIT_STUB_MARKER(62);
-
   // ----------- S t a t e -------------
   //  -- lr    : return address
   //  -- r3    : key
@@ -3291,8 +3168,6 @@ Handle<Code> KeyedLoadStubCompiler::CompileLoadArrayLength(
 
 Handle<Code> KeyedLoadStubCompiler::CompileLoadStringLength(
     Handle<String> name) {
-  EMIT_STUB_MARKER(63);
-
   // ----------- S t a t e -------------
   //  -- lr    : return address
   //  -- r3    : key
@@ -3319,8 +3194,6 @@ Handle<Code> KeyedLoadStubCompiler::CompileLoadStringLength(
 
 Handle<Code> KeyedLoadStubCompiler::CompileLoadFunctionPrototype(
     Handle<String> name) {
-  EMIT_STUB_MARKER(64);
-
   // ----------- S t a t e -------------
   //  -- lr    : return address
   //  -- r3    : key
@@ -3346,8 +3219,6 @@ Handle<Code> KeyedLoadStubCompiler::CompileLoadFunctionPrototype(
 
 Handle<Code> KeyedLoadStubCompiler::CompileLoadElement(
     Handle<Map> receiver_map) {
-  EMIT_STUB_MARKER(65);
-
   // ----------- S t a t e -------------
   //  -- lr    : return address
   //  -- r3    : key
@@ -3369,8 +3240,6 @@ Handle<Code> KeyedLoadStubCompiler::CompileLoadElement(
 Handle<Code> KeyedLoadStubCompiler::CompileLoadPolymorphic(
     MapHandleList* receiver_maps,
     CodeHandleList* handler_ics) {
-  EMIT_STUB_MARKER(66);
-
   // ----------- S t a t e -------------
   //  -- lr    : return address
   //  -- r3    : key
@@ -3403,8 +3272,6 @@ Handle<Code> KeyedStoreStubCompiler::CompileStoreField(Handle<JSObject> object,
                                                        int index,
                                                        Handle<Map> transition,
                                                        Handle<String> name) {
-  EMIT_STUB_MARKER(67);
-
   // ----------- S t a t e -------------
   //  -- r3    : value
   //  -- r4    : name
@@ -3444,8 +3311,6 @@ Handle<Code> KeyedStoreStubCompiler::CompileStoreField(Handle<JSObject> object,
 
 Handle<Code> KeyedStoreStubCompiler::CompileStoreElement(
     Handle<Map> receiver_map) {
-  EMIT_STUB_MARKER(68);
-
   // ----------- S t a t e -------------
   //  -- r3    : value
   //  -- r4    : key
@@ -3472,8 +3337,6 @@ Handle<Code> KeyedStoreStubCompiler::CompileStorePolymorphic(
     MapHandleList* receiver_maps,
     CodeHandleList* handler_stubs,
     MapHandleList* transitioned_maps) {
-  EMIT_STUB_MARKER(69);
-
   // ----------- S t a t e -------------
   //  -- r3    : value
   //  -- r4    : key
@@ -3514,8 +3377,6 @@ Handle<Code> KeyedStoreStubCompiler::CompileStorePolymorphic(
 
 Handle<Code> ConstructStubCompiler::CompileConstructStub(
     Handle<JSFunction> function) {
-  EMIT_STUB_MARKER(70);
-
   // ----------- S t a t e -------------
   //  -- r3    : argc
   //  -- r4    : constructor
@@ -3668,8 +3529,6 @@ Handle<Code> ConstructStubCompiler::CompileConstructStub(
 
 void KeyedLoadStubCompiler::GenerateLoadDictionaryElement(
     MacroAssembler* masm) {
-  EMIT_STUB_MARKER(71);
-
   // ---------- S t a t e --------------
   //  -- lr     : return address
   //  -- r3     : key
@@ -3754,8 +3613,6 @@ static void GenerateSmiKeyCheck(MacroAssembler* masm,
                                 DwVfpRegister double_scratch0,
                                 DwVfpRegister double_scratch1,
                                 Label* fail) {
-  EMIT_STUB_MARKER(72);
-
   Label key_ok;
   // Check for smi or a smi inside a heap number.  We convert the heap
   // number and check if the conversion is exact and fits into the smi
@@ -3788,8 +3645,6 @@ static void GenerateSmiKeyCheck(MacroAssembler* masm,
 void KeyedLoadStubCompiler::GenerateLoadExternalArray(
     MacroAssembler* masm,
     ElementsKind elements_kind) {
-  EMIT_STUB_MARKER(73);
-
   // ---------- S t a t e --------------
   //  -- lr     : return address
   //  -- r3     : key
@@ -3987,8 +3842,6 @@ void KeyedLoadStubCompiler::GenerateLoadExternalArray(
 void KeyedStoreStubCompiler::GenerateStoreExternalArray(
     MacroAssembler* masm,
     ElementsKind elements_kind) {
-  EMIT_STUB_MARKER(74);
-
   // ---------- S t a t e --------------
   //  -- r3     : value
   //  -- r4     : key
@@ -4181,8 +4034,6 @@ void KeyedStoreStubCompiler::GenerateStoreExternalArray(
 
 
 void KeyedLoadStubCompiler::GenerateLoadFastElement(MacroAssembler* masm) {
-  EMIT_STUB_MARKER(75);
-
   // ----------- S t a t e -------------
   //  -- lr    : return address
   //  -- r3    : key
@@ -4224,8 +4075,6 @@ void KeyedLoadStubCompiler::GenerateLoadFastElement(MacroAssembler* masm) {
 
 void KeyedLoadStubCompiler::GenerateLoadFastDoubleElement(
     MacroAssembler* masm) {
-  EMIT_STUB_MARKER(76);
-
   // ----------- S t a t e -------------
   //  -- lr    : return address
   //  -- r3    : key
@@ -4309,8 +4158,6 @@ void KeyedStoreStubCompiler::GenerateStoreFastElement(
     bool is_js_array,
     ElementsKind elements_kind,
     KeyedAccessGrowMode grow_mode) {
-  EMIT_STUB_MARKER(77);
-
   // ----------- S t a t e -------------
   //  -- r3    : value
   //  -- r4    : key
@@ -4476,8 +4323,6 @@ void KeyedStoreStubCompiler::GenerateStoreFastDoubleElement(
     MacroAssembler* masm,
     bool is_js_array,
     KeyedAccessGrowMode grow_mode) {
-  EMIT_STUB_MARKER(78);
-
   // ----------- S t a t e -------------
   //  -- r3    : value
   //  -- r4    : key

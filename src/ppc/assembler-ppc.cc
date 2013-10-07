@@ -54,14 +54,11 @@ bool CpuFeatures::initialized_ = false;
 unsigned CpuFeatures::supported_ = 0;
 unsigned CpuFeatures::found_by_runtime_probing_ = 0;
 
-#define EMIT_FAKE_ARM_INSTR(arm_opcode) fake_asm(arm_opcode);
-
 // Get the CPU features enabled by the build.
 static unsigned CpuFeaturesImpliedByCompiler() {
   unsigned answer = 0;
   return answer;
 }
-
 
 void CpuFeatures::Probe() {
   unsigned standard_features = static_cast<unsigned>(
@@ -1318,12 +1315,6 @@ void Assembler::stop(const char* msg, Condition cond, int32_t code,
 
 void Assembler::bkpt(uint32_t imm16) {
   emit(0x7d821008);
-#if 0
-  // PPCPORT_CHECK(false);
-  ASSERT(is_uint16(imm16));
-  // only supported in simulator to trigger debugging
-  EMIT_FAKE_ARM_INSTR(fBKPT);
-#endif
 }
 
 

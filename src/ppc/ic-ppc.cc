@@ -50,12 +50,9 @@ namespace internal {
 
 #define __ ACCESS_MASM(masm)
 
-#define EMIT_STUB_MARKER(stub_marker) __ marker_asm(stub_marker)
-
 static void GenerateGlobalInstanceTypeCheck(MacroAssembler* masm,
                                             Register type,
                                             Label* global_object) {
-  EMIT_STUB_MARKER(327);
   // Register usage:
   //   type: holds the receiver instance type on entry.
   __ cmpi(type, Operand(JS_GLOBAL_OBJECT_TYPE));
@@ -75,7 +72,6 @@ static void GenerateStringDictionaryReceiverCheck(MacroAssembler* masm,
                                                   Register t0,
                                                   Register t1,
                                                   Label* miss) {
-  EMIT_STUB_MARKER(328);
   // Register usage:
   //   receiver: holds the receiver on entry and is unchanged.
   //   elements: holds the property dictionary on fall through.
@@ -130,7 +126,6 @@ static void GenerateDictionaryLoad(MacroAssembler* masm,
                                    Register result,
                                    Register scratch1,
                                    Register scratch2) {
-  EMIT_STUB_MARKER(329);
   // Main use of the scratch registers.
   // scratch1: Used as temporary and to hold the capacity of the property
   //           dictionary.
@@ -183,7 +178,6 @@ static void GenerateDictionaryStore(MacroAssembler* masm,
                                     Register value,
                                     Register scratch1,
                                     Register scratch2) {
-  EMIT_STUB_MARKER(330);
   // Main use of the scratch registers.
   // scratch1: Used as temporary and to hold the capacity of the property
   //           dictionary.
@@ -227,7 +221,6 @@ static void GenerateDictionaryStore(MacroAssembler* masm,
 
 
 void LoadIC::GenerateArrayLength(MacroAssembler* masm) {
-  EMIT_STUB_MARKER(331);
   // ----------- S t a t e -------------
   //  -- r5    : name
   //  -- lr    : return address
@@ -243,7 +236,6 @@ void LoadIC::GenerateArrayLength(MacroAssembler* masm) {
 
 
 void LoadIC::GenerateStringLength(MacroAssembler* masm, bool support_wrappers) {
-  EMIT_STUB_MARKER(332);
   // ----------- S t a t e -------------
   //  -- r5    : name
   //  -- lr    : return address
@@ -261,7 +253,6 @@ void LoadIC::GenerateStringLength(MacroAssembler* masm, bool support_wrappers) {
 
 
 void LoadIC::GenerateFunctionPrototype(MacroAssembler* masm) {
-  EMIT_STUB_MARKER(333);
   // ----------- S t a t e -------------
   //  -- r5    : name
   //  -- lr    : return address
@@ -284,7 +275,6 @@ static void GenerateKeyedLoadReceiverCheck(MacroAssembler* masm,
                                            Register scratch,
                                            int interceptor_bit,
                                            Label* slow) {
-  EMIT_STUB_MARKER(334);
   // Check that the object isn't a smi.
   __ JumpIfSmi(receiver, slow);
   // Get the map of the receiver.
@@ -317,7 +307,6 @@ static void GenerateFastArrayLoad(MacroAssembler* masm,
                                   Register result,
                                   Label* not_fast_array,
                                   Label* out_of_range) {
-  EMIT_STUB_MARKER(335);
   // Register use:
   //
   // receiver - holds the receiver on entry.
@@ -377,7 +366,6 @@ static void GenerateKeyStringCheck(MacroAssembler* masm,
                                    Register hash,
                                    Label* index_string,
                                    Label* not_symbol) {
-  EMIT_STUB_MARKER(336);
   // assumes that r8 is free for scratch use
   // The key is not a smi.
   // Is it a string?
@@ -408,7 +396,6 @@ void CallICBase::GenerateMonomorphicCacheProbe(MacroAssembler* masm,
                                                int argc,
                                                Code::Kind kind,
                                                Code::ExtraICState extra_state) {
-  EMIT_STUB_MARKER(337);
   // ----------- S t a t e -------------
   //  -- r4    : receiver
   //  -- r5    : name
@@ -471,7 +458,6 @@ static void GenerateFunctionTailCall(MacroAssembler* masm,
                                      int argc,
                                      Label* miss,
                                      Register scratch) {
-  EMIT_STUB_MARKER(338);
   // r4: function
 
   // Check that the value isn't a smi.
@@ -489,7 +475,6 @@ static void GenerateFunctionTailCall(MacroAssembler* masm,
 
 
 void CallICBase::GenerateNormal(MacroAssembler* masm, int argc) {
-  EMIT_STUB_MARKER(339);
   // ----------- S t a t e -------------
   //  -- r5    : name
   //  -- lr    : return address
@@ -515,7 +500,6 @@ void CallICBase::GenerateMiss(MacroAssembler* masm,
                               int argc,
                               IC::UtilityId id,
                               Code::ExtraICState extra_state) {
-  EMIT_STUB_MARKER(340);
   // ----------- S t a t e -------------
   //  -- r5    : name
   //  -- lr    : return address
@@ -582,7 +566,6 @@ void CallICBase::GenerateMiss(MacroAssembler* masm,
 void CallIC::GenerateMegamorphic(MacroAssembler* masm,
                                  int argc,
                                  Code::ExtraICState extra_ic_state) {
-  EMIT_STUB_MARKER(341);
   // ----------- S t a t e -------------
   //  -- r5    : name
   //  -- lr    : return address
@@ -596,7 +579,6 @@ void CallIC::GenerateMegamorphic(MacroAssembler* masm,
 
 
 void KeyedCallIC::GenerateMegamorphic(MacroAssembler* masm, int argc) {
-  EMIT_STUB_MARKER(342);
   // ----------- S t a t e -------------
   //  -- r5    : name
   //  -- lr    : return address
@@ -703,7 +685,6 @@ void KeyedCallIC::GenerateMegamorphic(MacroAssembler* masm, int argc) {
 
 
 void KeyedCallIC::GenerateNormal(MacroAssembler* masm, int argc) {
-  EMIT_STUB_MARKER(343);
   // ----------- S t a t e -------------
   //  -- r5    : name
   //  -- lr    : return address
@@ -724,7 +705,6 @@ void KeyedCallIC::GenerateNormal(MacroAssembler* masm, int argc) {
 Object* LoadIC_Miss(Arguments args);
 
 void LoadIC::GenerateMegamorphic(MacroAssembler* masm) {
-  EMIT_STUB_MARKER(344);
   // ----------- S t a t e -------------
   //  -- r5    : name
   //  -- lr    : return address
@@ -744,7 +724,6 @@ void LoadIC::GenerateMegamorphic(MacroAssembler* masm) {
 
 
 void LoadIC::GenerateNormal(MacroAssembler* masm) {
-  EMIT_STUB_MARKER(345);
   // ----------- S t a t e -------------
   //  -- r5    : name
   //  -- lr    : return address
@@ -766,7 +745,6 @@ void LoadIC::GenerateNormal(MacroAssembler* masm) {
 
 
 void LoadIC::GenerateMiss(MacroAssembler* masm) {
-  EMIT_STUB_MARKER(346);
   // ----------- S t a t e -------------
   //  -- r5    : name
   //  -- lr    : return address
@@ -794,7 +772,6 @@ static MemOperand GenerateMappedArgumentsLookup(MacroAssembler* masm,
                                                 Register scratch3,
                                                 Label* unmapped_case,
                                                 Label* slow_case) {
-  EMIT_STUB_MARKER(347);
   Heap* heap = masm->isolate()->heap();
 
   // Check that the receiver is a JSObject. Because of the map check
@@ -850,7 +827,6 @@ static MemOperand GenerateUnmappedArgumentsLookup(MacroAssembler* masm,
                                                   Register parameter_map,
                                                   Register scratch,
                                                   Label* slow_case) {
-  EMIT_STUB_MARKER(348);
   // Element is in arguments backing store, which is referenced by the
   // second element of the parameter_map. The parameter_map register
   // must be loaded with the parameter map of the arguments object and is
@@ -874,7 +850,6 @@ static MemOperand GenerateUnmappedArgumentsLookup(MacroAssembler* masm,
 
 
 void KeyedLoadIC::GenerateNonStrictArguments(MacroAssembler* masm) {
-  EMIT_STUB_MARKER(349);
   // ---------- S t a t e --------------
   //  -- lr     : return address
   //  -- r3     : key
@@ -901,7 +876,6 @@ void KeyedLoadIC::GenerateNonStrictArguments(MacroAssembler* masm) {
 
 
 void KeyedStoreIC::GenerateNonStrictArguments(MacroAssembler* masm) {
-  EMIT_STUB_MARKER(350);
   // ---------- S t a t e --------------
   //  -- r3     : value
   //  -- r4     : key
@@ -932,7 +906,6 @@ void KeyedStoreIC::GenerateNonStrictArguments(MacroAssembler* masm) {
 
 void KeyedCallIC::GenerateNonStrictArguments(MacroAssembler* masm,
                                              int argc) {
-  EMIT_STUB_MARKER(351);
   // ----------- S t a t e -------------
   //  -- r5    : name
   //  -- lr    : return address
@@ -962,7 +935,6 @@ Object* KeyedLoadIC_Miss(Arguments args);
 
 
 void KeyedLoadIC::GenerateMiss(MacroAssembler* masm, bool force_generic) {
-  EMIT_STUB_MARKER(352);
   // ---------- S t a t e --------------
   //  -- lr     : return address
   //  -- r3     : key
@@ -984,7 +956,6 @@ void KeyedLoadIC::GenerateMiss(MacroAssembler* masm, bool force_generic) {
 
 
 void KeyedLoadIC::GenerateRuntimeGetProperty(MacroAssembler* masm) {
-  EMIT_STUB_MARKER(353);
   // ---------- S t a t e --------------
   //  -- lr     : return address
   //  -- r3     : key
@@ -998,7 +969,6 @@ void KeyedLoadIC::GenerateRuntimeGetProperty(MacroAssembler* masm) {
 
 
 void KeyedLoadIC::GenerateGeneric(MacroAssembler* masm) {
-  EMIT_STUB_MARKER(354);
   // ---------- S t a t e --------------
   //  -- lr     : return address
   //  -- r3     : key
@@ -1181,7 +1151,6 @@ void KeyedLoadIC::GenerateGeneric(MacroAssembler* masm) {
 
 
 void KeyedLoadIC::GenerateString(MacroAssembler* masm) {
-  EMIT_STUB_MARKER(355);
   // ---------- S t a t e --------------
   //  -- lr     : return address
   //  -- r3     : key (index)
@@ -1214,7 +1183,6 @@ void KeyedLoadIC::GenerateString(MacroAssembler* masm) {
 
 
 void KeyedLoadIC::GenerateIndexedInterceptor(MacroAssembler* masm) {
-  EMIT_STUB_MARKER(356);
   // ---------- S t a t e --------------
   //  -- lr     : return address
   //  -- r3     : key
@@ -1255,7 +1223,6 @@ void KeyedLoadIC::GenerateIndexedInterceptor(MacroAssembler* masm) {
 
 
 void KeyedStoreIC::GenerateMiss(MacroAssembler* masm, bool force_generic) {
-  EMIT_STUB_MARKER(357);
   // ---------- S t a t e --------------
   //  -- r3     : value
   //  -- r4     : key
@@ -1275,7 +1242,6 @@ void KeyedStoreIC::GenerateMiss(MacroAssembler* masm, bool force_generic) {
 
 
 void KeyedStoreIC::GenerateSlow(MacroAssembler* masm) {
-  EMIT_STUB_MARKER(358);
   // ---------- S t a t e --------------
   //  -- r3     : value
   //  -- r4     : key
@@ -1295,7 +1261,6 @@ void KeyedStoreIC::GenerateSlow(MacroAssembler* masm) {
 
 
 void KeyedStoreIC::GenerateTransitionElementsSmiToDouble(MacroAssembler* masm) {
-  EMIT_STUB_MARKER(359);
   // ---------- S t a t e --------------
   //  -- r5     : receiver
   //  -- r6     : target map
@@ -1317,7 +1282,6 @@ void KeyedStoreIC::GenerateTransitionElementsSmiToDouble(MacroAssembler* masm) {
 
 void KeyedStoreIC::GenerateTransitionElementsDoubleToObject(
     MacroAssembler* masm) {
-  EMIT_STUB_MARKER(360);
   // ---------- S t a t e --------------
   //  -- r5     : receiver
   //  -- r6     : target map
@@ -1339,7 +1303,6 @@ void KeyedStoreIC::GenerateTransitionElementsDoubleToObject(
 
 void KeyedStoreIC::GenerateRuntimeSetProperty(MacroAssembler* masm,
                                               StrictModeFlag strict_mode) {
-  EMIT_STUB_MARKER(361);
   // ---------- S t a t e --------------
   //  -- r3     : value
   //  -- r4     : key
@@ -1371,7 +1334,6 @@ static void KeyedStoreGenerateGenericHelper(
     Register receiver_map,
     Register elements_map,
     Register elements) {
-  EMIT_STUB_MARKER(362);
   Label transition_smi_elements;
   Label finish_object_store, non_double_value, transition_double_elements;
   Label fast_double_without_map_check;
@@ -1503,7 +1465,6 @@ static void KeyedStoreGenerateGenericHelper(
 
 void KeyedStoreIC::GenerateGeneric(MacroAssembler* masm,
                                    StrictModeFlag strict_mode) {
-  EMIT_STUB_MARKER(363);
   // ---------- S t a t e --------------
   //  -- r3     : value
   //  -- r4     : key
@@ -1604,7 +1565,6 @@ void KeyedStoreIC::GenerateGeneric(MacroAssembler* masm,
 
 void StoreIC::GenerateMegamorphic(MacroAssembler* masm,
                                   StrictModeFlag strict_mode) {
-  EMIT_STUB_MARKER(364);
   // ----------- S t a t e -------------
   //  -- r3    : value
   //  -- r4    : receiver
@@ -1625,7 +1585,6 @@ void StoreIC::GenerateMegamorphic(MacroAssembler* masm,
 
 
 void StoreIC::GenerateMiss(MacroAssembler* masm) {
-  EMIT_STUB_MARKER(365);
   // ----------- S t a t e -------------
   //  -- r3    : value
   //  -- r4    : receiver
@@ -1643,7 +1602,6 @@ void StoreIC::GenerateMiss(MacroAssembler* masm) {
 
 
 void StoreIC::GenerateArrayLength(MacroAssembler* masm) {
-  EMIT_STUB_MARKER(366);
   // ----------- S t a t e -------------
   //  -- r3    : value
   //  -- r4    : receiver
@@ -1700,7 +1658,6 @@ void StoreIC::GenerateArrayLength(MacroAssembler* masm) {
 
 
 void StoreIC::GenerateNormal(MacroAssembler* masm) {
-  EMIT_STUB_MARKER(367);
   // ----------- S t a t e -------------
   //  -- r3    : value
   //  -- r4    : receiver
@@ -1724,7 +1681,6 @@ void StoreIC::GenerateNormal(MacroAssembler* masm) {
 
 void StoreIC::GenerateGlobalProxy(MacroAssembler* masm,
                                   StrictModeFlag strict_mode) {
-  EMIT_STUB_MARKER(368);
   // ----------- S t a t e -------------
   //  -- r3    : value
   //  -- r4    : receiver

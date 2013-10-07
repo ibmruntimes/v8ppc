@@ -44,12 +44,9 @@ namespace internal {
 
 #define __ ACCESS_MASM(masm)
 
-#define EMIT_STUB_MARKER(stub_marker) __ marker_asm(stub_marker)
-
 void Builtins::Generate_Adaptor(MacroAssembler* masm,
                                 CFunctionId id,
                                 BuiltinExtraArguments extra_args) {
-  EMIT_STUB_MARKER(300);
   // ----------- S t a t e -------------
   //  -- r3                 : number of arguments excluding receiver
   //  -- r4                 : called function (only guaranteed when
@@ -80,7 +77,6 @@ void Builtins::Generate_Adaptor(MacroAssembler* masm,
 // Load the built-in InternalArray function from the current context.
 static void GenerateLoadInternalArrayFunction(MacroAssembler* masm,
                                               Register result) {
-  EMIT_STUB_MARKER(301);
   // Load the native context.
 
   __ LoadP(result,
@@ -97,7 +93,6 @@ static void GenerateLoadInternalArrayFunction(MacroAssembler* masm,
 
 // Load the built-in Array function from the current context.
 static void GenerateLoadArrayFunction(MacroAssembler* masm, Register result) {
-  EMIT_STUB_MARKER(302);
   // Load the native context.
 
   __ LoadP(result,
@@ -121,7 +116,6 @@ static void AllocateEmptyJSArray(MacroAssembler* masm,
                                  Register scratch2,
                                  Register scratch3,
                                  Label* gc_required) {
-  EMIT_STUB_MARKER(303);
   const int initial_capacity = JSArray::kPreallocatedArrayElements;
   STATIC_ASSERT(initial_capacity >= 0);
   __ LoadInitialArrayMap(array_function, scratch2, scratch1, false);
@@ -225,7 +219,6 @@ static void AllocateJSArray(MacroAssembler* masm,
                             Register scratch2,
                             bool fill_with_hole,
                             Label* gc_required) {
-  EMIT_STUB_MARKER(304);
   // Load the initial map from the array function.
   __ LoadInitialArrayMap(array_function, scratch2,
                          elements_array_storage, fill_with_hole);
@@ -337,7 +330,6 @@ static void AllocateJSArray(MacroAssembler* masm,
 // construct call and normal call.
 static void ArrayNativeCode(MacroAssembler* masm,
                             Label* call_generic_code) {
-  EMIT_STUB_MARKER(305);
   Counters* counters = masm->isolate()->counters();
   Label argc_one_or_more, argc_two_or_more, not_empty_array, empty_array,
       has_non_smi_element, finish, cant_transition_map, not_double;
@@ -499,7 +491,6 @@ static void ArrayNativeCode(MacroAssembler* masm,
 
 
 void Builtins::Generate_InternalArrayCode(MacroAssembler* masm) {
-  EMIT_STUB_MARKER(306);
   // ----------- S t a t e -------------
   //  -- r3     : number of arguments
   //  -- lr     : return address
@@ -535,7 +526,6 @@ void Builtins::Generate_InternalArrayCode(MacroAssembler* masm) {
 
 
 void Builtins::Generate_ArrayCode(MacroAssembler* masm) {
-  EMIT_STUB_MARKER(307);
   // ----------- S t a t e -------------
   //  -- r3     : number of arguments
   //  -- lr     : return address
@@ -570,7 +560,6 @@ void Builtins::Generate_ArrayCode(MacroAssembler* masm) {
 
 
 void Builtins::Generate_ArrayConstructCode(MacroAssembler* masm) {
-  EMIT_STUB_MARKER(308);
   // ----------- S t a t e -------------
   //  -- r3     : number of arguments
   //  -- r4     : constructor function
@@ -603,7 +592,6 @@ void Builtins::Generate_ArrayConstructCode(MacroAssembler* masm) {
 
 
 void Builtins::Generate_StringConstructCode(MacroAssembler* masm) {
-  EMIT_STUB_MARKER(309);
   // ----------- S t a t e -------------
   //  -- r3                     : number of arguments
   //  -- r4                     : constructor function
@@ -735,7 +723,6 @@ void Builtins::Generate_StringConstructCode(MacroAssembler* masm) {
 
 
 static void GenerateTailCallToSharedCode(MacroAssembler* masm) {
-  EMIT_STUB_MARKER(310);
   __ LoadP(r5, FieldMemOperand(r4, JSFunction::kSharedFunctionInfoOffset));
   __ LoadP(r5, FieldMemOperand(r5, SharedFunctionInfo::kCodeOffset));
   __ addi(r5, r5, Operand(Code::kHeaderSize - kHeapObjectTag));
@@ -750,7 +737,6 @@ void Builtins::Generate_InRecompileQueue(MacroAssembler* masm) {
 
 
 void Builtins::Generate_ParallelRecompile(MacroAssembler* masm) {
-  EMIT_STUB_MARKER(311);
   {
     FrameScope scope(masm, StackFrame::INTERNAL);
 
@@ -777,7 +763,6 @@ void Builtins::Generate_ParallelRecompile(MacroAssembler* masm) {
 static void Generate_JSConstructStubHelper(MacroAssembler* masm,
                                            bool is_api_function,
                                            bool count_constructions) {
-  EMIT_STUB_MARKER(312);
   // ----------- S t a t e -------------
   //  -- r3     : number of arguments
   //  -- r4     : constructor function
@@ -1164,7 +1149,6 @@ void Builtins::Generate_JSConstructStubApi(MacroAssembler* masm) {
 
 static void Generate_JSEntryTrampolineHelper(MacroAssembler* masm,
                                              bool is_construct) {
-  EMIT_STUB_MARKER(313);
   // Called from Generate_JS_Entry
   // r3: code entry
   // r4: function
@@ -1246,7 +1230,6 @@ void Builtins::Generate_JSConstructEntryTrampoline(MacroAssembler* masm) {
 
 
 void Builtins::Generate_LazyCompile(MacroAssembler* masm) {
-  EMIT_STUB_MARKER(314);
   // Enter an internal frame.
   {
     FrameScope scope(masm, StackFrame::INTERNAL);
@@ -1276,7 +1259,6 @@ void Builtins::Generate_LazyCompile(MacroAssembler* masm) {
 
 
 void Builtins::Generate_LazyRecompile(MacroAssembler* masm) {
-  EMIT_STUB_MARKER(315);
   // Enter an internal frame.
   {
     FrameScope scope(masm, StackFrame::INTERNAL);
@@ -1307,7 +1289,6 @@ void Builtins::Generate_LazyRecompile(MacroAssembler* masm) {
 
 static void Generate_NotifyDeoptimizedHelper(MacroAssembler* masm,
                                              Deoptimizer::BailoutType type) {
-  EMIT_STUB_MARKER(316);
   {
     FrameScope scope(masm, StackFrame::INTERNAL);
     // Pass the function and deoptimization type to the runtime system.
@@ -1349,7 +1330,6 @@ void Builtins::Generate_NotifyLazyDeoptimized(MacroAssembler* masm) {
 
 
 void Builtins::Generate_NotifyOSR(MacroAssembler* masm) {
-  EMIT_STUB_MARKER(317);
   // For now, we are relying on the fact that Runtime::NotifyOSR
   // doesn't do any garbage collection which allows us to save/restore
   // the registers without worrying about which of them contain
@@ -1369,8 +1349,6 @@ void Builtins::Generate_NotifyOSR(MacroAssembler* masm) {
 
 
 void Builtins::Generate_OnStackReplacement(MacroAssembler* masm) {
-  EMIT_STUB_MARKER(318);
-
   // Lookup the function in the JavaScript frame and push it as an
   // argument to the on-stack replacement function.
   __ LoadP(r3, MemOperand(fp, JavaScriptFrameConstants::kFunctionOffset));
@@ -1400,7 +1378,6 @@ void Builtins::Generate_OnStackReplacement(MacroAssembler* masm) {
 
 
 void Builtins::Generate_FunctionCall(MacroAssembler* masm) {
-  EMIT_STUB_MARKER(319);
   // 1. Make sure we have at least one argument.
   // r3: actual number of arguments
   { Label done;
@@ -1621,7 +1598,6 @@ void Builtins::Generate_FunctionApply(MacroAssembler* masm) {
   const int kFunctionOffset =  4 * kPointerSize;
 
   {
-    EMIT_STUB_MARKER(320);
     FrameScope frame_scope(masm, StackFrame::INTERNAL);
 
     __ LoadP(r3, MemOperand(fp, kFunctionOffset));  // get the function
@@ -1790,7 +1766,6 @@ void Builtins::Generate_FunctionApply(MacroAssembler* masm) {
 
 
 static void EnterArgumentsAdaptorFrame(MacroAssembler* masm) {
-  EMIT_STUB_MARKER(321);
   __ SmiTag(r3);
   __ LoadSmiLiteral(r7, Smi::FromInt(StackFrame::ARGUMENTS_ADAPTOR));
   __ mflr(r0);
@@ -1818,7 +1793,6 @@ static void LeaveArgumentsAdaptorFrame(MacroAssembler* masm) {
 
 
 void Builtins::Generate_ArgumentsAdaptorTrampoline(MacroAssembler* masm) {
-  EMIT_STUB_MARKER(322);
   // ----------- S t a t e -------------
   //  -- r3 : actual number of arguments
   //  -- r4 : function (passed through to callee)
