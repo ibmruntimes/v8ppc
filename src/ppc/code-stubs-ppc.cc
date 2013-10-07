@@ -1808,7 +1808,7 @@ void UnaryOpStub::GenerateSmiCodeBitNot(MacroAssembler* masm,
   // Flip bits and revert inverted smi-tag.
   ASSERT(kSmiTagMask == 1);
   __ notx(r3, r3);
-  __ ClearRightImm(r3, r3, Operand(kSmiTagMask));
+  __ ClearRightImm(r3, r3, Operand(kSmiTagSize + kSmiShiftSize));
   __ Ret();
 }
 
