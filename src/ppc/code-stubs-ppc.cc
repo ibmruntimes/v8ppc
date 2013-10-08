@@ -1571,7 +1571,9 @@ void ToBooleanStub::Generate(MacroAssembler* masm) {
     __ lfd(d1, FieldMemOperand(tos_, HeapNumber::kValueOffset));
     __ li(r0, Operand::Zero());
     __ push(r0);
+#if !V8_TARGET_ARCH_PPC64
     __ push(r0);
+#endif
     __ lfd(d2, MemOperand(sp, 0));
     __ addi(sp, sp, Operand(8));
     __ fcmpu(d1, d2);
