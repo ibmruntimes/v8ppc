@@ -1211,7 +1211,6 @@ static void Generate_JSEntryTrampolineHelper(MacroAssembler* masm,
     }
     // Exit the JS frame and remove the parameters (except function), and
     // return.
-    // Respect ABI stack constraint. (ARM?)
   }
   __ blr();
 

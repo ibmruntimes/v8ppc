@@ -358,28 +358,6 @@ bool Operand::is_reg() const {
   return rm_.is_valid();
 }
 
-#if 0
-Address Assembler::target_address_address_at(Address pc) {
-  Address target_pc = pc;
-  Instr instr = Memory::int32_at(target_pc);
-  // If we have a bx instruction, the instruction before the bx is
-  // what we need to patch.
-  static const int32_t kBxInstMask = 0x0ffffff0;
-  static const int32_t kBxInstPattern = 0x012fff10;
-  if ((instr & kBxInstMask) == kBxInstPattern) {
-    target_pc -= kInstrSize;
-    instr = Memory::int32_at(target_pc);
-  }
-
-  ASSERT(IsLdrPcImmediateOffset(instr));
-  int offset = instr & 0xfff;  // offset_12 is unsigned
-  if ((instr & (1 << 23)) == 0) offset = -offset;  // U bit defines offset sign
-  // Verify that the constant pool comes after the instruction referencing it.
-  ASSERT(offset >= -4);
-  return target_pc + offset + 8;
-}
-#endif
-
 
 // Fetch the 32bit value from the FIXED_SEQUENCE lis/ori
 Address Assembler::target_address_at(Address pc) {
@@ -405,40 +383,8 @@ Address Assembler::target_address_at(Address pc) {
 #endif
   }
 
-#ifdef PENGUIN_CLEANUP
-// for now fall into ARM code.. for compatibility
-
-  Address target_pc = pc;
-  Instr instr = Memory::int32_at(target_pc);
-  // If we have a bx instruction, the instruction before the bx is
-  // what we need to patch.
-  static const int32_t kBxInstMask = 0x0ffffff0;
-  static const int32_t kBxInstPattern = 0x012fff10;
-  if ((instr & kBxInstMask) == kBxInstPattern) {
-    target_pc -= kInstrSize;
-    instr = Memory::int32_at(target_pc);
-  }
-
-#ifdef USE_BLX
-  // If we have a blx instruction, the instruction before it is
-  // what needs to be patched.
-  if ((instr & kBlxRegMask) == kBlxRegPattern) {
-    target_pc -= kInstrSize;
-    instr = Memory::int32_at(target_pc);
-  }
-#endif
-
-  ASSERT(IsLdrPcImmediateOffset(instr));
-  int offset = instr & 0xfff;  // offset_12 is unsigned
-  if ((instr & (1 << 23)) == 0) offset = -offset;  // U bit defines offset sign
-  // Verify that the constant pool comes after the instruction referencing it.
-  ASSERT(offset >= -4);
-  return target_pc + offset + 8;
-#else
   PPCPORT_UNIMPLEMENTED();
-return (Address)0;
-//  return pc;  // fake a return (unimplemented path)
-#endif
+  return (Address)0;
 }
 
 

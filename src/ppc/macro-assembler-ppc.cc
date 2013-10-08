@@ -719,17 +719,11 @@ void MacroAssembler::EnterExitFrame(bool save_doubles, int stack_space) {
   ASSERT_EQ(0 * kPointerSize, ExitFrameConstants::kCallerFPOffset);
   ASSERT(stack_space > 0);
 
-#if 0
   // This is an opportunity to build a frame to wrap
   // all of the pushes that have happened inside of V8
   // since we were called from C code
-  stwu(fp, MemOperand(sp, -8));  // build frame for pushed parameters
-  mflr(r0);
-  stw(r0, MemOperand(fp, 4));
-  mr(fp, sp);
-#endif
 
-  // urgh -- replicate ARM frame for now
+  // replicate ARM frame - TODO make this more closely follow PPC ABI
   mflr(r0);
   Push(r0, fp);
   mr(fp, sp);
@@ -3460,22 +3454,6 @@ void MacroAssembler::CallCFunctionHelper(Register function,
   // Make sure that the stack is aligned before calling a C function unless
   // running in the simulator. The simulator has its own alignment check which
   // provides more information.
-#if defined(V8_HOST_ARCH_ARM)  // never used on PPC
-  if (emit_debug_code()) {
-    int frame_alignment = OS::ActivationFrameAlignment();
-    int frame_alignment_mask = frame_alignment - 1;
-    if (frame_alignment > kPointerSize) {
-      ASSERT(IsPowerOf2(frame_alignment));
-      Label alignment_as_expected;
-      tst(sp, Operand(frame_alignment_mask));
-      beq(&alignment_as_expected);
-      // Don't use Check here, as it will call Runtime_Abort possibly
-      // re-entering here.
-      stop("Unexpected alignment");
-      bind(&alignment_as_expected);
-    }
-  }
-#endif
 
   // Just call directly. The function called cannot cause a GC, or
   // allow preemption, so the return address in the link register

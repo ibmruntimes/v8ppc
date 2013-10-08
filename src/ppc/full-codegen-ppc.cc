@@ -121,7 +121,7 @@ class JumpPatchSite BASE_EMBEDDED {
 // The live registers are:
 //   o r4: the JS function object being called (i.e., ourselves)
 //   o cp: our context
-//   o fp: our caller's frame pointer r11 (ARM specific) PPC is fp (aka r31)
+//   o fp: our caller's frame pointer (aka r31)
 //   o sp: stack pointer
 //   o lr: return address  (bogus.. PPC has no lr reg)
 //
@@ -3064,41 +3064,15 @@ void FullCodeGenerator::EmitRandomHeapNumber(CallRuntime* expr) {
 
   __ bind(&heapnumber_allocated);
 
-#if 0  // optimal ARM code - need to reimplement on PowerPC
-  // Convert 32 random bits in r3 to 0.(32 random bits) in a double
-  // by computing:
-  // ( 1.(20 0s)(32 random bits) x 2^20 ) - (1.0 x 2^20)).
-  if (CpuFeatures::IsSupported(VFP2)) {
-    __ PrepareCallCFunction(1, r3);
-    __ LoadP(r3,
-             ContextOperand(context_register(), Context::GLOBAL_OBJECT_INDEX));
-    __ LoadP(r3, FieldMemOperand(r0, GlobalObject::kNativeContextOffset));
-    __ CallCFunction(ExternalReference::random_uint32_function(isolate()), 1);
-
-    CpuFeatures::Scope scope(VFP2);
-    // 0x41300000 is the top half of 1.0 x 2^20 as a double.
-    // Create this constant using mov/orr to avoid PC relative load.
-    __ mov(r4, Operand(0x41000000));
-    __ orr(r4, r4, Operand(0x300000));
-    // Move 0x41300000xxxxxxxx (x = random bits) to VFP.
-    __ vmov(d7, r3, r4);
-    // Move 0x4130000000000000 to VFP.
-    __ mov(r3, Operand(0, RelocInfo::NONE));
-    __ vmov(d8, r3, r4);
-    // Subtract and store the result in the heap number.
-    __ fsub(d7, d7, d8);
-    __ stfd(d7, FieldMemOperand(r7, HeapNumber::kValueOffset));
-    __ mr(r3, r7);
-  } else {
-#endif
-    __ PrepareCallCFunction(2, r3);
-    __ LoadP(r4,
-             ContextOperand(context_register(), Context::GLOBAL_OBJECT_INDEX));
-    __ mr(r3, r7);
-    __ LoadP(r4, FieldMemOperand(r4, GlobalObject::kNativeContextOffset));
-    __ CallCFunction(
-        ExternalReference::fill_heap_number_with_random_function(isolate()), 2);
-//  }
+  // Optimization opportunity here
+  // See other platforms for reference
+  __ PrepareCallCFunction(2, r3);
+  __ LoadP(r4,
+           ContextOperand(context_register(), Context::GLOBAL_OBJECT_INDEX));
+  __ mr(r3, r7);
+  __ LoadP(r4, FieldMemOperand(r4, GlobalObject::kNativeContextOffset));
+  __ CallCFunction(
+      ExternalReference::fill_heap_number_with_random_function(isolate()), 2);
 
   context()->Plug(r3);
 }

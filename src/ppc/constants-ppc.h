@@ -357,7 +357,7 @@ enum {
 enum FAKE_OPCODE_T {
   fBKPT = 14,
   fBranch = 44,
-  // the following is the marker for ARM instruction sequences outside
+  // the following is the marker for instruction sequences outside
   // assembler.cc that we have removed (marked by PPCPORT_UNIMPLEMENTED)
   fMASM3 = 61,
   fMASM16 = 69,
@@ -463,18 +463,6 @@ enum CheckForInexactConversion {
   kCheckForInexactConversion,
   kDontCheckForInexactConversion
 };
-
-// -----------------------------------------------------------------------------
-// Hints.
-
-// Branch hints are not used on the ARM.  They are defined so that they can
-// appear in shared function signatures, but will be ignored in ARM
-// implementations.
-enum Hint { no_hint };
-
-// Hints are not used on the arm.  Negating is trivial.
-inline Hint NegateHint(Hint ignored) { return no_hint; }
-
 
 // -----------------------------------------------------------------------------
 // Specific instructions, constants, and masks.

@@ -49,7 +49,7 @@ const char* Registers::names_[kNumRegisters] = {
 };
 
 
-// List of alias names which can be used when referring to ARM registers.
+// List of alias names which can be used when referring to PPC registers.
 const Registers::RegisterAlias Registers::aliases_[] = {
   {10, "sl"},
   {11, "r11"},
