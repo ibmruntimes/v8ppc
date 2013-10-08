@@ -3408,7 +3408,7 @@ void LCodeGen::DoDeferredMathAbsTaggedHeapNumber(LUnaryMathOperation* instr) {
     // exponent: floating point exponent value.
     // tmp1: allocated heap number.
     STATIC_ASSERT(HeapNumber::kSignMask == 0x80000000u);
-    __ ClearLeftImm(exponent, exponent, Operand(1));  // clear sign bit
+    __ clrlwi(exponent, exponent, Operand(1));  // clear sign bit
     __ stw(exponent, FieldMemOperand(tmp1, HeapNumber::kExponentOffset));
     __ lwz(tmp2, FieldMemOperand(input, HeapNumber::kMantissaOffset));
     __ stw(tmp2, FieldMemOperand(tmp1, HeapNumber::kMantissaOffset));
