@@ -1254,7 +1254,7 @@ int RegExpMacroAssemblerPPC::CheckStackGuardState(Address* return_address,
 
   // Find the current start address of the same character at the current string
   // position.
-  int start_index = frame_entry<int>(re_frame, kStartIndex);
+  int start_index = frame_entry<intptr_t>(re_frame, kStartIndex);
   const byte* new_address = StringCharacterPosition(*subject_tmp,
                                                     start_index + slice_offset);
 
