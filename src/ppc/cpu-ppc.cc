@@ -68,7 +68,7 @@ void CPU::FlushICache(void* buffer, size_t size) {
 #define CACHELINESIZE 128
 
   byte *start = reinterpret_cast<byte *>(
-                 reinterpret_cast<int>(buffer) & ~(CACHELINESIZE - 1));
+                 reinterpret_cast<intptr_t>(buffer) & ~(CACHELINESIZE - 1));
   byte *end = static_cast<byte *>(buffer) + size;
   for (byte *pointer = start; pointer < end;
         pointer+=CACHELINESIZE ) {
