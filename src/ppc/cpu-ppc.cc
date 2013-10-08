@@ -48,7 +48,7 @@ bool CPU::SupportsCrankshaft() {
   return true;
 }
 
-void CPU::FlushICache(void* start, size_t size) {
+void CPU::FlushICache(void* buffer, size_t size) {
   // Nothing to do flushing no instructions.
   if (size == 0) {
     return;
@@ -60,14 +60,17 @@ void CPU::FlushICache(void* start, size_t size) {
   // that the Icache was flushed.
   // None of this code ends up in the snapshot so there are no issues
   // around whether or not to generate the code when building snapshots.
-  Simulator::FlushICache(Isolate::Current()->simulator_i_cache(), start, size);
+  Simulator::FlushICache(Isolate::Current()->simulator_i_cache(), buffer, size);
 #else
 
 // This constant will be different for other versions of PowerPC
+// It must be a power of 2
 #define CACHELINESIZE 128
 
-  int *end = reinterpret_cast<int*>(start)+(size/4);
-  for (int *pointer = reinterpret_cast<int*>(start); pointer < end;
+  byte *start = reinterpret_cast<byte *>(
+                 reinterpret_cast<int>(buffer) & ~(CACHELINESIZE - 1));
+  byte *end = static_cast<byte *>(buffer) + size;
+  for (byte *pointer = start; pointer < end;
         pointer+=CACHELINESIZE ) {
     __asm__(
       "dcbf 0, %0  \n"  \
