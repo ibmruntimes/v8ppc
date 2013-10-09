@@ -1292,11 +1292,11 @@ class MacroAssembler: public Assembler {
   // Smi utilities
 
   // Shift left by 1
-  void SmiTag(Register reg) {
-    SmiTag(reg, reg);
+  void SmiTag(Register reg, RCBit rc = LeaveRC) {
+    SmiTag(reg, reg, rc);
   }
-  void SmiTag(Register dst, Register src) {
-    ShiftLeftImm(dst, src, Operand(kSmiShift));
+  void SmiTag(Register dst, Register src, RCBit rc = LeaveRC) {
+    ShiftLeftImm(dst, src, Operand(kSmiShift), rc);
   }
 
 #if !V8_TARGET_ARCH_PPC64

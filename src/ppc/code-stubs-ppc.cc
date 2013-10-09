@@ -2130,39 +2130,45 @@ void BinaryOpStub::GenerateSmiSmiOperation(MacroAssembler* masm) {
       // that would mean we should produce -0.
       break;
     }
-    case Token::DIV:
-      // Check for power of two on the right hand side.
-      __ JumpIfNotPowerOfTwoOrZero(right, scratch1, &not_smi_result);
-      // Check for positive and no remainder (scratch1 contains right - 1).
-      __ lis(r0, Operand(SIGN_EXT_IMM16(0x8000)));
-#if V8_TARGET_ARCH_PPC64
-      __ ShiftLeftImm(r0, r0, Operand(32));
-#endif
-      __ orx(scratch2, scratch1, r0);
-      __ and_(r0, left, scratch2, SetRC);
-      __ bne(&not_smi_result, cr0);
-
-      // Perform division by shifting.
-      __ CountLeadingZeros(scratch1, scratch1);
-      __ subfic(scratch1, scratch1, Operand(kSmiValueSize));
-      __ ShiftRightArith(right, left, scratch1);
-      __ Ret();
-      break;
-    case Token::MOD: {
-      Label done, check_neg_zero;
+    case Token::DIV: {
+      Label check_neg_zero;
       __ SmiUntag(ip, left);
       __ SmiUntag(scratch2, right, SetRC);
       __ Div(scratch1, ip, scratch2);
-      // A minor optimization: div may be calculated asynchronously, so we check
-      // for division by 0 before proceeding
       // Check for zero on the right hand side.
       __ beq(&not_smi_result, cr0);
-      // If the result is 0, we need to make sure the dividend (left) is
-      // positive (or 0), otherwise it is a -0 case.
+      // Not Smi if remainder is non-zero.
+      __ Mul(scratch2, scratch2, scratch1);
+      __ cmp(ip, scratch2);
+      __ bne(&not_smi_result);
+      // If the result is 0, we need to check for the -0 case.
+      __ SmiTag(scratch2, scratch1, SetRC);
+      __ beq(&check_neg_zero, cr0);
+      // Check for Smi overflow
+      __ xor_(scratch1, scratch2, scratch1, SetRC);
+      __ blt(&not_smi_result, cr0);
+      __ mr(right, scratch2);
+      __ Ret();
+
+      // If divisor (right) is negative, we must produce -0.
+      __ bind(&check_neg_zero);
+      __ cmpi(right, Operand::Zero());
+      __ blt(&not_smi_result);
+      __ mr(right, scratch2);
+      __ Ret();
+      break;
+    }
+    case Token::MOD: {
+      Label check_neg_zero;
+      __ SmiUntag(ip, left);
+      __ SmiUntag(scratch2, right, SetRC);
+      __ Div(scratch1, ip, scratch2);
+      // Check for zero on the right hand side.
+      __ beq(&not_smi_result, cr0);
       __ Mul(scratch1, scratch2, scratch1);
       __ sub(scratch1, ip, scratch1, LeaveOE, SetRC);
+      // If the result is 0, we need to check for the -0 case.
       __ beq(&check_neg_zero, cr0);
-      __ bind(&done);
 #if !V8_TARGET_ARCH_PPC64
       // Check that the signed result fits in a Smi.
       __ addis(scratch2, scratch1, Operand(0x4000));
@@ -2171,10 +2177,13 @@ void BinaryOpStub::GenerateSmiSmiOperation(MacroAssembler* masm) {
 #endif
       __ SmiTag(right, scratch1);
       __ Ret();
+
+      // If dividend (left) is negative, we must produce -0.
       __ bind(&check_neg_zero);
       __ cmpi(left, Operand::Zero());
       __ blt(&not_smi_result);
-      __ b(&done);
+      __ LoadSmiLiteral(right, Smi::FromInt(0));
+      __ Ret();
       break;
     }
     case Token::BIT_OR:

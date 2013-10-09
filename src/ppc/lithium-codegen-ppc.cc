@@ -906,12 +906,9 @@ void LCodeGen::DoModI(LModI* instr) {
     __ mov(scratch, Operand(divisor - 1));
     __ and_(result, dividend, scratch);
   } else {
-    // div runs in the background while we check for special cases.
     Register divisor = ToRegister(instr->right());
+
     __ divw(scratch, dividend, divisor);
-#if V8_TARGET_ARCH_PPC64
-    __ extsw(scratch, scratch);
-#endif
 
     // Check for x % 0.
     if (instr->hydrogen()->CheckFlag(HValue::kCanBeDivByZero)) {
@@ -919,6 +916,9 @@ void LCodeGen::DoModI(LModI* instr) {
         DeoptimizeIf(eq, instr->environment());
     }
 
+#if V8_TARGET_ARCH_PPC64
+    __ extsw(scratch, scratch);
+#endif
     __ Mul(scratch, divisor, scratch);
     __ sub(result, dividend, scratch, LeaveOE, SetRC);
 
@@ -1041,27 +1041,12 @@ void LCodeGen::EmitSignedIntegerDivisionByConstant(
 
 
 void LCodeGen::DoDivI(LDivI* instr) {
-  class DeferredDivI: public LDeferredCode {
-   public:
-    DeferredDivI(LCodeGen* codegen, LDivI* instr)
-        : LDeferredCode(codegen), instr_(instr) { }
-    virtual void Generate() {
-      codegen()->DoDeferredBinaryOpStub(instr_->pointer_map(),
-                                        instr_->left(),
-                                        instr_->right(),
-                                        Token::DIV);
-    }
-    virtual LInstruction* instr() { return instr_; }
-   private:
-    LDivI* instr_;
-  };
-
   const Register left = ToRegister(instr->left());
   const Register right = ToRegister(instr->right());
-#ifndef V8_TARGET_ARCH_PPC64
   const Register scratch = scratch0();
-#endif
   const Register result = ToRegister(instr->result());
+
+  __ divw(result, left, right);
 
   // Check for x / 0.
   if (instr->hydrogen()->CheckFlag(HValue::kCanBeDivByZero)) {
@@ -1089,64 +1074,14 @@ void LCodeGen::DoDivI(LDivI* instr) {
     __ bind(&left_not_min_int);
   }
 
-  Label done, deoptimize;
-  Label byTwo, byFour, general;
-  // Test for a few common cases first.
-
-  // divide by 1
-  __ cmpi(right, Operand(1));
-  __ bne(&byTwo);
-  __ mr(result, left);
-  __ b(&done);
-
-  // divide by 2
-  __ bind(&byTwo);
-  __ cmpi(right, Operand(2));
-  __ bne(&byFour);
-  __ andi(r0, left, Operand(1));
-  __ bne(&general, cr0);
-  __ ShiftRightArithImm(result, left, 1);
-  __ b(&done);
-
-  // divide by 4
-  __ bind(&byFour);
-  __ cmpi(right, Operand(4));
-  __ bne(&general);
-  __ andi(r0, left, Operand(3));
-  __ bne(&general, cr0);
-  __ ShiftRightArithImm(result, left, 2);
-  __ b(&done);
-
-  __ bind(&general);
-
-  // Call the stub. The numbers in r3 and r4 have
-  // to be tagged to Smis. If that is not possible, deoptimize.
-  DeferredDivI* deferred = new(zone()) DeferredDivI(this, instr);
-
 #if V8_TARGET_ARCH_PPC64
-  __ SmiTag(left);
-  __ SmiTag(right);
-#else
-  __ SmiTagCheckOverflow(ip, left, scratch);
-  __ BranchOnOverflow(&deoptimize);
-  __ mr(left, ip);
-
-  __ SmiTagCheckOverflow(ip, right, scratch);
-  __ BranchOnOverflow(&deoptimize);
-  __ mr(right, ip);
+  __ extsw(result, result);
 #endif
 
-  __ b(deferred->entry());
-  __ bind(deferred->exit());
-
-  // If the result in r3 is a Smi, untag it, else deoptimize.
-  __ JumpIfNotSmi(result, &deoptimize);
-  __ SmiUntag(result);
-  __ b(&done);
-
-  __ bind(&deoptimize);
-  DeoptimizeIf(al, instr->environment());
-  __ bind(&done);
+  // Deoptimize on non-zero remainder
+  __ Mul(scratch, right, result);
+  __ cmp(left, scratch);
+  DeoptimizeIf(ne, instr->environment());
 }
 
 
@@ -1181,39 +1116,6 @@ void LCodeGen::DoMathFloorOfDiv(LMathFloorOfDiv* instr) {
   __ fake_asm(fLITHIUM111);
 #endif
 }
-
-
-void LCodeGen::DoDeferredBinaryOpStub(LPointerMap* pointer_map,
-                                      LOperand* left_argument,
-                                      LOperand* right_argument,
-                                      Token::Value op) {
-  Register left = ToRegister(left_argument);
-  Register right = ToRegister(right_argument);
-
-  PushSafepointRegistersScope scope(this, Safepoint::kWithRegistersAndDoubles);
-  // Move left to r4 and right to r3 for the stub call.
-  if (left.is(r4)) {
-    __ Move(r3, right);
-  } else if (left.is(r3) && right.is(r4)) {
-    __ Swap(r3, r4, r5);
-  } else if (left.is(r3)) {
-    ASSERT(!right.is(r4));
-    __ mr(r4, r3);
-    __ mr(r3, right);
-  } else {
-    ASSERT(!left.is(r3) && !right.is(r3));
-    __ mr(r3, right);
-    __ mr(r4, left);
-  }
-  BinaryOpStub stub(op, OVERWRITE_LEFT);
-  __ CallStub(&stub);
-  RecordSafepointWithRegistersAndDoubles(pointer_map,
-                                         0,
-                                         Safepoint::kNoLazyDeopt);
-  // Overwrite the stored value of r3 with the result of the stub.
-  __ StoreToSafepointRegistersAndDoublesSlot(r3, r3);
-}
-
 
 void LCodeGen::DoMulI(LMulI* instr) {
   Register scratch = scratch0();

@@ -2156,7 +2156,8 @@ void Simulator::DecodeExt2_9bit(Instruction* instr) {
       int rb = instr->RBValue();
       int32_t ra_val = get_register(ra);
       int32_t rb_val = get_register(rb);
-      int32_t alu_out = ra_val / rb_val;
+      // result is undefined if divisor is zero.
+      int32_t alu_out = rb_val ? ra_val / rb_val : -1;
       set_register(rt, alu_out);
       if (instr->Bit(0)) {  // RC bit set
         SetCR0(alu_out);
@@ -2171,7 +2172,8 @@ void Simulator::DecodeExt2_9bit(Instruction* instr) {
       int rb = instr->RBValue();
       int64_t ra_val = get_register(ra);
       int64_t rb_val = get_register(rb);
-      int64_t alu_out = ra_val / rb_val;
+      // result is undefined if divisor is zero.
+      int64_t alu_out = rb_val ? ra_val / rb_val : -1;
       set_register(rt, alu_out);
       if (instr->Bit(0)) {  // RC bit set
         SetCR0(alu_out);
