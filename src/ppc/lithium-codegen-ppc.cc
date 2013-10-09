@@ -909,6 +909,9 @@ void LCodeGen::DoModI(LModI* instr) {
     // div runs in the background while we check for special cases.
     Register divisor = ToRegister(instr->right());
     __ divw(scratch, dividend, divisor);
+#if V8_TARGET_ARCH_PPC64
+    __ extsw(scratch, scratch);
+#endif
 
     // Check for x % 0.
     if (instr->hydrogen()->CheckFlag(HValue::kCanBeDivByZero)) {

@@ -720,6 +720,12 @@ void Decoder::DecodeExt2(Instruction* instr) {
       Format(instr, "divw'o'.   'rt, 'ra, 'rb");
       break;
     }
+#if V8_TARGET_ARCH_PPC64
+    case DIVD: {
+      Format(instr, "divd'o'.   'rt, 'ra, 'rb");
+      break;
+    }
+#endif
     case ADDX: {
       Format(instr, "add'o     'rt, 'ra, 'rb");
       break;

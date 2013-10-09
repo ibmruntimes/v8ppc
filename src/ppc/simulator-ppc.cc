@@ -2154,9 +2154,9 @@ void Simulator::DecodeExt2_9bit(Instruction* instr) {
       int rt = instr->RTValue();
       int ra = instr->RAValue();
       int rb = instr->RBValue();
-      intptr_t ra_val = get_register(ra);
-      intptr_t rb_val = get_register(rb);
-      intptr_t alu_out = ra_val / rb_val;
+      int32_t ra_val = get_register(ra);
+      int32_t rb_val = get_register(rb);
+      int32_t alu_out = ra_val / rb_val;
       set_register(rt, alu_out);
       if (instr->Bit(0)) {  // RC bit set
         SetCR0(alu_out);
@@ -2164,6 +2164,22 @@ void Simulator::DecodeExt2_9bit(Instruction* instr) {
       // todo - handle OE bit
       break;
     }
+#if V8_TARGET_ARCH_PPC64
+    case DIVD: {
+      int rt = instr->RTValue();
+      int ra = instr->RAValue();
+      int rb = instr->RBValue();
+      int64_t ra_val = get_register(ra);
+      int64_t rb_val = get_register(rb);
+      int64_t alu_out = ra_val / rb_val;
+      set_register(rt, alu_out);
+      if (instr->Bit(0)) {  // RC bit set
+        SetCR0(alu_out);
+      }
+      // todo - handle OE bit
+      break;
+    }
+#endif
     case ADDX: {
       int rt = instr->RTValue();
       int ra = instr->RAValue();
