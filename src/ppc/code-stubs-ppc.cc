@@ -781,7 +781,7 @@ void FloatingPointHelper::LoadNumberAsInt32Double(MacroAssembler* masm,
   __ EmitVFPTruncate(kRoundToZero,
                      scratch1,
                      double_dst,
-                     scratch1,
+                     scratch2,
                      double_scratch,
                      kCheckForInexactConversion);
 
