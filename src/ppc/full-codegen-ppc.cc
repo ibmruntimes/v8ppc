@@ -1973,16 +1973,18 @@ void FullCodeGenerator::EmitInlineSmiBinaryOp(BinaryOperation* expr,
       break;
     case Token::SHL: {
       __ b(&stub_call);
-      __ SmiUntag(scratch1, left);
       __ GetLeastBitsFromSmi(scratch2, right, 5);
+#if V8_TARGET_ARCH_PPC64
+      __ ShiftLeft(right, left, scratch2);
+#else
+      __ SmiUntag(scratch1, left);
       __ ShiftLeft(scratch1, scratch1, scratch2);
-#if !V8_TARGET_ARCH_PPC64
       // Check that the *signed* result fits in a smi
       __ addis(scratch2, scratch1, Operand(0x4000));
       __ cmpi(scratch2, Operand::Zero());
       __ blt(&stub_call);
-#endif
       __ SmiTag(right, scratch1);
+#endif
       break;
     }
     case Token::SHR: {

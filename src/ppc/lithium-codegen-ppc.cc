@@ -1362,18 +1362,27 @@ void LCodeGen::DoShiftI(LShiftI* instr) {
     __ andi(scratch, ToRegister(right_op), Operand(0x1F));
     switch (instr->op()) {
       case Token::SAR:
-        __ ShiftRightArith(result, left, scratch);
+        __ sraw(result, left, scratch);
+#if V8_TARGET_ARCH_PPC64
+        __ extsw(result, result);
+#endif
         break;
       case Token::SHR:
         if (instr->can_deopt()) {
-          __ ShiftRight(result, left, scratch, SetRC);
+          __ srw(result, left, scratch, SetRC);
+#if V8_TARGET_ARCH_PPC64
+          __ extsw(result, result, SetRC);
+#endif
           DeoptimizeIf(lt, instr->environment(), cr0);
         } else {
-          __ ShiftRight(result, left, scratch);
+          __ srw(result, left, scratch);
         }
         break;
       case Token::SHL:
-        __ ShiftLeft(result, left, scratch);
+        __ slw(result, left, scratch);
+#if V8_TARGET_ARCH_PPC64
+        __ extsw(result, result);
+#endif
         break;
       default:
         UNREACHABLE();
@@ -1386,17 +1395,20 @@ void LCodeGen::DoShiftI(LShiftI* instr) {
     switch (instr->op()) {
       case Token::SAR:
         if (shift_count != 0) {
-          __ ShiftRightArithImm(result, left, shift_count);
+          __ srawi(result, left, shift_count);
+#if V8_TARGET_ARCH_PPC64
+          __ extsw(result, result);
+#endif
         } else {
           __ Move(result, left);
         }
         break;
       case Token::SHR:
         if (shift_count != 0) {
-          __ ShiftRightImm(result, left, Operand(shift_count));
+          __ srwi(result, left, Operand(shift_count));
         } else {
           if (instr->can_deopt()) {
-            __ TestSignBit(left, r0);
+            __ TestSignBit32(left, r0);
             DeoptimizeIf(ne, instr->environment(), cr0);
           }
           __ Move(result, left);
@@ -1404,7 +1416,10 @@ void LCodeGen::DoShiftI(LShiftI* instr) {
         break;
       case Token::SHL:
         if (shift_count != 0) {
-          __ ShiftLeftImm(result, left, Operand(shift_count));
+          __ slwi(result, left, Operand(shift_count));
+#if V8_TARGET_ARCH_PPC64
+          __ extsw(result, result);
+#endif
         } else {
           __ Move(result, left);
         }
@@ -1439,6 +1454,9 @@ void LCodeGen::DoSubI(LSubI* instr) {
                               right_reg,
                               scratch0(), r0);
     // Doptimize on overflow
+#if V8_TARGET_ARCH_PPC64
+    __ extsw(scratch0(), scratch0(), SetRC);
+#endif
     DeoptimizeIf(lt, instr->environment(), cr0);
   }
 }
@@ -1597,6 +1615,9 @@ void LCodeGen::DoAddI(LAddI* instr) {
                               ToRegister(left),
                               right_reg,
                               scratch0(), r0);
+#if V8_TARGET_ARCH_PPC64
+    __ extsw(scratch0(), scratch0(), SetRC);
+#endif
     // Doptimize on overflow
     DeoptimizeIf(lt, instr->environment(), cr0);
   }
