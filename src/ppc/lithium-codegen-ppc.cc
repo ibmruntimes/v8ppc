@@ -775,15 +775,6 @@ void LCodeGen::RecordSafepointWithRegisters(LPointerMap* pointers,
 }
 
 
-void LCodeGen::RecordSafepointWithRegistersAndDoubles(
-    LPointerMap* pointers,
-    int arguments,
-    Safepoint::DeoptMode deopt_mode) {
-  RecordSafepoint(
-      pointers, Safepoint::kWithRegistersAndDoubles, arguments, deopt_mode);
-}
-
-
 void LCodeGen::RecordPosition(int position) {
   if (position == RelocInfo::kNoPosition) return;
   masm()->positions_recorder()->RecordPosition(position);
@@ -933,113 +924,6 @@ void LCodeGen::DoModI(LModI* instr) {
 }
 
 
-void LCodeGen::EmitSignedIntegerDivisionByConstant(
-    Register result,
-    Register dividend,
-    int32_t divisor,
-    Register remainder,
-    Register scratch,
-    LEnvironment* environment) {
-  ASSERT(!AreAliased(dividend, scratch, ip));
-  ASSERT(LChunkBuilder::HasMagicNumberForDivisor(divisor));
-
-  Label skip;
-  uint32_t divisor_abs = abs(divisor);
-
-  int32_t power_of_2_factor =
-    CompilerIntrinsics::CountTrailingZeros(divisor_abs);
-
-  switch (divisor_abs) {
-    case 0:
-      DeoptimizeIf(al, environment);
-      return;
-
-    case 1:
-      if (divisor > 0) {
-        __ Move(result, dividend);
-      } else {
-        __ li(r0, Operand::Zero());  // clear xer
-        __ mtxer(r0);
-        __ neg(result, dividend, SetOE, SetRC);
-        __ bnotoverflow(&skip, cr0);
-        DeoptimizeIf(al, environment);
-        __ bind(&skip);
-      }
-      // Compute the remainder.
-      __ li(remainder, Operand::Zero());
-      return;
-
-    default:
-      if (IsPowerOf2(divisor_abs)) {
-        // Branch and condition free code for integer division by a power
-        // of two.
-        int32_t power = WhichPowerOf2(divisor_abs);
-        if (power > 1) {
-          __ ShiftRightArithImm(scratch, dividend, power - 1);
-        }
-        __ ShiftRightImm(scratch, scratch, Operand(kBitsPerPointer - power));
-        __ add(scratch, dividend, scratch);
-        __ ShiftRightArithImm(result, scratch, power);
-        // Negate if necessary.
-        // We don't need to check for overflow because the case '-1' is
-        // handled separately.
-        if (divisor < 0) {
-          ASSERT(divisor != -1);
-          __ neg(result, result);
-        }
-        // Compute the remainder.
-        __ ShiftLeftImm(scratch, result, Operand(power));
-        if (divisor > 0) {
-          __ sub(remainder, dividend, scratch);
-        } else {
-          __ add(remainder, dividend, scratch);
-        }
-        return;
-      } else {
-        // Use magic numbers for a few specific divisors.
-        // Details and proofs can be found in:
-        // - Hacker's Delight, Henry S. Warren, Jr.
-        // - The PowerPC Compiler Writer’s Guide
-        // and probably many others.
-        //
-        // We handle
-        //   <divisor with magic numbers> * <power of 2>
-        // but not
-        //   <divisor with magic numbers> * <other divisor with magic numbers>
-        DivMagicNumbers magic_numbers =
-          DivMagicNumberFor(divisor_abs >> power_of_2_factor);
-        // Branch and condition free code for integer division by a power
-        // of two.
-        const int32_t M = magic_numbers.M;
-        const int32_t s = magic_numbers.s + power_of_2_factor;
-
-        __ mov(ip, Operand(M));
-#if V8_TARGET_ARCH_PPC64
-        __ Mul(scratch, dividend, ip);
-        __ ShiftRightArithImm(scratch, scratch, 32);
-#else
-        __ mulhw(scratch, dividend, ip);
-#endif
-        if (M < 0) {
-          __ add(scratch, scratch, dividend);
-        }
-        if (s > 0) {
-          __ srawi(scratch, scratch, s);
-        }
-        __ srwi(result, dividend, Operand(31));
-        __ add(result, scratch, result);
-        if (divisor < 0) __ neg(result, result);
-        // Compute the remainder.
-        __ mov(ip, Operand(divisor));
-        // This sequence could be replaced with 'mls' when
-        // it gets implemented.
-        __ Mul(scratch, result, ip);
-        __ sub(remainder, dividend, scratch);
-      }
-  }
-}
-
-
 void LCodeGen::DoDivI(LDivI* instr) {
   const Register left = ToRegister(instr->left());
   const Register right = ToRegister(instr->right());
@@ -1086,36 +970,119 @@ void LCodeGen::DoDivI(LDivI* instr) {
 
 
 void LCodeGen::DoMathFloorOfDiv(LMathFloorOfDiv* instr) {
-  const Register result = ToRegister(instr->result());
-  const Register left = ToRegister(instr->left());
-  const Register remainder = ToRegister(instr->temp());
-  const Register scratch = scratch0();
-
-  // We only optimize this for division by constants, because the standard
-  // integer division routine is usually slower than transitionning to VFP.
-  // This could be optimized on processors with SDIV available.
   ASSERT(instr->right()->IsConstantOperand());
+
+  const Register dividend = ToRegister(instr->left());
   int32_t divisor = ToInteger32(LConstantOperand::cast(instr->right()));
-  if (divisor < 0) {
-    __ cmpi(left, Operand::Zero());
-    DeoptimizeIf(eq, instr->environment());
+  const Register result = ToRegister(instr->result());
+
+  switch (divisor) {
+    case 0:
+      DeoptimizeIf(al, instr->environment());
+      return;
+
+    case 1:
+      __ Move(result, dividend);
+      return;
+
+    case -1: {
+      Label skip;
+      OEBit oe;
+      if (instr->hydrogen()->CheckFlag(HValue::kCanOverflow)) {
+        __ li(r0, Operand::Zero());  // clear xer
+        __ mtxer(r0);
+        oe = SetOE;
+      } else {
+        oe = LeaveOE;
+      }
+      __ neg(result, dividend, oe, SetRC);
+      if (instr->hydrogen()->CheckFlag(HValue::kBailoutOnMinusZero)) {
+        DeoptimizeIf(eq, instr->environment(), cr0);
+      }
+      if (instr->hydrogen()->CheckFlag(HValue::kCanOverflow)) {
+        __ bnotoverflow(&skip, cr0);
+        DeoptimizeIf(al, instr->environment());
+        __ bind(&skip);
+      }
+      return;
+    }
   }
-  EmitSignedIntegerDivisionByConstant(result,
-                                      left,
-                                      divisor,
-                                      remainder,
-                                      scratch,
-                                      instr->environment());
-  // We operated a truncating division. Correct the result if necessary.
-  __ cmpi(remainder, Operand::Zero());
-#ifdef PENGUIN_CLEANUP
-  __ teq(remainder, Operand(divisor), ne);
-  __ sub(result, result, Operand(1), LeaveCC, mi);
+
+  uint32_t divisor_abs = abs(divisor);
+  if (IsPowerOf2(divisor_abs)) {
+    int32_t power = WhichPowerOf2(divisor_abs);
+    if (divisor < 0) {
+      __ neg(result, dividend, LeaveOE, SetRC);
+      if (instr->hydrogen()->CheckFlag(HValue::kBailoutOnMinusZero)) {
+        DeoptimizeIf(eq, instr->environment(), cr0);
+      }
+      __ ShiftRightArithImm(result, result, power);
+    } else {
+      __ ShiftRightArithImm(result, dividend, power);
+    }
+  } else {
+    Register scratch = ToRegister(instr->temp());
+
+    // Find b which: 2^b < divisor_abs < 2^(b+1).
+    unsigned b = 31 - CompilerIntrinsics::CountLeadingZeros(divisor_abs);
+    unsigned shift = 32 + b;  // Precision +1bit (effectively).
+    double multiplier_f =
+        static_cast<double>(static_cast<uint64_t>(1) << shift) / divisor_abs;
+    int64_t multiplier;
+    if (multiplier_f - floor(multiplier_f) < 0.5) {
+        multiplier = static_cast<int64_t>(floor(multiplier_f));
+    } else {
+        multiplier = static_cast<int64_t>(floor(multiplier_f)) + 1;
+    }
+    // The multiplier is a uint32.
+    ASSERT(multiplier > 0 &&
+           multiplier < (static_cast<int64_t>(1) << 32));
+#if V8_TARGET_ARCH_PPC64
+    __ extsw(scratch, dividend);
+    if (divisor < 0 &&
+        instr->hydrogen()->CheckFlag(HValue::kBailoutOnMinusZero)) {
+      __ neg(scratch, scratch, LeaveOE, SetRC);
+      DeoptimizeIf(eq, instr->environment(), cr0);
+    }
+    __ mov(result, Operand(multiplier));
+    __ Mul(result, result, scratch);
+    __ addis(result, result, Operand(0x4000));
+    __ ShiftRightArithImm(result, result, shift);
 #else
-  PPCPORT_UNIMPLEMENTED();
-  __ fake_asm(fLITHIUM111);
+    if (divisor < 0 &&
+        instr->hydrogen()->CheckFlag(HValue::kBailoutOnMinusZero)) {
+      __ cmpi(dividend, Operand::Zero());
+      DeoptimizeIf(eq, instr->environment());
+    }
+    __ mov(result, Operand(multiplier));
+    __ mullw(ip, result, dividend);
+    __ mulhw(result, result, dividend);
+
+    if (static_cast<int32_t>(multiplier) < 0) {
+      __ add(result, result, dividend);
+    }
+    if (divisor < 0) {
+      __ neg(result, result);
+
+      // Subtract one from result if -(low word) < 0xC0000000
+      __ neg(ip, ip);
+      __ srwi(scratch, ip, Operand(30));
+      __ addi(scratch, scratch, Operand(1));
+      __ srwi(scratch, scratch, Operand(2));
+      __ addi(scratch, scratch, Operand(-1));
+      __ add(result, result, scratch);
+    } else {
+      // Add one to result if low word >= 0xC0000000
+      __ srwi(scratch, ip, Operand(30));
+      __ addi(scratch, scratch, Operand(1));
+      __ srwi(scratch, scratch, Operand(2));
+      __ add(result, result, scratch);
+    }
+    __ ShiftRightArithImm(result, result, shift - 32);
 #endif
+  }
 }
+
 
 void LCodeGen::DoMulI(LMulI* instr) {
   Register scratch = scratch0();

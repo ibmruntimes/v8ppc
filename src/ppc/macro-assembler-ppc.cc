@@ -252,30 +252,6 @@ void MacroAssembler::Ret(int drop, Condition cond) {
   Ret(cond);
 }
 
-
-void MacroAssembler::Swap(Register reg1,
-                          Register reg2,
-                          Register scratch,
-                          Condition cond) {
-#ifdef PENGUIN_CLEANUP
-  // Bogus instruction, inserted so we can trap here if we execute
-  ldr(r0, MemOperand(r0));
-  if (scratch.is(no_reg)) {
-    eor(reg1, reg1, Operand(reg2), LeaveCC, cond);
-    eor(reg2, reg2, Operand(reg1), LeaveCC, cond);
-    eor(reg1, reg1, Operand(reg2), LeaveCC, cond);
-  } else {
-    mov(scratch, reg1, LeaveCC, cond);
-    mov(reg1, reg2, LeaveCC, cond);
-    mov(reg2, scratch, LeaveCC, cond);
-  }
-#else
-  PPCPORT_UNIMPLEMENTED();
-  fake_asm(fMASM16);
-#endif
-}
-
-
 void MacroAssembler::Call(Label* target) {
   b(target, SetLK);
 }
@@ -306,23 +282,6 @@ void MacroAssembler::Move(DoubleRegister dst, DoubleRegister src) {
   }
 }
 
-
-void MacroAssembler::Sbfx(Register dst, Register src1, int lsb, int width,
-                          Condition cond) {
-  ASSERT(cond == al);
-  ASSERT(lsb < 32);
-  int mask = (1 << (width + lsb)) - 1 - ((1 << lsb) - 1);
-  mov(r0, Operand(mask));
-  and_(dst, src1, r0);
-  int shift_up = 32 - lsb - width;
-  int shift_down = lsb + shift_up;
-  if (shift_up != 0) {
-    slwi(dst, dst, Operand(shift_up));
-  }
-  if (shift_down != 0) {
-    srawi(dst, dst, shift_down);
-  }
-}
 
 void MacroAssembler::MultiPush(RegList regs) {
   int16_t num_to_push = NumberOfBitsSet(regs);
@@ -571,46 +530,6 @@ void MacroAssembler::PopSafepointRegisters() {
   if (num_unsaved > 0) {
     addi(sp, sp, Operand(num_unsaved * kPointerSize));
   }
-}
-
-
-void MacroAssembler::PushSafepointRegistersAndDoubles() {
-#ifdef PENGUIN_CLEANUP
-  PushSafepointRegisters();
-  sub(sp, sp, Operand(DwVfpRegister::kNumAllocatableRegisters *
-                      kDoubleSize));
-  for (int i = 0; i < DwVfpRegister::kNumAllocatableRegisters; i++) {
-    vstr(DwVfpRegister::FromAllocationIndex(i), sp, i * kDoubleSize);
-  }
-#else
-  PPCPORT_UNIMPLEMENTED();
-  fake_asm(fMASM22);
-#endif
-}
-
-
-void MacroAssembler::PopSafepointRegistersAndDoubles() {
-#ifdef PENGUIN_CLEANUP
-  for (int i = 0; i < DwVfpRegister::kNumAllocatableRegisters; i++) {
-    vldr(DwVfpRegister::FromAllocationIndex(i), sp, i * kDoubleSize);
-  }
-  addi(sp, sp, Operand(DwVfpRegister::kNumAllocatableRegisters *
-                      kDoubleSize));
-  PopSafepointRegisters();
-#else
-  PPCPORT_UNIMPLEMENTED();
-  fake_asm(fMASM23);
-#endif
-}
-
-void MacroAssembler::StoreToSafepointRegistersAndDoublesSlot(Register src,
-                                                             Register dst) {
-#ifdef PENGUIN_CLEANUP
-  StoreP(src, SafepointRegistersAndDoublesSlot(dst));
-#else
-  PPCPORT_UNIMPLEMENTED();
-  fake_asm(fMASM26);
-#endif
 }
 
 

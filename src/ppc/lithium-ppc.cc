@@ -1216,32 +1216,36 @@ HValue* LChunkBuilder::SimplifiedDividendForMathFloorOfDiv(HValue* dividend) {
 
 
 HValue* LChunkBuilder::SimplifiedDivisorForMathFloorOfDiv(HValue* divisor) {
-  // Only optimize when we have magic numbers for the divisor.
-  // The standard integer division routine is usually slower than transitionning
-  // to VFP.
   if (divisor->IsConstant() &&
       HConstant::cast(divisor)->HasInteger32Value()) {
     HConstant* constant_val = HConstant::cast(divisor);
-    int32_t int32_val = constant_val->Integer32Value();
-    if (LChunkBuilder::HasMagicNumberForDivisor(int32_val)) {
-      return constant_val->CopyToRepresentation(Representation::Integer32(),
-                                                divisor->block()->zone());
-    }
+    return constant_val->CopyToRepresentation(Representation::Integer32(),
+                                              divisor->block()->zone());
   }
   return NULL;
 }
 
-
 LInstruction* LChunkBuilder::DoMathFloorOfDiv(HMathFloorOfDiv* instr) {
-    HValue* right = instr->right();
+  HValue* right = instr->right();
+  ASSERT(right->IsConstant() && HConstant::cast(right)->HasInteger32Value());
+  LOperand* divisor = chunk_->DefineConstantOperand(HConstant::cast(right));
+  int32_t divisor_si = HConstant::cast(right)->Integer32Value();
+  if (divisor_si == 0) {
     LOperand* dividend = UseRegister(instr->left());
-    LOperand* divisor = UseRegisterOrConstant(right);
-    LOperand* remainder = TempRegister();
-    ASSERT(right->IsConstant() &&
-           HConstant::cast(right)->HasInteger32Value() &&
-           HasMagicNumberForDivisor(HConstant::cast(right)->Integer32Value()));
     return AssignEnvironment(DefineAsRegister(
-          new(zone()) LMathFloorOfDiv(dividend, divisor, remainder)));
+        new(zone()) LMathFloorOfDiv(dividend, divisor, NULL)));
+  } else if (IsPowerOf2(abs(divisor_si))) {
+    LOperand* dividend = UseRegisterAtStart(instr->left());
+    LInstruction* result = DefineAsRegister(
+        new(zone()) LMathFloorOfDiv(dividend, divisor, NULL));
+    return divisor_si < 0 ? AssignEnvironment(result) : result;
+  } else {
+    LOperand* dividend = UseRegisterAtStart(instr->left());
+    LOperand* temp = TempRegister();
+    LInstruction* result = DefineAsRegister(
+        new(zone()) LMathFloorOfDiv(dividend, divisor, temp));
+    return divisor_si < 0 ? AssignEnvironment(result) : result;
+  }
 }
 
 

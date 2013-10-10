@@ -115,7 +115,6 @@ bool AreAliased(Register reg1,
 #define ShiftLeft          sld
 #define ShiftRight         srd
 #define ShiftRightArith    srad
-#define CountLeadingZeros  cntlzd_
 #define Mul                mulld
 #define Div                divd
 #else
@@ -133,7 +132,6 @@ bool AreAliased(Register reg1,
 #define ShiftLeft          slw
 #define ShiftRight         srw
 #define ShiftRightArith    sraw
-#define CountLeadingZeros  cntlzw_
 #define Mul                mullw
 #define Div                divw
 #endif
@@ -175,16 +173,6 @@ class MacroAssembler: public Assembler {
   void Drop(int count, Condition cond = al);
 
   void Ret(int drop, Condition cond = al);
-
-  // Swap two registers.  If the scratch register is omitted then a slightly
-  // less efficient form using xor instead of mov is emitted.
-  void Swap(Register reg1,
-            Register reg2,
-            Register scratch = no_reg,
-            Condition cond = al);
-
-  void Sbfx(Register dst, Register src, int lsb, int width,
-            Condition cond = al);
 
   void Call(Label* target);
 
@@ -423,12 +411,10 @@ class MacroAssembler: public Assembler {
   // RegList constant kSafepointSavedRegisters.
   void PushSafepointRegisters();
   void PopSafepointRegisters();
-  void PushSafepointRegistersAndDoubles();
-  void PopSafepointRegistersAndDoubles();
+
   // Store value in register src in the safepoint stack slot for
   // register dst.
   void StoreToSafepointRegisterSlot(Register src, Register dst);
-  void StoreToSafepointRegistersAndDoublesSlot(Register src, Register dst);
   // Load the value of the src register from its safepoint stack slot
   // into register dst.
   void LoadFromSafepointRegisterSlot(Register dst, Register src);
