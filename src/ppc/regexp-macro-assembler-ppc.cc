@@ -1372,38 +1372,6 @@ void RegExpMacroAssemblerPPC::CheckStackLimit() {
 }
 
 
-#if 0
-void RegExpMacroAssemblerPPC::EmitBacktrackConstantPool() {
-  backtrack_constant_pool_offset_ = masm_->pc_offset();
-  for (int i = 0; i < kBacktrackConstantPoolSize; i++) {
-    __ emit(0);
-  }
-
-  backtrack_constant_pool_capacity_ = kBacktrackConstantPoolSize;
-}
-
-
-int RegExpMacroAssemblerPPC::GetBacktrackConstantPoolEntry() {
-  while (backtrack_constant_pool_capacity_ > 0) {
-    int offset = backtrack_constant_pool_offset_;
-    backtrack_constant_pool_offset_ += kPointerSize;
-    backtrack_constant_pool_capacity_--;
-    if (masm_->pc_offset() - offset < 2 * KB) {
-      return offset;
-    }
-  }
-  Label new_pool_skip;
-  __ b(&new_pool_skip);
-  EmitBacktrackConstantPool();
-  __ bind(&new_pool_skip);
-  int offset = backtrack_constant_pool_offset_;
-  backtrack_constant_pool_offset_ += kPointerSize;
-  backtrack_constant_pool_capacity_--;
-  return offset;
-}
-#endif
-
-
 void RegExpMacroAssemblerPPC::CallCFunctionUsingStub(
     ExternalReference function,
     int num_arguments) {

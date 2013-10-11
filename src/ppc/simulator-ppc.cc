@@ -1035,9 +1035,7 @@ void Simulator::SetFpResult(const double& result) {
 
 void Simulator::TrashCallerSaveRegisters() {
   // We don't trash the registers with the return value.
-#if 0
--- roohack
-A good idea to trash volatile registers, needs to be done
+#if 0  // A good idea to trash volatile registers, needs to be done
   registers_[2] = 0x50Bad4U;
   registers_[3] = 0x50Bad4U;
   registers_[12] = 0x50Bad4U;

@@ -79,8 +79,8 @@ bool LCodeGen::GenerateCode() {
   return GeneratePrologue() &&
       GenerateBody() &&
       GenerateDeferredCode() &&
-#if 0
-      GenerateDeoptJumpTable() &&  // not used on PPC
+#if 0  // not used on PPC
+      GenerateDeoptJumpTable() &&
 #endif
       GenerateSafepointTable();
 }

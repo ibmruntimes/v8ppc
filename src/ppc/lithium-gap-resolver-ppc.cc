@@ -231,20 +231,8 @@ void LGapResolver::EmitMove(int index) {
       ASSERT(destination->IsStackSlot());
       MemOperand destination_operand = cgen_->ToMemOperand(destination);
       if (in_cycle_) {
-#if 0
-        if (!destination_operand.OffsetIsUint16Encodable()) {
-          // ip is overwritten while saving the value to the destination.
-          // Therefore we can't use ip.  It is OK if the read from the source
-          // destroys ip, since that happens before the value is read.
-          __ lfd(kScratchDoubleReg.low(), source_operand);
-          __ stfd(kScratchDoubleReg.low(), destination_operand);
-        } else {
-#endif
-          __ LoadP(ip, source_operand);
-          __ StoreP(ip, destination_operand);
-#if 0
-        }
-#endif
+        __ LoadP(ip, source_operand);
+        __ StoreP(ip, destination_operand);
       } else {
         __ LoadP(kSavedValueRegister, source_operand);
         __ StoreP(kSavedValueRegister, destination_operand);

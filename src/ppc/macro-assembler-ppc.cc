@@ -123,8 +123,7 @@ int MacroAssembler::CallSize(
   int size;
   int movSize;
 
-#if 0
-  // Account for variable length Assembler::mov sequence.
+#if 0  // Account for variable length Assembler::mov sequence.
   intptr_t value = reinterpret_cast<intptr_t>(target);
   if (is_int16(value) || (((value >> 16) << 16) == value)) {
     movSize = 1;
@@ -152,8 +151,7 @@ int MacroAssembler::CallSizeNotPredictableCodeSize(
   int size;
   int movSize;
 
-#if 0
-  // Account for variable length Assembler::mov sequence.
+#if 0  // Account for variable length Assembler::mov sequence.
   intptr_t value = reinterpret_cast<intptr_t>(target);
   if (is_int16(value) || (((value >> 16) << 16) == value)) {
     movSize = 1;
@@ -587,32 +585,13 @@ void MacroAssembler::EnterFrame(StackFrame::Type type) {
 
 
 void MacroAssembler::LeaveFrame(StackFrame::Type type) {
-  // clean things up but don't perform return
+  // Drop the execution stack down to the frame pointer and restore
+  // the caller frame pointer and return address.
   mr(sp, fp);
   LoadP(fp, MemOperand(sp));
   LoadP(r0, MemOperand(sp, kPointerSize));
   mtlr(r0);
   addi(sp, sp, Operand(2*kPointerSize));
-
-/*
-  // this destroys r11
-  addi(r11,fp,Operand(16));
-  lwz(r0, MemOperand(r11, 4));
-  mtlr(r0);
-  lwz(fp, MemOperand(r11,-4));
-  mr(sp, r11);
-*/
-
-#if 0
-  // r0: preserved
-  // r1: preserved
-  // r2: preserved
-
-  // Drop the execution stack down to the frame pointer and restore
-  // the caller frame pointer and return address.
-  mr(sp, fp);
-  ldm(ia_w, sp, fp.bit() | lr.bit());
-#endif
 }
 
 // ExitFrame layout (probably wrongish.. needs updating)
@@ -4273,7 +4252,7 @@ void MacroAssembler::LoadHalfWord(Register dst, const MemOperand& mem,
     // If updateForm is ever true, then lhzu will
     // need to be implemented
     assert(0);
-#if 0
+#if 0  // LoadHalfWord w\ update not yet needed
     if (use_dform) {
       lhzu(dst, mem);
     } else {
@@ -4306,7 +4285,7 @@ void MacroAssembler::StoreHalfWord(Register src, const MemOperand& mem,
     // If updateForm is ever true, then sthu will
     // need to be implemented
     assert(0);
-#if 0
+#if 0  // StoreHalfWord w\ update not yet needed
     if (use_dform) {
       sthu(src, mem);
     } else {
@@ -4339,7 +4318,7 @@ void MacroAssembler::LoadByte(Register dst, const MemOperand& mem,
     // If updateForm is ever true, then lbzu will
     // need to be implemented
     assert(0);
-#if 0
+#if 0  // LoadByte w\ update not yet needed
     if (use_dform) {
       lbzu(dst, mem);
     } else {
@@ -4372,7 +4351,7 @@ void MacroAssembler::StoreByte(Register src, const MemOperand& mem,
     // If updateForm is ever true, then stbu will
     // need to be implemented
     assert(0);
-#if 0
+#if 0  // StoreByte w\ update not yet needed
     if (use_dform) {
       stbu(src, mem);
     } else {

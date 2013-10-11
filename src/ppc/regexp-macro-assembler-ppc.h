@@ -156,8 +156,6 @@ class RegExpMacroAssemblerPPC: public NativeRegExpMacroAssembler {
   // Initial size of code buffer.
   static const size_t kRegExpCodeSize = 1024;
 
-  static const int kBacktrackConstantPoolSize = 4;
-
   // Load a number of characters at the given offset from the
   // current position, into the current-character register.
   void LoadCurrentCharacterUnchecked(int cp_offset, int character_count);
@@ -167,9 +165,6 @@ class RegExpMacroAssemblerPPC: public NativeRegExpMacroAssembler {
 
   // Check whether we are exceeding the stack limit on the backtrack stack.
   void CheckStackLimit();
-
-  void EmitBacktrackConstantPool();
-  int GetBacktrackConstantPoolEntry();
 
 
   // Generate a call to CheckStackGuardState.
