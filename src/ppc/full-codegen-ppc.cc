@@ -1980,9 +1980,7 @@ void FullCodeGenerator::EmitInlineSmiBinaryOp(BinaryOperation* expr,
       __ SmiUntag(scratch1, left);
       __ ShiftLeft(scratch1, scratch1, scratch2);
       // Check that the *signed* result fits in a smi
-      __ addis(scratch2, scratch1, Operand(0x4000));
-      __ cmpi(scratch2, Operand::Zero());
-      __ blt(&stub_call);
+      __ JumpIfNotSmiCandidate(scratch1, scratch2, &stub_call);
       __ SmiTag(right, scratch1);
 #endif
       break;
@@ -1992,16 +1990,8 @@ void FullCodeGenerator::EmitInlineSmiBinaryOp(BinaryOperation* expr,
       __ SmiUntag(scratch1, left);
       __ GetLeastBitsFromSmi(scratch2, right, 5);
       __ srw(scratch1, scratch1, scratch2);
-      // Unsigned shift is not allowed to produce a negative number, so
-      // check the sign bit and, for 32-bit, the sign bit after Smi tagging.
-      __ TestBitRange(scratch1, 31,
-#if V8_TARGET_ARCH_PPC64
-                      31,
-#else
-                      30,
-#endif
-                      r0);
-      __ bne(&stub_call, cr0);
+      // Unsigned shift is not allowed to produce a negative number.
+      __ JumpIfNotUnsignedSmiCandidate(scratch1, r0, &stub_call);
       __ SmiTag(right, scratch1);
       break;
     }
@@ -2034,32 +2024,37 @@ void FullCodeGenerator::EmitInlineSmiBinaryOp(BinaryOperation* expr,
       break;
     }
     case Token::MUL: {
+      Label mul_zero;
 #if V8_TARGET_ARCH_PPC64
       // Remove tag from both operands.
       __ SmiUntag(ip, right);
       __ SmiUntag(r0, left);
       __ Mul(scratch1, r0, ip);
-      __ ShiftRightArithImm(scratch2, scratch1, 32);
+      // Check for overflowing the smi range - no overflow if higher 33 bits of
+      // the result are identical.
+      __ TestIfInt32(scratch1, scratch2, ip);
+      __ bne(&stub_call);
 #else
       __ SmiUntag(ip, right);
       __ mullw(scratch1, left, ip);
       __ mulhw(scratch2, left, ip);
-#endif
       // Check for overflowing the smi range - no overflow if higher 33 bits of
       // the result are identical.
-      __ srawi(ip, scratch1, 31);
-      __ cmp(ip, scratch2);
+      __ TestIfInt32(scratch2, scratch1, ip);
       __ bne(&stub_call);
+#endif
       // Go slow on zero result to handle -0.
+      __ cmpi(scratch1, Operand::Zero());
+      __ beq(&mul_zero);
 #if V8_TARGET_ARCH_PPC64
       __ SmiTag(right, scratch1);
 #else
       __ mr(right, scratch1);
 #endif
-      __ cmpi(scratch1, Operand::Zero());
-      __ bne(&done);
+      __ b(&done);
       // We need -0 if we were multiplying a negative number with 0 to get 0.
       // We know one of them was zero.
+      __ bind(&mul_zero);
       __ add(scratch2, right, left);
       __ cmpi(scratch2, Operand::Zero());
       __ blt(&stub_call);

@@ -2166,11 +2166,7 @@ Handle<Code> CallStubCompiler::CompileMathFloorCall(
   __ bind(&positive);
 
   // if any of the high bits are set, fail to generic
-  __ TestBitRange(r0,
-                  kBitsPerPointer - 1,
-                  kBitsPerPointer - 1 - (kSmiTagSize + kSmiShiftSize),
-                  r0);
-  __ bne(&slow, cr0);
+  __ JumpIfNotUnsignedSmiCandidate(r0, r0, &slow);
 
   // Tag the result.
   STATIC_ASSERT(kSmiTag == 0);
@@ -3741,10 +3737,8 @@ void KeyedLoadStubCompiler::GenerateLoadExternalArray(
     // it to a HeapNumber.
 #if !V8_TARGET_ARCH_PPC64
     Label box_int;
-    // High bits must be identical to fit in to an Smi
-    __ addis(r0, value, Operand(0x4000));
-    __ cmpi(r0, Operand::Zero());
-    __ blt(&box_int);
+    // Check that the value fits in a smi.
+    __ JumpIfNotSmiCandidate(value, r0, &box_int);
 #endif
     // Tag integer as smi and return it.
     __ SmiTag(r3, value);
@@ -3770,11 +3764,7 @@ void KeyedLoadStubCompiler::GenerateLoadExternalArray(
     // the value to be in the range of a positive smi, we can't
     // handle any of the high bits being set in the value.
     Label box_int;
-    __ TestBitRange(value,
-                    kBitsPerPointer - 1,
-                    kBitsPerPointer - 1 - (kSmiTagSize + kSmiShiftSize),
-                    r0);
-    __ bne(&box_int, cr0);   // If any high bits are set, box
+    __ JumpIfNotUnsignedSmiCandidate(value, r0, &box_int);
 
     // Tag integer as smi and return it.
     __ SmiTag(r3, value);

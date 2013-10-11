@@ -1165,14 +1165,14 @@ void LCodeGen::DoMulI(LMulI* instr) {
       // scratch:result = left * right.
 #if V8_TARGET_ARCH_PPC64
       __ Mul(result, left, right);
-      __ ShiftRightArithImm(scratch, result, 32);
+      __ TestIfInt32(result, scratch, r0);
+      DeoptimizeIf(ne, instr->environment());
 #else
       __ mullw(result, left, right);
       __ mulhw(scratch, left, right);
-#endif
-      __ srawi(r0, result, 31);
-      __ cmp(scratch, r0);
+      __ TestIfInt32(scratch, result, r0);
       DeoptimizeIf(ne, instr->environment());
+#endif
     } else {
       __ Mul(result, left, right);
     }

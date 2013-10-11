@@ -1855,20 +1855,18 @@ void UnaryOpStub::GenerateHeapNumberCodeBitNot(
   __ ConvertToInt32(r3, r4, r5, r6, d0, slow);
 
   // Do the bitwise operation and check if the result fits in a smi.
-  Label try_float;
   __ notx(r4, r4);
 
 #if !V8_TARGET_ARCH_PPC64
-  __ lis(r5, Operand(0x40000000 >> 16));
-  __ add(r5, r4, r5);
-  __ cmpi(r5, Operand::Zero());
-  __ blt(&try_float);
+  Label try_float;
+  __ JumpIfNotSmiCandidate(r4, r5, &try_float);
 #endif
 
   // Tag the result as a smi and we're done.
   __ SmiTag(r3, r4);
   __ Ret();
 
+#if !V8_TARGET_ARCH_PPC64
   // Try to store the result in a heap number.
   __ bind(&try_float);
   if (mode_ == UNARY_NO_OVERWRITE) {
@@ -1907,6 +1905,7 @@ void UnaryOpStub::GenerateHeapNumberCodeBitNot(
   if (FLAG_debug_code) {
     __ stop("Incorrect assumption in bit-not stub");
   }
+#endif
 }
 
 
@@ -2092,7 +2091,10 @@ void BinaryOpStub::GenerateSmiSmiOperation(MacroAssembler* masm) {
       // scratch1 = product (untagged)
       // scratch2 = sign-extended higher 32 bits of product.
       __ Mul(scratch1, r0, ip);
-      __ ShiftRightArithImm(scratch2, scratch1, 32);
+      // Check for overflowing the smi range - no overflow if higher 33 bits of
+      // the result are identical.
+      __ TestIfInt32(scratch1, scratch2, ip);
+      __ bne(&not_smi_result);
 #else
       // Remove tag from one of the operands. This way the multiplication result
       // will be a smi if it fits the smi range.
@@ -2102,12 +2104,11 @@ void BinaryOpStub::GenerateSmiSmiOperation(MacroAssembler* masm) {
       // scratch2 = higher 32 bits of product.
       __ mullw(scratch1, left, ip);
       __ mulhw(scratch2, left, ip);
-#endif
       // Check for overflowing the smi range - no overflow if higher 33 bits of
       // the result are identical.
-      __ srawi(ip, scratch1, 31);
-      __ cmp(ip, scratch2);
+      __ TestIfInt32(scratch2, scratch1, ip);
       __ bne(&not_smi_result);
+#endif
       // Go slow on zero result to handle -0.
       __ cmpi(scratch1, Operand::Zero());
       __ beq(&mul_zero);
@@ -2171,9 +2172,7 @@ void BinaryOpStub::GenerateSmiSmiOperation(MacroAssembler* masm) {
       __ beq(&check_neg_zero, cr0);
 #if !V8_TARGET_ARCH_PPC64
       // Check that the signed result fits in a Smi.
-      __ addis(scratch2, scratch1, Operand(0x4000));
-      __ cmpi(scratch2, Operand::Zero());
-      __ blt(&not_smi_result);
+      __ JumpIfNotSmiCandidate(scratch1, scratch2, &not_smi_result);
 #endif
       __ SmiTag(right, scratch1);
       __ Ret();
@@ -2212,16 +2211,8 @@ void BinaryOpStub::GenerateSmiSmiOperation(MacroAssembler* masm) {
       __ SmiUntag(scratch1, left);
       __ GetLeastBitsFromSmi(scratch2, right, 5);
       __ srw(scratch1, scratch1, scratch2);
-      // Unsigned shift is not allowed to produce a negative number, so
-      // check the sign bit and, for 32-bit, the sign bit after Smi tagging.
-      __ TestBitRange(scratch1, 31,
-#if V8_TARGET_ARCH_PPC64
-                      31,
-#else
-                      30,
-#endif
-                      r0);
-      __ bne(&not_smi_result, cr0);
+      // Unsigned shift is not allowed to produce a negative number.
+      __ JumpIfNotUnsignedSmiCandidate(scratch1, r0, &not_smi_result);
       // Smi tag result.
       __ SmiTag(right, scratch1);
       __ Ret();
@@ -2233,9 +2224,7 @@ void BinaryOpStub::GenerateSmiSmiOperation(MacroAssembler* masm) {
       __ ShiftLeft(scratch1, scratch1, scratch2);
 #if !V8_TARGET_ARCH_PPC64
       // Check that the signed result fits in a Smi.
-      __ addis(scratch2, scratch1, Operand(0x4000));
-      __ cmpi(scratch2, Operand::Zero());
-      __ blt(&not_smi_result);
+      __ JumpIfNotSmiCandidate(scratch1, scratch2, &not_smi_result);
 #endif
       __ SmiTag(right, scratch1);
       __ Ret();
@@ -2401,9 +2390,7 @@ void BinaryOpStub::GenerateFPOperation(MacroAssembler* masm,
 
 #if !V8_TARGET_ARCH_PPC64
       // Check that the *signed* result fits in a smi.
-      __ addis(r6, r5, Operand(0x40000000u >> 16));
-      __ cmpi(r6, Operand::Zero());
-      __ blt(&result_not_a_smi);
+      __ JumpIfNotSmiCandidate(r5, r6, &result_not_a_smi);
 #endif
       __ SmiTag(r3, r5);
       __ Ret();
@@ -2656,10 +2643,8 @@ void BinaryOpStub::GenerateInt32Stub(MacroAssembler* masm) {
 
 #if !V8_TARGET_ARCH_PPC64
         // Check if the result fits in a smi.
-        __ addis(scratch2, scratch1, Operand(0x40000000u >> 16));
-        __ cmpi(scratch2, Operand::Zero());
         // If not try to return a heap number.
-        __ blt(&return_heap_number);
+        __ JumpIfNotSmiCandidate(scratch1, scratch2, &return_heap_number);
 #endif
         // Check for minus zero. Return heap number for minus zero.
         Label not_zero;
@@ -2791,10 +2776,8 @@ void BinaryOpStub::GenerateInt32Stub(MacroAssembler* masm) {
 
 #if !V8_TARGET_ARCH_PPC64
       // Check if the result fits in a smi.
-      __ addis(scratch1, r5, Operand(0x40000000u >> 16));
-      __ cmpi(scratch1, Operand::Zero());
       // If not try to return a heap number. (We know the result is an int32.)
-      __ blt(&return_heap_number);
+      __ JumpIfNotSmiCandidate(r5, scratch1, &return_heap_number);
 #endif
       // Tag the result and return.
       __ SmiTag(r3, r5);

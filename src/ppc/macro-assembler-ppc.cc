@@ -2296,11 +2296,11 @@ void MacroAssembler::ConvertToInt32(Register source,
 
   // The result is not a 32-bit integer when the high 33 bits of the
   // result are not identical.
-  srawi(scratch2, dest, 31);
 #if V8_TARGET_ARCH_PPC64
-  sradi(scratch, dest, 32);
+  TestIfInt32(dest, scratch, scratch2);
+#else
+  TestIfInt32(scratch, dest, scratch2);
 #endif
-  cmp(scratch2, scratch);
   bne(not_int32);
 }
 
@@ -2335,13 +2335,13 @@ void MacroAssembler::EmitVFPTruncate(VFPRoundingMode rounding_mode,
 #endif
   addi(sp, sp, Operand(kDoubleSize));
 
-  // The result is not a 32-bit integer when the high 33 bits of the
-  // result are not identical.
-  srawi(r0, result, 31);
+  // The result is a 32-bit integer when the high 33 bits of the
+  // result are identical.
 #if V8_TARGET_ARCH_PPC64
-  sradi(scratch, result, 32);
+  TestIfInt32(result, scratch, r0);
+#else
+  TestIfInt32(scratch, result, r0);
 #endif
-  cmp(r0, scratch);
 
   if (check_inexact == kCheckForInexactConversion) {
     Label done;
@@ -2450,7 +2450,7 @@ void MacroAssembler::EmitECMATruncate(Register result,
          !scratch.is(input_low));
   ASSERT(!double_scratch.is(double_input));
 
-  Label done, truncate;
+  Label done;
 
   fctidz(double_scratch, double_input);
 
@@ -2468,19 +2468,15 @@ void MacroAssembler::EmitECMATruncate(Register result,
 #endif
 #endif
 
-  // The result is not a 32-bit integer when the high 33 bits of the
-  // result are not identical.
-  srawi(r0, result, 31);
+  // The result is a 32-bit integer when the high 33 bits of the
+  // result are identical.
 #if V8_TARGET_ARCH_PPC64
-  sradi(scratch, result, 32);
+  TestIfInt32(result, scratch, r0);
+#else
+  TestIfInt32(scratch, result, r0);
 #endif
-  cmp(r0, scratch);
-  bne(&truncate);
+  beq(&done);
 
-  // If we had no exceptions we are done
-  b(&done);
-
-  bind(&truncate);
   // Load the double value and perform a manual truncation.
   stfd(double_input, MemOperand(sp));
 #if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
