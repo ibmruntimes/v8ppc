@@ -535,34 +535,28 @@ class RecordWriteStub: public CodeStub {
       masm->mflr(r0);
       masm->push(r0);
       masm->MultiPush(kJSCallerSaved & ~scratch1_.bit());
-#if 0  // roohack - temporarily ignoring doubles
       if (mode == kSaveFPRegs) {
-        masm->sub(sp,
-                  sp,
-                  Operand(kDoubleSize * (DwVfpRegister::kNumRegisters - 1)));
-        // Save all VFP registers except d0.
-        for (int i = DwVfpRegister::kNumRegisters - 1; i > 0; i--) {
+        // Save all volatile VFP registers except d0.
+        const int kNumRegs = DwVfpRegister::kNumVolatileRegisters - 1;
+        masm->subi(sp, sp, Operand(kDoubleSize * kNumRegs));
+        for (int i = kNumRegs; i > 0; i--) {
           DwVfpRegister reg = DwVfpRegister::from_code(i);
-          masm->vstr(reg, MemOperand(sp, (i - 1) * kDoubleSize));
+          masm->stfd(reg, MemOperand(sp, (i - 1) * kDoubleSize));
         }
       }
-#endif
     }
 
     inline void RestoreCallerSaveRegisters(MacroAssembler*masm,
                                            SaveFPRegsMode mode) {
-#if 0  // roohack -  temporarily ignoring doubles
       if (mode == kSaveFPRegs) {
         // Restore all VFP registers except d0.
-        for (int i = DwVfpRegister::kNumRegisters - 1; i > 0; i--) {
+        const int kNumRegs = DwVfpRegister::kNumVolatileRegisters - 1;
+        for (int i = kNumRegs; i > 0; i--) {
           DwVfpRegister reg = DwVfpRegister::from_code(i);
-          masm->vldr(reg, MemOperand(sp, (i - 1) * kDoubleSize));
+          masm->lfd(reg, MemOperand(sp, (i - 1) * kDoubleSize));
         }
-        masm->add(sp,
-                  sp,
-                  Operand(kDoubleSize * (DwVfpRegister::kNumRegisters - 1)));
+        masm->addi(sp, sp, Operand(kDoubleSize * kNumRegs));
       }
-#endif
       masm->MultiPop(kJSCallerSaved & ~scratch1_.bit());
       masm->pop(r0);
       masm->mtlr(r0);

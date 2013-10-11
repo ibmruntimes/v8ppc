@@ -83,10 +83,6 @@ const RegList kCalleeSaved =
 
 const int kNumCalleeSaved = 11;
 
-// Double registers d8 to d15 are callee-saved.
-const int kNumDoubleCalleeSaved = 8;
-
-
 // Number of registers for which space is reserved in safepoints. Must be a
 // multiple of 8.
 // TODO(regis): Only 8 registers may actually be sufficient. Revisit.

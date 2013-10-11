@@ -1633,8 +1633,9 @@ void StoreBufferOverflowStub::Generate(MacroAssembler* masm) {
   __ mflr(r0);
   __ MultiPush(kJSCallerSaved | r0.bit());
   if (save_doubles_ == kSaveFPRegs) {
-    __ subi(sp, sp, Operand(kDoubleSize * DwVfpRegister::kNumRegisters));
-    for (int i = 0; i < DwVfpRegister::kNumRegisters; i++) {
+    const int kNumRegs = DwVfpRegister::kNumVolatileRegisters;
+    __ subi(sp, sp, Operand(kDoubleSize * kNumRegs));
+    for (int i = 0; i < kNumRegs; i++) {
       DwVfpRegister reg = DwVfpRegister::from_code(i);
       __ stfd(reg, MemOperand(sp, i * kDoubleSize));
     }
@@ -1650,11 +1651,12 @@ void StoreBufferOverflowStub::Generate(MacroAssembler* masm) {
       ExternalReference::store_buffer_overflow_function(masm->isolate()),
       argument_count);
   if (save_doubles_ == kSaveFPRegs) {
-    for (int i = 0; i < DwVfpRegister::kNumRegisters; i++) {
+    const int kNumRegs = DwVfpRegister::kNumVolatileRegisters;
+    for (int i = 0; i < kNumRegs; i++) {
       DwVfpRegister reg = DwVfpRegister::from_code(i);
       __ lfd(reg, MemOperand(sp, i * kDoubleSize));
     }
-    __ addi(sp, sp, Operand(kDoubleSize * DwVfpRegister::kNumRegisters));
+    __ addi(sp, sp, Operand(kDoubleSize * kNumRegs));
   }
   __ MultiPop(kJSCallerSaved | r0.bit());
   __ mtlr(r0);

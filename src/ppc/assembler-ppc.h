@@ -227,6 +227,7 @@ const Register fp = { kRegister_fp_Code };
 // Double word FP register.
 struct DwVfpRegister {
   static const int kNumRegisters = 32;
+  static const int kNumVolatileRegisters = 14;     // d0-d13
   static const int kNumAllocatableRegisters = 12;  // d1-d12
 
   inline static int ToAllocationIndex(DwVfpRegister reg);
