@@ -745,8 +745,7 @@ class Assembler : public AssemblerBase {
         bc(b_offset, BF, encode_crbit(cr, CR_LT), lk);
         break;
       default:
-        fake_asm(fBranch);
-        // UNIMPLEMENTED();
+        UNIMPLEMENTED();
     }
   }
 

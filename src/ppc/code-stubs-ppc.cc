@@ -3344,51 +3344,50 @@ void MathPowStub::Generate(MacroAssembler* masm) {
     __ beq(&int_exponent);
 
     if (exponent_type_ == ON_STACK) {
-#ifdef PENGUIN_CLEANUP
       // Detect square root case.  Crankshaft detects constant +/-0.5 at
       // compile time and uses DoMathPowHalf instead.  We then skip this check
       // for non-constant cases of +/-0.5 as these hardly occur.
-      Label not_plus_half;
+      Label not_plus_half, not_minus_inf1, not_minus_inf2;
 
       // Test for 0.5.
-      __ vmov(double_scratch, 0.5, scratch);
-      __ VFPCompareAndSetFlags(double_exponent, double_scratch);
+      __ LoadDoubleLiteral(double_scratch, 0.5, scratch);
+      __ fcmpu(double_exponent, double_scratch);
       __ bne(&not_plus_half);
 
       // Calculates square root of base.  Check for the special case of
       // Math.pow(-Infinity, 0.5) == Infinity (ECMA spec, 15.8.2.13).
-      __ vmov(double_scratch, -V8_INFINITY, scratch);
-      __ VFPCompareAndSetFlags(double_base, double_scratch);
-      __ vneg(double_result, double_scratch, eq);
-      __ beq(&done);
+      __ LoadDoubleLiteral(double_scratch, -V8_INFINITY, scratch);
+      __ fcmpu(double_base, double_scratch);
+      __ bne(&not_minus_inf1);
+      __ fneg(double_result, double_scratch);
+      __ b(&done);
+      __ bind(&not_minus_inf1);
 
       // Add +0 to convert -0 to +0.
-      __ vadd(double_scratch, double_base, kDoubleRegZero);
+      __ fadd(double_scratch, double_base, kDoubleRegZero);
       __ fsqrt(double_result, double_scratch);
       __ b(&done);
 
       __ bind(&not_plus_half);
-      __ vmov(double_scratch, -0.5, scratch);
-      __ VFPCompareAndSetFlags(double_exponent, double_scratch);
+      __ LoadDoubleLiteral(double_scratch, -0.5, scratch);
+      __ fcmpu(double_exponent, double_scratch);
       __ bne(&call_runtime);
 
       // Calculates square root of base.  Check for the special case of
       // Math.pow(-Infinity, -0.5) == 0 (ECMA spec, 15.8.2.13).
-      __ vmov(double_scratch, -V8_INFINITY, scratch);
-      __ VFPCompareAndSetFlags(double_base, double_scratch);
-      __ vmov(double_result, kDoubleRegZero, eq);
-      __ beq(&done);
+      __ LoadDoubleLiteral(double_scratch, -V8_INFINITY, scratch);
+      __ fcmpu(double_base, double_scratch);
+      __ bne(&not_minus_inf2);
+      __ fmr(double_result, kDoubleRegZero);
+      __ b(&done);
+      __ bind(&not_minus_inf2);
 
       // Add +0 to convert -0 to +0.
-      __ vadd(double_scratch, double_base, kDoubleRegZero);
-      __ vmov(double_result, 1.0, scratch);
+      __ fadd(double_scratch, double_base, kDoubleRegZero);
+      __ LoadDoubleLiteral(double_result, 1.0, scratch);
       __ fsqrt(double_scratch, double_scratch);
-      __ vdiv(double_result, double_result, double_scratch);
+      __ fdiv(double_result, double_result, double_scratch);
       __ b(&done);
-#else
-      PPCPORT_UNIMPLEMENTED();
-      __ fake_asm(fMASM3);
-#endif
     }
 
     __ mflr(r0);

@@ -3946,15 +3946,24 @@ void MacroAssembler::LoadDoubleLiteral(DwVfpRegister result,
 
   // avoid gcc strict aliasing error using union cast
   union {
-     double dval;
-     int ival[2];
+    double dval;
+#if V8_TARGET_ARCH_PPC64
+    intptr_t ival;
+#else
+    intptr_t ival[2];
+#endif
   } litVal;
 
   litVal.dval = value;
+#if V8_TARGET_ARCH_PPC64
+  mov(scratch, Operand(litVal.ival));
+  std(scratch, MemOperand(sp));
+#else
   LoadIntLiteral(scratch, litVal.ival[0]);
   stw(scratch, MemOperand(sp, 0));
   LoadIntLiteral(scratch, litVal.ival[1]);
   stw(scratch, MemOperand(sp, 4));
+#endif
   lfd(result, MemOperand(sp, 0));
 
   addi(sp, sp, Operand(8));  // restore the stack ptr

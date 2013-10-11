@@ -3404,9 +3404,7 @@ void LCodeGen::DoMathRound(LUnaryMathOperation* instr) {
   Register result = ToRegister(instr->result());
   DwVfpRegister double_scratch1 = ToDoubleRegister(instr->temp());
   Register scratch = scratch0();
-  DoubleRepresentation pointFive(0.5);
   Label done, check_sign_on_zero, skip1, skip2;
-
 
   // Extract exponent bits.
   __ subi(sp, sp, Operand(8));
@@ -3435,20 +3433,7 @@ void LCodeGen::DoMathRound(LUnaryMathOperation* instr) {
   __ cmpi(scratch, Operand(HeapNumber::kExponentBias + 32));
   DeoptimizeIf(ge, instr->environment());
 
-  __ subi(sp, sp, Operand(8));
-#if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
-  __ mov(scratch, Operand(pointFive.bits >> 32));
-  __ stw(scratch, MemOperand(sp, 4));
-  __ mov(scratch, Operand(pointFive.bits & 0xffffffff));
-  __ stw(scratch, MemOperand(sp, 0));
-#else
-  __ mov(scratch, Operand(pointFive.bits >> 32));
-  __ stw(scratch, MemOperand(sp, 0));
-  __ mov(scratch, Operand(pointFive.bits & 0xffffffff));
-  __ stw(scratch, MemOperand(sp, 4));
-#endif
-  __ lfd(double_scratch0(), MemOperand(sp, 0));
-
+  __ LoadDoubleLiteral(double_scratch0(), 0.5, scratch);
   __ fadd(double_scratch0(), input, double_scratch0());
 
   // Save the original sign for later comparison.
@@ -3457,6 +3442,7 @@ void LCodeGen::DoMathRound(LUnaryMathOperation* instr) {
 
   // Check sign of the result: if the sign changed, the input
   // value was in ]0.5, 0[ and the result should be -0.
+  __ subi(sp, sp, Operand(8));
   __ stfd(double_scratch0(), MemOperand(sp, 0));
 #if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
   __ lwz(result, MemOperand(sp, 4));
@@ -3513,28 +3499,13 @@ void LCodeGen::DoMathPowHalf(LUnaryMathOperation* instr) {
   DoubleRegister input = ToDoubleRegister(instr->value());
   DoubleRegister result = ToDoubleRegister(instr->result());
   DoubleRegister temp = ToDoubleRegister(instr->temp());
-  DoubleRepresentation minusInf(-V8_INFINITY);
 
   // Note that according to ECMA-262 15.8.2.13:
   // Math.pow(-Infinity, 0.5) == Infinity
   // Math.sqrt(-Infinity) == NaN
   Label skip, done;
 
-  __ subi(sp, sp, Operand(8));
-#if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
-  __ mov(scratch0(), Operand(minusInf.bits >> 32));
-  __ stw(scratch0(), MemOperand(sp, 4));
-  __ mov(scratch0(), Operand(minusInf.bits & 0xffffffff));
-  __ stw(scratch0(), MemOperand(sp, 0));
-#else
-  __ mov(scratch0(), Operand(minusInf.bits >> 32));
-  __ stw(scratch0(), MemOperand(sp, 0));
-  __ mov(scratch0(), Operand(minusInf.bits & 0xffffffff));
-  __ stw(scratch0(), MemOperand(sp, 4));
-#endif
-  __ lfd(temp, MemOperand(sp, 0));
-  __ addi(sp, sp, Operand(8));
-
+  __ LoadDoubleLiteral(temp, -V8_INFINITY, scratch0());
   __ fcmpu(input, temp);
   __ bne(&skip);
   __ fneg(result, temp);

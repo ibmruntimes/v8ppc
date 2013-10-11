@@ -3179,14 +3179,8 @@ void FullCodeGenerator::EmitMathPow(CallRuntime* expr) {
   ASSERT(args->length() == 2);
   VisitForStackValue(args->at(0));
   VisitForStackValue(args->at(1));
-#if 0
-  if (CpuFeatures::IsSupported(VFP2)) {
-    MathPowStub stub(MathPowStub::ON_STACK);
-    __ CallStub(&stub);
-  } else {
-#endif
-    __ CallRuntime(Runtime::kMath_pow, 2);
-  // }
+  MathPowStub stub(MathPowStub::ON_STACK);
+  __ CallStub(&stub);
   context()->Plug(r3);
 }
 
