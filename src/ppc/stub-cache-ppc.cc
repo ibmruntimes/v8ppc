@@ -3698,6 +3698,12 @@ void KeyedLoadStubCompiler::GenerateLoadExternalArray(
       __ lhzx(value, MemOperand(r6, value));
       break;
     case EXTERNAL_INT_ELEMENTS:
+      __ SmiToIntArrayOffset(value, key);
+      __ lwzx(value, MemOperand(r6, value));
+#if V8_TARGET_ARCH_PPC64
+      __ extsw(value, value);
+#endif
+      break;
     case EXTERNAL_UNSIGNED_INT_ELEMENTS:
       __ SmiToIntArrayOffset(value, key);
       __ lwzx(value, MemOperand(r6, value));
@@ -3733,19 +3739,18 @@ void KeyedLoadStubCompiler::GenerateLoadExternalArray(
     // For the Int and UnsignedInt array types, we need to see whether
     // the value can be represented in a Smi. If not, we need to convert
     // it to a HeapNumber.
-    Label box_int, smi_ok;
-    __ TestBitRange(value,
-                    kBitsPerPointer - 1,
-                    kBitsPerPointer - 1 - (kSmiTagSize + kSmiShiftSize),
-                    r3);
-    __ beq(&smi_ok, cr0);     // If all high bits are clear smi is ok
-    __ Cmpi(r3, Operand((1L << (kSmiTagSize + kSmiShiftSize + 1)) - 1), r0);
-    __ bne(&box_int);         // If all high bits are not set, we box it
-    __ bind(&smi_ok);
+#if !V8_TARGET_ARCH_PPC64
+    Label box_int;
+    // High bits must be identical to fit in to an Smi
+    __ addis(r0, value, Operand(0x4000));
+    __ cmpi(r0, Operand::Zero());
+    __ blt(&box_int);
+#endif
     // Tag integer as smi and return it.
     __ SmiTag(r3, value);
     __ Ret();
 
+#if !V8_TARGET_ARCH_PPC64
     __ bind(&box_int);
     // Allocate a HeapNumber for the result and perform int-to-double
     // conversion.  Don't touch r3 or r4 as they are needed if allocation
@@ -3759,7 +3764,7 @@ void KeyedLoadStubCompiler::GenerateLoadExternalArray(
       masm, value, d0);
     __ stfd(d0, FieldMemOperand(r3, HeapNumber::kValueOffset));
     __ Ret();
-
+#endif
   } else if (elements_kind == EXTERNAL_UNSIGNED_INT_ELEMENTS) {
     // The test is different for unsigned int values. Since we need
     // the value to be in the range of a positive smi, we can't
