@@ -1303,7 +1303,6 @@ class MacroAssembler: public Assembler {
     // The test is different for unsigned int values. Since we need
     // the value to be in the range of a positive smi, we can't
     // handle any of the high bits being set in the value.
-    Label box_int;
     TestBitRange(value,
                  kBitsPerPointer - 1,
                  kBitsPerPointer - 1 - kSmiShift,
