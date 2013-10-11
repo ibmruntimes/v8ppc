@@ -1256,41 +1256,32 @@ void NumberToStringStub::GenerateLookupNumberStringCache(MacroAssembler* masm,
   Label load_result_from_cache;
   if (!object_is_smi) {
     __ JumpIfSmi(object, &is_smi);
-#if 0
-    if (CpuFeatures::IsSupported(VFP2)) {
-      CpuFeatures::Scope scope(VFP2);
-      __ CheckMap(object,
-                  scratch1,
-                  Heap::kHeapNumberMapRootIndex,
-                  not_found,
-                  DONT_DO_SMI_CHECK);
 
-      STATIC_ASSERT(8 == kDoubleSize);
-      __ addi(scratch1,
-              object,
-              Operand(HeapNumber::kValueOffset - kHeapObjectTag));
-      __ ldm(ia, scratch1, scratch1.bit() | scratch2.bit());
-      __ eor(scratch1, scratch1, Operand(scratch2));
-      __ and_(scratch1, scratch1, mask);
+    __ CheckMap(object,
+                scratch1,
+                Heap::kHeapNumberMapRootIndex,
+                not_found,
+                DONT_DO_SMI_CHECK);
 
-      // Calculate address of entry in string cache: each entry consists
-      // of two pointer sized fields.
-      __ ShiftLeftImm(scratch1, scratch1, Operand(kPointerSizeLog2 + 1));
-      __ add(scratch1, number_string_cache, scratch1);
+    STATIC_ASSERT(8 == kDoubleSize);
+    __ lwz(scratch1, FieldMemOperand(object, HeapNumber::kExponentOffset));
+    __ lwz(scratch2, FieldMemOperand(object, HeapNumber::kMantissaOffset));
+    __ xor_(scratch1, scratch1, scratch2);
+    __ and_(scratch1, scratch1, mask);
 
-      Register probe = mask;
-      __ LoadP(probe,
-             FieldMemOperand(scratch1, FixedArray::kHeaderSize));
-      __ JumpIfSmi(probe, not_found);
-      __ lfd(d0, FieldMemOperand(object, HeapNumber::kValueOffset));
-      __ lfd(d1, FieldMemOperand(probe, HeapNumber::kValueOffset));
-      __ VFPCompareAndSetFlags(d0, d1);
-      __ bne(not_found);  // The cache did not contain this value.
-      __ b(&load_result_from_cache);
-    } else {
-#endif
-      __ b(not_found);
-//  }
+    // Calculate address of entry in string cache: each entry consists
+    // of two pointer sized fields.
+    __ ShiftLeftImm(scratch1, scratch1, Operand(kPointerSizeLog2 + 1));
+    __ add(scratch1, number_string_cache, scratch1);
+
+    Register probe = mask;
+    __ LoadP(probe, FieldMemOperand(scratch1, FixedArray::kHeaderSize));
+    __ JumpIfSmi(probe, not_found);
+    __ lfd(d0, FieldMemOperand(object, HeapNumber::kValueOffset));
+    __ lfd(d1, FieldMemOperand(probe, HeapNumber::kValueOffset));
+    __ fcmpu(d0, d1);
+    __ bne(not_found);  // The cache did not contain this value.
+    __ b(&load_result_from_cache);
   }
 
   __ bind(&is_smi);
