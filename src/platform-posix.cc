@@ -53,6 +53,10 @@
 #include <android/log.h>
 #endif
 
+#if defined(_AIX)
+#include <fenv.h>
+#endif
+
 #include "v8.h"
 
 #include "codegen.h"
@@ -131,7 +135,17 @@ void* OS::GetRandomMmapAddr() {
 // Math functions
 
 double modulo(double x, double y) {
+#if defined(_AIX)
+  // AIX raises an underflow exception for (Number.MIN_VALUE % Number.MAX_VALUE)
+  double result;
+  int exception;
+  feclearexcept(FE_ALL_EXCEPT);
+  result = fmod(x, y);
+  exception = fetestexcept(FE_UNDERFLOW);
+  return (exception ? x : result);
+#else
   return fmod(x, y);
+#endif
 }
 
 
