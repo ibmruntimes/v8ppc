@@ -459,14 +459,16 @@ void Thread::set_name(const char* name) {
 
 
 void Thread::Start() {
-  pthread_attr_t* attr_ptr = NULL;
   pthread_attr_t attr;
-  if (stack_size_ > 0) {
-    pthread_attr_init(&attr);
-    pthread_attr_setstacksize(&attr, static_cast<size_t>(stack_size_));
-    attr_ptr = &attr;
+  size_t stack_size = stack_size_;
+
+  if (stack_size == 0) {
+    // Default is 96KB -- bump up to 2MB
+    stack_size = 2 * MB;
   }
-  pthread_create(&data_->thread_, attr_ptr, ThreadEntry, this);
+  pthread_attr_init(&attr);
+  pthread_attr_setstacksize(&attr, static_cast<size_t>(stack_size));
+  pthread_create(&data_->thread_, &attr, ThreadEntry, this);
   ASSERT(data_->thread_ != kNoThread);
 }
 
