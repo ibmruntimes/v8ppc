@@ -1230,6 +1230,21 @@ double power_double_double(double x, double y) {
     int y_int = static_cast<int>(y);
     if (y == y_int) return ldexp(1.0, y_int);
   }
+#elif defined(_AIX)
+  // AIX has a custom implementation for pow.  This handles certain
+  // special cases that are different.
+  if ((x == 0.0 || isinf(x)) && y != 0.0 && isfinite(y)) {
+    double f;
+    double result = ((x == 0.0) ^ (y > 0)) ? V8_INFINITY : 0;
+    /* retain sign if odd integer exponent */
+    return ((modf(y, &f) == 0.0) && (static_cast<int64_t>(y) & 1)) ?
+      copysign(result, x) : result;
+  }
+
+  if (x == 2.0) {
+    int y_int = static_cast<int>(y);
+    if (y == y_int) return ldexp(1.0, y_int);
+  }
 #endif
 
   // The checks for special cases can be dropped in ia32 because it has already
