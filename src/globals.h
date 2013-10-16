@@ -59,12 +59,6 @@
 #ifdef _AIX
 #undef V8_INFINITY
 #define V8_INFINITY (__builtin_inff())
-
-// AIX is missing /usr/include/endian.h
-#define __LITTLE_ENDIAN 1234
-#define __BIG_ENDIAN    4321
-#define __BYTE_ORDER    __BIG_ENDIAN
-
 #endif
 
 

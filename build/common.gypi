@@ -351,6 +351,13 @@
       ['OS=="netbsd"', {
         'cflags': [ '-I/usr/pkg/include' ],
       }],
+      ['OS=="aix"', {
+        # AIX is missing /usr/include/endian.h
+        'defines': [
+          '__LITTLE_ENDIAN=1234',
+          '__BIG_ENDIAN=4321',
+          '__BYTE_ORDER=__BIG_ENDIAN'],
+      }],
     ],  # conditions
     'configurations': {
       'Debug': {
