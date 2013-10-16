@@ -3530,7 +3530,7 @@ void CEntryStub::GenerateCore(MacroAssembler* masm,
   }
 
   // PPC LINUX ABI:
-#if defined(V8_HOST_ARCH_PPC)
+#if !defined(USE_SIMULATOR)
   // Call C built-in on native hardware.
 #if defined(V8_TARGET_ARCH_PPC64)
   if (result_size_ < 2) {
@@ -3581,7 +3581,7 @@ void CEntryStub::GenerateCore(MacroAssembler* masm,
 
   __ mov(isolate_reg, Operand(ExternalReference::isolate_address()));
 
-#if defined(V8_HOST_ARCH_PPC) && \
+#if !defined(USE_SIMULATOR) && \
   (defined(_AIX) || defined(V8_TARGET_ARCH_PPC64))
   // Native AIX/PPC64 Linux use a function descriptor.
   __ LoadP(ToRegister(2), MemOperand(r15, kPointerSize));  // TOC
@@ -3704,7 +3704,7 @@ void CEntryStub::Generate(MacroAssembler* masm) {
   int arg_stack_space = 1;
 
   // PPC LINUX ABI:
-#if defined(V8_HOST_ARCH_PPC)
+#if !defined(USE_SIMULATOR)
 #if defined(V8_TARGET_ARCH_PPC64)
   // Pass buffer for return value on stack if necessary
   if (result_size_ > 1) {
@@ -4854,7 +4854,7 @@ void RegExpExecStub::Generate(MacroAssembler* masm) {
   __ addi(code, code, Operand(Code::kHeaderSize - kHeapObjectTag));
 
 
-#if !defined(V8_HOST_ARCH_PPC) && \
+#if defined(USE_SIMULATOR) && \
   (defined(_AIX) || defined(V8_TARGET_ARCH_PPC64))
   // Even Simulated AIX/PPC64 Linux uses a function descriptor for the
   // RegExp routine.  Extract the instruction address here since
@@ -6755,7 +6755,7 @@ void DirectCEntryStub::GenerateCall(MacroAssembler* masm,
 
 void DirectCEntryStub::GenerateCall(MacroAssembler* masm,
                                     Register target) {
-#if defined(V8_HOST_ARCH_PPC) && \
+#if !defined(USE_SIMULATOR) && \
   (defined(_AIX) || defined(V8_TARGET_ARCH_PPC64))
   // Native AIX/PPC64 Linux use a function descriptor.
   __ LoadP(ToRegister(2), MemOperand(target, kPointerSize));  // TOC
@@ -7454,7 +7454,7 @@ void ProfileEntryHookStub::Generate(MacroAssembler* masm) {
     __ ClearRightImm(sp, sp, Operand(3));
   }
 
-#if defined(V8_HOST_ARCH_PPC)
+#if !defined(USE_SIMULATOR)
   __ mov(ip, Operand(reinterpret_cast<intptr_t>(&entry_hook_)));
   __ LoadP(ip, MemOperand(ip));
 
@@ -7478,7 +7478,7 @@ void ProfileEntryHookStub::Generate(MacroAssembler* masm) {
 #endif
   __ Call(ip);
 
-#if defined(V8_HOST_ARCH_PPC)
+#if !defined(USE_SIMULATOR)
   __ addi(sp, sp, Operand(kNumRequiredStackFrameSlots * kPointerSize));
 #endif
 

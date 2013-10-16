@@ -349,11 +349,7 @@ void PPCDebugger::Debug() {
           if (strcmp(arg1, "all") == 0) {
             for (int i = 0; i < kNumRegisters; i++) {
               value = GetRegisterValue(i);
-#if V8_TARGET_ARCH_PPC64
-              PrintF("    %3s: %016lx", Registers::Name(i), value);
-#else
-              PrintF("    %3s: %08x", Registers::Name(i), value);
-#endif
+              PrintF("    %3s: %08" V8PRIxPTR, Registers::Name(i), value);
               if ((argc == 3 && strcmp(arg2, "fp") == 0) &&
                   i < 8 &&
                   (i % 2) == 0) {
@@ -371,11 +367,7 @@ void PPCDebugger::Debug() {
           } else if (strcmp(arg1, "alld") == 0) {
             for (int i = 0; i < kNumRegisters; i++) {
               value = GetRegisterValue(i);
-#if V8_TARGET_ARCH_PPC64
-              PrintF("     %3s: %016lx"
-#else
-              PrintF("     %3s: %08x"
-#endif
+              PrintF("     %3s: %08" V8PRIxPTR
                      " %11" V8PRIdPTR, Registers::Name(i), value, value);
               if ((argc == 3 && strcmp(arg2, "fp") == 0) &&
                   i < 8 &&
@@ -409,21 +401,15 @@ void PPCDebugger::Debug() {
               int regnum = strtoul(&arg1[1], 0, 10);
               if (regnum != kNoRegister) {
                 value = GetRegisterValue(regnum);
-#if V8_TARGET_ARCH_PPC64
-                PrintF("%s: 0x%016lx %ld\n", arg1, value, value);
-#else
-                PrintF("%s: 0x%08x %d\n", arg1, value, value);
-#endif
+                PrintF("%s: 0x%08" V8PRIxPTR " %" V8PRIdPTR "\n",
+                       arg1, value, value);
               } else {
                 PrintF("%s unrecognized\n", arg1);
               }
           } else {
             if (GetValue(arg1, &value)) {
-#if V8_TARGET_ARCH_PPC64
-              PrintF("%s: 0x%016lx %ld\n", arg1, value, value);
-#else
-              PrintF("%s: 0x%08x %d\n", arg1, value, value);
-#endif
+              PrintF("%s: 0x%08" V8PRIxPTR " %" V8PRIdPTR "\n",
+                     arg1, value, value);
             } else if (GetFPDoubleValue(arg1, &dvalue)) {
               uint64_t as_words = BitCast<uint64_t>(dvalue);
               PrintF("%s: %f 0x%08x %08x\n",

@@ -686,7 +686,7 @@ void MacroAssembler::InitializeNewString(Register string,
 
 
 int MacroAssembler::ActivationFrameAlignment() {
-#if defined(V8_HOST_ARCH_PPC)
+#if !defined(USE_SIMULATOR)
   // Running on the real platform. Use the alignment as mandated by the local
   // environment.
   // Note: This will break if we ever start generating snapshots on one PPC
@@ -3259,7 +3259,7 @@ void MacroAssembler::PrepareCallCFunction(int num_reg_arguments,
     // the original value of sp and, on native, the required slots to
     // make ABI work.
     mr(scratch, sp);
-#if defined(V8_HOST_ARCH_PPC)
+#if !defined(USE_SIMULATOR)
     subi(sp, sp, Operand((stack_passed_arguments +
                           kNumRequiredStackFrameSlots) * kPointerSize));
 #else
@@ -3268,7 +3268,7 @@ void MacroAssembler::PrepareCallCFunction(int num_reg_arguments,
     ASSERT(IsPowerOf2(frame_alignment));
     li(r0, Operand(-frame_alignment));
     and_(sp, sp, r0);
-#if defined(V8_HOST_ARCH_PPC)
+#if !defined(USE_SIMULATOR)
     // On the simulator we pass args on the stack
     StoreP(scratch, MemOperand(sp));
 #else
@@ -3352,7 +3352,7 @@ void MacroAssembler::CallCFunctionHelper(Register function,
   // Just call directly. The function called cannot cause a GC, or
   // allow preemption, so the return address in the link register
   // stays correct.
-#if defined(V8_HOST_ARCH_PPC) && \
+#if !defined(USE_SIMULATOR) && \
   (defined(_AIX) || defined(V8_TARGET_ARCH_PPC64))
   // AIX uses a function descriptor. When calling C code be aware
   // of this descriptor and pick up values from it
@@ -3365,7 +3365,7 @@ void MacroAssembler::CallCFunctionHelper(Register function,
   int stack_passed_arguments = CalculateStackPassedWords(
       num_reg_arguments, num_double_arguments);
   if (ActivationFrameAlignment() > kPointerSize) {
-#if defined(V8_HOST_ARCH_PPC)
+#if !defined(USE_SIMULATOR)
     // On real hardware we follow the ABI
     LoadP(sp, MemOperand(sp));
 #else
