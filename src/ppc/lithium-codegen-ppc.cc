@@ -1137,12 +1137,12 @@ void LCodeGen::DoMulI(LMulI* instr) {
             __ ShiftLeftImm(result, left, Operand(shift));
           } else if (IsPowerOf2(constant_abs - 1)) {
             int32_t shift = WhichPowerOf2(constant_abs - 1);
-            __ ShiftLeftImm(result, left, Operand(shift));
-            __ add(result, result, left);
+            __ ShiftLeftImm(scratch, left, Operand(shift));
+            __ add(result, scratch, left);
           } else if (IsPowerOf2(constant_abs + 1)) {
             int32_t shift = WhichPowerOf2(constant_abs + 1);
-            __ ShiftLeftImm(result, left, Operand(shift));
-            __ sub(result, result, left);
+            __ ShiftLeftImm(scratch, left, Operand(shift));
+            __ sub(result, scratch, left);
           }
 
           // Correct the sign of the result is the constant is negative.
@@ -1156,7 +1156,7 @@ void LCodeGen::DoMulI(LMulI* instr) {
     }
 
   } else {
-    Register right = EmitLoadRegister(right_op, scratch);
+    Register right = EmitLoadRegister(right_op, ip);
     if (bailout_on_minus_zero) {
       __ orx(ToRegister(instr->temp()), left, right);
     }
@@ -1168,8 +1168,8 @@ void LCodeGen::DoMulI(LMulI* instr) {
       __ TestIfInt32(result, scratch, r0);
       DeoptimizeIf(ne, instr->environment());
 #else
-      __ mullw(result, left, right);
       __ mulhw(scratch, left, right);
+      __ mullw(result, left, right);
       __ TestIfInt32(scratch, result, r0);
       DeoptimizeIf(ne, instr->environment());
 #endif
