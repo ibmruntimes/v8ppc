@@ -4412,17 +4412,6 @@ void CodePatcher::Emit(Instr instr) {
 }
 
 
-void CodePatcher::Emit(Address addr) {
-#if V8_TARGET_ARCH_PPC64
-  uint64_t value = reinterpret_cast<uint64_t>(addr);
-  // Possible endian issue here
-  masm()->emit(static_cast<uint32_t>(value >> 32));
-  masm()->emit(static_cast<uint32_t>(value & 0xFFFFFFFF));
-#else
-  masm()->emit(reinterpret_cast<Instr>(addr));
-#endif
-}
-
 void CodePatcher::EmitCondition(Condition cond) {
   Instr instr = Assembler::instr_at(masm_.pc_);
   switch (cond) {

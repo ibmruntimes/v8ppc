@@ -879,7 +879,7 @@ static void Generate_JSConstructStubHelper(MacroAssembler* masm,
         // and multiply by kPointerSizeLog2
         STATIC_ASSERT(Map::kPreAllocatedPropertyFieldsByte < 4);
         byte = Map::kPreAllocatedPropertyFieldsByte;
-#if defined(V8_HOST_ARCH_PPC)  // ENDIAN
+#if __BYTE_ORDER == __BIG_ENDIAN
         byte = 3 - byte;
 #endif
         __ ExtractBitRange(r3, r3,
@@ -916,7 +916,7 @@ static void Generate_JSConstructStubHelper(MacroAssembler* masm,
       // Fetch Map::kPreAllocatedPropertyFieldsByte field from r3
       STATIC_ASSERT(Map::kPreAllocatedPropertyFieldsByte < 4);
       byte = Map::kPreAllocatedPropertyFieldsByte;
-#if defined(V8_HOST_ARCH_PPC)  // ENDIAN
+#if __BYTE_ORDER == __BIG_ENDIAN
       byte = 3 - byte;
 #endif
       __ ExtractBitRange(r9, r3,
@@ -925,7 +925,7 @@ static void Generate_JSConstructStubHelper(MacroAssembler* masm,
       __ add(r6, r6, r9);
       STATIC_ASSERT(Map::kInObjectPropertiesByte < 4);
       byte = Map::kInObjectPropertiesByte;
-#if defined(V8_HOST_ARCH_PPC)  // ENDIAN
+#if __BYTE_ORDER == __BIG_ENDIAN
       byte = 3 - byte;
 #endif
       __ ExtractBitRange(r9, r3,

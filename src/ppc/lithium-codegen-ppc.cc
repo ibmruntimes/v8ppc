@@ -5103,7 +5103,6 @@ void LCodeGen::EmitDeepCopy(Handle<JSObject> object,
           Handle<FixedDoubleArray>::cast(elements);
       for (int i = 0; i < elements_length; i++) {
         int64_t value = double_array->get_representation(i);
-        // We only support little endian mode...
         int32_t value_low = static_cast<int32_t>(value & 0xFFFFFFFF);
         int32_t value_high = static_cast<int32_t>(value >> 32);
         int total_offset =

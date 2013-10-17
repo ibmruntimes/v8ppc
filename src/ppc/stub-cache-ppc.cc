@@ -2341,12 +2341,6 @@ Handle<Code> CallStubCompiler::CompileFastApiCall(
   CheckPrototypes(Handle<JSObject>::cast(object), r4, holder, r3, r6, r7, name,
                   depth, &miss);
 
-#if defined(V8_HOST_ARCH_PPC)
-  // PPC passes C++ object by reference not value
-  // roohack - this is wrong
-  // __ addi(r4, sp, Operand((argc + kFastApiCallArguments) * kPointerSize));
-#endif
-
   GenerateFastApiDirectCall(masm(), optimization, argc);
 
   __ bind(&miss);
@@ -4091,12 +4085,12 @@ void KeyedLoadStubCompiler::GenerateLoadFastDoubleElement(
   // scratch.
   __ stw(scratch, FieldMemOperand(heap_number_reg,
                                   HeapNumber::kExponentOffset));
-#if defined(V8_HOST_ARCH_PPC)
-  __ lwz(scratch, FieldMemOperand(indexed_double_offset,
-                                  FixedArray::kHeaderSize+4));
-#else
+#if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
   __ lwz(scratch, FieldMemOperand(indexed_double_offset,
                                   FixedArray::kHeaderSize));
+#else
+  __ lwz(scratch, FieldMemOperand(indexed_double_offset,
+                                  FixedArray::kHeaderSize+4));
 #endif
   __ stw(scratch, FieldMemOperand(heap_number_reg,
                                   HeapNumber::kMantissaOffset));

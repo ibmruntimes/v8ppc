@@ -3012,7 +3012,6 @@ void TranscendentalCacheStub::Generate(MacroAssembler* masm) {
     __ SmiToDoubleFPRegister(r3, d6, scratch0);
     __ subi(sp, sp, Operand(8));
     __ stfd(d6, MemOperand(sp, 0));
-    // ENDIAN issue here
 #if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
     __ lwz(r5, MemOperand(sp));
     __ lwz(r6, MemOperand(sp, 4));
@@ -3038,7 +3037,6 @@ void TranscendentalCacheStub::Generate(MacroAssembler* masm) {
     // Input is untagged double in d2. Output goes to d2.
     __ subi(sp, sp, Operand(8));
     __ stfd(d2, MemOperand(sp, 0));
-    // ENDIAN issue here
 #if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
     __ lwz(r5, MemOperand(sp, 4));
     __ lwz(r6, MemOperand(sp));
@@ -3623,7 +3621,7 @@ void CEntryStub::GenerateCore(MacroAssembler* masm,
   // check for failure result
   Label failure_returned;
   STATIC_ASSERT(((kFailureTag + 1) & kFailureTagMask) == 0);
-#if defined(V8_HOST_ARCH_PPC) && defined(V8_TARGET_ARCH_PPC64)
+#if defined(V8_TARGET_ARCH_PPC64) && !defined(USE_SIMULATOR)
   // If return value is on the stack, pop it to registers.
   if (result_size_ > 1) {
     ASSERT_EQ(2, result_size_);
@@ -5530,7 +5528,6 @@ void StringHelper::GenerateCopyCharactersLong(MacroAssembler* masm,
     __ Check(eq, "Destination of copy not aligned.", cr0);
   }
 
-  // Assumes word reads and writes are little endian.
   // Nothing to do for zero characters.
   Label done;
   if (!ascii) {  // for non-ascii, double the length
@@ -5582,8 +5579,13 @@ void StringHelper::GenerateTwoCharacterSymbolTableProbe(MacroAssembler* masm,
   // If check failed combine both characters into single halfword.
   // This is required by the contract of the method: code at the
   // not_found branch expects this combination in c1 register
+#if __BYTE_ORDER == __BIG_ENDIAN
+  __ ShiftLeftImm(c1, c1, Operand(kBitsPerByte));
+  __ orx(c1, c1, c2);
+#else
   __ ShiftLeftImm(r0, c2, Operand(kBitsPerByte));
   __ orx(c1, c1, r0);
+#endif
   __ b(not_found);
 
   __ bind(&not_array_index);
@@ -5595,8 +5597,13 @@ void StringHelper::GenerateTwoCharacterSymbolTableProbe(MacroAssembler* masm,
 
   // Collect the two characters in a register.
   Register chars = c1;
+#if __BYTE_ORDER == __BIG_ENDIAN
+  __ ShiftLeftImm(c1, c1, Operand(kBitsPerByte));
+  __ orx(chars, c1, c2);
+#else
   __ ShiftLeftImm(r0, c2, Operand(kBitsPerByte));
-  __ orx(chars, chars, r0);
+  __ orx(chars, c1, r0);
+#endif
 
   // chars: two character string, char 1 in byte 0 and char 2 in byte 1.
   // hash:  hash of two character string.
@@ -5677,7 +5684,6 @@ void StringHelper::GenerateTwoCharacterSymbolTableProbe(MacroAssembler* masm,
     __ bne(&next_probe[i]);
 
     // Check if the two characters match.
-    // Assumes that word load is little endian.
     __ lhz(scratch, FieldMemOperand(candidate, SeqAsciiString::kHeaderSize));
     __ cmp(chars, scratch);
     __ beq(&found_in_symbol_table);
@@ -6231,17 +6237,10 @@ void StringAddStub::Generate(MacroAssembler* masm) {
   // Resulting string has length 2 and first chars of two strings
   // are combined into single halfword in r5 register.
   // So we can fill resulting string without two loops by a single
-  // halfword store instruction (which assumes that processor is
-  // in a little endian mode)
+  // halfword store instruction
   __ li(r9, Operand(2));
   __ AllocateAsciiString(r3, r9, r7, r8, r22, &call_runtime);
-#if V8_HOST_ARCH_PPC  // Really we mean BIG ENDIAN host
-  __ stb(r5, FieldMemOperand(r3, SeqAsciiString::kHeaderSize));
-  __ srwi(r5, r5, Operand(8));
-  __ stb(r5, FieldMemOperand(r3, SeqAsciiString::kHeaderSize+1));
-#else  // LITTLE ENDIAN host
   __ sth(r5, FieldMemOperand(r3, SeqAsciiString::kHeaderSize));
-#endif
   __ IncrementCounter(counters->string_add_native(), 1, r5, r6);
   __ addi(sp, sp, Operand(2 * kPointerSize));
   __ Ret();

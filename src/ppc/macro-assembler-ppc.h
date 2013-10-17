@@ -1616,9 +1616,6 @@ class CodePatcher {
   // Emit an instruction directly.
   void Emit(Instr instr);
 
-  // Emit an address directly.
-  void Emit(Address addr);
-
   // Emit the condition part of an instruction leaving the rest of the current
   // instruction unchanged.
   void EmitCondition(Condition cond);

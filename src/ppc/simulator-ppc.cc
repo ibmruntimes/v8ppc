@@ -1288,7 +1288,7 @@ void Simulator::SoftwareInterrupt(Instruction* instr) {
             if (::v8::internal::FLAG_trace_sim) {
                 PrintF("Returned %08x\n", lo_res);
             }
-#if V8_HOST_ARCH_PPC
+#if __BYTE_ORDER == __BIG_ENDIAN
             set_register(r3, hi_res);
             set_register(r4, lo_res);
 #else
@@ -1393,18 +1393,18 @@ void Simulator::SoftwareInterrupt(Instruction* instr) {
         }
         set_register(r3, result);
 #else
-#if V8_HOST_ARCH_PPC
-        int32_t hi_res = static_cast<int32_t>(result);
-        int32_t lo_res = static_cast<int32_t>(result >> 32);
-#else
         int32_t lo_res = static_cast<int32_t>(result);
         int32_t hi_res = static_cast<int32_t>(result >> 32);
-#endif
         if (::v8::internal::FLAG_trace_sim) {
           PrintF("Returned %08x\n", lo_res);
         }
+#if __BYTE_ORDER == __BIG_ENDIAN
+        set_register(r3, hi_res);
+        set_register(r4, lo_res);
+#else
         set_register(r3, lo_res);
         set_register(r4, hi_res);
+#endif
 #endif
       }
       set_pc(saved_lr);

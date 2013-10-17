@@ -356,7 +356,8 @@
         'defines': [
           '__LITTLE_ENDIAN=1234',
           '__BIG_ENDIAN=4321',
-          '__BYTE_ORDER=__BIG_ENDIAN'],
+          '__BYTE_ORDER=__BIG_ENDIAN',
+          '__FLOAT_WORD_ORDER=__BIG_ENDIAN'],
       }],
     ],  # conditions
     'configurations': {
