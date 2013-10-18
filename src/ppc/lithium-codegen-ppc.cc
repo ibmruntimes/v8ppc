@@ -79,9 +79,7 @@ bool LCodeGen::GenerateCode() {
   return GeneratePrologue() &&
       GenerateBody() &&
       GenerateDeferredCode() &&
-#if 0  // not used on PPC
       GenerateDeoptJumpTable() &&
-#endif
       GenerateSafepointTable();
 }
 
@@ -249,16 +247,22 @@ bool LCodeGen::GenerateDeferredCode() {
     }
   }
 
-  // Deferred code is the last part of the instruction sequence. Mark
-  // the generated code as done unless we bailed out.
-  if (!is_aborted()) status_ = DONE;
   return !is_aborted();
 }
 
-// Currently unused on PPC
 bool LCodeGen::GenerateDeoptJumpTable() {
-  Abort("Unimplemented: GenerateDeoptJumpTable");
-  return false;
+  __ RecordComment("[ Deoptimisation jump table");
+  for (int i = 0; i < deopt_jump_table_.length(); i++) {
+    Assembler::BlockTrampolinePoolScope block_trampoline_pool(masm_);
+    __ bind(&deopt_jump_table_[i].label);
+    __ Jump(deopt_jump_table_[i].address, RelocInfo::RUNTIME_ENTRY);
+  }
+  __ RecordComment("]");
+
+  // The deoptimization jump table is the last part of the instruction
+  // sequence. Mark the generated code as done unless we bailed out.
+  if (!is_aborted()) status_ = DONE;
+  return !is_aborted();
 }
 
 
@@ -655,7 +659,17 @@ void LCodeGen::DeoptimizeIf(Condition cond, LEnvironment* environment,
 
   if (FLAG_trap_on_deopt) __ stop("trap_on_deopt", cond, kDefaultStopCode, cr);
 
-  __ Jump(entry, RelocInfo::RUNTIME_ENTRY, cond, cr);
+  if (cond == al) {
+    __ Jump(entry, RelocInfo::RUNTIME_ENTRY);
+  } else {
+    // We often have several deopts to the same entry, reuse the last
+    // jump entry if this is the case.
+    if (deopt_jump_table_.is_empty() ||
+        (deopt_jump_table_.last().address != entry)) {
+      deopt_jump_table_.Add(JumpTableEntry(entry), zone());
+    }
+    __ b(cond, &deopt_jump_table_.last().label, cr);
+  }
 }
 
 
