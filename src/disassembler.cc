@@ -158,7 +158,11 @@ static int DecodeIt(FILE* f,
                      "%08" V8PRIxPTR "      jump table entry %4" V8PRIdPTR,
                      ptr,
                      ptr - begin);
+#if V8_TARGET_ARCH_PPC64
+        pc += 8;
+#else
         pc += 4;
+#endif
       } else {
         decode_buffer[0] = '\0';
         pc += d.InstructionDecode(decode_buffer, pc);
