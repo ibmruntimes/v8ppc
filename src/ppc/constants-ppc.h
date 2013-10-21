@@ -61,13 +61,17 @@ const int kNoRegister = -1;
 // General constants are in an anonymous enum in class Instr.
 enum Condition {
   kNoCondition = -1,
-  eq =  0 << 28,                 // Equal.
-  ne =  1 << 28,                 // Not equal.
-  ge = 10 << 28,                 // Greater or equal.
-  lt = 11 << 28,                 // Less than.
-  gt = 12 << 28,                 // Greater than.
-  le = 13 << 28,                 // Less then or equal
-  al = 14 << 28                  // Always.
+  eq         =  0,         // Equal.
+  ne         =  1,         // Not equal.
+  ge         =  2,         // Greater or equal.
+  lt         =  3,         // Less than.
+  gt         =  4,         // Greater than.
+  le         =  5,         // Less then or equal
+  unordered  =  6,         // Floating-point unordered
+  ordered    =  7,
+  overflow   =  8,         // Summary overflow
+  nooverflow =  9,
+  al         = 10          // Always.
 };
 
 

@@ -745,6 +745,18 @@ class Assembler : public AssemblerBase {
       case ge:
         bc(b_offset, BF, encode_crbit(cr, CR_LT), lk);
         break;
+      case unordered:
+        bc(b_offset, BT, encode_crbit(cr, CR_FU), lk);
+        break;
+      case ordered:
+        bc(b_offset, BF, encode_crbit(cr, CR_FU), lk);
+        break;
+      case overflow:
+        bc(b_offset, BT, encode_crbit(cr, CR_SO), lk);
+        break;
+      case nooverflow:
+        bc(b_offset, BF, encode_crbit(cr, CR_SO), lk);
+        break;
       default:
         UNIMPLEMENTED();
     }
@@ -781,23 +793,14 @@ class Assembler : public AssemblerBase {
     b(le, L, cr, lk); }
   void bgt(Label* L, CRegister cr = cr7, LKBit lk = LeaveLK) {
     b(gt, L, cr, lk); }
-
   void bunordered(Label* L, CRegister cr = cr7, LKBit lk = LeaveLK) {
-    ASSERT(cr.code() >= 0 && cr.code() <= 7);
-    bc(branch_offset(L, false), BT, encode_crbit(cr, CR_FU), lk);
-  }
+    b(unordered, L, cr, lk); }
   void bordered(Label* L, CRegister cr = cr7, LKBit lk = LeaveLK) {
-    ASSERT(cr.code() >= 0 && cr.code() <= 7);
-    bc(branch_offset(L, false), BF, encode_crbit(cr, CR_FU), lk);
-  }
-  void boverflow(Label* L, CRegister cr = cr1, LKBit lk = LeaveLK) {
-    ASSERT(cr.code() >= 0 && cr.code() <= 7);
-    bc(branch_offset(L, false), BT, encode_crbit(cr, CR_SO), lk);
-  }
-  void bnotoverflow(Label* L, CRegister cr = cr1, LKBit lk = LeaveLK) {
-    ASSERT(cr.code() >= 0 && cr.code() <= 7);
-    bc(branch_offset(L, false), BF, encode_crbit(cr, CR_SO), lk);
-  }
+    b(ordered, L, cr, lk); }
+  void boverflow(Label* L, CRegister cr = cr0, LKBit lk = LeaveLK) {
+    b(overflow, L, cr, lk); }
+  void bnooverflow(Label* L, CRegister cr = cr0, LKBit lk = LeaveLK) {
+    b(nooverflow, L, cr, lk); }
 
   // Decrement CTR; branch if CTR != 0
   void bdnz(Label* L, LKBit lk = LeaveLK) {

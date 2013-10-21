@@ -5311,10 +5311,10 @@ int CompareStub::MinorKey() {
   // Encode the three parameters in a unique 16 bit value. To avoid duplicate
   // stubs the never NaN NaN condition is only taken into account if the
   // condition is equals.
-  ASSERT((static_cast<unsigned>(cc_) >> 28) < (1 << 12));
+  ASSERT(static_cast<unsigned>(cc_) < (1 << 12));
   ASSERT((lhs_.is(r3) && rhs_.is(r4)) ||
          (lhs_.is(r4) && rhs_.is(r3)));
-  return ConditionField::encode(static_cast<unsigned>(cc_) >> 28)
+  return ConditionField::encode(static_cast<unsigned>(cc_))
          | RegisterField::encode(lhs_.is(r3))
          | StrictField::encode(strict_)
          | NeverNanNanField::encode(cc_ == eq ? never_nan_nan_ : false)

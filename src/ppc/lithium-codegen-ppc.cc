@@ -1000,7 +1000,6 @@ void LCodeGen::DoMathFloorOfDiv(LMathFloorOfDiv* instr) {
       return;
 
     case -1: {
-      Label skip;
       OEBit oe;
       if (instr->hydrogen()->CheckFlag(HValue::kCanOverflow)) {
         __ li(r0, Operand::Zero());  // clear xer
@@ -1014,9 +1013,7 @@ void LCodeGen::DoMathFloorOfDiv(LMathFloorOfDiv* instr) {
         DeoptimizeIf(eq, instr->environment(), cr0);
       }
       if (instr->hydrogen()->CheckFlag(HValue::kCanOverflow)) {
-        __ bnotoverflow(&skip, cr0);
-        DeoptimizeIf(al, instr->environment());
-        __ bind(&skip);
+        DeoptimizeIf(overflow, instr->environment(), cr0);
       }
       return;
     }
@@ -3338,8 +3335,7 @@ void LCodeGen::EmitIntegerMathAbs(LUnaryMathOperation* instr) {
   __ mtxer(r0);
   __ neg(result, result, SetOE, SetRC);
   // Deoptimize on overflow.
-  __ bnotoverflow(&done, cr0);
-  DeoptimizeIf(al, instr->environment());
+  DeoptimizeIf(overflow, instr->environment(), cr0);
   __ bind(&done);
 }
 
