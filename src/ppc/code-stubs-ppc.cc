@@ -3185,8 +3185,8 @@ void TranscendentalCacheStub::Generate(MacroAssembler* masm) {
       FrameScope scope(masm, StackFrame::INTERNAL);
 
       // Allocate an aligned object larger than a HeapNumber.
-      ASSERT(4 * kPointerSize >= HeapNumber::kSize);
-      __ mov(scratch0, Operand(4 * kPointerSize));
+      ASSERT(2 * kDoubleSize >= HeapNumber::kSize);
+      __ LoadSmiLiteral(scratch0, Smi::FromInt(2 * kDoubleSize));
       __ push(scratch0);
       __ CallRuntimeSaveDoubles(Runtime::kAllocateInNewSpace);
     }
