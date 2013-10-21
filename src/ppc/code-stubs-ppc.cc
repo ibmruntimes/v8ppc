@@ -3572,7 +3572,11 @@ void CEntryStub::GenerateCore(MacroAssembler* masm,
 #else  // Simulated
   // Call C built-in using simulator.
   // r3 = argc, r4 = argv
+#if defined(V8_TARGET_ARCH_PPC64) && __BYTE_ORDER == __BIG_ENDIAN
+  __ ShiftLeftImm(r3, r14, Operand(32));
+#else
   __ mr(r3, r14);
+#endif
   __ mr(r4, r16);
   isolate_reg = r5;
 #endif

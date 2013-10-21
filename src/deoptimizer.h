@@ -697,7 +697,11 @@ class SlotRef BASE_EMBEDDED {
         return Handle<Object>(Memory::Object_at(addr_));
 
       case INT32: {
+#if defined(V8_TARGET_ARCH_PPC64) && __BYTE_ORDER == __BIG_ENDIAN
+        int value = Memory::int32_at(addr_ + kIntSize);
+#else
         int value = Memory::int32_at(addr_);
+#endif
         if (Smi::IsValid(value)) {
           return Handle<Object>(Smi::FromInt(value));
         } else {
@@ -706,7 +710,11 @@ class SlotRef BASE_EMBEDDED {
       }
 
       case UINT32: {
+#if defined(V8_TARGET_ARCH_PPC64) && __BYTE_ORDER == __BIG_ENDIAN
+        uint32_t value = Memory::uint32_at(addr_ + kIntSize);
+#else
         uint32_t value = Memory::uint32_at(addr_);
+#endif
         if (value <= static_cast<uint32_t>(Smi::kMaxValue)) {
           return Handle<Object>(Smi::FromInt(static_cast<int>(value)));
         } else {
