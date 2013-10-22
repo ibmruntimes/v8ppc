@@ -3522,9 +3522,9 @@ void CEntryStub::GenerateCore(MacroAssembler* masm,
       ExternalReference::heap_always_allocate_scope_depth(isolate);
   if (always_allocate) {
     __ mov(r3, Operand(scope_depth));
-    __ LoadP(r4, MemOperand(r3));
+    __ lwz(r4, MemOperand(r3));
     __ addi(r4, r4, Operand(1));
-    __ StoreP(r4, MemOperand(r3));
+    __ stw(r4, MemOperand(r3));
   }
 
   // PPC LINUX ABI:
@@ -3617,9 +3617,9 @@ void CEntryStub::GenerateCore(MacroAssembler* masm,
     // It's okay to clobber r5 and r6 here. Don't mess with r3 and r4
     // though (contain the result).
     __ mov(r5, Operand(scope_depth));
-    __ LoadP(r6, MemOperand(r5));
+    __ lwz(r6, MemOperand(r5));
     __ subi(r6, r6, Operand(1));
-    __ StoreP(r6, MemOperand(r5));
+    __ stw(r6, MemOperand(r5));
   }
 
   // check for failure result
