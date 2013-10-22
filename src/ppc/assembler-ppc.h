@@ -44,9 +44,11 @@
 #ifndef V8_PPC_ASSEMBLER_PPC_H_
 #define V8_PPC_ASSEMBLER_PPC_H_
 #include <stdio.h>
+#if !defined(_AIX)
 #include <elf.h>
 #include <fcntl.h>
 #include <unistd.h>
+#endif
 #include "assembler.h"
 #include "constants-ppc.h"
 #include "serialize.h"
