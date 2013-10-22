@@ -80,9 +80,11 @@ static const char *read_cpu_type() {
       // Read a chunk of the AUXV
       bytes_read = read(fd, buffer, sizeof(buffer));
       // Locate and read the platform field of AUXV if it is in the chunk
-      for (auxv_element = buffer; auxv_element < buffer+bytes_read && auxv_element->a_type != AT_NULL; auxv_element++) {
+      for (auxv_element = buffer;
+           auxv_element < buffer+bytes_read && auxv_element->a_type != AT_NULL;
+           auxv_element++) {
         if (auxv_element->a_type == AT_PLATFORM) {
-          result = (char *)auxv_element->a_un.a_val;
+          result = reinterpret_cast<char*>(auxv_element->a_un.a_val);
           goto done_reading;
         }
       }

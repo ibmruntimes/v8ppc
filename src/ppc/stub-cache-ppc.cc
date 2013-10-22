@@ -2140,7 +2140,7 @@ Handle<Code> CallStubCompiler::CompileMathFloorCall(
 
   // Round to integer minus
   if (CpuFeatures::IsSupported(FPU)) {
-    // The frim instruction is only supported on POWER5 
+    // The frim instruction is only supported on POWER5
     // and higher
     __ frim(d1, d1);
 #if V8_TARGET_ARCH_PPC64
@@ -2150,8 +2150,8 @@ Handle<Code> CallStubCompiler::CompileMathFloorCall(
 #endif
   } else {
     // This sequence is more portable (avoids frim)
-    // This should be evaluated to determine if frim provides any 
-    // perf benefit or if we can simply use the compatible sequence 
+    // This should be evaluated to determine if frim provides any
+    // perf benefit or if we can simply use the compatible sequence
     // always
     __ SetRoundingMode(kRoundToMinusInf);
 #if V8_TARGET_ARCH_PPC64
