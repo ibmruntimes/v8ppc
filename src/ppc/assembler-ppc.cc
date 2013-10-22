@@ -60,6 +60,48 @@ static unsigned CpuFeaturesImpliedByCompiler() {
   return answer;
 }
 
+#if !defined(_AIX)
+// This function uses types in elf.h
+static const char *read_cpu_type() {
+  char *result = NULL;
+  // Open the AUXV (auxilliary vector) psuedo-file
+  int fd = open("/proc/self/auxv", O_RDONLY);
+
+  if (fd != -1) {
+#if V8_TARGET_ARCH_PPC64
+    Elf64_auxv_t buffer[16];
+    Elf64_auxv_t *auxv_element;
+#else
+    Elf32_auxv_t buffer[16];
+    Elf32_auxv_t *auxv_element;
+#endif
+    int bytes_read = 0;
+    while (bytes_read >= 0) {
+      // Read a chunk of the AUXV
+      bytes_read = read(fd, buffer, sizeof(buffer));
+      // Locate and read the platform field of AUXV if it is in the chunk
+      for (auxv_element = buffer; auxv_element < buffer+bytes_read && auxv_element->a_type != AT_NULL; auxv_element++) {
+        if (auxv_element->a_type == AT_PLATFORM) {
+          result = (char *)auxv_element->a_un.a_val;
+          goto done_reading;
+        }
+      }
+    }
+    done_reading:
+    close(fd);
+  }
+
+  return result;
+}
+
+static bool is_processor(const char* p) {
+  static const char *auxv_cpu_type = read_cpu_type();
+  if (auxv_cpu_type == NULL) { PrintF("cpu_type = null\n"); return false; }
+  // PrintF("cpu_type = %s\n", auxv_cpu_type);
+  return (strcmp(auxv_cpu_type, p) == 0);
+}
+#endif
+
 void CpuFeatures::Probe() {
   unsigned standard_features = static_cast<unsigned>(
       OS::CpuFeaturesImpliedByPlatform()) | CpuFeaturesImpliedByCompiler();
@@ -77,6 +119,20 @@ void CpuFeatures::Probe() {
     // No probing for features if we might serialize (generate snapshot).
     return;
   }
+
+  // Detect whether frim instruction is supported (POWER5+)
+  // For now we will just check for processors we know do not
+  // support it
+#if !defined(_AIX)
+  if (!is_processor("ppc970") /* G5 */ && !is_processor("ppc7450") /* G4 */) {
+    // Assume support
+    supported_ |= (1u << FPU);
+  }
+#else
+  // Fallback: assume frim is supported -- will implement processor
+  // detection for other PPC platforms in is_processor() if required
+  supported_ |= (1u << FPU);
+#endif
 }
 
 Register ToRegister(int num) {

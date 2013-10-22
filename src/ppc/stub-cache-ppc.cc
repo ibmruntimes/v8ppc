@@ -2139,13 +2139,29 @@ Handle<Code> CallStubCompiler::CompileMathFloorCall(
   __ lfd(d1, FieldMemOperand(r3, HeapNumber::kValueOffset));
 
   // Round to integer minus
-  __ frim(d1, d1);
-  // Convert the argument to an integer.
+  if (CpuFeatures::IsSupported(FPU)) {
+    // The frim instruction is only supported on POWER5 
+    // and higher
+    __ frim(d1, d1);
 #if V8_TARGET_ARCH_PPC64
-  __ fctidz(d1, d1);
+    __ fctidz(d1, d1);
 #else
-  __ fctiwz(d1, d1);
+    __ fctiwz(d1, d1);
 #endif
+  } else {
+    // This sequence is more portable (avoids frim)
+    // This should be evaluated to determine if frim provides any 
+    // perf benefit or if we can simply use the compatible sequence 
+    // always
+    __ SetRoundingMode(kRoundToMinusInf);
+#if V8_TARGET_ARCH_PPC64
+    __ fctid(d1, d1);
+#else
+    __ fctiw(d1, d1);
+#endif
+    __ ResetRoundingMode();
+  }
+  // Convert the argument to an integer.
   __ stfdu(d1, MemOperand(sp, -8));
 #if V8_TARGET_ARCH_PPC64
   __ ld(r3, MemOperand(sp, 0));
