@@ -421,7 +421,8 @@ class MacroAssembler: public Assembler {
 
   // Flush the I-cache from asm code. You should use CPU::FlushICache from C.
   // Does not handle errors.
-  void FlushICache(Register address, unsigned instructions);
+  void FlushICache(Register address, size_t size,
+                   Register scratch);
 
   // Enter exit frame.
   // stack_space - extra stack space, used for alignment before call to C.

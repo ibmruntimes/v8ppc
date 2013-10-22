@@ -3379,12 +3379,29 @@ void MacroAssembler::CallCFunctionHelper(Register function,
 }
 
 
-void MacroAssembler::FlushICache(Register address, unsigned instructions) {
-    // Todo detect and iterate through cacheline crossings
-    dcbf(r0, address);
-    sync();
-    icbi(r0, address);
-    isync();
+void MacroAssembler::FlushICache(Register address, size_t size,
+                                 Register scratch) {
+  Label done;
+
+  dcbf(r0, address);
+  sync();
+  icbi(r0, address);
+  isync();
+
+  // This code handles ranges which cross a single cacheline boundary.
+  // scratch is last cacheline which intersects range.
+  ASSERT(size > 0 && size <= kCacheLineSize);
+  addi(scratch, address, Operand(size - 1));
+  ClearRightImm(scratch, scratch, Operand(kCacheLineSizeLog2));
+  cmpl(scratch, address);
+  ble(&done);
+
+  dcbf(r0, scratch);
+  sync();
+  icbi(r0, scratch);
+  isync();
+
+  bind(&done);
 }
 
 // This code assumes a FIXED_SEQUENCE for lis/ori
@@ -3462,9 +3479,9 @@ void MacroAssembler::PatchRelocatedValue(Register lis_location,
 
   // Update the I-cache so the new lis and addic can be executed.
 #if V8_TARGET_ARCH_PPC64
-  FlushICache(lis_location, 5);
+  FlushICache(lis_location, 5 * kInstrSize, scratch);
 #else
-  FlushICache(lis_location, 2);
+  FlushICache(lis_location, 2 * kInstrSize, scratch);
 #endif
 }
 

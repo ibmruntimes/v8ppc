@@ -43,6 +43,12 @@ const int kNumFPRegisters = kNumFPDoubleRegisters;
 
 const int kNoRegister = -1;
 
+// For FlushICache
+// This constant will be different for other versions of PowerPC
+// It must be a power of 2
+const unsigned int kCacheLineSizeLog2 = 7;
+const unsigned int kCacheLineSize = (1 << kCacheLineSizeLog2);
+
 // sign-extend the least significant 16-bit of value <imm>
 #define SIGN_EXT_IMM16(imm) ((static_cast<int>(imm) << 16) >> 16)
 
