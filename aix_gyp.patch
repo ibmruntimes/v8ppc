@@ -1,0 +1,62 @@
+--- build/gyp/pylib/gyp/common.py
++++ build/gyp/pylib/gyp/common.py
+@@ -378,6 +378,8 @@
+      return 'solaris'
+    if sys.platform.startswith('freebsd'):
+      return 'freebsd'
++   if sys.platform.startswith('aix'):
++     return 'aix'
+  
+    return 'linux'
+  
+--- build/gyp/pylib/gyp/generator/make.py
++++ build/gyp/pylib/gyp/generator/make.py
+@@ -200,6 +200,21 @@
+  """
+  
+  
++ LINK_COMMANDS_AIX = """\
++ quiet_cmd_alink = AR($(TOOLSET)) $@
++ cmd_alink = rm -f $@ && $(AR.$(TOOLSET)) $(ARFLAGS.$(TOOLSET)) $@ $(filter %.o,$^)
++ 
++ quiet_cmd_link = LINK($(TOOLSET)) $@
++ cmd_link = $(LINK.$(TOOLSET)) $(GYP_LDFLAGS) $(LDFLAGS.$(TOOLSET)) -o $@ $(LD_INPUTS) $(LIBS)
++ 
++ quiet_cmd_solink = SOLINK($(TOOLSET)) $@
++ cmd_solink = $(LINK.$(TOOLSET)) -shared $(GYP_LDFLAGS) $(LDFLAGS.$(TOOLSET)) -Wl,-soname=$(@F) -o $@ -Wl,--whole-archive $(LD_INPUTS) -Wl,--no-whole-archive $(LIBS)
++ 
++ quiet_cmd_solink_module = SOLINK_MODULE($(TOOLSET)) $@
++ cmd_solink_module = $(LINK.$(TOOLSET)) -shared $(GYP_LDFLAGS) $(LDFLAGS.$(TOOLSET)) -Wl,-soname=$(@F) -o $@ $(filter-out FORCE_DO_CMD, $^) $(LIBS)
++ """
++ 
++ 
+  # Header of toplevel Makefile.
+  # This should go into the build tree, but it's easier to keep it here for now.
+  SHARED_HEADER = ("""\
+
+--- build/gyp/pylib/gyp/generator/make.py
++++ build/gyp/pylib/gyp/generator/make.py
+@@ -1933,6 +1948,10 @@
+                                                           cc_command=cc_host):
+      arflags_host = 'crsT'
+  
++   if flavor == 'aix':
++     arflags_target = '-Xany ' + arflags_target
++     arflags_host = '-Xany ' + arflags_host
++ 
+    return { 'ARFLAGS.target': arflags_target,
+             'ARFLAGS.host': arflags_host }
+  
+--- build/gyp/pylib/gyp/generator/make.py
++++ build/gyp/pylib/gyp/generator/make.py
+@@ -2026,6 +2045,10 @@
+    elif flavor == 'freebsd':
+      header_params.update({
+          'flock': 'lockf',
++     })
++   elif flavor == 'aix':
++     header_params.update({
++         'link_commands': LINK_COMMANDS_AIX,
+      })
+  
+    header_params.update(RunSystemTests(flavor))

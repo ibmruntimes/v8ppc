@@ -46,6 +46,18 @@
 #include "parser.h"
 #include "unicode-inl.h"
 
+#if defined(_AIX)
+// AIX gcc is unable to compile this file in its entirety due to the
+// following open issue:
+//   http://gcc.gnu.org/bugzilla/show_bug.cgi?id=378
+// As a workaround, the file is split into two parts: test-api.cc and
+// test-api2.cc.
+#define TEST_API_IN_PARTS
+#if !defined(TEST_API_PART2)
+#define TEST_API_PART1
+#endif
+#endif
+
 static const bool kLogThreading = false;
 
 static bool IsNaN(double x) {
@@ -120,6 +132,136 @@ static void ExpectUndefined(const char* code) {
   CHECK(result->IsUndefined());
 }
 
+
+static v8::Handle<Value> Return239(Local<String> name, const AccessorInfo&) {
+  ApiTestFuzzer::Fuzz();
+  return v8_num(239);
+}
+
+
+static v8::Handle<Value> NoBlockGetterX(Local<String> name,
+                                        const AccessorInfo&) {
+  return v8::Handle<Value>();
+}
+
+
+template <typename T> static void USE(T) { }
+
+
+static uint16_t* AsciiToTwoByteString(const char* source) {
+  int array_length = i::StrLength(source) + 1;
+  uint16_t* converted = i::NewArray<uint16_t>(array_length);
+  for (int i = 0; i < array_length; i++) converted[i] = source[i];
+  return converted;
+}
+
+
+class TestResource: public String::ExternalStringResource {
+ public:
+  explicit TestResource(uint16_t* data, int* counter = NULL)
+    : data_(data), length_(0), counter_(counter) {
+    while (data[length_]) ++length_;
+  }
+
+  ~TestResource() {
+    i::DeleteArray(data_);
+    if (counter_ != NULL) ++*counter_;
+  }
+
+  const uint16_t* data() const {
+    return data_;
+  }
+
+  size_t length() const {
+    return length_;
+  }
+ private:
+  uint16_t* data_;
+  size_t length_;
+  int* counter_;
+};
+
+
+class TestAsciiResource: public String::ExternalAsciiStringResource {
+ public:
+  explicit TestAsciiResource(const char* data, int* counter = NULL)
+    : data_(data), length_(strlen(data)), counter_(counter) { }
+
+  ~TestAsciiResource() {
+    i::DeleteArray(data_);
+    if (counter_ != NULL) ++*counter_;
+  }
+
+  const char* data() const {
+    return data_;
+  }
+
+  size_t length() const {
+    return length_;
+  }
+ private:
+  const char* data_;
+  size_t length_;
+  int* counter_;
+};
+
+
+static const char* last_location;
+static const char* last_message;
+static void StoringErrorCallback(const char* location, const char* message) {
+  if (last_location == NULL) {
+    last_location = location;
+    last_message = message;
+  }
+}
+
+
+// For use within the TestSecurityHandler() test.
+static bool g_security_callback_result = false;
+static bool IndexedSecurityTestCallback(Local<v8::Object> global,
+                                        uint32_t key,
+                                        v8::AccessType type,
+                                        Local<Value> data) {
+  // Always allow read access.
+  if (type == v8::ACCESS_GET)
+    return true;
+
+  // Sometimes allow other access.
+  return g_security_callback_result;
+}
+
+
+static v8::Handle<Value> GetXValue(Local<String> name,
+                                   const AccessorInfo& info) {
+  ApiTestFuzzer::Fuzz();
+  CHECK_EQ(info.Data(), v8_str("donut"));
+  CHECK_EQ(name, v8_str("x"));
+  return name;
+}
+
+
+static Handle<Value> EmptyInterceptorGetter(Local<String> name,
+                                     const AccessorInfo& info) {
+  return Handle<Value>();
+}
+
+static Handle<Value> EmptyInterceptorSetter(Local<String> name,
+                                     Local<Value> value,
+                                     const AccessorInfo& info) {
+  return Handle<Value>();
+}
+
+static void AddInterceptor(Handle<FunctionTemplate> templ,
+                    v8::NamedPropertyGetter getter,
+                    v8::NamedPropertySetter setter) {
+  templ->InstanceTemplate()->SetNamedPropertyHandler(getter, setter);
+}
+
+static int p_getter_count;
+static int report_count = 0;
+
+
+#if !defined(TEST_API_IN_PARTS) || defined(TEST_API_PART1)
 
 static int signature_callback_count;
 static v8::Handle<Value> IncrementingSignatureCallback(
@@ -328,64 +470,6 @@ THREADED_TEST(Script) {
   Local<Script> script = Script::Compile(source);
   CHECK_EQ(6, script->Run()->Int32Value());
 }
-
-
-static uint16_t* AsciiToTwoByteString(const char* source) {
-  int array_length = i::StrLength(source) + 1;
-  uint16_t* converted = i::NewArray<uint16_t>(array_length);
-  for (int i = 0; i < array_length; i++) converted[i] = source[i];
-  return converted;
-}
-
-
-class TestResource: public String::ExternalStringResource {
- public:
-  explicit TestResource(uint16_t* data, int* counter = NULL)
-    : data_(data), length_(0), counter_(counter) {
-    while (data[length_]) ++length_;
-  }
-
-  ~TestResource() {
-    i::DeleteArray(data_);
-    if (counter_ != NULL) ++*counter_;
-  }
-
-  const uint16_t* data() const {
-    return data_;
-  }
-
-  size_t length() const {
-    return length_;
-  }
- private:
-  uint16_t* data_;
-  size_t length_;
-  int* counter_;
-};
-
-
-class TestAsciiResource: public String::ExternalAsciiStringResource {
- public:
-  explicit TestAsciiResource(const char* data, int* counter = NULL)
-    : data_(data), length_(strlen(data)), counter_(counter) { }
-
-  ~TestAsciiResource() {
-    i::DeleteArray(data_);
-    if (counter_ != NULL) ++*counter_;
-  }
-
-  const char* data() const {
-    return data_;
-  }
-
-  size_t length() const {
-    return length_;
-  }
- private:
-  const char* data_;
-  size_t length_;
-  int* counter_;
-};
 
 
 THREADED_TEST(ScriptUsingStringResource) {
@@ -797,11 +881,6 @@ static v8::Handle<Value> construct_call(const v8::Arguments& args) {
   args.This()->Set(v8_str("x"), v8_num(1));
   args.This()->Set(v8_str("y"), v8_num(2));
   return args.This();
-}
-
-static v8::Handle<Value> Return239(Local<String> name, const AccessorInfo&) {
-  ApiTestFuzzer::Fuzz();
-  return v8_num(239);
 }
 
 
@@ -1375,17 +1454,6 @@ void SimpleAccessorSetter(Local<String> name, Local<Value> value,
   self->Set(String::Concat(v8_str("accessor_"), name), value);
 }
 
-Handle<Value> EmptyInterceptorGetter(Local<String> name,
-                                     const AccessorInfo& info) {
-  return Handle<Value>();
-}
-
-Handle<Value> EmptyInterceptorSetter(Local<String> name,
-                                     Local<Value> value,
-                                     const AccessorInfo& info) {
-  return Handle<Value>();
-}
-
 Handle<Value> InterceptorGetter(Local<String> name,
                                 const AccessorInfo& info) {
   // Intercept names that start with 'interceptor_'.
@@ -1417,12 +1485,6 @@ void AddAccessor(Handle<FunctionTemplate> templ,
                  v8::AccessorGetter getter,
                  v8::AccessorSetter setter) {
   templ->PrototypeTemplate()->SetAccessor(name, getter, setter);
-}
-
-void AddInterceptor(Handle<FunctionTemplate> templ,
-                    v8::NamedPropertyGetter getter,
-                    v8::NamedPropertySetter setter) {
-  templ->InstanceTemplate()->SetNamedPropertyHandler(getter, setter);
 }
 
 THREADED_TEST(EmptyInterceptorDoesNotShadowAccessors) {
@@ -3545,15 +3607,6 @@ THREADED_TEST(MultiRun) {
 }
 
 
-static v8::Handle<Value> GetXValue(Local<String> name,
-                                   const AccessorInfo& info) {
-  ApiTestFuzzer::Fuzz();
-  CHECK_EQ(info.Data(), v8_str("donut"));
-  CHECK_EQ(name, v8_str("x"));
-  return name;
-}
-
-
 THREADED_TEST(SimplePropertyRead) {
   v8::HandleScope scope;
   Local<ObjectTemplate> templ = ObjectTemplate::New();
@@ -4721,9 +4774,6 @@ TEST(UndetectableOptimized) {
 }
 
 
-template <typename T> static void USE(T) { }
-
-
 // This test is not intended to be run, just type checked.
 static inline void PersistentHandles() {
   USE(PersistentHandles);
@@ -5141,16 +5191,6 @@ THREADED_TEST(NativeFunctionConstructCall) {
 }
 
 
-static const char* last_location;
-static const char* last_message;
-void StoringErrorCallback(const char* location, const char* message) {
-  if (last_location == NULL) {
-    last_location = location;
-    last_message = message;
-  }
-}
-
-
 // ErrorReporting creates a circular extensions configuration and
 // tests that the fatal error handler gets called.  This renders V8
 // unusable and therefore this test cannot be run in parallel.
@@ -5439,12 +5479,6 @@ THREADED_TEST(Arguments) {
 }
 
 
-static v8::Handle<Value> NoBlockGetterX(Local<String> name,
-                                        const AccessorInfo&) {
-  return v8::Handle<Value>();
-}
-
-
 static v8::Handle<Value> NoBlockGetterI(uint32_t index,
                                         const AccessorInfo&) {
   return v8::Handle<Value>();
@@ -5590,7 +5624,6 @@ THREADED_TEST(Enumerators) {
 }
 
 
-int p_getter_count;
 int p_getter_count2;
 
 
@@ -6291,25 +6324,10 @@ THREADED_TEST(TypeSwitch) {
 }
 
 
-// For use within the TestSecurityHandler() test.
-static bool g_security_callback_result = false;
 static bool NamedSecurityTestCallback(Local<v8::Object> global,
                                       Local<Value> name,
                                       v8::AccessType type,
                                       Local<Value> data) {
-  // Always allow read access.
-  if (type == v8::ACCESS_GET)
-    return true;
-
-  // Sometimes allow other access.
-  return g_security_callback_result;
-}
-
-
-static bool IndexedSecurityTestCallback(Local<v8::Object> global,
-                                        uint32_t key,
-                                        v8::AccessType type,
-                                        Local<Value> data) {
   // Always allow read access.
   if (type == v8::ACCESS_GET)
     return true;
@@ -6334,7 +6352,6 @@ static v8::Handle<Value> TroubleCallback(const v8::Arguments& args) {
 }
 
 
-static int report_count = 0;
 static void ApiUncaughtExceptionTestListener(v8::Handle<v8::Message>,
                                              v8::Handle<Value>) {
   report_count++;
@@ -8724,6 +8741,10 @@ THREADED_TEST(HandleIteration) {
   CHECK_EQ(0, CountHandles());
   CHECK_EQ(kNesting * kIterations, Recurse(kNesting, kIterations));
 }
+
+
+#endif  // !TEST_API_IN_PARTS || TEST_API_PART1
+#if !defined(TEST_API_IN_PARTS) || defined(TEST_API_PART2)
 
 
 static v8::Handle<Value> InterceptorHasOwnPropertyGetter(
@@ -17769,3 +17790,4 @@ THREADED_TEST(SemaphoreInterruption) {
   ThreadInterruptTest().RunTest();
 }
 #endif  // WIN32
+#endif  // !TEST_API_IN_PARTS || TEST_API_PART2

@@ -107,7 +107,8 @@ namespace internal {
 
 // Use AtomicWord for a machine-sized pointer. It is assumed that
 // reads and writes of naturally aligned values of this type are atomic.
-#if (defined(__OpenBSD__) && defined(__i386__)) || defined(_AIX)
+#if !defined(V8_HOST_ARCH_64_BIT) && \
+  ((defined(__OpenBSD__) && defined(__i386__)) || defined(_AIX))
 typedef Atomic32 AtomicWord;
 #else
 typedef intptr_t AtomicWord;
