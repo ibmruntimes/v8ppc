@@ -98,7 +98,10 @@ static const char *read_cpu_type() {
 
 static bool is_processor(const char* p) {
   static const char *auxv_cpu_type = read_cpu_type();
-  if (auxv_cpu_type == NULL) { PrintF("cpu_type = null\n"); return false; }
+  if (auxv_cpu_type == NULL) {
+    // PrintF("cpu_type = null\n");
+    return false;
+  }
   // PrintF("cpu_type = %s\n", auxv_cpu_type);
   return (strcmp(auxv_cpu_type, p) == 0);
 }
