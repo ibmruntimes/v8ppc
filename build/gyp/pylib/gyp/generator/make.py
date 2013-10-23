@@ -1948,6 +1948,10 @@ def RunSystemTests(flavor):
                                                          cc_command=cc_host):
     arflags_host = 'crsT'
 
+  if flavor == 'aix':
+    arflags_target = '-Xany ' + arflags_target
+    arflags_host = '-Xany ' + arflags_host
+
   return { 'ARFLAGS.target': arflags_target,
            'ARFLAGS.host': arflags_host }
 
