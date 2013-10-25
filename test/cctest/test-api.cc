@@ -46,7 +46,7 @@
 #include "parser.h"
 #include "unicode-inl.h"
 
-#if defined(_AIX)
+#if defined(_AIX) && defined(V8_HOST_ARCH_64_BIT)
 // AIX gcc is unable to compile this file in its entirety due to the
 // following open issue:
 //   http://gcc.gnu.org/bugzilla/show_bug.cgi?id=378

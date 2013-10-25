@@ -24,7 +24,14 @@
 // THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-#if defined(_AIX)
+#include "v8.h"
+
+#if defined(_AIX) && defined(V8_HOST_ARCH_64_BIT)
 #define TEST_API_PART2
+// AIX gcc is unable to compile test-api.cc in its entirety due to the
+// following open issue:
+//   http://gcc.gnu.org/bugzilla/show_bug.cgi?id=378
+// As a workaround, the file is split into two parts: test-api.cc and
+// test-api2.cc.
 #include "test-api.cc"
 #endif
