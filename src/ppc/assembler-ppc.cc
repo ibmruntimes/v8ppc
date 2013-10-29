@@ -205,7 +205,7 @@ Operand::Operand(Handle<Object> handle) {
   } else {
     // no relocation needed
     imm_ =  reinterpret_cast<intptr_t>(obj);
-    rmode_ = RelocInfo::NONE;
+    rmode_ = kRelocInfo_NONEPTR;
   }
 }
 
@@ -1296,7 +1296,7 @@ void Assembler::function_descriptor() {
 // and only use the generic version when we require a fixed sequence
 void Assembler::mov(Register dst, const Operand& src) {
   BlockTrampolinePoolScope block_trampoline_pool(this);
-  if (src.rmode_ != RelocInfo::NONE) {
+  if (!RelocInfo::IsNone(src.rmode_)) {
     // some form of relocation needed
     RecordRelocInfo(src.rmode_, src.imm_);
   }
@@ -1791,7 +1791,7 @@ void Assembler::RecordRelocInfo(RelocInfo::Mode rmode, intptr_t data) {
            || RelocInfo::IsComment(rmode)
            || RelocInfo::IsPosition(rmode));
   }
-  if (rinfo.rmode() != RelocInfo::NONE) {
+  if (RelocInfo::IsNone(rinfo.rmode()) {
     // Don't record external references unless the heap will be serialized.
     if (rmode == RelocInfo::EXTERNAL_REFERENCE) {
 #ifdef DEBUG

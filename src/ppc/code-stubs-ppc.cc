@@ -1524,7 +1524,7 @@ void ToBooleanStub::Generate(MacroAssembler* masm) {
       __ andi(r0, ip, Operand(1 << Map::kIsUndetectable));
       __ beq(&not_undetectable, cr0);
       // Undetectable -> false.
-      __ li(tos_, Operand(0, RelocInfo::NONE));
+      __ li(tos_, Operand::Zero());
       __ Ret();
       __ bind(&not_undetectable);
     }
@@ -1597,7 +1597,7 @@ void ToBooleanStub::CheckOddball(MacroAssembler* masm,
     // The value of a root is never NULL, so we can avoid loading a non-null
     // value into tos_ when we want to return 'true'.
     if (!result) {
-      __ li(tos_, Operand(0, RelocInfo::NONE));
+      __ li(tos_, Operand::Zero());
     }
     // Intel has some logic here not present on ARM
     // unclear if it's needed or not
@@ -3072,7 +3072,7 @@ void TranscendentalCacheStub::Generate(MacroAssembler* masm) {
   __ LoadP(cache_entry, MemOperand(cache_entry, cache_array_index), r0);
   // r3 points to the cache for the type type_.
   // If NULL, the cache hasn't been initialized yet, so go through runtime.
-  __ cmpi(cache_entry, Operand(0, RelocInfo::NONE));
+  __ cmpi(cache_entry, Operand::Zero());
   __ beq(&invalid_cache);
 
 #ifdef DEBUG
@@ -3765,7 +3765,7 @@ void CEntryStub::Generate(MacroAssembler* masm) {
   Isolate* isolate = masm->isolate();
   ExternalReference external_caught(Isolate::kExternalCaughtExceptionAddress,
                                     isolate);
-  __ li(r3, Operand(false, RelocInfo::NONE));
+  __ li(r3, Operand(false, RelocInfo::NONE32));
   __ mov(r5, Operand(external_caught));
   __ StoreP(r3, MemOperand(r5));
 
@@ -4479,7 +4479,7 @@ void ArgumentsAccessStub::GenerateNewStrict(MacroAssembler* masm) {
   // of the arguments object and the elements array in words.
   Label add_arguments_object;
   __ bind(&try_allocate);
-  __ cmpi(r4, Operand(0, RelocInfo::NONE));
+  __ cmpi(r4, Operand::Zero());
   __ beq(&add_arguments_object);
   __ SmiUntag(r4);
   __ addi(r4, r4, Operand(FixedArray::kHeaderSize / kPointerSize));
@@ -4514,7 +4514,7 @@ void ArgumentsAccessStub::GenerateNewStrict(MacroAssembler* masm) {
 
   // If there are no actual arguments, we're done.
   Label done;
-  __ cmpi(r4, Operand(0, RelocInfo::NONE));
+  __ cmpi(r4, Operand::Zero());
   __ beq(&done);
 
   // Get the parameters pointer from the stack.
@@ -4542,7 +4542,7 @@ void ArgumentsAccessStub::GenerateNewStrict(MacroAssembler* masm) {
   __ StoreP(r6, MemOperand(r7));
   __ addi(r7, r7, Operand(kPointerSize));
   __ subi(r4, r4, Operand(1));
-  __ cmpi(r4, Operand(0, RelocInfo::NONE));
+  __ cmpi(r4, Operand::Zero());
   __ bne(&loop);
 
   // Return and remove the on-stack parameters.
@@ -5537,7 +5537,7 @@ void StringHelper::GenerateCopyCharactersLong(MacroAssembler* masm,
   if (!ascii) {  // for non-ascii, double the length
     __ add(count, count, count);
   }
-  __ cmpi(count, Operand(0, RelocInfo::NONE));
+  __ cmpi(count, Operand::Zero());
   __ beq(&done);
 
   // Assume that you cannot read (or write) unaligned.

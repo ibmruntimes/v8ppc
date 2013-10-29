@@ -84,12 +84,12 @@ void Deoptimizer::DeoptimizeFunction(JSFunction* function) {
     // this is optimized code, so we don't have to have a predictable size.
     int call_size_in_bytes =
         MacroAssembler::CallSizeNotPredictableCodeSize(deopt_entry,
-                                                       RelocInfo::NONE);
+                                                       kRelocInfo_NONEPTR);
     int call_size_in_words = call_size_in_bytes / Assembler::kInstrSize;
     ASSERT(call_size_in_bytes % Assembler::kInstrSize == 0);
     ASSERT(call_size_in_bytes <= patch_size());
     CodePatcher patcher(call_address, call_size_in_words);
-    patcher.masm()->Call(deopt_entry, RelocInfo::NONE);
+    patcher.masm()->Call(deopt_entry, kRelocInfo_NONEPTR);
     ASSERT(prev_call_address == NULL ||
            call_address >= prev_call_address + patch_size());
     ASSERT(call_address + patch_size() <= code->instruction_end());

@@ -327,12 +327,12 @@ Operand::Operand(const ExternalReference& f)  {
 Operand::Operand(Smi* value) {
   rm_ = no_reg;
   imm_ =  reinterpret_cast<intptr_t>(value);
-  rmode_ = RelocInfo::NONE;
+  rmode_ = kRelocInfo_NONEPTR;
 }
 
 Operand::Operand(Register rm) {
   rm_ = rm;
-  rmode_ = RelocInfo::NONE;  // PPC -why doesn't ARM do this?
+  rmode_ = kRelocInfo_NONEPTR;  // PPC -why doesn't ARM do this?
 }
 
 void Assembler::CheckBuffer() {

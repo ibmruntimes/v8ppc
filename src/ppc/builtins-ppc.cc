@@ -146,7 +146,7 @@ static void AllocateEmptyJSArray(MacroAssembler* masm,
   __ LoadRoot(scratch1, Heap::kEmptyFixedArrayRootIndex);
   __ StoreP(scratch1, FieldMemOperand(result, JSArray::kPropertiesOffset), r0);
   // Field JSArray::kElementsOffset is initialized later.
-  __ li(scratch3,  Operand(0, RelocInfo::NONE));
+  __ li(scratch3,  Operand::Zero());
   __ StoreP(scratch3, FieldMemOperand(result, JSArray::kLengthOffset), r0);
 
   if (initial_capacity == 0) {
@@ -335,7 +335,7 @@ static void ArrayNativeCode(MacroAssembler* masm,
       has_non_smi_element, finish, cant_transition_map, not_double;
 
   // Check for array construction with zero arguments or one.
-  __ cmpi(r3, Operand(0, RelocInfo::NONE));
+  __ cmpi(r3, Operand::Zero());
   __ bne(&argc_one_or_more);
 
   // Handle construction of an empty array.
@@ -611,7 +611,7 @@ void Builtins::Generate_StringConstructCode(MacroAssembler* masm) {
 
   // Load the first arguments in r3 and get rid of the rest.
   Label no_arguments;
-  __ cmpi(r3, Operand(0, RelocInfo::NONE));
+  __ cmpi(r3, Operand::Zero());
   __ beq(&no_arguments);
   // First args = sp[(argc - 1) * 4].
   __ subi(r3, r3, Operand(1));
@@ -657,7 +657,7 @@ void Builtins::Generate_StringConstructCode(MacroAssembler* masm) {
     __ cmpi(r7, Operand(JSValue::kSize >> kPointerSizeLog2));
     __ Assert(eq, "Unexpected string wrapper instance size");
     __ lbz(r7, FieldMemOperand(map, Map::kUnusedPropertyFieldsOffset));
-    __ cmpi(r7, Operand(0, RelocInfo::NONE));
+    __ cmpi(r7, Operand::Zero());
     __ Assert(eq, "Unexpected unused properties of string wrapper");
   }
   __ StoreP(map, FieldMemOperand(r3, HeapObject::kMapOffset), r0);
@@ -1158,7 +1158,7 @@ static void Generate_JSEntryTrampolineHelper(MacroAssembler* masm,
   // r0,r8-r9, cp may be clobbered
 
   // Clear the context before we push it when entering the internal frame.
-  __ li(cp, Operand(0, RelocInfo::NONE));
+  __ li(cp, Operand::Zero());
 
   // Enter an internal frame.
   {
@@ -1403,7 +1403,7 @@ void Builtins::Generate_FunctionCall(MacroAssembler* masm) {
   // r3: actual number of arguments
   // r4: function
   Label shift_arguments;
-  __ li(r7, Operand(0, RelocInfo::NONE));  // indicate regular JS_FUNCTION
+  __ li(r7, Operand::Zero());  // indicate regular JS_FUNCTION
   { Label convert_to_object, use_global_receiver, patch_receiver;
     // Change context eagerly in case we need the global receiver.
     __ LoadP(cp, FieldMemOperand(r4, JSFunction::kContextOffset));
@@ -1472,7 +1472,7 @@ void Builtins::Generate_FunctionCall(MacroAssembler* masm) {
     __ ShiftLeftImm(r7, r3, Operand(kPointerSizeLog2));
     __ add(r7, sp, r7);
     __ LoadP(r4, MemOperand(r7));
-    __ li(r7, Operand(0, RelocInfo::NONE));
+    __ li(r7, Operand::Zero());
     __ b(&patch_receiver);
 
     // Use the global receiver object from the called function as the
@@ -1495,11 +1495,11 @@ void Builtins::Generate_FunctionCall(MacroAssembler* masm) {
 
   // 3b. Check for function proxy.
   __ bind(&slow);
-  __ li(r7, Operand(1, RelocInfo::NONE));  // indicate function proxy
+  __ li(r7, Operand(1, RelocInfo::NONE32));  // indicate function proxy
   __ cmpi(r5, Operand(JS_FUNCTION_PROXY_TYPE));
   __ beq(&shift_arguments);
   __ bind(&non_function);
-  __ li(r7, Operand(2, RelocInfo::NONE));  // indicate non-function
+  __ li(r7, Operand(2, RelocInfo::NONE32));  // indicate non-function
 
   // 3c. Patch the first argument when calling a non-function.  The
   //     CALL_NON_FUNCTION builtin expects the non-function callee as
@@ -1545,7 +1545,7 @@ void Builtins::Generate_FunctionCall(MacroAssembler* masm) {
     __ cmpi(r7, Operand::Zero());
     __ beq(&function);
     // Expected number of arguments is 0 for CALL_NON_FUNCTION.
-    __ li(r5, Operand(0, RelocInfo::NONE));
+    __ li(r5, Operand::Zero());
     __ SetCallKind(r8, CALL_AS_METHOD);
     __ cmpi(r7, Operand(1));
     __ bne(&non_proxy);
@@ -1628,7 +1628,7 @@ void Builtins::Generate_FunctionApply(MacroAssembler* masm) {
     // Push current limit and index.
     __ bind(&okay);
     __ push(r3);  // limit
-    __ li(r4, Operand(0, RelocInfo::NONE));  // initial index
+    __ li(r4, Operand::Zero());  // initial index
     __ push(r4);
 
     // Get the receiver.
@@ -1751,7 +1751,7 @@ void Builtins::Generate_FunctionApply(MacroAssembler* masm) {
     __ bind(&call_proxy);
     __ push(r4);  // add function proxy as last argument
     __ addi(r3, r3, Operand(1));
-    __ li(r5, Operand(0, RelocInfo::NONE));
+    __ li(r5, Operand::Zero());
     __ SetCallKind(r8, CALL_AS_METHOD);
     __ GetBuiltinEntry(r6, Builtins::CALL_FUNCTION_PROXY);
     __ Call(masm->isolate()->builtins()->ArgumentsAdaptorTrampoline(),

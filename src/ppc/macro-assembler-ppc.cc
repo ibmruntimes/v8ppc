@@ -717,7 +717,7 @@ void MacroAssembler::LeaveExitFrame(bool save_doubles,
   }
 
   // Clear top frame.
-  li(r6, Operand(0, RelocInfo::NONE));
+  li(r6, Operand::Zero());
   mov(ip, Operand(ExternalReference(Isolate::kCEntryFPAddress, isolate())));
   StoreP(r6, MemOperand(ip));
 
@@ -991,7 +991,7 @@ void MacroAssembler::IsObjectJSStringType(Register object,
 
 #ifdef ENABLE_DEBUGGER_SUPPORT
 void MacroAssembler::DebugBreak() {
-  li(r3, Operand(0, RelocInfo::NONE));
+  li(r3, Operand::Zero());
   mov(r4, Operand(ExternalReference(Runtime::kDebugBreak, isolate())));
   CEntryStub ces(1);
   ASSERT(AllowThisStubCall(&ces));
@@ -1026,7 +1026,7 @@ void MacroAssembler::PushTryHandler(StackHandler::Kind kind,
   StoreP(sp, MemOperand(r8));
 
   if (kind == StackHandler::JS_ENTRY) {
-    li(r8, Operand(0, RelocInfo::NONE));  // NULL frame pointer.
+    li(r8, Operand::Zero());  // NULL frame pointer.
     StoreP(r8, MemOperand(sp, StackHandlerConstants::kFPOffset));
     LoadSmiLiteral(r8, Smi::FromInt(0));    // Indicates no context.
     StoreP(r8, MemOperand(sp, StackHandlerConstants::kContextOffset));
@@ -1168,7 +1168,7 @@ void MacroAssembler::CheckAccessGlobalProxy(Register holder_reg,
   LoadP(scratch, MemOperand(fp, StandardFrameConstants::kContextOffset));
   // In debug mode, make sure the lexical context is set.
 #ifdef DEBUG
-  cmpi(scratch, Operand(0, RelocInfo::NONE));
+  cmpi(scratch, Operand::Zero());
   Check(ne, "we should not have an empty lexical context");
 #endif
 
@@ -3998,8 +3998,7 @@ void MacroAssembler::And(Register ra, Register rs, const Operand& rb,
   if (rb.is_reg()) {
     and_(ra, rs, rb.rm(), rc);
   } else {
-    if (is_uint16(rb.imm_) && rb.rmode_ == RelocInfo::NONE
-        && rc == SetRC) {
+    if (is_uint16(rb.imm_) && RelocInfo::IsNone(rb.rmode_) && rc == SetRC) {
       andi(ra, rs, rb);
     } else {
       // mov handles the relocation.
@@ -4014,7 +4013,7 @@ void MacroAssembler::Or(Register ra, Register rs, const Operand& rb, RCBit rc) {
   if (rb.is_reg()) {
     orx(ra, rs, rb.rm(), rc);
   } else {
-    if (is_uint16(rb.imm_) && rb.rmode_ == RelocInfo::NONE && rc == LeaveRC) {
+    if (is_uint16(rb.imm_) && RelocInfo::IsNone(rb.rmode_) && rc == LeaveRC) {
       ori(ra, rs, rb);
     } else {
       // mov handles the relocation.
@@ -4030,7 +4029,7 @@ void MacroAssembler::Xor(Register ra, Register rs, const Operand& rb,
   if (rb.is_reg()) {
     xor_(ra, rs, rb.rm(), rc);
   } else {
-    if (is_uint16(rb.imm_) && rb.rmode_ == RelocInfo::NONE && rc == LeaveRC) {
+    if (is_uint16(rb.imm_) && RelocInfo::IsNone(rb.rmode_) && rc == LeaveRC) {
       xori(ra, rs, rb);
     } else {
       // mov handles the relocation.
