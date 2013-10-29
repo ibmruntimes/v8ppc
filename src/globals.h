@@ -166,7 +166,7 @@ namespace internal {
 #endif
 #endif
 
-// Determine architecture endiannes (we only support little-endian).
+// Determine architecture endiannes
 #if V8_TARGET_ARCH_IA32
 #define V8_TARGET_LITTLE_ENDIAN 1
 #elif V8_TARGET_ARCH_X64
@@ -175,6 +175,8 @@ namespace internal {
 #define V8_TARGET_LITTLE_ENDIAN 1
 #elif V8_TARGET_ARCH_MIPS
 #define V8_TARGET_LITTLE_ENDIAN 1
+#elif V8_TARGET_ARCH_PPC
+#define V8_TARGET_BIG_ENDIAN 1
 #else
 #error Unknown target architecture endiannes
 #endif
