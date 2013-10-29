@@ -36,6 +36,27 @@ enum InvokeFlag {
 };
 
 
+// Flags used for the AllocateInNewSpace functions.
+enum AllocationFlags {
+  // No special flags.
+  NO_ALLOCATION_FLAGS = 0,
+  // Return the pointer to the allocated already tagged as a heap object.
+  TAG_OBJECT = 1 << 0,
+  // The content of the result register already contains the allocation top in
+  // new space.
+  RESULT_CONTAINS_TOP = 1 << 1,
+  // Specify that the requested size of the space to allocate is specified in
+  // words instead of bytes.
+  SIZE_IN_WORDS = 1 << 2,
+  // Align the allocation to a multiple of kDoubleSize
+  DOUBLE_ALIGNMENT = 1 << 3,
+  // Directly allocate in old pointer space
+  PRETENURE_OLD_POINTER_SPACE = 1 << 4,
+  // Directly allocate in old data space
+  PRETENURE_OLD_DATA_SPACE = 1 << 5
+};
+
+
 // Invalid depth in prototype chain.
 const int kInvalidProtoDepth = -1;
 
@@ -157,6 +178,35 @@ class Comment {
 };
 
 #endif  // DEBUG
+
+
+class AllocationUtils {
+ public:
+  static ExternalReference GetAllocationTopReference(
+      Isolate* isolate, AllocationFlags flags) {
+    if ((flags & PRETENURE_OLD_POINTER_SPACE) != 0) {
+      return ExternalReference::old_pointer_space_allocation_top_address(
+          isolate);
+    } else if ((flags & PRETENURE_OLD_DATA_SPACE) != 0) {
+      return ExternalReference::old_data_space_allocation_top_address(isolate);
+    }
+    return ExternalReference::new_space_allocation_top_address(isolate);
+  }
+
+
+  static ExternalReference GetAllocationLimitReference(
+      Isolate* isolate, AllocationFlags flags) {
+    if ((flags & PRETENURE_OLD_POINTER_SPACE) != 0) {
+      return ExternalReference::old_pointer_space_allocation_limit_address(
+          isolate);
+    } else if ((flags & PRETENURE_OLD_DATA_SPACE) != 0) {
+      return ExternalReference::old_data_space_allocation_limit_address(
+          isolate);
+    }
+    return ExternalReference::new_space_allocation_limit_address(isolate);
+  }
+};
+
 
 } }  // namespace v8::internal
 

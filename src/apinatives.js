@@ -37,7 +37,7 @@ function CreateDate(time) {
 }
 
 
-var kApiFunctionCache = {};
+var kApiFunctionCache = new InternalArray();
 var functionCache = kApiFunctionCache;
 
 
@@ -90,7 +90,7 @@ function InstantiateFunction(data, name) {
       // internal ToBoolean doesn't handle that!
       if (!(typeof parent === 'undefined')) {
         var parent_fun = Instantiate(parent);
-        fun.prototype.__proto__ = parent_fun.prototype;
+        %SetPrototype(fun.prototype, parent_fun.prototype);
       }
       ConfigureTemplateInstance(fun, data);
     } catch (e) {

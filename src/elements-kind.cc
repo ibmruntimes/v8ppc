@@ -35,9 +35,14 @@ namespace v8 {
 namespace internal {
 
 
-void PrintElementsKind(FILE* out, ElementsKind kind) {
+const char* ElementsKindToString(ElementsKind kind) {
   ElementsAccessor* accessor = ElementsAccessor::ForKind(kind);
-  PrintF(out, "%s", accessor->name());
+  return accessor->name();
+}
+
+
+void PrintElementsKind(FILE* out, ElementsKind kind) {
+  PrintF(out, "%s", ElementsKindToString(kind));
 }
 
 
@@ -77,6 +82,7 @@ ElementsKind GetFastElementsKindFromSequenceIndex(int sequence_number) {
          sequence_number < kFastElementsKindCount);
   return fast_elements_kind_sequence.Get()[sequence_number];
 }
+
 
 int GetSequenceIndexFromFastElementsKind(ElementsKind elements_kind) {
   for (int i = 0; i < kFastElementsKindCount; ++i) {

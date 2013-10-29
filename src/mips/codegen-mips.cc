@@ -27,15 +27,15 @@
 
 #include "v8.h"
 
-#if defined(V8_TARGET_ARCH_MIPS)
+#if V8_TARGET_ARCH_MIPS
 
 #include "codegen.h"
 #include "macro-assembler.h"
+#include "simulator-mips.h"
 
 namespace v8 {
 namespace internal {
 
-#define __ ACCESS_MASM(masm)
 
 UnaryMathFunction CreateTranscendentalFunction(TranscendentalCache::Type type) {
   switch (type) {
@@ -49,9 +49,77 @@ UnaryMathFunction CreateTranscendentalFunction(TranscendentalCache::Type type) {
 }
 
 
+#define __ masm.
+
+
+#if defined(USE_SIMULATOR)
+byte* fast_exp_mips_machine_code = NULL;
+double fast_exp_simulator(double x) {
+  return Simulator::current(Isolate::Current())->CallFP(
+      fast_exp_mips_machine_code, x, 0);
+}
+#endif
+
+
+UnaryMathFunction CreateExpFunction() {
+  if (!FLAG_fast_math) return &exp;
+  size_t actual_size;
+  byte* buffer = static_cast<byte*>(OS::Allocate(1 * KB, &actual_size, true));
+  if (buffer == NULL) return &exp;
+  ExternalReference::InitializeMathExpData();
+
+  MacroAssembler masm(NULL, buffer, static_cast<int>(actual_size));
+
+  {
+    DoubleRegister input = f12;
+    DoubleRegister result = f0;
+    DoubleRegister double_scratch1 = f4;
+    DoubleRegister double_scratch2 = f6;
+    Register temp1 = t0;
+    Register temp2 = t1;
+    Register temp3 = t2;
+
+    if (!IsMipsSoftFloatABI) {
+      // Input value is in f12 anyway, nothing to do.
+    } else {
+      __ Move(input, a0, a1);
+    }
+    __ Push(temp3, temp2, temp1);
+    MathExpGenerator::EmitMathExp(
+        &masm, input, result, double_scratch1, double_scratch2,
+        temp1, temp2, temp3);
+    __ Pop(temp3, temp2, temp1);
+    if (!IsMipsSoftFloatABI) {
+      // Result is already in f0, nothing to do.
+    } else {
+      __ Move(v0, v1, result);
+    }
+    __ Ret();
+  }
+
+  CodeDesc desc;
+  masm.GetCode(&desc);
+  ASSERT(!RelocInfo::RequiresRelocation(desc));
+
+  CPU::FlushICache(buffer, actual_size);
+  OS::ProtectCode(buffer, actual_size);
+
+#if !defined(USE_SIMULATOR)
+  return FUNCTION_CAST<UnaryMathFunction>(buffer);
+#else
+  fast_exp_mips_machine_code = buffer;
+  return &fast_exp_simulator;
+#endif
+}
+
+
+#undef __
+
+
 UnaryMathFunction CreateSqrtFunction() {
   return &sqrt;
 }
+
 
 // -------------------------------------------------------------------------
 // Platform-specific RuntimeCallHelper functions.
@@ -69,11 +137,15 @@ void StubRuntimeCallHelper::AfterCall(MacroAssembler* masm) const {
   masm->set_has_frame(false);
 }
 
+
 // -------------------------------------------------------------------------
 // Code generators
 
+#define __ ACCESS_MASM(masm)
+
 void ElementsTransitionGenerator::GenerateMapChangeElementsTransition(
-    MacroAssembler* masm) {
+    MacroAssembler* masm, AllocationSiteMode mode,
+    Label* allocation_memento_found) {
   // ----------- S t a t e -------------
   //  -- a0    : value
   //  -- a1    : key
@@ -82,6 +154,12 @@ void ElementsTransitionGenerator::GenerateMapChangeElementsTransition(
   //  -- a3    : target map, scratch for subsequent call
   //  -- t0    : scratch (elements)
   // -----------------------------------
+  if (mode == TRACK_ALLOCATION_SITE) {
+    ASSERT(allocation_memento_found != NULL);
+    masm->TestJSArrayForAllocationMemento(a2, t0, eq,
+                                          allocation_memento_found);
+  }
+
   // Set transitioned map.
   __ sw(a3, FieldMemOperand(a2, HeapObject::kMapOffset));
   __ RecordWriteField(a2,
@@ -96,7 +174,7 @@ void ElementsTransitionGenerator::GenerateMapChangeElementsTransition(
 
 
 void ElementsTransitionGenerator::GenerateSmiToDouble(
-    MacroAssembler* masm, Label* fail) {
+    MacroAssembler* masm, AllocationSiteMode mode, Label* fail) {
   // ----------- S t a t e -------------
   //  -- a0    : value
   //  -- a1    : key
@@ -106,9 +184,12 @@ void ElementsTransitionGenerator::GenerateSmiToDouble(
   //  -- t0    : scratch (elements)
   // -----------------------------------
   Label loop, entry, convert_hole, gc_required, only_change_map, done;
-  bool fpu_supported = CpuFeatures::IsSupported(FPU);
 
   Register scratch = t6;
+
+  if (mode == TRACK_ALLOCATION_SITE) {
+    masm->TestJSArrayForAllocationMemento(a2, t0, eq, fail);
+  }
 
   // Check for empty arrays, which only require a map transition and no changes
   // to the backing store.
@@ -124,8 +205,9 @@ void ElementsTransitionGenerator::GenerateSmiToDouble(
   // Allocate new FixedDoubleArray.
   __ sll(scratch, t1, 2);
   __ Addu(scratch, scratch, FixedDoubleArray::kHeaderSize);
-  __ AllocateInNewSpace(scratch, t2, t3, t5, &gc_required, NO_ALLOCATION_FLAGS);
+  __ Allocate(scratch, t2, t3, t5, &gc_required, DOUBLE_ALIGNMENT);
   // t2: destination FixedDoubleArray, not tagged as heap object
+
   // Set destination FixedDoubleArray's length and map.
   __ LoadRoot(t5, Heap::kFixedDoubleArrayMapRootIndex);
   __ sw(t1, MemOperand(t2, FixedDoubleArray::kLengthOffset));
@@ -166,8 +248,6 @@ void ElementsTransitionGenerator::GenerateSmiToDouble(
   // t2: end of destination FixedDoubleArray, not tagged
   // t3: begin of FixedDoubleArray element fields, not tagged
 
-  if (!fpu_supported) __ Push(a1, a0);
-
   __ Branch(&entry);
 
   __ bind(&only_change_map);
@@ -176,7 +256,7 @@ void ElementsTransitionGenerator::GenerateSmiToDouble(
                       HeapObject::kMapOffset,
                       a3,
                       t5,
-                      kRAHasBeenSaved,
+                      kRAHasNotBeenSaved,
                       kDontSaveFPRegs,
                       OMIT_REMEMBERED_SET,
                       OMIT_SMI_CHECK);
@@ -195,25 +275,11 @@ void ElementsTransitionGenerator::GenerateSmiToDouble(
   __ UntagAndJumpIfNotSmi(t5, t5, &convert_hole);
 
   // Normal smi, convert to double and store.
-  if (fpu_supported) {
-    CpuFeatures::Scope scope(FPU);
-    __ mtc1(t5, f0);
-    __ cvt_d_w(f0, f0);
-    __ sdc1(f0, MemOperand(t3));
-    __ Addu(t3, t3, kDoubleSize);
-  } else {
-    FloatingPointHelper::ConvertIntToDouble(masm,
-                                            t5,
-                                            FloatingPointHelper::kCoreRegisters,
-                                            f0,
-                                            a0,
-                                            a1,
-                                            t7,
-                                            f0);
-    __ sw(a0, MemOperand(t3));  // mantissa
-    __ sw(a1, MemOperand(t3, kIntSize));  // exponent
-    __ Addu(t3, t3, kDoubleSize);
-  }
+  __ mtc1(t5, f0);
+  __ cvt_d_w(f0, f0);
+  __ sdc1(f0, MemOperand(t3));
+  __ Addu(t3, t3, kDoubleSize);
+
   __ Branch(&entry);
 
   // Hole found, store the-hole NaN.
@@ -223,7 +289,7 @@ void ElementsTransitionGenerator::GenerateSmiToDouble(
     __ SmiTag(t5);
     __ Or(t5, t5, Operand(1));
     __ LoadRoot(at, Heap::kTheHoleValueRootIndex);
-    __ Assert(eq, "object found in smi-only array", at, Operand(t5));
+    __ Assert(eq, kObjectFoundInSmiOnlyArray, at, Operand(t5));
   }
   __ sw(t0, MemOperand(t3));  // mantissa
   __ sw(t1, MemOperand(t3, kIntSize));  // exponent
@@ -232,14 +298,13 @@ void ElementsTransitionGenerator::GenerateSmiToDouble(
   __ bind(&entry);
   __ Branch(&loop, lt, t3, Operand(t2));
 
-  if (!fpu_supported) __ Pop(a1, a0);
   __ pop(ra);
   __ bind(&done);
 }
 
 
 void ElementsTransitionGenerator::GenerateDoubleToObject(
-    MacroAssembler* masm, Label* fail) {
+    MacroAssembler* masm, AllocationSiteMode mode, Label* fail) {
   // ----------- S t a t e -------------
   //  -- a0    : value
   //  -- a1    : key
@@ -249,6 +314,10 @@ void ElementsTransitionGenerator::GenerateDoubleToObject(
   //  -- t0    : scratch (elements)
   // -----------------------------------
   Label entry, loop, convert_hole, gc_required, only_change_map;
+
+  if (mode == TRACK_ALLOCATION_SITE) {
+    masm->TestJSArrayForAllocationMemento(a2, t0, eq, fail);
+  }
 
   // Check for empty arrays, which only require a map transition and no changes
   // to the backing store.
@@ -265,7 +334,7 @@ void ElementsTransitionGenerator::GenerateDoubleToObject(
   // Allocate new FixedArray.
   __ sll(a0, t1, 1);
   __ Addu(a0, a0, FixedDoubleArray::kHeaderSize);
-  __ AllocateInNewSpace(a0, t2, t3, t5, &gc_required, NO_ALLOCATION_FLAGS);
+  __ Allocate(a0, t2, t3, t5, &gc_required, NO_ALLOCATION_FLAGS);
   // t2: destination FixedArray, not tagged as heap object
   // Set destination FixedDoubleArray's length and map.
   __ LoadRoot(t5, Heap::kFixedArrayMapRootIndex);
@@ -389,7 +458,7 @@ void StringCharLoadGenerator::Generate(MacroAssembler* masm,
   // the string.
   __ bind(&cons_string);
   __ lw(result, FieldMemOperand(string, ConsString::kSecondOffset));
-  __ LoadRoot(at, Heap::kEmptyStringRootIndex);
+  __ LoadRoot(at, Heap::kempty_stringRootIndex);
   __ Branch(call_runtime, ne, result, Operand(at));
   // Get the first of the two strings and load its instance type.
   __ lw(string, FieldMemOperand(string, ConsString::kFirstOffset));
@@ -408,7 +477,7 @@ void StringCharLoadGenerator::Generate(MacroAssembler* masm,
   __ Branch(&external_string, ne, at, Operand(zero_reg));
 
   // Prepare sequential strings
-  STATIC_ASSERT(SeqTwoByteString::kHeaderSize == SeqAsciiString::kHeaderSize);
+  STATIC_ASSERT(SeqTwoByteString::kHeaderSize == SeqOneByteString::kHeaderSize);
   __ Addu(string,
           string,
           SeqTwoByteString::kHeaderSize - kHeapObjectTag);
@@ -420,7 +489,7 @@ void StringCharLoadGenerator::Generate(MacroAssembler* masm,
     // Assert that we do not have a cons or slice (indirect strings) here.
     // Sequential strings have already been ruled out.
     __ And(at, result, Operand(kIsIndirectStringMask));
-    __ Assert(eq, "external string expected, but not found",
+    __ Assert(eq, kExternalStringExpectedButNotFound,
         at, Operand(zero_reg));
   }
   // Rule out short external strings.
@@ -445,6 +514,152 @@ void StringCharLoadGenerator::Generate(MacroAssembler* masm,
   __ lbu(result, MemOperand(at));
   __ bind(&done);
 }
+
+
+static MemOperand ExpConstant(int index, Register base) {
+  return MemOperand(base, index * kDoubleSize);
+}
+
+
+void MathExpGenerator::EmitMathExp(MacroAssembler* masm,
+                                   DoubleRegister input,
+                                   DoubleRegister result,
+                                   DoubleRegister double_scratch1,
+                                   DoubleRegister double_scratch2,
+                                   Register temp1,
+                                   Register temp2,
+                                   Register temp3) {
+  ASSERT(!input.is(result));
+  ASSERT(!input.is(double_scratch1));
+  ASSERT(!input.is(double_scratch2));
+  ASSERT(!result.is(double_scratch1));
+  ASSERT(!result.is(double_scratch2));
+  ASSERT(!double_scratch1.is(double_scratch2));
+  ASSERT(!temp1.is(temp2));
+  ASSERT(!temp1.is(temp3));
+  ASSERT(!temp2.is(temp3));
+  ASSERT(ExternalReference::math_exp_constants(0).address() != NULL);
+
+  Label done;
+
+  __ li(temp3, Operand(ExternalReference::math_exp_constants(0)));
+
+  __ ldc1(double_scratch1, ExpConstant(0, temp3));
+  __ Move(result, kDoubleRegZero);
+  __ BranchF(&done, NULL, ge, double_scratch1, input);
+  __ ldc1(double_scratch2, ExpConstant(1, temp3));
+  __ ldc1(result, ExpConstant(2, temp3));
+  __ BranchF(&done, NULL, ge, input, double_scratch2);
+  __ ldc1(double_scratch1, ExpConstant(3, temp3));
+  __ ldc1(result, ExpConstant(4, temp3));
+  __ mul_d(double_scratch1, double_scratch1, input);
+  __ add_d(double_scratch1, double_scratch1, result);
+  __ Move(temp2, temp1, double_scratch1);
+  __ sub_d(double_scratch1, double_scratch1, result);
+  __ ldc1(result, ExpConstant(6, temp3));
+  __ ldc1(double_scratch2, ExpConstant(5, temp3));
+  __ mul_d(double_scratch1, double_scratch1, double_scratch2);
+  __ sub_d(double_scratch1, double_scratch1, input);
+  __ sub_d(result, result, double_scratch1);
+  __ mul_d(input, double_scratch1, double_scratch1);
+  __ mul_d(result, result, input);
+  __ srl(temp1, temp2, 11);
+  __ ldc1(double_scratch2, ExpConstant(7, temp3));
+  __ mul_d(result, result, double_scratch2);
+  __ sub_d(result, result, double_scratch1);
+  __ ldc1(double_scratch2, ExpConstant(8, temp3));
+  __ add_d(result, result, double_scratch2);
+  __ li(at, 0x7ff);
+  __ And(temp2, temp2, at);
+  __ Addu(temp1, temp1, Operand(0x3ff));
+  __ sll(temp1, temp1, 20);
+
+  // Must not call ExpConstant() after overwriting temp3!
+  __ li(temp3, Operand(ExternalReference::math_exp_log_table()));
+  __ sll(at, temp2, 3);
+  __ addu(at, at, temp3);
+  __ lw(at, MemOperand(at));
+  __ Addu(temp3, temp3, Operand(kPointerSize));
+  __ sll(temp2, temp2, 3);
+  __ addu(temp2, temp2, temp3);
+  __ lw(temp2, MemOperand(temp2));
+  __ Or(temp1, temp1, temp2);
+  __ Move(input, at, temp1);
+  __ mul_d(result, result, input);
+  __ bind(&done);
+}
+
+
+// nop(CODE_AGE_MARKER_NOP)
+static const uint32_t kCodeAgePatchFirstInstruction = 0x00010180;
+
+static byte* GetNoCodeAgeSequence(uint32_t* length) {
+  // The sequence of instructions that is patched out for aging code is the
+  // following boilerplate stack-building prologue that is found in FUNCTIONS
+  static bool initialized = false;
+  static uint32_t sequence[kNoCodeAgeSequenceLength];
+  byte* byte_sequence = reinterpret_cast<byte*>(sequence);
+  *length = kNoCodeAgeSequenceLength * Assembler::kInstrSize;
+  if (!initialized) {
+    CodePatcher patcher(byte_sequence, kNoCodeAgeSequenceLength);
+    patcher.masm()->Push(ra, fp, cp, a1);
+    patcher.masm()->nop(Assembler::CODE_AGE_SEQUENCE_NOP);
+    patcher.masm()->Addu(fp, sp, Operand(2 * kPointerSize));
+    initialized = true;
+  }
+  return byte_sequence;
+}
+
+
+bool Code::IsYoungSequence(byte* sequence) {
+  uint32_t young_length;
+  byte* young_sequence = GetNoCodeAgeSequence(&young_length);
+  bool result = !memcmp(sequence, young_sequence, young_length);
+  ASSERT(result ||
+         Memory::uint32_at(sequence) == kCodeAgePatchFirstInstruction);
+  return result;
+}
+
+
+void Code::GetCodeAgeAndParity(byte* sequence, Age* age,
+                               MarkingParity* parity) {
+  if (IsYoungSequence(sequence)) {
+    *age = kNoAge;
+    *parity = NO_MARKING_PARITY;
+  } else {
+    Address target_address = Memory::Address_at(
+        sequence + Assembler::kInstrSize * (kNoCodeAgeSequenceLength - 1));
+    Code* stub = GetCodeFromTargetAddress(target_address);
+    GetCodeAgeAndParity(stub, age, parity);
+  }
+}
+
+
+void Code::PatchPlatformCodeAge(byte* sequence,
+                                Code::Age age,
+                                MarkingParity parity) {
+  uint32_t young_length;
+  byte* young_sequence = GetNoCodeAgeSequence(&young_length);
+  if (age == kNoAge) {
+    CopyBytes(sequence, young_sequence, young_length);
+    CPU::FlushICache(sequence, young_length);
+  } else {
+    Code* stub = GetCodeAgeStub(age, parity);
+    CodePatcher patcher(sequence, young_length / Assembler::kInstrSize);
+    // Mark this code sequence for FindPlatformCodeAgeSequence()
+    patcher.masm()->nop(Assembler::CODE_AGE_MARKER_NOP);
+    // Save the function's original return address
+    // (it will be clobbered by Call(t9))
+    patcher.masm()->mov(at, ra);
+    // Load the stub address to t9 and call it
+    patcher.masm()->li(t9,
+        Operand(reinterpret_cast<uint32_t>(stub->instruction_start())));
+    patcher.masm()->Call(t9);
+    // Record the stub address in the empty space for GetCodeAgeAndParity()
+    patcher.masm()->dd(reinterpret_cast<uint32_t>(stub->instruction_start()));
+  }
+}
+
 
 #undef __
 

@@ -51,18 +51,12 @@ class JumpTarget;
 // MIPS generated code calls C code, it must be via t9 register.
 
 
-// Flags used for the AllocateInNewSpace functions.
-enum AllocationFlags {
-  // No special flags.
-  NO_ALLOCATION_FLAGS = 0,
-  // Return the pointer to the allocated already tagged as a heap object.
-  TAG_OBJECT = 1 << 0,
-  // The content of the result register already contains the allocation top in
-  // new space.
-  RESULT_CONTAINS_TOP = 1 << 1,
-  // Specify that the requested size of the space to allocate is specified in
-  // words instead of bytes.
-  SIZE_IN_WORDS = 1 << 2
+// Flags used for AllocateHeapNumber
+enum TaggingMode {
+  // Tag the result.
+  TAG_RESULT,
+  // Don't tag
+  DONT_TAG_RESULT
 };
 
 // Flags used for the ObjectToDoubleFPURegister function.
@@ -180,10 +174,10 @@ class MacroAssembler: public Assembler {
   void Call(Register target, COND_ARGS);
   static int CallSize(Address target, RelocInfo::Mode rmode, COND_ARGS);
   void Call(Address target, RelocInfo::Mode rmode, COND_ARGS);
-  static int CallSize(Handle<Code> code,
-                      RelocInfo::Mode rmode = RelocInfo::CODE_TARGET,
-                      TypeFeedbackId ast_id = TypeFeedbackId::None(),
-                      COND_ARGS);
+  int CallSize(Handle<Code> code,
+               RelocInfo::Mode rmode = RelocInfo::CODE_TARGET,
+               TypeFeedbackId ast_id = TypeFeedbackId::None(),
+               COND_ARGS);
   void Call(Handle<Code> code,
             RelocInfo::Mode rmode = RelocInfo::CODE_TARGET,
             TypeFeedbackId ast_id = TypeFeedbackId::None(),
@@ -281,6 +275,7 @@ class MacroAssembler: public Assembler {
   void LoadHeapObject(Register dst, Handle<HeapObject> object);
 
   void LoadObject(Register result, Handle<Object> object) {
+    AllowDeferredHandleDereference heap_object_check;
     if (object->IsHeapObject()) {
       LoadHeapObject(result, Handle<HeapObject>::cast(object));
     } else {
@@ -315,6 +310,10 @@ class MacroAssembler: public Assembler {
                      int mask,
                      Condition cc,
                      Label* condition_met);
+
+  void CheckMapDeprecated(Handle<Map> map,
+                          Register scratch,
+                          Label* if_deprecated);
 
   // Check if object is in new space.  Jumps if the object is not in new space.
   // The register scratch can be object itself, but it will be clobbered.
@@ -469,25 +468,26 @@ class MacroAssembler: public Assembler {
   // ---------------------------------------------------------------------------
   // Allocation support.
 
-  // Allocate an object in new space. The object_size is specified
-  // either in bytes or in words if the allocation flag SIZE_IN_WORDS
-  // is passed. If the new space is exhausted control continues at the
-  // gc_required label. The allocated object is returned in result. If
-  // the flag tag_allocated_object is true the result is tagged as as
-  // a heap object. All registers are clobbered also when control
-  // continues at the gc_required label.
-  void AllocateInNewSpace(int object_size,
-                          Register result,
-                          Register scratch1,
-                          Register scratch2,
-                          Label* gc_required,
-                          AllocationFlags flags);
-  void AllocateInNewSpace(Register object_size,
-                          Register result,
-                          Register scratch1,
-                          Register scratch2,
-                          Label* gc_required,
-                          AllocationFlags flags);
+  // Allocate an object in new space or old pointer space. The object_size is
+  // specified either in bytes or in words if the allocation flag SIZE_IN_WORDS
+  // is passed. If the space is exhausted control continues at the gc_required
+  // label. The allocated object is returned in result. If the flag
+  // tag_allocated_object is true the result is tagged as as a heap object.
+  // All registers are clobbered also when control continues at the gc_required
+  // label.
+  void Allocate(int object_size,
+                Register result,
+                Register scratch1,
+                Register scratch2,
+                Label* gc_required,
+                AllocationFlags flags);
+
+  void Allocate(Register object_size,
+                Register result,
+                Register scratch1,
+                Register scratch2,
+                Label* gc_required,
+                AllocationFlags flags);
 
   // Undo allocation in new space. The object passed and objects allocated after
   // it will no longer be allocated. The caller must make sure that no pointers
@@ -536,7 +536,8 @@ class MacroAssembler: public Assembler {
                           Register scratch1,
                           Register scratch2,
                           Register heap_number_map,
-                          Label* gc_required);
+                          Label* gc_required,
+                          TaggingMode tagging_mode = TAG_RESULT);
   void AllocateHeapNumberWithValue(Register result,
                                    FPURegister value,
                                    Register scratch1,
@@ -612,14 +613,15 @@ class MacroAssembler: public Assembler {
   void MultiPushFPU(RegList regs);
   void MultiPushReversedFPU(RegList regs);
 
-  // Lower case push() for compatibility with arch-independent code.
   void push(Register src) {
     Addu(sp, sp, Operand(-kPointerSize));
     sw(src, MemOperand(sp, 0));
   }
+  void Push(Register src) { push(src); }
 
   // Push a handle.
   void Push(Handle<Object> handle);
+  void Push(Smi* smi) { Push(Handle<Smi>(smi, isolate())); }
 
   // Push two registers. Pushes leftmost register first (to highest address).
   void Push(Register src1, Register src2) {
@@ -660,11 +662,11 @@ class MacroAssembler: public Assembler {
   void MultiPopFPU(RegList regs);
   void MultiPopReversedFPU(RegList regs);
 
-  // Lower case pop() for compatibility with arch-independent code.
   void pop(Register dst) {
     lw(dst, MemOperand(sp, 0));
     Addu(sp, sp, Operand(kPointerSize));
   }
+  void Pop(Register dst) { pop(dst); }
 
   // Pop two registers. Pops rightmost register first (from lower address).
   void Pop(Register src1, Register src2) {
@@ -752,14 +754,16 @@ class MacroAssembler: public Assembler {
                       FPURegister double_scratch,
                       Label *not_int32);
 
-  // Truncates a double using a specific rounding mode.
+  // Truncates a double using a specific rounding mode, and writes the value
+  // to the result register.
   // The except_flag will contain any exceptions caused by the instruction.
-  // If check_inexact is kDontCheckForInexactConversion, then the inexacat
+  // If check_inexact is kDontCheckForInexactConversion, then the inexact
   // exception is masked.
   void EmitFPUTruncate(FPURoundingMode rounding_mode,
-                       FPURegister result,
+                       Register result,
                        DoubleRegister double_input,
-                       Register scratch1,
+                       Register scratch,
+                       DoubleRegister double_scratch,
                        Register except_flag,
                        CheckForInexactConversion check_inexact
                            = kDontCheckForInexactConversion);
@@ -823,6 +827,7 @@ class MacroAssembler: public Assembler {
                            bool can_have_holes);
 
   void LoadGlobalFunction(int index, Register function);
+  void LoadArrayFunction(Register function);
 
   // Load the initial map from the global function. The registers
   // function and map can be the same, function is then overwritten.
@@ -868,6 +873,7 @@ class MacroAssembler: public Assembler {
                       CallKind call_kind);
 
   void InvokeFunction(Handle<JSFunction> function,
+                      const ParameterCount& expected,
                       const ParameterCount& actual,
                       InvokeFlag flag,
                       const CallWrapper& call_wrapper,
@@ -886,6 +892,10 @@ class MacroAssembler: public Assembler {
   void IsObjectJSStringType(Register object,
                             Register scratch,
                             Label* fail);
+
+  void IsObjectNameType(Register object,
+                        Register scratch,
+                        Label* fail);
 
 #ifdef ENABLE_DEBUGGER_SUPPORT
   // -------------------------------------------------------------------------
@@ -972,14 +982,14 @@ class MacroAssembler: public Assembler {
   // case scratch2, scratch3 and scratch4 are unmodified.
   void StoreNumberToDoubleElements(Register value_reg,
                                    Register key_reg,
-                                   Register receiver_reg,
                                    // All regs below here overwritten.
                                    Register elements_reg,
                                    Register scratch1,
                                    Register scratch2,
                                    Register scratch3,
                                    Register scratch4,
-                                   Label* fail);
+                                   Label* fail,
+                                   int elements_offset = 0);
 
   // Compare an object's map with the specified map and its transitioned
   // elements maps if mode is ALLOW_ELEMENT_TRANSITION_MAPS. Jumps to
@@ -990,8 +1000,7 @@ class MacroAssembler: public Assembler {
                            Handle<Map> map,
                            Label* early_success,
                            Condition cond,
-                           Label* branch_to,
-                           CompareMapMode mode = REQUIRE_EXACT_MAP);
+                           Label* branch_to);
 
   // As above, but the map of the object is already loaded into the register
   // which is preserved by the code generated.
@@ -999,8 +1008,7 @@ class MacroAssembler: public Assembler {
                            Handle<Map> map,
                            Label* early_success,
                            Condition cond,
-                           Label* branch_to,
-                           CompareMapMode mode = REQUIRE_EXACT_MAP);
+                           Label* branch_to);
 
   // Check if the map of an object is equal to a specified map and branch to
   // label if not. Skip the smi check if not required (object is known to be a
@@ -1010,8 +1018,7 @@ class MacroAssembler: public Assembler {
                 Register scratch,
                 Handle<Map> map,
                 Label* fail,
-                SmiCheckType smi_check_type,
-                CompareMapMode mode = REQUIRE_EXACT_MAP);
+                SmiCheckType smi_check_type);
 
 
   void CheckMap(Register obj,
@@ -1129,6 +1136,7 @@ class MacroAssembler: public Assembler {
 
   // Call a code stub.
   void CallStub(CodeStub* stub,
+                TypeFeedbackId ast_id = TypeFeedbackId::None(),
                 Condition cond = cc_always,
                 Register r1 = zero_reg,
                 const Operand& r2 = Operand(zero_reg),
@@ -1212,7 +1220,13 @@ class MacroAssembler: public Assembler {
   // from handle and propagates exceptions.  Restores context.  stack_space
   // - space to be unwound on exit (includes the call JS arguments space and
   // the additional space allocated for the fast call).
-  void CallApiFunctionAndReturn(ExternalReference function, int stack_space);
+  void CallApiFunctionAndReturn(ExternalReference function,
+                                Address function_address,
+                                ExternalReference thunk_ref,
+                                Register thunk_last_arg,
+                                int stack_space,
+                                bool returns_handle,
+                                int return_value_offset_from_fp);
 
   // Jump to the builtin routine.
   void JumpToExternalReference(const ExternalReference& builtin,
@@ -1258,15 +1272,15 @@ class MacroAssembler: public Assembler {
 
   // Calls Abort(msg) if the condition cc is not satisfied.
   // Use --debug_code to enable.
-  void Assert(Condition cc, const char* msg, Register rs, Operand rt);
+  void Assert(Condition cc, BailoutReason reason, Register rs, Operand rt);
   void AssertRegisterIsRoot(Register reg, Heap::RootListIndex index);
   void AssertFastElements(Register elements);
 
   // Like Assert(), but always enabled.
-  void Check(Condition cc, const char* msg, Register rs, Operand rt);
+  void Check(Condition cc, BailoutReason reason, Register rs, Operand rt);
 
   // Print a message to stdout and abort execution.
-  void Abort(const char* msg);
+  void Abort(BailoutReason msg);
 
   // Verify restrictions about code generated in stubs.
   void set_generating_stub(bool value) { generating_stub_ = value; }
@@ -1343,11 +1357,14 @@ class MacroAssembler: public Assembler {
   // Abort execution if argument is not a string, enabled via --debug-code.
   void AssertString(Register object);
 
+  // Abort execution if argument is not a name, enabled via --debug-code.
+  void AssertName(Register object);
+
   // Abort execution if argument is not the root value with the given index,
   // enabled via --debug-code.
   void AssertRootValue(Register src,
                        Heap::RootListIndex root_value_index,
-                       const char* message);
+                       BailoutReason reason);
 
   // ---------------------------------------------------------------------------
   // HeapNumber utilities.
@@ -1374,6 +1391,8 @@ class MacroAssembler: public Assembler {
   void JumpIfInstanceTypeIsNotSequentialAscii(Register type,
                                               Register scratch,
                                               Label* failure);
+
+  void JumpIfNotUniqueName(Register reg, Label* not_unique_name);
 
   // Test that both first and second are sequential ASCII strings.
   // Assume that they are non-smis.
@@ -1426,6 +1445,17 @@ class MacroAssembler: public Assembler {
   // Expects object in a0 and returns map with validated enum cache
   // in a0.  Assumes that any other register can be used as a scratch.
   void CheckEnumCache(Register null_value, Label* call_runtime);
+
+  // AllocationMemento support. Arrays may have an associated
+  // AllocationMemento object that can be checked for in order to pretransition
+  // to another type.
+  // On entry, receiver_reg should point to the array object.
+  // scratch_reg gets clobbered.
+  // If allocation info is present, jump to allocation_info_present
+  void TestJSArrayForAllocationMemento(Register receiver_reg,
+                                       Register scratch_reg,
+                                       Condition cond,
+                                       Label* allocation_memento_present);
 
  private:
   void CallCFunctionHelper(Register function,
@@ -1501,9 +1531,9 @@ class MacroAssembler: public Assembler {
   // This handle will be patched with the code object on installation.
   Handle<Object> code_object_;
 
-  // Needs access to SafepointRegisterStackIndex for optimized frame
+  // Needs access to SafepointRegisterStackIndex for compiled frame
   // traversal.
-  friend class OptimizedFrame;
+  friend class StandardFrame;
 };
 
 
@@ -1532,7 +1562,6 @@ class CodePatcher {
 
  private:
   byte* address_;  // The address of the code being patched.
-  int instructions_;  // Number of instructions of the expected patch size.
   int size_;  // Number of bytes of the expected patch size.
   MacroAssembler masm_;  // Macro assembler used to generate the code.
 };

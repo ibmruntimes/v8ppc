@@ -25,9 +25,9 @@
 // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-// On MacOS, this test needs a stack size of at least 538 kBytes.
+// On MacOS X 10.7.5, this test needs a stack size of at least 788 kBytes.
 // On PPC64, this test needs a stack size of at least 698 kBytes.
-// Flags: --stack-size=700
+// Flags: --stack-size=800
 
 // Test that we can make large object literals that work.
 // Also test that we can attempt to make even larger object literals without

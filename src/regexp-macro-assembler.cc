@@ -77,14 +77,14 @@ const byte* NativeRegExpMacroAssembler::StringCharacterPosition(
   ASSERT(subject->IsExternalString() || subject->IsSeqString());
   ASSERT(start_index >= 0);
   ASSERT(start_index <= subject->length());
-  if (subject->IsAsciiRepresentation()) {
+  if (subject->IsOneByteRepresentation()) {
     const byte* address;
     if (StringShape(subject).IsExternal()) {
-      const char* data = ExternalAsciiString::cast(subject)->GetChars();
+      const uint8_t* data = ExternalAsciiString::cast(subject)->GetChars();
       address = reinterpret_cast<const byte*>(data);
     } else {
-      ASSERT(subject->IsSeqAsciiString());
-      char* data = SeqAsciiString::cast(subject)->GetChars();
+      ASSERT(subject->IsSeqOneByteString());
+      const uint8_t* data = SeqOneByteString::cast(subject)->GetChars();
       address = reinterpret_cast<const byte*>(data);
     }
     return address + start_index;
@@ -113,8 +113,8 @@ NativeRegExpMacroAssembler::Result NativeRegExpMacroAssembler::Match(
   ASSERT(previous_index <= subject->length());
 
   // No allocations before calling the regexp, but we can't use
-  // AssertNoAllocation, since regexps might be preempted, and another thread
-  // might do allocation anyway.
+  // DisallowHeapAllocation, since regexps might be preempted, and another
+  // thread might do allocation anyway.
 
   String* subject_ptr = *subject;
   // Character offsets into string.
@@ -133,7 +133,7 @@ NativeRegExpMacroAssembler::Result NativeRegExpMacroAssembler::Match(
     slice_offset = slice->offset();
   }
   // Ensure that an underlying string has the same ASCII-ness.
-  bool is_ascii = subject_ptr->IsAsciiRepresentation();
+  bool is_ascii = subject_ptr->IsOneByteRepresentation();
   ASSERT(subject_ptr->IsExternalString() || subject_ptr->IsSeqString());
   // String is now either Sequential or External
   int char_size_shift = is_ascii ? 0 : 1;
@@ -210,6 +210,26 @@ const byte NativeRegExpMacroAssembler::word_character_map[] = {
     0xffu, 0xffu, 0xffu, 0xffu, 0xffu, 0xffu, 0xffu, 0xffu,  // 'h' - 'o'
     0xffu, 0xffu, 0xffu, 0xffu, 0xffu, 0xffu, 0xffu, 0xffu,  // 'p' - 'w'
     0xffu, 0xffu, 0xffu, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u,  // 'x' - 'z'
+    // Latin-1 range
+    0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u,
+    0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u,
+    0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u,
+    0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u,
+
+    0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u,
+    0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u,
+    0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u,
+    0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u,
+
+    0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u,
+    0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u,
+    0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u,
+    0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u,
+
+    0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u,
+    0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u,
+    0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u,
+    0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u,
 };
 
 

@@ -31,7 +31,7 @@
 
 #include "v8.h"
 
-#if defined(V8_TARGET_ARCH_X64)
+#if V8_TARGET_ARCH_X64
 
 #include "disasm.h"
 #include "lazy-instance.h"
@@ -48,6 +48,7 @@ enum OperandType {
   BYTE_REG_OPER_OP_ORDER = REG_OPER_OP_ORDER | BYTE_SIZE_OPERAND_FLAG,
   BYTE_OPER_REG_OP_ORDER = OPER_REG_OP_ORDER | BYTE_SIZE_OPERAND_FLAG
 };
+
 
 //------------------------------------------------------------------
 // Tables
@@ -293,6 +294,7 @@ static InstructionDesc cmov_instructions[16] = {
   {"cmovg", TWO_OPERANDS_INSTR, REG_OPER_OP_ORDER, false}
 };
 
+
 //------------------------------------------------------------------------------
 // DisassemblerX64 implementation.
 
@@ -300,6 +302,7 @@ enum UnimplementedOpcodeAction {
   CONTINUE_ON_UNIMPLEMENTED_OPCODE,
   ABORT_ON_UNIMPLEMENTED_OPCODE
 };
+
 
 // A new DisassemblerX64 object is created to disassemble each instruction.
 // The object can only disassemble a single instruction.
@@ -1244,6 +1247,13 @@ int DisassemblerX64::TwoByteOpcodeInstruction(byte* data) {
     AppendToBuffer("xorps %s, ", NameOfXMMRegister(regop));
     current += PrintRightXMMOperand(current);
 
+  } else if (opcode == 0x50) {
+    // movmskps reg, xmm
+    int mod, regop, rm;
+    get_modrm(*current, &mod, &regop, &rm);
+    AppendToBuffer("movmskps %s, ", NameOfCPURegister(regop));
+    current += PrintRightXMMOperand(current);
+
   } else if ((opcode & 0xF0) == 0x80) {
     // Jcc: Conditional jump (branch).
     current = data + JumpConditional(data);
@@ -1724,6 +1734,11 @@ int DisassemblerX64::InstructionDecode(v8::internal::Vector<char> out_buffer,
         data += F6F7Instruction(data);
         break;
 
+      case 0x3C:
+        AppendToBuffer("cmp al, 0x%x", *reinterpret_cast<int8_t*>(data + 1));
+        data +=2;
+        break;
+
       default:
         UnimplementedInstruction();
         data += 1;
@@ -1750,6 +1765,7 @@ int DisassemblerX64::InstructionDecode(v8::internal::Vector<char> out_buffer,
                                      tmp_buffer_.start());
   return instr_len;
 }
+
 
 //------------------------------------------------------------------------------
 
@@ -1809,6 +1825,7 @@ const char* NameConverter::NameInCode(byte* addr) const {
   UNREACHABLE();
   return "";
 }
+
 
 //------------------------------------------------------------------------------
 

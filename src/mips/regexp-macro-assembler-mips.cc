@@ -27,7 +27,7 @@
 
 #include "v8.h"
 
-#if defined(V8_TARGET_ARCH_MIPS)
+#if V8_TARGET_ARCH_MIPS
 
 #include "unicode.h"
 #include "log.h"
@@ -122,7 +122,7 @@ RegExpMacroAssemblerMIPS::RegExpMacroAssemblerMIPS(
     int registers_to_save,
     Zone* zone)
     : NativeRegExpMacroAssembler(zone),
-      masm_(new MacroAssembler(Isolate::Current(), NULL, kRegExpCodeSize)),
+      masm_(new MacroAssembler(zone->isolate(), NULL, kRegExpCodeSize)),
       mode_(mode),
       num_registers_(registers_to_save),
       num_saved_registers_(registers_to_save),
@@ -235,55 +235,6 @@ void RegExpMacroAssemblerMIPS::CheckCharacterLT(uc16 limit, Label* on_less) {
 }
 
 
-void RegExpMacroAssemblerMIPS::CheckCharacters(Vector<const uc16> str,
-                                               int cp_offset,
-                                               Label* on_failure,
-                                               bool check_end_of_string) {
-  if (on_failure == NULL) {
-    // Instead of inlining a backtrack for each test, (re)use the global
-    // backtrack target.
-    on_failure = &backtrack_label_;
-  }
-
-  if (check_end_of_string) {
-    // Is last character of required match inside string.
-    CheckPosition(cp_offset + str.length() - 1, on_failure);
-  }
-
-  __ Addu(a0, end_of_input_address(), Operand(current_input_offset()));
-  if (cp_offset != 0) {
-    int byte_offset = cp_offset * char_size();
-    __ Addu(a0, a0, Operand(byte_offset));
-  }
-
-  // a0 : Address of characters to match against str.
-  int stored_high_byte = 0;
-  for (int i = 0; i < str.length(); i++) {
-    if (mode_ == ASCII) {
-      __ lbu(a1, MemOperand(a0, 0));
-      __ addiu(a0, a0, char_size());
-      ASSERT(str[i] <= String::kMaxAsciiCharCode);
-      BranchOrBacktrack(on_failure, ne, a1, Operand(str[i]));
-    } else {
-      __ lhu(a1, MemOperand(a0, 0));
-      __ addiu(a0, a0, char_size());
-      uc16 match_char = str[i];
-      int match_high_byte = (match_char >> 8);
-      if (match_high_byte == 0) {
-        BranchOrBacktrack(on_failure, ne, a1, Operand(str[i]));
-      } else {
-        if (match_high_byte != stored_high_byte) {
-          __ li(a2, Operand(match_high_byte));
-          stored_high_byte = match_high_byte;
-        }
-        __ Addu(a3, a2, Operand(match_char & 0xff));
-        BranchOrBacktrack(on_failure, ne, a1, Operand(a3));
-      }
-    }
-  }
-}
-
-
 void RegExpMacroAssemblerMIPS::CheckGreedyLoop(Label* on_equal) {
   Label backtrack_non_equal;
   __ lw(a0, MemOperand(backtrack_stackpointer(), 0));
@@ -341,7 +292,13 @@ void RegExpMacroAssemblerMIPS::CheckNotBackReferenceIgnoreCase(
     __ Or(t0, t0, Operand(0x20));  // Also convert input character.
     __ Branch(&fail, ne, t0, Operand(a3));
     __ Subu(a3, a3, Operand('a'));
-    __ Branch(&fail, hi, a3, Operand('z' - 'a'));  // Is a3 a lowercase letter?
+    __ Branch(&loop_check, ls, a3, Operand('z' - 'a'));
+    // Latin-1: Check for values in range [224,254] but not 247.
+    __ Subu(a3, a3, Operand(224 - 'a'));
+    // Weren't Latin-1 letters.
+    __ Branch(&fail, hi, a3, Operand(254 - 224));
+    // Check for 247.
+    __ Branch(&fail, eq, a3, Operand(247 - 224));
 
     __ bind(&loop_check);
     __ Branch(&loop, lt, a0, Operand(a1));
@@ -382,7 +339,7 @@ void RegExpMacroAssemblerMIPS::CheckNotBackReferenceIgnoreCase(
     // Address of current input position.
     __ Addu(a1, current_input_offset(), Operand(end_of_input_address()));
     // Isolate.
-    __ li(a3, Operand(ExternalReference::isolate_address()));
+    __ li(a3, Operand(ExternalReference::isolate_address(masm_->isolate())));
 
     {
       AllowExternalCallThatCantCauseGC scope(masm_);
@@ -511,7 +468,7 @@ void RegExpMacroAssemblerMIPS::CheckBitInTable(
     Handle<ByteArray> table,
     Label* on_bit_set) {
   __ li(a0, Operand(table));
-  if (mode_ != ASCII || kTableMask != String::kMaxAsciiCharCode) {
+  if (mode_ != ASCII || kTableMask != String::kMaxOneByteCharCode) {
     __ And(a1, current_character(), Operand(kTableSize - 1));
     __ Addu(a0, a0, a1);
   } else {
@@ -531,25 +488,20 @@ bool RegExpMacroAssemblerMIPS::CheckSpecialCharacterClass(uc16 type,
   case 's':
     // Match space-characters.
     if (mode_ == ASCII) {
-      // ASCII space characters are '\t'..'\r' and ' '.
+      // One byte space characters are '\t'..'\r', ' ' and \u00a0.
       Label success;
       __ Branch(&success, eq, current_character(), Operand(' '));
       // Check range 0x09..0x0d.
       __ Subu(a0, current_character(), Operand('\t'));
-      BranchOrBacktrack(on_no_match, hi, a0, Operand('\r' - '\t'));
+      __ Branch(&success, ls, a0, Operand('\r' - '\t'));
+      // \u00a0 (NBSP).
+      BranchOrBacktrack(on_no_match, ne, a0, Operand(0x00a0 - '\t'));
       __ bind(&success);
       return true;
     }
     return false;
   case 'S':
-    // Match non-space characters.
-    if (mode_ == ASCII) {
-      // ASCII space characters are '\t'..'\r' and ' '.
-      BranchOrBacktrack(on_no_match, eq, current_character(), Operand(' '));
-      __ Subu(a0, current_character(), Operand('\t'));
-      BranchOrBacktrack(on_no_match, ls, a0, Operand('\r' - '\t'));
-      return true;
-    }
+    // The emitted code for generic character classes is good enough.
     return false;
   case 'd':
     // Match ASCII digits ('0'..'9').
@@ -900,7 +852,7 @@ Handle<HeapObject> RegExpMacroAssemblerMIPS::GetCode(Handle<String> source) {
       __ PrepareCallCFunction(num_arguments, a0);
       __ mov(a0, backtrack_stackpointer());
       __ Addu(a1, frame_pointer(), Operand(kStackHighEnd));
-      __ li(a2, Operand(ExternalReference::isolate_address()));
+      __ li(a2, Operand(ExternalReference::isolate_address(masm_->isolate())));
       ExternalReference grow_stack =
           ExternalReference::re_grow_stack(masm_->isolate());
       __ CallCFunction(grow_stack, num_arguments);
@@ -928,9 +880,8 @@ Handle<HeapObject> RegExpMacroAssemblerMIPS::GetCode(Handle<String> source) {
 
   CodeDesc code_desc;
   masm_->GetCode(&code_desc);
-  Handle<Code> code = FACTORY->NewCode(code_desc,
-                                       Code::ComputeFlags(Code::REGEXP),
-                                       masm_->CodeObject());
+  Handle<Code> code = isolate()->factory()->NewCode(
+      code_desc, Code::ComputeFlags(Code::REGEXP), masm_->CodeObject());
   LOG(Isolate::Current(), RegExpCodeCreateEvent(*code, *source));
   return Handle<HeapObject>::cast(code);
 }
@@ -1004,6 +955,7 @@ void RegExpMacroAssemblerMIPS::PushBacktrack(Label* label) {
     int target = label->pos();
     __ li(a0, Operand(target + Code::kHeaderSize - kHeapObjectTag));
   } else {
+    Assembler::BlockTrampolinePoolScope block_trampoline_pool(masm_);
     Label after_constant;
     __ Branch(&after_constant);
     int offset = masm_->pc_offset();
@@ -1155,7 +1107,7 @@ int RegExpMacroAssemblerMIPS::CheckStackGuardState(Address* return_address,
 
   Handle<String> subject(frame_entry<String*>(re_frame, kInputString));
   // Current string.
-  bool is_ascii = subject->IsAsciiRepresentationUnderneath();
+  bool is_ascii = subject->IsOneByteRepresentationUnderneath();
 
   ASSERT(re_code->instruction_start() <= *return_address);
   ASSERT(*return_address <=
@@ -1186,7 +1138,7 @@ int RegExpMacroAssemblerMIPS::CheckStackGuardState(Address* return_address,
   }
 
   // String might have changed.
-  if (subject_tmp->IsAsciiRepresentation() != is_ascii) {
+  if (subject_tmp->IsOneByteRepresentation() != is_ascii) {
     // If we changed between an ASCII and an UC16 string, the specialized
     // code cannot be used, and we need to restart regexp matching from
     // scratch (including, potentially, compiling a new version of the code).

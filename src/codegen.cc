@@ -30,6 +30,7 @@
 #include "bootstrapper.h"
 #include "codegen.h"
 #include "compiler.h"
+#include "cpu-profiler.h"
 #include "debug.h"
 #include "prettyprinter.h"
 #include "rewriter.h"
@@ -58,13 +59,12 @@ Comment::~Comment() {
 #undef __
 
 
-void CodeGenerator::MakeCodePrologue(CompilationInfo* info) {
-#ifdef DEBUG
+void CodeGenerator::MakeCodePrologue(CompilationInfo* info, const char* kind) {
   bool print_source = false;
   bool print_ast = false;
   const char* ftype;
 
-  if (Isolate::Current()->bootstrapper()->IsActive()) {
+  if (info->isolate()->bootstrapper()->IsActive()) {
     print_source = FLAG_print_builtin_source;
     print_ast = FLAG_print_builtin_ast;
     ftype = "builtin";
@@ -75,17 +75,24 @@ void CodeGenerator::MakeCodePrologue(CompilationInfo* info) {
   }
 
   if (FLAG_trace_codegen || print_source || print_ast) {
-    PrintF("*** Generate code for %s function: ", ftype);
-    info->function()->name()->ShortPrint();
-    PrintF(" ***\n");
+    PrintF("[generating %s code for %s function: ", kind, ftype);
+    if (info->IsStub()) {
+      const char* name =
+          CodeStub::MajorName(info->code_stub()->MajorKey(), true);
+      PrintF("%s", name == NULL ? "<unknown>" : name);
+    } else {
+      PrintF("%s", *info->function()->debug_name()->ToCString());
+    }
+    PrintF("]\n");
   }
 
-  if (print_source) {
+#ifdef DEBUG
+  if (!info->IsStub() && print_source) {
     PrintF("--- Source from AST ---\n%s\n",
            PrettyPrinter().PrintProgram(info->function()));
   }
 
-  if (print_ast) {
+  if (!info->IsStub() && print_ast) {
     PrintF("--- AST ---\n%s\n",
            AstPrinter().PrintProgram(info->function()));
   }
@@ -100,13 +107,17 @@ Handle<Code> CodeGenerator::MakeCodeEpilogue(MacroAssembler* masm,
 
   // Allocate and install the code.
   CodeDesc desc;
+  bool is_crankshafted =
+      Code::ExtractKindFromFlags(flags) == Code::OPTIMIZED_FUNCTION ||
+      info->IsStub();
   masm->GetCode(&desc);
   Handle<Code> code =
-      isolate->factory()->NewCode(desc, flags, masm->CodeObject());
-
+      isolate->factory()->NewCode(desc, flags, masm->CodeObject(),
+                                  false, is_crankshafted);
   if (!code.is_null()) {
     isolate->counters()->total_compiled_code_size()->Increment(
         code->instruction_size());
+    code->set_prologue_offset(info->prologue_offset());
   }
   return code;
 }
@@ -114,25 +125,32 @@ Handle<Code> CodeGenerator::MakeCodeEpilogue(MacroAssembler* masm,
 
 void CodeGenerator::PrintCode(Handle<Code> code, CompilationInfo* info) {
 #ifdef ENABLE_DISASSEMBLER
+  AllowDeferredHandleDereference allow_deference_for_print_code;
   bool print_code = Isolate::Current()->bootstrapper()->IsActive()
       ? FLAG_print_builtin_code
-      : (FLAG_print_code || (info->IsOptimizing() && FLAG_print_opt_code));
+      : (FLAG_print_code ||
+         (info->IsStub() && FLAG_print_code_stubs) ||
+         (info->IsOptimizing() && FLAG_print_opt_code));
   if (print_code) {
     // Print the source code if available.
     FunctionLiteral* function = info->function();
-    Handle<Script> script = info->script();
-    if (!script->IsUndefined() && !script->source()->IsUndefined()) {
-      PrintF("--- Raw source ---\n");
-      StringInputBuffer stream(String::cast(script->source()));
-      stream.Seek(function->start_position());
-      // fun->end_position() points to the last character in the stream. We
-      // need to compensate by adding one to calculate the length.
-      int source_len =
-          function->end_position() - function->start_position() + 1;
-      for (int i = 0; i < source_len; i++) {
-        if (stream.has_more()) PrintF("%c", stream.GetNext());
+    if (code->kind() == Code::OPTIMIZED_FUNCTION) {
+      Handle<Script> script = info->script();
+      if (!script->IsUndefined() && !script->source()->IsUndefined()) {
+        PrintF("--- Raw source ---\n");
+        ConsStringIteratorOp op;
+        StringCharacterStream stream(String::cast(script->source()),
+                                     &op,
+                                     function->start_position());
+        // fun->end_position() points to the last character in the stream. We
+        // need to compensate by adding one to calculate the length.
+        int source_len =
+            function->end_position() - function->start_position() + 1;
+        for (int i = 0; i < source_len; i++) {
+          if (stream.HasMore()) PrintF("%c", stream.GetNext());
+        }
+        PrintF("\n\n");
       }
-      PrintF("\n\n");
     }
     if (info->IsOptimizing()) {
       if (FLAG_print_unopt_code) {
@@ -144,7 +162,12 @@ void CodeGenerator::PrintCode(Handle<Code> code, CompilationInfo* info) {
     } else {
       PrintF("--- Code ---\n");
     }
-    code->Disassemble(*function->debug_name()->ToCString());
+    if (info->IsStub()) {
+      CodeStub::Major major_key = info->code_stub()->MajorKey();
+      code->Disassemble(CodeStub::MajorName(major_key, false));
+    } else {
+      code->Disassemble(*function->debug_name()->ToCString());
+    }
   }
 #endif  // ENABLE_DISASSEMBLER
 }
@@ -153,12 +176,13 @@ void CodeGenerator::PrintCode(Handle<Code> code, CompilationInfo* info) {
 bool CodeGenerator::ShouldGenerateLog(Expression* type) {
   ASSERT(type != NULL);
   Isolate* isolate = Isolate::Current();
-  if (!isolate->logger()->is_logging() && !CpuProfiler::is_profiling(isolate)) {
+  if (!isolate->logger()->is_logging() &&
+      !isolate->cpu_profiler()->is_profiling()) {
     return false;
   }
-  Handle<String> name = Handle<String>::cast(type->AsLiteral()->handle());
+  Handle<String> name = Handle<String>::cast(type->AsLiteral()->value());
   if (FLAG_log_regexp) {
-    if (name->IsEqualTo(CStrVector("regexp")))
+    if (name->IsOneByteEqualTo(STATIC_ASCII_VECTOR("regexp")))
       return true;
   }
   return false;

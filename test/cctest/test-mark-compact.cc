@@ -35,6 +35,7 @@
 #include <errno.h>
 #endif
 
+
 #include "v8.h"
 
 #include "global-handles.h"
@@ -43,16 +44,9 @@
 
 using namespace v8::internal;
 
-static v8::Persistent<v8::Context> env;
-
-static void InitializeVM() {
-  if (env.IsEmpty()) env = v8::Context::New();
-  v8::HandleScope scope;
-  env->Enter();
-}
-
 
 TEST(MarkingDeque) {
+  CcTest::InitializeVM();
   int mem_size = 20 * kPointerSize;
   byte* mem = NewArray<byte>(20*kPointerSize);
   Address low = reinterpret_cast<Address>(mem);
@@ -60,19 +54,20 @@ TEST(MarkingDeque) {
   MarkingDeque s;
   s.Initialize(low, high);
 
-  Address address = NULL;
+  Address original_address = reinterpret_cast<Address>(&s);
+  Address current_address = original_address;
   while (!s.IsFull()) {
-    s.PushBlack(HeapObject::FromAddress(address));
-    address += kPointerSize;
+    s.PushBlack(HeapObject::FromAddress(current_address));
+    current_address += kPointerSize;
   }
 
   while (!s.IsEmpty()) {
     Address value = s.Pop()->address();
-    address -= kPointerSize;
-    CHECK_EQ(address, value);
+    current_address -= kPointerSize;
+    CHECK_EQ(current_address, value);
   }
 
-  CHECK_EQ(NULL, address);
+  CHECK_EQ(original_address, current_address);
   DeleteArray(mem);
 }
 
@@ -88,9 +83,9 @@ TEST(Promotion) {
   FLAG_always_compact = true;
   HEAP->ConfigureHeap(2*256*KB, 8*MB, 8*MB);
 
-  InitializeVM();
+  CcTest::InitializeVM();
 
-  v8::HandleScope sc;
+  v8::HandleScope sc(CcTest::isolate());
 
   // Allocate a fixed array in the new space.
   int array_size =
@@ -116,18 +111,16 @@ TEST(NoPromotion) {
 
   // Test the situation that some objects in new space are promoted to
   // the old space
-  InitializeVM();
+  CcTest::InitializeVM();
 
-  v8::HandleScope sc;
+  v8::HandleScope sc(CcTest::isolate());
 
   // Do a mark compact GC to shrink the heap.
   HEAP->CollectGarbage(OLD_POINTER_SPACE);
 
   // Allocate a big Fixed array in the new space.
-  int max_size =
-      Min(Page::kMaxNonCodeHeapObjectSize, HEAP->MaxObjectSizeInNewSpace());
-
-  int length = (max_size - FixedArray::kHeaderSize) / (2*kPointerSize);
+  int length = (Page::kMaxNonCodeHeapObjectSize -
+      FixedArray::kHeaderSize) / (2 * kPointerSize);
   Object* obj = i::Isolate::Current()->heap()->AllocateFixedArray(length)->
       ToObjectChecked();
 
@@ -154,9 +147,9 @@ TEST(NoPromotion) {
 
 
 TEST(MarkCompactCollector) {
-  InitializeVM();
+  CcTest::InitializeVM();
 
-  v8::HandleScope sc;
+  v8::HandleScope sc(CcTest::isolate());
   // call mark-compact when heap is empty
   HEAP->CollectGarbage(OLD_POINTER_SPACE);
 
@@ -182,8 +175,8 @@ TEST(MarkCompactCollector) {
                            JSObject::kHeaderSize)->ToObjectChecked();
 
   // allocate a garbage
-  String* func_name =
-      String::cast(HEAP->LookupAsciiSymbol("theFunction")->ToObjectChecked());
+  String* func_name = String::cast(
+      HEAP->InternalizeUtf8String("theFunction")->ToObjectChecked());
   SharedFunctionInfo* function_share = SharedFunctionInfo::cast(
       HEAP->AllocateSharedFunctionInfo(func_name)->ToObjectChecked());
   JSFunction* function = JSFunction::cast(
@@ -201,8 +194,8 @@ TEST(MarkCompactCollector) {
       HEAP->AllocateJSObject(function)->ToObjectChecked());
   HEAP->CollectGarbage(OLD_POINTER_SPACE);
 
-  func_name =
-      String::cast(HEAP->LookupAsciiSymbol("theFunction")->ToObjectChecked());
+  func_name = String::cast(
+      HEAP->InternalizeUtf8String("theFunction")->ToObjectChecked());
   CHECK(Isolate::Current()->context()->global_object()->
         HasLocalProperty(func_name));
   Object* func_value = Isolate::Current()->context()->global_object()->
@@ -212,11 +205,11 @@ TEST(MarkCompactCollector) {
 
   obj = JSObject::cast(HEAP->AllocateJSObject(function)->ToObjectChecked());
   String* obj_name =
-      String::cast(HEAP->LookupAsciiSymbol("theObject")->ToObjectChecked());
+      String::cast(HEAP->InternalizeUtf8String("theObject")->ToObjectChecked());
   Isolate::Current()->context()->global_object()->SetProperty(
       obj_name, obj, NONE, kNonStrictMode)->ToObjectChecked();
   String* prop_name =
-      String::cast(HEAP->LookupAsciiSymbol("theSlot")->ToObjectChecked());
+      String::cast(HEAP->InternalizeUtf8String("theSlot")->ToObjectChecked());
   obj->SetProperty(prop_name,
                    Smi::FromInt(23),
                    NONE,
@@ -225,7 +218,7 @@ TEST(MarkCompactCollector) {
   HEAP->CollectGarbage(OLD_POINTER_SPACE);
 
   obj_name =
-      String::cast(HEAP->LookupAsciiSymbol("theObject")->ToObjectChecked());
+      String::cast(HEAP->InternalizeUtf8String("theObject")->ToObjectChecked());
   CHECK(Isolate::Current()->context()->global_object()->
         HasLocalProperty(obj_name));
   CHECK(Isolate::Current()->context()->global_object()->
@@ -233,31 +226,33 @@ TEST(MarkCompactCollector) {
   obj = JSObject::cast(Isolate::Current()->context()->global_object()->
                        GetProperty(obj_name)->ToObjectChecked());
   prop_name =
-      String::cast(HEAP->LookupAsciiSymbol("theSlot")->ToObjectChecked());
+      String::cast(HEAP->InternalizeUtf8String("theSlot")->ToObjectChecked());
   CHECK(obj->GetProperty(prop_name) == Smi::FromInt(23));
 }
 
 
 // TODO(1600): compaction of map space is temporary removed from GC.
 #if 0
-static Handle<Map> CreateMap() {
-  return FACTORY->NewMap(JS_OBJECT_TYPE, JSObject::kHeaderSize);
+static Handle<Map> CreateMap(Isolate* isolate) {
+  return isolate->factory()->NewMap(JS_OBJECT_TYPE, JSObject::kHeaderSize);
 }
 
 
 TEST(MapCompact) {
   FLAG_max_map_space_pages = 16;
-  InitializeVM();
+  CcTest::InitializeVM();
+  Isolate* isolate = Isolate::Current();
+  Factory* factory = isolate->factory();
 
   {
     v8::HandleScope sc;
     // keep allocating maps while pointers are still encodable and thus
     // mark compact is permitted.
-    Handle<JSObject> root = FACTORY->NewJSObjectFromMap(CreateMap());
+    Handle<JSObject> root = factory->NewJSObjectFromMap(CreateMap());
     do {
       Handle<Map> map = CreateMap();
       map->set_prototype(*root);
-      root = FACTORY->NewJSObjectFromMap(map);
+      root = factory->NewJSObjectFromMap(map);
     } while (HEAP->map_space()->MapPointersEncodable());
   }
   // Now, as we don't have any handles to just allocated maps, we should
@@ -286,7 +281,8 @@ static void GCEpilogueCallbackFunc() {
 
 
 TEST(GCCallback) {
-  InitializeVM();
+  i::FLAG_stress_compaction = false;
+  CcTest::InitializeVM();
 
   HEAP->SetGlobalGCPrologueCallback(&GCPrologueCallbackFunc);
   HEAP->SetGlobalGCEpilogueCallback(&GCEpilogueCallbackFunc);
@@ -304,18 +300,22 @@ TEST(GCCallback) {
 
 
 static int NumberOfWeakCalls = 0;
-static void WeakPointerCallback(v8::Persistent<v8::Value> handle, void* id) {
+static void WeakPointerCallback(v8::Isolate* isolate,
+                                v8::Persistent<v8::Value>* handle,
+                                void* id) {
   ASSERT(id == reinterpret_cast<void*>(1234));
   NumberOfWeakCalls++;
-  handle.Dispose();
+  handle->Dispose(isolate);
 }
 
+
 TEST(ObjectGroups) {
-  InitializeVM();
+  FLAG_incremental_marking = false;
+  CcTest::InitializeVM();
   GlobalHandles* global_handles = Isolate::Current()->global_handles();
 
   NumberOfWeakCalls = 0;
-  v8::HandleScope handle_scope;
+  v8::HandleScope handle_scope(CcTest::isolate());
 
   Handle<Object> g1s1 =
       global_handles->Create(HEAP->AllocateFixedArray(1)->ToObjectChecked());
@@ -365,7 +365,7 @@ TEST(ObjectGroups) {
         Handle<HeapObject>::cast(g1s1).location(), g1_children, 1);
     global_handles->AddObjectGroup(g2_objects, 2, NULL);
     global_handles->AddImplicitReferences(
-        Handle<HeapObject>::cast(g2s2).location(), g2_children, 1);
+        Handle<HeapObject>::cast(g2s1).location(), g2_children, 1);
   }
   // Do a full GC
   HEAP->CollectGarbage(OLD_POINTER_SPACE);
@@ -393,7 +393,7 @@ TEST(ObjectGroups) {
         Handle<HeapObject>::cast(g1s1).location(), g1_children, 1);
     global_handles->AddObjectGroup(g2_objects, 2, NULL);
     global_handles->AddImplicitReferences(
-        Handle<HeapObject>::cast(g2s2).location(), g2_children, 1);
+        Handle<HeapObject>::cast(g2s1).location(), g2_children, 1);
   }
 
   HEAP->CollectGarbage(OLD_POINTER_SPACE);
@@ -439,10 +439,10 @@ class TestRetainedObjectInfo : public v8::RetainedObjectInfo {
 
 
 TEST(EmptyObjectGroups) {
-  InitializeVM();
+  CcTest::InitializeVM();
   GlobalHandles* global_handles = Isolate::Current()->global_handles();
 
-  v8::HandleScope handle_scope;
+  v8::HandleScope handle_scope(CcTest::isolate());
 
   Handle<Object> object =
       global_handles->Create(HEAP->AllocateFixedArray(1)->ToObjectChecked());
@@ -456,10 +456,17 @@ TEST(EmptyObjectGroups) {
 }
 
 
+#if defined(__has_feature)
+#if __has_feature(address_sanitizer)
+#define V8_WITH_ASAN 1
+#endif
+#endif
+
+
 // Here is a memory use test that uses /proc, and is therefore Linux-only.  We
 // do not care how much memory the simulator uses, since it is only there for
-// debugging purposes.
-#if defined(__linux__) && !defined(USE_SIMULATOR)
+// debugging purposes. Testing with ASAN doesn't make sense, either.
+#if defined(__linux__) && !defined(USE_SIMULATOR) && !defined(V8_WITH_ASAN)
 
 
 static uintptr_t ReadLong(char* buffer, intptr_t* position, int base) {
@@ -472,6 +479,10 @@ static uintptr_t ReadLong(char* buffer, intptr_t* position, int base) {
 }
 
 
+// The memory use computed this way is not entirely accurate and depends on
+// the way malloc allocates memory.  That's why the memory use may seem to
+// increase even though the sum of the allocated object sizes decreases.  It
+// also means that the memory use depends on the kernel and stdlib.
 static intptr_t MemoryInUse() {
   intptr_t memory_use = 0;
 
@@ -531,10 +542,10 @@ const intptr_t max64     = 4000;  // ???
 const intptr_t maxSnap32 = 2800;  // 2624
 const intptr_t max32     = 3300;  // 3136
 #else
-const intptr_t maxSnap64 = 3600;  // 3396
-const intptr_t max64     = 4000;  // 3948
-const intptr_t maxSnap32 = 2500;  // 2400
-const intptr_t max32     = 2860;  // 2760
+const intptr_t maxSnap64 = 4000;
+const intptr_t max64     = 4500;
+const intptr_t maxSnap32 = 3100;
+const intptr_t max32     = 3450;
 #endif
 
 
@@ -547,21 +558,43 @@ TEST(BootUpMemoryUse) {
   // Only Linux has the proc filesystem and only if it is mapped.  If it's not
   // there we just skip the test.
   if (initial_memory >= 0) {
-    InitializeVM();
+    CcTest::InitializeVM();
     intptr_t delta = MemoryInUse() - initial_memory;
-    if (sizeof(initial_memory) == 8) {
+    printf("delta: %" V8_PTR_PREFIX "d kB\n", delta / 1024);
+    if (sizeof(initial_memory) == 8) {  // 64-bit.
       if (v8::internal::Snapshot::IsEnabled()) {
         CHECK_LE(delta, maxSnap64 * 1024);
       } else {
         CHECK_LE(delta, max64 * 1024);
       }
-    } else {
+    } else {                            // 32-bit.
       if (v8::internal::Snapshot::IsEnabled()) {
         CHECK_LE(delta, maxSnap32 * 1024);
       } else {
         CHECK_LE(delta, max32 * 1024);
       }
     }
+  }
+}
+
+
+intptr_t ShortLivingIsolate() {
+  v8::Isolate* isolate = v8::Isolate::New();
+  { v8::Isolate::Scope isolate_scope(isolate);
+    v8::Locker lock(isolate);
+    v8::HandleScope handle_scope;
+    v8::Local<v8::Context> context = v8::Context::New(isolate);
+    CHECK(!context.IsEmpty());
+  }
+  isolate->Dispose();
+  return MemoryInUse();
+}
+
+
+TEST(RegressJoinThreadsOnIsolateDeinit) {
+  intptr_t size_limit = ShortLivingIsolate() * 2;
+  for (int i = 0; i < 10; i++) {
+    CHECK_GT(size_limit, ShortLivingIsolate());
   }
 }
 

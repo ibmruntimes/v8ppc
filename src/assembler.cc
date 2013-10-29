@@ -34,7 +34,7 @@
 
 #include "assembler.h"
 
-#include <math.h>  // For cos, log, pow, sin, tan, etc.
+#include <cmath>
 #include "api.h"
 #include "builtins.h"
 #include "counters.h"
@@ -95,6 +95,7 @@ namespace internal {
 struct DoubleConstant BASE_EMBEDDED {
   double min_int;
   double one_half;
+  double minus_one_half;
   double minus_zero;
   double zero;
   double uint8_max_value;
@@ -107,16 +108,106 @@ static DoubleConstant double_constants;
 
 const char* const RelocInfo::kFillerCommentString = "DEOPTIMIZATION PADDING";
 
+static bool math_exp_data_initialized = false;
+static Mutex* math_exp_data_mutex = NULL;
+static double* math_exp_constants_array = NULL;
+static double* math_exp_log_table_array = NULL;
+
 // -----------------------------------------------------------------------------
 // Implementation of AssemblerBase
 
-AssemblerBase::AssemblerBase(Isolate* isolate)
+AssemblerBase::AssemblerBase(Isolate* isolate, void* buffer, int buffer_size)
     : isolate_(isolate),
-      jit_cookie_(0) {
+      jit_cookie_(0),
+      enabled_cpu_features_(0),
+      emit_debug_code_(FLAG_debug_code),
+      predictable_code_size_(false) {
   if (FLAG_mask_constants_with_cookie && isolate != NULL)  {
     jit_cookie_ = V8::RandomPrivate(isolate);
   }
+
+  if (buffer == NULL) {
+    // Do our own buffer management.
+    if (buffer_size <= kMinimalBufferSize) {
+      buffer_size = kMinimalBufferSize;
+      if (isolate->assembler_spare_buffer() != NULL) {
+        buffer = isolate->assembler_spare_buffer();
+        isolate->set_assembler_spare_buffer(NULL);
+      }
+    }
+    if (buffer == NULL) buffer = NewArray<byte>(buffer_size);
+    own_buffer_ = true;
+  } else {
+    // Use externally provided buffer instead.
+    ASSERT(buffer_size > 0);
+    own_buffer_ = false;
+  }
+  buffer_ = static_cast<byte*>(buffer);
+  buffer_size_ = buffer_size;
+
+  pc_ = buffer_;
 }
+
+
+AssemblerBase::~AssemblerBase() {
+  if (own_buffer_) {
+    if (isolate() != NULL &&
+        isolate()->assembler_spare_buffer() == NULL &&
+        buffer_size_ == kMinimalBufferSize) {
+      isolate()->set_assembler_spare_buffer(buffer_);
+    } else {
+      DeleteArray(buffer_);
+    }
+  }
+}
+
+
+// -----------------------------------------------------------------------------
+// Implementation of PredictableCodeSizeScope
+
+PredictableCodeSizeScope::PredictableCodeSizeScope(AssemblerBase* assembler,
+                                                   int expected_size)
+    : assembler_(assembler),
+      expected_size_(expected_size),
+      start_offset_(assembler->pc_offset()),
+      old_value_(assembler->predictable_code_size()) {
+  assembler_->set_predictable_code_size(true);
+}
+
+
+PredictableCodeSizeScope::~PredictableCodeSizeScope() {
+  // TODO(svenpanne) Remove the 'if' when everything works.
+  if (expected_size_ >= 0) {
+    CHECK_EQ(expected_size_, assembler_->pc_offset() - start_offset_);
+  }
+  assembler_->set_predictable_code_size(old_value_);
+}
+
+
+// -----------------------------------------------------------------------------
+// Implementation of CpuFeatureScope
+
+#ifdef DEBUG
+CpuFeatureScope::CpuFeatureScope(AssemblerBase* assembler, CpuFeature f)
+    : assembler_(assembler) {
+  ASSERT(CpuFeatures::IsSafeForSnapshot(f));
+  old_enabled_ = assembler_->enabled_cpu_features();
+  uint64_t mask = static_cast<uint64_t>(1) << f;
+  // TODO(svenpanne) This special case below doesn't belong here!
+#if V8_TARGET_ARCH_ARM
+  // ARMv7 is implied by VFP3.
+  if (f == VFP3) {
+    mask |= static_cast<uint64_t>(1) << ARMv7;
+  }
+#endif
+  assembler_->set_enabled_cpu_features(old_enabled_ | mask);
+}
+
+
+CpuFeatureScope::~CpuFeatureScope() {
+  assembler_->set_enabled_cpu_features(old_enabled_);
+}
+#endif
 
 
 // -----------------------------------------------------------------------------
@@ -294,6 +385,7 @@ void RelocInfoWriter::WriteExtraTaggedIntData(int data_delta, int top_tag) {
   }
 }
 
+
 void RelocInfoWriter::WriteExtraTaggedConstPoolData(int data) {
   WriteExtraTag(kConstPoolExtraTag, kConstPoolTag);
   for (int i = 0; i < kIntSize; i++) {
@@ -302,6 +394,7 @@ void RelocInfoWriter::WriteExtraTaggedConstPoolData(int data) {
     data = data >> kBitsPerByte;
   }
 }
+
 
 void RelocInfoWriter::WriteExtraTaggedData(intptr_t data_delta, int top_tag) {
   WriteExtraTag(kDataJumpExtraTag, top_tag);
@@ -317,6 +410,7 @@ void RelocInfoWriter::Write(const RelocInfo* rinfo) {
 #ifdef DEBUG
   byte* begin_pos = pos_;
 #endif
+  ASSERT(rinfo->rmode() < RelocInfo::NUMBER_OF_MODES);
   ASSERT(rinfo->pc() - last_pc_ >= 0);
   ASSERT(RelocInfo::LAST_STANDARD_NONCOMPACT_ENUM - RelocInfo::LAST_COMPACT_ENUM
          <= kMaxStandardNonCompactModes);
@@ -574,6 +668,15 @@ void RelocIterator::next() {
       }
     }
   }
+  if (code_age_sequence_ != NULL) {
+    byte* old_code_age_sequence = code_age_sequence_;
+    code_age_sequence_ = NULL;
+    if (SetMode(RelocInfo::CODE_AGE_SEQUENCE)) {
+      rinfo_.data_ = 0;
+      rinfo_.pc_ = old_code_age_sequence;
+      return;
+    }
+  }
   done_ = true;
 }
 
@@ -589,6 +692,12 @@ RelocIterator::RelocIterator(Code* code, int mode_mask) {
   mode_mask_ = mode_mask;
   last_id_ = 0;
   last_position_ = 0;
+  byte* sequence = code->FindCodeAgeSequence();
+  if (sequence != NULL && !Code::IsYoungSequence(sequence)) {
+    code_age_sequence_ = sequence;
+  } else {
+    code_age_sequence_ = NULL;
+  }
   if (mode_mask_ == 0) pos_ = end_;
   next();
 }
@@ -604,6 +713,7 @@ RelocIterator::RelocIterator(const CodeDesc& desc, int mode_mask) {
   mode_mask_ = mode_mask;
   last_id_ = 0;
   last_position_ = 0;
+  code_age_sequence_ = NULL;
   if (mode_mask_ == 0) pos_ = end_;
   next();
 }
@@ -613,11 +723,28 @@ RelocIterator::RelocIterator(const CodeDesc& desc, int mode_mask) {
 // Implementation of RelocInfo
 
 
+#ifdef DEBUG
+bool RelocInfo::RequiresRelocation(const CodeDesc& desc) {
+  // Ensure there are no code targets or embedded objects present in the
+  // deoptimization entries, they would require relocation after code
+  // generation.
+  int mode_mask = RelocInfo::kCodeTargetMask |
+                  RelocInfo::ModeMask(RelocInfo::EMBEDDED_OBJECT) |
+                  RelocInfo::ModeMask(RelocInfo::CELL) |
+                  RelocInfo::kApplyMask;
+  RelocIterator it(desc, mode_mask);
+  return !it.done();
+}
+#endif
+
+
 #ifdef ENABLE_DISASSEMBLER
 const char* RelocInfo::RelocModeName(RelocInfo::Mode rmode) {
   switch (rmode) {
-    case RelocInfo::NONE:
-      return "no reloc";
+    case RelocInfo::NONE32:
+      return "no reloc 32";
+    case RelocInfo::NONE64:
+      return "no reloc 64";
     case RelocInfo::EMBEDDED_OBJECT:
       return "embedded object";
     case RelocInfo::CONSTRUCT_CALL:
@@ -633,8 +760,8 @@ const char* RelocInfo::RelocModeName(RelocInfo::Mode rmode) {
       return "code target";
     case RelocInfo::CODE_TARGET_WITH_ID:
       return "code target with id";
-    case RelocInfo::GLOBAL_PROPERTY_CELL:
-      return "global property cell";
+    case RelocInfo::CELL:
+      return "property cell";
     case RelocInfo::RUNTIME_ENTRY:
       return "runtime entry";
     case RelocInfo::JS_RETURN:
@@ -656,6 +783,8 @@ const char* RelocInfo::RelocModeName(RelocInfo::Mode rmode) {
       UNREACHABLE();
 #endif
       return "debug break slot";
+    case RelocInfo::CODE_AGE_SEQUENCE:
+      return "code_age_sequence";
     case RelocInfo::NUMBER_OF_MODES:
       UNREACHABLE();
       return "number_of_modes";
@@ -664,7 +793,7 @@ const char* RelocInfo::RelocModeName(RelocInfo::Mode rmode) {
 }
 
 
-void RelocInfo::Print(FILE* out) {
+void RelocInfo::Print(Isolate* isolate, FILE* out) {
   PrintF(out, "%p  %s", pc_, RelocModeName(rmode_));
   if (IsComment(rmode_)) {
     PrintF(out, "  (%s)", reinterpret_cast<char*>(data_));
@@ -686,11 +815,11 @@ void RelocInfo::Print(FILE* out) {
     }
   } else if (IsPosition(rmode_)) {
     PrintF(out, "  (%" V8_PTR_PREFIX "d)", data());
-  } else if (rmode_ == RelocInfo::RUNTIME_ENTRY &&
-             Isolate::Current()->deoptimizer_data() != NULL) {
+  } else if (IsRuntimeEntry(rmode_) &&
+             isolate->deoptimizer_data() != NULL) {
     // Depotimization bailouts are stored as runtime entries.
     int id = Deoptimizer::GetDeoptimizationId(
-        target_address(), Deoptimizer::EAGER);
+        isolate, target_address(), Deoptimizer::EAGER);
     if (id != Deoptimizer::kNotDeoptimizationEntry) {
       PrintF(out, "  (deoptimization bailout %d)", id);
     }
@@ -707,7 +836,7 @@ void RelocInfo::Verify() {
     case EMBEDDED_OBJECT:
       Object::VerifyPointer(target_object());
       break;
-    case GLOBAL_PROPERTY_CELL:
+    case CELL:
       Object::VerifyPointer(target_cell());
       break;
     case DEBUG_BREAK:
@@ -724,7 +853,7 @@ void RelocInfo::Verify() {
       CHECK(addr != NULL);
       // Check that we can find the right code object.
       Code* code = Code::GetCodeFromTargetAddress(addr);
-      Object* found = HEAP->FindCodeObject(addr);
+      Object* found = code->GetIsolate()->FindCodeObject(addr);
       CHECK(found->IsCode());
       CHECK(code->address() == HeapObject::cast(found)->address());
       break;
@@ -738,10 +867,14 @@ void RelocInfo::Verify() {
     case INTERNAL_REFERENCE:
     case CONST_POOL:
     case DEBUG_BREAK_SLOT:
-    case NONE:
+    case NONE32:
+    case NONE64:
       break;
     case NUMBER_OF_MODES:
       UNREACHABLE();
+      break;
+    case CODE_AGE_SEQUENCE:
+      ASSERT(Code::IsYoungSequence(pc_) || code_age_stub()->IsCode());
       break;
   }
 }
@@ -754,12 +887,66 @@ void RelocInfo::Verify() {
 void ExternalReference::SetUp() {
   double_constants.min_int = kMinInt;
   double_constants.one_half = 0.5;
+  double_constants.minus_one_half = -0.5;
   double_constants.minus_zero = -0.0;
   double_constants.uint8_max_value = 255;
   double_constants.zero = 0.0;
   double_constants.canonical_non_hole_nan = OS::nan_value();
   double_constants.the_hole_nan = BitCast<double>(kHoleNanInt64);
   double_constants.negative_infinity = -V8_INFINITY;
+
+  math_exp_data_mutex = OS::CreateMutex();
+}
+
+
+void ExternalReference::InitializeMathExpData() {
+  // Early return?
+  if (math_exp_data_initialized) return;
+
+  math_exp_data_mutex->Lock();
+  if (!math_exp_data_initialized) {
+    // If this is changed, generated code must be adapted too.
+    const int kTableSizeBits = 11;
+    const int kTableSize = 1 << kTableSizeBits;
+    const double kTableSizeDouble = static_cast<double>(kTableSize);
+
+    math_exp_constants_array = new double[9];
+    // Input values smaller than this always return 0.
+    math_exp_constants_array[0] = -708.39641853226408;
+    // Input values larger than this always return +Infinity.
+    math_exp_constants_array[1] = 709.78271289338397;
+    math_exp_constants_array[2] = V8_INFINITY;
+    // The rest is black magic. Do not attempt to understand it. It is
+    // loosely based on the "expd" function published at:
+    // http://herumi.blogspot.com/2011/08/fast-double-precision-exponential.html
+    const double constant3 = (1 << kTableSizeBits) / log(2.0);
+    math_exp_constants_array[3] = constant3;
+    math_exp_constants_array[4] =
+        static_cast<double>(static_cast<int64_t>(3) << 51);
+    math_exp_constants_array[5] = 1 / constant3;
+    math_exp_constants_array[6] = 3.0000000027955394;
+    math_exp_constants_array[7] = 0.16666666685227835;
+    math_exp_constants_array[8] = 1;
+
+    math_exp_log_table_array = new double[kTableSize];
+    for (int i = 0; i < kTableSize; i++) {
+      double value = pow(2, i / kTableSizeDouble);
+      uint64_t bits = BitCast<uint64_t, double>(value);
+      bits &= (static_cast<uint64_t>(1) << 52) - 1;
+      double mantissa = BitCast<double, uint64_t>(bits);
+      math_exp_log_table_array[i] = mantissa;
+    }
+
+    math_exp_data_initialized = true;
+  }
+  math_exp_data_mutex->Unlock();
+}
+
+
+void ExternalReference::TearDownMathExpData() {
+  delete[] math_exp_constants_array;
+  delete[] math_exp_log_table_array;
+  delete math_exp_data_mutex;
 }
 
 
@@ -788,8 +975,8 @@ ExternalReference::ExternalReference(const Runtime::Function* f,
   : address_(Redirect(isolate, f->entry)) {}
 
 
-ExternalReference ExternalReference::isolate_address() {
-  return ExternalReference(Isolate::Current());
+ExternalReference ExternalReference::isolate_address(Isolate* isolate) {
+  return ExternalReference(isolate);
 }
 
 
@@ -878,8 +1065,20 @@ ExternalReference ExternalReference::get_date_field_function(
 }
 
 
+ExternalReference ExternalReference::get_make_code_young_function(
+    Isolate* isolate) {
+  return ExternalReference(Redirect(
+      isolate, FUNCTION_ADDR(Code::MakeCodeAgeSequenceYoung)));
+}
+
+
 ExternalReference ExternalReference::date_cache_stamp(Isolate* isolate) {
   return ExternalReference(isolate->date_cache()->stamp_address());
+}
+
+
+ExternalReference ExternalReference::stress_deopt_count(Isolate* isolate) {
+  return ExternalReference(isolate->stress_deopt_count_address());
 }
 
 
@@ -904,6 +1103,20 @@ ExternalReference ExternalReference::compute_output_frames_function(
 }
 
 
+ExternalReference ExternalReference::log_enter_external_function(
+    Isolate* isolate) {
+  return ExternalReference(
+      Redirect(isolate, FUNCTION_ADDR(Logger::EnterExternal)));
+}
+
+
+ExternalReference ExternalReference::log_leave_external_function(
+    Isolate* isolate) {
+  return ExternalReference(
+      Redirect(isolate, FUNCTION_ADDR(Logger::LeaveExternal)));
+}
+
+
 ExternalReference ExternalReference::keyed_lookup_cache_keys(Isolate* isolate) {
   return ExternalReference(isolate->keyed_lookup_cache()->keys_address());
 }
@@ -918,6 +1131,12 @@ ExternalReference ExternalReference::keyed_lookup_cache_field_offsets(
 
 ExternalReference ExternalReference::roots_array_start(Isolate* isolate) {
   return ExternalReference(isolate->heap()->roots_array_start());
+}
+
+
+ExternalReference ExternalReference::allocation_sites_list_address(
+    Isolate* isolate) {
+  return ExternalReference(isolate->heap()->allocation_sites_list_address());
 }
 
 
@@ -973,18 +1192,56 @@ ExternalReference ExternalReference::new_space_allocation_limit_address(
 }
 
 
-ExternalReference ExternalReference::handle_scope_level_address() {
-  return ExternalReference(HandleScope::current_level_address());
+ExternalReference ExternalReference::old_pointer_space_allocation_top_address(
+    Isolate* isolate) {
+  return ExternalReference(
+      isolate->heap()->OldPointerSpaceAllocationTopAddress());
 }
 
 
-ExternalReference ExternalReference::handle_scope_next_address() {
-  return ExternalReference(HandleScope::current_next_address());
+ExternalReference ExternalReference::old_pointer_space_allocation_limit_address(
+    Isolate* isolate) {
+  return ExternalReference(
+      isolate->heap()->OldPointerSpaceAllocationLimitAddress());
 }
 
 
-ExternalReference ExternalReference::handle_scope_limit_address() {
-  return ExternalReference(HandleScope::current_limit_address());
+ExternalReference ExternalReference::old_data_space_allocation_top_address(
+    Isolate* isolate) {
+  return ExternalReference(
+      isolate->heap()->OldDataSpaceAllocationTopAddress());
+}
+
+
+ExternalReference ExternalReference::old_data_space_allocation_limit_address(
+    Isolate* isolate) {
+  return ExternalReference(
+      isolate->heap()->OldDataSpaceAllocationLimitAddress());
+}
+
+
+ExternalReference ExternalReference::
+    new_space_high_promotion_mode_active_address(Isolate* isolate) {
+  return ExternalReference(
+      isolate->heap()->NewSpaceHighPromotionModeActiveAddress());
+}
+
+
+ExternalReference ExternalReference::handle_scope_level_address(
+    Isolate* isolate) {
+  return ExternalReference(HandleScope::current_level_address(isolate));
+}
+
+
+ExternalReference ExternalReference::handle_scope_next_address(
+    Isolate* isolate) {
+  return ExternalReference(HandleScope::current_next_address(isolate));
+}
+
+
+ExternalReference ExternalReference::handle_scope_limit_address(
+    Isolate* isolate) {
+  return ExternalReference(HandleScope::current_limit_address(isolate));
 }
 
 
@@ -1019,6 +1276,12 @@ ExternalReference ExternalReference::address_of_min_int() {
 
 ExternalReference ExternalReference::address_of_one_half() {
   return ExternalReference(reinterpret_cast<void*>(&double_constants.one_half));
+}
+
+
+ExternalReference ExternalReference::address_of_minus_one_half() {
+  return ExternalReference(
+      reinterpret_cast<void*>(&double_constants.minus_one_half));
 }
 
 
@@ -1062,7 +1325,7 @@ ExternalReference ExternalReference::address_of_the_hole_nan() {
 ExternalReference ExternalReference::re_check_stack_guard_state(
     Isolate* isolate) {
   Address function;
-#ifdef V8_TARGET_ARCH_X64
+#if V8_TARGET_ARCH_X64
   function = FUNCTION_ADDR(RegExpMacroAssemblerX64::CheckStackGuardState);
 #elif V8_TARGET_ARCH_IA32
   function = FUNCTION_ADDR(RegExpMacroAssemblerIA32::CheckStackGuardState);
@@ -1078,6 +1341,7 @@ ExternalReference ExternalReference::re_check_stack_guard_state(
   return ExternalReference(Redirect(isolate, function));
 }
 
+
 ExternalReference ExternalReference::re_grow_stack(Isolate* isolate) {
   return ExternalReference(
       Redirect(isolate, FUNCTION_ADDR(NativeRegExpMacroAssembler::GrowStack)));
@@ -1089,6 +1353,7 @@ ExternalReference ExternalReference::re_case_insensitive_compare_uc16(
       isolate,
       FUNCTION_ADDR(NativeRegExpMacroAssembler::CaseInsensitiveCompareUC16)));
 }
+
 
 ExternalReference ExternalReference::re_word_character_map() {
   return ExternalReference(
@@ -1192,9 +1457,43 @@ ExternalReference ExternalReference::math_log_double_function(
 }
 
 
+ExternalReference ExternalReference::math_exp_constants(int constant_index) {
+  ASSERT(math_exp_data_initialized);
+  return ExternalReference(
+      reinterpret_cast<void*>(math_exp_constants_array + constant_index));
+}
+
+
+ExternalReference ExternalReference::math_exp_log_table() {
+  ASSERT(math_exp_data_initialized);
+  return ExternalReference(reinterpret_cast<void*>(math_exp_log_table_array));
+}
+
+
 ExternalReference ExternalReference::page_flags(Page* page) {
   return ExternalReference(reinterpret_cast<Address>(page) +
                            MemoryChunk::kFlagsOffset);
+}
+
+
+ExternalReference ExternalReference::ForDeoptEntry(Address entry) {
+  return ExternalReference(entry);
+}
+
+
+double power_helper(double x, double y) {
+  int y_int = static_cast<int>(y);
+  if (y == y_int) {
+    return power_double_int(x, y_int);  // Returns 1 if exponent is 0.
+  }
+  if (y == 0.5) {
+    return (std::isinf(x)) ? V8_INFINITY
+                           : fast_sqrt(x + 0.0);  // Convert -0 to +0.
+  }
+  if (y == -0.5) {
+    return (std::isinf(x)) ? 0 : 1.0 / fast_sqrt(x + 0.0);  // Convert -0 to +0.
+  }
+  return power_double_double(x, y);
 }
 
 
@@ -1218,10 +1517,11 @@ double power_double_int(double x, int y) {
 
 
 double power_double_double(double x, double y) {
-#ifdef __MINGW64_VERSION_MAJOR
+#if defined(__MINGW64_VERSION_MAJOR) && \
+    (!defined(__MINGW64_VERSION_RC) || __MINGW64_VERSION_RC < 1)
   // MinGW64 has a custom implementation for pow.  This handles certain
   // special cases that are different.
-  if ((x == 0.0 || isinf(x)) && isfinite(y)) {
+  if ((x == 0.0 || std::isinf(x)) && std::isfinite(y)) {
     double f;
     if (modf(y, &f) != 0.0) return ((x == 0.0) ^ (y > 0)) ? V8_INFINITY : 0;
   }
@@ -1249,7 +1549,9 @@ double power_double_double(double x, double y) {
 
   // The checks for special cases can be dropped in ia32 because it has already
   // been done in generated code before bailing out here.
-  if (isnan(y) || ((x == 1 || x == -1) && isinf(y))) return OS::nan_value();
+  if (std::isnan(y) || ((x == 1 || x == -1) && std::isinf(y))) {
+    return OS::nan_value();
+  }
   return pow(x, y);
 }
 
@@ -1351,6 +1653,10 @@ void PositionsRecorder::RecordPosition(int pos) {
     gdbjit_lineinfo_->SetPosition(assembler_->pc_offset(), pos, false);
   }
 #endif
+  LOG_CODE_EVENT(assembler_->isolate(),
+                 CodeLinePosInfoAddPositionEvent(jit_handler_data_,
+                                                 assembler_->pc_offset(),
+                                                 pos));
 }
 
 
@@ -1363,6 +1669,11 @@ void PositionsRecorder::RecordStatementPosition(int pos) {
     gdbjit_lineinfo_->SetPosition(assembler_->pc_offset(), pos, true);
   }
 #endif
+  LOG_CODE_EVENT(assembler_->isolate(),
+                 CodeLinePosInfoAddStatementPositionEvent(
+                     jit_handler_data_,
+                     assembler_->pc_offset(),
+                     pos));
 }
 
 

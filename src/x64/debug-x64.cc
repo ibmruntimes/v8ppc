@@ -27,7 +27,7 @@
 
 #include "v8.h"
 
-#if defined(V8_TARGET_ARCH_X64)
+#if V8_TARGET_ARCH_X64
 
 #include "assembler.h"
 #include "codegen.h"
@@ -48,11 +48,10 @@ bool BreakLocationIterator::IsDebugBreakAtReturn()  {
 // CodeGenerator::VisitReturnStatement and VirtualFrame::Exit in codegen-x64.cc
 // for the precise return instructions sequence.
 void BreakLocationIterator::SetDebugBreakAtReturn()  {
-  ASSERT(Assembler::kJSReturnSequenceLength >=
-         Assembler::kCallInstructionLength);
+  ASSERT(Assembler::kJSReturnSequenceLength >= Assembler::kCallSequenceLength);
   rinfo()->PatchCodeWithCall(
       Isolate::Current()->debug()->debug_break_return()->entry(),
-      Assembler::kJSReturnSequenceLength - Assembler::kCallInstructionLength);
+      Assembler::kJSReturnSequenceLength - Assembler::kCallSequenceLength);
 }
 
 
@@ -82,7 +81,7 @@ void BreakLocationIterator::SetDebugBreakAtSlot() {
   ASSERT(IsDebugBreakSlot());
   rinfo()->PatchCodeWithCall(
       Isolate::Current()->debug()->debug_break_slot()->entry(),
-      Assembler::kDebugBreakSlotLength - Assembler::kCallInstructionLength);
+      Assembler::kDebugBreakSlotLength - Assembler::kCallSequenceLength);
 }
 
 
@@ -230,6 +229,15 @@ void Debug::GenerateKeyedStoreICDebugBreak(MacroAssembler* masm) {
   // -----------------------------------
   Generate_DebugBreakCallHelper(
       masm, rax.bit() | rcx.bit() | rdx.bit(), 0, false);
+}
+
+
+void Debug::GenerateCompareNilICDebugBreak(MacroAssembler* masm) {
+  // Register state for CompareNil IC
+  // ----------- S t a t e -------------
+  //  -- rax    : value
+  // -----------------------------------
+  Generate_DebugBreakCallHelper(masm, rax.bit(), 0, false);
 }
 
 

@@ -40,12 +40,20 @@ regress/regress-524: SKIP
 # Skip long running test in debug and allow it to timeout in release mode.
 # regress/regress-524: (PASS || TIMEOUT), SKIP if $mode == debug
 
+# This test non-deterministically runs out of memory on Windows ia32.
+regress/regress-crbug-160010: SKIP
+
 ##############################################################################
-# Too slow in debug mode with --stress-opt
+# Too slow in debug mode with --stress-opt mode.
 compiler/regress-stacktrace-methods: PASS, SKIP if $mode == debug
 compiler/regress-funcaller: PASS, SKIP if $mode == debug
 regress/regress-2318: PASS, SKIP if $mode == debug
 regress/regress-create-exception: PASS, SKIP if $mode == debug
+regress/regress-2612: PASS, SKIP if $mode == debug
+
+##############################################################################
+# Too slow in debug mode for GC stress mode.
+regress/regress-crbug-217858: PASS, SKIP if $mode == debug
 
 ##############################################################################
 # These use a built-in that's only present in debug mode. They take
@@ -61,11 +69,24 @@ array-constructor: PASS || TIMEOUT
 unicode-case-overoptimization: PASS, TIMEOUT if ($arch == arm || $arch == android_arm || $arch == mipsel)
 
 ##############################################################################
+# This test expects to reach a certain recursion depth, which may not work
+# for debug mode.
+json-recursive: PASS, (PASS || FAIL) if $mode == debug
+
+##############################################################################
+# Skip long running tests that time out in debug mode.
+generated-transition-stub: PASS, SKIP if $mode == debug
+
+##############################################################################
 # This test sets the umask on a per-process basis and hence cannot be
 # used in multi-threaded runs.
 # On android there is no /tmp directory.
 d8-os: PASS, SKIP if ($isolates || $arch == android_arm || $arch == android_ia32)
 tools/tickprocessor: PASS, SKIP if ($arch == android_arm || $arch == android_ia32)
+
+##############################################################################
+# Long running test that reproduces memory leak and should be run manually.
+regress/regress-2073: SKIP
 
 ##############################################################################
 [ $arch == arm || $arch == android_arm ]
@@ -127,10 +148,6 @@ debug-liveedit-double-call: SKIP
 # Currently always deopt on minus zero
 math-floor-of-div-minus-zero: SKIP
 
-# Tests that are ARM simulated on PPC failures
-# PPC math precise, Intel not http://code.google.com/p/v8/issues/detail?id=1975
-regress/regress-transcendental: SKIP
-
 ##############################################################################
 [ $arch == mipsel ]
 
@@ -184,6 +201,9 @@ debug-liveedit-stack-padding: SKIP
 debug-liveedit-restart-frame: SKIP
 debug-liveedit-double-call: SKIP
 
+# Currently always deopt on minus zero
+math-floor-of-div-minus-zero: SKIP
+
 ##############################################################################
 # Native Client uses the ARM simulator so will behave similarly to arm
 # on mjsunit tests.
@@ -205,6 +225,10 @@ debug-liveedit-double-call: SKIP
 # As noted above none of them are run in the arm.debug case.
 fuzz-natives-part4: SKIP
 
+# NaCl builds have problems with this test since Pepper_28.
+# V8 Issue 2786
+math-exp-precision: SKIP
+
 # Requires bigger stack size in the Genesis and if stack size is increased,
 # the test requires too much time to run.  However, the problem test covers
 # should be platform-independent.
@@ -224,3 +248,20 @@ debug-liveedit-check-stack: SKIP
 debug-liveedit-stack-padding: SKIP
 debug-liveedit-restart-frame: SKIP
 debug-liveedit-double-call: SKIP
+
+##############################################################################
+[ $deopt_fuzzer == True ]
+
+# Skip tests that are not suitable for deoptimization fuzzing.
+assert-opt-and-deopt: SKIP
+never-optimize: SKIP
+regress/regress-2185-2: SKIP
+harmony/object-observe: SKIP
+readonly: SKIP
+array-feedback: SKIP
+
+# TODO(mstarzinger): Enable once escape analysis is stabilized.
+compiler/escape-analysis: SKIP
+
+# Deopt every n garbage collections collides with the deopt every n times flag.
+regress/regress-2653: SKIP

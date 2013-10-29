@@ -37,9 +37,10 @@
 #include "heap-profiler.h"
 #include "hydrogen.h"
 #include "lithium-allocator.h"
-#include "log.h"
+#include "objects.h"
 #include "once.h"
 #include "platform.h"
+#include "sampler.h"
 #include "runtime-profiler.h"
 #include "serialize.h"
 #include "store-buffer.h"
@@ -55,6 +56,7 @@ bool V8::has_been_disposed_ = false;
 bool V8::has_fatal_error_ = false;
 bool V8::use_crankshaft_ = true;
 List<CallCompletedCallback>* V8::call_completed_callbacks_ = NULL;
+v8::ArrayBuffer::Allocator* V8::array_buffer_allocator_ = NULL;
 
 static LazyMutex entropy_mutex = LAZY_MUTEX_INITIALIZER;
 
@@ -62,8 +64,6 @@ static EntropySource entropy_source;
 
 
 bool V8::Initialize(Deserializer* des) {
-  FlagList::EnforceFlagImplications();
-
   InitializeOncePerProcess();
 
   // The current thread may not yet had entered an isolate to run.
@@ -114,7 +114,9 @@ void V8::TearDown() {
 
   ElementsAccessor::TearDown();
   LOperand::TearDownCaches();
+  ExternalReference::TearDownMathExpData();
   RegisteredExtension::UnregisterAll();
+  Isolate::GlobalTearDown();
 
   is_running_ = false;
   has_been_disposed_ = true;
@@ -122,6 +124,7 @@ void V8::TearDown() {
   delete call_completed_callbacks_;
   call_completed_callbacks_ = NULL;
 
+  Sampler::TearDown();
   OS::TearDown();
 }
 
@@ -216,14 +219,22 @@ void V8::RemoveCallCompletedCallback(CallCompletedCallback callback) {
 
 
 void V8::FireCallCompletedCallback(Isolate* isolate) {
-  if (call_completed_callbacks_ == NULL) return;
+  bool has_call_completed_callbacks = call_completed_callbacks_ != NULL;
+  bool observer_delivery_pending =
+      FLAG_harmony_observation && isolate->observer_delivery_pending();
+  if (!has_call_completed_callbacks && !observer_delivery_pending) return;
   HandleScopeImplementer* handle_scope_implementer =
       isolate->handle_scope_implementer();
   if (!handle_scope_implementer->CallDepthIsZero()) return;
   // Fire callbacks.  Increase call depth to prevent recursive callbacks.
   handle_scope_implementer->IncrementCallDepth();
-  for (int i = 0; i < call_completed_callbacks_->length(); i++) {
-    call_completed_callbacks_->at(i)();
+  if (observer_delivery_pending) {
+    JSObject::DeliverChangeRecords(isolate);
+  }
+  if (has_call_completed_callbacks) {
+    for (int i = 0; i < call_completed_callbacks_->length(); i++) {
+      call_completed_callbacks_->at(i)();
+    }
   }
   handle_scope_implementer->DecrementCallDepth();
 }
@@ -252,37 +263,72 @@ Object* V8::FillHeapNumberWithRandom(Object* heap_number,
   return heap_number;
 }
 
+
 void V8::InitializeOncePerProcessImpl() {
-  OS::SetUp();
-
-  use_crankshaft_ = FLAG_crankshaft;
-
-  if (Serializer::enabled()) {
-    use_crankshaft_ = false;
-  }
-
-  CPU::SetUp();
-  if (!CPU::SupportsCrankshaft()) {
-    use_crankshaft_ = false;
-  }
-
-  OS::PostSetUp();
-
-  RuntimeProfiler::GlobalSetUp();
-
-  ElementsAccessor::InitializeOncePerProcess();
-
+  FlagList::EnforceFlagImplications();
   if (FLAG_stress_compaction) {
     FLAG_force_marking_deque_overflows = true;
     FLAG_gc_global = true;
     FLAG_max_new_space_size = (1 << (kPageSizeBits - 10)) * 2;
   }
 
+  if (FLAG_parallel_recompilation &&
+      (FLAG_trace_hydrogen || FLAG_trace_hydrogen_stubs)) {
+    FLAG_parallel_recompilation = false;
+    PrintF("Parallel recompilation has been disabled for tracing.\n");
+  }
+
+  if (FLAG_sweeper_threads <= 0) {
+    if (FLAG_concurrent_sweeping) {
+      FLAG_sweeper_threads = SystemThreadManager::
+          NumberOfParallelSystemThreads(
+              SystemThreadManager::CONCURRENT_SWEEPING);
+    } else if (FLAG_parallel_sweeping) {
+      FLAG_sweeper_threads = SystemThreadManager::
+          NumberOfParallelSystemThreads(
+              SystemThreadManager::PARALLEL_SWEEPING);
+    }
+    if (FLAG_sweeper_threads == 0) {
+      FLAG_concurrent_sweeping = false;
+      FLAG_parallel_sweeping = false;
+    }
+  } else if (!FLAG_concurrent_sweeping && !FLAG_parallel_sweeping) {
+    FLAG_sweeper_threads = 0;
+  }
+
+  if (FLAG_parallel_marking) {
+    if (FLAG_marking_threads <= 0) {
+      FLAG_marking_threads = SystemThreadManager::
+          NumberOfParallelSystemThreads(
+              SystemThreadManager::PARALLEL_MARKING);
+    }
+    if (FLAG_marking_threads == 0) {
+      FLAG_parallel_marking = false;
+    }
+  } else {
+    FLAG_marking_threads = 0;
+  }
+
+  if (FLAG_parallel_recompilation &&
+      SystemThreadManager::NumberOfParallelSystemThreads(
+          SystemThreadManager::PARALLEL_RECOMPILATION) == 0) {
+    FLAG_parallel_recompilation = false;
+  }
+
+  OS::SetUp();
+  Sampler::SetUp();
+  CPU::SetUp();
+  use_crankshaft_ = FLAG_crankshaft
+      && !Serializer::enabled()
+      && CPU::SupportsCrankshaft();
+  OS::PostSetUp();
+  ElementsAccessor::InitializeOncePerProcess();
   LOperand::SetUpCaches();
   SetUpJSCallerSavedCodeData();
-  SamplerRegistry::SetUp();
   ExternalReference::SetUp();
+  Bootstrapper::InitializeOncePerProcess();
 }
+
 
 void V8::InitializeOncePerProcess() {
   CallOnce(&init_once, &InitializeOncePerProcessImpl);

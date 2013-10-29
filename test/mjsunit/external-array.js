@@ -25,7 +25,7 @@
 // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-// Flags: --allow-natives-syntax --expose-gc
+// Flags: --allow-natives-syntax
 
 // Helper
 function assertInstance(o, f) {
@@ -48,12 +48,6 @@ f(a);
 
 assertEquals(0, a[0]);
 assertEquals(0, a[1]);
-
-// No-parameter constructor should fail right now.
-function abfunc1() {
-  return new ArrayBuffer();
-}
-assertThrows(abfunc1);
 
 // Test derivation from an ArrayBuffer
 var ab = new ArrayBuffer(12);
@@ -161,12 +155,10 @@ assertSame(a.buffer, (new Float32Array(a.buffer,4)).buffer);
 assertSame(a.buffer, (new Int8Array(a.buffer,3,51)).buffer);
 assertInstance(a.buffer, ArrayBuffer);
 
-// Test the correct behavior of the |BYTES_PER_ELEMENT| property (which is
-// "constant", but not read-only).
+// Test the correct behavior of the |BYTES_PER_ELEMENT| property
 a = new Int32Array(2);
 assertEquals(4, a.BYTES_PER_ELEMENT);
 a.BYTES_PER_ELEMENT = 42;
-assertEquals(42, a.BYTES_PER_ELEMENT);
 a = new Uint8Array(2);
 assertEquals(1, a.BYTES_PER_ELEMENT);
 a = new Int16Array(2);
@@ -202,15 +194,6 @@ assertEquals(3.5, get(array, 1));
 // Test non-number parameters.
 var array_with_length_from_non_number = new Int32Array("2");
 assertEquals(2, array_with_length_from_non_number.length);
-array_with_length_from_non_number = new Int32Array(undefined);
-assertEquals(0, array_with_length_from_non_number.length);
-var foo = { valueOf: function() { return 3; } };
-array_with_length_from_non_number = new Int32Array(foo);
-assertEquals(3, array_with_length_from_non_number.length);
-foo = { toString: function() { return "4"; } };
-array_with_length_from_non_number = new Int32Array(foo);
-assertEquals(4, array_with_length_from_non_number.length);
-
 
 // Test loads and stores.
 types = [Array, Int8Array, Uint8Array, Int16Array, Uint16Array, Int32Array,
@@ -318,7 +301,7 @@ function run_test(test_func, array, expected_result) {
   }
   assertEquals(expected_result, sum);
   %DeoptimizeFunction(test_func);
-  gc();  // Makes V8 forget about type information for test_func.
+  %ClearFunctionTypeFeedback(test_func);
 }
 
 function run_bounds_test(test_func, array, expected_result) {
@@ -359,8 +342,6 @@ for (var t = 0; t < types.length; t++) {
     a.length = 2;
     assertEquals(kElementCount, a.length);
     assertTrue(delete a.length);
-    a.length = 2;
-    assertEquals(2, a.length);
 
     // Make sure bounds checks are handled correctly for external arrays.
     run_bounds_test(a);
@@ -369,8 +350,7 @@ for (var t = 0; t < types.length; t++) {
     %OptimizeFunctionOnNextCall(run_bounds_test);
     run_bounds_test(a);
     %DeoptimizeFunction(run_bounds_test);
-    gc();  // Makes V8 forget about type information for test_func.
-
+    %ClearFunctionTypeFeedback(run_bounds_test);
   }
 
   function array_load_set_smi_check(a) {
@@ -389,7 +369,7 @@ for (var t = 0; t < types.length; t++) {
   array_load_set_smi_check2(a);
   array_load_set_smi_check2(0);
   %DeoptimizeFunction(array_load_set_smi_check2);
-  gc();  // Makes V8 forget about type information for array_load_set_smi_check.
+  %ClearFunctionTypeFeedback(array_load_set_smi_check2);
 }
 
 // Check handling of undefined in 32- and 64-bit external float arrays.
@@ -451,7 +431,6 @@ assertEquals(0, a.byteLength);
 assertEquals(0, a.length);
 a[0] = 1;
 assertEquals(undefined, a[0]);
-
 
 // Check construction from arrays.
 a = new Uint32Array([]);
@@ -539,33 +518,16 @@ assertSame(a.buffer, aa.buffer);
 
 assertThrows(function(){ a.subarray.call({}, 0) });
 assertThrows(function(){ a.subarray.call([], 0) });
-assertThrows(function(){ a.subarray.call(a) });
 
+// Try to call constructors directly as functions, and through .call
+// and .apply. Should fail.
 
-// Call constructors directly as functions, and through .call and .apply
-
-b = ArrayBuffer(100)
-a = Int8Array(b, 5, 77)
-assertInstance(b, ArrayBuffer)
-assertInstance(a, Int8Array)
-assertSame(b, a.buffer)
-assertEquals(5, a.byteOffset)
-assertEquals(77, a.byteLength)
-b = ArrayBuffer.call(null, 10)
-a = Uint16Array.call(null, b, 2, 4)
-assertInstance(b, ArrayBuffer)
-assertInstance(a, Uint16Array)
-assertSame(b, a.buffer)
-assertEquals(2, a.byteOffset)
-assertEquals(8, a.byteLength)
-b = ArrayBuffer.apply(null, [1000])
-a = Float32Array.apply(null, [b, 128, 1])
-assertInstance(b, ArrayBuffer)
-assertInstance(a, Float32Array)
-assertSame(b, a.buffer)
-assertEquals(128, a.byteOffset)
-assertEquals(4, a.byteLength)
-
+assertThrows(function() { ArrayBuffer(100); }, TypeError);
+assertThrows(function() { Int8Array(b, 5, 77); }, TypeError);
+assertThrows(function() { ArrayBuffer.call(null, 10); }, TypeError);
+assertThrows(function() { Uint16Array.call(null, b, 2, 4); }, TypeError);
+assertThrows(function() { ArrayBuffer.apply(null, [1000]); }, TypeError);
+assertThrows(function() { Float32Array.apply(null, [b, 128, 1]); }, TypeError);
 
 // Test array.set in different combinations.
 
@@ -643,8 +605,10 @@ a61.set(a62)
 assertArrayPrefix([1, 12], a61)
 
 // Invalid source
-assertThrows(function() { a.set(0) })
-assertThrows(function() { a.set({}) })
+assertThrows(function() { a.set(0); }, TypeError);
+assertArrayPrefix([1,2,3,4,5,6], a);
+a.set({}); // does not throw
+assertArrayPrefix([1,2,3,4,5,6], a);
 
 
 // Test arraybuffer.slice
@@ -654,15 +618,15 @@ var b0 = a0.buffer
 
 var b1 = b0.slice(0)
 assertEquals(b0.byteLength, b1.byteLength)
-assertArrayPrefix([1, 2, 3, 4, 5, 6], Int8Array(b1))
+assertArrayPrefix([1, 2, 3, 4, 5, 6], new Int8Array(b1))
 
 var b2 = b0.slice(3)
 assertEquals(b0.byteLength - 3, b2.byteLength)
-assertArrayPrefix([4, 5, 6], Int8Array(b2))
+assertArrayPrefix([4, 5, 6], new Int8Array(b2))
 
 var b3 = b0.slice(2, 4)
 assertEquals(2, b3.byteLength)
-assertArrayPrefix([3, 4], Int8Array(b3))
+assertArrayPrefix([3, 4], new Int8Array(b3))
 
 function goo(a, i) {
   return a[i];

@@ -42,25 +42,6 @@ namespace v8 {
 namespace internal {
 
 
-// General collection of (multi-)bit-flags that can be passed to scanners and
-// parsers to signify their (initial) mode of operation.
-enum ParsingFlags {
-  kNoParsingFlags = 0,
-  // Embed LanguageMode values in parsing flags, i.e., equivalent to:
-  // CLASSIC_MODE = 0,
-  // STRICT_MODE,
-  // EXTENDED_MODE,
-  kLanguageModeMask = 0x03,
-  kAllowLazy = 0x04,
-  kAllowNativesSyntax = 0x08,
-  kAllowModules = 0x10
-};
-
-STATIC_ASSERT((kLanguageModeMask & CLASSIC_MODE) == CLASSIC_MODE);
-STATIC_ASSERT((kLanguageModeMask & STRICT_MODE) == STRICT_MODE);
-STATIC_ASSERT((kLanguageModeMask & EXTENDED_MODE) == EXTENDED_MODE);
-
-
 // Returns the value (0 .. 15) of a hexadecimal character c.
 // If c is not a legal hexadecimal character, returns a value < 0.
 inline int HexValue(uc32 c) {
@@ -145,7 +126,7 @@ class UnicodeCache {
 // Caching predicates used by scanners.
  public:
   UnicodeCache() {}
-  typedef unibrow::Utf8InputBuffer<1024> Utf8Decoder;
+  typedef unibrow::Utf8Decoder<512> Utf8Decoder;
 
   StaticResource<Utf8Decoder>* utf8_decoder() {
     return &utf8_decoder_;
@@ -183,9 +164,9 @@ class LiteralBuffer {
   INLINE(void AddChar(uint32_t code_unit)) {
     if (position_ >= backing_store_.length()) ExpandBuffer();
     if (is_ascii_) {
-      if (code_unit < kMaxAsciiCharCodeU) {
+      if (code_unit <= unibrow::Latin1::kMaxChar) {
         backing_store_[position_] = static_cast<byte>(code_unit);
-        position_ += kASCIISize;
+        position_ += kOneByteSize;
         return;
       }
       ConvertToUtf16();
@@ -196,6 +177,11 @@ class LiteralBuffer {
   }
 
   bool is_ascii() { return is_ascii_; }
+
+  bool is_contextual_keyword(Vector<const char> keyword) {
+    return is_ascii() && keyword.length() == position_ &&
+        (memcmp(keyword.start(), backing_store_.start(), position_) == 0);
+  }
 
   Vector<const uc16> utf16_literal() {
     ASSERT(!is_ascii_);
@@ -234,7 +220,7 @@ class LiteralBuffer {
 
   void ExpandBuffer() {
     Vector<byte> new_store = Vector<byte>::New(NewCapacity(kInitialCapacity));
-    memcpy(new_store.start(), backing_store_.start(), position_);
+    OS::MemCopy(new_store.start(), backing_store_.start(), position_);
     backing_store_.Dispose();
     backing_store_ = new_store;
   }
@@ -250,7 +236,7 @@ class LiteralBuffer {
     } else {
       new_store = backing_store_;
     }
-    char* src = reinterpret_cast<char*>(backing_store_.start());
+    uint8_t* src = backing_store_.start();
     uc16* dst = reinterpret_cast<uc16*>(new_store.start());
     for (int i = position_ - 1; i >= 0; i--) {
       dst[i] = src[i];
@@ -315,8 +301,6 @@ class Scanner {
   // -1 is outside of the range of any real source code.
   static const int kNoOctalLocation = -1;
 
-  typedef unibrow::Utf8InputBuffer<1024> Utf8Decoder;
-
   explicit Scanner(UnicodeCache* scanner_contants);
 
   void Initialize(Utf16CharacterStream* source);
@@ -345,6 +329,10 @@ class Scanner {
   bool is_literal_ascii() {
     ASSERT_NOT_NULL(current_.literal_chars);
     return current_.literal_chars->is_ascii();
+  }
+  bool is_literal_contextual_keyword(Vector<const char> keyword) {
+    ASSERT_NOT_NULL(current_.literal_chars);
+    return current_.literal_chars->is_contextual_keyword(keyword);
   }
   int literal_length() const {
     ASSERT_NOT_NULL(current_.literal_chars);
@@ -382,6 +370,10 @@ class Scanner {
     ASSERT_NOT_NULL(next_.literal_chars);
     return next_.literal_chars->is_ascii();
   }
+  bool is_next_contextual_keyword(Vector<const char> keyword) {
+    ASSERT_NOT_NULL(next_.literal_chars);
+    return next_.literal_chars->is_contextual_keyword(keyword);
+  }
   int next_literal_length() const {
     ASSERT_NOT_NULL(next_.literal_chars);
     return next_.literal_chars->length();
@@ -416,7 +408,12 @@ class Scanner {
   void SetHarmonyModules(bool modules) {
     harmony_modules_ = modules;
   }
-
+  bool HarmonyNumericLiterals() const {
+    return harmony_numeric_literals_;
+  }
+  void SetHarmonyNumericLiterals(bool numeric_literals) {
+    harmony_numeric_literals_ = numeric_literals;
+  }
 
   // Returns true if there was a line terminator before the peek'ed token,
   // possibly inside a multi-line comment.
@@ -431,10 +428,6 @@ class Scanner {
   // Returns true if regexp flags are scanned (always since flags can
   // be empty).
   bool ScanRegExpFlags();
-
-  // Tells whether the buffer contains an identifier (no escapes).
-  // Used for checking if a property name is an identifier.
-  static bool IsIdentifier(unibrow::CharacterStream* buffer);
 
  private:
   // The current and look-ahead token.
@@ -569,6 +562,8 @@ class Scanner {
   bool harmony_scoping_;
   // Whether we scan 'module', 'import', 'export' as keywords.
   bool harmony_modules_;
+  // Whether we scan 0o777 and 0b111 as numbers.
+  bool harmony_numeric_literals_;
 };
 
 } }  // namespace v8::internal

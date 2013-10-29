@@ -220,6 +220,11 @@ CpuImplementer OS::GetCpuImplementer() {
 }
 
 
+CpuPart OS::GetCpuPart(CpuImplementer implementer) {
+  UNIMPLEMENTED();
+}
+
+
 bool OS::ArmCpuHasFeature(CpuFeature feature) {
   UNIMPLEMENTED();
 }
@@ -266,6 +271,12 @@ void OS::Sleep(int milliseconds) {
 }
 
 
+int OS::NumberOfCores() {
+  UNIMPLEMENTED();
+  return 0;
+}
+
+
 void OS::Abort() {
   // Minimalistic implementation for bootstrapping.
   abort();
@@ -274,6 +285,11 @@ void OS::Abort() {
 
 void OS::DebugBreak() {
   UNIMPLEMENTED();
+}
+
+
+void OS::DumpBacktrace() {
+  // Currently unsupported.
 }
 
 
@@ -306,6 +322,16 @@ int OS::StackWalk(Vector<OS::StackFrame> frames) {
 }
 
 
+VirtualMemory::VirtualMemory() {
+  UNIMPLEMENTED();
+}
+
+
+VirtualMemory::VirtualMemory(size_t size) {
+  UNIMPLEMENTED();
+}
+
+
 VirtualMemory::VirtualMemory(size_t size, void* address_hint) {
   UNIMPLEMENTED();
 }
@@ -319,6 +345,11 @@ VirtualMemory::~VirtualMemory() {
 bool VirtualMemory::IsReserved() {
   UNIMPLEMENTED();
   return false;
+}
+
+
+void VirtualMemory::Reset() {
+  UNIMPLEMENTED();
 }
 
 
@@ -340,6 +371,36 @@ bool VirtualMemory::Guard(void* address) {
 }
 
 
+void* VirtualMemory::ReserveRegion(size_t size) {
+  UNIMPLEMENTED();
+  return NULL;
+}
+
+
+bool VirtualMemory::CommitRegion(void* base, size_t size, bool is_executable) {
+  UNIMPLEMENTED();
+  return false;
+}
+
+
+bool VirtualMemory::UncommitRegion(void* base, size_t size) {
+  UNIMPLEMENTED();
+  return false;
+}
+
+
+bool VirtualMemory::ReleaseRegion(void* base, size_t size) {
+  UNIMPLEMENTED();
+  return false;
+}
+
+
+bool VirtualMemory::HasLazyCommits() {
+  // TODO(alph): implement for the platform.
+  return false;
+}
+
+
 class Thread::PlatformData : public Malloced {
  public:
   PlatformData() {
@@ -352,7 +413,8 @@ class Thread::PlatformData : public Malloced {
 
 Thread::Thread(const Options& options)
     : data_(new PlatformData()),
-      stack_size_(options.stack_size) {
+      stack_size_(options.stack_size),
+      start_semaphore_(NULL) {
   set_name(options.name);
   UNIMPLEMENTED();
 }

@@ -57,30 +57,8 @@ TransitionArray* TransitionArray::cast(Object* object) {
 }
 
 
-Map* TransitionArray::elements_transition() {
-  Object* transition_map = get(kElementsTransitionIndex);
-  return Map::cast(transition_map);
-}
-
-
-void TransitionArray::ClearElementsTransition() {
-  WRITE_FIELD(this, kElementsTransitionOffset, Smi::FromInt(0));
-}
-
-
 bool TransitionArray::HasElementsTransition() {
-  return IsFullTransitionArray() &&
-      get(kElementsTransitionIndex) != Smi::FromInt(0);
-}
-
-
-void TransitionArray::set_elements_transition(Map* transition_map,
-                                              WriteBarrierMode mode) {
-  ASSERT(IsFullTransitionArray());
-  Heap* heap = GetHeap();
-  WRITE_FIELD(this, kElementsTransitionOffset, transition_map);
-  CONDITIONAL_WRITE_BARRIER(
-      heap, this, kElementsTransitionOffset, transition_map, mode);
+  return Search(GetHeap()->elements_transition_symbol()) != kNotFound;
 }
 
 
@@ -143,19 +121,19 @@ Object** TransitionArray::GetKeySlot(int transition_number) {
 }
 
 
-String* TransitionArray::GetKey(int transition_number) {
+Name* TransitionArray::GetKey(int transition_number) {
   if (IsSimpleTransition()) {
     Map* target = GetTarget(kSimpleTransitionIndex);
     int descriptor = target->LastAdded();
-    String* key = target->instance_descriptors()->GetKey(descriptor);
+    Name* key = target->instance_descriptors()->GetKey(descriptor);
     return key;
   }
   ASSERT(transition_number < number_of_transitions());
-  return String::cast(get(ToKeyIndex(transition_number)));
+  return Name::cast(get(ToKeyIndex(transition_number)));
 }
 
 
-void TransitionArray::SetKey(int transition_number, String* key) {
+void TransitionArray::SetKey(int transition_number, Name* key) {
   ASSERT(!IsSimpleTransition());
   ASSERT(transition_number < number_of_transitions());
   set(ToKeyIndex(transition_number), key);
@@ -190,9 +168,9 @@ PropertyDetails TransitionArray::GetTargetDetails(int transition_number) {
 }
 
 
-int TransitionArray::Search(String* name) {
+int TransitionArray::Search(Name* name) {
   if (IsSimpleTransition()) {
-    String* key = GetKey(kSimpleTransitionIndex);
+    Name* key = GetKey(kSimpleTransitionIndex);
     if (key->Equals(name)) return kSimpleTransitionIndex;
     return kNotFound;
   }
@@ -201,7 +179,7 @@ int TransitionArray::Search(String* name) {
 
 
 void TransitionArray::NoIncrementalWriteBarrierSet(int transition_number,
-                                                   String* key,
+                                                   Name* key,
                                                    Map* target) {
   FixedArray::NoIncrementalWriteBarrierSet(
       this, ToKeyIndex(transition_number), key);

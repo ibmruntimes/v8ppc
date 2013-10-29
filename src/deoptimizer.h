@@ -38,6 +38,24 @@
 namespace v8 {
 namespace internal {
 
+
+static inline double read_double_value(Address p) {
+#ifdef V8_HOST_CAN_READ_UNALIGNED
+  return Memory::double_at(p);
+#else  // V8_HOST_CAN_READ_UNALIGNED
+  // Prevent gcc from using load-double (mips ldc1) on (possibly)
+  // non-64-bit aligned address.
+  union conversion {
+    double d;
+    uint32_t u[2];
+  } c;
+  c.u[0] = *reinterpret_cast<uint32_t*>(p);
+  c.u[1] = *reinterpret_cast<uint32_t*>(p + 4);
+  return c.d;
+#endif  // V8_HOST_CAN_READ_UNALIGNED
+}
+
+
 class FrameDescription;
 class TranslationIterator;
 class DeoptimizingCodeListNode;
@@ -57,17 +75,33 @@ class HeapNumberMaterializationDescriptor BASE_EMBEDDED {
 };
 
 
-class ArgumentsObjectMaterializationDescriptor BASE_EMBEDDED {
+class ObjectMaterializationDescriptor BASE_EMBEDDED {
  public:
-  ArgumentsObjectMaterializationDescriptor(Address slot_address, int argc)
-      : slot_address_(slot_address), arguments_length_(argc) { }
+  ObjectMaterializationDescriptor(
+      Address slot_address, int frame, int length, int duplicate, bool is_args)
+      : slot_address_(slot_address),
+        jsframe_index_(frame),
+        object_length_(length),
+        duplicate_object_(duplicate),
+        is_arguments_(is_args) { }
 
   Address slot_address() const { return slot_address_; }
-  int arguments_length() const { return arguments_length_; }
+  int jsframe_index() const { return jsframe_index_; }
+  int object_length() const { return object_length_; }
+  int duplicate_object() const { return duplicate_object_; }
+  bool is_arguments() const { return is_arguments_; }
+
+  // Only used for allocated receivers in DoComputeConstructStubFrame.
+  void patch_slot_address(intptr_t slot) {
+    slot_address_ = reinterpret_cast<Address>(slot);
+  }
 
  private:
   Address slot_address_;
-  int arguments_length_;
+  int jsframe_index_;
+  int object_length_;
+  int duplicate_object_;
+  bool is_arguments_;
 };
 
 
@@ -87,37 +121,15 @@ class OptimizedFunctionVisitor BASE_EMBEDDED {
 };
 
 
-class Deoptimizer;
-
-
-class DeoptimizerData {
+class OptimizedFunctionFilter BASE_EMBEDDED {
  public:
-  DeoptimizerData();
-  ~DeoptimizerData();
+  virtual ~OptimizedFunctionFilter() {}
 
-#ifdef ENABLE_DEBUGGER_SUPPORT
-  void Iterate(ObjectVisitor* v);
-#endif
-
- private:
-  MemoryChunk* eager_deoptimization_entry_code_;
-  MemoryChunk* lazy_deoptimization_entry_code_;
-  Deoptimizer* current_;
-
-#ifdef ENABLE_DEBUGGER_SUPPORT
-  DeoptimizedFrameInfo* deoptimized_frame_info_;
-#endif
-
-  // List of deoptimized code which still have references from active stack
-  // frames. These code objects are needed by the deoptimizer when deoptimizing
-  // a frame for which the code object for the function function has been
-  // changed from the code present when deoptimizing was done.
-  DeoptimizingCodeListNode* deoptimizing_code_list_;
-
-  friend class Deoptimizer;
-
-  DISALLOW_COPY_AND_ASSIGN(DeoptimizerData);
+  virtual bool TakeFunction(JSFunction* function) = 0;
 };
+
+
+class Deoptimizer;
 
 
 class Deoptimizer : public Malloced {
@@ -125,13 +137,36 @@ class Deoptimizer : public Malloced {
   enum BailoutType {
     EAGER,
     LAZY,
+    SOFT,
     OSR,
     // This last bailout type is not really a bailout, but used by the
     // debugger to deoptimize stack frames to allow inspection.
     DEBUGGER
   };
 
+  static const int kBailoutTypesWithCodeEntry = SOFT + 1;
+
+  struct JumpTableEntry {
+    inline JumpTableEntry(Address entry,
+                          Deoptimizer::BailoutType type,
+                          bool frame)
+        : label(),
+          address(entry),
+          bailout_type(type),
+          needs_frame(frame) { }
+    Label label;
+    Address address;
+    Deoptimizer::BailoutType bailout_type;
+    bool needs_frame;
+  };
+
+  static bool TraceEnabledFor(BailoutType deopt_type,
+                              StackFrame::Type frame_type);
+  static const char* MessageFor(BailoutType type);
+
   int output_count() const { return output_count_; }
+
+  Code::Kind compiled_code_kind() const { return compiled_code_->kind(); }
 
   // Number of created JS frames. Not all created frames are necessarily JS.
   int jsframe_count() const { return jsframe_count_; }
@@ -171,46 +206,65 @@ class Deoptimizer : public Malloced {
   static void ReplaceCodeForRelatedFunctions(JSFunction* function, Code* code);
 
   // Deoptimize all functions in the heap.
-  static void DeoptimizeAll();
+  static void DeoptimizeAll(Isolate* isolate);
 
   static void DeoptimizeGlobalObject(JSObject* object);
+
+  static void DeoptimizeAllFunctionsWith(Isolate* isolate,
+                                         OptimizedFunctionFilter* filter);
+
+  static void DeoptimizeCodeList(Isolate* isolate, ZoneList<Code*>* codes);
+
+  static void DeoptimizeAllFunctionsForContext(
+      Context* context, OptimizedFunctionFilter* filter);
 
   static void VisitAllOptimizedFunctionsForContext(
       Context* context, OptimizedFunctionVisitor* visitor);
 
-  static void VisitAllOptimizedFunctionsForGlobalObject(
-      JSObject* object, OptimizedFunctionVisitor* visitor);
-
-  static void VisitAllOptimizedFunctions(OptimizedFunctionVisitor* visitor);
+  static void VisitAllOptimizedFunctions(Isolate* isolate,
+                                         OptimizedFunctionVisitor* visitor);
 
   // The size in bytes of the code required at a lazy deopt patch site.
   static int patch_size();
 
-  // Patch all stack guard checks in the unoptimized code to
+  // Patch all interrupts with allowed loop depth in the unoptimized code to
   // unconditionally call replacement_code.
-  static void PatchStackCheckCode(Code* unoptimized_code,
-                                  Code* check_code,
-                                  Code* replacement_code);
+  static void PatchInterruptCode(Code* unoptimized_code,
+                                 Code* interrupt_code,
+                                 Code* replacement_code);
 
-  // Patch stack guard check at instruction before pc_after in
+  // Patch the interrupt at the instruction before pc_after in
   // the unoptimized code to unconditionally call replacement_code.
-  static void PatchStackCheckCodeAt(Code* unoptimized_code,
-                                    Address pc_after,
-                                    Code* check_code,
-                                    Code* replacement_code);
-
-  // Change all patched stack guard checks in the unoptimized code
-  // back to a normal stack guard check.
-  static void RevertStackCheckCode(Code* unoptimized_code,
-                                   Code* check_code,
+  static void PatchInterruptCodeAt(Code* unoptimized_code,
+                                   Address pc_after,
+                                   Code* interrupt_code,
                                    Code* replacement_code);
 
-  // Change all patched stack guard checks in the unoptimized code
-  // back to a normal stack guard check.
-  static void RevertStackCheckCodeAt(Code* unoptimized_code,
+  // Change all patched interrupts patched in the unoptimized code
+  // back to normal interrupts.
+  static void RevertInterruptCode(Code* unoptimized_code,
+                                  Code* interrupt_code,
+                                  Code* replacement_code);
+
+  // Change patched interrupt in the unoptimized code
+  // back to a normal interrupt.
+  static void RevertInterruptCodeAt(Code* unoptimized_code,
+                                    Address pc_after,
+                                    Code* interrupt_code,
+                                    Code* replacement_code);
+
+#ifdef DEBUG
+  static bool InterruptCodeIsPatched(Code* unoptimized_code,
                                      Address pc_after,
-                                     Code* check_code,
+                                     Code* interrupt_code,
                                      Code* replacement_code);
+
+  // Verify that all back edges of a certain loop depth are patched.
+  static void VerifyInterruptCode(Code* unoptimized_code,
+                                  Code* interrupt_code,
+                                  Code* replacement_code,
+                                  int loop_nesting_level);
+#endif  // DEBUG
 
   ~Deoptimizer();
 
@@ -226,8 +280,21 @@ class Deoptimizer : public Malloced {
 
   static void ComputeOutputFrames(Deoptimizer* deoptimizer);
 
-  static Address GetDeoptimizationEntry(int id, BailoutType type);
-  static int GetDeoptimizationId(Address addr, BailoutType type);
+
+  enum GetEntryMode {
+    CALCULATE_ENTRY_ADDRESS,
+    ENSURE_ENTRY_CODE
+  };
+
+
+  static Address GetDeoptimizationEntry(
+      Isolate* isolate,
+      int id,
+      BailoutType type,
+      GetEntryMode mode = ENSURE_ENTRY_CODE);
+  static int GetDeoptimizationId(Isolate* isolate,
+                                 Address addr,
+                                 BailoutType type);
   static int GetOutputInfo(DeoptimizationOutputData* data,
                            BailoutId node_id,
                            SharedFunctionInfo* shared);
@@ -259,6 +326,7 @@ class Deoptimizer : public Malloced {
    protected:
     MacroAssembler* masm() const { return masm_; }
     BailoutType type() const { return type_; }
+    Isolate* isolate() const { return masm_->isolate(); }
 
     virtual void GeneratePrologue() { }
 
@@ -283,8 +351,17 @@ class Deoptimizer : public Malloced {
 
   int ConvertJSFrameIndexToFrameIndex(int jsframe_index);
 
+  static size_t GetMaxDeoptTableSize();
+
+  static void EnsureCodeForDeoptimizationEntry(Isolate* isolate,
+                                               BailoutType type,
+                                               int max_entry_id);
+
+  Isolate* isolate() const { return isolate_; }
+
  private:
-  static const int kNumberOfEntries = 16384;
+  static const int kMinNumberOfEntries = 64;
+  static const int kMaxNumberOfEntries = 16384;
 
   Deoptimizer(Isolate* isolate,
               JSFunction* function,
@@ -293,6 +370,8 @@ class Deoptimizer : public Malloced {
               Address from,
               int fp_to_sp_delta,
               Code* optimized_code);
+  Code* FindOptimizedCode(JSFunction* function, Code* optimized_code);
+  void PrintFunctionName();
   void DeleteFrameDescriptions();
 
   void DoComputeOutputFrames();
@@ -305,9 +384,23 @@ class Deoptimizer : public Malloced {
   void DoComputeAccessorStubFrame(TranslationIterator* iterator,
                                   int frame_index,
                                   bool is_setter_stub_frame);
+  void DoComputeCompiledStubFrame(TranslationIterator* iterator,
+                                  int frame_index);
+
+  void DoTranslateObject(TranslationIterator* iterator,
+                         int object_index,
+                         int field_index);
+
+  enum DeoptimizerTranslatedValueType {
+    TRANSLATED_VALUE_IS_NATIVE,
+    TRANSLATED_VALUE_IS_TAGGED
+  };
+
   void DoTranslateCommand(TranslationIterator* iterator,
-                          int frame_index,
-                          unsigned output_offset);
+      int frame_index,
+      unsigned output_offset,
+      DeoptimizerTranslatedValueType value_type = TRANSLATED_VALUE_IS_TAGGED);
+
   // Translate a command for OSR.  Updates the input offset to be used for
   // the next command.  Returns false if translation of the command failed
   // (e.g., a number conversion failed) and may or may not have updated the
@@ -323,28 +416,63 @@ class Deoptimizer : public Malloced {
 
   Object* ComputeLiteral(int index) const;
 
-  void AddArgumentsObject(intptr_t slot_address, int argc);
-  void AddArgumentsObjectValue(intptr_t value);
+  void AddObjectStart(intptr_t slot_address, int argc, bool is_arguments);
+  void AddObjectDuplication(intptr_t slot, int object_index);
+  void AddObjectTaggedValue(intptr_t value);
+  void AddObjectDoubleValue(double value);
   void AddDoubleValue(intptr_t slot_address, double value);
 
-  static MemoryChunk* CreateCode(BailoutType type);
+  bool ArgumentsObjectIsAdapted(int object_index) {
+    ObjectMaterializationDescriptor desc = deferred_objects_.at(object_index);
+    int reverse_jsframe_index = jsframe_count_ - desc.jsframe_index() - 1;
+    return jsframe_has_adapted_arguments_[reverse_jsframe_index];
+  }
+
+  Handle<JSFunction> ArgumentsObjectFunction(int object_index) {
+    ObjectMaterializationDescriptor desc = deferred_objects_.at(object_index);
+    int reverse_jsframe_index = jsframe_count_ - desc.jsframe_index() - 1;
+    return jsframe_functions_[reverse_jsframe_index];
+  }
+
+  // Helper function for heap object materialization.
+  Handle<Object> MaterializeNextHeapObject();
+  Handle<Object> MaterializeNextValue();
+
   static void GenerateDeoptimizationEntries(
       MacroAssembler* masm, int count, BailoutType type);
 
   // Weak handle callback for deoptimizing code objects.
-  static void HandleWeakDeoptimizedCode(
-      v8::Persistent<v8::Value> obj, void* data);
-  static Code* FindDeoptimizingCodeFromAddress(Address addr);
-  static void RemoveDeoptimizingCode(Code* code);
+  static void HandleWeakDeoptimizedCode(v8::Isolate* isolate,
+                                        v8::Persistent<v8::Value>* obj,
+                                        void* data);
+
+  // Deoptimize the given code and add to appropriate deoptimization lists.
+  static void DeoptimizeCode(Isolate* isolate, Code* code);
+
+  // Patch the given code so that it will deoptimize itself.
+  static void PatchCodeForDeoptimization(Isolate* isolate, Code* code);
 
   // Fill the input from from a JavaScript frame. This is used when
   // the debugger needs to inspect an optimized frame. For normal
   // deoptimizations the input frame is filled in generated code.
   void FillInputFrame(Address tos, JavaScriptFrame* frame);
 
+  // Fill the given output frame's registers to contain the failure handler
+  // address and the number of parameters for a stub failure trampoline.
+  void SetPlatformCompiledStubRegisters(FrameDescription* output_frame,
+                                        CodeStubInterfaceDescriptor* desc);
+
+  // Fill the given output frame's double registers with the original values
+  // from the input frame's double registers.
+  void CopyDoubleRegisters(FrameDescription* output_frame);
+
+  // Determines whether the input frame contains alignment padding by looking
+  // at the dynamic alignment state slot inside the frame.
+  bool HasAlignmentPadding(JSFunction* function);
+
   Isolate* isolate_;
   JSFunction* function_;
-  Code* optimized_code_;
+  Code* compiled_code_;
   unsigned bailout_id_;
   BailoutType bailout_type_;
   Address from_;
@@ -360,9 +488,27 @@ class Deoptimizer : public Malloced {
   // Array of output frame descriptions.
   FrameDescription** output_;
 
-  List<Object*> deferred_arguments_objects_values_;
-  List<ArgumentsObjectMaterializationDescriptor> deferred_arguments_objects_;
+  // Deferred values to be materialized.
+  List<Object*> deferred_objects_tagged_values_;
+  List<double> deferred_objects_double_values_;
+  List<ObjectMaterializationDescriptor> deferred_objects_;
   List<HeapNumberMaterializationDescriptor> deferred_heap_numbers_;
+
+  // Output frame information. Only used during heap object materialization.
+  List<Handle<JSFunction> > jsframe_functions_;
+  List<bool> jsframe_has_adapted_arguments_;
+
+  // Materialized objects. Only used during heap object materialization.
+  List<Handle<Object> >* materialized_values_;
+  List<Handle<Object> >* materialized_objects_;
+  int materialization_value_index_;
+  int materialization_object_index_;
+
+#ifdef DEBUG
+  DisallowHeapAllocation* disallow_heap_allocation_;
+#endif  // DEBUG
+
+  bool trace_;
 
   static const int table_entry_size_;
 
@@ -406,24 +552,16 @@ class FrameDescription {
 
   double GetDoubleFrameSlot(unsigned offset) {
     intptr_t* ptr = GetFrameSlotPointer(offset);
-#if V8_TARGET_ARCH_MIPS
-    // Prevent gcc from using load-double (mips ldc1) on (possibly)
-    // non-64-bit aligned double. Uses two lwc1 instructions.
-    union conversion {
-      double d;
-      uint32_t u[2];
-    } c;
-    c.u[0] = *reinterpret_cast<uint32_t*>(ptr);
-    c.u[1] = *(reinterpret_cast<uint32_t*>(ptr) + 1);
-    return c.d;
-#else
-    return *reinterpret_cast<double*>(ptr);
-#endif
+    return read_double_value(reinterpret_cast<Address>(ptr));
   }
 
   void SetFrameSlot(unsigned offset, intptr_t value) {
     *GetFrameSlotPointer(offset) = value;
   }
+
+  void SetCallerPc(unsigned offset, intptr_t value);
+
+  void SetCallerFp(unsigned offset, intptr_t value);
 
   intptr_t GetRegister(unsigned n) const {
     ASSERT(n < ARRAY_SIZE(registers_));
@@ -514,16 +652,13 @@ class FrameDescription {
   uintptr_t frame_size_;  // Number of bytes.
   JSFunction* function_;
   intptr_t registers_[Register::kNumRegisters];
-  double double_registers_[DoubleRegister::kNumAllocatableRegisters];
+  double double_registers_[DoubleRegister::kMaxNumRegisters];
   intptr_t top_;
   intptr_t pc_;
   intptr_t fp_;
   intptr_t context_;
   StackFrame::Type type_;
   Smi* state_;
-#ifdef DEBUG
-  Code::Kind kind_;
-#endif
 
   // Continuation is the PC where the execution continues after
   // deoptimizing.
@@ -543,6 +678,40 @@ class FrameDescription {
 };
 
 
+class DeoptimizerData {
+ public:
+  explicit DeoptimizerData(MemoryAllocator* allocator);
+  ~DeoptimizerData();
+
+#ifdef ENABLE_DEBUGGER_SUPPORT
+  void Iterate(ObjectVisitor* v);
+#endif
+
+  Code* FindDeoptimizingCode(Address addr);
+  void RemoveDeoptimizingCode(Code* code);
+
+ private:
+  MemoryAllocator* allocator_;
+  int deopt_entry_code_entries_[Deoptimizer::kBailoutTypesWithCodeEntry];
+  MemoryChunk* deopt_entry_code_[Deoptimizer::kBailoutTypesWithCodeEntry];
+  Deoptimizer* current_;
+
+#ifdef ENABLE_DEBUGGER_SUPPORT
+  DeoptimizedFrameInfo* deoptimized_frame_info_;
+#endif
+
+  // List of deoptimized code which still have references from active stack
+  // frames. These code objects are needed by the deoptimizer when deoptimizing
+  // a frame for which the code object for the function function has been
+  // changed from the code present when deoptimizing was done.
+  DeoptimizingCodeListNode* deoptimizing_code_list_;
+
+  friend class Deoptimizer;
+
+  DISALLOW_COPY_AND_ASSIGN(DeoptimizerData);
+};
+
+
 class TranslationBuffer BASE_EMBEDDED {
  public:
   explicit TranslationBuffer(Zone* zone) : contents_(256, zone) { }
@@ -550,7 +719,7 @@ class TranslationBuffer BASE_EMBEDDED {
   int CurrentIndex() const { return contents_.length(); }
   void Add(int32_t value, Zone* zone);
 
-  Handle<ByteArray> CreateByteArray();
+  Handle<ByteArray> CreateByteArray(Factory* factory);
 
  private:
   ZoneList<uint8_t> contents_;
@@ -587,6 +756,10 @@ class Translation BASE_EMBEDDED {
     GETTER_STUB_FRAME,
     SETTER_STUB_FRAME,
     ARGUMENTS_ADAPTOR_FRAME,
+    COMPILED_STUB_FRAME,
+    DUPLICATED_OBJECT,
+    ARGUMENTS_OBJECT,
+    CAPTURED_OBJECT,
     REGISTER,
     INT32_REGISTER,
     UINT32_REGISTER,
@@ -595,12 +768,7 @@ class Translation BASE_EMBEDDED {
     INT32_STACK_SLOT,
     UINT32_STACK_SLOT,
     DOUBLE_STACK_SLOT,
-    LITERAL,
-    ARGUMENTS_OBJECT,
-
-    // A prefix indicating that the next command is a duplicate of the one
-    // that follows it.
-    DUPLICATE
+    LITERAL
   };
 
   Translation(TranslationBuffer* buffer, int frame_count, int jsframe_count,
@@ -617,10 +785,14 @@ class Translation BASE_EMBEDDED {
 
   // Commands.
   void BeginJSFrame(BailoutId node_id, int literal_id, unsigned height);
+  void BeginCompiledStubFrame();
   void BeginArgumentsAdaptorFrame(int literal_id, unsigned height);
   void BeginConstructStubFrame(int literal_id, unsigned height);
   void BeginGetterStubFrame(int literal_id);
   void BeginSetterStubFrame(int literal_id);
+  void BeginArgumentsObject(int args_length);
+  void BeginCapturedObject(int length);
+  void DuplicateObject(int object_index);
   void StoreRegister(Register reg);
   void StoreInt32Register(Register reg);
   void StoreUint32Register(Register reg);
@@ -630,8 +802,7 @@ class Translation BASE_EMBEDDED {
   void StoreUint32StackSlot(int index);
   void StoreDoubleStackSlot(int index);
   void StoreLiteral(int literal_id);
-  void StoreArgumentsObject(int args_index, int args_length);
-  void MarkDuplicate();
+  void StoreArgumentsObject(bool args_known, int args_index, int args_length);
 
   Zone* zone() const { return zone_; }
 
@@ -688,13 +859,13 @@ class SlotRef BASE_EMBEDDED {
   SlotRef(Address addr, SlotRepresentation representation)
       : addr_(addr), representation_(representation) { }
 
-  explicit SlotRef(Object* literal)
-      : literal_(literal), representation_(LITERAL) { }
+  SlotRef(Isolate* isolate, Object* literal)
+      : literal_(literal, isolate), representation_(LITERAL) { }
 
-  Handle<Object> GetValue() {
+  Handle<Object> GetValue(Isolate* isolate) {
     switch (representation_) {
       case TAGGED:
-        return Handle<Object>(Memory::Object_at(addr_));
+        return Handle<Object>(Memory::Object_at(addr_), isolate);
 
       case INT32: {
 #if defined(V8_TARGET_ARCH_PPC64) && __BYTE_ORDER == __BIG_ENDIAN
@@ -703,9 +874,9 @@ class SlotRef BASE_EMBEDDED {
         int value = Memory::int32_at(addr_);
 #endif
         if (Smi::IsValid(value)) {
-          return Handle<Object>(Smi::FromInt(value));
+          return Handle<Object>(Smi::FromInt(value), isolate);
         } else {
-          return Isolate::Current()->factory()->NewNumberFromInt(value);
+          return isolate->factory()->NewNumberFromInt(value);
         }
       }
 
@@ -716,16 +887,15 @@ class SlotRef BASE_EMBEDDED {
         uint32_t value = Memory::uint32_at(addr_);
 #endif
         if (value <= static_cast<uint32_t>(Smi::kMaxValue)) {
-          return Handle<Object>(Smi::FromInt(static_cast<int>(value)));
+          return Handle<Object>(Smi::FromInt(static_cast<int>(value)), isolate);
         } else {
-          return Isolate::Current()->factory()->NewNumber(
-            static_cast<double>(value));
+          return isolate->factory()->NewNumber(static_cast<double>(value));
         }
       }
 
       case DOUBLE: {
-        double value = Memory::double_at(addr_);
-        return Isolate::Current()->factory()->NewNumber(value);
+        double value = read_double_value(addr_);
+        return isolate->factory()->NewNumber(value);
       }
 
       case LITERAL:

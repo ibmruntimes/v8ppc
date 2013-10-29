@@ -101,6 +101,7 @@ bool InputIterator::Done() { return current_ >= limit_; }
 
 LOperand* InputIterator::Current() {
   ASSERT(!Done());
+  ASSERT(instr_->InputAt(current_) != NULL);
   return instr_->InputAt(current_);
 }
 
@@ -112,7 +113,9 @@ void InputIterator::Advance() {
 
 
 void InputIterator::SkipUninteresting() {
-  while (current_ < limit_ && instr_->InputAt(current_)->IsConstantOperand()) {
+  while (current_ < limit_) {
+    LOperand* current = instr_->InputAt(current_);
+    if (current != NULL && !current->IsConstantOperand()) break;
     ++current_;
   }
 }
@@ -129,9 +132,11 @@ bool UseIterator::Done() {
 
 LOperand* UseIterator::Current() {
   ASSERT(!Done());
-  return input_iterator_.Done()
+  LOperand* result = input_iterator_.Done()
       ? env_iterator_.Current()
       : input_iterator_.Current();
+  ASSERT(result != NULL);
+  return result;
 }
 
 
@@ -140,6 +145,20 @@ void UseIterator::Advance() {
       ? env_iterator_.Advance()
       : input_iterator_.Advance();
 }
+
+
+void LAllocator::SetLiveRangeAssignedRegister(
+    LiveRange* range,
+    int reg,
+    RegisterKind register_kind) {
+  if (register_kind == DOUBLE_REGISTERS) {
+    assigned_double_registers_->Add(reg);
+  } else {
+    assigned_registers_->Add(reg);
+  }
+  range->set_assigned_register(reg, register_kind, chunk()->zone());
+}
+
 
 } }  // namespace v8::internal
 

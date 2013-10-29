@@ -252,9 +252,17 @@ void StringStream::Add(const char* format, FmtElm arg0, FmtElm arg1,
 }
 
 
+void StringStream::Add(const char* format, FmtElm arg0, FmtElm arg1,
+                       FmtElm arg2, FmtElm arg3, FmtElm arg4) {
+  const char argc = 5;
+  FmtElm argv[argc] = { arg0, arg1, arg2, arg3, arg4 };
+  Add(CStrVector(format), Vector<FmtElm>(argv, argc));
+}
+
+
 SmartArrayPointer<const char> StringStream::ToCString() const {
   char* str = NewArray<char>(length_ + 1);
-  memcpy(str, buffer_, length_);
+  OS::MemCopy(str, buffer_, length_);
   str[length_] = '\0';
   return SmartArrayPointer<const char>(str);
 }
@@ -282,7 +290,8 @@ void StringStream::OutputToFile(FILE* out) {
 
 
 Handle<String> StringStream::ToString() {
-  return FACTORY->NewStringFromUtf8(Vector<const char>(buffer_, length_));
+  Factory* factory = Isolate::Current()->factory();
+  return factory->NewStringFromUtf8(Vector<const char>(buffer_, length_));
 }
 
 
@@ -311,14 +320,14 @@ bool StringStream::Put(String* str) {
 
 
 bool StringStream::Put(String* str, int start, int end) {
-  StringInputBuffer name_buffer(str);
-  name_buffer.Seek(start);
-  for (int i = start; i < end && name_buffer.has_more(); i++) {
-    int c = name_buffer.GetNext();
+  ConsStringIteratorOp op;
+  StringCharacterStream stream(str, &op, start);
+  for (int i = start; i < end && stream.HasMore(); i++) {
+    uint16_t c = stream.GetNext();
     if (c >= 127 || c < 32) {
       c = '?';
     }
-    if (!Put(c)) {
+    if (!Put(static_cast<char>(c))) {
       return false;  // Output was truncated.
     }
   }
@@ -350,9 +359,8 @@ void StringStream::PrintUsingMap(JSObject* js_object) {
   }
   int real_size = map->NumberOfOwnDescriptors();
   DescriptorArray* descs = map->instance_descriptors();
-  for (int i = 0; i < descs->number_of_descriptors(); i++) {
+  for (int i = 0; i < real_size; i++) {
     PropertyDetails details = descs->GetDetails(i);
-    if (details.descriptor_index() > real_size) continue;
     if (details.type() == FIELD) {
       Object* key = descs->GetKey(i);
       if (key->IsString() || key->IsNumber()) {
@@ -368,7 +376,7 @@ void StringStream::PrintUsingMap(JSObject* js_object) {
           key->ShortPrint();
         }
         Add(": ");
-        Object* value = js_object->FastPropertyAt(descs->GetFieldIndex(i));
+        Object* value = js_object->RawFastPropertyAt(descs->GetFieldIndex(i));
         Add("%o\n", value);
       }
     }
@@ -463,7 +471,7 @@ void StringStream::PrintSecurityTokenIfChanged(Object* f) {
   }
 
   JSFunction* fun = JSFunction::cast(f);
-  Object* perhaps_context = fun->unchecked_context();
+  Object* perhaps_context = fun->context();
   if (perhaps_context->IsHeapObject() &&
       heap->Contains(HeapObject::cast(perhaps_context)) &&
       perhaps_context->IsContext()) {
@@ -493,7 +501,7 @@ void StringStream::PrintFunction(Object* f, Object* receiver, Code** code) {
       // Common case: on-stack function present and resolved.
       PrintPrototype(fun, receiver);
       *code = fun->code();
-    } else if (f->IsSymbol()) {
+    } else if (f->IsInternalizedString()) {
       // Unresolved and megamorphic calls: Instead of the function
       // we have the function name on the stack.
       PrintName(f);
@@ -533,11 +541,13 @@ void StringStream::PrintFunction(Object* f, Object* receiver, Code** code) {
 void StringStream::PrintPrototype(JSFunction* fun, Object* receiver) {
   Object* name = fun->shared()->name();
   bool print_name = false;
-  Heap* heap = HEAP;
-  for (Object* p = receiver; p != heap->null_value(); p = p->GetPrototype()) {
+  Isolate* isolate = fun->GetIsolate();
+  for (Object* p = receiver;
+       p != isolate->heap()->null_value();
+       p = p->GetPrototype(isolate)) {
     if (p->IsJSObject()) {
       Object* key = JSObject::cast(p)->SlowReverseLookup(fun);
-      if (key != heap->undefined_value()) {
+      if (key != isolate->heap()->undefined_value()) {
         if (!name->IsString() ||
             !key->IsString() ||
             !String::cast(name)->Equals(String::cast(key))) {
@@ -573,7 +583,7 @@ char* HeapStringAllocator::grow(unsigned* bytes) {
   if (new_space == NULL) {
     return space_;
   }
-  memcpy(new_space, space_, *bytes);
+  OS::MemCopy(new_space, space_, *bytes);
   *bytes = new_bytes;
   DeleteArray(space_);
   space_ = new_space;

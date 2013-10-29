@@ -33,7 +33,7 @@
 
 #include "v8.h"
 
-#if defined(V8_TARGET_ARCH_IA32)
+#if V8_TARGET_ARCH_IA32
 
 #include "cpu.h"
 #include "macro-assembler.h"
@@ -79,6 +79,8 @@ void CPU::DebugBreak() {
   // instead
   // __asm { int 3 }
   __debugbreak();
+#elif defined(__native_client__)
+  asm("hlt");
 #else
   asm("int $3");
 #endif

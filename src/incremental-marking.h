@@ -75,7 +75,9 @@ class IncrementalMarking {
 
   bool WorthActivating();
 
-  void Start();
+  enum CompactionFlag { ALLOW_COMPACTION, PREVENT_COMPACTION };
+
+  void Start(CompactionFlag flag = ALLOW_COMPACTION);
 
   void Stop();
 
@@ -110,10 +112,7 @@ class IncrementalMarking {
   static const intptr_t kMarkingSpeedAccelleration = 2;
   static const intptr_t kMaxMarkingSpeed = 1000;
 
-  void OldSpaceStep(intptr_t allocated) {
-    Step(allocated * kFastMarking / kInitialMarkingSpeed,
-         GC_VIA_STACK_GUARD);
-  }
+  void OldSpaceStep(intptr_t allocated);
 
   void Step(intptr_t allocated, CompletionAction action);
 
@@ -127,7 +126,7 @@ class IncrementalMarking {
   }
 
   static void RecordWriteFromCode(HeapObject* obj,
-                                  Object* value,
+                                  Object** slot,
                                   Isolate* isolate);
 
   static void RecordWriteForEvacuationFromCode(HeapObject* obj,
@@ -163,19 +162,6 @@ class IncrementalMarking {
   inline void BlackToGreyAndUnshift(HeapObject* obj, MarkBit mark_bit);
 
   inline void WhiteToGreyAndPush(HeapObject* obj, MarkBit mark_bit);
-
-  // Does white->black or keeps gray or black color. Returns true if converting
-  // white to black.
-  inline bool MarkBlackOrKeepGrey(MarkBit mark_bit) {
-    ASSERT(!Marking::IsImpossible(mark_bit));
-    if (mark_bit.Get()) {
-      // Grey or black: Keep the color.
-      return false;
-    }
-    mark_bit.Set();
-    ASSERT(Marking::IsBlack(mark_bit));
-    return true;
-  }
 
   inline int steps_count() {
     return steps_count_;
@@ -234,12 +220,14 @@ class IncrementalMarking {
 
   void UncommitMarkingDeque();
 
+  void NotifyIncompleteScanOfObject(int unscanned_bytes) {
+    unscanned_bytes_of_large_object_ = unscanned_bytes;
+  }
+
  private:
   int64_t SpaceLeftInOldSpace();
 
   void ResetStepCounters();
-
-  enum CompactionFlag { ALLOW_COMPACTION, PREVENT_COMPACTION };
 
   void StartMarking(CompactionFlag flag);
 
@@ -258,6 +246,12 @@ class IncrementalMarking {
   static void SetNewSpacePageFlags(NewSpacePage* chunk, bool is_marking);
 
   void EnsureMarkingDequeIsCommitted();
+
+  INLINE(void ProcessMarkingDeque());
+
+  INLINE(void ProcessMarkingDeque(intptr_t bytes_to_process));
+
+  INLINE(void VisitObject(Map* map, HeapObject* obj, int size));
 
   Heap* heap_;
 
@@ -283,6 +277,8 @@ class IncrementalMarking {
   intptr_t write_barriers_invoked_since_last_step_;
 
   int no_marking_scope_depth_;
+
+  int unscanned_bytes_of_large_object_;
 
   DISALLOW_IMPLICIT_CONSTRUCTORS(IncrementalMarking);
 };

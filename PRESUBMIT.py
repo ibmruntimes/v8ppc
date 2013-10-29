@@ -44,7 +44,8 @@ def _V8PresubmitChecks(input_api, output_api):
     results.append(output_api.PresubmitError("C++ lint check failed"))
   if not SourceProcessor().Run(input_api.PresubmitLocalPath()):
     results.append(output_api.PresubmitError(
-        "Copyright header and trailing whitespaces check failed"))
+        "Copyright header, trailing whitespaces and two empty lines " \
+        "between declarations check failed"))
   return results
 
 
@@ -53,6 +54,7 @@ def _CommonChecks(input_api, output_api):
   results = []
   results.extend(input_api.canned_checks.CheckOwners(
       input_api, output_api, source_file_filter=None))
+  results.extend(_V8PresubmitChecks(input_api, output_api))
   return results
 
 
@@ -67,5 +69,7 @@ def CheckChangeOnCommit(input_api, output_api):
   results.extend(_CommonChecks(input_api, output_api))
   results.extend(input_api.canned_checks.CheckChangeHasDescription(
       input_api, output_api))
-  results.extend(_V8PresubmitChecks(input_api, output_api))
+  results.extend(input_api.canned_checks.CheckTreeIsOpen(
+      input_api, output_api,
+      json_url='http://v8-status.appspot.com/current?format=json'))
   return results

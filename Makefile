@@ -34,8 +34,10 @@ TESTJOBS ?=
 GYPFLAGS ?=
 TESTFLAGS ?=
 ANDROID_NDK_ROOT ?=
+ANDROID_NDK_HOST_ARCH ?=
 ANDROID_TOOLCHAIN ?=
-ANDROID_V8 ?= /data/local/v8
+ANDROID_V8 ?= /data/local/tmp/v8
+NACL_SDK_ROOT ?=
 
 # Special build flags. Use them like this: "make library=shared"
 
@@ -62,6 +64,12 @@ endif
 ifeq ($(verifyheap), on)
   GYPFLAGS += -Dv8_enable_verify_heap=1
 endif
+# backtrace=off
+ifeq ($(backtrace), off)
+  GYPFLAGS += -Dv8_enable_backtrace=0
+else
+  GYPFLAGS += -Dv8_enable_backtrace=1
+endif
 # snapshot=off
 ifeq ($(snapshot), off)
   GYPFLAGS += -Dv8_use_snapshot='false'
@@ -77,23 +85,28 @@ endif
 ifeq ($(extrappcchecks), on)
   GYPFLAGS += -Dv8_enable_extra_ppcchecks=1
 endif
-# gdbjit=on
+# gdbjit=on/off
 ifeq ($(gdbjit), on)
   GYPFLAGS += -Dv8_enable_gdbjit=1
 endif
-# liveobjectlist=on
-ifeq ($(liveobjectlist), on)
-  GYPFLAGS += -Dv8_use_liveobjectlist=true
+ifeq ($(gdbjit), off)
+  GYPFLAGS += -Dv8_enable_gdbjit=0
 endif
-# vfp3=off
-ifeq ($(vfp3), off)
-  GYPFLAGS += -Dv8_can_use_vfp3_instructions=false
-else
-  GYPFLAGS += -Dv8_can_use_vfp3_instructions=true
+# vtunejit=on
+ifeq ($(vtunejit), on)
+  GYPFLAGS += -Dv8_enable_vtunejit=1
+endif
+# optdebug=on
+ifeq ($(optdebug), on)
+  GYPFLAGS += -Dv8_optimized_debug=1
 endif
 # debuggersupport=off
 ifeq ($(debuggersupport), off)
   GYPFLAGS += -Dv8_enable_debugger_support=0
+endif
+# unalignedaccess=on
+ifeq ($(unalignedaccess), on)
+  GYPFLAGS += -Dv8_can_use_unaligned_accesses=true
 endif
 # soname_version=1.2.3
 ifdef soname_version
@@ -115,9 +128,70 @@ endif
 ifeq ($(regexp), interpreted)
   GYPFLAGS += -Dv8_interpreted_regexp=1
 endif
-# hardfp=on
-ifeq ($(hardfp), on)
-  GYPFLAGS += -Dv8_use_arm_eabi_hardfloat=true
+# i18nsupport=on
+ifeq ($(i18nsupport), on)
+  GYPFLAGS += -Dv8_enable_i18n_support=1
+endif
+# arm specific flags.
+# armv7=false/true
+ifeq ($(armv7), false)
+  GYPFLAGS += -Darmv7=0
+else
+ifeq ($(armv7), true)
+  GYPFLAGS += -Darmv7=1
+endif
+endif
+# vfp2=off. Deprecated, use armfpu=
+# vfp3=off. Deprecated, use armfpu=
+ifeq ($(vfp3), off)
+  GYPFLAGS += -Darm_fpu=vfp
+endif
+# hardfp=on/off. Deprecated, use armfloatabi
+ifeq ($(hardfp),on)
+  GYPFLAGS += -Darm_float_abi=hard
+else
+ifeq ($(hardfp),off)
+  GYPFLAGS += -Darm_float_abi=softfp
+endif
+endif
+# armneon=on/off
+ifeq ($(armneon), on)
+  GYPFLAGS += -Darm_neon=1
+endif
+# fpu: armfpu=xxx
+# xxx: vfp, vfpv3-d16, vfpv3, neon.
+ifeq ($(armfpu),)
+ifneq ($(vfp3), off)
+  GYPFLAGS += -Darm_fpu=default
+endif
+else
+  GYPFLAGS += -Darm_fpu=$(armfpu)
+endif
+# float abi: armfloatabi=softfp/hard
+ifeq ($(armfloatabi),)
+ifeq ($(hardfp),)
+  GYPFLAGS += -Darm_float_abi=default
+endif
+else
+  GYPFLAGS += -Darm_float_abi=$(armfloatabi)
+endif
+# armthumb=on/off
+ifeq ($(armthumb), off)
+  GYPFLAGS += -Darm_thumb=0
+else
+ifeq ($(armthumb), on)
+  GYPFLAGS += -Darm_thumb=1
+endif
+endif
+# armtest=on
+# With this flag set, by default v8 will only use features implied
+# by the compiler (no probe). This is done by modifying the default
+# values of enable_armv7, enable_vfp2, enable_vfp3 and enable_32dregs.
+# Modifying these flags when launching v8 will enable the probing for
+# the specified values.
+# When using the simulator, this flag is implied.
+ifeq ($(armtest), on)
+  GYPFLAGS += -Darm_test=on
 endif
 # nativesim=true
 ifeq ($(nativesim), true)
@@ -126,12 +200,14 @@ endif
 
 # ----------------- available targets: --------------------
 # - "dependencies": pulls in external dependencies (currently: GYP)
+# - "grokdump": rebuilds heap constants lists used by grokdump
 # - any arch listed in ARCHES (see below)
 # - any mode listed in MODES
 # - every combination <arch>.<mode>, e.g. "ia32.release"
 # - "native": current host's architecture, release mode
 # - any of the above with .check appended, e.g. "ia32.release.check"
 # - "android": cross-compile for Android/ARM
+# - "nacl" : cross-compile for Native Client (ia32 and x64)
 # - default (no target specified): build all DEFAULT_ARCHES and MODES
 # - "check": build all targets and run all tests
 # - "<arch>.clean" for any <arch> in ARCHES
@@ -144,20 +220,28 @@ endif
 ARCHES = ia32 x64 arm ppc mipsel ppc64
 DEFAULT_ARCHES = ia32 x64 arm ppc ppc64
 MODES = release debug
-ANDROID_ARCHES = android_ia32 android_arm
+ANDROID_ARCHES = android_ia32 android_arm android_mipsel
+NACL_ARCHES = nacl_ia32 nacl_x64
 
 # List of files that trigger Makefile regeneration:
-GYPFILES = build/all.gyp build/common.gypi build/standalone.gypi \
-           preparser/preparser.gyp samples/samples.gyp src/d8.gyp \
-           test/cctest/cctest.gyp tools/gyp/v8.gyp
+GYPFILES = build/all.gyp build/features.gypi build/standalone.gypi \
+	   build/toolchain.gypi preparser/preparser.gyp samples/samples.gyp \
+	   src/d8.gyp test/cctest/cctest.gyp tools/gyp/v8.gyp
 
+# If vtunejit=on, the v8vtune.gyp will be appended.
+ifeq ($(vtunejit), on)
+  GYPFILES += src/third_party/vtune/v8vtune.gyp
+endif
 # Generates all combinations of ARCHES and MODES, e.g. "ia32.release".
 BUILDS = $(foreach mode,$(MODES),$(addsuffix .$(mode),$(ARCHES)))
 ANDROID_BUILDS = $(foreach mode,$(MODES), \
                    $(addsuffix .$(mode),$(ANDROID_ARCHES)))
+NACL_BUILDS = $(foreach mode,$(MODES), \
+                   $(addsuffix .$(mode),$(NACL_ARCHES)))
 # Generates corresponding test targets, e.g. "ia32.release.check".
 CHECKS = $(addsuffix .check,$(BUILDS))
 ANDROID_CHECKS = $(addsuffix .check,$(ANDROID_BUILDS))
+NACL_CHECKS = $(addsuffix .check,$(NACL_BUILDS))
 # File where previously used GYPFLAGS are stored.
 ENVFILE = $(OUTDIR)/environment
 
@@ -165,7 +249,9 @@ ENVFILE = $(OUTDIR)/environment
         $(ARCHES) $(MODES) $(BUILDS) $(CHECKS) $(addsuffix .clean,$(ARCHES)) \
         $(addsuffix .check,$(MODES)) $(addsuffix .check,$(ARCHES)) \
         $(ANDROID_ARCHES) $(ANDROID_BUILDS) $(ANDROID_CHECKS) \
-        must-set-ANDROID_NDK_ROOT_OR_TOOLCHAIN
+        must-set-ANDROID_NDK_ROOT_OR_TOOLCHAIN \
+        $(NACL_ARCHES) $(NACL_BUILDS) $(NACL_CHECKS) \
+        must-set-NACL_SDK_ROOT
 
 # Target definitions. "all" is the default.
 all: $(MODES)
@@ -209,6 +295,16 @@ $(ANDROID_BUILDS): $(GYPFILES) $(ENVFILE) build/android.gypi \
 	        OUTDIR="$(OUTDIR)" \
 	        GYPFLAGS="$(GYPFLAGS)"
 
+$(NACL_ARCHES): $(addprefix $$@.,$(MODES))
+
+$(NACL_BUILDS): $(GYPFILES) $(ENVFILE) \
+		   Makefile.nacl must-set-NACL_SDK_ROOT
+	@$(MAKE) -f Makefile.nacl $@ \
+	        ARCH="$(basename $@)" \
+	        MODE="$(subst .,,$(suffix $@))" \
+	        OUTDIR="$(OUTDIR)" \
+	        GYPFLAGS="$(GYPFLAGS)"
+
 # Test targets.
 check: all
 	@tools/run-tests.py $(TESTJOBS) --outdir=$(OUTDIR) \
@@ -240,12 +336,21 @@ $(addsuffix .check, $(ANDROID_BUILDS)): $$(basename $$@).sync
 $(addsuffix .check, $(ANDROID_ARCHES)): \
                 $(addprefix $$(basename $$@).,$(MODES)).check
 
+$(addsuffix .check, $(NACL_BUILDS)): $$(basename $$@)
+	@tools/run-tests.py $(TESTJOBS) --outdir=$(OUTDIR) \
+	     --arch-and-mode=$(basename $@) \
+	     --timeout=600 --nopresubmit \
+	     --command-prefix="tools/nacl-run.py"
+
+$(addsuffix .check, $(NACL_ARCHES)): \
+                $(addprefix $$(basename $$@).,$(MODES)).check
+
 native.check: native
 	@tools/run-tests.py $(TESTJOBS) --outdir=$(OUTDIR)/native \
 	    --arch-and-mode=. $(TESTFLAGS)
 
 # Clean targets. You can clean each architecture individually, or everything.
-$(addsuffix .clean, $(ARCHES) $(ANDROID_ARCHES)):
+$(addsuffix .clean, $(ARCHES) $(ANDROID_ARCHES) $(NACL_ARCHES)):
 	rm -f $(OUTDIR)/Makefile.$(basename $@)
 	rm -rf $(OUTDIR)/$(basename $@).release
 	rm -rf $(OUTDIR)/$(basename $@).debug
@@ -256,11 +361,12 @@ native.clean:
 	rm -rf $(OUTDIR)/native
 	find $(OUTDIR) -regex '.*\(host\|target\).native\.mk' -delete
 
-clean: $(addsuffix .clean, $(ARCHES) $(ANDROID_ARCHES)) native.clean
+clean: $(addsuffix .clean, $(ARCHES) $(ANDROID_ARCHES) $(NACL_ARCHES)) native.clean
 
 # GYP file generation targets.
 OUT_MAKEFILES = $(addprefix $(OUTDIR)/Makefile.,$(ARCHES))
 $(OUT_MAKEFILES): $(GYPFILES) $(ENVFILE)
+	PYTHONPATH="$(shell pwd)/tools/generate_shim_headers:$(PYTHONPATH)" \
 	GYP_GENERATORS=make \
 	build/gyp/gyp --generator-output="$(OUTDIR)" build/all.gyp \
 	              -Ibuild/standalone.gypi --depth=. \
@@ -268,6 +374,7 @@ $(OUT_MAKEFILES): $(GYPFILES) $(ENVFILE)
 	              -S.$(subst .,,$(suffix $@)) $(GYPFLAGS)
 
 $(OUTDIR)/Makefile.native: $(GYPFILES) $(ENVFILE)
+	PYTHONPATH="$(shell pwd)/tools/generate_shim_headers:$(PYTHONPATH)" \
 	GYP_GENERATORS=make \
 	build/gyp/gyp --generator-output="$(OUTDIR)" build/all.gyp \
 	              -Ibuild/standalone.gypi --depth=. -S.native $(GYPFLAGS)
@@ -279,10 +386,22 @@ ifndef ANDROID_TOOLCHAIN
 endif
 endif
 
+# Note that NACL_SDK_ROOT must be set to point to an appropriate
+# Native Client SDK before using this makefile. You can download
+# an SDK here:
+#   https://developers.google.com/native-client/sdk/download
+# The path indicated by NACL_SDK_ROOT will typically end with
+# a folder for a pepper version such as "pepper_25" that should
+# have "tools" and "toolchain" subdirectories.
+must-set-NACL_SDK_ROOT:
+ifndef NACL_SDK_ROOT
+	  $(error NACL_SDK_ROOT must be set)
+endif
+
 # Replaces the old with the new environment file if they're different, which
 # will trigger GYP to regenerate Makefiles.
 $(ENVFILE): $(ENVFILE).new
-	@if test -r $(ENVFILE) && cmp $(ENVFILE).new $(ENVFILE) >/dev/null; \
+	@if test -r $(ENVFILE) && cmp $(ENVFILE).new $(ENVFILE) > /dev/null; \
 	    then rm $(ENVFILE).new; \
 	    else mv $(ENVFILE).new $(ENVFILE); fi
 
@@ -291,8 +410,17 @@ $(ENVFILE).new:
 	@mkdir -p $(OUTDIR); echo "GYPFLAGS=$(GYPFLAGS)" > $(ENVFILE).new; \
 	    echo "CXX=$(CXX)" >> $(ENVFILE).new
 
+# Heap constants for grokdump.
+DUMP_FILE = tools/v8heapconst.py
+grokdump: ia32.release
+	@cat $(DUMP_FILE).tmpl > $(DUMP_FILE)
+	@$(OUTDIR)/ia32.release/d8 --dump-heap-constants >> $(DUMP_FILE)
+
 # Dependencies.
 # Remember to keep these in sync with the DEPS file.
 dependencies:
 	svn checkout --force http://gyp.googlecode.com/svn/trunk build/gyp \
-	    --revision 1501
+	    --revision 1685
+	svn checkout --force \
+	    https://src.chromium.org/chrome/trunk/deps/third_party/icu46 \
+	    third_party/icu --revision 214189

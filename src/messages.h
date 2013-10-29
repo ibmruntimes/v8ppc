@@ -91,6 +91,7 @@ class MessageHandler {
  public:
   // Returns a message object for the API to use.
   static Handle<JSMessageObject> MakeMessageObject(
+      Isolate* isolate,
       const char* type,
       MessageLocation* loc,
       Vector< Handle<Object> > args,
@@ -102,10 +103,12 @@ class MessageHandler {
                             MessageLocation* loc,
                             Handle<Object> message);
 
-  static void DefaultMessageReport(const MessageLocation* loc,
+  static void DefaultMessageReport(Isolate* isolate,
+                                   const MessageLocation* loc,
                                    Handle<Object> message_obj);
-  static Handle<String> GetMessage(Handle<Object> data);
-  static SmartArrayPointer<char> GetLocalizedMessage(Handle<Object> data);
+  static Handle<String> GetMessage(Isolate* isolate, Handle<Object> data);
+  static SmartArrayPointer<char> GetLocalizedMessage(Isolate* isolate,
+                                                     Handle<Object> data);
 };
 
 } }  // namespace v8::internal

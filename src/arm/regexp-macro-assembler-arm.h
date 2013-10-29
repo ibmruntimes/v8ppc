@@ -30,6 +30,7 @@
 
 #include "arm/assembler-arm.h"
 #include "arm/assembler-arm-inl.h"
+#include "macro-assembler.h"
 
 namespace v8 {
 namespace internal {
@@ -52,10 +53,6 @@ class RegExpMacroAssemblerARM: public NativeRegExpMacroAssembler {
                                       Label* on_equal);
   virtual void CheckCharacterGT(uc16 limit, Label* on_greater);
   virtual void CheckCharacterLT(uc16 limit, Label* on_less);
-  virtual void CheckCharacters(Vector<const uc16> str,
-                               int cp_offset,
-                               Label* on_failure,
-                               bool check_end_of_string);
   // A "greedy loop" is a loop that is both greedy and with a simple
   // body. It has a particularly simple implementation.
   virtual void CheckGreedyLoop(Label* on_tos_equals_current_position);
@@ -223,6 +220,7 @@ class RegExpMacroAssemblerARM: public NativeRegExpMacroAssembler {
   inline void CallCFunctionUsingStub(ExternalReference function,
                                      int num_arguments);
 
+  Isolate* isolate() const { return masm_->isolate(); }
 
   MacroAssembler* masm_;
 

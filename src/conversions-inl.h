@@ -29,9 +29,9 @@
 #define V8_CONVERSIONS_INL_H_
 
 #include <limits.h>        // Required for INT_MAX etc.
-#include <math.h>
 #include <float.h>         // Required for DBL_MAX and on Win32 for finite()
 #include <stdarg.h>
+#include <cmath>
 #include "globals.h"       // Required for V8_INFINITY
 
 // ----------------------------------------------------------------------------
@@ -81,7 +81,7 @@ inline unsigned int FastD2UI(double x) {
     Address mantissa_ptr = reinterpret_cast<Address>(&x) + kIntSize;
 #endif
     // Copy least significant 32 bits of mantissa.
-    memcpy(&result, mantissa_ptr, sizeof(result));
+    OS::MemCopy(&result, mantissa_ptr, sizeof(result));
     return negative ? ~result + 1 : result;
   }
   // Large number (outside uint32 range), Infinity or NaN.
@@ -90,8 +90,8 @@ inline unsigned int FastD2UI(double x) {
 
 
 inline double DoubleToInteger(double x) {
-  if (isnan(x)) return 0;
-  if (!isfinite(x) || x == 0) return x;
+  if (std::isnan(x)) return 0;
+  if (!std::isfinite(x) || x == 0) return x;
   return (x >= 0) ? floor(x) : ceil(x);
 }
 
@@ -216,7 +216,7 @@ double InternalStringToIntDouble(UnicodeCache* unicode_cache,
       }
 
       // Rounding up may cause overflow.
-      if ((number & ((int64_t)1 << 53)) != 0) {
+      if ((number & (static_cast<int64_t>(1) << 53)) != 0) {
         exponent++;
         number >>= 1;
       }
@@ -485,9 +485,9 @@ double InternalStringToDouble(UnicodeCache* unicode_cache,
     sign = NEGATIVE;
   }
 
-  static const char kInfinitySymbol[] = "Infinity";
-  if (*current == kInfinitySymbol[0]) {
-    if (!SubStringEquals(&current, end, kInfinitySymbol)) {
+  static const char kInfinityString[] = "Infinity";
+  if (*current == kInfinityString[0]) {
+    if (!SubStringEquals(&current, end, kInfinityString)) {
       return JunkStringValue();
     }
 
@@ -519,6 +519,32 @@ double InternalStringToDouble(UnicodeCache* unicode_cache,
                                           end,
                                           false,
                                           allow_trailing_junk);
+
+    // It could be an explicit octal value.
+    } else if ((flags & ALLOW_OCTAL) && (*current == 'o' || *current == 'O')) {
+      ++current;
+      if (current == end || !isDigit(*current, 8) || sign != NONE) {
+        return JunkStringValue();  // "0o".
+      }
+
+      return InternalStringToIntDouble<3>(unicode_cache,
+                                          current,
+                                          end,
+                                          false,
+                                          allow_trailing_junk);
+
+    // It could be a binary value.
+    } else if ((flags & ALLOW_BINARY) && (*current == 'b' || *current == 'B')) {
+      ++current;
+      if (current == end || !isBinaryDigit(*current) || sign != NONE) {
+        return JunkStringValue();  // "0b".
+      }
+
+      return InternalStringToIntDouble<1>(unicode_cache,
+                                          current,
+                                          end,
+                                          false,
+                                          allow_trailing_junk);
     }
 
     // Ignore leading zeros in the integer part.
@@ -528,7 +554,7 @@ double InternalStringToDouble(UnicodeCache* unicode_cache,
     }
   }
 
-  bool octal = leading_zero && (flags & ALLOW_OCTALS) != 0;
+  bool octal = leading_zero && (flags & ALLOW_IMPLICIT_OCTAL) != 0;
 
   // Copy significant digits of the integer part (if any) to the buffer.
   while (*current >= '0' && *current <= '9') {

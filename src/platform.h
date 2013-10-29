@@ -46,7 +46,9 @@
 
 #ifdef __sun
 # ifndef signbit
+namespace std {
 int signbit(double x);
+}
 # endif
 #endif
 
@@ -67,6 +69,7 @@ int signbit(double x);
 // Microsoft Visual C++ specific stuff.
 #ifdef _MSC_VER
 
+#include "win32-headers.h"
 #include "win32-math.h"
 
 int strncasecmp(const char* s1, const char* s2, int n);
@@ -88,31 +91,21 @@ inline int lrint(double flt) {
   return intgr;
 }
 
-
 #endif  // _MSC_VER
 
+#ifndef __CYGWIN__
 // Random is missing on both Visual Studio and MinGW.
 int random();
+#endif
 
 #endif  // WIN32
 
-#include "atomicops.h"
 #include "lazy-instance.h"
-#include "platform-tls.h"
 #include "utils.h"
 #include "v8globals.h"
 
 namespace v8 {
 namespace internal {
-
-// Use AtomicWord for a machine-sized pointer. It is assumed that
-// reads and writes of naturally aligned values of this type are atomic.
-#if !defined(V8_HOST_ARCH_64_BIT) && \
-  ((defined(__OpenBSD__) && defined(__i386__)) || defined(_AIX))
-typedef Atomic32 AtomicWord;
-#else
-typedef intptr_t AtomicWord;
-#endif
 
 class Semaphore;
 class Mutex;
@@ -120,15 +113,73 @@ class Mutex;
 double ceiling(double x);
 double modulo(double x, double y);
 
-// Custom implementation of sin, cos, tan and log.
+// Custom implementation of math functions.
 double fast_sin(double input);
 double fast_cos(double input);
 double fast_tan(double input);
 double fast_log(double input);
+double fast_exp(double input);
 double fast_sqrt(double input);
+// The custom exp implementation needs 16KB of lookup data; initialize it
+// on demand.
+void lazily_initialize_fast_exp();
 
 // Forward declarations.
 class Socket;
+
+// ----------------------------------------------------------------------------
+// Fast TLS support
+
+#ifndef V8_NO_FAST_TLS
+
+#if defined(_MSC_VER) && V8_HOST_ARCH_IA32
+
+#define V8_FAST_TLS_SUPPORTED 1
+
+INLINE(intptr_t InternalGetExistingThreadLocal(intptr_t index));
+
+inline intptr_t InternalGetExistingThreadLocal(intptr_t index) {
+  const intptr_t kTibInlineTlsOffset = 0xE10;
+  const intptr_t kTibExtraTlsOffset = 0xF94;
+  const intptr_t kMaxInlineSlots = 64;
+  const intptr_t kMaxSlots = kMaxInlineSlots + 1024;
+  ASSERT(0 <= index && index < kMaxSlots);
+  if (index < kMaxInlineSlots) {
+    return static_cast<intptr_t>(__readfsdword(kTibInlineTlsOffset +
+                                               kPointerSize * index));
+  }
+  intptr_t extra = static_cast<intptr_t>(__readfsdword(kTibExtraTlsOffset));
+  ASSERT(extra != 0);
+  return *reinterpret_cast<intptr_t*>(extra +
+                                      kPointerSize * (index - kMaxInlineSlots));
+}
+
+#elif defined(__APPLE__) && (V8_HOST_ARCH_IA32 || V8_HOST_ARCH_X64)
+
+#define V8_FAST_TLS_SUPPORTED 1
+
+extern intptr_t kMacTlsBaseOffset;
+
+INLINE(intptr_t InternalGetExistingThreadLocal(intptr_t index));
+
+inline intptr_t InternalGetExistingThreadLocal(intptr_t index) {
+  intptr_t result;
+#if V8_HOST_ARCH_IA32
+  asm("movl %%gs:(%1,%2,4), %0;"
+      :"=r"(result)  // Output must be a writable register.
+      :"r"(kMacTlsBaseOffset), "r"(index));
+#else
+  asm("movq %%gs:(%1,%2,8), %0;"
+      :"=r"(result)
+      :"r"(kMacTlsBaseOffset), "r"(index));
+#endif
+  return result;
+}
+
+#endif
+
+#endif  // V8_NO_FAST_TLS
+
 
 // ----------------------------------------------------------------------------
 // OS
@@ -236,11 +287,16 @@ class OS {
   // Sleep for a number of milliseconds.
   static void Sleep(const int milliseconds);
 
+  static int NumberOfCores();
+
   // Abort the current process.
   static void Abort();
 
   // Debug break.
   static void DebugBreak();
+
+  // Dump C++ current stack trace (only functional on Linux).
+  static void DumpBacktrace();
 
   // Walk the stack.
   static const int kStackWalkError = -1;
@@ -312,6 +368,9 @@ class OS {
   // Support runtime detection of Cpu implementer
   static CpuImplementer GetCpuImplementer();
 
+  // Support runtime detection of Cpu implementer
+  static CpuPart GetCpuPart(CpuImplementer implementer);
+
   // Support runtime detection of VFP3 on ARM CPUs.
   static bool ArmCpuHasFeature(CpuFeature feature);
 
@@ -326,21 +385,64 @@ class OS {
   // the platform doesn't care. Guaranteed to be a power of two.
   static int ActivationFrameAlignment();
 
-  static void ReleaseStore(volatile AtomicWord* ptr, AtomicWord value);
-
 #if defined(V8_TARGET_ARCH_IA32)
-  // Copy memory area to disjoint memory area.
-  static void MemCopy(void* dest, const void* src, size_t size);
   // Limit below which the extra overhead of the MemCopy function is likely
   // to outweigh the benefits of faster copying.
   static const int kMinComplexMemCopy = 64;
-  typedef void (*MemCopyFunction)(void* dest, const void* src, size_t size);
 
-#else  // V8_TARGET_ARCH_IA32
+  // Copy memory area. No restrictions.
+  static void MemMove(void* dest, const void* src, size_t size);
+  typedef void (*MemMoveFunction)(void* dest, const void* src, size_t size);
+
+  // Keep the distinction of "move" vs. "copy" for the benefit of other
+  // architectures.
+  static void MemCopy(void* dest, const void* src, size_t size) {
+    MemMove(dest, src, size);
+  }
+#elif defined(V8_HOST_ARCH_ARM)
+  typedef void (*MemCopyUint8Function)(uint8_t* dest,
+                                       const uint8_t* src,
+                                       size_t size);
+  static MemCopyUint8Function memcopy_uint8_function;
+  static void MemCopyUint8Wrapper(uint8_t* dest,
+                                  const uint8_t* src,
+                                  size_t chars) {
+    memcpy(dest, src, chars);
+  }
+  // For values < 16, the assembler function is slower than the inlined C code.
+  static const int kMinComplexMemCopy = 16;
+  static void MemCopy(void* dest, const void* src, size_t size) {
+    (*memcopy_uint8_function)(reinterpret_cast<uint8_t*>(dest),
+                              reinterpret_cast<const uint8_t*>(src),
+                              size);
+  }
+  static void MemMove(void* dest, const void* src, size_t size) {
+    memmove(dest, src, size);
+  }
+
+  typedef void (*MemCopyUint16Uint8Function)(uint16_t* dest,
+                                             const uint8_t* src,
+                                             size_t size);
+  static MemCopyUint16Uint8Function memcopy_uint16_uint8_function;
+  static void MemCopyUint16Uint8Wrapper(uint16_t* dest,
+                                        const uint8_t* src,
+                                        size_t chars);
+  // For values < 12, the assembler function is slower than the inlined C code.
+  static const int kMinComplexConvertMemCopy = 12;
+  static void MemCopyUint16Uint8(uint16_t* dest,
+                                 const uint8_t* src,
+                                 size_t size) {
+    (*memcopy_uint16_uint8_function)(dest, src, size);
+  }
+#else
+  // Copy memory area to disjoint memory area.
   static void MemCopy(void* dest, const void* src, size_t size) {
     memcpy(dest, src, size);
   }
-  static const int kMinComplexMemCopy = 256;
+  static void MemMove(void* dest, const void* src, size_t size) {
+    memmove(dest, src, size);
+  }
+  static const int kMinComplexMemCopy = 16 * kPointerSize;
 #endif  // V8_TARGET_ARCH_IA32
 
   static int GetCurrentProcessId();
@@ -433,10 +535,68 @@ class VirtualMemory {
   // and the same size it was reserved with.
   static bool ReleaseRegion(void* base, size_t size);
 
+  // Returns true if OS performs lazy commits, i.e. the memory allocation call
+  // defers actual physical memory allocation till the first memory access.
+  // Otherwise returns false.
+  static bool HasLazyCommits();
+
  private:
   void* address_;  // Start address of the virtual memory.
   size_t size_;  // Size of the virtual memory.
 };
+
+
+// ----------------------------------------------------------------------------
+// Semaphore
+//
+// A semaphore object is a synchronization object that maintains a count. The
+// count is decremented each time a thread completes a wait for the semaphore
+// object and incremented each time a thread signals the semaphore. When the
+// count reaches zero,  threads waiting for the semaphore blocks until the
+// count becomes non-zero.
+
+class Semaphore {
+ public:
+  virtual ~Semaphore() {}
+
+  // Suspends the calling thread until the semaphore counter is non zero
+  // and then decrements the semaphore counter.
+  virtual void Wait() = 0;
+
+  // Suspends the calling thread until the counter is non zero or the timeout
+  // time has passed. If timeout happens the return value is false and the
+  // counter is unchanged. Otherwise the semaphore counter is decremented and
+  // true is returned. The timeout value is specified in microseconds.
+  virtual bool Wait(int timeout) = 0;
+
+  // Increments the semaphore counter.
+  virtual void Signal() = 0;
+};
+
+template <int InitialValue>
+struct CreateSemaphoreTrait {
+  static Semaphore* Create() {
+    return OS::CreateSemaphore(InitialValue);
+  }
+};
+
+// POD Semaphore initialized lazily (i.e. the first time Pointer() is called).
+// Usage:
+//   // The following semaphore starts at 0.
+//   static LazySemaphore<0>::type my_semaphore = LAZY_SEMAPHORE_INITIALIZER;
+//
+//   void my_function() {
+//     // Do something with my_semaphore.Pointer().
+//   }
+//
+template <int InitialValue>
+struct LazySemaphore {
+  typedef typename LazyDynamicInstance<
+      Semaphore, CreateSemaphoreTrait<InitialValue>,
+      ThreadSafeInitOnceTrait>::type type;
+};
+
+#define LAZY_SEMAPHORE_INITIALIZER LAZY_DYNAMIC_INSTANCE_INITIALIZER
 
 
 // ----------------------------------------------------------------------------
@@ -476,8 +636,17 @@ class Thread {
   explicit Thread(const Options& options);
   virtual ~Thread();
 
-  // Start new thread by calling the Run() method in the new thread.
+  // Start new thread by calling the Run() method on the new thread.
   void Start();
+
+  // Start new thread and wait until Run() method is called on the new thread.
+  void StartSynchronously() {
+    start_semaphore_ = OS::CreateSemaphore(0);
+    Start();
+    start_semaphore_->Wait();
+    delete start_semaphore_;
+    start_semaphore_ = NULL;
+  }
 
   // Wait until thread terminates.
   void Join();
@@ -528,6 +697,11 @@ class Thread {
   class PlatformData;
   PlatformData* data() { return data_; }
 
+  void NotifyStartedAndRun() {
+    if (start_semaphore_) start_semaphore_->Signal();
+    Run();
+  }
+
  private:
   void set_name(const char* name);
 
@@ -535,6 +709,7 @@ class Thread {
 
   char name_[kMaxThreadNameLength];
   int stack_size_;
+  Semaphore* start_semaphore_;
 
   DISALLOW_COPY_AND_ASSIGN(Thread);
 };
@@ -607,59 +782,6 @@ class ScopedLock {
 
 
 // ----------------------------------------------------------------------------
-// Semaphore
-//
-// A semaphore object is a synchronization object that maintains a count. The
-// count is decremented each time a thread completes a wait for the semaphore
-// object and incremented each time a thread signals the semaphore. When the
-// count reaches zero,  threads waiting for the semaphore blocks until the
-// count becomes non-zero.
-
-class Semaphore {
- public:
-  virtual ~Semaphore() {}
-
-  // Suspends the calling thread until the semaphore counter is non zero
-  // and then decrements the semaphore counter.
-  virtual void Wait() = 0;
-
-  // Suspends the calling thread until the counter is non zero or the timeout
-  // time has passed. If timeout happens the return value is false and the
-  // counter is unchanged. Otherwise the semaphore counter is decremented and
-  // true is returned. The timeout value is specified in microseconds.
-  virtual bool Wait(int timeout) = 0;
-
-  // Increments the semaphore counter.
-  virtual void Signal() = 0;
-};
-
-template <int InitialValue>
-struct CreateSemaphoreTrait {
-  static Semaphore* Create() {
-    return OS::CreateSemaphore(InitialValue);
-  }
-};
-
-// POD Semaphore initialized lazily (i.e. the first time Pointer() is called).
-// Usage:
-//   // The following semaphore starts at 0.
-//   static LazySemaphore<0>::type my_semaphore = LAZY_SEMAPHORE_INITIALIZER;
-//
-//   void my_function() {
-//     // Do something with my_semaphore.Pointer().
-//   }
-//
-template <int InitialValue>
-struct LazySemaphore {
-  typedef typename LazyDynamicInstance<
-      Semaphore, CreateSemaphoreTrait<InitialValue>,
-      ThreadSafeInitOnceTrait>::type type;
-};
-
-#define LAZY_SEMAPHORE_INITIALIZER LAZY_DYNAMIC_INSTANCE_INITIALIZER
-
-
-// ----------------------------------------------------------------------------
 // Socket
 //
 
@@ -696,96 +818,6 @@ class Socket {
   static uint16_t NToH(uint16_t value);
   static uint32_t HToN(uint32_t value);
   static uint32_t NToH(uint32_t value);
-};
-
-
-// ----------------------------------------------------------------------------
-// Sampler
-//
-// A sampler periodically samples the state of the VM and optionally
-// (if used for profiling) the program counter and stack pointer for
-// the thread that created it.
-
-// TickSample captures the information collected for each sample.
-class TickSample {
- public:
-  TickSample()
-      : state(OTHER),
-        pc(NULL),
-        sp(NULL),
-        fp(NULL),
-        tos(NULL),
-        frames_count(0),
-        has_external_callback(false) {}
-  StateTag state;  // The state of the VM.
-  Address pc;      // Instruction pointer.
-  Address sp;      // Stack pointer.
-  Address fp;      // Frame pointer.
-  union {
-    Address tos;   // Top stack value (*sp).
-    Address external_callback;
-  };
-  static const int kMaxFramesCount = 64;
-  Address stack[kMaxFramesCount];  // Call stack.
-  int frames_count : 8;  // Number of captured frames.
-  bool has_external_callback : 1;
-};
-
-class Sampler {
- public:
-  // Initialize sampler.
-  Sampler(Isolate* isolate, int interval);
-  virtual ~Sampler();
-
-  int interval() const { return interval_; }
-
-  // Performs stack sampling.
-  void SampleStack(TickSample* sample) {
-    DoSampleStack(sample);
-    IncSamplesTaken();
-  }
-
-  // This method is called for each sampling period with the current
-  // program counter.
-  virtual void Tick(TickSample* sample) = 0;
-
-  // Start and stop sampler.
-  void Start();
-  void Stop();
-
-  // Is the sampler used for profiling?
-  bool IsProfiling() const { return NoBarrier_Load(&profiling_) > 0; }
-  void IncreaseProfilingDepth() { NoBarrier_AtomicIncrement(&profiling_, 1); }
-  void DecreaseProfilingDepth() { NoBarrier_AtomicIncrement(&profiling_, -1); }
-
-  // Whether the sampler is running (that is, consumes resources).
-  bool IsActive() const { return NoBarrier_Load(&active_); }
-
-  Isolate* isolate() { return isolate_; }
-
-  // Used in tests to make sure that stack sampling is performed.
-  int samples_taken() const { return samples_taken_; }
-  void ResetSamplesTaken() { samples_taken_ = 0; }
-
-  class PlatformData;
-  PlatformData* data() { return data_; }
-
-  PlatformData* platform_data() { return data_; }
-
- protected:
-  virtual void DoSampleStack(TickSample* sample) = 0;
-
- private:
-  void SetActive(bool value) { NoBarrier_Store(&active_, value); }
-  void IncSamplesTaken() { if (++samples_taken_ < 0) samples_taken_ = 0; }
-
-  Isolate* isolate_;
-  const int interval_;
-  Atomic32 profiling_;
-  Atomic32 active_;
-  PlatformData* data_;  // Platform specific data.
-  int samples_taken_;  // Counts stack samples taken.
-  DISALLOW_IMPLICIT_CONSTRUCTORS(Sampler);
 };
 
 

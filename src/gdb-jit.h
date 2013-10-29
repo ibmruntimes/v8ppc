@@ -118,18 +118,20 @@ class GDBJITInterface: public AllStatic {
                       Script* script,
                       CompilationInfo* info);
 
-  static void AddCode(Handle<String> name,
+  static void AddCode(Handle<Name> name,
                       Handle<Script> script,
                       Handle<Code> code,
                       CompilationInfo* info);
 
-  static void AddCode(CodeTag tag, String* name, Code* code);
+  static void AddCode(CodeTag tag, Name* name, Code* code);
 
   static void AddCode(CodeTag tag, const char* name, Code* code);
 
   static void AddCode(CodeTag tag, Code* code);
 
   static void RemoveCode(Code* code);
+
+  static void RemoveCodeRange(Address start, Address end);
 
   static void RegisterDetailedLineInfo(Code* code, GDBJITLineInfo* line_info);
 };

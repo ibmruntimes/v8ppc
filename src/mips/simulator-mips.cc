@@ -26,12 +26,12 @@
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include <stdlib.h>
-#include <math.h>
 #include <limits.h>
+#include <cmath>
 #include <cstdarg>
 #include "v8.h"
 
-#if defined(V8_TARGET_ARCH_MIPS)
+#if V8_TARGET_ARCH_MIPS
 
 #include "cpu.h"
 #include "disasm.h"
@@ -132,8 +132,8 @@ void MipsDebugger::Stop(Instruction* instr) {
   ASSERT(msg != NULL);
 
   // Update this stop description.
-  if (!watched_stops[code].desc) {
-    watched_stops[code].desc = msg;
+  if (!watched_stops_[code].desc) {
+    watched_stops_[code].desc = msg;
   }
 
   if (strlen(msg) > 0) {
@@ -163,8 +163,8 @@ void MipsDebugger::Stop(Instruction* instr) {
   char* msg = *reinterpret_cast<char**>(sim_->get_pc() +
       Instruction::kInstrSize);
   // Update this stop description.
-  if (!sim_->watched_stops[code].desc) {
-    sim_->watched_stops[code].desc = msg;
+  if (!sim_->watched_stops_[code].desc) {
+    sim_->watched_stops_[code].desc = msg;
   }
   PrintF("Simulator hit %s (%u)\n", msg, code);
   sim_->set_pc(sim_->get_pc() + 2 * Instruction::kInstrSize);
@@ -513,7 +513,7 @@ void MipsDebugger::Debug() {
         int32_t words;
         if (argc == next_arg) {
           words = 10;
-        } else if (argc == next_arg + 1) {
+        } else {
           if (!GetValue(argv[next_arg], &words)) {
             words = 10;
           }
@@ -526,7 +526,7 @@ void MipsDebugger::Debug() {
           HeapObject* obj = reinterpret_cast<HeapObject*>(*cur);
           int value = *cur;
           Heap* current_heap = v8::internal::Isolate::Current()->heap();
-          if (current_heap->Contains(obj) || ((value & 1) == 0)) {
+          if (((value & 1) == 0) || current_heap->Contains(obj)) {
             PrintF(" (");
             if ((value & 1) == 0) {
               PrintF("smi %d", value / 2);
@@ -867,7 +867,7 @@ void Simulator::CheckICache(v8::internal::HashMap* i_cache,
                  Instruction::kInstrSize) == 0);
   } else {
     // Cache miss.  Load memory into the cache.
-    memcpy(cached_line, line, CachePage::kLineLength);
+    OS::MemCopy(cached_line, line, CachePage::kLineLength);
     *cache_valid_byte = CachePage::LINE_VALID;
   }
 }
@@ -1016,6 +1016,13 @@ void Simulator::set_register(int reg, int32_t value) {
 }
 
 
+void Simulator::set_dw_register(int reg, const int* dbl) {
+  ASSERT((reg >= 0) && (reg < kNumSimuRegisters));
+  registers_[reg] = dbl[0];
+  registers_[reg + 1] = dbl[1];
+}
+
+
 void Simulator::set_fpu_register(int fpureg, int32_t value) {
   ASSERT((fpureg >= 0) && (fpureg < kNumFPURegisters));
   FPUregisters_[fpureg] = value;
@@ -1045,6 +1052,19 @@ int32_t Simulator::get_register(int reg) const {
 }
 
 
+double Simulator::get_double_from_register_pair(int reg) {
+  ASSERT((reg >= 0) && (reg < kNumSimuRegisters) && ((reg % 2) == 0));
+
+  double dm_val = 0.0;
+  // Read the bits from the unsigned integer register_[] array
+  // into the double precision floating point value and return it.
+  char buffer[2 * sizeof(registers_[0])];
+  OS::MemCopy(buffer, &registers_[reg], 2 * sizeof(registers_[0]));
+  OS::MemCopy(&dm_val, buffer, 2 * sizeof(registers_[0]));
+  return(dm_val);
+}
+
+
 int32_t Simulator::get_fpu_register(int fpureg) const {
   ASSERT((fpureg >= 0) && (fpureg < kNumFPURegisters));
   return FPUregisters_[fpureg];
@@ -1071,12 +1091,14 @@ double Simulator::get_fpu_register_double(int fpureg) const {
 }
 
 
-// For use in calls that take two double values, constructed either
+// Runtime FP routines take up to two double arguments and zero
+// or one integer arguments. All are constructed here,
 // from a0-a3 or f12 and f14.
-void Simulator::GetFpArgs(double* x, double* y) {
+void Simulator::GetFpArgs(double* x, double* y, int32_t* z) {
   if (!IsMipsSoftFloatABI) {
     *x = get_fpu_register_double(12);
     *y = get_fpu_register_double(14);
+    *z = get_register(a2);
   } else {
     // We use a char buffer to get around the strict-aliasing rules which
     // otherwise allow the compiler to optimize away the copy.
@@ -1086,53 +1108,14 @@ void Simulator::GetFpArgs(double* x, double* y) {
     // Registers a0 and a1 -> x.
     reg_buffer[0] = get_register(a0);
     reg_buffer[1] = get_register(a1);
-    memcpy(x, buffer, sizeof(buffer));
-
+    OS::MemCopy(x, buffer, sizeof(buffer));
     // Registers a2 and a3 -> y.
     reg_buffer[0] = get_register(a2);
     reg_buffer[1] = get_register(a3);
-    memcpy(y, buffer, sizeof(buffer));
-  }
-}
-
-
-// For use in calls that take one double value, constructed either
-// from a0 and a1 or f12.
-void Simulator::GetFpArgs(double* x) {
-  if (!IsMipsSoftFloatABI) {
-    *x = get_fpu_register_double(12);
-  } else {
-    // We use a char buffer to get around the strict-aliasing rules which
-    // otherwise allow the compiler to optimize away the copy.
-    char buffer[sizeof(*x)];
-    int32_t* reg_buffer = reinterpret_cast<int32_t*>(buffer);
-    // Registers a0 and a1 -> x.
-    reg_buffer[0] = get_register(a0);
-    reg_buffer[1] = get_register(a1);
-    memcpy(x, buffer, sizeof(buffer));
-  }
-}
-
-
-// For use in calls that take one double value constructed either
-// from a0 and a1 or f12 and one integer value.
-void Simulator::GetFpArgs(double* x, int32_t* y) {
-  if (!IsMipsSoftFloatABI) {
-    *x = get_fpu_register_double(12);
-    *y = get_register(a2);
-  } else {
-    // We use a char buffer to get around the strict-aliasing rules which
-    // otherwise allow the compiler to optimize away the copy.
-    char buffer[sizeof(*x)];
-    int32_t* reg_buffer = reinterpret_cast<int32_t*>(buffer);
-    // Registers 0 and 1 -> x.
-    reg_buffer[0] = get_register(a0);
-    reg_buffer[1] = get_register(a1);
-    memcpy(x, buffer, sizeof(buffer));
-
-    // Register 2 -> y.
+    OS::MemCopy(y, buffer, sizeof(buffer));
+    // Register 2 -> z.
     reg_buffer[0] = get_register(a2);
-    memcpy(y, buffer, sizeof(*y));
+    OS::MemCopy(z, buffer, sizeof(*z));
   }
 }
 
@@ -1144,7 +1127,7 @@ void Simulator::SetFpResult(const double& result) {
   } else {
     char buffer[2 * sizeof(registers_[0])];
     int32_t* reg_buffer = reinterpret_cast<int32_t*>(buffer);
-    memcpy(buffer, &result, sizeof(buffer));
+    OS::MemCopy(buffer, &result, sizeof(buffer));
     // Copy result to v0 and v1.
     set_register(v0, reg_buffer[0]);
     set_register(v1, reg_buffer[1]);
@@ -1172,7 +1155,7 @@ bool Simulator::test_fcsr_bit(uint32_t cc) {
 bool Simulator::set_fcsr_round_error(double original, double rounded) {
   bool ret = false;
 
-  if (!isfinite(original) || !isfinite(rounded)) {
+  if (!std::isfinite(original) || !std::isfinite(rounded)) {
     set_fcsr_bit(kFCSRInvalidOpFlagBit, true);
     ret = true;
   }
@@ -1395,18 +1378,37 @@ typedef int64_t (*SimulatorRuntimeCall)(int32_t arg0,
                                         int32_t arg3,
                                         int32_t arg4,
                                         int32_t arg5);
-typedef double (*SimulatorRuntimeFPCall)(int32_t arg0,
-                                         int32_t arg1,
-                                         int32_t arg2,
-                                         int32_t arg3);
+
+// These prototypes handle the four types of FP calls.
+typedef int64_t (*SimulatorRuntimeCompareCall)(double darg0, double darg1);
+typedef double (*SimulatorRuntimeFPFPCall)(double darg0, double darg1);
+typedef double (*SimulatorRuntimeFPCall)(double darg0);
+typedef double (*SimulatorRuntimeFPIntCall)(double darg0, int32_t arg0);
 
 // This signature supports direct call in to API function native callback
 // (refer to InvocationCallback in v8.h).
+// NOTE: the O32 abi requires a0 to hold a special pointer when returning a
+// struct from the function (which is currently the case). This means we pass
+// the first argument in a1 instead of a0.
 typedef v8::Handle<v8::Value> (*SimulatorRuntimeDirectApiCall)(int32_t arg0);
+// Here, we pass the first argument in a0, because this function
+// does not return a struct.
+typedef void (*SimulatorRuntimeDirectApiCallNew)(int32_t arg0);
+typedef v8::Handle<v8::Value> (*SimulatorRuntimeProfilingApiCall)(
+    int32_t arg0, int32_t arg1);
+typedef void (*SimulatorRuntimeProfilingApiCallNew)(int32_t arg0, int32_t arg1);
 
 // This signature supports direct call to accessor getter callback.
+// See comment at SimulatorRuntimeDirectApiCall.
 typedef v8::Handle<v8::Value> (*SimulatorRuntimeDirectGetterCall)(int32_t arg0,
                                                                   int32_t arg1);
+// See comment at SimulatorRuntimeDirectApiCallNew.
+typedef void (*SimulatorRuntimeDirectGetterCallNew)(int32_t arg0,
+                                                    int32_t arg1);
+typedef v8::Handle<v8::Value> (*SimulatorRuntimeProfilingGetterCall)(
+    int32_t arg0, int32_t arg1, int32_t arg2);
+typedef void (*SimulatorRuntimeProfilingGetterCallNew)(
+    int32_t arg0, int32_t arg1, int32_t arg2);
 
 // Software interrupt instructions are used by the simulator to call into the
 // C-based V8 runtime. They are also used for debugging with simulator.
@@ -1475,69 +1477,178 @@ void Simulator::SoftwareInterrupt(Instruction* instr) {
     // simulator. Soft-float has additional abstraction of ExternalReference,
     // to support serialization.
     if (fp_call) {
-      SimulatorRuntimeFPCall target =
-                  reinterpret_cast<SimulatorRuntimeFPCall>(external);
+      double dval0, dval1;  // one or two double parameters
+      int32_t ival;         // zero or one integer parameters
+      int64_t iresult = 0;  // integer return value
+      double dresult = 0;   // double return value
+      GetFpArgs(&dval0, &dval1, &ival);
+      SimulatorRuntimeCall generic_target =
+          reinterpret_cast<SimulatorRuntimeCall>(external);
       if (::v8::internal::FLAG_trace_sim) {
-        double dval0, dval1;
-        int32_t ival;
         switch (redirection->type()) {
           case ExternalReference::BUILTIN_FP_FP_CALL:
           case ExternalReference::BUILTIN_COMPARE_CALL:
-            GetFpArgs(&dval0, &dval1);
             PrintF("Call to host function at %p with args %f, %f",
-                FUNCTION_ADDR(target), dval0, dval1);
+                   FUNCTION_ADDR(generic_target), dval0, dval1);
             break;
           case ExternalReference::BUILTIN_FP_CALL:
-            GetFpArgs(&dval0);
             PrintF("Call to host function at %p with arg %f",
-                FUNCTION_ADDR(target), dval0);
+                FUNCTION_ADDR(generic_target), dval0);
             break;
           case ExternalReference::BUILTIN_FP_INT_CALL:
-            GetFpArgs(&dval0, &ival);
             PrintF("Call to host function at %p with args %f, %d",
-                FUNCTION_ADDR(target), dval0, ival);
+                   FUNCTION_ADDR(generic_target), dval0, ival);
             break;
           default:
             UNREACHABLE();
             break;
         }
       }
-      if (redirection->type() != ExternalReference::BUILTIN_COMPARE_CALL) {
+      switch (redirection->type()) {
+      case ExternalReference::BUILTIN_COMPARE_CALL: {
+        SimulatorRuntimeCompareCall target =
+          reinterpret_cast<SimulatorRuntimeCompareCall>(external);
+        iresult = target(dval0, dval1);
+        set_register(v0, static_cast<int32_t>(iresult));
+        set_register(v1, static_cast<int32_t>(iresult >> 32));
+        break;
+      }
+      case ExternalReference::BUILTIN_FP_FP_CALL: {
+        SimulatorRuntimeFPFPCall target =
+          reinterpret_cast<SimulatorRuntimeFPFPCall>(external);
+        dresult = target(dval0, dval1);
+        SetFpResult(dresult);
+        break;
+      }
+      case ExternalReference::BUILTIN_FP_CALL: {
         SimulatorRuntimeFPCall target =
-            reinterpret_cast<SimulatorRuntimeFPCall>(external);
-        double result = target(arg0, arg1, arg2, arg3);
-        SetFpResult(result);
+          reinterpret_cast<SimulatorRuntimeFPCall>(external);
+        dresult = target(dval0);
+        SetFpResult(dresult);
+        break;
+      }
+      case ExternalReference::BUILTIN_FP_INT_CALL: {
+        SimulatorRuntimeFPIntCall target =
+          reinterpret_cast<SimulatorRuntimeFPIntCall>(external);
+        dresult = target(dval0, ival);
+        SetFpResult(dresult);
+        break;
+      }
+      default:
+        UNREACHABLE();
+        break;
+      }
+      if (::v8::internal::FLAG_trace_sim) {
+        switch (redirection->type()) {
+        case ExternalReference::BUILTIN_COMPARE_CALL:
+          PrintF("Returned %08x\n", static_cast<int32_t>(iresult));
+          break;
+        case ExternalReference::BUILTIN_FP_FP_CALL:
+        case ExternalReference::BUILTIN_FP_CALL:
+        case ExternalReference::BUILTIN_FP_INT_CALL:
+          PrintF("Returned %f\n", dresult);
+          break;
+        default:
+          UNREACHABLE();
+          break;
+        }
+      }
+    } else if (
+        redirection->type() == ExternalReference::DIRECT_API_CALL ||
+        redirection->type() == ExternalReference::DIRECT_API_CALL_NEW) {
+      if (redirection->type() == ExternalReference::DIRECT_API_CALL) {
+        // See comment at type definition of SimulatorRuntimeDirectApiCall
+        // for explanation of register usage.
+        if (::v8::internal::FLAG_trace_sim) {
+          PrintF("Call to host function at %p args %08x\n",
+              reinterpret_cast<void*>(external), arg1);
+        }
+        SimulatorRuntimeDirectApiCall target =
+            reinterpret_cast<SimulatorRuntimeDirectApiCall>(external);
+        v8::Handle<v8::Value> result = target(arg1);
+        *(reinterpret_cast<int*>(arg0)) = reinterpret_cast<int32_t>(*result);
+        set_register(v0, arg0);
       } else {
-        SimulatorRuntimeCall target =
-            reinterpret_cast<SimulatorRuntimeCall>(external);
-        uint64_t result = target(arg0, arg1, arg2, arg3, arg4, arg5);
-        int32_t gpreg_pair[2];
-        memcpy(&gpreg_pair[0], &result, 2 * sizeof(int32_t));
-        set_register(v0, gpreg_pair[0]);
-        set_register(v1, gpreg_pair[1]);
+        if (::v8::internal::FLAG_trace_sim) {
+          PrintF("Call to host function at %p args %08x\n",
+              reinterpret_cast<void*>(external), arg0);
+        }
+        SimulatorRuntimeDirectApiCallNew target =
+            reinterpret_cast<SimulatorRuntimeDirectApiCallNew>(external);
+        target(arg0);
       }
-    } else if (redirection->type() == ExternalReference::DIRECT_API_CALL) {
-      // See DirectCEntryStub::GenerateCall for explanation of register usage.
-      SimulatorRuntimeDirectApiCall target =
-                  reinterpret_cast<SimulatorRuntimeDirectApiCall>(external);
-      if (::v8::internal::FLAG_trace_sim) {
-        PrintF("Call to host function at %p args %08x\n",
-               FUNCTION_ADDR(target), arg1);
+    } else if (
+        redirection->type() == ExternalReference::PROFILING_API_CALL ||
+        redirection->type() == ExternalReference::PROFILING_API_CALL_NEW) {
+      if (redirection->type() == ExternalReference::PROFILING_API_CALL) {
+        // See comment at type definition of SimulatorRuntimeDirectApiCall
+        // for explanation of register usage.
+        if (::v8::internal::FLAG_trace_sim) {
+          PrintF("Call to host function at %p args %08x %08x\n",
+              reinterpret_cast<void*>(external), arg1, arg2);
+        }
+        SimulatorRuntimeProfilingApiCall target =
+            reinterpret_cast<SimulatorRuntimeProfilingApiCall>(external);
+        v8::Handle<v8::Value> result = target(arg1, arg2);
+        *(reinterpret_cast<int*>(arg0)) = reinterpret_cast<int32_t>(*result);
+        set_register(v0, arg0);
+      } else {
+        if (::v8::internal::FLAG_trace_sim) {
+          PrintF("Call to host function at %p args %08x %08x\n",
+              reinterpret_cast<void*>(external), arg0, arg1);
+        }
+        SimulatorRuntimeProfilingApiCallNew target =
+            reinterpret_cast<SimulatorRuntimeProfilingApiCallNew>(external);
+        target(arg0, arg1);
       }
-      v8::Handle<v8::Value> result = target(arg1);
-      *(reinterpret_cast<int*>(arg0)) = (int32_t) *result;
-      set_register(v0, arg0);
-    } else if (redirection->type() == ExternalReference::DIRECT_GETTER_CALL) {
-      // See DirectCEntryStub::GenerateCall for explanation of register usage.
-      SimulatorRuntimeDirectGetterCall target =
-                  reinterpret_cast<SimulatorRuntimeDirectGetterCall>(external);
-      if (::v8::internal::FLAG_trace_sim) {
-        PrintF("Call to host function at %p args %08x %08x\n",
-               FUNCTION_ADDR(target), arg1, arg2);
+    } else if (
+        redirection->type() == ExternalReference::DIRECT_GETTER_CALL ||
+        redirection->type() == ExternalReference::DIRECT_GETTER_CALL_NEW) {
+      if (redirection->type() == ExternalReference::DIRECT_GETTER_CALL) {
+        // See comment at type definition of SimulatorRuntimeDirectGetterCall
+        // for explanation of register usage.
+        if (::v8::internal::FLAG_trace_sim) {
+          PrintF("Call to host function at %p args %08x %08x\n",
+              reinterpret_cast<void*>(external), arg1, arg2);
+        }
+        SimulatorRuntimeDirectGetterCall target =
+            reinterpret_cast<SimulatorRuntimeDirectGetterCall>(external);
+        v8::Handle<v8::Value> result = target(arg1, arg2);
+        *(reinterpret_cast<int*>(arg0)) = reinterpret_cast<int32_t>(*result);
+        set_register(v0, arg0);
+      } else {
+        if (::v8::internal::FLAG_trace_sim) {
+          PrintF("Call to host function at %p args %08x %08x\n",
+              reinterpret_cast<void*>(external), arg0, arg1);
+        }
+        SimulatorRuntimeDirectGetterCallNew target =
+            reinterpret_cast<SimulatorRuntimeDirectGetterCallNew>(external);
+        target(arg0, arg1);
       }
-      v8::Handle<v8::Value> result = target(arg1, arg2);
-      *(reinterpret_cast<int*>(arg0)) = (int32_t) *result;
-      set_register(v0, arg0);
+    } else if (
+        redirection->type() == ExternalReference::PROFILING_GETTER_CALL ||
+        redirection->type() == ExternalReference::PROFILING_GETTER_CALL_NEW) {
+      if (redirection->type() == ExternalReference::PROFILING_GETTER_CALL) {
+        // See comment at type definition of SimulatorRuntimeProfilingGetterCall
+        // for explanation of register usage.
+        if (::v8::internal::FLAG_trace_sim) {
+          PrintF("Call to host function at %p args %08x %08x %08x\n",
+              reinterpret_cast<void*>(external), arg1, arg2, arg3);
+        }
+        SimulatorRuntimeProfilingGetterCall target =
+            reinterpret_cast<SimulatorRuntimeProfilingGetterCall>(external);
+        v8::Handle<v8::Value> result = target(arg1, arg2, arg3);
+        *(reinterpret_cast<int*>(arg0)) = reinterpret_cast<int32_t>(*result);
+        set_register(v0, arg0);
+      } else {
+        if (::v8::internal::FLAG_trace_sim) {
+          PrintF("Call to host function at %p args %08x %08x %08x\n",
+              reinterpret_cast<void*>(external), arg0, arg1, arg2);
+        }
+        SimulatorRuntimeProfilingGetterCallNew target =
+            reinterpret_cast<SimulatorRuntimeProfilingGetterCallNew>(external);
+        target(arg0, arg1, arg2);
+      }
     } else {
       SimulatorRuntimeCall target =
                   reinterpret_cast<SimulatorRuntimeCall>(external);
@@ -1616,33 +1727,33 @@ bool Simulator::IsStopInstruction(Instruction* instr) {
 bool Simulator::IsEnabledStop(uint32_t code) {
   ASSERT(code <= kMaxStopCode);
   ASSERT(code > kMaxWatchpointCode);
-  return !(watched_stops[code].count & kStopDisabledBit);
+  return !(watched_stops_[code].count & kStopDisabledBit);
 }
 
 
 void Simulator::EnableStop(uint32_t code) {
   if (!IsEnabledStop(code)) {
-    watched_stops[code].count &= ~kStopDisabledBit;
+    watched_stops_[code].count &= ~kStopDisabledBit;
   }
 }
 
 
 void Simulator::DisableStop(uint32_t code) {
   if (IsEnabledStop(code)) {
-    watched_stops[code].count |= kStopDisabledBit;
+    watched_stops_[code].count |= kStopDisabledBit;
   }
 }
 
 
 void Simulator::IncreaseStopCounter(uint32_t code) {
   ASSERT(code <= kMaxStopCode);
-  if ((watched_stops[code].count & ~(1 << 31)) == 0x7fffffff) {
+  if ((watched_stops_[code].count & ~(1 << 31)) == 0x7fffffff) {
     PrintF("Stop counter for code %i has overflowed.\n"
            "Enabling this code and reseting the counter to 0.\n", code);
-    watched_stops[code].count = 0;
+    watched_stops_[code].count = 0;
     EnableStop(code);
   } else {
-    watched_stops[code].count++;
+    watched_stops_[code].count++;
   }
 }
 
@@ -1657,12 +1768,12 @@ void Simulator::PrintStopInfo(uint32_t code) {
     return;
   }
   const char* state = IsEnabledStop(code) ? "Enabled" : "Disabled";
-  int32_t count = watched_stops[code].count & ~kStopDisabledBit;
+  int32_t count = watched_stops_[code].count & ~kStopDisabledBit;
   // Don't print the state of unused breakpoints.
   if (count != 0) {
-    if (watched_stops[code].desc) {
+    if (watched_stops_[code].desc) {
       PrintF("stop %i - 0x%x: \t%s, \tcounter = %i, \t%s\n",
-             code, code, state, count, watched_stops[code].desc);
+             code, code, state, count, watched_stops_[code].desc);
     } else {
       PrintF("stop %i - 0x%x: \t%s, \tcounter = %i\n",
              code, code, state, count);
@@ -1739,6 +1850,8 @@ void Simulator::ConfigureTypeRegister(Instruction* instr,
         default:
           UNIMPLEMENTED_MIPS();
       };
+      break;
+    case COP1X:
       break;
     case SPECIAL:
       switch (instr->FunctionFieldRaw()) {
@@ -1929,6 +2042,7 @@ void Simulator::DecodeTypeRegister(Instruction* instr) {
   const uint32_t rt_u   = static_cast<uint32_t>(rt);
   const int32_t  rd_reg = instr->RdValue();
 
+  const int32_t  fr_reg = instr->FrValue();
   const int32_t  fs_reg = instr->FsValue();
   const int32_t  ft_reg = instr->FtValue();
   const int32_t  fd_reg = instr->FdValue();
@@ -2032,7 +2146,7 @@ void Simulator::DecodeTypeRegister(Instruction* instr) {
               set_fpu_register_double(fd_reg, fs / ft);
               break;
             case ABS_D:
-              set_fpu_register_double(fd_reg, fs < 0 ? -fs : fs);
+              set_fpu_register_double(fd_reg, fabs(fs));
               break;
             case MOV_D:
               set_fpu_register_double(fd_reg, fs);
@@ -2044,25 +2158,28 @@ void Simulator::DecodeTypeRegister(Instruction* instr) {
               set_fpu_register_double(fd_reg, sqrt(fs));
               break;
             case C_UN_D:
-              set_fcsr_bit(fcsr_cc, isnan(fs) || isnan(ft));
+              set_fcsr_bit(fcsr_cc, std::isnan(fs) || std::isnan(ft));
               break;
             case C_EQ_D:
               set_fcsr_bit(fcsr_cc, (fs == ft));
               break;
             case C_UEQ_D:
-              set_fcsr_bit(fcsr_cc, (fs == ft) || (isnan(fs) || isnan(ft)));
+              set_fcsr_bit(fcsr_cc,
+                           (fs == ft) || (std::isnan(fs) || std::isnan(ft)));
               break;
             case C_OLT_D:
               set_fcsr_bit(fcsr_cc, (fs < ft));
               break;
             case C_ULT_D:
-              set_fcsr_bit(fcsr_cc, (fs < ft) || (isnan(fs) || isnan(ft)));
+              set_fcsr_bit(fcsr_cc,
+                           (fs < ft) || (std::isnan(fs) || std::isnan(ft)));
               break;
             case C_OLE_D:
               set_fcsr_bit(fcsr_cc, (fs <= ft));
               break;
             case C_ULE_D:
-              set_fcsr_bit(fcsr_cc, (fs <= ft) || (isnan(fs) || isnan(ft)));
+              set_fcsr_bit(fcsr_cc,
+                           (fs <= ft) || (std::isnan(fs) || std::isnan(ft)));
               break;
             case CVT_W_D:   // Convert double to word.
               // Rounding modes are not yet supported.
@@ -2173,8 +2290,8 @@ void Simulator::DecodeTypeRegister(Instruction* instr) {
           case CVT_D_L:  // Mips32r2 instruction.
             // Watch the signs here, we want 2 32-bit vals
             // to make a sign-64.
-            i64 = (uint32_t) get_fpu_register(fs_reg);
-            i64 |= ((int64_t) get_fpu_register(fs_reg + 1) << 32);
+            i64 = static_cast<uint32_t>(get_fpu_register(fs_reg));
+            i64 |= static_cast<int64_t>(get_fpu_register(fs_reg + 1)) << 32;
             set_fpu_register_double(fd_reg, static_cast<double>(i64));
             break;
             case CVT_S_L:
@@ -2185,6 +2302,19 @@ void Simulator::DecodeTypeRegister(Instruction* instr) {
           }
           break;
         case PS:
+          break;
+        default:
+          UNREACHABLE();
+      };
+      break;
+    case COP1X:
+      switch (instr->FunctionFieldRaw()) {
+        case MADD_D:
+          double fr, ft, fs;
+          fr = get_fpu_register_double(fr_reg);
+          fs = get_fpu_register_double(fs_reg);
+          ft = get_fpu_register_double(ft_reg);
+          set_fpu_register_double(fd_reg, fs * ft + fr);
           break;
         default:
           UNREACHABLE();
@@ -2219,10 +2349,10 @@ void Simulator::DecodeTypeRegister(Instruction* instr) {
           set_register(HI, static_cast<int32_t>(u64hilo >> 32));
           break;
         case DIV:
-          // Divide by zero was not checked in the configuration step - div and
-          // divu do not raise exceptions. On division by 0, the result will
-          // be UNPREDICTABLE.
-          if (rt != 0) {
+          // Divide by zero and overflow was not checked in the configuration
+          // step - div and divu do not raise exceptions. On division by 0 and
+          // on overflow (INT_MIN/-1), the result will be UNPREDICTABLE.
+          if (rt != 0 && !(rs == INT_MIN && rt == -1)) {
             set_register(LO, rs / rt);
             set_register(HI, rs % rt);
           }
@@ -2718,34 +2848,7 @@ void Simulator::Execute() {
 }
 
 
-int32_t Simulator::Call(byte* entry, int argument_count, ...) {
-  va_list parameters;
-  va_start(parameters, argument_count);
-  // Set up arguments.
-
-  // First four arguments passed in registers.
-  ASSERT(argument_count >= 4);
-  set_register(a0, va_arg(parameters, int32_t));
-  set_register(a1, va_arg(parameters, int32_t));
-  set_register(a2, va_arg(parameters, int32_t));
-  set_register(a3, va_arg(parameters, int32_t));
-
-  // Remaining arguments passed on stack.
-  int original_stack = get_register(sp);
-  // Compute position of stack on entry to generated code.
-  int entry_stack = (original_stack - (argument_count - 4) * sizeof(int32_t)
-                                    - kCArgsSlotsSize);
-  if (OS::ActivationFrameAlignment() != 0) {
-    entry_stack &= -OS::ActivationFrameAlignment();
-  }
-  // Store remaining arguments on stack, from low to high memory.
-  intptr_t* stack_argument = reinterpret_cast<intptr_t*>(entry_stack);
-  for (int i = 4; i < argument_count; i++) {
-    stack_argument[i - 4 + kCArgSlotCount] = va_arg(parameters, int32_t);
-  }
-  va_end(parameters);
-  set_register(sp, entry_stack);
-
+void Simulator::CallInternal(byte* entry) {
   // Prepare to execute the code at entry.
   set_register(pc, reinterpret_cast<int32_t>(entry));
   // Put down marker for end of simulation. The simulator will stop simulation
@@ -2809,6 +2912,38 @@ int32_t Simulator::Call(byte* entry, int argument_count, ...) {
   set_register(gp, gp_val);
   set_register(sp, sp_val);
   set_register(fp, fp_val);
+}
+
+
+int32_t Simulator::Call(byte* entry, int argument_count, ...) {
+  va_list parameters;
+  va_start(parameters, argument_count);
+  // Set up arguments.
+
+  // First four arguments passed in registers.
+  ASSERT(argument_count >= 4);
+  set_register(a0, va_arg(parameters, int32_t));
+  set_register(a1, va_arg(parameters, int32_t));
+  set_register(a2, va_arg(parameters, int32_t));
+  set_register(a3, va_arg(parameters, int32_t));
+
+  // Remaining arguments passed on stack.
+  int original_stack = get_register(sp);
+  // Compute position of stack on entry to generated code.
+  int entry_stack = (original_stack - (argument_count - 4) * sizeof(int32_t)
+                                    - kCArgsSlotsSize);
+  if (OS::ActivationFrameAlignment() != 0) {
+    entry_stack &= -OS::ActivationFrameAlignment();
+  }
+  // Store remaining arguments on stack, from low to high memory.
+  intptr_t* stack_argument = reinterpret_cast<intptr_t*>(entry_stack);
+  for (int i = 4; i < argument_count; i++) {
+    stack_argument[i - 4 + kCArgSlotCount] = va_arg(parameters, int32_t);
+  }
+  va_end(parameters);
+  set_register(sp, entry_stack);
+
+  CallInternal(entry);
 
   // Pop stack passed arguments.
   CHECK_EQ(entry_stack, get_register(sp));
@@ -2816,6 +2951,27 @@ int32_t Simulator::Call(byte* entry, int argument_count, ...) {
 
   int32_t result = get_register(v0);
   return result;
+}
+
+
+double Simulator::CallFP(byte* entry, double d0, double d1) {
+  if (!IsMipsSoftFloatABI) {
+    set_fpu_register_double(f12, d0);
+    set_fpu_register_double(f14, d1);
+  } else {
+    int buffer[2];
+    ASSERT(sizeof(buffer[0]) * 2 == sizeof(d0));
+    OS::MemCopy(buffer, &d0, sizeof(d0));
+    set_dw_register(a0, buffer);
+    OS::MemCopy(buffer, &d1, sizeof(d1));
+    set_dw_register(a2, buffer);
+  }
+  CallInternal(entry);
+  if (!IsMipsSoftFloatABI) {
+    return get_fpu_register_double(f0);
+  } else {
+    return get_double_from_register_pair(v0);
+  }
 }
 
 

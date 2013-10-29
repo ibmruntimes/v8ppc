@@ -51,27 +51,63 @@
   static void Test##Name()
 #endif
 
+#define EXTENSION_LIST(V)                                                \
+  V(GC_EXTENSION,    "v8/gc")                                            \
+  V(PRINT_EXTENSION, "v8/print")                                         \
+  V(TRACE_EXTENSION, "v8/trace")
+
+#define DEFINE_EXTENSION_ID(Name, Ident) Name##_ID,
+enum CcTestExtensionIds {
+  EXTENSION_LIST(DEFINE_EXTENSION_ID)
+  kMaxExtensions
+};
+#undef DEFINE_EXTENSION_ID
+
+typedef v8::internal::EnumSet<CcTestExtensionIds> CcTestExtensionFlags;
+#define DEFINE_EXTENSION_FLAG(Name, Ident)                               \
+  static const CcTestExtensionFlags Name(1 << Name##_ID);
+  static const CcTestExtensionFlags NO_EXTENSIONS(0);
+  static const CcTestExtensionFlags ALL_EXTENSIONS((1 << kMaxExtensions) - 1);
+  EXTENSION_LIST(DEFINE_EXTENSION_FLAG)
+#undef DEFINE_EXTENSION_FLAG
+
 class CcTest {
  public:
   typedef void (TestFunction)();
   CcTest(TestFunction* callback, const char* file, const char* name,
          const char* dependency, bool enabled);
   void Run() { callback_(); }
-  static int test_count();
   static CcTest* last() { return last_; }
   CcTest* prev() { return prev_; }
   const char* file() { return file_; }
   const char* name() { return name_; }
   const char* dependency() { return dependency_; }
   bool enabled() { return enabled_; }
+  static v8::Isolate* default_isolate() { return default_isolate_; }
+
+  static v8::Handle<v8::Context> env() {
+    return v8::Local<v8::Context>::New(default_isolate_, context_);
+  }
+
+  static v8::Isolate* isolate() { return default_isolate_; }
+
+  // Helper function to initialize the VM.
+  static void InitializeVM(CcTestExtensionFlags extensions = NO_EXTENSIONS);
+
  private:
+  friend int main(int argc, char** argv);
+  static void set_default_isolate(v8::Isolate* default_isolate) {
+    default_isolate_ = default_isolate;
+  }
   TestFunction* callback_;
   const char* file_;
   const char* name_;
   const char* dependency_;
   bool enabled_;
-  static CcTest* last_;
   CcTest* prev_;
+  static CcTest* last_;
+  static v8::Isolate* default_isolate_;
+  static v8::Persistent<v8::Context> context_;
 };
 
 // Switches between all the Api tests using the threading support.
@@ -87,13 +123,6 @@ class CcTest {
 class ApiTestFuzzer: public v8::internal::Thread {
  public:
   void CallTest();
-  explicit ApiTestFuzzer(int num)
-      : Thread("ApiTestFuzzer"),
-        test_number_(num),
-        gate_(v8::internal::OS::CreateSemaphore(0)),
-        active_(true) {
-  }
-  ~ApiTestFuzzer() { delete gate_; }
 
   // The ApiTestFuzzer is also a Thread, so it has a Run method.
   virtual void Run();
@@ -112,6 +141,14 @@ class ApiTestFuzzer: public v8::internal::Thread {
   static void Fuzz();
 
  private:
+  explicit ApiTestFuzzer(int num)
+      : Thread("ApiTestFuzzer"),
+        test_number_(num),
+        gate_(v8::internal::OS::CreateSemaphore(0)),
+        active_(true) {
+  }
+  ~ApiTestFuzzer() { delete gate_; }
+
   static bool fuzzing_;
   static int tests_being_run_;
   static int current_;
@@ -163,35 +200,45 @@ class RegisterThreadedTest {
   const char* name_;
 };
 
-
 // A LocalContext holds a reference to a v8::Context.
 class LocalContext {
  public:
   LocalContext(v8::ExtensionConfiguration* extensions = 0,
                v8::Handle<v8::ObjectTemplate> global_template =
                    v8::Handle<v8::ObjectTemplate>(),
-               v8::Handle<v8::Value> global_object = v8::Handle<v8::Value>())
-    : context_(v8::Context::New(extensions, global_template, global_object)) {
-    context_->Enter();
+               v8::Handle<v8::Value> global_object = v8::Handle<v8::Value>()) {
+    v8::Isolate* isolate = v8::Isolate::GetCurrent();
+    v8::HandleScope scope(isolate);
+    v8::Local<v8::Context> context = v8::Context::New(isolate,
+                                                      extensions,
+                                                      global_template,
+                                                      global_object);
+    context_.Reset(isolate, context);
+    context->Enter();
+    // We can't do this later perhaps because of a fatal error.
+    isolate_ = context->GetIsolate();
   }
 
   virtual ~LocalContext() {
-    context_->Exit();
+    v8::HandleScope scope(isolate_);
+    v8::Local<v8::Context>::New(isolate_, context_)->Exit();
     context_.Dispose();
   }
 
-  v8::Context* operator->() { return *context_; }
-  v8::Context* operator*() { return *context_; }
+  v8::Context* operator->() {
+    return *reinterpret_cast<v8::Context**>(&context_);
+  }
+  v8::Context* operator*() { return operator->(); }
   bool IsReady() { return !context_.IsEmpty(); }
 
   v8::Local<v8::Context> local() {
-    return v8::Local<v8::Context>::New(context_);
+    return v8::Local<v8::Context>::New(isolate_, context_);
   }
 
  private:
   v8::Persistent<v8::Context> context_;
+  v8::Isolate* isolate_;
 };
-
 
 static inline v8::Local<v8::Value> v8_num(double x) {
   return v8::Number::New(x);
@@ -230,6 +277,26 @@ static inline v8::Local<v8::Value> CompileRunWithOrigin(const char* source,
 static inline int FlagDependentPortOffset() {
   return ::v8::internal::FLAG_crankshaft == false ? 100 :
          ::v8::internal::FLAG_always_opt ? 200 : 0;
+}
+
+
+// Helper function that simulates a full new-space in the heap.
+static inline void SimulateFullSpace(v8::internal::NewSpace* space) {
+  int new_linear_size = static_cast<int>(
+      *space->allocation_limit_address() - *space->allocation_top_address());
+  v8::internal::MaybeObject* maybe = space->AllocateRaw(new_linear_size);
+  v8::internal::FreeListNode* node = v8::internal::FreeListNode::cast(maybe);
+  node->set_size(space->heap(), new_linear_size);
+}
+
+
+// Helper function that simulates a full old-space in the heap.
+static inline void SimulateFullSpace(v8::internal::PagedSpace* space) {
+  int old_linear_size = static_cast<int>(space->limit() - space->top());
+  space->Free(space->top(), old_linear_size);
+  space->SetTop(space->limit(), space->limit());
+  space->ResetFreeList();
+  space->ClearStats();
 }
 
 

@@ -47,10 +47,39 @@ namespace v8 {
 namespace internal {
 
 
+int Register::NumAllocatableRegisters() {
+  return kMaxNumAllocatableRegisters;
+}
+
+
+int DwVfpRegister::NumRegisters() {
+  return CpuFeatures::IsSupported(VFP32DREGS) ? 32 : 16;
+}
+
+
+int DwVfpRegister::NumAllocatableRegisters() {
+  return NumRegisters() - kNumReservedRegisters;
+}
+
+
 int DwVfpRegister::ToAllocationIndex(DwVfpRegister reg) {
   ASSERT(!reg.is(kDoubleRegZero));
   ASSERT(!reg.is(kScratchDoubleReg));
+  if (reg.code() > kDoubleRegZero.code()) {
+    return reg.code() - kNumReservedRegisters;
+  }
   return reg.code();
+}
+
+
+DwVfpRegister DwVfpRegister::FromAllocationIndex(int index) {
+  ASSERT(index >= 0 && index < NumAllocatableRegisters());
+  ASSERT(kScratchDoubleReg.code() - kDoubleRegZero.code() ==
+         kNumReservedRegisters - 1);
+  if (index >= kDoubleRegZero.code()) {
+    return from_code(index + kNumReservedRegisters);
+  }
+  return from_code(index);
 }
 
 
@@ -66,13 +95,13 @@ void RelocInfo::apply(intptr_t delta) {
 
 
 Address RelocInfo::target_address() {
-  ASSERT(IsCodeTarget(rmode_) || rmode_ == RUNTIME_ENTRY);
+  ASSERT(IsCodeTarget(rmode_) || IsRuntimeEntry(rmode_));
   return Assembler::target_address_at(pc_);
 }
 
 
 Address RelocInfo::target_address_address() {
-  ASSERT(IsCodeTarget(rmode_) || rmode_ == RUNTIME_ENTRY
+  ASSERT(IsCodeTarget(rmode_) || IsRuntimeEntry(rmode_)
                               || rmode_ == EMBEDDED_OBJECT
                               || rmode_ == EXTERNAL_REFERENCE);
   return reinterpret_cast<Address>(Assembler::target_pointer_address_at(pc_));
@@ -85,9 +114,8 @@ int RelocInfo::target_address_size() {
 
 
 void RelocInfo::set_target_address(Address target, WriteBarrierMode mode) {
-  ASSERT(IsCodeTarget(rmode_) || rmode_ == RUNTIME_ENTRY);
-  Assembler::set_target_address_at(pc_, reinterpret_cast<Address>(
-      reinterpret_cast<intptr_t>(target) & ~3));
+  ASSERT(IsCodeTarget(rmode_) || IsRuntimeEntry(rmode_));
+  Assembler::set_target_address_at(pc_, target);
   if (mode == UPDATE_WRITE_BARRIER && host() != NULL && IsCodeTarget(rmode_)) {
     Object* target_code = Code::GetCodeFromTargetAddress(target);
     host()->GetHeap()->incremental_marking()->RecordWriteIntoCode(
@@ -121,6 +149,7 @@ Object** RelocInfo::target_object_address() {
 
 void RelocInfo::set_target_object(Object* target, WriteBarrierMode mode) {
   ASSERT(IsCodeTarget(rmode_) || rmode_ == EMBEDDED_OBJECT);
+  ASSERT(!target->IsConsString());
   Assembler::set_target_pointer_at(pc_, reinterpret_cast<Address>(target));
   if (mode == UPDATE_WRITE_BARRIER &&
       host() != NULL &&
@@ -138,24 +167,35 @@ Address* RelocInfo::target_reference_address() {
 }
 
 
-Handle<JSGlobalPropertyCell> RelocInfo::target_cell_handle() {
-  ASSERT(rmode_ == RelocInfo::GLOBAL_PROPERTY_CELL);
+Address RelocInfo::target_runtime_entry(Assembler* origin) {
+  ASSERT(IsRuntimeEntry(rmode_));
+  return target_address();
+}
+
+
+void RelocInfo::set_target_runtime_entry(Address target,
+                                         WriteBarrierMode mode) {
+  ASSERT(IsRuntimeEntry(rmode_));
+  if (target_address() != target) set_target_address(target, mode);
+}
+
+
+Handle<Cell> RelocInfo::target_cell_handle() {
+  ASSERT(rmode_ == RelocInfo::CELL);
   Address address = Memory::Address_at(pc_);
-  return Handle<JSGlobalPropertyCell>(
-      reinterpret_cast<JSGlobalPropertyCell**>(address));
+  return Handle<Cell>(reinterpret_cast<Cell**>(address));
 }
 
 
-JSGlobalPropertyCell* RelocInfo::target_cell() {
-  ASSERT(rmode_ == RelocInfo::GLOBAL_PROPERTY_CELL);
-  return JSGlobalPropertyCell::FromValueAddress(Memory::Address_at(pc_));
+Cell* RelocInfo::target_cell() {
+  ASSERT(rmode_ == RelocInfo::CELL);
+  return Cell::FromValueAddress(Memory::Address_at(pc_));
 }
 
 
-void RelocInfo::set_target_cell(JSGlobalPropertyCell* cell,
-                                WriteBarrierMode mode) {
-  ASSERT(rmode_ == RelocInfo::GLOBAL_PROPERTY_CELL);
-  Address address = cell->address() + JSGlobalPropertyCell::kValueOffset;
+void RelocInfo::set_target_cell(Cell* cell, WriteBarrierMode mode) {
+  ASSERT(rmode_ == RelocInfo::CELL);
+  Address address = cell->address() + Cell::kValueOffset;
   Memory::Address_at(pc_) = address;
   if (mode == UPDATE_WRITE_BARRIER && host() != NULL) {
     // TODO(1550) We are passing NULL as a slot because cell can never be on
@@ -163,6 +203,24 @@ void RelocInfo::set_target_cell(JSGlobalPropertyCell* cell,
     host()->GetHeap()->incremental_marking()->RecordWrite(
         host(), NULL, cell);
   }
+}
+
+
+static const int kNoCodeAgeSequenceLength = 3;
+
+Code* RelocInfo::code_age_stub() {
+  ASSERT(rmode_ == RelocInfo::CODE_AGE_SEQUENCE);
+  return Code::GetCodeFromTargetAddress(
+      Memory::Address_at(pc_ + Assembler::kInstrSize *
+                         (kNoCodeAgeSequenceLength - 1)));
+}
+
+
+void RelocInfo::set_code_age_stub(Code* stub) {
+  ASSERT(rmode_ == RelocInfo::CODE_AGE_SEQUENCE);
+  Memory::Address_at(pc_ + Assembler::kInstrSize *
+                     (kNoCodeAgeSequenceLength - 1)) =
+      stub->instruction_start();
 }
 
 
@@ -207,19 +265,11 @@ Object** RelocInfo::call_object_address() {
 bool RelocInfo::IsPatchedReturnSequence() {
   Instr current_instr = Assembler::instr_at(pc_);
   Instr next_instr = Assembler::instr_at(pc_ + Assembler::kInstrSize);
-#ifdef USE_BLX
   // A patched return sequence is:
   //  ldr ip, [pc, #0]
   //  blx ip
   return ((current_instr & kLdrPCMask) == kLdrPCPattern)
           && ((next_instr & kBlxRegMask) == kBlxRegPattern);
-#else
-  // A patched return sequence is:
-  //  mov lr, pc
-  //  ldr pc, [pc, #-4]
-  return (current_instr == kMovLrPc)
-          && ((next_instr & kLdrPCMask) == kLdrPCPattern);
-#endif
 }
 
 
@@ -235,10 +285,12 @@ void RelocInfo::Visit(ObjectVisitor* visitor) {
     visitor->VisitEmbeddedPointer(this);
   } else if (RelocInfo::IsCodeTarget(mode)) {
     visitor->VisitCodeTarget(this);
-  } else if (mode == RelocInfo::GLOBAL_PROPERTY_CELL) {
-    visitor->VisitGlobalPropertyCell(this);
+  } else if (mode == RelocInfo::CELL) {
+    visitor->VisitCell(this);
   } else if (mode == RelocInfo::EXTERNAL_REFERENCE) {
     visitor->VisitExternalReference(this);
+  } else if (RelocInfo::IsCodeAgeSequence(mode)) {
+    visitor->VisitCodeAgeSequence(this);
 #ifdef ENABLE_DEBUGGER_SUPPORT
   // TODO(isolates): Get a cached isolate below.
   } else if (((RelocInfo::IsJSReturn(mode) &&
@@ -248,7 +300,7 @@ void RelocInfo::Visit(ObjectVisitor* visitor) {
              Isolate::Current()->debug()->has_break_points()) {
     visitor->VisitDebugTarget(this);
 #endif
-  } else if (mode == RelocInfo::RUNTIME_ENTRY) {
+  } else if (RelocInfo::IsRuntimeEntry(mode)) {
     visitor->VisitRuntimeEntry(this);
   }
 }
@@ -261,10 +313,12 @@ void RelocInfo::Visit(Heap* heap) {
     StaticVisitor::VisitEmbeddedPointer(heap, this);
   } else if (RelocInfo::IsCodeTarget(mode)) {
     StaticVisitor::VisitCodeTarget(heap, this);
-  } else if (mode == RelocInfo::GLOBAL_PROPERTY_CELL) {
-    StaticVisitor::VisitGlobalPropertyCell(heap, this);
+  } else if (mode == RelocInfo::CELL) {
+    StaticVisitor::VisitCell(heap, this);
   } else if (mode == RelocInfo::EXTERNAL_REFERENCE) {
     StaticVisitor::VisitExternalReference(this);
+  } else if (RelocInfo::IsCodeAgeSequence(mode)) {
+    StaticVisitor::VisitCodeAgeSequence(heap, this);
 #ifdef ENABLE_DEBUGGER_SUPPORT
   } else if (heap->isolate()->debug()->has_break_points() &&
              ((RelocInfo::IsJSReturn(mode) &&
@@ -273,7 +327,7 @@ void RelocInfo::Visit(Heap* heap) {
               IsPatchedDebugBreakSlotSequence()))) {
     StaticVisitor::VisitDebugTarget(heap, this);
 #endif
-  } else if (mode == RelocInfo::RUNTIME_ENTRY) {
+  } else if (RelocInfo::IsRuntimeEntry(mode)) {
     StaticVisitor::VisitRuntimeEntry(this);
   }
 }
@@ -296,7 +350,7 @@ Operand::Operand(const ExternalReference& f)  {
 Operand::Operand(Smi* value) {
   rm_ = no_reg;
   imm32_ =  reinterpret_cast<intptr_t>(value);
-  rmode_ = RelocInfo::NONE;
+  rmode_ = RelocInfo::NONE32;
 }
 
 
@@ -345,14 +399,11 @@ Address Assembler::target_pointer_address_at(Address pc) {
     instr = Memory::int32_at(target_pc);
   }
 
-#ifdef USE_BLX
-  // If we have a blx instruction, the instruction before it is
-  // what needs to be patched.
+  // With a blx instruction, the instruction before is what needs to be patched.
   if ((instr & kBlxRegMask) == kBlxRegPattern) {
     target_pc -= kInstrSize;
     instr = Memory::int32_at(target_pc);
   }
-#endif
 
   ASSERT(IsLdrPcImmediateOffset(instr));
   int offset = instr & 0xfff;  // offset_12 is unsigned
@@ -379,7 +430,6 @@ Address Assembler::target_pointer_at(Address pc) {
 Address Assembler::target_address_from_return_address(Address pc) {
   // Returns the address of the call target from the return address that will
   // be returned to after a call.
-#ifdef USE_BLX
   // Call sequence on V7 or later is :
   //  movw  ip, #... @ call address low 16
   //  movt  ip, #... @ call address high 16
@@ -398,18 +448,10 @@ Address Assembler::target_address_from_return_address(Address pc) {
   ASSERT(IsMovW(Memory::int32_at(candidate)) &&
          IsMovT(Memory::int32_at(candidate + kInstrSize)));
   return candidate;
-#else
-  // Call sequence is:
-  //  mov  lr, pc
-  //  ldr  pc, [pc, #...] @ call address
-  //                      @ return address
-  return pc - kInstrSize;
-#endif
 }
 
 
 Address Assembler::return_address_from_call_start(Address pc) {
-#ifdef USE_BLX
   if (IsLdrPcImmediateOffset(Memory::int32_at(pc))) {
     return pc + kInstrSize * 2;
   } else {
@@ -417,9 +459,6 @@ Address Assembler::return_address_from_call_start(Address pc) {
     ASSERT(IsMovT(Memory::int32_at(pc + kInstrSize)));
     return pc + kInstrSize * 3;
   }
-#else
-  return pc + kInstrSize;
-#endif
 }
 
 
@@ -473,14 +512,12 @@ void Assembler::set_target_pointer_at(Address pc, Address target) {
 
 
 Address Assembler::target_address_at(Address pc) {
-  return reinterpret_cast<Address>(
-      reinterpret_cast<intptr_t>(target_pointer_at(pc)) & ~3);
+  return target_pointer_at(pc);
 }
 
 
 void Assembler::set_target_address_at(Address pc, Address target) {
-  set_target_pointer_at(pc, reinterpret_cast<Address>(
-      reinterpret_cast<intptr_t>(target) & ~3));
+  set_target_pointer_at(pc, target);
 }
 
 

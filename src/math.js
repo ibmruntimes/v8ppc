@@ -25,6 +25,9 @@
 // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+// This file relies on the fact that the following declarations have been made
+// in runtime.js:
+// var $Object = global.Object;
 
 // Keep reference to original values of some global properties.  This
 // has the added benefit that the code in this file is isolated from
@@ -35,10 +38,9 @@ var $abs = MathAbs;
 // Instance class name can only be set on functions. That is the only
 // purpose for MathConstructor.
 function MathConstructor() {}
-%FunctionSetInstanceClassName(MathConstructor, 'Math');
 var $Math = new MathConstructor();
-$Math.__proto__ = $Object.prototype;
-%SetProperty(global, "Math", $Math, DONT_ENUM);
+
+// -------------------------------------------------------------------
 
 // ECMA 262 - 15.8.2.1
 function MathAbs(x) {
@@ -131,19 +133,16 @@ function MathMax(arg1, arg2) {  // length == 2
     // All comparisons failed, one of the arguments must be NaN.
     return 0/0;  // Compiler constant-folds this to NaN.
   }
-  if (length == 0) {
-    return -1/0;  // Compiler constant-folds this to -Infinity.
-  }
-  var r = arg1;
-  if (!IS_NUMBER(r)) r = NonNumberToNumber(r);
-  if (NUMBER_IS_NAN(r)) return r;
-  for (var i = 1; i < length; i++) {
+  var r = -1/0;  // Compiler constant-folds this to -Infinity.
+  for (var i = 0; i < length; i++) {
     var n = %_Arguments(i);
     if (!IS_NUMBER(n)) n = NonNumberToNumber(n);
-    if (NUMBER_IS_NAN(n)) return n;
     // Make sure +0 is considered greater than -0.  -0 is never a Smi, +0 can be
     // a Smi or heap number.
-    if (n > r || (r == 0 && n == 0 && !%_IsSmi(r) && 1 / r < 0)) r = n;
+    if (NUMBER_IS_NAN(n) || n > r ||
+        (r == 0 && n == 0 && !%_IsSmi(r) && 1 / r < 0)) {
+      r = n;
+    }
   }
   return r;
 }
@@ -164,19 +163,16 @@ function MathMin(arg1, arg2) {  // length == 2
     // All comparisons failed, one of the arguments must be NaN.
     return 0/0;  // Compiler constant-folds this to NaN.
   }
-  if (length == 0) {
-    return 1/0;  // Compiler constant-folds this to Infinity.
-  }
-  var r = arg1;
-  if (!IS_NUMBER(r)) r = NonNumberToNumber(r);
-  if (NUMBER_IS_NAN(r)) return r;
-  for (var i = 1; i < length; i++) {
+  var r = 1/0;  // Compiler constant-folds this to Infinity.
+  for (var i = 0; i < length; i++) {
     var n = %_Arguments(i);
     if (!IS_NUMBER(n)) n = NonNumberToNumber(n);
-    if (NUMBER_IS_NAN(n)) return n;
     // Make sure -0 is considered less than +0.  -0 is never a Smi, +0 can be a
     // Smi or a heap number.
-    if (n < r || (r == 0 && n == 0 && !%_IsSmi(n) && 1 / n < 0)) r = n;
+    if (NUMBER_IS_NAN(n) || n < r ||
+        (r == 0 && n == 0 && !%_IsSmi(n) && 1 / n < 0)) {
+      r = n;
+    }
   }
   return r;
 }
@@ -217,11 +213,23 @@ function MathTan(x) {
   return %_MathTan(x);
 }
 
+// Non-standard extension.
+function MathImul(x, y) {
+  if (!IS_NUMBER(x)) x = NonNumberToNumber(x);
+  if (!IS_NUMBER(y)) y = NonNumberToNumber(y);
+  return %NumberImul(x, y);
+}
+
 
 // -------------------------------------------------------------------
 
 function SetUpMath() {
   %CheckIsBootstrapping();
+
+  %SetPrototype($Math, $Object.prototype);
+  %SetProperty(global, "Math", $Math, DONT_ENUM);
+  %FunctionSetInstanceClassName(MathConstructor, 'Math');
+
   // Set up math constants.
   // ECMA-262, section 15.8.1.1.
   %OptimizeObjectForAddingMultipleProperties($Math, 8);
@@ -282,7 +290,8 @@ function SetUpMath() {
     "atan2", MathAtan2,
     "pow", MathPow,
     "max", MathMax,
-    "min", MathMin
+    "min", MathMin,
+    "imul", MathImul
   ));
 }
 

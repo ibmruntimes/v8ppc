@@ -173,7 +173,7 @@ PropertyKind.Indexed = 2;
 var PropertyType = {};
 PropertyType.Normal                  = 0;
 PropertyType.Field                   = 1;
-PropertyType.ConstantFunction        = 2;
+PropertyType.Constant                = 2;
 PropertyType.Callbacks               = 3;
 PropertyType.Handler                 = 4;
 PropertyType.Interceptor             = 5;
@@ -638,7 +638,7 @@ ObjectMirror.prototype.propertyNames = function(kind, limit) {
   // Find all the named properties.
   if (kind & PropertyKind.Named) {
     // Get the local property names.
-    propertyNames = %GetLocalPropertyNames(this.value_);
+    propertyNames = %GetLocalPropertyNames(this.value_, true);
     total += propertyNames.length;
 
     // Get names for named interceptor properties if any.
@@ -1509,6 +1509,11 @@ FrameDetails.prototype.scopeCount = function() {
 };
 
 
+FrameDetails.prototype.stepInPositionsImpl = function() {
+  return %GetStepInPositions(this.break_id_, this.frameId());
+};
+
+
 /**
  * Mirror object for stack frames.
  * @param {number} break_id The break id in the VM for which this frame is
@@ -1669,15 +1674,37 @@ FrameMirror.prototype.scope = function(index) {
 };
 
 
+FrameMirror.prototype.stepInPositions = function() {
+  var script = this.func().script();
+  var funcOffset = this.func().sourcePosition_();
+
+  var stepInRaw = this.details_.stepInPositionsImpl();
+  var result = [];
+  if (stepInRaw) {
+    for (var i = 0; i < stepInRaw.length; i++) {
+      var posStruct = {};
+      var offset = script.locationFromPosition(funcOffset + stepInRaw[i],
+                                               true);
+      serializeLocationFields(offset, posStruct);
+      var item = {
+        position: posStruct
+      };
+      result.push(item);
+    }
+  }
+
+  return result;
+};
+
+
 FrameMirror.prototype.evaluate = function(source, disable_break,
                                           opt_context_object) {
-  var result = %DebugEvaluate(this.break_id_,
-                              this.details_.frameId(),
-                              this.details_.inlinedFrameIndex(),
-                              source,
-                              Boolean(disable_break),
-                              opt_context_object);
-  return MakeMirror(result);
+  return MakeMirror(%DebugEvaluate(this.break_id_,
+                                   this.details_.frameId(),
+                                   this.details_.inlinedFrameIndex(),
+                                   source,
+                                   Boolean(disable_break),
+                                   opt_context_object));
 };
 
 
@@ -1844,10 +1871,14 @@ function ScopeDetails(frame, fun, index) {
                                      frame.details_.frameId(),
                                      frame.details_.inlinedFrameIndex(),
                                      index);
+    this.frame_id_ = frame.details_.frameId();
+    this.inlined_frame_id_ = frame.details_.inlinedFrameIndex();
   } else {
     this.details_ = %GetFunctionScopeDetails(fun.value(), index);
+    this.fun_value_ = fun.value();
     this.break_id_ = undefined;
   }
+  this.index_ = index;
 }
 
 
@@ -1864,6 +1895,22 @@ ScopeDetails.prototype.object = function() {
     %CheckExecutionState(this.break_id_);
   }
   return this.details_[kScopeDetailsObjectIndex];
+};
+
+
+ScopeDetails.prototype.setVariableValueImpl = function(name, new_value) {
+  var raw_res;
+  if (!IS_UNDEFINED(this.break_id_)) {
+    %CheckExecutionState(this.break_id_);
+    raw_res = %SetScopeVariableValue(this.break_id_, this.frame_id_,
+        this.inlined_frame_id_, this.index_, name, new_value);
+  } else {
+    raw_res = %SetScopeVariableValue(this.fun_value_, null, null, this.index_,
+        name, new_value);
+  }
+  if (!raw_res) {
+    throw new Error("Failed to set variable value");
+  }
 };
 
 
@@ -1911,6 +1958,11 @@ ScopeMirror.prototype.scopeObject = function() {
   var transient = this.scopeType() == ScopeType.Local ||
                   this.scopeType() == ScopeType.Closure;
   return MakeMirror(this.details_.object(), transient);
+};
+
+
+ScopeMirror.prototype.setVariableValue = function(name, new_value) {
+  this.details_.setVariableValueImpl(name, new_value);
 };
 
 

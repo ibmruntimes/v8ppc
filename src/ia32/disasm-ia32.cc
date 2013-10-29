@@ -31,7 +31,7 @@
 
 #include "v8.h"
 
-#if defined(V8_TARGET_ARCH_IA32)
+#if V8_TARGET_ARCH_IA32
 
 #include "disasm.h"
 
@@ -575,6 +575,7 @@ int DisassemblerIA32::F7Instruction(byte* data) {
   }
 }
 
+
 int DisassemblerIA32::D1D3C1Instruction(byte* data) {
   byte op = *data;
   ASSERT(op == 0xD1 || op == 0xD3 || op == 0xC1);
@@ -869,6 +870,7 @@ static const char* F0Mnem(byte f0byte) {
     case 0xAF: return "imul";
     case 0xA5: return "shld";
     case 0xAD: return "shrd";
+    case 0xAC: return "shrd";  // 3-operand version.
     case 0xAB: return "bts";
     default: return NULL;
   }
@@ -1037,6 +1039,14 @@ int DisassemblerIA32::InstructionDecode(v8::internal::Vector<char> out_buffer,
             get_modrm(*data, &mod, &regop, &rm);
             AppendToBuffer("xorps %s,%s",
                            NameOfXMMRegister(regop),
+                           NameOfXMMRegister(rm));
+            data++;
+          } else if (f0byte == 0x50) {
+            data += 2;
+            int mod, regop, rm;
+            get_modrm(*data, &mod, &regop, &rm);
+            AppendToBuffer("movmskps %s,%s",
+                           NameOfCPURegister(regop),
                            NameOfXMMRegister(rm));
             data++;
           } else if ((f0byte & 0xF0) == 0x80) {

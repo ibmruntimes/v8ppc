@@ -35,18 +35,6 @@
 namespace v8 {
 namespace internal {
 
-// Flags used for the AllocateInNewSpace functions.
-enum AllocationFlags {
-  // No special flags.
-  NO_ALLOCATION_FLAGS = 0,
-  // Return the pointer to the allocated already tagged as a heap object.
-  TAG_OBJECT = 1 << 0,
-  // The content of the result register already contains the allocation top in
-  // new space.
-  RESULT_CONTAINS_TOP = 1 << 1
-};
-
-
 // Default scratch register used by MacroAssembler (and other code that needs
 // a spare register). The register isn't callee save, and not used by the
 // function calling convention.
@@ -179,6 +167,10 @@ class MacroAssembler: public Assembler {
                      Condition cc,
                      Label* condition_met,
                      Label::Distance condition_met_distance = Label::kFar);
+
+  void CheckMapDeprecated(Handle<Map> map,
+                          Register scratch,
+                          Label* if_deprecated);
 
   // Check if object is in new space.  Jumps if the object is not in new space.
   // The register scratch can be object itself, but scratch will be clobbered.
@@ -361,6 +353,7 @@ class MacroAssembler: public Assembler {
                       CallKind call_kind);
 
   void InvokeFunction(Handle<JSFunction> function,
+                      const ParameterCount& expected,
                       const ParameterCount& actual,
                       InvokeFlag flag,
                       const CallWrapper& call_wrapper,
@@ -385,7 +378,7 @@ class MacroAssembler: public Assembler {
   void InitializeSmiConstantRegister() {
     movq(kSmiConstantRegister,
          reinterpret_cast<uint64_t>(Smi::FromInt(kSmiConstantRegisterValue)),
-         RelocInfo::NONE);
+         RelocInfo::NONE64);
   }
 
   // Conversions between tagged smi values and non-tagged integer values.
@@ -765,6 +758,12 @@ class MacroAssembler: public Assembler {
       Label* on_fail,
       Label::Distance near_jump = Label::kFar);
 
+  // Checks if the given register or operand is a unique name
+  void JumpIfNotUniqueName(Register reg, Label* not_unique_name,
+                           Label::Distance distance = Label::kFar);
+  void JumpIfNotUniqueName(Operand operand, Label* not_unique_name,
+                           Label::Distance distance = Label::kFar);
+
   // ---------------------------------------------------------------------------
   // Macro instructions.
 
@@ -795,9 +794,11 @@ class MacroAssembler: public Assembler {
   // Load a heap object and handle the case of new-space objects by
   // indirecting via a global cell.
   void LoadHeapObject(Register result, Handle<HeapObject> object);
+  void CmpHeapObject(Register reg, Handle<HeapObject> object);
   void PushHeapObject(Handle<HeapObject> object);
 
   void LoadObject(Register result, Handle<Object> object) {
+    AllowDeferredHandleDereference heap_object_check;
     if (object->IsHeapObject()) {
       LoadHeapObject(result, Handle<HeapObject>::cast(object));
     } else {
@@ -805,14 +806,27 @@ class MacroAssembler: public Assembler {
     }
   }
 
+  void CmpObject(Register reg, Handle<Object> object) {
+    AllowDeferredHandleDereference heap_object_check;
+    if (object->IsHeapObject()) {
+      CmpHeapObject(reg, Handle<HeapObject>::cast(object));
+    } else {
+      Cmp(reg, object);
+    }
+  }
+
   // Load a global cell into a register.
-  void LoadGlobalCell(Register dst, Handle<JSGlobalPropertyCell> cell);
+  void LoadGlobalCell(Register dst, Handle<Cell> cell);
 
   // Emit code to discard a non-negative number of pointer-sized elements
   // from the stack, clobbering only the rsp register.
   void Drop(int stack_elements);
 
   void Call(Label* target) { call(target); }
+  void Push(Register src) { push(src); }
+  void Pop(Register dst) { pop(dst); }
+  void PushReturnAddressFrom(Register src) { push(src); }
+  void PopReturnAddressTo(Register dst) { pop(dst); }
 
   // Control Flow
   void Jump(Address destination, RelocInfo::Mode rmode);
@@ -827,7 +841,7 @@ class MacroAssembler: public Assembler {
 
   // The size of the code generated for different call instructions.
   int CallSize(Address destination, RelocInfo::Mode rmode) {
-    return kCallInstructionLength;
+    return kCallSequenceLength;
   }
   int CallSize(ExternalReference ext);
   int CallSize(Handle<Code> code_object) {
@@ -895,7 +909,8 @@ class MacroAssembler: public Assembler {
                                    Register elements,
                                    Register index,
                                    XMMRegister xmm_scratch,
-                                   Label* fail);
+                                   Label* fail,
+                                   int elements_offset = 0);
 
   // Compare an object's map with the specified map and its transitioned
   // elements maps if mode is ALLOW_ELEMENT_TRANSITION_MAPS. FLAGS are set with
@@ -903,8 +918,7 @@ class MacroAssembler: public Assembler {
   // sequences branches to early_success.
   void CompareMap(Register obj,
                   Handle<Map> map,
-                  Label* early_success,
-                  CompareMapMode mode = REQUIRE_EXACT_MAP);
+                  Label* early_success);
 
   // Check if the map of an object is equal to a specified map and branch to
   // label if not. Skip the smi check if not required (object is known to be a
@@ -913,13 +927,13 @@ class MacroAssembler: public Assembler {
   void CheckMap(Register obj,
                 Handle<Map> map,
                 Label* fail,
-                SmiCheckType smi_check_type,
-                CompareMapMode mode = REQUIRE_EXACT_MAP);
+                SmiCheckType smi_check_type);
 
   // Check if the map of an object is equal to a specified map and branch to a
   // specified target if equal. Skip the smi check if not required (object is
   // known to be a heap object)
   void DispatchMap(Register obj,
+                   Register unused,
                    Handle<Map> map,
                    Handle<Code> success,
                    SmiCheckType smi_check_type);
@@ -932,6 +946,15 @@ class MacroAssembler: public Assembler {
   Condition IsObjectStringType(Register heap_object,
                                Register map,
                                Register instance_type);
+
+  // Check if the object in register heap_object is a name. Afterwards the
+  // register map contains the object map and the register instance_type
+  // contains the instance_type. The registers map and instance_type can be the
+  // same in which case it contains the instance type afterwards. Either of the
+  // registers map and instance_type can be the same as heap_object.
+  Condition IsObjectNameType(Register heap_object,
+                             Register map,
+                             Register instance_type);
 
   // FCmp compares and pops the two values on top of the FPU stack.
   // The flag results are similar to integer cmp, but requires unsigned
@@ -976,11 +999,14 @@ class MacroAssembler: public Assembler {
   // Abort execution if argument is not a string, enabled via --debug-code.
   void AssertString(Register object);
 
+  // Abort execution if argument is not a name, enabled via --debug-code.
+  void AssertName(Register object);
+
   // Abort execution if argument is not the root value with the given index,
   // enabled via --debug-code.
   void AssertRootValue(Register src,
                        Heap::RootListIndex root_value_index,
-                       const char* message);
+                       BailoutReason reason);
 
   // ---------------------------------------------------------------------------
   // Exception handling
@@ -1023,38 +1049,38 @@ class MacroAssembler: public Assembler {
   // ---------------------------------------------------------------------------
   // Allocation support
 
-  // Allocate an object in new space. If the new space is exhausted control
-  // continues at the gc_required label. The allocated object is returned in
-  // result and end of the new object is returned in result_end. The register
-  // scratch can be passed as no_reg in which case an additional object
-  // reference will be added to the reloc info. The returned pointers in result
-  // and result_end have not yet been tagged as heap objects. If
-  // result_contains_top_on_entry is true the content of result is known to be
-  // the allocation top on entry (could be result_end from a previous call to
-  // AllocateInNewSpace). If result_contains_top_on_entry is true scratch
+  // Allocate an object in new space or old pointer space. If the given space
+  // is exhausted control continues at the gc_required label. The allocated
+  // object is returned in result and end of the new object is returned in
+  // result_end. The register scratch can be passed as no_reg in which case
+  // an additional object reference will be added to the reloc info. The
+  // returned pointers in result and result_end have not yet been tagged as
+  // heap objects. If result_contains_top_on_entry is true the content of
+  // result is known to be the allocation top on entry (could be result_end
+  // from a previous call). If result_contains_top_on_entry is true scratch
   // should be no_reg as it is never used.
-  void AllocateInNewSpace(int object_size,
-                          Register result,
-                          Register result_end,
-                          Register scratch,
-                          Label* gc_required,
-                          AllocationFlags flags);
+  void Allocate(int object_size,
+                Register result,
+                Register result_end,
+                Register scratch,
+                Label* gc_required,
+                AllocationFlags flags);
 
-  void AllocateInNewSpace(int header_size,
-                          ScaleFactor element_size,
-                          Register element_count,
-                          Register result,
-                          Register result_end,
-                          Register scratch,
-                          Label* gc_required,
-                          AllocationFlags flags);
+  void Allocate(int header_size,
+                ScaleFactor element_size,
+                Register element_count,
+                Register result,
+                Register result_end,
+                Register scratch,
+                Label* gc_required,
+                AllocationFlags flags);
 
-  void AllocateInNewSpace(Register object_size,
-                          Register result,
-                          Register result_end,
-                          Register scratch,
-                          Label* gc_required,
-                          AllocationFlags flags);
+  void Allocate(Register object_size,
+                Register result,
+                Register result_end,
+                Register scratch,
+                Label* gc_required,
+                AllocationFlags flags);
 
   // Undo allocation in new space. The object passed and objects allocated after
   // it will no longer be allocated. Make sure that no pointers are left to the
@@ -1165,6 +1191,7 @@ class MacroAssembler: public Assembler {
 
   // Load the global function with the given index.
   void LoadGlobalFunction(int index, Register function);
+  void LoadArrayFunction(Register function);
 
   // Load the initial map from the global function. The registers
   // function and map can be the same.
@@ -1215,16 +1242,21 @@ class MacroAssembler: public Assembler {
   // rcx (rcx must be preserverd until CallApiFunctionAndReturn).  Saves
   // context (rsi).  Clobbers rax.  Allocates arg_stack_space * kPointerSize
   // inside the exit frame (not GCed) accessible via StackSpaceOperand.
-  void PrepareCallApiFunction(int arg_stack_space);
+  void PrepareCallApiFunction(int arg_stack_space, bool returns_handle);
 
   // Calls an API function.  Allocates HandleScope, extracts returned value
   // from handle and propagates exceptions.  Clobbers r14, r15, rbx and
   // caller-save registers.  Restores context.  On return removes
   // stack_space * kPointerSize (GCed).
-  void CallApiFunctionAndReturn(Address function_address, int stack_space);
+  void CallApiFunctionAndReturn(Address function_address,
+                                Address thunk_address,
+                                Register thunk_last_arg,
+                                int stack_space,
+                                bool returns_handle,
+                                int return_value_offset_from_rbp);
 
   // Before calling a C-function from generated code, align arguments on stack.
-  // After aligning the frame, arguments must be stored in esp[0], esp[4],
+  // After aligning the frame, arguments must be stored in rsp[0], rsp[8],
   // etc., not pushed. The argument count assumes all arguments are word sized.
   // The number of slots reserved for arguments depends on platform. On Windows
   // stack slots are reserved for the arguments passed in registers. On other
@@ -1291,15 +1323,15 @@ class MacroAssembler: public Assembler {
 
   // Calls Abort(msg) if the condition cc is not satisfied.
   // Use --debug_code to enable.
-  void Assert(Condition cc, const char* msg);
+  void Assert(Condition cc, BailoutReason reason);
 
   void AssertFastElements(Register elements);
 
   // Like Assert(), but always enabled.
-  void Check(Condition cc, const char* msg);
+  void Check(Condition cc, BailoutReason reason);
 
   // Print a message to stdout and abort execution.
-  void Abort(const char* msg);
+  void Abort(BailoutReason msg);
 
   // Check that the stack is aligned.
   void CheckStackAlignment();
@@ -1325,6 +1357,15 @@ class MacroAssembler: public Assembler {
   // in rax.  Assumes that any other register can be used as a scratch.
   void CheckEnumCache(Register null_value,
                       Label* call_runtime);
+
+  // AllocationMemento support. Arrays may have an associated
+  // AllocationMemento object that can be checked for in order to pretransition
+  // to another type.
+  // On entry, receiver_reg should point to the array object.
+  // scratch_reg gets clobbered.
+  // If allocation info is present, condition flags are set to equal
+  void TestJSArrayForAllocationMemento(Register receiver_reg,
+                                       Register scratch_reg);
 
  private:
   // Order general registers are pushed by Pushad.
@@ -1377,9 +1418,12 @@ class MacroAssembler: public Assembler {
   void LoadAllocationTopHelper(Register result,
                                Register scratch,
                                AllocationFlags flags);
+
   // Update allocation top with value in result_end register.
   // If scratch is valid, it contains the address of the allocation top.
-  void UpdateAllocationTopHelper(Register result_end, Register scratch);
+  void UpdateAllocationTopHelper(Register result_end,
+                                 Register scratch,
+                                 AllocationFlags flags);
 
   // Helper for PopHandleScope.  Allowed to perform a GC and returns
   // NULL if gc_allowed.  Does not perform a GC if !gc_allowed, and
@@ -1413,9 +1457,9 @@ class MacroAssembler: public Assembler {
     return kNumSafepointRegisters - kSafepointPushRegisterIndices[reg_code] - 1;
   }
 
-  // Needs access to SafepointRegisterStackIndex for optimized frame
+  // Needs access to SafepointRegisterStackIndex for compiled frame
   // traversal.
-  friend class OptimizedFrame;
+  friend class StandardFrame;
 };
 
 
@@ -1478,23 +1522,26 @@ inline Operand StackSpaceOperand(int index) {
 }
 
 
+inline Operand StackOperandForReturnAddress(int32_t disp) {
+  return Operand(rsp, disp);
+}
+
 
 #ifdef GENERATED_CODE_COVERAGE
 extern void LogGeneratedCodeCoverage(const char* file_line);
 #define CODE_COVERAGE_STRINGIFY(x) #x
 #define CODE_COVERAGE_TOSTRING(x) CODE_COVERAGE_STRINGIFY(x)
 #define __FILE_LINE__ __FILE__ ":" CODE_COVERAGE_TOSTRING(__LINE__)
-#define ACCESS_MASM(masm) {                                               \
-    byte* x64_coverage_function =                                         \
-        reinterpret_cast<byte*>(FUNCTION_ADDR(LogGeneratedCodeCoverage)); \
-    masm->pushfd();                                                       \
-    masm->pushad();                                                       \
-    masm->push(Immediate(reinterpret_cast<int>(&__FILE_LINE__)));         \
-    masm->call(x64_coverage_function, RelocInfo::RUNTIME_ENTRY);          \
-    masm->pop(rax);                                                       \
-    masm->popad();                                                        \
-    masm->popfd();                                                        \
-  }                                                                       \
+#define ACCESS_MASM(masm) {                                                  \
+    Address x64_coverage_function = FUNCTION_ADDR(LogGeneratedCodeCoverage); \
+    masm->pushfq();                                                          \
+    masm->Pushad();                                                          \
+    masm->push(Immediate(reinterpret_cast<int>(&__FILE_LINE__)));            \
+    masm->Call(x64_coverage_function, RelocInfo::EXTERNAL_REFERENCE);        \
+    masm->pop(rax);                                                          \
+    masm->Popad();                                                           \
+    masm->popfq();                                                           \
+  }                                                                          \
   masm->
 #else
 #define ACCESS_MASM(masm) masm->

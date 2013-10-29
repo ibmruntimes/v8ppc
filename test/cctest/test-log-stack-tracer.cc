@@ -32,11 +32,12 @@
 #include "v8.h"
 
 #include "api.h"
-#include "codegen.h"
-#include "log.h"
-#include "isolate.h"
 #include "cctest.h"
+#include "codegen.h"
 #include "disassembler.h"
+#include "isolate.h"
+#include "log.h"
+#include "sampler.h"
 #include "vm-state-inl.h"
 
 using v8::Function;
@@ -51,11 +52,8 @@ using v8::internal::Address;
 using v8::internal::Handle;
 using v8::internal::Isolate;
 using v8::internal::JSFunction;
-using v8::internal::StackTracer;
+using v8::internal::RegisterState;
 using v8::internal::TickSample;
-
-
-static v8::Persistent<v8::Context> env;
 
 
 static struct {
@@ -69,11 +67,12 @@ static void InitTraceEnv(TickSample* sample) {
 
 
 static void DoTrace(Address fp) {
-  trace_env.sample->fp = fp;
+  RegisterState regs;
+  regs.fp = fp;
   // sp is only used to define stack high bound
-  trace_env.sample->sp =
+  regs.sp =
       reinterpret_cast<Address>(trace_env.sample) - 10240;
-  StackTracer::Trace(Isolate::Current(), trace_env.sample);
+  trace_env.sample->Init(Isolate::Current(), regs);
 }
 
 
@@ -96,12 +95,12 @@ class TraceExtension : public v8::Extension {
   TraceExtension() : v8::Extension("v8/trace", kSource) { }
   virtual v8::Handle<v8::FunctionTemplate> GetNativeFunction(
       v8::Handle<String> name);
-  static v8::Handle<v8::Value> Trace(const v8::Arguments& args);
-  static v8::Handle<v8::Value> JSTrace(const v8::Arguments& args);
-  static v8::Handle<v8::Value> JSEntrySP(const v8::Arguments& args);
-  static v8::Handle<v8::Value> JSEntrySPLevel2(const v8::Arguments& args);
+  static void Trace(const v8::FunctionCallbackInfo<v8::Value>& args);
+  static void JSTrace(const v8::FunctionCallbackInfo<v8::Value>& args);
+  static void JSEntrySP(const v8::FunctionCallbackInfo<v8::Value>& args);
+  static void JSEntrySPLevel2(const v8::FunctionCallbackInfo<v8::Value>& args);
  private:
-  static Address GetFP(const v8::Arguments& args);
+  static Address GetFP(const v8::FunctionCallbackInfo<v8::Value>& args);
   static const char* kSource;
 };
 
@@ -129,7 +128,7 @@ v8::Handle<v8::FunctionTemplate> TraceExtension::GetNativeFunction(
 }
 
 
-Address TraceExtension::GetFP(const v8::Arguments& args) {
+Address TraceExtension::GetFP(const v8::FunctionCallbackInfo<v8::Value>& args) {
   // Convert frame pointer from encoding as smis in the arguments to a pointer.
   CHECK_EQ(2, args.Length());  // Ignore second argument on 32-bit platform.
 #if defined(V8_HOST_ARCH_32_BIT)
@@ -146,38 +145,35 @@ Address TraceExtension::GetFP(const v8::Arguments& args) {
 }
 
 
-v8::Handle<v8::Value> TraceExtension::Trace(const v8::Arguments& args) {
+void TraceExtension::Trace(const v8::FunctionCallbackInfo<v8::Value>& args) {
   DoTrace(GetFP(args));
-  return v8::Undefined();
 }
 
 
-v8::Handle<v8::Value> TraceExtension::JSTrace(const v8::Arguments& args) {
+void TraceExtension::JSTrace(const v8::FunctionCallbackInfo<v8::Value>& args) {
   DoTraceHideCEntryFPAddress(GetFP(args));
-  return v8::Undefined();
 }
 
 
 static Address GetJsEntrySp() {
   CHECK_NE(NULL, i::Isolate::Current()->thread_local_top());
-  return Isolate::js_entry_sp(i::Isolate::Current()->thread_local_top());
+  return i::Isolate::Current()->js_entry_sp();
 }
 
 
-v8::Handle<v8::Value> TraceExtension::JSEntrySP(const v8::Arguments& args) {
+void TraceExtension::JSEntrySP(
+    const v8::FunctionCallbackInfo<v8::Value>& args) {
   CHECK_NE(0, GetJsEntrySp());
-  return v8::Undefined();
 }
 
 
-v8::Handle<v8::Value> TraceExtension::JSEntrySPLevel2(
-    const v8::Arguments& args) {
-  v8::HandleScope scope;
+void TraceExtension::JSEntrySPLevel2(
+    const v8::FunctionCallbackInfo<v8::Value>& args) {
+  v8::HandleScope scope(args.GetIsolate());
   const Address js_entry_sp = GetJsEntrySp();
   CHECK_NE(0, js_entry_sp);
   CompileRun("js_entry_sp();");
   CHECK_EQ(js_entry_sp, GetJsEntrySp());
-  return v8::Undefined();
 }
 
 
@@ -185,25 +181,14 @@ static TraceExtension kTraceExtension;
 v8::DeclareExtension kTraceExtensionDeclaration(&kTraceExtension);
 
 
-static void InitializeVM() {
-  if (env.IsEmpty()) {
-    v8::HandleScope scope;
-    const char* extensions[] = { "v8/trace" };
-    v8::ExtensionConfiguration config(1, extensions);
-    env = v8::Context::New(&config);
-  }
-  v8::HandleScope scope;
-  env->Enter();
-}
-
-
 static bool IsAddressWithinFuncCode(JSFunction* function, Address addr) {
   i::Code* code = function->code();
   return code->contains(addr);
 }
 
+
 static bool IsAddressWithinFuncCode(const char* func_name, Address addr) {
-  v8::Local<v8::Value> func = env->Global()->Get(v8_str(func_name));
+  v8::Local<v8::Value> func = CcTest::env()->Global()->Get(v8_str(func_name));
   CHECK(func->IsFunction());
   JSFunction* js_func = JSFunction::cast(*v8::Utils::OpenHandle(*func));
   return IsAddressWithinFuncCode(js_func, addr);
@@ -213,8 +198,9 @@ static bool IsAddressWithinFuncCode(const char* func_name, Address addr) {
 // This C++ function is called as a constructor, to grab the frame pointer
 // from the calling function.  When this function runs, the stack contains
 // a C_Entry frame and a Construct frame above the calling function's frame.
-static v8::Handle<Value> construct_call(const v8::Arguments& args) {
-  i::StackFrameIterator frame_iterator;
+static void construct_call(const v8::FunctionCallbackInfo<v8::Value>& args) {
+  i::Isolate* isolate = reinterpret_cast<i::Isolate*>(args.GetIsolate());
+  i::StackFrameIterator frame_iterator(isolate);
   CHECK(frame_iterator.frame()->is_exit());
   frame_iterator.Advance();
   CHECK(frame_iterator.frame()->is_construct());
@@ -234,7 +220,7 @@ static v8::Handle<Value> construct_call(const v8::Arguments& args) {
 #else
 #error Host architecture is neither 32-bit nor 64-bit.
 #endif
-  return args.This();
+  args.GetReturnValue().Set(args.This());
 }
 
 
@@ -244,7 +230,7 @@ void CreateFramePointerGrabberConstructor(const char* constructor_name) {
         v8::FunctionTemplate::New(construct_call);
     constructor_template->SetClassName(v8_str("FPGrabber"));
     Local<Function> fun = constructor_template->GetFunction();
-    env->Global()->Set(v8_str(constructor_name), fun);
+    CcTest::env()->Global()->Set(v8_str(constructor_name), fun);
 }
 
 
@@ -272,7 +258,7 @@ static void CreateTraceCallerFunction(const char* func_name,
 
 // This test verifies that stack tracing works when called during
 // execution of a native function called from JS code. In this case,
-// StackTracer uses Isolate::c_entry_fp as a starting point for stack
+// TickSample::Trace uses Isolate::c_entry_fp as a starting point for stack
 // walking.
 TEST(CFromJSStackTrace) {
   // BUG(1303) Inlining of JSFuncDoTrace() in JSTrace below breaks this test.
@@ -281,8 +267,8 @@ TEST(CFromJSStackTrace) {
   TickSample sample;
   InitTraceEnv(&sample);
 
-  InitializeVM();
-  v8::HandleScope scope;
+  CcTest::InitializeVM(TRACE_EXTENSION);
+  v8::HandleScope scope(CcTest::isolate());
   // Create global function JSFuncDoTrace which calls
   // extension function trace() with the current frame pointer value.
   CreateTraceCallerFunction("JSFuncDoTrace", "trace");
@@ -299,7 +285,7 @@ TEST(CFromJSStackTrace) {
   //     JSFuncDoTrace() [JS] [captures EBP value and encodes it as Smi]
   //       trace(EBP) [native (extension)]
   //         DoTrace(EBP) [native]
-  //           StackTracer::Trace
+  //           TickSample::Trace
 
   CHECK(sample.has_external_callback);
   CHECK_EQ(FUNCTION_ADDR(TraceExtension::Trace), sample.external_callback);
@@ -314,9 +300,9 @@ TEST(CFromJSStackTrace) {
 
 
 // This test verifies that stack tracing works when called during
-// execution of JS code. However, as calling StackTracer requires
+// execution of JS code. However, as calling TickSample::Trace requires
 // entering native code, we can only emulate pure JS by erasing
-// Isolate::c_entry_fp value. In this case, StackTracer uses passed frame
+// Isolate::c_entry_fp value. In this case, TickSample::Trace uses passed frame
 // pointer value as a starting point for stack walking.
 TEST(PureJSStackTrace) {
   // This test does not pass with inlining enabled since inlined functions
@@ -326,8 +312,8 @@ TEST(PureJSStackTrace) {
   TickSample sample;
   InitTraceEnv(&sample);
 
-  InitializeVM();
-  v8::HandleScope scope;
+  CcTest::InitializeVM(TRACE_EXTENSION);
+  v8::HandleScope scope(CcTest::isolate());
   // Create global function JSFuncDoTrace which calls
   // extension function js_trace() with the current frame pointer value.
   CreateTraceCallerFunction("JSFuncDoTrace", "js_trace");
@@ -348,7 +334,7 @@ TEST(PureJSStackTrace) {
   //       JSFuncDoTrace() [JS]
   //         js_trace(EBP) [native (extension)]
   //           DoTraceHideCEntryFPAddress(EBP) [native]
-  //             StackTracer::Trace
+  //             TickSample::Trace
   //
 
   CHECK(sample.has_external_callback);
@@ -388,20 +374,20 @@ static int CFunc(int depth) {
 
 
 // This test verifies that stack tracing doesn't crash when called on
-// pure native code. StackTracer only unrolls JS code, so we can't
+// pure native code. TickSample::Trace only unrolls JS code, so we can't
 // get any meaningful info here.
 TEST(PureCStackTrace) {
   TickSample sample;
   InitTraceEnv(&sample);
-  InitializeVM();
+  CcTest::InitializeVM(TRACE_EXTENSION);
   // Check that sampler doesn't crash
   CHECK_EQ(10, CFunc(10));
 }
 
 
 TEST(JsEntrySp) {
-  InitializeVM();
-  v8::HandleScope scope;
+  CcTest::InitializeVM(TRACE_EXTENSION);
+  v8::HandleScope scope(CcTest::isolate());
   CHECK_EQ(0, GetJsEntrySp());
   CompileRun("a = 1; b = a + 1;");
   CHECK_EQ(0, GetJsEntrySp());
