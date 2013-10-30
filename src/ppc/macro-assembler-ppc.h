@@ -60,16 +60,6 @@ enum TaggingMode {
   DONT_TAG_RESULT
 };
 
-// Flags used for the ObjectToDoubleVFPRegister function.
-enum ObjectToDoubleFlags {
-  // No special flags.
-  NO_OBJECT_TO_DOUBLE_FLAGS = 0,
-  // Object is known to be a non smi.
-  OBJECT_NOT_SMI = 1 << 0,
-  // Don't load NaNs or infinities, branch to the non number case instead.
-  AVOID_NANS_AND_INFINITIES = 1 << 1
-};
-
 
 enum RememberedSetAction { EMIT_REMEMBERED_SET, OMIT_REMEMBERED_SET };
 enum SmiCheck { INLINE_SMI_CHECK, OMIT_SMI_CHECK };
@@ -991,8 +981,8 @@ class MacroAssembler: public Assembler {
   // scratch1 can be the same register as smi in which case smi will hold the
   // untagged value afterwards.
   void SmiToDoubleFPRegister(Register smi,
-                              DoubleRegister value,
-                              Register scratch1);
+                             DoubleRegister value,
+                             Register scratch1);
 
   // Overflow handling functions.
   // Usage: call the appropriate arithmetic function and then call one of the
