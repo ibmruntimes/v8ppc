@@ -420,6 +420,73 @@ class MacroAssembler: public Assembler {
   void FlushICache(Register address, size_t size,
                    Register scratch);
 
+  // Convert the smi or heap number in object to an int32 using the rules
+  // for ToInt32 as described in ECMAScript 9.5.: the value is truncated
+  // and brought into the range -2^31 .. +2^31 - 1.
+  void ConvertNumberToInt32(Register object,
+                            Register dst,
+                            Register heap_number_map,
+                            Register scratch1,
+                            Register scratch2,
+                            Register scratch3,
+                            DoubleRegister double_scratch,
+                            Label* not_int32);
+
+  // Loads the number from object into dst register.
+  // If |object| is neither smi nor heap number, |not_number| is jumped to
+  // with |object| still intact.
+  void LoadNumber(Register object,
+                  DoubleRegister dst,
+                  Register heap_number_map,
+                  Register scratch1,
+                  Register scratch2,
+                  Label* not_number);
+
+  // Load the number from object into double_dst in the double format.
+  // Control will jump to not_int32 if the value cannot be exactly represented
+  // by a 32-bit integer.
+  // Floating point value in the 32-bit integer range that are not exact integer
+  // won't be loaded.
+  void LoadNumberAsInt32Double(Register object,
+                               DoubleRegister double_dst,
+                               DoubleRegister double_scratch,
+                               Register heap_number_map,
+                               Register scratch1,
+                               Register scratch2,
+                               Label* not_int32);
+
+  // Loads the number from object into dst as a 32-bit integer.
+  // Control will jump to not_int32 if the object cannot be exactly represented
+  // by a 32-bit integer.
+  // Floating point value in the 32-bit integer range that are not exact integer
+  // won't be converted.
+  void LoadNumberAsInt32(Register object,
+                         Register dst,
+                         Register heap_number_map,
+                         Register scratch1,
+                         Register scratch2,
+                         Register scratch3,
+                         DoubleRegister double_scratch0,
+                         DoubleRegister double_scratch1,
+                         Label* not_int32);
+
+  // Converts the integer (untagged smi) in |src| to a double, storing
+  // the result to |double_dst|
+  void ConvertIntToDouble(Register src,
+                          DoubleRegister double_dst);
+
+  // Converts the unsigned integer (untagged smi) in |src| to
+  // a double, storing the result to |double_dst|
+  void ConvertUnsignedIntToDouble(Register src,
+                                  DoubleRegister double_dst);
+
+  // Converts the integer (untagged smi) in |src| to
+  // a float, storing the result in |dst|
+  // Warning: The value in |int_scrach| will be changed in the process!
+  void ConvertIntToFloat(const DoubleRegister dst,
+                         const Register src,
+                         const Register int_scratch);
+
   // Enter exit frame.
   // stack_space - extra stack space, used for alignment before call to C.
   void EnterExitFrame(bool save_doubles, int stack_space = 0);
