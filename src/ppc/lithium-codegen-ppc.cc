@@ -1354,7 +1354,7 @@ void LCodeGen::DoConstantI(LConstantI* instr) {
 // of storing double to stack
 void LCodeGen::DoConstantD(LConstantD* instr) {
   ASSERT(instr->result()->IsDoubleRegister());
-  DwVfpRegister result = ToDoubleRegister(instr->result());
+  DoubleRegister result = ToDoubleRegister(instr->result());
   double v = instr->value();
   __ LoadDoubleLiteral(result, v, scratch0());
 }
@@ -2770,7 +2770,7 @@ void LCodeGen::DoLoadKeyedFastDoubleElement(
   Register elements = ToRegister(instr->elements());
   bool key_is_constant = instr->key()->IsConstantOperand();
   Register key = no_reg;
-  DwVfpRegister result = ToDoubleRegister(instr->result());
+  DoubleRegister result = ToDoubleRegister(instr->result());
   Register scratch = scratch0();
 
   int element_size_shift = ElementsKindToShiftSize(FAST_DOUBLE_ELEMENTS);
@@ -2882,7 +2882,7 @@ void LCodeGen::DoLoadKeyedSpecializedArrayElement(
 
   if (elements_kind == EXTERNAL_FLOAT_ELEMENTS ||
       elements_kind == EXTERNAL_DOUBLE_ELEMENTS) {
-    DwVfpRegister result = ToDoubleRegister(instr->result());
+    DoubleRegister result = ToDoubleRegister(instr->result());
     if (key_is_constant) {
       __ Add(scratch0(), external_pointer,
              constant_key << element_size_shift,
@@ -3357,8 +3357,8 @@ void LCodeGen::DoMathAbs(LUnaryMathOperation* instr) {
 
   Representation r = instr->hydrogen()->value()->representation();
   if (r.IsDouble()) {
-    DwVfpRegister input = ToDoubleRegister(instr->value());
-    DwVfpRegister result = ToDoubleRegister(instr->result());
+    DoubleRegister input = ToDoubleRegister(instr->value());
+    DoubleRegister result = ToDoubleRegister(instr->result());
     __ fabs(result, input);
   } else if (r.IsInteger32()) {
     EmitIntegerMathAbs(instr);
@@ -3412,7 +3412,7 @@ void LCodeGen::DoMathFloor(LUnaryMathOperation* instr) {
 void LCodeGen::DoMathRound(LUnaryMathOperation* instr) {
   DoubleRegister input = ToDoubleRegister(instr->value());
   Register result = ToRegister(instr->result());
-  DwVfpRegister double_scratch1 = ToDoubleRegister(instr->temp());
+  DoubleRegister double_scratch1 = ToDoubleRegister(instr->temp());
   Register scratch = scratch0();
   Label done, check_sign_on_zero, skip1, skip2;
 
@@ -3989,7 +3989,7 @@ void LCodeGen::DoStoreKeyedFastElement(LStoreKeyedFastElement* instr) {
 
 void LCodeGen::DoStoreKeyedFastDoubleElement(
     LStoreKeyedFastDoubleElement* instr) {
-  DwVfpRegister value = ToDoubleRegister(instr->value());
+  DoubleRegister value = ToDoubleRegister(instr->value());
   Register elements = ToRegister(instr->elements());
   Register key = no_reg;
   Register scratch = scratch0();
@@ -4072,7 +4072,7 @@ void LCodeGen::DoStoreKeyedSpecializedArrayElement(
 
   if (elements_kind == EXTERNAL_FLOAT_ELEMENTS ||
       elements_kind == EXTERNAL_DOUBLE_ELEMENTS) {
-    DwVfpRegister value(ToDoubleRegister(instr->value()));
+    DoubleRegister value(ToDoubleRegister(instr->value()));
     if (key_is_constant) {
       __ Add(scratch0(), external_pointer,
              constant_key << element_size_shift,
@@ -4572,8 +4572,8 @@ void LCodeGen::DoDeferredTaggedToI(LTaggedToI* instr) {
   Register input_reg = ToRegister(instr->value());
   Register scratch1 = scratch0();
   Register scratch2 = ToRegister(instr->temp());
-  DwVfpRegister double_scratch = double_scratch0();
-  DwVfpRegister double_scratch2 = ToDoubleRegister(instr->temp3());
+  DoubleRegister double_scratch = double_scratch0();
+  DoubleRegister double_scratch2 = ToDoubleRegister(instr->temp3());
 
   ASSERT(!scratch1.is(input_reg) && !scratch1.is(scratch2));
   ASSERT(!scratch2.is(input_reg) && !scratch2.is(scratch1));
@@ -4694,13 +4694,13 @@ void LCodeGen::DoDoubleToI(LDoubleToI* instr) {
   Register result_reg = ToRegister(instr->result());
   Register scratch1 = scratch0();
   Register scratch2 = ToRegister(instr->temp());
-  DwVfpRegister double_input = ToDoubleRegister(instr->value());
+  DoubleRegister double_input = ToDoubleRegister(instr->value());
 
   Label done;
 
   if (instr->truncating()) {
     Register scratch3 = ToRegister(instr->temp2());
-    DwVfpRegister double_scratch = double_scratch0();
+    DoubleRegister double_scratch = double_scratch0();
     __ EmitECMATruncate(result_reg,
                         double_input,
                         double_scratch,
@@ -4708,7 +4708,7 @@ void LCodeGen::DoDoubleToI(LDoubleToI* instr) {
                         scratch2,
                         scratch3);
   } else {
-    DwVfpRegister double_scratch = double_scratch0();
+    DoubleRegister double_scratch = double_scratch0();
     __ EmitVFPTruncate(kRoundToMinusInf,
                        result_reg,
                        double_input,

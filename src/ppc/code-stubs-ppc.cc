@@ -582,7 +582,7 @@ void FloatingPointHelper::LoadOperands(
 // also needs a scratch double register instead of d3
 void FloatingPointHelper::LoadNumber(MacroAssembler* masm,
                                      Register object,
-                                     DwVfpRegister dst,
+                                     DoubleRegister dst,
                                      Register heap_number_map,
                                      Register scratch1,
                                      Register scratch2,
@@ -620,7 +620,7 @@ void FloatingPointHelper::ConvertNumberToInt32(MacroAssembler* masm,
                                                Register scratch1,
                                                Register scratch2,
                                                Register scratch3,
-                                               DwVfpRegister double_scratch,
+                                               DoubleRegister double_scratch,
                                                Label* not_number) {
   __ AssertRootValue(heap_number_map,
                      Heap::kHeapNumberMapRootIndex,
@@ -654,7 +654,7 @@ void FloatingPointHelper::ConvertNumberToInt32(MacroAssembler* masm,
 
 void FloatingPointHelper::ConvertIntToDouble(MacroAssembler* masm,
                                              Register src,
-                                             DwVfpRegister double_dst) {
+                                             DoubleRegister double_dst) {
   ASSERT(!src.is(r0));
 
   __ subi(sp, sp, Operand(8));  // reserve one temporary double on the stack
@@ -686,7 +686,7 @@ void FloatingPointHelper::ConvertIntToDouble(MacroAssembler* masm,
 
 void FloatingPointHelper::ConvertUnsignedIntToDouble(MacroAssembler* masm,
                                                      Register src,
-                                                     DwVfpRegister double_dst) {
+                                                     DoubleRegister double_dst) {
   ASSERT(!src.is(r0));
 
   __ subi(sp, sp, Operand(8));  // reserve one temporary double on the stack
@@ -716,7 +716,7 @@ void FloatingPointHelper::ConvertUnsignedIntToDouble(MacroAssembler* masm,
 }
 
 void FloatingPointHelper::ConvertIntToFloat(MacroAssembler* masm,
-                                            const DwVfpRegister dst,
+                                            const DoubleRegister dst,
                                             const Register src,
                                             const Register int_scratch) {
   __ subi(sp, sp, Operand(8));  // reserve one temporary double on the stack
@@ -747,8 +747,8 @@ void FloatingPointHelper::ConvertIntToFloat(MacroAssembler* masm,
 
 void FloatingPointHelper::LoadNumberAsInt32Double(MacroAssembler* masm,
                                                   Register object,
-                                                  DwVfpRegister double_dst,
-                                                  DwVfpRegister double_scratch,
+                                                  DoubleRegister double_dst,
+                                                  DoubleRegister double_scratch,
                                                   Register heap_number_map,
                                                   Register scratch1,
                                                   Register scratch2,
@@ -796,8 +796,8 @@ void FloatingPointHelper::LoadNumberAsInt32(MacroAssembler* masm,
                                             Register scratch1,
                                             Register scratch2,
                                             Register scratch3,
-                                            DwVfpRegister double_scratch0,
-                                            DwVfpRegister double_scratch1,
+                                            DoubleRegister double_scratch0,
+                                            DoubleRegister double_scratch1,
                                             Label* not_int32) {
   ASSERT(!dst.is(object));
   ASSERT(!scratch1.is(object) && !scratch2.is(object) && !scratch3.is(object));
@@ -1630,10 +1630,10 @@ void StoreBufferOverflowStub::Generate(MacroAssembler* masm) {
   __ mflr(r0);
   __ MultiPush(kJSCallerSaved | r0.bit());
   if (save_doubles_ == kSaveFPRegs) {
-    const int kNumRegs = DwVfpRegister::kNumVolatileRegisters;
+    const int kNumRegs = DoubleRegister::kNumVolatileRegisters;
     __ subi(sp, sp, Operand(kDoubleSize * kNumRegs));
     for (int i = 0; i < kNumRegs; i++) {
-      DwVfpRegister reg = DwVfpRegister::from_code(i);
+      DoubleRegister reg = DoubleRegister::from_code(i);
       __ stfd(reg, MemOperand(sp, i * kDoubleSize));
     }
   }
@@ -1648,9 +1648,9 @@ void StoreBufferOverflowStub::Generate(MacroAssembler* masm) {
       ExternalReference::store_buffer_overflow_function(masm->isolate()),
       argument_count);
   if (save_doubles_ == kSaveFPRegs) {
-    const int kNumRegs = DwVfpRegister::kNumVolatileRegisters;
+    const int kNumRegs = DoubleRegister::kNumVolatileRegisters;
     for (int i = 0; i < kNumRegs; i++) {
-      DwVfpRegister reg = DwVfpRegister::from_code(i);
+      DoubleRegister reg = DoubleRegister::from_code(i);
       __ lfd(reg, MemOperand(sp, i * kDoubleSize));
     }
     __ addi(sp, sp, Operand(kDoubleSize * kNumRegs));
@@ -2526,8 +2526,8 @@ void BinaryOpStub::GenerateInt32Stub(MacroAssembler* masm) {
   Register right = r3;
   Register scratch1 = r10;
   Register scratch2 = r11;
-  DwVfpRegister double_scratch0 = d0;
-  DwVfpRegister double_scratch1 = d1;
+  DoubleRegister double_scratch0 = d0;
+  DoubleRegister double_scratch1 = d1;
 
   Register heap_number_result = no_reg;
   Register heap_number_map = r9;

@@ -537,10 +537,10 @@ class RecordWriteStub: public CodeStub {
       masm->MultiPush(kJSCallerSaved & ~scratch1_.bit());
       if (mode == kSaveFPRegs) {
         // Save all volatile VFP registers except d0.
-        const int kNumRegs = DwVfpRegister::kNumVolatileRegisters - 1;
+        const int kNumRegs = DoubleRegister::kNumVolatileRegisters - 1;
         masm->subi(sp, sp, Operand(kDoubleSize * kNumRegs));
         for (int i = kNumRegs; i > 0; i--) {
-          DwVfpRegister reg = DwVfpRegister::from_code(i);
+          DoubleRegister reg = DoubleRegister::from_code(i);
           masm->stfd(reg, MemOperand(sp, (i - 1) * kDoubleSize));
         }
       }
@@ -550,9 +550,9 @@ class RecordWriteStub: public CodeStub {
                                            SaveFPRegsMode mode) {
       if (mode == kSaveFPRegs) {
         // Restore all VFP registers except d0.
-        const int kNumRegs = DwVfpRegister::kNumVolatileRegisters - 1;
+        const int kNumRegs = DoubleRegister::kNumVolatileRegisters - 1;
         for (int i = kNumRegs; i > 0; i--) {
-          DwVfpRegister reg = DwVfpRegister::from_code(i);
+          DoubleRegister reg = DoubleRegister::from_code(i);
           masm->lfd(reg, MemOperand(sp, (i - 1) * kDoubleSize));
         }
         masm->addi(sp, sp, Operand(kDoubleSize * kNumRegs));
@@ -708,26 +708,26 @@ class FloatingPointHelper : public AllStatic {
                                    Register scratch1,
                                    Register scratch2,
                                    Register scratch3,
-                                   DwVfpRegister double_scratch,
+                                   DoubleRegister double_scratch,
                                    Label* not_int32);
 
   // Converts the integer (untagged smi) in |src| to a double, storing
   // the result to |double_dst|
   static void ConvertIntToDouble(MacroAssembler* masm,
                                  Register src,
-                                 DwVfpRegister double_dst);
+                                 DoubleRegister double_dst);
 
   // Converts the unsigned integer (untagged smi) in |src| to
   // a double, storing the result to |double_dst|
   static void ConvertUnsignedIntToDouble(MacroAssembler* masm,
                                          Register src,
-                                         DwVfpRegister double_dst);
+                                         DoubleRegister double_dst);
 
   // Converts the integer (untagged smi) in |src| to
   // a float, storing the result in |dst|
   // Warning: The value in |int_scrach| will be changed in the process!
   static void ConvertIntToFloat(MacroAssembler* masm,
-                                const DwVfpRegister dst,
+                                const DoubleRegister dst,
                                 const Register src,
                                 const Register int_scratch);
 
@@ -736,19 +736,19 @@ class FloatingPointHelper : public AllStatic {
   // result in |int_dst|.
   // Warning: The value in |double_value| will be changed in the process!
   static void ConvertDoubleToInt(MacroAssembler* masm,
-                                 DwVfpRegister double_value,
+                                 DoubleRegister double_value,
                                  Register int_dst,
                                  Register scratch1,
-                                 DwVfpRegister double_scratch);
+                                 DoubleRegister double_scratch);
 
   // Converts the double in |double_value| to an unsigned integer,
   // storing the result in |int_dst|.
   // Warning: The value in |double_value| will be changed in the process!
   static void ConvertDoubleToUnsignedInt(MacroAssembler* masm,
-                                         DwVfpRegister double_value,
+                                         DoubleRegister double_value,
                                          Register int_dst,
                                          Register scratch1,
-                                         DwVfpRegister double_scratch);
+                                         DoubleRegister double_scratch);
   */
 
   // Load the number from object into double_dst in the double format.
@@ -758,8 +758,8 @@ class FloatingPointHelper : public AllStatic {
   // won't be loaded.
   static void LoadNumberAsInt32Double(MacroAssembler* masm,
                                       Register object,
-                                      DwVfpRegister double_dst,
-                                      DwVfpRegister double_scratch,
+                                      DoubleRegister double_dst,
+                                      DoubleRegister double_scratch,
                                       Register heap_number_map,
                                       Register scratch1,
                                       Register scratch2,
@@ -778,8 +778,8 @@ class FloatingPointHelper : public AllStatic {
                                 Register scratch1,
                                 Register scratch2,
                                 Register scratch3,
-                                DwVfpRegister double_scratch0,
-                                DwVfpRegister double_scratch1,
+                                DoubleRegister double_scratch0,
+                                DoubleRegister double_scratch1,
                                 Label* not_int32);
 
   // Generate non VFP3 code to check if a double can be exactly represented by a
@@ -822,7 +822,7 @@ class FloatingPointHelper : public AllStatic {
  private:
   static void LoadNumber(MacroAssembler* masm,
                          Register object,
-                         DwVfpRegister dst,
+                         DoubleRegister dst,
                          Register heap_number_map,
                          Register scratch1,
                          Register scratch2,

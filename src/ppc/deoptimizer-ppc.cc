@@ -1056,12 +1056,12 @@ void Deoptimizer::EntryGenerator::Generate() {
   RegList saved_regs = restored_regs | sp.bit();
 
   const int kDoubleRegsSize =
-      kDoubleSize * DwVfpRegister::kNumAllocatableRegisters;
+      kDoubleSize * DoubleRegister::kNumAllocatableRegisters;
 
   // Save all FPU registers before messing with them.
   __ subi(sp, sp, Operand(kDoubleRegsSize));
-  for (int i = 0; i < DwVfpRegister::kNumAllocatableRegisters; ++i) {
-    DwVfpRegister fpu_reg = DwVfpRegister::FromAllocationIndex(i);
+  for (int i = 0; i < DoubleRegister::kNumAllocatableRegisters; ++i) {
+    DoubleRegister fpu_reg = DoubleRegister::FromAllocationIndex(i);
     int offset = i * kDoubleSize;
     __ stfd(fpu_reg, MemOperand(sp, offset));
   }
@@ -1129,7 +1129,7 @@ void Deoptimizer::EntryGenerator::Generate() {
   // Copy VFP registers to
   // double_registers_[DoubleRegister::kNumAllocatableRegisters]
   int double_regs_offset = FrameDescription::double_registers_offset();
-  for (int i = 0; i < DwVfpRegister::kNumAllocatableRegisters; ++i) {
+  for (int i = 0; i < DoubleRegister::kNumAllocatableRegisters; ++i) {
     int dst_offset = i * kDoubleSize + double_regs_offset;
     int src_offset = i * kDoubleSize + kNumberOfRegisters * kPointerSize;
     __ lfd(d0, MemOperand(sp, src_offset));

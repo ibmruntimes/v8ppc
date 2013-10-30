@@ -3584,8 +3584,8 @@ static void GenerateSmiKeyCheck(MacroAssembler* masm,
                                 Register key,
                                 Register scratch0,
                                 Register scratch1,
-                                DwVfpRegister double_scratch0,
-                                DwVfpRegister double_scratch1,
+                                DoubleRegister double_scratch0,
+                                DoubleRegister double_scratch1,
                                 Label* fail) {
   Label key_ok;
   // Check for smi or a smi inside a heap number.  We convert the heap

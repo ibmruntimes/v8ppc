@@ -182,7 +182,7 @@ class LCodeGen BASE_EMBEDDED {
   HGraph* graph() const { return chunk_->graph(); }
 
   Register scratch0() { return r11; }
-  DwVfpRegister double_scratch0() { return kScratchDoubleReg; }
+  DoubleRegister double_scratch0() { return kScratchDoubleReg; }
 
   int GetNextEmittedBlock(int block);
   LInstruction* GetNextInstruction();

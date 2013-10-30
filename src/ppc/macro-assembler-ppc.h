@@ -477,7 +477,7 @@ class MacroAssembler: public Assembler {
   void LoadSmiLiteral(Register dst, Smi *smi);
 
   // load a literal double value <value> to FPR <result>
-  void LoadDoubleLiteral(DwVfpRegister result,
+  void LoadDoubleLiteral(DoubleRegister result,
                          double value,
                          Register scratch);
 
@@ -754,7 +754,7 @@ class MacroAssembler: public Assembler {
                           Label* gc_required,
                           TaggingMode tagging_mode = TAG_RESULT);
   void AllocateHeapNumberWithValue(Register result,
-                                   DwVfpRegister value,
+                                   DoubleRegister value,
                                    Register scratch1,
                                    Register scratch2,
                                    Register heap_number_map,
@@ -924,7 +924,7 @@ class MacroAssembler: public Assembler {
   // scratch1 can be the same register as smi in which case smi will hold the
   // untagged value afterwards.
   void SmiToDoubleFPRegister(Register smi,
-                              DwVfpRegister value,
+                              DoubleRegister value,
                               Register scratch1);
 
   // Overflow handling functions.
@@ -981,7 +981,7 @@ class MacroAssembler: public Assembler {
                       Register dest,
                       Register scratch,
                       Register scratch2,
-                      DwVfpRegister double_scratch,
+                      DoubleRegister double_scratch,
                       Label *not_int32);
 
   // Truncates a double using a specific rounding mode, and writes the value
@@ -992,9 +992,9 @@ class MacroAssembler: public Assembler {
   // exactly to a 32-bit integer.
   void EmitVFPTruncate(VFPRoundingMode rounding_mode,
                        Register result,
-                       DwVfpRegister double_input,
+                       DoubleRegister double_input,
                        Register scratch,
-                       DwVfpRegister double_scratch,
+                       DoubleRegister double_scratch,
                        CheckForInexactConversion check
                            = kDontCheckForInexactConversion);
 
@@ -1013,8 +1013,8 @@ class MacroAssembler: public Assembler {
   // the JS bitwise operations. See ECMA-262 9.5: ToInt32.
   // Exits with 'result' holding the answer and all other registers clobbered.
   void EmitECMATruncate(Register result,
-                        DwVfpRegister double_input,
-                        DwVfpRegister double_scratch,
+                        DoubleRegister double_input,
+                        DoubleRegister double_scratch,
                         Register scratch,
                         Register scratch2,
                         Register scratch3);

@@ -154,7 +154,7 @@ Register ToRegister(int num) {
 }
 
 
-const char* DwVfpRegister::AllocationIndexToString(int index) {
+const char* DoubleRegister::AllocationIndexToString(int index) {
   ASSERT(index >= 0 && index < kMaxNumAllocatableRegisters);
   const char* const names[] = {
     "d1",
@@ -587,9 +587,9 @@ bool Assembler::is_near(Label* L, Condition cond) {
 }
 
 void Assembler::a_form(Instr instr,
-                       DwVfpRegister frt,
-                       DwVfpRegister fra,
-                       DwVfpRegister frb,
+                       DoubleRegister frt,
+                       DoubleRegister fra,
+                       DoubleRegister frb,
                        RCBit r) {
   emit(instr | frt.code()*B21 | fra.code()*B16 | frb.code()*B11 | r);
 }
@@ -1435,7 +1435,7 @@ void Assembler::isync() {
 
 // Floating point support
 
-void Assembler::lfd(const DwVfpRegister frt, const MemOperand &src) {
+void Assembler::lfd(const DoubleRegister frt, const MemOperand &src) {
   int offset = src.offset();
   Register ra = src.ra();
   ASSERT(is_int16(offset));
@@ -1444,7 +1444,7 @@ void Assembler::lfd(const DwVfpRegister frt, const MemOperand &src) {
   emit(LFD | frt.code()*B21 | ra.code()*B16 | imm16);
 }
 
-void Assembler::lfdu(const DwVfpRegister frt, const MemOperand &src) {
+void Assembler::lfdu(const DoubleRegister frt, const MemOperand &src) {
   int offset = src.offset();
   Register ra = src.ra();
   ASSERT(is_int16(offset));
@@ -1453,21 +1453,21 @@ void Assembler::lfdu(const DwVfpRegister frt, const MemOperand &src) {
   emit(LFDU | frt.code()*B21 | ra.code()*B16 | imm16);
 }
 
-void Assembler::lfdx(const DwVfpRegister frt, const MemOperand &src) {
+void Assembler::lfdx(const DoubleRegister frt, const MemOperand &src) {
   Register ra = src.ra();
   Register rb = src.rb();
   ASSERT(!ra.is(r0));
   emit(EXT2 | LFDX | frt.code()*B21 | ra.code()*B16 | rb.code()*B11 | LeaveRC);
 }
 
-void Assembler::lfdux(const DwVfpRegister frt, const MemOperand & src) {
+void Assembler::lfdux(const DoubleRegister frt, const MemOperand & src) {
   Register ra = src.ra();
   Register rb = src.rb();
   ASSERT(!ra.is(r0));
   emit(EXT2 | LFDUX | frt.code()*B21 | ra.code()*B16 | rb.code()*B11 | LeaveRC);
 }
 
-void Assembler::lfs(const DwVfpRegister frt, const MemOperand &src) {
+void Assembler::lfs(const DoubleRegister frt, const MemOperand &src) {
   int offset = src.offset();
   Register ra = src.ra();
   ASSERT(is_int16(offset));
@@ -1477,7 +1477,7 @@ void Assembler::lfs(const DwVfpRegister frt, const MemOperand &src) {
   emit(LFS | frt.code()*B21 | ra.code()*B16 | imm16);
 }
 
-void Assembler::lfsu(const DwVfpRegister frt, const MemOperand &src) {
+void Assembler::lfsu(const DoubleRegister frt, const MemOperand &src) {
   int offset = src.offset();
   Register ra = src.ra();
   ASSERT(is_int16(offset));
@@ -1487,21 +1487,21 @@ void Assembler::lfsu(const DwVfpRegister frt, const MemOperand &src) {
   emit(LFSU | frt.code()*B21 | ra.code()*B16 | imm16);
 }
 
-void Assembler::lfsx(const DwVfpRegister frt, const MemOperand &src) {
+void Assembler::lfsx(const DoubleRegister frt, const MemOperand &src) {
   Register ra = src.ra();
   Register rb = src.rb();
   ASSERT(!ra.is(r0));
   emit(EXT2 | LFSX | frt.code()*B21 | ra.code()*B16 | rb.code()*B11 | LeaveRC);
 }
 
-void Assembler::lfsux(const DwVfpRegister frt, const MemOperand & src) {
+void Assembler::lfsux(const DoubleRegister frt, const MemOperand & src) {
   Register ra = src.ra();
   Register rb = src.rb();
   ASSERT(!ra.is(r0));
   emit(EXT2 | LFSUX | frt.code()*B21 | ra.code()*B16 | rb.code()*B11 | LeaveRC);
 }
 
-void Assembler::stfd(const DwVfpRegister frs, const MemOperand &src) {
+void Assembler::stfd(const DoubleRegister frs, const MemOperand &src) {
   int offset = src.offset();
   Register ra = src.ra();
   ASSERT(is_int16(offset));
@@ -1511,7 +1511,7 @@ void Assembler::stfd(const DwVfpRegister frs, const MemOperand &src) {
   emit(STFD | frs.code()*B21 | ra.code()*B16 | imm16);
 }
 
-void Assembler::stfdu(const DwVfpRegister frs, const MemOperand &src) {
+void Assembler::stfdu(const DoubleRegister frs, const MemOperand &src) {
   int offset = src.offset();
   Register ra = src.ra();
   ASSERT(is_int16(offset));
@@ -1521,21 +1521,21 @@ void Assembler::stfdu(const DwVfpRegister frs, const MemOperand &src) {
   emit(STFDU | frs.code()*B21 | ra.code()*B16 | imm16);
 }
 
-void Assembler::stfdx(const DwVfpRegister frs, const MemOperand &src) {
+void Assembler::stfdx(const DoubleRegister frs, const MemOperand &src) {
   Register ra = src.ra();
   Register rb = src.rb();
   ASSERT(!ra.is(r0));
   emit(EXT2 | STFDX | frs.code()*B21 | ra.code()*B16 | rb.code()*B11 | LeaveRC);
 }
 
-void Assembler::stfdux(const DwVfpRegister frs, const MemOperand &src) {
+void Assembler::stfdux(const DoubleRegister frs, const MemOperand &src) {
   Register ra = src.ra();
   Register rb = src.rb();
   ASSERT(!ra.is(r0));
   emit(EXT2 | STFDUX | frs.code()*B21 | ra.code()*B16 | rb.code()*B11 |LeaveRC);
 }
 
-void Assembler::stfs(const DwVfpRegister frs, const MemOperand &src) {
+void Assembler::stfs(const DoubleRegister frs, const MemOperand &src) {
   int offset = src.offset();
   Register ra = src.ra();
   ASSERT(is_int16(offset));
@@ -1545,7 +1545,7 @@ void Assembler::stfs(const DwVfpRegister frs, const MemOperand &src) {
   emit(STFS | frs.code()*B21 | ra.code()*B16 | imm16);
 }
 
-void Assembler::stfsu(const DwVfpRegister frs, const MemOperand &src) {
+void Assembler::stfsu(const DoubleRegister frs, const MemOperand &src) {
   int offset = src.offset();
   Register ra = src.ra();
   ASSERT(is_int16(offset));
@@ -1555,107 +1555,107 @@ void Assembler::stfsu(const DwVfpRegister frs, const MemOperand &src) {
   emit(STFSU | frs.code()*B21 | ra.code()*B16 | imm16);
 }
 
-void Assembler::stfsx(const DwVfpRegister frs, const MemOperand &src) {
+void Assembler::stfsx(const DoubleRegister frs, const MemOperand &src) {
   Register ra = src.ra();
   Register rb = src.rb();
   ASSERT(!ra.is(r0));
   emit(EXT2 | STFSX | frs.code()*B21 | ra.code()*B16 | rb.code()*B11 |LeaveRC);
 }
 
-void Assembler::stfsux(const DwVfpRegister frs, const MemOperand &src) {
+void Assembler::stfsux(const DoubleRegister frs, const MemOperand &src) {
   Register ra = src.ra();
   Register rb = src.rb();
   ASSERT(!ra.is(r0));
   emit(EXT2 | STFSUX | frs.code()*B21 | ra.code()*B16 | rb.code()*B11 |LeaveRC);
 }
 
-void Assembler::fsub(const DwVfpRegister frt,
-                     const DwVfpRegister fra,
-                     const DwVfpRegister frb,
+void Assembler::fsub(const DoubleRegister frt,
+                     const DoubleRegister fra,
+                     const DoubleRegister frb,
                      RCBit rc) {
   a_form(EXT4 | FSUB, frt, fra, frb, rc);
 }
 
-void Assembler::fadd(const DwVfpRegister frt,
-                     const DwVfpRegister fra,
-                     const DwVfpRegister frb,
+void Assembler::fadd(const DoubleRegister frt,
+                     const DoubleRegister fra,
+                     const DoubleRegister frb,
                      RCBit rc) {
   a_form(EXT4 | FADD, frt, fra, frb, rc);
 }
-void Assembler::fmul(const DwVfpRegister frt,
-                     const DwVfpRegister fra,
-                     const DwVfpRegister frc,
+void Assembler::fmul(const DoubleRegister frt,
+                     const DoubleRegister fra,
+                     const DoubleRegister frc,
                      RCBit rc) {
   emit(EXT4 | FMUL | frt.code()*B21 | fra.code()*B16 | frc.code()*B6 | rc);
 }
-void Assembler::fdiv(const DwVfpRegister frt,
-                     const DwVfpRegister fra,
-                     const DwVfpRegister frb,
+void Assembler::fdiv(const DoubleRegister frt,
+                     const DoubleRegister fra,
+                     const DoubleRegister frb,
                      RCBit rc) {
   a_form(EXT4 | FDIV, frt, fra, frb, rc);
 }
 
-void Assembler::fcmpu(const DwVfpRegister fra,
-                      const DwVfpRegister frb,
+void Assembler::fcmpu(const DoubleRegister fra,
+                      const DoubleRegister frb,
                       CRegister cr) {
   ASSERT(cr.code() >= 0 && cr.code() <= 7);
   emit(EXT4 | FCMPU | cr.code()*B23 | fra.code()*B16 | frb.code()*B11);
 }
 
-void Assembler::fmr(const DwVfpRegister frt,
-                    const DwVfpRegister frb,
+void Assembler::fmr(const DoubleRegister frt,
+                    const DoubleRegister frb,
                     RCBit rc) {
   emit(EXT4 | FMR | frt.code()*B21 | frb.code()*B11 | rc);
 }
 
-void Assembler::fctiwz(const DwVfpRegister frt,
-                     const DwVfpRegister frb) {
+void Assembler::fctiwz(const DoubleRegister frt,
+                       const DoubleRegister frb) {
   emit(EXT4 | FCTIWZ | frt.code()*B21 | frb.code()*B11);
 }
 
-void Assembler::fctiw(const DwVfpRegister frt,
-                     const DwVfpRegister frb) {
+void Assembler::fctiw(const DoubleRegister frt,
+                      const DoubleRegister frb) {
   emit(EXT4 | FCTIW | frt.code()*B21 | frb.code()*B11);
 }
 
-void Assembler::frim(const DwVfpRegister frt,
-                     const DwVfpRegister frb) {
+void Assembler::frim(const DoubleRegister frt,
+                     const DoubleRegister frb) {
   emit(EXT4 | FRIM | frt.code()*B21 | frb.code()*B11);
 }
 
-void Assembler::frsp(const DwVfpRegister frt,
-                     const DwVfpRegister frb,
+void Assembler::frsp(const DoubleRegister frt,
+                     const DoubleRegister frb,
                      RCBit rc) {
   emit(EXT4 | FRSP | frt.code()*B21 | frb.code()*B11 | rc);
 }
 
-void Assembler::fcfid(const DwVfpRegister frt,
-                      const DwVfpRegister frb,
+void Assembler::fcfid(const DoubleRegister frt,
+                      const DoubleRegister frb,
                       RCBit rc) {
   emit(EXT4 | FCFID | frt.code()*B21 | frb.code()*B11 | rc);
 }
 
-void Assembler::fctid(const DwVfpRegister frt,
-                      const DwVfpRegister frb,
+void Assembler::fctid(const DoubleRegister frt,
+                      const DoubleRegister frb,
                       RCBit rc) {
   emit(EXT4 | FCTID | frt.code()*B21 | frb.code()*B11 | rc);
 }
 
-void Assembler::fctidz(const DwVfpRegister frt,
-                      const DwVfpRegister frb,
+void Assembler::fctidz(const DoubleRegister frt,
+                       const DoubleRegister frb,
                       RCBit rc) {
   emit(EXT4 | FCTIDZ | frt.code()*B21 | frb.code()*B11 | rc);
 }
 
-void Assembler::fsel(const DwVfpRegister frt, const DwVfpRegister fra,
-                     const DwVfpRegister frc, const DwVfpRegister frb,
+void Assembler::fsel(const DoubleRegister frt, const DoubleRegister fra,
+                     const DoubleRegister frc, const DoubleRegister frb,
                      RCBit rc) {
   emit(EXT4 | FSEL | frt.code()*B21 | fra.code()*B16 | frb.code()*B11 |
        frc.code()*B6 | rc);
 }
 
-void Assembler::fneg(const DwVfpRegister frt,
-                     const DwVfpRegister frb,
+void Assembler::fneg(const DoubleRegister frt,
+                     const DoubleRegister frb,
                      RCBit rc) {
   emit(EXT4 | FNEG | frt.code()*B21 | frb.code()*B11 | rc);
 }
@@ -1664,23 +1664,23 @@ void Assembler::mtfsfi(int bf, int immediate, RCBit rc) {
   emit(EXT4 | MTFSFI | bf*B23 | immediate*B12 | rc);
 }
 
-void Assembler::mffs(const DwVfpRegister frt, RCBit rc) {
+void Assembler::mffs(const DoubleRegister frt, RCBit rc) {
   emit(EXT4 | MFFS | frt.code()*B21 | rc);
 }
 
-void Assembler::mtfsf(const DwVfpRegister frb, bool L,
+void Assembler::mtfsf(const DoubleRegister frb, bool L,
                       int FLM, bool W, RCBit rc) {
   emit(EXT4 | MTFSF | frb.code()*B11 | W*B16 | FLM*B17 | L*B25 | rc);
 }
 
-void Assembler::fsqrt(const DwVfpRegister frt,
-                      const DwVfpRegister frb,
+void Assembler::fsqrt(const DoubleRegister frt,
+                      const DoubleRegister frb,
                       RCBit rc) {
   emit(EXT4 | FSQRT | frt.code()*B21 | frb.code()*B11 | rc);
 }
 
-void Assembler::fabs(const DwVfpRegister frt,
-                     const DwVfpRegister frb,
+void Assembler::fabs(const DoubleRegister frt,
+                     const DoubleRegister frb,
                      RCBit rc) {
   emit(EXT4 | FABS | frt.code()*B21 | frb.code()*B11 | rc);
 }
