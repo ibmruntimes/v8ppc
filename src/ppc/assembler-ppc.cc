@@ -154,7 +154,7 @@ Register ToRegister(int num) {
 }
 
 
-static const char* DwVfpRegister::AllocationIndexToString(int index) {
+const char* DwVfpRegister::AllocationIndexToString(int index) {
   ASSERT(index >= 0 && index < kMaxNumAllocatableRegisters);
   const char* const names[] = {
     "d1",
