@@ -56,6 +56,52 @@
 namespace v8 {
 namespace internal {
 
+// CpuFeatures keeps track of which features are supported by the target CPU.
+// Supported features must be enabled by a CpuFeatureScope before use.
+class CpuFeatures : public AllStatic {
+ public:
+  // Detect features of the target CPU. Set safe defaults if the serializer
+  // is enabled (snapshots must be portable).
+  static void Probe();
+
+  // Display target use when compiling.
+  static void PrintTarget();
+
+  // Display features.
+  static void PrintFeatures();
+
+  // Check whether a feature is supported by the target CPU.
+  static bool IsSupported(CpuFeature f) {
+    ASSERT(initialized_);
+    return (supported_ & (1u << f)) != 0;
+  }
+
+  static bool IsFoundByRuntimeProbingOnly(CpuFeature f) {
+    ASSERT(initialized_);
+    return (found_by_runtime_probing_only_ &
+            (static_cast<uint64_t>(1) << f)) != 0;
+  }
+
+  static bool IsSafeForSnapshot(CpuFeature f) {
+    return (IsSupported(f) &&
+            (!Serializer::enabled() || !IsFoundByRuntimeProbingOnly(f)));
+  }
+
+  static unsigned cache_line_size() { return cache_line_size_; }
+
+ private:
+#ifdef DEBUG
+  static bool initialized_;
+#endif
+  static unsigned supported_;
+  static unsigned found_by_runtime_probing_only_;
+  static unsigned cache_line_size_;
+
+  friend class ExternalReference;
+  DISALLOW_COPY_AND_ASSIGN(CpuFeatures);
+};
+
+
 // CPU Registers.
 //
 // 1) We would prefer to use an enum, but enum values are assignment-
@@ -80,22 +126,24 @@ namespace internal {
 // Core register
 struct Register {
   static const int kNumRegisters = 32;
-  static const int kNumAllocatableRegisters = 8;  // r3-r10
-  static const int kSizeInBytes = 4;
+  static const int kMaxNumAllocatableRegisters = 8;  // r3-r10
+  static const int kSizeInBytes = kPointerSize;
+
+  inline static int NumAllocatableRegisters();
 
   static int ToAllocationIndex(Register reg) {
     int index = reg.code() - 3;  // r0-r2 are skipped
-    ASSERT(index < kNumAllocatableRegisters);
+    ASSERT(index < kMaxNumAllocatableRegisters);
     return index;
   }
 
   static Register FromAllocationIndex(int index) {
-    ASSERT(index >= 0 && index < kNumAllocatableRegisters);
+    ASSERT(index >= 0 && index < kMaxNumAllocatableRegisters);
     return from_code(index + 3);  // r0-r2 are skipped
   }
 
   static const char* AllocationIndexToString(int index) {
-    ASSERT(index >= 0 && index < kNumAllocatableRegisters);
+    ASSERT(index >= 0 && index < kMaxNumAllocatableRegisters);
     const char* const names[] = {
       "r3",
       "r4",
@@ -231,34 +279,19 @@ const Register fp = { kRegister_fp_Code };
 
 // Double word FP register.
 struct DwVfpRegister {
-  static const int kNumRegisters = 32;
+  static const int kMaxNumRegisters = 32;
   static const int kNumVolatileRegisters = 14;     // d0-d13
-  static const int kNumAllocatableRegisters = 12;  // d1-d12
+  static const int kMaxNumAllocatableRegisters = 12;  // d1-d12
+  static const int kSizeInBytes = 8;
 
+  inline static int NumRegisters();
+  inline static int NumAllocatableRegisters();
   inline static int ToAllocationIndex(DwVfpRegister reg);
+  static const char* AllocationIndexToString(int index);
 
   static DwVfpRegister FromAllocationIndex(int index) {
-    ASSERT(index >= 0 && index < kNumAllocatableRegisters);
+    ASSERT(index >= 0 && index < kMaxNumAllocatableRegisters);
     return from_code(index + 1);  // d0 is skipped
-  }
-
-  static const char* AllocationIndexToString(int index) {
-    ASSERT(index >= 0 && index < kNumAllocatableRegisters);
-    const char* const names[] = {
-      "d1",
-      "d2",
-      "d3",
-      "d4",
-      "d5",
-      "d6",
-      "d7",
-      "d8",
-      "d9",
-      "d10",
-      "d11",
-      "d12",
-    };
-    return names[index];
   }
 
   static DwVfpRegister from_code(int code) {
@@ -267,7 +300,7 @@ struct DwVfpRegister {
   }
 
   // Supporting d0 to d15, can be later extended to d31.
-  bool is_valid() const { return 0 <= code_ && code_ < kNumRegisters; }
+  bool is_valid() const { return 0 <= code_ && code_ < kMaxNumRegisters; }
   bool is(DwVfpRegister reg) const { return code_ == reg.code_; }
 
   int code() const {
@@ -449,105 +482,6 @@ class MemOperand BASE_EMBEDDED {
   friend class Assembler;
 };
 
-// CpuFeatures keeps track of which features are supported by the target CPU.
-// Supported features must be enabled by a Scope before use.
-class CpuFeatures : public AllStatic {
- public:
-  // Detect features of the target CPU. Set safe defaults if the serializer
-  // is enabled (snapshots must be portable).
-  static void Probe();
-
-  // Check whether a feature is supported by the target CPU.
-  static bool IsSupported(CpuFeature f) {
-    ASSERT(initialized_);
-    return (supported_ & (1u << f)) != 0;
-  }
-
-#ifdef DEBUG
-  // Check whether a feature is currently enabled.
-  static bool IsEnabled(CpuFeature f) {
-    ASSERT(initialized_);
-    Isolate* isolate = Isolate::UncheckedCurrent();
-    if (isolate == NULL) {
-      // When no isolate is available, work as if we're running in
-      // release mode.
-      return IsSupported(f);
-    }
-    unsigned enabled = static_cast<unsigned>(isolate->enabled_cpu_features());
-    return (enabled & (1u << f)) != 0;
-  }
-#endif
-
-  // Enable a specified feature within a scope.
-  class Scope BASE_EMBEDDED {
-#ifdef DEBUG
-
-   public:
-    explicit Scope(CpuFeature f) {
-      unsigned mask = 1u << f;
-      ASSERT(CpuFeatures::IsSupported(f));
-      ASSERT(!Serializer::enabled() ||
-             (CpuFeatures::found_by_runtime_probing_ & mask) == 0);
-      isolate_ = Isolate::UncheckedCurrent();
-      old_enabled_ = 0;
-      if (isolate_ != NULL) {
-        old_enabled_ = static_cast<unsigned>(isolate_->enabled_cpu_features());
-        isolate_->set_enabled_cpu_features(old_enabled_ | mask);
-      }
-    }
-    ~Scope() {
-      ASSERT_EQ(Isolate::UncheckedCurrent(), isolate_);
-      if (isolate_ != NULL) {
-        isolate_->set_enabled_cpu_features(old_enabled_);
-      }
-    }
-
-   private:
-    Isolate* isolate_;
-    unsigned old_enabled_;
-#else
-
-   public:
-    explicit Scope(CpuFeature f) {}
-#endif
-  };
-
-  class TryForceFeatureScope BASE_EMBEDDED {
-   public:
-    explicit TryForceFeatureScope(CpuFeature f)
-        : old_supported_(CpuFeatures::supported_) {
-      if (CanForce()) {
-        CpuFeatures::supported_ |= (1u << f);
-      }
-    }
-
-    ~TryForceFeatureScope() {
-      if (CanForce()) {
-        CpuFeatures::supported_ = old_supported_;
-      }
-    }
-
-   private:
-    static bool CanForce() {
-      // It's only safe to temporarily force support of CPU features
-      // when there's only a single isolate, which is guaranteed when
-      // the serializer is enabled.
-      return Serializer::enabled();
-    }
-
-    const unsigned old_supported_;
-  };
-
- private:
-#ifdef DEBUG
-  static bool initialized_;
-#endif
-  static unsigned supported_;
-  static unsigned found_by_runtime_probing_;
-
-  DISALLOW_COPY_AND_ASSIGN(CpuFeatures);
-};
-
 
 class Assembler : public AssemblerBase {
  public:
@@ -565,15 +499,7 @@ class Assembler : public AssemblerBase {
   // is too small, a fatal error occurs. No deallocation of the buffer is done
   // upon destruction of the assembler.
   Assembler(Isolate* isolate, void* buffer, int buffer_size);
-  ~Assembler();
-
-  // Overrides the default provided by FLAG_debug_code.
-  void set_emit_debug_code(bool value) { emit_debug_code_ = value; }
-
-  // Avoids using instructions that vary in size in unpredictable ways between
-  // the snapshot and the running VM.  This is needed by the full compiler so
-  // that it can recompile code with debug support and fix the PC.
-  void set_predictable_code_size(bool value) { predictable_code_size_ = value; }
+  virtual ~Assembler();
 
   // GetCode emits any pending (non-emitted) code and fills the descriptor
   // desc. GetCode() is idempotent; it returns the same result if no other
@@ -1090,8 +1016,6 @@ class Assembler : public AssemblerBase {
   // Jump unconditionally to given label.
   void jmp(Label* L) { b(L); }
 
-  bool predictable_code_size() const { return predictable_code_size_; }
-
   // Check the code size generated from label to here.
   int SizeOfCodeGeneratedSince(Label* label) {
     return pc_offset() - label->pos();
@@ -1149,8 +1073,6 @@ class Assembler : public AssemblerBase {
   void db(uint8_t data);
   void dd(uint32_t data);
 
-  int pc_offset() const { return pc_ - buffer_; }
-
   PositionsRecorder* positions_recorder() { return &positions_recorder_; }
 
   // Read/patch instructions
@@ -1199,8 +1121,6 @@ class Assembler : public AssemblerBase {
   // the relocation info.
   TypeFeedbackId recorded_ast_id_;
 
-  bool emit_debug_code() const { return emit_debug_code_; }
-
   int buffer_space() const { return reloc_info_writer.pos() - pc_; }
 
   // Decode branch instruction at pos and return branch target pos
@@ -1240,20 +1160,12 @@ class Assembler : public AssemblerBase {
 
 
  private:
-  // Code buffer:
-  // The buffer into which code and relocation info are generated.
-  byte* buffer_;
-  int buffer_size_;
-  // True if the assembler owns the buffer, false if buffer is external.
-  bool own_buffer_;
-
   // Code generation
   // The relocation writer's position is at least kGap bytes below the end of
   // the generated instructions. This is so that multi-instruction sequences do
   // not have to check for overflow. The same is true for writes of large
   // relocation info entries.
   static const int kGap = 32;
-  byte* pc_;  // the program counter; moves forward
 
   // Repeated checking whether the trampoline pool should be emitted is rather
   // expensive. By default we only check again once a number of instructions
@@ -1348,9 +1260,6 @@ class Assembler : public AssemblerBase {
   friend class BlockTrampolinePoolScope;
 
   PositionsRecorder positions_recorder_;
-
-  bool emit_debug_code_;
-  bool predictable_code_size_;
 
   friend class PositionsRecorder;
   friend class EnsureSpace;
