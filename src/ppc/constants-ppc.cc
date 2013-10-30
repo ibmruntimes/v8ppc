@@ -71,17 +71,21 @@ const char* Registers::Name(int reg) {
   return result;
 }
 
-// Power
+
 const char* FPRegisters::names_[kNumFPRegisters] = {
     "d0", "d1", "d2", "d3", "d4", "d5", "d6", "d7",
     "d8", "d9", "d10", "d11", "d12", "d13", "d14", "d15",
     "d16", "d17", "d18", "d19", "d20", "d21", "d22", "d23",
     "d24", "d25", "d26", "d27", "d28", "d29", "d30", "d31"
 };
+
+
 const char* FPRegisters::Name(int reg) {
   ASSERT((0 <= reg) && (reg < kNumFPRegisters));
   return names_[reg];
 }
+
+
 int FPRegisters::Number(const char* name) {
   for (int i = 0; i < kNumFPRegisters; i++) {
     if (strcmp(names_[i], name) == 0) {
@@ -93,7 +97,6 @@ int FPRegisters::Number(const char* name) {
   return kNoRegister;
 }
 
-// end of Power
 
 int Registers::Number(const char* name) {
   // Look through the canonical names.

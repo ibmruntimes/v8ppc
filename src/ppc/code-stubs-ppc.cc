@@ -390,6 +390,7 @@ static void GenerateFastCloneShallowArrayCommon(
   }
 }
 
+
 void FastCloneShallowArrayStub::Generate(MacroAssembler* masm) {
   // Stack layout on entry:
   //
@@ -564,6 +565,7 @@ void FloatingPointHelper::LoadSmis(MacroAssembler* masm,
   __ SmiToDoubleFPRegister(r4, d1, scratch1);
 }
 
+
 // needs cleanup for extra parameters that are unused
 void FloatingPointHelper::LoadOperands(
     MacroAssembler* masm,
@@ -577,6 +579,7 @@ void FloatingPointHelper::LoadOperands(
   // Load left operand (r4) to d1
   LoadNumber(masm, r4, d1, heap_number_map, scratch1, scratch2, slow);
 }
+
 
 // needs cleanup for extra parameters that are unused
 // also needs a scratch double register instead of d3
@@ -685,8 +688,8 @@ void FloatingPointHelper::ConvertIntToDouble(MacroAssembler* masm,
 
 
 void FloatingPointHelper::ConvertUnsignedIntToDouble(MacroAssembler* masm,
-                                                     Register src,
-                                                     DoubleRegister double_dst) {
+                                                 Register src,
+                                                 DoubleRegister double_dst) {
   ASSERT(!src.is(r0));
 
   __ subi(sp, sp, Operand(8));  // reserve one temporary double on the stack
@@ -927,6 +930,7 @@ void FloatingPointHelper::CallCCodeForDoubleOperation(
   __ blr();
 }
 
+
 // Handle the case where the lhs and rhs are the same object.
 // Equality is almost reflexive (everything but NaN), so this is a test
 // for "identity and not NaN".
@@ -1107,6 +1111,7 @@ static void EmitSmiNonsmiComparison(MacroAssembler* masm,
   __ SmiToDoubleFPRegister(rhs, d6, r10);
   // Fall through to both_loaded_as_doubles.
 }
+
 
 // See comment at call site.
 static void EmitStrictTwoHeapObjectCompare(MacroAssembler* masm,
@@ -4450,6 +4455,7 @@ void ArgumentsAccessStub::GenerateNewNonStrictFast(MacroAssembler* masm) {
   __ TailCallRuntime(Runtime::kNewArgumentsFast, 3, 1);
 }
 
+
 void ArgumentsAccessStub::GenerateNewStrict(MacroAssembler* masm) {
   // sp[0] : number of parameters
   // sp[4] : receiver displacement
@@ -6741,6 +6747,7 @@ void ICCompareStub::GenerateMiss(MacroAssembler* masm) {
   __ Jump(r5);
 }
 
+
 // This stub is paired with DirectCEntryStub::GenerateCall
 void DirectCEntryStub::Generate(MacroAssembler* masm) {
   // Retrieve return address
@@ -7060,6 +7067,7 @@ struct AheadOfTimeWriteBarrierStubList {
   Register object, value, address;
   RememberedSetAction action;
 };
+
 
 #define REG(Name) { kRegister_ ## Name ## _Code }
 

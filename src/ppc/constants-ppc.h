@@ -561,7 +561,6 @@ class Instruction {
     return instr & (((2 << (hi - lo)) - 1) << lo);
   }
 
-  // PowerPC
   inline int RSValue() const { return Bits(25, 21); }
   inline int RTValue() const { return Bits(25, 21); }
   inline int RAValue() const { return Bits(20, 16); }
@@ -570,10 +569,9 @@ class Instruction {
   DECLARE_STATIC_ACCESSOR(RBValue);
   inline int RCValue() const { return Bits(10, 6); }
   DECLARE_STATIC_ACCESSOR(RCValue);
-  // end PowerPC
 
   inline int OpcodeValue() const {
-    return static_cast<Opcode>(Bits(31, 26));  // PowerPC
+    return static_cast<Opcode>(Bits(31, 26));
   }
   inline Opcode OpcodeField() const {
     return static_cast<Opcode>(BitField(24, 21));

@@ -250,6 +250,7 @@ bool LCodeGen::GenerateDeferredCode() {
   return !is_aborted();
 }
 
+
 bool LCodeGen::GenerateDeoptJumpTable() {
   __ RecordComment("[ Deoptimisation jump table");
   for (int i = 0; i < deopt_jump_table_.length(); i++) {
@@ -1350,6 +1351,7 @@ void LCodeGen::DoConstantI(LConstantI* instr) {
   __ mov(ToRegister(instr->result()), Operand(instr->value()));
 }
 
+
 // TODO(penguin): put const to constant pool instead
 // of storing double to stack
 void LCodeGen::DoConstantD(LConstantD* instr) {
@@ -1358,6 +1360,7 @@ void LCodeGen::DoConstantD(LConstantD* instr) {
   double v = instr->value();
   __ LoadDoubleLiteral(result, v, scratch0());
 }
+
 
 void LCodeGen::DoConstantT(LConstantT* instr) {
   Handle<Object> value = instr->value();

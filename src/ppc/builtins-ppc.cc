@@ -200,6 +200,7 @@ static void AllocateEmptyJSArray(MacroAssembler* masm,
   }
 }
 
+
 // Allocate a JSArray with the number of elements stored in a register. The
 // register array_function holds the built-in Array function and the register
 // array_size holds the size of the array as a smi. The allocated array is put
@@ -313,6 +314,7 @@ static void AllocateJSArray(MacroAssembler* masm,
   // Tag object
   __ addi(result, result, Operand(kHeapObjectTag));
 }
+
 
 // Create a new array for the built-in Array function. This function allocates
 // the JSArray object and the FixedArray elements array and initializes these.

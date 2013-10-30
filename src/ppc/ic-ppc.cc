@@ -1754,6 +1754,7 @@ void CompareIC::UpdateCaches(Handle<Object> x, Handle<Object> y) {
   }
 }
 
+
 //
 // This code is paired with the JumpPatchSite class in full-codegen-ppc.cc
 //

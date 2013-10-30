@@ -86,6 +86,7 @@ TEST(0) {
   CHECK_EQ(7, static_cast<int>(res));
 }
 
+
 // Loop 100 times, adding loop counter to result
 TEST(1) {
   InitializeVM();
@@ -656,6 +657,7 @@ TEST(7) {
   TestRoundingMode(u32_f64, RN, (kMaxUInt + 0.5), kMaxUInt, true);
   TestRoundingMode(u32_f64, RN, (kMaxUInt + 1.0), kMaxUInt, true);
 }
+
 
 TEST(8) {
   // Test VFP multi load/store with ia_w.

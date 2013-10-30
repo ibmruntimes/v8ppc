@@ -44,9 +44,11 @@ void CPU::SetUp() {
   CpuFeatures::Probe();
 }
 
+
 bool CPU::SupportsCrankshaft() {
   return true;
 }
+
 
 void CPU::FlushICache(void* buffer, size_t size) {
   // Nothing to do flushing no instructions.

@@ -263,7 +263,6 @@ class Simulator {
   intptr_t* ReadDW(intptr_t addr);
   void WriteDW(intptr_t addr, int64_t value);
 
-  // PowerPC
   void SetCR0(intptr_t result, bool setSO = false);
   void DecodeBranchConditional(Instruction* instr);
   void DecodeExt1(Instruction* instr);
@@ -306,13 +305,13 @@ class Simulator {
   // Saturating instructions require a Q flag to indicate saturation.
   // There is currently no way to read the CPSR directly, and thus read the Q
   // flag, so this is left unimplemented.
-  intptr_t registers_[kNumGPRs];  // PowerPC
-  int32_t condition_reg_;  // PowerPC
-  int32_t fp_condition_reg_;  // PowerPC
-  intptr_t special_reg_lr_;  // PowerPC
-  intptr_t special_reg_pc_;  // PowerPC
-  intptr_t special_reg_ctr_;  // PowerPC
-  int32_t special_reg_xer_;  // PowerPC
+  intptr_t registers_[kNumGPRs];
+  int32_t condition_reg_;
+  int32_t fp_condition_reg_;
+  intptr_t special_reg_lr_;
+  intptr_t special_reg_pc_;
+  intptr_t special_reg_ctr_;
+  int32_t special_reg_xer_;
 
   double fp_register[kNumFPRs];
 

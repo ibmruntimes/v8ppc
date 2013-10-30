@@ -182,6 +182,7 @@ double PPCDebugger::GetFPDoubleRegisterValue(int regnum) {
   return sim_->get_double_from_d_register(regnum);
 }
 
+
 bool PPCDebugger::GetValue(const char* desc, intptr_t* value) {
   int regnum = Registers::Number(desc);
   if (regnum != kNoRegister) {
@@ -196,6 +197,7 @@ bool PPCDebugger::GetValue(const char* desc, intptr_t* value) {
   }
   return false;
 }
+
 
 bool PPCDebugger::GetFPDoubleValue(const char* desc, double* value) {
   int regnum = FPRegisters::Number(desc);
@@ -844,11 +846,11 @@ Simulator::Simulator(Isolate* isolate) : isolate_(isolate) {
   for (int i = 0; i < kNumGPRs; i++) {
     registers_[i] = 0;
   }
-  condition_reg_ = 0;  // PowerPC
-  fp_condition_reg_ = 0;  // PowerPC
-  special_reg_pc_ = 0;  // PowerPC
-  special_reg_lr_ = 0;  // PowerPC
-  special_reg_ctr_ = 0;  // PowerPC
+  condition_reg_ = 0;
+  fp_condition_reg_ = 0;
+  special_reg_pc_ = 0;
+  special_reg_lr_ = 0;
+  special_reg_ctr_ = 0;
 
   // Initializing FP registers.
   for (int i = 0; i < kNumFPRs; i++) {
@@ -975,6 +977,7 @@ double Simulator::get_double_from_register_pair(int reg) {
   return(dm_val);
 }
 
+
 // Raw access to the PC register.
 void Simulator::set_pc(intptr_t value) {
   pc_modified_ = true;
@@ -992,12 +995,14 @@ intptr_t Simulator::get_pc() const {
   return special_reg_pc_;
 }
 
+
 // For use in calls that take two double values which are currently
 // in d1 and d2
 void Simulator::GetFpArgs(double* x, double* y) {
   *x = get_double_from_d_register(1);
   *y = get_double_from_d_register(2);
 }
+
 
 // For use in calls that take one double value (d1)
 void Simulator::GetFpArgs(double* x) {
@@ -1034,6 +1039,7 @@ uint32_t Simulator::ReadWU(intptr_t addr, Instruction* instr) {
   return *ptr;
 }
 
+
 int32_t Simulator::ReadW(intptr_t addr, Instruction* instr) {
   int32_t* ptr = reinterpret_cast<int32_t*>(addr);
   return *ptr;
@@ -1045,6 +1051,7 @@ void Simulator::WriteW(intptr_t addr, uint32_t value, Instruction* instr) {
   *ptr = value;
   return;
 }
+
 
 void Simulator::WriteW(intptr_t addr, int32_t value, Instruction* instr) {
   int32_t* ptr = reinterpret_cast<int32_t*>(addr);
@@ -1526,6 +1533,7 @@ void Simulator::SetCR0(intptr_t result, bool setSO) {
   condition_reg_ = (condition_reg_ & ~0xF0000000) | bf;
 }
 
+
 void Simulator::DecodeBranchConditional(Instruction* instr) {
   int bo = instr->Bits(25, 21) << 21;
   int offset = (instr->Bits(15, 2) << 18) >> 16;
@@ -1577,6 +1585,7 @@ void Simulator::DecodeBranchConditional(Instruction* instr) {
       UNIMPLEMENTED();  // Invalid encoding
   }
 }
+
 
 // Handle execution based on instruction types.
 void Simulator::DecodeExt1(Instruction* instr) {
@@ -1631,6 +1640,7 @@ void Simulator::DecodeExt1(Instruction* instr) {
     }
   }
 }
+
 
 bool Simulator::DecodeExt2_10bit(Instruction *instr) {
   bool found = true;
@@ -1846,6 +1856,7 @@ bool Simulator::DecodeExt2_10bit(Instruction *instr) {
 
   return found;
 }
+
 
 void Simulator::DecodeExt2_9bit(Instruction* instr) {
   int opcode = instr->Bits(9, 1) << 1;
@@ -2366,6 +2377,7 @@ void Simulator::DecodeExt2_9bit(Instruction* instr) {
   }
 }
 
+
 void Simulator::DecodeExt2(Instruction* instr) {
     // Check first the 10-1 bit versions
     if (DecodeExt2_10bit(instr))
@@ -2373,6 +2385,7 @@ void Simulator::DecodeExt2(Instruction* instr) {
     // Now look at the lesser encodings
     DecodeExt2_9bit(instr);
 }
+
 
 void Simulator::DecodeExt4(Instruction* instr) {
   switch (instr->Bits(5, 1) << 1) {
@@ -3394,7 +3407,7 @@ intptr_t Simulator::Call(byte* entry, int argument_count, ...) {
   CHECK_EQ(entry_stack, get_register(sp));
   set_register(sp, original_stack);
 
-  intptr_t result = get_register(r3);   // PowerPC
+  intptr_t result = get_register(r3);
   return result;
 }
 

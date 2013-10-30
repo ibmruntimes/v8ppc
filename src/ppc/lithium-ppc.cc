@@ -1225,6 +1225,7 @@ HValue* LChunkBuilder::SimplifiedDivisorForMathFloorOfDiv(HValue* divisor) {
   return NULL;
 }
 
+
 LInstruction* LChunkBuilder::DoMathFloorOfDiv(HMathFloorOfDiv* instr) {
   HValue* right = instr->right();
   ASSERT(right->IsConstant() && HConstant::cast(right)->HasInteger32Value());

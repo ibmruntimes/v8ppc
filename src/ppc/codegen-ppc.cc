@@ -56,6 +56,7 @@ UnaryMathFunction CreateSqrtFunction() {
   return &sqrt;
 }
 
+
 // -------------------------------------------------------------------------
 // Platform-specific RuntimeCallHelper functions.
 

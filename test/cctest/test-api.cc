@@ -1911,6 +1911,7 @@ void AddAccessor(Handle<FunctionTemplate> templ,
   templ->PrototypeTemplate()->SetAccessor(name, getter, setter);
 }
 
+
 THREADED_TEST(EmptyInterceptorDoesNotShadowAccessors) {
   v8::HandleScope scope(v8::Isolate::GetCurrent());
   Handle<FunctionTemplate> parent = FunctionTemplate::New();

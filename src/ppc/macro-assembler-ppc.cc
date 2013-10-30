@@ -250,6 +250,7 @@ void MacroAssembler::Ret(int drop, Condition cond) {
   Ret(cond);
 }
 
+
 void MacroAssembler::Call(Label* target) {
   b(target, SetLK);
 }
@@ -293,6 +294,7 @@ void MacroAssembler::MultiPush(RegList regs) {
     }
   }
 }
+
 
 void MacroAssembler::MultiPop(RegList regs) {
   int16_t stack_offset = 0;
@@ -571,6 +573,7 @@ MemOperand MacroAssembler::SafepointRegistersAndDoublesSlot(Register reg) {
   return MemOperand(sp, doubles_size + register_offset);
 }
 
+
 void MacroAssembler::EnterFrame(StackFrame::Type type) {
   mflr(r0);
   push(r0);
@@ -593,6 +596,7 @@ void MacroAssembler::LeaveFrame(StackFrame::Type type) {
   mtlr(r0);
   addi(sp, sp, Operand(2*kPointerSize));
 }
+
 
 // ExitFrame layout (probably wrongish.. needs updating)
 //
@@ -739,6 +743,7 @@ void MacroAssembler::LeaveExitFrame(bool save_doubles,
     add(sp, sp, argument_count);
   }
 }
+
 
 void MacroAssembler::GetCFunctionDoubleResult(const DoubleRegister dst) {
   fmr(dst, d1);
@@ -1052,6 +1057,7 @@ void MacroAssembler::PopTryHandler() {
   addi(sp, sp, Operand(StackHandlerConstants::kSize - kPointerSize));
   StoreP(r4, MemOperand(ip));
 }
+
 
 // PPC - make use of ip as a temporary register
 void MacroAssembler::JumpToHandlerEntry() {
@@ -3404,6 +3410,7 @@ void MacroAssembler::FlushICache(Register address, size_t size,
   bind(&done);
 }
 
+
 // This code assumes a FIXED_SEQUENCE for lis/ori
 void MacroAssembler::PatchRelocatedValue(Register lis_location,
                                          Register scratch,
@@ -3484,6 +3491,7 @@ void MacroAssembler::PatchRelocatedValue(Register lis_location,
   FlushICache(lis_location, 2 * kInstrSize, scratch);
 #endif
 }
+
 
 // This code assumes a FIXED_SEQUENCE for lis/ori
 void MacroAssembler::GetRelocatedValueLocation(Register lis_location,
@@ -3764,6 +3772,7 @@ void MacroAssembler::EnsureNotWhite(
   bind(&done);
 }
 
+
 // Saturate a value into 8-bit unsigned integer
 //   if input_value < 0, output_value is 0
 //   if input_value > 255, output_value is 255
@@ -3793,13 +3802,16 @@ void MacroAssembler::ClampUint8(Register output_reg, Register input_reg) {
   bind(&done);
 }
 
+
 void MacroAssembler::SetRoundingMode(VFPRoundingMode RN) {
   mtfsfi(7, RN);
 }
 
+
 void MacroAssembler::ResetRoundingMode() {
   mtfsfi(7, kRoundToNearest);  // reset (default is kRoundToNearest)
 }
+
 
 void MacroAssembler::ClampDoubleToUint8(Register result_reg,
                                         DoubleRegister input_reg,
@@ -3843,6 +3855,7 @@ void MacroAssembler::ClampDoubleToUint8(Register result_reg,
 
   bind(&done);
 }
+
 
 void MacroAssembler::LoadInstanceDescriptors(Register map,
                                              Register descriptors) {
@@ -3920,6 +3933,7 @@ void MacroAssembler::LoadIntLiteral(Register dst, int value) {
   }
 }
 
+
 void MacroAssembler::LoadSmiLiteral(Register dst, Smi *smi) {
   intptr_t value = reinterpret_cast<intptr_t>(smi);
 #if V8_TARGET_ARCH_PPC64
@@ -3930,6 +3944,7 @@ void MacroAssembler::LoadSmiLiteral(Register dst, Smi *smi) {
   LoadIntLiteral(dst, value);
 #endif
 }
+
 
 void MacroAssembler::LoadDoubleLiteral(DoubleRegister result,
                                        double value,
@@ -3961,6 +3976,7 @@ void MacroAssembler::LoadDoubleLiteral(DoubleRegister result,
   addi(sp, sp, Operand(8));  // restore the stack ptr
 }
 
+
 void MacroAssembler::Add(Register dst, Register src,
                          uint32_t value, Register scratch) {
   if (is_int16(value)) {
@@ -3970,6 +3986,7 @@ void MacroAssembler::Add(Register dst, Register src,
     add(dst, src, scratch);
   }
 }
+
 
 void MacroAssembler::Cmpi(Register src1, const Operand& src2, Register scratch,
                           CRegister cr) {
@@ -3982,6 +3999,7 @@ void MacroAssembler::Cmpi(Register src1, const Operand& src2, Register scratch,
   }
 }
 
+
 void MacroAssembler::Cmpli(Register src1, const Operand& src2, Register scratch,
                            CRegister cr) {
   intptr_t value = src2.immediate();
@@ -3992,6 +4010,7 @@ void MacroAssembler::Cmpli(Register src1, const Operand& src2, Register scratch,
     cmpl(src1, scratch, cr);
   }
 }
+
 
 void MacroAssembler::And(Register ra, Register rs, const Operand& rb,
                          RCBit rc) {
@@ -4009,6 +4028,7 @@ void MacroAssembler::And(Register ra, Register rs, const Operand& rb,
   }
 }
 
+
 void MacroAssembler::Or(Register ra, Register rs, const Operand& rb, RCBit rc) {
   if (rb.is_reg()) {
     orx(ra, rs, rb.rm(), rc);
@@ -4023,6 +4043,7 @@ void MacroAssembler::Or(Register ra, Register rs, const Operand& rb, RCBit rc) {
     }
   }
 }
+
 
 void MacroAssembler::Xor(Register ra, Register rs, const Operand& rb,
                          RCBit rc) {
@@ -4040,6 +4061,7 @@ void MacroAssembler::Xor(Register ra, Register rs, const Operand& rb,
   }
 }
 
+
 void MacroAssembler::CmpSmiLiteral(Register src1, Smi *smi, Register scratch,
                                    CRegister cr) {
 #if V8_TARGET_ARCH_PPC64
@@ -4049,6 +4071,7 @@ void MacroAssembler::CmpSmiLiteral(Register src1, Smi *smi, Register scratch,
   Cmpi(src1, Operand(smi), scratch, cr);
 #endif
 }
+
 
 void MacroAssembler::CmplSmiLiteral(Register src1, Smi *smi, Register scratch,
                                    CRegister cr) {
@@ -4060,6 +4083,7 @@ void MacroAssembler::CmplSmiLiteral(Register src1, Smi *smi, Register scratch,
 #endif
 }
 
+
 void MacroAssembler::AddSmiLiteral(Register dst, Register src, Smi *smi,
                                    Register scratch) {
 #if V8_TARGET_ARCH_PPC64
@@ -4070,6 +4094,7 @@ void MacroAssembler::AddSmiLiteral(Register dst, Register src, Smi *smi,
 #endif
 }
 
+
 void MacroAssembler::SubSmiLiteral(Register dst, Register src, Smi *smi,
                                    Register scratch) {
 #if V8_TARGET_ARCH_PPC64
@@ -4079,6 +4104,7 @@ void MacroAssembler::SubSmiLiteral(Register dst, Register src, Smi *smi,
   Add(dst, src, -(reinterpret_cast<intptr_t>(smi)), scratch);
 #endif
 }
+
 
 void MacroAssembler::AndSmiLiteral(Register dst, Register src, Smi *smi,
                                    Register scratch, RCBit rc) {
@@ -4121,6 +4147,7 @@ void MacroAssembler::LoadP(Register dst, const MemOperand& mem,
 #endif
   }
 }
+
 
 // Store a "pointer" sized value to the memory location
 void MacroAssembler::StoreP(Register src, const MemOperand& mem,
@@ -4189,6 +4216,7 @@ void MacroAssembler::LoadWordArith(Register dst, const MemOperand& mem,
   }
 }
 
+
 // Variable length depending on whether offset fits into immediate field
 // MemOperand currently only supports d-form
 void MacroAssembler::LoadWord(Register dst, const MemOperand& mem,
@@ -4217,6 +4245,7 @@ void MacroAssembler::LoadWord(Register dst, const MemOperand& mem,
   }
 }
 
+
 // Variable length depending on whether offset fits into immediate field
 // MemOperand current only supports d-form
 void MacroAssembler::StoreWord(Register src, const MemOperand& mem,
@@ -4244,6 +4273,7 @@ void MacroAssembler::StoreWord(Register src, const MemOperand& mem,
     }
   }
 }
+
 
 // Variable length depending on whether offset fits into immediate field
 // MemOperand currently only supports d-form
@@ -4278,6 +4308,7 @@ void MacroAssembler::LoadHalfWord(Register dst, const MemOperand& mem,
   }
 }
 
+
 // Variable length depending on whether offset fits into immediate field
 // MemOperand current only supports d-form
 void MacroAssembler::StoreHalfWord(Register src, const MemOperand& mem,
@@ -4311,6 +4342,7 @@ void MacroAssembler::StoreHalfWord(Register src, const MemOperand& mem,
   }
 }
 
+
 // Variable length depending on whether offset fits into immediate field
 // MemOperand currently only supports d-form
 void MacroAssembler::LoadByte(Register dst, const MemOperand& mem,
@@ -4343,6 +4375,7 @@ void MacroAssembler::LoadByte(Register dst, const MemOperand& mem,
 #endif
   }
 }
+
 
 // Variable length depending on whether offset fits into immediate field
 // MemOperand current only supports d-form

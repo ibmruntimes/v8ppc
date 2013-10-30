@@ -744,7 +744,6 @@ class Assembler : public AssemblerBase {
 
   // Data-processing instructions
 
-  // PowerPC
   void sub(Register dst, Register src1, Register src2,
            OEBit s = LeaveOE, RCBit r = LeaveRC);
 
@@ -865,7 +864,6 @@ class Assembler : public AssemblerBase {
   void sraw(Register dst, Register src1, Register src2, RCBit r = LeaveRC);
 
   void cntlzw_(Register dst, Register src, RCBit rc = LeaveRC);
-  // end PowerPC
 
   void subi(Register dst, Register src1, const Operand& src2);
 
@@ -875,15 +873,12 @@ class Assembler : public AssemblerBase {
   void mov(Register dst, const Operand& src);
 
   // Multiply instructions
-
-  // PowerPC
   void mul(Register dst, Register src1, Register src2,
            OEBit s = LeaveOE, RCBit r = LeaveRC);
 
   // Miscellaneous arithmetic instructions
 
   // Special register access
-  // PowerPC
   void crxor(int bt, int ba, int bb);
   void mflr(Register dst);
   void mtlr(Register src);
@@ -895,7 +890,6 @@ class Assembler : public AssemblerBase {
   void fake_asm(enum FAKE_OPCODE_T fopcode);
   void marker_asm(int mcode);
   void function_descriptor();
-  // end PowerPC
 
   // Exception-generating instructions and debugging support
   void stop(const char* msg,

@@ -111,7 +111,6 @@ class Decoder {
   void UnknownFormat(Instruction* instr, const char* opcname);
   void MarkerFormat(Instruction* instr, const char* opcname, int id);
 
-  // PowerPC decoding
   void DecodeExt1(Instruction* instr);
   void DecodeExt2(Instruction* instr);
   void DecodeExt4(Instruction* instr);
@@ -146,15 +145,18 @@ void Decoder::Print(const char* str) {
   out_buffer_[out_buffer_pos_] = 0;
 }
 
+
 // Print the register name according to the active name converter.
 void Decoder::PrintRegister(int reg) {
   Print(converter_.NameOfCPURegister(reg));
 }
 
+
 // Print the double FP register name according to the active name converter.
 void Decoder::PrintDRegister(int reg) {
   Print(FPRegisters::Name(reg));
 }
+
 
 // Print SoftwareInterrupt codes. Factoring this out reduces the complexity of
 // the FormatOption method.
@@ -180,6 +182,7 @@ void Decoder::PrintSoftwareInterrupt(SoftwareInterruptCodes svc) {
       return;
   }
 }
+
 
 // Handle all register based formatting in this function to reduce the
 // complexity of FormatOption.
@@ -228,6 +231,7 @@ int Decoder::FormatFPRegister(Instruction* instr, const char* format) {
 
   return retval;
 }
+
 
 // FormatOption takes a formatting string and interprets it based on
 // the current instructions. The format string points to the first
@@ -397,6 +401,7 @@ void Decoder::Unknown(Instruction* instr) {
   Format(instr, "unknown");
 }
 
+
 // For currently unimplemented decodings the disassembler calls
 // UnknownFormat(instr) which will just print opcode name of the
 // instruction bits.
@@ -406,13 +411,14 @@ void Decoder::UnknownFormat(Instruction* instr, const char* name) {
   Format(instr, buffer);
 }
 
+
 void Decoder::MarkerFormat(Instruction* instr, const char* name, int id) {
   char buffer[100];
   snprintf(buffer, sizeof(buffer), "%s %d", name, id);
   Format(instr, buffer);
 }
 
-// PowerPC
+
 void Decoder::DecodeExt1(Instruction* instr) {
   switch (instr->Bits(10, 1) << 1) {
     case MCRF: {
@@ -557,6 +563,7 @@ void Decoder::DecodeExt1(Instruction* instr) {
     }
   }
 }
+
 
 void Decoder::DecodeExt2(Instruction* instr) {
   // Some encodings are 10-1 bits, handle those first
@@ -838,6 +845,7 @@ void Decoder::DecodeExt2(Instruction* instr) {
   }
 }
 
+
 void Decoder::DecodeExt4(Instruction* instr) {
   switch (instr->Bits(5, 1) << 1) {
     case FDIV: {
@@ -928,6 +936,7 @@ void Decoder::DecodeExt4(Instruction* instr) {
     }
   }
 }
+
 
 void Decoder::DecodeExt5(Instruction* instr) {
   switch (instr->Bits(4, 2) << 2) {
