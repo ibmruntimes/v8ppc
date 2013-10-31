@@ -180,6 +180,8 @@ class Simulator {
   // generated RegExp code with 7 parameters. This is a convenience function,
   // which sets up the simulator state and grabs the result on return.
   intptr_t Call(byte* entry, int argument_count, ...);
+  // Alternative: call a 2-argument double function.
+  double CallFP(byte* entry, double d0, double d1);
 
   // Push an address onto the JS stack.
   uintptr_t PushAddress(uintptr_t address);
@@ -288,30 +290,24 @@ class Simulator {
       void* external_function,
       v8::internal::ExternalReference::Type type);
 
-  // For use in calls that take double value arguments.
-  void GetFpArgs(double* x, double* y);
-  void GetFpArgs(double* x);
-  void GetFpArgs(double* x, intptr_t* y);
+  // Handle arguments and return value for runtime FP functions.
+  void GetFpArgs(double* x, double* y, intptr_t* z);
   void SetFpResult(const double& result);
   void TrashCallerSaveRegisters();
 
-  template<class ReturnType, int register_size>
-      ReturnType GetFromFPRegister(int reg_index);
-
-  template<class InputType, int register_size>
-      void SetFPRegister(int reg_index, const InputType& value);
+  void CallInternal(byte* entry);
 
   // Architecture state.
   // Saturating instructions require a Q flag to indicate saturation.
   // There is currently no way to read the CPSR directly, and thus read the Q
   // flag, so this is left unimplemented.
   intptr_t registers_[kNumGPRs];
-  int32_t condition_reg_;
-  int32_t fp_condition_reg_;
+  int32_t  condition_reg_;
+  int32_t  fp_condition_reg_;
   intptr_t special_reg_lr_;
   intptr_t special_reg_pc_;
   intptr_t special_reg_ctr_;
-  int32_t special_reg_xer_;
+  int32_t  special_reg_xer_;
 
   double fp_register[kNumFPRs];
 
@@ -340,14 +336,14 @@ class Simulator {
   static const uint32_t kStopDisabledBit = 1 << 31;
 
   // A stop is enabled, meaning the simulator will stop when meeting the
-  // instruction, if bit 31 of watched_stops[code].count is unset.
-  // The value watched_stops[code].count & ~(1 << 31) indicates how many times
+  // instruction, if bit 31 of watched_stops_[code].count is unset.
+  // The value watched_stops_[code].count & ~(1 << 31) indicates how many times
   // the breakpoint was hit or gone through.
   struct StopCountAndDesc {
     uint32_t count;
     char* desc;
   };
-  StopCountAndDesc watched_stops[kNumOfWatchedStops];
+  StopCountAndDesc watched_stops_[kNumOfWatchedStops];
 };
 
 
