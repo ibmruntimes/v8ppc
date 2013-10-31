@@ -1584,8 +1584,7 @@ class MacroAssembler: public Assembler {
   //   otherwise output_value is the (int)input_value (round to nearest)
   void ClampDoubleToUint8(Register result_reg,
                           DoubleRegister input_reg,
-                          DoubleRegister temp_double_reg,
-                          DoubleRegister temp_double_reg2);
+                          DoubleRegister temp_double_reg);
 
 
   void LoadInstanceDescriptors(Register map, Register descriptors);

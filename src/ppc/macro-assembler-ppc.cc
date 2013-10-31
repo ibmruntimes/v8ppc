@@ -3815,8 +3815,7 @@ void MacroAssembler::ResetRoundingMode() {
 
 void MacroAssembler::ClampDoubleToUint8(Register result_reg,
                                         DoubleRegister input_reg,
-                                        DoubleRegister temp_double_reg,
-                                        DoubleRegister temp_double_reg2) {
+                                        DoubleRegister temp_double_reg) {
   Label above_zero;
   Label done;
   Label in_bounds;
