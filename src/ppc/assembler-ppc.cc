@@ -40,7 +40,7 @@
 
 #include "v8.h"
 
-#if defined(V8_TARGET_ARCH_PPC)
+#if V8_TARGET_ARCH_PPC
 
 #include "ppc/assembler-ppc-inl.h"
 #include "serialize.h"
@@ -52,7 +52,14 @@ namespace internal {
 bool CpuFeatures::initialized_ = false;
 #endif
 unsigned CpuFeatures::supported_ = 0;
-unsigned CpuFeatures::found_by_runtime_probing_ = 0;
+unsigned CpuFeatures::found_by_runtime_probing_only_ = 0;
+unsigned CpuFeatures::cache_line_size_log2_ = 7;  // 128
+
+
+ExternalReference ExternalReference::cpu_features() {
+  ASSERT(CpuFeatures::initialized_);
+  return ExternalReference(&CpuFeatures::supported_);
+}
 
 
 // Get the CPU features enabled by the build.
@@ -145,6 +152,24 @@ void CpuFeatures::Probe() {
 }
 
 
+void CpuFeatures::PrintTarget() {
+  const char* ppc_arch = NULL;
+
+#if V8_TARGET_ARCH_PPC64
+  ppc_arch = "ppc64";
+#else
+  ppc_arch = "ppc";
+#endif
+
+  printf("target %s\n", ppc_arch);
+}
+
+
+void CpuFeatures::PrintFeatures() {
+  printf("FPU=%d\n", CpuFeatures::IsSupported(FPU));
+}
+
+
 Register ToRegister(int num) {
   ASSERT(num >= 0 && num < kNumRegisters);
   const Register kRegisters[] = {
@@ -220,16 +245,20 @@ void RelocInfo::PatchCodeWithCall(Address target, int guard_bytes) {
 // See assembler-ppc-inl.h for inlined constructors
 
 Operand::Operand(Handle<Object> handle) {
+#ifdef DEBUG
+  Isolate* isolate = Isolate::Current();
+#endif
+  AllowDeferredHandleDereference using_raw_address;
   rm_ = no_reg;
   // Verify all Objects referred by code are NOT in new space.
   Object* obj = *handle;
-  ASSERT(!HEAP->InNewSpace(obj));
+  ASSERT(!isolate->heap()->InNewSpace(obj));
   if (obj->IsHeapObject()) {
     imm_ = reinterpret_cast<intptr_t>(handle.location());
     rmode_ = RelocInfo::EMBEDDED_OBJECT;
   } else {
     // no relocation needed
-    imm_ =  reinterpret_cast<intptr_t>(obj);
+    imm_   = reinterpret_cast<intptr_t>(obj);
     rmode_ = kRelocInfo_NONEPTR;
   }
 }
@@ -256,42 +285,11 @@ MemOperand::MemOperand(Register ra, Register rb) {
 static const int kMinimalBufferSize = 4*KB;
 
 
-Assembler::Assembler(Isolate* arg_isolate, void* buffer, int buffer_size)
-    : AssemblerBase(arg_isolate),
+Assembler::Assembler(Isolate* isolate, void* buffer, int buffer_size)
+    : AssemblerBase(isolate, buffer, buffer_size),
       recorded_ast_id_(TypeFeedbackId::None()),
-      positions_recorder_(this),
-      emit_debug_code_(FLAG_debug_code),
-      predictable_code_size_(false) {
-  if (buffer == NULL) {
-    // Do our own buffer management.
-    if (buffer_size <= kMinimalBufferSize) {
-      buffer_size = kMinimalBufferSize;
-
-      if (isolate()->assembler_spare_buffer() != NULL) {
-        buffer = isolate()->assembler_spare_buffer();
-        isolate()->set_assembler_spare_buffer(NULL);
-      }
-    }
-    if (buffer == NULL) {
-      buffer_ = NewArray<byte>(buffer_size);
-    } else {
-      buffer_ = static_cast<byte*>(buffer);
-    }
-    buffer_size_ = buffer_size;
-    own_buffer_ = true;
-
-  } else {
-    // Use externally provided buffer instead.
-    ASSERT(buffer_size > 0);
-    buffer_ = static_cast<byte*>(buffer);
-    buffer_size_ = buffer_size;
-    own_buffer_ = false;
-  }
-
-  // Set up buffer pointers.
-  ASSERT(buffer_ != NULL);
-  pc_ = buffer_;
-  reloc_info_writer.Reposition(buffer_ + buffer_size, pc_);
+      positions_recorder_(this) {
+  reloc_info_writer.Reposition(buffer_ + buffer_size_, pc_);
 
   no_trampoline_pool_before_ = 0;
   trampoline_pool_blocked_nesting_ = 0;
@@ -305,18 +303,6 @@ Assembler::Assembler(Isolate* arg_isolate, void* buffer, int buffer_size)
   unbound_labels_count_ = 0;
 
   ClearRecordedAstId();
-}
-
-
-Assembler::~Assembler() {
-  if (own_buffer_) {
-    if (isolate()->assembler_spare_buffer() == NULL &&
-        buffer_size_ == kMinimalBufferSize) {
-      isolate()->set_assembler_spare_buffer(buffer_);
-    } else {
-      DeleteArray(buffer_);
-    }
-  }
 }
 
 
@@ -1953,7 +1939,7 @@ void Assembler::GrowBuffer() {
   // buffer nor pc absolute pointing inside the code buffer, so there is no need
   // to relocate any emitted relocation entries.
 
-#if defined(_AIX) || defined(V8_TARGET_ARCH_PPC64)
+#if defined(_AIX) || V8_TARGET_ARCH_PPC64
   // Relocate runtime entries.
   for (RelocIterator it(desc); !it.done(); it.next()) {
     RelocInfo::Mode rmode = it.rinfo()->rmode();
@@ -1991,7 +1977,7 @@ void Assembler::RecordRelocInfo(RelocInfo::Mode rmode, intptr_t data) {
            || RelocInfo::IsComment(rmode)
            || RelocInfo::IsPosition(rmode));
   }
-  if (RelocInfo::IsNone(rinfo.rmode()) {
+  if (!RelocInfo::IsNone(rinfo.rmode())) {
     // Don't record external references unless the heap will be serialized.
     if (rmode == RelocInfo::EXTERNAL_REFERENCE) {
 #ifdef DEBUG

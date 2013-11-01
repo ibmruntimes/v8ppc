@@ -65,6 +65,7 @@ void CPU::FlushICache(void* buffer, size_t size) {
   Simulator::FlushICache(Isolate::Current()->simulator_i_cache(), buffer, size);
 #else
 
+  const int kCacheLineSize = CpuFeatures::cache_line_size();
   intptr_t mask = kCacheLineSize - 1;
   byte *start = reinterpret_cast<byte *>(
                  reinterpret_cast<intptr_t>(buffer) & ~mask);

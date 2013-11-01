@@ -87,7 +87,8 @@ class CpuFeatures : public AllStatic {
             (!Serializer::enabled() || !IsFoundByRuntimeProbingOnly(f)));
   }
 
-  static unsigned cache_line_size() { return cache_line_size_; }
+  static unsigned cache_line_size_log2() { return cache_line_size_log2_; }
+  static unsigned cache_line_size() { return (1 << cache_line_size_log2_); }
 
  private:
 #ifdef DEBUG
@@ -95,7 +96,7 @@ class CpuFeatures : public AllStatic {
 #endif
   static unsigned supported_;
   static unsigned found_by_runtime_probing_only_;
-  static unsigned cache_line_size_;
+  static unsigned cache_line_size_log2_;
 
   friend class ExternalReference;
   DISALLOW_COPY_AND_ASSIGN(CpuFeatures);

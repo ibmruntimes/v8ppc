@@ -3396,7 +3396,9 @@ void MacroAssembler::FlushICache(Register address, size_t size,
 
   // This code handles ranges which cross a single cacheline boundary.
   // scratch is last cacheline which intersects range.
-  ASSERT(size > 0 && size <= kCacheLineSize);
+  const int kCacheLineSizeLog2 = CpuFeatures::cache_line_size_log2();
+
+  ASSERT(size > 0 && size <= (1 << kCacheLineSizeLog2));
   addi(scratch, address, Operand(size - 1));
   ClearRightImm(scratch, scratch, Operand(kCacheLineSizeLog2));
   cmpl(scratch, address);

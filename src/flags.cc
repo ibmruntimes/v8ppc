@@ -37,6 +37,9 @@
 #if V8_TARGET_ARCH_ARM
 #include "arm/assembler-arm-inl.h"
 #endif
+#if V8_TARGET_ARCH_PPC
+#include "ppc/assembler-ppc-inl.h"
+#endif
 
 namespace v8 {
 namespace internal {
@@ -520,7 +523,7 @@ void FlagList::ResetAllFlags() {
 
 // static
 void FlagList::PrintHelp() {
-#if V8_TARGET_ARCH_ARM
+#if V8_TARGET_ARCH_ARM || V8_TARGET_ARCH_PPC
   CpuFeatures::PrintTarget();
   CpuFeatures::Probe();
   CpuFeatures::PrintFeatures();
