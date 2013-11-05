@@ -30,7 +30,7 @@
 
 #include "v8.h"
 
-#if definedV8_TARGET_ARCH_PPC
+#if V8_TARGET_ARCH_PPC
 
 #include "ic-inl.h"
 #include "codegen.h"

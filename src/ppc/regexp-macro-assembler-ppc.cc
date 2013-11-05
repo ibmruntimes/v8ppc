@@ -30,8 +30,9 @@
 
 #include "v8.h"
 
-#if defined(V8_TARGET_ARCH_PPC)
+#if V8_TARGET_ARCH_PPC
 
+#include "cpu-profiler.h"
 #include "unicode.h"
 #include "log.h"
 #include "code-stubs.h"
@@ -126,7 +127,7 @@ RegExpMacroAssemblerPPC::RegExpMacroAssemblerPPC(
     int registers_to_save,
     Zone* zone)
     : NativeRegExpMacroAssembler(zone),
-      masm_(new MacroAssembler(Isolate::Current(), NULL, kRegExpCodeSize)),
+      masm_(new MacroAssembler(zone->isolate(), NULL, kRegExpCodeSize)),
       mode_(mode),
       num_registers_(registers_to_save),
       num_saved_registers_(registers_to_save),
@@ -139,7 +140,7 @@ RegExpMacroAssemblerPPC::RegExpMacroAssemblerPPC(
   ASSERT_EQ(0, registers_to_save % 2);
 
   // Called from C
-#if defined(_AIX) || defined(V8_TARGET_ARCH_PPC64)
+#if defined(_AIX) || V8_TARGET_ARCH_PPC64
   __ function_descriptor();
 #endif
 
@@ -255,56 +256,6 @@ void RegExpMacroAssemblerPPC::CheckCharacterLT(uc16 limit, Label* on_less) {
 }
 
 
-void RegExpMacroAssemblerPPC::CheckCharacters(Vector<const uc16> str,
-                                              int cp_offset,
-                                              Label* on_failure,
-                                              bool check_end_of_string) {
-  if (on_failure == NULL) {
-    // Instead of inlining a backtrack for each test, (re)use the global
-    // backtrack target.
-    on_failure = &backtrack_label_;
-  }
-
-  if (check_end_of_string) {
-    // Is last character of required match inside string.
-    CheckPosition(cp_offset + str.length() - 1, on_failure);
-  }
-
-  __ add(r3, end_of_input_address(), current_input_offset());
-  if (cp_offset != 0) {
-    int byte_offset = cp_offset * char_size();
-    __ addi(r3, r3, Operand(byte_offset));
-  }
-
-  // r3 : Address of characters to match against str.
-  int stored_high_byte = 0;
-  for (int i = 0; i < str.length(); i++) {
-    if (mode_ == ASCII) {
-      __ lbz(r4, MemOperand(r3));
-      __ addi(r3, r3, Operand(char_size()));
-      ASSERT(str[i] <= String::kMaxAsciiCharCode);
-      __ cmpi(r4, Operand(str[i]));
-    } else {
-      __ lhz(r4, MemOperand(r3));
-      __ addi(r3, r3, Operand(char_size()));
-      uc16 match_char = str[i];
-      int match_high_byte = (match_char >> 8);
-      if (match_high_byte == 0) {
-        __ cmpi(r4, Operand(str[i]));
-      } else {
-        if (match_high_byte != stored_high_byte) {
-          __ li(r5, Operand(match_high_byte));
-          stored_high_byte = match_high_byte;
-        }
-        __ addi(r6, r5, Operand(match_char & 0xff));
-        __ cmp(r4, r6);
-      }
-    }
-    BranchOrBacktrack(ne, on_failure);
-  }
-}
-
-
 void RegExpMacroAssemblerPPC::CheckGreedyLoop(Label* on_equal) {
   Label backtrack_non_equal;
   __ LoadP(r3, MemOperand(backtrack_stackpointer(), 0));
@@ -366,8 +317,13 @@ void RegExpMacroAssemblerPPC::CheckNotBackReferenceIgnoreCase(
     __ bne(&fail);
     __ subi(r6, r6, Operand('a'));
     __ cmpli(r6, Operand('z' - 'a'));  // Is r6 a lowercase letter?
-    __ bgt(&fail);
-
+    __ ble(&loop_check);  // In range 'a'-'z'.
+    // Latin-1: Check for values in range [224,254] but not 247.
+    __ subi(r6, r6, Operand(224 - 'a'));
+    __ cmpli(r6, Operand(254 - 224));
+    __ bgt(&fail);  // Weren't Latin-1 letters.
+    __ cmpi(r6, Operand(247 - 224));  // Check for 247.
+    __ beq(&fail);
 
     __ bind(&loop_check);
     __ cmp(r3, r4);
@@ -404,12 +360,12 @@ void RegExpMacroAssemblerPPC::CheckNotBackReferenceIgnoreCase(
     // Address of current input position.
     __ add(r4, current_input_offset(), end_of_input_address());
     // Isolate.
-    __ mov(r6, Operand(ExternalReference::isolate_address()));
+    __ mov(r6, Operand(ExternalReference::isolate_address(isolate())));
 
     {
       AllowExternalCallThatCantCauseGC scope(masm_);
       ExternalReference function =
-          ExternalReference::re_case_insensitive_compare_uc16(masm_->isolate());
+          ExternalReference::re_case_insensitive_compare_uc16(isolate());
       __ CallCFunction(function, argument_count);
     }
 
@@ -546,7 +502,7 @@ void RegExpMacroAssemblerPPC::CheckBitInTable(
     Handle<ByteArray> table,
     Label* on_bit_set) {
   __ mov(r3, Operand(table));
-  if (mode_ != ASCII || kTableMask != String::kMaxAsciiCharCode) {
+  if (mode_ != ASCII || kTableMask != String::kMaxOneByteCharCode) {
     __ andi(r4, current_character(), Operand(kTableSize - 1));
     __ addi(r4, r4, Operand(ByteArray::kHeaderSize - kHeapObjectTag));
   } else {
@@ -568,34 +524,28 @@ bool RegExpMacroAssemblerPPC::CheckSpecialCharacterClass(uc16 type,
   case 's':
     // Match space-characters
     if (mode_ == ASCII) {
-      // ASCII space characters are '\t'..'\r' and ' '.
+      // One byte space characters are '\t'..'\r', ' ' and \u00a0.
       Label success;
       __ cmpi(current_character(), Operand(' '));
       __ beq(&success);
       // Check range 0x09..0x0d
       __ subi(r3, current_character(), Operand('\t'));
       __ cmpli(r3, Operand('\r' - '\t'));
-      BranchOrBacktrack(gt, on_no_match);
+      __ ble(&success);
+      // \u00a0 (NBSP).
+      __ cmpi(r3, Operand(0x00a0 - '\t'));
+      BranchOrBacktrack(ne, on_no_match);
       __ bind(&success);
       return true;
     }
     return false;
   case 'S':
-    // Match non-space characters.
-    if (mode_ == ASCII) {
-      // ASCII space characters are '\t'..'\r' and ' '.
-      __ cmpi(current_character(), Operand(' '));
-      BranchOrBacktrack(eq, on_no_match);
-      __ subi(r3, current_character(), Operand('\t'));
-      __ cmpli(r3, Operand('\r' - '\t'));
-      BranchOrBacktrack(le, on_no_match);
-      return true;
-    }
+    // The emitted code for generic character classes is good enough.
     return false;
   case 'd':
     // Match ASCII digits ('0'..'9')
     __ subi(r3, current_character(), Operand('0'));
-    __ cmpli(current_character(), Operand('9' - '0'));
+    __ cmpli(r3, Operand('9' - '0'));
     BranchOrBacktrack(gt, on_no_match);
     return true;
   case 'D':
@@ -739,7 +689,7 @@ Handle<HeapObject> RegExpMacroAssemblerPPC::GetCode(Handle<String> source) {
     Label stack_ok;
 
     ExternalReference stack_limit =
-      ExternalReference::address_of_stack_limit(masm_->isolate());
+      ExternalReference::address_of_stack_limit(isolate());
     __ mov(r3, Operand(stack_limit));
     __ LoadP(r3, MemOperand(r3));
     __ sub(r3, sp, r3, LeaveOE, SetRC);
@@ -963,9 +913,9 @@ Handle<HeapObject> RegExpMacroAssemblerPPC::GetCode(Handle<String> source) {
       __ PrepareCallCFunction(num_arguments, r3);
       __ mr(r3, backtrack_stackpointer());
       __ addi(r4, frame_pointer(), Operand(kStackHighEnd));
-      __ mov(r5, Operand(ExternalReference::isolate_address()));
+      __ mov(r5, Operand(ExternalReference::isolate_address(isolate())));
       ExternalReference grow_stack =
-        ExternalReference::re_grow_stack(masm_->isolate());
+        ExternalReference::re_grow_stack(isolate());
       __ CallCFunction(grow_stack, num_arguments);
       // If return NULL, we have failed to grow the stack, and
       // must exit with a stack-overflow exception.
@@ -988,9 +938,8 @@ Handle<HeapObject> RegExpMacroAssemblerPPC::GetCode(Handle<String> source) {
 
   CodeDesc code_desc;
   masm_->GetCode(&code_desc);
-  Handle<Code> code = FACTORY->NewCode(code_desc,
-                                       Code::ComputeFlags(Code::REGEXP),
-                                       masm_->CodeObject());
+  Handle<Code> code = isolate()->factory()->NewCode(
+      code_desc, Code::ComputeFlags(Code::REGEXP), masm_->CodeObject());
   PROFILE(Isolate::Current(), RegExpCodeCreateEvent(*code, *source));
   return Handle<HeapObject>::cast(code);
 }
@@ -1062,6 +1011,7 @@ void RegExpMacroAssemblerPPC::PushBacktrack(Label* label) {
     int target = label->pos();
     __ mov(r3, Operand(target + Code::kHeaderSize - kHeapObjectTag));
   } else {
+    Assembler::BlockTrampolinePoolScope block_trampoline_pool(masm_);
     Label after_constant;
     __ b(&after_constant);
     int offset = masm_->pc_offset();
@@ -1166,7 +1116,7 @@ void RegExpMacroAssemblerPPC::CallCheckStackGuardState(Register scratch) {
   __ mov(r4, Operand(masm_->CodeObject()));
   // r3 becomes return address pointer.
   ExternalReference stack_guard_check =
-      ExternalReference::re_check_stack_guard_state(masm_->isolate());
+      ExternalReference::re_check_stack_guard_state(isolate());
   CallCFunctionUsingStub(stack_guard_check, num_arguments);
 }
 
@@ -1204,7 +1154,7 @@ int RegExpMacroAssemblerPPC::CheckStackGuardState(Address* return_address,
   Handle<String> subject(frame_entry<String*>(re_frame, kInputString));
 
   // Current string.
-  bool is_ascii = subject->IsAsciiRepresentationUnderneath();
+  bool is_ascii = subject->IsOneByteRepresentationUnderneath();
 
   ASSERT(re_code->instruction_start() <= *return_address);
   ASSERT(*return_address <=
@@ -1235,7 +1185,7 @@ int RegExpMacroAssemblerPPC::CheckStackGuardState(Address* return_address,
   }
 
   // String might have changed.
-  if (subject_tmp->IsAsciiRepresentation() != is_ascii) {
+  if (subject_tmp->IsOneByteRepresentation() != is_ascii) {
     // If we changed between an ASCII and an UC16 string, the specialized
     // code cannot be used, and we need to restart regexp matching from
     // scratch (including, potentially, compiling a new version of the code).
@@ -1354,7 +1304,7 @@ void RegExpMacroAssemblerPPC::Pop(Register target) {
 void RegExpMacroAssemblerPPC::CheckPreemption() {
   // Check for preemption.
   ExternalReference stack_limit =
-      ExternalReference::address_of_stack_limit(masm_->isolate());
+      ExternalReference::address_of_stack_limit(isolate());
   __ mov(r3, Operand(stack_limit));
   __ LoadP(r3, MemOperand(r3));
   __ cmpl(sp, r3);
@@ -1364,7 +1314,7 @@ void RegExpMacroAssemblerPPC::CheckPreemption() {
 
 void RegExpMacroAssemblerPPC::CheckStackLimit() {
   ExternalReference stack_limit =
-      ExternalReference::address_of_regexp_stack_limit(masm_->isolate());
+      ExternalReference::address_of_regexp_stack_limit(isolate());
   __ mov(r3, Operand(stack_limit));
   __ LoadP(r3, MemOperand(r3));
   __ cmpl(backtrack_stackpointer(), r3);
