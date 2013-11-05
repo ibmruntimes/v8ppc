@@ -31,7 +31,7 @@
 // CPU specific code for ppc independent of OS goes here.
 #include "v8.h"
 
-#if defined(V8_TARGET_ARCH_PPC)
+#if V8_TARGET_ARCH_PPC
 
 #include "cpu.h"
 #include "macro-assembler.h"
