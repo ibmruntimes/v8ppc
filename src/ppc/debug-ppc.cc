@@ -30,7 +30,7 @@
 
 #include "v8.h"
 
-#if defined(V8_TARGET_ARCH_PPC)
+#if V8_TARGET_ARCH_PPC
 
 #include "codegen.h"
 #include "debug.h"
@@ -167,7 +167,7 @@ static void Generate_DebugBreakCallHelper(MacroAssembler* masm,
         if ((non_object_regs & (1 << r)) != 0) {
           if (FLAG_debug_code) {
             __ andis(r0, reg, Operand(0xc000));
-            __ Assert(eq, "Unable to encode value as smi", cr0);
+            __ Assert(eq, kUnableToEncodeValueAsSmi, cr0);
           }
           __ SmiTag(reg);
         }
@@ -261,6 +261,15 @@ void Debug::GenerateKeyedStoreICDebugBreak(MacroAssembler* masm) {
 }
 
 
+void Debug::GenerateCompareNilICDebugBreak(MacroAssembler* masm) {
+  // Register state for CompareNil IC
+  // ----------- S t a t e -------------
+  //  -- r3    : value
+  // -----------------------------------
+  Generate_DebugBreakCallHelper(masm, r3.bit(), 0);
+}
+
+
 void Debug::GenerateCallICDebugBreak(MacroAssembler* masm) {
   // Calling convention for IC call (from ic-ppc.cc)
   // ----------- S t a t e -------------
@@ -341,12 +350,12 @@ void Debug::GenerateSlotDebugBreak(MacroAssembler* masm) {
 
 
 void Debug::GeneratePlainReturnLiveEdit(MacroAssembler* masm) {
-  masm->Abort("LiveEdit frame dropping is not supported on ppc");
+  masm->Abort(kLiveEditFrameDroppingIsNotSupportedOnPpc);
 }
 
 
 void Debug::GenerateFrameDropperLiveEdit(MacroAssembler* masm) {
-  masm->Abort("LiveEdit frame dropping is not supported on ppc");
+  masm->Abort(kLiveEditFrameDroppingIsNotSupportedOnPpc);
 }
 
 const bool Debug::kFrameDropperSupported = false;
