@@ -157,10 +157,10 @@ class Simulator {
   double get_double_from_register_pair(int reg);
   void set_d_register_from_double(int dreg, const double dbl) {
     ASSERT(dreg >= 0 && dreg < kNumFPRs);
-    fp_register[dreg] = dbl;
+    fp_registers_[dreg] = dbl;
   }
   double get_double_from_d_register(int dreg) {
-    return fp_register[dreg];
+    return fp_registers_[dreg];
   }
 
   // Special case of set_register and get_register to access the raw PC value.
@@ -309,7 +309,7 @@ class Simulator {
   intptr_t special_reg_ctr_;
   int32_t  special_reg_xer_;
 
-  double fp_register[kNumFPRs];
+  double fp_registers_[kNumFPRs];
 
   // Simulator support.
   char* stack_;
