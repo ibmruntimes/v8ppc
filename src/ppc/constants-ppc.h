@@ -367,7 +367,6 @@ enum FAKE_OPCODE_T {
   fMASM60 = 60,
   fMASM61 = 61,
   fMASM62 = 62,
-  fMASM63 = 63,
 
   fLastFaker  // can't be more than 128 (2^^7)
 };

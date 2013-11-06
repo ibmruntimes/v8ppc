@@ -822,7 +822,7 @@ static void PushInterceptorArguments(MacroAssembler* masm,
   __ push(holder);
   __ LoadP(scratch, FieldMemOperand(scratch, InterceptorInfo::kDataOffset));
   __ push(scratch);
-  __ mov(scratch, Operand(ExternalReference::isolate_address()));
+  __ mov(scratch, Operand(ExternalReference::isolate_address(masm->isolate())));
   __ push(scratch);
 }
 
@@ -896,7 +896,7 @@ static void GenerateFastApiDirectCall(MacroAssembler* masm,
   } else {
     __ Move(r9, call_data);
   }
-  __ mov(r10, Operand(ExternalReference::isolate_address()));
+  __ mov(r10, Operand(ExternalReference::isolate_address(masm->isolate())));
   // Store JS function, call data, isolate ReturnValue default and ReturnValue.
   __ StoreP(r8, MemOperand(sp, 1 * kPointerSize));
   __ StoreP(r9, MemOperand(sp, 2 * kPointerSize));
@@ -1191,7 +1191,7 @@ static void GenerateCheckPropertyCells(MacroAssembler* masm,
   }
 }
 
-
+#if 0  // Unused
 // Convert and store int passed in register ival to IEEE 754 single precision
 // floating point value at memory location (dst + 4 * wordoffset)
 // If VFP3 is available use it for conversion.
@@ -1200,14 +1200,12 @@ static void StoreIntAsFloat(MacroAssembler* masm,
                             Register wordoffset,
                             Register ival,
                             Register scratch1) {
-  __ fake_asm(fMASM63);
-#if 0  // below needs to be implemented
   __ vmov(s0, ival);
   __ add(scratch1, dst, Operand(wordoffset, LSL, 2));
   __ vcvt_f32_s32(s0, s0);
   __ vstr(s0, scratch1, 0);
-#endif
 }
+#endif
 
 
 void StubCompiler::GenerateTailCall(MacroAssembler* masm, Handle<Code> code) {
@@ -1394,10 +1392,10 @@ Register BaseLoadStubCompiler::CallbackHandlerFrontend(
     const int kElementsStartOffset = NameDictionary::kHeaderSize +
         NameDictionary::kElementsStartIndex * kPointerSize;
     const int kValueOffset = kElementsStartOffset + kPointerSize;
-    __ LoadP(scratch2, FieldMemOperand(pointer, kValueOffset));
-    __ mov(scratch3, Operand(callback));
-    __ cmp(scratch2, scratch3);
-    __ bne(miss);
+    __ LoadP(scratch2(), FieldMemOperand(pointer, kValueOffset));
+    __ mov(scratch3(), Operand(callback));
+    __ cmp(scratch2(), scratch3());
+    __ bne(&miss);
   }
 
   HandlerFrontendFooter(name, success, &miss);
@@ -1429,7 +1427,7 @@ void BaseLoadStubCompiler::GenerateLoadField(Register reg,
                                              Handle<JSObject> holder,
                                              PropertyIndex field,
                                              Representation representation) {
-  if (!reg.is(receiver())) __ mov(receiver(), reg);
+  if (!reg.is(receiver())) __ mr(receiver(), reg);
   if (kind() == Code::LOAD_IC) {
     LoadFieldStub stub(field.is_inobject(holder),
                        field.translate(holder),
@@ -1459,19 +1457,19 @@ void BaseLoadStubCompiler::GenerateLoadCallback(
   __ mr(scratch2(), sp);  // scratch2 = AccessorInfo::args_
   if (heap()->InNewSpace(callback->data())) {
     __ Move(scratch3(), callback);
-    __ LoadP(scratch3, FieldMemOperand(scratch3,
+    __ LoadP(scratch3(), FieldMemOperand(scratch3(),
                                        ExecutableAccessorInfo::kDataOffset));
   } else {
     __ Move(scratch3(), Handle<Object>(callback->data(), isolate()));
   }
   __ Push(reg, scratch3());
   __ LoadRoot(scratch3(), Heap::kUndefinedValueRootIndex);
-  __ mov(scratch4(), scratch3());
+  __ mr(scratch4(), scratch3());
   __ Push(scratch3(), scratch4());
   __ mov(scratch4(),
          Operand(ExternalReference::isolate_address(isolate())));
   __ Push(scratch4(), name());
-  __ mov(r3, sp);  // r3 = Handle<Name>
+  __ mr(r3, sp);  // r3 = Handle<Name>
 
   // PPC LINUX 32-bit ABI:
   //
@@ -1891,7 +1889,7 @@ Handle<Code> CallStubCompiler::CompileArrayPushCall(
 
       // Get the array's length into r3 and calculate new length.
       __ LoadP(r3, FieldMemOperand(receiver, JSArray::kLengthOffset));
-      __ add(r3, r3, Operand(Smi::FromInt(argc)));
+      __ AddSmiLiteral(r3, r3, Smi::FromInt(argc), r0);
 
       // Get the elements' length.
       __ LoadP(r7, FieldMemOperand(elements, FixedArray::kLengthOffset));
@@ -1901,7 +1899,7 @@ Handle<Code> CallStubCompiler::CompileArrayPushCall(
       __ bgt(&call_builtin);
 
       __ LoadP(r7, MemOperand(sp, (argc - 1) * kPointerSize));
-      __ StoreNumberToDoubleElements(r7, r3, elements, r8, d0,
+      __ StoreNumberToDoubleElements(r7, r3, elements, r8, r9, r22, r10,
                                      &call_builtin, argc * kDoubleSize);
 
       // Save new length.
@@ -2397,7 +2395,7 @@ Handle<Code> CallStubCompiler::CompileMathFloorCall(
   // arguments, bail out to the regular call.
   if (!object->IsJSObject() || argc != 1) return Handle<Code>::null();
 
-  Label miss, slow;
+  Label miss, slow, not_smi, positive, drop_arg_return;
   GenerateNameCheck(name, &miss);
 
   if (cell.is_null()) {
@@ -2996,7 +2994,7 @@ Handle<Code> StoreStubCompiler::CompileStoreInterceptor(
 
   __ Push(receiver(), this->name(), value());
 
-  __ LoadSmiLiteral(scratch1(), Smi::FromInt(strict_mode_));
+  __ LoadSmiLiteral(scratch1(), Smi::FromInt(strict_mode()));
   __ push(scratch1());  // strict mode
 
   // Do tail-call to the runtime system.
@@ -3425,15 +3423,14 @@ void KeyedStoreStubCompiler::GenerateStoreExternalArray(
       // Perform int-to-float conversion and store to memory.
       __ SmiToFloatArrayOffset(r10, key);
       // r10: efective address of the float element
-      FloatingPointHelper::ConvertIntToFloat(masm, d0, r8, r9);
+      __ ConvertIntToFloat(d0, r8, r9);
       __ stfsx(d0, MemOperand(r6, r10));
       break;
     case EXTERNAL_DOUBLE_ELEMENTS:
       __ SmiToDoubleArrayOffset(r10, key);
       // __ add(r6, r6, r10);
       // r6: effective address of the double element
-      FloatingPointHelper::ConvertIntToDouble(
-          masm, r8,  d0);
+      __ ConvertIntToDouble(r8,  d0);
       __ stfdx(d0, MemOperand(r6, r10));
       break;
     case FAST_ELEMENTS:
@@ -3748,7 +3745,7 @@ void KeyedStoreStubCompiler::GenerateStoreFastDoubleElement(
   // Compare smis, unsigned compare catches both negative and out-of-bound
   // indexes.
   __ cmpl(key_reg, scratch1);
-  if (grow_mode == ALLOW_JSARRAY_GROWTH) {
+  if (IsGrowStoreMode(store_mode)) {
     __ bge(&grow);
   } else {
     __ bge(&miss_force_generic);
@@ -3757,7 +3754,6 @@ void KeyedStoreStubCompiler::GenerateStoreFastDoubleElement(
   __ bind(&finish_store);
   __ StoreNumberToDoubleElements(value_reg,
                                  key_reg,
-                                 receiver_reg,
                                  // All registers after this are overwritten.
                                  elements_reg,
                                  scratch1,
@@ -3815,7 +3811,6 @@ void KeyedStoreStubCompiler::GenerateStoreFastDoubleElement(
     __ mr(scratch1, elements_reg);
     __ StoreNumberToDoubleElements(value_reg,
                                    key_reg,
-                                   receiver_reg,
                                    // All registers after this are overwritten.
                                    elements_reg,
                                    scratch1,
