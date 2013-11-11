@@ -1242,10 +1242,15 @@ class MaybeObject BASE_EMBEDDED {
   V(kSwitchStatementMixedOrNonLiteralSwitchLabels,                            \
     "SwitchStatement: mixed or non-literal switch labels")                    \
   V(kSwitchStatementTooManyClauses, "SwitchStatement: too many clauses")      \
+  V(kTheInstructionShouldBeALis, "The instruction should be a lis")           \
   V(kTheInstructionShouldBeALui, "The instruction should be a lui")           \
   V(kTheInstructionShouldBeAnOri, "The instruction should be an ori")         \
+  V(kTheInstructionShouldBeAnOris, "The instruction should be an oris")       \
+  V(kTheInstructionShouldBeASldi, "The instruction should be a sldi")         \
   V(kTheInstructionToPatchShouldBeALoadFromPc,                                \
     "The instruction to patch should be a load from pc")                      \
+  V(kTheInstructionToPatchShouldBeALis,                                       \
+    "The instruction to patch should be a lis")                               \
   V(kTheInstructionToPatchShouldBeALui,                                       \
     "The instruction to patch should be a lui")                               \
   V(kTheInstructionToPatchShouldBeAnOri,                                      \

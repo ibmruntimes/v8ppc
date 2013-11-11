@@ -1899,7 +1899,7 @@ Handle<Code> CallStubCompiler::CompileArrayPushCall(
       __ bgt(&call_builtin);
 
       __ LoadP(r7, MemOperand(sp, (argc - 1) * kPointerSize));
-      __ StoreNumberToDoubleElements(r7, r3, elements, r8, r9, r22, r10,
+      __ StoreNumberToDoubleElements(r7, r3, elements, r8, d0,
                                      &call_builtin, argc * kDoubleSize);
 
       // Save new length.
@@ -3334,12 +3334,7 @@ static void GenerateSmiKeyCheck(MacroAssembler* masm,
               fail,
               DONT_DO_SMI_CHECK);
   __ lfd(double_scratch0, FieldMemOperand(key, HeapNumber::kValueOffset));
-  __ EmitVFPTruncate(kRoundToZero,
-                     scratch0,
-                     double_scratch0,
-                     scratch1,
-                     double_scratch1,
-                     kCheckForInexactConversion);
+  __ TryDoubleToInt32Exact(scratch0, double_scratch0, scratch1, double_scratch1);
   __ bne(fail);
 #if V8_TARGET_ARCH_PPC64
   __ SmiTag(key, scratch0);
@@ -3476,7 +3471,7 @@ void KeyedStoreStubCompiler::GenerateStoreExternalArray(
         __ mr(r8, value);
         __ lfd(d0, FieldMemOperand(r8, HeapNumber::kValueOffset));
 
-        __ EmitECMATruncate(r8, d0, d1, r10, r7, r9);
+        __ ECMAToInt32(r8, d0, r10, r7, r9, d1);
         switch (elements_kind) {
           case EXTERNAL_BYTE_ELEMENTS:
           case EXTERNAL_UNSIGNED_BYTE_ELEMENTS:
@@ -3722,8 +3717,6 @@ void KeyedStoreStubCompiler::GenerateStoreFastDoubleElement(
   Register elements_reg = r6;
   Register scratch1 = r7;
   Register scratch2 = r8;
-  Register scratch3 = r9;
-  Register scratch4 = r10;
   Register length_reg = r10;
 
   // This stub is meant to be tail-jumped to, the receiver must already
@@ -3752,15 +3745,8 @@ void KeyedStoreStubCompiler::GenerateStoreFastDoubleElement(
   }
 
   __ bind(&finish_store);
-  __ StoreNumberToDoubleElements(value_reg,
-                                 key_reg,
-                                 // All registers after this are overwritten.
-                                 elements_reg,
-                                 scratch1,
-                                 scratch2,
-                                 scratch3,
-                                 scratch4,
-                                 &transition_elements_kind);
+  __ StoreNumberToDoubleElements(value_reg, key_reg, elements_reg,
+                                 scratch1, d0, &transition_elements_kind);
   __ Ret();
 
   // Handle store cache miss, replacing the ic with the generic stub.
@@ -3809,15 +3795,8 @@ void KeyedStoreStubCompiler::GenerateStoreFastDoubleElement(
               r0);
 
     __ mr(scratch1, elements_reg);
-    __ StoreNumberToDoubleElements(value_reg,
-                                   key_reg,
-                                   // All registers after this are overwritten.
-                                   elements_reg,
-                                   scratch1,
-                                   scratch2,
-                                   scratch3,
-                                   scratch4,
-                                   &transition_elements_kind);
+    __ StoreNumberToDoubleElements(value_reg, key_reg, scratch1,
+                                   scratch2, d0, &transition_elements_kind);
 
     __ mov(scratch1, Operand(kHoleNanLower32));
     __ mov(scratch2, Operand(kHoleNanUpper32));

@@ -1343,13 +1343,7 @@ static void KeyedStoreGenerateGenericHelper(
     __ bne(slow);
   }
   __ bind(&fast_double_without_map_check);
-  __ StoreNumberToDoubleElements(value,
-                                 key,
-                                 elements,  // Overwritten.
-                                 r6,        // Scratch regs...
-                                 r7,
-                                 r8,
-                                 r9,
+  __ StoreNumberToDoubleElements(value, key, elements, r6, d0,
                                  &transition_double_elements);
   if (increment_length == kIncrementLength) {
     // Add 1 to receiver->length.

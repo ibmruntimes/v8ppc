@@ -363,6 +363,9 @@ enum FAKE_OPCODE_T {
   fBKPT = 14,
 
   fMASM20 = 20,
+  fMASM21 = 21,
+  fMASM22 = 22,
+  fMASM23 = 23,
 
   fMASM60 = 60,
   fMASM61 = 61,
@@ -445,7 +448,7 @@ const uint32_t kMaxStopCode = kStopCode - 1;
 const int32_t  kDefaultStopCode = -1;
 
 // FP rounding modes.
-enum VFPRoundingMode {
+enum FPRoundingMode {
   RN = 0,   // Round to Nearest.
   RZ = 1,   // Round towards zero.
   RP = 2,   // Round towards Plus Infinity.
@@ -458,7 +461,7 @@ enum VFPRoundingMode {
   kRoundToMinusInf = RM
 };
 
-const uint32_t kVFPRoundingModeMask = 3;
+const uint32_t kFPRoundingModeMask = 3;
 
 enum CheckForInexactConversion {
   kCheckForInexactConversion,

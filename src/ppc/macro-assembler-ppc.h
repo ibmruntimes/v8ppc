@@ -410,6 +410,9 @@ class MacroAssembler: public Assembler {
   void FlushICache(Register address, size_t size,
                    Register scratch);
 
+  // If the value is a NaN, canonicalize the value else, do nothing.
+  void CanonicalizeNaN(const DoubleRegister value);
+
   // Convert the smi or heap number in object to an int32 using the rules
   // for ToInt32 as described in ECMAScript 9.5.: the value is truncated
   // and brought into the range -2^31 .. +2^31 - 1.
@@ -419,7 +422,8 @@ class MacroAssembler: public Assembler {
                             Register scratch1,
                             Register scratch2,
                             Register scratch3,
-                            DoubleRegister double_scratch,
+                            DoubleRegister double_scratch1,
+                            DoubleRegister double_scratch2,
                             Label* not_int32);
 
   // Loads the number from object into dst register.
@@ -428,8 +432,7 @@ class MacroAssembler: public Assembler {
   void LoadNumber(Register object,
                   DoubleRegister dst,
                   Register heap_number_map,
-                  Register scratch1,
-                  Register scratch2,
+                  Register scratch,
                   Label* not_number);
 
   // Load the number from object into double_dst in the double format.
@@ -453,9 +456,7 @@ class MacroAssembler: public Assembler {
   void LoadNumberAsInt32(Register object,
                          Register dst,
                          Register heap_number_map,
-                         Register scratch1,
-                         Register scratch2,
-                         Register scratch3,
+                         Register scratch,
                          DoubleRegister double_scratch0,
                          DoubleRegister double_scratch1,
                          Label* not_int32);
@@ -476,6 +477,16 @@ class MacroAssembler: public Assembler {
   void ConvertIntToFloat(const DoubleRegister dst,
                          const Register src,
                          const Register int_scratch);
+
+  // Converts the double_input to an integer.  Note that, upon return,
+  // the contents of double_dst will also hold the fixed point representation.
+  void ConvertDoubleToInt64(const DoubleRegister double_input,
+                            const Register dst,
+#if !V8_TARGET_ARCH_PPC64
+                            const Register dst_hi,
+#endif
+                            const DoubleRegister double_dst,
+                            FPRoundingMode rounding_mode = kRoundToZero);
 
   // Enter exit frame.
   // stack_space - extra stack space, used for alignment before call to C.
@@ -593,7 +604,7 @@ class MacroAssembler: public Assembler {
                      RCBit rc = LeaveRC);
 
   // Set new rounding mode RN to FPSCR
-  void SetRoundingMode(VFPRoundingMode RN);
+  void SetRoundingMode(FPRoundingMode RN);
 
   // reset rounding mode to default (kRoundToNearest)
   void ResetRoundingMode();
@@ -889,16 +900,12 @@ class MacroAssembler: public Assembler {
 
   // Check to see if maybe_number can be stored as a double in
   // FastDoubleElements. If it can, store it at the index specified by key in
-  // the FastDoubleElements array elements. Otherwise jump to fail, in which
-  // case scratch2, scratch3 and scratch4 are unmodified.
+  // the FastDoubleElements array elements. Otherwise jump to fail.
   void StoreNumberToDoubleElements(Register value_reg,
                                    Register key_reg,
-                                   // All regs below here overwritten.
                                    Register elements_reg,
                                    Register scratch1,
-                                   Register scratch2,
-                                   Register scratch3,
-                                   Register scratch4,
+                                   DoubleRegister double_scratch,
                                    Label* fail,
                                    int elements_offset = 0);
 
@@ -977,12 +984,43 @@ class MacroAssembler: public Assembler {
   void GetLeastBitsFromSmi(Register dst, Register src, int num_least_bits);
   void GetLeastBitsFromInt32(Register dst, Register src, int mun_least_bits);
 
-  // Load the value of a smi object into a FP double register. The register
-  // scratch1 can be the same register as smi in which case smi will hold the
-  // untagged value afterwards.
-  void SmiToDoubleFPRegister(Register smi,
-                             DoubleRegister value,
-                             Register scratch1);
+  // Load the value of a smi object into a double register.
+  void SmiToDouble(DoubleRegister value, Register smi);
+
+  // Check if a double can be exactly represented as a signed 32-bit integer.
+  // CR_EQ in cr7 is set if true.
+  void TestDoubleIsInt32(DoubleRegister double_input,
+                         Register scratch1,
+                         Register scratch2,
+                         DoubleRegister double_scratch);
+
+  // Try to convert a double to a signed 32-bit integer.
+  // CR_EQ in cr7 is set and result assigned if the conversion is exact.
+  void TryDoubleToInt32Exact(Register result,
+                             DoubleRegister double_input,
+                             Register scratch,
+                             DoubleRegister double_scratch);
+
+  // Floor a double and writes the value to the result register.
+  // Go to exact if the conversion is exact (to be able to test -0),
+  // fall through calling code if an overflow occurred, else go to done.
+  // In return, input_high is loaded with high bits of input.
+  void TryInt32Floor(Register result,
+                     DoubleRegister double_input,
+                     Register input_high,
+                     DoubleRegister double_scratch,
+                     Label* done,
+                     Label* exact);
+
+  // Performs a truncating conversion of a floating point number as used by
+  // the JS bitwise operations. See ECMA-262 9.5: ToInt32.
+  // Exits with 'result' holding the answer and all other registers clobbered.
+  void ECMAToInt32(Register result,
+                   DoubleRegister double_input,
+                   Register scratch,
+                   Register scratch_high,
+                   Register scratch_low,
+                   DoubleRegister double_scratch);
 
   // Overflow handling functions.
   // Usage: call the appropriate arithmetic function and then call one of the
@@ -1029,52 +1067,6 @@ class MacroAssembler: public Assembler {
     Ret();
     bind(&label);
   }
-
-  // Convert the HeapNumber pointed to by source to a 32bits signed integer
-  // dest. If the HeapNumber does not fit into a 32bits signed integer branch
-  // to not_int32 label. If VFP3 is available double_scratch is used but not
-  // scratch2
-  void ConvertToInt32(Register source,
-                      Register dest,
-                      Register scratch,
-                      Register scratch2,
-                      DoubleRegister double_scratch,
-                      Label *not_int32);
-
-  // Truncates a double using a specific rounding mode, and writes the value
-  // to the result register.
-  // Clears the z flag (ne condition) if an overflow occurs.
-  // If kCheckForInexactConversion is passed, the z flag is also cleared if the
-  // conversion was inexact, i.e. if the double value could not be converted
-  // exactly to a 32-bit integer.
-  void EmitVFPTruncate(VFPRoundingMode rounding_mode,
-                       Register result,
-                       DoubleRegister double_input,
-                       Register scratch,
-                       DoubleRegister double_scratch,
-                       CheckForInexactConversion check
-                           = kDontCheckForInexactConversion);
-
-  // Helper for EmitECMATruncate.
-  // This will truncate a floating-point value outside of the signed 32bit
-  // integer range to a 32bit signed integer.
-  // Expects the double value loaded in input_high and input_low.
-  // Exits with the answer in 'result'.
-  // Note that this code does not work for values in the 32bit range!
-  void EmitOutOfInt32RangeTruncate(Register result,
-                                   Register input_high,
-                                   Register input_low,
-                                   Register scratch);
-
-  // Performs a truncating conversion of a floating point number as used by
-  // the JS bitwise operations. See ECMA-262 9.5: ToInt32.
-  // Exits with 'result' holding the answer and all other registers clobbered.
-  void EmitECMATruncate(Register result,
-                        DoubleRegister double_input,
-                        DoubleRegister double_scratch,
-                        Register scratch,
-                        Register scratch2,
-                        Register scratch3);
 
   // ---------------------------------------------------------------------------
   // Runtime calls

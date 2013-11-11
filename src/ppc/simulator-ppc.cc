@@ -2554,7 +2554,7 @@ void Simulator::DecodeExt4(Instruction* instr) {
       } else if (frb_val < kMinLongLong) {
         frt_val = kMinLongLong;
       } else {
-        switch (fp_condition_reg_ & kVFPRoundingModeMask) {
+        switch (fp_condition_reg_ & kFPRoundingModeMask) {
           case kRoundToZero:
             frt_val = (int64_t)frb_val;
             break;
@@ -2608,7 +2608,7 @@ void Simulator::DecodeExt4(Instruction* instr) {
         if (opcode == FCTIWZ) {
           frt_val = (int64_t)frb_val;
         } else {
-          switch (fp_condition_reg_ & kVFPRoundingModeMask) {
+          switch (fp_condition_reg_ & kFPRoundingModeMask) {
           case kRoundToZero:
             frt_val = (int64_t)frb_val;
             break;
