@@ -363,9 +363,6 @@ enum FAKE_OPCODE_T {
   fBKPT = 14,
 
   fMASM20 = 20,
-  fMASM21 = 21,
-  fMASM22 = 22,
-  fMASM23 = 23,
 
   fMASM60 = 60,
   fMASM61 = 61,

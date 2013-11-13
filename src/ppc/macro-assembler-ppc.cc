@@ -579,7 +579,36 @@ MemOperand MacroAssembler::SafepointRegistersAndDoublesSlot(Register reg) {
 
 
 void MacroAssembler::CanonicalizeNaN(const DoubleRegister value) {
-  fake_asm(fMASM23);
+  Label done;
+
+  // Test for NaN
+  fcmpu(value, value);
+  bordered(&done);
+
+  // Replace with canonical NaN.
+  uint64_t nan_int64 = BitCast<uint64_t>(
+    FixedDoubleArray::canonical_not_the_hole_nan_as_double());
+#if V8_TARGET_ARCH_PPC64
+  mov(r0, Operand(nan_int64));
+  std(r0, MemOperand(sp, -kDoubleSize));
+#else
+  mov(r0, Operand(static_cast<intptr_t>(nan_int64)));
+#if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
+  stw(r0, MemOperand(sp, 0));
+#else
+  stw(r0, MemOperand(sp, 4));
+#endif
+  mov(r0, Operand(static_cast<intptr_t>(nan_int64 >> 32)));
+#if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
+  stw(r0, MemOperand(sp, 4));
+#else
+  stw(r0, MemOperand(sp, 0));
+#endif
+#endif
+  lfd(value, MemOperand(sp));
+  addi(sp, sp, Operand(kDoubleSize));
+
+  bind(&done);
 }
 
 
@@ -2552,51 +2581,51 @@ void MacroAssembler::TryDoubleToInt32Exact(Register result,
 void MacroAssembler::TryInt32Floor(Register result,
                                    DoubleRegister double_input,
                                    Register input_high,
+                                   Register scratch,
                                    DoubleRegister double_scratch,
                                    Label* done,
                                    Label* exact) {
-#if 1
-  fake_asm(fMASM21);
-#else
   ASSERT(!result.is(input_high));
   ASSERT(!double_input.is(double_scratch));
-  Label negative, exception;
+  Label exception;
 
-  VmovHigh(input_high, double_input);
+  // Move high word into input_high
+  stfdu(double_input, MemOperand(sp, -kDoubleSize));
+#if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
+  lwz(input_high, MemOperand(sp, 4));
+#else
+  lwz(input_high, MemOperand(sp, 0));
+#endif
+  addi(sp, sp, Operand(kDoubleSize));
 
-  // Test for NaN and infinities.
-  Sbfx(result, input_high,
-       HeapNumber::kExponentShift, HeapNumber::kExponentBits);
-  cmp(result, Operand(-1));
-  b(eq, &exception);
-  // Test for values that can be exactly represented as a
-  // signed 32-bit integer.
-  TryDoubleToInt32Exact(result, double_input, double_scratch);
-  // If exact, return (result already fetched).
-  b(eq, exact);
-  cmp(input_high, Operand::Zero());
-  b(mi, &negative);
+  // Test for NaN/Inf
+  ExtractBitMask(result, input_high, HeapNumber::kExponentMask);
+  cmpli(result, Operand(0x7ff));
+  beq(&exception);
 
-  // Input is in ]+0, +inf[.
-  // If result equals 0x7fffffff input was out of range or
-  // in ]0x7fffffff, 0x80000000[. We ignore this last case which
-  // could fits into an int32, that means we always think input was
-  // out of range and always go to exception.
-  // If result < 0x7fffffff, go to done, result fetched.
-  cmn(result, Operand(1));
-  b(mi, &exception);
+  // Convert (rounding to -Inf)
+  ConvertDoubleToInt64(double_input, result,
+#if !V8_TARGET_ARCH_PPC64
+                       scratch,
+#endif
+                       double_scratch,
+                       kRoundToMinusInf);
+
+  // Test for overflow
+#if V8_TARGET_ARCH_PPC64
+  TestIfInt32(result, scratch, r0);
+#else
+  TestIfInt32(scratch, result, r0);
+#endif
+  bne(&exception);
+
+  // Test for exactness
+  fcfid(double_scratch, double_scratch);
+  fcmpu(double_scratch, double_input);
+  beq(exact);
   b(done);
 
-  // Input is in ]-inf, -0[.
-  // If x is a non integer negative number,
-  // floor(x) <=> round_to_zero(x) - 1.
-  bind(&negative);
-  sub(result, result, Operand(1), SetCC);
-  // If result is still negative, go to done, result fetched.
-  // Else, we had an overflow and we fall through exception.
-  b(mi, done);
   bind(&exception);
-#endif
 }
 
 
@@ -2606,9 +2635,6 @@ void MacroAssembler::ECMAToInt32(Register result,
                                  Register scratch_high,
                                  Register scratch_low,
                                  DoubleRegister double_scratch) {
-#if 1
-  fake_asm(fMASM22);
-#else
   ASSERT(!scratch_high.is(result));
   ASSERT(!scratch_low.is(result));
   ASSERT(!scratch_low.is(scratch_high));
@@ -2619,46 +2645,66 @@ void MacroAssembler::ECMAToInt32(Register result,
 
   Label out_of_range, only_low, negate, done;
 
-  vcvt_s32_f64(double_scratch.low(), double_input);
-  vmov(result, double_scratch.low());
+  // Convert
+  ConvertDoubleToInt64(double_input, result,
+#if !V8_TARGET_ARCH_PPC64
+                       scratch,
+#endif
+                       double_scratch);
 
-  // If result is not saturated (0x7fffffff or 0x80000000), we are done.
-  sub(scratch, result, Operand(1));
-  cmp(scratch, Operand(0x7ffffffe));
-  b(lt, &done);
+  // Test for overflow
+#if V8_TARGET_ARCH_PPC64
+  TestIfInt32(result, scratch, r0);
+#else
+  TestIfInt32(scratch, result, r0);
+#endif
+  beq(&done);
 
-  vmov(scratch_low, scratch_high, double_input);
-  Ubfx(scratch, scratch_high,
-       HeapNumber::kExponentShift, HeapNumber::kExponentBits);
+  // Move high/low words into scratch registers
+  stfdu(double_input, MemOperand(sp, -kDoubleSize));
+#if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
+  lwz(scratch_high, MemOperand(sp, 4));
+  lwz(scratch_low, MemOperand(sp, 0));
+#else
+  lwz(scratch_high, MemOperand(sp, 0));
+  lwz(scratch_low, MemOperand(sp, 4));
+#endif
+  addi(sp, sp, Operand(kDoubleSize));
+
+  ExtractBitMask(scratch, scratch_high, HeapNumber::kExponentMask);
+
   // Load scratch with exponent - 1. This is faster than loading
-  // with exponent because Bias + 1 = 1024 which is an *ARM* immediate value.
-  sub(scratch, scratch, Operand(HeapNumber::kExponentBias + 1));
+  // with exponent because Bias + 1 = 1024 which is a *PPC* immediate value.
+  subi(scratch, scratch, Operand(HeapNumber::kExponentBias + 1));
   // If exponent is greater than or equal to 84, the 32 less significant
   // bits are 0s (2^84 = 1, 52 significant bits, 32 uncoded bits),
   // the result is 0.
   // Compare exponent with 84 (compare exponent - 1 with 83).
-  cmp(scratch, Operand(83));
-  b(ge, &out_of_range);
+  cmpi(scratch, Operand(83));
+  bge(&out_of_range);
 
   // If we reach this code, 31 <= exponent <= 83.
   // So, we don't have to handle cases where 0 <= exponent <= 20 for
   // which we would need to shift right the high part of the mantissa.
   // Scratch contains exponent - 1.
   // Load scratch with 52 - exponent (load with 51 - (exponent - 1)).
-  rsb(scratch, scratch, Operand(51), SetCC);
-  b(ls, &only_low);
+  subfic(scratch, scratch, Operand(51));
+  cmpi(scratch, Operand::Zero());
+  ble(&only_low);
   // 21 <= exponent <= 51, shift scratch_low and scratch_high
   // to generate the result.
-  mov(scratch_low, Operand(scratch_low, LSR, scratch));
+  srw(scratch_low, scratch_low, scratch);
   // Scratch contains: 52 - exponent.
   // We needs: exponent - 20.
   // So we use: 32 - scratch = 32 - 52 + exponent = exponent - 20.
-  rsb(scratch, scratch, Operand(32));
-  Ubfx(result, scratch_high,
-       0, HeapNumber::kMantissaBitsInTopWord);
+  subfic(scratch, scratch, Operand(32));
+  ExtractBitMask(result, scratch_high, HeapNumber::kMantissaMask);
   // Set the implicit 1 before the mantissa part in scratch_high.
-  orr(result, result, Operand(1 << HeapNumber::kMantissaBitsInTopWord));
-  orr(result, scratch_low, Operand(result, LSL, scratch));
+  STATIC_ASSERT(HeapNumber::kMantissaBitsInTopWord >= 16);
+  oris(result, result,
+       Operand(1 << ((HeapNumber::kMantissaBitsInTopWord) - 16)));
+  slw(r0, result, scratch);
+  orx(result, scratch_low, r0);
   b(&negate);
 
   bind(&out_of_range);
@@ -2668,8 +2714,8 @@ void MacroAssembler::ECMAToInt32(Register result,
   bind(&only_low);
   // 52 <= exponent <= 83, shift only scratch_low.
   // On entry, scratch contains: 52 - exponent.
-  rsb(scratch, scratch, Operand::Zero());
-  mov(result, Operand(scratch_low, LSL, scratch));
+  neg(scratch, scratch);
+  slw(result, scratch_low, scratch);
 
   bind(&negate);
   // If input was positive, scratch_high ASR 31 equals 0 and
@@ -2678,11 +2724,12 @@ void MacroAssembler::ECMAToInt32(Register result,
   // If the input was negative, we have to negate the result.
   // Input_high ASR 31 equals 0xffffffff and scratch_high LSR 31 equals 1.
   // New result = (result eor 0xffffffff) + 1 = 0 - result.
-  eor(result, result, Operand(scratch_high, ASR, 31));
-  add(result, result, Operand(scratch_high, LSR, 31));
+  srawi(r0, scratch_high, 31);
+  xor_(result, result, r0);
+  srwi(r0, scratch_high, Operand(31));
+  add(result, result, r0);
 
   bind(&done);
-#endif
 }
 
 

@@ -3334,7 +3334,8 @@ static void GenerateSmiKeyCheck(MacroAssembler* masm,
               fail,
               DONT_DO_SMI_CHECK);
   __ lfd(double_scratch0, FieldMemOperand(key, HeapNumber::kValueOffset));
-  __ TryDoubleToInt32Exact(scratch0, double_scratch0, scratch1, double_scratch1);
+  __ TryDoubleToInt32Exact(scratch0, double_scratch0, scratch1,
+                           double_scratch1);
   __ bne(fail);
 #if V8_TARGET_ARCH_PPC64
   __ SmiTag(key, scratch0);

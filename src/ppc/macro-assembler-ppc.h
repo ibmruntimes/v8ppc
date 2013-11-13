@@ -1008,6 +1008,7 @@ class MacroAssembler: public Assembler {
   void TryInt32Floor(Register result,
                      DoubleRegister double_input,
                      Register input_high,
+                     Register scratch,
                      DoubleRegister double_scratch,
                      Label* done,
                      Label* exact);
