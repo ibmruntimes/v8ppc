@@ -3534,41 +3534,34 @@ void FullCodeGenerator::EmitSeqStringSetCharCheck(Register string,
                                                   Register index,
                                                   Register value,
                                                   uint32_t encoding_mask) {
-#if 1
-  __ fake_asm(fMASM24);
-#else
-  __ SmiTst(index);
-  __ Check(eq, kNonSmiIndex);
-  __ SmiTst(value);
-  __ Check(eq, kNonSmiValue);
+  __ TestIfSmi(index, r0);
+  __ Check(eq, kNonSmiIndex, cr0);
+  __ TestIfSmi(value, r0);
+  __ Check(eq, kNonSmiValue, cr0);
 
-  __ ldr(ip, FieldMemOperand(string, String::kLengthOffset));
+  __ LoadP(ip, FieldMemOperand(string, String::kLengthOffset));
   __ cmp(index, ip);
   __ Check(lt, kIndexIsTooLarge);
 
-  __ cmp(index, Operand(Smi::FromInt(0)));
+  __ CmpSmiLiteral(index, Smi::FromInt(0), r0);
   __ Check(ge, kIndexIsNegative);
 
-  __ ldr(ip, FieldMemOperand(string, HeapObject::kMapOffset));
-  __ ldrb(ip, FieldMemOperand(ip, Map::kInstanceTypeOffset));
+  __ LoadP(ip, FieldMemOperand(string, HeapObject::kMapOffset));
+  __ lbz(ip, FieldMemOperand(ip, Map::kInstanceTypeOffset));
 
-  __ and_(ip, ip, Operand(kStringRepresentationMask | kStringEncodingMask));
-  __ cmp(ip, Operand(encoding_mask));
+  __ andi(ip, ip, Operand(kStringRepresentationMask | kStringEncodingMask));
+  __ cmpi(ip, Operand(encoding_mask));
   __ Check(eq, kUnexpectedStringType);
-#endif
 }
 
 
 void FullCodeGenerator::EmitOneByteSeqStringSetChar(CallRuntime* expr) {
-#if 1
-  __ fake_asm(fMASM25);
-#else
   ZoneList<Expression*>* args = expr->arguments();
   ASSERT_EQ(3, args->length());
 
-  Register string = r0;
-  Register index = r1;
-  Register value = r2;
+  Register string = r3;
+  Register index = r4;
+  Register value = r5;
 
   VisitForStackValue(args->at(1));  // index
   VisitForStackValue(args->at(2));  // value
@@ -3581,26 +3574,23 @@ void FullCodeGenerator::EmitOneByteSeqStringSetChar(CallRuntime* expr) {
     EmitSeqStringSetCharCheck(string, index, value, one_byte_seq_type);
   }
 
-  __ SmiUntag(value, value);
-  __ add(ip,
-         string,
-         Operand(SeqOneByteString::kHeaderSize - kHeapObjectTag));
-  __ strb(value, MemOperand(ip, index, LSR, kSmiTagSize));
+  __ SmiUntag(value);
+  __ addi(ip,
+          string,
+          Operand(SeqOneByteString::kHeaderSize - kHeapObjectTag));
+  __ SmiToByteArrayOffset(r0, index);
+  __ stbx(value, MemOperand(ip, r0));
   context()->Plug(string);
-#endif
 }
 
 
 void FullCodeGenerator::EmitTwoByteSeqStringSetChar(CallRuntime* expr) {
-#if 1
-  __ fake_asm(fMASM26);
-#else
   ZoneList<Expression*>* args = expr->arguments();
   ASSERT_EQ(3, args->length());
 
-  Register string = r0;
-  Register index = r1;
-  Register value = r2;
+  Register string = r3;
+  Register index = r4;
+  Register value = r5;
 
   VisitForStackValue(args->at(1));  // index
   VisitForStackValue(args->at(2));  // value
@@ -3613,14 +3603,13 @@ void FullCodeGenerator::EmitTwoByteSeqStringSetChar(CallRuntime* expr) {
     EmitSeqStringSetCharCheck(string, index, value, two_byte_seq_type);
   }
 
-  __ SmiUntag(value, value);
-  __ add(ip,
-         string,
-         Operand(SeqTwoByteString::kHeaderSize - kHeapObjectTag));
-  STATIC_ASSERT(kSmiTagSize == 1 && kSmiTag == 0);
-  __ strh(value, MemOperand(ip, index));
+  __ SmiUntag(value);
+  __ addi(ip,
+          string,
+          Operand(SeqTwoByteString::kHeaderSize - kHeapObjectTag));
+  __ SmiToShortArrayOffset(r0, index);
+  __ sthx(value, MemOperand(ip, r0));
   context()->Plug(string);
-#endif
 }
 
 

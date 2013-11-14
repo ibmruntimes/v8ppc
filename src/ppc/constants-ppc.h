@@ -366,9 +366,6 @@ enum FAKE_OPCODE_T {
   fMASM21 = 21,
   fMASM22 = 22,
   fMASM23 = 23,
-  fMASM24 = 24,
-  fMASM25 = 25,
-  fMASM26 = 26,
 
   fMASM60 = 60,
   fMASM61 = 61,
