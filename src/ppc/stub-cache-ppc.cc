@@ -122,7 +122,7 @@ static void ProbeTable(Isolate* isolate,
   // Jump to the first instruction in the code stub.
   __ addi(r0, code, Operand(Code::kHeaderSize - kHeapObjectTag));
   __ mtctr(r0);
-  __ bcr();
+  __ bctr();
 
   // Miss: fall through.
   __ bind(&miss);
@@ -2415,8 +2415,7 @@ Handle<Code> CallStubCompiler::CompileMathFloorCall(
 
   // If the argument is a smi, just return.
   STATIC_ASSERT(kSmiTag == 0);
-  __ andi(r0, r3, Operand(kSmiTagMask));
-  __ bne(&not_smi, cr0);
+  __ JumpIfNotSmi(r3, &not_smi);
   __ Drop(argc + 1);
   __ Ret();
   __ bind(&not_smi);

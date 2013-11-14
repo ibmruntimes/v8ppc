@@ -59,7 +59,7 @@ MacroAssembler::MacroAssembler(Isolate* arg_isolate, void* buffer, int size)
 void MacroAssembler::Jump(Register target, Condition cond) {
   ASSERT(cond == al);
   mtctr(target);
-  bcr();
+  bctr();
 }
 
 
@@ -74,7 +74,7 @@ void MacroAssembler::Jump(intptr_t target, RelocInfo::Mode rmode,
 
   mov(r0, Operand(target, rmode));
   mtctr(r0);
-  bcr();
+  bctr();
 
   bind(&skip);
   //  mov(pc, Operand(target, rmode), LeaveCC, cond);
@@ -697,7 +697,7 @@ void MacroAssembler::LoadNumberAsInt32(Register object,
                                        DoubleRegister double_scratch1,
                                        Label* not_int32) {
   ASSERT(!dst.is(object));
-  ASSERT(!scratch1.is(object));
+  ASSERT(!scratch.is(object));
 
   Label done, maybe_undefined;
 
@@ -1359,7 +1359,7 @@ void MacroAssembler::JumpToHandlerEntry() {
   SmiUntag(ip, r5);
   add(r0, r4, ip);
   mtctr(r0);
-  bcr();
+  bctr();
 }
 
 

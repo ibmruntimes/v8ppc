@@ -753,7 +753,7 @@ void Assembler::blr() {
 
 
 // Pseudo op - branch to count register -- used for "jump"
-void Assembler::bcr() {
+void Assembler::bctr() {
   bcctr(BA, LeaveLK);
 }
 

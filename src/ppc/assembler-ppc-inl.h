@@ -68,7 +68,7 @@ int DoubleRegister::NumAllocatableRegisters() {
 
 int DoubleRegister::ToAllocationIndex(DoubleRegister reg) {
   int index = reg.code() - 1;  // d0 is skipped
-  ASSERT(index < kNumAllocatableRegisters);
+  ASSERT(index < kMaxNumAllocatableRegisters);
   ASSERT(!reg.is(kDoubleRegZero));
   ASSERT(!reg.is(kScratchDoubleReg));
   return index;

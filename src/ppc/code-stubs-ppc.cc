@@ -3950,7 +3950,7 @@ void JSEntryStub::GenerateBody(MacroAssembler* masm, bool is_construct) {
 
   __ LoadP(r0, MemOperand(sp, kStackFrameLRSlot * kPointerSize));
   __ mtctr(r0);
-  __ bcr();
+  __ bctr();
 }
 
 
