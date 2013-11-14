@@ -1993,9 +1993,6 @@ void FullCodeGenerator::VisitAssignment(Assignment* expr) {
 
 
 void FullCodeGenerator::VisitYield(Yield* expr) {
-#if 1
-  __ fake_asm(fMASM21);
-#else
   Comment cmnt(masm_, "[ Yield");
   // Evaluate yielded value first; the initial iterator definition depends on
   // this.  It stays on the stack while we update the iterator.
@@ -2010,26 +2007,27 @@ void FullCodeGenerator::VisitYield(Yield* expr) {
     case Yield::INITIAL: {
       Label suspend, continuation, post_runtime, resume;
 
-      __ jmp(&suspend);
+      __ b(&suspend);
 
       __ bind(&continuation);
-      __ jmp(&resume);
+      __ b(&resume);
 
       __ bind(&suspend);
       VisitForAccumulatorValue(expr->generator_object());
       ASSERT(continuation.pos() > 0 && Smi::IsValid(continuation.pos()));
-      __ mov(r1, Operand(Smi::FromInt(continuation.pos())));
-      __ str(r1, FieldMemOperand(r0, JSGeneratorObject::kContinuationOffset));
-      __ str(cp, FieldMemOperand(r0, JSGeneratorObject::kContextOffset));
-      __ mov(r1, cp);
-      __ RecordWriteField(r0, JSGeneratorObject::kContextOffset, r1, r2,
+      __ LoadSmiLiteral(r4, Smi::FromInt(continuation.pos()));
+      __ StoreP(r4, FieldMemOperand(r3, JSGeneratorObject::kContinuationOffset),
+                r0);
+      __ StoreP(cp, FieldMemOperand(r3, JSGeneratorObject::kContextOffset), r0);
+      __ mr(r4, cp);
+      __ RecordWriteField(r3, JSGeneratorObject::kContextOffset, r4, r5,
                           kLRHasBeenSaved, kDontSaveFPRegs);
-      __ add(r1, fp, Operand(StandardFrameConstants::kExpressionsOffset));
-      __ cmp(sp, r1);
-      __ b(eq, &post_runtime);
-      __ push(r0);  // generator object
+      __ addi(r4, fp, Operand(StandardFrameConstants::kExpressionsOffset));
+      __ cmp(sp, r4);
+      __ beq(&post_runtime);
+      __ push(r3);  // generator object
       __ CallRuntime(Runtime::kSuspendJSGeneratorObject, 1);
-      __ ldr(cp, MemOperand(fp, StandardFrameConstants::kContextOffset));
+      __ LoadP(cp, MemOperand(fp, StandardFrameConstants::kContextOffset));
       __ bind(&post_runtime);
       __ pop(result_register());
       EmitReturnSequence();
@@ -2041,9 +2039,10 @@ void FullCodeGenerator::VisitYield(Yield* expr) {
 
     case Yield::FINAL: {
       VisitForAccumulatorValue(expr->generator_object());
-      __ mov(r1, Operand(Smi::FromInt(JSGeneratorObject::kGeneratorClosed)));
-      __ str(r1, FieldMemOperand(result_register(),
-                                 JSGeneratorObject::kContinuationOffset));
+      __ LoadSmiLiteral(r4, Smi::FromInt(JSGeneratorObject::kGeneratorClosed));
+      __ StoreP(r4, FieldMemOperand(result_register(),
+                                    JSGeneratorObject::kContinuationOffset),
+                r0);
       // Pop value from top-of-stack slot, box result into result register.
       EmitCreateIteratorResult(true);
       EmitUnwindBeforeReturn();
@@ -2061,169 +2060,176 @@ void FullCodeGenerator::VisitYield(Yield* expr) {
       Label l_catch, l_try, l_suspend, l_continuation, l_resume;
       Label l_next, l_call, l_loop;
       // Initial send value is undefined.
-      __ LoadRoot(r0, Heap::kUndefinedValueRootIndex);
+      __ LoadRoot(r3, Heap::kUndefinedValueRootIndex);
       __ b(&l_next);
 
       // catch (e) { receiver = iter; f = 'throw'; arg = e; goto l_call; }
       __ bind(&l_catch);
       handler_table()->set(expr->index(), Smi::FromInt(l_catch.pos()));
-      __ LoadRoot(r2, Heap::kthrow_stringRootIndex);     // "throw"
-      __ ldr(r3, MemOperand(sp, 1 * kPointerSize));      // iter
-      __ push(r3);                                       // iter
-      __ push(r0);                                       // exception
-      __ jmp(&l_call);
+      __ LoadRoot(r5, Heap::kthrow_stringRootIndex);     // "throw"
+      __ LoadP(r6, MemOperand(sp, 1 * kPointerSize));    // iter
+      __ push(r6);                                       // iter
+      __ push(r3);                                       // exception
+      __ b(&l_call);
 
       // try { received = %yield result }
       // Shuffle the received result above a try handler and yield it without
       // re-boxing.
       __ bind(&l_try);
-      __ pop(r0);                                        // result
+      __ pop(r3);                                        // result
       __ PushTryHandler(StackHandler::CATCH, expr->index());
       const int handler_size = StackHandlerConstants::kSize;
-      __ push(r0);                                       // result
-      __ jmp(&l_suspend);
+      __ push(r3);                                       // result
+      __ b(&l_suspend);
       __ bind(&l_continuation);
-      __ jmp(&l_resume);
+      __ b(&l_resume);
       __ bind(&l_suspend);
       const int generator_object_depth = kPointerSize + handler_size;
-      __ ldr(r0, MemOperand(sp, generator_object_depth));
-      __ push(r0);                                       // g
+      __ LoadP(r3, MemOperand(sp, generator_object_depth));
+      __ push(r3);                                       // g
       ASSERT(l_continuation.pos() > 0 && Smi::IsValid(l_continuation.pos()));
-      __ mov(r1, Operand(Smi::FromInt(l_continuation.pos())));
-      __ str(r1, FieldMemOperand(r0, JSGeneratorObject::kContinuationOffset));
-      __ str(cp, FieldMemOperand(r0, JSGeneratorObject::kContextOffset));
-      __ mov(r1, cp);
-      __ RecordWriteField(r0, JSGeneratorObject::kContextOffset, r1, r2,
+      __ LoadSmiLiteral(r4, Smi::FromInt(l_continuation.pos()));
+      __ StoreP(r4, FieldMemOperand(r3, JSGeneratorObject::kContinuationOffset),
+                r0);
+      __ StoreP(cp, FieldMemOperand(r3, JSGeneratorObject::kContextOffset), r0);
+      __ mr(r4, cp);
+      __ RecordWriteField(r3, JSGeneratorObject::kContextOffset, r4, r5,
                           kLRHasBeenSaved, kDontSaveFPRegs);
       __ CallRuntime(Runtime::kSuspendJSGeneratorObject, 1);
-      __ ldr(cp, MemOperand(fp, StandardFrameConstants::kContextOffset));
-      __ pop(r0);                                        // result
+      __ LoadP(cp, MemOperand(fp, StandardFrameConstants::kContextOffset));
+      __ pop(r3);                                        // result
       EmitReturnSequence();
       __ bind(&l_resume);                                // received in r0
       __ PopTryHandler();
 
       // receiver = iter; f = 'next'; arg = received;
       __ bind(&l_next);
-      __ LoadRoot(r2, Heap::knext_stringRootIndex);      // "next"
-      __ ldr(r3, MemOperand(sp, 1 * kPointerSize));      // iter
-      __ push(r3);                                       // iter
-      __ push(r0);                                       // received
+      __ LoadRoot(r5, Heap::knext_stringRootIndex);      // "next"
+      __ LoadP(r6, MemOperand(sp, 1 * kPointerSize));    // iter
+      __ push(r6);                                       // iter
+      __ push(r3);                                       // received
 
       // result = receiver[f](arg);
       __ bind(&l_call);
       Handle<Code> ic = isolate()->stub_cache()->ComputeKeyedCallInitialize(1);
       CallIC(ic);
-      __ ldr(cp, MemOperand(fp, StandardFrameConstants::kContextOffset));
+      __ LoadP(cp, MemOperand(fp, StandardFrameConstants::kContextOffset));
 
       // if (!result.done) goto l_try;
       __ bind(&l_loop);
-      __ push(r0);                                       // save result
-      __ LoadRoot(r2, Heap::kdone_stringRootIndex);      // "done"
+      __ push(r3);                                       // save result
+      __ LoadRoot(r5, Heap::kdone_stringRootIndex);      // "done"
       Handle<Code> done_ic = isolate()->builtins()->LoadIC_Initialize();
       CallIC(done_ic);                                   // result.done in r0
       Handle<Code> bool_ic = ToBooleanStub::GetUninitialized(isolate());
       CallIC(bool_ic);
-      __ cmp(r0, Operand(0));
-      __ b(eq, &l_try);
+      __ cmpi(r3, Operand::Zero());
+      __ beq(&l_try);
 
       // result.value
-      __ pop(r0);                                        // result
-      __ LoadRoot(r2, Heap::kvalue_stringRootIndex);     // "value"
+      __ pop(r3);                                        // result
+      __ LoadRoot(r5, Heap::kvalue_stringRootIndex);     // "value"
       Handle<Code> value_ic = isolate()->builtins()->LoadIC_Initialize();
       CallIC(value_ic);                                  // result.value in r0
-      context()->DropAndPlug(2, r0);                     // drop iter and g
+      context()->DropAndPlug(2, r3);                     // drop iter and g
       break;
     }
   }
-#endif
 }
 
 
 void FullCodeGenerator::EmitGeneratorResume(Expression *generator,
     Expression *value,
     JSGeneratorObject::ResumeMode resume_mode) {
-#if 1
-  __ fake_asm(fMASM22);
-#else
-  // The value stays in r0, and is ultimately read by the resumed generator, as
-  // if the CallRuntime(Runtime::kSuspendJSGeneratorObject) returned it.  r1
+  // The value stays in r3, and is ultimately read by the resumed generator, as
+  // if the CallRuntime(Runtime::kSuspendJSGeneratorObject) returned it.  r4
   // will hold the generator object until the activation has been resumed.
   VisitForStackValue(generator);
   VisitForAccumulatorValue(value);
-  __ pop(r1);
+  __ pop(r4);
 
   // Check generator state.
   Label wrong_state, done;
-  __ ldr(r3, FieldMemOperand(r1, JSGeneratorObject::kContinuationOffset));
+  __ LoadP(r6, FieldMemOperand(r4, JSGeneratorObject::kContinuationOffset));
   STATIC_ASSERT(JSGeneratorObject::kGeneratorExecuting <= 0);
   STATIC_ASSERT(JSGeneratorObject::kGeneratorClosed <= 0);
-  __ cmp(r3, Operand(Smi::FromInt(0)));
-  __ b(le, &wrong_state);
+  __ CmpSmiLiteral(r6, Smi::FromInt(0), r0);
+  __ ble(&wrong_state);
 
   // Load suspended function and context.
-  __ ldr(cp, FieldMemOperand(r1, JSGeneratorObject::kContextOffset));
-  __ ldr(r4, FieldMemOperand(r1, JSGeneratorObject::kFunctionOffset));
+  __ LoadP(cp, FieldMemOperand(r4, JSGeneratorObject::kContextOffset));
+  __ LoadP(r7, FieldMemOperand(r4, JSGeneratorObject::kFunctionOffset));
 
   // Load receiver and store as the first argument.
-  __ ldr(r2, FieldMemOperand(r1, JSGeneratorObject::kReceiverOffset));
-  __ push(r2);
+  __ LoadP(r5, FieldMemOperand(r4, JSGeneratorObject::kReceiverOffset));
+  __ push(r5);
 
   // Push holes for the rest of the arguments to the generator function.
-  __ ldr(r3, FieldMemOperand(r4, JSFunction::kSharedFunctionInfoOffset));
-  __ ldr(r3,
-         FieldMemOperand(r3, SharedFunctionInfo::kFormalParameterCountOffset));
-  __ LoadRoot(r2, Heap::kTheHoleValueRootIndex);
-  Label push_argument_holes, push_frame;
-  __ bind(&push_argument_holes);
-  __ sub(r3, r3, Operand(Smi::FromInt(1)), SetCC);
-  __ b(mi, &push_frame);
-  __ push(r2);
-  __ jmp(&push_argument_holes);
+  __ LoadP(r6, FieldMemOperand(r7, JSFunction::kSharedFunctionInfoOffset));
+  __ LoadWordArith(r6,
+       FieldMemOperand(r6, SharedFunctionInfo::kFormalParameterCountOffset));
+  __ LoadRoot(r5, Heap::kTheHoleValueRootIndex);
+  Label argument_loop, push_frame;
+#if V8_TARGET_ARCH_PPC64
+  __ cmpi(r6, Operand::Zero());
+  __ beq(&push_frame);
+#else
+  __ SmiUntag(r6, SetRC);
+  __ beq(&push_frame, cr0);
+#endif
+  __ mtctr(r6);
+  __ bind(&argument_loop);
+  __ push(r5);
+  __ bdnz(&argument_loop);
 
   // Enter a new JavaScript frame, and initialize its slots as they were when
   // the generator was suspended.
   Label resume_frame;
   __ bind(&push_frame);
-  __ bl(&resume_frame);
-  __ jmp(&done);
+  __ b(&resume_frame, SetLK);
+  __ b(&done);
   __ bind(&resume_frame);
-  __ push(lr);  // Return address.
+  __ mflr(r0);
+  __ push(r0);  // Return address.
   __ push(fp);  // Caller's frame pointer.
-  __ mov(fp, sp);
+  __ mr(fp, sp);
   __ push(cp);  // Callee's context.
-  __ push(r4);  // Callee's JS Function.
+  __ push(r7);  // Callee's JS Function.
 
   // Load the operand stack size.
-  __ ldr(r3, FieldMemOperand(r1, JSGeneratorObject::kOperandStackOffset));
-  __ ldr(r3, FieldMemOperand(r3, FixedArray::kLengthOffset));
-  __ SmiUntag(r3);
+  __ LoadP(r6, FieldMemOperand(r4, JSGeneratorObject::kOperandStackOffset));
+  __ LoadP(r6, FieldMemOperand(r6, FixedArray::kLengthOffset));
+  __ SmiUntag(r6, SetRC);
 
   // If we are sending a value and there is no operand stack, we can jump back
   // in directly.
+  Label call_resume;
   if (resume_mode == JSGeneratorObject::NEXT) {
     Label slow_resume;
-    __ cmp(r3, Operand(0));
-    __ b(ne, &slow_resume);
-    __ ldr(r3, FieldMemOperand(r4, JSFunction::kCodeEntryOffset));
-    __ ldr(r2, FieldMemOperand(r1, JSGeneratorObject::kContinuationOffset));
-    __ SmiUntag(r2);
-    __ add(r3, r3, r2);
-    __ mov(r2, Operand(Smi::FromInt(JSGeneratorObject::kGeneratorExecuting)));
-    __ str(r2, FieldMemOperand(r1, JSGeneratorObject::kContinuationOffset));
-    __ Jump(r3);
+    __ bne(&slow_resume, cr0);
+    __ LoadP(r6, FieldMemOperand(r7, JSFunction::kCodeEntryOffset));
+    __ LoadP(r5, FieldMemOperand(r4, JSGeneratorObject::kContinuationOffset));
+    __ SmiUntag(r5);
+    __ add(r6, r6, r5);
+    __ LoadSmiLiteral(r5, Smi::FromInt(JSGeneratorObject::kGeneratorExecuting));
+    __ StoreP(r5, FieldMemOperand(r4, JSGeneratorObject::kContinuationOffset),
+              r0);
+    __ Jump(r6);
     __ bind(&slow_resume);
+  } else {
+    __ beq(&call_resume, cr0);
   }
 
   // Otherwise, we push holes for the operand stack and call the runtime to fix
   // up the stack and the handlers.
-  Label push_operand_holes, call_resume;
-  __ bind(&push_operand_holes);
-  __ sub(r3, r3, Operand(1), SetCC);
-  __ b(mi, &call_resume);
-  __ push(r2);
-  __ b(&push_operand_holes);
+  Label operand_loop;
+  __ mtctr(r6);
+  __ bind(&operand_loop);
+  __ push(r5);
+  __ bdnz(&operand_loop);
+
   __ bind(&call_resume);
-  __ push(r1);
+  __ push(r4);
   __ push(result_register());
   __ Push(Smi::FromInt(resume_mode));
   __ CallRuntime(Runtime::kResumeJSGeneratorObject, 3);
@@ -2232,52 +2238,49 @@ void FullCodeGenerator::EmitGeneratorResume(Expression *generator,
 
   // Throw error if we attempt to operate on a running generator.
   __ bind(&wrong_state);
-  __ push(r1);
+  __ push(r4);
   __ CallRuntime(Runtime::kThrowGeneratorStateError, 1);
 
   __ bind(&done);
   context()->Plug(result_register());
-#endif
 }
 
 
 void FullCodeGenerator::EmitCreateIteratorResult(bool done) {
-#if 1
-  __ fake_asm(fMASM23);
-#else
   Label gc_required;
   Label allocated;
 
   Handle<Map> map(isolate()->native_context()->generator_result_map());
 
-  __ Allocate(map->instance_size(), r0, r2, r3, &gc_required, TAG_OBJECT);
-  __ jmp(&allocated);
+  __ Allocate(map->instance_size(), r3, r5, r6, &gc_required, TAG_OBJECT);
+  __ b(&allocated);
 
   __ bind(&gc_required);
   __ Push(Smi::FromInt(map->instance_size()));
   __ CallRuntime(Runtime::kAllocateInNewSpace, 1);
-  __ ldr(context_register(),
-         MemOperand(fp, StandardFrameConstants::kContextOffset));
+  __ LoadP(context_register(),
+           MemOperand(fp, StandardFrameConstants::kContextOffset));
 
   __ bind(&allocated);
-  __ mov(r1, Operand(map));
-  __ pop(r2);
-  __ mov(r3, Operand(isolate()->factory()->ToBoolean(done)));
-  __ mov(r4, Operand(isolate()->factory()->empty_fixed_array()));
+  __ mov(r4, Operand(map));
+  __ pop(r5);
+  __ mov(r6, Operand(isolate()->factory()->ToBoolean(done)));
+  __ mov(r7, Operand(isolate()->factory()->empty_fixed_array()));
   ASSERT_EQ(map->instance_size(), 5 * kPointerSize);
-  __ str(r1, FieldMemOperand(r0, HeapObject::kMapOffset));
-  __ str(r4, FieldMemOperand(r0, JSObject::kPropertiesOffset));
-  __ str(r4, FieldMemOperand(r0, JSObject::kElementsOffset));
-  __ str(r2,
-         FieldMemOperand(r0, JSGeneratorObject::kResultValuePropertyOffset));
-  __ str(r3,
-         FieldMemOperand(r0, JSGeneratorObject::kResultDonePropertyOffset));
+  __ StoreP(r4, FieldMemOperand(r3, HeapObject::kMapOffset), r0);
+  __ StoreP(r7, FieldMemOperand(r3, JSObject::kPropertiesOffset), r0);
+  __ StoreP(r7, FieldMemOperand(r3, JSObject::kElementsOffset), r0);
+  __ StoreP(r5,
+            FieldMemOperand(r3, JSGeneratorObject::kResultValuePropertyOffset),
+            r0);
+  __ StoreP(r6,
+            FieldMemOperand(r3, JSGeneratorObject::kResultDonePropertyOffset),
+            r0);
 
   // Only the value field needs a write barrier, as the other values are in the
   // root set.
-  __ RecordWriteField(r0, JSGeneratorObject::kResultValuePropertyOffset,
-                      r2, r3, kLRHasBeenSaved, kDontSaveFPRegs);
-#endif
+  __ RecordWriteField(r3, JSGeneratorObject::kResultValuePropertyOffset,
+                      r5, r6, kLRHasBeenSaved, kDontSaveFPRegs);
 }
 
 
