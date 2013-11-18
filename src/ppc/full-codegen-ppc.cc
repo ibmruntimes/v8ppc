@@ -349,7 +349,7 @@ void FullCodeGenerator::EmitProfilingCounterReset() {
 }
 
 
-// N.B. Deoptimizer::PatchStackCheckCodeAt manipulates the branch
+// N.B. Deoptimizer::PatchInterruptCodeAt manipulates the branch
 // instruction to the ok label below.  Thus a change to this sequence
 // (i.e. change in instruction count between the branch and
 // destination) may require a corresponding change to that logic as
