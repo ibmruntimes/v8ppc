@@ -1410,12 +1410,12 @@ void Assembler::rotld(Register ra, Register rs, Register rb, RCBit r) {
 
 
 void Assembler::rotldi(Register ra, Register rs, int sh, RCBit r) {
-  rldicl(ra, rs, n, 0, r);
+  rldicl(ra, rs, sh, 0, r);
 }
 
 
 void Assembler::rotrdi(Register ra, Register rs, int sh, RCBit r) {
-  rldicl(ra, rs, 64 - n, 0, r);
+  rldicl(ra, rs, 64 - sh, 0, r);
 }
 
 
