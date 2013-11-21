@@ -123,7 +123,7 @@ enum Opcode {
   EXT1    = 19 << 26,  // Extended code set 1
   RLWIMIX = 20 << 26,  // Rotate Left Word Immediate then Mask Insert
   RLWINMX = 21 << 26,  // Rotate Left Word Immediate then AND with Mask
-  RLWNMX  = 23 << 26,  // Rotate Left then AND with Mask
+  RLWNMX  = 23 << 26,  // Rotate Left Word then AND with Mask
   ORI     = 24 << 26,  // OR Immediate
   ORIS    = 25 << 26,  // OR Immediate Shifted
   XORI    = 26 << 26,  // XOR Immediate
@@ -272,6 +272,8 @@ enum OpcodeExt4 {
   FSQRT  = 22 << 1,   // Floating Square Root
   FSEL   = 23 << 1,   // Floating Select
   FMUL   = 25 << 1,   // Floating Multiply
+  FMSUB  = 28 << 1,   // Floating Multiply-Subtract
+  FMADD  = 29 << 1,   // Floating Multiply-Add
 
   // Bits 10-1
   FCMPU  =   0 << 1,  // Floating Compare Unordered
@@ -291,11 +293,14 @@ enum OpcodeExt4 {
   FCTIDZ = 815 << 1   // Floating convert from integer doubleword
 };
 
-// Bits 4-2
 enum OpcodeExt5 {
-  RLDICL = 0 << 2,    // Rotate Left Double Word Immediate then Clear Left
-  RLDICR = 1 << 2,    // Rotate Left Double Word Immediate then Clear Right
-  RLDIC  = 2 << 2     // Rotate Left Double Word Immediate then Clear
+  // Bits 4-2
+  RLDICL = 0 << 1,    // Rotate Left Double Word Immediate then Clear Left
+  RLDICR = 2 << 1,    // Rotate Left Double Word Immediate then Clear Right
+  RLDIC  = 4 << 1,    // Rotate Left Double Word Immediate then Clear
+  // Bits 4-1
+  RLDCL  = 8 << 1,    // Rotate Left Double Word then Clear Left
+  RLDCR  = 9 << 1     // Rotate Left Double Word then Clear Right
 };
 
 // Instruction encoding bits and masks.

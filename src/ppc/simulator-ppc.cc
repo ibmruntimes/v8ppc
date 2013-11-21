@@ -2500,6 +2500,30 @@ void Simulator::DecodeExt4(Instruction* instr) {
       set_d_register_from_double(frt, frt_val);
       return;
     }
+    case FMSUB: {
+      int frt = instr->RTValue();
+      int fra = instr->RAValue();
+      int frb = instr->RBValue();
+      int frc = instr->RCValue();
+      double fra_val = get_double_from_d_register(fra);
+      double frb_val = get_double_from_d_register(frb);
+      double frc_val = get_double_from_d_register(frc);
+      double frt_val = (fra_val * frc_val) - frb_val;
+      set_d_register_from_double(frt, frt_val);
+      return;
+    }
+    case FMADD: {
+      int frt = instr->RTValue();
+      int fra = instr->RAValue();
+      int frb = instr->RBValue();
+      int frc = instr->RCValue();
+      double fra_val = get_double_from_d_register(fra);
+      double frb_val = get_double_from_d_register(frb);
+      double frc_val = get_double_from_d_register(frc);
+      double frt_val = (fra_val * frc_val) + frb_val;
+      set_d_register_from_double(frt, frt_val);
+      return;
+    }
   }
   int opcode = instr->Bits(10, 1) << 1;
   switch (opcode) {
@@ -2773,6 +2797,28 @@ void Simulator::DecodeExt5(Instruction* instr) {
       return;
     }
   }
+  switch (instr->Bits(4, 1) << 1) {
+    case RLDCL: {
+      int ra = instr->RAValue();
+      int rs = instr->RSValue();
+      int rb = instr->RBValue();
+      uintptr_t rs_val = get_register(rs);
+      uintptr_t rb_val = get_register(rb);
+      int sh = (rb_val & 0x3f);
+      int mb = (instr->Bits(10, 6) | (instr->Bit(5) << 5));
+      ASSERT(sh >=0 && sh <= 63);
+      ASSERT(mb >=0 && mb <= 63);
+      // rotate left
+      uintptr_t result = (rs_val << sh) | (rs_val >> (64-sh));
+      uintptr_t mask = 0xffffffffffffffff >> mb;
+      result &= mask;
+      set_register(ra, result);
+      if (instr->Bit(0)) {  // RC bit set
+        SetCR0(result);
+      }
+      return;
+    }
+  }
   UNIMPLEMENTED();  // Not used by V8.
 }
 #endif
@@ -2936,11 +2982,19 @@ void Simulator::InstructionDecode(Instruction* instr) {
       }
       break;
     }
-    case RLWINMX: {
+    case RLWINMX:
+    case RLWNMX: {
       int ra = instr->RAValue();
       int rs = instr->RSValue();
       uint32_t rs_val = get_register(rs);
-      int sh = instr->Bits(15, 11);
+      int sh = 0;
+      if (opcode == RLWINMX) {
+        sh = instr->Bits(15, 11);
+      } else {
+        int rb = instr->RBValue();
+        uint32_t rb_val = get_register(rb);
+        sh = (rb_val & 0x1f);
+      }
       int mb = instr->Bits(10, 6);
       int me = instr->Bits(5, 1);
       // rotate left

@@ -830,6 +830,7 @@ class Assembler : public AssemblerBase {
   void stdux(Register rs, const MemOperand &src);
   void rldic(Register dst, Register src, int sh, int mb, RCBit r = LeaveRC);
   void rldicl(Register dst, Register src, int sh, int mb, RCBit r = LeaveRC);
+  void rldcl(Register ra, Register rs, Register rb, int mb, RCBit r = LeaveRC);
   void rldicr(Register dst, Register src, int sh, int me, RCBit r = LeaveRC);
   void sldi(Register dst, Register src, const Operand& val, RCBit rc = LeaveRC);
   void srdi(Register dst, Register src, const Operand& val, RCBit rc = LeaveRC);
@@ -841,6 +842,9 @@ class Assembler : public AssemblerBase {
   void srd(Register dst, Register src1, Register src2, RCBit r = LeaveRC);
   void sld(Register dst, Register src1, Register src2, RCBit r = LeaveRC);
   void srad(Register dst, Register src1, Register src2, RCBit r = LeaveRC);
+  void rotld(Register ra, Register rs, Register rb, RCBit r = LeaveRC);
+  void rotldi(Register ra, Register rs, int sh, RCBit r = LeaveRC);
+  void rotrdi(Register ra, Register rs, int sh, RCBit r = LeaveRC);
   void cntlzd_(Register dst, Register src, RCBit rc = LeaveRC);
   void extsw(Register rs, Register ra, RCBit r = LeaveRC);
   void mulld(Register dst, Register src1, Register src2,
@@ -853,6 +857,8 @@ class Assembler : public AssemblerBase {
               RCBit rc = LeaveRC);
   void rlwimi(Register ra, Register rs, int sh, int mb, int me,
               RCBit rc = LeaveRC);
+  void rlwnm(Register ra, Register rs, Register rb, int mb, int me,
+             RCBit rc = LeaveRC);
   void slwi(Register dst, Register src, const Operand& val, RCBit rc = LeaveRC);
   void srwi(Register dst, Register src, const Operand& val, RCBit rc = LeaveRC);
   void clrrwi(Register dst, Register src, const Operand& val,
@@ -863,6 +869,9 @@ class Assembler : public AssemblerBase {
   void srw(Register dst, Register src1, Register src2, RCBit r = LeaveRC);
   void slw(Register dst, Register src1, Register src2, RCBit r = LeaveRC);
   void sraw(Register dst, Register src1, Register src2, RCBit r = LeaveRC);
+  void rotlw(Register ra, Register rs, Register rb, RCBit r = LeaveRC);
+  void rotlwi(Register ra, Register rs, int sh, RCBit r = LeaveRC);
+  void rotrwi(Register ra, Register rs, int sh, RCBit r = LeaveRC);
 
   void cntlzw_(Register dst, Register src, RCBit rc = LeaveRC);
 
@@ -965,6 +974,12 @@ class Assembler : public AssemblerBase {
              RCBit rc = LeaveRC);
   void fabs(const DoubleRegister frt, const DoubleRegister frb,
             RCBit rc = LeaveRC);
+  void fmadd(const DoubleRegister frt, const DoubleRegister fra,
+             const DoubleRegister frc, const DoubleRegister frb,
+             RCBit rc = LeaveRC);
+  void fmsub(const DoubleRegister frt, const DoubleRegister fra,
+             const DoubleRegister frc, const DoubleRegister frb,
+             RCBit rc = LeaveRC);
 
   // Pseudo instructions
 
@@ -1193,6 +1208,8 @@ class Assembler : public AssemblerBase {
                OEBit o, RCBit r);
   void md_form(Instr instr, Register ra, Register rs, int shift, int maskbit,
                RCBit r);
+  void mds_form(Instr instr, Register ra, Register rs, Register rb, int maskbit,
+                RCBit r);
 
   // Labels
   void print(Label* L);

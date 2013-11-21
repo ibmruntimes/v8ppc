@@ -872,6 +872,14 @@ void Decoder::DecodeExt4(Instruction* instr) {
       Format(instr, "fmul'.   'Dt, 'Da, 'Dc");
       return;
     }
+    case FMSUB: {
+      Format(instr, "fmsub'.  'Dt, 'Da, 'Dc, 'Db");
+      return;
+    }
+    case FMADD: {
+      Format(instr, "fmadd'.  'Dt, 'Da, 'Dc, 'Db");
+      return;
+    }
   }
 
   switch (instr->Bits(10, 1) << 1) {
@@ -942,20 +950,24 @@ void Decoder::DecodeExt5(Instruction* instr) {
   switch (instr->Bits(4, 2) << 2) {
     case RLDICL: {
       Format(instr, "rldicl'. 'ra, 'rs, 'sh, 'mb");
-      break;
+      return;
     }
     case RLDICR: {
       Format(instr, "rldicr'. 'ra, 'rs, 'sh, 'me");
-      break;
+      return;
     }
     case RLDIC: {
       Format(instr, "rldic'.  'ra, 'rs, 'sh, 'mb");
-      break;
-    }
-    default: {
-      Unknown(instr);  // not used by V8
+      return;
     }
   }
+  switch (instr->Bits(4, 1) << 1) {
+    case RLDCL: {
+      Format(instr, "rldcl'.  'ra, 'rs, 'sb, 'mb");
+      return;
+    }
+  }
+  Unknown(instr);  // not used by V8
 }
 
 #undef VERIFIY
@@ -1079,7 +1091,7 @@ int Decoder::InstructionDecode(byte* instr_ptr) {
       break;
     }
     case RLWNMX: {
-      UnknownFormat(instr, "rlwnmx");
+      Format(instr, "rlwnm'.  'ra, 'rs, 'rb, 'me, 'mb");
       break;
     }
     case ORI: {

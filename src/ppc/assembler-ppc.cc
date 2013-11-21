@@ -663,6 +663,20 @@ void Assembler::md_form(Instr instr,
 }
 
 
+void Assembler::mds_form(Instr instr,
+                         Register ra,
+                         Register rs,
+                         Register rb,
+                         int maskbit,
+                         RCBit r) {
+  int m0_4  = maskbit & 0x1f;
+  int m5    = (maskbit >> 5) & 0x1;
+
+  emit(instr | rs.code()*B21 | ra.code()*B16 |
+       rb.code()*B11 | m0_4*B6 | m5*B5 | r);
+}
+
+
 // Returns the next free trampoline entry.
 int32_t Assembler::get_trampoline_entry() {
   int32_t trampoline_entry = kInvalidSlotPos;
@@ -808,6 +822,16 @@ void Assembler::rlwinm(Register ra, Register rs,
   emit(RLWINMX | rs.code()*B21 | ra.code()*B16 | sh*B11 | mb*B6 | me << 1 | rc);
 }
 
+
+void Assembler::rlwnm(Register ra, Register rs, Register rb, int mb, int me,
+                      RCBit rc) {
+  mb &= 0x1f;
+  me &= 0x1f;
+  emit(RLWNMX | rs.code()*B21 | ra.code()*B16 | rb.code()*B11 |
+       mb*B6 | me << 1 | rc);
+}
+
+
 void Assembler::rlwimi(Register ra, Register rs,
                        int sh, int mb, int me, RCBit rc) {
   sh &= 0x1f;
@@ -862,6 +886,21 @@ void Assembler::slw(Register dst, Register src1, Register src2, RCBit r) {
 
 void Assembler::sraw(Register ra, Register rs, Register rb, RCBit r) {
   x_form(EXT2 | SRAW, ra, rs, rb, r);
+}
+
+
+void Assembler::rotlw(Register ra, Register rs, Register rb, RCBit r) {
+  rlwnm(ra, rs, rb, 0, 31, r);
+}
+
+
+void Assembler::rotlwi(Register ra, Register rs, int sh, RCBit r) {
+  rlwinm(ra, rs, sh, 0, 31, r);
+}
+
+
+void Assembler::rotrwi(Register ra, Register rs, int sh, RCBit r) {
+  rlwinm(ra, rs, 32 - sh, 0, 31, r);
 }
 
 
@@ -1304,6 +1343,11 @@ void Assembler::rldicl(Register ra, Register rs, int sh, int mb, RCBit r) {
 }
 
 
+void Assembler::rldcl(Register ra, Register rs, Register rb, int mb, RCBit r) {
+  mds_form(EXT5 | RLDCL, ra, rs, rb, mb, r);
+}
+
+
 void Assembler::rldicr(Register ra, Register rs, int sh, int me, RCBit r) {
   md_form(EXT5 | RLDICR, ra, rs, sh, me, r);
 }
@@ -1357,6 +1401,21 @@ void Assembler::sld(Register dst, Register src1, Register src2, RCBit r) {
 
 void Assembler::srad(Register ra, Register rs, Register rb, RCBit r) {
   x_form(EXT2 | SRAD, ra, rs, rb, r);
+}
+
+
+void Assembler::rotld(Register ra, Register rs, Register rb, RCBit r) {
+  rldcl(ra, rs, rb, 0, r);
+}
+
+
+void Assembler::rotldi(Register ra, Register rs, int sh, RCBit r) {
+  rldicl(ra, rs, n, 0, r);
+}
+
+
+void Assembler::rotrdi(Register ra, Register rs, int sh, RCBit r) {
+  rldicl(ra, rs, 64 - n, 0, r);
 }
 
 
@@ -1848,6 +1907,22 @@ void Assembler::fabs(const DoubleRegister frt,
                      const DoubleRegister frb,
                      RCBit rc) {
   emit(EXT4 | FABS | frt.code()*B21 | frb.code()*B11 | rc);
+}
+
+
+void Assembler::fmadd(const DoubleRegister frt, const DoubleRegister fra,
+                      const DoubleRegister frc, const DoubleRegister frb,
+                      RCBit rc) {
+  emit(EXT4 | FMADD | frt.code()*B21 | fra.code()*B16 | frb.code()*B11 |
+       frc.code()*B6 | rc);
+}
+
+
+void Assembler::fmsub(const DoubleRegister frt, const DoubleRegister fra,
+                      const DoubleRegister frc, const DoubleRegister frb,
+                      RCBit rc) {
+  emit(EXT4 | FMSUB | frt.code()*B21 | fra.code()*B16 | frb.code()*B11 |
+       frc.code()*B6 | rc);
 }
 
 
