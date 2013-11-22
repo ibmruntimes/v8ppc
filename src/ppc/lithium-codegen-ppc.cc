@@ -302,8 +302,7 @@ Register LCodeGen::EmitLoadRegister(LOperand* op, Register scratch) {
       ASSERT(literal->IsNumber());
       if (is_int16(literal->Number())) {
         __ li(scratch, Operand(static_cast<intptr_t>(literal->Number())));
-      }
-      else {
+      } else {
         __ mov(scratch, Operand(static_cast<intptr_t>(literal->Number())));
       }
     } else if (r.IsDouble()) {
@@ -1224,13 +1223,16 @@ void LCodeGen::DoBitI(LBitI* instr) {
         is_uint16(ToInteger32(LConstantOperand::cast(right_op)))) {
       switch (instr->op()) {
         case Token::BIT_AND:
-          __ andi(result, left, Operand(ToInteger32(LConstantOperand::cast(right_op))));
+          __ andi(result, left,
+                  Operand(ToInteger32(LConstantOperand::cast(right_op))));
           break;
         case Token::BIT_OR:
-          __ ori(result, left, Operand(ToInteger32(LConstantOperand::cast(right_op))));
+          __ ori(result, left,
+                 Operand(ToInteger32(LConstantOperand::cast(right_op))));
           break;
         case Token::BIT_XOR:
-          __ xori(result, left, Operand(ToInteger32(LConstantOperand::cast(right_op))));
+          __ xori(result, left,
+                  Operand(ToInteger32(LConstantOperand::cast(right_op))));
           break;
         default:
           UNREACHABLE();
@@ -2844,14 +2846,12 @@ void LCodeGen::DoLoadKeyedFastDoubleElement(
       if (is_int16(address_offset + sizeof(kHoleNanLower32))) {
         __ lwz(scratch, MemOperand(elements,
                                    address_offset + sizeof(kHoleNanLower32)));
-      }
-      else {
+      } else {
         __ li(r0, Operand(address_offset));
         __ add(scratch, elements, r0);
         __ lwz(scratch, MemOperand(scratch, sizeof(kHoleNanLower32)));
       }
-    }
-    else {
+    } else {
       __ lwz(scratch, MemOperand(elements, sizeof(kHoleNanLower32)));
     }
 #else

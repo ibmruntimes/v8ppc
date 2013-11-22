@@ -246,8 +246,7 @@ void LGapResolver::EmitMove(int index) {
       if (cgen_->IsInteger32(constant_source)) {
         if (is_int16(cgen_->ToInteger32(constant_source))) {
           __ li(dst, Operand(cgen_->ToInteger32(constant_source)));
-        }
-        else {
+        } else {
           __ mov(dst, Operand(cgen_->ToInteger32(constant_source)));
         }
       } else {
@@ -260,8 +259,7 @@ void LGapResolver::EmitMove(int index) {
         if (is_int16(cgen_->ToInteger32(constant_source))) {
           __ li(kSavedValueRegister,
                Operand(cgen_->ToInteger32(constant_source)));
-        }
-        else {
+        } else {
           __ mov(kSavedValueRegister,
                  Operand(cgen_->ToInteger32(constant_source)));
         }

@@ -3556,8 +3556,7 @@ void MacroAssembler::CheckPageFlag(
 
   if (is_uint16(mask)) {
     andi(r0, scratch, Operand(mask));
-  }
-  else {
+  } else {
     li(r0, Operand(mask));
     and_(r0, r0, scratch, SetRC);
   }
