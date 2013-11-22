@@ -1557,7 +1557,8 @@ LInstruction* LChunkBuilder::DoSub(HSub* instr) {
     ASSERT(instr->left()->representation().Equals(instr->representation()));
     ASSERT(instr->right()->representation().Equals(instr->representation()));
 
-    if (instr->left()->IsConstant()) {
+    if (instr->left()->IsConstant() &&
+        !instr->CheckFlag(HValue::kCanOverflow)) {
       // If lhs is constant, do reverse subtraction instead.
       return DoRSub(instr);
     }
@@ -1586,6 +1587,7 @@ LInstruction* LChunkBuilder::DoRSub(HSub* instr) {
   ASSERT(instr->representation().IsSmiOrInteger32());
   ASSERT(instr->left()->representation().Equals(instr->representation()));
   ASSERT(instr->right()->representation().Equals(instr->representation()));
+  ASSERT(!instr->CheckFlag(HValue::kCanOverflow));
 
   // Note: The lhs of the subtraction becomes the rhs of the
   // reverse-subtraction.
@@ -1593,9 +1595,6 @@ LInstruction* LChunkBuilder::DoRSub(HSub* instr) {
   LOperand* right = UseOrConstantAtStart(instr->left());
   LRSubI* rsb = new(zone()) LRSubI(left, right);
   LInstruction* result = DefineAsRegister(rsb);
-  if (instr->CheckFlag(HValue::kCanOverflow)) {
-    result = AssignEnvironment(result);
-  }
   return result;
 }
 

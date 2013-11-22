@@ -397,6 +397,8 @@ class MacroAssembler: public Assembler {
   // RegList constant kSafepointSavedRegisters.
   void PushSafepointRegisters();
   void PopSafepointRegisters();
+  void PushSafepointRegistersAndDoubles();
+  void PopSafepointRegistersAndDoubles();
 
   // Store value in register src in the safepoint stack slot for
   // register dst.

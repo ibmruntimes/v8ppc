@@ -537,6 +537,32 @@ void MacroAssembler::PopSafepointRegisters() {
 }
 
 
+void MacroAssembler::PushSafepointRegistersAndDoubles() {
+  // Number of d-regs not known at snapshot time.
+  ASSERT(!Serializer::enabled());
+  PushSafepointRegisters();
+  subi(sp, sp, Operand(DoubleRegister::NumAllocatableRegisters() *
+                       kDoubleSize));
+  for (int i = 0; i < DoubleRegister::NumAllocatableRegisters(); i++) {
+    stfd(DoubleRegister::FromAllocationIndex(i),
+         MemOperand(sp, i * kDoubleSize));
+  }
+}
+
+
+void MacroAssembler::PopSafepointRegistersAndDoubles() {
+  // Number of d-regs not known at snapshot time.
+  ASSERT(!Serializer::enabled());
+  for (int i = 0; i < DoubleRegister::NumAllocatableRegisters(); i++) {
+    lfd(DoubleRegister::FromAllocationIndex(i),
+        MemOperand(sp, i * kDoubleSize));
+  }
+  addi(sp, sp, Operand(DoubleRegister::NumAllocatableRegisters() *
+                       kDoubleSize));
+  PopSafepointRegisters();
+}
+
+
 void MacroAssembler::StoreToSafepointRegisterSlot(Register src, Register dst) {
   StoreP(src, SafepointRegisterSlot(dst));
 }

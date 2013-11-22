@@ -115,14 +115,8 @@ class LCodeGen BASE_EMBEDDED {
   // LOperand must be a double register.
   DoubleRegister ToDoubleRegister(LOperand* op) const;
 
-  /*
-  // LOperand is loaded into dbl_scratch, unless already a double register.
-  DoubleRegister EmitLoadDoubleRegister(LOperand* op,
-                                        SwVfpRegister flt_scratch,
-                                        DoubleRegister dbl_scratch);
-  */
-
-  int32_t ToRepresentation(LConstantOperand* op, const Representation& r) const;
+  intptr_t ToRepresentation(LConstantOperand* op,
+                            const Representation& r) const;
   int32_t ToInteger32(LConstantOperand* op) const;
   Smi* ToSmi(LConstantOperand* op) const;
   double ToDouble(LConstantOperand* op) const;
@@ -322,6 +316,9 @@ class LCodeGen BASE_EMBEDDED {
   void RecordSafepointWithRegisters(LPointerMap* pointers,
                                     int arguments,
                                     Safepoint::DeoptMode mode);
+  void RecordSafepointWithRegistersAndDoubles(LPointerMap* pointers,
+                                              int arguments,
+                                              Safepoint::DeoptMode mode);
   void RecordPosition(int position);
   void RecordAndUpdatePosition(int position);
 
@@ -438,6 +435,9 @@ class LCodeGen BASE_EMBEDDED {
         case Safepoint::kWithRegisters:
           codegen_->masm_->PushSafepointRegisters();
           break;
+        case Safepoint::kWithRegistersAndDoubles:
+          codegen_->masm_->PushSafepointRegistersAndDoubles();
+          break;
         default:
           UNREACHABLE();
       }
@@ -449,6 +449,9 @@ class LCodeGen BASE_EMBEDDED {
       switch (kind) {
         case Safepoint::kWithRegisters:
           codegen_->masm_->PopSafepointRegisters();
+          break;
+        case Safepoint::kWithRegistersAndDoubles:
+          codegen_->masm_->PopSafepointRegistersAndDoubles();
           break;
         default:
           UNREACHABLE();
