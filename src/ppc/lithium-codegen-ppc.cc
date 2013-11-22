@@ -28,6 +28,7 @@
 // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+
 #include "v8.h"
 
 #include "ppc/lithium-codegen-ppc.h"
@@ -299,7 +300,12 @@ Register LCodeGen::EmitLoadRegister(LOperand* op, Register scratch) {
     Representation r = chunk_->LookupLiteralRepresentation(const_op);
     if (r.IsInteger32()) {
       ASSERT(literal->IsNumber());
-      __ mov(scratch, Operand(static_cast<intptr_t>(literal->Number())));
+      if (is_int16(literal->Number())) {
+        __ li(scratch, Operand(static_cast<intptr_t>(literal->Number())));
+      }
+      else {
+        __ mov(scratch, Operand(static_cast<intptr_t>(literal->Number())));
+      }
     } else if (r.IsDouble()) {
       Abort("EmitLoadRegister: Unsupported double immediate.");
     } else {
@@ -1213,6 +1219,25 @@ void LCodeGen::DoBitI(LBitI* instr) {
     right = Operand(EmitLoadRegister(right_op, ip));
   } else {
     ASSERT(right_op->IsRegister() || right_op->IsConstantOperand());
+
+    if (right_op->IsConstantOperand() &&
+        is_uint16(ToInteger32(LConstantOperand::cast(right_op)))) {
+      switch (instr->op()) {
+        case Token::BIT_AND:
+          __ andi(result, left, Operand(ToInteger32(LConstantOperand::cast(right_op))));
+          break;
+        case Token::BIT_OR:
+          __ ori(result, left, Operand(ToInteger32(LConstantOperand::cast(right_op))));
+          break;
+        case Token::BIT_XOR:
+          __ xori(result, left, Operand(ToInteger32(LConstantOperand::cast(right_op))));
+          break;
+        default:
+          UNREACHABLE();
+          break;
+      }
+      return;
+    }
     right = ToOperand(right_op);
   }
 
@@ -1489,11 +1514,20 @@ void LCodeGen::DoAddI(LAddI* instr) {
   LOperand* right = instr->right();
   LOperand* result = instr->result();
   bool can_overflow = instr->hydrogen()->CheckFlag(HValue::kCanOverflow);
-  Register right_reg = EmitLoadRegister(right, ip);
+
+  if (!can_overflow && right->IsConstantOperand()) {
+    if (is_int16(ToInteger32(LConstantOperand::cast(right)))) {
+      __ addi(ToRegister(result), ToRegister(left),
+              Operand(ToInteger32(LConstantOperand::cast(right))));
+      return;
+    }
+  }
 
   if (!can_overflow) {
+    Register right_reg = EmitLoadRegister(right, ip);
     __ add(ToRegister(result), ToRegister(left), right_reg);
   } else {  // can_overflow.
+    Register right_reg = EmitLoadRegister(right, ip);
     __ AddAndCheckForOverflow(ToRegister(result),
                               ToRegister(left),
                               right_reg,
@@ -2776,6 +2810,7 @@ void LCodeGen::DoLoadKeyedFastDoubleElement(
   int element_size_shift = ElementsKindToShiftSize(FAST_DOUBLE_ELEMENTS);
   bool key_is_tagged = instr->hydrogen()->key()->representation().IsTagged();
   int constant_key = 0;
+  int address_offset = 0;
   if (key_is_constant) {
     constant_key = ToInteger32(LConstantOperand::cast(instr->key()));
     if (constant_key & 0xF0000000) {
@@ -2793,22 +2828,40 @@ void LCodeGen::DoLoadKeyedFastDoubleElement(
   } else {
     __ IndexToArrayOffset(r0, key, element_size_shift, key_is_tagged);
     __ add(elements, elements, r0);
-    __ mov(r0, Operand((FixedDoubleArray::kHeaderSize - kHeapObjectTag) +
-                       (instr->additional_index() << element_size_shift)));
-    __ add(elements, elements, r0);
+    address_offset = (FixedDoubleArray::kHeaderSize - kHeapObjectTag) +
+                     (instr->additional_index() << element_size_shift);
+
+    if (!is_int16((address_offset))) {
+      __ mov(r0, Operand(address_offset));
+      __ add(elements, elements, r0);
+      address_offset = 0;
+    }
   }
 
   if (instr->hydrogen()->RequiresHoleCheck()) {
 #if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
-    __ lwz(scratch, MemOperand(elements, sizeof(kHoleNanLower32)));
+    if (address_offset) {
+      if (is_int16(address_offset + sizeof(kHoleNanLower32))) {
+        __ lwz(scratch, MemOperand(elements,
+                                   address_offset + sizeof(kHoleNanLower32)));
+      }
+      else {
+        __ li(r0, Operand(address_offset));
+        __ add(scratch, elements, r0);
+        __ lwz(scratch, MemOperand(scratch, sizeof(kHoleNanLower32)));
+      }
+    }
+    else {
+      __ lwz(scratch, MemOperand(elements, sizeof(kHoleNanLower32)));
+    }
 #else
-    __ lwz(scratch, MemOperand(elements));
+    __ lwz(scratch, MemOperand(elements, address_offset));
 #endif
     __ Cmpi(scratch, Operand(kHoleNanUpper32), r0);
     DeoptimizeIf(eq, instr->environment());
   }
 
-  __ lfd(result, MemOperand(elements, 0));
+  __ lfd(result, MemOperand(elements, address_offset));
 }
 
 
