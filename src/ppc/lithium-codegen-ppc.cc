@@ -300,11 +300,7 @@ Register LCodeGen::EmitLoadRegister(LOperand* op, Register scratch) {
     Representation r = chunk_->LookupLiteralRepresentation(const_op);
     if (r.IsInteger32()) {
       ASSERT(literal->IsNumber());
-      if (is_int16(literal->Number())) {
-        __ li(scratch, Operand(static_cast<intptr_t>(literal->Number())));
-      } else {
-        __ mov(scratch, Operand(static_cast<intptr_t>(literal->Number())));
-      }
+      __ LoadIntLiteral(scratch, static_cast<intptr_t>(literal->Number()));
     } else if (r.IsDouble()) {
       Abort("EmitLoadRegister: Unsupported double immediate.");
     } else {
