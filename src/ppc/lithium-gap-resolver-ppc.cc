@@ -252,7 +252,8 @@ void LGapResolver::EmitMove(int index) {
       ASSERT(destination->IsStackSlot());
       ASSERT(!in_cycle_);  // Constant moves happen after all cycles are gone.
       if (cgen_->IsInteger32(constant_source)) {
-        __ LoadIntLiteral(kSavedValueRegister, cgen_->ToInteger32(constant_source));
+        __ LoadIntLiteral(kSavedValueRegister,
+                          cgen_->ToInteger32(constant_source));
       } else {
         __ LoadObject(kSavedValueRegister,
                       cgen_->ToHandle(constant_source));
