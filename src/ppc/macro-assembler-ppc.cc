@@ -3700,7 +3700,7 @@ void MacroAssembler::FlushICache(Register address, size_t size,
   // scratch is last cacheline which intersects range.
   const int kCacheLineSizeLog2 = CpuFeatures::cache_line_size_log2();
 
-  ASSERT(size > 0 && size <= (1 << kCacheLineSizeLog2));
+  ASSERT(size > 0 && size <= (size_t)(1 << kCacheLineSizeLog2));
   addi(scratch, address, Operand(size - 1));
   ClearRightImm(scratch, scratch, Operand(kCacheLineSizeLog2));
   cmpl(scratch, address);
