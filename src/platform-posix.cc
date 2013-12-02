@@ -634,7 +634,7 @@ void Thread::Start() {
   ASSERT_EQ(0, result);
   // Native client uses default stack size.
 #if !defined(__native_client__)
-  if (stack_size_ > 0) {
+  if (stack_size_ > PTHREAD_STACK_MIN) {
     result = pthread_attr_setstacksize(&attr, static_cast<size_t>(stack_size_));
     ASSERT_EQ(0, result);
   }
