@@ -154,6 +154,32 @@ static void ExpectUndefined(const char* code) {
 }
 
 
+template<typename T>
+static void CheckReturnValue(const T& t, i::Address callback) {
+  v8::ReturnValue<v8::Value> rv = t.GetReturnValue();
+  i::Object** o = *reinterpret_cast<i::Object***>(&rv);
+  CHECK_EQ(v8::Isolate::GetCurrent(), t.GetIsolate());
+  CHECK_EQ(t.GetIsolate(), rv.GetIsolate());
+  CHECK((*o)->IsTheHole() || (*o)->IsUndefined());
+  // Verify reset
+  bool is_runtime = (*o)->IsTheHole();
+  rv.Set(true);
+  CHECK(!(*o)->IsTheHole() && !(*o)->IsUndefined());
+  rv.Set(v8::Handle<v8::Object>());
+  CHECK((*o)->IsTheHole() || (*o)->IsUndefined());
+  CHECK_EQ(is_runtime, (*o)->IsTheHole());
+
+  i::Isolate* isolate = reinterpret_cast<i::Isolate*>(t.GetIsolate());
+  // If CPU profiler is active check that when API callback is invoked
+  // VMState is set to EXTERNAL.
+  if (isolate->cpu_profiler()->is_profiling()) {
+    CHECK_EQ(i::EXTERNAL, isolate->current_vm_state());
+    CHECK(isolate->external_callback_scope());
+    CHECK_EQ(callback, isolate->external_callback_scope()->callback());
+  }
+}
+
+
 static void Return239Callback(
     Local<String> name, const v8::PropertyCallbackInfo<Value>& info) {
   ApiTestFuzzer::Fuzz();
@@ -947,32 +973,6 @@ THREADED_TEST(GlobalProperties) {
   global->Set(v8_str("pi"), v8_num(3.1415926));
   Local<Value> pi = global->Get(v8_str("pi"));
   CHECK_EQ(3.1415926, pi->NumberValue());
-}
-
-
-template<typename T>
-static void CheckReturnValue(const T& t, i::Address callback) {
-  v8::ReturnValue<v8::Value> rv = t.GetReturnValue();
-  i::Object** o = *reinterpret_cast<i::Object***>(&rv);
-  CHECK_EQ(v8::Isolate::GetCurrent(), t.GetIsolate());
-  CHECK_EQ(t.GetIsolate(), rv.GetIsolate());
-  CHECK((*o)->IsTheHole() || (*o)->IsUndefined());
-  // Verify reset
-  bool is_runtime = (*o)->IsTheHole();
-  rv.Set(true);
-  CHECK(!(*o)->IsTheHole() && !(*o)->IsUndefined());
-  rv.Set(v8::Handle<v8::Object>());
-  CHECK((*o)->IsTheHole() || (*o)->IsUndefined());
-  CHECK_EQ(is_runtime, (*o)->IsTheHole());
-
-  i::Isolate* isolate = reinterpret_cast<i::Isolate*>(t.GetIsolate());
-  // If CPU profiler is active check that when API callback is invoked
-  // VMState is set to EXTERNAL.
-  if (isolate->cpu_profiler()->is_profiling()) {
-    CHECK_EQ(i::EXTERNAL, isolate->current_vm_state());
-    CHECK(isolate->external_callback_scope());
-    CHECK_EQ(callback, isolate->external_callback_scope()->callback());
-  }
 }
 
 

@@ -1622,7 +1622,6 @@ void LCodeGen::DoShiftI(LShiftI* instr) {
 #if V8_TARGET_ARCH_PPC64
           if (instr->hydrogen_value()->representation().IsSmi()) {
             __ sldi(result, left, Operand(shift_count));
-          }
 #else
           if (instr->hydrogen_value()->representation().IsSmi() &&
               instr->can_deopt()) {
