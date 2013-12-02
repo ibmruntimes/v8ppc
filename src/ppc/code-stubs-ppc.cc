@@ -2924,12 +2924,7 @@ void CEntryStub::GenerateCore(MacroAssembler* masm,
   // Call C built-in on native hardware.
 #if defined(V8_TARGET_ARCH_PPC64)
   if (result_size_ < 2) {
-#if __BYTE_ORDER == __LITTLE_ENDIAN
     __ mr(r3, r14);
-#else
-    // r3 = argc << 32 (for alignment), r4 = argv
-    __ ShiftLeftImm(r3, r14, Operand(32));
-#endif
     __ mr(r4, r16);
     isolate_reg = r5;
   } else {
@@ -2938,12 +2933,7 @@ void CEntryStub::GenerateCore(MacroAssembler* masm,
     // Use frame storage reserved by calling function to pass return
     // buffer as implicit first argument.
     __ addi(r3, sp, Operand((kStackFrameExtraParamSlot + 1) * kPointerSize));
-#if __BYTE_ORDER == __LITTLE_ENDIAN
     __ mr(r4, r14);
-#else
-    // r4 = argc << 32 (for alignment), r5 = argv
-    __ ShiftLeftImm(r4, r14, Operand(32));
-#endif
     __ mr(r5, r16);
     isolate_reg = r6;
   }
@@ -4156,9 +4146,9 @@ void RegExpExecStub::Generate(MacroAssembler* masm) {
          FieldMemOperand(regexp_data, JSRegExp::kIrregexpCaptureCountOffset));
   // Check (number_of_captures + 1) * 2 <= offsets vector size
   // Or          number_of_captures * 2 <= offsets vector size - 2
-  // Multiplying by 2 comes for free since r2 is smi-tagged.
-  STATIC_ASSERT(kSmiTag == 0);
-  STATIC_ASSERT(kSmiTagSize + kSmiShiftSize == 1);
+  // SmiToShortArrayOffset accomplishes the multiplication by 2 and
+  // SmiUntag (which is a nop for 32-bit).
+  __ SmiToShortArrayOffset(r5, r5);
   STATIC_ASSERT(Isolate::kJSRegexpStaticOffsetsVectorSize >= 2);
   __ cmpli(r5, Operand(Isolate::kJSRegexpStaticOffsetsVectorSize - 2));
   __ bgt(&runtime);
@@ -4408,11 +4398,11 @@ Label seq_string /* 5 */, external_string /* 7 */,
   // Process the result from the native regexp code.
   __ bind(&success);
   __ LoadP(r4,
-         FieldMemOperand(regexp_data, JSRegExp::kIrregexpCaptureCountOffset));
+           FieldMemOperand(regexp_data, JSRegExp::kIrregexpCaptureCountOffset));
   // Calculate number of capture registers (number_of_captures + 1) * 2.
-#if 0  // roohack - removed during upstream, not sure if needed
+  // SmiToShortArrayOffset accomplishes the multiplication by 2 and
+  // SmiUntag (which is a nop for 32-bit).
   __ SmiToShortArrayOffset(r4, r4);
-#endif
   __ addi(r4, r4, Operand(2));
 
   __ LoadP(r3, MemOperand(sp, kLastMatchInfoOffset));
@@ -7113,10 +7103,9 @@ void ProfileEntryHookStub::Generate(MacroAssembler* masm) {
   }
 
 #if !defined(USE_SIMULATOR)
-  int32_t entry_hook =
-      reinterpret_cast<int32_t>(masm->isolate()->function_entry_hook());
+  uintptr_t entry_hook =
+      reinterpret_cast<uintptr_t>(masm->isolate()->function_entry_hook());
   __ mov(ip, Operand(entry_hook));
-  __ LoadP(ip, MemOperand(ip));
 
 #if (defined(_AIX) || defined(V8_TARGET_ARCH_PPC64))
   // Function descriptor
@@ -7209,7 +7198,7 @@ static void CreateArrayDispatchOneArgument(MacroAssembler* masm) {
   // Save the resulting elements kind in type info
   __ SmiTag(r6);
   __ LoadP(r8, FieldMemOperand(r5, Cell::kValueOffset));
-  __ StoreP(r6, FieldMemOperand(r8, AllocationSite::kTransitionInfoOffset));
+  __ StoreP(r6, FieldMemOperand(r8, AllocationSite::kTransitionInfoOffset), r0);
   __ SmiUntag(r6);
 
   __ bind(&normal_sequence);
