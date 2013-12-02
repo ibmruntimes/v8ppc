@@ -6487,7 +6487,7 @@ void NameDictionaryLookupStub::GenerateNegativeLookup(MacroAssembler* masm,
     __ LoadRoot(tmp, Heap::kTheHoleValueRootIndex);
 
     // Stop if found the property.
-    __ Cmpi(entity_name, Operand(Handle<String>(name)), r0);
+    __ Cmpi(entity_name, Operand(Handle<Name>(name)), r0);
     __ beq(miss);
 
     Label good;
@@ -6570,7 +6570,7 @@ void NameDictionaryLookupStub::GeneratePositiveLookup(MacroAssembler* masm,
     __ and_(scratch2, scratch1, scratch2);
 
     // Scale the index by multiplying by the element size.
-    ASSERT(StringDictionary::kEntrySize == 3);
+    ASSERT(NameDictionary::kEntrySize == 3);
     // scratch2 = scratch2 * 3.
     __ ShiftLeftImm(ip, scratch2, Operand(1));
     __ add(scratch2, scratch2, ip);
