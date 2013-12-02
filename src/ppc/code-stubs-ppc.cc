@@ -2947,19 +2947,11 @@ void CEntryStub::GenerateCore(MacroAssembler* masm,
     __ mr(r5, r16);
     isolate_reg = r6;
   }
-#elif defined(_AIX)  // 32-bit AIX
+#else  // 32-bit linux/AIX
   // r3 = argc, r4 = argv
   __ mr(r3, r14);
   __ mr(r4, r16);
   isolate_reg = r5;
-#else  // 32-bit linux
-  // Use frame storage reserved by calling function
-  // PPC passes C++ objects by reference not value
-  // This builds an object in the stack frame
-  __ addi(r3, sp, Operand((kStackFrameExtraParamSlot + 1) * kPointerSize));
-  __ StoreP(r14, MemOperand(r3));
-  __ StoreP(r16, MemOperand(r3, kPointerSize));
-  isolate_reg = r4;
 #endif
 #else  // Simulated
   // Call C built-in using simulator.
