@@ -161,7 +161,7 @@
       'target_defaults': {
         'cflags': [ '-Wall', '<(werror)', '-W', '-Wno-unused-parameter',
                     '-pthread', '-fno-exceptions', '-pedantic' ],
-        'cflags_cc': [ '-Wnon-virtual-dtor', '-fno-rtti' ],
+        'cflags_cc': [ '-Wnon-virtual-dtor', '-Wno-array-bounds' ,'-fno-rtti' ],
         'ldflags': [ '-pthread', ],
         'conditions': [
           [ 'OS=="linux"', {
