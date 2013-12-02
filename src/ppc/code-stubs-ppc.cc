@@ -7125,7 +7125,9 @@ void ProfileEntryHookStub::Generate(MacroAssembler* masm) {
   }
 
 #if !defined(USE_SIMULATOR)
-  __ mov(ip, Operand(reinterpret_cast<intptr_t>(&entry_hook_)));
+  int32_t entry_hook =
+      reinterpret_cast<int32_t>(masm->isolate()->function_entry_hook());
+  __ mov(ip, Operand(entry_hook));
   __ LoadP(ip, MemOperand(ip));
 
 #if (defined(_AIX) || defined(V8_TARGET_ARCH_PPC64))
