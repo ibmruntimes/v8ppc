@@ -1748,7 +1748,7 @@ void MacroAssembler::Allocate(int object_size,
     andi(scratch2, result, Operand(kDoubleAlignmentMask));
     Label aligned;
     beq(&aligned, cr0);
-    li(scratch2, Operand(isolate()->factory()->one_pointer_filler_map()));
+    mov(scratch2, Operand(isolate()->factory()->one_pointer_filler_map()));
     stw(scratch2, MemOperand(result));
     addi(result, result, Operand(kDoubleSize / 2));
     bind(&aligned);
@@ -1848,7 +1848,7 @@ void MacroAssembler::Allocate(Register object_size,
     andi(scratch2, result, Operand(kDoubleAlignmentMask));
     Label aligned;
     beq(&aligned, cr0);
-    li(scratch2, Operand(isolate()->factory()->one_pointer_filler_map()));
+    mov(scratch2, Operand(isolate()->factory()->one_pointer_filler_map()));
     stw(scratch2, MemOperand(result));
     addi(result, result, Operand(kDoubleSize / 2));
     bind(&aligned);

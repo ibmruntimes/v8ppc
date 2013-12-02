@@ -651,7 +651,7 @@ static byte* GetNoCodeAgeSequence(uint32_t* length) {
     CodePatcher patcher(byte_sequence, kNoCodeAgeSequenceLength);
     PredictableCodeSizeScope scope(patcher.masm(), *length);
     patcher.masm()->mflr(r0);
-    patcher.masm()->Push(r0, r4, cp, fp);
+    patcher.masm()->Push(r0, fp, cp, r4);
     patcher.masm()->addi(fp, sp, Operand(2 * kPointerSize));
     initialized = true;
   }
