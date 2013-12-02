@@ -3106,10 +3106,6 @@ void CEntryStub::Generate(MacroAssembler* masm) {
     ASSERT_EQ(2, result_size_);
     arg_stack_space += 2;
   }
-#elif !defined(_AIX)
-  // 32-bit linux
-  // Pass C++ objects by reference not value
-  arg_stack_space += 2;
 #endif
 #endif
 
