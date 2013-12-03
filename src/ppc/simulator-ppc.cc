@@ -1238,7 +1238,7 @@ void Simulator::SoftwareInterrupt(Instruction* instr) {
           reinterpret_cast<intptr_t>(redirection->external_function());
       if (fp_call) {
         double dval0, dval1;  // one or two double parameters
-        int32_t ival;         // zero or one integer parameters
+        intptr_t ival;        // zero or one integer parameters
         int64_t iresult = 0;  // integer return value
         double dresult = 0;   // double return value
         GetFpArgs(&dval0, &dval1, &ival);
