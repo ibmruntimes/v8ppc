@@ -7399,9 +7399,8 @@ void InternalArrayConstructorStub::Generate(MacroAssembler* masm) {
 
   // Figure out the right elements kind
   __ LoadP(r6, FieldMemOperand(r4, JSFunction::kPrototypeOrInitialMapOffset));
-  // Load the map's "bit field 2" into |result|. We only need the first byte,
-  // but the following bit field extraction takes care of that anyway.
-  __ LoadP(r6, FieldMemOperand(r6, Map::kBitField2Offset));
+  // Load the map's "bit field 2" into |result|.
+  __ lbz(r6, FieldMemOperand(r6, Map::kBitField2Offset));
   // Retrieve elements_kind from bit field 2.
   __ ExtractBitMask(r6, r6, Map::kElementsKindMask);
 
