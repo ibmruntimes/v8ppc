@@ -196,7 +196,7 @@ class InductionVariableBlocksTable BASE_EMBEDDED {
     return unsafe ? OPTIMISTICALLY_HOISTABLE : HOISTABLE;
   }
 
-// Work around for GCC 4.4.6 at -O3 reporting 
+// Work around for GCC 4.4.6 at -O3 reporting
 // warning: may be used uninitialized in this function
 #pragma GCC diagnostic ignored "-Wuninitialized"
   explicit InductionVariableBlocksTable(HGraph* graph)
