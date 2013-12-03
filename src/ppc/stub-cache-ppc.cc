@@ -516,20 +516,16 @@ void BaseStoreStubCompiler::GenerateStoreTransition(MacroAssembler* masm,
 
     __ JumpIfNotSmi(value_reg, &heap_number);
     __ SmiUntag(scratch1, value_reg);
-    __ fake_asm(fMASM61);
-#if 0  // the code below needs to be implemented
-    __ vmov(s0, scratch1);
-    __ vcvt_f64_s32(d0, s0);
+    __ ConvertIntToDouble(scratch1, d0);
     __ jmp(&do_store);
 
     __ bind(&heap_number);
     __ CheckMap(value_reg, scratch1, Heap::kHeapNumberMapRootIndex,
                 miss_label, DONT_DO_SMI_CHECK);
-    __ vldr(d0, FieldMemOperand(value_reg, HeapNumber::kValueOffset));
+    __ lfd(d0, FieldMemOperand(value_reg, HeapNumber::kValueOffset));
 
     __ bind(&do_store);
-    __ vstr(d0, FieldMemOperand(storage_reg, HeapNumber::kValueOffset));
-#endif
+    __ stfd(d0, FieldMemOperand(storage_reg, HeapNumber::kValueOffset));
   }
 
   // Stub never generated for non-global objects that require access
@@ -691,20 +687,16 @@ void BaseStoreStubCompiler::GenerateStoreField(MacroAssembler* masm,
     Label do_store, heap_number;
     __ JumpIfNotSmi(value_reg, &heap_number);
     __ SmiUntag(scratch2, value_reg);
-    __ fake_asm(fMASM62);
-#if 0  // need to implement code below
-    __ vmov(s0, scratch2);
-    __ vcvt_f64_s32(d0, s0);
+    __ ConvertIntToDouble(scratch2, d0);
     __ jmp(&do_store);
 
     __ bind(&heap_number);
     __ CheckMap(value_reg, scratch2, Heap::kHeapNumberMapRootIndex,
                 miss_label, DONT_DO_SMI_CHECK);
-    __ vldr(d0, FieldMemOperand(value_reg, HeapNumber::kValueOffset));
+    __ lfd(d0, FieldMemOperand(value_reg, HeapNumber::kValueOffset));
 
     __ bind(&do_store);
-    __ vstr(d0, FieldMemOperand(scratch1, HeapNumber::kValueOffset));
-#endif
+    __ stfd(d0, FieldMemOperand(scratch1, HeapNumber::kValueOffset));
     // Return the value (register r3).
     ASSERT(value_reg.is(r3));
     __ Ret();
