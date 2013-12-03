@@ -6088,7 +6088,9 @@ bool HOptimizedGraphBuilder::TryCallPolymorphicAsMonomorphic(
   return true;
 }
 
-
+// Work around for GCC 4.4.6 at -O3 reporting 
+// warning: array subscript is above array bounds
+#pragma GCC diagnostic ignored "-Warray-bounds"
 void HOptimizedGraphBuilder::HandlePolymorphicCallNamed(
     Call* expr,
     HValue* receiver,
