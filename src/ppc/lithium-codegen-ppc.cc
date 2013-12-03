@@ -3558,7 +3558,7 @@ void LCodeGen::CallKnownFunction(Handle<JSFunction> function,
 
     // Invoke function.
     __ SetCallKind(r8, call_kind);
-    if (*function == *info()->closure()) {
+    if (function.is_identical_to(info()->closure())) {
       __ CallSelf();
     } else {
       __ LoadP(ip, FieldMemOperand(r4, JSFunction::kCodeEntryOffset));
