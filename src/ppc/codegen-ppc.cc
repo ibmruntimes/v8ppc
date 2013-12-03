@@ -637,8 +637,8 @@ void MathExpGenerator::EmitMathExp(MacroAssembler* masm,
 
 #undef __
 
-// add(r0, pc, Operand(-8))
-static const uint32_t kCodeAgePatchFirstInstruction = 0xe24f0008;
+// lis     r3,<value>
+static const uint32_t kCodeAgePatchFirstInstruction = 0x3c600000;
 
 static byte* GetNoCodeAgeSequence(uint32_t* length) {
   // The sequence of instructions that is patched out for aging code is the
@@ -664,7 +664,8 @@ bool Code::IsYoungSequence(byte* sequence) {
   byte* young_sequence = GetNoCodeAgeSequence(&young_length);
   bool result = !memcmp(sequence, young_sequence, young_length);
   ASSERT(result ||
-         Memory::uint32_at(sequence) == kCodeAgePatchFirstInstruction);
+         (Memory::uint32_at(sequence) & 0xFFFF0000)
+            == kCodeAgePatchFirstInstruction);
   return result;
 }
 
@@ -692,17 +693,13 @@ void Code::PatchPlatformCodeAge(byte* sequence,
     CopyBytes(sequence, young_sequence, young_length);
     CPU::FlushICache(sequence, young_length);
   } else {
-#if 1
-    // defer implementation
-    CodePatcher patcher(sequence, young_length / Assembler::kInstrSize);
-    patcher.masm()->fake_asm(fMASM20);
-#else
+    // FIXED_SEQUENCE - must output 6 instructions (24bytes)
     Code* stub = GetCodeAgeStub(age, parity);
     CodePatcher patcher(sequence, young_length / Assembler::kInstrSize);
-    patcher.masm()->add(r0, pc, Operand(-8));
-    patcher.masm()->ldr(pc, MemOperand(pc, -4));
-    patcher.masm()->dd(reinterpret_cast<uint32_t>(stub->instruction_start()));
-#endif
+    patcher.masm()->mov(r3, Operand(reinterpret_cast<intptr_t>(sequence)));
+    patcher.masm()->LoadP(r0, MemOperand(r3, 20));
+    patcher.masm()->Jump(r0);
+    patcher.masm()->dd(reinterpret_cast<Instr>(stub->instruction_start()));
   }
 }
 
