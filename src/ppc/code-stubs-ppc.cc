@@ -5027,7 +5027,7 @@ void StringHelper::GenerateCopyCharactersLong(MacroAssembler* masm,
     // Check that destination is actually word aligned if the flag says
     // that it is.
     __ andi(r0, dest, Operand(kPointerAlignmentMask));
-    __ Check(eq, kDestinationOfCopyNotAligned);
+    __ Check(eq, kDestinationOfCopyNotAligned, cr0);
   }
 
   // Nothing to do for zero characters.
