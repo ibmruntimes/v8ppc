@@ -1692,6 +1692,7 @@ void BinaryOpStub_GenerateFPOperation(MacroAssembler* masm,
         }
 
         __ stfd(d1, FieldMemOperand(result, HeapNumber::kValueOffset));
+        __ mr(r3, result);
         __ Ret();
       } else {
         // Call the C function to handle the double operation.
