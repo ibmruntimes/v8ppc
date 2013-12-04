@@ -1657,9 +1657,9 @@ void LCodeGen::DoSubI(LSubI* instr) {
   LOperand* result = instr->result();
   bool can_overflow = instr->hydrogen()->CheckFlag(HValue::kCanOverflow);
   if (!can_overflow && right->IsConstantOperand()) {
-    if (is_int16(ToInteger32(LConstantOperand::cast(right)))) {
-      __ subi(ToRegister(result), ToRegister(left),
-              Operand(ToInteger32(LConstantOperand::cast(right))));
+    Operand right_operand = ToOperand(right);
+    if (is_int16(right_operand.immediate())) {
+      __ subi(ToRegister(result), ToRegister(left), right_operand);
       return;
     }
   }
