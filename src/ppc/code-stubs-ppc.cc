@@ -4088,6 +4088,7 @@ void RegExpExecStub::Generate(MacroAssembler* masm) {
   const int kJSRegExpOffset = 3 * kPointerSize;
 
   Label runtime, br_over, encoding_type_UC16;
+
   // Allocation of registers for this function. These are in callee save
   // registers and will be preserved by the call to the native RegExp code, as
   // this code is called using the normal C calling convention. When calling
@@ -4124,7 +4125,7 @@ void RegExpExecStub::Generate(MacroAssembler* masm) {
   // Check that the RegExp has been compiled (data contains a fixed array).
   __ LoadP(regexp_data, FieldMemOperand(r3, JSRegExp::kDataOffset));
   if (FLAG_debug_code) {
-    __ andi(r0, regexp_data, Operand(kSmiTagMask));
+    __ TestIfSmi(regexp_data, r0);
     __ Check(ne, kUnexpectedTypeForRegExpDataFixedArrayExpected, cr0);
     __ CompareObjectType(regexp_data, r3, r3, FIXED_ARRAY_TYPE);
     __ Check(eq, kUnexpectedTypeForRegExpDataFixedArrayExpected);
@@ -4151,7 +4152,7 @@ void RegExpExecStub::Generate(MacroAssembler* masm) {
   __ bgt(&runtime);
 
   // Reset offset for possibly sliced string.
-  __ mov(r22, Operand::Zero());
+  __ li(r11, Operand::Zero());
   __ LoadP(subject, MemOperand(sp, kSubjectOffset));
   __ JumpIfSmi(subject, &runtime);
   __ mr(r6, subject);  // Make a copy of the original subject string.
@@ -4178,7 +4179,7 @@ void RegExpExecStub::Generate(MacroAssembler* masm) {
   // (8) Short external string or not a string?  If yes, bail out to runtime.
   // (9) Sliced string.  Replace subject with parent.  Go to (4).
 
-Label seq_string /* 5 */, external_string /* 7 */,
+  Label seq_string /* 5 */, external_string /* 7 */,
         check_underlying /* 4 */, not_seq_nor_cons /* 6 */,
         not_long_external /* 8 */;
 
@@ -4192,7 +4193,7 @@ Label seq_string /* 5 */, external_string /* 7 */,
                   kStringRepresentationMask |
                   kShortExternalStringMask));
   STATIC_ASSERT((kStringTag | kSeqStringTag) == 0);
-  __ beq(&seq_string, cr0);
+  __ beq(&seq_string, cr0);  // Go to (5).
 
   // (2) Anything but sequential or cons?  If yes, go to (6).
   STATIC_ASSERT(kConsStringTag < kExternalStringTag);
@@ -4220,7 +4221,7 @@ Label seq_string /* 5 */, external_string /* 7 */,
   // The underlying external string is never a short external string.
   STATIC_CHECK(ExternalString::kMaxShortLength < ConsString::kMinLength);
   STATIC_CHECK(ExternalString::kMaxShortLength < SlicedString::kMinLength);
-  __ bne(&external_string, cr0);  // Got to (7)
+  __ bne(&external_string, cr0);  // Go to (7).
 
   // (5) Sequential string.  Load regexp code according to encoding.
   __ bind(&seq_string);
@@ -4238,7 +4239,6 @@ Label seq_string /* 5 */, external_string /* 7 */,
 
   STATIC_ASSERT(4 == kOneByteStringTag);
   STATIC_ASSERT(kTwoByteStringTag == 0);
-  // Find the code object based on the assumptions above.
   STATIC_ASSERT(kStringEncodingMask == 4);
   __ ExtractBitMask(r6, r3, kStringEncodingMask, SetRC);
   __ beq(&encoding_type_UC16, cr0);
@@ -4249,7 +4249,7 @@ Label seq_string /* 5 */, external_string /* 7 */,
   __ bind(&br_over);
 
   // (E) Carry on.  String handling is done.
-  // r7: irregexp code
+  // code: irregexp code
   // Check that the irregexp code has been generated for the actual string
   // encoding. If it has, the field contains a code object otherwise it contains
   // a smi (code flushing support).
@@ -4408,7 +4408,7 @@ Label seq_string /* 5 */, external_string /* 7 */,
   __ bne(&runtime);
   // Check that the JSArray is in fast case.
   __ LoadP(last_match_info_elements,
-         FieldMemOperand(r3, JSArray::kElementsOffset));
+           FieldMemOperand(r3, JSArray::kElementsOffset));
   __ LoadP(r3,
            FieldMemOperand(last_match_info_elements, HeapObject::kMapOffset));
   __ CompareRoot(r3, Heap::kFixedArrayMapRootIndex);
@@ -4423,7 +4423,7 @@ Label seq_string /* 5 */, external_string /* 7 */,
   __ bgt(&runtime);
 
   // r4: number of capture registers
-  // r7: subject string
+  // r26: subject string
   // Store the capture count.
   __ SmiTag(r5, r4);
   __ StoreP(r5, FieldMemOperand(last_match_info_elements,
@@ -4487,7 +4487,7 @@ Label seq_string /* 5 */, external_string /* 7 */,
   // (6) Not a long external string?  If yes, go to (8).
   __ bind(&not_seq_nor_cons);
   // Compare flags are still set.
-  __ b(gt, &not_long_external);  // Go to (8).
+  __ bgt(&not_long_external);  // Go to (8).
 
   // (7) External string.  Make it, offset-wise, look like a sequential string.
   __ bind(&external_string);
@@ -4507,7 +4507,7 @@ Label seq_string /* 5 */, external_string /* 7 */,
   __ subi(subject,
          subject,
          Operand(SeqTwoByteString::kHeaderSize - kHeapObjectTag));
-  __ b(&seq_string);
+  __ b(&seq_string);  // Go to (5).
 
   // (8) Short external string or not a string?  If yes, bail out to runtime.
   __ bind(&not_long_external);
@@ -4516,11 +4516,11 @@ Label seq_string /* 5 */, external_string /* 7 */,
   __ bne(&runtime, cr0);
 
   // (9) Sliced string.  Replace subject with parent.  Go to (4).
-  // Load offset into r22 and replace subject string with parent.
-  __ LoadP(r22, FieldMemOperand(subject, SlicedString::kOffsetOffset));
-  __ SmiUntag(r22);
+  // Load offset into r11 and replace subject string with parent.
+  __ LoadP(r11, FieldMemOperand(subject, SlicedString::kOffsetOffset));
+  __ SmiUntag(r11);
   __ LoadP(subject, FieldMemOperand(subject, SlicedString::kParentOffset));
-  __ jmp(&check_underlying);  // Go to (4).
+  __ b(&check_underlying);  // Go to (4).
 #endif  // V8_INTERPRETED_REGEXP
 }
 
