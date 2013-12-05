@@ -899,20 +899,25 @@ static void GenerateFastApiDirectCall(MacroAssembler* masm,
   // Prepare arguments.
   __ addi(r5, sp, Operand(5 * kPointerSize));
 
+  Address function_address = v8::ToCData<Address>(api_call_info->callback());
+  bool returns_handle =
+      !CallbackTable::ReturnsVoid(masm->isolate(), function_address);
+
   // Allocate the v8::Arguments structure in the arguments' space since
   // it's not controlled by GC.
   // PPC LINUX ABI:
   //
-  // Create 6 extra slots on stack:
+  // Create 5 or 6 extra slots on stack (depending on returns_handle):
   //    [0] space for DirectCEntryStub's LR save
-  //    [1] space for pointer-sized non-scalar return value (r3)
+  //    [1] (optional) space for pointer-sized non-scalar return value (r3)
   //    [2-5] v8:Arguments
   //
-  // We shift the arguments over a register (e.g. r3 -> r4) to allow
-  // for the return value buffer in implicit first arg.
-  // CallApiFunctionAndReturn will setup r3.
-  const int kApiStackSpace = 6;
-  Register arg0 = r4;
+  // If returns_handle, we shift the arguments over a register
+  // (e.g. r3 -> r4) to allow for the return value buffer in implicit
+  // first arg.  CallApiFunctionAndReturn will setup r3.
+  int kApiStackSpace = 5 + (returns_handle ? 1 : 0);
+  int kArgumentsSlot = kStackFrameExtraParamSlot + (returns_handle ? 2 : 1);
+  Register arg0 = returns_handle ? r4 : r3;
 
   FrameScope frame_scope(masm, StackFrame::MANUAL);
   __ EnterExitFrame(false, kApiStackSpace);
@@ -921,7 +926,7 @@ static void GenerateFastApiDirectCall(MacroAssembler* masm,
 
   // arg0 = v8::Arguments&
   // Arguments is after the return address.
-  __ addi(arg0, sp, Operand((kStackFrameExtraParamSlot + 2) * kPointerSize));
+  __ addi(arg0, sp, Operand(kArgumentsSlot * kPointerSize));
   // v8::Arguments::implicit_args_
   __ StoreP(r5, MemOperand(arg0, 0 * kPointerSize));
   // v8::Arguments::values_
@@ -935,9 +940,6 @@ static void GenerateFastApiDirectCall(MacroAssembler* masm,
   __ StoreP(ip, MemOperand(arg0, 3 * kPointerSize));
 
   const int kStackUnwindSpace = argc + kFastApiCallArguments + 1;
-  Address function_address = v8::ToCData<Address>(api_call_info->callback());
-  bool returns_handle =
-      !CallbackTable::ReturnsVoid(masm->isolate(), function_address);
   ApiFunction fun(function_address);
   ExternalReference::Type type =
       returns_handle ?
@@ -1460,37 +1462,41 @@ void BaseLoadStubCompiler::GenerateLoadCallback(
   __ mov(scratch4(),
          Operand(ExternalReference::isolate_address(isolate())));
   __ Push(scratch4(), name());
-  __ mr(r3, sp);  // r3 = Handle<Name>
+
+  Address getter_address = v8::ToCData<Address>(callback->getter());
+  bool returns_handle =
+      !CallbackTable::ReturnsVoid(isolate(), getter_address);
 
   // PPC LINUX 32-bit ABI:
   //
-  // Create 4 extra slots on stack:
+  // Create 3 or 4 extra slots on stack (depending on returns_handle):
   //    [0] space for DirectCEntryStub's LR save
-  //    [1] space for pointer-sized non-scalar return value (r3)
+  //    [1] (optional) space for pointer-sized non-scalar return value (r3)
   //    [2] copy of pointer-sized non-scalar first arg
   //    [3] AccessorInfo
   //
   // PPC LINUX 64-bit / AIX ABI:
   //
-  // Create 3 extra slots on stack:
+  // Create 2 or 3 extra slots on stack (depending on returns_handle):
   //    [0] space for DirectCEntryStub's LR save
-  //    [1] space for pointer-sized non-scalar return value (r3)
+  //    [1] (optional) space for pointer-sized non-scalar return value (r3)
   //    [2] AccessorInfo
   //
-  // We shift the arguments over a register (e.g. r3 -> r4) to allow
-  // for the return value buffer in implicit first arg.
-  // CallApiFunctionAndReturn will setup r3.
+  // If returns_handle, we shift the arguments over a register
+  // (e.g. r3 -> r4) to allow for the return value buffer in implicit
+  // first arg.  CallApiFunctionAndReturn will setup r3.
 #if (defined(_AIX) || defined(V8_TARGET_ARCH_PPC64))
-  const int kApiStackSpace = 3;
-  const int kAccessorInfoSlot = 2;
+  int kAccessorInfoSlot = kStackFrameExtraParamSlot + (returns_handle ? 2 : 1);
 #else
-  const int kApiStackSpace = 4;
-  const int kAccessorInfoSlot = 3;
+  int kArg0Slot = kStackFrameExtraParamSlot + (returns_handle ? 2 : 1);
+  int kAccessorInfoSlot = kArg0Slot + 1;
 #endif
-  Register arg0 = r4;
-  Register arg1 = r5;
+  int kApiStackSpace = kAccessorInfoSlot - kStackFrameExtraParamSlot + 1;
+  Register arg0 = (returns_handle ? r4 : r3);
+  Register arg1 = (returns_handle ? r5 : r4);
 
   __ mr(arg1, scratch2());  // Saved in case scratch2 == arg0.
+  __ mr(arg0, sp);  // arg0 = Handle<Name>
 
   FrameScope frame_scope(masm(), StackFrame::MANUAL);
   __ EnterExitFrame(false, kApiStackSpace);
@@ -1498,22 +1504,17 @@ void BaseLoadStubCompiler::GenerateLoadCallback(
 #if !(defined(_AIX) || defined(V8_TARGET_ARCH_PPC64))
   // pass 1st arg by reference
   __ StoreP(arg0,
-            MemOperand(sp, (kStackFrameExtraParamSlot + 2) * kPointerSize));
-  __ addi(arg0, sp, Operand((kStackFrameExtraParamSlot + 2) * kPointerSize));
+            MemOperand(sp, kArg0Slot * kPointerSize));
+  __ addi(arg0, sp, Operand(kArg0Slot * kPointerSize));
 #endif
 
   // Create AccessorInfo instance on the stack above the exit frame with
   // scratch2 (internal::Object** args_) as the data.
-  __ StoreP(arg1, MemOperand(sp, (kStackFrameExtraParamSlot + kAccessorInfoSlot)
-                             * kPointerSize));
+  __ StoreP(arg1, MemOperand(sp, kAccessorInfoSlot * kPointerSize));
   // arg1 = AccessorInfo&
-  __ addi(arg1, sp, Operand((kStackFrameExtraParamSlot + kAccessorInfoSlot)
-                            * kPointerSize));
+  __ addi(arg1, sp, Operand(kAccessorInfoSlot * kPointerSize));
 
   const int kStackUnwindSpace = kFastApiCallArguments + 1;
-  Address getter_address = v8::ToCData<Address>(callback->getter());
-  bool returns_handle =
-      !CallbackTable::ReturnsVoid(isolate(), getter_address);
 
   ApiFunction fun(getter_address);
   ExternalReference::Type type =
