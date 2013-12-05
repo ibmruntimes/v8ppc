@@ -217,20 +217,32 @@ void RelocInfo::set_target_cell(Cell* cell, WriteBarrierMode mode) {
 }
 
 
+#if V8_TARGET_ARCH_PPC64
+static const int kNoCodeAgeSequenceLength = 10;
+#else
 static const int kNoCodeAgeSequenceLength = 6;
+#endif
 
 Code* RelocInfo::code_age_stub() {
   ASSERT(rmode_ == RelocInfo::CODE_AGE_SEQUENCE);
   return Code::GetCodeFromTargetAddress(
       Memory::Address_at(pc_ + Assembler::kInstrSize *
+#if V8_TARGET_ARCH_PPC64
+                         (kNoCodeAgeSequenceLength - 2)));
+#else
                          (kNoCodeAgeSequenceLength - 1)));
+#endif
 }
 
 
 void RelocInfo::set_code_age_stub(Code* stub) {
   ASSERT(rmode_ == RelocInfo::CODE_AGE_SEQUENCE);
   Memory::Address_at(pc_ + Assembler::kInstrSize *
+#if V8_TARGET_ARCH_PPC64
+                     (kNoCodeAgeSequenceLength - 2)) =
+#else
                      (kNoCodeAgeSequenceLength - 1)) =
+#endif
       stub->instruction_start();
 }
 

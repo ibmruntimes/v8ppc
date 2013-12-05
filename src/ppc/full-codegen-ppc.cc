@@ -170,10 +170,21 @@ void FullCodeGenerator::Generate() {
         masm_, kNoCodeAgeSequenceLength * Assembler::kInstrSize);
     // The following instructions must remain together and unmodified
     // for code aging to work properly.
+    // It needs to match the code found in GetNoCodeAgeSequence()
     __ mflr(r0);
     __ Push(r0, fp, cp, r4);
     // Adjust fp to point to saved fp.
     __ addi(fp, sp, Operand(2 * kPointerSize));
+
+#if V8_TARGET_ARCH_PPC64
+      // With 64bit we need a couple of nop() instructions to pad
+      // out to 10 instructions total to ensure we have enough
+      // space to patch it later in Code::PatchPlatformCodeAge
+    __ nop();
+    __ nop();
+    __ nop();
+    __ nop();
+#endif
   }
   info->AddNoFrameRange(0, masm_->pc_offset());
 

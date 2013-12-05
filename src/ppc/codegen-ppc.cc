@@ -653,6 +653,15 @@ static byte* GetNoCodeAgeSequence(uint32_t* length) {
     patcher.masm()->mflr(r0);
     patcher.masm()->Push(r0, fp, cp, r4);
     patcher.masm()->addi(fp, sp, Operand(2 * kPointerSize));
+#if V8_TARGET_ARCH_PPC64
+      // With 64bit we need a couple of nop() instructions to pad
+      // out to 10 instructions total to ensure we have enough
+      // space to patch it later in Code::PatchPlatformCodeAge
+    patcher.masm()->nop();
+    patcher.masm()->nop();
+    patcher.masm()->nop();
+    patcher.masm()->nop();
+#endif
     initialized = true;
   }
   return byte_sequence;
@@ -677,7 +686,11 @@ void Code::GetCodeAgeAndParity(byte* sequence, Age* age,
     *parity = NO_MARKING_PARITY;
   } else {
     Address target_address = Memory::Address_at(
+#if V8_TARGET_ARCH_PPC64
+        sequence + Assembler::kInstrSize * (kNoCodeAgeSequenceLength - 2));
+#else
         sequence + Assembler::kInstrSize * (kNoCodeAgeSequenceLength - 1));
+#endif
     Code* stub = GetCodeFromTargetAddress(target_address);
     GetCodeAgeAndParity(stub, age, parity);
   }
@@ -693,13 +706,26 @@ void Code::PatchPlatformCodeAge(byte* sequence,
     CopyBytes(sequence, young_sequence, young_length);
     CPU::FlushICache(sequence, young_length);
   } else {
-    // FIXED_SEQUENCE - must output 6 instructions (24bytes)
+    // FIXED_SEQUENCE
+    // 32bit - must output 6 instructions (24bytes)
+    // 64bit - must output 10 instructions (40bytes)
     Code* stub = GetCodeAgeStub(age, parity);
     CodePatcher patcher(sequence, young_length / Assembler::kInstrSize);
     patcher.masm()->mov(r3, Operand(reinterpret_cast<intptr_t>(sequence)));
     patcher.masm()->LoadP(r0, MemOperand(r3, 20));
     patcher.masm()->Jump(r0);
+#if V8_TARGET_ARCH_PPC64
+    uint64_t value = reinterpret_cast<uint64_t>(stub->instruction_start());
+#if __BYTE_ORDER == __LITTLE_ENDIAN
+    patcher.masm()->dd(static_cast<uint32_t>(value & 0xFFFFFFFF));
+    patcher.masm()->dd(static_cast<uint32_t>(value >> 32));
+#else
+    patcher.masm()->dd(static_cast<uint32_t>(value >> 32));
+    patcher.masm()->dd(static_cast<uint32_t>(value & 0xFFFFFFFF));
+#endif
+#else
     patcher.masm()->dd(reinterpret_cast<Instr>(stub->instruction_start()));
+#endif
   }
 }
 
