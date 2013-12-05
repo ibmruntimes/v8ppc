@@ -449,7 +449,6 @@ static void GenerateCheckPropertyCell(MacroAssembler* masm,
                                       Label* miss) {
   Handle<Cell> cell = GlobalObject::EnsurePropertyCell(global, name);
   ASSERT(cell->value()->IsTheHole());
-  __ fake_asm(fMASM60);  // the code below is new and untested
   __ mov(scratch, Operand(cell));
   __ LoadP(scratch, FieldMemOperand(scratch, Cell::kValueOffset));
   __ LoadRoot(ip, Heap::kTheHoleValueRootIndex);
