@@ -2393,6 +2393,7 @@ void MacroAssembler::CallApiFunctionAndReturn(ExternalReference function,
   const int kLevelOffset = AddressOffset(
     ExternalReference::handle_scope_level_address(isolate()),
     next_address);
+  Register scratch = { thunk_last_arg.code() + 1 };
 
   // Allocate HandleScope in callee-save registers.
   // r26 - next_address
@@ -2423,31 +2424,31 @@ void MacroAssembler::CallApiFunctionAndReturn(ExternalReference function,
     addi(r3, sp, Operand((kStackFrameExtraParamSlot + 1) * kPointerSize));
   }
 
-  ASSERT(!thunk_last_arg.is(r6));
+  ASSERT(!thunk_last_arg.is(scratch));
   Label profiler_disabled;
   Label end_profiler_check;
   bool* is_profiling_flag =
       isolate()->cpu_profiler()->is_profiling_address();
   STATIC_ASSERT(sizeof(*is_profiling_flag) == 1);
-  mov(r6, Operand(reinterpret_cast<intptr_t>(is_profiling_flag)));
-  lbz(r6, MemOperand(r6, 0));
-  cmpi(r6, Operand::Zero());
+  mov(scratch, Operand(reinterpret_cast<intptr_t>(is_profiling_flag)));
+  lbz(scratch, MemOperand(scratch, 0));
+  cmpi(scratch, Operand::Zero());
   beq(&profiler_disabled);
 
   // Additional parameter is the address of the actual callback.
   mov(thunk_last_arg, Operand(reinterpret_cast<intptr_t>(function_address)));
-  mov(r6, Operand(thunk_ref));
+  mov(scratch, Operand(thunk_ref));
   jmp(&end_profiler_check);
 
   bind(&profiler_disabled);
-  mov(r6, Operand(function));
+  mov(scratch, Operand(function));
   bind(&end_profiler_check);
 
   // Native call returns to the DirectCEntry stub which redirects to the
   // return address pushed on stack (could have moved after GC).
   // DirectCEntry stub itself is generated early and never moves.
   DirectCEntryStub stub;
-  stub.GenerateCall(this, r6);
+  stub.GenerateCall(this, scratch);
 
   if (FLAG_log_timer_events) {
     FrameScope frame(this, StackFrame::MANUAL);

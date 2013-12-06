@@ -1371,12 +1371,12 @@ void Simulator::SoftwareInterrupt(Instruction* instr) {
           PrintF("\n");
         }
         CHECK(stack_aligned);
-#if !(defined(_AIX) || defined(V8_TARGET_ARCH_PPC64))
-        arg1 = *(reinterpret_cast<intptr_t *>(arg1));
-#endif
         if (redirection->type() == ExternalReference::DIRECT_GETTER_CALL) {
           SimulatorRuntimeDirectGetterCall target =
             reinterpret_cast<SimulatorRuntimeDirectGetterCall>(external);
+#if !(defined(_AIX) || defined(V8_TARGET_ARCH_PPC64))
+          arg1 = *(reinterpret_cast<intptr_t *>(arg1));
+#endif
           v8::Handle<v8::Value> result = target(arg1, arg2);
           if (::v8::internal::FLAG_trace_sim) {
             PrintF("Returned %p\n", reinterpret_cast<void *>(*result));
@@ -1386,6 +1386,9 @@ void Simulator::SoftwareInterrupt(Instruction* instr) {
         } else {
           SimulatorRuntimeDirectGetterCallNew target =
             reinterpret_cast<SimulatorRuntimeDirectGetterCallNew>(external);
+#if !(defined(_AIX) || defined(V8_TARGET_ARCH_PPC64))
+          arg0 = *(reinterpret_cast<intptr_t *>(arg0));
+#endif
           target(arg0, arg1);
         }
       } else if (
@@ -1402,12 +1405,12 @@ void Simulator::SoftwareInterrupt(Instruction* instr) {
           PrintF("\n");
         }
         CHECK(stack_aligned);
-#if !(defined(_AIX) || defined(V8_TARGET_ARCH_PPC64))
-        arg1 = *(reinterpret_cast<intptr_t *>(arg1));
-#endif
         if (redirection->type() == ExternalReference::PROFILING_GETTER_CALL) {
           SimulatorRuntimeProfilingGetterCall target =
             reinterpret_cast<SimulatorRuntimeProfilingGetterCall>(external);
+#if !(defined(_AIX) || defined(V8_TARGET_ARCH_PPC64))
+          arg1 = *(reinterpret_cast<intptr_t *>(arg1));
+#endif
           v8::Handle<v8::Value> result = target(arg1, arg2, arg3);
           if (::v8::internal::FLAG_trace_sim) {
             PrintF("Returned %p\n", reinterpret_cast<void *>(*result));
@@ -1418,6 +1421,9 @@ void Simulator::SoftwareInterrupt(Instruction* instr) {
           SimulatorRuntimeProfilingGetterCallNew target =
             reinterpret_cast<SimulatorRuntimeProfilingGetterCallNew>(
               external);
+#if !(defined(_AIX) || defined(V8_TARGET_ARCH_PPC64))
+          arg0 = *(reinterpret_cast<intptr_t *>(arg0));
+#endif
           target(arg0, arg1, arg2);
         }
       } else {

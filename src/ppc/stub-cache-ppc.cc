@@ -958,12 +958,13 @@ static void GenerateFastApiDirectCall(MacroAssembler* masm,
   ApiFunction thunk_fun(thunk_address);
   ExternalReference thunk_ref = ExternalReference(&thunk_fun, thunk_type,
       masm->isolate());
+  Register thunk_arg = { arg0.code() + 1 };
 
   AllowExternalCallThatCantCauseGC scope(masm);
   __ CallApiFunctionAndReturn(ref,
                               function_address,
                               thunk_ref,
-                              r4,
+                              thunk_arg,
                               kStackUnwindSpace,
                               returns_handle,
                               kFastApiCallArguments + 1);
@@ -1533,10 +1534,11 @@ void BaseLoadStubCompiler::GenerateLoadCallback(
   ApiFunction thunk_fun(thunk_address);
   ExternalReference thunk_ref = ExternalReference(&thunk_fun, thunk_type,
       isolate());
+  Register thunk_arg = { arg1.code() + 1 };
   __ CallApiFunctionAndReturn(ref,
                               getter_address,
                               thunk_ref,
-                              arg1,
+                              thunk_arg,
                               kStackUnwindSpace,
                               returns_handle,
                               5);
