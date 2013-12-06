@@ -616,8 +616,9 @@ void MacroAssembler::CanonicalizeNaN(const DoubleRegister value) {
     FixedDoubleArray::canonical_not_the_hole_nan_as_double());
 #if V8_TARGET_ARCH_PPC64
   mov(r0, Operand(nan_int64));
-  std(r0, MemOperand(sp, -kDoubleSize));
+  stdu(r0, MemOperand(sp, -kDoubleSize));
 #else
+  subi(sp, sp, Operand(kDoubleSize));
   mov(r0, Operand(static_cast<intptr_t>(nan_int64)));
 #if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
   stw(r0, MemOperand(sp, 0));
