@@ -931,9 +931,9 @@ static void EmitStrictTwoHeapObjectCompare(MacroAssembler* masm,
     // Now that we have the types we might as well check for
     // internalized-internalized.
     STATIC_ASSERT(kInternalizedTag == 0 && kStringTag == 0);
-    __ and_(r5, r5, r6);
+    __ orx(r5, r5, r6);
     __ andi(r0, r5, Operand(kIsNotStringMask | kIsNotInternalizedMask));
-    __ bne(&return_not_equal, cr0);
+    __ beq(&return_not_equal, cr0);
 }
 
 
