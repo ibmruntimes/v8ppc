@@ -1605,7 +1605,7 @@ void BaseLoadStubCompiler::GenerateLoadInterceptor(
       // the case, return immediately.
       Label interceptor_failed;
       __ LoadRoot(scratch1(), Heap::kNoInterceptorResultSentinelRootIndex);
-      __ cmp(r0, scratch1());
+      __ cmp(r3, scratch1());
       __ beq(&interceptor_failed);
       frame_scope.GenerateLeaveFrame();
       __ Ret();
