@@ -3255,9 +3255,8 @@ MemOperand LCodeGen::PrepareKeyedOperand(Register key,
                                          int additional_offset) {
   Register scratch = scratch0();
 
-  ASSERT(!(key_is_constant && key_is_smi));
-
   if (key_is_constant) {
+    // key_is_smi and additional_index are irrelevant in this case
     return MemOperand(base,
                       (constant_key << element_size_shift) + additional_offset);
   }
