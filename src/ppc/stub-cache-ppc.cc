@@ -349,7 +349,7 @@ void StubCompiler::GenerateFastPropertyLoad(MacroAssembler* masm,
     __ LoadP(dst, FieldMemOperand(src, JSObject::kPropertiesOffset));
     src = dst;
   }
-  __ LoadP(dst, FieldMemOperand(dst, offset), r0);
+  __ LoadP(dst, FieldMemOperand(src, offset), r0);
 }
 
 
