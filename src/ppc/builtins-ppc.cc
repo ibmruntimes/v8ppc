@@ -900,15 +900,14 @@ static void GenerateMakeCodeYoungAgainCommon(MacroAssembler* masm) {
   // crawls in MakeCodeYoung. This seems a bit fragile.
 
   __ mflr(r3);
-  // Adjust a3 to point to the head of the PlatformCodeAge sequence
-  __ subi(r3, r3,
-      Operand((kNoCodeAgeSequenceLength - 1) * Assembler::kInstrSize));
+  // Adjust r3 to point to the start of the PlatformCodeAge sequence
+  __ subi(r3, r3, Operand(kNoCodeAgePatchDelta));
 
   // The following registers must be saved and restored when calling through to
   // the runtime:
   //   r3 - contains return address (beginning of patch sequence)
   //   r4 - function object
-  //   ip - original return address
+  //   ip - return address
   FrameScope scope(masm, StackFrame::MANUAL);
   __ MultiPush(ip.bit() | r3.bit() | r4.bit() | fp.bit());
   __ PrepareCallCFunction(1, 0, r4);

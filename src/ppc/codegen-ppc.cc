@@ -684,12 +684,8 @@ void Code::GetCodeAgeAndParity(byte* sequence, Age* age,
     *age = kNoAge;
     *parity = NO_MARKING_PARITY;
   } else {
-    Address target_address = Memory::Address_at(
-#if V8_TARGET_ARCH_PPC64
-        sequence + Assembler::kInstrSize * (kNoCodeAgeSequenceLength - 2));
-#else
-        sequence + Assembler::kInstrSize * (kNoCodeAgeSequenceLength - 1));
-#endif
+    Address target_address = Memory::Address_at(sequence +
+                                                kNoCodeAgePatchDelta);
     Code* stub = GetCodeFromTargetAddress(target_address);
     GetCodeAgeAndParity(stub, age, parity);
   }
