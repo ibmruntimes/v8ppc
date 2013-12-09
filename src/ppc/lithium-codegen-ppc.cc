@@ -1078,7 +1078,7 @@ void LCodeGen::DoModI(LModI* instr) {
       divisor = hmod->fixed_right_arg().value;
 
       // Check if our assumption of a fixed right operand still holds.
-      __ cmpi(right_reg, Operand(divisor));
+      __ Cmpi(right_reg, Operand(divisor), r0);
       DeoptimizeIf(ne, instr->environment());
     }
 
