@@ -5805,7 +5805,7 @@ void StringAddStub::Generate(MacroAssembler* masm) {
   __ cmpi(r7, Operand::Zero());
   __ beq(&skip_write_barrier);
 
-  __ StoreP(r0, FieldMemOperand(r10, ConsString::kFirstOffset), r0);
+  __ StoreP(r3, FieldMemOperand(r10, ConsString::kFirstOffset), r0);
   __ RecordWriteField(r10,
                       ConsString::kFirstOffset,
                       r3,
