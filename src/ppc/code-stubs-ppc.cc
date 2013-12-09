@@ -7037,7 +7037,7 @@ void StoreArrayLiteralElementStub::Generate(MacroAssembler* masm) {
   // Array literal has ElementsKind of FAST_DOUBLE_ELEMENTS.
   __ bind(&double_elements);
   __ LoadP(r8, FieldMemOperand(r4, JSObject::kElementsOffset));
-  __ StoreNumberToDoubleElements(r3, r6, r4, r8, d0, &slow_elements);
+  __ StoreNumberToDoubleElements(r3, r6, r8, r9, d0, &slow_elements);
   __ Ret();
 }
 
