@@ -3628,14 +3628,14 @@ void StoreArrayLengthStub::Generate(MacroAssembler* masm) {
   // Check that elements are FixedArray.
   // We rely on StoreIC_ArrayLength below to deal with all types of
   // fast elements (including COW).
-  __ lwz(scratch, FieldMemOperand(receiver, JSArray::kElementsOffset));
+  __ LoadP(scratch, FieldMemOperand(receiver, JSArray::kElementsOffset));
   __ CompareObjectType(scratch, scratch, scratch, FIXED_ARRAY_TYPE);
   __ bne(&miss);
 
   // Check that the array has fast properties, otherwise the length
   // property might have been redefined.
-  __ lwz(scratch, FieldMemOperand(receiver, JSArray::kPropertiesOffset));
-  __ lwz(scratch, FieldMemOperand(scratch, FixedArray::kMapOffset));
+  __ LoadP(scratch, FieldMemOperand(receiver, JSArray::kPropertiesOffset));
+  __ LoadP(scratch, FieldMemOperand(scratch, FixedArray::kMapOffset));
   __ CompareRoot(scratch, Heap::kHashTableMapRootIndex);
   __ beq(&miss);
 
