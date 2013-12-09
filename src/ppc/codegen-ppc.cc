@@ -637,8 +637,8 @@ void MathExpGenerator::EmitMathExp(MacroAssembler* masm,
 
 #undef __
 
-// lis     r3,<value>
-static const uint32_t kCodeAgePatchFirstInstruction = 0x3c600000;
+// mflr ip
+static const uint32_t kCodeAgePatchFirstInstruction = 0x7d8802a6;
 
 static byte* GetNoCodeAgeSequence(uint32_t* length) {
   // The sequence of instructions that is patched out for aging code is the
@@ -673,8 +673,7 @@ bool Code::IsYoungSequence(byte* sequence) {
   byte* young_sequence = GetNoCodeAgeSequence(&young_length);
   bool result = !memcmp(sequence, young_sequence, young_length);
   ASSERT(result ||
-         (Memory::uint32_at(sequence) & 0xFFFF0000)
-            == kCodeAgePatchFirstInstruction);
+         Memory::uint32_at(sequence) == kCodeAgePatchFirstInstruction);
   return result;
 }
 
@@ -711,20 +710,24 @@ void Code::PatchPlatformCodeAge(byte* sequence,
     // 64bit - must output 10 instructions (40bytes)
     Code* stub = GetCodeAgeStub(age, parity);
     CodePatcher patcher(sequence, young_length / Assembler::kInstrSize);
-    patcher.masm()->mov(r3, Operand(reinterpret_cast<intptr_t>(sequence)));
-    patcher.masm()->LoadP(r0, MemOperand(r3, 20));
-    patcher.masm()->Jump(r0);
+    intptr_t target = reinterpret_cast<intptr_t>(stub->instruction_start());
+    // We use Call to compute the address of this patch sequence.
+    // Preserve lr since it will be clobbered.  See
+    // GenerateMakeCodeYoungAgainCommon for the stub code.
+    patcher.masm()->mflr(ip);
+    patcher.masm()->mov(r3, Operand(target));
+    patcher.masm()->Call(r3);
+    // Record the stub address in the empty space for GetCodeAgeAndParity()
 #if V8_TARGET_ARCH_PPC64
-    uint64_t value = reinterpret_cast<uint64_t>(stub->instruction_start());
 #if __BYTE_ORDER == __LITTLE_ENDIAN
-    patcher.masm()->dd(static_cast<uint32_t>(value & 0xFFFFFFFF));
-    patcher.masm()->dd(static_cast<uint32_t>(value >> 32));
+    patcher.masm()->dd(static_cast<uint32_t>(target & 0xFFFFFFFF));
+    patcher.masm()->dd(static_cast<uint32_t>(target >> 32));
 #else
-    patcher.masm()->dd(static_cast<uint32_t>(value >> 32));
-    patcher.masm()->dd(static_cast<uint32_t>(value & 0xFFFFFFFF));
+    patcher.masm()->dd(static_cast<uint32_t>(target >> 32));
+    patcher.masm()->dd(static_cast<uint32_t>(target & 0xFFFFFFFF));
 #endif
 #else
-    patcher.masm()->dd(reinterpret_cast<Instr>(stub->instruction_start()));
+    patcher.masm()->dd(static_cast<uint32_t>(target));
 #endif
   }
 }

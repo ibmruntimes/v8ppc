@@ -168,6 +168,15 @@ bool LCodeGen::GeneratePrologue() {
       __ Push(r0, fp, cp, r4);
       // Adjust FP to point to saved FP.
       __ addi(fp, sp, Operand(2 * kPointerSize));
+#if V8_TARGET_ARCH_PPC64
+      // With 64bit we need a couple of nop() instructions to pad
+      // out to 10 instructions total to ensure we have enough
+      // space to patch it later in Code::PatchPlatformCodeAge
+      __ nop();
+      __ nop();
+      __ nop();
+      __ nop();
+#endif
     }
     frame_is_built_ = true;
     info_->AddNoFrameRange(0, masm_->pc_offset());

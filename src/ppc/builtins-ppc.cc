@@ -899,18 +899,23 @@ static void GenerateMakeCodeYoungAgainCommon(MacroAssembler* masm) {
   // internal frame to make the code faster, since we shouldn't have to do stack
   // crawls in MakeCodeYoung. This seems a bit fragile.
 
+  __ mflr(r3);
+  // Adjust a3 to point to the head of the PlatformCodeAge sequence
+  __ subi(r3, r3,
+      Operand((kNoCodeAgeSequenceLength - 1) * Assembler::kInstrSize));
+
   // The following registers must be saved and restored when calling through to
   // the runtime:
   //   r3 - contains return address (beginning of patch sequence)
   //   r4 - function object
+  //   ip - original return address
   FrameScope scope(masm, StackFrame::MANUAL);
-  __ mflr(r0);
-  __ MultiPush(r0.bit() | r3.bit() | r4.bit() | fp.bit());
+  __ MultiPush(ip.bit() | r3.bit() | r4.bit() | fp.bit());
   __ PrepareCallCFunction(1, 0, r4);
   __ CallCFunction(
       ExternalReference::get_make_code_young_function(masm->isolate()), 1);
-  __ MultiPop(r0.bit() | r3.bit() | r4.bit() | fp.bit());
-  __ mtlr(r0);
+  __ MultiPop(ip.bit() | r3.bit() | r4.bit() | fp.bit());
+  __ mtlr(ip);
   __ Jump(r3);
 }
 
