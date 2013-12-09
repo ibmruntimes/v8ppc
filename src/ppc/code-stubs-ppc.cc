@@ -3173,12 +3173,12 @@ void JSEntryStub::GenerateBody(MacroAssembler* masm, bool is_construct) {
 
   Label invoke, handler_entry, exit;
 
-  ProfileEntryHookStub::MaybeCallEntryHook(masm);
-
   // Called from C
 #if defined(_AIX) || defined(V8_TARGET_ARCH_PPC64)
   __ function_descriptor();
 #endif
+
+  ProfileEntryHookStub::MaybeCallEntryHook(masm);
 
   // PPC LINUX ABI:
   // preserve LR in pre-reserved slot in caller's frame
@@ -7060,7 +7060,12 @@ void StubFailureTrampolineStub::Generate(MacroAssembler* masm) {
 
 void ProfileEntryHookStub::MaybeCallEntryHook(MacroAssembler* masm) {
   if (masm->isolate()->function_entry_hook() != NULL) {
-    PredictableCodeSizeScope predictable(masm, 4 * Assembler::kInstrSize);
+    PredictableCodeSizeScope predictable(masm,
+#if V8_TARGET_ARCH_PPC64
+                                         12 * Assembler::kInstrSize);
+#else
+                                         9 * Assembler::kInstrSize);
+#endif
     AllowStubCallsScope allow_stub_calls(masm, true);
     ProfileEntryHookStub stub;
     __ mflr(r0);
@@ -7072,18 +7077,25 @@ void ProfileEntryHookStub::MaybeCallEntryHook(MacroAssembler* masm) {
 }
 
 
-// roohack - unconverted, not sure if we need to or not
 void ProfileEntryHookStub::Generate(MacroAssembler* masm) {
   // The entry hook is a "push lr" instruction, followed by a call.
   const int32_t kReturnAddressDistanceFromFunctionStart =
       Assembler::kCallTargetAddressOffset + 2 * Assembler::kInstrSize;
 
-  // Save live volatile registers.
-  __ mflr(r3);
-  __ Push(r3, r30, r4);
-  const int32_t kNumSavedRegs = 3;
+  // This should contain all kJSCallerSaved registers.
+  const RegList kSavedRegs =
+     kJSCallerSaved |  // Caller saved registers.
+     r30.bit();        // Saved stack pointer.
+
+  // We also save lr, so the count here is one higher than the mask indicates.
+  const int32_t kNumSavedRegs = kNumJSCallerSaved + 2;
+
+  // Save all caller-save registers as this may be called from anywhere.
+  __ mflr(r0);
+  __ MultiPush(kSavedRegs | r0.bit());
 
   // Compute the function's address for the first argument.
+  __ mr(r3, r0);
   __ subi(r3, r3, Operand(kReturnAddressDistanceFromFunctionStart));
 
   // The caller's return address is above the saved temporaries.
@@ -7115,9 +7127,7 @@ void ProfileEntryHookStub::Generate(MacroAssembler* masm) {
 #else
   // Under the simulator we need to indirect the entry hook through a
   // trampoline function at a known address.
-  Address trampoline_address = reinterpret_cast<Address>(
-      reinterpret_cast<intptr_t>(EntryHookTrampoline));
-  ApiFunction dispatcher(trampoline_address);
+  ApiFunction dispatcher(FUNCTION_ADDR(EntryHookTrampoline));
   __ mov(ip, Operand(ExternalReference(&dispatcher,
                                        ExternalReference::BUILTIN_CALL,
                                        masm->isolate())));
@@ -7133,7 +7143,8 @@ void ProfileEntryHookStub::Generate(MacroAssembler* masm) {
     __ mr(sp, r30);
   }
 
-  __ Pop(r0, r30, r4);
+  // Also pop lr to get Ret(0).
+  __ MultiPop(kSavedRegs | r0.bit());
   __ mtlr(r0);
   __ Ret();
 }
