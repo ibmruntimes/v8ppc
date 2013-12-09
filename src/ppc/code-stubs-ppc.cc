@@ -3028,7 +3028,7 @@ void CEntryStub::GenerateCore(MacroAssembler* masm,
   __ beq(&retry, cr0);
 
   // Special handling of out of memory exceptions.
-  JumpIfOOM(masm, r0, ip, throw_out_of_memory_exception);
+  JumpIfOOM(masm, r3, ip, throw_out_of_memory_exception);
 
   // Retrieve the pending exception.
   __ mov(ip, Operand(ExternalReference(Isolate::kPendingExceptionAddress,
