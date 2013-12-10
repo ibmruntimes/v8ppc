@@ -1425,10 +1425,10 @@ LInstruction* LChunkBuilder::DoMathFloorOfDiv(HMathFloorOfDiv* instr) {
   HValue* right = instr->right();
   if (!right->IsConstant()) {
     ASSERT(right->representation().IsInteger32());
-    LOperand* dividend = UseFixed(instr->left(), r3);
+    LOperand* dividend = UseRegister(instr->left());
     LOperand* divisor = UseRegister(instr->right());
     LDivI* flooring_div = new(zone()) LDivI(dividend, divisor);
-    return AssignEnvironment(DefineFixed(flooring_div, r3));
+    return AssignEnvironment(DefineAsRegister(flooring_div));
   }
 
   ASSERT(right->IsConstant() && HConstant::cast(right)->HasInteger32Value());

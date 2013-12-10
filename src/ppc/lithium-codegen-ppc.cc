@@ -1208,16 +1208,19 @@ void LCodeGen::DoDivI(LDivI* instr) {
   const Register scratch = scratch0();
   const Register result = ToRegister(instr->result());
 
+  ASSERT(!left.is(result));
+  ASSERT(!right.is(result));
+
   __ divw(result, left, right);
 
   // Check for x / 0.
-  if (instr->hydrogen()->CheckFlag(HValue::kCanBeDivByZero)) {
+  if (instr->hydrogen_value()->CheckFlag(HValue::kCanBeDivByZero)) {
     __ cmpi(right, Operand::Zero());
     DeoptimizeIf(eq, instr->environment());
   }
 
   // Check for (0 / -x) that will produce negative zero.
-  if (instr->hydrogen()->CheckFlag(HValue::kBailoutOnMinusZero)) {
+  if (instr->hydrogen_value()->CheckFlag(HValue::kBailoutOnMinusZero)) {
     Label left_not_zero;
     __ cmpi(left, Operand::Zero());
     __ bne(&left_not_zero);
@@ -1227,7 +1230,7 @@ void LCodeGen::DoDivI(LDivI* instr) {
   }
 
   // Check for (kMinInt / -1).
-  if (instr->hydrogen()->CheckFlag(HValue::kCanOverflow)) {
+  if (instr->hydrogen_value()->CheckFlag(HValue::kCanOverflow)) {
     Label left_not_min_int;
     __ Cmpi(left, Operand(kMinInt), r0);
     __ bne(&left_not_min_int);
