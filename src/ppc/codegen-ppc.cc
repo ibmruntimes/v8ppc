@@ -82,6 +82,11 @@ UnaryMathFunction CreateExpFunction() {
     Register temp2 = r8;
     Register temp3 = r9;
 
+  // Called from C
+#if defined(_AIX) || defined(V8_TARGET_ARCH_PPC64)
+    __ function_descriptor();
+#endif
+
     __ Push(temp3, temp2, temp1);
     MathExpGenerator::EmitMathExp(
         &masm, input, result, double_scratch1, double_scratch2,
@@ -93,7 +98,9 @@ UnaryMathFunction CreateExpFunction() {
 
   CodeDesc desc;
   masm.GetCode(&desc);
+#if !(defined(_AIX) || defined(V8_TARGET_ARCH_PPC64))
   ASSERT(!RelocInfo::RequiresRelocation(desc));
+#endif
 
   CPU::FlushICache(buffer, actual_size);
   OS::ProtectCode(buffer, actual_size);
@@ -604,7 +611,7 @@ void MathExpGenerator::EmitMathExp(MacroAssembler* masm,
   __ fsub(result, result, double_scratch1);
   __ fmul(input, double_scratch1, double_scratch1);
   __ fmul(result, result, input);
-  __ ShiftRightImm(temp1, temp2, Operand(11));
+  __ srwi(temp1, temp2, Operand(11));
   __ lfd(double_scratch2, ExpConstant(7, temp3));
   __ fmul(result, result, double_scratch2);
   __ fsub(result, result, double_scratch1);
@@ -612,15 +619,15 @@ void MathExpGenerator::EmitMathExp(MacroAssembler* masm,
   __ fadd(result, result, double_scratch2);
   __ andi(temp2, temp2, Operand(0x7ff));
   __ addi(temp1, temp1, Operand(0x3ff));
-  __ ShiftLeftImm(temp1, temp1, Operand(20));
+  __ slwi(temp1, temp1, Operand(20));
 
   // Must not call ExpConstant() after overwriting temp3!
   __ mov(temp3, Operand(ExternalReference::math_exp_log_table()));
-  __ ShiftLeftImm(temp2, temp2, Operand(3));
+  __ slwi(temp2, temp2, Operand(3));
 #if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
   // Calculate ip (low), temp2/temp1 (high)
   __ lwzx(ip, MemOperand(temp3, temp2));
-  __ addi(temp3, temp3, Operand(kPointerSize));
+  __ addi(temp3, temp3, Operand(4));
   __ lwzx(temp2, MemOperand(temp3, temp2));
   __ orx(temp1, temp1, temp2);
   __ stw(ip, MemOperand(sp, 0));
@@ -628,7 +635,7 @@ void MathExpGenerator::EmitMathExp(MacroAssembler* masm,
 #else
   // Calculate temp1 (low), ip/temp1 (high)
   __ lwzx(ip, MemOperand(temp3, temp2));
-  __ addi(temp3, temp3, Operand(kPointerSize));
+  __ addi(temp3, temp3, Operand(4));
   __ lwzx(temp2, MemOperand(temp3, temp2));
   __ orx(temp1, temp1, ip);
   __ stw(temp1, MemOperand(sp, 0));
