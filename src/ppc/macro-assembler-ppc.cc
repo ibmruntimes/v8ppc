@@ -1714,10 +1714,7 @@ void MacroAssembler::Allocate(int object_size,
 
   // Set up allocation top address and object size registers.
   Register topaddr = scratch1;
-  Register obj_size_reg = scratch2;
   mov(topaddr, Operand(allocation_top));
-  // this won't work for very large object on PowerPC
-  li(obj_size_reg, Operand(object_size));
 
   // This code stores a temporary value in ip. This is OK, as the code below
   // does not need ip for implicit literal generation.
@@ -1759,7 +1756,12 @@ void MacroAssembler::Allocate(int object_size,
   // Calculate new top and bail out if new space is exhausted. Use result
   // to calculate the new top.
   li(r0, Operand(-1));
-  addc(scratch2, result, obj_size_reg);
+  if (is_int16(object_size)) {
+    addic(scratch2, result, Operand(object_size));
+  } else {
+    mov(scratch2, Operand(object_size));
+    addc(scratch2, result, scratch2);
+  }
   addze(r0, r0, LeaveOE, SetRC);
   beq(gc_required, cr0);
   cmpl(scratch2, ip);
