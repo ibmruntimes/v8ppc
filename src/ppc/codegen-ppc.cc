@@ -573,8 +573,10 @@ void MathExpGenerator::EmitMathExp(MacroAssembler* masm,
   __ mov(temp3, Operand(ExternalReference::math_exp_constants(0)));
 
   __ lfd(double_scratch1, ExpConstant(0, temp3));
-  __ fmr(result, kDoubleRegZero);
   __ fcmpu(double_scratch1, input);
+  __ fmr(result, input);
+  __ bunordered(&done);
+  __ fmr(result, kDoubleRegZero);
   __ bge(&done);
   __ lfd(double_scratch2, ExpConstant(1, temp3));
   __ fcmpu(input, double_scratch2);
@@ -615,18 +617,22 @@ void MathExpGenerator::EmitMathExp(MacroAssembler* masm,
   // Must not call ExpConstant() after overwriting temp3!
   __ mov(temp3, Operand(ExternalReference::math_exp_log_table()));
   __ ShiftLeftImm(temp2, temp2, Operand(3));
+#if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
+  // Calculate ip (low), temp2/temp1 (high)
   __ lwzx(ip, MemOperand(temp3, temp2));
   __ addi(temp3, temp3, Operand(kPointerSize));
   __ lwzx(temp2, MemOperand(temp3, temp2));
   __ orx(temp1, temp1, temp2);
-
-  // Move ip (low), temp1 (high) to input
-#if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
   __ stw(ip, MemOperand(sp, 0));
   __ stw(temp1, MemOperand(sp, 4));
 #else
-  __ stw(ip, MemOperand(sp, 4));
+  // Calculate temp1 (low), ip/temp1 (high)
+  __ lwzx(ip, MemOperand(temp3, temp2));
+  __ addi(temp3, temp3, Operand(kPointerSize));
+  __ lwzx(temp2, MemOperand(temp3, temp2));
+  __ orx(temp1, temp1, ip);
   __ stw(temp1, MemOperand(sp, 0));
+  __ stw(temp2, MemOperand(sp, 4));
 #endif
   __ lfd(input, MemOperand(sp, 0));
   __ addi(sp, sp, Operand(kDoubleSize));
