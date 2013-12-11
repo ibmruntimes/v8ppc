@@ -1323,7 +1323,7 @@ void MacroAssembler::PushTryHandler(StackHandler::Kind kind,
   STATIC_ASSERT(StackHandlerConstants::kSize == 5 * kPointerSize);
   STATIC_ASSERT(StackHandlerConstants::kNextOffset == 0 * kPointerSize);
   STATIC_ASSERT(StackHandlerConstants::kCodeOffset == 1 * kPointerSize);
-  STATIC_ASSERT(StackHandlerConstants::kStateSlot == 2 * kPointerSize);
+  STATIC_ASSERT(StackHandlerConstants::kStateOffset == 2 * kPointerSize);
   STATIC_ASSERT(StackHandlerConstants::kContextOffset == 3 * kPointerSize);
   STATIC_ASSERT(StackHandlerConstants::kFPOffset == 4 * kPointerSize);
 
@@ -1356,7 +1356,7 @@ void MacroAssembler::PushTryHandler(StackHandler::Kind kind,
       StackHandler::IndexField::encode(handler_index) |
       StackHandler::KindField::encode(kind);
   LoadIntLiteral(r8, state);
-  StoreP(r8, MemOperand(sp, StackHandlerConstants::kStateSlot));
+  StoreP(r8, MemOperand(sp, StackHandlerConstants::kStateOffset));
   mov(r8, Operand(CodeObject()));
   StoreP(r8, MemOperand(sp, StackHandlerConstants::kCodeOffset));
 }
@@ -1395,7 +1395,7 @@ void MacroAssembler::Throw(Register value) {
   STATIC_ASSERT(StackHandlerConstants::kSize == 5 * kPointerSize);
   STATIC_ASSERT(StackHandlerConstants::kNextOffset == 0);
   STATIC_ASSERT(StackHandlerConstants::kCodeOffset == 1 * kPointerSize);
-  STATIC_ASSERT(StackHandlerConstants::kStateSlot == 2 * kPointerSize);
+  STATIC_ASSERT(StackHandlerConstants::kStateOffset == 2 * kPointerSize);
   STATIC_ASSERT(StackHandlerConstants::kContextOffset == 3 * kPointerSize);
   STATIC_ASSERT(StackHandlerConstants::kFPOffset == 4 * kPointerSize);
   Label skip;
@@ -1435,7 +1435,7 @@ void MacroAssembler::ThrowUncatchable(Register value) {
   STATIC_ASSERT(StackHandlerConstants::kSize == 5 * kPointerSize);
   STATIC_ASSERT(StackHandlerConstants::kNextOffset == 0 * kPointerSize);
   STATIC_ASSERT(StackHandlerConstants::kCodeOffset == 1 * kPointerSize);
-  STATIC_ASSERT(StackHandlerConstants::kStateSlot == 2 * kPointerSize);
+  STATIC_ASSERT(StackHandlerConstants::kStateOffset == 2 * kPointerSize);
   STATIC_ASSERT(StackHandlerConstants::kContextOffset == 3 * kPointerSize);
   STATIC_ASSERT(StackHandlerConstants::kFPOffset == 4 * kPointerSize);
 
@@ -1455,7 +1455,7 @@ void MacroAssembler::ThrowUncatchable(Register value) {
 
   bind(&check_kind);
   STATIC_ASSERT(StackHandler::JS_ENTRY == 0);
-  LoadP(r5, MemOperand(sp, StackHandlerConstants::kStateSlot));
+  LoadP(r5, MemOperand(sp, StackHandlerConstants::kStateOffset));
   andi(r0, r5, Operand(StackHandler::KindField::kMask));
   bne(&fetch_next, cr0);
 
