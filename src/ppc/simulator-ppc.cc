@@ -1651,7 +1651,7 @@ void Simulator::DecodeExt1(Instruction* instr) {
       UNIMPLEMENTED();  // Not used by V8.
     case BCLRX: {
         // need to check BO flag
-        int old_pc = get_pc();
+        intptr_t old_pc = get_pc();
         set_pc(special_reg_lr_);
         if (instr->Bit(0) == 1) {  // LK flag set
           special_reg_lr_ = old_pc + 4;
@@ -1660,7 +1660,7 @@ void Simulator::DecodeExt1(Instruction* instr) {
     }
     case BCCTRX: {
         // need to check BO flag
-        int old_pc = get_pc();
+        intptr_t old_pc = get_pc();
         set_pc(special_reg_ctr_);
         if (instr->Bit(0) == 1) {  // LK flag set
           special_reg_lr_ = old_pc + 4;
