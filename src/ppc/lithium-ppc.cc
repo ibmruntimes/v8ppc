@@ -1538,8 +1538,8 @@ LInstruction* LChunkBuilder::DoMul(HMul* instr) {
         // The add and mul will be folded into a multiply-add in DoAdd.
         return NULL;
       }
-      if (instr == use->right() && use->IsSub()) {
-        // This mul is the rhs of a sub. The sub and mul will be folded into a
+      if (instr == use->left() && use->IsSub()) {
+        // This mul is the lhs of a sub. The mul and sub will be folded into a
         // multiply-sub in DoSub.
         return NULL;
       }
@@ -1572,8 +1572,8 @@ LInstruction* LChunkBuilder::DoSub(HSub* instr) {
     }
     return result;
   } else if (instr->representation().IsDouble()) {
-    if (instr->right()->IsMul()) {
-      return DoMultiplySub(instr->left(), HMul::cast(instr->right()));
+    if (instr->left()->IsMul()) {
+      return DoMultiplySub(instr->right(), HMul::cast(instr->left()));
     }
 
     return DoArithmeticD(Token::SUB, instr);
