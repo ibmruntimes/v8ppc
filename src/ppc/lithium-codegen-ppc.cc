@@ -3742,8 +3742,8 @@ void LCodeGen::DoMathFloor(LMathFloor* instr) {
     // Test for -0.
     __ cmpi(result, Operand::Zero());
     __ bne(&done);
-    __ cmpi(input_high, Operand::Zero());
-    DeoptimizeIf(lt, instr->environment());
+    __ TestSignBit32(input_high, r0);
+    DeoptimizeIf(ne, instr->environment(), cr0);
   }
   __ bind(&done);
 }
