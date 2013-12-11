@@ -934,10 +934,10 @@ static void GenerateFastApiDirectCall(MacroAssembler* masm,
   __ StoreP(ip, MemOperand(arg0, 1 * kPointerSize));
   // v8::Arguments::length_ = argc
   __ li(ip, Operand(argc));
-  __ StoreP(ip, MemOperand(arg0, 2 * kPointerSize));
+  __ stw(ip, MemOperand(arg0, 2 * kPointerSize));
   // v8::Arguments::is_construct_call = 0
   __ li(ip, Operand::Zero());
-  __ StoreP(ip, MemOperand(arg0, 3 * kPointerSize));
+  __ stw(ip, MemOperand(arg0, 2 * kPointerSize + kIntSize));
 
   const int kStackUnwindSpace = argc + kFastApiCallArguments + 1;
   ApiFunction fun(function_address);
