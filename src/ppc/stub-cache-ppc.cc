@@ -2279,7 +2279,7 @@ Handle<Code> CallStubCompiler::CompileStringCharAtCall(
 
   if (index_out_of_range.is_linked()) {
     __ bind(&index_out_of_range);
-    __ LoadRoot(r0, Heap::kempty_stringRootIndex);
+    __ LoadRoot(r3, Heap::kempty_stringRootIndex);
     __ Drop(argc + 1);
     __ Ret();
   }
