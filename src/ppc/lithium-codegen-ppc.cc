@@ -1283,21 +1283,27 @@ void LCodeGen::DoMathFloorOfDiv(LMathFloorOfDiv* instr) {
       return;
 
     case -1: {
-      OEBit oe;
+      OEBit oe = LeaveOE;
+
       if (instr->hydrogen()->CheckFlag(HValue::kCanOverflow)) {
+#if V8_TARGET_ARCH_PPC64
+        __ Cmpi(dividend, Operand(kMinInt), r0);
+        DeoptimizeIf(eq, instr->environment());
+#else
         __ li(r0, Operand::Zero());  // clear xer
         __ mtxer(r0);
         oe = SetOE;
-      } else {
-        oe = LeaveOE;
+#endif
       }
       __ neg(result, dividend, oe, SetRC);
       if (instr->hydrogen()->CheckFlag(HValue::kBailoutOnMinusZero)) {
         DeoptimizeIf(eq, instr->environment(), cr0);
       }
+#if !V8_TARGET_ARCH_PPC64
       if (instr->hydrogen()->CheckFlag(HValue::kCanOverflow)) {
         DeoptimizeIf(overflow, instr->environment(), cr0);
       }
+#endif
       return;
     }
   }
