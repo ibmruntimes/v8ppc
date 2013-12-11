@@ -2921,9 +2921,8 @@ void CEntryStub::GenerateCore(MacroAssembler* masm,
   }
 
   // PPC LINUX ABI:
-#if !defined(USE_SIMULATOR)
-  // Call C built-in on native hardware.
-#if defined(V8_TARGET_ARCH_PPC64)
+  // Call C built-in.
+#if (V8_TARGET_ARCH_PPC64 && V8_HOST_ARCH_PPC)
   if (result_size_ < 2) {
     __ mr(r3, r14);
     __ mr(r4, r16);
@@ -2938,14 +2937,7 @@ void CEntryStub::GenerateCore(MacroAssembler* masm,
     __ mr(r5, r16);
     isolate_reg = r6;
   }
-#else  // 32-bit linux/AIX
-  // r3 = argc, r4 = argv
-  __ mr(r3, r14);
-  __ mr(r4, r16);
-  isolate_reg = r5;
-#endif
-#else  // Simulated
-  // Call C built-in using simulator.
+#else  // 32-bit linux/AIX or 64-bit intel simulator
   // r3 = argc, r4 = argv
   __ mr(r3, r14);
   __ mr(r4, r16);
@@ -2998,7 +2990,7 @@ void CEntryStub::GenerateCore(MacroAssembler* masm,
   // check for failure result
   Label failure_returned;
   STATIC_ASSERT(((kFailureTag + 1) & kFailureTagMask) == 0);
-#if defined(V8_TARGET_ARCH_PPC64) && !defined(USE_SIMULATOR)
+#if (V8_TARGET_ARCH_PPC64 && V8_HOST_ARCH_PPC)
   // If return value is on the stack, pop it to registers.
   if (result_size_ > 1) {
     ASSERT_EQ(2, result_size_);
@@ -3086,14 +3078,12 @@ void CEntryStub::Generate(MacroAssembler* masm) {
   int arg_stack_space = 1;
 
   // PPC LINUX ABI:
-#if !defined(USE_SIMULATOR)
-#if defined(V8_TARGET_ARCH_PPC64)
+#if (V8_TARGET_ARCH_PPC64 && V8_HOST_ARCH_PPC)
   // Pass buffer for return value on stack if necessary
   if (result_size_ > 1) {
     ASSERT_EQ(2, result_size_);
     arg_stack_space += 2;
   }
-#endif
 #endif
 
   __ EnterExitFrame(save_doubles_, arg_stack_space);
