@@ -3528,7 +3528,9 @@ void CEntryStub::GenerateCore(MacroAssembler* masm,
   }
 
   // PPC LINUX ABI:
-#if !defined(USE_SIMULATOR)
+  // The #if below used to be !USE_SIMULATOR but needed
+  // to change to support nativesim=true builds
+#if defined(V8_HOST_ARCH_PPC64) || defined(V8_HOST_ARCH_PPC)
   // Call C built-in on native hardware.
 #if defined(V8_TARGET_ARCH_PPC64)
   if (result_size_ < 2) {
@@ -3706,7 +3708,9 @@ void CEntryStub::Generate(MacroAssembler* masm) {
   int arg_stack_space = 1;
 
   // PPC LINUX ABI:
-#if !defined(USE_SIMULATOR)
+  // The #if immediately below was !USE_SIMULATOR, but needed
+  // to change to support nativesim=true builds
+#if defined(V8_HOST_ARCH_PPC64) || defined(V8_HOST_ARCH_PPC)
 #if defined(V8_TARGET_ARCH_PPC64)
   // Pass buffer for return value on stack if necessary
   if (result_size_ > 1) {
@@ -7481,7 +7485,10 @@ void ProfileEntryHookStub::Generate(MacroAssembler* masm) {
 #endif
   __ Call(ip);
 
-#if !defined(USE_SIMULATOR)
+// For the most part this is true only when USE_SIMULATOR is true
+// The exception is when built with nativesim=true, then we need
+// Real PPC calling support plus simulation
+#if defined(V8_HOST_ARCH_PPC64) || defined(V8_HOST_ARCH_PPC)
   __ addi(sp, sp, Operand(kNumRequiredStackFrameSlots * kPointerSize));
 #endif
 
