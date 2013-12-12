@@ -3888,7 +3888,7 @@ void MacroAssembler::CheckMapDeprecated(Handle<Map> map,
     LoadP(scratch, FieldMemOperand(scratch, Map::kBitField3Offset));
     LoadSmiLiteral(r0, Smi::FromInt(Map::Deprecated::kMask));
     and_(scratch, scratch, r0, SetRC);
-    bne(if_deprecated);
+    bne(if_deprecated, cr0);
   }
 }
 

@@ -3213,7 +3213,7 @@ Handle<Code> BaseLoadStoreStubCompiler::CompilePolymorphicIC(
       __ mov(ip, Operand(receiver_maps->at(current)));
       __ cmp(map_reg, ip);
       __ bne(&no_match);
-      __ Jump(handlers->at(current), RelocInfo::CODE_TARGET, eq);
+      __ Jump(handlers->at(current), RelocInfo::CODE_TARGET);
       __ bind(&no_match);
     }
   }
