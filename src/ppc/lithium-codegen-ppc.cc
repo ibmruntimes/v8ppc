@@ -3762,6 +3762,7 @@ void LCodeGen::DoMathRound(LMathRound* instr) {
   __ LoadDoubleLiteral(dot_five, 0.5, r0);
   __ fabs(double_scratch1, input);
   __ fcmpu(double_scratch1, dot_five);
+  DeoptimizeIf(unordered, instr->environment());
   // If input is in [-0.5, -0], the result is -0.
   // If input is in [+0, +0.5[, the result is +0.
   // If the input is +0.5, the result is 1.
@@ -3774,8 +3775,8 @@ void LCodeGen::DoMathRound(LMathRound* instr) {
     __ lwz(input_high, MemOperand(sp, 0));
 #endif
     __ addi(sp, sp, Operand(kDoubleSize));
-    __ cmpi(input_high, Operand::Zero());
-    DeoptimizeIf(lt, instr->environment());  // [-0.5, -0].
+    __ TestSignBit32(input_high, r0);
+    DeoptimizeIf(ne, instr->environment(), cr0);  // [-0.5, -0].
   }
   Label return_zero;
   __ fcmpu(input, dot_five);
