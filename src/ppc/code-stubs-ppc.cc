@@ -1987,9 +1987,7 @@ void BinaryOpStub::GenerateInt32Stub(MacroAssembler* masm) {
         if (result_type_ <= BinaryOpIC::INT32) {
           __ TryDoubleToInt32Exact(scratch1, d1, scratch2, d8);
           // result does not fit in a 32-bit integer.
-          Label *not_int32 = ((result_type_ <= BinaryOpIC::INT32) ?
-                              &transition : &return_heap_number);
-          __ bne(not_int32);
+          __ bne(&transition);
 
 #if !V8_TARGET_ARCH_PPC64
           // Check if the result fits in a smi.
@@ -2016,7 +2014,7 @@ void BinaryOpStub::GenerateInt32Stub(MacroAssembler* masm) {
           __ addi(sp, sp, Operand(8));
 
           __ TestSignBit(scratch2, r0);
-          __ bne(&return_heap_number, cr0);
+          __ bne(&transition, cr0);
           __ bind(&not_zero);
 
           // Tag the result and return.
