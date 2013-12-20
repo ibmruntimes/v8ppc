@@ -1092,14 +1092,13 @@ void LCodeGen::DoModI(LModI* instr) {
       __ and_(result_reg, result_reg, r0);
       __ neg(result_reg, result_reg, LeaveOE, SetRC);
       if (hmod->CheckFlag(HValue::kBailoutOnMinusZero)) {
-        DeoptimizeIf(eq, instr->environment());
+        DeoptimizeIf(eq, instr->environment(), cr0);
       }
       __ b(&done);
     }
 
     __ bind(&left_is_not_negative);
-    __ mov(r0, Operand(divisor - 1));
-    __ and_(result_reg, result_reg, r0);
+    __ And(result_reg, left_reg, Operand(divisor - 1));
 
   } else {
     Register right_reg = ToRegister(instr->right());
