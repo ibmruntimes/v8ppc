@@ -379,7 +379,7 @@ void MacroAssembler::RecordWriteField(
   // of the object, so so offset must be a multiple of kPointerSize.
   ASSERT(IsAligned(offset, kPointerSize));
 
-  addi(dst, object, Operand(offset - kHeapObjectTag));
+  Add(dst, object, offset - kHeapObjectTag, r0);
   if (emit_debug_code()) {
     Label ok;
     andi(r0, dst, Operand((1 << kPointerSizeLog2) - 1));
