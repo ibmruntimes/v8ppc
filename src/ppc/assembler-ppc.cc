@@ -467,13 +467,13 @@ int Assembler::target_at(int pos)  {
     if (imm16 == 0)
         return kEndOfChain;
     return pos + imm16;
-  } else if ((instr & ~kImm16Mask) == 0) {
+  } else if ((instr & ~kImm26Mask) == 0) {
     // Emitted label constant, not part of a branch (regexp PushBacktrack).
      if (instr == 0) {
        return kEndOfChain;
      } else {
-       int32_t imm16 = SIGN_EXT_IMM16(instr);
-       return (imm16 + pos);
+       int32_t imm26 = SIGN_EXT_IMM26(instr);
+       return (imm26 + pos);
      }
   }
 
@@ -502,7 +502,7 @@ void Assembler::target_at_put(int pos, int target_pos) {
     ASSERT(is_int16(imm16));
     instr_at_put(pos, instr | (imm16 & kImm16Mask));
     return;
-  } else if ((instr & ~kImm16Mask) == 0) {
+  } else if ((instr & ~kImm26Mask) == 0) {
     ASSERT(target_pos == kEndOfChain || target_pos >= 0);
     // Emitted label constant, not part of a branch.
     // Make label relative to Code* of generated Code object.
@@ -523,9 +523,9 @@ int Assembler::max_reach_from(int pos) {
     return 26;
   } else if (BCX == opcode) {
     return 16;
-  } else if ((instr & ~kImm16Mask) == 0) {
+  } else if ((instr & ~kImm26Mask) == 0) {
     // Emitted label constant, not part of a branch (regexp PushBacktrack).
-    return 16;
+    return 26;
   }
 
   ASSERT(false);

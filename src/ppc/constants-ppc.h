@@ -43,8 +43,11 @@ const int kNumFPRegisters = kNumFPDoubleRegisters;
 
 const int kNoRegister = -1;
 
-// sign-extend the least significant 16-bit of value <imm>
+// sign-extend the least significant 16-bits of value <imm>
 #define SIGN_EXT_IMM16(imm) ((static_cast<int>(imm) << 16) >> 16)
+
+// sign-extend the least significant 26-bits of value <imm>
+#define SIGN_EXT_IMM26(imm) ((static_cast<int>(imm) << 6) >> 6)
 
 // -----------------------------------------------------------------------------
 // Conditions.
