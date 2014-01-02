@@ -977,11 +977,11 @@ static void EmitCheckForInternalizedStringsOrObjects(MacroAssembler* masm,
   __ andi(r0, r5, Operand(kIsNotStringMask));
   __ bne(&object_test, cr0);
   __ andi(r0, r5, Operand(kIsNotInternalizedMask));
-  __ beq(possible_strings, cr0);
+  __ bne(possible_strings, cr0);
   __ CompareObjectType(lhs, r6, r6, FIRST_NONSTRING_TYPE);
   __ bge(not_both_strings);
   __ andi(r0, r6, Operand(kIsNotInternalizedMask));
-  __ beq(possible_strings, cr0);
+  __ bne(possible_strings, cr0);
 
   // Both are internalized.  We already checked they weren't the same pointer
   // so they are not equal.
