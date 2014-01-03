@@ -415,7 +415,7 @@ Register LCodeGen::EmitLoadRegister(LOperand* op, Register scratch) {
     Representation r = chunk_->LookupLiteralRepresentation(const_op);
     if (r.IsInteger32()) {
       ASSERT(literal->IsNumber());
-      __ mov(scratch, Operand(static_cast<intptr_t>(literal->Number())));
+      __ LoadIntLiteral(scratch, static_cast<int32_t>(literal->Number()));
     } else if (r.IsSmi()) {
       ASSERT(constant->HasSmiValue());
       __ LoadSmiLiteral(scratch, Smi::FromInt(constant->Integer32Value()));
@@ -432,6 +432,19 @@ Register LCodeGen::EmitLoadRegister(LOperand* op, Register scratch) {
   }
   UNREACHABLE();
   return scratch;
+}
+
+
+void LCodeGen::EmitLoadIntegerConstant(LConstantOperand* const_op,
+                                       Register dst) {
+  ASSERT(IsInteger32(const_op));
+  HConstant* constant = chunk_->LookupConstant(const_op);
+  int32_t value = constant->Integer32Value();
+  if (IsSmi(const_op)) {
+    __ LoadSmiLiteral(dst, Smi::FromInt(value));
+  } else {
+    __ LoadIntLiteral(dst, value);
+  }
 }
 
 
@@ -464,7 +477,7 @@ int32_t LCodeGen::ToInteger32(LConstantOperand* op) const {
 
 
 intptr_t LCodeGen::ToRepresentation(LConstantOperand* op,
-                                   const Representation& r) const {
+                                    const Representation& r) const {
   HConstant* constant = chunk_->LookupConstant(op);
   int32_t value = constant->Integer32Value();
   if (r.IsInteger32()) return value;
@@ -1541,6 +1554,24 @@ void LCodeGen::DoBitI(LBitI* instr) {
   } else {
     ASSERT(right_op->IsRegister() || right_op->IsConstantOperand());
     right = ToOperand(right_op);
+
+    if (right_op->IsConstantOperand() && is_uint16(right.immediate())) {
+      switch (instr->op()) {
+        case Token::BIT_AND:
+          __ andi(result, left, right);
+          break;
+        case Token::BIT_OR:
+          __ ori(result, left, right);
+          break;
+        case Token::BIT_XOR:
+          __ xori(result, left, right);
+          break;
+        default:
+          UNREACHABLE();
+          break;
+      }
+      return;
+    }
   }
 
   switch (instr->op()) {
@@ -1877,6 +1908,15 @@ void LCodeGen::DoAddI(LAddI* instr) {
   LOperand* right = instr->right();
   LOperand* result = instr->result();
   bool can_overflow = instr->hydrogen()->CheckFlag(HValue::kCanOverflow);
+
+  if (!can_overflow && right->IsConstantOperand()) {
+    Operand right_operand = ToOperand(right);
+    if (is_int16(right_operand.immediate())) {
+      __ addi(ToRegister(result), ToRegister(left), right_operand);
+      return;
+    }
+  }
+
   Register right_reg = EmitLoadRegister(right, ip);
 
   if (!can_overflow) {
@@ -3194,14 +3234,23 @@ void LCodeGen::DoLoadKeyedFixedDoubleArray(LLoadKeyed* instr) {
     __ IndexToArrayOffset(r0, key, element_size_shift, key_is_smi);
     __ add(elements, elements, r0);
   }
-  __ Add(elements, elements, base_offset, r0);
-  __ lfd(result, MemOperand(elements, 0));
+  if (!is_int16(base_offset)) {
+    __ Add(elements, elements, base_offset, r0);
+    base_offset = 0;
+  }
+  __ lfd(result, MemOperand(elements, base_offset));
 
   if (instr->hydrogen()->RequiresHoleCheck()) {
 #if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
-    __ lwz(scratch, MemOperand(elements, sizeof(kHoleNanLower32)));
+    if (is_int16(base_offset + sizeof(kHoleNanLower32))) {
+      __ lwz(scratch, MemOperand(elements,
+                                 base_offset + sizeof(kHoleNanLower32)));
+    } else {
+      __ addi(scratch, elements, Operand(base_offset));
+      __ lwz(scratch, MemOperand(scratch, sizeof(kHoleNanLower32)));
+    }
 #else
-    __ lwz(scratch, MemOperand(elements));
+    __ lwz(scratch, MemOperand(elements, base_offset));
 #endif
     __ Cmpi(scratch, Operand(kHoleNanUpper32), r0);
     DeoptimizeIf(eq, instr->environment());

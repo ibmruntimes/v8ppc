@@ -112,6 +112,9 @@ class LCodeGen BASE_EMBEDDED {
   // LOperand is loaded into scratch, unless already a register.
   Register EmitLoadRegister(LOperand* op, Register scratch);
 
+  // LConstantOperand must be an Integer32 or Smi
+  void EmitLoadIntegerConstant(LConstantOperand* const_op, Register dst);
+
   // LOperand must be a double register.
   DoubleRegister ToDoubleRegister(LOperand* op) const;
 

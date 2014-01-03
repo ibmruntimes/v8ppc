@@ -3869,8 +3869,9 @@ void MacroAssembler::CheckPageFlag(
   ASSERT(cc == ne || cc == eq);
   ClearRightImm(scratch, object, Operand(kPageSizeBits));
   LoadP(scratch, MemOperand(scratch, MemoryChunk::kFlagsOffset));
-  li(r0, Operand(mask));
-  and_(r0, r0, scratch, SetRC);
+
+  And(r0, scratch, Operand(mask), SetRC);
+
   if (cc == ne) {
     bne(condition_met, cr0);
   }
