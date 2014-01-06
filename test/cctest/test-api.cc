@@ -2744,6 +2744,7 @@ class ScopedArrayBufferContents {
   const v8::ArrayBuffer::Contents contents_;
 };
 
+
 THREADED_TEST(ArrayBuffer_ApiInternalToExternal) {
   i::FLAG_harmony_array_buffer = true;
   i::FLAG_harmony_typed_arrays = true;
