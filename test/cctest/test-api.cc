@@ -51,7 +51,7 @@
 #include "utils.h"
 #include "vm-state.h"
 
-#if defined(_AIX) && defined(V8_HOST_ARCH_64_BIT)
+#if defined(_AIX) && defined(DEBUG) && V8_HOST_ARCH_64_BIT
 // AIX gcc is unable to compile this file in its entirety due to the
 // following open issue:
 //   http://gcc.gnu.org/bugzilla/show_bug.cgi?id=378
@@ -98,7 +98,7 @@ using ::v8::Value;
   }                                                                  \
   THREADED_TEST(Name)
 
-void RunWithProfiler(void (*test)()) {
+static void RunWithProfiler(void (*test)()) {
   LocalContext env;
   v8::HandleScope scope(env->GetIsolate());
   v8::Local<v8::String> profile_name = v8::String::New("my_profile1");
@@ -293,10 +293,12 @@ static void EmptyInterceptorGetter(Local<String> name,
                             const v8::PropertyCallbackInfo<v8::Value>& info) {
 }
 
+
 static void EmptyInterceptorSetter(Local<String> name,
                             Local<Value> value,
                             const v8::PropertyCallbackInfo<v8::Value>& info) {
 }
+
 
 static void AddInterceptor(Handle<FunctionTemplate> templ,
                     v8::NamedPropertyGetterCallback getter,
@@ -304,8 +306,24 @@ static void AddInterceptor(Handle<FunctionTemplate> templ,
   templ->InstanceTemplate()->SetNamedPropertyHandler(getter, setter);
 }
 
+
 static int p_getter_count;
 static int report_count = 0;
+
+
+template <typename T>
+static void CheckInternalFieldsAreZero(v8::Handle<T> value) {
+  CHECK_EQ(T::kInternalFieldCount, value->InternalFieldCount());
+  for (int i = 0; i < value->InternalFieldCount(); i++) {
+    CHECK_EQ(0, value->GetInternalField(i)->Int32Value());
+  }
+}
+
+
+static void DummyCallHandler(const v8::FunctionCallbackInfo<v8::Value>& args) {
+  ApiTestFuzzer::Fuzz();
+  args.GetReturnValue().Set(v8_num(13.4));
+}
 
 
 #if !defined(TEST_API_IN_PARTS) || defined(TEST_API_PART1)
@@ -1728,12 +1746,6 @@ THREADED_TEST(Boolean) {
 }
 
 
-static void DummyCallHandler(const v8::FunctionCallbackInfo<v8::Value>& args) {
-  ApiTestFuzzer::Fuzz();
-  args.GetReturnValue().Set(v8_num(13.4));
-}
-
-
 static void GetM(Local<String> name,
                  const v8::PropertyCallbackInfo<v8::Value>& info) {
   ApiTestFuzzer::Fuzz();
@@ -2731,15 +2743,6 @@ class ScopedArrayBufferContents {
  private:
   const v8::ArrayBuffer::Contents contents_;
 };
-
-template <typename T>
-static void CheckInternalFieldsAreZero(v8::Handle<T> value) {
-  CHECK_EQ(T::kInternalFieldCount, value->InternalFieldCount());
-  for (int i = 0; i < value->InternalFieldCount(); i++) {
-    CHECK_EQ(0, value->GetInternalField(i)->Int32Value());
-  }
-}
-
 
 THREADED_TEST(ArrayBuffer_ApiInternalToExternal) {
   i::FLAG_harmony_array_buffer = true;

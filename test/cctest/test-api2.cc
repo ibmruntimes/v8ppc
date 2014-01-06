@@ -26,7 +26,7 @@
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "v8.h"
 
-#if defined(_AIX) && defined(V8_HOST_ARCH_64_BIT)
+#if defined(_AIX) && defined(DEBUG) && V8_HOST_ARCH_64_BIT
 #define TEST_API_PART2
 // AIX gcc is unable to compile test-api.cc in its entirety due to the
 // following open issue:
