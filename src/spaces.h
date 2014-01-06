@@ -456,11 +456,11 @@ class MemoryChunk {
   // Return all current flags.
   intptr_t GetFlags() { return flags_; }
 
-  intptr_t parallel_sweeping() const {
+  int32_t parallel_sweeping() const {
     return parallel_sweeping_;
   }
 
-  void set_parallel_sweeping(intptr_t state) {
+  void set_parallel_sweeping(int32_t state) {
     parallel_sweeping_ = state;
   }
 
@@ -701,7 +701,7 @@ class MemoryChunk {
   // count highest number of bytes ever allocated on the page.
   int high_water_mark_;
 
-  intptr_t parallel_sweeping_;
+  int32_t parallel_sweeping_;
 
   // PagedSpace free-list statistics.
   intptr_t available_in_small_free_list_;
