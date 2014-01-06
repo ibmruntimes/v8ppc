@@ -436,7 +436,9 @@ enum CpuFeature { SSE4_1 = 32 + 19,  // x86
                   UNALIGNED_ACCESSES = 5,  // ARM
                   MOVW_MOVT_IMMEDIATE_LOADS = 6,  // ARM
                   SAHF = 0,    // x86
-                  FPU = 1};    // MIPS
+                  FPU = 1,     // MIPS/PPC
+                  IS64BIT = 2, // PPC
+                  GENERAL = 3}; // PPC
 
 
 // Used to specify if a macro instruction must perform a smi check on tagged

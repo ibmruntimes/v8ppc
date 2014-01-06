@@ -651,98 +651,150 @@ void FloatingPointHelper::ConvertNumberToInt32(MacroAssembler* masm,
   __ bind(&done);
 }
 
+void FloatingPointHelper::StoreDouble(MacroAssembler* masm,
+    Register src_hi,
+    Register src_lo,
+    Register store_location) {
+
+  __ stw(src_hi, MemOperand(store_location, HI_WORD_OFFSET));
+  __ stw(src_lo, MemOperand(store_location, LO_WORD_OFFSET));
+}
+
+void FloatingPointHelper::ConvertIntToFloatingPointNoPPC64(MacroAssembler* masm,
+    Register src,
+    DwVfpRegister double_dst,
+    Register scratch,
+    DwVfpRegister double_scratch,
+    bool result_is_a_float,
+    bool src_is_unsigned) {
+
+  __ subi(sp, sp, Operand(8));  // reserve one temporary double on the stack
+
+  if (src_is_unsigned) {
+    // load 0x4330000000000000 into double_scratch
+    __ lis(scratch, Operand(0x4330));
+    __ stw(scratch, MemOperand(sp, HI_WORD_OFFSET));
+    __ lis(scratch, Operand::Zero());
+    __ stw(scratch, MemOperand(sp, LO_WORD_OFFSET));
+    __ lfd(double_scratch, MemOperand(sp, 0));
+
+    // load 0x1.00000dddddddd x10^D into double_dst
+    __ lis(scratch, Operand(0x4330));
+    StoreDouble(masm, scratch, src, sp);
+  } else {
+    // load 0x4330000080000000 into double_scratch
+    __ lis(scratch, Operand(0x4330));
+    __ stw(scratch, MemOperand(sp, HI_WORD_OFFSET));
+    __ lis(scratch, Operand(-0x8000));
+    __ stw(scratch, MemOperand(sp, LO_WORD_OFFSET));
+    __ lfd(double_scratch, MemOperand(sp, 0));
+
+    // load 0x1.00000dddddddd x10^D into double_dst
+    __ lis(scratch, Operand(0x4330));
+    __ stw(scratch, MemOperand(sp, HI_WORD_OFFSET));
+    __ xoris(scratch, src, Operand(0x8000));
+    __ stw(scratch, MemOperand(sp, LO_WORD_OFFSET));
+  }
+
+  // Convert to double word FP from stack
+  __ lfd(double_dst, MemOperand(sp, 0));
+  __ fsub(double_dst, double_dst, double_scratch);
+
+  __ addi(sp, sp, Operand(8));  // restore stack
+
+  if (result_is_a_float) {
+    // Round to single word FP
+    __ frsp(double_dst, double_dst);
+  }
+}
+
+void FloatingPointHelper::ConvertIntToFloatingPoint(MacroAssembler* masm,
+    Register src,
+    DwVfpRegister double_dst,
+    Register scratch,
+    DwVfpRegister double_scratch,
+    bool result_is_a_float,
+    bool src_is_unsigned) {
+
+  ASSERT(!src.is(scratch));
+  ASSERT(!double_dst.is(double_scratch));
+
+#if !V8_TARGET_ARCH_PPC64
+  // If we have reduced 32-bit instruction set call out to
+  // generate a compatible sequence
+  if (!CpuFeatures::IsSupported(IS64BIT)) {
+    ConvertIntToFloatingPointNoPPC64(masm, src, double_dst, scratch, double_scratch, result_is_a_float, src_is_unsigned); 
+    return;
+  }
+#endif
+
+  // Normal sequence
+  __ subi(sp, sp, Operand(8));  // reserve one temporary double on the stack
+
+  if (src_is_unsigned) {
+#if V8_TARGET_ARCH_PPC64
+    __ clrldi(scratch, src, Operand(32));
+    __ std(scratch, MemOperand(sp, 0));
+#else
+    __ li(scratch, Operand::Zero());
+    StoreDouble(masm, scratch, src, sp);
+#endif
+  } else {
+#if V8_TARGET_ARCH_PPC64
+    __ extsw(scratch, src);
+    __ std(scratch, MemOperand(sp, 0));
+#else
+    __ srawi(scratch, src, 31);
+    StoreDouble(masm, scratch, src, sp);
+#endif
+  }
+
+  // Convert to double word FP from stack
+  __ lfd(double_dst, MemOperand(sp, 0));
+  __ fcfid(double_dst, double_dst);
+
+  __ addi(sp, sp, Operand(8));  // restore stack
+
+  if (result_is_a_float) {
+    // Round to single word FP
+    __ frsp(double_dst, double_dst);
+  }
+}
 
 void FloatingPointHelper::ConvertIntToDouble(MacroAssembler* masm,
                                              Register src,
                                              DwVfpRegister double_dst) {
-  ASSERT(!src.is(r0));
-
-  __ subi(sp, sp, Operand(8));  // reserve one temporary double on the stack
-
-  // sign-extend src to 64-bit and store it to temp double on the stack
-#if V8_TARGET_ARCH_PPC64
-  __ extsw(r0, src);
-  __ std(r0, MemOperand(sp, 0));
-#else
-  __ srawi(r0, src, 31);
-#if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
-  __ stw(r0, MemOperand(sp, 4));
-  __ stw(src, MemOperand(sp, 0));
-#else
-  __ stw(r0, MemOperand(sp, 0));
-  __ stw(src, MemOperand(sp, 4));
-#endif
-#endif
-
-  // load into FPR
-  __ lfd(double_dst, MemOperand(sp, 0));
-
-  __ addi(sp, sp, Operand(8));  // restore stack
-
-  // convert to double
-  __ fcfid(double_dst, double_dst);
+  Register scratch = r0;
+  DwVfpRegister double_scratch = d12;
+  bool result_is_a_float = false;
+  bool src_is_unsigned = false;
+  ConvertIntToFloatingPoint(masm, src, double_dst, 
+                            scratch, double_scratch, 
+                            result_is_a_float, src_is_unsigned);
 }
-
 
 void FloatingPointHelper::ConvertUnsignedIntToDouble(MacroAssembler* masm,
                                                      Register src,
                                                      DwVfpRegister double_dst) {
-  ASSERT(!src.is(r0));
-
-  __ subi(sp, sp, Operand(8));  // reserve one temporary double on the stack
-
-  // zero-extend src to 64-bit and store it to temp double on the stack
-#if V8_TARGET_ARCH_PPC64
-  __ clrldi(r0, src, Operand(32));
-  __ std(r0, MemOperand(sp, 0));
-#else
-  __ li(r0, Operand::Zero());
-#if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
-  __ stw(r0, MemOperand(sp, 4));
-  __ stw(src, MemOperand(sp, 0));
-#else
-  __ stw(r0, MemOperand(sp, 0));
-  __ stw(src, MemOperand(sp, 4));
-#endif
-#endif
-
-  // load into FPR
-  __ lfd(double_dst, MemOperand(sp, 0));
-
-  __ addi(sp, sp, Operand(8));  // restore stack
-
-  // convert to double
-  __ fcfid(double_dst, double_dst);
+  Register scratch = r0;
+  DwVfpRegister double_scratch = d12;
+  bool result_is_a_float = false;
+  bool src_is_unsigned = true;
+  ConvertIntToFloatingPoint(masm, src, double_dst, 
+                            scratch, double_scratch, 
+                            result_is_a_float, src_is_unsigned);
 }
 
 void FloatingPointHelper::ConvertIntToFloat(MacroAssembler* masm,
                                             const DwVfpRegister dst,
                                             const Register src,
                                             const Register int_scratch) {
-  __ subi(sp, sp, Operand(8));  // reserve one temporary double on the stack
-
-  // sign-extend src to 64-bit and store it to temp double on the stack
-#if V8_TARGET_ARCH_PPC64
-  __ extsw(int_scratch, src);
-  __ std(int_scratch, MemOperand(sp, 0));
-#else
-  __ srawi(int_scratch, src, 31);
-#if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
-  __ stw(int_scratch, MemOperand(sp, 4));
-  __ stw(src, MemOperand(sp, 0));
-#else
-  __ stw(int_scratch, MemOperand(sp, 0));
-  __ stw(src, MemOperand(sp, 4));
-#endif
-#endif
-
-  // load sign-extended src into FPR
-  __ lfd(dst, MemOperand(sp, 0));
-
-  __ addi(sp, sp, Operand(8));  // restore stack
-
-  __ fcfid(dst, dst);
-  __ frsp(dst, dst);
+  DwVfpRegister double_scratch = d12;
+  bool result_is_a_float = true;
+  bool src_is_unsigned = false;
+  ConvertIntToFloatingPoint(masm, src, dst, 
+                            int_scratch, double_scratch, 
+                            result_is_a_float, src_is_unsigned);
 }
 
 void FloatingPointHelper::LoadNumberAsInt32Double(MacroAssembler* masm,
@@ -3335,6 +3387,15 @@ void MathPowStub::Generate(MacroAssembler* masm) {
       __ bind(&not_minus_inf1);
 
       // Add +0 to convert -0 to +0.
+#if !V8_TARGET_ARCH_PPC64
+      // We still generate the fsqrt instruction
+      // below, but this branch should prevent it
+      // being executed on architectures that don't
+      // support it
+      if (!CpuFeatures::IsSupported(GENERAL)) {
+        __ b(&call_runtime);
+      }
+#endif
       __ fadd(double_scratch, double_base, kDoubleRegZero);
       __ fsqrt(double_result, double_scratch);
       __ b(&done);
@@ -3354,6 +3415,15 @@ void MathPowStub::Generate(MacroAssembler* masm) {
       __ bind(&not_minus_inf2);
 
       // Add +0 to convert -0 to +0.
+#if !V8_TARGET_ARCH_PPC64
+      // We still generate the fsqrt instruction
+      // below, but this branch should prevent it
+      // being executed on architectures that don't
+      // support it
+      if (!CpuFeatures::IsSupported(GENERAL)) {
+        __ b(&call_runtime);
+      }
+#endif
       __ fadd(double_scratch, double_base, kDoubleRegZero);
       __ LoadDoubleLiteral(double_result, 1.0, scratch);
       __ fsqrt(double_scratch, double_scratch);
@@ -7448,7 +7518,6 @@ void ProfileEntryHookStub::Generate(MacroAssembler* masm) {
   // Compute the function's address for the first argument.
   __ subi(r3, r3, Operand(kReturnAddressDistanceFromFunctionStart));
 
-  // The caller's return address is above the saved temporaries.
   // Grab that for the second argument to the hook.
   __ addi(r4, sp, Operand(kNumSavedRegs * kPointerSize));
 

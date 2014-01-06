@@ -33,6 +33,14 @@
 
 #include "ic-inl.h"
 
+#if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
+#define LO_WORD_OFFSET 0
+#define HI_WORD_OFFSET 4
+#else
+#define LO_WORD_OFFSET 4
+#define HI_WORD_OFFSET 0
+#endif
+
 namespace v8 {
 namespace internal {
 
@@ -697,6 +705,29 @@ class FloatingPointHelper : public AllStatic {
                            Register scratch1,
                            Register scratch2,
                            Label* not_number);
+
+  static void StoreDouble(MacroAssembler* masm,
+    Register src_hi,
+    Register src_lo,
+    Register store_location);
+
+  static void ConvertIntToFloatingPoint(MacroAssembler* masm,
+    Register src,
+    DwVfpRegister double_dst,
+    Register scratch,
+    DwVfpRegister double_scratch,
+    bool result_is_a_float,
+    bool src_is_unsigned);
+
+  static void ConvertIntToFloatingPointNoPPC64(MacroAssembler* masm,
+    Register src,
+    DwVfpRegister double_dst,
+    Register scratch,
+    DwVfpRegister double_scratch,
+    bool result_is_a_float,
+    bool src_is_unsigned);
+
+
 
   // Convert the smi or heap number in object to an int32 using the rules
   // for ToInt32 as described in ECMAScript 9.5.: the value is truncated

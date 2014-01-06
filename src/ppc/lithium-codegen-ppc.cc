@@ -3550,6 +3550,17 @@ void LCodeGen::DoMathRound(LUnaryMathOperation* instr) {
 void LCodeGen::DoMathSqrt(LUnaryMathOperation* instr) {
   DoubleRegister input = ToDoubleRegister(instr->value());
   DoubleRegister result = ToDoubleRegister(instr->result());
+#if !V8_TARGET_ARCH_PPC64
+  if (!CpuFeatures::IsSupported(GENERAL)) {
+    // load registers as the stub expects
+    __ fmr(d1, input);
+    __ LoadDoubleLiteral(d2, 0.5, scratch0());
+    MathPowStub stub(MathPowStub::DOUBLE);
+    __ CallStub(&stub);
+    __ fmr(result, d3);
+    return;
+  }
+#endif
   __ fsqrt(result, input);
 }
 
@@ -3572,6 +3583,22 @@ void LCodeGen::DoMathPowHalf(LUnaryMathOperation* instr) {
 
   // Add +0 to convert -0 to +0.
   __ bind(&skip);
+#if !V8_TARGET_ARCH_PPC64
+  if (!CpuFeatures::IsSupported(GENERAL)) {
+    // load registers as the stub expects
+    __ subi(sp, sp, Operand(4));
+    __ stw(r3, MemOperand(sp, 0)); 
+    __ fmr(d1, input);
+    __ LoadDoubleLiteral(d2, 0.5, scratch0());
+    MathPowStub stub(MathPowStub::DOUBLE);
+    __ CallStub(&stub);
+    __ fmr(result, d3);
+    __ lwz(r3, MemOperand(sp, 0));
+    __ addi(sp, sp, Operand(4));
+    __ bind(&done);
+    return;
+  }
+#endif
   __ fadd(result, input, kDoubleRegZero);
   __ fsqrt(result, result);
   __ bind(&done);

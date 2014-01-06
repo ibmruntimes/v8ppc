@@ -2242,6 +2242,36 @@ void MacroAssembler::SmiToDoubleFPRegister(Register smi,
   FloatingPointHelper::ConvertIntToDouble(this, scratch1, value);
 }
 
+void MacroAssembler::ConvertToInt32_NoPPC64(Register source,
+                                    Register dest,
+                                    Register scratch,
+                                    Register scratch2,
+                                    DwVfpRegister double_scratch,
+                                    Label *not_int32) {
+  // Retrieve double from heap
+  lfd(double_scratch, FieldMemOperand(source, HeapNumber::kValueOffset));
+
+  // Convert
+  fctiwz(double_scratch, double_scratch);
+
+  addi(sp, sp, Operand(-kDoubleSize));
+  stfd(double_scratch, MemOperand(sp, 0));
+
+#if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
+  lwz(dest, MemOperand(sp, 0));
+#else
+  lwz(dest, MemOperand(sp, 4));
+#endif
+  addi(sp, sp, Operand(kDoubleSize));
+
+  lis(scratch, Operand(-0x8000));
+  cmp(dest, scratch);
+  beq(not_int32);
+  lis(scratch, Operand(0x7FFF));
+  ori(scratch, scratch, Operand(0xFFFF));
+  cmp(dest, scratch);
+  beq(not_int32);
+}
 
 // Tries to get a signed int32 out of a double precision floating point heap
 // number. Rounds towards 0. Branch to 'not_int32' if the double is out of the
@@ -2252,6 +2282,14 @@ void MacroAssembler::ConvertToInt32(Register source,
                                     Register scratch2,
                                     DwVfpRegister double_scratch,
                                     Label *not_int32) {
+#if !V8_TARGET_ARCH_PPC64
+  if (!CpuFeatures::IsSupported(IS64BIT)) {
+    ConvertToInt32_NoPPC64(source, dest, scratch, scratch2, double_scratch, 
+                           not_int32);
+    return;
+  }
+#endif
+
   // Retrieve double from heap
   lfd(double_scratch, FieldMemOperand(source, HeapNumber::kValueOffset));
 
@@ -2283,6 +2321,51 @@ void MacroAssembler::ConvertToInt32(Register source,
   bne(not_int32);
 }
 
+void MacroAssembler::EmitVFPTruncate_NoPPC64(VFPRoundingMode rounding_mode,
+                                     Register result,
+                                     DwVfpRegister double_input,
+                                     Register scratch,
+                                     DwVfpRegister double_scratch,
+                                     CheckForInexactConversion check_inexact) {
+  // Convert
+  if (rounding_mode == kRoundToZero) {
+    fctiwz(double_scratch, double_input);
+  } else {
+    SetRoundingMode(rounding_mode);
+    fctiw(double_scratch, double_input);
+    ResetRoundingMode();
+  }
+
+  // reserve a slot on the stack
+  stfdu(double_scratch, MemOperand(sp, -kDoubleSize));
+#if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
+  lwz(result, MemOperand(sp, 0));
+#else
+  lwz(result, MemOperand(sp, 4));
+#endif
+  addi(sp, sp, Operand(kDoubleSize));
+
+  Label done, not_int32;
+  lis(scratch, Operand(-0x8000));
+  cmp(result, scratch);
+  beq(&not_int32);
+  lis(scratch, Operand(0x7FFF));
+  ori(scratch, scratch, Operand(0xFFFF));
+  cmp(result, scratch);
+  beq(&not_int32);
+  // TODO: Below quite inefficient!
+  // int32
+  if (check_inexact == kCheckForInexactConversion) {
+    fcmpu(double_scratch, double_input);
+  } else {
+    cmp(scratch, scratch); // always equal
+  }
+  b(&done);
+  // not int32
+  bind(&not_int32);
+  cmpi(scratch, Operand::Zero()); // always unequal
+  bind(&done);
+}
 
 void MacroAssembler::EmitVFPTruncate(VFPRoundingMode rounding_mode,
                                      Register result,
@@ -2290,6 +2373,13 @@ void MacroAssembler::EmitVFPTruncate(VFPRoundingMode rounding_mode,
                                      Register scratch,
                                      DwVfpRegister double_scratch,
                                      CheckForInexactConversion check_inexact) {
+#if !V8_TARGET_ARCH_PPC64
+  if (!CpuFeatures::IsSupported(IS64BIT)) {
+    EmitVFPTruncate_NoPPC64(rounding_mode, result, double_input, scratch,
+                            double_scratch, check_inexact);
+    return;
+  }
+#endif
   // Convert
   if (rounding_mode == kRoundToZero) {
     fctidz(double_scratch, double_input);
@@ -2414,6 +2504,52 @@ void MacroAssembler::EmitOutOfInt32RangeTruncate(Register result,
   bind(&done);
 }
 
+void MacroAssembler::EmitECMATruncate_NoPPC64(Register result,
+                                      DwVfpRegister double_input,
+                                      DwVfpRegister double_scratch,
+                                      Register scratch,
+                                      Register input_high,
+                                      Register input_low) {
+
+  fctiwz(double_scratch, double_input);
+  // reserve a slot on the stack
+  stfdu(double_scratch, MemOperand(sp, -kDoubleSize));
+#if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
+  lwz(result, MemOperand(sp, 0));
+#else
+  lwz(result, MemOperand(sp, 4));
+#endif
+
+  Label done, not_int32;
+  lis(scratch, Operand(-0x8000));
+  cmp(result, scratch);
+  beq(&not_int32);
+  lis(scratch, Operand(0x7FFF));
+  ori(scratch, scratch, Operand(0xFFFF));
+  cmp(result, scratch);
+  beq(&not_int32);
+  // int32
+  b(&done);
+  bind(&not_int32);
+  // not int32
+  stfd(double_input, MemOperand(sp));
+ #if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
+  lwz(input_low, MemOperand(sp));
+  lwz(input_high, MemOperand(sp, 4));
+#else
+  lwz(input_high, MemOperand(sp));
+  lwz(input_low, MemOperand(sp, 4));
+#endif
+  EmitOutOfInt32RangeTruncate(result,
+                              input_high,
+                              input_low,
+                              scratch);
+ 
+  bind(&done);
+
+  // restore the stack
+  addi(sp, sp, Operand(kDoubleSize));
+}
 
 void MacroAssembler::EmitECMATruncate(Register result,
                                       DwVfpRegister double_input,
@@ -2430,6 +2566,14 @@ void MacroAssembler::EmitECMATruncate(Register result,
   ASSERT(!double_scratch.is(double_input));
 
   Label done;
+
+#if !V8_TARGET_ARCH_PPC64
+  if (!CpuFeatures::IsSupported(IS64BIT)) {
+    EmitECMATruncate_NoPPC64(result, double_input, double_scratch,
+                             scratch, input_high, input_low);
+    return;
+  }
+#endif
 
   fctidz(double_scratch, double_input);
 

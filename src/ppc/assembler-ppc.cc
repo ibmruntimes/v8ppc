@@ -125,18 +125,38 @@ void CpuFeatures::Probe() {
     return;
   }
 
-  // Detect whether frim instruction is supported (POWER5+)
-  // For now we will just check for processors we know do not
-  // support it
+  // Detect instructions that are only supported on some 
+  // processors.
+  // FPU - whether frim instruction is supported (POWER5+)
+  //       G4 and G5 processors do not support this
+  // IS64BIT - whether the 64-bit instructions fctid, fctidz are supported
+  //           G4 is 32-bit and so doesn't support this
+  // GENERAL - whether "General group" optional instructions are supported
+  //           (fsqrt, fsqrts)
+  //           G4 doesn't support this
+  //
+  // Current approach is limted 
+  // - we will just check for processors we know do not support features 
+  //   and assume otherwise they are supported (rather than actually looking
+  //   at feature support info - eg HWCAP)
+  // - we only check on Linux, on other platforms we will assume support
+  // - we assume the only platforms are Linux and AIX (ie, that !AIX => Linux)
 #if !defined(_AIX)
   if (!is_processor("ppc970") /* G5 */ && !is_processor("ppc7450") /* G4 */) {
-    // Assume support
+    // Assume support if not a G4 or G5
     supported_ |= (1u << FPU);
   }
+  if (!is_processor("ppc7450")) {
+    // Assume support if not a G4
+    supported_ |= (1u << IS64BIT);
+    supported_ |= (1u << GENERAL);
+  }
 #else
-  // Fallback: assume frim is supported -- will implement processor
-  // detection for other PPC platforms in is_processor() if required
+  // Fallback: assume all instrs supported -- will implement processor/feature
+  // detection for other PPC platforms if required
   supported_ |= (1u << FPU);
+  supported_ |= (1u << IS64BIT);
+  supported_ |= (1u << GENERAL);
 #endif
 }
 
