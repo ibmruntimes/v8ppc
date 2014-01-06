@@ -29,7 +29,7 @@
 
 #if defined(__linux__) || defined(__FreeBSD__) || defined(__OpenBSD__) \
     || defined(__NetBSD__) || defined(__sun) || defined(__ANDROID__) \
-    || defined(__native_client__)
+    || defined(__native_client__) || defined(_AIX)
 
 #define USE_SIGNALS
 
@@ -37,7 +37,9 @@
 #include <pthread.h>
 #include <signal.h>
 #include <sys/time.h>
+#if !defined(_AIX)
 #include <sys/syscall.h>
+#endif
 // OpenBSD doesn't have <ucontext.h>. ucontext_t lives in <signal.h>
 // and is a typedef for struct sigcontext. There is no uc_mcontext.
 #if (!defined(__ANDROID__) || defined(__BIONIC_HAVE_UCONTEXT_T)) \
@@ -333,7 +335,7 @@ void SignalHandler::HandleProfilerSignal(int signal, siginfo_t* info,
 #else
   // Extracting the sample from the context is extremely machine dependent.
   ucontext_t* ucontext = reinterpret_cast<ucontext_t*>(context);
-#if !(defined(__OpenBSD__) || V8_HOST_ARCH_PPC)
+#if !(defined(__OpenBSD__) || (V8_HOST_ARCH_PPC && defined(__linux__)))
   mcontext_t& mcontext = ucontext->uc_mcontext;
 #endif
 #if defined(__linux__) || defined(__ANDROID__) || defined(_AIX)
@@ -364,9 +366,15 @@ void SignalHandler::HandleProfilerSignal(int signal, siginfo_t* info,
   state.sp = reinterpret_cast<Address>(mcontext.gregs[29]);
   state.fp = reinterpret_cast<Address>(mcontext.gregs[30]);
 #elif V8_HOST_ARCH_PPC
+#if defined(_AIX)
+  state.pc = reinterpret_cast<Address>(mcontext.jmp_context.iar);
+  state.sp = reinterpret_cast<Address>(mcontext.jmp_context.gpr[1]);
+  state.fp = reinterpret_cast<Address>(mcontext.jmp_context.gpr[31]);
+#else  // Linux
   state.pc = reinterpret_cast<Address>(ucontext->uc_mcontext.regs->nip);
   state.sp = reinterpret_cast<Address>(ucontext->uc_mcontext.regs->gpr[PT_R1]);
   state.fp = reinterpret_cast<Address>(ucontext->uc_mcontext.regs->gpr[PT_R31]);
+#endif
 #endif  // V8_HOST_ARCH_*
 #elif defined(__FreeBSD__)
 #if V8_HOST_ARCH_IA32

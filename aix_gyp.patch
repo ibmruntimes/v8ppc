@@ -1,23 +1,15 @@
---- build/gyp/pylib/gyp/common.py
-+++ build/gyp/pylib/gyp/common.py
-@@ -378,6 +378,8 @@
-      return 'solaris'
-    if sys.platform.startswith('freebsd'):
-      return 'freebsd'
-+   if sys.platform.startswith('aix'):
-+     return 'aix'
-  
-    return 'linux'
-  
 --- build/gyp/pylib/gyp/generator/make.py
 +++ build/gyp/pylib/gyp/generator/make.py
-@@ -200,6 +200,21 @@
+@@ -200,6 +200,24 @@
   """
   
   
 + LINK_COMMANDS_AIX = """\
 + quiet_cmd_alink = AR($(TOOLSET)) $@
-+ cmd_alink = rm -f $@ && $(AR.$(TOOLSET)) $(ARFLAGS.$(TOOLSET)) $@ $(filter %.o,$^)
++ cmd_alink = rm -f $@ && $(AR.$(TOOLSET)) -Xany crs $@ $(filter %.o,$^)
++ 
++ quiet_cmd_alink_thin = AR($(TOOLSET)) $@
++ cmd_alink_thin = rm -f $@ && $(AR.$(TOOLSET)) -Xany crsT $@ $(filter %.o,$^)
 + 
 + quiet_cmd_link = LINK($(TOOLSET)) $@
 + cmd_link = $(LINK.$(TOOLSET)) $(GYP_LDFLAGS) $(LDFLAGS.$(TOOLSET)) -o $@ $(LD_INPUTS) $(LIBS)
@@ -34,19 +26,6 @@
   # This should go into the build tree, but it's easier to keep it here for now.
   SHARED_HEADER = ("""\
 
---- build/gyp/pylib/gyp/generator/make.py
-+++ build/gyp/pylib/gyp/generator/make.py
-@@ -1933,6 +1948,10 @@
-                                                           cc_command=cc_host):
-      arflags_host = 'crsT'
-  
-+   if flavor == 'aix':
-+     arflags_target = '-Xany ' + arflags_target
-+     arflags_host = '-Xany ' + arflags_host
-+ 
-    return { 'ARFLAGS.target': arflags_target,
-             'ARFLAGS.host': arflags_host }
-  
 --- build/gyp/pylib/gyp/generator/make.py
 +++ build/gyp/pylib/gyp/generator/make.py
 @@ -2026,6 +2045,10 @@

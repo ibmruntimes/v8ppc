@@ -68,13 +68,13 @@ TEST(NumberOfCores) {
 #define GET_STACK_POINTER() \
   static intptr_t sp_addr = 0; \
   do { \
-    ASM("std %%sp, %0" : "=g" (sp_addr)); \
+    ASM("std 1, %0" : "=g" (sp_addr)); \
   } while (0)
 #elif defined(__PPC__) || defined(_ARCH_PPC)
 #define GET_STACK_POINTER() \
   static intptr_t sp_addr = 0; \
   do { \
-    ASM("stw %%sp, %0" : "=g" (sp_addr)); \
+    ASM("stw 1, %0" : "=g" (sp_addr)); \
   } while (0)
 #else
 #error Host architecture was not detected as supported by v8

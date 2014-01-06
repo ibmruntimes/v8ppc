@@ -1533,7 +1533,7 @@ double power_double_double(double x, double y) {
 #elif defined(_AIX)
   // AIX has a custom implementation for pow.  This handles certain
   // special cases that are different.
-  if ((x == 0.0 || isinf(x)) && y != 0.0 && isfinite(y)) {
+  if ((x == 0.0 || std::isinf(x)) && y != 0.0 && std::isfinite(y)) {
     double f;
     double result = ((x == 0.0) ^ (y > 0)) ? V8_INFINITY : 0;
     /* retain sign if odd integer exponent */
