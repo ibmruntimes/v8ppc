@@ -4299,7 +4299,7 @@ void MacroAssembler::LoadDoubleLiteral(DoubleRegister result,
 
 
 void MacroAssembler::Add(Register dst, Register src,
-                         uint32_t value, Register scratch) {
+                         intptr_t value, Register scratch) {
   if (is_int16(value)) {
     addi(dst, src, Operand(value));
   } else {
