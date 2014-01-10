@@ -520,7 +520,7 @@ class MacroAssembler: public Assembler {
 
 
 
-  void Add(Register dst, Register src, uint32_t value, Register scratch);
+  void Add(Register dst, Register src, intptr_t value, Register scratch);
   void Cmpi(Register src1, const Operand& src2, Register scratch,
             CRegister cr = cr7);
   void Cmpli(Register src1, const Operand& src2, Register scratch,

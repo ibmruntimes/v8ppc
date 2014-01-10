@@ -437,7 +437,7 @@ class MemOperand BASE_EMBEDDED {
 
   explicit MemOperand(Register ra, Register rb);
 
-  uint32_t offset() const {
+  int32_t offset() const {
     ASSERT(rb_.is(no_reg));
     return offset_;
   }
