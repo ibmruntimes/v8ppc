@@ -829,33 +829,33 @@ class PreservePositionScope BASE_EMBEDDED {
 // -----------------------------------------------------------------------------
 // Utility functions
 
-inline bool is_intn(int x, int n)  {
-  return -(1 << (n-1)) <= x && x < (1 << (n-1));
+inline bool is_intn(intptr_t x, int n)  {
+  return -(1L << (n-1)) <= x && x < (1L << (n-1));
 }
 
-inline bool is_int8(int x)  { return is_intn(x, 8); }
-inline bool is_int16(int x)  { return is_intn(x, 16); }
-inline bool is_int18(int x)  { return is_intn(x, 18); }
-inline bool is_int24(int x)  { return is_intn(x, 24); }
-inline bool is_int26(int x)  { return is_intn(x, 26); }
+inline bool is_int8(intptr_t x)  { return is_intn(x, 8); }
+inline bool is_int16(intptr_t x)  { return is_intn(x, 16); }
+inline bool is_int18(intptr_t x)  { return is_intn(x, 18); }
+inline bool is_int24(intptr_t x)  { return is_intn(x, 24); }
+inline bool is_int26(intptr_t x)  { return is_intn(x, 26); }
 
 
-inline bool is_uintn(int x, int n) {
-  return (x & -(1 << n)) == 0;
+inline bool is_uintn(intptr_t x, int n) {
+  return (x & -(1L << n)) == 0;
 }
 
-inline bool is_uint2(int x)  { return is_uintn(x, 2); }
-inline bool is_uint3(int x)  { return is_uintn(x, 3); }
-inline bool is_uint4(int x)  { return is_uintn(x, 4); }
-inline bool is_uint5(int x)  { return is_uintn(x, 5); }
-inline bool is_uint6(int x)  { return is_uintn(x, 6); }
-inline bool is_uint8(int x)  { return is_uintn(x, 8); }
-inline bool is_uint10(int x)  { return is_uintn(x, 10); }
-inline bool is_uint12(int x)  { return is_uintn(x, 12); }
-inline bool is_uint16(int x)  { return is_uintn(x, 16); }
-inline bool is_uint24(int x)  { return is_uintn(x, 24); }
-inline bool is_uint26(int x)  { return is_uintn(x, 26); }
-inline bool is_uint28(int x)  { return is_uintn(x, 28); }
+inline bool is_uint2(intptr_t x)  { return is_uintn(x, 2); }
+inline bool is_uint3(intptr_t x)  { return is_uintn(x, 3); }
+inline bool is_uint4(intptr_t x)  { return is_uintn(x, 4); }
+inline bool is_uint5(intptr_t x)  { return is_uintn(x, 5); }
+inline bool is_uint6(intptr_t x)  { return is_uintn(x, 6); }
+inline bool is_uint8(intptr_t x)  { return is_uintn(x, 8); }
+inline bool is_uint10(intptr_t x)  { return is_uintn(x, 10); }
+inline bool is_uint12(intptr_t x)  { return is_uintn(x, 12); }
+inline bool is_uint16(intptr_t x)  { return is_uintn(x, 16); }
+inline bool is_uint24(intptr_t x)  { return is_uintn(x, 24); }
+inline bool is_uint26(intptr_t x)  { return is_uintn(x, 26); }
+inline bool is_uint28(intptr_t x)  { return is_uintn(x, 28); }
 
 inline int NumberOfBitsSet(uint32_t x) {
   unsigned int num_bits_set;
