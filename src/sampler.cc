@@ -285,6 +285,10 @@ class SignalHandler : public AllStatic {
 
   static inline void Restore() {
     if (signal_handler_installed_) {
+#ifdef _AIX
+      // Ensure delivery of any pending SIGPROF before removing the handler
+      Thread::YieldCPU();
+#endif
       sigaction(SIGPROF, &old_signal_handler_, 0);
       signal_handler_installed_ = false;
     }

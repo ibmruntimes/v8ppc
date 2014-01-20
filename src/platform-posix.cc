@@ -654,7 +654,7 @@ void Thread::Join() {
 
 
 void Thread::YieldCPU() {
-#if V8_TARGET_ARCH_PPC
+#if V8_TARGET_ARCH_PPC && !defined(_AIX)
   i::OS::Sleep(0);
 #else
   int result = sched_yield();
