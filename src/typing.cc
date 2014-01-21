@@ -329,6 +329,9 @@ void AstTyper::VisitConditional(Conditional* expr) {
 }
 
 
+// simulated build generates warning (fails compile) without pragma
+// when built using gcc 4.4.6 on intel linux
+#pragma GCC diagnostic ignored "-Wuninitialized"
 void AstTyper::VisitVariableProxy(VariableProxy* expr) {
   Variable* var = expr->var();
   if (var->IsStackAllocated()) {
