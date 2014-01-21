@@ -634,8 +634,15 @@ void Thread::Start() {
   ASSERT_EQ(0, result);
   // Native client uses default stack size.
 #if !defined(__native_client__)
-  if (stack_size_ > PTHREAD_STACK_MIN) {
-    result = pthread_attr_setstacksize(&attr, static_cast<size_t>(stack_size_));
+  size_t stack_size = stack_size_;
+#if defined(_AIX)
+  if (stack_size == 0) {
+    // Default on AIX is 96KB -- bump up to 2MB
+    stack_size = 2 * MB;
+  }
+#endif
+  if (stack_size > PTHREAD_STACK_MIN) {
+    result = pthread_attr_setstacksize(&attr, stack_size);
     ASSERT_EQ(0, result);
   }
 #endif
