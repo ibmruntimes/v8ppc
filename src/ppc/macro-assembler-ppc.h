@@ -49,8 +49,8 @@ inline MemOperand FieldMemOperand(Register object, int offset) {
 
 
 // Give alias names to registers
-const Register cp = { 20 };  // JavaScript context pointer
-const Register kRootRegister = { 21 };  // Roots array pointer.
+const Register cp = { 18 };  // JavaScript context pointer
+const Register kRootRegister = { 19 };  // Roots array pointer.
 
 // Flags used for AllocateHeapNumber
 enum TaggingMode {

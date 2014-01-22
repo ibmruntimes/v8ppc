@@ -2003,10 +2003,10 @@ Handle<Code> CallStubCompiler::CompileArrayPushCall(
       __ cmp(end_elements, r6);
       __ bne(&call_builtin);
 
-      __ mov(r22, Operand(new_space_allocation_limit));
-      __ LoadP(r22, MemOperand(r22));
+      __ mov(r11, Operand(new_space_allocation_limit));
+      __ LoadP(r11, MemOperand(r11));
       __ addi(r6, r6, Operand(kAllocationDelta * kPointerSize));
-      __ cmpl(r6, r22);
+      __ cmpl(r6, r11);
       __ bgt(&call_builtin);
 
       // We fit and could grow elements.

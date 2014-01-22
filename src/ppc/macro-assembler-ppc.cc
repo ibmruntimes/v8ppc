@@ -960,15 +960,17 @@ void MacroAssembler::EnterExitFrame(bool save_doubles, int stack_space) {
     // since the sp slot and code slot were pushed after the fp.
   }
 
+  addi(sp, sp, Operand(-stack_space * kPointerSize));
+
   // Allocate and align the frame preparing for calling the runtime
   // function.
-  stack_space += kNumRequiredStackFrameSlots;
-  subi(sp, sp, Operand(stack_space * kPointerSize));
-  const int frame_alignment = MacroAssembler::ActivationFrameAlignment();
-  if (frame_alignment > 0) {
-    ASSERT(frame_alignment == 8);
-    ClearRightImm(sp, sp, Operand(3));  // equivalent to &= -8
+  const int frame_alignment = ActivationFrameAlignment();
+  if (frame_alignment > kPointerSize) {
+    ASSERT(IsPowerOf2(frame_alignment));
+    ClearRightImm(sp, sp, Operand(WhichPowerOf2(frame_alignment)));
   }
+  li(r0, Operand::Zero());
+  StorePU(r0, MemOperand(sp, -kNumRequiredStackFrameSlots * kPointerSize));
 
   // Set the exit frame sp value to point just before the return address
   // location.
@@ -2399,16 +2401,16 @@ void MacroAssembler::CallApiFunctionAndReturn(ExternalReference function,
   Register scratch = { thunk_last_arg.code() + 1 };
 
   // Allocate HandleScope in callee-save registers.
-  // r26 - next_address
-  // r27 - next_address->kNextOffset
-  // r28 - next_address->kLimitOffset
-  // r29 - next_address->kLevelOffset
-  mov(r26, Operand(next_address));
-  LoadP(r27, MemOperand(r26, kNextOffset));
-  LoadP(r28, MemOperand(r26, kLimitOffset));
-  lwz(r29, MemOperand(r26, kLevelOffset));
-  addi(r29, r29, Operand(1));
-  stw(r29, MemOperand(r26, kLevelOffset));
+  // r17 - next_address
+  // r14 - next_address->kNextOffset
+  // r15 - next_address->kLimitOffset
+  // r16 - next_address->kLevelOffset
+  mov(r17, Operand(next_address));
+  LoadP(r14, MemOperand(r17, kNextOffset));
+  LoadP(r15, MemOperand(r17, kLimitOffset));
+  lwz(r16, MemOperand(r17, kLevelOffset));
+  addi(r16, r16, Operand(1));
+  stw(r16, MemOperand(r17, kLevelOffset));
 
   if (FLAG_log_timer_events) {
     FrameScope frame(this, StackFrame::MANUAL);
@@ -2485,29 +2487,29 @@ void MacroAssembler::CallApiFunctionAndReturn(ExternalReference function,
   bind(&return_value_loaded);
   // No more valid handles (the result handle was the last one). Restore
   // previous handle scope.
-  StoreP(r27, MemOperand(r26, kNextOffset));
+  StoreP(r14, MemOperand(r17, kNextOffset));
   if (emit_debug_code()) {
-    lwz(r4, MemOperand(r26, kLevelOffset));
-    cmp(r4, r29);
+    lwz(r4, MemOperand(r17, kLevelOffset));
+    cmp(r4, r16);
     Check(eq, kUnexpectedLevelAfterReturnFromApiCall);
   }
-  subi(r29, r29, Operand(1));
-  stw(r29, MemOperand(r26, kLevelOffset));
-  LoadP(ip, MemOperand(r26, kLimitOffset));
-  cmp(r28, ip);
+  subi(r16, r16, Operand(1));
+  stw(r16, MemOperand(r17, kLevelOffset));
+  LoadP(ip, MemOperand(r17, kLimitOffset));
+  cmp(r15, ip);
   bne(&delete_allocated_handles);
 
   // Check if the function scheduled an exception.
   bind(&leave_exit_frame);
-  LoadRoot(r27, Heap::kTheHoleValueRootIndex);
+  LoadRoot(r14, Heap::kTheHoleValueRootIndex);
   mov(ip, Operand(ExternalReference::scheduled_exception_address(isolate())));
-  LoadP(r28, MemOperand(ip));
-  cmp(r27, r28);
+  LoadP(r15, MemOperand(ip));
+  cmp(r14, r15);
   bne(&promote_scheduled_exception);
 
   // LeaveExitFrame expects unwind space to be in a register.
-  mov(r27, Operand(stack_space));
-  LeaveExitFrame(false, r27);
+  mov(r14, Operand(stack_space));
+  LeaveExitFrame(false, r14);
   blr();
 
   bind(&promote_scheduled_exception);
@@ -2518,13 +2520,13 @@ void MacroAssembler::CallApiFunctionAndReturn(ExternalReference function,
 
   // HandleScope limit has changed. Delete allocated extensions.
   bind(&delete_allocated_handles);
-  StoreP(r28, MemOperand(r26, kLimitOffset));
-  mr(r27, r3);
-  PrepareCallCFunction(1, r28);
+  StoreP(r15, MemOperand(r17, kLimitOffset));
+  mr(r14, r3);
+  PrepareCallCFunction(1, r15);
   mov(r3, Operand(ExternalReference::isolate_address(isolate())));
   CallCFunction(
       ExternalReference::delete_handle_scope_extensions(isolate()), 1);
-  mr(r3, r27);
+  mr(r3, r14);
   b(&leave_exit_frame);
 }
 
@@ -3566,32 +3568,24 @@ void MacroAssembler::PrepareCallCFunction(int num_reg_arguments,
   int frame_alignment = ActivationFrameAlignment();
   int stack_passed_arguments = CalculateStackPassedWords(
       num_reg_arguments, num_double_arguments);
+  int stack_space = kNumRequiredStackFrameSlots;
+
   if (frame_alignment > kPointerSize) {
-    // Make stack end at alignment and make room for stack arguments,
-    // the original value of sp and, on native, the required slots to
-    // make ABI work.
+    // Make stack end at alignment and make room for stack arguments
+    // -- preserving original value of sp.
     mr(scratch, sp);
-#if !defined(USE_SIMULATOR)
-    subi(sp, sp, Operand((stack_passed_arguments +
-                          kNumRequiredStackFrameSlots) * kPointerSize));
-#else
-    subi(sp, sp, Operand((stack_passed_arguments + 1) * kPointerSize));
-#endif
+    addi(sp, sp, Operand(-(stack_passed_arguments + 1) * kPointerSize));
     ASSERT(IsPowerOf2(frame_alignment));
-    li(r0, Operand(-frame_alignment));
-    and_(sp, sp, r0);
-#if !defined(USE_SIMULATOR)
-    // On the simulator we pass args on the stack
-    StoreP(scratch, MemOperand(sp));
-#else
-    // On the simulator we pass args on the stack
-    StoreP(scratch,
-           MemOperand(sp, stack_passed_arguments * kPointerSize), r0);
-#endif
+    ClearRightImm(sp, sp, Operand(WhichPowerOf2(frame_alignment)));
+    StoreP(scratch, MemOperand(sp, stack_passed_arguments * kPointerSize));
   } else {
-    subi(sp, sp, Operand((stack_passed_arguments +
-                          kNumRequiredStackFrameSlots) * kPointerSize));
+    // Make room for stack arguments
+    stack_space += stack_passed_arguments;
   }
+
+  // Allocate frame with required slots to make ABI work.
+  li(r0, Operand::Zero());
+  StorePU(r0, MemOperand(sp, -stack_space * kPointerSize));
 }
 
 
@@ -3657,10 +3651,6 @@ void MacroAssembler::CallCFunctionHelper(Register function,
                                          int num_reg_arguments,
                                          int num_double_arguments) {
   ASSERT(has_frame());
-  // Make sure that the stack is aligned before calling a C function unless
-  // running in the simulator. The simulator has its own alignment check which
-  // provides more information.
-
   // Just call directly. The function called cannot cause a GC, or
   // allow preemption, so the return address in the link register
   // stays correct.
@@ -3674,19 +3664,13 @@ void MacroAssembler::CallCFunctionHelper(Register function,
 
   Call(function);
 
+  // Remove frame bought in PrepareCallCFunction
   int stack_passed_arguments = CalculateStackPassedWords(
       num_reg_arguments, num_double_arguments);
+  int stack_space = kNumRequiredStackFrameSlots + stack_passed_arguments;
+  addi(sp, sp, Operand(stack_space * kPointerSize));
   if (ActivationFrameAlignment() > kPointerSize) {
-#if !defined(USE_SIMULATOR)
-    // On real hardware we follow the ABI
     LoadP(sp, MemOperand(sp));
-#else
-    // On the simulator we pass args on the stack
-    LoadP(sp, MemOperand(sp, stack_passed_arguments * kPointerSize), r0);
-#endif
-  } else {
-    addi(sp, sp, Operand((stack_passed_arguments +
-                          kNumRequiredStackFrameSlots) * kPointerSize));
   }
 }
 

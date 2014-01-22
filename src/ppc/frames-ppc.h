@@ -65,23 +65,17 @@ int JSCallerSavedCode(int n);
 // N.B.  Do not bother saving all non-volatiles -- only those that v8
 //       modifies without saving/restoring inline.
 const RegList kCalleeSaved =
-  1 <<  14 |  // r14 (argument passing in CEntryStub)
-  1 <<  15 |  // r15 (argument passing in CEntryStub)
-  1 <<  16 |  // r16 (argument passing in CEntryStub)
-              // r17-r19 unused
-  1 <<  20 |  // r20 (cp in Javascript code)
-  1 <<  21 |  // r21 (roots array in Javascript code)
-  1 <<  22 |  // r22 (r9 hack in Javascript code)
-              // r23-r25 unused
-  1 <<  26 |  // r26 (HandleScope logic in MacroAssembler)
-  1 <<  27 |  // r27 (HandleScope logic in MacroAssembler)
-  1 <<  28 |  // r28 (HandleScope logic in MacroAssembler)
-  1 <<  29 |  // r29 (HandleScope logic in MacroAssembler)
-              // r30 used but saved/restored inline
+  1 <<  14 |  // r14 (general use)
+  1 <<  15 |  // r15 (general use)
+  1 <<  16 |  // r16 (general use)
+  1 <<  17 |  // r17 (general use)
+  1 <<  18 |  // r18 (general use / cp in Javascript code)
+  1 <<  19 |  // r19 (roots array in Javascript code)
+              // r20-r30 unused
   1 <<  31;   // r31 (fp in Javascript code)
 
 
-const int kNumCalleeSaved = 11;
+const int kNumCalleeSaved = 7;
 
 // Number of registers for which space is reserved in safepoints. Must be a
 // multiple of 8.
@@ -95,7 +89,8 @@ const RegList kSafepointSavedRegisters = kJSCallerSaved | kCalleeSaved;
 const int kNumSafepointSavedRegisters = kNumJSCallerSaved + kNumCalleeSaved;
 
 // The following constants describe the stack frame linkage area as
-// defined by the ABI.
+// defined by the ABI.  Note that kNumRequiredStackFrameSlots must
+// satisfy alignment requirements (rounding up if required).
 #if defined(_AIX) || defined(V8_TARGET_ARCH_PPC64)
 // [0] back chain
 // [1] condition register save area
@@ -108,7 +103,11 @@ const int kNumSafepointSavedRegisters = kNumJSCallerSaved + kNumCalleeSaved;
 // [13] Parameter8 save area
 // [14] Parameter9 slot (if necessary)
 // ...
+#ifdef V8_TARGET_ARCH_PPC64
 const int kNumRequiredStackFrameSlots = 14;
+#else
+const int kNumRequiredStackFrameSlots = 16;
+#endif
 const int kStackFrameLRSlot = 2;
 const int kStackFrameExtraParamSlot = 14;
 #else
@@ -116,7 +115,7 @@ const int kStackFrameExtraParamSlot = 14;
 // [1] link register save area
 // [2] Parameter9 slot (if necessary)
 // ...
-const int kNumRequiredStackFrameSlots = 2;
+const int kNumRequiredStackFrameSlots = 4;
 const int kStackFrameLRSlot = 1;
 const int kStackFrameExtraParamSlot = 2;
 #endif

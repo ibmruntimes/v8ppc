@@ -581,8 +581,8 @@ static void Generate_JSConstructStubHelper(MacroAssembler* masm,
         if (count_constructions) {
           __ LoadRoot(r10, Heap::kUndefinedValueRootIndex);
         } else if (FLAG_debug_code) {
-          __ LoadRoot(r11, Heap::kUndefinedValueRootIndex);
-          __ cmp(r10, r11);
+          __ LoadRoot(r18, Heap::kUndefinedValueRootIndex);
+          __ cmp(r10, r18);
           __ Assert(eq, kUndefinedValueNotLoaded);
         }
         __ b(&entry);
@@ -799,7 +799,7 @@ static void Generate_JSEntryTrampolineHelper(MacroAssembler* masm,
     __ mr(r14, r7);
     __ mr(r15, r7);
     __ mr(r16, r7);
-    __ mr(r22, r7);  // hmmm, possibly should be reassigned to r17
+    __ mr(r17, r7);
 
     // Invoke the code and pass argc as r3.
     __ mr(r3, r6);

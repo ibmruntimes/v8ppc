@@ -1399,7 +1399,7 @@ void BinaryOpStub_GenerateSmiSmiOperation(MacroAssembler* masm,
   Register left = r4;
   Register right = r3;
   Register scratch1 = r10;
-  Register scratch2 = r22;
+  Register scratch2 = r11;
 
   ASSERT(right.is(r3));
   STATIC_ASSERT(kSmiTag == 0);
@@ -1616,7 +1616,7 @@ void BinaryOpStub_GenerateFPOperation(MacroAssembler* masm,
   Register left = r4;
   Register right = r3;
   Register scratch1 = r10;
-  Register scratch2 = r22;
+  Register scratch2 = r11;
   Register scratch3 = r7;
 
   ASSERT(smi_operands || (not_numbers != NULL));
@@ -2363,7 +2363,7 @@ void TranscendentalCacheStub::Generate(MacroAssembler* masm) {
   Label loaded;
   Label calculate;
   Label invalid_cache;
-  const Register scratch0 = r22;
+  const Register scratch0 = r11;
   const Register scratch1 = r10;
   const Register cache_entry = r3;
   const bool tagged = (argument_type_ == TAGGED);
@@ -2631,7 +2631,7 @@ void MathPowStub::Generate(MacroAssembler* masm) {
   const DoubleRegister double_exponent = d2;
   const DoubleRegister double_result = d3;
   const DoubleRegister double_scratch = d0;
-  const Register scratch = r22;
+  const Register scratch = r11;
   const Register scratch2 = r10;
 
   Label call_runtime, done, int_exponent;
@@ -3737,7 +3737,7 @@ void ArgumentsAccessStub::GenerateNewNonStrictFast(MacroAssembler* masm) {
   //  sp[2] : function
   // Registers used over whole function:
   //  r9 : allocated object (tagged)
-  //  r22 : mapped parameter count (tagged)
+  //  r11 : mapped parameter count (tagged)
 
   __ LoadP(r4, MemOperand(sp, 0 * kPointerSize));
   // r4 = parameter count (tagged)
@@ -3782,23 +3782,23 @@ void ArgumentsAccessStub::GenerateNewNonStrictFast(MacroAssembler* masm) {
   Label skip2, skip3;
   __ CmpSmiLiteral(r4, Smi::FromInt(0), r0);
   __ bne(&skip2);
-  __ li(r22, Operand::Zero());
+  __ li(r11, Operand::Zero());
   __ b(&skip3);
   __ bind(&skip2);
-  __ SmiToPtrArrayOffset(r22, r4);
-  __ addi(r22, r22, Operand(kParameterMapHeaderSize));
+  __ SmiToPtrArrayOffset(r11, r4);
+  __ addi(r11, r11, Operand(kParameterMapHeaderSize));
   __ bind(&skip3);
 
   // 2. Backing store.
   __ SmiToPtrArrayOffset(r7, r5);
-  __ add(r22, r22, r7);
-  __ addi(r22, r22, Operand(FixedArray::kHeaderSize));
+  __ add(r11, r11, r7);
+  __ addi(r11, r11, Operand(FixedArray::kHeaderSize));
 
   // 3. Arguments object.
-  __ addi(r22, r22, Operand(Heap::kArgumentsObjectSize));
+  __ addi(r11, r11, Operand(Heap::kArgumentsObjectSize));
 
   // Do the allocation of all three objects in one go.
-  __ Allocate(r22, r3, r6, r7, &runtime, TAG_OBJECT);
+  __ Allocate(r11, r3, r6, r7, &runtime, TAG_OBJECT);
 
   // r3 = address of new object(s) (tagged)
   // r5 = argument count (tagged)
@@ -3808,7 +3808,7 @@ void ArgumentsAccessStub::GenerateNewNonStrictFast(MacroAssembler* masm) {
   const int kAliasedOffset =
       Context::SlotOffset(Context::ALIASED_ARGUMENTS_BOILERPLATE_INDEX);
 
-  __ LoadP(r7, MemOperand(r20,
+  __ LoadP(r7, MemOperand(cp,
              Context::SlotOffset(Context::GLOBAL_OBJECT_INDEX)));
   __ LoadP(r7, FieldMemOperand(r7, GlobalObject::kNativeContextOffset));
   Label skip4, skip5;
@@ -3867,8 +3867,8 @@ void ArgumentsAccessStub::GenerateNewNonStrictFast(MacroAssembler* masm) {
   __ StoreP(r9, FieldMemOperand(r7, FixedArray::kMapOffset), r0);
   __ AddSmiLiteral(r9, r4, Smi::FromInt(2), r0);
   __ StoreP(r9, FieldMemOperand(r7, FixedArray::kLengthOffset), r0);
-  __ StoreP(r20, FieldMemOperand(r7,
-                                 FixedArray::kHeaderSize + 0 * kPointerSize),
+  __ StoreP(cp, FieldMemOperand(r7,
+                                FixedArray::kHeaderSize + 0 * kPointerSize),
             r0);
   __ SmiToPtrArrayOffset(r9, r4);
   __ add(r9, r7, r9);
@@ -3887,9 +3887,9 @@ void ArgumentsAccessStub::GenerateNewNonStrictFast(MacroAssembler* masm) {
   // We loop from right to left.
   Label parameters_loop, parameters_test;
   __ mr(r9, r4);
-  __ LoadP(r22, MemOperand(sp, 0 * kPointerSize));
-  __ AddSmiLiteral(r22, r22, Smi::FromInt(Context::MIN_CONTEXT_SLOTS), r0);
-  __ sub(r22, r22, r4);
+  __ LoadP(r11, MemOperand(sp, 0 * kPointerSize));
+  __ AddSmiLiteral(r11, r11, Smi::FromInt(Context::MIN_CONTEXT_SLOTS), r0);
+  __ sub(r11, r11, r4);
   __ LoadRoot(r10, Heap::kTheHoleValueRootIndex);
   __ SmiToPtrArrayOffset(r6, r9);
   __ add(r6, r7, r6);
@@ -3907,10 +3907,10 @@ void ArgumentsAccessStub::GenerateNewNonStrictFast(MacroAssembler* masm) {
   __ SubSmiLiteral(r9, r9, Smi::FromInt(1), r0);
   __ SmiToPtrArrayOffset(r8, r9);
   __ addi(r8, r8, Operand(kParameterMapHeaderSize - kHeapObjectTag));
-  __ StorePX(r22, MemOperand(r8, r7));
+  __ StorePX(r11, MemOperand(r8, r7));
   __ subi(r8, r8, Operand(kParameterMapHeaderSize - FixedArray::kHeaderSize));
   __ StorePX(r10, MemOperand(r8, r6));
-  __ AddSmiLiteral(r22, r22, Smi::FromInt(1), r0);
+  __ AddSmiLiteral(r11, r11, Smi::FromInt(1), r0);
   __ bind(&parameters_test);
   __ CmpSmiLiteral(r9, Smi::FromInt(0), r0);
   __ bne(&parameters_loop);
@@ -3925,22 +3925,22 @@ void ArgumentsAccessStub::GenerateNewNonStrictFast(MacroAssembler* masm) {
   __ StoreP(r5, FieldMemOperand(r6, FixedArray::kLengthOffset), r0);
 
   Label arguments_loop, arguments_test;
-  __ mr(r22, r4);
+  __ mr(r11, r4);
   __ LoadP(r7, MemOperand(sp, 1 * kPointerSize));
-  __ SmiToPtrArrayOffset(r8, r22);
+  __ SmiToPtrArrayOffset(r8, r11);
   __ sub(r7, r7, r8);
   __ b(&arguments_test);
 
   __ bind(&arguments_loop);
   __ subi(r7, r7, Operand(kPointerSize));
   __ LoadP(r9, MemOperand(r7, 0));
-  __ SmiToPtrArrayOffset(r8, r22);
+  __ SmiToPtrArrayOffset(r8, r11);
   __ add(r8, r6, r8);
   __ StoreP(r9, FieldMemOperand(r8, FixedArray::kHeaderSize), r0);
-  __ AddSmiLiteral(r22, r22, Smi::FromInt(1), r0);
+  __ AddSmiLiteral(r11, r11, Smi::FromInt(1), r0);
 
   __ bind(&arguments_test);
-  __ cmp(r22, r5);
+  __ cmp(r11, r5);
   __ blt(&arguments_loop);
 
   // Return and remove the on-stack parameters.
@@ -4082,16 +4082,16 @@ void RegExpExecStub::Generate(MacroAssembler* masm) {
   // this code is called using the normal C calling convention. When calling
   // directly from generated code the native RegExp code will not do a GC and
   // therefore the content of these registers are safe to use after the call.
-  Register subject = r26;
-  Register regexp_data = r27;
-  Register last_match_info_elements = r28;
-  Register code = r29;
+  Register subject = r14;
+  Register regexp_data = r15;
+  Register last_match_info_elements = r16;
+  Register code = r17;
 
   // Ensure register assigments are consistent with callee save masks
-  ASSERT(subject.bit() & (kCalleeSaved & kRegExpCalleeSaved));
-  ASSERT(regexp_data.bit() & (kCalleeSaved & kRegExpCalleeSaved));
-  ASSERT(last_match_info_elements.bit() & (kCalleeSaved & kRegExpCalleeSaved));
-  ASSERT(code.bit() & (kCalleeSaved & kRegExpCalleeSaved));
+  ASSERT(subject.bit() & kCalleeSaved);
+  ASSERT(regexp_data.bit() & kCalleeSaved);
+  ASSERT(last_match_info_elements.bit() & kCalleeSaved);
+  ASSERT(code.bit() & kCalleeSaved);
 
   // Ensure that a RegExp stack is allocated.
   Isolate* isolate = masm->isolate();
@@ -4288,7 +4288,7 @@ void RegExpExecStub::Generate(MacroAssembler* masm) {
   // For arguments 4 (r6) and 3 (r5) get string length, calculate start of
   // string data and calculate the shift of the index (0 for ASCII and 1 for
   // two byte).
-  __ addi(r22, subject, Operand(SeqString::kHeaderSize - kHeapObjectTag));
+  __ addi(r18, subject, Operand(SeqString::kHeaderSize - kHeapObjectTag));
   __ xori(r6, r6, Operand(1));
   // Load the length from the original subject string from the previous stack
   // frame. Therefore we have to use fp, which points exactly to two pointer
@@ -4300,13 +4300,13 @@ void RegExpExecStub::Generate(MacroAssembler* masm) {
   // Argument 3, r5: Start of string data
   // Prepare start and end index of the input.
   __ ShiftLeft(r11, r11, r6);
-  __ add(r11, r22, r11);
+  __ add(r11, r18, r11);
   __ ShiftLeft(r5, r4, r6);
   __ add(r5, r11, r5);
 
-  __ LoadP(r22, FieldMemOperand(subject, String::kLengthOffset));
-  __ SmiUntag(r22);
-  __ ShiftLeft(r6, r22, r6);
+  __ LoadP(r18, FieldMemOperand(subject, String::kLengthOffset));
+  __ SmiUntag(r18);
+  __ ShiftLeft(r6, r18, r6);
   __ add(r6, r11, r6);
 
   // Argument 2 (r4): Previous index.
@@ -4411,7 +4411,7 @@ void RegExpExecStub::Generate(MacroAssembler* masm) {
   __ bgt(&runtime);
 
   // r4: number of capture registers
-  // r26: subject string
+  // subject: subject string
   // Store the capture count.
   __ SmiTag(r5, r4);
   __ StoreP(r5, FieldMemOperand(last_match_info_elements,
@@ -5426,7 +5426,7 @@ void SubStringStub::Generate(MacroAssembler* masm) {
   // r8: first character of substring to copy
   STATIC_ASSERT((SeqOneByteString::kHeaderSize & kObjectAlignmentMask) == 0);
   StringHelper::GenerateCopyCharactersLong(masm, r4, r8, r5, r6, r7, r9,
-                            r10, r22, COPY_ASCII | DEST_ALWAYS_ALIGNED);
+                            r10, r11, COPY_ASCII | DEST_ALWAYS_ALIGNED);
   __ b(&return_r3);
 
   // Allocate and copy the resulting two-byte string.
@@ -5445,7 +5445,7 @@ void SubStringStub::Generate(MacroAssembler* masm) {
   // r8: first character of substring to copy.
   STATIC_ASSERT((SeqTwoByteString::kHeaderSize & kObjectAlignmentMask) == 0);
   StringHelper::GenerateCopyCharactersLong(
-      masm, r4, r8, r5, r6, r7, r9, r10, r22, DEST_ALWAYS_ALIGNED);
+      masm, r4, r8, r5, r6, r7, r9, r10, r11, DEST_ALWAYS_ALIGNED);
 
   __ bind(&return_r3);
   Counters* counters = masm->isolate()->counters();
@@ -5736,7 +5736,7 @@ void StringAddStub::Generate(MacroAssembler* masm) {
   // just allocate a new one.
   Label make_two_character_string;
   StringHelper::GenerateTwoCharacterStringTableProbe(
-      masm, r5, r6, r9, r10, r7, r8, r22, &make_two_character_string);
+      masm, r5, r6, r9, r10, r7, r8, r11, &make_two_character_string);
   __ IncrementCounter(counters->string_add_native(), 1, r5, r6);
   __ addi(sp, sp, Operand(2 * kPointerSize));
   __ Ret();
@@ -5747,7 +5747,7 @@ void StringAddStub::Generate(MacroAssembler* masm) {
   // So we can fill resulting string without two loops by a single
   // halfword store instruction
   __ li(r9, Operand(2));
-  __ AllocateAsciiString(r3, r9, r7, r8, r22, &call_runtime);
+  __ AllocateAsciiString(r3, r9, r7, r8, r11, &call_runtime);
   __ sth(r5, FieldMemOperand(r3, SeqOneByteString::kHeaderSize));
   __ IncrementCounter(counters->string_add_native(), 1, r5, r6);
   __ addi(sp, sp, Operand(2 * kPointerSize));
@@ -5903,7 +5903,7 @@ void StringAddStub::Generate(MacroAssembler* masm) {
   __ andi(r0, r8, Operand(kStringEncodingMask));
   __ beq(&non_ascii_string_add_flat_result, cr0);
 
-  __ AllocateAsciiString(r3, r9, r7, r8, r22, &call_runtime);
+  __ AllocateAsciiString(r3, r9, r7, r8, r11, &call_runtime);
   __ addi(r9, r3, Operand(SeqOneByteString::kHeaderSize - kHeapObjectTag));
   // r3: result string.
   // r10: first character of first string.
@@ -5919,7 +5919,7 @@ void StringAddStub::Generate(MacroAssembler* masm) {
   __ Ret();
 
   __ bind(&non_ascii_string_add_flat_result);
-  __ AllocateTwoByteString(r3, r9, r7, r8, r22, &call_runtime);
+  __ AllocateTwoByteString(r3, r9, r7, r8, r11, &call_runtime);
   __ addi(r9, r3, Operand(SeqTwoByteString::kHeaderSize - kHeapObjectTag));
   // r3: result string.
   // r10: first character of first string.
@@ -6678,7 +6678,7 @@ struct AheadOfTimeWriteBarrierStubList {
 
 static const AheadOfTimeWriteBarrierStubList kAheadOfTime[] = {
   // Used in RegExpExecStub.
-  { REG(r28), REG(r26), REG(r10), EMIT_REMEMBERED_SET },
+  { REG(r16), REG(r14), REG(r10), EMIT_REMEMBERED_SET },
   // Used in CompileArrayPushCall.
   // Also used in StoreIC::GenerateNormal via GenerateDictionaryStore.
   // Also used in KeyedStoreIC::GenerateGeneric.
@@ -6697,11 +6697,11 @@ static const AheadOfTimeWriteBarrierStubList kAheadOfTime[] = {
   // ElementsTransitionGenerator::GenerateMapChangeElementTransition
   // and ElementsTransitionGenerator::GenerateSmiToDouble
   // and ElementsTransitionGenerator::GenerateDoubleToObject
-  { REG(r5), REG(r6), REG(r22), EMIT_REMEMBERED_SET },
-  { REG(r5), REG(r6), REG(r22), OMIT_REMEMBERED_SET },
+  { REG(r5), REG(r6), REG(r11), EMIT_REMEMBERED_SET },
+  { REG(r5), REG(r6), REG(r11), OMIT_REMEMBERED_SET },
   // ElementsTransitionGenerator::GenerateDoubleToObject
   { REG(r9), REG(r5), REG(r3), EMIT_REMEMBERED_SET },
-  { REG(r5), REG(r9), REG(r22), EMIT_REMEMBERED_SET },
+  { REG(r5), REG(r9), REG(r11), EMIT_REMEMBERED_SET },
   // StoreArrayLiteralElementStub::Generate
   { REG(r8), REG(r3), REG(r9), EMIT_REMEMBERED_SET },
   // FastNewClosureStub::Generate
@@ -7073,7 +7073,7 @@ void ProfileEntryHookStub::Generate(MacroAssembler* masm) {
   // This should contain all kJSCallerSaved registers.
   const RegList kSavedRegs =
      kJSCallerSaved |  // Caller saved registers.
-     r30.bit();        // Saved stack pointer.
+     r15.bit();        // Saved stack pointer.
 
   // We also save lr, so the count here is one higher than the mask indicates.
   const int32_t kNumSavedRegs = kNumJSCallerSaved + 2;
@@ -7093,10 +7093,9 @@ void ProfileEntryHookStub::Generate(MacroAssembler* masm) {
   // Align the stack if necessary.
   int frame_alignment = masm->ActivationFrameAlignment();
   if (frame_alignment > kPointerSize) {
-    __ mr(r30, sp);
+    __ mr(r15, sp);
     ASSERT(IsPowerOf2(frame_alignment));
-    ASSERT(-frame_alignment == -8);
-    __ ClearRightImm(sp, sp, Operand(3));
+    __ ClearRightImm(sp, sp, Operand(WhichPowerOf2(frame_alignment)));
   }
 
 #if !defined(USE_SIMULATOR)
@@ -7111,7 +7110,8 @@ void ProfileEntryHookStub::Generate(MacroAssembler* masm) {
 #endif
 
   // PPC LINUX ABI:
-  __ addi(sp, sp, Operand(-kNumRequiredStackFrameSlots * kPointerSize));
+  __ li(r0, Operand::Zero());
+  __ StorePU(r0, MemOperand(sp, -kNumRequiredStackFrameSlots * kPointerSize));
 #else
   // Under the simulator we need to indirect the entry hook through a
   // trampoline function at a known address.
@@ -7128,7 +7128,7 @@ void ProfileEntryHookStub::Generate(MacroAssembler* masm) {
 
   // Restore the stack pointer if needed.
   if (frame_alignment > kPointerSize) {
-    __ mr(sp, r30);
+    __ mr(sp, r15);
   }
 
   // Also pop lr to get Ret(0).

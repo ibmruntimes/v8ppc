@@ -1330,10 +1330,11 @@ void RegExpMacroAssemblerPPC::CallCFunctionUsingStub(
   __ mov(code_pointer(), Operand(function));
   RegExpCEntryStub stub;
   __ CallStub(&stub);
-  if (OS::ActivationFrameAlignment() > kPointerSize) {
+
+  // Remove frame bought in PrepareCallCFunction
+  __ addi(sp, sp, Operand(kNumRequiredStackFrameSlots * kPointerSize));
+  if (masm_->ActivationFrameAlignment() > kPointerSize) {
     __ LoadP(sp, MemOperand(sp, 0));
-  } else {
-    __ addi(sp, sp, Operand(kNumRequiredStackFrameSlots * kPointerSize));
   }
   __ mov(code_pointer(), Operand(masm_->CodeObject()));
 }
@@ -1369,20 +1370,14 @@ void RegExpMacroAssemblerPPC::LoadCurrentCharacterUnchecked(int cp_offset,
 
 
 void RegExpCEntryStub::Generate(MacroAssembler* masm_) {
-  int stack_alignment = OS::ActivationFrameAlignment();
-  if (stack_alignment < kPointerSize) stack_alignment = kPointerSize;
-
-  // Stack is already aligned for call, so decrement by alignment
-  // to make room for storing the return address.
-  int extra_stack_slots = stack_alignment >> kPointerSizeLog2;
-
-  __ addi(r3, sp, Operand(-stack_alignment));
+  // Stack is already aligned for call and the LR save area allocated.
+  __ addi(r3, sp, Operand(kStackFrameLRSlot * kPointerSize));
   __ mflr(r0);
-  __ StoreP(r0, MemOperand(r3, 0));
+  __ StoreP(r0, MemOperand(r3));
 
   // PPC LINUX ABI:
-  extra_stack_slots += kNumRequiredStackFrameSlots;
-  __ addi(sp, sp, Operand(-extra_stack_slots * kPointerSize));
+  __ li(r0, Operand::Zero());
+  __ StorePU(r0, MemOperand(sp, -kNumRequiredStackFrameSlots * kPointerSize));
 
 #if !defined(USE_SIMULATOR) && \
   (defined(_AIX) || defined(V8_TARGET_ARCH_PPC64))
@@ -1396,9 +1391,9 @@ void RegExpCEntryStub::Generate(MacroAssembler* masm_) {
 
   __ Call(target);
 
-  __ addi(sp, sp, Operand(extra_stack_slots * kPointerSize));
+  __ addi(sp, sp, Operand(kNumRequiredStackFrameSlots * kPointerSize));
 
-  __ LoadP(r0, MemOperand(sp, -stack_alignment));
+  __ LoadP(r0, MemOperand(sp, kStackFrameLRSlot * kPointerSize));
   __ mtlr(r0);
   __ blr();
 }

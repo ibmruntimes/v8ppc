@@ -113,7 +113,7 @@ int OS::ActivationFrameAlignment() {
 #elif V8_TARGET_ARCH_MIPS
   return 8;
 #elif V8_TARGET_ARCH_PPC
-  return 8;
+  return 16;
 #else
   // Otherwise we just assume 16 byte alignment, i.e.:
   // - With gcc 4.4 the tree vectorization optimizer can generate code

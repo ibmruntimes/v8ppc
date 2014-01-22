@@ -855,8 +855,8 @@ void KeyedStoreIC::GenerateNonStrictArguments(MacroAssembler* masm) {
       GenerateMappedArgumentsLookup(masm, r5, r4, r6, r7, r8, &notin, &slow);
   __ StoreP(r3, mapped_location);
   __ mr(r9, r6);  // r6 is modified by GenerateMappedArgumentsLookup
-  __ mr(r22, r3);
-  __ RecordWrite(r6, r9, r22, kLRHasNotBeenSaved, kDontSaveFPRegs);
+  __ mr(r11, r3);
+  __ RecordWrite(r6, r9, r11, kLRHasNotBeenSaved, kDontSaveFPRegs);
   __ Ret();
   __ bind(&notin);
   // The unmapped lookup expects that the parameter map is in r6.
@@ -864,8 +864,8 @@ void KeyedStoreIC::GenerateNonStrictArguments(MacroAssembler* masm) {
       GenerateUnmappedArgumentsLookup(masm, r4, r6, r7, &slow);
   __ StoreP(r3, unmapped_location);
   __ mr(r9, r6);  // r6 is modified by GenerateUnmappedArgumentsLookup
-  __ mr(r22, r3);
-  __ RecordWrite(r6, r9, r22, kLRHasNotBeenSaved, kDontSaveFPRegs);
+  __ mr(r11, r3);
+  __ RecordWrite(r6, r9, r11, kLRHasNotBeenSaved, kDontSaveFPRegs);
   __ Ret();
   __ bind(&slow);
   GenerateMiss(masm, MISS);
