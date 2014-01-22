@@ -41,6 +41,9 @@
 using namespace v8::internal;
 
 
+// IA32 builds fail on GCC 4.4.6 due to a warning in this function
+// Use a pragma to disable the checking for this function
+#pragma GCC diagnostic ignored "-Wstrict-aliasing"
 int STDCALL ConvertDToICVersion(double d) {
   Address double_ptr = reinterpret_cast<Address>(&d);
   uint32_t exponent_bits = Memory::uint32_at(double_ptr + kDoubleSize / 2);
