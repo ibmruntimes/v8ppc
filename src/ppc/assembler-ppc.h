@@ -53,6 +53,9 @@
 #include "constants-ppc.h"
 #include "serialize.h"
 
+#define ABI_USES_FUNCTION_DESCRIPTORS (defined(_AIX) || \
+  (defined(V8_TARGET_ARCH_PPC64) && (__BYTE_ORDER != __LITTLE_ENDIAN)))
+
 namespace v8 {
 namespace internal {
 

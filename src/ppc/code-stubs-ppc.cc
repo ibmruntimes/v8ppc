@@ -38,6 +38,10 @@
 #include "stub-cache.h"
 #include "ppc/regexp-macro-assembler-ppc.h"
 
+#define RETURNS_OBJECT_PAIRS_IN_REGS \
+  (!V8_HOST_ARCH_PPC || !V8_TARGET_ARCH_PPC64 || \
+  __BYTE_ORDER == __LITTLE_ENDIAN)
+
 namespace v8 {
 namespace internal {
 
@@ -2920,7 +2924,7 @@ void CEntryStub::GenerateCore(MacroAssembler* masm,
 
   // PPC LINUX ABI:
   // Call C built-in.
-#if (V8_TARGET_ARCH_PPC64 && V8_HOST_ARCH_PPC)
+#if !RETURNS_OBJECT_PAIRS_IN_REGS
   if (result_size_ < 2) {
     __ mr(r3, r14);
     __ mr(r4, r16);
@@ -2944,8 +2948,7 @@ void CEntryStub::GenerateCore(MacroAssembler* masm,
 
   __ mov(isolate_reg, Operand(ExternalReference::isolate_address(isolate)));
 
-#if !defined(USE_SIMULATOR) && \
-  (defined(_AIX) || defined(V8_TARGET_ARCH_PPC64))
+#if ABI_USES_FUNCTION_DESCRIPTORS && !defined(USE_SIMULATOR)
   // Native AIX/PPC64 Linux use a function descriptor.
   __ LoadP(ToRegister(2), MemOperand(r15, kPointerSize));  // TOC
   __ LoadP(ip, MemOperand(r15, 0));  // Instruction address
@@ -2988,7 +2991,7 @@ void CEntryStub::GenerateCore(MacroAssembler* masm,
   // check for failure result
   Label failure_returned;
   STATIC_ASSERT(((kFailureTag + 1) & kFailureTagMask) == 0);
-#if (V8_TARGET_ARCH_PPC64 && V8_HOST_ARCH_PPC)
+#if !RETURNS_OBJECT_PAIRS_IN_REGS
   // If return value is on the stack, pop it to registers.
   if (result_size_ > 1) {
     ASSERT_EQ(2, result_size_);
@@ -3162,7 +3165,7 @@ void JSEntryStub::GenerateBody(MacroAssembler* masm, bool is_construct) {
   Label invoke, handler_entry, exit;
 
   // Called from C
-#if defined(_AIX) || defined(V8_TARGET_ARCH_PPC64)
+#if ABI_USES_FUNCTION_DESCRIPTORS
   __ function_descriptor();
 #endif
 
@@ -4319,8 +4322,7 @@ void RegExpExecStub::Generate(MacroAssembler* masm) {
   __ addi(code, code, Operand(Code::kHeaderSize - kHeapObjectTag));
 
 
-#if defined(USE_SIMULATOR) && \
-  (defined(_AIX) || defined(V8_TARGET_ARCH_PPC64))
+#if ABI_USES_FUNCTION_DESCRIPTORS && defined(USE_SIMULATOR)
   // Even Simulated AIX/PPC64 Linux uses a function descriptor for the
   // RegExp routine.  Extract the instruction address here since
   // DirectCEntryStub::GenerateCall will not do it for calls out to
@@ -6374,8 +6376,7 @@ void DirectCEntryStub::Generate(MacroAssembler* masm) {
 
 void DirectCEntryStub::GenerateCall(MacroAssembler* masm,
                                     Register target) {
-#if !defined(USE_SIMULATOR) && \
-  (defined(_AIX) || defined(V8_TARGET_ARCH_PPC64))
+#if ABI_USES_FUNCTION_DESCRIPTORS && !defined(USE_SIMULATOR)
   // Native AIX/PPC64 Linux use a function descriptor.
   __ LoadP(ToRegister(2), MemOperand(target, kPointerSize));  // TOC
   __ LoadP(target, MemOperand(target, 0));  // Instruction address
@@ -7103,7 +7104,7 @@ void ProfileEntryHookStub::Generate(MacroAssembler* masm) {
       reinterpret_cast<uintptr_t>(masm->isolate()->function_entry_hook());
   __ mov(ip, Operand(entry_hook));
 
-#if (defined(_AIX) || defined(V8_TARGET_ARCH_PPC64))
+#if ABI_USES_FUNCTION_DESCRIPTORS
   // Function descriptor
   __ LoadP(ToRegister(2), MemOperand(ip, kPointerSize));
   __ LoadP(ip, MemOperand(ip, 0));

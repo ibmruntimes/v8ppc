@@ -3376,7 +3376,7 @@ void Simulator::Execute() {
 
 void Simulator::CallInternal(byte *entry) {
   // Prepare to execute the code at entry
-#if defined(_AIX) || defined(V8_TARGET_ARCH_PPC64)
+#if ABI_USES_FUNCTION_DESCRIPTORS
   // entry is the function descriptor
   set_pc(*(reinterpret_cast<intptr_t *>(entry)));
 #else

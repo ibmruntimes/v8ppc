@@ -83,7 +83,7 @@ UnaryMathFunction CreateExpFunction() {
     Register temp3 = r9;
 
   // Called from C
-#if defined(_AIX) || defined(V8_TARGET_ARCH_PPC64)
+#if ABI_USES_FUNCTION_DESCRIPTORS
     __ function_descriptor();
 #endif
 
@@ -98,7 +98,7 @@ UnaryMathFunction CreateExpFunction() {
 
   CodeDesc desc;
   masm.GetCode(&desc);
-#if !(defined(_AIX) || defined(V8_TARGET_ARCH_PPC64))
+#if !ABI_USES_FUNCTION_DESCRIPTORS
   ASSERT(!RelocInfo::RequiresRelocation(desc));
 #endif
 

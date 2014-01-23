@@ -930,11 +930,11 @@ void Deserializer::ReadObject(int space_number,
   bool is_codespace = (space_number == CODE_SPACE);
   ASSERT(obj->IsCode() == is_codespace);
 #endif
-#if defined(_AIX) || defined(V8_TARGET_ARCH_PPC64)
-  // If we're on a platform that uses function_descriptors
+#if ABI_USES_FUNCTION_DESCRIPTORS
+  // If we're on a platform that uses function descriptors
   // these jump tables make use of RelocInfo::INTERNAL_REFERENCE.
   // As the V8 serialization code doesn't handle that relocation type
-  // we use this hack to fix up code that has function_descriptors
+  // we use this hack to fix up code that has function descriptors.
   if (space_number == CODE_SPACE) {
     Code * code = reinterpret_cast<Code*>(HeapObject::FromAddress(address));
     for (RelocIterator it(code); !it.done(); it.next()) {

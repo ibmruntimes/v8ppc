@@ -3654,8 +3654,7 @@ void MacroAssembler::CallCFunctionHelper(Register function,
   // Just call directly. The function called cannot cause a GC, or
   // allow preemption, so the return address in the link register
   // stays correct.
-#if !defined(USE_SIMULATOR) && \
-  (defined(_AIX) || V8_TARGET_ARCH_PPC64)
+#if ABI_USES_FUNCTION_DESCRIPTORS && !defined(USE_SIMULATOR)
   // AIX uses a function descriptor. When calling C code be aware
   // of this descriptor and pick up values from it
   LoadP(ToRegister(2), MemOperand(function, kPointerSize));

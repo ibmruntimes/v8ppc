@@ -140,7 +140,7 @@ RegExpMacroAssemblerPPC::RegExpMacroAssemblerPPC(
   ASSERT_EQ(0, registers_to_save % 2);
 
   // Called from C
-#if defined(_AIX) || V8_TARGET_ARCH_PPC64
+#if ABI_USES_FUNCTION_DESCRIPTORS
   __ function_descriptor();
 #endif
 
@@ -1379,8 +1379,7 @@ void RegExpCEntryStub::Generate(MacroAssembler* masm_) {
   __ li(r0, Operand::Zero());
   __ StorePU(r0, MemOperand(sp, -kNumRequiredStackFrameSlots * kPointerSize));
 
-#if !defined(USE_SIMULATOR) && \
-  (defined(_AIX) || defined(V8_TARGET_ARCH_PPC64))
+#if ABI_USES_FUNCTION_DESCRIPTORS && !defined(USE_SIMULATOR)
   // Native AIX/PPC64 Linux use a function descriptor.
   __ LoadP(ToRegister(2), MemOperand(r26, kPointerSize));  // TOC
   __ LoadP(ip, MemOperand(r26, 0));  // Instruction address
