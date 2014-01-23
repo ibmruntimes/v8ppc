@@ -571,6 +571,9 @@ Thread::Thread(const Options& options)
     : data_(new PlatformData),
       stack_size_(options.stack_size()),
       start_semaphore_(NULL) {
+  if (stack_size_ > 0 && stack_size_ < PTHREAD_STACK_MIN) {
+    stack_size_ = PTHREAD_STACK_MIN;
+  }
   set_name(options.name());
 }
 
@@ -641,7 +644,7 @@ void Thread::Start() {
     stack_size = 2 * MB;
   }
 #endif
-  if (stack_size > PTHREAD_STACK_MIN) {
+  if (stack_size > 0) {
     result = pthread_attr_setstacksize(&attr, stack_size);
     ASSERT_EQ(0, result);
   }
