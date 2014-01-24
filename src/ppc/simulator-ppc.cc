@@ -1948,7 +1948,9 @@ bool Simulator::DecodeExt2_10bit(Instruction *instr) {
 }
 
 
-void Simulator::DecodeExt2_9bit(Instruction* instr) {
+bool Simulator::DecodeExt2_9bit_part1(Instruction* instr) {
+  bool found = true;
+
   int opcode = instr->Bits(9, 1) << 1;
   switch (opcode) {
     case TW: {
@@ -2075,6 +2077,20 @@ void Simulator::DecodeExt2_9bit(Instruction* instr) {
       break;
     }
 #endif
+    default: {
+      found = false;
+      break;
+    }
+  }
+
+  return found;
+}
+
+
+
+void Simulator::DecodeExt2_9bit_part2(Instruction* instr) {
+  int opcode = instr->Bits(9, 1) << 1;
+  switch (opcode) {
     case CNTLZWX: {
       int rs = instr->RSValue();
       int ra = instr->RAValue();
@@ -2241,8 +2257,11 @@ void Simulator::DecodeExt2_9bit(Instruction* instr) {
       int rb = instr->RBValue();
       int32_t ra_val = get_register(ra);
       int32_t rb_val = get_register(rb);
-      // result is undefined if divisor is zero.
-      int32_t alu_out = rb_val ? ra_val / rb_val : -1;
+      // result is undefined if divisor is zero or if operation
+      // is 0x80000000 / -1.
+      int32_t alu_out = (rb_val == 0 || (ra_val == kMinInt && rb_val == -1)) ?
+        -1 :
+        ra_val / rb_val;
       set_register(rt, alu_out);
       if (instr->Bit(0)) {  // RC bit set
         SetCR0(alu_out);
@@ -2257,8 +2276,14 @@ void Simulator::DecodeExt2_9bit(Instruction* instr) {
       int rb = instr->RBValue();
       int64_t ra_val = get_register(ra);
       int64_t rb_val = get_register(rb);
-      // result is undefined if divisor is zero.
-      int64_t alu_out = rb_val ? ra_val / rb_val : -1;
+      int64_t one = 1;  // work-around gcc
+      int64_t kMinLongLong = (one << 63);
+      // result is undefined if divisor is zero or if operation
+      // is 0x80000000_00000000 / -1.
+      int64_t alu_out = (rb_val == 0 ||
+                         (ra_val == kMinLongLong && rb_val == -1)) ?
+        -1 :
+        ra_val / rb_val;
       set_register(rt, alu_out);
       if (instr->Bit(0)) {  // RC bit set
         SetCR0(alu_out);
@@ -2473,7 +2498,9 @@ void Simulator::DecodeExt2(Instruction* instr) {
     if (DecodeExt2_10bit(instr))
         return;
     // Now look at the lesser encodings
-    DecodeExt2_9bit(instr);
+    if (DecodeExt2_9bit_part1(instr))
+        return;
+    DecodeExt2_9bit_part2(instr);
 }
 
 
