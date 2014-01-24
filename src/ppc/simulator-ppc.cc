@@ -1344,11 +1344,20 @@ void Simulator::SoftwareInterrupt(Instruction* instr) {
         if (redirection->type() == ExternalReference::DIRECT_API_CALL) {
           SimulatorRuntimeDirectApiCall target =
             reinterpret_cast<SimulatorRuntimeDirectApiCall>(external);
-          v8::Handle<v8::Value> result = target(arg1);
+#if ABI_RETURNS_HANDLES_IN_REGS
+          intptr_t p0 = arg0;
+#else
+          intptr_t p0 = arg1;
+#endif
+          v8::Handle<v8::Value> result = target(p0);
           if (::v8::internal::FLAG_trace_sim) {
             PrintF("Returned %p\n", reinterpret_cast<void *>(*result));
           }
+#if ABI_RETURNS_HANDLES_IN_REGS
+          arg0 = (intptr_t)*result;
+#else
           *(reinterpret_cast<intptr_t*>(arg0)) = (intptr_t) *result;
+#endif
           set_register(r3, arg0);
         } else {
           SimulatorRuntimeDirectApiCallNew target =
@@ -1374,19 +1383,30 @@ void Simulator::SoftwareInterrupt(Instruction* instr) {
         if (redirection->type() == ExternalReference::DIRECT_GETTER_CALL) {
           SimulatorRuntimeDirectGetterCall target =
             reinterpret_cast<SimulatorRuntimeDirectGetterCall>(external);
-#if !(defined(_AIX) || defined(V8_TARGET_ARCH_PPC64))
-          arg1 = *(reinterpret_cast<intptr_t *>(arg1));
+#if ABI_RETURNS_HANDLES_IN_REGS
+          intptr_t p0 = arg0;
+          intptr_t p1 = arg1;
+#else
+          intptr_t p0 = arg1;
+          intptr_t p1 = arg2;
 #endif
-          v8::Handle<v8::Value> result = target(arg1, arg2);
+#if !ABI_PASSES_HANDLES_IN_REGS
+          p0 = *(reinterpret_cast<intptr_t *>(p0));
+#endif
+          v8::Handle<v8::Value> result = target(p0, p1);
           if (::v8::internal::FLAG_trace_sim) {
             PrintF("Returned %p\n", reinterpret_cast<void *>(*result));
           }
+#if ABI_RETURNS_HANDLES_IN_REGS
+          arg0 = (intptr_t)*result;
+#else
           *(reinterpret_cast<intptr_t*>(arg0)) = (intptr_t) *result;
+#endif
           set_register(r3, arg0);
         } else {
           SimulatorRuntimeDirectGetterCallNew target =
             reinterpret_cast<SimulatorRuntimeDirectGetterCallNew>(external);
-#if !(defined(_AIX) || defined(V8_TARGET_ARCH_PPC64))
+#if !ABI_PASSES_HANDLES_IN_REGS
           arg0 = *(reinterpret_cast<intptr_t *>(arg0));
 #endif
           target(arg0, arg1);
@@ -1408,20 +1428,33 @@ void Simulator::SoftwareInterrupt(Instruction* instr) {
         if (redirection->type() == ExternalReference::PROFILING_GETTER_CALL) {
           SimulatorRuntimeProfilingGetterCall target =
             reinterpret_cast<SimulatorRuntimeProfilingGetterCall>(external);
-#if !(defined(_AIX) || defined(V8_TARGET_ARCH_PPC64))
-          arg1 = *(reinterpret_cast<intptr_t *>(arg1));
+#if ABI_RETURNS_HANDLES_IN_REGS
+          intptr_t p0 = arg0;
+          intptr_t p1 = arg1;
+          intptr_t p2 = arg2;
+#else
+          intptr_t p0 = arg1;
+          intptr_t p1 = arg2;
+          intptr_t p2 = arg3;
 #endif
-          v8::Handle<v8::Value> result = target(arg1, arg2, arg3);
+#if !ABI_PASSES_HANDLES_IN_REGS
+          p0 = *(reinterpret_cast<intptr_t *>(p0));
+#endif
+          v8::Handle<v8::Value> result = target(p0, p1, p2);
           if (::v8::internal::FLAG_trace_sim) {
             PrintF("Returned %p\n", reinterpret_cast<void *>(*result));
           }
+#if ABI_RETURNS_HANDLES_IN_REGS
+          arg0 = (intptr_t)*result;
+#else
           *(reinterpret_cast<intptr_t*>(arg0)) = (intptr_t) *result;
+#endif
           set_register(r3, arg0);
         } else {
           SimulatorRuntimeProfilingGetterCallNew target =
             reinterpret_cast<SimulatorRuntimeProfilingGetterCallNew>(
               external);
-#if !(defined(_AIX) || defined(V8_TARGET_ARCH_PPC64))
+#if !ABI_PASSES_HANDLES_IN_REGS
           arg0 = *(reinterpret_cast<intptr_t *>(arg0));
 #endif
           target(arg0, arg1, arg2);

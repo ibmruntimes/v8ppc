@@ -38,10 +38,6 @@
 #include "stub-cache.h"
 #include "ppc/regexp-macro-assembler-ppc.h"
 
-#define RETURNS_OBJECT_PAIRS_IN_REGS \
-  (!V8_HOST_ARCH_PPC || !V8_TARGET_ARCH_PPC64 || \
-  __BYTE_ORDER == __LITTLE_ENDIAN)
-
 namespace v8 {
 namespace internal {
 
@@ -2922,9 +2918,8 @@ void CEntryStub::GenerateCore(MacroAssembler* masm,
     __ stw(r4, MemOperand(r3));
   }
 
-  // PPC LINUX ABI:
   // Call C built-in.
-#if !RETURNS_OBJECT_PAIRS_IN_REGS
+#if V8_TARGET_ARCH_PPC64 && !ABI_RETURNS_OBJECT_PAIRS_IN_REGS
   if (result_size_ < 2) {
     __ mr(r3, r14);
     __ mr(r4, r16);
@@ -2939,7 +2934,7 @@ void CEntryStub::GenerateCore(MacroAssembler* masm,
     __ mr(r5, r16);
     isolate_reg = r6;
   }
-#else  // 32-bit linux/AIX or 64-bit intel simulator
+#else
   // r3 = argc, r4 = argv
   __ mr(r3, r14);
   __ mr(r4, r16);
@@ -2991,7 +2986,7 @@ void CEntryStub::GenerateCore(MacroAssembler* masm,
   // check for failure result
   Label failure_returned;
   STATIC_ASSERT(((kFailureTag + 1) & kFailureTagMask) == 0);
-#if !RETURNS_OBJECT_PAIRS_IN_REGS
+#if V8_TARGET_ARCH_PPC64 && !ABI_RETURNS_OBJECT_PAIRS_IN_REGS
   // If return value is on the stack, pop it to registers.
   if (result_size_ > 1) {
     ASSERT_EQ(2, result_size_);

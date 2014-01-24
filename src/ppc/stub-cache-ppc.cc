@@ -902,22 +902,27 @@ static void GenerateFastApiDirectCall(MacroAssembler* masm,
   Address function_address = v8::ToCData<Address>(api_call_info->callback());
   bool returns_handle =
       !CallbackTable::ReturnsVoid(masm->isolate(), function_address);
+#if !ABI_RETURNS_HANDLES_IN_REGS
+  bool alloc_return_buf = returns_handle;
+#else
+  bool alloc_return_buf = false;
+#endif
 
   // Allocate the v8::Arguments structure in the arguments' space since
   // it's not controlled by GC.
   // PPC LINUX ABI:
   //
-  // Create 5 or 6 extra slots on stack (depending on returns_handle):
+  // Create 5 or 6 extra slots on stack (depending on alloc_return_buf):
   //    [0] space for DirectCEntryStub's LR save
   //    [1] (optional) space for pointer-sized non-scalar return value (r3)
   //    [2-5] v8:Arguments
   //
-  // If returns_handle, we shift the arguments over a register
+  // If alloc_return_buf, we shift the arguments over a register
   // (e.g. r3 -> r4) to allow for the return value buffer in implicit
   // first arg.  CallApiFunctionAndReturn will setup r3.
-  int kApiStackSpace = 5 + (returns_handle ? 1 : 0);
-  int kArgumentsSlot = kStackFrameExtraParamSlot + (returns_handle ? 2 : 1);
-  Register arg0 = returns_handle ? r4 : r3;
+  int kApiStackSpace = 5 + (alloc_return_buf ? 1 : 0);
+  int kArgumentsSlot = kStackFrameExtraParamSlot + (alloc_return_buf ? 2 : 1);
+  Register arg0 = alloc_return_buf ? r4 : r3;
 
   FrameScope frame_scope(masm, StackFrame::MANUAL);
   __ EnterExitFrame(false, kApiStackSpace);
@@ -1467,34 +1472,40 @@ void BaseLoadStubCompiler::GenerateLoadCallback(
   Address getter_address = v8::ToCData<Address>(callback->getter());
   bool returns_handle =
       !CallbackTable::ReturnsVoid(isolate(), getter_address);
+#if !ABI_RETURNS_HANDLES_IN_REGS
+  bool alloc_return_buf = returns_handle;
+#else
+  bool alloc_return_buf = false;
+#endif
 
-  // PPC LINUX 32-bit ABI:
+  // If ABI passes Handles (pointer-sized struct) in a register:
   //
-  // Create 3 or 4 extra slots on stack (depending on returns_handle):
-  //    [0] space for DirectCEntryStub's LR save
-  //    [1] (optional) space for pointer-sized non-scalar return value (r3)
-  //    [2] copy of pointer-sized non-scalar first arg
-  //    [3] AccessorInfo
-  //
-  // PPC LINUX 64-bit / AIX ABI:
-  //
-  // Create 2 or 3 extra slots on stack (depending on returns_handle):
+  // Create 2 or 3 extra slots on stack (depending on alloc_return_buf):
   //    [0] space for DirectCEntryStub's LR save
   //    [1] (optional) space for pointer-sized non-scalar return value (r3)
   //    [2] AccessorInfo
   //
-  // If returns_handle, we shift the arguments over a register
+  // Otherwise:
+  //
+  // Create 3 or 4 extra slots on stack (depending on alloc_return_buf):
+  //    [0] space for DirectCEntryStub's LR save
+  //    [1] (optional) space for pointer-sized non-scalar return value (r3)
+  //    [2] copy of Handle (first arg)
+  //    [3] AccessorInfo
+  //
+  // If alloc_return_buf, we shift the arguments over a register
   // (e.g. r3 -> r4) to allow for the return value buffer in implicit
   // first arg.  CallApiFunctionAndReturn will setup r3.
-#if (defined(_AIX) || defined(V8_TARGET_ARCH_PPC64))
-  int kAccessorInfoSlot = kStackFrameExtraParamSlot + (returns_handle ? 2 : 1);
+#if ABI_PASSES_HANDLES_IN_REGS
+  int kAccessorInfoSlot = kStackFrameExtraParamSlot +
+    (alloc_return_buf ? 2 : 1);
 #else
-  int kArg0Slot = kStackFrameExtraParamSlot + (returns_handle ? 2 : 1);
+  int kArg0Slot = kStackFrameExtraParamSlot + (alloc_return_buf ? 2 : 1);
   int kAccessorInfoSlot = kArg0Slot + 1;
 #endif
   int kApiStackSpace = kAccessorInfoSlot - kStackFrameExtraParamSlot + 1;
-  Register arg0 = (returns_handle ? r4 : r3);
-  Register arg1 = (returns_handle ? r5 : r4);
+  Register arg0 = (alloc_return_buf ? r4 : r3);
+  Register arg1 = (alloc_return_buf ? r5 : r4);
 
   __ mr(arg1, scratch2());  // Saved in case scratch2 == arg0.
   __ mr(arg0, sp);  // arg0 = Handle<Name>
@@ -1502,7 +1513,7 @@ void BaseLoadStubCompiler::GenerateLoadCallback(
   FrameScope frame_scope(masm(), StackFrame::MANUAL);
   __ EnterExitFrame(false, kApiStackSpace);
 
-#if !(defined(_AIX) || defined(V8_TARGET_ARCH_PPC64))
+#if !ABI_PASSES_HANDLES_IN_REGS
   // pass 1st arg by reference
   __ StoreP(arg0,
             MemOperand(sp, kArg0Slot * kPointerSize));

@@ -2421,6 +2421,7 @@ void MacroAssembler::CallApiFunctionAndReturn(ExternalReference function,
     PopSafepointRegisters();
   }
 
+#if !ABI_RETURNS_HANDLES_IN_REGS
   if (returns_handle) {
     // PPC LINUX ABI
     // The return value is pointer-sized non-scalar value.
@@ -2428,6 +2429,7 @@ void MacroAssembler::CallApiFunctionAndReturn(ExternalReference function,
     // pass as an implicit first argument.
     addi(r3, sp, Operand((kStackFrameExtraParamSlot + 1) * kPointerSize));
   }
+#endif
 
   ASSERT(!thunk_last_arg.is(scratch));
   Label profiler_disabled;
@@ -2472,8 +2474,10 @@ void MacroAssembler::CallApiFunctionAndReturn(ExternalReference function,
   if (returns_handle) {
     Label load_return_value;
 
+#if !ABI_RETURNS_HANDLES_IN_REGS
     // Retrieve return value from stack buffer
     LoadP(r3, MemOperand(r3));
+#endif
 
     cmpi(r3, Operand::Zero());
     beq(&load_return_value);
