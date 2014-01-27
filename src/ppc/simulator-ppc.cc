@@ -1365,6 +1365,47 @@ void Simulator::SoftwareInterrupt(Instruction* instr) {
           target(arg0);
         }
       } else if (
+          redirection->type() == ExternalReference::PROFILING_API_CALL ||
+          redirection->type() == ExternalReference::PROFILING_API_CALL_NEW) {
+        // See callers of MacroAssembler::CallApiFunctionAndReturn for
+        // explanation of register usage.
+        if (::v8::internal::FLAG_trace_sim || !stack_aligned) {
+          PrintF("Call to host function at %p args %08" V8PRIxPTR " %08"
+                 V8PRIxPTR,
+                 reinterpret_cast<void*>(external), arg0, arg1);
+          if (!stack_aligned) {
+            PrintF(" with unaligned stack %08" V8PRIxPTR
+                   "\n", get_register(sp));
+          }
+          PrintF("\n");
+        }
+        CHECK(stack_aligned);
+        if (redirection->type() == ExternalReference::PROFILING_API_CALL) {
+          SimulatorRuntimeProfilingApiCall target =
+              reinterpret_cast<SimulatorRuntimeProfilingApiCall>(external);
+#if ABI_RETURNS_HANDLES_IN_REGS
+          intptr_t p0 = arg0;
+          intptr_t p1 = arg1;
+#else
+          intptr_t p0 = arg1;
+          intptr_t p1 = arg2;
+#endif
+          v8::Handle<v8::Value> result = target(p0, p1);
+          if (::v8::internal::FLAG_trace_sim) {
+            PrintF("Returned %p\n", reinterpret_cast<void *>(*result));
+          }
+#if ABI_RETURNS_HANDLES_IN_REGS
+          arg0 = (intptr_t)*result;
+#else
+          *(reinterpret_cast<intptr_t*>(arg0)) = (intptr_t) *result;
+#endif
+          set_register(r3, arg0);
+        } else {
+          SimulatorRuntimeProfilingApiCallNew target =
+              reinterpret_cast<SimulatorRuntimeProfilingApiCallNew>(external);
+          target(arg0, arg1);
+        }
+      } else if (
           redirection->type() == ExternalReference::DIRECT_GETTER_CALL ||
           redirection->type() == ExternalReference::DIRECT_GETTER_CALL_NEW) {
         // See callers of MacroAssembler::CallApiFunctionAndReturn for
