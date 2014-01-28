@@ -4780,7 +4780,7 @@ void LCodeGen::DoSmiUntag(LSmiUntag* instr) {
 
 void LCodeGen::EmitNumberUntagD(Register input_reg,
                                 DoubleRegister result_reg,
-                                bool allow_undefined_as_nan,
+                                bool can_convert_undefined_to_nan,
                                 bool deoptimize_on_minus_zero,
                                 LEnvironment* env,
                                 NumberUntagDMode mode) {
@@ -4788,16 +4788,14 @@ void LCodeGen::EmitNumberUntagD(Register input_reg,
 
   Label load_smi, heap_number, done;
 
-  STATIC_ASSERT(NUMBER_CANDIDATE_IS_ANY_TAGGED_CONVERT_HOLE >
-                NUMBER_CANDIDATE_IS_ANY_TAGGED);
-  if (mode >= NUMBER_CANDIDATE_IS_ANY_TAGGED) {
+  if (mode == NUMBER_CANDIDATE_IS_ANY_TAGGED) {
     // Smi check.
     __ UntagAndJumpIfSmi(scratch, input_reg, &load_smi);
 
     // Heap number map check.
     __ lw(scratch, FieldMemOperand(input_reg, HeapObject::kMapOffset));
     __ LoadRoot(at, Heap::kHeapNumberMapRootIndex);
-    if (!allow_undefined_as_nan) {
+    if (!can_convert_undefined_to_nan) {
       DeoptimizeIf(ne, env, scratch, Operand(at));
     } else {
       Label heap_number, convert;
@@ -4805,10 +4803,6 @@ void LCodeGen::EmitNumberUntagD(Register input_reg,
 
       // Convert undefined (and hole) to NaN.
       __ LoadRoot(at, Heap::kUndefinedValueRootIndex);
-      if (mode == NUMBER_CANDIDATE_IS_ANY_TAGGED_CONVERT_HOLE) {
-        __ Branch(&convert, eq, input_reg, Operand(at));
-        __ LoadRoot(at, Heap::kTheHoleValueRootIndex);
-      }
       DeoptimizeIf(ne, env, input_reg, Operand(at));
 
       __ bind(&convert);
@@ -4956,21 +4950,13 @@ void LCodeGen::DoNumberUntagD(LNumberUntagD* instr) {
   Register input_reg = ToRegister(input);
   DoubleRegister result_reg = ToDoubleRegister(result);
 
-  NumberUntagDMode mode = NUMBER_CANDIDATE_IS_ANY_TAGGED;
   HValue* value = instr->hydrogen()->value();
-  if (value->type().IsSmi()) {
-    mode = NUMBER_CANDIDATE_IS_SMI;
-  } else if (value->IsLoadKeyed()) {
-    HLoadKeyed* load = HLoadKeyed::cast(value);
-    if (load->UsesMustHandleHole()) {
-      if (load->hole_mode() == ALLOW_RETURN_HOLE) {
-        mode = NUMBER_CANDIDATE_IS_ANY_TAGGED_CONVERT_HOLE;
-      }
-    }
-  }
+
+  NumberUntagDMode mode = value->representation().IsSmi() ?
+  NUMBER_CANDIDATE_IS_SMI : NUMBER_CANDIDATE_IS_ANY_TAGGED;
 
   EmitNumberUntagD(input_reg, result_reg,
-                   instr->hydrogen()->allow_undefined_as_nan(),
+                   instr->hydrogen()->can_convert_undefined_to_nan(),
                    instr->hydrogen()->deoptimize_on_minus_zero(),
                    instr->environment(),
                    mode);

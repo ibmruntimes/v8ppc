@@ -1539,6 +1539,18 @@ LInstruction* LChunkBuilder::DoMultiplyAdd(HMul* mul, HValue* addend) {
 }
 
 
+
+LInstruction* LChunkBuilder::DoCompareHoleAndBranch(
+    HCompareHoleAndBranch* instr) {
+/*
+  LOperand* value = UseRegisterAtStart(instr->value());
+  return new(zone()) LCmpHoleAndBranch(value);
+*/
+ return NULL;
+}
+
+
+
 LInstruction* LChunkBuilder::DoAdd(HAdd* instr) {
   if (instr->representation().IsSmiOrInteger32()) {
     ASSERT(instr->left()->representation().Equals(instr->representation()));
