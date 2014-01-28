@@ -87,24 +87,42 @@ class CpuFeatures : public AllStatic {
   // Check whether a feature is supported by the target CPU.
   static bool IsSupported(CpuFeature f) {
     ASSERT(initialized_);
-    return (supported_ & (1u << f)) != 0;
+    return Check(f, supported_);
   }
 
   static bool IsFoundByRuntimeProbingOnly(CpuFeature f) {
     ASSERT(initialized_);
-    return (found_by_runtime_probing_only_ &
-            (static_cast<uint64_t>(1) << f)) != 0;
+    return Check(f, found_by_runtime_probing_only_);
   }
 
   static bool IsSafeForSnapshot(CpuFeature f) {
-    return (IsSupported(f) &&
+    return Check(f, cross_compile_) ||
+           (IsSupported(f) &&
             (!Serializer::enabled() || !IsFoundByRuntimeProbingOnly(f)));
   }
 
   static unsigned cache_line_size_log2() { return cache_line_size_log2_; }
   static unsigned cache_line_size() { return (1 << cache_line_size_log2_); }
 
+  static bool VerifyCrossCompiling() {
+    return cross_compile_ == 0;
+  }
+
+  static bool VerifyCrossCompiling(CpuFeature f) {
+    unsigned mask = flag2set(f);
+    return cross_compile_ == 0 ||
+           (cross_compile_ & mask) == mask;
+  }
+
  private:
+  static bool Check(CpuFeature f, unsigned set) {
+    return (set & flag2set(f)) != 0;
+  }
+
+  static unsigned flag2set(CpuFeature f) {
+    return 1u << f;
+  }
+
 #ifdef DEBUG
   static bool initialized_;
 #endif
@@ -112,7 +130,10 @@ class CpuFeatures : public AllStatic {
   static unsigned found_by_runtime_probing_only_;
   static unsigned cache_line_size_log2_;
 
+  static unsigned cross_compile_;
+
   friend class ExternalReference;
+  friend class PlatformFeatureScope;
   DISALLOW_COPY_AND_ASSIGN(CpuFeatures);
 };
 
@@ -220,7 +241,7 @@ struct Register {
 // These constants are used in several locations, including static initializers
 const int kRegister_no_reg_Code = -1;
 const int kRegister_r0_Code = 0;
-const int kRegister_sp_Code = 1;  // todo - rename to SP
+const int kRegister_sp_Code = 1;
 const int kRegister_r2_Code = 2;  // special on PowerPC
 const int kRegister_r3_Code = 3;
 const int kRegister_r4_Code = 4;
@@ -231,7 +252,7 @@ const int kRegister_r8_Code = 8;
 const int kRegister_r9_Code = 9;
 const int kRegister_r10_Code = 10;
 const int kRegister_r11_Code = 11;
-const int kRegister_ip_Code = 12;  // todo - fix
+const int kRegister_ip_Code = 12;
 const int kRegister_r13_Code = 13;
 const int kRegister_r14_Code = 14;
 const int kRegister_r15_Code = 15;
@@ -266,10 +287,8 @@ const Register r7  = { kRegister_r7_Code };
 const Register r8  = { kRegister_r8_Code };
 const Register r9  = { kRegister_r9_Code };
 const Register r10 = { kRegister_r10_Code };
-// Used as lithium codegen scratch register.
 const Register r11 = { kRegister_r11_Code };
 const Register ip  = { kRegister_ip_Code };
-// Used as roots register.
 const Register r13  = { kRegister_r13_Code };
 const Register r14  = { kRegister_r14_Code };
 const Register r15  = { kRegister_r15_Code };
@@ -278,7 +297,6 @@ const Register r16  = { kRegister_r16_Code };
 const Register r17  = { kRegister_r17_Code };
 const Register r18  = { kRegister_r18_Code };
 const Register r19  = { kRegister_r19_Code };
-// Used as context register.
 const Register r20  = { kRegister_r20_Code };
 const Register r21  = { kRegister_r21_Code };
 const Register r22  = { kRegister_r22_Code };
