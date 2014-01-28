@@ -69,7 +69,7 @@ static unsigned CpuFeaturesImpliedByCompiler() {
 }
 
 
-#if !defined(_AIX)
+#if !V8_OS_AIX
 // This function uses types in elf.h
 static const char *read_cpu_type() {
   char *result = NULL;
@@ -139,7 +139,7 @@ void CpuFeatures::Probe() {
   // Detect whether frim instruction is supported (POWER5+)
   // For now we will just check for processors we know do not
   // support it
-#if !defined(_AIX)
+#if !V8_OS_AIX
   if (!is_processor("ppc970") /* G5 */ && !is_processor("ppc7450") /* G4 */) {
     // Assume support
     supported_ |= (1u << FPU);
