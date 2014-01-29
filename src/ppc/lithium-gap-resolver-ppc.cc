@@ -245,7 +245,7 @@ void LGapResolver::EmitMove(int index) {
       if (cgen_->IsInteger32(constant_source)) {
         cgen_->EmitLoadIntegerConstant(constant_source, dst);
       } else {
-        __ LoadObject(dst, cgen_->ToHandle(constant_source));
+        __ Move(dst, cgen_->ToHandle(constant_source));
       }
     } else if (destination->IsDoubleRegister()) {
       DoubleRegister result = cgen_->ToDoubleRegister(destination);
@@ -257,8 +257,8 @@ void LGapResolver::EmitMove(int index) {
       if (cgen_->IsInteger32(constant_source)) {
         cgen_->EmitLoadIntegerConstant(constant_source, kSavedValueRegister);
       } else {
-        __ LoadObject(kSavedValueRegister,
-                      cgen_->ToHandle(constant_source));
+        __ Move(kSavedValueRegister,
+                cgen_->ToHandle(constant_source));
       }
       __ StoreP(kSavedValueRegister, cgen_->ToMemOperand(destination));
     }

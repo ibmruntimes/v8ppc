@@ -162,20 +162,25 @@ class CpuFeatures : public AllStatic {
 // Core register
 struct Register {
   static const int kNumRegisters = 32;
-  static const int kMaxNumAllocatableRegisters = 8;  // r3-r10
+  static const int kMaxNumAllocatableRegisters = 9;  // r3-r10 and cp
   static const int kSizeInBytes = kPointerSize;
+  static const int kCpRegister = 18;  // cp is r18
 
   inline static int NumAllocatableRegisters();
 
   static int ToAllocationIndex(Register reg) {
-    int index = reg.code() - 3;  // r0-r2 are skipped
+    int index = reg.is(from_code(kCpRegister)) ?
+      kMaxNumAllocatableRegisters - 1 :  // Return last index for 'cp'.
+      reg.code() - 3;  // r0-r2 are skipped
     ASSERT(index < kMaxNumAllocatableRegisters);
     return index;
   }
 
   static Register FromAllocationIndex(int index) {
     ASSERT(index >= 0 && index < kMaxNumAllocatableRegisters);
-    return from_code(index + 3);  // r0-r2 are skipped
+    return index == kMaxNumAllocatableRegisters - 1 ?
+      from_code(kCpRegister) :  // Last index is always the 'cp' register.
+      from_code(index + 3);  // r0-r2 are skipped
   }
 
   static const char* AllocationIndexToString(int index) {
@@ -188,27 +193,8 @@ struct Register {
       "r7",
       "r8",
       "r9",
-      "r10",  // currently last allocated register
-      "r11",  // lithium scratch
-      "r12",  // ip
-      "r13",
-      "r14",
-      "r15",
-      "r16",
-      "r17",
-      "r18",
-      "r19",
-      "r20",
-      "r21",
-      "r22",
-      "r23",
-      "r24",
-      "r25",
-      "r26",
-      "r27",
-      "r28",
-      "r29",
-      "r30",
+      "r10",
+      "cp",
     };
     return names[index];
   }
@@ -913,6 +899,10 @@ class Assembler : public AssemblerBase {
   void cmpl(Register src1, Register src2, CRegister cr = cr7);
 
   void mov(Register dst, const Operand& src);
+
+  // Load the position of the label relative to the generated code object
+  // pointer in a register.
+  void mov_label_offset(Register dst, Label* label);
 
   // Multiply instructions
   void mul(Register dst, Register src1, Register src2,

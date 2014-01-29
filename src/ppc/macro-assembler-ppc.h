@@ -1378,8 +1378,7 @@ class MacroAssembler: public Assembler {
     blt(not_smi_label);
   }
 #endif
-  inline void JumpIfNotUnsignedSmiCandidate(Register value, Register scratch,
-                                            Label* not_smi_label) {
+  inline void TestUnsignedSmiCandidate(Register value, Register scratch) {
     // The test is different for unsigned int values. Since we need
     // the value to be in the range of a positive smi, we can't
     // handle any of the high bits being set in the value.
@@ -1387,6 +1386,10 @@ class MacroAssembler: public Assembler {
                  kBitsPerPointer - 1,
                  kBitsPerPointer - 1 - kSmiShift,
                  scratch);
+  }
+  inline void JumpIfNotUnsignedSmiCandidate(Register value, Register scratch,
+                                            Label* not_smi_label) {
+    TestUnsignedSmiCandidate(value, scratch);
     bne(not_smi_label, cr0);
   }
 

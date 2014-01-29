@@ -6985,15 +6985,16 @@ class SharedFunctionInfo: public HeapObject {
   static const int kCountersOffset =
     kFunctionTokenPositionOffset + kIntSize;
 
-  static const int kOptCountOffset = kCountersOffset + kIntSize;
+  static const int kOptCountAndBailoutReasonOffset =
+    kCountersOffset + kIntSize;
 
   // Total size.
-  static const int kSize = kOptCountOffset + kIntSize;
+  static const int kSize = kOptCountAndBailoutReasonOffset + kIntSize;
 
 #else
 #error Unknown byte ordering
-  #endif  // Big endian
-  #endif  // 64-bit
+#endif  // Big endian
+#endif  // 64-bit
 
 
   // The construction counter for inobject slack tracking is stored in the
