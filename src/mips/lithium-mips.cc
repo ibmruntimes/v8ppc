@@ -1546,7 +1546,7 @@ LInstruction* LChunkBuilder::DoCompareHoleAndBranch(
   LOperand* value = UseRegisterAtStart(instr->value());
   return new(zone()) LCmpHoleAndBranch(value);
 */
- return NULL;
+  return NULL;
 }
 
 
