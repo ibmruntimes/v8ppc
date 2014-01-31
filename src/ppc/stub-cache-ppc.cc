@@ -728,20 +728,26 @@ static void GenerateFastApiDirectCall(MacroAssembler* masm,
   // Prepare arguments.
   __ addi(r5, sp, Operand(3 * kPointerSize));
 
+#if !ABI_RETURNS_HANDLES_IN_REGS
+  bool alloc_return_buf = true;
+#else
+  bool alloc_return_buf = false;
+#endif
+
   // Allocate the v8::Arguments structure in the arguments' space since
   // it's not controlled by GC.
   // PPC LINUX ABI:
   //
-  // Create 6 extra slots on stack:
+  // Create 5 or 6 extra slots on stack (depending on alloc_return_buf):
   //    [0] space for DirectCEntryStub's LR save
   //    [1] space for pointer-sized non-scalar return value (r3)
   //    [2-5] v8:Arguments
   //
-  // We shift the arguments over a register (e.g. r3 -> r4) to allow
-  // for the return value buffer in implicit first arg.
-  // CallApiFunctionAndReturn will setup r3.
-  const int kApiStackSpace = 6;
-  Register arg0 = r4;
+  // If alloc_return buf, we shift the arguments over a register
+  // (e.g. r3 -> r4) to allow for the return value buffer in implicit
+  // first arg.  CallApiFunctionAndReturn will setup r3.
+  int kApiStackSpace = 5 + (alloc_return_buf ? 1 : 0);
+  Register arg0 = alloc_return_buf ? r4 : r3;
 
   FrameScope frame_scope(masm, StackFrame::MANUAL);
   __ EnterExitFrame(false, kApiStackSpace);
@@ -750,7 +756,8 @@ static void GenerateFastApiDirectCall(MacroAssembler* masm,
 
   // arg0 = v8::Arguments&
   // Arguments is after the return address.
-  __ addi(arg0, sp, Operand((kStackFrameExtraParamSlot + 2) * kPointerSize));
+  __ addi(arg0, sp, Operand((kStackFrameExtraParamSlot +
+           (alloc_return_buf ? 2 : 1)) * kPointerSize));
   // v8::Arguments::implicit_args_
   __ StoreP(r5, MemOperand(arg0, 0 * kPointerSize));
   // v8::Arguments::values_
@@ -1206,6 +1213,12 @@ void StubCompiler::GenerateLoadCallback(Handle<JSObject> object,
                                         Handle<AccessorInfo> callback,
                                         Handle<String> name,
                                         Label* miss) {
+#if !ABI_RETURNS_HANDLES_IN_REGS
+  bool alloc_return_buf = true;
+#else
+  bool alloc_return_buf = false;
+#endif
+
   // Check that the receiver isn't a smi.
   __ JumpIfSmi(receiver, miss);
 
@@ -1232,33 +1245,35 @@ void StubCompiler::GenerateLoadCallback(Handle<JSObject> object,
   __ mov(scratch3, Operand(ExternalReference::isolate_address()));
   __ Push(scratch3, name_reg);
 
-  // PPC LINUX 32-bit ABI:
+  // If ABI passes Handles (pointer-sized struct) in a register:
   //
-  // Create 4 extra slots on stack:
-  //    [0] space for DirectCEntryStub's LR save
-  //    [1] space for pointer-sized non-scalar return value (r3)
-  //    [2] copy of pointer-sized non-scalar first arg
-  //    [3] AccessorInfo
-  //
-  // PPC LINUX 64-bit / AIX ABI:
-  //
-  // Create 3 extra slots on stack:
+  // Create 2 or 3 extra slots on stack (depending on alloc_return_buf):
   //    [0] space for DirectCEntryStub's LR save
   //    [1] space for pointer-sized non-scalar return value (r3)
   //    [2] AccessorInfo
   //
-  // We shift the arguments over a register (e.g. r3 -> r4) to allow
-  // for the return value buffer in implicit first arg.
-  // CallApiFunctionAndReturn will setup r3.
-#if (defined(_AIX) || defined(V8_TARGET_ARCH_PPC64))
-  const int kApiStackSpace = 3;
-  const int kAccessorInfoSlot = 2;
+  // Otherwise:
+  //
+  // Create 3 or 4 extra slots on stack (depending on alloc_return_buf):
+  //    [0] space for DirectCEntryStub's LR save
+  //    [1] (optional) space for pointer-sized non-scalar return value (r3)
+  //    [2] copy of Handle (first arg)
+  //    [3] AccessorInfo
+  //
+  // If alloc_return_buf, we shift the arguments over a register
+  // (e.g. r3 -> r4) to allow for the return value buffer in implicit
+  // first arg.  CallApiFunctionAndReturn will setup r3.
+#if ABI_PASSES_HANDLES_IN_REGS
+  const int kAccessorInfoSlot = kStackFrameExtraParamSlot +
+                                  (alloc_return_buf ? 2 : 1);
 #else
-  const int kApiStackSpace = 4;
-  const int kAccessorInfoSlot = 3;
+  const int kAccessorInfoSlot = kStackFrameExtraParamSlot +
+                                  (alloc_return_buf ? 3 : 2);
+  int kArg0Slot = kStackFrameExtraParamSlot + (alloc_return_buf ? 2 : 1);
 #endif
-  Register arg0 = r4;
-  Register arg1 = r5;
+  const int kApiStackSpace = (alloc_return_buf ? 4 : 3);
+  Register arg0 = (alloc_return_buf ? r4 : r3);
+  Register arg1 = (alloc_return_buf ? r5 : r4);
 
   __ mr(arg1, scratch2);  // Saved in case scratch2 == arg0.
   __ mr(arg0, sp);  // arg0 = Handle<String>
@@ -1266,20 +1281,17 @@ void StubCompiler::GenerateLoadCallback(Handle<JSObject> object,
   FrameScope frame_scope(masm(), StackFrame::MANUAL);
   __ EnterExitFrame(false, kApiStackSpace);
 
-#if !(defined(_AIX) || defined(V8_TARGET_ARCH_PPC64))
+#if !ABI_PASSES_HANDLES_IN_REGS
   // pass 1st arg by reference
-  __ StoreP(arg0,
-            MemOperand(sp, (kStackFrameExtraParamSlot + 2) * kPointerSize));
-  __ addi(arg0, sp, Operand((kStackFrameExtraParamSlot + 2) * kPointerSize));
+  __ StoreP(arg0, MemOperand(sp, kArg0Slot * kPointerSize));
+  __ addi(arg0, sp, Operand(kArg0Slot * kPointerSize));
 #endif
 
   // Create AccessorInfo instance on the stack above the exit frame with
   // ip (internal::Object** args_) as the data.
-  __ StoreP(arg1, MemOperand(sp, (kStackFrameExtraParamSlot + kAccessorInfoSlot)
-                             * kPointerSize));
+  __ StoreP(arg1, MemOperand(sp, kAccessorInfoSlot * kPointerSize));
   // arg1 = AccessorInfo&
-  __ addi(arg1, sp, Operand((kStackFrameExtraParamSlot + kAccessorInfoSlot)
-                            * kPointerSize));
+  __ addi(arg1, sp, Operand(kAccessorInfoSlot * kPointerSize));
 
   const int kStackUnwindSpace = 5;
   Address getter_address = v8::ToCData<Address>(callback->getter());

@@ -62,7 +62,7 @@ TEST(0) {
 
   Assembler assm(Isolate::Current(), NULL, 0);
 
-#if defined(_AIX) || defined(V8_TARGET_ARCH_PPC64)
+#if ABI_USES_FUNCTION_DESCRIPTORS
   __ function_descriptor();
 #endif
 
@@ -94,7 +94,7 @@ TEST(1) {
   Assembler assm(Isolate::Current(), NULL, 0);
   Label L, C;
 
-#if defined(_AIX) || defined(V8_TARGET_ARCH_PPC64)
+#if ABI_USES_FUNCTION_DESCRIPTORS
   __ function_descriptor();
 #endif
 
@@ -136,7 +136,7 @@ TEST(2) {
   Assembler assm(Isolate::Current(), NULL, 0);
   Label L, C;
 
-#if defined(_AIX) || defined(V8_TARGET_ARCH_PPC64)
+#if ABI_USES_FUNCTION_DESCRIPTORS
   __ function_descriptor();
 #endif
 
@@ -199,7 +199,7 @@ TEST(3) {
   Assembler assm(Isolate::Current(), NULL, 0);
   Label L, C;
 
-#if defined(_AIX) || defined(V8_TARGET_ARCH_PPC64)
+#if ABI_USES_FUNCTION_DESCRIPTORS
   __ function_descriptor();
 #endif
 

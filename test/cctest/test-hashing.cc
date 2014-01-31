@@ -114,7 +114,7 @@ void generate(MacroAssembler* masm, i::Vector<const char> string) {
   __ jr(ra);
   __ nop();
 #elif V8_TARGET_ARCH_PPC
-#if defined(_AIX) || defined(V8_TARGET_ARCH_PPC64)
+#if ABI_USES_FUNCTION_DESCRIPTORS
   __ function_descriptor();
 #endif
 
@@ -167,7 +167,7 @@ void generate(MacroAssembler* masm, uint32_t key) {
   __ jr(ra);
   __ nop();
 #elif V8_TARGET_ARCH_PPC
-#if defined(_AIX) || defined(V8_TARGET_ARCH_PPC64)
+#if ABI_USES_FUNCTION_DESCRIPTORS
   __ function_descriptor();
 #endif
   __ push(kRootRegister);

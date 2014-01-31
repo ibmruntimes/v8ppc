@@ -1331,11 +1331,20 @@ void Simulator::SoftwareInterrupt(Instruction* instr) {
           PrintF("\n");
         }
         CHECK(stack_aligned);
-        v8::Handle<v8::Value> result = target(arg1);
+#if ABI_RETURNS_HANDLES_IN_REGS
+        intptr_t p0 = arg0;
+#else
+        intptr_t p0 = arg1;
+#endif
+        v8::Handle<v8::Value> result = target(p0);
         if (::v8::internal::FLAG_trace_sim) {
           PrintF("Returned %p\n", reinterpret_cast<void *>(*result));
         }
+#if ABI_RETURNS_HANDLES_IN_REGS
+        arg0 = (intptr_t)*result;
+#else
         *(reinterpret_cast<intptr_t*>(arg0)) = (intptr_t) *result;
+#endif
         set_register(r3, arg0);
       } else if (redirection->type() == ExternalReference::DIRECT_GETTER_CALL) {
         // See callers of MacroAssembler::CallApiFunctionAndReturn for
@@ -1353,14 +1362,25 @@ void Simulator::SoftwareInterrupt(Instruction* instr) {
           PrintF("\n");
         }
         CHECK(stack_aligned);
-#if !(defined(_AIX) || defined(V8_TARGET_ARCH_PPC64))
-        arg1 = *(reinterpret_cast<intptr_t *>(arg1));
+#if ABI_RETURNS_HANDLES_IN_REGS
+        intptr_t p0 = arg0;
+        intptr_t p1 = arg1;
+#else
+        intptr_t p0 = arg1;
+        intptr_t p1 = arg2;
 #endif
-        v8::Handle<v8::Value> result = target(arg1, arg2);
+#if !ABI_PASSES_HANDLES_IN_REGS
+        p0 = *(reinterpret_cast<intptr_t *>(p0));
+#endif
+        v8::Handle<v8::Value> result = target(p0, p1);
         if (::v8::internal::FLAG_trace_sim) {
           PrintF("Returned %p\n", reinterpret_cast<void *>(*result));
         }
+#if ABI_RETURNS_HANDLES_IN_REGS
+        arg0 = (intptr_t)*result;
+#else
         *(reinterpret_cast<intptr_t*>(arg0)) = (intptr_t) *result;
+#endif
         set_register(r3, arg0);
       } else {
         // builtin call.
@@ -3282,7 +3302,7 @@ intptr_t Simulator::Call(byte* entry, int argument_count, ...) {
   set_register(sp, entry_stack);
 
   // Prepare to execute the code at entry
-#if defined(_AIX) || defined(V8_TARGET_ARCH_PPC64)
+#if ABI_USES_FUNCTION_DESCRIPTORS
   // entry is the function descriptor
   set_pc(*(reinterpret_cast<intptr_t *>(entry)));
 #else

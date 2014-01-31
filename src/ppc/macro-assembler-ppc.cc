@@ -2122,11 +2122,13 @@ void MacroAssembler::CallApiFunctionAndReturn(ExternalReference function,
   addi(r29, r29, Operand(1));
   stw(r29, MemOperand(r26, kLevelOffset));
 
+#if !ABI_RETURNS_HANDLES_IN_REGS
   // PPC LINUX ABI
   // The return value is pointer-sized non-scalar value.
   // Space has already been allocated on the stack which will pass as an
   // implicity first argument.
   addi(r3, sp, Operand((kStackFrameExtraParamSlot + 1) * kPointerSize));
+#endif
 
   // Native call returns to the DirectCEntry stub which redirects to the
   // return address pushed on stack (could have moved after GC).
@@ -2134,8 +2136,10 @@ void MacroAssembler::CallApiFunctionAndReturn(ExternalReference function,
   DirectCEntryStub stub;
   stub.GenerateCall(this, function);
 
+#if !ABI_RETURNS_HANDLES_IN_REGS
   // Retrieve return value from stack buffer
   LoadP(r3, MemOperand(r3));
+#endif
 
   Label promote_scheduled_exception;
   Label delete_allocated_handles;
@@ -3352,8 +3356,7 @@ void MacroAssembler::CallCFunctionHelper(Register function,
   // Just call directly. The function called cannot cause a GC, or
   // allow preemption, so the return address in the link register
   // stays correct.
-#if !defined(USE_SIMULATOR) && \
-  (defined(_AIX) || defined(V8_TARGET_ARCH_PPC64))
+#if ABI_USES_FUNCTION_DESCRIPTORS && !defined(USE_SIMULATOR)
   // AIX uses a function descriptor. When calling C code be aware
   // of this descriptor and pick up values from it
   LoadP(ToRegister(2), MemOperand(function, kPointerSize));
