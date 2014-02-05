@@ -89,6 +89,7 @@
 //  V8_OS_OPENBSD       - OpenBSD
 //  V8_OS_POSIX         - POSIX compatible (mostly everything except Windows)
 //  V8_OS_SOLARIS       - Sun Solaris and OpenSolaris
+//  V8_OS_AIX           - AIX
 //  V8_OS_WIN           - Microsoft Windows
 
 #if defined(__ANDROID__)
@@ -111,7 +112,7 @@
 #elif defined(__sun)
 # define V8_OS_POSIX 1
 # define V8_OS_SOLARIS 1
-#elif defined(__AIX)
+#elif defined(_AIX)
 # define V8_OS_POSIX 1
 # define V8_OS_AIX 1
 #elif defined(__FreeBSD__)
