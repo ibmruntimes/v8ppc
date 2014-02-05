@@ -299,6 +299,43 @@ static void EmptyInterceptorSetter(Local<String> name,
 }
 
 
+static void InterceptorGetter(Local<String> name,
+                              const v8::PropertyCallbackInfo<v8::Value>& info) {
+  // Intercept names that start with 'interceptor_'.
+  String::Utf8Value utf8(name);
+  char* name_str = *utf8;
+  char prefix[] = "interceptor_";
+  int i;
+  for (i = 0; name_str[i] && prefix[i]; ++i) {
+    if (name_str[i] != prefix[i]) return;
+  }
+  Handle<Object> self = info.This();
+  info.GetReturnValue().Set(self->GetHiddenValue(v8_str(name_str + i)));
+}
+
+
+static void InterceptorSetter(Local<String> name,
+                              Local<Value> value,
+                              const v8::PropertyCallbackInfo<v8::Value>& info) {
+  // Intercept accesses that set certain integer values, for which the name does
+  // not start with 'accessor_'.
+  String::Utf8Value utf8(name);
+  char* name_str = *utf8;
+  char prefix[] = "accessor_";
+  int i;
+  for (i = 0; name_str[i] && prefix[i]; ++i) {
+    if (name_str[i] != prefix[i]) break;
+  }
+  if (!prefix[i]) return;
+
+  if (value->IsInt32() && value->Int32Value() < 10000) {
+    Handle<Object> self = info.This();
+    self->SetHiddenValue(name, value);
+    info.GetReturnValue().Set(value);
+  }
+}
+
+
 static void AddInterceptor(Handle<FunctionTemplate> templ,
                     v8::NamedPropertyGetterCallback getter,
                     v8::NamedPropertySetterCallback setter) {
@@ -1965,41 +2002,6 @@ void SimpleAccessorSetter(Local<String> name, Local<Value> value,
                           const v8::PropertyCallbackInfo<void>& info) {
   Handle<Object> self = info.This();
   self->Set(String::Concat(v8_str("accessor_"), name), value);
-}
-
-void InterceptorGetter(Local<String> name,
-                       const v8::PropertyCallbackInfo<v8::Value>& info) {
-  // Intercept names that start with 'interceptor_'.
-  String::Utf8Value utf8(name);
-  char* name_str = *utf8;
-  char prefix[] = "interceptor_";
-  int i;
-  for (i = 0; name_str[i] && prefix[i]; ++i) {
-    if (name_str[i] != prefix[i]) return;
-  }
-  Handle<Object> self = info.This();
-  info.GetReturnValue().Set(self->GetHiddenValue(v8_str(name_str + i)));
-}
-
-void InterceptorSetter(Local<String> name,
-                       Local<Value> value,
-                       const v8::PropertyCallbackInfo<v8::Value>& info) {
-  // Intercept accesses that set certain integer values, for which the name does
-  // not start with 'accessor_'.
-  String::Utf8Value utf8(name);
-  char* name_str = *utf8;
-  char prefix[] = "accessor_";
-  int i;
-  for (i = 0; name_str[i] && prefix[i]; ++i) {
-    if (name_str[i] != prefix[i]) break;
-  }
-  if (!prefix[i]) return;
-
-  if (value->IsInt32() && value->Int32Value() < 10000) {
-    Handle<Object> self = info.This();
-    self->SetHiddenValue(name, value);
-    info.GetReturnValue().Set(value);
-  }
 }
 
 void AddAccessor(Handle<FunctionTemplate> templ,
