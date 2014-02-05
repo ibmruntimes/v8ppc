@@ -1725,7 +1725,7 @@ void CodeStub::GenerateStubsAheadOfTime(Isolate* isolate) {
   RecordWriteStub::GenerateFixedRegStubsAheadOfTime(isolate);
   ArrayConstructorStubBase::GenerateStubsAheadOfTime(isolate);
   CreateAllocationSiteStub::GenerateAheadOfTime(isolate);
-  BinaryOpStub::GenerateAheadOfTime(isolate);
+//  BinaryOpStub::GenerateAheadOfTime(isolate);
 }
 
 
