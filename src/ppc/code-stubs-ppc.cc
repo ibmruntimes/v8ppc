@@ -496,6 +496,7 @@ class ConvertToDoubleStub : public PlatformCodeStub {
   void Generate(MacroAssembler* masm);
 };
 
+
 void ConvertToDoubleStub::Generate(MacroAssembler* masm) {
   Register exponent = result1_;
   Register mantissa = result2_;
@@ -6044,7 +6045,8 @@ static void CreateArrayDispatchOneArgument(MacroAssembler* masm,
     // Save the resulting elements kind in type info
     __ SmiTag(r6);
     __ LoadP(r8, FieldMemOperand(r5, Cell::kValueOffset));
-    __ StoreP(r6, FieldMemOperand(r8, AllocationSite::kTransitionInfoOffset), r0);
+    __ StoreP(r6, FieldMemOperand(r8, AllocationSite::kTransitionInfoOffset),
+              r0);
     __ SmiUntag(r6);
 
     __ bind(&normal_sequence);

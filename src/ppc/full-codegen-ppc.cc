@@ -5013,7 +5013,7 @@ void BackEdgeTable::PatchAt(Code* unoptimized_code,
       //         blrl
       //  ok-label ----- pc_after points here
       patcher.masm()->bc(kInterruptBranchDisplacement, BF,
-                         v8::internal::Assembler::encode_crbit(cr7, CR_LT));  // bge
+          v8::internal::Assembler::encode_crbit(cr7, CR_LT));  // bge
       ASSERT_EQ(kBranchBeforeInterrupt, Memory::int32_at(branch_address));
       break;
     case ON_STACK_REPLACEMENT:

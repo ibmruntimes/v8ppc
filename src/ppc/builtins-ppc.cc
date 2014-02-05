@@ -1009,7 +1009,7 @@ void Builtins::Generate_OnStackReplacement(MacroAssembler* masm) {
 
   // Load deoptimization data from the code object.
   // <deopt_data> = <code>[#deoptimization_data_offset]
-  __ LoadP(r4, MemOperand(r3, Code::kDeoptimizationDataOffset - kHeapObjectTag));
+  __ LoadP(r4, FieldMemOperand(r3, Code::kDeoptimizationDataOffset));
 
   // Load the OSR entrypoint offset from the deoptimization data.
   // <osr_offset> = <deopt_data>[#header_size + #osr_pc_offset]
