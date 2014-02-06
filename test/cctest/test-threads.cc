@@ -177,11 +177,7 @@ class ThreadIdValidationThread : public v8::internal::Thread {
 
 
 TEST(ThreadIdValidation) {
-#ifdef V8_TARGET_ARCH_PPC
-  const int kNThreads = 50;
-#else
   const int kNThreads = 100;
-#endif
   i::List<ThreadIdValidationThread*> threads(kNThreads);
   i::List<i::ThreadId> refs(kNThreads);
   i::Semaphore* semaphore = new i::Semaphore(0);
