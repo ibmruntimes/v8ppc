@@ -1382,8 +1382,8 @@ LInstruction* LChunkBuilder::DoDiv(HDiv* instr) {
     if (instr->HasPowerOf2Divisor()) {
       ASSERT(!instr->CheckFlag(HValue::kCanBeDivByZero));
       LOperand* value = UseRegisterAtStart(instr->left());
-      LDivI* div = new(zone()) LDivI(value, UseConstant(instr->right()));
-      return AssignEnvironment(DefineAsRegister(div));
+      LDivI* div = new(zone()) LDivI(value, UseOrConstant(instr->right()));
+      return AssignEnvironment(DefineSameAsFirst(div));
     }
     LOperand* dividend = UseRegister(instr->left());
     LOperand* divisor = UseRegister(instr->right());
@@ -2016,7 +2016,11 @@ LInstruction* LChunkBuilder::DoChange(HChange* instr) {
       LInstruction* result = val->CheckFlag(HInstruction::kUint32)
           ? DefineSameAsFirst(new(zone()) LUint32ToSmi(value))
           : DefineSameAsFirst(new(zone()) LInteger32ToSmi(value));
-      if (val->HasRange() && val->range()->IsInSmiRange()) {
+      if (val->HasRange() && val->range()->IsInSmiRange()
+#if V8_TARGET_ARCH_PPC64
+          && val->range()->upper() != kMaxInt
+#endif
+        ) {
         return result;
       }
       return AssignEnvironment(result);

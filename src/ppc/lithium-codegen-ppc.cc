@@ -1387,8 +1387,23 @@ void LCodeGen::DoMulI(LMulI* instr) {
     switch (constant) {
       case -1:
         if (can_overflow) {
+#if V8_TARGET_ARCH_PPC64
+          if (instr->hydrogen()->representation().IsSmi()) {
+            __ li(r0, Operand::Zero());  // clear xer
+            __ mtxer(r0);
+            __ neg(result, left, SetOE, SetRC);
+            DeoptimizeIf(overflow, instr->environment(), cr0);
+          } else {
+            __ neg(result, left);
+            __ TestIfInt32(result, scratch, r0);
+            DeoptimizeIf(ne, instr->environment());
+          }
+#else
+          __ li(r0, Operand::Zero());  // clear xer
+          __ mtxer(r0);
           __ neg(result, left, SetOE, SetRC);
           DeoptimizeIf(overflow, instr->environment(), cr0);
+#endif
         } else {
           __ neg(result, left);
         }
@@ -1445,12 +1460,16 @@ void LCodeGen::DoMulI(LMulI* instr) {
       // result = left * right.
       if (instr->hydrogen()->representation().IsSmi()) {
         __ SmiUntag(result, left);
-        __ Mul(result, result, right);
+        __ SmiUntag(scratch, right);
+        __ Mul(result, result, scratch);
       } else {
         __ Mul(result, left, right);
       }
       __ TestIfInt32(result, scratch, r0);
       DeoptimizeIf(ne, instr->environment());
+      if (instr->hydrogen()->representation().IsSmi()) {
+        __ SmiTag(result);
+      }
 #else
       // scratch:result = left * right.
       if (instr->hydrogen()->representation().IsSmi()) {
@@ -1667,7 +1686,9 @@ void LCodeGen::DoSubI(LSubI* instr) {
                               scratch0(), r0);
     // Doptimize on overflow
 #if V8_TARGET_ARCH_PPC64
-    __ extsw(scratch0(), scratch0(), SetRC);
+    if (!instr->hydrogen()->representation().IsSmi()) {
+      __ extsw(scratch0(), scratch0(), SetRC);
+    }
 #endif
     DeoptimizeIf(lt, instr->environment(), cr0);
   }
@@ -1887,7 +1908,9 @@ void LCodeGen::DoAddI(LAddI* instr) {
                               right_reg,
                               scratch0(), r0);
 #if V8_TARGET_ARCH_PPC64
-    __ extsw(scratch0(), scratch0(), SetRC);
+    if (!instr->hydrogen()->representation().IsSmi()) {
+      __ extsw(scratch0(), scratch0(), SetRC);
+    }
 #endif
     // Doptimize on overflow
     DeoptimizeIf(lt, instr->environment(), cr0);
@@ -3188,11 +3211,13 @@ void LCodeGen::DoLoadKeyedFixedDoubleArray(LLoadKeyed* instr) {
     ((constant_key + instr->additional_index()) << element_size_shift);
   if (!key_is_constant) {
     __ IndexToArrayOffset(r0, key, element_size_shift, key_is_smi);
-    __ add(elements, elements, r0);
+    __ add(scratch, elements, r0);
+    elements = scratch;
   }
   if (!is_int16(base_offset)) {
-    __ Add(elements, elements, base_offset, r0);
+    __ Add(scratch, elements, base_offset, r0);
     base_offset = 0;
+    elements = scratch;
   }
   __ lfd(result, MemOperand(elements, base_offset));
 
@@ -4736,7 +4761,11 @@ void LCodeGen::DoUint32ToSmi(LUint32ToSmi* instr) {
   LOperand* input = instr->value();
   LOperand* output = instr->result();
   if (!instr->hydrogen()->value()->HasRange() ||
-      !instr->hydrogen()->value()->range()->IsInSmiRange()) {
+      !instr->hydrogen()->value()->range()->IsInSmiRange()
+#if V8_TARGET_ARCH_PPC64
+      || instr->hydrogen()->value()->range()->upper() == kMaxInt
+#endif
+    ) {
     __ TestUnsignedSmiCandidate(ToRegister(input), r0);
     DeoptimizeIf(ne, instr->environment(), cr0);
   }

@@ -1516,11 +1516,17 @@ void Assembler::mov_label_offset(Register dst, Label* label) {
     int target = label->pos();
     mov(dst, Operand(target + Code::kHeaderSize - kHeapObjectTag));
   } else {
+    bool is_linked = label->is_linked();
     // Emit the link to the label in the code stream followed by extra
     // nop instructions.
     ASSERT(dst.is(r3));  // target_at_put assumes r3 for now
-    int link = label->is_linked() ? label->pos() - pc_offset(): 0;
+    int link = is_linked ? label->pos() - pc_offset(): 0;
     label->link_to(pc_offset());
+
+    if (!is_linked && !trampoline_emitted_) {
+      unbound_labels_count_++;
+      next_buffer_check_ -= kTrampolineSlotsSize;
+    }
 
     // When the label is bound, these instructions will be patched
     // with a 2 instruction mov sequence that will load the

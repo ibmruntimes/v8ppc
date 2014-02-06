@@ -482,10 +482,10 @@ static intptr_t MemoryInUse() {
 }
 
 #if defined(V8_TARGET_ARCH_PPC)
-const intptr_t maxSnap64 = 4100;  // 4032
-const intptr_t max64     = 4600;  // 4480
-const intptr_t maxSnap32 = 3500;  // 3392
-const intptr_t max32     = 3800;  // 3648
+const intptr_t maxSnap64 = 4600;  // 4480
+const intptr_t max64     = 5200;  // 5056
+const intptr_t maxSnap32 = 3700;  // 3520
+const intptr_t max32     = 4200;  // 4032
 #else
 const intptr_t maxSnap64 = 4000;
 const intptr_t max64     = 4500;
