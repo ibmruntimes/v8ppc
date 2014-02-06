@@ -37,6 +37,7 @@
 
 #include "disasm.h"
 #include "assembler.h"
+#include "codegen.h"
 #include "ppc/constants-ppc.h"
 #include "ppc/simulator-ppc.h"
 #include "ppc/frames-ppc.h"
