@@ -83,11 +83,6 @@ void CPU::FlushICache(void* buffer, size_t size) {
 #endif  // USE_SIMULATOR
 }
 
-
-void CPU::DebugBreak() {
-  UNIMPLEMENTED();  // Unimplemented on PowerPC
-}
-
 } }  // namespace v8::internal
 
 #endif  // V8_TARGET_ARCH_PPC

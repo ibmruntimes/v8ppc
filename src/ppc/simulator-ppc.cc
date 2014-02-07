@@ -1000,12 +1000,14 @@ intptr_t Simulator::get_pc() const {
 }
 
 
-// Runtime FP routines take up to two double arguments (d1, d2) and zero
-// or one integer argument (r3). All are consructed here.
+// Runtime FP routines take:
+// - two double arguments
+// - one double argument and zero or one integer arguments.
+// All are consructed here from d1, d2 and r3.
 void Simulator::GetFpArgs(double* x, double* y, intptr_t* z) {
-  *x = fp_registers_[1];
-  *y = fp_registers_[2];
-  *z = registers_[3];
+  *x = get_double_from_d_register(1);
+  *y = get_double_from_d_register(2);
+  *z = get_register(3);
 }
 
 
@@ -1190,22 +1192,12 @@ typedef double (*SimulatorRuntimeFPIntCall)(double darg0, intptr_t arg0);
 
 // This signature supports direct call in to API function native callback
 // (refer to InvocationCallback in v8.h).
-typedef v8::Handle<v8::Value> (*SimulatorRuntimeDirectApiCall)(intptr_t arg0);
-typedef void (*SimulatorRuntimeDirectApiCallNew)(intptr_t arg0);
-typedef v8::Handle<v8::Value> (*SimulatorRuntimeProfilingApiCall)(
-    intptr_t arg0, intptr_t arg1);
-typedef void (*SimulatorRuntimeProfilingApiCallNew)(intptr_t arg0,
-                                                    intptr_t arg1);
+typedef void (*SimulatorRuntimeDirectApiCall)(intptr_t arg0);
+typedef void (*SimulatorRuntimeProfilingApiCall)(intptr_t arg0, intptr_t arg1);
 
 // This signature supports direct call to accessor getter callback.
-typedef v8::Handle<v8::Value> (*SimulatorRuntimeDirectGetterCall)(
-  intptr_t arg0,
-  intptr_t arg1);
-typedef void (*SimulatorRuntimeDirectGetterCallNew)(intptr_t arg0,
-                                                    intptr_t arg1);
-typedef v8::Handle<v8::Value> (*SimulatorRuntimeProfilingGetterCall)(
-    intptr_t arg0, intptr_t arg1, intptr_t arg2);
-typedef void (*SimulatorRuntimeProfilingGetterCallNew)(
+typedef void (*SimulatorRuntimeDirectGetterCall)(intptr_t arg0, intptr_t arg1);
+typedef void (*SimulatorRuntimeProfilingGetterCall)(
     intptr_t arg0, intptr_t arg1, intptr_t arg2);
 
 // Software interrupt instructions are used by the simulator to call into the
@@ -1326,9 +1318,7 @@ void Simulator::SoftwareInterrupt(Instruction* instr) {
             break;
           }
         }
-      } else if (
-          redirection->type() == ExternalReference::DIRECT_API_CALL ||
-          redirection->type() == ExternalReference::DIRECT_API_CALL_NEW) {
+      } else if (redirection->type() == ExternalReference::DIRECT_API_CALL) {
         // See callers of MacroAssembler::CallApiFunctionAndReturn for
         // explanation of register usage.
         if (::v8::internal::FLAG_trace_sim || !stack_aligned) {
@@ -1341,32 +1331,11 @@ void Simulator::SoftwareInterrupt(Instruction* instr) {
           PrintF("\n");
         }
         CHECK(stack_aligned);
-        if (redirection->type() == ExternalReference::DIRECT_API_CALL) {
-          SimulatorRuntimeDirectApiCall target =
-            reinterpret_cast<SimulatorRuntimeDirectApiCall>(external);
-#if ABI_RETURNS_HANDLES_IN_REGS
-          intptr_t p0 = arg0;
-#else
-          intptr_t p0 = arg1;
-#endif
-          v8::Handle<v8::Value> result = target(p0);
-          if (::v8::internal::FLAG_trace_sim) {
-            PrintF("Returned %p\n", reinterpret_cast<void *>(*result));
-          }
-#if ABI_RETURNS_HANDLES_IN_REGS
-          arg0 = (intptr_t)*result;
-#else
-          *(reinterpret_cast<intptr_t*>(arg0)) = (intptr_t) *result;
-#endif
-          set_register(r3, arg0);
-        } else {
-          SimulatorRuntimeDirectApiCallNew target =
-            reinterpret_cast<SimulatorRuntimeDirectApiCallNew>(external);
-          target(arg0);
-        }
+        SimulatorRuntimeDirectApiCall target =
+          reinterpret_cast<SimulatorRuntimeDirectApiCall>(external);
+        target(arg0);
       } else if (
-          redirection->type() == ExternalReference::PROFILING_API_CALL ||
-          redirection->type() == ExternalReference::PROFILING_API_CALL_NEW) {
+          redirection->type() == ExternalReference::PROFILING_API_CALL) {
         // See callers of MacroAssembler::CallApiFunctionAndReturn for
         // explanation of register usage.
         if (::v8::internal::FLAG_trace_sim || !stack_aligned) {
@@ -1380,34 +1349,11 @@ void Simulator::SoftwareInterrupt(Instruction* instr) {
           PrintF("\n");
         }
         CHECK(stack_aligned);
-        if (redirection->type() == ExternalReference::PROFILING_API_CALL) {
-          SimulatorRuntimeProfilingApiCall target =
-              reinterpret_cast<SimulatorRuntimeProfilingApiCall>(external);
-#if ABI_RETURNS_HANDLES_IN_REGS
-          intptr_t p0 = arg0;
-          intptr_t p1 = arg1;
-#else
-          intptr_t p0 = arg1;
-          intptr_t p1 = arg2;
-#endif
-          v8::Handle<v8::Value> result = target(p0, p1);
-          if (::v8::internal::FLAG_trace_sim) {
-            PrintF("Returned %p\n", reinterpret_cast<void *>(*result));
-          }
-#if ABI_RETURNS_HANDLES_IN_REGS
-          arg0 = (intptr_t)*result;
-#else
-          *(reinterpret_cast<intptr_t*>(arg0)) = (intptr_t) *result;
-#endif
-          set_register(r3, arg0);
-        } else {
-          SimulatorRuntimeProfilingApiCallNew target =
-              reinterpret_cast<SimulatorRuntimeProfilingApiCallNew>(external);
-          target(arg0, arg1);
-        }
+        SimulatorRuntimeProfilingApiCall target =
+          reinterpret_cast<SimulatorRuntimeProfilingApiCall>(external);
+        target(arg0, arg1);
       } else if (
-          redirection->type() == ExternalReference::DIRECT_GETTER_CALL ||
-          redirection->type() == ExternalReference::DIRECT_GETTER_CALL_NEW) {
+          redirection->type() == ExternalReference::DIRECT_GETTER_CALL) {
         // See callers of MacroAssembler::CallApiFunctionAndReturn for
         // explanation of register usage.
         if (::v8::internal::FLAG_trace_sim || !stack_aligned) {
@@ -1421,40 +1367,14 @@ void Simulator::SoftwareInterrupt(Instruction* instr) {
           PrintF("\n");
         }
         CHECK(stack_aligned);
-        if (redirection->type() == ExternalReference::DIRECT_GETTER_CALL) {
-          SimulatorRuntimeDirectGetterCall target =
-            reinterpret_cast<SimulatorRuntimeDirectGetterCall>(external);
-#if ABI_RETURNS_HANDLES_IN_REGS
-          intptr_t p0 = arg0;
-          intptr_t p1 = arg1;
-#else
-          intptr_t p0 = arg1;
-          intptr_t p1 = arg2;
-#endif
+        SimulatorRuntimeDirectGetterCall target =
+          reinterpret_cast<SimulatorRuntimeDirectGetterCall>(external);
 #if !ABI_PASSES_HANDLES_IN_REGS
-          p0 = *(reinterpret_cast<intptr_t *>(p0));
+        arg0 = *(reinterpret_cast<intptr_t *>(arg0));
 #endif
-          v8::Handle<v8::Value> result = target(p0, p1);
-          if (::v8::internal::FLAG_trace_sim) {
-            PrintF("Returned %p\n", reinterpret_cast<void *>(*result));
-          }
-#if ABI_RETURNS_HANDLES_IN_REGS
-          arg0 = (intptr_t)*result;
-#else
-          *(reinterpret_cast<intptr_t*>(arg0)) = (intptr_t) *result;
-#endif
-          set_register(r3, arg0);
-        } else {
-          SimulatorRuntimeDirectGetterCallNew target =
-            reinterpret_cast<SimulatorRuntimeDirectGetterCallNew>(external);
-#if !ABI_PASSES_HANDLES_IN_REGS
-          arg0 = *(reinterpret_cast<intptr_t *>(arg0));
-#endif
-          target(arg0, arg1);
-        }
+        target(arg0, arg1);
       } else if (
-        redirection->type() == ExternalReference::PROFILING_GETTER_CALL ||
-        redirection->type() == ExternalReference::PROFILING_GETTER_CALL_NEW) {
+        redirection->type() == ExternalReference::PROFILING_GETTER_CALL) {
         if (::v8::internal::FLAG_trace_sim || !stack_aligned) {
           PrintF("Call to host function at %p args %08" V8PRIxPTR " %08"
                  V8PRIxPTR " %08" V8PRIxPTR,
@@ -1466,40 +1386,13 @@ void Simulator::SoftwareInterrupt(Instruction* instr) {
           PrintF("\n");
         }
         CHECK(stack_aligned);
-        if (redirection->type() == ExternalReference::PROFILING_GETTER_CALL) {
-          SimulatorRuntimeProfilingGetterCall target =
-            reinterpret_cast<SimulatorRuntimeProfilingGetterCall>(external);
-#if ABI_RETURNS_HANDLES_IN_REGS
-          intptr_t p0 = arg0;
-          intptr_t p1 = arg1;
-          intptr_t p2 = arg2;
-#else
-          intptr_t p0 = arg1;
-          intptr_t p1 = arg2;
-          intptr_t p2 = arg3;
-#endif
+        SimulatorRuntimeProfilingGetterCall target =
+          reinterpret_cast<SimulatorRuntimeProfilingGetterCall>(
+            external);
 #if !ABI_PASSES_HANDLES_IN_REGS
-          p0 = *(reinterpret_cast<intptr_t *>(p0));
+        arg0 = *(reinterpret_cast<intptr_t *>(arg0));
 #endif
-          v8::Handle<v8::Value> result = target(p0, p1, p2);
-          if (::v8::internal::FLAG_trace_sim) {
-            PrintF("Returned %p\n", reinterpret_cast<void *>(*result));
-          }
-#if ABI_RETURNS_HANDLES_IN_REGS
-          arg0 = (intptr_t)*result;
-#else
-          *(reinterpret_cast<intptr_t*>(arg0)) = (intptr_t) *result;
-#endif
-          set_register(r3, arg0);
-        } else {
-          SimulatorRuntimeProfilingGetterCallNew target =
-            reinterpret_cast<SimulatorRuntimeProfilingGetterCallNew>(
-              external);
-#if !ABI_PASSES_HANDLES_IN_REGS
-          arg0 = *(reinterpret_cast<intptr_t *>(arg0));
-#endif
-          target(arg0, arg1, arg2);
-        }
+        target(arg0, arg1, arg2);
       } else {
         // builtin call.
         ASSERT(redirection->type() == ExternalReference::BUILTIN_CALL);
@@ -3627,10 +3520,22 @@ intptr_t Simulator::Call(byte* entry, int argument_count, ...) {
 }
 
 
-double Simulator::CallFP(byte* entry, double d0, double d1) {
+void Simulator::CallFP(byte* entry, double d0, double d1) {
   set_d_register_from_double(1, d0);
   set_d_register_from_double(2, d1);
   CallInternal(entry);
+}
+
+
+int32_t Simulator::CallFPReturnsInt(byte* entry, double d0, double d1) {
+  CallFP(entry, d0, d1);
+  int32_t result = get_register(r3);
+  return result;
+}
+
+
+double Simulator::CallFPReturnsDouble(byte* entry, double d0, double d1) {
+  CallFP(entry, d0, d1);
   return get_double_from_d_register(1);
 }
 

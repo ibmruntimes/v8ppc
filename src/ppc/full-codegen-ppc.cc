@@ -165,27 +165,7 @@ void FullCodeGenerator::Generate() {
   FrameScope frame_scope(masm_, StackFrame::MANUAL);
 
   info->set_prologue_offset(masm_->pc_offset());
-  {
-    PredictableCodeSizeScope predictible_code_size_scope(
-        masm_, kNoCodeAgeSequenceLength * Assembler::kInstrSize);
-    // The following instructions must remain together and unmodified
-    // for code aging to work properly.
-    // It needs to match the code found in GetNoCodeAgeSequence()
-    __ mflr(r0);
-    __ Push(r0, fp, cp, r4);
-    // Adjust fp to point to saved fp.
-    __ addi(fp, sp, Operand(2 * kPointerSize));
-
-#if V8_TARGET_ARCH_PPC64
-      // With 64bit we need a couple of nop() instructions to pad
-      // out to 10 instructions total to ensure we have enough
-      // space to patch it later in Code::PatchPlatformCodeAge
-    __ nop();
-    __ nop();
-    __ nop();
-    __ nop();
-#endif
-  }
+  __ Prologue(BUILD_FUNCTION_FRAME);
   info->AddNoFrameRange(0, masm_->pc_offset());
 
   { Comment cmnt(masm_, "[ Allocate locals");
@@ -309,8 +289,7 @@ void FullCodeGenerator::Generate() {
       __ cmpl(sp, ip);
       // This is a FIXED_SEQUENCE and must match the other StackCheck code
       __ bc_short(ge, &ok);
-      StackCheckStub stub;
-      __ CallStub(&stub);
+      __ Call(isolate()->builtins()->StackCheck(), RelocInfo::CODE_TARGET);
       __ bind(&ok);
     }
 
@@ -360,7 +339,7 @@ void FullCodeGenerator::EmitProfilingCounterReset() {
 }
 
 
-// N.B. Deoptimizer::PatchInterruptCodeAt manipulates the branch
+// N.B. BackEdgeTable::PatchAt manipulates the branch
 // instruction to the ok label below.  Thus a change to this sequence
 // (i.e. change in instruction count between the branch and
 // destination) may require a corresponding change to that logic as
@@ -380,8 +359,7 @@ void FullCodeGenerator::EmitBackEdgeBookkeeping(IterationStatement* stmt,
   }
   EmitProfilingCounterDecrement(weight);
   __ bc_short(ge, &ok);
-  InterruptStub stub;
-  __ CallStub(&stub);
+  __ Call(isolate()->builtins()->InterruptCheck(), RelocInfo::CODE_TARGET);
 
   // Record a mapping of this PC offset to the OSR id.  This is used to find
   // the AST id from the unoptimized code in order to use it as a key into
@@ -429,8 +407,8 @@ void FullCodeGenerator::EmitReturnSequence() {
         __ push(r5);
         __ CallRuntime(Runtime::kOptimizeFunctionOnNextCall, 1);
       } else {
-        InterruptStub stub;
-        __ CallStub(&stub);
+        __ Call(isolate()->builtins()->InterruptCheck(),
+                RelocInfo::CODE_TARGET);
       }
       __ pop(r3);
       EmitProfilingCounterReset();
@@ -1191,7 +1169,7 @@ void FullCodeGenerator::VisitForInStatement(ForInStatement* stmt) {
       Handle<Object>(Smi::FromInt(TypeFeedbackCells::kForInFastCaseMarker),
                      isolate()));
   RecordTypeFeedbackCell(stmt->ForInFeedbackId(), cell);
-  __ LoadHeapObject(r4, cell);
+  __ Move(r4, cell);
   __ LoadSmiLiteral(r5, Smi::FromInt(TypeFeedbackCells::kForInSlowCaseMarker));
   __ StoreP(r5, FieldMemOperand(r4, Cell::kValueOffset), r0);
 
@@ -1355,8 +1333,7 @@ void FullCodeGenerator::EmitNewClosure(Handle<SharedFunctionInfo> info,
       scope()->is_function_scope() &&
       info->num_literals() == 0) {
     FastNewClosureStub stub(info->language_mode(), info->is_generator());
-    __ mov(r3, Operand(info));
-    __ push(r3);
+    __ mov(r5, Operand(info));
     __ CallStub(&stub);
   } else {
     __ mov(r3, Operand(info));
@@ -1679,13 +1656,11 @@ void FullCodeGenerator::VisitObjectLiteral(ObjectLiteral* expr) {
   __ LoadSmiLiteral(r3, Smi::FromInt(flags));
   int properties_count = constant_properties->length() / 2;
   if ((FLAG_track_double_fields && expr->may_store_doubles()) ||
-      expr->depth() > 1) {
-    __ Push(r6, r5, r4, r3);
-    __ CallRuntime(Runtime::kCreateObjectLiteral, 4);
-  } else if (Serializer::enabled() || flags != ObjectLiteral::kFastElements ||
+      expr->depth() > 1 || Serializer::enabled() ||
+      flags != ObjectLiteral::kFastElements ||
       properties_count > FastCloneShallowObjectStub::kMaximumClonedProperties) {
     __ Push(r6, r5, r4, r3);
-    __ CallRuntime(Runtime::kCreateObjectLiteralShallow, 4);
+    __ CallRuntime(Runtime::kCreateObjectLiteral, 4);
   } else {
     FastCloneShallowObjectStub stub(properties_count);
     __ CallStub(&stub);
@@ -2374,30 +2349,14 @@ void FullCodeGenerator::EmitInlineSmiBinaryOp(BinaryOperation* expr,
       break;
     }
     case Token::ADD: {
-      Label add_no_overflow;
-      // C = A+B; C overflows if A/B have same sign and C has diff sign than A
-      __ xor_(r0, left, right);
-      __ add(scratch1, left, right);
-      __ TestSignBit(r0, r0);
-      __ bne(&add_no_overflow, cr0);
-      __ xor_(r0, right, scratch1);
-      __ TestSignBit(r0, r0);
+      __ AddAndCheckForOverflow(scratch1, left, right, scratch2, r0);
       __ bne(&stub_call, cr0);
-      __ bind(&add_no_overflow);
       __ mr(right, scratch1);
       break;
     }
     case Token::SUB: {
-      Label sub_no_overflow;
-      // C = A-B; C overflows if A/B have diff signs and C has diff sign than A
-      __ xor_(r0, left, right);
-      __ sub(scratch1, left, right);
-      __ TestSignBit(r0, r0);
-      __ beq(&sub_no_overflow, cr0);
-      __ xor_(r0, scratch1, left);
-      __ TestSignBit(r0, r0);
+      __ SubAndCheckForOverflow(scratch1, left, right, scratch2, r0);
       __ bne(&stub_call, cr0);
-      __ bind(&sub_no_overflow);
       __ mr(right, scratch1);
       break;
     }
@@ -3095,7 +3054,7 @@ void FullCodeGenerator::EmitIsStringWrapperSafeForDefaultValueOf(
 
   VisitForAccumulatorValue(args->at(0));
 
-  Label materialize_true, materialize_false;
+  Label materialize_true, materialize_false, skip_lookup;
   Label* if_true = NULL;
   Label* if_false = NULL;
   Label* fall_through = NULL;
@@ -3107,7 +3066,7 @@ void FullCodeGenerator::EmitIsStringWrapperSafeForDefaultValueOf(
   __ LoadP(r4, FieldMemOperand(r3, HeapObject::kMapOffset));
   __ lbz(ip, FieldMemOperand(r4, Map::kBitField2Offset));
   __ andi(r0, ip, Operand(1 << Map::kStringWrapperSafeForDefaultValueOf));
-  __ bne(if_true, cr0);
+  __ bne(&skip_lookup, cr0);
 
   // Check for fast case object. Generate false result for slow case object.
   __ LoadP(r5, FieldMemOperand(r3, JSObject::kPropertiesOffset));
@@ -3154,6 +3113,14 @@ void FullCodeGenerator::EmitIsStringWrapperSafeForDefaultValueOf(
   __ bne(&loop);
 
   __ bind(&done);
+
+  // Set the bit in the map to indicate that there is no local valueOf field.
+  __ lbz(r5, FieldMemOperand(r4, Map::kBitField2Offset));
+  __ ori(r5, r5, Operand(1 << Map::kStringWrapperSafeForDefaultValueOf));
+  __ stb(r5, FieldMemOperand(r4, Map::kBitField2Offset));
+
+  __ bind(&skip_lookup);
+
   // If a valueOf property is not found on the object check that its
   // prototype is the un-modified String prototype. If not result is false.
   __ LoadP(r5, FieldMemOperand(r4, Map::kPrototypeOffset));
@@ -3164,16 +3131,9 @@ void FullCodeGenerator::EmitIsStringWrapperSafeForDefaultValueOf(
   __ LoadP(r6, ContextOperand(r6,
                               Context::STRING_FUNCTION_PROTOTYPE_MAP_INDEX));
   __ cmp(r5, r6);
-  __ bne(if_false);
-
-  // Set the bit in the map to indicate that it has been checked safe for
-  // default valueOf and set true result.
-  __ lbz(r5, FieldMemOperand(r4, Map::kBitField2Offset));
-  __ ori(r5, r5, Operand(1 << Map::kStringWrapperSafeForDefaultValueOf));
-  __ stb(r5, FieldMemOperand(r4, Map::kBitField2Offset));
-  __ b(if_true);
-
   PrepareForBailoutBeforeSplit(expr, true, if_true, if_false);
+  Split(eq, if_true, if_false, fall_through);
+
   context()->Plug(if_true, if_false);
 }
 
@@ -3409,7 +3369,7 @@ void FullCodeGenerator::EmitLog(CallRuntime* expr) {
   //   2 (array): Arguments to the format string.
   ZoneList<Expression*>* args = expr->arguments();
   ASSERT_EQ(args->length(), 3);
-  if (CodeGenerator::ShouldGenerateLog(args->at(0))) {
+  if (CodeGenerator::ShouldGenerateLog(isolate(), args->at(0))) {
     VisitForStackValue(args->at(1));
     VisitForStackValue(args->at(2));
     __ CallRuntime(Runtime::kLog, 2);
@@ -3670,8 +3630,8 @@ void FullCodeGenerator::EmitSetValueOf(CallRuntime* expr) {
 void FullCodeGenerator::EmitNumberToString(CallRuntime* expr) {
   ZoneList<Expression*>* args = expr->arguments();
   ASSERT_EQ(args->length(), 1);
-  // Load the argument on the stack and call the stub.
-  VisitForStackValue(args->at(0));
+  // Load the argument into r3 and call the stub.
+  VisitForAccumulatorValue(args->at(0));
 
   NumberToStringStub stub;
   __ CallStub(&stub);
@@ -5005,6 +4965,97 @@ FullCodeGenerator::NestedStatement* FullCodeGenerator::TryFinally::Exit(
 }
 
 #undef __
+
+
+#if V8_TARGET_ARCH_PPC64
+static const int32_t kBranchBeforeInterrupt =  0x409c0044;
+static const int kInterruptBranchDisplacement = 0x44;
+static const int kInterruptInstructions = 8;
+
+#else
+static const int32_t kBranchBeforeInterrupt =  0x409c0024;
+static const int kInterruptBranchDisplacement = 0x24;
+static const int kInterruptInstructions = 5;
+#endif
+
+
+void BackEdgeTable::PatchAt(Code* unoptimized_code,
+                            Address pc,
+                            BackEdgeState target_state,
+                            Code* replacement_code) {
+  static const int kInstrSize = Assembler::kInstrSize;
+  Address branch_address = pc - kInterruptInstructions * kInstrSize;
+  CodePatcher patcher(branch_address, 1);
+
+  switch (target_state) {
+    case INTERRUPT:
+      //  <decrement profiling counter>
+      //         bge +44                  ;; (ok)
+      //         lis     r12, <interrupt stub address> upper
+      //         ori     r12, <interrupt stub address> lower
+      //         mtlr    r12
+      //         blrl
+      //  ok-label ----- pc_after points here
+      patcher.masm()->bc(kInterruptBranchDisplacement, BF,
+          v8::internal::Assembler::encode_crbit(cr7, CR_LT));  // bge
+      ASSERT_EQ(kBranchBeforeInterrupt, Memory::int32_at(branch_address));
+      break;
+    case ON_STACK_REPLACEMENT:
+    case OSR_AFTER_STACK_CHECK:
+      //  <decrement profiling counter>
+      //         nop
+      //         lis     r12, <on-stack replacement address> upper
+      //         ori     r12, <on-stack replacement address> lower
+      //         mtlr    r12
+      //         blrl
+      //  ok-label ----- pc_after points here
+      patcher.masm()->nop();
+      break;
+  }
+
+  Address mov_address = branch_address + kInstrSize;
+  // Replace the stack check address in the mov sequence with the
+  // entry address of the replacement code.
+  Assembler::set_target_address_at(mov_address, replacement_code->entry());
+
+  unoptimized_code->GetHeap()->incremental_marking()->RecordCodeTargetPatch(
+      unoptimized_code, mov_address, replacement_code);
+}
+
+
+BackEdgeTable::BackEdgeState BackEdgeTable::GetBackEdgeState(
+    Isolate* isolate,
+    Code* unoptimized_code,
+    Address pc) {
+  static const int kInstrSize = Assembler::kInstrSize;
+  Address branch_address = pc - kInterruptInstructions * kInstrSize;
+  Address mov_address = branch_address + kInstrSize;
+
+  if (Memory::int32_at(branch_address) == kBranchBeforeInterrupt) {
+    ASSERT(reinterpret_cast<uintptr_t>(
+             Assembler::target_address_at(mov_address)) ==
+           reinterpret_cast<uintptr_t>(
+             isolate->builtins()->InterruptCheck()->entry()));
+    return INTERRUPT;
+  }
+
+  ASSERT(Assembler::IsNop(Assembler::instr_at(branch_address)));
+
+  if (reinterpret_cast<uintptr_t>(
+        Assembler::target_address_at(mov_address)) ==
+      reinterpret_cast<uintptr_t>(
+        isolate->builtins()->OnStackReplacement()->entry())) {
+    return ON_STACK_REPLACEMENT;
+  }
+
+  ASSERT(reinterpret_cast<uintptr_t>(
+           Assembler::target_address_at(mov_address)) ==
+         reinterpret_cast<uintptr_t>(
+           isolate->builtins()->OsrAfterStackCheck()->entry()));
+  return OSR_AFTER_STACK_CHECK;
+}
+
+
 } }  // namespace v8::internal
 
 #endif  // V8_TARGET_ARCH_PPC

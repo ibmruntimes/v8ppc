@@ -58,7 +58,7 @@ UnaryMathFunction CreateTranscendentalFunction(TranscendentalCache::Type type) {
 #if defined(USE_SIMULATOR)
 byte* fast_exp_ppc_machine_code = NULL;
 double fast_exp_simulator(double x) {
-  return Simulator::current(Isolate::Current())->CallFP(
+  return Simulator::current(Isolate::Current())->CallFPReturnsDouble(
       fast_exp_ppc_machine_code, x, 0);
 }
 #endif
@@ -156,8 +156,7 @@ void ElementsTransitionGenerator::GenerateMapChangeElementsTransition(
   // -----------------------------------
   if (mode == TRACK_ALLOCATION_SITE) {
     ASSERT(allocation_memento_found != NULL);
-    __ TestJSArrayForAllocationMemento(r5, r7);
-    __ beq(allocation_memento_found);
+    __ JumpIfJSArrayHasAllocationMemento(r5, r7, allocation_memento_found);
   }
 
   // Set transitioned map.
@@ -186,8 +185,7 @@ void ElementsTransitionGenerator::GenerateSmiToDouble(
   Label loop, entry, convert_hole, gc_required, only_change_map, done;
 
   if (mode == TRACK_ALLOCATION_SITE) {
-    __ TestJSArrayForAllocationMemento(r5, r7);
-    __ beq(fail);
+    __ JumpIfJSArrayHasAllocationMemento(r5, r7, fail);
   }
 
   // Check for empty arrays, which only require a map transition and no changes
@@ -332,8 +330,7 @@ void ElementsTransitionGenerator::GenerateDoubleToObject(
   Label entry, loop, convert_hole, gc_required, only_change_map;
 
   if (mode == TRACK_ALLOCATION_SITE) {
-    __ TestJSArrayForAllocationMemento(r5, r7);
-    __ beq(fail);
+    __ JumpIfJSArrayHasAllocationMemento(r5, r7, fail);
   }
 
   // Check for empty arrays, which only require a map transition and no changes
@@ -575,7 +572,7 @@ void MathExpGenerator::EmitMathExp(MacroAssembler* masm,
   ASSERT(!temp2.is(temp3));
   ASSERT(ExternalReference::math_exp_constants(0).address() != NULL);
 
-  Label done;
+  Label zero, infinity, done;
 
   __ mov(temp3, Operand(ExternalReference::math_exp_constants(0)));
 
@@ -583,12 +580,12 @@ void MathExpGenerator::EmitMathExp(MacroAssembler* masm,
   __ fcmpu(double_scratch1, input);
   __ fmr(result, input);
   __ bunordered(&done);
-  __ fmr(result, kDoubleRegZero);
-  __ bge(&done);
+  __ bge(&zero);
+
   __ lfd(double_scratch2, ExpConstant(1, temp3));
   __ fcmpu(input, double_scratch2);
-  __ lfd(result, ExpConstant(2, temp3));
-  __ bge(&done);
+  __ bge(&infinity);
+
   __ lfd(double_scratch1, ExpConstant(3, temp3));
   __ lfd(result, ExpConstant(4, temp3));
   __ fmul(double_scratch1, double_scratch1, input);
@@ -609,14 +606,14 @@ void MathExpGenerator::EmitMathExp(MacroAssembler* masm,
   __ fmul(double_scratch1, double_scratch1, double_scratch2);
   __ fsub(double_scratch1, double_scratch1, input);
   __ fsub(result, result, double_scratch1);
-  __ fmul(input, double_scratch1, double_scratch1);
-  __ fmul(result, result, input);
-  __ srwi(temp1, temp2, Operand(11));
+  __ fmul(double_scratch2, double_scratch1, double_scratch1);
+  __ fmul(result, result, double_scratch2);
   __ lfd(double_scratch2, ExpConstant(7, temp3));
   __ fmul(result, result, double_scratch2);
   __ fsub(result, result, double_scratch1);
   __ lfd(double_scratch2, ExpConstant(8, temp3));
   __ fadd(result, result, double_scratch2);
+  __ srwi(temp1, temp2, Operand(11));
   __ andi(temp2, temp2, Operand(0x7ff));
   __ addi(temp1, temp1, Operand(0x3ff));
   __ slwi(temp1, temp1, Operand(20));
@@ -641,10 +638,19 @@ void MathExpGenerator::EmitMathExp(MacroAssembler* masm,
   __ stw(temp1, MemOperand(sp, 0));
   __ stw(temp2, MemOperand(sp, 4));
 #endif
-  __ lfd(input, MemOperand(sp, 0));
+  __ lfd(double_scratch1, MemOperand(sp, 0));
   __ addi(sp, sp, Operand(kDoubleSize));
 
-  __ fmul(result, result, input);
+  __ fmul(result, result, double_scratch1);
+  __ b(&done);
+
+  __ bind(&zero);
+  __ fmr(result, kDoubleRegZero);
+  __ b(&done);
+
+  __ bind(&infinity);
+  __ lfd(result, ExpConstant(2, temp3));
+
   __ bind(&done);
 }
 
@@ -694,7 +700,7 @@ bool Code::IsYoungSequence(byte* sequence) {
 void Code::GetCodeAgeAndParity(byte* sequence, Age* age,
                                MarkingParity* parity) {
   if (IsYoungSequence(sequence)) {
-    *age = kNoAge;
+    *age = kNoAgeCodeAge;
     *parity = NO_MARKING_PARITY;
   } else {
     Address target_address = Memory::Address_at(sequence +
@@ -705,19 +711,20 @@ void Code::GetCodeAgeAndParity(byte* sequence, Age* age,
 }
 
 
-void Code::PatchPlatformCodeAge(byte* sequence,
+void Code::PatchPlatformCodeAge(Isolate* isolate,
+                                byte* sequence,
                                 Code::Age age,
                                 MarkingParity parity) {
   uint32_t young_length;
   byte* young_sequence = GetNoCodeAgeSequence(&young_length);
-  if (age == kNoAge) {
+  if (age == kNoAgeCodeAge) {
     CopyBytes(sequence, young_sequence, young_length);
     CPU::FlushICache(sequence, young_length);
   } else {
     // FIXED_SEQUENCE
     // 32bit - must output 6 instructions (24bytes)
     // 64bit - must output 10 instructions (40bytes)
-    Code* stub = GetCodeAgeStub(age, parity);
+    Code* stub = GetCodeAgeStub(isolate, age, parity);
     CodePatcher patcher(sequence, young_length / Assembler::kInstrSize);
     intptr_t target = reinterpret_cast<intptr_t>(stub->instruction_start());
     // We use Call to compute the address of this patch sequence.

@@ -41,7 +41,6 @@
 #include "parser.h"
 #include "unicode-inl.h"
 
-using ::v8::AccessorInfo;
 using ::v8::Context;
 using ::v8::Extension;
 using ::v8::Function;
@@ -130,20 +129,18 @@ class JoinableThread {
  public:
   explicit JoinableThread(const char* name)
     : name_(name),
-      semaphore_(i::OS::CreateSemaphore(0)),
+      semaphore_(0),
       thread_(this) {
   }
 
-  virtual ~JoinableThread() {
-    delete semaphore_;
-  }
+  virtual ~JoinableThread() {}
 
   void Start() {
     thread_.Start();
   }
 
   void Join() {
-    semaphore_->Wait();
+    semaphore_.Wait();
   }
 
   virtual void Run() = 0;
@@ -158,7 +155,7 @@ class JoinableThread {
 
     virtual void Run() {
       joinable_thread_->Run();
-      joinable_thread_->semaphore_->Signal();
+      joinable_thread_->semaphore_.Signal();
     }
 
    private:
@@ -166,7 +163,7 @@ class JoinableThread {
   };
 
   const char* name_;
-  i::Semaphore* semaphore_;
+  i::Semaphore semaphore_;
   ThreadWithSemaphore thread_;
 
   friend class ThreadWithSemaphore;
@@ -186,7 +183,7 @@ class IsolateLockingThreadWithLocalContext : public JoinableThread {
     v8::Locker locker(isolate_);
     v8::Isolate::Scope isolate_scope(isolate_);
     v8::HandleScope handle_scope(isolate_);
-    LocalContext local_context;
+    LocalContext local_context(isolate_);
     CHECK_EQ(isolate_, v8::internal::Isolate::Current());
     CalcFibAndCheck();
   }
@@ -210,7 +207,7 @@ static void StartJoinAndDeleteThreads(const i::List<JoinableThread*>& threads) {
 
 // Run many threads all locking on the same isolate
 TEST(IsolateLockingStress) {
-#if V8_TARGET_ARCH_MIPS || V8_TARGET_ARCH_PPC
+#if V8_TARGET_ARCH_MIPS
   const int kNThreads = 50;
 #else
   const int kNThreads = 100;
@@ -248,7 +245,7 @@ class IsolateNonlockingThread : public JoinableThread {
 
 // Run many threads each accessing its own isolate without locking
 TEST(MultithreadedParallelIsolates) {
-#if V8_TARGET_ARCH_ARM || V8_TARGET_ARCH_MIPS || V8_TARGET_ARCH_PPC
+#if V8_TARGET_ARCH_ARM || V8_TARGET_ARCH_MIPS
   const int kNThreads = 10;
 #else
   const int kNThreads = 50;
@@ -270,7 +267,7 @@ class IsolateNestedLockingThread : public JoinableThread {
     v8::Locker lock(isolate_);
     v8::Isolate::Scope isolate_scope(isolate_);
     v8::HandleScope handle_scope(isolate_);
-    LocalContext local_context;
+    LocalContext local_context(isolate_);
     {
       v8::Locker another_lock(isolate_);
       CalcFibAndCheck();
@@ -287,7 +284,7 @@ class IsolateNestedLockingThread : public JoinableThread {
 
 // Run  many threads with nested locks
 TEST(IsolateNestedLocking) {
-#if V8_TARGET_ARCH_MIPS || V8_TARGET_ARCH_PPC
+#if V8_TARGET_ARCH_MIPS
   const int kNThreads = 50;
 #else
   const int kNThreads = 100;
@@ -314,7 +311,7 @@ class SeparateIsolatesLocksNonexclusiveThread : public JoinableThread {
     v8::Locker lock(isolate1_);
     v8::Isolate::Scope isolate_scope(isolate1_);
     v8::HandleScope handle_scope(isolate1_);
-    LocalContext local_context;
+    LocalContext local_context(isolate1_);
 
     IsolateLockingThreadWithLocalContext threadB(isolate2_);
     threadB.Start();
@@ -329,7 +326,7 @@ class SeparateIsolatesLocksNonexclusiveThread : public JoinableThread {
 
 // Run parallel threads that lock and access different isolates in parallel
 TEST(SeparateIsolatesLocksNonexclusive) {
-#if V8_TARGET_ARCH_ARM || V8_TARGET_ARCH_MIPS || V8_TARGET_ARCH_PPC
+#if V8_TARGET_ARCH_ARM || V8_TARGET_ARCH_MIPS
   const int kNThreads = 50;
 #else
   const int kNThreads = 100;
@@ -406,7 +403,7 @@ class LockerUnlockerThread : public JoinableThread {
 
 // Use unlocker inside of a Locker, multiple threads.
 TEST(LockerUnlocker) {
-#if V8_TARGET_ARCH_ARM || V8_TARGET_ARCH_MIPS || V8_TARGET_ARCH_PPC
+#if V8_TARGET_ARCH_ARM || V8_TARGET_ARCH_MIPS
   const int kNThreads = 50;
 #else
   const int kNThreads = 100;
@@ -460,7 +457,7 @@ class LockTwiceAndUnlockThread : public JoinableThread {
 
 // Use Unlocker inside two Lockers.
 TEST(LockTwiceAndUnlock) {
-#if V8_TARGET_ARCH_ARM || V8_TARGET_ARCH_MIPS || V8_TARGET_ARCH_PPC
+#if V8_TARGET_ARCH_ARM || V8_TARGET_ARCH_MIPS
   const int kNThreads = 50;
 #else
   const int kNThreads = 100;
@@ -548,7 +545,7 @@ class LockUnlockLockThread : public JoinableThread {
   virtual void Run() {
     v8::Locker lock1(isolate_);
     CHECK(v8::Locker::IsLocked(isolate_));
-    CHECK(!v8::Locker::IsLocked(CcTest::default_isolate()));
+    CHECK(!v8::Locker::IsLocked(CcTest::isolate()));
     {
       v8::Isolate::Scope isolate_scope(isolate_);
       v8::HandleScope handle_scope(isolate_);
@@ -560,13 +557,13 @@ class LockUnlockLockThread : public JoinableThread {
     {
       v8::Unlocker unlock1(isolate_);
       CHECK(!v8::Locker::IsLocked(isolate_));
-      CHECK(!v8::Locker::IsLocked(CcTest::default_isolate()));
+      CHECK(!v8::Locker::IsLocked(CcTest::isolate()));
       {
         v8::Locker lock2(isolate_);
         v8::Isolate::Scope isolate_scope(isolate_);
         v8::HandleScope handle_scope(isolate_);
         CHECK(v8::Locker::IsLocked(isolate_));
-        CHECK(!v8::Locker::IsLocked(CcTest::default_isolate()));
+        CHECK(!v8::Locker::IsLocked(CcTest::isolate()));
         v8::Local<v8::Context> context =
             v8::Local<v8::Context>::New(isolate_, context_);
         v8::Context::Scope context_scope(context);
@@ -583,7 +580,7 @@ class LockUnlockLockThread : public JoinableThread {
 
 // Locker inside an Unlocker inside a Locker.
 TEST(LockUnlockLockMultithreaded) {
-#if V8_TARGET_ARCH_MIPS || V8_TARGET_ARCH_PPC
+#if V8_TARGET_ARCH_MIPS
   const int kNThreads = 50;
 #else
   const int kNThreads = 100;
@@ -608,24 +605,26 @@ class LockUnlockLockDefaultIsolateThread : public JoinableThread {
  public:
   explicit LockUnlockLockDefaultIsolateThread(v8::Handle<v8::Context> context)
       : JoinableThread("LockUnlockLockDefaultIsolateThread"),
-        context_(CcTest::default_isolate(), context) {}
+        context_(CcTest::isolate(), context) {}
 
   virtual void Run() {
-    v8::Locker lock1(CcTest::default_isolate());
+    v8::Locker lock1(CcTest::isolate());
     {
-      v8::HandleScope handle_scope(CcTest::default_isolate());
+      v8::Isolate::Scope isolate_scope(CcTest::isolate());
+      v8::HandleScope handle_scope(CcTest::isolate());
       v8::Local<v8::Context> context =
-          v8::Local<v8::Context>::New(CcTest::default_isolate(), context_);
+          v8::Local<v8::Context>::New(CcTest::isolate(), context_);
       v8::Context::Scope context_scope(context);
       CalcFibAndCheck();
     }
     {
-      v8::Unlocker unlock1(CcTest::default_isolate());
+      v8::Unlocker unlock1(CcTest::isolate());
       {
-        v8::Locker lock2(CcTest::default_isolate());
-        v8::HandleScope handle_scope(CcTest::default_isolate());
+        v8::Locker lock2(CcTest::isolate());
+        v8::Isolate::Scope isolate_scope(CcTest::isolate());
+        v8::HandleScope handle_scope(CcTest::isolate());
         v8::Local<v8::Context> context =
-            v8::Local<v8::Context>::New(CcTest::default_isolate(), context_);
+            v8::Local<v8::Context>::New(CcTest::isolate(), context_);
         v8::Context::Scope context_scope(context);
         CalcFibAndCheck();
       }
@@ -639,7 +638,7 @@ class LockUnlockLockDefaultIsolateThread : public JoinableThread {
 
 // Locker inside an Unlocker inside a Locker for default isolate.
 TEST(LockUnlockLockDefaultIsolateMultithreaded) {
-#if V8_TARGET_ARCH_MIPS || V8_TARGET_ARCH_PPC
+#if V8_TARGET_ARCH_MIPS
   const int kNThreads = 50;
 #else
   const int kNThreads = 100;
@@ -647,9 +646,10 @@ TEST(LockUnlockLockDefaultIsolateMultithreaded) {
   Local<v8::Context> context;
   i::List<JoinableThread*> threads(kNThreads);
   {
-    v8::Locker locker_(CcTest::default_isolate());
-    v8::HandleScope handle_scope(CcTest::default_isolate());
-    context = v8::Context::New(CcTest::default_isolate());
+    v8::Locker locker_(CcTest::isolate());
+    v8::Isolate::Scope isolate_scope(CcTest::isolate());
+    v8::HandleScope handle_scope(CcTest::isolate());
+    context = v8::Context::New(CcTest::isolate());
     for (int i = 0; i < kNThreads; i++) {
       threads.Add(new LockUnlockLockDefaultIsolateThread(context));
     }
@@ -711,7 +711,7 @@ class IsolateGenesisThread : public JoinableThread {
 // Test installing extensions in separate isolates concurrently.
 // http://code.google.com/p/v8/issues/detail?id=1821
 TEST(ExtensionsRegistration) {
-#if V8_TARGET_ARCH_ARM || V8_TARGET_ARCH_MIPS || V8_TARGET_ARCH_PPC
+#if V8_TARGET_ARCH_ARM || V8_TARGET_ARCH_MIPS
   const int kNThreads = 10;
 #else
   const int kNThreads = 40;

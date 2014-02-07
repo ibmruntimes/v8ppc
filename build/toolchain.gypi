@@ -60,20 +60,6 @@
 
     'v8_enable_backtrace%': 0,
 
-    # Speeds up Debug builds:
-    # 0 - Compiler optimizations off (debuggable) (default). This may
-    #     be 5x slower than Release (or worse).
-    # 1 - Turn on compiler optimizations. This may be hard or impossible to
-    #     debug. This may still be 2x slower than Release (or worse).
-    # 2 - Turn on optimizations, and also #undef DEBUG / #define NDEBUG
-    #     (but leave V8_ENABLE_CHECKS and most other assertions enabled.
-    #     This may cause some v8 tests to fail in the Debug configuration.
-    #     This roughly matches the performance of a Release build and can
-    #     be used by embedders that need to build their own code as debug
-    #     but don't want or need a debug version of V8. This should produce
-    #     near-release speeds.
-    'v8_optimized_debug%': 0,
-
     # Enable profiling support. Only required on Windows.
     'v8_enable_prof%': 0,
 
@@ -461,6 +447,9 @@
           '__BYTE_ORDER=__BIG_ENDIAN',
           '__FLOAT_WORD_ORDER=__BIG_ENDIAN'],
         'conditions': [
+          [ 'v8_target_arch=="ppc"', {
+            'ldflags': [ '-Wl,-bmaxdata:0x30000000/dsa' ],
+          }],
           [ 'v8_target_arch=="ppc64"', {
             'cflags': [ '-maix64' ],
             'ldflags': [ '-maix64' ],
@@ -475,6 +464,7 @@
           'V8_ENABLE_CHECKS',
           'OBJECT_PRINT',
           'VERIFY_HEAP',
+          'DEBUG'
         ],
         'msvs_settings': {
           'VCCLCompilerTool': {
@@ -542,15 +532,6 @@
           },
         },
         'conditions': [
-          ['v8_optimized_debug==2', {
-            'defines': [
-              'NDEBUG',
-            ],
-          }, {
-            'defines': [
-              'DEBUG',
-            ],
-          }],
           ['OS=="linux" or OS=="freebsd" or OS=="openbsd" or OS=="netbsd" \
             or OS=="aix"', {
             'cflags': [ '-Wall', '<(werror)', '-W', '-Wno-unused-parameter',
@@ -587,13 +568,24 @@
                 'cflags!': [
                   '-O0',
                   '-O1',
-                  '-O2',
                   '-Os',
                 ],
                 'cflags': [
                   '-fdata-sections',
                   '-ffunction-sections',
-                  '-O3',
+                ],
+                'defines': [
+                  'OPTIMIZED_DEBUG'
+                ],
+                'conditions': [
+                  # TODO(crbug.com/272548): Avoid -O3 in NaCl
+                  ['nacl_target_arch=="none"', {
+                    'cflags': ['-O3'],
+                    'cflags!': ['-O2'],
+                    }, {
+                    'cflags': ['-O2'],
+                    'cflags!': ['-O3'],
+                  }],
                 ],
               }],
               ['v8_optimized_debug!=0 and gcc_version==44 and clang==0', {
@@ -644,13 +636,11 @@
           ['OS=="linux" or OS=="freebsd" or OS=="openbsd" or OS=="netbsd" \
             or OS=="aix"', {
             'cflags!': [
-              '-O2',
               '-Os',
             ],
             'cflags': [
               '-fdata-sections',
               '-ffunction-sections',
-              '-O3',
               '<(wno_array_bounds)',
             ],
             'conditions': [
@@ -659,6 +649,14 @@
                   # Avoid crashes with gcc 4.4 in the v8 test suite.
                   '-fno-tree-vrp',
                 ],
+              }],
+              # TODO(crbug.com/272548): Avoid -O3 in NaCl
+              ['nacl_target_arch=="none"', {
+                'cflags': ['-O3'],
+                'cflags!': ['-O2'],
+              }, {
+                'cflags': ['-O2'],
+                'cflags!': ['-O3'],
               }],
             ],
           }],

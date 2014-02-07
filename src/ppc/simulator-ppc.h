@@ -181,7 +181,9 @@ class Simulator {
   // which sets up the simulator state and grabs the result on return.
   intptr_t Call(byte* entry, int argument_count, ...);
   // Alternative: call a 2-argument double function.
-  double CallFP(byte* entry, double d0, double d1);
+  void CallFP(byte* entry, double d0, double d1);
+  int32_t CallFPReturnsInt(byte* entry, double d0, double d1);
+  double CallFPReturnsDouble(byte* entry, double d0, double d1);
 
   // Push an address onto the JS stack.
   uintptr_t PushAddress(uintptr_t address);

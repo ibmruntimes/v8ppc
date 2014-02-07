@@ -52,16 +52,12 @@
 #include "v8.h"
 #include "v8threads.h"
 
-#include "platform-posix.h"
 #include "platform.h"
 #include "vm-state-inl.h"
 
 
 namespace v8 {
 namespace internal {
-
-
-static Mutex* limit_mutex = NULL;
 
 
 const char* OS::LocalTimezone(double time) {
@@ -83,31 +79,6 @@ double OS::LocalTimeOffset() {
 }
 
 
-// We keep the lowest and highest addresses mapped as a quick way of
-// determining that pointers are outside the heap (used mostly in assertions
-// and verification).  The estimate is conservative, i.e., not all addresses in
-// 'allocated' space are actually allocated to our heap.  The range is
-// [lowest, highest), inclusive on the low and and exclusive on the high end.
-static void* lowest_ever_allocated = reinterpret_cast<void*>(-1);
-static void* highest_ever_allocated = reinterpret_cast<void*>(0);
-
-
-static void UpdateAllocatedSpaceLimits(void* address, int size) {
-  ASSERT(limit_mutex != NULL);
-  ScopedLock lock(limit_mutex);
-
-  lowest_ever_allocated = Min(lowest_ever_allocated, address);
-  highest_ever_allocated =
-      Max(highest_ever_allocated,
-          reinterpret_cast<void*>(reinterpret_cast<char*>(address) + size));
-}
-
-
-bool OS::IsOutsideAllocatedSpace(void* address) {
-  return address < lowest_ever_allocated || address >= highest_ever_allocated;
-}
-
-
 void* OS::Allocate(const size_t requested,
                    size_t* allocated,
                    bool executable) {
@@ -116,17 +87,11 @@ void* OS::Allocate(const size_t requested,
   void* mbase = mmap(NULL, msize, prot, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
 
   if (mbase == MAP_FAILED) {
-    LOG(ISOLATE, StringEvent("OS::Allocate", "mmap failed"));
+    LOG(i::Isolate::Current(), StringEvent("OS::Allocate", "mmap failed"));
     return NULL;
   }
   *allocated = msize;
-  UpdateAllocatedSpaceLimits(mbase, msize);
   return mbase;
-}
-
-
-void OS::DumpBacktrace() {
-  // Not yet implemented.
 }
 
 
@@ -183,7 +148,7 @@ static unsigned StringToLong(char* buffer) {
 }
 
 
-void OS::LogSharedLibraryAddresses() {
+void OS::LogSharedLibraryAddresses(Isolate *isolate) {
   static const int MAP_LENGTH = 1024;
   int fd = open("/proc/self/maps", O_RDONLY);
   if (fd < 0) return;
@@ -217,18 +182,13 @@ void OS::LogSharedLibraryAddresses() {
     // There may be no filename in this line.  Skip to next.
     if (start_of_path == NULL) continue;
     buffer[bytes_read] = 0;
-    LOG(i::Isolate::Current(), SharedLibraryEvent(start_of_path, start, end));
+    LOG(isolate, SharedLibraryEvent(start_of_path, start, end));
   }
   close(fd);
 }
 
 
 void OS::SignalCodeMovingGC() {
-}
-
-
-int OS::StackWalk(Vector<OS::StackFrame> frames) {
-  return 0;
 }
 
 
@@ -343,7 +303,6 @@ bool VirtualMemory::CommitRegion(void* base, size_t size, bool is_executable) {
 #endif
   if (mprotect(base, size, prot) == -1) return false;
 
-  UpdateAllocatedSpaceLimits(base, size);
   return true;
 }
 
@@ -360,100 +319,6 @@ bool VirtualMemory::ReleaseRegion(void* base, size_t size) {
 
 bool VirtualMemory::HasLazyCommits() {
   return true;
-}
-
-
-class AIXSemaphore : public Semaphore {
- public:
-  explicit AIXSemaphore(int count) {  sem_init(&sem_, 0, count); }
-  virtual ~AIXSemaphore() { sem_destroy(&sem_); }
-
-  virtual void Wait();
-  virtual bool Wait(int timeout);
-  virtual void Signal() { sem_post(&sem_); }
- private:
-  sem_t sem_;
-};
-
-
-void AIXSemaphore::Wait() {
-  while (true) {
-    int result = sem_wait(&sem_);
-    if (result == 0) return;  // Successfully got semaphore.
-    CHECK(result == -1 && errno == EINTR);  // Signal caused spurious wakeup.
-  }
-}
-
-
-#ifndef TIMEVAL_TO_TIMESPEC
-#define TIMEVAL_TO_TIMESPEC(tv, ts) do {                            \
-    (ts)->tv_sec = (tv)->tv_sec;                                    \
-    (ts)->tv_nsec = (tv)->tv_usec * 1000;                           \
-} while (false)
-#endif
-
-
-#ifndef timeradd
-#define timeradd(a, b, result) \
-  do { \
-    (result)->tv_sec = (a)->tv_sec + (b)->tv_sec; \
-    (result)->tv_usec = (a)->tv_usec + (b)->tv_usec; \
-    if ((result)->tv_usec >= 1000000) { \
-      ++(result)->tv_sec; \
-      (result)->tv_usec -= 1000000; \
-    } \
-  } while (0)
-#endif
-
-
-bool AIXSemaphore::Wait(int timeout) {
-  const long kOneSecondMicros = 1000000;  // NOLINT
-
-  // Split timeout into second and nanosecond parts.
-  struct timeval delta;
-  delta.tv_usec = timeout % kOneSecondMicros;
-  delta.tv_sec = timeout / kOneSecondMicros;
-
-  struct timeval current_time;
-  // Get the current time.
-  if (gettimeofday(&current_time, NULL) == -1) {
-    return false;
-  }
-
-  // Calculate time for end of timeout.
-  struct timeval end_time;
-  timeradd(&current_time, &delta, &end_time);
-
-  struct timespec ts;
-  TIMEVAL_TO_TIMESPEC(&end_time, &ts);
-  while (true) {
-    int result = sem_timedwait(&sem_, &ts);
-    if (result == 0) return true;  // Successfully got semaphore.
-    if (result == -1 && errno == ETIMEDOUT) return false;  // Timeout.
-    CHECK(result == -1 && errno == EINTR);  // Signal caused spurious wakeup.
-  }
-}
-
-
-Semaphore* OS::CreateSemaphore(int count) {
-  return new AIXSemaphore(count);
-}
-
-
-void OS::SetUp() {
-  // Seed the random number generator.
-  // Convert the current time to a 64-bit integer first, before converting it
-  // to an unsigned. Going directly can cause an overflow and the seed to be
-  // set to all ones. The seed will be identical for different instances that
-  // call this setup code within the same millisecond.
-  uint64_t seed = static_cast<uint64_t>(TimeCurrentMillis());
-  srandom(static_cast<unsigned int>(seed));
-  limit_mutex = CreateMutex();
-}
-
-
-void OS::TearDown() {
-  delete limit_mutex;
 }
 
 

@@ -367,7 +367,7 @@ void CallICBase::GenerateMonomorphicCacheProbe(MacroAssembler* masm,
                                          extra_state,
                                          Code::NORMAL,
                                          argc);
-  Isolate::Current()->stub_cache()->GenerateProbe(
+  masm->isolate()->stub_cache()->GenerateProbe(
       masm, flags, r4, r5, r6, r7, r8, r9);
 
   // If the stub cache probing failed, the receiver might be a value.
@@ -406,7 +406,7 @@ void CallICBase::GenerateMonomorphicCacheProbe(MacroAssembler* masm,
 
   // Probe the stub cache for the value object.
   __ bind(&probe);
-  Isolate::Current()->stub_cache()->GenerateProbe(
+  masm->isolate()->stub_cache()->GenerateProbe(
       masm, flags, r4, r5, r6, r7, r8, r9);
 
   __ bind(&miss);
@@ -669,9 +669,9 @@ void LoadIC::GenerateMegamorphic(MacroAssembler* masm) {
 
   // Probe the stub cache.
   Code::Flags flags = Code::ComputeFlags(
-      Code::STUB, MONOMORPHIC, Code::kNoExtraICState,
+      Code::HANDLER, MONOMORPHIC, Code::kNoExtraICState,
       Code::NORMAL, Code::LOAD_IC);
-  Isolate::Current()->stub_cache()->GenerateProbe(
+  masm->isolate()->stub_cache()->GenerateProbe(
       masm, flags, r3, r5, r6, r7, r8, r9);
 
   // Cache miss: Jump to runtime.
@@ -1515,10 +1515,10 @@ void StoreIC::GenerateMegamorphic(MacroAssembler* masm,
 
   // Get the receiver from the stack and probe the stub cache.
   Code::Flags flags = Code::ComputeFlags(
-      Code::STUB, MONOMORPHIC, strict_mode,
+      Code::HANDLER, MONOMORPHIC, strict_mode,
       Code::NORMAL, Code::STORE_IC);
 
-  Isolate::Current()->stub_cache()->GenerateProbe(
+  masm->isolate()->stub_cache()->GenerateProbe(
       masm, flags, r4, r5, r6, r7, r8, r9);
 
   // Cache miss: Jump to runtime.

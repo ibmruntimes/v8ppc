@@ -940,7 +940,7 @@ Handle<HeapObject> RegExpMacroAssemblerPPC::GetCode(Handle<String> source) {
   masm_->GetCode(&code_desc);
   Handle<Code> code = isolate()->factory()->NewCode(
       code_desc, Code::ComputeFlags(Code::REGEXP), masm_->CodeObject());
-  PROFILE(Isolate::Current(), RegExpCodeCreateEvent(*code, *source));
+  PROFILE(masm_->isolate(), RegExpCodeCreateEvent(*code, *source));
   return Handle<HeapObject>::cast(code);
 }
 
@@ -1007,20 +1007,7 @@ void RegExpMacroAssemblerPPC::PopRegister(int register_index) {
 
 
 void RegExpMacroAssemblerPPC::PushBacktrack(Label* label) {
-  if (label->is_bound()) {
-    int target = label->pos();
-    __ mov(r3, Operand(target + Code::kHeaderSize - kHeapObjectTag));
-  } else {
-    Assembler::BlockTrampolinePoolScope block_trampoline_pool(masm_);
-    Label after_constant;
-    __ b(&after_constant);
-    int offset = masm_->pc_offset();
-    int cp_offset = offset + Code::kHeaderSize - kHeapObjectTag;
-    __ emit(0);
-    masm_->label_at_put(label, offset);
-    __ bind(&after_constant);
-    __ LoadWord(r3, MemOperand(code_pointer(), cp_offset), r0);
-  }
+  __ mov_label_offset(r3, label);
   Push(r3);
   CheckStackLimit();
 }
@@ -1108,16 +1095,52 @@ void RegExpMacroAssemblerPPC::WriteStackPointerToRegister(int reg) {
 // Private methods:
 
 void RegExpMacroAssemblerPPC::CallCheckStackGuardState(Register scratch) {
-  static const int num_arguments = 3;
-  __ PrepareCallCFunction(num_arguments, scratch);
+  int frame_alignment = masm_->ActivationFrameAlignment();
+  int stack_space = kNumRequiredStackFrameSlots;
+  int stack_passed_arguments = 1;  // space for return address pointer
+
+  // The following stack manipulation logic is similar to
+  // PrepareCallCFunction.  However, we need an extra slot on the
+  // stack to house the return address parameter.
+  if (frame_alignment > kPointerSize) {
+    // Make stack end at alignment and make room for stack arguments
+    // -- preserving original value of sp.
+    __ mr(scratch, sp);
+    __ addi(sp, sp, Operand(-(stack_passed_arguments + 1) * kPointerSize));
+    ASSERT(IsPowerOf2(frame_alignment));
+    __ ClearRightImm(sp, sp, Operand(WhichPowerOf2(frame_alignment)));
+    __ StoreP(scratch, MemOperand(sp, stack_passed_arguments * kPointerSize));
+  } else {
+    // Make room for stack arguments
+    stack_space += stack_passed_arguments;
+  }
+
+  // Allocate frame with required slots to make ABI work.
+  __ li(r0, Operand::Zero());
+  __ StorePU(r0, MemOperand(sp, -stack_space * kPointerSize));
+
   // RegExp code frame pointer.
   __ mr(r5, frame_pointer());
   // Code* of self.
   __ mov(r4, Operand(masm_->CodeObject()));
-  // r3 becomes return address pointer.
+  // r3 will point to the return address, placed by DirectCEntry.
+  __ addi(r3, sp, Operand(kStackFrameExtraParamSlot * kPointerSize));
+
   ExternalReference stack_guard_check =
       ExternalReference::re_check_stack_guard_state(isolate());
-  CallCFunctionUsingStub(stack_guard_check, num_arguments);
+  __ mov(ip, Operand(stack_guard_check));
+  DirectCEntryStub stub;
+  stub.GenerateCall(masm_, ip);
+
+  // Restore the stack pointer
+  stack_space = kNumRequiredStackFrameSlots + stack_passed_arguments;
+  if (frame_alignment > kPointerSize) {
+    __ LoadP(sp, MemOperand(sp, stack_space * kPointerSize));
+  } else {
+    __ addi(sp, sp, Operand(stack_space * kPointerSize));
+  }
+
+  __ mov(code_pointer(), Operand(masm_->CodeObject()));
 }
 
 
@@ -1132,7 +1155,6 @@ int RegExpMacroAssemblerPPC::CheckStackGuardState(Address* return_address,
                                                   Code* re_code,
                                                   Address re_frame) {
   Isolate* isolate = frame_entry<Isolate*>(re_frame, kIsolate);
-  ASSERT(isolate == Isolate::Current());
   if (isolate->stack_guard()->IsStackOverflow()) {
     isolate->StackOverflow();
     return EXCEPTION;
@@ -1322,24 +1344,6 @@ void RegExpMacroAssemblerPPC::CheckStackLimit() {
 }
 
 
-void RegExpMacroAssemblerPPC::CallCFunctionUsingStub(
-    ExternalReference function,
-    int num_arguments) {
-  // Must pass all arguments in registers. The stub pushes on the stack.
-  ASSERT(num_arguments <= 8);
-  __ mov(code_pointer(), Operand(function));
-  RegExpCEntryStub stub;
-  __ CallStub(&stub);
-
-  // Remove frame bought in PrepareCallCFunction
-  __ addi(sp, sp, Operand(kNumRequiredStackFrameSlots * kPointerSize));
-  if (masm_->ActivationFrameAlignment() > kPointerSize) {
-    __ LoadP(sp, MemOperand(sp, 0));
-  }
-  __ mov(code_pointer(), Operand(masm_->CodeObject()));
-}
-
-
 bool RegExpMacroAssemblerPPC::CanReadUnaligned() {
   return CpuFeatures::IsSupported(UNALIGNED_ACCESSES) && !slow_safe();
 }
@@ -1368,34 +1372,6 @@ void RegExpMacroAssemblerPPC::LoadCurrentCharacterUnchecked(int cp_offset,
   }
 }
 
-
-void RegExpCEntryStub::Generate(MacroAssembler* masm_) {
-  // Stack is already aligned for call and the LR save area allocated.
-  __ addi(r3, sp, Operand(kStackFrameLRSlot * kPointerSize));
-  __ mflr(r0);
-  __ StoreP(r0, MemOperand(r3));
-
-  // PPC LINUX ABI:
-  __ li(r0, Operand::Zero());
-  __ StorePU(r0, MemOperand(sp, -kNumRequiredStackFrameSlots * kPointerSize));
-
-#if ABI_USES_FUNCTION_DESCRIPTORS && !defined(USE_SIMULATOR)
-  // Native AIX/PPC64 Linux use a function descriptor.
-  __ LoadP(ToRegister(2), MemOperand(r26, kPointerSize));  // TOC
-  __ LoadP(ip, MemOperand(r26, 0));  // Instruction address
-  Register target = ip;
-#else
-  Register target = r26;
-#endif
-
-  __ Call(target);
-
-  __ addi(sp, sp, Operand(kNumRequiredStackFrameSlots * kPointerSize));
-
-  __ LoadP(r0, MemOperand(sp, kStackFrameLRSlot * kPointerSize));
-  __ mtlr(r0);
-  __ blr();
-}
 
 #undef __
 

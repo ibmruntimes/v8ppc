@@ -89,278 +89,6 @@ void Deoptimizer::PatchCodeForDeoptimization(Isolate* isolate, Code* code) {
 }
 
 
-#if V8_TARGET_ARCH_PPC64
-static const int32_t kBranchBeforeInterrupt =  0x409c0044;
-static const int kInterruptBranchDisplacement = 0x44;
-static const int kInterruptInstructions = 8;
-
-#else
-static const int32_t kBranchBeforeInterrupt =  0x409c0024;
-static const int kInterruptBranchDisplacement = 0x24;
-static const int kInterruptInstructions = 5;
-#endif
-
-
-// This code has some dependency on the FIXED_SEQUENCE lis/ori
-// The back edge bookkeeping code from full-codegen-ppc.cc
-// has the form:
-//
-//  <decrement profiling counter>
-//  409c0044       bge +44                  ;; (ok)
-//  3d802553       lis     r12, 9555        ;; two part load
-//  618c5000       ori     r12, r12, 20480  ;; of interrupt stub address
-//  7d8803a6       mtlr    r12
-//  4e800021       blrl
-//  <pc_after>
-//
-// We patch the code to the following form:
-//
-//  <decrement profiling counter>
-//  60000000       ori     r0, r0, 0        ;; NOP
-//  3d80NNNN       lis     r12, NNNN        ;; two part load
-//  618cNNNN       ori     r12, r12, NNNN   ;; of on-stack replace address
-//  7d8803a6       mtlr    r12
-//  4e800021       blrl
-//
-// 64bit will have an expanded mov() [lis/ori] sequences
-void Deoptimizer::PatchInterruptCodeAt(Code* unoptimized_code,
-                                       Address pc_after,
-                                       Code* interrupt_code,
-                                       Code* replacement_code) {
-  ASSERT(!InterruptCodeIsPatched(unoptimized_code,
-                                 pc_after,
-                                 interrupt_code,
-                                 replacement_code));
-  const int kInstrSize = Assembler::kInstrSize;
-  const Address patch_start = pc_after - kInterruptInstructions * kInstrSize;
-
-  CodePatcher patcher(patch_start, kInterruptInstructions - 2);
-
-  // Replace conditional jump with NOP.
-  patcher.masm()->nop();
-
-  // Now modify the two part load (or 5 part on 64bit)
-  patcher.masm()->mov(ip,
-    Operand(reinterpret_cast<uintptr_t>(replacement_code->entry())));
-
-  unoptimized_code->GetHeap()->incremental_marking()->RecordCodeTargetPatch(
-    unoptimized_code, patch_start + kInstrSize, replacement_code);
-}
-
-
-void Deoptimizer::RevertInterruptCodeAt(Code* unoptimized_code,
-                                        Address pc_after,
-                                        Code* interrupt_code,
-                                        Code* replacement_code) {
-  ASSERT(InterruptCodeIsPatched(unoptimized_code,
-                                 pc_after,
-                                 interrupt_code,
-                                 replacement_code));
-  const int kInstrSize = Assembler::kInstrSize;
-  const Address patch_start = pc_after - kInterruptInstructions * kInstrSize;
-
-  CodePatcher patcher(patch_start, kInterruptInstructions - 2);
-
-  patcher.masm()->bc(kInterruptBranchDisplacement, BF,
-                     v8::internal::Assembler::encode_crbit(cr7, CR_LT));  // bge
-  ASSERT_EQ(kBranchBeforeInterrupt, Memory::int32_at(patch_start));
-
-  // Now modify the two part load (or 5 part on 64bit)
-  patcher.masm()->mov(ip,
-    Operand(reinterpret_cast<uintptr_t>(interrupt_code->entry())));
-
-  interrupt_code->GetHeap()->incremental_marking()->RecordCodeTargetPatch(
-      unoptimized_code, patch_start + kInstrSize, interrupt_code);
-}
-
-
-#ifdef DEBUG
-bool Deoptimizer::InterruptCodeIsPatched(Code* unoptimized_code,
-                                         Address pc_after,
-                                         Code* interrupt_code,
-                                         Code* replacement_code) {
-  const int kInstrSize = Assembler::kInstrSize;
-  const Address patch_start = pc_after - kInterruptInstructions * kInstrSize;
-
-  if (Assembler::IsNop(Assembler::instr_at(patch_start))) {
-    ASSERT(reinterpret_cast<uintptr_t>(
-        Assembler::target_address_at(patch_start + kInstrSize)) ==
-        reinterpret_cast<uintptr_t>(replacement_code->entry()));
-    return true;
-  } else {
-    ASSERT(reinterpret_cast<uintptr_t>(
-        Assembler::target_address_at(patch_start + kInstrSize)) ==
-        reinterpret_cast<uintptr_t>(interrupt_code->entry()));
-    return false;
-  }
-}
-#endif  // DEBUG
-
-
-static int LookupBailoutId(DeoptimizationInputData* data, BailoutId ast_id) {
-  ByteArray* translations = data->TranslationByteArray();
-  int length = data->DeoptCount();
-  for (int i = 0; i < length; i++) {
-    if (data->AstId(i) == ast_id) {
-      TranslationIterator it(translations,  data->TranslationIndex(i)->value());
-      int value = it.Next();
-      ASSERT(Translation::BEGIN == static_cast<Translation::Opcode>(value));
-      // Read the number of frames.
-      value = it.Next();
-      if (value == 1) return i;
-    }
-  }
-  UNREACHABLE();
-  return -1;
-}
-
-
-void Deoptimizer::DoComputeOsrOutputFrame() {
-  DeoptimizationInputData* data = DeoptimizationInputData::cast(
-      compiled_code_->deoptimization_data());
-  unsigned ast_id = data->OsrAstId()->value();
-
-  int bailout_id = LookupBailoutId(data, BailoutId(ast_id));
-  unsigned translation_index = data->TranslationIndex(bailout_id)->value();
-  ByteArray* translations = data->TranslationByteArray();
-
-  TranslationIterator iterator(translations, translation_index);
-  Translation::Opcode opcode =
-      static_cast<Translation::Opcode>(iterator.Next());
-  ASSERT(Translation::BEGIN == opcode);
-  USE(opcode);
-  int count = iterator.Next();
-  iterator.Skip(1);  // Drop JS frame count.
-  ASSERT(count == 1);
-  USE(count);
-
-  opcode = static_cast<Translation::Opcode>(iterator.Next());
-  USE(opcode);
-  ASSERT(Translation::JS_FRAME == opcode);
-  unsigned node_id = iterator.Next();
-  USE(node_id);
-  ASSERT(node_id == ast_id);
-  int closure_id = iterator.Next();
-  USE(closure_id);
-  ASSERT_EQ(Translation::kSelfLiteralId, closure_id);
-  unsigned height = iterator.Next();
-  unsigned height_in_bytes = height * kPointerSize;
-  USE(height_in_bytes);
-
-  unsigned fixed_size = ComputeFixedSize(function_);
-  unsigned input_frame_size = input_->GetFrameSize();
-  ASSERT(fixed_size + height_in_bytes == input_frame_size);
-
-  unsigned stack_slot_size = compiled_code_->stack_slots() * kPointerSize;
-  unsigned outgoing_height = data->ArgumentsStackHeight(bailout_id)->value();
-  unsigned outgoing_size = outgoing_height * kPointerSize;
-  unsigned output_frame_size = fixed_size + stack_slot_size + outgoing_size;
-  ASSERT(outgoing_size == 0);  // OSR does not happen in the middle of a call.
-
-  if (FLAG_trace_osr) {
-    PrintF("[on-stack replacement: begin 0x%08" V8PRIxPTR " ",
-           reinterpret_cast<intptr_t>(function_));
-    PrintFunctionName();
-    PrintF(" => node=%u, frame=%d->%d]\n",
-           ast_id,
-           input_frame_size,
-           output_frame_size);
-  }
-
-  // There's only one output frame in the OSR case.
-  output_count_ = 1;
-  output_ = new FrameDescription*[1];
-  output_[0] = new(output_frame_size) FrameDescription(
-      output_frame_size, function_);
-  output_[0]->SetFrameType(StackFrame::JAVA_SCRIPT);
-
-  // Clear the incoming parameters in the optimized frame to avoid
-  // confusing the garbage collector.
-  unsigned output_offset = output_frame_size - kPointerSize;
-  int parameter_count = function_->shared()->formal_parameter_count() + 1;
-  for (int i = 0; i < parameter_count; ++i) {
-    output_[0]->SetFrameSlot(output_offset, 0);
-    output_offset -= kPointerSize;
-  }
-
-  // Translate the incoming parameters. This may overwrite some of the
-  // incoming argument slots we've just cleared.
-  int input_offset = input_frame_size - kPointerSize;
-  bool ok = true;
-  int limit = input_offset - (parameter_count * kPointerSize);
-  while (ok && input_offset > limit) {
-    ok = DoOsrTranslateCommand(&iterator, &input_offset);
-  }
-
-  // There are no translation commands for the caller's pc and fp, the
-  // context, and the function.  Set them up explicitly.
-  for (int i =  StandardFrameConstants::kCallerPCOffset;
-       ok && i >=  StandardFrameConstants::kMarkerOffset;
-       i -= kPointerSize) {
-    uintptr_t input_value = input_->GetFrameSlot(input_offset);
-    if (FLAG_trace_osr) {
-      const char* name = "UNKNOWN";
-      switch (i) {
-        case StandardFrameConstants::kCallerPCOffset:
-          name = "caller's pc";
-          break;
-        case StandardFrameConstants::kCallerFPOffset:
-          name = "fp";
-          break;
-        case StandardFrameConstants::kContextOffset:
-          name = "context";
-          break;
-        case StandardFrameConstants::kMarkerOffset:
-          name = "function";
-          break;
-      }
-      PrintF("    [sp + %d] <- 0x%08" V8PRIxPTR " ;"
-             " [sp + %d] (fixed part - %s)\n",
-             output_offset,
-             input_value,
-             input_offset,
-             name);
-    }
-
-    output_[0]->SetFrameSlot(output_offset, input_->GetFrameSlot(input_offset));
-    input_offset -= kPointerSize;
-    output_offset -= kPointerSize;
-  }
-
-  // Translate the rest of the frame.
-  while (ok && input_offset >= 0) {
-    ok = DoOsrTranslateCommand(&iterator, &input_offset);
-  }
-
-  // If translation of any command failed, continue using the input frame.
-  if (!ok) {
-    delete output_[0];
-    output_[0] = input_;
-    output_[0]->SetPc(reinterpret_cast<uintptr_t>(from_));
-  } else {
-    // Set up the frame pointer and the context pointer.
-    output_[0]->SetRegister(fp.code(), input_->GetRegister(fp.code()));
-    output_[0]->SetRegister(cp.code(), input_->GetRegister(cp.code()));
-
-    unsigned pc_offset = data->OsrPcOffset()->value();
-    uintptr_t pc = reinterpret_cast<uintptr_t>(
-        compiled_code_->entry() + pc_offset);
-    output_[0]->SetPc(pc);
-  }
-  Code* continuation = isolate_->builtins()->builtin(Builtins::kNotifyOSR);
-  output_[0]->SetContinuation(
-      reinterpret_cast<uintptr_t>(continuation->entry()));
-
-  if (FLAG_trace_osr) {
-    PrintF("[on-stack replacement translation %s: 0x%08" V8PRIxPTR " ",
-           ok ? "finished" : "aborted",
-           reinterpret_cast<intptr_t>(function_));
-    PrintFunctionName();
-    PrintF(" => pc=0x%0" V8PRIxPTR "]\n", output_[0]->GetPc());
-  }
-}
-
-
 void Deoptimizer::FillInputFrame(Address tos, JavaScriptFrame* frame) {
   // Set the register values. The values are not important as there are no
   // callee saved registers in JavaScript frames, so all registers are
@@ -388,10 +116,7 @@ void Deoptimizer::SetPlatformCompiledStubRegisters(
   ApiFunction function(descriptor->deoptimization_handler_);
   ExternalReference xref(&function, ExternalReference::BUILTIN_CALL, isolate_);
   intptr_t handler = reinterpret_cast<intptr_t>(xref.address());
-  int params = descriptor->register_param_count_;
-  if (descriptor->stack_parameter_count_ != NULL) {
-    params++;
-  }
+  int params = descriptor->environment_length();
   output_frame->SetRegister(r3.code(), params);
   output_frame->SetRegister(r4.code(), handler);
 }
@@ -551,8 +276,8 @@ void Deoptimizer::EntryGenerator::Generate() {
   __ bind(&inner_push_loop);
   __ addi(r6, r6, Operand(-sizeof(intptr_t)));
   __ add(r9, r5, r6);
-  __ LoadP(r10, MemOperand(r9, FrameDescription::frame_content_offset()));
-  __ push(r10);
+  __ LoadP(r9, MemOperand(r9, FrameDescription::frame_content_offset()));
+  __ push(r9);
 
   __ bind(&inner_loop_header);
   __ cmpi(r6, Operand::Zero());
@@ -571,11 +296,8 @@ void Deoptimizer::EntryGenerator::Generate() {
   }
 
   // Push state, pc, and continuation from the last output frame.
-  if (type() != OSR) {
-    __ LoadP(r9, MemOperand(r5, FrameDescription::state_offset()));
-    __ push(r9);
-  }
-
+  __ LoadP(r9, MemOperand(r5, FrameDescription::state_offset()));
+  __ push(r9);
   __ LoadP(r9, MemOperand(r5, FrameDescription::pc_offset()));
   __ push(r9);
   __ LoadP(r9, MemOperand(r5, FrameDescription::continuation_offset()));
@@ -593,10 +315,10 @@ void Deoptimizer::EntryGenerator::Generate() {
 
   __ InitializeRootRegister();
 
-  __ pop(r10);  // get continuation, leave pc on stack
+  __ pop(ip);  // get continuation, leave pc on stack
   __ pop(r0);
   __ mtlr(r0);
-  __ Jump(r10);
+  __ Jump(ip);
   __ stop("Unreachable.");
 }
 

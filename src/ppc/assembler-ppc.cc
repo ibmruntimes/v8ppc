@@ -43,6 +43,7 @@
 #if V8_TARGET_ARCH_PPC
 
 #include "ppc/assembler-ppc-inl.h"
+#include "macro-assembler.h"
 #include "serialize.h"
 
 namespace v8 {
@@ -53,6 +54,7 @@ bool CpuFeatures::initialized_ = false;
 #endif
 unsigned CpuFeatures::supported_ = 0;
 unsigned CpuFeatures::found_by_runtime_probing_only_ = 0;
+unsigned CpuFeatures::cross_compile_ = 0;
 unsigned CpuFeatures::cache_line_size_log2_ = 7;  // 128
 
 
@@ -69,7 +71,7 @@ static unsigned CpuFeaturesImpliedByCompiler() {
 }
 
 
-#if !defined(_AIX)
+#if !V8_OS_AIX
 // This function uses types in elf.h
 static bool is_processor(const char* p) {
   static bool read_tried = false;
@@ -138,7 +140,7 @@ void CpuFeatures::Probe() {
   // Detect whether frim instruction is supported (POWER5+)
   // For now we will just check for processors we know do not
   // support it
-#if !defined(_AIX)
+#if !V8_OS_AIX
   if (!is_processor("ppc970") /* G5 */ && !is_processor("ppc7450") /* G4 */) {
     // Assume support
     supported_ |= (1u << FPU);
@@ -244,15 +246,12 @@ void RelocInfo::PatchCodeWithCall(Address target, int guard_bytes) {
 // See assembler-ppc-inl.h for inlined constructors
 
 Operand::Operand(Handle<Object> handle) {
-#ifdef DEBUG
-  Isolate* isolate = Isolate::Current();
-#endif
   AllowDeferredHandleDereference using_raw_address;
   rm_ = no_reg;
   // Verify all Objects referred by code are NOT in new space.
   Object* obj = *handle;
-  ASSERT(!isolate->heap()->InNewSpace(obj));
   if (obj->IsHeapObject()) {
+    ASSERT(!HeapObject::cast(obj)->GetHeap()->InNewSpace(obj));
     imm_ = reinterpret_cast<intptr_t>(handle.location());
     rmode_ = RelocInfo::EMBEDDED_OBJECT;
   } else {
@@ -467,7 +466,7 @@ int Assembler::target_at(int pos)  {
         return kEndOfChain;
     return pos + imm16;
   } else if ((instr & ~kImm26Mask) == 0) {
-    // Emitted label constant, not part of a branch (regexp PushBacktrack).
+    // Emitted link to a label, not part of a branch (regexp PushBacktrack).
      if (instr == 0) {
        return kEndOfChain;
      } else {
@@ -503,9 +502,21 @@ void Assembler::target_at_put(int pos, int target_pos) {
     return;
   } else if ((instr & ~kImm26Mask) == 0) {
     ASSERT(target_pos == kEndOfChain || target_pos >= 0);
-    // Emitted label constant, not part of a branch.
-    // Make label relative to Code* of generated Code object.
-    instr_at_put(pos, target_pos + (Code::kHeaderSize - kHeapObjectTag));
+    // Emitted link to a label, not part of a branch (regexp PushBacktrack).
+    // Load the position of the label relative to the generated code object
+    // pointer in a register.
+
+    Register dst = r3;  // we assume r3 for now
+    ASSERT(IsNop(instr_at(pos + kInstrSize)));
+    uint32_t target = target_pos + (Code::kHeaderSize - kHeapObjectTag);
+    CodePatcher patcher(reinterpret_cast<byte*>(buffer_ + pos),
+                        2,
+                        CodePatcher::DONT_FLUSH);
+    int target_hi = static_cast<int>(target) >> 16;
+    int target_lo = static_cast<int>(target) & 0XFFFF;
+
+    patcher.masm()->lis(dst, Operand(SIGN_EXT_IMM16(target_hi)));
+    patcher.masm()->ori(dst, dst, Operand(target_lo));
     return;
   }
 
@@ -713,34 +724,6 @@ int Assembler::branch_offset(Label* L, bool jump_elimination_allowed) {
   }
 
   return target_pos - pc_offset();
-}
-
-
-void Assembler::label_at_put(Label* L, int at_offset) {
-  int target_pos;
-  if (L->is_bound()) {
-    target_pos = L->pos();
-    instr_at_put(at_offset, target_pos + (Code::kHeaderSize - kHeapObjectTag));
-  } else {
-    if (L->is_linked()) {
-      target_pos = L->pos();  // L's link
-    } else {
-      // was: target_pos = kEndOfChain;
-      // However, using branch to self to mark the first reference
-      // should avoid most instances of branch offset overflow.  See
-      // target_at() for where this is converted back to kEndOfChain.
-      target_pos = at_offset;
-      if (!trampoline_emitted_) {
-        unbound_labels_count_++;
-        next_buffer_check_ -= kTrampolineSlotsSize;
-      }
-    }
-    L->link_to(at_offset);
-
-    Instr constant = target_pos - at_offset;
-    ASSERT(is_int16(constant));
-    instr_at_put(at_offset, constant);
-  }
 }
 
 
@@ -1524,6 +1507,37 @@ void Assembler::mov(Register dst, const Operand& src) {
   }
   ori(dst, dst, Operand(lo_word));
 #endif
+}
+
+
+void Assembler::mov_label_offset(Register dst, Label* label) {
+  if (label->is_bound()) {
+    int target = label->pos();
+    mov(dst, Operand(target + Code::kHeaderSize - kHeapObjectTag));
+  } else {
+    bool is_linked = label->is_linked();
+    // Emit the link to the label in the code stream followed by extra
+    // nop instructions.
+    ASSERT(dst.is(r3));  // target_at_put assumes r3 for now
+    int link = is_linked ? label->pos() - pc_offset(): 0;
+    label->link_to(pc_offset());
+
+    if (!is_linked && !trampoline_emitted_) {
+      unbound_labels_count_++;
+      next_buffer_check_ -= kTrampolineSlotsSize;
+    }
+
+    // When the label is bound, these instructions will be patched
+    // with a 2 instruction mov sequence that will load the
+    // destination register with the position of the label from the
+    // beginning of the code.
+    //
+    // When the label gets bound: target_at extracts the link and
+    // target_at_put patches the instructions.
+    BlockTrampolinePoolScope block_trampoline_pool(this);
+    emit(link);
+    nop();
+  }
 }
 
 

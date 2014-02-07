@@ -75,9 +75,8 @@ void BreakLocationIterator::SetDebugBreakAtReturn() {
   //
   CodePatcher patcher(rinfo()->pc(), Assembler::kJSReturnSequenceInstructions);
 // printf("SetDebugBreakAtReturn: pc=%08x\n", (unsigned int)rinfo()->pc());
-  patcher.masm()->mov(v8::internal::r0,
-    Operand(reinterpret_cast<intptr_t>(
-      Isolate::Current()->debug()->debug_break_return()->entry())));
+  patcher.masm()->mov(v8::internal::r0, Operand(reinterpret_cast<intptr_t>(
+      debug_info_->GetIsolate()->debug()->debug_break_return()->entry())));
   patcher.masm()->mtlr(v8::internal::r0);
   patcher.masm()->bclr(BA, SetLK);
   patcher.masm()->bkpt(0);
@@ -127,9 +126,8 @@ void BreakLocationIterator::SetDebugBreakAtSlot() {
   //
   CodePatcher patcher(rinfo()->pc(), Assembler::kDebugBreakSlotInstructions);
 // printf("SetDebugBreakAtSlot: pc=%08x\n", (unsigned int)rinfo()->pc());
-  patcher.masm()->mov(v8::internal::r0,
-            Operand(reinterpret_cast<intptr_t>(
-                   Isolate::Current()->debug()->debug_break_slot()->entry())));
+  patcher.masm()->mov(v8::internal::r0, Operand(reinterpret_cast<intptr_t>(
+      debug_info_->GetIsolate()->debug()->debug_break_slot()->entry())));
   patcher.masm()->mtlr(v8::internal::r0);
   patcher.masm()->bclr(BA, SetLK);
 }

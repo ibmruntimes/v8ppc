@@ -87,24 +87,42 @@ class CpuFeatures : public AllStatic {
   // Check whether a feature is supported by the target CPU.
   static bool IsSupported(CpuFeature f) {
     ASSERT(initialized_);
-    return (supported_ & (1u << f)) != 0;
+    return Check(f, supported_);
   }
 
   static bool IsFoundByRuntimeProbingOnly(CpuFeature f) {
     ASSERT(initialized_);
-    return (found_by_runtime_probing_only_ &
-            (static_cast<uint64_t>(1) << f)) != 0;
+    return Check(f, found_by_runtime_probing_only_);
   }
 
   static bool IsSafeForSnapshot(CpuFeature f) {
-    return (IsSupported(f) &&
+    return Check(f, cross_compile_) ||
+           (IsSupported(f) &&
             (!Serializer::enabled() || !IsFoundByRuntimeProbingOnly(f)));
   }
 
   static unsigned cache_line_size_log2() { return cache_line_size_log2_; }
   static unsigned cache_line_size() { return (1 << cache_line_size_log2_); }
 
+  static bool VerifyCrossCompiling() {
+    return cross_compile_ == 0;
+  }
+
+  static bool VerifyCrossCompiling(CpuFeature f) {
+    unsigned mask = flag2set(f);
+    return cross_compile_ == 0 ||
+           (cross_compile_ & mask) == mask;
+  }
+
  private:
+  static bool Check(CpuFeature f, unsigned set) {
+    return (set & flag2set(f)) != 0;
+  }
+
+  static unsigned flag2set(CpuFeature f) {
+    return 1u << f;
+  }
+
 #ifdef DEBUG
   static bool initialized_;
 #endif
@@ -112,7 +130,10 @@ class CpuFeatures : public AllStatic {
   static unsigned found_by_runtime_probing_only_;
   static unsigned cache_line_size_log2_;
 
+  static unsigned cross_compile_;
+
   friend class ExternalReference;
+  friend class PlatformFeatureScope;
   DISALLOW_COPY_AND_ASSIGN(CpuFeatures);
 };
 
@@ -141,20 +162,25 @@ class CpuFeatures : public AllStatic {
 // Core register
 struct Register {
   static const int kNumRegisters = 32;
-  static const int kMaxNumAllocatableRegisters = 8;  // r3-r10
+  static const int kMaxNumAllocatableRegisters = 9;  // r3-r10 and cp
   static const int kSizeInBytes = kPointerSize;
+  static const int kCpRegister = 18;  // cp is r18
 
   inline static int NumAllocatableRegisters();
 
   static int ToAllocationIndex(Register reg) {
-    int index = reg.code() - 3;  // r0-r2 are skipped
+    int index = reg.is(from_code(kCpRegister)) ?
+      kMaxNumAllocatableRegisters - 1 :  // Return last index for 'cp'.
+      reg.code() - 3;  // r0-r2 are skipped
     ASSERT(index < kMaxNumAllocatableRegisters);
     return index;
   }
 
   static Register FromAllocationIndex(int index) {
     ASSERT(index >= 0 && index < kMaxNumAllocatableRegisters);
-    return from_code(index + 3);  // r0-r2 are skipped
+    return index == kMaxNumAllocatableRegisters - 1 ?
+      from_code(kCpRegister) :  // Last index is always the 'cp' register.
+      from_code(index + 3);  // r0-r2 are skipped
   }
 
   static const char* AllocationIndexToString(int index) {
@@ -167,27 +193,8 @@ struct Register {
       "r7",
       "r8",
       "r9",
-      "r10",  // currently last allocated register
-      "r11",  // lithium scratch
-      "r12",  // ip
-      "r13",
-      "r14",
-      "r15",
-      "r16",
-      "r17",
-      "r18",
-      "r19",
-      "r20",
-      "r21",
-      "r22",
-      "r23",
-      "r24",
-      "r25",
-      "r26",
-      "r27",
-      "r28",
-      "r29",
-      "r30",
+      "r10",
+      "cp",
     };
     return names[index];
   }
@@ -220,7 +227,7 @@ struct Register {
 // These constants are used in several locations, including static initializers
 const int kRegister_no_reg_Code = -1;
 const int kRegister_r0_Code = 0;
-const int kRegister_sp_Code = 1;  // todo - rename to SP
+const int kRegister_sp_Code = 1;
 const int kRegister_r2_Code = 2;  // special on PowerPC
 const int kRegister_r3_Code = 3;
 const int kRegister_r4_Code = 4;
@@ -231,7 +238,7 @@ const int kRegister_r8_Code = 8;
 const int kRegister_r9_Code = 9;
 const int kRegister_r10_Code = 10;
 const int kRegister_r11_Code = 11;
-const int kRegister_ip_Code = 12;  // todo - fix
+const int kRegister_ip_Code = 12;
 const int kRegister_r13_Code = 13;
 const int kRegister_r14_Code = 14;
 const int kRegister_r15_Code = 15;
@@ -266,10 +273,8 @@ const Register r7  = { kRegister_r7_Code };
 const Register r8  = { kRegister_r8_Code };
 const Register r9  = { kRegister_r9_Code };
 const Register r10 = { kRegister_r10_Code };
-// Used as lithium codegen scratch register.
 const Register r11 = { kRegister_r11_Code };
 const Register ip  = { kRegister_ip_Code };
-// Used as roots register.
 const Register r13  = { kRegister_r13_Code };
 const Register r14  = { kRegister_r14_Code };
 const Register r15  = { kRegister_r15_Code };
@@ -278,7 +283,6 @@ const Register r16  = { kRegister_r16_Code };
 const Register r17  = { kRegister_r17_Code };
 const Register r18  = { kRegister_r18_Code };
 const Register r19  = { kRegister_r19_Code };
-// Used as context register.
 const Register r20  = { kRegister_r20_Code };
 const Register r21  = { kRegister_r21_Code };
 const Register r22  = { kRegister_r22_Code };
@@ -895,6 +899,10 @@ class Assembler : public AssemblerBase {
   void cmpl(Register src1, Register src2, CRegister cr = cr7);
 
   void mov(Register dst, const Operand& src);
+
+  // Load the position of the label relative to the generated code object
+  // pointer in a register.
+  void mov_label_offset(Register dst, Label* label);
 
   // Multiply instructions
   void mul(Register dst, Register src1, Register src2,
