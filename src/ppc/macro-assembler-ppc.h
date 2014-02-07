@@ -578,6 +578,16 @@ class MacroAssembler: public Assembler {
                  Register scratch,
                  bool updateForm = false);
 
+  void LoadRepresentation(Register dst,
+                          const MemOperand& mem,
+                          Representation r,
+                          Register scratch = no_reg);
+
+  void StoreRepresentation(Register src,
+                           const MemOperand& mem,
+                           Representation r,
+                           Register scratch = no_reg);
+
 
 
   void Add(Register dst, Register src, intptr_t value, Register scratch);

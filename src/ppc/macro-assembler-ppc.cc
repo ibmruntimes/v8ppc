@@ -4799,6 +4799,41 @@ void MacroAssembler::StoreByte(Register src, const MemOperand& mem,
   }
 }
 
+
+void MacroAssembler::LoadRepresentation(Register dst,
+                                        const MemOperand& mem,
+                                        Representation r,
+                                        Register scratch) {
+  ASSERT(!r.IsDouble());
+  if (r.IsByte()) {
+    lbz(dst, mem);
+#if V8_TARGET_ARCH_PPC64
+  } else if (r.IsInteger32()) {
+    lwz(dst, mem);
+#endif
+  } else {
+    LoadP(dst, mem, scratch);
+  }
+}
+
+
+void MacroAssembler::StoreRepresentation(Register src,
+                                         const MemOperand& mem,
+                                         Representation r,
+                                         Register scratch) {
+  ASSERT(!r.IsDouble());
+  if (r.IsByte()) {
+    stb(src, mem);
+#if V8_TARGET_ARCH_PPC64
+  } else if (r.IsInteger32()) {
+    stw(src, mem);
+#endif
+  } else {
+    StoreP(src, mem, scratch);
+  }
+}
+
+
 void MacroAssembler::TestJSArrayForAllocationMemento(
     Register receiver_reg,
     Register scratch_reg,

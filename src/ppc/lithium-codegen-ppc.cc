@@ -2957,11 +2957,7 @@ void LCodeGen::DoLoadNamedField(LLoadNamedField* instr) {
   if (access.IsExternalMemory()) {
     Register result = ToRegister(instr->result());
     MemOperand operand = MemOperand(object, offset);
-    if (access.representation().IsByte()) {
-      __ lbz(result, operand);
-    } else {
-      __ LoadP(result, operand);
-    }
+    __ LoadRepresentation(result, operand, access.representation());
     return;
   }
 
@@ -2977,11 +2973,7 @@ void LCodeGen::DoLoadNamedField(LLoadNamedField* instr) {
     object = result;
   }
   MemOperand operand = FieldMemOperand(object, offset);
-  if (access.representation().IsByte()) {
-    __ lbz(result, operand);
-  } else {
-    __ LoadP(result, operand);
-  }
+  __ LoadRepresentation(result, operand, access.representation());
 }
 
 
@@ -4215,11 +4207,7 @@ void LCodeGen::DoStoreNamedField(LStoreNamedField* instr) {
   if (access.IsExternalMemory()) {
     Register value = ToRegister(instr->value());
     MemOperand operand = MemOperand(object, offset);
-    if (representation.IsByte()) {
-      __ stb(value, operand);
-    } else {
-      __ StoreP(value, operand);
-    }
+    __ StoreRepresentation(value, operand, representation);
     return;
   }
 
@@ -4265,11 +4253,7 @@ void LCodeGen::DoStoreNamedField(LStoreNamedField* instr) {
           ? OMIT_SMI_CHECK : INLINE_SMI_CHECK;
   if (access.IsInobject()) {
     MemOperand operand = FieldMemOperand(object, offset);
-    if (representation.IsByte()) {
-      __ stb(value, operand);
-    } else {
-      __ StoreP(value, operand, r0);
-    }
+    __ StoreRepresentation(value, operand, representation, r0);
     if (instr->hydrogen()->NeedsWriteBarrier()) {
       // Update the write barrier for the object for in-object properties.
       __ RecordWriteField(object,
@@ -4284,11 +4268,7 @@ void LCodeGen::DoStoreNamedField(LStoreNamedField* instr) {
   } else {
     __ LoadP(scratch, FieldMemOperand(object, JSObject::kPropertiesOffset));
     MemOperand operand = FieldMemOperand(scratch, offset);
-    if (representation.IsByte()) {
-      __ stb(value, operand);
-    } else {
-      __ StoreP(value, operand, r0);
-    }
+    __ StoreRepresentation(value, operand, representation, r0);
     if (instr->hydrogen()->NeedsWriteBarrier()) {
       // Update the write barrier for the properties array.
       // object is used as a scratch register.
