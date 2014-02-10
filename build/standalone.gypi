@@ -113,9 +113,6 @@
           [ 'host_arch=="ppc64"', {
             'cflags': [ '-mminimal-toc' ],
           }],
-          [ 'host_arch=="ppc64le"', {
-            'cflags': [ '-Wno-unused-local-typedefs' ],
-          }],
           [ 'visibility=="hidden"', {
             'cflags': [ '-fvisibility=hidden' ],
           }],

@@ -248,7 +248,7 @@ template <int> class StaticAssertionHelper { };
 #define STATIC_CHECK(test)                                                    \
   typedef                                                                     \
     StaticAssertionHelper<sizeof(StaticAssertion<static_cast<bool>((test))>)> \
-    SEMI_STATIC_JOIN(__StaticAssertTypedef__, __LINE__)
+    SEMI_STATIC_JOIN(__StaticAssertTypedef__, __LINE__) __attribute__((unused))
 
 
 extern bool FLAG_enable_slow_asserts;
