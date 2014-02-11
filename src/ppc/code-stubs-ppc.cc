@@ -3603,6 +3603,9 @@ void CEntryStub::GenerateCore(MacroAssembler* masm,
   __ LoadP(ToRegister(2), MemOperand(r15, kPointerSize));  // TOC
   __ LoadP(ip, MemOperand(r15, 0));  // Instruction address
   Register target = ip;
+#elif ABI_TOC_ADDRESSABILITY_VIA_IP
+  Register target = ip;
+  __ Move(ip, r15);
 #else
   Register target = r15;
 #endif
@@ -6773,10 +6776,17 @@ void DirectCEntryStub::GenerateCall(MacroAssembler* masm,
 
 void DirectCEntryStub::GenerateCall(MacroAssembler* masm,
                                     Register target) {
+  Register scratch = r11;
 #if ABI_USES_FUNCTION_DESCRIPTORS && !defined(USE_SIMULATOR)
+  Register dest = ip;
   // Native AIX/PPC64 Linux use a function descriptor.
   __ LoadP(ToRegister(2), MemOperand(target, kPointerSize));  // TOC
-  __ LoadP(target, MemOperand(target, 0));  // Instruction address
+  __ LoadP(ip, MemOperand(target, 0));  // Instruction address
+#elif ABI_TOC_ADDRESSABILITY_VIA_IP
+  Register dest = ip;
+  __ Move(ip, target);
+#else
+  Register dest = target;
 #endif
 
   __ mov(r0, Operand(reinterpret_cast<intptr_t>(GetCode().location()),
@@ -6791,11 +6801,11 @@ void DirectCEntryStub::GenerateCall(MacroAssembler* masm,
   __ bind(&start);
   __ b(&here, SetLK);
   __ bind(&here);
-  __ mflr(ip);
+  __ mflr(scratch);
   __ mtlr(r0);  // from above, so we know where to return
-  __ addi(ip, ip, Operand(6 * Assembler::kInstrSize));
-  __ StoreP(ip, MemOperand(sp, kStackFrameExtraParamSlot * kPointerSize));
-  __ Jump(target);  // Call the C++ function.
+  __ addi(scratch, scratch, Operand(6 * Assembler::kInstrSize));
+  __ StoreP(scratch, MemOperand(sp, kStackFrameExtraParamSlot * kPointerSize));
+  __ Jump(dest);  // Call the C++ function.
   ASSERT_EQ(Assembler::kInstrSize +
             (6 * Assembler::kInstrSize),
             masm->SizeOfCodeGeneratedSince(&start));
@@ -7479,6 +7489,8 @@ void ProfileEntryHookStub::Generate(MacroAssembler* masm) {
   // Function descriptor
   __ LoadP(ToRegister(2), MemOperand(ip, kPointerSize));
   __ LoadP(ip, MemOperand(ip, 0));
+#elif ABI_TOC_ADDRESSABILITY_VIA_IP
+  // ip already set.
 #endif
 
   // PPC LINUX ABI:
