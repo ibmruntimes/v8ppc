@@ -639,6 +639,12 @@ class ExternalReference BASE_EMBEDDED {
     // MaybeObject* f(v8::internal::Arguments).
     BUILTIN_CALL,  // default
 
+#ifdef V8_HOST_ARCH_64_BIT
+    // Builtin call returning object pair.
+    // ObjectPair* f(v8::internal::Arguments).
+    BUILTIN_OBJECTPAIR_CALL,
+#endif
+
     // Builtin that takes float arguments and returns an int.
     // int f(double, double).
     BUILTIN_COMPARE_CALL,

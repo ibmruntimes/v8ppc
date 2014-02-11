@@ -987,12 +987,24 @@ ExternalReference::ExternalReference(Builtins::Name name, Isolate* isolate)
 
 ExternalReference::ExternalReference(Runtime::FunctionId id,
                                      Isolate* isolate)
+#ifdef V8_HOST_ARCH_64_BIT
+  : address_(Redirect(isolate, Runtime::FunctionForId(id)->entry,
+                      (Runtime::FunctionForId(id)->result_size == 2) ?
+                      BUILTIN_OBJECTPAIR_CALL : BUILTIN_CALL)) {}
+#else
   : address_(Redirect(isolate, Runtime::FunctionForId(id)->entry)) {}
+#endif
 
 
 ExternalReference::ExternalReference(const Runtime::Function* f,
                                      Isolate* isolate)
+#ifdef V8_HOST_ARCH_64_BIT
+  : address_(Redirect(isolate, f->entry,
+                      ((f->result_size == 2) ?
+                       BUILTIN_OBJECTPAIR_CALL : BUILTIN_CALL))) {}
+#else
   : address_(Redirect(isolate, f->entry)) {}
+#endif
 
 
 ExternalReference ExternalReference::isolate_address(Isolate* isolate) {
