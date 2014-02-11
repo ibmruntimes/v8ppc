@@ -286,7 +286,7 @@ void Profiler::Engage() {
   // TODO(mnaganov): This is actually "Chromium" mode. Flags need to be revised.
   // http://code.google.com/p/v8/issues/detail?id=487
   if (!FLAG_prof_lazy) {
-    OS::LogSharedLibraryAddresses();
+  OS::LogSharedLibraryAddresses();
   }
 
   // Start thread processing the profiler buffer.
@@ -848,7 +848,7 @@ void Logger::NewEvent(const char* name, void* object, size_t size) {
   if (!log_->IsEnabled() || !FLAG_log) return;
   LogMessageBuilder msg(this);
   msg.Append("new,%s,0x%" V8PRIxPTR ",%u\n", name, object,
-             static_cast<unsigned int>(size));
+          static_cast<unsigned int>(size));
   msg.WriteToLogFile();
 }
 
@@ -938,7 +938,7 @@ void Logger::CodeCreateEvent(LogEventsAndTags tag,
   for (const char* p = comment; *p != '\0'; p++) {
     if (*p == '"') {
       msg.Append('\\');
-    }
+  }
     msg.Append(*p);
   }
   msg.Append('"');
@@ -1306,9 +1306,9 @@ void Logger::DebugEvent(const char* event_type, Vector<uint16_t> parameter) {
   char* parameter_string = s.Finalize();
   LogMessageBuilder msg(this);
   msg.Append("debug-queue-event,%s,%15.3f,%s\n",
-             event_type,
-             OS::TimeCurrentMillis(),
-             parameter_string);
+          event_type,
+          OS::TimeCurrentMillis(),
+          parameter_string);
   DeleteArray(parameter_string);
   msg.WriteToLogFile();
 }
@@ -1327,7 +1327,7 @@ void Logger::TickEvent(TickSample* sample, bool overflow) {
   } else {
     msg.Append(",0,");
     msg.AppendAddress(sample->tos);
-  }
+}
   msg.Append(",%d", static_cast<int>(sample->state));
   if (overflow) {
     msg.Append(",overflow");
@@ -1373,7 +1373,7 @@ void Logger::ResumeProfiler() {
       if (FLAG_prof_lazy) {
         profiler_->Engage();
         LOG(ISOLATE, UncheckedStringEvent("profiler", "resume"));
-        FLAG_log_code = true;
+    FLAG_log_code = true;
         LogCompiledFunctions();
         LogAccessorCallbacks();
         if (!FLAG_sliding_state_window && !ticker_->IsActive()) {
@@ -1383,14 +1383,14 @@ void Logger::ResumeProfiler() {
       profiler_->resume();
     }
   }
-}
+  }
 
 
 // This function can be called when Log's mutex is acquired,
 // either from main or Profiler's thread.
 void Logger::LogFailure() {
   PauseProfiler();
-}
+  }
 
 
 bool Logger::IsProfilerSamplerActive() {
@@ -1623,13 +1623,13 @@ void Logger::LogExistingFunction(Handle<SharedFunctionInfo> shared,
                     Logger::ToNativeByScript(Logger::LAZY_COMPILE_TAG, *script),
                     *code, *shared,
                     *script_name, line_num + 1));
-      } else {
+    } else {
         // Can't distinguish eval and script here, so always use Script.
         PROFILE(ISOLATE,
                 CodeCreateEvent(
                     Logger::ToNativeByScript(Logger::SCRIPT_TAG, *script),
                     *code, *shared, *script_name));
-      }
+    }
     } else {
       PROFILE(ISOLATE,
               CodeCreateEvent(
@@ -1651,7 +1651,7 @@ void Logger::LogExistingFunction(Handle<SharedFunctionInfo> shared,
             CodeCreateEvent(
                 Logger::LAZY_COMPILE_TAG, *code, *shared, *func_name));
   }
-}
+  }
 
 
 void Logger::LogCompiledFunctions() {
@@ -1743,8 +1743,8 @@ bool Logger::SetUp() {
       logging_nesting_ = 1;
     }
     if (!FLAG_prof_lazy) {
-      profiler_->Engage();
-    }
+    profiler_->Engage();
+  }
   }
 
   return true;
@@ -1835,9 +1835,9 @@ bool SamplerRegistry::IterateActiveSamplers(VisitSampler func, void* param) {
        ActiveSamplersExist() && i < active_samplers_->length();
        ++i) {
     func(active_samplers_->at(i), param);
-  }
+    }
   return ActiveSamplersExist();
-}
+  }
 
 
 static void ComputeCpuProfiling(Sampler* sampler, void* flag_ptr) {
@@ -1862,9 +1862,9 @@ void SamplerRegistry::AddActiveSampler(Sampler* sampler) {
     active_samplers_ = new List<Sampler*>;
   } else {
     ASSERT(!active_samplers_->Contains(sampler));
-  }
+    }
   active_samplers_->Add(sampler);
-}
+  }
 
 
 void SamplerRegistry::RemoveActiveSampler(Sampler* sampler) {

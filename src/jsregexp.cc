@@ -92,7 +92,7 @@ static JSRegExp::Flags RegExpFlagsFromString(Handle<String> str) {
     }
   }
   return JSRegExp::Flags(flags);
-}
+  }
 
 
 static inline void ThrowRegExpException(Handle<JSRegExp> re,
@@ -158,8 +158,8 @@ static bool HasFewDifferentCharacters(Handle<String> pattern) {
       // We declare a regexp low-alphabet if it has at least 3 times as many
       // characters as it has different characters.
       if (different * 3 > length) return false;
-    }
   }
+}
   return true;
 }
 
@@ -196,7 +196,7 @@ Handle<Object> RegExpImpl::Compile(Handle<JSRegExp> re,
                          parse_result.error,
                          "malformed_regexp");
     return Handle<Object>::null();
-  }
+}
 
   bool has_been_compiled = false;
 
@@ -216,8 +216,8 @@ Handle<Object> RegExpImpl::Compile(Handle<JSRegExp> re,
     if (!HasFewDifferentCharacters(atom_string)) {
       AtomCompile(re, pattern, flags, atom_string);
       has_been_compiled = true;
-    }
   }
+}
   if (!has_been_compiled) {
     IrregexpInitialize(re, pattern, flags, parse_result.capture_count);
   }
@@ -244,12 +244,12 @@ Handle<Object> RegExpImpl::Exec(Handle<JSRegExp> regexp,
       ASSERT(!result.is_null() ||
              regexp->GetIsolate()->has_pending_exception());
       return result;
-    }
+  }
     default:
       UNREACHABLE();
       return Handle<Object>::null();
   }
-}
+  }
 
 
 // RegExp Atom implementation: Simple string search using indexOf.
@@ -264,7 +264,7 @@ void RegExpImpl::AtomCompile(Handle<JSRegExp> re,
                                                  pattern,
                                                  flags,
                                                  match_pattern);
-}
+  }
 
 
 static void SetAtomLastCapture(FixedArray* array,
@@ -358,7 +358,7 @@ Handle<Object> RegExpImpl::AtomExec(Handle<JSRegExp> re,
   FixedArray* array = FixedArray::cast(last_match_info->elements());
   SetAtomLastCapture(array, *subject, output_registers[0], output_registers[1]);
   return last_match_info;
-}
+    }
 
 
 // Irregexp implementation.
@@ -385,9 +385,9 @@ bool RegExpImpl::EnsureCompiledIrregexp(
     re->SetDataAt(JSRegExp::code_index(is_ascii), saved_code);
     ASSERT(compiled_code->IsSmi());
     return true;
-  }
+    }
   return CompileIrregexp(re, sample_subject, is_ascii);
-}
+  }
 
 
 static bool CreateRegExpErrorObjectAndThrow(Handle<JSRegExp> re,
@@ -399,11 +399,11 @@ static bool CreateRegExpErrorObjectAndThrow(Handle<JSRegExp> re,
   elements->set(0, re->Pattern());
   elements->set(1, *error_message);
   Handle<JSArray> array = factory->NewJSArrayWithElements(elements);
-  Handle<Object> regexp_err =
+    Handle<Object> regexp_err =
       factory->NewSyntaxError("malformed_regexp", array);
   isolate->Throw(*regexp_err);
   return false;
-}
+  }
 
 
 bool RegExpImpl::CompileIrregexp(Handle<JSRegExp> re,
@@ -469,7 +469,7 @@ bool RegExpImpl::CompileIrregexp(Handle<JSRegExp> re,
         isolate->factory()->NewStringFromUtf8(CStrVector(result.error_message));
     CreateRegExpErrorObjectAndThrow(re, is_ascii, error_message, isolate);
     return false;
-  }
+}
 
   Handle<FixedArray> data = Handle<FixedArray>(FixedArray::cast(re->data()));
   data->set(JSRegExp::code_index(is_ascii), result.code);
@@ -681,7 +681,7 @@ Handle<Object> RegExpImpl::IrregexpExec(Handle<JSRegExp> regexp,
   }
   ASSERT(res == RE_FAILURE);
   return isolate->factory()->null_value();
-}
+  }
 
 
 Handle<JSArray> RegExpImpl::SetLastMatchInfo(Handle<JSArray> last_match_info,
@@ -702,7 +702,7 @@ Handle<JSArray> RegExpImpl::SetLastMatchInfo(Handle<JSArray> last_match_info,
   SetLastSubject(array, *subject);
   SetLastInput(array, *subject);
   return last_match_info;
-}
+  }
 
 
 RegExpImpl::GlobalCache::GlobalCache(Handle<JSRegExp> regexp,
@@ -1229,10 +1229,10 @@ bool Trace::DeferredAction::Mentions(int that) {
   if (type() == ActionNode::CLEAR_CAPTURES) {
     Interval range = static_cast<DeferredClearCaptures*>(this)->range();
     return range.Contains(that);
-  } else {
+    } else {
     return reg() == that;
+    }
   }
-}
 
 
 bool Trace::mentions_reg(int reg) {
@@ -1241,9 +1241,9 @@ bool Trace::mentions_reg(int reg) {
        action = action->next()) {
     if (action->Mentions(reg))
       return true;
-  }
+    }
   return false;
-}
+  }
 
 
 bool Trace::GetStoredPosition(int reg, int* cp_offset) {
@@ -1261,7 +1261,7 @@ bool Trace::GetStoredPosition(int reg, int* cp_offset) {
     }
   }
   return false;
-}
+  }
 
 
 int Trace::FindAffectedRegisters(OutSet* affected_registers,
@@ -1281,7 +1281,7 @@ int Trace::FindAffectedRegisters(OutSet* affected_registers,
     }
   }
   return max_register;
-}
+  }
 
 
 void Trace::RestoreAffectedRegisters(RegExpMacroAssembler* assembler,
@@ -4975,7 +4975,7 @@ RegExpNode* RegExpQuantifier::ToNode(int min,
             alternation->AddAlternative(
                 GuardedAlternative(body->ToNode(compiler, answer)));
             alternation->AddAlternative(GuardedAlternative(on_success));
-          } else {
+    } else {
             alternation->AddAlternative(GuardedAlternative(on_success));
             alternation->AddAlternative(
                 GuardedAlternative(body->ToNode(compiler, answer)));
@@ -5519,8 +5519,8 @@ void CharacterRange::Canonicalize(ZoneList<CharacterRange>* character_ranges) {
       break;
     }
     max = current.to();
-    i++;
-  }
+        i++;
+        }
   // Canonical until the i'th range. If that's all of them, we are done.
   if (i == n) return;
 
@@ -5540,7 +5540,7 @@ void CharacterRange::Canonicalize(ZoneList<CharacterRange>* character_ranges) {
   character_ranges->Rewind(num_canonical);
 
   ASSERT(CharacterRange::IsCanonical(character_ranges));
-}
+      }
 
 
 void CharacterRange::Negate(ZoneList<CharacterRange>* ranges,
@@ -5554,7 +5554,7 @@ void CharacterRange::Negate(ZoneList<CharacterRange>* ranges,
   if (range_count > 0 && ranges->at(0).from() == 0) {
     from = ranges->at(0).to();
     i = 1;
-  }
+    }
   while (i < range_count) {
     CharacterRange range = ranges->at(i);
     negated_ranges->Add(CharacterRange(from + 1, range.from() - 1), zone);
@@ -5587,7 +5587,7 @@ OutSet* OutSet::Extend(unsigned value, Zone* zone) {
   OutSet* result = new(zone) OutSet(first_, remaining_);
   result->Set(value, zone);
   successors(zone)->Add(result, zone);
-  return result;
+    return result;
 }
 
 
@@ -5627,7 +5627,7 @@ void DispatchTable::AddRange(CharacterRange full_range, int value,
     loc.set_value(Entry(current.from(), current.to(),
                         empty()->Extend(value, zone)));
     return;
-  }
+}
   // First see if there is a range to the left of this one that
   // overlaps.
   ZoneSplayTree<Config>::Locator loc;

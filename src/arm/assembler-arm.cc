@@ -2063,11 +2063,7 @@ void Assembler::vmov(const DwVfpRegister dst,
       // Move the low and high parts of the double to a D register in one
       // instruction.
       mov(scratch, Operand(hi));
-#if V8_HOST_ARCH_PPC
-      vmov(dst, scratch, ip, cond);  // hack, swap ENDIAN scratch/ip
-#else
-      vmov(dst, ip, scratch, cond);  // original ENDIAN
-#endif
+      vmov(dst, ip, scratch, cond);
     }
   }
 }

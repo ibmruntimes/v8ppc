@@ -3467,7 +3467,13 @@ Handle<Code> ConstructStubCompiler::CompileConstructStub(
   // r1: constructor function
   // r2: initial map
   // r7: undefined
+  ASSERT(function->has_initial_map());
   __ ldrb(r3, FieldMemOperand(r2, Map::kInstanceSizeOffset));
+#ifdef DEBUG
+  int instance_size = function->initial_map()->instance_size();
+  __ cmp(r3, Operand(instance_size >> kPointerSizeLog2));
+  __ Check(eq, "Instance size of initial map changed.");
+#endif
   __ AllocateInNewSpace(r3, r4, r5, r6, &generic_stub_call, SIZE_IN_WORDS);
 
   // Allocated the JSObject, now initialize the fields. Map is set to initial
@@ -3525,7 +3531,6 @@ Handle<Code> ConstructStubCompiler::CompileConstructStub(
   }
 
   // Fill the unused in-object property fields with undefined.
-  ASSERT(function->has_initial_map());
   for (int i = shared->this_property_assignments_count();
        i < function->initial_map()->inobject_properties();
        i++) {
@@ -4434,11 +4439,7 @@ void KeyedLoadStubCompiler::GenerateLoadFastDoubleElement(
   // Load the upper word of the double in the fixed array and test for NaN.
   __ add(indexed_double_offset, elements_reg,
          Operand(key_reg, LSL, kDoubleSizeLog2 - kSmiTagSize));
-#if defined(V8_HOST_ARCH_PPC)
-  uint32_t upper_32_offset = FixedArray::kHeaderSize;
-#else
   uint32_t upper_32_offset = FixedArray::kHeaderSize + sizeof(kHoleNanLower32);
-#endif
   __ ldr(scratch, FieldMemOperand(indexed_double_offset, upper_32_offset));
   __ cmp(scratch, Operand(kHoleNanUpper32));
   __ b(&miss_force_generic, eq);
@@ -4452,13 +4453,8 @@ void KeyedLoadStubCompiler::GenerateLoadFastDoubleElement(
   // scratch.
   __ str(scratch, FieldMemOperand(heap_number_reg,
                                   HeapNumber::kExponentOffset));
-#if defined(V8_HOST_ARCH_PPC)
-  __ ldr(scratch, FieldMemOperand(indexed_double_offset,
-                                  FixedArray::kHeaderSize+4));
-#else
   __ ldr(scratch, FieldMemOperand(indexed_double_offset,
                                   FixedArray::kHeaderSize));
-#endif
   __ str(scratch, FieldMemOperand(heap_number_reg,
                                   HeapNumber::kMantissaOffset));
 

@@ -74,11 +74,6 @@ test-serialize/DeserializeFromSecondSerializationAndRunScript2: SKIP
 test-serialize/DeserializeAndRunScript2: SKIP
 test-serialize/DeserializeFromSecondSerialization: SKIP
 
-# Roohack - remove tests that fail on x64 ARM simulator (TIMEOUT)
-test-debug/DebugBreakLoop: SKIP
-test-api/Threading: SKIP
-test-api/ExternalArrays: SKIP
-
 ##############################################################################
 [ $arch == android_arm || $arch == android_ia32 ]
 
@@ -92,22 +87,3 @@ test-platform-tls/FastTLS: SKIP
 
 # This test times out.
 test-threads/ThreadJoinSelf: SKIP
-
-##############################################################################
-[ $arch == nacl_ia32 || $arch == nacl_x64 ]
-
-# These tests fail as there is no /tmp directory in Native Client.
-test-log/LogAccessorCallbacks: SKIP
-test-log/LogCallbacks: SKIP
-test-log/ProfLazyMode: SKIP
-
-# Native Client doesn't support sockets.
-test-debug/DebuggerAgent: SKIP
-test-debug/DebuggerAgentProtocolOverflowHeader: SKIP
-test-sockets/Socket: SKIP
-
-##############################################################################
-[ $arch == ppc || $arch == ppc64 ]
-# penguin - remove disasm tests for PPC as they are not
-# converted to test PPC ISA yet
-test-disasm-ppc/*: SKIP

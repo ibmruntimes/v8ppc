@@ -249,12 +249,12 @@ const int kStubMinorKeyBits = kBitsPerInt - kSmiTagSize - kStubMajorKeyBits;
   V(SHORT_EXTERNAL_STRING_WITH_ASCII_DATA_TYPE)                                \
   V(SHORT_EXTERNAL_ASCII_STRING_TYPE)                                          \
   V(PRIVATE_EXTERNAL_ASCII_STRING_TYPE)                                        \
-                                                                               \
+                                                \
   V(MAP_TYPE)                                                                  \
   V(CODE_TYPE)                                                                 \
   V(ODDBALL_TYPE)                                                              \
   V(JS_GLOBAL_PROPERTY_CELL_TYPE)                                              \
-                                                                               \
+                                                \
   V(HEAP_NUMBER_TYPE)                                                          \
   V(FOREIGN_TYPE)                                                              \
   V(BYTE_ARRAY_TYPE)                                                           \
@@ -271,7 +271,7 @@ const int kStubMinorKeyBits = kBitsPerInt - kSmiTagSize - kStubMajorKeyBits;
   V(EXTERNAL_FLOAT_ARRAY_TYPE)                                                 \
   V(EXTERNAL_PIXEL_ARRAY_TYPE)                                                 \
   V(FILLER_TYPE)                                                               \
-                                                                               \
+                                                \
   V(ACCESSOR_INFO_TYPE)                                                        \
   V(ACCESSOR_PAIR_TYPE)                                                        \
   V(ACCESS_CHECK_INFO_TYPE)                                                    \
@@ -286,7 +286,7 @@ const int kStubMinorKeyBits = kBitsPerInt - kSmiTagSize - kStubMajorKeyBits;
   V(POLYMORPHIC_CODE_CACHE_TYPE)                                               \
   V(TYPE_FEEDBACK_INFO_TYPE)                                                   \
   V(ALIASED_ARGUMENTS_ENTRY_TYPE)                                              \
-                                                                               \
+                                                \
   V(FIXED_ARRAY_TYPE)                                                          \
   V(FIXED_DOUBLE_ARRAY_TYPE)                                                   \
   V(SHARED_FUNCTION_INFO_TYPE)                                                 \
@@ -940,8 +940,8 @@ class Object : public MaybeObject {
   // Property access.
   MUST_USE_RESULT inline MaybeObject* GetProperty(String* key);
   MUST_USE_RESULT inline MaybeObject* GetProperty(
-      String* key,
-      PropertyAttributes* attributes);
+                                  String* key,
+                                  PropertyAttributes* attributes);
   MUST_USE_RESULT MaybeObject* GetPropertyWithReceiver(
       Object* receiver,
       String* key,
@@ -954,9 +954,9 @@ class Object : public MaybeObject {
                                     PropertyAttributes* attributes);
 
   MUST_USE_RESULT MaybeObject* GetProperty(Object* receiver,
-                                           LookupResult* result,
-                                           String* key,
-                                           PropertyAttributes* attributes);
+                      LookupResult* result,
+                      String* key,
+                      PropertyAttributes* attributes);
 
   MUST_USE_RESULT MaybeObject* GetPropertyWithDefinedGetter(Object* receiver,
                                                             JSReceiver* getter);
@@ -1593,31 +1593,31 @@ class JSObject: public JSReceiver {
 
   // Can cause GC.
   MUST_USE_RESULT MaybeObject* SetPropertyForResult(LookupResult* result,
-                                           String* key,
-                                           Object* value,
+                      String* key,
+                      Object* value,
                                            PropertyAttributes attributes,
                                            StrictModeFlag strict_mode,
                                            StoreFromKeyed store_mode);
   MUST_USE_RESULT MaybeObject* SetPropertyWithFailedAccessCheck(
       LookupResult* result,
-      String* name,
+                                           String* name,
       Object* value,
       bool check_prototype,
       StrictModeFlag strict_mode);
   MUST_USE_RESULT MaybeObject* SetPropertyWithCallback(
       Object* structure,
-      String* name,
-      Object* value,
+                                  String* name,
+                                  Object* value,
       JSObject* holder,
       StrictModeFlag strict_mode);
   MUST_USE_RESULT MaybeObject* SetPropertyWithInterceptor(
       String* name,
-      Object* value,
+                                     Object* value,
       PropertyAttributes attributes,
       StrictModeFlag strict_mode);
   MUST_USE_RESULT MaybeObject* SetPropertyPostInterceptor(
       String* name,
-      Object* value,
+                                     Object* value,
       PropertyAttributes attributes,
       StrictModeFlag strict_mode,
       ExtensibilityCheck extensibility_check);
@@ -1626,7 +1626,7 @@ class JSObject: public JSReceiver {
       Handle<JSObject> object,
       Handle<String> key,
       Handle<Object> value,
-      PropertyAttributes attributes);
+                                     PropertyAttributes attributes);
 
   // Try to follow an existing transition to a field with attributes NONE. The
   // return value indicates whether the transition was successful.
@@ -1643,8 +1643,8 @@ class JSObject: public JSReceiver {
   // Can cause GC.
   MUST_USE_RESULT MaybeObject* SetLocalPropertyIgnoreAttributes(
       String* key,
-      Object* value,
-      PropertyAttributes attributes);
+                          Object* value,
+                          PropertyAttributes attributes);
 
   // Retrieve a value in a normalized object given a lookup result.
   // Handles the special representation of JS global objects.
@@ -1692,7 +1692,7 @@ class JSObject: public JSReceiver {
                              Handle<String> name,
                              Handle<Object> getter,
                              Handle<Object> setter,
-                             PropertyAttributes attributes);
+                         PropertyAttributes attributes);
   MUST_USE_RESULT MaybeObject* DefineAccessor(String* name,
                                               Object* getter,
                                               Object* setter,
@@ -1712,21 +1712,21 @@ class JSObject: public JSReceiver {
   // Used from Object::GetProperty().
   MUST_USE_RESULT MaybeObject* GetPropertyWithFailedAccessCheck(
       Object* receiver,
-      LookupResult* result,
-      String* name,
-      PropertyAttributes* attributes);
+                                           LookupResult* result,
+                                     String* name,
+                                     PropertyAttributes* attributes);
   MUST_USE_RESULT MaybeObject* GetPropertyWithInterceptor(
       Object* receiver,
-      String* name,
-      PropertyAttributes* attributes);
+                                     String* name,
+                                     PropertyAttributes* attributes);
   MUST_USE_RESULT MaybeObject* GetPropertyPostInterceptor(
       Object* receiver,
       String* name,
       PropertyAttributes* attributes);
   MUST_USE_RESULT MaybeObject* GetLocalPropertyPostInterceptor(
       Object* receiver,
-      String* name,
-      PropertyAttributes* attributes);
+                          String* name,
+                          PropertyAttributes* attributes);
 
   // Returns true if this is an instance of an api function and has
   // been modified since it was created.  May give false positives.
@@ -1954,7 +1954,7 @@ class JSObject: public JSReceiver {
   // Add a property to a fast-case object using a map transition to
   // new_map.
   MUST_USE_RESULT MaybeObject* AddFastPropertyUsingMap(Map* new_map,
-                                                       String* name,
+                                  String* name,
                                                        Object* value,
                                                        int field_index);
 
@@ -1966,8 +1966,8 @@ class JSObject: public JSReceiver {
   // function, all orphaned.
   MUST_USE_RESULT MaybeObject* AddConstantFunctionProperty(
       String* name,
-      JSFunction* function,
-      PropertyAttributes attributes);
+                                      JSFunction* function,
+                                      PropertyAttributes attributes);
 
   MUST_USE_RESULT MaybeObject* ReplaceSlowProperty(
       String* name,
@@ -2006,19 +2006,19 @@ class JSObject: public JSReceiver {
   // Add a property to a fast-case object.
   MUST_USE_RESULT MaybeObject* AddFastProperty(
       String* name,
-      Object* value,
+                          Object* value,
       PropertyAttributes attributes,
       StoreFromKeyed store_mode = MAY_BE_STORE_FROM_KEYED);
 
   // Add a property to a slow-case object.
   MUST_USE_RESULT MaybeObject* AddSlowProperty(String* name,
-                                               Object* value,
-                                               PropertyAttributes attributes);
+                          Object* value,
+                          PropertyAttributes attributes);
 
   // Add a property to an object.
   MUST_USE_RESULT MaybeObject* AddProperty(
       String* name,
-      Object* value,
+                      Object* value,
       PropertyAttributes attributes,
       StrictModeFlag strict_mode,
       StoreFromKeyed store_mode = MAY_BE_STORE_FROM_KEYED,
@@ -3199,7 +3199,7 @@ class StringDictionary: public Dictionary<StringDictionaryShape, String*> {
   // For transforming properties of a JSObject.
   MUST_USE_RESULT MaybeObject* TransformPropertiesToFastFor(
       JSObject* obj,
-      int unused_property_fields);
+                                       int unused_property_fields);
 
   // Find entry for key, otherwise return kNotFound. Optimized version of
   // HashTable::FindEntry.
@@ -4437,7 +4437,7 @@ class Code: public HeapObject {
   // Flags operations.
   static inline Flags ComputeFlags(
       Kind kind,
-      InlineCacheState ic_state = UNINITIALIZED,
+                                   InlineCacheState ic_state = UNINITIALIZED,
       ExtraICState extra_ic_state = kNoExtraICState,
       StubType type = NORMAL,
       int argc = -1,
@@ -4448,7 +4448,7 @@ class Code: public HeapObject {
       StubType type,
       ExtraICState extra_ic_state = kNoExtraICState,
       InlineCacheHolderFlag holder = OWN_MAP,
-      int argc = -1);
+                                              int argc = -1);
 
   static inline InlineCacheState ExtractICStateFromFlags(Flags flags);
   static inline StubType ExtractTypeFromFlags(Flags flags);
@@ -5225,12 +5225,12 @@ class Struct: public HeapObject {
 // Script describes a script which has been added to the VM.
 class Script: public Struct {
  public:
-  // Script types.
+// Script types.
   enum Type {
     TYPE_NATIVE = 0,
     TYPE_EXTENSION = 1,
     TYPE_NORMAL = 2
-  };
+};
 
   // Script compilation types.
   enum CompilationType {
@@ -7293,10 +7293,10 @@ class String: public HeapObject {
   // handles unexpected data without causing assert failures and it does not
   // do any heap allocations.  This is useful when printing stack traces.
   SmartArrayPointer<char> ToCString(AllowNullsFlag allow_nulls,
-                                    RobustnessFlag robustness_flag,
-                                    int offset,
-                                    int length,
-                                    int* length_output = 0);
+                               RobustnessFlag robustness_flag,
+                               int offset,
+                               int length,
+                               int* length_output = 0);
   SmartArrayPointer<char> ToCString(
       AllowNullsFlag allow_nulls = DISALLOW_NULLS,
       RobustnessFlag robustness_flag = FAST_STRING_TRAVERSAL,
@@ -7457,7 +7457,7 @@ class String: public HeapObject {
   template <typename sinkchar>
   static void WriteToFlat(String* source,
                           sinkchar* sink,
-                          int from,
+                      int from,
                           int to);
 
   // The return value may point to the first aligned word containing the
@@ -7602,11 +7602,11 @@ class SeqAsciiString: public SeqString {
 
   // Support for StringInputBuffer.
   inline void SeqAsciiStringReadBlockIntoBuffer(ReadBlockBuffer* buffer,
-                                                unsigned* offset,
-                                                unsigned chars);
+                                             unsigned* offset,
+                                             unsigned chars);
   inline const unibrow::byte* SeqAsciiStringReadBlock(unsigned* remaining,
-                                                      unsigned* offset,
-                                                      unsigned chars);
+                                                   unsigned* offset,
+                                                   unsigned chars);
 
   DECLARE_VERIFIER(SeqAsciiString)
 
@@ -7654,8 +7654,8 @@ class SeqTwoByteString: public SeqString {
 
   // Support for StringInputBuffer.
   inline void SeqTwoByteStringReadBlockIntoBuffer(ReadBlockBuffer* buffer,
-                                                  unsigned* offset_ptr,
-                                                  unsigned chars);
+                                               unsigned* offset_ptr,
+                                               unsigned chars);
 
  private:
   DISALLOW_IMPLICIT_CONSTRUCTORS(SeqTwoByteString);

@@ -32,7 +32,6 @@ import multiprocessing
 import optparse
 import os
 from os.path import join
-import shlex
 import subprocess
 import sys
 import time
@@ -68,16 +67,7 @@ SUPPORTED_ARCHS = ["android_arm",
                    "ppc",
                    "ppc64",
                    "mipsel",
-                   "nacl_ia32",
-                   "nacl_x64",
                    "x64"]
-# Double the timeout for these:
-SLOW_ARCHS = ["android_arm",
-              "android_ia32",
-              "arm",
-              "mipsel",
-              "nacl_ia32",
-              "nacl_x64"]
 
 
 def BuildOptions():
@@ -149,10 +139,7 @@ def BuildOptions():
                     default=False, action="store_true")
   result.add_option("--warn-unused", help="Report unused rules",
                     default=False, action="store_true")
-  result.add_option("--junitout", help="File name of the JUnit output")
-  result.add_option("--junittestsuite",
-                    help="The testsuite name in the JUnit output file",
-                    default="v8tests")
+(??)
   return result
 
 
@@ -187,8 +174,6 @@ def ProcessOptions(options):
     print("Specifying --command-prefix disables network distribution, "
           "running tests locally.")
     options.no_network = True
-  options.command_prefix = shlex.split(options.command_prefix)
-  options.extra_flags = shlex.split(options.extra_flags)
   if options.j == 0:
     options.j = multiprocessing.cpu_count()
   if options.no_stress:
@@ -202,7 +187,7 @@ def ProcessOptions(options):
   if options.valgrind:
     run_valgrind = os.path.join("tools", "run-valgrind.py")
     # This is OK for distributed running, so we don't need to set no_network.
-    options.command_prefix = (["python", "-u", run_valgrind] +
+    options.command_prefix = ("python -u " + run_valgrind +
                               options.command_prefix)
   return True
 
@@ -286,12 +271,12 @@ def Execute(arch, mode, args, options, suites, workspace):
   timeout = options.timeout
   if timeout == -1:
     # Simulators are slow, therefore allow a longer default timeout.
-    if arch in SLOW_ARCHS:
+    if arch in ["android", "arm", "mipsel"]:
       timeout = 2 * TIMEOUT_DEFAULT;
     else:
       timeout = TIMEOUT_DEFAULT;
 
-  timeout *= TIMEOUT_SCALEFACTOR[mode]
+  options.timeout *= TIMEOUT_SCALEFACTOR[mode]
   ctx = context.Context(arch, mode, shell_dir,
                         mode_flags, options.verbose,
                         timeout, options.isolates,
@@ -311,9 +296,9 @@ def Execute(arch, mode, args, options, suites, workspace):
   for s in suites:
     s.ReadStatusFile(variables)
     s.ReadTestCases(ctx)
+    all_tests += s.tests
     if len(args) > 0:
       s.FilterTestCasesByArgs(args)
-    all_tests += s.tests
     s.FilterTestCasesByStatus(options.warn_unused)
     if options.cat:
       verbose.PrintTestSource(s.tests)
@@ -340,9 +325,6 @@ def Execute(arch, mode, args, options, suites, workspace):
   try:
     start_time = time.time()
     progress_indicator = progress.PROGRESS_INDICATORS[options.progress]()
-    if options.junitout:
-      progress_indicator = progress.JUnitTestProgressIndicator(
-          progress_indicator, options.junitout, options.junittestsuite)
 
     run_networked = not options.no_network
     if not run_networked:

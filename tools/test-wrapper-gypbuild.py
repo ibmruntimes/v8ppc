@@ -40,7 +40,7 @@ import subprocess
 import sys
 
 
-PROGRESS_INDICATORS = ['verbose', 'dots', 'color', 'mono', 'tap']
+PROGRESS_INDICATORS = ['verbose', 'dots', 'color', 'mono']
 
 
 def BuildOptions():
@@ -72,7 +72,7 @@ def BuildOptions():
   result.add_option("-v", "--verbose", help="Verbose output",
       default=False, action="store_true")
   result.add_option("-p", "--progress",
-      help="The style of progress indicator (verbose, dots, color, mono, tap)",
+      help="The style of progress indicator (verbose, dots, color, mono)",
       choices=PROGRESS_INDICATORS, default="mono")
   result.add_option("--report", help="Print a summary of the tests to be run",
       default=False, action="store_true")

@@ -69,7 +69,7 @@ ExternalReferenceTable* ExternalReferenceTable::instance(Isolate* isolate) {
   if (external_reference_table == NULL) {
     external_reference_table = new ExternalReferenceTable(isolate);
     isolate->set_external_reference_table(external_reference_table);
-  }
+}
   return external_reference_table;
 }
 
@@ -84,17 +84,17 @@ void ExternalReferenceTable::AddFromId(TypeCode type,
       ExternalReference ref(static_cast<Builtins::CFunctionId>(id), isolate);
       address = ref.address();
       break;
-    }
+  }
     case BUILTIN: {
       ExternalReference ref(static_cast<Builtins::Name>(id), isolate);
       address = ref.address();
       break;
-    }
+  }
     case RUNTIME_FUNCTION: {
       ExternalReference ref(static_cast<Runtime::FunctionId>(id), isolate);
       address = ref.address();
       break;
-    }
+  }
     case IC_UTILITY: {
       ExternalReference ref(IC_Utility(static_cast<IC::UtilityId>(id)),
                             isolate);
@@ -104,7 +104,7 @@ void ExternalReferenceTable::AddFromId(TypeCode type,
     default:
       UNREACHABLE();
       return;
-  }
+      }
   Add(address, type, id, name);
 }
 
@@ -114,14 +114,14 @@ void ExternalReferenceTable::Add(Address address,
                                  uint16_t id,
                                  const char* name) {
   ASSERT_NE(NULL, address);
-  ExternalReferenceEntry entry;
-  entry.address = address;
-  entry.code = EncodeExternal(type, id);
-  entry.name = name;
+    ExternalReferenceEntry entry;
+    entry.address = address;
+    entry.code = EncodeExternal(type, id);
+    entry.name = name;
   ASSERT_NE(0, entry.code);
-  refs_.Add(entry);
-  if (id > max_id_[type]) max_id_[type] = id;
-}
+    refs_.Add(entry);
+    if (id > max_id_[type]) max_id_[type] = id;
+  }
 
 
 void ExternalReferenceTable::PopulateTable(Isolate* isolate) {
@@ -147,7 +147,7 @@ void ExternalReferenceTable::PopulateTable(Isolate* isolate) {
   // Builtins
 #define DEF_ENTRY_C(name, ignored) \
   { C_BUILTIN, \
-    Builtins::c_##name, \
+      Builtins::c_##name, \
     "Builtins::" #name },
 
   BUILTIN_LIST_C(DEF_ENTRY_C)
@@ -168,7 +168,7 @@ void ExternalReferenceTable::PopulateTable(Isolate* isolate) {
   // Runtime functions
 #define RUNTIME_ENTRY(name, nargs, ressize) \
   { RUNTIME_FUNCTION, \
-    Runtime::k##name, \
+      Runtime::k##name, \
     "Runtime::" #name },
 
   RUNTIME_FUNCTION_LIST(RUNTIME_ENTRY)
@@ -177,7 +177,7 @@ void ExternalReferenceTable::PopulateTable(Isolate* isolate) {
   // IC utilities
 #define IC_ENTRY(name) \
   { IC_UTILITY, \
-    IC::k##name, \
+      IC::k##name, \
     "IC::" #name },
 
   IC_UTIL_LIST(IC_ENTRY)
@@ -206,7 +206,7 @@ void ExternalReferenceTable::PopulateTable(Isolate* isolate) {
       Debug::k_debug_break_return_address << kDebugIdShift,
       "Debug::debug_break_return_address()");
   Add(Debug_Address(Debug::k_restarter_frame_function_pointer).address(isolate),
-      DEBUG_ADDRESS,
+        DEBUG_ADDRESS,
       Debug::k_restarter_frame_function_pointer << kDebugIdShift,
       "Debug::restarter_frame_function_pointer_address()");
 #endif
@@ -221,7 +221,7 @@ void ExternalReferenceTable::PopulateTable(Isolate* isolate) {
   const StatsRefTableEntry stats_ref_table[] = {
 #define COUNTER_ENTRY(name, caption) \
   { &Counters::name,    \
-    Counters::k_##name, \
+      Counters::k_##name, \
     "Counters::" #name },
 
   STATS_COUNTER_LIST_1(COUNTER_ENTRY)
@@ -602,7 +602,7 @@ Deserializer::Deserializer(SnapshotByteSource* source)
   for (int i = 0; i < LAST_SPACE + 1; i++) {
     reservations_[i] = kUninitializedReservation;
   }
-}
+  }
 
 
 void Deserializer::Deserialize() {
@@ -627,13 +627,13 @@ void Deserializer::Deserialize() {
     Object* source = isolate_->heap()->natives_source_cache()->get(i);
     if (!source->IsUndefined()) {
       ExternalAsciiString::cast(source)->update_data_cache();
-    }
+  }
   }
 
   // Issue code events for newly deserialized code objects.
   LOG_CODE_EVENT(isolate_, LogCodeObjects());
   LOG_CODE_EVENT(isolate_, LogCompiledFunctions());
-}
+  }
 
 
 void Deserializer::DeserializePartial(Object** root) {
@@ -674,7 +674,7 @@ void Deserializer::VisitPointers(Object** start, Object** end) {
   // The space must be new space.  Any other space would cause ReadChunk to try
   // to update the remembered using NULL as the address.
   ReadChunk(start, end, NEW_SPACE, NULL);
-}
+  }
 
 
 // This routine writes the new object into the pointer provided and then
@@ -713,7 +713,7 @@ void Deserializer::ReadObject(int space_number,
     }
   }
 #endif
-}
+  }
 
 void Deserializer::ReadChunk(Object** current,
                              Object** limit,
@@ -884,7 +884,7 @@ void Deserializer::ReadChunk(Object** current,
         current =                                                            \
             reinterpret_cast<Object**>(raw_data_out + index * kPointerSize); \
         break;                                                               \
-      }
+}
       COMMON_RAW_LENGTHS(RAW_CASE)
 #undef RAW_CASE
 
@@ -904,7 +904,7 @@ void Deserializer::ReadChunk(Object** current,
         ASSERT(!isolate->heap()->InNewSpace(object));
         *current++ = object;
         break;
-      }
+  }
 
       SIXTEEN_CASES(kRootArrayConstants + kHasSkipDistance)
       SIXTEEN_CASES(kRootArrayConstants + kHasSkipDistance + 16) {
@@ -916,7 +916,7 @@ void Deserializer::ReadChunk(Object** current,
         ASSERT(!isolate->heap()->InNewSpace(object));
         *current++ = object;
         break;
-      }
+}
 
       case kRepeat: {
         int repeats = source_->GetInt();
@@ -940,7 +940,7 @@ void Deserializer::ReadChunk(Object** current,
         for (int i = 0; i < repeats; i++) current[i] = object;
         current += repeats;
         break;
-      }
+}
 
       // Deserialize a new object and write a pointer to it to the current
       // object.
@@ -1037,12 +1037,12 @@ void Deserializer::ReadChunk(Object** current,
         // If we get here then that indicates that you have a mismatch between
         // the number of GC roots when serializing and deserializing.
         UNREACHABLE();
-      }
+  }
 
       default:
         UNREACHABLE();
-    }
   }
+}
   ASSERT_EQ(limit, current);
 }
 
@@ -1116,12 +1116,12 @@ void Serializer::VisitPointers(Object** start, Object** end) {
       sink_->Put(kRawData + 1, "Smi");
       for (int i = 0; i < kPointerSize; i++) {
         sink_->Put(reinterpret_cast<byte*>(current)[i], "Byte");
-      }
+  }
     } else {
       SerializeObject(*current, kPlain, kStartOfObject, 0);
+}
     }
   }
-}
 
 
 // This ensures that the partial snapshot cache keeps things alive during GC and
@@ -1140,14 +1140,14 @@ void SerializerDeserializer::Iterate(ObjectVisitor* visitor) {
       // Extend the array ready to get a value from the visitor when
       // deserializing.
       isolate->PushToPartialSnapshotCache(Smi::FromInt(0));
-    }
+  }
     Object** cache = isolate->serialize_partial_snapshot_cache();
     visitor->VisitPointers(&cache[i], &cache[i + 1]);
     // Sentinel is the undefined object, which is a root so it will not normally
     // be found in the cache.
     if (cache[i] == isolate->heap()->undefined_value()) {
       break;
-    }
+}
   }
 }
 
@@ -1190,7 +1190,7 @@ int Serializer::RootIndex(HeapObject* heap_object, HowToCode from) {
         // MIPS or lis/addic on PPC.  Therefore we should not generate
         // such serialization data for MIPS/PPC.
         return kInvalidRootIndex;
-      }
+  }
 #endif
       return i;
     }
@@ -1249,7 +1249,7 @@ void StartupSerializer::SerializeObject(
     if (skip != 0) {
       sink_->Put(kSkip, "FlushPendingSkip");
       sink_->PutInt(skip, "SkipDistance");
-    }
+  }
 
     // Object has not yet been serialized.  Serialize it here.
     ObjectSerializer object_serializer(this,
@@ -1288,12 +1288,12 @@ void Serializer::PutRoot(int root_index,
     if (skip == 0) {
       sink_->Put(kRootArrayConstants + kNoSkipDistance + root_index,
                  "RootConstant");
-    } else {
+  } else {
       sink_->Put(kRootArrayConstants + kHasSkipDistance + root_index,
                  "RootConstant");
       sink_->PutInt(skip, "SkipInPutRoot");
     }
-  } else {
+    } else {
     if (skip != 0) {
       sink_->Put(kSkip, "SkipFromPutRoot");
       sink_->PutInt(skip, "SkipFromPutRootDistance");
@@ -1329,14 +1329,14 @@ void PartialSerializer::SerializeObject(
     if (skip != 0) {
       sink_->Put(kSkip, "SkipFromSerializeObject");
       sink_->PutInt(skip, "SkipDistanceFromSerializeObject");
-    }
+  }
 
     int cache_index = PartialSnapshotCacheIndex(heap_object);
     sink_->Put(kPartialSnapshotCache + how_to_code + where_to_point,
                "PartialSnapshotCache");
     sink_->PutInt(cache_index, "partial_snapshot_cache_index");
     return;
-  }
+}
 
   // Pointers from the partial snapshot to the objects in the startup snapshot
   // should go through the root array or through the partial snapshot cache.
@@ -1358,7 +1358,7 @@ void PartialSerializer::SerializeObject(
     if (skip != 0) {
       sink_->Put(kSkip, "SkipFromSerializeObject");
       sink_->PutInt(skip, "SkipDistanceFromSerializeObject");
-    }
+  }
     // Object has not yet been serialized.  Serialize it here.
     ObjectSerializer serializer(this,
                                 heap_object,
@@ -1417,22 +1417,22 @@ void Serializer::ObjectSerializer::VisitPointers(Object** start,
         int repeat_count = 1;
         while (current < end - 1 && current[repeat_count] == current_contents) {
           repeat_count++;
-        }
+  }
         current += repeat_count;
         bytes_processed_so_far_ += repeat_count * kPointerSize;
         if (repeat_count > kMaxRepeats) {
           sink_->Put(kRepeat, "SerializeRepeats");
           sink_->PutInt(repeat_count, "SerializeRepeats");
-        } else {
-          sink_->Put(CodeForRepeats(repeat_count), "SerializeRepeats");
-        }
       } else {
+          sink_->Put(CodeForRepeats(repeat_count), "SerializeRepeats");
+      }
+    } else {
         serializer_->SerializeObject(
                 current_contents, kPlain, kStartOfObject, 0);
         bytes_processed_so_far_ += kPointerSize;
         current++;
-      }
     }
+  }
   }
 }
 
@@ -1461,7 +1461,7 @@ void Serializer::ObjectSerializer::VisitExternalReferences(Address* start,
     sink_->PutInt(reference_id, "reference id");
   }
   bytes_processed_so_far_ += static_cast<int>((end - start) * kPointerSize);
-}
+  }
 
 
 void Serializer::ObjectSerializer::VisitExternalReference(RelocInfo* rinfo) {
@@ -1491,7 +1491,7 @@ void Serializer::ObjectSerializer::VisitRuntimeEntry(RelocInfo* rinfo) {
     representation = kStartOfObject + kFromCode;
   } else {
     representation = kStartOfObject + kPlain;
-  }
+    }
   sink_->Put(kExternalReference + representation, "ExternalReference");
   sink_->PutInt(skip, "SkipB4ExternalRef");
   sink_->PutInt(encoding, "reference id");
@@ -1541,9 +1541,9 @@ void Serializer::ObjectSerializer::VisitExternalAsciiString(
         sink_->PutSection(i, "NativesStringResourceEnd");
         bytes_processed_so_far_ += sizeof(resource);
         return;
-      }
-    }
   }
+  }
+}
   // One of the strings in the natives cache should match the resource.  We
   // can't serialize any other kinds of external strings.
   UNREACHABLE();
@@ -1582,7 +1582,7 @@ int Serializer::ObjectSerializer::OutputRawData(
       // We always end up here if we are outputting the code of a code object.
       sink_->Put(kRawData, "RawData");
       sink_->PutInt(bytes_to_output, "length");
-    }
+  }
     for (int i = 0; i < bytes_to_output; i++) {
       unsigned int data = base[i];
       sink_->PutSection(data, "Byte");
@@ -1603,7 +1603,7 @@ int Serializer::SpaceOfObject(HeapObject* object) {
     if (HEAP->InSpace(object, s)) {
       ASSERT(i < kNumberOfSpaces);
       return i;
-    }
+  }
   }
   UNREACHABLE();
   return 0;
@@ -1640,8 +1640,8 @@ bool SnapshotByteSource::AtEOF() {
   if (0u + length_ - position_ > 2 * sizeof(uint32_t)) return false;
   for (int x = position_; x < length_; x++) {
     if (data_[x] != SerializerDeserializer::nop()) return false;
-  }
+        }
   return true;
-}
+        }
 
 } }  // namespace v8::internal

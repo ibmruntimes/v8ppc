@@ -210,7 +210,7 @@ void i::V8::FatalProcessOutOfMemory(const char* location, bool take_snapshot) {
   FatalErrorCallback callback = GetFatalErrorHandler();
   {
     LEAVE_V8(isolate);
-    callback(location, "Allocation failed - process out of memory");
+  callback(location, "Allocation failed - process out of memory");
   }
   // If the callback returns, we stop execution.
   UNREACHABLE();
@@ -357,7 +357,7 @@ int StartupDataDecompressor::Decompress() {
       if (result != 0) return result;
     } else {
       ASSERT_EQ(0, compressed_data[i].raw_size);
-    }
+}
     compressed_data[i].data = decompressed;
   }
   V8::SetDecompressedStartupData(compressed_data);
@@ -605,7 +605,7 @@ bool SetResourceConstraints(ResourceConstraints* constraints) {
     bool result = isolate->heap()->ConfigureHeap(young_space_size / 2,
                                                  old_gen_size,
                                                  max_executable_size);
-    if (!result) return false;
+  if (!result) return false;
   }
   if (constraints->stack_limit() != NULL) {
     uintptr_t limit = reinterpret_cast<uintptr_t>(constraints->stack_limit());
@@ -630,7 +630,7 @@ void V8::MakeWeak(i::Object** object, void* parameters,
   i::Isolate* isolate = i::Isolate::Current();
   LOG_API(isolate, "MakeWeak");
   isolate->global_handles()->MakeWeak(object, parameters,
-                                                    callback);
+      callback);
 }
 
 
@@ -698,8 +698,8 @@ HandleScope::HandleScope() {
 HandleScope::~HandleScope() {
   if (!is_closed_) {
     Leave();
-  }
-}
+    }
+      }
 
 
 void HandleScope::Leave() {
@@ -712,19 +712,19 @@ void HandleScope::Leave() {
   if (current->limit != prev_limit_) {
     current->limit = prev_limit_;
     i::HandleScope::DeleteExtensions(isolate_);
-  }
+    }
 
 #ifdef DEBUG
   i::HandleScope::ZapRange(prev_next_, prev_limit_);
 #endif
-}
+    }
 
 
 int HandleScope::NumberOfHandles() {
   EnsureInitializedForIsolate(
       i::Isolate::Current(), "HandleScope::NumberOfHandles");
   return i::HandleScope::NumberOfHandles();
-}
+  }
 
 
 i::Object** HandleScope::CreateHandle(i::Object* value) {
@@ -794,7 +794,7 @@ v8::Local<v8::Value> Context::GetData() {
   ASSERT(env->IsNativeContext());
   if (!env->IsNativeContext()) {
     return Local<Value>();
-  }
+}
   i::Handle<i::Object> result(env->data(), isolate);
   return Utils::ToLocal(result);
 }
@@ -1504,7 +1504,7 @@ ScriptData* ScriptData::New(const char* data, int length) {
 
 
 Local<Script> Script::New(v8::Handle<String> source,
-                          v8::ScriptOrigin* origin,
+                              v8::ScriptOrigin* origin,
                           v8::ScriptData* pre_data,
                           v8::Handle<String> script_data) {
   i::Isolate* isolate = i::Isolate::Current();
@@ -1513,39 +1513,39 @@ Local<Script> Script::New(v8::Handle<String> source,
   ENTER_V8(isolate);
   i::SharedFunctionInfo* raw_result = NULL;
   { i::HandleScope scope(isolate);
-    i::Handle<i::String> str = Utils::OpenHandle(*source);
-    i::Handle<i::Object> name_obj;
-    int line_offset = 0;
-    int column_offset = 0;
-    if (origin != NULL) {
-      if (!origin->ResourceName().IsEmpty()) {
-        name_obj = Utils::OpenHandle(*origin->ResourceName());
-      }
-      if (!origin->ResourceLineOffset().IsEmpty()) {
-        line_offset = static_cast<int>(origin->ResourceLineOffset()->Value());
-      }
-      if (!origin->ResourceColumnOffset().IsEmpty()) {
+  i::Handle<i::String> str = Utils::OpenHandle(*source);
+  i::Handle<i::Object> name_obj;
+  int line_offset = 0;
+  int column_offset = 0;
+  if (origin != NULL) {
+    if (!origin->ResourceName().IsEmpty()) {
+      name_obj = Utils::OpenHandle(*origin->ResourceName());
+    }
+    if (!origin->ResourceLineOffset().IsEmpty()) {
+      line_offset = static_cast<int>(origin->ResourceLineOffset()->Value());
+    }
+    if (!origin->ResourceColumnOffset().IsEmpty()) {
         column_offset =
             static_cast<int>(origin->ResourceColumnOffset()->Value());
-      }
     }
+  }
     EXCEPTION_PREAMBLE(isolate);
     i::ScriptDataImpl* pre_data_impl =
         static_cast<i::ScriptDataImpl*>(pre_data);
-    // We assert that the pre-data is sane, even though we can actually
-    // handle it if it turns out not to be in release mode.
+  // We assert that the pre-data is sane, even though we can actually
+  // handle it if it turns out not to be in release mode.
     ASSERT(pre_data_impl == NULL || pre_data_impl->SanityCheck());
-    // If the pre-data isn't sane we simply ignore it
+  // If the pre-data isn't sane we simply ignore it
     if (pre_data_impl != NULL && !pre_data_impl->SanityCheck()) {
       pre_data_impl = NULL;
     }
     i::Handle<i::SharedFunctionInfo> result =
       i::Compiler::Compile(str,
-                           name_obj,
-                           line_offset,
-                           column_offset,
+                                                              name_obj,
+                                                              line_offset,
+                                                              column_offset,
                            isolate->global_context(),
-                           NULL,
+                                                              NULL,
                            pre_data_impl,
                            Utils::OpenHandle(*script_data, true),
                            i::NOT_NATIVES_CODE);
@@ -1804,7 +1804,7 @@ v8::Handle<Value> Message::GetScriptResourceName() const {
       i::Handle<i::JSValue>::cast(i::Handle<i::Object>(message->script()));
   i::Handle<i::Object> resource_name(i::Script::cast(script->value())->name());
   return scope.Close(Utils::ToLocal(resource_name));
-}
+  }
 
 
 v8::Handle<Value> Message::GetScriptData() const {
@@ -1828,7 +1828,7 @@ v8::Handle<v8::StackTrace> Message::GetStackTrace() const {
   i::Isolate* isolate = Utils::OpenHandle(this)->GetIsolate();
   if (IsDeadCheck(isolate, "v8::Message::GetStackTrace()")) {
     return Local<v8::StackTrace>();
-  }
+}
   ENTER_V8(isolate);
   HandleScope scope;
   i::Handle<i::JSMessageObject> message =
@@ -1942,7 +1942,7 @@ int Message::GetEndColumn() const {
   int start = message->start_position();
   int end = message->end_position();
   return static_cast<int>(start_col_obj->Number()) + (end - start);
-}
+    }
 
 
 Local<String> Message::GetSourceLine() const {
@@ -1960,7 +1960,7 @@ Local<String> Message::GetSourceLine() const {
   } else {
     return Local<String>();
   }
-}
+    }
 
 
 void Message::PrintCurrentStackTrace(FILE* out) {
@@ -1968,7 +1968,7 @@ void Message::PrintCurrentStackTrace(FILE* out) {
   if (IsDeadCheck(isolate, "v8::Message::PrintCurrentStackTrace()")) return;
   ENTER_V8(isolate);
   isolate->PrintCurrentStackTrace(out);
-}
+  }
 
 
 // --- S t a c k T r a c e ---
@@ -2382,8 +2382,8 @@ Local<Boolean> Value::ToBoolean() const {
     LOG_API(isolate, "ToBoolean");
     ENTER_V8(isolate);
     i::Handle<i::Object> val = i::Execution::ToBoolean(obj);
-    return Local<Boolean>(ToApi<Boolean>(val));
-  }
+  return Local<Boolean>(ToApi<Boolean>(val));
+}
 }
 
 
@@ -2547,8 +2547,8 @@ bool Value::BooleanValue() const {
     LOG_API(isolate, "BooleanValue");
     ENTER_V8(isolate);
     i::Handle<i::Object> value = i::Execution::ToBoolean(obj);
-    return value->IsTrue();
-  }
+  return value->IsTrue();
+}
 }
 
 
@@ -2763,7 +2763,7 @@ uint32_t Value::Uint32Value() const {
 
 
 bool v8::Object::Set(v8::Handle<Value> key, v8::Handle<Value> value,
-                     v8::PropertyAttribute attribs) {
+                             v8::PropertyAttribute attribs) {
   i::Isolate* isolate = Utils::OpenHandle(this)->GetIsolate();
   ON_BAILOUT(isolate, "v8::Object::Set()", return false);
   ENTER_V8(isolate);
@@ -3262,8 +3262,8 @@ Local<v8::Object> v8::Object::Clone() {
   i::Handle<i::JSObject> result = i::Copy(self);
   has_pending_exception = result.is_null();
   EXCEPTION_BAILOUT_CHECK(isolate, Local<Object>());
-  return Utils::ToLocal(result);
-}
+    return Utils::ToLocal(result);
+  }
 
 
 static i::Context* GetCreationContext(i::JSObject* object) {
@@ -4044,8 +4044,8 @@ int String::Write(uint16_t* buffer,
   i::Handle<i::String> str = Utils::OpenHandle(this);
   isolate->string_tracker()->RecordWrite(str);
   if (options & HINT_MANY_WRITES_EXPECTED) {
-    // Flatten the string for efficiency.  This applies whether we are
-    // using StringInputBuffer or Get(i) to access the characters.
+  // Flatten the string for efficiency.  This applies whether we are
+  // using StringInputBuffer or Get(i) to access the characters.
     FlattenString(str);
   }
   int end = start + length;
@@ -4410,8 +4410,8 @@ static i::Handle<i::FunctionTemplateInfo>
 
 Persistent<Context> v8::Context::New(
     v8::ExtensionConfiguration* extensions,
-    v8::Handle<ObjectTemplate> global_template,
-    v8::Handle<Value> global_object) {
+                                     v8::Handle<ObjectTemplate> global_template,
+                                     v8::Handle<Value> global_object) {
   i::Isolate::EnsureDefaultIsolate();
   i::Isolate* isolate = i::Isolate::Current();
   EnsureInitializedForIsolate(isolate, "v8::Context::New()");
@@ -4427,7 +4427,7 @@ Persistent<Context> v8::Context::New(
     i::Handle<i::FunctionTemplateInfo> global_constructor;
 
     if (!global_template.IsEmpty()) {
-      // Make sure that the global_template has a constructor.
+  // Make sure that the global_template has a constructor.
       global_constructor =
           EnsureConstructor(Utils::OpenHandle(*global_template));
 
@@ -4439,7 +4439,7 @@ Persistent<Context> v8::Context::New(
       // Set the global template to be the prototype template of
       // global proxy template.
       proxy_constructor->set_prototype_template(
-          *Utils::OpenHandle(*global_template));
+        *Utils::OpenHandle(*global_template));
 
       // Migrate security handlers from global_template to
       // proxy_template.  Temporarily removing access check
@@ -4453,7 +4453,7 @@ Persistent<Context> v8::Context::New(
         global_constructor->set_access_check_info(
             isolate->heap()->undefined_value());
       }
-    }
+  }
 
     // Create the environment.
     env = isolate->bootstrapper()->CreateEnvironment(
@@ -4533,7 +4533,7 @@ v8::Local<v8::Context> Context::GetEntered() {
   i::Isolate* isolate = i::Isolate::Current();
   if (!EnsureInitializedForIsolate(isolate, "v8::Context::GetEntered()")) {
     return Local<Context>();
-  }
+}
   i::Handle<i::Object> last =
       isolate->handle_scope_implementer()->LastEnteredContext();
   if (last.is_null()) return Local<Context>();
@@ -4918,7 +4918,7 @@ Local<String> v8::String::NewExternal(
 
 
 bool v8::String::MakeExternal(
-    v8::String::ExternalAsciiStringResource* resource) {
+      v8::String::ExternalAsciiStringResource* resource) {
   i::Handle<i::String> obj = Utils::OpenHandle(this);
   i::Isolate* isolate = obj->GetIsolate();
   if (IsDeadCheck(isolate, "v8::String::MakeExternal()")) return false;
@@ -5270,14 +5270,18 @@ void V8::IgnoreOutOfMemoryException() {
 }
 
 
-bool V8::AddMessageListener(MessageCallback that) {
+bool V8::AddMessageListener(MessageCallback that, Handle<Value> data) {
   i::Isolate* isolate = i::Isolate::Current();
   EnsureInitializedForIsolate(isolate, "v8::V8::AddMessageListener()");
   ON_BAILOUT(isolate, "v8::V8::AddMessageListener()", return false);
   ENTER_V8(isolate);
   i::HandleScope scope(isolate);
   NeanderArray listeners(isolate->factory()->message_listeners());
-  listeners.add(isolate->factory()->NewForeign(FUNCTION_ADDR(that)));
+  NeanderObject obj(2);
+  obj.set(0, *isolate->factory()->NewForeign(FUNCTION_ADDR(that)));
+  obj.set(1, data.IsEmpty() ? isolate->heap()->undefined_value()
+                            : *Utils::OpenHandle(*data));
+  listeners.add(obj.value());
   return true;
 }
 
@@ -5292,7 +5296,8 @@ void V8::RemoveMessageListeners(MessageCallback that) {
   for (int i = 0; i < listeners.length(); i++) {
     if (listeners.get(i)->IsUndefined()) continue;  // skip deleted ones
 
-    i::Handle<i::Foreign> callback_obj(i::Foreign::cast(listeners.get(i)));
+    NeanderObject listener(i::JSObject::cast(listeners.get(i)));
+    i::Handle<i::Foreign> callback_obj(i::Foreign::cast(listener.get(0)));
     if (callback_obj->foreign_address() == FUNCTION_ADDR(that)) {
       listeners.set(i, isolate->heap()->undefined_value());
     }
@@ -5776,8 +5781,8 @@ void Debug::CancelDebugBreak(Isolate* isolate) {
     internal_isolate->stack_guard()->Continue(i::DEBUGBREAK);
   } else {
     i::Isolate::GetDefaultIsolateStackGuard()->Continue(i::DEBUGBREAK);
-  }
-}
+      }
+    }
 
 
 void Debug::DebugBreakForCommand(ClientData* data, Isolate* isolate) {
@@ -5816,8 +5821,8 @@ void Debug::SetMessageHandler(v8::Debug::MessageHandler handler,
     isolate->debugger()->SetMessageHandler(MessageHandlerWrapper);
   } else {
     isolate->debugger()->SetMessageHandler(NULL);
-  }
-}
+      }
+    }
 
 
 void Debug::SetMessageHandler2(v8::Debug::MessageHandler2 handler) {
@@ -5825,7 +5830,7 @@ void Debug::SetMessageHandler2(v8::Debug::MessageHandler2 handler) {
   EnsureInitializedForIsolate(isolate, "v8::Debug::SetMessageHandler");
   ENTER_V8(isolate);
   isolate->debugger()->SetMessageHandler(handler);
-}
+  }
 
 
 void Debug::SendCommand(const uint16_t* command, int length,
@@ -6546,8 +6551,8 @@ void HandleScopeImplementer::IterateThis(ObjectVisitor* v) {
       found_block_before_deferred = true;
 #endif
     } else {
-      v->VisitPointers(block, &block[kHandleBlockSize]);
-    }
+    v->VisitPointers(block, &block[kHandleBlockSize]);
+  }
   }
 
   ASSERT(last_handle_before_deferred_block_ == NULL ||

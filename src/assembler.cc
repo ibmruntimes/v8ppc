@@ -272,7 +272,7 @@ void RelocInfoWriter::WriteTaggedData(intptr_t data_delta, int tag) {
 
 void RelocInfoWriter::WriteExtraTag(int extra_tag, int top_tag) {
   *--pos_ = static_cast<int>(top_tag << (kTagBits + kExtraTagBits) |
-                             extra_tag << kTagBits |
+            extra_tag << kTagBits |
                              kDefaultTag);
 }
 
@@ -349,7 +349,7 @@ void RelocInfoWriter::Write(const RelocInfo* rinfo) {
     ASSERT(static_cast<int>(rinfo->data()) == rinfo->data());
     int pos_delta = static_cast<int>(rinfo->data()) - last_position_;
     int pos_type_tag = (rmode == RelocInfo::POSITION) ? kNonstatementPositionTag
-                                                      : kStatementPositionTag;
+                                         : kStatementPositionTag;
     // Check if delta is small enough to fit in a tagged byte.
     if (is_intn(pos_delta, kSmallDataBits)) {
       WriteTaggedPC(pc_delta, kLocatableTag);
@@ -480,7 +480,7 @@ inline void RelocIterator::ReadTaggedPosition() {
   // Signed right shift is arithmetic shift.  Tested in test-utils.cc.
   last_position_ += signed_b >> kLocatableTypeTagBits;
   rinfo_.data_ = last_position_;
-}
+  }
 
 
 static inline RelocInfo::Mode GetPositionModeFromTag(int tag) {
@@ -549,10 +549,10 @@ void RelocIterator::next() {
           if (mode_mask_ & RelocInfo::kPositionMask) {
             AdvanceReadPosition();
             if (SetMode(GetPositionModeFromTag(locatable_tag))) return;
-          } else {
-            Advance(kIntSize);
-          }
         } else {
+          Advance(kIntSize);
+        }
+      } else {
           ASSERT(locatable_tag == kCommentTag);
           if (SetMode(RelocInfo::COMMENT)) {
             AdvanceReadData();

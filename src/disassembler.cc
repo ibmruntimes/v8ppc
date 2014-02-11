@@ -219,7 +219,7 @@ static int DecodeIt(FILE* f,
       RelocInfo::Mode rmode = relocinfo.rmode();
       if (RelocInfo::IsPosition(rmode)) {
         if (RelocInfo::IsStatementPosition(rmode)) {
-          out.AddFormatted("    ;; debug: statement %d", relocinfo.data());
+        out.AddFormatted("    ;; debug: statement %d", relocinfo.data());
         } else {
           out.AddFormatted("    ;; debug: position %d", relocinfo.data());
         }
@@ -239,7 +239,7 @@ static int DecodeIt(FILE* f,
           out.AddFormatted(" constructor,");
         }
         Code* code = Code::GetCodeFromTargetAddress(relocinfo.target_address());
-        Code::Kind kind = code->kind();
+          Code::Kind kind = code->kind();
         if (code->is_inline_cache_stub()) {
           if (rmode == RelocInfo::CODE_TARGET_CONTEXT) {
             out.AddFormatted(" contextual,");
@@ -255,33 +255,33 @@ static int DecodeIt(FILE* f,
             out.AddFormatted(", argc = %d", code->arguments_count());
           }
         } else if (kind == Code::STUB) {
-          // Reverse lookup required as the minor key cannot be retrieved
-          // from the code object.
+            // Reverse lookup required as the minor key cannot be retrieved
+            // from the code object.
           Object* obj = heap->code_stubs()->SlowReverseLookup(code);
           if (obj != heap->undefined_value()) {
-            ASSERT(obj->IsSmi());
-            // Get the STUB key and extract major and minor key.
-            uint32_t key = Smi::cast(obj)->value();
-            uint32_t minor_key = CodeStub::MinorKeyFromKey(key);
+              ASSERT(obj->IsSmi());
+              // Get the STUB key and extract major and minor key.
+              uint32_t key = Smi::cast(obj)->value();
+              uint32_t minor_key = CodeStub::MinorKeyFromKey(key);
             CodeStub::Major major_key = CodeStub::GetMajorKey(code);
             ASSERT(major_key == CodeStub::MajorKeyFromKey(key));
             out.AddFormatted(" %s, %s, ",
-                             Code::Kind2String(kind),
+                               Code::Kind2String(kind),
                              CodeStub::MajorName(major_key, false));
             switch (major_key) {
               case CodeStub::CallFunction: {
                 int argc =
                     CallFunctionStub::ExtractArgcFromMinorKey(minor_key);
                 out.AddFormatted("argc = %d", argc);
-                break;
-              }
-              default:
+                  break;
+                }
+                default:
                 out.AddFormatted("minor: %d", minor_key);
+              }
             }
-          }
-        } else {
+          } else {
           out.AddFormatted(" %s", Code::Kind2String(kind));
-        }
+          }
         if (rmode == RelocInfo::CODE_TARGET_WITH_ID) {
           out.AddFormatted(" (id = %d)", static_cast<int>(relocinfo.data()));
         }
@@ -294,10 +294,10 @@ static int DecodeIt(FILE* f,
           out.AddFormatted("    ;; %s", RelocInfo::RelocModeName(rmode));
         } else {
           out.AddFormatted("    ;; deoptimization bailout %d", id);
-        }
+      }
       } else {
         out.AddFormatted("    ;; %s", RelocInfo::RelocModeName(rmode));
-      }
+    }
     }
     DumpBuffer(f, &out);
   }
