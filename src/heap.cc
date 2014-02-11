@@ -238,10 +238,10 @@ intptr_t Heap::Available() {
 bool Heap::HasBeenSetUp() {
   return old_pointer_space_ != NULL &&
          old_data_space_ != NULL &&
-         code_space_ != NULL &&
-         map_space_ != NULL &&
+      code_space_ != NULL &&
+      map_space_ != NULL &&
          cell_space_ != NULL &&
-         lo_space_ != NULL;
+      lo_space_ != NULL;
 }
 
 
@@ -427,7 +427,7 @@ void Heap::GarbageCollectionPrologue() {
 
   LiveObjectList::GCPrologue();
   store_buffer()->GCPrologue();
-}
+  }
 
 
 intptr_t Heap::SizeOfObjects() {
@@ -446,7 +446,7 @@ void Heap::RepairFreeListsAfterBoot() {
        space != NULL;
        space = spaces.next()) {
     space->RepairFreeListsAfterBoot();
-  }
+}
 }
 
 
@@ -456,7 +456,7 @@ void Heap::GarbageCollectionEpilogue() {
 
   // In release mode, we only zap the from space under heap verification.
   if (Heap::ShouldZapGarbage()) {
-    ZapFromSpace();
+  ZapFromSpace();
   }
 
 #ifdef VERIFY_HEAP
@@ -673,7 +673,7 @@ class SymbolTableVerifier : public ObjectVisitor {
       if ((*p)->IsHeapObject()) {
         // Check that the symbol is actually a symbol.
         CHECK((*p)->IsTheHole() || (*p)->IsUndefined() || (*p)->IsSymbol());
-      }
+}
     }
   }
 };
@@ -1082,7 +1082,7 @@ static void VerifyNonPointerSpacePointers() {
   HeapObjectIterator code_it(HEAP->code_space());
   for (HeapObject* object = code_it.Next();
        object != NULL; object = code_it.Next())
-    object->Iterate(&v);
+      object->Iterate(&v);
 
   // The old data space was normally swept conservatively so that the iterator
   // doesn't work, so we normally skip the next bit.
@@ -1091,8 +1091,8 @@ static void VerifyNonPointerSpacePointers() {
     for (HeapObject* object = data_it.Next();
          object != NULL; object = data_it.Next())
       object->Iterate(&v);
-  }
-}
+      }
+    }
 #endif  // VERIFY_HEAP
 
 
@@ -1327,7 +1327,7 @@ void Heap::Scavenge() {
   LiveObjectList::UpdateReferencesForScavengeGC();
   if (!FLAG_watch_ic_patching) {
     isolate()->runtime_profiler()->UpdateSamplesAfterScavenge();
-  }
+      }
   incremental_marking()->UpdateMarkingDequeAfterScavenge();
 
   ScavengeWeakObjectRetainer weak_object_retainer(this);
@@ -1350,7 +1350,7 @@ void Heap::Scavenge() {
   gc_state_ = NOT_IN_GC;
 
   scavenges_since_last_idle_round_++;
-}
+      }
 
 
 String* Heap::UpdateNewSpaceReferenceInExternalStringTableEntry(Heap* heap,
@@ -1361,11 +1361,11 @@ String* Heap::UpdateNewSpaceReferenceInExternalStringTableEntry(Heap* heap,
     // Unreachable external string can be finalized.
     heap->FinalizeExternalString(String::cast(*p));
     return NULL;
-  }
+    }
 
   // String is still reachable.
   return String::cast(first_word.ToForwardingAddress());
-}
+  }
 
 
 void Heap::UpdateNewSpaceReferencesInExternalStringTable(
@@ -1398,7 +1398,7 @@ void Heap::UpdateNewSpaceReferencesInExternalStringTable(
       // String got promoted.  Move it to the old string list.
       external_string_table_.AddOldString(target);
     }
-  }
+}
 
   ASSERT(last <= end);
   external_string_table_.ShrinkNewStrings(static_cast<int>(last - start));
@@ -1435,7 +1435,7 @@ static Object* ProcessFunctionWeakReferences(Heap* heap,
       if (head == undefined) {
         // First element in the list.
         head = retain;
-      } else {
+  } else {
         // Subsequent elements in the list.
         ASSERT(tail != NULL);
         tail->set_next_function_link(retain);
@@ -1444,8 +1444,8 @@ static Object* ProcessFunctionWeakReferences(Heap* heap,
               HeapObject::RawField(tail, JSFunction::kNextFunctionLinkOffset);
           heap->mark_compact_collector()->RecordSlot(
               next_function, next_function, retain);
-        }
-      }
+  }
+}
       // Retained function is new tail.
       candidate_function = reinterpret_cast<JSFunction*>(retain);
       tail = candidate_function;
@@ -1563,8 +1563,8 @@ void Heap::VisitExternalResources(v8::ExternalResourceVisitor* visitor) {
               Handle<String>(String::cast(*p))));
         }
       }
-    }
-   private:
+  }
+ private:
     v8::ExternalResourceVisitor* visitor_;
   } visitor_adapter(visitor);
   external_string_table_.Iterate(&visitor_adapter);
@@ -1618,8 +1618,8 @@ Address Heap::DoScavenge(ObjectVisitor* scavenge_visitor,
         IterateAndMarkPointersToFromSpace(target->address(),
                                           target->address() + size,
                                           &ScavengeObject);
-      }
-    }
+  }
+}
 
     // Take another spin if there are now unswept objects in new space
     // (there are currently no more unswept promoted objects).
@@ -1701,7 +1701,7 @@ class ScavengingVisitor : public StaticVisitorBase {
                           template VisitSpecialized<JSFunction::kSize>);
     } else {
       table_.Register(kVisitJSFunction, &EvacuateJSFunction);
-    }
+}
 
     table_.RegisterSpecializations<ObjectEvacuationStrategy<DATA_OBJECT>,
                                    kVisitDataObject,
@@ -1714,7 +1714,7 @@ class ScavengingVisitor : public StaticVisitorBase {
     table_.RegisterSpecializations<ObjectEvacuationStrategy<POINTER_OBJECT>,
                                    kVisitStruct,
                                    kVisitStructGeneric>();
-  }
+}
 
   static VisitorDispatchTable<ScavengingCallback>* GetTable() {
     return &table_;
@@ -1725,35 +1725,35 @@ class ScavengingVisitor : public StaticVisitorBase {
   enum SizeRestriction { SMALL, UNKNOWN_SIZE };
 
   static void RecordCopiedObject(Heap* heap, HeapObject* obj) {
-    bool should_record = false;
+  bool should_record = false;
 #ifdef DEBUG
-    should_record = FLAG_heap_stats;
+  should_record = FLAG_heap_stats;
 #endif
-    should_record = should_record || FLAG_log_gc;
-    if (should_record) {
+  should_record = should_record || FLAG_log_gc;
+  if (should_record) {
       if (heap->new_space()->Contains(obj)) {
         heap->new_space()->RecordAllocation(obj);
-      } else {
+    } else {
         heap->new_space()->RecordPromotion(obj);
-      }
     }
   }
+}
 
   // Helper function used by CopyObject to copy a source object to an
   // allocated target object and update the forwarding pointer in the source
   // object.  Returns the target object.
   INLINE(static void MigrateObject(Heap* heap,
                                    HeapObject* source,
-                                   HeapObject* target,
+                                HeapObject* target,
                                    int size)) {
     // Copy the content of source to target.
     heap->CopyBlock(target->address(), source->address(), size);
 
-    // Set the forwarding address.
+  // Set the forwarding address.
     source->set_map_word(MapWord::FromForwardingAddress(target));
 
     if (logging_and_profiling_mode == LOGGING_AND_PROFILING_ENABLED) {
-      // Update NewSpace stats if necessary.
+  // Update NewSpace stats if necessary.
       RecordCopiedObject(heap, target);
       HEAP_PROFILE(heap, ObjectMoveEvent(source->address(), target->address()));
       Isolate* isolate = heap->isolate();
@@ -1771,7 +1771,7 @@ class ScavengingVisitor : public StaticVisitorBase {
         MemoryChunk::IncrementLiveBytesFromGC(target->address(), size);
       }
     }
-  }
+}
 
 
   template<ObjectContents object_contents,
@@ -1832,8 +1832,8 @@ class ScavengingVisitor : public StaticVisitorBase {
         }
 
         heap->tracer()->increment_promoted_objects_size(object_size);
-        return;
-      }
+    return;
+  }
     }
     MaybeObject* allocation = heap->new_space()->AllocateRaw(allocation_size);
     heap->promotion_queue()->SetNewLimit(heap->new_space()->top());
@@ -1953,23 +1953,23 @@ class ScavengingVisitor : public StaticVisitorBase {
       }
 
       MapWord first_word = first->map_word();
-      if (first_word.IsForwardingAddress()) {
+    if (first_word.IsForwardingAddress()) {
         HeapObject* target = first_word.ToForwardingAddress();
 
         *slot = target;
         object->set_map_word(MapWord::FromForwardingAddress(target));
-        return;
-      }
+      return;
+    }
 
       heap->DoScavengeObject(first->map(), slot, first);
       object->set_map_word(MapWord::FromForwardingAddress(*slot));
       return;
-    }
+  }
 
     int object_size = ConsString::kSize;
     EvacuateObject<POINTER_OBJECT, SMALL, kObjectAlignment>(
         map, slot, object, object_size);
-  }
+    }
 
   template<ObjectContents object_contents>
   class ObjectEvacuationStrategy {
@@ -2023,11 +2023,11 @@ void Heap::SelectScavengingVisitorsTable() {
       scavenging_visitors_table_.CopyFrom(
           ScavengingVisitor<IGNORE_MARKS,
                             LOGGING_AND_PROFILING_DISABLED>::GetTable());
-    } else {
+      } else {
       scavenging_visitors_table_.CopyFrom(
           ScavengingVisitor<IGNORE_MARKS,
                             LOGGING_AND_PROFILING_ENABLED>::GetTable());
-    }
+      }
   } else {
     if (!logging_and_profiling) {
       scavenging_visitors_table_.CopyFrom(
@@ -2049,8 +2049,8 @@ void Heap::SelectScavengingVisitorsTable() {
           scavenging_visitors_table_.GetVisitorById(
               StaticVisitorBase::kVisitConsString));
     }
+    }
   }
-}
 
 
 void Heap::ScavengeObjectSlow(HeapObject** p, HeapObject* object) {
@@ -2063,7 +2063,7 @@ void Heap::ScavengeObjectSlow(HeapObject** p, HeapObject* object) {
 
 
 MaybeObject* Heap::AllocatePartialMap(InstanceType instance_type,
-                                      int instance_size) {
+                                 int instance_size) {
   Object* result;
   MaybeObject* maybe_result = AllocateRawMap();
   if (!maybe_result->ToObject(&result)) return maybe_result;
@@ -3188,7 +3188,7 @@ MaybeObject* Heap::AllocateJSMessageObject(String* type,
 static inline bool Between(uint32_t character, uint32_t from, uint32_t to) {
   // This makes uses of the the unsigned wraparound.
   return character - from <= to - from;
-}
+    }
 
 
 MUST_USE_RESULT static inline MaybeObject* MakeOrFindTwoCharacterString(
@@ -3223,7 +3223,7 @@ MUST_USE_RESULT static inline MaybeObject* MakeOrFindTwoCharacterString(
     dest[1] = c2;
     return result;
   }
-}
+  }
 
 
 MaybeObject* Heap::AllocateConsString(String* first, String* second) {
@@ -3246,7 +3246,7 @@ MaybeObject* Heap::AllocateConsString(String* first, String* second) {
     unsigned c1 = first->Get(0);
     unsigned c2 = second->Get(0);
     return MakeOrFindTwoCharacterString(this, c1, c2);
-  }
+}
 
   bool first_is_ascii = first->IsAsciiRepresentation();
   bool second_is_ascii = second->IsAsciiRepresentation();
@@ -3288,7 +3288,7 @@ MaybeObject* Heap::AllocateConsString(String* first, String* second) {
       const char* src;
       if (first->IsExternalString()) {
         src = ExternalAsciiString::cast(first)->GetChars();
-      } else {
+  } else {
         src = SeqAsciiString::cast(first)->GetChars();
       }
       for (int i = 0; i < first_length; i++) *dest++ = src[i];
@@ -3312,7 +3312,7 @@ MaybeObject* Heap::AllocateConsString(String* first, String* second) {
         String::WriteToFlat(second, dest + first_length, 0, second_length);
         isolate_->counters()->string_add_runtime_ext_to_ascii()->Increment();
         return result;
-      }
+  }
 
       Object* result;
       { MaybeObject* maybe_result = AllocateRawTwoByteString(length);
@@ -3381,7 +3381,7 @@ MaybeObject* Heap::AllocateSubString(String* buffer,
       if (!maybe_result->ToObject(&result)) return maybe_result;
     }
     String* string_result = String::cast(result);
-    // Copy the characters into the new object.
+  // Copy the characters into the new object.
     if (is_ascii) {
       ASSERT(string_result->IsAsciiRepresentation());
       char* dest = SeqAsciiString::cast(string_result)->GetChars();
@@ -3390,9 +3390,9 @@ MaybeObject* Heap::AllocateSubString(String* buffer,
       ASSERT(string_result->IsTwoByteRepresentation());
       uc16* dest = SeqTwoByteString::cast(string_result)->GetChars();
       String::WriteToFlat(buffer, dest, start, end);
-    }
-    return result;
   }
+  return result;
+}
 
   ASSERT(buffer->IsFlat());
 #if VERIFY_HEAP
@@ -3436,7 +3436,7 @@ MaybeObject* Heap::AllocateSubString(String* buffer,
   ASSERT(sliced_string->parent()->IsSeqString() ||
          sliced_string->parent()->IsExternalString());
   return result;
-}
+  }
 
 
 MaybeObject* Heap::AllocateExternalStringFromAscii(
@@ -3661,7 +3661,7 @@ MaybeObject* Heap::CreateCode(const CodeDesc& desc,
 
 #ifdef VERIFY_HEAP
   if (FLAG_verify_heap) {
-    code->Verify();
+  code->Verify();
   }
 #endif
   return code;
@@ -3769,8 +3769,8 @@ MaybeObject* Heap::Allocate(Map* map, AllocationSpace space) {
 
 
 void Heap::InitializeFunction(JSFunction* function,
-                              SharedFunctionInfo* shared,
-                              Object* prototype) {
+                                 SharedFunctionInfo* shared,
+                                 Object* prototype) {
   ASSERT(!prototype->IsMap());
   function->initialize_properties();
   function->initialize_elements();
@@ -3814,7 +3814,7 @@ MaybeObject* Heap::AllocateFunctionPrototype(JSFunction* function) {
 
 
 MaybeObject* Heap::AllocateFunction(Map* function_map,
-                                    SharedFunctionInfo* shared,
+                               SharedFunctionInfo* shared,
                                     Object* prototype,
                                     PretenureFlag pretenure) {
   AllocationSpace space =
@@ -4043,7 +4043,7 @@ MaybeObject* Heap::AllocateJSObjectFromMap(Map* map, PretenureFlag pretenure) {
 
 
 MaybeObject* Heap::AllocateJSObject(JSFunction* constructor,
-                                    PretenureFlag pretenure) {
+                               PretenureFlag pretenure) {
   // Allocate the initial map if absent.
   if (!constructor->has_initial_map()) {
     Object* initial_map;
@@ -4077,7 +4077,7 @@ MaybeObject* Heap::AllocateJSModule(Context* context, ScopeInfo* scope_info) {
   module->set_context(context);
   module->set_scope_info(scope_info);
   return module;
-}
+  }
 
 
 MaybeObject* Heap::AllocateJSArrayAndStorage(
@@ -4414,7 +4414,7 @@ MaybeObject* Heap::ReinitializeJSGlobalProxy(JSFunction* constructor,
 
 
 MaybeObject* Heap::AllocateStringFromAscii(Vector<const char> string,
-                                           PretenureFlag pretenure) {
+                                      PretenureFlag pretenure) {
   int length = string.length();
   if (length == 1) {
     return Heap::LookupSingleCharacterStringFromCode(string[0]);
@@ -4433,7 +4433,7 @@ MaybeObject* Heap::AllocateStringFromAscii(Vector<const char> string,
 
 MaybeObject* Heap::AllocateStringFromUtf8Slow(Vector<const char> string,
                                               int non_ascii_start,
-                                              PretenureFlag pretenure) {
+                                     PretenureFlag pretenure) {
   // Continue counting the number of characters in the UTF-8 string, starting
   // from the first non-ascii character or word.
   int chars = non_ascii_start;
@@ -4443,7 +4443,7 @@ MaybeObject* Heap::AllocateStringFromUtf8Slow(Vector<const char> string,
   while (decoder->has_more()) {
     uint32_t r = decoder->GetNext();
     if (r <= unibrow::Utf16::kMaxNonSurrogateCharCode) {
-      chars++;
+    chars++;
     } else {
       chars += 2;
     }
@@ -4472,7 +4472,7 @@ MaybeObject* Heap::AllocateStringFromUtf8Slow(Vector<const char> string,
 
 
 MaybeObject* Heap::AllocateStringFromTwoByte(Vector<const uc16> string,
-                                             PretenureFlag pretenure) {
+                                        PretenureFlag pretenure) {
   // Check if the string is an ASCII string.
   Object* result;
   int length = string.length();
@@ -4512,11 +4512,11 @@ Map* Heap::SymbolMapForString(String* string) {
       return short_external_symbol_with_ascii_data_map();
     default: return NULL;  // No match found.
   }
-}
+  }
 
 
 MaybeObject* Heap::AllocateInternalSymbol(unibrow::CharacterStream* buffer,
-                                          int chars,
+                             int chars,
                                           uint32_t hash_field) {
   ASSERT(chars >= 0);
   // Ensure the chars matches the number of characters in the buffer.
@@ -4574,7 +4574,7 @@ MaybeObject* Heap::AllocateInternalSymbol(unibrow::CharacterStream* buffer,
       answer->Set(i++, unibrow::Utf16::TrailSurrogate(character));
     } else {
       answer->Set(i++, character);
-    }
+  }
   }
   return answer;
 }
@@ -5533,8 +5533,8 @@ void Heap::ZapFromSpace() {
          cursor < limit;
          cursor += kPointerSize) {
       Memory::Address_at(cursor) = kFromSpaceZapValue;
-    }
   }
+}
 }
 
 
@@ -5572,16 +5572,16 @@ void Heap::IterateAndMarkPointersToFromSpace(Address start,
           SLOW_ASSERT(new_object->IsHeapObject());
           store_buffer_.EnterDirectlyIntoStoreBuffer(
               reinterpret_cast<Address>(slot));
-        }
+          }
         SLOW_ASSERT(!MarkCompactCollector::IsOnEvacuationCandidate(new_object));
       } else if (record_slots &&
                  MarkCompactCollector::IsOnEvacuationCandidate(object)) {
         mark_compact_collector()->RecordSlot(slot, slot, object);
-      }
+        }
     }
     slot_address += kPointerSize;
   }
-}
+      }
 
 
 #ifdef DEBUG
@@ -5593,12 +5593,12 @@ bool IsAMapPointerAddress(Object** addr) {
   int mod = a % Map::kSize;
   return mod >= Map::kPointerFieldsBeginOffset &&
          mod < Map::kPointerFieldsEndOffset;
-}
+      }
 
 
 bool EverythingsAPointer(Object** addr) {
   return true;
-}
+    }
 
 
 static void CheckStoreBuffer(Heap* heap,
@@ -6687,8 +6687,8 @@ HeapObject* HeapIterator::NextObject() {
   }
   // Done with the last space.
   object_iterator_ = NULL;
-  return NULL;
-}
+    return NULL;
+  }
 
 
 void HeapIterator::reset() {
@@ -6770,7 +6770,7 @@ void PathTracer::TracePathFrom(Object** root) {
 
 static bool SafeIsNativeContext(HeapObject* obj) {
   return obj->map() == obj->GetHeap()->raw_unchecked_native_context_map();
-}
+    }
 
 
 void PathTracer::MarkRecursively(Object** p, MarkVisitor* mark_visitor) {
@@ -6812,7 +6812,7 @@ void PathTracer::MarkRecursively(Object** p, MarkVisitor* mark_visitor) {
     obj->IterateBody(map_p->instance_type(),
                      obj->SizeFromMap(map_p),
                      mark_visitor);
-  }
+}
 
   // Scan the map after the body because the body is a lot more interesting
   // when doing leak detection.
@@ -6820,7 +6820,7 @@ void PathTracer::MarkRecursively(Object** p, MarkVisitor* mark_visitor) {
 
   if (!found_target_in_trace_)  // don't pop if found the target
     object_stack_.RemoveLast();
-}
+    }
 
 
 void PathTracer::UnmarkRecursively(Object** p, UnmarkVisitor* unmark_visitor) {
@@ -6875,7 +6875,7 @@ void PathTracer::ProcessResults() {
 void Heap::TracePathToObjectFrom(Object* target, Object* root) {
   PathTracer tracer(target, PathTracer::FIND_ALL, VISIT_ALL);
   tracer.VisitPointer(&root);
-}
+    }
 
 
 // Triggers a depth-first traversal of reachable objects from roots
@@ -6988,7 +6988,7 @@ GCTracer::~GCTracer() {
         static_cast<double>(heap_->isolate()->memory_allocator()->Size()) / MB;
 
     PrintF("%s %.1f (%.1f) -> %.1f (%.1f) MB, ",
-           CollectorString(),
+         CollectorString(),
            static_cast<double>(start_object_size_) / MB,
            static_cast<double>(start_memory_size_) / MB,
            SizeOfHeapObjects(),

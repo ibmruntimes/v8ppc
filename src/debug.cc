@@ -152,7 +152,7 @@ void BreakLocationIterator::Next() {
       break_point_++;
       return;
     } else if (RelocInfo::IsCodeTarget(rmode())) {
-      // Check for breakable code target. Look in the original code as setting
+    // Check for breakable code target. Look in the original code as setting
       // break points can cause the code targets in the running (debugged) code
       // to be of a different kind than in the original code.
       Address target = original_rinfo()->target_address();
@@ -819,8 +819,8 @@ bool Debug::Load() {
       isolate_->bootstrapper()->CreateEnvironment(
           isolate_,
           Handle<Object>::null(),
-          v8::Handle<ObjectTemplate>(),
-          NULL);
+                                      v8::Handle<ObjectTemplate>(),
+                                      NULL);
 
   // Fail if no context could be created.
   if (context.is_null()) return false;
@@ -954,8 +954,8 @@ Object* Debug::Break(Arguments args) {
       // Step count should always be 0 for StepOut.
       ASSERT(thread_local_.step_count_ == 0);
   } else if (!break_points_hit->IsUndefined() ||
-             (thread_local_.last_step_action_ != StepNone &&
-              thread_local_.step_count_ == 0)) {
+    (thread_local_.last_step_action_ != StepNone &&
+     thread_local_.step_count_ == 0)) {
     // Notify debugger if a real break point is triggered or if performing
     // single stepping with no more steps to perform. Otherwise do another step.
 
@@ -971,7 +971,7 @@ Object* Debug::Break(Arguments args) {
 
       PrepareStep(StepNext, step_count);
     } else {
-      // Notify the debug event listeners.
+    // Notify the debug event listeners.
       isolate_->debugger()->OnDebugBreak(break_points_hit, false);
     }
   } else if (thread_local_.last_step_action_ != StepNone) {
@@ -1011,7 +1011,7 @@ Object* Debug::Break(Arguments args) {
   }
 
   if (thread_local_.frame_drop_mode_ == FRAMES_UNTOUCHED) {
-    SetAfterBreakTarget(frame);
+  SetAfterBreakTarget(frame);
   } else if (thread_local_.frame_drop_mode_ ==
       FRAME_DROPPED_IN_IC_CALL) {
     // We must have been calling IC stub. Do not go there anymore.
@@ -1344,7 +1344,7 @@ void Debug::PrepareStep(StepAction step_action, int step_count) {
     // to set step counter for it. It's expected to always be 0 for StepOut.
     thread_local_.step_count_ = 0;
   } else {
-    thread_local_.step_count_ = step_count;
+  thread_local_.step_count_ = step_count;
   }
 
   // Get the frame where the execution has stopped and skip the debug frame if
@@ -1397,8 +1397,8 @@ void Debug::PrepareStep(StepAction step_action, int step_count) {
 
   if (thread_local_.restarter_frame_function_pointer_ == NULL) {
     if (RelocInfo::IsCodeTarget(it.rinfo()->rmode())) {
-      bool is_call_target = false;
-      Address target = it.rinfo()->target_address();
+  bool is_call_target = false;
+    Address target = it.rinfo()->target_address();
       Code* code = Code::GetCodeFromTargetAddress(target);
       if (code->is_call_stub() || code->is_keyed_call_stub()) {
         is_call_target = true;
@@ -1406,7 +1406,7 @@ void Debug::PrepareStep(StepAction step_action, int step_count) {
       if (code->is_inline_cache_stub()) {
         is_inline_cache_stub = true;
         is_load_or_store = !is_call_target;
-      }
+  }
 
       // Check if target code is CallFunction stub.
       Code* maybe_call_function_stub = code;
@@ -1567,7 +1567,7 @@ bool Debug::StepNextContinue(BreakLocationIterator* break_location_iterator,
     int current_statement_position =
         break_location_iterator->code()->SourceStatementPosition(frame->pc());
     return thread_local_.last_fp_ == frame->UnpaddedFP() &&
-        thread_local_.last_statement_position_ == current_statement_position;
+           thread_local_.last_statement_position_ == current_statement_position;
   }
 
   // No step next action - don't continue.
@@ -1626,16 +1626,16 @@ Handle<Code> Debug::FindDebugBreak(Handle<Code> code, RelocInfo::Mode mode) {
 
       default:
         UNREACHABLE();
-    }
-  }
+      }
+      }
   if (RelocInfo::IsConstructCall(mode)) {
     if (code->has_function_cache()) {
       return isolate->builtins()->CallConstructStub_Recording_DebugBreak();
     } else {
       return isolate->builtins()->CallConstructStub_DebugBreak();
+      }
     }
-  }
-  if (code->kind() == Code::STUB) {
+    if (code->kind() == Code::STUB) {
     ASSERT(code->major_key() == CodeStub::CallFunction);
     if (code->has_function_cache()) {
       return isolate->builtins()->CallFunctionStub_Recording_DebugBreak();
@@ -2308,7 +2308,7 @@ void Debug::SetAfterBreakTarget(JavaScriptFrame* frame) {
   // Handle the jump to continue execution after break point depending on the
   // break location.
   if (at_js_return) {
-    // If the break point at return is still active jump to the corresponding
+    // If the break point as return is still active jump to the corresponding
     // place in the original code. If not the break point was removed during
     // break point processing.
     if (break_at_js_return_active) {
@@ -2330,8 +2330,8 @@ void Debug::SetAfterBreakTarget(JavaScriptFrame* frame) {
     // address to jump to in order to complete the call which is replaced by a
     // call to DebugBreakXXX.
 
-    // Find the corresponding address in the original code.
-    addr += original_code->instruction_start() - code->instruction_start();
+      // Find the corresponding address in the original code.
+      addr += original_code->instruction_start() - code->instruction_start();
 
     // Install jump to the call address in the original code. This will be the
     // call which was overwritten by the call to DebugBreakXXX.
@@ -2354,7 +2354,7 @@ bool Debug::IsBreakAtReturn(JavaScriptFrame* frame) {
   // return.
   if (!has_break_points_) {
     return false;
-  }
+}
 
   PrepareForBreakPoints();
 
@@ -2799,7 +2799,7 @@ void Debugger::OnAfterCompile(Handle<Script> script,
                      Isolate::Current()->js_builtins_object(),
                      ARRAY_SIZE(argv),
                      argv,
-                     &caught_exception);
+      &caught_exception);
   if (caught_exception) {
     return;
   }
@@ -2878,7 +2878,7 @@ void Debugger::ProcessDebugEvent(v8::DebugEvent event,
   // here, if it's only a debug command -- they will be processed later.
   if ((event != v8::Break || !auto_continue) && !event_listener_.is_null()) {
     CallEventCallback(event, exec_state, event_data, NULL);
-  }
+      }
   // Process pending debug commands.
   if (event == v8::Break) {
     while (!event_command_queue_.IsEmpty()) {
@@ -2962,7 +2962,7 @@ void Debugger::UnloadDebugger() {
   // Unload the debugger if feasible.
   if (!never_unload_debugger_) {
     debug->Unload();
-  }
+}
 
   // Clear the flag indicating that the debugger should be unloaded.
   debugger_unload_pending_ = false;
@@ -3031,22 +3031,22 @@ void Debugger::NotifyMessageHandler(v8::DebugEvent event,
   // DebugCommandProcessor goes here.
   v8::Local<v8::Object> cmd_processor;
   {
-    v8::Local<v8::Object> api_exec_state =
-        v8::Utils::ToLocal(Handle<JSObject>::cast(exec_state));
-    v8::Local<v8::String> fun_name =
-        v8::String::New("debugCommandProcessor");
-    v8::Local<v8::Function> fun =
-        v8::Function::Cast(*api_exec_state->Get(fun_name));
+  v8::Local<v8::Object> api_exec_state =
+      v8::Utils::ToLocal(Handle<JSObject>::cast(exec_state));
+  v8::Local<v8::String> fun_name =
+      v8::String::New("debugCommandProcessor");
+  v8::Local<v8::Function> fun =
+      v8::Function::Cast(*api_exec_state->Get(fun_name));
 
     v8::Handle<v8::Boolean> running =
         auto_continue ? v8::True() : v8::False();
     static const int kArgc = 1;
     v8::Handle<Value> argv[kArgc] = { running };
     cmd_processor = v8::Object::Cast(*fun->Call(api_exec_state, kArgc, argv));
-    if (try_catch.HasCaught()) {
-      PrintLn(try_catch.Exception());
-      return;
-    }
+  if (try_catch.HasCaught()) {
+    PrintLn(try_catch.Exception());
+    return;
+  }
   }
 
   bool running = auto_continue;
@@ -3061,10 +3061,10 @@ void Debugger::NotifyMessageHandler(v8::DebugEvent event,
         Debugger::host_dispatch_handler_();
         continue;
       }
-    } else {
+      } else {
       // In case there is no host dispatch - just wait.
       command_received_->Wait();
-    }
+      }
 
     // Get the command from the queue.
     CommandMessage command = command_queue_.Get();
@@ -3348,7 +3348,7 @@ bool Debugger::StartAgent(const char* name, int port,
       agent_->Start();
     }
     return true;
-  }
+}
 
   return false;
 }

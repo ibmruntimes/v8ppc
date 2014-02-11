@@ -70,14 +70,14 @@ class RegExpImpl {
   // the implementation wants to store in the data field.
   // Returns false if compilation fails.
   static Handle<Object> Compile(Handle<JSRegExp> re,
-                                Handle<String> pattern,
+                                    Handle<String> pattern,
                                 Handle<String> flags,
                                 Zone* zone);
 
   // See ECMA-262 section 15.10.6.2.
   // This function calls the garbage collector if necessary.
   static Handle<Object> Exec(Handle<JSRegExp> regexp,
-                             Handle<String> subject,
+                                 Handle<String> subject,
                              int index,
                              Handle<JSArray> lastMatchInfo);
 
@@ -116,7 +116,7 @@ class RegExpImpl {
   // as its "registers" argument.  If the regexp cannot be compiled,
   // an exception is set as pending, and this function returns negative.
   static int IrregexpPrepare(Handle<JSRegExp> regexp,
-                             Handle<String> subject);
+                                       Handle<String> subject);
 
   // Execute a regular expression on the subject, starting from index.
   // If matching succeeds, return the number of matches.  This can be larger
@@ -149,7 +149,7 @@ class RegExpImpl {
   class GlobalCache {
    public:
     GlobalCache(Handle<JSRegExp> regexp,
-                Handle<String> subject,
+                                     Handle<String> subject,
                 bool is_global,
                 Isolate* isolate);
 

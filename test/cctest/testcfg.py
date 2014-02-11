@@ -45,22 +45,19 @@ class CcTestSuite(testsuite.TestSuite):
     os.makedirs(self.serdes_dir)
 
   def ListTests(self, context):
-    shell = os.path.abspath(os.path.join(context.shell_dir, self.shell()))
     if utils.IsWindows():
-      shell += ".exe"
-    output = commands.Execute(context.command_prefix +
-                              [shell, "--list"] +
-                              context.extra_flags)
+      shell += '.exe'
+    shell = os.path.abspath(os.path.join(context.shell_dir, self.shell()))
+    output = commands.Execute([context.command_prefix,
+                               shell,
+                               '--list',
+                               context.extra_flags])
     if output.exit_code != 0:
       print output.stdout
       print output.stderr
       return []
     tests = []
     for test_desc in output.stdout.strip().split():
-      if test_desc.find('<') < 0:
-        # Native Client output can contain a few non-test arguments
-        # before the tests. Skip these.
-        continue
       raw_test, dependency = test_desc.split('<')
       if dependency != '':
         dependency = raw_test.split('/')[0] + '/' + dependency

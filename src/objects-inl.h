@@ -700,7 +700,7 @@ bool Object::IsNormalizedMapCache() {
 
 bool Object::IsCompilationCacheTable() {
   return IsHashTable();
-}
+  }
 
 
 bool Object::IsCodeCacheHashTable() {
@@ -725,7 +725,7 @@ bool Object::IsPrimitive() {
 
 bool Object::IsJSGlobalProxy() {
   bool result = IsHeapObject() &&
-                (HeapObject::cast(this)->map()->instance_type() ==
+      (HeapObject::cast(this)->map()->instance_type() ==
                  JS_GLOBAL_PROXY_TYPE);
   ASSERT(!result || IsAccessCheckNeeded());
   return result;
@@ -893,8 +893,8 @@ MaybeObject* Object::GetProperty(String* key, PropertyAttributes* attributes) {
   }
 
 #ifndef V8_TARGET_ARCH_MIPS
-  #define READ_DOUBLE_FIELD(p, offset) \
-    (*reinterpret_cast<double*>(FIELD_ADDR(p, offset)))
+#define READ_DOUBLE_FIELD(p, offset) \
+  (*reinterpret_cast<double*>(FIELD_ADDR(p, offset)))
 #else  // V8_TARGET_ARCH_MIPS
   // Prevent gcc from using load-double (mips ldc1) on (possibly)
   // non-64-bit aligned HeapNumber::value.
@@ -911,8 +911,8 @@ MaybeObject* Object::GetProperty(String* key, PropertyAttributes* attributes) {
 #endif  // V8_TARGET_ARCH_MIPS
 
 #ifndef V8_TARGET_ARCH_MIPS
-  #define WRITE_DOUBLE_FIELD(p, offset, value) \
-    (*reinterpret_cast<double*>(FIELD_ADDR(p, offset)) = value)
+#define WRITE_DOUBLE_FIELD(p, offset, value) \
+  (*reinterpret_cast<double*>(FIELD_ADDR(p, offset)) = value)
 #else  // V8_TARGET_ARCH_MIPS
   // Prevent gcc from using store-double (mips sdc1) on (possibly)
   // non-64-bit aligned HeapNumber::value.
@@ -1295,8 +1295,8 @@ MaybeObject* JSObject::EnsureCanContainElements(Object** objects,
       } else {
         target_kind = FAST_ELEMENTS;
       }
-    }
   }
+}
 
   if (target_kind != current_kind) {
     return TransitionElementsKind(target_kind);
@@ -1316,7 +1316,7 @@ MaybeObject* JSObject::EnsureCanContainElements(FixedArrayBase* elements,
     }
     Object** objects = FixedArray::cast(elements)->GetFirstElementAddress();
     return EnsureCanContainElements(objects, length, mode);
-  }
+}
 
   ASSERT(mode == ALLOW_COPIED_DOUBLE_ELEMENTS);
   if (GetElementsKind() == FAST_HOLEY_SMI_ELEMENTS) {
@@ -1351,7 +1351,7 @@ MaybeObject* JSObject::GetElementsTransitionMap(Isolate* isolate,
         return Map::cast(maybe_transitioned_map);
       }
     }
-  }
+}
 
   return GetElementsTransitionMapSlow(to_kind);
 }
@@ -2218,7 +2218,7 @@ void DescriptorArray::Append(Descriptor* desc,
     String* key = GetSortedKey(insertion - 1);
     if (key->Hash() <= hash) break;
     SetSortedKey(insertion, GetSortedKeyIndex(insertion - 1));
-  }
+}
 
   SetSortedKey(insertion, descriptor_number);
 }
@@ -2239,7 +2239,7 @@ void DescriptorArray::Append(Descriptor* desc) {
     String* key = GetSortedKey(insertion - 1);
     if (key->Hash() <= hash) break;
     SetSortedKey(insertion, GetSortedKeyIndex(insertion - 1));
-  }
+}
 
   SetSortedKey(insertion, descriptor_number);
 }
@@ -2409,7 +2409,10 @@ uint32_t String::hash_field() {
 
 
 void String::set_hash_field(uint32_t value) {
-  WRITE_INTPTR_FIELD(this, kHashFieldSlot, value);
+  WRITE_UINT32_FIELD(this, kHashFieldOffset, value);
+#if V8_HOST_ARCH_64_BIT
+  WRITE_UINT32_FIELD(this, kHashFieldOffset + kIntSize, 0);
+#endif
 }
 
 
@@ -2543,12 +2546,12 @@ int SeqTwoByteString::SeqTwoByteStringSize(InstanceType instance_type) {
 
 int SeqAsciiString::SeqAsciiStringSize(InstanceType instance_type) {
   return SizeFor(length());
-}
+    }
 
 
 String* SlicedString::parent() {
   return String::cast(READ_FIELD(this, kParentOffset));
-}
+  }
 
 
 void SlicedString::set_parent(String* parent, WriteBarrierMode mode) {
@@ -2596,7 +2599,7 @@ void ConsString::set_second(String* value, WriteBarrierMode mode) {
 bool ExternalString::is_short() {
   InstanceType type = map()->instance_type();
   return (type & kShortExternalStringMask) == kShortExternalStringTag;
-}
+  }
 
 
 const ExternalAsciiString::Resource* ExternalAsciiString::resource() {
@@ -2617,7 +2620,7 @@ void ExternalAsciiString::set_resource(
   *reinterpret_cast<const Resource**>(
       FIELD_ADDR(this, kResourceOffset)) = resource;
   if (resource != NULL) update_data_cache();
-}
+  }
 
 
 const char* ExternalAsciiString::GetChars() {
@@ -4417,42 +4420,6 @@ void JSFunction::set_initial_map(Map* value) {
 }
 
 
-MaybeObject* JSFunction::set_initial_map_and_cache_transitions(
-    Map* initial_map) {
-  Context* native_context = context()->native_context();
-  Object* array_function =
-      native_context->get(Context::ARRAY_FUNCTION_INDEX);
-  if (array_function->IsJSFunction() &&
-      this == JSFunction::cast(array_function)) {
-    // Replace all of the cached initial array maps in the native context with
-    // the appropriate transitioned elements kind maps.
-    Heap* heap = GetHeap();
-    MaybeObject* maybe_maps =
-        heap->AllocateFixedArrayWithHoles(kElementsKindCount);
-    FixedArray* maps;
-    if (!maybe_maps->To(&maps)) return maybe_maps;
-
-    Map* current_map = initial_map;
-    ElementsKind kind = current_map->elements_kind();
-    ASSERT(kind == GetInitialFastElementsKind());
-    maps->set(kind, current_map);
-    for (int i = GetSequenceIndexFromFastElementsKind(kind) + 1;
-         i < kFastElementsKindCount; ++i) {
-      Map* new_map;
-      ElementsKind next_kind = GetFastElementsKindFromSequenceIndex(i);
-      MaybeObject* maybe_new_map =
-          current_map->CopyAsElementsKind(next_kind, INSERT_TRANSITION);
-      if (!maybe_new_map->To(&new_map)) return maybe_new_map;
-      maps->set(next_kind, new_map);
-      current_map = new_map;
-    }
-    native_context->set_js_array_maps(maps);
-  }
-  set_initial_map(initial_map);
-  return this;
-}
-
-
 bool JSFunction::has_initial_map() {
   return prototype_or_initial_map()->IsMap();
 }
@@ -4726,7 +4693,7 @@ int JSRegExp::CaptureCount() {
     default:
       UNREACHABLE();
       return -1;
-  }
+}
 }
 
 
@@ -5154,9 +5121,9 @@ void Dictionary<Shape, Key>::SetEntry(int entry,
 
 template<typename Shape, typename Key>
 void Dictionary<Shape, Key>::SetEntry(int entry,
-                                      Object* key,
-                                      Object* value,
-                                      PropertyDetails details) {
+                          Object* key,
+                          Object* value,
+                          PropertyDetails details) {
   ASSERT(!key->IsString() ||
          details.IsDeleted() ||
          details.dictionary_index() > 0);
