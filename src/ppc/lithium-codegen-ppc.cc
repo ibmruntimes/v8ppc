@@ -1670,10 +1670,9 @@ void LCodeGen::DoSubI(LSubI* instr) {
   bool can_overflow = instr->hydrogen()->CheckFlag(HValue::kCanOverflow);
   if (!can_overflow && right->IsConstantOperand()) {
     Operand right_operand = ToOperand(right);
-    if (is_int16(right_operand.immediate())) {
-      __ subi(ToRegister(result), ToRegister(left), right_operand);
-      return;
-    }
+    __ Add(ToRegister(result), ToRegister(left),
+           -right_operand.immediate(), r0);
+    return;
   }
   Register right_reg = EmitLoadRegister(right, ip);
 
@@ -1703,11 +1702,12 @@ void LCodeGen::DoRSubI(LRSubI* instr) {
   ASSERT(!instr->hydrogen()->CheckFlag(HValue::kCanOverflow) &&
          right->IsConstantOperand());
 
-  if (is_int16(ToInteger32(LConstantOperand::cast(right)))) {
-    __ subfic(ToRegister(result), ToRegister(left), ToOperand(right));
+  Operand right_operand = ToOperand(right);
+  if (is_int16(right_operand.immediate())) {
+    __ subfic(ToRegister(result), ToRegister(left), right_operand);
   } else {
-    Register right_reg = EmitLoadRegister(right, ip);
-    __ sub(ToRegister(result), right_reg, ToRegister(left));
+    __ mov(r0, right_operand);
+    __ sub(ToRegister(result), r0, ToRegister(left));
   }
 }
 
@@ -1892,10 +1892,8 @@ void LCodeGen::DoAddI(LAddI* instr) {
 
   if (!can_overflow && right->IsConstantOperand()) {
     Operand right_operand = ToOperand(right);
-    if (is_int16(right_operand.immediate())) {
-      __ addi(ToRegister(result), ToRegister(left), right_operand);
-      return;
-    }
+    __ Add(ToRegister(result), ToRegister(left), right_operand.immediate(), r0);
+    return;
   }
 
   Register right_reg = EmitLoadRegister(right, ip);
