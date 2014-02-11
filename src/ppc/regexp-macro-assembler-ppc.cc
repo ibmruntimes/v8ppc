@@ -1439,6 +1439,9 @@ void RegExpCEntryStub::Generate(MacroAssembler* masm_) {
   __ LoadP(ToRegister(2), MemOperand(r26, kPointerSize));  // TOC
   __ LoadP(ip, MemOperand(r26, 0));  // Instruction address
   Register target = ip;
+#elif ABI_TOC_ADDRESSABILITY_VIA_IP
+  Register target = ip;
+  __ Move(target, r26);
 #else
   Register target = r26;
 #endif

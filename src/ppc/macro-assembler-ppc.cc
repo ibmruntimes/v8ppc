@@ -3359,11 +3359,17 @@ void MacroAssembler::CallCFunctionHelper(Register function,
 #if ABI_USES_FUNCTION_DESCRIPTORS && !defined(USE_SIMULATOR)
   // AIX uses a function descriptor. When calling C code be aware
   // of this descriptor and pick up values from it
+  Register dest = ip;
   LoadP(ToRegister(2), MemOperand(function, kPointerSize));
-  LoadP(function, MemOperand(function, 0));
+  LoadP(dest, MemOperand(function, 0));
+#elif ABI_TOC_ADDRESSABILITY_VIA_IP
+  Register dest = ip;
+  Move(ip, function);
+#else
+  Register dest = function;
 #endif
 
-  Call(function);
+  Call(dest);
 
   int stack_passed_arguments = CalculateStackPassedWords(
       num_reg_arguments, num_double_arguments);
