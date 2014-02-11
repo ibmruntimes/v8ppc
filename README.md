@@ -3,12 +3,8 @@ v8ppc
 
 Port of Google V8 javascript engine to PowerPC - PowerLinux and AIX.
 
-August 9th 98% of the tests were passing. (with crankshaft!)
+This branch of the code (libv8-3.14) is intended to match the 3.14.5.8 
+level of V8 that is used by the libv8 library built as part of Ubuntu
 
-Compile code:<br><code>
-make dependencies; make -j8 ppc
-</code>
+http://packages.ubuntu.com/source/trusty/libv8-3.14
 
-Test code:<br><code>
-tools/run-tests.py -j 12 --progress=dots --no-presubmit --arch-and-mode=ppc.debug --junitout v8tests-junit.xml
-</code>
