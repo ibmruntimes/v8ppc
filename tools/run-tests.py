@@ -139,6 +139,7 @@ def BuildOptions():
                     default=False, action="store_true")
   result.add_option("--warn-unused", help="Report unused rules",
                     default=False, action="store_true")
+(??)
   return result
 
 
