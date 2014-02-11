@@ -66,7 +66,7 @@ VariableMap::~VariableMap() {}
 
 Variable* VariableMap::Declare(
     Scope* scope,
-                             Handle<String> name,
+    Handle<String> name,
     VariableMode mode,
     bool is_valid_lhs,
     Variable::Kind kind,
@@ -386,7 +386,7 @@ Scope* Scope::FinalizeBlockScope() {
       outer_scope_->inner_scopes_.Remove(i);
       break;
     }
-}
+  }
 
   // Reparent inner scopes.
   for (int i = 0; i < inner_scopes_.length(); i++) {
@@ -396,7 +396,7 @@ Scope* Scope::FinalizeBlockScope() {
   // Move unresolved variables
   for (int i = 0; i < unresolved_.length(); i++) {
     outer_scope()->unresolved_.Add(unresolved_[i], zone());
-}
+  }
 
   return NULL;
 }
@@ -406,7 +406,7 @@ Variable* Scope::LocalLookup(Handle<String> name) {
   Variable* result = variables_.Lookup(name);
   if (result != NULL || scope_info_.is_null()) {
     return result;
-}
+  }
   // If we have a serialized scope info, we might find the variable there.
   // There should be no local slot with the given name.
   ASSERT(scope_info_->StackSlotIndex(*name) < 0);
@@ -669,7 +669,7 @@ bool Scope::AllocateVariables(CompilationInfo* info,
   if (FLAG_harmony_modules && (is_global_scope() || is_module_scope())) {
     AllocateModules(info);
     LinkModules(info);
-}
+  }
 
   return true;
 }
@@ -949,7 +949,7 @@ Variable* Scope::NonLocal(Handle<String> name, VariableMode mode) {
                        init_flag);
     // Allocate it by giving it a dynamic lookup.
     var->AllocateTo(Variable::LOOKUP, -1);
-    }
+  }
   return var;
 }
 
@@ -966,24 +966,24 @@ Variable* Scope::LookupRecursive(Handle<String> name,
   // variable remains the same.)
   if (var != NULL) {
     *binding_kind = BOUND;
-      return var;
+    return var;
   }
 
-    // We did not find a variable locally. Check against the function variable,
-    // if any. We can do this for all scopes, since the function variable is
-    // only present - if at all - for function scopes.
+  // We did not find a variable locally. Check against the function variable,
+  // if any. We can do this for all scopes, since the function variable is
+  // only present - if at all - for function scopes.
   *binding_kind = UNBOUND;
   var = LookupFunctionVar(name, factory);
   if (var != NULL) {
     *binding_kind = BOUND;
-    } else if (outer_scope_ != NULL) {
+  } else if (outer_scope_ != NULL) {
     var = outer_scope_->LookupRecursive(name, binding_kind, factory);
     if (*binding_kind == BOUND && (is_function_scope() || is_with_scope())) {
       var->ForceContextAllocation();
     }
   } else {
     ASSERT(is_global_scope());
-    }
+  }
 
   if (is_with_scope()) {
     // The current scope is a with scope, so the variable binding can not be
@@ -993,7 +993,7 @@ Variable* Scope::LookupRecursive(Handle<String> name,
     // from inside of an inner with scope (the property may not be in the 'with'
     // object).
     *binding_kind = DYNAMIC_LOOKUP;
-      return NULL;
+    return NULL;
   } else if (calls_non_strict_eval()) {
     // A variable binding may have been found in an outer scope, but the current
     // scope makes a non-strict 'eval' call, so the found variable may not be
@@ -1003,7 +1003,7 @@ Variable* Scope::LookupRecursive(Handle<String> name,
       *binding_kind = BOUND_EVAL_SHADOWED;
     } else if (*binding_kind == UNBOUND) {
       *binding_kind = UNBOUND_EVAL_SHADOWED;
-  }
+    }
   }
   return var;
 }
@@ -1035,7 +1035,7 @@ bool Scope::ResolveVariable(CompilationInfo* info,
         var = NonLocal(proxy->name(), DYNAMIC_GLOBAL);
       } else if (var->is_dynamic()) {
         var = NonLocal(proxy->name(), DYNAMIC);
-  } else {
+      } else {
         Variable* invalidated = var;
         var = NonLocal(proxy->name(), DYNAMIC_LOCAL);
         var->set_local_if_not_shadowed(invalidated);
@@ -1057,7 +1057,7 @@ bool Scope::ResolveVariable(CompilationInfo* info,
       // The variable could not be resolved statically.
       var = NonLocal(proxy->name(), DYNAMIC);
       break;
-      }
+  }
 
   ASSERT(var != NULL);
   proxy->BindTo(var);
@@ -1184,7 +1184,7 @@ bool Scope::HasArgumentsParameter() {
     if (params_[i]->name().is_identical_to(
             isolate_->factory()->arguments_symbol())) {
       return true;
-  }
+    }
   }
   return false;
 }
@@ -1225,27 +1225,27 @@ void Scope::AllocateParameterLocals() {
     // Therefore in strict mode we allocate parameters as if 'arguments'
     // were not used.
     uses_nonstrict_arguments = is_classic_mode();
-    }
+  }
 
-    // The same parameter may occur multiple times in the parameters_ list.
-    // If it does, and if it is not copied into the context object, it must
-    // receive the highest parameter index for that parameter; thus iteration
-    // order is relevant!
+  // The same parameter may occur multiple times in the parameters_ list.
+  // If it does, and if it is not copied into the context object, it must
+  // receive the highest parameter index for that parameter; thus iteration
+  // order is relevant!
   for (int i = params_.length() - 1; i >= 0; --i) {
-      Variable* var = params_[i];
-      ASSERT(var->scope() == this);
+    Variable* var = params_[i];
+    ASSERT(var->scope() == this);
     if (uses_nonstrict_arguments) {
       // Force context allocation of the parameter.
       var->ForceContextAllocation();
     }
 
-      if (MustAllocate(var)) {
-        if (MustAllocateInContext(var)) {
+    if (MustAllocate(var)) {
+      if (MustAllocateInContext(var)) {
         ASSERT(var->IsUnallocated() || var->IsContextSlot());
         if (var->IsUnallocated()) {
-            AllocateHeapSlot(var);
-          }
-        } else {
+          AllocateHeapSlot(var);
+        }
+      } else {
         ASSERT(var->IsUnallocated() || var->IsParameter());
         if (var->IsUnallocated()) {
           var->AllocateTo(Variable::PARAMETER, i);

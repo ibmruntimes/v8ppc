@@ -66,7 +66,7 @@ Handle<JSMessageObject> MessageHandler::MakeMessageObject(
       FACTORY->NewFixedArray(args.length());
   for (int i = 0; i < args.length(); i++) {
     arguments_elements->set(i, *args[i]);
-}
+  }
   Handle<JSArray> arguments_handle =
       FACTORY->NewJSArrayWithElements(arguments_elements);
 
