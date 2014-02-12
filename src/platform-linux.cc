@@ -115,7 +115,7 @@ static bool CPUInfoContainsString(const char * search_string) {
       ++what;
       while ((*what != '\0') && (*what == fgetc(f))) {
         ++what;
-}
+      }
       if (*what == '\0') {
         fclose(f);
         return true;
@@ -153,7 +153,7 @@ bool OS::ArmCpuHasFeature(CpuFeature feature) {
       break;
     default:
       UNREACHABLE();
-}
+  }
 
   if (CPUInfoContainsString(search_string)) {
     return true;
@@ -168,7 +168,7 @@ bool OS::ArmCpuHasFeature(CpuFeature feature) {
     if (CPUInfoContainsString("vfp") && CPUInfoContainsString("neon")) {
       return true;
     }
-}
+  }
 
   return false;
 }
@@ -253,7 +253,7 @@ bool OS::MipsCpuHasFeature(CpuFeature feature) {
       break;
     default:
       UNREACHABLE();
-}
+  }
 
   FILE* f = NULL;
   const char* what = search_string;
@@ -267,7 +267,7 @@ bool OS::MipsCpuHasFeature(CpuFeature feature) {
       ++what;
       while ((*what != '\0') && (*what == fgetc(f))) {
         ++what;
-}
+      }
       if (*what == '\0') {
         fclose(f);
         return true;
@@ -503,7 +503,7 @@ void OS::LogSharedLibraryAddresses() {
     if (attr_r == 'r' && attr_w != 'w' && attr_x == 'x') {
       // Found a read-only executable entry. Skip characters until we reach
       // the beginning of the filename or the end of the line.
-    do {
+      do {
         c = getc(fp);
       } while ((c != EOF) && (c != '\n') && (c != '/'));
       if (c == EOF) break;  // EOF: Was unexpected, just exit.
@@ -523,7 +523,7 @@ void OS::LogSharedLibraryAddresses() {
         // No library name found, just record the raw address range.
         snprintf(lib_name, kLibNameLen,
                  "%08" V8PRIxPTR "-%08" V8PRIxPTR, start, end);
-  }
+      }
       LOG(isolate, SharedLibraryEvent(lib_name, start, end));
     } else {
       // Entry not describing executable data. Skip to end of line to set up
@@ -664,7 +664,7 @@ bool VirtualMemory::IsReserved() {
 void VirtualMemory::Reset() {
   address_ = NULL;
   size_ = 0;
-  }
+}
 
 
 bool VirtualMemory::Commit(void* address, size_t size, bool is_executable) {
@@ -680,7 +680,7 @@ bool VirtualMemory::Uncommit(void* address, size_t size) {
 bool VirtualMemory::Guard(void* address) {
   OS::Guard(address, OS::CommitPageSize());
   return true;
-  }
+}
 
 
 void* VirtualMemory::ReserveRegion(size_t size) {
@@ -706,7 +706,7 @@ bool VirtualMemory::CommitRegion(void* base, size_t size, bool is_executable) {
                          kMmapFd,
                          kMmapFdOffset)) {
     return false;
-}
+  }
 
   UpdateAllocatedSpaceLimits(base, size);
   return true;
@@ -1131,8 +1131,8 @@ class SignalSender : public Thread {
   static void RestoreSignalHandler() {
     if (signal_handler_installed_) {
       sigaction(SIGPROF, &old_signal_handler_, 0);
-    signal_handler_installed_ = false;
-  }
+      signal_handler_installed_ = false;
+    }
   }
 
   static void AddActiveSampler(Sampler* sampler) {
@@ -1202,7 +1202,7 @@ class SignalSender : public Thread {
         Sleep(FULL_INTERVAL);
       }
     }
-}
+  }
 
   static void DoCpuProfile(Sampler* sampler, void* raw_sender) {
     if (!sampler->IsProfiling()) return;
@@ -1213,7 +1213,7 @@ class SignalSender : public Thread {
   static void DoRuntimeProfile(Sampler* sampler, void* ignored) {
     if (!sampler->isolate()->IsInitialized()) return;
     sampler->isolate()->runtime_profiler()->NotifyTick();
-}
+  }
 
   void SendProfilingSignal(int tid) {
     if (!signal_handler_installed_) return;
@@ -1299,7 +1299,7 @@ void OS::SetUp() {
 void OS::TearDown() {
   SignalSender::TearDown();
   delete limit_mutex;
-  }
+}
 
 
 Sampler::Sampler(Isolate* isolate, int interval)

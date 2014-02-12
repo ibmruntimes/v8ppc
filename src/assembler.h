@@ -128,8 +128,8 @@ class Label BASE_EMBEDDED {
       ASSERT(is_near_linked());
     } else {
       pos_ = pos + 1;
-    ASSERT(is_linked());
-  }
+      ASSERT(is_linked());
+    }
   }
 
   friend class Assembler;
@@ -155,16 +155,16 @@ enum SaveFPRegsMode { kDontSaveFPRegs, kSaveFPRegs };
 
 class RelocInfo BASE_EMBEDDED {
  public:
-// The constant kNoPosition is used with the collecting of source positions
-// in the relocation information. Two types of source positions are collected
-// "position" (RelocMode position) and "statement position" (RelocMode
-// statement_position). The "position" is collected at places in the source
-// code which are of interest when making stack traces to pin-point the source
-// location of a stack frame as close as possible. The "statement position" is
-// collected at the beginning at each statement, and is used to indicate
-// possible break locations. kNoPosition is used to indicate an
-// invalid/uninitialized position value.
-static const int kNoPosition = -1;
+  // The constant kNoPosition is used with the collecting of source positions
+  // in the relocation information. Two types of source positions are collected
+  // "position" (RelocMode position) and "statement position" (RelocMode
+  // statement_position). The "position" is collected at places in the source
+  // code which are of interest when making stack traces to pin-point the source
+  // location of a stack frame as close as possible. The "statement position" is
+  // collected at the beginning at each statement, and is used to indicate
+  // possible break locations. kNoPosition is used to indicate an
+  // invalid/uninitialized position value.
+  static const int kNoPosition = -1;
 
   // This string is used to add padding comments to the reloc info in cases
   // where we are not sure to have enough space for patching in during
@@ -193,7 +193,7 @@ static const int kNoPosition = -1;
     EMBEDDED_OBJECT,
     GLOBAL_PROPERTY_CELL,
 
-  // Everything after runtime_entry (inclusive) is not GC'ed.
+    // Everything after runtime_entry (inclusive) is not GC'ed.
     RUNTIME_ENTRY,
     JS_RETURN,  // Marks start of the ExitJSFrame code.
     COMMENT,
@@ -207,8 +207,8 @@ static const int kNoPosition = -1;
     // It uses a custom noncompact encoding.
     CONST_POOL,
 
-  // add more as needed
-  // Pseudo-types
+    // add more as needed
+    // Pseudo-types
     NUMBER_OF_MODES,  // There are at most 15 modes with noncompact encoding.
     NONE,  // never recorded
     LAST_CODE_ENUM = DEBUG_BREAK,
@@ -216,43 +216,43 @@ static const int kNoPosition = -1;
     // Modes <= LAST_COMPACT_ENUM are guaranteed to have compact encoding.
     LAST_COMPACT_ENUM = CODE_TARGET_WITH_ID,
     LAST_STANDARD_NONCOMPACT_ENUM = INTERNAL_REFERENCE
-};
+  };
 
 
   RelocInfo() {}
 
   RelocInfo(byte* pc, Mode rmode, intptr_t data, Code* host)
       : pc_(pc), rmode_(rmode), data_(data), host_(host) {
-}
+  }
 
   static inline bool IsConstructCall(Mode mode) {
     return mode == CONSTRUCT_CALL;
-}
+  }
   static inline bool IsCodeTarget(Mode mode) {
     return mode <= LAST_CODE_ENUM;
-}
+  }
   static inline bool IsEmbeddedObject(Mode mode) {
     return mode == EMBEDDED_OBJECT;
   }
-// Is the relocation mode affected by GC?
+  // Is the relocation mode affected by GC?
   static inline bool IsGCRelocMode(Mode mode) {
     return mode <= LAST_GCED_ENUM;
-}
+  }
   static inline bool IsJSReturn(Mode mode) {
     return mode == JS_RETURN;
-}
+  }
   static inline bool IsComment(Mode mode) {
     return mode == COMMENT;
-}
+  }
   static inline bool IsConstPool(Mode mode) {
     return mode == CONST_POOL;
-}
+  }
   static inline bool IsPosition(Mode mode) {
     return mode == POSITION || mode == STATEMENT_POSITION;
-}
+  }
   static inline bool IsStatementPosition(Mode mode) {
     return mode == STATEMENT_POSITION;
-}
+  }
   static inline bool IsExternalReference(Mode mode) {
     return mode == EXTERNAL_REFERENCE;
   }

@@ -63,8 +63,8 @@ extern "C" void V8_Fatal(const char* file, int line, const char* format, ...);
 // Helper function used by the CHECK_EQ function when given int
 // arguments.  Should not be called directly.
 inline void CheckEqualsHelper(const char* file, int line,
-                                     const char* expected_source, int expected,
-                                     const char* value_source, int value) {
+                              const char* expected_source, int expected,
+                              const char* value_source, int value) {
   if (expected != value) {
     V8_Fatal(file, line,
              "CHECK_EQ(%s, %s) failed\n#   Expected: %i\n#   Found: %i",
@@ -98,11 +98,11 @@ inline void CheckEqualsHelper(const char* file, int line,
 // Helper function used by the CHECK_NE function when given int
 // arguments.  Should not be called directly.
 inline void CheckNonEqualsHelper(const char* file,
-                                        int line,
-                                        const char* unexpected_source,
-                                        int unexpected,
-                                        const char* value_source,
-                                        int value) {
+                                 int line,
+                                 const char* unexpected_source,
+                                 int unexpected,
+                                 const char* value_source,
+                                 int value) {
   if (unexpected == value) {
     V8_Fatal(file, line, "CHECK_NE(%s, %s) failed\n#   Value: %i",
              unexpected_source, value_source, value);
@@ -113,11 +113,11 @@ inline void CheckNonEqualsHelper(const char* file,
 // Helper function used by the CHECK function when given string
 // arguments.  Should not be called directly.
 inline void CheckEqualsHelper(const char* file,
-                                     int line,
-                                     const char* expected_source,
-                                     const char* expected,
-                                     const char* value_source,
-                                     const char* value) {
+                              int line,
+                              const char* expected_source,
+                              const char* expected,
+                              const char* value_source,
+                              const char* value) {
   if ((expected == NULL && value != NULL) ||
       (expected != NULL && value == NULL) ||
       (expected != NULL && value != NULL && strcmp(expected, value) != 0)) {
@@ -129,11 +129,11 @@ inline void CheckEqualsHelper(const char* file,
 
 
 inline void CheckNonEqualsHelper(const char* file,
-                                        int line,
-                                        const char* expected_source,
-                                        const char* expected,
-                                        const char* value_source,
-                                        const char* value) {
+                                 int line,
+                                 const char* expected_source,
+                                 const char* expected,
+                                 const char* value_source,
+                                 const char* value) {
   if (expected == value ||
       (expected != NULL && value != NULL && strcmp(expected, value) == 0)) {
     V8_Fatal(file, line, "CHECK_NE(%s, %s) failed\n#   Value: %s",
@@ -145,10 +145,10 @@ inline void CheckNonEqualsHelper(const char* file,
 // Helper function used by the CHECK function when given pointer
 // arguments.  Should not be called directly.
 inline void CheckEqualsHelper(const char* file,
-                                     int line,
-                                     const char* expected_source,
+                              int line,
+                              const char* expected_source,
                               const void* expected,
-                                     const char* value_source,
+                              const char* value_source,
                               const void* value) {
   if (expected != value) {
     V8_Fatal(file, line,
@@ -160,10 +160,10 @@ inline void CheckEqualsHelper(const char* file,
 
 
 inline void CheckNonEqualsHelper(const char* file,
-                                        int line,
-                                        const char* expected_source,
+                                 int line,
+                                 const char* expected_source,
                                  const void* expected,
-                                        const char* value_source,
+                                 const char* value_source,
                                  const void* value) {
   if (expected == value) {
     V8_Fatal(file, line, "CHECK_NE(%s, %s) failed\n#   Value: %p",
@@ -175,11 +175,11 @@ inline void CheckNonEqualsHelper(const char* file,
 // Helper function used by the CHECK function when given floating
 // point arguments.  Should not be called directly.
 inline void CheckEqualsHelper(const char* file,
-                                     int line,
-                                     const char* expected_source,
-                                     double expected,
-                                     const char* value_source,
-                                     double value) {
+                              int line,
+                              const char* expected_source,
+                              double expected,
+                              const char* value_source,
+                              double value) {
   // Force values to 64 bit memory to truncate 80 bit precision on IA32.
   volatile double* exp = new double[1];
   *exp = expected;
@@ -196,10 +196,10 @@ inline void CheckEqualsHelper(const char* file,
 
 
 inline void CheckNonEqualsHelper(const char* file,
-                       int line,
-                       const char* expected_source,
+                                 int line,
+                                 const char* expected_source,
                                  double expected,
-                       const char* value_source,
+                                 const char* value_source,
                                  double value) {
   // Force values to 64 bit memory to truncate 80 bit precision on IA32.
   volatile double* exp = new double[1];

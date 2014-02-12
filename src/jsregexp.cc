@@ -92,7 +92,7 @@ static JSRegExp::Flags RegExpFlagsFromString(Handle<String> str) {
     }
   }
   return JSRegExp::Flags(flags);
-  }
+}
 
 
 static inline void ThrowRegExpException(Handle<JSRegExp> re,
@@ -158,8 +158,8 @@ static bool HasFewDifferentCharacters(Handle<String> pattern) {
       // We declare a regexp low-alphabet if it has at least 3 times as many
       // characters as it has different characters.
       if (different * 3 > length) return false;
+    }
   }
-}
   return true;
 }
 

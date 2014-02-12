@@ -78,7 +78,7 @@ void CodeGenerator::MakeCodePrologue(CompilationInfo* info) {
     PrintF("*** Generate code for %s function: ", ftype);
     info->function()->name()->ShortPrint();
     PrintF(" ***\n");
-    }
+  }
 
   if (print_source) {
     PrintF("--- Source from AST ---\n%s\n",
@@ -107,9 +107,9 @@ Handle<Code> CodeGenerator::MakeCodeEpilogue(MacroAssembler* masm,
   if (!code.is_null()) {
     isolate->counters()->total_compiled_code_size()->Increment(
         code->instruction_size());
-    }
-  return code;
   }
+  return code;
+}
 
 
 void CodeGenerator::PrintCode(Handle<Code> code, CompilationInfo* info) {
@@ -131,7 +131,7 @@ void CodeGenerator::PrintCode(Handle<Code> code, CompilationInfo* info) {
           function->end_position() - function->start_position() + 1;
       for (int i = 0; i < source_len; i++) {
         if (stream.has_more()) PrintF("%c", stream.GetNext());
-        }
+      }
       PrintF("\n\n");
     }
     if (info->IsOptimizing()) {
@@ -141,13 +141,13 @@ void CodeGenerator::PrintCode(Handle<Code> code, CompilationInfo* info) {
             *function->debug_name()->ToCString());
       }
       PrintF("--- Optimized code ---\n");
-      } else {
+    } else {
       PrintF("--- Code ---\n");
-      }
-    code->Disassemble(*function->debug_name()->ToCString());
     }
-#endif  // ENABLE_DISASSEMBLER
+    code->Disassemble(*function->debug_name()->ToCString());
   }
+#endif  // ENABLE_DISASSEMBLER
+}
 
 
 bool CodeGenerator::ShouldGenerateLog(Expression* type) {

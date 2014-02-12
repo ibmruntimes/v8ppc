@@ -77,7 +77,7 @@ inline int lrint(double flt) {
   __asm {
     fld flt
     fistp intgr
-};
+  };
 #else
   intgr = static_cast<int>(flt + 0.5);
   if ((intgr & 1) != 0 && intgr - flt == 0.5) {

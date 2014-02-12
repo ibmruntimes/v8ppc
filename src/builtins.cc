@@ -171,7 +171,7 @@ static inline bool CalledAsConstructor(Isolate* isolate) {
   bool result = (marker == kConstructMarker);
   ASSERT_EQ(result, reference_result);
   return result;
-    }
+}
 
 // ----------------------------------------------------------------------------
 
@@ -244,7 +244,7 @@ static MaybeObject* ArrayCodeGenericCommon(Arguments* args,
       if (!maybe_obj->ToObject(&obj)) return maybe_obj;
     }
     return array->SetElementsLength((*args)[1]);
-}
+  }
 
   // Optimize the case where there are no parameters passed.
   if (args->length() == 1) {
@@ -301,7 +301,7 @@ static MaybeObject* ArrayCodeGenericCommon(Arguments* args,
     default:
       UNREACHABLE();
       break;
-}
+  }
 
   array->set_elements(elms);
   array->set_length(Smi::FromInt(number_of_elements));
@@ -377,7 +377,7 @@ static FixedArray* LeftTrimFixedArray(Heap* heap,
     zap++;  // Header of filler must be at least one word so skip that.
     for (int i = 1; i < to_trim; i++) {
       *zap++ = Smi::FromInt(0);
-}
+    }
   }
   // Technically in new space this write might be omitted (except for
   // debug mode which iterates through the heap), but to play safer
@@ -393,7 +393,7 @@ static FixedArray* LeftTrimFixedArray(Heap* heap,
   if (heap->marking()->TransferMark(elms->address(),
                                     elms->address() + size_delta)) {
     MemoryChunk::IncrementLiveBytesFromMutator(elms->address(), -size_delta);
-}
+  }
 
   HEAP_PROFILE(heap, ObjectMoveEvent(elms->address(),
                                      elms->address() + size_delta));
@@ -415,7 +415,7 @@ static bool ArrayPrototypeHasNoElements(Heap* heap,
   if (array_proto != native_context->initial_object_prototype()) return false;
   if (array_proto->elements() != heap->empty_fixed_array()) return false;
   return array_proto->GetPrototype()->IsNull();
-  }
+}
 
 
 MUST_USE_RESULT
@@ -433,7 +433,7 @@ static inline MaybeObject* EnsureJSArrayWithWritableFastElements(
           array->TransitionElementsKind(FAST_ELEMENTS);
       if (maybe_transition->IsFailure()) return maybe_transition;
       return elms;
-      }
+    }
   } else if (map == heap->fixed_cow_array_map()) {
     MaybeObject* maybe_writable_result = array->EnsureWritableFastElements();
     if (args == NULL || array->HasFastObjectElements() ||
@@ -456,7 +456,7 @@ static inline MaybeObject* EnsureJSArrayWithWritableFastElements(
       DONT_ALLOW_DOUBLE_ELEMENTS);
   if (maybe_array->IsFailure()) return maybe_array;
   return array->elements();
-  }
+}
 
 
 static inline bool IsJSArrayFastElementMovingAllowed(Heap* heap,
@@ -537,12 +537,12 @@ BUILTIN(ArrayPush) {
     elms = new_elms;
   }
 
-    // Add the provided values.
+  // Add the provided values.
   AssertNoAllocation no_gc;
   WriteBarrierMode mode = elms->GetWriteBarrierMode(no_gc);
   for (int index = 0; index < to_add; index++) {
     elms->set(index + len, args[index + 1], mode);
-    }
+  }
 
   if (elms != array->elements()) {
     array->set_elements(elms);
@@ -1523,8 +1523,8 @@ Builtins::~Builtins() {
 
 #define DEF_ENUM_C(name, ignore) FUNCTION_ADDR(Builtin_##name),
 Address const Builtins::c_functions_[cfunction_count] = {
-    BUILTIN_LIST_C(DEF_ENUM_C)
-  };
+  BUILTIN_LIST_C(DEF_ENUM_C)
+};
 #undef DEF_ENUM_C
 
 #define DEF_JS_NAME(name, ignore) #name,
@@ -1539,14 +1539,14 @@ int const Builtins::javascript_argc_[id_count] = {
 #undef DEF_JS_NAME
 #undef DEF_JS_ARGC
 
-  struct BuiltinDesc {
-    byte* generator;
-    byte* c_code;
-    const char* s_name;  // name is only used for generating log information.
-    int name;
-    Code::Flags flags;
+struct BuiltinDesc {
+  byte* generator;
+  byte* c_code;
+  const char* s_name;  // name is only used for generating log information.
+  int name;
+  Code::Flags flags;
   BuiltinExtraArguments extra_args;
-  };
+};
 
 #define BUILTIN_FUNCTION_TABLE_INIT { V8_ONCE_INIT, {} }
 
@@ -1566,7 +1566,7 @@ class BuiltinFunctionTable {
 static BuiltinFunctionTable builtin_function_table =
     BUILTIN_FUNCTION_TABLE_INIT;
 
-  // Define array of pointers to generators and C builtin functions.
+// Define array of pointers to generators and C builtin functions.
 // We do this in a sort of roundabout way so that we can do the initialization
 // within the lexical scope of Builtins:: and within a context where
 // Code::Flags names a non-abstract type.
@@ -1599,8 +1599,8 @@ void Builtins::InitBuiltinFunctionTable() {
     functions->extra_args = NO_EXTRA_ARGUMENTS;                             \
     ++functions;
 
-      BUILTIN_LIST_C(DEF_FUNCTION_PTR_C)
-      BUILTIN_LIST_A(DEF_FUNCTION_PTR_A)
+  BUILTIN_LIST_C(DEF_FUNCTION_PTR_C)
+  BUILTIN_LIST_A(DEF_FUNCTION_PTR_A)
   BUILTIN_LIST_DEBUG_A(DEF_FUNCTION_PTR_A)
 
 #undef DEF_FUNCTION_PTR_C
@@ -1653,7 +1653,7 @@ void Builtins::SetUp(bool create_heap_objects) {
               heap->CreateCode(desc, flags, masm.CodeObject());
           if (!maybe_code->ToObject(&code)) {
             v8::internal::V8::FatalProcessOutOfMemory("CreateCode");
-      }
+          }
         }
       }
       // Log the event and add the code to the builtins array.

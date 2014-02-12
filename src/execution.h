@@ -245,7 +245,7 @@ class StackGuard {
   // You should hold the ExecutionAccess lock when calling this method.
   bool should_postpone_interrupts(const ExecutionAccess& lock) {
     return thread_local_.postpone_interrupts_nesting_ > 0;
-    }
+  }
 
   // You should hold the ExecutionAccess lock when calling this method.
   inline void set_interrupt_limits(const ExecutionAccess& lock);
