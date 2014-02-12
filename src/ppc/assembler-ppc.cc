@@ -1363,6 +1363,11 @@ void Assembler::clrldi(Register dst, Register src, const Operand& val,
 }
 
 
+void Assembler::rldimi(Register ra, Register rs, int sh, int mb, RCBit r) {
+  md_form(EXT5 | RLDIMI, ra, rs, sh, mb, r);
+}
+
+
 void Assembler::sradi(Register ra, Register rs, int sh, RCBit r) {
   int sh0_4 = sh & 0x1f;
   int sh5   = (sh >> 5) & 0x1;

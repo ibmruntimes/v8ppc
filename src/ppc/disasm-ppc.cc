@@ -957,6 +957,10 @@ void Decoder::DecodeExt5(Instruction* instr) {
       Format(instr, "rldic'.  'ra, 'rs, 'sh, 'mb");
       return;
     }
+    case RLDIMI: {
+      Format(instr, "rldimi'. 'ra, 'rs, 'sh, 'mb");
+      return;
+    }
   }
   switch (instr->Bits(4, 1) << 1) {
     case RLDCL: {

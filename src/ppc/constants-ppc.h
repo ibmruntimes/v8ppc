@@ -301,6 +301,7 @@ enum OpcodeExt5 {
   RLDICL = 0 << 1,    // Rotate Left Double Word Immediate then Clear Left
   RLDICR = 2 << 1,    // Rotate Left Double Word Immediate then Clear Right
   RLDIC  = 4 << 1,    // Rotate Left Double Word Immediate then Clear
+  RLDIMI = 6 << 1,    // Rotate Left Double Word Immediate then Mask Insert
   // Bits 4-1
   RLDCL  = 8 << 1,    // Rotate Left Double Word then Clear Left
   RLDCR  = 9 << 1     // Rotate Left Double Word then Clear Right
