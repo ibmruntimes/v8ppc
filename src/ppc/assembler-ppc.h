@@ -919,6 +919,7 @@ class Assembler : public AssemblerBase {
   void rldic(Register dst, Register src, int sh, int mb, RCBit r = LeaveRC);
   void rldicl(Register dst, Register src, int sh, int mb, RCBit r = LeaveRC);
   void rldicr(Register dst, Register src, int sh, int me, RCBit r = LeaveRC);
+  void rldimi(Register dst, Register src, int sh, int mb, RCBit r = LeaveRC);
   void sldi(Register dst, Register src, const Operand& val, RCBit rc = LeaveRC);
   void srdi(Register dst, Register src, const Operand& val, RCBit rc = LeaveRC);
   void clrrdi(Register dst, Register src, const Operand& val,
