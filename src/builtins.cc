@@ -1706,6 +1706,8 @@ void Builtins::SetUp(Isolate* isolate, bool create_heap_objects) {
   const BuiltinDesc* functions = builtin_function_table.functions();
 
 #if V8_TARGET_ARCH_PPC64
+  // The size of the code generated for PPC architectures is larger in
+  // general, but even more so for 64-bit.
   const int kBufferSize = 9 * KB;
 #else
   const int kBufferSize = 8 * KB;
