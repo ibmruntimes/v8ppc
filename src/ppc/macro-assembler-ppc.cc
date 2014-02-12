@@ -3537,7 +3537,7 @@ void MacroAssembler::GetRelocatedValueLocation(Register lis_location,
     lwz(scratch, MemOperand(lis_location, 3*kInstrSize));
   }
   sldi(result, result, Operand(16));
-  rlwimi(result, scratch, 0, 16, 31);
+  rldimi(result, scratch, 0, 48);
 
   lwz(scratch, MemOperand(lis_location, 4*kInstrSize));
   // scratch is now ori.
@@ -3548,7 +3548,7 @@ void MacroAssembler::GetRelocatedValueLocation(Register lis_location,
     lwz(scratch, MemOperand(lis_location, 4*kInstrSize));
   }
   sldi(result, result, Operand(16));
-  rlwimi(result, scratch, 0, 16, 31);
+  rldimi(result, scratch, 0, 48);
 #endif
 }
 

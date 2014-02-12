@@ -943,6 +943,10 @@ void Decoder::DecodeExt5(Instruction* instr) {
       Format(instr, "rldic'.  'ra, 'rs, 'sh, 'mb");
       break;
     }
+    case RLDIMI: {
+      Format(instr, "rldimi'. 'ra, 'rs, 'sh, 'mb");
+      break;
+    }
     default: {
       Unknown(instr);  // not used by V8
     }

@@ -2729,6 +2729,42 @@ void Simulator::DecodeExt5(Instruction* instr) {
       }
       return;
     }
+    case RLDIMI: {
+      int ra = instr->RAValue();
+      int rs = instr->RSValue();
+      uintptr_t rs_val = get_register(rs);
+      intptr_t ra_val = get_register(ra);
+      int sh = (instr->Bits(15, 11) | (instr->Bit(1) << 5));
+      int mb = (instr->Bits(10, 6) | (instr->Bit(5) << 5));
+      int me = 63 - sh;
+      // rotate left
+      uintptr_t result = (rs_val << sh) | (rs_val >> (64-sh));
+      uintptr_t mask = 0;
+      if (mb < me+1) {
+        uintptr_t bit = 0x8000000000000000 >> mb;
+        for (; mb <= me; mb++) {
+          mask |= bit;
+          bit >>= 1;
+        }
+      } else if (mb == me+1) {
+         mask = 0xffffffffffffffff;
+      } else {  // mb > me+1
+        uintptr_t bit = 0x8000000000000000 >> (me+1);  // needs to be tested
+        mask = 0xffffffffffffffff;
+        for (;me < mb;me++) {
+          mask ^= bit;
+          bit >>= 1;
+        }
+      }
+      result &= mask;
+      ra_val &= ~mask;
+      result |= ra_val;
+      set_register(ra, result);
+      if (instr->Bit(0)) {  // RC bit set
+        SetCR0(result);
+      }
+      return;
+    }
   }
   UNIMPLEMENTED();  // Not used by V8.
 }
