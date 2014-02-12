@@ -835,7 +835,11 @@ Simulator::Simulator(Isolate* isolate) : isolate_(isolate) {
   Initialize(isolate);
   // Set up simulator support first. Some of this information is needed to
   // setup the architecture state.
+#ifdef V8_TARGET_ARCH_PPC64
+  size_t stack_size = 2 * 1024*1024;  // allocate 2MB for stack
+#else
   size_t stack_size = 1 * 1024*1024;  // allocate 1MB for stack
+#endif
   stack_ = reinterpret_cast<char*>(malloc(stack_size));
   pc_modified_ = false;
   icount_ = 0;
