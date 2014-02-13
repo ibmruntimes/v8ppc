@@ -267,20 +267,22 @@ class Simulator {
   intptr_t* ReadDW(intptr_t addr);
   void WriteDW(intptr_t addr, int64_t value);
 
+  void Trace(Instruction* instr);
   void SetCR0(intptr_t result, bool setSO = false);
-  void DecodeBranchConditional(Instruction* instr);
-  void DecodeExt1(Instruction* instr);
-  bool DecodeExt2_10bit(Instruction* instr);
-  bool DecodeExt2_9bit_part1(Instruction* instr);
-  void DecodeExt2_9bit_part2(Instruction* instr);
-  void DecodeExt2(Instruction* instr);
-  void DecodeExt4(Instruction* instr);
+  void ExecuteBranchConditional(Instruction* instr);
+  void ExecuteExt1(Instruction* instr);
+  bool ExecuteExt2_10bit(Instruction* instr);
+  bool ExecuteExt2_9bit_part1(Instruction* instr);
+  void ExecuteExt2_9bit_part2(Instruction* instr);
+  void ExecuteExt2(Instruction* instr);
+  void ExecuteExt4(Instruction* instr);
 #if V8_TARGET_ARCH_PPC64
-  void DecodeExt5(Instruction* instr);
+  void ExecuteExt5(Instruction* instr);
 #endif
+  void ExecuteGeneric(Instruction* instr);
 
   // Executes one instruction.
-  void InstructionDecode(Instruction* instr);
+  void ExecuteInstruction(Instruction* instr);
 
   // ICache.
   static void CheckICache(v8::internal::HashMap* i_cache, Instruction* instr);
