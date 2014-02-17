@@ -1830,6 +1830,9 @@ void CEntryStub::GenerateCore(MacroAssembler* masm,
   __ LoadP(ToRegister(2), MemOperand(r15, kPointerSize));  // TOC
   __ LoadP(ip, MemOperand(r15, 0));  // Instruction address
   Register target = ip;
+#elif ABI_TOC_ADDRESSABILITY_VIA_IP
+  __ Move(ip, r15);
+  Register target = ip;
 #else
   Register target = r15;
 #endif
@@ -5215,12 +5218,15 @@ void DirectCEntryStub::GenerateCall(MacroAssembler* masm,
 #if ABI_USES_FUNCTION_DESCRIPTORS && !defined(USE_SIMULATOR)
   // Native AIX/PPC64 Linux use a function descriptor.
   __ LoadP(ToRegister(2), MemOperand(target, kPointerSize));  // TOC
-  __ LoadP(target, MemOperand(target, 0));  // Instruction address
+  __ LoadP(ip, MemOperand(target, 0));  // Instruction address
+#else
+  // ip needs to be set for DirectCEentryStub::Generate, and also
+  // for ABI_TOC_ADDRESSABILITY_VIA_IP.
+  __ Move(ip, target);
 #endif
 
   intptr_t code =
       reinterpret_cast<intptr_t>(GetCode(masm->isolate()).location());
-  __ Move(ip, target);
   __ mov(r0, Operand(code, RelocInfo::CODE_TARGET));
   __ Call(r0);  // Call the stub.
 }
@@ -5926,6 +5932,8 @@ void ProfileEntryHookStub::Generate(MacroAssembler* masm) {
   // Function descriptor
   __ LoadP(ToRegister(2), MemOperand(ip, kPointerSize));
   __ LoadP(ip, MemOperand(ip, 0));
+#elif ABI_TOC_ADDRESSABILITY_VIA_IP
+  // ip set above, so nothing to do.
 #endif
 
   // PPC LINUX ABI:

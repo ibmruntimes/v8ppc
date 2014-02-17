@@ -56,16 +56,20 @@
 #define ABI_USES_FUNCTION_DESCRIPTORS                                     \
   (V8_HOST_ARCH_PPC &&                                                    \
      (defined(_AIX) ||                                                    \
-      (defined(V8_TARGET_ARCH_PPC64) && (__BYTE_ORDER != __LITTLE_ENDIAN))))
+      (V8_TARGET_ARCH_PPC64 && (__BYTE_ORDER != __LITTLE_ENDIAN))))
 
 #define ABI_PASSES_HANDLES_IN_REGS \
-  (!V8_HOST_ARCH_PPC || defined(_AIX) || defined(V8_TARGET_ARCH_PPC64))
+  (!V8_HOST_ARCH_PPC || defined(_AIX) || V8_TARGET_ARCH_PPC64)
 
 #define ABI_RETURNS_HANDLES_IN_REGS \
   (!V8_HOST_ARCH_PPC || (__BYTE_ORDER == __LITTLE_ENDIAN))
 
 #define ABI_RETURNS_OBJECT_PAIRS_IN_REGS \
   (!V8_HOST_ARCH_PPC || (__BYTE_ORDER == __LITTLE_ENDIAN))
+
+#define ABI_TOC_ADDRESSABILITY_VIA_IP \
+  (V8_HOST_ARCH_PPC && V8_TARGET_ARCH_PPC64 && \
+    (__BYTE_ORDER == __LITTLE_ENDIAN))
 
 namespace v8 {
 namespace internal {
