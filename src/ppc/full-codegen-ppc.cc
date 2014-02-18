@@ -4529,7 +4529,7 @@ void FullCodeGenerator::EnterFinallyBlock() {
   ExternalReference has_pending_message =
       ExternalReference::address_of_has_pending_message(isolate());
   __ mov(ip, Operand(has_pending_message));
-  __ LoadP(r4, MemOperand(ip));
+  __ lbz(r4, MemOperand(ip));
   __ SmiTag(r4);
   __ push(r4);
 
@@ -4555,7 +4555,7 @@ void FullCodeGenerator::ExitFinallyBlock() {
   ExternalReference has_pending_message =
       ExternalReference::address_of_has_pending_message(isolate());
   __ mov(ip, Operand(has_pending_message));
-  __ StoreP(r4, MemOperand(ip));
+  __ stb(r4, MemOperand(ip));
 
   __ pop(r4);
   ExternalReference pending_message_obj =
