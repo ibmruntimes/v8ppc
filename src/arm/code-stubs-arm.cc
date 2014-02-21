@@ -3822,19 +3822,10 @@ void CEntryStub::GenerateCore(MacroAssembler* masm,
     __ str(r1, MemOperand(r0));
   }
 
-#if defined(V8_HOST_ARCH_PPC)
-  // Use frame storage reserved by calling function
-  // PPC passes C++ objects by reference not value
-  // This builds an object in the stack frame
-  __ str(r6, MemOperand(sp, 2 * kPointerSize));
-  __ str(r4, MemOperand(sp, 1 * kPointerSize));
-  __ add(r0, sp, Operand(1 * kPointerSize));
-#else
   // Call C built-in.
   // r0 = argc, r1 = argv
   __ mov(r0, Operand(r4));
   __ mov(r1, Operand(r6));
-#endif
 
 #if defined(V8_HOST_ARCH_ARM)
   int frame_alignment = MacroAssembler::ActivationFrameAlignment();
@@ -3852,13 +3843,7 @@ void CEntryStub::GenerateCore(MacroAssembler* masm,
   }
 #endif
 
-#if defined(V8_HOST_ARCH_PPC)
-  // PPC passes C++ objects by reference not value
-  // Thus argument 2 (r1) should be the isolate
-  __ mov(r1, Operand(ExternalReference::isolate_address()));
-#else
   __ mov(r2, Operand(ExternalReference::isolate_address()));
-#endif
 
   // To let the GC traverse the return address of the exit frames, we need to
   // know where the return address is. The CEntryStub is unmovable, so
@@ -3867,13 +3852,13 @@ void CEntryStub::GenerateCore(MacroAssembler* masm,
   // Compute the return address in lr to return to after the jump below. Pc is
   // already at '+ 8' from the current instruction but return is after three
   // instructions so add another 4 to pc to get the return address.
-  // {
+  {
     // Prevent literal pool emission before return address.
     Assembler::BlockConstPoolScope block_const_pool(masm);
     masm->add(lr, pc, Operand(4));
     __ str(lr, MemOperand(sp, 0));
     masm->Jump(r5);
-  // }
+  }
 
   if (always_allocate) {
     // It's okay to clobber r2 and r3 here. Don't mess with r0 and r1
@@ -3952,12 +3937,7 @@ void CEntryStub::Generate(MacroAssembler* masm) {
 
   // Enter the exit frame that transitions from JavaScript to C++.
   FrameScope scope(masm, StackFrame::MANUAL);
-#if defined(V8_HOST_ARCH_PPC)
-  // PPC needs extra frame space to fake out a C++ object
-  __ EnterExitFrame(save_doubles_, 2);
-#else
   __ EnterExitFrame(save_doubles_);
-#endif
 
   // Set up argc and the builtin function in callee-saved registers.
   __ mov(r4, Operand(r0));
@@ -5692,14 +5672,12 @@ void StringHelper::GenerateCopyCharactersLong(MacroAssembler* masm,
     __ Check(eq, "Destination of copy not aligned.");
   }
 
-#ifndef V8_HOST_ARCH_PPC
   const int kReadAlignment = 4;
   const int kReadAlignmentMask = kReadAlignment - 1;
   // Ensure that reading an entire aligned word containing the last character
   // of a string will not read outside the allocated area (because we pad up
   // to kObjectAlignment).
   STATIC_ASSERT(kObjectAlignment >= kReadAlignment);
-#endif
   // Assumes word reads and writes are little endian.
   // Nothing to do for zero characters.
   Label done;
@@ -5712,10 +5690,6 @@ void StringHelper::GenerateCopyCharactersLong(MacroAssembler* masm,
 
   // Assume that you cannot read (or write) unaligned.
   Label byte_loop;
-#if V8_HOST_ARCH_PPC
-  __ add(count, dest, Operand(count));
-  Register limit = count;  // Read until src equals this.
-#else  // little endian only
   // Must copy at least eight bytes, otherwise just do it one byte at a time.
   __ cmp(count, Operand(8));
   __ add(count, dest, Operand(count));
@@ -5808,7 +5782,7 @@ void StringHelper::GenerateCopyCharactersLong(MacroAssembler* masm,
     __ cmp(scratch3, Operand(8));
     __ b(ge, &loop);
   }
-#endif  // !V8_HOST_ARCH_PPC
+
   // Copy bytes from src to dst until dst hits limit.
   __ bind(&byte_loop);
   __ cmp(dest, Operand(limit));
@@ -6469,13 +6443,7 @@ void StringAddStub::Generate(MacroAssembler* masm) {
   // in a little endian mode)
   __ mov(r6, Operand(2));
   __ AllocateAsciiString(r0, r6, r4, r5, r9, &call_runtime);
-#if V8_HOST_ARCH_PPC  // Really we mean BIG ENDIAN host
-  __ strb(r2, FieldMemOperand(r0, SeqAsciiString::kHeaderSize));
-  __ mov(r2, Operand(r2, LSR, 8));
-  __ strb(r2, FieldMemOperand(r0, SeqAsciiString::kHeaderSize+1));
-#else  // LITTLE ENDIAN host
   __ strh(r2, FieldMemOperand(r0, SeqAsciiString::kHeaderSize));
-#endif
   __ IncrementCounter(counters->string_add_native(), 1, r2, r3);
   __ add(sp, sp, Operand(2 * kPointerSize));
   __ Ret();
