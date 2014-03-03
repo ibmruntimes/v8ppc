@@ -6903,7 +6903,7 @@ void String::WriteToFlat(String* src,
                   ExternalAsciiString::cast(source)->GetChars() + from,
                   to - from);
         return;
-        }
+      }
       case kTwoByteStringTag | kExternalStringTag: {
         const uc16* data =
             ExternalTwoByteString::cast(source)->GetChars();
@@ -7354,10 +7354,10 @@ uint32_t String::ComputeHashField(unibrow::CharacterStream* buffer,
   // index.
   while (buffer->has_more()) {
     hasher.AddCharacterNoIndex(buffer->GetNext());
-    }
+  }
 
   return hasher.GetHashField();
-  }
+}
 
 
 MaybeObject* String::SubString(int start, int end, PretenureFlag pretenure) {
@@ -7380,7 +7380,7 @@ static void TrimEnumCache(Heap* heap, Map* map, DescriptorArray* descriptors) {
   int live_enum = map->EnumLength();
   if (live_enum == Map::kInvalidEnumCache) {
     live_enum = map->NumberOfDescribedProperties(OWN_DESCRIPTORS, DONT_ENUM);
-}
+  }
   if (live_enum == 0) return descriptors->ClearEnumCache();
 
   FixedArray* enum_cache = descriptors->GetEnumCache();

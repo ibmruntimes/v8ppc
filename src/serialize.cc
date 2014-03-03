@@ -1190,7 +1190,7 @@ int Serializer::RootIndex(HeapObject* heap_object, HowToCode from) {
         // MIPS or lis/addic on PPC.  Therefore we should not generate
         // such serialization data for MIPS/PPC.
         return kInvalidRootIndex;
-  }
+      }
 #endif
       return i;
     }
