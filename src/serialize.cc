@@ -713,7 +713,7 @@ void Deserializer::ReadObject(int space_number,
     }
   }
 #endif
-  }
+}
 
 void Deserializer::ReadChunk(Object** current,
                              Object** limit,
