@@ -122,7 +122,7 @@ void Builtins::Generate_InternalArrayCode(MacroAssembler* masm) {
   if (FLAG_debug_code) {
     // Initial map for the builtin InternalArray functions should be maps.
     __ lw(a2, FieldMemOperand(a1, JSFunction::kPrototypeOrInitialMapOffset));
-    __ And(t0, a2, Operand(kSmiTagMask));
+    __ SmiTst(a2, t0);
     __ Assert(ne, kUnexpectedInitialMapForInternalArrayFunction,
               t0, Operand(zero_reg));
     __ GetObjectType(a2, a3, t0);
@@ -152,7 +152,7 @@ void Builtins::Generate_ArrayCode(MacroAssembler* masm) {
   if (FLAG_debug_code) {
     // Initial map for the builtin Array functions should be maps.
     __ lw(a2, FieldMemOperand(a1, JSFunction::kPrototypeOrInitialMapOffset));
-    __ And(t0, a2, Operand(kSmiTagMask));
+    __ SmiTst(a2, t0);
     __ Assert(ne, kUnexpectedInitialMapForArrayFunction1,
               t0, Operand(zero_reg));
     __ GetObjectType(a2, a3, t0);
@@ -301,17 +301,12 @@ static void CallRuntimePassFunction(MacroAssembler* masm,
                                     Runtime::FunctionId function_id) {
   FrameScope scope(masm, StackFrame::INTERNAL);
   // Push a copy of the function onto the stack.
-  __ push(a1);
-  // Push call kind information.
-  __ push(t1);
-  // Function is also the parameter to the runtime call.
-  __ push(a1);
+  // Push call kind information and function as parameter to the runtime call.
+  __ Push(a1, t1, a1);
 
   __ CallRuntime(function_id, 1);
-  // Restore call kind information.
-  __ pop(t1);
-  // Restore receiver.
-  __ pop(a1);
+  // Restore call kind information and receiver.
+  __ Pop(a1, t1);
 }
 
 
@@ -421,14 +416,11 @@ static void Generate_JSConstructStubHelper(MacroAssembler* masm,
         __ sb(t0, constructor_count);
         __ Branch(&allocate, ne, t0, Operand(zero_reg));
 
-        __ Push(a1, a2);
-
-        __ push(a1);  // Constructor.
+        __ Push(a1, a2, a1);  // a1 = Constructor.
         // The call will replace the stub, so the countdown is only done once.
         __ CallRuntime(Runtime::kFinalizeInstanceSize, 1);
 
-        __ pop(a2);
-        __ pop(a1);
+        __ Pop(a1, a2);
 
         __ bind(&allocate);
       }
@@ -821,12 +813,9 @@ static void GenerateMakeCodeYoungAgainCommon(MacroAssembler* masm) {
   // internal frame to make the code faster, since we shouldn't have to do stack
   // crawls in MakeCodeYoung. This seems a bit fragile.
 
-  __ mov(a0, ra);
-  // Adjust a0 to point to the head of the PlatformCodeAge sequence
+  // Set a0 to point to the head of the PlatformCodeAge sequence.
   __ Subu(a0, a0,
       Operand((kNoCodeAgeSequenceLength - 1) * Assembler::kInstrSize));
-  // Restore the original return address of the function
-  __ mov(ra, at);
 
   // The following registers must be saved and restored when calling through to
   // the runtime:
@@ -863,12 +852,9 @@ void Builtins::Generate_MarkCodeAsExecutedOnce(MacroAssembler* masm) {
   // save/restore the registers without worrying about which of them contain
   // pointers.
 
-  __ mov(a0, ra);
-  // Adjust a0 to point to the head of the PlatformCodeAge sequence
+  // Set a0 to point to the head of the PlatformCodeAge sequence.
   __ Subu(a0, a0,
       Operand((kNoCodeAgeSequenceLength - 1) * Assembler::kInstrSize));
-  // Restore the original return address of the function
-  __ mov(ra, at);
 
   // The following registers must be saved and restored when calling through to
   // the runtime:
@@ -887,7 +873,7 @@ void Builtins::Generate_MarkCodeAsExecutedOnce(MacroAssembler* masm) {
 
   // Perform prologue operations usually performed by the young code stub.
   __ Push(ra, fp, cp, a1);
-  __ Addu(fp, sp, Operand(2 * kPointerSize));
+  __ Addu(fp, sp, Operand(StandardFrameConstants::kFixedFrameSizeFromFp));
 
   // Jump to point after the code-age stub.
   __ Addu(a0, a0, Operand((kNoCodeAgeSequenceLength) * Assembler::kInstrSize));
@@ -900,7 +886,8 @@ void Builtins::Generate_MarkCodeAsExecutedTwice(MacroAssembler* masm) {
 }
 
 
-void Builtins::Generate_NotifyStubFailure(MacroAssembler* masm) {
+static void Generate_NotifyStubFailureHelper(MacroAssembler* masm,
+                                             SaveFPRegsMode save_doubles) {
   {
     FrameScope scope(masm, StackFrame::INTERNAL);
 
@@ -909,12 +896,22 @@ void Builtins::Generate_NotifyStubFailure(MacroAssembler* masm) {
     // registers.
     __ MultiPush(kJSCallerSaved | kCalleeSaved);
     // Pass the function and deoptimization type to the runtime system.
-    __ CallRuntime(Runtime::kNotifyStubFailure, 0);
+    __ CallRuntime(Runtime::kNotifyStubFailure, 0, save_doubles);
     __ MultiPop(kJSCallerSaved | kCalleeSaved);
   }
 
   __ Addu(sp, sp, Operand(kPointerSize));  // Ignore state
   __ Jump(ra);  // Jump to miss handler
+}
+
+
+void Builtins::Generate_NotifyStubFailure(MacroAssembler* masm) {
+  Generate_NotifyStubFailureHelper(masm, kDontSaveFPRegs);
+}
+
+
+void Builtins::Generate_NotifyStubFailureSaveDoubles(MacroAssembler* masm) {
+  Generate_NotifyStubFailureHelper(masm, kSaveFPRegs);
 }
 
 
@@ -1216,11 +1213,13 @@ void Builtins::Generate_FunctionCall(MacroAssembler* masm) {
 
 
 void Builtins::Generate_FunctionApply(MacroAssembler* masm) {
-  const int kIndexOffset    = -5 * kPointerSize;
-  const int kLimitOffset    = -4 * kPointerSize;
-  const int kArgsOffset     =  2 * kPointerSize;
-  const int kRecvOffset     =  3 * kPointerSize;
-  const int kFunctionOffset =  4 * kPointerSize;
+  const int kIndexOffset    =
+      StandardFrameConstants::kExpressionsOffset - (2 * kPointerSize);
+  const int kLimitOffset    =
+      StandardFrameConstants::kExpressionsOffset - (1 * kPointerSize);
+  const int kArgsOffset     = 2 * kPointerSize;
+  const int kRecvOffset     = 3 * kPointerSize;
+  const int kFunctionOffset = 4 * kPointerSize;
 
   {
     FrameScope frame_scope(masm, StackFrame::INTERNAL);
@@ -1245,8 +1244,7 @@ void Builtins::Generate_FunctionApply(MacroAssembler* masm) {
 
     // Out of stack space.
     __ lw(a1, MemOperand(fp, kFunctionOffset));
-    __ push(a1);
-    __ push(v0);
+    __ Push(a1, v0);
     __ InvokeBuiltin(Builtins::APPLY_OVERFLOW, CALL_FUNCTION);
     // End of stack check.
 
@@ -1327,8 +1325,7 @@ void Builtins::Generate_FunctionApply(MacroAssembler* masm) {
     // a0: current argument index
     __ bind(&loop);
     __ lw(a1, MemOperand(fp, kArgsOffset));
-    __ push(a1);
-    __ push(a0);
+    __ Push(a1, a0);
 
     // Call the runtime to access the property in the arguments array.
     __ CallRuntime(Runtime::kGetProperty, 2);
@@ -1381,7 +1378,8 @@ static void EnterArgumentsAdaptorFrame(MacroAssembler* masm) {
   __ sll(a0, a0, kSmiTagSize);
   __ li(t0, Operand(Smi::FromInt(StackFrame::ARGUMENTS_ADAPTOR)));
   __ MultiPush(a0.bit() | a1.bit() | t0.bit() | fp.bit() | ra.bit());
-  __ Addu(fp, sp, Operand(3 * kPointerSize));
+  __ Addu(fp, sp,
+      Operand(StandardFrameConstants::kFixedFrameSizeFromFp + kPointerSize));
 }
 
 
@@ -1391,7 +1389,8 @@ static void LeaveArgumentsAdaptorFrame(MacroAssembler* masm) {
   // -----------------------------------
   // Get the number of arguments passed (as a smi), tear down the frame and
   // then tear down the parameters.
-  __ lw(a1, MemOperand(fp, -3 * kPointerSize));
+  __ lw(a1, MemOperand(fp, -(StandardFrameConstants::kFixedFrameSizeFromFp +
+                             kPointerSize)));
   __ mov(sp, fp);
   __ MultiPop(fp.bit() | ra.bit());
   __ sll(t0, a1, kPointerSizeLog2 - kSmiTagSize);
@@ -1489,7 +1488,9 @@ void Builtins::Generate_ArgumentsAdaptorTrampoline(MacroAssembler* masm) {
     __ LoadRoot(t0, Heap::kUndefinedValueRootIndex);
     __ sll(t2, a2, kPointerSizeLog2);
     __ Subu(a2, fp, Operand(t2));
-    __ Addu(a2, a2, Operand(-4 * kPointerSize));  // Adjust for frame.
+    // Adjust for frame.
+    __ Subu(a2, a2, Operand(StandardFrameConstants::kFixedFrameSizeFromFp +
+                            2 * kPointerSize));
 
     Label fill;
     __ bind(&fill);

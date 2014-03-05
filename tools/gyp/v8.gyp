@@ -28,6 +28,7 @@
 {
   'variables': {
     'v8_code': 1,
+    'v8_random_seed%': 314159265,
   },
   'includes': ['../../build/toolchain.gypi', '../../build/features.gypi'],
   'targets': [
@@ -58,7 +59,6 @@
         ['component=="shared_library"', {
           'type': '<(component)',
           'sources': [
-            '../../src/defaults.cc',
             # Note: on non-Windows we still build this file so that gyp
             # has some sources to link into the component.
             '../../src/v8dll-main.cc',
@@ -113,10 +113,15 @@
           'dependencies': [
             'mksnapshot.<(v8_target_arch)#host',
             'js2c#host',
+            'generate_trig_table#host',
           ],
         }, {
           'toolsets': ['target'],
-          'dependencies': ['mksnapshot.<(v8_target_arch)', 'js2c'],
+          'dependencies': [
+            'mksnapshot.<(v8_target_arch)',
+            'js2c',
+            'generate_trig_table',
+          ],
         }],
         ['component=="shared_library"', {
           'defines': [
@@ -140,6 +145,7 @@
       'sources': [
         '<(SHARED_INTERMEDIATE_DIR)/libraries.cc',
         '<(SHARED_INTERMEDIATE_DIR)/experimental-libraries.cc',
+        '<(SHARED_INTERMEDIATE_DIR)/trig-table.cc',
         '<(INTERMEDIATE_DIR)/snapshot.cc',
       ],
       'actions': [
@@ -155,6 +161,11 @@
             'mksnapshot_flags': [
               '--log-snapshot-positions',
               '--logfile', '<(INTERMEDIATE_DIR)/snapshot.log',
+            ],
+            'conditions': [
+              ['v8_random_seed!=0', {
+                'mksnapshot_flags': ['--random-seed', '<(v8_random_seed)'],
+              }],
             ],
           },
           'action': [
@@ -177,15 +188,16 @@
       'sources': [
         '<(SHARED_INTERMEDIATE_DIR)/libraries.cc',
         '<(SHARED_INTERMEDIATE_DIR)/experimental-libraries.cc',
+        '<(SHARED_INTERMEDIATE_DIR)/trig-table.cc',
         '../../src/snapshot-empty.cc',
       ],
       'conditions': [
         ['want_separate_host_toolset==1', {
           'toolsets': ['host', 'target'],
-          'dependencies': ['js2c#host'],
+          'dependencies': ['js2c#host', 'generate_trig_table#host'],
         }, {
           'toolsets': ['target'],
-          'dependencies': ['js2c'],
+          'dependencies': ['js2c', 'generate_trig_table'],
         }],
         ['component=="shared_library"', {
           'defines': [
@@ -193,6 +205,32 @@
             'V8_SHARED',
           ],
         }],
+      ]
+    },
+    { 'target_name': 'generate_trig_table',
+      'type': 'none',
+      'conditions': [
+        ['want_separate_host_toolset==1', {
+          'toolsets': ['host'],
+        }, {
+          'toolsets': ['target'],
+        }],
+      ],
+      'actions': [
+        {
+          'action_name': 'generate',
+          'inputs': [
+            '../../tools/generate-trig-table.py',
+          ],
+          'outputs': [
+            '<(SHARED_INTERMEDIATE_DIR)/trig-table.cc',
+          ],
+          'action': [
+            'python',
+            '../../tools/generate-trig-table.py',
+            '<@(_outputs)',
+          ],
+        },
       ]
     },
     {
@@ -275,6 +313,8 @@
         '../../src/debug-agent.h',
         '../../src/debug.cc',
         '../../src/debug.h',
+        '../../src/default-platform.cc',
+        '../../src/default-platform.h',
         '../../src/deoptimizer.cc',
         '../../src/deoptimizer.h',
         '../../src/disasm.h',
@@ -294,6 +334,8 @@
         '../../src/execution.h',
         '../../src/extensions/externalize-string-extension.cc',
         '../../src/extensions/externalize-string-extension.h',
+        '../../src/extensions/free-buffer-extension.cc',
+        '../../src/extensions/free-buffer-extension.h',
         '../../src/extensions/gc-extension.cc',
         '../../src/extensions/gc-extension.h',
         '../../src/extensions/statistics-extension.cc',
@@ -899,10 +941,6 @@
             'BUILDING_V8_SHARED',
             'V8_SHARED',
           ],
-        }, {
-          'sources': [
-            '../../src/defaults.cc',
-          ],
         }],
         ['v8_postmortem_support=="true"', {
           'sources': [
@@ -923,6 +961,12 @@
         ['OS=="win" and v8_enable_i18n_support==1', {
           'dependencies': [
             '<(icu_gyp_path):icudata',
+          ],
+        }],
+        ['v8_use_default_platform==0', {
+          'sources!': [
+            '../../src/default-platform.cc',
+            '../../src/default-platform.h',
           ],
         }],
       ],
@@ -974,6 +1018,7 @@
           '../../src/proxy.js',
           '../../src/collection.js',
           '../../src/object-observe.js',
+          '../../src/promise.js',
           '../../src/generator.js',
           '../../src/array-iterator.js',
           '../../src/harmony-string.js',

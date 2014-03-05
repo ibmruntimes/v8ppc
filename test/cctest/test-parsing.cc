@@ -206,7 +206,8 @@ TEST(Preparsing) {
   {
     i::FLAG_lazy = true;
     ScriptResource* resource = new ScriptResource(source, source_length);
-    v8::Local<v8::String> script_source = v8::String::NewExternal(resource);
+    v8::Local<v8::String> script_source =
+        v8::String::NewExternal(isolate, resource);
     v8::Script::Compile(script_source, NULL, preparse);
   }
 
@@ -214,7 +215,8 @@ TEST(Preparsing) {
     i::FLAG_lazy = false;
 
     ScriptResource* resource = new ScriptResource(source, source_length);
-    v8::Local<v8::String> script_source = v8::String::NewExternal(resource);
+    v8::Local<v8::String> script_source =
+        v8::String::NewExternal(isolate, resource);
     v8::Script::New(script_source, NULL, preparse, v8::Local<v8::String>());
   }
   delete preparse;
@@ -1050,15 +1052,14 @@ i::Handle<i::String> FormatMessage(i::ScriptDataImpl* data) {
   i::Factory* factory = isolate->factory();
   const char* message = data->BuildMessage();
   i::Handle<i::String> format = v8::Utils::OpenHandle(
-                                    *v8::String::New(message));
+      *v8::String::NewFromUtf8(CcTest::isolate(), message));
   i::Vector<const char*> args = data->BuildArgs();
   i::Handle<i::JSArray> args_array = factory->NewJSArray(args.length());
   for (int i = 0; i < args.length(); i++) {
-    i::JSArray::SetElement(args_array,
-                           i,
-                           v8::Utils::OpenHandle(*v8::String::New(args[i])),
-                           NONE,
-                           i::kNonStrictMode);
+    i::JSArray::SetElement(
+        args_array, i, v8::Utils::OpenHandle(*v8::String::NewFromUtf8(
+                                                  CcTest::isolate(), args[i])),
+        NONE, i::kNonStrictMode);
   }
   i::Handle<i::JSObject> builtins(isolate->js_builtins_object());
   i::Handle<i::Object> format_fun =
@@ -1329,7 +1330,7 @@ TEST(PreparserStrictOctal) {
       "    01;               \n"
       "  };                  \n"
       "};                    \n";
-  v8::Script::Compile(v8::String::New(script));
+  v8::Script::Compile(v8::String::NewFromUtf8(CcTest::isolate(), script));
   CHECK(try_catch.HasCaught());
   v8::String::Utf8Value exception(try_catch.Exception());
   CHECK_EQ("SyntaxError: Octal literals are not allowed in strict mode.",

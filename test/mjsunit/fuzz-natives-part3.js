@@ -116,6 +116,7 @@ function testArgumentTypes(name, argc) {
 
 var knownProblems = {
   "Abort": true,
+  "ThrowMessage": true,
 
   // Avoid calling the concat operation, because weird lengths
   // may lead to out-of-memory.  Ditto for StringBuilderJoin.
@@ -203,11 +204,15 @@ var knownProblems = {
   "_OneByteSeqStringSetChar": true,
   "_TwoByteSeqStringSetChar": true,
 
+  // Only applicable to TypedArrays.
+  "TypedArrayInitialize": true,
+
   // Only applicable to generators.
   "_GeneratorNext": true,
   "_GeneratorThrow": true,
 
   // Only applicable to DataViews.
+  "DataViewInitialize":true,
   "DataViewGetBuffer": true,
   "DataViewGetByteLength": true,
   "DataViewGetByteOffset": true

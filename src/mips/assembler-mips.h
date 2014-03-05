@@ -537,13 +537,6 @@ class Assembler : public AssemblerBase {
         target);
   }
 
-  // This sets the branch destination.
-  // This is for calls and branches to runtime code.
-  inline static void set_external_target_at(Address instruction_payload,
-                                            Address target) {
-    set_target_address_at(instruction_payload, target);
-  }
-
   // Size of an instruction.
   static const int kInstrSize = sizeof(Instr);
 
@@ -895,6 +888,9 @@ class Assembler : public AssemblerBase {
   // inline tables, e.g., jump-tables.
   void db(uint8_t data);
   void dd(uint32_t data);
+
+  // Emits the address of the code stub's first instruction.
+  void emit_code_stub_address(Code* stub);
 
   PositionsRecorder* positions_recorder() { return &positions_recorder_; }
 

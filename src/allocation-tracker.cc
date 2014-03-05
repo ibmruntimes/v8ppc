@@ -169,7 +169,7 @@ void AllocationTracker::PrepareForSerialization() {
 }
 
 
-void AllocationTracker::NewObjectEvent(Address addr, int size) {
+void AllocationTracker::AllocationEvent(Address addr, int size) {
   DisallowHeapAllocation no_allocation;
   Heap* heap = ids_->heap();
 
@@ -185,7 +185,8 @@ void AllocationTracker::NewObjectEvent(Address addr, int size) {
   while (!it.done() && length < kMaxAllocationTraceLength) {
     JavaScriptFrame* frame = it.frame();
     SharedFunctionInfo* shared = frame->function()->shared();
-    SnapshotObjectId id = ids_->FindEntry(shared->address());
+    SnapshotObjectId id = ids_->FindOrAddEntry(
+        shared->address(), shared->Size(), false);
     allocation_trace_buffer_[length++] = id;
     AddFunctionInfo(shared, id);
     it.Advance();
@@ -272,7 +273,7 @@ void AllocationTracker::UnresolvedLocation::HandleWeakScript(
     void* data) {
   UnresolvedLocation* location = reinterpret_cast<UnresolvedLocation*>(data);
   location->script_ = Handle<Script>::null();
-  obj->Dispose();
+  obj->Reset();
 }
 
 

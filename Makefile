@@ -98,7 +98,7 @@ ifeq ($(vtunejit), on)
 endif
 # optdebug=on
 ifeq ($(optdebug), on)
-  GYPFLAGS += -Dv8_optimized_debug=1
+  GYPFLAGS += -Dv8_optimized_debug=2
 endif
 # debuggersupport=off
 ifeq ($(debuggersupport), off)
@@ -107,6 +107,10 @@ endif
 # unalignedaccess=on
 ifeq ($(unalignedaccess), on)
   GYPFLAGS += -Dv8_can_use_unaligned_accesses=true
+endif
+# randomseed=12345, disable random seed via randomseed=0
+ifdef randomseed
+  GYPFLAGS += -Dv8_random_seed=$(randomseed)
 endif
 # soname_version=1.2.3
 ifdef soname_version
@@ -353,6 +357,16 @@ $(addsuffix .check, $(NACL_ARCHES)): \
 native.check: native
 	@tools/run-tests.py $(TESTJOBS) --outdir=$(OUTDIR)/native \
 	    --arch-and-mode=. $(TESTFLAGS)
+
+FASTTESTFLAGS = --flaky-tests=skip --slow-tests=skip --pass-fail-tests=skip \
+                --variants=default,stress
+FASTTESTMODES = ia32.release,x64.release,ia32.debug,x64.debug,arm.debug
+
+quickcheck:
+	@$(MAKE) all optdebug=on
+	@tools/run-tests.py $(TESTJOBS) --outdir=$(OUTDIR) \
+	    --arch-and-mode=$(FASTTESTMODES) $(FASTTESTFLAGS) $(TESTFLAGS)
+qc: quickcheck
 
 # Clean targets. You can clean each architecture individually, or everything.
 $(addsuffix .clean, $(ARCHES) $(ANDROID_ARCHES) $(NACL_ARCHES)):

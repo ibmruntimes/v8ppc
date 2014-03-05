@@ -35,6 +35,11 @@
 // in this test case.  Depending on whether smi-only arrays are actually
 // enabled, this test takes the appropriate code path to check smi-only arrays.
 
+// Reset the GC stress mode to be off. Needed because AllocationMementos only
+// live for one gc, so a gc that happens in certain fragile areas of the test
+// can break assumptions.
+%SetFlags("--gc-interval=-1")
+
 // support_smi_only_arrays = %HasFastSmiElements(new Array(1,2,3,4,5,6,7,8));
 support_smi_only_arrays = true;
 
@@ -88,11 +93,15 @@ if (support_smi_only_arrays) {
   }
 
   get_literal(3);
-  get_literal(3);
-  %OptimizeFunctionOnNextCall(get_literal);
+  // It's important to store a from before we crankshaft get_literal, because
+  // mementos won't be created from crankshafted code at all.
   a = get_literal(3);
+  %OptimizeFunctionOnNextCall(get_literal);
+  get_literal(3);
   assertOptimized(get_literal);
   assertTrue(%HasFastSmiElements(a));
+  // a has a memento so the transition caused by the store will affect the
+  // boilerplate.
   a[0] = 3.5;
 
   // We should have transitioned the boilerplate array to double, and

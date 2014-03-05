@@ -1,4 +1,5 @@
-// Copyright 2010 the V8 project authors. All rights reserved.
+
+// Copyright 2013 the V8 project authors. All rights reserved.
 // Redistribution and use in source and binary forms, with or without
 // modification, are permitted provided that the following conditions are
 // met:
@@ -25,25 +26,20 @@
 // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#ifndef V8_ALLOCATION_INL_H_
-#define V8_ALLOCATION_INL_H_
-
-#include "allocation.h"
-
-namespace v8 {
-namespace internal {
-
-
-void* PreallocatedStorageAllocationPolicy::New(size_t size) {
-  return Isolate::Current()->PreallocatedStorageNew(size);
+// Flags: --nostress-opt --allow-natives-syntax
+var maxSize = %MaxSmi() + 1;
+function TestArray(constr) {
+  assertThrows(function() {
+    new constr(maxSize);
+  }, RangeError);
 }
 
-
-void PreallocatedStorageAllocationPolicy::Delete(void* p) {
-  return Isolate::Current()->PreallocatedStorageDelete(p);
-}
-
-
-} }  // namespace v8::internal
-
-#endif  // V8_ALLOCATION_INL_H_
+TestArray(Uint8Array);
+TestArray(Int8Array);
+TestArray(Uint16Array);
+TestArray(Int16Array);
+TestArray(Uint32Array);
+TestArray(Int32Array);
+TestArray(Float32Array);
+TestArray(Float64Array);
+TestArray(Uint8ClampedArray);

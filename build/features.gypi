@@ -59,6 +59,9 @@
     # Enable compiler warnings when using V8_DEPRECATED apis.
     'v8_deprecation_warnings%': 0,
 
+    # Use the v8 provided v8::Platform implementation.
+    'v8_use_default_platform%': 1,
+
     'v8_native_sim%': 'false',
 
     'v8_enable_extra_ppcchecks%': 0,
@@ -88,6 +91,9 @@
       }],
       ['v8_enable_i18n_support==1', {
         'defines': ['V8_I18N_SUPPORT',],
+      }],
+      ['v8_use_default_platform==1', {
+        'defines': ['V8_USE_DEFAULT_PLATFORM',],
       }],
       ['v8_compress_startup_data=="bz2"', {
         'defines': [
@@ -122,7 +128,7 @@
       'Release': {
         'variables': {
           'v8_enable_extra_checks%': 0,
-          'v8_enable_handle_zapping%': 0,
+          'v8_enable_handle_zapping%': 1,
         },
         'conditions': [
           ['v8_enable_extra_checks==1', {

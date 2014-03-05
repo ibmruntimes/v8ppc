@@ -186,6 +186,9 @@ class LCodeGen: public LCodeGenBase {
 
   void AddDeferredCode(LDeferredCode* code) { deferred_.Add(code, zone()); }
 
+  void SaveCallerDoubles();
+  void RestoreCallerDoubles();
+
   // Code generation passes.  Returns true if code generation should
   // continue.
   bool GeneratePrologue();
@@ -242,8 +245,6 @@ class LCodeGen: public LCodeGenBase {
                          CallKind call_kind,
                          A1State a1_state);
 
-  void LoadHeapObject(Register result, Handle<HeapObject> object);
-
   void RecordSafepointWithLazyDeopt(LInstruction* instr,
                                     SafepointMode safepoint_mode);
 
@@ -279,6 +280,10 @@ class LCodeGen: public LCodeGenBase {
   Register ToRegister(int index) const;
   DoubleRegister ToDoubleRegister(int index) const;
 
+  MemOperand BuildSeqStringOperand(Register string,
+                                   LOperand* index,
+                                   String::Encoding encoding);
+
   void EmitIntegerMathAbs(LMathAbs* instr);
 
   // Support for recording safepoint and position information.
@@ -299,6 +304,8 @@ class LCodeGen: public LCodeGenBase {
 
   static Condition TokenToCondition(Token::Value op, bool is_unsigned);
   void EmitGoto(int block);
+
+  // EmitBranch expects to be the last instruction of a block.
   template<class InstrType>
   void EmitBranch(InstrType instr,
                   Condition condition,
@@ -309,6 +316,11 @@ class LCodeGen: public LCodeGenBase {
                    Condition condition,
                    FPURegister src1,
                    FPURegister src2);
+  template<class InstrType>
+  void EmitFalseBranch(InstrType instr,
+                       Condition condition,
+                       Register src1,
+                       const Operand& src2);
   template<class InstrType>
   void EmitFalseBranchF(InstrType instr,
                         Condition condition,

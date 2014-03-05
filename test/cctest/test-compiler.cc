@@ -45,7 +45,8 @@ using namespace v8::internal;
 class PrintExtension : public v8::Extension {
  public:
   PrintExtension() : v8::Extension("v8/print", kSource) { }
-  virtual v8::Handle<v8::FunctionTemplate> GetNativeFunction(
+  virtual v8::Handle<v8::FunctionTemplate> GetNativeFunctionTemplate(
+      v8::Isolate* isolate,
       v8::Handle<v8::String> name);
   static void Print(const v8::FunctionCallbackInfo<v8::Value>& args);
  private:
@@ -56,7 +57,8 @@ class PrintExtension : public v8::Extension {
 const char* PrintExtension::kSource = "native function print();";
 
 
-v8::Handle<v8::FunctionTemplate> PrintExtension::GetNativeFunction(
+v8::Handle<v8::FunctionTemplate> PrintExtension::GetNativeFunctionTemplate(
+    v8::Isolate* isolate,
     v8::Handle<v8::String> str) {
   return v8::FunctionTemplate::New(PrintExtension::Print);
 }
@@ -92,7 +94,8 @@ static void SetGlobalProperty(const char* name, Object* value) {
   Handle<String> internalized_name =
       isolate->factory()->InternalizeUtf8String(name);
   Handle<JSObject> global(isolate->context()->global_object());
-  SetProperty(isolate, global, internalized_name, object, NONE, kNonStrictMode);
+  Runtime::SetObjectProperty(isolate, global, internalized_name, object, NONE,
+                             kNonStrictMode);
 }
 
 
@@ -330,7 +333,8 @@ TEST(Regression236) {
 TEST(GetScriptLineNumber) {
   LocalContext context;
   v8::HandleScope scope(CcTest::isolate());
-  v8::ScriptOrigin origin = v8::ScriptOrigin(v8::String::New("test"));
+  v8::ScriptOrigin origin =
+      v8::ScriptOrigin(v8::String::NewFromUtf8(CcTest::isolate(), "test"));
   const char function_f[] = "function f() {}";
   const int max_rows = 1000;
   const int buffer_size = max_rows + sizeof(function_f);
@@ -342,10 +346,12 @@ TEST(GetScriptLineNumber) {
     if (i > 0)
       buffer[i - 1] = '\n';
     OS::MemCopy(&buffer[i], function_f, sizeof(function_f) - 1);
-    v8::Handle<v8::String> script_body = v8::String::New(buffer.start());
+    v8::Handle<v8::String> script_body =
+        v8::String::NewFromUtf8(CcTest::isolate(), buffer.start());
     v8::Script::Compile(script_body, &origin)->Run();
-    v8::Local<v8::Function> f = v8::Local<v8::Function>::Cast(
-        context->Global()->Get(v8::String::New("f")));
+    v8::Local<v8::Function> f =
+        v8::Local<v8::Function>::Cast(context->Global()->Get(
+            v8::String::NewFromUtf8(CcTest::isolate(), "f")));
     CHECK_EQ(i, f->GetScriptLineNumber());
   }
 }
@@ -363,7 +369,8 @@ TEST(OptimizedCodeSharing) {
   v8::HandleScope scope(CcTest::isolate());
   for (int i = 0; i < 10; i++) {
     LocalContext env;
-    env->Global()->Set(v8::String::New("x"), v8::Integer::New(i));
+    env->Global()->Set(v8::String::NewFromUtf8(CcTest::isolate(), "x"),
+                       v8::Integer::New(i));
     CompileRun("function MakeClosure() {"
                "  return function() { return x; };"
                "}"

@@ -889,9 +889,9 @@ TEST(Utf8Conversion) {
   v8::HandleScope handle_scope(CcTest::isolate());
   // A simple ascii string
   const char* ascii_string = "abcdef12345";
-  int len =
-      v8::String::New(ascii_string,
-                      StrLength(ascii_string))->Utf8Length();
+  int len = v8::String::NewFromUtf8(CcTest::isolate(), ascii_string,
+                                    v8::String::kNormalString,
+                                    StrLength(ascii_string))->Utf8Length();
   CHECK_EQ(StrLength(ascii_string), len);
   // A mixed ascii and non-ascii string
   // U+02E4 -> CB A4
@@ -906,7 +906,8 @@ TEST(Utf8Conversion) {
   // The number of bytes expected to be written for each length
   const int lengths[12] = {0, 0, 2, 3, 3, 3, 6, 7, 7, 7, 10, 11};
   const int char_lengths[12] = {0, 0, 1, 2, 2, 2, 3, 4, 4, 4, 5, 5};
-  v8::Handle<v8::String> mixed = v8::String::New(mixed_string, 5);
+  v8::Handle<v8::String> mixed = v8::String::NewFromTwoByte(
+      CcTest::isolate(), mixed_string, v8::String::kNormalString, 5);
   CHECK_EQ(10, mixed->Utf8Length());
   // Try encoding the string with all capacities
   char buffer[11];
@@ -942,9 +943,9 @@ TEST(ExternalShortStringAdd) {
 
   // Allocate two JavaScript arrays for holding short strings.
   v8::Handle<v8::Array> ascii_external_strings =
-      v8::Array::New(kMaxLength + 1);
+      v8::Array::New(CcTest::isolate(), kMaxLength + 1);
   v8::Handle<v8::Array> non_ascii_external_strings =
-      v8::Array::New(kMaxLength + 1);
+      v8::Array::New(CcTest::isolate(), kMaxLength + 1);
 
   // Generate short ascii and non-ascii external strings.
   for (int i = 0; i <= kMaxLength; i++) {
@@ -957,7 +958,7 @@ TEST(ExternalShortStringAdd) {
     AsciiResource* ascii_resource =
         new(&zone) AsciiResource(Vector<const char>(ascii, i));
     v8::Local<v8::String> ascii_external_string =
-        v8::String::NewExternal(ascii_resource);
+        v8::String::NewExternal(CcTest::isolate(), ascii_resource);
 
     ascii_external_strings->Set(v8::Integer::New(i), ascii_external_string);
     uc16* non_ascii = zone.NewArray<uc16>(i + 1);
@@ -968,7 +969,7 @@ TEST(ExternalShortStringAdd) {
     // string data.
     Resource* resource = new(&zone) Resource(Vector<const uc16>(non_ascii, i));
     v8::Local<v8::String> non_ascii_external_string =
-      v8::String::NewExternal(resource);
+      v8::String::NewExternal(CcTest::isolate(), resource);
     non_ascii_external_strings->Set(v8::Integer::New(i),
                                     non_ascii_external_string);
   }
@@ -1083,8 +1084,8 @@ TEST(CachedHashOverflow) {
   const char* line;
   for (int i = 0; (line = lines[i]); i++) {
     printf("%s\n", line);
-    v8::Local<v8::Value> result =
-        v8::Script::Compile(v8::String::New(line))->Run();
+    v8::Local<v8::Value> result = v8::Script::Compile(
+        v8::String::NewFromUtf8(CcTest::isolate(), line))->Run();
     CHECK_EQ(results[i]->IsUndefined(), result->IsUndefined());
     CHECK_EQ(results[i]->IsNumber(), result->IsNumber());
     if (result->IsNumber()) {
@@ -1213,7 +1214,7 @@ TEST(AsciiArrayJoin) {
   v8::ResourceConstraints constraints;
   constraints.set_max_young_space_size(256 * K);
   constraints.set_max_old_space_size(4 * K * K);
-  v8::SetResourceConstraints(&constraints);
+  v8::SetResourceConstraints(CcTest::isolate(), &constraints);
 
   // String s is made of 2^17 = 131072 'c' characters and a is an array
   // starting with 'bad', followed by 2^14 times the string s. That means the
@@ -1230,8 +1231,8 @@ TEST(AsciiArrayJoin) {
   v8::HandleScope scope(CcTest::isolate());
   LocalContext context;
   v8::V8::IgnoreOutOfMemoryException();
-  v8::Local<v8::Script> script =
-      v8::Script::Compile(v8::String::New(join_causing_out_of_memory));
+  v8::Local<v8::Script> script = v8::Script::Compile(
+      v8::String::NewFromUtf8(CcTest::isolate(), join_causing_out_of_memory));
   v8::Local<v8::Value> result = script->Run();
 
   // Check for out of memory state.

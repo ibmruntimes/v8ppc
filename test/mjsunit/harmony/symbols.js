@@ -59,6 +59,7 @@ function TestType() {
   for (var i in symbols) {
     assertEquals("symbol", typeof symbols[i])
     assertTrue(typeof symbols[i] === "symbol")
+    assertFalse(%SymbolIsPrivate(symbols[i]))
     assertEquals(null, %_ClassOf(symbols[i]))
     assertEquals("Symbol", %_ClassOf(new Symbol(symbols[i])))
     assertEquals("Symbol", %_ClassOf(Object(symbols[i])))
@@ -344,7 +345,7 @@ function TestCachedKeyAfterScavenge() {
   var a = {};
   a[key] = "abc";
 
-  for (var i = 0; i < 1000000; i++) {
+  for (var i = 0; i < 100000; i++) {
     a[key] += "a";  // Allocations cause a scavenge.
   }
 }

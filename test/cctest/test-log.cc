@@ -305,9 +305,11 @@ TEST(Issue23768) {
   env->Enter();
 
   SimpleExternalString source_ext_str("(function ext() {})();");
-  v8::Local<v8::String> source = v8::String::NewExternal(&source_ext_str);
+  v8::Local<v8::String> source =
+      v8::String::NewExternal(CcTest::isolate(), &source_ext_str);
   // Script needs to have a name in order to trigger InitLineEnds execution.
-  v8::Handle<v8::String> origin = v8::String::New("issue-23768-test");
+  v8::Handle<v8::String> origin =
+      v8::String::NewFromUtf8(CcTest::isolate(), "issue-23768-test");
   v8::Handle<v8::Script> evil_script = v8::Script::Compile(source, origin);
   CHECK(!evil_script.IsEmpty());
   CHECK(!evil_script->Run().IsEmpty());
@@ -335,7 +337,8 @@ TEST(LogCallbacks) {
                                            v8::FunctionTemplate::New());
   obj->SetClassName(v8_str("Obj"));
   v8::Handle<v8::ObjectTemplate> proto = obj->PrototypeTemplate();
-  v8::Local<v8::Signature> signature = v8::Signature::New(obj);
+  v8::Local<v8::Signature> signature =
+      v8::Signature::New(CcTest::isolate(), obj);
   proto->Set(v8_str("method1"),
              v8::FunctionTemplate::New(ObjMethod1,
                                        v8::Handle<v8::Value>(),
@@ -451,12 +454,14 @@ TEST(EquivalenceOfLoggingAndTraversal) {
   i::Vector<const char> log(
       i::ReadFile(initialize_logger.StopLoggingGetTempFile(), &exists, true));
   CHECK(exists);
-  v8::Handle<v8::String> log_str = v8::String::New(log.start(), log.length());
+  v8::Handle<v8::String> log_str = v8::String::NewFromUtf8(
+      CcTest::isolate(), log.start(), v8::String::kNormalString, log.length());
   initialize_logger.env()->Global()->Set(v8_str("_log"), log_str);
 
   i::Vector<const unsigned char> source = TestSources::GetScriptsSource();
-  v8::Handle<v8::String> source_str = v8::String::New(
-      reinterpret_cast<const char*>(source.start()), source.length());
+  v8::Handle<v8::String> source_str = v8::String::NewFromUtf8(
+      CcTest::isolate(), reinterpret_cast<const char*>(source.start()),
+      v8::String::kNormalString, source.length());
   v8::TryCatch try_catch;
   v8::Handle<v8::Script> script = v8::Script::Compile(source_str, v8_str(""));
   if (script.IsEmpty()) {

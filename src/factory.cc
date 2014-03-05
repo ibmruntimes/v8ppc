@@ -132,11 +132,14 @@ Handle<ObjectHashSet> Factory::NewObjectHashSet(int at_least_space_for) {
 }
 
 
-Handle<ObjectHashTable> Factory::NewObjectHashTable(int at_least_space_for) {
+Handle<ObjectHashTable> Factory::NewObjectHashTable(
+    int at_least_space_for,
+    MinimumCapacity capacity_option) {
   ASSERT(0 <= at_least_space_for);
   CALL_HEAP_FUNCTION(isolate(),
                      ObjectHashTable::Allocate(isolate()->heap(),
-                                               at_least_space_for),
+                                               at_least_space_for,
+                                               capacity_option),
                      ObjectHashTable);
 }
 
@@ -147,7 +150,7 @@ Handle<WeakHashTable> Factory::NewWeakHashTable(int at_least_space_for) {
       isolate(),
       WeakHashTable::Allocate(isolate()->heap(),
                               at_least_space_for,
-                              WeakHashTable::USE_DEFAULT_MINIMUM_CAPACITY,
+                              USE_DEFAULT_MINIMUM_CAPACITY,
                               TENURED),
       WeakHashTable);
 }
@@ -307,8 +310,7 @@ Handle<String> ConcatStringContent(Handle<StringType> result,
 Handle<String> Factory::NewFlatConcatString(Handle<String> first,
                                             Handle<String> second) {
   int total_length = first->length() + second->length();
-  if (first->IsOneByteRepresentationUnderneath() &&
-      second->IsOneByteRepresentationUnderneath()) {
+  if (first->IsOneByteRepresentation() && second->IsOneByteRepresentation()) {
     return ConcatStringContent<uint8_t>(
         NewRawOneByteString(total_length), first, second);
   } else {
@@ -359,6 +361,14 @@ Handle<Symbol> Factory::NewSymbol() {
   CALL_HEAP_FUNCTION(
       isolate(),
       isolate()->heap()->AllocateSymbol(),
+      Symbol);
+}
+
+
+Handle<Symbol> Factory::NewPrivateSymbol() {
+  CALL_HEAP_FUNCTION(
+      isolate(),
+      isolate()->heap()->AllocatePrivateSymbol(),
       Symbol);
 }
 
@@ -438,6 +448,15 @@ Handle<Struct> Factory::NewStruct(InstanceType type) {
       isolate(),
       isolate()->heap()->AllocateStruct(type),
       Struct);
+}
+
+
+Handle<AliasedArgumentsEntry> Factory::NewAliasedArgumentsEntry(
+    int aliased_context_slot) {
+  Handle<AliasedArgumentsEntry> entry = Handle<AliasedArgumentsEntry>::cast(
+      NewStruct(ALIASED_ARGUMENTS_ENTRY_TYPE));
+  entry->set_aliased_context_slot(aliased_context_slot);
+  return entry;
 }
 
 
@@ -573,10 +592,32 @@ Handle<Map> Factory::NewMap(InstanceType type,
 
 
 Handle<JSObject> Factory::NewFunctionPrototype(Handle<JSFunction> function) {
-  CALL_HEAP_FUNCTION(
-      isolate(),
-      isolate()->heap()->AllocateFunctionPrototype(*function),
-      JSObject);
+  // Make sure to use globals from the function's context, since the function
+  // can be from a different context.
+  Handle<Context> native_context(function->context()->native_context());
+  Handle<Map> new_map;
+  if (function->shared()->is_generator()) {
+    // Generator prototypes can share maps since they don't have "constructor"
+    // properties.
+    new_map = handle(native_context->generator_object_prototype_map());
+  } else {
+    // Each function prototype gets a fresh map to avoid unwanted sharing of
+    // maps between prototypes of different constructors.
+    Handle<JSFunction> object_function(native_context->object_function());
+    ASSERT(object_function->has_initial_map());
+    new_map = Map::Copy(handle(object_function->initial_map()));
+  }
+
+  Handle<JSObject> prototype = NewJSObjectFromMap(new_map);
+
+  if (!function->shared()->is_generator()) {
+    JSObject::SetLocalPropertyIgnoreAttributes(prototype,
+                                               constructor_string(),
+                                               function,
+                                               DONT_ENUM);
+  }
+
+  return prototype;
 }
 
 
@@ -594,11 +635,12 @@ Handle<Map> Factory::CopyMap(Handle<Map> src,
   int instance_size_delta = extra_inobject_properties * kPointerSize;
   int max_instance_size_delta =
       JSObject::kMaxInstanceSize - copy->instance_size();
-  if (instance_size_delta > max_instance_size_delta) {
+  int max_extra_properties = max_instance_size_delta >> kPointerSizeLog2;
+  if (extra_inobject_properties > max_extra_properties) {
     // If the instance size overflows, we allocate as many properties
     // as we can as inobject properties.
     instance_size_delta = max_instance_size_delta;
-    extra_inobject_properties = max_instance_size_delta >> kPointerSizeLog2;
+    extra_inobject_properties = max_extra_properties;
   }
   // Adjust the map with the extra inobject properties.
   int inobject_properties =
@@ -812,7 +854,7 @@ Handle<Object> Factory::NewError(const char* maker,
                                  const char* message,
                                  Vector< Handle<Object> > args) {
   // Instantiate a closeable HandleScope for EscapeFrom.
-  v8::HandleScope scope(reinterpret_cast<v8::Isolate*>(isolate()));
+  v8::EscapableHandleScope scope(reinterpret_cast<v8::Isolate*>(isolate()));
   Handle<FixedArray> array = NewFixedArray(args.length());
   for (int i = 0; i < args.length(); i++) {
     array->set(i, *args[i]);
@@ -1047,6 +1089,7 @@ Handle<String> Factory::InternalizedStringFromString(Handle<String> value) {
 
 Handle<JSObject> Factory::NewJSObject(Handle<JSFunction> constructor,
                                       PretenureFlag pretenure) {
+  JSFunction::EnsureHasInitialMap(constructor);
   CALL_HEAP_FUNCTION(
       isolate(),
       isolate()->heap()->AllocateJSObject(*constructor, pretenure), JSObject);
@@ -1190,6 +1233,19 @@ void Factory::SetContent(Handle<JSArray> array,
   CALL_HEAP_FUNCTION_VOID(
       isolate(),
       array->SetContent(*elements));
+}
+
+
+Handle<JSGeneratorObject> Factory::NewJSGeneratorObject(
+    Handle<JSFunction> function) {
+  ASSERT(function->shared()->is_generator());
+  JSFunction::EnsureHasInitialMap(function);
+  Handle<Map> map(function->initial_map());
+  ASSERT(map->instance_type() == JS_GENERATOR_OBJECT_TYPE);
+  CALL_HEAP_FUNCTION(
+      isolate(),
+      isolate()->heap()->AllocateJSObjectFromMap(*map),
+      JSGeneratorObject);
 }
 
 

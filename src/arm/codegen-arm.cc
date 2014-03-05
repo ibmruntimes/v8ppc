@@ -851,7 +851,8 @@ static byte* GetNoCodeAgeSequence(uint32_t* length) {
     PredictableCodeSizeScope scope(patcher.masm(), *length);
     patcher.masm()->stm(db_w, sp, r1.bit() | cp.bit() | fp.bit() | lr.bit());
     patcher.masm()->nop(ip.code());
-    patcher.masm()->add(fp, sp, Operand(2 * kPointerSize));
+    patcher.masm()->add(fp, sp,
+                        Operand(StandardFrameConstants::kFixedFrameSizeFromFp));
     initialized = true;
   }
   return byte_sequence;
@@ -896,7 +897,7 @@ void Code::PatchPlatformCodeAge(Isolate* isolate,
     CodePatcher patcher(sequence, young_length / Assembler::kInstrSize);
     patcher.masm()->add(r0, pc, Operand(-8));
     patcher.masm()->ldr(pc, MemOperand(pc, -4));
-    patcher.masm()->dd(reinterpret_cast<uint32_t>(stub->instruction_start()));
+    patcher.masm()->emit_code_stub_address(stub);
   }
 }
 

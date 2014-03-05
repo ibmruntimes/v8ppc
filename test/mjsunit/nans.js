@@ -110,7 +110,3 @@ function TestFloatQuietNan() {
 }
 
 TestFloatQuietNan();
-
-
-
-
