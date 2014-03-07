@@ -671,7 +671,8 @@ static byte* GetNoCodeAgeSequence(uint32_t* length) {
     PredictableCodeSizeScope scope(patcher.masm(), *length);
     patcher.masm()->mflr(r0);
     patcher.masm()->Push(r0, fp, cp, r4);
-    patcher.masm()->addi(fp, sp, Operand(2 * kPointerSize));
+    patcher.masm()->addi(fp, sp,
+                        Operand(StandardFrameConstants::kFixedFrameSizeFromFp));
 #if V8_TARGET_ARCH_PPC64
       // With 64bit we need a couple of nop() instructions to pad
       // out to 10 instructions total to ensure we have enough
@@ -734,17 +735,7 @@ void Code::PatchPlatformCodeAge(Isolate* isolate,
     patcher.masm()->mov(r3, Operand(target));
     patcher.masm()->Call(r3);
     // Record the stub address in the empty space for GetCodeAgeAndParity()
-#if V8_TARGET_ARCH_PPC64
-#if __BYTE_ORDER == __LITTLE_ENDIAN
-    patcher.masm()->dd(static_cast<uint32_t>(target & 0xFFFFFFFF));
-    patcher.masm()->dd(static_cast<uint32_t>(target >> 32));
-#else
-    patcher.masm()->dd(static_cast<uint32_t>(target >> 32));
-    patcher.masm()->dd(static_cast<uint32_t>(target & 0xFFFFFFFF));
-#endif
-#else
-    patcher.masm()->dd(static_cast<uint32_t>(target));
-#endif
+    patcher.masm()->emit_ptr(target);
   }
 }
 

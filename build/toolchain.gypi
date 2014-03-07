@@ -440,12 +440,15 @@
         'cflags': [ '-I/usr/pkg/include' ],
       }],
       ['OS=="aix"', {
-        # AIX is missing /usr/include/endian.h
         'defines': [
+          # AIX is missing /usr/include/endian.h
           '__LITTLE_ENDIAN=1234',
           '__BIG_ENDIAN=4321',
           '__BYTE_ORDER=__BIG_ENDIAN',
-          '__FLOAT_WORD_ORDER=__BIG_ENDIAN'],
+          '__FLOAT_WORD_ORDER=__BIG_ENDIAN',
+          # Support for malloc(0)
+          '_LINUX_SOURCE_COMPAT=1',
+          '_ALL_SOURCE=1'],
         'conditions': [
           [ 'v8_target_arch=="ppc"', {
             'ldflags': [ '-Wl,-bmaxdata:0x30000000/dsa' ],

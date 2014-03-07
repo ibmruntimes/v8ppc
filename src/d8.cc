@@ -77,6 +77,10 @@
 #define ASSERT(condition) assert(condition)
 #endif
 
+#if V8_OS_AIX
+#define malloc __linux_malloc
+#endif
+
 namespace v8 {
 
 

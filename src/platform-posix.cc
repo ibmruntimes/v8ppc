@@ -134,6 +134,14 @@ uint64_t OS::TotalPhysicalMemory() {
     return 0;
   }
   return static_cast<uint64_t>(memory_info.dwTotalPhys);
+#elif V8_OS_AIX
+  intptr_t realMem = sysconf(_SC_AIX_REALMEM);
+  if (realMem == -1) {
+    UNREACHABLE();
+    return 0;
+  }
+  // convert Kb to bytes.
+  return static_cast<uint64_t>(realMem) * 1024;
 #else
   intptr_t pages = sysconf(_SC_PHYS_PAGES);
   intptr_t page_size = sysconf(_SC_PAGESIZE);

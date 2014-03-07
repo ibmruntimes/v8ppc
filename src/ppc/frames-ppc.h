@@ -138,7 +138,8 @@ const int kStackFrameExtraParamSlot = 2;
 
 class EntryFrameConstants : public AllStatic {
  public:
-  static const int kCallerFPOffset      = -3 * kPointerSize;
+  static const int kCallerFPOffset =
+      -(StandardFrameConstants::kFixedFrameSizeFromFp + kPointerSize);
 };
 
 

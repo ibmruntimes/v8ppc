@@ -1107,6 +1107,7 @@ class Assembler : public AssemblerBase {
   // for inline tables, e.g., jump-tables.
   void db(uint8_t data);
   void dd(uint32_t data);
+  void emit_ptr(uintptr_t data);
 
   PositionsRecorder* positions_recorder() { return &positions_recorder_; }
 

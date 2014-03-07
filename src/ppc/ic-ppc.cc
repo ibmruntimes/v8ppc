@@ -354,7 +354,7 @@ Object* CallIC_Miss(Arguments args);
 void CallICBase::GenerateMonomorphicCacheProbe(MacroAssembler* masm,
                                                int argc,
                                                Code::Kind kind,
-                                               Code::ExtraICState extra_state) {
+                                               ExtraICState extra_state) {
   // ----------- S t a t e -------------
   //  -- r4    : receiver
   //  -- r5    : name
@@ -458,7 +458,7 @@ void CallICBase::GenerateNormal(MacroAssembler* masm, int argc) {
 void CallICBase::GenerateMiss(MacroAssembler* masm,
                               int argc,
                               IC::UtilityId id,
-                              Code::ExtraICState extra_state) {
+                              ExtraICState extra_state) {
   // ----------- S t a t e -------------
   //  -- r5    : name
   //  -- lr    : return address
@@ -524,7 +524,7 @@ void CallICBase::GenerateMiss(MacroAssembler* masm,
 
 void CallIC::GenerateMegamorphic(MacroAssembler* masm,
                                  int argc,
-                                 Code::ExtraICState extra_ic_state) {
+                                 ExtraICState extra_ic_state) {
   // ----------- S t a t e -------------
   //  -- r5    : name
   //  -- lr    : return address
@@ -590,8 +590,7 @@ void KeyedCallIC::GenerateMegamorphic(MacroAssembler* masm, int argc) {
   __ IncrementCounter(counters->keyed_call_generic_slow_load(), 1, r3, r6);
   {
     FrameScope scope(masm, StackFrame::INTERNAL);
-    __ push(r5);  // save the key
-    __ Push(r4, r5);  // pass the receiver and the key
+    __ Push(r5, r4, r5);  // Save the key and pass the receiver and the key.
     __ CallRuntime(Runtime::kKeyedGetProperty, 2);
     __ pop(r5);  // restore the key
   }
@@ -623,7 +622,7 @@ void KeyedCallIC::GenerateMegamorphic(MacroAssembler* masm, int argc) {
   GenerateMonomorphicCacheProbe(masm,
                                 argc,
                                 Code::KEYED_CALL_IC,
-                                Code::kNoExtraICState);
+                                kNoExtraICState);
   // Fall through on miss.
 
   __ bind(&slow_call);
@@ -669,7 +668,7 @@ void LoadIC::GenerateMegamorphic(MacroAssembler* masm) {
 
   // Probe the stub cache.
   Code::Flags flags = Code::ComputeFlags(
-      Code::HANDLER, MONOMORPHIC, Code::kNoExtraICState,
+      Code::HANDLER, MONOMORPHIC, kNoExtraICState,
       Code::NORMAL, Code::LOAD_IC);
   masm->isolate()->stub_cache()->GenerateProbe(
       masm, flags, r3, r5, r6, r7, r8, r9);
@@ -839,7 +838,7 @@ void KeyedLoadIC::GenerateNonStrictArguments(MacroAssembler* masm) {
   __ mr(r3, r5);
   __ Ret();
   __ bind(&slow);
-  GenerateMiss(masm, MISS);
+  GenerateMiss(masm);
 }
 
 
@@ -868,7 +867,7 @@ void KeyedStoreIC::GenerateNonStrictArguments(MacroAssembler* masm) {
   __ RecordWrite(r6, r9, r11, kLRHasNotBeenSaved, kDontSaveFPRegs);
   __ Ret();
   __ bind(&slow);
-  GenerateMiss(masm, MISS);
+  GenerateMiss(masm);
 }
 
 
@@ -899,7 +898,7 @@ void KeyedCallIC::GenerateNonStrictArguments(MacroAssembler* masm,
 }
 
 
-void KeyedLoadIC::GenerateMiss(MacroAssembler* masm, ICMissMode miss_mode) {
+void KeyedLoadIC::GenerateMiss(MacroAssembler* masm) {
   // ---------- S t a t e --------------
   //  -- lr     : return address
   //  -- r3     : key
@@ -912,9 +911,8 @@ void KeyedLoadIC::GenerateMiss(MacroAssembler* masm, ICMissMode miss_mode) {
   __ Push(r4, r3);
 
   // Perform tail call to the entry.
-  ExternalReference ref = miss_mode == MISS_FORCE_GENERIC
-      ? ExternalReference(IC_Utility(kKeyedLoadIC_MissForceGeneric), isolate)
-      : ExternalReference(IC_Utility(kKeyedLoadIC_Miss), isolate);
+  ExternalReference ref =
+      ExternalReference(IC_Utility(kKeyedLoadIC_Miss), isolate);
 
   __ TailCallExternalReference(ref, 2, 1);
 }
@@ -1143,7 +1141,7 @@ void KeyedLoadIC::GenerateString(MacroAssembler* masm) {
   char_at_generator.GenerateSlow(masm, call_helper);
 
   __ bind(&miss);
-  GenerateMiss(masm, MISS);
+  GenerateMiss(masm);
 }
 
 
@@ -1183,11 +1181,11 @@ void KeyedLoadIC::GenerateIndexedInterceptor(MacroAssembler* masm) {
       1);
 
   __ bind(&slow);
-  GenerateMiss(masm, MISS);
+  GenerateMiss(masm);
 }
 
 
-void KeyedStoreIC::GenerateMiss(MacroAssembler* masm, ICMissMode miss_mode) {
+void KeyedStoreIC::GenerateMiss(MacroAssembler* masm) {
   // ---------- S t a t e --------------
   //  -- r3     : value
   //  -- r4     : key
@@ -1198,10 +1196,8 @@ void KeyedStoreIC::GenerateMiss(MacroAssembler* masm, ICMissMode miss_mode) {
   // Push receiver, key and value for runtime call.
   __ Push(r5, r4, r3);
 
-  ExternalReference ref = miss_mode == MISS_FORCE_GENERIC
-      ? ExternalReference(IC_Utility(kKeyedStoreIC_MissForceGeneric),
-                          masm->isolate())
-      : ExternalReference(IC_Utility(kKeyedStoreIC_Miss), masm->isolate());
+  ExternalReference ref =
+      ExternalReference(IC_Utility(kKeyedStoreIC_Miss), masm->isolate());
   __ TailCallExternalReference(ref, 3, 1);
 }
 
@@ -1292,6 +1288,22 @@ static void KeyedStoreGenerateGenericHelper(
     __ cmp(elements_map, scratch_value);
     __ bne(fast_double);
   }
+
+  // HOLECHECK: guards "A[i] = V"
+  // We have to go to the runtime if the current value is the hole because
+  // there may be a callback on the element
+  Label holecheck_passed1;
+  __ addi(address, elements, Operand(FixedArray::kHeaderSize - kHeapObjectTag));
+  __ SmiToPtrArrayOffset(scratch_value, key);
+  __ LoadPX(scratch_value, MemOperand(address, scratch_value));
+  __ Cmpi(scratch_value, Operand(masm->isolate()->factory()->the_hole_value()),
+          r0);
+  __ bne(&holecheck_passed1);
+  __ JumpIfDictionaryInPrototypeChain(receiver, elements_map, scratch_value,
+                                      slow);
+
+  __ bind(&holecheck_passed1);
+
   // Smi stores don't require further checks.
   Label non_smi_value;
   __ JumpIfNotSmi(value, &non_smi_value);
@@ -1342,6 +1354,25 @@ static void KeyedStoreGenerateGenericHelper(
     __ CompareRoot(elements_map, Heap::kFixedDoubleArrayMapRootIndex);
     __ bne(slow);
   }
+
+  // HOLECHECK: guards "A[i] double hole?"
+  // We have to see if the double version of the hole is present. If so
+  // go to the runtime.
+#if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
+  __ addi(address, elements,
+          Operand((FixedDoubleArray::kHeaderSize + sizeof(kHoleNanLower32))
+                  - kHeapObjectTag));
+#else
+  __ addi(address, elements,
+          Operand((FixedDoubleArray::kHeaderSize - kHeapObjectTag)));
+#endif
+  __ SmiToDoubleArrayOffset(scratch_value, key);
+  __ lwzx(scratch_value, MemOperand(address, scratch_value));
+  __ Cmpi(scratch_value, Operand(kHoleNanUpper32), r0);
+  __ bne(&fast_double_without_map_check);
+  __ JumpIfDictionaryInPrototypeChain(receiver, elements_map, scratch_value,
+                                      slow);
+
   __ bind(&fast_double_without_map_check);
   __ StoreNumberToDoubleElements(value, key, elements, r6, d0,
                                  &transition_double_elements);
@@ -1431,10 +1462,11 @@ void KeyedStoreIC::GenerateGeneric(MacroAssembler* masm,
   __ JumpIfSmi(receiver, &slow);
   // Get the map of the object.
   __ LoadP(receiver_map, FieldMemOperand(receiver, HeapObject::kMapOffset));
-  // Check that the receiver does not require access checks.  We need
-  // to do this because this generic stub does not perform map checks.
+  // Check that the receiver does not require access checks and is not observed.
+  // The generic stub does not perform map checks or handle observed objects.
   __ lbz(ip, FieldMemOperand(receiver_map, Map::kBitFieldOffset));
-  __ andi(r0, ip, Operand(1 << Map::kIsAccessCheckNeeded));
+  __ andi(r0, ip, Operand(1 << Map::kIsAccessCheckNeeded |
+                          1 << Map::kIsObserved));
   __ bne(&slow, cr0);
   // Check if the object is a JS array or not.
   __ lbz(r7, FieldMemOperand(receiver_map, Map::kInstanceTypeOffset));
@@ -1505,7 +1537,7 @@ void KeyedStoreIC::GenerateGeneric(MacroAssembler* masm,
 
 
 void StoreIC::GenerateMegamorphic(MacroAssembler* masm,
-                                  StrictModeFlag strict_mode) {
+                                  ExtraICState extra_ic_state) {
   // ----------- S t a t e -------------
   //  -- r3    : value
   //  -- r4    : receiver
@@ -1515,7 +1547,7 @@ void StoreIC::GenerateMegamorphic(MacroAssembler* masm,
 
   // Get the receiver from the stack and probe the stub cache.
   Code::Flags flags = Code::ComputeFlags(
-      Code::HANDLER, MONOMORPHIC, strict_mode,
+      Code::HANDLER, MONOMORPHIC, extra_ic_state,
       Code::NORMAL, Code::STORE_IC);
 
   masm->isolate()->stub_cache()->GenerateProbe(
@@ -1645,12 +1677,10 @@ void PatchInlinedSmiCode(Address address, InlinedSmiCheck check) {
     return;
   }
 
-#ifdef DEBUG
   if (FLAG_trace_ic) {
     PrintF("[  patching ic at %p, cmp=%p, delta=%d\n",
            address, cmp_instruction_address, delta);
   }
-#endif
 
   Address patch_address =
       cmp_instruction_address - delta * Instruction::kInstrSize;

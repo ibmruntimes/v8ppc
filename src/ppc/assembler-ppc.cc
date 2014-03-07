@@ -310,6 +310,7 @@ void Assembler::GetCode(CodeDesc* desc) {
   desc->buffer_size = buffer_size_;
   desc->instr_size = pc_offset();
   desc->reloc_size = (buffer_ + buffer_size_) - reloc_info_writer.pos();
+  desc->origin = this;
 }
 
 
@@ -1448,24 +1449,9 @@ void Assembler::marker_asm(int mcode) {
 // TOC and static chain are ignored and set to 0.
 void Assembler::function_descriptor() {
   RecordRelocInfo(RelocInfo::INTERNAL_REFERENCE);
-#if V8_TARGET_ARCH_PPC64
-  uint64_t value = reinterpret_cast<uint64_t>(pc_) + 3 * kPointerSize;
-#if __BYTE_ORDER == __LITTLE_ENDIAN
-  emit(static_cast<uint32_t>(value & 0xFFFFFFFF));
-  emit(static_cast<uint32_t>(value >> 32));
-#else
-  emit(static_cast<uint32_t>(value >> 32));
-  emit(static_cast<uint32_t>(value & 0xFFFFFFFF));
-#endif
-  emit(static_cast<Instr>(0));
-  emit(static_cast<Instr>(0));
-  emit(static_cast<Instr>(0));
-  emit(static_cast<Instr>(0));
-#else
-  emit(reinterpret_cast<Instr>(pc_) + 3 * kPointerSize);
-  emit(static_cast<Instr>(0));
-  emit(static_cast<Instr>(0));
-#endif
+  emit_ptr(reinterpret_cast<uintptr_t>(pc_) + 3 * kPointerSize);
+  emit_ptr(0);
+  emit_ptr(0);
 }
 
 
@@ -2058,6 +2044,13 @@ void Assembler::dd(uint32_t data) {
   CheckBuffer();
   *reinterpret_cast<uint32_t*>(pc_) = data;
   pc_ += sizeof(uint32_t);
+}
+
+
+void Assembler::emit_ptr(uintptr_t data) {
+  CheckBuffer();
+  *reinterpret_cast<uintptr_t*>(pc_) = data;
+  pc_ += sizeof(uintptr_t);
 }
 
 
