@@ -872,6 +872,7 @@ void MacroAssembler::Prologue(PrologueFrameMode frame_mode) {
   } else {
     PredictableCodeSizeScope predictible_code_size_scope(
       this, kNoCodeAgeSequenceLength * Assembler::kInstrSize);
+    Assembler::BlockTrampolinePoolScope block_trampoline_pool(this);
     // The following instructions must remain together and unmodified
     // for code aging to work properly.
     if (isolate()->IsCodePreAgingActive()) {
@@ -882,16 +883,8 @@ void MacroAssembler::Prologue(PrologueFrameMode frame_mode) {
       mflr(ip);
       mov(r3, Operand(target));
       Call(r3);
-#if V8_TARGET_ARCH_PPC64
-#if __BYTE_ORDER == __LITTLE_ENDIAN
-      dd(static_cast<uint32_t>(target & 0xFFFFFFFF));
-      dd(static_cast<uint32_t>(target >> 32));
-#else
-      dd(static_cast<uint32_t>(target >> 32));
-      dd(static_cast<uint32_t>(target & 0xFFFFFFFF));
-#endif
-#else
-      dd(static_cast<uint32_t>(target));
+#if !V8_TARGET_ARCH_PPC64
+      nop();
 #endif
     } else {
       // This matches the code found in GetNoCodeAgeSequence()
@@ -902,10 +895,8 @@ void MacroAssembler::Prologue(PrologueFrameMode frame_mode) {
 
 #if V8_TARGET_ARCH_PPC64
       // With 64bit we need a couple of nop() instructions to pad
-      // out to 10 instructions total to ensure we have enough
+      // out to 8 instructions total to ensure we have enough
       // space to patch it later in Code::PatchPlatformCodeAge
-      nop();
-      nop();
       nop();
       nop();
 #endif
