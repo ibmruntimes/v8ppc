@@ -315,55 +315,37 @@ class MacroAssembler: public Assembler {
   void Push(Smi* smi) { Push(Handle<Smi>(smi, isolate())); }
 
   // Push two registers.  Pushes leftmost register first (to highest address).
-  void Push(Register src1, Register src2, Condition cond = al) {
-    ASSERT(!src1.is(src2));
+  void Push(Register src1, Register src2) {
     StorePU(src1, MemOperand(sp, -kPointerSize));
     StorePU(src2, MemOperand(sp, -kPointerSize));
   }
 
   // Push three registers.  Pushes leftmost register first (to highest address).
-  void Push(Register src1, Register src2, Register src3, Condition cond = al) {
-    ASSERT(!src1.is(src2));
-    ASSERT(!src2.is(src3));
-    ASSERT(!src1.is(src3));
+  void Push(Register src1, Register src2, Register src3) {
     StorePU(src1, MemOperand(sp, -kPointerSize));
-    Push(src2, src3, cond);
+    Push(src2, src3);
   }
 
   // Push four registers.  Pushes leftmost register first (to highest address).
   void Push(Register src1,
             Register src2,
             Register src3,
-            Register src4,
-            Condition cond = al) {
-    ASSERT(!src1.is(src2));
-    ASSERT(!src2.is(src3));
-    ASSERT(!src1.is(src3));
-    ASSERT(!src1.is(src4));
-    ASSERT(!src2.is(src4));
-    ASSERT(!src3.is(src4));
-
+            Register src4) {
     StorePU(src1, MemOperand(sp, -kPointerSize));
-    Push(src2, src3, src4, cond);
+    Push(src2, src3, src4);
   }
 
   void Pop(Register dst) { pop(dst); }
 
   // Pop two registers. Pops rightmost register first (from lower address).
-  void Pop(Register src1, Register src2, Condition cond = al) {
-    ASSERT(!src1.is(src2));
-    ASSERT(cond == al);
+  void Pop(Register src1, Register src2) {
     LoadP(src2, MemOperand(sp, 0));
     LoadP(src1, MemOperand(sp, kPointerSize));
     addi(sp, sp, Operand(2 * kPointerSize));
   }
 
   // Pop three registers.  Pops rightmost register first (from lower address).
-  void Pop(Register src1, Register src2, Register src3, Condition cond = al) {
-    ASSERT(!src1.is(src2));
-    ASSERT(!src2.is(src3));
-    ASSERT(!src1.is(src3));
-    ASSERT(cond == al);
+  void Pop(Register src1, Register src2, Register src3) {
     LoadP(src3, MemOperand(sp, 0));
     LoadP(src2, MemOperand(sp, kPointerSize));
     LoadP(src1, MemOperand(sp, 2 * kPointerSize));
@@ -374,15 +356,7 @@ class MacroAssembler: public Assembler {
   void Pop(Register src1,
            Register src2,
            Register src3,
-           Register src4,
-           Condition cond = al) {
-    ASSERT(!src1.is(src2));
-    ASSERT(!src2.is(src3));
-    ASSERT(!src1.is(src3));
-    ASSERT(!src1.is(src4));
-    ASSERT(!src2.is(src4));
-    ASSERT(!src3.is(src4));
-    ASSERT(cond == al);
+           Register src4) {
     LoadP(src4, MemOperand(sp, 0));
     LoadP(src3, MemOperand(sp, kPointerSize));
     LoadP(src2, MemOperand(sp, 2 * kPointerSize));
