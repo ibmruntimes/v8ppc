@@ -675,10 +675,8 @@ static byte* GetNoCodeAgeSequence(uint32_t* length) {
                         Operand(StandardFrameConstants::kFixedFrameSizeFromFp));
 #if V8_TARGET_ARCH_PPC64
       // With 64bit we need a couple of nop() instructions to pad
-      // out to 10 instructions total to ensure we have enough
+      // out to 8 instructions total to ensure we have enough
       // space to patch it later in Code::PatchPlatformCodeAge
-    patcher.masm()->nop();
-    patcher.masm()->nop();
     patcher.masm()->nop();
     patcher.masm()->nop();
 #endif
@@ -704,8 +702,8 @@ void Code::GetCodeAgeAndParity(byte* sequence, Age* age,
     *age = kNoAgeCodeAge;
     *parity = NO_MARKING_PARITY;
   } else {
-    Address target_address = Memory::Address_at(sequence +
-                                                kNoCodeAgePatchDelta);
+    Address target_address = Assembler::target_address_at(
+      sequence + kNoCodeAgeTargetDelta);
     Code* stub = GetCodeFromTargetAddress(target_address);
     GetCodeAgeAndParity(stub, age, parity);
   }
@@ -724,9 +722,10 @@ void Code::PatchPlatformCodeAge(Isolate* isolate,
   } else {
     // FIXED_SEQUENCE
     // 32bit - must output 6 instructions (24bytes)
-    // 64bit - must output 10 instructions (40bytes)
+    // 64bit - must output 8 instructions (32bytes)
     Code* stub = GetCodeAgeStub(isolate, age, parity);
     CodePatcher patcher(sequence, young_length / Assembler::kInstrSize);
+    Assembler::BlockTrampolinePoolScope block_trampoline_pool(patcher.masm());
     intptr_t target = reinterpret_cast<intptr_t>(stub->instruction_start());
     // We use Call to compute the address of this patch sequence.
     // Preserve lr since it will be clobbered.  See
@@ -734,8 +733,9 @@ void Code::PatchPlatformCodeAge(Isolate* isolate,
     patcher.masm()->mflr(ip);
     patcher.masm()->mov(r3, Operand(target));
     patcher.masm()->Call(r3);
-    // Record the stub address in the empty space for GetCodeAgeAndParity()
-    patcher.masm()->emit_ptr(target);
+#if !V8_TARGET_ARCH_PPC64
+    patcher.masm()->nop();
+#endif
   }
 }
 
