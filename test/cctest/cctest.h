@@ -58,10 +58,11 @@
   static void Test##Name()
 #endif
 
-#define EXTENSION_LIST(V)                                                \
-  V(GC_EXTENSION,    "v8/gc")                                            \
-  V(PRINT_EXTENSION, "v8/print")                                         \
-  V(TRACE_EXTENSION, "v8/trace")
+#define EXTENSION_LIST(V)                                                      \
+  V(GC_EXTENSION,       "v8/gc")                                               \
+  V(PRINT_EXTENSION,    "v8/print")                                            \
+  V(PROFILER_EXTENSION, "v8/profiler")                                         \
+  V(TRACE_EXTENSION,    "v8/trace")
 
 #define DEFINE_EXTENSION_ID(Name, Ident) Name##_ID,
 enum CcTestExtensionIds {
@@ -128,6 +129,10 @@ class CcTest {
   static v8::Local<v8::Context> NewContext(
       CcTestExtensionFlags extensions,
       v8::Isolate* isolate = CcTest::isolate());
+
+  static void TearDown() {
+    if (isolate_ != NULL) isolate_->Dispose();
+  }
 
  private:
   friend int main(int argc, char** argv);
@@ -289,7 +294,7 @@ class LocalContext {
 };
 
 static inline v8::Local<v8::Value> v8_num(double x) {
-  return v8::Number::New(x);
+  return v8::Number::New(v8::Isolate::GetCurrent(), x);
 }
 
 
@@ -317,8 +322,8 @@ static inline v8::Local<v8::Value> CompileRunWithOrigin(const char* source,
                                                         int column_number) {
   v8::Isolate* isolate = v8::Isolate::GetCurrent();
   v8::ScriptOrigin origin(v8::String::NewFromUtf8(isolate, origin_url),
-                          v8::Integer::New(line_number),
-                          v8::Integer::New(column_number));
+                          v8::Integer::New(isolate, line_number),
+                          v8::Integer::New(isolate, column_number));
   return v8::Script::Compile(v8::String::NewFromUtf8(isolate, source), &origin)
       ->Run();
 }
@@ -363,7 +368,7 @@ class HeapObjectsTracker {
 
   ~HeapObjectsTracker() {
     i::Isolate::Current()->heap()->CollectAllAvailableGarbage();
-    CHECK_EQ(0, heap_profiler_->FindUntrackedObjects());
+    CHECK_EQ(0, heap_profiler_->heap_object_map()->FindUntrackedObjects());
     heap_profiler_->StopHeapObjectsTracking();
   }
 

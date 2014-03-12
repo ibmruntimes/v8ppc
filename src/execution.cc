@@ -502,6 +502,19 @@ void StackGuard::FullDeopt() {
 }
 
 
+bool StackGuard::IsDeoptMarkedCode() {
+  ExecutionAccess access(isolate_);
+  return (thread_local_.interrupt_flags_ & DEOPT_MARKED_CODE) != 0;
+}
+
+
+void StackGuard::DeoptMarkedCode() {
+  ExecutionAccess access(isolate_);
+  thread_local_.interrupt_flags_ |= DEOPT_MARKED_CODE;
+  set_interrupt_limits(access);
+}
+
+
 #ifdef ENABLE_DEBUGGER_SUPPORT
 bool StackGuard::IsDebugBreak() {
   ExecutionAccess access(isolate_);
@@ -536,6 +549,48 @@ void StackGuard::Continue(InterruptFlag after_what) {
   thread_local_.interrupt_flags_ &= ~static_cast<int>(after_what);
   if (!should_postpone_interrupts(access) && !has_pending_interrupts(access)) {
     reset_limits(access);
+  }
+}
+
+
+void StackGuard::RequestInterrupt(InterruptCallback callback, void* data) {
+  ExecutionAccess access(isolate_);
+  thread_local_.interrupt_flags_ |= API_INTERRUPT;
+  thread_local_.interrupt_callback_ = callback;
+  thread_local_.interrupt_callback_data_ = data;
+  set_interrupt_limits(access);
+}
+
+
+void StackGuard::ClearInterrupt() {
+  thread_local_.interrupt_callback_ = 0;
+  thread_local_.interrupt_callback_data_ = 0;
+  Continue(API_INTERRUPT);
+}
+
+
+bool StackGuard::IsAPIInterrupt() {
+  ExecutionAccess access(isolate_);
+  return thread_local_.interrupt_flags_ & API_INTERRUPT;
+}
+
+
+void StackGuard::InvokeInterruptCallback() {
+  InterruptCallback callback = 0;
+  void* data = 0;
+
+  {
+    ExecutionAccess access(isolate_);
+    callback = thread_local_.interrupt_callback_;
+    data = thread_local_.interrupt_callback_data_;
+    thread_local_.interrupt_callback_ = NULL;
+    thread_local_.interrupt_callback_data_ = NULL;
+  }
+
+  if (callback != NULL) {
+    VMState<EXTERNAL> state(isolate_);
+    HandleScope handle_scope(isolate_);
+    callback(reinterpret_cast<v8::Isolate*>(isolate_), data);
   }
 }
 
@@ -581,6 +636,8 @@ void StackGuard::ThreadLocal::Clear() {
   nesting_ = 0;
   postpone_interrupts_nesting_ = 0;
   interrupt_flags_ = 0;
+  interrupt_callback_ = NULL;
+  interrupt_callback_data_ = NULL;
 }
 
 
@@ -601,6 +658,8 @@ bool StackGuard::ThreadLocal::Initialize(Isolate* isolate) {
   nesting_ = 0;
   postpone_interrupts_nesting_ = 0;
   interrupt_flags_ = 0;
+  interrupt_callback_ = NULL;
+  interrupt_callback_data_ = NULL;
   return should_set_stack_limits;
 }
 
@@ -936,6 +995,11 @@ MaybeObject* Execution::HandleStackGuardInterrupt(Isolate* isolate) {
     return isolate->heap()->undefined_value();
   }
 
+  if (stack_guard->IsAPIInterrupt()) {
+    stack_guard->InvokeInterruptCallback();
+    stack_guard->Continue(API_INTERRUPT);
+  }
+
   if (stack_guard->IsGCRequest()) {
     isolate->heap()->CollectAllGarbage(Heap::kNoGCFlags,
                                        "StackGuard GC request");
@@ -961,6 +1025,10 @@ MaybeObject* Execution::HandleStackGuardInterrupt(Isolate* isolate) {
   if (stack_guard->IsFullDeopt()) {
     stack_guard->Continue(FULL_DEOPT);
     Deoptimizer::DeoptimizeAll(isolate);
+  }
+  if (stack_guard->IsDeoptMarkedCode()) {
+    stack_guard->Continue(DEOPT_MARKED_CODE);
+    Deoptimizer::DeoptimizeMarkedCode(isolate);
   }
   if (stack_guard->IsInstallCodeRequest()) {
     ASSERT(isolate->concurrent_recompilation_enabled());

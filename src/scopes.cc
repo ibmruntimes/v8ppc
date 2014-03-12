@@ -290,8 +290,7 @@ bool Scope::Analyze(CompilationInfo* info) {
 
   // Allocate the variables.
   {
-    AstNodeFactory<AstNullVisitor> ast_node_factory(info->isolate(),
-                                                    info->zone());
+    AstNodeFactory<AstNullVisitor> ast_node_factory(info->zone());
     if (!top->AllocateVariables(info, &ast_node_factory)) return false;
   }
 
@@ -800,7 +799,7 @@ static void Indent(int n, const char* str) {
 
 static void PrintName(Handle<String> name) {
   SmartArrayPointer<char> s = name->ToCString(DISALLOW_NULLS);
-  PrintF("%s", *s);
+  PrintF("%s", s.get());
 }
 
 

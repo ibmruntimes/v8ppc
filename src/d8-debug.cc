@@ -30,6 +30,7 @@
 #include "d8.h"
 #include "d8-debug.h"
 #include "debug-agent.h"
+#include "platform/socket.h"
 
 
 namespace v8 {
@@ -332,13 +333,13 @@ void ReceiverThread::Run() {
   // Receive the connect message (with empty body).
   i::SmartArrayPointer<char> message =
       i::DebuggerAgentUtil::ReceiveMessage(remote_debugger_->conn());
-  ASSERT(*message == NULL);
+  ASSERT(message.get() == NULL);
 
   while (true) {
     // Receive a message.
     i::SmartArrayPointer<char> message =
         i::DebuggerAgentUtil::ReceiveMessage(remote_debugger_->conn());
-    if (*message == NULL) {
+    if (message.get() == NULL) {
       remote_debugger_->ConnectionClosed();
       return;
     }

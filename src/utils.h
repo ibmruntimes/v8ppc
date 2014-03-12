@@ -28,10 +28,10 @@
 #ifndef V8_UTILS_H_
 #define V8_UTILS_H_
 
+#include <limits.h>
 #include <stdlib.h>
 #include <string.h>
 #include <algorithm>
-#include <climits>
 
 #include "allocation.h"
 #include "checks.h"
@@ -1118,6 +1118,7 @@ class BailoutId {
 
   bool IsNone() const { return id_ == kNoneId; }
   bool operator==(const BailoutId& other) const { return id_ == other.id_; }
+  bool operator!=(const BailoutId& other) const { return id_ != other.id_; }
 
  private:
   static const int kNoneId = -1;
@@ -1137,6 +1138,21 @@ class BailoutId {
   static const int kStubEntryId = 5;
 
   int id_;
+};
+
+
+template <class C>
+class ContainerPointerWrapper {
+ public:
+  typedef typename C::iterator iterator;
+  typedef typename C::reverse_iterator reverse_iterator;
+  explicit ContainerPointerWrapper(C* container) : container_(container) {}
+  iterator begin() { return container_->begin(); }
+  iterator end() { return container_->end(); }
+  reverse_iterator rbegin() { return container_->rbegin(); }
+  reverse_iterator rend() { return container_->rend(); }
+ private:
+  C* container_;
 };
 
 } }  // namespace v8::internal

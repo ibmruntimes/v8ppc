@@ -1,4 +1,4 @@
-// Copyright 2013 the V8 project authors. All rights reserved.
+// Copyright 2014 the V8 project authors. All rights reserved.
 // Redistribution and use in source and binary forms, with or without
 // modification, are permitted provided that the following conditions are
 // met:
@@ -25,21 +25,28 @@
 // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-// Check that the __proto__ accessor is properly poisoned when extracted
-// from Object.prototype using the property descriptor.
-var desc = Object.getOwnPropertyDescriptor(Object.prototype, "__proto__");
-assertEquals("function", typeof desc.get);
-assertEquals("function", typeof desc.set);
-assertDoesNotThrow("desc.get.call({})");
-assertThrows("desc.set.call({})", TypeError);
+// Flags: --allow-natives-syntax
 
-// Check that any redefinition of the __proto__ accessor causes poising
-// to cease and the accessor to be extracted normally.
-Object.defineProperty(Object.prototype, "__proto__", { get:function(){} });
-desc = Object.getOwnPropertyDescriptor(Object.prototype, "__proto__");
-assertDoesNotThrow("desc.get.call({})");
-assertThrows("desc.set.call({})", TypeError);
-Object.defineProperty(Object.prototype, "__proto__", { set:function(x){} });
-desc = Object.getOwnPropertyDescriptor(Object.prototype, "__proto__");
-assertDoesNotThrow("desc.get.call({})");
-assertDoesNotThrow("desc.set.call({})");
+function load(a, i) {
+  return a[i];
+}
+load([1, 2, 3], "length");
+load(3);
+load([1, 2, 3], 3);
+load(0, 0);
+%OptimizeFunctionOnNextCall(load);
+assertEquals(2, load([1, 2, 3], 1));
+assertEquals(undefined, load(0, 0));
+
+function store(a, i, x) {
+  a[i] = x;
+}
+store([1, 2, 3], "length", 3);
+store(3);
+store([1, 2, 3], 3, 3);
+store(0, 0, 1);
+%OptimizeFunctionOnNextCall(store);
+var a = [1, 2, 3];
+store(a, 1, 1);
+assertEquals(1, a[1]);
+store(0, 0, 1);

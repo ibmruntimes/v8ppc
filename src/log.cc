@@ -1043,7 +1043,7 @@ void Logger::ApiNamedSecurityCheck(Object* key) {
   if (key->IsString()) {
     SmartArrayPointer<char> str =
         String::cast(key)->ToCString(DISALLOW_NULLS, ROBUST_STRING_TRAVERSAL);
-    ApiEvent("api,check-security,\"%s\"\n", *str);
+    ApiEvent("api,check-security,\"%s\"\n", str.get());
   } else if (key->IsSymbol()) {
     Symbol* symbol = Symbol::cast(key);
     if (symbol->name()->IsUndefined()) {
@@ -1053,7 +1053,7 @@ void Logger::ApiNamedSecurityCheck(Object* key) {
       SmartArrayPointer<char> str = String::cast(symbol->name())->ToCString(
           DISALLOW_NULLS, ROBUST_STRING_TRAVERSAL);
       ApiEvent("api,check-security,symbol(\"%s\" hash %x)\n",
-               *str,
+               str.get(),
                Symbol::cast(key)->Hash());
     }
   } else if (key->IsUndefined()) {
@@ -1255,17 +1255,18 @@ void Logger::ApiNamedPropertyAccess(const char* tag,
   if (name->IsString()) {
     SmartArrayPointer<char> property_name =
         String::cast(name)->ToCString(DISALLOW_NULLS, ROBUST_STRING_TRAVERSAL);
-    ApiEvent("api,%s,\"%s\",\"%s\"\n", tag, *class_name, *property_name);
+    ApiEvent("api,%s,\"%s\",\"%s\"\n", tag, class_name.get(),
+             property_name.get());
   } else {
     Symbol* symbol = Symbol::cast(name);
     uint32_t hash = symbol->Hash();
     if (symbol->name()->IsUndefined()) {
-      ApiEvent("api,%s,\"%s\",symbol(hash %x)\n", tag, *class_name, hash);
+      ApiEvent("api,%s,\"%s\",symbol(hash %x)\n", tag, class_name.get(), hash);
     } else {
       SmartArrayPointer<char> str = String::cast(symbol->name())->ToCString(
           DISALLOW_NULLS, ROBUST_STRING_TRAVERSAL);
       ApiEvent("api,%s,\"%s\",symbol(\"%s\" hash %x)\n",
-               tag, *class_name, *str, hash);
+               tag, class_name.get(), str.get(), hash);
     }
   }
 }
@@ -1277,7 +1278,7 @@ void Logger::ApiIndexedPropertyAccess(const char* tag,
   String* class_name_obj = holder->class_name();
   SmartArrayPointer<char> class_name =
       class_name_obj->ToCString(DISALLOW_NULLS, ROBUST_STRING_TRAVERSAL);
-  ApiEvent("api,%s,\"%s\",%u\n", tag, *class_name, index);
+  ApiEvent("api,%s,\"%s\",%u\n", tag, class_name.get(), index);
 }
 
 
@@ -1286,7 +1287,7 @@ void Logger::ApiObjectAccess(const char* tag, JSObject* object) {
   String* class_name_obj = object->class_name();
   SmartArrayPointer<char> class_name =
       class_name_obj->ToCString(DISALLOW_NULLS, ROBUST_STRING_TRAVERSAL);
-  ApiEvent("api,%s,\"%s\"\n", tag, *class_name);
+  ApiEvent("api,%s,\"%s\"\n", tag, class_name.get());
 }
 
 
@@ -1334,7 +1335,7 @@ void Logger::CallbackEventInternal(const char* prefix, Name* name,
   if (name->IsString()) {
     SmartArrayPointer<char> str =
         String::cast(name)->ToCString(DISALLOW_NULLS, ROBUST_STRING_TRAVERSAL);
-    msg.Append(",1,\"%s%s\"", prefix, *str);
+    msg.Append(",1,\"%s%s\"", prefix, str.get());
   } else {
     Symbol* symbol = Symbol::cast(name);
     if (symbol->name()->IsUndefined()) {
@@ -1342,7 +1343,8 @@ void Logger::CallbackEventInternal(const char* prefix, Name* name,
     } else {
       SmartArrayPointer<char> str = String::cast(symbol->name())->ToCString(
           DISALLOW_NULLS, ROBUST_STRING_TRAVERSAL);
-      msg.Append(",1,symbol(\"%s\" hash %x)", prefix, *str, symbol->Hash());
+      msg.Append(",1,symbol(\"%s\" hash %x)", prefix, str.get(),
+                 symbol->Hash());
     }
   }
   msg.Append('\n');
@@ -1432,8 +1434,7 @@ void Logger::CodeCreateEvent(LogEventsAndTags tag,
   CALL_LISTENERS(CodeCreateEvent(tag, code, shared, info, name));
 
   if (!FLAG_log_code || !log_->IsEnabled()) return;
-  if (code == isolate_->builtins()->builtin(
-      Builtins::kLazyCompile))
+  if (code == isolate_->builtins()->builtin(Builtins::kCompileUnoptimized))
     return;
 
   Log::MessageBuilder msg(log_);
@@ -1441,7 +1442,7 @@ void Logger::CodeCreateEvent(LogEventsAndTags tag,
   if (name->IsString()) {
     SmartArrayPointer<char> str =
         String::cast(name)->ToCString(DISALLOW_NULLS, ROBUST_STRING_TRAVERSAL);
-    msg.Append("\"%s\"", *str);
+    msg.Append("\"%s\"", str.get());
   } else {
     msg.AppendSymbolName(Symbol::cast(name));
   }
@@ -1472,11 +1473,11 @@ void Logger::CodeCreateEvent(LogEventsAndTags tag,
   AppendCodeCreateHeader(&msg, tag, code);
   SmartArrayPointer<char> name =
       shared->DebugName()->ToCString(DISALLOW_NULLS, ROBUST_STRING_TRAVERSAL);
-  msg.Append("\"%s ", *name);
+  msg.Append("\"%s ", name.get());
   if (source->IsString()) {
     SmartArrayPointer<char> sourcestr =
        String::cast(source)->ToCString(DISALLOW_NULLS, ROBUST_STRING_TRAVERSAL);
-    msg.Append("%s", *sourcestr);
+    msg.Append("%s", sourcestr.get());
   } else {
     msg.AppendSymbolName(Symbol::cast(source));
   }
@@ -1879,14 +1880,6 @@ void Logger::LogCodeObject(Object* object) {
       description = "A keyed store IC from the snapshot";
       tag = Logger::KEYED_STORE_IC_TAG;
       break;
-    case Code::CALL_IC:
-      description = "A call IC from the snapshot";
-      tag = Logger::CALL_IC_TAG;
-      break;
-    case Code::KEYED_CALL_IC:
-      description = "A keyed call IC from the snapshot";
-      tag = Logger::KEYED_CALL_IC_TAG;
-      break;
     case Code::NUMBER_OF_KINDS:
       break;
   }
@@ -1967,8 +1960,8 @@ void Logger::LogCompiledFunctions() {
   // During iteration, there can be heap allocation due to
   // GetScriptLineNumber call.
   for (int i = 0; i < compiled_funcs_count; ++i) {
-    if (*code_objects[i] == isolate_->builtins()->builtin(
-        Builtins::kLazyCompile))
+    if (code_objects[i].is_identical_to(
+            isolate_->builtins()->CompileUnoptimized()))
       continue;
     LogExistingFunction(sfis[i], code_objects[i]);
   }
@@ -2066,7 +2059,7 @@ bool Logger::SetUp(Isolate* isolate) {
 
   SmartArrayPointer<const char> log_file_name =
       PrepareLogFileName(isolate, FLAG_logfile);
-  log_->Initialize(*log_file_name);
+  log_->Initialize(log_file_name.get());
 
 
   if (FLAG_perf_basic_prof) {
@@ -2080,7 +2073,7 @@ bool Logger::SetUp(Isolate* isolate) {
   }
 
   if (FLAG_ll_prof) {
-    ll_logger_ = new LowLevelLogger(*log_file_name);
+    ll_logger_ = new LowLevelLogger(log_file_name.get());
     addCodeEventListener(ll_logger_);
   }
 

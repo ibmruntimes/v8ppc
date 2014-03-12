@@ -1591,7 +1591,7 @@ void MacroAssembler::Allocate(int object_size,
                               Label* gc_required,
                               AllocationFlags flags) {
   ASSERT((flags & (RESULT_CONTAINS_TOP | SIZE_IN_WORDS)) == 0);
-  ASSERT(object_size <= Page::kMaxNonCodeHeapObjectSize);
+  ASSERT(object_size <= Page::kMaxRegularHeapObjectSize);
   if (!FLAG_inline_new) {
     if (emit_debug_code()) {
       // Trash the registers to simulate an allocation failure.
@@ -2297,7 +2297,7 @@ void MacroAssembler::PrepareCallApiFunction(int argc) {
 
 
 void MacroAssembler::CallApiFunctionAndReturn(
-    Address function_address,
+    Register function_address,
     Address thunk_address,
     Operand thunk_last_arg,
     int stack_space,
@@ -2310,6 +2310,7 @@ void MacroAssembler::CallApiFunctionAndReturn(
   ExternalReference level_address =
       ExternalReference::handle_scope_level_address(isolate());
 
+  ASSERT(edx.is(function_address));
   // Allocate HandleScope in callee-save registers.
   mov(ebx, Operand::StaticVariable(next_address));
   mov(edi, Operand::StaticVariable(limit_address));
@@ -2336,14 +2337,14 @@ void MacroAssembler::CallApiFunctionAndReturn(
   j(zero, &profiler_disabled);
 
   // Additional parameter is the address of the actual getter function.
-  mov(thunk_last_arg, Immediate(function_address));
+  mov(thunk_last_arg, function_address);
   // Call the api function.
   call(thunk_address, RelocInfo::RUNTIME_ENTRY);
   jmp(&end_profiler_check);
 
   bind(&profiler_disabled);
   // Call the api function.
-  call(function_address, RelocInfo::RUNTIME_ENTRY);
+  call(function_address);
   bind(&end_profiler_check);
 
   if (FLAG_log_timer_events) {
@@ -2455,23 +2456,6 @@ void MacroAssembler::JumpToExternalReference(const ExternalReference& ext) {
 }
 
 
-void MacroAssembler::SetCallKind(Register dst, CallKind call_kind) {
-  // This macro takes the dst register to make the code more readable
-  // at the call sites. However, the dst register has to be ecx to
-  // follow the calling convention which requires the call type to be
-  // in ecx.
-  ASSERT(dst.is(ecx));
-  if (call_kind == CALL_AS_FUNCTION) {
-    // Set to some non-zero smi by updating the least significant
-    // byte.
-    mov_b(dst, 1 << kSmiTagSize);
-  } else {
-    // Set to smi zero by clearing the register.
-    xor_(dst, dst);
-  }
-}
-
-
 void MacroAssembler::InvokePrologue(const ParameterCount& expected,
                                     const ParameterCount& actual,
                                     Handle<Code> code_constant,
@@ -2480,8 +2464,7 @@ void MacroAssembler::InvokePrologue(const ParameterCount& expected,
                                     bool* definitely_mismatches,
                                     InvokeFlag flag,
                                     Label::Distance done_near,
-                                    const CallWrapper& call_wrapper,
-                                    CallKind call_kind) {
+                                    const CallWrapper& call_wrapper) {
   bool definitely_matches = false;
   *definitely_mismatches = false;
   Label invoke;
@@ -2534,14 +2517,12 @@ void MacroAssembler::InvokePrologue(const ParameterCount& expected,
 
     if (flag == CALL_FUNCTION) {
       call_wrapper.BeforeCall(CallSize(adaptor, RelocInfo::CODE_TARGET));
-      SetCallKind(ecx, call_kind);
       call(adaptor, RelocInfo::CODE_TARGET);
       call_wrapper.AfterCall();
       if (!*definitely_mismatches) {
         jmp(done, done_near);
       }
     } else {
-      SetCallKind(ecx, call_kind);
       jmp(adaptor, RelocInfo::CODE_TARGET);
     }
     bind(&invoke);
@@ -2553,8 +2534,7 @@ void MacroAssembler::InvokeCode(const Operand& code,
                                 const ParameterCount& expected,
                                 const ParameterCount& actual,
                                 InvokeFlag flag,
-                                const CallWrapper& call_wrapper,
-                                CallKind call_kind) {
+                                const CallWrapper& call_wrapper) {
   // You can't call a function without a valid frame.
   ASSERT(flag == JUMP_FUNCTION || has_frame());
 
@@ -2562,48 +2542,15 @@ void MacroAssembler::InvokeCode(const Operand& code,
   bool definitely_mismatches = false;
   InvokePrologue(expected, actual, Handle<Code>::null(), code,
                  &done, &definitely_mismatches, flag, Label::kNear,
-                 call_wrapper, call_kind);
+                 call_wrapper);
   if (!definitely_mismatches) {
     if (flag == CALL_FUNCTION) {
       call_wrapper.BeforeCall(CallSize(code));
-      SetCallKind(ecx, call_kind);
       call(code);
       call_wrapper.AfterCall();
     } else {
       ASSERT(flag == JUMP_FUNCTION);
-      SetCallKind(ecx, call_kind);
       jmp(code);
-    }
-    bind(&done);
-  }
-}
-
-
-void MacroAssembler::InvokeCode(Handle<Code> code,
-                                const ParameterCount& expected,
-                                const ParameterCount& actual,
-                                RelocInfo::Mode rmode,
-                                InvokeFlag flag,
-                                const CallWrapper& call_wrapper,
-                                CallKind call_kind) {
-  // You can't call a function without a valid frame.
-  ASSERT(flag == JUMP_FUNCTION || has_frame());
-
-  Label done;
-  Operand dummy(eax, 0);
-  bool definitely_mismatches = false;
-  InvokePrologue(expected, actual, code, dummy, &done, &definitely_mismatches,
-                 flag, Label::kNear, call_wrapper, call_kind);
-  if (!definitely_mismatches) {
-    if (flag == CALL_FUNCTION) {
-      call_wrapper.BeforeCall(CallSize(code, rmode));
-      SetCallKind(ecx, call_kind);
-      call(code, rmode);
-      call_wrapper.AfterCall();
-    } else {
-      ASSERT(flag == JUMP_FUNCTION);
-      SetCallKind(ecx, call_kind);
-      jmp(code, rmode);
     }
     bind(&done);
   }
@@ -2613,8 +2560,7 @@ void MacroAssembler::InvokeCode(Handle<Code> code,
 void MacroAssembler::InvokeFunction(Register fun,
                                     const ParameterCount& actual,
                                     InvokeFlag flag,
-                                    const CallWrapper& call_wrapper,
-                                    CallKind call_kind) {
+                                    const CallWrapper& call_wrapper) {
   // You can't call a function without a valid frame.
   ASSERT(flag == JUMP_FUNCTION || has_frame());
 
@@ -2626,7 +2572,7 @@ void MacroAssembler::InvokeFunction(Register fun,
 
   ParameterCount expected(ebx);
   InvokeCode(FieldOperand(edi, JSFunction::kCodeEntryOffset),
-             expected, actual, flag, call_wrapper, call_kind);
+             expected, actual, flag, call_wrapper);
 }
 
 
@@ -2634,8 +2580,7 @@ void MacroAssembler::InvokeFunction(Register fun,
                                     const ParameterCount& expected,
                                     const ParameterCount& actual,
                                     InvokeFlag flag,
-                                    const CallWrapper& call_wrapper,
-                                    CallKind call_kind) {
+                                    const CallWrapper& call_wrapper) {
   // You can't call a function without a valid frame.
   ASSERT(flag == JUMP_FUNCTION || has_frame());
 
@@ -2643,7 +2588,7 @@ void MacroAssembler::InvokeFunction(Register fun,
   mov(esi, FieldOperand(edi, JSFunction::kContextOffset));
 
   InvokeCode(FieldOperand(edi, JSFunction::kCodeEntryOffset),
-             expected, actual, flag, call_wrapper, call_kind);
+             expected, actual, flag, call_wrapper);
 }
 
 
@@ -2651,10 +2596,9 @@ void MacroAssembler::InvokeFunction(Handle<JSFunction> function,
                                     const ParameterCount& expected,
                                     const ParameterCount& actual,
                                     InvokeFlag flag,
-                                    const CallWrapper& call_wrapper,
-                                    CallKind call_kind) {
+                                    const CallWrapper& call_wrapper) {
   LoadHeapObject(edi, function);
-  InvokeFunction(edi, expected, actual, flag, call_wrapper, call_kind);
+  InvokeFunction(edi, expected, actual, flag, call_wrapper);
 }
 
 
@@ -2670,7 +2614,7 @@ void MacroAssembler::InvokeBuiltin(Builtins::JavaScript id,
   ParameterCount expected(0);
   GetBuiltinFunction(edi, id);
   InvokeCode(FieldOperand(edi, JSFunction::kCodeEntryOffset),
-             expected, expected, flag, call_wrapper, CALL_AS_METHOD);
+             expected, expected, flag, call_wrapper);
 }
 
 
@@ -3279,7 +3223,7 @@ void MacroAssembler::EmitSeqStringSetCharCheck(Register string,
                                                uint32_t encoding_mask) {
   Label is_object;
   JumpIfNotSmi(string, &is_object, Label::kNear);
-  Throw(kNonObject);
+  Abort(kNonObject);
   bind(&is_object);
 
   push(value);
@@ -3289,20 +3233,19 @@ void MacroAssembler::EmitSeqStringSetCharCheck(Register string,
   and_(value, Immediate(kStringRepresentationMask | kStringEncodingMask));
   cmp(value, Immediate(encoding_mask));
   pop(value);
-  ThrowIf(not_equal, kUnexpectedStringType);
+  Check(equal, kUnexpectedStringType);
 
   // The index is assumed to be untagged coming in, tag it to compare with the
   // string length without using a temp register, it is restored at the end of
   // this function.
   SmiTag(index);
-  // Can't use overflow here directly, compiler can't seem to disambiguate.
-  ThrowIf(NegateCondition(no_overflow), kIndexIsTooLarge);
+  Check(no_overflow, kIndexIsTooLarge);
 
   cmp(index, FieldOperand(string, String::kLengthOffset));
-  ThrowIf(greater_equal, kIndexIsTooLarge);
+  Check(less, kIndexIsTooLarge);
 
   cmp(index, Immediate(Smi::FromInt(0)));
-  ThrowIf(less, kIndexIsNegative);
+  Check(greater_equal, kIndexIsNegative);
 
   // Restore the index
   SmiUntag(index);
@@ -3642,10 +3585,16 @@ void MacroAssembler::CheckEnumCache(Label* call_runtime) {
 
   // Check that there are no elements. Register rcx contains the current JS
   // object we've reached through the prototype chain.
+  Label no_elements;
   mov(ecx, FieldOperand(ecx, JSObject::kElementsOffset));
   cmp(ecx, isolate()->factory()->empty_fixed_array());
+  j(equal, &no_elements);
+
+  // Second chance, the object may be using the empty slow element dictionary.
+  cmp(ecx, isolate()->factory()->empty_slow_element_dictionary());
   j(not_equal, call_runtime);
 
+  bind(&no_elements);
   mov(ecx, FieldOperand(ebx, Map::kPrototypeOffset));
   cmp(ecx, isolate()->factory()->null_value());
   j(not_equal, &next);

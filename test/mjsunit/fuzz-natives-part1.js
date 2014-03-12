@@ -149,9 +149,9 @@ var knownProblems = {
   "PushCatchContext": true,
   "PushBlockContext": true,
   "PushModuleContext": true,
-  "LazyCompile": true,
-  "LazyRecompile": true,
-  "ConcurrentRecompile": true,
+  "CompileUnoptimized": true,
+  "CompileOptimized": true,
+  "CompileOptimizedConcurrent": true,
   "NotifyDeoptimized": true,
   "NotifyStubFailure": true,
   "NotifyOSR": true,
@@ -171,6 +171,7 @@ var knownProblems = {
 
   // Vararg with minimum number > 0.
   "Call": true,
+  "SetAllocationTimeout": true,
 
   // Requires integer arguments to be non-negative.
   "Apply": true,

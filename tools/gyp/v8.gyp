@@ -253,7 +253,6 @@
         '../../src/allocation-tracker.h',
         '../../src/api.cc',
         '../../src/api.h',
-        '../../src/apiutils.h',
         '../../src/arguments.cc',
         '../../src/arguments.h',
         '../../src/assembler.cc',
@@ -313,8 +312,6 @@
         '../../src/debug-agent.h',
         '../../src/debug.cc',
         '../../src/debug.h',
-        '../../src/default-platform.cc',
-        '../../src/default-platform.h',
         '../../src/deoptimizer.cc',
         '../../src/deoptimizer.h',
         '../../src/disasm.h',
@@ -340,6 +337,8 @@
         '../../src/extensions/gc-extension.h',
         '../../src/extensions/statistics-extension.cc',
         '../../src/extensions/statistics-extension.h',
+        '../../src/extensions/trigger-failure-extension.cc',
+        '../../src/extensions/trigger-failure-extension.h',
         '../../src/factory.cc',
         '../../src/factory.h',
         '../../src/fast-dtoa.cc',
@@ -444,6 +443,13 @@
         '../../src/jsregexp.cc',
         '../../src/jsregexp.h',
         '../../src/lazy-instance.h',
+        # TODO(jochen): move libplatform/ files to their own target.
+        '../../src/libplatform/default-platform.cc',
+        '../../src/libplatform/default-platform.h',
+        '../../src/libplatform/task-queue.cc',
+        '../../src/libplatform/task-queue.h',
+        '../../src/libplatform/worker-thread.cc',
+        '../../src/libplatform/worker-thread.h',
         '../../src/list-inl.h',
         '../../src/list.h',
         '../../src/lithium-allocator-inl.h',
@@ -838,6 +844,43 @@
             ],
           },
         ],
+        ['OS=="qnx"', {
+            'link_settings': {
+              'target_conditions': [
+                ['_toolset=="host" and host_os=="linux"', {
+                  'libraries': [
+                    '-lrt'
+                  ],
+                }],
+                ['_toolset=="target"', {
+                  'libraries': [
+                    '-lbacktrace', '-lsocket'
+                  ],
+                }],
+              ],
+            },
+            'sources': [
+              '../../src/platform-posix.cc',
+            ],
+            'target_conditions': [
+              ['_toolset=="host" and host_os=="linux"', {
+                'sources': [
+                  '../../src/platform-linux.cc'
+                ],
+              }],
+              ['_toolset=="host" and host_os=="mac"', {
+                'sources': [
+                  '../../src/platform-macos.cc'
+                ],
+              }],
+              ['_toolset=="target"', {
+                'sources': [
+                  '../../src/platform-qnx.cc'
+                ],
+              }],
+            ],
+          },
+        ],
         ['OS=="freebsd"', {
             'link_settings': {
               'libraries': [
@@ -1113,32 +1156,6 @@
           'toolsets': ['host'],
         }, {
           'toolsets': ['target'],
-        }],
-        ['v8_compress_startup_data=="bz2"', {
-          'libraries': [
-            '-lbz2',
-          ]
-        }],
-      ],
-    },
-    {
-      'target_name': 'v8_shell',
-      'type': 'executable',
-      'dependencies': [
-        'v8'
-      ],
-      'sources': [
-        '../../samples/shell.cc',
-      ],
-      'conditions': [
-        ['want_separate_host_toolset==1', {
-          'toolsets': ['host'],
-        }, {
-          'toolsets': ['target'],
-        }],
-        ['OS=="win"', {
-          # This could be gotten by not setting chromium_code, if that's OK.
-          'defines': ['_CRT_SECURE_NO_WARNINGS'],
         }],
         ['v8_compress_startup_data=="bz2"', {
           'libraries': [

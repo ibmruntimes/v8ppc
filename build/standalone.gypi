@@ -44,7 +44,7 @@
         'variables': {
           'conditions': [
             ['OS=="linux" or OS=="freebsd" or OS=="openbsd" or \
-               OS=="netbsd" or OS=="mac" or OS=="aix"', {
+               OS=="netbsd" or OS=="mac" or OS=="qnx" or OS=="aix"', {
               # This handles the Unix platforms we generally deal with.
               # Anything else gets passed through, which probably won't work
               # very well; such hosts should pass an explicit target_arch
@@ -98,7 +98,7 @@
       ['(v8_target_arch=="arm" and host_arch!="arm") or \
         (v8_target_arch=="mipsel" and host_arch!="mipsel") or \
         (v8_target_arch=="x64" and host_arch!="x64") or \
-        (OS=="android")', {
+        (OS=="android" or OS=="qnx")', {
         'want_separate_host_toolset': 1,
       }, {
         'want_separate_host_toolset': 0,
@@ -122,7 +122,7 @@
       }],
     ],
     # Default ARM variable settings.
-    'armv7%': 'default',
+    'arm_version%': 'default',
     'arm_neon%': 0,
     'arm_fpu%': 'vfpv3',
     'arm_float_abi%': 'default',
@@ -199,6 +199,32 @@
     }],
     # 'OS=="linux" or OS=="freebsd" or OS=="openbsd" or OS=="solaris"
     #  or OS=="netbsd"'
+    ['OS=="qnx"', {
+      'target_defaults': {
+        'cflags': [ '-Wall', '<(werror)', '-W', '-Wno-unused-parameter',
+                    '-fno-exceptions' ],
+        'cflags_cc': [ '-Wnon-virtual-dtor', '-fno-rtti' ],
+        'conditions': [
+          [ 'visibility=="hidden"', {
+            'cflags': [ '-fvisibility=hidden' ],
+          }],
+          [ 'component=="shared_library"', {
+            'cflags': [ '-fPIC' ],
+          }],
+        ],
+        'target_conditions': [
+          [ '_toolset=="host" and host_os=="linux"', {
+            'cflags': [ '-pthread' ],
+            'ldflags': [ '-pthread' ],
+            'libraries': [ '-lrt' ],
+          }],
+          [ '_toolset=="target"', {
+            'cflags': [ '-Wno-psabi' ],
+            'libraries': [ '-lbacktrace', '-lsocket', '-lm' ],
+          }],
+        ],
+      },
+    }],  # OS=="qnx"
     ['OS=="win"', {
       'target_defaults': {
         'defines': [
@@ -286,7 +312,6 @@
           'GCC_INLINES_ARE_PRIVATE_EXTERN': 'YES',
           'GCC_SYMBOLS_PRIVATE_EXTERN': 'YES',      # -fvisibility=hidden
           'GCC_THREADSAFE_STATICS': 'NO',           # -fno-threadsafe-statics
-          'GCC_VERSION': 'com.apple.compilers.llvmgcc42',
           'GCC_WARN_ABOUT_MISSING_NEWLINE': 'YES',  # -Wnewline-eof
           'GCC_WARN_NON_VIRTUAL_DESTRUCTOR': 'YES', # -Wnon-virtual-dtor
           # MACOSX_DEPLOYMENT_TARGET maps to -mmacosx-version-min

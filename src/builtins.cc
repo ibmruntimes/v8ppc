@@ -153,8 +153,8 @@ BUILTIN_LIST_C(DEF_ARG_TYPE)
 #endif
 
 
-static inline bool CalledAsConstructor(Isolate* isolate) {
 #ifdef DEBUG
+static inline bool CalledAsConstructor(Isolate* isolate) {
   // Calculate the result using a full stack frame iterator and check
   // that the state of the stack is as we assume it to be in the
   // code below.
@@ -163,7 +163,6 @@ static inline bool CalledAsConstructor(Isolate* isolate) {
   it.Advance();
   StackFrame* frame = it.frame();
   bool reference_result = frame->is_construct();
-#endif
   Address fp = Isolate::c_entry_fp(isolate->thread_local_top());
   // Because we know fp points to an exit frame we can use the relevant
   // part of ExitFrame::ComputeCallerState directly.
@@ -180,6 +179,7 @@ static inline bool CalledAsConstructor(Isolate* isolate) {
   ASSERT_EQ(result, reference_result);
   return result;
 }
+#endif
 
 
 // ----------------------------------------------------------------------------
@@ -1173,6 +1173,15 @@ MUST_USE_RESULT static MaybeObject* HandleApiCallHelper(
     fun_data = *desc;
   }
 
+  SharedFunctionInfo* shared = function->shared();
+  if (shared->is_classic_mode() && !shared->native()) {
+    Object* recv = args[0];
+    ASSERT(!recv->IsNull());
+    if (recv->IsUndefined()) {
+      args[0] = function->context()->global_object()->global_receiver();
+    }
+  }
+
   Object* raw_holder = TypeCheck(heap, args.length(), &args[0], fun_data);
 
   if (raw_holder->IsNull()) {
@@ -1300,23 +1309,8 @@ BUILTIN(HandleApiCallAsConstructor) {
 }
 
 
-static void Generate_LoadIC_Initialize(MacroAssembler* masm) {
-  LoadIC::GenerateInitialize(masm);
-}
-
-
-static void Generate_LoadIC_PreMonomorphic(MacroAssembler* masm) {
-  LoadIC::GeneratePreMonomorphic(masm);
-}
-
-
 static void Generate_LoadIC_Miss(MacroAssembler* masm) {
   LoadIC::GenerateMiss(masm);
-}
-
-
-static void Generate_LoadIC_Megamorphic(MacroAssembler* masm) {
-  LoadIC::GenerateMegamorphic(masm);
 }
 
 
@@ -1327,7 +1321,8 @@ static void Generate_LoadIC_Normal(MacroAssembler* masm) {
 
 static void Generate_LoadIC_Getter_ForDeopt(MacroAssembler* masm) {
   LoadStubCompiler::GenerateLoadViaGetter(
-      masm, LoadStubCompiler::registers()[0], Handle<JSFunction>());
+      masm, Handle<HeapType>::null(),
+      LoadStubCompiler::registers()[0], Handle<JSFunction>());
 }
 
 
@@ -1381,26 +1376,6 @@ static void Generate_StoreIC_Slow(MacroAssembler* masm) {
 }
 
 
-static void Generate_StoreIC_Initialize(MacroAssembler* masm) {
-  StoreIC::GenerateInitialize(masm);
-}
-
-
-static void Generate_StoreIC_Initialize_Strict(MacroAssembler* masm) {
-  StoreIC::GenerateInitialize(masm);
-}
-
-
-static void Generate_StoreIC_PreMonomorphic(MacroAssembler* masm) {
-  StoreIC::GeneratePreMonomorphic(masm);
-}
-
-
-static void Generate_StoreIC_PreMonomorphic_Strict(MacroAssembler* masm) {
-  StoreIC::GeneratePreMonomorphic(masm);
-}
-
-
 static void Generate_StoreIC_Miss(MacroAssembler* masm) {
   StoreIC::GenerateMiss(masm);
 }
@@ -1411,30 +1386,9 @@ static void Generate_StoreIC_Normal(MacroAssembler* masm) {
 }
 
 
-static void Generate_StoreIC_Megamorphic(MacroAssembler* masm) {
-  StoreIC::GenerateMegamorphic(masm,
-                               StoreIC::ComputeExtraICState(kNonStrictMode));
-}
-
-
-static void Generate_StoreIC_Megamorphic_Strict(MacroAssembler* masm) {
-  StoreIC::GenerateMegamorphic(masm,
-                               StoreIC::ComputeExtraICState(kStrictMode));
-}
-
-
 static void Generate_StoreIC_Setter_ForDeopt(MacroAssembler* masm) {
-  StoreStubCompiler::GenerateStoreViaSetter(masm, Handle<JSFunction>());
-}
-
-
-static void Generate_StoreIC_Generic(MacroAssembler* masm) {
-  StoreIC::GenerateRuntimeSetProperty(masm, kNonStrictMode);
-}
-
-
-static void Generate_StoreIC_Generic_Strict(MacroAssembler* masm) {
-  StoreIC::GenerateRuntimeSetProperty(masm, kStrictMode);
+  StoreStubCompiler::GenerateStoreViaSetter(
+      masm, Handle<HeapType>::null(), Handle<JSFunction>());
 }
 
 

@@ -26,7 +26,6 @@
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-import datetime
 import optparse
 import sys
 import tempfile
@@ -52,6 +51,30 @@ CONFIG = {
   DEPS_FILE: "DEPS",
 }
 
+
+class PushToTrunkOptions(CommonOptions):
+  @staticmethod
+  def MakeForcedOptions(reviewer, chrome_path):
+    """Convenience wrapper."""
+    class Options(object):
+      pass
+    options = Options()
+    options.s = 0
+    options.l = None
+    options.f = True
+    options.m = False
+    options.r = reviewer
+    options.c = chrome_path
+    return PushToTrunkOptions(options)
+
+  def __init__(self, options):
+    super(PushToTrunkOptions, self).__init__(options, options.m)
+    self.requires_editor = not options.f
+    self.wait_for_lgtm = not options.f
+    self.tbr_commit = not options.m
+    self.l = options.l
+    self.r = options.r
+    self.c = options.c
 
 class Preparation(Step):
   MESSAGE = "Preparation."
@@ -115,7 +138,7 @@ class PrepareChangeLog(Step):
     # These version numbers are used again later for the trunk commit.
     self.ReadAndPersistVersion()
 
-    date = datetime.date.today().strftime("%Y-%m-%d")
+    date = self.GetDate()
     self.Persist("date", date)
     output = "%s: Version %s.%s.%s\n\n" % (date,
                                            self._state["major"],
@@ -158,9 +181,6 @@ class EditChangeLog(Step):
            "entry, then edit its contents to your liking. When you're done, "
            "save the file and exit your EDITOR. ")
     self.ReadLine(default="")
-
-    # TODO(machenbach): Don't use EDITOR in forced mode as soon as script is
-    # well tested.
     self.Editor(self.Config(CHANGELOG_ENTRY_FILE))
     handle, new_changelog = tempfile.mkstemp()
     os.close(handle)
@@ -215,7 +235,11 @@ class CommitLocal(Step):
                                               self._state["new_minor"],
                                               self._state["new_build"]))
     self.Persist("prep_commit_msg", prep_commit_msg)
-    if self.Git("commit -a -m \"%s\"" % prep_commit_msg) is None:
+
+    # Include optional TBR only in the git command. The persisted commit
+    # message is used for finding the commit again later.
+    review = "\n\nTBR=%s" % self._options.r if self._options.tbr_commit else ""
+    if self.Git("commit -a -m \"%s%s\"" % (prep_commit_msg, review)) is None:
       self.Die("'git commit -a' failed.")
 
 
@@ -229,7 +253,11 @@ class CommitRepository(Step):
     TextToFile(GetLastChangeLogEntries(self.Config(CHANGELOG_FILE)),
                self.Config(CHANGELOG_ENTRY_FILE))
 
-    if self.Git("cl dcommit -f", "PRESUBMIT_TREE_CHECK=\"skip\"") is None:
+    if self.Git("cl presubmit", "PRESUBMIT_TREE_CHECK=\"skip\"") is None:
+      self.Die("'git cl presubmit' failed, please try again.")
+
+    if self.Git("cl dcommit -f --bypass-hooks",
+                retry_on=lambda x: x is None) is None:
       self.Die("'git cl dcommit' failed, please try again.")
 
 
@@ -257,31 +285,28 @@ class SquashCommits(Step):
     args = "diff svn/trunk %s" % self._state["prepare_commit_hash"]
     TextToFile(self.Git(args), self.Config(PATCH_FILE))
 
-    # Convert the ChangeLog entry to commit message format:
-    # - remove date
-    # - remove indentation
-    # - merge paragraphs into single long lines, keeping empty lines between
-    #   them.
+    # Convert the ChangeLog entry to commit message format.
     self.RestoreIfUnset("date")
-    changelog_entry = FileToText(self.Config(CHANGELOG_ENTRY_FILE))
+    text = FileToText(self.Config(CHANGELOG_ENTRY_FILE))
 
-    # TODO(machenbach): This could create a problem if the changelog contained
-    # any quotation marks.
-    text = Command("echo \"%s\" \
-        | sed -e \"s/^%s: //\" \
-        | sed -e 's/^ *//' \
-        | awk '{ \
-            if (need_space == 1) {\
-              printf(\" \");\
-            };\
-            printf(\"%%s\", $0);\
-            if ($0 ~ /^$/) {\
-              printf(\"\\n\\n\");\
-              need_space = 0;\
-            } else {\
-              need_space = 1;\
-            }\
-          }'" % (changelog_entry, self._state["date"]))
+    # Remove date and trailing white space.
+    text = re.sub(r"^%s: " % self._state["date"], "", text.rstrip())
+
+    # Retrieve svn revision for showing the used bleeding edge revision in the
+    # commit message.
+    args = "svn find-rev %s" % self._state["prepare_commit_hash"]
+    svn_revision = self.Git(args).strip()
+    self.Persist("svn_revision", svn_revision)
+    text = MSub(r"^(Version \d+\.\d+\.\d+)$",
+                "\\1 (based on bleeding_edge revision r%s)" % svn_revision,
+                text)
+
+    # Remove indentation and merge paragraphs into single long lines, keeping
+    # empty lines between them.
+    def SplitMapJoin(split_text, fun, join_text):
+      return lambda text: join_text.join(map(fun, text.split(split_text)))
+    strip = lambda line: line.strip()
+    text = SplitMapJoin("\n\n", SplitMapJoin("\n", strip, " "), "\n\n")(text)
 
     if not text:
       self.Die("Commit message editing failed.")
@@ -351,7 +376,7 @@ class CommitSVN(Step):
   MESSAGE = "Commit to SVN."
 
   def RunStep(self):
-    result = self.Git("svn dcommit 2>&1")
+    result = self.Git("svn dcommit 2>&1", retry_on=lambda x: x is None)
     if not result:
       self.Die("'git svn dcommit' failed.")
     result = filter(lambda x: re.search(r"^Committed r[0-9]+", x),
@@ -365,7 +390,7 @@ class CommitSVN(Step):
       print("Sorry, grepping for the SVN revision failed. Please look for it "
             "in the last command's output above and provide it manually (just "
             "the number, without the leading \"r\").")
-      self.DieInForcedMode("Can't prompt in forced mode.")
+      self.DieNoManualMode("Can't prompt in forced mode.")
       while not trunk_revision:
         print "> ",
         trunk_revision = self.ReadLine()
@@ -380,7 +405,8 @@ class TagRevision(Step):
     ver = "%s.%s.%s" % (self._state["major"],
                         self._state["minor"],
                         self._state["build"])
-    if self.Git("svn tag %s -m \"Tagging version %s\"" % (ver, ver)) is None:
+    if self.Git("svn tag %s -m \"Tagging version %s\"" % (ver, ver),
+                retry_on=lambda x: x is None) is None:
       self.Die("'git svn tag' failed.")
 
 
@@ -390,7 +416,7 @@ class CheckChromium(Step):
   def Run(self):
     chrome_path = self._options.c
     if not chrome_path:
-      self.DieInForcedMode("Please specify the path to a Chromium checkout in "
+      self.DieNoManualMode("Please specify the path to a Chromium checkout in "
                           "forced mode.")
       print ("Do you have a \"NewGit\" Chromium checkout and want "
           "this script to automate creation of the roll CL? If yes, enter the "
@@ -453,17 +479,20 @@ class UploadCL(Step):
     ver = "%s.%s.%s" % (self._state["major"],
                         self._state["minor"],
                         self._state["build"])
-    if self._options and self._options.r:
+    if self._options.r:
       print "Using account %s for review." % self._options.r
       rev = self._options.r
     else:
       print "Please enter the email address of a reviewer for the roll CL: ",
-      self.DieInForcedMode("A reviewer must be specified in forced mode.")
+      self.DieNoManualMode("A reviewer must be specified in forced mode.")
       rev = self.ReadLine()
-    args = "commit -am \"Update V8 to version %s.\n\nTBR=%s\"" % (ver, rev)
+    self.RestoreIfUnset("svn_revision")
+    args = ("commit -am \"Update V8 to version %s "
+            "(based on bleeding_edge revision r%s).\n\nTBR=%s\""
+            % (ver, self._state["svn_revision"], rev))
     if self.Git(args) is None:
       self.Die("'git commit' failed.")
-    force_flag = " -f" if self._options.f else ""
+    force_flag = " -f" if self._options.force_upload else ""
     if self.Git("cl upload --send-mail%s" % force_flag, pipe=False) is None:
       self.Die("'git cl upload' failed, please try again.")
     print "CL uploaded."
@@ -548,6 +577,9 @@ def BuildOptions():
   result.add_option("-l", "--last-push", dest="l",
                     help=("Manually specify the git commit ID "
                           "of the last push to trunk."))
+  result.add_option("-m", "--manual", dest="m",
+                    help="Prompt the user at every important step.",
+                    default=False, action="store_true")
   result.add_option("-r", "--reviewer", dest="r",
                     help=("Specify the account name to be used for reviews."))
   result.add_option("-s", "--step", dest="s",
@@ -560,11 +592,14 @@ def ProcessOptions(options):
   if options.s < 0:
     print "Bad step number %d" % options.s
     return False
-  if options.f and not options.r:
-    print "A reviewer (-r) is required in forced mode."
+  if not options.m and not options.r:
+    print "A reviewer (-r) is required in (semi-)automatic mode."
     return False
-  if options.f and not options.c:
-    print "A chromium checkout (-c) is required in forced mode."
+  if options.f and options.m:
+    print "Manual and forced mode cannot be combined."
+    return False
+  if not options.m and not options.c:
+    print "A chromium checkout (-c) is required in (semi-)automatic mode."
     return False
   return True
 
@@ -575,7 +610,7 @@ def Main():
   if not ProcessOptions(options):
     parser.print_help()
     return 1
-  RunPushToTrunk(CONFIG, options)
+  RunPushToTrunk(CONFIG, PushToTrunkOptions(options))
 
 if __name__ == "__main__":
   sys.exit(Main())
