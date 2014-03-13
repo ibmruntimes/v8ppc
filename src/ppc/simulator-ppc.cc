@@ -28,9 +28,10 @@
 // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+#include <stdarg.h>
 #include <stdlib.h>
 #include <cmath>
-#include <cstdarg>
+
 #include "v8.h"
 
 #if V8_TARGET_ARCH_PPC
@@ -922,6 +923,12 @@ class Redirection {
     return reinterpret_cast<Redirection*>(addr_of_redirection);
   }
 
+  static void* ReverseRedirection(intptr_t reg) {
+    Redirection* redirection = FromSwiInstruction(
+        reinterpret_cast<Instruction*>(reinterpret_cast<void*>(reg)));
+    return redirection->external_function();
+  }
+
  private:
   void* external_function_;
   uint32_t swi_instruction_;
@@ -1218,12 +1225,12 @@ typedef double (*SimulatorRuntimeFPIntCall)(double darg0, intptr_t arg0);
 // This signature supports direct call in to API function native callback
 // (refer to InvocationCallback in v8.h).
 typedef void (*SimulatorRuntimeDirectApiCall)(intptr_t arg0);
-typedef void (*SimulatorRuntimeProfilingApiCall)(intptr_t arg0, intptr_t arg1);
+typedef void (*SimulatorRuntimeProfilingApiCall)(intptr_t arg0, void* arg1);
 
 // This signature supports direct call to accessor getter callback.
 typedef void (*SimulatorRuntimeDirectGetterCall)(intptr_t arg0, intptr_t arg1);
 typedef void (*SimulatorRuntimeProfilingGetterCall)(
-    intptr_t arg0, intptr_t arg1, intptr_t arg2);
+    intptr_t arg0, intptr_t arg1, void* arg2);
 
 // Software interrupt instructions are used by the simulator to call into the
 // C-based V8 runtime.
@@ -1380,7 +1387,7 @@ void Simulator::SoftwareInterrupt(Instruction* instr) {
         CHECK(stack_aligned);
         SimulatorRuntimeProfilingApiCall target =
           reinterpret_cast<SimulatorRuntimeProfilingApiCall>(external);
-        target(arg0, arg1);
+        target(arg0, Redirection::ReverseRedirection(arg1));
       } else if (
           redirection->type() == ExternalReference::DIRECT_GETTER_CALL) {
         // See callers of MacroAssembler::CallApiFunctionAndReturn for
@@ -1421,7 +1428,7 @@ void Simulator::SoftwareInterrupt(Instruction* instr) {
 #if !ABI_PASSES_HANDLES_IN_REGS
         arg0 = *(reinterpret_cast<intptr_t *>(arg0));
 #endif
-        target(arg0, arg1, arg2);
+        target(arg0, arg1, Redirection::ReverseRedirection(arg2));
       } else {
         // builtin call.
         if (::v8::internal::FLAG_trace_sim || !stack_aligned) {
@@ -1943,13 +1950,26 @@ bool Simulator::ExecuteExt2_9bit_part1(Instruction* instr) {
     case CMP: {
       int ra = instr->RAValue();
       int rb = instr->RBValue();
-      intptr_t ra_val = get_register(ra);
-      intptr_t rb_val = get_register(rb);
       int cr = instr->Bits(25, 23);
       int bf = 0;
-      if (ra_val < rb_val) { bf |= 0x80000000; }
-      if (ra_val > rb_val) { bf |= 0x40000000; }
-      if (ra_val == rb_val) { bf |= 0x20000000; }
+#if V8_TARGET_ARCH_PPC64
+      int L = instr->Bit(21);
+      if (L) {
+#endif
+        intptr_t ra_val = get_register(ra);
+        intptr_t rb_val = get_register(rb);
+        if (ra_val < rb_val) { bf |= 0x80000000; }
+        if (ra_val > rb_val) { bf |= 0x40000000; }
+        if (ra_val == rb_val) { bf |= 0x20000000; }
+#if V8_TARGET_ARCH_PPC64
+      } else {
+        int32_t ra_val = get_register(ra);
+        int32_t rb_val = get_register(rb);
+        if (ra_val < rb_val) { bf |= 0x80000000; }
+        if (ra_val > rb_val) { bf |= 0x40000000; }
+        if (ra_val == rb_val) { bf |= 0x20000000; }
+      }
+#endif
       int condition_mask = 0xF0000000 >> (cr*4);
       int condition =  bf >> (cr*4);
       condition_reg_ = (condition_reg_ & ~condition_mask) | condition;
@@ -2017,9 +2037,15 @@ bool Simulator::ExecuteExt2_9bit_part1(Instruction* instr) {
       int ra = instr->RAValue();
       intptr_t ra_val = get_register(ra);
       intptr_t alu_out = 1 + ~ra_val;
+#if V8_TARGET_ARCH_PPC64
+      intptr_t one = 1;  // work-around gcc
+      intptr_t kOverflowVal = (one << 63);
+#else
+      intptr_t kOverflowVal = kMinInt;
+#endif
       set_register(rt, alu_out);
       if (instr->Bit(10)) {  // OE bit set
-        if (ra_val == kMinInt) {
+        if (ra_val == kOverflowVal) {
             special_reg_xer_ |= 0xC0000000;  // set SO,OV
         } else {
             special_reg_xer_ &= ~0x40000000;  // clear OV
@@ -2148,13 +2174,26 @@ void Simulator::ExecuteExt2_9bit_part2(Instruction* instr) {
     case CMPL: {
       int ra = instr->RAValue();
       int rb = instr->RBValue();
-      uintptr_t ra_val = get_register(ra);
-      uintptr_t rb_val = get_register(rb);
       int cr = instr->Bits(25, 23);
       int bf = 0;
-      if (ra_val < rb_val) { bf |= 0x80000000; }
-      if (ra_val > rb_val) { bf |= 0x40000000; }
-      if (ra_val == rb_val) { bf |= 0x20000000; }
+#if V8_TARGET_ARCH_PPC64
+      int L = instr->Bit(21);
+      if (L) {
+#endif
+        uintptr_t ra_val = get_register(ra);
+        uintptr_t rb_val = get_register(rb);
+        if (ra_val < rb_val) { bf |= 0x80000000; }
+        if (ra_val > rb_val) { bf |= 0x40000000; }
+        if (ra_val == rb_val) { bf |= 0x20000000; }
+#if V8_TARGET_ARCH_PPC64
+      } else {
+        uint32_t ra_val = get_register(ra);
+        uint32_t rb_val = get_register(rb);
+        if (ra_val < rb_val) { bf |= 0x80000000; }
+        if (ra_val > rb_val) { bf |= 0x40000000; }
+        if (ra_val == rb_val) { bf |= 0x20000000; }
+      }
+#endif
       int condition_mask = 0xF0000000 >> (cr*4);
       int condition =  bf >> (cr*4);
       condition_reg_ = (condition_reg_ & ~condition_mask) | condition;
@@ -2522,7 +2561,7 @@ void Simulator::ExecuteExt4(Instruction* instr) {
       int frt = instr->RTValue();
       int frb = instr->RBValue();
       double frb_val = get_double_from_d_register(frb);
-      double frt_val = sqrt(frb_val);
+      double frt_val = std::sqrt(frb_val);
       set_d_register_from_double(frt, frt_val);
       return;
     }
@@ -2631,10 +2670,10 @@ void Simulator::ExecuteExt4(Instruction* instr) {
             frt_val = (int64_t)frb_val;
             break;
           case kRoundToPlusInf:
-            frt_val = (int64_t)ceil(frb_val);
+            frt_val = (int64_t)std::ceil(frb_val);
             break;
           case kRoundToMinusInf:
-            frt_val = (int64_t)floor(frb_val);
+            frt_val = (int64_t)std::floor(frb_val);
             break;
           default:
             frt_val = (int64_t)frb_val;
@@ -2685,16 +2724,16 @@ void Simulator::ExecuteExt4(Instruction* instr) {
             frt_val = (int64_t)frb_val;
             break;
           case kRoundToPlusInf:
-            frt_val = (int64_t)ceil(frb_val);
+            frt_val = (int64_t)std::ceil(frb_val);
             break;
           case kRoundToMinusInf:
-            frt_val = (int64_t)floor(frb_val);
+            frt_val = (int64_t)std::floor(frb_val);
             break;
           case kRoundToNearest:
             frt_val = (int64_t)lround(frb_val);
 
             // Round to even if exactly halfway.  (lround rounds up)
-            if (fabs(static_cast<double>(frt_val) - frb_val) == 0.5 &&
+            if (std::fabs(static_cast<double>(frt_val) - frb_val) == 0.5 &&
                 (frt_val % 2)) {
                 frt_val += ((frt_val > 0) ? -1 : 1);
             }
@@ -2768,7 +2807,7 @@ void Simulator::ExecuteExt4(Instruction* instr) {
       int frt = instr->RTValue();
       int frb = instr->RBValue();
       double frb_val = get_double_from_d_register(frb);
-      double frt_val = fabs(frb_val);
+      double frt_val = std::fabs(frb_val);
       set_d_register_from_double(frt, frt_val);
       return;
     }
@@ -2924,13 +2963,25 @@ void Simulator::ExecuteGeneric(Instruction* instr) {
     }
     case CMPLI: {
       int ra = instr->RAValue();
-      uintptr_t ra_val = get_register(ra);
       uint32_t im_val = instr->Bits(15, 0);
       int cr = instr->Bits(25, 23);
       int bf = 0;
-      if (ra_val < im_val) { bf |= 0x80000000; }
-      if (ra_val > im_val) { bf |= 0x40000000; }
-      if (ra_val == im_val) { bf |= 0x20000000; }
+#if V8_TARGET_ARCH_PPC64
+      int L = instr->Bit(21);
+      if (L) {
+#endif
+        uintptr_t ra_val = get_register(ra);
+        if (ra_val < im_val) { bf |= 0x80000000; }
+        if (ra_val > im_val) { bf |= 0x40000000; }
+        if (ra_val == im_val) { bf |= 0x20000000; }
+#if V8_TARGET_ARCH_PPC64
+      } else {
+        uint32_t ra_val = get_register(ra);
+        if (ra_val < im_val) { bf |= 0x80000000; }
+        if (ra_val > im_val) { bf |= 0x40000000; }
+        if (ra_val == im_val) { bf |= 0x20000000; }
+      }
+#endif
       int condition_mask = 0xF0000000 >> (cr*4);
       int condition =  bf >> (cr*4);
       condition_reg_ = (condition_reg_ & ~condition_mask) | condition;
@@ -2938,14 +2989,26 @@ void Simulator::ExecuteGeneric(Instruction* instr) {
     }
     case CMPI: {
       int ra = instr->RAValue();
-      intptr_t ra_val = get_register(ra);
       int32_t im_val = instr->Bits(15, 0);
       im_val = SIGN_EXT_IMM16(im_val);
       int cr = instr->Bits(25, 23);
       int bf = 0;
-      if (ra_val < im_val) { bf |= 0x80000000; }
-      if (ra_val > im_val) { bf |= 0x40000000; }
-      if (ra_val == im_val) { bf |= 0x20000000; }
+#if V8_TARGET_ARCH_PPC64
+      int L = instr->Bit(21);
+      if (L) {
+#endif
+        intptr_t ra_val = get_register(ra);
+        if (ra_val < im_val) { bf |= 0x80000000; }
+        if (ra_val > im_val) { bf |= 0x40000000; }
+        if (ra_val == im_val) { bf |= 0x20000000; }
+#if V8_TARGET_ARCH_PPC64
+      } else {
+        int32_t ra_val = get_register(ra);
+        if (ra_val < im_val) { bf |= 0x80000000; }
+        if (ra_val > im_val) { bf |= 0x40000000; }
+        if (ra_val == im_val) { bf |= 0x20000000; }
+      }
+#endif
       int condition_mask = 0xF0000000 >> (cr*4);
       int condition =  bf >> (cr*4);
       condition_reg_ = (condition_reg_ & ~condition_mask) | condition;

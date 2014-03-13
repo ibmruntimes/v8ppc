@@ -40,30 +40,6 @@ namespace internal {
 void ArrayNativeCode(MacroAssembler* masm, Label* call_generic_code);
 
 
-// Compute a transcendental math function natively, or call the
-// TranscendentalCache runtime function.
-class TranscendentalCacheStub: public PlatformCodeStub {
- public:
-  enum ArgumentType {
-    TAGGED = 0 << TranscendentalCache::kTranscendentalTypeBits,
-    UNTAGGED = 1 << TranscendentalCache::kTranscendentalTypeBits
-  };
-
-  TranscendentalCacheStub(TranscendentalCache::Type type,
-                          ArgumentType argument_type)
-      : type_(type), argument_type_(argument_type) { }
-  void Generate(MacroAssembler* masm);
- private:
-  TranscendentalCache::Type type_;
-  ArgumentType argument_type_;
-  void GenerateCallCFunction(MacroAssembler* masm, Register scratch);
-
-  Major MajorKey() { return TranscendentalCache; }
-  int MinorKey() { return type_ | argument_type_; }
-  Runtime::FunctionId RuntimeFunction();
-};
-
-
 class StoreBufferOverflowStub: public PlatformCodeStub {
  public:
   explicit StoreBufferOverflowStub(SaveFPRegsMode save_fp)
@@ -84,18 +60,6 @@ class StoreBufferOverflowStub: public PlatformCodeStub {
 
 class StringHelper : public AllStatic {
  public:
-  // Generate code for copying characters using a simple loop. This should only
-  // be used in places where the number of characters is small and the
-  // additional setup and checking in GenerateCopyCharactersLong adds too much
-  // overhead. Copying of overlapping regions is not supported.
-  // Dest register ends at the position after the last character written.
-  static void GenerateCopyCharacters(MacroAssembler* masm,
-                                     Register dest,
-                                     Register src,
-                                     Register count,
-                                     Register scratch,
-                                     bool ascii);
-
   // Generate code for copying a large number of characters. This function
   // is allowed to spend extra time setting up conditions to make copying
   // faster. Copying of overlapping regions is not supported.
@@ -111,23 +75,6 @@ class StringHelper : public AllStatic {
                                          Register scratch5,
                                          int flags);
 
-
-  // Probe the string table for a two character string. If the string is
-  // not found by probing a jump to the label not_found is performed. This jump
-  // does not guarantee that the string is not in the string table. If the
-  // string is found the code falls through with the string in register r0.
-  // Contents of both c1 and c2 registers are modified. At the exit c1 is
-  // guaranteed to contain halfword with low and high bytes equal to
-  // initial contents of c1 and c2 respectively.
-  static void GenerateTwoCharacterStringTableProbe(MacroAssembler* masm,
-                                                   Register c1,
-                                                   Register c2,
-                                                   Register scratch1,
-                                                   Register scratch2,
-                                                   Register scratch3,
-                                                   Register scratch4,
-                                                   Register scratch5,
-                                                   Label* not_found);
 
   // Generate string hash.
   static void GenerateHashInit(MacroAssembler* masm,
@@ -146,32 +93,6 @@ class StringHelper : public AllStatic {
 
  private:
   DISALLOW_IMPLICIT_CONSTRUCTORS(StringHelper);
-};
-
-
-class StringAddStub: public PlatformCodeStub {
- public:
-  explicit StringAddStub(StringAddFlags flags) : flags_(flags) {}
-
- private:
-  Major MajorKey() { return StringAdd; }
-  int MinorKey() { return flags_; }
-
-  void Generate(MacroAssembler* masm);
-
-  void GenerateConvertArgument(MacroAssembler* masm,
-                               int stack_offset,
-                               Register arg,
-                               Register scratch1,
-                               Register scratch2,
-                               Register scratch3,
-                               Register scratch4,
-                               Label* slow);
-
-  void GenerateRegisterArgsPush(MacroAssembler* masm);
-  void GenerateRegisterArgsPop(MacroAssembler* masm);
-
-  const StringAddFlags flags_;
 };
 
 
@@ -339,26 +260,16 @@ class RecordWriteStub: public PlatformCodeStub {
       masm->push(r0);
       masm->MultiPush(kJSCallerSaved & ~scratch1_.bit());
       if (mode == kSaveFPRegs) {
-        // Save all volatile VFP registers except d0.
-        const int kNumRegs = DoubleRegister::kNumVolatileRegisters - 1;
-        masm->subi(sp, sp, Operand(kDoubleSize * kNumRegs));
-        for (int i = kNumRegs; i > 0; i--) {
-          DoubleRegister reg = DoubleRegister::from_code(i);
-          masm->stfd(reg, MemOperand(sp, (i - 1) * kDoubleSize));
-        }
+        // Save all volatile FP registers except d0.
+        masm->SaveFPRegs(sp, 1, DoubleRegister::kNumVolatileRegisters - 1);
       }
     }
 
     inline void RestoreCallerSaveRegisters(MacroAssembler*masm,
                                            SaveFPRegsMode mode) {
       if (mode == kSaveFPRegs) {
-        // Restore all VFP registers except d0.
-        const int kNumRegs = DoubleRegister::kNumVolatileRegisters - 1;
-        for (int i = kNumRegs; i > 0; i--) {
-          DoubleRegister reg = DoubleRegister::from_code(i);
-          masm->lfd(reg, MemOperand(sp, (i - 1) * kDoubleSize));
-        }
-        masm->addi(sp, sp, Operand(kDoubleSize * kNumRegs));
+        // Restore all volatile FP registers except d0.
+        masm->RestoreFPRegs(sp, 1, DoubleRegister::kNumVolatileRegisters - 1);
       }
       masm->MultiPop(kJSCallerSaved & ~scratch1_.bit());
       masm->pop(r0);
