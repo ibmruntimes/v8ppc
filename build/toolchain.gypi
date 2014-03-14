@@ -451,7 +451,7 @@
           '_ALL_SOURCE=1'],
         'conditions': [
           [ 'v8_target_arch=="ppc"', {
-            'ldflags': [ '-Wl,-bmaxdata:0x30000000/dsa' ],
+            'ldflags': [ '-Wl,-bmaxdata:0x60000000/dsa' ],
           }],
           [ 'v8_target_arch=="ppc64"', {
             'cflags': [ '-maix64' ],
