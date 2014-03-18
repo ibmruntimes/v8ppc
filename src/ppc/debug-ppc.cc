@@ -47,10 +47,7 @@ bool BreakLocationIterator::IsDebugBreakAtReturn() {
 void BreakLocationIterator::SetDebugBreakAtReturn() {
   // Patch the code changing the return from JS function sequence from
   //
-  //   mr sp, fp
-  //   lwz fp, 0(sp)
-  //   lwz r0, 4(sp)
-  //   mtlr r0
+  //   LeaveExitFrame (5 instructions)
   //   addi sp, sp, <delta>
   //   blr
   //

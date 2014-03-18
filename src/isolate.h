@@ -30,7 +30,6 @@
 
 #include "../include/v8-debug.h"
 #include "allocation.h"
-#include "apiutils.h"
 #include "assert-scope.h"
 #include "atomicops.h"
 #include "builtins.h"
@@ -52,11 +51,13 @@ namespace v8 {
 namespace internal {
 
 class Bootstrapper;
+struct CallInterfaceDescriptor;
 class CodeGenerator;
 class CodeRange;
 struct CodeStubInterfaceDescriptor;
 class CodeTracer;
 class CompilationCache;
+class ConsStringIteratorOp;
 class ContextSlotCache;
 class Counters;
 class CpuFeatures;
@@ -73,19 +74,19 @@ class HeapProfiler;
 class HStatistics;
 class HTracer;
 class InlineRuntimeFunctionsTable;
-class NoAllocationStringAllocator;
 class InnerPointerToCodeCache;
+class MaterializedObjectStore;
+class NoAllocationStringAllocator;
 class RandomNumberGenerator;
 class RegExpStack;
 class SaveContext;
-class UnicodeCache;
-class ConsStringIteratorOp;
 class StringTracker;
 class StubCache;
 class SweeperThread;
 class ThreadManager;
 class ThreadState;
 class ThreadVisitor;  // Defined in v8threads.h
+class UnicodeCache;
 template <StateTag Tag> class VMState;
 
 // 'void function pointer', used to roundtrip the
@@ -877,9 +878,8 @@ class Isolate {
   StubCache* stub_cache() { return stub_cache_; }
   DeoptimizerData* deoptimizer_data() { return deoptimizer_data_; }
   ThreadLocalTop* thread_local_top() { return &thread_local_top_; }
-
-  TranscendentalCache* transcendental_cache() const {
-    return transcendental_cache_;
+  MaterializedObjectStore* materialized_object_store() {
+    return materialized_object_store_;
   }
 
   MemoryAllocator* memory_allocator() {
@@ -898,9 +898,8 @@ class Isolate {
     return descriptor_lookup_cache_;
   }
 
-  v8::ImplementationUtilities::HandleScopeData* handle_scope_data() {
-    return &handle_scope_data_;
-  }
+  HandleScopeData* handle_scope_data() { return &handle_scope_data_; }
+
   HandleScopeImplementer* handle_scope_implementer() {
     ASSERT(handle_scope_implementer_);
     return handle_scope_implementer_;
@@ -1088,6 +1087,17 @@ class Isolate {
   CodeStubInterfaceDescriptor*
       code_stub_interface_descriptor(int index);
 
+  enum CallDescriptorKey {
+    KeyedCall,
+    NamedCall,
+    CallHandler,
+    ArgumentAdaptorCall,
+    ApiFunctionCall,
+    NUMBER_OF_CALL_DESCRIPTORS
+  };
+
+  CallInterfaceDescriptor* call_descriptor(CallDescriptorKey index);
+
   void IterateDeferredHandles(ObjectVisitor* visitor);
   void LinkDeferredHandles(DeferredHandles* deferred_handles);
   void UnlinkDeferredHandles(DeferredHandles* deferred_handles);
@@ -1095,6 +1105,10 @@ class Isolate {
 #ifdef DEBUG
   bool IsDeferredHandle(Object** location);
 #endif  // DEBUG
+
+  int max_available_threads() const {
+    return max_available_threads_;
+  }
 
   void set_max_available_threads(int value) {
     max_available_threads_ = value;
@@ -1276,16 +1290,16 @@ class Isolate {
   StatsTable* stats_table_;
   StubCache* stub_cache_;
   DeoptimizerData* deoptimizer_data_;
+  MaterializedObjectStore* materialized_object_store_;
   ThreadLocalTop thread_local_top_;
   bool capture_stack_trace_for_uncaught_exceptions_;
   int stack_trace_for_uncaught_exceptions_frame_limit_;
   StackTrace::StackTraceOptions stack_trace_for_uncaught_exceptions_options_;
-  TranscendentalCache* transcendental_cache_;
   MemoryAllocator* memory_allocator_;
   KeyedLookupCache* keyed_lookup_cache_;
   ContextSlotCache* context_slot_cache_;
   DescriptorLookupCache* descriptor_lookup_cache_;
-  v8::ImplementationUtilities::HandleScopeData handle_scope_data_;
+  HandleScopeData handle_scope_data_;
   HandleScopeImplementer* handle_scope_implementer_;
   UnicodeCache* unicode_cache_;
   Zone runtime_zone_;
@@ -1310,6 +1324,7 @@ class Isolate {
   DateCache* date_cache_;
   unibrow::Mapping<unibrow::Ecma262Canonicalize> interp_canonicalize_mapping_;
   CodeStubInterfaceDescriptor* code_stub_interface_descriptors_;
+  CallInterfaceDescriptor* call_descriptors_;
   RandomNumberGenerator* random_number_generator_;
 
   // True if fatal error has been signaled for this isolate.
@@ -1488,18 +1503,21 @@ class StackLimitCheck BASE_EMBEDDED {
 class PostponeInterruptsScope BASE_EMBEDDED {
  public:
   explicit PostponeInterruptsScope(Isolate* isolate)
-      : stack_guard_(isolate->stack_guard()) {
+      : stack_guard_(isolate->stack_guard()), isolate_(isolate) {
+    ExecutionAccess access(isolate_);
     stack_guard_->thread_local_.postpone_interrupts_nesting_++;
     stack_guard_->DisableInterrupts();
   }
 
   ~PostponeInterruptsScope() {
+    ExecutionAccess access(isolate_);
     if (--stack_guard_->thread_local_.postpone_interrupts_nesting_ == 0) {
       stack_guard_->EnableInterrupts();
     }
   }
  private:
   StackGuard* stack_guard_;
+  Isolate* isolate_;
 };
 
 

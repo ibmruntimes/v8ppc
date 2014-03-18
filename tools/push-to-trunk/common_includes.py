@@ -26,6 +26,7 @@
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+import datetime
 import os
 import re
 import subprocess
@@ -105,7 +106,7 @@ def MakeChangeLogBody(commit_messages, auto_format=False):
     title = title.strip()
     if auto_format:
       # Only add commits that set the LOG flag correctly.
-      log_exp = r"^[ \t]*LOG[ \t]*=[ \t]*(?:Y(?:ES)?)|TRUE"
+      log_exp = r"^[ \t]*LOG[ \t]*=[ \t]*(?:(?:Y(?:ES)?)|TRUE)"
       if not re.search(log_exp, body, flags=re.I | re.M):
         continue
       # Never include reverts.
@@ -188,24 +189,44 @@ def Command(cmd, args="", prefix="", pipe=True):
 
 # Wrapper for side effects.
 class SideEffectHandler(object):
+  def Call(self, fun, *args, **kwargs):
+    return fun(*args, **kwargs)
+
   def Command(self, cmd, args="", prefix="", pipe=True):
     return Command(cmd, args, prefix, pipe)
 
   def ReadLine(self):
     return sys.stdin.readline().strip()
 
-  def ReadURL(self, url):
+  def ReadURL(self, url, params=None):
     # pylint: disable=E1121
-    url_fh = urllib2.urlopen(url, None, 60)
+    url_fh = urllib2.urlopen(url, params, 60)
     try:
       return url_fh.read()
     finally:
       url_fh.close()
 
-  def Sleep(seconds):
+  def Sleep(self, seconds):
     time.sleep(seconds)
 
+  def GetDate(self):
+    return datetime.date.today().strftime("%Y-%m-%d")
+
 DEFAULT_SIDE_EFFECT_HANDLER = SideEffectHandler()
+
+
+class NoRetryException(Exception):
+  pass
+
+
+class CommonOptions(object):
+  def __init__(self, options, manual=True):
+    self.requires_editor = True
+    self.wait_for_lgtm = True
+    self.s = options.s
+    self.force_readline_defaults = not manual
+    self.force_upload = not manual
+    self.manual = manual
 
 
 class Step(object):
@@ -221,6 +242,7 @@ class Step(object):
     assert self._config is not None
     assert self._state is not None
     assert self._side_effect_handler is not None
+    assert isinstance(options, CommonOptions)
 
   def Config(self, key):
     return self._config[key]
@@ -253,6 +275,8 @@ class Step(object):
       got_exception = False
       try:
         result = cb()
+      except NoRetryException, e:
+        raise e
       except Exception:
         got_exception = True
       if got_exception or retry_on(result):
@@ -267,7 +291,7 @@ class Step(object):
 
   def ReadLine(self, default=None):
     # Don't prompt in forced mode.
-    if self._options and self._options.f and default is not None:
+    if self._options.force_readline_defaults and default is not None:
       print "%s (forced)" % default
       return default
     else:
@@ -278,13 +302,17 @@ class Step(object):
     return self.Retry(cmd, retry_on, [5, 30])
 
   def Editor(self, args):
-    return self._side_effect_handler.Command(os.environ["EDITOR"], args,
-                                             pipe=False)
+    if self._options.requires_editor:
+      return self._side_effect_handler.Command(os.environ["EDITOR"], args,
+                                               pipe=False)
 
-  def ReadURL(self, url, retry_on=None, wait_plan=None):
+  def ReadURL(self, url, params=None, retry_on=None, wait_plan=None):
     wait_plan = wait_plan or [3, 60, 600]
-    cmd = lambda: self._side_effect_handler.ReadURL(url)
+    cmd = lambda: self._side_effect_handler.ReadURL(url, params)
     return self.Retry(cmd, retry_on, wait_plan)
+
+  def GetDate(self):
+    return self._side_effect_handler.GetDate()
 
   def Die(self, msg=""):
     if msg != "":
@@ -292,9 +320,9 @@ class Step(object):
     print "Exiting"
     raise Exception(msg)
 
-  def DieInForcedMode(self, msg=""):
-    if self._options and self._options.f:
-      msg = msg or "Not implemented in forced mode."
+  def DieNoManualMode(self, msg=""):
+    if not self._options.manual:
+      msg = msg or "Only available in manual mode."
       self.Die(msg)
 
   def Confirm(self, msg):
@@ -333,11 +361,9 @@ class Step(object):
     if not os.path.exists(self._config[DOT_GIT_LOCATION]):
       self.Die("This is not a git checkout, this script won't work for you.")
 
-    # TODO(machenbach): Don't use EDITOR in forced mode as soon as script is
-    # well tested.
     # Cancel if EDITOR is unset or not executable.
-    if (not os.environ.get("EDITOR") or
-        Command("which", os.environ["EDITOR"]) is None):
+    if (self._options.requires_editor and (not os.environ.get("EDITOR") or
+        Command("which", os.environ["EDITOR"]) is None)):
       self.Die("Please set your EDITOR environment variable, you'll need it.")
 
   def CommonPrepare(self):
@@ -406,9 +432,7 @@ class Step(object):
     answer = ""
     while answer != "LGTM":
       print "> ",
-      # TODO(machenbach): Add default="LGTM" to avoid prompt when script is
-      # well tested and when prepare push cl has TBR flag.
-      answer = self.ReadLine()
+      answer = self.ReadLine(None if self._options.wait_for_lgtm else "LGTM")
       if answer != "LGTM":
         print "That was not 'LGTM'."
 
@@ -416,7 +440,7 @@ class Step(object):
     print("Applying the patch \"%s\" failed. Either type \"ABORT<Return>\", "
           "or resolve the conflicts, stage *all* touched files with "
           "'git add', and type \"RESOLVED<Return>\"")
-    self.DieInForcedMode()
+    self.DieNoManualMode()
     answer = ""
     while answer != "RESOLVED":
       if answer == "ABORT":
@@ -442,9 +466,9 @@ class UploadStep(Step):
       reviewer = self._options.r
     else:
       print "Please enter the email address of a V8 reviewer for your patch: ",
-      self.DieInForcedMode("A reviewer must be specified in forced mode.")
+      self.DieNoManualMode("A reviewer must be specified in forced mode.")
       reviewer = self.ReadLine()
-    force_flag = " -f" if self._options.f else ""
+    force_flag = " -f" if self._options.force_upload else ""
     args = "cl upload -r \"%s\" --send-mail%s" % (reviewer, force_flag)
     # TODO(machenbach): Check output in forced mode. Verify that all required
     # base files were uploaded, if not retry.

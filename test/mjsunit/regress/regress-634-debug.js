@@ -1,4 +1,4 @@
-// Copyright 2013 the V8 project authors. All rights reserved.
+// Copyright 2014 the V8 project authors. All rights reserved.
 // Redistribution and use in source and binary forms, with or without
 // modification, are permitted provided that the following conditions are
 // met:
@@ -25,31 +25,17 @@
 // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#ifndef V8_DEFAULT_PLATFORM_H_
-#define V8_DEFAULT_PLATFORM_H_
+// Flags: --allow-natives-syntax
 
-#include "v8.h"
+function f() {
+  %SetAllocationTimeout(1, 0, false);
+  a = new Array(0);
+  assertEquals(0, a.length);
+  assertEquals(0, a.length);
+  %SetAllocationTimeout(-1, -1, true);
+}
 
-namespace v8 {
-namespace internal {
-
-class DefaultPlatform : public Platform {
- public:
-  DefaultPlatform();
-  virtual ~DefaultPlatform();
-
-  // v8::Platform implementation.
-  virtual void CallOnBackgroundThread(
-      Task *task, ExpectedRuntime expected_runtime) V8_OVERRIDE;
-  virtual void CallOnForegroundThread(v8::Isolate *isolate,
-                                      Task *task) V8_OVERRIDE;
-
- private:
-  DISALLOW_COPY_AND_ASSIGN(DefaultPlatform);
-};
-
-
-} }  // namespace v8::internal
-
-
-#endif  // V8_DEFAULT_PLATFORM_H_
+f();
+f();
+%OptimizeFunctionOnNextCall(f);
+f();

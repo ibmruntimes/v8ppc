@@ -82,8 +82,8 @@ bool Expression::IsUndefinedLiteral(Isolate* isolate) {
 }
 
 
-VariableProxy::VariableProxy(Isolate* isolate, Variable* var, int position)
-    : Expression(isolate, position),
+VariableProxy::VariableProxy(Zone* zone, Variable* var, int position)
+    : Expression(zone, position),
       name_(var->name()),
       var_(NULL),  // Will be set by the call to BindTo.
       is_this_(var->is_this()),
@@ -94,12 +94,12 @@ VariableProxy::VariableProxy(Isolate* isolate, Variable* var, int position)
 }
 
 
-VariableProxy::VariableProxy(Isolate* isolate,
+VariableProxy::VariableProxy(Zone* zone,
                              Handle<String> name,
                              bool is_this,
                              Interface* interface,
                              int position)
-    : Expression(isolate, position),
+    : Expression(zone, position),
       name_(name),
       var_(NULL),
       is_this_(is_this),
@@ -126,20 +126,18 @@ void VariableProxy::BindTo(Variable* var) {
 }
 
 
-Assignment::Assignment(Isolate* isolate,
+Assignment::Assignment(Zone* zone,
                        Token::Value op,
                        Expression* target,
                        Expression* value,
                        int pos)
-    : Expression(isolate, pos),
+    : Expression(zone, pos),
       op_(op),
       target_(target),
       value_(value),
       binary_operation_(NULL),
-      assignment_id_(GetNextId(isolate)),
-      is_monomorphic_(false),
+      assignment_id_(GetNextId(zone)),
       is_uninitialized_(false),
-      is_pre_monomorphic_(false),
       store_mode_(STANDARD_STORE) { }
 
 
@@ -187,15 +185,31 @@ LanguageMode FunctionLiteral::language_mode() const {
 }
 
 
-ObjectLiteralProperty::ObjectLiteralProperty(Literal* key,
-                                             Expression* value,
-                                             Isolate* isolate) {
+void FunctionLiteral::InitializeSharedInfo(
+    Handle<Code> unoptimized_code) {
+  for (RelocIterator it(*unoptimized_code); !it.done(); it.next()) {
+    RelocInfo* rinfo = it.rinfo();
+    if (rinfo->rmode() != RelocInfo::EMBEDDED_OBJECT) continue;
+    Object* obj = rinfo->target_object();
+    if (obj->IsSharedFunctionInfo()) {
+      SharedFunctionInfo* shared = SharedFunctionInfo::cast(obj);
+      if (shared->start_position() == start_position()) {
+        shared_info_ = Handle<SharedFunctionInfo>(shared);
+        break;
+      }
+    }
+  }
+}
+
+
+ObjectLiteralProperty::ObjectLiteralProperty(
+    Zone* zone, Literal* key, Expression* value) {
   emit_store_ = true;
   key_ = key;
   value_ = value;
   Object* k = *key->value();
   if (k->IsInternalizedString() &&
-      isolate->heap()->proto_string()->Equals(String::cast(k))) {
+      zone->isolate()->heap()->proto_string()->Equals(String::cast(k))) {
     kind_ = PROTOTYPE;
   } else if (value_->AsMaterializedLiteral() != NULL) {
     kind_ = MATERIALIZED_LITERAL;
@@ -207,8 +221,8 @@ ObjectLiteralProperty::ObjectLiteralProperty(Literal* key,
 }
 
 
-ObjectLiteralProperty::ObjectLiteralProperty(bool is_getter,
-                                             FunctionLiteral* value) {
+ObjectLiteralProperty::ObjectLiteralProperty(
+    Zone* zone, bool is_getter, FunctionLiteral* value) {
   emit_store_ = true;
   value_ = value;
   kind_ = is_getter ? GETTER : SETTER;
@@ -574,62 +588,25 @@ bool FunctionDeclaration::IsInlineable() const {
 // TODO(rossberg): all RecordTypeFeedback functions should disappear
 // once we use the common type field in the AST consistently.
 
-
 void Expression::RecordToBooleanTypeFeedback(TypeFeedbackOracle* oracle) {
   to_boolean_types_ = oracle->ToBooleanTypes(test_id());
 }
 
 
-bool Call::ComputeTarget(Handle<Map> type, Handle<String> name) {
-  // If there is an interceptor, we can't compute the target for a direct call.
-  if (type->has_named_interceptor()) return false;
-
-  if (check_type_ == RECEIVER_MAP_CHECK) {
-    // For primitive checks the holder is set up to point to the corresponding
-    // prototype object, i.e. one step of the algorithm below has been already
-    // performed. For non-primitive checks we clear it to allow computing
-    // targets for polymorphic calls.
-    holder_ = Handle<JSObject>::null();
-  }
-  LookupResult lookup(type->GetIsolate());
-  while (true) {
-    // If a dictionary map is found in the prototype chain before the actual
-    // target, a new target can always appear. In that case, bail out.
-    // TODO(verwaest): Alternatively a runtime negative lookup on the normal
-    // receiver or prototype could be added.
-    if (type->is_dictionary_map()) return false;
-    type->LookupDescriptor(NULL, *name, &lookup);
-    if (lookup.IsFound()) {
-      switch (lookup.type()) {
-        case CONSTANT: {
-          // We surely know the target for a constant function.
-          Handle<Object> constant(lookup.GetConstantFromMap(*type),
-                                  type->GetIsolate());
-          if (constant->IsJSFunction()) {
-            target_ = Handle<JSFunction>::cast(constant);
-            return true;
-          }
-          // Fall through.
-        }
-        case NORMAL:
-        case FIELD:
-        case CALLBACKS:
-        case HANDLER:
-        case INTERCEPTOR:
-          // We don't know the target.
-          return false;
-        case TRANSITION:
-        case NONEXISTENT:
-          UNREACHABLE();
-          break;
-      }
+Call::CallType Call::GetCallType(Isolate* isolate) const {
+  VariableProxy* proxy = expression()->AsVariableProxy();
+  if (proxy != NULL) {
+    if (proxy->var()->is_possibly_eval(isolate)) {
+      return POSSIBLY_EVAL_CALL;
+    } else if (proxy->var()->IsUnallocated()) {
+      return GLOBAL_CALL;
+    } else if (proxy->var()->IsLookupSlot()) {
+      return LOOKUP_SLOT_CALL;
     }
-    // If we reach the end of the prototype chain, we don't know the target.
-    if (!type->prototype()->IsJSObject()) return false;
-    // Go up the prototype chain, recording where we are currently.
-    holder_ = Handle<JSObject>(JSObject::cast(type->prototype()));
-    type = Handle<Map>(holder()->map());
   }
+
+  Property* property = expression()->AsProperty();
+  return property != NULL ? PROPERTY_CALL : OTHER_CALL;
 }
 
 
@@ -654,87 +631,14 @@ bool Call::ComputeGlobalTarget(Handle<GlobalObject> global,
 }
 
 
-Handle<JSObject> Call::GetPrototypeForPrimitiveCheck(
-    CheckType check, Isolate* isolate) {
-  v8::internal::Context* native_context = isolate->context()->native_context();
-  JSFunction* function = NULL;
-  switch (check) {
-    case RECEIVER_MAP_CHECK:
-      UNREACHABLE();
-      break;
-    case STRING_CHECK:
-      function = native_context->string_function();
-      break;
-    case SYMBOL_CHECK:
-      function = native_context->symbol_function();
-      break;
-    case NUMBER_CHECK:
-      function = native_context->number_function();
-      break;
-    case BOOLEAN_CHECK:
-      function = native_context->boolean_function();
-      break;
-  }
-  ASSERT(function != NULL);
-  return Handle<JSObject>(JSObject::cast(function->instance_prototype()));
-}
-
-
-void Call::RecordTypeFeedback(TypeFeedbackOracle* oracle,
-                              CallKind call_kind) {
-  is_monomorphic_ = oracle->CallIsMonomorphic(CallFeedbackId());
-  Property* property = expression()->AsProperty();
-  if (property == NULL) {
-    // Function call.  Specialize for monomorphic calls.
-    if (is_monomorphic_) target_ = oracle->GetCallTarget(CallFeedbackId());
-  } else if (property->key()->IsPropertyName()) {
-    // Method call.  Specialize for the receiver types seen at runtime.
-    Literal* key = property->key()->AsLiteral();
-    ASSERT(key != NULL && key->value()->IsString());
-    Handle<String> name = Handle<String>::cast(key->value());
-    check_type_ = oracle->GetCallCheckType(CallFeedbackId());
-    receiver_types_.Clear();
-    if (check_type_ == RECEIVER_MAP_CHECK) {
-      oracle->CallReceiverTypes(CallFeedbackId(),
-          name, arguments()->length(), call_kind, &receiver_types_);
-      is_monomorphic_ = is_monomorphic_ && receiver_types_.length() > 0;
-    } else {
-      holder_ = GetPrototypeForPrimitiveCheck(check_type_, oracle->isolate());
-      receiver_types_.Add(handle(holder_->map()), oracle->zone());
-    }
-#ifdef ENABLE_SLOW_ASSERTS
-    if (FLAG_enable_slow_asserts) {
-      int length = receiver_types_.length();
-      for (int i = 0; i < length; i++) {
-        Handle<Map> map = receiver_types_.at(i);
-        ASSERT(!map.is_null() && *map != NULL);
-      }
-    }
-#endif
-    if (is_monomorphic_) {
-      Handle<Map> map = receiver_types_.first();
-      is_monomorphic_ = ComputeTarget(map, name);
-    }
-  } else {
-    if (is_monomorphic_) {
-      keyed_array_call_is_holey_ =
-          oracle->KeyedArrayCallIsHoley(CallFeedbackId());
-    }
-  }
-}
-
-
 void CallNew::RecordTypeFeedback(TypeFeedbackOracle* oracle) {
-  allocation_info_cell_ =
-      oracle->GetCallNewAllocationInfoCell(CallNewFeedbackId());
+  allocation_site_ =
+      oracle->GetCallNewAllocationSite(CallNewFeedbackId());
   is_monomorphic_ = oracle->CallNewIsMonomorphic(CallNewFeedbackId());
   if (is_monomorphic_) {
     target_ = oracle->GetCallNewTarget(CallNewFeedbackId());
-    Object* value = allocation_info_cell_->value();
-    ASSERT(!value->IsTheHole());
-    if (value->IsAllocationSite()) {
-      AllocationSite* site = AllocationSite::cast(value);
-      elements_kind_ = site->GetElementsKind();
+    if (!allocation_site_.is_null()) {
+      elements_kind_ = allocation_site_->GetElementsKind();
     }
   }
 }
@@ -742,8 +646,10 @@ void CallNew::RecordTypeFeedback(TypeFeedbackOracle* oracle) {
 
 void ObjectLiteral::Property::RecordTypeFeedback(TypeFeedbackOracle* oracle) {
   TypeFeedbackId id = key()->LiteralFeedbackId();
-  receiver_type_ = oracle->ObjectLiteralStoreIsMonomorphic(id)
-      ? oracle->GetObjectLiteralStoreMap(id) : Handle<Map>::null();
+  SmallMapList maps;
+  oracle->CollectReceiverTypes(id, &maps);
+  receiver_type_ = maps.length() == 1 ? maps.at(0)
+                                      : Handle<Map>::null();
 }
 
 
@@ -1116,16 +1022,16 @@ RegExpAlternative::RegExpAlternative(ZoneList<RegExpTree*>* nodes)
 }
 
 
-CaseClause::CaseClause(Isolate* isolate,
+CaseClause::CaseClause(Zone* zone,
                        Expression* label,
                        ZoneList<Statement*>* statements,
                        int pos)
-    : AstNode(pos),
+    : Expression(zone, pos),
       label_(label),
       statements_(statements),
-      compare_type_(Type::None(), isolate),
-      compare_id_(AstNode::GetNextId(isolate)),
-      entry_id_(AstNode::GetNextId(isolate)) {
+      compare_type_(Type::None(zone)),
+      compare_id_(AstNode::GetNextId(zone)),
+      entry_id_(AstNode::GetNextId(zone)) {
 }
 
 

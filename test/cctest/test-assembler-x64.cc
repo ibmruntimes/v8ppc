@@ -179,10 +179,10 @@ TEST(AssemblerX64XchglOperations) {
   Assembler assm(CcTest::i_isolate(), buffer, static_cast<int>(actual_size));
 
   __ movq(rax, Operand(arg1, 0));
-  __ movq(rbx, Operand(arg2, 0));
-  __ xchgl(rax, rbx);
+  __ movq(r11, Operand(arg2, 0));
+  __ xchgl(rax, r11);
   __ movq(Operand(arg1, 0), rax);
-  __ movq(Operand(arg2, 0), rbx);
+  __ movq(Operand(arg2, 0), r11);
   __ ret(0);
 
   CodeDesc desc;
@@ -279,8 +279,8 @@ TEST(AssemblerX64TestlOperations) {
   // Set rax with the ZF flag of the testl instruction.
   Label done;
   __ movq(rax, Immediate(1));
-  __ movq(rbx, Operand(arg2, 0));
-  __ testl(Operand(arg1, 0), rbx);
+  __ movq(r11, Operand(arg2, 0));
+  __ testl(Operand(arg1, 0), r11);
   __ j(zero, &done, Label::kNear);
   __ movq(rax, Immediate(0));
   __ bind(&done);
@@ -604,7 +604,7 @@ void DoSSE2(const v8::FunctionCallbackInfo<v8::Value>& args) {
 
   F0 f = FUNCTION_CAST<F0>(code->entry());
   int res = f();
-  args.GetReturnValue().Set(v8::Integer::New(res));
+  args.GetReturnValue().Set(v8::Integer::New(CcTest::isolate(), res));
 }
 
 
@@ -614,8 +614,10 @@ TEST(StackAlignmentForSSE2) {
 
   v8::Isolate* isolate = CcTest::isolate();
   v8::HandleScope handle_scope(isolate);
-  v8::Handle<v8::ObjectTemplate> global_template = v8::ObjectTemplate::New();
-  global_template->Set(v8_str("do_sse2"), v8::FunctionTemplate::New(DoSSE2));
+  v8::Handle<v8::ObjectTemplate> global_template =
+      v8::ObjectTemplate::New(isolate);
+  global_template->Set(v8_str("do_sse2"),
+                       v8::FunctionTemplate::New(isolate, DoSSE2));
 
   LocalContext env(NULL, global_template);
   CompileRun(

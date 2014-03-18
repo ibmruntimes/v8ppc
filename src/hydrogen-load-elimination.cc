@@ -43,7 +43,6 @@ static const int kMaxTrackedObjects = 5;
 class HFieldApproximation : public ZoneObject {
  public:  // Just a data blob.
   HValue* object_;
-  HLoadNamedField* last_load_;
   HValue* last_value_;
   HFieldApproximation* next_;
 
@@ -52,7 +51,6 @@ class HFieldApproximation : public ZoneObject {
     if (this == NULL) return NULL;
     HFieldApproximation* copy = new(zone) HFieldApproximation();
     copy->object_ = this->object_;
-    copy->last_load_ = this->last_load_;
     copy->last_value_ = this->last_value_;
     copy->next_ = this->next_->Copy(zone);
     return copy;
@@ -134,8 +132,10 @@ class HLoadEliminationTable : public ZoneObject {
     return this;
   }
 
-  // Support for global analysis with HFlowEngine: Copy state to sucessor block.
-  HLoadEliminationTable* Copy(HBasicBlock* succ, Zone* zone) {
+  // Support for global analysis with HFlowEngine: Copy state to successor
+  // block.
+  HLoadEliminationTable* Copy(HBasicBlock* succ, HBasicBlock* from_block,
+                              Zone* zone) {
     HLoadEliminationTable* copy =
         new(zone) HLoadEliminationTable(zone, aliasing_);
     copy->EnsureFields(fields_.length());
@@ -151,8 +151,8 @@ class HLoadEliminationTable : public ZoneObject {
 
   // Support for global analysis with HFlowEngine: Merge this state with
   // the other incoming state.
-  HLoadEliminationTable* Merge(HBasicBlock* succ,
-      HLoadEliminationTable* that, Zone* zone) {
+  HLoadEliminationTable* Merge(HBasicBlock* succ, HLoadEliminationTable* that,
+                               HBasicBlock* that_block, Zone* zone) {
     if (that->fields_.length() < fields_.length()) {
       // Drop fields not in the other table.
       fields_.Rewind(that->fields_.length());
@@ -178,6 +178,10 @@ class HLoadEliminationTable : public ZoneObject {
         approx = approx->next_;
       }
     }
+    if (FLAG_trace_load_elimination) {
+      TRACE((" merge-to B%d\n", succ->block_id()));
+      Print();
+    }
     return this;
   }
 
@@ -189,6 +193,10 @@ class HLoadEliminationTable : public ZoneObject {
   // load or store for this object and field exists, return the new value with
   // which the load should be replaced. Otherwise, return {instr}.
   HValue* load(HLoadNamedField* instr) {
+    // There must be no loads from non observable in-object properties.
+    ASSERT(!instr->access().IsInobject() ||
+           instr->access().existing_inobject_property());
+
     int field = FieldOf(instr->access());
     if (field < 0) return instr;
 
@@ -197,12 +205,14 @@ class HLoadEliminationTable : public ZoneObject {
 
     if (approx->last_value_ == NULL) {
       // Load is not redundant. Fill out a new entry.
-      approx->last_load_ = instr;
       approx->last_value_ = instr;
       return instr;
-    } else {
+    } else if (approx->last_value_->block()->EqualToOrDominates(
+        instr->block())) {
       // Eliminate the load. Reuse previously stored value or load instruction.
       return approx->last_value_;
+    } else {
+      return instr;
     }
   }
 
@@ -211,18 +221,26 @@ class HLoadEliminationTable : public ZoneObject {
   // the stored values are the same), return NULL indicating that this store
   // instruction is redundant. Otherwise, return {instr}.
   HValue* store(HStoreNamedField* instr) {
+    if (instr->access().IsInobject() &&
+        !instr->access().existing_inobject_property()) {
+      TRACE(("  skipping non existing property initialization store\n"));
+      return instr;
+    }
+
     int field = FieldOf(instr->access());
     if (field < 0) return KillIfMisaligned(instr);
 
     HValue* object = instr->object()->ActualValue();
     HValue* value = instr->value();
 
-    // Kill non-equivalent may-alias entries.
-    KillFieldInternal(object, field, value);
     if (instr->has_transition()) {
-      // A transition store alters the map of the object.
-      // TODO(titzer): remember the new map (a constant) for the object.
+      // A transition introduces a new field and alters the map of the object.
+      // Since the field in the object is new, it cannot alias existing entries.
+      // TODO(titzer): introduce a constant for the new map and remember it.
       KillFieldInternal(object, FieldOf(JSObject::kMapOffset), NULL);
+    } else {
+      // Kill non-equivalent may-alias entries.
+      KillFieldInternal(object, field, value);
     }
     HFieldApproximation* approx = FindOrCreate(object, field);
 
@@ -231,7 +249,6 @@ class HLoadEliminationTable : public ZoneObject {
       return NULL;
     } else {
       // The store is not redundant. Update the entry.
-      approx->last_load_ = NULL;
       approx->last_value_ = value;
       return instr;
     }
@@ -314,7 +331,6 @@ class HLoadEliminationTable : public ZoneObject {
 
     // Insert the entry at the head of the list.
     approx->object_ = object;
-    approx->last_load_ = NULL;
     approx->last_value_ = NULL;
     approx->next_ = fields_[field];
     fields_[field] = approx;
@@ -397,7 +413,6 @@ class HLoadEliminationTable : public ZoneObject {
       PrintF("  field %d: ", i);
       for (HFieldApproximation* a = fields_[i]; a != NULL; a = a->next_) {
         PrintF("[o%d =", a->object_->id());
-        if (a->last_load_ != NULL) PrintF(" L%d", a->last_load_->id());
         if (a->last_value_ != NULL) PrintF(" v%d", a->last_value_->id());
         PrintF("] ");
       }

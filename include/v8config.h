@@ -88,6 +88,7 @@
 //  V8_OS_NETBSD        - NetBSD
 //  V8_OS_OPENBSD       - OpenBSD
 //  V8_OS_POSIX         - POSIX compatible (mostly everything except Windows)
+//  V8_OS_QNX           - QNX Neutrino
 //  V8_OS_SOLARIS       - Sun Solaris and OpenSolaris
 //  V8_OS_AIX           - AIX
 //  V8_OS_WIN           - Microsoft Windows
@@ -131,6 +132,9 @@
 # define V8_OS_BSD 1
 # define V8_OS_OPENBSD 1
 # define V8_OS_POSIX 1
+#elif defined(__QNXNTO__)
+# define V8_OS_POSIX 1
+# define V8_OS_QNX 1
 #elif defined(_WIN32)
 # define V8_OS_WIN 1
 #endif
@@ -139,6 +143,7 @@
 // -----------------------------------------------------------------------------
 // C library detection
 //
+//  V8_LIBC_MSVCRT  - MSVC libc
 //  V8_LIBC_BIONIC  - Bionic libc
 //  V8_LIBC_BSD     - BSD libc derivate
 //  V8_LIBC_GLIBC   - GNU C library
@@ -150,7 +155,9 @@
 //   ...
 //  #endif
 
-#if defined(__BIONIC__)
+#if defined (_MSC_VER)
+# define V8_LIBC_MSVCRT 1
+#elif defined(__BIONIC__)
 # define V8_LIBC_BIONIC 1
 # define V8_LIBC_BSD 1
 #elif defined(__UCLIBC__)

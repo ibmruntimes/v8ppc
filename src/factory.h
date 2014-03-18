@@ -99,10 +99,13 @@ class Factory {
   }
   Handle<String> InternalizeString(Handle<String> str);
   Handle<String> InternalizeOneByteString(Vector<const uint8_t> str);
-  Handle<String> InternalizeOneByteString(Handle<SeqOneByteString>,
-                                   int from,
-                                   int length);
+  Handle<String> InternalizeOneByteString(
+      Handle<SeqOneByteString>, int from, int length);
+
   Handle<String> InternalizeTwoByteString(Vector<const uc16> str);
+
+  template<class StringTableKey>
+  Handle<String> InternalizeStringWithKey(StringTableKey* key);
 
 
   // String creation functions.  Most of the string creation functions take
@@ -158,22 +161,27 @@ class Factory {
       PretenureFlag pretenure = NOT_TENURED);
 
   // Create a new cons string object which consists of a pair of strings.
-  Handle<String> NewConsString(Handle<String> first,
-                               Handle<String> second);
+  Handle<String> NewConsString(Handle<String> left,
+                               Handle<String> right);
+
+  Handle<ConsString> NewRawConsString(String::Encoding encoding);
 
   // Create a new sequential string containing the concatenation of the inputs.
   Handle<String> NewFlatConcatString(Handle<String> first,
                                      Handle<String> second);
 
-  // Create a new string object which holds a substring of a string.
-  Handle<String> NewSubString(Handle<String> str,
-                              int begin,
-                              int end);
-
   // Create a new string object which holds a proper substring of a string.
   Handle<String> NewProperSubString(Handle<String> str,
                                     int begin,
                                     int end);
+
+  // Create a new string object which holds a substring of a string.
+  Handle<String> NewSubString(Handle<String> str, int begin, int end) {
+    if (begin == 0 && end == str->length()) return str;
+    return NewProperSubString(str, begin, end);
+  }
+
+  Handle<SlicedString> NewRawSlicedString(String::Encoding encoding);
 
   // Creates a new external String object.  There are two String encodings
   // in the system: ASCII and two byte.  Unlike other String types, it does
@@ -250,6 +258,11 @@ class Factory {
       int length,
       ExternalArrayType array_type,
       void* external_pointer,
+      PretenureFlag pretenure = NOT_TENURED);
+
+  Handle<FixedTypedArrayBase> NewFixedTypedArray(
+      int length,
+      ExternalArrayType array_type,
       PretenureFlag pretenure = NOT_TENURED);
 
   Handle<Cell> NewCell(Handle<Object> value);

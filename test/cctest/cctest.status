@@ -70,14 +70,34 @@
 }],  # ALWAYS
 
 ##############################################################################
+['asan == True', {
+  # Skip tests not suitable for ASAN.
+  'test-assembler-x64/AssemblerX64XchglOperations': [SKIP],
+  'test-lockers/MultithreadedParallelIsolates': [SKIP],
+}],  # 'asan == True'
+
+##############################################################################
 ['system == windows', {
 
   # BUG(2999).
   'test-cpu-profiler/CollectCpuProfile': [PASS, FAIL],
+  'test-cpu-profiler/JsNativeJsSample': [PASS, FLAKY],
+
+  # BUG(3055).
+  'test-cpu-profiler/JsNative1JsNative2JsSample': [PASS, ['mode == release', FAIL], ['mode == debug', FLAKY]],
 
   # BUG(3005).
   'test-alloc/CodeRange': [PASS, FAIL],
 }],  # 'system == windows'
+
+##############################################################################
+['system == macos', {
+
+  # BUG(3125).
+  'test-debug/DebugGetLoadedScripts': [PASS, FLAKY],
+  'test-debug/DebugStepLinear': [PASS, FLAKY],
+  'test-debug/DebuggerClearMessageHandler': [PASS, FLAKY],
+}],  # 'system == macos'
 
 ##############################################################################
 ['arch == arm', {
@@ -96,6 +116,9 @@
   'test-serialize/DeserializeFromSecondSerializationAndRunScript2': [SKIP],
   'test-serialize/DeserializeAndRunScript2': [SKIP],
   'test-serialize/DeserializeFromSecondSerialization': [SKIP],
+
+  # BUG(2999).
+  'test-cpu-profiler/CollectCpuProfile': [PASS, FLAKY],
 
   ############################################################################
   # Slow tests.

@@ -33,6 +33,7 @@ import multiprocessing
 import optparse
 import os
 from os.path import join
+import platform
 import shlex
 import subprocess
 import sys
@@ -68,6 +69,11 @@ MODE_FLAGS = {
     "release" : ["--nobreak-on-abort", "--nodead-code-elimination",
                  "--nofold-constants"]}
 
+GC_STRESS_FLAGS = ["--gc-interval=500", "--stress-compaction",
+                   "--concurrent-recompilation-queue-length=64",
+                   "--concurrent-recompilation-delay=500",
+                   "--concurrent-recompilation"]
+
 SUPPORTED_ARCHS = ["android_arm",
                    "android_ia32",
                    "arm",
@@ -96,6 +102,9 @@ def BuildOptions():
   result.add_option("--arch-and-mode",
                     help="Architecture and mode in the format 'arch.mode'",
                     default=None)
+  result.add_option("--asan",
+                    help="Regard test expectations for ASAN",
+                    default=False, action="store_true")
   result.add_option("--buildbot",
                     help="Adapt to path structure used on buildbots",
                     default=False, action="store_true")
@@ -110,6 +119,9 @@ def BuildOptions():
   result.add_option("--pass-fail-tests",
                     help="Regard pass|fail tests (run|skip|dontcare)",
                     default="dontcare")
+  result.add_option("--gc-stress",
+                    help="Switch on GC stress mode",
+                    default=False, action="store_true")
   result.add_option("--command-prefix",
                     help="Prepended to each shell command used to run a test",
                     default="")
@@ -149,6 +161,8 @@ def BuildOptions():
                     help=("The style of progress indicator"
                           " (verbose, dots, color, mono)"),
                     choices=progress.PROGRESS_INDICATORS.keys(), default="mono")
+  result.add_option("--quickcheck", default=False, action="store_true",
+                    help=("Quick check mode (skip slow/flaky tests)"))
   result.add_option("--report", help="Print a summary of the tests to be run",
                     default=False, action="store_true")
   result.add_option("--shard-count",
@@ -192,7 +206,7 @@ def ProcessOptions(options):
     options.mode = ",".join([tokens[1] for tokens in options.arch_and_mode])
   options.mode = options.mode.split(",")
   for mode in options.mode:
-    if not mode.lower() in ["debug", "release"]:
+    if not mode.lower() in ["debug", "release", "optdebug"]:
       print "Unknown mode %s" % mode
       return False
   if options.arch in ["auto", "native"]:
@@ -220,6 +234,10 @@ def ProcessOptions(options):
     options.no_network = True
   options.command_prefix = shlex.split(options.command_prefix)
   options.extra_flags = shlex.split(options.extra_flags)
+
+  if options.gc_stress:
+    options.extra_flags += GC_STRESS_FLAGS
+
   if options.j == 0:
     options.j = multiprocessing.cpu_count()
 
@@ -228,9 +246,9 @@ def ProcessOptions(options):
     return reduce(lambda x, y: x + y, args) <= 1
 
   if not excl(options.no_stress, options.stress_only, options.no_variants,
-              bool(options.variants)):
-    print("Use only one of --no-stress, --stress-only, --no-variants or "
-          "--variants.")
+              bool(options.variants), options.quickcheck):
+    print("Use only one of --no-stress, --stress-only, --no-variants, "
+          "--variants, or --quickcheck.")
     return False
   if options.no_stress:
     VARIANTS = ["default", "nocrankshaft"]
@@ -243,6 +261,12 @@ def ProcessOptions(options):
     if not set(VARIANTS).issubset(VARIANT_FLAGS.keys()):
       print "All variants must be in %s" % str(VARIANT_FLAGS.keys())
       return False
+  if options.quickcheck:
+    VARIANTS = ["default", "stress"]
+    options.flaky_tests = "skip"
+    options.slow_tests = "skip"
+    options.pass_fail_tests = "skip"
+
   if not options.shell_dir:
     if options.shell:
       print "Warning: --shell is deprecated, use --shell-dir instead."
@@ -323,7 +347,10 @@ def Main():
       s.DownloadData()
 
   for (arch, mode) in options.arch_and_mode:
-    code = Execute(arch, mode, args, options, suites, workspace)
+    try:
+      code = Execute(arch, mode, args, options, suites, workspace)
+    except KeyboardInterrupt:
+      return 2
     exit_code = exit_code or code
   return exit_code
 
@@ -340,6 +367,9 @@ def Execute(arch, mode, args, options, suites, workspace):
       shell_dir = os.path.join(workspace, options.outdir,
                                "%s.%s" % (arch, mode))
   shell_dir = os.path.relpath(shell_dir)
+
+  if mode == "optdebug":
+    mode = "debug"  # "optdebug" is just an alias.
 
   # Populate context object.
   mode_flags = MODE_FLAGS[mode]
@@ -361,12 +391,15 @@ def Execute(arch, mode, args, options, suites, workspace):
 
   # Find available test suites and read test cases from them.
   variables = {
-    "mode": mode,
     "arch": arch,
-    "system": utils.GuessOS(),
-    "isolates": options.isolates,
+    "asan": options.asan,
     "deopt_fuzzer": False,
+    "gc_stress": options.gc_stress,
+    "isolates": options.isolates,
+    "mode": mode,
     "no_i18n": options.no_i18n,
+    "simulator": utils.UseSimulator(arch),
+    "system": utils.GuessOS(),
   }
   all_tests = []
   num_tests = 0
@@ -440,7 +473,7 @@ def Execute(arch, mode, args, options, suites, workspace):
       return exit_code
     overall_duration = time.time() - start_time
   except KeyboardInterrupt:
-    return 1
+    raise
 
   if options.time:
     verbose.PrintTestDurations(suites, overall_duration)

@@ -364,35 +364,48 @@ void HSideEffectMap::Store(GVNFlagSet flags, HInstruction* instr) {
 
 
 HGlobalValueNumberingPhase::HGlobalValueNumberingPhase(HGraph* graph)
-      : HPhase("H_Global value numbering", graph),
-        removed_side_effects_(false),
-        block_side_effects_(graph->blocks()->length(), zone()),
-        loop_side_effects_(graph->blocks()->length(), zone()),
-        visited_on_paths_(graph->blocks()->length(), zone()) {
-    ASSERT(!AllowHandleAllocation::IsAllowed());
-    block_side_effects_.AddBlock(GVNFlagSet(), graph->blocks()->length(),
-                                 zone());
-    loop_side_effects_.AddBlock(GVNFlagSet(), graph->blocks()->length(),
+    : HPhase("H_Global value numbering", graph),
+      removed_side_effects_(false),
+      block_side_effects_(graph->blocks()->length(), zone()),
+      loop_side_effects_(graph->blocks()->length(), zone()),
+      visited_on_paths_(graph->blocks()->length(), zone()) {
+  ASSERT(!AllowHandleAllocation::IsAllowed());
+  block_side_effects_.AddBlock(GVNFlagSet(), graph->blocks()->length(),
                                 zone());
-  }
+  loop_side_effects_.AddBlock(GVNFlagSet(), graph->blocks()->length(),
+                              zone());
+}
 
-void HGlobalValueNumberingPhase::Analyze() {
-  removed_side_effects_ = false;
-  ComputeBlockSideEffects();
-  if (FLAG_loop_invariant_code_motion) {
-    LoopInvariantCodeMotion();
+
+void HGlobalValueNumberingPhase::Run() {
+  ASSERT(!removed_side_effects_);
+  for (int i = FLAG_gvn_iterations; i > 0; --i) {
+    // Compute the side effects.
+    ComputeBlockSideEffects();
+
+    // Perform loop invariant code motion if requested.
+    if (FLAG_loop_invariant_code_motion) LoopInvariantCodeMotion();
+
+    // Perform the actual value numbering.
+    AnalyzeGraph();
+
+    // Continue GVN if we removed any side effects.
+    if (!removed_side_effects_) break;
+    removed_side_effects_ = false;
+
+    // Clear all side effects.
+    ASSERT_EQ(block_side_effects_.length(), graph()->blocks()->length());
+    ASSERT_EQ(loop_side_effects_.length(), graph()->blocks()->length());
+    for (int i = 0; i < graph()->blocks()->length(); ++i) {
+      block_side_effects_[i].RemoveAll();
+      loop_side_effects_[i].RemoveAll();
+    }
+    visited_on_paths_.Clear();
   }
-  AnalyzeGraph();
 }
 
 
 void HGlobalValueNumberingPhase::ComputeBlockSideEffects() {
-  // The Analyze phase of GVN can be called multiple times. Clear loop side
-  // effects before computing them to erase the contents from previous Analyze
-  // passes.
-  for (int i = 0; i < loop_side_effects_.length(); ++i) {
-    loop_side_effects_[i].RemoveAll();
-  }
   for (int i = graph()->blocks()->length() - 1; i >= 0; --i) {
     // Compute side effects for the block.
     HBasicBlock* block = graph()->blocks()->at(i);
@@ -412,10 +425,13 @@ void HGlobalValueNumberingPhase::ComputeBlockSideEffects() {
 
       // Propagate loop side effects upwards.
       if (block->HasParentLoopHeader()) {
-        int header_id = block->parent_loop_header()->block_id();
-        loop_side_effects_[header_id].Add(block->IsLoopHeader()
-                                          ? loop_side_effects_[id]
-                                          : side_effects);
+        HBasicBlock* with_parent = block;
+        if (block->IsLoopHeader()) side_effects = loop_side_effects_[id];
+        do {
+          HBasicBlock* parent_block = with_parent->parent_loop_header();
+          loop_side_effects_[parent_block->block_id()].Add(side_effects);
+          with_parent = parent_block;
+        } while (with_parent->HasParentLoopHeader());
       }
     }
   }
@@ -423,7 +439,7 @@ void HGlobalValueNumberingPhase::ComputeBlockSideEffects() {
 
 
 SmartArrayPointer<char> GetGVNFlagsString(GVNFlagSet flags) {
-  char underlying_buffer[kLastFlag * 128];
+  char underlying_buffer[kNumberOfFlags * 128];
   Vector<char> buffer(underlying_buffer, sizeof(underlying_buffer));
 #if DEBUG
   int offset = 0;
@@ -432,7 +448,7 @@ SmartArrayPointer<char> GetGVNFlagsString(GVNFlagSet flags) {
   buffer[0] = 0;
   uint32_t set_depends_on = 0;
   uint32_t set_changes = 0;
-  for (int bit = 0; bit < kLastFlag; ++bit) {
+  for (int bit = 0; bit < kNumberOfFlags; ++bit) {
     if (flags.Contains(static_cast<GVNFlag>(bit))) {
       if (bit % 2 == 0) {
         set_changes++;
@@ -441,15 +457,15 @@ SmartArrayPointer<char> GetGVNFlagsString(GVNFlagSet flags) {
       }
     }
   }
-  bool positive_changes = set_changes < (kLastFlag / 2);
-  bool positive_depends_on = set_depends_on < (kLastFlag / 2);
+  bool positive_changes = set_changes < (kNumberOfFlags / 2);
+  bool positive_depends_on = set_depends_on < (kNumberOfFlags / 2);
   if (set_changes > 0) {
     if (positive_changes) {
       offset += OS::SNPrintF(buffer + offset, "changes [");
     } else {
       offset += OS::SNPrintF(buffer + offset, "changes all except [");
     }
-    for (int bit = 0; bit < kLastFlag; ++bit) {
+    for (int bit = 0; bit < kNumberOfFlags; ++bit) {
       if (flags.Contains(static_cast<GVNFlag>(bit)) == positive_changes) {
         switch (static_cast<GVNFlag>(bit)) {
 #define DECLARE_FLAG(type)                                       \
@@ -478,7 +494,7 @@ GVN_UNTRACKED_FLAG_LIST(DECLARE_FLAG)
     } else {
       offset += OS::SNPrintF(buffer + offset, "depends on all except [");
     }
-    for (int bit = 0; bit < kLastFlag; ++bit) {
+    for (int bit = 0; bit < kNumberOfFlags; ++bit) {
       if (flags.Contains(static_cast<GVNFlag>(bit)) == positive_depends_on) {
         switch (static_cast<GVNFlag>(bit)) {
 #define DECLARE_FLAG(type)                                       \
@@ -517,15 +533,11 @@ void HGlobalValueNumberingPhase::LoopInvariantCodeMotion() {
       GVNFlagSet side_effects = loop_side_effects_[block->block_id()];
       TRACE_GVN_2("Try loop invariant motion for block B%d %s\n",
                   block->block_id(),
-                  *GetGVNFlagsString(side_effects));
+                  GetGVNFlagsString(side_effects).get());
 
-      GVNFlagSet accumulated_first_time_depends;
-      GVNFlagSet accumulated_first_time_changes;
       HBasicBlock* last = block->loop_information()->GetLastBackEdge();
       for (int j = block->block_id(); j <= last->block_id(); ++j) {
-        ProcessLoopBlock(graph()->blocks()->at(j), block, side_effects,
-                         &accumulated_first_time_depends,
-                         &accumulated_first_time_changes);
+        ProcessLoopBlock(graph()->blocks()->at(j), block, side_effects);
       }
     }
   }
@@ -535,24 +547,21 @@ void HGlobalValueNumberingPhase::LoopInvariantCodeMotion() {
 void HGlobalValueNumberingPhase::ProcessLoopBlock(
     HBasicBlock* block,
     HBasicBlock* loop_header,
-    GVNFlagSet loop_kills,
-    GVNFlagSet* first_time_depends,
-    GVNFlagSet* first_time_changes) {
+    GVNFlagSet loop_kills) {
   HBasicBlock* pre_header = loop_header->predecessors()->at(0);
   GVNFlagSet depends_flags = HValue::ConvertChangesToDependsFlags(loop_kills);
   TRACE_GVN_2("Loop invariant motion for B%d %s\n",
               block->block_id(),
-              *GetGVNFlagsString(depends_flags));
+              GetGVNFlagsString(depends_flags).get());
   HInstruction* instr = block->first();
   while (instr != NULL) {
     HInstruction* next = instr->next();
-    bool hoisted = false;
     if (instr->CheckFlag(HValue::kUseGVN)) {
       TRACE_GVN_4("Checking instruction %d (%s) %s. Loop %s\n",
                   instr->id(),
                   instr->Mnemonic(),
-                  *GetGVNFlagsString(instr->gvn_flags()),
-                  *GetGVNFlagsString(loop_kills));
+                  GetGVNFlagsString(instr->gvn_flags()).get(),
+                  GetGVNFlagsString(loop_kills).get());
       bool can_hoist = !instr->gvn_flags().ContainsAnyOf(depends_flags);
       if (can_hoist && !graph()->use_optimistic_licm()) {
         can_hoist = block->IsLoopSuccessorDominator();
@@ -567,29 +576,13 @@ void HGlobalValueNumberingPhase::ProcessLoopBlock(
         }
 
         if (inputs_loop_invariant && ShouldMove(instr, loop_header)) {
-          TRACE_GVN_1("Hoisting loop invariant instruction %d\n", instr->id());
+          TRACE_GVN_2("Hoisting loop invariant instruction i%d to block B%d\n",
+                      instr->id(), pre_header->block_id());
           // Move the instruction out of the loop.
           instr->Unlink();
           instr->InsertBefore(pre_header->end());
           if (instr->HasSideEffects()) removed_side_effects_ = true;
-          hoisted = true;
         }
-      }
-    }
-    if (!hoisted) {
-      // If an instruction is not hoisted, we have to account for its side
-      // effects when hoisting later HTransitionElementsKind instructions.
-      GVNFlagSet previous_depends = *first_time_depends;
-      GVNFlagSet previous_changes = *first_time_changes;
-      first_time_depends->Add(instr->DependsOnFlags());
-      first_time_changes->Add(instr->ChangesFlags());
-      if (!(previous_depends == *first_time_depends)) {
-        TRACE_GVN_1("Updated first-time accumulated %s\n",
-                    *GetGVNFlagsString(*first_time_depends));
-      }
-      if (!(previous_changes == *first_time_changes)) {
-        TRACE_GVN_1("Updated first-time accumulated %s\n",
-                    *GetGVNFlagsString(*first_time_changes));
       }
     }
     instr = next;
@@ -787,7 +780,9 @@ void HGlobalValueNumberingPhase::AnalyzeGraph() {
                         instr->Mnemonic(),
                         other->id(),
                         other->Mnemonic());
-            instr->HandleSideEffectDominator(changes_flag, other);
+            if (instr->HandleSideEffectDominator(changes_flag, other)) {
+              removed_side_effects_ = true;
+            }
           }
         }
       }
@@ -801,7 +796,7 @@ void HGlobalValueNumberingPhase::AnalyzeGraph() {
         map->Kill(flags);
         dominators->Store(flags, instr);
         TRACE_GVN_2("Instruction %d %s\n", instr->id(),
-                    *GetGVNFlagsString(flags));
+                    GetGVNFlagsString(flags).get());
       }
       if (instr->CheckFlag(HValue::kUseGVN)) {
         ASSERT(!instr->HasObservableSideEffects());

@@ -1,4 +1,4 @@
-// Copyright 2012 the V8 project authors. All rights reserved.
+// Copyright 2013 the V8 project authors. All rights reserved.
 // Redistribution and use in source and binary forms, with or without
 // modification, are permitted provided that the following conditions are
 // met:
@@ -25,25 +25,40 @@
 // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#ifndef V8_APIUTILS_H_
-#define V8_APIUTILS_H_
+#include "v8.h"
 
-namespace v8 {
-class ImplementationUtilities {
- public:
-  static int GetNameCount(ExtensionConfiguration* that) {
-    return that->name_count_;
-  }
+#include "cctest.h"
+#include "libplatform/task-queue.h"
+#include "libplatform/worker-thread.h"
+#include "test-libplatform.h"
 
-  static const char** GetNames(ExtensionConfiguration* that) {
-    return that->names_;
-  }
+using namespace v8::internal;
 
-  // Introduce an alias for the handle scope data to allow non-friends
-  // to access the HandleScope data.
-  typedef v8::HandleScope::Data HandleScopeData;
-};
 
-}  // namespace v8
+TEST(WorkerThread) {
+  TaskQueue queue;
+  TaskCounter task_counter;
 
-#endif  // V8_APIUTILS_H_
+  TestTask* task1 = new TestTask(&task_counter, true);
+  TestTask* task2 = new TestTask(&task_counter, true);
+  TestTask* task3 = new TestTask(&task_counter, true);
+  TestTask* task4 = new TestTask(&task_counter, true);
+
+  WorkerThread* thread1 = new WorkerThread(&queue);
+  WorkerThread* thread2 = new WorkerThread(&queue);
+
+  CHECK_EQ(4, task_counter.GetCount());
+
+  queue.Append(task1);
+  queue.Append(task2);
+  queue.Append(task3);
+  queue.Append(task4);
+
+  // TaskQueue ASSERTs that it is empty in its destructor.
+  queue.Terminate();
+
+  delete thread1;
+  delete thread2;
+
+  CHECK_EQ(0, task_counter.GetCount());
+}

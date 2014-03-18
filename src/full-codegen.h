@@ -52,8 +52,8 @@ class JumpPatchSite;
 // debugger to piggybag on.
 class BreakableStatementChecker: public AstVisitor {
  public:
-  explicit BreakableStatementChecker(Isolate* isolate) : is_breakable_(false) {
-    InitializeAstVisitor(isolate);
+  explicit BreakableStatementChecker(Zone* zone) : is_breakable_(false) {
+    InitializeAstVisitor(zone);
   }
 
   void Check(Statement* stmt);
@@ -99,8 +99,7 @@ class FullCodeGenerator: public AstVisitor {
         type_feedback_cells_(info->HasDeoptimizationSupport()
                              ? info->function()->ast_node_count() : 0,
                              info->zone()),
-        ic_total_count_(0),
-        zone_(info->zone()) {
+        ic_total_count_(0) {
     Initialize();
   }
 
@@ -121,8 +120,6 @@ class FullCodeGenerator: public AstVisitor {
     UNREACHABLE();
     return NULL;
   }
-
-  Zone* zone() const { return zone_; }
 
   static const int kMaxBackEdgeWeight = 127;
 
@@ -490,8 +487,8 @@ class FullCodeGenerator: public AstVisitor {
   void EmitReturnSequence();
 
   // Platform-specific code sequences for calls
-  void EmitCallWithStub(Call* expr, CallFunctionFlags flags);
-  void EmitCallWithIC(Call* expr, Handle<Object> name, RelocInfo::Mode mode);
+  void EmitCallWithStub(Call* expr);
+  void EmitCallWithIC(Call* expr);
   void EmitKeyedCallWithIC(Call* expr, Expression* key);
 
   // Platform-specific code for inline runtime calls.
@@ -573,8 +570,13 @@ class FullCodeGenerator: public AstVisitor {
   void EmitKeyedPropertyAssignment(Assignment* expr);
 
   void CallIC(Handle<Code> code,
-              RelocInfo::Mode rmode = RelocInfo::CODE_TARGET,
+              ContextualMode mode = NOT_CONTEXTUAL,
               TypeFeedbackId id = TypeFeedbackId::None());
+
+  void CallLoadIC(ContextualMode mode,
+                  TypeFeedbackId id = TypeFeedbackId::None());
+  void CallStoreIC(ContextualMode mode,
+                   TypeFeedbackId id = TypeFeedbackId::None());
 
   void SetFunctionPosition(FunctionLiteral* fun);
   void SetReturnPosition(FunctionLiteral* fun);
@@ -605,6 +607,9 @@ class FullCodeGenerator: public AstVisitor {
   bool is_eval() { return info_->is_eval(); }
   bool is_native() { return info_->is_native(); }
   bool is_classic_mode() { return language_mode() == CLASSIC_MODE; }
+  StrictModeFlag strict_mode() {
+    return is_classic_mode() ? kNonStrictMode : kStrictMode;
+  }
   LanguageMode language_mode() { return function()->language_mode(); }
   FunctionLiteral* function() { return info_->function(); }
   Scope* scope() { return scope_; }
@@ -853,7 +858,6 @@ class FullCodeGenerator: public AstVisitor {
   Handle<FixedArray> handler_table_;
   Handle<Cell> profiling_counter_;
   bool generate_debug_code_;
-  Zone* zone_;
 
   friend class NestedStatement;
 
@@ -936,10 +940,10 @@ class BackEdgeTable {
 
   // Change a back edge patched for on-stack replacement to perform a
   // stack check first.
-  static void AddStackCheck(CompilationInfo* info);
+  static void AddStackCheck(Handle<Code> code, uint32_t pc_offset);
 
-  // Remove the stack check, if available, and replace by on-stack replacement.
-  static void RemoveStackCheck(CompilationInfo* info);
+  // Revert the patch by AddStackCheck.
+  static void RemoveStackCheck(Handle<Code> code, uint32_t pc_offset);
 
   // Return the current patch state of the back edge.
   static BackEdgeState GetBackEdgeState(Isolate* isolate,

@@ -25,32 +25,15 @@
 // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#include "v8.h"
-
-#include "default-platform.h"
-
-namespace v8 {
-namespace internal {
-
-
-DefaultPlatform::DefaultPlatform() {}
-
-
-DefaultPlatform::~DefaultPlatform() {}
-
-void DefaultPlatform::CallOnBackgroundThread(Task *task,
-                                             ExpectedRuntime expected_runtime) {
-  // TODO(jochen): implement.
-  task->Run();
-  delete task;
+function format(a) {
+  if (a) {
+    return "X"+true+"Y";
+  } else {
+    return "X"+false+"Y";
+  }
 }
 
-
-void DefaultPlatform::CallOnForegroundThread(v8::Isolate* isolate, Task* task) {
-  // TODO(jochen): implement.
-  task->Run();
-  delete task;
+for (var i = 0; i < 1000; i++) {
+  assertEquals("XtrueY", format(true));
+  assertEquals("XfalseY", format(false));
 }
-
-
-} }  // namespace v8::internal

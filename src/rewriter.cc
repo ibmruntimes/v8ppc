@@ -43,8 +43,8 @@ class Processor: public AstVisitor {
         result_assigned_(false),
         is_set_(false),
         in_try_(false),
-        factory_(zone->isolate(), zone) {
-    InitializeAstVisitor(zone->isolate());
+        factory_(zone) {
+    InitializeAstVisitor(zone);
   }
 
   virtual ~Processor() { }
@@ -204,11 +204,6 @@ void Processor::VisitSwitchStatement(SwitchStatement* node) {
     Process(clause->statements());
   }
   is_set_ = is_set_ && set_after_switch;
-}
-
-
-void Processor::VisitCaseClause(CaseClause* clause) {
-  UNREACHABLE();
 }
 
 

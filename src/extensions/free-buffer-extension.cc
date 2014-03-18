@@ -36,7 +36,7 @@ namespace internal {
 v8::Handle<v8::FunctionTemplate> FreeBufferExtension::GetNativeFunctionTemplate(
     v8::Isolate* isolate,
     v8::Handle<v8::String> str) {
-  return v8::FunctionTemplate::New(FreeBufferExtension::FreeBuffer);
+  return v8::FunctionTemplate::New(isolate, FreeBufferExtension::FreeBuffer);
 }
 
 
@@ -45,16 +45,6 @@ void FreeBufferExtension::FreeBuffer(
   v8::Handle<v8::ArrayBuffer> arrayBuffer = args[0].As<v8::ArrayBuffer>();
   v8::ArrayBuffer::Contents contents = arrayBuffer->Externalize();
   V8::ArrayBufferAllocator()->Free(contents.Data(), contents.ByteLength());
-}
-
-
-void FreeBufferExtension::Register() {
-  static char buffer[100];
-  Vector<char> temp_vector(buffer, sizeof(buffer));
-  OS::SNPrintF(temp_vector, "native function freeBuffer();");
-
-  static FreeBufferExtension buffer_free_extension(buffer);
-  static v8::DeclareExtension declaration(&buffer_free_extension);
 }
 
 } }  // namespace v8::internal

@@ -172,10 +172,9 @@ ShellOptions Shell::options;
 const char* Shell::kPrompt = "d8> ";
 
 
+#ifndef V8_SHARED
 const int MB = 1024 * 1024;
 
-
-#ifndef V8_SHARED
 bool CounterMap::Match(void* key1, void* key2) {
   const char* name1 = reinterpret_cast<const char*>(key1);
   const char* name2 = reinterpret_cast<const char*>(key2);
@@ -614,26 +613,26 @@ void Shell::ReportException(Isolate* isolate, v8::TryCatch* try_catch) {
 Handle<Array> Shell::GetCompletions(Isolate* isolate,
                                     Handle<String> text,
                                     Handle<String> full) {
-  HandleScope handle_scope(isolate);
+  EscapableHandleScope handle_scope(isolate);
   v8::Local<v8::Context> utility_context =
       v8::Local<v8::Context>::New(isolate, utility_context_);
   v8::Context::Scope context_scope(utility_context);
   Handle<Object> global = utility_context->Global();
-  Handle<Value> fun =
+  Local<Value> fun =
       global->Get(String::NewFromUtf8(isolate, "GetCompletions"));
   static const int kArgc = 3;
   v8::Local<v8::Context> evaluation_context =
       v8::Local<v8::Context>::New(isolate, evaluation_context_);
   Handle<Value> argv[kArgc] = { evaluation_context->Global(), text, full };
-  Handle<Value> val = Handle<Function>::Cast(fun)->Call(global, kArgc, argv);
-  return handle_scope.Close(Handle<Array>::Cast(val));
+  Local<Value> val = Local<Function>::Cast(fun)->Call(global, kArgc, argv);
+  return handle_scope.Escape(Local<Array>::Cast(val));
 }
 
 
 #ifdef ENABLE_DEBUGGER_SUPPORT
-Handle<Object> Shell::DebugMessageDetails(Isolate* isolate,
-                                          Handle<String> message) {
-  HandleScope handle_scope(isolate);
+Local<Object> Shell::DebugMessageDetails(Isolate* isolate,
+                                         Handle<String> message) {
+  EscapableHandleScope handle_scope(isolate);
   v8::Local<v8::Context> context =
       v8::Local<v8::Context>::New(isolate, utility_context_);
   v8::Context::Scope context_scope(context);
@@ -643,13 +642,13 @@ Handle<Object> Shell::DebugMessageDetails(Isolate* isolate,
   static const int kArgc = 1;
   Handle<Value> argv[kArgc] = { message };
   Handle<Value> val = Handle<Function>::Cast(fun)->Call(global, kArgc, argv);
-  return Handle<Object>::Cast(val);
+  return handle_scope.Escape(Local<Object>(Handle<Object>::Cast(val)));
 }
 
 
-Handle<Value> Shell::DebugCommandToJSONRequest(Isolate* isolate,
-                                               Handle<String> command) {
-  HandleScope handle_scope(isolate);
+Local<Value> Shell::DebugCommandToJSONRequest(Isolate* isolate,
+                                              Handle<String> command) {
+  EscapableHandleScope handle_scope(isolate);
   v8::Local<v8::Context> context =
       v8::Local<v8::Context>::New(isolate, utility_context_);
   v8::Context::Scope context_scope(context);
@@ -659,7 +658,7 @@ Handle<Value> Shell::DebugCommandToJSONRequest(Isolate* isolate,
   static const int kArgc = 1;
   Handle<Value> argv[kArgc] = { command };
   Handle<Value> val = Handle<Function>::Cast(fun)->Call(global, kArgc, argv);
-  return val;
+  return handle_scope.Escape(Local<Value>(val));
 }
 
 
@@ -863,54 +862,54 @@ class BZip2Decompressor : public v8::StartupDataDecompressor {
 
 
 Handle<ObjectTemplate> Shell::CreateGlobalTemplate(Isolate* isolate) {
-  Handle<ObjectTemplate> global_template = ObjectTemplate::New();
+  Handle<ObjectTemplate> global_template = ObjectTemplate::New(isolate);
   global_template->Set(String::NewFromUtf8(isolate, "print"),
-                       FunctionTemplate::New(Print));
+                       FunctionTemplate::New(isolate, Print));
   global_template->Set(String::NewFromUtf8(isolate, "write"),
-                       FunctionTemplate::New(Write));
+                       FunctionTemplate::New(isolate, Write));
   global_template->Set(String::NewFromUtf8(isolate, "read"),
-                       FunctionTemplate::New(Read));
+                       FunctionTemplate::New(isolate, Read));
   global_template->Set(String::NewFromUtf8(isolate, "readbuffer"),
-                       FunctionTemplate::New(ReadBuffer));
+                       FunctionTemplate::New(isolate, ReadBuffer));
   global_template->Set(String::NewFromUtf8(isolate, "readline"),
-                       FunctionTemplate::New(ReadLine));
+                       FunctionTemplate::New(isolate, ReadLine));
   global_template->Set(String::NewFromUtf8(isolate, "load"),
-                       FunctionTemplate::New(Load));
+                       FunctionTemplate::New(isolate, Load));
   global_template->Set(String::NewFromUtf8(isolate, "quit"),
-                       FunctionTemplate::New(Quit));
+                       FunctionTemplate::New(isolate, Quit));
   global_template->Set(String::NewFromUtf8(isolate, "version"),
-                       FunctionTemplate::New(Version));
+                       FunctionTemplate::New(isolate, Version));
 
   // Bind the Realm object.
-  Handle<ObjectTemplate> realm_template = ObjectTemplate::New();
+  Handle<ObjectTemplate> realm_template = ObjectTemplate::New(isolate);
   realm_template->Set(String::NewFromUtf8(isolate, "current"),
-                      FunctionTemplate::New(RealmCurrent));
+                      FunctionTemplate::New(isolate, RealmCurrent));
   realm_template->Set(String::NewFromUtf8(isolate, "owner"),
-                      FunctionTemplate::New(RealmOwner));
+                      FunctionTemplate::New(isolate, RealmOwner));
   realm_template->Set(String::NewFromUtf8(isolate, "global"),
-                      FunctionTemplate::New(RealmGlobal));
+                      FunctionTemplate::New(isolate, RealmGlobal));
   realm_template->Set(String::NewFromUtf8(isolate, "create"),
-                      FunctionTemplate::New(RealmCreate));
+                      FunctionTemplate::New(isolate, RealmCreate));
   realm_template->Set(String::NewFromUtf8(isolate, "dispose"),
-                      FunctionTemplate::New(RealmDispose));
+                      FunctionTemplate::New(isolate, RealmDispose));
   realm_template->Set(String::NewFromUtf8(isolate, "switch"),
-                      FunctionTemplate::New(RealmSwitch));
+                      FunctionTemplate::New(isolate, RealmSwitch));
   realm_template->Set(String::NewFromUtf8(isolate, "eval"),
-                      FunctionTemplate::New(RealmEval));
+                      FunctionTemplate::New(isolate, RealmEval));
   realm_template->SetAccessor(String::NewFromUtf8(isolate, "shared"),
                               RealmSharedGet, RealmSharedSet);
   global_template->Set(String::NewFromUtf8(isolate, "Realm"), realm_template);
 
 #ifndef V8_SHARED
-  Handle<ObjectTemplate> performance_template = ObjectTemplate::New();
+  Handle<ObjectTemplate> performance_template = ObjectTemplate::New(isolate);
   performance_template->Set(String::NewFromUtf8(isolate, "now"),
-                            FunctionTemplate::New(PerformanceNow));
+                            FunctionTemplate::New(isolate, PerformanceNow));
   global_template->Set(String::NewFromUtf8(isolate, "performance"),
                        performance_template);
 #endif  // V8_SHARED
 
 #if !defined(V8_SHARED) && !defined(_WIN32) && !defined(_WIN64)
-  Handle<ObjectTemplate> os_templ = ObjectTemplate::New();
+  Handle<ObjectTemplate> os_templ = ObjectTemplate::New(isolate);
   AddOSMethods(isolate, os_templ);
   global_template->Set(String::NewFromUtf8(isolate, "os"), os_templ);
 #endif  // V8_SHARED
@@ -970,7 +969,7 @@ Local<Context> Shell::CreateEvaluationContext(Isolate* isolate) {
 #endif  // V8_SHARED
   // Initialize the global objects
   Handle<ObjectTemplate> global_template = CreateGlobalTemplate(isolate);
-  HandleScope handle_scope(isolate);
+  EscapableHandleScope handle_scope(isolate);
   Local<Context> context = Context::New(isolate, NULL, global_template);
   ASSERT(!context.IsEmpty());
   Context::Scope scope(context);
@@ -990,7 +989,7 @@ Local<Context> Shell::CreateEvaluationContext(Isolate* isolate) {
   context->Global()->Set(String::NewFromUtf8(isolate, "arguments"),
                          Utils::ToLocal(arguments_jsarray));
 #endif  // V8_SHARED
-  return handle_scope.Close(context);
+  return handle_scope.Escape(context);
 }
 
 
@@ -1101,16 +1100,22 @@ static char* ReadChars(Isolate* isolate, const char* name, int* size_out) {
   return chars;
 }
 
-static void ReadBufferWeakCallback(v8::Isolate* isolate,
-                                   Persistent<ArrayBuffer>* array_buffer,
-                                   uint8_t* data) {
-  size_t byte_length =
-      Local<ArrayBuffer>::New(isolate, *array_buffer)->ByteLength();
-  isolate->AdjustAmountOfExternalAllocatedMemory(
+
+struct DataAndPersistent {
+  uint8_t* data;
+  Persistent<ArrayBuffer> handle;
+};
+
+
+static void ReadBufferWeakCallback(
+    const v8::WeakCallbackData<ArrayBuffer, DataAndPersistent>& data) {
+  size_t byte_length = data.GetValue()->ByteLength();
+  data.GetIsolate()->AdjustAmountOfExternalAllocatedMemory(
       -static_cast<intptr_t>(byte_length));
 
-  delete[] data;
-  array_buffer->Reset();
+  delete[] data.GetParameter()->data;
+  data.GetParameter()->handle.Reset();
+  delete data.GetParameter();
 }
 
 
@@ -1124,16 +1129,19 @@ void Shell::ReadBuffer(const v8::FunctionCallbackInfo<v8::Value>& args) {
   }
 
   Isolate* isolate = args.GetIsolate();
-  uint8_t* data = reinterpret_cast<uint8_t*>(
+  DataAndPersistent* data = new DataAndPersistent;
+  data->data = reinterpret_cast<uint8_t*>(
       ReadChars(args.GetIsolate(), *filename, &length));
-  if (data == NULL) {
+  if (data->data == NULL) {
+    delete data;
     Throw(args.GetIsolate(), "Error reading file");
     return;
   }
-  Handle<v8::ArrayBuffer> buffer = ArrayBuffer::New(isolate, data, length);
-  v8::Persistent<v8::ArrayBuffer> weak_handle(isolate, buffer);
-  weak_handle.MakeWeak(data, ReadBufferWeakCallback);
-  weak_handle.MarkIndependent();
+  Handle<v8::ArrayBuffer> buffer =
+      ArrayBuffer::New(isolate, data->data, length);
+  data->handle.Reset(isolate, buffer);
+  data->handle.SetWeak(data, ReadBufferWeakCallback);
+  data->handle.MarkIndependent();
   isolate->AdjustAmountOfExternalAllocatedMemory(length);
 
   args.GetReturnValue().Set(buffer);
@@ -1560,13 +1568,14 @@ int Shell::RunMain(Isolate* isolate, int argc, char* argv[]) {
 
 #ifdef V8_SHARED
 static void SetStandaloneFlagsViaCommandLine() {
-  int fake_argc = 2;
-  char **fake_argv = new char*[2];
+  int fake_argc = 3;
+  char **fake_argv = new char*[3];
   fake_argv[0] = NULL;
   fake_argv[1] = strdup("--trace-hydrogen-file=hydrogen.cfg");
   fake_argv[2] = strdup("--redirect-code-traces-to=code.asm");
   v8::V8::SetFlagsFromCommandLine(&fake_argc, fake_argv, false);
   free(fake_argv[1]);
+  free(fake_argv[2]);
   delete[] fake_argv;
 }
 #endif

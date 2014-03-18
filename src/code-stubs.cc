@@ -43,18 +43,12 @@ CodeStubInterfaceDescriptor::CodeStubInterfaceDescriptor()
     : register_param_count_(-1),
       stack_parameter_count_(no_reg),
       hint_stack_parameter_count_(-1),
-      continuation_type_(NORMAL_CONTINUATION),
       function_mode_(NOT_JS_FUNCTION_STUB_MODE),
       register_params_(NULL),
       deoptimization_handler_(NULL),
       handler_arguments_mode_(DONT_PASS_ARGUMENTS),
       miss_handler_(),
       has_miss_handler_(false) { }
-
-
-void CodeStub::GenerateStubsRequiringBuiltinsAheadOfTime(Isolate* isolate) {
-  StubFailureTailCallTrampolineStub::GenerateAheadOfTime(isolate);
-}
 
 
 bool CodeStub::FindCodeInCache(Code** code_out, Isolate* isolate) {
@@ -80,8 +74,8 @@ SmartArrayPointer<const char> CodeStub::GetName() {
 
 void CodeStub::RecordCodeGeneration(Code* code, Isolate* isolate) {
   SmartArrayPointer<const char> name = GetName();
-  PROFILE(isolate, CodeCreateEvent(Logger::STUB_TAG, code, *name));
-  GDBJIT(AddCode(GDBJITInterface::STUB, *name, code));
+  PROFILE(isolate, CodeCreateEvent(Logger::STUB_TAG, code, name.get()));
+  GDBJIT(AddCode(GDBJITInterface::STUB, name.get(), code));
   Counters* counters = isolate->counters();
   counters->total_stubs_code_size()->Increment(code->instruction_size());
 }
@@ -164,7 +158,7 @@ Handle<Code> CodeStub::GetCode(Isolate* isolate) {
 #ifdef ENABLE_DISASSEMBLER
     if (FLAG_print_code_stubs) {
       CodeTracer::Scope trace_scope(isolate->GetCodeTracer());
-      new_object->Disassemble(*GetName(), trace_scope.file());
+      new_object->Disassemble(GetName().get(), trace_scope.file());
       PrintF(trace_scope.file(), "\n");
     }
 #endif
@@ -197,6 +191,7 @@ const char* CodeStub::MajorName(CodeStub::Major major_key,
 #define DEF_CASE(name) case name: return #name "Stub";
     CODE_STUB_LIST(DEF_CASE)
 #undef DEF_CASE
+    case UninitializedMajorKey: return "<UninitializedMajorKey>Stub";
     default:
       if (!allow_unknown_keys) {
         UNREACHABLE();
@@ -246,8 +241,30 @@ void BinaryOpICStub::GenerateAheadOfTime(Isolate* isolate,
 }
 
 
-void NewStringAddStub::PrintBaseName(StringStream* stream) {
-  stream->Add("NewStringAddStub");
+// static
+void BinaryOpICWithAllocationSiteStub::GenerateAheadOfTime(Isolate* isolate) {
+  // Generate special versions of the stub.
+  BinaryOpIC::State::GenerateAheadOfTime(isolate, &GenerateAheadOfTime);
+}
+
+
+void BinaryOpICWithAllocationSiteStub::PrintState(StringStream* stream) {
+  state_.Print(stream);
+}
+
+
+// static
+void BinaryOpICWithAllocationSiteStub::GenerateAheadOfTime(
+    Isolate* isolate, const BinaryOpIC::State& state) {
+  if (state.CouldCreateAllocationMementos()) {
+    BinaryOpICWithAllocationSiteStub stub(state);
+    stub.GetCode(isolate);
+  }
+}
+
+
+void StringAddStub::PrintBaseName(StringStream* stream) {
+  stream->Add("StringAddStub");
   if ((flags() & STRING_ADD_CHECK_BOTH) == STRING_ADD_CHECK_BOTH) {
     stream->Add("_CheckBoth");
   } else if ((flags() & STRING_ADD_CHECK_LEFT) == STRING_ADD_CHECK_LEFT) {
@@ -453,38 +470,33 @@ void CompareNilICStub::State::Print(StringStream* stream) const {
 }
 
 
-Handle<Type> CompareNilICStub::GetType(
-    Isolate* isolate,
-    Handle<Map> map) {
+Type* CompareNilICStub::GetType(Zone* zone, Handle<Map> map) {
   if (state_.Contains(CompareNilICStub::GENERIC)) {
-    return handle(Type::Any(), isolate);
+    return Type::Any(zone);
   }
 
-  Handle<Type> result(Type::None(), isolate);
+  Type* result = Type::None(zone);
   if (state_.Contains(CompareNilICStub::UNDEFINED)) {
-    result = handle(Type::Union(result, handle(Type::Undefined(), isolate)),
-                    isolate);
+    result = Type::Union(result, Type::Undefined(zone), zone);
   }
   if (state_.Contains(CompareNilICStub::NULL_TYPE)) {
-    result = handle(Type::Union(result, handle(Type::Null(), isolate)),
-                    isolate);
+    result = Type::Union(result, Type::Null(zone), zone);
   }
   if (state_.Contains(CompareNilICStub::MONOMORPHIC_MAP)) {
-    Type* type = map.is_null() ? Type::Detectable() : Type::Class(map);
-    result = handle(Type::Union(result, handle(type, isolate)), isolate);
+    Type* type =
+        map.is_null() ? Type::Detectable(zone) : Type::Class(map, zone);
+    result = Type::Union(result, type, zone);
   }
 
   return result;
 }
 
 
-Handle<Type> CompareNilICStub::GetInputType(
-    Isolate* isolate,
-    Handle<Map> map) {
-  Handle<Type> output_type = GetType(isolate, map);
-  Handle<Type> nil_type = handle(nil_value_ == kNullValue
-      ? Type::Null() : Type::Undefined(), isolate);
-  return handle(Type::Union(output_type, nil_type), isolate);
+Type* CompareNilICStub::GetInputType(Zone* zone, Handle<Map> map) {
+  Type* output_type = GetType(zone, map);
+  Type* nil_type =
+      nil_value_ == kNullValue ? Type::Null(zone) : Type::Undefined(zone);
+  return Type::Union(output_type, nil_type, zone);
 }
 
 
@@ -539,15 +551,12 @@ void KeyedStoreElementStub::Generate(MacroAssembler* masm) {
     case FAST_HOLEY_SMI_ELEMENTS:
     case FAST_DOUBLE_ELEMENTS:
     case FAST_HOLEY_DOUBLE_ELEMENTS:
-    case EXTERNAL_BYTE_ELEMENTS:
-    case EXTERNAL_UNSIGNED_BYTE_ELEMENTS:
-    case EXTERNAL_SHORT_ELEMENTS:
-    case EXTERNAL_UNSIGNED_SHORT_ELEMENTS:
-    case EXTERNAL_INT_ELEMENTS:
-    case EXTERNAL_UNSIGNED_INT_ELEMENTS:
-    case EXTERNAL_FLOAT_ELEMENTS:
-    case EXTERNAL_DOUBLE_ELEMENTS:
-    case EXTERNAL_PIXEL_ELEMENTS:
+#define TYPED_ARRAY_CASE(Type, type, TYPE, ctype, size) \
+    case EXTERNAL_##TYPE##_ELEMENTS:                    \
+    case TYPE##_ELEMENTS:
+
+    TYPED_ARRAYS(TYPED_ARRAY_CASE)
+#undef TYPED_ARRAY_CASE
       UNREACHABLE();
       break;
     case DICTIONARY_ELEMENTS:
@@ -573,7 +582,6 @@ void ArgumentsAccessStub::PrintName(StringStream* stream) {
 
 void CallFunctionStub::PrintName(StringStream* stream) {
   stream->Add("CallFunctionStub_Args%d", argc_);
-  if (ReceiverMightBeImplicit()) stream->Add("_Implicit");
   if (RecordCallTarget()) stream->Add("_Recording");
 }
 
@@ -581,6 +589,28 @@ void CallFunctionStub::PrintName(StringStream* stream) {
 void CallConstructStub::PrintName(StringStream* stream) {
   stream->Add("CallConstructStub");
   if (RecordCallTarget()) stream->Add("_Recording");
+}
+
+
+void ArrayConstructorStub::PrintName(StringStream* stream) {
+  stream->Add("ArrayConstructorStub");
+  switch (argument_count_) {
+    case ANY: stream->Add("_Any"); break;
+    case NONE: stream->Add("_None"); break;
+    case ONE: stream->Add("_One"); break;
+    case MORE_THAN_ONE: stream->Add("_More_Than_One"); break;
+  }
+}
+
+
+void ArrayConstructorStubBase::BasePrintName(const char* name,
+                                             StringStream* stream) {
+  stream->Add(name);
+  stream->Add("_");
+  stream->Add(ElementsKindToString(elements_kind()));
+  if (override_mode() == DISABLE_ALLOCATION_SITES) {
+    stream->Add("_DISABLE_ALLOCATION_SITES");
+  }
 }
 
 
@@ -671,12 +701,6 @@ void StubFailureTrampolineStub::GenerateAheadOfTime(Isolate* isolate) {
 }
 
 
-void StubFailureTailCallTrampolineStub::GenerateAheadOfTime(Isolate* isolate) {
-  StubFailureTailCallTrampolineStub stub;
-  stub.GetCode(isolate);
-}
-
-
 void ProfileEntryHookStub::EntryHookTrampoline(intptr_t function,
                                                intptr_t stack_pointer,
                                                Isolate* isolate) {
@@ -718,6 +742,12 @@ void FastNewClosureStub::InstallDescriptors(Isolate* isolate) {
 }
 
 
+void FastNewContextStub::InstallDescriptors(Isolate* isolate) {
+  FastNewContextStub stub(FastNewContextStub::kMaximumSlots);
+  InstallDescriptor(isolate, &stub);
+}
+
+
 // static
 void BinaryOpICStub::InstallDescriptors(Isolate* isolate) {
   BinaryOpICStub stub(Token::ADD, NO_OVERWRITE);
@@ -726,8 +756,22 @@ void BinaryOpICStub::InstallDescriptors(Isolate* isolate) {
 
 
 // static
-void NewStringAddStub::InstallDescriptors(Isolate* isolate) {
-  NewStringAddStub stub(STRING_ADD_CHECK_NONE, NOT_TENURED);
+void BinaryOpWithAllocationSiteStub::InstallDescriptors(Isolate* isolate) {
+  BinaryOpWithAllocationSiteStub stub(Token::ADD, NO_OVERWRITE);
+  InstallDescriptor(isolate, &stub);
+}
+
+
+// static
+void StringAddStub::InstallDescriptors(Isolate* isolate) {
+  StringAddStub stub(STRING_ADD_CHECK_NONE, NOT_TENURED);
+  InstallDescriptor(isolate, &stub);
+}
+
+
+// static
+void RegExpConstructResultStub::InstallDescriptors(Isolate* isolate) {
+  RegExpConstructResultStub stub;
   InstallDescriptor(isolate, &stub);
 }
 
