@@ -151,7 +151,7 @@ void FullCodeGenerator::Generate() {
   if (info->is_classic_mode() && !info->is_native()) {
     Label ok;
     int receiver_offset = info->scope()->num_parameters() * kPointerSize;
-    __ LoadP(r5, MemOperand(sp, receiver_offset));
+    __ LoadP(r5, MemOperand(sp, receiver_offset), r0);
     __ CompareRoot(r5, Heap::kUndefinedValueRootIndex);
     __ bne(&ok);
 
