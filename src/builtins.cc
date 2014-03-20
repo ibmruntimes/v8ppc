@@ -268,13 +268,12 @@ static FixedArrayBase* LeftTrimFixedArray(Heap* heap,
   // Maintain marking consistency for HeapObjectIterator and
   // IncrementalMarking.
   int size_delta = to_trim * entry_size;
-  if (heap->marking()->TransferMark(elms->address(),
-                                    elms->address() + size_delta)) {
-    MemoryChunk::IncrementLiveBytesFromMutator(elms->address(), -size_delta);
-  }
+  Address new_start = elms->address() + size_delta;
+  heap->marking()->TransferMark(elms->address(), new_start);
+  heap->AdjustLiveBytes(new_start, -size_delta, Heap::FROM_MUTATOR);
 
-  FixedArrayBase* new_elms = FixedArrayBase::cast(HeapObject::FromAddress(
-      elms->address() + size_delta));
+  FixedArrayBase* new_elms =
+      FixedArrayBase::cast(HeapObject::FromAddress(new_start));
   HeapProfiler* profiler = heap->isolate()->heap_profiler();
   if (profiler->is_tracking_object_moves()) {
     profiler->ObjectMoveEvent(elms->address(),
@@ -351,6 +350,20 @@ static inline MaybeObject* EnsureJSArrayWithWritableFastElements(
     return array->elements();
   }
   return elms;
+}
+
+
+// TODO(ishell): Temporary wrapper until handlified.
+MUST_USE_RESULT
+static inline Handle<Object> EnsureJSArrayWithWritableFastElementsWrapper(
+    Isolate* isolate,
+    Handle<Object> receiver,
+    Arguments* args,
+    int first_added_arg) {
+  CALL_HEAP_FUNCTION(isolate,
+                     EnsureJSArrayWithWritableFastElements(
+                         isolate->heap(), *receiver, args, first_added_arg),
+                     Object);
 }
 
 
@@ -507,34 +520,65 @@ BUILTIN(ArrayPush) {
 }
 
 
-BUILTIN(ArrayPop) {
-  Heap* heap = isolate->heap();
-  Object* receiver = *args.receiver();
-  FixedArrayBase* elms_obj;
-  MaybeObject* maybe_elms =
-      EnsureJSArrayWithWritableFastElements(heap, receiver, NULL, 0);
-  if (maybe_elms == NULL) return CallJsBuiltin(isolate, "ArrayPop", args);
-  if (!maybe_elms->To(&elms_obj)) return maybe_elms;
+// TODO(ishell): Temporary wrapper until handlified.
+static bool ElementsAccessorHasElementWrapper(
+    ElementsAccessor* accessor,
+    Handle<Object> receiver,
+    Handle<JSObject> holder,
+    uint32_t key,
+    Handle<FixedArrayBase> backing_store = Handle<FixedArrayBase>::null()) {
+  return accessor->HasElement(*receiver, *holder, key,
+                              backing_store.is_null() ? *backing_store : NULL);
+}
 
-  JSArray* array = JSArray::cast(receiver);
+
+// TODO(ishell): Temporary wrapper until handlified.
+static Handle<Object> ElementsAccessorGetWrapper(
+    Isolate* isolate,
+    ElementsAccessor* accessor,
+    Handle<Object> receiver,
+    Handle<JSObject> holder,
+    uint32_t key,
+    Handle<FixedArrayBase> backing_store = Handle<FixedArrayBase>::null()) {
+  CALL_HEAP_FUNCTION(isolate,
+                     accessor->Get(*receiver, *holder, key,
+                                   backing_store.is_null()
+                                   ? *backing_store : NULL),
+                     Object);
+}
+
+
+BUILTIN(ArrayPop) {
+  HandleScope scope(isolate);
+  Handle<Object> receiver = args.receiver();
+  Handle<Object> elms_or_null =
+      EnsureJSArrayWithWritableFastElementsWrapper(isolate, receiver, NULL, 0);
+  RETURN_IF_EMPTY_HANDLE(isolate, elms_or_null);
+  if (*elms_or_null == NULL) return CallJsBuiltin(isolate, "ArrayPop", args);
+
+  Handle<FixedArrayBase> elms_obj = Handle<FixedArrayBase>::cast(elms_or_null);
+  Handle<JSArray> array = Handle<JSArray>::cast(receiver);
   ASSERT(!array->map()->is_observed());
 
   int len = Smi::cast(array->length())->value();
-  if (len == 0) return heap->undefined_value();
+  if (len == 0) return isolate->heap()->undefined_value();
 
   ElementsAccessor* accessor = array->GetElementsAccessor();
   int new_length = len - 1;
-  MaybeObject* maybe_result;
-  if (accessor->HasElement(array, array, new_length, elms_obj)) {
-    maybe_result = accessor->Get(array, array, new_length, elms_obj);
+  Handle<Object> element;
+  if (ElementsAccessorHasElementWrapper(
+      accessor, array, array, new_length, elms_obj)) {
+    element = ElementsAccessorGetWrapper(
+        isolate, accessor, array, array, new_length, elms_obj);
   } else {
-    maybe_result = array->GetPrototype()->GetElement(isolate, len - 1);
+    Handle<Object> proto(array->GetPrototype(), isolate);
+    element = Object::GetElement(isolate, proto, len - 1);
   }
-  if (maybe_result->IsFailure()) return maybe_result;
-  MaybeObject* maybe_failure =
-      accessor->SetLength(array, Smi::FromInt(new_length));
-  if (maybe_failure->IsFailure()) return maybe_failure;
-  return maybe_result;
+  RETURN_IF_EMPTY_HANDLE(isolate, element);
+  RETURN_IF_EMPTY_HANDLE(isolate,
+                         accessor->SetLength(
+                             array, handle(Smi::FromInt(new_length), isolate)));
+  return *element;
 }
 
 
@@ -677,8 +721,8 @@ BUILTIN(ArraySlice) {
   } else {
     // Array.slice(arguments, ...) is quite a common idiom (notably more
     // than 50% of invocations in Web apps).  Treat it in C++ as well.
-    Map* arguments_map =
-        isolate->context()->native_context()->arguments_boilerplate()->map();
+    Map* arguments_map = isolate->context()->native_context()->
+        sloppy_arguments_boilerplate()->map();
 
     bool is_arguments_object_with_fast_elements =
         receiver->IsJSObject() &&
@@ -1174,7 +1218,7 @@ MUST_USE_RESULT static MaybeObject* HandleApiCallHelper(
   }
 
   SharedFunctionInfo* shared = function->shared();
-  if (shared->is_classic_mode() && !shared->native()) {
+  if (shared->strict_mode() == SLOPPY && !shared->native()) {
     Object* recv = args[0];
     ASSERT(!recv->IsNull());
     if (recv->IsUndefined()) {
@@ -1320,9 +1364,7 @@ static void Generate_LoadIC_Normal(MacroAssembler* masm) {
 
 
 static void Generate_LoadIC_Getter_ForDeopt(MacroAssembler* masm) {
-  LoadStubCompiler::GenerateLoadViaGetter(
-      masm, Handle<HeapType>::null(),
-      LoadStubCompiler::registers()[0], Handle<JSFunction>());
+  LoadStubCompiler::GenerateLoadViaGetterForDeopt(masm);
 }
 
 
@@ -1366,8 +1408,8 @@ static void Generate_KeyedLoadIC_IndexedInterceptor(MacroAssembler* masm) {
 }
 
 
-static void Generate_KeyedLoadIC_NonStrictArguments(MacroAssembler* masm) {
-  KeyedLoadIC::GenerateNonStrictArguments(masm);
+static void Generate_KeyedLoadIC_SloppyArguments(MacroAssembler* masm) {
+  KeyedLoadIC::GenerateSloppyArguments(masm);
 }
 
 
@@ -1387,18 +1429,17 @@ static void Generate_StoreIC_Normal(MacroAssembler* masm) {
 
 
 static void Generate_StoreIC_Setter_ForDeopt(MacroAssembler* masm) {
-  StoreStubCompiler::GenerateStoreViaSetter(
-      masm, Handle<HeapType>::null(), Handle<JSFunction>());
+  StoreStubCompiler::GenerateStoreViaSetterForDeopt(masm);
 }
 
 
 static void Generate_KeyedStoreIC_Generic(MacroAssembler* masm) {
-  KeyedStoreIC::GenerateGeneric(masm, kNonStrictMode);
+  KeyedStoreIC::GenerateGeneric(masm, SLOPPY);
 }
 
 
 static void Generate_KeyedStoreIC_Generic_Strict(MacroAssembler* masm) {
-  KeyedStoreIC::GenerateGeneric(masm, kStrictMode);
+  KeyedStoreIC::GenerateGeneric(masm, STRICT);
 }
 
 
@@ -1432,8 +1473,8 @@ static void Generate_KeyedStoreIC_PreMonomorphic_Strict(MacroAssembler* masm) {
 }
 
 
-static void Generate_KeyedStoreIC_NonStrictArguments(MacroAssembler* masm) {
-  KeyedStoreIC::GenerateNonStrictArguments(masm);
+static void Generate_KeyedStoreIC_SloppyArguments(MacroAssembler* masm) {
+  KeyedStoreIC::GenerateSloppyArguments(masm);
 }
 
 
@@ -1599,9 +1640,7 @@ void Builtins::InitBuiltinFunctionTable() {
     functions->c_code = NULL;                                               \
     functions->s_name = #aname;                                             \
     functions->name = k##aname;                                             \
-    functions->flags = Code::ComputeFlags(                                  \
-        Code::HANDLER, MONOMORPHIC, kNoExtraICState,                        \
-        Code::NORMAL, Code::kind);                                          \
+    functions->flags = Code::ComputeHandlerFlags(Code::kind);               \
     functions->extra_args = NO_EXTRA_ARGUMENTS;                             \
     ++functions;
 
@@ -1624,17 +1663,12 @@ void Builtins::SetUp(Isolate* isolate, bool create_heap_objects) {
 
   const BuiltinDesc* functions = builtin_function_table.functions();
 
-#if V8_TARGET_ARCH_PPC64
-  // The size of the code generated for PPC architectures is larger in
-  // general, but even more so for 64-bit.
-  const int kBufferSize = 9 * KB;
-#else
-  const int kBufferSize = 8 * KB;
-#endif
   // For now we generate builtin adaptor code into a stack-allocated
   // buffer, before copying it into individual code objects. Be careful
   // with alignment, some platforms don't like unaligned code.
-  union { int force_alignment; byte buffer[kBufferSize]; } u;
+  // TODO(jbramley): I had to increase the size of this buffer from 8KB because
+  // we can generate a lot of debug code on A64.
+  union { int force_alignment; byte buffer[16*KB]; } u;
 
   // Traverse the list of builtins and generate an adaptor in a
   // separate code object for each one.
@@ -1657,7 +1691,7 @@ void Builtins::SetUp(Isolate* isolate, bool create_heap_objects) {
       {
         // During startup it's OK to always allocate and defer GC to later.
         // This simplifies things because we don't need to retry.
-        AlwaysAllocateScope __scope__;
+        AlwaysAllocateScope __scope__(isolate);
         { MaybeObject* maybe_code =
               heap->CreateCode(desc, flags, masm.CodeObject());
           if (!maybe_code->ToObject(&code)) {

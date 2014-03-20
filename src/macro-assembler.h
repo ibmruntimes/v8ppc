@@ -72,6 +72,14 @@ const int kInvalidProtoDepth = -1;
 #include "x64/assembler-x64-inl.h"
 #include "code.h"  // must be after assembler_*.h
 #include "x64/macro-assembler-x64.h"
+#elif V8_TARGET_ARCH_A64
+#include "a64/constants-a64.h"
+#include "assembler.h"
+#include "a64/assembler-a64.h"
+#include "a64/assembler-a64-inl.h"
+#include "code.h"  // must be after assembler_*.h
+#include "a64/macro-assembler-a64.h"
+#include "a64/macro-assembler-a64-inl.h"
 #elif V8_TARGET_ARCH_ARM
 #include "arm/constants-arm.h"
 #include "assembler.h"
@@ -123,6 +131,7 @@ class FrameScope {
   // scope, the MacroAssembler is still marked as being in a frame scope, and
   // the code will be generated again when it goes out of scope.
   void GenerateLeaveFrame() {
+    ASSERT(type_ != StackFrame::MANUAL && type_ != StackFrame::NONE);
     masm_->LeaveFrame(type_);
   }
 

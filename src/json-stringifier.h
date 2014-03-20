@@ -360,6 +360,7 @@ Handle<Object> BasicJsonStringifier::ApplyToJsonFunction(
   PropertyAttributes attr;
   Handle<Object> fun =
       Object::GetProperty(object, object, &lookup, tojson_string_, &attr);
+  if (fun.is_null()) return Handle<Object>::null();
   if (!fun->IsJSFunction()) return object;
 
   // Call toJSON function.
@@ -654,7 +655,7 @@ BasicJsonStringifier::Result BasicJsonStringifier::SerializeJSObject(
                        isolate_);
       } else {
         property = GetProperty(isolate_, object, key);
-        if (property.is_null()) return EXCEPTION;
+        RETURN_IF_EMPTY_HANDLE_VALUE(isolate_, property, EXCEPTION);
       }
       Result result = SerializeProperty(property, comma, key);
       if (!comma && result == SUCCESS) comma = true;
@@ -686,7 +687,7 @@ BasicJsonStringifier::Result BasicJsonStringifier::SerializeJSObject(
           property = GetProperty(isolate_, object, key_handle);
         }
       }
-      if (property.is_null()) return EXCEPTION;
+      RETURN_IF_EMPTY_HANDLE_VALUE(isolate_, property, EXCEPTION);
       Result result = SerializeProperty(property, comma, key_handle);
       if (!comma && result == SUCCESS) comma = true;
       if (result >= EXCEPTION) return result;

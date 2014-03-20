@@ -453,10 +453,10 @@ Handle<JSArray> Isolate::CaptureSimpleStackTrace(Handle<JSObject> error_object,
   // If the caller parameter is a function we skip frames until we're
   // under it before starting to collect.
   bool seen_caller = !caller->IsJSFunction();
-  // First element is reserved to store the number of non-strict frames.
+  // First element is reserved to store the number of sloppy frames.
   int cursor = 1;
   int frames_seen = 0;
-  int non_strict_frames = 0;
+  int sloppy_frames = 0;
   bool encountered_strict_function = false;
   for (StackFrameIterator iter(this);
        !iter.done() && frames_seen < limit;
@@ -487,13 +487,13 @@ Handle<JSArray> Isolate::CaptureSimpleStackTrace(Handle<JSObject> error_object,
         Handle<Smi> offset(Smi::FromInt(frames[i].offset()), this);
         // The stack trace API should not expose receivers and function
         // objects on frames deeper than the top-most one with a strict
-        // mode function.  The number of non-strict frames is stored as
+        // mode function.  The number of sloppy frames is stored as
         // first element in the result array.
         if (!encountered_strict_function) {
-          if (!fun->shared()->is_classic_mode()) {
+          if (fun->shared()->strict_mode() == STRICT) {
             encountered_strict_function = true;
           } else {
-            non_strict_frames++;
+            sloppy_frames++;
           }
         }
         elements->set(cursor++, *recv);
@@ -503,7 +503,7 @@ Handle<JSArray> Isolate::CaptureSimpleStackTrace(Handle<JSObject> error_object,
       }
     }
   }
-  elements->set(0, Smi::FromInt(non_strict_frames));
+  elements->set(0, Smi::FromInt(sloppy_frames));
   Handle<JSArray> result = factory()->NewJSArrayWithElements(elements);
   result->set_length(Smi::FromInt(cursor));
   return result;
@@ -778,7 +778,7 @@ static MayAccessDecision MayAccessPreCheck(Isolate* isolate,
 
 bool Isolate::MayNamedAccess(JSObject* receiver, Object* key,
                              v8::AccessType type) {
-  ASSERT(receiver->IsAccessCheckNeeded());
+  ASSERT(receiver->IsJSGlobalProxy() || receiver->IsAccessCheckNeeded());
 
   // The callers of this method are not expecting a GC.
   DisallowHeapAllocation no_gc;
@@ -829,7 +829,7 @@ bool Isolate::MayNamedAccess(JSObject* receiver, Object* key,
 bool Isolate::MayIndexedAccess(JSObject* receiver,
                                uint32_t index,
                                v8::AccessType type) {
-  ASSERT(receiver->IsAccessCheckNeeded());
+  ASSERT(receiver->IsJSGlobalProxy() || receiver->IsAccessCheckNeeded());
   // Check for compatibility between the security tokens in the
   // current lexical context and the accessed object.
   ASSERT(context());
@@ -946,6 +946,7 @@ Failure* Isolate::ReThrow(MaybeObject* exception) {
 
 
 Failure* Isolate::ThrowIllegalOperation() {
+  if (FLAG_stack_trace_on_illegal) PrintStack(stdout);
   return Throw(heap_.illegal_access_string());
 }
 
@@ -1122,8 +1123,6 @@ void Isolate::DoThrow(Object* exception, MessageLocation* location) {
     // while the bootstrapper is active since the infrastructure may not have
     // been properly initialized.
     if (!bootstrapping) {
-      Handle<String> stack_trace;
-      if (FLAG_trace_exception) stack_trace = StackTraceString();
       Handle<JSArray> stack_trace_object;
       if (capture_stack_trace_for_uncaught_exceptions_) {
         if (IsErrorObject(exception_handle)) {
@@ -1163,7 +1162,6 @@ void Isolate::DoThrow(Object* exception, MessageLocation* location) {
           "uncaught_exception",
           location,
           HandleVector<Object>(&exception_arg, 1),
-          stack_trace,
           stack_trace_object);
       thread_local_top()->pending_message_obj_ = *message_obj;
       if (location != NULL) {
@@ -1465,6 +1463,13 @@ Isolate::ThreadDataTable::~ThreadDataTable() {
 }
 
 
+Isolate::PerIsolateThreadData::~PerIsolateThreadData() {
+#if defined(USE_SIMULATOR)
+  delete simulator_;
+#endif
+}
+
+
 Isolate::PerIsolateThreadData*
     Isolate::ThreadDataTable::Lookup(Isolate* isolate,
                                      ThreadId thread_id) {
@@ -1545,7 +1550,6 @@ Isolate::Isolate()
       global_handles_(NULL),
       eternal_handles_(NULL),
       thread_manager_(NULL),
-      fp_stubs_generated_(false),
       has_installed_extensions_(false),
       string_tracker_(NULL),
       regexp_stack_(NULL),
@@ -1565,8 +1569,8 @@ Isolate::Isolate()
       optimizing_compiler_thread_(NULL),
       sweeper_thread_(NULL),
       num_sweeper_threads_(0),
-      max_available_threads_(0),
-      stress_deopt_count_(0) {
+      stress_deopt_count_(0),
+      next_optimization_id_(0) {
   id_ = NoBarrier_AtomicIncrement(&isolate_counter_, 1);
   TRACE_ISOLATE(constructor);
 
@@ -1581,19 +1585,9 @@ Isolate::Isolate()
   thread_manager_ = new ThreadManager();
   thread_manager_->isolate_ = this;
 
-#if V8_TARGET_ARCH_ARM && !defined(__arm__) || \
-    V8_TARGET_ARCH_PPC && !defined(__PPC__) || \
-    V8_TARGET_ARCH_MIPS && !defined(__mips__)
-  simulator_initialized_ = false;
-  simulator_i_cache_ = NULL;
-  simulator_redirection_ = NULL;
-#endif
-
 #ifdef DEBUG
   // heap_histograms_ initializes itself.
   memset(&js_spill_information_, 0, sizeof(js_spill_information_));
-  memset(code_kind_statistics_, 0,
-         sizeof(code_kind_statistics_[0]) * Code::NUMBER_OF_KINDS);
 #endif
 
 #ifdef ENABLE_DEBUGGER_SUPPORT
@@ -1673,6 +1667,10 @@ void Isolate::Deinit() {
     delete[] sweeper_thread_;
     sweeper_thread_ = NULL;
 
+    if (FLAG_job_based_sweeping &&
+        heap_.mark_compact_collector()->IsConcurrentSweepingInProgress()) {
+      heap_.mark_compact_collector()->WaitUntilSweepingCompleted();
+    }
 
     if (FLAG_hydrogen_stats) GetHStatistics()->Print();
 
@@ -1920,7 +1918,7 @@ bool Isolate::Init(Deserializer* des) {
   }
 
   // The initialization process does not handle memory exhaustion.
-  DisallowAllocationFailure disallow_allocation_failure;
+  DisallowAllocationFailure disallow_allocation_failure(this);
 
   InitializeLoggingAndCounters();
 
@@ -1968,7 +1966,8 @@ bool Isolate::Init(Deserializer* des) {
 
   // Initialize other runtime facilities
 #if defined(USE_SIMULATOR)
-#if V8_TARGET_ARCH_ARM || V8_TARGET_ARCH_MIPS || V8_TARGET_ARCH_PPC
+#if V8_TARGET_ARCH_ARM || V8_TARGET_ARCH_A64 || V8_TARGET_ARCH_MIPS || \
+    V8_TARGET_ARCH_PPC
   Simulator::Initialize(this);
 #endif
 #endif
@@ -2006,6 +2005,12 @@ bool Isolate::Init(Deserializer* des) {
   bootstrapper_->Initialize(create_heap_objects);
   builtins_.SetUp(this, create_heap_objects);
 
+  if (FLAG_log_internal_timer_events) {
+    set_event_logger(Logger::LogInternalEvents);
+  } else {
+    set_event_logger(Logger::EmptyLogInternalEvents);
+  }
+
   // Set default value if not yet set.
   // TODO(yangguo): move this to ResourceConstraints::ConfigureDefaults
   // once ResourceConstraints becomes an argument to the Isolate constructor.
@@ -2014,7 +2019,10 @@ bool Isolate::Init(Deserializer* des) {
     max_available_threads_ = Max(Min(CPU::NumberOfProcessorsOnline(), 4), 1);
   }
 
-  num_sweeper_threads_ = SweeperThread::NumberOfThreads(max_available_threads_);
+  if (!FLAG_job_based_sweeping) {
+    num_sweeper_threads_ =
+        SweeperThread::NumberOfThreads(max_available_threads_);
+  }
 
   if (FLAG_trace_hydrogen || FLAG_trace_hydrogen_stubs) {
     PrintF("Concurrent recompilation has been disabled for tracing.\n");
@@ -2100,17 +2108,14 @@ bool Isolate::Init(Deserializer* des) {
     CodeStub::GenerateFPStubs(this);
     StoreBufferOverflowStub::GenerateFixedRegStubsAheadOfTime(this);
     StubFailureTrampolineStub::GenerateAheadOfTime(this);
-    // TODO(mstarzinger): The following is an ugly hack to make sure the
-    // interface descriptor is initialized even when stubs have been
-    // deserialized out of the snapshot without the graph builder.
-    FastCloneShallowArrayStub stub(FastCloneShallowArrayStub::CLONE_ELEMENTS,
-                                   DONT_TRACK_ALLOCATION_SITE, 0);
-    stub.InitializeInterfaceDescriptor(
-        this, code_stub_interface_descriptor(CodeStub::FastCloneShallowArray));
+    // Ensure interface descriptors are initialized even when stubs have been
+    // deserialized out of the snapshot without using the graph builder.
+    FastCloneShallowArrayStub::InstallDescriptors(this);
     BinaryOpICStub::InstallDescriptors(this);
     BinaryOpWithAllocationSiteStub::InstallDescriptors(this);
-    CompareNilICStub::InitializeForIsolate(this);
-    ToBooleanStub::InitializeForIsolate(this);
+    CompareNilICStub::InstallDescriptors(this);
+    ToBooleanStub::InstallDescriptors(this);
+    ToNumberStub::InstallDescriptors(this);
     ArrayConstructorStubBase::InstallDescriptors(this);
     InternalArrayConstructorStubBase::InstallDescriptors(this);
     FastNewClosureStub::InstallDescriptors(this);

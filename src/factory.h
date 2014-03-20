@@ -61,7 +61,8 @@ class Factory {
 
   Handle<ConstantPoolArray> NewConstantPoolArray(
       int number_of_int64_entries,
-      int number_of_ptr_entries,
+      int number_of_code_ptr_entries,
+      int number_of_heap_ptr_entries,
       int number_of_int32_entries);
 
   Handle<SeededNumberDictionary> NewSeededNumberDictionary(
@@ -225,9 +226,6 @@ class Factory {
                                   Handle<Context> previous,
                                   Handle<ScopeInfo> scope_info);
 
-  // Return the internalized version of the passed in string.
-  Handle<String> InternalizedStringFromString(Handle<String> value);
-
   // Allocate a new struct.  The struct is pretenured (allocated directly in
   // the old generation).
   Handle<Struct> NewStruct(InstanceType type);
@@ -292,6 +290,10 @@ class Factory {
 
   Handle<FixedArray> CopyFixedArray(Handle<FixedArray> array);
 
+  // This method expects a COW array in new space, and creates a copy
+  // of it in old space.
+  Handle<FixedArray> CopyAndTenureFixedCOWArray(Handle<FixedArray> array);
+
   Handle<FixedArray> CopySizeFixedArray(Handle<FixedArray> array,
                                         int new_length,
                                         PretenureFlag pretenure = NOT_TENURED);
@@ -326,15 +328,20 @@ class Factory {
   // runtime.
   Handle<JSObject> NewJSObject(Handle<JSFunction> constructor,
                                PretenureFlag pretenure = NOT_TENURED);
+  // JSObject that should have a memento pointing to the allocation site.
+  Handle<JSObject> NewJSObjectWithMemento(Handle<JSFunction> constructor,
+                                          Handle<AllocationSite> site);
 
   // Global objects are pretenured and initialized based on a constructor.
   Handle<GlobalObject> NewGlobalObject(Handle<JSFunction> constructor);
 
   // JS objects are pretenured when allocated by the bootstrapper and
   // runtime.
-  Handle<JSObject> NewJSObjectFromMap(Handle<Map> map,
-                                      PretenureFlag pretenure = NOT_TENURED,
-                                      bool allocate_properties = true);
+  Handle<JSObject> NewJSObjectFromMap(
+      Handle<Map> map,
+      PretenureFlag pretenure = NOT_TENURED,
+      bool allocate_properties = true,
+      Handle<AllocationSite> allocation_site = Handle<AllocationSite>::null());
 
   Handle<JSObject> NewJSObjectFromMapForDeoptimizer(
       Handle<Map> map, PretenureFlag pretenure = NOT_TENURED);
@@ -353,6 +360,12 @@ class Factory {
       Handle<FixedArrayBase> elements,
       ElementsKind elements_kind = TERMINAL_FAST_ELEMENTS_KIND,
       PretenureFlag pretenure = NOT_TENURED);
+
+  void NewJSArrayStorage(
+      Handle<JSArray> array,
+      int length,
+      int capacity,
+      ArrayStorageAllocationMode mode = DONT_INITIALIZE_ARRAY_ELEMENTS);
 
   void SetElementsCapacityAndLength(Handle<JSArray> array,
                                     int capacity,
@@ -379,7 +392,7 @@ class Factory {
 
   Handle<JSFunction> NewFunctionWithoutPrototype(
       Handle<String> name,
-      LanguageMode language_mode);
+      StrictMode strict_mode);
 
   Handle<JSFunction> NewFunction(Handle<Object> super, bool is_global);
 
@@ -438,6 +451,7 @@ class Factory {
 
   Handle<Object> NewReferenceError(const char* message,
                                    Vector< Handle<Object> > args);
+  Handle<Object> NewReferenceError(const char* message, Handle<JSArray> args);
   Handle<Object> NewReferenceError(Handle<String> message);
 
   Handle<Object> NewEvalError(const char* message,
@@ -528,7 +542,6 @@ class Factory {
       int start_position,
       int end_position,
       Handle<Object> script,
-      Handle<Object> stack_trace,
       Handle<Object> stack_frames);
 
   Handle<SeededNumberDictionary> DictionaryAtNumberPut(
@@ -582,7 +595,7 @@ class Factory {
 
   Handle<JSFunction> NewFunctionWithoutPrototypeHelper(
       Handle<String> name,
-      LanguageMode language_mode);
+      StrictMode strict_mode);
 
   // Create a new map cache.
   Handle<MapCache> NewMapCache(int at_least_space_for);

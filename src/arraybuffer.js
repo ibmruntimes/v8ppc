@@ -56,18 +56,22 @@ function ArrayBufferSlice(start, end) {
   }
 
   var relativeStart = TO_INTEGER(start);
-  var first;
-  if (relativeStart < 0) {
-    first = MathMax(this.byteLength + relativeStart, 0);
-  } else {
-    first = MathMin(relativeStart, this.byteLength);
+  if (!IS_UNDEFINED(end)) {
+    end = TO_INTEGER(end);
   }
-  var relativeEnd = IS_UNDEFINED(end) ? this.byteLength : TO_INTEGER(end);
+  var first;
+  var byte_length = %ArrayBufferGetByteLength(this);
+  if (relativeStart < 0) {
+    first = MathMax(byte_length + relativeStart, 0);
+  } else {
+    first = MathMin(relativeStart, byte_length);
+  }
+  var relativeEnd = IS_UNDEFINED(end) ? byte_length : end;
   var fin;
   if (relativeEnd < 0) {
-    fin = MathMax(this.byteLength + relativeEnd, 0);
+    fin = MathMax(byte_length + relativeEnd, 0);
   } else {
-    fin = MathMin(relativeEnd, this.byteLength);
+    fin = MathMin(relativeEnd, byte_length);
   }
 
   if (fin < first) {

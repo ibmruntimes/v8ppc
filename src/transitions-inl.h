@@ -28,7 +28,6 @@
 #ifndef V8_TRANSITIONS_INL_H_
 #define V8_TRANSITIONS_INL_H_
 
-#include "objects-inl.h"
 #include "transitions.h"
 
 namespace v8 {
@@ -160,9 +159,7 @@ void TransitionArray::SetTarget(int transition_number, Map* value) {
 
 PropertyDetails TransitionArray::GetTargetDetails(int transition_number) {
   Map* map = GetTarget(transition_number);
-  DescriptorArray* descriptors = map->instance_descriptors();
-  int descriptor = map->LastAdded();
-  return descriptors->GetDetails(descriptor);
+  return map->GetLastDescriptorDetails();
 }
 
 

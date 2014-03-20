@@ -41,14 +41,6 @@ var $Promise = Promise;
 
 // Core functionality.
 
-// Event queue format: [(value, [(handler, deferred)*])*]
-// I.e., a list of value/tasks pairs, where the value is a resolution value or
-// rejection reason, and the tasks are a respective list of handler/deferred
-// pairs waiting for notification of this value. Each handler is an onResolve or
-// onReject function provided to the same call of 'chain' that produced the
-// associated deferred.
-var promiseEvents = new InternalArray;
-
 // Status values: 0 = pending, +1 = resolved, -1 = rejected
 var promiseStatus = NEW_PRIVATE("Promise#status");
 var promiseValue = NEW_PRIVATE("Promise#value");
@@ -99,6 +91,15 @@ function PromiseResolve(promise, x) {
 
 function PromiseReject(promise, r) {
   PromiseDone(promise, -1, r, promiseOnReject)
+}
+
+
+// For API.
+
+function PromiseNopResolver() {}
+
+function PromiseCreate() {
+  return new Promise(PromiseNopResolver)
 }
 
 
@@ -173,43 +174,38 @@ function PromiseCatch(onReject) {
 }
 
 function PromiseEnqueue(value, tasks) {
-  promiseEvents.push(value, tasks);
+  GetMicrotaskQueue().push(function() {
+    for (var i = 0; i < tasks.length; i += 2) {
+      PromiseHandle(value, tasks[i], tasks[i + 1])
+    }
+  });
+
   %SetMicrotaskPending(true);
 }
 
-function PromiseMicrotaskRunner() {
-  var events = promiseEvents;
-  if (events.length > 0) {
-    promiseEvents = new InternalArray;
-    for (var i = 0; i < events.length; i += 2) {
-      var value = events[i];
-      var tasks = events[i + 1];
-      for (var j = 0; j < tasks.length; j += 2) {
-        var handler = tasks[j];
-        var deferred = tasks[j + 1];
-        try {
-          var result = handler(value);
-          if (result === deferred.promise)
-            throw MakeTypeError('promise_cyclic', [result]);
-          else if (IsPromise(result))
-            result.chain(deferred.resolve, deferred.reject);
-          else
-            deferred.resolve(result);
-        } catch(e) {
-          // TODO(rossberg): perhaps log uncaught exceptions below.
-          try { deferred.reject(e) } catch(e) {}
-        }
-      }
-    }
+function PromiseHandle(value, handler, deferred) {
+  try {
+    var result = handler(value);
+    if (result === deferred.promise)
+      throw MakeTypeError('promise_cyclic', [result]);
+    else if (IsPromise(result))
+      result.chain(deferred.resolve, deferred.reject);
+    else
+      deferred.resolve(result);
+  } catch(e) {
+    // TODO(rossberg): perhaps log uncaught exceptions below.
+    try { deferred.reject(e) } catch(e) {}
   }
 }
-RunMicrotasks.runners.push(PromiseMicrotaskRunner);
 
 
 // Multi-unwrapped chaining with thenable coercion.
 
 function PromiseThen(onResolve, onReject) {
-  onResolve = IS_UNDEFINED(onResolve) ? PromiseIdResolveHandler : onResolve;
+  onResolve =
+    IS_NULL_OR_UNDEFINED(onResolve) ? PromiseIdResolveHandler : onResolve;
+  onReject =
+    IS_NULL_OR_UNDEFINED(onReject) ? PromiseIdRejectHandler : onReject;
   var that = this;
   var constructor = this.constructor;
   return this.chain(
@@ -225,8 +221,15 @@ function PromiseThen(onResolve, onReject) {
 PromiseCoerce.table = new $WeakMap;
 
 function PromiseCoerce(constructor, x) {
-  if (!(IsPromise(x) || IS_NULL_OR_UNDEFINED(x))) {
-    var then = x.then;
+  if (!IsPromise(x) && IS_SPEC_OBJECT(x)) {
+    var then;
+    try {
+      then = x.then;
+    } catch(r) {
+      var promise = %_CallFunction(constructor, r, PromiseRejected);
+      PromiseCoerce.table.set(x, promise);
+      return promise;
+    }
     if (typeof then === 'function') {
       if (PromiseCoerce.table.has(x)) {
         return PromiseCoerce.table.get(x);
@@ -235,8 +238,8 @@ function PromiseCoerce(constructor, x) {
         PromiseCoerce.table.set(x, deferred.promise);
         try {
           %_CallFunction(x, deferred.resolve, deferred.reject, then);
-        } catch(e) {
-          deferred.reject(e);
+        } catch(r) {
+          deferred.reject(r);
         }
         return deferred.promise;
       }
@@ -250,19 +253,23 @@ function PromiseCoerce(constructor, x) {
 
 function PromiseCast(x) {
   // TODO(rossberg): cannot do better until we support @@create.
-  return IsPromise(x) ? x : this.resolve(x);
+  return IsPromise(x) ? x : new this(function(resolve) { resolve(x) });
 }
 
 function PromiseAll(values) {
   var deferred = %_CallFunction(this, PromiseDeferred);
   var resolutions = [];
+  if (!%_IsArray(values)) {
+    deferred.reject(MakeTypeError('invalid_argument'));
+    return deferred.promise;
+  }
   try {
     var count = values.length;
     if (count === 0) {
       deferred.resolve(resolutions);
     } else {
       for (var i = 0; i < values.length; ++i) {
-        this.cast(values[i]).chain(
+        this.resolve(values[i]).then(
           function(i, x) {
             resolutions[i] = x;
             if (--count === 0) deferred.resolve(resolutions);
@@ -279,9 +286,13 @@ function PromiseAll(values) {
 
 function PromiseOne(values) {
   var deferred = %_CallFunction(this, PromiseDeferred);
+  if (!%_IsArray(values)) {
+    deferred.reject(MakeTypeError('invalid_argument'));
+    return deferred.promise;
+  }
   try {
     for (var i = 0; i < values.length; ++i) {
-      this.cast(values[i]).chain(
+      this.resolve(values[i]).then(
         function(x) { deferred.resolve(x) },
         function(r) { deferred.reject(r) }
       );
@@ -300,11 +311,11 @@ function SetUpPromise() {
   global_receiver.Promise = $Promise;
   InstallFunctions($Promise, DONT_ENUM, [
     "defer", PromiseDeferred,
-    "resolve", PromiseResolved,
+    "accept", PromiseResolved,
     "reject", PromiseRejected,
     "all", PromiseAll,
     "race", PromiseOne,
-    "cast", PromiseCast
+    "resolve", PromiseCast
   ]);
   InstallFunctions($Promise.prototype, DONT_ENUM, [
     "chain", PromiseChain,

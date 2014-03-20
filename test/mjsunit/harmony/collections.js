@@ -25,10 +25,11 @@
 // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-// Flags: --harmony-collections --expose-gc --allow-natives-syntax
+// Flags: --harmony-collections --harmony-weak-collections
+// Flags: --expose-gc --allow-natives-syntax
 
 
-// Test valid getter and setter calls on Sets.
+// Test valid getter and setter calls on Sets and WeakSets
 function TestValidSetCalls(m) {
   assertDoesNotThrow(function () { m.add(new Object) });
   assertDoesNotThrow(function () { m.has(new Object) });
@@ -63,7 +64,7 @@ function TestInvalidCalls(m) {
 TestInvalidCalls(new WeakMap);
 
 
-// Test expected behavior for Sets
+// Test expected behavior for Sets and WeakSets
 function TestSet(set, key) {
   assertFalse(set.has(key));
   assertSame(undefined, set.add(key));

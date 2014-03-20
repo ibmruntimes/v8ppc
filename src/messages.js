@@ -45,10 +45,6 @@ var kMessages = {
   unterminated_regexp:           ["Invalid regular expression: missing /"],
   regexp_flags:                  ["Cannot supply flags when constructing one RegExp from another"],
   incompatible_method_receiver:  ["Method ", "%0", " called on incompatible receiver ", "%1"],
-  invalid_lhs_in_assignment:     ["Invalid left-hand side in assignment"],
-  invalid_lhs_in_for_in:         ["Invalid left-hand side in for-in"],
-  invalid_lhs_in_postfix_op:     ["Invalid left-hand side expression in postfix operation"],
-  invalid_lhs_in_prefix_op:      ["Invalid left-hand side expression in prefix operation"],
   multiple_defaults_in_switch:   ["More than one default clause in switch statement"],
   newline_after_throw:           ["Illegal newline after throw"],
   redeclaration:                 ["%0", " '", "%1", "' has already been declared"],
@@ -64,7 +60,6 @@ var kMessages = {
   not_defined:                   ["%0", " is not defined"],
   non_object_property_load:      ["Cannot read property '", "%0", "' of ", "%1"],
   non_object_property_store:     ["Cannot set property '", "%0", "' of ", "%1"],
-  non_object_property_call:      ["Cannot call method '", "%0", "' of ", "%1"],
   with_expression:               ["%0", " has no properties"],
   illegal_invocation:            ["Illegal invocation"],
   no_setter_in_callback:         ["Cannot set property ", "%0", " of ", "%1", " which has only a getter"],
@@ -120,7 +115,7 @@ var kMessages = {
   invalid_string_length:         ["Invalid string length"],
   invalid_typed_array_offset:    ["Start offset is too large:"],
   invalid_typed_array_length:    ["Invalid typed array length"],
-  invalid_typed_array_alignment: ["%0", "of", "%1", "should be a multiple of", "%3"],
+  invalid_typed_array_alignment: ["%0", " of ", "%1", " should be a multiple of ", "%2"],
   typed_array_set_source_too_large:
                                  ["Source is too large"],
   typed_array_set_negative_offset:
@@ -133,6 +128,11 @@ var kMessages = {
   stack_overflow:                ["Maximum call stack size exceeded"],
   invalid_time_value:            ["Invalid time value"],
   invalid_count_value:           ["Invalid count value"],
+  // ReferenceError
+  invalid_lhs_in_assignment:     ["Invalid left-hand side in assignment"],
+  invalid_lhs_in_for:            ["Invalid left-hand side in for-loop"],
+  invalid_lhs_in_postfix_op:     ["Invalid left-hand side expression in postfix operation"],
+  invalid_lhs_in_prefix_op:      ["Invalid left-hand side expression in prefix operation"],
   // SyntaxError
   paren_in_arg_string:           ["Function arg string contains parenthesis"],
   not_isvar:                     ["builtin %IS_VAR: not a variable"],
@@ -155,8 +155,8 @@ var kMessages = {
   invalid_preparser_data:        ["Invalid preparser data for function ", "%0"],
   strict_mode_with:              ["Strict mode code may not include a with statement"],
   strict_eval_arguments:         ["Unexpected eval or arguments in strict mode"],
-  too_many_arguments:            ["Too many arguments in function call (only 32766 allowed)"],
-  too_many_parameters:           ["Too many parameters in function definition (only 32766 allowed)"],
+  too_many_arguments:            ["Too many arguments in function call (only 65535 allowed)"],
+  too_many_parameters:           ["Too many parameters in function definition (only 65535 allowed)"],
   too_many_variables:            ["Too many variables declared (only 131071 allowed)"],
   strict_param_dupe:             ["Strict mode function may not have duplicate parameter names"],
   strict_octal_literal:          ["Octal literals are not allowed in strict mode."],
@@ -176,7 +176,8 @@ var kMessages = {
   cant_prevent_ext_external_array_elements: ["Cannot prevent extension of an object with external array elements"],
   redef_external_array_element:  ["Cannot redefine a property of an object with external array elements"],
   harmony_const_assign:          ["Assignment to constant variable."],
-  symbol_to_string:              ["Conversion from symbol to string"],
+  symbol_to_string:              ["Cannot convert a Symbol value to a string"],
+  symbol_to_primitive:           ["Cannot convert a Symbol wrapper object to a primitive value"],
   invalid_module_path:           ["Module does not export '", "%0", "', or export is not itself a module"],
   module_type_error:             ["Module '", "%0", "' used improperly"],
   module_export_undefined:       ["Export '", "%0", "' is not defined in module"]
@@ -939,14 +940,10 @@ function CallSiteToString() {
   if (this.isNative()) {
     fileLocation = "native";
   } else {
-    if (this.isEval()) {
-      fileName = this.getScriptNameOrSourceURL();
-      if (!fileName) {
-        fileLocation = this.getEvalOrigin();
-        fileLocation += ", ";  // Expecting source position to follow.
-      }
-    } else {
-      fileName = this.getFileName();
+    fileName = this.getScriptNameOrSourceURL();
+    if (!fileName && this.isEval()) {
+      fileLocation = this.getEvalOrigin();
+      fileLocation += ", ";  // Expecting source position to follow.
     }
 
     if (fileName) {
@@ -1077,15 +1074,15 @@ function FormatErrorString(error) {
 
 function GetStackFrames(raw_stack) {
   var frames = new InternalArray();
-  var non_strict_frames = raw_stack[0];
+  var sloppy_frames = raw_stack[0];
   for (var i = 1; i < raw_stack.length; i += 4) {
     var recv = raw_stack[i];
     var fun = raw_stack[i + 1];
     var code = raw_stack[i + 2];
     var pc = raw_stack[i + 3];
     var pos = %FunctionGetPositionForOffset(code, pc);
-    non_strict_frames--;
-    frames.push(new CallSite(recv, fun, pos, (non_strict_frames < 0)));
+    sloppy_frames--;
+    frames.push(new CallSite(recv, fun, pos, (sloppy_frames < 0)));
   }
   return frames;
 }

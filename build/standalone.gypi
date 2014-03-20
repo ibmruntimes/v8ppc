@@ -34,6 +34,7 @@
   'variables': {
     'component%': 'static_library',
     'clang%': 0,
+    'asan%': 0,
     'v8_enable_backtrace%': 0,
     'v8_enable_i18n_support%': 1,
     'v8_deprecation_warnings': 1,
@@ -51,7 +52,11 @@
               # to gyp.
               'host_arch%':
                 '<!(uname -m | sed -e "s/i.86/ia32/;\
-                  s/x86_64/x64/;s/amd64/x64/;s/arm.*/arm/;s/mips.*/mipsel/")',
+                                       s/x86_64/x64/;\
+                                       s/amd64/x64/;\
+                                       s/aarch64/a64/;\
+                                       s/arm.*/arm/;\
+                                       s/mips.*/mipsel/")',
             }, {
               # OS!="linux" and OS!="freebsd" and OS!="openbsd" and
               # OS!="netbsd" and OS!="mac" and OS!="aix"
@@ -96,6 +101,7 @@
 
     'conditions': [
       ['(v8_target_arch=="arm" and host_arch!="arm") or \
+        (v8_target_arch=="a64" and host_arch!="a64") or \
         (v8_target_arch=="mipsel" and host_arch!="mipsel") or \
         (v8_target_arch=="x64" and host_arch!="x64") or \
         (OS=="android" or OS=="qnx")', {
@@ -174,6 +180,22 @@
     ],
   },
   'conditions': [
+    ['asan==1', {
+      'target_defaults': {
+        'cflags_cc+': [
+          '-fno-omit-frame-pointer',
+          '-gline-tables-only',
+          '-fsanitize=address',
+          '-w',  # http://crbug.com/162783
+        ],
+        'cflags_cc!': [
+          '-fomit-frame-pointer',
+        ],
+        'ldflags': [
+          '-fsanitize=address',
+        ],
+      }
+    }],
     ['OS=="linux" or OS=="freebsd" or OS=="openbsd" or OS=="solaris" \
        or OS=="netbsd" or OS=="aix"', {
       'target_defaults': {
@@ -334,6 +356,12 @@
             'xcode_settings': {'GCC_TREAT_WARNINGS_AS_ERRORS': 'NO'},
           }, {
             'xcode_settings': {'GCC_TREAT_WARNINGS_AS_ERRORS': 'YES'},
+          }],
+          ['clang==1', {
+            'xcode_settings': {
+              'GCC_VERSION': 'com.apple.compilers.llvm.clang.1_0',
+              'CLANG_CXX_LANGUAGE_STANDARD': 'gnu++11',  # -std=gnu++11
+            },
           }],
         ],
         'target_conditions': [

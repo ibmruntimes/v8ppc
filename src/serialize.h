@@ -60,7 +60,7 @@ const int kReferenceTypeShift = kReferenceIdBits;
 const int kDebugRegisterBits = 4;
 const int kDebugIdShift = kDebugRegisterBits;
 
-const int kDeoptTableSerializeEntryCount = 8;
+const int kDeoptTableSerializeEntryCount = 12;
 
 // ExternalReferenceTable is a helper class that defines the relationship
 // between external references and their encodings. It is used to build
@@ -579,7 +579,6 @@ class Serializer : public SerializerDeserializer {
   // relative addresses for back references.
   int fullness_[LAST_SPACE + 1];
   SnapshotByteSink* sink_;
-  int current_root_index_;
   ExternalReferenceEncoder* external_reference_encoder_;
   static bool serialization_enabled_;
   // Did we already make use of the fact that serialization was not enabled?

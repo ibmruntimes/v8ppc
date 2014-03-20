@@ -262,14 +262,6 @@ class MacroAssembler: public Assembler {
       Register scratch,
       Label* no_map_match);
 
-  // Load the initial map for new Arrays from a JSFunction.
-  void LoadInitialArrayMap(Register function_in,
-                           Register scratch,
-                           Register map_out,
-                           bool can_have_holes);
-
-  void LoadGlobalContext(Register global_context);
-
   // Load the global function with the given index.
   void LoadGlobalFunction(int index, Register function);
 
@@ -556,6 +548,10 @@ class MacroAssembler: public Assembler {
 
   // Abort execution if argument is not a name, enabled via --debug-code.
   void AssertName(Register object);
+
+  // Abort execution if argument is not undefined or an AllocationSite, enabled
+  // via --debug-code.
+  void AssertUndefinedOrAllocationSite(Register object);
 
   // ---------------------------------------------------------------------------
   // Exception handling
@@ -851,6 +847,9 @@ class MacroAssembler: public Assembler {
   // Move if the registers are not identical.
   void Move(Register target, Register source);
 
+  // Move a constant into a register using the most efficient encoding.
+  void Move(Register dst, Immediate imm);
+
   // Push a handle value.
   void Push(Handle<Object> handle) { push(Immediate(handle)); }
   void Push(Smi* smi) { Push(Handle<Smi>(smi, isolate())); }
@@ -862,6 +861,10 @@ class MacroAssembler: public Assembler {
 
   // Insert code to verify that the x87 stack has the specified depth (0-7)
   void VerifyX87StackDepth(uint32_t depth);
+
+  // Emit code for a truncating division by a constant. The dividend register is
+  // unchanged, the result is in edx, and eax gets clobbered.
+  void TruncatingDiv(Register dividend, int32_t divisor);
 
   // ---------------------------------------------------------------------------
   // StatsCounter support

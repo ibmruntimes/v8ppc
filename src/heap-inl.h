@@ -223,7 +223,7 @@ MaybeObject* Heap::AllocateRaw(int size_in_bytes,
   HeapProfiler* profiler = isolate_->heap_profiler();
 #ifdef DEBUG
   if (FLAG_gc_interval >= 0 &&
-      !disallow_allocation_failure_ &&
+      AllowAllocationFailure::IsAllowed(isolate_) &&
       Heap::allocation_timeout_-- <= 0) {
     return Failure::RetryAfterGC(space);
   }
@@ -490,7 +490,8 @@ void Heap::ScavengePointer(HeapObject** p) {
 }
 
 
-void Heap::UpdateAllocationSiteFeedback(HeapObject* object) {
+void Heap::UpdateAllocationSiteFeedback(HeapObject* object,
+                                        ScratchpadSlotMode mode) {
   Heap* heap = object->GetHeap();
   ASSERT(heap->InFromSpace(object));
 
@@ -518,7 +519,7 @@ void Heap::UpdateAllocationSiteFeedback(HeapObject* object) {
   if (!memento->IsValid()) return;
 
   if (memento->GetAllocationSite()->IncrementMementoFoundCount()) {
-    heap->AddAllocationSiteToScratchpad(memento->GetAllocationSite());
+    heap->AddAllocationSiteToScratchpad(memento->GetAllocationSite(), mode);
   }
 }
 
@@ -541,7 +542,7 @@ void Heap::ScavengeObject(HeapObject** p, HeapObject* object) {
     return;
   }
 
-  UpdateAllocationSiteFeedback(object);
+  UpdateAllocationSiteFeedback(object, IGNORE_SCRATCHPAD_SLOT);
 
   // AllocationMementos are unrooted and shouldn't survive a scavenge
   ASSERT(object->map() != object->GetHeap()->allocation_memento_map());
@@ -662,7 +663,7 @@ Isolate* Heap::isolate() {
     (ISOLATE)->counters()->gc_last_resort_from_handles()->Increment();         \
     (ISOLATE)->heap()->CollectAllAvailableGarbage("last resort gc");           \
     {                                                                          \
-      AlwaysAllocateScope __scope__;                                           \
+      AlwaysAllocateScope __scope__(ISOLATE);                                  \
       __maybe_object__ = FUNCTION_CALL;                                        \
     }                                                                          \
     if (__maybe_object__->ToObject(&__object__)) RETURN_VALUE;                 \
@@ -777,21 +778,20 @@ void Heap::CompletelyClearInstanceofCache() {
 }
 
 
-AlwaysAllocateScope::AlwaysAllocateScope() {
+AlwaysAllocateScope::AlwaysAllocateScope(Isolate* isolate)
+    : heap_(isolate->heap()), daf_(isolate) {
   // We shouldn't hit any nested scopes, because that requires
   // non-handle code to call handle code. The code still works but
   // performance will degrade, so we want to catch this situation
   // in debug mode.
-  Isolate* isolate = Isolate::Current();
-  ASSERT(isolate->heap()->always_allocate_scope_depth_ == 0);
-  isolate->heap()->always_allocate_scope_depth_++;
+  ASSERT(heap_->always_allocate_scope_depth_ == 0);
+  heap_->always_allocate_scope_depth_++;
 }
 
 
 AlwaysAllocateScope::~AlwaysAllocateScope() {
-  Isolate* isolate = Isolate::Current();
-  isolate->heap()->always_allocate_scope_depth_--;
-  ASSERT(isolate->heap()->always_allocate_scope_depth_ == 0);
+  heap_->always_allocate_scope_depth_--;
+  ASSERT(heap_->always_allocate_scope_depth_ == 0);
 }
 
 
@@ -809,6 +809,21 @@ NoWeakObjectVerificationScope::~NoWeakObjectVerificationScope() {
 #endif
 
 
+GCCallbacksScope::GCCallbacksScope(Heap* heap) : heap_(heap) {
+  heap_->gc_callbacks_depth_++;
+}
+
+
+GCCallbacksScope::~GCCallbacksScope() {
+  heap_->gc_callbacks_depth_--;
+}
+
+
+bool GCCallbacksScope::CheckReenter() {
+  return heap_->gc_callbacks_depth_ == 1;
+}
+
+
 void VerifyPointersVisitor::VisitPointers(Object** start, Object** end) {
   for (Object** current = start; current < end; current++) {
     if ((*current)->IsHeapObject()) {
@@ -820,25 +835,15 @@ void VerifyPointersVisitor::VisitPointers(Object** start, Object** end) {
 }
 
 
+void VerifySmisVisitor::VisitPointers(Object** start, Object** end) {
+  for (Object** current = start; current < end; current++) {
+     CHECK((*current)->IsSmi());
+  }
+}
+
+
 double GCTracer::SizeOfHeapObjects() {
   return (static_cast<double>(heap_->SizeOfObjects())) / MB;
-}
-
-
-DisallowAllocationFailure::DisallowAllocationFailure() {
-#ifdef DEBUG
-  Isolate* isolate = Isolate::Current();
-  old_state_ = isolate->heap()->disallow_allocation_failure_;
-  isolate->heap()->disallow_allocation_failure_ = true;
-#endif
-}
-
-
-DisallowAllocationFailure::~DisallowAllocationFailure() {
-#ifdef DEBUG
-  Isolate* isolate = Isolate::Current();
-  isolate->heap()->disallow_allocation_failure_ = old_state_;
-#endif
 }
 
 

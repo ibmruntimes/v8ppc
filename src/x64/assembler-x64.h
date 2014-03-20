@@ -44,27 +44,6 @@ namespace internal {
 
 // Utility functions
 
-// Test whether a 64-bit value is in a specific range.
-inline bool is_uint32(int64_t x) {
-  static const uint64_t kMaxUInt32 = V8_UINT64_C(0xffffffff);
-  return static_cast<uint64_t>(x) <= kMaxUInt32;
-}
-
-inline bool is_int32(int64_t x) {
-  static const int64_t kMinInt32 = -V8_INT64_C(0x80000000);
-  return is_uint32(x - kMinInt32);
-}
-
-inline bool uint_is_int32(uint64_t x) {
-  static const uint64_t kMaxInt32 = V8_UINT64_C(0x7fffffff);
-  return x <= kMaxInt32;
-}
-
-inline bool is_uint32(uint64_t x) {
-  static const uint64_t kMaxUInt32 = V8_UINT64_C(0xffffffff);
-  return x <= kMaxUInt32;
-}
-
 // CPU Registers.
 //
 // 1) We would prefer to use an enum, but enum values are assignment-
@@ -576,8 +555,21 @@ class Assembler : public AssemblerBase {
   // the absolute address of the target.
   // These functions convert between absolute Addresses of Code objects and
   // the relative displacements stored in the code.
-  static inline Address target_address_at(Address pc);
-  static inline void set_target_address_at(Address pc, Address target);
+  static inline Address target_address_at(Address pc,
+                                          ConstantPoolArray* constant_pool);
+  static inline void set_target_address_at(Address pc,
+                                           ConstantPoolArray* constant_pool,
+                                           Address target);
+  static inline Address target_address_at(Address pc, Code* code) {
+    ConstantPoolArray* constant_pool = code ? code->constant_pool() : NULL;
+    return target_address_at(pc, constant_pool);
+  }
+  static inline void set_target_address_at(Address pc,
+                                           Code* code,
+                                           Address target) {
+    ConstantPoolArray* constant_pool = code ? code->constant_pool() : NULL;
+    set_target_address_at(pc, constant_pool, target);
+  }
 
   // Return the code target address at a call site from the return address
   // of that call in the instruction stream.
@@ -586,8 +578,8 @@ class Assembler : public AssemblerBase {
   // This sets the branch destination (which is in the instruction on x64).
   // This is for calls and branches within generated code.
   inline static void deserialization_set_special_target_at(
-      Address instruction_payload, Address target) {
-    set_target_address_at(instruction_payload, target);
+      Address instruction_payload, Code* code, Address target) {
+    set_target_address_at(instruction_payload, code, target);
   }
 
   static inline RelocInfo::Mode RelocInfoNone() {
@@ -701,15 +693,15 @@ class Assembler : public AssemblerBase {
   void pushfq();
   void popfq();
 
-  void push(Immediate value);
+  void pushq(Immediate value);
   // Push a 32 bit integer, and guarantee that it is actually pushed as a
   // 32 bit value, the normal push will optimize the 8 bit case.
-  void push_imm32(int32_t imm32);
-  void push(Register src);
-  void push(const Operand& src);
+  void pushq_imm32(int32_t imm32);
+  void pushq(Register src);
+  void pushq(const Operand& src);
 
-  void pop(Register dst);
-  void pop(const Operand& dst);
+  void popq(Register dst);
+  void popq(const Operand& dst);
 
   void enter(Immediate size);
   void leave();
@@ -958,6 +950,7 @@ class Assembler : public AssemblerBase {
   void imul(Register dst, const Operand& src);           // dst = dst * src.
   void imul(Register dst, Register src, Immediate imm);  // dst = src * imm.
   // Signed 32-bit multiply instructions.
+  void imull(Register src);                              // edx:eax = eax * src.
   void imull(Register dst, Register src);                 // dst = dst * src.
   void imull(Register dst, const Operand& src);           // dst = dst * src.
   void imull(Register dst, Register src, Immediate imm);  // dst = src * imm.
@@ -1215,6 +1208,7 @@ class Assembler : public AssemblerBase {
   // Bit operations.
   void bt(const Operand& dst, Register src);
   void bts(const Operand& dst, Register src);
+  void bsrl(Register dst, Register src);
 
   // Miscellaneous
   void clc();
@@ -1260,9 +1254,6 @@ class Assembler : public AssemblerBase {
   // Call near absolute indirect, address in register
   void call(Register adr);
 
-  // Call near indirect
-  void call(const Operand& operand);
-
   // Jumps
   // Jump short or near relative.
   // Use a 32-bit signed displacement.
@@ -1273,9 +1264,6 @@ class Assembler : public AssemblerBase {
 
   // Jump near absolute indirect (r64)
   void jmp(Register adr);
-
-  // Jump near absolute indirect (m64)
-  void jmp(const Operand& src);
 
   // Conditional jumps
   void j(Condition cc,
@@ -1407,6 +1395,8 @@ class Assembler : public AssemblerBase {
 
   void movapd(XMMRegister dst, XMMRegister src);
 
+  void psllq(XMMRegister reg, byte imm8);
+
   void cvttsd2si(Register dst, const Operand& src);
   void cvttsd2si(Register dst, XMMRegister src);
   void cvttsd2siq(Register dst, XMMRegister src);
@@ -1472,6 +1462,12 @@ class Assembler : public AssemblerBase {
   // Use --code-comments to enable.
   void RecordComment(const char* msg, bool force = false);
 
+  // Allocate a constant pool of the correct size for the generated code.
+  MaybeObject* AllocateConstantPool(Heap* heap);
+
+  // Generate the constant pool for the generated code.
+  void PopulateConstantPool(ConstantPoolArray* constant_pool);
+
   // Writes a single word of data in the code stream.
   // Used for inline tables, e.g., jump-tables.
   void db(uint8_t data);
@@ -1498,6 +1494,13 @@ class Assembler : public AssemblerBase {
 
   byte byte_at(int pos)  { return buffer_[pos]; }
   void set_byte_at(int pos, byte value) { buffer_[pos] = value; }
+
+ protected:
+  // Call near indirect
+  void call(const Operand& operand);
+
+  // Jump near absolute indirect (m64)
+  void jmp(const Operand& src);
 
  private:
   byte* addr_at(int pos)  { return buffer_ + pos; }
