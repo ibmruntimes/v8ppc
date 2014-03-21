@@ -45,7 +45,7 @@ inline Atomic32 NoBarrier_AtomicExchange(volatile Atomic32* ptr,
   Atomic32 old_value;
   do {
     old_value = *ptr;
-  } while (__sync_bool_compare_and_swap(ptr, old_value, new_value));
+  } while (__sync_bool_compare_and_swap(ptr, old_value, new_value) == false);
   return old_value;
 }
 
@@ -117,6 +117,33 @@ inline Atomic64 NoBarrier_CompareAndSwap(volatile Atomic64* ptr,
                                          Atomic64 old_value,
                                          Atomic64 new_value) {
   return(__sync_val_compare_and_swap( ptr, old_value, new_value));
+}
+
+inline Atomic64 NoBarrier_AtomicExchange(volatile Atomic64* ptr,
+                                         Atomic64 new_value) {
+  Atomic64 old_value;
+  do {
+    old_value = *ptr;
+  } while (__sync_bool_compare_and_swap(ptr, old_value, new_value) == false);
+  return old_value;
+}
+
+inline Atomic64 NoBarrier_AtomicIncrement(volatile Atomic64* ptr,
+                                          Atomic64 increment) {
+  return Barrier_AtomicIncrement(ptr, increment);
+}
+
+inline Atomic64 Barrier_AtomicIncrement(volatile Atomic64* ptr,
+                                        Atomic64 increment) {
+  for (;;) {
+    Atomic64 old_value = *ptr;
+    Atomic64 new_value = old_value + increment;
+    if (__sync_bool_compare_and_swap(ptr, old_value, new_value)) {
+      return new_value;
+      // The exchange took place as expected.
+    }
+    // Otherwise, *ptr changed mid-loop and we need to retry.
+  }
 }
 
 inline Atomic64 Acquire_CompareAndSwap(volatile Atomic64* ptr,

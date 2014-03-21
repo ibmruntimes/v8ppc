@@ -131,6 +131,9 @@ void FullCodeGenerator::Generate() {
   CompilationInfo* info = info_;
   handler_table_ =
       isolate()->factory()->NewFixedArray(function()->handler_count(), TENURED);
+
+  InitializeFeedbackVector();
+
   profiling_counter_ = isolate()->factory()->NewCell(
       Handle<Smi>(Smi::FromInt(FLAG_interrupt_budget), isolate()));
   SetFunctionPosition(function());
@@ -145,10 +148,10 @@ void FullCodeGenerator::Generate() {
   }
 #endif
 
-  // Classic mode functions and builtins need to replace the receiver with the
+  // Sloppy mode functions and builtins need to replace the receiver with the
   // global proxy when called as functions (without an explicit receiver
   // object).
-  if (info->is_classic_mode() && !info->is_native()) {
+  if (info->strict_mode() == SLOPPY && !info->is_native()) {
     Label ok;
     int receiver_offset = info->scope()->num_parameters() * kPointerSize;
     __ LoadP(r5, MemOperand(sp, receiver_offset), r0);
@@ -261,12 +264,12 @@ void FullCodeGenerator::Generate() {
     // The stub will rewrite receiever and parameter count if the previous
     // stack frame was an arguments adapter frame.
     ArgumentsAccessStub::Type type;
-    if (!is_classic_mode()) {
+    if (strict_mode() == STRICT) {
       type = ArgumentsAccessStub::NEW_STRICT;
     } else if (function()->has_duplicate_parameters()) {
-      type = ArgumentsAccessStub::NEW_NON_STRICT_SLOW;
+      type = ArgumentsAccessStub::NEW_SLOPPY_SLOW;
     } else {
-      type = ArgumentsAccessStub::NEW_NON_STRICT_FAST;
+      type = ArgumentsAccessStub::NEW_SLOPPY_FAST;
     }
     ArgumentsAccessStub stub(type);
     __ CallStub(&stub);
@@ -292,7 +295,7 @@ void FullCodeGenerator::Generate() {
       if (scope()->is_function_scope() && scope()->function() != NULL) {
         VariableDeclaration* function = scope()->function();
         ASSERT(function->proxy()->var()->mode() == CONST ||
-               function->proxy()->var()->mode() == CONST_HARMONY);
+               function->proxy()->var()->mode() == CONST_LEGACY);
         ASSERT(function->proxy()->var()->location() != Variable::UNALLOCATED);
         VisitVariableDeclaration(function);
       }
@@ -671,7 +674,7 @@ void FullCodeGenerator::DoTest(Expression* condition,
                                Label* if_false,
                                Label* fall_through) {
   Handle<Code> ic = ToBooleanStub::GetUninitialized(isolate());
-  CallIC(ic, NOT_CONTEXTUAL, condition->test_id());
+  CallIC(ic, condition->test_id());
   __ cmpi(result_register(), Operand::Zero());
   Split(ne, if_true, if_false, fall_through);
 }
@@ -793,7 +796,7 @@ void FullCodeGenerator::VisitVariableDeclaration(
   VariableProxy* proxy = declaration->proxy();
   VariableMode mode = declaration->mode();
   Variable* variable = proxy->var();
-  bool hole_init = mode == CONST || mode == CONST_HARMONY || mode == LET;
+  bool hole_init = mode == LET || mode == CONST || mode == CONST_LEGACY;
   switch (variable->location()) {
     case Variable::UNALLOCATED:
       globals_->Add(variable->name(), zone());
@@ -1034,7 +1037,7 @@ void FullCodeGenerator::VisitSwitchStatement(SwitchStatement* stmt) {
     // Record position before stub call for type feedback.
     SetSourcePosition(clause->position());
     Handle<Code> ic = CompareIC::GetUninitialized(isolate(), Token::EQ_STRICT);
-    CallIC(ic, NOT_CONTEXTUAL, clause->CompareId());
+    CallIC(ic, clause->CompareId());
     patch_site.EmitPatchInfo();
 
     Label skip;
@@ -1079,6 +1082,7 @@ void FullCodeGenerator::VisitSwitchStatement(SwitchStatement* stmt) {
 
 void FullCodeGenerator::VisitForInStatement(ForInStatement* stmt) {
   Comment cmnt(masm_, "[ ForInStatement");
+  int slot = stmt->ForInFeedbackSlot();
   SetStatementPosition(stmt);
 
   Label loop, exit;
@@ -1169,13 +1173,13 @@ void FullCodeGenerator::VisitForInStatement(ForInStatement* stmt) {
   Label non_proxy;
   __ bind(&fixed_array);
 
-  Handle<Cell> cell = isolate()->factory()->NewCell(
-      Handle<Object>(Smi::FromInt(TypeFeedbackCells::kForInFastCaseMarker),
-                     isolate()));
-  RecordTypeFeedbackCell(stmt->ForInFeedbackId(), cell);
-  __ Move(r4, cell);
-  __ LoadSmiLiteral(r5, Smi::FromInt(TypeFeedbackCells::kForInSlowCaseMarker));
-  __ StoreP(r5, FieldMemOperand(r4, Cell::kValueOffset), r0);
+  Handle<Object> feedback = Handle<Object>(
+      Smi::FromInt(TypeFeedbackInfo::kForInFastCaseMarker),
+      isolate());
+  StoreFeedbackVectorSlot(slot, feedback);
+  __ Move(r4, FeedbackVector());
+  __ LoadSmiLiteral(r5, Smi::FromInt(TypeFeedbackInfo::kForInSlowCaseMarker));
+  __ StoreP(r5, FieldMemOperand(r4, FixedArray::OffsetOfElementAt(slot)), r0);
 
   __ LoadSmiLiteral(r4, Smi::FromInt(1));  // Smi indicates slow check
   __ LoadP(r5, MemOperand(sp, 0 * kPointerSize));  // Get enumerated object
@@ -1335,7 +1339,7 @@ void FullCodeGenerator::EmitNewClosure(Handle<SharedFunctionInfo> info,
       !pretenure &&
       scope()->is_function_scope() &&
       info->num_literals() == 0) {
-    FastNewClosureStub stub(info->language_mode(), info->is_generator());
+    FastNewClosureStub stub(info->strict_mode(), info->is_generator());
     __ mov(r5, Operand(info));
     __ CallStub(&stub);
   } else {
@@ -1365,7 +1369,7 @@ void FullCodeGenerator::EmitLoadGlobalCheckExtensions(Variable* var,
   Scope* s = scope();
   while (s != NULL) {
     if (s->num_heap_slots() > 0) {
-      if (s->calls_non_strict_eval()) {
+      if (s->calls_sloppy_eval()) {
         // Check that extension is NULL.
         __ LoadP(temp, ContextOperand(current, Context::EXTENSION_INDEX));
         __ cmpi(temp, Operand::Zero());
@@ -1378,7 +1382,7 @@ void FullCodeGenerator::EmitLoadGlobalCheckExtensions(Variable* var,
     }
     // If no outer scope calls eval, we do not need to check more
     // context extensions.
-    if (!s->outer_scope_calls_non_strict_eval() || s->is_eval_scope()) break;
+    if (!s->outer_scope_calls_sloppy_eval() || s->is_eval_scope()) break;
     s = s->outer_scope();
   }
 
@@ -1421,7 +1425,7 @@ MemOperand FullCodeGenerator::ContextSlotOperandCheckExtensions(Variable* var,
 
   for (Scope* s = scope(); s != var->scope(); s = s->outer_scope()) {
     if (s->num_heap_slots() > 0) {
-      if (s->calls_non_strict_eval()) {
+      if (s->calls_sloppy_eval()) {
         // Check that extension is NULL.
         __ LoadP(temp, ContextOperand(context, Context::EXTENSION_INDEX));
         __ cmpi(temp, Operand::Zero());
@@ -1459,14 +1463,13 @@ void FullCodeGenerator::EmitDynamicLookupFastCase(Variable* var,
   } else if (var->mode() == DYNAMIC_LOCAL) {
     Variable* local = var->local_if_not_shadowed();
     __ LoadP(r3, ContextSlotOperandCheckExtensions(local, slow));
-    if (local->mode() == LET ||
-        local->mode() == CONST ||
-        local->mode() == CONST_HARMONY) {
+    if (local->mode() == LET || local->mode() == CONST ||
+        local->mode() == CONST_LEGACY) {
       __ CompareRoot(r3, Heap::kTheHoleValueRootIndex);
       __ bne(done);
-      if (local->mode() == CONST) {
+      if (local->mode() == CONST_LEGACY) {
         __ LoadRoot(r3, Heap::kUndefinedValueRootIndex);
-      } else {  // LET || CONST_HARMONY
+      } else {  // LET || CONST
         __ mov(r3, Operand(var->name()));
         __ push(r3);
         __ CallRuntime(Runtime::kThrowReferenceError, 1);
@@ -1486,7 +1489,7 @@ void FullCodeGenerator::EmitVariableLoad(VariableProxy* proxy) {
   // variables.
   switch (var->location()) {
     case Variable::UNALLOCATED: {
-      Comment cmnt(masm_, "Global variable");
+      Comment cmnt(masm_, "[ Global variable");
       // Use inline caching. Variable name is passed in r5 and the global
       // object (receiver) in r3.
       __ LoadP(r3, GlobalObjectOperand());
@@ -1499,9 +1502,8 @@ void FullCodeGenerator::EmitVariableLoad(VariableProxy* proxy) {
     case Variable::PARAMETER:
     case Variable::LOCAL:
     case Variable::CONTEXT: {
-      Comment cmnt(masm_, var->IsContextSlot()
-                              ? "Context variable"
-                              : "Stack variable");
+      Comment cmnt(masm_, var->IsContextSlot() ? "[ Context variable"
+                                               : "[ Stack variable");
       if (var->binding_needs_init()) {
         // var->scope() may be NULL when the proxy is located in eval code and
         // refers to a potential outside binding. Currently those bindings are
@@ -1533,7 +1535,7 @@ void FullCodeGenerator::EmitVariableLoad(VariableProxy* proxy) {
           // Check that we always have valid source position.
           ASSERT(var->initializer_position() != RelocInfo::kNoPosition);
           ASSERT(proxy->position() != RelocInfo::kNoPosition);
-          skip_init_check = var->mode() != CONST &&
+          skip_init_check = var->mode() != CONST_LEGACY &&
               var->initializer_position() < proxy->position();
         }
 
@@ -1543,7 +1545,7 @@ void FullCodeGenerator::EmitVariableLoad(VariableProxy* proxy) {
           GetVar(r3, var);
           __ CompareRoot(r3, Heap::kTheHoleValueRootIndex);
           __ bne(&done);
-          if (var->mode() == LET || var->mode() == CONST_HARMONY) {
+          if (var->mode() == LET || var->mode() == CONST) {
             // Throw a reference error when using an uninitialized let/const
             // binding in harmony mode.
             __ mov(r3, Operand(var->name()));
@@ -1551,7 +1553,7 @@ void FullCodeGenerator::EmitVariableLoad(VariableProxy* proxy) {
             __ CallRuntime(Runtime::kThrowReferenceError, 1);
           } else {
             // Uninitalized const bindings outside of harmony mode are unholed.
-            ASSERT(var->mode() == CONST);
+            ASSERT(var->mode() == CONST_LEGACY);
             __ LoadRoot(r3, Heap::kUndefinedValueRootIndex);
           }
           __ bind(&done);
@@ -1564,12 +1566,12 @@ void FullCodeGenerator::EmitVariableLoad(VariableProxy* proxy) {
     }
 
     case Variable::LOOKUP: {
+      Comment cmnt(masm_, "[ Lookup variable");
       Label done, slow;
       // Generate code for loading from variables potentially shadowed
       // by eval-introduced variables.
       EmitDynamicLookupFastCase(var, NOT_INSIDE_TYPEOF, &slow, &done);
       __ bind(&slow);
-      Comment cmnt(masm_, "Lookup variable");
       __ mov(r4, Operand(var->name()));
       __ Push(cp, r4);  // Context and name.
       __ CallRuntime(Runtime::kLoadContextSlot, 2);
@@ -1657,8 +1659,7 @@ void FullCodeGenerator::VisitObjectLiteral(ObjectLiteral* expr) {
       : ObjectLiteral::kNoFlags;
   __ LoadSmiLiteral(r3, Smi::FromInt(flags));
   int properties_count = constant_properties->length() / 2;
-  if ((FLAG_track_double_fields && expr->may_store_doubles()) ||
-      expr->depth() > 1 || Serializer::enabled() ||
+  if (expr->may_store_doubles() || expr->depth() > 1 || Serializer::enabled() ||
       flags != ObjectLiteral::kFastElements ||
       properties_count > FastCloneShallowObjectStub::kMaximumClonedProperties) {
     __ Push(r6, r5, r4, r3);
@@ -1700,7 +1701,7 @@ void FullCodeGenerator::VisitObjectLiteral(ObjectLiteral* expr) {
             VisitForAccumulatorValue(value);
             __ mov(r5, Operand(key->value()));
             __ LoadP(r4, MemOperand(sp));
-            CallStoreIC(NOT_CONTEXTUAL, key->LiteralFeedbackId());
+            CallStoreIC(key->LiteralFeedbackId());
             PrepareForBailoutForId(key->id(), NO_REGISTERS);
           } else {
             VisitForEffect(value);
@@ -1872,13 +1873,9 @@ void FullCodeGenerator::VisitArrayLiteral(ArrayLiteral* expr) {
 
 
 void FullCodeGenerator::VisitAssignment(Assignment* expr) {
+  ASSERT(expr->target()->IsValidLeftHandSide());
+
   Comment cmnt(masm_, "[ Assignment");
-  // Invalid left-hand sides are rewritten to have a 'throw ReferenceError'
-  // on the left-hand side.
-  if (!expr->target()->IsValidLeftHandSide()) {
-    VisitForEffect(expr->target());
-    return;
-  }
 
   // Left-hand side can only be a property, a global or a (parameter or local)
   // slot.
@@ -2104,7 +2101,7 @@ void FullCodeGenerator::VisitYield(Yield* expr) {
       __ LoadP(r4, MemOperand(sp, kPointerSize));
       __ LoadP(r3, MemOperand(sp, 2 * kPointerSize));
       Handle<Code> ic = isolate()->builtins()->KeyedLoadIC_Initialize();
-      CallIC(ic, NOT_CONTEXTUAL, TypeFeedbackId::None());
+      CallIC(ic, TypeFeedbackId::None());
       __ mr(r4, r3);
       __ StoreP(r4, MemOperand(sp, 2 * kPointerSize));
       CallFunctionStub stub(1, CALL_AS_METHOD);
@@ -2311,7 +2308,7 @@ void FullCodeGenerator::EmitKeyedPropertyLoad(Property* prop) {
   SetSourcePosition(prop->position());
   // Call keyed load IC. It has arguments key and receiver in r3 and r4.
   Handle<Code> ic = isolate()->builtins()->KeyedLoadIC_Initialize();
-  CallIC(ic, NOT_CONTEXTUAL, prop->PropertyFeedbackId());
+  CallIC(ic, prop->PropertyFeedbackId());
 }
 
 
@@ -2338,8 +2335,7 @@ void FullCodeGenerator::EmitInlineSmiBinaryOp(BinaryOperation* expr,
 
   __ bind(&stub_call);
   BinaryOpICStub stub(op, mode);
-  CallIC(stub.GetCode(isolate()), NOT_CONTEXTUAL,
-         expr->BinaryOperationFeedbackId());
+  CallIC(stub.GetCode(isolate()), expr->BinaryOperationFeedbackId());
   patch_site.EmitPatchInfo();
   __ b(&done);
 
@@ -2448,20 +2444,14 @@ void FullCodeGenerator::EmitBinaryOp(BinaryOperation* expr,
   __ pop(r4);
   BinaryOpICStub stub(op, mode);
   JumpPatchSite patch_site(masm_);    // unbound, signals no inlined smi code.
-  CallIC(stub.GetCode(isolate()), NOT_CONTEXTUAL,
-         expr->BinaryOperationFeedbackId());
+  CallIC(stub.GetCode(isolate()), expr->BinaryOperationFeedbackId());
   patch_site.EmitPatchInfo();
   context()->Plug(r3);
 }
 
 
 void FullCodeGenerator::EmitAssignment(Expression* expr) {
-  // Invalid left-hand sides are rewritten by the parser to have a 'throw
-  // ReferenceError' on the left-hand side.
-  if (!expr->IsValidLeftHandSide()) {
-    VisitForEffect(expr);
-    return;
-  }
+  ASSERT(expr->IsValidLeftHandSide());
 
   // Left-hand side can only be a property, a global or a (parameter or local)
   // slot.
@@ -2487,7 +2477,7 @@ void FullCodeGenerator::EmitAssignment(Expression* expr) {
       __ mr(r4, r3);
       __ pop(r3);  // Restore value.
       __ mov(r5, Operand(prop->key()->AsLiteral()->value()));
-      CallStoreIC(NOT_CONTEXTUAL);
+      CallStoreIC();
       break;
     }
     case KEYED_PROPERTY: {
@@ -2496,7 +2486,7 @@ void FullCodeGenerator::EmitAssignment(Expression* expr) {
       VisitForAccumulatorValue(prop->key());
       __ mr(r4, r3);
       __ Pop(r3, r5);  // r3 = restored value.
-      Handle<Code> ic = is_classic_mode()
+      Handle<Code> ic = strict_mode() == SLOPPY
           ? isolate()->builtins()->KeyedStoreIC_Initialize()
           : isolate()->builtins()->KeyedStoreIC_Initialize_Strict();
       CallIC(ic);
@@ -2507,44 +2497,59 @@ void FullCodeGenerator::EmitAssignment(Expression* expr) {
 }
 
 
-void FullCodeGenerator::EmitVariableAssignment(Variable* var,
-                                               Token::Value op) {
+void FullCodeGenerator::EmitStoreToStackLocalOrContextSlot(
+    Variable* var, MemOperand location) {
+  __ StoreP(result_register(), location, r0);
+  if (var->IsContextSlot()) {
+    // RecordWrite may destroy all its register arguments.
+    __ mr(r6, result_register());
+    int offset = Context::SlotOffset(var->index());
+    __ RecordWriteContextSlot(
+        r4, offset, r6, r5, kLRHasBeenSaved, kDontSaveFPRegs);
+  }
+}
+
+
+void FullCodeGenerator::EmitCallStoreContextSlot(
+    Handle<String> name, StrictMode strict_mode) {
+  __ push(r3);  // Value.
+  __ mov(r4, Operand(name));
+  __ LoadSmiLiteral(r3, Smi::FromInt(strict_mode));
+  __ Push(cp, r4, r3);  // Context, name, strict mode.
+  __ CallRuntime(Runtime::kStoreContextSlot, 4);
+}
+
+
+void FullCodeGenerator::EmitVariableAssignment(Variable* var, Token::Value op) {
   if (var->IsUnallocated()) {
     // Global var, const, or let.
     __ mov(r5, Operand(var->name()));
     __ LoadP(r4, GlobalObjectOperand());
-    CallStoreIC(CONTEXTUAL);
-  } else if (op == Token::INIT_CONST) {
+    CallStoreIC();
+
+  } else if (op == Token::INIT_CONST_LEGACY) {
     // Const initializers need a write barrier.
     ASSERT(!var->IsParameter());  // No const parameters.
-    if (var->IsStackLocal()) {
-      Label skip;
-      __ LoadP(r4, StackOperand(var));
-      __ CompareRoot(r4, Heap::kTheHoleValueRootIndex);
-      __ bne(&skip);
-      __ StoreP(result_register(), StackOperand(var));
-      __ bind(&skip);
-    } else {
-      ASSERT(var->IsContextSlot() || var->IsLookupSlot());
-      // Like var declarations, const declarations are hoisted to function
-      // scope.  However, unlike var initializers, const initializers are
-      // able to drill a hole to that function context, even from inside a
-      // 'with' context.  We thus bypass the normal static scope lookup for
-      // var->IsContextSlot().
+    if (var->IsLookupSlot()) {
       __ push(r3);
       __ mov(r3, Operand(var->name()));
       __ Push(cp, r3);  // Context and name.
       __ CallRuntime(Runtime::kInitializeConstContextSlot, 3);
+    } else {
+      ASSERT(var->IsStackAllocated() || var->IsContextSlot());
+      Label skip;
+      MemOperand location = VarOperand(var, r4);
+      __ LoadP(r5, location);
+      __ CompareRoot(r5, Heap::kTheHoleValueRootIndex);
+      __ bne(&skip);
+      EmitStoreToStackLocalOrContextSlot(var, location);
+      __ bind(&skip);
     }
 
   } else if (var->mode() == LET && op != Token::INIT_LET) {
     // Non-initializing assignment to let variable needs a write barrier.
     if (var->IsLookupSlot()) {
-      __ push(r3);  // Value.
-      __ mov(r4, Operand(var->name()));
-      __ LoadSmiLiteral(r3, Smi::FromInt(language_mode()));
-      __ Push(cp, r4, r3);  // Context, name, strict mode.
-      __ CallRuntime(Runtime::kStoreContextSlot, 4);
+      EmitCallStoreContextSlot(var->name(), strict_mode());
     } else {
       ASSERT(var->IsStackAllocated() || var->IsContextSlot());
       Label assign;
@@ -2557,20 +2562,16 @@ void FullCodeGenerator::EmitVariableAssignment(Variable* var,
       __ CallRuntime(Runtime::kThrowReferenceError, 1);
       // Perform the assignment.
       __ bind(&assign);
-      __ StoreP(result_register(), location, r0);
-      if (var->IsContextSlot()) {
-        // RecordWrite may destroy all its register arguments.
-        __ mr(r6, result_register());
-        int offset = Context::SlotOffset(var->index());
-        __ RecordWriteContextSlot(
-            r4, offset, r6, r5, kLRHasBeenSaved, kDontSaveFPRegs);
-      }
+      EmitStoreToStackLocalOrContextSlot(var, location);
     }
 
-  } else if (!var->is_const_mode() || op == Token::INIT_CONST_HARMONY) {
+  } else if (!var->is_const_mode() || op == Token::INIT_CONST) {
     // Assignment to var or initializing assignment to let/const
     // in harmony mode.
-    if (var->IsStackAllocated() || var->IsContextSlot()) {
+    if (var->IsLookupSlot()) {
+      EmitCallStoreContextSlot(var->name(), strict_mode());
+    } else {
+      ASSERT((var->IsStackAllocated() || var->IsContextSlot()));
       MemOperand location = VarOperand(var, r4);
       if (generate_debug_code_ && op == Token::INIT_LET) {
         // Check for an uninitialized let binding.
@@ -2578,21 +2579,7 @@ void FullCodeGenerator::EmitVariableAssignment(Variable* var,
         __ CompareRoot(r5, Heap::kTheHoleValueRootIndex);
         __ Check(eq, kLetBindingReInitialization);
       }
-      // Perform the assignment.
-      __ StoreP(r3, location, r0);
-      if (var->IsContextSlot()) {
-        __ mr(r6, r3);
-        int offset = Context::SlotOffset(var->index());
-        __ RecordWriteContextSlot(
-            r4, offset, r6, r5, kLRHasBeenSaved, kDontSaveFPRegs);
-      }
-    } else {
-      ASSERT(var->IsLookupSlot());
-      __ push(r3);  // Value.
-      __ mov(r4, Operand(var->name()));
-      __ LoadSmiLiteral(r3, Smi::FromInt(language_mode()));
-      __ Push(cp, r4, r3);  // Context, name, strict mode.
-      __ CallRuntime(Runtime::kStoreContextSlot, 4);
+      EmitStoreToStackLocalOrContextSlot(var, location);
     }
   }
   // Non-initializing assignments to consts are ignored.
@@ -2610,7 +2597,7 @@ void FullCodeGenerator::EmitNamedPropertyAssignment(Assignment* expr) {
   __ mov(r5, Operand(prop->key()->AsLiteral()->value()));
   __ pop(r4);
 
-  CallStoreIC(NOT_CONTEXTUAL, expr->AssignmentFeedbackId());
+  CallStoreIC(expr->AssignmentFeedbackId());
 
   PrepareForBailoutForId(expr->AssignmentId(), TOS_REG);
   context()->Plug(r3);
@@ -2624,10 +2611,10 @@ void FullCodeGenerator::EmitKeyedPropertyAssignment(Assignment* expr) {
   SetSourcePosition(expr->position());
   __ Pop(r5, r4);  // r1 = key.
 
-  Handle<Code> ic = is_classic_mode()
+  Handle<Code> ic = strict_mode() == SLOPPY
       ? isolate()->builtins()->KeyedStoreIC_Initialize()
       : isolate()->builtins()->KeyedStoreIC_Initialize_Strict();
-  CallIC(ic, NOT_CONTEXTUAL, expr->AssignmentFeedbackId());
+  CallIC(ic, expr->AssignmentFeedbackId());
 
   PrepareForBailoutForId(expr->AssignmentId(), TOS_REG);
   context()->Plug(r3);
@@ -2654,10 +2641,8 @@ void FullCodeGenerator::VisitProperty(Property* expr) {
 
 
 void FullCodeGenerator::CallIC(Handle<Code> code,
-                               ContextualMode mode,
                                TypeFeedbackId ast_id) {
   ic_total_count_++;
-  ASSERT(mode != CONTEXTUAL || ast_id.IsNone());
   __ Call(code, RelocInfo::CODE_TARGET, ast_id);
 }
 
@@ -2676,7 +2661,7 @@ void FullCodeGenerator::EmitCallWithIC(Call* expr) {
       PrepareForBailout(callee, NO_REGISTERS);
     }
     // Push undefined as receiver. This is patched in the method prologue if it
-    // is a classic mode method.
+    // is a sloppy mode method.
     __ Push(isolate()->factory()->undefined_value());
     flags = NO_CALL_FUNCTION_FLAGS;
   } else {
@@ -2768,15 +2753,15 @@ void FullCodeGenerator::EmitCallWithStub(Call* expr) {
   SetSourcePosition(expr->position());
 
   Handle<Object> uninitialized =
-      TypeFeedbackCells::UninitializedSentinel(isolate());
-  Handle<Cell> cell = isolate()->factory()->NewCell(uninitialized);
-  RecordTypeFeedbackCell(expr->CallFeedbackId(), cell);
-  __ mov(r5, Operand(cell));
+      TypeFeedbackInfo::UninitializedSentinel(isolate());
+  StoreFeedbackVectorSlot(expr->CallFeedbackSlot(), uninitialized);
+  __ Move(r5, FeedbackVector());
+  __ LoadSmiLiteral(r6, Smi::FromInt(expr->CallFeedbackSlot()));
 
   // Record call targets in unoptimized code.
   CallFunctionStub stub(arg_count, RECORD_CALL_TARGET);
   __ LoadP(r4, MemOperand(sp, (arg_count + 1) * kPointerSize), r0);
-  __ CallStub(&stub, expr->CallFeedbackId());
+  __ CallStub(&stub);
   RecordJSReturnSite(expr);
   // Restore context register.
   __ LoadP(cp, MemOperand(fp, StandardFrameConstants::kContextOffset));
@@ -2796,8 +2781,8 @@ void FullCodeGenerator::EmitResolvePossiblyDirectEval(int arg_count) {
   int receiver_offset = 2 + info_->scope()->num_parameters();
   __ LoadP(r6, MemOperand(fp, receiver_offset * kPointerSize), r0);
 
-  // r5: the language mode.
-  __ LoadSmiLiteral(r5, Smi::FromInt(language_mode()));
+  // r5: strict mode.
+  __ LoadSmiLiteral(r5, Smi::FromInt(strict_mode()));
 
   // r4: the start position of the scope the calls resides in.
   __ LoadSmiLiteral(r4, Smi::FromInt(scope()->start_position()));
@@ -2957,10 +2942,17 @@ void FullCodeGenerator::VisitCallNew(CallNew* expr) {
 
   // Record call targets in unoptimized code.
   Handle<Object> uninitialized =
-      TypeFeedbackCells::UninitializedSentinel(isolate());
-  Handle<Cell> cell = isolate()->factory()->NewCell(uninitialized);
-  RecordTypeFeedbackCell(expr->CallNewFeedbackId(), cell);
-  __ mov(r5, Operand(cell));
+      TypeFeedbackInfo::UninitializedSentinel(isolate());
+  StoreFeedbackVectorSlot(expr->CallNewFeedbackSlot(), uninitialized);
+  if (FLAG_pretenuring_call_new) {
+    StoreFeedbackVectorSlot(expr->AllocationSiteFeedbackSlot(),
+                            isolate()->factory()->NewAllocationSite());
+    ASSERT(expr->AllocationSiteFeedbackSlot() ==
+           expr->CallNewFeedbackSlot() + 1);
+  }
+
+  __ Move(r5, FeedbackVector());
+  __ LoadSmiLiteral(r6, Smi::FromInt(expr->CallNewFeedbackSlot()));
 
   CallConstructStub stub(RECORD_CALL_TARGET);
   __ Call(stub.GetCode(isolate()), RelocInfo::CONSTRUCT_CALL);
@@ -4287,9 +4279,7 @@ void FullCodeGenerator::VisitUnaryOperation(UnaryOperation* expr) {
       if (property != NULL) {
         VisitForStackValue(property->obj());
         VisitForStackValue(property->key());
-        StrictModeFlag strict_mode_flag = (language_mode() == CLASSIC_MODE)
-            ? kNonStrictMode : kStrictMode;
-        __ LoadSmiLiteral(r4, Smi::FromInt(strict_mode_flag));
+        __ LoadSmiLiteral(r4, Smi::FromInt(strict_mode()));
         __ push(r4);
         __ InvokeBuiltin(Builtins::DELETE, CALL_FUNCTION);
         context()->Plug(r3);
@@ -4297,11 +4287,11 @@ void FullCodeGenerator::VisitUnaryOperation(UnaryOperation* expr) {
         Variable* var = proxy->var();
         // Delete of an unqualified identifier is disallowed in strict mode
         // but "delete this" is allowed.
-        ASSERT(language_mode() == CLASSIC_MODE || var->is_this());
+        ASSERT(strict_mode() == SLOPPY || var->is_this());
         if (var->IsUnallocated()) {
           __ LoadP(r5, GlobalObjectOperand());
           __ mov(r4, Operand(var->name()));
-          __ LoadSmiLiteral(r3, Smi::FromInt(kNonStrictMode));
+          __ LoadSmiLiteral(r3, Smi::FromInt(SLOPPY));
           __ Push(r5, r4, r3);
           __ InvokeBuiltin(Builtins::DELETE, CALL_FUNCTION);
           context()->Plug(r3);
@@ -4390,15 +4380,10 @@ void FullCodeGenerator::VisitUnaryOperation(UnaryOperation* expr) {
 
 
 void FullCodeGenerator::VisitCountOperation(CountOperation* expr) {
+  ASSERT(expr->expression()->IsValidLeftHandSide());
+
   Comment cmnt(masm_, "[ CountOperation");
   SetSourcePosition(expr->position());
-
-  // Invalid left-hand sides are rewritten to have a 'throw ReferenceError'
-  // as the left-hand side.
-  if (!expr->expression()->IsValidLeftHandSide()) {
-    VisitForEffect(expr->expression());
-    return;
-  }
 
   // Expression can only be a property, a global or a (parameter or local)
   // slot.
@@ -4515,9 +4500,7 @@ void FullCodeGenerator::VisitCountOperation(CountOperation* expr) {
   SetSourcePosition(expr->position());
 
   BinaryOpICStub stub(Token::ADD, NO_OVERWRITE);
-  CallIC(stub.GetCode(isolate()),
-         NOT_CONTEXTUAL,
-         expr->CountBinOpFeedbackId());
+  CallIC(stub.GetCode(isolate()), expr->CountBinOpFeedbackId());
   patch_site.EmitPatchInfo();
   __ bind(&done);
 
@@ -4546,7 +4529,7 @@ void FullCodeGenerator::VisitCountOperation(CountOperation* expr) {
     case NAMED_PROPERTY: {
       __ mov(r5, Operand(prop->key()->AsLiteral()->value()));
       __ pop(r4);
-      CallStoreIC(NOT_CONTEXTUAL, expr->CountStoreFeedbackId());
+      CallStoreIC(expr->CountStoreFeedbackId());
       PrepareForBailoutForId(expr->AssignmentId(), TOS_REG);
       if (expr->is_postfix()) {
         if (!context()->IsEffect()) {
@@ -4559,10 +4542,10 @@ void FullCodeGenerator::VisitCountOperation(CountOperation* expr) {
     }
     case KEYED_PROPERTY: {
       __ Pop(r5, r4);  // r1 = key. r2 = receiver.
-      Handle<Code> ic = is_classic_mode()
+      Handle<Code> ic = strict_mode() == SLOPPY
           ? isolate()->builtins()->KeyedStoreIC_Initialize()
           : isolate()->builtins()->KeyedStoreIC_Initialize_Strict();
-      CallIC(ic, NOT_CONTEXTUAL, expr->CountStoreFeedbackId());
+      CallIC(ic, expr->CountStoreFeedbackId());
       PrepareForBailoutForId(expr->AssignmentId(), TOS_REG);
       if (expr->is_postfix()) {
         if (!context()->IsEffect()) {
@@ -4582,7 +4565,7 @@ void FullCodeGenerator::VisitForTypeofValue(Expression* expr) {
   ASSERT(!context()->IsTest());
   VariableProxy* proxy = expr->AsVariableProxy();
   if (proxy != NULL && proxy->var()->IsUnallocated()) {
-    Comment cmnt(masm_, "Global variable");
+    Comment cmnt(masm_, "[ Global variable");
     __ LoadP(r3, GlobalObjectOperand());
     __ mov(r5, Operand(proxy->name()));
     // Use a regular load, not a contextual load, to avoid a reference
@@ -4591,6 +4574,7 @@ void FullCodeGenerator::VisitForTypeofValue(Expression* expr) {
     PrepareForBailout(expr, TOS_REG);
     context()->Plug(r3);
   } else if (proxy != NULL && proxy->var()->IsLookupSlot()) {
+    Comment cmnt(masm_, "[ Lookup slot");
     Label done, slow;
 
     // Generate code for loading from variables potentially shadowed
@@ -4753,7 +4737,7 @@ void FullCodeGenerator::VisitCompareOperation(CompareOperation* expr) {
       // Record position and call the compare IC.
       SetSourcePosition(expr->position());
       Handle<Code> ic = CompareIC::GetUninitialized(isolate(), op);
-      CallIC(ic, NOT_CONTEXTUAL, expr->CompareOperationFeedbackId());
+      CallIC(ic, expr->CompareOperationFeedbackId());
       patch_site.EmitPatchInfo();
       PrepareForBailoutBeforeSplit(expr, true, if_true, if_false);
       __ cmpi(r3, Operand::Zero());
@@ -4788,7 +4772,7 @@ void FullCodeGenerator::EmitLiteralCompareNil(CompareOperation* expr,
     Split(eq, if_true, if_false, fall_through);
   } else {
     Handle<Code> ic = CompareNilICStub::GetUninitialized(isolate(), nil);
-    CallIC(ic, NOT_CONTEXTUAL, expr->CompareOperationFeedbackId());
+    CallIC(ic, expr->CompareOperationFeedbackId());
     __ cmpi(r3, Operand::Zero());
     Split(ne, if_true, if_false, fall_through);
   }
@@ -4997,7 +4981,8 @@ void BackEdgeTable::PatchAt(Code* unoptimized_code,
   Address mov_address = branch_address + kInstrSize;
   // Replace the stack check address in the mov sequence with the
   // entry address of the replacement code.
-  Assembler::set_target_address_at(mov_address, replacement_code->entry());
+  Assembler::set_target_address_at(mov_address, unoptimized_code,
+                                   replacement_code->entry());
 
   unoptimized_code->GetHeap()->incremental_marking()->RecordCodeTargetPatch(
       unoptimized_code, mov_address, replacement_code);
@@ -5011,28 +4996,24 @@ BackEdgeTable::BackEdgeState BackEdgeTable::GetBackEdgeState(
   static const int kInstrSize = Assembler::kInstrSize;
   Address branch_address = pc - kInterruptInstructions * kInstrSize;
   Address mov_address = branch_address + kInstrSize;
+  Address interrupt_address = Assembler::target_address_at(mov_address,
+                                                           unoptimized_code);
 
   if (Memory::int32_at(branch_address) == kBranchBeforeInterrupt) {
-    ASSERT(reinterpret_cast<uintptr_t>(
-             Assembler::target_address_at(mov_address)) ==
-           reinterpret_cast<uintptr_t>(
-             isolate->builtins()->InterruptCheck()->entry()));
+    ASSERT(interrupt_address ==
+           isolate->builtins()->InterruptCheck()->entry());
     return INTERRUPT;
   }
 
   ASSERT(Assembler::IsNop(Assembler::instr_at(branch_address)));
 
-  if (reinterpret_cast<uintptr_t>(
-        Assembler::target_address_at(mov_address)) ==
-      reinterpret_cast<uintptr_t>(
-        isolate->builtins()->OnStackReplacement()->entry())) {
+  if (interrupt_address ==
+      isolate->builtins()->OnStackReplacement()->entry()) {
     return ON_STACK_REPLACEMENT;
   }
 
-  ASSERT(reinterpret_cast<uintptr_t>(
-           Assembler::target_address_at(mov_address)) ==
-         reinterpret_cast<uintptr_t>(
-           isolate->builtins()->OsrAfterStackCheck()->entry()));
+  ASSERT(interrupt_address ==
+         isolate->builtins()->OsrAfterStackCheck()->entry());
   return OSR_AFTER_STACK_CHECK;
 }
 

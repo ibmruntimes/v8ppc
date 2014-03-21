@@ -399,7 +399,7 @@ DEFINE_bool(enable_32dregs, ENABLE_32DREGS_DEFAULT,
 DEFINE_bool(enable_vldr_imm, false,
             "enable use of constant pools for double immediate (ARM only)")
 DEFINE_bool(force_long_branches, false,
-            "force all emitted branches to be in long mode (MIPS only)")
+            "force all emitted branches to be in long mode (MIPS/PPC only)")
 
 // bootstrapper.cc
 DEFINE_string(expose_natives_as, NULL, "expose natives in global object")

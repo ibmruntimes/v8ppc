@@ -2876,16 +2876,8 @@ void MacroAssembler::Check(Condition cond, BailoutReason reason, CRegister cr) {
 void MacroAssembler::Abort(BailoutReason reason) {
   Label abort_start;
   bind(&abort_start);
-  // We want to pass the msg string like a smi to avoid GC
-  // problems, however msg is not guaranteed to be aligned
-  // properly. Instead, we pass an aligned pointer that is
-  // a proper v8 smi, but also pass the alignment difference
-  // from the real pointer as a smi.
-  const char* msg = GetBailoutReason(reason);
-  intptr_t p1 = reinterpret_cast<intptr_t>(msg);
-  intptr_t p0 = (p1 & ~kSmiTagMask) + kSmiTag;
-  ASSERT(reinterpret_cast<Object*>(p0)->IsSmi());
 #ifdef DEBUG
+  const char* msg = GetBailoutReason(reason);
   if (msg != NULL) {
     RecordComment("Abort message: ");
     RecordComment(msg);
@@ -2897,18 +2889,16 @@ void MacroAssembler::Abort(BailoutReason reason) {
   }
 #endif
 
-  mov(r0, Operand(p0));
-  push(r0);
-  LoadSmiLiteral(r0, Smi::FromInt(p1 - p0));
+  LoadSmiLiteral(r0, Smi::FromInt(reason));
   push(r0);
   // Disable stub call restrictions to always allow calls to abort.
   if (!has_frame_) {
     // We don't actually want to generate a pile of code for this, so just
     // claim there is a stack frame, without generating one.
     FrameScope scope(this, StackFrame::NONE);
-    CallRuntime(Runtime::kAbort, 2);
+    CallRuntime(Runtime::kAbort, 1);
   } else {
-    CallRuntime(Runtime::kAbort, 2);
+    CallRuntime(Runtime::kAbort, 1);
   }
   // will not return here
 }
@@ -2958,31 +2948,6 @@ void MacroAssembler::LoadTransitionedArrayMapConditional(
 }
 
 
-void MacroAssembler::LoadInitialArrayMap(
-    Register function_in, Register scratch,
-    Register map_out, bool can_have_holes) {
-  ASSERT(!function_in.is(map_out));
-  Label done;
-  LoadP(map_out, FieldMemOperand(function_in,
-                                 JSFunction::kPrototypeOrInitialMapOffset));
-  if (!FLAG_smi_only_arrays) {
-    ElementsKind kind = can_have_holes ? FAST_HOLEY_ELEMENTS : FAST_ELEMENTS;
-    LoadTransitionedArrayMapConditional(FAST_SMI_ELEMENTS,
-                                        kind,
-                                        map_out,
-                                        scratch,
-                                        &done);
-  } else if (can_have_holes) {
-    LoadTransitionedArrayMapConditional(FAST_SMI_ELEMENTS,
-                                        FAST_HOLEY_SMI_ELEMENTS,
-                                        map_out,
-                                        scratch,
-                                        &done);
-  }
-  bind(&done);
-}
-
-
 void MacroAssembler::LoadGlobalFunction(int index, Register function) {
   // Load the global or builtins object from the current context.
   LoadP(function,
@@ -2992,20 +2957,6 @@ void MacroAssembler::LoadGlobalFunction(int index, Register function) {
                                   GlobalObject::kNativeContextOffset));
   // Load the function from the native context.
   LoadP(function, MemOperand(function, Context::SlotOffset(index)), r0);
-}
-
-
-void MacroAssembler::LoadArrayFunction(Register function) {
-  // Load the global or builtins object from the current context.
-  LoadP(function,
-        MemOperand(cp, Context::SlotOffset(Context::GLOBAL_OBJECT_INDEX)));
-  // Load the global context from the global or builtins object.
-  LoadP(function,
-        FieldMemOperand(function, GlobalObject::kGlobalContextOffset));
-  // Load the array function from the native context.
-  LoadP(function,
-        MemOperand(function,
-                   Context::SlotOffset(Context::ARRAY_FUNCTION_INDEX)));
 }
 
 
@@ -3156,6 +3107,21 @@ void MacroAssembler::AssertName(Register object) {
     CompareInstanceType(object, object, LAST_NAME_TYPE);
     pop(object);
     Check(le, kOperandIsNotAName);
+  }
+}
+
+
+void MacroAssembler::AssertUndefinedOrAllocationSite(Register object,
+                                                     Register scratch) {
+  if (emit_debug_code()) {
+    Label done_checking;
+    AssertNotSmi(object);
+    CompareRoot(object, Heap::kUndefinedValueRootIndex);
+    beq(&done_checking);
+    LoadP(scratch, FieldMemOperand(object, HeapObject::kMapOffset));
+    CompareRoot(scratch, Heap::kAllocationSiteMapRootIndex);
+    Assert(eq, kExpectedUndefinedOrCell);
+    bind(&done_checking);
   }
 }
 
@@ -5014,6 +4980,27 @@ void CodePatcher::EmitCondition(Condition cond) {
       UNIMPLEMENTED();
   }
   masm_.emit(instr);
+}
+
+
+void MacroAssembler::TruncatingDiv(Register result,
+                                   Register dividend,
+                                   int32_t divisor) {
+  ASSERT(!dividend.is(result));
+  ASSERT(!dividend.is(r0));
+  ASSERT(!result.is(r0));
+  MultiplierAndShift ms(divisor);
+  mov(r0, Operand(ms.multiplier()));
+  mulhw(result, dividend, r0);
+  if (divisor > 0 && ms.multiplier() < 0) {
+    add(result, result, dividend);
+  }
+  if (divisor < 0 && ms.multiplier() > 0) {
+    sub(result, result, dividend);
+  }
+  if (ms.shift() > 0) srawi(result, result, ms.shift());
+  ExtractBit(r0, dividend, 31);
+  add(result, result, r0);
 }
 
 

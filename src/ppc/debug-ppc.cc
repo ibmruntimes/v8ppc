@@ -161,7 +161,7 @@ static void Generate_DebugBreakCallHelper(MacroAssembler* masm,
         Register reg = { r };
         if ((non_object_regs & (1 << r)) != 0) {
           if (FLAG_debug_code) {
-            __ andis(r0, reg, Operand(0xc000));
+            __ TestUnsignedSmiCandidate(reg, r0);
             __ Assert(eq, kUnableToEncodeValueAsSmi, cr0);
           }
           __ SmiTag(reg);
@@ -295,9 +295,10 @@ void Debug::GenerateCallFunctionStubRecordDebugBreak(MacroAssembler* masm) {
   // Register state for CallFunctionStub (from code-stubs-ppc.cc).
   // ----------- S t a t e -------------
   //  -- r4 : function
-  //  -- r5 : cache cell for call target
+  //  -- r5 : feedback array
+  //  -- r6 : slot in feedback array
   // -----------------------------------
-  Generate_DebugBreakCallHelper(masm, r4.bit() | r5.bit(), 0);
+  Generate_DebugBreakCallHelper(masm, r4.bit() | r5.bit() | r6.bit(), 0);
 }
 
 
@@ -316,9 +317,10 @@ void Debug::GenerateCallConstructStubRecordDebugBreak(MacroAssembler* masm) {
   // ----------- S t a t e -------------
   //  -- r3     : number of arguments (not smi)
   //  -- r4     : constructor function
-  //  -- r5     : cache cell for call target
+  //  -- r5     : feedback array
+  //  -- r6     : feedback slot (smi)
   // -----------------------------------
-  Generate_DebugBreakCallHelper(masm, r4.bit() | r5.bit(), r3.bit());
+  Generate_DebugBreakCallHelper(masm, r4.bit() | r5.bit() | r6.bit(), r3.bit());
 }
 
 

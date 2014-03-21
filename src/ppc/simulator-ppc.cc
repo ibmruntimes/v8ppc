@@ -873,6 +873,10 @@ Simulator::Simulator(Isolate* isolate) : isolate_(isolate) {
 }
 
 
+Simulator::~Simulator() {
+}
+
+
 // When the generated code calls an external reference we need to catch that in
 // the simulator.  The external reference will be a function compiled for the
 // host architecture.  We need to call that function instead of trying to
@@ -2278,16 +2282,22 @@ void Simulator::ExecuteExt2_9bit_part2(Instruction* instr) {
       int rb = instr->RBValue();
       int32_t ra_val = get_register(ra);
       int32_t rb_val = get_register(rb);
+      bool overflow = (ra_val == kMinInt && rb_val == -1);
       // result is undefined if divisor is zero or if operation
       // is 0x80000000 / -1.
-      int32_t alu_out = (rb_val == 0 || (ra_val == kMinInt && rb_val == -1)) ?
-        -1 :
-        ra_val / rb_val;
+      int32_t alu_out = (rb_val == 0 || overflow) ? -1 : ra_val / rb_val;
       set_register(rt, alu_out);
-      if (instr->Bit(0)) {  // RC bit set
-        SetCR0(alu_out);
+      if (instr->Bit(10)) {  // OE bit set
+        if (overflow) {
+            special_reg_xer_ |= 0xC0000000;  // set SO,OV
+        } else {
+            special_reg_xer_ &= ~0x40000000;  // clear OV
+        }
       }
-      // todo - handle OE bit
+      if (instr->Bit(0)) {  // RC bit set
+        bool setSO = (special_reg_xer_ & 0x80000000);
+        SetCR0(alu_out, setSO);
+      }
       break;
     }
 #if V8_TARGET_ARCH_PPC64
