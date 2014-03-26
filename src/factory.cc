@@ -69,6 +69,14 @@ Handle<FixedArray> Factory::NewFixedArrayWithHoles(int size,
 }
 
 
+Handle<FixedArray> Factory::NewUninitializedFixedArray(int size) {
+  CALL_HEAP_FUNCTION(
+      isolate(),
+      isolate()->heap()->AllocateUninitializedFixedArray(size),
+      FixedArray);
+}
+
+
 Handle<FixedDoubleArray> Factory::NewFixedDoubleArray(int size,
                                                       PretenureFlag pretenure) {
   ASSERT(0 <= size);
@@ -281,7 +289,7 @@ Handle<String> Factory::NewStringFromTwoByte(Vector<const uc16> string,
 
 
 Handle<SeqOneByteString> Factory::NewRawOneByteString(int length,
-                                                  PretenureFlag pretenure) {
+                                                      PretenureFlag pretenure) {
   CALL_HEAP_FUNCTION(
       isolate(),
       isolate()->heap()->AllocateRawOneByteString(length, pretenure),
@@ -377,9 +385,7 @@ Handle<String> Factory::NewConsString(Handle<String> left,
   // Make sure that an out of memory exception is thrown if the length
   // of the new cons string is too large.
   if (length > String::kMaxLength || length < 0) {
-    isolate()->context()->mark_out_of_memory();
-    V8::FatalProcessOutOfMemory("String concatenation result too large.");
-    UNREACHABLE();
+    isolate()->ThrowInvalidStringLength();
     return Handle<String>::null();
   }
 
@@ -405,6 +411,7 @@ Handle<String> Factory::NewConsString(Handle<String> left,
     ASSERT(left->IsFlat());
     ASSERT(right->IsFlat());
 
+    STATIC_ASSERT(ConsString::kMinLength <= String::kMaxLength);
     if (is_one_byte) {
       Handle<SeqOneByteString> result = NewRawOneByteString(length);
       DisallowHeapAllocation no_gc;
@@ -490,12 +497,14 @@ Handle<String> Factory::NewProperSubString(Handle<String> str,
   if (!FLAG_string_slices || length < SlicedString::kMinLength) {
     if (str->IsOneByteRepresentation()) {
       Handle<SeqOneByteString> result = NewRawOneByteString(length);
+      ASSERT(!result.is_null());
       uint8_t* dest = result->GetChars();
       DisallowHeapAllocation no_gc;
       String::WriteToFlat(*str, dest, begin, end);
       return result;
     } else {
       Handle<SeqTwoByteString> result = NewRawTwoByteString(length);
+      ASSERT(!result.is_null());
       uc16* dest = result->GetChars();
       DisallowHeapAllocation no_gc;
       String::WriteToFlat(*str, dest, begin, end);
@@ -874,16 +883,6 @@ Handle<Map> Factory::CopyMap(Handle<Map> src) {
 }
 
 
-Handle<Map> Factory::GetElementsTransitionMap(
-    Handle<JSObject> src,
-    ElementsKind elements_kind) {
-  Isolate* i = isolate();
-  CALL_HEAP_FUNCTION(i,
-                     src->GetElementsTransitionMap(i, elements_kind),
-                     Map);
-}
-
-
 Handle<FixedArray> Factory::CopyFixedArray(Handle<FixedArray> array) {
   CALL_HEAP_FUNCTION(isolate(), array->Copy(), FixedArray);
 }
@@ -1132,8 +1131,7 @@ Handle<String> Factory::EmergencyNewError(const char* message,
       space--;
       if (space > 0) {
         Handle<String> arg_str = Handle<String>::cast(
-            Object::GetElement(isolate(), args, i));
-        CHECK_NOT_EMPTY_HANDLE(isolate(), arg_str);
+            Object::GetElementNoExceptionThrown(isolate(), args, i));
         SmartArrayPointer<char> arg = arg_str->ToCString();
         Vector<char> v2(p, static_cast<int>(space));
         OS::StrNCpy(v2, arg.get(), space);
@@ -1436,8 +1434,9 @@ Handle<JSObject> Factory::NewJSObjectFromMap(
 }
 
 
-Handle<JSArray> Factory::NewJSArray(int capacity,
-                                    ElementsKind elements_kind,
+Handle<JSArray> Factory::NewJSArray(ElementsKind elements_kind,
+                                    int length,
+                                    int capacity,
                                     PretenureFlag pretenure) {
   if (capacity != 0) {
     elements_kind = GetHoleyElementsKind(elements_kind);
@@ -1445,7 +1444,7 @@ Handle<JSArray> Factory::NewJSArray(int capacity,
   CALL_HEAP_FUNCTION(isolate(),
                      isolate()->heap()->AllocateJSArrayAndStorage(
                          elements_kind,
-                         0,
+                         length,
                          capacity,
                          INITIALIZE_ARRAY_ELEMENTS_WITH_HOLE,
                          pretenure),
@@ -1455,12 +1454,14 @@ Handle<JSArray> Factory::NewJSArray(int capacity,
 
 Handle<JSArray> Factory::NewJSArrayWithElements(Handle<FixedArrayBase> elements,
                                                 ElementsKind elements_kind,
+                                                int length,
                                                 PretenureFlag pretenure) {
+  ASSERT(length <= elements->length());
   CALL_HEAP_FUNCTION(
       isolate(),
       isolate()->heap()->AllocateJSArrayWithElements(*elements,
                                                      elements_kind,
-                                                     elements->length(),
+                                                     length,
                                                      pretenure),
       JSArray);
 }
@@ -1475,24 +1476,6 @@ void Factory::NewJSArrayStorage(Handle<JSArray> array,
                                                                     length,
                                                                     capacity,
                                                                     mode));
-}
-
-
-void Factory::SetElementsCapacityAndLength(Handle<JSArray> array,
-                                           int capacity,
-                                           int length) {
-  ElementsAccessor* accessor = array->GetElementsAccessor();
-  CALL_HEAP_FUNCTION_VOID(
-      isolate(),
-      accessor->SetCapacityAndLength(*array, capacity, length));
-}
-
-
-void Factory::SetContent(Handle<JSArray> array,
-                         Handle<FixedArrayBase> elements) {
-  CALL_HEAP_FUNCTION_VOID(
-      isolate(),
-      array->SetContent(*elements));
 }
 
 

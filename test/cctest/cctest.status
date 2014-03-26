@@ -65,41 +65,41 @@
   # are actually 13 * 38 * 5 * 128 = 316160 individual tests hidden here.
   'test-parsing/ParserSync': [PASS, NO_VARIANTS],
 
+  # BUG(2999).
+  'test-cpu-profiler/CollectCpuProfile': [PASS, FLAKY],
+
   ############################################################################
   # Slow tests.
   'test-api/Threading1': [PASS, ['mode == debug', SLOW]],
   'test-api/Threading2': [PASS, ['mode == debug', SLOW]],
   'test-api/Threading3': [PASS, ['mode == debug', SLOW]],
   'test-api/Threading4': [PASS, ['mode == debug', SLOW]],
+  'test-strings/StringOOM*': [PASS, ['mode == debug', SKIP]],
 }],  # ALWAYS
 
 ##############################################################################
-['arch == a64', {
+['arch == arm64', {
 
   'test-api/Bug618': [PASS],
 
   # BUG(v8:2999).
   'test-cpu-profiler/CollectCpuProfile': [PASS, FAIL],
 
-  # Runs out of memory in debug mode.
-  'test-api/OutOfMemory': [PASS, ['mode == debug', FAIL]],
-  'test-api/OutOfMemoryNested': [PASS, ['mode == debug', FAIL]],
-
   # BUG(v8:3154).
   'test-heap/ReleaseOverReservedPages': [PASS, ['mode == debug', FAIL]],
 
   # BUG(v8:3155).
   'test-strings/AsciiArrayJoin': [PASS, ['mode == debug', FAIL]],
-}],  # 'arch == a64'
+}],  # 'arch == arm64'
 
-['arch == a64 and simulator_run == True', {
+['arch == arm64 and simulator_run == True', {
 
   # Pass but take too long with the simulator.
   'test-api/ExternalArrays': [PASS, TIMEOUT],
   'test-api/Threading1': [SKIP],
-}],  # 'arch == a64 and simulator_run == True'
+}],  # 'arch == arm64 and simulator_run == True'
 
-['arch == a64 and mode == debug and simulator_run == True', {
+['arch == arm64 and mode == debug and simulator_run == True', {
 
   # Pass but take too long with the simulator in debug mode.
   'test-api/ExternalDoubleArray': [SKIP],
@@ -109,7 +109,7 @@
   'test-api/Float32Array': [SKIP],
   'test-api/Float64Array': [SKIP],
   'test-debug/DebugBreakLoop': [SKIP],
-}],  # 'arch == a64 and mode == debug and simulator_run == True'
+}],  # 'arch == arm64 and mode == debug and simulator_run == True'
 
 ##############################################################################
 ['asan == True', {
@@ -151,12 +151,6 @@
 ##############################################################################
 ['arch == arm', {
 
-  # We cannot assume that we can throw OutOfMemory exceptions in all situations.
-  # Apparently our ARM box is in such a state. Skip the test as it also runs for
-  # a long time.
-  'test-api/OutOfMemory': [SKIP],
-  'test-api/OutOfMemoryNested': [SKIP],
-
   # BUG(355): Test crashes on ARM.
   'test-log/ProfLazyMode': [SKIP],
 
@@ -165,9 +159,6 @@
   'test-serialize/DeserializeFromSecondSerializationAndRunScript2': [SKIP],
   'test-serialize/DeserializeAndRunScript2': [SKIP],
   'test-serialize/DeserializeFromSecondSerialization': [SKIP],
-
-  # BUG(2999).
-  'test-cpu-profiler/CollectCpuProfile': [PASS, FLAKY],
 
   ############################################################################
   # Slow tests.

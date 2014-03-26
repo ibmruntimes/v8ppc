@@ -135,11 +135,6 @@ static Handle<Object> Invoke(bool is_construct,
   ASSERT(*has_pending_exception == isolate->has_pending_exception());
   if (*has_pending_exception) {
     isolate->ReportPendingMessages();
-    if (isolate->pending_exception()->IsOutOfMemory()) {
-      if (!isolate->ignore_out_of_memory()) {
-        V8::FatalProcessOutOfMemory("JS", true);
-      }
-    }
 #ifdef ENABLE_DEBUGGER_SUPPORT
     // Reset stepping state when script exits with uncaught exception.
     if (isolate->debugger()->IsDebuggerActive()) {
@@ -225,9 +220,6 @@ Handle<Object> Execution::TryCall(Handle<JSFunction> func,
     ASSERT(catcher.HasCaught());
     ASSERT(isolate->has_pending_exception());
     ASSERT(isolate->external_caught_exception());
-    if (isolate->is_out_of_memory() && !isolate->ignore_out_of_memory()) {
-      V8::FatalProcessOutOfMemory("OOM during Execution::TryCall");
-    }
     if (isolate->pending_exception() ==
         isolate->heap()->termination_exception()) {
       result = isolate->factory()->termination_exception();
@@ -819,10 +811,10 @@ Handle<JSFunction> Execution::InstantiateFunction(
   if (!data->do_not_cache()) {
     // Fast case: see if the function has already been instantiated
     int serial_number = Smi::cast(data->serial_number())->value();
-    Object* elm =
-        isolate->native_context()->function_cache()->
-            GetElementNoExceptionThrown(isolate, serial_number);
-    if (elm->IsJSFunction()) return Handle<JSFunction>(JSFunction::cast(elm));
+    Handle<JSObject> cache(isolate->native_context()->function_cache());
+    Handle<Object> elm =
+        Object::GetElementNoExceptionThrown(isolate, cache, serial_number);
+    if (elm->IsJSFunction()) return Handle<JSFunction>::cast(elm);
   }
   // The function has not yet been instantiated in this context; do it.
   Handle<Object> args[] = { data };

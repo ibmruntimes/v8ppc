@@ -167,7 +167,7 @@ void Deoptimizer::EntryGenerator::Generate() {
 
   const int kDoubleRegsSize = kDoubleSize *
       XMMRegister::NumAllocatableRegisters();
-  __ subq(rsp, Immediate(kDoubleRegsSize));
+  __ subp(rsp, Immediate(kDoubleRegsSize));
 
   for (int i = 0; i < XMMRegister::NumAllocatableRegisters(); ++i) {
     XMMRegister xmm_reg = XMMRegister::FromAllocationIndex(i);
@@ -196,11 +196,11 @@ void Deoptimizer::EntryGenerator::Generate() {
   // Get the address of the location in the code object
   // and compute the fp-to-sp delta in register arg5.
   __ movp(arg_reg_4, Operand(rsp, kSavedRegistersAreaSize + 1 * kRegisterSize));
-  __ lea(arg5, Operand(rsp, kSavedRegistersAreaSize + 1 * kRegisterSize +
+  __ leap(arg5, Operand(rsp, kSavedRegistersAreaSize + 1 * kRegisterSize +
                             kPCOnStackSize));
 
-  __ subq(arg5, rbp);
-  __ neg(arg5);
+  __ subp(arg5, rbp);
+  __ negp(arg5);
 
   // Allocate a new deoptimizer object.
   __ PrepareCallCFunction(6);
@@ -241,25 +241,25 @@ void Deoptimizer::EntryGenerator::Generate() {
   }
 
   // Remove the bailout id and return address from the stack.
-  __ addq(rsp, Immediate(1 * kRegisterSize + kPCOnStackSize));
+  __ addp(rsp, Immediate(1 * kRegisterSize + kPCOnStackSize));
 
   // Compute a pointer to the unwinding limit in register rcx; that is
   // the first stack slot not part of the input frame.
   __ movp(rcx, Operand(rbx, FrameDescription::frame_size_offset()));
-  __ addq(rcx, rsp);
+  __ addp(rcx, rsp);
 
   // Unwind the stack down to - but not including - the unwinding
   // limit and copy the contents of the activation frame to the input
   // frame description.
-  __ lea(rdx, Operand(rbx, FrameDescription::frame_content_offset()));
+  __ leap(rdx, Operand(rbx, FrameDescription::frame_content_offset()));
   Label pop_loop_header;
   __ jmp(&pop_loop_header);
   Label pop_loop;
   __ bind(&pop_loop);
   __ Pop(Operand(rdx, 0));
-  __ addq(rdx, Immediate(sizeof(intptr_t)));
+  __ addp(rdx, Immediate(sizeof(intptr_t)));
   __ bind(&pop_loop_header);
-  __ cmpq(rcx, rsp);
+  __ cmpp(rcx, rsp);
   __ j(not_equal, &pop_loop);
 
   // Compute the output frame in the deoptimizer.
@@ -281,7 +281,7 @@ void Deoptimizer::EntryGenerator::Generate() {
   // last FrameDescription**.
   __ movl(rdx, Operand(rax, Deoptimizer::output_count_offset()));
   __ movp(rax, Operand(rax, Deoptimizer::output_offset()));
-  __ lea(rdx, Operand(rax, rdx, times_pointer_size, 0));
+  __ leap(rdx, Operand(rax, rdx, times_pointer_size, 0));
   __ jmp(&outer_loop_header);
   __ bind(&outer_push_loop);
   // Inner loop state: rbx = current FrameDescription*, rcx = loop index.
@@ -289,14 +289,14 @@ void Deoptimizer::EntryGenerator::Generate() {
   __ movp(rcx, Operand(rbx, FrameDescription::frame_size_offset()));
   __ jmp(&inner_loop_header);
   __ bind(&inner_push_loop);
-  __ subq(rcx, Immediate(sizeof(intptr_t)));
+  __ subp(rcx, Immediate(sizeof(intptr_t)));
   __ Push(Operand(rbx, rcx, times_1, FrameDescription::frame_content_offset()));
   __ bind(&inner_loop_header);
-  __ testq(rcx, rcx);
+  __ testp(rcx, rcx);
   __ j(not_zero, &inner_push_loop);
-  __ addq(rax, Immediate(kPointerSize));
+  __ addp(rax, Immediate(kPointerSize));
   __ bind(&outer_loop_header);
-  __ cmpq(rax, rdx);
+  __ cmpp(rax, rdx);
   __ j(below, &outer_push_loop);
 
   for (int i = 0; i < XMMRegister::NumAllocatableRegisters(); ++i) {

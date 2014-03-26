@@ -883,7 +883,7 @@ void FullCodeGenerator::SetExpressionPosition(Expression* expr) {
     }
   }
 #else
-  CodeGenerator::RecordPositions(masm_, pos);
+  CodeGenerator::RecordPositions(masm_, expr->position());
 #endif
 }
 
@@ -949,34 +949,6 @@ void FullCodeGenerator::EmitGeneratorThrow(CallRuntime* expr) {
 
 void FullCodeGenerator::EmitDebugBreakInOptimizedCode(CallRuntime* expr) {
   context()->Plug(handle(Smi::FromInt(0), isolate()));
-}
-
-
-void FullCodeGenerator::EmitDoubleHi(CallRuntime* expr) {
-  ZoneList<Expression*>* args = expr->arguments();
-  ASSERT(args->length() == 1);
-  VisitForStackValue(args->at(0));
-  masm()->CallRuntime(Runtime::kDoubleHi, 1);
-  context()->Plug(result_register());
-}
-
-
-void FullCodeGenerator::EmitDoubleLo(CallRuntime* expr) {
-  ZoneList<Expression*>* args = expr->arguments();
-  ASSERT(args->length() == 1);
-  VisitForStackValue(args->at(0));
-  masm()->CallRuntime(Runtime::kDoubleLo, 1);
-  context()->Plug(result_register());
-}
-
-
-void FullCodeGenerator::EmitConstructDouble(CallRuntime* expr) {
-  ZoneList<Expression*>* args = expr->arguments();
-  ASSERT(args->length() == 2);
-  VisitForStackValue(args->at(0));
-  VisitForStackValue(args->at(1));
-  masm()->CallRuntime(Runtime::kConstructDouble, 2);
-  context()->Plug(result_register());
 }
 
 

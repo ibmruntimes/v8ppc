@@ -624,6 +624,7 @@ class HValue : public ZoneObject {
     kCanBeDivByZero,
     kLeftCanBeMinInt,
     kLeftCanBeNegative,
+    kLeftCanBePositive,
     kAllowUndefinedAsNaN,
     kIsArguments,
     kTruncatingToInt32,
@@ -1269,6 +1270,8 @@ class HInstruction : public HValue {
 #ifdef DEBUG
   virtual void Verify() V8_OVERRIDE;
 #endif
+
+  bool CanDeoptimize();
 
   virtual bool HasStackCheck() { return false; }
 
@@ -4105,6 +4108,8 @@ class HMathFloorOfDiv V8_FINAL : public HBinaryOperation {
     SetFlag(kCanOverflow);
     SetFlag(kCanBeDivByZero);
     SetFlag(kLeftCanBeMinInt);
+    SetFlag(kLeftCanBeNegative);
+    SetFlag(kLeftCanBePositive);
     SetFlag(kAllowUndefinedAsNaN);
   }
 
@@ -4398,7 +4403,9 @@ class HIsSmiAndBranch V8_FINAL : public HUnaryControlInstruction {
   HIsSmiAndBranch(HValue* value,
                   HBasicBlock* true_target = NULL,
                   HBasicBlock* false_target = NULL)
-      : HUnaryControlInstruction(value, true_target, false_target) {}
+      : HUnaryControlInstruction(value, true_target, false_target) {
+    set_representation(Representation::Tagged());
+  }
 };
 
 

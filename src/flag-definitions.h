@@ -276,6 +276,7 @@ DEFINE_string(trace_hydrogen_file, NULL, "trace hydrogen to given file name")
 DEFINE_string(trace_phase, "HLZ", "trace generated IR for specified phases")
 DEFINE_bool(trace_inlining, false, "trace inlining decisions")
 DEFINE_bool(trace_load_elimination, false, "trace load elimination")
+DEFINE_bool(trace_store_elimination, false, "trace store elimination")
 DEFINE_bool(trace_alloc, false, "trace register allocator")
 DEFINE_bool(trace_all_uses, false, "trace all use positions")
 DEFINE_bool(trace_range, false, "trace range analysis")
@@ -311,6 +312,7 @@ DEFINE_bool(analyze_environment_liveness, true,
             "analyze liveness of environment slots and zap dead values")
 DEFINE_bool(load_elimination, true, "use load elimination")
 DEFINE_bool(check_elimination, true, "use check elimination")
+DEFINE_bool(store_elimination, false, "use store elimination")
 DEFINE_bool(dead_code_elimination, true, "use dead code elimination")
 DEFINE_bool(fold_constants, true, "use constant folding")
 DEFINE_bool(trace_dead_code_elimination, false, "trace dead code elimination")
@@ -354,6 +356,9 @@ DEFINE_implication(concurrent_osr, concurrent_recompilation)
 DEFINE_bool(omit_map_checks_for_leaf_maps, true,
             "do not emit check maps for constant values that have a leaf map, "
             "deoptimize the optimized code if the layout of the maps changes.")
+
+DEFINE_int(typed_array_max_size_in_heap, 64,
+    "threshold for in-heap typed array")
 
 // Profiler flags.
 DEFINE_int(frame_count, 1, "number of stack frames inspected by the profiler")
@@ -585,14 +590,14 @@ DEFINE_bool(use_verbose_printer, true, "allows verbose printing")
 DEFINE_bool(allow_natives_syntax, false, "allow natives syntax")
 DEFINE_bool(trace_parse, false, "trace parsing and preparsing")
 
-// simulator-arm.cc, simulator-a64.cc and simulator-mips.cc
+// simulator-arm.cc, simulator-arm64.cc and simulator-mips.cc
 DEFINE_bool(trace_sim, false, "Trace simulator execution")
 DEFINE_bool(trace_sim_stubs, false, "Trace simulator execution w/ stub markers")
 DEFINE_bool(debug_sim, false, "Enable debugging the simulator")
 DEFINE_bool(check_icache, false,
             "Check icache flushes in ARM and MIPS simulator")
 DEFINE_int(stop_sim_at, 0, "Simulator stop after x number of instructions")
-#if defined(V8_TARGET_ARCH_A64) || defined(V8_TARGET_ARCH_PPC64)
+#if defined(V8_TARGET_ARCH_ARM64) || defined(V8_TARGET_ARCH_PPC64)
 DEFINE_int(sim_stack_alignment, 16,
            "Stack alignment in bytes in simulator. This must be a power of two "
            "and it must be at least 16. 16 is default.")
@@ -601,7 +606,7 @@ DEFINE_int(sim_stack_alignment, 8,
            "Stack alingment in bytes in simulator (4 or 8, 8 is default)")
 #endif
 DEFINE_int(sim_stack_size, 2 * MB / KB,
-           "Stack size of the A64 simulator in kBytes (default is 2 MB)")
+           "Stack size of the ARM64 simulator in kBytes (default is 2 MB)")
 DEFINE_bool(log_regs_modified, true,
             "When logging register values, only print modified registers.")
 DEFINE_bool(log_colour, true,
@@ -820,7 +825,7 @@ DEFINE_bool(log_timer_events, false,
 DEFINE_implication(log_timer_events, log_internal_timer_events)
 DEFINE_implication(log_internal_timer_events, prof)
 DEFINE_bool(log_instruction_stats, false, "Log AArch64 instruction statistics.")
-DEFINE_string(log_instruction_file, "a64_inst.csv",
+DEFINE_string(log_instruction_file, "arm64_inst.csv",
               "AArch64 instruction statistics log file.")
 DEFINE_int(log_instruction_period, 1 << 22,
            "AArch64 instruction statistics logging period.")

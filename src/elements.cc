@@ -318,7 +318,7 @@ MUST_USE_RESULT static MaybeObject* CopyDoubleToObjectElements(
       // that no GC is triggered, allocate HeapNumbers from old space if they
       // can't be taken from new space.
       if (!maybe_value->ToObject(&value)) {
-        ASSERT(maybe_value->IsRetryAfterGC() || maybe_value->IsOutOfMemory());
+        ASSERT(maybe_value->IsRetryAfterGC());
         Heap* heap = from->GetHeap();
         MaybeObject* maybe_value_object =
             heap->AllocateHeapNumber(from->get_scalar(i + from_start),
@@ -592,7 +592,9 @@ class ElementsAccessorBase : public ElementsAccessor {
   typedef ElementsTraitsParam ElementsTraits;
   typedef typename ElementsTraitsParam::BackingStore BackingStore;
 
-  virtual ElementsKind kind() const { return ElementsTraits::Kind; }
+  virtual ElementsKind kind() const V8_FINAL V8_OVERRIDE {
+    return ElementsTraits::Kind;
+  }
 
   static void ValidateContents(JSObject* holder, int length) {
   }
@@ -616,7 +618,7 @@ class ElementsAccessorBase : public ElementsAccessor {
     ElementsAccessorSubclass::ValidateContents(holder, length);
   }
 
-  virtual void Validate(JSObject* holder) {
+  virtual void Validate(JSObject* holder) V8_FINAL V8_OVERRIDE {
     ElementsAccessorSubclass::ValidateImpl(holder);
   }
 
@@ -631,7 +633,7 @@ class ElementsAccessorBase : public ElementsAccessor {
   virtual bool HasElement(Object* receiver,
                           JSObject* holder,
                           uint32_t key,
-                          FixedArrayBase* backing_store) {
+                          FixedArrayBase* backing_store) V8_FINAL V8_OVERRIDE {
     if (backing_store == NULL) {
       backing_store = holder->elements();
     }
@@ -639,10 +641,24 @@ class ElementsAccessorBase : public ElementsAccessor {
         receiver, holder, key, backing_store);
   }
 
-  MUST_USE_RESULT virtual MaybeObject* Get(Object* receiver,
-                                           JSObject* holder,
-                                           uint32_t key,
-                                           FixedArrayBase* backing_store) {
+  // TODO(ishell): Temporary wrapper until handlified.
+  MUST_USE_RESULT virtual Handle<Object> Get(
+      Handle<Object> receiver,
+      Handle<JSObject> holder,
+      uint32_t key,
+      Handle<FixedArrayBase> backing_store) V8_FINAL V8_OVERRIDE {
+    CALL_HEAP_FUNCTION(holder->GetIsolate(),
+                       Get(*receiver, *holder, key,
+                           backing_store.is_null()
+                           ? NULL : *backing_store),
+                       Object);
+  }
+
+  MUST_USE_RESULT virtual MaybeObject* Get(
+      Object* receiver,
+      JSObject* holder,
+      uint32_t key,
+      FixedArrayBase* backing_store) V8_FINAL V8_OVERRIDE {
     if (backing_store == NULL) {
       backing_store = holder->elements();
     }
@@ -674,7 +690,7 @@ class ElementsAccessorBase : public ElementsAccessor {
       Object* receiver,
       JSObject* holder,
       uint32_t key,
-      FixedArrayBase* backing_store) {
+      FixedArrayBase* backing_store) V8_FINAL V8_OVERRIDE {
     if (backing_store == NULL) {
       backing_store = holder->elements();
     }
@@ -697,7 +713,7 @@ class ElementsAccessorBase : public ElementsAccessor {
       Object* receiver,
       JSObject* holder,
       uint32_t key,
-      FixedArrayBase* backing_store) {
+      FixedArrayBase* backing_store) V8_FINAL V8_OVERRIDE {
     if (backing_store == NULL) {
       backing_store = holder->elements();
     }
@@ -721,7 +737,7 @@ class ElementsAccessorBase : public ElementsAccessor {
       Object* receiver,
       JSObject* holder,
       uint32_t key,
-      FixedArrayBase* backing_store) {
+      FixedArrayBase* backing_store) V8_FINAL V8_OVERRIDE {
     if (backing_store == NULL) {
       backing_store = holder->elements();
     }
@@ -739,7 +755,7 @@ class ElementsAccessorBase : public ElementsAccessor {
 
   MUST_USE_RESULT virtual Handle<Object> SetLength(
       Handle<JSArray> array,
-      Handle<Object> length) {
+      Handle<Object> length) V8_FINAL V8_OVERRIDE {
     Isolate* isolate = array->GetIsolate();
     return ElementsAccessorSubclass::SetLengthImpl(
         array, length, handle(array->elements(), isolate));
@@ -750,27 +766,25 @@ class ElementsAccessorBase : public ElementsAccessor {
       Handle<Object> length,
       Handle<FixedArrayBase> backing_store);
 
-  MUST_USE_RESULT virtual MaybeObject* SetCapacityAndLength(
-      JSArray* array,
+  virtual void SetCapacityAndLength(
+      Handle<JSArray> array,
       int capacity,
-      int length) {
-    return ElementsAccessorSubclass::SetFastElementsCapacityAndLength(
-        array,
-        capacity,
-        length);
+      int length) V8_FINAL V8_OVERRIDE {
+    ElementsAccessorSubclass::
+        SetFastElementsCapacityAndLength(array, capacity, length);
   }
 
-  MUST_USE_RESULT static MaybeObject* SetFastElementsCapacityAndLength(
-      JSObject* obj,
+  static void SetFastElementsCapacityAndLength(
+      Handle<JSObject> obj,
       int capacity,
       int length) {
     UNIMPLEMENTED();
-    return obj;
   }
 
-  MUST_USE_RESULT virtual MaybeObject* Delete(JSObject* obj,
-                                              uint32_t key,
-                                              JSReceiver::DeleteMode mode) = 0;
+  MUST_USE_RESULT virtual Handle<Object> Delete(
+      Handle<JSObject> obj,
+      uint32_t key,
+      JSReceiver::DeleteMode mode) V8_OVERRIDE = 0;
 
   MUST_USE_RESULT static MaybeObject* CopyElementsImpl(FixedArrayBase* from,
                                                        uint32_t from_start,
@@ -783,13 +797,45 @@ class ElementsAccessorBase : public ElementsAccessor {
     return NULL;
   }
 
-  MUST_USE_RESULT virtual MaybeObject* CopyElements(JSObject* from_holder,
-                                                    uint32_t from_start,
-                                                    ElementsKind from_kind,
-                                                    FixedArrayBase* to,
-                                                    uint32_t to_start,
-                                                    int copy_size,
-                                                    FixedArrayBase* from) {
+  // TODO(ishell): Temporary wrapper, remove when CopyElements handlified.
+  Handle<Object> CopyElementsHelper(
+      Handle<JSObject> from_holder,
+      uint32_t from_start,
+      ElementsKind from_kind,
+      Handle<FixedArrayBase> to,
+      uint32_t to_start,
+      int copy_size,
+      Handle<FixedArrayBase> from) {
+    CALL_HEAP_FUNCTION(to->GetIsolate(),
+                       CopyElements(
+                           from_holder.is_null() ? NULL : *from_holder,
+                           from_start, from_kind, *to, to_start, copy_size,
+                           from.is_null() ? NULL : *from),
+                       Object);
+  }
+
+  virtual void CopyElements(
+      Handle<JSObject> from_holder,
+      uint32_t from_start,
+      ElementsKind from_kind,
+      Handle<FixedArrayBase> to,
+      uint32_t to_start,
+      int copy_size,
+      Handle<FixedArrayBase> from) V8_FINAL V8_OVERRIDE {
+    Handle<Object> result = CopyElementsHelper(
+        from_holder, from_start, from_kind, to, to_start, copy_size, from);
+    ASSERT(!result.is_null());
+    USE(result);
+  }
+
+  MUST_USE_RESULT virtual MaybeObject* CopyElements(
+      JSObject* from_holder,
+      uint32_t from_start,
+      ElementsKind from_kind,
+      FixedArrayBase* to,
+      uint32_t to_start,
+      int copy_size,
+      FixedArrayBase* from) V8_FINAL V8_OVERRIDE {
     int packed_size = kPackedSizeNotKnown;
     if (from == NULL) {
       from = from_holder->elements();
@@ -813,7 +859,7 @@ class ElementsAccessorBase : public ElementsAccessor {
       Object* receiver,
       JSObject* holder,
       FixedArray* to,
-      FixedArrayBase* from) {
+      FixedArrayBase* from) V8_FINAL V8_OVERRIDE {
     int len0 = to->length();
 #ifdef ENABLE_SLOW_ASSERTS
     if (FLAG_enable_slow_asserts) {
@@ -891,7 +937,8 @@ class ElementsAccessorBase : public ElementsAccessor {
     return backing_store->length();
   }
 
-  virtual uint32_t GetCapacity(FixedArrayBase* backing_store) {
+  virtual uint32_t GetCapacity(FixedArrayBase* backing_store)
+      V8_FINAL V8_OVERRIDE {
     return ElementsAccessorSubclass::GetCapacityImpl(backing_store);
   }
 
@@ -901,7 +948,7 @@ class ElementsAccessorBase : public ElementsAccessor {
   }
 
   virtual uint32_t GetKeyForIndex(FixedArrayBase* backing_store,
-                                  uint32_t index) {
+                                  uint32_t index) V8_FINAL V8_OVERRIDE {
     return ElementsAccessorSubclass::GetKeyForIndexImpl(backing_store, index);
   }
 
@@ -928,28 +975,28 @@ class FastElementsAccessor
 
   // Adjusts the length of the fast backing store or returns the new length or
   // undefined in case conversion to a slow backing store should be performed.
-  static MaybeObject* SetLengthWithoutNormalize(FixedArrayBase* backing_store,
-                                                JSArray* array,
-                                                Object* length_object,
-                                                uint32_t length) {
+  static Handle<Object> SetLengthWithoutNormalize(
+      Handle<FixedArrayBase> backing_store,
+      Handle<JSArray> array,
+      Handle<Object> length_object,
+      uint32_t length) {
+    Isolate* isolate = array->GetIsolate();
     uint32_t old_capacity = backing_store->length();
-    Object* old_length = array->length();
+    Handle<Object> old_length(array->length(), isolate);
     bool same_or_smaller_size = old_length->IsSmi() &&
-        static_cast<uint32_t>(Smi::cast(old_length)->value()) >= length;
+        static_cast<uint32_t>(Handle<Smi>::cast(old_length)->value()) >= length;
     ElementsKind kind = array->GetElementsKind();
 
     if (!same_or_smaller_size && IsFastElementsKind(kind) &&
         !IsFastHoleyElementsKind(kind)) {
       kind = GetHoleyElementsKind(kind);
-      MaybeObject* maybe_obj = array->TransitionElementsKind(kind);
-      if (maybe_obj->IsFailure()) return maybe_obj;
+      JSObject::TransitionElementsKind(array, kind);
     }
 
     // Check whether the backing store should be shrunk.
     if (length <= old_capacity) {
       if (array->HasFastSmiOrObjectElements()) {
-        MaybeObject* maybe_obj = array->EnsureWritableFastElements();
-        if (!maybe_obj->To(&backing_store)) return maybe_obj;
+        backing_store = JSObject::EnsureWritableFastElements(array);
       }
       if (2 * length <= old_capacity) {
         // If more than half the elements won't be used, trim the array.
@@ -966,7 +1013,7 @@ class FastElementsAccessor
         // Otherwise, fill the unused tail with holes.
         int old_length = FastD2IChecked(array->length()->Number());
         for (int i = length; i < old_length; i++) {
-          BackingStore::cast(backing_store)->set_the_hole(i);
+          Handle<BackingStore>::cast(backing_store)->set_the_hole(i);
         }
       }
       return length_object;
@@ -976,65 +1023,48 @@ class FastElementsAccessor
     uint32_t min = JSObject::NewElementsCapacity(old_capacity);
     uint32_t new_capacity = length > min ? length : min;
     if (!array->ShouldConvertToSlowElements(new_capacity)) {
-      MaybeObject* result = FastElementsAccessorSubclass::
+      FastElementsAccessorSubclass::
           SetFastElementsCapacityAndLength(array, new_capacity, length);
-      if (result->IsFailure()) return result;
       array->ValidateElements();
       return length_object;
     }
 
     // Request conversion to slow elements.
-    return array->GetHeap()->undefined_value();
+    return isolate->factory()->undefined_value();
   }
 
-  // TODO(ishell): Temporary wrapper until handlified.
-  static Handle<Object> SetLengthWithoutNormalize(
-      Handle<FixedArrayBase> backing_store,
-      Handle<JSArray> array,
-      Handle<Object> length_object,
-      uint32_t length) {
-    CALL_HEAP_FUNCTION(array->GetIsolate(),
-                       SetLengthWithoutNormalize(
-                           *backing_store, *array, *length_object, length),
-                       Object);
-  }
-
-  static MaybeObject* DeleteCommon(JSObject* obj,
-                                   uint32_t key,
-                                   JSReceiver::DeleteMode mode) {
+  static Handle<Object> DeleteCommon(Handle<JSObject> obj,
+                                     uint32_t key,
+                                     JSReceiver::DeleteMode mode) {
     ASSERT(obj->HasFastSmiOrObjectElements() ||
            obj->HasFastDoubleElements() ||
            obj->HasFastArgumentsElements());
+    Isolate* isolate = obj->GetIsolate();
     Heap* heap = obj->GetHeap();
-    Object* elements = obj->elements();
-    if (elements == heap->empty_fixed_array()) {
-      return heap->true_value();
+    Handle<Object> elements = handle(obj->elements(), isolate);
+    if (*elements == heap->empty_fixed_array()) {
+      return isolate->factory()->true_value();
     }
-    typename KindTraits::BackingStore* backing_store =
-        KindTraits::BackingStore::cast(elements);
+    Handle<BackingStore> backing_store = Handle<BackingStore>::cast(elements);
     bool is_sloppy_arguments_elements_map =
         backing_store->map() == heap->sloppy_arguments_elements_map();
     if (is_sloppy_arguments_elements_map) {
-      backing_store = KindTraits::BackingStore::cast(
-          FixedArray::cast(backing_store)->get(1));
+      backing_store = Handle<BackingStore>::cast(
+          handle(Handle<FixedArray>::cast(backing_store)->get(1), isolate));
     }
     uint32_t length = static_cast<uint32_t>(
         obj->IsJSArray()
-        ? Smi::cast(JSArray::cast(obj)->length())->value()
+        ? Smi::cast(Handle<JSArray>::cast(obj)->length())->value()
         : backing_store->length());
     if (key < length) {
       if (!is_sloppy_arguments_elements_map) {
         ElementsKind kind = KindTraits::Kind;
         if (IsFastPackedElementsKind(kind)) {
-          MaybeObject* transitioned =
-              obj->TransitionElementsKind(GetHoleyElementsKind(kind));
-          if (transitioned->IsFailure()) return transitioned;
+          JSObject::TransitionElementsKind(obj, GetHoleyElementsKind(kind));
         }
         if (IsFastSmiOrObjectElementsKind(KindTraits::Kind)) {
-          Object* writable;
-          MaybeObject* maybe = obj->EnsureWritableFastElements();
-          if (!maybe->ToObject(&writable)) return maybe;
-          backing_store = KindTraits::BackingStore::cast(writable);
+          Handle<Object> writable = JSObject::EnsureWritableFastElements(obj);
+          backing_store = Handle<BackingStore>::cast(writable);
         }
       }
       backing_store->set_the_hole(key);
@@ -1044,7 +1074,7 @@ class FastElementsAccessor
       // one adjacent hole to the value being deleted.
       const int kMinLengthForSparsenessCheck = 64;
       if (backing_store->length() >= kMinLengthForSparsenessCheck &&
-          !heap->InNewSpace(backing_store) &&
+          !heap->InNewSpace(*backing_store) &&
           ((key > 0 && backing_store->is_the_hole(key - 1)) ||
            (key + 1 < length && backing_store->is_the_hole(key + 1)))) {
         int num_used = 0;
@@ -1054,17 +1084,17 @@ class FastElementsAccessor
           if (4 * num_used > backing_store->length()) break;
         }
         if (4 * num_used <= backing_store->length()) {
-          MaybeObject* result = obj->NormalizeElements();
-          if (result->IsFailure()) return result;
+          JSObject::NormalizeElements(obj);
         }
       }
     }
-    return heap->true_value();
+    return isolate->factory()->true_value();
   }
 
-  virtual MaybeObject* Delete(JSObject* obj,
-                              uint32_t key,
-                              JSReceiver::DeleteMode mode) {
+  virtual Handle<Object> Delete(
+      Handle<JSObject> obj,
+      uint32_t key,
+      JSReceiver::DeleteMode mode) V8_FINAL V8_OVERRIDE {
     return DeleteCommon(obj, key, mode);
   }
 
@@ -1187,16 +1217,16 @@ class FastSmiOrObjectElementsAccessor
   }
 
 
-  static MaybeObject* SetFastElementsCapacityAndLength(JSObject* obj,
-                                                       uint32_t capacity,
-                                                       uint32_t length) {
+  static void SetFastElementsCapacityAndLength(
+      Handle<JSObject> obj,
+      uint32_t capacity,
+      uint32_t length) {
     JSObject::SetFastElementsCapacitySmiMode set_capacity_mode =
         obj->HasFastSmiElements()
             ? JSObject::kAllowSmiElements
             : JSObject::kDontAllowSmiElements;
-    return obj->SetFastElementsCapacityAndLength(capacity,
-                                                 length,
-                                                 set_capacity_mode);
+    JSObject::SetFastElementsCapacityAndLength(
+        obj, capacity, length, set_capacity_mode);
   }
 };
 
@@ -1261,11 +1291,10 @@ class FastDoubleElementsAccessor
                              KindTraits,
                              kDoubleSize>(name) {}
 
-  static MaybeObject* SetFastElementsCapacityAndLength(JSObject* obj,
-                                                       uint32_t capacity,
-                                                       uint32_t length) {
-    return obj->SetFastDoubleElementsCapacityAndLength(capacity,
-                                                       length);
+  static void SetFastElementsCapacityAndLength(Handle<JSObject> obj,
+                                               uint32_t capacity,
+                                               uint32_t length) {
+    JSObject::SetFastDoubleElementsCapacityAndLength(obj, capacity, length);
   }
 
  protected:
@@ -1396,11 +1425,12 @@ class TypedElementsAccessor
     return obj;
   }
 
-  MUST_USE_RESULT virtual MaybeObject* Delete(JSObject* obj,
-                                              uint32_t key,
-                                              JSReceiver::DeleteMode mode) {
+  MUST_USE_RESULT virtual Handle<Object> Delete(
+      Handle<JSObject> obj,
+      uint32_t key,
+      JSReceiver::DeleteMode mode) V8_FINAL V8_OVERRIDE {
     // External arrays always ignore deletes.
-    return obj->GetHeap()->true_value();
+    return obj->GetIsolate()->factory()->true_value();
   }
 
   static bool HasElementImpl(Object* receiver,
@@ -1555,6 +1585,16 @@ class DictionaryElementsAccessor
     return heap->true_value();
   }
 
+  // TODO(ishell): Temporary wrapper until handlified.
+  MUST_USE_RESULT static Handle<Object> DeleteCommon(
+      Handle<JSObject> obj,
+      uint32_t key,
+      JSReceiver::DeleteMode mode) {
+    CALL_HEAP_FUNCTION(obj->GetIsolate(),
+                       DeleteCommon(*obj, key, mode),
+                       Object);
+  }
+
   MUST_USE_RESULT static MaybeObject* CopyElementsImpl(FixedArrayBase* from,
                                                        uint32_t from_start,
                                                        FixedArrayBase* to,
@@ -1571,9 +1611,10 @@ class DictionaryElementsAccessor
   friend class ElementsAccessorBase<DictionaryElementsAccessor,
                                     ElementsKindTraits<DICTIONARY_ELEMENTS> >;
 
-  MUST_USE_RESULT virtual MaybeObject* Delete(JSObject* obj,
-                                              uint32_t key,
-                                              JSReceiver::DeleteMode mode) {
+  MUST_USE_RESULT virtual Handle<Object> Delete(
+      Handle<JSObject> obj,
+      uint32_t key,
+      JSReceiver::DeleteMode mode) V8_FINAL V8_OVERRIDE {
     return DeleteCommon(obj, key, mode);
   }
 
@@ -1763,18 +1804,22 @@ class SloppyArgumentsElementsAccessor : public ElementsAccessorBase<
     return obj;
   }
 
-  MUST_USE_RESULT virtual MaybeObject* Delete(JSObject* obj,
-                                              uint32_t key,
-                                              JSReceiver::DeleteMode mode) {
-    FixedArray* parameter_map = FixedArray::cast(obj->elements());
-    Object* probe = GetParameterMapArg(obj, parameter_map, key);
+  MUST_USE_RESULT virtual Handle<Object> Delete(
+      Handle<JSObject> obj,
+      uint32_t key,
+      JSReceiver::DeleteMode mode) V8_FINAL V8_OVERRIDE {
+    Isolate* isolate = obj->GetIsolate();
+    Handle<FixedArray> parameter_map =
+        handle(FixedArray::cast(obj->elements()), isolate);
+    Handle<Object> probe = GetParameterMapArg(obj, parameter_map, key);
     if (!probe->IsTheHole()) {
       // TODO(kmillikin): We could check if this was the last aliased
       // parameter, and revert to normal elements in that case.  That
       // would enable GC of the context.
       parameter_map->set_the_hole(key + 2);
     } else {
-      FixedArray* arguments = FixedArray::cast(parameter_map->get(1));
+      Handle<FixedArray> arguments =
+          handle(FixedArray::cast(parameter_map->get(1)), isolate);
       if (arguments->IsDictionary()) {
         return DictionaryElementsAccessor::DeleteCommon(obj, key, mode);
       } else {
@@ -1784,7 +1829,7 @@ class SloppyArgumentsElementsAccessor : public ElementsAccessorBase<
         return FastHoleyObjectElementsAccessor::DeleteCommon(obj, key, mode);
       }
     }
-    return obj->GetHeap()->true_value();
+    return isolate->factory()->true_value();
   }
 
   MUST_USE_RESULT static MaybeObject* CopyElementsImpl(FixedArrayBase* from,
@@ -1827,6 +1872,7 @@ class SloppyArgumentsElementsAccessor : public ElementsAccessorBase<
   }
 
  private:
+  // TODO(ishell): remove when all usages are handlified.
   static Object* GetParameterMapArg(JSObject* holder,
                                     FixedArray* parameter_map,
                                     uint32_t key) {
@@ -1836,6 +1882,18 @@ class SloppyArgumentsElementsAccessor : public ElementsAccessorBase<
     return key < (length - 2)
         ? parameter_map->get(key + 2)
         : parameter_map->GetHeap()->the_hole_value();
+  }
+
+  static Handle<Object> GetParameterMapArg(Handle<JSObject> holder,
+                                           Handle<FixedArray> parameter_map,
+                                           uint32_t key) {
+    Isolate* isolate = holder->GetIsolate();
+    uint32_t length = holder->IsJSArray()
+        ? Smi::cast(Handle<JSArray>::cast(holder)->length())->value()
+        : parameter_map->length();
+    return key < (length - 2)
+        ? handle(parameter_map->get(key + 2), isolate)
+        : Handle<Object>::cast(isolate->factory()->the_hole_value());
   }
 };
 
@@ -1925,12 +1983,11 @@ MUST_USE_RESULT Handle<Object> ElementsAccessorBase<ElementsAccessorSubclass,
     }
   }
 
-  Factory* factory = isolate->factory();
   // Fall-back case: The new length is not a number so make the array
   // size one and set only element to length.
-  Handle<FixedArray> new_backing_store = factory->NewFixedArray(1);
+  Handle<FixedArray> new_backing_store = isolate->factory()->NewFixedArray(1);
   new_backing_store->set(0, *length);
-  factory->SetContent(array, new_backing_store);
+  JSArray::SetContent(array, new_backing_store);
   return array;
 }
 

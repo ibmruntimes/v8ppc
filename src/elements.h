@@ -65,6 +65,13 @@ class ElementsAccessor {
   // can optionally pass in the backing store to use for the check, which must
   // be compatible with the ElementsKind of the ElementsAccessor. If
   // backing_store is NULL, the holder->elements() is used as the backing store.
+  MUST_USE_RESULT virtual Handle<Object> Get(
+      Handle<Object> receiver,
+      Handle<JSObject> holder,
+      uint32_t key,
+      Handle<FixedArrayBase> backing_store =
+          Handle<FixedArrayBase>::null()) = 0;
+
   MUST_USE_RESULT virtual MaybeObject* Get(
       Object* receiver,
       JSObject* holder,
@@ -119,14 +126,16 @@ class ElementsAccessor {
   // elements. This method should only be called for array expansion OR by
   // runtime JavaScript code that use InternalArrays and don't care about
   // EcmaScript 5.1 semantics.
-  MUST_USE_RESULT virtual MaybeObject* SetCapacityAndLength(JSArray* array,
-                                                            int capacity,
-                                                            int length) = 0;
+  virtual void SetCapacityAndLength(
+      Handle<JSArray> array,
+      int capacity,
+      int length) = 0;
 
   // Deletes an element in an object, returning a new elements backing store.
-  MUST_USE_RESULT virtual MaybeObject* Delete(JSObject* holder,
-                                              uint32_t key,
-                                              JSReceiver::DeleteMode mode) = 0;
+  MUST_USE_RESULT virtual Handle<Object> Delete(
+      Handle<JSObject> holder,
+      uint32_t key,
+      JSReceiver::DeleteMode mode) = 0;
 
   // If kCopyToEnd is specified as the copy_size to CopyElements, it copies all
   // of elements from source after source_start to the destination array.
@@ -141,6 +150,14 @@ class ElementsAccessor {
   // the source JSObject or JSArray in source_holder. If the holder's backing
   // store is available, it can be passed in source and source_holder is
   // ignored.
+  virtual void CopyElements(
+      Handle<JSObject> source_holder,
+      uint32_t source_start,
+      ElementsKind source_kind,
+      Handle<FixedArrayBase> destination,
+      uint32_t destination_start,
+      int copy_size,
+      Handle<FixedArrayBase> source = Handle<FixedArrayBase>::null()) = 0;
   MUST_USE_RESULT virtual MaybeObject* CopyElements(
       JSObject* source_holder,
       uint32_t source_start,
@@ -149,6 +166,15 @@ class ElementsAccessor {
       uint32_t destination_start,
       int copy_size,
       FixedArrayBase* source = NULL) = 0;
+
+  void CopyElements(
+      Handle<JSObject> from_holder,
+      Handle<FixedArrayBase> to,
+      ElementsKind from_kind,
+      Handle<FixedArrayBase> from = Handle<FixedArrayBase>::null()) {
+    CopyElements(from_holder, 0, from_kind, to, 0,
+                 kCopyToEndAndInitializeToHole, from);
+  }
 
   MUST_USE_RESULT MaybeObject* CopyElements(JSObject* from_holder,
                                             FixedArrayBase* to,

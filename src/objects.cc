@@ -962,63 +962,70 @@ MaybeObject* Object::GetProperty(Object* receiver,
 }
 
 
-MaybeObject* Object::GetElementWithReceiver(Isolate* isolate,
-                                            Object* receiver,
-                                            uint32_t index) {
-  Heap* heap = isolate->heap();
-  Object* holder = this;
+Handle<Object> Object::GetElementWithReceiver(Isolate* isolate,
+                                              Handle<Object> object,
+                                              Handle<Object> receiver,
+                                              uint32_t index) {
+  Handle<Object> holder;
 
   // Iterate up the prototype chain until an element is found or the null
   // prototype is encountered.
-  for (holder = this;
-       holder != heap->null_value();
-       holder = holder->GetPrototype(isolate)) {
+  for (holder = object;
+       !holder->IsNull();
+       holder = Handle<Object>(holder->GetPrototype(isolate), isolate)) {
     if (!holder->IsJSObject()) {
       Context* native_context = isolate->context()->native_context();
       if (holder->IsNumber()) {
-        holder = native_context->number_function()->instance_prototype();
+        holder = Handle<Object>(
+            native_context->number_function()->instance_prototype(), isolate);
       } else if (holder->IsString()) {
-        holder = native_context->string_function()->instance_prototype();
+        holder = Handle<Object>(
+            native_context->string_function()->instance_prototype(), isolate);
       } else if (holder->IsSymbol()) {
-        holder = native_context->symbol_function()->instance_prototype();
+        holder = Handle<Object>(
+            native_context->symbol_function()->instance_prototype(), isolate);
       } else if (holder->IsBoolean()) {
-        holder = native_context->boolean_function()->instance_prototype();
+        holder = Handle<Object>(
+            native_context->boolean_function()->instance_prototype(), isolate);
       } else if (holder->IsJSProxy()) {
-        return JSProxy::cast(holder)->GetElementWithHandler(receiver, index);
+        CALL_HEAP_FUNCTION(isolate,
+            Handle<JSProxy>::cast(holder)->GetElementWithHandler(
+                *receiver, index),
+            Object);
       } else {
         // Undefined and null have no indexed properties.
         ASSERT(holder->IsUndefined() || holder->IsNull());
-        return heap->undefined_value();
+        return isolate->factory()->undefined_value();
       }
     }
 
     // Inline the case for JSObjects. Doing so significantly improves the
     // performance of fetching elements where checking the prototype chain is
     // necessary.
-    JSObject* js_object = JSObject::cast(holder);
+    Handle<JSObject> js_object = Handle<JSObject>::cast(holder);
 
     // Check access rights if needed.
     if (js_object->IsAccessCheckNeeded()) {
-      Isolate* isolate = heap->isolate();
-      if (!isolate->MayIndexedAccess(js_object, index, v8::ACCESS_GET)) {
-        isolate->ReportFailedAccessCheck(js_object, v8::ACCESS_GET);
-        RETURN_IF_SCHEDULED_EXCEPTION(isolate);
-        return heap->undefined_value();
+      if (!isolate->MayIndexedAccessWrapper(js_object, index, v8::ACCESS_GET)) {
+        isolate->ReportFailedAccessCheckWrapper(js_object, v8::ACCESS_GET);
+        RETURN_HANDLE_IF_SCHEDULED_EXCEPTION(isolate, Object);
+        return isolate->factory()->undefined_value();
       }
     }
 
     if (js_object->HasIndexedInterceptor()) {
-      return js_object->GetElementWithInterceptor(receiver, index);
+      return JSObject::GetElementWithInterceptor(js_object, receiver, index);
     }
 
-    if (js_object->elements() != heap->empty_fixed_array()) {
-      MaybeObject* result = js_object->GetElementsAccessor()->Get(
+    if (js_object->elements() != isolate->heap()->empty_fixed_array()) {
+      Handle<Object> result = js_object->GetElementsAccessor()->Get(
           receiver, js_object, index);
-      if (result != heap->the_hole_value()) return result;
+      RETURN_IF_EMPTY_HANDLE_VALUE(isolate, result, Handle<Object>());
+      if (!result->IsTheHole()) return result;
     }
   }
 
-  return heap->undefined_value();
+  return isolate->factory()->undefined_value();
 }
 
 
@@ -1525,17 +1532,18 @@ void JSObject::JSObjectShortPrint(StringStream* accumulator) {
 
 
 void JSObject::PrintElementsTransition(
-    FILE* file, ElementsKind from_kind, FixedArrayBase* from_elements,
-    ElementsKind to_kind, FixedArrayBase* to_elements) {
+    FILE* file, Handle<JSObject> object,
+    ElementsKind from_kind, Handle<FixedArrayBase> from_elements,
+    ElementsKind to_kind, Handle<FixedArrayBase> to_elements) {
   if (from_kind != to_kind) {
     PrintF(file, "elements transition [");
     PrintElementsKind(file, from_kind);
     PrintF(file, " -> ");
     PrintElementsKind(file, to_kind);
     PrintF(file, "] in ");
-    JavaScriptFrame::PrintTop(GetIsolate(), file, false, true);
+    JavaScriptFrame::PrintTop(object->GetIsolate(), file, false, true);
     PrintF(file, " for ");
-    ShortPrint(file);
+    object->ShortPrint(file);
     PrintF(file, " from ");
     from_elements->ShortPrint(file);
     PrintF(file, " to ");
@@ -3225,24 +3233,31 @@ Handle<Map> Map::FindTransitionedMap(MapHandleList* candidates) {
 
 static Map* FindClosestElementsTransition(Map* map, ElementsKind to_kind) {
   Map* current_map = map;
-  int index = GetSequenceIndexFromFastElementsKind(map->elements_kind());
-  int to_index = IsFastElementsKind(to_kind)
-      ? GetSequenceIndexFromFastElementsKind(to_kind)
-      : GetSequenceIndexFromFastElementsKind(TERMINAL_FAST_ELEMENTS_KIND);
+  int target_kind =
+      IsFastElementsKind(to_kind) || IsExternalArrayElementsKind(to_kind)
+      ? to_kind
+      : TERMINAL_FAST_ELEMENTS_KIND;
 
-  ASSERT(index <= to_index);
+  // Support for legacy API.
+  if (IsExternalArrayElementsKind(to_kind) &&
+      !IsFixedTypedArrayElementsKind(map->elements_kind())) {
+    return map;
+  }
 
-  for (; index < to_index; ++index) {
+  ElementsKind kind = map->elements_kind();
+  while (kind != target_kind) {
+    kind = GetNextTransitionElementsKind(kind);
     if (!current_map->HasElementsTransition()) return current_map;
     current_map = current_map->elements_transition_map();
   }
-  if (!IsFastElementsKind(to_kind) && current_map->HasElementsTransition()) {
+
+  if (to_kind != kind && current_map->HasElementsTransition()) {
+    ASSERT(to_kind == DICTIONARY_ELEMENTS);
     Map* next_map = current_map->elements_transition_map();
     if (next_map->elements_kind() == to_kind) return next_map;
   }
-  ASSERT(IsFastElementsKind(to_kind)
-         ? current_map->elements_kind() == to_kind
-         : current_map->elements_kind() == TERMINAL_FAST_ELEMENTS_KIND);
+
+  ASSERT(current_map->elements_kind() == target_kind);
   return current_map;
 }
 
@@ -3270,26 +3285,21 @@ bool Map::IsMapInArrayPrototypeChain() {
 
 static MaybeObject* AddMissingElementsTransitions(Map* map,
                                                   ElementsKind to_kind) {
-  ASSERT(IsFastElementsKind(map->elements_kind()));
-  int index = GetSequenceIndexFromFastElementsKind(map->elements_kind());
-  int to_index = IsFastElementsKind(to_kind)
-      ? GetSequenceIndexFromFastElementsKind(to_kind)
-      : GetSequenceIndexFromFastElementsKind(TERMINAL_FAST_ELEMENTS_KIND);
-
-  ASSERT(index <= to_index);
+  ASSERT(IsTransitionElementsKind(map->elements_kind()));
 
   Map* current_map = map;
 
-  for (; index < to_index; ++index) {
-    ElementsKind next_kind = GetFastElementsKindFromSequenceIndex(index + 1);
+  ElementsKind kind = map->elements_kind();
+  while (kind != to_kind && !IsTerminalElementsKind(kind)) {
+    kind = GetNextTransitionElementsKind(kind);
     MaybeObject* maybe_next_map =
-        current_map->CopyAsElementsKind(next_kind, INSERT_TRANSITION);
+        current_map->CopyAsElementsKind(kind, INSERT_TRANSITION);
     if (!maybe_next_map->To(&current_map)) return maybe_next_map;
   }
 
   // In case we are exiting the fast elements kind system, just add the map in
   // the end.
-  if (!IsFastElementsKind(to_kind)) {
+  if (kind != to_kind) {
     MaybeObject* maybe_next_map =
         current_map->CopyAsElementsKind(to_kind, INSERT_TRANSITION);
     if (!maybe_next_map->To(&current_map)) return maybe_next_map;
@@ -3321,7 +3331,7 @@ MaybeObject* JSObject::GetElementsTransitionMapSlow(ElementsKind to_kind) {
       // Only remember the map transition if there is not an already existing
       // non-matching element transition.
       !start_map->IsUndefined() && !start_map->is_shared() &&
-      IsFastElementsKind(from_kind);
+      IsTransitionElementsKind(from_kind);
 
   // Only store fast element maps in ascending generality.
   if (IsFastElementsKind(to_kind)) {
@@ -4661,120 +4671,92 @@ void JSObject::TransformToFastProperties(Handle<JSObject> object,
 }
 
 
-static MUST_USE_RESULT MaybeObject* CopyFastElementsToDictionary(
-    Isolate* isolate,
-    FixedArrayBase* array,
+static Handle<SeededNumberDictionary> CopyFastElementsToDictionary(
+    Handle<FixedArrayBase> array,
     int length,
-    SeededNumberDictionary* dictionary) {
-  Heap* heap = isolate->heap();
+    Handle<SeededNumberDictionary> dictionary) {
+  Isolate* isolate = array->GetIsolate();
+  Factory* factory = isolate->factory();
   bool has_double_elements = array->IsFixedDoubleArray();
   for (int i = 0; i < length; i++) {
-    Object* value = NULL;
+    Handle<Object> value;
     if (has_double_elements) {
-      FixedDoubleArray* double_array = FixedDoubleArray::cast(array);
+      Handle<FixedDoubleArray> double_array =
+          Handle<FixedDoubleArray>::cast(array);
       if (double_array->is_the_hole(i)) {
-        value = isolate->heap()->the_hole_value();
+        value = factory->the_hole_value();
       } else {
-        // Objects must be allocated in the old object space, since the
-        // overall number of HeapNumbers needed for the conversion might
-        // exceed the capacity of new space, and we would fail repeatedly
-        // trying to convert the FixedDoubleArray.
-        MaybeObject* maybe_value_object =
-            heap->AllocateHeapNumber(double_array->get_scalar(i), TENURED);
-        if (!maybe_value_object->ToObject(&value)) return maybe_value_object;
+        value = factory->NewHeapNumber(double_array->get_scalar(i));
       }
     } else {
-      value = FixedArray::cast(array)->get(i);
+      value = handle(Handle<FixedArray>::cast(array)->get(i), isolate);
     }
     if (!value->IsTheHole()) {
       PropertyDetails details = PropertyDetails(NONE, NORMAL, 0);
-      MaybeObject* maybe_result =
-          dictionary->AddNumberEntry(i, value, details);
-      if (!maybe_result->To(&dictionary)) return maybe_result;
+      dictionary =
+          SeededNumberDictionary::AddNumberEntry(dictionary, i, value, details);
     }
   }
   return dictionary;
 }
 
 
-static Handle<SeededNumberDictionary> CopyFastElementsToDictionary(
-    Handle<FixedArrayBase> array,
-    int length,
-    Handle<SeededNumberDictionary> dict) {
-  Isolate* isolate = array->GetIsolate();
-  CALL_HEAP_FUNCTION(isolate,
-                     CopyFastElementsToDictionary(
-                         isolate, *array, length, *dict),
-                     SeededNumberDictionary);
-}
-
-
 Handle<SeededNumberDictionary> JSObject::NormalizeElements(
     Handle<JSObject> object) {
-  CALL_HEAP_FUNCTION(object->GetIsolate(),
-                     object->NormalizeElements(),
-                     SeededNumberDictionary);
-}
-
-
-MaybeObject* JSObject::NormalizeElements() {
-  ASSERT(!HasExternalArrayElements());
+  ASSERT(!object->HasExternalArrayElements() &&
+         !object->HasFixedTypedArrayElements());
+  Isolate* isolate = object->GetIsolate();
+  Factory* factory = isolate->factory();
 
   // Find the backing store.
-  FixedArrayBase* array = FixedArrayBase::cast(elements());
-  Map* old_map = array->map();
+  Handle<FixedArrayBase> array(FixedArrayBase::cast(object->elements()));
   bool is_arguments =
-      (old_map == old_map->GetHeap()->sloppy_arguments_elements_map());
+      (array->map() == isolate->heap()->sloppy_arguments_elements_map());
   if (is_arguments) {
-    array = FixedArrayBase::cast(FixedArray::cast(array)->get(1));
+    array = handle(FixedArrayBase::cast(
+        Handle<FixedArray>::cast(array)->get(1)));
   }
-  if (array->IsDictionary()) return array;
+  if (array->IsDictionary()) return Handle<SeededNumberDictionary>::cast(array);
 
-  ASSERT(HasFastSmiOrObjectElements() ||
-         HasFastDoubleElements() ||
-         HasFastArgumentsElements());
+  ASSERT(object->HasFastSmiOrObjectElements() ||
+         object->HasFastDoubleElements() ||
+         object->HasFastArgumentsElements());
   // Compute the effective length and allocate a new backing store.
-  int length = IsJSArray()
-      ? Smi::cast(JSArray::cast(this)->length())->value()
+  int length = object->IsJSArray()
+      ? Smi::cast(Handle<JSArray>::cast(object)->length())->value()
       : array->length();
   int old_capacity = 0;
   int used_elements = 0;
-  GetElementsCapacityAndUsage(&old_capacity, &used_elements);
-  SeededNumberDictionary* dictionary;
-  MaybeObject* maybe_dictionary =
-      SeededNumberDictionary::Allocate(GetHeap(), used_elements);
-  if (!maybe_dictionary->To(&dictionary)) return maybe_dictionary;
+  object->GetElementsCapacityAndUsage(&old_capacity, &used_elements);
+  Handle<SeededNumberDictionary> dictionary =
+      factory->NewSeededNumberDictionary(used_elements);
 
-  maybe_dictionary = CopyFastElementsToDictionary(
-      GetIsolate(), array, length, dictionary);
-  if (!maybe_dictionary->To(&dictionary)) return maybe_dictionary;
+  dictionary = CopyFastElementsToDictionary(array, length, dictionary);
 
   // Switch to using the dictionary as the backing storage for elements.
   if (is_arguments) {
-    FixedArray::cast(elements())->set(1, dictionary);
+    FixedArray::cast(object->elements())->set(1, *dictionary);
   } else {
     // Set the new map first to satify the elements type assert in
     // set_elements().
-    Map* new_map;
-    MaybeObject* maybe = GetElementsTransitionMap(GetIsolate(),
-                                                  DICTIONARY_ELEMENTS);
-    if (!maybe->To(&new_map)) return maybe;
-    // TODO(verwaest): Replace by MigrateToMap.
-    set_map(new_map);
-    set_elements(dictionary);
+    Handle<Map> new_map =
+        JSObject::GetElementsTransitionMap(object, DICTIONARY_ELEMENTS);
+
+    JSObject::MigrateToMap(object, new_map);
+    object->set_elements(*dictionary);
   }
 
-  old_map->GetHeap()->isolate()->counters()->elements_to_dictionary()->
-      Increment();
+  isolate->counters()->elements_to_dictionary()->Increment();
 
 #ifdef DEBUG
   if (FLAG_trace_normalization) {
     PrintF("Object elements have been normalized:\n");
-    Print();
+    object->Print();
   }
 #endif
 
-  ASSERT(HasDictionaryElements() || HasDictionaryArgumentsElements());
+  ASSERT(object->HasDictionaryElements() ||
+         object->HasDictionaryArgumentsElements());
   return dictionary;
 }
 
@@ -5103,18 +5085,6 @@ Handle<Object> JSObject::DeletePropertyWithInterceptor(Handle<JSObject> object,
 }
 
 
-// TODO(mstarzinger): Temporary wrapper until handlified.
-static Handle<Object> AccessorDelete(Handle<JSObject> object,
-                                     uint32_t index,
-                                     JSObject::DeleteMode mode) {
-  CALL_HEAP_FUNCTION(object->GetIsolate(),
-                     object->GetElementsAccessor()->Delete(*object,
-                                                           index,
-                                                           mode),
-                     Object);
-}
-
-
 Handle<Object> JSObject::DeleteElementWithInterceptor(Handle<JSObject> object,
                                                       uint32_t index) {
   Isolate* isolate = object->GetIsolate();
@@ -5141,7 +5111,8 @@ Handle<Object> JSObject::DeleteElementWithInterceptor(Handle<JSObject> object,
     // Rebox CustomArguments::kReturnValueOffset before returning.
     return handle(*result_internal, isolate);
   }
-  Handle<Object> delete_result = AccessorDelete(object, index, NORMAL_DELETION);
+  Handle<Object> delete_result = object->GetElementsAccessor()->Delete(
+      object, index, NORMAL_DELETION);
   RETURN_HANDLE_IF_SCHEDULED_EXCEPTION(isolate, Object);
   return delete_result;
 }
@@ -5190,8 +5161,7 @@ Handle<Object> JSObject::DeleteElement(Handle<JSObject> object,
       if (object->GetLocalElementAccessorPair(index) != NULL) {
         old_value = Handle<Object>::cast(factory->the_hole_value());
       } else {
-        old_value = Object::GetElement(isolate, object, index);
-        CHECK_NOT_EMPTY_HANDLE(isolate, old_value);
+        old_value = Object::GetElementNoExceptionThrown(isolate, object, index);
       }
     }
   }
@@ -5201,7 +5171,7 @@ Handle<Object> JSObject::DeleteElement(Handle<JSObject> object,
   if (object->HasIndexedInterceptor() && mode != FORCE_DELETION) {
     result = DeleteElementWithInterceptor(object, index);
   } else {
-    result = AccessorDelete(object, index, mode);
+    result = object->GetElementsAccessor()->Delete(object, index, mode);
   }
 
   if (should_enqueue_change_record && !HasLocalElement(object, index)) {
@@ -5469,7 +5439,8 @@ Handle<Object> JSObject::PreventExtensions(Handle<JSObject> object) {
   }
 
   // It's not possible to seal objects with external array elements
-  if (object->HasExternalArrayElements()) {
+  if (object->HasExternalArrayElements() ||
+      object->HasFixedTypedArrayElements()) {
     Handle<Object> error  =
         isolate->factory()->NewTypeError(
             "cant_prevent_ext_external_array_elements",
@@ -5549,7 +5520,8 @@ Handle<Object> JSObject::Freeze(Handle<JSObject> object) {
   }
 
   // It's not possible to freeze objects with external array elements
-  if (object->HasExternalArrayElements()) {
+  if (object->HasExternalArrayElements() ||
+      object->HasFixedTypedArrayElements()) {
     Handle<Object> error  =
         isolate->factory()->NewTypeError(
             "cant_prevent_ext_external_array_elements",
@@ -6360,8 +6332,7 @@ void JSObject::DefineAccessor(Handle<JSObject> object,
     if (is_element) {
       preexists = HasLocalElement(object, index);
       if (preexists && object->GetLocalElementAccessorPair(index) == NULL) {
-        old_value = Object::GetElement(isolate, object, index);
-        CHECK_NOT_EMPTY_HANDLE(isolate, old_value);
+        old_value = Object::GetElementNoExceptionThrown(isolate, object, index);
       }
     } else {
       LookupResult lookup(isolate);
@@ -11174,33 +11145,20 @@ Handle<FixedArray> JSObject::SetFastElementsCapacityAndLength(
     int capacity,
     int length,
     SetFastElementsCapacitySmiMode smi_mode) {
-  CALL_HEAP_FUNCTION(
-      object->GetIsolate(),
-      object->SetFastElementsCapacityAndLength(capacity, length, smi_mode),
-      FixedArray);
-}
-
-
-MaybeObject* JSObject::SetFastElementsCapacityAndLength(
-    int capacity,
-    int length,
-    SetFastElementsCapacitySmiMode smi_mode) {
-  Heap* heap = GetHeap();
   // We should never end in here with a pixel or external array.
-  ASSERT(!HasExternalArrayElements());
+  ASSERT(!object->HasExternalArrayElements());
 
   // Allocate a new fast elements backing store.
-  FixedArray* new_elements;
-  MaybeObject* maybe = heap->AllocateUninitializedFixedArray(capacity);
-  if (!maybe->To(&new_elements)) return maybe;
+  Handle<FixedArray> new_elements =
+      object->GetIsolate()->factory()->NewUninitializedFixedArray(capacity);
 
-  ElementsKind elements_kind = GetElementsKind();
+  ElementsKind elements_kind = object->GetElementsKind();
   ElementsKind new_elements_kind;
   // The resized array has FAST_*_SMI_ELEMENTS if the capacity mode forces it,
   // or if it's allowed and the old elements array contained only SMIs.
   bool has_fast_smi_elements =
       (smi_mode == kForceSmiElements) ||
-      ((smi_mode == kAllowSmiElements) && HasFastSmiElements());
+      ((smi_mode == kAllowSmiElements) && object->HasFastSmiElements());
   if (has_fast_smi_elements) {
     if (IsHoleyElementsKind(elements_kind)) {
       new_elements_kind = FAST_HOLEY_SMI_ELEMENTS;
@@ -11214,37 +11172,31 @@ MaybeObject* JSObject::SetFastElementsCapacityAndLength(
       new_elements_kind = FAST_ELEMENTS;
     }
   }
-  FixedArrayBase* old_elements = elements();
+  Handle<FixedArrayBase> old_elements(object->elements());
   ElementsAccessor* accessor = ElementsAccessor::ForKind(new_elements_kind);
-  MaybeObject* maybe_obj =
-      accessor->CopyElements(this, new_elements, elements_kind);
-  if (maybe_obj->IsFailure()) return maybe_obj;
+  accessor->CopyElements(object, new_elements, elements_kind);
 
   if (elements_kind != SLOPPY_ARGUMENTS_ELEMENTS) {
-    Map* new_map = map();
-    if (new_elements_kind != elements_kind) {
-      MaybeObject* maybe =
-          GetElementsTransitionMap(GetIsolate(), new_elements_kind);
-      if (!maybe->To(&new_map)) return maybe;
-    }
-    ValidateElements();
-    set_map_and_elements(new_map, new_elements);
+    Handle<Map> new_map = (new_elements_kind != elements_kind)
+        ? GetElementsTransitionMap(object, new_elements_kind)
+        : handle(object->map());
+    object->ValidateElements();
+    object->set_map_and_elements(*new_map, *new_elements);
 
     // Transition through the allocation site as well if present.
-    maybe_obj = UpdateAllocationSite(new_elements_kind);
-    if (maybe_obj->IsFailure()) return maybe_obj;
+    JSObject::UpdateAllocationSite(object, new_elements_kind);
   } else {
-    FixedArray* parameter_map = FixedArray::cast(old_elements);
-    parameter_map->set(1, new_elements);
+    Handle<FixedArray> parameter_map = Handle<FixedArray>::cast(old_elements);
+    parameter_map->set(1, *new_elements);
   }
 
   if (FLAG_trace_elements_transitions) {
-    PrintElementsTransition(stdout, elements_kind, old_elements,
-                            GetElementsKind(), new_elements);
+    PrintElementsTransition(stdout, object, elements_kind, old_elements,
+                            object->GetElementsKind(), new_elements);
   }
 
-  if (IsJSArray()) {
-    JSArray::cast(this)->set_length(Smi::FromInt(length));
+  if (object->IsJSArray()) {
+    Handle<JSArray>::cast(object)->set_length(Smi::FromInt(length));
   }
   return new_elements;
 }
@@ -11253,26 +11205,14 @@ MaybeObject* JSObject::SetFastElementsCapacityAndLength(
 void JSObject::SetFastDoubleElementsCapacityAndLength(Handle<JSObject> object,
                                                       int capacity,
                                                       int length) {
-  CALL_HEAP_FUNCTION_VOID(
-      object->GetIsolate(),
-      object->SetFastDoubleElementsCapacityAndLength(capacity, length));
-}
-
-
-MaybeObject* JSObject::SetFastDoubleElementsCapacityAndLength(
-    int capacity,
-    int length) {
-  Heap* heap = GetHeap();
   // We should never end in here with a pixel or external array.
-  ASSERT(!HasExternalArrayElements());
+  ASSERT(!object->HasExternalArrayElements());
 
-  FixedArrayBase* elems;
-  { MaybeObject* maybe_obj =
-        heap->AllocateUninitializedFixedDoubleArray(capacity);
-    if (!maybe_obj->To(&elems)) return maybe_obj;
-  }
+  Handle<FixedArrayBase> elems =
+      object->GetIsolate()->factory()->NewFixedDoubleArray(capacity);
 
-  ElementsKind elements_kind = GetElementsKind();
+  ElementsKind elements_kind = object->GetElementsKind();
+  CHECK(elements_kind != SLOPPY_ARGUMENTS_ELEMENTS);
   ElementsKind new_elements_kind = elements_kind;
   if (IsHoleyElementsKind(elements_kind)) {
     new_elements_kind = FAST_HOLEY_DOUBLE_ELEMENTS;
@@ -11280,36 +11220,23 @@ MaybeObject* JSObject::SetFastDoubleElementsCapacityAndLength(
     new_elements_kind = FAST_DOUBLE_ELEMENTS;
   }
 
-  Map* new_map;
-  { MaybeObject* maybe_obj =
-        GetElementsTransitionMap(heap->isolate(), new_elements_kind);
-    if (!maybe_obj->To(&new_map)) return maybe_obj;
-  }
+  Handle<Map> new_map = GetElementsTransitionMap(object, new_elements_kind);
 
-  FixedArrayBase* old_elements = elements();
+  Handle<FixedArrayBase> old_elements(object->elements());
   ElementsAccessor* accessor = ElementsAccessor::ForKind(FAST_DOUBLE_ELEMENTS);
-  { MaybeObject* maybe_obj =
-        accessor->CopyElements(this, elems, elements_kind);
-    if (maybe_obj->IsFailure()) return maybe_obj;
-  }
-  if (elements_kind != SLOPPY_ARGUMENTS_ELEMENTS) {
-    ValidateElements();
-    set_map_and_elements(new_map, elems);
-  } else {
-    FixedArray* parameter_map = FixedArray::cast(old_elements);
-    parameter_map->set(1, elems);
-  }
+  accessor->CopyElements(object, elems, elements_kind);
+
+  object->ValidateElements();
+  object->set_map_and_elements(*new_map, *elems);
 
   if (FLAG_trace_elements_transitions) {
-    PrintElementsTransition(stdout, elements_kind, old_elements,
-                            GetElementsKind(), elems);
+    PrintElementsTransition(stdout, object, elements_kind, old_elements,
+                            object->GetElementsKind(), elems);
   }
 
-  if (IsJSArray()) {
-    JSArray::cast(this)->set_length(Smi::FromInt(length));
+  if (object->IsJSArray()) {
+    Handle<JSArray>::cast(object)->set_length(Smi::FromInt(length));
   }
-
-  return this;
 }
 
 
@@ -11321,9 +11248,9 @@ void JSArray::Initialize(Handle<JSArray> array, int capacity, int length) {
 }
 
 
-void JSArray::Expand(int required_size) {
-  GetIsolate()->factory()->SetElementsCapacityAndLength(
-      Handle<JSArray>(this), required_size, required_size);
+void JSArray::Expand(Handle<JSArray> array, int required_size) {
+  ElementsAccessor* accessor = array->GetElementsAccessor();
+  accessor->SetCapacityAndLength(array, required_size, required_size);
 }
 
 
@@ -11343,8 +11270,7 @@ static bool GetOldValue(Isolate* isolate,
   if (object->GetLocalElementAccessorPair(index) != NULL) {
     value = Handle<Object>::cast(isolate->factory()->the_hole_value());
   } else {
-    value = Object::GetElement(isolate, object, index);
-    CHECK_NOT_EMPTY_HANDLE(isolate, value);
+    value = Object::GetElementNoExceptionThrown(isolate, object, index);
   }
   old_values->Add(value);
   indices->Add(index);
@@ -11861,31 +11787,16 @@ Handle<Object> JSObject::SetPrototype(Handle<JSObject> object,
 }
 
 
-// TODO(ishell): temporary wrapper until handilfied.
-// static
 void JSObject::EnsureCanContainElements(Handle<JSObject> object,
                                         Arguments* args,
                                         uint32_t first_arg,
                                         uint32_t arg_count,
                                         EnsureElementsMode mode) {
-  CALL_HEAP_FUNCTION_VOID(object->GetIsolate(),
-                          object->EnsureCanContainElements(args,
-                                                           first_arg,
-                                                           arg_count,
-                                                           mode));
-}
-
-
-MaybeObject* JSObject::EnsureCanContainElements(Arguments* args,
-                                                uint32_t first_arg,
-                                                uint32_t arg_count,
-                                                EnsureElementsMode mode) {
   // Elements in |Arguments| are ordered backwards (because they're on the
   // stack), but the method that's called here iterates over them in forward
   // direction.
   return EnsureCanContainElements(
-      args->arguments() - first_arg - (arg_count - 1),
-      arg_count, mode);
+      object, args->arguments() - first_arg - (arg_count - 1), arg_count, mode);
 }
 
 
@@ -12529,7 +12440,9 @@ Handle<Object> JSObject::SetElement(Handle<JSObject> object,
   }
 
   // Don't allow element properties to be redefined for external arrays.
-  if (object->HasExternalArrayElements() && set_mode == DEFINE_PROPERTY) {
+  if ((object->HasExternalArrayElements() ||
+          object->HasFixedTypedArrayElements()) &&
+      set_mode == DEFINE_PROPERTY) {
     Handle<Object> number = isolate->factory()->NewNumberFromUint(index);
     Handle<Object> args[] = { object, number };
     Handle<Object> error = isolate->factory()->NewTypeError(
@@ -12564,8 +12477,7 @@ Handle<Object> JSObject::SetElement(Handle<JSObject> object,
 
   if (old_attributes != ABSENT) {
     if (object->GetLocalElementAccessorPair(index) == NULL) {
-      old_value = Object::GetElement(isolate, object, index);
-      CHECK_NOT_EMPTY_HANDLE(isolate, old_value);
+      old_value = Object::GetElementNoExceptionThrown(isolate, object, index);
     }
   } else if (object->IsJSArray()) {
     // Store old array length in case adding an element grows the array.
@@ -12611,8 +12523,8 @@ Handle<Object> JSObject::SetElement(Handle<JSObject> object,
   } else if (old_value->IsTheHole()) {
     EnqueueChangeRecord(object, "reconfigure", name, old_value);
   } else {
-    Handle<Object> new_value = Object::GetElement(isolate, object, index);
-    CHECK_NOT_EMPTY_HANDLE(isolate, new_value);
+    Handle<Object> new_value =
+        Object::GetElementNoExceptionThrown(isolate, object, index);
     bool value_changed = !old_value->SameValue(*new_value);
     if (old_attributes != new_attributes) {
       if (!value_changed) old_value = isolate->factory()->the_hole_value();
@@ -12718,13 +12630,6 @@ Handle<Object> JSObject::SetElementWithoutInterceptor(
 }
 
 
-void JSObject::TransitionElementsKind(Handle<JSObject> object,
-                                      ElementsKind to_kind) {
-  CALL_HEAP_FUNCTION_VOID(object->GetIsolate(),
-                          object->TransitionElementsKind(to_kind));
-}
-
-
 const double AllocationSite::kPretenureRatio = 0.85;
 
 
@@ -12756,11 +12661,13 @@ bool AllocationSite::IsNestedSite() {
 }
 
 
-MaybeObject* AllocationSite::DigestTransitionFeedback(ElementsKind to_kind) {
-  Isolate* isolate = GetIsolate();
+void AllocationSite::DigestTransitionFeedback(Handle<AllocationSite> site,
+                                              ElementsKind to_kind) {
+  Isolate* isolate = site->GetIsolate();
 
-  if (SitePointsToLiteral() && transition_info()->IsJSArray()) {
-    JSArray* transition_info = JSArray::cast(this->transition_info());
+  if (site->SitePointsToLiteral() && site->transition_info()->IsJSArray()) {
+    Handle<JSArray> transition_info =
+        handle(JSArray::cast(site->transition_info()));
     ElementsKind kind = transition_info->GetElementsKind();
     // if kind is holey ensure that to_kind is as well.
     if (IsHoleyElementsKind(kind)) {
@@ -12773,22 +12680,21 @@ MaybeObject* AllocationSite::DigestTransitionFeedback(ElementsKind to_kind) {
       CHECK(transition_info->length()->ToArrayIndex(&length));
       if (length <= kMaximumArrayBytesToPretransition) {
         if (FLAG_trace_track_allocation_sites) {
-          bool is_nested = IsNestedSite();
+          bool is_nested = site->IsNestedSite();
           PrintF(
               "AllocationSite: JSArray %p boilerplate %s updated %s->%s\n",
-              reinterpret_cast<void*>(this),
+              reinterpret_cast<void*>(*site),
               is_nested ? "(nested)" : "",
               ElementsKindToString(kind),
               ElementsKindToString(to_kind));
         }
-        MaybeObject* result = transition_info->TransitionElementsKind(to_kind);
-        if (result->IsFailure()) return result;
-        dependent_code()->DeoptimizeDependentCodeGroup(
+        JSObject::TransitionElementsKind(transition_info, to_kind);
+        site->dependent_code()->DeoptimizeDependentCodeGroup(
             isolate, DependentCode::kAllocationSiteTransitionChangedGroup);
       }
     }
   } else {
-    ElementsKind kind = GetElementsKind();
+    ElementsKind kind = site->GetElementsKind();
     // if kind is holey ensure that to_kind is as well.
     if (IsHoleyElementsKind(kind)) {
       to_kind = GetHoleyElementsKind(to_kind);
@@ -12796,16 +12702,15 @@ MaybeObject* AllocationSite::DigestTransitionFeedback(ElementsKind to_kind) {
     if (IsMoreGeneralElementsKindTransition(kind, to_kind)) {
       if (FLAG_trace_track_allocation_sites) {
         PrintF("AllocationSite: JSArray %p site updated %s->%s\n",
-               reinterpret_cast<void*>(this),
+               reinterpret_cast<void*>(*site),
                ElementsKindToString(kind),
                ElementsKindToString(to_kind));
       }
-      SetElementsKind(to_kind);
-      dependent_code()->DeoptimizeDependentCodeGroup(
+      site->SetElementsKind(to_kind);
+      site->dependent_code()->DeoptimizeDependentCodeGroup(
           isolate, DependentCode::kAllocationSiteTransitionChangedGroup);
     }
   }
-  return this;
 }
 
 
@@ -12824,64 +12729,62 @@ void AllocationSite::AddDependentCompilationInfo(Handle<AllocationSite> site,
 
 void JSObject::UpdateAllocationSite(Handle<JSObject> object,
                                     ElementsKind to_kind) {
-  CALL_HEAP_FUNCTION_VOID(object->GetIsolate(),
-      object->UpdateAllocationSite(to_kind));
-}
+  if (!object->IsJSArray()) return;
 
+  Heap* heap = object->GetHeap();
+  if (!heap->InNewSpace(*object)) return;
 
-MaybeObject* JSObject::UpdateAllocationSite(ElementsKind to_kind) {
-  if (!IsJSArray()) return this;
+  Handle<AllocationSite> site;
+  {
+    DisallowHeapAllocation no_allocation;
+    // Check if there is potentially a memento behind the object. If
+    // the last word of the momento is on another page we return
+    // immediatelly.
+    Address object_address = object->address();
+    Address memento_address = object_address + JSArray::kSize;
+    Address last_memento_word_address = memento_address + kPointerSize;
+    if (!NewSpacePage::OnSamePage(object_address,
+                                  last_memento_word_address)) {
+      return;
+    }
 
-  Heap* heap = GetHeap();
-  if (!heap->InNewSpace(this)) return this;
+    // Either object is the last object in the new space, or there is another
+    // object of at least word size (the header map word) following it, so
+    // suffices to compare ptr and top here.
+    Address top = heap->NewSpaceTop();
+    ASSERT(memento_address == top ||
+           memento_address + HeapObject::kHeaderSize <= top);
+    if (memento_address == top) return;
 
-  // Check if there is potentially a memento behind the object. If
-  // the last word of the momento is on another page we return
-  // immediatelly.
-  Address object_address = address();
-  Address memento_address = object_address + JSArray::kSize;
-  Address last_memento_word_address = memento_address + kPointerSize;
-  if (!NewSpacePage::OnSamePage(object_address,
-                                last_memento_word_address)) {
-    return this;
+    HeapObject* candidate = HeapObject::FromAddress(memento_address);
+    if (candidate->map() != heap->allocation_memento_map()) return;
+
+    AllocationMemento* memento = AllocationMemento::cast(candidate);
+    if (!memento->IsValid()) return;
+
+    // Walk through to the Allocation Site
+    site = handle(memento->GetAllocationSite());
   }
-
-  // Either object is the last object in the new space, or there is another
-  // object of at least word size (the header map word) following it, so
-  // suffices to compare ptr and top here.
-  Address top = heap->NewSpaceTop();
-  ASSERT(memento_address == top ||
-         memento_address + HeapObject::kHeaderSize <= top);
-  if (memento_address == top) return this;
-
-  HeapObject* candidate = HeapObject::FromAddress(memento_address);
-  if (candidate->map() != heap->allocation_memento_map()) return this;
-
-  AllocationMemento* memento = AllocationMemento::cast(candidate);
-  if (!memento->IsValid()) return this;
-
-  // Walk through to the Allocation Site
-  AllocationSite* site = memento->GetAllocationSite();
-  return site->DigestTransitionFeedback(to_kind);
+  AllocationSite::DigestTransitionFeedback(site, to_kind);
 }
 
 
-MaybeObject* JSObject::TransitionElementsKind(ElementsKind to_kind) {
-  ElementsKind from_kind = map()->elements_kind();
+void JSObject::TransitionElementsKind(Handle<JSObject> object,
+                                      ElementsKind to_kind) {
+  ElementsKind from_kind = object->map()->elements_kind();
 
   if (IsFastHoleyElementsKind(from_kind)) {
     to_kind = GetHoleyElementsKind(to_kind);
   }
 
-  if (from_kind == to_kind) return this;
+  if (from_kind == to_kind) return;
   // Don't update the site if to_kind isn't fast
   if (IsFastElementsKind(to_kind)) {
-    MaybeObject* maybe_failure = UpdateAllocationSite(to_kind);
-    if (maybe_failure->IsFailure()) return maybe_failure;
+    UpdateAllocationSite(object, to_kind);
   }
 
-  Isolate* isolate = GetIsolate();
-  if (elements() == isolate->heap()->empty_fixed_array() ||
+  Isolate* isolate = object->GetIsolate();
+  if (object->elements() == isolate->heap()->empty_fixed_array() ||
       (IsFastSmiOrObjectElementsKind(from_kind) &&
        IsFastSmiOrObjectElementsKind(to_kind)) ||
       (from_kind == FAST_DOUBLE_ELEMENTS &&
@@ -12889,55 +12792,48 @@ MaybeObject* JSObject::TransitionElementsKind(ElementsKind to_kind) {
     ASSERT(from_kind != TERMINAL_FAST_ELEMENTS_KIND);
     // No change is needed to the elements() buffer, the transition
     // only requires a map change.
-    MaybeObject* maybe_new_map = GetElementsTransitionMap(isolate, to_kind);
-    Map* new_map;
-    if (!maybe_new_map->To(&new_map)) return maybe_new_map;
-    // TODO(verwaest): Replace by MigrateToMap.
-    set_map(new_map);
+    Handle<Map> new_map = GetElementsTransitionMap(object, to_kind);
+    MigrateToMap(object, new_map);
     if (FLAG_trace_elements_transitions) {
-      FixedArrayBase* elms = FixedArrayBase::cast(elements());
-      PrintElementsTransition(stdout, from_kind, elms, to_kind, elms);
+      Handle<FixedArrayBase> elms(object->elements());
+      PrintElementsTransition(stdout, object, from_kind, elms, to_kind, elms);
     }
-    return this;
+    return;
   }
 
-  FixedArrayBase* elms = FixedArrayBase::cast(elements());
+  Handle<FixedArrayBase> elms(object->elements());
   uint32_t capacity = static_cast<uint32_t>(elms->length());
   uint32_t length = capacity;
 
-  if (IsJSArray()) {
-    Object* raw_length = JSArray::cast(this)->length();
+  if (object->IsJSArray()) {
+    Object* raw_length = Handle<JSArray>::cast(object)->length();
     if (raw_length->IsUndefined()) {
       // If length is undefined, then JSArray is being initialized and has no
       // elements, assume a length of zero.
       length = 0;
     } else {
-      CHECK(JSArray::cast(this)->length()->ToArrayIndex(&length));
+      CHECK(raw_length->ToArrayIndex(&length));
     }
   }
 
   if (IsFastSmiElementsKind(from_kind) &&
       IsFastDoubleElementsKind(to_kind)) {
-    MaybeObject* maybe_result =
-        SetFastDoubleElementsCapacityAndLength(capacity, length);
-    if (maybe_result->IsFailure()) return maybe_result;
-    ValidateElements();
-    return this;
+    SetFastDoubleElementsCapacityAndLength(object, capacity, length);
+    object->ValidateElements();
+    return;
   }
 
   if (IsFastDoubleElementsKind(from_kind) &&
       IsFastObjectElementsKind(to_kind)) {
-    MaybeObject* maybe_result = SetFastElementsCapacityAndLength(
-        capacity, length, kDontAllowSmiElements);
-    if (maybe_result->IsFailure()) return maybe_result;
-    ValidateElements();
-    return this;
+    SetFastElementsCapacityAndLength(object, capacity, length,
+                                     kDontAllowSmiElements);
+    object->ValidateElements();
+    return;
   }
 
   // This method should never be called for any other case than the ones
   // handled above.
   UNREACHABLE();
-  return GetIsolate()->heap()->null_value();
 }
 
 
@@ -12981,46 +12877,41 @@ MaybeObject* JSArray::JSArrayUpdateLengthFromIndex(uint32_t index,
 }
 
 
-MaybeObject* JSObject::GetElementWithInterceptor(Object* receiver,
-                                                 uint32_t index) {
-  Isolate* isolate = GetIsolate();
-  HandleScope scope(isolate);
+Handle<Object> JSObject::GetElementWithInterceptor(Handle<JSObject> object,
+                                                   Handle<Object> receiver,
+                                                   uint32_t index) {
+  Isolate* isolate = object->GetIsolate();
 
   // Make sure that the top context does not change when doing
   // callbacks or interceptor calls.
   AssertNoContextChange ncc(isolate);
 
-  Handle<InterceptorInfo> interceptor(GetIndexedInterceptor(), isolate);
-  Handle<Object> this_handle(receiver, isolate);
-  Handle<JSObject> holder_handle(this, isolate);
+  Handle<InterceptorInfo> interceptor(object->GetIndexedInterceptor(), isolate);
   if (!interceptor->getter()->IsUndefined()) {
     v8::IndexedPropertyGetterCallback getter =
         v8::ToCData<v8::IndexedPropertyGetterCallback>(interceptor->getter());
     LOG(isolate,
-        ApiIndexedPropertyAccess("interceptor-indexed-get", this, index));
+        ApiIndexedPropertyAccess("interceptor-indexed-get", *object, index));
     PropertyCallbackArguments
-        args(isolate, interceptor->data(), receiver, this);
+        args(isolate, interceptor->data(), *receiver, *object);
     v8::Handle<v8::Value> result = args.Call(getter, index);
-    RETURN_IF_SCHEDULED_EXCEPTION(isolate);
+    RETURN_HANDLE_IF_SCHEDULED_EXCEPTION(isolate, Object);
     if (!result.IsEmpty()) {
       Handle<Object> result_internal = v8::Utils::OpenHandle(*result);
       result_internal->VerifyApiCallResultType();
-      return *result_internal;
+      // Rebox handle before return.
+      return Handle<Object>(*result_internal, isolate);
     }
   }
 
-  Heap* heap = holder_handle->GetHeap();
-  ElementsAccessor* handler = holder_handle->GetElementsAccessor();
-  MaybeObject* raw_result = handler->Get(*this_handle,
-                                         *holder_handle,
-                                         index);
-  if (raw_result != heap->the_hole_value()) return raw_result;
+  ElementsAccessor* handler = object->GetElementsAccessor();
+  Handle<Object> result = handler->Get(receiver,  object, index);
+  RETURN_IF_EMPTY_HANDLE_VALUE(isolate, result, Handle<Object>());
+  if (!result->IsTheHole()) return result;
 
-  RETURN_IF_SCHEDULED_EXCEPTION(isolate);
-
-  Object* pt = holder_handle->GetPrototype();
-  if (pt == heap->null_value()) return heap->undefined_value();
-  return pt->GetElementWithReceiver(isolate, *this_handle, index);
+  Handle<Object> proto(object->GetPrototype(), isolate);
+  if (proto->IsNull()) return isolate->factory()->undefined_value();
+  return Object::GetElementWithReceiver(isolate, proto, receiver, index);
 }
 
 
@@ -13181,6 +13072,7 @@ bool JSObject::ShouldConvertToFastElements() {
 bool JSObject::ShouldConvertToFastDoubleElements(
     bool* has_smi_only_elements) {
   *has_smi_only_elements = false;
+  if (HasSloppyArgumentsElements()) return false;
   if (FLAG_unbox_double_arrays) {
     ASSERT(HasDictionaryElements());
     SeededNumberDictionary* dictionary = element_dictionary();
@@ -13980,7 +13872,7 @@ MaybeObject* HashTable<Shape, Key>::Allocate(Heap* heap,
                      ? at_least_space_for
                      : ComputeCapacity(at_least_space_for);
   if (capacity > HashTable::kMaxCapacity) {
-    return Failure::OutOfMemoryException(0x10);
+    v8::internal::Heap::FatalProcessOutOfMemory("invalid table size", true);
   }
 
   Object* obj;
@@ -14469,10 +14361,11 @@ Handle<Object> JSObject::PrepareElementsForSort(Handle<JSObject> object,
     object->ValidateElements();
 
     object->set_map_and_elements(*new_map, *fast_elements);
-  } else if (object->HasExternalArrayElements()) {
-    // External arrays cannot have holes or undefined elements.
+  } else if (object->HasExternalArrayElements() ||
+             object->HasFixedTypedArrayElements()) {
+    // Typed arrays cannot have holes or undefined elements.
     return handle(Smi::FromInt(
-        ExternalArray::cast(object->elements())->length()), isolate);
+        FixedArrayBase::cast(object->elements())->length()), isolate);
   } else if (!object->HasFastDoubleElements()) {
     EnsureWritableFastElements(object);
   }
@@ -14573,12 +14466,14 @@ ExternalArrayType JSTypedArray::type() {
   switch (elements()->map()->instance_type()) {
 #define INSTANCE_TYPE_TO_ARRAY_TYPE(Type, type, TYPE, ctype, size)            \
     case EXTERNAL_##TYPE##_ARRAY_TYPE:                                        \
+    case FIXED_##TYPE##_ARRAY_TYPE:                                           \
       return kExternal##Type##Array;
 
     TYPED_ARRAYS(INSTANCE_TYPE_TO_ARRAY_TYPE)
 #undef INSTANCE_TYPE_TO_ARRAY_TYPE
 
     default:
+      UNREACHABLE();
       return static_cast<ExternalArrayType>(-1);
   }
 }
@@ -16414,6 +16309,65 @@ void JSTypedArray::Neuter() {
   NeuterView();
   set_length(Smi::FromInt(0));
   set_elements(GetHeap()->EmptyExternalArrayForMap(map()));
+}
+
+
+static ElementsKind FixedToExternalElementsKind(ElementsKind elements_kind) {
+  switch (elements_kind) {
+#define TYPED_ARRAY_CASE(Type, type, TYPE, ctype, size)                       \
+    case TYPE##_ELEMENTS: return EXTERNAL_##TYPE##_ELEMENTS;
+
+    TYPED_ARRAYS(TYPED_ARRAY_CASE)
+#undef TYPED_ARRAY_CASE
+
+    default:
+      UNREACHABLE();
+      return FIRST_EXTERNAL_ARRAY_ELEMENTS_KIND;
+  }
+}
+
+
+Handle<JSArrayBuffer> JSTypedArray::MaterializeArrayBuffer(
+    Handle<JSTypedArray> typed_array) {
+
+  Handle<Map> map(typed_array->map());
+  Isolate* isolate = typed_array->GetIsolate();
+
+  ASSERT(IsFixedTypedArrayElementsKind(map->elements_kind()));
+
+  Handle<JSArrayBuffer> buffer = isolate->factory()->NewJSArrayBuffer();
+  Handle<FixedTypedArrayBase> fixed_typed_array(
+      FixedTypedArrayBase::cast(typed_array->elements()));
+  Runtime::SetupArrayBufferAllocatingData(isolate, buffer,
+      fixed_typed_array->DataSize(), false);
+  memcpy(buffer->backing_store(),
+         fixed_typed_array->DataPtr(),
+         fixed_typed_array->DataSize());
+  Handle<ExternalArray> new_elements =
+      isolate->factory()->NewExternalArray(
+          fixed_typed_array->length(), typed_array->type(),
+          static_cast<uint8_t*>(buffer->backing_store()));
+  Handle<Map> new_map = JSObject::GetElementsTransitionMap(
+          typed_array,
+          FixedToExternalElementsKind(map->elements_kind()));
+
+  buffer->set_weak_first_view(*typed_array);
+  ASSERT(typed_array->weak_next() == isolate->heap()->undefined_value());
+  typed_array->set_buffer(*buffer);
+  typed_array->set_map_and_elements(*new_map, *new_elements);
+
+  return buffer;
+}
+
+
+Handle<JSArrayBuffer> JSTypedArray::GetBuffer() {
+  Handle<Object> result(buffer(), GetIsolate());
+  if (*result != Smi::FromInt(0)) {
+    ASSERT(IsExternalArrayElementsKind(map()->elements_kind()));
+    return Handle<JSArrayBuffer>::cast(result);
+  }
+  Handle<JSTypedArray> self(this);
+  return MaterializeArrayBuffer(self);
 }
 
 

@@ -134,10 +134,11 @@
   'osr-elements-kind': [SKIP],
   'regress/regress-165637': [SKIP],
   'regress/regress-2249': [SKIP],
+  'debug-stepout-scope-part8': [PASS, ['arch == arm ', FAIL]],
 }],  # 'gc_stress == True'
 
 ##############################################################################
-['arch == a64', {
+['arch == arm64', {
 
   # Requires bigger stack size in the Genesis and if stack size is increased,
   # the test requires too much time to run.  However, the problem test covers
@@ -145,7 +146,8 @@
   'regress/regress-1132': [SKIP],
 
   # Pass but take too long to run. Skip.
-  # Some similar tests (with fewer iterations) may be included in a64-js tests.
+  # Some similar tests (with fewer iterations) may be included in arm64-js
+  # tests.
   'compiler/regress-arguments': [SKIP],
   'compiler/regress-gvn': [SKIP],
   'compiler/regress-max-locals-for-osr': [SKIP],
@@ -208,9 +210,9 @@
   'unicodelctest-no-optimization': [PASS, SLOW],
   'unicodelctest': [PASS, SLOW],
   'unicode-test': [PASS, SLOW],
-}],  # 'arch == a64'
+}],  # 'arch == arm64'
 
-['arch == a64 and mode == debug and simulator_run == True', {
+['arch == arm64 and mode == debug and simulator_run == True', {
 
   # Pass but take too long with the simulator in debug mode.
   'array-sort': [PASS, TIMEOUT],
@@ -220,7 +222,7 @@
   'harmony/symbols': [SKIP],
   # Issue 3219:
   'getters-on-elements': [PASS, ['gc_stress == True', FAIL]],
-}],  # 'arch == a64 and mode == debug and simulator_run == True'
+}],  # 'arch == arm64 and mode == debug and simulator_run == True'
 
 ##############################################################################
 ['asan == True', {
@@ -243,7 +245,7 @@
   'unicode-test': [PASS, ['mode == debug', PASS, FAIL]],
 
   # Times out often in release mode on ARM.
-  'compiler/regress-stacktrace-methods': [PASS, PASS, ['mode == release', TIMEOUT]],
+  'compiler/regress-stacktrace-methods': [PASS, ['mode == release', TIMEOUT]],
   'array-splice': [PASS, TIMEOUT],
 
   # Long running test.
@@ -294,7 +296,7 @@
   'array-constructor': [PASS, ['mode == debug', SKIP]],
 
   # Times out often in release mode on MIPS.
-  'compiler/regress-stacktrace-methods': [PASS, PASS, ['mode == release', TIMEOUT]],
+  'compiler/regress-stacktrace-methods': [PASS, ['mode == release', TIMEOUT]],
   'array-splice': [PASS, TIMEOUT],
 
   # Long running test.
@@ -362,6 +364,9 @@
 
   # Bug(v8:2978).
   'lithium/MathExp': [PASS, FAIL],
+
+  # Lead to OOM:
+  'string-oom-*': [SKIP],
 }],  # 'arch == nacl_ia32 or arch == nacl_x64'
 
 ##############################################################################

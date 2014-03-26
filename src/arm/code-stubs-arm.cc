@@ -76,7 +76,7 @@ void NumberToStringStub::InitializeInterfaceDescriptor(
   descriptor->register_param_count_ = 1;
   descriptor->register_params_ = registers;
   descriptor->deoptimization_handler_ =
-      Runtime::FunctionForId(Runtime::kNumberToString)->entry;
+      Runtime::FunctionForId(Runtime::kHiddenNumberToString)->entry;
 }
 
 
@@ -141,7 +141,7 @@ void RegExpConstructResultStub::InitializeInterfaceDescriptor(
   descriptor->register_param_count_ = 3;
   descriptor->register_params_ = registers;
   descriptor->deoptimization_handler_ =
-      Runtime::FunctionForId(Runtime::kRegExpConstructResult)->entry;
+      Runtime::FunctionForId(Runtime::kHiddenRegExpConstructResult)->entry;
 }
 
 
@@ -385,7 +385,7 @@ void StringAddStub::InitializeInterfaceDescriptor(
   descriptor->register_param_count_ = 2;
   descriptor->register_params_ = registers;
   descriptor->deoptimization_handler_ =
-      Runtime::FunctionForId(Runtime::kStringAdd)->entry;
+      Runtime::FunctionForId(Runtime::kHiddenStringAdd)->entry;
 }
 
 
@@ -1501,22 +1501,9 @@ void CEntryStub::GenerateAheadOfTime(Isolate* isolate) {
 }
 
 
-static void JumpIfOOM(MacroAssembler* masm,
-                      Register value,
-                      Register scratch,
-                      Label* oom_label) {
-  STATIC_ASSERT(Failure::OUT_OF_MEMORY_EXCEPTION == 3);
-  STATIC_ASSERT(kFailureTag == 3);
-  __ and_(scratch, value, Operand(0xf));
-  __ cmp(scratch, Operand(0xf));
-  __ b(eq, oom_label);
-}
-
-
 void CEntryStub::GenerateCore(MacroAssembler* masm,
                               Label* throw_normal_exception,
                               Label* throw_termination_exception,
-                              Label* throw_out_of_memory_exception,
                               bool do_gc,
                               bool always_allocate) {
   // r0: result parameter for PerformGC, if any
@@ -1614,16 +1601,10 @@ void CEntryStub::GenerateCore(MacroAssembler* masm,
   __ tst(r0, Operand(((1 << kFailureTypeTagSize) - 1) << kFailureTagSize));
   __ b(eq, &retry);
 
-  // Special handling of out of memory exceptions.
-  JumpIfOOM(masm, r0, ip, throw_out_of_memory_exception);
-
   // Retrieve the pending exception.
   __ mov(ip, Operand(ExternalReference(Isolate::kPendingExceptionAddress,
                                        isolate)));
   __ ldr(r0, MemOperand(ip));
-
-  // See if we just retrieved an OOM exception.
-  JumpIfOOM(masm, r0, ip, throw_out_of_memory_exception);
 
   // Clear the pending exception.
   __ LoadRoot(r3, Heap::kTheHoleValueRootIndex);
@@ -1679,13 +1660,11 @@ void CEntryStub::Generate(MacroAssembler* masm) {
 
   Label throw_normal_exception;
   Label throw_termination_exception;
-  Label throw_out_of_memory_exception;
 
   // Call into the runtime system.
   GenerateCore(masm,
                &throw_normal_exception,
                &throw_termination_exception,
-               &throw_out_of_memory_exception,
                false,
                false);
 
@@ -1693,7 +1672,6 @@ void CEntryStub::Generate(MacroAssembler* masm) {
   GenerateCore(masm,
                &throw_normal_exception,
                &throw_termination_exception,
-               &throw_out_of_memory_exception,
                true,
                false);
 
@@ -1703,29 +1681,8 @@ void CEntryStub::Generate(MacroAssembler* masm) {
   GenerateCore(masm,
                &throw_normal_exception,
                &throw_termination_exception,
-               &throw_out_of_memory_exception,
                true,
                true);
-
-  __ bind(&throw_out_of_memory_exception);
-  // Set external caught exception to false.
-  Isolate* isolate = masm->isolate();
-  ExternalReference external_caught(Isolate::kExternalCaughtExceptionAddress,
-                                    isolate);
-  __ mov(r0, Operand(false, RelocInfo::NONE32));
-  __ mov(r2, Operand(external_caught));
-  __ str(r0, MemOperand(r2));
-
-  // Set pending exception and r0 to out of memory exception.
-  Label already_have_failure;
-  JumpIfOOM(masm, r0, ip, &already_have_failure);
-  Failure* out_of_memory = Failure::OutOfMemoryException(0x1);
-  __ mov(r0, Operand(reinterpret_cast<int32_t>(out_of_memory)));
-  __ bind(&already_have_failure);
-  __ mov(r2, Operand(ExternalReference(Isolate::kPendingExceptionAddress,
-                                       isolate)));
-  __ str(r0, MemOperand(r2));
-  // Fall through to the next label.
 
   __ bind(&throw_termination_exception);
   __ ThrowUncatchable(r0);
@@ -2498,7 +2455,7 @@ void RegExpExecStub::Generate(MacroAssembler* masm) {
   // time or if regexp entry in generated code is turned off runtime switch or
   // at compilation.
 #ifdef V8_INTERPRETED_REGEXP
-  __ TailCallRuntime(Runtime::kRegExpExec, 4, 1);
+  __ TailCallRuntime(Runtime::kHiddenRegExpExec, 4, 1);
 #else  // V8_INTERPRETED_REGEXP
 
   // Stack frame on entry.
@@ -2873,7 +2830,7 @@ void RegExpExecStub::Generate(MacroAssembler* masm) {
 
   // Do the runtime call to execute the regexp.
   __ bind(&runtime);
-  __ TailCallRuntime(Runtime::kRegExpExec, 4, 1);
+  __ TailCallRuntime(Runtime::kHiddenRegExpExec, 4, 1);
 
   // Deferred code for string handling.
   // (6) Not a long external string?  If yes, go to (8).
@@ -3268,7 +3225,7 @@ void StringCharCodeAtGenerator::GenerateSlow(
   call_helper.BeforeCall(masm);
   __ SmiTag(index_);
   __ Push(object_, index_);
-  __ CallRuntime(Runtime::kStringCharCodeAt, 2);
+  __ CallRuntime(Runtime::kHiddenStringCharCodeAt, 2);
   __ Move(result_, r0);
   call_helper.AfterCall(masm);
   __ jmp(&exit_);
@@ -3716,7 +3673,7 @@ void SubStringStub::Generate(MacroAssembler* masm) {
 
   // Just jump to runtime to create the sub string.
   __ bind(&runtime);
-  __ TailCallRuntime(Runtime::kSubString, 3, 1);
+  __ TailCallRuntime(Runtime::kHiddenSubString, 3, 1);
 
   __ bind(&single_char);
   // r0: original string
@@ -3874,7 +3831,7 @@ void StringCompareStub::Generate(MacroAssembler* masm) {
   // Call the runtime; it returns -1 (less), 0 (equal), or 1 (greater)
   // tagged as a small integer.
   __ bind(&runtime);
-  __ TailCallRuntime(Runtime::kStringCompare, 2, 1);
+  __ TailCallRuntime(Runtime::kHiddenStringCompare, 2, 1);
 }
 
 
@@ -4361,7 +4318,7 @@ void ICCompareStub::GenerateStrings(MacroAssembler* masm) {
   if (equality) {
     __ TailCallRuntime(Runtime::kStringEquals, 2, 1);
   } else {
-    __ TailCallRuntime(Runtime::kStringCompare, 2, 1);
+    __ TailCallRuntime(Runtime::kHiddenStringCompare, 2, 1);
   }
 
   __ bind(&miss);

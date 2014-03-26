@@ -140,7 +140,16 @@ endif
 # deprecation_warnings=on
 ifeq ($(deprecationwarnings), on)
   GYPFLAGS += -Dv8_deprecation_warnings=1
-endif 
+endif
+# asan=/path/to/clang++
+ifneq ($(strip $(asan)),)
+  GYPFLAGS += -Dasan=1
+  export CXX="$(asan)"
+  export CXX_host="$(asan)"
+  export LINK="$(asan)"
+  export ASAN_SYMBOLIZER_PATH="$(dir $(asan))llvm-symbolizer"
+endif
+
 # arm specific flags.
 # arm_version=<number | "default">
 ifneq ($(strip $(arm_version)),)
@@ -231,11 +240,11 @@ endif
 
 # Architectures and modes to be compiled. Consider these to be internal
 # variables, don't override them (use the targets instead).
-ARCHES = ia32 x64 arm a64 mipsel ppc ppc64
+ARCHES = ia32 x64 arm arm64 mipsel ppc ppc64
 DEFAULT_ARCHES = ia32 x64 arm ppc ppc64
 MODES = release debug optdebug
 DEFAULT_MODES = release debug
-ANDROID_ARCHES = android_ia32 android_arm android_a64 android_mipsel
+ANDROID_ARCHES = android_ia32 android_arm android_arm64 android_mipsel
 NACL_ARCHES = nacl_ia32 nacl_x64
 
 # List of files that trigger Makefile regeneration:
@@ -381,8 +390,8 @@ native.check: native
 	    --arch-and-mode=. $(TESTFLAGS)
 
 SUPERFASTTESTMODES = ia32.release
-FASTTESTMODES = $(SUPERFASTTESTMODES),x64.release,ia32.optdebug,x64.optdebug,arm.optdebug,a64.release
-FASTCOMPILEMODES = $(FASTTESTMODES),a64.optdebug
+FASTTESTMODES = $(SUPERFASTTESTMODES),x64.release,ia32.optdebug,x64.optdebug,arm.optdebug,arm64.release
+FASTCOMPILEMODES = $(FASTTESTMODES),arm64.optdebug
 
 COMMA = ,
 EMPTY =
@@ -473,4 +482,4 @@ dependencies:
 	    --revision 1831
 	svn checkout --force \
 	    https://src.chromium.org/chrome/trunk/deps/third_party/icu46 \
-	    third_party/icu --revision 239289
+	    third_party/icu --revision 258359

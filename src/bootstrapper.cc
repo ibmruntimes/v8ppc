@@ -88,6 +88,8 @@ Handle<String> Bootstrapper::NativesSourceLookup(int index) {
                                           source.length());
     Handle<String> source_code =
         isolate_->factory()->NewExternalStringFromAscii(resource);
+    // We do not expect this to throw an exception. Change this if it does.
+    CHECK_NOT_EMPTY_HANDLE(isolate_, source_code);
     heap->natives_source_cache()->set(index, *source_code);
   }
   Handle<Object> cached_source(heap->natives_source_cache()->get(index),
@@ -1097,7 +1099,7 @@ void Genesis::InitializeGlobal(Handle<GlobalObject> inner_global,
 #define INSTALL_TYPED_ARRAY(Type, type, TYPE, ctype, size)                    \
     {                                                                         \
       Handle<JSFunction> fun = InstallTypedArray(#Type "Array",               \
-          EXTERNAL_##TYPE##_ELEMENTS);                                        \
+          TYPE##_ELEMENTS);                                                   \
       native_context()->set_##type##_array_fun(*fun);                         \
     }
     TYPED_ARRAYS(INSTALL_TYPED_ARRAY)
@@ -1310,9 +1312,6 @@ void Genesis::InitializeGlobal(Handle<GlobalObject> inner_global,
     delegate->shared()->DontAdaptArguments();
   }
 
-  // Initialize the out of memory slot.
-  native_context()->set_out_of_memory(heap->false_value());
-
   // Initialize the embedder data slot.
   Handle<FixedArray> embedder_data = factory->NewFixedArray(3);
   native_context()->set_embedder_data(*embedder_data);
@@ -1466,6 +1465,7 @@ bool Genesis::CompileExperimentalBuiltin(Isolate* isolate, int index) {
   Handle<String> source_code =
       factory->NewStringFromAscii(
           ExperimentalNatives::GetRawScriptSource(index));
+  RETURN_IF_EMPTY_HANDLE_VALUE(isolate, source_code, false);
   return CompileNative(isolate, name, source_code);
 }
 
@@ -1515,6 +1515,7 @@ bool Genesis::CompileScriptCached(Isolate* isolate,
   if (cache == NULL || !cache->Lookup(name, &function_info)) {
     ASSERT(source->IsOneByteRepresentation());
     Handle<String> script_name = factory->NewStringFromUtf8(name);
+    ASSERT(!script_name.is_null());
     function_info = Compiler::CompileScript(
         source,
         script_name,
@@ -2083,8 +2084,10 @@ static Handle<JSObject> ResolveBuiltinIdHolder(
   ASSERT_EQ(".prototype", period_pos);
   Vector<const char> property(holder_expr,
                               static_cast<int>(period_pos - holder_expr));
+  Handle<String> property_string = factory->InternalizeUtf8String(property);
+  ASSERT(!property_string.is_null());
   Handle<JSFunction> function = Handle<JSFunction>::cast(
-      GetProperty(isolate, global, factory->InternalizeUtf8String(property)));
+      GetProperty(isolate, global, property_string));
   return Handle<JSObject>(JSObject::cast(function->prototype()));
 }
 
@@ -2352,6 +2355,8 @@ bool Genesis::InstallExtension(Isolate* isolate,
   }
   Handle<String> source_code =
       isolate->factory()->NewExternalStringFromAscii(extension->source());
+  // We do not expect this to throw an exception. Change this if it does.
+  CHECK_NOT_EMPTY_HANDLE(isolate, source_code);
   bool result = CompileScriptCached(isolate,
                                     CStrVector(extension->name()),
                                     source_code,

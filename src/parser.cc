@@ -215,6 +215,7 @@ Handle<String> Parser::LookupCachedSymbol(int symbol_id) {
   Handle<String> result = symbol_cache_.at(symbol_id);
   if (result.is_null()) {
     result = scanner()->AllocateInternalizedString(isolate_);
+    ASSERT(!result.is_null());
     symbol_cache_.at(symbol_id) = result;
     return result;
   }
@@ -439,12 +440,33 @@ bool ParserTraits::IsIdentifier(Expression* expression) {
 }
 
 
+void ParserTraits::PushPropertyName(FuncNameInferrer* fni,
+                                    Expression* expression) {
+  if (expression->IsPropertyName()) {
+    fni->PushLiteralName(expression->AsLiteral()->AsPropertyName());
+  } else {
+    fni->PushLiteralName(
+        parser_->isolate()->factory()->anonymous_function_string());
+  }
+}
+
+
 void ParserTraits::CheckAssigningFunctionLiteralToProperty(Expression* left,
                                                            Expression* right) {
   ASSERT(left != NULL);
   if (left->AsProperty() != NULL &&
       right->AsFunctionLiteral() != NULL) {
     right->AsFunctionLiteral()->set_pretenure();
+  }
+}
+
+
+void ParserTraits::CheckPossibleEvalCall(Expression* expression,
+                                         Scope* scope) {
+  VariableProxy* callee = expression->AsVariableProxy();
+  if (callee != NULL &&
+      callee->IsVariable(parser_->isolate()->factory()->eval_string())) {
+    scope->DeclarationScope()->RecordEvalCall();
   }
 }
 
@@ -594,6 +616,7 @@ void ParserTraits::ReportMessageAt(Scanner::Location source_location,
   Handle<FixedArray> elements = factory->NewFixedArray(args.length());
   for (int i = 0; i < args.length(); i++) {
     Handle<String> arg_string = factory->NewStringFromUtf8(CStrVector(args[i]));
+    ASSERT(!arg_string.is_null());
     elements->set(i, *arg_string);
   }
   Handle<JSArray> array = factory->NewJSArrayWithElements(elements);
@@ -651,7 +674,10 @@ Handle<String> ParserTraits::GetSymbol(Scanner* scanner) {
       parser_->scanner()->LogSymbol(parser_->log_, parser_->position());
     }
   }
-  return parser_->scanner()->AllocateInternalizedString(parser_->isolate_);
+  Handle<String> result =
+      parser_->scanner()->AllocateInternalizedString(parser_->isolate_);
+  ASSERT(!result.is_null());
+  return result;
 }
 
 
@@ -737,11 +763,6 @@ FunctionLiteral* ParserTraits::ParseFunctionLiteral(
   return parser_->ParseFunctionLiteral(name, function_name_location,
                                        name_is_strict_reserved, is_generator,
                                        function_token_position, type, ok);
-}
-
-
-Expression* ParserTraits::ParsePostfixExpression(bool* ok) {
-  return parser_->ParsePostfixExpression(ok);
 }
 
 
@@ -877,7 +898,7 @@ FunctionLiteral* Parser::DoParseProgram(CompilationInfo* info,
       CheckOctalLiteral(beg_pos, scanner()->location().end_pos, &ok);
     }
 
-    if (ok && FLAG_harmony_scoping && strict_mode() == STRICT) {
+    if (ok && allow_harmony_scoping() && strict_mode() == STRICT) {
       CheckConflictingVarDeclarations(scope_, &ok);
     }
 
@@ -1682,7 +1703,7 @@ void Parser::Declare(Declaration* declaration, bool resolve, bool* ok) {
       // because the var declaration is hoisted to the function scope where 'x'
       // is already bound.
       ASSERT(IsDeclaredVariableMode(var->mode()));
-      if (FLAG_harmony_scoping && strict_mode() == STRICT) {
+      if (allow_harmony_scoping() && strict_mode() == STRICT) {
         // In harmony we treat re-declarations as early errors. See
         // ES5 16 for a definition of early errors.
         SmartArrayPointer<char> c_string = name->ToCString(DISALLOW_NULLS);
@@ -1693,8 +1714,8 @@ void Parser::Declare(Declaration* declaration, bool resolve, bool* ok) {
         return;
       }
       Handle<String> message_string =
-          isolate()->factory()->NewStringFromUtf8(CStrVector("Variable"),
-                                                  TENURED);
+          isolate()->factory()->InternalizeOneByteString(
+              STATIC_ASCII_VECTOR("Variable"));
       Expression* expression =
           NewThrowTypeError(isolate()->factory()->redeclaration_string(),
                             message_string, name);
@@ -1860,7 +1881,7 @@ Statement* Parser::ParseFunctionDeclaration(ZoneStringList* names, bool* ok) {
   // In extended mode, a function behaves as a lexical binding, except in the
   // global scope.
   VariableMode mode =
-      FLAG_harmony_scoping &&
+      allow_harmony_scoping() &&
       strict_mode() == STRICT && !scope_->is_global_scope() ? LET : VAR;
   VariableProxy* proxy = NewUnresolved(name, mode, Interface::NewValue());
   Declaration* declaration =
@@ -1872,7 +1893,7 @@ Statement* Parser::ParseFunctionDeclaration(ZoneStringList* names, bool* ok) {
 
 
 Block* Parser::ParseBlock(ZoneStringList* labels, bool* ok) {
-  if (FLAG_harmony_scoping && strict_mode() == STRICT) {
+  if (allow_harmony_scoping() && strict_mode() == STRICT) {
     return ParseScopedBlock(labels, ok);
   }
 
@@ -2000,7 +2021,7 @@ Block* Parser::ParseVariableDeclarations(
         init_op = Token::INIT_CONST_LEGACY;
         break;
       case STRICT:
-        if (FLAG_harmony_scoping) {
+        if (allow_harmony_scoping()) {
           if (var_context == kStatement) {
             // In strict mode 'const' declarations are only allowed in source
             // element positions.
@@ -2027,7 +2048,7 @@ Block* Parser::ParseVariableDeclarations(
     //   contained in extended code.
     //
     // TODO(rossberg): make 'let' a legal identifier in sloppy mode.
-    if (!FLAG_harmony_scoping || strict_mode() == SLOPPY) {
+    if (!allow_harmony_scoping() || strict_mode() == SLOPPY) {
       ReportMessage("illegal_let", Vector<const char*>::empty());
       *ok = false;
       return NULL;
@@ -2654,7 +2675,7 @@ TryStatement* Parser::ParseTryStatement(bool* ok) {
 
     Target target(&this->target_stack_, &catch_collector);
     VariableMode mode =
-        FLAG_harmony_scoping && strict_mode() == STRICT ? LET : VAR;
+        allow_harmony_scoping() && strict_mode() == STRICT ? LET : VAR;
     catch_variable =
         catch_scope->DeclareLocal(name, mode, kCreatedInitialized);
 
@@ -2922,6 +2943,7 @@ Statement* Parser::ParseForStatement(ZoneStringList* labels, bool* ok) {
         Factory* heap_factory = isolate()->factory();
         Handle<String> tempstr =
             heap_factory->NewConsString(heap_factory->dot_for_string(), name);
+        RETURN_IF_EMPTY_HANDLE_VALUE(isolate(), tempstr, 0);
         Handle<String> tempname = heap_factory->InternalizeString(tempstr);
         Variable* temp = scope_->DeclarationScope()->NewTemporary(tempname);
         VariableProxy* temp_proxy = factory()->NewVariableProxy(temp);
@@ -3039,231 +3061,6 @@ Statement* Parser::ParseForStatement(ZoneStringList* labels, bool* ok) {
     loop->Initialize(init, cond, next, body);
     return loop;
   }
-}
-
-
-Expression* Parser::ParsePostfixExpression(bool* ok) {
-  // PostfixExpression ::
-  //   LeftHandSideExpression ('++' | '--')?
-
-  Scanner::Location lhs_location = scanner()->peek_location();
-  Expression* expression = ParseLeftHandSideExpression(CHECK_OK);
-  if (!scanner()->HasAnyLineTerminatorBeforeNext() &&
-      Token::IsCountOp(peek())) {
-    if (expression == NULL || !expression->IsValidLeftHandSide()) {
-      ReportMessageAt(lhs_location, "invalid_lhs_in_postfix_op", true);
-      *ok = false;
-      return NULL;
-    }
-
-    if (strict_mode() == STRICT) {
-      // Postfix expression operand in strict mode may not be eval or arguments.
-      CheckStrictModeLValue(expression, CHECK_OK);
-    }
-    MarkExpressionAsLValue(expression);
-
-    Token::Value next = Next();
-    expression =
-        factory()->NewCountOperation(next,
-                                     false /* postfix */,
-                                     expression,
-                                     position());
-  }
-  return expression;
-}
-
-
-Expression* Parser::ParseLeftHandSideExpression(bool* ok) {
-  // LeftHandSideExpression ::
-  //   (NewExpression | MemberExpression) ...
-
-  Expression* result = ParseMemberWithNewPrefixesExpression(CHECK_OK);
-
-  while (true) {
-    switch (peek()) {
-      case Token::LBRACK: {
-        Consume(Token::LBRACK);
-        int pos = position();
-        Expression* index = ParseExpression(true, CHECK_OK);
-        result = factory()->NewProperty(result, index, pos);
-        Expect(Token::RBRACK, CHECK_OK);
-        break;
-      }
-
-      case Token::LPAREN: {
-        int pos;
-        if (scanner()->current_token() == Token::IDENTIFIER) {
-          // For call of an identifier we want to report position of
-          // the identifier as position of the call in the stack trace.
-          pos = position();
-        } else {
-          // For other kinds of calls we record position of the parenthesis as
-          // position of the call.  Note that this is extremely important for
-          // expressions of the form function(){...}() for which call position
-          // should not point to the closing brace otherwise it will intersect
-          // with positions recorded for function literal and confuse debugger.
-          pos = peek_position();
-          // Also the trailing parenthesis are a hint that the function will
-          // be called immediately. If we happen to have parsed a preceding
-          // function literal eagerly, we can also compile it eagerly.
-          if (result->IsFunctionLiteral() && mode() == PARSE_EAGERLY) {
-            result->AsFunctionLiteral()->set_parenthesized();
-          }
-        }
-        ZoneList<Expression*>* args = ParseArguments(CHECK_OK);
-
-        // Keep track of eval() calls since they disable all local variable
-        // optimizations.
-        // The calls that need special treatment are the
-        // direct eval calls. These calls are all of the form eval(...), with
-        // no explicit receiver.
-        // These calls are marked as potentially direct eval calls. Whether
-        // they are actually direct calls to eval is determined at run time.
-        VariableProxy* callee = result->AsVariableProxy();
-        if (callee != NULL &&
-            callee->IsVariable(isolate()->factory()->eval_string())) {
-          scope_->DeclarationScope()->RecordEvalCall();
-        }
-        result = factory()->NewCall(result, args, pos);
-        if (fni_ != NULL) fni_->RemoveLastFunction();
-        break;
-      }
-
-      case Token::PERIOD: {
-        Consume(Token::PERIOD);
-        int pos = position();
-        Handle<String> name = ParseIdentifierName(CHECK_OK);
-        result = factory()->NewProperty(
-            result, factory()->NewLiteral(name, pos), pos);
-        if (fni_ != NULL) fni_->PushLiteralName(name);
-        break;
-      }
-
-      default:
-        return result;
-    }
-  }
-}
-
-
-Expression* Parser::ParseMemberWithNewPrefixesExpression(bool* ok) {
-  // NewExpression ::
-  //   ('new')+ MemberExpression
-
-  // The grammar for new expressions is pretty warped. We can have several 'new'
-  // keywords following each other, and then a MemberExpression. When we see '('
-  // after the MemberExpression, it's associated with the rightmost unassociated
-  // 'new' to create a NewExpression with arguments. However, a NewExpression
-  // can also occur without arguments.
-
-  // Examples of new expression:
-  // new foo.bar().baz means (new (foo.bar)()).baz
-  // new foo()() means (new foo())()
-  // new new foo()() means (new (new foo())())
-  // new new foo means new (new foo)
-  // new new foo() means new (new foo())
-  // new new foo().bar().baz means (new (new foo()).bar()).baz
-
-  if (peek() == Token::NEW) {
-    Consume(Token::NEW);
-    int new_pos = position();
-    Expression* result = ParseMemberWithNewPrefixesExpression(CHECK_OK);
-    if (peek() == Token::LPAREN) {
-      // NewExpression with arguments.
-      ZoneList<Expression*>* args = ParseArguments(CHECK_OK);
-      result = factory()->NewCallNew(result, args, new_pos);
-      // The expression can still continue with . or [ after the arguments.
-      result = ParseMemberExpressionContinuation(result, CHECK_OK);
-      return result;
-    }
-    // NewExpression without arguments.
-    return factory()->NewCallNew(
-        result, new(zone()) ZoneList<Expression*>(0, zone()), new_pos);
-  }
-  // No 'new' keyword.
-  return ParseMemberExpression(ok);
-}
-
-
-Expression* Parser::ParseMemberExpression(bool* ok) {
-  // MemberExpression ::
-  //   (PrimaryExpression | FunctionLiteral)
-  //     ('[' Expression ']' | '.' Identifier | Arguments)*
-
-  // The '[' Expression ']' and '.' Identifier parts are parsed by
-  // ParseMemberExpressionContinuation, and the Arguments part is parsed by the
-  // caller.
-
-  // Parse the initial primary or function expression.
-  Expression* result = NULL;
-  if (peek() == Token::FUNCTION) {
-    Consume(Token::FUNCTION);
-    int function_token_position = position();
-    bool is_generator = allow_generators() && Check(Token::MUL);
-    Handle<String> name;
-    bool is_strict_reserved_name = false;
-    Scanner::Location function_name_location = Scanner::Location::invalid();
-    FunctionLiteral::FunctionType function_type =
-        FunctionLiteral::ANONYMOUS_EXPRESSION;
-    if (peek_any_identifier()) {
-      name = ParseIdentifierOrStrictReservedWord(&is_strict_reserved_name,
-                                                 CHECK_OK);
-      function_name_location = scanner()->location();
-      function_type = FunctionLiteral::NAMED_EXPRESSION;
-    }
-    result = ParseFunctionLiteral(name,
-                                  function_name_location,
-                                  is_strict_reserved_name,
-                                  is_generator,
-                                  function_token_position,
-                                  function_type,
-                                  CHECK_OK);
-  } else {
-    result = ParsePrimaryExpression(CHECK_OK);
-  }
-
-  result = ParseMemberExpressionContinuation(result, CHECK_OK);
-  return result;
-}
-
-
-Expression* Parser::ParseMemberExpressionContinuation(Expression* expression,
-                                                      bool* ok) {
-  // Parses this part of MemberExpression:
-  // ('[' Expression ']' | '.' Identifier)*
-  while (true) {
-    switch (peek()) {
-      case Token::LBRACK: {
-        Consume(Token::LBRACK);
-        int pos = position();
-        Expression* index = ParseExpression(true, CHECK_OK);
-        expression = factory()->NewProperty(expression, index, pos);
-        if (fni_ != NULL) {
-          if (index->IsPropertyName()) {
-            fni_->PushLiteralName(index->AsLiteral()->AsPropertyName());
-          } else {
-            fni_->PushLiteralName(
-                isolate()->factory()->anonymous_function_string());
-          }
-        }
-        Expect(Token::RBRACK, CHECK_OK);
-        break;
-      }
-      case Token::PERIOD: {
-        Consume(Token::PERIOD);
-        int pos = position();
-        Handle<String> name = ParseIdentifierName(CHECK_OK);
-        expression = factory()->NewProperty(
-            expression, factory()->NewLiteral(name, pos), pos);
-        if (fni_ != NULL) fni_->PushLiteralName(name);
-        break;
-      }
-      default:
-        return expression;
-    }
-  }
-  ASSERT(false);
-  return NULL;
 }
 
 
@@ -3389,7 +3186,7 @@ FunctionLiteral* Parser::ParseFunctionLiteral(
   Scope* original_declaration_scope = original_scope_->DeclarationScope();
   Scope* scope =
       function_type == FunctionLiteral::DECLARATION &&
-      (!FLAG_harmony_scoping || strict_mode() == SLOPPY) &&
+      (!allow_harmony_scoping() || strict_mode() == SLOPPY) &&
       (original_scope_ == original_declaration_scope ||
        declaration_scope != original_declaration_scope)
           ? NewScope(declaration_scope, FUNCTION_SCOPE)
@@ -3480,11 +3277,12 @@ FunctionLiteral* Parser::ParseFunctionLiteral(
     Variable* fvar = NULL;
     Token::Value fvar_init_op = Token::INIT_CONST_LEGACY;
     if (function_type == FunctionLiteral::NAMED_EXPRESSION) {
-      if (FLAG_harmony_scoping && strict_mode() == STRICT) {
+      if (allow_harmony_scoping() && strict_mode() == STRICT) {
         fvar_init_op = Token::INIT_CONST;
       }
-      VariableMode fvar_mode = FLAG_harmony_scoping && strict_mode() == STRICT
-          ? CONST : CONST_LEGACY;
+      VariableMode fvar_mode =
+          allow_harmony_scoping() && strict_mode() == STRICT ? CONST
+                                                             : CONST_LEGACY;
       fvar = new(zone()) Variable(scope_,
          function_name, fvar_mode, true /* is valid LHS */,
          Variable::NORMAL, kCreatedInitialized, Interface::NewConst());
@@ -3706,7 +3504,7 @@ FunctionLiteral* Parser::ParseFunctionLiteral(
     dont_optimize_reason = factory()->visitor()->dont_optimize_reason();
   }
 
-  if (FLAG_harmony_scoping && strict_mode() == STRICT) {
+  if (allow_harmony_scoping() && strict_mode() == STRICT) {
     CheckConflictingVarDeclarations(scope, CHECK_OK);
   }
 
@@ -4023,6 +3821,7 @@ bool RegExpParser::simple() {
 RegExpTree* RegExpParser::ReportError(Vector<const char> message) {
   failed_ = true;
   *error_ = isolate()->factory()->NewStringFromAscii(message, NOT_TENURED);
+  ASSERT(!error_->is_null());
   // Zip to the end to make sure the no more input is read.
   current_ = kEndMarker;
   next_pos_ = in()->length();

@@ -63,6 +63,33 @@ function SymbolValueOf() {
 }
 
 
+function InternalSymbol(key) {
+  var internal_registry = %SymbolRegistry().for_intern;
+  if (IS_UNDEFINED(internal_registry[key])) {
+    internal_registry[key] = %CreateSymbol(key);
+  }
+  return internal_registry[key];
+}
+
+
+function SymbolFor(key) {
+  key = TO_STRING_INLINE(key);
+  var registry = %SymbolRegistry();
+  if (IS_UNDEFINED(registry.for[key])) {
+    var symbol = %CreateSymbol(key);
+    registry.for[key] = symbol;
+    registry.keyFor[symbol] = key;
+  }
+  return registry.for[key];
+}
+
+
+function SymbolKeyFor(symbol) {
+  if (!IS_SYMBOL(symbol)) throw MakeTypeError("not_a_symbol", [symbol]);
+  return %SymbolRegistry().keyFor[symbol];
+}
+
+
 // ES6 19.1.2.8
 function ObjectGetOwnPropertySymbols(obj) {
   if (!IS_SPEC_OBJECT(obj)) {
@@ -78,11 +105,36 @@ function ObjectGetOwnPropertySymbols(obj) {
 
 //-------------------------------------------------------------------
 
+var symbolCreate = InternalSymbol("Symbol.create");
+var symbolHasInstance = InternalSymbol("Symbol.hasInstance");
+var symbolIsConcatSpreadable = InternalSymbol("Symbol.isConcatSpreadable");
+var symbolIsRegExp = InternalSymbol("Symbol.isRegExp");
+var symbolIterator = InternalSymbol("Symbol.iterator");
+var symbolToStringTag = InternalSymbol("Symbol.toStringTag");
+var symbolUnscopables = InternalSymbol("Symbol.unscopables");
+
+
+//-------------------------------------------------------------------
+
 function SetUpSymbol() {
   %CheckIsBootstrapping();
 
   %SetCode($Symbol, SymbolConstructor);
   %FunctionSetPrototype($Symbol, new $Object());
+
+  InstallConstants($Symbol, $Array(
+    "create", symbolCreate,
+    "hasInstance", symbolHasInstance,
+    "isConcatSpreadable", symbolIsConcatSpreadable,
+    "isRegExp", symbolIsRegExp,
+    "iterator", symbolIterator,
+    "toStringTag", symbolToStringTag,
+    "unscopables", symbolUnscopables
+  ));
+  InstallFunctions($Symbol, DONT_ENUM, $Array(
+    "for", SymbolFor,
+    "keyFor", SymbolKeyFor
+  ));
 
   %SetProperty($Symbol.prototype, "constructor", $Symbol, DONT_ENUM);
   InstallFunctions($Symbol.prototype, DONT_ENUM, $Array(

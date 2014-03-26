@@ -156,7 +156,7 @@ static void Generate_DebugBreakCallHelper(MacroAssembler* masm,
     // Read current padding counter and skip corresponding number of words.
     __ Pop(kScratchRegister);
     __ SmiToInteger32(kScratchRegister, kScratchRegister);
-    __ lea(rsp, Operand(rsp, kScratchRegister, times_pointer_size, 0));
+    __ leap(rsp, Operand(rsp, kScratchRegister, times_pointer_size, 0));
 
     // Get rid of the internal frame.
   }
@@ -164,7 +164,7 @@ static void Generate_DebugBreakCallHelper(MacroAssembler* masm,
   // If this call did not replace a call but patched other code then there will
   // be an unwanted return address left on the stack. Here we get rid of that.
   if (convert_call_to_jmp) {
-    __ addq(rsp, Immediate(kPCOnStackSize));
+    __ addp(rsp, Immediate(kPCOnStackSize));
   }
 
   // Now that the break point has been handled, resume normal execution by
@@ -327,7 +327,7 @@ void Debug::GenerateFrameDropperLiveEdit(MacroAssembler* masm) {
   __ movp(Operand(rax, 0), Immediate(0));
 
   // We do not know our frame height, but set rsp based on rbp.
-  __ lea(rsp, Operand(rbp, -1 * kPointerSize));
+  __ leap(rsp, Operand(rbp, -1 * kPointerSize));
 
   __ Pop(rdi);  // Function.
   __ popq(rbp);
@@ -338,7 +338,7 @@ void Debug::GenerateFrameDropperLiveEdit(MacroAssembler* masm) {
   // Get function code.
   __ movp(rdx, FieldOperand(rdi, JSFunction::kSharedFunctionInfoOffset));
   __ movp(rdx, FieldOperand(rdx, SharedFunctionInfo::kCodeOffset));
-  __ lea(rdx, FieldOperand(rdx, Code::kHeaderSize));
+  __ leap(rdx, FieldOperand(rdx, Code::kHeaderSize));
 
   // Re-run JSFunction, rdi is function, rsi is context.
   __ jmp(rdx);

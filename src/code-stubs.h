@@ -100,8 +100,8 @@ namespace internal {
   V(StringLength)                        \
   V(KeyedStringLength)
 
-// List of code stubs only used on ARM platforms.
-#if defined(V8_TARGET_ARCH_ARM) || defined(V8_TARGET_ARCH_A64)
+// List of code stubs only used on ARM 32 bits platforms.
+#if V8_TARGET_ARCH_ARM
 #define CODE_STUB_LIST_ARM(V)  \
   V(GetProperty)               \
   V(SetProperty)               \
@@ -109,6 +109,19 @@ namespace internal {
   V(DirectCEntry)
 #else
 #define CODE_STUB_LIST_ARM(V)
+#endif
+
+// List of code stubs only used on ARM 64 bits platforms.
+#if V8_TARGET_ARCH_ARM64
+#define CODE_STUB_LIST_ARM64(V)  \
+  V(GetProperty)               \
+  V(SetProperty)               \
+  V(InvokeBuiltin)             \
+  V(DirectCEntry)              \
+  V(StoreRegistersState)       \
+  V(RestoreRegistersState)
+#else
+#define CODE_STUB_LIST_ARM64(V)
 #endif
 
 // List of code stubs only used on PPC platforms.
@@ -138,6 +151,7 @@ namespace internal {
 #define CODE_STUB_LIST(V)            \
   CODE_STUB_LIST_ALL_PLATFORMS(V)    \
   CODE_STUB_LIST_ARM(V)              \
+  CODE_STUB_LIST_ARM64(V)           \
   CODE_STUB_LIST_PPC(V)              \
   CODE_STUB_LIST_MIPS(V)
 
@@ -454,8 +468,8 @@ class RuntimeCallHelper {
 #include "ia32/code-stubs-ia32.h"
 #elif V8_TARGET_ARCH_X64
 #include "x64/code-stubs-x64.h"
-#elif V8_TARGET_ARCH_A64
-#include "a64/code-stubs-a64.h"
+#elif V8_TARGET_ARCH_ARM64
+#include "arm64/code-stubs-arm64.h"
 #elif V8_TARGET_ARCH_ARM
 #include "arm/code-stubs-arm.h"
 #elif V8_TARGET_ARCH_PPC
@@ -1511,7 +1525,6 @@ class CEntryStub : public PlatformCodeStub {
   void GenerateCore(MacroAssembler* masm,
                     Label* throw_normal_exception,
                     Label* throw_termination_exception,
-                    Label* throw_out_of_memory_exception,
                     bool do_gc,
                     bool always_allocate_scope);
 

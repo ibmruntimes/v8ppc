@@ -111,7 +111,6 @@ namespace internal {
   F(FlattenString, 1, 1) \
   F(TryMigrateInstance, 1, 1) \
   F(NotifyContextDisposed, 0, 1) \
-  F(MaxSmi, 0, 1) \
   \
   /* Array join support */ \
   F(PushIfAbsent, 2, 1) \
@@ -312,8 +311,10 @@ namespace internal {
   /* Harmony symbols */ \
   F(CreateSymbol, 1, 1) \
   F(CreatePrivateSymbol, 1, 1) \
+  F(CreateGlobalPrivateSymbol, 1, 1) \
   F(NewSymbolWrapper, 1, 1) \
   F(SymbolDescription, 1, 1) \
+  F(SymbolRegistry, 0, 1) \
   F(SymbolIsPrivate, 1, 1) \
   \
   /* Harmony proxies */ \
@@ -367,7 +368,6 @@ namespace internal {
   F(ArrayBufferIsView, 1, 1) \
   F(ArrayBufferNeuter, 1, 1) \
   \
-  F(TypedArrayInitialize, 5, 1) \
   F(TypedArrayInitializeFromArrayLike, 4, 1) \
   F(TypedArrayGetBuffer, 1, 1) \
   F(TypedArrayGetByteLength, 1, 1) \
@@ -375,7 +375,6 @@ namespace internal {
   F(TypedArrayGetLength, 1, 1) \
   F(TypedArraySetFastCases, 3, 1) \
   \
-  F(DataViewInitialize, 4, 1) \
   F(DataViewGetBuffer, 1, 1) \
   F(DataViewGetByteLength, 1, 1) \
   F(DataViewGetByteOffset, 1, 1) \
@@ -469,6 +468,15 @@ namespace internal {
   F(HasExternalUint32Elements, 1, 1) \
   F(HasExternalFloat32Elements, 1, 1) \
   F(HasExternalFloat64Elements, 1, 1) \
+  F(HasFixedUint8ClampedElements, 1, 1) \
+  F(HasFixedInt8Elements, 1, 1) \
+  F(HasFixedUint8Elements, 1, 1) \
+  F(HasFixedInt16Elements, 1, 1) \
+  F(HasFixedUint16Elements, 1, 1) \
+  F(HasFixedInt32Elements, 1, 1) \
+  F(HasFixedUint32Elements, 1, 1) \
+  F(HasFixedFloat32Elements, 1, 1) \
+  F(HasFixedFloat64Elements, 1, 1) \
   F(HasFastProperties, 1, 1) \
   F(TransitionElementsKind, 2, 1) \
   F(HaveSameMap, 2, 1) \
@@ -494,7 +502,7 @@ namespace internal {
   F(GetScopeCount, 2, 1) \
   F(GetStepInPositions, 2, 1) \
   F(GetScopeDetails, 4, 1) \
-  F(GetAllScopesDetails, 3, 1) \
+  F(GetAllScopesDetails, 4, 1) \
   F(GetFunctionScopeCount, 1, 1) \
   F(GetFunctionScopeDetails, 2, 1) \
   F(SetScopeVariableValue, 6, 1) \
@@ -595,14 +603,28 @@ namespace internal {
 // RUNTIME_FUNCTION_LIST defines all runtime functions accessed
 // either directly by id (via the code generator), or indirectly
 // via a native call by name (from within JS code).
+// Entries have the form F(name, number of arguments, number of return values).
 
 #define RUNTIME_FUNCTION_LIST(F) \
   RUNTIME_FUNCTION_LIST_ALWAYS_1(F) \
   RUNTIME_FUNCTION_LIST_ALWAYS_2(F) \
   RUNTIME_FUNCTION_LIST_DEBUG(F) \
   RUNTIME_FUNCTION_LIST_DEBUGGER_SUPPORT(F) \
-  RUNTIME_FUNCTION_LIST_I18N_SUPPORT(F) \
-  INLINE_RUNTIME_FUNCTION_LIST(F)
+  RUNTIME_FUNCTION_LIST_I18N_SUPPORT(F)
+
+// RUNTIME_HIDDEN_FUNCTION_LIST defines all runtime functions accessed
+// by id from code generator, but not via native call by name.
+// Entries have the form F(name, number of arguments, number of return values).
+#define RUNTIME_HIDDEN_FUNCTION_LIST(F) \
+  F(NumberToString, 1, 1) \
+  F(RegExpConstructResult, 3, 1) \
+  F(RegExpExec, 4, 1) \
+  F(StringAdd, 2, 1)  \
+  F(SubString, 3, 1) \
+  F(StringCompare, 2, 1) \
+  F(StringCharCodeAt, 2, 1) \
+  F(Log, 3, 1) \
+  F(GetFromCache, 2, 1)
 
 // ----------------------------------------------------------------------------
 // INLINE_FUNCTION_LIST defines all inlined functions accessed
@@ -640,15 +662,6 @@ namespace internal {
   F(GeneratorNext, 2, 1)                                                     \
   F(GeneratorThrow, 2, 1)                                                    \
   F(DebugBreakInOptimizedCode, 0, 1)                                         \
-  INLINE_RUNTIME_FUNCTION_LIST(F)
-
-
-// ----------------------------------------------------------------------------
-// INLINE_RUNTIME_FUNCTION_LIST defines all inlined functions accessed
-// with a native call of the form %_name from within JS code that also have
-// a corresponding runtime function, that is called for slow cases.
-// Entries have the form F(name, number of arguments, number of return values).
-#define INLINE_RUNTIME_FUNCTION_LIST(F) \
   F(ClassOf, 1, 1)                                                           \
   F(StringCharCodeAt, 2, 1)                                                  \
   F(Log, 3, 1)                                                               \
@@ -658,10 +671,22 @@ namespace internal {
   F(RegExpExec, 4, 1)                                                        \
   F(RegExpConstructResult, 3, 1)                                             \
   F(GetFromCache, 2, 1)                                                      \
-  F(NumberToString, 1, 1)                                                    \
+  F(NumberToString, 1, 1)
+
+
+// ----------------------------------------------------------------------------
+// INLINE_OPTIMIZED_FUNCTION_LIST defines all inlined functions accessed
+// with a native call of the form %_name from within JS code that also have
+// a corresponding runtime function, that is called from non-optimized code.
+// Entries have the form F(name, number of arguments, number of return values).
+#define INLINE_OPTIMIZED_FUNCTION_LIST(F) \
   F(DoubleHi, 1, 1)                                                          \
   F(DoubleLo, 1, 1)                                                          \
-  F(ConstructDouble, 2, 1)
+  F(ConstructDouble, 2, 1)                                                   \
+  F(TypedArrayInitialize, 5, 1)                                              \
+  F(DataViewInitialize, 4, 1)                                                \
+  F(MaxSmi, 0, 1)                                                            \
+  F(TypedArrayMaxSizeInHeap, 0, 1)
 
 
 //---------------------------------------------------------------------------
@@ -715,8 +740,14 @@ class Runtime : public AllStatic {
 #define F(name, nargs, ressize) k##name,
     RUNTIME_FUNCTION_LIST(F)
 #undef F
+#define F(name, nargs, ressize) kHidden##name,
+    RUNTIME_HIDDEN_FUNCTION_LIST(F)
+#undef F
 #define F(name, nargs, ressize) kInline##name,
     INLINE_FUNCTION_LIST(F)
+#undef F
+#define F(name, nargs, ressize) kInlineOptimized##name,
+    INLINE_OPTIMIZED_FUNCTION_LIST(F)
 #undef F
     kNumFunctions,
     kFirstInlineFunction = kInlineIsSmi
@@ -724,7 +755,9 @@ class Runtime : public AllStatic {
 
   enum IntrinsicType {
     RUNTIME,
-    INLINE
+    RUNTIME_HIDDEN,
+    INLINE,
+    INLINE_OPTIMIZED
   };
 
   // Intrinsic function descriptor.
@@ -773,14 +806,9 @@ class Runtime : public AllStatic {
 
   // Support getting the characters in a string using [] notation as
   // in Firefox/SpiderMonkey, Safari and Opera.
-  MUST_USE_RESULT static MaybeObject* GetElementOrCharAt(Isolate* isolate,
-                                                         Handle<Object> object,
-                                                         uint32_t index);
-
-  MUST_USE_RESULT static MaybeObject* GetElementOrCharAtOrFail(
-      Isolate* isolate,
-      Handle<Object> object,
-      uint32_t index);
+  static Handle<Object> GetElementOrCharAt(Isolate* isolate,
+                                           Handle<Object> object,
+                                           uint32_t index);
 
   static Handle<Object> SetObjectProperty(
       Isolate* isolate,
@@ -850,7 +878,10 @@ class Runtime : public AllStatic {
   };
 
   static void ArrayIdToTypeAndSize(int array_id,
-      ExternalArrayType *type, size_t *element_size);
+      ExternalArrayType *type,
+      ElementsKind* external_elements_kind,
+      ElementsKind* fixed_elements_kind,
+      size_t *element_size);
 
   // Helper functions used stubs.
   static void PerformGC(Object* result, Isolate* isolate);

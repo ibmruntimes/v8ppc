@@ -649,12 +649,6 @@ bool MaybeObject::IsRetryAfterGC() {
 }
 
 
-bool MaybeObject::IsOutOfMemory() {
-  return HAS_FAILURE_TAG(this)
-      && Failure::cast(this)->IsOutOfMemoryException();
-}
-
-
 bool MaybeObject::IsException() {
   return this == Failure::Exception();
 }
@@ -1031,7 +1025,6 @@ bool Object::IsNaN() {
 }
 
 
-// static
 Handle<Object> Object::ToSmi(Isolate* isolate, Handle<Object> object) {
   if (object->IsSmi()) return object;
   if (object->IsHeapNumber()) {
@@ -1071,17 +1064,16 @@ Handle<Object> Object::GetElement(Isolate* isolate,
   // This was not always the case. This ASSERT is here to catch
   // leftover incorrect uses.
   ASSERT(AllowHeapAllocation::IsAllowed());
-  CALL_HEAP_FUNCTION(isolate,
-                     object->GetElementWithReceiver(isolate, *object, index),
-                     Object);
+  return Object::GetElementWithReceiver(isolate, object, object, index);
 }
 
 
-Object* Object::GetElementNoExceptionThrown(Isolate* isolate, uint32_t index) {
-  MaybeObject* maybe = GetElementWithReceiver(isolate, this, index);
-  ASSERT(!maybe->IsFailure());
-  Object* result = NULL;  // Initialization to please compiler.
-  maybe->ToObject(&result);
+Handle<Object> Object::GetElementNoExceptionThrown(Isolate* isolate,
+                                                   Handle<Object> object,
+                                                   uint32_t index) {
+  Handle<Object> result =
+      Object::GetElementWithReceiver(isolate, object, object, index);
+  CHECK_NOT_EMPTY_HANDLE(isolate, result);
   return result;
 }
 
@@ -1237,11 +1229,6 @@ bool Failure::IsInternalError() const {
 }
 
 
-bool Failure::IsOutOfMemoryException() const {
-  return type() == OUT_OF_MEMORY_EXCEPTION;
-}
-
-
 AllocationSpace Failure::allocation_space() const {
   ASSERT_EQ(RETRY_AFTER_GC, type());
   return static_cast<AllocationSpace>((value() >> kFailureTypeTagSize)
@@ -1256,11 +1243,6 @@ Failure* Failure::InternalError() {
 
 Failure* Failure::Exception() {
   return Construct(EXCEPTION);
-}
-
-
-Failure* Failure::OutOfMemoryException(intptr_t value) {
-  return Construct(OUT_OF_MEMORY_EXCEPTION, value);
 }
 
 
@@ -1613,73 +1595,79 @@ void JSObject::EnsureCanContainHeapObjectElements(Handle<JSObject> object) {
 }
 
 
-MaybeObject* JSObject::EnsureCanContainElements(Object** objects,
-                                                uint32_t count,
-                                                EnsureElementsMode mode) {
-  ElementsKind current_kind = map()->elements_kind();
+void JSObject::EnsureCanContainElements(Handle<JSObject> object,
+                                        Object** objects,
+                                        uint32_t count,
+                                        EnsureElementsMode mode) {
+  ElementsKind current_kind = object->map()->elements_kind();
   ElementsKind target_kind = current_kind;
-  ASSERT(mode != ALLOW_COPIED_DOUBLE_ELEMENTS);
-  bool is_holey = IsFastHoleyElementsKind(current_kind);
-  if (current_kind == FAST_HOLEY_ELEMENTS) return this;
-  Heap* heap = GetHeap();
-  Object* the_hole = heap->the_hole_value();
-  for (uint32_t i = 0; i < count; ++i) {
-    Object* current = *objects++;
-    if (current == the_hole) {
-      is_holey = true;
-      target_kind = GetHoleyElementsKind(target_kind);
-    } else if (!current->IsSmi()) {
-      if (mode == ALLOW_CONVERTED_DOUBLE_ELEMENTS && current->IsNumber()) {
-        if (IsFastSmiElementsKind(target_kind)) {
-          if (is_holey) {
-            target_kind = FAST_HOLEY_DOUBLE_ELEMENTS;
-          } else {
-            target_kind = FAST_DOUBLE_ELEMENTS;
+  {
+    DisallowHeapAllocation no_allocation;
+    ASSERT(mode != ALLOW_COPIED_DOUBLE_ELEMENTS);
+    bool is_holey = IsFastHoleyElementsKind(current_kind);
+    if (current_kind == FAST_HOLEY_ELEMENTS) return;
+    Heap* heap = object->GetHeap();
+    Object* the_hole = heap->the_hole_value();
+    for (uint32_t i = 0; i < count; ++i) {
+      Object* current = *objects++;
+      if (current == the_hole) {
+        is_holey = true;
+        target_kind = GetHoleyElementsKind(target_kind);
+      } else if (!current->IsSmi()) {
+        if (mode == ALLOW_CONVERTED_DOUBLE_ELEMENTS && current->IsNumber()) {
+          if (IsFastSmiElementsKind(target_kind)) {
+            if (is_holey) {
+              target_kind = FAST_HOLEY_DOUBLE_ELEMENTS;
+            } else {
+              target_kind = FAST_DOUBLE_ELEMENTS;
+            }
           }
+        } else if (is_holey) {
+          target_kind = FAST_HOLEY_ELEMENTS;
+          break;
+        } else {
+          target_kind = FAST_ELEMENTS;
         }
-      } else if (is_holey) {
-        target_kind = FAST_HOLEY_ELEMENTS;
-        break;
-      } else {
-        target_kind = FAST_ELEMENTS;
       }
     }
   }
-
   if (target_kind != current_kind) {
-    return TransitionElementsKind(target_kind);
+    TransitionElementsKind(object, target_kind);
   }
-  return this;
 }
 
 
-MaybeObject* JSObject::EnsureCanContainElements(FixedArrayBase* elements,
-                                                uint32_t length,
-                                                EnsureElementsMode mode) {
-  if (elements->map() != GetHeap()->fixed_double_array_map()) {
-    ASSERT(elements->map() == GetHeap()->fixed_array_map() ||
-           elements->map() == GetHeap()->fixed_cow_array_map());
+void JSObject::EnsureCanContainElements(Handle<JSObject> object,
+                                        Handle<FixedArrayBase> elements,
+                                        uint32_t length,
+                                        EnsureElementsMode mode) {
+  Heap* heap = object->GetHeap();
+  if (elements->map() != heap->fixed_double_array_map()) {
+    ASSERT(elements->map() == heap->fixed_array_map() ||
+           elements->map() == heap->fixed_cow_array_map());
     if (mode == ALLOW_COPIED_DOUBLE_ELEMENTS) {
       mode = DONT_ALLOW_DOUBLE_ELEMENTS;
     }
-    Object** objects = FixedArray::cast(elements)->GetFirstElementAddress();
-    return EnsureCanContainElements(objects, length, mode);
+    Object** objects =
+        Handle<FixedArray>::cast(elements)->GetFirstElementAddress();
+    EnsureCanContainElements(object, objects, length, mode);
+    return;
   }
 
   ASSERT(mode == ALLOW_COPIED_DOUBLE_ELEMENTS);
-  if (GetElementsKind() == FAST_HOLEY_SMI_ELEMENTS) {
-    return TransitionElementsKind(FAST_HOLEY_DOUBLE_ELEMENTS);
-  } else if (GetElementsKind() == FAST_SMI_ELEMENTS) {
-    FixedDoubleArray* double_array = FixedDoubleArray::cast(elements);
+  if (object->GetElementsKind() == FAST_HOLEY_SMI_ELEMENTS) {
+    TransitionElementsKind(object, FAST_HOLEY_DOUBLE_ELEMENTS);
+  } else if (object->GetElementsKind() == FAST_SMI_ELEMENTS) {
+    Handle<FixedDoubleArray> double_array =
+        Handle<FixedDoubleArray>::cast(elements);
     for (uint32_t i = 0; i < length; ++i) {
       if (double_array->is_the_hole(i)) {
-        return TransitionElementsKind(FAST_HOLEY_DOUBLE_ELEMENTS);
+        TransitionElementsKind(object, FAST_HOLEY_DOUBLE_ELEMENTS);
+        return;
       }
     }
-    return TransitionElementsKind(FAST_DOUBLE_ELEMENTS);
+    TransitionElementsKind(object, FAST_DOUBLE_ELEMENTS);
   }
-
-  return this;
 }
 
 
@@ -1746,6 +1734,11 @@ void JSObject::initialize_elements() {
     WRITE_FIELD(this, kElementsOffset, GetHeap()->empty_fixed_array());
   } else if (map()->has_external_array_elements()) {
     ExternalArray* empty_array = GetHeap()->EmptyExternalArrayForMap(map());
+    ASSERT(!GetHeap()->InNewSpace(empty_array));
+    WRITE_FIELD(this, kElementsOffset, empty_array);
+  } else if (map()->has_fixed_typed_array_elements()) {
+    FixedTypedArrayBase* empty_array =
+      GetHeap()->EmptyFixedTypedArrayForMap(map());
     ASSERT(!GetHeap()->InNewSpace(empty_array));
     WRITE_FIELD(this, kElementsOffset, empty_array);
   } else {
@@ -2107,6 +2100,7 @@ void Object::VerifyApiCallResultType() {
 #if ENABLE_EXTRA_CHECKS
   if (!(IsSmi() ||
         IsString() ||
+        IsSymbol() ||
         IsSpecObject() ||
         IsHeapNumber() ||
         IsUndefined() ||
@@ -3684,33 +3678,62 @@ void ExternalFloat64Array::set(int index, double value) {
 }
 
 
-int FixedTypedArrayBase::size() {
+void* FixedTypedArrayBase::DataPtr() {
+  return FIELD_ADDR(this, kDataOffset);
+}
+
+
+int FixedTypedArrayBase::DataSize() {
   InstanceType instance_type = map()->instance_type();
   int element_size;
   switch (instance_type) {
-    case FIXED_UINT8_ARRAY_TYPE:
-    case FIXED_INT8_ARRAY_TYPE:
-    case FIXED_UINT8_CLAMPED_ARRAY_TYPE:
-      element_size = 1;
+#define TYPED_ARRAY_CASE(Type, type, TYPE, ctype, size)                       \
+    case FIXED_##TYPE##_ARRAY_TYPE:                                           \
+      element_size = size;                                                    \
       break;
-    case FIXED_UINT16_ARRAY_TYPE:
-    case FIXED_INT16_ARRAY_TYPE:
-      element_size = 2;
-      break;
-    case FIXED_UINT32_ARRAY_TYPE:
-    case FIXED_INT32_ARRAY_TYPE:
-    case FIXED_FLOAT32_ARRAY_TYPE:
-      element_size = 4;
-      break;
-    case FIXED_FLOAT64_ARRAY_TYPE:
-      element_size = 8;
-      break;
+
+    TYPED_ARRAYS(TYPED_ARRAY_CASE)
+#undef TYPED_ARRAY_CASE
     default:
       UNREACHABLE();
       return 0;
   }
-  return OBJECT_POINTER_ALIGN(kDataOffset + length() * element_size);
+  return length() * element_size;
 }
+
+
+int FixedTypedArrayBase::size() {
+  return OBJECT_POINTER_ALIGN(kDataOffset + DataSize());
+}
+
+
+uint8_t Uint8ArrayTraits::defaultValue() { return 0; }
+
+
+uint8_t Uint8ClampedArrayTraits::defaultValue() { return 0; }
+
+
+int8_t Int8ArrayTraits::defaultValue() { return 0; }
+
+
+uint16_t Uint16ArrayTraits::defaultValue() { return 0; }
+
+
+int16_t Int16ArrayTraits::defaultValue() { return 0; }
+
+
+uint32_t Uint32ArrayTraits::defaultValue() { return 0; }
+
+
+int32_t Int32ArrayTraits::defaultValue() { return 0; }
+
+
+float Float32ArrayTraits::defaultValue() {
+  return static_cast<float>(OS::nan_value());
+}
+
+
+double Float64ArrayTraits::defaultValue() { return OS::nan_value(); }
 
 
 template <class Traits>
@@ -3748,6 +3771,47 @@ void FixedTypedArray<Float64ArrayTraits>::set(
 
 
 template <class Traits>
+typename Traits::ElementType FixedTypedArray<Traits>::from_int(int value) {
+  return static_cast<ElementType>(value);
+}
+
+
+template <> inline
+uint8_t FixedTypedArray<Uint8ClampedArrayTraits>::from_int(int value) {
+  if (value < 0) return 0;
+  if (value > 0xFF) return 0xFF;
+  return static_cast<uint8_t>(value);
+}
+
+
+template <class Traits>
+typename Traits::ElementType FixedTypedArray<Traits>::from_double(
+    double value) {
+  return static_cast<ElementType>(DoubleToInt32(value));
+}
+
+
+template<> inline
+uint8_t FixedTypedArray<Uint8ClampedArrayTraits>::from_double(double value) {
+  if (value < 0) return 0;
+  if (value > 0xFF) return 0xFF;
+  return static_cast<uint8_t>(lrint(value));
+}
+
+
+template<> inline
+float FixedTypedArray<Float32ArrayTraits>::from_double(double value) {
+  return static_cast<float>(value);
+}
+
+
+template<> inline
+double FixedTypedArray<Float64ArrayTraits>::from_double(double value) {
+  return value;
+}
+
+
+template <class Traits>
 MaybeObject* FixedTypedArray<Traits>::get(int index) {
   return Traits::ToObject(GetHeap(), get_scalar(index));
 }
@@ -3758,10 +3822,10 @@ MaybeObject* FixedTypedArray<Traits>::SetValue(uint32_t index, Object* value) {
   if (index < static_cast<uint32_t>(length())) {
     if (value->IsSmi()) {
       int int_value = Smi::cast(value)->value();
-      cast_value = static_cast<ElementType>(int_value);
+      cast_value = from_int(int_value);
     } else if (value->IsHeapNumber()) {
       double double_value = HeapNumber::cast(value)->value();
-      cast_value = static_cast<ElementType>(DoubleToInt32(double_value));
+      cast_value = from_double(double_value);
     } else {
       // Clamp undefined to the default value. All other types have been
       // converted to a number type further up in the call chain.
@@ -6037,6 +6101,20 @@ bool JSObject::HasFixedTypedArrayElements() {
 }
 
 
+#define FIXED_TYPED_ELEMENTS_CHECK(Type, type, TYPE, ctype, size)         \
+bool JSObject::HasFixed##Type##Elements() {                               \
+  HeapObject* array = elements();                                         \
+  ASSERT(array != NULL);                                                  \
+  if (!array->IsHeapObject())                                             \
+    return false;                                                         \
+  return array->map()->instance_type() == FIXED_##TYPE##_ARRAY_TYPE;      \
+}
+
+TYPED_ARRAYS(FIXED_TYPED_ELEMENTS_CHECK)
+
+#undef FIXED_TYPED_ELEMENTS_CHECK
+
+
 bool JSObject::HasNamedInterceptor() {
   return map()->has_named_interceptor();
 }
@@ -6533,20 +6611,20 @@ void Map::ClearCodeCache(Heap* heap) {
 }
 
 
-void JSArray::EnsureSize(int required_size) {
-  ASSERT(HasFastSmiOrObjectElements());
-  FixedArray* elts = FixedArray::cast(elements());
+void JSArray::EnsureSize(Handle<JSArray> array, int required_size) {
+  ASSERT(array->HasFastSmiOrObjectElements());
+  Handle<FixedArray> elts = handle(FixedArray::cast(array->elements()));
   const int kArraySizeThatFitsComfortablyInNewSpace = 128;
   if (elts->length() < required_size) {
     // Doubling in size would be overkill, but leave some slack to avoid
     // constantly growing.
-    Expand(required_size + (required_size >> 3));
+    Expand(array, required_size + (required_size >> 3));
     // It's a performance benefit to keep a frequently used array in new-space.
-  } else if (!GetHeap()->new_space()->Contains(elts) &&
+  } else if (!array->GetHeap()->new_space()->Contains(*elts) &&
              required_size < kArraySizeThatFitsComfortablyInNewSpace) {
     // Expand will allocate a new backing store in new space even if the size
     // we asked for isn't larger than what we had before.
-    Expand(required_size);
+    Expand(array, required_size);
   }
 }
 
@@ -6564,19 +6642,19 @@ bool JSArray::AllowsSetElementsLength() {
 }
 
 
-MaybeObject* JSArray::SetContent(FixedArrayBase* storage) {
-  MaybeObject* maybe_result = EnsureCanContainElements(
-      storage, storage->length(), ALLOW_COPIED_DOUBLE_ELEMENTS);
-  if (maybe_result->IsFailure()) return maybe_result;
-  ASSERT((storage->map() == GetHeap()->fixed_double_array_map() &&
-          IsFastDoubleElementsKind(GetElementsKind())) ||
-         ((storage->map() != GetHeap()->fixed_double_array_map()) &&
-          (IsFastObjectElementsKind(GetElementsKind()) ||
-           (IsFastSmiElementsKind(GetElementsKind()) &&
-            FixedArray::cast(storage)->ContainsOnlySmisOrHoles()))));
-  set_elements(storage);
-  set_length(Smi::FromInt(storage->length()));
-  return this;
+void JSArray::SetContent(Handle<JSArray> array,
+                         Handle<FixedArrayBase> storage) {
+  EnsureCanContainElements(array, storage, storage->length(),
+                           ALLOW_COPIED_DOUBLE_ELEMENTS);
+
+  ASSERT((storage->map() == array->GetHeap()->fixed_double_array_map() &&
+          IsFastDoubleElementsKind(array->GetElementsKind())) ||
+         ((storage->map() != array->GetHeap()->fixed_double_array_map()) &&
+          (IsFastObjectElementsKind(array->GetElementsKind()) ||
+           (IsFastSmiElementsKind(array->GetElementsKind()) &&
+            Handle<FixedArray>::cast(storage)->ContainsOnlySmisOrHoles()))));
+  array->set_elements(*storage);
+  array->set_length(Smi::FromInt(storage->length()));
 }
 
 

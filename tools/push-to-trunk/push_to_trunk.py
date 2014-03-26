@@ -34,8 +34,6 @@ import urllib2
 from common_includes import *
 
 TRUNKBRANCH = "TRUNKBRANCH"
-CHROMIUM = "CHROMIUM"
-DEPS_FILE = "DEPS_FILE"
 
 CONFIG = {
   BRANCHNAME: "prepare-push",
@@ -48,7 +46,6 @@ CONFIG = {
   CHANGELOG_ENTRY_FILE: "/tmp/v8-push-to-trunk-tempfile-changelog-entry",
   PATCH_FILE: "/tmp/v8-push-to-trunk-tempfile-patch-file",
   COMMITMSG_FILE: "/tmp/v8-push-to-trunk-tempfile-commitmsg",
-  DEPS_FILE: "DEPS",
 }
 
 PUSH_MESSAGE_SUFFIX = " (based on bleeding_edge revision r%d)"
@@ -70,6 +67,18 @@ class FreshBranch(Step):
 
   def RunStep(self):
     self.GitCreateBranch(self.Config(BRANCHNAME), "svn/bleeding_edge")
+
+
+class PreparePushRevision(Step):
+  MESSAGE = "Check which revision to push."
+
+  def RunStep(self):
+    if self._options.revision:
+      self["push_hash"] = self.GitSVNFindGitHash(self._options.revision)
+    else:
+      self["push_hash"] = self.GitLog(n=1, format="%H", git_hash="HEAD")
+    if not self["push_hash"]:  # pragma: no cover
+      self.Die("Could not determine the git hash for the push.")
 
 
 class DetectLastPush(Step):
@@ -101,12 +110,13 @@ class DetectLastPush(Step):
         self.Die("Could not retrieve bleeding edge git hash for trunk push %s"
                  % last_push)
 
-    # TODO(machenbach): last_push_trunk points to the svn revision on trunk.
-    # It is not used yet but we'll need it for retrieving the current version.
+    # This points to the svn revision of the last push on trunk.
     self["last_push_trunk"] = last_push
-    # TODO(machenbach): This currently points to the prepare push revision that
-    # will be deprecated soon. After the deprecation it will point to the last
-    # bleeding_edge revision that went into the last push.
+    # This points to the last bleeding_edge revision that went into the last
+    # push.
+    # TODO(machenbach): Do we need a check to make sure we're not pushing a
+    # revision older than the last push? If we do this, the output of the
+    # current change log preparation won't make much sense.
     self["last_push_bleeding_edge"] = last_push_bleeding_edge
 
 
@@ -137,15 +147,6 @@ class IncrementVersion(Step):
                                     self["new_minor"],
                                     self["new_build"])
 
-    # TODO(machenbach): The following will be deprecated. Increment version
-    # numbers for version.cc on bleeding_edge (new build level on trunk + 1).
-    text = FileToText(self.Config(VERSION_FILE))
-    text = MSub(r"(?<=#define BUILD_NUMBER)(?P<space>\s+)\d*$",
-                r"\g<space>%s" % str(int(self["new_build"]) + 1),
-                text)
-    TextToFile(text, self.Config(VERSION_FILE))
-    self.ReadAndPersistVersion("new_be_")
-
 
 class PrepareChangeLog(Step):
   MESSAGE = "Prepare raw ChangeLog entry."
@@ -173,7 +174,8 @@ class PrepareChangeLog(Step):
     output = "%s: Version %s\n\n" % (self["date"], self["version"])
     TextToFile(output, self.Config(CHANGELOG_ENTRY_FILE))
     commits = self.GitLog(format="%H",
-        git_hash="%s..HEAD" % self["last_push_bleeding_edge"])
+        git_hash="%s..%s" % (self["last_push_bleeding_edge"],
+                             self["push_hash"]))
 
     # Cache raw commit messages.
     commit_messages = [
@@ -222,34 +224,6 @@ class EditChangeLog(Step):
     TextToFile(changelog_entry, self.Config(CHANGELOG_ENTRY_FILE))
 
 
-class CommitLocal(Step):
-  MESSAGE = "Commit to local branch."
-
-  def RunStep(self):
-    self["prep_commit_msg"] = ("Prepare push to trunk.  "
-        "Now working on version %s.%s.%s." % (self["new_be_major"],
-                                              self["new_be_minor"],
-                                              self["new_be_build"]))
-
-    # Include optional TBR only in the git command. The persisted commit
-    # message is used for finding the commit again later.
-    if self._options.tbr_commit:
-      message = "%s\n\nTBR=%s" % (self["prep_commit_msg"],
-                                  self._options.reviewer)
-    else:
-      message = "%s" % self["prep_commit_msg"]
-    self.GitCommit(message)
-
-
-class CommitRepository(Step):
-  MESSAGE = "Commit to the repository."
-
-  def RunStep(self):
-    self.WaitForLGTM()
-    self.GitPresubmit()
-    self.GitDCommit()
-
-
 class StragglerCommits(Step):
   MESSAGE = ("Fetch straggler commits that sneaked in since this script was "
              "started.")
@@ -257,13 +231,6 @@ class StragglerCommits(Step):
   def RunStep(self):
     self.GitSVNFetch()
     self.GitCheckout("svn/bleeding_edge")
-    self["prepare_commit_hash"] = self.GitLog(n=1, format="%H",
-                                              grep=self["prep_commit_msg"])
-    # TODO(machenbach): Retrieve the push hash from a command-line option or
-    # use ToT. The "prepare_commit_hash" will be deprecated along with the
-    # prepare push commit.
-    self["push_hash"] = self.GitLog(n=1, format="%H",
-                                    parent_hash=self["prepare_commit_hash"])
 
 
 class SquashCommits(Step):
@@ -364,6 +331,8 @@ class SanityCheck(Step):
   MESSAGE = "Sanity check."
 
   def RunStep(self):
+    # TODO(machenbach): Run presubmit script here as it is now missing in the
+    # prepare push process.
     if not self.Confirm("Please check if your local checkout is sane: Inspect "
         "%s, compile, run tests. Do you want to commit this new trunk "
         "revision to the repository?" % self.Config(VERSION_FILE)):
@@ -401,100 +370,15 @@ class TagRevision(Step):
     self.GitSVNTag(self["version"])
 
 
-class CheckChromium(Step):
-  MESSAGE = "Ask for chromium checkout."
-
-  def Run(self):
-    self["chrome_path"] = self._options.chromium
-    if not self["chrome_path"]:
-      self.DieNoManualMode("Please specify the path to a Chromium checkout in "
-                          "forced mode.")
-      print ("Do you have a \"NewGit\" Chromium checkout and want "
-          "this script to automate creation of the roll CL? If yes, enter the "
-          "path to (and including) the \"src\" directory here, otherwise just "
-          "press <Return>: "),
-      self["chrome_path"] = self.ReadLine()
-
-
-class SwitchChromium(Step):
-  MESSAGE = "Switch to Chromium checkout."
-  REQUIRES = "chrome_path"
-
-  def RunStep(self):
-    self["v8_path"] = os.getcwd()
-    os.chdir(self["chrome_path"])
-    self.InitialEnvironmentChecks()
-    # Check for a clean workdir.
-    if not self.GitIsWorkdirClean():  # pragma: no cover
-      self.Die("Workspace is not clean. Please commit or undo your changes.")
-    # Assert that the DEPS file is there.
-    if not os.path.exists(self.Config(DEPS_FILE)):  # pragma: no cover
-      self.Die("DEPS file not present.")
-
-
-class UpdateChromiumCheckout(Step):
-  MESSAGE = "Update the checkout and create a new branch."
-  REQUIRES = "chrome_path"
-
-  def RunStep(self):
-    os.chdir(self["chrome_path"])
-    self.GitCheckout("master")
-    self.GitPull()
-    self.GitCreateBranch("v8-roll-%s" % self["trunk_revision"])
-
-
-class UploadCL(Step):
-  MESSAGE = "Create and upload CL."
-  REQUIRES = "chrome_path"
-
-  def RunStep(self):
-    os.chdir(self["chrome_path"])
-
-    # Patch DEPS file.
-    deps = FileToText(self.Config(DEPS_FILE))
-    deps = re.sub("(?<=\"v8_revision\": \")([0-9]+)(?=\")",
-                  self["trunk_revision"],
-                  deps)
-    TextToFile(deps, self.Config(DEPS_FILE))
-
-    if self._options.reviewer:
-      print "Using account %s for review." % self._options.reviewer
-      rev = self._options.reviewer
-    else:
-      print "Please enter the email address of a reviewer for the roll CL: ",
-      self.DieNoManualMode("A reviewer must be specified in forced mode.")
-      rev = self.ReadLine()
-    suffix = PUSH_MESSAGE_SUFFIX % int(self["svn_revision"])
-    self.GitCommit("Update V8 to version %s%s.\n\nTBR=%s"
-                   % (self["version"], suffix, rev))
-    self.GitUpload(author=self._options.author,
-                   force=self._options.force_upload)
-    print "CL uploaded."
-
-
-class SwitchV8(Step):
-  MESSAGE = "Returning to V8 checkout."
-  REQUIRES = "chrome_path"
-
-  def RunStep(self):
-    os.chdir(self["v8_path"])
-
-
 class CleanUp(Step):
   MESSAGE = "Done!"
 
   def RunStep(self):
-    if self["chrome_path"]:
-      print("Congratulations, you have successfully created the trunk "
-            "revision %s and rolled it into Chromium. Please don't forget to "
-            "update the v8rel spreadsheet:" % self["version"])
-    else:  # pragma: no cover
-      print("Congratulations, you have successfully created the trunk "
-            "revision %s. Please don't forget to roll this new version into "
-            "Chromium, and to update the v8rel spreadsheet:"
-            % self["version"])
-    print "%s\ttrunk\t%s" % (self["version"],
-                             self["trunk_revision"])
+    print("Congratulations, you have successfully created the trunk "
+          "revision %s. Please don't forget to roll this new version into "
+          "Chromium, and to update the v8rel spreadsheet:"
+          % self["version"])
+    print "%s\ttrunk\t%s" % (self["version"], self["trunk_revision"])
 
     self.CommonCleanup()
     if self.Config(TRUNKBRANCH) != self["current_branch"]:
@@ -514,21 +398,21 @@ class PushToTrunk(ScriptsBase):
                         help=("The git commit ID of the last bleeding edge "
                               "revision that was pushed to trunk. This is "
                               "used for the auto-generated ChangeLog entry."))
-    parser.add_argument("-c", "--chromium",
-                        help=("The path to your Chromium src/ "
-                              "directory to automate the V8 roll."))
     parser.add_argument("-l", "--last-push",
                         help="The git commit ID of the last push to trunk.")
+    parser.add_argument("-R", "--revision",
+                        help="The svn revision to push (defaults to HEAD).")
 
   def _ProcessOptions(self, options):  # pragma: no cover
     if not options.manual and not options.reviewer:
       print "A reviewer (-r) is required in (semi-)automatic mode."
       return False
-    if not options.manual and not options.chromium:
-      print "A chromium checkout (-c) is required in (semi-)automatic mode."
-      return False
     if not options.manual and not options.author:
       print "Specify your chromium.org email with -a in (semi-)automatic mode."
+      return False
+    if options.revision and not int(options.revision) > 0:
+      print("The --revision flag must be a positiv integer pointing to a "
+            "valid svn revision.")
       return False
 
     options.tbr_commit = not options.manual
@@ -538,13 +422,11 @@ class PushToTrunk(ScriptsBase):
     return [
       Preparation,
       FreshBranch,
+      PreparePushRevision,
       DetectLastPush,
       IncrementVersion,
       PrepareChangeLog,
       EditChangeLog,
-      CommitLocal,
-      UploadStep,
-      CommitRepository,
       StragglerCommits,
       SquashCommits,
       NewBranch,
@@ -555,11 +437,6 @@ class PushToTrunk(ScriptsBase):
       SanityCheck,
       CommitSVN,
       TagRevision,
-      CheckChromium,
-      SwitchChromium,
-      UpdateChromiumCheckout,
-      UploadCL,
-      SwitchV8,
       CleanUp,
     ]
 

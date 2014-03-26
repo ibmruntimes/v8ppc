@@ -103,6 +103,7 @@ var kMessages = {
   invalid_argument:              ["invalid_argument"],
   data_view_not_array_buffer:    ["First argument to DataView constructor must be an ArrayBuffer"],
   constructor_not_function:      ["Constructor ", "%0", " requires 'new'"],
+  not_a_symbol:                  ["%0", " is not a symbol"],
   not_a_promise:                 ["%0", " is not a promise"],
   resolver_not_a_function:       ["Promise resolver ", "%0", " is not a function"],
   promise_cyclic:                ["Chaining cycle detected for promise ", "%0"],
@@ -157,7 +158,7 @@ var kMessages = {
   strict_eval_arguments:         ["Unexpected eval or arguments in strict mode"],
   too_many_arguments:            ["Too many arguments in function call (only 65535 allowed)"],
   too_many_parameters:           ["Too many parameters in function definition (only 65535 allowed)"],
-  too_many_variables:            ["Too many variables declared (only 131071 allowed)"],
+  too_many_variables:            ["Too many variables declared (only 4194303 allowed)"],
   strict_param_dupe:             ["Strict mode function may not have duplicate parameter names"],
   strict_octal_literal:          ["Octal literals are not allowed in strict mode."],
   strict_duplicate_property:     ["Duplicate data property in object literal not allowed in strict mode"],
@@ -787,11 +788,10 @@ function GetStackTraceLine(recv, fun, pos, isGlobal) {
 // ----------------------------------------------------------------------------
 // Error implementation
 
-//TODO(rossberg)
-var CallSiteReceiverKey = NEW_PRIVATE("receiver");
-var CallSiteFunctionKey = NEW_PRIVATE("function");
-var CallSitePositionKey = NEW_PRIVATE("position");
-var CallSiteStrictModeKey = NEW_PRIVATE("strict mode");
+var CallSiteReceiverKey = NEW_PRIVATE("CallSite#receiver");
+var CallSiteFunctionKey = NEW_PRIVATE("CallSite#function");
+var CallSitePositionKey = NEW_PRIVATE("CallSite#position");
+var CallSiteStrictModeKey = NEW_PRIVATE("CallSite#strict_mode");
 
 function CallSite(receiver, fun, pos, strict_mode) {
   SET_PRIVATE(this, CallSiteReceiverKey, receiver);

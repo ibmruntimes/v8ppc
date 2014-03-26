@@ -146,11 +146,6 @@ PreParserExpression PreParserTraits::ParseFunctionLiteral(
 }
 
 
-PreParserExpression PreParserTraits::ParsePostfixExpression(bool* ok) {
-  return pre_parser_->ParsePostfixExpression(ok);
-}
-
-
 PreParser::PreParseResult PreParser::PreParseLazyFunction(
     StrictMode strict_mode, bool is_generator, ParserRecorder* log) {
   log_ = log;
@@ -384,7 +379,7 @@ PreParser::Statement PreParser::ParseBlock(bool* ok) {
   //
   Expect(Token::LBRACE, CHECK_OK);
   while (peek() != Token::RBRACE) {
-    if (FLAG_harmony_scoping && strict_mode() == STRICT) {
+    if (allow_harmony_scoping() && strict_mode() == STRICT) {
       ParseSourceElement(CHECK_OK);
     } else {
       ParseStatement(CHECK_OK);
@@ -449,7 +444,7 @@ PreParser::Statement PreParser::ParseVariableDeclarations(
     // non-harmony semantics in sloppy mode.
     Consume(Token::CONST);
     if (strict_mode() == STRICT) {
-      if (FLAG_harmony_scoping) {
+      if (allow_harmony_scoping()) {
         if (var_context != kSourceElement && var_context != kForStatement) {
           ReportMessageAt(scanner()->peek_location(), "unprotected_const");
           *ok = false;
@@ -472,7 +467,7 @@ PreParser::Statement PreParser::ParseVariableDeclarations(
     //   contained in extended code.
     //
     // TODO(rossberg): make 'let' a legal identifier in sloppy mode.
-    if (!FLAG_harmony_scoping || strict_mode() == SLOPPY) {
+    if (!allow_harmony_scoping() || strict_mode() == SLOPPY) {
       ReportMessageAt(scanner()->peek_location(), "illegal_let");
       *ok = false;
       return Statement::Default();
@@ -842,167 +837,6 @@ PreParser::Statement PreParser::ParseDebuggerStatement(bool* ok) {
 #undef DUMMY
 
 
-PreParser::Expression PreParser::ParsePostfixExpression(bool* ok) {
-  // PostfixExpression ::
-  //   LeftHandSideExpression ('++' | '--')?
-
-  Expression expression = ParseLeftHandSideExpression(CHECK_OK);
-  if (!scanner()->HasAnyLineTerminatorBeforeNext() &&
-      Token::IsCountOp(peek())) {
-    if (strict_mode() == STRICT) {
-      CheckStrictModeLValue(expression, CHECK_OK);
-    }
-    Next();
-    return Expression::Default();
-  }
-  return expression;
-}
-
-
-PreParser::Expression PreParser::ParseLeftHandSideExpression(bool* ok) {
-  // LeftHandSideExpression ::
-  //   (NewExpression | MemberExpression) ...
-
-  Expression result = ParseMemberWithNewPrefixesExpression(CHECK_OK);
-
-  while (true) {
-    switch (peek()) {
-      case Token::LBRACK: {
-        Consume(Token::LBRACK);
-        ParseExpression(true, CHECK_OK);
-        Expect(Token::RBRACK, CHECK_OK);
-        if (result.IsThis()) {
-          result = Expression::ThisProperty();
-        } else {
-          result = Expression::Default();
-        }
-        break;
-      }
-
-      case Token::LPAREN: {
-        ParseArguments(CHECK_OK);
-        result = Expression::Default();
-        break;
-      }
-
-      case Token::PERIOD: {
-        Consume(Token::PERIOD);
-        ParseIdentifierName(CHECK_OK);
-        if (result.IsThis()) {
-          result = Expression::ThisProperty();
-        } else {
-          result = Expression::Default();
-        }
-        break;
-      }
-
-      default:
-        return result;
-    }
-  }
-}
-
-
-PreParser::Expression PreParser::ParseMemberWithNewPrefixesExpression(
-    bool* ok) {
-  // NewExpression ::
-  //   ('new')+ MemberExpression
-
-  // See Parser::ParseNewExpression.
-
-  if (peek() == Token::NEW) {
-    Consume(Token::NEW);
-    ParseMemberWithNewPrefixesExpression(CHECK_OK);
-    if (peek() == Token::LPAREN) {
-      // NewExpression with arguments.
-      ParseArguments(CHECK_OK);
-      // The expression can still continue with . or [ after the arguments.
-      ParseMemberExpressionContinuation(Expression::Default(), CHECK_OK);
-    }
-    return Expression::Default();
-  }
-  // No 'new' keyword.
-  return ParseMemberExpression(ok);
-}
-
-
-PreParser::Expression PreParser::ParseMemberExpression(bool* ok) {
-  // MemberExpression ::
-  //   (PrimaryExpression | FunctionLiteral)
-  //     ('[' Expression ']' | '.' Identifier | Arguments)*
-
-  // The '[' Expression ']' and '.' Identifier parts are parsed by
-  // ParseMemberExpressionContinuation, and the Arguments part is parsed by the
-  // caller.
-
-  // Parse the initial primary or function expression.
-  Expression result = Expression::Default();
-  if (peek() == Token::FUNCTION) {
-    Consume(Token::FUNCTION);
-    int function_token_position = position();
-    bool is_generator = allow_generators() && Check(Token::MUL);
-    Identifier name = Identifier::Default();
-    bool is_strict_reserved_name = false;
-    Scanner::Location function_name_location = Scanner::Location::invalid();
-    FunctionLiteral::FunctionType function_type =
-        FunctionLiteral::ANONYMOUS_EXPRESSION;
-    if (peek_any_identifier()) {
-      name = ParseIdentifierOrStrictReservedWord(&is_strict_reserved_name,
-                                                 CHECK_OK);
-      function_name_location = scanner()->location();
-      function_type = FunctionLiteral::NAMED_EXPRESSION;
-    }
-    result = ParseFunctionLiteral(name,
-                                  function_name_location,
-                                  is_strict_reserved_name,
-                                  is_generator,
-                                  function_token_position,
-                                  function_type,
-                                  CHECK_OK);
-  } else {
-    result = ParsePrimaryExpression(CHECK_OK);
-  }
-  result = ParseMemberExpressionContinuation(result, CHECK_OK);
-  return result;
-}
-
-
-PreParser::Expression PreParser::ParseMemberExpressionContinuation(
-    PreParserExpression expression, bool* ok) {
-  // Parses this part of MemberExpression:
-  // ('[' Expression ']' | '.' Identifier)*
-  while (true) {
-    switch (peek()) {
-      case Token::LBRACK: {
-        Consume(Token::LBRACK);
-        ParseExpression(true, CHECK_OK);
-        Expect(Token::RBRACK, CHECK_OK);
-        if (expression.IsThis()) {
-          expression = Expression::ThisProperty();
-        } else {
-          expression = Expression::Default();
-        }
-        break;
-      }
-      case Token::PERIOD: {
-        Consume(Token::PERIOD);
-        ParseIdentifierName(CHECK_OK);
-        if (expression.IsThis()) {
-          expression = Expression::ThisProperty();
-        } else {
-          expression = Expression::Default();
-        }
-        break;
-      }
-      default:
-        return expression;
-    }
-  }
-  ASSERT(false);
-  return PreParserExpression::Default();
-}
-
-
 PreParser::Expression PreParser::ParseFunctionLiteral(
     Identifier function_name,
     Scanner::Location function_name_location,
@@ -1016,7 +850,6 @@ PreParser::Expression PreParser::ParseFunctionLiteral(
 
   // Parse function body.
   ScopeType outer_scope_type = scope_->type();
-  bool inside_with = scope_->inside_with();
   PreParserScope function_scope(scope_, FUNCTION_SCOPE);
   FunctionState function_state(&function_state_, &scope_, &function_scope);
   function_state.set_is_generator(is_generator);
@@ -1058,8 +891,7 @@ PreParser::Expression PreParser::ParseFunctionLiteral(
 
   // See Parser::ParseFunctionLiteral for more information about lazy parsing
   // and lazy compilation.
-  bool is_lazily_parsed = (outer_scope_type == GLOBAL_SCOPE &&
-                           !inside_with && allow_lazy() &&
+  bool is_lazily_parsed = (outer_scope_type == GLOBAL_SCOPE && allow_lazy() &&
                            !parenthesized_function_);
   parenthesized_function_ = false;
 
@@ -1102,7 +934,6 @@ PreParser::Expression PreParser::ParseFunctionLiteral(
 
     int end_position = scanner()->location().end_pos;
     CheckOctalLiteral(start_position, end_position, CHECK_OK);
-    return Expression::StrictFunction();
   }
 
   return Expression::Default();
