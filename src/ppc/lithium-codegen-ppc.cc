@@ -267,6 +267,9 @@ void LCodeGen::GenerateOsrPrologue() {
 
 
 void LCodeGen::GenerateBodyInstructionPre(LInstruction* instr) {
+  if (instr->IsCall()) {
+    EnsureSpaceForLazyDeopt(Deoptimizer::patch_size());
+  }
   if (!instr->IsLazyBailout() && !instr->IsGap()) {
     safepoints_.BumpLastLazySafepointIndex();
   }
@@ -1406,8 +1409,31 @@ void LCodeGen::DoFlooringDivByConstI(LFlooringDivByConstI* instr) {
     DeoptimizeIf(eq, instr->environment());
   }
 
-  // TODO(svenpanne) Add correction terms.
-  __ TruncatingDiv(result, dividend, divisor);
+  // Easy case: We need no dynamic check for the dividend and the flooring
+  // division is the same as the truncating division.
+  if ((divisor > 0 && !hdiv->CheckFlag(HValue::kLeftCanBeNegative)) ||
+      (divisor < 0 && !hdiv->CheckFlag(HValue::kLeftCanBePositive))) {
+    __ TruncatingDiv(result, dividend, Abs(divisor));
+    if (divisor < 0) __ neg(result, result);
+    return;
+  }
+
+  // In the general case we may need to adjust before and after the truncating
+  // division to get a flooring division.
+  Register temp = ToRegister(instr->temp());
+  ASSERT(!temp.is(dividend) && !temp.is(result));
+  Label needs_adjustment, done;
+  __ cmpwi(dividend, Operand::Zero());
+  __ b(divisor > 0 ? lt : gt, &needs_adjustment);
+  __ TruncatingDiv(result, dividend, Abs(divisor));
+  if (divisor < 0) __ neg(result, result);
+  __ b(&done);
+  __ bind(&needs_adjustment);
+  __ addi(temp, dividend, Operand(divisor > 0 ? 1 : -1));
+  __ TruncatingDiv(result, temp, Abs(divisor));
+  if (divisor < 0) __ neg(result, result);
+  __ subi(result, result, Operand(1));
+  __ bind(&done);
 }
 
 
@@ -4222,6 +4248,15 @@ void LCodeGen::DoStoreNamedField(LStoreNamedField* instr) {
       instr->hydrogen()->value()->IsHeapObject()
           ? OMIT_SMI_CHECK : INLINE_SMI_CHECK;
 
+#if V8_TARGET_ARCH_PPC64
+  ASSERT(!(representation.IsSmi() &&
+           instr->value()->IsConstantOperand() &&
+           !IsInteger32(LConstantOperand::cast(instr->value()))));
+#else
+  ASSERT(!(representation.IsSmi() &&
+           instr->value()->IsConstantOperand() &&
+           !IsSmi(LConstantOperand::cast(instr->value()))));
+#endif
   if (representation.IsHeapObject()) {
     Register value = ToRegister(instr->value());
     if (!hinstr->value()->type().IsHeapObject()) {
@@ -4698,7 +4733,7 @@ void LCodeGen::DoDeferredStringCharCodeAt(LStringCharCodeAt* instr) {
     __ SmiTag(index);
     __ push(index);
   }
-  CallRuntimeFromDeferred(Runtime::kStringCharCodeAt, 2, instr,
+  CallRuntimeFromDeferred(Runtime::kHiddenStringCharCodeAt, 2, instr,
                           instr->context());
   __ AssertSmi(r3);
   __ SmiUntag(r3);
@@ -5820,7 +5855,7 @@ void LCodeGen::EnsureSpaceForLazyDeopt(int space_needed) {
 
 
 void LCodeGen::DoLazyBailout(LLazyBailout* instr) {
-  EnsureSpaceForLazyDeopt(Deoptimizer::patch_size());
+  last_lazy_deopt_pc_ = masm()->pc_offset();
   ASSERT(instr->HasEnvironment());
   LEnvironment* env = instr->environment();
   RegisterEnvironmentForDeoptimization(env, Safepoint::kLazyDeopt);
@@ -5893,10 +5928,7 @@ void LCodeGen::DoStackCheck(LStackCheck* instr) {
     CallCode(isolate()->builtins()->StackCheck(),
               RelocInfo::CODE_TARGET,
               instr);
-    EnsureSpaceForLazyDeopt(Deoptimizer::patch_size());
     __ bind(&done);
-    RegisterEnvironmentForDeoptimization(env, Safepoint::kLazyDeopt);
-    safepoints_.RecordLazyDeoptimizationIndex(env->deoptimization_index());
   } else {
     ASSERT(instr->hydrogen()->is_backwards_branch());
     // Perform stack overflow check if this goto needs it before jumping.

@@ -113,6 +113,24 @@ class JumpPatchSite BASE_EMBEDDED {
 };
 
 
+static void EmitStackCheck(MacroAssembler* masm_,
+                           Register stack_limit_scratch,
+                           int pointers = 0,
+                           Register scratch = sp) {
+    Isolate* isolate = masm_->isolate();
+  Label ok;
+  ASSERT(scratch.is(sp) == (pointers == 0));
+  if (pointers != 0) {
+    __ Add(scratch, sp, -(pointers * kPointerSize), r0);
+  }
+  __ LoadRoot(stack_limit_scratch, Heap::kStackLimitRootIndex);
+  __ cmpl(scratch, stack_limit_scratch);
+  __ bc_short(ge, &ok);
+  __ Call(isolate->builtins()->StackCheck(), RelocInfo::CODE_TARGET);
+  __ bind(&ok);
+}
+
+
 // Generate code for a JS function.  On entry to the function the receiver
 // and arguments have been pushed on the stack left to right.  The actual
 // argument count matches the formal parameter count expected by the
@@ -180,20 +198,28 @@ void FullCodeGenerator::Generate() {
     // Generators allocate locals, if any, in context slots.
     ASSERT(!info->function()->is_generator() || locals_count == 0);
     if (locals_count > 0) {
-      // Emit a loop to initialize stack cells for locals when optimizing for
-      // size. Otherwise, unroll the loop for maximum performance.
+      if (locals_count >= 128) {
+        EmitStackCheck(masm_, r4, locals_count, ip);
+      }
       __ LoadRoot(ip, Heap::kUndefinedValueRootIndex);
-      if (FLAG_optimize_for_size && locals_count > 4) {
-        Label loop;
-        __ li(r5, Operand(locals_count));
+      int kMaxPushes = FLAG_optimize_for_size ? 4 : 32;
+      if (locals_count >= kMaxPushes) {
+        int loop_iterations = locals_count / kMaxPushes;
+        __ mov(r5, Operand(loop_iterations));
         __ mtctr(r5);
-        __ bind(&loop);
-        __ push(ip);
-        __ bdnz(&loop);
-      } else {
-        for (int i = 0; i < locals_count; i++) {
+        Label loop_header;
+        __ bind(&loop_header);
+        // Do pushes.
+        for (int i = 0; i < kMaxPushes; i++) {
           __ push(ip);
         }
+        // Continue loop if not done.
+        __ bdnz(&loop_header);
+      }
+      int remaining = locals_count % kMaxPushes;
+      // Emit the remaining pushes.
+      for (int i  = 0; i < remaining; i++) {
+        __ push(ip);
       }
     }
   }
@@ -304,13 +330,7 @@ void FullCodeGenerator::Generate() {
 
     { Comment cmnt(masm_, "[ Stack check");
       PrepareForBailoutForId(BailoutId::Declarations(), NO_REGISTERS);
-      Label ok;
-      __ LoadRoot(ip, Heap::kStackLimitRootIndex);
-      __ cmpl(sp, ip);
-      // This is a FIXED_SEQUENCE and must match the other StackCheck code
-      __ bc_short(ge, &ok);
-      __ Call(isolate()->builtins()->StackCheck(), RelocInfo::CODE_TARGET);
-      __ bind(&ok);
+      EmitStackCheck(masm_, ip);
     }
 
     { Comment cmnt(masm_, "[ Body");
@@ -3444,7 +3464,7 @@ void FullCodeGenerator::EmitLog(CallRuntime* expr) {
   if (CodeGenerator::ShouldGenerateLog(isolate(), args->at(0))) {
     VisitForStackValue(args->at(1));
     VisitForStackValue(args->at(2));
-    __ CallRuntime(Runtime::kLog, 2);
+    __ CallRuntime(Runtime::kHiddenLog, 2);
   }
 
   // Finally, we're expected to leave a value on the top of the stack.
@@ -3909,7 +3929,7 @@ void FullCodeGenerator::EmitGetFromCache(CallRuntime* expr) {
   __ bind(&not_found);
   // Call runtime to perform the lookup.
   __ Push(cache, key);
-  __ CallRuntime(Runtime::kGetFromCache, 2);
+  __ CallRuntime(Runtime::kHiddenGetFromCache, 2);
 
   __ bind(&done);
   context()->Plug(r3);
@@ -4214,8 +4234,8 @@ void FullCodeGenerator::EmitFastAsciiArrayJoin(CallRuntime* expr) {
 
 
 void FullCodeGenerator::VisitCallRuntime(CallRuntime* expr) {
-  Handle<String> name = expr->name();
-  if (name->length() > 0 && name->Get(0) == '_') {
+  if (expr->function() != NULL &&
+      expr->function()->intrinsic_type == Runtime::INLINE) {
     Comment cmnt(masm_, "[ InlineRuntimeCall");
     EmitInlineRuntimeCall(expr);
     return;

@@ -1028,6 +1028,8 @@ RUNTIME_FUNCTION(MaybeObject*, Runtime_TypedArrayInitialize) {
 // initializes backing store using memove.
 //
 // Returns true if backing store was initialized or false otherwise.
+// Work around for GCC 4.4.6
+#pragma GCC diagnostic ignored "-Wuninitialized"
 RUNTIME_FUNCTION(MaybeObject*, Runtime_TypedArrayInitializeFromArrayLike) {
   HandleScope scope(isolate);
   ASSERT(args.length() == 4);

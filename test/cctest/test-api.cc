@@ -371,6 +371,27 @@ static void DummyCallHandler(const v8::FunctionCallbackInfo<v8::Value>& args) {
 }
 
 
+static int named_access_count = 0;
+static int indexed_access_count = 0;
+
+static bool NamedAccessCounter(Local<v8::Object> global,
+                               Local<Value> name,
+                               v8::AccessType type,
+                               Local<Value> data) {
+  named_access_count++;
+  return true;
+}
+
+
+static bool IndexedAccessCounter(Local<v8::Object> global,
+                                 uint32_t key,
+                                 v8::AccessType type,
+                                 Local<Value> data) {
+  indexed_access_count++;
+  return true;
+}
+
+
 #if !defined(TEST_API_IN_PARTS) || defined(TEST_API_PART1)
 
 static int signature_callback_count;
@@ -9475,27 +9496,6 @@ THREADED_TEST(CrossDomainAccessors) {
 
   context1->Exit();
   context0->Exit();
-}
-
-
-static int named_access_count = 0;
-static int indexed_access_count = 0;
-
-static bool NamedAccessCounter(Local<v8::Object> global,
-                               Local<Value> name,
-                               v8::AccessType type,
-                               Local<Value> data) {
-  named_access_count++;
-  return true;
-}
-
-
-static bool IndexedAccessCounter(Local<v8::Object> global,
-                                 uint32_t key,
-                                 v8::AccessType type,
-                                 Local<Value> data) {
-  indexed_access_count++;
-  return true;
 }
 
 
