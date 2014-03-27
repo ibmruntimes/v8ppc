@@ -3058,7 +3058,7 @@ void LCodeGen::DoLoadNamedField(LLoadNamedField* instr) {
   if (access.IsExternalMemory()) {
     Register result = ToRegister(instr->result());
     MemOperand operand = MemOperand(object, offset);
-    __ LoadRepresentation(result, operand, access.representation());
+    __ LoadRepresentation(result, operand, access.representation(), r0);
     return;
   }
 
@@ -3091,7 +3091,7 @@ void LCodeGen::DoLoadNamedField(LLoadNamedField* instr) {
 #endif
 
   __ LoadRepresentation(result, FieldMemOperand(object, offset),
-                        representation);
+                        representation, r0);
 }
 
 
@@ -3420,7 +3420,7 @@ void LCodeGen::DoLoadKeyedFixedArray(LLoadKeyed* instr) {
 #endif
 
   __ LoadRepresentation(result, FieldMemOperand(store_base, offset),
-                        representation);
+                        representation, r0);
 
   // Check for the hole value.
   if (requires_hole_check) {
@@ -4239,7 +4239,7 @@ void LCodeGen::DoStoreNamedField(LStoreNamedField* instr) {
   if (access.IsExternalMemory()) {
     Register value = ToRegister(instr->value());
     MemOperand operand = MemOperand(object, offset);
-    __ StoreRepresentation(value, operand, representation);
+    __ StoreRepresentation(value, operand, representation, r0);
     return;
   }
 
