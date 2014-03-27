@@ -468,7 +468,7 @@ static Handle<Object> CreateLiteralBoilerplate(
 }
 
 
-RUNTIME_FUNCTION(MaybeObject*, Runtime_CreateObjectLiteral) {
+RUNTIME_FUNCTION(MaybeObject*, RuntimeHidden_CreateObjectLiteral) {
   HandleScope scope(isolate);
   ASSERT(args.length() == 4);
   CONVERT_ARG_HANDLE_CHECKED(FixedArray, literals, 0);
@@ -570,7 +570,7 @@ static MaybeObject* CreateArrayLiteralImpl(Isolate* isolate,
 }
 
 
-RUNTIME_FUNCTION(MaybeObject*, Runtime_CreateArrayLiteral) {
+RUNTIME_FUNCTION(MaybeObject*, RuntimeHidden_CreateArrayLiteral) {
   HandleScope scope(isolate);
   ASSERT(args.length() == 4);
   CONVERT_ARG_HANDLE_CHECKED(FixedArray, literals, 0);
@@ -583,7 +583,7 @@ RUNTIME_FUNCTION(MaybeObject*, Runtime_CreateArrayLiteral) {
 }
 
 
-RUNTIME_FUNCTION(MaybeObject*, Runtime_CreateArrayLiteralStubBailout) {
+RUNTIME_FUNCTION(MaybeObject*, RuntimeHidden_CreateArrayLiteralStubBailout) {
   HandleScope scope(isolate);
   ASSERT(args.length() == 3);
   CONVERT_ARG_HANDLE_CHECKED(FixedArray, literals, 0);
@@ -2133,6 +2133,8 @@ RUNTIME_FUNCTION(MaybeObject*, Runtime_SetAccessorProperty) {
   CONVERT_ARG_HANDLE_CHECKED(Object, setter, 3);
   CONVERT_SMI_ARG_CHECKED(attribute, 4);
   CONVERT_SMI_ARG_CHECKED(access_control, 5);
+  RUNTIME_ASSERT(getter->IsUndefined() || getter->IsFunctionTemplateInfo());
+  RUNTIME_ASSERT(setter->IsUndefined() || setter->IsFunctionTemplateInfo());
   JSObject::DefineAccessor(object,
                            name,
                            InstantiateAccessorComponent(isolate, getter),
@@ -2156,7 +2158,7 @@ static Failure* ThrowRedeclarationError(Isolate* isolate,
 }
 
 
-RUNTIME_FUNCTION(MaybeObject*, Runtime_DeclareGlobals) {
+RUNTIME_FUNCTION(MaybeObject*, RuntimeHidden_DeclareGlobals) {
   HandleScope scope(isolate);
   ASSERT(args.length() == 3);
   Handle<GlobalObject> global = Handle<GlobalObject>(
@@ -2251,7 +2253,7 @@ RUNTIME_FUNCTION(MaybeObject*, Runtime_DeclareGlobals) {
 }
 
 
-RUNTIME_FUNCTION(MaybeObject*, Runtime_DeclareContextSlot) {
+RUNTIME_FUNCTION(MaybeObject*, RuntimeHidden_DeclareContextSlot) {
   HandleScope scope(isolate);
   ASSERT(args.length() == 4);
 
@@ -2410,7 +2412,7 @@ RUNTIME_FUNCTION(MaybeObject*, Runtime_InitializeVarGlobal) {
 }
 
 
-RUNTIME_FUNCTION(MaybeObject*, Runtime_InitializeConstGlobal) {
+RUNTIME_FUNCTION(MaybeObject*, RuntimeHidden_InitializeConstGlobal) {
   SealHandleScope shs(isolate);
   // All constants are declared with an initial value. The name
   // of the constant is the first argument and the initial value
@@ -2487,7 +2489,7 @@ RUNTIME_FUNCTION(MaybeObject*, Runtime_InitializeConstGlobal) {
 }
 
 
-RUNTIME_FUNCTION(MaybeObject*, Runtime_InitializeConstContextSlot) {
+RUNTIME_FUNCTION(MaybeObject*, RuntimeHidden_InitializeConstContextSlot) {
   HandleScope scope(isolate);
   ASSERT(args.length() == 3);
 
@@ -2805,7 +2807,7 @@ RUNTIME_FUNCTION(MaybeObject*, Runtime_GetDefaultReceiver) {
 }
 
 
-RUNTIME_FUNCTION(MaybeObject*, Runtime_MaterializeRegExpLiteral) {
+RUNTIME_FUNCTION(MaybeObject*, RuntimeHidden_MaterializeRegExpLiteral) {
   HandleScope scope(isolate);
   ASSERT(args.length() == 4);
   CONVERT_ARG_HANDLE_CHECKED(FixedArray, literals, 0);
@@ -3123,7 +3125,7 @@ RUNTIME_FUNCTION(MaybeObject*, Runtime_SetExpectedNumberOfProperties) {
 }
 
 
-RUNTIME_FUNCTION(MaybeObject*, Runtime_CreateJSGeneratorObject) {
+RUNTIME_FUNCTION(MaybeObject*, RuntimeHidden_CreateJSGeneratorObject) {
   HandleScope scope(isolate);
   ASSERT(args.length() == 0);
 
@@ -3149,7 +3151,7 @@ RUNTIME_FUNCTION(MaybeObject*, Runtime_CreateJSGeneratorObject) {
 }
 
 
-RUNTIME_FUNCTION(MaybeObject*, Runtime_SuspendJSGeneratorObject) {
+RUNTIME_FUNCTION(MaybeObject*, RuntimeHidden_SuspendJSGeneratorObject) {
   SealHandleScope shs(isolate);
   ASSERT(args.length() == 1);
   CONVERT_ARG_CHECKED(JSGeneratorObject, generator_object, 0);
@@ -3200,7 +3202,7 @@ RUNTIME_FUNCTION(MaybeObject*, Runtime_SuspendJSGeneratorObject) {
 // inlined into GeneratorNext and GeneratorThrow.  EmitGeneratorResumeResume is
 // called in any case, as it needs to reconstruct the stack frame and make space
 // for arguments and operands.
-RUNTIME_FUNCTION(MaybeObject*, Runtime_ResumeJSGeneratorObject) {
+RUNTIME_FUNCTION(MaybeObject*, RuntimeHidden_ResumeJSGeneratorObject) {
   SealHandleScope shs(isolate);
   ASSERT(args.length() == 3);
   CONVERT_ARG_CHECKED(JSGeneratorObject, generator_object, 0);
@@ -3248,7 +3250,7 @@ RUNTIME_FUNCTION(MaybeObject*, Runtime_ResumeJSGeneratorObject) {
 }
 
 
-RUNTIME_FUNCTION(MaybeObject*, Runtime_ThrowGeneratorStateError) {
+RUNTIME_FUNCTION(MaybeObject*, RuntimeHidden_ThrowGeneratorStateError) {
   HandleScope scope(isolate);
   ASSERT(args.length() == 1);
   CONVERT_ARG_HANDLE_CHECKED(JSGeneratorObject, generator, 0);
@@ -6926,7 +6928,7 @@ RUNTIME_FUNCTION(MaybeObject*, RuntimeHidden_NumberToString) {
 }
 
 
-RUNTIME_FUNCTION(MaybeObject*, Runtime_NumberToStringSkipCache) {
+RUNTIME_FUNCTION(MaybeObject*, RuntimeHidden_NumberToStringSkipCache) {
   SealHandleScope shs(isolate);
   ASSERT(args.length() == 1);
 
@@ -6946,24 +6948,6 @@ RUNTIME_FUNCTION(MaybeObject*, Runtime_NumberToInteger) {
   // We do not include 0 so that we don't have to treat +0 / -0 cases.
   if (number > 0 && number <= Smi::kMaxValue) {
     return Smi::FromInt(static_cast<int>(number));
-  }
-  return isolate->heap()->NumberFromDouble(DoubleToInteger(number));
-}
-
-
-// ES6 draft 9.1.11
-RUNTIME_FUNCTION(MaybeObject*, Runtime_NumberToPositiveInteger) {
-  SealHandleScope shs(isolate);
-  ASSERT(args.length() == 1);
-
-  CONVERT_DOUBLE_ARG_CHECKED(number, 0);
-
-  // We do not include 0 so that we don't have to treat +0 / -0 cases.
-  if (number > 0 && number <= Smi::kMaxValue) {
-    return Smi::FromInt(static_cast<int>(number));
-  }
-  if (number <= 0) {
-    return Smi::FromInt(0);
   }
   return isolate->heap()->NumberFromDouble(DoubleToInteger(number));
 }
@@ -7013,7 +6997,7 @@ RUNTIME_FUNCTION(MaybeObject*, Runtime_NumberToJSInt32) {
 
 // Converts a Number to a Smi, if possible. Returns NaN if the number is not
 // a small integer.
-RUNTIME_FUNCTION(MaybeObject*, Runtime_NumberToSmi) {
+RUNTIME_FUNCTION(MaybeObject*, RuntimeHidden_NumberToSmi) {
   SealHandleScope shs(isolate);
   ASSERT(args.length() == 1);
 
@@ -7032,7 +7016,7 @@ RUNTIME_FUNCTION(MaybeObject*, Runtime_NumberToSmi) {
 }
 
 
-RUNTIME_FUNCTION(MaybeObject*, Runtime_AllocateHeapNumber) {
+RUNTIME_FUNCTION(MaybeObject*, RuntimeHidden_AllocateHeapNumber) {
   SealHandleScope shs(isolate);
   ASSERT(args.length() == 0);
   return isolate->heap()->AllocateHeapNumber(0);
@@ -8022,7 +8006,7 @@ RUNTIME_FUNCTION(MaybeObject*, Runtime_DateSetValue) {
 }
 
 
-RUNTIME_FUNCTION(MaybeObject*, Runtime_NewArgumentsFast) {
+RUNTIME_FUNCTION(MaybeObject*, RuntimeHidden_NewArgumentsFast) {
   HandleScope scope(isolate);
   ASSERT(args.length() == 3);
 
@@ -8117,7 +8101,7 @@ RUNTIME_FUNCTION(MaybeObject*, Runtime_NewArgumentsFast) {
 }
 
 
-RUNTIME_FUNCTION(MaybeObject*, Runtime_NewStrictArgumentsFast) {
+RUNTIME_FUNCTION(MaybeObject*, RuntimeHidden_NewStrictArgumentsFast) {
   SealHandleScope shs(isolate);
   ASSERT(args.length() == 3);
 
@@ -8150,7 +8134,7 @@ RUNTIME_FUNCTION(MaybeObject*, Runtime_NewStrictArgumentsFast) {
 }
 
 
-RUNTIME_FUNCTION(MaybeObject*, Runtime_NewClosureFromStubFailure) {
+RUNTIME_FUNCTION(MaybeObject*, RuntimeHidden_NewClosureFromStubFailure) {
   HandleScope scope(isolate);
   ASSERT(args.length() == 1);
   CONVERT_ARG_HANDLE_CHECKED(SharedFunctionInfo, shared, 0);
@@ -8164,7 +8148,7 @@ RUNTIME_FUNCTION(MaybeObject*, Runtime_NewClosureFromStubFailure) {
 }
 
 
-RUNTIME_FUNCTION(MaybeObject*, Runtime_NewClosure) {
+RUNTIME_FUNCTION(MaybeObject*, RuntimeHidden_NewClosure) {
   HandleScope scope(isolate);
   ASSERT(args.length() == 3);
   CONVERT_ARG_HANDLE_CHECKED(Context, context, 0);
@@ -8430,7 +8414,7 @@ static MaybeObject* Runtime_NewObjectHelper(Isolate* isolate,
 }
 
 
-RUNTIME_FUNCTION(MaybeObject*, Runtime_NewObject) {
+RUNTIME_FUNCTION(MaybeObject*, RuntimeHidden_NewObject) {
   HandleScope scope(isolate);
   ASSERT(args.length() == 1);
 
@@ -8441,7 +8425,7 @@ RUNTIME_FUNCTION(MaybeObject*, Runtime_NewObject) {
 }
 
 
-RUNTIME_FUNCTION(MaybeObject*, Runtime_NewObjectWithAllocationSite) {
+RUNTIME_FUNCTION(MaybeObject*, RuntimeHidden_NewObjectWithAllocationSite) {
   HandleScope scope(isolate);
   ASSERT(args.length() == 2);
 
@@ -8458,7 +8442,7 @@ RUNTIME_FUNCTION(MaybeObject*, Runtime_NewObjectWithAllocationSite) {
 }
 
 
-RUNTIME_FUNCTION(MaybeObject*, Runtime_FinalizeInstanceSize) {
+RUNTIME_FUNCTION(MaybeObject*, RuntimeHidden_FinalizeInstanceSize) {
   HandleScope scope(isolate);
   ASSERT(args.length() == 1);
 
@@ -8469,7 +8453,7 @@ RUNTIME_FUNCTION(MaybeObject*, Runtime_FinalizeInstanceSize) {
 }
 
 
-RUNTIME_FUNCTION(MaybeObject*, Runtime_CompileUnoptimized) {
+RUNTIME_FUNCTION(MaybeObject*, RuntimeHidden_CompileUnoptimized) {
   HandleScope scope(isolate);
   ASSERT(args.length() == 1);
 
@@ -8498,7 +8482,7 @@ RUNTIME_FUNCTION(MaybeObject*, Runtime_CompileUnoptimized) {
 }
 
 
-RUNTIME_FUNCTION(MaybeObject*, Runtime_CompileOptimized) {
+RUNTIME_FUNCTION(MaybeObject*, RuntimeHidden_CompileOptimized) {
   HandleScope scope(isolate);
   ASSERT(args.length() == 2);
   Handle<JSFunction> function = args.at<JSFunction>(0);
@@ -8561,7 +8545,7 @@ class ActivationsFinder : public ThreadVisitor {
 };
 
 
-RUNTIME_FUNCTION(MaybeObject*, Runtime_NotifyStubFailure) {
+RUNTIME_FUNCTION(MaybeObject*, RuntimeHidden_NotifyStubFailure) {
   HandleScope scope(isolate);
   ASSERT(args.length() == 0);
   Deoptimizer* deoptimizer = Deoptimizer::Grab(isolate);
@@ -8571,7 +8555,7 @@ RUNTIME_FUNCTION(MaybeObject*, Runtime_NotifyStubFailure) {
 }
 
 
-RUNTIME_FUNCTION(MaybeObject*, Runtime_NotifyDeoptimized) {
+RUNTIME_FUNCTION(MaybeObject*, RuntimeHidden_NotifyDeoptimized) {
   HandleScope scope(isolate);
   ASSERT(args.length() == 1);
   RUNTIME_ASSERT(args[0]->IsSmi());
@@ -9023,7 +9007,7 @@ RUNTIME_FUNCTION(MaybeObject*, Runtime_GetConstructorDelegate) {
 }
 
 
-RUNTIME_FUNCTION(MaybeObject*, Runtime_NewGlobalContext) {
+RUNTIME_FUNCTION(MaybeObject*, RuntimeHidden_NewGlobalContext) {
   SealHandleScope shs(isolate);
   ASSERT(args.length() == 2);
 
@@ -9042,7 +9026,7 @@ RUNTIME_FUNCTION(MaybeObject*, Runtime_NewGlobalContext) {
 }
 
 
-RUNTIME_FUNCTION(MaybeObject*, Runtime_NewFunctionContext) {
+RUNTIME_FUNCTION(MaybeObject*, RuntimeHidden_NewFunctionContext) {
   SealHandleScope shs(isolate);
   ASSERT(args.length() == 1);
 
@@ -9052,7 +9036,7 @@ RUNTIME_FUNCTION(MaybeObject*, Runtime_NewFunctionContext) {
 }
 
 
-RUNTIME_FUNCTION(MaybeObject*, Runtime_PushWithContext) {
+RUNTIME_FUNCTION(MaybeObject*, RuntimeHidden_PushWithContext) {
   SealHandleScope shs(isolate);
   ASSERT(args.length() == 2);
   JSReceiver* extension_object;
@@ -9096,7 +9080,7 @@ RUNTIME_FUNCTION(MaybeObject*, Runtime_PushWithContext) {
 }
 
 
-RUNTIME_FUNCTION(MaybeObject*, Runtime_PushCatchContext) {
+RUNTIME_FUNCTION(MaybeObject*, RuntimeHidden_PushCatchContext) {
   SealHandleScope shs(isolate);
   ASSERT(args.length() == 3);
   String* name = String::cast(args[0]);
@@ -9122,7 +9106,7 @@ RUNTIME_FUNCTION(MaybeObject*, Runtime_PushCatchContext) {
 }
 
 
-RUNTIME_FUNCTION(MaybeObject*, Runtime_PushBlockContext) {
+RUNTIME_FUNCTION(MaybeObject*, RuntimeHidden_PushBlockContext) {
   SealHandleScope shs(isolate);
   ASSERT(args.length() == 2);
   ScopeInfo* scope_info = ScopeInfo::cast(args[0]);
@@ -9154,7 +9138,7 @@ RUNTIME_FUNCTION(MaybeObject*, Runtime_IsJSModule) {
 }
 
 
-RUNTIME_FUNCTION(MaybeObject*, Runtime_PushModuleContext) {
+RUNTIME_FUNCTION(MaybeObject*, RuntimeHidden_PushModuleContext) {
   SealHandleScope shs(isolate);
   ASSERT(args.length() == 2);
   CONVERT_SMI_ARG_CHECKED(index, 0);
@@ -9189,7 +9173,7 @@ RUNTIME_FUNCTION(MaybeObject*, Runtime_PushModuleContext) {
 }
 
 
-RUNTIME_FUNCTION(MaybeObject*, Runtime_DeclareModules) {
+RUNTIME_FUNCTION(MaybeObject*, RuntimeHidden_DeclareModules) {
   HandleScope scope(isolate);
   ASSERT(args.length() == 1);
   CONVERT_ARG_HANDLE_CHECKED(FixedArray, descriptions, 0);
@@ -9242,7 +9226,7 @@ RUNTIME_FUNCTION(MaybeObject*, Runtime_DeclareModules) {
 }
 
 
-RUNTIME_FUNCTION(MaybeObject*, Runtime_DeleteContextSlot) {
+RUNTIME_FUNCTION(MaybeObject*, RuntimeHidden_DeleteContextSlot) {
   HandleScope scope(isolate);
   ASSERT(args.length() == 2);
 
@@ -9435,17 +9419,17 @@ static ObjectPair LoadContextSlotHelper(Arguments args,
 }
 
 
-RUNTIME_FUNCTION(ObjectPair, Runtime_LoadContextSlot) {
+RUNTIME_FUNCTION(ObjectPair, RuntimeHidden_LoadContextSlot) {
   return LoadContextSlotHelper(args, isolate, true);
 }
 
 
-RUNTIME_FUNCTION(ObjectPair, Runtime_LoadContextSlotNoReferenceError) {
+RUNTIME_FUNCTION(ObjectPair, RuntimeHidden_LoadContextSlotNoReferenceError) {
   return LoadContextSlotHelper(args, isolate, false);
 }
 
 
-RUNTIME_FUNCTION(MaybeObject*, Runtime_StoreContextSlot) {
+RUNTIME_FUNCTION(MaybeObject*, RuntimeHidden_StoreContextSlot) {
   HandleScope scope(isolate);
   ASSERT(args.length() == 4);
 
@@ -9530,7 +9514,7 @@ RUNTIME_FUNCTION(MaybeObject*, Runtime_StoreContextSlot) {
 }
 
 
-RUNTIME_FUNCTION(MaybeObject*, Runtime_Throw) {
+RUNTIME_FUNCTION(MaybeObject*, RuntimeHidden_Throw) {
   HandleScope scope(isolate);
   ASSERT(args.length() == 1);
 
@@ -9538,7 +9522,7 @@ RUNTIME_FUNCTION(MaybeObject*, Runtime_Throw) {
 }
 
 
-RUNTIME_FUNCTION(MaybeObject*, Runtime_ReThrow) {
+RUNTIME_FUNCTION(MaybeObject*, RuntimeHidden_ReThrow) {
   HandleScope scope(isolate);
   ASSERT(args.length() == 1);
 
@@ -9546,14 +9530,14 @@ RUNTIME_FUNCTION(MaybeObject*, Runtime_ReThrow) {
 }
 
 
-RUNTIME_FUNCTION(MaybeObject*, Runtime_PromoteScheduledException) {
+RUNTIME_FUNCTION(MaybeObject*, RuntimeHidden_PromoteScheduledException) {
   SealHandleScope shs(isolate);
   ASSERT_EQ(0, args.length());
   return isolate->PromoteScheduledException();
 }
 
 
-RUNTIME_FUNCTION(MaybeObject*, Runtime_ThrowReferenceError) {
+RUNTIME_FUNCTION(MaybeObject*, RuntimeHidden_ThrowReferenceError) {
   HandleScope scope(isolate);
   ASSERT(args.length() == 1);
 
@@ -9565,7 +9549,7 @@ RUNTIME_FUNCTION(MaybeObject*, Runtime_ThrowReferenceError) {
 }
 
 
-RUNTIME_FUNCTION(MaybeObject*, Runtime_ThrowNotDateError) {
+RUNTIME_FUNCTION(MaybeObject*, RuntimeHidden_ThrowNotDateError) {
   HandleScope scope(isolate);
   ASSERT(args.length() == 0);
   return isolate->Throw(*isolate->factory()->NewTypeError(
@@ -9573,7 +9557,7 @@ RUNTIME_FUNCTION(MaybeObject*, Runtime_ThrowNotDateError) {
 }
 
 
-RUNTIME_FUNCTION(MaybeObject*, Runtime_ThrowMessage) {
+RUNTIME_FUNCTION(MaybeObject*, RuntimeHidden_ThrowMessage) {
   HandleScope scope(isolate);
   ASSERT(args.length() == 1);
   CONVERT_SMI_ARG_CHECKED(message_id, 0);
@@ -9586,7 +9570,7 @@ RUNTIME_FUNCTION(MaybeObject*, Runtime_ThrowMessage) {
 }
 
 
-RUNTIME_FUNCTION(MaybeObject*, Runtime_StackGuard) {
+RUNTIME_FUNCTION(MaybeObject*, RuntimeHidden_StackGuard) {
   SealHandleScope shs(isolate);
   ASSERT(args.length() == 0);
 
@@ -9599,7 +9583,7 @@ RUNTIME_FUNCTION(MaybeObject*, Runtime_StackGuard) {
 }
 
 
-RUNTIME_FUNCTION(MaybeObject*, Runtime_TryInstallOptimizedCode) {
+RUNTIME_FUNCTION(MaybeObject*, RuntimeHidden_TryInstallOptimizedCode) {
   HandleScope scope(isolate);
   ASSERT(args.length() == 1);
   CONVERT_ARG_HANDLE_CHECKED(JSFunction, function, 0);
@@ -9616,7 +9600,7 @@ RUNTIME_FUNCTION(MaybeObject*, Runtime_TryInstallOptimizedCode) {
 }
 
 
-RUNTIME_FUNCTION(MaybeObject*, Runtime_Interrupt) {
+RUNTIME_FUNCTION(MaybeObject*, RuntimeHidden_Interrupt) {
   SealHandleScope shs(isolate);
   ASSERT(args.length() == 0);
   return Execution::HandleStackGuardInterrupt(isolate);
@@ -9916,7 +9900,7 @@ static ObjectPair CompileGlobalEval(Isolate* isolate,
 }
 
 
-RUNTIME_FUNCTION(ObjectPair, Runtime_ResolvePossiblyDirectEval) {
+RUNTIME_FUNCTION(ObjectPair, RuntimeHidden_ResolvePossiblyDirectEval) {
   HandleScope scope(isolate);
   ASSERT(args.length() == 5);
 
@@ -9967,7 +9951,7 @@ static MaybeObject* Allocate(Isolate* isolate,
 }
 
 
-RUNTIME_FUNCTION(MaybeObject*, Runtime_AllocateInNewSpace) {
+RUNTIME_FUNCTION(MaybeObject*, RuntimeHidden_AllocateInNewSpace) {
   SealHandleScope shs(isolate);
   ASSERT(args.length() == 1);
   CONVERT_SMI_ARG_CHECKED(size, 0);
@@ -9975,7 +9959,7 @@ RUNTIME_FUNCTION(MaybeObject*, Runtime_AllocateInNewSpace) {
 }
 
 
-RUNTIME_FUNCTION(MaybeObject*, Runtime_AllocateInTargetSpace) {
+RUNTIME_FUNCTION(MaybeObject*, RuntimeHidden_AllocateInTargetSpace) {
   SealHandleScope shs(isolate);
   ASSERT(args.length() == 2);
   CONVERT_SMI_ARG_CHECKED(size, 0);
@@ -15033,7 +15017,7 @@ static MaybeObject* ArrayConstructorCommon(Isolate* isolate,
 }
 
 
-RUNTIME_FUNCTION(MaybeObject*, Runtime_ArrayConstructor) {
+RUNTIME_FUNCTION(MaybeObject*, RuntimeHidden_ArrayConstructor) {
   HandleScope scope(isolate);
   // If we get 2 arguments then they are the stub parameters (constructor, type
   // info).  If we get 4, then the first one is a pointer to the arguments
@@ -15070,7 +15054,7 @@ RUNTIME_FUNCTION(MaybeObject*, Runtime_ArrayConstructor) {
 }
 
 
-RUNTIME_FUNCTION(MaybeObject*, Runtime_InternalArrayConstructor) {
+RUNTIME_FUNCTION(MaybeObject*, RuntimeHidden_InternalArrayConstructor) {
   HandleScope scope(isolate);
   Arguments empty_args(0, NULL);
   bool no_caller_args = args.length() == 1;
@@ -15199,5 +15183,10 @@ void Runtime::PerformGC(Object* result, Isolate* isolate) {
   }
 }
 
+
+void Runtime::OutOfMemory() {
+  Heap::FatalProcessOutOfMemory("CALL_AND_RETRY_LAST", true);
+  UNREACHABLE();
+}
 
 } }  // namespace v8::internal

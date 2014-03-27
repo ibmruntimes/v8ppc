@@ -223,7 +223,7 @@ bool LCodeGen::GeneratePrologue() {
       __ CallStub(&stub);
     } else {
       __ Push(rdi);
-      __ CallRuntime(Runtime::kNewFunctionContext, 1);
+      __ CallRuntime(Runtime::kHiddenNewFunctionContext, 1);
     }
     RecordSafepoint(Safepoint::kNoLazyDeopt);
     // Context is returned in rax.  It replaces the context passed to us.
@@ -279,6 +279,22 @@ void LCodeGen::GenerateBodyInstructionPre(LInstruction* instr) {
   }
   if (!instr->IsLazyBailout() && !instr->IsGap()) {
     safepoints_.BumpLastLazySafepointIndex();
+  }
+}
+
+
+void LCodeGen::GenerateBodyInstructionPost(LInstruction* instr) {
+  if (instr->HasResult() && instr->MustSignExtendResult(chunk())) {
+    if (instr->result()->IsRegister()) {
+      Register result_reg = ToRegister(instr->result());
+      __ movsxlq(result_reg, result_reg);
+    } else {
+      // Sign extend the 32bit result in the stack slots.
+      ASSERT(instr->result()->IsStackSlot());
+      Operand src = ToOperand(instr->result());
+      __ movsxlq(kScratchRegister, src);
+      __ movq(src, kScratchRegister);
+    }
   }
 }
 
@@ -410,6 +426,12 @@ XMMRegister LCodeGen::ToDoubleRegister(LOperand* op) const {
 
 bool LCodeGen::IsInteger32Constant(LConstantOperand* op) const {
   return chunk_->LookupLiteralRepresentation(op).IsSmiOrInteger32();
+}
+
+
+bool LCodeGen::IsDehoistedKeyConstant(LConstantOperand* op) const {
+  return op->IsConstantOperand() &&
+      chunk_->IsDehoistedKey(chunk_->LookupConstant(op));
 }
 
 
@@ -2936,19 +2958,6 @@ void LCodeGen::DoAccessArgumentsAt(LAccessArgumentsAt* instr) {
 void LCodeGen::DoLoadKeyedExternalArray(LLoadKeyed* instr) {
   ElementsKind elements_kind = instr->elements_kind();
   LOperand* key = instr->key();
-  if (!key->IsConstantOperand()) {
-    Register key_reg = ToRegister(key);
-    // Even though the HLoad/StoreKeyed (in this case) instructions force
-    // the input representation for the key to be an integer, the input
-    // gets replaced during bound check elimination with the index argument
-    // to the bounds check, which can be tagged, so that case must be
-    // handled here, too.
-    if (instr->hydrogen()->IsDehoisted()) {
-      // Sign extend key because it could be a 32 bit negative value
-      // and the dehoisted address computation happens in 64 bits
-      __ movsxlq(key_reg, key_reg);
-    }
-  }
   int base_offset = instr->is_fixed_typed_array()
     ? FixedTypedArrayBase::kDataOffset - kHeapObjectTag
     : 0;
@@ -3022,19 +3031,6 @@ void LCodeGen::DoLoadKeyedExternalArray(LLoadKeyed* instr) {
 void LCodeGen::DoLoadKeyedFixedDoubleArray(LLoadKeyed* instr) {
   XMMRegister result(ToDoubleRegister(instr->result()));
   LOperand* key = instr->key();
-  if (!key->IsConstantOperand()) {
-    Register key_reg = ToRegister(key);
-    // Even though the HLoad/StoreKeyed instructions force the input
-    // representation for the key to be an integer, the input gets replaced
-    // during bound check elimination with the index argument to the bounds
-    // check, which can be tagged, so that case must be handled here, too.
-    if (instr->hydrogen()->IsDehoisted()) {
-      // Sign extend key because it could be a 32 bit negative value
-      // and the dehoisted address computation happens in 64 bits
-      __ movsxlq(key_reg, key_reg);
-    }
-  }
-
   if (instr->hydrogen()->RequiresHoleCheck()) {
     int offset = FixedDoubleArray::kHeaderSize - kHeapObjectTag +
         sizeof(kHoleNanLower32);
@@ -3062,20 +3058,6 @@ void LCodeGen::DoLoadKeyedFixedArray(LLoadKeyed* instr) {
   HLoadKeyed* hinstr = instr->hydrogen();
   Register result = ToRegister(instr->result());
   LOperand* key = instr->key();
-  if (!key->IsConstantOperand()) {
-    Register key_reg = ToRegister(key);
-    // Even though the HLoad/StoreKeyedFastElement instructions force
-    // the input representation for the key to be an integer, the input
-    // gets replaced during bound check elimination with the index
-    // argument to the bounds check, which can be tagged, so that
-    // case must be handled here, too.
-    if (hinstr->IsDehoisted()) {
-      // Sign extend key because it could be a 32 bit negative value
-      // and the dehoisted address computation happens in 64 bits
-      __ movsxlq(key_reg, key_reg);
-    }
-  }
-
   bool requires_hole_check = hinstr->RequiresHoleCheck();
   int offset = FixedArray::kHeaderSize - kHeapObjectTag;
   Representation representation = hinstr->representation();
@@ -3348,7 +3330,7 @@ void LCodeGen::DoDeclareGlobals(LDeclareGlobals* instr) {
   __ Push(rsi);  // The context is the first argument.
   __ Push(instr->hydrogen()->pairs());
   __ Push(Smi::FromInt(instr->hydrogen()->flags()));
-  CallRuntime(Runtime::kDeclareGlobals, 3, instr);
+  CallRuntime(Runtime::kHiddenDeclareGlobals, 3, instr);
 }
 
 
@@ -3480,7 +3462,7 @@ void LCodeGen::DoDeferredMathAbsTaggedHeapNumber(LMathAbs* instr) {
   // Slow case: Call the runtime system to do the number allocation.
   __ bind(&slow);
   CallRuntimeFromDeferred(
-      Runtime::kAllocateHeapNumber, 0, instr, instr->context());
+      Runtime::kHiddenAllocateHeapNumber, 0, instr, instr->context());
   // Set the pointer to the new heap number in tmp.
   if (!tmp.is(rax)) __ movp(tmp, rax);
   // Restore input_reg after call to runtime.
@@ -4134,19 +4116,6 @@ void LCodeGen::DoBoundsCheck(LBoundsCheck* instr) {
 void LCodeGen::DoStoreKeyedExternalArray(LStoreKeyed* instr) {
   ElementsKind elements_kind = instr->elements_kind();
   LOperand* key = instr->key();
-  if (!key->IsConstantOperand()) {
-    Register key_reg = ToRegister(key);
-    // Even though the HLoad/StoreKeyedFastElement instructions force
-    // the input representation for the key to be an integer, the input
-    // gets replaced during bound check elimination with the index
-    // argument to the bounds check, which can be tagged, so that case
-    // must be handled here, too.
-    if (instr->hydrogen()->IsDehoisted()) {
-      // Sign extend key because it could be a 32 bit negative value
-      // and the dehoisted address computation happens in 64 bits
-      __ movsxlq(key_reg, key_reg);
-    }
-  }
   int base_offset = instr->is_fixed_typed_array()
     ? FixedTypedArrayBase::kDataOffset - kHeapObjectTag
     : 0;
@@ -4210,20 +4179,6 @@ void LCodeGen::DoStoreKeyedExternalArray(LStoreKeyed* instr) {
 void LCodeGen::DoStoreKeyedFixedDoubleArray(LStoreKeyed* instr) {
   XMMRegister value = ToDoubleRegister(instr->value());
   LOperand* key = instr->key();
-  if (!key->IsConstantOperand()) {
-    Register key_reg = ToRegister(key);
-    // Even though the HLoad/StoreKeyedFastElement instructions force
-    // the input representation for the key to be an integer, the
-    // input gets replaced during bound check elimination with the index
-    // argument to the bounds check, which can be tagged, so that case
-    // must be handled here, too.
-    if (instr->hydrogen()->IsDehoisted()) {
-      // Sign extend key because it could be a 32 bit negative value
-      // and the dehoisted address computation happens in 64 bits
-      __ movsxlq(key_reg, key_reg);
-    }
-  }
-
   if (instr->NeedsCanonicalization()) {
     Label have_value;
 
@@ -4251,20 +4206,6 @@ void LCodeGen::DoStoreKeyedFixedDoubleArray(LStoreKeyed* instr) {
 void LCodeGen::DoStoreKeyedFixedArray(LStoreKeyed* instr) {
   HStoreKeyed* hinstr = instr->hydrogen();
   LOperand* key = instr->key();
-  if (!key->IsConstantOperand()) {
-    Register key_reg = ToRegister(key);
-    // Even though the HLoad/StoreKeyedFastElement instructions force
-    // the input representation for the key to be an integer, the
-    // input gets replaced during bound check elimination with the index
-    // argument to the bounds check, which can be tagged, so that case
-    // must be handled here, too.
-    if (hinstr->IsDehoisted()) {
-      // Sign extend key because it could be a 32 bit negative value
-      // and the dehoisted address computation happens in 64 bits
-      __ movsxlq(key_reg, key_reg);
-    }
-  }
-
   int offset = FixedArray::kHeaderSize - kHeapObjectTag;
   Representation representation = hinstr->value()->representation();
 
@@ -4607,11 +4548,11 @@ void LCodeGen::DoDeferredNumberTagU(LNumberTagU* instr) {
 
     // NumberTagU uses the context from the frame, rather than
     // the environment's HContext or HInlinedContext value.
-    // They only call Runtime::kAllocateHeapNumber.
+    // They only call Runtime::kHiddenAllocateHeapNumber.
     // The corresponding HChange instructions are added in a phase that does
     // not have easy access to the local context.
     __ movp(rsi, Operand(rbp, StandardFrameConstants::kContextOffset));
-    __ CallRuntimeSaveDoubles(Runtime::kAllocateHeapNumber);
+    __ CallRuntimeSaveDoubles(Runtime::kHiddenAllocateHeapNumber);
     RecordSafepointWithRegisters(
         instr->pointer_map(), 0, Safepoint::kNoLazyDeopt);
     __ StoreToSafepointRegisterSlot(reg, rax);
@@ -4663,11 +4604,11 @@ void LCodeGen::DoDeferredNumberTagD(LNumberTagD* instr) {
     PushSafepointRegistersScope scope(this);
     // NumberTagD uses the context from the frame, rather than
     // the environment's HContext or HInlinedContext value.
-    // They only call Runtime::kAllocateHeapNumber.
+    // They only call Runtime::kHiddenAllocateHeapNumber.
     // The corresponding HChange instructions are added in a phase that does
     // not have easy access to the local context.
     __ movp(rsi, Operand(rbp, StandardFrameConstants::kContextOffset));
-    __ CallRuntimeSaveDoubles(Runtime::kAllocateHeapNumber);
+    __ CallRuntimeSaveDoubles(Runtime::kHiddenAllocateHeapNumber);
     RecordSafepointWithRegisters(
         instr->pointer_map(), 0, Safepoint::kNoLazyDeopt);
     __ movp(kScratchRegister, rax);
@@ -5219,7 +5160,7 @@ void LCodeGen::DoDeferredAllocate(LAllocate* instr) {
   __ Push(Smi::FromInt(flags));
 
   CallRuntimeFromDeferred(
-      Runtime::kAllocateInTargetSpace, 2, instr, instr->context());
+      Runtime::kHiddenAllocateInTargetSpace, 2, instr, instr->context());
   __ StoreToSafepointRegisterSlot(result, rax);
 }
 
@@ -5251,7 +5192,7 @@ void LCodeGen::DoRegExpLiteral(LRegExpLiteral* instr) {
   __ Push(Smi::FromInt(instr->hydrogen()->literal_index()));
   __ Push(instr->hydrogen()->pattern());
   __ Push(instr->hydrogen()->flags());
-  CallRuntime(Runtime::kMaterializeRegExpLiteral, 4, instr);
+  CallRuntime(Runtime::kHiddenMaterializeRegExpLiteral, 4, instr);
   __ movp(rbx, rax);
 
   __ bind(&materialized);
@@ -5263,7 +5204,7 @@ void LCodeGen::DoRegExpLiteral(LRegExpLiteral* instr) {
   __ bind(&runtime_allocate);
   __ Push(rbx);
   __ Push(Smi::FromInt(size));
-  CallRuntime(Runtime::kAllocateInNewSpace, 1, instr);
+  CallRuntime(Runtime::kHiddenAllocateInNewSpace, 1, instr);
   __ Pop(rbx);
 
   __ bind(&allocated);
@@ -5297,7 +5238,7 @@ void LCodeGen::DoFunctionLiteral(LFunctionLiteral* instr) {
     __ Push(instr->hydrogen()->shared_info());
     __ PushRoot(pretenure ? Heap::kTrueValueRootIndex :
                             Heap::kFalseValueRootIndex);
-    CallRuntime(Runtime::kNewClosure, 3, instr);
+    CallRuntime(Runtime::kHiddenNewClosure, 3, instr);
   }
 }
 
@@ -5492,7 +5433,7 @@ void LCodeGen::DoDummyUse(LDummyUse* instr) {
 void LCodeGen::DoDeferredStackCheck(LStackCheck* instr) {
   PushSafepointRegistersScope scope(this);
   __ movp(rsi, Operand(rbp, StandardFrameConstants::kContextOffset));
-  __ CallRuntimeSaveDoubles(Runtime::kStackGuard);
+  __ CallRuntimeSaveDoubles(Runtime::kHiddenStackGuard);
   RecordSafepointWithLazyDeopt(instr, RECORD_SAFEPOINT_WITH_REGISTERS, 0);
   ASSERT(instr->HasEnvironment());
   LEnvironment* env = instr->environment();
