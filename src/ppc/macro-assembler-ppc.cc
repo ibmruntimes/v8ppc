@@ -4802,18 +4802,18 @@ void MacroAssembler::LoadRepresentation(Register dst,
                                         Register scratch) {
   ASSERT(!r.IsDouble());
   if (r.IsInteger8()) {
-    lbz(dst, mem);
+    LoadByte(dst, mem, scratch);
     extsb(dst, dst);
   } else if (r.IsUInteger8()) {
-    lbz(dst, mem);
+    LoadByte(dst, mem, scratch);
   } else if (r.IsInteger16()) {
-    lhz(dst, mem);
+    LoadHalfWord(dst, mem, scratch);
     extsh(dst, dst);
   } else if (r.IsUInteger16()) {
-    lhz(dst, mem);
+    LoadHalfWord(dst, mem, scratch);
 #if V8_TARGET_ARCH_PPC64
   } else if (r.IsInteger32()) {
-    lwz(dst, mem);
+    LoadWord(dst, mem, scratch);
 #endif
   } else {
     LoadP(dst, mem, scratch);
@@ -4827,12 +4827,12 @@ void MacroAssembler::StoreRepresentation(Register src,
                                          Register scratch) {
   ASSERT(!r.IsDouble());
   if (r.IsInteger8() || r.IsUInteger8()) {
-    stb(src, mem);
+    StoreByte(src, mem, scratch);
   } else if (r.IsInteger16() || r.IsUInteger16()) {
-    sth(src, mem);
+    StoreHalfWord(src, mem, scratch);
 #if V8_TARGET_ARCH_PPC64
   } else if (r.IsInteger32()) {
-    stw(src, mem);
+    StoreWord(src, mem, scratch);
 #endif
   } else {
     StoreP(src, mem, scratch);
