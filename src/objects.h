@@ -1566,6 +1566,9 @@ class Object : public MaybeObject {
       Name* key,
       PropertyAttributes* attributes);
 
+  static Handle<Object> GetPropertyOrElement(Handle<Object> object,
+                                             Handle<Name> key);
+
   static Handle<Object> GetProperty(Handle<Object> object,
                                     Handle<Name> key);
   static Handle<Object> GetProperty(Handle<Object> object,
@@ -3151,6 +3154,8 @@ class FixedDoubleArray: public FixedArrayBase {
   inline double get_scalar(int index);
   inline int64_t get_representation(int index);
   MUST_USE_RESULT inline MaybeObject* get(int index);
+  // TODO(ishell): Rename as get() once all usages handlified.
+  inline Handle<Object> get_as_handle(int index);
   inline void set(int index, double value);
   inline void set_the_hole(int index);
 
