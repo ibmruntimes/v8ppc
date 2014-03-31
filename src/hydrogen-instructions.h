@@ -6025,6 +6025,11 @@ class HObjectAccess V8_FINAL {
         JSArrayBuffer::kBackingStoreOffset, Representation::External());
   }
 
+  static HObjectAccess ForJSArrayBufferByteLength() {
+    return HObjectAccess::ForObservableJSObjectOffset(
+        JSArrayBuffer::kByteLengthOffset, Representation::Tagged());
+  }
+
   static HObjectAccess ForExternalArrayExternalPointer() {
     return HObjectAccess::ForObservableJSObjectOffset(
         ExternalArray::kExternalPointerOffset, Representation::External());
@@ -7499,6 +7504,7 @@ class HLoadFieldByIndex V8_FINAL : public HTemplateInstruction<2> {
                     HValue* index) {
     SetOperandAt(0, object);
     SetOperandAt(1, index);
+    SetChangesFlag(kNewSpacePromotion);
     set_representation(Representation::Tagged());
   }
 

@@ -5659,7 +5659,6 @@ void LCodeGen::DoRegExpLiteral(LRegExpLiteral* instr) {
 
 void LCodeGen::DoTransitionElementsKind(LTransitionElementsKind* instr) {
   Register object = ToRegister(instr->object());
-  Register temp1 = ToRegister(instr->temp1());
 
   Handle<Map> from_map = instr->original_map();
   Handle<Map> to_map = instr->transitioned_map();
@@ -5667,26 +5666,34 @@ void LCodeGen::DoTransitionElementsKind(LTransitionElementsKind* instr) {
   ElementsKind to_kind = instr->to_kind();
 
   Label not_applicable;
-  __ CheckMap(object, temp1, from_map, &not_applicable, DONT_DO_SMI_CHECK);
 
   if (IsSimpleMapChangeTransition(from_kind, to_kind)) {
+    Register temp1 = ToRegister(instr->temp1());
     Register new_map = ToRegister(instr->temp2());
+    __ CheckMap(object, temp1, from_map, &not_applicable, DONT_DO_SMI_CHECK);
     __ Mov(new_map, Operand(to_map));
     __ Str(new_map, FieldMemOperand(object, HeapObject::kMapOffset));
     // Write barrier.
     __ RecordWriteField(object, HeapObject::kMapOffset, new_map, temp1,
                         GetLinkRegisterState(), kDontSaveFPRegs);
   } else {
+    {
+      UseScratchRegisterScope temps(masm());
+      // Use the temp register only in a restricted scope - the codegen checks
+      // that we do not use any register across a call.
+      __ CheckMap(object, temps.AcquireX(), from_map, &not_applicable,
+                  DONT_DO_SMI_CHECK);
+    }
+    ASSERT(object.is(x0));
     ASSERT(ToRegister(instr->context()).is(cp));
     PushSafepointRegistersScope scope(
         this, Safepoint::kWithRegistersAndDoubles);
-    __ Mov(x0, object);
     __ Mov(x1, Operand(to_map));
     bool is_js_array = from_map->instance_type() == JS_ARRAY_TYPE;
     TransitionElementsKindStub stub(from_kind, to_kind, is_js_array);
     __ CallStub(&stub);
     RecordSafepointWithRegistersAndDoubles(
-        instr->pointer_map(), 0, Safepoint::kNoLazyDeopt);
+        instr->pointer_map(), 0, Safepoint::kLazyDeopt);
   }
   __ Bind(&not_applicable);
 }
@@ -5872,14 +5879,61 @@ void LCodeGen::DoWrapReceiver(LWrapReceiver* instr) {
 }
 
 
+void LCodeGen::DoDeferredLoadMutableDouble(LLoadFieldByIndex* instr,
+                                           Register result,
+                                           Register object,
+                                           Register index) {
+  PushSafepointRegistersScope scope(this, Safepoint::kWithRegisters);
+  __ Push(object);
+  __ Push(index);
+  __ Mov(cp, 0);
+  __ CallRuntimeSaveDoubles(Runtime::kLoadMutableDouble);
+  RecordSafepointWithRegisters(
+      instr->pointer_map(), 1, Safepoint::kNoLazyDeopt);
+  __ StoreToSafepointRegisterSlot(x0, result);
+}
+
+
 void LCodeGen::DoLoadFieldByIndex(LLoadFieldByIndex* instr) {
+  class DeferredLoadMutableDouble V8_FINAL : public LDeferredCode {
+   public:
+    DeferredLoadMutableDouble(LCodeGen* codegen,
+                              LLoadFieldByIndex* instr,
+                              Register result,
+                              Register object,
+                              Register index)
+        : LDeferredCode(codegen),
+          instr_(instr),
+          result_(result),
+          object_(object),
+          index_(index) {
+    }
+    virtual void Generate() V8_OVERRIDE {
+      codegen()->DoDeferredLoadMutableDouble(instr_, result_, object_, index_);
+    }
+    virtual LInstruction* instr() V8_OVERRIDE { return instr_; }
+   private:
+    LLoadFieldByIndex* instr_;
+    Register result_;
+    Register object_;
+    Register index_;
+  };
   Register object = ToRegister(instr->object());
   Register index = ToRegister(instr->index());
   Register result = ToRegister(instr->result());
 
   __ AssertSmi(index);
 
+  DeferredLoadMutableDouble* deferred;
+  deferred = new(zone()) DeferredLoadMutableDouble(
+      this, instr, result, object, index);
+
   Label out_of_object, done;
+
+  __ TestAndBranchIfAnySet(
+      index, reinterpret_cast<uint64_t>(Smi::FromInt(1)), deferred->entry());
+  __ Mov(index, Operand(index, ASR, 1));
+
   __ Cmp(index, Smi::FromInt(0));
   __ B(lt, &out_of_object);
 
@@ -5895,6 +5949,7 @@ void LCodeGen::DoLoadFieldByIndex(LLoadFieldByIndex* instr) {
   __ Sub(result, result, Operand::UntagSmiAndScale(index, kPointerSizeLog2));
   __ Ldr(result, FieldMemOperand(result,
                                  FixedArray::kHeaderSize - kPointerSize));
+  __ Bind(deferred->exit());
   __ Bind(&done);
 }
 
