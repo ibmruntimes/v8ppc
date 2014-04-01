@@ -120,10 +120,14 @@ static void EmitStackCheck(MacroAssembler* masm_,
     Isolate* isolate = masm_->isolate();
   Label ok;
   ASSERT(scratch.is(sp) == (pointers == 0));
+  Heap::RootListIndex index;
   if (pointers != 0) {
     __ Add(scratch, sp, -(pointers * kPointerSize), r0);
+    index = Heap::kRealStackLimitRootIndex;
+  } else {
+    index = Heap::kStackLimitRootIndex;
   }
-  __ LoadRoot(stack_limit_scratch, Heap::kStackLimitRootIndex);
+  __ LoadRoot(stack_limit_scratch, index);
   __ cmpl(scratch, stack_limit_scratch);
   __ bc_short(ge, &ok);
   __ Call(isolate->builtins()->StackCheck(), RelocInfo::CODE_TARGET);

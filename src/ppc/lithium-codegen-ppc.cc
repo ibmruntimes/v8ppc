@@ -1178,7 +1178,7 @@ void LCodeGen::DoDivByPowerOf2I(LDivByPowerOf2I* instr) {
   Register dividend = ToRegister(instr->dividend());
   int32_t divisor = instr->divisor();
   Register result = ToRegister(instr->result());
-  ASSERT(divisor == kMinInt || (divisor != 0 && IsPowerOf2(Abs(divisor))));
+  ASSERT(divisor == kMinInt || IsPowerOf2(Abs(divisor)));
   ASSERT(!result.is(dividend));
 
   // Check for (0 / -x) that will produce negative zero.
@@ -1253,36 +1253,37 @@ void LCodeGen::DoDivByConstI(LDivByConstI* instr) {
 }
 
 
+// TODO(svenpanne) Refactor this to avoid code duplication with DoFlooringDivI.
 void LCodeGen::DoDivI(LDivI* instr) {
   HBinaryOperation* hdiv = instr->hydrogen();
-  const Register left = ToRegister(instr->left());
-  const Register right = ToRegister(instr->right());
+  const Register dividend = ToRegister(instr->dividend());
+  const Register divisor = ToRegister(instr->divisor());
   Register result = ToRegister(instr->result());
 
-  ASSERT(!left.is(result));
-  ASSERT(!right.is(result));
+  ASSERT(!dividend.is(result));
+  ASSERT(!divisor.is(result));
 
   if (hdiv->CheckFlag(HValue::kCanOverflow)) {
     __ li(r0, Operand::Zero());  // clear xer
     __ mtxer(r0);
   }
 
-  __ divw(result, left, right, SetOE, SetRC);
+  __ divw(result, dividend, divisor, SetOE, SetRC);
 
   // Check for x / 0.
   if (hdiv->CheckFlag(HValue::kCanBeDivByZero)) {
-    __ cmpwi(right, Operand::Zero());
+    __ cmpwi(divisor, Operand::Zero());
     DeoptimizeIf(eq, instr->environment());
   }
 
   // Check for (0 / -x) that will produce negative zero.
   if (hdiv->CheckFlag(HValue::kBailoutOnMinusZero)) {
-    Label left_not_zero;
-    __ cmpwi(left, Operand::Zero());
-    __ bne(&left_not_zero);
-    __ cmpwi(right, Operand::Zero());
+    Label dividend_not_zero;
+    __ cmpwi(dividend, Operand::Zero());
+    __ bne(&dividend_not_zero);
+    __ cmpwi(divisor, Operand::Zero());
     DeoptimizeIf(lt, instr->environment());
-    __ bind(&left_not_zero);
+    __ bind(&dividend_not_zero);
   }
 
   // Check for (kMinInt / -1).
@@ -1293,37 +1294,16 @@ void LCodeGen::DoDivI(LDivI* instr) {
     } else {
       // When truncating, we want kMinInt / -1 = kMinInt.
       __ bnooverflow(&no_overflow_possible, cr0);
-      __ mr(result, left);
+      __ mr(result, dividend);
     }
     __ bind(&no_overflow_possible);
   }
 
-  if (hdiv->IsMathFloorOfDiv()) {
-    Label done;
-    Register scratch = scratch0();
-    // If both operands have the same sign then we are done.
-#if V8_TARGET_ARCH_PPC64
-    __ xor_(scratch, left, right);
-    __ cmpwi(scratch, Operand::Zero());
-    __ bge(&done);
-#else
-    __ xor_(scratch, left, right, SetRC);
-    __ bge(&done, cr0);
-#endif
-
-    // If there is no remainder then we are done.
-    __ mullw(scratch, right, result);
-    __ cmpw(left, scratch);
-    __ beq(&done);
-
-    // We performed a truncating division. Correct the result.
-    __ subi(result, result, Operand(1));
-    __ bind(&done);
-  } else if (!hdiv->CheckFlag(HInstruction::kAllUsesTruncatingToInt32)) {
+  if (!hdiv->CheckFlag(HInstruction::kAllUsesTruncatingToInt32)) {
     // Deoptimize if remainder is not 0.
     Register scratch = scratch0();
-    __ mullw(scratch, right, result);
-    __ cmpw(left, scratch);
+    __ mullw(scratch, divisor, result);
+    __ cmpw(dividend, scratch);
     DeoptimizeIf(ne, instr->environment());
   }
 }
@@ -1432,6 +1412,75 @@ void LCodeGen::DoFlooringDivByConstI(LFlooringDivByConstI* instr) {
   __ addi(temp, dividend, Operand(divisor > 0 ? 1 : -1));
   __ TruncatingDiv(result, temp, Abs(divisor));
   if (divisor < 0) __ neg(result, result);
+  __ subi(result, result, Operand(1));
+  __ bind(&done);
+}
+
+
+// TODO(svenpanne) Refactor this to avoid code duplication with DoDivI.
+void LCodeGen::DoFlooringDivI(LFlooringDivI* instr) {
+  HBinaryOperation* hdiv = instr->hydrogen();
+  const Register dividend = ToRegister(instr->dividend());
+  const Register divisor = ToRegister(instr->divisor());
+  Register result = ToRegister(instr->result());
+
+  ASSERT(!dividend.is(result));
+  ASSERT(!divisor.is(result));
+
+  if (hdiv->CheckFlag(HValue::kCanOverflow)) {
+    __ li(r0, Operand::Zero());  // clear xer
+    __ mtxer(r0);
+  }
+
+  __ divw(result, dividend, divisor, SetOE, SetRC);
+
+  // Check for x / 0.
+  if (hdiv->CheckFlag(HValue::kCanBeDivByZero)) {
+    __ cmpwi(divisor, Operand::Zero());
+    DeoptimizeIf(eq, instr->environment());
+  }
+
+  // Check for (0 / -x) that will produce negative zero.
+  if (hdiv->CheckFlag(HValue::kBailoutOnMinusZero)) {
+    Label dividend_not_zero;
+    __ cmpwi(dividend, Operand::Zero());
+    __ bne(&dividend_not_zero);
+    __ cmpwi(divisor, Operand::Zero());
+    DeoptimizeIf(lt, instr->environment());
+    __ bind(&dividend_not_zero);
+  }
+
+  // Check for (kMinInt / -1).
+  if (hdiv->CheckFlag(HValue::kCanOverflow)) {
+    Label no_overflow_possible;
+    if (!hdiv->CheckFlag(HValue::kAllUsesTruncatingToInt32)) {
+      DeoptimizeIf(overflow, instr->environment(), cr0);
+    } else {
+      // When truncating, we want kMinInt / -1 = kMinInt.
+      __ bnooverflow(&no_overflow_possible, cr0);
+      __ mr(result, dividend);
+    }
+    __ bind(&no_overflow_possible);
+  }
+
+  Label done;
+  Register scratch = scratch0();
+  // If both operands have the same sign then we are done.
+#if V8_TARGET_ARCH_PPC64
+  __ xor_(scratch, dividend, divisor);
+  __ cmpwi(scratch, Operand::Zero());
+  __ bge(&done);
+#else
+  __ xor_(scratch, dividend, divisor, SetRC);
+  __ bge(&done, cr0);
+#endif
+
+  // If there is no remainder then we are done.
+  __ mullw(scratch, divisor, result);
+  __ cmpw(dividend, scratch);
+  __ beq(&done);
+
+  // We performed a truncating division. Correct the result.
   __ subi(result, result, Operand(1));
   __ bind(&done);
 }
@@ -6040,7 +6089,7 @@ void LCodeGen::DoDeferredLoadMutableDouble(LLoadFieldByIndex* instr,
   __ li(cp, Operand::Zero());
   __ CallRuntimeSaveDoubles(Runtime::kLoadMutableDouble);
   RecordSafepointWithRegisters(
-      instr->pointer_map(), 1, Safepoint::kNoLazyDeopt);
+      instr->pointer_map(), 2, Safepoint::kNoLazyDeopt);
   __ StoreToSafepointRegisterSlot(r3, result);
 }
 
