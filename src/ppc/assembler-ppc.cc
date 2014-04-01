@@ -1507,24 +1507,46 @@ void Assembler::mov(Register dst, const Operand& src) {
     RecordRelocInfo(src.rmode_, src.imm_);
   }
 
+  intptr_t value = src.immediate();
   bool canOptimize = (RelocInfo::IsNone(src.rmode_) &&
                       !is_trampoline_pool_blocked());
-  intptr_t value = src.immediate();
 
   if (canOptimize) {
     if (is_int16(value)) {
       li(dst, Operand(value));
-      return;
-    } else if (is_int32(value)) {
-      int hi_word = static_cast<int>(value >> 16);
-      int lo_word = static_cast<int>(value & 0xffff);
-      lis(dst, Operand(SIGN_EXT_IMM16(hi_word)));
-      if (lo_word) {
-        ori(dst, dst, Operand(lo_word));
+    } else {
+      uint16_t u16;
+#if V8_TARGET_ARCH_PPC64
+      if (is_int32(value)) {
+#endif
+        lis(dst, Operand(value >> 16));
+#if V8_TARGET_ARCH_PPC64
+      } else {
+        if (is_int48(value)) {
+          li(dst, Operand(value >> 32));
+        } else {
+          lis(dst, Operand(value >> 48));
+          u16 = ((value >> 32) & 0xffff);
+          if (u16) {
+            ori(dst, dst, Operand(u16));
+          }
+        }
+        sldi(dst, dst, Operand(32));
+        u16 = ((value >> 16) & 0xffff);
+        if (u16) {
+          oris(dst, dst, Operand(u16));
+        }
       }
-      return;
+#endif
+      u16 = (value & 0xffff);
+      if (u16) {
+        ori(dst, dst, Operand(u16));
+      }
     }
+    return;
   }
+
+  ASSERT(!canOptimize);
 
   {
     BlockTrampolinePoolScope block_trampoline_pool(this);
@@ -1541,7 +1563,6 @@ void Assembler::mov(Register dst, const Operand& src) {
     oris(dst, dst, Operand(hi_word));
     ori(dst, dst, Operand(lo_word));
 #else
-    ASSERT(!canOptimize);
     int hi_word = static_cast<int>(value >> 16);
     int lo_word = static_cast<int>(value & 0xffff);
     lis(dst, Operand(SIGN_EXT_IMM16(hi_word)));
