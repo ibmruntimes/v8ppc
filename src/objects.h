@@ -357,8 +357,6 @@ const int kStubMinorKeyBits = kBitsPerInt - kSmiTagSize - kStubMajorKeyBits;
                                                                                \
   V(INTERNALIZED_STRING_TYPE)                                                  \
   V(ASCII_INTERNALIZED_STRING_TYPE)                                            \
-  V(CONS_INTERNALIZED_STRING_TYPE)                                             \
-  V(CONS_ASCII_INTERNALIZED_STRING_TYPE)                                       \
   V(EXTERNAL_INTERNALIZED_STRING_TYPE)                                         \
   V(EXTERNAL_ASCII_INTERNALIZED_STRING_TYPE)                                   \
   V(EXTERNAL_INTERNALIZED_STRING_WITH_ONE_BYTE_DATA_TYPE)                      \
@@ -516,14 +514,6 @@ const int kStubMinorKeyBits = kBitsPerInt - kSmiTagSize - kStubMajorKeyBits;
     kVariableSizeSentinel,                                                     \
     ascii_internalized_string,                                                 \
     AsciiInternalizedString)                                                   \
-  V(CONS_INTERNALIZED_STRING_TYPE,                                             \
-    ConsString::kSize,                                                         \
-    cons_internalized_string,                                                  \
-    ConsInternalizedString)                                                    \
-  V(CONS_ASCII_INTERNALIZED_STRING_TYPE,                                       \
-    ConsString::kSize,                                                         \
-    cons_ascii_internalized_string,                                            \
-    ConsAsciiInternalizedString)                                               \
   V(EXTERNAL_INTERNALIZED_STRING_TYPE,                                         \
     ExternalTwoByteString::kSize,                                              \
     external_internalized_string,                                              \
@@ -633,7 +623,7 @@ STATIC_ASSERT(
 // Use this mask to distinguish between cons and slice only after making
 // sure that the string is one of the two (an indirect string).
 const uint32_t kSlicedNotConsMask = kSlicedStringTag & ~kConsStringTag;
-STATIC_ASSERT(IS_POWER_OF_TWO(kSlicedNotConsMask) && kSlicedNotConsMask != 0);
+STATIC_ASSERT(IS_POWER_OF_TWO(kSlicedNotConsMask));
 
 // If bit 7 is clear, then bit 3 indicates whether this two-byte
 // string actually contains one byte data.
@@ -664,10 +654,6 @@ enum InstanceType {
       | kInternalizedTag,
   ASCII_INTERNALIZED_STRING_TYPE = kOneByteStringTag | kSeqStringTag
       | kInternalizedTag,
-  CONS_INTERNALIZED_STRING_TYPE = kTwoByteStringTag | kConsStringTag
-      | kInternalizedTag,
-  CONS_ASCII_INTERNALIZED_STRING_TYPE = kOneByteStringTag | kConsStringTag
-      | kInternalizedTag,
   EXTERNAL_INTERNALIZED_STRING_TYPE = kTwoByteStringTag | kExternalStringTag
       | kInternalizedTag,
   EXTERNAL_ASCII_INTERNALIZED_STRING_TYPE = kOneByteStringTag
@@ -687,9 +673,9 @@ enum InstanceType {
 
   STRING_TYPE = INTERNALIZED_STRING_TYPE | kNotInternalizedTag,
   ASCII_STRING_TYPE = ASCII_INTERNALIZED_STRING_TYPE | kNotInternalizedTag,
-  CONS_STRING_TYPE = CONS_INTERNALIZED_STRING_TYPE | kNotInternalizedTag,
+  CONS_STRING_TYPE = kTwoByteStringTag | kConsStringTag | kNotInternalizedTag,
   CONS_ASCII_STRING_TYPE =
-      CONS_ASCII_INTERNALIZED_STRING_TYPE | kNotInternalizedTag,
+      kOneByteStringTag | kConsStringTag | kNotInternalizedTag,
 
   SLICED_STRING_TYPE =
       kTwoByteStringTag | kSlicedStringTag | kNotInternalizedTag,
@@ -1296,6 +1282,8 @@ class MaybeObject BASE_EMBEDDED {
   V(kOperandIsNotAString, "Operand is not a string")                          \
   V(kOperandIsNotSmi, "Operand is not smi")                                   \
   V(kOperandNotANumber, "Operand not a number")                               \
+  V(kObjectTagged, "The object is tagged")                                    \
+  V(kObjectNotTagged, "The object is not tagged")                             \
   V(kOptimizationDisabled, "Optimization is disabled")                        \
   V(kOptimizedTooManyTimes, "Optimized too many times")                       \
   V(kOutOfVirtualRegistersWhileTryingToAllocateTempRegister,                  \
@@ -1636,6 +1624,7 @@ class Object : public MaybeObject {
   // < the length of the string.  Used to implement [] on strings.
   inline bool IsStringObjectWithCharacterAt(uint32_t index);
 
+  DECLARE_VERIFIER(Object)
 #ifdef VERIFY_HEAP
   // Verify a pointer is a valid object pointer.
   static void VerifyPointer(Object* p);
@@ -1822,6 +1811,14 @@ class HeapObject: public Object {
   // new space, or if the value is an immortal immutable object, like the maps
   // of primitive (non-JS) objects like strings, heap numbers etc.
   inline void set_map_no_write_barrier(Map* value);
+
+  // Get the map using acquire load.
+  inline Map* synchronized_map();
+  inline MapWord synchronized_map_word();
+
+  // Set the map using release store
+  inline void synchronized_set_map(Map* value);
+  inline void synchronized_set_map_word(MapWord map_word);
 
   // During garbage collection, the map word of a heap object does not
   // necessarily contain a map pointer.
@@ -2203,6 +2200,10 @@ class JSObject: public JSReceiver {
   DECL_ACCESSORS(elements, FixedArrayBase)
   inline void initialize_elements();
   MUST_USE_RESULT inline MaybeObject* ResetElements();
+  static void ResetElements(Handle<JSObject> object);
+  static inline void SetMapAndElements(Handle<JSObject> object,
+                                       Handle<Map> map,
+                                       Handle<FixedArrayBase> elements);
   inline ElementsKind GetElementsKind();
   inline ElementsAccessor* GetElementsAccessor();
   // Returns true if an object has elements of FAST_SMI_ELEMENTS ElementsKind.
@@ -2250,11 +2251,6 @@ class JSObject: public JSReceiver {
   bool HasFastArgumentsElements();
   bool HasDictionaryArgumentsElements();
   inline SeededNumberDictionary* element_dictionary();  // Gets slow elements.
-
-  inline void set_map_and_elements(
-      Map* map,
-      FixedArrayBase* value,
-      WriteBarrierMode mode = UPDATE_WRITE_BARRIER);
 
   // Requires: HasFastElements().
   static Handle<FixedArray> EnsureWritableFastElements(
@@ -3027,6 +3023,10 @@ class FixedArrayBase: public HeapObject {
   // [length]: length of the array.
   inline int length();
   inline void set_length(int value);
+
+  // Get and set the length using acquire loads and release stores.
+  inline int synchronized_length();
+  inline void synchronized_set_length(int value);
 
   inline static FixedArrayBase* cast(Object* object);
 
@@ -8839,6 +8839,11 @@ class String: public Name {
   // Get and set the length of the string.
   inline int length();
   inline void set_length(int value);
+
+  // Get and set the length of the string using acquire loads and release
+  // stores.
+  inline int synchronized_length();
+  inline void synchronized_set_length(int value);
 
   // Returns whether this string has only ASCII chars, i.e. all of them can
   // be ASCII encoded.  This might be the case even if the string is

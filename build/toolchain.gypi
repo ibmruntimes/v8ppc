@@ -552,10 +552,7 @@
         'conditions': [
           ['OS=="linux" or OS=="freebsd" or OS=="openbsd" or OS=="netbsd" or \
             OS=="qnx" or OS=="aix"', {
-            'cflags': [ '-Wall', '<(werror)', '-W', '-Wno-unused-parameter',
-                        '-Wnon-virtual-dtor', '-Woverloaded-virtual',
-                        '<(wno_array_bounds)',
-                      ],
+            'cflags': [ '-Woverloaded-virtual', '<(wno_array_bounds)', ],
             'conditions': [
               ['v8_optimized_debug==0', {
                 'cflags!': [

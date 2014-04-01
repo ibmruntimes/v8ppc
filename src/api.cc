@@ -533,7 +533,7 @@ i::Object** V8::GlobalizeReference(i::Isolate* isolate, i::Object** obj) {
   LOG_API(isolate, "Persistent::New");
   i::Handle<i::Object> result = isolate->global_handles()->Create(*obj);
 #ifdef DEBUG
-  (*obj)->Verify();
+  (*obj)->ObjectVerify();
 #endif  // DEBUG
   return result.location();
 }
@@ -542,7 +542,7 @@ i::Object** V8::GlobalizeReference(i::Isolate* isolate, i::Object** obj) {
 i::Object** V8::CopyPersistent(i::Object** obj) {
   i::Handle<i::Object> result = i::GlobalHandles::CopyGlobal(obj);
 #ifdef DEBUG
-  (*obj)->Verify();
+  (*obj)->ObjectVerify();
 #endif  // DEBUG
   return result.location();
 }
@@ -3736,8 +3736,7 @@ void PrepareExternalArrayElements(i::Handle<i::JSObject> object,
           object,
           GetElementsKindFromExternalArrayType(array_type));
 
-  object->set_map(*external_array_map);
-  object->set_elements(*array);
+  i::JSObject::SetMapAndElements(object, external_array_map, array);
 }
 
 }  // namespace
@@ -5834,7 +5833,7 @@ Local<Object> Array::CloneElementAt(uint32_t index) {
 
 bool Value::IsPromise() const {
   i::Handle<i::Object> val = Utils::OpenHandle(this);
-  if (!val->IsJSObject()) return false;
+  if (!i::FLAG_harmony_promises || !val->IsJSObject()) return false;
   i::Handle<i::JSObject> obj = i::Handle<i::JSObject>::cast(val);
   i::Isolate* isolate = obj->GetIsolate();
   LOG_API(isolate, "IsPromise");
@@ -6101,7 +6100,7 @@ i::Handle<i::JSTypedArray> NewTypedArray(
           static_cast<uint8_t*>(buffer->backing_store()) + byte_offset);
   i::Handle<i::Map> map =
       i::JSObject::GetElementsTransitionMap(obj, elements_kind);
-  obj->set_map_and_elements(*map, *elements);
+  i::JSObject::SetMapAndElements(obj, map, elements);
   return obj;
 }
 

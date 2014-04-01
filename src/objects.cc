@@ -1284,34 +1284,39 @@ bool String::MakeExternal(v8::String::ExternalStringResource* resource) {
   // In either case we resort to a short external string instead, omitting
   // the field caching the address of the backing store.  When we encounter
   // short external strings in generated code, we need to bailout to runtime.
+  Map* new_map;
   if (size < ExternalString::kSize ||
       heap->old_pointer_space()->Contains(this)) {
-    this->set_map_no_write_barrier(
-        is_internalized
-            ? (is_ascii
-                ? heap->
-                    short_external_internalized_string_with_one_byte_data_map()
-                : heap->short_external_internalized_string_map())
-            : (is_ascii
-                ? heap->short_external_string_with_one_byte_data_map()
-                : heap->short_external_string_map()));
+    new_map = is_internalized
+        ? (is_ascii
+            ? heap->
+                short_external_internalized_string_with_one_byte_data_map()
+            : heap->short_external_internalized_string_map())
+        : (is_ascii
+            ? heap->short_external_string_with_one_byte_data_map()
+            : heap->short_external_string_map());
   } else {
-    this->set_map_no_write_barrier(
-        is_internalized
-            ? (is_ascii
-                ? heap->external_internalized_string_with_one_byte_data_map()
-                : heap->external_internalized_string_map())
-            : (is_ascii
-                ? heap->external_string_with_one_byte_data_map()
-                : heap->external_string_map()));
+    new_map = is_internalized
+        ? (is_ascii
+            ? heap->external_internalized_string_with_one_byte_data_map()
+            : heap->external_internalized_string_map())
+        : (is_ascii
+            ? heap->external_string_with_one_byte_data_map()
+            : heap->external_string_map());
   }
+
+  // Byte size of the external String object.
+  int new_size = this->SizeFromMap(new_map);
+  heap->CreateFillerObjectAt(this->address() + new_size, size - new_size);
+
+  // We are storing the new map using release store after creating a filler for
+  // the left-over space to avoid races with the sweeper thread.
+  this->synchronized_set_map(new_map);
+
   ExternalTwoByteString* self = ExternalTwoByteString::cast(this);
   self->set_resource(resource);
   if (is_internalized) self->Hash();  // Force regeneration of the hash value.
 
-  // Fill the remainder of the string with dead wood.
-  int new_size = this->Size();  // Byte size of the external String object.
-  heap->CreateFillerObjectAt(this->address() + new_size, size - new_size);
   heap->AdjustLiveBytes(this->address(), new_size - size, Heap::FROM_MUTATOR);
   return true;
 }
@@ -1351,23 +1356,30 @@ bool String::MakeExternal(v8::String::ExternalAsciiStringResource* resource) {
   // In either case we resort to a short external string instead, omitting
   // the field caching the address of the backing store.  When we encounter
   // short external strings in generated code, we need to bailout to runtime.
+  Map* new_map;
   if (size < ExternalString::kSize ||
       heap->old_pointer_space()->Contains(this)) {
-    this->set_map_no_write_barrier(
-        is_internalized ? heap->short_external_ascii_internalized_string_map()
-                        : heap->short_external_ascii_string_map());
+    new_map = is_internalized
+        ? heap->short_external_ascii_internalized_string_map()
+        : heap->short_external_ascii_string_map();
   } else {
-    this->set_map_no_write_barrier(
-        is_internalized ? heap->external_ascii_internalized_string_map()
-                        : heap->external_ascii_string_map());
+    new_map = is_internalized
+        ? heap->external_ascii_internalized_string_map()
+        : heap->external_ascii_string_map();
   }
+
+  // Byte size of the external String object.
+  int new_size = this->SizeFromMap(new_map);
+  heap->CreateFillerObjectAt(this->address() + new_size, size - new_size);
+
+  // We are storing the new map using release store after creating a filler for
+  // the left-over space to avoid races with the sweeper thread.
+  this->synchronized_set_map(new_map);
+
   ExternalAsciiString* self = ExternalAsciiString::cast(this);
   self->set_resource(resource);
   if (is_internalized) self->Hash();  // Force regeneration of the hash value.
 
-  // Fill the remainder of the string with dead wood.
-  int new_size = this->Size();  // Byte size of the external String object.
-  heap->CreateFillerObjectAt(this->address() + new_size, size - new_size);
   heap->AdjustLiveBytes(this->address(), new_size - size, Heap::FROM_MUTATOR);
   return true;
 }
@@ -2301,7 +2313,9 @@ static void RightTrimFixedArray(Heap* heap, FixedArray* elms, int to_trim) {
   // we still do it.
   heap->CreateFillerObjectAt(new_end, size_delta);
 
-  elms->set_length(len - to_trim);
+  // We are storing the new length using release store after creating a filler
+  // for the left-over space to avoid races with the sweeper thread.
+  elms->synchronized_set_length(len - to_trim);
 
   heap->AdjustLiveBytes(elms->address(), -size_delta, mode);
 
@@ -2376,7 +2390,9 @@ void JSObject::MigrateToMap(Handle<JSObject> object, Handle<Map> new_map) {
   // converted to doubles.
   if (!old_map->InstancesNeedRewriting(
           *new_map, number_of_fields, inobject, unused)) {
-    object->set_map(*new_map);
+    // Writing the new map here does not require synchronization since it does
+    // not change the actual object size.
+    object->synchronized_set_map(*new_map);
     return;
   }
 
@@ -2446,6 +2462,11 @@ void JSObject::MigrateToMap(Handle<JSObject> object, Handle<Map> new_map) {
   int instance_size_delta = old_map->instance_size() - new_instance_size;
   ASSERT(instance_size_delta >= 0);
   Address address = object->address() + new_instance_size;
+
+  // The trimming is performed on a newly allocated object, which is on a
+  // fresly allocated page or on an already swept page. Hence, the sweeper
+  // thread can not get confused with the filler creation. No synchronization
+  // needed.
   isolate->heap()->CreateFillerObjectAt(address, instance_size_delta);
 
   // If there are properties in the new backing store, trim it to the correct
@@ -2455,6 +2476,10 @@ void JSObject::MigrateToMap(Handle<JSObject> object, Handle<Map> new_map) {
     object->set_properties(*array);
   }
 
+  // The trimming is performed on a newly allocated object, which is on a
+  // fresly allocated page or on an already swept page. Hence, the sweeper
+  // thread can not get confused with the filler creation. No synchronization
+  // needed.
   object->set_map(*new_map);
 }
 
@@ -4645,7 +4670,10 @@ void JSObject::NormalizeProperties(Handle<JSObject> object,
                         -instance_size_delta,
                         Heap::FROM_MUTATOR);
 
-  object->set_map(*new_map);
+  // We are storing the new map using release store after creating a filler for
+  // the left-over space to avoid races with the sweeper thread.
+  object->synchronized_set_map(*new_map);
+
   map->NotifyLeafMapLayoutChange();
 
   object->set_properties(*dictionary);
@@ -4669,6 +4697,13 @@ void JSObject::TransformToFastProperties(Handle<JSObject> object,
       object->GetIsolate(),
       object->property_dictionary()->TransformPropertiesToFastFor(
           *object, unused_property_fields));
+}
+
+
+void JSObject::ResetElements(Handle<JSObject> object) {
+  CALL_HEAP_FUNCTION_VOID(
+      object->GetIsolate(),
+      object->ResetElements());
 }
 
 
@@ -9158,7 +9193,6 @@ Handle<String> SeqString::Truncate(Handle<SeqString> string, int new_length) {
   }
 
   int delta = old_size - new_size;
-  string->set_length(new_length);
 
   Address start_of_string = string->address();
   ASSERT_OBJECT_ALIGNED(start_of_string);
@@ -9176,6 +9210,10 @@ Handle<String> SeqString::Truncate(Handle<SeqString> string, int new_length) {
     heap->CreateFillerObjectAt(start_of_string + new_size, delta);
   }
   heap->AdjustLiveBytes(start_of_string, -delta, Heap::FROM_MUTATOR);
+
+  // We are storing the new length using release store after creating a filler
+  // for the left-over space to avoid races with the sweeper thread.
+  string->synchronized_set_length(new_length);
 
   if (new_length == 0) return heap->isolate()->factory()->empty_string();
   return string;
@@ -11183,7 +11221,7 @@ Handle<FixedArray> JSObject::SetFastElementsCapacityAndLength(
         ? GetElementsTransitionMap(object, new_elements_kind)
         : handle(object->map());
     object->ValidateElements();
-    object->set_map_and_elements(*new_map, *new_elements);
+    JSObject::SetMapAndElements(object, new_map, new_elements);
 
     // Transition through the allocation site as well if present.
     JSObject::UpdateAllocationSite(object, new_elements_kind);
@@ -11229,7 +11267,7 @@ void JSObject::SetFastDoubleElementsCapacityAndLength(Handle<JSObject> object,
   accessor->CopyElements(object, elems, elements_kind);
 
   object->ValidateElements();
-  object->set_map_and_elements(*new_map, *elems);
+  JSObject::SetMapAndElements(object, new_map, elems);
 
   if (FLAG_trace_elements_transitions) {
     PrintElementsTransition(stdout, object, elements_kind, old_elements,
@@ -13834,9 +13872,6 @@ class InternalizedStringKey : public HashTableKey {
   }
 
   MaybeObject* AsObject(Heap* heap) {
-    // Attempt to flatten the string, so that internalized strings will most
-    // often be flat strings.
-    string_ = string_->TryFlattenGetString();
     // Internalize the string if possible.
     Map* map = heap->InternalizedStringMapForString(string_);
     if (map != NULL) {
@@ -13876,7 +13911,7 @@ MaybeObject* HashTable<Shape, Key>::Allocate(Heap* heap,
                                              int at_least_space_for,
                                              MinimumCapacity capacity_option,
                                              PretenureFlag pretenure) {
-  ASSERT(!capacity_option || IS_POWER_OF_TWO(at_least_space_for));
+  ASSERT(!capacity_option || IsPowerOf2(at_least_space_for));
   int capacity = (capacity_option == USE_CUSTOM_MINIMUM_CAPACITY)
                      ? at_least_space_for
                      : ComputeCapacity(at_least_space_for);
@@ -14369,7 +14404,7 @@ Handle<Object> JSObject::PrepareElementsForSort(Handle<JSObject> object,
     dict->CopyValuesTo(*fast_elements);
     object->ValidateElements();
 
-    object->set_map_and_elements(*new_map, *fast_elements);
+    JSObject::SetMapAndElements(object, new_map, fast_elements);
   } else if (object->HasExternalArrayElements() ||
              object->HasFixedTypedArrayElements()) {
     // Typed arrays cannot have holes or undefined elements.
@@ -16363,7 +16398,7 @@ Handle<JSArrayBuffer> JSTypedArray::MaterializeArrayBuffer(
   buffer->set_weak_first_view(*typed_array);
   ASSERT(typed_array->weak_next() == isolate->heap()->undefined_value());
   typed_array->set_buffer(*buffer);
-  typed_array->set_map_and_elements(*new_map, *new_elements);
+  JSObject::SetMapAndElements(typed_array, new_map, new_elements);
 
   return buffer;
 }
