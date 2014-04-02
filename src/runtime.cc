@@ -209,9 +209,7 @@ static Handle<Map> ComputeObjectLiteralMap(
     return isolate->factory()->ObjectLiteralMapFromCache(context, keys);
   }
   *is_result_from_cache = false;
-  return isolate->factory()->CopyMap(
-      Handle<Map>(context->object_function()->initial_map()),
-      number_of_properties);
+  return Map::Create(handle(context->object_function()), number_of_properties);
 }
 
 
@@ -2119,15 +2117,11 @@ RUNTIME_FUNCTION(MaybeObject*, Runtime_SetAccessorProperty) {
 }
 
 
-static Failure* ThrowRedeclarationError(Isolate* isolate,
-                                        const char* type,
-                                        Handle<String> name) {
+static Failure* ThrowRedeclarationError(Isolate* isolate, Handle<String> name) {
   HandleScope scope(isolate);
-  Handle<Object> type_handle =
-      isolate->factory()->NewStringFromAscii(CStrVector(type));
-  Handle<Object> args[2] = { type_handle, name };
-  Handle<Object> error =
-      isolate->factory()->NewTypeError("redeclaration", HandleVector(args, 2));
+  Handle<Object> args[1] = { name };
+  Handle<Object> error = isolate->factory()->NewTypeError(
+      "var_redeclaration", HandleVector(args, 1));
   return isolate->Throw(*error);
 }
 
@@ -2204,7 +2198,7 @@ RUNTIME_FUNCTION(MaybeObject*, RuntimeHidden_DeclareGlobals) {
       if (lookup.IsFound() && lookup.IsDontDelete()) {
         if (lookup.IsReadOnly() || lookup.IsDontEnum() ||
             lookup.IsPropertyCallbacks()) {
-          return ThrowRedeclarationError(isolate, "function", name);
+          return ThrowRedeclarationError(isolate, name);
         }
         // If the existing property is not configurable, keep its attributes.
         attr = lookup.GetAttributes();
@@ -2256,8 +2250,7 @@ RUNTIME_FUNCTION(MaybeObject*, RuntimeHidden_DeclareContextSlot) {
     if (((attributes & READ_ONLY) != 0) || (mode == READ_ONLY)) {
       // Functions are not read-only.
       ASSERT(mode != READ_ONLY || initial_value->IsTheHole());
-      const char* type = ((attributes & READ_ONLY) != 0) ? "const" : "var";
-      return ThrowRedeclarationError(isolate, type, name);
+      return ThrowRedeclarationError(isolate, name);
     }
 
     // Initialize it if necessary.
@@ -2311,7 +2304,7 @@ RUNTIME_FUNCTION(MaybeObject*, RuntimeHidden_DeclareContextSlot) {
       LookupResult lookup(isolate);
       object->Lookup(*name, &lookup);
       if (lookup.IsPropertyCallbacks()) {
-        return ThrowRedeclarationError(isolate, "const", name);
+        return ThrowRedeclarationError(isolate, name);
       }
     }
     if (object->IsJSGlobalObject()) {
@@ -3089,9 +3082,7 @@ RUNTIME_FUNCTION(MaybeObject*, Runtime_SetExpectedNumberOfProperties) {
   if (!func->shared()->live_objects_may_exist()) {
     func->shared()->set_expected_nof_properties(num);
     if (func->has_initial_map()) {
-      Handle<Map> new_initial_map =
-          func->GetIsolate()->factory()->CopyMap(
-              Handle<Map>(func->initial_map()));
+      Handle<Map> new_initial_map = Map::Copy(handle(func->initial_map()));
       new_initial_map->set_unused_property_fields(num);
       func->set_initial_map(*new_initial_map);
     }
@@ -7995,11 +7986,10 @@ RUNTIME_FUNCTION(MaybeObject*, RuntimeHidden_NewArgumentsFast) {
       parameter_map->set_map(
           isolate->heap()->sloppy_arguments_elements_map());
 
-      Handle<Map> old_map(result->map());
-      Handle<Map> new_map = isolate->factory()->CopyMap(old_map);
-      new_map->set_elements_kind(SLOPPY_ARGUMENTS_ELEMENTS);
+      Handle<Map> map = Map::Copy(handle(result->map()));
+      map->set_elements_kind(SLOPPY_ARGUMENTS_ELEMENTS);
 
-      result->set_map(*new_map);
+      result->set_map(*map);
       result->set_elements(*parameter_map);
 
       // Store the context and the arguments array at the beginning of the
@@ -14901,8 +14891,6 @@ RUNTIME_FUNCTION(MaybeObject*, Runtime_SetIsObserved) {
   if (obj->IsJSProxy())
     return isolate->heap()->undefined_value();
 
-  ASSERT(!(obj->map()->is_observed() && obj->IsJSObject() &&
-           Handle<JSObject>::cast(obj)->HasFastElements()));
   ASSERT(obj->IsJSObject());
   JSObject::SetObserved(Handle<JSObject>::cast(obj));
   return isolate->heap()->undefined_value();
