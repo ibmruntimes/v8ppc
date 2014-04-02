@@ -1221,7 +1221,7 @@ typedef struct ObjectPair (*SimulatorRuntimeObjectPairCall)(intptr_t arg0,
 #endif
 
 // These prototypes handle the four types of FP calls.
-typedef int64_t (*SimulatorRuntimeCompareCall)(double darg0, double darg1);
+typedef int (*SimulatorRuntimeCompareCall)(double darg0, double darg1);
 typedef double (*SimulatorRuntimeFPFPCall)(double darg0, double darg1);
 typedef double (*SimulatorRuntimeFPCall)(double darg0);
 typedef double (*SimulatorRuntimeFPIntCall)(double darg0, intptr_t arg0);
@@ -1267,7 +1267,7 @@ void Simulator::SoftwareInterrupt(Instruction* instr) {
       if (fp_call) {
         double dval0, dval1;  // one or two double parameters
         intptr_t ival;        // zero or one integer parameters
-        int64_t iresult = 0;  // integer return value
+        int iresult = 0;      // integer return value
         double dresult = 0;   // double return value
         GetFpArgs(&dval0, &dval1, &ival);
         if (::v8::internal::FLAG_trace_sim || !stack_aligned) {
@@ -1303,19 +1303,7 @@ void Simulator::SoftwareInterrupt(Instruction* instr) {
             SimulatorRuntimeCompareCall target =
               reinterpret_cast<SimulatorRuntimeCompareCall>(external);
             iresult = target(dval0, dval1);
-#if V8_TARGET_ARCH_PPC64
             set_register(r3, iresult);
-#else
-            int32_t lo_res = static_cast<int32_t>(iresult);
-            int32_t hi_res = static_cast<int32_t>(iresult >> 32);
-#if __BYTE_ORDER == __BIG_ENDIAN
-            set_register(r3, hi_res);
-            set_register(r4, lo_res);
-#else
-            set_register(r3, lo_res);
-            set_register(r4, hi_res);
-#endif
-#endif
             break;
           }
           case ExternalReference::BUILTIN_FP_FP_CALL: {
@@ -1346,7 +1334,7 @@ void Simulator::SoftwareInterrupt(Instruction* instr) {
         if (::v8::internal::FLAG_trace_sim || !stack_aligned) {
           switch (redirection->type()) {
           case ExternalReference::BUILTIN_COMPARE_CALL:
-            PrintF("Returned %08x\n", static_cast<int32_t>(iresult));
+            PrintF("Returned %08x\n", iresult);
             break;
           case ExternalReference::BUILTIN_FP_FP_CALL:
           case ExternalReference::BUILTIN_FP_CALL:
@@ -1463,13 +1451,16 @@ void Simulator::SoftwareInterrupt(Instruction* instr) {
         int64_t result = target(arg0, arg1, arg2, arg3, arg4, arg5);
         int32_t lo_res = static_cast<int32_t>(result);
         int32_t hi_res = static_cast<int32_t>(result >> 32);
-        if (::v8::internal::FLAG_trace_sim) {
-          PrintF("Returned %08x\n", lo_res);
-        }
 #if __BYTE_ORDER == __BIG_ENDIAN
+        if (::v8::internal::FLAG_trace_sim) {
+          PrintF("Returned %08x\n", hi_res);
+        }
         set_register(r3, hi_res);
         set_register(r4, lo_res);
 #else
+        if (::v8::internal::FLAG_trace_sim) {
+          PrintF("Returned %08x\n", lo_res);
+        }
         set_register(r3, lo_res);
         set_register(r4, hi_res);
 #endif
