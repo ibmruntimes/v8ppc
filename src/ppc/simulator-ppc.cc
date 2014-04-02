@@ -1244,12 +1244,19 @@ void Simulator::SoftwareInterrupt(Instruction* instr) {
           (get_register(sp)
            & (::v8::internal::FLAG_sim_stack_alignment - 1)) == 0;
       Redirection* redirection = Redirection::FromSwiInstruction(instr);
-      intptr_t arg0 = get_register(r3);
-      intptr_t arg1 = get_register(r4);
-      intptr_t arg2 = get_register(r5);
-      intptr_t arg3 = get_register(r6);
-      intptr_t arg4 = get_register(r7);
-      intptr_t arg5 = get_register(r8);
+      const int kArgCount = 6;
+      int arg0_regnum = 3;
+#if V8_TARGET_ARCH_PPC64 && !ABI_RETURNS_OBJECT_PAIRS_IN_REGS
+      intptr_t result_buffer = 0;
+      if (redirection->type() == ExternalReference::BUILTIN_OBJECTPAIR_CALL) {
+        result_buffer = get_register(r3);
+        arg0_regnum++;
+      }
+#endif
+      intptr_t arg[kArgCount];
+      for (int i = 0; i < kArgCount; i++) {
+        arg[i] = get_register(arg0_regnum + i);
+      }
       bool fp_call =
          (redirection->type() == ExternalReference::BUILTIN_FP_FP_CALL) ||
          (redirection->type() == ExternalReference::BUILTIN_COMPARE_CALL) ||
@@ -1347,7 +1354,7 @@ void Simulator::SoftwareInterrupt(Instruction* instr) {
         // explanation of register usage.
         if (::v8::internal::FLAG_trace_sim || !stack_aligned) {
           PrintF("Call to host function at %p args %08" V8PRIxPTR,
-                 reinterpret_cast<void*>(external), arg0);
+                 reinterpret_cast<void*>(external), arg[0]);
           if (!stack_aligned) {
             PrintF(" with unaligned stack %08" V8PRIxPTR
                    "\n", get_register(sp));
@@ -1357,7 +1364,7 @@ void Simulator::SoftwareInterrupt(Instruction* instr) {
         CHECK(stack_aligned);
         SimulatorRuntimeDirectApiCall target =
           reinterpret_cast<SimulatorRuntimeDirectApiCall>(external);
-        target(arg0);
+        target(arg[0]);
       } else if (
           redirection->type() == ExternalReference::PROFILING_API_CALL) {
         // See callers of MacroAssembler::CallApiFunctionAndReturn for
@@ -1365,7 +1372,7 @@ void Simulator::SoftwareInterrupt(Instruction* instr) {
         if (::v8::internal::FLAG_trace_sim || !stack_aligned) {
           PrintF("Call to host function at %p args %08" V8PRIxPTR " %08"
                  V8PRIxPTR,
-                 reinterpret_cast<void*>(external), arg0, arg1);
+                 reinterpret_cast<void*>(external), arg[0], arg[1]);
           if (!stack_aligned) {
             PrintF(" with unaligned stack %08" V8PRIxPTR
                    "\n", get_register(sp));
@@ -1375,7 +1382,7 @@ void Simulator::SoftwareInterrupt(Instruction* instr) {
         CHECK(stack_aligned);
         SimulatorRuntimeProfilingApiCall target =
           reinterpret_cast<SimulatorRuntimeProfilingApiCall>(external);
-        target(arg0, Redirection::ReverseRedirection(arg1));
+        target(arg[0], Redirection::ReverseRedirection(arg[1]));
       } else if (
           redirection->type() == ExternalReference::DIRECT_GETTER_CALL) {
         // See callers of MacroAssembler::CallApiFunctionAndReturn for
@@ -1383,7 +1390,7 @@ void Simulator::SoftwareInterrupt(Instruction* instr) {
         if (::v8::internal::FLAG_trace_sim || !stack_aligned) {
           PrintF("Call to host function at %p args %08" V8PRIxPTR " %08"
                  V8PRIxPTR,
-                 reinterpret_cast<void*>(external), arg0, arg1);
+                 reinterpret_cast<void*>(external), arg[0], arg[1]);
           if (!stack_aligned) {
             PrintF(" with unaligned stack %08" V8PRIxPTR
                    "\n", get_register(sp));
@@ -1394,15 +1401,15 @@ void Simulator::SoftwareInterrupt(Instruction* instr) {
         SimulatorRuntimeDirectGetterCall target =
           reinterpret_cast<SimulatorRuntimeDirectGetterCall>(external);
 #if !ABI_PASSES_HANDLES_IN_REGS
-        arg0 = *(reinterpret_cast<intptr_t *>(arg0));
+        arg[0] = *(reinterpret_cast<intptr_t *>(arg[0]));
 #endif
-        target(arg0, arg1);
+        target(arg[0], arg[1]);
       } else if (
         redirection->type() == ExternalReference::PROFILING_GETTER_CALL) {
         if (::v8::internal::FLAG_trace_sim || !stack_aligned) {
           PrintF("Call to host function at %p args %08" V8PRIxPTR " %08"
                  V8PRIxPTR " %08" V8PRIxPTR,
-                 reinterpret_cast<void*>(external), arg0, arg1, arg2);
+                 reinterpret_cast<void*>(external), arg[0], arg[1], arg[2]);
           if (!stack_aligned) {
             PrintF(" with unaligned stack %08" V8PRIxPTR "\n",
                    get_register(sp));
@@ -1414,9 +1421,9 @@ void Simulator::SoftwareInterrupt(Instruction* instr) {
           reinterpret_cast<SimulatorRuntimeProfilingGetterCall>(
             external);
 #if !ABI_PASSES_HANDLES_IN_REGS
-        arg0 = *(reinterpret_cast<intptr_t *>(arg0));
+        arg[0] = *(reinterpret_cast<intptr_t *>(arg[0]));
 #endif
-        target(arg0, arg1, Redirection::ReverseRedirection(arg2));
+        target(arg[0], arg[1], Redirection::ReverseRedirection(arg[2]));
       } else {
         // builtin call.
         if (::v8::internal::FLAG_trace_sim || !stack_aligned) {
@@ -1427,12 +1434,12 @@ void Simulator::SoftwareInterrupt(Instruction* instr) {
               "\t\t\t\targs %08" V8PRIxPTR ", %08" V8PRIxPTR ", %08" V8PRIxPTR
               ", %08" V8PRIxPTR ", %08" V8PRIxPTR ", %08" V8PRIxPTR,
               FUNCTION_ADDR(target),
-              arg0,
-              arg1,
-              arg2,
-              arg3,
-              arg4,
-              arg5);
+              arg[0],
+              arg[1],
+              arg[2],
+              arg[3],
+              arg[4],
+              arg[5]);
           if (!stack_aligned) {
             PrintF(" with unaligned stack %08" V8PRIxPTR
                    "\n", get_register(sp));
@@ -1444,7 +1451,7 @@ void Simulator::SoftwareInterrupt(Instruction* instr) {
         ASSERT(redirection->type() == ExternalReference::BUILTIN_CALL);
         SimulatorRuntimeCall target =
           reinterpret_cast<SimulatorRuntimeCall>(external);
-        int64_t result = target(arg0, arg1, arg2, arg3, arg4, arg5);
+        int64_t result = target(arg[0], arg[1], arg[2], arg[3], arg[4], arg[5]);
         int32_t lo_res = static_cast<int32_t>(result);
         int32_t hi_res = static_cast<int32_t>(result >> 32);
 #if __BYTE_ORDER == __BIG_ENDIAN
@@ -1464,7 +1471,8 @@ void Simulator::SoftwareInterrupt(Instruction* instr) {
         if (redirection->type() == ExternalReference::BUILTIN_CALL) {
           SimulatorRuntimeCall target =
             reinterpret_cast<SimulatorRuntimeCall>(external);
-          intptr_t result = target(arg0, arg1, arg2, arg3, arg4, arg5);
+          intptr_t result = target(arg[0], arg[1], arg[2], arg[3], arg[4],
+                                   arg[5]);
           if (::v8::internal::FLAG_trace_sim) {
             PrintF("Returned %08" V8PRIxPTR "\n", result);
           }
@@ -1474,13 +1482,19 @@ void Simulator::SoftwareInterrupt(Instruction* instr) {
                  ExternalReference::BUILTIN_OBJECTPAIR_CALL);
           SimulatorRuntimeObjectPairCall target =
             reinterpret_cast<SimulatorRuntimeObjectPairCall>(external);
-          struct ObjectPair result = target(arg0, arg1, arg2, arg3, arg4, arg5);
+          struct ObjectPair result = target(arg[0], arg[1], arg[2], arg[3],
+                                            arg[4], arg[5]);
           if (::v8::internal::FLAG_trace_sim) {
             PrintF("Returned %08" V8PRIxPTR ", %08" V8PRIxPTR "\n",
                    result.x, result.y);
           }
+#if ABI_RETURNS_OBJECT_PAIRS_IN_REGS
           set_register(r3, result.x);
           set_register(r4, result.y);
+#else
+          OS::MemCopy(reinterpret_cast<void *>(result_buffer), &result,
+                      sizeof(struct ObjectPair));
+#endif
         }
 #endif
       }
