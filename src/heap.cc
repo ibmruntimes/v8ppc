@@ -4402,6 +4402,8 @@ MaybeObject* Heap::AllocateFunction(Map* function_map,
 }
 
 
+// Work around bad optimization by GCC 4.4.6 on PPC Linux
+#pragma GCC optimize "O0"
 MaybeObject* Heap::AllocateArgumentsObject(Object* callee, int length) {
   // To get fast allocation and map sharing for arguments objects we
   // allocate them based on an arguments boilerplate.
@@ -4455,6 +4457,7 @@ MaybeObject* Heap::AllocateArgumentsObject(Object* callee, int length) {
 
   return result;
 }
+#pragma GCC reset_options
 
 
 void Heap::InitializeJSObjectFromMap(JSObject* obj,

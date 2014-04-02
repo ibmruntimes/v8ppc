@@ -954,6 +954,8 @@ MaybeObject* Object::GetProperty(Object* receiver,
 }
 
 
+// Work around bad optimization by GCC 4.4.6 on PPC Linux
+#pragma GCC optimize "O0"
 Handle<Object> Object::GetElementWithReceiver(Isolate* isolate,
                                               Handle<Object> object,
                                               Handle<Object> receiver,
@@ -1019,6 +1021,7 @@ Handle<Object> Object::GetElementWithReceiver(Isolate* isolate,
 
   return isolate->factory()->undefined_value();
 }
+#pragma GCC reset_options
 
 
 Object* Object::GetPrototype(Isolate* isolate) {
