@@ -203,7 +203,7 @@ void FullCodeGenerator::Generate() {
     ASSERT(!info->function()->is_generator() || locals_count == 0);
     if (locals_count > 0) {
       if (locals_count >= 128) {
-        EmitStackCheck(masm_, r4, locals_count, ip);
+        EmitStackCheck(masm_, r5, locals_count, ip);
       }
       __ LoadRoot(ip, Heap::kUndefinedValueRootIndex);
       int kMaxPushes = FLAG_optimize_for_size ? 4 : 32;
