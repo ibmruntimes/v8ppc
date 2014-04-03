@@ -3640,10 +3640,144 @@ void ExternalUint8Array::set(int index, uint8_t value) {
 }
 
 
+#if V8_TARGET_ARCH_PPC
+#define ReverseExternalArrayBytes(BYTE_ORDER)     \
+    ((BYTE_ORDER == __LITTLE_ENDIAN) ?            \
+     FLAG_big_endian_external_arrays :            \
+     FLAG_little_endian_external_arrays)
+#else
+#define ReverseExternalArrayBytes(BYTE_ORDER) false
+#endif
+
+
+static inline uint16_t ReadReverseInt16(void *ptr) {
+#if V8_HOST_ARCH_PPC
+  uint16_t *u = static_cast<uint16_t*>(ptr);
+  uint16_t value;
+  __asm__ __volatile__("lhbrx %0,0,%1" : "=r" (value) : "r" (u), "m" (*u));
+  return value;
+#else
+  uint8_t *u = static_cast<uint8_t*>(ptr);
+  union conversion {
+    uint16_t s;
+    uint8_t u[2];
+  } c;
+  c.u[0] = u[1];
+  c.u[1] = u[0];
+  return c.s;
+#endif
+}
+
+
+static inline void WriteReverseInt16(void *ptr, uint16_t value) {
+#if V8_HOST_ARCH_PPC
+  uint16_t *u = static_cast<uint16_t*>(ptr);
+  __asm__ __volatile__("sthbrx %1,0,%2" : "=m" (*u) : "r" (value), "r" (u));
+#else
+  uint8_t *u = static_cast<uint8_t*>(ptr);
+  union conversion {
+    uint16_t s;
+    uint8_t u[2];
+  } c;
+  c.s = value;
+  u[1] = c.u[0];
+  u[0] = c.u[1];
+#endif
+}
+
+
+static inline uint32_t ReadReverseInt32(void *ptr) {
+#if V8_HOST_ARCH_PPC
+  uint32_t *u = static_cast<uint32_t*>(ptr);
+  uint32_t value;
+  __asm__ __volatile__("lwbrx %0,0,%1" : "=r" (value) : "r" (u), "m" (*u));
+  return value;
+#else
+  uint8_t *u = static_cast<uint8_t*>(ptr);
+  union conversion {
+    uint32_t i;
+    uint8_t u[4];
+  } c;
+  c.u[0] = u[3];
+  c.u[1] = u[2];
+  c.u[2] = u[1];
+  c.u[3] = u[0];
+  return c.i;
+#endif
+}
+
+
+static inline void WriteReverseInt32(void *ptr, uint32_t value) {
+#if V8_HOST_ARCH_PPC
+  uint32_t *u = static_cast<uint32_t*>(ptr);
+  __asm__ __volatile__("stwbrx %1,0,%2" : "=m" (*u) : "r" (value), "r" (u));
+#else
+  uint8_t *u = static_cast<uint8_t*>(ptr);
+  union conversion {
+    uint32_t i;
+    uint8_t u[4];
+  } c;
+  c.i = value;
+  u[3] = c.u[0];
+  u[2] = c.u[1];
+  u[1] = c.u[2];
+  u[0] = c.u[3];
+#endif
+}
+
+
+static inline float ReadReverseFloat(void *ptr) {
+  union conversion {
+    float f;
+    uint32_t u;
+  } c;
+  c.u = ReadReverseInt32(ptr);
+  return c.f;
+}
+
+
+static inline void WriteReverseFloat(void *ptr, float value) {
+  union conversion {
+    float f;
+    uint32_t u;
+  } c;
+  c.f = value;
+  WriteReverseInt32(ptr, c.u);
+}
+
+
+static inline double ReadReverseDouble(void *ptr) {
+  uint32_t *u = static_cast<uint32_t*>(ptr);
+  union conversion {
+    double d;
+    uint32_t u[2];
+  } c;
+  c.u[0] = ReadReverseInt32(&u[1]);
+  c.u[1] = ReadReverseInt32(&u[0]);
+  return c.d;
+}
+
+
+static inline void WriteReverseDouble(void *ptr, double value) {
+  uint32_t *u = static_cast<uint32_t*>(ptr);
+  union conversion {
+    double d;
+    uint32_t u[2];
+  } c;
+  c.d = value;
+  WriteReverseInt32(&u[0], c.u[1]);
+  WriteReverseInt32(&u[1], c.u[0]);
+}
+
+
 int16_t ExternalInt16Array::get_scalar(int index) {
   ASSERT((index >= 0) && (index < this->length()));
   int16_t* ptr = static_cast<int16_t*>(external_pointer());
-  return ptr[index];
+  if (ReverseExternalArrayBytes(__BYTE_ORDER)) {
+    return ReadReverseInt16(&ptr[index]);
+  } else {
+    return ptr[index];
+  }
 }
 
 
@@ -3655,14 +3789,22 @@ MaybeObject* ExternalInt16Array::get(int index) {
 void ExternalInt16Array::set(int index, int16_t value) {
   ASSERT((index >= 0) && (index < this->length()));
   int16_t* ptr = static_cast<int16_t*>(external_pointer());
-  ptr[index] = value;
+  if (ReverseExternalArrayBytes(__BYTE_ORDER)) {
+    WriteReverseInt16(&ptr[index], value);
+  } else {
+    ptr[index] = value;
+  }
 }
 
 
 uint16_t ExternalUint16Array::get_scalar(int index) {
   ASSERT((index >= 0) && (index < this->length()));
   uint16_t* ptr = static_cast<uint16_t*>(external_pointer());
-  return ptr[index];
+  if (ReverseExternalArrayBytes(__BYTE_ORDER)) {
+    return ReadReverseInt16(&ptr[index]);
+  } else {
+    return ptr[index];
+  }
 }
 
 
@@ -3674,14 +3816,22 @@ MaybeObject* ExternalUint16Array::get(int index) {
 void ExternalUint16Array::set(int index, uint16_t value) {
   ASSERT((index >= 0) && (index < this->length()));
   uint16_t* ptr = static_cast<uint16_t*>(external_pointer());
-  ptr[index] = value;
+  if (ReverseExternalArrayBytes(__BYTE_ORDER)) {
+    WriteReverseInt16(&ptr[index], value);
+  } else {
+    ptr[index] = value;
+  }
 }
 
 
 int32_t ExternalInt32Array::get_scalar(int index) {
   ASSERT((index >= 0) && (index < this->length()));
   int32_t* ptr = static_cast<int32_t*>(external_pointer());
-  return ptr[index];
+  if (ReverseExternalArrayBytes(__BYTE_ORDER)) {
+    return ReadReverseInt32(&ptr[index]);
+  } else {
+    return ptr[index];
+  }
 }
 
 
@@ -3693,14 +3843,22 @@ MaybeObject* ExternalInt32Array::get(int index) {
 void ExternalInt32Array::set(int index, int32_t value) {
   ASSERT((index >= 0) && (index < this->length()));
   int32_t* ptr = static_cast<int32_t*>(external_pointer());
-  ptr[index] = value;
+  if (ReverseExternalArrayBytes(__BYTE_ORDER)) {
+    WriteReverseInt32(&ptr[index], value);
+  } else {
+    ptr[index] = value;
+  }
 }
 
 
 uint32_t ExternalUint32Array::get_scalar(int index) {
   ASSERT((index >= 0) && (index < this->length()));
   uint32_t* ptr = static_cast<uint32_t*>(external_pointer());
-  return ptr[index];
+  if (ReverseExternalArrayBytes(__BYTE_ORDER)) {
+    return ReadReverseInt32(&ptr[index]);
+  } else {
+    return ptr[index];
+  }
 }
 
 
@@ -3712,14 +3870,22 @@ MaybeObject* ExternalUint32Array::get(int index) {
 void ExternalUint32Array::set(int index, uint32_t value) {
   ASSERT((index >= 0) && (index < this->length()));
   uint32_t* ptr = static_cast<uint32_t*>(external_pointer());
-  ptr[index] = value;
+  if (ReverseExternalArrayBytes(__BYTE_ORDER)) {
+    WriteReverseInt32(&ptr[index], value);
+  } else {
+    ptr[index] = value;
+  }
 }
 
 
 float ExternalFloat32Array::get_scalar(int index) {
   ASSERT((index >= 0) && (index < this->length()));
   float* ptr = static_cast<float*>(external_pointer());
-  return ptr[index];
+  if (ReverseExternalArrayBytes(__FLOAT_WORD_ORDER)) {
+    return ReadReverseFloat(&ptr[index]);
+  } else {
+    return ptr[index];
+  }
 }
 
 
@@ -3731,14 +3897,22 @@ MaybeObject* ExternalFloat32Array::get(int index) {
 void ExternalFloat32Array::set(int index, float value) {
   ASSERT((index >= 0) && (index < this->length()));
   float* ptr = static_cast<float*>(external_pointer());
-  ptr[index] = value;
+  if (ReverseExternalArrayBytes(__FLOAT_WORD_ORDER)) {
+    WriteReverseFloat(&ptr[index], value);
+  } else {
+    ptr[index] = value;
+  }
 }
 
 
 double ExternalFloat64Array::get_scalar(int index) {
   ASSERT((index >= 0) && (index < this->length()));
   double* ptr = static_cast<double*>(external_pointer());
-  return ptr[index];
+  if (ReverseExternalArrayBytes(__FLOAT_WORD_ORDER)) {
+    return ReadReverseDouble(&ptr[index]);
+  } else {
+    return ptr[index];
+  }
 }
 
 
@@ -3750,7 +3924,11 @@ MaybeObject* ExternalFloat64Array::get(int index) {
 void ExternalFloat64Array::set(int index, double value) {
   ASSERT((index >= 0) && (index < this->length()));
   double* ptr = static_cast<double*>(external_pointer());
-  ptr[index] = value;
+  if (ReverseExternalArrayBytes(__FLOAT_WORD_ORDER)) {
+    WriteReverseDouble(&ptr[index], value);
+  } else {
+    ptr[index] = value;
+  }
 }
 
 
@@ -3812,12 +3990,109 @@ float Float32ArrayTraits::defaultValue() {
 double Float64ArrayTraits::defaultValue() { return OS::nan_value(); }
 
 
+uint8_t Uint8ArrayTraits::ReadReverseBytes(void *ptr) {
+  UNREACHABLE();
+  return -1;
+}
+
+
+void Uint8ArrayTraits::WriteReverseBytes(void *ptr, uint8_t scalar) {
+  UNREACHABLE();
+}
+
+
+uint8_t Uint8ClampedArrayTraits::ReadReverseBytes(void *ptr) {
+  UNREACHABLE();
+  return -1;
+}
+
+
+void Uint8ClampedArrayTraits::WriteReverseBytes(void *ptr, uint8_t scalar) {
+  UNREACHABLE();
+}
+
+
+int8_t Int8ArrayTraits::ReadReverseBytes(void *ptr) {
+  UNREACHABLE();
+  return -1;
+}
+
+
+void Int8ArrayTraits::WriteReverseBytes(void *ptr, int8_t scalar) {
+  UNREACHABLE();
+}
+
+
+uint16_t Uint16ArrayTraits::ReadReverseBytes(void *ptr) {
+  return ReadReverseInt16(ptr);
+}
+
+
+void Uint16ArrayTraits::WriteReverseBytes(void *ptr, uint16_t scalar) {
+  WriteReverseInt16(ptr, scalar);
+}
+
+
+int16_t Int16ArrayTraits::ReadReverseBytes(void *ptr) {
+  return ReadReverseInt16(ptr);
+}
+
+
+void Int16ArrayTraits::WriteReverseBytes(void *ptr, int16_t scalar) {
+  WriteReverseInt16(ptr, scalar);
+}
+
+
+uint32_t Uint32ArrayTraits::ReadReverseBytes(void *ptr) {
+  return ReadReverseInt32(ptr);
+}
+
+
+void Uint32ArrayTraits::WriteReverseBytes(void *ptr, uint32_t scalar) {
+  WriteReverseInt32(ptr, scalar);
+}
+
+
+int32_t Int32ArrayTraits::ReadReverseBytes(void *ptr) {
+  return ReadReverseInt32(ptr);
+}
+
+
+void Int32ArrayTraits::WriteReverseBytes(void *ptr, int32_t scalar) {
+  WriteReverseInt32(ptr, scalar);
+}
+
+
+float Float32ArrayTraits::ReadReverseBytes(void *ptr) {
+  return ReadReverseFloat(ptr);
+}
+
+
+void Float32ArrayTraits::WriteReverseBytes(void *ptr, float scalar) {
+  WriteReverseFloat(ptr, scalar);
+}
+
+
+double Float64ArrayTraits::ReadReverseBytes(void *ptr) {
+  return ReadReverseDouble(ptr);
+}
+
+
+void Float64ArrayTraits::WriteReverseBytes(void *ptr, double scalar) {
+  WriteReverseDouble(ptr, scalar);
+}
+
+
 template <class Traits>
 typename Traits::ElementType FixedTypedArray<Traits>::get_scalar(int index) {
   ASSERT((index >= 0) && (index < this->length()));
   ElementType* ptr = reinterpret_cast<ElementType*>(
       FIELD_ADDR(this, kDataOffset));
-  return ptr[index];
+  if (ReverseExternalArrayBytes(__BYTE_ORDER) && sizeof(ElementType) > 1) {
+    return Traits::ReadReverseBytes(&ptr[index]);
+  } else {
+    return ptr[index];
+  }
 }
 
 
@@ -3825,7 +4100,11 @@ template<> inline
 FixedTypedArray<Float64ArrayTraits>::ElementType
     FixedTypedArray<Float64ArrayTraits>::get_scalar(int index) {
   ASSERT((index >= 0) && (index < this->length()));
-  return READ_DOUBLE_FIELD(this, ElementOffset(index));
+  if (ReverseExternalArrayBytes(__FLOAT_WORD_ORDER)) {
+    return ReadReverseDouble(FIELD_ADDR(this, ElementOffset(index)));
+  } else {
+    return READ_DOUBLE_FIELD(this, ElementOffset(index));
+  }
 }
 
 
@@ -3834,7 +4113,11 @@ void FixedTypedArray<Traits>::set(int index, ElementType value) {
   ASSERT((index >= 0) && (index < this->length()));
   ElementType* ptr = reinterpret_cast<ElementType*>(
       FIELD_ADDR(this, kDataOffset));
-  ptr[index] = value;
+  if (ReverseExternalArrayBytes(__BYTE_ORDER) && sizeof(ElementType) > 1) {
+    Traits::WriteReverseBytes(&ptr[index], value);
+  } else {
+    ptr[index] = value;
+  }
 }
 
 
@@ -3842,7 +4125,11 @@ template<> inline
 void FixedTypedArray<Float64ArrayTraits>::set(
     int index, Float64ArrayTraits::ElementType value) {
   ASSERT((index >= 0) && (index < this->length()));
-  WRITE_DOUBLE_FIELD(this, ElementOffset(index), value);
+  if (ReverseExternalArrayBytes(__FLOAT_WORD_ORDER)) {
+    WriteReverseDouble(FIELD_ADDR(this, ElementOffset(index)), value);
+  } else {
+    WRITE_DOUBLE_FIELD(this, ElementOffset(index), value);
+  }
 }
 
 

@@ -4601,93 +4601,89 @@ void MacroAssembler::LoadWordArith(Register dst, const MemOperand& mem,
   }
 }
 
+MemOperand MacroAssembler::MemAccessOperand(const MemOperand& mem,
+                                            MemAccessFlags flags,
+                                            Register scratch) {
+  ASSERT(!((flags & kMemAccessUpdate) && (flags & kMemAccessReverse)));
+
+  if (mem.isIndexed() ||
+      (is_int16(mem.offset()) &&
+       !(flags & kMemAccessReverse))) {
+    return mem;
+  }
+
+  mov(scratch, Operand(mem.offset()));
+  return MemOperand(mem.ra(), scratch);
+}
+
 
 // Variable length depending on whether offset fits into immediate field
-// MemOperand currently only supports d-form
 void MacroAssembler::LoadWord(Register dst, const MemOperand& mem,
-                              Register scratch, bool updateForm) {
-  Register base = mem.ra();
-  int offset = mem.offset();
+                              Register scratch, MemAccessFlags flags) {
+  MemOperand src = MemAccessOperand(mem, flags, scratch);
 
-  bool use_dform = true;
-  if (!is_int16(offset)) {
-    use_dform = false;
-    LoadIntLiteral(scratch, offset);
-  }
-
-  if (!updateForm) {
-    if (use_dform) {
-      lwz(dst, mem);
+  if (!(flags & kMemAccessUpdate)) {
+    if (!src.isIndexed()) {
+      lwz(dst, src);
+    } else if (!(flags & kMemAccessReverse)) {
+      lwzx(dst, src);
     } else {
-      lwzx(dst, MemOperand(base, scratch));
+      lwbrx(dst, src);
     }
   } else {
-    if (use_dform) {
-      lwzu(dst, mem);
+    if (!src.isIndexed()) {
+      lwzu(dst, src);
     } else {
-      lwzux(dst, MemOperand(base, scratch));
+      lwzux(dst, src);
     }
   }
 }
 
 
 // Variable length depending on whether offset fits into immediate field
-// MemOperand current only supports d-form
 void MacroAssembler::StoreWord(Register src, const MemOperand& mem,
-                               Register scratch, bool updateForm) {
-  Register base = mem.ra();
-  int offset = mem.offset();
+                               Register scratch, MemAccessFlags flags) {
+  MemOperand dst = MemAccessOperand(mem, flags, scratch);
 
-  bool use_dform = true;
-  if (!is_int16(offset)) {
-    use_dform = false;
-    LoadIntLiteral(scratch, offset);
-  }
-
-  if (!updateForm) {
-    if (use_dform) {
-      stw(src, mem);
+  if (!(flags & kMemAccessUpdate)) {
+    if (!dst.isIndexed()) {
+      stw(src, dst);
+    } else if (!(flags & kMemAccessReverse)) {
+      stwx(src, dst);
     } else {
-      stwx(src, MemOperand(base, scratch));
+      stwbrx(src, dst);
     }
   } else {
-    if (use_dform) {
-      stwu(src, mem);
+    if (!dst.isIndexed()) {
+      stwu(src, dst);
     } else {
-      stwux(src, MemOperand(base, scratch));
+      stwux(src, dst);
     }
   }
 }
 
 
 // Variable length depending on whether offset fits into immediate field
-// MemOperand currently only supports d-form
 void MacroAssembler::LoadHalfWord(Register dst, const MemOperand& mem,
-                                  Register scratch, bool updateForm) {
-  Register base = mem.ra();
-  int offset = mem.offset();
+                                  Register scratch, MemAccessFlags flags) {
+  MemOperand src = MemAccessOperand(mem, flags, scratch);
 
-  bool use_dform = true;
-  if (!is_int16(offset)) {
-    use_dform = false;
-    LoadIntLiteral(scratch, offset);
-  }
-
-  if (!updateForm) {
-    if (use_dform) {
-      lhz(dst, mem);
+  if (!(flags & kMemAccessUpdate)) {
+    if (!src.isIndexed()) {
+      lhz(dst, src);
+    } else if (!(flags & kMemAccessReverse)) {
+      lhzx(dst, src);
     } else {
-      lhzx(dst, MemOperand(base, scratch));
+      lhbrx(dst, src);
     }
   } else {
-    // If updateForm is ever true, then lhzu will
-    // need to be implemented
+    // lhzu not implemented
     assert(0);
 #if 0  // LoadHalfWord w\ update not yet needed
-    if (use_dform) {
-      lhzu(dst, mem);
+    if (!src.isIndexed()) {
+      lhzu(dst, src);
     } else {
-      lhzux(dst, MemOperand(base, scratch));
+      lhzux(dst, src);
     }
 #endif
   }
@@ -4695,33 +4691,26 @@ void MacroAssembler::LoadHalfWord(Register dst, const MemOperand& mem,
 
 
 // Variable length depending on whether offset fits into immediate field
-// MemOperand current only supports d-form
 void MacroAssembler::StoreHalfWord(Register src, const MemOperand& mem,
-                                   Register scratch, bool updateForm) {
-  Register base = mem.ra();
-  int offset = mem.offset();
+                                   Register scratch, MemAccessFlags flags) {
+  MemOperand dst = MemAccessOperand(mem, flags, scratch);
 
-  bool use_dform = true;
-  if (!is_int16(offset)) {
-    use_dform = false;
-    LoadIntLiteral(scratch, offset);
-  }
-
-  if (!updateForm) {
-    if (use_dform) {
-      sth(src, mem);
+  if (!(flags & kMemAccessUpdate)) {
+    if (!dst.isIndexed()) {
+      sth(src, dst);
+    } else if (!(flags & kMemAccessReverse)) {
+      sthx(src, dst);
     } else {
-      sthx(src, MemOperand(base, scratch));
+      sthbrx(src, dst);
     }
   } else {
-    // If updateForm is ever true, then sthu will
-    // need to be implemented
+    // sthu not implemented
     assert(0);
 #if 0  // StoreHalfWord w\ update not yet needed
-    if (use_dform) {
-      sthu(src, mem);
+    if (!dst.isIndexed()) {
+      sthu(src, dst);
     } else {
-      sthux(src, MemOperand(base, scratch));
+      sthux(src, dst);
     }
 #endif
   }
@@ -4729,33 +4718,24 @@ void MacroAssembler::StoreHalfWord(Register src, const MemOperand& mem,
 
 
 // Variable length depending on whether offset fits into immediate field
-// MemOperand currently only supports d-form
 void MacroAssembler::LoadByte(Register dst, const MemOperand& mem,
-                              Register scratch, bool updateForm) {
-  Register base = mem.ra();
-  int offset = mem.offset();
+                              Register scratch, MemAccessFlags flags) {
+  MemOperand src = MemAccessOperand(mem, flags, scratch);
 
-  bool use_dform = true;
-  if (!is_int16(offset)) {
-    use_dform = false;
-    LoadIntLiteral(scratch, offset);
-  }
-
-  if (!updateForm) {
-    if (use_dform) {
-      lbz(dst, mem);
+  if (!(flags & kMemAccessUpdate)) {
+    if (!src.isIndexed()) {
+      lbz(dst, src);
     } else {
-      lbzx(dst, MemOperand(base, scratch));
+      lbzx(dst, src);
     }
   } else {
-    // If updateForm is ever true, then lbzu will
-    // need to be implemented
+    // lbzu not implemented
     assert(0);
 #if 0  // LoadByte w\ update not yet needed
-    if (use_dform) {
-      lbzu(dst, mem);
+    if (!src.isIndexed()) {
+      lbzu(dst, src);
     } else {
-      lbzux(dst, MemOperand(base, scratch));
+      lbzux(dst, src);
     }
 #endif
   }
@@ -4765,31 +4745,23 @@ void MacroAssembler::LoadByte(Register dst, const MemOperand& mem,
 // Variable length depending on whether offset fits into immediate field
 // MemOperand current only supports d-form
 void MacroAssembler::StoreByte(Register src, const MemOperand& mem,
-                               Register scratch, bool updateForm) {
-  Register base = mem.ra();
-  int offset = mem.offset();
+                               Register scratch, MemAccessFlags flags) {
+  MemOperand dst = MemAccessOperand(mem, flags, scratch);
 
-  bool use_dform = true;
-  if (!is_int16(offset)) {
-    use_dform = false;
-    LoadIntLiteral(scratch, offset);
-  }
-
-  if (!updateForm) {
-    if (use_dform) {
-      stb(src, mem);
+  if (!(flags & kMemAccessUpdate)) {
+    if (!dst.isIndexed()) {
+      stb(src, dst);
     } else {
-      stbx(src, MemOperand(base, scratch));
+      stbx(src, dst);
     }
   } else {
-    // If updateForm is ever true, then stbu will
-    // need to be implemented
+    // stbu not implemented
     assert(0);
 #if 0  // StoreByte w\ update not yet needed
-    if (use_dform) {
-      stbu(src, mem);
+    if (!dst.isIndexed()) {
+      stbu(src, dst);
     } else {
-      stbux(src, MemOperand(base, scratch));
+      stbux(src, dst);
     }
 #endif
   }

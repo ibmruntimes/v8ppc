@@ -245,6 +245,7 @@ enum OpcodeExt2 {
   DIVW  = 491 << 1,   // Divide Word
 
   // Below represent bits 10-1  (any value >= 512)
+  LWBRX = 534 << 1,   // Load Word Byte-Reverse Indexed
   LFSX = 535 << 1,    // load float-single w/ x-form
   SRWX = 536 << 1,    // Shift Right Word
   SRDX = 539 << 1,    // Shift Right Double Word
@@ -252,14 +253,17 @@ enum OpcodeExt2 {
   SYNC = 598 << 1,    // Synchronize
   LFDX = 599 << 1,    // load float-double w/ x-form
   LFDUX = 631 << 1,   // load float-double w/ update X-form
+  STWBRX = 662 << 1,  // Store Word Byte-Reverse Indexed
   STFSX = 663 << 1,   // store float-single w/ x-form
   STFSUX = 695 << 1,  // store float-single w/ update x-form
   STFDX = 727 << 1,   // store float-double w/ x-form
   STFDUX = 759 << 1,  // store float-double w/ update x-form
+  LHBRX = 790 << 1,   // Load Half Word Byte-Reverse Indexed
   SRAW = 792 << 1,    // Shift Right Algebraic Word
   SRAD = 794 << 1,    // Shift Right Algebraic Double Word
   SRAWIX = 824 << 1,  // Shift Right Algebraic Word Immediate
   SRADIX = 413 << 2,  // Shift Right Algebraic Double Word Immediate
+  STHBRX = 918 << 1,  // Store Half Word Byte-Reverse Indexed
   EXTSH = 922 << 1,   // Extend Sign Halfword
   EXTSB = 954 << 1,   // Extend Sign Byte
   ICBI = 982 << 1,    // Instruction Cache Block Invalidate

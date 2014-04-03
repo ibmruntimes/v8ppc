@@ -1904,6 +1904,48 @@ bool Simulator::ExecuteExt2_10bit(Instruction *instr) {
       }
       break;
     }
+    case STWBRX: {
+      int rs = instr->RSValue();
+      int ra = instr->RAValue();
+      int rb = instr->RBValue();
+      intptr_t ra_val = ra == 0 ? 0 : get_register(ra);
+      int32_t rs_val = get_register(rs);
+      intptr_t rb_val = get_register(rb);
+      WriteReverseInt32(reinterpret_cast<void *>(ra_val+rb_val), rs_val);
+      break;
+    }
+    case STHBRX: {
+      int rs = instr->RSValue();
+      int ra = instr->RAValue();
+      int rb = instr->RBValue();
+      intptr_t ra_val = ra == 0 ? 0 : get_register(ra);
+      int16_t rs_val = get_register(rs);
+      intptr_t rb_val = get_register(rb);
+      WriteReverseInt16(reinterpret_cast<void *>(ra_val+rb_val), rs_val);
+      break;
+    }
+    case LWBRX: {
+      int rt = instr->RTValue();
+      int ra = instr->RAValue();
+      int rb = instr->RBValue();
+      intptr_t ra_val = ra == 0 ? 0 : get_register(ra);
+      intptr_t rb_val = get_register(rb);
+      uint32_t result =
+          ReadReverseInt32(reinterpret_cast<void *>(ra_val+rb_val));
+      set_register(rt, result);
+      break;
+    }
+    case LHBRX: {
+      int rt = instr->RTValue();
+      int ra = instr->RAValue();
+      int rb = instr->RBValue();
+      intptr_t ra_val = ra == 0 ? 0 : get_register(ra);
+      intptr_t rb_val = get_register(rb);
+      uint16_t result =
+          ReadReverseInt16(reinterpret_cast<void *>(ra_val+rb_val));
+      set_register(rt, result & 0xFFFF);
+      break;
+    }
     case SYNC: {
       // todo - simulate sync
       break;

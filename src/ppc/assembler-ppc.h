@@ -479,8 +479,12 @@ class MemOperand BASE_EMBEDDED {
 
   explicit MemOperand(Register ra, Register rb);
 
+  bool isIndexed() const {
+    return (offset_ == 0 && !rb_.is(no_reg));
+  }
+
   int32_t offset() const {
-    ASSERT(rb_.is(no_reg));
+    ASSERT(!isIndexed());
     return offset_;
   }
 
@@ -491,7 +495,7 @@ class MemOperand BASE_EMBEDDED {
   }
 
   Register rb() const {
-    ASSERT(offset_ == 0 && !rb_.is(no_reg));
+    ASSERT(isIndexed());
     return rb_;
   }
 
@@ -842,10 +846,12 @@ class Assembler : public AssemblerBase {
   void lhz(Register dst, const MemOperand& src);
   void lhzx(Register dst, const MemOperand& src);
   void lhzux(Register dst, const MemOperand& src);
+  void lhbrx(Register dst, const MemOperand& src);
   void lwz(Register dst, const MemOperand& src);
   void lwzu(Register dst, const MemOperand& src);
   void lwzx(Register dst, const MemOperand& src);
   void lwzux(Register dst, const MemOperand& src);
+  void lwbrx(Register dst, const MemOperand& src);
   void lwa(Register dst, const MemOperand& src);
   void stb(Register dst, const MemOperand& src);
   void stbx(Register dst, const MemOperand& src);
@@ -853,10 +859,12 @@ class Assembler : public AssemblerBase {
   void sth(Register dst, const MemOperand& src);
   void sthx(Register dst, const MemOperand& src);
   void sthux(Register dst, const MemOperand& src);
+  void sthbrx(Register dst, const MemOperand& src);
   void stw(Register dst, const MemOperand& src);
   void stwu(Register dst, const MemOperand& src);
   void stwx(Register rs, const MemOperand& src);
   void stwux(Register rs, const MemOperand& src);
+  void stwbrx(Register rs, const MemOperand& src);
 
   void extsb(Register rs, Register ra, RCBit r = LeaveRC);
   void extsh(Register rs, Register ra, RCBit r = LeaveRC);

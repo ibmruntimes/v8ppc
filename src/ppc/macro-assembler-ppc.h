@@ -64,6 +64,7 @@ enum TaggingMode {
 enum RememberedSetAction { EMIT_REMEMBERED_SET, OMIT_REMEMBERED_SET };
 enum SmiCheck { INLINE_SMI_CHECK, OMIT_SMI_CHECK };
 enum LinkRegisterStatus { kLRHasNotBeenSaved, kLRHasBeenSaved };
+enum MemAccessFlags { kMemAccessNone, kMemAccessUpdate, kMemAccessReverse };
 
 
 Register GetRegisterThatIsNotOneOf(Register reg1,
@@ -484,7 +485,7 @@ class MacroAssembler: public Assembler {
   void LoadWord(Register dst,
                 const MemOperand& mem,
                 Register scratch,
-                bool updateForm = false);
+                MemAccessFlags flags = kMemAccessNone);
 
   void LoadWordArith(Register dst,
                      const MemOperand& mem,
@@ -493,27 +494,27 @@ class MacroAssembler: public Assembler {
   void StoreWord(Register src,
                  const MemOperand& mem,
                  Register scratch,
-                 bool updateForm = false);
+                 MemAccessFlags flags = kMemAccessNone);
 
   void LoadHalfWord(Register dst,
                     const MemOperand& mem,
                     Register scratch,
-                    bool updateForm = false);
+                    MemAccessFlags flags = kMemAccessNone);
 
   void StoreHalfWord(Register src,
                      const MemOperand& mem,
                      Register scratch,
-                     bool updateForm = false);
+                     MemAccessFlags flags = kMemAccessNone);
 
   void LoadByte(Register dst,
                 const MemOperand& mem,
                 Register scratch,
-                bool updateForm = false);
+                MemAccessFlags flags = kMemAccessNone);
 
   void StoreByte(Register src,
                  const MemOperand& mem,
                  Register scratch,
-                 bool updateForm = false);
+                 MemAccessFlags flags = kMemAccessNone);
 
   void LoadRepresentation(Register dst,
                           const MemOperand& mem,
@@ -1660,6 +1661,11 @@ class MacroAssembler: public Assembler {
   static int SafepointRegisterStackIndex(int reg_code);
   MemOperand SafepointRegisterSlot(Register reg);
   MemOperand SafepointRegistersAndDoublesSlot(Register reg);
+
+  // Helper for LoadWord/StoreWord/...
+  MemOperand MemAccessOperand(const MemOperand& mem,
+                              MemAccessFlags flags,
+                              Register scratch);
 
   bool generating_stub_;
   bool has_frame_;

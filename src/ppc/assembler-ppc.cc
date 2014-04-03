@@ -1159,6 +1159,14 @@ void Assembler::lhzux(Register rt, const MemOperand & src) {
 }
 
 
+void Assembler::lhbrx(Register rt, const MemOperand &src) {
+  Register ra = src.ra();
+  Register rb = src.rb();
+  ASSERT(!ra.is(r0));
+  emit(EXT2 | LHBRX | rt.code()*B21 | ra.code()*B16 | rb.code()*B11 | LeaveRC);
+}
+
+
 void Assembler::lwz(Register dst, const MemOperand &src) {
   ASSERT(!src.ra_.is(r0));
   d_form(LWZ, dst, src.ra(), src.offset(), true);
@@ -1184,6 +1192,14 @@ void Assembler::lwzux(Register rt, const MemOperand & src) {
   Register rb = src.rb();
   ASSERT(!ra.is(r0));
   emit(EXT2 | LWZUX | rt.code()*B21 | ra.code()*B16 | rb.code()*B11 | LeaveRC);
+}
+
+
+void Assembler::lwbrx(Register rt, const MemOperand &src) {
+  Register ra = src.ra();
+  Register rb = src.rb();
+  ASSERT(!ra.is(r0));
+  emit(EXT2 | LWBRX | rt.code()*B21 | ra.code()*B16 | rb.code()*B11 | LeaveRC);
 }
 
 
@@ -1244,6 +1260,14 @@ void Assembler::sthux(Register rs, const MemOperand &src) {
 }
 
 
+void Assembler::sthbrx(Register rs, const MemOperand &src) {
+  Register ra = src.ra();
+  Register rb = src.rb();
+  ASSERT(!ra.is(r0));
+  emit(EXT2 | STHBRX | rs.code()*B21 | ra.code()*B16 | rb.code()*B11 | LeaveRC);
+}
+
+
 void Assembler::stw(Register dst, const MemOperand &src) {
   ASSERT(!src.ra_.is(r0));
   d_form(STW, dst, src.ra(), src.offset(), true);
@@ -1269,6 +1293,14 @@ void Assembler::stwux(Register rs, const MemOperand &src) {
   Register rb = src.rb();
   ASSERT(!ra.is(r0));
   emit(EXT2 | STWUX | rs.code()*B21 | ra.code()*B16 | rb.code()*B11 | LeaveRC);
+}
+
+
+void Assembler::stwbrx(Register rs, const MemOperand &src) {
+  Register ra = src.ra();
+  Register rb = src.rb();
+  ASSERT(!ra.is(r0));
+  emit(EXT2 | STWBRX | rs.code()*B21 | ra.code()*B16 | rb.code()*B11 | LeaveRC);
 }
 
 

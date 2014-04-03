@@ -3274,6 +3274,7 @@ void LCodeGen::DoLoadKeyedExternalArray(LLoadKeyed* instr) {
     int base_offset =
       (instr->additional_index() << element_size_shift) + additional_offset;
     DoubleRegister result = ToDoubleRegister(instr->result());
+    bool reverse = ReverseExternalArrayBytes(__FLOAT_WORD_ORDER);
     if (key_is_constant) {
       __ Add(scratch0(), external_pointer,
              constant_key << element_size_shift,
@@ -3284,74 +3285,73 @@ void LCodeGen::DoLoadKeyedExternalArray(LLoadKeyed* instr) {
     }
     if (elements_kind == EXTERNAL_FLOAT32_ELEMENTS ||
         elements_kind == FLOAT32_ELEMENTS) {
-      __ lfs(result, MemOperand(scratch0(), base_offset));
+      if (!reverse) {
+        __ lfs(result, MemOperand(scratch0(), base_offset));
+      } else {
+        // reverse bytes to emulate opposite endianness
+        __ mov(ip, Operand(base_offset));
+        __ lwbrx(r0, MemOperand(scratch0(), ip));
+        __ stwu(r0, MemOperand(sp, -4));
+        __ lfs(result, MemOperand(sp, 0));
+        __ addi(sp, sp, Operand(4));
+      }
     } else  {  // loading doubles, not floats.
-      __ lfd(result, MemOperand(scratch0(), base_offset));
+      if (!reverse) {
+        __ lfd(result, MemOperand(scratch0(), base_offset));
+      } else {
+        // reverse bytes to emulate opposite endianness
+        __ addi(sp, sp, Operand(-kDoubleSize));
+        __ mov(ip, Operand(base_offset));
+        __ lwbrx(r0, MemOperand(scratch0(), ip));
+        __ stw(r0, MemOperand(sp, 4));
+        __ addi(ip, ip, Operand(4));
+        __ lwbrx(r0, MemOperand(scratch0(), ip));
+        __ stw(r0, MemOperand(sp, 0));
+        __ lfd(result, MemOperand(sp, 0));
+        __ addi(sp, sp, Operand(kDoubleSize));
+      }
     }
   } else {
     Register result = ToRegister(instr->result());
     MemOperand mem_operand = PrepareKeyedOperand(
       key, external_pointer, key_is_constant, key_is_smi, constant_key,
       element_size_shift, instr->additional_index(), additional_offset);
+    MemAccessFlags flags = (ReverseExternalArrayBytes(__BYTE_ORDER) ?
+                            kMemAccessReverse : kMemAccessNone);
     switch (elements_kind) {
       case EXTERNAL_INT8_ELEMENTS:
       case INT8_ELEMENTS:
-        if (key_is_constant) {
-          __ LoadByte(result, mem_operand, r0);
-        } else {
-          __ lbzx(result, mem_operand);
-        }
+        __ LoadByte(result, mem_operand, r0);
         __ extsb(result, result);
         break;
       case EXTERNAL_UINT8_CLAMPED_ELEMENTS:
       case EXTERNAL_UINT8_ELEMENTS:
       case UINT8_ELEMENTS:
       case UINT8_CLAMPED_ELEMENTS:
-        if (key_is_constant) {
-          __ LoadByte(result, mem_operand, r0);
-        } else {
-          __ lbzx(result, mem_operand);
-        }
+        __ LoadByte(result, mem_operand, r0);
         break;
       case EXTERNAL_INT16_ELEMENTS:
       case INT16_ELEMENTS:
-        if (key_is_constant) {
-          __ LoadHalfWord(result, mem_operand, r0);
-        } else {
-          __ lhzx(result, mem_operand);
-        }
+        __ LoadHalfWord(result, mem_operand, r0, flags);
         __ extsh(result, result);
         break;
       case EXTERNAL_UINT16_ELEMENTS:
       case UINT16_ELEMENTS:
-        if (key_is_constant) {
-          __ LoadHalfWord(result, mem_operand, r0);
-        } else {
-          __ lhzx(result, mem_operand);
-        }
+        __ LoadHalfWord(result, mem_operand, r0, flags);
         break;
       case EXTERNAL_INT32_ELEMENTS:
       case INT32_ELEMENTS:
-        if (key_is_constant) {
-          __ LoadWord(result, mem_operand, r0);
-        } else {
-          __ lwzx(result, mem_operand);
-        }
+        __ LoadWord(result, mem_operand, r0, flags);
 #if V8_TARGET_ARCH_PPC64
         __ extsw(result, result);
 #endif
         break;
       case EXTERNAL_UINT32_ELEMENTS:
       case UINT32_ELEMENTS:
-        if (key_is_constant) {
-          __ LoadWord(result, mem_operand, r0);
-        } else {
-          __ lwzx(result, mem_operand);
-        }
+        __ LoadWord(result, mem_operand, r0, flags);
         if (!instr->hydrogen()->CheckFlag(HInstruction::kUint32)) {
-          __ lis(r0, Operand(SIGN_EXT_IMM16(0x8000)));
-          __ cmplw(result, r0);
-          DeoptimizeIf(ge, instr->environment());
+          __ cmpwi(result, Operand::Zero());
+          DeoptimizeIf(lt, instr->environment());
         }
         break;
       case FLOAT32_ELEMENTS:
@@ -4466,6 +4466,7 @@ void LCodeGen::DoStoreKeyedExternalArray(LStoreKeyed* instr) {
     int base_offset =
       (instr->additional_index() << element_size_shift) + additional_offset;
     Register address = scratch0();
+    bool reverse = ReverseExternalArrayBytes(__FLOAT_WORD_ORDER);
     DoubleRegister value(ToDoubleRegister(instr->value()));
     if (key_is_constant) {
       if (constant_key != 0) {
@@ -4483,14 +4484,34 @@ void LCodeGen::DoStoreKeyedExternalArray(LStoreKeyed* instr) {
         elements_kind == FLOAT32_ELEMENTS) {
       __ frsp(double_scratch0(), value);
       __ stfs(double_scratch0(), MemOperand(address, base_offset));
+      if (reverse) {
+        // reverse bytes to emulate opposite endianness
+        __ mov(ip, Operand(base_offset));
+        __ lwzx(r0, MemOperand(address, ip));
+        __ stwbrx(r0, MemOperand(address, ip));
+      }
     } else {  // Storing doubles, not floats.
-      __ stfd(value, MemOperand(address, base_offset));
+      if (!reverse) {
+        __ stfd(value, MemOperand(address, base_offset));
+      } else {
+        // reverse bytes to emulate opposite endianness
+        __ stfdu(value, MemOperand(sp, -kDoubleSize));
+        __ mov(ip, Operand(base_offset));
+        __ lwz(r0, MemOperand(sp, 4));
+        __ stwbrx(r0, MemOperand(address, ip));
+        __ addi(ip, ip, Operand(4));
+        __ lwz(r0, MemOperand(sp, 0));
+        __ stwbrx(r0, MemOperand(address, ip));
+        __ addi(sp, sp, Operand(kDoubleSize));
+      }
     }
   } else {
     Register value(ToRegister(instr->value()));
     MemOperand mem_operand = PrepareKeyedOperand(
       key, external_pointer, key_is_constant, key_is_smi, constant_key,
       element_size_shift, instr->additional_index(), additional_offset);
+    MemAccessFlags flags = (ReverseExternalArrayBytes(__BYTE_ORDER) ?
+                            kMemAccessReverse : kMemAccessNone);
     switch (elements_kind) {
       case EXTERNAL_UINT8_CLAMPED_ELEMENTS:
       case EXTERNAL_INT8_ELEMENTS:
@@ -4498,31 +4519,19 @@ void LCodeGen::DoStoreKeyedExternalArray(LStoreKeyed* instr) {
       case UINT8_ELEMENTS:
       case UINT8_CLAMPED_ELEMENTS:
       case INT8_ELEMENTS:
-        if (key_is_constant) {
-          __ StoreByte(value, mem_operand, r0);
-        } else {
-          __ stbx(value, mem_operand);
-        }
+        __ StoreByte(value, mem_operand, r0);
         break;
       case EXTERNAL_INT16_ELEMENTS:
       case EXTERNAL_UINT16_ELEMENTS:
       case INT16_ELEMENTS:
       case UINT16_ELEMENTS:
-        if (key_is_constant) {
-          __ StoreHalfWord(value, mem_operand, r0);
-        } else {
-          __ sthx(value, mem_operand);
-        }
+        __ StoreHalfWord(value, mem_operand, r0, flags);
         break;
       case EXTERNAL_INT32_ELEMENTS:
       case EXTERNAL_UINT32_ELEMENTS:
       case INT32_ELEMENTS:
       case UINT32_ELEMENTS:
-        if (key_is_constant) {
-          __ StoreWord(value, mem_operand, r0);
-        } else {
-          __ stwx(value, mem_operand);
-        }
+        __ StoreWord(value, mem_operand, r0, flags);
         break;
       case FLOAT32_ELEMENTS:
       case FLOAT64_ELEMENTS:

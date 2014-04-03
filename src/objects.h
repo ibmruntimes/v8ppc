@@ -5040,6 +5040,8 @@ class FixedTypedArray: public FixedTypedArrayBase {
       static const char* Designator() { return #type " array"; }              \
       static inline MaybeObject* ToObject(Heap* heap, elementType scalar);    \
       static inline elementType defaultValue();                               \
+      static inline elementType ReadReverseBytes(void *ptr);                  \
+      static inline void WriteReverseBytes(void *ptr, elementType scalar);    \
   };                                                                          \
                                                                               \
   typedef FixedTypedArray<Type##ArrayTraits> Fixed##Type##Array;

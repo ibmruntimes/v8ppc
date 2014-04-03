@@ -794,6 +794,10 @@ void Decoder::DecodeExt2(Instruction* instr) {
       Format(instr, "stwux   'rs, 'ra, 'rb");
       break;
     }
+    case STWBRX: {
+      Format(instr, "stwbrx  'rs, 'ra, 'rb");
+      break;
+    }
     case STBX: {
       Format(instr, "stbx    'rs, 'ra, 'rb");
       break;
@@ -810,12 +814,20 @@ void Decoder::DecodeExt2(Instruction* instr) {
       Format(instr, "sthux   'rs, 'ra, 'rb");
       break;
     }
+    case STHBRX: {
+      Format(instr, "sthbrx  'rs, 'ra, 'rb");
+      break;
+    }
     case LWZX: {
       Format(instr, "lwzx    'rt, 'ra, 'rb");
       break;
     }
     case LWZUX: {
       Format(instr, "lwzux   'rt, 'ra, 'rb");
+      break;
+    }
+    case LWBRX: {
+      Format(instr, "lwbrx   'rt, 'ra, 'rb");
       break;
     }
     case LBZX: {
@@ -832,6 +844,10 @@ void Decoder::DecodeExt2(Instruction* instr) {
     }
     case LHZUX: {
       Format(instr, "lhzux   'rt, 'ra, 'rb");
+      break;
+    }
+    case LHBRX: {
+      Format(instr, "lhbrx   'rt, 'ra, 'rb");
       break;
     }
 #if V8_TARGET_ARCH_PPC64

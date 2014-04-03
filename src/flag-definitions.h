@@ -405,6 +405,10 @@ DEFINE_bool(enable_vldr_imm, false,
             "enable use of constant pools for double immediate (ARM only)")
 DEFINE_bool(force_long_branches, false,
             "force all emitted branches to be in long mode (MIPS/PPC only)")
+DEFINE_bool(little_endian_external_arrays, false,
+            "manipulate external arrays as little-endian (PPC only)")
+DEFINE_bool(big_endian_external_arrays, false,
+            "manipulate external arrays as big-endian (PPC only)")
 
 // bootstrapper.cc
 DEFINE_string(expose_natives_as, NULL, "expose natives in global object")
