@@ -359,6 +359,9 @@
           '__BYTE_ORDER=__BIG_ENDIAN',
           '__FLOAT_WORD_ORDER=__BIG_ENDIAN'],
         'conditions': [
+          [ 'v8_target_arch=="ppc"', {
+            'ldflags': [ '-Wl,-bmaxdata:0x60000000/dsa' ],
+          }],
           [ 'v8_target_arch=="ppc64"', {
             'cflags': [ '-maix64' ],
             'ldflags': [ '-maix64' ],
