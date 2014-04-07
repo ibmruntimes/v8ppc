@@ -917,13 +917,13 @@ void KeyedCallIC::GenerateNonStrictArguments(MacroAssembler* masm,
   __ LoadP(r4, MemOperand(sp, argc * kPointerSize), r0);
   MemOperand mapped_location =
       GenerateMappedArgumentsLookup(masm, r4, r5, r6, r7, r8, &notin, &slow);
-  __ LoadP(r4, mapped_location);
+  __ LoadPX(r4, mapped_location);
   GenerateFunctionTailCall(masm, argc, &slow, r6);
   __ bind(&notin);
   // The unmapped lookup expects that the parameter map is in r6.
   MemOperand unmapped_location =
       GenerateUnmappedArgumentsLookup(masm, r5, r6, r7, &slow);
-  __ LoadP(r4, unmapped_location);
+  __ LoadPX(r4, unmapped_location);
   __ LoadRoot(r6, Heap::kTheHoleValueRootIndex);
   __ cmp(r4, r6);
   __ beq(&slow);
