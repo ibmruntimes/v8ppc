@@ -1,4 +1,4 @@
-// Copyright 2008 the V8 project authors. All rights reserved.
+// Copyright 2014 the V8 project authors. All rights reserved.
 // Redistribution and use in source and binary forms, with or without
 // modification, are permitted provided that the following conditions are
 // met:
@@ -25,36 +25,20 @@
 // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-// Flags: --gc-greedy --noverify-heap
-
-function IterativeFib(n) {
-  var f0 = 0, f1 = 1;
-  for (; n > 0; --n) {
-    var f2 = f0 + f1;
-    f0 = f1; f1 = f2;
-  }
-  return f0;
+// Test BinaryOpICStub substract
+var a;
+for (var i = 0; i < 2; i++) {
+  var x = 42 + a - {};
+  print(x);
+  a = "";
 }
 
-function RecursiveFib(n) {
-  if (n <= 1) return n;
-  return RecursiveFib(n - 1) + RecursiveFib(n - 2);
+// Test BinaryOpICStub add
+var b = 1.4;
+var val = 0;
+var o = {valueOf:function() { val++; return 10; }};
+for (var i = 0; i < 2; i++) {
+  var x = (b + i) + o;
+  b = "";
 }
-
-function Check(n, expected) {
-  var i = IterativeFib(n);
-  var r = RecursiveFib(n);
-  assertEquals(i, expected);
-  assertEquals(r, expected);
-}
-
-Check(0, 0);
-Check(1, 1);
-Check(2, 1);
-Check(3, 1 + 1);
-Check(4, 2 + 1);
-Check(5, 3 + 2);
-Check(10, 55);
-Check(15, 610);
-Check(20, 6765);
-assertEquals(IterativeFib(75), 2111485077978050);
+assertEquals(val, 2);

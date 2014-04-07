@@ -4428,6 +4428,20 @@ class V8_EXPORT Isolate {
    */
   void SetEventLogger(LogEventCallback that);
 
+  /**
+   * Adds a callback to notify the host application when a script finished
+   * running.  If a script re-enters the runtime during executing, the
+   * CallCompletedCallback is only invoked when the outer-most script
+   * execution ends.  Executing scripts inside the callback do not trigger
+   * further callbacks.
+   */
+  void AddCallCompletedCallback(CallCompletedCallback callback);
+
+  /**
+   * Removes callback that was installed by AddCallCompletedCallback.
+   */
+  void RemoveCallCompletedCallback(CallCompletedCallback callback);
+
  private:
   template<class K, class V, class Traits> friend class PersistentValueMap;
 
@@ -4795,11 +4809,15 @@ class V8_EXPORT V8 {
    * CallCompletedCallback is only invoked when the outer-most script
    * execution ends.  Executing scripts inside the callback do not trigger
    * further callbacks.
+   *
+   * Will be deprecated soon. Use Isolate::AddCallCompletedCallback.
    */
   static void AddCallCompletedCallback(CallCompletedCallback callback);
 
   /**
    * Removes callback that was installed by AddCallCompletedCallback.
+   *
+   * Will be deprecated soon. Use Isolate::RemoveCallCompletedCallback.
    */
   static void RemoveCallCompletedCallback(CallCompletedCallback callback);
 
@@ -5256,8 +5274,13 @@ class V8_EXPORT Context {
    */
   void Exit();
 
-  /** Returns true if the context has experienced an out of memory situation. */
-  bool HasOutOfMemoryException() { return false; }
+  /**
+   * Returns true if the context has experienced an out of memory situation.
+   * Since V8 always treats OOM as fatal error, this can no longer return true.
+   * Therefore this is now deprecated.
+   * */
+  V8_DEPRECATED("This can no longer happen. OOM is a fatal error.",
+                bool HasOutOfMemoryException()) { return false; }
 
   /** Returns an isolate associated with a current context. */
   v8::Isolate* GetIsolate();
@@ -5581,7 +5604,7 @@ class Internals {
   static const int kNullValueRootIndex = 7;
   static const int kTrueValueRootIndex = 8;
   static const int kFalseValueRootIndex = 9;
-  static const int kEmptyStringRootIndex = 152;
+  static const int kEmptyStringRootIndex = 159;
 
   static const int kNodeClassIdOffset = 1 * kApiPointerSize;
   static const int kNodeFlagsOffset = 1 * kApiPointerSize + 3;

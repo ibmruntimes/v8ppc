@@ -61,13 +61,14 @@ Vector<const uc16> GetCharVector(Handle<String> string) {
 class URIUnescape : public AllStatic {
  public:
   template<typename Char>
-  static Handle<String> Unescape(Isolate* isolate, Handle<String> source);
+  MUST_USE_RESULT static MaybeHandle<String> Unescape(Isolate* isolate,
+                                                      Handle<String> source);
 
  private:
   static const signed char kHexValue['g'];
 
   template<typename Char>
-  static Handle<String> UnescapeSlow(
+  MUST_USE_RESULT static MaybeHandle<String> UnescapeSlow(
       Isolate* isolate, Handle<String> string, int start_index);
 
   static INLINE(int TwoDigitHex(uint16_t character1, uint16_t character2));
@@ -91,7 +92,8 @@ const signed char URIUnescape::kHexValue[] = {
 
 
 template<typename Char>
-Handle<String> URIUnescape::Unescape(Isolate* isolate, Handle<String> source) {
+MaybeHandle<String> URIUnescape::Unescape(Isolate* isolate,
+                                          Handle<String> source) {
   int index;
   { DisallowHeapAllocation no_allocation;
     StringSearch<uint8_t, Char> search(isolate, STATIC_ASCII_VECTOR("%"));
@@ -103,7 +105,7 @@ Handle<String> URIUnescape::Unescape(Isolate* isolate, Handle<String> source) {
 
 
 template <typename Char>
-Handle<String> URIUnescape::UnescapeSlow(
+MaybeHandle<String> URIUnescape::UnescapeSlow(
     Isolate* isolate, Handle<String> string, int start_index) {
   bool one_byte = true;
   int length = string->length();
@@ -129,9 +131,8 @@ Handle<String> URIUnescape::UnescapeSlow(
   Handle<String> second_part;
   ASSERT(unescaped_length <= String::kMaxLength);
   if (one_byte) {
-    Handle<SeqOneByteString> dest =
-        isolate->factory()->NewRawOneByteString(unescaped_length);
-    ASSERT(!dest.is_null());
+    Handle<SeqOneByteString> dest = isolate->factory()->NewRawOneByteString(
+        unescaped_length).ToHandleChecked();
     DisallowHeapAllocation no_allocation;
     Vector<const Char> vector = GetCharVector<Char>(string);
     for (int i = start_index; i < length; dest_position++) {
@@ -142,9 +143,8 @@ Handle<String> URIUnescape::UnescapeSlow(
     }
     second_part = dest;
   } else {
-    Handle<SeqTwoByteString> dest =
-        isolate->factory()->NewRawTwoByteString(unescaped_length);
-    ASSERT(!dest.is_null());
+    Handle<SeqTwoByteString> dest = isolate->factory()->NewRawTwoByteString(
+        unescaped_length).ToHandleChecked();
     DisallowHeapAllocation no_allocation;
     Vector<const Char> vector = GetCharVector<Char>(string);
     for (int i = start_index; i < length; dest_position++) {
@@ -203,7 +203,8 @@ int URIUnescape::UnescapeChar(Vector<const Char> vector,
 class URIEscape : public AllStatic {
  public:
   template<typename Char>
-  static Handle<String> Escape(Isolate* isolate, Handle<String> string);
+  MUST_USE_RESULT static MaybeHandle<String> Escape(Isolate* isolate,
+                                                    Handle<String> string);
 
  private:
   static const char kHexChars[17];
@@ -247,7 +248,7 @@ const char URIEscape::kNotEscaped[] = {
 
 
 template<typename Char>
-Handle<String> URIEscape::Escape(Isolate* isolate, Handle<String> string) {
+MaybeHandle<String> URIEscape::Escape(Isolate* isolate, Handle<String> string) {
   ASSERT(string->IsFlat());
   int escaped_length = 0;
   int length = string->length();
@@ -273,9 +274,11 @@ Handle<String> URIEscape::Escape(Isolate* isolate, Handle<String> string) {
   // No length change implies no change.  Return original string if no change.
   if (escaped_length == length) return string;
 
-  Handle<SeqOneByteString> dest =
-      isolate->factory()->NewRawOneByteString(escaped_length);
-  RETURN_IF_EMPTY_HANDLE_VALUE(isolate, dest, Handle<String>());
+  Handle<SeqOneByteString> dest;
+  ASSIGN_RETURN_ON_EXCEPTION(
+      isolate, dest,
+      isolate->factory()->NewRawOneByteString(escaped_length),
+      String);
   int dest_position = 0;
 
   { DisallowHeapAllocation no_allocation;

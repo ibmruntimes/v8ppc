@@ -319,13 +319,6 @@ LS_MACRO_LIST(DEFINE_FUNCTION)
 #undef DEFINE_FUNCTION
 
 
-void MacroAssembler::Adr(const Register& rd, Label* label) {
-  ASSERT(allow_macro_instructions_);
-  ASSERT(!rd.IsZero());
-  adr(rd, label);
-}
-
-
 void MacroAssembler::Asr(const Register& rd,
                          const Register& rn,
                          unsigned shift) {
@@ -830,6 +823,12 @@ void MacroAssembler::Fnmsub(const FPRegister& fd,
 void MacroAssembler::Frinta(const FPRegister& fd, const FPRegister& fn) {
   ASSERT(allow_macro_instructions_);
   frinta(fd, fn);
+}
+
+
+void MacroAssembler::Frintm(const FPRegister& fd, const FPRegister& fn) {
+  ASSERT(allow_macro_instructions_);
+  frintm(fd, fn);
 }
 
 

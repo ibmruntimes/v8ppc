@@ -156,14 +156,14 @@ void Object::Lookup(Name* name, LookupResult* result) {
 }
 
 
-Handle<Object> Object::GetPropertyWithReceiver(
+MaybeHandle<Object> Object::GetPropertyWithReceiver(
     Handle<Object> object,
     Handle<Object> receiver,
     Handle<Name> name,
     PropertyAttributes* attributes) {
   LookupResult lookup(name->GetIsolate());
   object->Lookup(*name, &lookup);
-  Handle<Object> result =
+  MaybeHandle<Object> result =
       GetProperty(object, receiver, &lookup, name, attributes);
   ASSERT(*attributes <= ABSENT);
   return result;
@@ -389,10 +389,10 @@ Handle<FixedArray> JSObject::EnsureWritableFastElements(
 }
 
 
-Handle<Object> JSObject::GetPropertyWithCallback(Handle<JSObject> object,
-                                                 Handle<Object> receiver,
-                                                 Handle<Object> structure,
-                                                 Handle<Name> name) {
+MaybeHandle<Object> JSObject::GetPropertyWithCallback(Handle<JSObject> object,
+                                                      Handle<Object> receiver,
+                                                      Handle<Object> structure,
+                                                      Handle<Name> name) {
   Isolate* isolate = name->GetIsolate();
   // To accommodate both the old and the new api we switch on the
   // data structure used to store the callbacks.  Eventually foreign
@@ -415,8 +415,7 @@ Handle<Object> JSObject::GetPropertyWithCallback(Handle<JSObject> object,
           isolate->factory()->NewTypeError("incompatible_method_receiver",
                                            HandleVector(args,
                                                         ARRAY_SIZE(args)));
-      isolate->Throw(*error);
-      return Handle<Object>::null();
+      return isolate->Throw<Object>(error);
     }
     // TODO(rossberg): Handling symbols in the API requires changing the API,
     // so we do not support it for now.
@@ -443,7 +442,7 @@ Handle<Object> JSObject::GetPropertyWithCallback(Handle<JSObject> object,
     PropertyCallbackArguments args(isolate, data->data(), *self, *object);
     v8::Handle<v8::Value> result =
         args.Call(call_fun, v8::Utils::ToLocal(key));
-    RETURN_HANDLE_IF_SCHEDULED_EXCEPTION(isolate, Object);
+    RETURN_EXCEPTION_IF_SCHEDULED_EXCEPTION(isolate, Object);
     if (result.IsEmpty()) {
       return isolate->factory()->undefined_value();
     }
@@ -556,7 +555,7 @@ MaybeObject* Object::GetPropertyWithDefinedGetter(Object* receiver,
 
 
 // Only deal with CALLBACKS and INTERCEPTOR
-Handle<Object> JSObject::GetPropertyWithFailedAccessCheck(
+MaybeHandle<Object> JSObject::GetPropertyWithFailedAccessCheck(
     Handle<JSObject> object,
     Handle<Object> receiver,
     LookupResult* result,
@@ -670,7 +669,6 @@ PropertyAttributes JSObject::GetPropertyAttributeWithFailedAccessCheck(
       }
 
       case HANDLER:
-      case TRANSITION:
       case NONEXISTENT:
         UNREACHABLE();
     }
@@ -830,11 +828,11 @@ bool JSObject::IsDirty() {
 }
 
 
-Handle<Object> Object::GetProperty(Handle<Object> object,
-                                   Handle<Object> receiver,
-                                   LookupResult* result,
-                                   Handle<Name> key,
-                                   PropertyAttributes* attributes) {
+MaybeHandle<Object> Object::GetProperty(Handle<Object> object,
+                                        Handle<Object> receiver,
+                                        LookupResult* result,
+                                        Handle<Name> key,
+                                        PropertyAttributes* attributes) {
   Isolate* isolate = result->isolate();
   CALL_HEAP_FUNCTION(
       isolate,
@@ -884,13 +882,15 @@ MaybeObject* Object::GetProperty(Object* receiver,
         JSObject* checked = JSObject::cast(current);
         if (!isolate->MayNamedAccess(checked, name, v8::ACCESS_GET)) {
           HandleScope scope(isolate);
-          Handle<Object> value = JSObject::GetPropertyWithFailedAccessCheck(
-              handle(checked, isolate),
-              handle(receiver, isolate),
-              result,
-              handle(name, isolate),
-              attributes);
-          RETURN_IF_EMPTY_HANDLE(isolate, value);
+          Handle<Object> value;
+          ASSIGN_RETURN_FAILURE_ON_EXCEPTION(
+              isolate, value,
+              JSObject::GetPropertyWithFailedAccessCheck(
+                  handle(checked, isolate),
+                  handle(receiver, isolate),
+                  result,
+                  handle(name, isolate),
+                  attributes));
           return *value;
         }
       }
@@ -924,27 +924,30 @@ MaybeObject* Object::GetProperty(Object* receiver,
       return result->GetConstant();
     case CALLBACKS: {
       HandleScope scope(isolate);
-      Handle<Object> value = JSObject::GetPropertyWithCallback(
-          handle(result->holder(), isolate),
-          handle(receiver, isolate),
-          handle(result->GetCallbackObject(), isolate),
-          handle(name, isolate));
-      RETURN_IF_EMPTY_HANDLE(isolate, value);
+      Handle<Object> value;
+      ASSIGN_RETURN_FAILURE_ON_EXCEPTION(
+          isolate, value,
+          JSObject::GetPropertyWithCallback(
+              handle(result->holder(), isolate),
+              handle(receiver, isolate),
+              handle(result->GetCallbackObject(), isolate),
+              handle(name, isolate)));
       return *value;
     }
     case HANDLER:
       return result->proxy()->GetPropertyWithHandler(receiver, name);
     case INTERCEPTOR: {
       HandleScope scope(isolate);
-      Handle<Object> value = JSObject::GetPropertyWithInterceptor(
-          handle(result->holder(), isolate),
-          handle(receiver, isolate),
-          handle(name, isolate),
-          attributes);
-      RETURN_IF_EMPTY_HANDLE(isolate, value);
+      Handle<Object> value;
+      ASSIGN_RETURN_FAILURE_ON_EXCEPTION(
+          isolate, value,
+          JSObject::GetPropertyWithInterceptor(
+              handle(result->holder(), isolate),
+              handle(receiver, isolate),
+              handle(name, isolate),
+              attributes));
       return *value;
     }
-    case TRANSITION:
     case NONEXISTENT:
       UNREACHABLE();
       break;
@@ -2124,16 +2127,17 @@ void JSObject::AddSlowProperty(Handle<JSObject> object,
 }
 
 
-Handle<Object> JSObject::AddProperty(Handle<JSObject> object,
-                                     Handle<Name> name,
-                                     Handle<Object> value,
-                                     PropertyAttributes attributes,
-                                     StrictMode strict_mode,
-                                     JSReceiver::StoreFromKeyed store_mode,
-                                     ExtensibilityCheck extensibility_check,
-                                     ValueType value_type,
-                                     StoreMode mode,
-                                     TransitionFlag transition_flag) {
+MaybeHandle<Object> JSObject::AddProperty(
+    Handle<JSObject> object,
+    Handle<Name> name,
+    Handle<Object> value,
+    PropertyAttributes attributes,
+    StrictMode strict_mode,
+    JSReceiver::StoreFromKeyed store_mode,
+    ExtensibilityCheck extensibility_check,
+    ValueType value_type,
+    StoreMode mode,
+    TransitionFlag transition_flag) {
   ASSERT(!object->IsJSGlobalProxy());
   Isolate* isolate = object->GetIsolate();
 
@@ -2150,8 +2154,7 @@ Handle<Object> JSObject::AddProperty(Handle<JSObject> object,
       Handle<Object> args[1] = { name };
       Handle<Object> error = isolate->factory()->NewTypeError(
           "object_not_extensible", HandleVector(args, ARRAY_SIZE(args)));
-      isolate->Throw(*error);
-      return Handle<Object>();
+      return isolate->Throw<Object>(error);
     }
   }
 
@@ -2211,14 +2214,15 @@ void JSObject::EnqueueChangeRecord(Handle<JSObject> object,
 }
 
 
-Handle<Object> JSObject::SetPropertyPostInterceptor(
+MaybeHandle<Object> JSObject::SetPropertyPostInterceptor(
     Handle<JSObject> object,
     Handle<Name> name,
     Handle<Object> value,
     PropertyAttributes attributes,
     StrictMode strict_mode) {
   // Check local property, ignore interceptor.
-  LookupResult result(object->GetIsolate());
+  Isolate* isolate = object->GetIsolate();
+  LookupResult result(isolate);
   object->LocalLookupRealNamedProperty(*name, &result);
   if (!result.IsFound()) {
     object->map()->LookupTransition(*object, *name, &result);
@@ -2230,8 +2234,12 @@ Handle<Object> JSObject::SetPropertyPostInterceptor(
                                 strict_mode, MAY_BE_STORE_FROM_KEYED);
   }
   bool done = false;
-  Handle<Object> result_object = SetPropertyViaPrototypes(
-      object, name, value, attributes, strict_mode, &done);
+  Handle<Object> result_object;
+  ASSIGN_RETURN_ON_EXCEPTION(
+      isolate, result_object,
+      SetPropertyViaPrototypes(
+          object, name, value, attributes, strict_mode, &done),
+      Object);
   if (done) return result_object;
   // Add a new real property.
   return AddProperty(object, name, value, attributes, strict_mode);
@@ -2842,7 +2850,7 @@ Handle<Map> Map::CurrentMapForDeprecatedInternal(Handle<Map> map) {
 }
 
 
-Handle<Object> JSObject::SetPropertyWithInterceptor(
+MaybeHandle<Object> JSObject::SetPropertyWithInterceptor(
     Handle<JSObject> object,
     Handle<Name> name,
     Handle<Object> value,
@@ -2865,22 +2873,20 @@ Handle<Object> JSObject::SetPropertyWithInterceptor(
     v8::Handle<v8::Value> result = args.Call(setter,
                                              v8::Utils::ToLocal(name_string),
                                              v8::Utils::ToLocal(value_unhole));
-    RETURN_HANDLE_IF_SCHEDULED_EXCEPTION(isolate, Object);
+    RETURN_EXCEPTION_IF_SCHEDULED_EXCEPTION(isolate, Object);
     if (!result.IsEmpty()) return value;
   }
-  Handle<Object> result =
-      SetPropertyPostInterceptor(object, name, value, attributes, strict_mode);
-  RETURN_HANDLE_IF_SCHEDULED_EXCEPTION(isolate, Object);
-  return result;
+  return SetPropertyPostInterceptor(
+      object, name, value, attributes, strict_mode);
 }
 
 
-Handle<Object> JSReceiver::SetProperty(Handle<JSReceiver> object,
-                                       Handle<Name> name,
-                                       Handle<Object> value,
-                                       PropertyAttributes attributes,
-                                       StrictMode strict_mode,
-                                       StoreFromKeyed store_mode) {
+MaybeHandle<Object> JSReceiver::SetProperty(Handle<JSReceiver> object,
+                                            Handle<Name> name,
+                                            Handle<Object> value,
+                                            PropertyAttributes attributes,
+                                            StrictMode strict_mode,
+                                            StoreFromKeyed store_mode) {
   LookupResult result(object->GetIsolate());
   object->LocalLookup(*name, &result, true);
   if (!result.IsFound()) {
@@ -2891,12 +2897,12 @@ Handle<Object> JSReceiver::SetProperty(Handle<JSReceiver> object,
 }
 
 
-Handle<Object> JSObject::SetPropertyWithCallback(Handle<JSObject> object,
-                                                 Handle<Object> structure,
-                                                 Handle<Name> name,
-                                                 Handle<Object> value,
-                                                 Handle<JSObject> holder,
-                                                 StrictMode strict_mode) {
+MaybeHandle<Object> JSObject::SetPropertyWithCallback(Handle<JSObject> object,
+                                                      Handle<Object> structure,
+                                                      Handle<Name> name,
+                                                      Handle<Object> value,
+                                                      Handle<JSObject> holder,
+                                                      StrictMode strict_mode) {
   Isolate* isolate = object->GetIsolate();
 
   // We should never get here to initialize a const with the hole
@@ -2915,7 +2921,7 @@ Handle<Object> JSObject::SetPropertyWithCallback(Handle<JSObject> object,
                               isolate, *object, *value, callback->data),
                           break,
                           return Handle<Object>());
-    RETURN_HANDLE_IF_SCHEDULED_EXCEPTION(isolate, Object);
+    RETURN_EXCEPTION_IF_SCHEDULED_EXCEPTION(isolate, Object);
     return value;
   }
 
@@ -2928,8 +2934,7 @@ Handle<Object> JSObject::SetPropertyWithCallback(Handle<JSObject> object,
           isolate->factory()->NewTypeError("incompatible_method_receiver",
                                            HandleVector(args,
                                                         ARRAY_SIZE(args)));
-      isolate->Throw(*error);
-      return Handle<Object>();
+      return isolate->Throw<Object>(error);
     }
     // TODO(rossberg): Support symbols in the API.
     if (name->IsSymbol()) return value;
@@ -2944,7 +2949,7 @@ Handle<Object> JSObject::SetPropertyWithCallback(Handle<JSObject> object,
     args.Call(call_fun,
               v8::Utils::ToLocal(key),
               v8::Utils::ToLocal(value));
-    RETURN_HANDLE_IF_SCHEDULED_EXCEPTION(isolate, Object);
+    RETURN_EXCEPTION_IF_SCHEDULED_EXCEPTION(isolate, Object);
     return value;
   }
 
@@ -2960,8 +2965,7 @@ Handle<Object> JSObject::SetPropertyWithCallback(Handle<JSObject> object,
       Handle<Object> error =
           isolate->factory()->NewTypeError("no_setter_in_callback",
                                            HandleVector(args, 2));
-      isolate->Throw(*error);
-      return Handle<Object>();
+      return isolate->Throw<Object>(error);
     }
   }
 
@@ -2971,7 +2975,7 @@ Handle<Object> JSObject::SetPropertyWithCallback(Handle<JSObject> object,
   }
 
   UNREACHABLE();
-  return Handle<Object>();
+  return MaybeHandle<Object>();
 }
 
 
@@ -3042,12 +3046,13 @@ Handle<Object> JSObject::SetElementWithCallbackSetterInPrototypes(
 }
 
 
-Handle<Object> JSObject::SetPropertyViaPrototypes(Handle<JSObject> object,
-                                                  Handle<Name> name,
-                                                  Handle<Object> value,
-                                                  PropertyAttributes attributes,
-                                                  StrictMode strict_mode,
-                                                  bool* done) {
+MaybeHandle<Object> JSObject::SetPropertyViaPrototypes(
+    Handle<JSObject> object,
+    Handle<Name> name,
+    Handle<Object> value,
+    PropertyAttributes attributes,
+    StrictMode strict_mode,
+    bool* done) {
   Isolate* isolate = object->GetIsolate();
 
   *done = false;
@@ -3080,7 +3085,6 @@ Handle<Object> JSObject::SetPropertyViaPrototypes(Handle<JSObject> object,
         return JSProxy::SetPropertyViaPrototypesWithHandler(
             proxy, object, name, value, attributes, strict_mode, done);
       }
-      case TRANSITION:
       case NONEXISTENT:
         UNREACHABLE();
         break;
@@ -3093,8 +3097,7 @@ Handle<Object> JSObject::SetPropertyViaPrototypes(Handle<JSObject> object,
     Handle<Object> args[] = { name, object };
     Handle<Object> error = isolate->factory()->NewTypeError(
         "strict_read_only_property", HandleVector(args, ARRAY_SIZE(args)));
-    isolate->Throw(*error);
-    return Handle<Object>();
+    return isolate->Throw<Object>(error);
   }
   return isolate->factory()->the_hole_value();
 }
@@ -3463,7 +3466,7 @@ void JSObject::LookupRealNamedPropertyInPrototypes(Name* name,
 
 
 // We only need to deal with CALLBACKS and INTERCEPTORS
-Handle<Object> JSObject::SetPropertyWithFailedAccessCheck(
+MaybeHandle<Object> JSObject::SetPropertyWithFailedAccessCheck(
     Handle<JSObject> object,
     LookupResult* result,
     Handle<Name> name,
@@ -3526,18 +3529,18 @@ Handle<Object> JSObject::SetPropertyWithFailedAccessCheck(
 
   Isolate* isolate = object->GetIsolate();
   isolate->ReportFailedAccessCheckWrapper(object, v8::ACCESS_SET);
-  RETURN_HANDLE_IF_SCHEDULED_EXCEPTION(isolate, Object);
+  RETURN_EXCEPTION_IF_SCHEDULED_EXCEPTION(isolate, Object);
   return value;
 }
 
 
-Handle<Object> JSReceiver::SetProperty(Handle<JSReceiver> object,
-                                       LookupResult* result,
-                                       Handle<Name> key,
-                                       Handle<Object> value,
-                                       PropertyAttributes attributes,
-                                       StrictMode strict_mode,
-                                       StoreFromKeyed store_mode) {
+MaybeHandle<Object> JSReceiver::SetProperty(Handle<JSReceiver> object,
+                                            LookupResult* result,
+                                            Handle<Name> key,
+                                            Handle<Object> value,
+                                            PropertyAttributes attributes,
+                                            StrictMode strict_mode,
+                                            StoreFromKeyed store_mode) {
   if (result->IsHandler()) {
     return JSProxy::SetPropertyWithHandler(handle(result->proxy()),
         object, key, value, attributes, strict_mode);
@@ -3892,7 +3895,7 @@ Handle<Object> JSObject::TryMigrateInstance(Handle<JSObject> object) {
 }
 
 
-Handle<Object> JSObject::SetPropertyUsingTransition(
+MaybeHandle<Object> JSObject::SetPropertyUsingTransition(
     Handle<JSObject> object,
     LookupResult* lookup,
     Handle<Name> name,
@@ -3918,7 +3921,7 @@ Handle<Object> JSObject::SetPropertyUsingTransition(
   // Keep the target CONSTANT if the same value is stored.
   // TODO(verwaest): Also support keeping the placeholder
   // (value->IsUninitialized) as constant.
-  if (!value->FitsRepresentation(details.representation()) ||
+  if (!lookup->CanHoldValue(value) ||
       (details.type() == CONSTANT &&
        descriptors->GetValue(descriptor) != *value)) {
     transition_map = Map::GeneralizeRepresentation(transition_map,
@@ -3951,7 +3954,7 @@ static void SetPropertyToField(LookupResult* lookup,
                                Handle<Name> name,
                                Handle<Object> value) {
   Representation representation = lookup->representation();
-  if (!value->FitsRepresentation(representation) ||
+  if (!lookup->CanHoldValue(value) ||
       lookup->type() == CONSTANT) {
     JSObject::GeneralizeFieldRepresentation(handle(lookup->holder()),
                                             lookup->GetDescriptorIndex(),
@@ -4018,13 +4021,14 @@ static void SetPropertyToFieldWithAttributes(LookupResult* lookup,
 }
 
 
-Handle<Object> JSObject::SetPropertyForResult(Handle<JSObject> object,
-                                              LookupResult* lookup,
-                                              Handle<Name> name,
-                                              Handle<Object> value,
-                                              PropertyAttributes attributes,
-                                              StrictMode strict_mode,
-                                              StoreFromKeyed store_mode) {
+MaybeHandle<Object> JSObject::SetPropertyForResult(
+    Handle<JSObject> object,
+    LookupResult* lookup,
+    Handle<Name> name,
+    Handle<Object> value,
+    PropertyAttributes attributes,
+    StrictMode strict_mode,
+    StoreFromKeyed store_mode) {
   Isolate* isolate = object->GetIsolate();
 
   // Make sure that the top context does not change when doing callbacks or
@@ -4060,8 +4064,12 @@ Handle<Object> JSObject::SetPropertyForResult(Handle<JSObject> object,
 
   if (!lookup->IsProperty() && !object->IsJSContextExtensionObject()) {
     bool done = false;
-    Handle<Object> result_object = SetPropertyViaPrototypes(
-        object, name, value, attributes, strict_mode, &done);
+    Handle<Object> result_object;
+    ASSIGN_RETURN_ON_EXCEPTION(
+        isolate, result_object,
+        SetPropertyViaPrototypes(
+            object, name, value, attributes, strict_mode, &done),
+        Object);
     if (done) return result_object;
   }
 
@@ -4076,8 +4084,7 @@ Handle<Object> JSObject::SetPropertyForResult(Handle<JSObject> object,
       Handle<Object> args[] = { name, object };
       Handle<Object> error = isolate->factory()->NewTypeError(
           "strict_read_only_property", HandleVector(args, ARRAY_SIZE(args)));
-      isolate->Throw(*error);
-      return Handle<Object>();
+      return isolate->Throw<Object>(error);
     } else {
       return value;
     }
@@ -4093,38 +4100,40 @@ Handle<Object> JSObject::SetPropertyForResult(Handle<JSObject> object,
 
   // This is a real property that is not read-only, or it is a
   // transition or null descriptor and there are no setters in the prototypes.
-  Handle<Object> result = value;
-  switch (lookup->type()) {
-    case NORMAL:
-      SetNormalizedProperty(handle(lookup->holder()), lookup, value);
-      break;
-    case FIELD:
-      SetPropertyToField(lookup, name, value);
-      break;
-    case CONSTANT:
-      // Only replace the constant if necessary.
-      if (*value == lookup->GetConstant()) return value;
-      SetPropertyToField(lookup, name, value);
-      break;
-    case CALLBACKS: {
-      Handle<Object> callback_object(lookup->GetCallbackObject(), isolate);
-      return SetPropertyWithCallback(object, callback_object, name, value,
-                                     handle(lookup->holder()), strict_mode);
+  MaybeHandle<Object> maybe_result = value;
+  if (lookup->IsTransition()) {
+    maybe_result = SetPropertyUsingTransition(handle(lookup->holder()), lookup,
+                                              name, value, attributes);
+  } else {
+    switch (lookup->type()) {
+      case NORMAL:
+        SetNormalizedProperty(handle(lookup->holder()), lookup, value);
+        break;
+      case FIELD:
+        SetPropertyToField(lookup, name, value);
+        break;
+      case CONSTANT:
+        // Only replace the constant if necessary.
+        if (*value == lookup->GetConstant()) return value;
+        SetPropertyToField(lookup, name, value);
+        break;
+      case CALLBACKS: {
+        Handle<Object> callback_object(lookup->GetCallbackObject(), isolate);
+        return SetPropertyWithCallback(object, callback_object, name, value,
+                                      handle(lookup->holder()), strict_mode);
+      }
+      case INTERCEPTOR:
+        maybe_result = SetPropertyWithInterceptor(
+            handle(lookup->holder()), name, value, attributes, strict_mode);
+        break;
+      case HANDLER:
+      case NONEXISTENT:
+        UNREACHABLE();
     }
-    case INTERCEPTOR:
-      result = SetPropertyWithInterceptor(handle(lookup->holder()), name, value,
-                                          attributes, strict_mode);
-      break;
-    case TRANSITION:
-      result = SetPropertyUsingTransition(handle(lookup->holder()), lookup,
-                                          name, value, attributes);
-      break;
-    case HANDLER:
-    case NONEXISTENT:
-      UNREACHABLE();
   }
 
-  RETURN_IF_EMPTY_HANDLE_VALUE(isolate, result, Handle<Object>());
+  Handle<Object> result;
+  ASSIGN_RETURN_ON_EXCEPTION(isolate, result, maybe_result, Object);
 
   if (is_observed) {
     if (lookup->IsTransition()) {
@@ -4155,7 +4164,7 @@ Handle<Object> JSObject::SetPropertyForResult(Handle<JSObject> object,
 // Note that this method cannot be used to set the prototype of a function
 // because ConvertDescriptorToField() which is called in "case CALLBACKS:"
 // doesn't handle function prototypes correctly.
-Handle<Object> JSObject::SetLocalPropertyIgnoreAttributes(
+MaybeHandle<Object> JSObject::SetLocalPropertyIgnoreAttributes(
     Handle<JSObject> object,
     Handle<Name> name,
     Handle<Object> value,
@@ -4219,33 +4228,36 @@ Handle<Object> JSObject::SetLocalPropertyIgnoreAttributes(
   }
 
   // Check of IsReadOnly removed from here in clone.
-  switch (lookup.type()) {
-    case NORMAL:
-      ReplaceSlowProperty(object, name, value, attributes);
-      break;
-    case FIELD:
-      SetPropertyToFieldWithAttributes(&lookup, name, value, attributes);
-      break;
-    case CONSTANT:
-      // Only replace the constant if necessary.
-      if (lookup.GetAttributes() != attributes ||
-          *value != lookup.GetConstant()) {
+  if (lookup.IsTransition()) {
+    Handle<Object> result;
+    ASSIGN_RETURN_ON_EXCEPTION(
+        isolate, result,
+        SetPropertyUsingTransition(
+            handle(lookup.holder()), &lookup, name, value, attributes),
+        Object);
+  } else {
+    switch (lookup.type()) {
+      case NORMAL:
+        ReplaceSlowProperty(object, name, value, attributes);
+        break;
+      case FIELD:
         SetPropertyToFieldWithAttributes(&lookup, name, value, attributes);
-      }
-      break;
-    case CALLBACKS:
-      ConvertAndSetLocalProperty(&lookup, name, value, attributes);
-      break;
-    case TRANSITION: {
-      Handle<Object> result = SetPropertyUsingTransition(
-          handle(lookup.holder()), &lookup, name, value, attributes);
-      RETURN_IF_EMPTY_HANDLE_VALUE(isolate, result, Handle<Object>());
-      break;
+        break;
+      case CONSTANT:
+        // Only replace the constant if necessary.
+        if (lookup.GetAttributes() != attributes ||
+            *value != lookup.GetConstant()) {
+          SetPropertyToFieldWithAttributes(&lookup, name, value, attributes);
+        }
+        break;
+      case CALLBACKS:
+        ConvertAndSetLocalProperty(&lookup, name, value, attributes);
+        break;
+      case NONEXISTENT:
+      case HANDLER:
+      case INTERCEPTOR:
+        UNREACHABLE();
     }
-    case NONEXISTENT:
-    case HANDLER:
-    case INTERCEPTOR:
-      UNREACHABLE();
   }
 
   if (is_observed) {
@@ -4389,7 +4401,6 @@ PropertyAttributes JSReceiver::GetPropertyAttributeForResult(
             Handle<JSObject>::cast(receiver),
             name,
             continue_search);
-      case TRANSITION:
       case NONEXISTENT:
         UNREACHABLE();
     }
@@ -4490,7 +4501,7 @@ PropertyAttributes JSObject::GetElementAttributeWithoutInterceptor(
     uint32_t index,
     bool continue_search) {
   PropertyAttributes attr = object->GetElementsAccessor()->GetAttributes(
-      *receiver, *object, index);
+      receiver, object, index);
   if (attr != ABSENT) return attr;
 
   // Handle [] on String objects.
@@ -4632,7 +4643,6 @@ void JSObject::NormalizeProperties(Handle<JSObject> object,
         break;
       case HANDLER:
       case NORMAL:
-      case TRANSITION:
       case NONEXISTENT:
         UNREACHABLE();
         break;
@@ -5019,7 +5029,7 @@ Handle<ObjectHashTable> JSObject::GetOrCreateHiddenPropertiesHashtable(
       DONT_ENUM,
       OPTIMAL_REPRESENTATION,
       ALLOW_AS_CONSTANT,
-      OMIT_EXTENSIBILITY_CHECK);
+      OMIT_EXTENSIBILITY_CHECK).Assert();
 
   return hashtable;
 }
@@ -5058,7 +5068,7 @@ Handle<Object> JSObject::SetHiddenPropertiesHashTable(Handle<JSObject> object,
                                    DONT_ENUM,
                                    OPTIMAL_REPRESENTATION,
                                    ALLOW_AS_CONSTANT,
-                                   OMIT_EXTENSIBILITY_CHECK);
+                                   OMIT_EXTENSIBILITY_CHECK).Assert();
   return object;
 }
 
@@ -5185,7 +5195,7 @@ Handle<Object> JSObject::DeleteElement(Handle<JSObject> object,
   if (object->map()->is_observed()) {
     should_enqueue_change_record = HasLocalElement(object, index);
     if (should_enqueue_change_record) {
-      if (object->GetLocalElementAccessorPair(index) != NULL) {
+      if (!GetLocalElementAccessorPair(object, index).is_null()) {
         old_value = Handle<Object>::cast(factory->the_hole_value());
       } else {
         old_value = Object::GetElementNoExceptionThrown(isolate, object, index);
@@ -5510,8 +5520,11 @@ static void FreezeDictionary(Dictionary* dictionary) {
       PropertyDetails details = dictionary->DetailsAt(i);
       int attrs = DONT_DELETE;
       // READ_ONLY is an invalid attribute for JS setters/getters.
-      if (details.type() != CALLBACKS ||
-          !dictionary->ValueAt(i)->IsAccessorPair()) {
+      if (details.type() == CALLBACKS) {
+        Object* v = dictionary->ValueAt(i);
+        if (v->IsPropertyCell()) v = PropertyCell::cast(v)->value();
+        if (!v->IsAccessorPair()) attrs |= READ_ONLY;
+      } else {
         attrs |= READ_ONLY;
       }
       details = details.CopyAddAttributes(
@@ -5522,7 +5535,7 @@ static void FreezeDictionary(Dictionary* dictionary) {
 }
 
 
-Handle<Object> JSObject::Freeze(Handle<JSObject> object) {
+MaybeHandle<Object> JSObject::Freeze(Handle<JSObject> object) {
   // Freezing sloppy arguments should be handled elsewhere.
   ASSERT(!object->HasSloppyArgumentsElements());
   ASSERT(!object->map()->is_observed());
@@ -5535,7 +5548,7 @@ Handle<Object> JSObject::Freeze(Handle<JSObject> object) {
                                       isolate->factory()->undefined_value(),
                                       v8::ACCESS_KEYS)) {
     isolate->ReportFailedAccessCheckWrapper(object, v8::ACCESS_KEYS);
-    RETURN_HANDLE_IF_SCHEDULED_EXCEPTION(isolate, Object);
+    RETURN_EXCEPTION_IF_SCHEDULED_EXCEPTION(isolate, Object);
     return isolate->factory()->false_value();
   }
 
@@ -5553,8 +5566,7 @@ Handle<Object> JSObject::Freeze(Handle<JSObject> object) {
         isolate->factory()->NewTypeError(
             "cant_prevent_ext_external_array_elements",
             HandleVector(&object, 1));
-    isolate->Throw(*error);
-    return Handle<Object>();
+    return isolate->Throw<Object>(error);
   }
 
   Handle<SeededNumberDictionary> new_element_dictionary;
@@ -5580,11 +5592,11 @@ Handle<Object> JSObject::Freeze(Handle<JSObject> object) {
     }
   }
 
-  LookupResult result(isolate);
-  Handle<Map> old_map(object->map());
-  old_map->LookupTransition(*object, isolate->heap()->frozen_symbol(), &result);
-  if (result.IsTransition()) {
-    Handle<Map> transition_map(result.GetTransitionTarget());
+  Handle<Map> old_map(object->map(), isolate);
+  int transition_index = old_map->SearchTransition(
+      isolate->heap()->frozen_symbol());
+  if (transition_index != TransitionArray::kNotFound) {
+    Handle<Map> transition_map(old_map->GetTransition(transition_index));
     ASSERT(transition_map->has_dictionary_elements());
     ASSERT(transition_map->is_frozen());
     ASSERT(!transition_map->is_extensible());
@@ -5636,22 +5648,19 @@ Handle<Object> JSObject::Freeze(Handle<JSObject> object) {
 
 
 void JSObject::SetObserved(Handle<JSObject> object) {
-  ASSERT(!object->map()->is_observed());
   Isolate* isolate = object->GetIsolate();
-
-  LookupResult result(isolate);
-  object->map()->LookupTransition(*object,
-                                  isolate->heap()->observed_symbol(),
-                                  &result);
-
   Handle<Map> new_map;
-  if (result.IsTransition()) {
-    new_map = handle(result.GetTransitionTarget());
+  Handle<Map> old_map(object->map(), isolate);
+  ASSERT(!old_map->is_observed());
+  int transition_index = old_map->SearchTransition(
+      isolate->heap()->observed_symbol());
+  if (transition_index != TransitionArray::kNotFound) {
+    new_map = handle(old_map->GetTransition(transition_index), isolate);
     ASSERT(new_map->is_observed());
-  } else if (object->map()->CanHaveMoreTransitions()) {
-    new_map = Map::CopyForObserved(handle(object->map()));
+  } else if (old_map->CanHaveMoreTransitions()) {
+    new_map = Map::CopyForObserved(old_map);
   } else {
-    new_map = Map::Copy(handle(object->map()));
+    new_map = Map::Copy(old_map);
     new_map->set_is_observed();
   }
   JSObject::MigrateToMap(object, new_map);
@@ -5798,8 +5807,8 @@ Handle<JSObject> JSObjectWalkVisitor<ContextObject>::StructureWalk(
           RETURN_IF_EMPTY_HANDLE_VALUE(isolate, result, Handle<JSObject>());
           if (copying) {
             // Creating object copy for literals. No strict mode needed.
-            CHECK_NOT_EMPTY_HANDLE(isolate, JSObject::SetProperty(
-                copy, key_string, result, NONE, SLOPPY));
+            JSObject::SetProperty(
+                copy, key_string, result, NONE, SLOPPY).Assert();
           }
         }
       }
@@ -6365,7 +6374,7 @@ void JSObject::DefineAccessor(Handle<JSObject> object,
   if (is_observed) {
     if (is_element) {
       preexists = HasLocalElement(object, index);
-      if (preexists && object->GetLocalElementAccessorPair(index) == NULL) {
+      if (preexists && GetLocalElementAccessorPair(object, index).is_null()) {
         old_value = Object::GetElementNoExceptionThrown(isolate, object, index);
       }
     } else {
@@ -7240,74 +7249,92 @@ void Map::RemoveFromCodeCache(Name* name, Code* code, int index) {
 }
 
 
-// An iterator over all map transitions in an descriptor array, reusing the map
-// field of the contens array while it is running.
+// An iterator over all map transitions in an descriptor array, reusing the
+// constructor field of the map while it is running. Negative values in
+// the constructor field indicate an active map transition iteration. The
+// original constructor is restored after iterating over all entries.
 class IntrusiveMapTransitionIterator {
  public:
-  explicit IntrusiveMapTransitionIterator(TransitionArray* transition_array)
-      : transition_array_(transition_array) { }
+  IntrusiveMapTransitionIterator(
+      Map* map, TransitionArray* transition_array, Object* constructor)
+      : map_(map),
+        transition_array_(transition_array),
+        constructor_(constructor) { }
 
-  void Start() {
-    ASSERT(!IsIterating());
-    *TransitionArrayHeader() = Smi::FromInt(0);
+  void StartIfNotStarted() {
+    ASSERT(!(*IteratorField())->IsSmi() || IsIterating());
+    if (!(*IteratorField())->IsSmi()) {
+      ASSERT(*IteratorField() == constructor_);
+      *IteratorField() = Smi::FromInt(-1);
+    }
   }
 
   bool IsIterating() {
-    return (*TransitionArrayHeader())->IsSmi();
+    return (*IteratorField())->IsSmi() &&
+           Smi::cast(*IteratorField())->value() < 0;
   }
 
   Map* Next() {
     ASSERT(IsIterating());
-    int index = Smi::cast(*TransitionArrayHeader())->value();
+    int value = Smi::cast(*IteratorField())->value();
+    int index = -value - 1;
     int number_of_transitions = transition_array_->number_of_transitions();
     while (index < number_of_transitions) {
-      *TransitionArrayHeader() = Smi::FromInt(index + 1);
+      *IteratorField() = Smi::FromInt(value - 1);
       return transition_array_->GetTarget(index);
     }
 
-    *TransitionArrayHeader() = transition_array_->GetHeap()->fixed_array_map();
+    *IteratorField() = constructor_;
     return NULL;
   }
 
  private:
-  Object** TransitionArrayHeader() {
-    return HeapObject::RawField(transition_array_, TransitionArray::kMapOffset);
+  Object** IteratorField() {
+    return HeapObject::RawField(map_, Map::kConstructorOffset);
   }
 
+  Map* map_;
   TransitionArray* transition_array_;
+  Object* constructor_;
 };
 
 
-// An iterator over all prototype transitions, reusing the map field of the
-// underlying array while it is running.
+// An iterator over all prototype transitions, reusing the constructor field
+// of the map while it is running.  Positive values in the constructor field
+// indicate an active prototype transition iteration. The original constructor
+// is restored after iterating over all entries.
 class IntrusivePrototypeTransitionIterator {
  public:
-  explicit IntrusivePrototypeTransitionIterator(HeapObject* proto_trans)
-      : proto_trans_(proto_trans) { }
+  IntrusivePrototypeTransitionIterator(
+      Map* map, HeapObject* proto_trans, Object* constructor)
+      : map_(map), proto_trans_(proto_trans), constructor_(constructor) { }
 
-  void Start() {
-    ASSERT(!IsIterating());
-    *Header() = Smi::FromInt(0);
+  void StartIfNotStarted() {
+    if (!(*IteratorField())->IsSmi()) {
+      ASSERT(*IteratorField() == constructor_);
+      *IteratorField() = Smi::FromInt(0);
+    }
   }
 
   bool IsIterating() {
-    return (*Header())->IsSmi();
+    return (*IteratorField())->IsSmi() &&
+           Smi::cast(*IteratorField())->value() >= 0;
   }
 
   Map* Next() {
     ASSERT(IsIterating());
-    int transitionNumber = Smi::cast(*Header())->value();
+    int transitionNumber = Smi::cast(*IteratorField())->value();
     if (transitionNumber < NumberOfTransitions()) {
-      *Header() = Smi::FromInt(transitionNumber + 1);
+      *IteratorField() = Smi::FromInt(transitionNumber + 1);
       return GetTransition(transitionNumber);
     }
-    *Header() = proto_trans_->GetHeap()->fixed_array_map();
+    *IteratorField() = constructor_;
     return NULL;
   }
 
  private:
-  Object** Header() {
-    return HeapObject::RawField(proto_trans_, FixedArray::kMapOffset);
+  Object** IteratorField() {
+    return HeapObject::RawField(map_, Map::kConstructorOffset);
   }
 
   int NumberOfTransitions() {
@@ -7327,29 +7354,33 @@ class IntrusivePrototypeTransitionIterator {
         transitionNumber * Map::kProtoTransitionElementsPerEntry;
   }
 
+  Map* map_;
   HeapObject* proto_trans_;
+  Object* constructor_;
 };
 
 
 // To traverse the transition tree iteratively, we have to store two kinds of
 // information in a map: The parent map in the traversal and which children of a
 // node have already been visited. To do this without additional memory, we
-// temporarily reuse two maps with known values:
+// temporarily reuse two fields with known values:
 //
 //  (1) The map of the map temporarily holds the parent, and is restored to the
 //      meta map afterwards.
 //
 //  (2) The info which children have already been visited depends on which part
-//      of the map we currently iterate:
+//      of the map we currently iterate. We use the constructor field of the
+//      map to store the current index. We can do that because the constructor
+//      is the same for all involved maps.
 //
 //    (a) If we currently follow normal map transitions, we temporarily store
-//        the current index in the map of the FixedArray of the desciptor
-//        array's contents, and restore it to the fixed array map afterwards.
-//        Note that a single descriptor can have 0, 1, or 2 transitions.
+//        the current index in the constructor field, and restore it to the
+//        original constructor afterwards. Note that a single descriptor can
+//        have 0, 1, or 2 transitions.
 //
 //    (b) If we currently follow prototype transitions, we temporarily store
-//        the current index in the map of the FixedArray holding the prototype
-//        transitions, and restore it to the fixed array map afterwards.
+//        the current index in the constructor field, and restore it to the
+//        original constructor afterwards.
 //
 // Note that the child iterator is just a concatenation of two iterators: One
 // iterating over map transitions and one iterating over prototype transisitons.
@@ -7366,38 +7397,29 @@ class TraversableMap : public Map {
     return old_parent;
   }
 
-  // Start iterating over this map's children, possibly destroying a FixedArray
-  // map (see explanation above).
-  void ChildIteratorStart() {
-    if (HasTransitionArray()) {
-      if (HasPrototypeTransitions()) {
-        IntrusivePrototypeTransitionIterator(GetPrototypeTransitions()).Start();
-      }
-
-      IntrusiveMapTransitionIterator(transitions()).Start();
-    }
-  }
-
   // If we have an unvisited child map, return that one and advance. If we have
-  // none, return NULL and reset any destroyed FixedArray maps.
-  TraversableMap* ChildIteratorNext() {
-    TransitionArray* transition_array = unchecked_transition_array();
-    if (!transition_array->map()->IsSmi() &&
-        !transition_array->IsTransitionArray()) {
-      return NULL;
-    }
+  // none, return NULL and restore the overwritten constructor field.
+  TraversableMap* ChildIteratorNext(Object* constructor) {
+    if (!HasTransitionArray()) return NULL;
 
+    TransitionArray* transition_array = transitions();
     if (transition_array->HasPrototypeTransitions()) {
       HeapObject* proto_transitions =
-          transition_array->UncheckedPrototypeTransitions();
-      IntrusivePrototypeTransitionIterator proto_iterator(proto_transitions);
+          transition_array->GetPrototypeTransitions();
+      IntrusivePrototypeTransitionIterator proto_iterator(this,
+                                                          proto_transitions,
+                                                          constructor);
+      proto_iterator.StartIfNotStarted();
       if (proto_iterator.IsIterating()) {
         Map* next = proto_iterator.Next();
         if (next != NULL) return static_cast<TraversableMap*>(next);
       }
     }
 
-    IntrusiveMapTransitionIterator transition_iterator(transition_array);
+    IntrusiveMapTransitionIterator transition_iterator(this,
+                                                       transition_array,
+                                                       constructor);
+    transition_iterator.StartIfNotStarted();
     if (transition_iterator.IsIterating()) {
       Map* next = transition_iterator.Next();
       if (next != NULL) return static_cast<TraversableMap*>(next);
@@ -7411,12 +7433,16 @@ class TraversableMap : public Map {
 // Traverse the transition tree in postorder without using the C++ stack by
 // doing pointer reversal.
 void Map::TraverseTransitionTree(TraverseCallback callback, void* data) {
+  // Make sure that we do not allocate in the callback.
+  DisallowHeapAllocation no_allocation;
+
   TraversableMap* current = static_cast<TraversableMap*>(this);
-  current->ChildIteratorStart();
+  // Get the root constructor here to restore it later when finished iterating
+  // over maps.
+  Object* root_constructor = constructor();
   while (true) {
-    TraversableMap* child = current->ChildIteratorNext();
+    TraversableMap* child = current->ChildIteratorNext(root_constructor);
     if (child != NULL) {
-      child->ChildIteratorStart();
       child->SetParent(current);
       current = child;
     } else {
@@ -7883,14 +7909,15 @@ void FixedArray::Shrink(int new_length) {
 }
 
 
-MaybeObject* FixedArray::AddKeysFromJSArray(JSArray* array) {
+Handle<FixedArray> FixedArray::AddKeysFromJSArray(Handle<FixedArray> content,
+                                                  Handle<JSArray> array) {
   ElementsAccessor* accessor = array->GetElementsAccessor();
-  MaybeObject* maybe_result =
-      accessor->AddElementsToFixedArray(array, array, this);
-  FixedArray* result;
-  if (!maybe_result->To<FixedArray>(&result)) return maybe_result;
+  Handle<FixedArray> result =
+      accessor->AddElementsToFixedArray(array, array, content);
+
 #ifdef ENABLE_SLOW_ASSERTS
   if (FLAG_enable_slow_asserts) {
+    DisallowHeapAllocation no_allocation;
     for (int i = 0; i < result->length(); i++) {
       Object* current = result->get(i);
       ASSERT(current->IsNumber() || current->IsName());
@@ -7901,14 +7928,19 @@ MaybeObject* FixedArray::AddKeysFromJSArray(JSArray* array) {
 }
 
 
-MaybeObject* FixedArray::UnionOfKeys(FixedArray* other) {
-  ElementsAccessor* accessor = ElementsAccessor::ForArray(other);
-  MaybeObject* maybe_result =
-      accessor->AddElementsToFixedArray(NULL, NULL, this, other);
-  FixedArray* result;
-  if (!maybe_result->To(&result)) return maybe_result;
+Handle<FixedArray> FixedArray::UnionOfKeys(Handle<FixedArray> first,
+                                           Handle<FixedArray> second) {
+  ElementsAccessor* accessor = ElementsAccessor::ForArray(second);
+  Handle<FixedArray> result =
+      accessor->AddElementsToFixedArray(
+          Handle<Object>::null(),     // receiver
+          Handle<JSObject>::null(),   // holder
+          first,
+          Handle<FixedArrayBase>::cast(second));
+
 #ifdef ENABLE_SLOW_ASSERTS
   if (FLAG_enable_slow_asserts) {
+    DisallowHeapAllocation no_allocation;
     for (int i = 0; i < result->length(); i++) {
       Object* current = result->get(i);
       ASSERT(current->IsNumber() || current->IsName());
@@ -8197,24 +8229,6 @@ Handle<AccessorPair> AccessorPair::Copy(Handle<AccessorPair> pair) {
 Object* AccessorPair::GetComponent(AccessorComponent component) {
   Object* accessor = get(component);
   return accessor->IsTheHole() ? GetHeap()->undefined_value() : accessor;
-}
-
-
-MaybeObject* DeoptimizationInputData::Allocate(Isolate* isolate,
-                                               int deopt_entry_count,
-                                               PretenureFlag pretenure) {
-  ASSERT(deopt_entry_count > 0);
-  return isolate->heap()->AllocateFixedArray(LengthFor(deopt_entry_count),
-                                             pretenure);
-}
-
-
-MaybeObject* DeoptimizationOutputData::Allocate(Isolate* isolate,
-                                                int number_of_deopt_points,
-                                                PretenureFlag pretenure) {
-  if (number_of_deopt_points == 0) return isolate->heap()->empty_fixed_array();
-  return isolate->heap()->AllocateFixedArray(
-      LengthOfFixedArray(number_of_deopt_points), pretenure);
 }
 
 
@@ -11203,7 +11217,7 @@ Handle<FixedArray> JSObject::SetFastElementsCapacityAndLength(
     Handle<Map> new_map = (new_elements_kind != elements_kind)
         ? GetElementsTransitionMap(object, new_elements_kind)
         : handle(object->map());
-    object->ValidateElements();
+    JSObject::ValidateElements(object);
     JSObject::SetMapAndElements(object, new_map, new_elements);
 
     // Transition through the allocation site as well if present.
@@ -11249,7 +11263,7 @@ void JSObject::SetFastDoubleElementsCapacityAndLength(Handle<JSObject> object,
   ElementsAccessor* accessor = ElementsAccessor::ForKind(FAST_DOUBLE_ELEMENTS);
   accessor->CopyElements(object, elems, elements_kind);
 
-  object->ValidateElements();
+  JSObject::ValidateElements(object);
   JSObject::SetMapAndElements(object, new_map, elems);
 
   if (FLAG_trace_elements_transitions) {
@@ -11290,7 +11304,7 @@ static bool GetOldValue(Isolate* isolate,
   ASSERT(attributes != ABSENT);
   if (attributes == DONT_DELETE) return false;
   Handle<Object> value;
-  if (object->GetLocalElementAccessorPair(index) != NULL) {
+  if (!JSObject::GetLocalElementAccessorPair(object, index).is_null()) {
     value = Handle<Object>::cast(isolate->factory()->the_hole_value());
   } else {
     value = Object::GetElementNoExceptionThrown(isolate, object, index);
@@ -11427,7 +11441,7 @@ Handle<Object> JSArray::SetElementsLength(Handle<JSArray> array,
 
     SetProperty(deleted, isolate->factory()->length_string(),
                 isolate->factory()->NewNumberFromUint(delete_count),
-                NONE, SLOPPY);
+                NONE, SLOPPY).Assert();
   }
 
   EnqueueSpliceRecord(array, index, deleted, add_count);
@@ -11829,35 +11843,40 @@ void JSObject::EnsureCanContainElements(Handle<JSObject> object,
 }
 
 
-AccessorPair* JSObject::GetLocalPropertyAccessorPair(Name* name) {
+MaybeHandle<AccessorPair> JSObject::GetLocalPropertyAccessorPair(
+    Handle<JSObject> object,
+    Handle<Name> name) {
   uint32_t index = 0;
   if (name->AsArrayIndex(&index)) {
-    return GetLocalElementAccessorPair(index);
+    return GetLocalElementAccessorPair(object, index);
   }
 
-  LookupResult lookup(GetIsolate());
-  LocalLookupRealNamedProperty(name, &lookup);
+  Isolate* isolate = object->GetIsolate();
+  LookupResult lookup(isolate);
+  object->LocalLookupRealNamedProperty(*name, &lookup);
 
   if (lookup.IsPropertyCallbacks() &&
       lookup.GetCallbackObject()->IsAccessorPair()) {
-    return AccessorPair::cast(lookup.GetCallbackObject());
+    return handle(AccessorPair::cast(lookup.GetCallbackObject()), isolate);
   }
-  return NULL;
+  return MaybeHandle<AccessorPair>();
 }
 
 
-AccessorPair* JSObject::GetLocalElementAccessorPair(uint32_t index) {
-  if (IsJSGlobalProxy()) {
-    Object* proto = GetPrototype();
-    if (proto->IsNull()) return NULL;
+MaybeHandle<AccessorPair> JSObject::GetLocalElementAccessorPair(
+    Handle<JSObject> object,
+    uint32_t index) {
+  if (object->IsJSGlobalProxy()) {
+    Handle<Object> proto(object->GetPrototype(), object->GetIsolate());
+    if (proto->IsNull()) return MaybeHandle<AccessorPair>();
     ASSERT(proto->IsJSGlobalObject());
-    return JSObject::cast(proto)->GetLocalElementAccessorPair(index);
+    return GetLocalElementAccessorPair(Handle<JSObject>::cast(proto), index);
   }
 
   // Check for lookup interceptor.
-  if (HasIndexedInterceptor()) return NULL;
+  if (object->HasIndexedInterceptor()) return MaybeHandle<AccessorPair>();
 
-  return GetElementsAccessor()->GetAccessorPair(this, this, index);
+  return object->GetElementsAccessor()->GetAccessorPair(object, object, index);
 }
 
 
@@ -12128,7 +12147,7 @@ Handle<Object> JSObject::SetFastElement(Handle<JSObject> object,
 
     SetFastDoubleElementsCapacityAndLength(object, new_capacity, array_length);
     FixedDoubleArray::cast(object->elements())->set(index, value->Number());
-    object->ValidateElements();
+    JSObject::ValidateElements(object);
     return value;
   }
   // Change elements kind from Smi-only to generic FAST if necessary.
@@ -12152,7 +12171,7 @@ Handle<Object> JSObject::SetFastElement(Handle<JSObject> object,
         SetFastElementsCapacityAndLength(object, new_capacity, array_length,
                                          smi_mode);
     new_elements->set(index, *value);
-    object->ValidateElements();
+    JSObject::ValidateElements(object);
     return value;
   }
 
@@ -12298,7 +12317,7 @@ Handle<Object> JSObject::SetDictionaryElement(Handle<JSObject> object,
       SetFastElementsCapacityAndLength(object, new_length, new_length,
                                        smi_mode);
     }
-    object->ValidateElements();
+    JSObject::ValidateElements(object);
 #ifdef DEBUG
     if (FLAG_trace_normalization) {
       PrintF("Object elements are fast case again:\n");
@@ -12350,7 +12369,7 @@ Handle<Object> JSObject::SetFastDoubleElement(
                                            check_prototype);
     RETURN_IF_EMPTY_HANDLE_VALUE(object->GetIsolate(), result,
                                  Handle<Object>());
-    object->ValidateElements();
+    JSObject::ValidateElements(object);
     return result;
   }
 
@@ -12390,7 +12409,7 @@ Handle<Object> JSObject::SetFastDoubleElement(
       ASSERT(static_cast<uint32_t>(new_capacity) > index);
       SetFastDoubleElementsCapacityAndLength(object, new_capacity, index + 1);
       FixedDoubleArray::cast(object->elements())->set(index, double_value);
-      object->ValidateElements();
+      JSObject::ValidateElements(object);
       return value;
     }
   }
@@ -12506,7 +12525,7 @@ Handle<Object> JSObject::SetElement(Handle<JSObject> object,
   Handle<Object> new_length_handle;
 
   if (old_attributes != ABSENT) {
-    if (object->GetLocalElementAccessorPair(index) == NULL) {
+    if (GetLocalElementAccessorPair(object, index).is_null()) {
       old_value = Object::GetElementNoExceptionThrown(isolate, object, index);
     }
   } else if (object->IsJSArray()) {
@@ -12849,7 +12868,7 @@ void JSObject::TransitionElementsKind(Handle<JSObject> object,
   if (IsFastSmiElementsKind(from_kind) &&
       IsFastDoubleElementsKind(to_kind)) {
     SetFastDoubleElementsCapacityAndLength(object, capacity, length);
-    object->ValidateElements();
+    JSObject::ValidateElements(object);
     return;
   }
 
@@ -12857,7 +12876,7 @@ void JSObject::TransitionElementsKind(Handle<JSObject> object,
       IsFastObjectElementsKind(to_kind)) {
     SetFastElementsCapacityAndLength(object, capacity, length,
                                      kDontAllowSmiElements);
-    object->ValidateElements();
+    JSObject::ValidateElements(object);
     return;
   }
 
@@ -13188,7 +13207,7 @@ InterceptorInfo* JSObject::GetIndexedInterceptor() {
 }
 
 
-Handle<Object> JSObject::GetPropertyPostInterceptor(
+MaybeHandle<Object> JSObject::GetPropertyPostInterceptor(
     Handle<JSObject> object,
     Handle<Object> receiver,
     Handle<Name> name,
@@ -13197,17 +13216,15 @@ Handle<Object> JSObject::GetPropertyPostInterceptor(
   Isolate* isolate = object->GetIsolate();
   LookupResult lookup(isolate);
   object->LocalLookupRealNamedProperty(*name, &lookup);
-  Handle<Object> result;
   if (lookup.IsFound()) {
-    result = GetProperty(object, receiver, &lookup, name, attributes);
+    return GetProperty(object, receiver, &lookup, name, attributes);
   } else {
     // Continue searching via the prototype chain.
     Handle<Object> prototype(object->GetPrototype(), isolate);
     *attributes = ABSENT;
     if (prototype->IsNull()) return isolate->factory()->undefined_value();
-    result = GetPropertyWithReceiver(prototype, receiver, name, attributes);
+    return GetPropertyWithReceiver(prototype, receiver, name, attributes);
   }
-  return result;
 }
 
 
@@ -13225,7 +13242,7 @@ MaybeObject* JSObject::GetLocalPropertyPostInterceptor(
 }
 
 
-Handle<Object> JSObject::GetPropertyWithInterceptor(
+MaybeHandle<Object> JSObject::GetPropertyWithInterceptor(
     Handle<JSObject> object,
     Handle<Object> receiver,
     Handle<Name> name,
@@ -13247,7 +13264,7 @@ Handle<Object> JSObject::GetPropertyWithInterceptor(
         args(isolate, interceptor->data(), *receiver, *object);
     v8::Handle<v8::Value> result =
         args.Call(getter, v8::Utils::ToLocal(name_string));
-    RETURN_HANDLE_IF_SCHEDULED_EXCEPTION(isolate, Object);
+    RETURN_EXCEPTION_IF_SCHEDULED_EXCEPTION(isolate, Object);
     if (!result.IsEmpty()) {
       *attributes = NONE;
       Handle<Object> result_internal = v8::Utils::OpenHandle(*result);
@@ -14385,7 +14402,7 @@ Handle<Object> JSObject::PrepareElementsForSort(Handle<JSObject> object,
     Handle<FixedArray> fast_elements =
         isolate->factory()->NewFixedArray(dict->NumberOfElements(), tenure);
     dict->CopyValuesTo(*fast_elements);
-    object->ValidateElements();
+    JSObject::ValidateElements(object);
 
     JSObject::SetMapAndElements(object, new_map, fast_elements);
   } else if (object->HasExternalArrayElements() ||
@@ -15872,6 +15889,197 @@ void WeakHashTable::AddEntry(int entry, Object* key, Object* value) {
   set(EntryToIndex(entry), key);
   set(EntryToValueIndex(entry), value);
   ElementAdded();
+}
+
+
+template<class Derived, int entrysize>
+Handle<Derived> OrderedHashTable<Derived, entrysize>::Allocate(
+    Isolate* isolate, int capacity, PretenureFlag pretenure) {
+  // Capacity must be a power of two, since we depend on being able
+  // to divide and multiple by 2 (kLoadFactor) to derive capacity
+  // from number of buckets. If we decide to change kLoadFactor
+  // to something other than 2, capacity should be stored as another
+  // field of this object.
+  const int kMinCapacity = 4;
+  capacity = RoundUpToPowerOf2(Max(kMinCapacity, capacity));
+  if (capacity > kMaxCapacity) {
+    v8::internal::Heap::FatalProcessOutOfMemory("invalid table size", true);
+  }
+  int num_buckets = capacity / kLoadFactor;
+  Handle<Derived> table =
+      Handle<Derived>::cast(
+          isolate->factory()->NewFixedArray(
+              kHashTableStartIndex + num_buckets + (capacity * kEntrySize),
+              pretenure));
+  for (int i = 0; i < num_buckets; ++i) {
+    table->set(kHashTableStartIndex + i, Smi::FromInt(kNotFound));
+  }
+  table->SetNumberOfBuckets(num_buckets);
+  table->SetNumberOfElements(0);
+  table->SetNumberOfDeletedElements(0);
+  return table;
+}
+
+
+template<class Derived, int entrysize>
+Handle<Derived> OrderedHashTable<Derived, entrysize>::EnsureGrowable(
+    Handle<Derived> table) {
+  int nof = table->NumberOfElements();
+  int nod = table->NumberOfDeletedElements();
+  int capacity = table->Capacity();
+  if ((nof + nod) < capacity) return table;
+  // Don't need to grow if we can simply clear out deleted entries instead.
+  // Note that we can't compact in place, though, so we always allocate
+  // a new table.
+  return Rehash(table, (nod < (capacity >> 1)) ? capacity << 1 : capacity);
+}
+
+
+template<class Derived, int entrysize>
+Handle<Derived> OrderedHashTable<Derived, entrysize>::Shrink(
+    Handle<Derived> table) {
+  int nof = table->NumberOfElements();
+  int capacity = table->Capacity();
+  if (nof > (capacity >> 2)) return table;
+  return Rehash(table, capacity / 2);
+}
+
+
+template<class Derived, int entrysize>
+Handle<Derived> OrderedHashTable<Derived, entrysize>::Rehash(
+    Handle<Derived> table, int new_capacity) {
+  Handle<Derived> new_table =
+      Allocate(table->GetIsolate(),
+               new_capacity,
+               table->GetHeap()->InNewSpace(*table) ? NOT_TENURED : TENURED);
+  int nof = table->NumberOfElements();
+  int nod = table->NumberOfDeletedElements();
+  int new_buckets = new_table->NumberOfBuckets();
+  int new_entry = 0;
+  for (int old_entry = 0; old_entry < (nof + nod); ++old_entry) {
+    Object* key = table->KeyAt(old_entry);
+    if (key->IsTheHole()) continue;
+    Object* hash = key->GetHash();
+    int bucket = Smi::cast(hash)->value() & (new_buckets - 1);
+    Object* chain_entry = new_table->get(kHashTableStartIndex + bucket);
+    new_table->set(kHashTableStartIndex + bucket, Smi::FromInt(new_entry));
+    int new_index = new_table->EntryToIndex(new_entry);
+    int old_index = table->EntryToIndex(old_entry);
+    for (int i = 0; i < entrysize; ++i) {
+      Object* value = table->get(old_index + i);
+      new_table->set(new_index + i, value);
+    }
+    new_table->set(new_index + kChainOffset, chain_entry);
+    ++new_entry;
+  }
+  new_table->SetNumberOfElements(nof);
+  return new_table;
+}
+
+
+template<class Derived, int entrysize>
+int OrderedHashTable<Derived, entrysize>::FindEntry(Object* key) {
+  ASSERT(!key->IsTheHole());
+  Object* hash = key->GetHash();
+  if (hash->IsUndefined()) return kNotFound;
+  for (int entry = HashToEntry(Smi::cast(hash)->value());
+       entry != kNotFound;
+       entry = ChainAt(entry)) {
+    Object* candidate = KeyAt(entry);
+    if (candidate->SameValue(key))
+      return entry;
+  }
+  return kNotFound;
+}
+
+
+template<class Derived, int entrysize>
+int OrderedHashTable<Derived, entrysize>::AddEntry(int hash) {
+  int entry = NumberOfElements() + NumberOfDeletedElements();
+  int bucket = HashToBucket(hash);
+  int index = EntryToIndex(entry);
+  Object* chain_entry = get(kHashTableStartIndex + bucket);
+  set(kHashTableStartIndex + bucket, Smi::FromInt(entry));
+  set(index + kChainOffset, chain_entry);
+  SetNumberOfElements(NumberOfElements() + 1);
+  return index;
+}
+
+
+template<class Derived, int entrysize>
+void OrderedHashTable<Derived, entrysize>::RemoveEntry(int entry) {
+  int index = EntryToIndex(entry);
+  for (int i = 0; i < entrysize; ++i) {
+    set_the_hole(index + i);
+  }
+  SetNumberOfElements(NumberOfElements() - 1);
+  SetNumberOfDeletedElements(NumberOfDeletedElements() + 1);
+}
+
+
+template class OrderedHashTable<OrderedHashSet, 1>;
+template class OrderedHashTable<OrderedHashMap, 2>;
+
+
+bool OrderedHashSet::Contains(Object* key) {
+  return FindEntry(key) != kNotFound;
+}
+
+
+Handle<OrderedHashSet> OrderedHashSet::Add(Handle<OrderedHashSet> table,
+                                           Handle<Object> key) {
+  if (table->FindEntry(*key) != kNotFound) return table;
+
+  table = EnsureGrowable(table);
+
+  Handle<Object> hash = GetOrCreateHash(key, table->GetIsolate());
+  int index = table->AddEntry(Smi::cast(*hash)->value());
+  table->set(index, *key);
+  return table;
+}
+
+
+Handle<OrderedHashSet> OrderedHashSet::Remove(Handle<OrderedHashSet> table,
+                                              Handle<Object> key) {
+  int entry = table->FindEntry(*key);
+  if (entry == kNotFound) return table;
+  table->RemoveEntry(entry);
+  // TODO(adamk): Don't shrink if we're being iterated over
+  return Shrink(table);
+}
+
+
+Object* OrderedHashMap::Lookup(Object* key) {
+  int entry = FindEntry(key);
+  if (entry == kNotFound) return GetHeap()->the_hole_value();
+  return ValueAt(entry);
+}
+
+
+Handle<OrderedHashMap> OrderedHashMap::Put(Handle<OrderedHashMap> table,
+                                           Handle<Object> key,
+                                           Handle<Object> value) {
+  int entry = table->FindEntry(*key);
+
+  if (value->IsTheHole()) {
+    if (entry == kNotFound) return table;
+    table->RemoveEntry(entry);
+    // TODO(adamk): Only shrink if not iterating
+    return Shrink(table);
+  }
+
+  if (entry != kNotFound) {
+    table->set(table->EntryToIndex(entry) + kValueOffset, *value);
+    return table;
+  }
+
+  table = EnsureGrowable(table);
+
+  Handle<Object> hash = GetOrCreateHash(key, table->GetIsolate());
+  int index = table->AddEntry(Smi::cast(*hash)->value());
+  table->set(index, *key);
+  table->set(index + kValueOffset, *value);
+  return table;
 }
 
 

@@ -255,8 +255,16 @@ class MacroAssembler : public Assembler {
   void Load(const Register& rt, const MemOperand& addr, Representation r);
   void Store(const Register& rt, const MemOperand& addr, Representation r);
 
+  enum AdrHint {
+    // The target must be within the immediate range of adr.
+    kAdrNear,
+    // The target may be outside of the immediate range of adr. Additional
+    // instructions may be emitted.
+    kAdrFar
+  };
+  void Adr(const Register& rd, Label* label, AdrHint = kAdrNear);
+
   // Remaining instructions are simple pass-through calls to the assembler.
-  inline void Adr(const Register& rd, Label* label);
   inline void Asr(const Register& rd, const Register& rn, unsigned shift);
   inline void Asr(const Register& rd, const Register& rn, const Register& rm);
 
@@ -387,6 +395,7 @@ class MacroAssembler : public Assembler {
                      const FPRegister& fm,
                      const FPRegister& fa);
   inline void Frinta(const FPRegister& fd, const FPRegister& fn);
+  inline void Frintm(const FPRegister& fd, const FPRegister& fn);
   inline void Frintn(const FPRegister& fd, const FPRegister& fn);
   inline void Frintz(const FPRegister& fd, const FPRegister& fn);
   inline void Fsqrt(const FPRegister& fd, const FPRegister& fn);
@@ -502,7 +511,8 @@ class MacroAssembler : public Assembler {
   // Pseudo-instructions ------------------------------------------------------
 
   // Compute rd = abs(rm).
-  // This function clobbers the condition flags.
+  // This function clobbers the condition flags. On output the overflow flag is
+  // set iff the negation overflowed.
   //
   // If rm is the minimum representable value, the result is not representable.
   // Handlers for each case can be specified using the relevant labels.

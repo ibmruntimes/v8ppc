@@ -14,11 +14,6 @@ namespace internal {
 
 class Factory V8_FINAL {
  public:
-  // Allocate a new boxed value.
-  Handle<Box> NewBox(
-      Handle<Object> value,
-      PretenureFlag pretenure = NOT_TENURED);
-
   // Allocates a fixed array initialized with undefined values.
   Handle<FixedArray> NewFixedArray(
       int size,
@@ -57,19 +52,31 @@ class Factory V8_FINAL {
       int at_least_space_for,
       MinimumCapacity capacity_option = USE_DEFAULT_MINIMUM_CAPACITY);
 
+  Handle<OrderedHashSet> NewOrderedHashSet();
+  Handle<OrderedHashMap> NewOrderedHashMap();
+
   Handle<WeakHashTable> NewWeakHashTable(int at_least_space_for);
 
   Handle<DescriptorArray> NewDescriptorArray(int number_of_descriptors,
                                              int slack = 0);
+
+  // Create a DeoptimizationInputData.
   Handle<DeoptimizationInputData> NewDeoptimizationInputData(
       int deopt_entry_count,
       PretenureFlag pretenure);
+
+  // Create a DeoptimizationOutputData.
   Handle<DeoptimizationOutputData> NewDeoptimizationOutputData(
       int deopt_entry_count,
       PretenureFlag pretenure);
-  // Allocates a pre-tenured empty AccessorPair.
+
+  // Create a new boxed value.
+  Handle<Box> NewBox(Handle<Object> value);
+
+  // Create a pre-tenured empty AccessorPair.
   Handle<AccessorPair> NewAccessorPair();
 
+  // Create an empty TypeFeedbackInfo.
   Handle<TypeFeedbackInfo> NewTypeFeedbackInfo();
 
   Handle<String> InternalizeUtf8String(Vector<const char> str);
@@ -132,16 +139,16 @@ class Factory V8_FINAL {
   // Allocates and partially initializes an ASCII or TwoByte String. The
   // characters of the string are uninitialized. Currently used in regexp code
   // only, where they are pretenured.
-  Handle<SeqOneByteString> NewRawOneByteString(
+  MUST_USE_RESULT MaybeHandle<SeqOneByteString> NewRawOneByteString(
       int length,
       PretenureFlag pretenure = NOT_TENURED);
-  Handle<SeqTwoByteString> NewRawTwoByteString(
+  MUST_USE_RESULT MaybeHandle<SeqTwoByteString> NewRawTwoByteString(
       int length,
       PretenureFlag pretenure = NOT_TENURED);
 
   // Create a new cons string object which consists of a pair of strings.
-  Handle<String> NewConsString(Handle<String> left,
-                               Handle<String> right);
+  MUST_USE_RESULT MaybeHandle<String> NewConsString(Handle<String> left,
+                                                    Handle<String> right);
 
   Handle<ConsString> NewRawConsString(String::Encoding encoding);
 
@@ -166,9 +173,9 @@ class Factory V8_FINAL {
   // in the system: ASCII and two byte.  Unlike other String types, it does
   // not make sense to have a UTF-8 factory function for external strings,
   // because we cannot change the underlying buffer.
-  Handle<String> NewExternalStringFromAscii(
+  MUST_USE_RESULT MaybeHandle<String> NewExternalStringFromAscii(
       const ExternalAsciiString::Resource* resource);
-  Handle<String> NewExternalStringFromTwoByte(
+  MUST_USE_RESULT MaybeHandle<String> NewExternalStringFromTwoByte(
       const ExternalTwoByteString::Resource* resource);
 
   // Create a symbol.
@@ -208,6 +215,7 @@ class Factory V8_FINAL {
   // the old generation).
   Handle<Struct> NewStruct(InstanceType type);
 
+  // Create an AliasedArgumentsEntry.
   Handle<AliasedArgumentsEntry> NewAliasedArgumentsEntry(
       int aliased_context_slot);
 
@@ -317,14 +325,19 @@ class Factory V8_FINAL {
       bool allocate_properties = true,
       Handle<AllocationSite> allocation_site = Handle<AllocationSite>::null());
 
-  Handle<JSObject> NewJSObjectFromMapForDeoptimizer(
-      Handle<Map> map, PretenureFlag pretenure = NOT_TENURED);
-
   // JS modules are pretenured.
   Handle<JSModule> NewJSModule(Handle<Context> context,
                                Handle<ScopeInfo> scope_info);
 
   // JS arrays are pretenured when allocated by the parser.
+
+  // Create a JSArray with no elements.
+  Handle<JSArray> NewJSArray(
+      ElementsKind elements_kind,
+      PretenureFlag pretenure = NOT_TENURED);
+
+  // Create a JSArray with a specified length and elements initialized
+  // according to the specified mode.
   Handle<JSArray> NewJSArray(
       ElementsKind elements_kind,
       int length,
@@ -336,10 +349,14 @@ class Factory V8_FINAL {
       int capacity,
       ElementsKind elements_kind = TERMINAL_FAST_ELEMENTS_KIND,
       PretenureFlag pretenure = NOT_TENURED) {
+    if (capacity != 0) {
+      elements_kind = GetHoleyElementsKind(elements_kind);
+    }
     return NewJSArray(elements_kind, 0, capacity,
                       INITIALIZE_ARRAY_ELEMENTS_WITH_HOLE, pretenure);
   }
 
+  // Create a JSArray with the given elements.
   Handle<JSArray> NewJSArrayWithElements(
       Handle<FixedArrayBase> elements,
       ElementsKind elements_kind,
@@ -393,8 +410,10 @@ class Factory V8_FINAL {
       Handle<Context> context,
       PretenureFlag pretenure = TENURED);
 
+  // Create a serialized scope info.
   Handle<ScopeInfo> NewScopeInfo(int length);
 
+  // Create an External object for V8's external API.
   Handle<JSObject> NewExternal(void* value);
 
   Handle<Code> NewCode(const CodeDesc& desc,
@@ -432,6 +451,11 @@ class Factory V8_FINAL {
   Handle<Object> NewRangeError(const char* message,
                                Vector< Handle<Object> > args);
   Handle<Object> NewRangeError(Handle<String> message);
+
+  Handle<Object> NewInvalidStringLengthError() {
+    return NewRangeError("invalid_string_length",
+                         HandleVector<Object>(NULL, 0));
+  }
 
   Handle<Object> NewSyntaxError(const char* message, Handle<JSArray> args);
   Handle<Object> NewSyntaxError(Handle<String> message);

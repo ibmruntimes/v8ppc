@@ -1496,11 +1496,11 @@ FixedArrayBase* JSObject::elements() {
 }
 
 
-void JSObject::ValidateElements() {
+void JSObject::ValidateElements(Handle<JSObject> object) {
 #ifdef ENABLE_SLOW_ASSERTS
   if (FLAG_enable_slow_asserts) {
-    ElementsAccessor* accessor = GetElementsAccessor();
-    accessor->Validate(this);
+    ElementsAccessor* accessor = object->GetElementsAccessor();
+    accessor->Validate(object);
   }
 #endif
 }
@@ -1640,7 +1640,7 @@ inline bool AllocationSite::DigestPretenuringFeedback() {
 
 
 void JSObject::EnsureCanContainHeapObjectElements(Handle<JSObject> object) {
-  object->ValidateElements();
+  JSObject::ValidateElements(object);
   ElementsKind elements_kind = object->map()->elements_kind();
   if (!IsFastObjectElementsKind(elements_kind)) {
     if (IsFastHoleyElementsKind(elements_kind)) {
@@ -2629,15 +2629,9 @@ void Map::LookupDescriptor(JSObject* holder,
 void Map::LookupTransition(JSObject* holder,
                            Name* name,
                            LookupResult* result) {
-  if (HasTransitionArray()) {
-    TransitionArray* transition_array = transitions();
-    int number = transition_array->Search(name);
-    if (number != TransitionArray::kNotFound) {
-      return result->TransitionResult(
-          holder, transition_array->GetTarget(number));
-    }
-  }
-  result->NotFound();
+  int transition_index = this->SearchTransition(name);
+  if (transition_index == TransitionArray::kNotFound) return result->NotFound();
+  result->TransitionResult(holder, this->GetTransition(transition_index));
 }
 
 
@@ -4901,6 +4895,12 @@ Map* Map::GetTransition(int transition_index) {
 }
 
 
+int Map::SearchTransition(Name* name) {
+  if (HasTransitionArray()) return transitions()->Search(name);
+  return TransitionArray::kNotFound;
+}
+
+
 MaybeObject* Map::set_elements_transition_map(Map* transitioned_map) {
   TransitionArray* transitions;
   MaybeObject* maybe_transitions = AddTransition(
@@ -4996,23 +4996,6 @@ void Map::SetBackPointer(Object* value, WriteBarrierMode mode) {
     CONDITIONAL_WRITE_BARRIER(
         GetHeap(), this, kTransitionsOrBackPointerOffset, value, mode);
   }
-}
-
-
-// Can either be Smi (no transitions), normal transition array, or a transition
-// array with the header overwritten as a Smi (thus iterating).
-TransitionArray* Map::unchecked_transition_array() {
-  Object* object = *HeapObject::RawField(this,
-                                         Map::kTransitionsOrBackPointerOffset);
-  TransitionArray* transition_array = static_cast<TransitionArray*>(object);
-  return transition_array;
-}
-
-
-HeapObject* Map::UncheckedPrototypeTransitions() {
-  ASSERT(HasTransitionArray());
-  ASSERT(unchecked_transition_array()->HasPrototypeTransitions());
-  return unchecked_transition_array()->UncheckedPrototypeTransitions();
 }
 
 

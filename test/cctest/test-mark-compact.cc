@@ -170,7 +170,7 @@ TEST(MarkCompactCollector) {
                                   JSObject::kHeaderSize)->ToObjectChecked());
   function->set_initial_map(initial_map);
   JSReceiver::SetProperty(
-      global, handle(func_name), handle(function), NONE, SLOPPY);
+      global, handle(func_name), handle(function), NONE, SLOPPY).Check();
 
   JSObject* obj = JSObject::cast(
       heap->AllocateJSObject(function)->ToObjectChecked());
@@ -187,12 +187,13 @@ TEST(MarkCompactCollector) {
   obj = JSObject::cast(heap->AllocateJSObject(function)->ToObjectChecked());
   String* obj_name =
       String::cast(heap->InternalizeUtf8String("theObject")->ToObjectChecked());
-  JSReceiver::SetProperty(global, handle(obj_name), handle(obj), NONE, SLOPPY);
+  JSReceiver::SetProperty(
+      global, handle(obj_name), handle(obj), NONE, SLOPPY).Check();
   String* prop_name =
       String::cast(heap->InternalizeUtf8String("theSlot")->ToObjectChecked());
   Handle<Smi> twenty_three(Smi::FromInt(23), isolate);
   JSReceiver::SetProperty(
-      handle(obj), handle(prop_name), twenty_three, NONE, SLOPPY);
+      handle(obj), handle(prop_name), twenty_three, NONE, SLOPPY).Check();
 
   heap->CollectGarbage(OLD_POINTER_SPACE, "trigger 5");
 
@@ -496,8 +497,8 @@ const intptr_t max64     = 5700;  // 5568
 const intptr_t maxSnap32 = 3800;  // 3648
 const intptr_t max32     = 4300;  // 4160
 #else
-const intptr_t maxSnap64 = 4000;
-const intptr_t max64     = 4500;
+const intptr_t maxSnap64 = 4100;
+const intptr_t max64     = 4600;
 const intptr_t maxSnap32 = 3100;
 const intptr_t max32     = 3450;
 #endif

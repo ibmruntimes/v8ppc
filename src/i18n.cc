@@ -58,11 +58,10 @@ bool ExtractStringSetting(Isolate* isolate,
                           const char* key,
                           icu::UnicodeString* setting) {
   Handle<String> str = isolate->factory()->NewStringFromAscii(CStrVector(key));
-  MaybeObject* maybe_object = options->GetProperty(*str);
-  Object* object;
-  if (maybe_object->ToObject(&object) && object->IsString()) {
+  Handle<Object> object = Object::GetProperty(options, str);
+  if (object->IsString()) {
     v8::String::Utf8Value utf8_string(
-        v8::Utils::ToLocal(Handle<String>(String::cast(object))));
+        v8::Utils::ToLocal(Handle<String>::cast(object)));
     *setting = icu::UnicodeString::fromUTF8(*utf8_string);
     return true;
   }
@@ -75,9 +74,8 @@ bool ExtractIntegerSetting(Isolate* isolate,
                            const char* key,
                            int32_t* value) {
   Handle<String> str = isolate->factory()->NewStringFromAscii(CStrVector(key));
-  MaybeObject* maybe_object = options->GetProperty(*str);
-  Object* object;
-  if (maybe_object->ToObject(&object) && object->IsNumber()) {
+  Handle<Object> object = Object::GetProperty(options, str);
+  if (object->IsNumber()) {
     object->ToInt32(value);
     return true;
   }
@@ -90,9 +88,8 @@ bool ExtractBooleanSetting(Isolate* isolate,
                            const char* key,
                            bool* value) {
   Handle<String> str = isolate->factory()->NewStringFromAscii(CStrVector(key));
-  MaybeObject* maybe_object = options->GetProperty(*str);
-  Object* object;
-  if (maybe_object->ToObject(&object) && object->IsBoolean()) {
+  Handle<Object> object = Object::GetProperty(options, str);
+  if (object->IsBoolean()) {
     *value = object->BooleanValue();
     return true;
   }
@@ -163,7 +160,7 @@ void SetResolvedDateSettings(Isolate* isolate,
             reinterpret_cast<const uint16_t*>(pattern.getBuffer()),
             pattern.length())),
       NONE,
-      SLOPPY);
+      SLOPPY).Assert();
 
   // Set time zone and calendar.
   const icu::Calendar* calendar = date_format->getCalendar();
@@ -173,7 +170,7 @@ void SetResolvedDateSettings(Isolate* isolate,
       isolate->factory()->NewStringFromAscii(CStrVector("calendar")),
       isolate->factory()->NewStringFromAscii(CStrVector(calendar_name)),
       NONE,
-      SLOPPY);
+      SLOPPY).Assert();
 
   const icu::TimeZone& tz = calendar->getTimeZone();
   icu::UnicodeString time_zone;
@@ -188,7 +185,7 @@ void SetResolvedDateSettings(Isolate* isolate,
           isolate->factory()->NewStringFromAscii(CStrVector("timeZone")),
           isolate->factory()->NewStringFromAscii(CStrVector("UTC")),
           NONE,
-          SLOPPY);
+          SLOPPY).Assert();
     } else {
       JSObject::SetProperty(
           resolved,
@@ -199,7 +196,7 @@ void SetResolvedDateSettings(Isolate* isolate,
                     canonical_time_zone.getBuffer()),
                 canonical_time_zone.length())),
           NONE,
-          SLOPPY);
+          SLOPPY).Assert();
     }
   }
 
@@ -216,14 +213,14 @@ void SetResolvedDateSettings(Isolate* isolate,
         isolate->factory()->NewStringFromAscii(CStrVector("numberingSystem")),
         isolate->factory()->NewStringFromAscii(CStrVector(ns)),
         NONE,
-        SLOPPY);
+        SLOPPY).Assert();
   } else {
     JSObject::SetProperty(
         resolved,
         isolate->factory()->NewStringFromAscii(CStrVector("numberingSystem")),
         isolate->factory()->undefined_value(),
         NONE,
-        SLOPPY);
+        SLOPPY).Assert();
   }
   delete numbering_system;
 
@@ -238,7 +235,7 @@ void SetResolvedDateSettings(Isolate* isolate,
         isolate->factory()->NewStringFromAscii(CStrVector("locale")),
         isolate->factory()->NewStringFromAscii(CStrVector(result)),
         NONE,
-        SLOPPY);
+        SLOPPY).Assert();
   } else {
     // This would never happen, since we got the locale from ICU.
     JSObject::SetProperty(
@@ -246,7 +243,7 @@ void SetResolvedDateSettings(Isolate* isolate,
         isolate->factory()->NewStringFromAscii(CStrVector("locale")),
         isolate->factory()->NewStringFromAscii(CStrVector("und")),
         NONE,
-        SLOPPY);
+        SLOPPY).Assert();
   }
 }
 
@@ -389,7 +386,7 @@ void SetResolvedNumberSettings(Isolate* isolate,
             reinterpret_cast<const uint16_t*>(pattern.getBuffer()),
             pattern.length())),
       NONE,
-      SLOPPY);
+      SLOPPY).Assert();
 
   // Set resolved currency code in options.currency if not empty.
   icu::UnicodeString currency(number_format->getCurrency());
@@ -402,7 +399,7 @@ void SetResolvedNumberSettings(Isolate* isolate,
               reinterpret_cast<const uint16_t*>(currency.getBuffer()),
               currency.length())),
         NONE,
-        SLOPPY);
+        SLOPPY).Assert();
   }
 
   // Ugly hack. ICU doesn't expose numbering system in any way, so we have
@@ -418,14 +415,14 @@ void SetResolvedNumberSettings(Isolate* isolate,
         isolate->factory()->NewStringFromAscii(CStrVector("numberingSystem")),
         isolate->factory()->NewStringFromAscii(CStrVector(ns)),
         NONE,
-        SLOPPY);
+        SLOPPY).Assert();
   } else {
     JSObject::SetProperty(
         resolved,
         isolate->factory()->NewStringFromAscii(CStrVector("numberingSystem")),
         isolate->factory()->undefined_value(),
         NONE,
-        SLOPPY);
+        SLOPPY).Assert();
   }
   delete numbering_system;
 
@@ -434,7 +431,7 @@ void SetResolvedNumberSettings(Isolate* isolate,
       isolate->factory()->NewStringFromAscii(CStrVector("useGrouping")),
       isolate->factory()->ToBoolean(number_format->isGroupingUsed()),
       NONE,
-      SLOPPY);
+      SLOPPY).Assert();
 
   JSObject::SetProperty(
       resolved,
@@ -443,7 +440,7 @@ void SetResolvedNumberSettings(Isolate* isolate,
       isolate->factory()->NewNumberFromInt(
           number_format->getMinimumIntegerDigits()),
       NONE,
-      SLOPPY);
+      SLOPPY).Assert();
 
   JSObject::SetProperty(
       resolved,
@@ -452,7 +449,7 @@ void SetResolvedNumberSettings(Isolate* isolate,
       isolate->factory()->NewNumberFromInt(
           number_format->getMinimumFractionDigits()),
       NONE,
-      SLOPPY);
+      SLOPPY).Assert();
 
   JSObject::SetProperty(
       resolved,
@@ -461,7 +458,7 @@ void SetResolvedNumberSettings(Isolate* isolate,
       isolate->factory()->NewNumberFromInt(
           number_format->getMaximumFractionDigits()),
       NONE,
-      SLOPPY);
+      SLOPPY).Assert();
 
   Handle<String> key = isolate->factory()->NewStringFromAscii(
       CStrVector("minimumSignificantDigits"));
@@ -473,7 +470,7 @@ void SetResolvedNumberSettings(Isolate* isolate,
         isolate->factory()->NewNumberFromInt(
             number_format->getMinimumSignificantDigits()),
         NONE,
-        SLOPPY);
+        SLOPPY).Assert();
   }
 
   key = isolate->factory()->NewStringFromAscii(
@@ -486,7 +483,7 @@ void SetResolvedNumberSettings(Isolate* isolate,
         isolate->factory()->NewNumberFromInt(
             number_format->getMaximumSignificantDigits()),
         NONE,
-        SLOPPY);
+        SLOPPY).Assert();
   }
 
   // Set the locale
@@ -500,7 +497,7 @@ void SetResolvedNumberSettings(Isolate* isolate,
         isolate->factory()->NewStringFromAscii(CStrVector("locale")),
         isolate->factory()->NewStringFromAscii(CStrVector(result)),
         NONE,
-        SLOPPY);
+        SLOPPY).Assert();
   } else {
     // This would never happen, since we got the locale from ICU.
     JSObject::SetProperty(
@@ -508,7 +505,7 @@ void SetResolvedNumberSettings(Isolate* isolate,
         isolate->factory()->NewStringFromAscii(CStrVector("locale")),
         isolate->factory()->NewStringFromAscii(CStrVector("und")),
         NONE,
-        SLOPPY);
+        SLOPPY).Assert();
   }
 }
 
@@ -589,7 +586,7 @@ void SetResolvedCollatorSettings(Isolate* isolate,
       isolate->factory()->ToBoolean(
           collator->getAttribute(UCOL_NUMERIC_COLLATION, status) == UCOL_ON),
       NONE,
-      SLOPPY);
+      SLOPPY).Assert();
 
   switch (collator->getAttribute(UCOL_CASE_FIRST, status)) {
     case UCOL_LOWER_FIRST:
@@ -598,7 +595,7 @@ void SetResolvedCollatorSettings(Isolate* isolate,
           isolate->factory()->NewStringFromAscii(CStrVector("caseFirst")),
           isolate->factory()->NewStringFromAscii(CStrVector("lower")),
           NONE,
-          SLOPPY);
+          SLOPPY).Assert();
       break;
     case UCOL_UPPER_FIRST:
       JSObject::SetProperty(
@@ -606,7 +603,7 @@ void SetResolvedCollatorSettings(Isolate* isolate,
           isolate->factory()->NewStringFromAscii(CStrVector("caseFirst")),
           isolate->factory()->NewStringFromAscii(CStrVector("upper")),
           NONE,
-          SLOPPY);
+          SLOPPY).Assert();
       break;
     default:
       JSObject::SetProperty(
@@ -614,7 +611,7 @@ void SetResolvedCollatorSettings(Isolate* isolate,
           isolate->factory()->NewStringFromAscii(CStrVector("caseFirst")),
           isolate->factory()->NewStringFromAscii(CStrVector("false")),
           NONE,
-          SLOPPY);
+          SLOPPY).Assert();
   }
 
   switch (collator->getAttribute(UCOL_STRENGTH, status)) {
@@ -624,7 +621,7 @@ void SetResolvedCollatorSettings(Isolate* isolate,
           isolate->factory()->NewStringFromAscii(CStrVector("strength")),
           isolate->factory()->NewStringFromAscii(CStrVector("primary")),
           NONE,
-          SLOPPY);
+          SLOPPY).Assert();
 
       // case level: true + s1 -> case, s1 -> base.
       if (UCOL_ON == collator->getAttribute(UCOL_CASE_LEVEL, status)) {
@@ -633,14 +630,14 @@ void SetResolvedCollatorSettings(Isolate* isolate,
             isolate->factory()->NewStringFromAscii(CStrVector("sensitivity")),
             isolate->factory()->NewStringFromAscii(CStrVector("case")),
             NONE,
-            SLOPPY);
+            SLOPPY).Assert();
       } else {
         JSObject::SetProperty(
             resolved,
             isolate->factory()->NewStringFromAscii(CStrVector("sensitivity")),
             isolate->factory()->NewStringFromAscii(CStrVector("base")),
             NONE,
-            SLOPPY);
+            SLOPPY).Assert();
       }
       break;
     }
@@ -650,13 +647,13 @@ void SetResolvedCollatorSettings(Isolate* isolate,
           isolate->factory()->NewStringFromAscii(CStrVector("strength")),
           isolate->factory()->NewStringFromAscii(CStrVector("secondary")),
           NONE,
-          SLOPPY);
+          SLOPPY).Assert();
       JSObject::SetProperty(
           resolved,
           isolate->factory()->NewStringFromAscii(CStrVector("sensitivity")),
           isolate->factory()->NewStringFromAscii(CStrVector("accent")),
           NONE,
-          SLOPPY);
+          SLOPPY).Assert();
       break;
     case UCOL_TERTIARY:
       JSObject::SetProperty(
@@ -664,13 +661,13 @@ void SetResolvedCollatorSettings(Isolate* isolate,
           isolate->factory()->NewStringFromAscii(CStrVector("strength")),
           isolate->factory()->NewStringFromAscii(CStrVector("tertiary")),
           NONE,
-          SLOPPY);
+          SLOPPY).Assert();
       JSObject::SetProperty(
           resolved,
           isolate->factory()->NewStringFromAscii(CStrVector("sensitivity")),
           isolate->factory()->NewStringFromAscii(CStrVector("variant")),
           NONE,
-          SLOPPY);
+          SLOPPY).Assert();
       break;
     case UCOL_QUATERNARY:
       // We shouldn't get quaternary and identical from ICU, but if we do
@@ -680,13 +677,13 @@ void SetResolvedCollatorSettings(Isolate* isolate,
           isolate->factory()->NewStringFromAscii(CStrVector("strength")),
           isolate->factory()->NewStringFromAscii(CStrVector("quaternary")),
           NONE,
-          SLOPPY);
+          SLOPPY).Assert();
       JSObject::SetProperty(
           resolved,
           isolate->factory()->NewStringFromAscii(CStrVector("sensitivity")),
           isolate->factory()->NewStringFromAscii(CStrVector("variant")),
           NONE,
-          SLOPPY);
+          SLOPPY).Assert();
       break;
     default:
       JSObject::SetProperty(
@@ -694,13 +691,13 @@ void SetResolvedCollatorSettings(Isolate* isolate,
           isolate->factory()->NewStringFromAscii(CStrVector("strength")),
           isolate->factory()->NewStringFromAscii(CStrVector("identical")),
           NONE,
-          SLOPPY);
+          SLOPPY).Assert();
       JSObject::SetProperty(
           resolved,
           isolate->factory()->NewStringFromAscii(CStrVector("sensitivity")),
           isolate->factory()->NewStringFromAscii(CStrVector("variant")),
           NONE,
-          SLOPPY);
+          SLOPPY).Assert();
   }
 
   JSObject::SetProperty(
@@ -709,7 +706,7 @@ void SetResolvedCollatorSettings(Isolate* isolate,
       isolate->factory()->ToBoolean(collator->getAttribute(
           UCOL_ALTERNATE_HANDLING, status) == UCOL_SHIFTED),
       NONE,
-      SLOPPY);
+      SLOPPY).Assert();
 
   // Set the locale
   char result[ULOC_FULLNAME_CAPACITY];
@@ -722,7 +719,7 @@ void SetResolvedCollatorSettings(Isolate* isolate,
         isolate->factory()->NewStringFromAscii(CStrVector("locale")),
         isolate->factory()->NewStringFromAscii(CStrVector(result)),
         NONE,
-        SLOPPY);
+        SLOPPY).Assert();
   } else {
     // This would never happen, since we got the locale from ICU.
     JSObject::SetProperty(
@@ -730,7 +727,7 @@ void SetResolvedCollatorSettings(Isolate* isolate,
         isolate->factory()->NewStringFromAscii(CStrVector("locale")),
         isolate->factory()->NewStringFromAscii(CStrVector("und")),
         NONE,
-        SLOPPY);
+        SLOPPY).Assert();
   }
 }
 
@@ -785,7 +782,7 @@ void SetResolvedBreakIteratorSettings(Isolate* isolate,
         isolate->factory()->NewStringFromAscii(CStrVector("locale")),
         isolate->factory()->NewStringFromAscii(CStrVector(result)),
         NONE,
-        SLOPPY);
+        SLOPPY).Assert();
   } else {
     // This would never happen, since we got the locale from ICU.
     JSObject::SetProperty(
@@ -793,7 +790,7 @@ void SetResolvedBreakIteratorSettings(Isolate* isolate,
         isolate->factory()->NewStringFromAscii(CStrVector("locale")),
         isolate->factory()->NewStringFromAscii(CStrVector("und")),
         NONE,
-        SLOPPY);
+        SLOPPY).Assert();
   }
 }
 
