@@ -1346,28 +1346,31 @@ void LCodeGen::DoFlooringDivByPowerOf2I(LFlooringDivByPowerOf2I* instr) {
   if (hdiv->CheckFlag(HValue::kBailoutOnMinusZero)) {
     DeoptimizeIf(eq, instr->environment(), cr0);
   }
-#if V8_TARGET_ARCH_PPC64
-  if (shift) {
-    __ sradi(result, result, shift);
-  }
-#else
-  if (hdiv->CheckFlag(HValue::kLeftCanBeMinInt)) {
-    // Note that we could emit branch-free code, but that would need one more
-    // register.
-    if (divisor == -1) {
-      DeoptimizeIf(overflow, instr->environment(), cr0);
-    } else {
-      Label overflow, done;
-      __ boverflow(&overflow, cr0);
-      __ srawi(result, result, shift);
-      __ b(&done);
-      __ bind(&overflow);
-      __ mov(result, Operand(kMinInt / divisor));
-      __ bind(&done);
+
+  // If the negation could not overflow, simply shifting is OK.
+#if !V8_TARGET_ARCH_PPC64
+  if (!instr->hydrogen()->CheckFlag(HValue::kLeftCanBeMinInt)) {
+#endif
+    if (shift) {
+      __ ShiftRightArithImm(result, result, shift);
     }
-  } else if (shift) {
-    __ srawi(result, result, shift);
+    return;
+#if !V8_TARGET_ARCH_PPC64
   }
+
+  // Dividing by -1 is basically negation, unless we overflow.
+  if (divisor == -1) {
+    DeoptimizeIf(overflow, instr->environment(), cr0);
+    return;
+  }
+
+  Label overflow, done;
+  __ boverflow(&overflow, cr0);
+  __ srawi(result, result, shift);
+  __ b(&done);
+  __ bind(&overflow);
+  __ mov(result, Operand(kMinInt / divisor));
+  __ bind(&done);
 #endif
 }
 
@@ -5663,7 +5666,17 @@ void LCodeGen::DoDeferredAllocate(LAllocate* instr) {
     __ push(size);
   } else {
     int32_t size = ToInteger32(LConstantOperand::cast(instr->size()));
-    __ Push(Smi::FromInt(size));
+#if !V8_TARGET_ARCH_PPC64
+    if (size >= 0 && size <= Smi::kMaxValue) {
+#endif
+      __ Push(Smi::FromInt(size));
+#if !V8_TARGET_ARCH_PPC64
+    } else {
+      // We should never get here at runtime => abort
+      __ stop("invalid allocation size");
+      return;
+    }
+#endif
   }
 
   int flags = AllocateDoubleAlignFlag::encode(
