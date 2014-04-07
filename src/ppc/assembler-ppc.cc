@@ -1301,42 +1301,73 @@ void Assembler::function_descriptor() {
 // Todo - break this dependency so we can optimize mov() in general
 // and only use the generic version when we require a fixed sequence
 void Assembler::mov(Register dst, const Operand& src) {
-  BlockTrampolinePoolScope block_trampoline_pool(this);
   if (src.rmode_ != RelocInfo::NONE) {
     // some form of relocation needed
     RecordRelocInfo(src.rmode_, src.imm_);
   }
 
-#if V8_TARGET_ARCH_PPC64
-  int64_t value = src.immediate();
-  int32_t hi_32 = static_cast<int64_t>(value) >> 32;
-  int32_t lo_32 = static_cast<int32_t>(value);
-  int hi_word = static_cast<int>(hi_32) >> 16;
-  int lo_word = static_cast<int>(hi_32) & 0xFFFF;
-  lis(dst, Operand(SIGN_EXT_IMM16(hi_word)));
-  ori(dst, dst, Operand(lo_word));
-  sldi(dst, dst, Operand(32));
-  hi_word = (static_cast<int>(lo_32) >> 16) & 0xFFFF;
-  lo_word = static_cast<int>(lo_32) & 0xFFFF;
-  oris(dst, dst, Operand(hi_word));
-  ori(dst, dst, Operand(lo_word));
-#else
-  int value = src.immediate();
-  if (!is_trampoline_pool_blocked()) {
+  intptr_t value = src.immediate();
+  bool canOptimize = (src.rmode_ == RelocInfo::NONE &&
+                      !is_trampoline_pool_blocked());
+
+  if (canOptimize) {
     if (is_int16(value)) {
       li(dst, Operand(value));
-      return;
+    } else {
+      uint16_t u16;
+#if V8_TARGET_ARCH_PPC64
+      if (is_int32(value)) {
+#endif
+        lis(dst, Operand(value >> 16));
+#if V8_TARGET_ARCH_PPC64
+      } else {
+        if (is_int48(value)) {
+          li(dst, Operand(value >> 32));
+        } else {
+          lis(dst, Operand(value >> 48));
+          u16 = ((value >> 32) & 0xffff);
+          if (u16) {
+            ori(dst, dst, Operand(u16));
+          }
+        }
+        sldi(dst, dst, Operand(32));
+        u16 = ((value >> 16) & 0xffff);
+        if (u16) {
+          oris(dst, dst, Operand(u16));
+        }
+      }
+#endif
+      u16 = (value & 0xffff);
+      if (u16) {
+        ori(dst, dst, Operand(u16));
+      }
     }
-  }
-  int hi_word = static_cast<int>(value) >> 16;
-  int lo_word = static_cast<int>(value) & 0XFFFF;
-
-  lis(dst, Operand(SIGN_EXT_IMM16(hi_word)));
-  if ((!is_trampoline_pool_blocked()) && (lo_word == 0)) {
     return;
   }
-  ori(dst, dst, Operand(lo_word));
+
+  ASSERT(!canOptimize);
+
+  {
+    BlockTrampolinePoolScope block_trampoline_pool(this);
+#if V8_TARGET_ARCH_PPC64
+    int32_t hi_32 = static_cast<int32_t>(value >> 32);
+    int32_t lo_32 = static_cast<int32_t>(value);
+    int hi_word = static_cast<int>(hi_32 >> 16);
+    int lo_word = static_cast<int>(hi_32 & 0xffff);
+    lis(dst, Operand(SIGN_EXT_IMM16(hi_word)));
+    ori(dst, dst, Operand(lo_word));
+    sldi(dst, dst, Operand(32));
+    hi_word = static_cast<int>(((lo_32 >> 16) & 0xffff));
+    lo_word = static_cast<int>(lo_32 & 0xffff);
+    oris(dst, dst, Operand(hi_word));
+    ori(dst, dst, Operand(lo_word));
+#else
+    int hi_word = static_cast<int>(value >> 16);
+    int lo_word = static_cast<int>(value & 0xffff);
+    lis(dst, Operand(SIGN_EXT_IMM16(hi_word)));
+    ori(dst, dst, Operand(lo_word));
 #endif
+  }
 }
 
 // Special register instructions

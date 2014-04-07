@@ -190,6 +190,7 @@ void Deoptimizer::PatchStackCheckCodeAt(Code* unoptimized_code,
 
 #if V8_TARGET_ARCH_PPC64
   CodePatcher patcher(pc_after - 8 * kInstrSize, 6);
+  Assembler::BlockTrampolinePoolScope block_trampoline_pool(patcher.masm());
 
   // Assemble the 64 bit value from the five part load and verify
   // that it is the stack guard code
@@ -204,6 +205,7 @@ void Deoptimizer::PatchStackCheckCodeAt(Code* unoptimized_code,
     (Memory::uint32_at(pc_after - 3 * kInstrSize) & 0xFFFF);
 #else
   CodePatcher patcher(pc_after - 5 * kInstrSize, 3);
+  Assembler::BlockTrampolinePoolScope block_trampoline_pool(patcher.masm());
 
   // Assemble the 32 bit value from the two part load and verify
   // that it is the stack guard code
@@ -258,6 +260,7 @@ void Deoptimizer::RevertStackCheckCodeAt(Code* unoptimized_code,
 #if V8_TARGET_ARCH_PPC64
   // Replace NOP with conditional jump.
   CodePatcher patcher(pc_after - 8 * kInstrSize, 6);
+  Assembler::BlockTrampolinePoolScope block_trampoline_pool(patcher.masm());
   if (FLAG_count_based_interrupts) {
       patcher.masm()->bc(+68, BF,
                 v8::internal::Assembler::encode_crbit(cr7, CR_LT));  // bge
@@ -272,6 +275,7 @@ void Deoptimizer::RevertStackCheckCodeAt(Code* unoptimized_code,
 #else
   // Replace NOP with conditional jump.
   CodePatcher patcher(pc_after - 5 * kInstrSize, 3);
+  Assembler::BlockTrampolinePoolScope block_trampoline_pool(patcher.masm());
   if (FLAG_count_based_interrupts) {
       patcher.masm()->bc(+36, BF,
                 v8::internal::Assembler::encode_crbit(cr7, CR_LT));  // bge

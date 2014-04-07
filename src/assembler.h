@@ -838,6 +838,10 @@ inline bool is_int16(intptr_t x)  { return is_intn(x, 16); }
 inline bool is_int18(intptr_t x)  { return is_intn(x, 18); }
 inline bool is_int24(intptr_t x)  { return is_intn(x, 24); }
 inline bool is_int26(intptr_t x)  { return is_intn(x, 26); }
+#if V8_HOST_ARCH_64_BIT
+inline bool is_int32(intptr_t x)  { return is_intn(x, 32); }
+inline bool is_int48(intptr_t x)  { return is_intn(x, 48); }
+#endif
 
 
 inline bool is_uintn(intptr_t x, int n) {
