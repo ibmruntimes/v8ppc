@@ -184,9 +184,9 @@ namespace internal {
 //   static Handle<Struct>::type struct_create(int tag, int length, Region*);
 //   static void struct_shrink(Handle<Struct>::type, int length);
 //   static int struct_tag(Handle<Struct>::type);
+//   static int struct_length(Handle<Struct>::type);
 //   static Handle<Type>::type struct_get(Handle<Struct>::type, int);
 //   static void struct_set(Handle<Struct>::type, int, Handle<Type>::type);
-//   static int struct_length(Handle<Struct>::type);
 //   static int lub_bitset(Type*);
 // }
 template<class Config>
@@ -375,7 +375,7 @@ class TypeImpl : public Config::Base {
 struct ZoneTypeConfig {
   typedef TypeImpl<ZoneTypeConfig> Type;
   class Base {};
-  struct Struct { int tag; int length; void* args[1]; };
+  typedef void* Struct;
   typedef i::Zone Region;
   template<class T> struct Handle { typedef T* type; };
 
@@ -397,9 +397,9 @@ struct ZoneTypeConfig {
   static inline Struct* struct_create(int tag, int length, Zone* zone);
   static inline void struct_shrink(Struct* structured, int length);
   static inline int struct_tag(Struct* structured);
+  static inline int struct_length(Struct* structured);
   static inline Type* struct_get(Struct* structured, int i);
   static inline void struct_set(Struct* structured, int i, Type* type);
-  static inline int struct_length(Struct* structured);
   static inline int lub_bitset(Type* type);
 };
 
@@ -435,10 +435,10 @@ struct HeapTypeConfig {
       int tag, int length, Isolate* isolate);
   static inline void struct_shrink(i::Handle<Struct> structured, int length);
   static inline int struct_tag(i::Handle<Struct> structured);
+  static inline int struct_length(i::Handle<Struct> structured);
   static inline i::Handle<Type> struct_get(i::Handle<Struct> structured, int i);
   static inline void struct_set(
       i::Handle<Struct> structured, int i, i::Handle<Type> type);
-  static inline int struct_length(i::Handle<Struct> structured);
   static inline int lub_bitset(Type* type);
 };
 
