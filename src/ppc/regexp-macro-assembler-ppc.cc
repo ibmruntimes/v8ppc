@@ -1213,7 +1213,7 @@ int RegExpMacroAssemblerPPC::CheckStackGuardState(Address* return_address,
   MaybeObject* result = Execution::HandleStackGuardInterrupt(isolate);
 
   if (*code_handle != re_code) {  // Return address no longer valid
-    int delta = code_handle->address() - re_code->address();
+    intptr_t delta = code_handle->address() - re_code->address();
     // Overwrite the return address on the stack.
     *return_address += delta;
   }
