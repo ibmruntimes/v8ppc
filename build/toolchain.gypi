@@ -496,7 +496,7 @@
         },
         'conditions': [
           ['OS=="linux" or OS=="freebsd" or OS=="openbsd" or OS=="netbsd" or \
-            OS=="qnx"', {
+            OS=="qnx" or OS=="aix"', {
             'cflags!': [
               '-O0',
               '-O3',
@@ -601,7 +601,7 @@
         },
         'conditions': [
           ['OS=="linux" or OS=="freebsd" or OS=="openbsd" or OS=="netbsd" or \
-            OS=="qnx"', {
+            OS=="qnx" or OS=="aix"', {
             'cflags!': [
               '-O0',
               '-O1',
@@ -651,7 +651,7 @@
         ],
         'conditions': [
           ['OS=="linux" or OS=="freebsd" or OS=="openbsd" or OS=="netbsd" or \
-            OS=="qnx"', {
+            OS=="qnx" or OS=="aix"', {
             'cflags': [ '-Woverloaded-virtual', '<(wno_array_bounds)', ],
           }],
           ['OS=="linux" and v8_enable_backtrace==1', {
