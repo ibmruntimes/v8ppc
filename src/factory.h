@@ -46,8 +46,6 @@ class Factory V8_FINAL {
 
   Handle<NameDictionary> NewNameDictionary(int at_least_space_for);
 
-  Handle<ObjectHashSet> NewObjectHashSet(int at_least_space_for);
-
   Handle<ObjectHashTable> NewObjectHashTable(
       int at_least_space_for,
       MinimumCapacity capacity_option = USE_DEFAULT_MINIMUM_CAPACITY);
@@ -59,6 +57,8 @@ class Factory V8_FINAL {
 
   Handle<DescriptorArray> NewDescriptorArray(int number_of_descriptors,
                                              int slack = 0);
+  Handle<TransitionArray> NewTransitionArray(int number_of_transitions);
+  Handle<TransitionArray> NewSimpleTransitionArray(Handle<Map> target);
   Handle<DeoptimizationInputData> NewDeoptimizationInputData(
       int deopt_entry_count,
       PretenureFlag pretenure);
@@ -202,7 +202,7 @@ class Factory V8_FINAL {
   // Create a 'with' context.
   Handle<Context> NewWithContext(Handle<JSFunction> function,
                                  Handle<Context> previous,
-                                 Handle<JSObject> extension);
+                                 Handle<JSReceiver> extension);
 
   // Create a block context.
   Handle<Context> NewBlockContext(Handle<JSFunction> function,

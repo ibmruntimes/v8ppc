@@ -74,6 +74,7 @@ namespace internal {
   V(Map, constant_pool_array_map, ConstantPoolArrayMap)                        \
   V(Oddball, no_interceptor_result_sentinel, NoInterceptorResultSentinel)      \
   V(Map, hash_table_map, HashTableMap)                                         \
+  V(Map, ordered_hash_table_map, OrderedHashTableMap)                          \
   V(FixedArray, empty_fixed_array, EmptyFixedArray)                            \
   V(ByteArray, empty_byte_array, EmptyByteArray)                               \
   V(DescriptorArray, empty_descriptor_array, EmptyDescriptorArray)             \
@@ -260,6 +261,7 @@ namespace internal {
   V(constant_pool_array_map)              \
   V(no_interceptor_result_sentinel)       \
   V(hash_table_map)                       \
+  V(ordered_hash_table_map)               \
   V(empty_fixed_array)                    \
   V(empty_byte_array)                     \
   V(empty_descriptor_array)               \
@@ -570,7 +572,8 @@ class Heap {
   // set up already.
   bool ConfigureHeap(int max_semispace_size,
                      intptr_t max_old_gen_size,
-                     intptr_t max_executable_size);
+                     intptr_t max_executable_size,
+                     intptr_t code_range_size);
   bool ConfigureHeapDefault();
 
   // Prepares the heap, setting up memory areas that are needed in the isolate
@@ -1012,29 +1015,6 @@ class Heap {
   // that the resulting object has hash_table_map as map.
   MUST_USE_RESULT MaybeObject* AllocateHashTable(
       int length, PretenureFlag pretenure = NOT_TENURED);
-
-  // Allocate a global context.
-  MUST_USE_RESULT MaybeObject* AllocateGlobalContext(JSFunction* function,
-                                                     ScopeInfo* scope_info);
-
-  // Allocate a function context.
-  MUST_USE_RESULT MaybeObject* AllocateFunctionContext(int length,
-                                                       JSFunction* function);
-
-  // Allocate a catch context.
-  MUST_USE_RESULT MaybeObject* AllocateCatchContext(JSFunction* function,
-                                                    Context* previous,
-                                                    String* name,
-                                                    Object* thrown_object);
-  // Allocate a 'with' context.
-  MUST_USE_RESULT MaybeObject* AllocateWithContext(JSFunction* function,
-                                                   Context* previous,
-                                                   JSReceiver* extension);
-
-  // Allocate a block context.
-  MUST_USE_RESULT MaybeObject* AllocateBlockContext(JSFunction* function,
-                                                    Context* previous,
-                                                    ScopeInfo* info);
 
   // Allocates a new utility object in the old generation.
   MUST_USE_RESULT MaybeObject* AllocateStruct(InstanceType type);
@@ -1544,10 +1524,9 @@ class Heap {
       8 * (Page::kPageSize > MB ? Page::kPageSize : MB);
 
   intptr_t OldGenerationAllocationLimit(intptr_t old_gen_size) {
-    const int divisor = FLAG_stress_compaction ? 10 : 1;
-    intptr_t limit =
-        Max(old_gen_size + old_gen_size / divisor,
-            kMinimumOldGenerationAllocationLimit);
+    intptr_t limit = FLAG_stress_compaction ?
+        old_gen_size + old_gen_size / 10 : old_gen_size * 4;
+    limit = Max(limit, kMinimumOldGenerationAllocationLimit);
     limit += new_space_.Capacity();
     intptr_t halfway_to_the_max = (old_gen_size + max_old_generation_size_) / 2;
     return Min(limit, halfway_to_the_max);

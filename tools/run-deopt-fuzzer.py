@@ -215,6 +215,8 @@ def BuildOptions():
                     default= -1, type="int")
   result.add_option("-v", "--verbose", help="Verbose output",
                     default=False, action="store_true")
+  result.add_option("--random-seed", default=0, dest="random_seed",
+                    help="Default seed for initializing random generator")
   return result
 
 
@@ -244,6 +246,8 @@ def ProcessOptions(options):
   options.extra_flags = shlex.split(options.extra_flags)
   if options.j == 0:
     options.j = multiprocessing.cpu_count()
+  while options.random_seed == 0:
+    options.random_seed = random.SystemRandom().randint(-2147483648, 2147483647)
   if not options.distribution_mode in DISTRIBUTION_MODES:
     print "Unknown distribution mode %s" % options.distribution_mode
     return False
@@ -364,7 +368,8 @@ def Execute(arch, mode, args, options, suites, workspace):
                         timeout, options.isolates,
                         options.command_prefix,
                         options.extra_flags,
-                        False)
+                        False,
+                        options.random_seed)
 
   # Find available test suites and read test cases from them.
   variables = {
@@ -375,6 +380,7 @@ def Execute(arch, mode, args, options, suites, workspace):
     "isolates": options.isolates,
     "mode": mode,
     "no_i18n": False,
+    "no_snap": False,
     "simulator": utils.UseSimulator(arch),
     "system": utils.GuessOS(),
   }

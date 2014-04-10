@@ -140,13 +140,19 @@
     },
     'default_configuration': 'Debug',
     'configurations': {
-      'Debug': {
+      'DebugBaseCommon': {
         'cflags': [ '-g', '-O0' ],
         'conditions': [
           [ 'OS=="aix"', {
             'cflags': [ '-gxcoff' ],
           }],
         ],
+      },
+      'Optdebug': {
+        'inherit_from': [ 'DebugBaseCommon', 'DebugBase2' ],
+      },
+      'Debug': {
+        # Xcode insists on this empty entry.
       },
       'Release': {
         # Xcode insists on this empty entry.

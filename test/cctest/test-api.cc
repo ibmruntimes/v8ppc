@@ -15667,7 +15667,8 @@ static void CheckElementValue(i::Isolate* isolate,
                               int expected,
                               i::Handle<i::Object> obj,
                               int offset) {
-  i::Object* element = *i::Object::GetElement(isolate, obj, offset);
+  i::Object* element =
+      *i::Object::GetElement(isolate, obj, offset).ToHandleChecked();
   CHECK_EQ(expected, i::Smi::cast(element)->value());
 }
 
@@ -16304,7 +16305,8 @@ static void ObjectWithExternalArrayTestHelper(
       array_type == v8::kExternalFloat32Array) {
     CHECK_EQ(static_cast<int>(i::OS::nan_value()),
              static_cast<int>(
-                 i::Object::GetElement(isolate, jsobj, 7)->Number()));
+                 i::Object::GetElement(
+                     isolate, jsobj, 7).ToHandleChecked()->Number()));
   } else {
     CheckElementValue(isolate, 0, jsobj, 7);
   }
@@ -16316,7 +16318,8 @@ static void ObjectWithExternalArrayTestHelper(
   CHECK_EQ(2, result->Int32Value());
   CHECK_EQ(2,
            static_cast<int>(
-               i::Object::GetElement(isolate, jsobj, 6)->Number()));
+               i::Object::GetElement(
+                   isolate, jsobj, 6).ToHandleChecked()->Number()));
 
   if (array_type != v8::kExternalFloat32Array &&
       array_type != v8::kExternalFloat64Array) {
@@ -16596,7 +16599,8 @@ static void ExternalArrayTestHelper(v8::ExternalArrayType array_type,
                                                kElementCount);
   CHECK_EQ(1,
            static_cast<int>(
-               i::Object::GetElement(isolate, jsobj, 1)->Number()));
+               i::Object::GetElement(
+                   isolate, jsobj, 1).ToHandleChecked()->Number()));
 
   ObjectWithExternalArrayTestHelper<ExternalArrayClass, ElementType>(
       context.local(), obj, kElementCount, array_type, low, high);

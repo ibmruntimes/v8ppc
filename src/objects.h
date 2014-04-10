@@ -1078,7 +1078,8 @@ class MaybeObject BASE_EMBEDDED {
   V(Cell)                                      \
   V(PropertyCell)                              \
   V(ObjectHashTable)                           \
-  V(WeakHashTable)
+  V(WeakHashTable)                             \
+  V(OrderedHashTable)
 
 
 #define ERROR_MESSAGES_LIST(V) \
@@ -1543,9 +1544,6 @@ class Object : public MaybeObject {
 
   // Property access.
   MUST_USE_RESULT inline MaybeObject* GetProperty(Name* key);
-  MUST_USE_RESULT inline MaybeObject* GetProperty(
-      Name* key,
-      PropertyAttributes* attributes);
 
   // TODO(yangguo): this should eventually replace the non-handlified version.
   MUST_USE_RESULT static MaybeHandle<Object> GetPropertyWithReceiver(
@@ -1558,8 +1556,9 @@ class Object : public MaybeObject {
       Name* key,
       PropertyAttributes* attributes);
 
-  static Handle<Object> GetPropertyOrElement(Handle<Object> object,
-                                             Handle<Name> key);
+  MUST_USE_RESULT static MaybeHandle<Object> GetPropertyOrElement(
+      Handle<Object> object,
+      Handle<Name> key);
 
   static Handle<Object> GetProperty(Handle<Object> object,
                                     Handle<Name> key);
@@ -1575,12 +1574,15 @@ class Object : public MaybeObject {
                                            Name* key,
                                            PropertyAttributes* attributes);
 
-  MUST_USE_RESULT MaybeObject* GetPropertyWithDefinedGetter(Object* receiver,
-                                                            JSReceiver* getter);
+  MUST_USE_RESULT static MaybeHandle<Object> GetPropertyWithDefinedGetter(
+      Handle<Object> object,
+      Handle<Object> receiver,
+      Handle<JSReceiver> getter);
 
-  static inline Handle<Object> GetElement(Isolate* isolate,
-                                          Handle<Object> object,
-                                          uint32_t index);
+  MUST_USE_RESULT static inline MaybeHandle<Object> GetElement(
+      Isolate* isolate,
+      Handle<Object> object,
+      uint32_t index);
 
   // For use when we know that no exception can be thrown.
   static inline Handle<Object> GetElementNoExceptionThrown(
@@ -1588,10 +1590,11 @@ class Object : public MaybeObject {
       Handle<Object> object,
       uint32_t index);
 
-  static Handle<Object> GetElementWithReceiver(Isolate* isolate,
-                                               Handle<Object> object,
-                                               Handle<Object> receiver,
-                                               uint32_t index);
+  MUST_USE_RESULT static MaybeHandle<Object> GetElementWithReceiver(
+      Isolate* isolate,
+      Handle<Object> object,
+      Handle<Object> receiver,
+      uint32_t index);
 
   // Return the object's prototype (might be Heap::null_value()).
   Object* GetPrototype(Isolate* isolate);
@@ -2202,7 +2205,6 @@ class JSObject: public JSReceiver {
   // arguments object.
   DECL_ACCESSORS(elements, FixedArrayBase)
   inline void initialize_elements();
-  MUST_USE_RESULT inline MaybeObject* ResetElements();
   static void ResetElements(Handle<JSObject> object);
   static inline void SetMapAndElements(Handle<JSObject> object,
                                        Handle<Map> map,
@@ -2405,10 +2407,6 @@ class JSObject: public JSReceiver {
       Handle<Object> receiver,
       Handle<Name> name,
       PropertyAttributes* attributes);
-  MUST_USE_RESULT MaybeObject* GetLocalPropertyPostInterceptor(
-      Object* receiver,
-      Name* name,
-      PropertyAttributes* attributes);
 
   // Returns true if this is an instance of an api function and has
   // been modified since it was created.  May give false positives.
@@ -2519,9 +2517,10 @@ class JSObject: public JSReceiver {
 
   // Returns the index'th element.
   // The undefined object if index is out of bounds.
-  static Handle<Object> GetElementWithInterceptor(Handle<JSObject> object,
-                                                  Handle<Object> receiver,
-                                                  uint32_t index);
+  MUST_USE_RESULT static MaybeHandle<Object> GetElementWithInterceptor(
+      Handle<JSObject> object,
+      Handle<Object> receiver,
+      uint32_t index);
 
   enum SetFastElementsCapacitySmiMode {
     kAllowSmiElements,
@@ -2600,11 +2599,8 @@ class JSObject: public JSReceiver {
   // map and the ElementsKind set.
   static Handle<Map> GetElementsTransitionMap(Handle<JSObject> object,
                                               ElementsKind to_kind);
-  inline MUST_USE_RESULT MaybeObject* GetElementsTransitionMap(
-      Isolate* isolate,
-      ElementsKind elements_kind);
-  MUST_USE_RESULT MaybeObject* GetElementsTransitionMapSlow(
-      ElementsKind elements_kind);
+  static Handle<Map> GetElementsTransitionMapSlow(Handle<JSObject> object,
+                                                  ElementsKind elements_kind);
 
   static void TransitionElementsKind(Handle<JSObject> object,
                                      ElementsKind to_kind);
@@ -2812,17 +2808,13 @@ class JSObject: public JSReceiver {
       Handle<Name> name,
       PropertyAttributes* attributes);
 
-  MUST_USE_RESULT static Handle<Object> GetElementWithCallback(
+  MUST_USE_RESULT static MaybeHandle<Object> GetElementWithCallback(
       Handle<JSObject> object,
       Handle<Object> receiver,
       Handle<Object> structure,
       uint32_t index,
       Handle<Object> holder);
 
-  MUST_USE_RESULT MaybeObject* GetElementWithCallback(Object* receiver,
-                                                      Object* structure,
-                                                      uint32_t index,
-                                                      Object* holder);
   static PropertyAttributes GetElementAttributeWithInterceptor(
       Handle<JSObject> object,
       Handle<JSReceiver> receiver,
@@ -2949,9 +2941,10 @@ class JSObject: public JSReceiver {
                               Handle<Object> value,
                               PropertyAttributes attributes);
 
-  static Handle<Object> DeleteProperty(Handle<JSObject> object,
-                                       Handle<Name> name,
-                                       DeleteMode mode);
+  MUST_USE_RESULT static MaybeHandle<Object> DeleteProperty(
+      Handle<JSObject> object,
+      Handle<Name> name,
+      DeleteMode mode);
   static Handle<Object> DeletePropertyPostInterceptor(Handle<JSObject> object,
                                                       Handle<Name> name,
                                                       DeleteMode mode);
@@ -2963,11 +2956,13 @@ class JSObject: public JSReceiver {
                                                  Handle<Name> name,
                                                  DeleteMode mode);
 
-  static Handle<Object> DeleteElement(Handle<JSObject> object,
-                                      uint32_t index,
-                                      DeleteMode mode);
-  static Handle<Object> DeleteElementWithInterceptor(Handle<JSObject> object,
-                                                     uint32_t index);
+  MUST_USE_RESULT static MaybeHandle<Object> DeleteElement(
+      Handle<JSObject> object,
+      uint32_t index,
+      DeleteMode mode);
+  MUST_USE_RESULT static MaybeHandle<Object> DeleteElementWithInterceptor(
+      Handle<JSObject> object,
+      uint32_t index);
 
   bool ReferencesObjectFromElements(FixedArray* elements,
                                     ElementsKind kind,
@@ -3097,13 +3092,15 @@ class FixedArray: public FixedArrayBase {
                                         PretenureFlag pretenure = NOT_TENURED);
 
   // Add the elements of a JSArray to this FixedArray.
-  static Handle<FixedArray> AddKeysFromJSArray(Handle<FixedArray> content,
-                                               Handle<JSArray> array);
+  MUST_USE_RESULT static MaybeHandle<FixedArray> AddKeysFromJSArray(
+      Handle<FixedArray> content,
+      Handle<JSArray> array);
 
   // Computes the union of keys and return the result.
   // Used for implementing "for (n in object) { }"
-  static Handle<FixedArray> UnionOfKeys(Handle<FixedArray> first,
-                                        Handle<FixedArray> second);
+  MUST_USE_RESULT static MaybeHandle<FixedArray> UnionOfKeys(
+      Handle<FixedArray> first,
+      Handle<FixedArray> second);
 
   // Copy a sub array from the receiver to dest.
   void CopyTo(int pos, FixedArray* dest, int dest_pos, int len);
@@ -3473,7 +3470,7 @@ class DescriptorArray: public FixedArray {
   inline void Set(int descriptor_number,
                   Descriptor* desc,
                   const WhitenessWitness&);
-  inline void Set(int descriptor_number, Descriptor* desc);
+  void Replace(int descriptor_number, Descriptor* descriptor);
 
   // Append automatically sets the enumeration index. This should only be used
   // to add descriptors in bulk at the end, followed by sorting the descriptor
@@ -3481,12 +3478,6 @@ class DescriptorArray: public FixedArray {
   inline void Append(Descriptor* desc, const WhitenessWitness&);
   inline void Append(Descriptor* desc);
 
-  // Transfer a complete descriptor from the src descriptor array to this
-  // descriptor array.
-  void CopyFrom(int dst_index,
-                DescriptorArray* src,
-                int src_index,
-                const WhitenessWitness&);
   static Handle<DescriptorArray> Merge(Handle<Map> left_map,
                                        int verbatim,
                                        int valid,
@@ -3501,17 +3492,15 @@ class DescriptorArray: public FixedArray {
                          int new_size,
                          DescriptorArray* other);
 
-  MUST_USE_RESULT MaybeObject* CopyUpTo(int enumeration_index) {
-    return CopyUpToAddAttributes(enumeration_index, NONE);
-  }
+  static Handle<DescriptorArray> CopyUpTo(Handle<DescriptorArray> desc,
+                                          int enumeration_index,
+                                          int slack = 0);
 
   static Handle<DescriptorArray> CopyUpToAddAttributes(
       Handle<DescriptorArray> desc,
       int enumeration_index,
-      PropertyAttributes attributes);
-  MUST_USE_RESULT MaybeObject* CopyUpToAddAttributes(
-      int enumeration_index,
-      PropertyAttributes attributes);
+      PropertyAttributes attributes,
+      int slack = 0);
 
   // Sort the instance descriptors by the hash codes of their keys.
   void Sort();
@@ -3613,6 +3602,14 @@ class DescriptorArray: public FixedArray {
            (descriptor_number * kDescriptorSize) +
            kDescriptorValue;
   }
+
+  // Transfer a complete descriptor from the src descriptor array to this
+  // descriptor array.
+  void CopyFrom(int index,
+                DescriptorArray* src,
+                const WhitenessWitness&);
+
+  inline void Set(int descriptor_number, Descriptor* desc);
 
   // Swap first and second descriptor.
   inline void SwapSortedKeys(int first, int second);
@@ -3793,7 +3790,6 @@ class HashTable: public FixedArray {
   void Rehash(Key key);
 
  protected:
-  friend class ObjectHashSet;
   friend class ObjectHashTable;
 
   // Find the entry at which to insert element with the given key that
@@ -4003,9 +3999,18 @@ class Dictionary: public HashTable<Shape, Key> {
 
   // Delete a property from the dictionary.
   Object* DeleteProperty(int entry, JSObject::DeleteMode mode);
+  // TODO(ishell): Temporary wrapper until handlified.
+  static Handle<Object> DeleteProperty(
+      Handle<Dictionary<Shape, Key> > dictionary,
+      int entry,
+      JSObject::DeleteMode mode);
 
   // Attempt to shrink the dictionary after deletion of key.
   MUST_USE_RESULT MaybeObject* Shrink(Key key);
+  // TODO(ishell): Temporary wrapper until handlified.
+  MUST_USE_RESULT static Handle<FixedArray> Shrink(
+      Handle<Dictionary<Shape, Key> > dictionary,
+      Key key);
 
   // Returns the number of elements in the dictionary filtering out properties
   // with the specified attributes.
@@ -4224,7 +4229,6 @@ class UnseededNumberDictionary
 };
 
 
-template <int entrysize>
 class ObjectHashTableShape : public BaseShape<Object*> {
  public:
   static inline bool IsMatch(Object* key, Object* other);
@@ -4233,45 +4237,13 @@ class ObjectHashTableShape : public BaseShape<Object*> {
   MUST_USE_RESULT static inline MaybeObject* AsObject(Heap* heap,
                                                       Object* key);
   static const int kPrefixSize = 0;
-  static const int kEntrySize = entrysize;
-};
-
-
-// ObjectHashSet holds keys that are arbitrary objects by using the identity
-// hash of the key for hashing purposes.
-class ObjectHashSet: public HashTable<ObjectHashTableShape<1>, Object*> {
- public:
-  static inline ObjectHashSet* cast(Object* obj) {
-    ASSERT(obj->IsHashTable());
-    return reinterpret_cast<ObjectHashSet*>(obj);
-  }
-
-  // Looks up whether the given key is part of this hash set.
-  bool Contains(Object* key);
-
-  static Handle<ObjectHashSet> EnsureCapacity(
-      Handle<ObjectHashSet> table,
-      int n,
-      Handle<Object> key,
-      PretenureFlag pretenure = NOT_TENURED);
-
-  // Attempt to shrink hash table after removal of key.
-  static Handle<ObjectHashSet> Shrink(Handle<ObjectHashSet> table,
-                                      Handle<Object> key);
-
-  // Adds the given key to this hash set.
-  static Handle<ObjectHashSet> Add(Handle<ObjectHashSet> table,
-                                   Handle<Object> key);
-
-  // Removes the given key from this hash set.
-  static Handle<ObjectHashSet> Remove(Handle<ObjectHashSet> table,
-                                      Handle<Object> key);
+  static const int kEntrySize = 2;
 };
 
 
 // ObjectHashTable maps keys that are arbitrary objects to object values by
 // using the identity hash of the key for hashing purposes.
-class ObjectHashTable: public HashTable<ObjectHashTableShape<2>, Object*> {
+class ObjectHashTable: public HashTable<ObjectHashTableShape, Object*> {
  public:
   static inline ObjectHashTable* cast(Object* obj) {
     ASSERT(obj->IsHashTable());
@@ -4343,7 +4315,7 @@ class OrderedHashTable: public FixedArray {
       Isolate* isolate, int capacity, PretenureFlag pretenure = NOT_TENURED);
 
   // Returns an OrderedHashTable (possibly |table|) with enough space
-  // to add at least one new element, or returns a Failure if a GC occurs.
+  // to add at least one new element.
   static Handle<Derived> EnsureGrowable(Handle<Derived> table);
 
   // Returns an OrderedHashTable (possibly |table|) that's shrunken
@@ -4434,7 +4406,7 @@ class OrderedHashTable: public FixedArray {
 class OrderedHashSet: public OrderedHashTable<OrderedHashSet, 1> {
  public:
   static OrderedHashSet* cast(Object* obj) {
-    ASSERT(obj->IsFixedArray());  // TODO(adamk): Make a map for this
+    ASSERT(obj->IsOrderedHashTable());
     return reinterpret_cast<OrderedHashSet*>(obj);
   }
 
@@ -4449,7 +4421,7 @@ class OrderedHashSet: public OrderedHashTable<OrderedHashSet, 1> {
 class OrderedHashMap: public OrderedHashTable<OrderedHashMap, 2> {
  public:
   static OrderedHashMap* cast(Object* obj) {
-    ASSERT(obj->IsFixedArray());  // TODO(adamk): Make a map for this
+    ASSERT(obj->IsOrderedHashTable());
     return reinterpret_cast<OrderedHashMap*>(obj);
   }
 
@@ -6226,20 +6198,17 @@ class Map: public HeapObject {
   inline bool HasTransitionArray();
   inline bool HasElementsTransition();
   inline Map* elements_transition_map();
-  MUST_USE_RESULT inline MaybeObject* set_elements_transition_map(
-      Map* transitioned_map);
+  static Handle<TransitionArray> SetElementsTransitionMap(
+      Handle<Map> map, Handle<Map> transitioned_map);
   inline void SetTransition(int transition_index, Map* target);
   inline Map* GetTransition(int transition_index);
   inline int SearchTransition(Name* name);
+  inline FixedArrayBase* GetInitialElements();
 
   static Handle<TransitionArray> AddTransition(Handle<Map> map,
                                                Handle<Name> key,
                                                Handle<Map> target,
                                                SimpleTransitionFlag flag);
-
-  MUST_USE_RESULT inline MaybeObject* AddTransition(Name* key,
-                                                    Map* target,
-                                                    SimpleTransitionFlag flag);
   DECL_ACCESSORS(transitions, TransitionArray)
   inline void ClearTransitions(Heap* heap,
                                WriteBarrierMode mode = UPDATE_WRITE_BARRIER);
@@ -6445,37 +6414,42 @@ class Map: public HeapObject {
   MUST_USE_RESULT MaybeObject* RawCopy(int instance_size);
   static Handle<Map> CopyDropDescriptors(Handle<Map> map);
   MUST_USE_RESULT MaybeObject* CopyDropDescriptors();
-  static Handle<Map> CopyReplaceDescriptors(Handle<Map> map,
-                                            Handle<DescriptorArray> descriptors,
-                                            TransitionFlag flag,
-                                            Handle<Name> name);
-  MUST_USE_RESULT MaybeObject* CopyReplaceDescriptors(
-      DescriptorArray* descriptors,
+  static Handle<Map> CopyReplaceDescriptors(
+      Handle<Map> map,
+      Handle<DescriptorArray> descriptors,
       TransitionFlag flag,
-      Name* name = NULL,
+      Handle<Name> name,
+      SimpleTransitionFlag simple_flag = FULL_TRANSITION);
+  static Handle<Map> CopyReplaceDescriptors(
+      Handle<Map> map,
+      Handle<DescriptorArray> descriptors,
+      TransitionFlag flag,
       SimpleTransitionFlag simple_flag = FULL_TRANSITION);
   static Handle<Map> CopyInstallDescriptors(
       Handle<Map> map,
       int new_descriptor,
       Handle<DescriptorArray> descriptors);
-  MUST_USE_RESULT MaybeObject* ShareDescriptor(DescriptorArray* descriptors,
-                                               Descriptor* descriptor);
-  MUST_USE_RESULT MaybeObject* CopyAddDescriptor(Descriptor* descriptor,
-                                                 TransitionFlag flag);
-  MUST_USE_RESULT MaybeObject* CopyInsertDescriptor(Descriptor* descriptor,
-                                                    TransitionFlag flag);
-  MUST_USE_RESULT MaybeObject* CopyReplaceDescriptor(
-      DescriptorArray* descriptors,
+  static Handle<Map> ShareDescriptor(Handle<Map> map,
+                                     Handle<DescriptorArray> descriptors,
+                                     Descriptor* descriptor);
+  static Handle<Map> CopyAddDescriptor(Handle<Map> map,
+                                       Descriptor* descriptor,
+                                       TransitionFlag flag);
+  static Handle<Map> CopyInsertDescriptor(Handle<Map> map,
+                                          Descriptor* descriptor,
+                                          TransitionFlag flag);
+  static Handle<Map> CopyReplaceDescriptor(
+      Handle<Map> map,
+      Handle<DescriptorArray> descriptors,
       Descriptor* descriptor,
       int index,
       TransitionFlag flag);
 
-  MUST_USE_RESULT MaybeObject* AsElementsKind(ElementsKind kind);
-
   static Handle<Map> AsElementsKind(Handle<Map> map, ElementsKind kind);
 
-  MUST_USE_RESULT MaybeObject* CopyAsElementsKind(ElementsKind kind,
-                                                  TransitionFlag flag);
+  static Handle<Map> CopyAsElementsKind(Handle<Map> map,
+                                        ElementsKind kind,
+                                        TransitionFlag flag);
 
   static Handle<Map> CopyForObserved(Handle<Map> map);
 
@@ -6491,7 +6465,6 @@ class Map: public HeapObject {
   static Handle<Map> Copy(Handle<Map> map);
   static Handle<Map> Create(Handle<JSFunction> constructor,
                             int extra_inobject_properties);
-  MUST_USE_RESULT MaybeObject* Copy();
 
   // Returns the next free property index (only valid for FAST MODE).
   int NextFreePropertyIndex();
@@ -7858,10 +7831,9 @@ class GlobalObject: public JSObject {
   // by throwing an exception.  This is for the debug and builtins global
   // objects, where it is known which properties can be expected to be present
   // on the object.
-  Object* GetPropertyNoExceptionThrown(Name* key) {
-    Object* answer = GetProperty(key)->ToObjectUnchecked();
-    return answer;
-  }
+  static inline Handle<Object> GetPropertyNoExceptionThrown(
+      Handle<GlobalObject> global,
+      Handle<Name> name);
 
   // Casting.
   static inline GlobalObject* cast(Object* obj);
@@ -10327,8 +10299,9 @@ class JSArray: public JSObject {
   // Initializes the array to a certain length.
   inline bool AllowsSetElementsLength();
   // Can cause GC.
-  static Handle<Object> SetElementsLength(Handle<JSArray> array,
-                                          Handle<Object> length);
+  MUST_USE_RESULT static MaybeHandle<Object> SetElementsLength(
+      Handle<JSArray> array,
+      Handle<Object> length);
 
   // Set the content of the array to the content of storage.
   static inline void SetContent(Handle<JSArray> array,
