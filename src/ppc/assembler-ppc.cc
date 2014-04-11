@@ -755,14 +755,18 @@ void Assembler::bctr() {
 
 
 void Assembler::bc(int branch_offset, BOfield bo, int condition_bit, LKBit lk) {
-  positions_recorder()->WriteRecordedPositions();
+  if (lk == SetLK) {
+    positions_recorder()->WriteRecordedPositions();
+  }
   ASSERT(is_int16(branch_offset));
   emit(BCX | bo | condition_bit*B16 | (kImm16Mask & branch_offset) | lk);
 }
 
 
 void Assembler::b(int branch_offset, LKBit lk) {
-  positions_recorder()->WriteRecordedPositions();
+  if (lk == SetLK) {
+    positions_recorder()->WriteRecordedPositions();
+  }
   ASSERT((branch_offset & 3) == 0);
   int imm26 = branch_offset;
   ASSERT(is_int26(imm26));
@@ -1044,6 +1048,42 @@ void Assembler::cmpl(Register src1, Register src2, CRegister cr) {
 #else
   int L = 0;
 #endif
+  ASSERT(cr.code() >= 0 && cr.code() <= 7);
+  emit(EXT2 | CMPL | cr.code()*B23 | L*B21 | src1.code()*B16 |
+       src2.code()*B11);
+}
+
+
+void Assembler::cmpwi(Register src1, const Operand& src2, CRegister cr) {
+  intptr_t imm16 = src2.imm_;
+  int L = 0;
+  ASSERT(is_int16(imm16));
+  ASSERT(cr.code() >= 0 && cr.code() <= 7);
+  imm16 &= kImm16Mask;
+  emit(CMPI | cr.code()*B23 | L*B21 | src1.code()*B16 | imm16);
+}
+
+
+void Assembler::cmplwi(Register src1, const Operand& src2, CRegister cr) {
+  uintptr_t uimm16 = src2.imm_;
+  int L = 0;
+  ASSERT(is_uint16(uimm16));
+  ASSERT(cr.code() >= 0 && cr.code() <= 7);
+  uimm16 &= kImm16Mask;
+  emit(CMPLI | cr.code()*B23 | L*B21 | src1.code()*B16 | uimm16);
+}
+
+
+void Assembler::cmpw(Register src1, Register src2, CRegister cr) {
+  int L = 0;
+  ASSERT(cr.code() >= 0 && cr.code() <= 7);
+  emit(EXT2 | CMP | cr.code()*B23 | L*B21 | src1.code()*B16 |
+       src2.code()*B11);
+}
+
+
+void Assembler::cmplw(Register src1, Register src2, CRegister cr) {
+  int L = 0;
   ASSERT(cr.code() >= 0 && cr.code() <= 7);
   emit(EXT2 | CMPL | cr.code()*B23 | L*B21 | src1.code()*B16 |
        src2.code()*B11);

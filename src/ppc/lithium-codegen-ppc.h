@@ -280,7 +280,10 @@ class LCodeGen: public LCodeGenBase {
   Register ToRegister(int index) const;
   DoubleRegister ToDoubleRegister(int index) const;
 
-  void EmitIntegerMathAbs(LMathAbs* instr);
+  void EmitMathAbs(LMathAbs* instr);
+#if V8_TARGET_ARCH_PPC64
+  void EmitInteger32MathAbs(LMathAbs* instr);
+#endif
 
   // Support for recording safepoint and position information.
   void RecordSafepoint(LPointerMap* pointers,

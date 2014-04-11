@@ -1075,7 +1075,7 @@ void LCodeGen::DoModI(LModI* instr) {
     ASSERT(IsPowerOf2(divisor));
     Label left_is_not_negative;
     if (left->CanBeNegative()) {
-      __ cmpi(left_reg, Operand::Zero());
+      __ cmpwi(left_reg, Operand::Zero());
       __ bge(&left_is_not_negative);
       __ neg(result_reg, left_reg);
       __ mov(r0, Operand(divisor - 1));
@@ -1098,7 +1098,7 @@ void LCodeGen::DoModI(LModI* instr) {
 
     // Check for x % 0.
     if (right->CanBeZero()) {
-      __ cmpi(right_reg, Operand::Zero());
+      __ cmpwi(right_reg, Operand::Zero());
       DeoptimizeIf(eq, instr->environment());
     }
 
@@ -1106,9 +1106,9 @@ void LCodeGen::DoModI(LModI* instr) {
     // want. We have to deopt if we care about -0, because we can't return that.
     if (left->RangeCanInclude(kMinInt) && right->RangeCanInclude(-1)) {
       Label no_overflow_possible;
-      __ Cmpi(left_reg, Operand(kMinInt), r0);
+      __ Cmpwi(left_reg, Operand(kMinInt), r0);
       __ bne(&no_overflow_possible);
-      __ cmpi(right_reg, Operand(-1));
+      __ cmpwi(right_reg, Operand(-1));
       if (hmod->CheckFlag(HValue::kBailoutOnMinusZero)) {
         DeoptimizeIf(eq, instr->environment());
       } else {
@@ -1130,7 +1130,7 @@ void LCodeGen::DoModI(LModI* instr) {
         hmod->CanBeZero() &&
         hmod->CheckFlag(HValue::kBailoutOnMinusZero)) {
       __ bne(&done, cr0);
-      __ cmpi(left_reg, Operand::Zero());
+      __ cmpwi(left_reg, Operand::Zero());
       DeoptimizeIf(lt, instr->environment());
     }
   }
@@ -1152,12 +1152,12 @@ void LCodeGen::DoDivI(LDivI* instr) {
     } else {
       // Check for (0 / -x) that will produce negative zero.
       if (instr->hydrogen()->CheckFlag(HValue::kBailoutOnMinusZero)) {
-        __ cmpi(dividend, Operand::Zero());
+        __ cmpwi(dividend, Operand::Zero());
         DeoptimizeIf(eq, instr->environment());
       }
       // Check for (kMinInt / -1).
       if (divisor == -1 && instr->hydrogen()->CheckFlag(HValue::kCanOverflow)) {
-        __ Cmpi(dividend, Operand(kMinInt), r0);
+        __ Cmpwi(dividend, Operand(kMinInt), r0);
         DeoptimizeIf(eq, instr->environment());
       }
       test_value = - divisor - 1;
@@ -1168,7 +1168,7 @@ void LCodeGen::DoDivI(LDivI* instr) {
       if (instr->hydrogen()->CheckFlag(
           HInstruction::kAllUsesTruncatingToInt32)) {
         Label negative_dividend, done;
-        __ cmpi(dividend, Operand::Zero());
+        __ cmpwi(dividend, Operand::Zero());
         __ blt(&negative_dividend);
         __ ShiftRightArithImm(dividend, dividend, power);
         if (divisor < 0) __ neg(dividend, dividend);
@@ -1205,16 +1205,16 @@ void LCodeGen::DoDivI(LDivI* instr) {
 
   // Check for x / 0.
   if (instr->hydrogen_value()->CheckFlag(HValue::kCanBeDivByZero)) {
-    __ cmpi(right, Operand::Zero());
+    __ cmpwi(right, Operand::Zero());
     DeoptimizeIf(eq, instr->environment());
   }
 
   // Check for (0 / -x) that will produce negative zero.
   if (instr->hydrogen_value()->CheckFlag(HValue::kBailoutOnMinusZero)) {
     Label left_not_zero;
-    __ cmpi(left, Operand::Zero());
+    __ cmpwi(left, Operand::Zero());
     __ bne(&left_not_zero);
-    __ cmpi(right, Operand::Zero());
+    __ cmpwi(right, Operand::Zero());
     DeoptimizeIf(lt, instr->environment());
     __ bind(&left_not_zero);
   }
@@ -1222,9 +1222,9 @@ void LCodeGen::DoDivI(LDivI* instr) {
   // Check for (kMinInt / -1).
   if (instr->hydrogen_value()->CheckFlag(HValue::kCanOverflow)) {
     Label left_not_min_int;
-    __ Cmpi(left, Operand(kMinInt), r0);
+    __ Cmpwi(left, Operand(kMinInt), r0);
     __ bne(&left_not_min_int);
-    __ cmpi(right, Operand(-1));
+    __ cmpwi(right, Operand(-1));
     DeoptimizeIf(eq, instr->environment());
     __ bind(&left_not_min_int);
   }
@@ -1236,11 +1236,17 @@ void LCodeGen::DoDivI(LDivI* instr) {
   if (instr->is_flooring()) {
     Label done;
     // If both operands have the same sign then we are done.
+#if V8_TARGET_ARCH_PPC64
+    __ xor_(scratch, left, right);
+    __ cmpwi(scratch, Operand::Zero());
+    __ bge(&done);
+#else
     __ xor_(scratch, left, right, SetRC);
     __ bge(&done, cr0);
+#endif
 
     __ Mul(scratch, right, result);
-    __ cmp(left, scratch);
+    __ cmpw(left, scratch);
     __ beq(&done);
 
     // We performed a truncating division. Correct the result.
@@ -1250,7 +1256,7 @@ void LCodeGen::DoDivI(LDivI* instr) {
                HInstruction::kAllUsesTruncatingToInt32)) {
     // Deoptimize if remainder is not 0.
     __ Mul(scratch, right, result);
-    __ cmp(left, scratch);
+    __ cmpw(left, scratch);
     DeoptimizeIf(ne, instr->environment());
   }
 }
@@ -1277,7 +1283,7 @@ void LCodeGen::DoMathFloorOfDiv(LMathFloorOfDiv* instr) {
 
       if (instr->hydrogen()->CheckFlag(HValue::kCanOverflow)) {
 #if V8_TARGET_ARCH_PPC64
-        __ Cmpi(dividend, Operand(kMinInt), r0);
+        __ Cmpwi(dividend, Operand(kMinInt), r0);
         DeoptimizeIf(eq, instr->environment());
 #else
         __ li(r0, Operand::Zero());  // clear xer
@@ -1420,20 +1426,17 @@ void LCodeGen::DoMulI(LMulI* instr) {
         if (can_overflow) {
 #if V8_TARGET_ARCH_PPC64
           if (instr->hydrogen()->representation().IsSmi()) {
+#endif
             __ li(r0, Operand::Zero());  // clear xer
             __ mtxer(r0);
             __ neg(result, left, SetOE, SetRC);
             DeoptimizeIf(overflow, instr->environment(), cr0);
+#if V8_TARGET_ARCH_PPC64
           } else {
             __ neg(result, left);
             __ TestIfInt32(result, scratch, r0);
             DeoptimizeIf(ne, instr->environment());
           }
-#else
-          __ li(r0, Operand::Zero());  // clear xer
-          __ mtxer(r0);
-          __ neg(result, left, SetOE, SetRC);
-          DeoptimizeIf(overflow, instr->environment(), cr0);
 #endif
         } else {
           __ neg(result, left);
@@ -1443,7 +1446,15 @@ void LCodeGen::DoMulI(LMulI* instr) {
         if (bailout_on_minus_zero) {
           // If left is strictly negative and the constant is null, the
           // result is -0. Deoptimize if required, otherwise return 0.
-          __ cmpi(left, Operand::Zero());
+#if V8_TARGET_ARCH_PPC64
+          if (instr->hydrogen()->representation().IsSmi()) {
+#endif
+            __ cmpi(left, Operand::Zero());
+#if V8_TARGET_ARCH_PPC64
+          } else {
+            __ cmpwi(left, Operand::Zero());
+          }
+#endif
           DeoptimizeIf(lt, instr->environment());
         }
         __ li(result, Operand::Zero());
@@ -1525,8 +1536,18 @@ void LCodeGen::DoMulI(LMulI* instr) {
 
     if (bailout_on_minus_zero) {
       Label done;
-      __ xor_(r0, left, right, SetRC);
-      __ bge(&done, cr0);
+#if V8_TARGET_ARCH_PPC64
+      if (instr->hydrogen()->representation().IsSmi()) {
+#endif
+        __ xor_(r0, left, right, SetRC);
+        __ bge(&done, cr0);
+#if V8_TARGET_ARCH_PPC64
+      } else {
+        __ xor_(r0, left, right);
+        __ cmpwi(r0, Operand::Zero());
+        __ bge(&done);
+      }
+#endif
       // Bail out if the result is minus zero.
       __ cmpi(result, Operand::Zero());
       DeoptimizeIf(eq, instr->environment());
@@ -1654,8 +1675,8 @@ void LCodeGen::DoShiftI(LShiftI* instr) {
           __ srwi(result, left, Operand(shift_count));
         } else {
           if (instr->can_deopt()) {
-            __ TestSignBit32(left, r0);
-            DeoptimizeIf(ne, instr->environment(), cr0);
+            __ cmpwi(left, Operand::Zero());
+            DeoptimizeIf(lt, instr->environment());
           }
           __ Move(result, left);
         }
@@ -1957,7 +1978,15 @@ void LCodeGen::DoMathMinMax(LMathMinMax* instr) {
     Register right_reg = EmitLoadRegister(right, ip);
     Register result_reg = ToRegister(instr->result());
     Label return_left, done;
-    __ cmp(left_reg, right_reg);
+#if V8_TARGET_ARCH_PPC64
+    if (instr->hydrogen_value()->representation().IsSmi()) {
+#endif
+      __ cmp(left_reg, right_reg);
+#if V8_TARGET_ARCH_PPC64
+    } else {
+      __ cmpw(left_reg, right_reg);
+    }
+#endif
     __ b(cond, &return_left);
     __ Move(result_reg, right_reg);
     __ b(&done);
@@ -2104,7 +2133,12 @@ void LCodeGen::DoBranch(LBranch* instr) {
   const uint crZOrNaNBits = (1 << (31 - Assembler::encode_crbit(cr7, CR_EQ)) |
                              1 << (31 - Assembler::encode_crbit(cr7, CR_FU)));
 
-  if (r.IsInteger32() || r.IsSmi()) {
+  if (r.IsInteger32()) {
+    ASSERT(!info()->IsStub());
+    Register reg = ToRegister(instr->value());
+    __ cmpwi(reg, Operand::Zero());
+    EmitBranch(instr, ne);
+  } else if (r.IsSmi()) {
     ASSERT(!info()->IsStub());
     Register reg = ToRegister(instr->value());
     __ cmpi(reg, Operand::Zero());
@@ -2310,19 +2344,21 @@ void LCodeGen::DoCompareNumericAndBranch(LCompareNumericAndBranch* instr) {
         if (instr->hydrogen_value()->representation().IsSmi()) {
           __ CmpSmiLiteral(ToRegister(left), Smi::FromInt(value), r0);
         } else {
-          __ Cmpi(ToRegister(left), Operand(value), r0);
+          __ Cmpwi(ToRegister(left), Operand(value), r0);
         }
       } else if (left->IsConstantOperand()) {
         int32_t value = ToInteger32(LConstantOperand::cast(left));
         if (instr->hydrogen_value()->representation().IsSmi()) {
           __ CmpSmiLiteral(ToRegister(right), Smi::FromInt(value), r0);
         } else {
-          __ Cmpi(ToRegister(right), Operand(value), r0);
+          __ Cmpwi(ToRegister(right), Operand(value), r0);
         }
         // We transposed the operands. Reverse the condition.
         cond = ReverseCondition(cond);
-      } else {
+      } else if (instr->hydrogen_value()->representation().IsSmi()) {
         __ cmp(ToRegister(left), ToRegister(right));
+      } else {
+        __ cmpw(ToRegister(left), ToRegister(right));
       }
     }
     EmitBranch(instr, cond);
@@ -3179,7 +3215,7 @@ void LCodeGen::DoLoadKeyedExternalArray(LLoadKeyed* instr) {
         }
         if (!instr->hydrogen()->CheckFlag(HInstruction::kUint32)) {
           __ lis(r0, Operand(SIGN_EXT_IMM16(0x8000)));
-          __ cmpl(result, r0);
+          __ cmplw(result, r0);
           DeoptimizeIf(ge, instr->environment());
         }
         break;
@@ -3666,10 +3702,10 @@ void LCodeGen::DoDeferredMathAbsTaggedHeapNumber(LMathAbs* instr) {
   __ lwz(exponent, FieldMemOperand(input, HeapNumber::kExponentOffset));
   // Check the sign of the argument. If the argument is positive, just
   // return it.
-  __ TestSignBit32(exponent, r0);
+  __ cmpwi(exponent, Operand::Zero());
   // Move the input to the result if necessary.
   __ Move(result, input);
-  __ beq(&done, cr0);
+  __ bge(&done);
 
   // Input is negative. Reverse its sign.
   // Preserve the value of all registers.
@@ -3717,7 +3753,7 @@ void LCodeGen::DoDeferredMathAbsTaggedHeapNumber(LMathAbs* instr) {
 }
 
 
-void LCodeGen::EmitIntegerMathAbs(LMathAbs* instr) {
+void LCodeGen::EmitMathAbs(LMathAbs* instr) {
   Register input = ToRegister(instr->value());
   Register result = ToRegister(instr->result());
   Label done;
@@ -3731,6 +3767,26 @@ void LCodeGen::EmitIntegerMathAbs(LMathAbs* instr) {
   DeoptimizeIf(overflow, instr->environment(), cr0);
   __ bind(&done);
 }
+
+
+#if V8_TARGET_ARCH_PPC64
+void LCodeGen::EmitInteger32MathAbs(LMathAbs* instr) {
+  Register input = ToRegister(instr->value());
+  Register result = ToRegister(instr->result());
+  Label done;
+  __ cmpwi(input, Operand::Zero());
+  __ Move(result, input);
+  __ bge(&done);
+
+  // Deoptimize on overflow.
+  __ lis(r0, Operand(SIGN_EXT_IMM16(0x8000)));
+  __ cmpw(input, r0);
+  DeoptimizeIf(eq, instr->environment());
+
+  __ neg(result, result);
+  __ bind(&done);
+}
+#endif
 
 
 void LCodeGen::DoMathAbs(LMathAbs* instr) {
@@ -3752,8 +3808,14 @@ void LCodeGen::DoMathAbs(LMathAbs* instr) {
     DoubleRegister input = ToDoubleRegister(instr->value());
     DoubleRegister result = ToDoubleRegister(instr->result());
     __ fabs(result, input);
+#if V8_TARGET_ARCH_PPC64
+  } else if (r.IsInteger32()) {
+    EmitInteger32MathAbs(instr);
+  } else if (r.IsSmi()) {
+#else
   } else if (r.IsSmiOrInteger32()) {
-    EmitIntegerMathAbs(instr);
+#endif
+    EmitMathAbs(instr);
   } else {
     // Representation is tagged.
     DeferredMathAbsTaggedHeapNumber* deferred =
@@ -3762,7 +3824,7 @@ void LCodeGen::DoMathAbs(LMathAbs* instr) {
     // Smi check.
     __ JumpIfNotSmi(input, deferred->entry());
     // If smi, handle it directly.
-    EmitIntegerMathAbs(instr);
+    EmitMathAbs(instr);
     __ bind(deferred->exit());
   }
 }
@@ -3784,8 +3846,8 @@ void LCodeGen::DoMathFloor(LMathFloor* instr) {
     // Test for -0.
     __ cmpi(result, Operand::Zero());
     __ bne(&done);
-    __ TestSignBit32(input_high, r0);
-    DeoptimizeIf(ne, instr->environment(), cr0);
+    __ cmpwi(input_high, Operand::Zero());
+    DeoptimizeIf(lt, instr->environment());
   }
   __ bind(&done);
 }
@@ -3817,8 +3879,8 @@ void LCodeGen::DoMathRound(LMathRound* instr) {
     __ lwz(input_high, MemOperand(sp, 0));
 #endif
     __ addi(sp, sp, Operand(kDoubleSize));
-    __ TestSignBit32(input_high, r0);
-    DeoptimizeIf(ne, instr->environment(), cr0);  // [-0.5, -0].
+    __ cmpwi(input_high, Operand::Zero());
+    DeoptimizeIf(lt, instr->environment());  // [-0.5, -0].
   }
   Label return_zero;
   __ fcmpu(input, dot_five);
@@ -5097,8 +5159,8 @@ void LCodeGen::DoDeferredTaggedToI(LTaggedToI* instr) {
 #else
       __ lwz(scratch1, FieldMemOperand(scratch2, HeapNumber::kValueOffset));
 #endif
-      __ TestSignBit32(scratch1, r0);
-      DeoptimizeIf(ne, instr->environment(), cr0);
+      __ cmpwi(scratch1, Operand::Zero());
+      DeoptimizeIf(lt, instr->environment());
     }
   }
   __ bind(&done);
@@ -5183,8 +5245,8 @@ void LCodeGen::DoDoubleToI(LDoubleToI* instr) {
       __ lwz(scratch1, MemOperand(sp, 0));
 #endif
       __ addi(sp, sp, Operand(kDoubleSize));
-      __ TestSignBit32(scratch1, r0);
-      DeoptimizeIf(ne, instr->environment(), cr0);
+      __ cmpwi(scratch1, Operand::Zero());
+      DeoptimizeIf(lt, instr->environment());
       __ bind(&done);
     }
   }
@@ -5215,8 +5277,8 @@ void LCodeGen::DoDoubleToSmi(LDoubleToSmi* instr) {
       __ lwz(scratch1, MemOperand(sp, 0));
 #endif
       __ addi(sp, sp, Operand(kDoubleSize));
-      __ TestSignBit32(scratch1, r0);
-      DeoptimizeIf(ne, instr->environment(), cr0);
+      __ cmpwi(scratch1, Operand::Zero());
+      DeoptimizeIf(lt, instr->environment());
       __ bind(&done);
     }
   }

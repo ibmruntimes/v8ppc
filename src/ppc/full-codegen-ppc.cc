@@ -4131,8 +4131,8 @@ void FullCodeGenerator::EmitFastAsciiArrayJoin(CallRuntime* expr) {
   // zero.
   __ cmpi(ip, Operand::Zero());
   __ bne(&bailout);
-  __ TestSignBit32(scratch2, r0);
-  __ bne(&bailout, cr0);
+  __ cmpwi(scratch2, Operand::Zero());
+  __ blt(&bailout);
 #endif
 
   __ AddAndCheckForOverflow(string_length, string_length, scratch2,
