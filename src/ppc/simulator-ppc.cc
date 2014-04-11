@@ -1868,7 +1868,10 @@ bool Simulator::DecodeExt2_10bit(Instruction *instr) {
   return found;
 }
 
-void Simulator::DecodeExt2_9bit(Instruction* instr) {
+
+bool Simulator::DecodeExt2_9bit_part1(Instruction* instr) {
+  bool found = true;
+
   int opcode = instr->Bits(9, 1) << 1;
   switch (opcode) {
     case TW: {
@@ -1879,13 +1882,26 @@ void Simulator::DecodeExt2_9bit(Instruction* instr) {
     case CMP: {
       int ra = instr->RAValue();
       int rb = instr->RBValue();
-      intptr_t ra_val = get_register(ra);
-      intptr_t rb_val = get_register(rb);
       int cr = instr->Bits(25, 23);
       int bf = 0;
-      if (ra_val < rb_val) { bf |= 0x80000000; }
-      if (ra_val > rb_val) { bf |= 0x40000000; }
-      if (ra_val == rb_val) { bf |= 0x20000000; }
+#if V8_TARGET_ARCH_PPC64
+      int L = instr->Bit(21);
+      if (L) {
+#endif
+        intptr_t ra_val = get_register(ra);
+        intptr_t rb_val = get_register(rb);
+        if (ra_val < rb_val) { bf |= 0x80000000; }
+        if (ra_val > rb_val) { bf |= 0x40000000; }
+        if (ra_val == rb_val) { bf |= 0x20000000; }
+#if V8_TARGET_ARCH_PPC64
+      } else {
+        int32_t ra_val = get_register(ra);
+        int32_t rb_val = get_register(rb);
+        if (ra_val < rb_val) { bf |= 0x80000000; }
+        if (ra_val > rb_val) { bf |= 0x40000000; }
+        if (ra_val == rb_val) { bf |= 0x20000000; }
+      }
+#endif
       int condition_mask = 0xF0000000 >> (cr*4);
       int condition =  bf >> (cr*4);
       condition_reg_ = (condition_reg_ & ~condition_mask) | condition;
@@ -1953,9 +1969,15 @@ void Simulator::DecodeExt2_9bit(Instruction* instr) {
       int ra = instr->RAValue();
       intptr_t ra_val = get_register(ra);
       intptr_t alu_out = 1 + ~ra_val;
+#if V8_TARGET_ARCH_PPC64
+      intptr_t one = 1;  // work-around gcc
+      intptr_t kOverflowVal = (one << 63);
+#else
+      intptr_t kOverflowVal = kMinInt;
+#endif
       set_register(rt, alu_out);
       if (instr->Bit(10)) {  // OE bit set
-        if (ra_val == kMinInt) {
+        if (ra_val == kOverflowVal) {
             special_reg_xer_ |= 0xC0000000;  // set SO,OV
         } else {
             special_reg_xer_ &= ~0x40000000;  // clear OV
@@ -1995,6 +2017,19 @@ void Simulator::DecodeExt2_9bit(Instruction* instr) {
       break;
     }
 #endif
+    default: {
+      found = false;
+      break;
+    }
+  }
+
+  return found;
+}
+
+
+void Simulator::DecodeExt2_9bit_part2(Instruction* instr) {
+  int opcode = instr->Bits(9, 1) << 1;
+  switch (opcode) {
     case CNTLZWX: {
       int rs = instr->RSValue();
       int ra = instr->RAValue();
@@ -2070,13 +2105,26 @@ void Simulator::DecodeExt2_9bit(Instruction* instr) {
     case CMPL: {
       int ra = instr->RAValue();
       int rb = instr->RBValue();
-      uintptr_t ra_val = get_register(ra);
-      uintptr_t rb_val = get_register(rb);
       int cr = instr->Bits(25, 23);
       int bf = 0;
-      if (ra_val < rb_val) { bf |= 0x80000000; }
-      if (ra_val > rb_val) { bf |= 0x40000000; }
-      if (ra_val == rb_val) { bf |= 0x20000000; }
+#if V8_TARGET_ARCH_PPC64
+      int L = instr->Bit(21);
+      if (L) {
+#endif
+        uintptr_t ra_val = get_register(ra);
+        uintptr_t rb_val = get_register(rb);
+        if (ra_val < rb_val) { bf |= 0x80000000; }
+        if (ra_val > rb_val) { bf |= 0x40000000; }
+        if (ra_val == rb_val) { bf |= 0x20000000; }
+#if V8_TARGET_ARCH_PPC64
+      } else {
+        uint32_t ra_val = get_register(ra);
+        uint32_t rb_val = get_register(rb);
+        if (ra_val < rb_val) { bf |= 0x80000000; }
+        if (ra_val > rb_val) { bf |= 0x40000000; }
+        if (ra_val == rb_val) { bf |= 0x20000000; }
+      }
+#endif
       int condition_mask = 0xF0000000 >> (cr*4);
       int condition =  bf >> (cr*4);
       condition_reg_ = (condition_reg_ & ~condition_mask) | condition;
@@ -2392,7 +2440,9 @@ void Simulator::DecodeExt2(Instruction* instr) {
     if (DecodeExt2_10bit(instr))
         return;
     // Now look at the lesser encodings
-    DecodeExt2_9bit(instr);
+    if (DecodeExt2_9bit_part1(instr))
+      return;
+    DecodeExt2_9bit_part2(instr);
 }
 
 void Simulator::DecodeExt4(Instruction* instr) {
@@ -2805,13 +2855,25 @@ void Simulator::InstructionDecode(Instruction* instr) {
     }
     case CMPLI: {
       int ra = instr->RAValue();
-      uintptr_t ra_val = get_register(ra);
       uint32_t im_val = instr->Bits(15, 0);
       int cr = instr->Bits(25, 23);
       int bf = 0;
-      if (ra_val < im_val) { bf |= 0x80000000; }
-      if (ra_val > im_val) { bf |= 0x40000000; }
-      if (ra_val == im_val) { bf |= 0x20000000; }
+#if V8_TARGET_ARCH_PPC64
+      int L = instr->Bit(21);
+      if (L) {
+#endif
+        uintptr_t ra_val = get_register(ra);
+        if (ra_val < im_val) { bf |= 0x80000000; }
+        if (ra_val > im_val) { bf |= 0x40000000; }
+        if (ra_val == im_val) { bf |= 0x20000000; }
+#if V8_TARGET_ARCH_PPC64
+      } else {
+        uint32_t ra_val = get_register(ra);
+        if (ra_val < im_val) { bf |= 0x80000000; }
+        if (ra_val > im_val) { bf |= 0x40000000; }
+        if (ra_val == im_val) { bf |= 0x20000000; }
+      }
+#endif
       int condition_mask = 0xF0000000 >> (cr*4);
       int condition =  bf >> (cr*4);
       condition_reg_ = (condition_reg_ & ~condition_mask) | condition;
@@ -2819,14 +2881,26 @@ void Simulator::InstructionDecode(Instruction* instr) {
     }
     case CMPI: {
       int ra = instr->RAValue();
-      intptr_t ra_val = get_register(ra);
       int32_t im_val = instr->Bits(15, 0);
       im_val = SIGN_EXT_IMM16(im_val);
       int cr = instr->Bits(25, 23);
       int bf = 0;
-      if (ra_val < im_val) { bf |= 0x80000000; }
-      if (ra_val > im_val) { bf |= 0x40000000; }
-      if (ra_val == im_val) { bf |= 0x20000000; }
+#if V8_TARGET_ARCH_PPC64
+      int L = instr->Bit(21);
+      if (L) {
+#endif
+        intptr_t ra_val = get_register(ra);
+        if (ra_val < im_val) { bf |= 0x80000000; }
+        if (ra_val > im_val) { bf |= 0x40000000; }
+        if (ra_val == im_val) { bf |= 0x20000000; }
+#if V8_TARGET_ARCH_PPC64
+      } else {
+        int32_t ra_val = get_register(ra);
+        if (ra_val < im_val) { bf |= 0x80000000; }
+        if (ra_val > im_val) { bf |= 0x40000000; }
+        if (ra_val == im_val) { bf |= 0x20000000; }
+      }
+#endif
       int condition_mask = 0xF0000000 >> (cr*4);
       int condition =  bf >> (cr*4);
       condition_reg_ = (condition_reg_ & ~condition_mask) | condition;

@@ -4003,6 +4003,31 @@ void MacroAssembler::Cmpli(Register src1, const Operand& src2, Register scratch,
   }
 }
 
+
+void MacroAssembler::Cmpwi(Register src1, const Operand& src2,
+                           Register scratch, CRegister cr) {
+  intptr_t value = src2.immediate();
+  if (is_int16(value)) {
+    cmpwi(src1, src2, cr);
+  } else {
+    mov(scratch, src2);
+    cmpw(src1, scratch, cr);
+  }
+}
+
+
+void MacroAssembler::Cmplwi(Register src1, const Operand& src2,
+                            Register scratch, CRegister cr) {
+  intptr_t value = src2.immediate();
+  if (is_uint16(value)) {
+    cmplwi(src1, src2, cr);
+  } else {
+    mov(scratch, src2);
+    cmplw(src1, scratch, cr);
+  }
+}
+
+
 void MacroAssembler::And(Register ra, Register rs, const Operand& rb,
                          RCBit rc) {
   if (rb.is_reg()) {

@@ -643,7 +643,15 @@ void Decoder::DecodeExt2(Instruction* instr) {
   // ?? are all of these xo_form?
   switch (instr->Bits(9, 1) << 1) {
     case CMP: {
-      Format(instr, "cmp     'ra, 'rb");
+#if V8_TARGET_ARCH_PPC64
+      if (instr->Bit(21)) {
+#endif
+        Format(instr, "cmp     'ra, 'rb");
+#if V8_TARGET_ARCH_PPC64
+      } else {
+        Format(instr, "cmpw    'ra, 'rb");
+      }
+#endif
       break;
     }
     case SLWX: {
@@ -683,7 +691,15 @@ void Decoder::DecodeExt2(Instruction* instr) {
       break;
     }
     case CMPL: {
-      Format(instr, "cmpl    'ra, 'rb");
+#if V8_TARGET_ARCH_PPC64
+      if (instr->Bit(21)) {
+#endif
+        Format(instr, "cmpl    'ra, 'rb");
+#if V8_TARGET_ARCH_PPC64
+      } else {
+        Format(instr, "cmplw   'ra, 'rb");
+      }
+#endif
       break;
     }
     case NEGX: {
@@ -977,11 +993,27 @@ int Decoder::InstructionDecode(byte* instr_ptr) {
       break;
     }
     case CMPLI: {
-      Format(instr, "cmpli   'ra, 'uint16");
+#if V8_TARGET_ARCH_PPC64
+      if (instr->Bit(21)) {
+#endif
+        Format(instr, "cmpli   'ra, 'uint16");
+#if V8_TARGET_ARCH_PPC64
+      } else {
+        Format(instr, "cmplwi  'ra, 'uint16");
+      }
+#endif
       break;
     }
     case CMPI: {
-      Format(instr, "cmpi    'ra, 'int16");
+#if V8_TARGET_ARCH_PPC64
+      if (instr->Bit(21)) {
+#endif
+        Format(instr, "cmpi    'ra, 'int16");
+#if V8_TARGET_ARCH_PPC64
+      } else {
+        Format(instr, "cmpwi   'ra, 'int16");
+      }
+#endif
       break;
     }
     case ADDIC: {

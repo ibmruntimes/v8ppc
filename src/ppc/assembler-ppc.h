@@ -876,6 +876,8 @@ class Assembler : public AssemblerBase {
   void xor_(Register dst, Register src1, Register src2, RCBit rc = LeaveRC);
   void cmpi(Register src1, const Operand& src2, CRegister cr = cr7);
   void cmpli(Register src1, const Operand& src2, CRegister cr = cr7);
+  void cmpwi(Register src1, const Operand& src2, CRegister cr = cr7);
+  void cmplwi(Register src1, const Operand& src2, CRegister cr = cr7);
   void li(Register dst, const Operand& src);
   void lis(Register dst, const Operand& imm);
   void mr(Register dst, Register src);
@@ -960,6 +962,8 @@ class Assembler : public AssemblerBase {
 
   void cmp(Register src1, Register src2, CRegister cr = cr7);
   void cmpl(Register src1, Register src2, CRegister cr = cr7);
+  void cmpw(Register src1, Register src2, CRegister cr = cr7);
+  void cmplw(Register src1, Register src2, CRegister cr = cr7);
 
   void mov(Register dst, const Operand& src);
 

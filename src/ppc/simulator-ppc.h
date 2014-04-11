@@ -268,7 +268,8 @@ class Simulator {
   void DecodeBranchConditional(Instruction* instr);
   void DecodeExt1(Instruction* instr);
   bool DecodeExt2_10bit(Instruction* instr);
-  void DecodeExt2_9bit(Instruction* instr);
+  bool DecodeExt2_9bit_part1(Instruction* instr);
+  void DecodeExt2_9bit_part2(Instruction* instr);
   void DecodeExt2(Instruction* instr);
   void DecodeExt4(Instruction* instr);
 #if V8_TARGET_ARCH_PPC64
