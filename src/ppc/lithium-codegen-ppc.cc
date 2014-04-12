@@ -1654,7 +1654,7 @@ void LCodeGen::DoMulI(LMulI* instr) {
 #if V8_TARGET_ARCH_PPC64
       } else {
         __ xor_(r0, left, right);
-        __ cmpwi(scratch, Operand::Zero());
+        __ cmpwi(r0, Operand::Zero());
         __ bge(&done);
       }
 #endif
@@ -2219,7 +2219,12 @@ void LCodeGen::DoBranch(LBranch* instr) {
   const uint crZOrNaNBits = (1 << (31 - Assembler::encode_crbit(cr7, CR_EQ)) |
                              1 << (31 - Assembler::encode_crbit(cr7, CR_FU)));
 
-  if (r.IsInteger32() || r.IsSmi()) {
+  if (r.IsInteger32()) {
+    ASSERT(!info()->IsStub());
+    Register reg = ToRegister(instr->value());
+    __ cmpwi(reg, Operand::Zero());
+    EmitBranch(instr, ne);
+  } else if (r.IsSmi()) {
     ASSERT(!info()->IsStub());
     Register reg = ToRegister(instr->value());
     __ cmpi(reg, Operand::Zero());
