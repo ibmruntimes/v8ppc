@@ -4615,13 +4615,14 @@ void FullCodeGenerator::EmitLiteralCompareTypeof(Expression* expr,
   }
   PrepareForBailoutBeforeSplit(expr, true, if_true, if_false);
 
-  if (check->Equals(isolate()->heap()->number_string())) {
+  Factory* factory = isolate()->factory();
+  if (String::Equals(check, factory->number_string())) {
     __ JumpIfSmi(r3, if_true);
     __ LoadP(r3, FieldMemOperand(r3, HeapObject::kMapOffset));
     __ LoadRoot(ip, Heap::kHeapNumberMapRootIndex);
     __ cmp(r3, ip);
     Split(eq, if_true, if_false, fall_through);
-  } else if (check->Equals(isolate()->heap()->string_string())) {
+  } else if (String::Equals(check, factory->string_string())) {
     __ JumpIfSmi(r3, if_false);
     // Check for undetectable objects => false.
     __ CompareObjectType(r3, r3, r4, FIRST_NONSTRING_TYPE);
@@ -4630,20 +4631,20 @@ void FullCodeGenerator::EmitLiteralCompareTypeof(Expression* expr,
     STATIC_ASSERT((1 << Map::kIsUndetectable) < 0x8000);
     __ andi(r0, r4, Operand(1 << Map::kIsUndetectable));
     Split(eq, if_true, if_false, fall_through, cr0);
-  } else if (check->Equals(isolate()->heap()->symbol_string())) {
+  } else if (String::Equals(check, factory->symbol_string())) {
     __ JumpIfSmi(r3, if_false);
     __ CompareObjectType(r3, r3, r4, SYMBOL_TYPE);
     Split(eq, if_true, if_false, fall_through);
-  } else if (check->Equals(isolate()->heap()->boolean_string())) {
+  } else if (String::Equals(check, factory->boolean_string())) {
     __ CompareRoot(r3, Heap::kTrueValueRootIndex);
     __ beq(if_true);
     __ CompareRoot(r3, Heap::kFalseValueRootIndex);
     Split(eq, if_true, if_false, fall_through);
   } else if (FLAG_harmony_typeof &&
-             check->Equals(isolate()->heap()->null_string())) {
+             String::Equals(check, factory->null_string())) {
     __ CompareRoot(r3, Heap::kNullValueRootIndex);
     Split(eq, if_true, if_false, fall_through);
-  } else if (check->Equals(isolate()->heap()->undefined_string())) {
+  } else if (String::Equals(check, factory->undefined_string())) {
     __ CompareRoot(r3, Heap::kUndefinedValueRootIndex);
     __ beq(if_true);
     __ JumpIfSmi(r3, if_false);
@@ -4653,14 +4654,14 @@ void FullCodeGenerator::EmitLiteralCompareTypeof(Expression* expr,
     __ andi(r0, r4, Operand(1 << Map::kIsUndetectable));
     Split(ne, if_true, if_false, fall_through, cr0);
 
-  } else if (check->Equals(isolate()->heap()->function_string())) {
+  } else if (String::Equals(check, factory->function_string())) {
     __ JumpIfSmi(r3, if_false);
     STATIC_ASSERT(NUM_OF_CALLABLE_SPEC_OBJECT_TYPES == 2);
     __ CompareObjectType(r3, r3, r4, JS_FUNCTION_TYPE);
     __ beq(if_true);
     __ cmpi(r4, Operand(JS_FUNCTION_PROXY_TYPE));
     Split(eq, if_true, if_false, fall_through);
-  } else if (check->Equals(isolate()->heap()->object_string())) {
+  } else if (String::Equals(check, factory->object_string())) {
     __ JumpIfSmi(r3, if_false);
     if (!FLAG_harmony_typeof) {
       __ CompareRoot(r3, Heap::kNullValueRootIndex);
