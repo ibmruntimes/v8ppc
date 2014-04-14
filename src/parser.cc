@@ -224,7 +224,31 @@ Handle<String> Parser::LookupCachedSymbol(int symbol_id) {
 }
 
 
-FunctionEntry ScriptDataImpl::GetFunctionEntry(int start) {
+ScriptData* ScriptData::New(const char* data, int length) {
+  // The length is obviously invalid.
+  if (length % sizeof(unsigned) != 0) {
+    return NULL;
+  }
+
+  int deserialized_data_length = length / sizeof(unsigned);
+  unsigned* deserialized_data;
+  bool owns_store = reinterpret_cast<intptr_t>(data) % sizeof(unsigned) != 0;
+  if (owns_store) {
+    // Copy the data to align it.
+    deserialized_data = i::NewArray<unsigned>(deserialized_data_length);
+    i::CopyBytes(reinterpret_cast<char*>(deserialized_data),
+                 data, static_cast<size_t>(length));
+  } else {
+    // If aligned, don't create a copy of the data.
+    deserialized_data = reinterpret_cast<unsigned*>(const_cast<char*>(data));
+  }
+  return new ScriptData(
+      Vector<unsigned>(deserialized_data, deserialized_data_length),
+      owns_store);
+}
+
+
+FunctionEntry ScriptData::GetFunctionEntry(int start) {
   // The current pre-data entry must be a FunctionEntry with the given
   // start position.
   if ((function_index_ + FunctionEntry::kSize <= store_.length())
@@ -238,12 +262,12 @@ FunctionEntry ScriptDataImpl::GetFunctionEntry(int start) {
 }
 
 
-int ScriptDataImpl::GetSymbolIdentifier() {
+int ScriptData::GetSymbolIdentifier() {
   return ReadNumber(&symbol_data_);
 }
 
 
-bool ScriptDataImpl::SanityCheck() {
+bool ScriptData::SanityCheck() {
   // Check that the header data is valid and doesn't specify
   // point to positions outside the store.
   if (store_.length() < PreparseDataConstants::kHeaderSize) return false;
@@ -292,7 +316,7 @@ bool ScriptDataImpl::SanityCheck() {
 
 
 
-const char* ScriptDataImpl::ReadString(unsigned* start, int* chars) {
+const char* ScriptData::ReadString(unsigned* start, int* chars) {
   int length = start[0];
   char* result = NewArray<char>(length + 1);
   for (int i = 0; i < length; i++) {
@@ -304,25 +328,25 @@ const char* ScriptDataImpl::ReadString(unsigned* start, int* chars) {
 }
 
 
-Scanner::Location ScriptDataImpl::MessageLocation() const {
+Scanner::Location ScriptData::MessageLocation() const {
   int beg_pos = Read(PreparseDataConstants::kMessageStartPos);
   int end_pos = Read(PreparseDataConstants::kMessageEndPos);
   return Scanner::Location(beg_pos, end_pos);
 }
 
 
-bool ScriptDataImpl::IsReferenceError() const {
+bool ScriptData::IsReferenceError() const {
   return Read(PreparseDataConstants::kIsReferenceErrorPos);
 }
 
 
-const char* ScriptDataImpl::BuildMessage() const {
+const char* ScriptData::BuildMessage() const {
   unsigned* start = ReadAddress(PreparseDataConstants::kMessageTextPos);
   return ReadString(start, NULL);
 }
 
 
-Vector<const char*> ScriptDataImpl::BuildArgs() const {
+Vector<const char*> ScriptData::BuildArgs() const {
   int arg_count = Read(PreparseDataConstants::kMessageArgCountPos);
   const char** array = NewArray<const char*>(arg_count);
   // Position after text found by skipping past length field and
@@ -338,12 +362,12 @@ Vector<const char*> ScriptDataImpl::BuildArgs() const {
 }
 
 
-unsigned ScriptDataImpl::Read(int position) const {
+unsigned ScriptData::Read(int position) const {
   return store_[PreparseDataConstants::kHeaderSize + position];
 }
 
 
-unsigned* ScriptDataImpl::ReadAddress(int position) const {
+unsigned* ScriptData::ReadAddress(int position) const {
   return &store_[PreparseDataConstants::kHeaderSize + position];
 }
 
@@ -714,9 +738,9 @@ Handle<String> ParserTraits::GetSymbol(Scanner* scanner) {
       return parser_->LookupCachedSymbol(symbol_id);
     }
   } else if (parser_->cached_data_mode() == PRODUCE_CACHED_DATA) {
-    if (parser_->log_->ShouldLogSymbols()) {
-      parser_->scanner()->LogSymbol(parser_->log_, parser_->position());
-    }
+    // Parser is never used inside lazy functions (it falls back to PreParser
+    // instead), so we can produce the symbol data unconditionally.
+    parser_->scanner()->LogSymbol(parser_->log_, parser_->position());
   }
   Handle<String> result =
       parser_->scanner()->AllocateInternalizedString(parser_->isolate());
@@ -890,7 +914,7 @@ FunctionLiteral* Parser::ParseProgram() {
   }
   if (cached_data_mode_ == PRODUCE_CACHED_DATA) {
     Vector<unsigned> store = recorder.ExtractData();
-    *cached_data_ = new ScriptDataImpl(store);
+    *cached_data_ = new ScriptData(store);
     log_ = NULL;
   }
   return result;
@@ -1126,7 +1150,8 @@ void* Parser::ParseSourceElements(ZoneList<Statement*>* processor,
 
         // Check "use strict" directive (ES5 14.1).
         if (strict_mode() == SLOPPY &&
-            directive->Equals(isolate()->heap()->use_strict_string()) &&
+            String::Equals(isolate()->factory()->use_strict_string(),
+                           directive) &&
             token_loc.end_pos - token_loc.beg_pos ==
               isolate()->heap()->use_strict_string()->length() + 2) {
           // TODO(mstarzinger): Global strict eval calls, need their own scope
@@ -1195,8 +1220,8 @@ Statement* Parser::ParseModuleElement(ZoneStringList* labels,
         ExpressionStatement* estmt = stmt->AsExpressionStatement();
         if (estmt != NULL &&
             estmt->expression()->AsVariableProxy() != NULL &&
-            estmt->expression()->AsVariableProxy()->name()->Equals(
-                isolate()->heap()->module_string()) &&
+            String::Equals(isolate()->factory()->module_string(),
+                           estmt->expression()->AsVariableProxy()->name()) &&
             !scanner()->literal_contains_escapes()) {
           return ParseModuleDeclaration(NULL, ok);
         }
@@ -2393,8 +2418,8 @@ Statement* Parser::ParseExpressionOrLabelledStatement(ZoneStringList* labels,
       !scanner()->HasAnyLineTerminatorBeforeNext() &&
       expr != NULL &&
       expr->AsVariableProxy() != NULL &&
-      expr->AsVariableProxy()->name()->Equals(
-          isolate()->heap()->native_string()) &&
+      String::Equals(isolate()->factory()->native_string(),
+                     expr->AsVariableProxy()->name()) &&
       !scanner()->literal_contains_escapes()) {
     return ParseNativeDeclaration(ok);
   }
@@ -2405,8 +2430,8 @@ Statement* Parser::ParseExpressionOrLabelledStatement(ZoneStringList* labels,
       peek() != Token::IDENTIFIER ||
       scanner()->HasAnyLineTerminatorBeforeNext() ||
       expr->AsVariableProxy() == NULL ||
-      !expr->AsVariableProxy()->name()->Equals(
-          isolate()->heap()->module_string()) ||
+      !String::Equals(isolate()->factory()->module_string(),
+                      expr->AsVariableProxy()->name()) ||
       scanner()->literal_contains_escapes()) {
     ExpectSemicolon(CHECK_OK);
   }
@@ -3111,10 +3136,10 @@ DebuggerStatement* Parser::ParseDebuggerStatement(bool* ok) {
 }
 
 
-void Parser::ReportInvalidPreparseData(Handle<String> name, bool* ok) {
+void Parser::ReportInvalidCachedData(Handle<String> name, bool* ok) {
   SmartArrayPointer<char> name_string = name->ToCString(DISALLOW_NULLS);
   const char* element[1] = { name_string.get() };
-  ReportMessage("invalid_preparser_data",
+  ReportMessage("invalid_cached_data_function",
                 Vector<const char*>(element, 1));
   *ok = false;
 }
@@ -3375,7 +3400,7 @@ FunctionLiteral* Parser::ParseFunctionLiteral(
           if (entry.end_pos() <= function_block_pos) {
             // End position greater than end of stream is safe, and hard
             // to check.
-            ReportInvalidPreparseData(function_name, CHECK_OK);
+            ReportInvalidCachedData(function_name, CHECK_OK);
           }
           scanner()->SeekForward(entry.end_pos() - 1);
 
@@ -3388,20 +3413,13 @@ FunctionLiteral* Parser::ParseFunctionLiteral(
           scope_->SetStrictMode(entry.strict_mode());
         } else {
           // This case happens when we have preparse data but it doesn't contain
-          // an entry for the function. As a safety net, fall back to eager
-          // parsing. It is unclear whether PreParser's laziness analysis can
-          // produce different results than the Parser's laziness analysis (see
-          // https://codereview.chromium.org/7565003 ). In this case, we must
-          // discard all the preparse data, since the symbol data will be wrong.
-          is_lazily_parsed = false;
-          cached_data_mode_ = NO_CACHED_DATA;
+          // an entry for the function. Fail the compilation.
+          ReportInvalidCachedData(function_name, CHECK_OK);
         }
       } else {
         // With no cached data, we partially parse the function, without
         // building an AST. This gathers the data needed to build a lazy
         // function.
-        // FIXME(marja): Now the PreParser doesn't need to log functions /
-        // symbols; only errors -> clean that up.
         SingletonLogger logger;
         PreParser::PreParseResult result = LazyParseFunctionLiteral(&logger);
         if (result == PreParser::kPreParseStackOverflow) {
@@ -4536,27 +4554,27 @@ RegExpTree* RegExpParser::ParseCharacterClass() {
 // ----------------------------------------------------------------------------
 // The Parser interface.
 
-ScriptDataImpl::~ScriptDataImpl() {
+ScriptData::~ScriptData() {
   if (owns_store_) store_.Dispose();
 }
 
 
-int ScriptDataImpl::Length() {
+int ScriptData::Length() {
   return store_.length() * sizeof(unsigned);
 }
 
 
-const char* ScriptDataImpl::Data() {
+const char* ScriptData::Data() {
   return reinterpret_cast<const char*>(store_.start());
 }
 
 
-bool ScriptDataImpl::HasError() {
+bool ScriptData::HasError() {
   return has_error();
 }
 
 
-void ScriptDataImpl::Initialize() {
+void ScriptData::Initialize() {
   // Prepares state for use.
   if (store_.length() >= PreparseDataConstants::kHeaderSize) {
     function_index_ = PreparseDataConstants::kHeaderSize;
@@ -4573,7 +4591,7 @@ void ScriptDataImpl::Initialize() {
 }
 
 
-int ScriptDataImpl::ReadNumber(byte** source) {
+int ScriptData::ReadNumber(byte** source) {
   // Reads a number from symbol_data_ in base 128. The most significant
   // bit marks that there are more digits.
   // If the first byte is 0x80 (kNumberTerminator), it would normally
@@ -4597,33 +4615,6 @@ int ScriptDataImpl::ReadNumber(byte** source) {
   }
   *source = data;
   return result;
-}
-
-
-// Create a Scanner for the preparser to use as input, and preparse the source.
-ScriptDataImpl* PreParserApi::PreParse(Isolate* isolate,
-                                       Utf16CharacterStream* source) {
-  CompleteParserRecorder recorder;
-  HistogramTimerScope timer(isolate->counters()->pre_parse());
-  Scanner scanner(isolate->unicode_cache());
-  intptr_t stack_limit = isolate->stack_guard()->real_climit();
-  PreParser preparser(&scanner, &recorder, stack_limit);
-  preparser.set_allow_lazy(true);
-  preparser.set_allow_generators(FLAG_harmony_generators);
-  preparser.set_allow_for_of(FLAG_harmony_iteration);
-  preparser.set_allow_harmony_scoping(FLAG_harmony_scoping);
-  preparser.set_allow_harmony_numeric_literals(FLAG_harmony_numeric_literals);
-  scanner.Initialize(source);
-  PreParser::PreParseResult result = preparser.PreParseProgram();
-  if (result == PreParser::kPreParseStackOverflow) {
-    isolate->StackOverflow();
-    return NULL;
-  }
-
-  // Extract the accumulated data from the recorder as a single
-  // contiguous vector that we are responsible for disposing.
-  Vector<unsigned> store = recorder.ExtractData();
-  return new ScriptDataImpl(store);
 }
 
 
@@ -4664,7 +4655,7 @@ bool Parser::Parse() {
     SetCachedData(info()->cached_data(), info()->cached_data_mode());
     if (info()->cached_data_mode() == CONSUME_CACHED_DATA &&
         (*info()->cached_data())->has_error()) {
-      ScriptDataImpl* cached_data = *(info()->cached_data());
+      ScriptData* cached_data = *(info()->cached_data());
       Scanner::Location loc = cached_data->MessageLocation();
       const char* message = cached_data->BuildMessage();
       Vector<const char*> args = cached_data->BuildArgs();

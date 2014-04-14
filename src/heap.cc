@@ -1714,180 +1714,6 @@ void Heap::UpdateReferencesInExternalStringTable(
 }
 
 
-template <class T>
-struct WeakListVisitor;
-
-
-template <class T>
-static Object* VisitWeakList(Heap* heap,
-                             Object* list,
-                             WeakObjectRetainer* retainer,
-                             bool record_slots) {
-  Object* undefined = heap->undefined_value();
-  Object* head = undefined;
-  T* tail = NULL;
-  MarkCompactCollector* collector = heap->mark_compact_collector();
-  while (list != undefined) {
-    // Check whether to keep the candidate in the list.
-    T* candidate = reinterpret_cast<T*>(list);
-    Object* retained = retainer->RetainAs(list);
-    if (retained != NULL) {
-      if (head == undefined) {
-        // First element in the list.
-        head = retained;
-      } else {
-        // Subsequent elements in the list.
-        ASSERT(tail != NULL);
-        WeakListVisitor<T>::SetWeakNext(tail, retained);
-        if (record_slots) {
-          Object** next_slot =
-            HeapObject::RawField(tail, WeakListVisitor<T>::WeakNextOffset());
-          collector->RecordSlot(next_slot, next_slot, retained);
-        }
-      }
-      // Retained object is new tail.
-      ASSERT(!retained->IsUndefined());
-      candidate = reinterpret_cast<T*>(retained);
-      tail = candidate;
-
-
-      // tail is a live object, visit it.
-      WeakListVisitor<T>::VisitLiveObject(
-          heap, tail, retainer, record_slots);
-    } else {
-      WeakListVisitor<T>::VisitPhantomObject(heap, candidate);
-    }
-
-    // Move to next element in the list.
-    list = WeakListVisitor<T>::WeakNext(candidate);
-  }
-
-  // Terminate the list if there is one or more elements.
-  if (tail != NULL) {
-    WeakListVisitor<T>::SetWeakNext(tail, undefined);
-  }
-  return head;
-}
-
-
-template <class T>
-static void ClearWeakList(Heap* heap,
-                          Object* list) {
-  Object* undefined = heap->undefined_value();
-  while (list != undefined) {
-    T* candidate = reinterpret_cast<T*>(list);
-    list = WeakListVisitor<T>::WeakNext(candidate);
-    WeakListVisitor<T>::SetWeakNext(candidate, undefined);
-  }
-}
-
-
-template<>
-struct WeakListVisitor<JSFunction> {
-  static void SetWeakNext(JSFunction* function, Object* next) {
-    function->set_next_function_link(next);
-  }
-
-  static Object* WeakNext(JSFunction* function) {
-    return function->next_function_link();
-  }
-
-  static int WeakNextOffset() {
-    return JSFunction::kNextFunctionLinkOffset;
-  }
-
-  static void VisitLiveObject(Heap*, JSFunction*,
-                              WeakObjectRetainer*, bool) {
-  }
-
-  static void VisitPhantomObject(Heap*, JSFunction*) {
-  }
-};
-
-
-template<>
-struct WeakListVisitor<Code> {
-  static void SetWeakNext(Code* code, Object* next) {
-    code->set_next_code_link(next);
-  }
-
-  static Object* WeakNext(Code* code) {
-    return code->next_code_link();
-  }
-
-  static int WeakNextOffset() {
-    return Code::kNextCodeLinkOffset;
-  }
-
-  static void VisitLiveObject(Heap*, Code*,
-                              WeakObjectRetainer*, bool) {
-  }
-
-  static void VisitPhantomObject(Heap*, Code*) {
-  }
-};
-
-
-template<>
-struct WeakListVisitor<Context> {
-  static void SetWeakNext(Context* context, Object* next) {
-    context->set(Context::NEXT_CONTEXT_LINK,
-                 next,
-                 UPDATE_WRITE_BARRIER);
-  }
-
-  static Object* WeakNext(Context* context) {
-    return context->get(Context::NEXT_CONTEXT_LINK);
-  }
-
-  static void VisitLiveObject(Heap* heap,
-                              Context* context,
-                              WeakObjectRetainer* retainer,
-                              bool record_slots) {
-    // Process the three weak lists linked off the context.
-    DoWeakList<JSFunction>(heap, context, retainer, record_slots,
-        Context::OPTIMIZED_FUNCTIONS_LIST);
-    DoWeakList<Code>(heap, context, retainer, record_slots,
-        Context::OPTIMIZED_CODE_LIST);
-    DoWeakList<Code>(heap, context, retainer, record_slots,
-        Context::DEOPTIMIZED_CODE_LIST);
-  }
-
-  template<class T>
-  static void DoWeakList(Heap* heap,
-                         Context* context,
-                         WeakObjectRetainer* retainer,
-                         bool record_slots,
-                         int index) {
-    // Visit the weak list, removing dead intermediate elements.
-    Object* list_head = VisitWeakList<T>(heap, context->get(index), retainer,
-        record_slots);
-
-    // Update the list head.
-    context->set(index, list_head, UPDATE_WRITE_BARRIER);
-
-    if (record_slots) {
-      // Record the updated slot if necessary.
-      Object** head_slot = HeapObject::RawField(
-          context, FixedArray::SizeFor(index));
-      heap->mark_compact_collector()->RecordSlot(
-          head_slot, head_slot, list_head);
-    }
-  }
-
-  static void VisitPhantomObject(Heap* heap, Context* context) {
-    ClearWeakList<JSFunction>(heap,
-        context->get(Context::OPTIMIZED_FUNCTIONS_LIST));
-    ClearWeakList<Code>(heap, context->get(Context::OPTIMIZED_CODE_LIST));
-    ClearWeakList<Code>(heap, context->get(Context::DEOPTIMIZED_CODE_LIST));
-  }
-
-  static int WeakNextOffset() {
-    return FixedArray::SizeFor(Context::NEXT_CONTEXT_LINK);
-  }
-};
-
-
 void Heap::ProcessWeakReferences(WeakObjectRetainer* retainer) {
   // We don't record weak slots during marking or scavenges.
   // Instead we do it once when we complete mark-compact cycle.
@@ -1913,66 +1739,6 @@ void Heap::ProcessNativeContexts(WeakObjectRetainer* retainer,
 }
 
 
-template<>
-struct WeakListVisitor<JSArrayBufferView> {
-  static void SetWeakNext(JSArrayBufferView* obj, Object* next) {
-    obj->set_weak_next(next);
-  }
-
-  static Object* WeakNext(JSArrayBufferView* obj) {
-    return obj->weak_next();
-  }
-
-  static void VisitLiveObject(Heap*,
-                              JSArrayBufferView* obj,
-                              WeakObjectRetainer* retainer,
-                              bool record_slots) {}
-
-  static void VisitPhantomObject(Heap*, JSArrayBufferView*) {}
-
-  static int WeakNextOffset() {
-    return JSArrayBufferView::kWeakNextOffset;
-  }
-};
-
-
-template<>
-struct WeakListVisitor<JSArrayBuffer> {
-  static void SetWeakNext(JSArrayBuffer* obj, Object* next) {
-    obj->set_weak_next(next);
-  }
-
-  static Object* WeakNext(JSArrayBuffer* obj) {
-    return obj->weak_next();
-  }
-
-  static void VisitLiveObject(Heap* heap,
-                              JSArrayBuffer* array_buffer,
-                              WeakObjectRetainer* retainer,
-                              bool record_slots) {
-    Object* typed_array_obj =
-        VisitWeakList<JSArrayBufferView>(
-            heap,
-            array_buffer->weak_first_view(),
-            retainer, record_slots);
-    array_buffer->set_weak_first_view(typed_array_obj);
-    if (typed_array_obj != heap->undefined_value() && record_slots) {
-      Object** slot = HeapObject::RawField(
-          array_buffer, JSArrayBuffer::kWeakFirstViewOffset);
-      heap->mark_compact_collector()->RecordSlot(slot, slot, typed_array_obj);
-    }
-  }
-
-  static void VisitPhantomObject(Heap* heap, JSArrayBuffer* phantom) {
-    Runtime::FreeArrayBuffer(heap->isolate(), phantom);
-  }
-
-  static int WeakNextOffset() {
-    return JSArrayBuffer::kWeakNextOffset;
-  }
-};
-
-
 void Heap::ProcessArrayBuffers(WeakObjectRetainer* retainer,
                                bool record_slots) {
   Object* array_buffer_obj =
@@ -1992,29 +1758,6 @@ void Heap::TearDownArrayBuffers() {
   }
   array_buffers_list_ = undefined;
 }
-
-
-template<>
-struct WeakListVisitor<AllocationSite> {
-  static void SetWeakNext(AllocationSite* obj, Object* next) {
-    obj->set_weak_next(next);
-  }
-
-  static Object* WeakNext(AllocationSite* obj) {
-    return obj->weak_next();
-  }
-
-  static void VisitLiveObject(Heap* heap,
-                              AllocationSite* site,
-                              WeakObjectRetainer* retainer,
-                              bool record_slots) {}
-
-  static void VisitPhantomObject(Heap* heap, AllocationSite* phantom) {}
-
-  static int WeakNextOffset() {
-    return AllocationSite::kWeakNextOffset;
-  }
-};
 
 
 void Heap::ProcessAllocationSites(WeakObjectRetainer* retainer,
@@ -4167,7 +3910,11 @@ MaybeObject* Heap::CreateCode(const CodeDesc& desc,
   code->set_ic_age(global_ic_age_);
   code->set_prologue_offset(prologue_offset);
   if (code->kind() == Code::OPTIMIZED_FUNCTION) {
-    code->set_marked_for_deoptimization(false);
+    ASSERT(!code->marked_for_deoptimization());
+  }
+  if (code->is_inline_cache_stub()) {
+    ASSERT(!code->is_weak_stub());
+    ASSERT(!code->is_invalidated_weak_stub());
   }
 
   if (FLAG_enable_ool_constant_pool) {
@@ -4536,46 +4283,6 @@ MaybeObject* Heap::AllocateJSObject(JSFunction* constructor,
   ASSERT(!result->ToObject(&non_failure) || !non_failure->IsGlobalObject());
 #endif
   return result;
-}
-
-
-MaybeObject* Heap::AllocateJSArrayStorage(
-    JSArray* array,
-    int length,
-    int capacity,
-    ArrayStorageAllocationMode mode) {
-  ASSERT(capacity >= length);
-
-  if (capacity == 0) {
-    array->set_length(Smi::FromInt(0));
-    array->set_elements(empty_fixed_array());
-    return array;
-  }
-
-  FixedArrayBase* elms;
-  MaybeObject* maybe_elms = NULL;
-  ElementsKind elements_kind = array->GetElementsKind();
-  if (IsFastDoubleElementsKind(elements_kind)) {
-    if (mode == DONT_INITIALIZE_ARRAY_ELEMENTS) {
-      maybe_elms = AllocateUninitializedFixedDoubleArray(capacity);
-    } else {
-      ASSERT(mode == INITIALIZE_ARRAY_ELEMENTS_WITH_HOLE);
-      maybe_elms = AllocateFixedDoubleArrayWithHoles(capacity);
-    }
-  } else {
-    ASSERT(IsFastSmiOrObjectElementsKind(elements_kind));
-    if (mode == DONT_INITIALIZE_ARRAY_ELEMENTS) {
-      maybe_elms = AllocateUninitializedFixedArray(capacity);
-    } else {
-      ASSERT(mode == INITIALIZE_ARRAY_ELEMENTS_WITH_HOLE);
-      maybe_elms = AllocateFixedArrayWithHoles(capacity);
-    }
-  }
-  if (!maybe_elms->To(&elms)) return maybe_elms;
-
-  array->set_elements(elms);
-  array->set_length(Smi::FromInt(length));
-  return array;
 }
 
 
@@ -5201,12 +4908,6 @@ MaybeObject* Heap::AllocateFixedArray(int length, PretenureFlag pretenure) {
 }
 
 
-MaybeObject* Heap::AllocateFixedArrayWithHoles(int length,
-                                               PretenureFlag pretenure) {
-  return AllocateFixedArrayWithFiller(length, pretenure, the_hole_value());
-}
-
-
 MaybeObject* Heap::AllocateUninitializedFixedArray(int length) {
   if (length == 0) return empty_fixed_array();
 
@@ -5247,27 +4948,6 @@ MaybeObject* Heap::AllocateUninitializedFixedDoubleArray(
   if (!maybe_obj->ToObject(&elements_object)) return maybe_obj;
   FixedDoubleArray* elements =
       reinterpret_cast<FixedDoubleArray*>(elements_object);
-
-  elements->set_map_no_write_barrier(fixed_double_array_map());
-  elements->set_length(length);
-  return elements;
-}
-
-
-MaybeObject* Heap::AllocateFixedDoubleArrayWithHoles(
-    int length,
-    PretenureFlag pretenure) {
-  if (length == 0) return empty_fixed_array();
-
-  Object* elements_object;
-  MaybeObject* maybe_obj = AllocateRawFixedDoubleArray(length, pretenure);
-  if (!maybe_obj->ToObject(&elements_object)) return maybe_obj;
-  FixedDoubleArray* elements =
-      reinterpret_cast<FixedDoubleArray*>(elements_object);
-
-  for (int i = 0; i < length; ++i) {
-    elements->set_the_hole(i);
-  }
 
   elements->set_map_no_write_barrier(fixed_double_array_map());
   elements->set_length(length);

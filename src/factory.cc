@@ -30,7 +30,9 @@ Handle<FixedArray> Factory::NewFixedArrayWithHoles(int size,
   ASSERT(0 <= size);
   CALL_HEAP_FUNCTION(
       isolate(),
-      isolate()->heap()->AllocateFixedArrayWithHoles(size, pretenure),
+      isolate()->heap()->AllocateFixedArrayWithFiller(size,
+                                                      pretenure,
+                                                      *the_hole_value()),
       FixedArray);
 }
 
@@ -50,6 +52,18 @@ Handle<FixedDoubleArray> Factory::NewFixedDoubleArray(int size,
       isolate(),
       isolate()->heap()->AllocateUninitializedFixedDoubleArray(size, pretenure),
       FixedDoubleArray);
+}
+
+
+Handle<FixedDoubleArray> Factory::NewFixedDoubleArrayWithHoles(
+    int size,
+    PretenureFlag pretenure) {
+  ASSERT(0 <= size);
+  Handle<FixedDoubleArray> array = NewFixedDoubleArray(size, pretenure);
+  for (int i = 0; i < size; ++i) {
+    array->set_the_hole(i);
+  }
+  return array;
 }
 
 
@@ -130,33 +144,6 @@ Handle<WeakHashTable> Factory::NewWeakHashTable(int at_least_space_for) {
                               USE_DEFAULT_MINIMUM_CAPACITY,
                               TENURED),
       WeakHashTable);
-}
-
-
-Handle<DescriptorArray> Factory::NewDescriptorArray(int number_of_descriptors,
-                                                    int slack) {
-  ASSERT(0 <= number_of_descriptors);
-  CALL_HEAP_FUNCTION(isolate(),
-                     DescriptorArray::Allocate(
-                         isolate(), number_of_descriptors, slack),
-                     DescriptorArray);
-}
-
-
-Handle<TransitionArray> Factory::NewTransitionArray(int number_of_transitions) {
-  ASSERT(0 <= number_of_transitions);
-  CALL_HEAP_FUNCTION(isolate(),
-                     TransitionArray::Allocate(
-                         isolate(), number_of_transitions),
-                     TransitionArray);
-}
-
-
-Handle<TransitionArray> Factory::NewSimpleTransitionArray(Handle<Map> target) {
-  CALL_HEAP_FUNCTION(isolate(),
-                     TransitionArray::AllocateSimple(
-                         isolate(), *target),
-                     TransitionArray);
 }
 
 
@@ -1122,7 +1109,7 @@ Handle<String> Factory::EmergencyNewError(const char* message,
       space--;
       if (space > 0) {
         Handle<String> arg_str = Handle<String>::cast(
-            Object::GetElementNoExceptionThrown(isolate(), args, i));
+            Object::GetElement(isolate(), args, i).ToHandleChecked());
         SmartArrayPointer<char> arg = arg_str->ToCString();
         Vector<char> v2(p, static_cast<int>(space));
         OS::StrNCpy(v2, arg.get(), space);
@@ -1145,8 +1132,8 @@ Handle<Object> Factory::NewError(const char* maker,
                                  const char* message,
                                  Handle<JSArray> args) {
   Handle<String> make_str = InternalizeUtf8String(maker);
-  Handle<Object> fun_obj = GlobalObject::GetPropertyNoExceptionThrown(
-      isolate()->js_builtins_object(), make_str);
+  Handle<Object> fun_obj = Object::GetProperty(
+      isolate()->js_builtins_object(), make_str).ToHandleChecked();
   // If the builtins haven't been properly configured yet this error
   // constructor may not have been defined.  Bail out.
   if (!fun_obj->IsJSFunction()) {
@@ -1158,12 +1145,15 @@ Handle<Object> Factory::NewError(const char* maker,
 
   // Invoke the JavaScript factory method. If an exception is thrown while
   // running the factory method, use the exception as the result.
-  bool caught_exception;
-  Handle<Object> result = Execution::TryCall(fun,
-                                             isolate()->js_builtins_object(),
-                                             ARRAY_SIZE(argv),
-                                             argv,
-                                             &caught_exception);
+  Handle<Object> result;
+  Handle<Object> exception;
+  if (!Execution::TryCall(fun,
+                          isolate()->js_builtins_object(),
+                          ARRAY_SIZE(argv),
+                          argv,
+                          &exception).ToHandle(&result)) {
+    return exception;
+  }
   return result;
 }
 
@@ -1176,19 +1166,21 @@ Handle<Object> Factory::NewError(Handle<String> message) {
 Handle<Object> Factory::NewError(const char* constructor,
                                  Handle<String> message) {
   Handle<String> constr = InternalizeUtf8String(constructor);
-  Handle<JSFunction> fun = Handle<JSFunction>::cast(
-      GlobalObject::GetPropertyNoExceptionThrown(
-          isolate()->js_builtins_object(), constr));
+  Handle<JSFunction> fun = Handle<JSFunction>::cast(Object::GetProperty(
+      isolate()->js_builtins_object(), constr).ToHandleChecked());
   Handle<Object> argv[] = { message };
 
   // Invoke the JavaScript factory method. If an exception is thrown while
   // running the factory method, use the exception as the result.
-  bool caught_exception;
-  Handle<Object> result = Execution::TryCall(fun,
-                                             isolate()->js_builtins_object(),
-                                             ARRAY_SIZE(argv),
-                                             argv,
-                                             &caught_exception);
+  Handle<Object> result;
+  Handle<Object> exception;
+  if (!Execution::TryCall(fun,
+                          isolate()->js_builtins_object(),
+                          ARRAY_SIZE(argv),
+                          argv,
+                          &exception).ToHandle(&result)) {
+    return exception;
+  }
   return result;
 }
 
@@ -1468,14 +1460,38 @@ Handle<JSArray> Factory::NewJSArrayWithElements(Handle<FixedArrayBase> elements,
 
 
 void Factory::NewJSArrayStorage(Handle<JSArray> array,
-                                     int length,
-                                     int capacity,
-                                     ArrayStorageAllocationMode mode) {
-  CALL_HEAP_FUNCTION_VOID(isolate(),
-                          isolate()->heap()->AllocateJSArrayStorage(*array,
-                                                                    length,
-                                                                    capacity,
-                                                                    mode));
+                                int length,
+                                int capacity,
+                                ArrayStorageAllocationMode mode) {
+  ASSERT(capacity >= length);
+
+  if (capacity == 0) {
+    array->set_length(Smi::FromInt(0));
+    array->set_elements(*empty_fixed_array());
+    return;
+  }
+
+  Handle<FixedArrayBase> elms;
+  ElementsKind elements_kind = array->GetElementsKind();
+  if (IsFastDoubleElementsKind(elements_kind)) {
+    if (mode == DONT_INITIALIZE_ARRAY_ELEMENTS) {
+      elms = NewFixedDoubleArray(capacity);
+    } else {
+      ASSERT(mode == INITIALIZE_ARRAY_ELEMENTS_WITH_HOLE);
+      elms = NewFixedDoubleArrayWithHoles(capacity);
+    }
+  } else {
+    ASSERT(IsFastSmiOrObjectElementsKind(elements_kind));
+    if (mode == DONT_INITIALIZE_ARRAY_ELEMENTS) {
+      elms = NewUninitializedFixedArray(capacity);
+    } else {
+      ASSERT(mode == INITIALIZE_ARRAY_ELEMENTS_WITH_HOLE);
+      elms = NewFixedArrayWithHoles(capacity);
+    }
+  }
+
+  array->set_elements(*elms);
+  array->set_length(Smi::FromInt(length));
 }
 
 
@@ -1689,17 +1705,6 @@ Handle<JSFunction> Factory::NewFunctionWithoutPrototype(
   Handle<JSFunction> fun = NewFunctionWithoutPrototypeHelper(name, strict_mode);
   fun->set_context(isolate()->context()->native_context());
   return fun;
-}
-
-
-Handle<Object> Factory::ToObject(Handle<Object> object) {
-  CALL_HEAP_FUNCTION(isolate(), object->ToObject(isolate()), Object);
-}
-
-
-Handle<Object> Factory::ToObject(Handle<Object> object,
-                                 Handle<Context> native_context) {
-  CALL_HEAP_FUNCTION(isolate(), object->ToObject(*native_context), Object);
 }
 
 
@@ -1991,28 +1996,25 @@ void Factory::SetRegExpIrregexpData(Handle<JSRegExp> regexp,
 
 
 
-void Factory::ConfigureInstance(Handle<FunctionTemplateInfo> desc,
-                                Handle<JSObject> instance,
-                                bool* pending_exception) {
+MaybeHandle<FunctionTemplateInfo> Factory::ConfigureInstance(
+    Handle<FunctionTemplateInfo> desc, Handle<JSObject> instance) {
   // Configure the instance by adding the properties specified by the
   // instance template.
   Handle<Object> instance_template(desc->instance_template(), isolate());
   if (!instance_template->IsUndefined()) {
-    Execution::ConfigureInstance(isolate(),
-                                 instance,
-                                 instance_template,
-                                 pending_exception);
-  } else {
-    *pending_exception = false;
+      RETURN_ON_EXCEPTION(
+          isolate(),
+          Execution::ConfigureInstance(isolate(), instance, instance_template),
+          FunctionTemplateInfo);
   }
+  return desc;
 }
 
 
 Handle<Object> Factory::GlobalConstantFor(Handle<String> name) {
-  Heap* h = isolate()->heap();
-  if (name->Equals(h->undefined_string())) return undefined_value();
-  if (name->Equals(h->nan_string())) return nan_value();
-  if (name->Equals(h->infinity_string())) return infinity_value();
+  if (String::Equals(name, undefined_string())) return undefined_value();
+  if (String::Equals(name, nan_string())) return nan_value();
+  if (String::Equals(name, infinity_string())) return infinity_value();
   return Handle<Object>::null();
 }
 

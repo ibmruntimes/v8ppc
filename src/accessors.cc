@@ -37,31 +37,9 @@
 #include "isolate.h"
 #include "list-inl.h"
 #include "property-details.h"
-#include "api.h"
 
 namespace v8 {
 namespace internal {
-
-
-static Handle<AccessorInfo> MakeAccessor(Isolate* isolate,
-                                         Handle<String> name,
-                                         AccessorGetterCallback getter,
-                                         AccessorSetterCallback setter,
-                                         PropertyAttributes attributes) {
-  Factory* factory = isolate->factory();
-  Handle<ExecutableAccessorInfo> info = factory->NewExecutableAccessorInfo();
-  info->set_property_attributes(attributes);
-  info->set_all_can_read(true);
-  info->set_all_can_write(true);
-  info->set_prohibits_overwriting(true);
-  info->set_name(*factory->length_string());
-  info->set_property_attributes(attributes);
-  Handle<Object> get = v8::FromCData(isolate, getter);
-  Handle<Object> set = v8::FromCData(isolate, setter);
-  info->set_getter(*get);
-  if (!(attributes & ReadOnly)) info->set_setter(*set);
-  return info;
-}
 
 
 template <class C>
@@ -102,10 +80,10 @@ MaybeObject* Accessors::ReadOnlySetAccessor(Isolate* isolate,
 
 
 static V8_INLINE bool CheckForName(Handle<String> name,
-                                   String* property_name,
+                                   Handle<String> property_name,
                                    int offset,
                                    int* object_offset) {
-  if (name->Equals(property_name)) {
+  if (String::Equals(name, property_name)) {
     *object_offset = offset;
     return true;
   }
@@ -122,7 +100,7 @@ bool Accessors::IsJSObjectFieldAccessor(typename T::TypeHandle type,
   Isolate* isolate = name->GetIsolate();
 
   if (type->Is(T::String())) {
-    return CheckForName(name, isolate->heap()->length_string(),
+    return CheckForName(name, isolate->factory()->length_string(),
                         String::kLengthOffset, object_offset);
   }
 
@@ -132,25 +110,25 @@ bool Accessors::IsJSObjectFieldAccessor(typename T::TypeHandle type,
   switch (map->instance_type()) {
     case JS_ARRAY_TYPE:
       return
-        CheckForName(name, isolate->heap()->length_string(),
+        CheckForName(name, isolate->factory()->length_string(),
                      JSArray::kLengthOffset, object_offset);
     case JS_TYPED_ARRAY_TYPE:
       return
-        CheckForName(name, isolate->heap()->length_string(),
+        CheckForName(name, isolate->factory()->length_string(),
                      JSTypedArray::kLengthOffset, object_offset) ||
-        CheckForName(name, isolate->heap()->byte_length_string(),
+        CheckForName(name, isolate->factory()->byte_length_string(),
                      JSTypedArray::kByteLengthOffset, object_offset) ||
-        CheckForName(name, isolate->heap()->byte_offset_string(),
+        CheckForName(name, isolate->factory()->byte_offset_string(),
                      JSTypedArray::kByteOffsetOffset, object_offset);
     case JS_ARRAY_BUFFER_TYPE:
       return
-        CheckForName(name, isolate->heap()->byte_length_string(),
+        CheckForName(name, isolate->factory()->byte_length_string(),
                      JSArrayBuffer::kByteLengthOffset, object_offset);
     case JS_DATA_VIEW_TYPE:
       return
-        CheckForName(name, isolate->heap()->byte_length_string(),
+        CheckForName(name, isolate->factory()->byte_length_string(),
                      JSDataView::kByteLengthOffset, object_offset) ||
-        CheckForName(name, isolate->heap()->byte_offset_string(),
+        CheckForName(name, isolate->factory()->byte_offset_string(),
                      JSDataView::kByteOffsetOffset, object_offset);
     default:
       return false;
@@ -224,13 +202,12 @@ MaybeObject* Accessors::ArraySetLength(Isolate* isolate,
 
   Handle<JSArray> array_handle = Handle<JSArray>::cast(object);
 
-  bool has_exception;
-  Handle<Object> uint32_v =
-      Execution::ToUint32(isolate, value, &has_exception);
-  if (has_exception) return Failure::Exception();
-  Handle<Object> number_v =
-      Execution::ToNumber(isolate, value, &has_exception);
-  if (has_exception) return Failure::Exception();
+  Handle<Object> uint32_v;
+  ASSIGN_RETURN_FAILURE_ON_EXCEPTION(
+      isolate, uint32_v, Execution::ToUint32(isolate, value));
+  Handle<Object> number_v;
+  ASSIGN_RETURN_FAILURE_ON_EXCEPTION(
+      isolate, number_v, Execution::ToNumber(isolate, value));
 
   if (uint32_v->Number() == number_v->Number()) {
     Handle<Object> result;
@@ -256,42 +233,24 @@ const AccessorDescriptor Accessors::ArrayLength = {
 // Accessors::StringLength
 //
 
-void Accessors::StringLengthGetter(
-    v8::Local<v8::String> name,
-    const v8::PropertyCallbackInfo<v8::Value>& info) {
-  i::Isolate* isolate = reinterpret_cast<i::Isolate*>(info.GetIsolate());
-  DisallowHeapAllocation no_allocation;
-  HandleScope scope(isolate);
-  Object* value = *Utils::OpenHandle(*info.This());
-  Object* result;
-  if (value->IsJSValue()) value = JSValue::cast(value)->value();
-  if (value->IsString()) {
-    result = Smi::FromInt(String::cast(value)->length());
-  } else {
-    // If object is not a string we return 0 to be compatible with WebKit.
-    // Note: Firefox returns the length of ToString(object).
-    result = Smi::FromInt(0);
-  }
-  info.GetReturnValue().Set(Utils::ToLocal(Handle<Object>(result, isolate)));
+
+MaybeObject* Accessors::StringGetLength(Isolate* isolate,
+                                        Object* object,
+                                        void*) {
+  Object* value = object;
+  if (object->IsJSValue()) value = JSValue::cast(object)->value();
+  if (value->IsString()) return Smi::FromInt(String::cast(value)->length());
+  // If object is not a string we return 0 to be compatible with WebKit.
+  // Note: Firefox returns the length of ToString(object).
+  return Smi::FromInt(0);
 }
 
 
-void Accessors::StringLengthSetter(
-    v8::Local<v8::String> name,
-    v8::Local<v8::Value> value,
-    const v8::PropertyCallbackInfo<void>& info) {
-  UNREACHABLE();
-}
-
-
-Handle<AccessorInfo> Accessors::StringLengthInfo(
-      Isolate* isolate, PropertyAttributes attributes) {
-  return MakeAccessor(isolate,
-                      isolate->factory()->length_string(),
-                      &StringLengthGetter,
-                      &StringLengthSetter,
-                      attributes);
-}
+const AccessorDescriptor Accessors::StringLength = {
+  StringGetLength,
+  IllegalSetter,
+  0
+};
 
 
 //

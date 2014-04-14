@@ -105,7 +105,7 @@ class ToplevelTest(unittest.TestCase):
     self.assertEquals({"10": "100", "9": "99:99", "3": "91:98"},
                       B([["100", "10"], ["99", "9"], ["91", "3"]]))
     self.assertEquals({"13": "101", "12": "100:100", "9": "94:97",
-                       "3": "91:93,98:99"},
+                       "3": "91:93, 98:99"},
                       B([["101", "13"], ["100", "12"], ["98", "3"],
                          ["94", "9"], ["91", "3"]]))
 
@@ -1187,7 +1187,8 @@ LOG=N
       Git("diff --name-only hash2 hash2^", TEST_CONFIG[VERSION_FILE]),
       Git("checkout -f hash2 -- %s" % TEST_CONFIG[VERSION_FILE], "",
           cb=ResetVersion(3, 1, 1)),
-      Git("log -1 --format=%B hash2", "Version 3.3.1.1 (merged 12)"),
+      Git("log -1 --format=%B hash2",
+          "Version 3.3.1.1 (merged 12)\n\nReview URL: fake.com\n"),
       Git("log -1 --format=%s hash2", ""),
       Git("svn find-rev hash2", "234"),
       Git("checkout -f HEAD -- %s" % TEST_CONFIG[VERSION_FILE], "",
@@ -1197,6 +1198,7 @@ LOG=N
       Git("diff --name-only hash3 hash3^", TEST_CONFIG[VERSION_FILE]),
       Git("checkout -f hash3 -- %s" % TEST_CONFIG[VERSION_FILE], "",
           cb=ResetVersion(21, 2)),
+      Git("log -1 --format=%B hash3", ""),
       Git("log -1 --format=%s hash3", ""),
       Git("svn find-rev hash3", "123"),
       Git("checkout -f HEAD -- %s" % TEST_CONFIG[VERSION_FILE], "",
@@ -1206,6 +1208,7 @@ LOG=N
       Git("diff --name-only hash6 hash6^", TEST_CONFIG[VERSION_FILE]),
       Git("checkout -f hash6 -- %s" % TEST_CONFIG[VERSION_FILE], "",
           cb=ResetVersion(22, 3)),
+      Git("log -1 --format=%B hash6", ""),
       Git("log -1 --format=%s hash6", ""),
       Git("svn find-rev hash6", "345"),
       Git("checkout -f HEAD -- %s" % TEST_CONFIG[VERSION_FILE], "",
@@ -1243,11 +1246,17 @@ LOG=N
 
     expected_json = [
       {"bleeding_edge": "", "patches_merged": "", "version": "3.22.3",
-       "chromium_revision": "4567", "branch": "trunk", "revision": "345"},
+       "chromium_revision": "4567", "branch": "trunk", "revision": "345",
+       "review_link": "",
+       "revision_link": "https://code.google.com/p/v8/source/detail?r=345"},
       {"patches_merged": "", "bleeding_edge": "", "version": "3.21.2",
-       "branch": "3.21", "revision": "123"},
+       "chromium_revision": "", "branch": "3.21", "revision": "123",
+       "review_link": "",
+       "revision_link": "https://code.google.com/p/v8/source/detail?r=123"},
       {"patches_merged": "12", "bleeding_edge": "", "version": "3.3.1.1",
-       "branch": "3.3", "revision": "234"}
+       "chromium_revision": "", "branch": "3.3", "revision": "234",
+       "review_link": "fake.com",
+       "revision_link": "https://code.google.com/p/v8/source/detail?r=234"},
     ]
     self.assertEquals(expected_json, json.loads(FileToText(json_output)))
 

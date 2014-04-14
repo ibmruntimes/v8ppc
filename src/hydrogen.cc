@@ -5343,6 +5343,24 @@ HCheckMaps* HOptimizedGraphBuilder::AddCheckMap(HValue* object,
 HInstruction* HOptimizedGraphBuilder::BuildLoadNamedField(
     PropertyAccessInfo* info,
     HValue* checked_object) {
+  // See if this is a load for an immutable property
+  if (checked_object->ActualValue()->IsConstant() &&
+      info->lookup()->IsCacheable() &&
+      info->lookup()->IsReadOnly() && info->lookup()->IsDontDelete()) {
+    Handle<Object> object(
+        HConstant::cast(checked_object->ActualValue())->handle(isolate()));
+
+    if (object->IsJSObject()) {
+      LookupResult lookup(isolate());
+      Handle<JSObject>::cast(object)->Lookup(*info->name(), &lookup);
+      Handle<Object> value(lookup.GetLazyValue(), isolate());
+
+      if (!value->IsTheHole()) {
+        return New<HConstant>(value);
+      }
+    }
+  }
+
   HObjectAccess access = info->access();
   if (access.representation().IsDouble()) {
     // Load the heap number.
@@ -6783,9 +6801,12 @@ HInstruction* HGraphBuilder::BuildConstantMapCheck(Handle<JSObject> constant,
 
 HInstruction* HGraphBuilder::BuildCheckPrototypeMaps(Handle<JSObject> prototype,
                                                      Handle<JSObject> holder) {
-  while (!prototype.is_identical_to(holder)) {
+  while (holder.is_null() || !prototype.is_identical_to(holder)) {
     BuildConstantMapCheck(prototype, top_info());
-    prototype = handle(JSObject::cast(prototype->GetPrototype()));
+    Object* next_prototype = prototype->GetPrototype();
+    if (next_prototype->IsNull()) return NULL;
+    CHECK(next_prototype->IsJSObject());
+    prototype = handle(JSObject::cast(next_prototype));
   }
 
   HInstruction* checked_object = BuildConstantMapCheck(prototype, top_info());
@@ -7662,6 +7683,17 @@ bool HOptimizedGraphBuilder::TryInlineBuiltinMethodCall(
       if (receiver_map->instance_type() != JS_ARRAY_TYPE) return false;
       ElementsKind elements_kind = receiver_map->elements_kind();
       if (!IsFastElementsKind(elements_kind)) return false;
+
+      // If there may be elements accessors in the prototype chain, the fast
+      // inlined version can't be used.
+      if (receiver_map->DictionaryElementsInPrototypeChainOnly()) return false;
+      // If there currently can be no elements accessors on the prototype chain,
+      // it doesn't mean that there won't be any later. Install a full prototype
+      // chain check to trap element accessors being installed on the prototype
+      // chain, which would cause elements to go to dictionary mode and result
+      // in a map change.
+      Handle<JSObject> prototype(JSObject::cast(receiver_map->prototype()));
+      BuildCheckPrototypeMaps(prototype, Handle<JSObject>());
 
       HValue* op_vals[] = {
         context(),
@@ -9821,6 +9853,17 @@ HControlInstruction* HOptimizedGraphBuilder::BuildCompareInstruction(
 
   if (combined_type->Is(Type::Receiver())) {
     if (Token::IsEqualityOp(op)) {
+      // HCompareObjectEqAndBranch can only deal with object, so
+      // exclude numbers.
+      if ((left->IsConstant() &&
+           HConstant::cast(left)->HasNumberValue()) ||
+          (right->IsConstant() &&
+           HConstant::cast(right)->HasNumberValue())) {
+        Add<HDeoptimize>("Type mismatch between feedback and constant",
+                         Deoptimizer::SOFT);
+        // The caller expects a branch instruction, so make it happy.
+        return New<HBranch>(graph()->GetConstantTrue());
+      }
       // Can we get away with map check and not instance type check?
       HValue* operand_to_check =
           left->block()->block_id() < right->block()->block_id() ? left : right;
@@ -9867,17 +9910,6 @@ HControlInstruction* HOptimizedGraphBuilder::BuildCompareInstruction(
         New<HCompareObjectEqAndBranch>(left, right);
     return result;
   } else if (combined_type->Is(Type::String())) {
-    // If we have a constant argument, it should be consistent with the type
-    // feedback (otherwise we fail assertions in HCompareObjectEqAndBranch).
-    if ((left->IsConstant() &&
-         !HConstant::cast(left)->HasStringValue()) ||
-        (right->IsConstant() &&
-         !HConstant::cast(right)->HasStringValue())) {
-      Add<HDeoptimize>("Type mismatch between feedback and constant",
-                       Deoptimizer::SOFT);
-      // The caller expects a branch instruction, so make it happy.
-      return New<HBranch>(graph()->GetConstantTrue());
-    }
     BuildCheckHeapObject(left);
     Add<HCheckInstanceType>(left, HCheckInstanceType::IS_STRING);
     BuildCheckHeapObject(right);

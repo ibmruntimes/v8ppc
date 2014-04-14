@@ -279,6 +279,7 @@ static bool IndexedSecurityTestCallback(Local<v8::Object> global,
                                         uint32_t key,
                                         v8::AccessType type,
                                         Local<Value> data) {
+  printf("b\n");
   // Always allow read access.
   if (type == v8::ACCESS_GET)
     return true;
@@ -8311,19 +8312,6 @@ THREADED_TEST(TypeSwitch) {
 }
 
 
-static bool NamedSecurityTestCallback(Local<v8::Object> global,
-                                      Local<Value> name,
-                                      v8::AccessType type,
-                                      Local<Value> data) {
-  // Always allow read access.
-  if (type == v8::ACCESS_GET)
-    return true;
-
-  // Sometimes allow other access.
-  return g_security_callback_result;
-}
-
-
 static int trouble_nesting = 0;
 static void TroubleCallback(const v8::FunctionCallbackInfo<v8::Value>& args) {
   ApiTestFuzzer::Fuzz();
@@ -8446,6 +8434,21 @@ TEST(TryCatchFinallyUsingTryCatchHandler) {
       "  { try { throw ''; } finally { throw 0; }"
       "})()");
   CHECK(try_catch.HasCaught());
+}
+
+
+// For use within the TestSecurityHandler() test.
+static bool NamedSecurityTestCallback(Local<v8::Object> global,
+                                      Local<Value> name,
+                                      v8::AccessType type,
+                                      Local<Value> data) {
+  printf("a\n");
+  // Always allow read access.
+  if (type == v8::ACCESS_GET)
+    return true;
+
+  // Sometimes allow other access.
+  return g_security_callback_result;
 }
 
 
@@ -8617,6 +8620,61 @@ THREADED_TEST(SecurityChecksForPrototypeChain) {
     CHECK(!access_f3->Run()->Equals(v8_num(101)));
     CHECK(access_f3->Run()->IsUndefined());
   }
+}
+
+
+static bool named_security_check_with_gc_called;
+
+static bool NamedSecurityCallbackWithGC(Local<v8::Object> global,
+                                        Local<Value> name,
+                                        v8::AccessType type,
+                                        Local<Value> data) {
+  CcTest::heap()->CollectAllGarbage(i::Heap::kNoGCFlags);
+  named_security_check_with_gc_called = true;
+  return true;
+}
+
+
+static bool indexed_security_check_with_gc_called;
+
+static bool IndexedSecurityTestCallbackWithGC(Local<v8::Object> global,
+                                              uint32_t key,
+                                              v8::AccessType type,
+                                              Local<Value> data) {
+  CcTest::heap()->CollectAllGarbage(i::Heap::kNoGCFlags);
+  indexed_security_check_with_gc_called = true;
+  return true;
+}
+
+
+TEST(SecurityTestGCAllowed) {
+  v8::Isolate* isolate = CcTest::isolate();
+  v8::HandleScope handle_scope(isolate);
+  v8::Handle<v8::ObjectTemplate> object_template =
+      v8::ObjectTemplate::New(isolate);
+  object_template->SetAccessCheckCallbacks(NamedSecurityCallbackWithGC,
+                                           IndexedSecurityTestCallbackWithGC);
+
+  v8::Handle<Context> context = Context::New(isolate);
+  v8::Context::Scope context_scope(context);
+
+  context->Global()->Set(v8_str("obj"), object_template->NewInstance());
+
+  named_security_check_with_gc_called = false;
+  CompileRun("obj.foo = new String(1001);");
+  CHECK(named_security_check_with_gc_called);
+
+  indexed_security_check_with_gc_called = false;
+  CompileRun("obj[0] = new String(1002);");
+  CHECK(indexed_security_check_with_gc_called);
+
+  named_security_check_with_gc_called = false;
+  CHECK(CompileRun("obj.foo")->ToString()->Equals(v8_str("1001")));
+  CHECK(named_security_check_with_gc_called);
+
+  indexed_security_check_with_gc_called = false;
+  CHECK(CompileRun("obj[0]")->ToString()->Equals(v8_str("1002")));
+  CHECK(indexed_security_check_with_gc_called);
 }
 
 
@@ -14208,6 +14266,7 @@ static void event_handler(const v8::JitCodeEvent* event) {
 UNINITIALIZED_TEST(SetJitCodeEventHandler) {
   i::FLAG_stress_compaction = true;
   i::FLAG_incremental_marking = false;
+  if (i::FLAG_never_compact) return;
   const char* script =
     "function bar() {"
     "  var sum = 0;"
@@ -14867,8 +14926,7 @@ TEST(PreCompileSerialization) {
   i::OS::MemCopy(serialized_data, cd->data, cd->length);
 
   // Deserialize.
-  v8::ScriptData* deserialized =
-      v8::ScriptData::New(serialized_data, cd->length);
+  i::ScriptData* deserialized = i::ScriptData::New(serialized_data, cd->length);
 
   // Verify that the original is the same as the deserialized.
   CHECK_EQ(cd->length, deserialized->Length());
@@ -14884,11 +14942,8 @@ TEST(PreCompileDeserializationError) {
   v8::V8::Initialize();
   const char* data = "DONT CARE";
   int invalid_size = 3;
-  v8::ScriptData* sd = v8::ScriptData::New(data, invalid_size);
-
-  CHECK_EQ(0, sd->Length());
-
-  delete sd;
+  i::ScriptData* sd = i::ScriptData::New(data, invalid_size);
+  CHECK_EQ(NULL, sd);
 }
 
 
@@ -14909,10 +14964,10 @@ TEST(CompileWithInvalidCachedData) {
   // want to modify the data before passing it back.
   const v8::ScriptCompiler::CachedData* cd = source.GetCachedData();
   // ScriptData does not take ownership of the buffers passed to it.
-  v8::ScriptData* sd =
-      v8::ScriptData::New(reinterpret_cast<const char*>(cd->data), cd->length);
+  i::ScriptData* sd =
+      i::ScriptData::New(reinterpret_cast<const char*>(cd->data), cd->length);
   CHECK(!sd->HasError());
-  // ScriptDataImpl private implementation details
+  // ScriptData private implementation details
   const int kHeaderSize = i::PreparseDataConstants::kHeaderSize;
   const int kFunctionEntrySize = i::FunctionEntry::kSize;
   const int kFunctionEntryStartOffset = 0;
@@ -14938,18 +14993,20 @@ TEST(CompileWithInvalidCachedData) {
       v8::ScriptCompiler::CompileUnbound(isolate, &source2);
 
   CHECK(try_catch.HasCaught());
-  String::Utf8Value exception_value(try_catch.Message()->Get());
-  CHECK_EQ("Uncaught SyntaxError: Invalid preparser data for function bar",
-           *exception_value);
+  {
+    String::Utf8Value exception_value(try_catch.Message()->Get());
+    CHECK_EQ("Uncaught SyntaxError: Invalid cached data for function bar",
+             *exception_value);
+  }
 
   try_catch.Reset();
   delete sd;
 
-  // Overwrite function bar's start position with 200.  The function entry
-  // will not be found when searching for it by position and we should fall
-  // back on eager compilation.
+  // Overwrite function bar's start position with 200. The function entry will
+  // not be found when searching for it by position, and the compilation fails.
+
   // ScriptData does not take ownership of the buffers passed to it.
-  sd = v8::ScriptData::New(reinterpret_cast<const char*>(cd->data), cd->length);
+  sd = i::ScriptData::New(reinterpret_cast<const char*>(cd->data), cd->length);
   sd_data = reinterpret_cast<unsigned*>(const_cast<char*>(sd->Data()));
   sd_data[kHeaderSize + 1 * kFunctionEntrySize + kFunctionEntryStartOffset] =
       200;
@@ -14961,7 +15018,34 @@ TEST(CompileWithInvalidCachedData) {
           reinterpret_cast<const uint8_t*>(sd->Data()), sd->Length()));
   compiled_script =
       v8::ScriptCompiler::CompileUnbound(isolate, &source3);
-  CHECK(!try_catch.HasCaught());
+  CHECK(try_catch.HasCaught());
+  {
+    String::Utf8Value exception_value(try_catch.Message()->Get());
+    CHECK_EQ("Uncaught SyntaxError: Invalid cached data for function bar",
+             *exception_value);
+  }
+  CHECK(compiled_script.IsEmpty());
+  try_catch.Reset();
+  delete sd;
+
+  // Try passing in cached data which is obviously invalid (wrong length).
+  sd = i::ScriptData::New(reinterpret_cast<const char*>(cd->data), cd->length);
+  const char* script4 =
+      "function foo(){ return 8;}\n"
+      "function bar(){ return 6 + 7;}  foo();";
+  v8::ScriptCompiler::Source source4(
+      v8_str(script4),
+      new v8::ScriptCompiler::CachedData(
+          reinterpret_cast<const uint8_t*>(sd->Data()), sd->Length() - 1));
+  compiled_script =
+      v8::ScriptCompiler::CompileUnbound(isolate, &source4);
+  CHECK(try_catch.HasCaught());
+  {
+    String::Utf8Value exception_value(try_catch.Message()->Get());
+    CHECK_EQ("Uncaught SyntaxError: Invalid cached data",
+             *exception_value);
+  }
+  CHECK(compiled_script.IsEmpty());
   delete sd;
 }
 
@@ -21986,7 +22070,7 @@ THREADED_TEST(FunctionNew) {
   i::Isolate* i_isolate = reinterpret_cast<i::Isolate*>(isolate);
   i::Handle<i::JSObject> cache(i_isolate->native_context()->function_cache());
   i::Handle<i::Object> elm =
-      i::Object::GetElementNoExceptionThrown(i_isolate, cache, serial_number);
+      i::Object::GetElement(i_isolate, cache, serial_number).ToHandleChecked();
   CHECK(elm->IsUndefined());
   // Verify that each Function::New creates a new function instance
   Local<Object> data2 = v8::Object::New(isolate);
@@ -22428,5 +22512,18 @@ TEST(Regress354123) {
   CHECK_EQ(1, named_access_count);
   CompileRun("Object.getPrototypeOf(friend);");
   CHECK_EQ(2, named_access_count);
+}
+
+
+TEST(CaptureStackTraceForStackOverflow) {
+  v8::internal::FLAG_stack_size = 150;
+  LocalContext current;
+  v8::Isolate* isolate = current->GetIsolate();
+  v8::HandleScope scope(isolate);
+  V8::SetCaptureStackTraceForUncaughtExceptions(
+      true, 10, v8::StackTrace::kDetailed);
+  v8::TryCatch try_catch;
+  CompileRun("(function f(x) { f(x+1); })(0)");
+  CHECK(try_catch.HasCaught());
 }
 #endif  // !TEST_API_IN_PARTS || TEST_API_PART2
