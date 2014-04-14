@@ -967,8 +967,10 @@ MaybeObject* Object::GetProperty(Object* receiver,
 }
 
 
+#if defined(__GNUC__) && (__GNUC__ == 4) && (__GNUC_MINOR__ <= 4)
 // Work around bad optimization by GCC 4.4.6 on PPC Linux
 #pragma GCC optimize "O0"
+#endif
 MaybeHandle<Object> Object::GetElementWithReceiver(Isolate* isolate,
                                                    Handle<Object> object,
                                                    Handle<Object> receiver,
@@ -1036,7 +1038,9 @@ MaybeHandle<Object> Object::GetElementWithReceiver(Isolate* isolate,
 
   return isolate->factory()->undefined_value();
 }
+#if defined(__GNUC__) && (__GNUC__ == 4) && (__GNUC_MINOR__ <= 4)
 #pragma GCC reset_options
+#endif
 
 
 Object* Object::GetPrototype(Isolate* isolate) {

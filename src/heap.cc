@@ -4384,8 +4384,10 @@ MaybeObject* Heap::AllocateFunction(Map* function_map,
 }
 
 
+#if defined(__GNUC__) && (__GNUC__ == 4) && (__GNUC_MINOR__ <= 4)
 // Work around bad optimization by GCC 4.4.6 on PPC Linux
 #pragma GCC optimize "O0"
+#endif
 MaybeObject* Heap::AllocateArgumentsObject(Object* callee, int length) {
   // To get fast allocation and map sharing for arguments objects we
   // allocate them based on an arguments boilerplate.
@@ -4439,7 +4441,9 @@ MaybeObject* Heap::AllocateArgumentsObject(Object* callee, int length) {
 
   return result;
 }
+#if defined(__GNUC__) && (__GNUC__ == 4) && (__GNUC_MINOR__ <= 4)
 #pragma GCC reset_options
+#endif
 
 
 void Heap::InitializeJSObjectFromMap(JSObject* obj,
