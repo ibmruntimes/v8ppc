@@ -3,12 +3,9 @@ v8ppc
 
 Port of Google V8 javascript engine to PowerPC - PowerLinux and AIX.
 
-August 9th 98% of the tests were passing. (with crankshaft!)
-
-Compile code:<br><code>
-make dependencies; make -j8 ppc
-</code>
-
-Test code:<br><code>
-tools/run-tests.py -j 12 --progress=dots --no-presubmit --arch-and-mode=ppc.debug --junitout v8tests-junit.xml
-</code>
+Platform | Build Status | Test Status
+---------|--------------|-------------
+PowerLinux 32-bit | [![Build Status](http://v8ppc.osuosl.org:8080/buildStatus/icon?job=Build-PowerPC-V8)](http://v8ppc.osuosl.org:8080/view/V8/job/Build-PowerPC-V8/) | [![Build Status](http://v8ppc.osuosl.org:8080/buildStatus/icon?job=Test-PowerPC-V8)](http://v8ppc.osuosl.org:8080/view/V8/job/Test-PowerPC-V8/)
+PowerLinux 64-bit | [![Build Status](http://v8ppc.osuosl.org:8080/buildStatus/icon?job=Build-PowerPC64-V8)](http://v8ppc.osuosl.org:8080/view/V8/job/Build-PowerPC64-V8/) | [![Build Status](http://v8ppc.osuosl.org:8080/buildStatus/icon?job=Test-PowerPC64-V8)](http://v8ppc.osuosl.org:8080/view/V8/job/Test-PowerPC64-V8/)
+AIX 32-bit | [![Build Status](http://v8ppc.osuosl.org:8080/buildStatus/icon?job=Build-AIX-V8)](http://v8ppc.osuosl.org:8080/view/V8/job/Build-AIX-V8/) | [![Build Status](http://v8ppc.osuosl.org:8080/buildStatus/icon?job=Test-AIX-V8)](http://v8ppc.osuosl.org:8080/view/V8/job/Test-AIX-V8/)
+AIX 64-bit | [![Build Status](http://v8ppc.osuosl.org:8080/buildStatus/icon?job=Build-AIX64-V8)](http://v8ppc.osuosl.org:8080/view/V8/job/Build-AIX64-V8/) | [![Build Status](http://v8ppc.osuosl.org:8080/buildStatus/icon?job=Test-AIX64-V8)](http://v8ppc.osuosl.org:8080/view/V8/job/Test-AIX64-V8/)
