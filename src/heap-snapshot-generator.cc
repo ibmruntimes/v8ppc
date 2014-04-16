@@ -732,7 +732,7 @@ size_t HeapObjectsMap::GetUsedMemorySize() const {
 
 
 HeapEntriesMap::HeapEntriesMap()
-    : entries_(HeapThingsMatch) {
+    : entries_(HashMap::PointersMatch) {
 }
 
 
@@ -751,7 +751,7 @@ void HeapEntriesMap::Pair(HeapThing thing, int entry) {
 
 
 HeapObjectsSet::HeapObjectsSet()
-    : entries_(HeapEntriesMap::HeapThingsMatch) {
+    : entries_(HashMap::PointersMatch) {
 }
 
 
@@ -1081,10 +1081,9 @@ class IndexedReferencesExtractor : public ObjectVisitor {
     Address field = obj->address() + offset;
     ASSERT(!Memory::Object_at(field)->IsFailure());
     ASSERT(Memory::Object_at(field)->IsHeapObject());
-    // Address field is a byte pointer, we need to cast it
-    // to avoid setting the wrong bit on big endian platforms
-    intptr_t *tagged = reinterpret_cast<intptr_t *>(field);
-    *tagged |= kFailureTag;
+    Object* untagged = *reinterpret_cast<Object**>(field);
+    intptr_t tagged  = reinterpret_cast<intptr_t>(untagged) | kFailureTag;
+    *reinterpret_cast<Object**>(field) = reinterpret_cast<Object*>(tagged);
   }
 
  private:

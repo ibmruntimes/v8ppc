@@ -75,7 +75,7 @@ inline unsigned int FastD2UI(double x) {
   if (x < k2Pow52) {
     x += k2Pow52;
     uint32_t result;
-#if V8_TARGET_LITTLE_ENDIAN
+#ifndef V8_TARGET_BIG_ENDIAN
     Address mantissa_ptr = reinterpret_cast<Address>(&x);
 #else
     Address mantissa_ptr = reinterpret_cast<Address>(&x) + kIntSize;

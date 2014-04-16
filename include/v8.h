@@ -4099,7 +4099,7 @@ class V8_EXPORT Isolate {
   /**
    * Assert that no Javascript code is invoked.
    */
-  class DisallowJavascriptExecutionScope {
+  class V8_EXPORT DisallowJavascriptExecutionScope {
    public:
     enum OnFailure { CRASH_ON_FAILURE, THROW_ON_FAILURE };
 
@@ -4120,7 +4120,7 @@ class V8_EXPORT Isolate {
   /**
    * Introduce exception to DisallowJavascriptExecutionScope.
    */
-  class AllowJavascriptExecutionScope {
+  class V8_EXPORT AllowJavascriptExecutionScope {
    public:
     explicit AllowJavascriptExecutionScope(Isolate* isolate);
     ~AllowJavascriptExecutionScope();
@@ -4840,15 +4840,14 @@ class V8_EXPORT V8 {
 
   /**
    * Forcefully terminate the current thread of JavaScript execution
-   * in the given isolate. If no isolate is provided, the default
-   * isolate is used.
+   * in the given isolate.
    *
    * This method can be used by any thread even if that thread has not
    * acquired the V8 lock with a Locker object.
    *
    * \param isolate The isolate in which to terminate the current JS execution.
    */
-  static void TerminateExecution(Isolate* isolate = NULL);
+  static void TerminateExecution(Isolate* isolate);
 
   /**
    * Is V8 terminating JavaScript execution.
