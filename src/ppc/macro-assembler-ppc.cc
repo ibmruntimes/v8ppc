@@ -650,17 +650,9 @@ void MacroAssembler::CanonicalizeNaN(const DoubleRegister dst,
 #else
   subi(sp, sp, Operand(kDoubleSize));
   mov(r0, Operand(static_cast<intptr_t>(nan_int64)));
-#if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
-  stw(r0, MemOperand(sp, 0));
-#else
-  stw(r0, MemOperand(sp, 4));
-#endif
+  stw(r0, MemOperand(sp, Register::kMantissaOffset));
   mov(r0, Operand(static_cast<intptr_t>(nan_int64 >> 32)));
-#if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
-  stw(r0, MemOperand(sp, 4));
-#else
-  stw(r0, MemOperand(sp, 0));
-#endif
+  stw(r0, MemOperand(sp, Register::kExponentOffset));
 #endif
   lfd(dst, MemOperand(sp));
   addi(sp, sp, Operand(kDoubleSize));
@@ -681,13 +673,8 @@ void MacroAssembler::ConvertIntToDouble(Register src,
   std(r0, MemOperand(sp, 0));
 #else
   srawi(r0, src, 31);
-#if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
-  stw(r0, MemOperand(sp, 4));
-  stw(src, MemOperand(sp, 0));
-#else
-  stw(r0, MemOperand(sp, 0));
-  stw(src, MemOperand(sp, 4));
-#endif
+  stw(r0, MemOperand(sp, Register::kExponentOffset));
+  stw(src, MemOperand(sp, Register::kMantissaOffset));
 #endif
 
   // load into FPR
@@ -712,13 +699,8 @@ void MacroAssembler::ConvertUnsignedIntToDouble(Register src,
   std(r0, MemOperand(sp, 0));
 #else
   li(r0, Operand::Zero());
-#if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
-  stw(r0, MemOperand(sp, 4));
-  stw(src, MemOperand(sp, 0));
-#else
-  stw(r0, MemOperand(sp, 0));
-  stw(src, MemOperand(sp, 4));
-#endif
+  stw(r0, MemOperand(sp, Register::kExponentOffset));
+  stw(src, MemOperand(sp, Register::kMantissaOffset));
 #endif
 
   // load into FPR
@@ -742,13 +724,8 @@ void MacroAssembler::ConvertIntToFloat(const DoubleRegister dst,
   std(int_scratch, MemOperand(sp, 0));
 #else
   srawi(int_scratch, src, 31);
-#if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
-  stw(int_scratch, MemOperand(sp, 4));
-  stw(src, MemOperand(sp, 0));
-#else
-  stw(int_scratch, MemOperand(sp, 0));
-  stw(src, MemOperand(sp, 4));
-#endif
+  stw(int_scratch, MemOperand(sp, Register::kExponentOffset));
+  stw(src, MemOperand(sp, Register::kMantissaOffset));
 #endif
 
   // load sign-extended src into FPR
@@ -780,13 +757,8 @@ void MacroAssembler::ConvertDoubleToInt64(const DoubleRegister double_input,
 #if V8_TARGET_ARCH_PPC64
   ld(dst, MemOperand(sp, 0));
 #else
-#if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
-  lwz(dst_hi, MemOperand(sp, 4));
-  lwz(dst, MemOperand(sp, 0));
-#else
-  lwz(dst_hi, MemOperand(sp, 0));
-  lwz(dst, MemOperand(sp, 4));
-#endif
+  lwz(dst_hi, MemOperand(sp, Register::kExponentOffset));
+  lwz(dst, MemOperand(sp, Register::kMantissaOffset));
 #endif
   addi(sp, sp, Operand(kDoubleSize));
 }
@@ -2552,11 +2524,7 @@ void MacroAssembler::TryInt32Floor(Register result,
 
   // Move high word into input_high
   stfdu(double_input, MemOperand(sp, -kDoubleSize));
-#if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
-  lwz(input_high, MemOperand(sp, 4));
-#else
-  lwz(input_high, MemOperand(sp, 0));
-#endif
+  lwz(input_high, MemOperand(sp, Register::kExponentOffset));
   addi(sp, sp, Operand(kDoubleSize));
 
   // Test for NaN/Inf
@@ -3421,7 +3389,7 @@ void MacroAssembler::CopyBytes(Register src,
     StoreP(scratch, MemOperand(dst));
     addi(dst, dst, Operand(kPointerSize));
   } else {
-#if __BYTE_ORDER == __LITTLE_ENDIAN
+#if V8_TARGET_LITTLE_ENDIAN
     stb(scratch, MemOperand(dst, 0));
     ShiftRightImm(scratch, scratch, Operand(8));
     stb(scratch, MemOperand(dst, 1));
@@ -4197,14 +4165,10 @@ void MacroAssembler::ClampDoubleToUint8(Register result_reg,
   fctiw(double_scratch, input_reg);
 
   // reserve a slot on the stack
-  stfdu(double_scratch, MemOperand(sp, -8));
-#if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
-  lwz(result_reg, MemOperand(sp));
-#else
-  lwz(result_reg, MemOperand(sp, 4));
-#endif
+  stfdu(double_scratch, MemOperand(sp, -kDoubleSize));
+  lwz(result_reg, MemOperand(sp, Register::kMantissaOffset));
   // restore the stack
-  addi(sp, sp, Operand(8));
+  addi(sp, sp, Operand(kDoubleSize));
 
   bind(&done);
 }

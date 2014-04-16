@@ -173,7 +173,7 @@ class SnapshotByteSource {
   }
 
   int32_t GetUnalignedInt() {
-#if defined(V8_HOST_CAN_READ_UNALIGNED) &&  __BYTE_ORDER == __LITTLE_ENDIAN
+#if defined(V8_HOST_CAN_READ_UNALIGNED) &&  V8_TARGET_LITTLE_ENDIAN
     int32_t answer;
     ASSERT(position_ + sizeof(answer) <= length_ + 0u);
     answer = *reinterpret_cast<const int32_t*>(data_ + position_);

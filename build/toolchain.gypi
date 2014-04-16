@@ -268,17 +268,28 @@
           }],  # _toolset=="target"
         ],
       }],  # v8_target_arch=="arm"
-      ['v8_target_arch=="ppc"', {
+      ['v8_target_arch=="ppc" or v8_target_arch=="ppc64"', {
         'defines': [
           'V8_TARGET_ARCH_PPC',
         ],
-      }],  # v8_target_arch=="ppc"
-      ['v8_target_arch=="ppc64"', {
-        'defines': [
-          'V8_TARGET_ARCH_PPC',
-          'V8_TARGET_ARCH_PPC64',
+        'conditions': [
+          ['v8_target_arch=="ppc64"', {
+            'defines': [
+              'V8_TARGET_ARCH_PPC64',
+            ],
+          }],
+          ['v8_host_byteorder=="little"', {
+            'defines': [
+              'V8_TARGET_ARCH_PPC_LE',
+            ],
+          }],
+          ['v8_host_byteorder=="big"', {
+            'defines': [
+              'V8_TARGET_ARCH_PPC_BE',
+            ],
+          }],
         ],
-      }],  # v8_target_arch=="ppc64"
+      }],  # ppc
       ['v8_target_arch=="ia32"', {
         'defines': [
           'V8_TARGET_ARCH_IA32',
@@ -446,11 +457,6 @@
       }],
       ['OS=="aix"', {
         'defines': [
-          # AIX is missing /usr/include/endian.h
-          '__LITTLE_ENDIAN=1234',
-          '__BIG_ENDIAN=4321',
-          '__BYTE_ORDER=__BIG_ENDIAN',
-          '__FLOAT_WORD_ORDER=__BIG_ENDIAN',
           # Support for malloc(0)
           '_LINUX_SOURCE_COMPAT=1',
           '_ALL_SOURCE=1'],

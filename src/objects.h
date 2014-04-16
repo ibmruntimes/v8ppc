@@ -1930,10 +1930,10 @@ class HeapNumber: public HeapObject {
   // is a mixture of sign, exponent and mantissa.  Our current platforms are all
   // little endian apart from non-EABI arm which is little endian with big
   // endian floating point word ordering!
-#if __BYTE_ORDER == __LITTLE_ENDIAN
+#if V8_TARGET_LITTLE_ENDIAN
   static const int kMantissaOffset = kValueOffset;
   static const int kExponentOffset = kValueOffset + 4;
-#elif __BYTE_ORDER == __BIG_ENDIAN
+#elif V8_TARGET_BIG_ENDIAN
   static const int kMantissaOffset = kValueOffset + 4;
   static const int kExponentOffset = kValueOffset;
 #endif
@@ -7139,7 +7139,7 @@ class SharedFunctionInfo: public HeapObject {
   // By doing this we guarantee that LSB of each kPointerSize aligned
   // word is not set and thus this word cannot be treated as pointer
   // to HeapObject during old space traversal.
-#if __BYTE_ORDER == __LITTLE_ENDIAN
+#if V8_TARGET_LITTLE_ENDIAN
   static const int kLengthOffset =
       kAstNodeCountOffset + kPointerSize;
   static const int kFormalParameterCountOffset =
@@ -7169,7 +7169,7 @@ class SharedFunctionInfo: public HeapObject {
   // Total size.
   static const int kSize = kCountersOffset + kIntSize;
 
-#elif __BYTE_ORDER == __BIG_ENDIAN
+#elif V8_TARGET_BIG_ENDIAN
   static const int kFormalParameterCountOffset =
     kAstNodeCountOffset + kPointerSize;
   static const int kLengthOffset =
@@ -7208,9 +7208,9 @@ class SharedFunctionInfo: public HeapObject {
   // The construction counter for inobject slack tracking is stored in the
   // most significant byte of compiler_hints which is otherwise unused.
   // Its offset depends on the endian-ness of the architecture.
-#if __BYTE_ORDER == __LITTLE_ENDIAN
+#if V8_TARGET_LITTLE_ENDIAN
   static const int kConstructionCountOffset = kCompilerHintsOffset + 3;
-#elif __BYTE_ORDER == __BIG_ENDIAN
+#elif V8_TARGET_BIG_ENDIAN
   static const int kConstructionCountOffset = kCompilerHintsOffset + 0;
 #else
 #error Unknown byte ordering
@@ -7288,14 +7288,14 @@ class SharedFunctionInfo: public HeapObject {
   static const int kNativeBitWithinByte =
       (kNative + kCompilerHintsSmiTagSize) % kBitsPerByte;
 
-#if __BYTE_ORDER == __LITTLE_ENDIAN
+#if V8_TARGET_LITTLE_ENDIAN
   static const int kStrictModeByteOffset = kCompilerHintsOffset +
       (kStrictModeFunction + kCompilerHintsSmiTagSize) / kBitsPerByte;
   static const int kExtendedModeByteOffset = kCompilerHintsOffset +
       (kExtendedModeFunction + kCompilerHintsSmiTagSize) / kBitsPerByte;
   static const int kNativeByteOffset = kCompilerHintsOffset +
       (kNative + kCompilerHintsSmiTagSize) / kBitsPerByte;
-#elif __BYTE_ORDER == __BIG_ENDIAN
+#elif V8_TARGET_BIG_ENDIAN
   static const int kStrictModeByteOffset = kCompilerHintsOffset +
       (kCompilerHintsSize - 1) -
       ((kStrictModeFunction + kCompilerHintsSmiTagSize) / kBitsPerByte);
@@ -8633,7 +8633,7 @@ class Name: public HeapObject {
 
   // Layout description.
   static const int kHashFieldSlot = HeapObject::kHeaderSize;
-#if __BYTE_ORDER == __LITTLE_ENDIAN || !V8_HOST_ARCH_64_BIT
+#if V8_TARGET_LITTLE_ENDIAN || !V8_HOST_ARCH_64_BIT
   static const int kHashFieldOffset = kHashFieldSlot;
 #else
   static const int kHashFieldOffset = kHashFieldSlot + kIntSize;

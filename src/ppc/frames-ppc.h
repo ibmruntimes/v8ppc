@@ -91,7 +91,7 @@ const int kNumSafepointSavedRegisters = kNumJSCallerSaved + kNumCalleeSaved;
 // The following constants describe the stack frame linkage area as
 // defined by the ABI.  Note that kNumRequiredStackFrameSlots must
 // satisfy alignment requirements (rounding up if required).
-#if defined(V8_TARGET_ARCH_PPC64) && __BYTE_ORDER == __LITTLE_ENDIAN
+#if V8_TARGET_ARCH_PPC64 && V8_TARGET_LITTLE_ENDIAN
 // [0] back chain
 // [1] condition register save area
 // [2] link register save area
@@ -104,7 +104,7 @@ const int kNumSafepointSavedRegisters = kNumJSCallerSaved + kNumCalleeSaved;
 const int kNumRequiredStackFrameSlots = 12;
 const int kStackFrameLRSlot = 2;
 const int kStackFrameExtraParamSlot = 12;
-#elif defined(_AIX) || defined(V8_TARGET_ARCH_PPC64)
+#elif defined(_AIX) || V8_TARGET_ARCH_PPC64
 // [0] back chain
 // [1] condition register save area
 // [2] link register save area
@@ -116,7 +116,7 @@ const int kStackFrameExtraParamSlot = 12;
 // [13] Parameter8 save area
 // [14] Parameter9 slot (if necessary)
 // ...
-#ifdef V8_TARGET_ARCH_PPC64
+#if V8_TARGET_ARCH_PPC64
 const int kNumRequiredStackFrameSlots = 14;
 #else
 const int kNumRequiredStackFrameSlots = 16;

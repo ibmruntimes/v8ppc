@@ -160,7 +160,9 @@ namespace internal {
 #define V8_TARGET_LITTLE_ENDIAN 1
 #elif V8_TARGET_ARCH_MIPS
 #define V8_TARGET_LITTLE_ENDIAN 1
-#elif V8_TARGET_ARCH_PPC
+#elif V8_TARGET_ARCH_PPC_LE
+#define V8_TARGET_LITTLE_ENDIAN 1
+#elif V8_TARGET_ARCH_PPC_BE
 #define V8_TARGET_BIG_ENDIAN 1
 #else
 #error Unknown target architecture endiannes

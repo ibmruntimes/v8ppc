@@ -56,20 +56,20 @@
 #define ABI_USES_FUNCTION_DESCRIPTORS                                     \
   (V8_HOST_ARCH_PPC &&                                                    \
      (defined(_AIX) ||                                                    \
-      (V8_TARGET_ARCH_PPC64 && (__BYTE_ORDER != __LITTLE_ENDIAN))))
+      (V8_TARGET_ARCH_PPC64 && V8_TARGET_BIG_ENDIAN)))
 
 #define ABI_PASSES_HANDLES_IN_REGS \
   (!V8_HOST_ARCH_PPC || defined(_AIX) || V8_TARGET_ARCH_PPC64)
 
 #define ABI_RETURNS_HANDLES_IN_REGS \
-  (!V8_HOST_ARCH_PPC || (__BYTE_ORDER == __LITTLE_ENDIAN))
+  (!V8_HOST_ARCH_PPC || V8_TARGET_LITTLE_ENDIAN)
 
 #define ABI_RETURNS_OBJECT_PAIRS_IN_REGS \
-  (!V8_HOST_ARCH_PPC || (__BYTE_ORDER == __LITTLE_ENDIAN))
+  (!V8_HOST_ARCH_PPC || V8_TARGET_LITTLE_ENDIAN)
 
 #define ABI_TOC_ADDRESSABILITY_VIA_IP \
   (V8_HOST_ARCH_PPC && V8_TARGET_ARCH_PPC64 && \
-    (__BYTE_ORDER == __LITTLE_ENDIAN))
+    V8_TARGET_LITTLE_ENDIAN)
 
 namespace v8 {
 namespace internal {
@@ -169,6 +169,14 @@ struct Register {
   static const int kMaxNumAllocatableRegisters = 9;  // r3-r10 and cp
   static const int kSizeInBytes = kPointerSize;
   static const int kCpRegister = 18;  // cp is r18
+
+#if V8_TARGET_LITTLE_ENDIAN
+  static const int kMantissaOffset = 0;
+  static const int kExponentOffset = 4;
+#else
+  static const int kMantissaOffset = 4;
+  static const int kExponentOffset = 0;
+#endif
 
   inline static int NumAllocatableRegisters();
 

@@ -1889,9 +1889,9 @@ void HeapObject::IterateBody(InstanceType type, int object_size,
 
 bool HeapNumber::HeapNumberBooleanValue() {
   // NaN, +0, and -0 should return the false object
-#if __BYTE_ORDER == __LITTLE_ENDIAN
+#if V8_TARGET_LITTLE_ENDIAN
   union IeeeDoubleLittleEndianArchType u;
-#elif __BYTE_ORDER == __BIG_ENDIAN
+#elif V8_TARGET_BIG_ENDIAN
   union IeeeDoubleBigEndianArchType u;
 #endif
   u.d = value();

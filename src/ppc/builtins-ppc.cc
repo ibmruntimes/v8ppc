@@ -446,23 +446,12 @@ static void Generate_JSConstructStubHelper(MacroAssembler* masm,
       // r6: object size (in words)
       // r7: JSObject (not tagged)
       // r8: First in-object property of JSObject (not tagged)
-      uint32_t byte;
       __ ShiftLeftImm(r9, r6, Operand(kPointerSizeLog2));
       __ add(r9, r7, r9);  // End of object.
       ASSERT_EQ(3 * kPointerSize, JSObject::kHeaderSize);
       __ LoadRoot(r10, Heap::kUndefinedValueRootIndex);
       if (count_constructions) {
-        __ lwz(r3, FieldMemOperand(r5, Map::kInstanceSizesOffset));
-        // Fetch Map::kPreAllocatedPropertyFieldsByte field from r3
-        // and multiply by kPointerSizeLog2
-        STATIC_ASSERT(Map::kPreAllocatedPropertyFieldsByte < 4);
-        byte = Map::kPreAllocatedPropertyFieldsByte;
-#if __BYTE_ORDER == __BIG_ENDIAN
-        byte = 3 - byte;
-#endif
-        __ ExtractBitRange(r3, r3,
-                           ((byte + 1) * kBitsPerByte) - 1,
-                           byte * kBitsPerByte);
+        __ lbz(r3, FieldMemOperand(r5, Map::kPreAllocatedPropertyFieldsOffset));
         __ ShiftLeftImm(r3, r3, Operand(kPointerSizeLog2));
         __ add(r3, r8, r3);
         // r3: offset of first field after pre-allocated fields
@@ -490,25 +479,9 @@ static void Generate_JSConstructStubHelper(MacroAssembler* masm,
       __ lbz(r6, FieldMemOperand(r5, Map::kUnusedPropertyFieldsOffset));
       // The field instance sizes contains both pre-allocated property fields
       // and in-object properties.
-      __ lwz(r3, FieldMemOperand(r5, Map::kInstanceSizesOffset));
-      // Fetch Map::kPreAllocatedPropertyFieldsByte field from r3
-      STATIC_ASSERT(Map::kPreAllocatedPropertyFieldsByte < 4);
-      byte = Map::kPreAllocatedPropertyFieldsByte;
-#if __BYTE_ORDER == __BIG_ENDIAN
-      byte = 3 - byte;
-#endif
-      __ ExtractBitRange(r9, r3,
-                         ((byte + 1) * kBitsPerByte) - 1,
-                         byte * kBitsPerByte);
+      __ lbz(r9, FieldMemOperand(r5, Map::kPreAllocatedPropertyFieldsOffset));
       __ add(r6, r6, r9);
-      STATIC_ASSERT(Map::kInObjectPropertiesByte < 4);
-      byte = Map::kInObjectPropertiesByte;
-#if __BYTE_ORDER == __BIG_ENDIAN
-      byte = 3 - byte;
-#endif
-      __ ExtractBitRange(r9, r3,
-                         ((byte + 1) * kBitsPerByte) - 1,
-                         byte * kBitsPerByte);
+      __ lbz(r9, FieldMemOperand(r5, Map::kInObjectPropertiesOffset));
       __ sub(r6, r6, r9, LeaveOE, SetRC);
 
       // Done if no extra properties are to be allocated.
