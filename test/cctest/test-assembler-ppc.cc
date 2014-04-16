@@ -62,15 +62,12 @@ TEST(0) {
 
   CodeDesc desc;
   assm.GetCode(&desc);
-  Object* code = isolate->heap()->CreateCode(
-      desc,
-      Code::ComputeFlags(Code::STUB),
-      Handle<Code>())->ToObjectChecked();
-  CHECK(code->IsCode());
+  Handle<Code> code = isolate->factory()->NewCode(
+      desc, Code::ComputeFlags(Code::STUB), Handle<Code>());
 #ifdef DEBUG
-  Code::cast(code)->Print();
+  code->Print();
 #endif
-  F2 f = FUNCTION_CAST<F2>(Code::cast(code)->entry());
+  F2 f = FUNCTION_CAST<F2>(code->entry());
   intptr_t res =
     reinterpret_cast<intptr_t>(CALL_GENERATED_CODE(f, 3, 4, 0, 0, 0));
   ::printf("f() = %" V8PRIdPTR "\n", res);
@@ -106,15 +103,12 @@ TEST(1) {
 
   CodeDesc desc;
   assm.GetCode(&desc);
-  Object* code = isolate->heap()->CreateCode(
-      desc,
-      Code::ComputeFlags(Code::STUB),
-      Handle<Code>())->ToObjectChecked();
-  CHECK(code->IsCode());
+  Handle<Code> code = isolate->factory()->NewCode(
+      desc, Code::ComputeFlags(Code::STUB), Handle<Code>());
 #ifdef DEBUG
-  Code::cast(code)->Print();
+  code->Print();
 #endif
-  F1 f = FUNCTION_CAST<F1>(Code::cast(code)->entry());
+  F1 f = FUNCTION_CAST<F1>(code->entry());
   intptr_t res =
     reinterpret_cast<intptr_t>(CALL_GENERATED_CODE(f, 100, 0, 0, 0, 0));
   ::printf("f() = %" V8PRIdPTR  "\n", res);
@@ -162,15 +156,12 @@ TEST(2) {
 
   CodeDesc desc;
   assm.GetCode(&desc);
-  Object* code = isolate->heap()->CreateCode(
-      desc,
-      Code::ComputeFlags(Code::STUB),
-      Handle<Code>())->ToObjectChecked();
-  CHECK(code->IsCode());
+  Handle<Code> code = isolate->factory()->NewCode(
+      desc, Code::ComputeFlags(Code::STUB), Handle<Code>());
 #ifdef DEBUG
-  Code::cast(code)->Print();
+  code->Print();
 #endif
-  F1 f = FUNCTION_CAST<F1>(Code::cast(code)->entry());
+  F1 f = FUNCTION_CAST<F1>(code->entry());
   intptr_t res =
     reinterpret_cast<intptr_t>(CALL_GENERATED_CODE(f, 10, 0, 0, 0, 0));
   ::printf("f() = %" V8PRIdPTR "\n", res);
@@ -241,15 +232,12 @@ TEST(3) {
 
   CodeDesc desc;
   assm.GetCode(&desc);
-  Object* code = isolate->heap()->CreateCode(
-      desc,
-      Code::ComputeFlags(Code::STUB),
-      Handle<Code>())->ToObjectChecked();
-  CHECK(code->IsCode());
+  Handle<Code> code = isolate->factory()->NewCode(
+      desc, Code::ComputeFlags(Code::STUB), Handle<Code>());
 #ifdef DEBUG
-  Code::cast(code)->Print();
+  code->Print();
 #endif
-  F3 f = FUNCTION_CAST<F3>(Code::cast(code)->entry());
+  F3 f = FUNCTION_CAST<F3>(code->entry());
   t.i = 100000;
   t.c = 10;
   t.s = 1000;
