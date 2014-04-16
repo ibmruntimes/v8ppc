@@ -5370,7 +5370,7 @@ SMI_ACCESSORS(SharedFunctionInfo, counters, kCountersOffset)
 
 #else
 
-#if __BYTE_ORDER == __LITTLE_ENDIAN
+#if V8_TARGET_LITTLE_ENDIAN
 #define PSEUDO_SMI_LO_ALIGN 0
 #define PSEUDO_SMI_HI_ALIGN kIntSize
 #else

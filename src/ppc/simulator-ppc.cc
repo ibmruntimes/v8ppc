@@ -836,7 +836,7 @@ Simulator::Simulator(Isolate* isolate) : isolate_(isolate) {
   Initialize(isolate);
   // Set up simulator support first. Some of this information is needed to
   // setup the architecture state.
-#ifdef V8_TARGET_ARCH_PPC64
+#if V8_TARGET_ARCH_PPC64
   size_t stack_size = 2 * 1024*1024;  // allocate 2MB for stack
 #else
   size_t stack_size = 1 * 1024*1024;  // allocate 1MB for stack
@@ -986,7 +986,7 @@ double Simulator::get_double_from_register_pair(int reg) {
   ASSERT((reg >= 0) && (reg < kNumGPRs) && ((reg % 2) == 0));
 
   double dm_val = 0.0;
-#ifndef V8_TARGET_ARCH_PPC64  // doesn't make sense in 64bit mode
+#if !V8_TARGET_ARCH_PPC64  // doesn't make sense in 64bit mode
   // Read the bits from the unsigned integer register_[] array
   // into the double precision floating point value and return it.
   char buffer[sizeof(fp_registers_[0])];
@@ -1458,7 +1458,7 @@ void Simulator::SoftwareInterrupt(Instruction* instr) {
         int64_t result = target(arg[0], arg[1], arg[2], arg[3], arg[4], arg[5]);
         int32_t lo_res = static_cast<int32_t>(result);
         int32_t hi_res = static_cast<int32_t>(result >> 32);
-#if __BYTE_ORDER == __BIG_ENDIAN
+#if V8_TARGET_BIG_ENDIAN
         if (::v8::internal::FLAG_trace_sim) {
           PrintF("Returned %08x\n", hi_res);
         }

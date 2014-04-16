@@ -2476,11 +2476,7 @@ void LCodeGen::DoCmpHoleAndBranch(LCmpHoleAndBranch* instr) {
 
   Register scratch = scratch0();
   __ stfdu(input_reg, MemOperand(sp, -kDoubleSize));
-#if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
-  __ lwz(scratch, MemOperand(sp, 4));
-#else
-  __ lwz(scratch, MemOperand(sp, 0));
-#endif
+  __ lwz(scratch, MemOperand(sp, Register::kExponentOffset));
   __ addi(sp, sp, Operand(kDoubleSize));
   __ Cmpi(scratch, Operand(kHoleNanUpper32), r0);
   EmitBranch(instr, eq);
@@ -2497,11 +2493,7 @@ void LCodeGen::DoCompareMinusZeroAndBranch(LCompareMinusZeroAndBranch* instr) {
     __ fcmpu(value, kDoubleRegZero);
     EmitFalseBranch(instr, ne);
     __ stfdu(value, MemOperand(sp, -kDoubleSize));
-#if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
-    __ lwz(scratch, MemOperand(sp, 4));
-#else
-    __ lwz(scratch, MemOperand(sp, 0));
-#endif
+    __ lwz(scratch, MemOperand(sp, Register::kExponentOffset));
     __ addi(sp, sp, Operand(kDoubleSize));
     __ cmpwi(scratch, Operand::Zero());
     EmitBranch(instr, lt);
@@ -3141,7 +3133,7 @@ void LCodeGen::DoLoadNamedField(LLoadNamedField* instr) {
     // Read int value directly from upper half of the smi.
     STATIC_ASSERT(kSmiTag == 0);
     STATIC_ASSERT(kSmiTagSize + kSmiShiftSize == 32);
-#if __BYTE_ORDER == __LITTLE_ENDIAN
+#if V8_TARGET_LITTLE_ENDIAN
     offset += kPointerSize / 2;
 #endif
     representation = Representation::Integer32();
@@ -3415,17 +3407,13 @@ void LCodeGen::DoLoadKeyedFixedDoubleArray(LLoadKeyed* instr) {
   __ lfd(result, MemOperand(elements, base_offset));
 
   if (instr->hydrogen()->RequiresHoleCheck()) {
-#if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
-    if (is_int16(base_offset + sizeof(kHoleNanLower32))) {
+    if (is_int16(base_offset + Register::kExponentOffset)) {
       __ lwz(scratch, MemOperand(elements,
-                                 base_offset + sizeof(kHoleNanLower32)));
+                                 base_offset + Register::kExponentOffset));
     } else {
       __ addi(scratch, elements, Operand(base_offset));
-      __ lwz(scratch, MemOperand(scratch, sizeof(kHoleNanLower32)));
+      __ lwz(scratch, MemOperand(scratch, Register::kExponentOffset));
     }
-#else
-    __ lwz(scratch, MemOperand(elements, base_offset));
-#endif
     __ Cmpi(scratch, Operand(kHoleNanUpper32), r0);
     DeoptimizeIf(eq, instr->environment());
   }
@@ -3471,7 +3459,7 @@ void LCodeGen::DoLoadKeyedFixedArray(LLoadKeyed* instr) {
     // Read int value directly from upper half of the smi.
     STATIC_ASSERT(kSmiTag == 0);
     STATIC_ASSERT(kSmiTagSize + kSmiShiftSize == 32);
-#if __BYTE_ORDER == __LITTLE_ENDIAN
+#if V8_TARGET_LITTLE_ENDIAN
     offset += kPointerSize / 2;
 #endif
   }
@@ -4001,11 +3989,7 @@ void LCodeGen::DoMathRound(LMathRound* instr) {
   __ bgt(&convert);  // Out of [-0.5, +0.5].
   if (instr->hydrogen()->CheckFlag(HValue::kBailoutOnMinusZero)) {
     __ stfdu(input, MemOperand(sp, -kDoubleSize));
-#if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
-    __ lwz(input_high, MemOperand(sp, 4));
-#else
-    __ lwz(input_high, MemOperand(sp, 0));
-#endif
+    __ lwz(input_high, MemOperand(sp, Register::kExponentOffset));
     __ addi(sp, sp, Operand(kDoubleSize));
     __ cmpwi(input_high, Operand::Zero());
     DeoptimizeIf(lt, instr->environment());  // [-0.5, -0].
@@ -4361,7 +4345,7 @@ void LCodeGen::DoStoreNamedField(LStoreNamedField* instr) {
     // Store int value directly to upper half of the smi.
     STATIC_ASSERT(kSmiTag == 0);
     STATIC_ASSERT(kSmiTagSize + kSmiShiftSize == 32);
-#if __BYTE_ORDER == __LITTLE_ENDIAN
+#if V8_TARGET_LITTLE_ENDIAN
     offset += kPointerSize / 2;
 #endif
     representation = Representation::Integer32();
@@ -4635,7 +4619,7 @@ void LCodeGen::DoStoreKeyedFixedArray(LStoreKeyed* instr) {
     // Store int value directly to upper half of the smi.
     STATIC_ASSERT(kSmiTag == 0);
     STATIC_ASSERT(kSmiTagSize + kSmiShiftSize == 32);
-#if __BYTE_ORDER == __LITTLE_ENDIAN
+#if V8_TARGET_LITTLE_ENDIAN
     offset += kPointerSize / 2;
 #endif
   }
@@ -5112,13 +5096,8 @@ void LCodeGen::EmitNumberUntagD(Register input_reg,
     __ lfd(result_reg, FieldMemOperand(input_reg, HeapNumber::kValueOffset));
     if (deoptimize_on_minus_zero) {
       __ stfdu(result_reg, MemOperand(sp, -kDoubleSize));
-#if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
-      __ lwz(ip, MemOperand(sp, 0));
-      __ lwz(scratch, MemOperand(sp, 4));
-#else
-      __ lwz(ip, MemOperand(sp, 4));
-      __ lwz(scratch, MemOperand(sp, 0));
-#endif
+      __ lwz(scratch, MemOperand(sp, Register::kExponentOffset));
+      __ lwz(ip, MemOperand(sp, Register::kMantissaOffset));
       __ addi(sp, sp, Operand(kDoubleSize));
 
       __ cmpi(ip, Operand::Zero());
@@ -5213,11 +5192,8 @@ void LCodeGen::DoDeferredTaggedToI(LTaggedToI* instr) {
     if (instr->hydrogen()->CheckFlag(HValue::kBailoutOnMinusZero)) {
       __ cmpi(input_reg, Operand::Zero());
       __ bne(&done);
-#if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
-      __ lwz(scratch1, FieldMemOperand(scratch2, HeapNumber::kValueOffset + 4));
-#else
-      __ lwz(scratch1, FieldMemOperand(scratch2, HeapNumber::kValueOffset));
-#endif
+      __ lwz(scratch1, FieldMemOperand(scratch2, HeapNumber::kValueOffset +
+                                       Register::kExponentOffset));
       __ cmpwi(scratch1, Operand::Zero());
       DeoptimizeIf(lt, instr->environment());
     }
@@ -5298,11 +5274,7 @@ void LCodeGen::DoDoubleToI(LDoubleToI* instr) {
       __ cmpi(result_reg, Operand::Zero());
       __ bne(&done);
       __ stfdu(double_input, MemOperand(sp, -kDoubleSize));
-#if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
-      __ lwz(scratch1, MemOperand(sp, 4));
-#else
-      __ lwz(scratch1, MemOperand(sp, 0));
-#endif
+      __ lwz(scratch1, MemOperand(sp, Register::kExponentOffset));
       __ addi(sp, sp, Operand(kDoubleSize));
       __ cmpwi(scratch1, Operand::Zero());
       DeoptimizeIf(lt, instr->environment());
@@ -5330,11 +5302,7 @@ void LCodeGen::DoDoubleToSmi(LDoubleToSmi* instr) {
       __ cmpi(result_reg, Operand::Zero());
       __ bne(&done);
       __ stfdu(double_input, MemOperand(sp, -kDoubleSize));
-#if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
-      __ lwz(scratch1, MemOperand(sp, 4));
-#else
-      __ lwz(scratch1, MemOperand(sp, 0));
-#endif
+      __ lwz(scratch1, MemOperand(sp, Register::kExponentOffset));
       __ addi(sp, sp, Operand(kDoubleSize));
       __ cmpwi(scratch1, Operand::Zero());
       DeoptimizeIf(lt, instr->environment());
@@ -5549,17 +5517,9 @@ void LCodeGen::DoDoubleBits(LDoubleBits* instr) {
   Register result_reg = ToRegister(instr->result());
   __ stfdu(value_reg, MemOperand(sp, -kDoubleSize));
   if (instr->hydrogen()->bits() == HDoubleBits::HIGH) {
-#if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
-    __ lwz(result_reg, MemOperand(sp, 4));
-#else
-    __ lwz(result_reg, MemOperand(sp, 0));
-#endif
+    __ lwz(result_reg, MemOperand(sp, Register::kExponentOffset));
   } else {
-#if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
-    __ lwz(result_reg, MemOperand(sp, 0));
-#else
-    __ lwz(result_reg, MemOperand(sp, 4));
-#endif
+    __ lwz(result_reg, MemOperand(sp, Register::kMantissaOffset));
   }
   __ addi(sp, sp, Operand(kDoubleSize));
 }
@@ -5569,12 +5529,12 @@ void LCodeGen::DoConstructDouble(LConstructDouble* instr) {
   Register hi_reg = ToRegister(instr->hi());
   Register lo_reg = ToRegister(instr->lo());
   DoubleRegister result_reg = ToDoubleRegister(instr->result());
-#if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
-  __ stwu(hi_reg, MemOperand(sp, -4));
-  __ stwu(lo_reg, MemOperand(sp, -4));
+#if V8_TARGET_LITTLE_ENDIAN
+  __ stwu(hi_reg, MemOperand(sp, -kDoubleSize / 2));
+  __ stwu(lo_reg, MemOperand(sp, -kDoubleSize / 2));
 #else
-  __ stwu(lo_reg, MemOperand(sp, -4));
-  __ stwu(hi_reg, MemOperand(sp, -4));
+  __ stwu(lo_reg, MemOperand(sp, -kDoubleSize / 2));
+  __ stwu(hi_reg, MemOperand(sp, -kDoubleSize / 2));
 #endif
   __ lfd(result_reg, MemOperand(sp));
   __ addi(sp, sp, Operand(kDoubleSize));

@@ -174,12 +174,10 @@ namespace internal {
 #define V8_TARGET_LITTLE_ENDIAN 1
 #elif V8_TARGET_ARCH_MIPS
 #define V8_TARGET_LITTLE_ENDIAN 1
-#elif V8_TARGET_ARCH_PPC
-# if __BYTE_ORDER == __LITTLE_ENDIAN
+#elif V8_TARGET_ARCH_PPC_LE
 #define V8_TARGET_LITTLE_ENDIAN 1
-# else
+#elif V8_TARGET_ARCH_PPC_BE
 #define V8_TARGET_BIG_ENDIAN 1
-# endif
 #else
 #error Unknown target architecture endiannes
 #endif

@@ -1018,14 +1018,9 @@ static void KeyedStoreGenerateGenericHelper(
   // HOLECHECK: guards "A[i] double hole?"
   // We have to see if the double version of the hole is present. If so
   // go to the runtime.
-#if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
   __ addi(address, elements,
-          Operand((FixedDoubleArray::kHeaderSize + sizeof(kHoleNanLower32))
-                  - kHeapObjectTag));
-#else
-  __ addi(address, elements,
-          Operand((FixedDoubleArray::kHeaderSize - kHeapObjectTag)));
-#endif
+          Operand((FixedDoubleArray::kHeaderSize + Register::kExponentOffset -
+                   kHeapObjectTag)));
   __ SmiToDoubleArrayOffset(scratch_value, key);
   __ lwzx(scratch_value, MemOperand(address, scratch_value));
   __ Cmpi(scratch_value, Operand(kHoleNanUpper32), r0);

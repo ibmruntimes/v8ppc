@@ -658,13 +658,10 @@ void DoubleToIStub::Generate(MacroAssembler* masm) {
   // Account for saved regs if input is sp.
   if (input_reg.is(sp)) double_offset += 2 * kPointerSize;
 
-#if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
-  __ lwz(scratch_high, MemOperand(input_reg, double_offset + 4));
-  __ lwz(scratch_low, MemOperand(input_reg, double_offset));
-#else
-  __ lwz(scratch_high, MemOperand(input_reg, double_offset));
-  __ lwz(scratch_low, MemOperand(input_reg, double_offset + 4));
-#endif
+  __ lwz(scratch_high, MemOperand(input_reg, double_offset +
+                                  Register::kExponentOffset));
+  __ lwz(scratch_low, MemOperand(input_reg, double_offset +
+                                 Register::kMantissaOffset));
 
   __ ExtractBitMask(scratch, scratch_high, HeapNumber::kExponentMask);
   // Load scratch with exponent - 1. This is faster than loading

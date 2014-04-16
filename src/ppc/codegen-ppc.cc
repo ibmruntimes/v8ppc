@@ -313,13 +313,8 @@ void ElementsTransitionGenerator::GenerateSmiToDouble(
 #if V8_TARGET_ARCH_PPC64
   __ std(r7, MemOperand(r10, 0));
 #else
-#if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
-  __ stw(r7, MemOperand(r10, 0));
-  __ stw(r8, MemOperand(r10, 4));
-#else
-  __ stw(r8, MemOperand(r10, 0));
-  __ stw(r7, MemOperand(r10, 4));
-#endif
+  __ stw(r8, MemOperand(r10, Register::kExponentOffset));
+  __ stw(r7, MemOperand(r10, Register::kMantissaOffset));
 #endif
   __ addi(r10, r10, Operand(8));
 
@@ -394,12 +389,8 @@ void ElementsTransitionGenerator::GenerateDoubleToObject(
   __ b(fail);
 
   __ bind(&loop);
-#if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
-  __ lwz(r4, MemOperand(r7, 4));
-#else
-  __ lwz(r4, MemOperand(r7));
-#endif
-  __ addi(r7, r7, Operand(8));
+  __ lwz(r4, MemOperand(r7, Register::kExponentOffset));
+  __ addi(r7, r7, Operand(kDoubleSize));
   // r4: current element's upper 32 bit
   // r7: address of next element's upper 32 bit
   __ Cmpi(r4, Operand(kHoleNanUpper32), r0);
@@ -409,21 +400,14 @@ void ElementsTransitionGenerator::GenerateDoubleToObject(
   __ AllocateHeapNumber(r5, r3, r4, r11, &gc_required);
   // r5: new heap number
 #if V8_TARGET_ARCH_PPC64
-  __ ld(r3, MemOperand(r7, -8));
+  __ ld(r3, MemOperand(r7, -kDoubleSize));
   __ addi(r4, r5, Operand(-1));  // subtract tag for std
   __ std(r3, MemOperand(r4, HeapNumber::kValueOffset));
 #else
-#if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
-  __ lwz(r3, MemOperand(r7, -8));
-  __ lwz(r4, MemOperand(r7, -4));
-  __ stw(r3, FieldMemOperand(r5, HeapNumber::kValueOffset));
-  __ stw(r4, FieldMemOperand(r5, HeapNumber::kValueOffset+4));
-#else
-  __ lwz(r3, MemOperand(r7, -4));
-  __ lwz(r4, MemOperand(r7, -8));
-  __ stw(r3, FieldMemOperand(r5, HeapNumber::kValueOffset+4));
-  __ stw(r4, FieldMemOperand(r5, HeapNumber::kValueOffset));
-#endif
+  __ lwz(r3, MemOperand(r7, Register::kMantissaOffset - kDoubleSize));
+  __ lwz(r4, MemOperand(r7, Register::kExponentOffset - kDoubleSize));
+  __ stw(r3, FieldMemOperand(r5, HeapNumber::kMantissaOffset));
+  __ stw(r4, FieldMemOperand(r5, HeapNumber::kExponentOffset));
 #endif
   __ mr(r3, r6);
   __ StoreP(r5, MemOperand(r6));
@@ -610,11 +594,7 @@ void MathExpGenerator::EmitMathExp(MacroAssembler* masm,
   // Move low word of double_scratch1 to temp2
   __ subi(sp, sp, Operand(kDoubleSize));
   __ stfd(double_scratch1, MemOperand(sp));
-#if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
-  __ lwz(temp2, MemOperand(sp, 0));
-#else
-  __ lwz(temp2, MemOperand(sp, 4));
-#endif
+  __ lwz(temp2, MemOperand(sp, Register::kMantissaOffset));
 
   __ fsub(double_scratch1, double_scratch1, result);
   __ lfd(result, ExpConstant(6, temp3));
@@ -632,27 +612,23 @@ void MathExpGenerator::EmitMathExp(MacroAssembler* masm,
   __ srwi(temp1, temp2, Operand(11));
   __ andi(temp2, temp2, Operand(0x7ff));
   __ addi(temp1, temp1, Operand(0x3ff));
-  __ slwi(temp1, temp1, Operand(20));
 
   // Must not call ExpConstant() after overwriting temp3!
   __ mov(temp3, Operand(ExternalReference::math_exp_log_table()));
   __ slwi(temp2, temp2, Operand(3));
-#if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
-  // Calculate ip (low), temp2/temp1 (high)
-  __ lwzx(ip, MemOperand(temp3, temp2));
-  __ addi(temp3, temp3, Operand(4));
-  __ lwzx(temp2, MemOperand(temp3, temp2));
-  __ orx(temp1, temp1, temp2);
-  __ stw(ip, MemOperand(sp, 0));
-  __ stw(temp1, MemOperand(sp, 4));
+#if V8_TARGET_ARCH_PPC64
+  __ ldx(temp2, MemOperand(temp3, temp2));
+  __ sldi(temp1, temp1, Operand(52));
+  __ orx(temp2, temp1, temp2);
+  __ std(temp2, MemOperand(sp, 0));
 #else
-  // Calculate temp1 (low), ip/temp1 (high)
-  __ lwzx(ip, MemOperand(temp3, temp2));
-  __ addi(temp3, temp3, Operand(4));
-  __ lwzx(temp2, MemOperand(temp3, temp2));
-  __ orx(temp1, temp1, ip);
-  __ stw(temp1, MemOperand(sp, 0));
-  __ stw(temp2, MemOperand(sp, 4));
+  __ add(ip, temp3, temp2);
+  __ lwz(temp3, MemOperand(ip, Register::kExponentOffset));
+  __ lwz(temp2, MemOperand(ip, Register::kMantissaOffset));
+  __ slwi(temp1, temp1, Operand(20));
+  __ orx(temp3, temp1, temp3);
+  __ stw(temp3, MemOperand(sp, Register::kExponentOffset));
+  __ stw(temp2, MemOperand(sp, Register::kMantissaOffset));
 #endif
   __ lfd(double_scratch1, MemOperand(sp, 0));
   __ addi(sp, sp, Operand(kDoubleSize));
