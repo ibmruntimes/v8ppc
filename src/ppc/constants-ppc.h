@@ -409,7 +409,7 @@ enum BOfield {  // Bits 25-21
   BA     = 20 << 21   // Branch always
 };
 
-#ifdef _AIX
+#if V8_OS_AIX
 #undef CR_LT
 #undef CR_GT
 #undef CR_EQ

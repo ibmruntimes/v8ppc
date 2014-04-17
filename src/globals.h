@@ -44,7 +44,7 @@
 # define V8_INFINITY INFINITY
 #endif
 
-#ifdef _AIX
+#if V8_OS_AIX
 #undef V8_INFINITY
 #define V8_INFINITY (__builtin_inff())
 #endif
@@ -241,7 +241,11 @@ typedef byte* Address;
 # define V8_UINT64_C(x)   (x ## ULL)
 # define V8_INT64_C(x)    (x ## LL)
 # define V8_INTPTR_C(x)   (x)
+# if V8_OS_AIX
+# define V8_PTR_PREFIX    "l"
+# else
 # define V8_PTR_PREFIX    ""
+# endif
 #endif
 
 // The following macro works on both 32 and 64-bit platforms.
@@ -252,16 +256,6 @@ typedef byte* Address;
 #define V8PRIxPTR V8_PTR_PREFIX "x"
 #define V8PRIdPTR V8_PTR_PREFIX "d"
 #define V8PRIuPTR V8_PTR_PREFIX "u"
-
-// Fix for AIX define intptr_t as "long int":
-#ifdef _AIX
-#undef V8_PTR_PREFIX
-#define V8_PTR_PREFIX "l"
-#undef V8PRIdPTR
-#define V8PRIdPTR "ld"
-#undef V8PRIxPTR
-#define V8PRIxPTR "lx"
-#endif
 
 // Fix for Mac OS X defining uintptr_t as "unsigned long":
 #if V8_OS_MACOSX

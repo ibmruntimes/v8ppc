@@ -104,7 +104,7 @@ const int kNumSafepointSavedRegisters = kNumJSCallerSaved + kNumCalleeSaved;
 const int kNumRequiredStackFrameSlots = 12;
 const int kStackFrameLRSlot = 2;
 const int kStackFrameExtraParamSlot = 12;
-#elif defined(_AIX) || V8_TARGET_ARCH_PPC64
+#elif V8_OS_AIX || V8_TARGET_ARCH_PPC64
 // [0] back chain
 // [1] condition register save area
 // [2] link register save area
