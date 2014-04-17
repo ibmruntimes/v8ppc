@@ -1347,7 +1347,7 @@ class BoyerMooreLookahead : public ZoneObject {
 // code to store the capture is deferred and generated (twice) after the places
 // where baz has been matched.
 
-#ifdef _AIX
+#if V8_OS_AIX
 #undef UNKNOWN
 #undef FALSE
 #undef TRUE

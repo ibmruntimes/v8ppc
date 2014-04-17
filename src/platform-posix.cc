@@ -254,7 +254,7 @@ void* OS::GetRandomMmapAddr() {
     // no hint at all. The high hint prevents the break from getting hemmed in
     // at low values, ceding half of the address space to the system heap.
     raw_addr += 0x80000000;
-# elif _AIX
+# elif V8_OS_AIX
     // The range 0x30000000 - 0xD0000000 is available on AIX;
     // choose the upper range.
     raw_addr += 0x90000000;

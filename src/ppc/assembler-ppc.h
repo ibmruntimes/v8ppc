@@ -44,7 +44,7 @@
 #ifndef V8_PPC_ASSEMBLER_PPC_H_
 #define V8_PPC_ASSEMBLER_PPC_H_
 #include <stdio.h>
-#if !defined(_AIX)
+#if !V8_OS_AIX
 #include <elf.h>
 #include <fcntl.h>
 #include <unistd.h>
@@ -55,11 +55,11 @@
 
 #define ABI_USES_FUNCTION_DESCRIPTORS                                     \
   (V8_HOST_ARCH_PPC &&                                                    \
-     (defined(_AIX) ||                                                    \
+     (V8_OS_AIX ||                                                        \
       (V8_TARGET_ARCH_PPC64 && V8_TARGET_BIG_ENDIAN)))
 
 #define ABI_PASSES_HANDLES_IN_REGS \
-  (!V8_HOST_ARCH_PPC || defined(_AIX) || V8_TARGET_ARCH_PPC64)
+  (!V8_HOST_ARCH_PPC || V8_OS_AIX || V8_TARGET_ARCH_PPC64)
 
 #define ABI_RETURNS_HANDLES_IN_REGS \
   (!V8_HOST_ARCH_PPC || V8_TARGET_LITTLE_ENDIAN)

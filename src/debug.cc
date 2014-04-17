@@ -56,9 +56,9 @@ namespace internal {
 #ifdef ENABLE_DEBUGGER_SUPPORT
 
 
-#if defined (_AIX)
+#if V8_OS_AIX
 static bool message_handled = true;
-#endif /* defined(_AIX) */
+#endif /* V8_OS_AIX */
 Debug::Debug(Isolate* isolate)
     : has_break_points_(false),
       script_cache_(NULL),
@@ -3067,9 +3067,9 @@ void Debugger::NotifyMessageHandler(v8::DebugEvent event,
         auto_continue,
         Handle<JSObject>::cast(exec_state),
         Handle<JSObject>::cast(event_data));
-#if defined (_AIX)
+#if V8_OS_AIX
     message_handled = true;
-#endif /* defined(_AIX) */
+#endif /* V8_OS_AIX */
     InvokeMessageHandler(message);
   }
 
@@ -3120,7 +3120,7 @@ void Debugger::NotifyMessageHandler(v8::DebugEvent event,
       // In case there is no host dispatch - just wait.
       command_received_.Wait();
     }
-#if defined (_AIX)
+#if V8_OS_AIX
   // before getting the new command, see if there is a previous commend
   // which was not handled. This happens when remote debugger was not
   // ready when the previous reached this method for processing, which
@@ -3135,7 +3135,7 @@ void Debugger::NotifyMessageHandler(v8::DebugEvent event,
     message_handled = true;
     InvokeMessageHandler(message);
   }
-#endif /* defined(_AIX) */
+#endif /* V8_OS_AIX */
 
     // Get the command from the queue.
     CommandMessage command = command_queue_.Get();
@@ -3398,9 +3398,9 @@ Handle<Object> Debugger::Call(Handle<JSFunction> fun,
 
 
 static void StubMessageHandler2(const v8::Debug::Message& message) {
-#if defined (_AIX)
+#if V8_OS_AIX
   message_handled = false;
-#endif /* defined(_AIX) */
+#endif /* V8_OS_AIX */
 }
 
 
