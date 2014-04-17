@@ -484,17 +484,12 @@ Handle<JSFunction> Genesis::CreateEmptyFunction(Isolate* isolate) {
   // 262 15.3.4.
   Handle<String> empty_string =
       factory->InternalizeOneByteString(STATIC_ASCII_VECTOR("Empty"));
+  Handle<Code> code(isolate->builtins()->builtin(Builtins::kEmptyFunction));
   Handle<JSFunction> empty_function =
-      factory->NewFunctionWithoutPrototype(empty_string, SLOPPY);
+      factory->NewFunctionWithoutPrototype(empty_string, code);
 
   // --- E m p t y ---
-  Handle<Code> code =
-      Handle<Code>(isolate->builtins()->builtin(
-          Builtins::kEmptyFunction));
-  empty_function->set_code(*code);
-  empty_function->shared()->set_code(*code);
-  Handle<String> source =
-      factory->NewStringFromOneByte(STATIC_ASCII_VECTOR("() {}"));
+  Handle<String> source = factory->NewStringFromStaticAscii("() {}");
   Handle<Script> script = factory->NewScript(source);
   script->set_type(Smi::FromInt(Script::TYPE_NATIVE));
   empty_function->shared()->set_script(*script);
@@ -567,16 +562,14 @@ Handle<JSFunction> Genesis::GetThrowTypeErrorFunction() {
   if (throw_type_error_function.is_null()) {
     Handle<String> name = factory()->InternalizeOneByteString(
         STATIC_ASCII_VECTOR("ThrowTypeError"));
-    throw_type_error_function =
-      factory()->NewFunctionWithoutPrototype(name, SLOPPY);
     Handle<Code> code(isolate()->builtins()->builtin(
         Builtins::kStrictModePoisonPill));
+    throw_type_error_function =
+        factory()->NewFunctionWithoutPrototype(name, code);
     throw_type_error_function->set_map(native_context()->sloppy_function_map());
-    throw_type_error_function->set_code(*code);
-    throw_type_error_function->shared()->set_code(*code);
     throw_type_error_function->shared()->DontAdaptArguments();
 
-    JSObject::PreventExtensions(throw_type_error_function);
+    JSObject::PreventExtensions(throw_type_error_function).Assert();
   }
   return throw_type_error_function;
 }
@@ -1304,6 +1297,16 @@ void Genesis::InitializeExperimentalGlobal() {
                       isolate()->initial_object_prototype(),
                       Builtins::kIllegal, true, true);
     }
+    {   // -- S e t I t e r a t o r
+      Handle<Map> map = isolate()->factory()->NewMap(
+          JS_SET_ITERATOR_TYPE, JSSetIterator::kSize);
+      native_context()->set_set_iterator_map(*map);
+    }
+    {   // -- M a p I t e r a t o r
+      Handle<Map> map = isolate()->factory()->NewMap(
+          JS_MAP_ITERATOR_TYPE, JSMapIterator::kSize);
+      native_context()->set_map_iterator_map(*map);
+    }
   }
 
   if (FLAG_harmony_weak_collections) {
@@ -1358,37 +1361,38 @@ void Genesis::InitializeExperimentalGlobal() {
         *generator_object_prototype);
     native_context()->set_generator_object_prototype_map(
         *generator_object_prototype_map);
+  }
 
-    // Create a map for generator result objects.
-    ASSERT(object_function->initial_map()->inobject_properties() == 0);
+  if (FLAG_harmony_collections || FLAG_harmony_generators) {
+    // Collection forEach uses an iterator result object.
+    // Generators return iteraror result objects.
+
     STATIC_ASSERT(JSGeneratorObject::kResultPropertyCount == 2);
-    Handle<Map> generator_result_map = Map::Create(
+    Handle<JSFunction> object_function(native_context()->object_function());
+    ASSERT(object_function->initial_map()->inobject_properties() == 0);
+    Handle<Map> iterator_result_map = Map::Create(
         object_function, JSGeneratorObject::kResultPropertyCount);
-    ASSERT(generator_result_map->inobject_properties() ==
+    ASSERT(iterator_result_map->inobject_properties() ==
         JSGeneratorObject::kResultPropertyCount);
     Map::EnsureDescriptorSlack(
-        generator_result_map, JSGeneratorObject::kResultPropertyCount);
+        iterator_result_map, JSGeneratorObject::kResultPropertyCount);
 
-    Handle<String> value_string = factory()->InternalizeOneByteString(
-        STATIC_ASCII_VECTOR("value"));
-    FieldDescriptor value_descr(value_string,
+    FieldDescriptor value_descr(isolate()->factory()->value_string(),
                                 JSGeneratorObject::kResultValuePropertyIndex,
                                 NONE,
                                 Representation::Tagged());
-    generator_result_map->AppendDescriptor(&value_descr);
+    iterator_result_map->AppendDescriptor(&value_descr);
 
-    Handle<String> done_string = factory()->InternalizeOneByteString(
-        STATIC_ASCII_VECTOR("done"));
-    FieldDescriptor done_descr(done_string,
+    FieldDescriptor done_descr(isolate()->factory()->done_string(),
                                JSGeneratorObject::kResultDonePropertyIndex,
                                NONE,
                                Representation::Tagged());
-    generator_result_map->AppendDescriptor(&done_descr);
+    iterator_result_map->AppendDescriptor(&done_descr);
 
-    generator_result_map->set_unused_property_fields(0);
+    iterator_result_map->set_unused_property_fields(0);
     ASSERT_EQ(JSGeneratorObject::kResultSize,
-              generator_result_map->instance_size());
-    native_context()->set_generator_result_map(*generator_result_map);
+              iterator_result_map->instance_size());
+    native_context()->set_iterator_result_map(*iterator_result_map);
   }
 }
 
@@ -1404,10 +1408,12 @@ bool Genesis::CompileBuiltin(Isolate* isolate, int index) {
 bool Genesis::CompileExperimentalBuiltin(Isolate* isolate, int index) {
   Vector<const char> name = ExperimentalNatives::GetScriptName(index);
   Factory* factory = isolate->factory();
-  Handle<String> source_code =
+  Handle<String> source_code;
+  ASSIGN_RETURN_ON_EXCEPTION_VALUE(
+      isolate, source_code,
       factory->NewStringFromAscii(
-          ExperimentalNatives::GetRawScriptSource(index));
-  RETURN_IF_EMPTY_HANDLE_VALUE(isolate, source_code, false);
+          ExperimentalNatives::GetRawScriptSource(index)),
+      false);
   return CompileNative(isolate, name, source_code);
 }
 
@@ -1456,8 +1462,8 @@ bool Genesis::CompileScriptCached(Isolate* isolate,
   // function and insert it into the cache.
   if (cache == NULL || !cache->Lookup(name, &function_info)) {
     ASSERT(source->IsOneByteRepresentation());
-    Handle<String> script_name = factory->NewStringFromUtf8(name);
-    ASSERT(!script_name.is_null());
+    Handle<String> script_name =
+        factory->NewStringFromUtf8(name).ToHandleChecked();
     function_info = Compiler::CompileScript(
         source,
         script_name,

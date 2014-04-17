@@ -85,6 +85,7 @@ Heap::Heap()
 // Will be 4 * reserved_semispace_size_ to ensure that young
 // generation can be aligned to its size.
       maximum_committed_(0),
+      old_space_growing_factor_(4),
       survived_since_last_expansion_(0),
       sweep_generation_(0),
       always_allocate_scope_depth_(0),
@@ -2412,6 +2413,22 @@ MaybeObject* Heap::AllocateMap(InstanceType instance_type,
 }
 
 
+MaybeObject* Heap::AllocateFillerObject(int size,
+                                        bool double_align,
+                                        AllocationSpace space) {
+  HeapObject* allocation;
+  { MaybeObject* maybe_allocation = AllocateRaw(size, space, space);
+    if (!maybe_allocation->To(&allocation)) return maybe_allocation;
+  }
+#ifdef DEBUG
+  MemoryChunk* chunk = MemoryChunk::FromAddress(allocation->address());
+  ASSERT(chunk->owner()->identity() == space);
+#endif
+  CreateFillerObjectAt(allocation->address(), size);
+  return allocation;
+}
+
+
 MaybeObject* Heap::AllocatePolymorphicCodeCache() {
   return AllocateStruct(POLYMORPHIC_CODE_CACHE_TYPE);
 }
@@ -3377,7 +3394,7 @@ MaybeObject* Heap::LookupSingleCharacterStringFromCode(uint16_t code) {
   }
 
   SeqTwoByteString* result;
-  { MaybeObject* maybe_result = AllocateRawTwoByteString(1);
+  { MaybeObject* maybe_result = AllocateRawTwoByteString(1, NOT_TENURED);
     if (!maybe_result->To<SeqTwoByteString>(&result)) return maybe_result;
   }
   result->SeqTwoByteStringSet(0, code);
@@ -3940,26 +3957,6 @@ MaybeObject* Heap::CopyJSObject(JSObject* source, AllocationSite* site) {
   }
   // Return the new clone.
   return clone;
-}
-
-
-MaybeObject* Heap::AllocateStringFromOneByte(Vector<const uint8_t> string,
-                                             PretenureFlag pretenure) {
-  int length = string.length();
-  if (length == 1) {
-    return Heap::LookupSingleCharacterStringFromCode(string[0]);
-  }
-  Object* result;
-  { MaybeObject* maybe_result =
-        AllocateRawOneByteString(string.length(), pretenure);
-    if (!maybe_result->ToObject(&result)) return maybe_result;
-  }
-
-  // Copy the characters into the new object.
-  CopyChars(SeqOneByteString::cast(result)->GetChars(),
-            string.start(),
-            length);
-  return result;
 }
 
 
@@ -5319,6 +5316,12 @@ bool Heap::ConfigureHeap(int max_semispace_size,
           AllocationMemento::kSize));
 
   code_range_size_ = code_range_size;
+
+  // We set the old generation growing factor to 2 to grow the heap slower on
+  // memory-constrained devices.
+  if (max_old_generation_size_ <= kMaxOldSpaceSizeMediumMemoryDevice) {
+    old_space_growing_factor_ = 2;
+  }
 
   configured_ = true;
   return true;

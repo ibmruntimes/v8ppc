@@ -68,6 +68,8 @@
 //             - JSDataView
 //           - JSSet
 //           - JSMap
+//           - JSSetIterator
+//           - JSMapIterator
 //           - JSWeakCollection
 //             - JSWeakMap
 //             - JSWeakSet
@@ -447,6 +449,8 @@ const int kStubMinorKeyBits = kBitsPerInt - kSmiTagSize - kStubMajorKeyBits;
   V(JS_PROXY_TYPE)                                                             \
   V(JS_SET_TYPE)                                                               \
   V(JS_MAP_TYPE)                                                               \
+  V(JS_SET_ITERATOR_TYPE)                                                      \
+  V(JS_MAP_ITERATOR_TYPE)                                                      \
   V(JS_WEAK_MAP_TYPE)                                                          \
   V(JS_WEAK_SET_TYPE)                                                          \
   V(JS_REGEXP_TYPE)                                                            \
@@ -795,6 +799,8 @@ enum InstanceType {
   JS_DATA_VIEW_TYPE,
   JS_SET_TYPE,
   JS_MAP_TYPE,
+  JS_SET_ITERATOR_TYPE,
+  JS_MAP_ITERATOR_TYPE,
   JS_WEAK_MAP_TYPE,
   JS_WEAK_SET_TYPE,
 
@@ -1042,6 +1048,8 @@ class MaybeObject BASE_EMBEDDED {
   V(JSFunctionProxy)                           \
   V(JSSet)                                     \
   V(JSMap)                                     \
+  V(JSSetIterator)                             \
+  V(JSMapIterator)                             \
   V(JSWeakCollection)                          \
   V(JSWeakMap)                                 \
   V(JSWeakSet)                                 \
@@ -2373,9 +2381,10 @@ class JSObject: public JSReceiver {
 
   // Retrieves an AccessorPair property from the given object. Might return
   // undefined if the property doesn't exist or is of a different kind.
-  static Handle<Object> GetAccessor(Handle<JSObject> object,
-                                    Handle<Name> name,
-                                    AccessorComponent component);
+  MUST_USE_RESULT static MaybeHandle<Object> GetAccessor(
+      Handle<JSObject> object,
+      Handle<Name> name,
+      AccessorComponent component);
 
   // Defines an AccessorPair property on the given object.
   // TODO(mstarzinger): Rename to SetAccessor() and return empty handle on
@@ -2388,8 +2397,9 @@ class JSObject: public JSReceiver {
                              v8::AccessControl access_control = v8::DEFAULT);
 
   // Defines an AccessorInfo property on the given object.
-  static Handle<Object> SetAccessor(Handle<JSObject> object,
-                                    Handle<AccessorInfo> info);
+  MUST_USE_RESULT static MaybeHandle<Object> SetAccessor(
+      Handle<JSObject> object,
+      Handle<AccessorInfo> info);
 
   MUST_USE_RESULT static MaybeHandle<Object> GetPropertyWithInterceptor(
       Handle<JSObject> object,
@@ -2667,7 +2677,8 @@ class JSObject: public JSReceiver {
   bool ReferencesObject(Object* obj);
 
   // Disalow further properties to be added to the object.
-  static Handle<Object> PreventExtensions(Handle<JSObject> object);
+  MUST_USE_RESULT static MaybeHandle<Object> PreventExtensions(
+      Handle<JSObject> object);
 
   // ES5 Object.freeze
   MUST_USE_RESULT static MaybeHandle<Object> Freeze(Handle<JSObject> object);
@@ -2947,8 +2958,9 @@ class JSObject: public JSReceiver {
   static Handle<Object> DeletePropertyPostInterceptor(Handle<JSObject> object,
                                                       Handle<Name> name,
                                                       DeleteMode mode);
-  static Handle<Object> DeletePropertyWithInterceptor(Handle<JSObject> object,
-                                                      Handle<Name> name);
+  MUST_USE_RESULT static MaybeHandle<Object> DeletePropertyWithInterceptor(
+      Handle<JSObject> object,
+      Handle<Name> name);
 
   // Deletes the named property in a normalized object.
   static Handle<Object> DeleteNormalizedProperty(Handle<JSObject> object,
@@ -4332,16 +4344,17 @@ class ObjectHashTable: public HashTable<ObjectHashTable,
 //   [0]: bucket count
 //   [1]: element count
 //   [2]: deleted element count
-//   [3..(NumberOfBuckets() - 1)]: "hash table", where each item is an offset
+//   [3]: live iterators (doubly-linked list)
+//   [4..(NumberOfBuckets() - 1)]: "hash table", where each item is an offset
 //                                 into the data table (see below) where the
 //                                 first item in this bucket is stored.
-//   [3 + NumberOfBuckets()..length]: "data table", an array of length
+//   [4 + NumberOfBuckets()..length]: "data table", an array of length
 //                            Capacity() * kEntrySize, where the first entrysize
 //                            items are handled by the derived class and the
 //                            item at kChainOffset is another entry into the
 //                            data table indicating the next entry in this hash
 //                            bucket.
-template<class Derived, int entrysize>
+template<class Derived, class Iterator, int entrysize>
 class OrderedHashTable: public FixedArray {
  public:
   // Returns an OrderedHashTable with a capacity of at least |capacity|.
@@ -4356,6 +4369,10 @@ class OrderedHashTable: public FixedArray {
   // if possible.
   static Handle<Derived> Shrink(Handle<Derived> table);
 
+  // Returns a new empty OrderedHashTable and updates all the iterators to
+  // point to the new table.
+  static Handle<Derived> Clear(Handle<Derived> table);
+
   // Returns kNotFound if the key isn't present.
   int FindEntry(Object* key);
 
@@ -4367,9 +4384,15 @@ class OrderedHashTable: public FixedArray {
     return Smi::cast(get(kNumberOfDeletedElementsIndex))->value();
   }
 
+  int UsedCapacity() { return NumberOfElements() + NumberOfDeletedElements(); }
+
   int NumberOfBuckets() {
     return Smi::cast(get(kNumberOfBucketsIndex))->value();
   }
+
+  Object* iterators() { return get(kIteratorsIndex); }
+
+  void set_iterators(Object* value) { set(kIteratorsIndex, value); }
 
   // Returns the index into the data table where the new entry
   // should be placed. The table is assumed to have enough space
@@ -4385,7 +4408,10 @@ class OrderedHashTable: public FixedArray {
     return kHashTableStartIndex + NumberOfBuckets() + (entry * kEntrySize);
   }
 
+  Object* KeyAt(int entry) { return get(EntryToIndex(entry)); }
+
   static const int kNotFound = -1;
+  static const int kMinCapacity = 4;
 
  private:
   static Handle<Derived> Rehash(Handle<Derived> table, int new_capacity);
@@ -4406,8 +4432,6 @@ class OrderedHashTable: public FixedArray {
     return NumberOfBuckets() * kLoadFactor;
   }
 
-  Object* KeyAt(int entry) { return get(EntryToIndex(entry)); }
-
   // Returns the next entry for the given entry.
   int ChainAt(int entry) {
     return Smi::cast(get(EntryToIndex(entry) + kChainOffset))->value();
@@ -4425,7 +4449,8 @@ class OrderedHashTable: public FixedArray {
   static const int kNumberOfBucketsIndex = 0;
   static const int kNumberOfElementsIndex = kNumberOfBucketsIndex + 1;
   static const int kNumberOfDeletedElementsIndex = kNumberOfElementsIndex + 1;
-  static const int kHashTableStartIndex = kNumberOfDeletedElementsIndex + 1;
+  static const int kIteratorsIndex = kNumberOfDeletedElementsIndex + 1;
+  static const int kHashTableStartIndex = kIteratorsIndex + 1;
 
   static const int kEntrySize = entrysize + 1;
   static const int kChainOffset = entrysize;
@@ -4437,7 +4462,11 @@ class OrderedHashTable: public FixedArray {
 };
 
 
-class OrderedHashSet: public OrderedHashTable<OrderedHashSet, 1> {
+class JSSetIterator;
+
+
+class OrderedHashSet: public OrderedHashTable<
+    OrderedHashSet, JSSetIterator, 1> {
  public:
   static OrderedHashSet* cast(Object* obj) {
     ASSERT(obj->IsOrderedHashTable());
@@ -4452,7 +4481,11 @@ class OrderedHashSet: public OrderedHashTable<OrderedHashSet, 1> {
 };
 
 
-class OrderedHashMap: public OrderedHashTable<OrderedHashMap, 2> {
+class JSMapIterator;
+
+
+class OrderedHashMap:public OrderedHashTable<
+    OrderedHashMap, JSMapIterator, 2> {
  public:
   static OrderedHashMap* cast(Object* obj) {
     ASSERT(obj->IsOrderedHashTable());
@@ -6261,8 +6294,8 @@ class Map: public HeapObject {
                               int target_inobject,
                               int target_unused);
   static Handle<Map> GeneralizeAllFieldRepresentations(Handle<Map> map);
-  static Handle<HeapType> GeneralizeFieldType(Handle<HeapType> old_field_type,
-                                              Handle<HeapType> new_field_type,
+  static Handle<HeapType> GeneralizeFieldType(Handle<HeapType> type1,
+                                              Handle<HeapType> type2,
                                               Isolate* isolate)
       V8_WARN_UNUSED_RESULT;
   static void GeneralizeFieldType(Handle<Map> map,
@@ -7642,7 +7675,7 @@ class JSGeneratorObject: public JSObject {
   enum ResumeMode { NEXT, THROW };
 
   // Yielding from a generator returns an object with the following inobject
-  // properties.  See Context::generator_result_map() for the map.
+  // properties.  See Context::iterator_result_map() for the map.
   static const int kResultValuePropertyIndex = 0;
   static const int kResultDonePropertyIndex = 1;
   static const int kResultPropertyCount = 2;
@@ -8447,9 +8480,6 @@ class PolymorphicCodeCache: public Struct {
                      Code::Flags flags,
                      Handle<Code> code);
 
-  MUST_USE_RESULT MaybeObject* Update(MapHandleList* maps,
-                                      Code::Flags flags,
-                                      Code* code);
 
   // Returns an undefined value if the entry is not found.
   Handle<Object> Lookup(MapHandleList* maps, Code::Flags flags);
@@ -8475,9 +8505,11 @@ class PolymorphicCodeCacheHashTable
  public:
   Object* Lookup(MapHandleList* maps, int code_kind);
 
-  MUST_USE_RESULT MaybeObject* Put(MapHandleList* maps,
-                                   int code_kind,
-                                   Code* code);
+  static Handle<PolymorphicCodeCacheHashTable> Put(
+      Handle<PolymorphicCodeCacheHashTable> hash_table,
+      MapHandleList* maps,
+      int code_kind,
+      Handle<Code> code);
 
   static inline PolymorphicCodeCacheHashTable* cast(Object* obj);
 
@@ -10123,6 +10155,149 @@ class JSMap: public JSObject {
 
  private:
   DISALLOW_IMPLICIT_CONSTRUCTORS(JSMap);
+};
+
+
+// OrderedHashTableIterator is an iterator that iterates over the keys and
+// values of an OrderedHashTable.
+//
+// The hash table has a reference to the iterator and the iterators themselves
+// have references to the [next_iterator] and [previous_iterator], thus creating
+// a double linked list.
+//
+// When the hash table changes the iterators are called to update their [index]
+// and [count]. The hash table calls [EntryRemoved], [TableCompacted] as well
+// as [TableCleared].
+//
+// When an iterator is done it closes itself. It removes itself from the double
+// linked list and it sets its [table] to undefined, no longer keeping the
+// [table] alive.
+template<class Derived, class TableType>
+class OrderedHashTableIterator: public JSObject {
+ public:
+  // [table]: the backing hash table mapping keys to values.
+  DECL_ACCESSORS(table, Object)
+
+  // [index]: The index into the data table.
+  DECL_ACCESSORS(index, Smi)
+
+  // [count]: The logical index into the data table, ignoring the holes.
+  DECL_ACCESSORS(count, Smi)
+
+  // [kind]: The kind of iteration this is. One of the [Kind] enum values.
+  DECL_ACCESSORS(kind, Smi)
+
+  // [next_iterator]: Used as a double linked list for the live iterators.
+  DECL_ACCESSORS(next_iterator, Object)
+
+  // [previous_iterator]: Used as a double linked list for the live iterators.
+  DECL_ACCESSORS(previous_iterator, Object)
+
+#ifdef OBJECT_PRINT
+  void OrderedHashTableIteratorPrint(FILE* out);
+#endif
+
+  static const int kTableOffset = JSObject::kHeaderSize;
+  static const int kIndexOffset = kTableOffset + kPointerSize;
+  static const int kCountOffset = kIndexOffset + kPointerSize;
+  static const int kKindOffset = kCountOffset + kPointerSize;
+  static const int kNextIteratorOffset = kKindOffset + kPointerSize;
+  static const int kPreviousIteratorOffset = kNextIteratorOffset + kPointerSize;
+  static const int kSize = kPreviousIteratorOffset + kPointerSize;
+
+  enum Kind {
+    kKindKeys = 1,
+    kKindValues = 2,
+    kKindEntries = 3
+  };
+
+  // Called by the underlying [table] when an entry is removed.
+  void EntryRemoved(int index);
+
+  // Called by the underlying [table] when it is compacted/rehashed.
+  void TableCompacted() {
+    // All holes have been removed so index is now same as count.
+    set_index(count());
+  }
+
+  // Called by the underlying [table] when it is cleared.
+  void TableCleared() {
+    set_index(Smi::FromInt(0));
+    set_count(Smi::FromInt(0));
+  }
+
+  // Removes the iterator from the double linked list and removes its reference
+  // back to the [table].
+  void Close();
+
+  // Returns an iterator result object: {value: any, done: boolean} and moves
+  // the index to the next valid entry. Closes the iterator if moving past the
+  // end.
+  static Handle<JSObject> Next(Handle<Derived> iterator);
+
+ protected:
+  static Handle<Derived> CreateInternal(
+      Handle<Map> map, Handle<TableType> table, int kind);
+
+ private:
+  // Ensures [index] is not pointing to a hole.
+  void Seek();
+
+  // Moves [index] to next valid entry. Closes the iterator if moving past the
+  // end.
+  void MoveNext();
+
+  bool Closed() {
+    return table()->IsUndefined();
+  }
+
+  DISALLOW_IMPLICIT_CONSTRUCTORS(OrderedHashTableIterator);
+};
+
+
+class JSSetIterator: public OrderedHashTableIterator<JSSetIterator,
+                                                     OrderedHashSet> {
+ public:
+  // Creates a new iterator associated with [table].
+  // [kind] needs to be one of the OrderedHashTableIterator Kind enum values.
+  static inline Handle<JSSetIterator> Create(
+      Handle<OrderedHashSet> table, int kind);
+
+  // Dispatched behavior.
+  DECLARE_PRINTER(JSSetIterator)
+  DECLARE_VERIFIER(JSSetIterator)
+
+  // Casting.
+  static inline JSSetIterator* cast(Object* obj);
+
+  static Handle<Object> ValueForKind(
+      Handle<JSSetIterator> iterator, int entry_index);
+
+ private:
+  DISALLOW_IMPLICIT_CONSTRUCTORS(JSSetIterator);
+};
+
+
+class JSMapIterator: public OrderedHashTableIterator<JSMapIterator,
+                                                     OrderedHashMap> {
+ public:
+  // Creates a new iterator associated with [table].
+  // [kind] needs to be one of the OrderedHashTableIterator Kind enum values.
+  static inline Handle<JSMapIterator> Create(
+      Handle<OrderedHashMap> table, int kind);
+
+  // Dispatched behavior.
+  DECLARE_PRINTER(JSMapIterator)
+  DECLARE_VERIFIER(JSMapIterator)
+
+  // Casting.
+  static inline JSMapIterator* cast(Object* obj);
+
+  static Handle<Object> ValueForKind(
+      Handle<JSMapIterator> iterator, int entry_index);
+
+ private:
+  DISALLOW_IMPLICIT_CONSTRUCTORS(JSMapIterator);
 };
 
 

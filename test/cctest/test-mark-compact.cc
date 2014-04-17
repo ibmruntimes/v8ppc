@@ -39,6 +39,7 @@
 
 #include "v8.h"
 
+#include "full-codegen.h"
 #include "global-handles.h"
 #include "snapshot.h"
 #include "cctest.h"
@@ -482,18 +483,6 @@ static intptr_t MemoryInUse() {
   return memory_use;
 }
 
-#if defined(V8_TARGET_ARCH_PPC)
-const intptr_t maxSnap64 = 4800;  // 4608
-const intptr_t max64     = 5700;  // 5568
-const intptr_t maxSnap32 = 3800;  // 3648
-const intptr_t max32     = 4300;  // 4160
-#else
-const intptr_t maxSnap64 = 4100;
-const intptr_t max64     = 4600;
-const intptr_t maxSnap32 = 3100;
-const intptr_t max32     = 3450;
-#endif
-
 
 TEST(BootUpMemoryUse) {
   intptr_t initial_memory = MemoryInUse();
@@ -508,18 +497,12 @@ TEST(BootUpMemoryUse) {
     CcTest::InitializeVM();
     intptr_t delta = MemoryInUse() - initial_memory;
     printf("delta: %" V8_PTR_PREFIX "d kB\n", delta / 1024);
-    if (sizeof(initial_memory) == 8) {  // 64-bit.
-      if (v8::internal::Snapshot::IsEnabled()) {
-        CHECK_LE(delta, maxSnap64 * 1024);
-      } else {
-        CHECK_LE(delta, max64 * 1024);
-      }
-    } else {                            // 32-bit.
-      if (v8::internal::Snapshot::IsEnabled()) {
-        CHECK_LE(delta, maxSnap32 * 1024);
-      } else {
-        CHECK_LE(delta, max32 * 1024);
-      }
+    if (v8::internal::Snapshot::IsEnabled()) {
+      CHECK_LE(delta,
+          3000 * 1024 * FullCodeGenerator::kBootCodeSizeMultiplier / 100);
+    } else {
+      CHECK_LE(delta,
+          3350 * 1024 * FullCodeGenerator::kBootCodeSizeMultiplier / 100);
     }
   }
 }

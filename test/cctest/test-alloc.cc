@@ -55,7 +55,7 @@ static MaybeObject* AllocateAfterFailures() {
 
   // Old data space.
   SimulateFullSpace(heap->old_data_space());
-  CHECK(!heap->AllocateRawOneByteString(100, TENURED)->IsFailure());
+  CHECK(!heap->AllocateByteArray(100, TENURED)->IsFailure());
 
   // Old pointer space.
   SimulateFullSpace(heap->old_pointer_space());
@@ -133,8 +133,7 @@ TEST(StressJS) {
   Handle<Map> map(function->initial_map());
   Handle<DescriptorArray> instance_descriptors(map->instance_descriptors());
   Handle<Foreign> foreign = factory->NewForeign(&kDescriptor);
-  Handle<String> name =
-      factory->NewStringFromAscii(Vector<const char>("get", 3));
+  Handle<String> name = factory->NewStringFromStaticAscii("get");
   ASSERT(instance_descriptors->IsEmpty());
 
   Map::EnsureDescriptorSlack(map, 1);

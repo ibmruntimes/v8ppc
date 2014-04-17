@@ -41,7 +41,7 @@
       'include_dirs': [
         '../../src',
       ],
-      'sources': [
+      'sources': [  ### gcmole(all) ###
         '<(generated_file)',
         'cctest.cc',
         'gay-fixed.cc',
@@ -125,7 +125,7 @@
       ],
       'conditions': [
         ['v8_target_arch=="ia32"', {
-          'sources': [
+          'sources': [  ### gcmole(arch:ia32) ###
             'test-assembler-ia32.cc',
             'test-code-stubs.cc',
             'test-code-stubs-ia32.cc',
@@ -136,7 +136,7 @@
           ],
         }],
         ['v8_target_arch=="x64"', {
-          'sources': [
+          'sources': [  ### gcmole(arch:x64) ###
             'test-assembler-x64.cc',
             'test-code-stubs.cc',
             'test-code-stubs-x64.cc',
@@ -147,7 +147,7 @@
           ],
         }],
         ['v8_target_arch=="arm"', {
-          'sources': [
+          'sources': [  ### gcmole(arch:arm) ###
             'test-assembler-arm.cc',
             'test-code-stubs.cc',
             'test-code-stubs-arm.cc',
@@ -156,7 +156,7 @@
           ],
         }],
         ['v8_target_arch=="arm64"', {
-          'sources': [
+          'sources': [  ### gcmole(arch:arm64) ###
             'test-utils-arm64.cc',
             'test-assembler-arm64.cc',
             'test-code-stubs.cc',
@@ -167,15 +167,22 @@
             'test-js-arm64-variables.cc'
           ],
         }],
-        ['v8_target_arch=="ppc" or v8_target_arch=="ppc64"', {
-          'sources': [
+        ['v8_target_arch=="ppc"', {
+          'sources': [  ### gcmole(arch:ppc) ###
+            'test-assembler-ppc.cc',
+            'test-code-stubs.cc',
+            'test-disasm-ppc.cc'
+          ],
+        }],
+        ['v8_target_arch=="ppc64"', {
+          'sources': [  ### gcmole(arch:ppc64) ###
             'test-assembler-ppc.cc',
             'test-code-stubs.cc',
             'test-disasm-ppc.cc'
           ],
         }],
         ['v8_target_arch=="mipsel"', {
-          'sources': [
+          'sources': [  ### gcmole(arch:mipsel) ###
             'test-assembler-mips.cc',
             'test-code-stubs.cc',
             'test-code-stubs-mips.cc',

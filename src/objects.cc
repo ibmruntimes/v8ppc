@@ -63,15 +63,16 @@ namespace internal {
 
 Handle<HeapType> Object::OptimalType(Isolate* isolate,
                                      Representation representation) {
-  if (!FLAG_track_field_types) return HeapType::Any(isolate);
-  if (representation.IsNone()) return HeapType::None(isolate);
-  if (representation.IsHeapObject() && IsHeapObject()) {
-    // We can track only JavaScript objects with stable maps.
-    Handle<Map> map(HeapObject::cast(this)->map(), isolate);
-    if (map->is_stable() &&
-        map->instance_type() >= FIRST_NONCALLABLE_SPEC_OBJECT_TYPE &&
-        map->instance_type() <= LAST_NONCALLABLE_SPEC_OBJECT_TYPE) {
-      return HeapType::Class(map, isolate);
+  if (FLAG_track_field_types) {
+    if (representation.IsNone()) return HeapType::None(isolate);
+    if (representation.IsHeapObject() && IsHeapObject()) {
+      // We can track only JavaScript objects with stable maps.
+      Handle<Map> map(HeapObject::cast(this)->map(), isolate);
+      if (map->is_stable() &&
+          map->instance_type() >= FIRST_NONCALLABLE_SPEC_OBJECT_TYPE &&
+          map->instance_type() <= LAST_NONCALLABLE_SPEC_OBJECT_TYPE) {
+        return HeapType::Class(map, isolate);
+      }
     }
   }
   return HeapType::Any(isolate);
@@ -538,7 +539,7 @@ MaybeHandle<Object> JSObject::GetPropertyWithFailedAccessCheck(
   // No accessible property found.
   *attributes = ABSENT;
   isolate->ReportFailedAccessCheck(object, v8::ACCESS_GET);
-  RETURN_HANDLE_IF_SCHEDULED_EXCEPTION(isolate, Object);
+  RETURN_EXCEPTION_IF_SCHEDULED_EXCEPTION(isolate, Object);
   return isolate->factory()->undefined_value();
 }
 
@@ -887,7 +888,7 @@ MaybeHandle<Object> Object::GetElementWithReceiver(Isolate* isolate,
     if (js_object->IsAccessCheckNeeded()) {
       if (!isolate->MayIndexedAccess(js_object, index, v8::ACCESS_GET)) {
         isolate->ReportFailedAccessCheck(js_object, v8::ACCESS_GET);
-        RETURN_HANDLE_IF_SCHEDULED_EXCEPTION(isolate, Object);
+        RETURN_EXCEPTION_IF_SCHEDULED_EXCEPTION(isolate, Object);
         return isolate->factory()->undefined_value();
       }
     }
@@ -1682,6 +1683,8 @@ void HeapObject::IterateBody(InstanceType type, int object_size,
     case JS_DATA_VIEW_TYPE:
     case JS_SET_TYPE:
     case JS_MAP_TYPE:
+    case JS_SET_ITERATOR_TYPE:
+    case JS_MAP_ITERATOR_TYPE:
     case JS_WEAK_MAP_TYPE:
     case JS_WEAK_SET_TYPE:
     case JS_REGEXP_TYPE:
@@ -2533,11 +2536,21 @@ void Map::UpdateDescriptor(int descriptor_number, Descriptor* desc) {
 
 
 // static
-Handle<HeapType> Map::GeneralizeFieldType(Handle<HeapType> old_field_type,
-                                          Handle<HeapType> new_field_type,
+Handle<HeapType> Map::GeneralizeFieldType(Handle<HeapType> type1,
+                                          Handle<HeapType> type2,
                                           Isolate* isolate) {
-  if (new_field_type->NowIs(old_field_type)) return old_field_type;
-  if (old_field_type->NowIs(new_field_type)) return new_field_type;
+  static const int kMaxClassesPerFieldType = 5;
+  if (type1->NowIs(type2)) return type2;
+  if (type2->NowIs(type1)) return type1;
+  if (type1->NowStable() && type2->NowStable()) {
+    Handle<HeapType> type = HeapType::Union(type1, type2, isolate);
+    if (type->NumClasses() <= kMaxClassesPerFieldType) {
+      ASSERT(type->NowStable());
+      ASSERT(type1->NowIs(type));
+      ASSERT(type2->NowIs(type));
+      return type;
+    }
+  }
   return HeapType::Any(isolate);
 }
 
@@ -5250,8 +5263,8 @@ Handle<Object> JSObject::DeletePropertyPostInterceptor(Handle<JSObject> object,
 }
 
 
-Handle<Object> JSObject::DeletePropertyWithInterceptor(Handle<JSObject> object,
-                                                       Handle<Name> name) {
+MaybeHandle<Object> JSObject::DeletePropertyWithInterceptor(
+    Handle<JSObject> object, Handle<Name> name) {
   Isolate* isolate = object->GetIsolate();
 
   // TODO(rossberg): Support symbols in the API.
@@ -5267,7 +5280,7 @@ Handle<Object> JSObject::DeletePropertyWithInterceptor(Handle<JSObject> object,
         isolate, interceptor->data(), *object, *object);
     v8::Handle<v8::Boolean> result =
         args.Call(deleter, v8::Utils::ToLocal(Handle<String>::cast(name)));
-    RETURN_HANDLE_IF_SCHEDULED_EXCEPTION(isolate, Object);
+    RETURN_EXCEPTION_IF_SCHEDULED_EXCEPTION(isolate, Object);
     if (!result.IsEmpty()) {
       ASSERT(result->IsBoolean());
       Handle<Object> result_internal = v8::Utils::OpenHandle(*result);
@@ -5278,7 +5291,6 @@ Handle<Object> JSObject::DeletePropertyWithInterceptor(Handle<JSObject> object,
   }
   Handle<Object> result =
       DeletePropertyPostInterceptor(object, name, NORMAL_DELETION);
-  RETURN_HANDLE_IF_SCHEDULED_EXCEPTION(isolate, Object);
   return result;
 }
 
@@ -5302,7 +5314,7 @@ MaybeHandle<Object> JSObject::DeleteElementWithInterceptor(
   PropertyCallbackArguments args(
       isolate, interceptor->data(), *object, *object);
   v8::Handle<v8::Boolean> result = args.Call(deleter, index);
-  RETURN_HANDLE_IF_SCHEDULED_EXCEPTION(isolate, Object);
+  RETURN_EXCEPTION_IF_SCHEDULED_EXCEPTION(isolate, Object);
   if (!result.IsEmpty()) {
     ASSERT(result->IsBoolean());
     Handle<Object> result_internal = v8::Utils::OpenHandle(*result);
@@ -5326,7 +5338,7 @@ MaybeHandle<Object> JSObject::DeleteElement(Handle<JSObject> object,
   if (object->IsAccessCheckNeeded() &&
       !isolate->MayIndexedAccess(object, index, v8::ACCESS_DELETE)) {
     isolate->ReportFailedAccessCheck(object, v8::ACCESS_DELETE);
-    RETURN_HANDLE_IF_SCHEDULED_EXCEPTION(isolate, Object);
+    RETURN_EXCEPTION_IF_SCHEDULED_EXCEPTION(isolate, Object);
     return factory->false_value();
   }
 
@@ -5395,7 +5407,7 @@ MaybeHandle<Object> JSObject::DeleteProperty(Handle<JSObject> object,
   if (object->IsAccessCheckNeeded() &&
       !isolate->MayNamedAccess(object, name, v8::ACCESS_DELETE)) {
     isolate->ReportFailedAccessCheck(object, v8::ACCESS_DELETE);
-    RETURN_HANDLE_IF_SCHEDULED_EXCEPTION(isolate, Object);
+    RETURN_EXCEPTION_IF_SCHEDULED_EXCEPTION(isolate, Object);
     return isolate->factory()->false_value();
   }
 
@@ -5442,7 +5454,10 @@ MaybeHandle<Object> JSObject::DeleteProperty(Handle<JSObject> object,
     if (mode == FORCE_DELETION) {
       result = DeletePropertyPostInterceptor(object, name, mode);
     } else {
-      result = DeletePropertyWithInterceptor(object, name);
+      ASSIGN_RETURN_ON_EXCEPTION(
+          isolate, result,
+          DeletePropertyWithInterceptor(object, name),
+          Object);
     }
   } else {
     // Normalize object if needed.
@@ -5617,7 +5632,7 @@ bool JSObject::ReferencesObject(Object* obj) {
 }
 
 
-Handle<Object> JSObject::PreventExtensions(Handle<JSObject> object) {
+MaybeHandle<Object> JSObject::PreventExtensions(Handle<JSObject> object) {
   Isolate* isolate = object->GetIsolate();
 
   if (!object->map()->is_extensible()) return object;
@@ -5626,7 +5641,7 @@ Handle<Object> JSObject::PreventExtensions(Handle<JSObject> object) {
       !isolate->MayNamedAccess(
           object, isolate->factory()->undefined_value(), v8::ACCESS_KEYS)) {
     isolate->ReportFailedAccessCheck(object, v8::ACCESS_KEYS);
-    RETURN_HANDLE_IF_SCHEDULED_EXCEPTION(isolate, Object);
+    RETURN_EXCEPTION_IF_SCHEDULED_EXCEPTION(isolate, Object);
     return isolate->factory()->false_value();
   }
 
@@ -5644,8 +5659,7 @@ Handle<Object> JSObject::PreventExtensions(Handle<JSObject> object) {
         isolate->factory()->NewTypeError(
             "cant_prevent_ext_external_array_elements",
             HandleVector(&object, 1));
-    isolate->Throw(*error);
-    return Handle<Object>();
+    return isolate->Throw<Object>(error);
   }
 
   // If there are fast elements we normalize.
@@ -6928,8 +6942,8 @@ bool JSObject::DefineFastAccessor(Handle<JSObject> object,
 }
 
 
-Handle<Object> JSObject::SetAccessor(Handle<JSObject> object,
-                                     Handle<AccessorInfo> info) {
+MaybeHandle<Object> JSObject::SetAccessor(Handle<JSObject> object,
+                                          Handle<AccessorInfo> info) {
   Isolate* isolate = object->GetIsolate();
   Factory* factory = isolate->factory();
   Handle<Name> name(Name::cast(info->name()));
@@ -6938,7 +6952,7 @@ Handle<Object> JSObject::SetAccessor(Handle<JSObject> object,
   if (object->IsAccessCheckNeeded() &&
       !isolate->MayNamedAccess(object, name, v8::ACCESS_SET)) {
     isolate->ReportFailedAccessCheck(object, v8::ACCESS_SET);
-    RETURN_HANDLE_IF_SCHEDULED_EXCEPTION(isolate, Object);
+    RETURN_EXCEPTION_IF_SCHEDULED_EXCEPTION(isolate, Object);
     return factory->undefined_value();
   }
 
@@ -7011,9 +7025,9 @@ Handle<Object> JSObject::SetAccessor(Handle<JSObject> object,
 }
 
 
-Handle<Object> JSObject::GetAccessor(Handle<JSObject> object,
-                                     Handle<Name> name,
-                                     AccessorComponent component) {
+MaybeHandle<Object> JSObject::GetAccessor(Handle<JSObject> object,
+                                          Handle<Name> name,
+                                          AccessorComponent component) {
   Isolate* isolate = object->GetIsolate();
 
   // Make sure that the top context does not change when doing callbacks or
@@ -7024,7 +7038,7 @@ Handle<Object> JSObject::GetAccessor(Handle<JSObject> object,
   if (object->IsAccessCheckNeeded() &&
       !isolate->MayNamedAccess(object, name, v8::ACCESS_HAS)) {
     isolate->ReportFailedAccessCheck(object, v8::ACCESS_HAS);
-    RETURN_HANDLE_IF_SCHEDULED_EXCEPTION(isolate, Object);
+    RETURN_EXCEPTION_IF_SCHEDULED_EXCEPTION(isolate, Object);
     return isolate->factory()->undefined_value();
   }
 
@@ -8037,41 +8051,27 @@ void CodeCacheHashTable::RemoveByIndex(int index) {
 }
 
 
-void PolymorphicCodeCache::Update(Handle<PolymorphicCodeCache> cache,
+void PolymorphicCodeCache::Update(Handle<PolymorphicCodeCache> code_cache,
                                   MapHandleList* maps,
                                   Code::Flags flags,
                                   Handle<Code> code) {
-  Isolate* isolate = cache->GetIsolate();
-  CALL_HEAP_FUNCTION_VOID(isolate, cache->Update(maps, flags, *code));
-}
-
-
-MaybeObject* PolymorphicCodeCache::Update(MapHandleList* maps,
-                                          Code::Flags flags,
-                                          Code* code) {
-  // Initialize cache if necessary.
-  if (cache()->IsUndefined()) {
-    Object* result;
-    { MaybeObject* maybe_result =
-          PolymorphicCodeCacheHashTable::Allocate(
-              GetHeap(),
-              PolymorphicCodeCacheHashTable::kInitialSize);
-      if (!maybe_result->ToObject(&result)) return maybe_result;
-    }
-    set_cache(result);
+  Isolate* isolate = code_cache->GetIsolate();
+  if (code_cache->cache()->IsUndefined()) {
+    Handle<PolymorphicCodeCacheHashTable> result =
+        PolymorphicCodeCacheHashTable::New(
+            isolate,
+            PolymorphicCodeCacheHashTable::kInitialSize);
+    code_cache->set_cache(*result);
   } else {
     // This entry shouldn't be contained in the cache yet.
-    ASSERT(PolymorphicCodeCacheHashTable::cast(cache())
+    ASSERT(PolymorphicCodeCacheHashTable::cast(code_cache->cache())
                ->Lookup(maps, flags)->IsUndefined());
   }
-  PolymorphicCodeCacheHashTable* hash_table =
-      PolymorphicCodeCacheHashTable::cast(cache());
-  Object* new_cache;
-  { MaybeObject* maybe_new_cache = hash_table->Put(maps, flags, code);
-    if (!maybe_new_cache->ToObject(&new_cache)) return maybe_new_cache;
-  }
-  set_cache(new_cache);
-  return this;
+  Handle<PolymorphicCodeCacheHashTable> hash_table =
+      handle(PolymorphicCodeCacheHashTable::cast(code_cache->cache()));
+  Handle<PolymorphicCodeCacheHashTable> new_cache =
+      PolymorphicCodeCacheHashTable::Put(hash_table, maps, flags, code);
+  code_cache->set_cache(*new_cache);
 }
 
 
@@ -8093,8 +8093,10 @@ Handle<Object> PolymorphicCodeCache::Lookup(MapHandleList* maps,
 class PolymorphicCodeCacheHashTableKey : public HashTableKey {
  public:
   // Callers must ensure that |maps| outlives the newly constructed object.
-  PolymorphicCodeCacheHashTableKey(MapHandleList* maps, int code_flags)
-      : maps_(maps),
+  PolymorphicCodeCacheHashTableKey(
+      Isolate* isolate, MapHandleList* maps, int code_flags)
+      : isolate_(isolate),
+        maps_(maps),
         code_flags_(code_flags) {}
 
   bool IsMatch(Object* other) {
@@ -8160,6 +8162,12 @@ class PolymorphicCodeCacheHashTableKey : public HashTableKey {
     return list;
   }
 
+  Handle<FixedArray> AsHandle() {
+    CALL_HEAP_FUNCTION(isolate_,
+                       AsObject(isolate_->heap()),
+                       FixedArray);
+  }
+
  private:
   static MapHandleList* FromObject(Object* obj,
                                    int* code_flags,
@@ -8173,6 +8181,7 @@ class PolymorphicCodeCacheHashTableKey : public HashTableKey {
     return maps;
   }
 
+  Isolate* isolate_;
   MapHandleList* maps_;  // weak.
   int code_flags_;
   static const int kDefaultListAllocationSize = kMaxKeyedPolymorphism + 1;
@@ -8180,30 +8189,29 @@ class PolymorphicCodeCacheHashTableKey : public HashTableKey {
 
 
 Object* PolymorphicCodeCacheHashTable::Lookup(MapHandleList* maps,
-                                              int code_flags) {
-  PolymorphicCodeCacheHashTableKey key(maps, code_flags);
+                                              int code_kind) {
+  DisallowHeapAllocation no_alloc;
+  PolymorphicCodeCacheHashTableKey key(GetIsolate(), maps, code_kind);
   int entry = FindEntry(&key);
   if (entry == kNotFound) return GetHeap()->undefined_value();
   return get(EntryToIndex(entry) + 1);
 }
 
 
-MaybeObject* PolymorphicCodeCacheHashTable::Put(MapHandleList* maps,
-                                                int code_flags,
-                                                Code* code) {
-  PolymorphicCodeCacheHashTableKey key(maps, code_flags);
-  Object* obj;
-  { MaybeObject* maybe_obj = EnsureCapacity(1, &key);
-    if (!maybe_obj->ToObject(&obj)) return maybe_obj;
-  }
-  PolymorphicCodeCacheHashTable* cache =
-      reinterpret_cast<PolymorphicCodeCacheHashTable*>(obj);
+Handle<PolymorphicCodeCacheHashTable> PolymorphicCodeCacheHashTable::Put(
+      Handle<PolymorphicCodeCacheHashTable> hash_table,
+      MapHandleList* maps,
+      int code_kind,
+      Handle<Code> code) {
+  PolymorphicCodeCacheHashTableKey key(
+      hash_table->GetIsolate(), maps, code_kind);
+  Handle<PolymorphicCodeCacheHashTable> cache =
+      EnsureCapacity(hash_table, 1, &key);
   int entry = cache->FindInsertionEntry(key.Hash());
-  { MaybeObject* maybe_obj = key.AsObject(GetHeap());
-    if (!maybe_obj->ToObject(&obj)) return maybe_obj;
-  }
-  cache->set(EntryToIndex(entry), obj);
-  cache->set(EntryToIndex(entry) + 1, code);
+
+  Handle<FixedArray> obj = key.AsHandle();
+  cache->set(EntryToIndex(entry), *obj);
+  cache->set(EntryToIndex(entry) + 1, *code);
   cache->ElementAdded();
   return cache;
 }
@@ -13566,7 +13574,7 @@ MaybeHandle<Object> JSObject::GetElementWithInterceptor(
     PropertyCallbackArguments
         args(isolate, interceptor->data(), *receiver, *object);
     v8::Handle<v8::Value> result = args.Call(getter, index);
-    RETURN_HANDLE_IF_SCHEDULED_EXCEPTION(isolate, Object);
+    RETURN_EXCEPTION_IF_SCHEDULED_EXCEPTION(isolate, Object);
     if (!result.IsEmpty()) {
       Handle<Object> result_internal = v8::Utils::OpenHandle(*result);
       result_internal->VerifyApiCallResultType();
@@ -16341,15 +16349,14 @@ void WeakHashTable::AddEntry(int entry, Object* key, Object* value) {
 }
 
 
-template<class Derived, int entrysize>
-Handle<Derived> OrderedHashTable<Derived, entrysize>::Allocate(
+template<class Derived, class Iterator, int entrysize>
+Handle<Derived> OrderedHashTable<Derived, Iterator, entrysize>::Allocate(
     Isolate* isolate, int capacity, PretenureFlag pretenure) {
   // Capacity must be a power of two, since we depend on being able
   // to divide and multiple by 2 (kLoadFactor) to derive capacity
   // from number of buckets. If we decide to change kLoadFactor
   // to something other than 2, capacity should be stored as another
   // field of this object.
-  const int kMinCapacity = 4;
   capacity = RoundUpToPowerOf2(Max(kMinCapacity, capacity));
   if (capacity > kMaxCapacity) {
     v8::internal::Heap::FatalProcessOutOfMemory("invalid table size", true);
@@ -16366,12 +16373,13 @@ Handle<Derived> OrderedHashTable<Derived, entrysize>::Allocate(
   table->SetNumberOfBuckets(num_buckets);
   table->SetNumberOfElements(0);
   table->SetNumberOfDeletedElements(0);
+  table->set_iterators(isolate->heap()->undefined_value());
   return table;
 }
 
 
-template<class Derived, int entrysize>
-Handle<Derived> OrderedHashTable<Derived, entrysize>::EnsureGrowable(
+template<class Derived, class Iterator, int entrysize>
+Handle<Derived> OrderedHashTable<Derived, Iterator, entrysize>::EnsureGrowable(
     Handle<Derived> table) {
   int nof = table->NumberOfElements();
   int nod = table->NumberOfDeletedElements();
@@ -16384,8 +16392,8 @@ Handle<Derived> OrderedHashTable<Derived, entrysize>::EnsureGrowable(
 }
 
 
-template<class Derived, int entrysize>
-Handle<Derived> OrderedHashTable<Derived, entrysize>::Shrink(
+template<class Derived, class Iterator, int entrysize>
+Handle<Derived> OrderedHashTable<Derived, Iterator, entrysize>::Shrink(
     Handle<Derived> table) {
   int nof = table->NumberOfElements();
   int capacity = table->Capacity();
@@ -16394,8 +16402,31 @@ Handle<Derived> OrderedHashTable<Derived, entrysize>::Shrink(
 }
 
 
-template<class Derived, int entrysize>
-Handle<Derived> OrderedHashTable<Derived, entrysize>::Rehash(
+template<class Derived, class Iterator, int entrysize>
+Handle<Derived> OrderedHashTable<Derived, Iterator, entrysize>::Clear(
+    Handle<Derived> table) {
+  Handle<Derived> new_table =
+      Allocate(table->GetIsolate(),
+               kMinCapacity,
+               table->GetHeap()->InNewSpace(*table) ? NOT_TENURED : TENURED);
+
+  new_table->set_iterators(table->iterators());
+  table->set_iterators(table->GetHeap()->undefined_value());
+
+  DisallowHeapAllocation no_allocation;
+  for (Object* object = new_table->iterators();
+       !object->IsUndefined();
+       object = Iterator::cast(object)->next_iterator()) {
+    Iterator::cast(object)->TableCleared();
+    Iterator::cast(object)->set_table(*new_table);
+  }
+
+  return new_table;
+}
+
+
+template<class Derived, class Iterator, int entrysize>
+Handle<Derived> OrderedHashTable<Derived, Iterator, entrysize>::Rehash(
     Handle<Derived> table, int new_capacity) {
   Handle<Derived> new_table =
       Allocate(table->GetIsolate(),
@@ -16422,12 +16453,24 @@ Handle<Derived> OrderedHashTable<Derived, entrysize>::Rehash(
     ++new_entry;
   }
   new_table->SetNumberOfElements(nof);
+
+  new_table->set_iterators(table->iterators());
+  table->set_iterators(table->GetHeap()->undefined_value());
+
+  DisallowHeapAllocation no_allocation;
+  for (Object* object = new_table->iterators();
+       !object->IsUndefined();
+       object = Iterator::cast(object)->next_iterator()) {
+    Iterator::cast(object)->TableCompacted();
+    Iterator::cast(object)->set_table(*new_table);
+  }
+
   return new_table;
 }
 
 
-template<class Derived, int entrysize>
-int OrderedHashTable<Derived, entrysize>::FindEntry(Object* key) {
+template<class Derived, class Iterator, int entrysize>
+int OrderedHashTable<Derived, Iterator, entrysize>::FindEntry(Object* key) {
   ASSERT(!key->IsTheHole());
   Object* hash = key->GetHash();
   if (hash->IsUndefined()) return kNotFound;
@@ -16442,9 +16485,9 @@ int OrderedHashTable<Derived, entrysize>::FindEntry(Object* key) {
 }
 
 
-template<class Derived, int entrysize>
-int OrderedHashTable<Derived, entrysize>::AddEntry(int hash) {
-  int entry = NumberOfElements() + NumberOfDeletedElements();
+template<class Derived, class Iterator, int entrysize>
+int OrderedHashTable<Derived, Iterator, entrysize>::AddEntry(int hash) {
+  int entry = UsedCapacity();
   int bucket = HashToBucket(hash);
   int index = EntryToIndex(entry);
   Object* chain_entry = get(kHashTableStartIndex + bucket);
@@ -16455,19 +16498,74 @@ int OrderedHashTable<Derived, entrysize>::AddEntry(int hash) {
 }
 
 
-template<class Derived, int entrysize>
-void OrderedHashTable<Derived, entrysize>::RemoveEntry(int entry) {
+template<class Derived, class Iterator, int entrysize>
+void OrderedHashTable<Derived, Iterator, entrysize>::RemoveEntry(int entry) {
   int index = EntryToIndex(entry);
   for (int i = 0; i < entrysize; ++i) {
     set_the_hole(index + i);
   }
   SetNumberOfElements(NumberOfElements() - 1);
   SetNumberOfDeletedElements(NumberOfDeletedElements() + 1);
+
+  DisallowHeapAllocation no_allocation;
+  for (Object* object = iterators();
+       !object->IsUndefined();
+       object = Iterator::cast(object)->next_iterator()) {
+    Iterator::cast(object)->EntryRemoved(entry);
+  }
 }
 
 
-template class OrderedHashTable<OrderedHashSet, 1>;
-template class OrderedHashTable<OrderedHashMap, 2>;
+template Handle<OrderedHashSet>
+OrderedHashTable<OrderedHashSet, JSSetIterator, 1>::Allocate(
+    Isolate* isolate, int capacity, PretenureFlag pretenure);
+
+template Handle<OrderedHashSet>
+OrderedHashTable<OrderedHashSet, JSSetIterator, 1>::EnsureGrowable(
+    Handle<OrderedHashSet> table);
+
+template Handle<OrderedHashSet>
+OrderedHashTable<OrderedHashSet, JSSetIterator, 1>::Shrink(
+    Handle<OrderedHashSet> table);
+
+template Handle<OrderedHashSet>
+OrderedHashTable<OrderedHashSet, JSSetIterator, 1>::Clear(
+    Handle<OrderedHashSet> table);
+
+template int
+OrderedHashTable<OrderedHashSet, JSSetIterator, 1>::FindEntry(Object* key);
+
+template int
+OrderedHashTable<OrderedHashSet, JSSetIterator, 1>::AddEntry(int hash);
+
+template void
+OrderedHashTable<OrderedHashSet, JSSetIterator, 1>::RemoveEntry(int entry);
+
+
+template Handle<OrderedHashMap>
+OrderedHashTable<OrderedHashMap, JSMapIterator, 2>::Allocate(
+    Isolate* isolate, int capacity, PretenureFlag pretenure);
+
+template Handle<OrderedHashMap>
+OrderedHashTable<OrderedHashMap, JSMapIterator, 2>::EnsureGrowable(
+    Handle<OrderedHashMap> table);
+
+template Handle<OrderedHashMap>
+OrderedHashTable<OrderedHashMap, JSMapIterator, 2>::Shrink(
+    Handle<OrderedHashMap> table);
+
+template Handle<OrderedHashMap>
+OrderedHashTable<OrderedHashMap, JSMapIterator, 2>::Clear(
+    Handle<OrderedHashMap> table);
+
+template int
+OrderedHashTable<OrderedHashMap, JSMapIterator, 2>::FindEntry(Object* key);
+
+template int
+OrderedHashTable<OrderedHashMap, JSMapIterator, 2>::AddEntry(int hash);
+
+template void
+OrderedHashTable<OrderedHashMap, JSMapIterator, 2>::RemoveEntry(int entry);
 
 
 bool OrderedHashSet::Contains(Object* key) {
@@ -16493,7 +16591,6 @@ Handle<OrderedHashSet> OrderedHashSet::Remove(Handle<OrderedHashSet> table,
   int entry = table->FindEntry(*key);
   if (entry == kNotFound) return table;
   table->RemoveEntry(entry);
-  // TODO(adamk): Don't shrink if we're being iterated over
   return Shrink(table);
 }
 
@@ -16513,7 +16610,6 @@ Handle<OrderedHashMap> OrderedHashMap::Put(Handle<OrderedHashMap> table,
   if (value->IsTheHole()) {
     if (entry == kNotFound) return table;
     table->RemoveEntry(entry);
-    // TODO(adamk): Only shrink if not iterating
     return Shrink(table);
   }
 
@@ -16529,6 +16625,221 @@ Handle<OrderedHashMap> OrderedHashMap::Put(Handle<OrderedHashMap> table,
   table->set(index, *key);
   table->set(index + kValueOffset, *value);
   return table;
+}
+
+
+template<class Derived, class TableType>
+void OrderedHashTableIterator<Derived, TableType>::EntryRemoved(int index) {
+  int i = this->index()->value();
+  if (index < i) {
+    set_count(Smi::FromInt(count()->value() - 1));
+  }
+  if (index == i) {
+    Seek();
+  }
+}
+
+
+template<class Derived, class TableType>
+void OrderedHashTableIterator<Derived, TableType>::Close() {
+  if (Closed()) return;
+
+  DisallowHeapAllocation no_allocation;
+
+  Object* undefined = GetHeap()->undefined_value();
+  TableType* table = TableType::cast(this->table());
+  Object* previous = previous_iterator();
+  Object* next = next_iterator();
+
+  if (previous == undefined) {
+    ASSERT_EQ(table->iterators(), this);
+    table->set_iterators(next);
+  } else {
+    ASSERT_EQ(Derived::cast(previous)->next_iterator(), this);
+    Derived::cast(previous)->set_next_iterator(next);
+  }
+
+  if (!next->IsUndefined()) {
+    ASSERT_EQ(Derived::cast(next)->previous_iterator(), this);
+    Derived::cast(next)->set_previous_iterator(previous);
+  }
+
+  set_previous_iterator(undefined);
+  set_next_iterator(undefined);
+  set_table(undefined);
+}
+
+
+template<class Derived, class TableType>
+void OrderedHashTableIterator<Derived, TableType>::Seek() {
+  ASSERT(!Closed());
+
+  DisallowHeapAllocation no_allocation;
+
+  int index = this->index()->value();
+
+  TableType* table = TableType::cast(this->table());
+  int used_capacity = table->UsedCapacity();
+
+  while (index < used_capacity && table->KeyAt(index)->IsTheHole()) {
+    index++;
+  }
+  set_index(Smi::FromInt(index));
+}
+
+
+template<class Derived, class TableType>
+void OrderedHashTableIterator<Derived, TableType>::MoveNext() {
+  ASSERT(!Closed());
+
+  set_index(Smi::FromInt(index()->value() + 1));
+  set_count(Smi::FromInt(count()->value() + 1));
+  Seek();
+}
+
+
+template<class Derived, class TableType>
+Handle<JSObject> OrderedHashTableIterator<Derived, TableType>::Next(
+    Handle<Derived> iterator) {
+  Isolate* isolate = iterator->GetIsolate();
+  Factory* factory = isolate->factory();
+
+  Handle<Object> object(iterator->table(), isolate);
+
+  if (!object->IsUndefined()) {
+    Handle<TableType> table = Handle<TableType>::cast(object);
+    int index = iterator->index()->value();
+    if (index < table->UsedCapacity()) {
+      int entry_index = table->EntryToIndex(index);
+      iterator->MoveNext();
+      Handle<Object> value = Derived::ValueForKind(iterator, entry_index);
+      return factory->NewIteratorResultObject(value, false);
+    } else {
+      iterator->Close();
+    }
+  }
+
+  return factory->NewIteratorResultObject(factory->undefined_value(), true);
+}
+
+
+template<class Derived, class TableType>
+Handle<Derived> OrderedHashTableIterator<Derived, TableType>::CreateInternal(
+    Handle<Map> map,
+    Handle<TableType> table,
+    int kind) {
+  Isolate* isolate = table->GetIsolate();
+
+  Handle<Object> undefined = isolate->factory()->undefined_value();
+
+  Handle<Derived> new_iterator = Handle<Derived>::cast(
+      isolate->factory()->NewJSObjectFromMap(map));
+  new_iterator->set_previous_iterator(*undefined);
+  new_iterator->set_table(*table);
+  new_iterator->set_index(Smi::FromInt(0));
+  new_iterator->set_count(Smi::FromInt(0));
+  new_iterator->set_kind(Smi::FromInt(kind));
+
+  Handle<Object> old_iterator(table->iterators(), isolate);
+  if (!old_iterator->IsUndefined()) {
+    Handle<Derived>::cast(old_iterator)->set_previous_iterator(*new_iterator);
+    new_iterator->set_next_iterator(*old_iterator);
+  } else {
+    new_iterator->set_next_iterator(*undefined);
+  }
+
+  table->set_iterators(*new_iterator);
+
+  return new_iterator;
+}
+
+
+template void
+OrderedHashTableIterator<JSSetIterator, OrderedHashSet>::EntryRemoved(
+    int index);
+
+template void
+OrderedHashTableIterator<JSSetIterator, OrderedHashSet>::Close();
+
+template Handle<JSObject>
+OrderedHashTableIterator<JSSetIterator, OrderedHashSet>::Next(
+    Handle<JSSetIterator> iterator);
+
+template Handle<JSSetIterator>
+OrderedHashTableIterator<JSSetIterator, OrderedHashSet>::CreateInternal(
+      Handle<Map> map, Handle<OrderedHashSet> table, int kind);
+
+
+template void
+OrderedHashTableIterator<JSMapIterator, OrderedHashMap>::EntryRemoved(
+    int index);
+
+template void
+OrderedHashTableIterator<JSMapIterator, OrderedHashMap>::Close();
+
+template Handle<JSObject>
+OrderedHashTableIterator<JSMapIterator, OrderedHashMap>::Next(
+    Handle<JSMapIterator> iterator);
+
+template Handle<JSMapIterator>
+OrderedHashTableIterator<JSMapIterator, OrderedHashMap>::CreateInternal(
+      Handle<Map> map, Handle<OrderedHashMap> table, int kind);
+
+
+Handle<Object> JSSetIterator::ValueForKind(
+    Handle<JSSetIterator> iterator, int entry_index) {
+  int kind = iterator->kind()->value();
+  // Set.prototype only has values and entries.
+  ASSERT(kind == kKindValues || kind == kKindEntries);
+
+  Isolate* isolate = iterator->GetIsolate();
+  Factory* factory = isolate->factory();
+
+  Handle<OrderedHashSet> table(
+      OrderedHashSet::cast(iterator->table()), isolate);
+  Handle<Object> value = Handle<Object>(table->get(entry_index), isolate);
+
+  if (kind == kKindEntries) {
+    Handle<FixedArray> array = factory->NewFixedArray(2);
+    array->set(0, *value);
+    array->set(1, *value);
+    return factory->NewJSArrayWithElements(array);
+  }
+
+  return value;
+}
+
+
+Handle<Object> JSMapIterator::ValueForKind(
+    Handle<JSMapIterator> iterator, int entry_index) {
+  int kind = iterator->kind()->value();
+  ASSERT(kind == kKindKeys || kind == kKindValues || kind == kKindEntries);
+
+  Isolate* isolate = iterator->GetIsolate();
+  Factory* factory = isolate->factory();
+
+  Handle<OrderedHashMap> table(
+      OrderedHashMap::cast(iterator->table()), isolate);
+
+  switch (kind) {
+    case kKindKeys:
+      return Handle<Object>(table->get(entry_index), isolate);
+
+    case kKindValues:
+      return Handle<Object>(table->get(entry_index + 1), isolate);
+
+    case kKindEntries: {
+      Handle<Object> key(table->get(entry_index), isolate);
+      Handle<Object> value(table->get(entry_index + 1), isolate);
+      Handle<FixedArray> array = factory->NewFixedArray(2);
+      array->set(0, *key);
+      array->set(1, *value);
+      return factory->NewJSArrayWithElements(array);
+    }
+  }
+
+  UNREACHABLE();
+  return factory->undefined_value();
 }
 
 
