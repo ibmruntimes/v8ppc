@@ -192,9 +192,11 @@ bool PPCDebugger::GetValue(const char* desc, intptr_t* value) {
     return true;
   } else {
     if (strncmp(desc, "0x", 2) == 0) {
-      return SScanF(desc + 2, "%x", reinterpret_cast<uint32_t*>(value)) == 1;
+      return SScanF(desc + 2, "%" V8PRIxPTR,
+                    reinterpret_cast<uintptr_t*>(value)) == 1;
     } else {
-      return SScanF(desc, "%u", reinterpret_cast<uint32_t*>(value)) == 1;
+      return SScanF(desc, "%" V8PRIuPTR,
+                    reinterpret_cast<uintptr_t*>(value)) == 1;
     }
   }
   return false;
@@ -486,12 +488,12 @@ void PPCDebugger::Debug() {
           PrintF("  0x%08" V8PRIxPTR ":  0x%08" V8PRIxPTR " %10" V8PRIdPTR,
                  reinterpret_cast<intptr_t>(cur), *cur, *cur);
           HeapObject* obj = reinterpret_cast<HeapObject*>(*cur);
-          int value = *cur;
+          intptr_t value = *cur;
           Heap* current_heap = v8::internal::Isolate::Current()->heap();
           if (((value & 1) == 0) || current_heap->Contains(obj)) {
             PrintF(" (");
             if ((value & 1) == 0) {
-              PrintF("smi %d", value / 2);
+              PrintF("smi %d", PlatformSmiTagging::SmiToInt(obj));
             } else {
               obj->ShortPrint();
             }
