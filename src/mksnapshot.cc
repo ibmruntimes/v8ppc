@@ -43,6 +43,8 @@
 
 #if V8_TARGET_ARCH_ARM
 #include "arm/assembler-arm-inl.h"
+#elif V8_TARGET_ARCH_PPC
+#include "ppc/assembler-ppc-inl.h"
 #endif
 
 using namespace v8;
@@ -276,8 +278,8 @@ int main(int argc, char** argv) {
   // By default, log code create information in the snapshot.
   i::FLAG_log_code = true;
 
-#if V8_TARGET_ARCH_ARM
-  // Printing flags on ARM requires knowing if we intend to enable
+#if V8_TARGET_ARCH_ARM || V8_TARGET_ARCH_PPC
+  // Printing flags on ARM/PPC requires knowing if we intend to enable
   // the serializer or not.
   v8::internal::CpuFeatures::SetHintCreatingSnapshot();
 #endif

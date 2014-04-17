@@ -52,6 +52,7 @@ namespace internal {
 #ifdef DEBUG
 bool CpuFeatures::initialized_ = false;
 #endif
+bool CpuFeatures::hint_creating_snapshot_ = false;
 unsigned CpuFeatures::supported_ = 0;
 unsigned CpuFeatures::found_by_runtime_probing_only_ = 0;
 unsigned CpuFeatures::cross_compile_ = 0;
@@ -119,10 +120,27 @@ static bool is_processor(const char* p) {
 #endif
 
 
+void CpuFeatures::SetHintCreatingSnapshot() {
+  hint_creating_snapshot_ = true;
+}
+
+
+void CpuFeatures::ProbeWithoutIsolate() {
+  Probe(hint_creating_snapshot_);
+}
+
+
 void CpuFeatures::Probe() {
+  // The Serializer can only be queried after isolate initialization.
+  Probe(Serializer::enabled());
+}
+
+
+void CpuFeatures::Probe(bool serializer_enabled) {
   unsigned standard_features = static_cast<unsigned>(
       OS::CpuFeaturesImpliedByPlatform()) | CpuFeaturesImpliedByCompiler();
-  ASSERT(supported_ == 0 || supported_ == standard_features);
+  ASSERT(supported_ == 0 ||
+         (supported_ & standard_features) == standard_features);
 #ifdef DEBUG
   initialized_ = true;
 #endif
@@ -132,7 +150,7 @@ void CpuFeatures::Probe() {
   // snapshot.
   supported_ |= standard_features;
 
-  if (Serializer::enabled()) {
+  if (serializer_enabled) {
     // No probing for features if we might serialize (generate snapshot).
     return;
   }
@@ -2143,11 +2161,6 @@ void Assembler::RecordRelocInfo(RelocInfo::Mode rmode, intptr_t data) {
   if (!RelocInfo::IsNone(rinfo.rmode())) {
     // Don't record external references unless the heap will be serialized.
     if (rmode == RelocInfo::EXTERNAL_REFERENCE) {
-#ifdef DEBUG
-      if (!Serializer::enabled()) {
-        Serializer::TooLateToEnableNow();
-      }
-#endif
       if (!Serializer::enabled() && !emit_debug_code()) {
         return;
       }
