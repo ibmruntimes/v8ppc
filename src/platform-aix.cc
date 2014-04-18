@@ -60,6 +60,31 @@ namespace v8 {
 namespace internal {
 
 
+static inline void *mmapHelper(size_t len, int prot, int flags,
+                               int fildes, off_t  off) {
+  void *addr = OS::GetRandomMmapAddr();
+#if V8_TARGET_ARCH_PPC64
+  if (addr) {
+    // We must use MAP_FIXED here to avoid the 0x07000000_00000000
+    // range, which causes loss of precision if addresses are
+    // converted to double precision numbers.
+    ASSERT(!(flags & MAP_VARIABLE));
+    void* mbase;
+    for (int i = 0; i < 10; i++) {
+      mbase = mmap(addr, len, prot, flags | MAP_FIXED, fildes, off);
+      if (mbase != MAP_FAILED) return mbase;
+      // Try again with a different random address.
+      addr = OS::GetRandomMmapAddr();
+    }
+  }
+  // Fall through if we can't get an address in the range we want
+  // after multiple attempts -- just let the system decide (without
+  // MAP_FIXED this time).
+#endif
+  return mmap(addr, len, prot, flags, fildes, off);
+}
+
+
 const char* OS::LocalTimezone(double time, TimezoneCache* cache) {
   if (std::isnan(time)) return "";
   time_t tv = static_cast<time_t>(floor(time/msPerSecond));
@@ -84,7 +109,7 @@ void* OS::Allocate(const size_t requested,
                    bool executable) {
   const size_t msize = RoundUp(requested, getpagesize());
   int prot = PROT_READ | PROT_WRITE | (executable ? PROT_EXEC : 0);
-  void* mbase = mmap(NULL, msize, prot, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+  void* mbase = mmapHelper(msize, prot, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
 
   if (mbase == MAP_FAILED) {
     LOG(i::Isolate::Current(), StringEvent("OS::Allocate", "mmap failed"));
@@ -117,7 +142,7 @@ OS::MemoryMappedFile* OS::MemoryMappedFile::open(const char* name) {
   int size = ftell(file);
 
   void* memory =
-      mmap(0, size, PROT_READ | PROT_WRITE, MAP_SHARED, fileno(file), 0);
+      mmapHelper(size, PROT_READ | PROT_WRITE, MAP_SHARED, fileno(file), 0);
   return new PosixMemoryMappedFile(file, memory, size);
 }
 
@@ -132,7 +157,7 @@ OS::MemoryMappedFile* OS::MemoryMappedFile::create(const char* name, int size,
     return NULL;
   }
   void* memory =
-      mmap(0, size, PROT_READ | PROT_WRITE, MAP_SHARED, fileno(file), 0);
+      mmapHelper(size, PROT_READ | PROT_WRITE, MAP_SHARED, fileno(file), 0);
   return new PosixMemoryMappedFile(file, memory, size);
 }
 
@@ -208,12 +233,11 @@ VirtualMemory::VirtualMemory(size_t size, size_t alignment)
   ASSERT(IsAligned(alignment, static_cast<intptr_t>(OS::AllocateAlignment())));
   size_t request_size = RoundUp(size + alignment,
                                 static_cast<intptr_t>(OS::AllocateAlignment()));
-  void* reservation = mmap(OS::GetRandomMmapAddr(),
-                           request_size,
-                           PROT_NONE,
-                           MAP_PRIVATE | MAP_ANONYMOUS,
-                           kMmapFd,
-                           kMmapFdOffset);
+  void* reservation = mmapHelper(request_size,
+                                 PROT_NONE,
+                                 MAP_PRIVATE | MAP_ANONYMOUS,
+                                 kMmapFd,
+                                 kMmapFdOffset);
   if (reservation == MAP_FAILED) return;
 
   Address base = static_cast<Address>(reservation);
@@ -280,12 +304,11 @@ bool VirtualMemory::Guard(void* address) {
 
 
 void* VirtualMemory::ReserveRegion(size_t size) {
-  void* result = mmap(OS::GetRandomMmapAddr(),
-                      size,
-                      PROT_NONE,
-                      MAP_PRIVATE | MAP_ANONYMOUS,
-                      kMmapFd,
-                      kMmapFdOffset);
+  void* result = mmapHelper(size,
+                            PROT_NONE,
+                            MAP_PRIVATE | MAP_ANONYMOUS,
+                            kMmapFd,
+                            kMmapFdOffset);
 
   if (result == MAP_FAILED) return NULL;
 
