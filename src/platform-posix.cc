@@ -103,14 +103,30 @@ void* OS::GetRandomMmapAddr() {
   // CpuFeatures::Probe. We don't care about randomization in this case because
   // the code page is immediately freed.
   if (isolate != NULL) {
-#ifdef V8_TARGET_ARCH_X64
+#ifdef V8_HOST_ARCH_64_BIT
     uint64_t rnd1 = V8::RandomPrivate(isolate);
     uint64_t rnd2 = V8::RandomPrivate(isolate);
     uint64_t raw_addr = (rnd1 << 32) ^ rnd2;
+#endif
+#ifdef V8_TARGET_ARCH_X64
     // Currently available CPUs have 48 bits of virtual addressing.  Truncate
     // the hint address to 46 bits to give the kernel a fighting chance of
     // fulfilling our placement request.
     raw_addr &= V8_UINT64_C(0x3ffffffff000);
+#elif defined(V8_TARGET_ARCH_PPC64)
+# ifdef _AIX
+    // AIX: 64 bits of virtual addressing, but we limit address range
+    // to avoid losing precision if address is stored as a double.
+    raw_addr &= V8_UINT64_C(0x3ffffffff000);
+    // Use extra address space to isolate the mmap regions from the heap.
+    raw_addr += V8_UINT64_C(0x400000000000);
+# elif __BYTE_ORDER == __BIG_ENDIAN
+    // Big-endian Linux: 44 bits of virtual addressing.
+    raw_addr &= V8_UINT64_C(0x03fffffff000);
+# else
+    // Little-endian Linux: 48 bits of virtual addressing.
+    raw_addr &= V8_UINT64_C(0x3ffffffff000);
+# endif
 #else
     uint32_t raw_addr = V8::RandomPrivate(isolate);
     // The range 0x20000000 - 0x60000000 is relatively unpopulated across a
