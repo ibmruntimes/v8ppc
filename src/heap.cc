@@ -65,6 +65,7 @@
 #include "regexp-macro-assembler.h"
 #include "mips/regexp-macro-assembler-mips.h"
 #endif
+#include "full-codegen.h"
 
 namespace v8 {
 namespace internal {
@@ -816,7 +817,8 @@ bool Heap::CollectGarbage(GarbageCollector collector,
       !incremental_marking()->should_hurry() &&
       FLAG_incremental_marking_steps) {
     // Make progress in incremental marking.
-    const intptr_t kStepSizeWhenDelayedByScavenge = 1 * MB;
+    const intptr_t kStepSizeWhenDelayedByScavenge = 1 * MB *
+      FullCodeGenerator::kCodeSizeMultiplier / 100;
     incremental_marking()->Step(kStepSizeWhenDelayedByScavenge,
                                 IncrementalMarking::NO_GC_VIA_STACK_GUARD);
     if (!incremental_marking()->IsComplete()) {
