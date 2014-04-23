@@ -80,6 +80,12 @@ static inline void *mmapHelper(size_t len, int prot, int flags,
   // Fall through if we can't get an address in the range we want
   // after multiple attempts -- just let the system decide (without
   // MAP_FIXED this time).
+
+  // N.B. This case should never happen given the size of the
+  // randomized range -- in fact looping at all is extremely rare.  If
+  // we ever do hit this case, it is better to let the system allocate
+  // a high address (and bet against its unlikely consumption
+  // introspectively as a double) than to fail outright.
 #endif
   return mmap(addr, len, prot, flags, fildes, off);
 }
