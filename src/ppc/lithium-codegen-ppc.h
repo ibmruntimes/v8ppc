@@ -265,8 +265,6 @@ class LCodeGen: public LCodeGenBase {
                     CRegister cr = cr7);
   void DeoptimizeIf(Condition condition, LEnvironment* environment,
                     CRegister cr = cr7);
-  void ApplyCheckIf(Condition condition, LBoundsCheck* check,
-                    CRegister cr = cr7);
 
   void AddToTranslation(LEnvironment* environment,
                         Translation* translation,

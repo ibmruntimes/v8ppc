@@ -7489,33 +7489,37 @@ class SharedFunctionInfo: public HeapObject {
 
 #elif V8_TARGET_BIG_ENDIAN
   static const int kFormalParameterCountOffset =
-    kAstNodeCountOffset + kPointerSize;
+      kInitialMapOffset + kPointerSize;
   static const int kLengthOffset =
-    kFormalParameterCountOffset + kIntSize;
+      kFormalParameterCountOffset + kIntSize;
 
   static const int kNumLiteralsOffset =
-    kLengthOffset + kIntSize;
+      kLengthOffset + kIntSize;
   static const int kExpectedNofPropertiesOffset =
-    kNumLiteralsOffset + kIntSize;
+      kNumLiteralsOffset + kIntSize;
 
   static const int kStartPositionAndTypeOffset =
-    kExpectedNofPropertiesOffset + kIntSize;
+      kExpectedNofPropertiesOffset + kIntSize;
   static const int kEndPositionOffset =
-    kStartPositionAndTypeOffset + kIntSize;
+      kStartPositionAndTypeOffset + kIntSize;
 
   static const int kCompilerHintsOffset =
-    kEndPositionOffset + kIntSize;
+      kEndPositionOffset + kIntSize;
   static const int kFunctionTokenPositionOffset =
-    kCompilerHintsOffset + kIntSize;
+      kCompilerHintsOffset + kIntSize;
 
   static const int kCountersOffset =
-    kFunctionTokenPositionOffset + kIntSize;
-
+      kFunctionTokenPositionOffset + kIntSize;
   static const int kOptCountAndBailoutReasonOffset =
-    kCountersOffset + kIntSize;
+      kCountersOffset + kIntSize;
+
+  static const int kProfilerTicksOffset =
+      kOptCountAndBailoutReasonOffset + kIntSize;
+  static const int kAstNodeCountOffset =
+      kProfilerTicksOffset + kIntSize;
 
   // Total size.
-  static const int kSize = kOptCountAndBailoutReasonOffset + kIntSize;
+  static const int kSize = kAstNodeCountOffset + kIntSize;
 
 #else
 #error Unknown byte ordering

@@ -4398,36 +4398,46 @@ void LCodeGen::DoStoreNamedGeneric(LStoreNamedGeneric* instr) {
 }
 
 
-void LCodeGen::ApplyCheckIf(Condition cond, LBoundsCheck* check,
-                            CRegister cr) {
-  if (FLAG_debug_code && check->hydrogen()->skip_check()) {
+void LCodeGen::DoBoundsCheck(LBoundsCheck* instr) {
+  Representation representation = instr->hydrogen()->length()->representation();
+  ASSERT(representation.Equals(instr->hydrogen()->index()->representation()));
+  ASSERT(representation.IsSmiOrInteger32());
+
+  Condition cc = instr->hydrogen()->allow_equality() ? lt : le;
+  if (instr->length()->IsConstantOperand()) {
+    int32_t length = ToInteger32(LConstantOperand::cast(instr->length()));
+    Register index = ToRegister(instr->index());
+    if (representation.IsSmi()) {
+      __ Cmpli(index, Operand(Smi::FromInt(length)), r0);
+    } else {
+      __ Cmplwi(index, Operand(length), r0);
+    }
+    cc = ReverseCondition(cc);
+  } else if (instr->index()->IsConstantOperand()) {
+    int32_t index = ToInteger32(LConstantOperand::cast(instr->index()));
+    Register length = ToRegister(instr->length());
+    if (representation.IsSmi()) {
+      __ Cmpli(length, Operand(Smi::FromInt(index)), r0);
+    } else {
+      __ Cmplwi(length, Operand(index), r0);
+    }
+  } else {
+    Register index = ToRegister(instr->index());
+    Register length = ToRegister(instr->length());
+    if (representation.IsSmi()) {
+      __ cmpl(length, index);
+    } else {
+      __ cmplw(length, index);
+    }
+  }
+  if (FLAG_debug_code && instr->hydrogen()->skip_check()) {
     Label done;
-    __ b(NegateCondition(cond), &done, cr);
+    __ b(NegateCondition(cc), &done);
     __ stop("eliminated bounds check failed");
     __ bind(&done);
   } else {
-    DeoptimizeIf(cond, check->environment(), cr);
+    DeoptimizeIf(cc, instr->environment());
   }
-}
-
-
-void LCodeGen::DoBoundsCheck(LBoundsCheck* instr) {
-  if (instr->hydrogen()->skip_check()) return;
-
-  if (instr->index()->IsConstantOperand()) {
-    int constant_index =
-        ToInteger32(LConstantOperand::cast(instr->index()));
-    if (instr->hydrogen()->length()->representation().IsSmi()) {
-      __ LoadSmiLiteral(ip, Smi::FromInt(constant_index));
-    } else {
-      __ mov(ip, Operand(constant_index));
-    }
-    __ cmpl(ip, ToRegister(instr->length()));
-  } else {
-    __ cmpl(ToRegister(instr->index()), ToRegister(instr->length()));
-  }
-  Condition condition = instr->hydrogen()->allow_equality() ? gt : ge;
-  ApplyCheckIf(condition, instr);
 }
 
 
@@ -5442,15 +5452,15 @@ void LCodeGen::DoCheckMaps(LCheckMaps* instr) {
     __ bind(deferred->check_maps());
   }
 
-  UniqueSet<Map> map_set = instr->hydrogen()->map_set();
+  const UniqueSet<Map>* map_set = instr->hydrogen()->map_set();
   Label success;
-  for (int i = 0; i < map_set.size() - 1; i++) {
-    Handle<Map> map = map_set.at(i).handle();
+  for (int i = 0; i < map_set->size() - 1; i++) {
+    Handle<Map> map = map_set->at(i).handle();
     __ CompareMap(map_reg, map, &success);
     __ beq(&success);
   }
 
-  Handle<Map> map = map_set.at(map_set.size() - 1).handle();
+  Handle<Map> map = map_set->at(map_set->size() - 1).handle();
   __ CompareMap(map_reg, map, &success);
   if (instr->hydrogen()->has_migration_target()) {
     __ bne(deferred->entry());
