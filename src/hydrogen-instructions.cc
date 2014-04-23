@@ -1249,6 +1249,13 @@ bool HBranch::KnownSuccessorBlock(HBasicBlock** block) {
 }
 
 
+void HBranch::PrintDataTo(StringStream* stream) {
+  HUnaryControlInstruction::PrintDataTo(stream);
+  stream->Add(" ");
+  expected_input_types().Print(stream);
+}
+
+
 void HCompareMap::PrintDataTo(StringStream* stream) {
   value()->PrintNameTo(stream);
   stream->Add(" (%p)", *map().handle());
@@ -3302,6 +3309,21 @@ bool HHasInstanceTypeAndBranch::KnownSuccessorBlock(HBasicBlock** block) {
 void HCompareHoleAndBranch::InferRepresentation(
     HInferRepresentationPhase* h_infer) {
   ChangeRepresentation(value()->representation());
+}
+
+
+bool HCompareNumericAndBranch::KnownSuccessorBlock(HBasicBlock** block) {
+  if (left() == right() &&
+      left()->representation().IsSmiOrInteger32()) {
+    *block = (token() == Token::EQ ||
+              token() == Token::EQ_STRICT ||
+              token() == Token::LTE ||
+              token() == Token::GTE)
+        ? FirstSuccessor() : SecondSuccessor();
+    return true;
+  }
+  *block = NULL;
+  return false;
 }
 
 

@@ -1316,11 +1316,8 @@ HValue* HGraphBuilder::BuildCheckForCapacityGrow(
 
   HValue* max_gap = Add<HConstant>(static_cast<int32_t>(JSObject::kMaxGap));
   HValue* max_capacity = AddUncasted<HAdd>(current_capacity, max_gap);
-  IfBuilder key_checker(this);
-  key_checker.If<HCompareNumericAndBranch>(key, max_capacity, Token::LT);
-  key_checker.Then();
-  key_checker.ElseDeopt("Key out of capacity range");
-  key_checker.End();
+
+  Add<HBoundsCheck>(key, max_capacity);
 
   HValue* new_capacity = BuildNewElementsCapacity(key);
   HValue* new_elements = BuildGrowElementsCapacity(object, elements,
@@ -5576,15 +5573,15 @@ bool HOptimizedGraphBuilder::PropertyAccessInfo::LoadResult(Handle<Map> map) {
 
 void HOptimizedGraphBuilder::PropertyAccessInfo::LoadFieldMaps(
     Handle<Map> map) {
+  // Clear any previously collected field maps.
+  field_maps_.Clear();
+
   // Figure out the field type from the accessor map.
   Handle<HeapType> field_type(lookup_.GetFieldTypeFromMap(*map), isolate());
 
   // Collect the (stable) maps from the field type.
   int num_field_maps = field_type->NumClasses();
-  if (num_field_maps == 0) {
-    field_maps_.Clear();
-    return;
-  }
+  if (num_field_maps == 0) return;
   ASSERT(access_.representation().IsHeapObject());
   field_maps_.Reserve(num_field_maps, zone());
   HeapType::Iterator<Map> it = field_type->Classes();
@@ -6967,13 +6964,36 @@ HInstruction* HOptimizedGraphBuilder::BuildCallConstantFunction(
 }
 
 
+class FunctionSorter {
+ public:
+  FunctionSorter(int index = 0, int ticks = 0, int size = 0)
+      : index_(index), ticks_(ticks), size_(size) { }
+
+  int index() const { return index_; }
+  int ticks() const { return ticks_; }
+  int size() const { return size_; }
+
+ private:
+  int index_;
+  int ticks_;
+  int size_;
+};
+
+
+inline bool operator<(const FunctionSorter& lhs, const FunctionSorter& rhs) {
+  int diff = lhs.ticks() - rhs.ticks();
+  if (diff != 0) return diff > 0;
+  return lhs.size() < rhs.size();
+}
+
+
 void HOptimizedGraphBuilder::HandlePolymorphicCallNamed(
     Call* expr,
     HValue* receiver,
     SmallMapList* types,
     Handle<String> name) {
   int argument_count = expr->arguments()->length() + 1;  // Includes receiver.
-  int order[kMaxCallPolymorphism];
+  FunctionSorter order[kMaxCallPolymorphism];
 
   bool handle_smi = false;
   bool handled_string = false;
@@ -6995,9 +7015,12 @@ void HOptimizedGraphBuilder::HandlePolymorphicCallNamed(
         handle_smi = true;
       }
       expr->set_target(target);
-      order[ordered_functions++] = i;
+      order[ordered_functions++] = FunctionSorter(
+          i, target->shared()->profiler_ticks(), InliningAstSize(target));
     }
   }
+
+  std::sort(order, order + ordered_functions);
 
   HBasicBlock* number_block = NULL;
   HBasicBlock* join = NULL;
@@ -7005,7 +7028,7 @@ void HOptimizedGraphBuilder::HandlePolymorphicCallNamed(
   int count = 0;
 
   for (int fn = 0; fn < ordered_functions; ++fn) {
-    int i = order[fn];
+    int i = order[fn].index();
     PropertyAccessInfo info(this, LOAD, ToType(types->at(i)), name);
     if (info.type()->Is(Type::String())) {
       if (handled_string) continue;
@@ -7790,12 +7813,18 @@ bool HOptimizedGraphBuilder::TryInlineBuiltinMethodCall(
 
       HValue* value_to_push = Pop();
       HValue* array = Pop();
+      Drop(1);  // Drop function.
 
-      HValue* length = Add<HLoadNamedField>(array, static_cast<HValue*>(NULL),
-          HObjectAccess::ForArrayLength(elements_kind));
+      HInstruction* new_size = NULL;
+      HValue* length = NULL;
 
       {
         NoObservableSideEffectsScope scope(this);
+
+        length = Add<HLoadNamedField>(array, static_cast<HValue*>(NULL),
+          HObjectAccess::ForArrayLength(elements_kind));
+
+        new_size = AddUncasted<HAdd>(length, graph()->GetConstant1());
 
         bool is_array = receiver_map->instance_type() == JS_ARRAY_TYPE;
         BuildUncheckedMonomorphicElementAccess(array, length,
@@ -7803,11 +7832,13 @@ bool HOptimizedGraphBuilder::TryInlineBuiltinMethodCall(
                                                elements_kind, STORE,
                                                NEVER_RETURN_HOLE,
                                                STORE_AND_GROW_NO_TRANSITION);
+
+        if (!ast_context()->IsEffect()) Push(new_size);
+        Add<HSimulate>(expr->id(), REMOVABLE_SIMULATE);
+        if (!ast_context()->IsEffect()) Drop(1);
       }
 
-      HInstruction* new_size = NewUncasted<HAdd>(length, Add<HConstant>(argc));
-      Drop(1);  // Drop function.
-      ast_context()->ReturnInstruction(new_size, expr->id());
+      ast_context()->ReturnValue(new_size);
       return true;
     }
     default:

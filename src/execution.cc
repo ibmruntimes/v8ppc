@@ -54,7 +54,7 @@ MUST_USE_RESULT static MaybeHandle<Object> Invoke(
   }
 
   // Placeholder for return value.
-  MaybeObject* value = reinterpret_cast<Object*>(kZapValue);
+  Object* value = NULL;
 
   typedef Object* (*JSEntryFunction)(byte* entry,
                                      Object* function,
@@ -114,7 +114,7 @@ MUST_USE_RESULT static MaybeHandle<Object> Invoke(
     isolate->clear_pending_message();
   }
 
-  return Handle<Object>(value->ToObjectUnchecked(), isolate);
+  return Handle<Object>(value, isolate);
 }
 
 
@@ -941,7 +941,7 @@ void Execution::ProcessDebugMessages(Isolate* isolate,
 }
 #endif
 
-MaybeObject* Execution::HandleStackGuardInterrupt(Isolate* isolate) {
+Object* Execution::HandleStackGuardInterrupt(Isolate* isolate) {
   StackGuard* stack_guard = isolate->stack_guard();
   if (stack_guard->ShouldPostponeInterrupts()) {
     return isolate->heap()->undefined_value();

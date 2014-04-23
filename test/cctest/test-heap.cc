@@ -241,7 +241,6 @@ TEST(Tagging) {
            Failure::RetryAfterGC(NEW_SPACE)->allocation_space());
   CHECK_EQ(OLD_POINTER_SPACE,
            Failure::RetryAfterGC(OLD_POINTER_SPACE)->allocation_space());
-  CHECK(Failure::Exception()->IsFailure());
   CHECK(Smi::FromInt(Smi::kMinValue)->IsSmi());
   CHECK(Smi::FromInt(Smi::kMaxValue)->IsSmi());
 }
@@ -268,8 +267,8 @@ TEST(GarbageCollection) {
   {
     HandleScope inner_scope(isolate);
     // Allocate a function and keep it in global object's property.
-    Handle<JSFunction> function =
-        factory->NewFunction(name, factory->undefined_value());
+    Handle<JSFunction> function = factory->NewFunctionWithPrototype(
+        name, factory->undefined_value());
     Handle<Map> initial_map =
         factory->NewMap(JS_OBJECT_TYPE, JSObject::kHeaderSize);
     function->set_initial_map(*initial_map);
@@ -597,17 +596,13 @@ static const char* not_so_random_string_table[] = {
 
 
 static void CheckInternalizedStrings(const char** strings) {
+  Factory* factory = CcTest::i_isolate()->factory();
   for (const char* string = *strings; *strings != 0; string = *strings++) {
-    Object* a;
-    MaybeObject* maybe_a = CcTest::heap()->InternalizeUtf8String(string);
-    // InternalizeUtf8String may return a failure if a GC is needed.
-    if (!maybe_a->ToObject(&a)) continue;
+    Handle<String> a = factory->InternalizeUtf8String(string);
     CHECK(a->IsInternalizedString());
-    Object* b;
-    MaybeObject* maybe_b = CcTest::heap()->InternalizeUtf8String(string);
-    if (!maybe_b->ToObject(&b)) continue;
-    CHECK_EQ(b, a);
-    CHECK(String::cast(b)->IsUtf8EqualTo(CStrVector(string)));
+    Handle<String> b = factory->InternalizeUtf8String(string);
+    CHECK_EQ(*b, *a);
+    CHECK(String::cast(*b)->IsUtf8EqualTo(CStrVector(string)));
   }
 }
 
@@ -615,6 +610,7 @@ static void CheckInternalizedStrings(const char** strings) {
 TEST(StringTable) {
   CcTest::InitializeVM();
 
+  v8::HandleScope sc(CcTest::isolate());
   CheckInternalizedStrings(not_so_random_string_table);
   CheckInternalizedStrings(not_so_random_string_table);
 }
@@ -627,8 +623,8 @@ TEST(FunctionAllocation) {
 
   v8::HandleScope sc(CcTest::isolate());
   Handle<String> name = factory->InternalizeUtf8String("theFunction");
-  Handle<JSFunction> function =
-      factory->NewFunction(name, factory->undefined_value());
+  Handle<JSFunction> function = factory->NewFunctionWithPrototype(
+      name, factory->undefined_value());
   Handle<Map> initial_map =
       factory->NewMap(JS_OBJECT_TYPE, JSObject::kHeaderSize);
   function->set_initial_map(*initial_map);
@@ -726,8 +722,8 @@ TEST(JSObjectMaps) {
 
   v8::HandleScope sc(CcTest::isolate());
   Handle<String> name = factory->InternalizeUtf8String("theFunction");
-  Handle<JSFunction> function =
-      factory->NewFunction(name, factory->undefined_value());
+  Handle<JSFunction> function = factory->NewFunctionWithPrototype(
+      name, factory->undefined_value());
   Handle<Map> initial_map =
       factory->NewMap(JS_OBJECT_TYPE, JSObject::kHeaderSize);
   function->set_initial_map(*initial_map);

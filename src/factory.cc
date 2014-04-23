@@ -242,9 +242,8 @@ Handle<String> Factory::InternalizeUtf8String(Vector<const char> string) {
 
 // Internalized strings are created in the old generation (data space).
 Handle<String> Factory::InternalizeString(Handle<String> string) {
-  CALL_HEAP_FUNCTION(isolate(),
-                     isolate()->heap()->InternalizeString(*string),
-                     String);
+  if (string->IsInternalizedString()) return string;
+  return StringTable::LookupString(isolate(), string);
 }
 
 
@@ -269,9 +268,7 @@ Handle<String> Factory::InternalizeTwoByteString(Vector<const uc16> string) {
 
 template<class StringTableKey>
 Handle<String> Factory::InternalizeStringWithKey(StringTableKey* key) {
-  CALL_HEAP_FUNCTION(isolate(),
-                     isolate()->heap()->InternalizeStringWithKey(key),
-                     String);
+  return StringTable::LookupKey(isolate(), key);
 }
 
 
@@ -350,11 +347,27 @@ MaybeHandle<SeqTwoByteString> Factory::NewRawTwoByteString(
 }
 
 
-Handle<String> Factory::LookupSingleCharacterStringFromCode(uint32_t index) {
-  CALL_HEAP_FUNCTION(
-      isolate(),
-      isolate()->heap()->LookupSingleCharacterStringFromCode(index),
-      String);
+Handle<String> Factory::LookupSingleCharacterStringFromCode(uint32_t code) {
+  if (code <= String::kMaxOneByteCharCodeU) {
+    {
+      DisallowHeapAllocation no_allocation;
+      Object* value = single_character_string_cache()->get(code);
+      if (value != *undefined_value()) {
+        return handle(String::cast(value), isolate());
+      }
+    }
+    uint8_t buffer[1];
+    buffer[0] = static_cast<uint8_t>(code);
+    Handle<String> result =
+        InternalizeOneByteString(Vector<const uint8_t>(buffer, 1));
+    single_character_string_cache()->set(code, *result);
+    return result;
+  }
+  ASSERT(code <= String::kMaxUtf16CodeUnitU);
+
+  Handle<SeqTwoByteString> result = NewRawTwoByteString(1).ToHandleChecked();
+  result->SeqTwoByteStringSet(0, static_cast<uint16_t>(code));
+  return result;
 }
 
 
@@ -532,6 +545,8 @@ Handle<String> Factory::NewProperSubString(Handle<String> str,
 #endif
   ASSERT(begin > 0 || end < str->length());
 
+  str = String::Flatten(str);
+
   int length = end - begin;
   if (length <= 0) return empty_string();
   if (length == 1) {
@@ -566,28 +581,10 @@ Handle<String> Factory::NewProperSubString(Handle<String> str,
 
   int offset = begin;
 
-  while (str->IsConsString()) {
-    Handle<ConsString> cons = Handle<ConsString>::cast(str);
-    int split = cons->first()->length();
-    if (split <= offset) {
-      // Slice is fully contained in the second part.
-      str = Handle<String>(cons->second(), isolate());
-      offset -= split;  // Adjust for offset.
-      continue;
-    } else if (offset + length <= split) {
-      // Slice is fully contained in the first part.
-      str = Handle<String>(cons->first(), isolate());
-      continue;
-    }
-    break;
-  }
-
   if (str->IsSlicedString()) {
     Handle<SlicedString> slice = Handle<SlicedString>::cast(str);
     str = Handle<String>(slice->parent(), isolate());
     offset += slice->offset();
-  } else {
-    str = String::Flatten(str);
   }
 
   ASSERT(str->IsSeqString() || str->IsExternalString());
@@ -1273,12 +1270,7 @@ Handle<JSFunction> Factory::NewFunction(Handle<String> name,
                                         Handle<Code> code,
                                         bool force_initial_map) {
   // Allocate the function
-  Handle<JSFunction> function = NewFunction(name, the_hole_value());
-
-  // Set up the code pointer in both the shared function info and in
-  // the function itself.
-  function->shared()->set_code(*code);
-  function->set_code(*code);
+  Handle<JSFunction> function = NewFunction(name, code, the_hole_value());
 
   if (force_initial_map ||
       type != JS_OBJECT_TYPE ||
@@ -1304,12 +1296,7 @@ Handle<JSFunction> Factory::NewFunctionWithPrototype(Handle<String> name,
                                                      Handle<Code> code,
                                                      bool force_initial_map) {
   // Allocate the function.
-  Handle<JSFunction> function = NewFunction(name, prototype);
-
-  // Set up the code pointer in both the shared function info and in
-  // the function itself.
-  function->shared()->set_code(*code);
-  function->set_code(*code);
+  Handle<JSFunction> function = NewFunction(name, code, prototype);
 
   if (force_initial_map ||
       type != JS_OBJECT_TYPE ||
@@ -1877,6 +1864,7 @@ Handle<SharedFunctionInfo> Factory::NewSharedFunctionInfo(Handle<String> name) {
   share->set_debug_info(*undefined_value(), SKIP_WRITE_BARRIER);
   share->set_inferred_name(*empty_string(), SKIP_WRITE_BARRIER);
   share->set_initial_map(*undefined_value(), SKIP_WRITE_BARRIER);
+  share->set_profiler_ticks(0);
   share->set_ast_node_count(0);
   share->set_counters(0);
 
@@ -2041,19 +2029,20 @@ Handle<JSFunction> Factory::NewFunction(Handle<SharedFunctionInfo> info,
 
 
 Handle<JSFunction> Factory::NewFunction(Handle<String> name,
-                                        Handle<Object> prototype) {
-  Handle<SharedFunctionInfo> info = NewSharedFunctionInfo(name);
-  Handle<Context> context(isolate()->context()->native_context());
-  return NewFunction(info, context, prototype);
-}
-
-
-Handle<JSFunction> Factory::NewFunctionWithoutPrototype(Handle<String> name,
-                                                        Handle<Code> code) {
+                                        Handle<Code> code,
+                                        MaybeHandle<Object> maybe_prototype) {
   Handle<SharedFunctionInfo> info = NewSharedFunctionInfo(name);
   info->set_code(*code);
   Handle<Context> context(isolate()->context()->native_context());
-  return NewFunction(info, context, MaybeHandle<Object>());
+  return NewFunction(info, context, maybe_prototype);
+}
+
+
+Handle<JSFunction> Factory::NewFunctionWithPrototype(Handle<String> name,
+                                                     Handle<Object> prototype) {
+  Handle<SharedFunctionInfo> info = NewSharedFunctionInfo(name);
+  Handle<Context> context(isolate()->context()->native_context());
+  return NewFunction(info, context, prototype);
 }
 
 

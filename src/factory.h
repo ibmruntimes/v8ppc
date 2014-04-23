@@ -81,6 +81,8 @@ class Factory V8_FINAL {
   // Create an empty TypeFeedbackInfo.
   Handle<TypeFeedbackInfo> NewTypeFeedbackInfo();
 
+  // Finds the internalized copy for string in the string table.
+  // If not found, a new string is added to the table and returned.
   Handle<String> InternalizeUtf8String(Vector<const char> str);
   Handle<String> InternalizeUtf8String(const char* str) {
     return InternalizeUtf8String(CStrVector(str));
@@ -165,7 +167,9 @@ class Factory V8_FINAL {
       int length,
       PretenureFlag pretenure = NOT_TENURED);
 
-  Handle<String> LookupSingleCharacterStringFromCode(uint32_t index);
+  // Creates a single character string where the character has given code.
+  // A cache is used for ASCII codes.
+  Handle<String> LookupSingleCharacterStringFromCode(uint32_t code);
 
   // Create a new cons string object which consists of a pair of strings.
   MUST_USE_RESULT MaybeHandle<String> NewConsString(Handle<String> left,
@@ -442,7 +446,12 @@ class Factory V8_FINAL {
   void BecomeJSFunction(Handle<JSReceiver> object);
 
   Handle<JSFunction> NewFunction(Handle<String> name,
-                                 Handle<Object> prototype);
+                                 Handle<Code> code,
+                                 MaybeHandle<Object> maybe_prototype =
+                                     MaybeHandle<Object>());
+
+  Handle<JSFunction> NewFunctionWithPrototype(Handle<String> name,
+                                              Handle<Object> prototype);
 
   Handle<JSFunction> NewFunctionFromSharedFunctionInfo(
       Handle<SharedFunctionInfo> function_info,
@@ -461,9 +470,6 @@ class Factory V8_FINAL {
                                               Handle<JSObject> prototype,
                                               Handle<Code> code,
                                               bool force_initial_map);
-
-  Handle<JSFunction> NewFunctionWithoutPrototype(Handle<String> name,
-                                                 Handle<Code> code);
 
   // Create a serialized scope info.
   Handle<ScopeInfo> NewScopeInfo(int length);
@@ -572,6 +578,10 @@ class Factory V8_FINAL {
   }
   INTERNALIZED_STRING_LIST(STRING_ACCESSOR)
 #undef STRING_ACCESSOR
+
+  inline void set_string_table(Handle<StringTable> table) {
+    isolate()->heap()->set_string_table(*table);
+  }
 
   Handle<String> hidden_string() {
     return Handle<String>(&isolate()->heap()->hidden_string_);

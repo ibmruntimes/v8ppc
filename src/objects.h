@@ -931,7 +931,6 @@ class MaybeObject BASE_EMBEDDED {
  public:
   inline bool IsFailure();
   inline bool IsRetryAfterGC();
-  inline bool IsException();
   inline bool ToObject(Object** obj) {
     if (IsFailure()) return false;
     *obj = reinterpret_cast<Object*>(this);
@@ -1459,7 +1458,8 @@ class Object : public MaybeObject {
   // Oddball testing.
   INLINE(bool IsUndefined());
   INLINE(bool IsNull());
-  INLINE(bool IsTheHole());  // Shadows MaybeObject's implementation.
+  INLINE(bool IsTheHole());
+  INLINE(bool IsException());
   INLINE(bool IsUninitialized());
   INLINE(bool IsTrue());
   INLINE(bool IsFalse());
@@ -1540,7 +1540,6 @@ class Object : public MaybeObject {
   // Failure is returned otherwise.
   static MUST_USE_RESULT inline Handle<Object> ToSmi(Isolate* isolate,
                                                      Handle<Object> object);
-  MUST_USE_RESULT inline MaybeObject* ToSmi();
 
   void Lookup(Name* name, LookupResult* result);
 
@@ -1674,9 +1673,8 @@ class Smi: public Object {
 };
 
 
-// Failure is used for reporting out of memory situations and
-// propagating exceptions through the runtime system.  Failure objects
-// are transient and cannot occur as part of the object graph.
+// Failure is mainly used for reporting a situation requiring a GC.
+// Failure objects are transient and cannot occur as part of the object graph.
 //
 // Failures are a single word, encoded as follows:
 // +-------------------------+---+--+--+
@@ -1688,9 +1686,6 @@ class Smi: public Object {
 // The low two bits, 0-1, are the failure tag, 11.  The next two bits,
 // 2-3, are a failure type tag 'tt' with possible values:
 //   00 RETRY_AFTER_GC
-//   01 EXCEPTION
-//   10 INTERNAL_ERROR
-//   11 OUT_OF_MEMORY_EXCEPTION
 //
 // The next three bits, 4-6, are an allocation space tag 'sss'.  The
 // allocation space tag is 000 for all failure types except
@@ -1703,13 +1698,8 @@ const int kFailureTypeTagMask = (1 << kFailureTypeTagSize) - 1;
 
 class Failure: public MaybeObject {
  public:
-  // RuntimeStubs assumes EXCEPTION = 1 in the compiler-generated code.
   enum Type {
-    RETRY_AFTER_GC = 0,
-    EXCEPTION = 1,       // Returning this marker tells the real exception
-                         // is in Isolate::pending_exception.
-    INTERNAL_ERROR = 2,
-    OUT_OF_MEMORY_EXCEPTION = 3
+    RETRY_AFTER_GC = 0
   };
 
   inline Type type() const;
@@ -1719,8 +1709,6 @@ class Failure: public MaybeObject {
 
   static inline Failure* RetryAfterGC(AllocationSpace space);
   static inline Failure* RetryAfterGC();  // NEW_SPACE
-  static inline Failure* Exception();
-  static inline Failure* InternalError();
   // Casting.
   static inline Failure* cast(MaybeObject* object);
 
@@ -2660,9 +2648,10 @@ class JSObject: public JSReceiver {
                                        = UPDATE_WRITE_BARRIER);
 
   // Set the object's prototype (only JSReceiver and null are allowed values).
-  static Handle<Object> SetPrototype(Handle<JSObject> object,
-                                     Handle<Object> value,
-                                     bool skip_hidden_prototypes = false);
+  MUST_USE_RESULT static MaybeHandle<Object> SetPrototype(
+      Handle<JSObject> object,
+      Handle<Object> value,
+      bool skip_hidden_prototypes = false);
 
   // Initializes the body after properties slot, properties slot is
   // initialized by set_properties.  Fill the pre-allocated fields with
@@ -2695,11 +2684,13 @@ class JSObject: public JSReceiver {
   static Handle<JSObject> Copy(Handle<JSObject> object,
                                Handle<AllocationSite> site);
   static Handle<JSObject> Copy(Handle<JSObject> object);
-  static Handle<JSObject> DeepCopy(Handle<JSObject> object,
-                                   AllocationSiteUsageContext* site_context,
-                                   DeepCopyHints hints = kNoHints);
-  static Handle<JSObject> DeepWalk(Handle<JSObject> object,
-                                   AllocationSiteCreationContext* site_context);
+  MUST_USE_RESULT static MaybeHandle<JSObject> DeepCopy(
+      Handle<JSObject> object,
+      AllocationSiteUsageContext* site_context,
+      DeepCopyHints hints = kNoHints);
+  MUST_USE_RESULT static MaybeHandle<JSObject> DeepWalk(
+      Handle<JSObject> object,
+      AllocationSiteCreationContext* site_context);
 
   static Handle<Object> GetDataProperty(Handle<JSObject> object,
                                         Handle<Name> key);
@@ -3899,6 +3890,8 @@ class HashTableKey {
   // Returns the key object for storing into the hash table.
   // If allocations fails a failure object is returned.
   MUST_USE_RESULT virtual MaybeObject* AsObject(Heap* heap) = 0;
+  // TODO(ishell): This should eventually replace AsObject().
+  inline Handle<Object> AsHandle(Isolate* isolate);
   // Required.
   virtual ~HashTableKey() {}
 };
@@ -3936,12 +3929,10 @@ class StringTable: public HashTable<StringTable,
                                     StringTableShape,
                                     HashTableKey*> {
  public:
-  // Find string in the string table.  If it is not there yet, it is
-  // added.  The return value is the string table which might have
-  // been enlarged.  If the return value is not a failure, the string
-  // pointer *s is set to the string found.
-  MUST_USE_RESULT MaybeObject* LookupString(String* key, Object** s);
-  MUST_USE_RESULT MaybeObject* LookupKey(HashTableKey* key, Object** s);
+  // Find string in the string table. If it is not there yet, it is
+  // added. The return value is the string found.
+  static Handle<String> LookupString(Isolate* isolate, Handle<String> key);
+  static Handle<String> LookupKey(Isolate* isolate, HashTableKey* key);
 
   // Looks up a string that is equal to the given string and returns
   // true if it is found, assigning the string to the given output
@@ -4668,6 +4659,10 @@ class ScopeInfo : public FixedArray {
 
   // Return the initialization flag of the given context local.
   InitializationFlag ContextLocalInitFlag(int var);
+
+  // Return true if this local was introduced by the compiler, and should not be
+  // exposed to the user in a debugger.
+  bool LocalIsSynthetic(int var);
 
   // Lookup support for serialized scope info. Returns the
   // the stack slot index for a given slot name if the slot is
@@ -7246,6 +7241,7 @@ class SharedFunctionInfo: public HeapObject {
   inline void set_ast_node_count(int count);
 
   inline int profiler_ticks();
+  inline void set_profiler_ticks(int ticks);
 
   // Inline cache age is used to infer whether the function survived a context
   // disposal or not. In the former case we reset the opt_count.
@@ -7419,14 +7415,10 @@ class SharedFunctionInfo: public HeapObject {
   static const int kInferredNameOffset = kDebugInfoOffset + kPointerSize;
   static const int kInitialMapOffset =
       kInferredNameOffset + kPointerSize;
-  // ast_node_count is a Smi field. It could be grouped with another Smi field
-  // into a PSEUDO_SMI_ACCESSORS pair (on x64), if one becomes available.
-  static const int kAstNodeCountOffset =
-      kInitialMapOffset + kPointerSize;
 #if V8_HOST_ARCH_32_BIT
   // Smi fields.
   static const int kLengthOffset =
-      kAstNodeCountOffset + kPointerSize;
+      kInitialMapOffset + kPointerSize;
   static const int kFormalParameterCountOffset = kLengthOffset + kPointerSize;
   static const int kExpectedNofPropertiesOffset =
       kFormalParameterCountOffset + kPointerSize;
@@ -7444,9 +7436,13 @@ class SharedFunctionInfo: public HeapObject {
       kCompilerHintsOffset + kPointerSize;
   static const int kCountersOffset =
       kOptCountAndBailoutReasonOffset + kPointerSize;
+  static const int kAstNodeCountOffset =
+      kCountersOffset + kPointerSize;
+  static const int kProfilerTicksOffset =
+      kAstNodeCountOffset + kPointerSize;
 
   // Total size.
-  static const int kSize = kCountersOffset + kPointerSize;
+  static const int kSize = kProfilerTicksOffset + kPointerSize;
 #else
   // The only reason to use smi fields instead of int fields
   // is to allow iteration without maps decoding during
@@ -7459,7 +7455,7 @@ class SharedFunctionInfo: public HeapObject {
   // to HeapObject during old space traversal.
 #if V8_TARGET_LITTLE_ENDIAN
   static const int kLengthOffset =
-      kAstNodeCountOffset + kPointerSize;
+      kInitialMapOffset + kPointerSize;
   static const int kFormalParameterCountOffset =
       kLengthOffset + kIntSize;
 
@@ -7480,12 +7476,16 @@ class SharedFunctionInfo: public HeapObject {
 
   static const int kOptCountAndBailoutReasonOffset =
       kCompilerHintsOffset + kIntSize;
-
   static const int kCountersOffset =
       kOptCountAndBailoutReasonOffset + kIntSize;
 
+  static const int kAstNodeCountOffset =
+      kCountersOffset + kIntSize;
+  static const int kProfilerTicksOffset =
+      kAstNodeCountOffset + kIntSize;
+
   // Total size.
-  static const int kSize = kCountersOffset + kIntSize;
+  static const int kSize = kProfilerTicksOffset + kIntSize;
 
 #elif V8_TARGET_BIG_ENDIAN
   static const int kFormalParameterCountOffset =
@@ -9266,6 +9266,7 @@ class String: public Name {
   static const int32_t kMaxOneByteCharCode = unibrow::Latin1::kMaxChar;
   static const uint32_t kMaxOneByteCharCodeU = unibrow::Latin1::kMaxChar;
   static const int kMaxUtf16CodeUnit = 0xffff;
+  static const uint32_t kMaxUtf16CodeUnitU = kMaxUtf16CodeUnit;
 
   // Value of hash field containing computed hash equal to zero.
   static const int kEmptyStringHash = kIsNotArrayIndexMask;
@@ -9863,6 +9864,7 @@ class Oddball: public HeapObject {
   static const byte kUndefined = 5;
   static const byte kUninitialized = 6;
   static const byte kOther = 7;
+  static const byte kException = 8;
 
   typedef FixedBodyDescriptor<kToStringOffset,
                               kToNumberOffset + kPointerSize,

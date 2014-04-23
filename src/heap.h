@@ -60,6 +60,7 @@ namespace internal {
   V(Oddball, true_value, TrueValue)                                            \
   V(Oddball, false_value, FalseValue)                                          \
   V(Oddball, uninitialized_value, UninitializedValue)                          \
+  V(Oddball, exception, Exception)                                             \
   V(Map, cell_map, CellMap)                                                    \
   V(Map, global_property_cell_map, GlobalPropertyCellMap)                      \
   V(Map, shared_function_info_map, SharedFunctionInfoMap)                      \
@@ -187,6 +188,7 @@ namespace internal {
   V(Map, uninitialized_map, UninitializedMap)                                  \
   V(Map, arguments_marker_map, ArgumentsMarkerMap)                             \
   V(Map, no_interceptor_result_sentinel_map, NoInterceptorResultSentinelMap)   \
+  V(Map, exception_map, ExceptionMap)                                          \
   V(Map, termination_exception_map, TerminationExceptionMap)                   \
   V(Map, message_object_map, JSMessageObjectMap)                               \
   V(Map, foreign_map, ForeignMap)                                              \
@@ -826,13 +828,6 @@ class Heap {
   MUST_USE_RESULT MaybeObject* AllocateInternalizedStringImpl(
       T t, int chars, uint32_t hash_field);
 
-  // Computes a single character string where the character has code.
-  // A cache is used for ASCII codes.
-  // Returns Failure::RetryAfterGC(requested_bytes, space) if the allocation
-  // failed. Please note this does not perform a garbage collection.
-  MUST_USE_RESULT MaybeObject* LookupSingleCharacterStringFromCode(
-      uint16_t code);
-
   // Allocate a byte array of the specified length
   // Returns Failure::RetryAfterGC(requested_bytes, space) if the allocation
   // failed.
@@ -1003,12 +998,6 @@ class Heap {
   // Returns Failure::RetryAfterGC(requested_bytes, space) if allocation
   // failed.
   // Please note this function does not perform a garbage collection.
-  MUST_USE_RESULT MaybeObject* InternalizeUtf8String(const char* str) {
-    return InternalizeUtf8String(CStrVector(str));
-  }
-  MUST_USE_RESULT MaybeObject* InternalizeUtf8String(Vector<const char> str);
-
-  MUST_USE_RESULT MaybeObject* InternalizeString(String* str);
   MUST_USE_RESULT MaybeObject* InternalizeStringWithKey(HashTableKey* key);
 
   bool InternalizeStringIfExists(String* str, String** result);

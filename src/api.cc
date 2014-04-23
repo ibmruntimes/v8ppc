@@ -3167,7 +3167,8 @@ bool v8::Object::SetPrototype(Handle<Value> value) {
   // to propagate outside.
   TryCatch try_catch;
   EXCEPTION_PREAMBLE(isolate);
-  i::Handle<i::Object> result = i::JSObject::SetPrototype(self, value_obj);
+  i::MaybeHandle<i::Object> result = i::JSObject::SetPrototype(
+      self, value_obj);
   has_pending_exception = result.is_null();
   EXCEPTION_BAILOUT_CHECK(isolate, false);
   return true;
@@ -7084,13 +7085,13 @@ const CpuProfileNode* CpuProfile::GetSample(int index) const {
 
 int64_t CpuProfile::GetStartTime() const {
   const i::CpuProfile* profile = reinterpret_cast<const i::CpuProfile*>(this);
-  return (profile->start_time() - i::Time::UnixEpoch()).InMicroseconds();
+  return (profile->start_time() - i::TimeTicks()).InMicroseconds();
 }
 
 
 int64_t CpuProfile::GetEndTime() const {
   const i::CpuProfile* profile = reinterpret_cast<const i::CpuProfile*>(this);
-  return (profile->end_time() - i::Time::UnixEpoch()).InMicroseconds();
+  return (profile->end_time() - i::TimeTicks()).InMicroseconds();
 }
 
 
