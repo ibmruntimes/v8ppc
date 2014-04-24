@@ -240,7 +240,7 @@ void FullCodeGenerator::Generate() {
       __ Push(info->scope()->GetScopeInfo());
       __ CallRuntime(Runtime::kHiddenNewGlobalContext, 2);
     } else if (heap_slots <= FastNewContextStub::kMaximumSlots) {
-      FastNewContextStub stub(heap_slots);
+      FastNewContextStub stub(isolate(), heap_slots);
       __ CallStub(&stub);
     } else {
       __ push(r4);
@@ -301,7 +301,7 @@ void FullCodeGenerator::Generate() {
     } else {
       type = ArgumentsAccessStub::NEW_SLOPPY_FAST;
     }
-    ArgumentsAccessStub stub(type);
+    ArgumentsAccessStub stub(isolate(), type);
     __ CallStub(&stub);
 
     SetVar(arguments, r3, r4, r5);
@@ -1363,7 +1363,9 @@ void FullCodeGenerator::EmitNewClosure(Handle<SharedFunctionInfo> info,
       !pretenure &&
       scope()->is_function_scope() &&
       info->num_literals() == 0) {
-    FastNewClosureStub stub(info->strict_mode(), info->is_generator());
+    FastNewClosureStub stub(isolate(),
+                            info->strict_mode(),
+                            info->is_generator());
     __ mov(r5, Operand(info));
     __ CallStub(&stub);
   } else {
@@ -1689,7 +1691,7 @@ void FullCodeGenerator::VisitObjectLiteral(ObjectLiteral* expr) {
     __ Push(r6, r5, r4, r3);
     __ CallRuntime(Runtime::kHiddenCreateObjectLiteral, 4);
   } else {
-    FastCloneShallowObjectStub stub(properties_count);
+    FastCloneShallowObjectStub stub(isolate(), properties_count);
     __ CallStub(&stub);
   }
 
@@ -1827,6 +1829,7 @@ void FullCodeGenerator::VisitArrayLiteral(ArrayLiteral* expr) {
   if (has_fast_elements && constant_elements_values->map() ==
       isolate()->heap()->fixed_cow_array_map()) {
     FastCloneShallowArrayStub stub(
+        isolate(),
         FastCloneShallowArrayStub::COPY_ON_WRITE_ELEMENTS,
         allocation_site_mode,
         length);
@@ -1848,7 +1851,8 @@ void FullCodeGenerator::VisitArrayLiteral(ArrayLiteral* expr) {
       mode = FastCloneShallowArrayStub::CLONE_ELEMENTS;
     }
 
-    FastCloneShallowArrayStub stub(mode, allocation_site_mode, length);
+    FastCloneShallowArrayStub stub(isolate(), mode, allocation_site_mode,
+                                   length);
     __ CallStub(&stub);
   }
 
@@ -1880,7 +1884,7 @@ void FullCodeGenerator::VisitArrayLiteral(ArrayLiteral* expr) {
                           EMIT_REMEMBERED_SET, INLINE_SMI_CHECK);
     } else {
       __ LoadSmiLiteral(r6, Smi::FromInt(i));
-      StoreArrayLiteralElementStub stub;
+      StoreArrayLiteralElementStub stub(isolate());
       __ CallStub(&stub);
     }
 
@@ -2128,7 +2132,7 @@ void FullCodeGenerator::VisitYield(Yield* expr) {
       CallIC(ic, TypeFeedbackId::None());
       __ mr(r4, r3);
       __ StoreP(r4, MemOperand(sp, 2 * kPointerSize));
-      CallFunctionStub stub(1, CALL_AS_METHOD);
+      CallFunctionStub stub(isolate(), 1, CALL_AS_METHOD);
       __ CallStub(&stub);
 
       __ LoadP(cp, MemOperand(fp, StandardFrameConstants::kContextOffset));
@@ -2358,8 +2362,8 @@ void FullCodeGenerator::EmitInlineSmiBinaryOp(BinaryOperation* expr,
   patch_site.EmitJumpIfSmi(scratch1, &smi_case);
 
   __ bind(&stub_call);
-  BinaryOpICStub stub(op, mode);
-  CallIC(stub.GetCode(isolate()), expr->BinaryOperationFeedbackId());
+  BinaryOpICStub stub(isolate(), op, mode);
+  CallIC(stub.GetCode(), expr->BinaryOperationFeedbackId());
   patch_site.EmitPatchInfo();
   __ b(&done);
 
@@ -2466,9 +2470,9 @@ void FullCodeGenerator::EmitBinaryOp(BinaryOperation* expr,
                                      Token::Value op,
                                      OverwriteMode mode) {
   __ pop(r4);
-  BinaryOpICStub stub(op, mode);
+  BinaryOpICStub stub(isolate(), op, mode);
   JumpPatchSite patch_site(masm_);    // unbound, signals no inlined smi code.
-  CallIC(stub.GetCode(isolate()), expr->BinaryOperationFeedbackId());
+  CallIC(stub.GetCode(), expr->BinaryOperationFeedbackId());
   patch_site.EmitPatchInfo();
   context()->Plug(r3);
 }
@@ -2710,7 +2714,7 @@ void FullCodeGenerator::EmitCallWithIC(Call* expr) {
 
   // Record source position for debugger.
   SetSourcePosition(expr->position());
-  CallFunctionStub stub(arg_count, flags);
+  CallFunctionStub stub(isolate(), arg_count, flags);
   __ LoadP(r4, MemOperand(sp, (arg_count + 1) * kPointerSize));
   __ CallStub(&stub);
 
@@ -2752,7 +2756,7 @@ void FullCodeGenerator::EmitKeyedCallWithIC(Call* expr,
 
   // Record source position for debugger.
   SetSourcePosition(expr->position());
-  CallFunctionStub stub(arg_count, CALL_AS_METHOD);
+  CallFunctionStub stub(isolate(), arg_count, CALL_AS_METHOD);
   __ LoadP(r4, MemOperand(sp, (arg_count + 1) * kPointerSize));
   __ CallStub(&stub);
 
@@ -2783,7 +2787,7 @@ void FullCodeGenerator::EmitCallWithStub(Call* expr) {
   __ LoadSmiLiteral(r6, Smi::FromInt(expr->CallFeedbackSlot()));
 
   // Record call targets in unoptimized code.
-  CallFunctionStub stub(arg_count, RECORD_CALL_TARGET);
+  CallFunctionStub stub(isolate(), arg_count, RECORD_CALL_TARGET);
   __ LoadP(r4, MemOperand(sp, (arg_count + 1) * kPointerSize), r0);
   __ CallStub(&stub);
   RecordJSReturnSite(expr);
@@ -2860,7 +2864,7 @@ void FullCodeGenerator::VisitCall(Call* expr) {
 
     // Record source position for debugger.
     SetSourcePosition(expr->position());
-    CallFunctionStub stub(arg_count, NO_CALL_FUNCTION_FLAGS);
+    CallFunctionStub stub(isolate(), arg_count, NO_CALL_FUNCTION_FLAGS);
     __ LoadP(r4, MemOperand(sp, (arg_count + 1) * kPointerSize), r0);
     __ CallStub(&stub);
     RecordJSReturnSite(expr);
@@ -2978,8 +2982,8 @@ void FullCodeGenerator::VisitCallNew(CallNew* expr) {
   __ Move(r5, FeedbackVector());
   __ LoadSmiLiteral(r6, Smi::FromInt(expr->CallNewFeedbackSlot()));
 
-  CallConstructStub stub(RECORD_CALL_TARGET);
-  __ Call(stub.GetCode(isolate()), RelocInfo::CONSTRUCT_CALL);
+  CallConstructStub stub(isolate(), RECORD_CALL_TARGET);
+  __ Call(stub.GetCode(), RelocInfo::CONSTRUCT_CALL);
   PrepareForBailoutForId(expr->ReturnId(), TOS_REG);
   context()->Plug(r3);
 }
@@ -3366,7 +3370,7 @@ void FullCodeGenerator::EmitArguments(CallRuntime* expr) {
   VisitForAccumulatorValue(args->at(0));
   __ mr(r4, r3);
   __ LoadSmiLiteral(r3, Smi::FromInt(info_->scope()->num_parameters()));
-  ArgumentsAccessStub stub(ArgumentsAccessStub::READ_ELEMENT);
+  ArgumentsAccessStub stub(isolate(), ArgumentsAccessStub::READ_ELEMENT);
   __ CallStub(&stub);
   context()->Plug(r3);
 }
@@ -3479,7 +3483,7 @@ void FullCodeGenerator::EmitLog(CallRuntime* expr) {
 
 void FullCodeGenerator::EmitSubString(CallRuntime* expr) {
   // Load the arguments on the stack and call the stub.
-  SubStringStub stub;
+  SubStringStub stub(isolate());
   ZoneList<Expression*>* args = expr->arguments();
   ASSERT(args->length() == 3);
   VisitForStackValue(args->at(0));
@@ -3492,7 +3496,7 @@ void FullCodeGenerator::EmitSubString(CallRuntime* expr) {
 
 void FullCodeGenerator::EmitRegExpExec(CallRuntime* expr) {
   // Load the arguments on the stack and call the stub.
-  RegExpExecStub stub;
+  RegExpExecStub stub(isolate());
   ZoneList<Expression*>* args = expr->arguments();
   ASSERT(args->length() == 4);
   VisitForStackValue(args->at(0));
@@ -3644,7 +3648,7 @@ void FullCodeGenerator::EmitMathPow(CallRuntime* expr) {
   ASSERT(args->length() == 2);
   VisitForStackValue(args->at(0));
   VisitForStackValue(args->at(1));
-  MathPowStub stub(MathPowStub::ON_STACK);
+  MathPowStub stub(isolate(), MathPowStub::ON_STACK);
   __ CallStub(&stub);
   context()->Plug(r3);
 }
@@ -3684,7 +3688,7 @@ void FullCodeGenerator::EmitNumberToString(CallRuntime* expr) {
   // Load the argument into r3 and call the stub.
   VisitForAccumulatorValue(args->at(0));
 
-  NumberToStringStub stub;
+  NumberToStringStub stub(isolate());
   __ CallStub(&stub);
   context()->Plug(r3);
 }
@@ -3807,7 +3811,7 @@ void FullCodeGenerator::EmitStringAdd(CallRuntime* expr) {
   VisitForAccumulatorValue(args->at(1));
 
   __ pop(r4);
-  StringAddStub stub(STRING_ADD_CHECK_BOTH, NOT_TENURED);
+  StringAddStub stub(isolate(), STRING_ADD_CHECK_BOTH, NOT_TENURED);
   __ CallStub(&stub);
   context()->Plug(r3);
 }
@@ -3819,7 +3823,7 @@ void FullCodeGenerator::EmitStringCompare(CallRuntime* expr) {
   VisitForStackValue(args->at(0));
   VisitForStackValue(args->at(1));
 
-  StringCompareStub stub;
+  StringCompareStub stub(isolate());
   __ CallStub(&stub);
   context()->Plug(r3);
 }
@@ -3858,7 +3862,7 @@ void FullCodeGenerator::EmitCallFunction(CallRuntime* expr) {
 
 
 void FullCodeGenerator::EmitRegExpConstructResult(CallRuntime* expr) {
-  RegExpConstructResultStub stub;
+  RegExpConstructResultStub stub(isolate());
   ZoneList<Expression*>* args = expr->arguments();
   ASSERT(args->length() == 3);
   VisitForStackValue(args->at(0));
@@ -4252,7 +4256,7 @@ void FullCodeGenerator::VisitCallRuntime(CallRuntime* expr) {
 
     // Record source position of the IC call.
     SetSourcePosition(expr->position());
-    CallFunctionStub stub(arg_count, NO_CALL_FUNCTION_FLAGS);
+    CallFunctionStub stub(isolate(), arg_count, NO_CALL_FUNCTION_FLAGS);
     __ LoadP(r4, MemOperand(sp, (arg_count + 1) * kPointerSize));
     __ CallStub(&stub);
 
@@ -4473,7 +4477,7 @@ void FullCodeGenerator::VisitCountOperation(CountOperation* expr) {
     __ b(&stub_call);
     __ bind(&slow);
   }
-  ToNumberStub convert_stub;
+  ToNumberStub convert_stub(isolate());
   __ CallStub(&convert_stub);
 
   // Save result for postfix expressions.
@@ -4503,8 +4507,8 @@ void FullCodeGenerator::VisitCountOperation(CountOperation* expr) {
   // Record position before stub call.
   SetSourcePosition(expr->position());
 
-  BinaryOpICStub stub(Token::ADD, NO_OVERWRITE);
-  CallIC(stub.GetCode(isolate()), expr->CountBinOpFeedbackId());
+  BinaryOpICStub stub(isolate(), Token::ADD, NO_OVERWRITE);
+  CallIC(stub.GetCode(), expr->CountBinOpFeedbackId());
   patch_site.EmitPatchInfo();
   __ bind(&done);
 
@@ -4714,7 +4718,7 @@ void FullCodeGenerator::VisitCompareOperation(CompareOperation* expr) {
 
     case Token::INSTANCEOF: {
       VisitForStackValue(expr->right());
-      InstanceofStub stub(InstanceofStub::kNoFlags);
+      InstanceofStub stub(isolate(), InstanceofStub::kNoFlags);
       __ CallStub(&stub);
       PrepareForBailoutBeforeSplit(expr, true, if_true, if_false);
       // The stub returns 0 for true.
