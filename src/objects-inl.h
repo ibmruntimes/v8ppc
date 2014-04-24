@@ -6648,6 +6648,10 @@ MaybeObject* NumberDictionaryShape::AsObject(Heap* heap, uint32_t key) {
   return heap->NumberFromUint32(key);
 }
 
+Handle<Object> NumberDictionaryShape::AsHandle(Isolate* isolate, uint32_t key) {
+  return isolate->factory()->NewNumberFromUint(key);
+}
+
 
 bool NameDictionaryShape::IsMatch(Name* key, Object* other) {
   // We know that all entries in a hash table had their hash keys created.
@@ -6670,6 +6674,13 @@ uint32_t NameDictionaryShape::HashForObject(Name* key, Object* other) {
 MaybeObject* NameDictionaryShape::AsObject(Heap* heap, Name* key) {
   ASSERT(key->IsUniqueName());
   return key;
+}
+
+
+Handle<Object> NameDictionaryShape::AsHandle(Isolate* isolate, Name* key) {
+  ASSERT(key->IsUniqueName());
+  // TODO(ishell): Convert Name* to Handle<Name> to avoid re-wrapping here.
+  return handle(key, isolate);
 }
 
 

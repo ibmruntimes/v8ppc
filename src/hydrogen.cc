@@ -3099,8 +3099,7 @@ HGraph::HGraph(CompilationInfo* info)
       inlined_functions_(5, info->zone()) {
   if (info->IsStub()) {
     HydrogenCodeStub* stub = info->code_stub();
-    CodeStubInterfaceDescriptor* descriptor =
-        stub->GetInterfaceDescriptor(isolate_);
+    CodeStubInterfaceDescriptor* descriptor = stub->GetInterfaceDescriptor();
     start_environment_ =
         new(zone_) HEnvironment(zone_, descriptor->environment_length());
   } else {
@@ -8013,8 +8012,8 @@ bool HOptimizedGraphBuilder::TryInlineApiCall(Handle<JSFunction> function,
   CallInterfaceDescriptor* descriptor =
       isolate()->call_descriptor(Isolate::ApiFunctionCall);
 
-  CallApiFunctionStub stub(is_store, call_data_is_undefined, argc);
-  Handle<Code> code = stub.GetCode(isolate());
+  CallApiFunctionStub stub(isolate(), is_store, call_data_is_undefined, argc);
+  Handle<Code> code = stub.GetCode();
   HConstant* code_value = Add<HConstant>(code);
 
   ASSERT((sizeof(op_vals) / kPointerSize) ==

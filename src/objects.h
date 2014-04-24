@@ -4104,13 +4104,22 @@ class Dictionary: public HashTable<Derived, Shape, Key> {
 
  protected:
   // Generic at put operation.
-  MUST_USE_RESULT MaybeObject* AtPut(Key key, Object* value);
+  MUST_USE_RESULT static Handle<Derived> AtPut(
+      Handle<Derived> dictionary,
+      Key key,
+      Handle<Object> value);
 
   // Add entry to dictionary.
   MUST_USE_RESULT MaybeObject* AddEntry(Key key,
                                         Object* value,
                                         PropertyDetails details,
                                         uint32_t hash);
+  MUST_USE_RESULT static Handle<Derived> AddEntry(
+      Handle<Derived> dictionary,
+      Key key,
+      Handle<Object> value,
+      PropertyDetails details,
+      uint32_t hash);
 
   // Generate new enumeration indices to avoid enumeration index overflow.
   MUST_USE_RESULT MaybeObject* GenerateNewEnumerationIndices();
@@ -4126,6 +4135,7 @@ class NameDictionaryShape : public BaseShape<Name*> {
   static inline uint32_t HashForObject(Name* key, Object* object);
   MUST_USE_RESULT static inline MaybeObject* AsObject(Heap* heap,
                                                       Name* key);
+  static inline Handle<Object> AsHandle(Isolate* isolate, Name* key);
   static const int kPrefixSize = 2;
   static const int kEntrySize = 3;
   static const bool kIsEnumerable = true;
@@ -4161,8 +4171,10 @@ class NameDictionary: public Dictionary<NameDictionary,
 class NumberDictionaryShape : public BaseShape<uint32_t> {
  public:
   static inline bool IsMatch(uint32_t key, Object* other);
+  // TODO(ishell): This should be eventually replaced with AsHandle().
   MUST_USE_RESULT static inline MaybeObject* AsObject(Heap* heap,
                                                       uint32_t key);
+  static inline Handle<Object> AsHandle(Isolate* isolate, uint32_t key);
   static const int kEntrySize = 3;
   static const bool kIsEnumerable = false;
 };
@@ -4200,27 +4212,23 @@ class SeededNumberDictionary
   }
 
   // Type specific at put (default NONE attributes is used when adding).
-  MUST_USE_RESULT MaybeObject* AtNumberPut(uint32_t key, Object* value);
+  MUST_USE_RESULT static Handle<SeededNumberDictionary> AtNumberPut(
+      Handle<SeededNumberDictionary> dictionary,
+      uint32_t key,
+      Handle<Object> value);
   MUST_USE_RESULT static Handle<SeededNumberDictionary> AddNumberEntry(
       Handle<SeededNumberDictionary> dictionary,
       uint32_t key,
       Handle<Object> value,
       PropertyDetails details);
-  MUST_USE_RESULT MaybeObject* AddNumberEntry(uint32_t key,
-                                              Object* value,
-                                              PropertyDetails details);
 
   // Set an existing entry or add a new one if needed.
   // Return the updated dictionary.
   MUST_USE_RESULT static Handle<SeededNumberDictionary> Set(
       Handle<SeededNumberDictionary> dictionary,
-      uint32_t index,
+      uint32_t key,
       Handle<Object> value,
       PropertyDetails details);
-
-  MUST_USE_RESULT MaybeObject* Set(uint32_t key,
-                                   Object* value,
-                                   PropertyDetails details);
 
   void UpdateMaxNumberKey(uint32_t key);
 
@@ -4255,17 +4263,21 @@ class UnseededNumberDictionary
   }
 
   // Type specific at put (default NONE attributes is used when adding).
-  MUST_USE_RESULT MaybeObject* AtNumberPut(uint32_t key, Object* value);
-  MUST_USE_RESULT MaybeObject* AddNumberEntry(uint32_t key, Object* value);
+  MUST_USE_RESULT static Handle<UnseededNumberDictionary> AtNumberPut(
+      Handle<UnseededNumberDictionary> dictionary,
+      uint32_t key,
+      Handle<Object> value);
+  MUST_USE_RESULT static Handle<UnseededNumberDictionary> AddNumberEntry(
+      Handle<UnseededNumberDictionary> dictionary,
+      uint32_t key,
+      Handle<Object> value);
 
   // Set an existing entry or add a new one if needed.
   // Return the updated dictionary.
   MUST_USE_RESULT static Handle<UnseededNumberDictionary> Set(
       Handle<UnseededNumberDictionary> dictionary,
-      uint32_t index,
+      uint32_t key,
       Handle<Object> value);
-
-  MUST_USE_RESULT MaybeObject* Set(uint32_t key, Object* value);
 };
 
 
