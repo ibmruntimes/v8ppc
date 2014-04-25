@@ -1705,33 +1705,38 @@ void LCodeGen::DoShiftI(LShiftI* instr) {
 
 
 void LCodeGen::DoSubI(LSubI* instr) {
-  LOperand* left = instr->left();
   LOperand* right = instr->right();
-  LOperand* result = instr->result();
+  Register left = ToRegister(instr->left());
+  Register result = ToRegister(instr->result());
   bool can_overflow = instr->hydrogen()->CheckFlag(HValue::kCanOverflow);
   if (!can_overflow && right->IsConstantOperand()) {
     Operand right_operand = ToOperand(right);
-    __ Add(ToRegister(result), ToRegister(left),
-           -right_operand.immediate(), r0);
-    return;
-  }
-  Register right_reg = EmitLoadRegister(right, ip);
-
-  if (!can_overflow) {
-    __ sub(ToRegister(result), ToRegister(left), right_reg);
+    __ Add(result, left, -right_operand.immediate(), r0);
   } else {
-    __ SubAndCheckForOverflow(ToRegister(result),
-                              ToRegister(left),
-                              right_reg,
-                              scratch0(), r0);
-    // Doptimize on overflow
+    Register right_reg = EmitLoadRegister(right, ip);
+
+    if (!can_overflow) {
+      __ sub(result, left, right_reg);
+    } else {
+      __ SubAndCheckForOverflow(result,
+                                left,
+                                right_reg,
+                                scratch0(), r0);
+      // Doptimize on overflow
 #if V8_TARGET_ARCH_PPC64
-    if (!instr->hydrogen()->representation().IsSmi()) {
-      __ extsw(scratch0(), scratch0(), SetRC);
-    }
+      if (!instr->hydrogen()->representation().IsSmi()) {
+        __ extsw(scratch0(), scratch0(), SetRC);
+      }
 #endif
-    DeoptimizeIf(lt, instr->environment(), cr0);
+      DeoptimizeIf(lt, instr->environment(), cr0);
+    }
   }
+
+#if V8_TARGET_ARCH_PPC64
+  if (!instr->hydrogen()->representation().IsSmi()) {
+    __ extsw(result, result);
+  }
+#endif
 }
 
 
@@ -1909,34 +1914,43 @@ void LCodeGen::DoSeqStringSetChar(LSeqStringSetChar* instr) {
 
 
 void LCodeGen::DoAddI(LAddI* instr) {
-  LOperand* left = instr->left();
   LOperand* right = instr->right();
-  LOperand* result = instr->result();
+  Register left = ToRegister(instr->left());
+  Register result = ToRegister(instr->result());
   bool can_overflow = instr->hydrogen()->CheckFlag(HValue::kCanOverflow);
+#if V8_TARGET_ARCH_PPC64
+  bool isInteger = !(instr->hydrogen()->representation().IsSmi() ||
+                     instr->hydrogen()->representation().IsExternal());
+#endif
 
   if (!can_overflow && right->IsConstantOperand()) {
     Operand right_operand = ToOperand(right);
-    __ Add(ToRegister(result), ToRegister(left), right_operand.immediate(), r0);
-    return;
-  }
+    __ Add(result, left, right_operand.immediate(), r0);
+  } else {
+    Register right_reg = EmitLoadRegister(right, ip);
 
-  Register right_reg = EmitLoadRegister(right, ip);
-
-  if (!can_overflow) {
-    __ add(ToRegister(result), ToRegister(left), right_reg);
-  } else {  // can_overflow.
-    __ AddAndCheckForOverflow(ToRegister(result),
-                              ToRegister(left),
-                              right_reg,
-                              scratch0(), r0);
+    if (!can_overflow) {
+      __ add(result, left, right_reg);
+    } else {  // can_overflow.
+      __ AddAndCheckForOverflow(result,
+                                left,
+                                right_reg,
+                                scratch0(), r0);
 #if V8_TARGET_ARCH_PPC64
-    if (!instr->hydrogen()->representation().IsSmi()) {
-      __ extsw(scratch0(), scratch0(), SetRC);
-    }
+      if (isInteger) {
+        __ extsw(scratch0(), scratch0(), SetRC);
+      }
 #endif
-    // Doptimize on overflow
-    DeoptimizeIf(lt, instr->environment(), cr0);
+      // Doptimize on overflow
+      DeoptimizeIf(lt, instr->environment(), cr0);
+    }
   }
+
+#if V8_TARGET_ARCH_PPC64
+  if (isInteger) {
+    __ extsw(result, result);
+  }
+#endif
 }
 
 
