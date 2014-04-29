@@ -941,6 +941,12 @@ void LCodeGen::RecordSafepoint(
       safepoint.DefinePointerRegister(ToRegister(pointer), zone());
     }
   }
+#if V8_OOL_CONSTANT_POOL
+  if (kind & Safepoint::kWithRegisters) {
+    // Register always contains a pointer to the constant pool.
+    safepoint.DefinePointerRegister(kConstantPoolRegister, zone());
+  }
+#endif
 }
 
 
@@ -2920,14 +2926,9 @@ void LCodeGen::DoDeferredInstanceOfKnownGlobal(LInstanceOfKnownGlobal* instr,
   LoadContextFromDeferred(instr->context());
 
   __ Move(InstanceofStub::right(), instr->function());
-#if V8_TARGET_ARCH_PPC64
-  static const int kAdditionalDelta = 12;
-#else
-  static const int kAdditionalDelta = 6;
-#endif
+  // Include instructions below in delta: mov + call = mov + (mov + 2)
+  static const int kAdditionalDelta = (2 * Assembler::kMovInstructions) + 2;
   int delta = masm_->InstructionsGeneratedSince(map_check) + kAdditionalDelta;
-  Label before_push_delta;
-  __ bind(&before_push_delta);
   {
     Assembler::BlockTrampolinePoolScope block_trampoline_pool(masm_);
     // r8 is used to communicate the offset to the location of the map check.
@@ -4277,7 +4278,7 @@ void LCodeGen::DoInnerAllocatedObject(LInnerAllocatedObject* instr) {
   Register base = ToRegister(instr->base_object());
   if (instr->offset()->IsConstantOperand()) {
     LConstantOperand* offset = LConstantOperand::cast(instr->offset());
-    __ addi(result, base, Operand(ToInteger32(offset)));
+    __ Add(result, base, ToInteger32(offset), r0);
   } else {
     Register offset = ToRegister(instr->offset());
     __ add(result, base, offset);

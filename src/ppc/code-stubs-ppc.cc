@@ -472,7 +472,7 @@ void HydrogenCodeStub::GenerateLightweightMiss(MacroAssembler* masm) {
   int param_count = descriptor->register_param_count_;
   {
     // Call the runtime system in a fresh internal frame.
-    FrameScope scope(masm, StackFrame::INTERNAL);
+    FrameAndConstantPoolScope scope(masm, StackFrame::INTERNAL);
     ASSERT(descriptor->register_param_count_ == 0 ||
            r3.is(descriptor->register_params_[param_count - 1]));
     // Push arguments
@@ -1566,7 +1566,7 @@ void CEntryStub::Generate(MacroAssembler* masm) {
 
 #if ABI_USES_FUNCTION_DESCRIPTORS && !defined(USE_SIMULATOR)
   // Native AIX/PPC64 Linux use a function descriptor.
-  __ LoadP(ToRegister(2), MemOperand(r15, kPointerSize));  // TOC
+  __ LoadP(ToRegister(ABI_TOC_REGISTER), MemOperand(r15, kPointerSize));
   __ LoadP(ip, MemOperand(r15, 0));  // Instruction address
   Register target = ip;
 #elif ABI_TOC_ADDRESSABILITY_VIA_IP
@@ -1708,6 +1708,11 @@ void JSEntryStub::GenerateBody(MacroAssembler* masm, bool is_construct) {
   // r7: argv
   __ li(r0, Operand(-1));  // Push a bad frame pointer to fail if it is used.
   __ push(r0);
+#if V8_OOL_CONSTANT_POOL
+  __ mov(kConstantPoolRegister,
+         Operand(isolate()->factory()->empty_constant_pool_array()));
+  __ push(kConstantPoolRegister);
+#endif
   int marker = is_construct ? StackFrame::ENTRY_CONSTRUCT : StackFrame::ENTRY;
   __ LoadSmiLiteral(r0, Smi::FromInt(marker));
   __ push(r0);
@@ -1858,10 +1863,13 @@ void InstanceofStub::Generate(MacroAssembler* masm) {
   const Register scratch = r5;
   Register scratch3 = no_reg;
 
+  // delta = mov + unaligned LoadP + cmp + bne
 #if V8_TARGET_ARCH_PPC64
-  const int32_t kDeltaToLoadBoolResult = 9 * Assembler::kInstrSize;
+  const int32_t kDeltaToLoadBoolResult =
+      (Assembler::kMovInstructions + 4) * Assembler::kInstrSize;
 #else
-  const int32_t kDeltaToLoadBoolResult = 5 * Assembler::kInstrSize;
+  const int32_t kDeltaToLoadBoolResult =
+      (Assembler::kMovInstructions + 3) * Assembler::kInstrSize;
 #endif
 
   Label slow, loop, is_instance, is_not_instance, not_js_object;
@@ -1911,7 +1919,7 @@ void InstanceofStub::Generate(MacroAssembler* masm) {
     __ mflr(inline_site);
     __ sub(inline_site, inline_site, offset);
     // Get the map location in r8 and patch it.
-    __ GetRelocatedValueLocation(inline_site, offset, scratch);
+    __ GetRelocatedValue(inline_site, offset, scratch);
     __ StoreP(map, FieldMemOperand(offset, Cell::kValueOffset), r0);
   }
 
@@ -1943,7 +1951,7 @@ void InstanceofStub::Generate(MacroAssembler* masm) {
     __ LoadRoot(r3, Heap::kTrueValueRootIndex);
     __ addi(inline_site, inline_site, Operand(kDeltaToLoadBoolResult));
     // Get the boolean result location in scratch and patch it.
-    __ PatchRelocatedValue(inline_site, scratch, r3);
+    __ SetRelocatedValue(inline_site, scratch, r3);
 
     if (!ReturnTrueFalseObject()) {
       __ LoadSmiLiteral(r3, Smi::FromInt(0));
@@ -1960,7 +1968,7 @@ void InstanceofStub::Generate(MacroAssembler* masm) {
     __ LoadRoot(r3, Heap::kFalseValueRootIndex);
     __ addi(inline_site, inline_site, Operand(kDeltaToLoadBoolResult));
     // Get the boolean result location in scratch and patch it.
-    __ PatchRelocatedValue(inline_site, scratch, r3);
+    __ SetRelocatedValue(inline_site, scratch, r3);
 
     if (!ReturnTrueFalseObject()) {
       __ LoadSmiLiteral(r3, Smi::FromInt(1));
@@ -2003,7 +2011,7 @@ void InstanceofStub::Generate(MacroAssembler* masm) {
   __ InvokeBuiltin(Builtins::INSTANCE_OF, JUMP_FUNCTION);
   } else {
     {
-      FrameScope scope(masm, StackFrame::INTERNAL);
+      FrameAndConstantPoolScope scope(masm, StackFrame::INTERNAL);
       __ Push(r3, r4);
       __ InvokeBuiltin(Builtins::INSTANCE_OF, CALL_FUNCTION);
     }
@@ -2990,7 +2998,7 @@ static void GenerateRecordCallTarget(MacroAssembler* masm) {
     // Create an AllocationSite if we don't already have it, store it in the
     // slot.
     {
-      FrameScope scope(masm, StackFrame::INTERNAL);
+      FrameAndConstantPoolScope scope(masm, StackFrame::INTERNAL);
 
       // Arguments register must be smi-tagged to call out.
       __ SmiTag(r3);
@@ -3132,7 +3140,7 @@ void CallFunctionStub::Generate(MacroAssembler* masm) {
   if (CallAsMethod()) {
     __ bind(&wrap);
     // Wrap the receiver and patch it back onto the stack.
-    { FrameScope frame_scope(masm, StackFrame::INTERNAL);
+    { FrameAndConstantPoolScope frame_scope(masm, StackFrame::INTERNAL);
       __ Push(r4, r6);
       __ InvokeBuiltin(Builtins::TO_OBJECT, CALL_FUNCTION);
       __ pop(r4);
@@ -3169,7 +3177,7 @@ void CallConstructStub::Generate(MacroAssembler* masm) {
       __ LoadP(r5, FieldMemOperand(r8, FixedArray::kHeaderSize + kPointerSize));
     } else {
       Label feedback_register_initialized;
-      // Put the AllocationSite from the feedback vector into r2, or undefined.
+      // Put the AllocationSite from the feedback vector into r5, or undefined.
       __ LoadP(r5, FieldMemOperand(r8, FixedArray::kHeaderSize));
       __ LoadP(r8, FieldMemOperand(r5, AllocationSite::kMapOffset));
       __ CompareRoot(r8, Heap::kAllocationSiteMapRootIndex);
@@ -4178,7 +4186,7 @@ void ICCompareStub::GenerateMiss(MacroAssembler* masm) {
     ExternalReference miss =
         ExternalReference(IC_Utility(IC::kCompareIC_Miss), isolate());
 
-    FrameScope scope(masm, StackFrame::INTERNAL);
+    FrameAndConstantPoolScope scope(masm, StackFrame::INTERNAL);
     __ Push(r4, r3);
     __ mflr(r0);
     __ Push(r0, r4, r3);
@@ -4214,7 +4222,7 @@ void DirectCEntryStub::GenerateCall(MacroAssembler* masm,
                                     Register target) {
 #if ABI_USES_FUNCTION_DESCRIPTORS && !defined(USE_SIMULATOR)
   // Native AIX/PPC64 Linux use a function descriptor.
-  __ LoadP(ToRegister(2), MemOperand(target, kPointerSize));  // TOC
+  __ LoadP(ToRegister(ABI_TOC_REGISTER), MemOperand(target, kPointerSize));
   __ LoadP(ip, MemOperand(target, 0));  // Instruction address
 #else
   // ip needs to be set for DirectCEentryStub::Generate, and also
@@ -4514,7 +4522,6 @@ bool CodeStub::CanUseFPRegisters() {
 void RecordWriteStub::Generate(MacroAssembler* masm) {
   Label skip_to_incremental_noncompacting;
   Label skip_to_incremental_compacting;
-  const int crBit = Assembler::encode_crbit(cr2, CR_LT);
 
   // The first two branch instructions are generated with labels so as to
   // get the offset fixed up correctly by the bind(Label*) call.  We patch
@@ -4523,7 +4530,7 @@ void RecordWriteStub::Generate(MacroAssembler* masm) {
   // See RecordWriteStub::Patch for details.
 
   // Clear the bit, branch on True for NOP action initially
-  __ crxor(crBit, crBit, crBit);
+  __ crclr(Assembler::encode_crbit(cr2, CR_LT));
   __ blt(&skip_to_incremental_noncompacting, cr2);
   __ blt(&skip_to_incremental_compacting, cr2);
 
@@ -4841,7 +4848,7 @@ void ProfileEntryHookStub::Generate(MacroAssembler* masm) {
 
 #if ABI_USES_FUNCTION_DESCRIPTORS
   // Function descriptor
-  __ LoadP(ToRegister(2), MemOperand(ip, kPointerSize));
+  __ LoadP(ToRegister(ABI_TOC_REGISTER), MemOperand(ip, kPointerSize));
   __ LoadP(ip, MemOperand(ip, 0));
 #elif ABI_TOC_ADDRESSABILITY_VIA_IP
   // ip set above, so nothing to do.

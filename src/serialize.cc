@@ -933,7 +933,8 @@ void Deserializer::ReadObject(int space_number,
   bool is_codespace = (space_number == CODE_SPACE);
   ASSERT(obj->IsCode() == is_codespace);
 #endif
-#if ABI_USES_FUNCTION_DESCRIPTORS
+#if V8_TARGET_ARCH_PPC && \
+    (ABI_USES_FUNCTION_DESCRIPTORS || V8_OOL_CONSTANT_POOL)
   // If we're on a platform that uses function descriptors
   // these jump tables make use of RelocInfo::INTERNAL_REFERENCE.
   // As the V8 serialization code doesn't handle that relocation type
@@ -943,8 +944,8 @@ void Deserializer::ReadObject(int space_number,
     for (RelocIterator it(code); !it.done(); it.next()) {
       RelocInfo::Mode rmode = it.rinfo()->rmode();
       if (rmode == RelocInfo::INTERNAL_REFERENCE) {
-        uintptr_t* p = reinterpret_cast<uintptr_t*>(code->instruction_start());
-        *p = reinterpret_cast<uintptr_t>(p + 3);
+        Assembler::RelocateInternalReference(it.rinfo()->pc(), 0,
+                                             code->instruction_start());
       }
     }
   }

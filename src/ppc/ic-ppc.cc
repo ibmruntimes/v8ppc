@@ -1295,7 +1295,7 @@ Condition CompareIC::ComputeCondition(Token::Value op) {
 bool CompareIC::HasInlinedSmiCode(Address address) {
   // The address of the instruction following the call.
   Address cmp_instruction_address =
-      address + Assembler::kCallTargetAddressOffset;
+      Assembler::return_address_from_call_start(address);
 
   // If the instruction following the call is not a cmp rx, #yyy, nothing
   // was inlined.
@@ -1309,7 +1309,7 @@ bool CompareIC::HasInlinedSmiCode(Address address) {
 //
 void PatchInlinedSmiCode(Address address, InlinedSmiCheck check) {
   Address cmp_instruction_address =
-      address + Assembler::kCallTargetAddressOffset;
+      Assembler::return_address_from_call_start(address);
 
   // If the instruction following the call is not a cmp rx, #yyy, nothing
   // was inlined.

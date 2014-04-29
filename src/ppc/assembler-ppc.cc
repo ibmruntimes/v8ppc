@@ -232,14 +232,18 @@ const int RelocInfo::kApplyMask = 1 << RelocInfo::INTERNAL_REFERENCE;
 bool RelocInfo::IsCodedSpecially() {
   // The deserializer needs to know whether a pointer is specially
   // coded.  Being specially coded on PPC means that it is a lis/ori
-  // instruction sequence, and that is always the case inside code
-  // objects.
+  // instruction sequence or is an out of line constant pool entry,
+  // and these are always the case inside code objects.
   return true;
 }
 
 
 bool RelocInfo::IsInConstantPool() {
+#if V8_OOL_CONSTANT_POOL
+  return Assembler::IsConstantPoolLoadStart(pc_);
+#else
   return false;
+#endif
 }
 
 
@@ -309,6 +313,9 @@ static const int kMinimalBufferSize = 4*KB;
 Assembler::Assembler(Isolate* isolate, void* buffer, int buffer_size)
     : AssemblerBase(isolate, buffer, buffer_size),
       recorded_ast_id_(TypeFeedbackId::None()),
+#if V8_OOL_CONSTANT_POOL
+      constant_pool_builder_(),
+#endif
       positions_recorder_(this) {
   reloc_info_writer.Reposition(buffer_ + buffer_size_, pc_);
 
@@ -323,6 +330,11 @@ Assembler::Assembler(Isolate* isolate, void* buffer, int buffer_size)
 
   trampoline_emitted_ = FLAG_force_long_branches;
   unbound_labels_count_ = 0;
+
+#if V8_OOL_CONSTANT_POOL
+  constant_pool_available_ = false;
+  constant_pool_full_ = false;
+#endif
 
   ClearRecordedAstId();
 }
@@ -365,7 +377,12 @@ Condition Assembler::GetCondition(Instr instr) {
 
 
 bool Assembler::IsLis(Instr instr) {
-  return (instr & kOpcodeMask) == ADDIS;
+  return ((instr & kOpcodeMask) == ADDIS) && GetRA(instr).is(r0);
+}
+
+
+bool Assembler::IsLi(Instr instr) {
+  return ((instr & kOpcodeMask) == ADDI) && GetRA(instr).is(r0);
 }
 
 
@@ -444,6 +461,12 @@ bool Assembler::IsRldicl(Instr instr) {
 
 bool Assembler::IsCmpImmediate(Instr instr) {
   return ((instr & kOpcodeMask) == CMPI);
+}
+
+
+bool Assembler::IsCrSet(Instr instr) {
+  return (((instr & kOpcodeMask) == EXT1) &&
+          ((instr & kExt1OpcodeMask) == CREQV));
 }
 
 
@@ -1512,11 +1535,41 @@ void Assembler::marker_asm(int mcode) {
 // Code address skips the function descriptor "header".
 // TOC and static chain are ignored and set to 0.
 void Assembler::function_descriptor() {
+  ASSERT(pc_offset() == 0);
   RecordRelocInfo(RelocInfo::INTERNAL_REFERENCE);
   emit_ptr(reinterpret_cast<uintptr_t>(pc_) + 3 * kPointerSize);
   emit_ptr(0);
   emit_ptr(0);
 }
+
+
+#if ABI_USES_FUNCTION_DESCRIPTORS || V8_OOL_CONSTANT_POOL
+void Assembler::RelocateInternalReference(Address pc,
+                                          intptr_t delta,
+                                          Address code_start) {
+  ASSERT(delta || code_start);
+#if ABI_USES_FUNCTION_DESCRIPTORS
+  uintptr_t *fd = reinterpret_cast<uintptr_t*>(pc);
+  if (fd[1] == 0 && fd[2] == 0) {
+    // Function descriptor
+    if (delta) {
+      fd[0] += delta;
+    } else {
+      fd[0] = reinterpret_cast<uintptr_t>(code_start) + 3 * kPointerSize;
+    }
+    return;
+  }
+#endif
+#if V8_OOL_CONSTANT_POOL
+  // mov for LoadConstantPoolPointerRegister
+  ConstantPoolArray *constant_pool = NULL;
+  if (delta) {
+    code_start = target_address_at(pc, constant_pool) + delta;
+  }
+  set_target_address_at(pc, constant_pool, code_start);
+#endif
+}
+#endif
 
 
 // Primarily used for loading constants
@@ -1526,14 +1579,34 @@ void Assembler::function_descriptor() {
 // Todo - break this dependency so we can optimize mov() in general
 // and only use the generic version when we require a fixed sequence
 void Assembler::mov(Register dst, const Operand& src) {
-  if (!RelocInfo::IsNone(src.rmode_)) {
-    // some form of relocation needed
-    RecordRelocInfo(src.rmode_, src.imm_);
-  }
-
   intptr_t value = src.immediate();
   bool canOptimize = (RelocInfo::IsNone(src.rmode_) &&
                       !is_trampoline_pool_blocked());
+  RelocInfo rinfo(pc_, src.rmode_, value, NULL);
+
+  if (!RelocInfo::IsNone(src.rmode_)) {
+    // some form of relocation needed
+    RecordRelocInfo(rinfo);
+  }
+
+#if V8_OOL_CONSTANT_POOL
+  if (can_use_constant_pool() &&
+      !(canOptimize && is_int16(value))) {
+    ConstantPoolAddEntry(rinfo);
+#if V8_TARGET_ARCH_PPC64
+    BlockTrampolinePoolScope block_trampoline_pool(this);
+    // We don't support 32-bit entries at this time
+    ASSERT(rinfo.rmode() != RelocInfo::NONE32);
+    // We are forced to use 2 instruction sequence since the constant
+    // pool pointer is tagged.
+    li(dst, Operand::Zero());
+    ldx(dst, MemOperand(kConstantPoolRegister, dst));
+#else
+    lwz(dst, MemOperand(kConstantPoolRegister, 0));
+#endif
+    return;
+  }
+#endif
 
   if (canOptimize) {
     if (is_int16(value)) {
@@ -1630,6 +1703,11 @@ void Assembler::mov_label_offset(Register dst, Label* label) {
 // Special register instructions
 void Assembler::crxor(int bt, int ba, int bb) {
   emit(EXT1 | CRXOR | bt*B21 | ba*B16 | bb*B11);
+}
+
+
+void Assembler::creqv(int bt, int ba, int bb) {
+  emit(EXT1 | CREQV | bt*B21 | ba*B16 | bb*B11);
 }
 
 
@@ -2113,17 +2191,17 @@ void Assembler::GrowBuffer() {
   // buffer nor pc absolute pointing inside the code buffer, so there is no need
   // to relocate any emitted relocation entries.
 
-#if ABI_USES_FUNCTION_DESCRIPTORS
+#if ABI_USES_FUNCTION_DESCRIPTORS || V8_OOL_CONSTANT_POOL
   // Relocate runtime entries.
   for (RelocIterator it(desc); !it.done(); it.next()) {
     RelocInfo::Mode rmode = it.rinfo()->rmode();
     if (rmode == RelocInfo::INTERNAL_REFERENCE) {
-      intptr_t* p = reinterpret_cast<intptr_t*>(it.rinfo()->pc());
-      if (*p != 0) {  // 0 means uninitialized.
-        *p += pc_delta;
-      }
+      RelocateInternalReference(it.rinfo()->pc(), pc_delta, 0);
     }
   }
+#if V8_OOL_CONSTANT_POOL
+  constant_pool_builder_.Relocate(pc_delta);
+#endif
 #endif
 }
 
@@ -2151,24 +2229,30 @@ void Assembler::emit_ptr(uintptr_t data) {
 
 void Assembler::RecordRelocInfo(RelocInfo::Mode rmode, intptr_t data) {
   RelocInfo rinfo(pc_, rmode, data, NULL);
-  if (rmode >= RelocInfo::JS_RETURN && rmode <= RelocInfo::DEBUG_BREAK_SLOT) {
+  RecordRelocInfo(rinfo);
+}
+
+
+void Assembler::RecordRelocInfo(const RelocInfo& rinfo) {
+  if (rinfo.rmode() >= RelocInfo::JS_RETURN &&
+      rinfo.rmode() <= RelocInfo::DEBUG_BREAK_SLOT) {
     // Adjust code for new modes.
-    ASSERT(RelocInfo::IsDebugBreakSlot(rmode)
-           || RelocInfo::IsJSReturn(rmode)
-           || RelocInfo::IsComment(rmode)
-           || RelocInfo::IsPosition(rmode));
+    ASSERT(RelocInfo::IsDebugBreakSlot(rinfo.rmode())
+           || RelocInfo::IsJSReturn(rinfo.rmode())
+           || RelocInfo::IsComment(rinfo.rmode())
+           || RelocInfo::IsPosition(rinfo.rmode()));
   }
   if (!RelocInfo::IsNone(rinfo.rmode())) {
     // Don't record external references unless the heap will be serialized.
-    if (rmode == RelocInfo::EXTERNAL_REFERENCE) {
+    if (rinfo.rmode() == RelocInfo::EXTERNAL_REFERENCE) {
       if (!Serializer::enabled() && !emit_debug_code()) {
         return;
       }
     }
     ASSERT(buffer_space() >= kMaxRelocSize);  // too late to grow buffer here
-    if (rmode == RelocInfo::CODE_TARGET_WITH_ID) {
-      RelocInfo reloc_info_with_ast_id(pc_,
-                                       rmode,
+    if (rinfo.rmode() == RelocInfo::CODE_TARGET_WITH_ID) {
+      RelocInfo reloc_info_with_ast_id(rinfo.pc(),
+                                       rinfo.rmode(),
                                        RecordedAstId().ToInt(),
                                        NULL);
       ClearRecordedAstId();
@@ -2234,17 +2318,197 @@ void Assembler::CheckTrampolinePool() {
 
 
 Handle<ConstantPoolArray> Assembler::NewConstantPool(Isolate* isolate) {
+#if V8_OOL_CONSTANT_POOL
+  return constant_pool_builder_.New(isolate);
+#else
   // No out-of-line constant pool support.
   ASSERT(!FLAG_enable_ool_constant_pool);
   return isolate->factory()->empty_constant_pool_array();
+#endif
 }
 
 
 void Assembler::PopulateConstantPool(ConstantPoolArray* constant_pool) {
+#if V8_OOL_CONSTANT_POOL
+  constant_pool_builder_.Populate(this, constant_pool);
+#else
   // No out-of-line constant pool support.
   ASSERT(!FLAG_enable_ool_constant_pool);
-  return;
+#endif
 }
+
+
+#if V8_OOL_CONSTANT_POOL
+ConstantPoolBuilder::ConstantPoolBuilder()
+    : entries_(),
+      merged_indexes_(),
+      count_of_64bit_(0),
+      count_of_code_ptr_(0),
+      count_of_heap_ptr_(0),
+      count_of_32bit_(0) { }
+
+
+bool ConstantPoolBuilder::IsEmpty() {
+  return entries_.size() == 0;
+}
+
+
+bool ConstantPoolBuilder::Is64BitEntry(RelocInfo::Mode rmode) {
+#if V8_TARGET_ARCH_PPC64
+  return !RelocInfo::IsGCRelocMode(rmode) && rmode != RelocInfo::NONE32;
+#else
+  return rmode == RelocInfo::NONE64;
+#endif
+}
+
+
+bool ConstantPoolBuilder::Is32BitEntry(RelocInfo::Mode rmode) {
+#if V8_TARGET_ARCH_PPC64
+  return rmode == RelocInfo::NONE32;
+#else
+  return !RelocInfo::IsGCRelocMode(rmode) && rmode != RelocInfo::NONE64;
+#endif
+}
+
+
+bool ConstantPoolBuilder::IsCodePtrEntry(RelocInfo::Mode rmode) {
+  return RelocInfo::IsCodeTarget(rmode);
+}
+
+
+bool ConstantPoolBuilder::IsHeapPtrEntry(RelocInfo::Mode rmode) {
+  return RelocInfo::IsGCRelocMode(rmode) && !RelocInfo::IsCodeTarget(rmode);
+}
+
+
+void ConstantPoolBuilder::AddEntry(Assembler* assm,
+                                   const RelocInfo& rinfo) {
+  RelocInfo::Mode rmode = rinfo.rmode();
+  ASSERT(rmode != RelocInfo::COMMENT &&
+         rmode != RelocInfo::POSITION &&
+         rmode != RelocInfo::STATEMENT_POSITION &&
+         rmode != RelocInfo::CONST_POOL);
+
+
+  // Try to merge entries which won't be patched.
+  int merged_index = -1;
+  if (RelocInfo::IsNone(rmode) ||
+      (!Serializer::enabled() && (rmode >= RelocInfo::CELL))) {
+    size_t i;
+    std::vector<RelocInfo>::const_iterator it;
+    for (it = entries_.begin(), i = 0; it != entries_.end(); it++, i++) {
+      if (RelocInfo::IsEqual(rinfo, *it)) {
+        merged_index = i;
+        break;
+      }
+    }
+  }
+
+  entries_.push_back(rinfo);
+  merged_indexes_.push_back(merged_index);
+
+  if (merged_index == -1) {
+    // Not merged, so update the appropriate count.
+    if (Is64BitEntry(rmode)) {
+      count_of_64bit_++;
+    } else if (Is32BitEntry(rmode)) {
+      count_of_32bit_++;
+    } else if (IsCodePtrEntry(rmode)) {
+      count_of_code_ptr_++;
+    } else {
+      ASSERT(IsHeapPtrEntry(rmode));
+      count_of_heap_ptr_++;
+    }
+  }
+
+  // Check if we still have room for another entry given PPC's load
+  // immediate offset range.
+  if (!(is_int16(ConstantPoolArray::SizeFor(count_of_64bit_,
+                                            count_of_code_ptr_,
+                                            count_of_heap_ptr_,
+                                            count_of_32bit_)))) {
+    assm->set_constant_pool_full();
+  }
+}
+
+
+void ConstantPoolBuilder::Relocate(intptr_t pc_delta) {
+  for (std::vector<RelocInfo>::iterator rinfo = entries_.begin();
+       rinfo != entries_.end(); rinfo++) {
+    ASSERT(rinfo->rmode() != RelocInfo::JS_RETURN);
+    rinfo->set_pc(rinfo->pc() + pc_delta);
+  }
+}
+
+
+Handle<ConstantPoolArray> ConstantPoolBuilder::New(Isolate* isolate) {
+  if (IsEmpty()) {
+    return isolate->factory()->empty_constant_pool_array();
+  } else {
+    return isolate->factory()->NewConstantPoolArray(count_of_64bit_,
+                                                    count_of_code_ptr_,
+                                                    count_of_heap_ptr_,
+                                                    count_of_32bit_);
+  }
+}
+
+
+void ConstantPoolBuilder::Populate(Assembler* assm,
+                                   ConstantPoolArray* constant_pool) {
+  ASSERT(constant_pool->count_of_int64_entries() == count_of_64bit_);
+  ASSERT(constant_pool->count_of_code_ptr_entries() == count_of_code_ptr_);
+  ASSERT(constant_pool->count_of_heap_ptr_entries() == count_of_heap_ptr_);
+  ASSERT(constant_pool->count_of_int32_entries() == count_of_32bit_);
+  ASSERT(entries_.size() == merged_indexes_.size());
+
+  int index_64bit = 0;
+  int index_code_ptr = count_of_64bit_;
+  int index_heap_ptr = count_of_64bit_ + count_of_code_ptr_;
+  int index_32bit = count_of_64bit_ + count_of_code_ptr_ + count_of_heap_ptr_;
+
+  size_t i;
+  std::vector<RelocInfo>::const_iterator rinfo;
+  for (rinfo = entries_.begin(), i = 0; rinfo != entries_.end(); rinfo++, i++) {
+    RelocInfo::Mode rmode = rinfo->rmode();
+
+    // Update constant pool if necessary and get the entry's offset.
+    int offset;
+    if (merged_indexes_[i] == -1) {
+      if (Is64BitEntry(rmode)) {
+        offset = constant_pool->OffsetOfElementAt(index_64bit) - kHeapObjectTag;
+        constant_pool->set(index_64bit++, rinfo->data64());
+      } else if (Is32BitEntry(rmode)) {
+        offset = constant_pool->OffsetOfElementAt(index_32bit) - kHeapObjectTag;
+        constant_pool->set(index_32bit++, static_cast<int32_t>(rinfo->data()));
+      } else if (IsCodePtrEntry(rmode)) {
+        offset = constant_pool->OffsetOfElementAt(index_code_ptr) -
+            kHeapObjectTag;
+        constant_pool->set(index_code_ptr++,
+                           reinterpret_cast<Object *>(rinfo->data()));
+      } else {
+        ASSERT(IsHeapPtrEntry(rmode));
+        offset = constant_pool->OffsetOfElementAt(index_heap_ptr) -
+            kHeapObjectTag;
+        constant_pool->set(index_heap_ptr++,
+                           reinterpret_cast<Object *>(rinfo->data()));
+      }
+      merged_indexes_[i] = offset;  // Stash offset for merged entries.
+    } else {
+      size_t merged_index = static_cast<size_t>(merged_indexes_[i]);
+      ASSERT(merged_index < merged_indexes_.size() && merged_index < i);
+      offset = merged_indexes_[merged_index];
+    }
+
+    // Patch load instruction with correct offset.
+    Assembler::SetConstantPoolOffset(rinfo->pc(), offset);
+  }
+
+  ASSERT((index_64bit == count_of_64bit_) &&
+         (index_code_ptr == (index_64bit + count_of_code_ptr_)) &&
+         (index_heap_ptr == (index_code_ptr + count_of_heap_ptr_)) &&
+         (index_32bit == (index_heap_ptr + count_of_32bit_)));
+}
+#endif
 
 
 } }  // namespace v8::internal

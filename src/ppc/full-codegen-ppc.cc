@@ -363,7 +363,6 @@ void FullCodeGenerator::EmitProfilingCounterDecrement(int delta) {
   __ LoadP(r6, FieldMemOperand(r5, Cell::kValueOffset));
   __ SubSmiLiteral(r6, r6, Smi::FromInt(delta), r0);
   __ StoreP(r6, FieldMemOperand(r5, Cell::kValueOffset), r0);
-  __ cmpi(r6, Operand::Zero());
 }
 
 
@@ -379,14 +378,8 @@ void FullCodeGenerator::EmitProfilingCounterReset() {
 }
 
 
-// N.B. BackEdgeTable::PatchAt manipulates the branch
-// instruction to the ok label below.  Thus a change to this sequence
-// (i.e. change in instruction count between the branch and
-// destination) may require a corresponding change to that logic as
-// well.
 void FullCodeGenerator::EmitBackEdgeBookkeeping(IterationStatement* stmt,
                                                 Label* back_edge_target) {
-  Assembler::BlockTrampolinePoolScope block_trampoline_pool(masm_);
   Comment cmnt(masm_, "[ Back edge bookkeeping");
   Label ok;
 
@@ -395,13 +388,17 @@ void FullCodeGenerator::EmitBackEdgeBookkeeping(IterationStatement* stmt,
   int weight = Min(kMaxBackEdgeWeight,
                    Max(1, distance / kCodeSizeMultiplier));
   EmitProfilingCounterDecrement(weight);
-  __ bc_short(ge, &ok);
-  __ Call(isolate()->builtins()->InterruptCheck(), RelocInfo::CODE_TARGET);
+  { Assembler::BlockTrampolinePoolScope block_trampoline_pool(masm_);
+    // BackEdgeTable::PatchAt manipulates this sequence.
+    __ cmpi(r6, Operand::Zero());
+    __ bc_short(ge, &ok);
+    __ Call(isolate()->builtins()->InterruptCheck(), RelocInfo::CODE_TARGET);
 
-  // Record a mapping of this PC offset to the OSR id.  This is used to find
-  // the AST id from the unoptimized code in order to use it as a key into
-  // the deoptimization input data found in the optimized code.
-  RecordBackEdge(stmt->OsrEntryId());
+    // Record a mapping of this PC offset to the OSR id.  This is used to find
+    // the AST id from the unoptimized code in order to use it as a key into
+    // the deoptimization input data found in the optimized code.
+    RecordBackEdge(stmt->OsrEntryId());
+  }
   EmitProfilingCounterReset();
 
   __ bind(&ok);
@@ -436,6 +433,7 @@ void FullCodeGenerator::EmitReturnSequence() {
     }
     EmitProfilingCounterDecrement(weight);
     Label ok;
+    __ cmpi(r6, Operand::Zero());
     __ bge(&ok);
     __ push(r3);
     __ Call(isolate()->builtins()->InterruptCheck(),
@@ -452,6 +450,9 @@ void FullCodeGenerator::EmitReturnSequence() {
     // Make sure that the constant pool is not emitted inside of the return
     // sequence.
     { Assembler::BlockTrampolinePoolScope block_trampoline_pool(masm_);
+#if V8_OOL_CONSTANT_POOL
+      ConstantPoolUnavailableScope constant_pool_unavailable(masm_);
+#endif
       int32_t sp_delta = (info_->scope()->num_parameters() + 1) * kPointerSize;
       CodeGenerator::RecordPositions(masm_, function()->end_position() - 1);
       __ RecordJSReturn();
@@ -459,8 +460,8 @@ void FullCodeGenerator::EmitReturnSequence() {
       __ Add(sp, sp, sp_delta, r0);
       __ blr();
       info_->AddNoFrameRange(no_frame_start, masm_->pc_offset());
-#if V8_TARGET_ARCH_PPC64
-      // With 64bit we need a couple of nop() instructions to ensure we have
+#if V8_TARGET_ARCH_PPC64 && !V8_OOL_CONSTANT_POOL
+      // With 64bit we need a nop() instructions to ensure we have
       // enough space to SetDebugBreakAtReturn()
       masm_->nop();
 #endif
@@ -1233,7 +1234,7 @@ void FullCodeGenerator::VisitForInStatement(ForInStatement* stmt) {
   __ LoadPX(r6, MemOperand(r6, r5));
 
   // Get the expected map from the stack or a smi in the
-  // permanent slow case into register r2.
+  // permanent slow case into register r5.
   __ LoadP(r5, MemOperand(sp, 3 * kPointerSize));
 
   // Check if the expected map still matches that of the enumerable.
@@ -2232,14 +2233,24 @@ void FullCodeGenerator::EmitGeneratorResume(Expression *generator,
     Label slow_resume;
     __ bne(&slow_resume, cr0);
     __ LoadP(r6, FieldMemOperand(r7, JSFunction::kCodeEntryOffset));
-    __ LoadP(r5, FieldMemOperand(r4, JSGeneratorObject::kContinuationOffset));
-    __ SmiUntag(r5);
-    __ add(r6, r6, r5);
-    __ LoadSmiLiteral(r5, Smi::FromInt(JSGeneratorObject::kGeneratorExecuting));
-    __ StoreP(r5, FieldMemOperand(r4, JSGeneratorObject::kContinuationOffset),
-              r0);
-    __ Jump(r6);
-    __ bind(&slow_resume);
+#if V8_OOL_CONSTANT_POOL
+    { ConstantPoolUnavailableScope constant_pool_unavailable(masm_);
+      // Load the new code object's constant pool pointer.
+      __ LoadP(kConstantPoolRegister,
+               MemOperand(r6, Code::kConstantPoolOffset - Code::kHeaderSize));
+#endif
+      __ LoadP(r5, FieldMemOperand(r4, JSGeneratorObject::kContinuationOffset));
+      __ SmiUntag(r5);
+      __ add(r6, r6, r5);
+      __ LoadSmiLiteral(r5,
+                        Smi::FromInt(JSGeneratorObject::kGeneratorExecuting));
+      __ StoreP(r5, FieldMemOperand(r4, JSGeneratorObject::kContinuationOffset),
+                r0);
+      __ Jump(r6);
+      __ bind(&slow_resume);
+#if V8_OOL_CONSTANT_POOL
+    }
+#endif
   } else {
     __ beq(&call_resume, cr0);
   }
@@ -4549,7 +4560,7 @@ void FullCodeGenerator::VisitCountOperation(CountOperation* expr) {
       break;
     }
     case KEYED_PROPERTY: {
-      __ Pop(r5, r4);  // r1 = key. r2 = receiver.
+      __ Pop(r5, r4);  // r4 = key. r5 = receiver.
       Handle<Code> ic = strict_mode() == SLOPPY
           ? isolate()->builtins()->KeyedStoreIC_Initialize()
           : isolate()->builtins()->KeyedStoreIC_Initialize_Strict();
@@ -4941,53 +4952,43 @@ FullCodeGenerator::NestedStatement* FullCodeGenerator::TryFinally::Exit(
 #undef __
 
 
-#if V8_TARGET_ARCH_PPC64
-static const int32_t kBranchBeforeInterrupt =  0x409c0044;
-static const int kInterruptBranchDisplacement = 0x44;
-static const int kInterruptInstructions = 8;
-
-#else
-static const int32_t kBranchBeforeInterrupt =  0x409c0024;
-static const int kInterruptBranchDisplacement = 0x24;
-static const int kInterruptInstructions = 5;
-#endif
-
-
 void BackEdgeTable::PatchAt(Code* unoptimized_code,
                             Address pc,
                             BackEdgeState target_state,
                             Code* replacement_code) {
   static const int kInstrSize = Assembler::kInstrSize;
-  Address branch_address = pc - kInterruptInstructions * kInstrSize;
-  CodePatcher patcher(branch_address, 1);
+  Address mov_address = Assembler::target_address_from_return_address(pc);
+  Address cmp_address = mov_address - 2 * kInstrSize;
+  CodePatcher patcher(cmp_address, 1);
 
   switch (target_state) {
     case INTERRUPT:
+    {
       //  <decrement profiling counter>
-      //         bge +44                  ;; (ok)
-      //         lis     r12, <interrupt stub address> upper
-      //         ori     r12, <interrupt stub address> lower
+      //         cmpi    r6, 0
+      //         bge     <ok>            ;; not changed
+      //         mov     r12, <interrupt stub address>
       //         mtlr    r12
       //         blrl
-      //  ok-label ----- pc_after points here
-      patcher.masm()->bc(kInterruptBranchDisplacement, BF,
-          v8::internal::Assembler::encode_crbit(cr7, CR_LT));  // bge
-      ASSERT_EQ(kBranchBeforeInterrupt, Memory::int32_at(branch_address));
+      //  ok-label
+      patcher.masm()->cmpi(r6, Operand::Zero());
       break;
+    }
     case ON_STACK_REPLACEMENT:
     case OSR_AFTER_STACK_CHECK:
       //  <decrement profiling counter>
-      //         nop
-      //         lis     r12, <on-stack replacement address> upper
-      //         ori     r12, <on-stack replacement address> lower
+      //         crset
+      //         bge     <ok>            ;; not changed
+      //         mov     r12, <on-stack replacement address>
       //         mtlr    r12
       //         blrl
       //  ok-label ----- pc_after points here
-      patcher.masm()->nop();
+
+      // Set the LT bit such that bge is a NOP
+      patcher.masm()->crset(Assembler::encode_crbit(cr7, CR_LT));
       break;
   }
 
-  Address mov_address = branch_address + kInstrSize;
   // Replace the stack check address in the mov sequence with the
   // entry address of the replacement code.
   Assembler::set_target_address_at(mov_address, unoptimized_code,
@@ -5003,18 +5004,18 @@ BackEdgeTable::BackEdgeState BackEdgeTable::GetBackEdgeState(
     Code* unoptimized_code,
     Address pc) {
   static const int kInstrSize = Assembler::kInstrSize;
-  Address branch_address = pc - kInterruptInstructions * kInstrSize;
-  Address mov_address = branch_address + kInstrSize;
+  Address mov_address = Assembler::target_address_from_return_address(pc);
+  Address cmp_address = mov_address - 2 * kInstrSize;
   Address interrupt_address = Assembler::target_address_at(mov_address,
                                                            unoptimized_code);
 
-  if (Memory::int32_at(branch_address) == kBranchBeforeInterrupt) {
+  if (Assembler::IsCmpImmediate(Assembler::instr_at(cmp_address))) {
     ASSERT(interrupt_address ==
            isolate->builtins()->InterruptCheck()->entry());
     return INTERRUPT;
   }
 
-  ASSERT(Assembler::IsNop(Assembler::instr_at(branch_address)));
+  ASSERT(Assembler::IsCrSet(Assembler::instr_at(cmp_address)));
 
   if (interrupt_address ==
       isolate->builtins()->OnStackReplacement()->entry()) {

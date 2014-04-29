@@ -657,25 +657,21 @@ static byte* GetNoCodeAgeSequence(uint32_t* length) {
   // The sequence of instructions that is patched out for aging code is the
   // following boilerplate stack-building prologue that is found in FUNCTIONS
   static bool initialized = false;
-  static uint32_t sequence[kNoCodeAgeSequenceLength];
+  static uint32_t sequence[kCodeAgeSequenceLength];
   byte* byte_sequence = reinterpret_cast<byte*>(sequence);
-  *length = kNoCodeAgeSequenceLength * Assembler::kInstrSize;
+  *length = kCodeAgeSequenceLength * Assembler::kInstrSize;
   if (!initialized) {
     // Since patcher is a large object, allocate it dynamically when needed,
     // to avoid overloading the stack in stress conditions.
     SmartPointer<CodePatcher>
-        patcher(new CodePatcher(byte_sequence, kNoCodeAgeSequenceLength));
+        patcher(new CodePatcher(byte_sequence, kCodeAgeSequenceLength));
     PredictableCodeSizeScope scope(patcher->masm(), *length);
     patcher->masm()->PushFixedFrame(r4);
     patcher->masm()->addi(
         fp, sp, Operand(StandardFrameConstants::kFixedFrameSizeFromFp));
-#if V8_TARGET_ARCH_PPC64
-      // With 64bit we need a couple of nop() instructions to pad
-      // out to 8 instructions total to ensure we have enough
-      // space to patch it later in Code::PatchPlatformCodeAge
-    patcher->masm()->nop();
-    patcher->masm()->nop();
-#endif
+    for (int i = 0; i < kNoCodeAgeSequenceNops; i++) {
+      patcher->masm()->nop();
+    }
     initialized = true;
   }
   return byte_sequence;
@@ -698,8 +694,9 @@ void Code::GetCodeAgeAndParity(byte* sequence, Age* age,
     *age = kNoAgeCodeAge;
     *parity = NO_MARKING_PARITY;
   } else {
+    ConstantPoolArray *constant_pool = NULL;
     Address target_address = Assembler::target_address_at(
-      sequence + kNoCodeAgeTargetDelta);
+      sequence + kCodeAgingTargetDelta, constant_pool);
     Code* stub = GetCodeFromTargetAddress(target_address);
     GetCodeAgeAndParity(stub, age, parity);
   }
@@ -717,8 +714,6 @@ void Code::PatchPlatformCodeAge(Isolate* isolate,
     CPU::FlushICache(sequence, young_length);
   } else {
     // FIXED_SEQUENCE
-    // 32bit - must output 6 instructions (24bytes)
-    // 64bit - must output 8 instructions (32bytes)
     Code* stub = GetCodeAgeStub(isolate, age, parity);
     CodePatcher patcher(sequence, young_length / Assembler::kInstrSize);
     Assembler::BlockTrampolinePoolScope block_trampoline_pool(patcher.masm());
@@ -729,9 +724,9 @@ void Code::PatchPlatformCodeAge(Isolate* isolate,
     patcher.masm()->mflr(ip);
     patcher.masm()->mov(r3, Operand(target));
     patcher.masm()->Call(r3);
-#if !V8_TARGET_ARCH_PPC64
-    patcher.masm()->nop();
-#endif
+    for (int i = 0; i < kCodeAgingSequenceNops; i++) {
+      patcher.masm()->nop();
+    }
   }
 }
 

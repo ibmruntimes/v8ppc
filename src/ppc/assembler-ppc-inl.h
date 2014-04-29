@@ -75,12 +75,12 @@ int DoubleRegister::ToAllocationIndex(DoubleRegister reg) {
 }
 
 void RelocInfo::apply(intptr_t delta) {
+#if ABI_USES_FUNCTION_DESCRIPTORS || V8_OOL_CONSTANT_POOL
   if (RelocInfo::IsInternalReference(rmode_)) {
     // absolute code pointer inside code object moves with the code object.
-    intptr_t* p = reinterpret_cast<intptr_t*>(pc_);
-    *p += delta;  // relocate entry
-    CPU::FlushICache(p, sizeof(uintptr_t));
+    Assembler::RelocateInternalReference(pc_, delta, 0);
   }
+#endif
   // We do not use pc relative addressing on PPC, so there is
   // nothing else to do.
 }
@@ -97,28 +97,35 @@ Address RelocInfo::target_address_address() {
                               || rmode_ == EMBEDDED_OBJECT
                               || rmode_ == EXTERNAL_REFERENCE);
 
+#if V8_OOL_CONSTANT_POOL
+  if (Assembler::IsConstantPoolLoadStart(pc_)) {
+    // We return the PC for ool constant pool since this function is used by the
+    // serializerer and expects the address to reside within the code object.
+    return reinterpret_cast<Address>(pc_);
+  }
+#endif
+
   // Read the address of the word containing the target_address in an
   // instruction stream.
   // The only architecture-independent user of this function is the serializer.
   // The serializer uses it to find out how many raw bytes of instruction to
   // output before the next target.
-  // For an instruction like LIS/ADDIC where the target bits are mixed into the
+  // For an instruction like LIS/ORI where the target bits are mixed into the
   // instruction bits, the size of the target will be zero, indicating that the
   // serializer should not step forward in memory after a target is resolved
-  // and written. In this case the target_address_address function should
-  // return the end of the instructions to be patched, allowing the
-  // deserializer to deserialize the instructions as raw bytes and put them in
-  // place, ready to be patched with the target.
-
-  return reinterpret_cast<Address>(
-    pc_ + (Assembler::kInstructionsForPtrConstant *
-           Assembler::kInstrSize));
+  // and written.
+  return reinterpret_cast<Address>(pc_);
 }
 
 
 Address RelocInfo::constant_pool_entry_address() {
+#if V8_OOL_CONSTANT_POOL
+  return Assembler::target_constant_pool_address_at(pc_,
+                                                    host_->constant_pool());
+#else
   UNREACHABLE();
   return NULL;
+#endif
 }
 
 
@@ -139,7 +146,29 @@ void RelocInfo::set_target_address(Address target, WriteBarrierMode mode) {
 
 
 Address Assembler::target_address_from_return_address(Address pc) {
-  return pc - kCallTargetAddressOffset;
+  // Returns the address of the call target from the return address that will
+  // be returned to after a call.
+  // Call sequence is :
+  //  mov   ip, @ call address
+  //  mtlr  ip
+  //  blrl
+  //                      @ return address
+#if V8_OOL_CONSTANT_POOL
+  if (IsConstantPoolLoadEnd(pc - 3 * kInstrSize)) {
+    return pc - (kMovInstructionsConstantPool + 2) * kInstrSize;
+  }
+#endif
+  return pc - (kMovInstructionsNoConstantPool + 2) * kInstrSize;
+}
+
+
+Address Assembler::return_address_from_call_start(Address pc) {
+#if V8_OOL_CONSTANT_POOL
+  Address load_address = pc + (kMovInstructionsConstantPool - 1) * kInstrSize;
+  if (IsConstantPoolLoadEnd(load_address))
+    return pc + (kMovInstructionsConstantPool + 2) * kInstrSize;
+#endif
+  return pc + (kMovInstructionsNoConstantPool + 2) * kInstrSize;
 }
 
 
@@ -215,15 +244,23 @@ void RelocInfo::set_target_cell(Cell* cell, WriteBarrierMode mode) {
 }
 
 
-#if V8_TARGET_ARCH_PPC64
-static const int kNoCodeAgeSequenceLength = 8;
-static const int kNoCodeAgeTargetDelta = 1 * Assembler::kInstrSize;
-static const int kNoCodeAgePatchDelta = 8 * Assembler::kInstrSize;
+#if V8_OOL_CONSTANT_POOL
+static const int kNoCodeAgeInstructions = 7;
 #else
-static const int kNoCodeAgeSequenceLength = 6;
-static const int kNoCodeAgeTargetDelta = 1 * Assembler::kInstrSize;
-static const int kNoCodeAgePatchDelta = 5 * Assembler::kInstrSize;
+static const int kNoCodeAgeInstructions = 6;
 #endif
+static const int kCodeAgingInstructions =
+    Assembler::kMovInstructionsNoConstantPool + 3;
+static const int kCodeAgeSequenceLength =
+    ((kNoCodeAgeInstructions >= kCodeAgingInstructions) ?
+     kNoCodeAgeInstructions : kCodeAgingInstructions);
+static const int kNoCodeAgeSequenceNops = (kCodeAgeSequenceLength -
+                                           kNoCodeAgeInstructions);
+static const int kCodeAgingSequenceNops = (kCodeAgeSequenceLength -
+                                           kCodeAgingInstructions);
+static const int kCodeAgingTargetDelta = 1 * Assembler::kInstrSize;
+static const int kCodeAgingPatchDelta = (kCodeAgingInstructions *
+                                         Assembler::kInstrSize);
 
 
 Handle<Object> RelocInfo::code_age_stub_handle(Assembler* origin) {
@@ -235,13 +272,13 @@ Handle<Object> RelocInfo::code_age_stub_handle(Assembler* origin) {
 Code* RelocInfo::code_age_stub() {
   ASSERT(rmode_ == RelocInfo::CODE_AGE_SEQUENCE);
   return Code::GetCodeFromTargetAddress(
-    Assembler::target_address_at(pc_ + kNoCodeAgeTargetDelta, host_));
+    Assembler::target_address_at(pc_ + kCodeAgingTargetDelta, host_));
 }
 
 
 void RelocInfo::set_code_age_stub(Code* stub) {
   ASSERT(rmode_ == RelocInfo::CODE_AGE_SEQUENCE);
-  Assembler::set_target_address_at(pc_ + kNoCodeAgeTargetDelta,
+  Assembler::set_target_address_at(pc_ + kCodeAgingTargetDelta,
                                    host_,
                                    stub->instruction_start());
 }
@@ -429,16 +466,15 @@ bool Operand::is_reg() const {
 
 
 // Fetch the 32bit value from the FIXED_SEQUENCE lis/ori
-Address Assembler::target_address_at(Address pc) {
+Address Assembler::target_address_at(Address pc,
+                                     ConstantPoolArray* constant_pool) {
   Instr instr1 = instr_at(pc);
   Instr instr2 = instr_at(pc + kInstrSize);
-#if V8_TARGET_ARCH_PPC64
-  Instr instr4 = instr_at(pc + (3*kInstrSize));
-  Instr instr5 = instr_at(pc + (4*kInstrSize));
-#endif
   // Interpret 2 instructions generated by lis/ori
   if (IsLis(instr1) && IsOri(instr2)) {
 #if V8_TARGET_ARCH_PPC64
+    Instr instr4 = instr_at(pc + (3*kInstrSize));
+    Instr instr5 = instr_at(pc + (4*kInstrSize));
     // Assemble the 64 bit value.
     uint64_t hi = (static_cast<uint32_t>((instr1 & kImm16Mask) << 16) |
                    static_cast<uint32_t>(instr2 & kImm16Mask));
@@ -451,26 +487,75 @@ Address Assembler::target_address_at(Address pc) {
         ((instr1 & kImm16Mask) << 16) | (instr2 & kImm16Mask));
 #endif
   }
-
+#if V8_OOL_CONSTANT_POOL
+  return Memory::Address_at(
+    target_constant_pool_address_at(pc, constant_pool));
+#else
   PPCPORT_UNIMPLEMENTED();
   return (Address)0;
+#endif
 }
+
+
+#if V8_OOL_CONSTANT_POOL
+bool Assembler::IsConstantPoolLoadStart(Address pc) {
+#if V8_TARGET_ARCH_PPC64
+  if (!IsLi(instr_at(pc))) return false;
+  pc += kInstrSize;
+#endif
+  return GetRA(instr_at(pc)).is(kConstantPoolRegister);
+}
+
+
+bool Assembler::IsConstantPoolLoadEnd(Address pc) {
+#if V8_TARGET_ARCH_PPC64
+  pc -= kInstrSize;
+#endif
+  return IsConstantPoolLoadStart(pc);
+}
+
+
+int Assembler::GetConstantPoolOffset(Address pc) {
+  ASSERT(IsConstantPoolLoadStart(pc));
+  Instr instr = instr_at(pc);
+  int offset = SIGN_EXT_IMM16((instr & kImm16Mask));
+  return offset;
+}
+
+
+void Assembler::SetConstantPoolOffset(Address pc, int offset) {
+  ASSERT(IsConstantPoolLoadStart(pc));
+  ASSERT(is_int16(offset));
+  Instr instr = instr_at(pc);
+  instr &= ~kImm16Mask;
+  instr |= (offset & kImm16Mask);
+  instr_at_put(pc, instr);
+}
+
+
+Address Assembler::target_constant_pool_address_at(
+  Address pc, ConstantPoolArray* constant_pool) {
+  Address addr = reinterpret_cast<Address>(constant_pool);
+  ASSERT(addr);
+  addr += GetConstantPoolOffset(pc);
+  return addr;
+}
+#endif
 
 
 // This sets the branch destination (which gets loaded at the call address).
 // This is for calls and branches within generated code.  The serializer
-// has already deserialized the lis/ori instructions etc.
+// has already deserialized the mov instructions etc.
 // There is a FIXED_SEQUENCE assumption here
 void Assembler::deserialization_set_special_target_at(
     Address instruction_payload, Code* code, Address target) {
-  set_target_address_at(
-      instruction_payload - kInstructionsForPtrConstant * kInstrSize,
-      code,
-      target);
+  set_target_address_at(instruction_payload, code, target);
 }
 
 // This code assumes the FIXED_SEQUENCE of lis/ori
-void Assembler::set_target_address_at(Address pc, Address target) {
+void Assembler::set_target_address_at(Address pc,
+                                      ConstantPoolArray* constant_pool,
+                                      Address target) {
   Instr instr1 = instr_at(pc);
   Instr instr2 = instr_at(pc + kInstrSize);
   // Interpret 2 instructions generated by lis/ori
@@ -518,7 +603,12 @@ void Assembler::set_target_address_at(Address pc, Address target) {
     CPU::FlushICache(p, 8);
 #endif
   } else {
+#if V8_OOL_CONSTANT_POOL
+    Memory::Address_at(
+      target_constant_pool_address_at(pc, constant_pool)) = target;
+#else
     UNREACHABLE();
+#endif
   }
 }
 

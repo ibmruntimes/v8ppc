@@ -43,12 +43,15 @@
 
 #ifndef V8_PPC_ASSEMBLER_PPC_H_
 #define V8_PPC_ASSEMBLER_PPC_H_
+
 #include <stdio.h>
 #if !V8_OS_AIX
 #include <elf.h>
 #include <fcntl.h>
 #include <unistd.h>
 #endif
+#include <vector>
+
 #include "assembler.h"
 #include "constants-ppc.h"
 #include "serialize.h"
@@ -70,6 +73,12 @@
 #define ABI_TOC_ADDRESSABILITY_VIA_IP \
   (V8_HOST_ARCH_PPC && V8_TARGET_ARCH_PPC64 && \
     V8_TARGET_LITTLE_ENDIAN)
+
+#if !V8_HOST_ARCH_PPC || V8_OS_AIX || V8_TARGET_ARCH_PPC64
+#define ABI_TOC_REGISTER kRegister_r2_Code
+#else
+#define ABI_TOC_REGISTER kRegister_r13_Code
+#endif
 
 namespace v8 {
 namespace internal {
@@ -316,6 +325,13 @@ const Register r29  = { kRegister_r29_Code };
 const Register r30  = { kRegister_r30_Code };
 const Register fp = { kRegister_fp_Code };
 
+// Give alias names to registers
+const Register cp = { kRegister_r18_Code };  // JavaScript context pointer
+const Register kRootRegister = { kRegister_r19_Code };  // Roots array pointer.
+#if V8_OOL_CONSTANT_POOL
+const Register kConstantPoolRegister = { kRegister_r20_Code };  // Constant pool
+#endif
+
 // Double word FP register.
 struct DoubleRegister {
   static const int kMaxNumRegisters = 32;
@@ -520,6 +536,38 @@ class MemOperand BASE_EMBEDDED {
 };
 
 
+#if V8_OOL_CONSTANT_POOL
+// Class used to build a constant pool.
+class ConstantPoolBuilder BASE_EMBEDDED {
+ public:
+  explicit ConstantPoolBuilder();
+  void AddEntry(Assembler* assm, const RelocInfo& rinfo);
+  void Relocate(intptr_t pc_delta);
+  bool IsEmpty();
+  Handle<ConstantPoolArray> New(Isolate* isolate);
+  void Populate(Assembler* assm, ConstantPoolArray* constant_pool);
+
+  inline int count_of_64bit() const { return count_of_64bit_; }
+  inline int count_of_code_ptr() const { return count_of_code_ptr_; }
+  inline int count_of_heap_ptr() const { return count_of_heap_ptr_; }
+  inline int count_of_32bit() const { return count_of_32bit_; }
+
+ private:
+  bool Is64BitEntry(RelocInfo::Mode rmode);
+  bool Is32BitEntry(RelocInfo::Mode rmode);
+  bool IsCodePtrEntry(RelocInfo::Mode rmode);
+  bool IsHeapPtrEntry(RelocInfo::Mode rmode);
+
+  std::vector<RelocInfo> entries_;
+  std::vector<int> merged_indexes_;
+  int count_of_64bit_;
+  int count_of_code_ptr_;
+  int count_of_heap_ptr_;
+  int count_of_32bit_;
+};
+#endif
+
+
 class Assembler : public AssemblerBase {
  public:
   // Create an assembler. Instructions and relocation information are emitted
@@ -572,19 +620,24 @@ class Assembler : public AssemblerBase {
   // The high 8 bits are set to zero.
   void label_at_put(Label* L, int at_offset);
 
+#if V8_OOL_CONSTANT_POOL
+  INLINE(static bool IsConstantPoolLoadStart(Address pc));
+  INLINE(static bool IsConstantPoolLoadEnd(Address pc));
+  INLINE(static int GetConstantPoolOffset(Address pc));
+  INLINE(static void SetConstantPoolOffset(Address pc, int offset));
+
+  // Return the address in the constant pool of the code target address used by
+  // the branch/call instruction at pc, or the object in a mov.
+  INLINE(static Address target_constant_pool_address_at(
+           Address pc, ConstantPoolArray* constant_pool));
+#endif
+
   // Read/Modify the code target address in the branch/call instruction at pc.
-  INLINE(static Address target_address_at(Address pc));
-  INLINE(static void set_target_address_at(Address pc, Address target));
-  // On PPC there is no Constant Pool so we skip that parameter.
   INLINE(static Address target_address_at(Address pc,
-                                          ConstantPoolArray* constant_pool)) {
-    return target_address_at(pc);
-  }
+                                          ConstantPoolArray* constant_pool));
   INLINE(static void set_target_address_at(Address pc,
                                            ConstantPoolArray* constant_pool,
-                                           Address target)) {
-    set_target_address_at(pc, target);
-  }
+                                           Address target));
   INLINE(static Address target_address_at(Address pc, Code* code)) {
     ConstantPoolArray* constant_pool = code ? code->constant_pool() : NULL;
     return target_address_at(pc, constant_pool);
@@ -599,6 +652,10 @@ class Assembler : public AssemblerBase {
   // Return the code target address at a call site from the return address
   // of that call in the instruction stream.
   inline static Address target_address_from_return_address(Address pc);
+
+  // Given the address of the beginning of a call, return the address
+  // in the instruction stream that the call will return to.
+  INLINE(static Address return_address_from_call_start(Address pc));
 
   // This sets the branch destination.
   // This is for calls and branches within generated code.
@@ -616,34 +673,35 @@ class Assembler : public AssemblerBase {
   // a target is resolved and written.
   static const int kSpecialTargetSize = 0;
 
-  // Number of consecutive instructions used to store pointer sized constant.
+  // Number of instructions to load an address via a mov sequence.
 #if V8_TARGET_ARCH_PPC64
-  static const int kInstructionsForPtrConstant = 5;
+  static const int kMovInstructionsConstantPool = 2;
+  static const int kMovInstructionsNoConstantPool = 5;
 #else
-  static const int kInstructionsForPtrConstant = 2;
+  static const int kMovInstructionsConstantPool = 1;
+  static const int kMovInstructionsNoConstantPool = 2;
+#endif
+#if V8_OOL_CONSTANT_POOL
+  static const int kMovInstructions = kMovInstructionsConstantPool;
+#else
+  static const int kMovInstructions = kMovInstructionsNoConstantPool;
 #endif
 
   // Distance between the instruction referring to the address of the call
   // target and the return address.
 
   // Call sequence is a FIXED_SEQUENCE:
-  // lis     r8, 2148      @ call address hi
-  // ori     r8, r8, 5728  @ call address lo
+  // mov     r8, @ call address
   // mtlr    r8
   // blrl
   //                      @ return address
-  // in 64bit mode, the addres load is a 5 instruction sequence
-#if V8_TARGET_ARCH_PPC64
-  static const int kCallTargetAddressOffset = 7 * kInstrSize;
-#else
-  static const int kCallTargetAddressOffset = 4 * kInstrSize;
-#endif
+  static const int kCallTargetAddressOffset =
+      (kMovInstructions + 2) * kInstrSize;
 
   // Distance between start of patched return sequence and the emitted address
   // to jump to.
   // Patched return sequence is a FIXED_SEQUENCE:
-  //   lis r0, <address hi>
-  //   ori r0, r0, <address lo>
+  //   mov r0, <address>
   //   mtlr r0
   //   blrl
   static const int kPatchReturnSequenceAddressOffset =  0 * kInstrSize;
@@ -651,37 +709,20 @@ class Assembler : public AssemblerBase {
   // Distance between start of patched debug break slot and the emitted address
   // to jump to.
   // Patched debug break slot code is a FIXED_SEQUENCE:
-  //   lis r0, <address hi>
-  //   ori r0, r0, <address lo>
+  //   mov r0, <address>
   //   mtlr r0
   //   blrl
   static const int kPatchDebugBreakSlotAddressOffset =  0 * kInstrSize;
 
-  // Difference between address of current opcode and value read from pc
-  // register.
-  static const int kPcLoadDelta = 0;  // Todo: remove
-
-#if V8_TARGET_ARCH_PPC64
-  static const int kPatchDebugBreakSlotReturnOffset = 7 * kInstrSize;
-#else
-  static const int kPatchDebugBreakSlotReturnOffset = 4 * kInstrSize;
-#endif
-
   // This is the length of the BreakLocationIterator::SetDebugBreakAtReturn()
   // code patch FIXED_SEQUENCE
-#if V8_TARGET_ARCH_PPC64
-  static const int kJSReturnSequenceInstructions = 8;
-#else
-  static const int kJSReturnSequenceInstructions = 5;
-#endif
+  static const int kJSReturnSequenceInstructions =
+      kMovInstructionsNoConstantPool + 3;
 
   // This is the length of the code sequence from SetDebugBreakAtSlot()
   // FIXED_SEQUENCE
-#if V8_TARGET_ARCH_PPC64
-  static const int kDebugBreakSlotInstructions = 7;
-#else
-  static const int kDebugBreakSlotInstructions = 4;
-#endif
+  static const int kDebugBreakSlotInstructions =
+      kMovInstructionsNoConstantPool + 2;
   static const int kDebugBreakSlotLength =
       kDebugBreakSlotInstructions * kInstrSize;
 
@@ -957,6 +998,9 @@ class Assembler : public AssemblerBase {
 
   // Special register access
   void crxor(int bt, int ba, int bb);
+  void crclr(int bt) { crxor(bt, bt, bt); }
+  void creqv(int bt, int ba, int bb);
+  void crset(int bt) { creqv(bt, bt, bt); }
   void mflr(Register dst);
   void mtlr(Register src);
   void mtctr(Register src);
@@ -1163,6 +1207,7 @@ class Assembler : public AssemblerBase {
   static Condition GetCondition(Instr instr);
 
   static bool IsLis(Instr instr);
+  static bool IsLi(Instr instr);
   static bool IsAddic(Instr instr);
   static bool IsOri(Instr instr);
 
@@ -1182,6 +1227,7 @@ class Assembler : public AssemblerBase {
 #if V8_TARGET_ARCH_PPC64
   static bool IsRldicl(Instr instr);
 #endif
+  static bool IsCrSet(Instr instr);
   static Register GetCmpImmediateRegister(Instr instr);
   static int GetCmpImmediateRawImmediate(Instr instr);
   static bool IsNop(Instr instr, int type = NON_MARKING_NOP);
@@ -1196,6 +1242,21 @@ class Assembler : public AssemblerBase {
 
   // Generate the constant pool for the generated code.
   void PopulateConstantPool(ConstantPoolArray* constant_pool);
+
+#if V8_OOL_CONSTANT_POOL
+  bool can_use_constant_pool() const {
+    return is_constant_pool_available() && !constant_pool_full_;
+  }
+
+  void set_constant_pool_full() {
+    constant_pool_full_ = true;
+  }
+#endif
+
+#if ABI_USES_FUNCTION_DESCRIPTORS || V8_OOL_CONSTANT_POOL
+  static void RelocateInternalReference(Address pc, intptr_t delta,
+                                        Address code_start);
+#endif
 
  protected:
   // Relocation for a type-recording IC has the AST id added to it.  This
@@ -1213,6 +1274,12 @@ class Assembler : public AssemblerBase {
 
   // Record reloc info for current pc_
   void RecordRelocInfo(RelocInfo::Mode rmode, intptr_t data = 0);
+  void RecordRelocInfo(const RelocInfo& rinfo);
+#if V8_OOL_CONSTANT_POOL
+  void ConstantPoolAddEntry(const RelocInfo& rinfo) {
+    constant_pool_builder_.AddEntry(this, rinfo);
+  }
+#endif
 
   // Block the emission of the trampoline pool before pc_offset.
   void BlockTrampolinePoolBefore(int pc_offset) {
@@ -1240,6 +1307,15 @@ class Assembler : public AssemblerBase {
     return trampoline_emitted_;
   }
 
+#if V8_OOL_CONSTANT_POOL
+  bool is_constant_pool_available() const {
+    return constant_pool_available_;
+  }
+
+  void set_constant_pool_available(bool available) {
+    constant_pool_available_ = available;
+  }
+#endif
 
  private:
   // Code generation
@@ -1265,6 +1341,17 @@ class Assembler : public AssemblerBase {
 
   // The bound position, before this we cannot do instruction elimination.
   int last_bound_pos_;
+
+#if V8_OOL_CONSTANT_POOL
+  ConstantPoolBuilder constant_pool_builder_;
+
+  // Indicates whether the constant pool can be accessed, which is only possible
+  // if kConstantPoolRegister points to the current code object's constant pool.
+  bool constant_pool_available_;
+  // Indicates whether the constant pool is too full to accept new entries due
+  // to the load instruction's limitted immediate offset range.
+  bool constant_pool_full_;
+#endif
 
   // Code emission
   inline void CheckBuffer();
@@ -1342,9 +1429,12 @@ class Assembler : public AssemblerBase {
   friend class RelocInfo;
   friend class CodePatcher;
   friend class BlockTrampolinePoolScope;
+#if V8_OOL_CONSTANT_POOL
+  friend class FrameAndConstantPoolScope;
+  friend class ConstantPoolUnavailableScope;
+#endif
 
   PositionsRecorder positions_recorder_;
-
   friend class PositionsRecorder;
   friend class EnsureSpace;
 };

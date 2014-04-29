@@ -47,32 +47,20 @@ bool BreakLocationIterator::IsDebugBreakAtReturn() {
 void BreakLocationIterator::SetDebugBreakAtReturn() {
   // Patch the code changing the return from JS function sequence from
   //
-  //   LeaveExitFrame (5 instructions)
+  //   LeaveFrame
   //   addi sp, sp, <delta>
   //   blr
   //
   // to a call to the debug break return code.
-  // this uses a FIXED_SEQUENCE to load a 32bit constant
+  // this uses a FIXED_SEQUENCE to load an address constant
   //
-  //   lis r0, <address hi>
-  //   ori r0, r0, <address lo>
-  //   mtlr r0
-  //   blrl
-  //   bkpt
-  //
-  // The 64bit sequence is a bit longer
-  //   lis r0, <address bits 63-48>
-  //   ori r0, r0, <address bits 47-32>
-  //   sldi r0, r0, 32
-  //   oris r0, r0, <address bits 31-16>
-  //   ori  r0, r0, <address bits 15-0>
+  //   mov r0, <address>
   //   mtlr r0
   //   blrl
   //   bkpt
   //
   CodePatcher patcher(rinfo()->pc(), Assembler::kJSReturnSequenceInstructions);
   Assembler::BlockTrampolinePoolScope block_trampoline_pool(patcher.masm());
-// printf("SetDebugBreakAtReturn: pc=%08x\n", (unsigned int)rinfo()->pc());
   patcher.masm()->mov(v8::internal::r0, Operand(reinterpret_cast<intptr_t>(
       debug_info_->GetIsolate()->debug()->debug_break_return()->entry())));
   patcher.masm()->mtlr(v8::internal::r0);
@@ -115,16 +103,12 @@ void BreakLocationIterator::SetDebugBreakAtSlot() {
   //
   // to a call to the debug break code, using a FIXED_SEQUENCE.
   //
-  //   lis r0, <address hi>
-  //   ori r0, r0, <address lo>
+  //   mov r0, <address>
   //   mtlr r0
   //   blrl
   //
-  // The 64bit sequence is +3 instructions longer for the load
-  //
   CodePatcher patcher(rinfo()->pc(), Assembler::kDebugBreakSlotInstructions);
   Assembler::BlockTrampolinePoolScope block_trampoline_pool(patcher.masm());
-// printf("SetDebugBreakAtSlot: pc=%08x\n", (unsigned int)rinfo()->pc());
   patcher.masm()->mov(v8::internal::r0, Operand(reinterpret_cast<intptr_t>(
       debug_info_->GetIsolate()->debug()->debug_break_slot()->entry())));
   patcher.masm()->mtlr(v8::internal::r0);
@@ -148,9 +132,8 @@ static void Generate_DebugBreakCallHelper(MacroAssembler* masm,
                                           RegList object_regs,
                                           RegList non_object_regs) {
   {
-    FrameScope scope(masm, StackFrame::INTERNAL);
+    FrameAndConstantPoolScope scope(masm, StackFrame::INTERNAL);
 
-// printf("Generate_DebugBreakCallHelper\n");
     // Store the registers containing live values on the expression stack to
     // make sure that these are correctly updated during GC. Non object values
     // are stored as a smi causing it to be untouched by GC.

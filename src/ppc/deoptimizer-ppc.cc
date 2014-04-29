@@ -62,7 +62,7 @@ void Deoptimizer::PatchCodeForDeoptimization(Isolate* isolate, Code* code) {
     // Fail hard and early if we enter this code object again.
     byte* pointer = code->FindCodeAgeSequence();
     if (pointer != NULL) {
-      pointer += kNoCodeAgeSequenceLength * Assembler::kInstrSize;
+      pointer += kCodeAgeSequenceLength * Assembler::kInstrSize;
     } else {
       pointer = code->instruction_start();
     }
@@ -380,8 +380,13 @@ void FrameDescription::SetCallerFp(unsigned offset, intptr_t value) {
 
 
 void FrameDescription::SetCallerConstantPool(unsigned offset, intptr_t value) {
+#if V8_OOL_CONSTANT_POOL
+  ASSERT(FLAG_enable_ool_constant_pool);
+  SetFrameSlot(offset, value);
+#else
   // No out-of-line constant pool support.
   UNREACHABLE();
+#endif
 }
 
 

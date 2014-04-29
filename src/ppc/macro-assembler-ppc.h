@@ -47,11 +47,6 @@ inline MemOperand FieldMemOperand(Register object, int offset) {
 }
 
 
-
-// Give alias names to registers
-const Register cp = { kRegister_r18_Code };  // JavaScript context pointer
-const Register kRootRegister = { kRegister_r19_Code };  // Roots array pointer.
-
 // Flags used for AllocateHeapNumber
 enum TaggingMode {
   // Tag the result.
@@ -323,7 +318,8 @@ class MacroAssembler: public Assembler {
   // Push three registers.  Pushes leftmost register first (to highest address).
   void Push(Register src1, Register src2, Register src3) {
     StorePU(src1, MemOperand(sp, -kPointerSize));
-    Push(src2, src3);
+    StorePU(src2, MemOperand(sp, -kPointerSize));
+    StorePU(src3, MemOperand(sp, -kPointerSize));
   }
 
   // Push four registers.  Pushes leftmost register first (to highest address).
@@ -332,7 +328,22 @@ class MacroAssembler: public Assembler {
             Register src3,
             Register src4) {
     StorePU(src1, MemOperand(sp, -kPointerSize));
-    Push(src2, src3, src4);
+    StorePU(src2, MemOperand(sp, -kPointerSize));
+    StorePU(src3, MemOperand(sp, -kPointerSize));
+    StorePU(src4, MemOperand(sp, -kPointerSize));
+  }
+
+  // Push five registers.  Pushes leftmost register first (to highest address).
+  void Push(Register src1,
+            Register src2,
+            Register src3,
+            Register src4,
+            Register src5) {
+    StorePU(src1, MemOperand(sp, -kPointerSize));
+    StorePU(src2, MemOperand(sp, -kPointerSize));
+    StorePU(src3, MemOperand(sp, -kPointerSize));
+    StorePU(src4, MemOperand(sp, -kPointerSize));
+    StorePU(src5, MemOperand(sp, -kPointerSize));
   }
 
   void Pop(Register dst) { pop(dst); }
@@ -362,6 +373,20 @@ class MacroAssembler: public Assembler {
     LoadP(src2, MemOperand(sp, 2 * kPointerSize));
     LoadP(src1, MemOperand(sp, 3 * kPointerSize));
     addi(sp, sp, Operand(4 * kPointerSize));
+  }
+
+  // Pop five registers.  Pops rightmost register first (from lower address).
+  void Pop(Register src1,
+           Register src2,
+           Register src3,
+           Register src4,
+           Register src5) {
+    LoadP(src5, MemOperand(sp, 0));
+    LoadP(src4, MemOperand(sp, kPointerSize));
+    LoadP(src3, MemOperand(sp, 2 * kPointerSize));
+    LoadP(src2, MemOperand(sp, 3 * kPointerSize));
+    LoadP(src1, MemOperand(sp, 4 * kPointerSize));
+    addi(sp, sp, Operand(5 * kPointerSize));
   }
 
   // Push a fixed frame, consisting of lr, fp, context and
@@ -1549,14 +1574,13 @@ class MacroAssembler: public Assembler {
   // ---------------------------------------------------------------------------
   // Patching helpers.
 
-  // Patch the relocated value (lis/ori pair).
-  void PatchRelocatedValue(Register lis_location,
-                           Register scratch,
-                           Register new_value);
-  // Get the relocatad value (loaded data) from the lis/ori pair.
-  void GetRelocatedValueLocation(Register lis_location,
-                                 Register result,
-                                 Register scratch);
+  // Retrieve/patch the relocated value (lis/ori pair or constant pool load).
+  void GetRelocatedValue(Register location,
+                         Register result,
+                         Register scratch);
+  void SetRelocatedValue(Register location,
+                         Register scratch,
+                         Register new_value);
 
   void ClampUint8(Register output_reg, Register input_reg);
 
@@ -1581,7 +1605,7 @@ class MacroAssembler: public Assembler {
   }
 
   // Activation support.
-  void EnterFrame(StackFrame::Type type);
+  void EnterFrame(StackFrame::Type type, bool load_constant_pool = false);
   // Returns the pc offset at which the frame ends.
   int LeaveFrame(StackFrame::Type type);
 
@@ -1661,6 +1685,11 @@ class MacroAssembler: public Assembler {
   MemOperand SafepointRegisterSlot(Register reg);
   MemOperand SafepointRegistersAndDoublesSlot(Register reg);
 
+#if V8_OOL_CONSTANT_POOL
+  // Loads the constant pool pointer (kConstantPoolRegister).
+  void LoadConstantPoolPointerRegister();
+#endif
+
   bool generating_stub_;
   bool has_frame_;
   // This handle will be patched with the code object on installation.
@@ -1705,6 +1734,77 @@ class CodePatcher {
   MacroAssembler masm_;  // Macro assembler used to generate the code.
   FlushICache flush_cache_;  // Whether to flush the I cache after patching.
 };
+
+
+#if V8_OOL_CONSTANT_POOL
+class FrameAndConstantPoolScope {
+ public:
+  FrameAndConstantPoolScope(MacroAssembler* masm, StackFrame::Type type)
+      : masm_(masm),
+        type_(type),
+        old_has_frame_(masm->has_frame()),
+        old_constant_pool_available_(masm->is_constant_pool_available())  {
+    // We only want to enable constant pool access for non-manual frame scopes
+    // to ensure the constant pool pointer is valid throughout the scope.
+    ASSERT(type_ != StackFrame::MANUAL && type_ != StackFrame::NONE);
+    masm->set_has_frame(true);
+    masm->set_constant_pool_available(true);
+    masm->EnterFrame(type, !old_constant_pool_available_);
+  }
+
+  ~FrameAndConstantPoolScope() {
+    masm_->LeaveFrame(type_);
+    masm_->set_has_frame(old_has_frame_);
+    masm_->set_constant_pool_available(old_constant_pool_available_);
+  }
+
+  // Normally we generate the leave-frame code when this object goes
+  // out of scope.  Sometimes we may need to generate the code somewhere else
+  // in addition.  Calling this will achieve that, but the object stays in
+  // scope, the MacroAssembler is still marked as being in a frame scope, and
+  // the code will be generated again when it goes out of scope.
+  void GenerateLeaveFrame() {
+    ASSERT(type_ != StackFrame::MANUAL && type_ != StackFrame::NONE);
+    masm_->LeaveFrame(type_);
+  }
+
+ private:
+  MacroAssembler* masm_;
+  StackFrame::Type type_;
+  bool old_has_frame_;
+  bool old_constant_pool_available_;
+
+  DISALLOW_IMPLICIT_CONSTRUCTORS(FrameAndConstantPoolScope);
+};
+#else
+#define FrameAndConstantPoolScope FrameScope
+#endif
+
+
+#if V8_OOL_CONSTANT_POOL
+// Class for scoping the the unavailability of constant pool access.
+class ConstantPoolUnavailableScope {
+ public:
+  explicit ConstantPoolUnavailableScope(MacroAssembler* masm)
+     : masm_(masm),
+       old_constant_pool_available_(masm->is_constant_pool_available()) {
+    if (FLAG_enable_ool_constant_pool) {
+      masm_->set_constant_pool_available(false);
+    }
+  }
+  ~ConstantPoolUnavailableScope() {
+    if (FLAG_enable_ool_constant_pool) {
+     masm_->set_constant_pool_available(old_constant_pool_available_);
+    }
+  }
+
+ private:
+  MacroAssembler* masm_;
+  int old_constant_pool_available_;
+
+  DISALLOW_IMPLICIT_CONSTRUCTORS(ConstantPoolUnavailableScope);
+};
+#endif
 
 
 // -----------------------------------------------------------------------------

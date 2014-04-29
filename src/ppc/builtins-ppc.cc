@@ -263,7 +263,7 @@ void Builtins::Generate_StringConstructCode(MacroAssembler* masm) {
   __ push(function);  // Preserve the function.
   __ IncrementCounter(counters->string_ctor_conversions(), 1, r6, r7);
   {
-    FrameScope scope(masm, StackFrame::INTERNAL);
+    FrameAndConstantPoolScope scope(masm, StackFrame::INTERNAL);
     __ push(r3);
     __ InvokeBuiltin(Builtins::TO_STRING, CALL_FUNCTION);
   }
@@ -283,7 +283,7 @@ void Builtins::Generate_StringConstructCode(MacroAssembler* masm) {
   __ bind(&gc_required);
   __ IncrementCounter(counters->string_ctor_gc_required(), 1, r6, r7);
   {
-    FrameScope scope(masm, StackFrame::INTERNAL);
+    FrameAndConstantPoolScope scope(masm, StackFrame::INTERNAL);
     __ push(argument);
     __ CallRuntime(Runtime::kNewStringWrapper, 1);
   }
@@ -293,7 +293,7 @@ void Builtins::Generate_StringConstructCode(MacroAssembler* masm) {
 
 static void CallRuntimePassFunction(
     MacroAssembler* masm, Runtime::FunctionId function_id) {
-  FrameScope scope(masm, StackFrame::INTERNAL);
+  FrameAndConstantPoolScope scope(masm, StackFrame::INTERNAL);
   // Push a copy of the function onto the stack.
   // Push function as parameter to the runtime call.
   __ Push(r4, r4);
@@ -362,7 +362,7 @@ static void Generate_JSConstructStubHelper(MacroAssembler* masm,
 
   // Enter a construct frame.
   {
-    FrameScope scope(masm, StackFrame::CONSTRUCT);
+    FrameAndConstantPoolScope scope(masm, StackFrame::CONSTRUCT);
 
     if (create_memento) {
       __ AssertUndefinedOrAllocationSite(r5, r6);
@@ -856,7 +856,7 @@ void Builtins::Generate_CompileUnoptimized(MacroAssembler* masm) {
 
 
 static void CallCompileOptimized(MacroAssembler* masm, bool concurrent) {
-  FrameScope scope(masm, StackFrame::INTERNAL);
+  FrameAndConstantPoolScope scope(masm, StackFrame::INTERNAL);
   // Push a copy of the function onto the stack.
   // Push function as parameter to the runtime call.
   __ Push(r4, r4);
@@ -890,7 +890,7 @@ static void GenerateMakeCodeYoungAgainCommon(MacroAssembler* masm) {
 
   __ mflr(r3);
   // Adjust r3 to point to the start of the PlatformCodeAge sequence
-  __ subi(r3, r3, Operand(kNoCodeAgePatchDelta));
+  __ subi(r3, r3, Operand(kCodeAgingPatchDelta));
 
   // The following registers must be saved and restored when calling through to
   // the runtime:
@@ -930,7 +930,7 @@ void Builtins::Generate_MarkCodeAsExecutedOnce(MacroAssembler* masm) {
 
   __ mflr(r3);
   // Adjust r3 to point to the start of the PlatformCodeAge sequence
-  __ subi(r3, r3, Operand(kNoCodeAgePatchDelta));
+  __ subi(r3, r3, Operand(kCodeAgingPatchDelta));
 
   // The following registers must be saved and restored when calling through to
   // the runtime:
@@ -951,7 +951,7 @@ void Builtins::Generate_MarkCodeAsExecutedOnce(MacroAssembler* masm) {
   __ addi(fp, sp, Operand(StandardFrameConstants::kFixedFrameSizeFromFp));
 
   // Jump to point after the code-age stub.
-  __ addi(r3, r3, Operand(kNoCodeAgeSequenceLength * Assembler::kInstrSize));
+  __ addi(r3, r3, Operand(kCodeAgeSequenceLength * Assembler::kInstrSize));
   __ Jump(r3);
 }
 
@@ -964,7 +964,7 @@ void Builtins::Generate_MarkCodeAsExecutedTwice(MacroAssembler* masm) {
 static void Generate_NotifyStubFailureHelper(MacroAssembler* masm,
                                              SaveFPRegsMode save_doubles) {
   {
-    FrameScope scope(masm, StackFrame::INTERNAL);
+    FrameAndConstantPoolScope scope(masm, StackFrame::INTERNAL);
 
     // Preserve registers across notification, this is important for compiled
     // stubs that tail call the runtime on deopts passing their parameters in
@@ -993,7 +993,7 @@ void Builtins::Generate_NotifyStubFailureSaveDoubles(MacroAssembler* masm) {
 static void Generate_NotifyDeoptimizedHelper(MacroAssembler* masm,
                                              Deoptimizer::BailoutType type) {
   {
-    FrameScope scope(masm, StackFrame::INTERNAL);
+    FrameAndConstantPoolScope scope(masm, StackFrame::INTERNAL);
     // Pass the function and deoptimization type to the runtime system.
     __ LoadSmiLiteral(r3, Smi::FromInt(static_cast<int>(type)));
     __ push(r3);
@@ -1041,7 +1041,7 @@ void Builtins::Generate_OnStackReplacement(MacroAssembler* masm) {
   // Lookup the function in the JavaScript frame.
   __ LoadP(r3, MemOperand(fp, JavaScriptFrameConstants::kFunctionOffset));
   {
-    FrameScope scope(masm, StackFrame::INTERNAL);
+    FrameAndConstantPoolScope scope(masm, StackFrame::INTERNAL);
     // Pass function as argument.
     __ push(r3);
     __ CallRuntime(Runtime::kCompileForOnStackReplacement, 1);
@@ -1059,20 +1059,29 @@ void Builtins::Generate_OnStackReplacement(MacroAssembler* masm) {
   // <deopt_data> = <code>[#deoptimization_data_offset]
   __ LoadP(r4, FieldMemOperand(r3, Code::kDeoptimizationDataOffset));
 
-  // Load the OSR entrypoint offset from the deoptimization data.
-  // <osr_offset> = <deopt_data>[#header_size + #osr_pc_offset]
-  __ LoadP(r4, FieldMemOperand(r4, FixedArray::OffsetOfElementAt(
+#if V8_OOL_CONSTANT_POOL
+  { ConstantPoolUnavailableScope constant_pool_unavailable(masm);
+    __ LoadP(kConstantPoolRegister,
+             FieldMemOperand(r3, Code::kConstantPoolOffset));
+#endif
+
+    // Load the OSR entrypoint offset from the deoptimization data.
+    // <osr_offset> = <deopt_data>[#header_size + #osr_pc_offset]
+    __ LoadP(r4, FieldMemOperand(r4, FixedArray::OffsetOfElementAt(
                                  DeoptimizationInputData::kOsrPcOffsetIndex)));
-  __ SmiUntag(r4);
+    __ SmiUntag(r4);
 
-  // Compute the target address = code_obj + header_size + osr_offset
-  // <entry_addr> = <code_obj> + #header_size + <osr_offset>
-  __ add(r3, r3, r4);
-  __ addi(r0, r3, Operand(Code::kHeaderSize - kHeapObjectTag));
-  __ mtlr(r0);
+    // Compute the target address = code_obj + header_size + osr_offset
+    // <entry_addr> = <code_obj> + #header_size + <osr_offset>
+    __ add(r3, r3, r4);
+    __ addi(r0, r3, Operand(Code::kHeaderSize - kHeapObjectTag));
+    __ mtlr(r0);
 
-  // And "return" to the OSR entry point of the function.
-  __ Ret();
+    // And "return" to the OSR entry point of the function.
+    __ Ret();
+#if V8_OOL_CONSTANT_POOL
+  }
+#endif
 }
 
 
@@ -1083,7 +1092,7 @@ void Builtins::Generate_OsrAfterStackCheck(MacroAssembler* masm) {
   __ cmpl(sp, ip);
   __ bge(&ok);
   {
-    FrameScope scope(masm, StackFrame::INTERNAL);
+    FrameAndConstantPoolScope scope(masm, StackFrame::INTERNAL);
     __ CallRuntime(Runtime::kHiddenStackGuard, 0);
   }
   __ Jump(masm->isolate()->builtins()->OnStackReplacement(),
@@ -1172,7 +1181,7 @@ void Builtins::Generate_FunctionCall(MacroAssembler* masm) {
 
     {
       // Enter an internal frame in order to preserve argument count.
-      FrameScope scope(masm, StackFrame::INTERNAL);
+      FrameAndConstantPoolScope scope(masm, StackFrame::INTERNAL);
       __ SmiTag(r3);
       __ Push(r3, r5);
       __ InvokeBuiltin(Builtins::TO_OBJECT, CALL_FUNCTION);
@@ -1304,7 +1313,7 @@ void Builtins::Generate_FunctionApply(MacroAssembler* masm) {
   const int kFunctionOffset = 4 * kPointerSize;
 
   {
-    FrameScope frame_scope(masm, StackFrame::INTERNAL);
+    FrameAndConstantPoolScope frame_scope(masm, StackFrame::INTERNAL);
 
     __ LoadP(r3, MemOperand(fp, kFunctionOffset));  // get the function
     __ push(r3);
@@ -1487,7 +1496,11 @@ static void EnterArgumentsAdaptorFrame(MacroAssembler* masm) {
   __ LoadSmiLiteral(r7, Smi::FromInt(StackFrame::ARGUMENTS_ADAPTOR));
   __ mflr(r0);
   __ push(r0);
+#if V8_OOL_CONSTANT_POOL
+  __ Push(fp, kConstantPoolRegister, r7, r4, r3);
+#else
   __ Push(fp, r7, r4, r3);
+#endif
   __ addi(fp, sp,
          Operand(StandardFrameConstants::kFixedFrameSizeFromFp + kPointerSize));
 }
@@ -1501,13 +1514,23 @@ static void LeaveArgumentsAdaptorFrame(MacroAssembler* masm) {
   // then tear down the parameters.
   __ LoadP(r4, MemOperand(fp, -(StandardFrameConstants::kFixedFrameSizeFromFp +
                                 kPointerSize)));
+#if V8_OOL_CONSTANT_POOL
+  __ addi(sp, fp, Operand(StandardFrameConstants::kConstantPoolOffset));
+  __ LoadP(kConstantPoolRegister, MemOperand(sp));
+  __ LoadP(fp, MemOperand(sp, kPointerSize));
+  __ LoadP(r0, MemOperand(sp, 2 * kPointerSize));
+  int slots = 3;  // adjust for kConstantPoolRegister + fp + lr below
+#else
   __ mr(sp, fp);
   __ LoadP(fp, MemOperand(sp));
   __ LoadP(r0, MemOperand(sp, kPointerSize));
+  int slots = 2;  // adjust for fp + lr below
+#endif
   __ mtlr(r0);
   __ SmiToPtrArrayOffset(r0, r4);
   __ add(sp, sp, r0);
-  __ addi(sp, sp, Operand(3 * kPointerSize));  // adjust for receiver + fp + lr
+  __ addi(sp, sp,
+          Operand((1 + slots) * kPointerSize));  // adjust for receiver + others
 }
 
 

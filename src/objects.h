@@ -1315,6 +1315,7 @@ class MaybeObject BASE_EMBEDDED {
   V(kTheInstructionShouldBeALui, "The instruction should be a lui")           \
   V(kTheInstructionShouldBeAnOri, "The instruction should be an ori")         \
   V(kTheInstructionShouldBeAnOris, "The instruction should be an oris")       \
+  V(kTheInstructionShouldBeALi, "The instruction should be a li")       \
   V(kTheInstructionShouldBeASldi, "The instruction should be a sldi")         \
   V(kTheInstructionToPatchShouldBeALoadFromPc,                                \
     "The instruction to patch should be a load from pc")                      \
@@ -3323,15 +3324,18 @@ class ConstantPoolArray: public FixedArrayBase {
   }
 
   // Layout description.
-  static const int kArrayLayoutOffset = FixedArray::kHeaderSize;
-  static const int kFirstOffset = kArrayLayoutOffset + kPointerSize;
+  static const int kArrayLayout1Offset = FixedArray::kHeaderSize;
+  static const int kArrayLayout2Offset = kArrayLayout1Offset + kIntSize;
+  static const int kFirstOffset = kArrayLayout2Offset + kIntSize;
 
-  static const int kFieldBitSize = 10;
+  static const int kFieldBitSize = 15;
   static const int kMaxEntriesPerType = (1 << kFieldBitSize) - 1;
 
-  class NumberOfInt64EntriesField: public BitField<int, 0, kFieldBitSize> {};
-  class NumberOfCodePtrEntriesField: public BitField<int, 10, kFieldBitSize> {};
-  class NumberOfHeapPtrEntriesField: public BitField<int, 20, kFieldBitSize> {};
+  // ArrayLayout1 (ensure LSB is clear)
+  class NumberOfInt64EntriesField: public BitField<int, 1, kFieldBitSize> {};
+  class NumberOfCodePtrEntriesField: public BitField<int, 17, kFieldBitSize> {};
+  // ArrayLayout2 (ensure LSB is clear)
+  class NumberOfHeapPtrEntriesField: public BitField<int, 1, kFieldBitSize> {};
   class WeakObjectStateField: public BitField<WeakObjectState, 30, 2> {};
 
   // Dispatched behavior.
@@ -5857,7 +5861,7 @@ class Code: public HeapObject {
   static const int kPrologueOffset = kKindSpecificFlags2Offset + kIntSize;
   static const int kConstantPoolOffset = kPrologueOffset + kPointerSize;
 
-  static const int kHeaderPaddingStart = kConstantPoolOffset + kIntSize;
+  static const int kHeaderPaddingStart = kConstantPoolOffset + kPointerSize;
 
   // Add padding to align the instruction start following right after
   // the Code object header.

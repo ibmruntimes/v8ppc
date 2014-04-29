@@ -2892,23 +2892,54 @@ void MarkCompactCollector::MigrateObject(HeapObject* dst,
     Address dst_slot = dst_addr;
     ASSERT(IsAligned(size, kPointerSize));
 
+#if V8_OOL_CONSTANT_POOL
+    ConstantPoolArray* constant_pool = NULL;
+    Address int64_start = 0;
+    Address int64_end = 0;
+    Address int32_start = 0;
+    Address int32_end = 0;
+    if (src->IsConstantPoolArray()) {
+      constant_pool = ConstantPoolArray::cast(src);
+      int count = constant_pool->count_of_int64_entries();
+      if (count) {
+        int64_start = src_addr + constant_pool->OffsetOfElementAt(
+          constant_pool->first_int64_index());
+        int64_end   = int64_start + count * kInt64Size;
+      }
+      count = constant_pool->count_of_int32_entries();
+      if (count) {
+        int32_start = src_addr + constant_pool->OffsetOfElementAt(
+          constant_pool->first_int32_index());
+        int32_end   = int32_start + count * kInt32Size;
+      }
+    }
+#define CONSTANT_VALUE(src_slot)                                 \
+    (constant_pool &&                                            \
+     ((src_slot >= int64_start && src_slot < int64_end) ||       \
+      (src_slot >= int32_start && src_slot < int32_end)))
+#else
+#define CONSTANT_VALUE(src_slot) false
+#endif
     for (int remaining = size / kPointerSize; remaining > 0; remaining--) {
       Object* value = Memory::Object_at(src_slot);
 
       Memory::Object_at(dst_slot) = value;
 
-      if (heap_->InNewSpace(value)) {
-        heap_->store_buffer()->Mark(dst_slot);
-      } else if (value->IsHeapObject() && IsOnEvacuationCandidate(value)) {
-        SlotsBuffer::AddTo(&slots_buffer_allocator_,
-                           &migration_slots_buffer_,
-                           reinterpret_cast<Object**>(dst_slot),
-                           SlotsBuffer::IGNORE_OVERFLOW);
+      if (!CONSTANT_VALUE(src_slot)) {
+        if (heap_->InNewSpace(value)) {
+          heap_->store_buffer()->Mark(dst_slot);
+        } else if (value->IsHeapObject() && IsOnEvacuationCandidate(value)) {
+          SlotsBuffer::AddTo(&slots_buffer_allocator_,
+                             &migration_slots_buffer_,
+                             reinterpret_cast<Object**>(dst_slot),
+                             SlotsBuffer::IGNORE_OVERFLOW);
+        }
       }
 
       src_slot += kPointerSize;
       dst_slot += kPointerSize;
     }
+#undef CONSTANT_VALUE
 
     if (compacting_ && dst->IsJSFunction()) {
       Address code_entry_slot = dst_addr + JSFunction::kCodeEntryOffset;
@@ -2923,9 +2954,11 @@ void MarkCompactCollector::MigrateObject(HeapObject* dst,
       }
     } else if (compacting_ && dst->IsConstantPoolArray()) {
       ConstantPoolArray* constant_pool = ConstantPoolArray::cast(dst);
-      for (int i = 0; i < constant_pool->count_of_code_ptr_entries(); i++) {
+      int count = constant_pool->count_of_code_ptr_entries();
+      int first_index = constant_pool->first_code_ptr_index();
+      for (int i = 0; i < count; i++) {
         Address code_entry_slot =
-            dst_addr + constant_pool->OffsetOfElementAt(i);
+            dst_addr + constant_pool->OffsetOfElementAt(first_index + i);
         Address code_entry = Memory::Address_at(code_entry_slot);
 
         if (Page::FromAddress(code_entry)->IsEvacuationCandidate()) {

@@ -344,6 +344,7 @@ enum {
   kImm26Mask  = (1 << 26) - 1,
   kBOfieldMask = 0x1f << 21,
   kOpcodeMask = 0x3f << 26,
+  kExt1OpcodeMask = 0x3ff << 1,
   kExt2OpcodeMask = 0x1f << 1,
   kExt5OpcodeMask = 0x3 << 2,
   kBOMask = 0x1f << 21,

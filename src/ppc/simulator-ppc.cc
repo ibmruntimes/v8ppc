@@ -1720,9 +1720,20 @@ void Simulator::ExecuteExt1(Instruction* instr) {
       condition_reg_ |= bt_val;
       break;
     }
+    case CREQV: {
+      int bt = instr->Bits(25, 21);
+      int ba = instr->Bits(20, 16);
+      int bb = instr->Bits(15, 11);
+      int ba_val = ((0x80000000 >> ba) & condition_reg_) == 0 ? 0 : 1;
+      int bb_val = ((0x80000000 >> bb) & condition_reg_) == 0 ? 0 : 1;
+      int bt_val = 1 - (ba_val ^ bb_val);
+      bt_val = bt_val << (31-bt);  // shift bit to correct destination
+      condition_reg_ &= ~(0x80000000 >> bt);
+      condition_reg_ |= bt_val;
+      break;
+    }
     case CRNAND:
     case CRAND:
-    case CREQV:
     case CRORC:
     case CROR:
     default: {

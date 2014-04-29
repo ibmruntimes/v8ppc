@@ -71,11 +71,17 @@ const RegList kCalleeSaved =
   1 <<  17 |  // r17 (general use)
   1 <<  18 |  // r18 (general use / cp in Javascript code)
   1 <<  19 |  // r19 (roots array in Javascript code)
-              // r20-r30 unused
+#if V8_OOL_CONSTANT_POOL
+  1 <<  20 |  // r20 (constant pool array in Javascript code)
+#endif
   1 <<  31;   // r31 (fp in Javascript code)
 
 
+#if V8_OOL_CONSTANT_POOL
+const int kNumCalleeSaved = 8;
+#else
 const int kNumCalleeSaved = 7;
+#endif
 
 // Number of registers for which space is reserved in safepoints. Must be a
 // multiple of 8.
@@ -145,8 +151,13 @@ class EntryFrameConstants : public AllStatic {
 
 class ExitFrameConstants : public AllStatic {
  public:
+#if V8_OOL_CONSTANT_POOL
+  static const int kFrameSize = 3 * kPointerSize;
+  static const int kConstantPoolOffset = -3 * kPointerSize;
+#else
   static const int kFrameSize = 2 * kPointerSize;
-
+  static const int kConstantPoolOffset = 0;  // Not used.
+#endif
   static const int kCodeOffset = -2 * kPointerSize;
   static const int kSPOffset = -1 * kPointerSize;
 
@@ -158,8 +169,6 @@ class ExitFrameConstants : public AllStatic {
   // FP-relative displacement of the caller's SP.  It points just
   // below the saved PC.
   static const int kCallerSPDisplacement = 2 * kPointerSize;
-
-  static const int kConstantPoolOffset = 0;  // Not used.
 };
 
 
