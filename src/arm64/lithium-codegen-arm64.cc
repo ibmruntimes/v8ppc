@@ -1,29 +1,6 @@
 // Copyright 2013 the V8 project authors. All rights reserved.
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are
-// met:
-//
-//     * Redistributions of source code must retain the above copyright
-//       notice, this list of conditions and the following disclaimer.
-//     * Redistributions in binary form must reproduce the above
-//       copyright notice, this list of conditions and the following
-//       disclaimer in the documentation and/or other materials provided
-//       with the distribution.
-//     * Neither the name of Google Inc. nor the names of its
-//       contributors may be used to endorse or promote products derived
-//       from this software without specific prior written permission.
-//
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-// "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-// LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-// A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-// OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-// SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-// LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-// DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-// THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-// (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
 
 #include "v8.h"
 
@@ -927,7 +904,7 @@ void LCodeGen::PopulateDeoptimizationData(Handle<Code> code) {
   if (length == 0) return;
 
   Handle<DeoptimizationInputData> data =
-      factory()->NewDeoptimizationInputData(length, TENURED);
+      DeoptimizationInputData::New(isolate(), length, TENURED);
 
   Handle<ByteArray> translations =
       translations_.CreateByteArray(isolate()->factory());
@@ -1235,9 +1212,9 @@ Operand LCodeGen::ToOperand32(LOperand* op, IntegerSignedness signedness) {
     Representation r = chunk_->LookupLiteralRepresentation(const_op);
     if (r.IsInteger32()) {
       ASSERT(constant->HasInteger32Value());
-      return Operand(signedness == SIGNED_INT32
-                     ? constant->Integer32Value()
-                     : static_cast<uint32_t>(constant->Integer32Value()));
+      return (signedness == SIGNED_INT32)
+          ? Operand(constant->Integer32Value())
+          : Operand(static_cast<uint32_t>(constant->Integer32Value()));
     } else {
       // Other constants not implemented.
       Abort(kToOperand32UnsupportedImmediate);
@@ -1778,23 +1755,23 @@ void LCodeGen::DoBitS(LBitS* instr) {
 
 
 void LCodeGen::DoBoundsCheck(LBoundsCheck *instr) {
-  Condition cc = instr->hydrogen()->allow_equality() ? hi : hs;
+  Condition cond = instr->hydrogen()->allow_equality() ? hi : hs;
   ASSERT(instr->hydrogen()->index()->representation().IsInteger32());
   ASSERT(instr->hydrogen()->length()->representation().IsInteger32());
   if (instr->index()->IsConstantOperand()) {
     Operand index = ToOperand32I(instr->index());
     Register length = ToRegister32(instr->length());
     __ Cmp(length, index);
-    cc = ReverseConditionForCmp(cc);
+    cond = ReverseConditionForCmp(cond);
   } else {
     Register index = ToRegister32(instr->index());
     Operand length = ToOperand32I(instr->length());
     __ Cmp(index, length);
   }
   if (FLAG_debug_code && instr->hydrogen()->skip_check()) {
-    __ Assert(InvertCondition(cc), kEliminatedBoundsCheckFailed);
+    __ Assert(InvertCondition(cond), kEliminatedBoundsCheckFailed);
   } else {
-    DeoptimizeIf(cc, instr->environment());
+    DeoptimizeIf(cond, instr->environment());
   }
 }
 
@@ -2757,7 +2734,7 @@ void LCodeGen::DoDoubleToIntOrSmi(LDoubleToIntOrSmi* instr) {
     DeoptimizeIfMinusZero(input, instr->environment());
   }
 
-  __ TryConvertDoubleToInt32(result, input, double_scratch());
+  __ TryRepresentDoubleAsInt32(result, input, double_scratch());
   DeoptimizeIf(ne, instr->environment());
 
   if (instr->tag_result()) {
@@ -5508,7 +5485,7 @@ void LCodeGen::DoDeferredTaggedToI(LTaggedToI* instr,
     // A heap number: load value and convert to int32 using non-truncating
     // function. If the result is out of range, branch to deoptimize.
     __ Ldr(dbl_scratch1, FieldMemOperand(input, HeapNumber::kValueOffset));
-    __ TryConvertDoubleToInt32(output, dbl_scratch1, dbl_scratch2);
+    __ TryRepresentDoubleAsInt32(output, dbl_scratch1, dbl_scratch2);
     DeoptimizeIf(ne, instr->environment());
 
     if (instr->hydrogen()->CheckFlag(HValue::kBailoutOnMinusZero)) {

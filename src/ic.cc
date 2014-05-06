@@ -1,29 +1,6 @@
 // Copyright 2012 the V8 project authors. All rights reserved.
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are
-// met:
-//
-//     * Redistributions of source code must retain the above copyright
-//       notice, this list of conditions and the following disclaimer.
-//     * Redistributions in binary form must reproduce the above
-//       copyright notice, this list of conditions and the following
-//       disclaimer in the documentation and/or other materials provided
-//       with the distribution.
-//     * Neither the name of Google Inc. nor the names of its
-//       contributors may be used to endorse or promote products derived
-//       from this software without specific prior written permission.
-//
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-// "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-// LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-// A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-// OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-// SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-// LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-// DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-// THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-// (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
 
 #include "v8.h"
 
@@ -31,11 +8,11 @@
 #include "api.h"
 #include "arguments.h"
 #include "codegen.h"
+#include "conversions.h"
 #include "execution.h"
 #include "ic-inl.h"
 #include "runtime.h"
 #include "stub-cache.h"
-#include "v8conversions.h"
 
 namespace v8 {
 namespace internal {
@@ -167,7 +144,6 @@ IC::IC(FrameDepth depth, Isolate* isolate)
 }
 
 
-#ifdef ENABLE_DEBUGGER_SUPPORT
 SharedFunctionInfo* IC::GetSharedFunctionInfo() const {
   // Compute the JavaScript frame for the frame pointer of this IC
   // structure. We need this to be able to find the function
@@ -198,7 +174,6 @@ Code* IC::GetOriginalCode() const {
   ASSERT(original_code->IsCode());
   return original_code;
 }
-#endif
 
 
 static bool HasInterceptorGetter(JSObject* object) {
@@ -1947,8 +1922,7 @@ RUNTIME_FUNCTION(SharedStoreIC_ExtendStorage) {
   int new_unused = transition->unused_property_fields();
   int new_size = old_storage->length() + new_unused + 1;
 
-  Handle<FixedArray> new_storage = isolate->factory()->CopySizeFixedArray(
-      old_storage, new_size);
+  Handle<FixedArray> new_storage = FixedArray::CopySize(old_storage, new_size);
 
   Handle<Object> to_store = value;
 
@@ -2058,7 +2032,8 @@ RUNTIME_FUNCTION(ElementsTransitionAndStoreIC_Miss) {
 }
 
 
-BinaryOpIC::State::State(ExtraICState extra_ic_state) {
+BinaryOpIC::State::State(Isolate* isolate, ExtraICState extra_ic_state)
+    : isolate_(isolate) {
   // We don't deserialize the SSE2 Field, since this is only used to be able
   // to include SSE2 as well as non-SSE2 versions in the snapshot. For code
   // generation we always want it to reflect the current state.
@@ -2109,7 +2084,7 @@ void BinaryOpIC::State::GenerateAheadOfTime(
   // Generated list of commonly used stubs
 #define GENERATE(op, left_kind, right_kind, result_kind, mode)  \
   do {                                                          \
-    State state(op, mode);                                      \
+    State state(isolate, op, mode);                             \
     state.left_kind_ = left_kind;                               \
     state.fixed_right_arg_.has_value = false;                   \
     state.right_kind_ = right_kind;                             \
@@ -2304,7 +2279,7 @@ void BinaryOpIC::State::GenerateAheadOfTime(
 #undef GENERATE
 #define GENERATE(op, left_kind, fixed_right_arg_value, result_kind, mode) \
   do {                                                                    \
-    State state(op, mode);                                                \
+    State state(isolate, op, mode);                                       \
     state.left_kind_ = left_kind;                                         \
     state.fixed_right_arg_.has_value = true;                              \
     state.fixed_right_arg_.value = fixed_right_arg_value;                 \
@@ -2482,7 +2457,7 @@ MaybeHandle<Object> BinaryOpIC::Transition(
     Handle<AllocationSite> allocation_site,
     Handle<Object> left,
     Handle<Object> right) {
-  State state(target()->extra_ic_state());
+  State state(isolate(), target()->extra_ic_state());
 
   // Compute the actual result using the builtin for the binary operation.
   Object* builtin = isolate()->js_builtins_object()->javascript_builtin(
@@ -2499,7 +2474,7 @@ MaybeHandle<Object> BinaryOpIC::Transition(
   // update the state of this very IC, so we must update the stored state.
   UpdateTarget();
   // Compute the new state.
-  State old_state(target()->extra_ic_state());
+  State old_state(isolate(), target()->extra_ic_state());
   state.Update(left, right, result);
 
   // Check if we have a string operation here.

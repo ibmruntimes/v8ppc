@@ -319,7 +319,7 @@ static void InterceptorGetter(Local<String> name,
   for (i = 0; name_str[i] && prefix[i]; ++i) {
     if (name_str[i] != prefix[i]) return;
   }
-  Handle<Object> self = info.This();
+  Handle<Object> self = Handle<Object>::Cast(info.This());
   info.GetReturnValue().Set(self->GetHiddenValue(v8_str(name_str + i)));
 }
 
@@ -339,7 +339,7 @@ static void InterceptorSetter(Local<String> name,
   if (!prefix[i]) return;
 
   if (value->IsInt32() && value->Int32Value() < 10000) {
-    Handle<Object> self = info.This();
+    Handle<Object> self = Handle<Object>::Cast(info.This());
     self->SetHiddenValue(name, value);
     info.GetReturnValue().Set(value);
   }
@@ -2063,14 +2063,14 @@ static void EchoNamedProperty(Local<String> name,
 
 void SimpleAccessorGetter(Local<String> name,
                           const v8::PropertyCallbackInfo<v8::Value>& info) {
-  Handle<Object> self = info.This();
+  Handle<Object> self = Handle<Object>::Cast(info.This());
   info.GetReturnValue().Set(
       self->Get(String::Concat(v8_str("accessor_"), name)));
 }
 
 void SimpleAccessorSetter(Local<String> name, Local<Value> value,
                           const v8::PropertyCallbackInfo<void>& info) {
-  Handle<Object> self = info.This();
+  Handle<Object> self = Handle<Object>::Cast(info.This());
   self->Set(String::Concat(v8_str("accessor_"), name), value);
 }
 
@@ -8265,10 +8265,9 @@ static void YGetter(Local<String> name,
 static void YSetter(Local<String> name,
                     Local<Value> value,
                     const v8::PropertyCallbackInfo<void>& info) {
-  if (info.This()->Has(name)) {
-    info.This()->Delete(name);
-  }
-  info.This()->Set(name, value);
+  Local<Object> this_obj = Local<Object>::Cast(info.This());
+  if (this_obj->Has(name)) this_obj->Delete(name);
+  this_obj->Set(name, value);
 }
 
 
@@ -11485,7 +11484,7 @@ THREADED_TEST(InterceptorLoadICInvalidatedFieldViaGlobal) {
 static void SetOnThis(Local<String> name,
                       Local<Value> value,
                       const v8::PropertyCallbackInfo<void>& info) {
-  info.This()->ForceSet(name, value);
+  Local<Object>::Cast(info.This())->ForceSet(name, value);
 }
 
 
@@ -17251,12 +17250,7 @@ void AnalyzeStackInNativeCode(const v8::FunctionCallbackInfo<v8::Value>& args) {
                     stackTrace->GetFrame(0));
     checkStackFrame(origin, "baz", 8, 3, false, true,
                     stackTrace->GetFrame(1));
-#ifdef ENABLE_DEBUGGER_SUPPORT
     bool is_eval = true;
-#else  // ENABLE_DEBUGGER_SUPPORT
-    bool is_eval = false;
-#endif  // ENABLE_DEBUGGER_SUPPORT
-
     // This is the source string inside the eval which has the call to baz.
     checkStackFrame(NULL, "", 1, 5, is_eval, false,
                     stackTrace->GetFrame(2));
@@ -18572,7 +18566,7 @@ static void SetterWhichSetsYOnThisTo23(
     const v8::PropertyCallbackInfo<void>& info) {
   CHECK(v8::Utils::OpenHandle(*info.This())->IsJSObject());
   CHECK(v8::Utils::OpenHandle(*info.Holder())->IsJSObject());
-  info.This()->Set(v8_str("y"), v8_num(23));
+  Local<Object>::Cast(info.This())->Set(v8_str("y"), v8_num(23));
 }
 
 
@@ -18591,7 +18585,7 @@ void FooSetInterceptor(Local<String> name,
   CHECK(v8::Utils::OpenHandle(*info.This())->IsJSObject());
   CHECK(v8::Utils::OpenHandle(*info.Holder())->IsJSObject());
   if (!name->Equals(v8_str("foo"))) return;
-  info.This()->Set(v8_str("y"), v8_num(23));
+  Local<Object>::Cast(info.This())->Set(v8_str("y"), v8_num(23));
   info.GetReturnValue().Set(v8_num(23));
 }
 
@@ -18644,7 +18638,7 @@ static void NamedPropertySetterWhichSetsYOnThisTo23(
     Local<Value> value,
     const v8::PropertyCallbackInfo<v8::Value>& info) {
   if (name->Equals(v8_str("x"))) {
-    info.This()->Set(v8_str("y"), v8_num(23));
+    Local<Object>::Cast(info.This())->Set(v8_str("y"), v8_num(23));
   }
 }
 
@@ -20675,9 +20669,9 @@ TEST(CallCompletedCallback) {
   env->Global()->Set(v8_str("recursion"),
                      recursive_runtime->GetFunction());
   // Adding the same callback a second time has no effect.
-  v8::V8::AddCallCompletedCallback(CallCompletedCallback1);
-  v8::V8::AddCallCompletedCallback(CallCompletedCallback1);
-  v8::V8::AddCallCompletedCallback(CallCompletedCallback2);
+  env->GetIsolate()->AddCallCompletedCallback(CallCompletedCallback1);
+  env->GetIsolate()->AddCallCompletedCallback(CallCompletedCallback1);
+  env->GetIsolate()->AddCallCompletedCallback(CallCompletedCallback2);
   i::OS::Print("--- Script (1) ---\n");
   Local<Script> script = v8::Script::Compile(
       v8::String::NewFromUtf8(env->GetIsolate(), "recursion(0)"));
@@ -20686,7 +20680,7 @@ TEST(CallCompletedCallback) {
 
   i::OS::Print("\n--- Script (2) ---\n");
   callback_fired = 0;
-  v8::V8::RemoveCallCompletedCallback(CallCompletedCallback1);
+  env->GetIsolate()->RemoveCallCompletedCallback(CallCompletedCallback1);
   script->Run();
   CHECK_EQ(2, callback_fired);
 
@@ -20715,7 +20709,7 @@ void CallCompletedCallbackException() {
 TEST(CallCompletedCallbackOneException) {
   LocalContext env;
   v8::HandleScope scope(env->GetIsolate());
-  v8::V8::AddCallCompletedCallback(CallCompletedCallbackNoException);
+  env->GetIsolate()->AddCallCompletedCallback(CallCompletedCallbackNoException);
   CompileRun("throw 'exception';");
 }
 
@@ -20723,7 +20717,7 @@ TEST(CallCompletedCallbackOneException) {
 TEST(CallCompletedCallbackTwoExceptions) {
   LocalContext env;
   v8::HandleScope scope(env->GetIsolate());
-  v8::V8::AddCallCompletedCallback(CallCompletedCallbackException);
+  env->GetIsolate()->AddCallCompletedCallback(CallCompletedCallbackException);
   CompileRun("throw 'first exception';");
 }
 

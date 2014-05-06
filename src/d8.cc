@@ -1,29 +1,6 @@
 // Copyright 2012 the V8 project authors. All rights reserved.
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are
-// met:
-//
-//     * Redistributions of source code must retain the above copyright
-//       notice, this list of conditions and the following disclaimer.
-//     * Redistributions in binary form must reproduce the above
-//       copyright notice, this list of conditions and the following
-//       disclaimer in the documentation and/or other materials provided
-//       with the distribution.
-//     * Neither the name of Google Inc. nor the names of its
-//       contributors may be used to endorse or promote products derived
-//       from this software without specific prior written permission.
-//
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-// "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-// LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-// A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-// OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-// SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-// LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-// DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-// THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-// (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
 
 
 // Defined when linking against shared lib on Windows.
@@ -67,7 +44,7 @@
 #include "natives.h"
 #include "platform.h"
 #include "v8.h"
-#endif  // V8_SHARED
+#endif  // !V8_SHARED
 
 #if !defined(_WIN32) && !defined(_WIN64)
 #include <unistd.h>  // NOLINT
@@ -167,7 +144,7 @@ CounterCollection* Shell::counters_ = &local_counters_;
 i::Mutex Shell::context_mutex_;
 const i::TimeTicks Shell::kInitialTicks = i::TimeTicks::HighResolutionNow();
 Persistent<Context> Shell::utility_context_;
-#endif  // V8_SHARED
+#endif  // !V8_SHARED
 
 Persistent<Context> Shell::evaluation_context_;
 ShellOptions Shell::options;
@@ -182,7 +159,7 @@ bool CounterMap::Match(void* key1, void* key2) {
   const char* name2 = reinterpret_cast<const char*>(key2);
   return strcmp(name1, name2) == 0;
 }
-#endif  // V8_SHARED
+#endif  // !V8_SHARED
 
 
 // Converts a V8 value to a C string.
@@ -197,11 +174,11 @@ bool Shell::ExecuteString(Isolate* isolate,
                           Handle<Value> name,
                           bool print_result,
                           bool report_exceptions) {
-#if !defined(V8_SHARED) && defined(ENABLE_DEBUGGER_SUPPORT)
+#ifndef V8_SHARED
   bool FLAG_debugger = i::FLAG_debugger;
 #else
   bool FLAG_debugger = false;
-#endif  // !V8_SHARED && ENABLE_DEBUGGER_SUPPORT
+#endif  // !V8_SHARED
   HandleScope handle_scope(isolate);
   TryCatch try_catch;
   options.script_executed = true;
@@ -321,7 +298,7 @@ void Shell::PerformanceNow(const v8::FunctionCallbackInfo<v8::Value>& args) {
   i::TimeDelta delta = i::TimeTicks::HighResolutionNow() - kInitialTicks;
   args.GetReturnValue().Set(delta.InMillisecondsF());
 }
-#endif  // V8_SHARED
+#endif  // !V8_SHARED
 
 
 // Realm.current() returns the index of the currently active realm.
@@ -565,14 +542,14 @@ void Shell::Version(const v8::FunctionCallbackInfo<v8::Value>& args) {
 
 void Shell::ReportException(Isolate* isolate, v8::TryCatch* try_catch) {
   HandleScope handle_scope(isolate);
-#if !defined(V8_SHARED) && defined(ENABLE_DEBUGGER_SUPPORT)
+#ifndef V8_SHARED
   Handle<Context> utility_context;
   bool enter_context = !isolate->InContext();
   if (enter_context) {
     utility_context = Local<Context>::New(isolate, utility_context_);
     utility_context->Enter();
   }
-#endif  // !V8_SHARED && ENABLE_DEBUGGER_SUPPORT
+#endif  // !V8_SHARED
   v8::String::Utf8Value exception(try_catch->Exception());
   const char* exception_string = ToCString(exception);
   Handle<Message> message = try_catch->Message();
@@ -607,9 +584,9 @@ void Shell::ReportException(Isolate* isolate, v8::TryCatch* try_catch) {
     }
   }
   printf("\n");
-#if !defined(V8_SHARED) && defined(ENABLE_DEBUGGER_SUPPORT)
+#ifndef V8_SHARED
   if (enter_context) utility_context->Exit();
-#endif  // !V8_SHARED && ENABLE_DEBUGGER_SUPPORT
+#endif  // !V8_SHARED
 }
 
 
@@ -633,7 +610,6 @@ Handle<Array> Shell::GetCompletions(Isolate* isolate,
 }
 
 
-#ifdef ENABLE_DEBUGGER_SUPPORT
 Local<Object> Shell::DebugMessageDetails(Isolate* isolate,
                                          Handle<String> message) {
   EscapableHandleScope handle_scope(isolate);
@@ -674,11 +650,8 @@ void Shell::DispatchDebugMessages() {
   v8::Context::Scope context_scope(context);
   v8::Debug::ProcessDebugMessages();
 }
-#endif  // ENABLE_DEBUGGER_SUPPORT
-#endif  // V8_SHARED
 
 
-#ifndef V8_SHARED
 int32_t* Counter::Bind(const char* name, bool is_histogram) {
   int i;
   for (i = 0; i < kMaxNameSize - 1 && name[i]; i++)
@@ -790,7 +763,6 @@ void Shell::InstallUtilityScript(Isolate* isolate) {
   evaluation_context->SetSecurityToken(Undefined(isolate));
   v8::Context::Scope context_scope(utility_context);
 
-#ifdef ENABLE_DEBUGGER_SUPPORT
   if (i::FLAG_debugger) printf("JavaScript debugger enabled\n");
   // Install the debugger object in the utility scope
   i::Debug* debug = reinterpret_cast<i::Isolate*>(isolate)->debug();
@@ -801,7 +773,6 @@ void Shell::InstallUtilityScript(Isolate* isolate) {
                                  Utils::ToLocal(js_debug));
   debug->debug_context()->set_security_token(
       reinterpret_cast<i::Isolate*>(isolate)->heap()->undefined_value());
-#endif  // ENABLE_DEBUGGER_SUPPORT
 
   // Run the d8 shell utility script in the utility context
   int source_index = i::NativesCollection<i::D8>::GetIndex("d8");
@@ -828,14 +799,12 @@ void Shell::InstallUtilityScript(Isolate* isolate) {
           i::SharedFunctionInfo::cast(*compiled_script)->script()));
   script_object->set_type(i::Smi::FromInt(i::Script::TYPE_NATIVE));
 
-#ifdef ENABLE_DEBUGGER_SUPPORT
   // Start the in-process debugger if requested.
   if (i::FLAG_debugger && !i::FLAG_debugger_agent) {
     v8::Debug::SetDebugEventListener2(HandleDebugEvent);
   }
-#endif  // ENABLE_DEBUGGER_SUPPORT
 }
-#endif  // V8_SHARED
+#endif  // !V8_SHARED
 
 
 #ifdef COMPRESS_STARTUP_DATA_BZ2
@@ -911,13 +880,13 @@ Handle<ObjectTemplate> Shell::CreateGlobalTemplate(Isolate* isolate) {
                             FunctionTemplate::New(isolate, PerformanceNow));
   global_template->Set(String::NewFromUtf8(isolate, "performance"),
                        performance_template);
-#endif  // V8_SHARED
+#endif  // !V8_SHARED
 
 #if !defined(V8_SHARED) && !defined(_WIN32) && !defined(_WIN64)
   Handle<ObjectTemplate> os_templ = ObjectTemplate::New(isolate);
   AddOSMethods(isolate, os_templ);
   global_template->Set(String::NewFromUtf8(isolate, "os"), os_templ);
-#endif  // V8_SHARED
+#endif  // !V8_SHARED && !_WIN32 && !_WIN64
 
   return global_template;
 }
@@ -943,7 +912,7 @@ void Shell::Initialize(Isolate* isolate) {
     V8::SetCreateHistogramFunction(CreateHistogram);
     V8::SetAddHistogramSampleFunction(AddHistogramSample);
   }
-#endif  // V8_SHARED
+#endif  // !V8_SHARED
 }
 
 
@@ -956,14 +925,12 @@ void Shell::InitializeDebugger(Isolate* isolate) {
   utility_context_.Reset(isolate,
                          Context::New(isolate, NULL, global_template));
 
-#ifdef ENABLE_DEBUGGER_SUPPORT
   // Start the debugger agent if requested.
   if (i::FLAG_debugger_agent) {
     v8::Debug::EnableAgent("d8 shell", i::FLAG_debugger_port, true);
     v8::Debug::SetDebugMessageDispatchHandler(DispatchDebugMessages, true);
   }
-#endif  // ENABLE_DEBUGGER_SUPPORT
-#endif  // V8_SHARED
+#endif  // !V8_SHARED
 }
 
 
@@ -971,7 +938,7 @@ Local<Context> Shell::CreateEvaluationContext(Isolate* isolate) {
 #ifndef V8_SHARED
   // This needs to be a critical section since this is not thread-safe
   i::LockGuard<i::Mutex> lock_guard(&context_mutex_);
-#endif  // V8_SHARED
+#endif  // !V8_SHARED
   // Initialize the global objects
   Handle<ObjectTemplate> global_template = CreateGlobalTemplate(isolate);
   EscapableHandleScope handle_scope(isolate);
@@ -993,7 +960,7 @@ Local<Context> Shell::CreateEvaluationContext(Isolate* isolate) {
       factory->NewJSArrayWithElements(arguments_array);
   context->Global()->Set(String::NewFromUtf8(isolate, "arguments"),
                          Utils::ToLocal(arguments_jsarray));
-#endif  // V8_SHARED
+#endif  // !V8_SHARED
   return handle_scope.Escape(context);
 }
 
@@ -1017,7 +984,7 @@ struct CounterAndKey {
 inline bool operator<(const CounterAndKey& lhs, const CounterAndKey& rhs) {
   return strcmp(lhs.key, rhs.key) < 0;
 }
-#endif  // V8_SHARED
+#endif  // !V8_SHARED
 
 
 void Shell::OnExit() {
@@ -1058,7 +1025,7 @@ void Shell::OnExit() {
   }
   delete counters_file_;
   delete counter_map_;
-#endif  // V8_SHARED
+#endif  // !V8_SHARED
 }
 
 
@@ -1173,7 +1140,7 @@ static char* ReadLine(char* data) {
 static char* ReadWord(char* data) {
   return ReadToken(data, ' ');
 }
-#endif  // V8_SHARED
+#endif  // !V8_SHARED
 
 
 // Reads a file into a v8 string.
@@ -1271,14 +1238,14 @@ void ShellThread::Run() {
     ptr = next_line;
   }
 }
-#endif  // V8_SHARED
+#endif  // !V8_SHARED
 
 
 SourceGroup::~SourceGroup() {
 #ifndef V8_SHARED
   delete thread_;
   thread_ = NULL;
-#endif  // V8_SHARED
+#endif  // !V8_SHARED
 }
 
 
@@ -1386,7 +1353,7 @@ void SourceGroup::WaitForThread() {
     done_semaphore_.Wait();
   }
 }
-#endif  // V8_SHARED
+#endif  // !V8_SHARED
 
 
 bool Shell::SetOptions(int argc, char* argv[]) {
@@ -1440,7 +1407,7 @@ bool Shell::SetOptions(int argc, char* argv[]) {
 #else
       options.dump_heap_constants = true;
       argv[i] = NULL;
-#endif
+#endif  // V8_SHARED
     } else if (strcmp(argv[i], "--throws") == 0) {
       options.expected_to_throw = true;
       argv[i] = NULL;
@@ -1481,7 +1448,7 @@ bool Shell::SetOptions(int argc, char* argv[]) {
     printf("-p requires a file containing a list of files as parameter\n");
     return false;
   }
-#endif  // V8_SHARED
+#endif  // !V8_SHARED
 
   v8::V8::SetFlagsFromCommandLine(&argc, argv, true);
 
@@ -1527,7 +1494,7 @@ int Shell::RunMain(Isolate* isolate, int argc, char* argv[]) {
   for (int i = 1; i < options.num_isolates; ++i) {
     options.isolate_sources[i].StartExecuteInThread();
   }
-#endif  // V8_SHARED
+#endif  // !V8_SHARED
   {  // NOLINT
     Locker lock(isolate);
     {
@@ -1536,13 +1503,13 @@ int Shell::RunMain(Isolate* isolate, int argc, char* argv[]) {
       if (options.last_run) {
         // Keep using the same context in the interactive shell.
         evaluation_context_.Reset(isolate, context);
-#if !defined(V8_SHARED) && defined(ENABLE_DEBUGGER_SUPPORT)
+#ifndef V8_SHARED
         // If the interactive debugger is enabled make sure to activate
         // it before running the files passed on the command line.
         if (i::FLAG_debugger) {
           InstallUtilityScript(isolate);
         }
-#endif  // !V8_SHARED && ENABLE_DEBUGGER_SUPPORT
+#endif  // !V8_SHARED
       }
       {
         Context::Scope cscope(context);
@@ -1569,7 +1536,7 @@ int Shell::RunMain(Isolate* isolate, int argc, char* argv[]) {
     thread->Join();
     delete thread;
   }
-#endif  // V8_SHARED
+#endif  // !V8_SHARED
   return 0;
 }
 
@@ -1643,7 +1610,7 @@ static void DumpHeapConstants(i::Isolate* isolate) {
   printf("}\n");
 #undef ROOT_LIST_CASE
 }
-#endif  // V8_SHARED
+#endif  // !V8_SHARED
 
 
 class ShellArrayBufferAllocator : public v8::ArrayBuffer::Allocator {
@@ -1747,25 +1714,25 @@ int Shell::Main(int argc, char* argv[]) {
     }
 
 
-#if !defined(V8_SHARED) && defined(ENABLE_DEBUGGER_SUPPORT)
+#ifndef V8_SHARED
     // Run remote debugger if requested, but never on --test
     if (i::FLAG_remote_debugger && !options.test_shell) {
       InstallUtilityScript(isolate);
       RunRemoteDebugger(isolate, i::FLAG_debugger_port);
       return 0;
     }
-#endif  // !V8_SHARED && ENABLE_DEBUGGER_SUPPORT
+#endif  // !V8_SHARED
 
     // Run interactive shell if explicitly requested or if no script has been
     // executed, but never on --test
 
     if (( options.interactive_shell || !options.script_executed )
         && !options.test_shell ) {
-#if !defined(V8_SHARED) && defined(ENABLE_DEBUGGER_SUPPORT)
+#ifndef V8_SHARED
       if (!i::FLAG_debugger) {
         InstallUtilityScript(isolate);
       }
-#endif  // !V8_SHARED && ENABLE_DEBUGGER_SUPPORT
+#endif  // !V8_SHARED
       RunShell(isolate);
     }
   }

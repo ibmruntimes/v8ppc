@@ -1,29 +1,6 @@
 // Copyright 2012 the V8 project authors. All rights reserved.
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are
-// met:
-//
-//     * Redistributions of source code must retain the above copyright
-//       notice, this list of conditions and the following disclaimer.
-//     * Redistributions in binary form must reproduce the above
-//       copyright notice, this list of conditions and the following
-//       disclaimer in the documentation and/or other materials provided
-//       with the distribution.
-//     * Neither the name of Google Inc. nor the names of its
-//       contributors may be used to endorse or promote products derived
-//       from this software without specific prior written permission.
-//
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-// "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-// LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-// A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-// OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-// SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-// LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-// DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-// THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-// (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
 
 #include <stdlib.h>
 #include <limits>
@@ -38,6 +15,7 @@
 #include "codegen.h"
 #include "compilation-cache.h"
 #include "compiler.h"
+#include "conversions.h"
 #include "cpu.h"
 #include "cpu-profiler.h"
 #include "dateparser-inl.h"
@@ -63,7 +41,6 @@
 #include "string-search.h"
 #include "stub-cache.h"
 #include "uri.h"
-#include "v8conversions.h"
 #include "v8threads.h"
 #include "vm-state-inl.h"
 
@@ -1734,7 +1711,7 @@ static Handle<JSWeakCollection> WeakCollectionInitialize(
     Isolate* isolate,
     Handle<JSWeakCollection> weak_collection) {
   ASSERT(weak_collection->map()->inobject_properties() == 0);
-  Handle<ObjectHashTable> table = isolate->factory()->NewObjectHashTable(0);
+  Handle<ObjectHashTable> table = ObjectHashTable::New(isolate, 0);
   weak_collection->set_table(*table);
   weak_collection->set_next(Smi::FromInt(0));
   return weak_collection;
@@ -3076,7 +3053,7 @@ RUNTIME_FUNCTION(Runtime_FunctionSetReadOnlyPrototype) {
   } else {  // Dictionary properties.
     // Directly manipulate the property details.
     DisallowHeapAllocation no_gc;
-    int entry = function->property_dictionary()->FindEntry(*name);
+    int entry = function->property_dictionary()->FindEntry(name);
     ASSERT(entry != NameDictionary::kNotFound);
     PropertyDetails details = function->property_dictionary()->DetailsAt(entry);
     PropertyDetails new_details(
@@ -3142,6 +3119,7 @@ RUNTIME_FUNCTION(Runtime_SetCode) {
   bool was_native = target_shared->native();
   target_shared->set_compiler_hints(source_shared->compiler_hints());
   target_shared->set_native(was_native);
+  target_shared->set_profiler_ticks(source_shared->profiler_ticks());
 
   // Set the code of the target function.
   target->ReplaceCode(source_shared->code());
@@ -5074,8 +5052,11 @@ RUNTIME_FUNCTION(Runtime_GetProperty) {
 
 // KeyedGetProperty is called from KeyedLoadIC::GenerateGeneric.
 RUNTIME_FUNCTION(Runtime_KeyedGetProperty) {
-  SealHandleScope shs(isolate);
+  HandleScope scope(isolate);
   ASSERT(args.length() == 2);
+
+  CONVERT_ARG_HANDLE_CHECKED(Object, receiver_obj, 0);
+  CONVERT_ARG_HANDLE_CHECKED(Object, key_obj, 1);
 
   // Fast cases for getting named properties of the receiver JSObject
   // itself.
@@ -5088,17 +5069,18 @@ RUNTIME_FUNCTION(Runtime_KeyedGetProperty) {
   //
   // Additionally, we need to make sure that we do not cache results
   // for objects that require access checks.
-  if (args[0]->IsJSObject()) {
-    if (!args[0]->IsJSGlobalProxy() &&
-        !args[0]->IsAccessCheckNeeded() &&
-        args[1]->IsName()) {
-      JSObject* receiver = JSObject::cast(args[0]);
-      Name* key = Name::cast(args[1]);
+  if (receiver_obj->IsJSObject()) {
+    if (!receiver_obj->IsJSGlobalProxy() &&
+        !receiver_obj->IsAccessCheckNeeded() &&
+        key_obj->IsName()) {
+      DisallowHeapAllocation no_allocation;
+      Handle<JSObject> receiver = Handle<JSObject>::cast(receiver_obj);
+      Handle<Name> key = Handle<Name>::cast(key_obj);
       if (receiver->HasFastProperties()) {
         // Attempt to use lookup cache.
         Map* receiver_map = receiver->map();
         KeyedLookupCache* keyed_lookup_cache = isolate->keyed_lookup_cache();
-        int offset = keyed_lookup_cache->Lookup(receiver_map, key);
+        int offset = keyed_lookup_cache->Lookup(receiver_map, *key);
         if (offset != -1) {
           // Doubles are not cached, so raw read the value.
           Object* value = receiver->RawFastPropertyAt(offset);
@@ -5109,17 +5091,17 @@ RUNTIME_FUNCTION(Runtime_KeyedGetProperty) {
         // Lookup cache miss.  Perform lookup and update the cache if
         // appropriate.
         LookupResult result(isolate);
-        receiver->LocalLookup(key, &result);
+        receiver->LocalLookup(*key, &result);
         if (result.IsField()) {
           int offset = result.GetFieldIndex().field_index();
           // Do not track double fields in the keyed lookup cache. Reading
           // double values requires boxing.
           if (!result.representation().IsDouble()) {
-            keyed_lookup_cache->Update(receiver_map, key, offset);
+            keyed_lookup_cache->Update(receiver_map, *key, offset);
           }
-          HandleScope scope(isolate);
+          AllowHeapAllocation allow_allocation;
           return *JSObject::FastPropertyAt(
-              handle(receiver, isolate), result.representation(), offset);
+              receiver, result.representation(), offset);
         }
       } else {
         // Attempt dictionary lookup.
@@ -5134,17 +5116,18 @@ RUNTIME_FUNCTION(Runtime_KeyedGetProperty) {
           // If value is the hole do the general lookup.
         }
       }
-    } else if (FLAG_smi_only_arrays && args.at<Object>(1)->IsSmi()) {
+    } else if (FLAG_smi_only_arrays && key_obj->IsSmi()) {
       // JSObject without a name key. If the key is a Smi, check for a
       // definite out-of-bounds access to elements, which is a strong indicator
       // that subsequent accesses will also call the runtime. Proactively
       // transition elements to FAST_*_ELEMENTS to avoid excessive boxing of
       // doubles for those future calls in the case that the elements would
       // become FAST_DOUBLE_ELEMENTS.
-      Handle<JSObject> js_object(args.at<JSObject>(0));
+      Handle<JSObject> js_object = Handle<JSObject>::cast(receiver_obj);
       ElementsKind elements_kind = js_object->GetElementsKind();
       if (IsFastDoubleElementsKind(elements_kind)) {
-        if (args.at<Smi>(1)->value() >= js_object->elements()->length()) {
+        Handle<Smi> key = Handle<Smi>::cast(key_obj);
+        if (key->value() >= js_object->elements()->length()) {
           if (IsFastHoleyElementsKind(elements_kind)) {
             elements_kind = FAST_HOLEY_ELEMENTS;
           } else {
@@ -5158,10 +5141,9 @@ RUNTIME_FUNCTION(Runtime_KeyedGetProperty) {
                !IsFastElementsKind(elements_kind));
       }
     }
-  } else if (args[0]->IsString() && args[1]->IsSmi()) {
+  } else if (receiver_obj->IsString() && key_obj->IsSmi()) {
     // Fast case for string indexing using [] with a smi index.
-    HandleScope scope(isolate);
-    Handle<String> str = args.at<String>(0);
+    Handle<String> str = Handle<String>::cast(receiver_obj);
     int index = args.smi_at(1);
     if (index >= 0 && index < str->length()) {
       return *GetCharAt(str, index);
@@ -5169,12 +5151,10 @@ RUNTIME_FUNCTION(Runtime_KeyedGetProperty) {
   }
 
   // Fall back to GetObjectProperty.
-  HandleScope scope(isolate);
   Handle<Object> result;
   ASSIGN_RETURN_FAILURE_ON_EXCEPTION(
       isolate, result,
-      Runtime::GetObjectProperty(
-          isolate, args.at<Object>(0), args.at<Object>(1)));
+      Runtime::GetObjectProperty(isolate, receiver_obj, key_obj));
   return *result;
 }
 
@@ -5627,8 +5607,6 @@ RUNTIME_FUNCTION(Runtime_StoreArrayLiteralElement) {
 // Check whether debugger and is about to step into the callback that is passed
 // to a built-in function such as Array.forEach.
 RUNTIME_FUNCTION(Runtime_DebugCallbackSupportsStepping) {
-  SealHandleScope shs(isolate);
-#ifdef ENABLE_DEBUGGER_SUPPORT
   ASSERT(args.length() == 1);
   if (!isolate->IsDebuggerActive() || !isolate->debug()->StepInActive()) {
     return isolate->heap()->false_value();
@@ -5637,17 +5615,12 @@ RUNTIME_FUNCTION(Runtime_DebugCallbackSupportsStepping) {
   // We do not step into the callback if it's a builtin or not even a function.
   return isolate->heap()->ToBoolean(
       callback->IsJSFunction() && !JSFunction::cast(callback)->IsBuiltin());
-#else
-  return isolate->heap()->false_value();
-#endif  // ENABLE_DEBUGGER_SUPPORT
 }
 
 
 // Set one shot breakpoints for the callback function that is passed to a
 // built-in function such as Array.forEach to enable stepping into the callback.
 RUNTIME_FUNCTION(Runtime_DebugPrepareStepInIfStepping) {
-  SealHandleScope shs(isolate);
-#ifdef ENABLE_DEBUGGER_SUPPORT
   ASSERT(args.length() == 1);
   Debug* debug = isolate->debug();
   if (!debug->IsStepping()) return isolate->heap()->undefined_value();
@@ -5658,7 +5631,17 @@ RUNTIME_FUNCTION(Runtime_DebugPrepareStepInIfStepping) {
   // again, we need to clear the step out at this point.
   debug->ClearStepOut();
   debug->FloodWithOneShot(callback);
-#endif  // ENABLE_DEBUGGER_SUPPORT
+  return isolate->heap()->undefined_value();
+}
+
+
+// Notify the debugger if an expcetion in a promise is not caught (yet).
+RUNTIME_FUNCTION(Runtime_DebugPendingExceptionInPromise) {
+  ASSERT(args.length() == 2);
+  HandleScope scope(isolate);
+  CONVERT_ARG_HANDLE_CHECKED(Object, exception, 0);
+  CONVERT_ARG_HANDLE_CHECKED(JSObject, promise, 1);
+  isolate->debugger()->OnException(exception, true, promise);
   return isolate->heap()->undefined_value();
 }
 
@@ -6025,7 +6008,7 @@ RUNTIME_FUNCTION(Runtime_GetNamedInterceptorPropertyNames) {
   CONVERT_ARG_HANDLE_CHECKED(JSObject, obj, 0);
 
   if (obj->HasNamedInterceptor()) {
-    Handle<JSArray> result;
+    Handle<JSObject> result;
     if (JSObject::GetKeysForNamedInterceptor(obj, obj).ToHandle(&result)) {
       return *result;
     }
@@ -6042,7 +6025,7 @@ RUNTIME_FUNCTION(Runtime_GetIndexedInterceptorElementNames) {
   CONVERT_ARG_HANDLE_CHECKED(JSObject, obj, 0);
 
   if (obj->HasIndexedInterceptor()) {
-    Handle<JSArray> result;
+    Handle<JSObject> result;
     if (JSObject::GetKeysForIndexedInterceptor(obj, obj).ToHandle(&result)) {
       return *result;
     }
@@ -8347,13 +8330,11 @@ static Object* Runtime_NewObjectHelper(Isolate* isolate,
     return isolate->Throw(*type_error);
   }
 
-#ifdef ENABLE_DEBUGGER_SUPPORT
   Debug* debug = isolate->debug();
   // Handle stepping into constructors if step into is active.
   if (debug->StepInActive()) {
     debug->HandleStepIn(function, Handle<Object>::null(), 0, true);
   }
-#endif
 
   if (function->has_initial_map()) {
     if (function->initial_map()->instance_type() == JS_FUNCTION_TYPE) {
@@ -10040,8 +10021,7 @@ class ArrayConcatVisitor {
     ASSERT(fast_elements_);
     Handle<FixedArray> current_storage(*storage_);
     Handle<SeededNumberDictionary> slow_storage(
-        isolate_->factory()->NewSeededNumberDictionary(
-            current_storage->length()));
+        SeededNumberDictionary::New(isolate_, current_storage->length()));
     uint32_t current_length = static_cast<uint32_t>(current_storage->length());
     for (uint32_t i = 0; i < current_length; i++) {
       HandleScope loop_scope(isolate_);
@@ -10587,7 +10567,7 @@ RUNTIME_FUNCTION(Runtime_ArrayConcat) {
     uint32_t at_least_space_for = estimate_nof_elements +
                                   (estimate_nof_elements >> 2);
     storage = Handle<FixedArray>::cast(
-        isolate->factory()->NewSeededNumberDictionary(at_least_space_for));
+        SeededNumberDictionary::New(isolate, at_least_space_for));
   }
 
   ArrayConcatVisitor visitor(isolate, storage, fast_case);
@@ -10746,7 +10726,6 @@ RUNTIME_FUNCTION(Runtime_LookupAccessor) {
 }
 
 
-#ifdef ENABLE_DEBUGGER_SUPPORT
 RUNTIME_FUNCTION(Runtime_DebugBreak) {
   SealHandleScope shs(isolate);
   ASSERT(args.length() == 0);
@@ -13684,8 +13663,6 @@ RUNTIME_FUNCTION(Runtime_GetHeapUsage) {
   return Smi::FromInt(usage);
 }
 
-#endif  // ENABLE_DEBUGGER_SUPPORT
-
 
 #ifdef V8_I18N_SUPPORT
 RUNTIME_FUNCTION(Runtime_CanonicalizeLanguageTag) {
@@ -14586,8 +14563,7 @@ RUNTIME_FUNCTION(Runtime_TryMigrateInstance) {
   // code where we can't handle lazy deopts for lack of a suitable bailout
   // ID. So we just try migration and signal failure if necessary,
   // which will also trigger a deopt.
-  Handle<Object> result = JSObject::TryMigrateInstance(js_object);
-  if (result.is_null()) return Smi::FromInt(0);
+  if (!JSObject::TryMigrateInstance(js_object)) return Smi::FromInt(0);
   return *object;
 }
 
@@ -15127,7 +15103,7 @@ void Runtime::InitializeIntrinsicFunctionNames(Isolate* isolate,
   for (int i = 0; i < kNumFunctions; ++i) {
     const char* name = kIntrinsicFunctions[i].name;
     if (name == NULL) continue;
-    Handle<NameDictionary> new_dict = NameDictionary::AddNameEntry(
+    Handle<NameDictionary> new_dict = NameDictionary::Add(
         dict,
         isolate->factory()->InternalizeUtf8String(name),
         Handle<Smi>(Smi::FromInt(i), isolate),
@@ -15140,7 +15116,7 @@ void Runtime::InitializeIntrinsicFunctionNames(Isolate* isolate,
 
 const Runtime::Function* Runtime::FunctionForName(Handle<String> name) {
   Heap* heap = name->GetHeap();
-  int entry = heap->intrinsic_function_names()->FindEntry(*name);
+  int entry = heap->intrinsic_function_names()->FindEntry(name);
   if (entry != kNotFound) {
     Object* smi_index = heap->intrinsic_function_names()->ValueAt(entry);
     int function_index = Smi::cast(smi_index)->value();

@@ -1,29 +1,6 @@
 // Copyright 2012 the V8 project authors. All rights reserved.
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are
-// met:
-//
-//     * Redistributions of source code must retain the above copyright
-//       notice, this list of conditions and the following disclaimer.
-//     * Redistributions in binary form must reproduce the above
-//       copyright notice, this list of conditions and the following
-//       disclaimer in the documentation and/or other materials provided
-//       with the distribution.
-//     * Neither the name of Google Inc. nor the names of its
-//       contributors may be used to endorse or promote products derived
-//       from this software without specific prior written permission.
-//
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-// "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-// LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-// A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-// OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-// SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-// LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-// DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-// THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-// (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
 //
 // Review notes:
 //
@@ -216,6 +193,11 @@ bool Object::IsSpecFunction() {
   if (!Object::IsHeapObject()) return false;
   InstanceType type = HeapObject::cast(this)->map()->instance_type();
   return type == JS_FUNCTION_TYPE || type == JS_FUNCTION_PROXY_TYPE;
+}
+
+
+bool Object::IsTemplateInfo() {
+  return IsObjectTemplateInfo() || IsFunctionTemplateInfo();
 }
 
 
@@ -470,10 +452,26 @@ uc32 FlatStringReader::Get(int index) {
 }
 
 
-Handle<Object> HashTableKey::AsHandle(Isolate* isolate) {
-  CALL_HEAP_FUNCTION(isolate, AsObject(isolate->heap()), Object);
+Handle<Object> StringTableShape::AsHandle(Isolate* isolate, HashTableKey* key) {
+  return key->AsHandle(isolate);
 }
 
+
+Handle<Object> MapCacheShape::AsHandle(Isolate* isolate, HashTableKey* key) {
+  return key->AsHandle(isolate);
+}
+
+
+Handle<Object> CompilationCacheShape::AsHandle(Isolate* isolate,
+                                               HashTableKey* key) {
+  return key->AsHandle(isolate);
+}
+
+
+Handle<Object> CodeCacheHashTableShape::AsHandle(Isolate* isolate,
+                                                 HashTableKey* key) {
+  return key->AsHandle(isolate);
+}
 
 template <typename Char>
 class SequentialStringKey : public HashTableKey {
@@ -511,7 +509,7 @@ class OneByteStringKey : public SequentialStringKey<uint8_t> {
     return String::cast(string)->IsOneByteEqualTo(string_);
   }
 
-  virtual MaybeObject* AsObject(Heap* heap) V8_OVERRIDE;
+  virtual Handle<Object> AsHandle(Isolate* isolate) V8_OVERRIDE;
 };
 
 
@@ -542,7 +540,7 @@ class SubStringKey : public HashTableKey {
   }
 
   virtual bool IsMatch(Object* string) V8_OVERRIDE;
-  virtual MaybeObject* AsObject(Heap* heap) V8_OVERRIDE;
+  virtual Handle<Object> AsHandle(Isolate* isolate) V8_OVERRIDE;
 
  private:
   const Char* GetChars();
@@ -571,7 +569,7 @@ class TwoByteStringKey : public SequentialStringKey<uc16> {
     return String::cast(string)->IsTwoByteEqualTo(string_);
   }
 
-  virtual MaybeObject* AsObject(Heap* heap) V8_OVERRIDE;
+  virtual Handle<Object> AsHandle(Isolate* isolate) V8_OVERRIDE;
 };
 
 
@@ -597,11 +595,10 @@ class Utf8StringKey : public HashTableKey {
     return String::cast(other)->Hash();
   }
 
-  virtual MaybeObject* AsObject(Heap* heap) V8_OVERRIDE {
+  virtual Handle<Object> AsHandle(Isolate* isolate) V8_OVERRIDE {
     if (hash_field_ == 0) Hash();
-    return heap->AllocateInternalizedStringFromUtf8(string_,
-                                                    chars_,
-                                                    hash_field_);
+    return isolate->factory()->NewInternalizedStringFromUtf8(
+        string_, chars_, hash_field_);
   }
 
   Vector<const char> string_;
@@ -4660,6 +4657,7 @@ bool Code::marked_for_deoptimization() {
 
 void Code::set_marked_for_deoptimization(bool flag) {
   ASSERT(kind() == OPTIMIZED_FUNCTION);
+  ASSERT(!flag || AllowDeoptimization::IsAllowed(GetIsolate()));
   int previous = READ_UINT32_FIELD(this, kKindSpecificFlags1Offset);
   int updated = MarkedForDeoptimizationField::update(previous, flag);
   WRITE_UINT32_FIELD(this, kKindSpecificFlags1Offset, updated);
@@ -5162,7 +5160,6 @@ void Script::set_compilation_state(CompilationState state) {
 }
 
 
-#ifdef ENABLE_DEBUGGER_SUPPORT
 ACCESSORS(DebugInfo, shared, SharedFunctionInfo, kSharedFunctionInfoIndex)
 ACCESSORS(DebugInfo, original_code, Code, kOriginalCodeIndex)
 ACCESSORS(DebugInfo, code, Code, kPatchedCodeIndex)
@@ -5172,7 +5169,6 @@ ACCESSORS_TO_SMI(BreakPointInfo, code_position, kCodePositionIndex)
 ACCESSORS_TO_SMI(BreakPointInfo, source_position, kSourcePositionIndex)
 ACCESSORS_TO_SMI(BreakPointInfo, statement_position, kStatementPositionIndex)
 ACCESSORS(BreakPointInfo, break_point_objects, Object, kBreakPointObjectsIndex)
-#endif
 
 ACCESSORS(SharedFunctionInfo, name, Object, kNameOffset)
 ACCESSORS(SharedFunctionInfo, optimized_code_map, Object,
@@ -6236,24 +6232,6 @@ bool JSObject::HasIndexedInterceptor() {
 }
 
 
-MaybeObject* JSObject::EnsureWritableFastElements() {
-  ASSERT(HasFastSmiOrObjectElements());
-  FixedArray* elems = FixedArray::cast(elements());
-  Isolate* isolate = GetIsolate();
-  if (elems->map() != isolate->heap()->fixed_cow_array_map()) return elems;
-  Object* writable_elems;
-  { MaybeObject* maybe_writable_elems = isolate->heap()->CopyFixedArrayWithMap(
-      elems, isolate->heap()->fixed_array_map());
-    if (!maybe_writable_elems->ToObject(&writable_elems)) {
-      return maybe_writable_elems;
-    }
-  }
-  set_elements(FixedArray::cast(writable_elems));
-  isolate->counters()->cow_arrays_converted()->Increment();
-  return writable_elems;
-}
-
-
 NameDictionary* JSObject::property_dictionary() {
   ASSERT(!HasFastProperties());
   return NameDictionary::cast(properties());
@@ -6592,16 +6570,16 @@ bool AccessorPair::prohibits_overwriting() {
 
 template<typename Derived, typename Shape, typename Key>
 void Dictionary<Derived, Shape, Key>::SetEntry(int entry,
-                                               Object* key,
-                                               Object* value) {
+                                               Handle<Object> key,
+                                               Handle<Object> value) {
   SetEntry(entry, key, value, PropertyDetails(Smi::FromInt(0)));
 }
 
 
 template<typename Derived, typename Shape, typename Key>
 void Dictionary<Derived, Shape, Key>::SetEntry(int entry,
-                                               Object* key,
-                                               Object* value,
+                                               Handle<Object> key,
+                                               Handle<Object> value,
                                                PropertyDetails details) {
   ASSERT(!key->IsName() ||
          details.IsDeleted() ||
@@ -6609,8 +6587,8 @@ void Dictionary<Derived, Shape, Key>::SetEntry(int entry,
   int index = DerivedHashTable::EntryToIndex(entry);
   DisallowHeapAllocation no_gc;
   WriteBarrierMode mode = FixedArray::GetWriteBarrierMode(no_gc);
-  FixedArray::set(index, key, mode);
-  FixedArray::set(index+1, value, mode);
+  FixedArray::set(index, *key, mode);
+  FixedArray::set(index+1, *value, mode);
   FixedArray::set(index+2, details.AsSmi());
 }
 
@@ -6632,9 +6610,11 @@ uint32_t UnseededNumberDictionaryShape::HashForObject(uint32_t key,
   return ComputeIntegerHash(static_cast<uint32_t>(other->Number()), 0);
 }
 
+
 uint32_t SeededNumberDictionaryShape::SeededHash(uint32_t key, uint32_t seed) {
   return ComputeIntegerHash(key, seed);
 }
+
 
 uint32_t SeededNumberDictionaryShape::SeededHashForObject(uint32_t key,
                                                           uint32_t seed,
@@ -6643,16 +6623,13 @@ uint32_t SeededNumberDictionaryShape::SeededHashForObject(uint32_t key,
   return ComputeIntegerHash(static_cast<uint32_t>(other->Number()), seed);
 }
 
-MaybeObject* NumberDictionaryShape::AsObject(Heap* heap, uint32_t key) {
-  return heap->NumberFromUint32(key);
-}
 
 Handle<Object> NumberDictionaryShape::AsHandle(Isolate* isolate, uint32_t key) {
   return isolate->factory()->NewNumberFromUint(key);
 }
 
 
-bool NameDictionaryShape::IsMatch(Name* key, Object* other) {
+bool NameDictionaryShape::IsMatch(Handle<Name> key, Object* other) {
   // We know that all entries in a hash table had their hash keys created.
   // Use that knowledge to have fast failure.
   if (key->Hash() != Name::cast(other)->Hash()) return false;
@@ -6660,70 +6637,72 @@ bool NameDictionaryShape::IsMatch(Name* key, Object* other) {
 }
 
 
-uint32_t NameDictionaryShape::Hash(Name* key) {
+uint32_t NameDictionaryShape::Hash(Handle<Name> key) {
   return key->Hash();
 }
 
 
-uint32_t NameDictionaryShape::HashForObject(Name* key, Object* other) {
+uint32_t NameDictionaryShape::HashForObject(Handle<Name> key, Object* other) {
   return Name::cast(other)->Hash();
 }
 
 
-MaybeObject* NameDictionaryShape::AsObject(Heap* heap, Name* key) {
+Handle<Object> NameDictionaryShape::AsHandle(Isolate* isolate,
+                                             Handle<Name> key) {
   ASSERT(key->IsUniqueName());
   return key;
 }
 
 
-Handle<Object> NameDictionaryShape::AsHandle(Isolate* isolate, Name* key) {
-  ASSERT(key->IsUniqueName());
-  // TODO(ishell): Convert Name* to Handle<Name> to avoid re-wrapping here.
-  return handle(key, isolate);
+void NameDictionary::DoGenerateNewEnumerationIndices(
+    Handle<NameDictionary> dictionary) {
+  DerivedDictionary::GenerateNewEnumerationIndices(dictionary);
 }
 
 
-bool ObjectHashTableShape::IsMatch(Object* key, Object* other) {
+bool ObjectHashTableShape::IsMatch(Handle<Object> key, Object* other) {
   return key->SameValue(other);
 }
 
 
-uint32_t ObjectHashTableShape::Hash(Object* key) {
+uint32_t ObjectHashTableShape::Hash(Handle<Object> key) {
   return Smi::cast(key->GetHash())->value();
 }
 
 
-uint32_t ObjectHashTableShape::HashForObject(Object* key, Object* other) {
+uint32_t ObjectHashTableShape::HashForObject(Handle<Object> key,
+                                             Object* other) {
   return Smi::cast(other->GetHash())->value();
 }
 
 
-MaybeObject* ObjectHashTableShape::AsObject(Heap* heap, Object* key) {
+Handle<Object> ObjectHashTableShape::AsHandle(Isolate* isolate,
+                                              Handle<Object> key) {
   return key;
 }
 
 
 Handle<ObjectHashTable> ObjectHashTable::Shrink(
     Handle<ObjectHashTable> table, Handle<Object> key) {
-  return HashTable_::Shrink(table, *key);
+  return DerivedHashTable::Shrink(table, key);
 }
 
 
 template <int entrysize>
-bool WeakHashTableShape<entrysize>::IsMatch(Object* key, Object* other) {
+bool WeakHashTableShape<entrysize>::IsMatch(Handle<Object> key, Object* other) {
   return key->SameValue(other);
 }
 
 
 template <int entrysize>
-uint32_t WeakHashTableShape<entrysize>::Hash(Object* key) {
-  intptr_t hash = reinterpret_cast<intptr_t>(key);
+uint32_t WeakHashTableShape<entrysize>::Hash(Handle<Object> key) {
+  intptr_t hash = reinterpret_cast<intptr_t>(*key);
   return (uint32_t)(hash & 0xFFFFFFFF);
 }
 
 
 template <int entrysize>
-uint32_t WeakHashTableShape<entrysize>::HashForObject(Object* key,
+uint32_t WeakHashTableShape<entrysize>::HashForObject(Handle<Object> key,
                                                       Object* other) {
   intptr_t hash = reinterpret_cast<intptr_t>(other);
   return (uint32_t)(hash & 0xFFFFFFFF);
@@ -6731,8 +6710,8 @@ uint32_t WeakHashTableShape<entrysize>::HashForObject(Object* key,
 
 
 template <int entrysize>
-MaybeObject* WeakHashTableShape<entrysize>::AsObject(Heap* heap,
-                                                    Object* key) {
+Handle<Object> WeakHashTableShape<entrysize>::AsHandle(Isolate* isolate,
+                                                       Handle<Object> key) {
   return key;
 }
 
@@ -6791,24 +6770,6 @@ void JSArray::SetContent(Handle<JSArray> array,
             Handle<FixedArray>::cast(storage)->ContainsOnlySmisOrHoles()))));
   array->set_elements(*storage);
   array->set_length(Smi::FromInt(storage->length()));
-}
-
-
-MaybeObject* FixedArray::Copy() {
-  if (length() == 0) return this;
-  return GetHeap()->CopyFixedArray(this);
-}
-
-
-MaybeObject* FixedDoubleArray::Copy() {
-  if (length() == 0) return this;
-  return GetHeap()->CopyFixedDoubleArray(this);
-}
-
-
-MaybeObject* ConstantPoolArray::Copy() {
-  if (length() == 0) return this;
-  return GetHeap()->CopyConstantPoolArray(this);
 }
 
 

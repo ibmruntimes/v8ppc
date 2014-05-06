@@ -1,29 +1,6 @@
 // Copyright 2012 the V8 project authors. All rights reserved.
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are
-// met:
-//
-//     * Redistributions of source code must retain the above copyright
-//       notice, this list of conditions and the following disclaimer.
-//     * Redistributions in binary form must reproduce the above
-//       copyright notice, this list of conditions and the following
-//       disclaimer in the documentation and/or other materials provided
-//       with the distribution.
-//     * Neither the name of Google Inc. nor the names of its
-//       contributors may be used to endorse or promote products derived
-//       from this software without specific prior written permission.
-//
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-// "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-// LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-// A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-// OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-// SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-// LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-// DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-// THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-// (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
 
 #include "v8.h"
 
@@ -53,12 +30,12 @@
 namespace v8 {
 namespace internal {
 
-#ifdef ENABLE_DEBUGGER_SUPPORT
-
 
 #if V8_OS_AIX
 static bool message_handled = true;
 #endif /* V8_OS_AIX */
+
+
 Debug::Debug(Isolate* isolate)
     : has_break_points_(false),
       script_cache_(NULL),
@@ -2641,13 +2618,15 @@ MaybeHandle<Object> Debugger::MakeBreakEvent(Handle<Object> break_points_hit) {
 
 
 MaybeHandle<Object> Debugger::MakeExceptionEvent(Handle<Object> exception,
-                                                 bool uncaught) {
+                                                 bool uncaught,
+                                                 Handle<Object> promise) {
   Handle<Object> exec_state;
   if (!MakeExecutionState().ToHandle(&exec_state)) return MaybeHandle<Object>();
   // Create the new exception event object.
   Handle<Object> argv[] = { exec_state,
                             exception,
-                            isolate_->factory()->ToBoolean(uncaught) };
+                            isolate_->factory()->ToBoolean(uncaught),
+                            promise };
   return MakeJSObject(CStrVector("MakeExceptionEvent"), ARRAY_SIZE(argv), argv);
 }
 
@@ -2677,7 +2656,9 @@ MaybeHandle<Object> Debugger::MakeScriptCollectedEvent(int id) {
 }
 
 
-void Debugger::OnException(Handle<Object> exception, bool uncaught) {
+void Debugger::OnException(Handle<Object> exception,
+                           bool uncaught,
+                           Handle<Object> promise) {
   HandleScope scope(isolate_);
   Debug* debug = isolate_->debug();
 
@@ -2701,13 +2682,21 @@ void Debugger::OnException(Handle<Object> exception, bool uncaught) {
 
   // Clear all current stepping setup.
   debug->ClearStepping();
+
+  // Determine event;
+  DebugEvent event = promise->IsUndefined()
+      ? v8::Exception : v8::UncaughtExceptionInPromise;
+
   // Create the event data object.
   Handle<Object> event_data;
   // Bail out and don't call debugger if exception.
-  if (!MakeExceptionEvent(exception, uncaught).ToHandle(&event_data)) return;
+  if (!MakeExceptionEvent(
+          exception, uncaught, promise).ToHandle(&event_data)) {
+    return;
+  }
 
   // Process debug event.
-  ProcessDebugEvent(v8::Exception, Handle<JSObject>::cast(event_data), false);
+  ProcessDebugEvent(event, Handle<JSObject>::cast(event_data), false);
   // Return to continue execution from where the exception was thrown.
 }
 
@@ -3773,7 +3762,5 @@ void MessageDispatchHelperThread::Run() {
     }
   }
 }
-
-#endif  // ENABLE_DEBUGGER_SUPPORT
 
 } }  // namespace v8::internal

@@ -1,29 +1,6 @@
 // Copyright 2012 the V8 project authors. All rights reserved.
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are
-// met:
-//
-//     * Redistributions of source code must retain the above copyright
-//       notice, this list of conditions and the following disclaimer.
-//     * Redistributions in binary form must reproduce the above
-//       copyright notice, this list of conditions and the following
-//       disclaimer in the documentation and/or other materials provided
-//       with the distribution.
-//     * Neither the name of Google Inc. nor the names of its
-//       contributors may be used to endorse or promote products derived
-//       from this software without specific prior written permission.
-//
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-// "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-// LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-// A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-// OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-// SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-// LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-// DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-// THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-// (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
 
 #ifndef V8_HYDROGEN_INSTRUCTIONS_H_
 #define V8_HYDROGEN_INSTRUCTIONS_H_
@@ -32,13 +9,13 @@
 
 #include "allocation.h"
 #include "code-stubs.h"
+#include "conversions.h"
 #include "data-flow.h"
 #include "deoptimizer.h"
 #include "small-pointer-list.h"
 #include "string-stream.h"
 #include "unique.h"
-#include "v8conversions.h"
-#include "v8utils.h"
+#include "utils.h"
 #include "zone.h"
 
 namespace v8 {
@@ -2085,14 +2062,15 @@ class HEnterInlined V8_FINAL : public HTemplateInstruction<0> {
  public:
   static HEnterInlined* New(Zone* zone,
                             HValue* context,
+                            BailoutId return_id,
                             Handle<JSFunction> closure,
                             int arguments_count,
                             FunctionLiteral* function,
                             InliningKind inlining_kind,
                             Variable* arguments_var,
                             HArgumentsObject* arguments_object) {
-    return new(zone) HEnterInlined(closure, arguments_count, function,
-                                   inlining_kind, arguments_var,
+    return new(zone) HEnterInlined(return_id, closure, arguments_count,
+                                   function, inlining_kind, arguments_var,
                                    arguments_object, zone);
   }
 
@@ -2107,6 +2085,7 @@ class HEnterInlined V8_FINAL : public HTemplateInstruction<0> {
   void set_arguments_pushed() { arguments_pushed_ = true; }
   FunctionLiteral* function() const { return function_; }
   InliningKind inlining_kind() const { return inlining_kind_; }
+  BailoutId ReturnId() const { return return_id_; }
 
   virtual Representation RequiredInputRepresentation(int index) V8_OVERRIDE {
     return Representation::None();
@@ -2118,14 +2097,16 @@ class HEnterInlined V8_FINAL : public HTemplateInstruction<0> {
   DECLARE_CONCRETE_INSTRUCTION(EnterInlined)
 
  private:
-  HEnterInlined(Handle<JSFunction> closure,
+  HEnterInlined(BailoutId return_id,
+                Handle<JSFunction> closure,
                 int arguments_count,
                 FunctionLiteral* function,
                 InliningKind inlining_kind,
                 Variable* arguments_var,
                 HArgumentsObject* arguments_object,
                 Zone* zone)
-      : closure_(closure),
+      : return_id_(return_id),
+        closure_(closure),
         arguments_count_(arguments_count),
         arguments_pushed_(false),
         function_(function),
@@ -2135,6 +2116,7 @@ class HEnterInlined V8_FINAL : public HTemplateInstruction<0> {
         return_targets_(2, zone) {
   }
 
+  BailoutId return_id_;
   Handle<JSFunction> closure_;
   int arguments_count_;
   bool arguments_pushed_;

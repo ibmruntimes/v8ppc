@@ -1,29 +1,6 @@
 // Copyright 2012 the V8 project authors. All rights reserved.
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are
-// met:
-//
-//     * Redistributions of source code must retain the above copyright
-//       notice, this list of conditions and the following disclaimer.
-//     * Redistributions in binary form must reproduce the above
-//       copyright notice, this list of conditions and the following
-//       disclaimer in the documentation and/or other materials provided
-//       with the distribution.
-//     * Neither the name of Google Inc. nor the names of its
-//       contributors may be used to endorse or promote products derived
-//       from this software without specific prior written permission.
-//
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-// "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-// LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-// A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-// OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-// SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-// LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-// DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-// THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-// (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
 
 #include "api.h"
 
@@ -106,7 +83,7 @@ namespace v8 {
 
 #define EXCEPTION_BAILOUT_CHECK_DO_CALLBACK(isolate, value)                    \
   EXCEPTION_BAILOUT_CHECK_GENERIC(                                             \
-      isolate, value, i::V8::FireCallCompletedCallback(isolate);)
+      isolate, value, isolate->FireCallCompletedCallback();)
 
 
 #define EXCEPTION_BAILOUT_CHECK(isolate, value)                                \
@@ -694,7 +671,7 @@ static i::Handle<i::FixedArray> EmbedderDataFor(Context* context,
     return i::Handle<i::FixedArray>();
   }
   int new_size = i::Max(index, data->length() << 1) + 1;
-  data = env->GetIsolate()->factory()->CopySizeFixedArray(data, new_size);
+  data = i::FixedArray::CopySize(data, new_size);
   env->set_embedder_data(*data);
   return data;
 }
@@ -6491,12 +6468,6 @@ void V8::RemoveMemoryAllocationCallback(MemoryAllocationCallback callback) {
 }
 
 
-void V8::AddCallCompletedCallback(CallCompletedCallback callback) {
-  if (callback == NULL) return;
-  i::V8::AddCallCompletedCallback(callback);
-}
-
-
 void V8::RunMicrotasks(Isolate* isolate) {
   i::Isolate* i_isolate = reinterpret_cast<i::Isolate*>(isolate);
   i::HandleScope scope(i_isolate);
@@ -6513,11 +6484,6 @@ void V8::EnqueueMicrotask(Isolate* isolate, Handle<Function> microtask) {
 
 void V8::SetAutorunMicrotasks(Isolate* isolate, bool autorun) {
   reinterpret_cast<i::Isolate*>(isolate)->set_autorun_microtasks(autorun);
-}
-
-
-void V8::RemoveCallCompletedCallback(CallCompletedCallback callback) {
-  i::V8::RemoveCallCompletedCallback(callback);
 }
 
 
@@ -6669,14 +6635,14 @@ void Isolate::SetEventLogger(LogEventCallback that) {
 
 void Isolate::AddCallCompletedCallback(CallCompletedCallback callback) {
   if (callback == NULL) return;
-  // TODO(jochen): Make this per isolate.
-  i::V8::AddCallCompletedCallback(callback);
+  i::Isolate* isolate = reinterpret_cast<i::Isolate*>(this);
+  isolate->AddCallCompletedCallback(callback);
 }
 
 
 void Isolate::RemoveCallCompletedCallback(CallCompletedCallback callback) {
-  // TODO(jochen): Make this per isolate.
-  i::V8::RemoveCallCompletedCallback(callback);
+  i::Isolate* isolate = reinterpret_cast<i::Isolate*>(this);
+  isolate->RemoveCallCompletedCallback(callback);
 }
 
 
@@ -6808,8 +6774,6 @@ Local<Value> Exception::Error(v8::Handle<v8::String> raw_message) {
 
 
 // --- D e b u g   S u p p o r t ---
-
-#ifdef ENABLE_DEBUGGER_SUPPORT
 
 bool Debug::SetDebugEventListener2(EventCallback2 that, Handle<Value> data) {
   i::Isolate* isolate = i::Isolate::Current();
@@ -6975,9 +6939,6 @@ void Debug::SetLiveEditEnabled(Isolate* isolate, bool enable) {
 }
 
 
-#endif  // ENABLE_DEBUGGER_SUPPORT
-
-
 Handle<String> CpuProfileNode::GetFunctionName() const {
   i::Isolate* isolate = i::Isolate::Current();
   const i::ProfileNode* node = reinterpret_cast<const i::ProfileNode*>(this);
@@ -7080,6 +7041,12 @@ const CpuProfileNode* CpuProfile::GetTopDownRoot() const {
 const CpuProfileNode* CpuProfile::GetSample(int index) const {
   const i::CpuProfile* profile = reinterpret_cast<const i::CpuProfile*>(this);
   return reinterpret_cast<const CpuProfileNode*>(profile->sample(index));
+}
+
+
+int64_t CpuProfile::GetSampleTimestamp(int index) const {
+  const i::CpuProfile* profile = reinterpret_cast<const i::CpuProfile*>(this);
+  return (profile->sample_timestamp(index) - i::TimeTicks()).InMicroseconds();
 }
 
 

@@ -1,29 +1,6 @@
 // Copyright 2012 the V8 project authors. All rights reserved.
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are
-// met:
-//
-//     * Redistributions of source code must retain the above copyright
-//       notice, this list of conditions and the following disclaimer.
-//     * Redistributions in binary form must reproduce the above
-//       copyright notice, this list of conditions and the following
-//       disclaimer in the documentation and/or other materials provided
-//       with the distribution.
-//     * Neither the name of Google Inc. nor the names of its
-//       contributors may be used to endorse or promote products derived
-//       from this software without specific prior written permission.
-//
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-// "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-// LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-// A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-// OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-// SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-// LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-// DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-// THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-// (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
 
 #ifndef V8_ISOLATE_H_
 #define V8_ISOLATE_H_
@@ -95,11 +72,9 @@ template <StateTag Tag> class VMState;
 typedef void* ExternalReferenceRedirectorPointer();
 
 
-#ifdef ENABLE_DEBUGGER_SUPPORT
 class Debug;
 class Debugger;
 class DebuggerAgent;
-#endif
 
 #if defined(NATIVE_SIMULATION) || \
     !defined(__arm__) && V8_TARGET_ARCH_ARM || \
@@ -312,17 +287,6 @@ class ThreadLocalTop BASE_EMBEDDED {
 };
 
 
-#ifdef ENABLE_DEBUGGER_SUPPORT
-
-#define ISOLATE_DEBUGGER_INIT_LIST(V)                                          \
-  V(DebuggerAgent*, debugger_agent_instance, NULL)
-#else
-
-#define ISOLATE_DEBUGGER_INIT_LIST(V)
-
-#endif
-
-
 #if defined(NATIVE_SIMULATION) || \
     V8_TARGET_ARCH_ARM && !defined(__arm__) || \
     V8_TARGET_ARCH_ARM64 && !defined(__aarch64__) || \
@@ -397,8 +361,8 @@ typedef List<HeapObject*> DebugObjectCache;
   V(bool, fp_stubs_generated, false)                                           \
   V(int, max_available_threads, 0)                                             \
   V(uint32_t, per_isolate_assert_data, 0xFFFFFFFFu)                            \
-  ISOLATE_INIT_SIMULATOR_LIST(V)                                               \
-  ISOLATE_DEBUGGER_INIT_LIST(V)
+  V(DebuggerAgent*, debugger_agent_instance, NULL)                             \
+  ISOLATE_INIT_SIMULATOR_LIST(V)
 
 #define THREAD_LOCAL_TOP_ACCESSOR(type, name)                        \
   inline void set_##name(type v) { thread_local_top_.name##_ = v; }  \
@@ -974,7 +938,6 @@ class Isolate {
 
   inline bool IsCodePreAgingActive();
 
-#ifdef ENABLE_DEBUGGER_SUPPORT
   Debugger* debugger() {
     if (!NoBarrier_Load(&debugger_initialized_)) InitializeDebugger();
     return debugger_;
@@ -983,7 +946,6 @@ class Isolate {
     if (!NoBarrier_Load(&debugger_initialized_)) InitializeDebugger();
     return debug_;
   }
-#endif
 
   inline bool IsDebuggerActive();
   inline bool DebuggerHasBreakPoints();
@@ -1120,6 +1082,10 @@ class Isolate {
 
   // Get (and lazily initialize) the registry for per-isolate symbols.
   Handle<JSObject> GetSymbolRegistry();
+
+  void AddCallCompletedCallback(CallCompletedCallback callback);
+  void RemoveCallCompletedCallback(CallCompletedCallback callback);
+  void FireCallCompletedCallback();
 
  private:
   Isolate();
@@ -1302,10 +1268,8 @@ class Isolate {
   JSObject::SpillInformation js_spill_information_;
 #endif
 
-#ifdef ENABLE_DEBUGGER_SUPPORT
   Debugger* debugger_;
   Debug* debug_;
-#endif
   CpuProfiler* cpu_profiler_;
   HeapProfiler* heap_profiler_;
   FunctionEntryHook function_entry_hook_;
@@ -1340,6 +1304,9 @@ class Isolate {
   unsigned int stress_deopt_count_;
 
   int next_optimization_id_;
+
+  // List of callbacks when a Call completes.
+  List<CallCompletedCallback> call_completed_callbacks_;
 
   friend class ExecutionAccess;
   friend class HandleScopeImplementer;

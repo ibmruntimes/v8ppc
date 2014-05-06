@@ -388,9 +388,6 @@ void Genesis::SetFunctionInstanceDescriptor(
   int size = (prototypeMode == DONT_ADD_PROTOTYPE) ? 4 : 5;
   Map::EnsureDescriptorSlack(map, size);
 
-  Handle<Foreign> name(factory()->NewForeign(&Accessors::FunctionName));
-  Handle<Foreign> args(factory()->NewForeign(&Accessors::FunctionArguments));
-  Handle<Foreign> caller(factory()->NewForeign(&Accessors::FunctionCaller));
   PropertyAttributes attribs = static_cast<PropertyAttributes>(
       DONT_ENUM | DONT_DELETE | READ_ONLY);
 
@@ -401,16 +398,25 @@ void Genesis::SetFunctionInstanceDescriptor(
                           length, attribs);
     map->AppendDescriptor(&d);
   }
+  Handle<AccessorInfo> name =
+      Accessors::FunctionNameInfo(isolate(), attribs);
   {  // Add name.
-    CallbacksDescriptor d(factory()->name_string(), name, attribs);
+    CallbacksDescriptor d(Handle<Name>(Name::cast(name->name())),
+                          name, attribs);
     map->AppendDescriptor(&d);
   }
+  Handle<AccessorInfo> args =
+      Accessors::FunctionArgumentsInfo(isolate(), attribs);
   {  // Add arguments.
-    CallbacksDescriptor d(factory()->arguments_string(), args, attribs);
+    CallbacksDescriptor d(Handle<Name>(Name::cast(args->name())),
+                          args, attribs);
     map->AppendDescriptor(&d);
   }
+  Handle<AccessorInfo> caller =
+      Accessors::FunctionCallerInfo(isolate(), attribs);
   {  // Add caller.
-    CallbacksDescriptor d(factory()->caller_string(), caller, attribs);
+    CallbacksDescriptor d(Handle<Name>(Name::cast(caller->name())),
+                          caller, attribs);
     map->AppendDescriptor(&d);
   }
   if (prototypeMode != DONT_ADD_PROTOTYPE) {
@@ -519,7 +525,6 @@ void Genesis::SetStrictFunctionInstanceDescriptor(
   int size = (prototypeMode == DONT_ADD_PROTOTYPE) ? 4 : 5;
   Map::EnsureDescriptorSlack(map, size);
 
-  Handle<Foreign> name(factory()->NewForeign(&Accessors::FunctionName));
   Handle<AccessorPair> arguments(factory()->NewAccessorPair());
   Handle<AccessorPair> caller(factory()->NewAccessorPair());
   PropertyAttributes rw_attribs =
@@ -534,8 +539,11 @@ void Genesis::SetStrictFunctionInstanceDescriptor(
                           length, ro_attribs);
     map->AppendDescriptor(&d);
   }
+  Handle<AccessorInfo> name =
+      Accessors::FunctionNameInfo(isolate(), ro_attribs);
   {  // Add name.
-    CallbacksDescriptor d(factory()->name_string(), name, ro_attribs);
+    CallbacksDescriptor d(Handle<Name>(Name::cast(name->name())),
+                          name, ro_attribs);
     map->AppendDescriptor(&d);
   }
   {  // Add arguments.
@@ -855,12 +863,15 @@ void Genesis::InitializeGlobal(Handle<GlobalObject> inner_global,
     ASSERT(initial_map->elements_kind() == GetInitialFastElementsKind());
     Map::EnsureDescriptorSlack(initial_map, 1);
 
-    Handle<Foreign> array_length(factory->NewForeign(&Accessors::ArrayLength));
     PropertyAttributes attribs = static_cast<PropertyAttributes>(
         DONT_ENUM | DONT_DELETE);
 
+    Handle<AccessorInfo> array_length =
+        Accessors::ArrayLengthInfo(isolate, attribs);
     {  // Add length.
-      CallbacksDescriptor d(factory->length_string(), array_length, attribs);
+      CallbacksDescriptor d(
+          Handle<Name>(Name::cast(array_length->name())),
+          array_length, attribs);
       array_function->initial_map()->AppendDescriptor(&d);
     }
 
@@ -1435,9 +1446,7 @@ bool Genesis::CompileNative(Isolate* isolate,
                             Vector<const char> name,
                             Handle<String> source) {
   HandleScope scope(isolate);
-#ifdef ENABLE_DEBUGGER_SUPPORT
   isolate->debugger()->set_compiling_natives(true);
-#endif
   // During genesis, the boilerplate for stack overflow won't work until the
   // environment has been at least partially initialized. Add a stack check
   // before entering JS code to catch overflow early.
@@ -1453,9 +1462,7 @@ bool Genesis::CompileNative(Isolate* isolate,
                                     true);
   ASSERT(isolate->has_pending_exception() != result);
   if (!result) isolate->clear_pending_exception();
-#ifdef ENABLE_DEBUGGER_SUPPORT
   isolate->debugger()->set_compiling_natives(false);
-#endif
   return result;
 }
 
@@ -1610,14 +1617,14 @@ Handle<JSFunction> Genesis::InstallInternalArray(
   // Make "length" magic on instances.
   Map::EnsureDescriptorSlack(initial_map, 1);
 
-  Handle<Foreign> array_length(factory()->NewForeign(
-      &Accessors::ArrayLength));
   PropertyAttributes attribs = static_cast<PropertyAttributes>(
       DONT_ENUM | DONT_DELETE);
 
+  Handle<AccessorInfo> array_length =
+      Accessors::ArrayLengthInfo(isolate(), attribs);
   {  // Add length.
     CallbacksDescriptor d(
-        factory()->length_string(), array_length, attribs);
+        Handle<Name>(Name::cast(array_length->name())), array_length, attribs);
     array_function->initial_map()->AppendDescriptor(&d);
   }
 
@@ -2147,7 +2154,6 @@ bool Genesis::InstallSpecialObjects(Handle<Context> native_context) {
         false);
   }
 
-#ifdef ENABLE_DEBUGGER_SUPPORT
   // Expose the debug global object in global if a name for it is specified.
   if (FLAG_expose_debug_as != NULL && strlen(FLAG_expose_debug_as) != 0) {
     Debug* debug = isolate->debug();
@@ -2170,7 +2176,6 @@ bool Genesis::InstallSpecialObjects(Handle<Context> native_context) {
             global, debug_string, global_proxy, DONT_ENUM),
         false);
   }
-#endif
   return true;
 }
 
@@ -2505,12 +2510,14 @@ void Genesis::MakeFunctionInstancePrototypeWritable() {
 
 class NoTrackDoubleFieldsForSerializerScope {
  public:
-  NoTrackDoubleFieldsForSerializerScope() : flag_(FLAG_track_double_fields) {
+  explicit NoTrackDoubleFieldsForSerializerScope(Isolate* isolate)
+      : isolate_(isolate), flag_(FLAG_track_double_fields) {
     if (Serializer::enabled()) {
       // Disable tracking double fields because heap numbers treated as
       // immutable by the serializer.
       FLAG_track_double_fields = false;
     }
+    USE(isolate_);
   }
   ~NoTrackDoubleFieldsForSerializerScope() {
     if (Serializer::enabled()) {
@@ -2519,6 +2526,7 @@ class NoTrackDoubleFieldsForSerializerScope {
   }
 
  private:
+  Isolate* isolate_;
   bool flag_;
 };
 
@@ -2529,7 +2537,7 @@ Genesis::Genesis(Isolate* isolate,
                  v8::ExtensionConfiguration* extensions)
     : isolate_(isolate),
       active_(isolate->bootstrapper()) {
-  NoTrackDoubleFieldsForSerializerScope disable_double_tracking_for_serializer;
+  NoTrackDoubleFieldsForSerializerScope disable_scope(isolate);
   result_ = Handle<Context>::null();
   // If V8 cannot be initialized, just return.
   if (!V8::Initialize(NULL)) return;

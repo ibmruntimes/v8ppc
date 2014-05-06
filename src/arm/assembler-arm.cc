@@ -48,7 +48,6 @@ namespace internal {
 #ifdef DEBUG
 bool CpuFeatures::initialized_ = false;
 #endif
-bool CpuFeatures::hint_creating_snapshot_ = false;
 unsigned CpuFeatures::supported_ = 0;
 unsigned CpuFeatures::found_by_runtime_probing_only_ = 0;
 unsigned CpuFeatures::cross_compile_ = 0;
@@ -101,22 +100,6 @@ const char* DwVfpRegister::AllocationIndexToString(int index) {
 }
 
 
-void CpuFeatures::SetHintCreatingSnapshot() {
-  hint_creating_snapshot_ = true;
-}
-
-
-void CpuFeatures::ProbeWithoutIsolate() {
-  Probe(hint_creating_snapshot_);
-}
-
-
-void CpuFeatures::Probe() {
-  // The Serializer can only be queried after isolate initialization.
-  Probe(Serializer::enabled());
-}
-
-
 void CpuFeatures::Probe(bool serializer_enabled) {
   uint64_t standard_features = static_cast<unsigned>(
       OS::CpuFeaturesImpliedByPlatform()) | CpuFeaturesImpliedByCompiler();
@@ -133,8 +116,6 @@ void CpuFeatures::Probe(bool serializer_enabled) {
 
   if (serializer_enabled) {
     // No probing for features if we might serialize (generate snapshot).
-    printf("   ");
-    PrintFeatures();
     return;
   }
 
@@ -3175,9 +3156,7 @@ void Assembler::RecordComment(const char* msg) {
 void Assembler::RecordConstPool(int size) {
   // We only need this for debugger support, to correctly compute offsets in the
   // code.
-#ifdef ENABLE_DEBUGGER_SUPPORT
   RecordRelocInfo(RelocInfo::CONST_POOL, static_cast<intptr_t>(size));
-#endif
 }
 
 

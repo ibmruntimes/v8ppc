@@ -1,29 +1,6 @@
 // Copyright 2012 the V8 project authors. All rights reserved.
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are
-// met:
-//
-//     * Redistributions of source code must retain the above copyright
-//       notice, this list of conditions and the following disclaimer.
-//     * Redistributions in binary form must reproduce the above
-//       copyright notice, this list of conditions and the following
-//       disclaimer in the documentation and/or other materials provided
-//       with the distribution.
-//     * Neither the name of Google Inc. nor the names of its
-//       contributors may be used to endorse or promote products derived
-//       from this software without specific prior written permission.
-//
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-// "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-// LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-// A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-// OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-// SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-// LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-// DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-// THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-// (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
 
 #include "v8.h"
 
@@ -595,11 +572,8 @@ class MarkCompactCollector::SweeperTask : public v8::Task {
 
 
 void MarkCompactCollector::StartSweeperThreads() {
-  // TODO(hpayer): This check is just used for debugging purpose and
-  // should be removed or turned into an assert after investigating the
-  // crash in concurrent sweeping.
-  CHECK(free_list_old_pointer_space_.get()->IsEmpty());
-  CHECK(free_list_old_data_space_.get()->IsEmpty());
+  ASSERT(free_list_old_pointer_space_.get()->IsEmpty());
+  ASSERT(free_list_old_data_space_.get()->IsEmpty());
   sweeping_pending_ = true;
   for (int i = 0; i < isolate()->num_sweeper_threads(); i++) {
     isolate()->sweeper_threads()[i]->StartSweeping();
@@ -627,14 +601,14 @@ void MarkCompactCollector::WaitUntilSweepingCompleted() {
   }
   ParallelSweepSpacesComplete();
   sweeping_pending_ = false;
-  RefillFreeLists(heap()->paged_space(OLD_DATA_SPACE));
-  RefillFreeLists(heap()->paged_space(OLD_POINTER_SPACE));
+  RefillFreeList(heap()->paged_space(OLD_DATA_SPACE));
+  RefillFreeList(heap()->paged_space(OLD_POINTER_SPACE));
   heap()->paged_space(OLD_DATA_SPACE)->ResetUnsweptFreeBytes();
   heap()->paged_space(OLD_POINTER_SPACE)->ResetUnsweptFreeBytes();
 }
 
 
-intptr_t MarkCompactCollector::RefillFreeLists(PagedSpace* space) {
+void MarkCompactCollector::RefillFreeList(PagedSpace* space) {
   FreeList* free_list;
 
   if (space == heap()->old_pointer_space()) {
@@ -644,13 +618,12 @@ intptr_t MarkCompactCollector::RefillFreeLists(PagedSpace* space) {
   } else {
     // Any PagedSpace might invoke RefillFreeLists, so we need to make sure
     // to only refill them for old data and pointer spaces.
-    return 0;
+    return;
   }
 
   intptr_t freed_bytes = space->free_list()->Concatenate(free_list);
   space->AddToAccountingStats(freed_bytes);
   space->DecrementUnsweptFreeBytes(freed_bytes);
-  return freed_bytes;
 }
 
 
@@ -3112,8 +3085,7 @@ static String* UpdateReferenceInExternalStringTableEntry(Heap* heap,
 
 bool MarkCompactCollector::TryPromoteObject(HeapObject* object,
                                             int object_size) {
-  // TODO(hpayer): Replace that check with an assert.
-  CHECK(object_size <= Page::kMaxRegularHeapObjectSize);
+  ASSERT(object_size <= Page::kMaxRegularHeapObjectSize);
 
   OldSpace* target_space = heap()->TargetSpace(object);
 
@@ -3220,12 +3192,10 @@ void MarkCompactCollector::EvacuatePages() {
   int npages = evacuation_candidates_.length();
   for (int i = 0; i < npages; i++) {
     Page* p = evacuation_candidates_[i];
-    // TODO(hpayer): This check is just used for debugging purpose and
-    // should be removed or turned into an assert after investigating the
-    // crash in concurrent sweeping.
-    CHECK(p->IsEvacuationCandidate() ||
-          p->IsFlagSet(Page::RESCAN_ON_EVACUATION));
-    CHECK_EQ(static_cast<int>(p->parallel_sweeping()), 0);
+    ASSERT(p->IsEvacuationCandidate() ||
+           p->IsFlagSet(Page::RESCAN_ON_EVACUATION));
+    ASSERT(static_cast<int>(p->parallel_sweeping()) ==
+           MemoryChunk::PARALLEL_SWEEPING_DONE);
     if (p->IsEvacuationCandidate()) {
       // During compaction we might have to request a new page.
       // Check that space still have room for that.
@@ -3703,7 +3673,7 @@ void MarkCompactCollector::EvacuateNewSpaceAndCandidates() {
     WeakHashTable* table =
         WeakHashTable::cast(heap_->weak_object_to_code_table());
     table->Iterate(&updating_visitor);
-    table->Rehash(heap_->undefined_value());
+    table->Rehash(heap_->isolate()->factory()->undefined_value());
   }
 
   // Update pointers from external string table.
@@ -4074,10 +4044,7 @@ template<MarkCompactCollector::SweepingParallelism mode>
 intptr_t MarkCompactCollector::SweepConservatively(PagedSpace* space,
                                                    FreeList* free_list,
                                                    Page* p) {
-  // TODO(hpayer): This check is just used for debugging purpose and
-  // should be removed or turned into an assert after investigating the
-  // crash in concurrent sweeping.
-  CHECK(!p->IsEvacuationCandidate() && !p->WasSwept());
+  ASSERT(!p->IsEvacuationCandidate() && !p->WasSwept());
   ASSERT((mode == MarkCompactCollector::SWEEP_IN_PARALLEL &&
          free_list != NULL) ||
          (mode == MarkCompactCollector::SWEEP_SEQUENTIALLY &&
@@ -4185,7 +4152,6 @@ void MarkCompactCollector::SweepInParallel(PagedSpace* space) {
 
 void MarkCompactCollector::SweepSpace(PagedSpace* space, SweeperType sweeper) {
   space->set_was_swept_conservatively(sweeper == CONSERVATIVE ||
-                                      sweeper == LAZY_CONSERVATIVE ||
                                       sweeper == PARALLEL_CONSERVATIVE ||
                                       sweeper == CONCURRENT_CONSERVATIVE);
   space->ClearStats();
@@ -4193,7 +4159,6 @@ void MarkCompactCollector::SweepSpace(PagedSpace* space, SweeperType sweeper) {
   PageIterator it(space);
 
   int pages_swept = 0;
-  bool lazy_sweeping_active = false;
   bool unused_page_present = false;
   bool parallel_sweeping_active = false;
 
@@ -4237,25 +4202,6 @@ void MarkCompactCollector::SweepSpace(PagedSpace* space, SweeperType sweeper) {
         }
         SweepConservatively<SWEEP_SEQUENTIALLY>(space, NULL, p);
         pages_swept++;
-        break;
-      }
-      case LAZY_CONSERVATIVE: {
-        if (lazy_sweeping_active) {
-          if (FLAG_gc_verbose) {
-            PrintF("Sweeping 0x%" V8PRIxPTR " lazily postponed.\n",
-                   reinterpret_cast<intptr_t>(p));
-          }
-          space->IncreaseUnsweptFreeBytes(p);
-        } else {
-          if (FLAG_gc_verbose) {
-            PrintF("Sweeping 0x%" V8PRIxPTR " conservatively.\n",
-                   reinterpret_cast<intptr_t>(p));
-          }
-          SweepConservatively<SWEEP_SEQUENTIALLY>(space, NULL, p);
-          pages_swept++;
-          space->SetPagesToSweep(p->next_page());
-          lazy_sweeping_active = true;
-        }
         break;
       }
       case CONCURRENT_CONSERVATIVE:
@@ -4318,8 +4264,7 @@ void MarkCompactCollector::SweepSpaces() {
 #ifdef DEBUG
   state_ = SWEEP_SPACES;
 #endif
-  SweeperType how_to_sweep =
-      FLAG_lazy_sweeping ? LAZY_CONSERVATIVE : CONSERVATIVE;
+  SweeperType how_to_sweep = CONSERVATIVE;
   if (AreSweeperThreadsActivated()) {
     if (FLAG_parallel_sweeping) how_to_sweep = PARALLEL_CONSERVATIVE;
     if (FLAG_concurrent_sweeping) how_to_sweep = CONCURRENT_CONSERVATIVE;
@@ -4343,7 +4288,6 @@ void MarkCompactCollector::SweepSpaces() {
 
     if (how_to_sweep == PARALLEL_CONSERVATIVE ||
         how_to_sweep == CONCURRENT_CONSERVATIVE) {
-      // TODO(hpayer): fix race with concurrent sweeper
       StartSweeperThreads();
     }
 
@@ -4392,12 +4336,10 @@ void MarkCompactCollector::ParallelSweepSpacesComplete() {
 
 
 void MarkCompactCollector::EnableCodeFlushing(bool enable) {
-#ifdef ENABLE_DEBUGGER_SUPPORT
   if (isolate()->debug()->IsLoaded() ||
       isolate()->debug()->has_break_points()) {
     enable = false;
   }
-#endif
 
   if (enable) {
     if (code_flusher_ != NULL) return;
