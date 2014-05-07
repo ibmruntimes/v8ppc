@@ -1983,12 +1983,11 @@ void JSObject::EnqueueChangeRecord(Handle<JSObject> object,
                                    const char* type_str,
                                    Handle<Name> name,
                                    Handle<Object> old_value) {
+  ASSERT(!object->IsJSGlobalProxy());
+  ASSERT(!object->IsJSGlobalObject());
   Isolate* isolate = object->GetIsolate();
   HandleScope scope(isolate);
   Handle<String> type = isolate->factory()->InternalizeUtf8String(type_str);
-  if (object->IsJSGlobalObject()) {
-    object = handle(JSGlobalObject::cast(*object)->global_receiver(), isolate);
-  }
   Handle<Object> args[] = { type, object, name, old_value };
   int argc = name.is_null() ? 2 : old_value->IsTheHole() ? 3 : 4;
 
@@ -3155,9 +3154,12 @@ MaybeHandle<Object> JSObject::SetPropertyViaPrototypes(
       }
       case CALLBACKS: {
         *done = true;
-        Handle<Object> callback_object(result.GetCallbackObject(), isolate);
-        return SetPropertyWithCallback(object, callback_object, name, value,
-                                       handle(result.holder()), strict_mode);
+        if (!result.IsReadOnly()) {
+          Handle<Object> callback_object(result.GetCallbackObject(), isolate);
+          return SetPropertyWithCallback(object, callback_object, name, value,
+                                         handle(result.holder()), strict_mode);
+        }
+        break;
       }
       case HANDLER: {
         Handle<JSProxy> proxy(result.proxy());
@@ -3437,19 +3439,18 @@ static Handle<Map> AddMissingElementsTransitions(Handle<Map> map,
 }
 
 
-Handle<Map> JSObject::GetElementsTransitionMap(Handle<JSObject> object,
-                                               ElementsKind to_kind) {
-  Isolate* isolate = object->GetIsolate();
-  Handle<Map> current_map(object->map());
-  ElementsKind from_kind = current_map->elements_kind();
-  if (from_kind == to_kind) return current_map;
+Handle<Map> Map::TransitionElementsTo(Handle<Map> map,
+                                      ElementsKind to_kind) {
+  ElementsKind from_kind = map->elements_kind();
+  if (from_kind == to_kind) return map;
 
+  Isolate* isolate = map->GetIsolate();
   Context* native_context = isolate->context()->native_context();
   Object* maybe_array_maps = native_context->js_array_maps();
   if (maybe_array_maps->IsFixedArray()) {
     DisallowHeapAllocation no_gc;
     FixedArray* array_maps = FixedArray::cast(maybe_array_maps);
-    if (array_maps->get(from_kind) == *current_map) {
+    if (array_maps->get(from_kind) == *map) {
       Object* maybe_transitioned_map = array_maps->get(to_kind);
       if (maybe_transitioned_map->IsMap()) {
         return handle(Map::cast(maybe_transitioned_map));
@@ -3457,23 +3458,22 @@ Handle<Map> JSObject::GetElementsTransitionMap(Handle<JSObject> object,
     }
   }
 
-  return GetElementsTransitionMapSlow(object, to_kind);
+  return TransitionElementsToSlow(map, to_kind);
 }
 
 
-Handle<Map> JSObject::GetElementsTransitionMapSlow(Handle<JSObject> object,
-                                                   ElementsKind to_kind) {
-  Handle<Map> start_map(object->map());
-  ElementsKind from_kind = start_map->elements_kind();
+Handle<Map> Map::TransitionElementsToSlow(Handle<Map> map,
+                                          ElementsKind to_kind) {
+  ElementsKind from_kind = map->elements_kind();
 
   if (from_kind == to_kind) {
-    return start_map;
+    return map;
   }
 
   bool allow_store_transition =
       // Only remember the map transition if there is not an already existing
       // non-matching element transition.
-      !start_map->IsUndefined() && !start_map->is_shared() &&
+      !map->IsUndefined() && !map->is_shared() &&
       IsTransitionElementsKind(from_kind);
 
   // Only store fast element maps in ascending generality.
@@ -3484,10 +3484,10 @@ Handle<Map> JSObject::GetElementsTransitionMapSlow(Handle<JSObject> object,
   }
 
   if (!allow_store_transition) {
-    return Map::CopyAsElementsKind(start_map, to_kind, OMIT_TRANSITION);
+    return Map::CopyAsElementsKind(map, to_kind, OMIT_TRANSITION);
   }
 
-  return Map::AsElementsKind(start_map, to_kind);
+  return Map::AsElementsKind(map, to_kind);
 }
 
 
@@ -3500,6 +3500,13 @@ Handle<Map> Map::AsElementsKind(Handle<Map> map, ElementsKind kind) {
   }
 
   return AddMissingElementsTransitions(closest_map, kind);
+}
+
+
+Handle<Map> JSObject::GetElementsTransitionMap(Handle<JSObject> object,
+                                               ElementsKind to_kind) {
+  Handle<Map> map(object->map());
+  return Map::TransitionElementsTo(map, to_kind);
 }
 
 
@@ -5075,9 +5082,7 @@ Handle<SeededNumberDictionary> JSObject::NormalizeElements(
 }
 
 
-Smi* JSReceiver::GenerateIdentityHash() {
-  Isolate* isolate = GetIsolate();
-
+static Smi* GenerateIdentityHash(Isolate* isolate) {
   int hash_value;
   int attempts = 0;
   do {
@@ -5093,14 +5098,31 @@ Smi* JSReceiver::GenerateIdentityHash() {
 
 
 void JSObject::SetIdentityHash(Handle<JSObject> object, Handle<Smi> hash) {
+  ASSERT(!object->IsJSGlobalProxy());
   Isolate* isolate = object->GetIsolate();
   SetHiddenProperty(object, isolate->factory()->identity_hash_string(), hash);
+}
+
+
+template<typename ProxyType>
+static Handle<Object> GetOrCreateIdentityHashHelper(Handle<ProxyType> proxy) {
+  Isolate* isolate = proxy->GetIsolate();
+
+  Handle<Object> hash(proxy->hash(), isolate);
+  if (hash->IsSmi()) return hash;
+
+  hash = handle(GenerateIdentityHash(isolate), isolate);
+  proxy->set_hash(*hash);
+  return hash;
 }
 
 
 Object* JSObject::GetIdentityHash() {
   DisallowHeapAllocation no_gc;
   Isolate* isolate = GetIsolate();
+  if (IsJSGlobalProxy()) {
+    return JSGlobalProxy::cast(this)->hash();
+  }
   Object* stored_value =
       GetHiddenProperty(isolate->factory()->identity_hash_string());
   return stored_value->IsSmi()
@@ -5110,21 +5132,17 @@ Object* JSObject::GetIdentityHash() {
 
 
 Handle<Object> JSObject::GetOrCreateIdentityHash(Handle<JSObject> object) {
-  Handle<Object> hash(object->GetIdentityHash(), object->GetIsolate());
-  if (hash->IsSmi())
-    return hash;
+  if (object->IsJSGlobalProxy()) {
+    return GetOrCreateIdentityHashHelper(Handle<JSGlobalProxy>::cast(object));
+  }
 
   Isolate* isolate = object->GetIsolate();
 
-  hash = handle(object->GenerateIdentityHash(), isolate);
-  Handle<Object> result = SetHiddenProperty(object,
-      isolate->factory()->identity_hash_string(), hash);
+  Handle<Object> hash(object->GetIdentityHash(), isolate);
+  if (hash->IsSmi()) return hash;
 
-  if (result->IsUndefined()) {
-    // Trying to get hash of detached proxy.
-    return handle(Smi::FromInt(0), isolate);
-  }
-
+  hash = handle(GenerateIdentityHash(isolate), isolate);
+  SetHiddenProperty(object, isolate->factory()->identity_hash_string(), hash);
   return hash;
 }
 
@@ -5135,15 +5153,7 @@ Object* JSProxy::GetIdentityHash() {
 
 
 Handle<Object> JSProxy::GetOrCreateIdentityHash(Handle<JSProxy> proxy) {
-  Isolate* isolate = proxy->GetIsolate();
-
-  Handle<Object> hash(proxy->GetIdentityHash(), isolate);
-  if (hash->IsSmi())
-    return hash;
-
-  hash = handle(proxy->GenerateIdentityHash(), isolate);
-  proxy->set_hash(*hash);
-  return hash;
+  return GetOrCreateIdentityHashHelper(proxy);
 }
 
 
@@ -5151,6 +5161,8 @@ Object* JSObject::GetHiddenProperty(Handle<Name> key) {
   DisallowHeapAllocation no_gc;
   ASSERT(key->IsUniqueName());
   if (IsJSGlobalProxy()) {
+    // JSGlobalProxies store their hash internally.
+    ASSERT(*key != GetHeap()->identity_hash_string());
     // For a proxy, use the prototype as target object.
     Object* proxy_parent = GetPrototype();
     // If the proxy is detached, return undefined.
@@ -5185,6 +5197,8 @@ Handle<Object> JSObject::SetHiddenProperty(Handle<JSObject> object,
 
   ASSERT(key->IsUniqueName());
   if (object->IsJSGlobalProxy()) {
+    // JSGlobalProxies store their hash internally.
+    ASSERT(*key != *isolate->factory()->identity_hash_string());
     // For a proxy, use the prototype as target object.
     Handle<Object> proxy_parent(object->GetPrototype(), isolate);
     // If the proxy is detached, return undefined.
@@ -5922,6 +5936,8 @@ MaybeHandle<Object> JSObject::Freeze(Handle<JSObject> object) {
 
 
 void JSObject::SetObserved(Handle<JSObject> object) {
+  ASSERT(!object->IsJSGlobalProxy());
+  ASSERT(!object->IsJSGlobalObject());
   Isolate* isolate = object->GetIsolate();
   Handle<Map> new_map;
   Handle<Map> old_map(object->map(), isolate);
@@ -11282,10 +11298,11 @@ void Code::MakeOlder(MarkingParity current_parity) {
   if (sequence != NULL) {
     Age age;
     MarkingParity code_parity;
-    GetCodeAgeAndParity(sequence, &age, &code_parity);
+    Isolate* isolate = GetIsolate();
+    GetCodeAgeAndParity(isolate, sequence, &age, &code_parity);
     age = EffectiveAge(age);
     if (age != kLastCodeAge && code_parity != current_parity) {
-      PatchPlatformCodeAge(GetIsolate(),
+      PatchPlatformCodeAge(isolate,
                            sequence,
                            static_cast<Age>(age + 1),
                            current_parity);
@@ -11321,7 +11338,7 @@ Code::Age Code::GetRawAge() {
   }
   Age age;
   MarkingParity parity;
-  GetCodeAgeAndParity(sequence, &age, &parity);
+  GetCodeAgeAndParity(GetIsolate(), sequence, &age, &parity);
   return age;
 }
 
@@ -17166,6 +17183,10 @@ Handle<JSArrayBuffer> JSTypedArray::MaterializeArrayBuffer(
 
   ASSERT(IsFixedTypedArrayElementsKind(map->elements_kind()));
 
+  Handle<Map> new_map = Map::TransitionElementsTo(
+          map,
+          FixedToExternalElementsKind(map->elements_kind()));
+
   Handle<JSArrayBuffer> buffer = isolate->factory()->NewJSArrayBuffer();
   Handle<FixedTypedArrayBase> fixed_typed_array(
       FixedTypedArrayBase::cast(typed_array->elements()));
@@ -17178,9 +17199,6 @@ Handle<JSArrayBuffer> JSTypedArray::MaterializeArrayBuffer(
       isolate->factory()->NewExternalArray(
           fixed_typed_array->length(), typed_array->type(),
           static_cast<uint8_t*>(buffer->backing_store()));
-  Handle<Map> new_map = JSObject::GetElementsTransitionMap(
-          typed_array,
-          FixedToExternalElementsKind(map->elements_kind()));
 
   buffer->set_weak_first_view(*typed_array);
   ASSERT(typed_array->weak_next() == isolate->heap()->undefined_value());

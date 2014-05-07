@@ -2011,9 +2011,16 @@ void LCodeGen::DoConstantE(LConstantE* instr) {
 
 void LCodeGen::DoConstantT(LConstantT* instr) {
   Register reg = ToRegister(instr->result());
-  Handle<Object> handle = instr->value(isolate());
+  Handle<Object> object = instr->value(isolate());
   AllowDeferredHandleDereference smi_check;
-  __ LoadObject(reg, handle);
+  if (instr->hydrogen()->HasObjectMap()) {
+    Handle<Map> object_map = instr->hydrogen()->ObjectMap().handle();
+    ASSERT(object->IsHeapObject());
+    ASSERT(!object_map->is_stable() ||
+           *object_map == Handle<HeapObject>::cast(object)->map());
+    USE(object_map);
+  }
+  __ LoadObject(reg, object);
 }
 
 
@@ -5594,29 +5601,35 @@ void LCodeGen::DoCheckMaps(LCheckMaps* instr) {
     Register object_;
   };
 
-  if (instr->hydrogen()->CanOmitMapChecks()) return;
+  if (instr->hydrogen()->IsStabilityCheck()) {
+    const UniqueSet<Map>* maps = instr->hydrogen()->maps();
+    for (int i = 0; i < maps->size(); ++i) {
+      AddStabilityDependency(maps->at(i).handle());
+    }
+    return;
+  }
 
   LOperand* input = instr->value();
   ASSERT(input->IsRegister());
   Register reg = ToRegister(input);
 
   DeferredCheckMaps* deferred = NULL;
-  if (instr->hydrogen()->has_migration_target()) {
+  if (instr->hydrogen()->HasMigrationTarget()) {
     deferred = new(zone()) DeferredCheckMaps(this, instr, reg, x87_stack_);
     __ bind(deferred->check_maps());
   }
 
-  const UniqueSet<Map>* map_set = instr->hydrogen()->map_set();
+  const UniqueSet<Map>* maps = instr->hydrogen()->maps();
   Label success;
-  for (int i = 0; i < map_set->size() - 1; i++) {
-    Handle<Map> map = map_set->at(i).handle();
+  for (int i = 0; i < maps->size() - 1; i++) {
+    Handle<Map> map = maps->at(i).handle();
     __ CompareMap(reg, map);
     __ j(equal, &success, Label::kNear);
   }
 
-  Handle<Map> map = map_set->at(map_set->size() - 1).handle();
+  Handle<Map> map = maps->at(maps->size() - 1).handle();
   __ CompareMap(reg, map);
-  if (instr->hydrogen()->has_migration_target()) {
+  if (instr->hydrogen()->HasMigrationTarget()) {
     __ j(not_equal, deferred->entry());
   } else {
     DeoptimizeIf(not_equal, instr->environment());

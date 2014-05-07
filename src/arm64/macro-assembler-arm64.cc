@@ -1222,6 +1222,64 @@ void MacroAssembler::AssertStackConsistency() {
 }
 
 
+void MacroAssembler::AssertFPCRState(Register fpcr) {
+  if (emit_debug_code()) {
+    Label unexpected_mode, done;
+    UseScratchRegisterScope temps(this);
+    if (fpcr.IsNone()) {
+      fpcr = temps.AcquireX();
+      Mrs(fpcr, FPCR);
+    }
+
+    // Settings overridden by ConfiugreFPCR():
+    //   - Assert that default-NaN mode is set.
+    Tbz(fpcr, DN_offset, &unexpected_mode);
+
+    // Settings left to their default values:
+    //   - Assert that flush-to-zero is not set.
+    Tbnz(fpcr, FZ_offset, &unexpected_mode);
+    //   - Assert that the rounding mode is nearest-with-ties-to-even.
+    STATIC_ASSERT(FPTieEven == 0);
+    Tst(fpcr, RMode_mask);
+    B(eq, &done);
+
+    Bind(&unexpected_mode);
+    Abort(kUnexpectedFPCRMode);
+
+    Bind(&done);
+  }
+}
+
+
+void MacroAssembler::ConfigureFPCR() {
+  UseScratchRegisterScope temps(this);
+  Register fpcr = temps.AcquireX();
+  Mrs(fpcr, FPCR);
+
+  // If necessary, enable default-NaN mode. The default values of the other FPCR
+  // options should be suitable, and AssertFPCRState will verify that.
+  Label no_write_required;
+  Tbnz(fpcr, DN_offset, &no_write_required);
+
+  Orr(fpcr, fpcr, DN_mask);
+  Msr(FPCR, fpcr);
+
+  Bind(&no_write_required);
+  AssertFPCRState(fpcr);
+}
+
+
+void MacroAssembler::CanonicalizeNaN(const FPRegister& dst,
+                                     const FPRegister& src) {
+  AssertFPCRState();
+
+  // With DN=1 and RMode=FPTieEven, subtracting 0.0 preserves all inputs except
+  // for NaNs, which become the default NaN. We use fsub rather than fadd
+  // because sub preserves -0.0 inputs: -0.0 + 0.0 = 0.0, but -0.0 - 0.0 = -0.0.
+  Fsub(dst, src, fp_zero);
+}
+
+
 void MacroAssembler::LoadRoot(CPURegister destination,
                               Heap::RootListIndex index) {
   // TODO(jbramley): Most root values are constants, and can be synthesized
@@ -1615,14 +1673,7 @@ void MacroAssembler::CallRuntime(const Runtime::Function* f,
 
   // Check that the number of arguments matches what the function expects.
   // If f->nargs is -1, the function can accept a variable number of arguments.
-  if (f->nargs >= 0 && f->nargs != num_arguments) {
-    // Illegal operation: drop the stack arguments and return undefined.
-    if (num_arguments > 0) {
-      Drop(num_arguments);
-    }
-    LoadRoot(x0, Heap::kUndefinedValueRootIndex);
-    return;
-  }
+  CHECK(f->nargs < 0 || f->nargs == num_arguments);
 
   // Place the necessary arguments.
   Mov(x0, num_arguments);
@@ -3888,7 +3939,6 @@ void MacroAssembler::StoreNumberToDoubleElements(Register value_reg,
                                                  Register elements_reg,
                                                  Register scratch1,
                                                  FPRegister fpscratch1,
-                                                 FPRegister fpscratch2,
                                                  Label* fail,
                                                  int elements_offset) {
   ASSERT(!AreAliased(value_reg, key_reg, elements_reg, scratch1));
@@ -3906,12 +3956,9 @@ void MacroAssembler::StoreNumberToDoubleElements(Register value_reg,
            fail, DONT_DO_SMI_CHECK);
 
   Ldr(fpscratch1, FieldMemOperand(value_reg, HeapNumber::kValueOffset));
-  Fmov(fpscratch2, FixedDoubleArray::canonical_not_the_hole_nan_as_double());
 
-  // Check for NaN by comparing the number to itself: NaN comparison will
-  // report unordered, indicated by the overflow flag being set.
-  Fcmp(fpscratch1, fpscratch1);
-  Fcsel(fpscratch1, fpscratch2, fpscratch1, vs);
+  // Canonicalize NaNs.
+  CanonicalizeNaN(fpscratch1);
 
   // Store the result.
   Bind(&store_num);
@@ -5020,7 +5067,8 @@ void MacroAssembler::EmitFrameSetupForCodeAgePatching() {
   // TODO(jbramley): Other architectures use the internal memcpy to copy the
   // sequence. If this is a performance bottleneck, we should consider caching
   // the sequence and copying it in the same way.
-  InstructionAccurateScope scope(this, kCodeAgeSequenceSize / kInstructionSize);
+  InstructionAccurateScope scope(this,
+                                 kNoCodeAgeSequenceLength / kInstructionSize);
   ASSERT(jssp.Is(StackPointer()));
   EmitFrameSetupForCodeAgePatching(this);
 }
@@ -5028,7 +5076,8 @@ void MacroAssembler::EmitFrameSetupForCodeAgePatching() {
 
 
 void MacroAssembler::EmitCodeAgeSequence(Code* stub) {
-  InstructionAccurateScope scope(this, kCodeAgeSequenceSize / kInstructionSize);
+  InstructionAccurateScope scope(this,
+                                 kNoCodeAgeSequenceLength / kInstructionSize);
   ASSERT(jssp.Is(StackPointer()));
   EmitCodeAgeSequence(this, stub);
 }
@@ -5052,7 +5101,7 @@ void MacroAssembler::EmitFrameSetupForCodeAgePatching(Assembler * assm) {
   __ stp(fp, lr, MemOperand(jssp, 2 * kXRegSize));
   __ add(fp, jssp, StandardFrameConstants::kFixedFrameSizeFromFp);
 
-  __ AssertSizeOfCodeGeneratedSince(&start, kCodeAgeSequenceSize);
+  __ AssertSizeOfCodeGeneratedSince(&start, kNoCodeAgeSequenceLength);
 }
 
 
@@ -5075,46 +5124,17 @@ void MacroAssembler::EmitCodeAgeSequence(Assembler * assm,
   __ AssertSizeOfCodeGeneratedSince(&start, kCodeAgeStubEntryOffset);
   if (stub) {
     __ dc64(reinterpret_cast<uint64_t>(stub->instruction_start()));
-    __ AssertSizeOfCodeGeneratedSince(&start, kCodeAgeSequenceSize);
+    __ AssertSizeOfCodeGeneratedSince(&start, kNoCodeAgeSequenceLength);
   }
 }
 
 
-bool MacroAssembler::IsYoungSequence(byte* sequence) {
-  // Generate a young sequence to compare with.
-  const int length = kCodeAgeSequenceSize / kInstructionSize;
-  static bool initialized = false;
-  static byte young[kCodeAgeSequenceSize];
-  if (!initialized) {
-    PatchingAssembler patcher(young, length);
-    // The young sequence is the frame setup code for FUNCTION code types. It is
-    // generated by FullCodeGenerator::Generate.
-    MacroAssembler::EmitFrameSetupForCodeAgePatching(&patcher);
-    initialized = true;
-  }
-
-  bool is_young = (memcmp(sequence, young, kCodeAgeSequenceSize) == 0);
-  ASSERT(is_young || IsCodeAgeSequence(sequence));
+bool MacroAssembler::IsYoungSequence(Isolate* isolate, byte* sequence) {
+  bool is_young = isolate->code_aging_helper()->IsYoung(sequence);
+  ASSERT(is_young ||
+         isolate->code_aging_helper()->IsOld(sequence));
   return is_young;
 }
-
-
-#ifdef DEBUG
-bool MacroAssembler::IsCodeAgeSequence(byte* sequence) {
-  // The old sequence varies depending on the code age. However, the code up
-  // until kCodeAgeStubEntryOffset does not change, so we can check that part to
-  // get a reasonable level of verification.
-  const int length = kCodeAgeStubEntryOffset / kInstructionSize;
-  static bool initialized = false;
-  static byte old[kCodeAgeStubEntryOffset];
-  if (!initialized) {
-    PatchingAssembler patcher(old, length);
-    MacroAssembler::EmitCodeAgeSequence(&patcher, NULL);
-    initialized = true;
-  }
-  return memcmp(sequence, old, kCodeAgeStubEntryOffset) == 0;
-}
-#endif
 
 
 void MacroAssembler::TruncatingDiv(Register result,

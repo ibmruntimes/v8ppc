@@ -680,11 +680,13 @@ HConstant* HGraph::GetConstantMinus1() {
 }
 
 
-#define DEFINE_GET_CONSTANT(Name, name, htype, boolean_value)                  \
+#define DEFINE_GET_CONSTANT(Name, name, type, htype, boolean_value)            \
 HConstant* HGraph::GetConstant##Name() {                                       \
   if (!constant_##name##_.is_set()) {                                          \
     HConstant* constant = new(zone()) HConstant(                               \
         Unique<Object>::CreateImmovable(isolate()->factory()->name##_value()), \
+        Unique<Map>::CreateImmovable(isolate()->factory()->type##_map()),      \
+        false,                                                                 \
         Representation::Tagged(),                                              \
         htype,                                                                 \
         true,                                                                  \
@@ -698,11 +700,11 @@ HConstant* HGraph::GetConstant##Name() {                                       \
 }
 
 
-DEFINE_GET_CONSTANT(Undefined, undefined, HType::Tagged(), false)
-DEFINE_GET_CONSTANT(True, true, HType::Boolean(), true)
-DEFINE_GET_CONSTANT(False, false, HType::Boolean(), false)
-DEFINE_GET_CONSTANT(Hole, the_hole, HType::Tagged(), false)
-DEFINE_GET_CONSTANT(Null, null, HType::Tagged(), false)
+DEFINE_GET_CONSTANT(Undefined, undefined, undefined, HType::Tagged(), false)
+DEFINE_GET_CONSTANT(True, true, boolean, HType::Boolean(), true)
+DEFINE_GET_CONSTANT(False, false, boolean, HType::Boolean(), false)
+DEFINE_GET_CONSTANT(Hole, the_hole, the_hole, HType::Tagged(), false)
+DEFINE_GET_CONSTANT(Null, null, null, HType::Tagged(), false)
 
 
 #undef DEFINE_GET_CONSTANT
@@ -1236,11 +1238,6 @@ HValue* HGraphBuilder::BuildCheckHeapObject(HValue* obj) {
 void HGraphBuilder::FinishExitWithHardDeoptimization(const char* reason) {
   Add<HDeoptimize>(reason, Deoptimizer::EAGER);
   FinishExitCurrentBlock(New<HAbnormalExit>());
-}
-
-
-HValue* HGraphBuilder::BuildCheckMap(HValue* obj, Handle<Map> map) {
-  return Add<HCheckMaps>(obj, map, top_info());
 }
 
 
@@ -2144,13 +2141,13 @@ HInstruction* HGraphBuilder::BuildUncheckedMonomorphicElementAccess(
   if (access_type == STORE && (fast_elements || fast_smi_only_elements) &&
       store_mode != STORE_NO_TRANSITION_HANDLE_COW) {
     HCheckMaps* check_cow_map = Add<HCheckMaps>(
-        elements, isolate()->factory()->fixed_array_map(), top_info());
+        elements, isolate()->factory()->fixed_array_map());
     check_cow_map->ClearDependsOnFlag(kElementsKind);
   }
   HInstruction* length = NULL;
   if (is_js_array) {
     length = Add<HLoadNamedField>(
-        checked_object, static_cast<HValue*>(NULL),
+        checked_object->ActualValue(), checked_object,
         HObjectAccess::ForArrayLength(elements_kind));
   } else {
     length = AddLoadFixedArrayLength(elements);
@@ -2218,7 +2215,7 @@ HInstruction* HGraphBuilder::BuildUncheckedMonomorphicElementAccess(
                                             elements_kind, length);
       } else {
         HCheckMaps* check_cow_map = Add<HCheckMaps>(
-            elements, isolate()->factory()->fixed_array_map(), top_info());
+            elements, isolate()->factory()->fixed_array_map());
         check_cow_map->ClearDependsOnFlag(kElementsKind);
       }
     }
@@ -2686,7 +2683,7 @@ void HGraphBuilder::BuildCompareNil(
       // the monomorphic map when the code is used as a template to generate a
       // new IC. For optimized functions, there is no sentinel map, the map
       // emitted below is the actual monomorphic map.
-      BuildCheckMap(value, type->Classes().Current());
+      Add<HCheckMaps>(value, type->Classes().Current());
     } else {
       if_nil.Deopt("Too many undetectable types");
     }
@@ -5138,7 +5135,7 @@ void HOptimizedGraphBuilder::VisitObjectLiteral(ObjectLiteral* expr) {
             } else {
               PropertyAccessInfo info(this, STORE, ToType(map), name);
               if (info.CanAccessMonomorphic()) {
-                HValue* checked_literal = BuildCheckMap(literal, map);
+                HValue* checked_literal = Add<HCheckMaps>(literal, map);
                 ASSERT(!info.lookup()->IsPropertyCallbacks());
                 store = BuildMonomorphicAccess(
                     &info, literal, checked_literal, value,
@@ -5265,7 +5262,7 @@ void HOptimizedGraphBuilder::VisitArrayLiteral(ArrayLiteral* expr) {
 
     // De-opt if elements kind changed from boilerplate_elements_kind.
     Handle<Map> map = Handle<Map>(boilerplate_object->map(), isolate());
-    literal = Add<HCheckMaps>(literal, map, top_info());
+    literal = Add<HCheckMaps>(literal, map);
   }
 
   // The array is expected in the bailout environment during computation
@@ -5318,7 +5315,7 @@ void HOptimizedGraphBuilder::VisitArrayLiteral(ArrayLiteral* expr) {
 HCheckMaps* HOptimizedGraphBuilder::AddCheckMap(HValue* object,
                                                 Handle<Map> map) {
   BuildCheckHeapObject(object);
-  return Add<HCheckMaps>(object, map, top_info());
+  return Add<HCheckMaps>(object, map);
 }
 
 
@@ -5353,8 +5350,24 @@ HInstruction* HOptimizedGraphBuilder::BuildLoadNamedField(
     // Load the double value from it.
     access = HObjectAccess::ForHeapNumberValue();
   }
+
+  SmallMapList* map_list = info->field_maps();
+  if (map_list->length() == 0) {
+    return New<HLoadNamedField>(checked_object, checked_object, access);
+  }
+
+  UniqueSet<Map>* maps = new(zone()) UniqueSet<Map>(map_list->length(), zone());
+  for (int i = 0; i < map_list->length(); ++i) {
+    Handle<Map> map = map_list->at(i);
+    maps->Add(Unique<Map>::CreateImmovable(map), zone());
+    // TODO(bmeurer): Get rid of this shit!
+    if (map->CanTransition()) {
+      Map::AddDependentCompilationInfo(
+          map, DependentCode::kPrototypeCheckGroup, top_info());
+    }
+  }
   return New<HLoadNamedField>(
-      checked_object, checked_object, access, info->field_maps(), top_info());
+      checked_object, checked_object, access, maps, info->field_type());
 }
 
 
@@ -5401,12 +5414,7 @@ HInstruction* HOptimizedGraphBuilder::BuildStoreNamedField(
     if (!info->field_maps()->is_empty()) {
       ASSERT(field_access.representation().IsHeapObject());
       BuildCheckHeapObject(value);
-      if (info->field_maps()->length() == 1) {
-        // TODO(bmeurer): Also apply stable maps optimization to the else case!
-        value = BuildCheckMap(value, info->field_maps()->first());
-      } else {
-        value = Add<HCheckMaps>(value, info->field_maps());
-      }
+      value = Add<HCheckMaps>(value, info->field_maps());
 
       // TODO(bmeurer): This is a dirty hack to avoid repeating the smi check
       // that was already performed by the HCheckHeapObject above in the
@@ -5498,6 +5506,7 @@ bool HOptimizedGraphBuilder::PropertyAccessInfo::IsCompatible(
     }
   }
   info->GeneralizeRepresentation(r);
+  info->field_type_ = info->field_type_.Combine(field_type_);
   return true;
 }
 
@@ -5549,8 +5558,9 @@ bool HOptimizedGraphBuilder::PropertyAccessInfo::LoadResult(Handle<Map> map) {
 
 void HOptimizedGraphBuilder::PropertyAccessInfo::LoadFieldMaps(
     Handle<Map> map) {
-  // Clear any previously collected field maps.
+  // Clear any previously collected field maps/type.
   field_maps_.Clear();
+  field_type_ = HType::Tagged();
 
   // Figure out the field type from the accessor map.
   Handle<HeapType> field_type(lookup_.GetFieldTypeFromMap(*map), isolate());
@@ -5572,6 +5582,22 @@ void HOptimizedGraphBuilder::PropertyAccessInfo::LoadFieldMaps(
   }
   field_maps_.Sort();
   ASSERT_EQ(num_field_maps, field_maps_.length());
+
+  // Determine field HType from field HeapType.
+  if (field_type->Is(HeapType::Number())) {
+    field_type_ = HType::HeapNumber();
+  } else if (field_type->Is(HeapType::String())) {
+    field_type_ = HType::String();
+  } else if (field_type->Is(HeapType::Boolean())) {
+    field_type_ = HType::Boolean();
+  } else if (field_type->Is(HeapType::Array())) {
+    field_type_ = HType::JSArray();
+  } else if (field_type->Is(HeapType::Object())) {
+    field_type_ = HType::JSObject();
+  } else if (field_type->Is(HeapType::Null()) ||
+             field_type->Is(HeapType::Undefined())) {
+    field_type_ = HType::NonPrimitive();
+  }
 
   // Add dependency on the map that introduced the field.
   Map::AddDependentCompilationInfo(
@@ -6360,8 +6386,7 @@ HInstruction* HOptimizedGraphBuilder::BuildMonomorphicElementAccess(
     Handle<Map> map,
     PropertyAccessType access_type,
     KeyedAccessStoreMode store_mode) {
-  HCheckMaps* checked_object = Add<HCheckMaps>(object, map, top_info(),
-                                               dependency);
+  HCheckMaps* checked_object = Add<HCheckMaps>(object, map, dependency);
   if (dependency) {
     checked_object->ClearDependsOnFlag(kElementsKind);
   }
@@ -6840,19 +6865,9 @@ void HOptimizedGraphBuilder::VisitProperty(Property* expr) {
 }
 
 
-HInstruction* HGraphBuilder::BuildConstantMapCheck(Handle<JSObject> constant,
-                                                   CompilationInfo* info) {
-  HConstant* constant_value = New<HConstant>(constant);
-  Handle<Map> map(constant->map(), info->isolate());
-
-  if (constant->map()->CanOmitMapChecks()) {
-    Map::AddDependentCompilationInfo(
-        map, DependentCode::kPrototypeCheckGroup, info);
-    return constant_value;
-  }
-
-  AddInstruction(constant_value);
-  HCheckMaps* check = Add<HCheckMaps>(constant_value, map, info);
+HInstruction* HGraphBuilder::BuildConstantMapCheck(Handle<JSObject> constant) {
+  HCheckMaps* check = Add<HCheckMaps>(
+      Add<HConstant>(constant), handle(constant->map()));
   check->ClearDependsOnFlag(kElementsKind);
   return check;
 }
@@ -6861,16 +6876,13 @@ HInstruction* HGraphBuilder::BuildConstantMapCheck(Handle<JSObject> constant,
 HInstruction* HGraphBuilder::BuildCheckPrototypeMaps(Handle<JSObject> prototype,
                                                      Handle<JSObject> holder) {
   while (holder.is_null() || !prototype.is_identical_to(holder)) {
-    BuildConstantMapCheck(prototype, top_info());
+    BuildConstantMapCheck(prototype);
     Object* next_prototype = prototype->GetPrototype();
     if (next_prototype->IsNull()) return NULL;
     CHECK(next_prototype->IsJSObject());
     prototype = handle(JSObject::cast(next_prototype));
   }
-
-  HInstruction* checked_object = BuildConstantMapCheck(prototype, top_info());
-  if (!checked_object->IsLinked()) AddInstruction(checked_object);
-  return checked_object;
+  return BuildConstantMapCheck(prototype);
 }
 
 
@@ -10820,12 +10832,6 @@ void HOptimizedGraphBuilder::GenerateObjectEquals(CallRuntime* call) {
   HCompareObjectEqAndBranch* result =
       New<HCompareObjectEqAndBranch>(left, right);
   return ast_context()->ReturnControl(result, call->id());
-}
-
-
-void HOptimizedGraphBuilder::GenerateLog(CallRuntime* call) {
-  // %_Log is ignored in optimized code.
-  return ast_context()->ReturnValue(graph()->GetConstantUndefined());
 }
 
 

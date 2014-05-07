@@ -54,6 +54,7 @@ class InlineRuntimeFunctionsTable;
 class InnerPointerToCodeCache;
 class MaterializedObjectStore;
 class NoAllocationStringAllocator;
+class CodeAgingHelper;
 class RandomNumberGenerator;
 class RegExpStack;
 class SaveContext;
@@ -846,6 +847,7 @@ class Isolate {
   Heap* heap() { return &heap_; }
   StatsTable* stats_table();
   StubCache* stub_cache() { return stub_cache_; }
+  CodeAgingHelper* code_aging_helper() { return code_aging_helper_; }
   DeoptimizerData* deoptimizer_data() { return deoptimizer_data_; }
   ThreadLocalTop* thread_local_top() { return &thread_local_top_; }
   MaterializedObjectStore* materialized_object_store() {
@@ -938,14 +940,8 @@ class Isolate {
 
   inline bool IsCodePreAgingActive();
 
-  Debugger* debugger() {
-    if (!NoBarrier_Load(&debugger_initialized_)) InitializeDebugger();
-    return debugger_;
-  }
-  Debug* debug() {
-    if (!NoBarrier_Load(&debugger_initialized_)) InitializeDebugger();
-    return debug_;
-  }
+  Debugger* debugger() {  return debugger_; }
+  Debug* debug() { return debug_; }
 
   inline bool IsDebuggerActive();
   inline bool DebuggerHasBreakPoints();
@@ -1192,8 +1188,6 @@ class Isolate {
 
   void PropagatePendingExceptionToExternalTryCatch();
 
-  void InitializeDebugger();
-
   // Traverse prototype chain to find out whether the object is derived from
   // the Error object.
   bool IsErrorObject(Handle<Object> obj);
@@ -1215,6 +1209,7 @@ class Isolate {
   StackGuard stack_guard_;
   StatsTable* stats_table_;
   StubCache* stub_cache_;
+  CodeAgingHelper* code_aging_helper_;
   DeoptimizerData* deoptimizer_data_;
   MaterializedObjectStore* materialized_object_store_;
   ThreadLocalTop thread_local_top_;

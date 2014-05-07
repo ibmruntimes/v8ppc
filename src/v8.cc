@@ -99,7 +99,7 @@ void V8::InitializeOncePerProcessImpl() {
   if (FLAG_stress_compaction) {
     FLAG_force_marking_deque_overflows = true;
     FLAG_gc_global = true;
-    FLAG_max_new_space_size = (1 << (kPageSizeBits - 10)) * 2;
+    FLAG_max_new_space_size = 2 * Page::kPageSize;
   }
 
 #ifdef V8_USE_DEFAULT_PLATFORM
@@ -110,6 +110,12 @@ void V8::InitializeOncePerProcessImpl() {
   bool serializer_enabled = Serializer::enabled(NULL);
   CpuFeatures::Probe(serializer_enabled);
   OS::PostSetUp();
+  // The custom exp implementation needs 16KB of lookup data; initialize it
+  // on demand.
+  init_fast_sqrt_function();
+#ifdef _WIN64
+  init_modulo_function();
+#endif
   ElementsAccessor::InitializeOncePerProcess();
   LOperand::SetUpCaches();
   SetUpJSCallerSavedCodeData();

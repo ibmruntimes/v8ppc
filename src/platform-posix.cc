@@ -41,13 +41,8 @@
 #include <android/log.h>
 #endif
 
-#if defined(_AIX)
-#include <fenv.h>
-#endif
-
 #include "v8.h"
 
-#include "codegen.h"
 #include "isolate-inl.h"
 #include "platform.h"
 
@@ -320,43 +315,6 @@ void OS::DebugBreak() {
 // ----------------------------------------------------------------------------
 // Math functions
 
-double modulo(double x, double y) {
-#if V8_OS_AIX
-  // AIX raises an underflow exception for (Number.MIN_VALUE % Number.MAX_VALUE)
-  double result;
-  int exception;
-  feclearexcept(FE_ALL_EXCEPT);
-  result = std::fmod(x, y);
-  exception = fetestexcept(FE_UNDERFLOW);
-  return (exception ? x : result);
-#else
-  return std::fmod(x, y);
-#endif
-}
-
-
-#define UNARY_MATH_FUNCTION(name, generator)             \
-static UnaryMathFunction fast_##name##_function = NULL;  \
-void init_fast_##name##_function() {                     \
-  fast_##name##_function = generator;                    \
-}                                                        \
-double fast_##name(double x) {                           \
-  return (*fast_##name##_function)(x);                   \
-}
-
-UNARY_MATH_FUNCTION(exp, CreateExpFunction())
-UNARY_MATH_FUNCTION(sqrt, CreateSqrtFunction())
-
-#undef UNARY_MATH_FUNCTION
-
-
-void lazily_initialize_fast_exp() {
-  if (fast_exp_function == NULL) {
-    init_fast_exp_function();
-  }
-}
-
-
 #if V8_OS_AIX
 #undef NAN
 #define NAN (__builtin_nanf(""))
@@ -591,8 +549,6 @@ void OS::PostSetUp() {
   OS::memcopy_uint8_function =
       CreateMemCopyUint8Function(&OS::MemCopyUint8Wrapper);
 #endif
-  // fast_exp is initialized lazily.
-  init_fast_sqrt_function();
 }
 
 

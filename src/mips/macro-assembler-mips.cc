@@ -4015,14 +4015,6 @@ bool MacroAssembler::AllowThisStubCall(CodeStub* stub) {
 }
 
 
-void MacroAssembler::IllegalOperation(int num_arguments) {
-  if (num_arguments > 0) {
-    addiu(sp, sp, num_arguments * kPointerSize);
-  }
-  LoadRoot(v0, Heap::kUndefinedValueRootIndex);
-}
-
-
 void MacroAssembler::IndexFromHash(Register hash,
                                    Register index) {
   // If the hash field contains an array index pick it out. The assert checks
@@ -4177,10 +4169,7 @@ void MacroAssembler::CallRuntime(const Runtime::Function* f,
   // If the expected number of arguments of the runtime function is
   // constant, we check that the actual number of arguments match the
   // expectation.
-  if (f->nargs >= 0 && f->nargs != num_arguments) {
-    IllegalOperation(num_arguments);
-    return;
-  }
+  CHECK(f->nargs < 0 || f->nargs == num_arguments);
 
   // TODO(1236192): Most runtime routines don't need the number of
   // arguments passed in because it is constant. At some point we
@@ -4471,7 +4460,7 @@ void MacroAssembler::Prologue(PrologueFrameMode frame_mode) {
     Addu(fp, sp, Operand(StandardFrameConstants::kFixedFrameSizeFromFp));
   } else {
     PredictableCodeSizeScope predictible_code_size_scope(
-      this, kNoCodeAgeSequenceLength * Assembler::kInstrSize);
+      this, kNoCodeAgeSequenceLength);
     // The following three instructions must remain together and unmodified
     // for code aging to work properly.
     if (isolate()->IsCodePreAgingActive()) {
@@ -5675,10 +5664,13 @@ bool AreAliased(Register r1, Register r2, Register r3, Register r4) {
 }
 
 
-CodePatcher::CodePatcher(byte* address, int instructions)
+CodePatcher::CodePatcher(byte* address,
+                         int instructions,
+                         FlushICache flush_cache)
     : address_(address),
       size_(instructions * Assembler::kInstrSize),
-      masm_(NULL, address, size_ + Assembler::kGap) {
+      masm_(NULL, address, size_ + Assembler::kGap),
+      flush_cache_(flush_cache) {
   // Create a new macro assembler pointing to the address of the code to patch.
   // The size is adjusted with kGap on order for the assembler to generate size
   // bytes of instructions without failing with buffer size constraints.
@@ -5688,7 +5680,9 @@ CodePatcher::CodePatcher(byte* address, int instructions)
 
 CodePatcher::~CodePatcher() {
   // Indicate that code has changed.
-  CPU::FlushICache(address_, size_);
+  if (flush_cache_ == FLUSH) {
+    CPU::FlushICache(address_, size_);
+  }
 
   // Check that the code was patched as expected.
   ASSERT(masm_.pc_ == address_ + size_);

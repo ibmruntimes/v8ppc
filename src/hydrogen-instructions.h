@@ -655,6 +655,10 @@ class HValue : public ZoneObject {
     HYDROGEN_ABSTRACT_INSTRUCTION_LIST(DECLARE_PREDICATE)
   #undef DECLARE_PREDICATE
 
+  bool IsBitwiseBinaryShift() {
+    return IsShl() || IsShr() || IsSar();
+  }
+
   HValue(HType type = HType::Tagged())
       : block_(NULL),
         id_(kNoNumber),
@@ -2744,19 +2748,28 @@ class HLoadRoot V8_FINAL : public HTemplateInstruction<0> {
 class HCheckMaps V8_FINAL : public HTemplateInstruction<2> {
  public:
   static HCheckMaps* New(Zone* zone, HValue* context, HValue* value,
-                         Handle<Map> map, CompilationInfo* info,
-                         HValue* typecheck = NULL);
+                         Handle<Map> map, HValue* typecheck = NULL) {
+    return new(zone) HCheckMaps(value, new(zone) UniqueSet<Map>(
+            Unique<Map>::CreateImmovable(map), zone), typecheck);
+  }
   static HCheckMaps* New(Zone* zone, HValue* context,
-                         HValue* value, SmallMapList* maps,
+                         HValue* value, SmallMapList* map_list,
                          HValue* typecheck = NULL) {
-    HCheckMaps* check_map = new(zone) HCheckMaps(value, zone, typecheck);
-    for (int i = 0; i < maps->length(); i++) {
-      check_map->Add(maps->at(i), zone);
+    UniqueSet<Map>* maps = new(zone) UniqueSet<Map>(map_list->length(), zone);
+    for (int i = 0; i < map_list->length(); ++i) {
+      maps->Add(Unique<Map>::CreateImmovable(map_list->at(i)), zone);
     }
-    return check_map;
+    return new(zone) HCheckMaps(value, maps, typecheck);
   }
 
-  bool CanOmitMapChecks() { return omit_; }
+  bool IsStabilityCheck() const { return is_stability_check_; }
+  void MarkAsStabilityCheck() {
+    has_migration_target_ = false;
+    is_stability_check_ = true;
+    ClearChangesFlag(kNewSpacePromotion);
+    ClearDependsOnFlag(kElementsKind);
+    ClearDependsOnFlag(kMaps);
+  }
 
   virtual bool HasEscapingOperandAt(int index) V8_OVERRIDE { return false; }
   virtual Representation RequiredInputRepresentation(int index) V8_OVERRIDE {
@@ -2767,55 +2780,80 @@ class HCheckMaps V8_FINAL : public HTemplateInstruction<2> {
   HValue* value() { return OperandAt(0); }
   HValue* typecheck() { return OperandAt(1); }
 
-  Unique<Map> first_map() const { return map_set_.at(0); }
-  const UniqueSet<Map>* map_set() const { return &map_set_; }
+  const UniqueSet<Map>* maps() const { return maps_; }
+  void set_maps(const UniqueSet<Map>* maps) { maps_ = maps; }
 
-  void set_map_set(UniqueSet<Map>* maps, Zone *zone) {
-    map_set_.Clear();
-    for (int i = 0; i < maps->size(); i++) {
-      map_set_.Add(maps->at(i), zone);
-    }
+  bool maps_are_stable() const { return maps_are_stable_; }
+
+  bool HasMigrationTarget() const { return has_migration_target_; }
+
+  virtual HValue* Canonicalize() V8_OVERRIDE;
+
+  static HCheckMaps* CreateAndInsertAfter(Zone* zone,
+                                          HValue* value,
+                                          Unique<Map> map,
+                                          bool map_is_stable,
+                                          HInstruction* instr) {
+    return CreateAndInsertAfter(zone, value, new(zone) UniqueSet<Map>(
+            map, zone), map_is_stable, instr);
   }
 
-  bool has_migration_target() const {
-    return has_migration_target_;
+  static HCheckMaps* CreateAndInsertAfter(Zone* zone,
+                                          HValue* value,
+                                          const UniqueSet<Map>* maps,
+                                          bool maps_are_stable,
+                                          HInstruction* instr) {
+    return instr->Append(new(zone) HCheckMaps(value, maps, maps_are_stable));
   }
 
   DECLARE_CONCRETE_INSTRUCTION(CheckMaps)
 
  protected:
   virtual bool DataEquals(HValue* other) V8_OVERRIDE {
-    return this->map_set_.Equals(&HCheckMaps::cast(other)->map_set_);
+    return this->maps()->Equals(HCheckMaps::cast(other)->maps());
   }
 
   virtual int RedefinedOperandIndex() { return 0; }
 
  private:
-  void Add(Handle<Map> map, Zone* zone) {
-    map_set_.Add(Unique<Map>(map), zone);
-    SetDependsOnFlag(kMaps);
-    SetDependsOnFlag(kElementsKind);
-
-    if (!has_migration_target_ && map->is_migration_target()) {
-      has_migration_target_ = true;
-      SetChangesFlag(kNewSpacePromotion);
-    }
-  }
-
-  // Clients should use one of the static New* methods above.
-  HCheckMaps(HValue* value, Zone *zone, HValue* typecheck)
-      : HTemplateInstruction<2>(value->type()),
-        omit_(false), has_migration_target_(false) {
+  HCheckMaps(HValue* value, const UniqueSet<Map>* maps, bool maps_are_stable)
+      : HTemplateInstruction<2>(value->type()), maps_(maps),
+        has_migration_target_(false), is_stability_check_(false),
+        maps_are_stable_(maps_are_stable) {
+    ASSERT_NE(0, maps->size());
     SetOperandAt(0, value);
-    // Use the object value for the dependency if NULL is passed.
-    SetOperandAt(1, typecheck != NULL ? typecheck : value);
+    // Use the object value for the dependency.
+    SetOperandAt(1, value);
     set_representation(Representation::Tagged());
     SetFlag(kUseGVN);
+    SetDependsOnFlag(kMaps);
+    SetDependsOnFlag(kElementsKind);
   }
 
-  bool omit_;
-  bool has_migration_target_;
-  UniqueSet<Map> map_set_;
+  HCheckMaps(HValue* value, const UniqueSet<Map>* maps, HValue* typecheck)
+      : HTemplateInstruction<2>(value->type()), maps_(maps),
+        has_migration_target_(false), is_stability_check_(false),
+        maps_are_stable_(true) {
+    ASSERT_NE(0, maps->size());
+    SetOperandAt(0, value);
+    // Use the object value for the dependency if NULL is passed.
+    SetOperandAt(1, typecheck ? typecheck : value);
+    set_representation(Representation::Tagged());
+    SetFlag(kUseGVN);
+    SetDependsOnFlag(kMaps);
+    SetDependsOnFlag(kElementsKind);
+    for (int i = 0; i < maps->size(); ++i) {
+      Handle<Map> map = maps->at(i).handle();
+      if (map->is_migration_target()) has_migration_target_ = true;
+      if (!map->is_stable()) maps_are_stable_ = false;
+    }
+    if (has_migration_target_) SetChangesFlag(kNewSpacePromotion);
+  }
+
+  const UniqueSet<Map>* maps_;
+  bool has_migration_target_ : 1;
+  bool is_stability_check_ : 1;
+  bool maps_are_stable_ : 1;
 };
 
 
@@ -3459,12 +3497,22 @@ class HConstant V8_FINAL : public HTemplateInstruction<0> {
   }
 
   static HConstant* CreateAndInsertBefore(Zone* zone,
-                                          Unique<Object> unique,
+                                          Unique<Object> object,
                                           bool is_not_in_new_space,
                                           HInstruction* instruction) {
     return instruction->Prepend(new(zone) HConstant(
-        unique, Representation::Tagged(), HType::Tagged(),
-        is_not_in_new_space, false, false, kUnknownInstanceType));
+        object, Unique<Map>(Handle<Map>::null()), false,
+        Representation::Tagged(), HType::Tagged(), is_not_in_new_space,
+        false, false, kUnknownInstanceType));
+  }
+
+  static HConstant* CreateAndInsertAfter(Zone* zone,
+                                         Unique<Map> map,
+                                         HInstruction* instruction) {
+    return instruction->Append(new(zone) HConstant(
+            map, Unique<Map>(Handle<Map>::null()), false,
+            Representation::Tagged(), HType::Tagged(), true,
+            false, false, MAP_TYPE));
   }
 
   Handle<Object> handle(Isolate* isolate) {
@@ -3477,12 +3525,6 @@ class HConstant V8_FINAL : public HTemplateInstruction<0> {
     AllowDeferredHandleDereference smi_check;
     ASSERT(has_int32_value_ || !object_.handle()->IsSmi());
     return object_.handle();
-  }
-
-  bool HasMap(Handle<Map> map) {
-    Handle<Object> constant_object = handle(map->GetIsolate());
-    return constant_object->IsHeapObject() &&
-        Handle<HeapObject>::cast(constant_object)->map() == *map;
   }
 
   bool IsSpecialDouble() const {
@@ -3569,6 +3611,22 @@ class HConstant V8_FINAL : public HTemplateInstruction<0> {
   bool IsUndetectable() const { return is_undetectable_; }
   InstanceType GetInstanceType() const { return instance_type_; }
 
+  bool HasMapValue() const { return instance_type_ == MAP_TYPE; }
+  Unique<Map> MapValue() const {
+    ASSERT(HasMapValue());
+    return Unique<Map>::cast(GetUnique());
+  }
+  bool HasStableMapValue() const {
+    ASSERT(HasMapValue() || !has_stable_map_value_);
+    return has_stable_map_value_;
+  }
+
+  bool HasObjectMap() const { return !object_map_.IsNull(); }
+  Unique<Map> ObjectMap() const {
+    ASSERT(HasObjectMap());
+    return object_map_;
+  }
+
   virtual intptr_t Hashcode() V8_OVERRIDE {
     if (has_int32_value_) {
       return static_cast<intptr_t>(int32_value_);
@@ -3641,7 +3699,9 @@ class HConstant V8_FINAL : public HTemplateInstruction<0> {
             Representation r = Representation::None(),
             bool is_not_in_new_space = true,
             Unique<Object> optional = Unique<Object>(Handle<Object>::null()));
-  HConstant(Unique<Object> unique,
+  HConstant(Unique<Object> object,
+            Unique<Map> object_map,
+            bool has_stable_map_value,
             Representation r,
             HType type,
             bool is_not_in_new_space,
@@ -3660,6 +3720,12 @@ class HConstant V8_FINAL : public HTemplateInstruction<0> {
   // constant is non-numeric, object_ always points to a valid
   // constant HeapObject.
   Unique<Object> object_;
+
+  // If object_ is a heap object, this points to the stable map of the object.
+  Unique<Map> object_map_;
+
+  // If object_ is a map, this indicates whether the map is stable.
+  bool has_stable_map_value_ : 1;
 
   // We store the HConstant in the most specific form safely possible.
   // The two flags, has_int32_value_ and has_double_value_ tell us if
@@ -5830,6 +5896,10 @@ class HObjectAccess V8_FINAL {
     return portion() == kStringLengths;
   }
 
+  inline bool IsMap() const {
+    return portion() == kMaps;
+  }
+
   inline int offset() const {
     return OffsetField::decode(value_);
   }
@@ -6142,24 +6212,10 @@ class HObjectAccess V8_FINAL {
 
 class HLoadNamedField V8_FINAL : public HTemplateInstruction<2> {
  public:
-  DECLARE_INSTRUCTION_FACTORY_P3(HLoadNamedField, HValue*, HValue*,
-                                 HObjectAccess);
-  static HLoadNamedField* New(Zone* zone, HValue* context,
-                              HValue* object, HValue* dependency,
-                              HObjectAccess access, SmallMapList* maps,
-                              CompilationInfo* info) {
-    HLoadNamedField* load_named_field = HLoadNamedField::New(
-        zone, context, object, dependency, access);
-    for (int i = 0; i < maps->length(); ++i) {
-      Handle<Map> map(maps->at(i));
-      load_named_field->map_set_.Add(Unique<Map>(map), zone);
-      if (map->CanTransition()) {
-        Map::AddDependentCompilationInfo(
-            map, DependentCode::kPrototypeCheckGroup, info);
-      }
-    }
-    return load_named_field;
-  }
+  DECLARE_INSTRUCTION_FACTORY_P3(HLoadNamedField, HValue*,
+                                 HValue*, HObjectAccess);
+  DECLARE_INSTRUCTION_FACTORY_P5(HLoadNamedField, HValue*, HValue*,
+                                 HObjectAccess, const UniqueSet<Map>*, HType);
 
   HValue* object() { return OperandAt(0); }
   HValue* dependency() {
@@ -6172,7 +6228,7 @@ class HLoadNamedField V8_FINAL : public HTemplateInstruction<2> {
       return access_.representation();
   }
 
-  const UniqueSet<Map>* map_set() const { return &map_set_; }
+  const UniqueSet<Map>* maps() const { return maps_; }
 
   virtual bool HasEscapingOperandAt(int index) V8_OVERRIDE { return false; }
   virtual bool HasOutOfBoundsAccess(int size) V8_OVERRIDE {
@@ -6188,23 +6244,36 @@ class HLoadNamedField V8_FINAL : public HTemplateInstruction<2> {
   virtual Range* InferRange(Zone* zone) V8_OVERRIDE;
   virtual void PrintDataTo(StringStream* stream) V8_OVERRIDE;
 
+  bool CanBeReplacedWith(HValue* other) const {
+    if (!type().Equals(other->type())) return false;
+    if (!representation().Equals(other->representation())) return false;
+    if (!other->IsLoadNamedField()) return true;
+    HLoadNamedField* that = HLoadNamedField::cast(other);
+    if (this->maps_ == that->maps_) return true;
+    if (this->maps_ == NULL || that->maps_ == NULL) return false;
+    return this->maps_->IsSubset(that->maps_);
+  }
+
   DECLARE_CONCRETE_INSTRUCTION(LoadNamedField)
 
  protected:
   virtual bool DataEquals(HValue* other) V8_OVERRIDE {
-    HLoadNamedField* b = HLoadNamedField::cast(other);
-    return access_.Equals(b->access_) && this->map_set_.Equals(&b->map_set_);
+    HLoadNamedField* that = HLoadNamedField::cast(other);
+    if (!this->access_.Equals(that->access_)) return false;
+    if (this->maps_ == that->maps_) return true;
+    return (this->maps_ != NULL &&
+            that->maps_ != NULL &&
+            this->maps_->Equals(that->maps_));
   }
 
  private:
   HLoadNamedField(HValue* object,
                   HValue* dependency,
-                  HObjectAccess access,
-                  Handle<Map> map = Handle<Map>::null())
-      : access_(access) {
-    ASSERT(object != NULL);
+                  HObjectAccess access)
+      : access_(access), maps_(NULL) {
+    ASSERT_NOT_NULL(object);
     SetOperandAt(0, object);
-    SetOperandAt(1, dependency != NULL ? dependency : object);
+    SetOperandAt(1, dependency ? dependency : object);
 
     Representation representation = access.representation();
     if (representation.IsInteger8() ||
@@ -6224,6 +6293,8 @@ class HLoadNamedField V8_FINAL : public HTemplateInstruction<2> {
                representation.IsInteger32()) {
       set_representation(representation);
     } else if (representation.IsHeapObject()) {
+      // TODO(bmeurer): This is probably broken. What we actually want to to
+      // instead is set_representation(Representation::HeapObject()).
       set_type(HType::NonPrimitive());
       set_representation(Representation::Tagged());
     } else {
@@ -6232,10 +6303,32 @@ class HLoadNamedField V8_FINAL : public HTemplateInstruction<2> {
     access.SetGVNFlags(this, LOAD);
   }
 
+  HLoadNamedField(HValue* object,
+                  HValue* dependency,
+                  HObjectAccess access,
+                  const UniqueSet<Map>* maps,
+                  HType type)
+      : HTemplateInstruction<2>(type), access_(access), maps_(maps) {
+    ASSERT_NOT_NULL(maps);
+    ASSERT_NE(0, maps->size());
+
+    ASSERT_NOT_NULL(object);
+    SetOperandAt(0, object);
+    SetOperandAt(1, dependency ? dependency : object);
+
+    ASSERT(access.representation().IsHeapObject());
+    // TODO(bmeurer): This is probably broken. What we actually want to to
+    // instead is set_representation(Representation::HeapObject()).
+    if (!type.IsHeapObject()) set_type(HType::NonPrimitive());
+    set_representation(Representation::Tagged());
+
+    access.SetGVNFlags(this, LOAD);
+  }
+
   virtual bool IsDeletable() const V8_OVERRIDE { return true; }
 
   HObjectAccess access_;
-  UniqueSet<Map> map_set_;
+  const UniqueSet<Map>* maps_;
 };
 
 
@@ -7432,6 +7525,8 @@ class HCheckMapValue V8_FINAL : public HTemplateInstruction<2> {
 
   HValue* value() { return OperandAt(0); }
   HValue* map() { return OperandAt(1); }
+
+  virtual HValue* Canonicalize() V8_OVERRIDE;
 
   DECLARE_CONCRETE_INSTRUCTION(CheckMapValue)
 

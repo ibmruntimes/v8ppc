@@ -1048,10 +1048,6 @@ class MacroAssembler: public Assembler {
                    Handle<Code> success,
                    SmiCheckType smi_check_type);
 
-  // Generates code for reporting that an illegal operation has
-  // occurred.
-  void IllegalOperation(int num_arguments);
-
 
   // Load and check the instance type of an object for being a string.
   // Loads the type into the second argument register.
@@ -1618,7 +1614,14 @@ const Operand& rt = Operand(zero_reg), BranchDelaySlot bd = PROTECT
 // an assertion to fail.
 class CodePatcher {
  public:
-  CodePatcher(byte* address, int instructions);
+  enum FlushICache {
+    FLUSH,
+    DONT_FLUSH
+  };
+
+  CodePatcher(byte* address,
+              int instructions,
+              FlushICache flush_cache = FLUSH);
   virtual ~CodePatcher();
 
   // Macro assembler to emit code.
@@ -1638,6 +1641,7 @@ class CodePatcher {
   byte* address_;  // The address of the code being patched.
   int size_;  // Number of bytes of the expected patch size.
   MacroAssembler masm_;  // Macro assembler used to generate the code.
+  FlushICache flush_cache_;  // Whether to flush the I cache after patching.
 };
 
 

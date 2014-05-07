@@ -1728,9 +1728,16 @@ void LCodeGen::DoConstantE(LConstantE* instr) {
 
 
 void LCodeGen::DoConstantT(LConstantT* instr) {
-  Handle<Object> value = instr->value(isolate());
+  Handle<Object> object = instr->value(isolate());
   AllowDeferredHandleDereference smi_check;
-  __ li(ToRegister(instr->result()), value);
+  if (instr->hydrogen()->HasObjectMap()) {
+    Handle<Map> object_map = instr->hydrogen()->ObjectMap().handle();
+    ASSERT(object->IsHeapObject());
+    ASSERT(!object_map->is_stable() ||
+           *object_map == Handle<HeapObject>::cast(object)->map());
+    USE(object_map);
+  }
+  __ li(ToRegister(instr->result()), object);
 }
 
 
@@ -5164,7 +5171,14 @@ void LCodeGen::DoCheckMaps(LCheckMaps* instr) {
     Register object_;
   };
 
-  if (instr->hydrogen()->CanOmitMapChecks()) return;
+  if (instr->hydrogen()->IsStabilityCheck()) {
+    const UniqueSet<Map>* maps = instr->hydrogen()->maps();
+    for (int i = 0; i < maps->size(); ++i) {
+      AddStabilityDependency(maps->at(i).handle());
+    }
+    return;
+  }
+
   Register map_reg = scratch0();
   LOperand* input = instr->value();
   ASSERT(input->IsRegister());
@@ -5172,20 +5186,20 @@ void LCodeGen::DoCheckMaps(LCheckMaps* instr) {
   __ lw(map_reg, FieldMemOperand(reg, HeapObject::kMapOffset));
 
   DeferredCheckMaps* deferred = NULL;
-  if (instr->hydrogen()->has_migration_target()) {
+  if (instr->hydrogen()->HasMigrationTarget()) {
     deferred = new(zone()) DeferredCheckMaps(this, instr, reg);
     __ bind(deferred->check_maps());
   }
 
-  const UniqueSet<Map>* map_set = instr->hydrogen()->map_set();
+  const UniqueSet<Map>* maps = instr->hydrogen()->maps();
   Label success;
-  for (int i = 0; i < map_set->size() - 1; i++) {
-    Handle<Map> map = map_set->at(i).handle();
+  for (int i = 0; i < maps->size() - 1; i++) {
+    Handle<Map> map = maps->at(i).handle();
     __ CompareMapAndBranch(map_reg, map, &success, eq, &success);
   }
-  Handle<Map> map = map_set->at(map_set->size() - 1).handle();
+  Handle<Map> map = maps->at(maps->size() - 1).handle();
   // Do the CompareMap() directly within the Branch() and DeoptimizeIf().
-  if (instr->hydrogen()->has_migration_target()) {
+  if (instr->hydrogen()->HasMigrationTarget()) {
     __ Branch(deferred->entry(), ne, map_reg, Operand(map));
   } else {
     DeoptimizeIf(ne, instr->environment(), map_reg, Operand(map));

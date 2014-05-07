@@ -152,12 +152,9 @@ DEFINE_bool(harmony_modules, false,
             "enable harmony modules (implies block scoping)")
 DEFINE_bool(harmony_symbols, false,
             "enable harmony symbols (a.k.a. private names)")
-DEFINE_bool(harmony_promises, false, "enable harmony promises")
 DEFINE_bool(harmony_proxies, false, "enable harmony proxies")
 DEFINE_bool(harmony_collections, false,
-            "enable harmony collections (sets, maps, weak sets, weak maps)")
-DEFINE_bool(harmony_weak_collections, false,
-            "enable only harmony weak collections (weak sets and maps)")
+            "enable harmony collections (sets, maps)")
 DEFINE_bool(harmony_generators, false, "enable harmony generators")
 DEFINE_bool(harmony_iteration, false, "enable harmony iteration (for-of)")
 DEFINE_bool(harmony_numeric_literals, false,
@@ -165,6 +162,7 @@ DEFINE_bool(harmony_numeric_literals, false,
 DEFINE_bool(harmony_strings, false, "enable harmony string")
 DEFINE_bool(harmony_arrays, false, "enable harmony arrays")
 DEFINE_bool(harmony_maths, false, "enable harmony math functions")
+DEFINE_bool(harmony_promises, true, "(dummy flag, has no effect)")
 DEFINE_bool(harmony, false, "enable all harmony features (except typeof)")
 
 DEFINE_implication(harmony, harmony_scoping)
@@ -177,14 +175,10 @@ DEFINE_implication(harmony, harmony_iteration)
 DEFINE_implication(harmony, harmony_numeric_literals)
 DEFINE_implication(harmony, harmony_strings)
 DEFINE_implication(harmony, harmony_arrays)
-DEFINE_implication(harmony_collections, harmony_weak_collections)
-DEFINE_implication(harmony_promises, harmony_weak_collections)
 DEFINE_implication(harmony_modules, harmony_scoping)
 
 DEFINE_implication(harmony, es_staging)
 DEFINE_implication(es_staging, harmony_maths)
-DEFINE_implication(es_staging, harmony_promises)
-DEFINE_implication(es_staging, harmony_weak_collections)
 
 // Flags for experimental implementation features.
 DEFINE_bool(packed_arrays, true, "optimizes arrays that have no holes")
@@ -469,8 +463,10 @@ DEFINE_bool(always_inline_smi_code, false,
             "always inline smi code in non-opt code")
 
 // heap.cc
-DEFINE_int(max_new_space_size, 0, "max size of the new generation (in kBytes)")
-DEFINE_int(max_old_space_size, 0, "max size of the old generation (in Mbytes)")
+DEFINE_int(max_new_space_size, 0,
+    "max size of the new space consisting of two semi-spaces which are half"
+    "the size (in MBytes)")
+DEFINE_int(max_old_space_size, 0, "max size of the old space (in Mbytes)")
 DEFINE_int(max_executable_size, 0, "max size of executable memory (in Mbytes)")
 DEFINE_bool(gc_global, false, "always perform global GCs")
 DEFINE_int(gc_interval, -1, "garbage collect after <n> allocations")
@@ -775,7 +771,6 @@ DEFINE_bool(trace_regexp_assembler, false,
 DEFINE_bool(log, false,
             "Minimal logging (no API, code, GC, suspect, or handles samples).")
 DEFINE_bool(log_all, false, "Log all events to the log file.")
-DEFINE_bool(log_runtime, false, "Activate runtime system %Log call.")
 DEFINE_bool(log_api, false, "Log API events to the log file.")
 DEFINE_bool(log_code, false,
             "Log code events to the log file without profiling.")
