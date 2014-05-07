@@ -135,13 +135,13 @@ void MacroAssembler::Call(Address target,
                           Condition cond) {
   BlockTrampolinePoolScope block_trampoline_pool(this);
   ASSERT(cond == al);
-  Label start;
-  bind(&start);
 
 #ifdef DEBUG
   // Check the expected size before generating code to ensure we assume the same
   // constant pool availability (e.g., whether constant pool is full or not).
   int expected_size = CallSize(target, rmode, cond);
+  Label start;
+  bind(&start);
 #endif
 
   // Statement positions are expected to be recorded when the target
@@ -176,17 +176,23 @@ void MacroAssembler::Call(Handle<Code> code,
                           TypeFeedbackId ast_id,
                           Condition cond) {
   BlockTrampolinePoolScope block_trampoline_pool(this);
+  ASSERT(RelocInfo::IsCodeTarget(rmode));
+
+#ifdef DEBUG
+  // Check the expected size before generating code to ensure we assume the same
+  // constant pool availability (e.g., whether constant pool is full or not).
+  int expected_size = CallSize(code, rmode, ast_id, cond);
   Label start;
   bind(&start);
-  ASSERT(RelocInfo::IsCodeTarget(rmode));
+#endif
+
   if (rmode == RelocInfo::CODE_TARGET && !ast_id.IsNone()) {
     SetRecordedAstId(ast_id);
     rmode = RelocInfo::CODE_TARGET_WITH_ID;
   }
   AllowDeferredHandleDereference using_raw_address;
   Call(reinterpret_cast<Address>(code.location()), rmode, cond);
-  ASSERT_EQ(CallSize(code, rmode, ast_id, cond),
-            SizeOfCodeGeneratedSince(&start));
+  ASSERT_EQ(expected_size, SizeOfCodeGeneratedSince(&start));
 }
 
 
