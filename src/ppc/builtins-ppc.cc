@@ -926,7 +926,7 @@ void Builtins::Generate_MarkCodeAsExecutedOnce(MacroAssembler* masm) {
   __ addi(fp, sp, Operand(StandardFrameConstants::kFixedFrameSizeFromFp));
 
   // Jump to point after the code-age stub.
-  __ addi(r3, r3, Operand(kCodeAgeSequenceLength * Assembler::kInstrSize));
+  __ addi(r3, r3, Operand(kNoCodeAgeSequenceLength));
   __ Jump(r3);
 }
 

@@ -251,16 +251,18 @@ static const int kNoCodeAgeInstructions = 6;
 #endif
 static const int kCodeAgingInstructions =
     Assembler::kMovInstructionsNoConstantPool + 3;
-static const int kCodeAgeSequenceLength =
+static const int kNoCodeAgeSequenceInstructions =
     ((kNoCodeAgeInstructions >= kCodeAgingInstructions) ?
      kNoCodeAgeInstructions : kCodeAgingInstructions);
-static const int kNoCodeAgeSequenceNops = (kCodeAgeSequenceLength -
+static const int kNoCodeAgeSequenceNops = (kNoCodeAgeSequenceInstructions -
                                            kNoCodeAgeInstructions);
-static const int kCodeAgingSequenceNops = (kCodeAgeSequenceLength -
+static const int kCodeAgingSequenceNops = (kNoCodeAgeSequenceInstructions -
                                            kCodeAgingInstructions);
 static const int kCodeAgingTargetDelta = 1 * Assembler::kInstrSize;
 static const int kCodeAgingPatchDelta = (kCodeAgingInstructions *
                                          Assembler::kInstrSize);
+static const int kNoCodeAgeSequenceLength = (kNoCodeAgeSequenceInstructions *
+                                             Assembler::kInstrSize);
 
 
 Handle<Object> RelocInfo::code_age_stub_handle(Assembler* origin) {
