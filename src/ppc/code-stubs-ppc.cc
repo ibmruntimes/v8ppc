@@ -3067,7 +3067,7 @@ static void EmitWrapCase(MacroAssembler* masm, int argc, Label* cont) {
     __ InvokeBuiltin(Builtins::TO_OBJECT, CALL_FUNCTION);
     __ pop(r4);
   }
-  __ StoreP(r3, MemOperand(sp, argc * kPointerSize));
+  __ StoreP(r3, MemOperand(sp, argc * kPointerSize), r0);
   __ b(cont);
 }
 
@@ -3097,7 +3097,7 @@ void CallFunctionStub::Generate(MacroAssembler* masm) {
     }
 
     // Compute the receiver in sloppy mode.
-    __ LoadP(r6, MemOperand(sp, argc * kPointerSize));
+    __ LoadP(r6, MemOperand(sp, argc * kPointerSize), r0);
 
     if (NeedsChecks()) {
       __ JumpIfSmi(r6, &wrap);
@@ -3222,7 +3222,7 @@ void CallICStub::Generate(MacroAssembler* masm) {
   if (state_.CallAsMethod()) {
     EmitContinueIfStrictOrNative(masm, &cont);
     // Compute the receiver in sloppy mode.
-    __ LoadP(r6, MemOperand(sp, argc * kPointerSize));
+    __ LoadP(r6, MemOperand(sp, argc * kPointerSize), r0);
 
     __ JumpIfSmi(r6, &wrap);
     __ CompareObjectType(r6, r7, r7, FIRST_SPEC_OBJECT_TYPE);
@@ -3277,7 +3277,7 @@ void CallICStub::Generate(MacroAssembler* masm) {
 
 void CallICStub::GenerateMiss(MacroAssembler* masm) {
   // Get the receiver of the function from the stack; 1 ~ return address.
-  __ LoadP(r7, MemOperand(sp, (state_.arg_count() + 1) * kPointerSize));
+  __ LoadP(r7, MemOperand(sp, (state_.arg_count() + 1) * kPointerSize), r0);
 
   {
     FrameAndConstantPoolScope scope(masm, StackFrame::INTERNAL);
