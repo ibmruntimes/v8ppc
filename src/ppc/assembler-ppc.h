@@ -108,10 +108,10 @@ class CpuFeatures : public AllStatic {
     return Check(f, found_by_runtime_probing_only_);
   }
 
-  static bool IsSafeForSnapshot(CpuFeature f) {
+  static bool IsSafeForSnapshot(Isolate* isolate, CpuFeature f) {
     return Check(f, cross_compile_) ||
            (IsSupported(f) &&
-            (!Serializer::enabled() || !IsFoundByRuntimeProbingOnly(f)));
+            (!Serializer::enabled(isolate) || !IsFoundByRuntimeProbingOnly(f)));
   }
 
   static unsigned cache_line_size_log2() { return cache_line_size_log2_; }

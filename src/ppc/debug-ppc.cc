@@ -170,6 +170,16 @@ static void Generate_DebugBreakCallHelper(MacroAssembler* masm,
 }
 
 
+void Debug::GenerateCallICStubDebugBreak(MacroAssembler* masm) {
+  // Register state for CallICStub
+  // ----------- S t a t e -------------
+  //  -- r4 : function
+  //  -- r6 : slot in feedback array (smi)
+  // -----------------------------------
+  Generate_DebugBreakCallHelper(masm, r4.bit() | r6.bit(), 0);
+}
+
+
 void Debug::GenerateLoadICDebugBreak(MacroAssembler* masm) {
   // Calling convention for IC load (from ic-ppc.cc).
   // ----------- S t a t e -------------
@@ -226,15 +236,6 @@ void Debug::GenerateCompareNilICDebugBreak(MacroAssembler* masm) {
 }
 
 
-void Debug::GenerateCallICDebugBreak(MacroAssembler* masm) {
-  // Calling convention for IC call (from ic-ppc.cc)
-  // ----------- S t a t e -------------
-  //  -- r5     : name
-  // -----------------------------------
-  Generate_DebugBreakCallHelper(masm, r5.bit(), 0);
-}
-
-
 void Debug::GenerateReturnDebugBreak(MacroAssembler* masm) {
   // In places other than IC call sites it is expected that r3 is TOS which
   // is an object - this is not generally the case so this should be used with
@@ -249,17 +250,6 @@ void Debug::GenerateCallFunctionStubDebugBreak(MacroAssembler* masm) {
   //  -- r4 : function
   // -----------------------------------
   Generate_DebugBreakCallHelper(masm, r4.bit(), 0);
-}
-
-
-void Debug::GenerateCallFunctionStubRecordDebugBreak(MacroAssembler* masm) {
-  // Register state for CallFunctionStub (from code-stubs-ppc.cc).
-  // ----------- S t a t e -------------
-  //  -- r4 : function
-  //  -- r5 : feedback array
-  //  -- r6 : slot in feedback array
-  // -----------------------------------
-  Generate_DebugBreakCallHelper(masm, r4.bit() | r5.bit() | r6.bit(), 0);
 }
 
 

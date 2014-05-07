@@ -536,8 +536,6 @@ void MacroAssembler::PopSafepointRegisters() {
 
 
 void MacroAssembler::PushSafepointRegistersAndDoubles() {
-  // Number of d-regs not known at snapshot time.
-  ASSERT(!Serializer::enabled());
   PushSafepointRegisters();
   subi(sp, sp, Operand(DoubleRegister::NumAllocatableRegisters() *
                        kDoubleSize));
@@ -549,8 +547,6 @@ void MacroAssembler::PushSafepointRegistersAndDoubles() {
 
 
 void MacroAssembler::PopSafepointRegistersAndDoubles() {
-  // Number of d-regs not known at snapshot time.
-  ASSERT(!Serializer::enabled());
   for (int i = 0; i < DoubleRegister::NumAllocatableRegisters(); i++) {
     lfd(DoubleRegister::FromAllocationIndex(i),
         MemOperand(sp, i * kDoubleSize));

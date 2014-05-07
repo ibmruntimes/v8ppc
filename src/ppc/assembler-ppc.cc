@@ -2228,7 +2228,7 @@ void Assembler::RecordRelocInfo(const RelocInfo& rinfo) {
   if (!RelocInfo::IsNone(rinfo.rmode())) {
     // Don't record external references unless the heap will be serialized.
     if (rinfo.rmode() == RelocInfo::EXTERNAL_REFERENCE) {
-      if (!Serializer::enabled() && !emit_debug_code()) {
+      if (!Serializer::enabled(isolate()) && !emit_debug_code()) {
         return;
       }
     }
@@ -2376,7 +2376,7 @@ void ConstantPoolBuilder::AddEntry(Assembler* assm,
   // Try to merge entries which won't be patched.
   int merged_index = -1;
   if (RelocInfo::IsNone(rmode) ||
-      (!Serializer::enabled() && (rmode >= RelocInfo::CELL))) {
+      (!Serializer::enabled(assm->isolate()) && (rmode >= RelocInfo::CELL))) {
     size_t i;
     std::vector<RelocInfo>::const_iterator it;
     for (it = entries_.begin(), i = 0; it != entries_.end(); it++, i++) {
