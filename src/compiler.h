@@ -155,11 +155,13 @@ class CompilationInfo {
     ASSERT(function_ == NULL);
     function_ = literal;
   }
-  // When the scope is applied, we may have deferred work to do on the function.
   void PrepareForCompilation(Scope* scope);
   void SetGlobalScope(Scope* global_scope) {
     ASSERT(global_scope_ == NULL);
     global_scope_ = global_scope;
+  }
+  Handle<FixedArray> feedback_vector() const {
+    return feedback_vector_;
   }
   void SetCode(Handle<Code> code) { code_ = code; }
   void SetExtension(v8::Extension* extension) {
@@ -396,6 +398,9 @@ class CompilationInfo {
   // global script. Will be a null handle otherwise.
   Handle<Context> context_;
 
+  // Used by codegen, ultimately kept rooted by the SharedFunctionInfo.
+  Handle<FixedArray> feedback_vector_;
+
   // Compilation mode flag and whether deoptimization is allowed.
   Mode mode_;
   BailoutId osr_ast_id_;
@@ -533,6 +538,8 @@ class OptimizedCompileJob: public ZoneObject {
   MUST_USE_RESULT Status AbortAndDisableOptimization(
       BailoutReason reason = kNoReason) {
     if (reason != kNoReason) info_->set_bailout_reason(reason);
+    // Reference to shared function info does not change between phases.
+    AllowDeferredHandleDereference allow_handle_dereference;
     info_->shared_info()->DisableOptimization(info_->bailout_reason());
     return SetLastStatus(BAILED_OUT);
   }

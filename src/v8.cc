@@ -87,21 +87,6 @@ void V8::SetReturnAddressLocationResolver(
 }
 
 
-void V8::RunMicrotasks(Isolate* isolate) {
-  if (!isolate->microtask_pending())
-    return;
-
-  HandleScopeImplementer* handle_scope_implementer =
-      isolate->handle_scope_implementer();
-  ASSERT(handle_scope_implementer->CallDepthIsZero());
-
-  // Increase call depth to prevent recursive callbacks.
-  handle_scope_implementer->IncrementCallDepth();
-  Execution::RunMicrotasks(isolate);
-  handle_scope_implementer->DecrementCallDepth();
-}
-
-
 void V8::InitializeOncePerProcessImpl() {
   FlagList::EnforceFlagImplications();
   Serializer::InitializeOncePerProcess();
@@ -121,7 +106,9 @@ void V8::InitializeOncePerProcessImpl() {
   platform_ = new DefaultPlatform;
 #endif
   Sampler::SetUp();
-  CpuFeatures::Probe(Serializer::enabled());
+  // TODO(svenpanne) Clean this up when Serializer is a real object.
+  bool serializer_enabled = Serializer::enabled(NULL);
+  CpuFeatures::Probe(serializer_enabled);
   OS::PostSetUp();
   ElementsAccessor::InitializeOncePerProcess();
   LOperand::SetUpCaches();

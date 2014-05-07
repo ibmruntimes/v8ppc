@@ -673,8 +673,8 @@ class Isolate {
   class ExceptionScope {
    public:
     explicit ExceptionScope(Isolate* isolate) :
-      // Scope currently can only be used for regular exceptions, not
-      // failures like OOM or termination exception.
+      // Scope currently can only be used for regular exceptions,
+      // not termination exception.
       isolate_(isolate),
       pending_exception_(isolate_->pending_exception(), isolate_),
       catcher_(isolate_->catcher())
@@ -1086,6 +1086,8 @@ class Isolate {
   void AddCallCompletedCallback(CallCompletedCallback callback);
   void RemoveCallCompletedCallback(CallCompletedCallback callback);
   void FireCallCompletedCallback();
+
+  void RunMicrotasks();
 
  private:
   Isolate();

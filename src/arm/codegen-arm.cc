@@ -79,13 +79,11 @@ UnaryMathFunction CreateExpFunction() {
 
 #if defined(V8_HOST_ARCH_ARM)
 OS::MemCopyUint8Function CreateMemCopyUint8Function(
-      OS::MemCopyUint8Function stub) {
+    OS::MemCopyUint8Function stub) {
 #if defined(USE_SIMULATOR)
   return stub;
 #else
-  if (Serializer::enabled() || !CpuFeatures::IsSupported(UNALIGNED_ACCESSES)) {
-    return stub;
-  }
+  if (!CpuFeatures::IsSupported(UNALIGNED_ACCESSES)) return stub;
   size_t actual_size;
   byte* buffer = static_cast<byte*>(OS::Allocate(1 * KB, &actual_size, true));
   if (buffer == NULL) return stub;
@@ -237,13 +235,11 @@ OS::MemCopyUint8Function CreateMemCopyUint8Function(
 
 // Convert 8 to 16. The number of character to copy must be at least 8.
 OS::MemCopyUint16Uint8Function CreateMemCopyUint16Uint8Function(
-      OS::MemCopyUint16Uint8Function stub) {
+    OS::MemCopyUint16Uint8Function stub) {
 #if defined(USE_SIMULATOR)
   return stub;
 #else
-  if (Serializer::enabled() || !CpuFeatures::IsSupported(UNALIGNED_ACCESSES)) {
-    return stub;
-  }
+  if (!CpuFeatures::IsSupported(UNALIGNED_ACCESSES)) return stub;
   size_t actual_size;
   byte* buffer = static_cast<byte*>(OS::Allocate(1 * KB, &actual_size, true));
   if (buffer == NULL) return stub;

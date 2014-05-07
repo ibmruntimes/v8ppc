@@ -6,8 +6,7 @@
 
 // Test debug events when we listen to all exceptions and
 // there is a catch handler for the exception thrown in a Promise.
-// Expectation:
-//  - only the normal Exception debug event is triggered.
+// We expect a normal Exception debug event to be triggered.
 
 Debug = debug.Debug;
 
@@ -35,10 +34,10 @@ function listener(event, exec_state, event_data, data) {
     // Ignore exceptions during startup in stress runs.
     if (step >= 1) return;
     assertEquals(["resolve", "end main", "throw"], log);
-    assertTrue(event != Debug.DebugEvent.PendingExceptionInPromise);
     if (event == Debug.DebugEvent.Exception) {
       assertEquals("caught", event_data.exception().message);
       assertEquals(undefined, event_data.promise());
+      assertFalse(event_data.uncaught());
       step++;
     }
   } catch (e) {

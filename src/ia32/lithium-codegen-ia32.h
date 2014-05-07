@@ -174,8 +174,6 @@ class LCodeGen: public LCodeGenBase {
 
   int GetStackSlotCount() const { return chunk()->spill_slot_count(); }
 
-  void Abort(BailoutReason reason);
-
   void AddDeferredCode(LDeferredCode* code) { deferred_.Add(code, zone()); }
 
   void SaveCallerDoubles();
@@ -436,6 +434,7 @@ class LCodeGen: public LCodeGenBase {
     }
 
     MacroAssembler* masm() const { return masm_; }
+    Isolate* isolate() const { return masm_->isolate(); }
 
    private:
     int ArrayIndex(X87Register reg);

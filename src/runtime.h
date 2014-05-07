@@ -75,7 +75,8 @@ namespace internal {
   F(SetInlineBuiltinFlag, 1, 1) \
   F(StoreArrayLiteralElement, 5, 1) \
   F(DebugPrepareStepInIfStepping, 1, 1) \
-  F(DebugPendingExceptionInPromise, 2, 1) \
+  F(DebugPromiseHandlePrologue, 1, 1) \
+  F(DebugPromiseHandleEpilogue, 0, 1) \
   F(FlattenString, 1, 1) \
   F(LoadMutableDouble, 2, 1) \
   F(TryMigrateInstance, 1, 1) \
@@ -202,7 +203,7 @@ namespace internal {
   F(SetCode, 2, 1) \
   F(SetExpectedNumberOfProperties, 2, 1) \
   \
-  F(CreateApiFunction, 1, 1) \
+  F(CreateApiFunction, 2, 1) \
   F(IsTemplate, 1, 1) \
   F(GetTemplateField, 2, 1) \
   F(DisableAccessChecks, 1, 1) \
@@ -310,7 +311,11 @@ namespace internal {
   F(SetIsObserved, 1, 1) \
   F(GetObservationState, 0, 1) \
   F(ObservationWeakMapCreate, 0, 1) \
-  F(IsAccessAllowedForObserver, 3, 1) \
+  F(ObserverObjectAndRecordHaveSameOrigin, 3, 1) \
+  F(ObjectWasCreatedInCurrentOrigin, 1, 1) \
+  F(ObjectObserveInObjectContext, 3, 1) \
+  F(ObjectGetNotifierInObjectContext, 1, 1) \
+  F(ObjectNotifierPerformChangeInObjectContext, 3, 1) \
   \
   /* Harmony typed arrays */ \
   F(ArrayBufferInitialize, 2, 1)\
@@ -396,7 +401,7 @@ namespace internal {
   F(HasFastProperties, 1, 1) \
   F(TransitionElementsKind, 2, 1) \
   F(HaveSameMap, 2, 1) \
-  F(IsAccessCheckNeeded, 1, 1)
+  F(IsJSGlobalProxy, 1, 1)
 
 
 #define RUNTIME_FUNCTION_LIST_DEBUGGER(F) \
@@ -819,7 +824,9 @@ class Runtime : public AllStatic {
       Handle<JSObject> object,
       Handle<Object> key,
       Handle<Object> value,
-      PropertyAttributes attr);
+      PropertyAttributes attr,
+      JSReceiver::StoreFromKeyed store_from_keyed
+        = JSReceiver::MAY_BE_STORE_FROM_KEYED);
 
   MUST_USE_RESULT static MaybeHandle<Object> DeleteObjectProperty(
       Isolate* isolate,
@@ -865,7 +872,10 @@ class Runtime : public AllStatic {
     ARRAY_ID_INT32 = 6,
     ARRAY_ID_FLOAT32 = 7,
     ARRAY_ID_FLOAT64 = 8,
-    ARRAY_ID_UINT8_CLAMPED = 9
+    ARRAY_ID_UINT8_CLAMPED = 9,
+
+    ARRAY_ID_FIRST = ARRAY_ID_UINT8,
+    ARRAY_ID_LAST = ARRAY_ID_UINT8_CLAMPED
   };
 
   static void ArrayIdToTypeAndSize(int array_id,

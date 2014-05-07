@@ -339,7 +339,7 @@ void BasicJsonStringifier::Append_(const Char* chars) {
 MaybeHandle<Object> BasicJsonStringifier::ApplyToJsonFunction(
     Handle<Object> object, Handle<Object> key) {
   LookupResult lookup(isolate_);
-  JSObject::cast(*object)->LookupRealNamedProperty(*tojson_string_, &lookup);
+  JSObject::cast(*object)->LookupRealNamedProperty(tojson_string_, &lookup);
   if (!lookup.IsProperty()) return object;
   PropertyAttributes attr;
   Handle<Object> fun;
@@ -560,6 +560,8 @@ BasicJsonStringifier::Result BasicJsonStringifier::SerializeJSArray(
       break;
     }
     case FAST_DOUBLE_ELEMENTS: {
+      // Empty array is FixedArray but not FixedDoubleArray.
+      if (length == 0) break;
       Handle<FixedDoubleArray> elements(
           FixedDoubleArray::cast(object->elements()), isolate_);
       for (uint32_t i = 0; i < length; i++) {

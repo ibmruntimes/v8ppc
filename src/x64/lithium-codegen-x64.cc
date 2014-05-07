@@ -66,13 +66,6 @@ void LCodeGen::FinishCode(Handle<Code> code) {
   code->set_safepoint_table_offset(safepoints_.GetCodeOffset());
   if (code->is_optimized_code()) RegisterWeakObjectsInOptimizedCode(code);
   PopulateDeoptimizationData(code);
-  info()->CommitDependencies(code);
-}
-
-
-void LChunkBuilder::Abort(BailoutReason reason) {
-  info()->set_bailout_reason(reason);
-  status_ = ABORTED;
 }
 
 
@@ -3898,7 +3891,7 @@ void LCodeGen::DoCallNew(LCallNew* instr) {
   __ Set(rax, instr->arity());
   // No cell in ebx for construct type feedback in optimized code
   __ LoadRoot(rbx, Heap::kUndefinedValueRootIndex);
-  CallConstructStub stub(isolate(), NO_CALL_FUNCTION_FLAGS);
+  CallConstructStub stub(isolate(), NO_CALL_CONSTRUCTOR_FLAGS);
   CallCode(stub.GetCode(), RelocInfo::CONSTRUCT_CALL, instr);
 }
 
@@ -3997,7 +3990,6 @@ void LCodeGen::DoStoreNamedField(LStoreNamedField* instr) {
   }
 
   Register object = ToRegister(instr->object());
-  Handle<Map> transition = instr->transition();
   SmiCheck check_needed = hinstr->value()->IsHeapObject()
                           ? OMIT_SMI_CHECK : INLINE_SMI_CHECK;
 
@@ -4021,15 +4013,17 @@ void LCodeGen::DoStoreNamedField(LStoreNamedField* instr) {
       }
     }
   } else if (representation.IsDouble()) {
-    ASSERT(transition.is_null());
     ASSERT(access.IsInobject());
+    ASSERT(!hinstr->has_transition());
     ASSERT(!hinstr->NeedsWriteBarrier());
     XMMRegister value = ToDoubleRegister(instr->value());
     __ movsd(FieldOperand(object, offset), value);
     return;
   }
 
-  if (!transition.is_null()) {
+  if (hinstr->has_transition()) {
+    Handle<Map> transition = hinstr->transition_map();
+    AddDeprecationDependency(transition);
     if (!hinstr->NeedsWriteBarrierForMap()) {
       __ Move(FieldOperand(object, HeapObject::kMapOffset), transition);
     } else {

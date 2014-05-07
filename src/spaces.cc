@@ -559,10 +559,6 @@ void MemoryChunk::InsertAfter(MemoryChunk* other) {
 
 
 void MemoryChunk::Unlink() {
-  if (!InNewSpace() && IsFlagSet(SCAN_ON_SCAVENGE)) {
-    heap_->decrement_scan_on_scavenge_pages();
-    ClearFlag(SCAN_ON_SCAVENGE);
-  }
   MemoryChunk* next_element = next_chunk();
   MemoryChunk* prev_element = prev_chunk();
   next_element->set_prev_chunk(prev_element);
@@ -930,7 +926,8 @@ PagedSpace::PagedSpace(Heap* heap,
     : Space(heap, id, executable),
       free_list_(this),
       was_swept_conservatively_(false),
-      unswept_free_bytes_(0) {
+      unswept_free_bytes_(0),
+      end_of_unswept_pages_(NULL) {
   if (id == CODE_SPACE) {
     area_size_ = heap->isolate()->memory_allocator()->
         CodePageAreaSize();
@@ -1060,7 +1057,9 @@ intptr_t PagedSpace::SizeOfFirstPage() {
         // upgraded to handle small pages.
         size = AreaSize();
       } else {
-        size = 480 * KB * FullCodeGenerator::kBootCodeSizeMultiplier / 100;
+        size = RoundUp(
+            480 * KB * FullCodeGenerator::kBootCodeSizeMultiplier / 100,
+            kPointerSize);
       }
       break;
     default:
@@ -1103,7 +1102,7 @@ void PagedSpace::IncreaseCapacity(int size) {
 }
 
 
-void PagedSpace::ReleasePage(Page* page, bool unlink) {
+void PagedSpace::ReleasePage(Page* page) {
   ASSERT(page->LiveBytes() == 0);
   ASSERT(AreaSize() == page->area_size());
 
@@ -1115,6 +1114,11 @@ void PagedSpace::ReleasePage(Page* page, bool unlink) {
     DecreaseUnsweptFreeBytes(page);
   }
 
+  if (page->IsFlagSet(MemoryChunk::SCAN_ON_SCAVENGE)) {
+    heap()->decrement_scan_on_scavenge_pages();
+    page->ClearFlag(MemoryChunk::SCAN_ON_SCAVENGE);
+  }
+
   ASSERT(!free_list_.ContainsPageFreeListItems(page));
 
   if (Page::FromAllocationTop(allocation_info_.top()) == page) {
@@ -1122,9 +1126,7 @@ void PagedSpace::ReleasePage(Page* page, bool unlink) {
     allocation_info_.set_limit(NULL);
   }
 
-  if (unlink) {
-    page->Unlink();
-  }
+  page->Unlink();
   if (page->IsFlagSet(MemoryChunk::CONTAINS_ONLY_DATA)) {
     heap()->isolate()->memory_allocator()->Free(page);
   } else {
@@ -1397,7 +1399,7 @@ bool NewSpace::AddFreshPage() {
 }
 
 
-MaybeObject* NewSpace::SlowAllocateRaw(int size_in_bytes) {
+AllocationResult NewSpace::SlowAllocateRaw(int size_in_bytes) {
   Address old_top = allocation_info_.top();
   Address high = to_space_.page_high();
   if (allocation_info_.limit() < high) {
@@ -1419,7 +1421,7 @@ MaybeObject* NewSpace::SlowAllocateRaw(int size_in_bytes) {
     top_on_previous_step_ = to_space_.page_low();
     return AllocateRaw(size_in_bytes);
   } else {
-    return Failure::RetryAfterGC();
+    return AllocationResult::Retry();
   }
 }
 
@@ -2842,22 +2844,22 @@ void LargeObjectSpace::TearDown() {
 }
 
 
-MaybeObject* LargeObjectSpace::AllocateRaw(int object_size,
-                                           Executability executable) {
+AllocationResult LargeObjectSpace::AllocateRaw(int object_size,
+                                               Executability executable) {
   // Check if we want to force a GC before growing the old space further.
   // If so, fail the allocation.
   if (!heap()->always_allocate() &&
       heap()->OldGenerationAllocationLimitReached()) {
-    return Failure::RetryAfterGC(identity());
+    return AllocationResult::Retry(identity());
   }
 
   if (Size() + object_size > max_capacity_) {
-    return Failure::RetryAfterGC(identity());
+    return AllocationResult::Retry(identity());
   }
 
   LargePage* page = heap()->isolate()->memory_allocator()->
       AllocateLargePage(object_size, this, executable);
-  if (page == NULL) return Failure::RetryAfterGC(identity());
+  if (page == NULL) return AllocationResult::Retry(identity());
   ASSERT(page->area_size() >= object_size);
 
   size_ += static_cast<int>(page->size());

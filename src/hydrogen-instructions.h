@@ -161,7 +161,6 @@ class LChunkBuilder;
   V(WrapReceiver)
 
 #define GVN_TRACKED_FLAG_LIST(V)               \
-  V(Maps)                                      \
   V(NewSpacePromotion)
 
 #define GVN_UNTRACKED_FLAG_LIST(V)             \
@@ -177,6 +176,7 @@ class LChunkBuilder;
   V(ElementsPointer)                           \
   V(GlobalVars)                                \
   V(InobjectFields)                            \
+  V(Maps)                                      \
   V(OsrEntries)                                \
   V(ExternalMemory)                            \
   V(StringChars)                               \
@@ -949,7 +949,7 @@ class HValue : public ZoneObject {
   virtual Representation RepresentationFromInputs() {
     return representation();
   }
-  Representation RepresentationFromUses();
+  virtual Representation RepresentationFromUses();
   Representation RepresentationFromUseRequirements();
   bool HasNonSmiUse();
   virtual void UpdateRepresentation(Representation new_rep,
@@ -2638,6 +2638,7 @@ class HUnaryMathOperation V8_FINAL : public HTemplateInstruction<2> {
   virtual Range* InferRange(Zone* zone) V8_OVERRIDE;
 
   virtual HValue* Canonicalize() V8_OVERRIDE;
+  virtual Representation RepresentationFromUses() V8_OVERRIDE;
   virtual Representation RepresentationFromInputs() V8_OVERRIDE;
 
   BuiltinFunctionId op() const { return op_; }
@@ -2652,6 +2653,15 @@ class HUnaryMathOperation V8_FINAL : public HTemplateInstruction<2> {
   }
 
  private:
+  // Indicates if we support a double (and int32) output for Math.floor and
+  // Math.round.
+  bool SupportsFlexibleFloorAndRound() const {
+#ifdef V8_TARGET_ARCH_ARM64
+    return true;
+#else
+    return false;
+#endif
+  }
   HUnaryMathOperation(HValue* context, HValue* value, BuiltinFunctionId op)
       : HTemplateInstruction<2>(HType::TaggedNumber()), op_(op) {
     SetOperandAt(0, context);
@@ -2659,6 +2669,12 @@ class HUnaryMathOperation V8_FINAL : public HTemplateInstruction<2> {
     switch (op) {
       case kMathFloor:
       case kMathRound:
+        if (SupportsFlexibleFloorAndRound()) {
+          SetFlag(kFlexibleRepresentation);
+        } else {
+          set_representation(Representation::Integer32());
+        }
+        break;
       case kMathClz32:
         set_representation(Representation::Integer32());
         break;
@@ -2746,8 +2762,6 @@ class HCheckMaps V8_FINAL : public HTemplateInstruction<2> {
   virtual Representation RequiredInputRepresentation(int index) V8_OVERRIDE {
     return Representation::Tagged();
   }
-  virtual bool HandleSideEffectDominator(GVNFlag side_effect,
-                                         HValue* dominator) V8_OVERRIDE;
   virtual void PrintDataTo(StringStream* stream) V8_OVERRIDE;
 
   HValue* value() { return OperandAt(0); }
@@ -2797,7 +2811,6 @@ class HCheckMaps V8_FINAL : public HTemplateInstruction<2> {
     SetOperandAt(1, typecheck != NULL ? typecheck : value);
     set_representation(Representation::Tagged());
     SetFlag(kUseGVN);
-    SetFlag(kTrackSideEffectDominators);
   }
 
   bool omit_;
@@ -6598,14 +6611,9 @@ class HStoreNamedField V8_FINAL : public HTemplateInstruction<3> {
     }
   }
 
-  void SetTransition(HConstant* map_constant, CompilationInfo* info) {
+  void SetTransition(HConstant* transition) {
     ASSERT(!has_transition());  // Only set once.
-    Handle<Map> map = Handle<Map>::cast(map_constant->handle(info->isolate()));
-    if (map->CanBeDeprecated()) {
-      Map::AddDependentCompilationInfo(
-          map, DependentCode::kTransitionGroup, info);
-    }
-    SetOperandAt(2, map_constant);
+    SetOperandAt(2, transition);
     has_transition_ = true;
   }
 
