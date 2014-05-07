@@ -3276,7 +3276,7 @@ void CallFunctionStub::Generate(MacroAssembler* masm) {
     }
 
     // Compute the receiver in non-strict mode.
-    __ LoadP(r6, MemOperand(sp, argc_ * kPointerSize));
+    __ LoadP(r6, MemOperand(sp, argc_ * kPointerSize), r0);
 
     if (NeedsChecks()) {
       __ JumpIfSmi(r6, &wrap);
@@ -3335,7 +3335,7 @@ void CallFunctionStub::Generate(MacroAssembler* masm) {
       __ InvokeBuiltin(Builtins::TO_OBJECT, CALL_FUNCTION);
       __ pop(r4);
     }
-    __ StoreP(r3, MemOperand(sp, argc_ * kPointerSize));
+    __ StoreP(r3, MemOperand(sp, argc_ * kPointerSize), r0);
     __ b(&cont);
   }
 }
@@ -4062,7 +4062,7 @@ void ArrayPushStub::Generate(MacroAssembler* masm) {
     __ bgt(&attempt_to_grow_elements);
 
     // Check if value is a smi.
-    __ LoadP(r7, MemOperand(sp, (argc - 1) * kPointerSize));
+    __ LoadP(r7, MemOperand(sp, (argc - 1) * kPointerSize), r0);
     __ JumpIfNotSmi(r7, &with_write_barrier);
 
     // Store the value.
@@ -4080,7 +4080,7 @@ void ArrayPushStub::Generate(MacroAssembler* masm) {
   } else {
     __ bgt(&call_builtin);
 
-    __ LoadP(r7, MemOperand(sp, (argc - 1) * kPointerSize));
+    __ LoadP(r7, MemOperand(sp, (argc - 1) * kPointerSize), r0);
     __ StoreNumberToDoubleElements(r7, scratch, elements, r8, d0,
                                    &call_builtin, argc * kDoubleSize);
   }
@@ -4165,7 +4165,7 @@ void ArrayPushStub::Generate(MacroAssembler* masm) {
     return;
   }
 
-  __ LoadP(r5, MemOperand(sp, (argc - 1) * kPointerSize));
+  __ LoadP(r5, MemOperand(sp, (argc - 1) * kPointerSize), r0);
   // Growing elements that are SMI-only requires special handling in case the
   // new element is non-Smi. For now, delegate to the builtin.
   if (IsFastSmiElementsKind(elements_kind())) {

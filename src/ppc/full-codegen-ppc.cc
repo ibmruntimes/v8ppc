@@ -2702,7 +2702,7 @@ void FullCodeGenerator::EmitCallWithIC(Call* expr) {
   // Record source position for debugger.
   SetSourcePosition(expr->position());
   CallFunctionStub stub(arg_count, flags);
-  __ LoadP(r4, MemOperand(sp, (arg_count + 1) * kPointerSize));
+  __ LoadP(r4, MemOperand(sp, (arg_count + 1) * kPointerSize), r0);
   __ CallStub(&stub);
 
   RecordJSReturnSite(expr);
@@ -2744,7 +2744,7 @@ void FullCodeGenerator::EmitKeyedCallWithIC(Call* expr,
   // Record source position for debugger.
   SetSourcePosition(expr->position());
   CallFunctionStub stub(arg_count, CALL_AS_METHOD);
-  __ LoadP(r4, MemOperand(sp, (arg_count + 1) * kPointerSize));
+  __ LoadP(r4, MemOperand(sp, (arg_count + 1) * kPointerSize), r0);
   __ CallStub(&stub);
 
   RecordJSReturnSite(expr);
@@ -4257,7 +4257,7 @@ void FullCodeGenerator::VisitCallRuntime(CallRuntime* expr) {
     // Record source position of the IC call.
     SetSourcePosition(expr->position());
     CallFunctionStub stub(arg_count, NO_CALL_FUNCTION_FLAGS);
-    __ LoadP(r4, MemOperand(sp, (arg_count + 1) * kPointerSize));
+    __ LoadP(r4, MemOperand(sp, (arg_count + 1) * kPointerSize), r0);
     __ CallStub(&stub);
 
     // Restore context register.

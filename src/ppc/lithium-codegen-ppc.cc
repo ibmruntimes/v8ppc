@@ -3121,7 +3121,7 @@ void LCodeGen::DoAccessArgumentsAt(LAccessArgumentsAt* instr) {
     if (instr->index()->IsConstantOperand()) {
       int const_index = ToInteger32(LConstantOperand::cast(instr->index()));
       int index = (const_length - const_index) + 1;
-      __ LoadP(result, MemOperand(arguments, index * kPointerSize));
+      __ LoadP(result, MemOperand(arguments, index * kPointerSize), r0);
     } else {
       Register index = ToRegister(instr->index());
       __ subfic(result, index, Operand(const_length + 1));
