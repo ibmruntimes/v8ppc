@@ -1246,6 +1246,7 @@ class Assembler : public AssemblerBase {
 #if ABI_USES_FUNCTION_DESCRIPTORS || V8_OOL_CONSTANT_POOL
   static void RelocateInternalReference(Address pc, intptr_t delta,
                                         Address code_start);
+  static int DecodeInternalReference(Vector<char> buffer, Address pc);
 #endif
 
  protected:
