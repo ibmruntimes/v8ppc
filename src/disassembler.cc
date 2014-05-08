@@ -108,11 +108,14 @@ static int DecodeIt(Isolate* isolate,
   } else {
     // No relocation information when printing code stubs.
   }
+#if !V8_TARGET_ARCH_PPC
   int constants = -1;  // no constants being decoded at the start
+#endif
 
   while (pc < end) {
     // First decode instruction so that we know its length.
     byte* prev_pc = pc;
+#if !V8_TARGET_ARCH_PPC
     if (constants > 0) {
       OS::SNPrintF(decode_buffer,
                    "%08x       constant",
@@ -135,12 +138,24 @@ static int DecodeIt(Isolate* isolate,
                      "%08" V8PRIxPTR "      jump table entry %4" V8PRIdPTR,
                      ptr,
                      ptr - begin);
-#if V8_TARGET_ARCH_PPC64
-        pc += 8;
-#else
         pc += 4;
-#endif
       } else {
+#elif ABI_USES_FUNCTION_DESCRIPTORS || V8_OOL_CONSTANT_POOL
+    // V8_TARGET_ARCH_PPC
+    {
+      // Function descriptors are specially decoded and skipped.
+      // Other internal references (load of ool constant pool pointer)
+      // are not since they are a encoded as a regular mov sequence.
+      int skip;
+      if (it != NULL && !it->done() && it->rinfo()->pc() == pc &&
+          it->rinfo()->rmode() == RelocInfo::INTERNAL_REFERENCE &&
+          (skip = Assembler::DecodeInternalReference(decode_buffer, pc))) {
+        pc += skip;
+      } else {
+#else
+    {
+      {
+#endif
         decode_buffer[0] = '\0';
         pc += d.InstructionDecode(decode_buffer, pc);
       }
