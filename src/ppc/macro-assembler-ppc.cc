@@ -616,20 +616,8 @@ void MacroAssembler::CanonicalizeNaN(const DoubleRegister dst,
   }
 
   // Replace with canonical NaN.
-  uint64_t nan_int64 = BitCast<uint64_t>(
-    FixedDoubleArray::canonical_not_the_hole_nan_as_double());
-#if V8_TARGET_ARCH_PPC64
-  mov(r0, Operand(nan_int64));
-  stdu(r0, MemOperand(sp, -kDoubleSize));
-#else
-  subi(sp, sp, Operand(kDoubleSize));
-  mov(r0, Operand(static_cast<intptr_t>(nan_int64)));
-  stw(r0, MemOperand(sp, Register::kMantissaOffset));
-  mov(r0, Operand(static_cast<intptr_t>(nan_int64 >> 32)));
-  stw(r0, MemOperand(sp, Register::kExponentOffset));
-#endif
-  lfd(dst, MemOperand(sp));
-  addi(sp, sp, Operand(kDoubleSize));
+  double nan_value = FixedDoubleArray::canonical_not_the_hole_nan_as_double();
+  LoadDoubleLiteral(dst, nan_value, r0);
 
   bind(&done);
 }
