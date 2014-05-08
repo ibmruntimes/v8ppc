@@ -1495,6 +1495,22 @@ void Assembler::function_descriptor() {
 }
 
 
+#if ABI_USES_FUNCTION_DESCRIPTORS
+int Assembler::DecodeInternalReference(Vector<char> buffer, Address pc) {
+  uintptr_t *fd = reinterpret_cast<uintptr_t*>(pc);
+  if (fd[1] == 0 && fd[2] == 0) {
+    // Function descriptor
+    OS::SNPrintF(buffer,
+                 "[%08" V8PRIxPTR ", %08" V8PRIxPTR ", %08" V8PRIxPTR "]"
+                 "   function descriptor",
+                 fd[0], fd[1], fd[2]);
+    return kPointerSize * 3;
+  }
+  return 0;
+}
+#endif
+
+
 // Primarily used for loading constants
 // This should really move to be in macro-assembler as it
 // is really a pseudo instruction

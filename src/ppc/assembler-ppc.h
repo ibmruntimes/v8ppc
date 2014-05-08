@@ -1163,6 +1163,10 @@ class Assembler : public AssemblerBase {
   void BlockTrampolinePoolFor(int instructions);
   void CheckTrampolinePool();
 
+#if ABI_USES_FUNCTION_DESCRIPTORS
+  static int DecodeInternalReference(Vector<char> buffer, Address pc);
+#endif
+
  protected:
   // Relocation for a type-recording IC has the AST id added to it.  This
   // member variable is a way to pass the information from the call site to
