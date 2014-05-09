@@ -580,16 +580,23 @@ void ConstantPoolArray::ConstantPoolArrayPrint(FILE* out) {
   HeapObject::PrintHeader(out, "ConstantPoolArray");
   PrintF(out, " - length: %d", length());
   for (int i = 0; i < length(); i++) {
+    int offset = OffsetOfElementAt(i);
     if (i < first_code_ptr_index()) {
-      PrintF(out, "\n  [%d]: double: %g", i, get_int64_entry_as_double(i));
+#if V8_HOST_ARCH_64_BIT
+      PrintF(out, "\n  [%d]: 0x%" V8PRIxPTR " (int64)", offset,
+             get_int64_entry(i));
+#else
+      PrintF(out, "\n  [%d]: %g (double)", offset,
+             get_int64_entry_as_double(i));
+#endif
     } else if (i < first_heap_ptr_index()) {
-      PrintF(out, "\n  [%d]: code target pointer: %p", i,
-             reinterpret_cast<void*>(get_code_ptr_entry(i)));
+      PrintF(out, "\n  [%d]: 0x%" V8PRIxPTR " (code target pointer)", offset,
+             reinterpret_cast<uintptr_t>(get_code_ptr_entry(i)));
     } else if (i < first_int32_index()) {
-      PrintF(out, "\n  [%d]: heap pointer: %p", i,
-             reinterpret_cast<void*>(get_heap_ptr_entry(i)));
+      PrintF(out, "\n  [%d]: 0x%" V8PRIxPTR " (heap pointer)", offset,
+             reinterpret_cast<uintptr_t>(get_heap_ptr_entry(i)));
     } else {
-      PrintF(out, "\n  [%d]: int32: %d", i, get_int32_entry(i));
+      PrintF(out, "\n  [%d]: 0x%x (int32)", offset, get_int32_entry(i));
     }
   }
   PrintF(out, "\n");

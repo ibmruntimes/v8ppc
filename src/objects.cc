@@ -11780,6 +11780,15 @@ void Code::Disassemble(const char* name, FILE* out) {
     it.rinfo()->Print(GetIsolate(), out);
   }
   PrintF(out, "\n");
+
+  if (FLAG_enable_ool_constant_pool) {
+    ConstantPoolArray *pool = constant_pool();
+    if (pool->length()) {
+      PrintF(out, "Constant Pool\n");
+      pool->Print(out);
+      PrintF(out, "\n");
+    }
+  }
 }
 #endif  // ENABLE_DISASSEMBLER
 
