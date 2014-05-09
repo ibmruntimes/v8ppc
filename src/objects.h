@@ -11098,6 +11098,13 @@ class ObjectVisitor BASE_EMBEDDED {
   // Visit weak next_code_link in Code object.
   virtual void VisitNextCodeLink(Object** p) { VisitPointers(p, p + 1); }
 
+  // Visit pointer embedded in ool constant pool
+  virtual void VisitConstantPoolEmbeddedPointer(
+      Object** p,
+      ConstantPoolArray::WeakObjectState state) {
+    VisitPointers(p, p + 1);
+  }
+
   // To allow lazy clearing of inline caches the visitor has
   // a rich interface for iterating over Code objects..
 

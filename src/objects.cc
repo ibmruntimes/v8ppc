@@ -9944,13 +9944,14 @@ bool Map::EquivalentToForNormalization(Map* other,
 
 
 void ConstantPoolArray::ConstantPoolIterateBody(ObjectVisitor* v) {
+  WeakObjectState state = get_weak_object_state();
   for (int i = 0; i < count_of_code_ptr_entries(); i++) {
     int index = first_code_ptr_index() + i;
     v->VisitCodeEntry(reinterpret_cast<Address>(RawFieldOfElementAt(index)));
   }
   for (int i = 0; i < count_of_heap_ptr_entries(); i++) {
     int index = first_heap_ptr_index() + i;
-    v->VisitPointer(RawFieldOfElementAt(index));
+    v->VisitConstantPoolEmbeddedPointer(RawFieldOfElementAt(index), state);
   }
 }
 
