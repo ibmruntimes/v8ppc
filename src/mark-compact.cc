@@ -68,6 +68,18 @@ class VerifyMarkingVisitor: public ObjectVisitor {
     }
   }
 
+  void VisitConstantPoolEmbeddedPointer(
+      Object** p,
+      ConstantPoolArray::WeakObjectState state) {
+    bool is_weak_object =
+        (state == ConstantPoolArray::WEAK_OBJECTS_IN_OPTIMIZED_CODE &&
+         Code::IsWeakObjectInOptimizedCode(*p)) ||
+        (state == ConstantPoolArray::WEAK_OBJECTS_IN_IC &&
+         Code::IsWeakObjectInIC(*p));
+    if (!is_weak_object)
+      VisitPointer(p);
+  }
+
   void VisitEmbeddedPointer(RelocInfo* rinfo) {
     ASSERT(rinfo->rmode() == RelocInfo::EMBEDDED_OBJECT);
     if (!rinfo->host()->IsWeakObject(rinfo->target_object())) {
