@@ -571,6 +571,7 @@ void MathExpGenerator::EmitMathExp(MacroAssembler* masm,
   // Move low word of double_scratch1 to temp2
   __ subi(sp, sp, Operand(kDoubleSize));
   __ stfd(double_scratch1, MemOperand(sp));
+  __ nop();  // LHS/RAW optimization
   __ lwz(temp2, MemOperand(sp, Register::kMantissaOffset));
 
   __ fsub(double_scratch1, double_scratch1, result);
@@ -607,6 +608,7 @@ void MathExpGenerator::EmitMathExp(MacroAssembler* masm,
   __ stw(temp3, MemOperand(sp, Register::kExponentOffset));
   __ stw(temp2, MemOperand(sp, Register::kMantissaOffset));
 #endif
+  __ nop();  // LHS/RAW optimization
   __ lfd(double_scratch1, MemOperand(sp, 0));
   __ addi(sp, sp, Operand(kDoubleSize));
 
