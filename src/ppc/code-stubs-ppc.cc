@@ -675,6 +675,7 @@ void FloatingPointHelper::ConvertIntToDouble(MacroAssembler* masm,
 #endif
 
   // load into FPR
+  __ nop();  // LHS/RAW optimization
   __ lfd(double_dst, MemOperand(sp, 0));
 
   __ addi(sp, sp, Operand(8));  // restore stack
@@ -707,6 +708,7 @@ void FloatingPointHelper::ConvertUnsignedIntToDouble(MacroAssembler* masm,
 #endif
 
   // load into FPR
+  __ nop();  // LHS/RAW optimization
   __ lfd(double_dst, MemOperand(sp, 0));
 
   __ addi(sp, sp, Operand(8));  // restore stack
@@ -737,6 +739,7 @@ void FloatingPointHelper::ConvertIntToFloat(MacroAssembler* masm,
 #endif
 
   // load sign-extended src into FPR
+  __ nop();  // LHS/RAW optimization
   __ lfd(dst, MemOperand(sp, 0));
 
   __ addi(sp, sp, Operand(8));  // restore stack

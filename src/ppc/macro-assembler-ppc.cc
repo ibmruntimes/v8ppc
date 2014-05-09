@@ -2264,6 +2264,7 @@ void MacroAssembler::ConvertToInt32(Register source,
 
   addi(sp, sp, Operand(-kDoubleSize));
   stfd(double_scratch, MemOperand(sp, 0));
+  nop();  // LHS/RAW optimization
 #if V8_TARGET_ARCH_PPC64
   ld(dest, MemOperand(sp, 0));
 #else
@@ -2305,6 +2306,7 @@ void MacroAssembler::EmitVFPTruncate(VFPRoundingMode rounding_mode,
 
   addi(sp, sp, Operand(-kDoubleSize));
   stfd(double_scratch, MemOperand(sp, 0));
+  nop();  // LHS/RAW optimization
 #if V8_TARGET_ARCH_PPC64
   ld(result, MemOperand(sp, 0));
 #else
@@ -2439,6 +2441,7 @@ void MacroAssembler::EmitECMATruncate(Register result,
 
   // reserve a slot on the stack
   stfdu(double_scratch, MemOperand(sp, -8));
+  nop();  // LHS/RAW optimization
 #if V8_TARGET_ARCH_PPC64
   ld(result, MemOperand(sp, 0));
 #else
@@ -2462,6 +2465,7 @@ void MacroAssembler::EmitECMATruncate(Register result,
 
   // Load the double value and perform a manual truncation.
   stfd(double_input, MemOperand(sp));
+  nop();  // LHS/RAW optimization
 #if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
   lwz(input_low, MemOperand(sp));
   lwz(input_high, MemOperand(sp, 4));
@@ -3843,6 +3847,7 @@ void MacroAssembler::ClampDoubleToUint8(Register result_reg,
 
   // reserve a slot on the stack
   stfdu(temp_double_reg, MemOperand(sp, -8));
+  nop();  // LHS/RAW optimization
 #if __FLOAT_WORD_ORDER == __LITTLE_ENDIAN
   lwz(result_reg, MemOperand(sp));
 #else
@@ -3966,6 +3971,7 @@ void MacroAssembler::LoadDoubleLiteral(DwVfpRegister result,
   LoadIntLiteral(scratch, litVal.ival[1]);
   stw(scratch, MemOperand(sp, 4));
 #endif
+  nop();  // LHS/RAW optimization
   lfd(result, MemOperand(sp, 0));
 
   addi(sp, sp, Operand(8));  // restore the stack ptr

@@ -3687,6 +3687,7 @@ void LCodeGen::DoRandom(LRandom* instr) {
   __ stw(r4, MemOperand(sp, 0));
   __ stw(r3, MemOperand(sp, 4));
 #endif
+  __ nop();  // LHS/RAW optimization
   __ lfd(d7, MemOperand(sp, 0));
 
   // Move 0x4130000000000000 to VFP.
@@ -3698,6 +3699,7 @@ void LCodeGen::DoRandom(LRandom* instr) {
   __ stw(r4, MemOperand(sp, 0));
   __ stw(r3, MemOperand(sp, 4));
 #endif
+  __ nop();  // LHS/RAW optimization
   __ lfd(d8, MemOperand(sp, 0));
 
   __ addi(sp, sp, Operand(8));
