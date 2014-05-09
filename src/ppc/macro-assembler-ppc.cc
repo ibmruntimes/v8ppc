@@ -640,6 +640,7 @@ void MacroAssembler::ConvertIntToDouble(Register src,
 #endif
 
   // load into FPR
+  nop();  // LHS/RAW optimization
   lfd(double_dst, MemOperand(sp, 0));
 
   addi(sp, sp, Operand(8));  // restore stack
@@ -666,6 +667,7 @@ void MacroAssembler::ConvertUnsignedIntToDouble(Register src,
 #endif
 
   // load into FPR
+  nop();  // LHS/RAW optimization
   lfd(double_dst, MemOperand(sp, 0));
 
   addi(sp, sp, Operand(8));  // restore stack
@@ -691,6 +693,7 @@ void MacroAssembler::ConvertIntToFloat(const DoubleRegister dst,
 #endif
 
   // load sign-extended src into FPR
+  nop();  // LHS/RAW optimization
   lfd(dst, MemOperand(sp, 0));
 
   addi(sp, sp, Operand(8));  // restore stack
@@ -716,6 +719,7 @@ void MacroAssembler::ConvertDoubleToInt64(const DoubleRegister double_input,
   }
 
   stfdu(double_dst, MemOperand(sp, -kDoubleSize));
+  nop();  // LHS/RAW optimization
 #if V8_TARGET_ARCH_PPC64
   ld(dst, MemOperand(sp, 0));
 #else
@@ -2520,6 +2524,7 @@ void MacroAssembler::TryInt32Floor(Register result,
 
   // Move high word into input_high
   stfdu(double_input, MemOperand(sp, -kDoubleSize));
+  nop();  // LHS/RAW optimization
   lwz(input_high, MemOperand(sp, Register::kExponentOffset));
   addi(sp, sp, Operand(kDoubleSize));
 
@@ -4173,6 +4178,7 @@ void MacroAssembler::ClampDoubleToUint8(Register result_reg,
 
   // reserve a slot on the stack
   stfdu(double_scratch, MemOperand(sp, -kDoubleSize));
+  nop();  // LHS/RAW optimization
   lwz(result_reg, MemOperand(sp, Register::kMantissaOffset));
   // restore the stack
   addi(sp, sp, Operand(kDoubleSize));
@@ -4336,6 +4342,7 @@ void MacroAssembler::LoadDoubleLiteral(DoubleRegister result,
   LoadIntLiteral(scratch, litVal.ival[1]);
   stw(scratch, MemOperand(sp, 4));
 #endif
+  nop();  // LHS/RAW optimization
   lfd(result, MemOperand(sp, 0));
 
   addi(sp, sp, Operand(8));  // restore the stack ptr
