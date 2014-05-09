@@ -1161,6 +1161,7 @@ template <class C> inline bool Is(Object* obj);
   V(kLookupVariableInCountOperation,                                          \
     "Lookup variable in count operation")                                     \
   V(kMapBecameDeprecated, "Map became deprecated")                            \
+  V(kMapBecameUnstable, "Map became unstable")                                \
   V(kMapIsNoLongerInEax, "Map is no longer in eax")                           \
   V(kModuleDeclaration, "Module declaration")                                 \
   V(kModuleLiteral, "Module literal")                                         \
@@ -2471,9 +2472,6 @@ class JSObject: public JSReceiver {
   // map and the ElementsKind set.
   static Handle<Map> GetElementsTransitionMap(Handle<JSObject> object,
                                               ElementsKind to_kind);
-  static Handle<Map> GetElementsTransitionMapSlow(Handle<JSObject> object,
-                                                  ElementsKind elements_kind);
-
   static void TransitionElementsKind(Handle<JSObject> object,
                                      ElementsKind to_kind);
 
@@ -6343,6 +6341,11 @@ class Map: public HeapObject {
       PropertyAttributes attributes,
       TransitionFlag flag);
 
+  // Returns a new map with all transitions dropped from the given map and
+  // the ElementsKind set.
+  static Handle<Map> TransitionElementsTo(Handle<Map> map,
+                                          ElementsKind to_kind);
+
   static Handle<Map> AsElementsKind(Handle<Map> map, ElementsKind kind);
 
   static Handle<Map> CopyAsElementsKind(Handle<Map> map,
@@ -6603,6 +6606,9 @@ class Map: public HeapObject {
   // This includes adding transitions to the leaf map or changing
   // the descriptor array.
   inline void NotifyLeafMapLayoutChange();
+
+  static Handle<Map> TransitionElementsToSlow(Handle<Map> object,
+                                              ElementsKind to_kind);
 
   // Zaps the contents of backing data structures. Note that the
   // heap verifier (i.e. VerifyMarkingVisitor) relies on zapping of objects
@@ -7507,6 +7513,7 @@ class JSGeneratorObject: public JSObject {
   // cannot be resumed.
   inline int continuation();
   inline void set_continuation(int continuation);
+  inline bool is_suspended();
 
   // [operand_stack]: Saved operand stack.
   DECL_ACCESSORS(operand_stack, FixedArray)
