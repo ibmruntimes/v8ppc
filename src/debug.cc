@@ -1991,6 +1991,9 @@ static void RedirectActivationsToRecompiledCodeOnThread(
     // Patch the return address to return into the code with
     // debug break slots.
     frame->set_pc(new_pc);
+    if (FLAG_enable_ool_constant_pool) {
+      frame->set_constant_pool(new_code->constant_pool());
+    }
   }
 }
 
