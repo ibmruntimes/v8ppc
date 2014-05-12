@@ -3887,9 +3887,8 @@ void MacroAssembler::CheckMapDeprecated(Handle<Map> map,
                                         Label* if_deprecated) {
   if (map->CanBeDeprecated()) {
     mov(scratch, Operand(map));
-    LoadP(scratch, FieldMemOperand(scratch, Map::kBitField3Offset));
-    LoadSmiLiteral(r0, Smi::FromInt(Map::Deprecated::kMask));
-    and_(scratch, scratch, r0, SetRC);
+    lwz(scratch, FieldMemOperand(scratch, Map::kBitField3Offset));
+    ExtractBitMask(scratch, scratch, Map::Deprecated::kMask, SetRC);
     bne(if_deprecated, cr0);
   }
 }
@@ -4219,16 +4218,16 @@ void MacroAssembler::LoadInstanceDescriptors(Register map,
 
 
 void MacroAssembler::NumberOfOwnDescriptors(Register dst, Register map) {
-  LoadP(dst, FieldMemOperand(map, Map::kBitField3Offset));
+  lwz(dst, FieldMemOperand(map, Map::kBitField3Offset));
   DecodeField<Map::NumberOfOwnDescriptorsBits>(dst);
 }
 
 
 void MacroAssembler::EnumLength(Register dst, Register map) {
   STATIC_ASSERT(Map::EnumLengthBits::kShift == 0);
-  LoadP(dst, FieldMemOperand(map, Map::kBitField3Offset));
-  LoadSmiLiteral(r0, Smi::FromInt(Map::EnumLengthBits::kMask));
-  and_(dst, dst, r0);
+  lwz(dst, FieldMemOperand(map, Map::kBitField3Offset));
+  ExtractBitMask(dst, dst, Map::EnumLengthBits::kMask);
+  SmiTag(dst);
 }
 
 

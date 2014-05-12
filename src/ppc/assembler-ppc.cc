@@ -354,7 +354,7 @@ Condition Assembler::GetCondition(Instr instr) {
       return ne;
     default:
       UNIMPLEMENTED();
-    }
+  }
   return al;
 }
 

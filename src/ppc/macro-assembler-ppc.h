@@ -1570,9 +1570,7 @@ class MacroAssembler: public Assembler {
 
   template<typename Field>
   void DecodeField(Register reg) {
-    uintptr_t mask = reinterpret_cast<intptr_t>(Smi::FromInt(Field::kMask));
-    ExtractBitMask(reg, reg, mask);
-    SmiTag(reg);
+    ExtractBitMask(reg, reg, Field::kMask);
   }
 
   // Activation support.

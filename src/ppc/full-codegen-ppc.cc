@@ -3096,7 +3096,7 @@ void FullCodeGenerator::EmitIsStringWrapperSafeForDefaultValueOf(
   __ addi(r7, r7, Operand(DescriptorArray::kFirstOffset - kHeapObjectTag));
   // Calculate the end of the descriptor array.
   __ mr(r5, r7);
-  __ SmiToPtrArrayOffset(ip, r6);
+  __ ShiftLeftImm(ip, r6, Operand(kPointerSizeLog2));
   __ add(r5, r5, ip);
 
   // Loop through all the keys in the descriptor array. If one of these is the

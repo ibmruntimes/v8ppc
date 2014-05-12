@@ -4715,6 +4715,15 @@ void LCodeGen::DoTransitionElementsKind(LTransitionElementsKind* instr) {
 }
 
 
+void LCodeGen::DoArrayShift(LArrayShift* instr) {
+  ASSERT(ToRegister(instr->context()).is(cp));
+  ASSERT(ToRegister(instr->object()).is(r3));
+  ASSERT(ToRegister(instr->result()).is(r3));
+  ArrayShiftStub stub(isolate(), instr->hydrogen()->kind());
+  CallCode(stub.GetCode(), RelocInfo::CODE_TARGET, instr);
+}
+
+
 void LCodeGen::DoTrapAllocationMemento(LTrapAllocationMemento* instr) {
   Register object = ToRegister(instr->object());
   Register temp = ToRegister(instr->temp());
