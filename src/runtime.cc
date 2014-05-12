@@ -978,6 +978,8 @@ RUNTIME_FUNCTION(Runtime_TypedArrayInitialize) {
       &fixed_elements_kind,
       &element_size);
 
+  RUNTIME_ASSERT(holder->map()->elements_kind() == fixed_elements_kind);
+
   size_t byte_offset = 0;
   size_t byte_length = 0;
   RUNTIME_ASSERT(TryNumberToSize(isolate, *byte_offset_object, &byte_offset));
@@ -986,7 +988,7 @@ RUNTIME_FUNCTION(Runtime_TypedArrayInitialize) {
   holder->set_byte_offset(*byte_offset_object);
   holder->set_byte_length(*byte_length_object);
 
-  CHECK_EQ(0, static_cast<int>(byte_length % element_size));
+  RUNTIME_ASSERT(byte_length % element_size == 0);
   size_t length = byte_length / element_size;
 
   if (length > static_cast<unsigned>(Smi::kMaxValue)) {
@@ -1063,6 +1065,8 @@ RUNTIME_FUNCTION(Runtime_TypedArrayInitializeFromArrayLike) {
       &external_elements_kind,
       &fixed_elements_kind,
       &element_size);
+
+  RUNTIME_ASSERT(holder->map()->elements_kind() == fixed_elements_kind);
 
   Handle<JSArrayBuffer> buffer = isolate->factory()->NewJSArrayBuffer();
   if (source->IsJSTypedArray() &&
@@ -1741,6 +1745,7 @@ RUNTIME_FUNCTION(Runtime_WeakCollectionGet) {
   CONVERT_ARG_HANDLE_CHECKED(Object, key, 1);
   Handle<ObjectHashTable> table(
       ObjectHashTable::cast(weak_collection->table()));
+  RUNTIME_ASSERT(table->IsKey(*key));
   Handle<Object> lookup(table->Lookup(key), isolate);
   return lookup->IsTheHole() ? isolate->heap()->undefined_value() : *lookup;
 }
@@ -1753,6 +1758,7 @@ RUNTIME_FUNCTION(Runtime_WeakCollectionHas) {
   CONVERT_ARG_HANDLE_CHECKED(Object, key, 1);
   Handle<ObjectHashTable> table(
       ObjectHashTable::cast(weak_collection->table()));
+  RUNTIME_ASSERT(table->IsKey(*key));
   Handle<Object> lookup(table->Lookup(key), isolate);
   return isolate->heap()->ToBoolean(!lookup->IsTheHole());
 }
@@ -1765,6 +1771,7 @@ RUNTIME_FUNCTION(Runtime_WeakCollectionDelete) {
   CONVERT_ARG_HANDLE_CHECKED(Object, key, 1);
   Handle<ObjectHashTable> table(ObjectHashTable::cast(
       weak_collection->table()));
+  RUNTIME_ASSERT(table->IsKey(*key));
   Handle<Object> lookup(table->Lookup(key), isolate);
   Handle<ObjectHashTable> new_table =
       ObjectHashTable::Put(table, key, isolate->factory()->the_hole_value());
@@ -1781,6 +1788,7 @@ RUNTIME_FUNCTION(Runtime_WeakCollectionSet) {
   CONVERT_ARG_HANDLE_CHECKED(Object, value, 2);
   Handle<ObjectHashTable> table(
       ObjectHashTable::cast(weak_collection->table()));
+  RUNTIME_ASSERT(table->IsKey(*key));
   Handle<ObjectHashTable> new_table = ObjectHashTable::Put(table, key, value);
   weak_collection->set_table(*new_table);
   return isolate->heap()->undefined_value();
@@ -2801,12 +2809,7 @@ static Handle<JSFunction> InstallBuiltin(Isolate* isolate,
   Handle<String> key = isolate->factory()->InternalizeUtf8String(name);
   Handle<Code> code(isolate->builtins()->builtin(builtin_name));
   Handle<JSFunction> optimized =
-      isolate->factory()->NewFunction(MaybeHandle<Object>(),
-                                      key,
-                                      JS_OBJECT_TYPE,
-                                      JSObject::kHeaderSize,
-                                      code,
-                                      false);
+      isolate->factory()->NewFunctionWithoutPrototype(key, code);
   optimized->shared()->DontAdaptArguments();
   JSReceiver::SetProperty(holder, key, optimized, NONE, STRICT).Assert();
   return optimized;
@@ -3038,49 +3041,6 @@ RUNTIME_FUNCTION(Runtime_FunctionSetPrototype) {
   ASSERT(fun->should_have_prototype());
   Accessors::FunctionSetPrototype(fun, value);
   return args[0];  // return TOS
-}
-
-
-RUNTIME_FUNCTION(Runtime_FunctionSetReadOnlyPrototype) {
-  HandleScope shs(isolate);
-  RUNTIME_ASSERT(args.length() == 1);
-  CONVERT_ARG_HANDLE_CHECKED(JSFunction, function, 0);
-
-  Handle<String> name = isolate->factory()->prototype_string();
-
-  if (function->HasFastProperties()) {
-    // Construct a new field descriptor with updated attributes.
-    Handle<DescriptorArray> instance_desc =
-        handle(function->map()->instance_descriptors());
-
-    int index = instance_desc->SearchWithCache(*name, function->map());
-    ASSERT(index != DescriptorArray::kNotFound);
-    PropertyDetails details = instance_desc->GetDetails(index);
-
-    CallbacksDescriptor new_desc(
-        name,
-        handle(instance_desc->GetValue(index), isolate),
-        static_cast<PropertyAttributes>(details.attributes() | READ_ONLY));
-
-    // Create a new map featuring the new field descriptors array.
-    Handle<Map> map = handle(function->map());
-    Handle<Map> new_map = Map::CopyReplaceDescriptor(
-        map, instance_desc, &new_desc, index, OMIT_TRANSITION);
-
-    JSObject::MigrateToMap(function, new_map);
-  } else {  // Dictionary properties.
-    // Directly manipulate the property details.
-    DisallowHeapAllocation no_gc;
-    int entry = function->property_dictionary()->FindEntry(name);
-    ASSERT(entry != NameDictionary::kNotFound);
-    PropertyDetails details = function->property_dictionary()->DetailsAt(entry);
-    PropertyDetails new_details(
-        static_cast<PropertyAttributes>(details.attributes() | READ_ONLY),
-        details.type(),
-        details.dictionary_index());
-    function->property_dictionary()->DetailsAtPut(entry, new_details);
-  }
-  return *function;
 }
 
 
@@ -4307,6 +4267,7 @@ RUNTIME_FUNCTION(Runtime_StringReplaceGlobalRegExpWithString) {
   CONVERT_ARG_HANDLE_CHECKED(JSArray, last_match_info, 3);
 
   RUNTIME_ASSERT(regexp->GetFlags().is_global());
+  RUNTIME_ASSERT(last_match_info->HasFastObjectElements());
 
   subject = String::Flatten(subject);
 
@@ -4737,12 +4698,11 @@ static Object* SearchRegExpMultiple(
   RegExpImpl::GlobalCache global_cache(regexp, subject, true, isolate);
   if (global_cache.HasException()) return isolate->heap()->exception();
 
-  Handle<FixedArray> result_elements;
-  if (result_array->HasFastObjectElements()) {
-    result_elements =
-        Handle<FixedArray>(FixedArray::cast(result_array->elements()));
-  }
-  if (result_elements.is_null() || result_elements->length() < 16) {
+  // Ensured in Runtime_RegExpExecMultiple.
+  ASSERT(result_array->HasFastObjectElements());
+  Handle<FixedArray> result_elements(
+      FixedArray::cast(result_array->elements()));
+  if (result_elements->length() < 16) {
     result_elements = isolate->factory()->NewFixedArrayWithHoles(16);
   }
 
@@ -4856,9 +4816,11 @@ RUNTIME_FUNCTION(Runtime_RegExpExecMultiple) {
   CONVERT_ARG_HANDLE_CHECKED(JSRegExp, regexp, 0);
   CONVERT_ARG_HANDLE_CHECKED(JSArray, last_match_info, 2);
   CONVERT_ARG_HANDLE_CHECKED(JSArray, result_array, 3);
+  RUNTIME_ASSERT(last_match_info->HasFastObjectElements());
+  RUNTIME_ASSERT(result_array->HasFastObjectElements());
 
   subject = String::Flatten(subject);
-  ASSERT(regexp->GetFlags().is_global());
+  RUNTIME_ASSERT(regexp->GetFlags().is_global());
 
   if (regexp->CaptureCount() == 0) {
     return SearchRegExpMultiple<false>(
@@ -5506,6 +5468,7 @@ RUNTIME_FUNCTION(Runtime_SetHiddenProperty) {
   CONVERT_ARG_HANDLE_CHECKED(JSObject, object, 0);
   CONVERT_ARG_HANDLE_CHECKED(String, key, 1);
   CONVERT_ARG_HANDLE_CHECKED(Object, value, 2);
+  RUNTIME_ASSERT(key->IsUniqueName());
   return *JSObject::SetHiddenProperty(object, key, value);
 }
 
@@ -7340,6 +7303,7 @@ RUNTIME_FUNCTION(Runtime_StringBuilderJoin) {
   CONVERT_SMI_ARG_CHECKED(array_length, 1);
   CONVERT_ARG_HANDLE_CHECKED(String, separator, 2);
   RUNTIME_ASSERT(array->HasFastObjectElements());
+  RUNTIME_ASSERT(array_length >= 0);
 
   Handle<FixedArray> fixed_array(FixedArray::cast(array->elements()));
   if (fixed_array->length() < array_length) {
@@ -7387,17 +7351,19 @@ RUNTIME_FUNCTION(Runtime_StringBuilderJoin) {
   uc16* end = sink + length;
 #endif
 
+  RUNTIME_ASSERT(fixed_array->get(0)->IsString());
   String* first = String::cast(fixed_array->get(0));
-  String* seperator_raw = *separator;
+  String* separator_raw = *separator;
   int first_length = first->length();
   String::WriteToFlat(first, sink, 0, first_length);
   sink += first_length;
 
   for (int i = 1; i < array_length; i++) {
     ASSERT(sink + separator_length <= end);
-    String::WriteToFlat(seperator_raw, sink, 0, separator_length);
+    String::WriteToFlat(separator_raw, sink, 0, separator_length);
     sink += separator_length;
 
+    RUNTIME_ASSERT(fixed_array->get(i)->IsString());
     String* element = String::cast(fixed_array->get(i));
     int element_length = element->length();
     ASSERT(sink + element_length <= end);
@@ -7476,6 +7442,8 @@ RUNTIME_FUNCTION(Runtime_SparseJoinWithSeparator) {
   FixedArray* elements = FixedArray::cast(elements_array->elements());
   for (int i = 0; i < elements_length; i += 2) {
     RUNTIME_ASSERT(elements->get(i)->IsNumber());
+    CONVERT_NUMBER_CHECKED(uint32_t, position, Uint32, elements->get(i));
+    RUNTIME_ASSERT(position < array_length);
     RUNTIME_ASSERT(elements->get(i + 1)->IsString());
   }
 
@@ -7893,7 +7861,7 @@ RUNTIME_FUNCTION(Runtime_MathFloor) {
 
 
 // Slow version of Math.pow.  We check for fast paths for special cases.
-// Used if SSE2/VFP3 is not available.
+// Used if VFP3 is not available.
 RUNTIME_FUNCTION(RuntimeHidden_MathPowSlow) {
   HandleScope scope(isolate);
   ASSERT(args.length() == 2);
@@ -9587,7 +9555,7 @@ RUNTIME_FUNCTION(RuntimeHidden_StackGuard) {
     return isolate->StackOverflow();
   }
 
-  return Execution::HandleStackGuardInterrupt(isolate);
+  return isolate->stack_guard()->HandleInterrupts();
 }
 
 
@@ -9611,7 +9579,7 @@ RUNTIME_FUNCTION(RuntimeHidden_TryInstallOptimizedCode) {
 RUNTIME_FUNCTION(RuntimeHidden_Interrupt) {
   SealHandleScope shs(isolate);
   ASSERT(args.length() == 0);
-  return Execution::HandleStackGuardInterrupt(isolate);
+  return isolate->stack_guard()->HandleInterrupts();
 }
 
 
@@ -9754,6 +9722,8 @@ RUNTIME_FUNCTION(Runtime_DateLocalTimezone) {
   ASSERT(args.length() == 1);
 
   CONVERT_DOUBLE_ARG_CHECKED(x, 0);
+  RUNTIME_ASSERT(x >= -DateCache::kMaxTimeBeforeUTCInMs &&
+                 x <= DateCache::kMaxTimeBeforeUTCInMs);
   const char* zone =
       isolate->date_cache()->LocalTimezone(static_cast<int64_t>(x));
   Handle<String> result = isolate->factory()->NewStringFromUtf8(
@@ -9767,6 +9737,8 @@ RUNTIME_FUNCTION(Runtime_DateToUTC) {
   ASSERT(args.length() == 1);
 
   CONVERT_DOUBLE_ARG_CHECKED(x, 0);
+  RUNTIME_ASSERT(x >= -DateCache::kMaxTimeBeforeUTCInMs &&
+                 x <= DateCache::kMaxTimeBeforeUTCInMs);
   int64_t time = isolate->date_cache()->ToUTC(static_cast<int64_t>(x));
 
   return *isolate->factory()->NewNumber(static_cast<double>(time));
@@ -10358,6 +10330,10 @@ static bool IterateElements(Isolate* isolate,
       if (length == 0) break;
       // Run through the elements FixedArray and use HasElement and GetElement
       // to check the prototype for missing elements.
+      if (receiver->elements()->IsFixedArray()) {
+        ASSERT(receiver->elements()->length() == 0);
+        break;
+      }
       Handle<FixedDoubleArray> elements(
           FixedDoubleArray::cast(receiver->elements()));
       int fast_length = static_cast<int>(length);
@@ -10708,15 +10684,13 @@ RUNTIME_FUNCTION(Runtime_MoveArrayContents) {
 RUNTIME_FUNCTION(Runtime_EstimateNumberOfElements) {
   SealHandleScope shs(isolate);
   ASSERT(args.length() == 1);
-  CONVERT_ARG_CHECKED(JSObject, object, 0);
+  CONVERT_ARG_CHECKED(JSArray, object, 0);
   HeapObject* elements = object->elements();
   if (elements->IsDictionary()) {
     int result = SeededNumberDictionary::cast(elements)->NumberOfElements();
     return Smi::FromInt(result);
-  } else if (object->IsJSArray()) {
-    return JSArray::cast(object)->length();
   } else {
-    return Smi::FromInt(FixedArray::cast(elements)->length());
+    return object->length();
   }
 }
 
@@ -10757,8 +10731,8 @@ RUNTIME_FUNCTION(Runtime_GetArrayKeys) {
     }
     return *isolate->factory()->NewJSArrayWithElements(keys);
   } else {
-    ASSERT(array->HasFastSmiOrObjectElements() ||
-           array->HasFastDoubleElements());
+    RUNTIME_ASSERT(array->HasFastSmiOrObjectElements() ||
+                   array->HasFastDoubleElements());
     uint32_t actual_length = static_cast<uint32_t>(array->elements()->length());
     return *isolate->factory()->NewNumberFromUint(Min(actual_length, length));
   }
@@ -10784,7 +10758,8 @@ RUNTIME_FUNCTION(Runtime_LookupAccessor) {
 RUNTIME_FUNCTION(Runtime_DebugBreak) {
   SealHandleScope shs(isolate);
   ASSERT(args.length() == 0);
-  return Execution::DebugBreakHelper(isolate);
+  Execution::DebugBreakHelper(isolate);
+  return isolate->heap()->undefined_value();
 }
 
 
@@ -10821,7 +10796,7 @@ RUNTIME_FUNCTION(Runtime_SetDebugEventListener) {
 RUNTIME_FUNCTION(Runtime_Break) {
   SealHandleScope shs(isolate);
   ASSERT(args.length() == 0);
-  isolate->stack_guard()->DebugBreak();
+  isolate->stack_guard()->RequestDebugBreak();
   return isolate->heap()->undefined_value();
 }
 
@@ -10861,8 +10836,8 @@ static Handle<Object> DebugLookupResultValue(Isolate* isolate,
       break;
     }
     case INTERCEPTOR:
-      break;
     case HANDLER:
+      break;
     case NONEXISTENT:
       UNREACHABLE();
       break;
@@ -12699,12 +12674,13 @@ RUNTIME_FUNCTION(Runtime_SetFunctionBreakPoint) {
   ASSERT(args.length() == 3);
   CONVERT_ARG_HANDLE_CHECKED(JSFunction, function, 0);
   CONVERT_NUMBER_CHECKED(int32_t, source_position, Int32, args[1]);
-  RUNTIME_ASSERT(source_position >= 0);
+  RUNTIME_ASSERT(source_position >= function->shared()->start_position() &&
+                 source_position <= function->shared()->end_position());
   CONVERT_ARG_HANDLE_CHECKED(Object, break_point_object_arg, 2);
 
   // Set break point.
-  isolate->debug()->SetBreakPoint(function, break_point_object_arg,
-                                  &source_position);
+  RUNTIME_ASSERT(isolate->debug()->SetBreakPoint(
+      function, break_point_object_arg, &source_position));
 
   return Smi::FromInt(source_position);
 }
@@ -13506,7 +13482,7 @@ RUNTIME_FUNCTION(Runtime_LiveEditFunctionSetScript) {
       Script* script = Script::cast(JSValue::cast(*script_object)->value());
       script_object = Handle<Object>(script, isolate);
     }
-
+    RUNTIME_ASSERT(function_wrapper->value()->IsSharedFunctionInfo());
     LiveEdit::SetFunctionScript(function_wrapper, script_object);
   } else {
     // Just ignore this. We may not have a SharedFunctionInfo for some functions
@@ -14978,7 +14954,6 @@ RUNTIME_FUNCTION(Runtime_ObjectObserveInObjectContext) {
   CONVERT_ARG_HANDLE_CHECKED(JSObject, object, 0);
   CONVERT_ARG_HANDLE_CHECKED(JSFunction, callback, 1);
   CONVERT_ARG_HANDLE_CHECKED(Object, accept, 2);
-  RUNTIME_ASSERT(accept->IsUndefined() || accept->IsJSObject());
 
   Handle<Context> context(object->GetCreationContext(), isolate);
   Handle<JSFunction> function(context->native_object_observe(), isolate);
