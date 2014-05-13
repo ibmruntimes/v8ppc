@@ -2369,6 +2369,7 @@ void LCodeGen::DoCmpHoleAndBranch(LCmpHoleAndBranch* instr) {
 
   Register scratch = scratch0();
   __ stfdu(input_reg, MemOperand(sp, -kDoubleSize));
+  __ nop();  // LHS/RAW optimization
   __ lwz(scratch, MemOperand(sp, Register::kExponentOffset));
   __ addi(sp, sp, Operand(kDoubleSize));
   __ Cmpi(scratch, Operand(kHoleNanUpper32), r0);
@@ -2386,6 +2387,7 @@ void LCodeGen::DoCompareMinusZeroAndBranch(LCompareMinusZeroAndBranch* instr) {
     __ fcmpu(value, kDoubleRegZero);
     EmitFalseBranch(instr, ne);
     __ stfdu(value, MemOperand(sp, -kDoubleSize));
+    __ nop();  // LHS/RAW optimization
     __ lwz(scratch, MemOperand(sp, Register::kExponentOffset));
     __ addi(sp, sp, Operand(kDoubleSize));
     __ cmpwi(scratch, Operand::Zero());
@@ -3893,6 +3895,7 @@ void LCodeGen::DoMathRound(LMathRound* instr) {
   __ bgt(&convert);  // Out of [-0.5, +0.5].
   if (instr->hydrogen()->CheckFlag(HValue::kBailoutOnMinusZero)) {
     __ stfdu(input, MemOperand(sp, -kDoubleSize));
+    __ nop();  // LHS/RAW optimization
     __ lwz(input_high, MemOperand(sp, Register::kExponentOffset));
     __ addi(sp, sp, Operand(kDoubleSize));
     __ cmpwi(input_high, Operand::Zero());
@@ -4993,6 +4996,7 @@ void LCodeGen::EmitNumberUntagD(Register input_reg,
     __ lfd(result_reg, FieldMemOperand(input_reg, HeapNumber::kValueOffset));
     if (deoptimize_on_minus_zero) {
       __ stfdu(result_reg, MemOperand(sp, -kDoubleSize));
+      __ nop();  // LHS/RAW optimization
       __ lwz(scratch, MemOperand(sp, Register::kExponentOffset));
       __ lwz(ip, MemOperand(sp, Register::kMantissaOffset));
       __ addi(sp, sp, Operand(kDoubleSize));
@@ -5171,6 +5175,7 @@ void LCodeGen::DoDoubleToI(LDoubleToI* instr) {
       __ cmpi(result_reg, Operand::Zero());
       __ bne(&done);
       __ stfdu(double_input, MemOperand(sp, -kDoubleSize));
+      __ nop();  // LHS/RAW optimization
       __ lwz(scratch1, MemOperand(sp, Register::kExponentOffset));
       __ addi(sp, sp, Operand(kDoubleSize));
       __ cmpwi(scratch1, Operand::Zero());
@@ -5199,6 +5204,7 @@ void LCodeGen::DoDoubleToSmi(LDoubleToSmi* instr) {
       __ cmpi(result_reg, Operand::Zero());
       __ bne(&done);
       __ stfdu(double_input, MemOperand(sp, -kDoubleSize));
+      __ nop();  // LHS/RAW optimization
       __ lwz(scratch1, MemOperand(sp, Register::kExponentOffset));
       __ addi(sp, sp, Operand(kDoubleSize));
       __ cmpwi(scratch1, Operand::Zero());
