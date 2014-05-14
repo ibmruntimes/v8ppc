@@ -30,12 +30,6 @@
 namespace v8 {
 namespace internal {
 
-
-#if V8_OS_AIX
-static bool message_handled = true;
-#endif /* V8_OS_AIX */
-
-
 Debug::Debug(Isolate* isolate)
     : has_break_points_(false),
       script_cache_(NULL),
@@ -772,11 +766,9 @@ bool Debug::Load() {
 
   // Bail out if we're already in the process of compiling the native
   // JavaScript source code for the debugger.
-  if (debugger->compiling_natives() ||
-      debugger->is_loading_debugger())
-    return false;
-  debugger->set_loading_debugger(true);
+  if (debugger->ignore_debugger()) return false;
 
+  Debugger::IgnoreScope during_load(debugger);
   // Disable breakpoints and interrupts while compiling and running the
   // debugger scripts including the context creation code.
   DisableBreak disable(isolate_, true);
@@ -812,7 +804,6 @@ bool Debug::Load() {
       false);
 
   // Compile the JavaScript for the debugger in the debugger context.
-  debugger->set_compiling_natives(true);
   bool caught_exception =
       !CompileDebuggerScript(isolate_, Natives::GetIndex("mirror")) ||
       !CompileDebuggerScript(isolate_, Natives::GetIndex("debug"));
@@ -822,11 +813,8 @@ bool Debug::Load() {
         !CompileDebuggerScript(isolate_, Natives::GetIndex("liveedit"));
   }
 
-  debugger->set_compiling_natives(false);
-
   // Make sure we mark the debugger as not loading before we might
   // return.
-  debugger->set_loading_debugger(false);
 
   // Check for caught exceptions.
   if (caught_exception) return false;
@@ -2007,37 +1995,15 @@ class ActiveFunctionsRedirector : public ThreadVisitor {
 };
 
 
-class ForceDebuggerActive {
- public:
-  explicit ForceDebuggerActive(Isolate *isolate) {
-    isolate_ = isolate;
-    old_state_ = isolate->debugger()->force_debugger_active();
-    isolate_->debugger()->set_force_debugger_active(true);
-  }
-
-  ~ForceDebuggerActive() {
-    isolate_->debugger()->set_force_debugger_active(old_state_);
-  }
-
- private:
-  Isolate *isolate_;
-  bool old_state_;
-
-  DISALLOW_COPY_AND_ASSIGN(ForceDebuggerActive);
-};
-
-
 void Debug::EnsureFunctionHasDebugBreakSlots(Handle<JSFunction> function) {
   if (function->code()->kind() == Code::FUNCTION &&
       function->code()->has_debug_break_slots()) {
     // Nothing to do. Function code already had debug break slots.
     return;
   }
-
   // Make sure that the shared full code is compiled with debug
   // break slots.
   if (!function->shared()->code()->has_debug_break_slots()) {
-    ForceDebuggerActive force_debugger_active(isolate_);
     MaybeHandle<Code> code = Compiler::GetCodeForDebugging(function);
     // Recompilation can fail.  In that case leave the code as it was.
     if (!code.is_null()) function->ReplaceCode(*code.ToHandleChecked());
@@ -2671,19 +2637,14 @@ void Debug::AfterGarbageCollection() {
 
 
 Debugger::Debugger(Isolate* isolate)
-    : debugger_access_(isolate->debugger_access()),
-      event_listener_(Handle<Object>()),
+    : event_listener_(Handle<Object>()),
       event_listener_data_(Handle<Object>()),
-      compiling_natives_(false),
-      is_loading_debugger_(false),
+      is_active_(false),
+      ignore_debugger_(false),
       live_edit_enabled_(true),
       never_unload_debugger_(false),
-      force_debugger_active_(false),
       message_handler_(NULL),
       debugger_unload_pending_(false),
-      debug_message_dispatch_handler_(NULL),
-      message_dispatch_helper_thread_(NULL),
-      agent_(NULL),
       command_queue_(isolate->logger(), kQueueInitialSize),
       command_received_(0),
       event_command_queue_(isolate->logger(), kQueueInitialSize),
@@ -2779,7 +2740,7 @@ void Debugger::OnException(Handle<Object> exception, bool uncaught) {
 
   // Bail out based on state or if there is no listener for this event
   if (debug->InDebugger()) return;
-  if (!Debugger::EventActive(v8::Exception)) return;
+  if (!Debugger::EventActive()) return;
 
   Handle<Object> promise = debug->GetPromiseForUncaughtException();
   uncaught |= !promise->IsUndefined();
@@ -2823,7 +2784,7 @@ void Debugger::OnDebugBreak(Handle<Object> break_points_hit,
   ASSERT(isolate_->context() == *isolate_->debug()->debug_context());
 
   // Bail out if there is no listener for this event
-  if (!Debugger::EventActive(v8::Break)) return;
+  if (!Debugger::EventActive()) return;
 
   // Debugger must be entered in advance.
   ASSERT(isolate_->context() == *isolate_->debug()->debug_context());
@@ -2845,8 +2806,7 @@ void Debugger::OnBeforeCompile(Handle<Script> script) {
 
   // Bail out based on state or if there is no listener for this event
   if (isolate_->debug()->InDebugger()) return;
-  if (compiling_natives()) return;
-  if (!EventActive(v8::BeforeCompile)) return;
+  if (!EventActive()) return;
 
   // Enter the debugger.
   EnterDebugger debugger(isolate_);
@@ -2874,10 +2834,7 @@ void Debugger::OnAfterCompile(Handle<Script> script,
   debug->AddScriptToScriptCache(script);
 
   // No more to do if not debugging.
-  if (!IsDebuggerActive()) return;
-
-  // No compile events while compiling natives.
-  if (compiling_natives()) return;
+  if (!Debugger::EventActive()) return;
 
   // Store whether in debugger before entering debugger.
   bool in_debugger = debug->InDebugger();
@@ -2916,7 +2873,6 @@ void Debugger::OnAfterCompile(Handle<Script> script,
   }
   // Bail out based on state or if there is no listener for this event
   if (in_debugger && (after_compile_flags & SEND_WHEN_DEBUGGING) == 0) return;
-  if (!Debugger::EventActive(v8::AfterCompile)) return;
 
   // Create the compile state object.
   Handle<Object> event_data;
@@ -2933,8 +2889,7 @@ void Debugger::OnScriptCollected(int id) {
 
   // No more to do if not debugging.
   if (isolate_->debug()->InDebugger()) return;
-  if (!IsDebuggerActive()) return;
-  if (!Debugger::EventActive(v8::ScriptCollected)) return;
+  if (!Debugger::EventActive()) return;
 
   // Enter the debugger.
   EnterDebugger debugger(isolate_);
@@ -3114,9 +3069,6 @@ void Debugger::NotifyMessageHandler(v8::DebugEvent event,
         auto_continue,
         Handle<JSObject>::cast(exec_state),
         Handle<JSObject>::cast(event_data));
-#if V8_OS_AIX
-    message_handled = true;
-#endif /* V8_OS_AIX */
     InvokeMessageHandler(message);
   }
 
@@ -3147,28 +3099,11 @@ void Debugger::NotifyMessageHandler(v8::DebugEvent event,
     // Wait for new command in the queue.
     command_received_.Wait();
 
-#if V8_OS_AIX
-    // before getting the new command, see if there is a previous commend
-    // which was not handled. This happens when remote debugger was not
-    // ready when the previous reached this method for processing, which
-    // would have been ignored through the stub handler. Handle it now.
-
-    if (!message_handled && sendEventMessage) {
-      MessageImpl message = MessageImpl::NewEvent(
-          event,
-          auto_continue,
-          Handle<JSObject>::cast(exec_state),
-          Handle<JSObject>::cast(event_data));
-      message_handled = true;
-      InvokeMessageHandler(message);
-    }
-#endif /* V8_OS_AIX */
-
     // Get the command from the queue.
     CommandMessage command = command_queue_.Get();
     isolate_->logger()->DebugTag(
         "Got request from command queue, in interactive loop.");
-    if (!Debugger::IsDebuggerActive()) {
+    if (!Debugger::is_active()) {
       // Delete command text and user data.
       command.Dispose();
       return;
@@ -3255,8 +3190,8 @@ void Debugger::SetEventListener(Handle<Object> callback,
 }
 
 
-void Debugger::SetMessageHandler(v8::Debug::MessageHandler2 handler) {
-  LockGuard<RecursiveMutex> with(debugger_access_);
+void Debugger::SetMessageHandler(v8::Debug::MessageHandler handler) {
+  LockGuard<RecursiveMutex> with(&debugger_access_);
 
   message_handler_ = handler;
   ListenersChanged();
@@ -3264,15 +3199,16 @@ void Debugger::SetMessageHandler(v8::Debug::MessageHandler2 handler) {
     // Send an empty command to the debugger if in a break to make JavaScript
     // run again if the debugger is closed.
     if (isolate_->debug()->InDebugger()) {
-      ProcessCommand(Vector<const uint16_t>::empty());
+      EnqueueCommandMessage(Vector<const uint16_t>::empty());
     }
   }
 }
 
 
 void Debugger::ListenersChanged() {
-  bool active = IsDebuggerActive();
-  if (active) {
+  LockGuard<RecursiveMutex> with(&debugger_access_);
+  is_active_ = message_handler_ != NULL || !event_listener_.is_null();
+  if (is_active_) {
     // Disable the compilation cache when the debugger is active.
     isolate_->compilation_cache()->Disable();
     debugger_unload_pending_ = false;
@@ -3285,22 +3221,10 @@ void Debugger::ListenersChanged() {
 }
 
 
-void Debugger::SetDebugMessageDispatchHandler(
-    v8::Debug::DebugMessageDispatchHandler handler, bool provide_locker) {
-  LockGuard<Mutex> lock_guard(&dispatch_handler_access_);
-  debug_message_dispatch_handler_ = handler;
-
-  if (provide_locker && message_dispatch_helper_thread_ == NULL) {
-    message_dispatch_helper_thread_ = new MessageDispatchHelperThread(isolate_);
-    message_dispatch_helper_thread_->Start();
-  }
-}
-
-
 // Calls the registered debug message handler. This callback is part of the
 // public API.
 void Debugger::InvokeMessageHandler(MessageImpl message) {
-  LockGuard<RecursiveMutex> with(debugger_access_);
+  LockGuard<RecursiveMutex> with(&debugger_access_);
 
   if (message_handler_ != NULL) {
     message_handler_(message);
@@ -3312,8 +3236,8 @@ void Debugger::InvokeMessageHandler(MessageImpl message) {
 // a copy of the command string managed by the debugger.  Up to this
 // point, the command data was managed by the API client.  Called
 // by the API client thread.
-void Debugger::ProcessCommand(Vector<const uint16_t> command,
-                              v8::Debug::ClientData* client_data) {
+void Debugger::EnqueueCommandMessage(Vector<const uint16_t> command,
+                                     v8::Debug::ClientData* client_data) {
   // Need to cast away const.
   CommandMessage message = CommandMessage::New(
       Vector<uint16_t>(const_cast<uint16_t*>(command.start()),
@@ -3326,18 +3250,6 @@ void Debugger::ProcessCommand(Vector<const uint16_t> command,
   // Set the debug command break flag to have the command processed.
   if (!isolate_->debug()->InDebugger()) {
     isolate_->stack_guard()->RequestDebugCommand();
-  }
-
-  MessageDispatchHelperThread* dispatch_thread;
-  {
-    LockGuard<Mutex> lock_guard(&dispatch_handler_access_);
-    dispatch_thread = message_dispatch_helper_thread_;
-  }
-
-  if (dispatch_thread == NULL) {
-    CallMessageDispatchHandler();
-  } else {
-    dispatch_thread->Schedule();
   }
 }
 
@@ -3355,15 +3267,6 @@ void Debugger::EnqueueDebugCommand(v8::Debug::ClientData* client_data) {
   if (!isolate_->debug()->InDebugger()) {
     isolate_->stack_guard()->RequestDebugCommand();
   }
-}
-
-
-bool Debugger::IsDebuggerActive() {
-  LockGuard<RecursiveMutex> with(debugger_access_);
-
-  return message_handler_ != NULL ||
-      !event_listener_.is_null() ||
-      force_debugger_active_;
 }
 
 
@@ -3392,62 +3295,6 @@ MaybeHandle<Object> Debugger::Call(Handle<JSFunction> fun,
                      isolate_),
       ARRAY_SIZE(argv),
       argv);
-}
-
-
-static void StubMessageHandler2(const v8::Debug::Message& message) {
-#if V8_OS_AIX
-  message_handled = false;
-#endif /* V8_OS_AIX */
-}
-
-
-bool Debugger::StartAgent(const char* name, int port,
-                          bool wait_for_connection) {
-  if (wait_for_connection) {
-    // Suspend V8 if it is already running or set V8 to suspend whenever
-    // it starts.
-    // Provide stub message handler; V8 auto-continues each suspend
-    // when there is no message handler; we doesn't need it.
-    // Once become suspended, V8 will stay so indefinitely long, until remote
-    // debugger connects and issues "continue" command.
-    Debugger::message_handler_ = StubMessageHandler2;
-    v8::Debug::DebugBreak(reinterpret_cast<v8::Isolate*>(isolate_));
-  }
-
-  if (agent_ == NULL) {
-    agent_ = new DebuggerAgent(isolate_, name, port);
-    agent_->Start();
-  }
-  return true;
-}
-
-
-void Debugger::StopAgent() {
-  if (agent_ != NULL) {
-    agent_->Shutdown();
-    agent_->Join();
-    delete agent_;
-    agent_ = NULL;
-  }
-}
-
-
-void Debugger::WaitForAgent() {
-  if (agent_ != NULL)
-    agent_->WaitUntilListening();
-}
-
-
-void Debugger::CallMessageDispatchHandler() {
-  v8::Debug::DebugMessageDispatchHandler handler;
-  {
-    LockGuard<Mutex> lock_guard(&dispatch_handler_access_);
-    handler = Debugger::debug_message_dispatch_handler_;
-  }
-  if (handler != NULL) {
-    handler();
-  }
 }
 
 
@@ -3519,7 +3366,7 @@ EnterDebugger::~EnterDebugger() {
     }
 
     // If leaving the debugger with the debugger no longer active unload it.
-    if (!isolate_->debugger()->IsDebuggerActive()) {
+    if (!isolate_->debugger()->is_active()) {
       isolate_->debugger()->UnloadDebugger();
     }
   }
@@ -3786,40 +3633,6 @@ void LockingCommandMessageQueue::Put(const CommandMessage& message) {
 void LockingCommandMessageQueue::Clear() {
   LockGuard<Mutex> lock_guard(&mutex_);
   queue_.Clear();
-}
-
-
-MessageDispatchHelperThread::MessageDispatchHelperThread(Isolate* isolate)
-    : Thread("v8:MsgDispHelpr"),
-      isolate_(isolate), sem_(0),
-      already_signalled_(false) {
-}
-
-
-void MessageDispatchHelperThread::Schedule() {
-  {
-    LockGuard<Mutex> lock_guard(&mutex_);
-    if (already_signalled_) {
-      return;
-    }
-    already_signalled_ = true;
-  }
-  sem_.Signal();
-}
-
-
-void MessageDispatchHelperThread::Run() {
-  while (true) {
-    sem_.Wait();
-    {
-      LockGuard<Mutex> lock_guard(&mutex_);
-      already_signalled_ = false;
-    }
-    {
-      Locker locker(reinterpret_cast<v8::Isolate*>(isolate_));
-      isolate_->debugger()->CallMessageDispatchHandler();
-    }
-  }
 }
 
 } }  // namespace v8::internal

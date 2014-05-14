@@ -671,7 +671,7 @@ bool LCodeGen::GeneratePrologue() {
   ASSERT(__ StackPointer().Is(jssp));
   info()->set_prologue_offset(masm_->pc_offset());
   if (NeedsEagerFrame()) {
-    __ Prologue(info()->IsStub() ? BUILD_STUB_FRAME : BUILD_FUNCTION_FRAME);
+    __ Prologue(info());
     frame_is_built_ = true;
     info_->AddNoFrameRange(0, masm_->pc_offset());
   }
@@ -2290,7 +2290,7 @@ void LCodeGen::DoDoubleBits(LDoubleBits* instr) {
   Register result_reg = ToRegister(instr->result());
   if (instr->hydrogen()->bits() == HDoubleBits::HIGH) {
     __ Fmov(result_reg, value_reg);
-    __ Mov(result_reg, Operand(result_reg, LSR, 32));
+    __ Lsr(result_reg, result_reg, 32);
   } else {
     __ Fmov(result_reg.W(), value_reg.S());
   }
@@ -2300,12 +2300,12 @@ void LCodeGen::DoDoubleBits(LDoubleBits* instr) {
 void LCodeGen::DoConstructDouble(LConstructDouble* instr) {
   Register hi_reg = ToRegister(instr->hi());
   Register lo_reg = ToRegister(instr->lo());
-  Register temp = ToRegister(instr->temp());
   DoubleRegister result_reg = ToDoubleRegister(instr->result());
 
-  __ And(temp, lo_reg, Operand(0xffffffff));
-  __ Orr(temp, temp, Operand(hi_reg, LSL, 32));
-  __ Fmov(result_reg, temp);
+  // Insert the least significant 32 bits of hi_reg into the most significant
+  // 32 bits of lo_reg, and move to a floating point register.
+  __ Bfi(lo_reg, hi_reg, 32, 32);
+  __ Fmov(result_reg, lo_reg);
 }
 
 
@@ -2415,8 +2415,8 @@ void LCodeGen::DoCompareMinusZeroAndBranch(LCompareMinusZeroAndBranch* instr) {
     Register value = ToRegister(instr->value());
     __ CheckMap(value, scratch, Heap::kHeapNumberMapRootIndex,
                 instr->FalseLabel(chunk()), DO_SMI_CHECK);
-    __ Ldr(double_scratch(), FieldMemOperand(value, HeapNumber::kValueOffset));
-    __ JumpIfMinusZero(double_scratch(), instr->TrueLabel(chunk()));
+    __ Ldr(scratch, FieldMemOperand(value, HeapNumber::kValueOffset));
+    __ JumpIfMinusZero(scratch, instr->TrueLabel(chunk()));
   }
   EmitGoto(instr->FalseDestination(chunk()));
 }
@@ -2524,7 +2524,15 @@ void LCodeGen::DoCmpT(LCmpT* instr) {
 void LCodeGen::DoConstantD(LConstantD* instr) {
   ASSERT(instr->result()->IsDoubleRegister());
   DoubleRegister result = ToDoubleRegister(instr->result());
-  __ Fmov(result, instr->value());
+  if (instr->value() == 0) {
+    if (copysign(1.0, instr->value()) == 1.0) {
+      __ Fmov(result, fp_zero);
+    } else {
+      __ Fneg(result, fp_zero);
+    }
+  } else {
+    __ Fmov(result, instr->value());
+  }
 }
 
 
@@ -2663,13 +2671,14 @@ void LCodeGen::DoDivByPowerOf2I(LDivByPowerOf2I* instr) {
   // Check for (0 / -x) that will produce negative zero.
   HDiv* hdiv = instr->hydrogen();
   if (hdiv->CheckFlag(HValue::kBailoutOnMinusZero) && divisor < 0) {
-    __ Cmp(dividend, 0);
-    DeoptimizeIf(eq, instr->environment());
+    DeoptimizeIfZero(dividend, instr->environment());
   }
   // Check for (kMinInt / -1).
   if (hdiv->CheckFlag(HValue::kCanOverflow) && divisor == -1) {
-    __ Cmp(dividend, kMinInt);
-    DeoptimizeIf(eq, instr->environment());
+    // Test dividend for kMinInt by subtracting one (cmp) and checking for
+    // overflow.
+    __ Cmp(dividend, 1);
+    DeoptimizeIf(vs, instr->environment());
   }
   // Deoptimize if remainder will not be 0.
   if (!hdiv->CheckFlag(HInstruction::kAllUsesTruncatingToInt32) &&
@@ -3870,9 +3879,14 @@ void LCodeGen::DoFlooringDivByPowerOf2I(LFlooringDivByPowerOf2I* instr) {
   Register result = ToRegister32(instr->result());
   int32_t divisor = instr->divisor();
 
+  // If the divisor is 1, return the dividend.
+  if (divisor == 1) {
+    __ Mov(result, dividend, kDiscardForSameWReg);
+    return;
+  }
+
   // If the divisor is positive, things are easy: There can be no deopts and we
   // can simply do an arithmetic right shift.
-  if (divisor == 1) return;
   int32_t shift = WhichPowerOf2Abs(divisor);
   if (divisor > 1) {
     __ Mov(result, Operand(dividend, ASR, shift));
@@ -3897,14 +3911,8 @@ void LCodeGen::DoFlooringDivByPowerOf2I(LFlooringDivByPowerOf2I* instr) {
     return;
   }
 
-  // Using a conditional data processing instruction would need 1 more register.
-  Label not_kmin_int, done;
-  __ B(vc, &not_kmin_int);
-  __ Mov(result, kMinInt / divisor);
-  __ B(&done);
-  __ bind(&not_kmin_int);
-  __ Mov(result, Operand(dividend, ASR, shift));
-  __ bind(&done);
+  __ Asr(result, dividend, shift);
+  __ Csel(result, result, kMinInt / divisor, vc);
 }
 
 
@@ -3922,8 +3930,7 @@ void LCodeGen::DoFlooringDivByConstI(LFlooringDivByConstI* instr) {
   // Check for (0 / -x) that will produce negative zero.
   HMathFloorOfDiv* hdiv = instr->hydrogen();
   if (hdiv->CheckFlag(HValue::kBailoutOnMinusZero) && divisor < 0) {
-    __ Cmp(dividend, 0);
-    DeoptimizeIf(eq, instr->environment());
+    DeoptimizeIfZero(dividend, instr->environment());
   }
 
   // Easy case: We need no dynamic check for the dividend and the flooring
@@ -3945,12 +3952,12 @@ void LCodeGen::DoFlooringDivByConstI(LFlooringDivByConstI* instr) {
   __ TruncatingDiv(result, dividend, Abs(divisor));
   if (divisor < 0) __ Neg(result, result);
   __ B(&done);
-  __ bind(&needs_adjustment);
+  __ Bind(&needs_adjustment);
   __ Add(temp, dividend, Operand(divisor > 0 ? 1 : -1));
   __ TruncatingDiv(result, temp, Abs(divisor));
   if (divisor < 0) __ Neg(result, result);
   __ Sub(result, result, Operand(1));
-  __ bind(&done);
+  __ Bind(&done);
 }
 
 
@@ -4111,9 +4118,9 @@ void LCodeGen::DoMathRoundD(LMathRoundD* instr) {
 
 void LCodeGen::DoMathRoundI(LMathRoundI* instr) {
   DoubleRegister input = ToDoubleRegister(instr->value());
-  DoubleRegister temp1 = ToDoubleRegister(instr->temp1());
+  DoubleRegister temp = ToDoubleRegister(instr->temp1());
+  DoubleRegister dot_five = double_scratch();
   Register result = ToRegister(instr->result());
-  Label try_rounding;
   Label done;
 
   // Math.round() rounds to the nearest integer, with ties going towards
@@ -4124,42 +4131,41 @@ void LCodeGen::DoMathRoundI(LMathRoundI* instr) {
   //    that -0.0 rounds to itself, and values -0.5 <= input < 0 also produce a
   //    result of -0.0.
 
-  DoubleRegister dot_five = double_scratch();
+  // Add 0.5 and round towards -infinity.
   __ Fmov(dot_five, 0.5);
-  __ Fabs(temp1, input);
-  __ Fcmp(temp1, dot_five);
-  // If input is in [-0.5, -0], the result is -0.
-  // If input is in [+0, +0.5[, the result is +0.
-  // If the input is +0.5, the result is 1.
-  __ B(hi, &try_rounding);  // hi so NaN will also branch.
+  __ Fadd(temp, input, dot_five);
+  __ Fcvtms(result, temp);
 
+  // The result is correct if:
+  //  result is not 0, as the input could be NaN or [-0.5, -0.0].
+  //  result is not 1, as 0.499...94 will wrongly map to 1.
+  //  result fits in 32 bits.
+  __ Cmp(result, Operand(result.W(), SXTW));
+  __ Ccmp(result, 1, ZFlag, eq);
+  __ B(hi, &done);
+
+  // At this point, we have to handle possible inputs of NaN or numbers in the
+  // range [-0.5, 1.5[, or numbers larger than 32 bits.
+
+  // Deoptimize if the result > 1, as it must be larger than 32 bits.
+  __ Cmp(result, 1);
+  DeoptimizeIf(hi, instr->environment());
+
+  // Deoptimize for negative inputs, which at this point are only numbers in
+  // the range [-0.5, -0.0]
   if (instr->hydrogen()->CheckFlag(HValue::kBailoutOnMinusZero)) {
     __ Fmov(result, input);
-    DeoptimizeIfNegative(result, instr->environment());  // [-0.5, -0.0].
+    DeoptimizeIfNegative(result, instr->environment());
   }
+
+  // Deoptimize if the input was NaN.
   __ Fcmp(input, dot_five);
-  __ Mov(result, 1);  // +0.5.
-  // Remaining cases: [+0, +0.5[ or [-0.5, +0.5[, depending on
-  // flag kBailoutOnMinusZero, will return 0 (xzr).
-  __ Csel(result, result, xzr, eq);
-  __ B(&done);
+  DeoptimizeIf(vs, instr->environment());
 
-  __ Bind(&try_rounding);
-  // Since we're providing a 32-bit result, we can implement ties-to-infinity by
-  // adding 0.5 to the input, then taking the floor of the result. This does not
-  // work for very large positive doubles because adding 0.5 would cause an
-  // intermediate rounding stage, so a different approach is necessary when a
-  // double result is needed.
-  __ Fadd(temp1, input, dot_five);
-  __ Fcvtms(result, temp1);
-
-  // Deopt if
-  //  * the input was NaN
-  //  * the result is not representable using a 32-bit integer.
-  __ Fcmp(input, 0.0);
-  __ Ccmp(result, Operand(result.W(), SXTW), NoFlag, vc);
-  DeoptimizeIf(ne, instr->environment());
-
+  // Now, the only unhandled inputs are in the range [0.0, 1.5[ (or [-0.5, 1.5[
+  // if we didn't generate a -0.0 bailout). If input >= 0.5 then return 1,
+  // else 0; we avoid dealing with 0.499...94 directly.
+  __ Cset(result, ge);
   __ Bind(&done);
 }
 
@@ -4218,8 +4224,7 @@ void LCodeGen::DoModByPowerOf2I(LModByPowerOf2I* instr) {
   int32_t mask = divisor < 0 ? -(divisor + 1) : (divisor - 1);
   Label dividend_is_not_negative, done;
   if (hmod->CheckFlag(HValue::kLeftCanBeNegative)) {
-    __ Cmp(dividend, 0);
-    __ B(pl, &dividend_is_not_negative);
+    __ Tbz(dividend, kWSignBit, &dividend_is_not_negative);
     // Note that this is correct even for kMinInt operands.
     __ Neg(dividend, dividend);
     __ And(dividend, dividend, mask);

@@ -75,7 +75,6 @@ typedef void* ExternalReferenceRedirectorPointer();
 
 class Debug;
 class Debugger;
-class DebuggerAgent;
 
 #if defined(NATIVE_SIMULATION) || \
     !defined(__arm__) && V8_TARGET_ARCH_ARM || \
@@ -362,7 +361,6 @@ typedef List<HeapObject*> DebugObjectCache;
   V(bool, fp_stubs_generated, false)                                           \
   V(int, max_available_threads, 0)                                             \
   V(uint32_t, per_isolate_assert_data, 0xFFFFFFFFu)                            \
-  V(DebuggerAgent*, debugger_agent_instance, NULL)                             \
   V(InterruptCallback, api_interrupt_callback, NULL)                           \
   V(void*, api_interrupt_callback_data, NULL)                                  \
   ISOLATE_INIT_SIMULATOR_LIST(V)
@@ -521,9 +519,6 @@ class Isolate {
 
   // Mutex for serializing access to break control structures.
   RecursiveMutex* break_access() { return &break_access_; }
-
-  // Mutex for serializing access to debugger.
-  RecursiveMutex* debugger_access() { return &debugger_access_; }
 
   Address get_address_from_id(AddressId id);
 
@@ -940,12 +935,9 @@ class Isolate {
     return &interp_canonicalize_mapping_;
   }
 
-  inline bool IsCodePreAgingActive();
-
   Debugger* debugger() {  return debugger_; }
   Debug* debug() { return debug_; }
 
-  inline bool IsDebuggerActive();
   inline bool DebuggerHasBreakPoints();
 
   CpuProfiler* cpu_profiler() const { return cpu_profiler_; }
@@ -1204,7 +1196,6 @@ class Isolate {
   CodeRange* code_range_;
   RecursiveMutex break_access_;
   Atomic32 debugger_initialized_;
-  RecursiveMutex debugger_access_;
   Logger* logger_;
   StackGuard stack_guard_;
   StatsTable* stats_table_;

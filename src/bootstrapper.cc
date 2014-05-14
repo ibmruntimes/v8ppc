@@ -1421,7 +1421,7 @@ bool Genesis::CompileNative(Isolate* isolate,
                             Vector<const char> name,
                             Handle<String> source) {
   HandleScope scope(isolate);
-  isolate->debugger()->set_compiling_natives(true);
+  Debugger::IgnoreScope compiling_natives(isolate->debugger());
   // During genesis, the boilerplate for stack overflow won't work until the
   // environment has been at least partially initialized. Add a stack check
   // before entering JS code to catch overflow early.
@@ -1437,7 +1437,6 @@ bool Genesis::CompileNative(Isolate* isolate,
                                     true);
   ASSERT(isolate->has_pending_exception() != result);
   if (!result) isolate->clear_pending_exception();
-  isolate->debugger()->set_compiling_natives(false);
   return result;
 }
 
@@ -1549,7 +1548,7 @@ void Genesis::InstallNativeFunctions() {
 
 
 void Genesis::InstallExperimentalNativeFunctions() {
-  INSTALL_NATIVE(JSFunction, "RunMicrotasks", run_microtasks);
+  INSTALL_NATIVE(JSFunction, "RunMicrotasksJS", run_microtasks);
   INSTALL_NATIVE(JSFunction, "EnqueueMicrotask", enqueue_microtask);
 
   if (FLAG_harmony_proxies) {

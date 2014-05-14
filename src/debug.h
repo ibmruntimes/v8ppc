@@ -8,7 +8,6 @@
 #include "allocation.h"
 #include "arguments.h"
 #include "assembler.h"
-#include "debug-agent.h"
 #include "execution.h"
 #include "factory.h"
 #include "flags.h"
@@ -782,17 +781,11 @@ class Debugger {
                             Handle<JSObject> event_data,
                             bool auto_continue);
   void SetEventListener(Handle<Object> callback, Handle<Object> data);
-  void SetMessageHandler(v8::Debug::MessageHandler2 handler);
-  void SetDebugMessageDispatchHandler(
-      v8::Debug::DebugMessageDispatchHandler handler,
-      bool provide_locker);
-
-  // Invoke the message handler function.
-  void InvokeMessageHandler(MessageImpl message);
+  void SetMessageHandler(v8::Debug::MessageHandler handler);
 
   // Add a debugger command to the command queue.
-  void ProcessCommand(Vector<const uint16_t> command,
-                      v8::Debug::ClientData* client_data = NULL);
+  void EnqueueCommandMessage(Vector<const uint16_t> command,
+                             v8::Debug::ClientData* client_data = NULL);
 
   // Check whether there are commands in the command queue.
   bool HasCommands();
@@ -803,18 +796,6 @@ class Debugger {
   MUST_USE_RESULT MaybeHandle<Object> Call(Handle<JSFunction> fun,
                                            Handle<Object> data);
 
-  // Start the debugger agent listening on the provided port.
-  bool StartAgent(const char* name, int port,
-                  bool wait_for_connection = false);
-
-  // Stop the debugger agent.
-  void StopAgent();
-
-  // Blocks until the agent has started listening for connections
-  void WaitForAgent();
-
-  void CallMessageDispatchHandler();
-
   Handle<Context> GetDebugContext();
 
   // Unload the debugger if possible. Only called when no debugger is currently
@@ -822,45 +803,49 @@ class Debugger {
   void UnloadDebugger();
   friend void ForceUnloadDebugger();  // In test-debug.cc
 
-  inline bool EventActive(v8::DebugEvent event) {
-    LockGuard<RecursiveMutex> lock_guard(debugger_access_);
+  inline bool EventActive() {
+    LockGuard<RecursiveMutex> lock_guard(&debugger_access_);
 
     // Check whether the message handler was been cleared.
+    // TODO(yangguo): handle loading and unloading of the debugger differently.
     if (debugger_unload_pending_) {
       if (isolate_->debug()->debugger_entry() == NULL) {
         UnloadDebugger();
       }
     }
 
-    if (((event == v8::BeforeCompile) || (event == v8::AfterCompile)) &&
-        !FLAG_debug_compile_events) {
-      return false;
-
-    } else if ((event == v8::ScriptCollected) &&
-               !FLAG_debug_script_collected_events) {
-      return false;
-    }
-
     // Currently argument event is not used.
-    return !compiling_natives_ && Debugger::IsDebuggerActive();
+    return !ignore_debugger_ && is_active_;
   }
 
-  void set_compiling_natives(bool compiling_natives) {
-    compiling_natives_ = compiling_natives;
-  }
-  bool compiling_natives() const { return compiling_natives_; }
-  void set_loading_debugger(bool v) { is_loading_debugger_ = v; }
-  bool is_loading_debugger() const { return is_loading_debugger_; }
+  bool ignore_debugger() const { return ignore_debugger_; }
   void set_live_edit_enabled(bool v) { live_edit_enabled_ = v; }
   bool live_edit_enabled() const {
     return FLAG_enable_liveedit && live_edit_enabled_ ;
   }
-  void set_force_debugger_active(bool force_debugger_active) {
-    force_debugger_active_ = force_debugger_active;
-  }
-  bool force_debugger_active() const { return force_debugger_active_; }
 
-  bool IsDebuggerActive();
+  bool is_active() {
+    LockGuard<RecursiveMutex> lock_guard(&debugger_access_);
+    return is_active_;
+  }
+
+  class IgnoreScope {
+   public:
+    explicit IgnoreScope(Debugger* debugger)
+        : debugger_(debugger),
+          old_state_(debugger_->ignore_debugger_) {
+      debugger_->ignore_debugger_ = true;
+    }
+
+    ~IgnoreScope() {
+      debugger_->ignore_debugger_ = old_state_;
+    }
+
+   private:
+    Debugger* debugger_;
+    bool old_state_;
+    DISALLOW_COPY_AND_ASSIGN(IgnoreScope);
+  };
 
  private:
   explicit Debugger(Isolate* isolate);
@@ -878,22 +863,18 @@ class Debugger {
                            Handle<Object> event_data);
   void ListenersChanged();
 
-  RecursiveMutex* debugger_access_;  // Mutex guarding debugger variables.
+  // Invoke the message handler function.
+  void InvokeMessageHandler(MessageImpl message);
+
+  RecursiveMutex debugger_access_;  // Mutex guarding debugger variables.
   Handle<Object> event_listener_;  // Global handle to listener.
   Handle<Object> event_listener_data_;
-  bool compiling_natives_;  // Are we compiling natives?
-  bool is_loading_debugger_;  // Are we loading the debugger?
+  bool is_active_;
+  bool ignore_debugger_;  // Are we temporarily ignoring the debugger?
   bool live_edit_enabled_;  // Enable LiveEdit.
   bool never_unload_debugger_;  // Can we unload the debugger?
-  bool force_debugger_active_;  // Activate debugger without event listeners.
-  v8::Debug::MessageHandler2 message_handler_;
+  v8::Debug::MessageHandler message_handler_;
   bool debugger_unload_pending_;  // Was message handler cleared?
-
-  Mutex dispatch_handler_access_;  // Mutex guarding dispatch handler.
-  v8::Debug::DebugMessageDispatchHandler debug_message_dispatch_handler_;
-  MessageDispatchHelperThread* message_dispatch_helper_thread_;
-
-  DebuggerAgent* agent_;
 
   static const int kQueueInitialSize = 4;
   LockingCommandMessageQueue command_queue_;
@@ -990,29 +971,6 @@ class Debug_Address {
  private:
   Debug::AddressId id_;
 };
-
-// The optional thread that Debug Agent may use to temporary call V8 to process
-// pending debug requests if debuggee is not running V8 at the moment.
-// Techincally it does not call V8 itself, rather it asks embedding program
-// to do this via v8::Debug::HostDispatchHandler
-class MessageDispatchHelperThread: public Thread {
- public:
-  explicit MessageDispatchHelperThread(Isolate* isolate);
-  ~MessageDispatchHelperThread() {}
-
-  void Schedule();
-
- private:
-  void Run();
-
-  Isolate* isolate_;
-  Semaphore sem_;
-  Mutex mutex_;
-  bool already_signalled_;
-
-  DISALLOW_COPY_AND_ASSIGN(MessageDispatchHelperThread);
-};
-
 
 } }  // namespace v8::internal
 
