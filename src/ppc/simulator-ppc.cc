@@ -1950,7 +1950,7 @@ bool Simulator::ExecuteExt2_9bit_part1(Instruction* instr) {
       int ra = instr->RAValue();
       int rb = instr->RBValue();
       int cr = instr->Bits(25, 23);
-      int bf = 0;
+      uint32_t bf = 0;
 #if V8_TARGET_ARCH_PPC64
       int L = instr->Bit(21);
       if (L) {
@@ -1969,8 +1969,8 @@ bool Simulator::ExecuteExt2_9bit_part1(Instruction* instr) {
         if (ra_val == rb_val) { bf |= 0x20000000; }
       }
 #endif
-      int condition_mask = 0xF0000000 >> (cr*4);
-      int condition =  bf >> (cr*4);
+      uint32_t condition_mask = 0xF0000000U >> (cr*4);
+      uint32_t condition =  bf >> (cr*4);
       condition_reg_ = (condition_reg_ & ~condition_mask) | condition;
       break;
     }
@@ -2174,7 +2174,7 @@ void Simulator::ExecuteExt2_9bit_part2(Instruction* instr) {
       int ra = instr->RAValue();
       int rb = instr->RBValue();
       int cr = instr->Bits(25, 23);
-      int bf = 0;
+      uint32_t bf = 0;
 #if V8_TARGET_ARCH_PPC64
       int L = instr->Bit(21);
       if (L) {
@@ -2193,8 +2193,8 @@ void Simulator::ExecuteExt2_9bit_part2(Instruction* instr) {
         if (ra_val == rb_val) { bf |= 0x20000000; }
       }
 #endif
-      int condition_mask = 0xF0000000 >> (cr*4);
-      int condition =  bf >> (cr*4);
+      uint32_t condition_mask = 0xF0000000U >> (cr*4);
+      uint32_t condition =  bf >> (cr*4);
       condition_reg_ = (condition_reg_ & ~condition_mask) | condition;
       break;
     }
@@ -2970,7 +2970,7 @@ void Simulator::ExecuteGeneric(Instruction* instr) {
       int ra = instr->RAValue();
       uint32_t im_val = instr->Bits(15, 0);
       int cr = instr->Bits(25, 23);
-      int bf = 0;
+      uint32_t bf = 0;
 #if V8_TARGET_ARCH_PPC64
       int L = instr->Bit(21);
       if (L) {
@@ -2987,8 +2987,8 @@ void Simulator::ExecuteGeneric(Instruction* instr) {
         if (ra_val == im_val) { bf |= 0x20000000; }
       }
 #endif
-      int condition_mask = 0xF0000000 >> (cr*4);
-      int condition =  bf >> (cr*4);
+      uint32_t condition_mask = 0xF0000000U >> (cr*4);
+      uint32_t condition =  bf >> (cr*4);
       condition_reg_ = (condition_reg_ & ~condition_mask) | condition;
       break;
     }
@@ -2997,7 +2997,7 @@ void Simulator::ExecuteGeneric(Instruction* instr) {
       int32_t im_val = instr->Bits(15, 0);
       im_val = SIGN_EXT_IMM16(im_val);
       int cr = instr->Bits(25, 23);
-      int bf = 0;
+      uint32_t bf = 0;
 #if V8_TARGET_ARCH_PPC64
       int L = instr->Bit(21);
       if (L) {
@@ -3014,8 +3014,8 @@ void Simulator::ExecuteGeneric(Instruction* instr) {
         if (ra_val == im_val) { bf |= 0x20000000; }
       }
 #endif
-      int condition_mask = 0xF0000000 >> (cr*4);
-      int condition =  bf >> (cr*4);
+      uint32_t condition_mask = 0xF0000000U >> (cr*4);
+      uint32_t condition =  bf >> (cr*4);
       condition_reg_ = (condition_reg_ & ~condition_mask) | condition;
       break;
     }
