@@ -900,26 +900,27 @@ void MacroAssembler::AssertNotSmi(Register object) {
 }
 
 
-void MacroAssembler::Prologue(CompilationInfo* info) {
-  if (info->IsStub()) {
+void MacroAssembler::StubPrologue() {
+  push(ebp);  // Caller's frame pointer.
+  mov(ebp, esp);
+  push(esi);  // Callee's context.
+  push(Immediate(Smi::FromInt(StackFrame::STUB)));
+}
+
+
+void MacroAssembler::Prologue(bool code_pre_aging) {
+  PredictableCodeSizeScope predictible_code_size_scope(this,
+      kNoCodeAgeSequenceLength);
+  if (code_pre_aging) {
+      // Pre-age the code.
+    call(isolate()->builtins()->MarkCodeAsExecutedOnce(),
+        RelocInfo::CODE_AGE_SEQUENCE);
+    Nop(kNoCodeAgeSequenceLength - Assembler::kCallInstructionLength);
+  } else {
     push(ebp);  // Caller's frame pointer.
     mov(ebp, esp);
     push(esi);  // Callee's context.
-    push(Immediate(Smi::FromInt(StackFrame::STUB)));
-  } else {
-    PredictableCodeSizeScope predictible_code_size_scope(this,
-        kNoCodeAgeSequenceLength);
-    if (info->IsCodePreAgingActive()) {
-        // Pre-age the code.
-      call(isolate()->builtins()->MarkCodeAsExecutedOnce(),
-          RelocInfo::CODE_AGE_SEQUENCE);
-      Nop(kNoCodeAgeSequenceLength - Assembler::kCallInstructionLength);
-    } else {
-      push(ebp);  // Caller's frame pointer.
-      mov(ebp, esp);
-      push(esi);  // Callee's context.
-      push(edi);  // Callee's JS function.
-    }
+    push(edi);  // Callee's JS function.
   }
 }
 
@@ -1278,7 +1279,7 @@ void MacroAssembler::CheckAccessGlobalProxy(Register holder_reg,
 // Note: r0 will contain hash code
 void MacroAssembler::GetNumberHash(Register r0, Register scratch) {
   // Xor original key with a seed.
-  if (Serializer::enabled(isolate())) {
+  if (serializer_enabled()) {
     ExternalReference roots_array_start =
         ExternalReference::roots_array_start(isolate());
     mov(scratch, Immediate(Heap::kHashSeedRootIndex));

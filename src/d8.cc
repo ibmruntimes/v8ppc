@@ -757,11 +757,12 @@ void Shell::InstallUtilityScript(Isolate* isolate) {
   // Install the debugger object in the utility scope
   i::Debug* debug = reinterpret_cast<i::Isolate*>(isolate)->debug();
   debug->Load();
+  i::Handle<i::Context> debug_context = debug->debug_context();
   i::Handle<i::JSObject> js_debug
-      = i::Handle<i::JSObject>(debug->debug_context()->global_object());
+      = i::Handle<i::JSObject>(debug_context->global_object());
   utility_context->Global()->Set(String::NewFromUtf8(isolate, "$debug"),
                                  Utils::ToLocal(js_debug));
-  debug->debug_context()->set_security_token(
+  debug_context->set_security_token(
       reinterpret_cast<i::Isolate*>(isolate)->heap()->undefined_value());
 
   // Run the d8 shell utility script in the utility context
@@ -1454,7 +1455,8 @@ static void DumpHeapConstants(i::Isolate* isolate) {
 class ShellArrayBufferAllocator : public v8::ArrayBuffer::Allocator {
  public:
   virtual void* Allocate(size_t length) {
-    return memset(AllocateUninitialized(length), 0, length);
+    void* data = AllocateUninitialized(length);
+    return data == NULL ? data : memset(data, 0, length);
   }
   virtual void* AllocateUninitialized(size_t length) { return malloc(length); }
   virtual void Free(void* data, size_t) { free(data); }

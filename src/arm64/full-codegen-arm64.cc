@@ -170,8 +170,7 @@ void FullCodeGenerator::Generate() {
   //  Push(lr, fp, cp, x1);
   //  Add(fp, jssp, 2 * kPointerSize);
   info->set_prologue_offset(masm_->pc_offset());
-  ASSERT(!info->IsStub());
-  __ Prologue(info);
+  __ Prologue(info->IsCodePreAgingActive());
   info->AddNoFrameRange(0, masm_->pc_offset());
 
   // Reserve space on the stack for locals.
@@ -1656,7 +1655,7 @@ void FullCodeGenerator::VisitObjectLiteral(ObjectLiteral* expr) {
   const int max_cloned_properties =
       FastCloneShallowObjectStub::kMaximumClonedProperties;
   if (expr->may_store_doubles() || expr->depth() > 1 ||
-      Serializer::enabled(isolate()) || flags != ObjectLiteral::kFastElements ||
+      masm()->serializer_enabled() || flags != ObjectLiteral::kFastElements ||
       properties_count > max_cloned_properties) {
     __ Push(x3, x2, x1, x0);
     __ CallRuntime(Runtime::kHiddenCreateObjectLiteral, 4);

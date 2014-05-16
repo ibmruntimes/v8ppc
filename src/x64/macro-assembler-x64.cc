@@ -60,7 +60,7 @@ int64_t MacroAssembler::RootRegisterDelta(ExternalReference other) {
 
 Operand MacroAssembler::ExternalOperand(ExternalReference target,
                                         Register scratch) {
-  if (root_array_available_ && !Serializer::enabled(isolate())) {
+  if (root_array_available_ && !serializer_enabled()) {
     int64_t delta = RootRegisterDelta(target);
     if (delta != kInvalidRootRegisterDelta && is_int32(delta)) {
       return Operand(kRootRegister, static_cast<int32_t>(delta));
@@ -72,7 +72,7 @@ Operand MacroAssembler::ExternalOperand(ExternalReference target,
 
 
 void MacroAssembler::Load(Register destination, ExternalReference source) {
-  if (root_array_available_ && !Serializer::enabled(isolate())) {
+  if (root_array_available_ && !serializer_enabled()) {
     int64_t delta = RootRegisterDelta(source);
     if (delta != kInvalidRootRegisterDelta && is_int32(delta)) {
       movp(destination, Operand(kRootRegister, static_cast<int32_t>(delta)));
@@ -90,7 +90,7 @@ void MacroAssembler::Load(Register destination, ExternalReference source) {
 
 
 void MacroAssembler::Store(ExternalReference destination, Register source) {
-  if (root_array_available_ && !Serializer::enabled(isolate())) {
+  if (root_array_available_ && !serializer_enabled()) {
     int64_t delta = RootRegisterDelta(destination);
     if (delta != kInvalidRootRegisterDelta && is_int32(delta)) {
       movp(Operand(kRootRegister, static_cast<int32_t>(delta)), source);
@@ -109,7 +109,7 @@ void MacroAssembler::Store(ExternalReference destination, Register source) {
 
 void MacroAssembler::LoadAddress(Register destination,
                                  ExternalReference source) {
-  if (root_array_available_ && !Serializer::enabled(isolate())) {
+  if (root_array_available_ && !serializer_enabled()) {
     int64_t delta = RootRegisterDelta(source);
     if (delta != kInvalidRootRegisterDelta && is_int32(delta)) {
       leap(destination, Operand(kRootRegister, static_cast<int32_t>(delta)));
@@ -122,7 +122,7 @@ void MacroAssembler::LoadAddress(Register destination,
 
 
 int MacroAssembler::LoadAddressSize(ExternalReference source) {
-  if (root_array_available_ && !Serializer::enabled(isolate())) {
+  if (root_array_available_ && !serializer_enabled()) {
     // This calculation depends on the internals of LoadAddress.
     // It's correctness is ensured by the asserts in the Call
     // instruction below.
@@ -144,7 +144,7 @@ int MacroAssembler::LoadAddressSize(ExternalReference source) {
 
 void MacroAssembler::PushAddress(ExternalReference source) {
   int64_t address = reinterpret_cast<int64_t>(source.address());
-  if (is_int32(address) && !Serializer::enabled(isolate())) {
+  if (is_int32(address) && !serializer_enabled()) {
     if (emit_debug_code()) {
       Move(kScratchRegister, kZapValue, Assembler::RelocInfoNone());
     }
@@ -252,7 +252,7 @@ void MacroAssembler::InNewSpace(Register object,
                                 Condition cc,
                                 Label* branch,
                                 Label::Distance distance) {
-  if (Serializer::enabled(isolate())) {
+  if (serializer_enabled()) {
     // Can't do arithmetic on external references if it might get serialized.
     // The mask isn't really an address.  We load it as an external reference in
     // case the size of the new space is different between the snapshot maker
@@ -3889,26 +3889,27 @@ void MacroAssembler::InvokePrologue(const ParameterCount& expected,
 }
 
 
-void MacroAssembler::Prologue(CompilationInfo* info) {
-  if (info->IsStub()) {
+void MacroAssembler::StubPrologue() {
     pushq(rbp);  // Caller's frame pointer.
     movp(rbp, rsp);
     Push(rsi);  // Callee's context.
     Push(Smi::FromInt(StackFrame::STUB));
+}
+
+
+void MacroAssembler::Prologue(bool code_pre_aging) {
+  PredictableCodeSizeScope predictible_code_size_scope(this,
+      kNoCodeAgeSequenceLength);
+  if (code_pre_aging) {
+      // Pre-age the code.
+    Call(isolate()->builtins()->MarkCodeAsExecutedOnce(),
+         RelocInfo::CODE_AGE_SEQUENCE);
+    Nop(kNoCodeAgeSequenceLength - Assembler::kShortCallInstructionLength);
   } else {
-    PredictableCodeSizeScope predictible_code_size_scope(this,
-        kNoCodeAgeSequenceLength);
-    if (info->IsCodePreAgingActive()) {
-        // Pre-age the code.
-      Call(isolate()->builtins()->MarkCodeAsExecutedOnce(),
-           RelocInfo::CODE_AGE_SEQUENCE);
-      Nop(kNoCodeAgeSequenceLength - Assembler::kShortCallInstructionLength);
-    } else {
-      pushq(rbp);  // Caller's frame pointer.
-      movp(rbp, rsp);
-      Push(rsi);  // Callee's context.
-      Push(rdi);  // Callee's JS function.
-    }
+    pushq(rbp);  // Caller's frame pointer.
+    movp(rbp, rsp);
+    Push(rsi);  // Callee's context.
+    Push(rdi);  // Callee's JS function.
   }
 }
 

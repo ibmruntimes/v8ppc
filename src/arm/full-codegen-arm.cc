@@ -171,8 +171,7 @@ void FullCodeGenerator::Generate() {
   FrameScope frame_scope(masm_, StackFrame::MANUAL);
 
   info->set_prologue_offset(masm_->pc_offset());
-  ASSERT(!info->IsStub());
-  __ Prologue(info);
+  __ Prologue(info->IsCodePreAgingActive());
   info->AddNoFrameRange(0, masm_->pc_offset());
 
   { Comment cmnt(masm_, "[ Allocate locals");
@@ -1652,7 +1651,7 @@ void FullCodeGenerator::VisitObjectLiteral(ObjectLiteral* expr) {
   __ mov(r0, Operand(Smi::FromInt(flags)));
   int properties_count = constant_properties->length() / 2;
   if (expr->may_store_doubles() || expr->depth() > 1 ||
-      Serializer::enabled(isolate()) || flags != ObjectLiteral::kFastElements ||
+      masm()->serializer_enabled() || flags != ObjectLiteral::kFastElements ||
       properties_count > FastCloneShallowObjectStub::kMaximumClonedProperties) {
     __ Push(r3, r2, r1, r0);
     __ CallRuntime(Runtime::kHiddenCreateObjectLiteral, 4);
