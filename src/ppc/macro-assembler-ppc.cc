@@ -743,19 +743,25 @@ void MacroAssembler::LoadConstantPoolPointerRegister() {
 #endif
 
 
-void MacroAssembler::Prologue(CompilationInfo* info) {
-  if (info->IsStub()) {
-    PushFixedFrame();
-    Push(Smi::FromInt(StackFrame::STUB));
-    // Adjust FP to point to saved FP.
-    addi(fp, sp, Operand(StandardFrameConstants::kFixedFrameSizeFromFp));
-  } else {
-    PredictableCodeSizeScope predictible_code_size_scope(
+void MacroAssembler::StubPrologue() {
+  PushFixedFrame();
+  Push(Smi::FromInt(StackFrame::STUB));
+  // Adjust FP to point to saved FP.
+  addi(fp, sp, Operand(StandardFrameConstants::kFixedFrameSizeFromFp));
+#if V8_OOL_CONSTANT_POOL
+  LoadConstantPoolPointerRegister();
+  set_constant_pool_available(true);
+#endif
+}
+
+
+void MacroAssembler::Prologue(bool code_pre_aging) {
+  { PredictableCodeSizeScope predictible_code_size_scope(
       this, kNoCodeAgeSequenceLength);
     Assembler::BlockTrampolinePoolScope block_trampoline_pool(this);
     // The following instructions must remain together and unmodified
     // for code aging to work properly.
-    if (info->IsCodePreAgingActive()) {
+    if (code_pre_aging) {
       // Pre-age the code.
       // This matches the code found in PatchPlatformCodeAge()
       Code* stub = Code::GetPreAgedCodeAgeStub(isolate());
@@ -3661,7 +3667,7 @@ void MacroAssembler::FlushICache(Register address, size_t size,
 
   // This code handles ranges which cross a single cacheline boundary.
   // scratch is last cacheline which intersects range.
-  const int kCacheLineSizeLog2 = CpuFeatures::cache_line_size_log2();
+  const int kCacheLineSizeLog2 = WhichPowerOf2(CpuFeatures::cache_line_size());
 
   ASSERT(size > 0 && size <= (size_t)(1 << kCacheLineSizeLog2));
   addi(scratch, address, Operand(size - 1));

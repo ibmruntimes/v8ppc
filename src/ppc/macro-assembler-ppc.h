@@ -425,7 +425,8 @@ class MacroAssembler: public Assembler {
                             FPRoundingMode rounding_mode = kRoundToZero);
 
   // Generates function and stub prologue code.
-  void Prologue(CompilationInfo* info);
+  void StubPrologue();
+  void Prologue(bool code_pre_aging);
 
   // Enter exit frame.
   // stack_space - extra stack space, used for alignment before call to C.

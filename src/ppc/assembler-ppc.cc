@@ -49,21 +49,6 @@
 namespace v8 {
 namespace internal {
 
-#ifdef DEBUG
-bool CpuFeatures::initialized_ = false;
-#endif
-unsigned CpuFeatures::supported_ = 0;
-unsigned CpuFeatures::found_by_runtime_probing_only_ = 0;
-unsigned CpuFeatures::cross_compile_ = 0;
-unsigned CpuFeatures::cache_line_size_log2_ = 7;  // 128
-
-
-ExternalReference ExternalReference::cpu_features() {
-  ASSERT(CpuFeatures::initialized_);
-  return ExternalReference(&CpuFeatures::supported_);
-}
-
-
 // Get the CPU features enabled by the build.
 static unsigned CpuFeaturesImpliedByCompiler() {
   unsigned answer = 0;
@@ -71,7 +56,7 @@ static unsigned CpuFeaturesImpliedByCompiler() {
 }
 
 
-#if !V8_OS_AIX
+#if !V8_OS_AIX && !defined(USE_SIMULATOR)
 // This function uses types in elf.h
 static bool is_processor(const char* p) {
   static bool read_tried = false;
@@ -119,29 +104,18 @@ static bool is_processor(const char* p) {
 #endif
 
 
-void CpuFeatures::Probe(bool serializer_enabled) {
-  unsigned standard_features = static_cast<unsigned>(
-      OS::CpuFeaturesImpliedByPlatform()) | CpuFeaturesImpliedByCompiler();
-  ASSERT(supported_ == 0 ||
-         (supported_ & standard_features) == standard_features);
-#ifdef DEBUG
-  initialized_ = true;
-#endif
+void CpuFeatures::ProbeImpl(bool cross_compile) {
+  supported_ |= OS::CpuFeaturesImpliedByPlatform();
+  supported_ |= CpuFeaturesImpliedByCompiler();
+  cache_line_size_ = 128;
 
-  // Get the features implied by the OS and the compiler settings. This is the
-  // minimal set of features which is also alowed for generated code in the
-  // snapshot.
-  supported_ |= standard_features;
-
-  if (serializer_enabled) {
-    // No probing for features if we might serialize (generate snapshot).
-    return;
-  }
+  // Only use statically determined features for cross compile (snapshot).
+  if (cross_compile) return;
 
   // Detect whether frim instruction is supported (POWER5+)
   // For now we will just check for processors we know do not
   // support it
-#if !V8_OS_AIX
+#if !V8_OS_AIX && !defined(USE_SIMULATOR)
   if (!is_processor("ppc970") /* G5 */ && !is_processor("ppc7450") /* G4 */) {
     // Assume support
     supported_ |= (1u << FPU);
@@ -2244,7 +2218,7 @@ void Assembler::RecordRelocInfo(const RelocInfo& rinfo) {
   if (!RelocInfo::IsNone(rinfo.rmode())) {
     // Don't record external references unless the heap will be serialized.
     if (rinfo.rmode() == RelocInfo::EXTERNAL_REFERENCE) {
-      if (!Serializer::enabled(isolate()) && !emit_debug_code()) {
+      if (!serializer_enabled() && !emit_debug_code()) {
         return;
       }
     }
@@ -2392,7 +2366,7 @@ void ConstantPoolBuilder::AddEntry(Assembler* assm,
   // Try to merge entries which won't be patched.
   int merged_index = -1;
   if (RelocInfo::IsNone(rmode) ||
-      (!Serializer::enabled(assm->isolate()) && (rmode >= RelocInfo::CELL))) {
+      (!assm->serializer_enabled() && (rmode >= RelocInfo::CELL))) {
     size_t i;
     std::vector<RelocInfo>::const_iterator it;
     for (it = entries_.begin(), i = 0; it != entries_.end(); it++, i++) {
