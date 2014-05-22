@@ -2781,7 +2781,7 @@ void LCodeGen::DoLoadKeyedFastElement(LLoadKeyedFastElement* instr) {
     __ add(scratch, elements, r0);
     offset = FixedArray::OffsetOfElementAt(instr->additional_index());
   }
-  __ LoadP(result, FieldMemOperand(store_base, offset));
+  __ LoadP(result, FieldMemOperand(store_base, offset), r0);
 
   // Check for the hole value.
   if (instr->hydrogen()->RequiresHoleCheck()) {
