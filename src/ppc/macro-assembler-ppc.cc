@@ -3479,9 +3479,9 @@ static const int kRegisterPassedArguments = 8;
 int MacroAssembler::CalculateStackPassedWords(int num_reg_arguments,
                                               int num_double_arguments) {
   int stack_passed_words = 0;
-  if (num_double_arguments > DoubleRegister::NumRegisters()) {
+  if (num_double_arguments > DoubleRegister::kNumRegisters) {
       stack_passed_words +=
-        2 * (num_double_arguments - DoubleRegister::NumRegisters());
+        2 * (num_double_arguments - DoubleRegister::kNumRegisters);
   }
   // Up to 8 simple arguments are passed in registers r3..r10.
   if (num_reg_arguments > kRegisterPassedArguments) {

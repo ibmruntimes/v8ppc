@@ -175,9 +175,7 @@ class CpuFeatures : public AllStatic {
 // Core register
 struct Register {
   static const int kNumRegisters = 32;
-  static const int kMaxNumAllocatableRegisters = 9;  // r3-r10 and cp
   static const int kSizeInBytes = kPointerSize;
-  static const int kCpRegister = 18;  // cp is r18
 
 #if V8_TARGET_LITTLE_ENDIAN
   static const int kMantissaOffset = 0;
@@ -187,34 +185,62 @@ struct Register {
   static const int kExponentOffset = 0;
 #endif
 
-  inline static int NumAllocatableRegisters();
+  static const int kAllocatableLowRangeBegin  = 3;
+  static const int kAllocatableLowRangeEnd    = 10;
+  static const int kAllocatableHighRangeBegin = 14;
+#if V8_OOL_CONSTANT_POOL
+  static const int kAllocatableHighRangeEnd   = 27;
+#else
+  static const int kAllocatableHighRangeEnd   = 28;
+#endif
+  static const int kAllocatableContext        = 30;
+
+  static const int kNumAllocatableLow =
+      kAllocatableLowRangeEnd - kAllocatableLowRangeBegin + 1;
+  static const int kNumAllocatableHigh =
+      kAllocatableHighRangeEnd - kAllocatableHighRangeBegin + 1;
+  static const int kMaxNumAllocatableRegisters =
+      kNumAllocatableLow + kNumAllocatableHigh + 1;  // cp
+  static int NumAllocatableRegisters() { return kMaxNumAllocatableRegisters; }
 
   static int ToAllocationIndex(Register reg) {
-    int index = reg.is(from_code(kCpRegister)) ?
-      kMaxNumAllocatableRegisters - 1 :  // Return last index for 'cp'.
-      reg.code() - 3;  // r0-r2 are skipped
-    ASSERT(index < kMaxNumAllocatableRegisters);
+    int index;
+    int code = reg.code();
+    if (code == kAllocatableContext) {
+      // Context is the last index
+      index = NumAllocatableRegisters() - 1;
+    } else if (code <= kAllocatableLowRangeEnd) {
+      // low range
+      index = code - kAllocatableLowRangeBegin;
+    } else {
+      // high range
+      index = code - kAllocatableHighRangeBegin + kNumAllocatableLow;
+    }
+    ASSERT(index >= 0 && index < kMaxNumAllocatableRegisters);
     return index;
   }
 
   static Register FromAllocationIndex(int index) {
     ASSERT(index >= 0 && index < kMaxNumAllocatableRegisters);
-    return index == kMaxNumAllocatableRegisters - 1 ?
-      from_code(kCpRegister) :  // Last index is always the 'cp' register.
-      from_code(index + 3);  // r0-r2 are skipped
+    // Last index is always the 'cp' register.
+    if (index == kMaxNumAllocatableRegisters - 1) {
+      return from_code(kAllocatableContext);
+    }
+    return (index < kNumAllocatableLow)
+        ? from_code(index + kAllocatableLowRangeBegin)
+        : from_code(index - kNumAllocatableLow + kAllocatableHighRangeBegin);
   }
 
   static const char* AllocationIndexToString(int index) {
     ASSERT(index >= 0 && index < kMaxNumAllocatableRegisters);
     const char* const names[] = {
-      "r3",
-      "r4",
-      "r5",
-      "r6",
-      "r7",
-      "r8",
-      "r9",
-      "r10",
+      "r3", "r4", "r5", "r6", "r7", "r8", "r9", "r10",
+      "r14", "r15", "r16", "r17", "r18",
+      "r19", "r20", "r21", "r22", "r23",
+      "r24", "r25", "r26", "r27",
+#if !V8_OOL_CONSTANT_POOL
+      "r28",
+#endif
       "cp",
     };
     return names[index];
@@ -247,20 +273,20 @@ struct Register {
 
 // These constants are used in several locations, including static initializers
 const int kRegister_no_reg_Code = -1;
-const int kRegister_r0_Code = 0;
-const int kRegister_sp_Code = 1;
-const int kRegister_r2_Code = 2;  // special on PowerPC
-const int kRegister_r3_Code = 3;
-const int kRegister_r4_Code = 4;
-const int kRegister_r5_Code = 5;
-const int kRegister_r6_Code = 6;
-const int kRegister_r7_Code = 7;
-const int kRegister_r8_Code = 8;
-const int kRegister_r9_Code = 9;
+const int kRegister_r0_Code  =  0;  // general scratch
+const int kRegister_sp_Code  =  1;  // stack pointer
+const int kRegister_r2_Code  =  2;  // special on PowerPC
+const int kRegister_r3_Code  =  3;
+const int kRegister_r4_Code  =  4;
+const int kRegister_r5_Code  =  5;
+const int kRegister_r6_Code  =  6;
+const int kRegister_r7_Code  =  7;
+const int kRegister_r8_Code  =  8;
+const int kRegister_r9_Code  =  9;
 const int kRegister_r10_Code = 10;
-const int kRegister_r11_Code = 11;
-const int kRegister_ip_Code = 12;
-const int kRegister_r13_Code = 13;
+const int kRegister_r11_Code = 11;  // lithium scratch
+const int kRegister_ip_Code  = 12;  // ip (general scratch)
+const int kRegister_r13_Code = 13;  // special on PowerPC
 const int kRegister_r14_Code = 14;
 const int kRegister_r15_Code = 15;
 
@@ -276,10 +302,10 @@ const int kRegister_r24_Code = 24;
 const int kRegister_r25_Code = 25;
 const int kRegister_r26_Code = 26;
 const int kRegister_r27_Code = 27;
-const int kRegister_r28_Code = 28;
-const int kRegister_r29_Code = 29;
-const int kRegister_r30_Code = 30;
-const int kRegister_fp_Code = 31;
+const int kRegister_r28_Code = 28;  // constant pool pointer
+const int kRegister_r29_Code = 29;  // roots array pointer
+const int kRegister_r30_Code = 30;  // context pointer
+const int kRegister_fp_Code  = 31;  // frame pointer
 
 const Register no_reg = { kRegister_no_reg_Code };
 
@@ -318,35 +344,55 @@ const Register r30  = { kRegister_r30_Code };
 const Register fp = { kRegister_fp_Code };
 
 // Give alias names to registers
-const Register cp = { kRegister_r18_Code };  // JavaScript context pointer
-const Register kRootRegister = { kRegister_r19_Code };  // Roots array pointer.
+const Register cp = { kRegister_r30_Code };  // JavaScript context pointer
+const Register kRootRegister = { kRegister_r29_Code };  // Roots array pointer.
 #if V8_OOL_CONSTANT_POOL
-const Register kConstantPoolRegister = { kRegister_r20_Code };  // Constant pool
+const Register kConstantPoolRegister = { kRegister_r28_Code };  // Constant pool
 #endif
 
 // Double word FP register.
 struct DoubleRegister {
-  static const int kMaxNumRegisters = 32;
+  static const int kNumRegisters = 32;
+  static const int kMaxNumRegisters = kNumRegisters;
   static const int kNumVolatileRegisters = 14;     // d0-d13
-  static const int kMaxNumAllocatableRegisters = 12;  // d1-d12
   static const int kSizeInBytes = 8;
 
-  inline static int NumRegisters();
-  inline static int NumAllocatableRegisters();
-  inline static int ToAllocationIndex(DoubleRegister reg);
-  static const char* AllocationIndexToString(int index);
+  static const int kAllocatableLowRangeBegin  = 1;
+  static const int kAllocatableLowRangeEnd    = 12;
+  static const int kAllocatableHighRangeBegin = 15;
+  static const int kAllocatableHighRangeEnd   = 31;
+
+  static const int kNumAllocatableLow =
+      kAllocatableLowRangeEnd - kAllocatableLowRangeBegin + 1;
+  static const int kNumAllocatableHigh =
+      kAllocatableHighRangeEnd - kAllocatableHighRangeBegin + 1;
+  static const int kMaxNumAllocatableRegisters =
+      kNumAllocatableLow + kNumAllocatableHigh;
+  static int NumAllocatableRegisters() { return kMaxNumAllocatableRegisters; }
+
+  static int ToAllocationIndex(DoubleRegister reg) {
+    int code = reg.code();
+    int index = (code <= kAllocatableLowRangeEnd)
+      ? code - kAllocatableLowRangeBegin
+      : code - kAllocatableHighRangeBegin + kNumAllocatableLow;
+    ASSERT(index < kMaxNumAllocatableRegisters);
+    return index;
+  }
 
   static DoubleRegister FromAllocationIndex(int index) {
     ASSERT(index >= 0 && index < kMaxNumAllocatableRegisters);
-    return from_code(index + 1);  // d0 is skipped
+    return (index < kNumAllocatableLow)
+        ? from_code(index + kAllocatableLowRangeBegin)
+        : from_code(index - kNumAllocatableLow + kAllocatableHighRangeBegin);
   }
+
+  static const char* AllocationIndexToString(int index);
 
   static DoubleRegister from_code(int code) {
     DoubleRegister r = { code };
     return r;
   }
 
-  // Supporting d0 to d15, can be later extended to d31.
   bool is_valid() const { return 0 <= code_ && code_ < kMaxNumRegisters; }
   bool is(DoubleRegister reg) const { return code_ == reg.code_; }
 

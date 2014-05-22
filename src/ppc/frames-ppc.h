@@ -39,26 +39,28 @@ int JSCallerSavedCode(int n);
 
 
 // Callee-saved registers preserved when switching from C to JavaScript
-// N.B.  Do not bother saving all non-volatiles -- only those that v8
-//       modifies without saving/restoring inline.
 const RegList kCalleeSaved =
-  1 <<  14 |  // r14 (general use)
-  1 <<  15 |  // r15 (general use)
-  1 <<  16 |  // r16 (general use)
-  1 <<  17 |  // r17 (general use)
-  1 <<  18 |  // r18 (general use / cp in Javascript code)
-  1 <<  19 |  // r19 (roots array in Javascript code)
-#if V8_OOL_CONSTANT_POOL
-  1 <<  20 |  // r20 (constant pool array in Javascript code)
-#endif
-  1 <<  31;   // r31 (fp in Javascript code)
+  1 <<  14 |  // r14
+  1 <<  15 |  // r15
+  1 <<  16 |  // r16
+  1 <<  17 |  // r17
+  1 <<  18 |  // r18
+  1 <<  19 |  // r19
+  1 <<  20 |  // r20
+  1 <<  21 |  // r21
+  1 <<  22 |  // r22
+  1 <<  23 |  // r23
+  1 <<  24 |  // r24
+  1 <<  25 |  // r25
+  1 <<  26 |  // r26
+  1 <<  27 |  // r27
+  1 <<  28 |  // r28
+  1 <<  29 |  // r29
+  1 <<  30 |  // r20
+  1 <<  31;   // r31
 
 
-#if V8_OOL_CONSTANT_POOL
-const int kNumCalleeSaved = 8;
-#else
-const int kNumCalleeSaved = 7;
-#endif
+const int kNumCalleeSaved = 18;
 
 // Number of registers for which space is reserved in safepoints. Must be a
 // multiple of 8.
