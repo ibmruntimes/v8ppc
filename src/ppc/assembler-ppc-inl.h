@@ -54,29 +54,6 @@ namespace internal {
 bool CpuFeatures::SupportsCrankshaft() { return true; }
 
 
-int Register::NumAllocatableRegisters() {
-  return kMaxNumAllocatableRegisters;
-}
-
-
-int DoubleRegister::NumRegisters() {
-  return kNumRegisters;
-}
-
-
-int DoubleRegister::NumAllocatableRegisters() {
-  return kMaxNumAllocatableRegisters;
-}
-
-
-int DoubleRegister::ToAllocationIndex(DoubleRegister reg) {
-  int index = reg.code() - 1;  // d0 is skipped
-  ASSERT(index < kMaxNumAllocatableRegisters);
-  ASSERT(!reg.is(kDoubleRegZero));
-  ASSERT(!reg.is(kScratchDoubleReg));
-  return index;
-}
-
 void RelocInfo::apply(intptr_t delta, ICacheFlushMode icache_flush_mode) {
 #if ABI_USES_FUNCTION_DESCRIPTORS || V8_OOL_CONSTANT_POOL
   if (RelocInfo::IsInternalReference(rmode_)) {

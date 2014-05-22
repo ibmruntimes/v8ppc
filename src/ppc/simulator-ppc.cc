@@ -367,7 +367,7 @@ void PPCDebugger::Debug() {
                    sim_->special_reg_ctr_, sim_->special_reg_xer_,
                    sim_->condition_reg_);
           } else if (strcmp(arg1, "allf") == 0) {
-            for (int i = 0; i < DoubleRegister::NumRegisters(); i++) {
+            for (int i = 0; i < DoubleRegister::kNumRegisters; i++) {
               dvalue = GetFPDoubleRegisterValue(i);
               uint64_t as_words = BitCast<uint64_t>(dvalue);
               PrintF("%3s: %f 0x%08x %08x\n",
