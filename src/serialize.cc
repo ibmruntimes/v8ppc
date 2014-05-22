@@ -523,6 +523,13 @@ void ExternalReferenceTable::PopulateTable(Isolate* isolate) {
       UNCLASSIFIED,
       50,
       "pending_message_script");
+
+#ifdef SOFT_FPU
+  Add(ExternalReference::convert_int_double_function(isolate).address(),
+      UNCLASSIFIED,
+      51,
+      "convert_int_double_function");
+#endif
 }
 
 

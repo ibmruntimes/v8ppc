@@ -91,6 +91,12 @@ ifeq ($(vfp3), off)
 else
   GYPFLAGS += -Dv8_can_use_vfp3_instructions=true
 endif
+# fpu=soft
+ifeq ($(fpu), soft)
+  GYPFLAGS += -Dv8_can_use_fpu_instructions=false
+else
+  GYPFLAGS += -Dv8_can_use_fpu_instructions=true
+endif
 # debuggersupport=off
 ifeq ($(debuggersupport), off)
   GYPFLAGS += -Dv8_enable_debugger_support=0

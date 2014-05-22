@@ -664,6 +664,9 @@ class ExternalReference BASE_EMBEDDED {
   static ExternalReference math_cos_double_function(Isolate* isolate);
   static ExternalReference math_tan_double_function(Isolate* isolate);
   static ExternalReference math_log_double_function(Isolate* isolate);
+#ifdef SOFT_FPU
+  static ExternalReference convert_int_double_function(Isolate* isolate);
+#endif
 
   static ExternalReference page_flags(Page* page);
 
@@ -874,6 +877,10 @@ bool EvalComparison(Token::Value op, double op1, double op2);
 // Computes pow(x, y) with the special cases in the spec for Math.pow.
 double power_double_int(double x, int y);
 double power_double_double(double x, double y);
+
+#ifdef SOFT_FPU
+double convert_int_double(double d, int x);
+#endif
 
 // Helper class for generating code or data associated with the code
 // right after a call instruction. As an example this can be used to

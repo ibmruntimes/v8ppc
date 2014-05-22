@@ -657,6 +657,7 @@ void FloatingPointHelper::ConvertIntToDouble(MacroAssembler* masm,
                                              DwVfpRegister double_dst) {
   ASSERT(!src.is(r0));
 
+#ifndef SOFT_FPU
   __ subi(sp, sp, Operand(8));  // reserve one temporary double on the stack
 
   // sign-extend src to 64-bit and store it to temp double on the stack
@@ -681,6 +682,22 @@ void FloatingPointHelper::ConvertIntToDouble(MacroAssembler* masm,
 
   // convert to double
   __ fcfid(double_dst, double_dst);
+#else  // No FPU support
+  __ MultiPush(r10.bit()|r9.bit()|r8.bit()|r7.bit()|r6.bit()|
+       r5.bit()|r4.bit()|r3.bit());
+  __ mflr(r0);  // C function call will destroy link register
+  __ push(r0);
+  __ PrepareCallCFunction(1, 1, r4);
+  __ mr(r3, src);
+  AllowExternalCallThatCantCauseGC scope(masm);
+  __ CallCFunction(
+       ExternalReference::convert_int_double_function(masm->isolate()), 1, 1);
+  __ GetCFunctionDoubleResult(double_dst);
+  __ pop(r0);
+  __ mtlr(r0);
+  __ MultiPop(r10.bit()|r9.bit()|r8.bit()|r7.bit()|r6.bit()|
+       r5.bit()|r4.bit()|r3.bit());
+#endif
 }
 
 

@@ -188,6 +188,13 @@
         'defines': [
           'V8_TARGET_ARCH_PPC',
         ],
+        'conditions': [
+          [ 'v8_can_use_fpu_instructions=="false"', {
+            'defines': [
+              'SOFT_FPU',
+            ],
+          }],
+        ],
       }],  # v8_target_arch=="ppc"
       ['v8_target_arch=="ppc64"', {
         'defines': [

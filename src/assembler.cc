@@ -1056,6 +1056,20 @@ ExternalReference ExternalReference::address_of_the_hole_nan() {
       reinterpret_cast<void*>(&double_constants.the_hole_nan));
 }
 
+#ifdef SOFT_FPU
+double convert_int_double(double d, int x) {
+  // d value is ignored, we're just piggybacking on exiting prototype
+  return static_cast<double>(x);
+}
+
+ExternalReference ExternalReference::convert_int_double_function(
+    Isolate* isolate) {
+  return ExternalReference(Redirect(isolate,
+                                    FUNCTION_ADDR(convert_int_double),
+                                    BUILTIN_FP_INT_CALL));
+}
+#endif
+
 
 #ifndef V8_INTERPRETED_REGEXP
 
