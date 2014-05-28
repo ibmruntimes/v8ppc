@@ -47,11 +47,11 @@ EXPAND_MACROS = [
 # that the parser doesn't bit-rot. Change the values as needed when you add,
 # remove or change runtime functions, but make sure we don't lose our ability
 # to parse them!
-EXPECTED_FUNCTION_COUNT = 362
-EXPECTED_FUZZABLE_COUNT = 329
+EXPECTED_FUNCTION_COUNT = 358
+EXPECTED_FUZZABLE_COUNT = 325
 EXPECTED_CCTEST_COUNT = 6
 EXPECTED_UNKNOWN_COUNT = 5
-EXPECTED_BUILTINS_COUNT = 826
+EXPECTED_BUILTINS_COUNT = 782
 
 
 # Don't call these at all.
@@ -287,6 +287,12 @@ class Generator(object):
     s2 = self._RawRandomString(1, 5)
     # 'foo' + 'bar'
     return self._Variable(name, "\"%s\" + \"%s\"" % (s1, s2))
+
+  def _SeqTwoByteString(self, name):
+    s1 = self._RawRandomString(1, 5)
+    s2 = self._RawRandomString(1, 5)
+    # 'foo' + unicode + 'bar'
+    return self._Variable(name, "\"%s\" + \"\\2082\" + \"%s\"" % (s1, s2))
 
   def _SlicedString(self, name):
     s = self._RawRandomString(20, 30)
@@ -674,7 +680,9 @@ class Generator(object):
     "Number": ["1.5", _Number],
     "Object": ["new Object()", _Object],
     "PropertyDetails": ["513", _PropertyDetails],
+    "SeqOneByteString": ["\"seq 1-byte\"", _SeqString],
     "SeqString": ["\"seqstring\"", _SeqString],
+    "SeqTwoByteString": ["\"seq \\u2082-byte\"", _SeqTwoByteString],
     "Smi": ["1", _Smi],
     "StrictMode": ["1", _StrictMode],
     "String": ["\"foo\"", _String],

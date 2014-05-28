@@ -6,7 +6,7 @@
 #define V8_ACCESSORS_H_
 
 #include "allocation.h"
-#include "v8globals.h"
+#include "globals.h"
 
 namespace v8 {
 namespace internal {
@@ -85,6 +85,11 @@ class Accessors : public AllStatic {
       AccessorGetterCallback getter,
       AccessorSetterCallback setter,
       PropertyAttributes attributes);
+
+  static Handle<ExecutableAccessorInfo> CloneAccessor(
+      Isolate* isolate,
+      Handle<ExecutableAccessorInfo> accessor);
+
 
  private:
   // Helper functions.

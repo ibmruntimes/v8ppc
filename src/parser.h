@@ -718,6 +718,10 @@ class Parser : public ParserBase<ParserTraits> {
                                   Expression* each,
                                   Expression* subject,
                                   Statement* body);
+  Statement* DesugarLetBindingsInForStatement(
+      Scope* inner_scope, ZoneStringList* names, ForStatement* loop,
+      Statement* init, Expression* cond, Statement* next, Statement* body,
+      bool* ok);
 
   FunctionLiteral* ParseFunctionLiteral(
       Handle<String> name,
@@ -781,6 +785,8 @@ class Parser : public ParserBase<ParserTraits> {
                                                bool is_generator,
                                                bool* ok);
 
+  void ThrowPendingError();
+
   Isolate* isolate_;
 
   Handle<Script> script_;
@@ -792,6 +798,14 @@ class Parser : public ParserBase<ParserTraits> {
   CachedDataMode cached_data_mode_;
 
   CompilationInfo* info_;
+
+  // Pending errors.
+  bool has_pending_error_;
+  Scanner::Location pending_error_location_;
+  const char* pending_error_message_;
+  MaybeHandle<String> pending_error_arg_;
+  const char* pending_error_char_arg_;
+  bool pending_error_is_reference_error_;
 };
 
 

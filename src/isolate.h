@@ -215,10 +215,10 @@ class ThreadLocalTop BASE_EMBEDDED {
 
   // Get the top C++ try catch handler or NULL if none are registered.
   //
-  // This method is not guarenteed to return an address that can be
+  // This method is not guaranteed to return an address that can be
   // used for comparison with addresses into the JS stack.  If such an
   // address is needed, use try_catch_handler_address.
-  v8::TryCatch* TryCatchHandler();
+  FIELD_ACCESSOR(v8::TryCatch*, try_catch_handler)
 
   // Get the address of the top C++ try catch handler or NULL if
   // none are registered.
@@ -230,12 +230,15 @@ class ThreadLocalTop BASE_EMBEDDED {
   // stack, try_catch_handler_address returns a JS stack address that
   // corresponds to the place on the JS stack where the C++ handler
   // would have been if the stack were not separate.
-  FIELD_ACCESSOR(Address, try_catch_handler_address)
+  Address try_catch_handler_address() {
+    return reinterpret_cast<Address>(
+        v8::TryCatch::JSStackComparableAddress(try_catch_handler()));
+  }
 
   void Free() {
     ASSERT(!has_pending_message_);
     ASSERT(!external_caught_exception_);
-    ASSERT(try_catch_handler_address_ == NULL);
+    ASSERT(try_catch_handler_ == NULL);
   }
 
   Isolate* isolate_;
@@ -283,7 +286,7 @@ class ThreadLocalTop BASE_EMBEDDED {
  private:
   void InitializeInternal();
 
-  Address try_catch_handler_address_;
+  v8::TryCatch* try_catch_handler_;
 };
 
 
@@ -353,7 +356,7 @@ typedef List<HeapObject*> DebugObjectCache;
   /* AstNode state. */                                                         \
   V(int, ast_node_id, 0)                                                       \
   V(unsigned, ast_node_count, 0)                                               \
-  V(bool, microtask_pending, false)                                            \
+  V(int, pending_microtask_count, 0)                                           \
   V(bool, autorun_microtasks, true)                                            \
   V(HStatistics*, hstatistics, NULL)                                           \
   V(HTracer*, htracer, NULL)                                                   \
@@ -569,7 +572,7 @@ class Isolate {
     thread_local_top_.pending_message_script_ = heap_.the_hole_value();
   }
   v8::TryCatch* try_catch_handler() {
-    return thread_local_top_.TryCatchHandler();
+    return thread_local_top_.try_catch_handler();
   }
   Address try_catch_handler_address() {
     return thread_local_top_.try_catch_handler_address();
@@ -935,7 +938,6 @@ class Isolate {
     return &interp_canonicalize_mapping_;
   }
 
-  Debugger* debugger() {  return debugger_; }
   Debug* debug() { return debug_; }
 
   inline bool DebuggerHasBreakPoints();
@@ -970,10 +972,18 @@ class Isolate {
 
   THREAD_LOCAL_TOP_ACCESSOR(LookupResult*, top_lookup_result)
 
+  void enable_serializer() {
+    // The serializer can only be enabled before the isolate init.
+    ASSERT(state_ != INITIALIZED);
+    serializer_enabled_ = true;
+  }
+
+  bool serializer_enabled() const { return serializer_enabled_; }
+
   bool IsDead() { return has_fatal_error_; }
   void SignalFatalError() { has_fatal_error_ = true; }
 
-  bool use_crankshaft() const { return use_crankshaft_; }
+  bool use_crankshaft() const;
 
   bool initialized_from_snapshot() { return initialized_from_snapshot_; }
 
@@ -1077,6 +1087,7 @@ class Isolate {
   void RemoveCallCompletedCallback(CallCompletedCallback callback);
   void FireCallCompletedCallback();
 
+  void EnqueueMicrotask(Handle<JSFunction> microtask);
   void RunMicrotasks();
 
  private:
@@ -1238,11 +1249,11 @@ class Isolate {
   CallInterfaceDescriptor* call_descriptors_;
   RandomNumberGenerator* random_number_generator_;
 
+  // Whether the isolate has been created for snapshotting.
+  bool serializer_enabled_;
+
   // True if fatal error has been signaled for this isolate.
   bool has_fatal_error_;
-
-  // True if we are using the Crankshaft optimizing compiler.
-  bool use_crankshaft_;
 
   // True if this isolate was initialized from a snapshot.
   bool initialized_from_snapshot_;
@@ -1256,7 +1267,6 @@ class Isolate {
   JSObject::SpillInformation js_spill_information_;
 #endif
 
-  Debugger* debugger_;
   Debug* debug_;
   CpuProfiler* cpu_profiler_;
   HeapProfiler* heap_profiler_;

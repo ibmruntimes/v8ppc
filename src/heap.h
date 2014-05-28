@@ -18,7 +18,6 @@
 #include "spaces.h"
 #include "splay-tree-inl.h"
 #include "store-buffer.h"
-#include "v8globals.h"
 
 namespace v8 {
 namespace internal {
@@ -196,7 +195,7 @@ namespace internal {
   V(Symbol, megamorphic_symbol, MegamorphicSymbol)                             \
   V(FixedArray, materialized_objects, MaterializedObjects)                     \
   V(FixedArray, allocation_sites_scratchpad, AllocationSitesScratchpad)        \
-  V(JSObject, microtask_state, MicrotaskState)
+  V(FixedArray, microtask_queue, MicrotaskQueue)
 
 // Entries in this list are limited to Smis and are not visited during GC.
 #define SMI_ROOT_LIST(V)                                                       \
@@ -767,7 +766,7 @@ class Heap {
 
   // Ensure that we have swept all spaces in such a way that we can iterate
   // over all objects.  May cause a GC.
-  void EnsureHeapIsIterable();
+  void MakeHeapIterable();
 
   // Notify the heap that a context has been disposed.
   int NotifyContextDisposed();
@@ -1035,22 +1034,6 @@ class Heap {
   inline int64_t AdjustAmountOfExternalAllocatedMemory(
       int64_t change_in_bytes);
 
-  // This is only needed for testing high promotion mode.
-  void SetNewSpaceHighPromotionModeActive(bool mode) {
-    new_space_high_promotion_mode_active_ = mode;
-  }
-
-  // Returns the allocation mode (pre-tenuring) based on observed promotion
-  // rates of previous collections.
-  inline PretenureFlag GetPretenureMode() {
-    return FLAG_pretenuring && new_space_high_promotion_mode_active_
-        ? TENURED : NOT_TENURED;
-  }
-
-  inline Address* NewSpaceHighPromotionModeActiveAddress() {
-    return reinterpret_cast<Address*>(&new_space_high_promotion_mode_active_);
-  }
-
   inline intptr_t PromotedTotalSize() {
     int64_t total = PromotedSpaceSizeOfObjects() + PromotedExternalMemorySize();
     if (total > kMaxInt) return static_cast<intptr_t>(kMaxInt);
@@ -1149,11 +1132,12 @@ class Heap {
     kSmiRootsStart = kStringTableRootIndex + 1
   };
 
-  STATIC_CHECK(kUndefinedValueRootIndex == Internals::kUndefinedValueRootIndex);
-  STATIC_CHECK(kNullValueRootIndex == Internals::kNullValueRootIndex);
-  STATIC_CHECK(kTrueValueRootIndex == Internals::kTrueValueRootIndex);
-  STATIC_CHECK(kFalseValueRootIndex == Internals::kFalseValueRootIndex);
-  STATIC_CHECK(kempty_stringRootIndex == Internals::kEmptyStringRootIndex);
+  STATIC_ASSERT(kUndefinedValueRootIndex ==
+                Internals::kUndefinedValueRootIndex);
+  STATIC_ASSERT(kNullValueRootIndex == Internals::kNullValueRootIndex);
+  STATIC_ASSERT(kTrueValueRootIndex == Internals::kTrueValueRootIndex);
+  STATIC_ASSERT(kFalseValueRootIndex == Internals::kFalseValueRootIndex);
+  STATIC_ASSERT(kempty_stringRootIndex == Internals::kEmptyStringRootIndex);
 
   // Generated code can embed direct references to non-writable roots if
   // they are in new space.
@@ -1187,9 +1171,18 @@ class Heap {
   // Check new space expansion criteria and expand semispaces if it was hit.
   void CheckNewSpaceExpansionCriteria();
 
+  inline void IncrementPromotedObjectsSize(int object_size) {
+    ASSERT(object_size > 0);
+    promoted_objects_size_ += object_size;
+  }
+
+  inline void IncrementSemiSpaceCopiedObjectSize(int object_size) {
+    ASSERT(object_size > 0);
+    semi_space_copied_object_size_ += object_size;
+  }
+
   inline void IncrementYoungSurvivorsCounter(int survived) {
     ASSERT(survived >= 0);
-    young_survivors_after_last_gc_ = survived;
     survived_since_last_expansion_ += survived;
   }
 
@@ -1540,6 +1533,7 @@ class Heap {
   LargeObjectSpace* lo_space_;
   HeapState gc_state_;
   int gc_post_processing_depth_;
+  Address new_space_top_after_last_gc_;
 
   // Returns the amount of external memory registered since last global gc.
   int64_t PromotedExternalMemorySize();
@@ -1571,11 +1565,6 @@ class Heap {
   // remain until the next failure and garbage collection.
   int allocation_timeout_;
 #endif  // DEBUG
-
-  // Indicates that the new space should be kept small due to high promotion
-  // rates caused by the mutator allocating a lot of long-lived objects.
-  // TODO(hpayer): change to bool if no longer accessed from generated code
-  intptr_t new_space_high_promotion_mode_active_;
 
   // Limit that triggers a global GC on the next (normally caused) GC.  This
   // is checked when we have already decided to do a GC to help determine
@@ -2017,71 +2006,23 @@ class Heap {
   void AddAllocationSiteToScratchpad(AllocationSite* site,
                                      ScratchpadSlotMode mode);
 
-  void UpdateSurvivalRateTrend(int start_new_space_size);
-
-  enum SurvivalRateTrend { INCREASING, STABLE, DECREASING, FLUCTUATING };
+  void UpdateSurvivalStatistics(int start_new_space_size);
 
   static const int kYoungSurvivalRateHighThreshold = 90;
-  static const int kYoungSurvivalRateLowThreshold = 10;
   static const int kYoungSurvivalRateAllowedDeviation = 15;
 
   static const int kOldSurvivalRateLowThreshold = 10;
 
-  int young_survivors_after_last_gc_;
   int high_survival_rate_period_length_;
-  int low_survival_rate_period_length_;
-  double survival_rate_;
-  SurvivalRateTrend previous_survival_rate_trend_;
-  SurvivalRateTrend survival_rate_trend_;
+  intptr_t promoted_objects_size_;
+  double promotion_rate_;
+  intptr_t semi_space_copied_object_size_;
+  double semi_space_copied_rate_;
 
-  void set_survival_rate_trend(SurvivalRateTrend survival_rate_trend) {
-    ASSERT(survival_rate_trend != FLUCTUATING);
-    previous_survival_rate_trend_ = survival_rate_trend_;
-    survival_rate_trend_ = survival_rate_trend;
-  }
-
-  SurvivalRateTrend survival_rate_trend() {
-    if (survival_rate_trend_ == STABLE) {
-      return STABLE;
-    } else if (previous_survival_rate_trend_ == STABLE) {
-      return survival_rate_trend_;
-    } else if (survival_rate_trend_ != previous_survival_rate_trend_) {
-      return FLUCTUATING;
-    } else {
-      return survival_rate_trend_;
-    }
-  }
-
-  bool IsStableOrIncreasingSurvivalTrend() {
-    switch (survival_rate_trend()) {
-      case STABLE:
-      case INCREASING:
-        return true;
-      default:
-        return false;
-    }
-  }
-
-  bool IsStableOrDecreasingSurvivalTrend() {
-    switch (survival_rate_trend()) {
-      case STABLE:
-      case DECREASING:
-        return true;
-      default:
-        return false;
-    }
-  }
-
-  bool IsIncreasingSurvivalTrend() {
-    return survival_rate_trend() == INCREASING;
-  }
-
+  // TODO(hpayer): Allocation site pretenuring may make this method obsolete.
+  // Re-visit incremental marking heuristics.
   bool IsHighSurvivalRate() {
     return high_survival_rate_period_length_ > 0;
-  }
-
-  bool IsLowSurvivalRate() {
-    return low_survival_rate_period_length_ > 0;
   }
 
   void SelectScavengingVisitorsTable();
@@ -2379,6 +2320,9 @@ class SpaceIterator : public Malloced {
 // aggregates the specific iterators for the different spaces as
 // these can only iterate over one space only.
 //
+// HeapIterator ensures there is no allocation during its lifetime
+// (using an embedded DisallowHeapAllocation instance).
+//
 // HeapIterator can skip free list nodes (that is, de-allocated heap
 // objects that still remain in the heap). As implementation of free
 // nodes filtering uses GC marks, it can't be used during MS/MC GC
@@ -2401,12 +2345,18 @@ class HeapIterator BASE_EMBEDDED {
   void reset();
 
  private:
+  struct MakeHeapIterableHelper {
+    explicit MakeHeapIterableHelper(Heap* heap) { heap->MakeHeapIterable(); }
+  };
+
   // Perform the initialization.
   void Init();
   // Perform all necessary shutdown (destruction) work.
   void Shutdown();
   HeapObject* NextObject();
 
+  MakeHeapIterableHelper make_heap_iterable_helper_;
+  DisallowHeapAllocation no_heap_allocation_;
   Heap* heap_;
   HeapObjectsFiltering filtering_;
   HeapObjectsFilter* filter_;
@@ -2600,10 +2550,6 @@ class GCTracer BASE_EMBEDDED {
   // Sets the full GC count.
   void set_full_gc_count(int count) { full_gc_count_ = count; }
 
-  void increment_promoted_objects_size(int object_size) {
-    promoted_objects_size_ += object_size;
-  }
-
   void increment_nodes_died_in_new_space() {
     nodes_died_in_new_space_++;
   }
@@ -2656,9 +2602,6 @@ class GCTracer BASE_EMBEDDED {
   // Amount of time spent in mutator that is time elapsed between end of the
   // previous collection and the beginning of the current one.
   double spent_in_mutator_;
-
-  // Size of objects promoted during the current collection.
-  intptr_t promoted_objects_size_;
 
   // Number of died nodes in the new space.
   int nodes_died_in_new_space_;

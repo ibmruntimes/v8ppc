@@ -232,16 +232,6 @@ class IncrementalMarkingMarkingVisitor
     VisitNativeContext(map, context);
   }
 
-  static void VisitWeakCollection(Map* map, HeapObject* object) {
-    Heap* heap = map->GetHeap();
-    VisitPointers(heap,
-                  HeapObject::RawField(object,
-                                       JSWeakCollection::kPropertiesOffset),
-                  HeapObject::RawField(object, JSWeakCollection::kSize));
-  }
-
-  static void BeforeVisitingSharedFunctionInfo(HeapObject* object) {}
-
   INLINE(static void VisitPointer(Heap* heap, Object** p)) {
     Object* obj = *p;
     if (obj->IsHeapObject()) {
@@ -463,7 +453,7 @@ bool IncrementalMarking::WorthActivating() {
   return FLAG_incremental_marking &&
       FLAG_incremental_marking_steps &&
       heap_->gc_state() == Heap::NOT_IN_GC &&
-      !Serializer::enabled(heap_->isolate()) &&
+      !heap_->isolate()->serializer_enabled() &&
       heap_->isolate()->IsInitialized() &&
       heap_->PromotedSpaceSizeOfObjects() > kActivationThreshold;
 }
@@ -541,7 +531,7 @@ void IncrementalMarking::Start(CompactionFlag flag) {
   ASSERT(FLAG_incremental_marking_steps);
   ASSERT(state_ == STOPPED);
   ASSERT(heap_->gc_state() == Heap::NOT_IN_GC);
-  ASSERT(!Serializer::enabled(heap_->isolate()));
+  ASSERT(!heap_->isolate()->serializer_enabled());
   ASSERT(heap_->isolate()->IsInitialized());
 
   ResetStepCounters();

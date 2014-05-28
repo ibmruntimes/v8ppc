@@ -34,6 +34,8 @@
 #include "ppc/regexp-macro-assembler-ppc.h"
 #elif V8_TARGET_ARCH_MIPS
 #include "mips/regexp-macro-assembler-mips.h"
+#elif V8_TARGET_ARCH_X87
+#include "x87/regexp-macro-assembler-x87.h"
 #else
 #error Unsupported target architecture.
 #endif
@@ -604,8 +606,7 @@ int RegExpImpl::IrregexpExecRaw(Handle<JSRegExp> regexp,
                                                      index);
   if (result == RE_SUCCESS) {
     // Copy capture results to the start of the registers array.
-    OS::MemCopy(
-        output, raw_output, number_of_capture_registers * sizeof(int32_t));
+    MemCopy(output, raw_output, number_of_capture_registers * sizeof(int32_t));
   }
   if (result == RE_EXCEPTION) {
     ASSERT(!isolate->has_pending_exception());
@@ -6080,6 +6081,9 @@ RegExpEngine::CompilationResult RegExpEngine::Compile(
 #elif V8_TARGET_ARCH_MIPS
   RegExpMacroAssemblerMIPS macro_assembler(mode, (data->capture_count + 1) * 2,
                                            zone);
+#elif V8_TARGET_ARCH_X87
+  RegExpMacroAssemblerX87 macro_assembler(mode, (data->capture_count + 1) * 2,
+                                          zone);
 #else
 #error "Unsupported architecture"
 #endif

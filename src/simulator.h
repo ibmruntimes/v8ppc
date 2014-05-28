@@ -17,6 +17,8 @@
 #include "ppc/simulator-ppc.h"
 #elif V8_TARGET_ARCH_MIPS
 #include "mips/simulator-mips.h"
+#elif V8_TARGET_ARCH_X87
+#include "x87/simulator-x87.h"
 #else
 #error Unsupported target architecture.
 #endif

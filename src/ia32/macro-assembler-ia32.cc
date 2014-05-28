@@ -55,6 +55,11 @@ void MacroAssembler::Store(Register src, const Operand& dst, Representation r) {
   } else if (r.IsInteger16() || r.IsUInteger16()) {
     mov_w(dst, src);
   } else {
+    if (r.IsHeapObject()) {
+      AssertNotSmi(src);
+    } else if (r.IsSmi()) {
+      AssertSmi(src);
+    }
     mov(dst, src);
   }
 }
@@ -375,16 +380,14 @@ void MacroAssembler::TaggedToI(Register result_reg,
 
 
 void MacroAssembler::LoadUint32(XMMRegister dst,
-                                Register src,
-                                XMMRegister scratch) {
+                                Register src) {
   Label done;
   cmp(src, Immediate(0));
   ExternalReference uint32_bias =
         ExternalReference::address_of_uint32_bias();
-  movsd(scratch, Operand::StaticVariable(uint32_bias));
   Cvtsi2sd(dst, src);
   j(not_sign, &done, Label::kNear);
-  addsd(dst, scratch);
+  addsd(dst, Operand::StaticVariable(uint32_bias));
   bind(&done);
 }
 
@@ -1798,32 +1801,13 @@ void MacroAssembler::AllocateAsciiConsString(Register result,
                                              Register scratch1,
                                              Register scratch2,
                                              Label* gc_required) {
-  Label allocate_new_space, install_map;
-  AllocationFlags flags = TAG_OBJECT;
-
-  ExternalReference high_promotion_mode = ExternalReference::
-      new_space_high_promotion_mode_active_address(isolate());
-
-  test(Operand::StaticVariable(high_promotion_mode), Immediate(1));
-  j(zero, &allocate_new_space);
-
   Allocate(ConsString::kSize,
            result,
            scratch1,
            scratch2,
            gc_required,
-           static_cast<AllocationFlags>(flags | PRETENURE_OLD_POINTER_SPACE));
-  jmp(&install_map);
+           TAG_OBJECT);
 
-  bind(&allocate_new_space);
-  Allocate(ConsString::kSize,
-           result,
-           scratch1,
-           scratch2,
-           gc_required,
-           flags);
-
-  bind(&install_map);
   // Set the map. The other fields are left uninitialized.
   mov(FieldOperand(result, HeapObject::kMapOffset),
       Immediate(isolate()->factory()->cons_ascii_string_map()));
@@ -2063,16 +2047,10 @@ void MacroAssembler::IndexFromHash(Register hash, Register index) {
   // reserved for it does not conflict.
   ASSERT(TenToThe(String::kMaxCachedArrayIndexLength) <
          (1 << String::kArrayIndexValueBits));
-  // We want the smi-tagged index in key.  kArrayIndexValueMask has zeros in
-  // the low kHashShift bits.
-  and_(hash, String::kArrayIndexValueMask);
-  STATIC_ASSERT(String::kHashShift >= kSmiTagSize && kSmiTag == 0);
-  if (String::kHashShift > kSmiTagSize) {
-    shr(hash, String::kHashShift - kSmiTagSize);
-  }
   if (!index.is(hash)) {
     mov(index, hash);
   }
+  DecodeFieldToSmi<String::ArrayIndexValueBits>(index);
 }
 
 
@@ -3438,8 +3416,7 @@ void MacroAssembler::JumpIfDictionaryInPrototypeChain(
   bind(&loop_again);
   mov(current, FieldOperand(current, HeapObject::kMapOffset));
   mov(scratch1, FieldOperand(current, Map::kBitField2Offset));
-  and_(scratch1, Map::kElementsKindMask);
-  shr(scratch1, Map::kElementsKindShift);
+  DecodeField<Map::ElementsKindBits>(scratch1);
   cmp(scratch1, Immediate(DICTIONARY_ELEMENTS));
   j(equal, found);
   mov(current, FieldOperand(current, Map::kPrototypeOffset));

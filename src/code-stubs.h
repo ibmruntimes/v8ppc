@@ -30,6 +30,7 @@ namespace internal {
   V(CompareNilIC)                        \
   V(MathPow)                             \
   V(CallIC)                              \
+  V(CallIC_Array)                        \
   V(FunctionPrototype)                   \
   V(RecordWrite)                         \
   V(StoreBufferOverflow)                 \
@@ -460,6 +461,8 @@ class RuntimeCallHelper {
 #include "ppc/code-stubs-ppc.h"
 #elif V8_TARGET_ARCH_MIPS
 #include "mips/code-stubs-mips.h"
+#elif V8_TARGET_ARCH_X87
+#include "x87/code-stubs-x87.h"
 #else
 #error Unsupported target architecture.
 #endif
@@ -597,9 +600,6 @@ class FastNewContextStub V8_FINAL : public HydrogenCodeStub {
 
 class FastCloneShallowArrayStub : public HydrogenCodeStub {
  public:
-  // Maximum length of copied elements array.
-  static const int kMaximumInlinedCloneLength = 8;
-
   FastCloneShallowArrayStub(Isolate* isolate,
                             AllocationSiteMode allocation_site_mode)
       : HydrogenCodeStub(isolate),
@@ -829,15 +829,28 @@ class CallICStub: public PlatformCodeStub {
 
  protected:
   virtual int MinorKey() { return GetExtraICState(); }
-  virtual void PrintState(StringStream* stream) V8_FINAL V8_OVERRIDE;
+  virtual void PrintState(StringStream* stream) V8_OVERRIDE;
 
- private:
   virtual CodeStub::Major MajorKey() { return CallIC; }
 
   // Code generation helpers.
-  void GenerateMiss(MacroAssembler* masm);
+  void GenerateMiss(MacroAssembler* masm, IC::UtilityId id);
 
-  CallIC::State state_;
+  const CallIC::State state_;
+};
+
+
+class CallIC_ArrayStub: public CallICStub {
+ public:
+  CallIC_ArrayStub(Isolate* isolate, const CallIC::State& state_in)
+      : CallICStub(isolate, state_in) {}
+
+  virtual void Generate(MacroAssembler* masm);
+
+ protected:
+  virtual void PrintState(StringStream* stream) V8_OVERRIDE;
+
+  virtual CodeStub::Major MajorKey() { return CallIC_Array; }
 };
 
 

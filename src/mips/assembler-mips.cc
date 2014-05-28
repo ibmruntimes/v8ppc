@@ -1675,7 +1675,7 @@ void Assembler::cfc1(Register rt, FPUControlRegister fs) {
 
 void Assembler::DoubleAsTwoUInt32(double d, uint32_t* lo, uint32_t* hi) {
   uint64_t i;
-  OS::MemCopy(&i, &d, 8);
+  memcpy(&i, &d, 8);
 
   *lo = i & 0xffffffff;
   *hi = i >> 32;
@@ -1990,9 +1990,9 @@ void Assembler::GrowBuffer() {
   // Copy the data.
   int pc_delta = desc.buffer - buffer_;
   int rc_delta = (desc.buffer + desc.buffer_size) - (buffer_ + buffer_size_);
-  OS::MemMove(desc.buffer, buffer_, desc.instr_size);
-  OS::MemMove(reloc_info_writer.pos() + rc_delta,
-              reloc_info_writer.pos(), desc.reloc_size);
+  MemMove(desc.buffer, buffer_, desc.instr_size);
+  MemMove(reloc_info_writer.pos() + rc_delta, reloc_info_writer.pos(),
+          desc.reloc_size);
 
   // Switch buffers.
   DeleteArray(buffer_);
@@ -2166,7 +2166,9 @@ void Assembler::QuietNaN(HeapObject* object) {
 // There is an optimization below, which emits a nop when the address
 // fits in just 16 bits. This is unlikely to help, and should be benchmarked,
 // and possibly removed.
-void Assembler::set_target_address_at(Address pc, Address target) {
+void Assembler::set_target_address_at(Address pc,
+                                      Address target,
+                                      ICacheFlushMode icache_flush_mode) {
   Instr instr2 = instr_at(pc + kInstrSize);
   uint32_t rt_code = GetRtField(instr2);
   uint32_t* p = reinterpret_cast<uint32_t*>(pc);
@@ -2260,7 +2262,9 @@ void Assembler::set_target_address_at(Address pc, Address target) {
     patched_jump = true;
   }
 
-  CPU::FlushICache(pc, (patched_jump ? 3 : 2) * sizeof(int32_t));
+  if (icache_flush_mode != SKIP_ICACHE_FLUSH) {
+    CPU::FlushICache(pc, (patched_jump ? 3 : 2) * sizeof(int32_t));
+  }
 }
 
 

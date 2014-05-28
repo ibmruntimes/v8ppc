@@ -452,9 +452,12 @@ void FullCodeGenerator::PrepareForBailoutForId(BailoutId id, State state) {
   unsigned pc_and_state =
       StateField::encode(state) | PcField::encode(masm_->pc_offset());
   ASSERT(Smi::IsValid(pc_and_state));
+#ifdef DEBUG
+  for (int i = 0; i < bailout_entries_.length(); ++i) {
+    ASSERT(bailout_entries_[i].id != id);
+  }
+#endif
   BailoutEntry entry = { id, pc_and_state };
-  ASSERT(!prepared_bailout_ids_.Contains(id.ToInt()));
-  prepared_bailout_ids_.Add(id.ToInt(), zone());
   bailout_entries_.Add(entry, zone());
 }
 
@@ -820,7 +823,7 @@ void FullCodeGenerator::SetStatementPosition(Statement* stmt) {
     // If the position recording did record a new position generate a debug
     // break slot to make the statement breakable.
     if (position_recorded) {
-      Debug::GenerateSlot(masm_);
+      DebugCodegen::GenerateSlot(masm_);
     }
   }
 }
@@ -846,7 +849,7 @@ void FullCodeGenerator::SetExpressionPosition(Expression* expr) {
     // If the position recording did record a new position generate a debug
     // break slot to make the statement breakable.
     if (position_recorded) {
-      Debug::GenerateSlot(masm_);
+      DebugCodegen::GenerateSlot(masm_);
     }
   }
 }

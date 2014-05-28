@@ -476,10 +476,7 @@ Handle<String> Shell::ReadFromStdin(Isolate* isolate) {
     // not been fully read into the buffer yet (does not end with '\n').
     // If fgets gets an error, just give up.
     char* input = NULL;
-    {  // Release lock for blocking input.
-      Unlocker unlock(isolate);
-      input = fgets(buffer, kBufferSize, stdin);
-    }
+    input = fgets(buffer, kBufferSize, stdin);
     if (input == NULL) return Handle<String>();
     length = static_cast<int>(strlen(buffer));
     if (length == 0) {
@@ -741,7 +738,6 @@ void Shell::AddHistogramSample(void* histogram, int sample) {
 
 
 void Shell::InstallUtilityScript(Isolate* isolate) {
-  Locker lock(isolate);
   HandleScope scope(isolate);
   // If we use the utility context, we have to set the security tokens so that
   // utility, evaluation and debug context can all access each other.
@@ -908,7 +904,6 @@ void Shell::Initialize(Isolate* isolate) {
 void Shell::InitializeDebugger(Isolate* isolate) {
   if (options.test_shell) return;
 #ifndef V8_SHARED
-  Locker lock(isolate);
   HandleScope scope(isolate);
   Handle<ObjectTemplate> global_template = CreateGlobalTemplate(isolate);
   utility_context_.Reset(isolate,
@@ -1035,8 +1030,6 @@ static FILE* FOpen(const char* path, const char* mode) {
 
 
 static char* ReadChars(Isolate* isolate, const char* name, int* size_out) {
-  // Release the V8 lock while reading files.
-  v8::Unlocker unlocker(isolate);
   FILE* file = FOpen(name, "rb");
   if (file == NULL) return NULL;
 
@@ -1116,7 +1109,6 @@ Handle<String> Shell::ReadFile(Isolate* isolate, const char* name) {
 
 
 void Shell::RunShell(Isolate* isolate) {
-  Locker locker(isolate);
   HandleScope outer_scope(isolate);
   v8::Local<v8::Context> context =
       v8::Local<v8::Context>::New(isolate, evaluation_context_);
@@ -1208,7 +1200,6 @@ void SourceGroup::ExecuteInThread() {
     next_semaphore_.Wait();
     {
       Isolate::Scope iscope(isolate);
-      Locker lock(isolate);
       {
         HandleScope scope(isolate);
         PerIsolateData data(isolate);
@@ -1224,9 +1215,16 @@ void SourceGroup::ExecuteInThread() {
         V8::ContextDisposedNotification();
         V8::IdleNotification(kLongIdlePauseInMs);
       }
+      if (Shell::options.invoke_weak_callbacks) {
+        // By sending a low memory notifications, we will try hard to collect
+        // all garbage and will therefore also invoke all weak callbacks of
+        // actually unreachable persistent handles.
+        V8::LowMemoryNotification();
+      }
     }
     done_semaphore_.Signal();
   } while (!Shell::options.last_run);
+
   isolate->Dispose();
 }
 
@@ -1285,6 +1283,11 @@ bool Shell::SetOptions(int argc, char* argv[]) {
       options.test_shell = true;
       argv[i] = NULL;
     } else if (strcmp(argv[i], "--send-idle-notification") == 0) {
+      options.send_idle_notification = true;
+      argv[i] = NULL;
+    } else if (strcmp(argv[i], "--invoke-weak-callbacks") == 0) {
+      options.invoke_weak_callbacks = true;
+      // TODO(jochen) See issue 3351
       options.send_idle_notification = true;
       argv[i] = NULL;
     } else if (strcmp(argv[i], "-f") == 0) {
@@ -1355,35 +1358,36 @@ int Shell::RunMain(Isolate* isolate, int argc, char* argv[]) {
     options.isolate_sources[i].StartExecuteInThread();
   }
 #endif  // !V8_SHARED
-  {  // NOLINT
-    Locker lock(isolate);
-    {
-      HandleScope scope(isolate);
-      Local<Context> context = CreateEvaluationContext(isolate);
-      if (options.last_run) {
-        // Keep using the same context in the interactive shell.
-        evaluation_context_.Reset(isolate, context);
+  {
+    HandleScope scope(isolate);
+    Local<Context> context = CreateEvaluationContext(isolate);
+    if (options.last_run && options.use_interactive_shell()) {
+      // Keep using the same context in the interactive shell.
+      evaluation_context_.Reset(isolate, context);
 #ifndef V8_SHARED
-        // If the interactive debugger is enabled make sure to activate
-        // it before running the files passed on the command line.
-        if (i::FLAG_debugger) {
-          InstallUtilityScript(isolate);
-        }
+      // If the interactive debugger is enabled make sure to activate
+      // it before running the files passed on the command line.
+      if (i::FLAG_debugger) {
+        InstallUtilityScript(isolate);
+      }
 #endif  // !V8_SHARED
-      }
-      {
-        Context::Scope cscope(context);
-        PerIsolateData::RealmScope realm_scope(PerIsolateData::Get(isolate));
-        options.isolate_sources[0].Execute(isolate);
-      }
     }
-    if (!options.last_run) {
-      if (options.send_idle_notification) {
-        const int kLongIdlePauseInMs = 1000;
-        V8::ContextDisposedNotification();
-        V8::IdleNotification(kLongIdlePauseInMs);
-      }
+    {
+      Context::Scope cscope(context);
+      PerIsolateData::RealmScope realm_scope(PerIsolateData::Get(isolate));
+      options.isolate_sources[0].Execute(isolate);
     }
+  }
+  if (options.send_idle_notification) {
+    const int kLongIdlePauseInMs = 1000;
+    V8::ContextDisposedNotification();
+    V8::IdleNotification(kLongIdlePauseInMs);
+  }
+  if (options.invoke_weak_callbacks) {
+    // By sending a low memory notifications, we will try hard to collect all
+    // garbage and will therefore also invoke all weak callbacks of actually
+    // unreachable persistent handles.
+    V8::LowMemoryNotification();
   }
 
 #ifndef V8_SHARED
@@ -1471,7 +1475,8 @@ class MockArrayBufferAllocator : public v8::ArrayBuffer::Allocator {
   virtual void* AllocateUninitialized(size_t length) V8_OVERRIDE {
     return malloc(0);
   }
-  virtual void Free(void*, size_t) V8_OVERRIDE {
+  virtual void Free(void* p, size_t) V8_OVERRIDE {
+    free(p);
   }
 };
 
@@ -1494,7 +1499,7 @@ int Shell::Main(int argc, char* argv[]) {
   v8::ResourceConstraints constraints;
   constraints.ConfigureDefaults(i::OS::TotalPhysicalMemory(),
                                 i::OS::MaxVirtualMemory(),
-                                i::CPU::NumberOfProcessorsOnline());
+                                i::OS::NumberOfProcessorsOnline());
   v8::SetResourceConstraints(isolate, &constraints);
 #endif
   DumbLineEditor dumb_line_editor(isolate);
@@ -1542,8 +1547,7 @@ int Shell::Main(int argc, char* argv[]) {
 
     // Run interactive shell if explicitly requested or if no script has been
     // executed, but never on --test
-    if (( options.interactive_shell || !options.script_executed )
-        && !options.test_shell ) {
+    if (options.use_interactive_shell()) {
 #ifndef V8_SHARED
       if (!i::FLAG_debugger) {
         InstallUtilityScript(isolate);

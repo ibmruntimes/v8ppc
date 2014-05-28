@@ -7,7 +7,7 @@
 
 #include "assembler.h"
 #include "frames.h"
-#include "v8globals.h"
+#include "globals.h"
 
 namespace v8 {
 namespace internal {
@@ -1356,11 +1356,35 @@ class MacroAssembler: public Assembler {
   void NumberOfOwnDescriptors(Register dst, Register map);
 
   template<typename Field>
+  void DecodeField(Register dst, Register src) {
+    Ubfx(dst, src, Field::kShift, Field::kSize);
+  }
+
+  template<typename Field>
   void DecodeField(Register reg) {
+    DecodeField<Field>(reg, reg);
+  }
+
+  template<typename Field>
+  void DecodeFieldToSmi(Register dst, Register src) {
     static const int shift = Field::kShift;
-    static const int mask = Field::kMask >> shift;
-    mov(reg, Operand(reg, LSR, shift));
-    and_(reg, reg, Operand(mask));
+    static const int mask = Field::kMask >> shift << kSmiTagSize;
+    STATIC_ASSERT((mask & (0x80000000u >> (kSmiTagSize - 1))) == 0);
+    STATIC_ASSERT(kSmiTag == 0);
+    if (shift < kSmiTagSize) {
+      mov(dst, Operand(src, LSL, kSmiTagSize - shift));
+      and_(dst, dst, Operand(mask));
+    } else if (shift > kSmiTagSize) {
+      mov(dst, Operand(src, LSR, shift - kSmiTagSize));
+      and_(dst, dst, Operand(mask));
+    } else {
+      and_(dst, src, Operand(mask));
+    }
+  }
+
+  template<typename Field>
+  void DecodeFieldToSmi(Register reg) {
+    DecodeField<Field>(reg, reg);
   }
 
   // Activation support.

@@ -254,10 +254,13 @@ bool LCodeGen::GeneratePrologue() {
   int heap_slots = info_->num_heap_slots() - Context::MIN_CONTEXT_SLOTS;
   if (heap_slots > 0) {
     Comment(";;; Allocate local context");
+    bool need_write_barrier = true;
     // Argument to NewContext is the function, which is still in edi.
     if (heap_slots <= FastNewContextStub::kMaximumSlots) {
       FastNewContextStub stub(isolate(), heap_slots);
       __ CallStub(&stub);
+      // Result of FastNewContextStub is always in new space.
+      need_write_barrier = false;
     } else {
       __ push(edi);
       __ CallRuntime(Runtime::kHiddenNewFunctionContext, 1);
@@ -281,11 +284,18 @@ bool LCodeGen::GeneratePrologue() {
         int context_offset = Context::SlotOffset(var->index());
         __ mov(Operand(esi, context_offset), eax);
         // Update the write barrier. This clobbers eax and ebx.
-        __ RecordWriteContextSlot(esi,
-                                  context_offset,
-                                  eax,
-                                  ebx,
-                                  kDontSaveFPRegs);
+        if (need_write_barrier) {
+          __ RecordWriteContextSlot(esi,
+                                    context_offset,
+                                    eax,
+                                    ebx,
+                                    kDontSaveFPRegs);
+        } else if (FLAG_debug_code) {
+          Label done;
+          __ JumpIfInNewSpace(esi, eax, &done, Label::kNear);
+          __ Abort(kExpectedNewSpaceObject);
+          __ bind(&done);
+        }
       }
     }
     Comment(";;; End allocate local context");
@@ -1645,11 +1655,11 @@ void LCodeGen::DoShiftI(LShiftI* instr) {
         }
         break;
       case Token::SHR:
-        if (shift_count == 0 && instr->can_deopt()) {
+        if (shift_count != 0) {
+          __ shr(ToRegister(left), shift_count);
+        } else if (instr->can_deopt()) {
           __ test(ToRegister(left), ToRegister(left));
           DeoptimizeIf(sign, instr->environment());
-        } else {
-          __ shr(ToRegister(left), shift_count);
         }
         break;
       case Token::SHL:
@@ -1749,13 +1759,6 @@ void LCodeGen::DoConstantT(LConstantT* instr) {
   Register reg = ToRegister(instr->result());
   Handle<Object> object = instr->value(isolate());
   AllowDeferredHandleDereference smi_check;
-  if (instr->hydrogen()->HasObjectMap()) {
-    Handle<Map> object_map = instr->hydrogen()->ObjectMap().handle();
-    ASSERT(object->IsHeapObject());
-    ASSERT(!object_map->is_stable() ||
-           *object_map == Handle<HeapObject>::cast(object)->map());
-    USE(object_map);
-  }
   __ LoadObject(reg, object);
 }
 
@@ -2243,7 +2246,9 @@ Condition LCodeGen::TokenToCondition(Token::Value op, bool is_unsigned) {
 void LCodeGen::DoCompareNumericAndBranch(LCompareNumericAndBranch* instr) {
   LOperand* left = instr->left();
   LOperand* right = instr->right();
-  Condition cc = TokenToCondition(instr->op(), instr->is_double());
+  bool is_unsigned =
+      instr->is_double() || instr->hydrogen()->CheckFlag(HInstruction::kUint32);
+  Condition cc = TokenToCondition(instr->op(), is_unsigned);
 
   if (left->IsConstantOperand() && right->IsConstantOperand()) {
     // We can statically evaluate the comparison.
@@ -3046,8 +3051,7 @@ void LCodeGen::DoLoadKeyedExternalArray(LLoadKeyed* instr) {
       key,
       instr->hydrogen()->key()->representation(),
       elements_kind,
-      0,
-      instr->additional_index()));
+      instr->base_offset()));
   if (elements_kind == EXTERNAL_FLOAT32_ELEMENTS ||
       elements_kind == FLOAT32_ELEMENTS) {
     XMMRegister result(ToDoubleRegister(instr->result()));
@@ -3110,14 +3114,11 @@ void LCodeGen::DoLoadKeyedExternalArray(LLoadKeyed* instr) {
 
 void LCodeGen::DoLoadKeyedFixedDoubleArray(LLoadKeyed* instr) {
   if (instr->hydrogen()->RequiresHoleCheck()) {
-    int offset = FixedDoubleArray::kHeaderSize - kHeapObjectTag +
-        sizeof(kHoleNanLower32);
     Operand hole_check_operand = BuildFastArrayOperand(
         instr->elements(), instr->key(),
         instr->hydrogen()->key()->representation(),
         FAST_DOUBLE_ELEMENTS,
-        offset,
-        instr->additional_index());
+        instr->base_offset() + sizeof(kHoleNanLower32));
     __ cmp(hole_check_operand, Immediate(kHoleNanUpper32));
     DeoptimizeIf(equal, instr->environment());
   }
@@ -3127,8 +3128,7 @@ void LCodeGen::DoLoadKeyedFixedDoubleArray(LLoadKeyed* instr) {
       instr->key(),
       instr->hydrogen()->key()->representation(),
       FAST_DOUBLE_ELEMENTS,
-      FixedDoubleArray::kHeaderSize - kHeapObjectTag,
-      instr->additional_index());
+      instr->base_offset());
   XMMRegister result = ToDoubleRegister(instr->result());
   __ movsd(result, double_load_operand);
 }
@@ -3143,8 +3143,7 @@ void LCodeGen::DoLoadKeyedFixedArray(LLoadKeyed* instr) {
                                instr->key(),
                                instr->hydrogen()->key()->representation(),
                                FAST_ELEMENTS,
-                               FixedArray::kHeaderSize - kHeapObjectTag,
-                               instr->additional_index()));
+                               instr->base_offset()));
 
   // Check for the hole value.
   if (instr->hydrogen()->RequiresHoleCheck()) {
@@ -3175,13 +3174,9 @@ Operand LCodeGen::BuildFastArrayOperand(
     LOperand* key,
     Representation key_representation,
     ElementsKind elements_kind,
-    uint32_t offset,
-    uint32_t additional_index) {
+    uint32_t base_offset) {
   Register elements_pointer_reg = ToRegister(elements_pointer);
   int element_shift_size = ElementsKindToShiftSize(elements_kind);
-  if (IsFixedTypedArrayElementsKind(elements_kind)) {
-    offset += FixedTypedArrayBase::kDataOffset - kHeapObjectTag;
-  }
   int shift_size = element_shift_size;
   if (key->IsConstantOperand()) {
     int constant_value = ToInteger32(LConstantOperand::cast(key));
@@ -3189,8 +3184,8 @@ Operand LCodeGen::BuildFastArrayOperand(
       Abort(kArrayIndexConstantValueTooBig);
     }
     return Operand(elements_pointer_reg,
-                   ((constant_value + additional_index) << shift_size)
-                       + offset);
+                   ((constant_value) << shift_size)
+                       + base_offset);
   } else {
     // Take the tag bit into account while computing the shift size.
     if (key_representation.IsSmi() && (shift_size >= 1)) {
@@ -3200,7 +3195,7 @@ Operand LCodeGen::BuildFastArrayOperand(
     return Operand(elements_pointer_reg,
                    ToRegister(key),
                    scale_factor,
-                   offset + (additional_index << element_shift_size));
+                   base_offset);
   }
 }
 
@@ -3713,9 +3708,9 @@ void LCodeGen::DoMathRound(LMathRound* instr) {
 
 
 void LCodeGen::DoMathSqrt(LMathSqrt* instr) {
-  XMMRegister input_reg = ToDoubleRegister(instr->value());
-  ASSERT(ToDoubleRegister(instr->result()).is(input_reg));
-  __ sqrtsd(input_reg, input_reg);
+  Operand input = ToOperand(instr->value());
+  XMMRegister output = ToDoubleRegister(instr->result());
+  __ sqrtsd(output, input);
 }
 
 
@@ -3983,30 +3978,12 @@ void LCodeGen::DoStoreNamedField(LStoreNamedField* instr) {
   }
 
   Register object = ToRegister(instr->object());
-  SmiCheck check_needed =
-      instr->hydrogen()->value()->IsHeapObject()
-          ? OMIT_SMI_CHECK : INLINE_SMI_CHECK;
+  __ AssertNotSmi(object);
 
-  ASSERT(!(representation.IsSmi() &&
-           instr->value()->IsConstantOperand() &&
-           !IsSmi(LConstantOperand::cast(instr->value()))));
-  if (representation.IsHeapObject()) {
-    if (instr->value()->IsConstantOperand()) {
-      LConstantOperand* operand_value = LConstantOperand::cast(instr->value());
-      if (chunk_->LookupConstant(operand_value)->HasSmiValue()) {
-        DeoptimizeIf(no_condition, instr->environment());
-      }
-    } else {
-      if (!instr->hydrogen()->value()->type().IsHeapObject()) {
-        Register value = ToRegister(instr->value());
-        __ test(value, Immediate(kSmiTagMask));
-        DeoptimizeIf(zero, instr->environment());
-
-        // We know now that value is not a smi, so we can omit the check below.
-        check_needed = OMIT_SMI_CHECK;
-      }
-    }
-  } else if (representation.IsDouble()) {
+  ASSERT(!representation.IsSmi() ||
+         !instr->value()->IsConstantOperand() ||
+         IsSmi(LConstantOperand::cast(instr->value())));
+  if (representation.IsDouble()) {
     ASSERT(access.IsInobject());
     ASSERT(!instr->hydrogen()->has_transition());
     ASSERT(!instr->hydrogen()->NeedsWriteBarrier());
@@ -4073,7 +4050,7 @@ void LCodeGen::DoStoreNamedField(LStoreNamedField* instr) {
                         temp,
                         kSaveFPRegs,
                         EMIT_REMEMBERED_SET,
-                        check_needed);
+                        instr->hydrogen()->SmiCheckForWriteBarrier());
   }
 }
 
@@ -4127,8 +4104,7 @@ void LCodeGen::DoStoreKeyedExternalArray(LStoreKeyed* instr) {
       key,
       instr->hydrogen()->key()->representation(),
       elements_kind,
-      0,
-      instr->additional_index()));
+      instr->base_offset()));
   if (elements_kind == EXTERNAL_FLOAT32_ELEMENTS ||
       elements_kind == FLOAT32_ELEMENTS) {
     XMMRegister xmm_scratch = double_scratch0();
@@ -4187,8 +4163,7 @@ void LCodeGen::DoStoreKeyedFixedDoubleArray(LStoreKeyed* instr) {
       instr->key(),
       instr->hydrogen()->key()->representation(),
       FAST_DOUBLE_ELEMENTS,
-      FixedDoubleArray::kHeaderSize - kHeapObjectTag,
-      instr->additional_index());
+      instr->base_offset());
 
   XMMRegister value = ToDoubleRegister(instr->value());
 
@@ -4215,8 +4190,7 @@ void LCodeGen::DoStoreKeyedFixedArray(LStoreKeyed* instr) {
       instr->key(),
       instr->hydrogen()->key()->representation(),
       FAST_ELEMENTS,
-      FixedArray::kHeaderSize - kHeapObjectTag,
-      instr->additional_index());
+      instr->base_offset());
   if (instr->value()->IsRegister()) {
     __ mov(operand, ToRegister(instr->value()));
   } else {
@@ -4465,10 +4439,7 @@ void LCodeGen::DoInteger32ToDouble(LInteger32ToDouble* instr) {
 void LCodeGen::DoUint32ToDouble(LUint32ToDouble* instr) {
   LOperand* input = instr->value();
   LOperand* output = instr->result();
-  LOperand* temp = instr->temp();
-  __ LoadUint32(ToDoubleRegister(output),
-                ToRegister(input),
-                ToDoubleRegister(temp));
+  __ LoadUint32(ToDoubleRegister(output), ToRegister(input));
 }
 
 
@@ -4479,8 +4450,8 @@ void LCodeGen::DoNumberTagI(LNumberTagI* instr) {
                        LNumberTagI* instr)
         : LDeferredCode(codegen), instr_(instr) { }
     virtual void Generate() V8_OVERRIDE {
-      codegen()->DoDeferredNumberTagIU(instr_, instr_->value(), instr_->temp(),
-                                       NULL, SIGNED_INT32);
+      codegen()->DoDeferredNumberTagIU(
+          instr_, instr_->value(), instr_->temp(), SIGNED_INT32);
     }
     virtual LInstruction* instr() V8_OVERRIDE { return instr_; }
    private:
@@ -4505,8 +4476,8 @@ void LCodeGen::DoNumberTagU(LNumberTagU* instr) {
     DeferredNumberTagU(LCodeGen* codegen, LNumberTagU* instr)
         : LDeferredCode(codegen), instr_(instr) { }
     virtual void Generate() V8_OVERRIDE {
-      codegen()->DoDeferredNumberTagIU(instr_, instr_->value(), instr_->temp1(),
-                                       instr_->temp2(), UNSIGNED_INT32);
+      codegen()->DoDeferredNumberTagIU(
+          instr_, instr_->value(), instr_->temp(), UNSIGNED_INT32);
     }
     virtual LInstruction* instr() V8_OVERRIDE { return instr_; }
    private:
@@ -4528,12 +4499,11 @@ void LCodeGen::DoNumberTagU(LNumberTagU* instr) {
 
 void LCodeGen::DoDeferredNumberTagIU(LInstruction* instr,
                                      LOperand* value,
-                                     LOperand* temp1,
-                                     LOperand* temp2,
+                                     LOperand* temp,
                                      IntegerSignedness signedness) {
   Label done, slow;
   Register reg = ToRegister(value);
-  Register tmp = ToRegister(temp1);
+  Register tmp = ToRegister(temp);
   XMMRegister xmm_scratch = double_scratch0();
 
   if (signedness == SIGNED_INT32) {
@@ -4544,7 +4514,7 @@ void LCodeGen::DoDeferredNumberTagIU(LInstruction* instr,
     __ xor_(reg, 0x80000000);
     __ Cvtsi2sd(xmm_scratch, Operand(reg));
   } else {
-    __ LoadUint32(xmm_scratch, reg, ToDoubleRegister(temp2));
+    __ LoadUint32(xmm_scratch, reg);
   }
 
   if (FLAG_inline_new) {

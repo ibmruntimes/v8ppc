@@ -1449,8 +1449,8 @@ void RegExpExecStub::Generate(MacroAssembler* masm) {
   // (5b) Is subject external?  If yes, go to (8).
   __ testb(rbx, Immediate(kStringRepresentationMask));
   // The underlying external string is never a short external string.
-  STATIC_CHECK(ExternalString::kMaxShortLength < ConsString::kMinLength);
-  STATIC_CHECK(ExternalString::kMaxShortLength < SlicedString::kMinLength);
+  STATIC_ASSERT(ExternalString::kMaxShortLength < ConsString::kMinLength);
+  STATIC_ASSERT(ExternalString::kMaxShortLength < SlicedString::kMinLength);
   __ j(not_zero, &external_string);  // Go to (8)
 
   // (6) One byte sequential.  Load regexp code for one byte.
@@ -2228,16 +2228,17 @@ static void EmitWrapCase(MacroAssembler* masm,
 }
 
 
-void CallFunctionStub::Generate(MacroAssembler* masm) {
+static void CallFunctionNoFeedback(MacroAssembler* masm,
+                                   int argc, bool needs_checks,
+                                   bool call_as_method) {
   // rdi : the function to call
 
   // wrap_and_call can only be true if we are compiling a monomorphic method.
   Isolate* isolate = masm->isolate();
   Label slow, non_function, wrap, cont;
-  int argc = argc_;
   StackArgumentsAccessor args(rsp, argc);
 
-  if (NeedsChecks()) {
+  if (needs_checks) {
     // Check that the function really is a JavaScript function.
     __ JumpIfSmi(rdi, &non_function);
 
@@ -2249,15 +2250,15 @@ void CallFunctionStub::Generate(MacroAssembler* masm) {
   // Fast-case: Just invoke the function.
   ParameterCount actual(argc);
 
-  if (CallAsMethod()) {
-    if (NeedsChecks()) {
+  if (call_as_method) {
+    if (needs_checks) {
       EmitContinueIfStrictOrNative(masm, &cont);
     }
 
     // Load the receiver from the stack.
     __ movp(rax, args.GetReceiverOperand());
 
-    if (NeedsChecks()) {
+    if (needs_checks) {
       __ JumpIfSmi(rax, &wrap);
 
       __ CmpObjectType(rax, FIRST_SPEC_OBJECT_TYPE, rcx);
@@ -2271,16 +2272,21 @@ void CallFunctionStub::Generate(MacroAssembler* masm) {
 
   __ InvokeFunction(rdi, actual, JUMP_FUNCTION, NullCallWrapper());
 
-  if (NeedsChecks()) {
+  if (needs_checks) {
     // Slow-case: Non-function called.
     __ bind(&slow);
     EmitSlowCase(isolate, masm, &args, argc, &non_function);
   }
 
-  if (CallAsMethod()) {
+  if (call_as_method) {
     __ bind(&wrap);
     EmitWrapCase(masm, &args, &cont);
   }
+}
+
+
+void CallFunctionStub::Generate(MacroAssembler* masm) {
+  CallFunctionNoFeedback(masm, argc_, NeedsChecks(), CallAsMethod());
 }
 
 
@@ -2358,6 +2364,43 @@ static void EmitLoadTypeFeedbackVector(MacroAssembler* masm, Register vector) {
 }
 
 
+void CallIC_ArrayStub::Generate(MacroAssembler* masm) {
+  // rdi - function
+  // rdx - slot id (as integer)
+  Label miss;
+  int argc = state_.arg_count();
+  ParameterCount actual(argc);
+
+  EmitLoadTypeFeedbackVector(masm, rbx);
+  __ SmiToInteger32(rdx, rdx);
+
+  __ LoadGlobalFunction(Context::ARRAY_FUNCTION_INDEX, rcx);
+  __ cmpq(rdi, rcx);
+  __ j(not_equal, &miss);
+
+  __ movq(rax, Immediate(arg_count()));
+  __ movp(rbx, FieldOperand(rbx, rdx, times_pointer_size,
+                            FixedArray::kHeaderSize));
+
+  // Verify that ecx contains an AllocationSite
+  __ AssertUndefinedOrAllocationSite(rbx);
+  ArrayConstructorStub stub(masm->isolate(), arg_count());
+  __ TailCallStub(&stub);
+
+  __ bind(&miss);
+  GenerateMiss(masm, IC::kCallIC_Customization_Miss);
+
+  // The slow case, we need this no matter what to complete a call after a miss.
+  CallFunctionNoFeedback(masm,
+                         arg_count(),
+                         true,
+                         CallAsMethod());
+
+  // Unreachable.
+  __ int3();
+}
+
+
 void CallICStub::Generate(MacroAssembler* masm) {
   // rdi - function
   // rbx - vector
@@ -2423,7 +2466,7 @@ void CallICStub::Generate(MacroAssembler* masm) {
 
   // We are here because tracing is on or we are going monomorphic.
   __ bind(&miss);
-  GenerateMiss(masm);
+  GenerateMiss(masm, IC::kCallIC_Miss);
 
   // the slow case
   __ bind(&slow_start);
@@ -2439,7 +2482,7 @@ void CallICStub::Generate(MacroAssembler* masm) {
 }
 
 
-void CallICStub::GenerateMiss(MacroAssembler* masm) {
+void CallICStub::GenerateMiss(MacroAssembler* masm, IC::UtilityId id) {
   // Get the receiver of the function from the stack; 1 ~ return address.
   __ movp(rcx, Operand(rsp, (state_.arg_count() + 1) * kPointerSize));
 
@@ -2454,7 +2497,7 @@ void CallICStub::GenerateMiss(MacroAssembler* masm) {
     __ Push(rdx);
 
     // Call the entry.
-    ExternalReference miss = ExternalReference(IC_Utility(IC::kCallIC_Miss),
+    ExternalReference miss = ExternalReference(IC_Utility(id),
                                                masm->isolate());
     __ CallExternalReference(miss, 4);
 
@@ -3364,7 +3407,7 @@ void SubStringStub::Generate(MacroAssembler* masm) {
 
   // Handle external string.
   // Rule out short external strings.
-  STATIC_CHECK(kShortExternalStringTag != 0);
+  STATIC_ASSERT(kShortExternalStringTag != 0);
   __ testb(rbx, Immediate(kShortExternalStringMask));
   __ j(not_zero, &runtime);
   __ movp(rdi, FieldOperand(rdi, ExternalString::kResourceDataOffset));
@@ -4836,8 +4879,7 @@ void InternalArrayConstructorStub::Generate(MacroAssembler* masm) {
   // but the following masking takes care of that anyway.
   __ movzxbp(rcx, FieldOperand(rcx, Map::kBitField2Offset));
   // Retrieve elements_kind from bit field 2.
-  __ andp(rcx, Immediate(Map::kElementsKindMask));
-  __ shrp(rcx, Immediate(Map::kElementsKindShift));
+  __ DecodeField<Map::ElementsKindBits>(rcx);
 
   if (FLAG_debug_code) {
     Label done;

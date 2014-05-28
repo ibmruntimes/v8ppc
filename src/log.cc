@@ -106,7 +106,7 @@ class CodeEventLogger::NameBuffer {
 
   void AppendBytes(const char* bytes, int size) {
     size = Min(size, kUtf8BufferSize - utf8_pos_);
-    OS::MemCopy(utf8_buffer_ + utf8_pos_, bytes, size);
+    MemCopy(utf8_buffer_ + utf8_pos_, bytes, size);
     utf8_pos_ += size;
   }
 
@@ -230,6 +230,7 @@ class PerfBasicLogger : public CodeEventLogger {
   virtual ~PerfBasicLogger();
 
   virtual void CodeMoveEvent(Address from, Address to) { }
+  virtual void CodeDisableOptEvent(Code* code, SharedFunctionInfo* shared) { }
   virtual void CodeDeleteEvent(Address from) { }
 
  private:
@@ -295,6 +296,7 @@ class PerfJitLogger : public CodeEventLogger {
   virtual ~PerfJitLogger();
 
   virtual void CodeMoveEvent(Address from, Address to) { }
+  virtual void CodeDisableOptEvent(Code* code, SharedFunctionInfo* shared) { }
   virtual void CodeDeleteEvent(Address from) { }
 
  private:
@@ -320,6 +322,7 @@ class PerfJitLogger : public CodeEventLogger {
   static const uint32_t kElfMachX64 = 62;
   static const uint32_t kElfMachARM = 40;
   static const uint32_t kElfMachMIPS = 10;
+  static const uint32_t kElfMachX87 = 3;
 
   struct jitheader {
     uint32_t magic;
@@ -359,6 +362,8 @@ class PerfJitLogger : public CodeEventLogger {
     return kElfMachARM;
 #elif V8_TARGET_ARCH_MIPS
     return kElfMachMIPS;
+#elif V8_TARGET_ARCH_X87
+    return kElfMachX87;
 #else
     UNIMPLEMENTED();
     return 0;
@@ -457,6 +462,7 @@ class LowLevelLogger : public CodeEventLogger {
   virtual ~LowLevelLogger();
 
   virtual void CodeMoveEvent(Address from, Address to);
+  virtual void CodeDisableOptEvent(Code* code, SharedFunctionInfo* shared) { }
   virtual void CodeDeleteEvent(Address from);
   virtual void SnapshotPositionEvent(Address addr, int pos);
   virtual void CodeMovingGCEvent();
@@ -530,8 +536,8 @@ LowLevelLogger::LowLevelLogger(const char* name)
   // Open the low-level log file.
   size_t len = strlen(name);
   ScopedVector<char> ll_name(static_cast<int>(len + sizeof(kLogExt)));
-  OS::MemCopy(ll_name.start(), name, len);
-  OS::MemCopy(ll_name.start() + len, kLogExt, sizeof(kLogExt));
+  MemCopy(ll_name.start(), name, len);
+  MemCopy(ll_name.start() + len, kLogExt, sizeof(kLogExt));
   ll_output_handle_ = OS::FOpen(ll_name.start(), OS::LogFileOpenMode);
   setvbuf(ll_output_handle_, NULL, _IOFBF, kLogBufferSize);
 
@@ -556,6 +562,8 @@ void LowLevelLogger::LogCodeInfo() {
   const char arch[] = "ppc";
 #elif V8_TARGET_ARCH_MIPS
   const char arch[] = "mips";
+#elif V8_TARGET_ARCH_X87
+  const char arch[] = "x87";
 #else
   const char arch[] = "unknown";
 #endif
@@ -625,6 +633,7 @@ class JitLogger : public CodeEventLogger {
   explicit JitLogger(JitCodeEventHandler code_event_handler);
 
   virtual void CodeMoveEvent(Address from, Address to);
+  virtual void CodeDisableOptEvent(Code* code, SharedFunctionInfo* shared) { }
   virtual void CodeDeleteEvent(Address from);
   virtual void AddCodeLinePosInfoEvent(
       void* jit_handler_data,
@@ -1444,6 +1453,24 @@ void Logger::CodeCreateEvent(LogEventsAndTags tag,
   AppendCodeCreateHeader(&msg, tag, code);
   msg.Append("\"args_count: %d\"", args_count);
   msg.Append('\n');
+  msg.WriteToLogFile();
+}
+
+
+void Logger::CodeDisableOptEvent(Code* code,
+                                 SharedFunctionInfo* shared) {
+  PROFILER_LOG(CodeDisableOptEvent(code, shared));
+
+  if (!is_logging_code_events()) return;
+  CALL_LISTENERS(CodeDisableOptEvent(code, shared));
+
+  if (!FLAG_log_code || !log_->IsEnabled()) return;
+  Log::MessageBuilder msg(log_);
+  msg.Append("%s,", kLogEventsNames[CODE_DISABLE_OPT_EVENT]);
+  SmartArrayPointer<char> name =
+      shared->DebugName()->ToCString(DISALLOW_NULLS, ROBUST_STRING_TRAVERSAL);
+  msg.Append("\"%s\",", name.get());
+  msg.Append("\"%s\"\n", GetBailoutReason(shared->DisableOptimizationReason()));
   msg.WriteToLogFile();
 }
 

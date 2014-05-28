@@ -21,6 +21,8 @@
 #include "ppc/lithium-ppc.h"
 #elif V8_TARGET_ARCH_MIPS
 #include "mips/lithium-mips.h"
+#elif V8_TARGET_ARCH_X87
+#include "x87/lithium-x87.h"
 #else
 #error Unsupported target architecture.
 #endif
@@ -870,7 +872,7 @@ bool HInstruction::CanDeoptimize() {
     case HValue::kMathMinMax:
     case HValue::kParameter:
     case HValue::kPhi:
-    case HValue::kPushArgument:
+    case HValue::kPushArguments:
     case HValue::kRegExpLiteral:
     case HValue::kReturn:
     case HValue::kRor:
@@ -878,6 +880,7 @@ bool HInstruction::CanDeoptimize() {
     case HValue::kSeqStringGetChar:
     case HValue::kStoreCodeEntry:
     case HValue::kStoreKeyed:
+    case HValue::kStoreNamedField:
     case HValue::kStoreNamedGeneric:
     case HValue::kStringCharCodeAt:
     case HValue::kStringCharFromCode:
@@ -926,7 +929,6 @@ bool HInstruction::CanDeoptimize() {
     case HValue::kStoreContextSlot:
     case HValue::kStoreGlobalCell:
     case HValue::kStoreKeyedGeneric:
-    case HValue::kStoreNamedField:
     case HValue::kStringAdd:
     case HValue::kStringCompareAndBranch:
     case HValue::kSub:
@@ -2904,6 +2906,7 @@ bool HConstant::EmitAtUses() {
   if (UseCount() == 0) return true;
   if (IsCell()) return false;
   if (representation().IsDouble()) return false;
+  if (representation().IsExternal()) return false;
   return true;
 }
 
@@ -3459,7 +3462,7 @@ void HLoadKeyed::PrintDataTo(StringStream* stream) {
   stream->Add("[");
   key()->PrintNameTo(stream);
   if (IsDehoisted()) {
-    stream->Add(" + %d]", index_offset());
+    stream->Add(" + %d]", base_offset());
   } else {
     stream->Add("]");
   }
@@ -3611,7 +3614,7 @@ void HStoreKeyed::PrintDataTo(StringStream* stream) {
   stream->Add("[");
   key()->PrintNameTo(stream);
   if (IsDehoisted()) {
-    stream->Add(" + %d] = ", index_offset());
+    stream->Add(" + %d] = ", base_offset());
   } else {
     stream->Add("] = ");
   }

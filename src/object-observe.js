@@ -368,7 +368,8 @@ function ObjectObserve(object, callback, acceptList) {
   if (ObjectIsFrozen(callback))
     throw MakeTypeError("observe_callback_frozen");
 
-  return %ObjectObserveInObjectContext(object, callback, acceptList);
+  var objectObserveFn = %GetObjectContextObjectObserve(object);
+  return objectObserveFn(object, callback, acceptList);
 }
 
 function NativeObjectObserve(object, callback, acceptList) {
@@ -419,8 +420,8 @@ function ObserverEnqueueIfActive(observer, objectInfo, changeRecord) {
 
   var callbackInfo = CallbackInfoNormalize(callback);
   if (IS_NULL(GetPendingObservers())) {
-    SetPendingObservers(nullProtoObject())
-    EnqueueMicrotask(ObserveMicrotaskRunner);
+    SetPendingObservers(nullProtoObject());
+    %EnqueueMicrotask(ObserveMicrotaskRunner);
   }
   GetPendingObservers()[callbackInfo.priority] = callback;
   callbackInfo.push(changeRecord);
@@ -543,8 +544,8 @@ function ObjectNotifierPerformChange(changeType, changeFn) {
   if (!IS_SPEC_FUNCTION(changeFn))
     throw MakeTypeError("observe_perform_non_function");
 
-  return %ObjectNotifierPerformChangeInObjectContext(
-      objectInfo, changeType, changeFn);
+  var performChangeFn = %GetObjectContextNotifierPerformChange(objectInfo);
+  performChangeFn(objectInfo, changeType, changeFn);
 }
 
 function NativeObjectNotifierPerformChange(objectInfo, changeType, changeFn) {
@@ -571,7 +572,8 @@ function ObjectGetNotifier(object) {
 
   if (!%ObjectWasCreatedInCurrentOrigin(object)) return null;
 
-  return %ObjectGetNotifierInObjectContext(object);
+  var getNotifierFn = %GetObjectContextObjectGetNotifier(object);
+  return getNotifierFn(object);
 }
 
 function NativeObjectGetNotifier(object) {

@@ -97,9 +97,7 @@ bool TypeFeedbackOracle::StoreIsKeyedPolymorphic(TypeFeedbackId ast_id) {
 
 bool TypeFeedbackOracle::CallIsMonomorphic(int slot) {
   Handle<Object> value = GetInfo(slot);
-  return FLAG_pretenuring_call_new
-      ? value->IsJSFunction()
-      : value->IsAllocationSite() || value->IsJSFunction();
+  return value->IsAllocationSite() || value->IsJSFunction();
 }
 
 
@@ -134,12 +132,11 @@ KeyedAccessStoreMode TypeFeedbackOracle::GetStoreMode(
 
 Handle<JSFunction> TypeFeedbackOracle::GetCallTarget(int slot) {
   Handle<Object> info = GetInfo(slot);
-  if (FLAG_pretenuring_call_new || info->IsJSFunction()) {
-    return Handle<JSFunction>::cast(info);
+  if (info->IsAllocationSite()) {
+    return Handle<JSFunction>(isolate()->native_context()->array_function());
   }
 
-  ASSERT(info->IsAllocationSite());
-  return Handle<JSFunction>(isolate()->native_context()->array_function());
+  return Handle<JSFunction>::cast(info);
 }
 
 
@@ -151,6 +148,15 @@ Handle<JSFunction> TypeFeedbackOracle::GetCallNewTarget(int slot) {
 
   ASSERT(info->IsAllocationSite());
   return Handle<JSFunction>(isolate()->native_context()->array_function());
+}
+
+
+Handle<AllocationSite> TypeFeedbackOracle::GetCallAllocationSite(int slot) {
+  Handle<Object> info = GetInfo(slot);
+  if (info->IsAllocationSite()) {
+    return Handle<AllocationSite>::cast(info);
+  }
+  return Handle<AllocationSite>::null();
 }
 
 

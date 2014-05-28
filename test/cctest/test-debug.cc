@@ -4724,7 +4724,7 @@ class ThreadBarrier V8_FINAL {
   Mutex mutex_;
   int num_blocked_;
 
-  STATIC_CHECK(N > 0);
+  STATIC_ASSERT(N > 0);
 
   DISALLOW_COPY_AND_ASSIGN(ThreadBarrier);
 };
@@ -6869,7 +6869,8 @@ TEST(DebugContextIsPreservedBetweenAccesses) {
   v8::Debug::SetDebugEventListener(DebugEventBreakPointHitCount);
   v8::Local<v8::Context> context1 = v8::Debug::GetDebugContext();
   v8::Local<v8::Context> context2 = v8::Debug::GetDebugContext();
-  CHECK_EQ(*context1, *context2);
+  CHECK(v8::Utils::OpenHandle(*context1).is_identical_to(
+            v8::Utils::OpenHandle(*context2)));
   v8::Debug::SetDebugEventListener(NULL);
 }
 

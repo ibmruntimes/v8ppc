@@ -121,9 +121,6 @@ class Execution V8_FINAL : public AllStatic {
                                                Handle<Object> object);
   static MaybeHandle<Object> TryGetConstructorDelegate(Isolate* isolate,
                                                        Handle<Object> object);
-
-  static void RunMicrotasks(Isolate* isolate);
-  static void EnqueueMicrotask(Isolate* isolate, Handle<Object> microtask);
 };
 
 
@@ -158,7 +155,6 @@ class StackGuard V8_FINAL {
   V(DEBUGCOMMAND, DebugCommand)                                 \
   V(TERMINATE_EXECUTION, TerminateExecution)                    \
   V(GC_REQUEST, GC)                                             \
-  V(FULL_DEOPT, FullDeopt)                                      \
   V(INSTALL_CODE, InstallCode)                                  \
   V(API_INTERRUPT, ApiInterrupt)                                \
   V(DEOPT_MARKED_ALLOCATION_SITES, DeoptMarkedAllocationSites)

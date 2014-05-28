@@ -26,14 +26,14 @@ namespace internal {
   F(GetProperty, 2, 1) \
   F(KeyedGetProperty, 2, 1) \
   F(DeleteProperty, 3, 1) \
-  F(HasLocalProperty, 2, 1) \
+  F(HasOwnProperty, 2, 1) \
   F(HasProperty, 2, 1) \
   F(HasElement, 2, 1) \
   F(IsPropertyEnumerable, 2, 1) \
   F(GetPropertyNames, 1, 1) \
   F(GetPropertyNamesFast, 1, 1) \
-  F(GetLocalPropertyNames, 2, 1) \
-  F(GetLocalElementNames, 1, 1) \
+  F(GetOwnPropertyNames, 2, 1) \
+  F(GetOwnElementNames, 1, 1) \
   F(GetInterceptorInfo, 1, 1) \
   F(GetNamedInterceptorPropertyNames, 1, 1) \
   F(GetIndexedInterceptorElementNames, 1, 1) \
@@ -200,7 +200,6 @@ namespace internal {
   F(GetV8Version, 0, 1) \
   \
   F(SetCode, 2, 1) \
-  F(SetExpectedNumberOfProperties, 2, 1) \
   \
   F(CreateApiFunction, 2, 1) \
   F(IsTemplate, 1, 1) \
@@ -244,9 +243,6 @@ namespace internal {
   /* ES5 */ \
   F(ObjectFreeze, 1, 1) \
   \
-  /* Harmony microtasks */ \
-  F(GetMicrotaskState, 0, 1) \
-  \
   /* Harmony modules */ \
   F(IsJSModule, 1, 1) \
   \
@@ -279,7 +275,6 @@ namespace internal {
   F(SetCreateIterator, 2, 1) \
   \
   F(SetIteratorNext, 1, 1) \
-  F(SetIteratorClose, 1, 1) \
   \
   /* Harmony maps */ \
   F(MapInitialize, 1, 1) \
@@ -292,7 +287,6 @@ namespace internal {
   F(MapCreateIterator, 2, 1) \
   \
   F(MapIteratorNext, 1, 1) \
-  F(MapIteratorClose, 1, 1) \
   \
   /* Harmony weak maps and sets */ \
   F(WeakCollectionInitialize, 1, 1) \
@@ -302,7 +296,7 @@ namespace internal {
   F(WeakCollectionSet, 3, 1) \
   \
   /* Harmony events */ \
-  F(SetMicrotaskPending, 1, 1) \
+  F(EnqueueMicrotask, 1, 1) \
   F(RunMicrotasks, 0, 1) \
   \
   /* Harmony observe */ \
@@ -312,9 +306,9 @@ namespace internal {
   F(ObservationWeakMapCreate, 0, 1) \
   F(ObserverObjectAndRecordHaveSameOrigin, 3, 1) \
   F(ObjectWasCreatedInCurrentOrigin, 1, 1) \
-  F(ObjectObserveInObjectContext, 3, 1) \
-  F(ObjectGetNotifierInObjectContext, 1, 1) \
-  F(ObjectNotifierPerformChangeInObjectContext, 3, 1) \
+  F(GetObjectContextObjectObserve, 1, 1) \
+  F(GetObjectContextObjectGetNotifier, 1, 1) \
+  F(GetObjectContextNotifierPerformChange, 1, 1) \
   \
   /* Harmony typed arrays */ \
   F(ArrayBufferInitialize, 2, 1)\
@@ -361,7 +355,7 @@ namespace internal {
   F(Abort, 1, 1) \
   F(AbortJS, 1, 1) \
   /* ES5 */ \
-  F(LocalKeys, 1, 1) \
+  F(OwnKeys, 1, 1) \
   \
   /* Message objects */ \
   F(MessageGetStartPosition, 1, 1) \

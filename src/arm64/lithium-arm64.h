@@ -136,7 +136,8 @@ class LCodeGen;
   V(OsrEntry)                                   \
   V(Parameter)                                  \
   V(Power)                                      \
-  V(PushArgument)                               \
+  V(PreparePushArguments)                       \
+  V(PushArguments)                              \
   V(RegExpLiteral)                              \
   V(Return)                                     \
   V(SeqStringGetChar)                           \
@@ -1287,6 +1288,7 @@ class LDeclareGlobals V8_FINAL : public LTemplateInstruction<0, 1, 0> {
 
 class LDeoptimize V8_FINAL : public LTemplateInstruction<0, 0, 0> {
  public:
+  virtual bool IsControl() const V8_OVERRIDE { return true; }
   DECLARE_CONCRETE_INSTRUCTION(Deoptimize, "deoptimize")
   DECLARE_HYDROGEN_ACCESSOR(Deoptimize)
 };
@@ -1757,15 +1759,15 @@ class LLoadKeyed : public LTemplateInstruction<1, 2, T> {
   bool is_typed_elements() const {
     return is_external() || is_fixed_typed_array();
   }
-  uint32_t additional_index() const {
-    return this->hydrogen()->index_offset();
+  uint32_t base_offset() const {
+    return this->hydrogen()->base_offset();
   }
   void PrintDataTo(StringStream* stream) V8_OVERRIDE {
     this->elements()->PrintTo(stream);
     stream->Add("[");
     this->key()->PrintTo(stream);
-    if (this->hydrogen()->IsDehoisted()) {
-      stream->Add(" + %d]", this->additional_index());
+    if (this->base_offset() != 0) {
+      stream->Add(" + %d]", this->base_offset());
     } else {
       stream->Add("]");
     }
@@ -2249,15 +2251,50 @@ class LPower V8_FINAL : public LTemplateInstruction<1, 2, 0> {
 };
 
 
-class LPushArgument V8_FINAL : public LTemplateInstruction<0, 1, 0> {
+class LPreparePushArguments V8_FINAL : public LTemplateInstruction<0, 0, 0> {
  public:
-  explicit LPushArgument(LOperand* value) {
-    inputs_[0] = value;
+  explicit LPreparePushArguments(int argc) : argc_(argc) {}
+
+  inline int argc() const { return argc_; }
+
+  DECLARE_CONCRETE_INSTRUCTION(PreparePushArguments, "prepare-push-arguments")
+
+ protected:
+  int argc_;
+};
+
+
+class LPushArguments V8_FINAL : public LTemplateResultInstruction<0> {
+ public:
+  explicit LPushArguments(Zone* zone,
+                          int capacity = kRecommendedMaxPushedArgs)
+      : zone_(zone), inputs_(capacity, zone) {}
+
+  LOperand* argument(int i) { return inputs_[i]; }
+  int ArgumentCount() const { return inputs_.length(); }
+
+  void AddArgument(LOperand* arg) { inputs_.Add(arg, zone_); }
+
+  DECLARE_CONCRETE_INSTRUCTION(PushArguments, "push-arguments")
+
+  // It is better to limit the number of arguments pushed simultaneously to
+  // avoid pressure on the register allocator.
+  static const int kRecommendedMaxPushedArgs = 4;
+  bool ShouldSplitPush() const {
+    return inputs_.length() >= kRecommendedMaxPushedArgs;
   }
 
-  LOperand* value() { return inputs_[0]; }
+ protected:
+  Zone* zone_;
+  ZoneList<LOperand*> inputs_;
 
-  DECLARE_CONCRETE_INSTRUCTION(PushArgument, "push-argument")
+ private:
+  // Iterator support.
+  virtual int InputCount() V8_FINAL V8_OVERRIDE { return inputs_.length(); }
+  virtual LOperand* InputAt(int i) V8_FINAL V8_OVERRIDE { return inputs_[i]; }
+
+  virtual int TempCount() V8_FINAL V8_OVERRIDE { return 0; }
+  virtual LOperand* TempAt(int i) V8_FINAL V8_OVERRIDE { return NULL; }
 };
 
 
@@ -2419,14 +2456,14 @@ class LStoreKeyed : public LTemplateInstruction<0, 3, T> {
     }
     return this->hydrogen()->NeedsCanonicalization();
   }
-  uint32_t additional_index() const { return this->hydrogen()->index_offset(); }
+  uint32_t base_offset() const { return this->hydrogen()->base_offset(); }
 
   void PrintDataTo(StringStream* stream) V8_OVERRIDE {
     this->elements()->PrintTo(stream);
     stream->Add("[");
     this->key()->PrintTo(stream);
-    if (this->hydrogen()->IsDehoisted()) {
-      stream->Add(" + %d] <-", this->additional_index());
+    if (this->base_offset() != 0) {
+      stream->Add(" + %d] <-", this->base_offset());
     } else {
       stream->Add("] <- ");
     }
@@ -3137,6 +3174,7 @@ class LChunkBuilder V8_FINAL : public LChunkBuilderBase {
   LInstruction* AssignEnvironment(LInstruction* instr);
 
   void VisitInstruction(HInstruction* current);
+  void AddInstruction(LInstruction* instr, HInstruction* current);
   void DoBasicBlock(HBasicBlock* block);
 
   int JSShiftAmountFromHConstant(HValue* constant) {

@@ -61,7 +61,6 @@ void V8::TearDown() {
   Isolate::GlobalTearDown();
 
   Sampler::TearDown();
-  Serializer::TearDown();
 
 #ifdef V8_USE_DEFAULT_PLATFORM
   DefaultPlatform* platform = static_cast<DefaultPlatform*>(platform_);
@@ -79,7 +78,6 @@ void V8::SetReturnAddressLocationResolver(
 
 void V8::InitializeOncePerProcessImpl() {
   FlagList::EnforceFlagImplications();
-  Serializer::InitializeOncePerProcess();
 
   if (FLAG_predictable && FLAG_random_seed == 0) {
     // Avoid random seeds in predictable mode.
@@ -97,7 +95,7 @@ void V8::InitializeOncePerProcessImpl() {
 #endif
   Sampler::SetUp();
   CpuFeatures::Probe(false);
-  OS::PostSetUp();
+  init_memcopy_functions();
   // The custom exp implementation needs 16KB of lookup data; initialize it
   // on demand.
   init_fast_sqrt_function();

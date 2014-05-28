@@ -21,6 +21,9 @@
 #elif V8_TARGET_ARCH_MIPS
 #include "mips/lithium-mips.h"
 #include "mips/lithium-codegen-mips.h"
+#elif V8_TARGET_ARCH_X87
+#include "x87/lithium-x87.h"
+#include "x87/lithium-codegen-x87.h"
 #elif V8_TARGET_ARCH_PPC
 #include "ppc/lithium-ppc.h"
 #include "ppc/lithium-codegen-ppc.h"
@@ -139,7 +142,7 @@ void LCodeGenBase::Comment(const char* format, ...) {
   // issues when the stack allocated buffer goes out of scope.
   size_t length = builder.position();
   Vector<char> copy = Vector<char>::New(static_cast<int>(length) + 1);
-  OS::MemCopy(copy.start(), builder.Finalize(), copy.length());
+  MemCopy(copy.start(), builder.Finalize(), copy.length());
   masm()->RecordComment(copy.start());
 }
 

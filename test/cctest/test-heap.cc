@@ -210,7 +210,7 @@ TEST(HeapObjects) {
 
   Handle<String> object_string = Handle<String>::cast(factory->Object_string());
   Handle<GlobalObject> global(CcTest::i_isolate()->context()->global_object());
-  CHECK(JSReceiver::HasLocalProperty(global, object_string));
+  CHECK(JSReceiver::HasOwnProperty(global, object_string));
 
   // Check ToString for oddballs
   CheckOddball(isolate, heap->true_value(), "true");
@@ -279,7 +279,7 @@ TEST(GarbageCollection) {
   heap->CollectGarbage(NEW_SPACE);
 
   // Function should be alive.
-  CHECK(JSReceiver::HasLocalProperty(global, name));
+  CHECK(JSReceiver::HasOwnProperty(global, name));
   // Check function is retained.
   Handle<Object> func_value =
       Object::GetProperty(global, name).ToHandleChecked();
@@ -298,7 +298,7 @@ TEST(GarbageCollection) {
   // After gc, it should survive.
   heap->CollectGarbage(NEW_SPACE);
 
-  CHECK(JSReceiver::HasLocalProperty(global, obj_name));
+  CHECK(JSReceiver::HasOwnProperty(global, obj_name));
   Handle<Object> obj =
       Object::GetProperty(global, obj_name).ToHandleChecked();
   CHECK(obj->IsJSObject());
@@ -656,55 +656,55 @@ TEST(ObjectProperties) {
   Handle<Smi> two(Smi::FromInt(2), isolate);
 
   // check for empty
-  CHECK(!JSReceiver::HasLocalProperty(obj, first));
+  CHECK(!JSReceiver::HasOwnProperty(obj, first));
 
   // add first
   JSReceiver::SetProperty(obj, first, one, NONE, SLOPPY).Check();
-  CHECK(JSReceiver::HasLocalProperty(obj, first));
+  CHECK(JSReceiver::HasOwnProperty(obj, first));
 
   // delete first
   JSReceiver::DeleteProperty(obj, first, JSReceiver::NORMAL_DELETION).Check();
-  CHECK(!JSReceiver::HasLocalProperty(obj, first));
+  CHECK(!JSReceiver::HasOwnProperty(obj, first));
 
   // add first and then second
   JSReceiver::SetProperty(obj, first, one, NONE, SLOPPY).Check();
   JSReceiver::SetProperty(obj, second, two, NONE, SLOPPY).Check();
-  CHECK(JSReceiver::HasLocalProperty(obj, first));
-  CHECK(JSReceiver::HasLocalProperty(obj, second));
+  CHECK(JSReceiver::HasOwnProperty(obj, first));
+  CHECK(JSReceiver::HasOwnProperty(obj, second));
 
   // delete first and then second
   JSReceiver::DeleteProperty(obj, first, JSReceiver::NORMAL_DELETION).Check();
-  CHECK(JSReceiver::HasLocalProperty(obj, second));
+  CHECK(JSReceiver::HasOwnProperty(obj, second));
   JSReceiver::DeleteProperty(obj, second, JSReceiver::NORMAL_DELETION).Check();
-  CHECK(!JSReceiver::HasLocalProperty(obj, first));
-  CHECK(!JSReceiver::HasLocalProperty(obj, second));
+  CHECK(!JSReceiver::HasOwnProperty(obj, first));
+  CHECK(!JSReceiver::HasOwnProperty(obj, second));
 
   // add first and then second
   JSReceiver::SetProperty(obj, first, one, NONE, SLOPPY).Check();
   JSReceiver::SetProperty(obj, second, two, NONE, SLOPPY).Check();
-  CHECK(JSReceiver::HasLocalProperty(obj, first));
-  CHECK(JSReceiver::HasLocalProperty(obj, second));
+  CHECK(JSReceiver::HasOwnProperty(obj, first));
+  CHECK(JSReceiver::HasOwnProperty(obj, second));
 
   // delete second and then first
   JSReceiver::DeleteProperty(obj, second, JSReceiver::NORMAL_DELETION).Check();
-  CHECK(JSReceiver::HasLocalProperty(obj, first));
+  CHECK(JSReceiver::HasOwnProperty(obj, first));
   JSReceiver::DeleteProperty(obj, first, JSReceiver::NORMAL_DELETION).Check();
-  CHECK(!JSReceiver::HasLocalProperty(obj, first));
-  CHECK(!JSReceiver::HasLocalProperty(obj, second));
+  CHECK(!JSReceiver::HasOwnProperty(obj, first));
+  CHECK(!JSReceiver::HasOwnProperty(obj, second));
 
   // check string and internalized string match
   const char* string1 = "fisk";
   Handle<String> s1 = factory->NewStringFromAsciiChecked(string1);
   JSReceiver::SetProperty(obj, s1, one, NONE, SLOPPY).Check();
   Handle<String> s1_string = factory->InternalizeUtf8String(string1);
-  CHECK(JSReceiver::HasLocalProperty(obj, s1_string));
+  CHECK(JSReceiver::HasOwnProperty(obj, s1_string));
 
   // check internalized string and string match
   const char* string2 = "fugl";
   Handle<String> s2_string = factory->InternalizeUtf8String(string2);
   JSReceiver::SetProperty(obj, s2_string, one, NONE, SLOPPY).Check();
   Handle<String> s2 = factory->NewStringFromAsciiChecked(string2);
-  CHECK(JSReceiver::HasLocalProperty(obj, s2));
+  CHECK(JSReceiver::HasOwnProperty(obj, s2));
 }
 
 
@@ -891,7 +891,6 @@ TEST(StringAllocation) {
 static int ObjectsFoundInHeap(Heap* heap, Handle<Object> objs[], int size) {
   // Count the number of objects found in the heap.
   int found_count = 0;
-  heap->EnsureHeapIsIterable();
   HeapIterator iterator(heap);
   for (HeapObject* obj = iterator.next(); obj != NULL; obj = iterator.next()) {
     for (int i = 0; i < size; i++) {
@@ -1630,9 +1629,8 @@ TEST(TestSizeOfObjects) {
 
 TEST(TestSizeOfObjectsVsHeapIteratorPrecision) {
   CcTest::InitializeVM();
-  CcTest::heap()->EnsureHeapIsIterable();
-  intptr_t size_of_objects_1 = CcTest::heap()->SizeOfObjects();
   HeapIterator iterator(CcTest::heap());
+  intptr_t size_of_objects_1 = CcTest::heap()->SizeOfObjects();
   intptr_t size_of_objects_2 = 0;
   for (HeapObject* obj = iterator.next();
        obj != NULL;
@@ -2197,100 +2195,60 @@ TEST(OptimizedAllocationAlwaysInNewSpace) {
 
 TEST(OptimizedPretenuringAllocationFolding) {
   i::FLAG_allow_natives_syntax = true;
-  i::FLAG_max_semi_space_size = 1;
-  i::FLAG_allocation_site_pretenuring = false;
+  i::FLAG_expose_gc = true;
   CcTest::InitializeVM();
   if (!CcTest::i_isolate()->use_crankshaft() || i::FLAG_always_opt) return;
   if (i::FLAG_gc_global || i::FLAG_stress_compaction) return;
   v8::HandleScope scope(CcTest::isolate());
-  CcTest::heap()->SetNewSpaceHighPromotionModeActive(true);
 
-  v8::Local<v8::Value> res = CompileRun(
-      "function DataObject() {"
-      "  this.a = 1.1;"
-      "  this.b = [{}];"
-      "  this.c = 1.2;"
-      "  this.d = [{}];"
-      "  this.e = 1.3;"
-      "  this.f = [{}];"
-      "}"
-      "var number_elements = 20000;"
+  i::ScopedVector<char> source(1024);
+  i::OS::SNPrintF(
+      source,
+      "var number_elements = %d;"
       "var elements = new Array();"
       "function f() {"
       "  for (var i = 0; i < number_elements; i++) {"
-      "    elements[i] = new DataObject();"
+      "    elements[i] = [[{}], [1.1]];"
       "  }"
       "  return elements[number_elements-1]"
       "};"
-      "f(); f(); f();"
-      "%OptimizeFunctionOnNextCall(f);"
-      "f();");
+      "f(); gc();"
+      "f(); f();"
+      "%%OptimizeFunctionOnNextCall(f);"
+      "f();",
+      AllocationSite::kPretenureMinimumCreated);
+
+  v8::Local<v8::Value> res = CompileRun(source.start());
+
+  v8::Local<v8::Value> int_array = v8::Object::Cast(*res)->Get(v8_str("0"));
+  Handle<JSObject> int_array_handle =
+      v8::Utils::OpenHandle(*v8::Handle<v8::Object>::Cast(int_array));
+  v8::Local<v8::Value> double_array = v8::Object::Cast(*res)->Get(v8_str("1"));
+  Handle<JSObject> double_array_handle =
+      v8::Utils::OpenHandle(*v8::Handle<v8::Object>::Cast(double_array));
 
   Handle<JSObject> o =
       v8::Utils::OpenHandle(*v8::Handle<v8::Object>::Cast(res));
-
-  CHECK(CcTest::heap()->InOldDataSpace(o->RawFastPropertyAt(0)));
-  CHECK(CcTest::heap()->InOldPointerSpace(o->RawFastPropertyAt(1)));
-  CHECK(CcTest::heap()->InOldDataSpace(o->RawFastPropertyAt(2)));
-  CHECK(CcTest::heap()->InOldPointerSpace(o->RawFastPropertyAt(3)));
-  CHECK(CcTest::heap()->InOldDataSpace(o->RawFastPropertyAt(4)));
-  CHECK(CcTest::heap()->InOldPointerSpace(o->RawFastPropertyAt(5)));
-}
-
-
-TEST(OptimizedPretenuringAllocationFoldingBlocks) {
-  i::FLAG_allow_natives_syntax = true;
-  i::FLAG_max_semi_space_size = 1;
-  i::FLAG_allocation_site_pretenuring = false;
-  CcTest::InitializeVM();
-  if (!CcTest::i_isolate()->use_crankshaft() || i::FLAG_always_opt) return;
-  if (i::FLAG_gc_global || i::FLAG_stress_compaction) return;
-  v8::HandleScope scope(CcTest::isolate());
-  CcTest::heap()->SetNewSpaceHighPromotionModeActive(true);
-
-  v8::Local<v8::Value> res = CompileRun(
-      "var number_elements = 30000;"
-      "var elements = new Array(number_elements);"
-      "function DataObject() {"
-      "  this.a = [{}];"
-      "  this.b = [{}];"
-      "  this.c = 1.1;"
-      "  this.d = 1.2;"
-      "  this.e = [{}];"
-      "  this.f = 1.3;"
-      "}"
-      "function f() {"
-      "  for (var i = 0; i < number_elements; i++) {"
-      "    elements[i] = new DataObject();"
-      "  }"
-      "  return elements[number_elements - 1];"
-      "};"
-      "f(); f(); f();"
-      "%OptimizeFunctionOnNextCall(f);"
-      "f();");
-
-  Handle<JSObject> o =
-      v8::Utils::OpenHandle(*v8::Handle<v8::Object>::Cast(res));
-
-  CHECK(CcTest::heap()->InOldPointerSpace(o->RawFastPropertyAt(0)));
-  CHECK(CcTest::heap()->InOldPointerSpace(o->RawFastPropertyAt(1)));
-  CHECK(CcTest::heap()->InOldDataSpace(o->RawFastPropertyAt(2)));
-  CHECK(CcTest::heap()->InOldDataSpace(o->RawFastPropertyAt(3)));
-  CHECK(CcTest::heap()->InOldPointerSpace(o->RawFastPropertyAt(4)));
-  CHECK(CcTest::heap()->InOldDataSpace(o->RawFastPropertyAt(5)));
+  CHECK(CcTest::heap()->InOldPointerSpace(*o));
+  CHECK(CcTest::heap()->InOldPointerSpace(*int_array_handle));
+  CHECK(CcTest::heap()->InOldPointerSpace(int_array_handle->elements()));
+  CHECK(CcTest::heap()->InOldPointerSpace(*double_array_handle));
+  CHECK(CcTest::heap()->InOldDataSpace(double_array_handle->elements()));
 }
 
 
 TEST(OptimizedPretenuringObjectArrayLiterals) {
   i::FLAG_allow_natives_syntax = true;
-  i::FLAG_max_semi_space_size = 1;
+  i::FLAG_expose_gc = true;
   CcTest::InitializeVM();
   if (!CcTest::i_isolate()->use_crankshaft() || i::FLAG_always_opt) return;
   if (i::FLAG_gc_global || i::FLAG_stress_compaction) return;
   v8::HandleScope scope(CcTest::isolate());
 
-  v8::Local<v8::Value> res = CompileRun(
-      "var number_elements = 20000;"
+  i::ScopedVector<char> source(1024);
+  i::OS::SNPrintF(
+      source,
+      "var number_elements = %d;"
       "var elements = new Array(number_elements);"
       "function f() {"
       "  for (var i = 0; i < number_elements; i++) {"
@@ -2298,9 +2256,13 @@ TEST(OptimizedPretenuringObjectArrayLiterals) {
       "  }"
       "  return elements[number_elements - 1];"
       "};"
-      "f(); f(); f();"
-      "%OptimizeFunctionOnNextCall(f);"
-      "f();");
+      "f(); gc();"
+      "f(); f();"
+      "%%OptimizeFunctionOnNextCall(f);"
+      "f();",
+      AllocationSite::kPretenureMinimumCreated);
+
+  v8::Local<v8::Value> res = CompileRun(source.start());
 
   Handle<JSObject> o =
       v8::Utils::OpenHandle(*v8::Handle<v8::Object>::Cast(res));
@@ -2312,14 +2274,16 @@ TEST(OptimizedPretenuringObjectArrayLiterals) {
 
 TEST(OptimizedPretenuringMixedInObjectProperties) {
   i::FLAG_allow_natives_syntax = true;
-  i::FLAG_max_semi_space_size = 1;
+  i::FLAG_expose_gc = true;
   CcTest::InitializeVM();
   if (!CcTest::i_isolate()->use_crankshaft() || i::FLAG_always_opt) return;
   if (i::FLAG_gc_global || i::FLAG_stress_compaction) return;
   v8::HandleScope scope(CcTest::isolate());
 
-  v8::Local<v8::Value> res = CompileRun(
-      "var number_elements = 20000;"
+  i::ScopedVector<char> source(1024);
+  i::OS::SNPrintF(
+      source,
+      "var number_elements = %d;"
       "var elements = new Array(number_elements);"
       "function f() {"
       "  for (var i = 0; i < number_elements; i++) {"
@@ -2327,9 +2291,13 @@ TEST(OptimizedPretenuringMixedInObjectProperties) {
       "  }"
       "  return elements[number_elements - 1];"
       "};"
-      "f(); f(); f();"
-      "%OptimizeFunctionOnNextCall(f);"
-      "f();");
+      "f(); gc();"
+      "f(); f();"
+      "%%OptimizeFunctionOnNextCall(f);"
+      "f();",
+      AllocationSite::kPretenureMinimumCreated);
+
+  v8::Local<v8::Value> res = CompileRun(source.start());
 
   Handle<JSObject> o =
       v8::Utils::OpenHandle(*v8::Handle<v8::Object>::Cast(res));
@@ -2347,14 +2315,16 @@ TEST(OptimizedPretenuringMixedInObjectProperties) {
 
 TEST(OptimizedPretenuringDoubleArrayProperties) {
   i::FLAG_allow_natives_syntax = true;
-  i::FLAG_max_semi_space_size = 1;
+  i::FLAG_expose_gc = true;
   CcTest::InitializeVM();
   if (!CcTest::i_isolate()->use_crankshaft() || i::FLAG_always_opt) return;
   if (i::FLAG_gc_global || i::FLAG_stress_compaction) return;
   v8::HandleScope scope(CcTest::isolate());
 
-  v8::Local<v8::Value> res = CompileRun(
-      "var number_elements = 30000;"
+  i::ScopedVector<char> source(1024);
+  i::OS::SNPrintF(
+      source,
+      "var number_elements = %d;"
       "var elements = new Array(number_elements);"
       "function f() {"
       "  for (var i = 0; i < number_elements; i++) {"
@@ -2362,9 +2332,13 @@ TEST(OptimizedPretenuringDoubleArrayProperties) {
       "  }"
       "  return elements[i - 1];"
       "};"
-      "f(); f(); f();"
-      "%OptimizeFunctionOnNextCall(f);"
-      "f();");
+      "f(); gc();"
+      "f(); f();"
+      "%%OptimizeFunctionOnNextCall(f);"
+      "f();",
+      AllocationSite::kPretenureMinimumCreated);
+
+  v8::Local<v8::Value> res = CompileRun(source.start());
 
   Handle<JSObject> o =
       v8::Utils::OpenHandle(*v8::Handle<v8::Object>::Cast(res));
@@ -2376,14 +2350,16 @@ TEST(OptimizedPretenuringDoubleArrayProperties) {
 
 TEST(OptimizedPretenuringdoubleArrayLiterals) {
   i::FLAG_allow_natives_syntax = true;
-  i::FLAG_max_semi_space_size = 1;
+  i::FLAG_expose_gc = true;
   CcTest::InitializeVM();
   if (!CcTest::i_isolate()->use_crankshaft() || i::FLAG_always_opt) return;
   if (i::FLAG_gc_global || i::FLAG_stress_compaction) return;
   v8::HandleScope scope(CcTest::isolate());
 
-  v8::Local<v8::Value> res = CompileRun(
-      "var number_elements = 30000;"
+  i::ScopedVector<char> source(1024);
+  i::OS::SNPrintF(
+      source,
+      "var number_elements = %d;"
       "var elements = new Array(number_elements);"
       "function f() {"
       "  for (var i = 0; i < number_elements; i++) {"
@@ -2391,9 +2367,13 @@ TEST(OptimizedPretenuringdoubleArrayLiterals) {
       "  }"
       "  return elements[number_elements - 1];"
       "};"
-      "f(); f(); f();"
-      "%OptimizeFunctionOnNextCall(f);"
-      "f();");
+      "f(); gc();"
+      "f(); f();"
+      "%%OptimizeFunctionOnNextCall(f);"
+      "f();",
+      AllocationSite::kPretenureMinimumCreated);
+
+  v8::Local<v8::Value> res = CompileRun(source.start());
 
   Handle<JSObject> o =
       v8::Utils::OpenHandle(*v8::Handle<v8::Object>::Cast(res));
@@ -2405,14 +2385,16 @@ TEST(OptimizedPretenuringdoubleArrayLiterals) {
 
 TEST(OptimizedPretenuringNestedMixedArrayLiterals) {
   i::FLAG_allow_natives_syntax = true;
-  i::FLAG_max_semi_space_size = 1;
+  i::FLAG_expose_gc = true;
   CcTest::InitializeVM();
   if (!CcTest::i_isolate()->use_crankshaft() || i::FLAG_always_opt) return;
   if (i::FLAG_gc_global || i::FLAG_stress_compaction) return;
   v8::HandleScope scope(CcTest::isolate());
 
-  v8::Local<v8::Value> res = CompileRun(
-      "var number_elements = 20000;"
+  i::ScopedVector<char> source(1024);
+  i::OS::SNPrintF(
+      source,
+      "var number_elements = 100;"
       "var elements = new Array(number_elements);"
       "function f() {"
       "  for (var i = 0; i < number_elements; i++) {"
@@ -2420,9 +2402,13 @@ TEST(OptimizedPretenuringNestedMixedArrayLiterals) {
       "  }"
       "  return elements[number_elements - 1];"
       "};"
-      "f(); f(); f();"
-      "%OptimizeFunctionOnNextCall(f);"
-      "f();");
+      "f(); gc();"
+      "f(); f();"
+      "%%OptimizeFunctionOnNextCall(f);"
+      "f();",
+      AllocationSite::kPretenureMinimumCreated);
+
+  v8::Local<v8::Value> res = CompileRun(source.start());
 
   v8::Local<v8::Value> int_array = v8::Object::Cast(*res)->Get(v8_str("0"));
   Handle<JSObject> int_array_handle =
@@ -2443,14 +2429,16 @@ TEST(OptimizedPretenuringNestedMixedArrayLiterals) {
 
 TEST(OptimizedPretenuringNestedObjectLiterals) {
   i::FLAG_allow_natives_syntax = true;
-  i::FLAG_max_semi_space_size = 1;
+  i::FLAG_expose_gc = true;
   CcTest::InitializeVM();
   if (!CcTest::i_isolate()->use_crankshaft() || i::FLAG_always_opt) return;
   if (i::FLAG_gc_global || i::FLAG_stress_compaction) return;
   v8::HandleScope scope(CcTest::isolate());
 
-  v8::Local<v8::Value> res = CompileRun(
-      "var number_elements = 20000;"
+  i::ScopedVector<char> source(1024);
+  i::OS::SNPrintF(
+      source,
+      "var number_elements = %d;"
       "var elements = new Array(number_elements);"
       "function f() {"
       "  for (var i = 0; i < number_elements; i++) {"
@@ -2458,9 +2446,13 @@ TEST(OptimizedPretenuringNestedObjectLiterals) {
       "  }"
       "  return elements[number_elements - 1];"
       "};"
-      "f(); f(); f();"
-      "%OptimizeFunctionOnNextCall(f);"
-      "f();");
+      "f(); gc();"
+      "f(); f();"
+      "%%OptimizeFunctionOnNextCall(f);"
+      "f();",
+      AllocationSite::kPretenureMinimumCreated);
+
+  v8::Local<v8::Value> res = CompileRun(source.start());
 
   v8::Local<v8::Value> int_array_1 = v8::Object::Cast(*res)->Get(v8_str("0"));
   Handle<JSObject> int_array_handle_1 =
@@ -2481,14 +2473,16 @@ TEST(OptimizedPretenuringNestedObjectLiterals) {
 
 TEST(OptimizedPretenuringNestedDoubleLiterals) {
   i::FLAG_allow_natives_syntax = true;
-  i::FLAG_max_semi_space_size = 1;
+  i::FLAG_expose_gc = true;
   CcTest::InitializeVM();
   if (!CcTest::i_isolate()->use_crankshaft() || i::FLAG_always_opt) return;
   if (i::FLAG_gc_global || i::FLAG_stress_compaction) return;
   v8::HandleScope scope(CcTest::isolate());
 
-  v8::Local<v8::Value> res = CompileRun(
-      "var number_elements = 20000;"
+  i::ScopedVector<char> source(1024);
+  i::OS::SNPrintF(
+      source,
+      "var number_elements = %d;"
       "var elements = new Array(number_elements);"
       "function f() {"
       "  for (var i = 0; i < number_elements; i++) {"
@@ -2496,9 +2490,13 @@ TEST(OptimizedPretenuringNestedDoubleLiterals) {
       "  }"
       "  return elements[number_elements - 1];"
       "};"
-      "f(); f(); f();"
-      "%OptimizeFunctionOnNextCall(f);"
-      "f();");
+      "f(); gc();"
+      "f(); f();"
+      "%%OptimizeFunctionOnNextCall(f);"
+      "f();",
+      AllocationSite::kPretenureMinimumCreated);
+
+  v8::Local<v8::Value> res = CompileRun(source.start());
 
   v8::Local<v8::Value> double_array_1 =
       v8::Object::Cast(*res)->Get(v8_str("0"));
@@ -2522,19 +2520,24 @@ TEST(OptimizedPretenuringNestedDoubleLiterals) {
 // Make sure pretenuring feedback is gathered for constructed objects as well
 // as for literals.
 TEST(OptimizedPretenuringConstructorCalls) {
-  if (!FLAG_allocation_site_pretenuring || !i::FLAG_pretenuring_call_new) {
+  if (!i::FLAG_pretenuring_call_new) {
     // FLAG_pretenuring_call_new needs to be synced with the snapshot.
     return;
   }
   i::FLAG_allow_natives_syntax = true;
-  i::FLAG_max_semi_space_size = 1;
+  i::FLAG_expose_gc = true;
   CcTest::InitializeVM();
   if (!CcTest::i_isolate()->use_crankshaft() || i::FLAG_always_opt) return;
   if (i::FLAG_gc_global || i::FLAG_stress_compaction) return;
   v8::HandleScope scope(CcTest::isolate());
 
-  v8::Local<v8::Value> res = CompileRun(
-      "var number_elements = 20000;"
+  i::ScopedVector<char> source(1024);
+  // Call new is doing slack tracking for the first
+  // JSFunction::kGenerousAllocationCount allocations, and we can't find
+  // mementos during that time.
+  i::OS::SNPrintF(
+      source,
+      "var number_elements = %d;"
       "var elements = new Array(number_elements);"
       "function foo() {"
       "  this.a = 3;"
@@ -2546,13 +2549,60 @@ TEST(OptimizedPretenuringConstructorCalls) {
       "  }"
       "  return elements[number_elements - 1];"
       "};"
-      "f(); f(); f();"
-      "%OptimizeFunctionOnNextCall(f);"
-      "f();");
+      "f(); gc();"
+      "f(); f();"
+      "%%OptimizeFunctionOnNextCall(f);"
+      "f();",
+      AllocationSite::kPretenureMinimumCreated +
+      JSFunction::kGenerousAllocationCount);
+
+  v8::Local<v8::Value> res = CompileRun(source.start());
 
   Handle<JSObject> o =
       v8::Utils::OpenHandle(*v8::Handle<v8::Object>::Cast(res));
 
+  CHECK(CcTest::heap()->InOldPointerSpace(*o));
+}
+
+
+TEST(OptimizedPretenuringCallNew) {
+  if (!i::FLAG_pretenuring_call_new) {
+    // FLAG_pretenuring_call_new needs to be synced with the snapshot.
+    return;
+  }
+  i::FLAG_allow_natives_syntax = true;
+  i::FLAG_expose_gc = true;
+  CcTest::InitializeVM();
+  if (!CcTest::i_isolate()->use_crankshaft() || i::FLAG_always_opt) return;
+  if (i::FLAG_gc_global || i::FLAG_stress_compaction) return;
+  v8::HandleScope scope(CcTest::isolate());
+
+  i::ScopedVector<char> source(1024);
+  // Call new is doing slack tracking for the first
+  // JSFunction::kGenerousAllocationCount allocations, and we can't find
+  // mementos during that time.
+  i::OS::SNPrintF(
+      source,
+      "var number_elements = %d;"
+      "var elements = new Array(number_elements);"
+      "function g() { this.a = 0; }"
+      "function f() {"
+      "  for (var i = 0; i < number_elements; i++) {"
+      "    elements[i] = new g();"
+      "  }"
+      "  return elements[number_elements - 1];"
+      "};"
+      "f(); gc();"
+      "f(); f();"
+      "%%OptimizeFunctionOnNextCall(f);"
+      "f();",
+      AllocationSite::kPretenureMinimumCreated +
+      JSFunction::kGenerousAllocationCount);
+
+  v8::Local<v8::Value> res = CompileRun(source.start());
+
+  Handle<JSObject> o =
+      v8::Utils::OpenHandle(*v8::Handle<v8::Object>::Cast(res));
   CHECK(CcTest::heap()->InOldPointerSpace(*o));
 }
 
@@ -2581,33 +2631,6 @@ TEST(OptimizedAllocationArrayLiterals) {
       v8::Utils::OpenHandle(*v8::Handle<v8::Object>::Cast(res));
 
   CHECK(CcTest::heap()->InNewSpace(o->elements()));
-}
-
-
-// Test global pretenuring call new.
-TEST(OptimizedPretenuringCallNew) {
-  i::FLAG_allow_natives_syntax = true;
-  i::FLAG_allocation_site_pretenuring = false;
-  i::FLAG_pretenuring_call_new = true;
-  CcTest::InitializeVM();
-  if (!CcTest::i_isolate()->use_crankshaft() || i::FLAG_always_opt) return;
-  if (i::FLAG_gc_global || i::FLAG_stress_compaction) return;
-  v8::HandleScope scope(CcTest::isolate());
-  CcTest::heap()->SetNewSpaceHighPromotionModeActive(true);
-
-  AlwaysAllocateScope always_allocate(CcTest::i_isolate());
-  v8::Local<v8::Value> res = CompileRun(
-      "function g() { this.a = 0; }"
-      "function f() {"
-      "  return new g();"
-      "};"
-      "f(); f(); f();"
-      "%OptimizeFunctionOnNextCall(f);"
-      "f();");
-
-  Handle<JSObject> o =
-      v8::Utils::OpenHandle(*v8::Handle<v8::Object>::Cast(res));
-  CHECK(CcTest::heap()->InOldPointerSpace(*o));
 }
 
 
@@ -3726,10 +3749,6 @@ TEST(DisableInlineAllocation) {
   CcTest::heap()->DisableInlineAllocation();
   CompileRun("run()");
 
-  // Run test with inline allocation disabled and pretenuring.
-  CcTest::heap()->SetNewSpaceHighPromotionModeActive(true);
-  CompileRun("run()");
-
   // Run test with inline allocation re-enabled.
   CcTest::heap()->EnableInlineAllocation();
   CompileRun("run()");
@@ -3793,7 +3812,7 @@ TEST(EnsureAllocationSiteDependentCodesProcessed) {
   // Now make sure that a gc should get rid of the function, even though we
   // still have the allocation site alive.
   for (int i = 0; i < 4; i++) {
-    heap->CollectAllGarbage(false);
+    heap->CollectAllGarbage(Heap::kNoGCFlags);
   }
 
   // The site still exists because of our global handle, but the code is no
@@ -4252,3 +4271,17 @@ TEST(ArrayShiftSweeping) {
   CHECK(page->WasSwept() ||
         Marking::IsBlack(Marking::MarkBitFrom(o->elements())));
 }
+
+
+#ifdef DEBUG
+TEST(PathTracer) {
+  // Type cast checks fail because the path tracer abuses the map for marking.
+  if (i::FLAG_enable_slow_asserts) return;
+  CcTest::InitializeVM();
+  v8::HandleScope scope(CcTest::isolate());
+
+  v8::Local<v8::Value> result = CompileRun("'abc'");
+  Handle<Object> o = v8::Utils::OpenHandle(*result);
+  CcTest::i_isolate()->heap()->TracePathToObject(*o);
+}
+#endif  // DEBUG

@@ -151,6 +151,9 @@ class HBasicBlock V8_FINAL : public ZoneObject {
     dominates_loop_successors_ = true;
   }
 
+  bool IsOrdered() const { return is_ordered_; }
+  void MarkAsOrdered() { is_ordered_ = true; }
+
   void MarkSuccEdgeUnreachable(int succ);
 
   inline Zone* zone() const;
@@ -207,6 +210,7 @@ class HBasicBlock V8_FINAL : public ZoneObject {
   bool is_reachable_ : 1;
   bool dominates_loop_successors_ : 1;
   bool is_osr_entry_ : 1;
+  bool is_ordered_ : 1;
 };
 
 
@@ -1291,6 +1295,10 @@ class HGraphBuilder {
 
   void AddSimulate(BailoutId id, RemovableSimulate removable = FIXED_SIMULATE);
 
+  // When initializing arrays, we'll unfold the loop if the number of elements
+  // is known at compile time and is <= kElementLoopUnrollThreshold.
+  static const int kElementLoopUnrollThreshold = 8;
+
  protected:
   virtual bool BuildGraph() = 0;
 
@@ -1384,18 +1392,9 @@ class HGraphBuilder {
 
   HInstruction* AddLoadStringInstanceType(HValue* string);
   HInstruction* AddLoadStringLength(HValue* string);
-  HStoreNamedField* AddStoreMapNoWriteBarrier(HValue* object, HValue* map) {
-    HStoreNamedField* store_map = Add<HStoreNamedField>(
-        object, HObjectAccess::ForMap(), map);
-    store_map->SkipWriteBarrier();
-    return store_map;
-  }
-  HStoreNamedField* AddStoreMapConstant(HValue* object, Handle<Map> map);
-  HStoreNamedField* AddStoreMapConstantNoWriteBarrier(HValue* object,
-                                                      Handle<Map> map) {
-    HStoreNamedField* store_map = AddStoreMapConstant(object, map);
-    store_map->SkipWriteBarrier();
-    return store_map;
+  HStoreNamedField* AddStoreMapConstant(HValue* object, Handle<Map> map) {
+    return Add<HStoreNamedField>(object, HObjectAccess::ForMap(),
+                                 Add<HConstant>(map));
   }
   HLoadNamedField* AddLoadElements(HValue* object,
                                    HValue* dependency = NULL);
@@ -2247,6 +2246,11 @@ class HOptimizedGraphBuilder : public HGraphBuilder, public AstVisitor {
   // Try to optimize fun.apply(receiver, arguments) pattern.
   bool TryCallApply(Call* expr);
 
+  bool TryHandleArrayCall(Call* expr, HValue* function);
+  bool TryHandleArrayCallNew(CallNew* expr, HValue* function);
+  void BuildArrayCall(Expression* expr, int arguments_count, HValue* function,
+                      Handle<AllocationSite> cell);
+
   HValue* ImplicitReceiverFor(HValue* function,
                               Handle<JSFunction> target);
 
@@ -2330,8 +2334,13 @@ class HOptimizedGraphBuilder : public HGraphBuilder, public AstVisitor {
       ElementsKind fixed_elements_kind,
       HValue* byte_length, HValue* length);
 
-  bool IsCallNewArrayInlineable(CallNew* expr);
-  void BuildInlinedCallNewArray(CallNew* expr);
+  Handle<JSFunction> array_function() {
+    return handle(isolate()->native_context()->array_function());
+  }
+
+  bool IsCallArrayInlineable(int argument_count, Handle<AllocationSite> site);
+  void BuildInlinedCallArray(Expression* expression, int argument_count,
+                             Handle<AllocationSite> site);
 
   class PropertyAccessInfo {
    public:

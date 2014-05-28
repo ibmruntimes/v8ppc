@@ -412,7 +412,6 @@ void MarkCompactCollector::CollectGarbage() {
   // Make sure that Prepare() has been called. The individual steps below will
   // update the state as they proceed.
   ASSERT(state_ == PREPARE_GC);
-  ASSERT(encountered_weak_collections_ == Smi::FromInt(0));
 
   MarkLiveObjects();
   ASSERT(heap_->incremental_marking()->IsStopped());
@@ -428,8 +427,6 @@ void MarkCompactCollector::CollectGarbage() {
 #endif
 
   SweepSpaces();
-
-  if (!FLAG_collect_maps) ReattachInitialMaps();
 
 #ifdef DEBUG
   if (FLAG_verify_native_context_separation) {
@@ -1486,49 +1483,6 @@ class MarkCompactMarkingVisitor
     return true;
   }
 
-  INLINE(static void BeforeVisitingSharedFunctionInfo(HeapObject* object)) {
-    SharedFunctionInfo* shared = SharedFunctionInfo::cast(object);
-    shared->BeforeVisitingPointers();
-  }
-
-  static void VisitWeakCollection(Map* map, HeapObject* object) {
-    MarkCompactCollector* collector = map->GetHeap()->mark_compact_collector();
-    JSWeakCollection* weak_collection =
-        reinterpret_cast<JSWeakCollection*>(object);
-
-    // Enqueue weak map in linked list of encountered weak maps.
-    if (weak_collection->next() == Smi::FromInt(0)) {
-      weak_collection->set_next(collector->encountered_weak_collections());
-      collector->set_encountered_weak_collections(weak_collection);
-    }
-
-    // Skip visiting the backing hash table containing the mappings.
-    int object_size = JSWeakCollection::BodyDescriptor::SizeOf(map, object);
-    BodyVisitorBase<MarkCompactMarkingVisitor>::IteratePointers(
-        map->GetHeap(),
-        object,
-        JSWeakCollection::BodyDescriptor::kStartOffset,
-        JSWeakCollection::kTableOffset);
-    BodyVisitorBase<MarkCompactMarkingVisitor>::IteratePointers(
-        map->GetHeap(),
-        object,
-        JSWeakCollection::kTableOffset + kPointerSize,
-        object_size);
-
-    // Mark the backing hash table without pushing it on the marking stack.
-    Object* table_object = weak_collection->table();
-    if (!table_object->IsHashTable()) return;
-    WeakHashTable* table = WeakHashTable::cast(table_object);
-    Object** table_slot =
-        HeapObject::RawField(weak_collection, JSWeakCollection::kTableOffset);
-    MarkBit table_mark = Marking::MarkBitFrom(table);
-    collector->RecordSlot(table_slot, table_slot, table);
-    if (!table_mark.Get()) collector->SetMark(table, table_mark);
-    // Recording the map slot can be skipped, because maps are not compacted.
-    collector->MarkObject(table->map(), Marking::MarkBitFrom(table->map()));
-    ASSERT(MarkCompactCollector::IsMarked(table->map()));
-  }
-
  private:
   template<int id>
   static inline void TrackObjectStatsAndVisit(Map* map, HeapObject* obj);
@@ -2089,6 +2043,7 @@ int MarkCompactCollector::DiscoverAndPromoteBlackObjectsOnPage(
                     object,
                     size,
                     NEW_SPACE);
+      heap()->IncrementSemiSpaceCopiedObjectSize(size);
     }
     *cells = 0;
   }
@@ -2545,23 +2500,6 @@ void MarkCompactCollector::ProcessMapCaches() {
 }
 
 
-void MarkCompactCollector::ReattachInitialMaps() {
-  HeapObjectIterator map_iterator(heap()->map_space());
-  for (HeapObject* obj = map_iterator.Next();
-       obj != NULL;
-       obj = map_iterator.Next()) {
-    Map* map = Map::cast(obj);
-
-    STATIC_ASSERT(LAST_TYPE == LAST_JS_RECEIVER_TYPE);
-    if (map->instance_type() < FIRST_JS_RECEIVER_TYPE) continue;
-
-    if (map->attached_to_shared_function_info()) {
-      JSFunction::cast(map->constructor())->shared()->AttachInitialMap(map);
-    }
-  }
-}
-
-
 void MarkCompactCollector::ClearNonLiveReferences() {
   // Iterate over the map space, setting map transitions that go from
   // a marked map to an unmarked map to null transitions.  This action
@@ -2575,13 +2513,6 @@ void MarkCompactCollector::ClearNonLiveReferences() {
     if (!map->CanTransition()) continue;
 
     MarkBit map_mark = Marking::MarkBitFrom(map);
-    if (map_mark.Get() && map->attached_to_shared_function_info()) {
-      // This map is used for inobject slack tracking and has been detached
-      // from SharedFunctionInfo during the mark phase.
-      // Since it survived the GC, reattach it now.
-      JSFunction::cast(map->constructor())->shared()->AttachInitialMap(map);
-    }
-
     ClearNonLivePrototypeTransitions(map);
     ClearNonLiveMapTransitions(map, map_mark);
 
@@ -2821,21 +2752,22 @@ void MarkCompactCollector::ProcessWeakCollections() {
   GCTracer::Scope gc_scope(tracer_, GCTracer::Scope::MC_WEAKCOLLECTION_PROCESS);
   Object* weak_collection_obj = encountered_weak_collections();
   while (weak_collection_obj != Smi::FromInt(0)) {
-    ASSERT(MarkCompactCollector::IsMarked(
-        HeapObject::cast(weak_collection_obj)));
     JSWeakCollection* weak_collection =
         reinterpret_cast<JSWeakCollection*>(weak_collection_obj);
-    ObjectHashTable* table = ObjectHashTable::cast(weak_collection->table());
-    Object** anchor = reinterpret_cast<Object**>(table->address());
-    for (int i = 0; i < table->Capacity(); i++) {
-      if (MarkCompactCollector::IsMarked(HeapObject::cast(table->KeyAt(i)))) {
-        Object** key_slot =
-            table->RawFieldOfElementAt(ObjectHashTable::EntryToIndex(i));
-        RecordSlot(anchor, key_slot, *key_slot);
-        Object** value_slot =
-            table->RawFieldOfElementAt(ObjectHashTable::EntryToValueIndex(i));
-        MarkCompactMarkingVisitor::MarkObjectByPointer(
-            this, anchor, value_slot);
+    ASSERT(MarkCompactCollector::IsMarked(weak_collection));
+    if (weak_collection->table()->IsHashTable()) {
+      ObjectHashTable* table = ObjectHashTable::cast(weak_collection->table());
+      Object** anchor = reinterpret_cast<Object**>(table->address());
+      for (int i = 0; i < table->Capacity(); i++) {
+        if (MarkCompactCollector::IsMarked(HeapObject::cast(table->KeyAt(i)))) {
+          Object** key_slot =
+              table->RawFieldOfElementAt(ObjectHashTable::EntryToIndex(i));
+          RecordSlot(anchor, key_slot, *key_slot);
+          Object** value_slot =
+              table->RawFieldOfElementAt(ObjectHashTable::EntryToValueIndex(i));
+          MarkCompactMarkingVisitor::MarkObjectByPointer(
+              this, anchor, value_slot);
+        }
       }
     }
     weak_collection_obj = weak_collection->next();
@@ -2847,18 +2779,20 @@ void MarkCompactCollector::ClearWeakCollections() {
   GCTracer::Scope gc_scope(tracer_, GCTracer::Scope::MC_WEAKCOLLECTION_CLEAR);
   Object* weak_collection_obj = encountered_weak_collections();
   while (weak_collection_obj != Smi::FromInt(0)) {
-    ASSERT(MarkCompactCollector::IsMarked(
-        HeapObject::cast(weak_collection_obj)));
     JSWeakCollection* weak_collection =
         reinterpret_cast<JSWeakCollection*>(weak_collection_obj);
-    ObjectHashTable* table = ObjectHashTable::cast(weak_collection->table());
-    for (int i = 0; i < table->Capacity(); i++) {
-      if (!MarkCompactCollector::IsMarked(HeapObject::cast(table->KeyAt(i)))) {
-        table->RemoveEntry(i);
+    ASSERT(MarkCompactCollector::IsMarked(weak_collection));
+    if (weak_collection->table()->IsHashTable()) {
+      ObjectHashTable* table = ObjectHashTable::cast(weak_collection->table());
+      for (int i = 0; i < table->Capacity(); i++) {
+        HeapObject* key = HeapObject::cast(table->KeyAt(i));
+        if (!MarkCompactCollector::IsMarked(key)) {
+          table->RemoveEntry(i);
+        }
       }
     }
     weak_collection_obj = weak_collection->next();
-    weak_collection->set_next(Smi::FromInt(0));
+    weak_collection->set_next(heap()->undefined_value());
   }
   set_encountered_weak_collections(Smi::FromInt(0));
 }
@@ -3128,8 +3062,7 @@ bool MarkCompactCollector::TryPromoteObject(HeapObject* object,
                   object,
                   object_size,
                   target_space->identity());
-    heap()->mark_compact_collector()->tracer()->
-        increment_promoted_objects_size(object_size);
+    heap()->IncrementPromotedObjectsSize(object_size);
     return true;
   }
 

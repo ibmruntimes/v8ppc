@@ -51,6 +51,21 @@ Handle<AccessorInfo> Accessors::MakeAccessor(
 }
 
 
+Handle<ExecutableAccessorInfo> Accessors::CloneAccessor(
+    Isolate* isolate,
+    Handle<ExecutableAccessorInfo> accessor) {
+  Factory* factory = isolate->factory();
+  Handle<ExecutableAccessorInfo> info = factory->NewExecutableAccessorInfo();
+  info->set_name(accessor->name());
+  info->set_flag(accessor->flag());
+  info->set_expected_receiver_type(accessor->expected_receiver_type());
+  info->set_getter(accessor->getter());
+  info->set_setter(accessor->setter());
+  info->set_data(accessor->data());
+  return info;
+}
+
+
 template <class C>
 static C* FindInstanceOf(Isolate* isolate, Object* obj) {
   for (Object* cur = obj; !cur->IsNull(); cur = cur->GetPrototype(isolate)) {
@@ -183,7 +198,7 @@ void Accessors::ArrayLengthSetter(
   // causes an infinite loop.
   if (!object->IsJSArray()) {
     MaybeHandle<Object> maybe_result =
-        JSObject::SetLocalPropertyIgnoreAttributes(
+        JSObject::SetOwnPropertyIgnoreAttributes(
             object, isolate->factory()->length_string(), value, NONE);
     maybe_result.Check();
     return;
@@ -790,7 +805,7 @@ static Handle<Object> SetFunctionPrototype(Isolate* isolate,
   if (!function->should_have_prototype()) {
     // Since we hit this accessor, object will have no prototype property.
     MaybeHandle<Object> maybe_result =
-        JSObject::SetLocalPropertyIgnoreAttributes(
+        JSObject::SetOwnPropertyIgnoreAttributes(
             receiver, isolate->factory()->prototype_string(), value, NONE);
     return maybe_result.ToHandleChecked();
   }
@@ -1124,22 +1139,33 @@ Handle<AccessorInfo> Accessors::FunctionArgumentsInfo(
 //
 
 
+static inline bool AllowAccessToFunction(Context* current_context,
+                                         JSFunction* function) {
+  return current_context->HasSameSecurityTokenAs(function->context());
+}
+
+
 class FrameFunctionIterator {
  public:
   FrameFunctionIterator(Isolate* isolate, const DisallowHeapAllocation& promise)
-      : frame_iterator_(isolate),
+      : isolate_(isolate),
+        frame_iterator_(isolate),
         functions_(2),
         index_(0) {
     GetFunctions();
   }
   JSFunction* next() {
-    if (functions_.length() == 0) return NULL;
-    JSFunction* next_function = functions_[index_];
-    index_--;
-    if (index_ < 0) {
-      GetFunctions();
+    while (true) {
+      if (functions_.length() == 0) return NULL;
+      JSFunction* next_function = functions_[index_];
+      index_--;
+      if (index_ < 0) {
+        GetFunctions();
+      }
+      // Skip functions from other origins.
+      if (!AllowAccessToFunction(isolate_->context(), next_function)) continue;
+      return next_function;
     }
-    return next_function;
   }
 
   // Iterate through functions until the first occurence of 'function'.
@@ -1164,6 +1190,7 @@ class FrameFunctionIterator {
     frame_iterator_.Advance();
     index_ = functions_.length() - 1;
   }
+  Isolate* isolate_;
   JavaScriptFrameIterator frame_iterator_;
   List<JSFunction*> functions_;
   int index_;
@@ -1209,6 +1236,10 @@ MaybeHandle<JSFunction> FindCaller(Isolate* isolate,
   // Change from ES5, which used to throw, see:
   // https://bugs.ecmascript.org/show_bug.cgi?id=310
   if (caller->shared()->strict_mode() == STRICT) {
+    return MaybeHandle<JSFunction>();
+  }
+  // Don't return caller from another security context.
+  if (!AllowAccessToFunction(isolate->context(), caller)) {
     return MaybeHandle<JSFunction>();
   }
   return Handle<JSFunction>(caller);

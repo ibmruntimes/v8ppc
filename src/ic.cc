@@ -207,7 +207,7 @@ static void LookupForRead(Handle<Object> object,
       return;
     }
 
-    holder->LocalLookupRealNamedProperty(name, lookup);
+    holder->LookupOwnRealNamedProperty(name, lookup);
     if (lookup->IsFound()) {
       ASSERT(!lookup->IsInterceptor());
       return;
@@ -285,7 +285,7 @@ bool IC::TryRemoveInvalidPrototypeDependentStub(Handle<Object> receiver,
   if (receiver->IsGlobalObject()) {
     LookupResult lookup(isolate());
     GlobalObject* global = GlobalObject::cast(*receiver);
-    global->LocalLookupRealNamedProperty(name, &lookup);
+    global->LookupOwnRealNamedProperty(name, &lookup);
     if (!lookup.IsFound()) return false;
     PropertyCell* cell = global->GetPropertyCell(&lookup);
     return cell->type()->IsConstant();
@@ -501,7 +501,6 @@ void CallIC::Clear(Isolate* isolate,
                    Code* target,
                    ConstantPoolArray* constant_pool) {
   // Currently, CallIC doesn't have state changes.
-  ASSERT(target->ic_state() == v8::internal::GENERIC);
 }
 
 
@@ -1186,7 +1185,7 @@ static bool LookupForWrite(Handle<JSObject> receiver,
   receiver->Lookup(name, lookup);
   if (lookup->IsFound()) {
     if (lookup->IsInterceptor() && !HasInterceptorSetter(lookup->holder())) {
-      receiver->LocalLookupRealNamedProperty(name, lookup);
+      receiver->LookupOwnRealNamedProperty(name, lookup);
       if (!lookup->IsFound()) return false;
     }
 
@@ -1344,7 +1343,7 @@ void CallIC::State::Print(StringStream* stream) const {
 Handle<Code> CallIC::initialize_stub(Isolate* isolate,
                                      int argc,
                                      CallType call_type) {
-  CallICStub stub(isolate, State::DefaultCallState(argc, call_type));
+  CallICStub stub(isolate, State(argc, call_type));
   Handle<Code> code = stub.GetCode();
   return code;
 }
@@ -1794,6 +1793,15 @@ MaybeHandle<Object> KeyedStoreIC::Store(Handle<Object> object,
     }
   }
 
+  if (store_handle.is_null()) {
+    ASSIGN_RETURN_ON_EXCEPTION(
+        isolate(),
+        store_handle,
+        Runtime::SetObjectProperty(
+            isolate(), object, key, value, NONE, strict_mode()),
+        Object);
+  }
+
   if (!is_target_set()) {
     if (*stub == *generic_stub()) {
       TRACE_GENERIC_IC(isolate(), "KeyedStoreIC", "set generic");
@@ -1803,15 +1811,7 @@ MaybeHandle<Object> KeyedStoreIC::Store(Handle<Object> object,
     TRACE_IC("StoreIC", key);
   }
 
-  if (!store_handle.is_null()) return store_handle;
-  Handle<Object> result;
-  ASSIGN_RETURN_ON_EXCEPTION(
-      isolate(),
-      result,
-      Runtime::SetObjectProperty(
-          isolate(), object, key, value,  NONE, strict_mode()),
-      Object);
-  return result;
+  return store_handle;
 }
 
 
@@ -1829,6 +1829,52 @@ ExtraICState CallIC::State::GetExtraICState() const {
 }
 
 
+bool CallIC::DoCustomHandler(Handle<Object> receiver,
+                             Handle<Object> function,
+                             Handle<FixedArray> vector,
+                             Handle<Smi> slot,
+                             const State& state) {
+  ASSERT(FLAG_use_ic && function->IsJSFunction());
+
+  // Are we the array function?
+  Handle<JSFunction> array_function = Handle<JSFunction>(
+      isolate()->context()->native_context()->array_function(), isolate());
+  if (array_function.is_identical_to(Handle<JSFunction>::cast(function))) {
+    // Alter the slot.
+    Handle<AllocationSite> new_site = isolate()->factory()->NewAllocationSite();
+    vector->set(slot->value(), *new_site);
+    CallIC_ArrayStub stub(isolate(), state);
+    set_target(*stub.GetCode());
+    Handle<String> name;
+    if (array_function->shared()->name()->IsString()) {
+      name = Handle<String>(String::cast(array_function->shared()->name()),
+                            isolate());
+    }
+
+    TRACE_IC("CallIC (Array call)", name);
+    return true;
+  }
+  return false;
+}
+
+
+void CallIC::PatchMegamorphic(Handle<FixedArray> vector,
+                              Handle<Smi> slot) {
+  State state(target()->extra_ic_state());
+
+  // We are going generic.
+  vector->set(slot->value(),
+              *TypeFeedbackInfo::MegamorphicSentinel(isolate()),
+              SKIP_WRITE_BARRIER);
+
+  CallICStub stub(isolate(), state);
+  Handle<Code> code = stub.GetCode();
+  set_target(*code);
+
+  TRACE_GENERIC_IC(isolate(), "CallIC", "megamorphic");
+}
+
+
 void CallIC::HandleMiss(Handle<Object> receiver,
                         Handle<Object> function,
                         Handle<FixedArray> vector,
@@ -1838,16 +1884,22 @@ void CallIC::HandleMiss(Handle<Object> receiver,
 
   if (feedback->IsJSFunction() || !function->IsJSFunction()) {
     // We are going generic.
-    ASSERT(!function->IsJSFunction() || *function != feedback);
-
     vector->set(slot->value(),
                 *TypeFeedbackInfo::MegamorphicSentinel(isolate()),
                 SKIP_WRITE_BARRIER);
+
     TRACE_GENERIC_IC(isolate(), "CallIC", "megamorphic");
   } else {
     // If we came here feedback must be the uninitialized sentinel,
     // and we are going monomorphic.
     ASSERT(feedback == *TypeFeedbackInfo::UninitializedSentinel(isolate()));
+
+    // Do we want to install a custom handler?
+    if (FLAG_use_ic &&
+        DoCustomHandler(receiver, function, vector, slot, state)) {
+      return;
+    }
+
     Handle<JSFunction> js_function = Handle<JSFunction>::cast(function);
     Handle<Object> name(js_function->shared()->name(), isolate());
     TRACE_IC("CallIC", name);
@@ -1873,6 +1925,19 @@ RUNTIME_FUNCTION(CallIC_Miss) {
   Handle<FixedArray> vector = args.at<FixedArray>(2);
   Handle<Smi> slot = args.at<Smi>(3);
   ic.HandleMiss(receiver, function, vector, slot);
+  return *function;
+}
+
+
+RUNTIME_FUNCTION(CallIC_Customization_Miss) {
+  HandleScope scope(isolate);
+  ASSERT(args.length() == 4);
+  // A miss on a custom call ic always results in going megamorphic.
+  CallIC ic(isolate);
+  Handle<Object> function = args.at<Object>(1);
+  Handle<FixedArray> vector = args.at<FixedArray>(2);
+  Handle<Smi> slot = args.at<Smi>(3);
+  ic.PatchMegamorphic(vector, slot);
   return *function;
 }
 
@@ -1964,7 +2029,7 @@ RUNTIME_FUNCTION(StoreIC_ArrayLength) {
 #ifdef DEBUG
   // The length property has to be a writable callback property.
   LookupResult debug_lookup(isolate);
-  receiver->LocalLookup(isolate->factory()->length_string(), &debug_lookup);
+  receiver->LookupOwn(isolate->factory()->length_string(), &debug_lookup);
   ASSERT(debug_lookup.IsPropertyCallbacks() && !debug_lookup.IsReadOnly());
 #endif
 

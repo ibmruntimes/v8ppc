@@ -89,7 +89,6 @@ Heap::Heap()
 #ifdef DEBUG
       allocation_timeout_(0),
 #endif  // DEBUG
-      new_space_high_promotion_mode_active_(false),
       old_generation_allocation_limit_(kMinimumOldGenerationAllocationLimit),
       size_of_old_gen_at_last_old_space_gc_(0),
       external_allocation_limit_(0),
@@ -102,12 +101,11 @@ Heap::Heap()
       gc_safe_size_of_old_object_(NULL),
       total_regexp_code_generated_(0),
       tracer_(NULL),
-      young_survivors_after_last_gc_(0),
       high_survival_rate_period_length_(0),
-      low_survival_rate_period_length_(0),
-      survival_rate_(0),
-      previous_survival_rate_trend_(Heap::STABLE),
-      survival_rate_trend_(Heap::STABLE),
+      promoted_objects_size_(0),
+      promotion_rate_(0),
+      semi_space_copied_object_size_(0),
+      semi_space_copied_rate_(0),
       max_gc_pause_(0.0),
       total_gc_time_ms_(0.0),
       max_alive_after_gc_(0),
@@ -426,6 +424,10 @@ void Heap::GarbageCollectionPrologue() {
 #endif
   }
 
+  // Reset GC statistics.
+  promoted_objects_size_ = 0;
+  semi_space_copied_object_size_ = 0;
+
   UpdateMaximumCommitted();
 
 #ifdef DEBUG
@@ -697,6 +699,10 @@ void Heap::GarbageCollectionEpilogue() {
   ReportStatisticsAfterGC();
 #endif  // DEBUG
   isolate_->debug()->AfterGarbageCollection();
+
+  // Remember the last top pointer so that we can later find out
+  // whether we allocated in new space since the last GC.
+  new_space_top_after_last_gc_ = new_space()->top();
 }
 
 
@@ -861,9 +867,7 @@ void Heap::MoveElements(FixedArray* array,
 
   ASSERT(array->map() != fixed_cow_array_map());
   Object** dst_objects = array->data_start() + dst_index;
-  OS::MemMove(dst_objects,
-              array->data_start() + src_index,
-              len * kPointerSize);
+  MemMove(dst_objects, array->data_start() + src_index, len * kPointerSize);
   if (!InNewSpace(array)) {
     for (int i = 0; i < len; i++) {
       // TODO(hpayer): check store buffer for entries
@@ -1008,36 +1012,24 @@ void Heap::ClearNormalizedMapCaches() {
 }
 
 
-void Heap::UpdateSurvivalRateTrend(int start_new_space_size) {
+void Heap::UpdateSurvivalStatistics(int start_new_space_size) {
   if (start_new_space_size == 0) return;
 
-  double survival_rate =
-      (static_cast<double>(young_survivors_after_last_gc_) * 100) /
-      start_new_space_size;
+  promotion_rate_ =
+        (static_cast<double>(promoted_objects_size_) /
+            static_cast<double>(start_new_space_size) * 100);
+
+  semi_space_copied_rate_ =
+        (static_cast<double>(semi_space_copied_object_size_) /
+            static_cast<double>(start_new_space_size) * 100);
+
+  double survival_rate = promotion_rate_ + semi_space_copied_rate_;
 
   if (survival_rate > kYoungSurvivalRateHighThreshold) {
     high_survival_rate_period_length_++;
   } else {
     high_survival_rate_period_length_ = 0;
   }
-
-  if (survival_rate < kYoungSurvivalRateLowThreshold) {
-    low_survival_rate_period_length_++;
-  } else {
-    low_survival_rate_period_length_ = 0;
-  }
-
-  double survival_rate_diff = survival_rate_ - survival_rate;
-
-  if (survival_rate_diff > kYoungSurvivalRateAllowedDeviation) {
-    set_survival_rate_trend(DECREASING);
-  } else if (survival_rate_diff < -kYoungSurvivalRateAllowedDeviation) {
-    set_survival_rate_trend(INCREASING);
-  } else {
-    set_survival_rate_trend(STABLE);
-  }
-
-  survival_rate_ = survival_rate;
 }
 
 bool Heap::PerformGarbageCollection(
@@ -1097,51 +1089,7 @@ bool Heap::PerformGarbageCollection(
     tracer_ = NULL;
   }
 
-  UpdateSurvivalRateTrend(start_new_space_size);
-
-  if (!new_space_high_promotion_mode_active_ &&
-      new_space_.Capacity() == new_space_.MaximumCapacity() &&
-      IsStableOrIncreasingSurvivalTrend() &&
-      IsHighSurvivalRate()) {
-    // Stable high survival rates even though young generation is at
-    // maximum capacity indicates that most objects will be promoted.
-    // To decrease scavenger pauses and final mark-sweep pauses, we
-    // have to limit maximal capacity of the young generation.
-    SetNewSpaceHighPromotionModeActive(true);
-    if (FLAG_trace_gc) {
-      PrintPID("Limited new space size due to high promotion rate: %d MB\n",
-               new_space_.InitialCapacity() / MB);
-    }
-    // The high promotion mode is our indicator to turn on pretenuring. We have
-    // to deoptimize all optimized code in global pretenuring mode and all
-    // code which should be tenured in local pretenuring mode.
-    if (FLAG_pretenuring) {
-      if (!FLAG_allocation_site_pretenuring) {
-        isolate_->stack_guard()->RequestFullDeopt();
-      }
-    }
-  } else if (new_space_high_promotion_mode_active_ &&
-      IsStableOrDecreasingSurvivalTrend() &&
-      IsLowSurvivalRate()) {
-    // Decreasing low survival rates might indicate that the above high
-    // promotion mode is over and we should allow the young generation
-    // to grow again.
-    SetNewSpaceHighPromotionModeActive(false);
-    if (FLAG_trace_gc) {
-      PrintPID("Unlimited new space size due to low promotion rate: %d MB\n",
-               new_space_.MaximumCapacity() / MB);
-    }
-    // Trigger deoptimization here to turn off global pretenuring as soon as
-    // possible.
-    if (FLAG_pretenuring && !FLAG_allocation_site_pretenuring) {
-      isolate_->stack_guard()->RequestFullDeopt();
-    }
-  }
-
-  if (new_space_high_promotion_mode_active_ &&
-      new_space_.Capacity() > new_space_.InitialCapacity()) {
-    new_space_.Shrink();
-  }
+  UpdateSurvivalStatistics(start_new_space_size);
 
   isolate_->counters()->objs_since_last_young()->Set(0);
 
@@ -1342,8 +1290,7 @@ static void VerifyNonPointerSpacePointers(Heap* heap) {
 
 void Heap::CheckNewSpaceExpansionCriteria() {
   if (new_space_.Capacity() < new_space_.MaximumCapacity() &&
-      survived_since_last_expansion_ > new_space_.Capacity() &&
-      !new_space_high_promotion_mode_active_) {
+      survived_since_last_expansion_ > new_space_.Capacity()) {
     // Grow the size of new space if there is room to grow, enough data
     // has survived scavenge since the last expansion and we are not in
     // high promotion mode.
@@ -1909,11 +1856,7 @@ class ScavengingVisitor : public StaticVisitorBase {
                     &ObjectEvacuationStrategy<POINTER_OBJECT>::
                         template VisitSpecialized<SharedFunctionInfo::kSize>);
 
-    table_.Register(kVisitJSWeakMap,
-                    &ObjectEvacuationStrategy<POINTER_OBJECT>::
-                    Visit);
-
-    table_.Register(kVisitJSWeakSet,
+    table_.Register(kVisitJSWeakCollection,
                     &ObjectEvacuationStrategy<POINTER_OBJECT>::
                     Visit);
 
@@ -2062,7 +2005,7 @@ class ScavengingVisitor : public StaticVisitorBase {
           }
         }
 
-        heap->tracer()->increment_promoted_objects_size(object_size);
+        heap->IncrementPromotedObjectsSize(object_size);
         return;
       }
     }
@@ -2081,6 +2024,7 @@ class ScavengingVisitor : public StaticVisitorBase {
     // buffer.
     *slot = target;
     MigrateObject(heap, object, target, object_size);
+    heap->IncrementSemiSpaceCopiedObjectSize(object_size);
     return;
   }
 
@@ -2903,9 +2847,9 @@ void Heap::CreateInitialObjects() {
   set_observation_state(*factory->NewJSObjectFromMap(
       factory->NewMap(JS_OBJECT_TYPE, JSObject::kHeaderSize)));
 
-  // Allocate object to hold object microtask state.
-  set_microtask_state(*factory->NewJSObjectFromMap(
-      factory->NewMap(JS_OBJECT_TYPE, JSObject::kHeaderSize)));
+  // Microtask queue uses the empty fixed array as a sentinel for "empty".
+  // Number of queued microtasks stored in Isolate::pending_microtask_count().
+  set_microtask_queue(empty_fixed_array());
 
   set_frozen_symbol(*factory->NewPrivateSymbol());
   set_nonexistent_symbol(*factory->NewPrivateSymbol());
@@ -3632,7 +3576,7 @@ void Heap::InitializeJSObjectFromMap(JSObject* obj,
   // so that object accesses before the constructor completes (e.g. in the
   // debugger) will not cause a crash.
   if (map->constructor()->IsJSFunction() &&
-      JSFunction::cast(map->constructor())->shared()->
+      JSFunction::cast(map->constructor())->
           IsInobjectSlackTrackingInProgress()) {
     // We might want to shrink the object later.
     ASSERT(obj->GetInternalFieldCount() == 0);
@@ -3851,7 +3795,7 @@ static inline void WriteOneByteData(Vector<const char> vector,
                                     int len) {
   // Only works for ascii.
   ASSERT(vector.length() == len);
-  OS::MemCopy(chars, vector.start(), len);
+  MemCopy(chars, vector.start(), len);
 }
 
 static inline void WriteTwoByteData(Vector<const char> vector,
@@ -4320,14 +4264,15 @@ STRUCT_LIST(MAKE_CASE)
 
 bool Heap::IsHeapIterable() {
   return (!old_pointer_space()->was_swept_conservatively() &&
-          !old_data_space()->was_swept_conservatively());
+          !old_data_space()->was_swept_conservatively() &&
+          new_space_top_after_last_gc_ == new_space()->top());
 }
 
 
-void Heap::EnsureHeapIsIterable() {
+void Heap::MakeHeapIterable() {
   ASSERT(AllowHeapAllocation::IsAllowed());
   if (!IsHeapIterable()) {
-    CollectAllGarbage(kMakeHeapIterableMask, "Heap::EnsureHeapIsIterable");
+    CollectAllGarbage(kMakeHeapIterableMask, "Heap::MakeHeapIterable");
   }
   ASSERT(IsHeapIterable());
 }
@@ -4388,7 +4333,7 @@ bool Heap::IdleNotification(int hint) {
     return false;
   }
 
-  if (!FLAG_incremental_marking || Serializer::enabled(isolate_)) {
+  if (!FLAG_incremental_marking || isolate_->serializer_enabled()) {
     return IdleGlobalGC();
   }
 
@@ -5051,9 +4996,8 @@ bool Heap::ConfigureHeap(int max_semi_space_size,
   initial_semispace_size_ = Min(initial_semispace_size_, max_semi_space_size_);
 
   // The external allocation limit should be below 256 MB on all architectures
-  // to avoid unnecessary low memory notifications, as that is the threshold
-  // for some embedders.
-  external_allocation_limit_ = 12 * max_semi_space_size_;
+  // to avoid that resource-constrained embedders run low on memory.
+  external_allocation_limit_ = 192 * MB;
   ASSERT(external_allocation_limit_ <= 256 * MB);
 
   // The old generation is paged and needs at least one page for each space.
@@ -5208,6 +5152,7 @@ bool Heap::SetUp() {
   if (!new_space_.SetUp(reserved_semispace_size_, max_semi_space_size_)) {
     return false;
   }
+  new_space_top_after_last_gc_ = new_space()->top();
 
   // Initialize old pointer space.
   old_pointer_space_ =
@@ -5731,7 +5676,9 @@ class UnreachableObjectsFilter : public HeapObjectsFilter {
 
 
 HeapIterator::HeapIterator(Heap* heap)
-    : heap_(heap),
+    : make_heap_iterable_helper_(heap),
+      no_heap_allocation_(),
+      heap_(heap),
       filtering_(HeapIterator::kNoFiltering),
       filter_(NULL) {
   Init();
@@ -5740,7 +5687,9 @@ HeapIterator::HeapIterator(Heap* heap)
 
 HeapIterator::HeapIterator(Heap* heap,
                            HeapIterator::HeapObjectsFiltering filtering)
-    : heap_(heap),
+    : make_heap_iterable_helper_(heap),
+      no_heap_allocation_(),
+      heap_(heap),
       filtering_(filtering),
       filter_(NULL) {
   Init();
@@ -6041,7 +5990,6 @@ GCTracer::GCTracer(Heap* heap,
       full_gc_count_(0),
       allocated_since_last_gc_(0),
       spent_in_mutator_(0),
-      promoted_objects_size_(0),
       nodes_died_in_new_space_(0),
       nodes_copied_in_new_space_(0),
       nodes_promoted_(0),
@@ -6188,11 +6136,14 @@ GCTracer::~GCTracer() {
     PrintF("holes_size_after=%" V8_PTR_PREFIX "d ", CountTotalHolesSize(heap_));
 
     PrintF("allocated=%" V8_PTR_PREFIX "d ", allocated_since_last_gc_);
-    PrintF("promoted=%" V8_PTR_PREFIX "d ", promoted_objects_size_);
+    PrintF("promoted=%" V8_PTR_PREFIX "d ", heap_->promoted_objects_size_);
+    PrintF("semi_space_copied=%" V8_PTR_PREFIX "d ",
+        heap_->semi_space_copied_object_size_);
     PrintF("nodes_died_in_new=%d ", nodes_died_in_new_space_);
     PrintF("nodes_copied_in_new=%d ", nodes_copied_in_new_space_);
     PrintF("nodes_promoted=%d ", nodes_promoted_);
-    PrintF("survived=%.1f%% ", heap_->survival_rate_);
+    PrintF("promotion_rate=%.1f%% ", heap_->promotion_rate_);
+    PrintF("semi_space_copy_rate=%.1f%% ", heap_->semi_space_copied_rate_);
 
     if (collector_ == SCAVENGER) {
       PrintF("stepscount=%d ", steps_count_since_last_gc_);
@@ -6480,8 +6431,8 @@ void Heap::CheckpointObjectStats() {
   CODE_AGE_LIST_COMPLETE(ADJUST_LAST_TIME_OBJECT_COUNT)
 #undef ADJUST_LAST_TIME_OBJECT_COUNT
 
-  OS::MemCopy(object_counts_last_time_, object_counts_, sizeof(object_counts_));
-  OS::MemCopy(object_sizes_last_time_, object_sizes_, sizeof(object_sizes_));
+  MemCopy(object_counts_last_time_, object_counts_, sizeof(object_counts_));
+  MemCopy(object_sizes_last_time_, object_sizes_, sizeof(object_sizes_));
   ClearObjectStats();
 }
 

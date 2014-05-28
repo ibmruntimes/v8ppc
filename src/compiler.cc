@@ -111,7 +111,7 @@ void CompilationInfo::Initialize(Isolate* isolate,
   mode_ = mode;
   abort_due_to_dependency_ = false;
   if (script_->type()->value() == Script::TYPE_NATIVE) MarkAsNative();
-  if (isolate_->debugger()->is_active()) MarkAsDebug();
+  if (isolate_->debug()->is_active()) MarkAsDebug();
 
   if (!shared_info_.is_null()) {
     ASSERT(strict_mode() == SLOPPY);
@@ -456,6 +456,20 @@ OptimizedCompileJob::Status OptimizedCompileJob::GenerateCode() {
     if (optimized_code.is_null()) {
       if (info()->bailout_reason() == kNoReason) {
         info_->set_bailout_reason(kCodeGenerationFailed);
+      } else if (info()->bailout_reason() == kMapBecameDeprecated) {
+        if (FLAG_trace_opt) {
+          PrintF("[aborted optimizing ");
+          info()->closure()->ShortPrint();
+          PrintF(" because a map became deprecated]\n");
+        }
+        return AbortOptimization();
+      } else if (info()->bailout_reason() == kMapBecameUnstable) {
+        if (FLAG_trace_opt) {
+          PrintF("[aborted optimizing ");
+          info()->closure()->ShortPrint();
+          PrintF(" because a map became unstable]\n");
+        }
+        return AbortOptimization();
       }
       return AbortAndDisableOptimization();
     }
@@ -508,9 +522,6 @@ void OptimizedCompileJob::RecordOptimizationStats() {
 // Sets the expected number of properties based on estimate from compiler.
 void SetExpectedNofPropertiesFromEstimate(Handle<SharedFunctionInfo> shared,
                                           int estimate) {
-  // See the comment in SetExpectedNofProperties.
-  if (shared->live_objects_may_exist()) return;
-
   // If no properties are added in the constructor, they are more likely
   // to be added later.
   if (estimate == 0) estimate = 2;
@@ -518,7 +529,7 @@ void SetExpectedNofPropertiesFromEstimate(Handle<SharedFunctionInfo> shared,
   // TODO(yangguo): check whether those heuristics are still up-to-date.
   // We do not shrink objects that go into a snapshot (yet), so we adjust
   // the estimate conservatively.
-  if (Serializer::enabled(shared->GetIsolate())) {
+  if (shared->GetIsolate()->serializer_enabled()) {
     estimate += 2;
   } else if (FLAG_clever_optimizations) {
     // Inobject slack tracking will reclaim redundant inobject space later,
@@ -761,7 +772,7 @@ static Handle<SharedFunctionInfo> CompileToplevel(CompilationInfo* info) {
   FixedArray* array = isolate->native_context()->embedder_data();
   script->set_context_data(array->get(0));
 
-  isolate->debugger()->OnBeforeCompile(script);
+  isolate->debug()->OnBeforeCompile(script);
 
   ASSERT(info->is_eval() || info->is_global());
 
@@ -838,7 +849,7 @@ static Handle<SharedFunctionInfo> CompileToplevel(CompilationInfo* info) {
     live_edit_tracker.RecordFunctionInfo(result, lit, info->zone());
   }
 
-  isolate->debugger()->OnAfterCompile(script, Debugger::NO_AFTER_COMPILE_FLAGS);
+  isolate->debug()->OnAfterCompile(script, Debug::NO_AFTER_COMPILE_FLAGS);
 
   return result;
 }

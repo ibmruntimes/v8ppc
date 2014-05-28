@@ -95,8 +95,7 @@ class LCodeGen: public LCodeGenBase {
   enum IntegerSignedness { SIGNED_INT32, UNSIGNED_INT32 };
   void DoDeferredNumberTagIU(LInstruction* instr,
                              LOperand* value,
-                             LOperand* temp1,
-                             LOperand* temp2,
+                             LOperand* temp,
                              IntegerSignedness signedness);
 
   void DoDeferredTaggedToI(LTaggedToI* instr, Label* done);
@@ -241,8 +240,7 @@ class LCodeGen: public LCodeGenBase {
                                 LOperand* key,
                                 Representation key_representation,
                                 ElementsKind elements_kind,
-                                uint32_t offset,
-                                uint32_t additional_index = 0);
+                                uint32_t base_offset);
 
   Operand BuildSeqStringOperand(Register string,
                                 LOperand* index,

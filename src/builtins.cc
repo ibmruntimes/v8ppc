@@ -172,15 +172,11 @@ BUILTIN(EmptyFunction) {
 }
 
 
-static void MoveDoubleElements(FixedDoubleArray* dst,
-                               int dst_index,
-                               FixedDoubleArray* src,
-                               int src_index,
-                               int len) {
+static void MoveDoubleElements(FixedDoubleArray* dst, int dst_index,
+                               FixedDoubleArray* src, int src_index, int len) {
   if (len == 0) return;
-  OS::MemMove(dst->data_start() + dst_index,
-              src->data_start() + src_index,
-              len * kDoubleSize);
+  MemMove(dst->data_start() + dst_index, src->data_start() + src_index,
+          len * kDoubleSize);
 }
 
 
@@ -382,15 +378,17 @@ BUILTIN(ArrayPush) {
   }
 
   Handle<JSArray> array = Handle<JSArray>::cast(receiver);
+  int len = Smi::cast(array->length())->value();
+  int to_add = args.length() - 1;
+  if (to_add > 0 && JSArray::WouldChangeReadOnlyLength(array, len + to_add)) {
+    return CallJsBuiltin(isolate, "ArrayPush", args);
+  }
   ASSERT(!array->map()->is_observed());
 
   ElementsKind kind = array->GetElementsKind();
 
   if (IsFastSmiOrObjectElementsKind(kind)) {
     Handle<FixedArray> elms = Handle<FixedArray>::cast(elms_obj);
-
-    int len = Smi::cast(array->length())->value();
-    int to_add = args.length() - 1;
     if (to_add == 0) {
       return Smi::FromInt(len);
     }
@@ -429,10 +427,7 @@ BUILTIN(ArrayPush) {
     array->set_length(Smi::FromInt(new_length));
     return Smi::FromInt(new_length);
   } else {
-    int len = Smi::cast(array->length())->value();
     int elms_len = elms_obj->length();
-
-    int to_add = args.length() - 1;
     if (to_add == 0) {
       return Smi::FromInt(len);
     }
@@ -578,14 +573,18 @@ BUILTIN(ArrayUnshift) {
   if (!array->HasFastSmiOrObjectElements()) {
     return CallJsBuiltin(isolate, "ArrayUnshift", args);
   }
-  Handle<FixedArray> elms = Handle<FixedArray>::cast(elms_obj);
-
   int len = Smi::cast(array->length())->value();
   int to_add = args.length() - 1;
   int new_length = len + to_add;
   // Currently fixed arrays cannot grow too big, so
   // we should never hit this case.
   ASSERT(to_add <= (Smi::kMaxValue - len));
+
+  if (to_add > 0 && JSArray::WouldChangeReadOnlyLength(array, len + to_add)) {
+    return CallJsBuiltin(isolate, "ArrayUnshift", args);
+  }
+
+  Handle<FixedArray> elms = Handle<FixedArray>::cast(elms_obj);
 
   JSObject::EnsureCanContainElements(array, &args, 1, to_add,
                                      DONT_ALLOW_DOUBLE_ELEMENTS);
@@ -1068,13 +1067,20 @@ BUILTIN(ArrayConcat) {
 
 
 // -----------------------------------------------------------------------------
-// Strict mode poison pills
+// Generator and strict mode poison pills
 
 
 BUILTIN(StrictModePoisonPill) {
   HandleScope scope(isolate);
   return isolate->Throw(*isolate->factory()->NewTypeError(
       "strict_poison_pill", HandleVector<Object>(NULL, 0)));
+}
+
+
+BUILTIN(GeneratorPoisonPill) {
+  HandleScope scope(isolate);
+  return isolate->Throw(*isolate->factory()->NewTypeError(
+      "generator_poison_pill", HandleVector<Object>(NULL, 0)));
 }
 
 
@@ -1421,68 +1427,68 @@ static void Generate_KeyedStoreIC_SloppyArguments(MacroAssembler* masm) {
 
 
 static void Generate_CallICStub_DebugBreak(MacroAssembler* masm) {
-  Debug::GenerateCallICStubDebugBreak(masm);
+  DebugCodegen::GenerateCallICStubDebugBreak(masm);
 }
 
 
 static void Generate_LoadIC_DebugBreak(MacroAssembler* masm) {
-  Debug::GenerateLoadICDebugBreak(masm);
+  DebugCodegen::GenerateLoadICDebugBreak(masm);
 }
 
 
 static void Generate_StoreIC_DebugBreak(MacroAssembler* masm) {
-  Debug::GenerateStoreICDebugBreak(masm);
+  DebugCodegen::GenerateStoreICDebugBreak(masm);
 }
 
 
 static void Generate_KeyedLoadIC_DebugBreak(MacroAssembler* masm) {
-  Debug::GenerateKeyedLoadICDebugBreak(masm);
+  DebugCodegen::GenerateKeyedLoadICDebugBreak(masm);
 }
 
 
 static void Generate_KeyedStoreIC_DebugBreak(MacroAssembler* masm) {
-  Debug::GenerateKeyedStoreICDebugBreak(masm);
+  DebugCodegen::GenerateKeyedStoreICDebugBreak(masm);
 }
 
 
 static void Generate_CompareNilIC_DebugBreak(MacroAssembler* masm) {
-  Debug::GenerateCompareNilICDebugBreak(masm);
+  DebugCodegen::GenerateCompareNilICDebugBreak(masm);
 }
 
 
 static void Generate_Return_DebugBreak(MacroAssembler* masm) {
-  Debug::GenerateReturnDebugBreak(masm);
+  DebugCodegen::GenerateReturnDebugBreak(masm);
 }
 
 
 static void Generate_CallFunctionStub_DebugBreak(MacroAssembler* masm) {
-  Debug::GenerateCallFunctionStubDebugBreak(masm);
+  DebugCodegen::GenerateCallFunctionStubDebugBreak(masm);
 }
 
 
 static void Generate_CallConstructStub_DebugBreak(MacroAssembler* masm) {
-  Debug::GenerateCallConstructStubDebugBreak(masm);
+  DebugCodegen::GenerateCallConstructStubDebugBreak(masm);
 }
 
 
 static void Generate_CallConstructStub_Recording_DebugBreak(
     MacroAssembler* masm) {
-  Debug::GenerateCallConstructStubRecordDebugBreak(masm);
+  DebugCodegen::GenerateCallConstructStubRecordDebugBreak(masm);
 }
 
 
 static void Generate_Slot_DebugBreak(MacroAssembler* masm) {
-  Debug::GenerateSlotDebugBreak(masm);
+  DebugCodegen::GenerateSlotDebugBreak(masm);
 }
 
 
 static void Generate_PlainReturn_LiveEdit(MacroAssembler* masm) {
-  Debug::GeneratePlainReturnLiveEdit(masm);
+  DebugCodegen::GeneratePlainReturnLiveEdit(masm);
 }
 
 
 static void Generate_FrameDropper_LiveEdit(MacroAssembler* masm) {
-  Debug::GenerateFrameDropperLiveEdit(masm);
+  DebugCodegen::GenerateFrameDropperLiveEdit(masm);
 }
 
 

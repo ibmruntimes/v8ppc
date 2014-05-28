@@ -622,9 +622,9 @@ class HCheckTable : public ZoneObject {
       int L = cursor_;
       int R = size_ - cursor_;
 
-      OS::MemMove(&tmp_entries[0], &entries_[0], L * sizeof(HCheckTableEntry));
-      OS::MemMove(&entries_[0], &entries_[L], R * sizeof(HCheckTableEntry));
-      OS::MemMove(&entries_[R], &tmp_entries[0], L * sizeof(HCheckTableEntry));
+      MemMove(&tmp_entries[0], &entries_[0], L * sizeof(HCheckTableEntry));
+      MemMove(&entries_[0], &entries_[L], R * sizeof(HCheckTableEntry));
+      MemMove(&entries_[R], &tmp_entries[0], L * sizeof(HCheckTableEntry));
     }
 
     cursor_ = size_;  // Move cursor to end.
@@ -714,7 +714,7 @@ class HCheckMapsEffects : public ZoneObject {
     switch (instr->opcode()) {
       case HValue::kStoreNamedField: {
         HStoreNamedField* store = HStoreNamedField::cast(instr);
-        if (store->access().IsMap() && store->has_transition()) {
+        if (store->access().IsMap() || store->has_transition()) {
           objects_.Add(store->object(), zone);
         }
         break;

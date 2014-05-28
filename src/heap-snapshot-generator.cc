@@ -82,7 +82,7 @@ void HeapEntry::SetIndexedReference(HeapGraphEdge::Type type,
 
 void HeapEntry::Print(
     const char* prefix, const char* edge_name, int max_depth, int indent) {
-  STATIC_CHECK(sizeof(unsigned) == sizeof(id()));
+  STATIC_ASSERT(sizeof(unsigned) == sizeof(id()));
   OS::Print("%6" V8PRIuPTR " @%6u %*c %s%s: ",
             self_size(), id(), indent, ' ', prefix, edge_name);
   if (type() != kString) {
@@ -155,6 +155,7 @@ const char* HeapEntry::TypeAsString() {
     case kSynthetic: return "/synthetic/";
     case kConsString: return "/concatenated string/";
     case kSlicedString: return "/sliced string/";
+    case kSymbol: return "/symbol/";
     default: return "???";
   }
 }
@@ -189,10 +190,10 @@ HeapSnapshot::HeapSnapshot(HeapProfiler* profiler,
       gc_roots_index_(HeapEntry::kNoEntry),
       natives_root_index_(HeapEntry::kNoEntry),
       max_snapshot_js_object_id_(0) {
-  STATIC_CHECK(
+  STATIC_ASSERT(
       sizeof(HeapGraphEdge) ==
       SnapshotSizeConstants<kPointerSize>::kExpectedHeapGraphEdgeSize);
-  STATIC_CHECK(
+  STATIC_ASSERT(
       sizeof(HeapEntry) ==
       SnapshotSizeConstants<kPointerSize>::kExpectedHeapEntrySize);
   USE(SnapshotSizeConstants<4>::kExpectedHeapGraphEdgeSize);
@@ -851,6 +852,8 @@ HeapEntry* V8HeapExplorer::AddEntry(HeapObject* object) {
     return AddEntry(object,
                     HeapEntry::kString,
                     names_->GetName(String::cast(object)));
+  } else if (object->IsSymbol()) {
+    return AddEntry(object, HeapEntry::kSymbol, "symbol");
   } else if (object->IsCode()) {
     return AddEntry(object, HeapEntry::kCode, "");
   } else if (object->IsSharedFunctionInfo()) {
@@ -1094,10 +1097,16 @@ bool V8HeapExplorer::ExtractReferencesPass1(int entry, HeapObject* obj) {
     ExtractJSGlobalProxyReferences(entry, JSGlobalProxy::cast(obj));
   } else if (obj->IsJSArrayBuffer()) {
     ExtractJSArrayBufferReferences(entry, JSArrayBuffer::cast(obj));
+  } else if (obj->IsJSWeakSet()) {
+    ExtractJSWeakCollectionReferences(entry, JSWeakSet::cast(obj));
+  } else if (obj->IsJSWeakMap()) {
+    ExtractJSWeakCollectionReferences(entry, JSWeakMap::cast(obj));
   } else if (obj->IsJSObject()) {
     ExtractJSObjectReferences(entry, JSObject::cast(obj));
   } else if (obj->IsString()) {
     ExtractStringReferences(entry, String::cast(obj));
+  } else if (obj->IsSymbol()) {
+    ExtractSymbolReferences(entry, Symbol::cast(obj));
   } else if (obj->IsMap()) {
     ExtractMapReferences(entry, Map::cast(obj));
   } else if (obj->IsSharedFunctionInfo()) {
@@ -1191,9 +1200,9 @@ void V8HeapExplorer::ExtractJSObjectReferences(
     SetWeakReference(js_fun, entry,
                      "next_function_link", js_fun->next_function_link(),
                      JSFunction::kNextFunctionLinkOffset);
-    STATIC_CHECK(JSFunction::kNextFunctionLinkOffset
+    STATIC_ASSERT(JSFunction::kNextFunctionLinkOffset
                  == JSFunction::kNonWeakFieldsEndOffset);
-    STATIC_CHECK(JSFunction::kNextFunctionLinkOffset + kPointerSize
+    STATIC_ASSERT(JSFunction::kNextFunctionLinkOffset + kPointerSize
                  == JSFunction::kSize);
   } else if (obj->IsGlobalObject()) {
     GlobalObject* global_obj = GlobalObject::cast(obj);
@@ -1209,7 +1218,7 @@ void V8HeapExplorer::ExtractJSObjectReferences(
     SetInternalReference(global_obj, entry,
                          "global_receiver", global_obj->global_receiver(),
                          GlobalObject::kGlobalReceiverOffset);
-    STATIC_CHECK(GlobalObject::kHeaderSize - JSObject::kHeaderSize ==
+    STATIC_ASSERT(GlobalObject::kHeaderSize - JSObject::kHeaderSize ==
                  4 * kPointerSize);
   } else if (obj->IsJSArrayBufferView()) {
     JSArrayBufferView* view = JSArrayBufferView::cast(obj);
@@ -1241,6 +1250,22 @@ void V8HeapExplorer::ExtractStringReferences(int entry, String* string) {
     SetInternalReference(ss, entry, "parent", ss->parent(),
                          SlicedString::kParentOffset);
   }
+}
+
+
+void V8HeapExplorer::ExtractSymbolReferences(int entry, Symbol* symbol) {
+  SetInternalReference(symbol, entry,
+                       "name", symbol->name(),
+                       Symbol::kNameOffset);
+}
+
+
+void V8HeapExplorer::ExtractJSWeakCollectionReferences(
+    int entry, JSWeakCollection* collection) {
+  MarkAsWeakContainer(collection->table());
+  SetInternalReference(collection, entry,
+                       "table", collection->table(),
+                       JSWeakCollection::kTableOffset);
 }
 
 
@@ -1292,10 +1317,12 @@ void V8HeapExplorer::ExtractContextReferences(int entry, Context* context) {
     EXTRACT_CONTEXT_FIELD(DEOPTIMIZED_CODE_LIST, unused, deoptimized_code_list);
     EXTRACT_CONTEXT_FIELD(NEXT_CONTEXT_LINK, unused, next_context_link);
 #undef EXTRACT_CONTEXT_FIELD
-    STATIC_CHECK(Context::OPTIMIZED_FUNCTIONS_LIST == Context::FIRST_WEAK_SLOT);
-    STATIC_CHECK(Context::NEXT_CONTEXT_LINK + 1
-                 == Context::NATIVE_CONTEXT_SLOTS);
-    STATIC_CHECK(Context::FIRST_WEAK_SLOT + 5 == Context::NATIVE_CONTEXT_SLOTS);
+    STATIC_ASSERT(Context::OPTIMIZED_FUNCTIONS_LIST ==
+                  Context::FIRST_WEAK_SLOT);
+    STATIC_ASSERT(Context::NEXT_CONTEXT_LINK + 1 ==
+                  Context::NATIVE_CONTEXT_SLOTS);
+    STATIC_ASSERT(Context::FIRST_WEAK_SLOT + 5 ==
+                  Context::NATIVE_CONTEXT_SLOTS);
   }
 }
 
@@ -1409,9 +1436,6 @@ void V8HeapExplorer::ExtractSharedFunctionInfoReferences(
   SetInternalReference(obj, entry,
                        "feedback_vector", shared->feedback_vector(),
                        SharedFunctionInfo::kFeedbackVectorOffset);
-  SetWeakReference(obj, entry,
-                   "initial_map", shared->initial_map(),
-                   SharedFunctionInfo::kInitialMapOffset);
 }
 
 
@@ -1533,7 +1557,7 @@ void V8HeapExplorer::ExtractAllocationSiteReferences(int entry,
                        AllocationSite::kDependentCodeOffset);
   // Do not visit weak_next as it is not visited by the StaticVisitor,
   // and we're not very interested in weak_next field here.
-  STATIC_CHECK(AllocationSite::kWeakNextOffset >=
+  STATIC_ASSERT(AllocationSite::kWeakNextOffset >=
                AllocationSite::BodyDescriptor::kEndOffset);
 }
 
@@ -1752,7 +1776,7 @@ String* V8HeapExplorer::GetConstructorName(JSObject* object) {
     Object* constructor_prop = NULL;
     Isolate* isolate = heap->isolate();
     LookupResult result(isolate);
-    object->LocalLookupRealNamedProperty(
+    object->LookupOwnRealNamedProperty(
         isolate->factory()->constructor_string(), &result);
     if (!result.IsFound()) return object->constructor_name();
 
@@ -2569,10 +2593,6 @@ bool HeapSnapshotGenerator::GenerateSnapshot() {
   CHECK(!debug_heap->map_space()->was_swept_conservatively());
 #endif
 
-  // The following code uses heap iterators, so we want the heap to be
-  // stable. It should follow TagGlobalObjects as that can allocate.
-  DisallowHeapAllocation no_alloc;
-
 #ifdef VERIFY_HEAP
   debug_heap->Verify();
 #endif
@@ -2665,10 +2685,10 @@ class OutputStreamWriter {
     ASSERT(static_cast<size_t>(n) <= strlen(s));
     const char* s_end = s + n;
     while (s < s_end) {
-      int s_chunk_size = Min(
-          chunk_size_ - chunk_pos_, static_cast<int>(s_end - s));
+      int s_chunk_size =
+          Min(chunk_size_ - chunk_pos_, static_cast<int>(s_end - s));
       ASSERT(s_chunk_size > 0);
-      OS::MemCopy(chunk_.start() + chunk_pos_, s, s_chunk_size);
+      MemCopy(chunk_.start() + chunk_pos_, s, s_chunk_size);
       s += s_chunk_size;
       chunk_pos_ += s_chunk_size;
       MaybeWriteChunk();
@@ -2804,7 +2824,7 @@ template<> struct ToUnsigned<8> {
 
 template<typename T>
 static int utoa_impl(T value, const Vector<char>& buffer, int buffer_pos) {
-  STATIC_CHECK(static_cast<T>(-1) > 0);  // Check that T is unsigned
+  STATIC_ASSERT(static_cast<T>(-1) > 0);  // Check that T is unsigned
   int number_of_digits = 0;
   T t = value;
   do {
@@ -2825,7 +2845,7 @@ static int utoa_impl(T value, const Vector<char>& buffer, int buffer_pos) {
 template<typename T>
 static int utoa(T value, const Vector<char>& buffer, int buffer_pos) {
   typename ToUnsigned<sizeof(value)>::Type unsigned_value = value;
-  STATIC_CHECK(sizeof(value) == sizeof(unsigned_value));
+  STATIC_ASSERT(sizeof(value) == sizeof(unsigned_value));
   return utoa_impl(unsigned_value, buffer, buffer_pos);
 }
 

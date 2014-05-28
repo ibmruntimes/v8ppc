@@ -5,6 +5,9 @@
 #include "api.h"
 
 #include <string.h>  // For memcpy, strlen.
+#ifdef V8_USE_ADDRESS_SANITIZER
+#include <sanitizer/asan_interface.h>
+#endif  // V8_USE_ADDRESS_SANITIZER
 #include <cmath>  // For isnan.
 #include "../include/v8-debug.h"
 #include "../include/v8-profiler.h"
@@ -37,6 +40,7 @@
 #include "runtime.h"
 #include "runtime-profiler.h"
 #include "scanner-character-streams.h"
+#include "simulator.h"
 #include "snapshot.h"
 #include "unicode-inl.h"
 #include "utils/random-number-generator.h"
@@ -1582,13 +1586,13 @@ int UnboundScript::GetId() {
 
 
 int UnboundScript::GetLineNumber(int code_pos) {
-  i::Handle<i::HeapObject> obj =
-      i::Handle<i::HeapObject>::cast(Utils::OpenHandle(this));
+  i::Handle<i::SharedFunctionInfo> obj =
+      i::Handle<i::SharedFunctionInfo>::cast(Utils::OpenHandle(this));
   i::Isolate* isolate = obj->GetIsolate();
   ON_BAILOUT(isolate, "v8::UnboundScript::GetLineNumber()", return -1);
   LOG_API(isolate, "UnboundScript::GetLineNumber");
-  if (obj->IsScript()) {
-    i::Handle<i::Script> script(i::Script::cast(*obj));
+  if (obj->script()->IsScript()) {
+    i::Handle<i::Script> script(i::Script::cast(obj->script()));
     return i::Script::GetLineNumber(script, code_pos);
   } else {
     return -1;
@@ -1597,14 +1601,14 @@ int UnboundScript::GetLineNumber(int code_pos) {
 
 
 Handle<Value> UnboundScript::GetScriptName() {
-  i::Handle<i::HeapObject> obj =
-      i::Handle<i::HeapObject>::cast(Utils::OpenHandle(this));
+  i::Handle<i::SharedFunctionInfo> obj =
+      i::Handle<i::SharedFunctionInfo>::cast(Utils::OpenHandle(this));
   i::Isolate* isolate = obj->GetIsolate();
   ON_BAILOUT(isolate, "v8::UnboundScript::GetName()",
              return Handle<String>());
   LOG_API(isolate, "UnboundScript::GetName");
-  if (obj->IsScript()) {
-    i::Object* name = i::Script::cast(*obj)->name();
+  if (obj->script()->IsScript()) {
+    i::Object* name = i::Script::cast(obj->script())->name();
     return Utils::ToLocal(i::Handle<i::Object>(name, isolate));
   } else {
     return Handle<String>();
@@ -1724,6 +1728,13 @@ Local<UnboundScript> ScriptCompiler::CompileUnbound(
                                    cached_data_mode,
                                    i::NOT_NATIVES_CODE);
     has_pending_exception = result.is_null();
+    if (has_pending_exception && cached_data_mode == i::CONSUME_CACHED_DATA) {
+      // This case won't happen during normal operation; we have compiled
+      // successfully and produced cached data, and but the second compilation
+      // of the same source code fails.
+      delete script_data_impl;
+      script_data_impl = NULL;
+    }
     EXCEPTION_BAILOUT_CHECK(isolate, Local<UnboundScript>());
     raw_result = *result;
     if ((options & kProduceDataToCache) && script_data_impl != NULL) {
@@ -1746,12 +1757,10 @@ Local<Script> ScriptCompiler::Compile(
     Source* source,
     CompileOptions options) {
   i::Isolate* isolate = reinterpret_cast<i::Isolate*>(v8_isolate);
-  ON_BAILOUT(isolate, "v8::ScriptCompiler::Compile()",
-             return Local<Script>());
+  ON_BAILOUT(isolate, "v8::ScriptCompiler::Compile()", return Local<Script>());
   LOG_API(isolate, "ScriptCompiler::CompiletBound()");
   ENTER_V8(isolate);
-  Local<UnboundScript> generic =
-      CompileUnbound(v8_isolate, source, options);
+  Local<UnboundScript> generic = CompileUnbound(v8_isolate, source, options);
   if (generic.IsEmpty()) return Local<Script>();
   return generic->BindToCurrentContext();
 }
@@ -1785,13 +1794,26 @@ Local<Script> Script::Compile(v8::Handle<String> source,
 
 v8::TryCatch::TryCatch()
     : isolate_(i::Isolate::Current()),
-      next_(isolate_->try_catch_handler_address()),
+      next_(isolate_->try_catch_handler()),
       is_verbose_(false),
       can_continue_(true),
       capture_message_(true),
       rethrow_(false),
       has_terminated_(false) {
   Reset();
+  js_stack_comparable_address_ = this;
+#ifdef V8_USE_ADDRESS_SANITIZER
+  void* asan_fake_stack_handle = __asan_get_current_fake_stack();
+  if (asan_fake_stack_handle != NULL) {
+    js_stack_comparable_address_ = __asan_addr_is_in_fake_stack(
+        asan_fake_stack_handle, js_stack_comparable_address_, NULL, NULL);
+    CHECK(js_stack_comparable_address_ != NULL);
+  }
+#endif
+  // Special handling for simulators which have a separate JS stack.
+  js_stack_comparable_address_ = reinterpret_cast<void*>(
+      v8::internal::SimulatorStack::RegisterCTryCatch(
+          reinterpret_cast<uintptr_t>(js_stack_comparable_address_)));
   isolate_->RegisterTryCatchHandler(this);
 }
 
@@ -1811,10 +1833,12 @@ v8::TryCatch::~TryCatch() {
       isolate_->RestorePendingMessageFromTryCatch(this);
     }
     isolate_->UnregisterTryCatchHandler(this);
+    v8::internal::SimulatorStack::UnregisterCTryCatch();
     reinterpret_cast<Isolate*>(isolate_)->ThrowException(exc);
     ASSERT(!isolate_->thread_local_top()->rethrowing_message_);
   } else {
     isolate_->UnregisterTryCatchHandler(this);
+    v8::internal::SimulatorStack::UnregisterCTryCatch();
   }
 }
 
@@ -2115,6 +2139,9 @@ Local<StackTrace> StackTrace::CurrentStackTrace(
     StackTraceOptions options) {
   i::Isolate* i_isolate = reinterpret_cast<i::Isolate*>(isolate);
   ENTER_V8(i_isolate);
+  // TODO(dcarney): remove when ScriptDebugServer is fixed.
+  options = static_cast<StackTraceOptions>(
+      static_cast<int>(options) | kExposeFramesAcrossSecurityOrigins);
   i::Handle<i::JSArray> stackTrace =
       i_isolate->CaptureCurrentStackTrace(frame_limit, options);
   return Utils::StackTraceToLocal(stackTrace);
@@ -3037,8 +3064,8 @@ bool v8::Object::ForceSet(v8::Handle<Value> key,
 
 
 bool v8::Object::SetPrivate(v8::Handle<Private> key, v8::Handle<Value> value) {
-  return Set(v8::Handle<Value>(reinterpret_cast<Value*>(*key)),
-             value, DontEnum);
+  return ForceSet(v8::Handle<Value>(reinterpret_cast<Value*>(*key)),
+                  value, DontEnum);
 }
 
 
@@ -3125,8 +3152,7 @@ PropertyAttribute v8::Object::GetPropertyAttributes(v8::Handle<Value> key) {
 
 Local<Value> v8::Object::GetPrototype() {
   i::Isolate* isolate = Utils::OpenHandle(this)->GetIsolate();
-  ON_BAILOUT(isolate, "v8::Object::GetPrototype()",
-             return Local<v8::Value>());
+  ON_BAILOUT(isolate, "v8::Object::GetPrototype()", return Local<v8::Value>());
   ENTER_V8(isolate);
   i::Handle<i::Object> self = Utils::OpenHandle(this);
   i::Handle<i::Object> result(self->GetPrototype(isolate), isolate);
@@ -3202,7 +3228,7 @@ Local<Array> v8::Object::GetOwnPropertyNames() {
   EXCEPTION_PREAMBLE(isolate);
   i::Handle<i::FixedArray> value;
   has_pending_exception = !i::JSReceiver::GetKeys(
-      self, i::JSReceiver::LOCAL_ONLY).ToHandle(&value);
+      self, i::JSReceiver::OWN_ONLY).ToHandle(&value);
   EXCEPTION_BAILOUT_CHECK(isolate, Local<v8::Array>());
   // Because we use caching to speed up enumeration it is important
   // to never change the result of the basic enumeration function so
@@ -3249,7 +3275,7 @@ Local<String> v8::Object::ObjectProtoToString() {
 
       // Write prefix.
       char* ptr = buf.start();
-      i::OS::MemCopy(ptr, prefix, prefix_len * v8::internal::kCharSize);
+      i::MemCopy(ptr, prefix, prefix_len * v8::internal::kCharSize);
       ptr += prefix_len;
 
       // Write real content.
@@ -3257,7 +3283,7 @@ Local<String> v8::Object::ObjectProtoToString() {
       ptr += str_len;
 
       // Write postfix.
-      i::OS::MemCopy(ptr, postfix, postfix_len * v8::internal::kCharSize);
+      i::MemCopy(ptr, postfix, postfix_len * v8::internal::kCharSize);
 
       // Copy the buffer into a heap-allocated string and return it.
       Local<String> result = v8::String::NewFromUtf8(
@@ -3327,6 +3353,8 @@ bool v8::Object::Has(v8::Handle<Value> key) {
 
 
 bool v8::Object::HasPrivate(v8::Handle<Private> key) {
+  // TODO(rossberg): this should use HasOwnProperty, but we'd need to
+  // generalise that to a (noy yet existant) Name argument first.
   return Has(v8::Handle<Value>(reinterpret_cast<Value*>(*key)));
 }
 
@@ -3430,7 +3458,7 @@ bool v8::Object::HasOwnProperty(Handle<String> key) {
   i::Isolate* isolate = Utils::OpenHandle(this)->GetIsolate();
   ON_BAILOUT(isolate, "v8::Object::HasOwnProperty()",
              return false);
-  return i::JSReceiver::HasLocalProperty(
+  return i::JSReceiver::HasOwnProperty(
       Utils::OpenHandle(this), Utils::OpenHandle(*key));
 }
 
@@ -6626,16 +6654,13 @@ void Isolate::RemoveCallCompletedCallback(CallCompletedCallback callback) {
 
 
 void Isolate::RunMicrotasks() {
-  i::Isolate* i_isolate = reinterpret_cast<i::Isolate*>(this);
-  i::HandleScope scope(i_isolate);
-  i_isolate->RunMicrotasks();
+  reinterpret_cast<i::Isolate*>(this)->RunMicrotasks();
 }
 
 
 void Isolate::EnqueueMicrotask(Handle<Function> microtask) {
-  i::Isolate* i_isolate = reinterpret_cast<i::Isolate*>(this);
-  ENTER_V8(i_isolate);
-  i::Execution::EnqueueMicrotask(i_isolate, Utils::OpenHandle(*microtask));
+  i::Isolate* isolate = reinterpret_cast<i::Isolate*>(this);
+  isolate->EnqueueMicrotask(Utils::OpenHandle(*microtask));
 }
 
 
@@ -6788,8 +6813,8 @@ bool Debug::SetDebugEventListener(EventCallback that, Handle<Value> data) {
   if (that != NULL) {
     foreign = isolate->factory()->NewForeign(FUNCTION_ADDR(that));
   }
-  isolate->debugger()->SetEventListener(foreign,
-                                        Utils::OpenHandle(*data, true));
+  isolate->debug()->SetEventListener(foreign,
+                                     Utils::OpenHandle(*data, true));
   return true;
 }
 
@@ -6807,7 +6832,7 @@ void Debug::CancelDebugBreak(Isolate* isolate) {
 
 void Debug::DebugBreakForCommand(Isolate* isolate, ClientData* data) {
   i::Isolate* internal_isolate = reinterpret_cast<i::Isolate*>(isolate);
-  internal_isolate->debugger()->EnqueueDebugCommand(data);
+  internal_isolate->debug()->EnqueueDebugCommand(data);
 }
 
 
@@ -6815,7 +6840,7 @@ void Debug::SetMessageHandler(v8::Debug::MessageHandler handler) {
   i::Isolate* isolate = i::Isolate::Current();
   EnsureInitializedForIsolate(isolate, "v8::Debug::SetMessageHandler");
   ENTER_V8(isolate);
-  isolate->debugger()->SetMessageHandler(handler);
+  isolate->debug()->SetMessageHandler(handler);
 }
 
 
@@ -6824,7 +6849,7 @@ void Debug::SendCommand(Isolate* isolate,
                         int length,
                         ClientData* client_data) {
   i::Isolate* internal_isolate = reinterpret_cast<i::Isolate*>(isolate);
-  internal_isolate->debugger()->EnqueueCommandMessage(
+  internal_isolate->debug()->EnqueueCommandMessage(
       i::Vector<const uint16_t>(command, length), client_data);
 }
 
@@ -6838,10 +6863,10 @@ Local<Value> Debug::Call(v8::Handle<v8::Function> fun,
   i::MaybeHandle<i::Object> maybe_result;
   EXCEPTION_PREAMBLE(isolate);
   if (data.IsEmpty()) {
-    maybe_result = isolate->debugger()->Call(
+    maybe_result = isolate->debug()->Call(
         Utils::OpenHandle(*fun), isolate->factory()->undefined_value());
   } else {
-    maybe_result = isolate->debugger()->Call(
+    maybe_result = isolate->debug()->Call(
         Utils::OpenHandle(*fun), Utils::OpenHandle(*data));
   }
   i::Handle<i::Object> result;
@@ -6889,13 +6914,13 @@ Local<Context> Debug::GetDebugContext() {
   i::Isolate* isolate = i::Isolate::Current();
   EnsureInitializedForIsolate(isolate, "v8::Debug::GetDebugContext()");
   ENTER_V8(isolate);
-  return Utils::ToLocal(i::Isolate::Current()->debugger()->GetDebugContext());
+  return Utils::ToLocal(i::Isolate::Current()->debug()->GetDebugContext());
 }
 
 
 void Debug::SetLiveEditEnabled(Isolate* isolate, bool enable) {
   i::Isolate* internal_isolate = reinterpret_cast<i::Isolate*>(isolate);
-  internal_isolate->debugger()->set_live_edit_enabled(enable);
+  internal_isolate->debug()->set_live_edit_enabled(enable);
 }
 
 
@@ -7389,7 +7414,7 @@ void HandleScopeImplementer::FreeThreadResources() {
 char* HandleScopeImplementer::ArchiveThread(char* storage) {
   HandleScopeData* current = isolate_->handle_scope_data();
   handle_scope_data_ = *current;
-  OS::MemCopy(storage, this, sizeof(*this));
+  MemCopy(storage, this, sizeof(*this));
 
   ResetAfterArchive();
   current->Initialize();
@@ -7404,7 +7429,7 @@ int HandleScopeImplementer::ArchiveSpacePerThread() {
 
 
 char* HandleScopeImplementer::RestoreThread(char* storage) {
-  OS::MemCopy(this, storage, sizeof(*this));
+  MemCopy(this, storage, sizeof(*this));
   *isolate_->handle_scope_data() = handle_scope_data_;
   return storage + ArchiveSpacePerThread();
 }

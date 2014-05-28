@@ -20,6 +20,7 @@ const int kMaxKeyedPolymorphism = 4;
   ICU(LoadIC_Miss)                                    \
   ICU(KeyedLoadIC_Miss)                               \
   ICU(CallIC_Miss)                                    \
+  ICU(CallIC_Customization_Miss)                      \
   ICU(StoreIC_Miss)                                   \
   ICU(StoreIC_ArrayLength)                            \
   ICU(StoreIC_Slow)                                   \
@@ -338,12 +339,8 @@ class CallIC: public IC {
    public:
     explicit State(ExtraICState extra_ic_state);
 
-    static State DefaultCallState(int argc, CallType call_type) {
-      return State(argc, call_type);
-    }
-
-    static State MegamorphicCallState(int argc, CallType call_type) {
-      return State(argc, call_type);
+    State(int argc, CallType call_type)
+        : argc_(argc), call_type_(call_type) {
     }
 
     InlineCacheState GetICState() const { return ::v8::internal::GENERIC; }
@@ -360,22 +357,7 @@ class CallIC: public IC {
 
     void Print(StringStream* stream) const;
 
-    bool operator==(const State& other_state) const {
-      return (argc_ == other_state.argc_ &&
-              call_type_ == other_state.call_type_);
-    }
-
-    bool operator!=(const State& other_state) const {
-      return !(*this == other_state);
-    }
-
    private:
-    State(int argc,
-          CallType call_type)
-        : argc_(argc),
-        call_type_(call_type) {
-    }
-
     class ArgcBits: public BitField<int, 0, Code::kArgumentsBits> {};
     class CallTypeBits: public BitField<CallType, Code::kArgumentsBits, 1> {};
 
@@ -387,10 +369,19 @@ class CallIC: public IC {
       : IC(EXTRA_CALL_FRAME, isolate) {
   }
 
+  void PatchMegamorphic(Handle<FixedArray> vector, Handle<Smi> slot);
+
   void HandleMiss(Handle<Object> receiver,
                   Handle<Object> function,
                   Handle<FixedArray> vector,
                   Handle<Smi> slot);
+
+  // Returns true if a custom handler was installed.
+  bool DoCustomHandler(Handle<Object> receiver,
+                       Handle<Object> function,
+                       Handle<FixedArray> vector,
+                       Handle<Smi> slot,
+                       const State& state);
 
   // Code generator routines.
   static Handle<Code> initialize_stub(Isolate* isolate,

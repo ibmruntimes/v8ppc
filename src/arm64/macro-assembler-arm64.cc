@@ -559,6 +559,11 @@ void MacroAssembler::Store(const Register& rt,
     Str(rt.W(), addr);
   } else {
     ASSERT(rt.Is64Bits());
+    if (r.IsHeapObject()) {
+      AssertNotSmi(rt);
+    } else if (r.IsSmi()) {
+      AssertSmi(rt);
+    }
     Str(rt, addr);
   }
 }
@@ -805,10 +810,13 @@ void MacroAssembler::Pop(const CPURegister& dst0, const CPURegister& dst1,
 }
 
 
-void MacroAssembler::PushPopQueue::PushQueued() {
+void MacroAssembler::PushPopQueue::PushQueued(
+    PreambleDirective preamble_directive) {
   if (queued_.empty()) return;
 
-  masm_->PushPreamble(size_);
+  if (preamble_directive == WITH_PREAMBLE) {
+    masm_->PushPreamble(size_);
+  }
 
   int count = queued_.size();
   int index = 0;
@@ -3536,33 +3544,12 @@ void MacroAssembler::AllocateAsciiConsString(Register result,
                                              Register scratch1,
                                              Register scratch2,
                                              Label* gc_required) {
-  Label allocate_new_space, install_map;
-  AllocationFlags flags = TAG_OBJECT;
-
-  ExternalReference high_promotion_mode = ExternalReference::
-      new_space_high_promotion_mode_active_address(isolate());
-  Mov(scratch1, high_promotion_mode);
-  Ldr(scratch1, MemOperand(scratch1));
-  Cbz(scratch1, &allocate_new_space);
-
   Allocate(ConsString::kSize,
            result,
            scratch1,
            scratch2,
            gc_required,
-           static_cast<AllocationFlags>(flags | PRETENURE_OLD_POINTER_SPACE));
-
-  B(&install_map);
-
-  Bind(&allocate_new_space);
-  Allocate(ConsString::kSize,
-           result,
-           scratch1,
-           scratch2,
-           gc_required,
-           flags);
-
-  Bind(&install_map);
+           TAG_OBJECT);
 
   InitializeNewString(result,
                       length,
@@ -3782,7 +3769,7 @@ void MacroAssembler::LoadElementsKindFromMap(Register result, Register map) {
   // Load the map's "bit field 2".
   __ Ldrb(result, FieldMemOperand(map, Map::kBitField2Offset));
   // Retrieve elements_kind from bit field 2.
-  __ Ubfx(result, result, Map::kElementsKindShift, Map::kElementsKindBitCount);
+  DecodeField<Map::ElementsKindBits>(result);
 }
 
 
@@ -3988,11 +3975,8 @@ void MacroAssembler::IndexFromHash(Register hash, Register index) {
   // conflict.
   ASSERT(TenToThe(String::kMaxCachedArrayIndexLength) <
          (1 << String::kArrayIndexValueBits));
-  // We want the smi-tagged index in key.  kArrayIndexValueMask has zeros in
-  // the low kHashShift bits.
-  STATIC_ASSERT(kSmiTag == 0);
-  Ubfx(hash, hash, String::kHashShift, String::kArrayIndexValueBits);
-  SmiTag(index, hash);
+  DecodeField<String::ArrayIndexValueBits>(index, hash);
+  SmiTag(index, index);
 }
 
 
@@ -4557,7 +4541,7 @@ void MacroAssembler::JumpIfDictionaryInPrototypeChain(
   Bind(&loop_again);
   Ldr(current, FieldMemOperand(current, HeapObject::kMapOffset));
   Ldrb(scratch1, FieldMemOperand(current, Map::kBitField2Offset));
-  Ubfx(scratch1, scratch1, Map::kElementsKindShift, Map::kElementsKindBitCount);
+  DecodeField<Map::ElementsKindBits>(scratch1);
   CompareAndBranch(scratch1, DICTIONARY_ELEMENTS, eq, found);
   Ldr(current, FieldMemOperand(current, Map::kPrototypeOffset));
   CompareAndBranch(current, Operand(factory->null_value()), ne, &loop_again);

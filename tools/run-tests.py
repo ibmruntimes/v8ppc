@@ -80,10 +80,11 @@ SUPPORTED_ARCHS = ["android_arm",
                    "android_ia32",
                    "arm",
                    "ia32",
-                   "ppc",
-                   "ppc64",
+                   "x87",
                    "mips",
                    "mipsel",
+                   "ppc",
+                   "ppc64",
                    "nacl_ia32",
                    "nacl_x64",
                    "x64",
@@ -97,6 +98,7 @@ SLOW_ARCHS = ["android_arm",
               "mipsel",
               "nacl_ia32",
               "nacl_x64",
+              "x87",
               "arm64"]
 
 
@@ -157,6 +159,9 @@ def BuildOptions():
   result.add_option("--no-snap", "--nosnap",
                     help='Test a build compiled without snapshot.',
                     default=False, dest="no_snap", action="store_true")
+  result.add_option("--no-sorting", "--nosorting",
+                    help="Don't sort tests according to duration of last run.",
+                    default=False, dest="no_sorting", action="store_true")
   result.add_option("--no-stress", "--nostress",
                     help="Don't run crankshaft --always-opt --stress-op test",
                     default=False, dest="no_stress", action="store_true")
@@ -175,6 +180,8 @@ def BuildOptions():
                     help=("Quick check mode (skip slow/flaky tests)"))
   result.add_option("--report", help="Print a summary of the tests to be run",
                     default=False, action="store_true")
+  result.add_option("--json-test-results",
+                    help="Path to a file for storing json results.")
   result.add_option("--shard-count",
                     help="Split testsuites into this number of shards",
                     default=1, type="int")
@@ -253,6 +260,9 @@ def ProcessOptions(options):
 
   if options.gc_stress:
     options.extra_flags += GC_STRESS_FLAGS
+
+  if options.asan:
+    options.extra_flags.append("--invoke-weak-callbacks")
 
   if options.j == 0:
     options.j = multiprocessing.cpu_count()
@@ -406,7 +416,8 @@ def Execute(arch, mode, args, options, suites, workspace):
                         options.command_prefix,
                         options.extra_flags,
                         options.no_i18n,
-                        options.random_seed)
+                        options.random_seed,
+                        options.no_sorting)
 
   # TODO(all): Combine "simulator" and "simulator_run".
   simulator_run = not options.dont_skip_simulator_slow_tests and \
@@ -465,6 +476,9 @@ def Execute(arch, mode, args, options, suites, workspace):
   if options.junitout:
     progress_indicator = progress.JUnitTestProgressIndicator(
         progress_indicator, options.junitout, options.junittestsuite)
+  if options.json_test_results:
+    progress_indicator = progress.JsonTestProgressIndicator(
+        progress_indicator, options.json_test_results, arch, mode)
 
   run_networked = not options.no_network
   if not run_networked:

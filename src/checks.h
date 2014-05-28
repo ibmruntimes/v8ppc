@@ -101,7 +101,7 @@ inline void CheckEqualsHelper(const char* file, int line,
   if (expected != value) {
     V8_Fatal(file, line,
              "CHECK_EQ(%s, %s) failed\n#"
-             "   Expected: 0x%" V8PRIxPTR "\n#   Found: 0x%" V8PRIxPTR,
+             "   Expected: 0x%lx\n#   Found: 0x%lx",
              expected_source, value_source, expected, value);
   }
 }
@@ -257,33 +257,6 @@ inline void CheckNonEqualsHelper(const char* file,
 #define CHECK_LE(a, b) CHECK((a) <= (b))
 
 
-// Use C++11 static_assert if possible, which gives error
-// messages that are easier to understand on first sight.
-#if V8_HAS_CXX11_STATIC_ASSERT
-#define STATIC_CHECK(test) static_assert(test, #test)
-#else
-// This is inspired by the static assertion facility in boost.  This
-// is pretty magical.  If it causes you trouble on a platform you may
-// find a fix in the boost code.
-template <bool> class StaticAssertion;
-template <> class StaticAssertion<true> { };
-// This macro joins two tokens.  If one of the tokens is a macro the
-// helper call causes it to be resolved before joining.
-#define SEMI_STATIC_JOIN(a, b) SEMI_STATIC_JOIN_HELPER(a, b)
-#define SEMI_STATIC_JOIN_HELPER(a, b) a##b
-// Causes an error during compilation of the condition is not
-// statically known to be true.  It is formulated as a typedef so that
-// it can be used wherever a typedef can be used.  Beware that this
-// actually causes each use to introduce a new defined type with a
-// name depending on the source line.
-template <int> class StaticAssertionHelper { };
-#define STATIC_CHECK(test)                                                    \
-  typedef                                                                     \
-    StaticAssertionHelper<sizeof(StaticAssertion<static_cast<bool>((test))>)> \
-    SEMI_STATIC_JOIN(__StaticAssertTypedef__, __LINE__) V8_UNUSED
-#endif
-
-
 #ifdef DEBUG
 #ifndef OPTIMIZED_DEBUG
 #define ENABLE_SLOW_ASSERTS    1
@@ -327,12 +300,6 @@ void DumpBacktrace();
 #define ASSERT_LT(v1, v2)      ((void) 0)
 #define ASSERT_LE(v1, v2)      ((void) 0)
 #endif
-// Static asserts has no impact on runtime performance, so they can be
-// safely enabled in release mode. Moreover, the ((void) 0) expression
-// obeys different syntax rules than typedef's, e.g. it can't appear
-// inside class declaration, this leads to inconsistency between debug
-// and release compilation modes behavior.
-#define STATIC_ASSERT(test)  STATIC_CHECK(test)
 
 #define ASSERT_NOT_NULL(p)  ASSERT_NE(NULL, p)
 

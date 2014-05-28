@@ -630,21 +630,12 @@ void ParserTraits::ReportMessageAt(Scanner::Location source_location,
     // and we want to report the stack overflow later.
     return;
   }
-  MessageLocation location(parser_->script_,
-                           source_location.beg_pos,
-                           source_location.end_pos);
-  Factory* factory = parser_->isolate()->factory();
-  Handle<FixedArray> elements = factory->NewFixedArray(arg == NULL ? 0 : 1);
-  if (arg != NULL) {
-    Handle<String> arg_string =
-        factory->NewStringFromUtf8(CStrVector(arg)).ToHandleChecked();
-    elements->set(0, *arg_string);
-  }
-  Handle<JSArray> array = factory->NewJSArrayWithElements(elements);
-  Handle<Object> result = is_reference_error
-      ? factory->NewReferenceError(message, array)
-      : factory->NewSyntaxError(message, array);
-  parser_->isolate()->Throw(*result, &location);
+  parser_->has_pending_error_ = true;
+  parser_->pending_error_location_ = source_location;
+  parser_->pending_error_message_ = message;
+  parser_->pending_error_char_arg_ = arg;
+  parser_->pending_error_arg_ = Handle<String>();
+  parser_->pending_error_is_reference_error_ = is_reference_error;
 }
 
 
@@ -666,19 +657,12 @@ void ParserTraits::ReportMessageAt(Scanner::Location source_location,
     // and we want to report the stack overflow later.
     return;
   }
-  MessageLocation location(parser_->script_,
-                           source_location.beg_pos,
-                           source_location.end_pos);
-  Factory* factory = parser_->isolate()->factory();
-  Handle<FixedArray> elements = factory->NewFixedArray(arg.is_null() ? 0 : 1);
-  if (!arg.is_null()) {
-    elements->set(0, *(arg.ToHandleChecked()));
-  }
-  Handle<JSArray> array = factory->NewJSArrayWithElements(elements);
-  Handle<Object> result = is_reference_error
-      ? factory->NewReferenceError(message, array)
-      : factory->NewSyntaxError(message, array);
-  parser_->isolate()->Throw(*result, &location);
+  parser_->has_pending_error_ = true;
+  parser_->pending_error_location_ = source_location;
+  parser_->pending_error_message_ = message;
+  parser_->pending_error_char_arg_ = NULL;
+  parser_->pending_error_arg_ = arg;
+  parser_->pending_error_is_reference_error_ = is_reference_error;
 }
 
 
@@ -790,7 +774,10 @@ Parser::Parser(CompilationInfo* info)
       target_stack_(NULL),
       cached_data_(NULL),
       cached_data_mode_(NO_CACHED_DATA),
-      info_(info) {
+      info_(info),
+      has_pending_error_(false),
+      pending_error_message_(NULL),
+      pending_error_char_arg_(NULL) {
   ASSERT(!script_.is_null());
   isolate_->set_ast_node_id(0);
   set_allow_harmony_scoping(!info->is_native() && FLAG_harmony_scoping);
@@ -942,6 +929,8 @@ FunctionLiteral* Parser::DoParseProgram(CompilationInfo* info,
           factory()->visitor()->dont_optimize_reason());
     } else if (stack_overflow()) {
       isolate()->StackOverflow();
+    } else {
+      ThrowPendingError();
     }
   }
 
@@ -1036,7 +1025,11 @@ FunctionLiteral* Parser::ParseLazy(Utf16CharacterStream* source) {
   ASSERT(target_stack_ == NULL);
 
   if (result == NULL) {
-    if (stack_overflow()) isolate()->StackOverflow();
+    if (stack_overflow()) {
+      isolate()->StackOverflow();
+    } else {
+      ThrowPendingError();
+    }
   } else {
     Handle<String> inferred_name(shared_info->inferred_name());
     result->set_inferred_name(inferred_name);
@@ -1274,7 +1267,7 @@ Module* Parser::ParseModuleLiteral(bool* ok) {
   Interface* interface = scope->interface();
   for (Interface::Iterator it = interface->iterator();
        !it.done(); it.Advance()) {
-    if (scope->LocalLookup(it.name()) == NULL) {
+    if (scope->LookupLocal(it.name()) == NULL) {
       ParserTraits::ReportMessage("module_export_undefined", it.name());
       *ok = false;
       return NULL;
@@ -1686,7 +1679,7 @@ void Parser::Declare(Declaration* declaration, bool resolve, bool* ok) {
     // global scope.
     var = declaration_scope->is_global_scope()
         ? declaration_scope->Lookup(name)
-        : declaration_scope->LocalLookup(name);
+        : declaration_scope->LookupLocal(name);
     if (var == NULL) {
       // Declare the name.
       var = declaration_scope->DeclareLocal(
@@ -2844,12 +2837,175 @@ void Parser::InitializeForEachStatement(ForEachStatement* stmt,
 }
 
 
+Statement* Parser::DesugarLetBindingsInForStatement(
+    Scope* inner_scope, ZoneStringList* names, ForStatement* loop,
+    Statement* init, Expression* cond, Statement* next, Statement* body,
+    bool* ok) {
+  // ES6 13.6.3.4 specifies that on each loop iteration the let variables are
+  // copied into a new environment. After copying, the "next" statement of the
+  // loop is executed to update the loop variables. The loop condition is
+  // checked and the loop body is executed.
+  //
+  // We rewrite a for statement of the form
+  //
+  //  for (let x = i; cond; next) body
+  //
+  // into
+  //
+  //  {
+  //     let x = i;
+  //     temp_x = x;
+  //     flag = 1;
+  //     for (;;) {
+  //        let x = temp_x;
+  //        if (flag == 1) {
+  //          flag = 0;
+  //        } else {
+  //          next;
+  //        }
+  //        if (cond) {
+  //          <empty>
+  //        } else {
+  //          break;
+  //        }
+  //        b
+  //        temp_x = x;
+  //     }
+  //  }
+
+  ASSERT(names->length() > 0);
+  Scope* for_scope = scope_;
+  ZoneList<Variable*> temps(names->length(), zone());
+
+  Block* outer_block = factory()->NewBlock(NULL, names->length() + 3, false,
+                                           RelocInfo::kNoPosition);
+  outer_block->AddStatement(init, zone());
+
+  Handle<String> temp_name = isolate()->factory()->dot_for_string();
+  Handle<Smi> smi0 = handle(Smi::FromInt(0), isolate());
+  Handle<Smi> smi1 = handle(Smi::FromInt(1), isolate());
+
+
+  // For each let variable x:
+  //   make statement: temp_x = x.
+  for (int i = 0; i < names->length(); i++) {
+    VariableProxy* proxy =
+        NewUnresolved(names->at(i), LET, Interface::NewValue());
+    Variable* temp = scope_->DeclarationScope()->NewTemporary(temp_name);
+    VariableProxy* temp_proxy = factory()->NewVariableProxy(temp);
+    Assignment* assignment = factory()->NewAssignment(
+        Token::ASSIGN, temp_proxy, proxy, RelocInfo::kNoPosition);
+    Statement* assignment_statement = factory()->NewExpressionStatement(
+        assignment, RelocInfo::kNoPosition);
+    outer_block->AddStatement(assignment_statement, zone());
+    temps.Add(temp, zone());
+  }
+
+  Variable* flag = scope_->DeclarationScope()->NewTemporary(temp_name);
+  // Make statement: flag = 1.
+  {
+    VariableProxy* flag_proxy = factory()->NewVariableProxy(flag);
+    Expression* const1 = factory()->NewLiteral(smi1, RelocInfo::kNoPosition);
+    Assignment* assignment = factory()->NewAssignment(
+        Token::ASSIGN, flag_proxy, const1, RelocInfo::kNoPosition);
+    Statement* assignment_statement = factory()->NewExpressionStatement(
+        assignment, RelocInfo::kNoPosition);
+    outer_block->AddStatement(assignment_statement, zone());
+  }
+
+  outer_block->AddStatement(loop, zone());
+  outer_block->set_scope(for_scope);
+  scope_ = inner_scope;
+
+  Block* inner_block = factory()->NewBlock(NULL, 2 * names->length() + 3,
+                                           false, RelocInfo::kNoPosition);
+  int pos = scanner()->location().beg_pos;
+  ZoneList<Variable*> inner_vars(names->length(), zone());
+
+  // For each let variable x:
+  //    make statement: let x = temp_x.
+  for (int i = 0; i < names->length(); i++) {
+    VariableProxy* proxy =
+        NewUnresolved(names->at(i), LET, Interface::NewValue());
+    Declaration* declaration =
+        factory()->NewVariableDeclaration(proxy, LET, scope_, pos);
+    Declare(declaration, true, CHECK_OK);
+    inner_vars.Add(declaration->proxy()->var(), zone());
+    VariableProxy* temp_proxy = factory()->NewVariableProxy(temps.at(i));
+    Assignment* assignment = factory()->NewAssignment(
+        Token::INIT_LET, proxy, temp_proxy, pos);
+    Statement* assignment_statement = factory()->NewExpressionStatement(
+        assignment, pos);
+    proxy->var()->set_initializer_position(pos);
+    inner_block->AddStatement(assignment_statement, zone());
+  }
+
+  // Make statement: if (flag == 1) { flag = 0; } else { next; }.
+  {
+    Expression* compare = NULL;
+    // Make compare expresion: flag == 1.
+    {
+      Expression* const1 = factory()->NewLiteral(smi1, RelocInfo::kNoPosition);
+      VariableProxy* flag_proxy = factory()->NewVariableProxy(flag);
+      compare = factory()->NewCompareOperation(
+          Token::EQ, flag_proxy, const1, RelocInfo::kNoPosition);
+    }
+    Statement* clear_flag = NULL;
+    // Make statement: flag = 0.
+    {
+      VariableProxy* flag_proxy = factory()->NewVariableProxy(flag);
+      Expression* const0 = factory()->NewLiteral(smi0, RelocInfo::kNoPosition);
+      Assignment* assignment = factory()->NewAssignment(
+          Token::ASSIGN, flag_proxy, const0, RelocInfo::kNoPosition);
+      clear_flag = factory()->NewExpressionStatement(assignment, pos);
+    }
+    Statement* clear_flag_or_next = factory()->NewIfStatement(
+        compare, clear_flag, next, RelocInfo::kNoPosition);
+    inner_block->AddStatement(clear_flag_or_next, zone());
+  }
+
+
+  // Make statement: if (cond) { } else { break; }.
+  {
+    Statement* empty = factory()->NewEmptyStatement(RelocInfo::kNoPosition);
+    BreakableStatement* t = LookupBreakTarget(Handle<String>(), CHECK_OK);
+    Statement* stop = factory()->NewBreakStatement(t, RelocInfo::kNoPosition);
+    Statement* if_not_cond_break = factory()->NewIfStatement(
+        cond, empty, stop, RelocInfo::kNoPosition);
+    inner_block->AddStatement(if_not_cond_break, zone());
+  }
+
+  inner_block->AddStatement(body, zone());
+
+  // For each let variable x:
+  //   make statement: temp_x = x;
+  for (int i = 0; i < names->length(); i++) {
+    VariableProxy* temp_proxy = factory()->NewVariableProxy(temps.at(i));
+    int pos = scanner()->location().end_pos;
+    VariableProxy* proxy = factory()->NewVariableProxy(inner_vars.at(i), pos);
+    Assignment* assignment = factory()->NewAssignment(
+        Token::ASSIGN, temp_proxy, proxy, RelocInfo::kNoPosition);
+    Statement* assignment_statement = factory()->NewExpressionStatement(
+        assignment, RelocInfo::kNoPosition);
+    inner_block->AddStatement(assignment_statement, zone());
+  }
+
+  inner_scope->set_end_position(scanner()->location().end_pos);
+  inner_block->set_scope(inner_scope);
+  scope_ = for_scope;
+
+  loop->Initialize(NULL, NULL, NULL, inner_block);
+  return outer_block;
+}
+
+
 Statement* Parser::ParseForStatement(ZoneStringList* labels, bool* ok) {
   // ForStatement ::
   //   'for' '(' Expression? ';' Expression? ';' Expression? ')' Statement
 
   int pos = peek_position();
   Statement* init = NULL;
+  ZoneStringList let_bindings(1, zone());
 
   // Create an in-between scope for let-bound iteration variables.
   Scope* saved_scope = scope_;
@@ -2901,8 +3057,8 @@ Statement* Parser::ParseForStatement(ZoneStringList* labels, bool* ok) {
       Handle<String> name;
       VariableDeclarationProperties decl_props = kHasNoInitializers;
       Block* variable_statement =
-         ParseVariableDeclarations(kForStatement, &decl_props, NULL, &name,
-                                   CHECK_OK);
+         ParseVariableDeclarations(kForStatement, &decl_props, &let_bindings,
+                                   &name, CHECK_OK);
       bool accept_IN = !name.is_null() && decl_props != kHasInitializers;
       bool accept_OF = decl_props == kHasNoInitializers;
       ForEachStatement::VisitMode mode;
@@ -3005,6 +3161,15 @@ Statement* Parser::ParseForStatement(ZoneStringList* labels, bool* ok) {
   // Parsed initializer at this point.
   Expect(Token::SEMICOLON, CHECK_OK);
 
+  // If there are let bindings, then condition and the next statement of the
+  // for loop must be parsed in a new scope.
+  Scope* inner_scope = NULL;
+  if (let_bindings.length() > 0) {
+    inner_scope = NewScope(for_scope, BLOCK_SCOPE);
+    inner_scope->set_start_position(scanner()->location().beg_pos);
+    scope_ = inner_scope;
+  }
+
   Expression* cond = NULL;
   if (peek() != Token::SEMICOLON) {
     cond = ParseExpression(true, CHECK_OK);
@@ -3019,31 +3184,22 @@ Statement* Parser::ParseForStatement(ZoneStringList* labels, bool* ok) {
   Expect(Token::RPAREN, CHECK_OK);
 
   Statement* body = ParseStatement(NULL, CHECK_OK);
-  scope_ = saved_scope;
-  for_scope->set_end_position(scanner()->location().end_pos);
-  for_scope = for_scope->FinalizeBlockScope();
-  if (for_scope != NULL) {
-    // Rewrite a for statement of the form
-    //
-    //   for (let x = i; c; n) b
-    //
-    // into
-    //
-    //   {
-    //     let x = i;
-    //     for (; c; n) b
-    //   }
-    ASSERT(init != NULL);
-    Block* result = factory()->NewBlock(NULL, 2, false, RelocInfo::kNoPosition);
-    result->AddStatement(init, zone());
-    result->AddStatement(loop, zone());
-    result->set_scope(for_scope);
-    loop->Initialize(NULL, cond, next, body);
-    return result;
+
+  Statement* result = NULL;
+  if (let_bindings.length() > 0) {
+    scope_ = for_scope;
+    result = DesugarLetBindingsInForStatement(inner_scope, &let_bindings, loop,
+                                              init, cond, next, body, CHECK_OK);
+    scope_ = saved_scope;
+    for_scope->set_end_position(scanner()->location().end_pos);
   } else {
     loop->Initialize(init, cond, next, body);
-    return loop;
+    result = loop;
+    scope_ = saved_scope;
+    for_scope->set_end_position(scanner()->location().end_pos);
+    for_scope->FinalizeBlockScope();
   }
+  return result;
 }
 
 
@@ -3675,6 +3831,32 @@ void Parser::RegisterTargetUse(Label* target, Target* stop) {
   for (Target* t = target_stack_; t != stop; t = t->previous()) {
     TargetCollector* collector = t->node()->AsTargetCollector();
     if (collector != NULL) collector->AddTarget(target, zone());
+  }
+}
+
+
+void Parser::ThrowPendingError() {
+  if (has_pending_error_) {
+    MessageLocation location(script_,
+                             pending_error_location_.beg_pos,
+                             pending_error_location_.end_pos);
+    Factory* factory = isolate()->factory();
+    bool has_arg =
+        !pending_error_arg_.is_null() || pending_error_char_arg_ != NULL;
+    Handle<FixedArray> elements = factory->NewFixedArray(has_arg ? 1 : 0);
+    if (!pending_error_arg_.is_null()) {
+      elements->set(0, *(pending_error_arg_.ToHandleChecked()));
+    } else if (pending_error_char_arg_ != NULL) {
+      Handle<String> arg_string =
+          factory->NewStringFromUtf8(CStrVector(pending_error_char_arg_))
+          .ToHandleChecked();
+      elements->set(0, *arg_string);
+    }
+    Handle<JSArray> array = factory->NewJSArrayWithElements(elements);
+    Handle<Object> result = pending_error_is_reference_error_
+        ? factory->NewReferenceError(pending_error_message_, array)
+        : factory->NewSyntaxError(pending_error_message_, array);
+    isolate()->Throw(*result, &location);
   }
 }
 

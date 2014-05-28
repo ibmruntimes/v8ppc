@@ -276,6 +276,12 @@ class Label BASE_EMBEDDED {
 
 enum SaveFPRegsMode { kDontSaveFPRegs, kSaveFPRegs };
 
+// Specifies whether to perform icache flush operations on RelocInfo updates.
+// If FLUSH_ICACHE_IF_NEEDED, the icache will always be flushed if an
+// instruction was modified. If SKIP_ICACHE_FLUSH the flush will always be
+// skipped (only use this if you will flush the icache manually before it is
+// executed).
+enum ICacheFlushMode { FLUSH_ICACHE_IF_NEEDED, SKIP_ICACHE_FLUSH };
 
 // -----------------------------------------------------------------------------
 // Relocation information
@@ -359,7 +365,6 @@ class RelocInfo {
     LAST_COMPACT_ENUM = CODE_TARGET_WITH_ID,
     LAST_STANDARD_NONCOMPACT_ENUM = INTERNAL_REFERENCE
   };
-
 
   RelocInfo() {}
 
@@ -452,7 +457,9 @@ class RelocInfo {
   void set_host(Code* host) { host_ = host; }
 
   // Apply a relocation by delta bytes
-  INLINE(void apply(intptr_t delta));
+  INLINE(void apply(intptr_t delta,
+                    ICacheFlushMode icache_flush_mode =
+                        FLUSH_ICACHE_IF_NEEDED));
 
   // Is the pointer this relocation info refers to coded like a plain pointer
   // or is it strange in some way (e.g. relative or patched into a series of
@@ -468,22 +475,35 @@ class RelocInfo {
   // can only be called if IsCodeTarget(rmode_) || IsRuntimeEntry(rmode_)
   INLINE(Address target_address());
   INLINE(void set_target_address(Address target,
-                                 WriteBarrierMode mode = UPDATE_WRITE_BARRIER));
+                                 WriteBarrierMode write_barrier_mode =
+                                     UPDATE_WRITE_BARRIER,
+                                 ICacheFlushMode icache_flush_mode =
+                                     FLUSH_ICACHE_IF_NEEDED));
   INLINE(Object* target_object());
   INLINE(Handle<Object> target_object_handle(Assembler* origin));
   INLINE(void set_target_object(Object* target,
-                                WriteBarrierMode mode = UPDATE_WRITE_BARRIER));
+                                WriteBarrierMode write_barrier_mode =
+                                    UPDATE_WRITE_BARRIER,
+                                ICacheFlushMode icache_flush_mode =
+                                    FLUSH_ICACHE_IF_NEEDED));
   INLINE(Address target_runtime_entry(Assembler* origin));
   INLINE(void set_target_runtime_entry(Address target,
-                                       WriteBarrierMode mode =
-                                           UPDATE_WRITE_BARRIER));
+                                       WriteBarrierMode write_barrier_mode =
+                                           UPDATE_WRITE_BARRIER,
+                                       ICacheFlushMode icache_flush_mode =
+                                           FLUSH_ICACHE_IF_NEEDED));
   INLINE(Cell* target_cell());
   INLINE(Handle<Cell> target_cell_handle());
   INLINE(void set_target_cell(Cell* cell,
-                              WriteBarrierMode mode = UPDATE_WRITE_BARRIER));
+                              WriteBarrierMode write_barrier_mode =
+                                  UPDATE_WRITE_BARRIER,
+                              ICacheFlushMode icache_flush_mode =
+                                  FLUSH_ICACHE_IF_NEEDED));
   INLINE(Handle<Object> code_age_stub_handle(Assembler* origin));
   INLINE(Code* code_age_stub());
-  INLINE(void set_code_age_stub(Code* stub));
+  INLINE(void set_code_age_stub(Code* stub,
+                                ICacheFlushMode icache_flush_mode =
+                                    FLUSH_ICACHE_IF_NEEDED));
 
   // Returns the address of the constant pool entry where the target address
   // is held.  This should only be called if IsInConstantPool returns true.
@@ -780,8 +800,6 @@ class ExternalReference BASE_EMBEDDED {
 
   ExternalReference(const IC_Utility& ic_utility, Isolate* isolate);
 
-  ExternalReference(const Debug_Address& debug_address, Isolate* isolate);
-
   explicit ExternalReference(StatsCounter* counter);
 
   ExternalReference(Isolate::AddressId id, Isolate* isolate);
@@ -862,8 +880,6 @@ class ExternalReference BASE_EMBEDDED {
       Isolate* isolate);
   static ExternalReference old_data_space_allocation_limit_address(
       Isolate* isolate);
-  static ExternalReference new_space_high_promotion_mode_active_address(
-      Isolate* isolate);
 
   static ExternalReference mod_two_doubles_operation(Isolate* isolate);
   static ExternalReference power_double_double_function(Isolate* isolate);
@@ -900,6 +916,10 @@ class ExternalReference BASE_EMBEDDED {
   static ExternalReference ForDeoptEntry(Address entry);
 
   static ExternalReference cpu_features();
+
+  static ExternalReference debug_after_break_target_address(Isolate* isolate);
+  static ExternalReference debug_restarter_frame_function_pointer_address(
+      Isolate* isolate);
 
   static ExternalReference is_profiling_address(Isolate* isolate);
   static ExternalReference invoke_function_callback(Isolate* isolate);
