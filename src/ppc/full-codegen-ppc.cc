@@ -210,6 +210,7 @@ void FullCodeGenerator::Generate() {
   if (heap_slots > 0) {
     // Argument to NewContext is the function, which is still in r4.
     Comment cmnt(masm_, "[ Allocate context");
+    bool need_write_barrier = true;
     if (FLAG_harmony_scoping && info->scope()->is_global_scope()) {
       __ push(r4);
       __ Push(info->scope()->GetScopeInfo());
@@ -217,6 +218,8 @@ void FullCodeGenerator::Generate() {
     } else if (heap_slots <= FastNewContextStub::kMaximumSlots) {
       FastNewContextStub stub(isolate(), heap_slots);
       __ CallStub(&stub);
+      // Result of FastNewContextStub is always in new space.
+      need_write_barrier = false;
     } else {
       __ push(r4);
       __ CallRuntime(Runtime::kHiddenNewFunctionContext, 1);
@@ -240,8 +243,15 @@ void FullCodeGenerator::Generate() {
         __ StoreP(r3, target, r0);
 
         // Update the write barrier.
-        __ RecordWriteContextSlot(
-            cp, target.offset(), r3, r6, kLRHasBeenSaved, kDontSaveFPRegs);
+        if (need_write_barrier) {
+          __ RecordWriteContextSlot(
+              cp, target.offset(), r3, r6, kLRHasBeenSaved, kDontSaveFPRegs);
+        } else if (FLAG_debug_code) {
+          Label done;
+          __ JumpIfInNewSpace(cp, r3, &done);
+          __ Abort(kExpectedNewSpaceObject);
+          __ bind(&done);
+        }
       }
     }
   }
@@ -1798,7 +1808,7 @@ void FullCodeGenerator::VisitArrayLiteral(ArrayLiteral* expr) {
   __ LoadP(r6, FieldMemOperand(r6, JSFunction::kLiteralsOffset));
   __ LoadSmiLiteral(r5, Smi::FromInt(expr->literal_index()));
   __ mov(r4, Operand(constant_elements));
-  if (expr->depth() > 1) {
+  if (expr->depth() > 1 || length > JSObject::kInitialMaxFastElementArray) {
     __ LoadSmiLiteral(r3, Smi::FromInt(flags));
     __ Push(r6, r5, r4, r3);
     __ CallRuntime(Runtime::kHiddenCreateArrayLiteral, 4);

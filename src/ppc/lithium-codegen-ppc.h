@@ -136,8 +136,7 @@ class LCodeGen: public LCodeGenBase {
                                  bool key_is_tagged,
                                  int constant_key,
                                  int element_size_shift,
-                                 int additional_index,
-                                 int additional_offset);
+                                 int base_offset);
 
   // Emit frame translation commands for an environment.
   void WriteTranslation(LEnvironment* environment, Translation* translation);

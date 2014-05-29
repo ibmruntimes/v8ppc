@@ -427,6 +427,7 @@ class LDummyUse V8_FINAL : public LTemplateInstruction<1, 1, 0> {
 
 class LDeoptimize V8_FINAL : public LTemplateInstruction<0, 0, 0> {
  public:
+  virtual bool IsControl() const V8_OVERRIDE { return true; }
   DECLARE_CONCRETE_INSTRUCTION(Deoptimize, "deoptimize")
   DECLARE_HYDROGEN_ACCESSOR(Deoptimize)
 };
@@ -1643,7 +1644,7 @@ class LLoadKeyed V8_FINAL : public LTemplateInstruction<1, 2, 0> {
   DECLARE_HYDROGEN_ACCESSOR(LoadKeyed)
 
   virtual void PrintDataTo(StringStream* stream) V8_OVERRIDE;
-  uint32_t additional_index() const { return hydrogen()->index_offset(); }
+  uint32_t base_offset() const { return hydrogen()->base_offset(); }
 };
 
 
@@ -2218,7 +2219,7 @@ class LStoreKeyed V8_FINAL : public LTemplateInstruction<0, 3, 0> {
     }
     return hydrogen()->NeedsCanonicalization();
   }
-  uint32_t additional_index() const { return hydrogen()->index_offset(); }
+  uint32_t base_offset() const { return hydrogen()->base_offset(); }
 };
 
 
@@ -2803,6 +2804,7 @@ class LChunkBuilder V8_FINAL : public LChunkBuilderBase {
 
   // Temporary operand that must be in a register.
   MUST_USE_RESULT LUnallocated* TempRegister();
+  MUST_USE_RESULT LUnallocated* TempDoubleRegister();
   MUST_USE_RESULT LOperand* FixedTemp(Register reg);
   MUST_USE_RESULT LOperand* FixedTemp(DoubleRegister reg);
 
@@ -2832,6 +2834,7 @@ class LChunkBuilder V8_FINAL : public LChunkBuilderBase {
       CanDeoptimize can_deoptimize = CANNOT_DEOPTIMIZE_EAGERLY);
 
   void VisitInstruction(HInstruction* current);
+  void AddInstruction(LInstruction* instr, HInstruction* current);
 
   void DoBasicBlock(HBasicBlock* block, HBasicBlock* next_block);
   LInstruction* DoShift(Token::Value op, HBitwiseBinaryOperation* instr);

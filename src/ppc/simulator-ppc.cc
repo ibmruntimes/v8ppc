@@ -792,7 +792,7 @@ void Simulator::CheckICache(v8::internal::HashMap* i_cache,
                        Instruction::kInstrSize));
   } else {
     // Cache miss.  Load memory into the cache.
-    OS::MemCopy(cached_line, line, CachePage::kLineLength);
+    memcpy(cached_line, line, CachePage::kLineLength);
     *cache_valid_byte = CachePage::LINE_VALID;
   }
 }
@@ -969,8 +969,8 @@ double Simulator::get_double_from_register_pair(int reg) {
   // Read the bits from the unsigned integer register_[] array
   // into the double precision floating point value and return it.
   char buffer[sizeof(fp_registers_[0])];
-  OS::MemCopy(buffer, &registers_[reg], 2 * sizeof(registers_[0]));
-  OS::MemCopy(&dm_val, buffer, 2 * sizeof(registers_[0]));
+  memcpy(buffer, &registers_[reg], 2 * sizeof(registers_[0]));
+  memcpy(&dm_val, buffer, 2 * sizeof(registers_[0]));
 #endif
   return(dm_val);
 }
@@ -1475,8 +1475,8 @@ void Simulator::SoftwareInterrupt(Instruction* instr) {
           set_register(r3, result.x);
           set_register(r4, result.y);
 #else
-          OS::MemCopy(reinterpret_cast<void *>(result_buffer), &result,
-                      sizeof(struct ObjectPair));
+          memcpy(reinterpret_cast<void *>(result_buffer), &result,
+                 sizeof(struct ObjectPair));
 #endif
         }
 #endif

@@ -503,7 +503,7 @@ void StringCharLoadGenerator::Generate(MacroAssembler* masm,
     __ Assert(eq, kExternalStringExpectedButNotFound, cr0);
   }
   // Rule out short external strings.
-  STATIC_CHECK(kShortExternalStringTag != 0);
+  STATIC_ASSERT(kShortExternalStringTag != 0);
   __ andi(r0, result, Operand(kShortExternalStringMask));
   __ bne(call_runtime, cr0);
   __ LoadP(string,

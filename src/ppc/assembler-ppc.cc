@@ -1503,7 +1503,8 @@ void Assembler::function_descriptor() {
 #if ABI_USES_FUNCTION_DESCRIPTORS || V8_OOL_CONSTANT_POOL
 void Assembler::RelocateInternalReference(Address pc,
                                           intptr_t delta,
-                                          Address code_start) {
+                                          Address code_start,
+                                          ICacheFlushMode icache_flush_mode) {
   ASSERT(delta || code_start);
 #if ABI_USES_FUNCTION_DESCRIPTORS
   uintptr_t *fd = reinterpret_cast<uintptr_t*>(pc);
@@ -1523,7 +1524,7 @@ void Assembler::RelocateInternalReference(Address pc,
   if (delta) {
     code_start = target_address_at(pc, constant_pool) + delta;
   }
-  set_target_address_at(pc, constant_pool, code_start);
+  set_target_address_at(pc, constant_pool, code_start, icache_flush_mode);
 #endif
 }
 

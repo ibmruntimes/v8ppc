@@ -1903,34 +1903,12 @@ void MacroAssembler::AllocateAsciiConsString(Register result,
                                              Register scratch1,
                                              Register scratch2,
                                              Label* gc_required) {
-  Label allocate_new_space, install_map;
-  AllocationFlags flags = TAG_OBJECT;
-
-  ExternalReference high_promotion_mode = ExternalReference::
-      new_space_high_promotion_mode_active_address(isolate());
-  mov(scratch1, Operand(high_promotion_mode));
-  LoadP(scratch1, MemOperand(scratch1));
-  cmpi(scratch1, Operand::Zero());
-  beq(&allocate_new_space);
-
   Allocate(ConsString::kSize,
            result,
            scratch1,
            scratch2,
            gc_required,
-           static_cast<AllocationFlags>(flags | PRETENURE_OLD_POINTER_SPACE));
-
-  b(&install_map);
-
-  bind(&allocate_new_space);
-  Allocate(ConsString::kSize,
-           result,
-           scratch1,
-           scratch2,
-           gc_required,
-           flags);
-
-  bind(&install_map);
+           TAG_OBJECT);
 
   InitializeNewString(result,
                       length,
@@ -2451,20 +2429,7 @@ void MacroAssembler::IndexFromHash(Register hash, Register index) {
   // conflict.
   ASSERT(TenToThe(String::kMaxCachedArrayIndexLength) <
          (1 << String::kArrayIndexValueBits));
-  // We want the smi-tagged index in key.  kArrayIndexValueMask has zeros in
-  // the low kHashShift bits.
-  STATIC_ASSERT(String::kHashShift == 2);
-  STATIC_ASSERT(String::kArrayIndexValueBits == 24);
-  // index = SmiTag((hash >> 2) & 0x00FFFFFF);
-#if V8_TARGET_ARCH_PPC64
-  ExtractBitRange(index, hash, 25, 2);
-  SmiTag(index);
-#else
-  STATIC_ASSERT(kSmiShift == 1);
-  // 32-bit can do this in one instruction:
-  //    index = (hash & 0x03FFFFFC) >> 1;
-  rlwinm(index, hash, 31, 7, 30);
-#endif
+  DecodeFieldToSmi<String::ArrayIndexValueBits>(index, hash);
 }
 
 
@@ -3412,17 +3377,26 @@ void MacroAssembler::CopyBytes(Register src,
 }
 
 
+void MacroAssembler::InitializeNFieldsWithFiller(Register start_offset,
+                                                 Register count,
+                                                 Register filler) {
+  Label loop;
+  mtctr(count);
+  bind(&loop);
+  StoreP(filler, MemOperand(start_offset));
+  addi(start_offset, start_offset, Operand(kPointerSize));
+  bdnz(&loop);
+}
+
 void MacroAssembler::InitializeFieldsWithFiller(Register start_offset,
                                                 Register end_offset,
                                                 Register filler) {
-  Label loop, entry;
-  b(&entry);
-  bind(&loop);
-  StoreP(filler, MemOperand(start_offset), r0);
-  addi(start_offset, start_offset, Operand(kPointerSize));
-  bind(&entry);
-  cmp(start_offset, end_offset);
-  blt(&loop);
+  Label done;
+  sub(r0, end_offset, start_offset, LeaveOE, SetRC);
+  beq(&done, cr0);
+  ShiftRightImm(r0, r0, Operand(kPointerSizeLog2));
+  InitializeNFieldsWithFiller(start_offset, r0, filler);
+  bind(&done);
 }
 
 
@@ -4840,6 +4814,11 @@ void MacroAssembler::StoreRepresentation(Register src,
     StoreWord(src, mem, scratch);
 #endif
   } else {
+    if (r.IsHeapObject()) {
+      AssertNotSmi(src);
+    } else if (r.IsSmi()) {
+      AssertSmi(src);
+    }
     StoreP(src, mem, scratch);
   }
 }
@@ -4908,7 +4887,7 @@ void MacroAssembler::JumpIfDictionaryInPrototypeChain(
   bind(&loop_again);
   LoadP(current, FieldMemOperand(current, HeapObject::kMapOffset));
   lbz(scratch1, FieldMemOperand(current, Map::kBitField2Offset));
-  ExtractBitMask(scratch1, scratch1, Map::kElementsKindMask);
+  DecodeField<Map::ElementsKindBits>(scratch1);
   cmpi(scratch1, Operand(DICTIONARY_ELEMENTS));
   beq(found);
   LoadP(current, FieldMemOperand(current, Map::kPrototypeOffset));

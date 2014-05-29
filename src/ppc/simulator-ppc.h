@@ -40,9 +40,6 @@ typedef int (*ppc_regexp_matcher)(String*, int, const byte*, const byte*,
   (FUNCTION_CAST<ppc_regexp_matcher>(entry)(                              \
       p0, p1, p2, p3, p4, p5, p6, p7, NULL, p8))
 
-#define TRY_CATCH_FROM_ADDRESS(try_catch_address) \
-  reinterpret_cast<TryCatch*>(try_catch_address)
-
 // The stack limit beyond which we will throw stack overflow errors in
 // generated code. Because generated code on ppc uses the C stack, we
 // just use the C stack limit.
@@ -357,10 +354,6 @@ class Simulator {
     (intptr_t)p7,                                                       \
     (intptr_t)NULL,                                                     \
     (intptr_t)p8)
-
-#define TRY_CATCH_FROM_ADDRESS(try_catch_address)                              \
-  try_catch_address == NULL ?                                                  \
-      NULL : *(reinterpret_cast<TryCatch**>(try_catch_address))
 
 
 // The simulator has its own stack. Thus it has a different stack limit from

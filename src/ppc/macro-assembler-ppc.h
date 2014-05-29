@@ -10,7 +10,7 @@
 
 #include "assembler.h"
 #include "frames.h"
-#include "v8globals.h"
+#include "globals.h"
 
 namespace v8 {
 namespace internal {
@@ -782,6 +782,14 @@ class MacroAssembler: public Assembler {
                  Register dst,
                  Register length,
                  Register scratch);
+
+  // Initialize fields with filler values.  |count| fields starting at
+  // |start_offset| are overwritten with the value in |filler|.  At the end the
+  // loop, |start_offset| points at the next uninitialized field.  |count| is
+  // assumed to be non-zero.
+  void InitializeNFieldsWithFiller(Register start_offset,
+                                   Register count,
+                                   Register filler);
 
   // Initialize fields with filler values.  Fields starting at |start_offset|
   // not including end_offset are overwritten with the value in |filler|.  At
@@ -1570,8 +1578,37 @@ class MacroAssembler: public Assembler {
   void NumberOfOwnDescriptors(Register dst, Register map);
 
   template<typename Field>
+  void DecodeField(Register dst, Register src) {
+    ExtractBitRange(dst, src, Field::kShift + Field::kSize - 1, Field::kShift);
+  }
+
+  template<typename Field>
   void DecodeField(Register reg) {
-    ExtractBitMask(reg, reg, Field::kMask);
+    DecodeField<Field>(reg, reg);
+  }
+
+  template<typename Field>
+  void DecodeFieldToSmi(Register dst, Register src) {
+#if V8_TARGET_ARCH_PPC64
+    DecodeField<Field>(dst, src);
+    SmiTag(dst);
+#else
+    // 32-bit can do this in one instruction:
+    int start = Field::kSize + kSmiShift - 1;
+    int end = kSmiShift;
+    int rotate = kSmiShift - Field::kShift;
+    if (rotate < 0) {
+      rotate += kBitsPerPointer;
+    }
+    rlwinm(dst, src, rotate,
+           kBitsPerPointer - start - 1,
+           kBitsPerPointer - end - 1);
+#endif
+  }
+
+  template<typename Field>
+  void DecodeFieldToSmi(Register reg) {
+    DecodeFieldToSmi<Field>(reg, reg);
   }
 
   // Activation support.
