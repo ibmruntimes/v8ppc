@@ -59,7 +59,9 @@
 // As a workaround, the file is split into two parts: test-api.cc and
 // test-api2.cc.
 #define TEST_API_IN_PARTS
-#if !defined(TEST_API_PART2)
+#if defined(TEST_API_PART2)
+extern int p_getter_count;
+#else
 #define TEST_API_PART1
 #endif
 #endif
@@ -98,7 +100,7 @@ using ::v8::Value;
   THREADED_TEST(Name)
 
 
-static void RunWithProfiler(void (*test)()) {
+void RunWithProfiler(void (*test)()) {
   LocalContext env;
   v8::HandleScope scope(env->GetIsolate());
   v8::Local<v8::String> profile_name =
@@ -108,233 +110,6 @@ static void RunWithProfiler(void (*test)()) {
   cpu_profiler->StartProfiling(profile_name);
   (*test)();
   reinterpret_cast<i::CpuProfiler*>(cpu_profiler)->DeleteAllProfiles();
-}
-
-
-template<typename T>
-static void CheckReturnValue(const T& t, i::Address callback) {
-  v8::ReturnValue<v8::Value> rv = t.GetReturnValue();
-  i::Object** o = *reinterpret_cast<i::Object***>(&rv);
-  CHECK_EQ(CcTest::isolate(), t.GetIsolate());
-  CHECK_EQ(t.GetIsolate(), rv.GetIsolate());
-  CHECK((*o)->IsTheHole() || (*o)->IsUndefined());
-  // Verify reset
-  bool is_runtime = (*o)->IsTheHole();
-  rv.Set(true);
-  CHECK(!(*o)->IsTheHole() && !(*o)->IsUndefined());
-  rv.Set(v8::Handle<v8::Object>());
-  CHECK((*o)->IsTheHole() || (*o)->IsUndefined());
-  CHECK_EQ(is_runtime, (*o)->IsTheHole());
-
-  i::Isolate* isolate = reinterpret_cast<i::Isolate*>(t.GetIsolate());
-  // If CPU profiler is active check that when API callback is invoked
-  // VMState is set to EXTERNAL.
-  if (isolate->cpu_profiler()->is_profiling()) {
-    CHECK_EQ(i::EXTERNAL, isolate->current_vm_state());
-    CHECK(isolate->external_callback_scope());
-    CHECK_EQ(callback, isolate->external_callback_scope()->callback());
-  }
-}
-
-
-static void Return239Callback(
-    Local<String> name, const v8::PropertyCallbackInfo<Value>& info) {
-  ApiTestFuzzer::Fuzz();
-  CheckReturnValue(info, FUNCTION_ADDR(Return239Callback));
-  info.GetReturnValue().Set(v8_str("bad value"));
-  info.GetReturnValue().Set(v8_num(239));
-}
-
-
-static void NoBlockGetterX(Local<String> name,
-                           const v8::PropertyCallbackInfo<v8::Value>&) {
-}
-
-
-class TestResource: public String::ExternalStringResource {
- public:
-  TestResource(uint16_t* data, int* counter = NULL, bool owning_data = true)
-      : data_(data), length_(0), counter_(counter), owning_data_(owning_data) {
-    while (data[length_]) ++length_;
-  }
-
-  ~TestResource() {
-    if (owning_data_) i::DeleteArray(data_);
-    if (counter_ != NULL) ++*counter_;
-  }
-
-  const uint16_t* data() const {
-    return data_;
-  }
-
-  size_t length() const {
-    return length_;
-  }
-
- private:
-  uint16_t* data_;
-  size_t length_;
-  int* counter_;
-  bool owning_data_;
-};
-
-
-class TestAsciiResource: public String::ExternalAsciiStringResource {
- public:
-  TestAsciiResource(const char* data, int* counter = NULL, size_t offset = 0)
-      : orig_data_(data),
-        data_(data + offset),
-        length_(strlen(data) - offset),
-        counter_(counter) { }
-
-  ~TestAsciiResource() {
-    i::DeleteArray(orig_data_);
-    if (counter_ != NULL) ++*counter_;
-  }
-
-  const char* data() const {
-    return data_;
-  }
-
-  size_t length() const {
-    return length_;
-  }
-
- private:
-  const char* orig_data_;
-  const char* data_;
-  size_t length_;
-  int* counter_;
-};
-
-
-static const char* last_location;
-static const char* last_message;
-static void StoringErrorCallback(const char* location, const char* message) {
-  if (last_location == NULL) {
-    last_location = location;
-    last_message = message;
-  }
-}
-
-
-// For use within the TestSecurityHandler() test.
-static bool g_security_callback_result = false;
-static bool IndexedSecurityTestCallback(Local<v8::Object> global,
-                                        uint32_t key,
-                                        v8::AccessType type,
-                                        Local<Value> data) {
-  printf("b\n");
-  // Always allow read access.
-  if (type == v8::ACCESS_GET)
-    return true;
-
-  // Sometimes allow other access.
-  return g_security_callback_result;
-}
-
-
-static void GetXValue(Local<String> name,
-                      const v8::PropertyCallbackInfo<v8::Value>& info) {
-  ApiTestFuzzer::Fuzz();
-  CHECK_EQ(info.Data(), v8_str("donut"));
-  CHECK_EQ(name, v8_str("x"));
-  info.GetReturnValue().Set(name);
-}
-
-
-static void EmptyInterceptorGetter(Local<String> name,
-                            const v8::PropertyCallbackInfo<v8::Value>& info) {
-}
-
-
-static void EmptyInterceptorSetter(Local<String> name,
-                            Local<Value> value,
-                            const v8::PropertyCallbackInfo<v8::Value>& info) {
-}
-
-
-static void InterceptorGetter(Local<String> name,
-                              const v8::PropertyCallbackInfo<v8::Value>& info) {
-  // Intercept names that start with 'interceptor_'.
-  String::Utf8Value utf8(name);
-  char* name_str = *utf8;
-  char prefix[] = "interceptor_";
-  int i;
-  for (i = 0; name_str[i] && prefix[i]; ++i) {
-    if (name_str[i] != prefix[i]) return;
-  }
-  Handle<Object> self = Handle<Object>::Cast(info.This());
-  info.GetReturnValue().Set(self->GetHiddenValue(v8_str(name_str + i)));
-}
-
-
-static void InterceptorSetter(Local<String> name,
-                              Local<Value> value,
-                              const v8::PropertyCallbackInfo<v8::Value>& info) {
-  // Intercept accesses that set certain integer values, for which the name does
-  // not start with 'accessor_'.
-  String::Utf8Value utf8(name);
-  char* name_str = *utf8;
-  char prefix[] = "accessor_";
-  int i;
-  for (i = 0; name_str[i] && prefix[i]; ++i) {
-    if (name_str[i] != prefix[i]) break;
-  }
-  if (!prefix[i]) return;
-
-  if (value->IsInt32() && value->Int32Value() < 10000) {
-    Handle<Object> self = Handle<Object>::Cast(info.This());
-    self->SetHiddenValue(name, value);
-    info.GetReturnValue().Set(value);
-  }
-}
-
-
-static void AddInterceptor(Handle<FunctionTemplate> templ,
-                    v8::NamedPropertyGetterCallback getter,
-                    v8::NamedPropertySetterCallback setter) {
-  templ->InstanceTemplate()->SetNamedPropertyHandler(getter, setter);
-}
-
-
-static int p_getter_count;
-static int report_count = 0;
-
-
-template <typename T>
-static void CheckInternalFieldsAreZero(v8::Handle<T> value) {
-  CHECK_EQ(T::kInternalFieldCount, value->InternalFieldCount());
-  for (int i = 0; i < value->InternalFieldCount(); i++) {
-    CHECK_EQ(0, value->GetInternalField(i)->Int32Value());
-  }
-}
-
-
-static void DummyCallHandler(const v8::FunctionCallbackInfo<v8::Value>& args) {
-  ApiTestFuzzer::Fuzz();
-  args.GetReturnValue().Set(v8_num(13.4));
-}
-
-
-static int named_access_count = 0;
-static int indexed_access_count = 0;
-
-static bool NamedAccessCounter(Local<v8::Object> global,
-                               Local<Value> name,
-                               v8::AccessType type,
-                               Local<Value> data) {
-  named_access_count++;
-  return true;
-}
-
-
-static bool IndexedAccessCounter(Local<v8::Object> global,
-                                 uint32_t key,
-                                 v8::AccessType type,
-                                 Local<Value> data) {
-  indexed_access_count++;
-  return true;
 }
 
 
@@ -646,7 +421,67 @@ THREADED_TEST(Script) {
   Local<Script> script = v8_compile(source);
   CHECK_EQ(6, script->Run()->Int32Value());
 }
+#endif
 
+
+class TestResource: public String::ExternalStringResource {
+ public:
+  TestResource(uint16_t* data, int* counter = NULL, bool owning_data = true)
+      : data_(data), length_(0), counter_(counter), owning_data_(owning_data) {
+    while (data[length_]) ++length_;
+  }
+
+  ~TestResource() {
+    if (owning_data_) i::DeleteArray(data_);
+    if (counter_ != NULL) ++*counter_;
+  }
+
+  const uint16_t* data() const {
+    return data_;
+  }
+
+  size_t length() const {
+    return length_;
+  }
+
+ private:
+  uint16_t* data_;
+  size_t length_;
+  int* counter_;
+  bool owning_data_;
+};
+
+
+class TestAsciiResource: public String::ExternalAsciiStringResource {
+ public:
+  TestAsciiResource(const char* data, int* counter = NULL, size_t offset = 0)
+      : orig_data_(data),
+        data_(data + offset),
+        length_(strlen(data) - offset),
+        counter_(counter) { }
+
+  ~TestAsciiResource() {
+    i::DeleteArray(orig_data_);
+    if (counter_ != NULL) ++*counter_;
+  }
+
+  const char* data() const {
+    return data_;
+  }
+
+  size_t length() const {
+    return length_;
+  }
+
+ private:
+  const char* orig_data_;
+  const char* data_;
+  size_t length_;
+  int* counter_;
+};
+
+
+#if !defined(TEST_API_IN_PARTS) || defined(TEST_API_PART1)
 
 THREADED_TEST(ScriptUsingStringResource) {
   int dispose_count = 0;
@@ -1094,7 +929,36 @@ THREADED_TEST(GlobalProperties) {
   Local<Value> pi = global->Get(v8_str("pi"));
   CHECK_EQ(3.1415926, pi->NumberValue());
 }
+#endif
 
+
+template<typename T>
+static void CheckReturnValue(const T& t, i::Address callback) {
+  v8::ReturnValue<v8::Value> rv = t.GetReturnValue();
+  i::Object** o = *reinterpret_cast<i::Object***>(&rv);
+  CHECK_EQ(CcTest::isolate(), t.GetIsolate());
+  CHECK_EQ(t.GetIsolate(), rv.GetIsolate());
+  CHECK((*o)->IsTheHole() || (*o)->IsUndefined());
+  // Verify reset
+  bool is_runtime = (*o)->IsTheHole();
+  rv.Set(true);
+  CHECK(!(*o)->IsTheHole() && !(*o)->IsUndefined());
+  rv.Set(v8::Handle<v8::Object>());
+  CHECK((*o)->IsTheHole() || (*o)->IsUndefined());
+  CHECK_EQ(is_runtime, (*o)->IsTheHole());
+
+  i::Isolate* isolate = reinterpret_cast<i::Isolate*>(t.GetIsolate());
+  // If CPU profiler is active check that when API callback is invoked
+  // VMState is set to EXTERNAL.
+  if (isolate->cpu_profiler()->is_profiling()) {
+    CHECK_EQ(i::EXTERNAL, isolate->current_vm_state());
+    CHECK(isolate->external_callback_scope());
+    CHECK_EQ(callback, isolate->external_callback_scope()->callback());
+  }
+}
+
+
+#if !defined(TEST_API_IN_PARTS) || defined(TEST_API_PART1)
 
 static void handle_callback_impl(const v8::FunctionCallbackInfo<Value>& info,
                                  i::Address callback) {
@@ -1123,7 +987,19 @@ static void construct_callback(
   info.GetReturnValue().Set(v8_str("bad value"));
   info.GetReturnValue().Set(info.This());
 }
+#endif
 
+
+static void Return239Callback(
+    Local<String> name, const v8::PropertyCallbackInfo<Value>& info) {
+  ApiTestFuzzer::Fuzz();
+  CheckReturnValue(info, FUNCTION_ADDR(Return239Callback));
+  info.GetReturnValue().Set(v8_str("bad value"));
+  info.GetReturnValue().Set(v8_num(239));
+}
+
+
+#if !defined(TEST_API_IN_PARTS) || defined(TEST_API_PART1)
 
 template<typename Handler>
 static void TestFunctionTemplateInitializer(Handler handler,
@@ -1868,7 +1744,16 @@ THREADED_TEST(Boolean) {
   CHECK(v8::Number::New(isolate, 42)->BooleanValue());
   CHECK(!v8_compile("NaN")->Run()->BooleanValue());
 }
+#endif
 
+
+static void DummyCallHandler(const v8::FunctionCallbackInfo<v8::Value>& args) {
+  ApiTestFuzzer::Fuzz();
+  args.GetReturnValue().Set(v8_num(13.4));
+}
+
+
+#if !defined(TEST_API_IN_PARTS) || defined(TEST_API_PART1)
 
 static void GetM(Local<String> name,
                  const v8::PropertyCallbackInfo<v8::Value>& info) {
@@ -2018,14 +1903,74 @@ void SimpleAccessorSetter(Local<String> name, Local<Value> value,
   Handle<Object> self = Handle<Object>::Cast(info.This());
   self->Set(String::Concat(v8_str("accessor_"), name), value);
 }
+#endif
 
-void AddAccessor(Handle<FunctionTemplate> templ,
+// AIX Workaround: file split into two parts: test-api.cc and test-api2.cc
+static void EmptyInterceptorGetter(Local<String> name,
+                            const v8::PropertyCallbackInfo<v8::Value>& info) {
+}
+
+// AIX Workaround: file split into two parts: test-api.cc and test-api2.cc
+static void EmptyInterceptorSetter(Local<String> name,
+                            Local<Value> value,
+                            const v8::PropertyCallbackInfo<v8::Value>& info) {
+}
+
+// AIX Workaround: file split into two parts: test-api.cc and test-api2.cc
+static void InterceptorGetter(Local<String> name,
+                       const v8::PropertyCallbackInfo<v8::Value>& info) {
+  // Intercept names that start with 'interceptor_'.
+  String::Utf8Value utf8(name);
+  char* name_str = *utf8;
+  char prefix[] = "interceptor_";
+  int i;
+  for (i = 0; name_str[i] && prefix[i]; ++i) {
+    if (name_str[i] != prefix[i]) return;
+  }
+  Handle<Object> self = Handle<Object>::Cast(info.This());
+  info.GetReturnValue().Set(self->GetHiddenValue(v8_str(name_str + i)));
+}
+
+// AIX Workaround: file split into two parts: test-api.cc and test-api2.cc
+static void InterceptorSetter(Local<String> name,
+                       Local<Value> value,
+                       const v8::PropertyCallbackInfo<v8::Value>& info) {
+  // Intercept accesses that set certain integer values, for which the name does
+  // not start with 'accessor_'.
+  String::Utf8Value utf8(name);
+  char* name_str = *utf8;
+  char prefix[] = "accessor_";
+  int i;
+  for (i = 0; name_str[i] && prefix[i]; ++i) {
+    if (name_str[i] != prefix[i]) break;
+  }
+  if (!prefix[i]) return;
+
+  if (value->IsInt32() && value->Int32Value() < 10000) {
+    Handle<Object> self = Handle<Object>::Cast(info.This());
+    self->SetHiddenValue(name, value);
+    info.GetReturnValue().Set(value);
+  }
+}
+
+
+#if !defined(TEST_API_IN_PARTS) || defined(TEST_API_PART1)
+static void AddAccessor(Handle<FunctionTemplate> templ,
                  Handle<String> name,
                  v8::AccessorGetterCallback getter,
                  v8::AccessorSetterCallback setter) {
   templ->PrototypeTemplate()->SetAccessor(name, getter, setter);
 }
+#endif
 
+static void AddInterceptor(Handle<FunctionTemplate> templ,
+                    v8::NamedPropertyGetterCallback getter,
+                    v8::NamedPropertySetterCallback setter) {
+  templ->InstanceTemplate()->SetNamedPropertyHandler(getter, setter);
+}
+
+
+#if !defined(TEST_API_IN_PARTS) || defined(TEST_API_PART1)
 
 THREADED_TEST(EmptyInterceptorDoesNotShadowAccessors) {
   v8::HandleScope scope(CcTest::isolate());
@@ -3039,7 +2984,18 @@ class ScopedArrayBufferContents {
  private:
   const v8::ArrayBuffer::Contents contents_;
 };
+#endif
 
+template <typename T>
+static void CheckInternalFieldsAreZero(v8::Handle<T> value) {
+  CHECK_EQ(T::kInternalFieldCount, value->InternalFieldCount());
+  for (int i = 0; i < value->InternalFieldCount(); i++) {
+    CHECK_EQ(0, value->GetInternalField(i)->Int32Value());
+  }
+}
+
+
+#if !defined(TEST_API_IN_PARTS) || defined(TEST_API_PART1)
 
 THREADED_TEST(ArrayBuffer_ApiInternalToExternal) {
   LocalContext env;
@@ -5513,7 +5469,19 @@ THREADED_TEST(MultiRun) {
   for (int i = 0; i < 10; i++)
     script->Run();
 }
+#endif
 
+
+static void GetXValue(Local<String> name,
+                      const v8::PropertyCallbackInfo<v8::Value>& info) {
+  ApiTestFuzzer::Fuzz();
+  CHECK_EQ(info.Data(), v8_str("donut"));
+  CHECK_EQ(name, v8_str("x"));
+  info.GetReturnValue().Set(name);
+}
+
+
+#if !defined(TEST_API_IN_PARTS) || defined(TEST_API_PART1)
 
 THREADED_TEST(SimplePropertyRead) {
   LocalContext context;
@@ -7154,7 +7122,22 @@ THREADED_TEST(NativeFunctionConstructCall) {
              CompileRun("(new C()).data"));
   }
 }
+#endif
 
+
+static const char* last_location;
+static const char* last_message;
+
+// AIX Workaround: file split into two parts: test-api.cc and test-api2.cc
+static void StoringErrorCallback(const char* location, const char* message) {
+  if (last_location == NULL) {
+    last_location = location;
+    last_message = message;
+  }
+}
+
+
+#if !defined(TEST_API_IN_PARTS) || defined(TEST_API_PART1)
 
 // ErrorReporting creates a circular extensions configuration and
 // tests that the fatal error handler gets called.  This renders V8
@@ -7358,7 +7341,15 @@ THREADED_TEST(Arguments) {
   args_fun = context->Global()->Get(v8_str("f")).As<Function>();
   v8_compile("f(1, 2, 3)")->Run();
 }
+#endif
 
+
+static void NoBlockGetterX(Local<String> name,
+                           const v8::PropertyCallbackInfo<v8::Value>&) {
+}
+
+
+#if !defined(TEST_API_IN_PARTS) || defined(TEST_API_PART1)
 
 static void NoBlockGetterI(uint32_t index,
                            const v8::PropertyCallbackInfo<v8::Value>&) {
@@ -7507,6 +7498,7 @@ THREADED_TEST(Enumerators) {
 }
 
 
+int p_getter_count;
 int p_getter_count2;
 
 
@@ -8311,7 +8303,11 @@ static void TroubleCallback(const v8::FunctionCallbackInfo<v8::Value>& args) {
   args.GetReturnValue().Set(
       Function::Cast(*trouble_callee)->Call(arg_this, 0, NULL));
 }
+#endif
 
+static int report_count = 0;
+
+#if !defined(TEST_API_IN_PARTS) || defined(TEST_API_PART1)
 
 static void ApiUncaughtExceptionTestListener(v8::Handle<v8::Message>,
                                              v8::Handle<Value>) {
@@ -8419,9 +8415,13 @@ TEST(TryCatchFinallyUsingTryCatchHandler) {
       "})()");
   CHECK(try_catch.HasCaught());
 }
+#endif
 
 
 // For use within the TestSecurityHandler() test.
+static bool g_security_callback_result = false;
+
+#if !defined(TEST_API_IN_PARTS) || defined(TEST_API_PART1)
 static bool NamedSecurityTestCallback(Local<v8::Object> global,
                                       Local<Value> name,
                                       v8::AccessType type,
@@ -8434,7 +8434,24 @@ static bool NamedSecurityTestCallback(Local<v8::Object> global,
   // Sometimes allow other access.
   return g_security_callback_result;
 }
+#endif
 
+
+static bool IndexedSecurityTestCallback(Local<v8::Object> global,
+                                        uint32_t key,
+                                        v8::AccessType type,
+                                        Local<Value> data) {
+  printf("b\n");
+  // Always allow read access.
+  if (type == v8::ACCESS_GET)
+    return true;
+
+  // Sometimes allow other access.
+  return g_security_callback_result;
+}
+
+
+#if !defined(TEST_API_IN_PARTS) || defined(TEST_API_PART1)
 
 // SecurityHandler can't be run twice
 TEST(SecurityHandler) {
@@ -9595,7 +9612,31 @@ THREADED_TEST(CrossDomainAccessors) {
   context1->Exit();
   context0->Exit();
 }
+#endif
 
+
+static int named_access_count = 0;
+static int indexed_access_count = 0;
+
+static bool NamedAccessCounter(Local<v8::Object> global,
+                               Local<Value> name,
+                               v8::AccessType type,
+                               Local<Value> data) {
+  named_access_count++;
+  return true;
+}
+
+
+static bool IndexedAccessCounter(Local<v8::Object> global,
+                                 uint32_t key,
+                                 v8::AccessType type,
+                                 Local<Value> data) {
+  indexed_access_count++;
+  return true;
+}
+
+
+#if !defined(TEST_API_IN_PARTS) || defined(TEST_API_PART1)
 
 // This one is too easily disturbed by other tests.
 TEST(AccessControlIC) {
