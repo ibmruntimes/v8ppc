@@ -5,11 +5,11 @@
 #ifndef V8_X64_LITHIUM_X64_H_
 #define V8_X64_LITHIUM_X64_H_
 
-#include "hydrogen.h"
-#include "lithium-allocator.h"
-#include "lithium.h"
-#include "safepoint-table.h"
-#include "utils.h"
+#include "src/hydrogen.h"
+#include "src/lithium-allocator.h"
+#include "src/lithium.h"
+#include "src/safepoint-table.h"
+#include "src/utils.h"
 
 namespace v8 {
 namespace internal {
@@ -26,7 +26,6 @@ class LCodeGen;
   V(ArgumentsLength)                            \
   V(ArithmeticD)                                \
   V(ArithmeticT)                                \
-  V(ArrayShift)                                 \
   V(BitI)                                       \
   V(BoundsCheck)                                \
   V(Branch)                                     \
@@ -1834,7 +1833,7 @@ class LCallJSFunction V8_FINAL : public LTemplateInstruction<1, 1, 0> {
 class LCallWithDescriptor V8_FINAL : public LTemplateResultInstruction<1> {
  public:
   LCallWithDescriptor(const CallInterfaceDescriptor* descriptor,
-                      ZoneList<LOperand*>& operands,
+                      const ZoneList<LOperand*>& operands,
                       Zone* zone)
     : inputs_(descriptor->environment_length() + 1, zone) {
     ASSERT(descriptor->environment_length() + 1 == operands.length());
@@ -2242,21 +2241,6 @@ class LTransitionElementsKind V8_FINAL : public LTemplateInstruction<0, 2, 2> {
   }
   ElementsKind from_kind() { return hydrogen()->from_kind(); }
   ElementsKind to_kind() { return hydrogen()->to_kind(); }
-};
-
-
-class LArrayShift V8_FINAL : public LTemplateInstruction<1, 2, 0> {
- public:
-  LArrayShift(LOperand* context, LOperand* object) {
-    inputs_[0] = context;
-    inputs_[1] = object;
-  }
-
-  LOperand* context() const { return inputs_[0]; }
-  LOperand* object() const { return inputs_[1]; }
-
-  DECLARE_CONCRETE_INSTRUCTION(ArrayShift, "array-shift")
-  DECLARE_HYDROGEN_ACCESSOR(ArrayShift)
 };
 
 
@@ -2679,8 +2663,6 @@ class LChunkBuilder V8_FINAL : public LChunkBuilderBase {
 
   // Build the sequence for the graph.
   LPlatformChunk* Build();
-
-  LInstruction* CheckElideControlInstruction(HControlInstruction* instr);
 
   // Declare methods that deal with the individual node types.
 #define DECLARE_DO(type) LInstruction* Do##type(H##type* node);

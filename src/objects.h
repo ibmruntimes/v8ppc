@@ -5,26 +5,26 @@
 #ifndef V8_OBJECTS_H_
 #define V8_OBJECTS_H_
 
-#include "allocation.h"
-#include "assert-scope.h"
-#include "builtins.h"
-#include "elements-kind.h"
-#include "flags.h"
-#include "list.h"
-#include "property-details.h"
-#include "smart-pointers.h"
-#include "unicode-inl.h"
+#include "src/allocation.h"
+#include "src/assert-scope.h"
+#include "src/builtins.h"
+#include "src/elements-kind.h"
+#include "src/flags.h"
+#include "src/list.h"
+#include "src/property-details.h"
+#include "src/smart-pointers.h"
+#include "src/unicode-inl.h"
 #if V8_TARGET_ARCH_ARM64
-#include "arm64/constants-arm64.h"
+#include "src/arm64/constants-arm64.h"
 #elif V8_TARGET_ARCH_ARM
-#include "arm/constants-arm.h"
+#include "src/arm/constants-arm.h"
 #elif V8_TARGET_ARCH_PPC
-#include "ppc/constants-ppc.h"
+#include "src/ppc/constants-ppc.h"
 #elif V8_TARGET_ARCH_MIPS
-#include "mips/constants-mips.h"
+#include "src/mips/constants-mips.h"
 #endif
-#include "v8checks.h"
-#include "zone.h"
+#include "src/v8checks.h"
+#include "src/zone.h"
 
 
 //
@@ -584,12 +584,12 @@ enum StringRepresentationTag {
 };
 const uint32_t kIsIndirectStringMask = 0x1;
 const uint32_t kIsIndirectStringTag = 0x1;
-STATIC_ASSERT((kSeqStringTag & kIsIndirectStringMask) == 0);
-STATIC_ASSERT((kExternalStringTag & kIsIndirectStringMask) == 0);
-STATIC_ASSERT(
-    (kConsStringTag & kIsIndirectStringMask) == kIsIndirectStringTag);
-STATIC_ASSERT(
-    (kSlicedStringTag & kIsIndirectStringMask) == kIsIndirectStringTag);
+STATIC_ASSERT((kSeqStringTag & kIsIndirectStringMask) == 0);  // NOLINT
+STATIC_ASSERT((kExternalStringTag & kIsIndirectStringMask) == 0);  // NOLINT
+STATIC_ASSERT((kConsStringTag &
+               kIsIndirectStringMask) == kIsIndirectStringTag);  // NOLINT
+STATIC_ASSERT((kSlicedStringTag &
+               kIsIndirectStringMask) == kIsIndirectStringTag);  // NOLINT
 
 // Use this mask to distinguish between cons and slice only after making
 // sure that the string is one of the two (an indirect string).
@@ -2232,22 +2232,22 @@ class JSObject: public JSReceiver {
       Handle<JSObject> object,
       Handle<JSObject> receiver,
       Handle<Name> name,
-      bool continue_search);
+      bool check_prototype);
   static PropertyAttributes GetPropertyAttributeWithInterceptor(
       Handle<JSObject> object,
       Handle<JSObject> receiver,
       Handle<Name> name,
-      bool continue_search);
+      bool check_prototype);
   static PropertyAttributes GetPropertyAttributeWithFailedAccessCheck(
       Handle<JSObject> object,
       LookupResult* result,
       Handle<Name> name,
-      bool continue_search);
+      bool check_prototype);
   static PropertyAttributes GetElementAttributeWithReceiver(
       Handle<JSObject> object,
       Handle<JSReceiver> receiver,
       uint32_t index,
-      bool continue_search);
+      bool check_prototype);
 
   // Retrieves an AccessorPair property from the given object. Might return
   // undefined if the property doesn't exist or is of a different kind.
@@ -2451,7 +2451,6 @@ class JSObject: public JSReceiver {
   void LookupRealNamedProperty(Handle<Name> name, LookupResult* result);
   void LookupRealNamedPropertyInPrototypes(Handle<Name> name,
                                            LookupResult* result);
-  void LookupCallbackProperty(Handle<Name> name, LookupResult* result);
 
   // Returns the number of properties on this object filtering out properties
   // with the specified attributes (ignoring interceptors).
@@ -4147,11 +4146,15 @@ class ObjectHashTable: public HashTable<ObjectHashTable,
   // returned in case the key is not present.
   Object* Lookup(Handle<Object> key);
 
-  // Adds (or overwrites) the value associated with the given key. Mapping a
-  // key to the hole value causes removal of the whole entry.
+  // Adds (or overwrites) the value associated with the given key.
   static Handle<ObjectHashTable> Put(Handle<ObjectHashTable> table,
                                      Handle<Object> key,
                                      Handle<Object> value);
+
+  // Returns an ObjectHashTable (possibly |table|) where |key| has been removed.
+  static Handle<ObjectHashTable> Remove(Handle<ObjectHashTable> table,
+                                        Handle<Object> key,
+                                        bool* was_present);
 
  private:
   friend class MarkCompactCollector;
@@ -4217,9 +4220,14 @@ class OrderedHashTable: public FixedArray {
   // if possible.
   static Handle<Derived> Shrink(Handle<Derived> table);
 
-  // Returns a new empty OrderedHashTable and updates all the iterators to
-  // point to the new table.
+  // Returns a new empty OrderedHashTable and records the clearing so that
+  // exisiting iterators can be updated.
   static Handle<Derived> Clear(Handle<Derived> table);
+
+  // Returns an OrderedHashTable (possibly |table|) where |key| has been
+  // removed.
+  static Handle<Derived> Remove(Handle<Derived> table, Handle<Object> key,
+      bool* was_present);
 
   // Returns kNotFound if the key isn't present.
   int FindEntry(Handle<Object> key);
@@ -4344,8 +4352,6 @@ class OrderedHashSet: public OrderedHashTable<
   bool Contains(Handle<Object> key);
   static Handle<OrderedHashSet> Add(
       Handle<OrderedHashSet> table, Handle<Object> key);
-  static Handle<OrderedHashSet> Remove(
-      Handle<OrderedHashSet> table, Handle<Object> key, bool* was_present);
 };
 
 
@@ -6865,24 +6871,26 @@ class Script: public Struct {
 //
 // Installation of ids for the selected builtin functions is handled
 // by the bootstrapper.
-#define FUNCTIONS_WITH_ID_LIST(V)                   \
-  V(Array.prototype, push, ArrayPush)               \
-  V(Array.prototype, pop, ArrayPop)                 \
-  V(Array.prototype, shift, ArrayShift)             \
-  V(Function.prototype, apply, FunctionApply)       \
-  V(String.prototype, charCodeAt, StringCharCodeAt) \
-  V(String.prototype, charAt, StringCharAt)         \
-  V(String, fromCharCode, StringFromCharCode)       \
-  V(Math, floor, MathFloor)                         \
-  V(Math, round, MathRound)                         \
-  V(Math, ceil, MathCeil)                           \
-  V(Math, abs, MathAbs)                             \
-  V(Math, log, MathLog)                             \
-  V(Math, exp, MathExp)                             \
-  V(Math, sqrt, MathSqrt)                           \
-  V(Math, pow, MathPow)                             \
-  V(Math, max, MathMax)                             \
-  V(Math, min, MathMin)                             \
+#define FUNCTIONS_WITH_ID_LIST(V)                     \
+  V(Array.prototype, indexOf, ArrayIndexOf)           \
+  V(Array.prototype, lastIndexOf, ArrayLastIndexOf)   \
+  V(Array.prototype, push, ArrayPush)                 \
+  V(Array.prototype, pop, ArrayPop)                   \
+  V(Array.prototype, shift, ArrayShift)               \
+  V(Function.prototype, apply, FunctionApply)         \
+  V(String.prototype, charCodeAt, StringCharCodeAt)   \
+  V(String.prototype, charAt, StringCharAt)           \
+  V(String, fromCharCode, StringFromCharCode)         \
+  V(Math, floor, MathFloor)                           \
+  V(Math, round, MathRound)                           \
+  V(Math, ceil, MathCeil)                             \
+  V(Math, abs, MathAbs)                               \
+  V(Math, log, MathLog)                               \
+  V(Math, exp, MathExp)                               \
+  V(Math, sqrt, MathSqrt)                             \
+  V(Math, pow, MathPow)                               \
+  V(Math, max, MathMax)                               \
+  V(Math, min, MathMin)                               \
   V(Math, imul, MathImul)
 
 enum BuiltinFunctionId {
@@ -8456,10 +8464,13 @@ class AllocationSite: public Struct {
   enum PretenureDecision {
     kUndecided = 0,
     kDontTenure = 1,
-    kTenure = 2,
-    kZombie = 3,
+    kMaybeTenure = 2,
+    kTenure = 3,
+    kZombie = 4,
     kLastPretenureDecisionValue = kZombie
   };
+
+  const char* PretenureDecisionName(PretenureDecision decision);
 
   DECL_ACCESSORS(transition_info, Object)
   // nested_site threads a list of sites that represent nested literals
@@ -8482,8 +8493,8 @@ class AllocationSite: public Struct {
   class DoNotInlineBit:         public BitField<bool,         29,  1> {};
 
   // Bitfields for pretenure_data
-  class MementoFoundCountBits:  public BitField<int,               0, 27> {};
-  class PretenureDecisionBits:  public BitField<PretenureDecision, 27, 2> {};
+  class MementoFoundCountBits:  public BitField<int,               0, 26> {};
+  class PretenureDecisionBits:  public BitField<PretenureDecision, 26, 3> {};
   class DeoptDependentCodeBit:  public BitField<bool,              29, 1> {};
   STATIC_ASSERT(PretenureDecisionBits::kMax >= kLastPretenureDecisionValue);
 
@@ -8544,9 +8555,17 @@ class AllocationSite: public Struct {
     return pretenure_decision() == kZombie;
   }
 
+  bool IsMaybeTenure() {
+    return pretenure_decision() == kMaybeTenure;
+  }
+
   inline void MarkZombie();
 
-  inline bool DigestPretenuringFeedback();
+  inline bool MakePretenureDecision(PretenureDecision current_decision,
+                                    double ratio,
+                                    bool maximum_size_scavenge);
+
+  inline bool DigestPretenuringFeedback(bool maximum_size_scavenge);
 
   ElementsKind GetElementsKind() {
     ASSERT(!SitePointsToLiteral());
@@ -10043,10 +10062,6 @@ class OrderedHashTableIterator: public JSObject {
   // end.
   static Handle<JSObject> Next(Handle<Derived> iterator);
 
- protected:
-  static Handle<Derived> CreateInternal(
-      Handle<Map> map, Handle<TableType> table, int kind);
-
  private:
   // Transitions the iterator to the non obsolote backing store. This is a NOP
   // if the [table] is not obsolete.
@@ -10059,11 +10074,6 @@ class OrderedHashTableIterator: public JSObject {
 class JSSetIterator: public OrderedHashTableIterator<JSSetIterator,
                                                      OrderedHashSet> {
  public:
-  // Creates a new iterator associated with [table].
-  // [kind] needs to be one of the OrderedHashTableIterator Kind enum values.
-  static inline Handle<JSSetIterator> Create(
-      Handle<OrderedHashSet> table, int kind);
-
   // Dispatched behavior.
   DECLARE_PRINTER(JSSetIterator)
   DECLARE_VERIFIER(JSSetIterator)
@@ -10083,11 +10093,6 @@ class JSSetIterator: public OrderedHashTableIterator<JSSetIterator,
 class JSMapIterator: public OrderedHashTableIterator<JSMapIterator,
                                                      OrderedHashMap> {
  public:
-  // Creates a new iterator associated with [table].
-  // [kind] needs to be one of the OrderedHashTableIterator Kind enum values.
-  static inline Handle<JSMapIterator> Create(
-      Handle<OrderedHashMap> table, int kind);
-
   // Dispatched behavior.
   DECLARE_PRINTER(JSMapIterator)
   DECLARE_VERIFIER(JSMapIterator)
@@ -10430,9 +10435,6 @@ class AccessorInfo: public Struct {
   inline bool all_can_write();
   inline void set_all_can_write(bool value);
 
-  inline bool prohibits_overwriting();
-  inline void set_prohibits_overwriting(bool value);
-
   inline PropertyAttributes property_attributes();
   inline void set_property_attributes(PropertyAttributes attributes);
 
@@ -10459,8 +10461,7 @@ class AccessorInfo: public Struct {
   // Bit positions in flag.
   static const int kAllCanReadBit = 0;
   static const int kAllCanWriteBit = 1;
-  static const int kProhibitsOverwritingBit = 2;
-  class AttributesField: public BitField<PropertyAttributes, 3, 3> {};
+  class AttributesField: public BitField<PropertyAttributes, 2, 3> {};
 
   DISALLOW_IMPLICIT_CONSTRUCTORS(AccessorInfo);
 };
@@ -10625,7 +10626,6 @@ class AccessorPair: public Struct {
   inline void set_access_flags(v8::AccessControl access_control);
   inline bool all_can_read();
   inline bool all_can_write();
-  inline bool prohibits_overwriting();
 
   static inline AccessorPair* cast(Object* obj);
 
@@ -10668,7 +10668,6 @@ class AccessorPair: public Struct {
  private:
   static const int kAllCanReadBit = 0;
   static const int kAllCanWriteBit = 1;
-  static const int kProhibitsOverwritingBit = 2;
 
   // Strangely enough, in addition to functions and harmony proxies, the spec
   // requires us to consider undefined as a kind of accessor, too:
@@ -10945,6 +10944,8 @@ class DebugInfo: public Struct {
   static const int kBreakPointsStateIndex =
       kActiveBreakPointsCountIndex + kPointerSize;
   static const int kSize = kBreakPointsStateIndex + kPointerSize;
+
+  static const int kEstimatedNofBreakPointsInFunction = 16;
 
  private:
   static const int kNoBreakPointInfo = -1;

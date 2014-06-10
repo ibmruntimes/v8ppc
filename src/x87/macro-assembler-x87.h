@@ -5,9 +5,9 @@
 #ifndef V8_X87_MACRO_ASSEMBLER_X87_H_
 #define V8_X87_MACRO_ASSEMBLER_X87_H_
 
-#include "assembler.h"
-#include "frames.h"
-#include "globals.h"
+#include "src/assembler.h"
+#include "src/frames.h"
+#include "src/globals.h"
 
 namespace v8 {
 namespace internal {
@@ -531,12 +531,6 @@ class MacroAssembler: public Assembler {
 
   // Throw past all JS frames to the top JS entry frame.
   void ThrowUncatchable(Register value);
-
-  // Throw a message string as an exception.
-  void Throw(BailoutReason reason);
-
-  // Throw a message string as an exception if a condition is not true.
-  void ThrowIf(Condition cc, BailoutReason reason);
 
   // ---------------------------------------------------------------------------
   // Inline caching support

@@ -5,9 +5,9 @@
 #ifndef V8_MIPS_MACRO_ASSEMBLER_MIPS_H_
 #define V8_MIPS_MACRO_ASSEMBLER_MIPS_H_
 
-#include "assembler.h"
-#include "mips/assembler-mips.h"
-#include "globals.h"
+#include "src/assembler.h"
+#include "src/mips/assembler-mips.h"
+#include "src/globals.h"
 
 namespace v8 {
 namespace internal {
@@ -930,12 +930,6 @@ class MacroAssembler: public Assembler {
   // Propagates an uncatchable exception to the top of the current JS stack's
   // handler chain.
   void ThrowUncatchable(Register value);
-
-  // Throw a message string as an exception.
-  void Throw(BailoutReason reason);
-
-  // Throw a message string as an exception if a condition is not true.
-  void ThrowIf(Condition cc, BailoutReason reason, Register rs, Operand rt);
 
   // Copies a fixed number of fields of heap objects from src to dst.
   void CopyFields(Register dst, Register src, RegList temps, int field_count);

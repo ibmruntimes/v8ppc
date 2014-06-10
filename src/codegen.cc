@@ -6,17 +6,17 @@
 #include <fenv.h>
 #endif
 
-#include "v8.h"
+#include "src/v8.h"
 
-#include "bootstrapper.h"
-#include "codegen.h"
-#include "compiler.h"
-#include "cpu-profiler.h"
-#include "debug.h"
-#include "prettyprinter.h"
-#include "rewriter.h"
-#include "runtime.h"
-#include "stub-cache.h"
+#include "src/bootstrapper.h"
+#include "src/codegen.h"
+#include "src/compiler.h"
+#include "src/cpu-profiler.h"
+#include "src/debug.h"
+#include "src/prettyprinter.h"
+#include "src/rewriter.h"
+#include "src/runtime.h"
+#include "src/stub-cache.h"
 
 namespace v8 {
 namespace internal {

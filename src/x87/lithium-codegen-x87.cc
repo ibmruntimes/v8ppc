@@ -2,17 +2,17 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "v8.h"
+#include "src/v8.h"
 
 #if V8_TARGET_ARCH_X87
 
-#include "x87/lithium-codegen-x87.h"
-#include "ic.h"
-#include "code-stubs.h"
-#include "deoptimizer.h"
-#include "stub-cache.h"
-#include "codegen.h"
-#include "hydrogen-osr.h"
+#include "src/x87/lithium-codegen-x87.h"
+#include "src/ic.h"
+#include "src/code-stubs.h"
+#include "src/deoptimizer.h"
+#include "src/stub-cache.h"
+#include "src/codegen.h"
+#include "src/hydrogen-osr.h"
 
 namespace v8 {
 namespace internal {
@@ -4230,15 +4230,6 @@ void LCodeGen::DoTransitionElementsKind(LTransitionElementsKind* instr) {
         RECORD_SAFEPOINT_WITH_REGISTERS_AND_NO_ARGUMENTS);
   }
   __ bind(&not_applicable);
-}
-
-
-void LCodeGen::DoArrayShift(LArrayShift* instr) {
-  ASSERT(ToRegister(instr->context()).is(esi));
-  ASSERT(ToRegister(instr->object()).is(eax));
-  ASSERT(ToRegister(instr->result()).is(eax));
-  ArrayShiftStub stub(isolate(), instr->hydrogen()->kind());
-  CallCode(stub.GetCode(), RelocInfo::CODE_TARGET, instr);
 }
 
 

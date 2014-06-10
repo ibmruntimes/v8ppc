@@ -2,16 +2,16 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "v8.h"
+#include "src/v8.h"
 
 #if V8_TARGET_ARCH_ARM64
 
-#include "bootstrapper.h"
-#include "codegen.h"
-#include "cpu-profiler.h"
-#include "debug.h"
-#include "isolate-inl.h"
-#include "runtime.h"
+#include "src/bootstrapper.h"
+#include "src/codegen.h"
+#include "src/cpu-profiler.h"
+#include "src/debug.h"
+#include "src/isolate-inl.h"
+#include "src/runtime.h"
 
 namespace v8 {
 namespace internal {
@@ -1546,48 +1546,6 @@ void MacroAssembler::ThrowUncatchable(Register value,
   Pop(object, state, cp, fp);
 
   JumpToHandlerEntry(value, object, state, scratch3, scratch4);
-}
-
-
-void MacroAssembler::Throw(BailoutReason reason) {
-  Label throw_start;
-  Bind(&throw_start);
-#ifdef DEBUG
-  const char* msg = GetBailoutReason(reason);
-  RecordComment("Throw message: ");
-  RecordComment((msg != NULL) ? msg : "UNKNOWN");
-#endif
-
-  Mov(x0, Smi::FromInt(reason));
-  Push(x0);
-
-  // Disable stub call restrictions to always allow calls to throw.
-  if (!has_frame_) {
-    // We don't actually want to generate a pile of code for this, so just
-    // claim there is a stack frame, without generating one.
-    FrameScope scope(this, StackFrame::NONE);
-    CallRuntime(Runtime::kHiddenThrowMessage, 1);
-  } else {
-    CallRuntime(Runtime::kHiddenThrowMessage, 1);
-  }
-  // ThrowMessage should not return here.
-  Unreachable();
-}
-
-
-void MacroAssembler::ThrowIf(Condition cond, BailoutReason reason) {
-  Label ok;
-  B(InvertCondition(cond), &ok);
-  Throw(reason);
-  Bind(&ok);
-}
-
-
-void MacroAssembler::ThrowIfSmi(const Register& value, BailoutReason reason) {
-  Label ok;
-  JumpIfNotSmi(value, &ok);
-  Throw(reason);
-  Bind(&ok);
 }
 
 
@@ -4314,7 +4272,8 @@ void MacroAssembler::RecordWriteField(
     LinkRegisterStatus lr_status,
     SaveFPRegsMode save_fp,
     RememberedSetAction remembered_set_action,
-    SmiCheck smi_check) {
+    SmiCheck smi_check,
+    PointersToHereCheck pointers_to_here_check_for_value) {
   // First, check if a write barrier is even needed. The tests below
   // catch stores of Smis.
   Label done;
@@ -4343,7 +4302,8 @@ void MacroAssembler::RecordWriteField(
               lr_status,
               save_fp,
               remembered_set_action,
-              OMIT_SMI_CHECK);
+              OMIT_SMI_CHECK,
+              pointers_to_here_check_for_value);
 
   Bind(&done);
 
@@ -4356,18 +4316,91 @@ void MacroAssembler::RecordWriteField(
 }
 
 
+// Will clobber: object, map, dst.
+// If lr_status is kLRHasBeenSaved, lr will also be clobbered.
+void MacroAssembler::RecordWriteForMap(Register object,
+                                       Register map,
+                                       Register dst,
+                                       LinkRegisterStatus lr_status,
+                                       SaveFPRegsMode fp_mode) {
+  ASM_LOCATION("MacroAssembler::RecordWrite");
+  ASSERT(!AreAliased(object, map));
+
+  if (emit_debug_code()) {
+    UseScratchRegisterScope temps(this);
+    Register temp = temps.AcquireX();
+
+    CompareMap(map, temp, isolate()->factory()->meta_map());
+    Check(eq, kWrongAddressOrValuePassedToRecordWrite);
+  }
+
+  if (!FLAG_incremental_marking) {
+    return;
+  }
+
+  if (emit_debug_code()) {
+    UseScratchRegisterScope temps(this);
+    Register temp = temps.AcquireX();
+
+    Ldr(temp, FieldMemOperand(object, HeapObject::kMapOffset));
+    Cmp(temp, map);
+    Check(eq, kWrongAddressOrValuePassedToRecordWrite);
+  }
+
+  // Count number of write barriers in generated code.
+  isolate()->counters()->write_barriers_static()->Increment();
+  // TODO(mstarzinger): Dynamic counter missing.
+
+  // First, check if a write barrier is even needed. The tests below
+  // catch stores of smis and stores into the young generation.
+  Label done;
+
+  // A single check of the map's pages interesting flag suffices, since it is
+  // only set during incremental collection, and then it's also guaranteed that
+  // the from object's page's interesting flag is also set.  This optimization
+  // relies on the fact that maps can never be in new space.
+  CheckPageFlagClear(map,
+                     map,  // Used as scratch.
+                     MemoryChunk::kPointersToHereAreInterestingMask,
+                     &done);
+
+  // Record the actual write.
+  if (lr_status == kLRHasNotBeenSaved) {
+    Push(lr);
+  }
+  Add(dst, object, HeapObject::kMapOffset - kHeapObjectTag);
+  RecordWriteStub stub(isolate(), object, map, dst, OMIT_REMEMBERED_SET,
+                       fp_mode);
+  CallStub(&stub);
+  if (lr_status == kLRHasNotBeenSaved) {
+    Pop(lr);
+  }
+
+  Bind(&done);
+
+  // Clobber clobbered registers when running with the debug-code flag
+  // turned on to provoke errors.
+  if (emit_debug_code()) {
+    Mov(dst, Operand(BitCast<int64_t>(kZapValue + 12)));
+    Mov(map, Operand(BitCast<int64_t>(kZapValue + 16)));
+  }
+}
+
+
 // Will clobber: object, address, value.
 // If lr_status is kLRHasBeenSaved, lr will also be clobbered.
 //
 // The register 'object' contains a heap object pointer. The heap object tag is
 // shifted away.
-void MacroAssembler::RecordWrite(Register object,
-                                 Register address,
-                                 Register value,
-                                 LinkRegisterStatus lr_status,
-                                 SaveFPRegsMode fp_mode,
-                                 RememberedSetAction remembered_set_action,
-                                 SmiCheck smi_check) {
+void MacroAssembler::RecordWrite(
+    Register object,
+    Register address,
+    Register value,
+    LinkRegisterStatus lr_status,
+    SaveFPRegsMode fp_mode,
+    RememberedSetAction remembered_set_action,
+    SmiCheck smi_check,
+    PointersToHereCheck pointers_to_here_check_for_value) {
   ASM_LOCATION("MacroAssembler::RecordWrite");
   ASSERT(!AreAliased(object, value));
 
@@ -4393,10 +4426,12 @@ void MacroAssembler::RecordWrite(Register object,
     JumpIfSmi(value, &done);
   }
 
-  CheckPageFlagClear(value,
-                     value,  // Used as scratch.
-                     MemoryChunk::kPointersToHereAreInterestingMask,
-                     &done);
+  if (pointers_to_here_check_for_value != kPointersToHereAreAlwaysInteresting) {
+    CheckPageFlagClear(value,
+                       value,  // Used as scratch.
+                       MemoryChunk::kPointersToHereAreInterestingMask,
+                       &done);
+  }
   CheckPageFlagClear(object,
                      value,  // Used as scratch.
                      MemoryChunk::kPointersFromHereAreInterestingMask,
