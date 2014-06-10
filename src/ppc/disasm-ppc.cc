@@ -31,14 +31,14 @@
 #include <stdarg.h>
 #include <string.h>
 
-#include "v8.h"
+#include "src/v8.h"
 
 #if V8_TARGET_ARCH_PPC
 
-#include "constants-ppc.h"
-#include "disasm.h"
-#include "macro-assembler.h"
-#include "platform.h"
+#include "src/ppc/constants-ppc.h"
+#include "src/disasm.h"
+#include "src/macro-assembler.h"
+#include "src/platform.h"
 
 
 namespace v8 {

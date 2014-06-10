@@ -8,14 +8,14 @@
 #ifndef V8_PPC_LITHIUM_CODEGEN_PPC_H_
 #define V8_PPC_LITHIUM_CODEGEN_PPC_H_
 
-#include "ppc/lithium-ppc.h"
+#include "src/ppc/lithium-ppc.h"
 
-#include "ppc/lithium-gap-resolver-ppc.h"
-#include "deoptimizer.h"
-#include "lithium-codegen.h"
-#include "safepoint-table.h"
-#include "scopes.h"
-#include "utils.h"
+#include "src/ppc/lithium-gap-resolver-ppc.h"
+#include "src/deoptimizer.h"
+#include "src/lithium-codegen.h"
+#include "src/safepoint-table.h"
+#include "src/scopes.h"
+#include "src/utils.h"
 
 namespace v8 {
 namespace internal {

@@ -52,9 +52,9 @@
 #endif
 #include <vector>
 
-#include "assembler.h"
-#include "constants-ppc.h"
-#include "serialize.h"
+#include "src/assembler.h"
+#include "src/ppc/constants-ppc.h"
+#include "src/serialize.h"
 
 #define ABI_USES_FUNCTION_DESCRIPTORS                                     \
   (V8_HOST_ARCH_PPC &&                                                    \

@@ -9,16 +9,16 @@
 #include <stdlib.h>
 #include <cmath>
 
-#include "v8.h"
+#include "src/v8.h"
 
 #if V8_TARGET_ARCH_PPC
 
-#include "disasm.h"
-#include "assembler.h"
-#include "codegen.h"
-#include "ppc/constants-ppc.h"
-#include "ppc/simulator-ppc.h"
-#include "ppc/frames-ppc.h"
+#include "src/disasm.h"
+#include "src/assembler.h"
+#include "src/codegen.h"
+#include "src/ppc/constants-ppc.h"
+#include "src/ppc/simulator-ppc.h"
+#include "src/ppc/frames-ppc.h"
 
 #if defined(USE_SIMULATOR)
 

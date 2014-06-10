@@ -41,10 +41,10 @@
 #ifndef V8_PPC_ASSEMBLER_PPC_INL_H_
 #define V8_PPC_ASSEMBLER_PPC_INL_H_
 
-#include "ppc/assembler-ppc.h"
+#include "src/ppc/assembler-ppc.h"
 
-#include "cpu.h"
-#include "debug.h"
+#include "src/cpu.h"
+#include "src/debug.h"
 
 
 namespace v8 {

@@ -38,13 +38,13 @@
 // Copyright IBM Corp. 2012, 2013. All rights reserved.
 //
 
-#include "v8.h"
+#include "src/v8.h"
 
 #if V8_TARGET_ARCH_PPC
 
-#include "ppc/assembler-ppc-inl.h"
-#include "macro-assembler.h"
-#include "serialize.h"
+#include "src/ppc/assembler-ppc-inl.h"
+#include "src/macro-assembler.h"
+#include "src/serialize.h"
 
 namespace v8 {
 namespace internal {
@@ -834,28 +834,28 @@ void Assembler::rlwimi(Register ra, Register rs,
 
 void Assembler::slwi(Register dst, Register src, const Operand& val,
                      RCBit rc) {
-  ASSERT((32 > val.imm_)&&(val.imm_ >= 0));
+  ASSERT((32 > val.imm_) && (val.imm_ >= 0));
   rlwinm(dst, src, val.imm_, 0, 31-val.imm_, rc);
 }
 
 
 void Assembler::srwi(Register dst, Register src, const Operand& val,
                      RCBit rc) {
-  ASSERT((32 > val.imm_)&&(val.imm_ >= 0));
+  ASSERT((32 > val.imm_) && (val.imm_ >= 0));
   rlwinm(dst, src, 32-val.imm_, val.imm_, 31, rc);
 }
 
 
 void Assembler::clrrwi(Register dst, Register src, const Operand& val,
                        RCBit rc) {
-  ASSERT((32 > val.imm_)&&(val.imm_ >= 0));
+  ASSERT((32 > val.imm_) && (val.imm_ >= 0));
   rlwinm(dst, src, 0, 0, 31-val.imm_, rc);
 }
 
 
 void Assembler::clrlwi(Register dst, Register src, const Operand& val,
                        RCBit rc) {
-  ASSERT((32 > val.imm_)&&(val.imm_ >= 0));
+  ASSERT((32 > val.imm_) && (val.imm_ >= 0));
   rlwinm(dst, src, 0, val.imm_, 31, rc);
 }
 
@@ -1382,28 +1382,28 @@ void Assembler::rldicr(Register ra, Register rs, int sh, int me, RCBit r) {
 
 void Assembler::sldi(Register dst, Register src, const Operand& val,
                      RCBit rc) {
-  ASSERT((64 > val.imm_)&&(val.imm_ >= 0));
+  ASSERT((64 > val.imm_) && (val.imm_ >= 0));
   rldicr(dst, src, val.imm_, 63-val.imm_, rc);
 }
 
 
 void Assembler::srdi(Register dst, Register src, const Operand& val,
                      RCBit rc) {
-  ASSERT((64 > val.imm_)&&(val.imm_ >= 0));
+  ASSERT((64 > val.imm_) && (val.imm_ >= 0));
   rldicl(dst, src, 64-val.imm_, val.imm_, rc);
 }
 
 
 void Assembler::clrrdi(Register dst, Register src, const Operand& val,
                        RCBit rc) {
-  ASSERT((64 > val.imm_)&&(val.imm_ >= 0));
+  ASSERT((64 > val.imm_) && (val.imm_ >= 0));
   rldicr(dst, src, 0, 63-val.imm_, rc);
 }
 
 
 void Assembler::clrldi(Register dst, Register src, const Operand& val,
                        RCBit rc) {
-  ASSERT((64 > val.imm_)&&(val.imm_ >= 0));
+  ASSERT((64 > val.imm_) && (val.imm_ >= 0));
   rldicl(dst, src, 0, val.imm_, rc);
 }
 

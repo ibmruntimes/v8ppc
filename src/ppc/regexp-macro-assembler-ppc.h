@@ -8,9 +8,9 @@
 #ifndef V8_PPC_REGEXP_MACRO_ASSEMBLER_PPC_H_
 #define V8_PPC_REGEXP_MACRO_ASSEMBLER_PPC_H_
 
-#include "ppc/assembler-ppc.h"
-#include "ppc/assembler-ppc-inl.h"
-#include "macro-assembler.h"
+#include "src/ppc/assembler-ppc.h"
+#include "src/ppc/assembler-ppc-inl.h"
+#include "src/macro-assembler.h"
 
 namespace v8 {
 namespace internal {

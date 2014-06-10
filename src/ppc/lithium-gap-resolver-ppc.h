@@ -8,9 +8,9 @@
 #ifndef V8_PPC_LITHIUM_GAP_RESOLVER_PPC_H_
 #define V8_PPC_LITHIUM_GAP_RESOLVER_PPC_H_
 
-#include "v8.h"
+#include "src/v8.h"
 
-#include "lithium.h"
+#include "src/lithium.h"
 
 namespace v8 {
 namespace internal {

@@ -16,7 +16,7 @@
 #ifndef V8_PPC_SIMULATOR_PPC_H_
 #define V8_PPC_SIMULATOR_PPC_H_
 
-#include "allocation.h"
+#include "src/allocation.h"
 
 #if !defined(USE_SIMULATOR)
 // Running without a simulator on a native ppc platform.
@@ -63,9 +63,9 @@ class SimulatorStack : public v8::internal::AllStatic {
 #else  // !defined(USE_SIMULATOR)
 // Running with a simulator.
 
-#include "constants-ppc.h"
-#include "hashmap.h"
-#include "assembler.h"
+#include "src/ppc/constants-ppc.h"
+#include "src/hashmap.h"
+#include "src/assembler.h"
 
 namespace v8 {
 namespace internal {
