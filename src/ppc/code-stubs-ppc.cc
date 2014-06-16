@@ -122,6 +122,16 @@ void RegExpConstructResultStub::InitializeInterfaceDescriptor(
 }
 
 
+void KeyedLoadGenericElementStub::InitializeInterfaceDescriptor(
+    CodeStubInterfaceDescriptor* descriptor) {
+  static Register registers[] = { r4, r3 };
+  descriptor->register_param_count_ = 2;
+  descriptor->register_params_ = registers;
+  descriptor->deoptimization_handler_ =
+      Runtime::FunctionForId(Runtime::kKeyedGetProperty)->entry;
+}
+
+
 void LoadFieldStub::InitializeInterfaceDescriptor(
     CodeStubInterfaceDescriptor* descriptor) {
   static Register registers[] = { r3 };
@@ -3492,49 +3502,38 @@ enum CopyCharactersFlags {
 };
 
 
-// roohack - optimization opportunity here, stringcopy is important
-// and the current version below is very dumb
-void StringHelper::GenerateCopyCharactersLong(MacroAssembler* masm,
-                                              Register dest,
-                                              Register src,
-                                              Register count,
-                                              Register scratch1,
-                                              Register scratch2,
-                                              Register scratch3,
-                                              Register scratch4,
-                                              Register scratch5,
-                                              int flags) {
-  bool ascii = (flags & COPY_ASCII) != 0;
-  bool dest_always_aligned = (flags & DEST_ALWAYS_ALIGNED) != 0;
-
-  if (dest_always_aligned && FLAG_debug_code) {
-    // Check that destination is actually word aligned if the flag says
-    // that it is.
+void StringHelper::GenerateCopyCharacters(MacroAssembler* masm,
+                                          Register dest,
+                                          Register src,
+                                          Register count,
+                                          Register scratch,
+                                          String::Encoding encoding) {
+  if (FLAG_debug_code) {
+    // Check that destination is word aligned.
     __ andi(r0, dest, Operand(kPointerAlignmentMask));
     __ Check(eq, kDestinationOfCopyNotAligned, cr0);
   }
 
   // Nothing to do for zero characters.
   Label done;
-  if (!ascii) {  // for non-ascii, double the length
-    __ add(count, count, count);
+  if (encoding == String::TWO_BYTE_ENCODING) {
+    // double the length
+    __ add(count, count, count, LeaveOE, SetRC);
+    __ beq(&done, cr0);
+  } else {
+    __ cmpi(count, Operand::Zero());
+    __ beq(&done);
   }
-  __ cmpi(count, Operand::Zero());
-  __ beq(&done);
 
-  // Assume that you cannot read (or write) unaligned.
+  // Copy count bytes from src to dst.
   Label byte_loop;
-  __ add(count, dest, count);
-  Register limit = count;  // Read until src equals this.
-  // Copy bytes from src to dst until dst hits limit.
+  __ mtctr(count);
   __ bind(&byte_loop);
-  __ cmp(dest, limit);
-  __ bge(&done);
-  __ lbz(scratch1, MemOperand(src));
+  __ lbz(scratch, MemOperand(src));
   __ addi(src, src, Operand(1));
-  __ stb(scratch1, MemOperand(dest));
+  __ stb(scratch, MemOperand(dest));
   __ addi(dest, dest, Operand(1));
-  __ b(&byte_loop);
+  __ bdnz(&byte_loop);
 
   __ bind(&done);
 }
@@ -3774,8 +3773,8 @@ void SubStringStub::Generate(MacroAssembler* masm) {
   // r5: result string length
   // r8: first character of substring to copy
   STATIC_ASSERT((SeqOneByteString::kHeaderSize & kObjectAlignmentMask) == 0);
-  StringHelper::GenerateCopyCharactersLong(masm, r4, r8, r5, r6, r7, r9,
-                            r10, r11, COPY_ASCII | DEST_ALWAYS_ALIGNED);
+  StringHelper::GenerateCopyCharacters(
+      masm, r4, r8, r5, r6, String::ONE_BYTE_ENCODING);
   __ b(&return_r3);
 
   // Allocate and copy the resulting two-byte string.
@@ -3793,8 +3792,8 @@ void SubStringStub::Generate(MacroAssembler* masm) {
   // r5: result length.
   // r8: first character of substring to copy.
   STATIC_ASSERT((SeqTwoByteString::kHeaderSize & kObjectAlignmentMask) == 0);
-  StringHelper::GenerateCopyCharactersLong(
-      masm, r4, r8, r5, r6, r7, r9, r10, r11, DEST_ALWAYS_ALIGNED);
+  StringHelper::GenerateCopyCharacters(
+      masm, r4, r8, r5, r6, String::TWO_BYTE_ENCODING);
 
   __ bind(&return_r3);
   Counters* counters = isolate()->counters();
