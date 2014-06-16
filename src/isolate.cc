@@ -37,10 +37,10 @@
 namespace v8 {
 namespace internal {
 
-Atomic32 ThreadId::highest_thread_id_ = 0;
+base::Atomic32 ThreadId::highest_thread_id_ = 0;
 
 int ThreadId::AllocateThreadId() {
-  int new_id = NoBarrier_AtomicIncrement(&highest_thread_id_, 1);
+  int new_id = base::NoBarrier_AtomicIncrement(&highest_thread_id_, 1);
   return new_id;
 }
 
@@ -114,7 +114,7 @@ enum DefaultIsolateStatus {
 static DefaultIsolateStatus default_isolate_status_
     = kDefaultIsolateUninitialized;
 Isolate::ThreadDataTable* Isolate::thread_data_table_ = NULL;
-Atomic32 Isolate::isolate_counter_ = 0;
+base::Atomic32 Isolate::isolate_counter_ = 0;
 
 Isolate::PerIsolateThreadData*
     Isolate::FindOrAllocatePerThreadDataForThisThread() {
@@ -1166,20 +1166,15 @@ void Isolate::DoThrow(Object* exception, MessageLocation* location) {
 }
 
 
-bool Isolate::IsExternallyCaught() {
+bool Isolate::HasExternalTryCatch() {
   ASSERT(has_pending_exception());
 
-  if ((thread_local_top()->catcher_ == NULL) ||
-      (try_catch_handler() != thread_local_top()->catcher_)) {
-    // When throwing the exception, we found no v8::TryCatch
-    // which should care about this exception.
-    return false;
-  }
+  return (thread_local_top()->catcher_ != NULL) &&
+      (try_catch_handler() == thread_local_top()->catcher_);
+}
 
-  if (!is_catchable_by_javascript(pending_exception())) {
-    return true;
-  }
 
+bool Isolate::IsFinallyOnTop() {
   // Get the address of the external handler so we can compare the address to
   // determine which one is closer to the top of the stack.
   Address external_handler_address =
@@ -1199,18 +1194,18 @@ bool Isolate::IsExternallyCaught() {
       StackHandler::FromAddress(Isolate::handler(thread_local_top()));
   while (handler != NULL && handler->address() < external_handler_address) {
     ASSERT(!handler->is_catch());
-    if (handler->is_finally()) return false;
+    if (handler->is_finally()) return true;
 
     handler = handler->next();
   }
 
-  return true;
+  return false;
 }
 
 
 void Isolate::ReportPendingMessages() {
   ASSERT(has_pending_exception());
-  PropagatePendingExceptionToExternalTryCatch();
+  bool can_clear_message = PropagatePendingExceptionToExternalTryCatch();
 
   HandleScope scope(this);
   if (thread_local_top_.pending_exception_ ==
@@ -1237,7 +1232,7 @@ void Isolate::ReportPendingMessages() {
       }
     }
   }
-  clear_pending_message();
+  if (can_clear_message) clear_pending_message();
 }
 
 
@@ -1487,7 +1482,7 @@ Isolate::Isolate()
       num_sweeper_threads_(0),
       stress_deopt_count_(0),
       next_optimization_id_(0) {
-  id_ = NoBarrier_AtomicIncrement(&isolate_counter_, 1);
+  id_ = base::NoBarrier_AtomicIncrement(&isolate_counter_, 1);
   TRACE_ISOLATE(constructor);
 
   memset(isolate_addresses_, 0,
@@ -1742,14 +1737,22 @@ void Isolate::InitializeThreadLocal() {
 }
 
 
-void Isolate::PropagatePendingExceptionToExternalTryCatch() {
+bool Isolate::PropagatePendingExceptionToExternalTryCatch() {
   ASSERT(has_pending_exception());
 
-  bool external_caught = IsExternallyCaught();
-  thread_local_top_.external_caught_exception_ = external_caught;
+  bool has_external_try_catch = HasExternalTryCatch();
+  if (!has_external_try_catch) {
+    thread_local_top_.external_caught_exception_ = false;
+    return true;
+  }
 
-  if (!external_caught) return;
+  bool catchable_by_js = is_catchable_by_javascript(pending_exception());
+  if (catchable_by_js && IsFinallyOnTop()) {
+    thread_local_top_.external_caught_exception_ = false;
+    return false;
+  }
 
+  thread_local_top_.external_caught_exception_ = true;
   if (thread_local_top_.pending_exception_ ==
              heap()->termination_exception()) {
     try_catch_handler()->can_continue_ = false;
@@ -1765,13 +1768,14 @@ void Isolate::PropagatePendingExceptionToExternalTryCatch() {
     handler->has_terminated_ = false;
     handler->exception_ = pending_exception();
     // Propagate to the external try-catch only if we got an actual message.
-    if (thread_local_top_.pending_message_obj_->IsTheHole()) return;
+    if (thread_local_top_.pending_message_obj_->IsTheHole()) return true;
 
     handler->message_obj_ = thread_local_top_.pending_message_obj_;
     handler->message_script_ = thread_local_top_.pending_message_script_;
     handler->message_start_pos_ = thread_local_top_.pending_message_start_pos_;
     handler->message_end_pos_ = thread_local_top_.pending_message_end_pos_;
   }
+  return true;
 }
 
 
@@ -1964,6 +1968,13 @@ bool Isolate::Init(Deserializer* des) {
            Internals::kIsolateEmbedderDataOffset);
   CHECK_EQ(static_cast<int>(OFFSET_OF(Isolate, heap_.roots_)),
            Internals::kIsolateRootsOffset);
+  CHECK_EQ(static_cast<int>(
+               OFFSET_OF(Isolate, heap_.amount_of_external_allocated_memory_)),
+           Internals::kAmountOfExternalAllocatedMemoryOffset);
+  CHECK_EQ(static_cast<int>(OFFSET_OF(
+               Isolate,
+               heap_.amount_of_external_allocated_memory_at_last_global_gc_)),
+           Internals::kAmountOfExternalAllocatedMemoryAtLastGlobalGCOffset);
 
   state_ = INITIALIZED;
   time_millis_at_init_ = OS::TimeCurrentMillis();
@@ -2001,6 +2012,7 @@ bool Isolate::Init(Deserializer* des) {
     NumberToStringStub::InstallDescriptors(this);
     StringAddStub::InstallDescriptors(this);
     RegExpConstructResultStub::InstallDescriptors(this);
+    KeyedLoadGenericElementStub::InstallDescriptors(this);
   }
 
   CallDescriptors::InitializeForIsolate(this);
@@ -2263,7 +2275,8 @@ void Isolate::FireCallCompletedCallback() {
 }
 
 
-void Isolate::EnqueueMicrotask(Handle<JSFunction> microtask) {
+void Isolate::EnqueueMicrotask(Handle<Object> microtask) {
+  ASSERT(microtask->IsJSFunction() || microtask->IsCallHandlerInfo());
   Handle<FixedArray> queue(heap()->microtask_queue(), this);
   int num_tasks = pending_microtask_count();
   ASSERT(num_tasks <= queue->length());
@@ -2302,18 +2315,30 @@ void Isolate::RunMicrotasks() {
 
     for (int i = 0; i < num_tasks; i++) {
       HandleScope scope(this);
-      Handle<JSFunction> microtask(JSFunction::cast(queue->get(i)), this);
-      Handle<Object> exception;
-      MaybeHandle<Object> result = Execution::TryCall(
-          microtask, factory()->undefined_value(), 0, NULL, &exception);
-      // If execution is terminating, just bail out.
-      if (result.is_null() &&
-          !exception.is_null() &&
-          *exception == heap()->termination_exception()) {
-        // Clear out any remaining callbacks in the queue.
-        heap()->set_microtask_queue(heap()->empty_fixed_array());
-        set_pending_microtask_count(0);
-        return;
+      Handle<Object> microtask(queue->get(i), this);
+      if (microtask->IsJSFunction()) {
+        Handle<JSFunction> microtask_function =
+            Handle<JSFunction>::cast(microtask);
+        Handle<Object> exception;
+        MaybeHandle<Object> result = Execution::TryCall(
+            microtask_function, factory()->undefined_value(),
+            0, NULL, &exception);
+        // If execution is terminating, just bail out.
+        if (result.is_null() &&
+            !exception.is_null() &&
+            *exception == heap()->termination_exception()) {
+          // Clear out any remaining callbacks in the queue.
+          heap()->set_microtask_queue(heap()->empty_fixed_array());
+          set_pending_microtask_count(0);
+          return;
+        }
+      } else {
+        Handle<CallHandlerInfo> callback_info =
+            Handle<CallHandlerInfo>::cast(microtask);
+        v8::MicrotaskCallback callback =
+            v8::ToCData<v8::MicrotaskCallback>(callback_info->callback());
+        void* data = v8::ToCData<void*>(callback_info->data());
+        callback(data);
       }
     }
   }

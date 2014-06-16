@@ -764,8 +764,9 @@ void Runtime::FreeArrayBuffer(Isolate* isolate,
   size_t allocated_length = NumberToSize(
       isolate, phantom_array_buffer->byte_length());
 
-  isolate->heap()->AdjustAmountOfExternalAllocatedMemory(
-      -static_cast<int64_t>(allocated_length));
+  reinterpret_cast<v8::Isolate*>(isolate)
+      ->AdjustAmountOfExternalAllocatedMemory(
+          -static_cast<int64_t>(allocated_length));
   CHECK(V8::ArrayBufferAllocator() != NULL);
   V8::ArrayBufferAllocator()->Free(
       phantom_array_buffer->backing_store(),
@@ -819,7 +820,8 @@ bool Runtime::SetupArrayBufferAllocatingData(
 
   SetupArrayBuffer(isolate, array_buffer, false, data, allocated_length);
 
-  isolate->heap()->AdjustAmountOfExternalAllocatedMemory(allocated_length);
+  reinterpret_cast<v8::Isolate*>(isolate)
+      ->AdjustAmountOfExternalAllocatedMemory(allocated_length);
 
   return true;
 }
@@ -2022,7 +2024,7 @@ MUST_USE_RESULT static MaybeHandle<Object> GetOwnProperty(Isolate* isolate,
     case ACCESS_ABSENT: return factory->undefined_value();
   }
 
-  PropertyAttributes attrs = JSReceiver::GetOwnPropertyAttribute(obj, name);
+  PropertyAttributes attrs = JSReceiver::GetOwnPropertyAttributes(obj, name);
   if (attrs == ABSENT) {
     RETURN_EXCEPTION_IF_SCHEDULED_EXCEPTION(isolate, Object);
     return factory->undefined_value();
@@ -2279,7 +2281,7 @@ RUNTIME_FUNCTION(RuntimeHidden_DeclareGlobals) {
         // We found an existing property. Unless it was an interceptor
         // that claims the property is absent, skip this declaration.
         if (!lookup.IsInterceptor()) continue;
-        if (JSReceiver::GetPropertyAttribute(global, name) != ABSENT) continue;
+        if (JSReceiver::GetPropertyAttributes(global, name) != ABSENT) continue;
         // Fall-through and introduce the absent property by using
         // SetProperty.
       }
@@ -2470,7 +2472,7 @@ RUNTIME_FUNCTION(Runtime_InitializeVarGlobal) {
   if (lookup.IsInterceptor()) {
     Handle<JSObject> holder(lookup.holder());
     PropertyAttributes intercepted =
-        JSReceiver::GetPropertyAttribute(holder, name);
+        JSReceiver::GetPropertyAttributes(holder, name);
     if (intercepted != ABSENT && (intercepted & READ_ONLY) == 0) {
       // Found an interceptor that's not read only.
       if (assign) {
@@ -2555,7 +2557,7 @@ RUNTIME_FUNCTION(RuntimeHidden_InitializeConstGlobal) {
   // Strict mode handling not needed (const is disallowed in strict mode).
   if (lookup.IsField()) {
     FixedArray* properties = global->properties();
-    int index = lookup.GetFieldIndex().field_index();
+    int index = lookup.GetFieldIndex().outobject_array_index();
     if (properties->get(index)->IsTheHole() || !lookup.IsReadOnly()) {
       properties->set(index, *value);
     }
@@ -2644,9 +2646,10 @@ RUNTIME_FUNCTION(RuntimeHidden_InitializeConstContextSlot) {
 
     if (lookup.IsField()) {
       FixedArray* properties = object->properties();
-      int index = lookup.GetFieldIndex().field_index();
-      if (properties->get(index)->IsTheHole()) {
-        properties->set(index, *value);
+      FieldIndex index = lookup.GetFieldIndex();
+      ASSERT(!index.is_inobject());
+      if (properties->get(index.outobject_array_index())->IsTheHole()) {
+        properties->set(index.outobject_array_index(), *value);
       }
     } else if (lookup.IsNormal()) {
       if (object->GetNormalizedProperty(&lookup)->IsTheHole()) {
@@ -5053,10 +5056,11 @@ RUNTIME_FUNCTION(Runtime_KeyedGetProperty) {
         // Attempt to use lookup cache.
         Handle<Map> receiver_map(receiver->map(), isolate);
         KeyedLookupCache* keyed_lookup_cache = isolate->keyed_lookup_cache();
-        int offset = keyed_lookup_cache->Lookup(receiver_map, key);
-        if (offset != -1) {
+        int index = keyed_lookup_cache->Lookup(receiver_map, key);
+        if (index != -1) {
           // Doubles are not cached, so raw read the value.
-          Object* value = receiver->RawFastPropertyAt(offset);
+          Object* value = receiver->RawFastPropertyAt(
+              FieldIndex::ForKeyedLookupCacheIndex(*receiver_map, index));
           return value->IsTheHole()
               ? isolate->heap()->undefined_value()
               : value;
@@ -5066,15 +5070,16 @@ RUNTIME_FUNCTION(Runtime_KeyedGetProperty) {
         LookupResult result(isolate);
         receiver->LookupOwn(key, &result);
         if (result.IsField()) {
-          int offset = result.GetFieldIndex().field_index();
+          FieldIndex field_index = result.GetFieldIndex();
           // Do not track double fields in the keyed lookup cache. Reading
           // double values requires boxing.
           if (!result.representation().IsDouble()) {
-            keyed_lookup_cache->Update(receiver_map, key, offset);
+            keyed_lookup_cache->Update(receiver_map, key,
+                field_index.GetKeyedLookupCacheIndex());
           }
           AllowHeapAllocation allow_allocation;
-          return *JSObject::FastPropertyAt(
-              receiver, result.representation(), offset);
+          return *JSObject::FastPropertyAt(receiver, result.representation(),
+                                           field_index);
         }
       } else {
         // Attempt dictionary lookup.
@@ -5557,16 +5562,17 @@ RUNTIME_FUNCTION(Runtime_StoreArrayLiteralElement) {
     HeapNumber* number = HeapNumber::cast(*value);
     double_array->set(store_index, number->Number());
   } else {
-    ASSERT(IsFastSmiElementsKind(elements_kind) ||
-           IsFastDoubleElementsKind(elements_kind));
-    ElementsKind transitioned_kind = IsFastHoleyElementsKind(elements_kind)
-        ? FAST_HOLEY_ELEMENTS
-        : FAST_ELEMENTS;
-    JSObject::TransitionElementsKind(object, transitioned_kind);
-    if (IsMoreGeneralElementsKindTransition(
-            boilerplate_object->GetElementsKind(),
-            transitioned_kind)) {
-      JSObject::TransitionElementsKind(boilerplate_object, transitioned_kind);
+    if (!IsFastObjectElementsKind(elements_kind)) {
+      ElementsKind transitioned_kind = IsFastHoleyElementsKind(elements_kind)
+          ? FAST_HOLEY_ELEMENTS
+          : FAST_ELEMENTS;
+      JSObject::TransitionElementsKind(object, transitioned_kind);
+      ElementsKind boilerplate_elements_kind =
+          boilerplate_object->GetElementsKind();
+      if (IsMoreGeneralElementsKindTransition(boilerplate_elements_kind,
+                                              transitioned_kind)) {
+        JSObject::TransitionElementsKind(boilerplate_object, transitioned_kind);
+      }
     }
     FixedArray* object_array = FixedArray::cast(object->elements());
     object_array->set(store_index, *value);
@@ -5763,7 +5769,7 @@ RUNTIME_FUNCTION(Runtime_IsPropertyEnumerable) {
   CONVERT_ARG_HANDLE_CHECKED(JSObject, object, 0);
   CONVERT_ARG_HANDLE_CHECKED(Name, key, 1);
 
-  PropertyAttributes att = JSReceiver::GetOwnPropertyAttribute(object, key);
+  PropertyAttributes att = JSReceiver::GetOwnPropertyAttributes(object, key);
   if (att == ABSENT || (att & DONT_ENUM) != 0) {
     RETURN_FAILURE_IF_SCHEDULED_EXCEPTION(isolate);
     return isolate->heap()->false_value();
@@ -9450,7 +9456,7 @@ RUNTIME_FUNCTION(RuntimeHidden_StoreContextSlot) {
 
   // Set the property if it's not read only or doesn't yet exist.
   if ((attributes & READ_ONLY) == 0 ||
-      (JSReceiver::GetOwnPropertyAttribute(object, name) == ABSENT)) {
+      (JSReceiver::GetOwnPropertyAttributes(object, name) == ABSENT)) {
     RETURN_FAILURE_ON_EXCEPTION(
         isolate,
         JSReceiver::SetProperty(object, name, value, NONE, strict_mode));
@@ -9779,6 +9785,59 @@ bool CodeGenerationFromStringsAllowed(Isolate* isolate,
 }
 
 
+// Walk up the stack expecting:
+//  - Runtime_CompileString
+//  - JSFunction callee (eval, Function constructor, etc)
+//  - call() (maybe)
+//  - apply() (maybe)
+//  - bind() (maybe)
+// - JSFunction caller (maybe)
+//
+// return true if the caller has the same security token as the callee
+// or if an exit frame was hit, in which case allow it through, as it could
+// have come through the api.
+static bool TokensMatchForCompileString(Isolate* isolate) {
+  MaybeHandle<JSFunction> callee;
+  bool exit_handled = true;
+  bool tokens_match = true;
+  bool done = false;
+  for (StackFrameIterator it(isolate); !it.done() && !done; it.Advance()) {
+    StackFrame* raw_frame = it.frame();
+    if (!raw_frame->is_java_script()) {
+      if (raw_frame->is_exit()) exit_handled = false;
+      continue;
+    }
+    JavaScriptFrame* outer_frame = JavaScriptFrame::cast(raw_frame);
+    List<FrameSummary> frames(FLAG_max_inlining_levels + 1);
+    outer_frame->Summarize(&frames);
+    for (int i = frames.length() - 1; i >= 0 && !done; --i) {
+      FrameSummary& frame = frames[i];
+      Handle<JSFunction> fun = frame.function();
+      // Capture the callee function.
+      if (callee.is_null()) {
+        callee = fun;
+        exit_handled = true;
+        continue;
+      }
+      // Exit condition.
+      Handle<Context> context(callee.ToHandleChecked()->context());
+      if (!fun->context()->HasSameSecurityTokenAs(*context)) {
+        tokens_match = false;
+        done = true;
+        continue;
+      }
+      // Skip bound functions in correct origin.
+      if (fun->shared()->bound()) {
+        exit_handled = true;
+        continue;
+      }
+      done = true;
+    }
+  }
+  return !exit_handled || tokens_match;
+}
+
+
 RUNTIME_FUNCTION(Runtime_CompileString) {
   HandleScope scope(isolate);
   ASSERT(args.length() == 2);
@@ -9787,6 +9846,11 @@ RUNTIME_FUNCTION(Runtime_CompileString) {
 
   // Extract native context.
   Handle<Context> context(isolate->context()->native_context());
+
+  // Filter cross security context calls.
+  if (!TokensMatchForCompileString(isolate)) {
+    return isolate->heap()->undefined_value();
+  }
 
   // Check if native context allows code generation from
   // strings. Throw an exception if it doesn't.
@@ -10776,7 +10840,7 @@ static Handle<Object> DebugLookupResultValue(Isolate* isolate,
     case FIELD:
       value = JSObject::FastPropertyAt(handle(result->holder(), isolate),
                                        result->representation(),
-                                       result->GetFieldIndex().field_index());
+                                       result->GetFieldIndex());
       break;
     case CONSTANT:
       return handle(result->GetConstant(), isolate);
@@ -10784,7 +10848,7 @@ static Handle<Object> DebugLookupResultValue(Isolate* isolate,
       Handle<Object> structure(result->GetCallbackObject(), isolate);
       ASSERT(!structure->IsForeign());
       if (structure->IsAccessorInfo()) {
-        MaybeHandle<Object> obj = JSObject::GetPropertyWithCallback(
+        MaybeHandle<Object> obj = JSObject::GetPropertyWithAccessor(
             receiver, name, handle(result->holder(), isolate), structure);
         if (!obj.ToHandle(&value)) {
           value = handle(isolate->pending_exception(), isolate);
@@ -10965,11 +11029,10 @@ RUNTIME_FUNCTION(Runtime_DebugNamedInterceptorPropertyValue) {
   RUNTIME_ASSERT(obj->HasNamedInterceptor());
   CONVERT_ARG_HANDLE_CHECKED(Name, name, 1);
 
-  PropertyAttributes attributes;
   Handle<Object> result;
+  LookupIterator it(obj, name, obj);
   ASSIGN_RETURN_FAILURE_ON_EXCEPTION(
-      isolate, result,
-      JSObject::GetPropertyWithInterceptor(obj, obj, name, &attributes));
+      isolate, result, JSObject::GetProperty(&it));
   return *result;
 }
 
@@ -14545,14 +14608,17 @@ RUNTIME_FUNCTION(Runtime_LoadMutableDouble) {
   ASSERT(args.length() == 2);
   CONVERT_ARG_HANDLE_CHECKED(JSObject, object, 0);
   CONVERT_ARG_HANDLE_CHECKED(Smi, index, 1);
-  int idx = index->value() >> 1;
-  int inobject_properties = object->map()->inobject_properties();
-  if (idx < 0) {
-    idx = -idx + inobject_properties - 1;
+  RUNTIME_ASSERT((index->value() & 1) == 1);
+  FieldIndex field_index =
+      FieldIndex::ForLoadByFieldIndex(object->map(), index->value());
+  if (field_index.is_inobject()) {
+    RUNTIME_ASSERT(field_index.property_index() <
+                   object->map()->inobject_properties());
+  } else {
+    RUNTIME_ASSERT(field_index.outobject_array_index() <
+                   object->properties()->length());
   }
-  int max_idx = object->properties()->length() + inobject_properties;
-  RUNTIME_ASSERT(idx < max_idx);
-  Handle<Object> raw_value(object->RawFastPropertyAt(idx), isolate);
+  Handle<Object> raw_value(object->RawFastPropertyAt(field_index), isolate);
   RUNTIME_ASSERT(raw_value->IsNumber() || raw_value->IsUninitialized());
   return *Object::NewStorageFor(isolate, raw_value, Representation::Double());
 }

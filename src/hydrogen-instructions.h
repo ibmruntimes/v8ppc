@@ -46,6 +46,7 @@ class LChunkBuilder;
   V(AbnormalExit)                              \
   V(AccessArgumentsAt)                         \
   V(Add)                                       \
+  V(AllocateBlockContext)                      \
   V(Allocate)                                  \
   V(ApplyArguments)                            \
   V(ArgumentsElements)                         \
@@ -140,6 +141,7 @@ class LChunkBuilder;
   V(StackCheck)                                \
   V(StoreCodeEntry)                            \
   V(StoreContextSlot)                          \
+  V(StoreFrameContext)                         \
   V(StoreGlobalCell)                           \
   V(StoreKeyed)                                \
   V(StoreKeyedGeneric)                         \
@@ -1158,6 +1160,7 @@ class HInstruction : public HValue {
     position_.set_operand_position(index, pos);
   }
 
+  bool Dominates(HInstruction* other);
   bool CanTruncateToSmi() const { return CheckFlag(kTruncatingToSmi); }
   bool CanTruncateToInt32() const { return CheckFlag(kTruncatingToInt32); }
 
@@ -5458,6 +5461,13 @@ class HAllocate V8_FINAL : public HTemplateInstruction<2> {
   HValue* context() { return OperandAt(0); }
   HValue* size() { return OperandAt(1); }
 
+  bool has_size_upper_bound() { return size_upper_bound_ != NULL; }
+  HConstant* size_upper_bound() { return size_upper_bound_; }
+  void set_size_upper_bound(HConstant* value) {
+    ASSERT(size_upper_bound_ == NULL);
+    size_upper_bound_ = value;
+  }
+
   virtual Representation RequiredInputRepresentation(int index) V8_OVERRIDE {
     if (index == 0) {
       return Representation::Tagged();
@@ -5533,9 +5543,10 @@ class HAllocate V8_FINAL : public HTemplateInstruction<2> {
       : HTemplateInstruction<2>(type),
         flags_(ComputeFlags(pretenure_flag, instance_type)),
         dominating_allocate_(NULL),
-        filler_free_space_size_(NULL) {
+        filler_free_space_size_(NULL),
+        size_upper_bound_(NULL) {
     SetOperandAt(0, context);
-    SetOperandAt(1, size);
+    UpdateSize(size);
     set_representation(Representation::Tagged());
     SetFlag(kTrackSideEffectDominators);
     SetChangesFlag(kNewSpacePromotion);
@@ -5582,6 +5593,11 @@ class HAllocate V8_FINAL : public HTemplateInstruction<2> {
 
   void UpdateSize(HValue* size) {
     SetOperandAt(1, size);
+    if (size->IsInteger32Constant()) {
+      size_upper_bound_ = HConstant::cast(size);
+    } else {
+      size_upper_bound_ = NULL;
+    }
   }
 
   HAllocate* GetFoldableDominator(HAllocate* dominator);
@@ -5603,6 +5619,7 @@ class HAllocate V8_FINAL : public HTemplateInstruction<2> {
   Handle<Map> known_initial_map_;
   HAllocate* dominating_allocate_;
   HStoreNamedField* filler_free_space_size_;
+  HConstant* size_upper_bound_;
 };
 
 
@@ -5783,20 +5800,8 @@ class HLoadContextSlot V8_FINAL : public HUnaryOperation {
     kCheckReturnUndefined
   };
 
-  HLoadContextSlot(HValue* context, Variable* var)
-      : HUnaryOperation(context), slot_index_(var->index()) {
-    ASSERT(var->IsContextSlot());
-    switch (var->mode()) {
-      case LET:
-      case CONST:
-        mode_ = kCheckDeoptimize;
-        break;
-      case CONST_LEGACY:
-        mode_ = kCheckReturnUndefined;
-        break;
-      default:
-        mode_ = kNoCheck;
-    }
+  HLoadContextSlot(HValue* context, int slot_index, Mode mode)
+      : HUnaryOperation(context), slot_index_(slot_index), mode_(mode) {
     set_representation(Representation::Tagged());
     SetFlag(kUseGVN);
     SetDependsOnFlag(kContextSlots);
@@ -6044,9 +6049,14 @@ class HObjectAccess V8_FINAL {
     return HObjectAccess(kMaps, JSObject::kMapOffset);
   }
 
-  static HObjectAccess ForMapInstanceSize() {
+  static HObjectAccess ForMapAsInteger32() {
+    return HObjectAccess(kMaps, JSObject::kMapOffset,
+                         Representation::Integer32());
+  }
+
+  static HObjectAccess ForMapInObjectProperties() {
     return HObjectAccess(kInobject,
-                         Map::kInstanceSizeOffset,
+                         Map::kInObjectPropertiesOffset,
                          Representation::UInteger8());
   }
 
@@ -6054,6 +6064,46 @@ class HObjectAccess V8_FINAL {
     return HObjectAccess(kInobject,
                          Map::kInstanceTypeOffset,
                          Representation::UInteger8());
+  }
+
+  static HObjectAccess ForMapInstanceSize() {
+    return HObjectAccess(kInobject,
+                         Map::kInstanceSizeOffset,
+                         Representation::UInteger8());
+  }
+
+  static HObjectAccess ForMapBitField() {
+    return HObjectAccess(kInobject,
+                         Map::kBitFieldOffset,
+                         Representation::UInteger8());
+  }
+
+  static HObjectAccess ForMapBitField2() {
+    return HObjectAccess(kInobject,
+                         Map::kBitField2Offset,
+                         Representation::UInteger8());
+  }
+
+  static HObjectAccess ForNameHashField() {
+    return HObjectAccess(kInobject,
+                         Name::kHashFieldOffset,
+                         Representation::Integer32());
+  }
+
+  static HObjectAccess ForMapInstanceTypeAndBitField() {
+#if V8_TARGET_LITTLE_ENDIAN
+    STATIC_ASSERT((Map::kInstanceTypeOffset & 1) == 0);
+    STATIC_ASSERT(Map::kBitFieldOffset == Map::kInstanceTypeOffset + 1);
+    return HObjectAccess(kInobject,
+                         Map::kInstanceTypeOffset,
+                         Representation::UInteger16());
+#else
+    STATIC_ASSERT((Map::kBitFieldOffset & 1) == 0);
+    STATIC_ASSERT(Map::kInstanceTypeOffset == Map::kBitFieldOffset + 1);
+    return HObjectAccess(kInobject,
+                         Map::kBitFieldOffset,
+                         Representation::UInteger16());
+#endif
   }
 
   static HObjectAccess ForPropertyCellValue() {
@@ -6448,6 +6498,10 @@ class HLoadKeyed V8_FINAL
   bool HasDependency() const { return OperandAt(0) != OperandAt(2); }
   uint32_t base_offset() { return BaseOffsetField::decode(bit_field_); }
   void IncreaseBaseOffset(uint32_t base_offset) {
+    // The base offset is usually simply the size of the array header, except
+    // with dehoisting adds an addition offset due to a array index key
+    // manipulation, in which case it becomes (array header size +
+    // constant-offset-from-key * kPointerSize)
     base_offset += BaseOffsetField::decode(bit_field_);
     bit_field_ = BaseOffsetField::update(bit_field_, base_offset);
   }
@@ -6460,7 +6514,7 @@ class HLoadKeyed V8_FINAL
   void SetDehoisted(bool is_dehoisted) {
     bit_field_ = IsDehoistedField::update(bit_field_, is_dehoisted);
   }
-  ElementsKind elements_kind() const {
+  virtual ElementsKind elements_kind() const V8_OVERRIDE {
     return ElementsKindField::decode(bit_field_);
   }
   LoadKeyedHoleMode hole_mode() const {
@@ -6918,6 +6972,10 @@ class HStoreKeyed V8_FINAL
   ElementsKind elements_kind() const { return elements_kind_; }
   uint32_t base_offset() { return base_offset_; }
   void IncreaseBaseOffset(uint32_t base_offset) {
+    // The base offset is usually simply the size of the array header, except
+    // with dehoisting adds an addition offset due to a array index key
+    // manipulation, in which case it becomes (array header size +
+    // constant-offset-from-key * kPointerSize)
     base_offset_ += base_offset;
   }
   virtual int MaxBaseOffsetBits() {
@@ -7700,6 +7758,57 @@ class HLoadFieldByIndex V8_FINAL : public HTemplateInstruction<2> {
  private:
   virtual bool IsDeletable() const V8_OVERRIDE { return true; }
 };
+
+
+class HStoreFrameContext: public HUnaryOperation {
+ public:
+  DECLARE_INSTRUCTION_FACTORY_P1(HStoreFrameContext, HValue*);
+
+  HValue* context() { return OperandAt(0); }
+
+  virtual Representation RequiredInputRepresentation(int index) {
+    return Representation::Tagged();
+  }
+
+  DECLARE_CONCRETE_INSTRUCTION(StoreFrameContext)
+ private:
+  explicit HStoreFrameContext(HValue* context)
+      : HUnaryOperation(context) {
+    set_representation(Representation::Tagged());
+    SetChangesFlag(kContextSlots);
+  }
+};
+
+
+class HAllocateBlockContext: public HTemplateInstruction<2> {
+ public:
+  DECLARE_INSTRUCTION_FACTORY_P3(HAllocateBlockContext, HValue*,
+                                 HValue*, Handle<ScopeInfo>);
+  HValue* context() { return OperandAt(0); }
+  HValue* function() { return OperandAt(1); }
+  Handle<ScopeInfo> scope_info() { return scope_info_; }
+
+  virtual Representation RequiredInputRepresentation(int index) {
+    return Representation::Tagged();
+  }
+
+  virtual void PrintDataTo(StringStream* stream);
+
+  DECLARE_CONCRETE_INSTRUCTION(AllocateBlockContext)
+
+ private:
+  HAllocateBlockContext(HValue* context,
+                        HValue* function,
+                        Handle<ScopeInfo> scope_info)
+      : scope_info_(scope_info) {
+    SetOperandAt(0, context);
+    SetOperandAt(1, function);
+    set_representation(Representation::Tagged());
+  }
+
+  Handle<ScopeInfo> scope_info_;
+};
+
 
 
 #undef DECLARE_INSTRUCTION

@@ -338,15 +338,9 @@ void BasicJsonStringifier::Append_(const Char* chars) {
 
 MaybeHandle<Object> BasicJsonStringifier::ApplyToJsonFunction(
     Handle<Object> object, Handle<Object> key) {
-  LookupResult lookup(isolate_);
-  JSObject::cast(*object)->LookupRealNamedProperty(tojson_string_, &lookup);
-  if (!lookup.IsProperty()) return object;
-  PropertyAttributes attr;
+  LookupIterator it(object, tojson_string_, LookupIterator::SKIP_INTERCEPTOR);
   Handle<Object> fun;
-  ASSIGN_RETURN_ON_EXCEPTION(
-      isolate_, fun,
-      Object::GetProperty(object, object, &lookup, tojson_string_, &attr),
-      Object);
+  ASSIGN_RETURN_ON_EXCEPTION(isolate_, fun, Object::GetProperty(&it), Object);
   if (!fun->IsJSFunction()) return object;
 
   // Call toJSON function.
@@ -657,10 +651,8 @@ BasicJsonStringifier::Result BasicJsonStringifier::SerializeJSObject(
       if (details.IsDontEnum()) continue;
       Handle<Object> property;
       if (details.type() == FIELD && *map == object->map()) {
-        property = Handle<Object>(
-                       object->RawFastPropertyAt(
-                           map->instance_descriptors()->GetFieldIndex(i)),
-                       isolate_);
+        property = Handle<Object>(object->RawFastPropertyAt(
+            FieldIndex::ForDescriptor(*map, i)), isolate_);
       } else {
         ASSIGN_RETURN_ON_EXCEPTION_VALUE(
             isolate_, property,

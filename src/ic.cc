@@ -554,6 +554,23 @@ void CompareIC::Clear(Isolate* isolate,
 }
 
 
+Handle<Code> KeyedLoadIC::megamorphic_stub() {
+  if (FLAG_compiled_keyed_generic_loads) {
+    return KeyedLoadGenericElementStub(isolate()).GetCode();
+  } else {
+    return isolate()->builtins()->KeyedLoadIC_Generic();
+  }
+}
+
+Handle<Code> KeyedLoadIC::generic_stub() const {
+  if (FLAG_compiled_keyed_generic_loads) {
+    return KeyedLoadGenericElementStub(isolate()).GetCode();
+  } else {
+    return isolate()->builtins()->KeyedLoadIC_Generic();
+  }
+}
+
+
 static bool MigrateDeprecated(Handle<Object> object) {
   if (!object->IsJSObject()) return false;
   Handle<JSObject> receiver = Handle<JSObject>::cast(object);
@@ -625,17 +642,14 @@ MaybeHandle<Object> LoadIC::Load(Handle<Object> object, Handle<String> name) {
   // Update inline cache and stub cache.
   if (use_ic) UpdateCaches(&lookup, object, name);
 
-  PropertyAttributes attr;
   // Get the property.
+  LookupIterator it(object, name);
   Handle<Object> result;
   ASSIGN_RETURN_ON_EXCEPTION(
-      isolate(),
-      result,
-      Object::GetProperty(object, object, &lookup, name, &attr),
-      Object);
+      isolate(), result, Object::GetProperty(&it), Object);
   // If the property is not present, check if we need to throw an exception.
   if ((lookup.IsInterceptor() || lookup.IsHandler()) &&
-      attr == ABSENT && IsUndeclaredGlobal(object)) {
+      !it.IsFound() && IsUndeclaredGlobal(object)) {
     return ReferenceError("not_defined", name);
   }
 
@@ -838,14 +852,12 @@ Handle<Code> LoadIC::megamorphic_stub() {
 }
 
 
-Handle<Code> LoadIC::SimpleFieldLoad(int offset,
-                                     bool inobject,
-                                     Representation representation) {
+Handle<Code> LoadIC::SimpleFieldLoad(FieldIndex index) {
   if (kind() == Code::LOAD_IC) {
-    LoadFieldStub stub(isolate(), inobject, offset, representation);
+    LoadFieldStub stub(isolate(), index);
     return stub.GetCode();
   } else {
-    KeyedLoadFieldStub stub(isolate(), inobject, offset, representation);
+    KeyedLoadFieldStub stub(isolate(), index);
     return stub.GetCode();
   }
 }
@@ -924,8 +936,8 @@ Handle<Code> LoadIC::CompileHandler(LookupResult* lookup,
                                     InlineCacheHolderFlag cache_holder) {
   if (object->IsString() &&
       String::Equals(isolate()->factory()->length_string(), name)) {
-    int length_index = String::kLengthOffset / kPointerSize;
-    return SimpleFieldLoad(length_index);
+    FieldIndex index = FieldIndex::ForInObjectOffset(String::kLengthOffset);
+    return SimpleFieldLoad(index);
   }
 
   if (object->IsStringWrapper() &&
@@ -945,11 +957,9 @@ Handle<Code> LoadIC::CompileHandler(LookupResult* lookup,
 
   switch (lookup->type()) {
     case FIELD: {
-      PropertyIndex field = lookup->GetFieldIndex();
+      FieldIndex field = lookup->GetFieldIndex();
       if (object.is_identical_to(holder)) {
-        return SimpleFieldLoad(field.translate(holder),
-                               field.is_inobject(holder),
-                               lookup->representation());
+        return SimpleFieldLoad(field);
       }
       return compiler.CompileLoadField(
           type, holder, name, field, lookup->representation());
@@ -985,12 +995,15 @@ Handle<Code> LoadIC::CompileHandler(LookupResult* lookup,
       // Use simple field loads for some well-known callback properties.
       if (object->IsJSObject()) {
         Handle<JSObject> receiver = Handle<JSObject>::cast(object);
+        Handle<Map> map(receiver->map());
         Handle<HeapType> type = IC::MapToType<HeapType>(
             handle(receiver->map()), isolate());
         int object_offset;
         if (Accessors::IsJSObjectFieldAccessor<HeapType>(
                 type, name, &object_offset)) {
-          return SimpleFieldLoad(object_offset / kPointerSize);
+          FieldIndex index = FieldIndex::ForInObjectOffset(
+              object_offset, receiver->map());
+          return SimpleFieldLoad(index);
         }
       }
 
@@ -1158,7 +1171,8 @@ MaybeHandle<Object> KeyedLoadIC::Load(Handle<Object> object,
   }
 
   if (!is_target_set()) {
-    if (*stub == *generic_stub()) {
+    Code* generic = *generic_stub();
+    if (*stub == generic) {
       TRACE_GENERIC_IC(isolate(), "KeyedLoadIC", "set generic");
     }
     set_target(*stub);
@@ -1803,7 +1817,8 @@ MaybeHandle<Object> KeyedStoreIC::Store(Handle<Object> object,
   }
 
   if (!is_target_set()) {
-    if (*stub == *generic_stub()) {
+    Code* generic = *generic_stub();
+    if (*stub == generic) {
       TRACE_GENERIC_IC(isolate(), "KeyedStoreIC", "set generic");
     }
     ASSERT(!stub.is_null());
@@ -1917,6 +1932,8 @@ void CallIC::HandleMiss(Handle<Object> receiver,
 
 // Used from ic-<arch>.cc.
 RUNTIME_FUNCTION(CallIC_Miss) {
+  Logger::TimerEventScope timer(
+      isolate, Logger::TimerEventScope::v8_ic_miss);
   HandleScope scope(isolate);
   ASSERT(args.length() == 4);
   CallIC ic(isolate);
@@ -1930,6 +1947,8 @@ RUNTIME_FUNCTION(CallIC_Miss) {
 
 
 RUNTIME_FUNCTION(CallIC_Customization_Miss) {
+  Logger::TimerEventScope timer(
+      isolate, Logger::TimerEventScope::v8_ic_miss);
   HandleScope scope(isolate);
   ASSERT(args.length() == 4);
   // A miss on a custom call ic always results in going megamorphic.
@@ -1944,6 +1963,8 @@ RUNTIME_FUNCTION(CallIC_Customization_Miss) {
 
 // Used from ic-<arch>.cc.
 RUNTIME_FUNCTION(LoadIC_Miss) {
+  Logger::TimerEventScope timer(
+      isolate, Logger::TimerEventScope::v8_ic_miss);
   HandleScope scope(isolate);
   ASSERT(args.length() == 2);
   LoadIC ic(IC::NO_EXTRA_FRAME, isolate);
@@ -1958,6 +1979,8 @@ RUNTIME_FUNCTION(LoadIC_Miss) {
 
 // Used from ic-<arch>.cc
 RUNTIME_FUNCTION(KeyedLoadIC_Miss) {
+  Logger::TimerEventScope timer(
+      isolate, Logger::TimerEventScope::v8_ic_miss);
   HandleScope scope(isolate);
   ASSERT(args.length() == 2);
   KeyedLoadIC ic(IC::NO_EXTRA_FRAME, isolate);
@@ -1971,6 +1994,8 @@ RUNTIME_FUNCTION(KeyedLoadIC_Miss) {
 
 
 RUNTIME_FUNCTION(KeyedLoadIC_MissFromStubFailure) {
+  Logger::TimerEventScope timer(
+      isolate, Logger::TimerEventScope::v8_ic_miss);
   HandleScope scope(isolate);
   ASSERT(args.length() == 2);
   KeyedLoadIC ic(IC::EXTRA_CALL_FRAME, isolate);
@@ -1985,6 +2010,8 @@ RUNTIME_FUNCTION(KeyedLoadIC_MissFromStubFailure) {
 
 // Used from ic-<arch>.cc.
 RUNTIME_FUNCTION(StoreIC_Miss) {
+  Logger::TimerEventScope timer(
+      isolate, Logger::TimerEventScope::v8_ic_miss);
   HandleScope scope(isolate);
   ASSERT(args.length() == 3);
   StoreIC ic(IC::NO_EXTRA_FRAME, isolate);
@@ -2001,6 +2028,8 @@ RUNTIME_FUNCTION(StoreIC_Miss) {
 
 
 RUNTIME_FUNCTION(StoreIC_MissFromStubFailure) {
+  Logger::TimerEventScope timer(
+      isolate, Logger::TimerEventScope::v8_ic_miss);
   HandleScope scope(isolate);
   ASSERT(args.length() == 3);
   StoreIC ic(IC::EXTRA_CALL_FRAME, isolate);
@@ -2017,6 +2046,8 @@ RUNTIME_FUNCTION(StoreIC_MissFromStubFailure) {
 
 
 RUNTIME_FUNCTION(StoreIC_ArrayLength) {
+  Logger::TimerEventScope timer(
+      isolate, Logger::TimerEventScope::v8_ic_miss);
   HandleScope scope(isolate);
 
   ASSERT(args.length() == 2);
@@ -2043,6 +2074,8 @@ RUNTIME_FUNCTION(StoreIC_ArrayLength) {
 // it is necessary to extend the properties array of a
 // JSObject.
 RUNTIME_FUNCTION(SharedStoreIC_ExtendStorage) {
+  Logger::TimerEventScope timer(
+      isolate, Logger::TimerEventScope::v8_ic_miss);
   HandleScope shs(isolate);
   ASSERT(args.length() == 3);
 
@@ -2083,6 +2116,8 @@ RUNTIME_FUNCTION(SharedStoreIC_ExtendStorage) {
 
 // Used from ic-<arch>.cc.
 RUNTIME_FUNCTION(KeyedStoreIC_Miss) {
+  Logger::TimerEventScope timer(
+      isolate, Logger::TimerEventScope::v8_ic_miss);
   HandleScope scope(isolate);
   ASSERT(args.length() == 3);
   KeyedStoreIC ic(IC::NO_EXTRA_FRAME, isolate);
@@ -2099,6 +2134,8 @@ RUNTIME_FUNCTION(KeyedStoreIC_Miss) {
 
 
 RUNTIME_FUNCTION(KeyedStoreIC_MissFromStubFailure) {
+  Logger::TimerEventScope timer(
+      isolate, Logger::TimerEventScope::v8_ic_miss);
   HandleScope scope(isolate);
   ASSERT(args.length() == 3);
   KeyedStoreIC ic(IC::EXTRA_CALL_FRAME, isolate);
@@ -2149,6 +2186,8 @@ RUNTIME_FUNCTION(KeyedStoreIC_Slow) {
 
 
 RUNTIME_FUNCTION(ElementsTransitionAndStoreIC_Miss) {
+  Logger::TimerEventScope timer(
+      isolate, Logger::TimerEventScope::v8_ic_miss);
   HandleScope scope(isolate);
   ASSERT(args.length() == 4);
   KeyedStoreIC ic(IC::EXTRA_CALL_FRAME, isolate);
@@ -2658,6 +2697,8 @@ MaybeHandle<Object> BinaryOpIC::Transition(
 
 
 RUNTIME_FUNCTION(BinaryOpIC_Miss) {
+  Logger::TimerEventScope timer(
+      isolate, Logger::TimerEventScope::v8_ic_miss);
   HandleScope scope(isolate);
   ASSERT_EQ(2, args.length());
   Handle<Object> left = args.at<Object>(BinaryOpICStub::kLeft);
@@ -2673,6 +2714,8 @@ RUNTIME_FUNCTION(BinaryOpIC_Miss) {
 
 
 RUNTIME_FUNCTION(BinaryOpIC_MissWithAllocationSite) {
+  Logger::TimerEventScope timer(
+      isolate, Logger::TimerEventScope::v8_ic_miss);
   HandleScope scope(isolate);
   ASSERT_EQ(3, args.length());
   Handle<AllocationSite> allocation_site = args.at<AllocationSite>(
@@ -2906,6 +2949,8 @@ Code* CompareIC::UpdateCaches(Handle<Object> x, Handle<Object> y) {
 
 // Used from ICCompareStub::GenerateMiss in code-stubs-<arch>.cc.
 RUNTIME_FUNCTION(CompareIC_Miss) {
+  Logger::TimerEventScope timer(
+      isolate, Logger::TimerEventScope::v8_ic_miss);
   HandleScope scope(isolate);
   ASSERT(args.length() == 3);
   CompareIC ic(isolate, static_cast<Token::Value>(args.smi_at(2)));
@@ -2970,6 +3015,8 @@ Handle<Object> CompareNilIC::CompareNil(Handle<Object> object) {
 
 
 RUNTIME_FUNCTION(CompareNilIC_Miss) {
+  Logger::TimerEventScope timer(
+      isolate, Logger::TimerEventScope::v8_ic_miss);
   HandleScope scope(isolate);
   Handle<Object> object = args.at<Object>(0);
   CompareNilIC ic(isolate);
@@ -3035,6 +3082,8 @@ Handle<Object> ToBooleanIC::ToBoolean(Handle<Object> object) {
 
 
 RUNTIME_FUNCTION(ToBooleanIC_Miss) {
+  Logger::TimerEventScope timer(
+      isolate, Logger::TimerEventScope::v8_ic_miss);
   ASSERT(args.length() == 1);
   HandleScope scope(isolate);
   Handle<Object> object = args.at<Object>(0);

@@ -6,6 +6,7 @@
 
 #include "src/accessors.h"
 #include "src/api.h"
+#include "src/base/once.h"
 #include "src/bootstrapper.h"
 #include "src/codegen.h"
 #include "src/compilation-cache.h"
@@ -21,7 +22,6 @@
 #include "src/natives.h"
 #include "src/objects-visiting.h"
 #include "src/objects-visiting-inl.h"
-#include "src/once.h"
 #include "src/runtime-profiler.h"
 #include "src/scopeinfo.h"
 #include "src/snapshot.h"
@@ -49,7 +49,9 @@ namespace internal {
 
 
 Heap::Heap()
-    : isolate_(NULL),
+    : amount_of_external_allocated_memory_(0),
+      amount_of_external_allocated_memory_at_last_global_gc_(0),
+      isolate_(NULL),
       code_range_size_(0),
 // semispace_size_ should be a power of 2 and old_generation_size_ should be
 // a multiple of Page::kPageSize.
@@ -59,11 +61,10 @@ Heap::Heap()
       max_old_generation_size_(700ul * (kPointerSize / 4) * MB),
       max_executable_size_(256ul * (kPointerSize / 4) * MB),
 // Variables set based on semispace_size_ and old_generation_size_ in
-// ConfigureHeap (survived_since_last_expansion_, external_allocation_limit_)
+// ConfigureHeap.
 // Will be 4 * reserved_semispace_size_ to ensure that young
 // generation can be aligned to its size.
       maximum_committed_(0),
-      old_space_growing_factor_(4),
       survived_since_last_expansion_(0),
       sweep_generation_(0),
       always_allocate_scope_depth_(0),
@@ -91,9 +92,6 @@ Heap::Heap()
 #endif  // DEBUG
       old_generation_allocation_limit_(kMinimumOldGenerationAllocationLimit),
       size_of_old_gen_at_last_old_space_gc_(0),
-      external_allocation_limit_(0),
-      amount_of_external_allocated_memory_(0),
-      amount_of_external_allocated_memory_at_last_global_gc_(0),
       old_gen_exhausted_(false),
       inline_allocation_disabled_(false),
       store_buffer_rebuilder_(store_buffer()),
@@ -151,6 +149,7 @@ Heap::Heap()
   set_native_contexts_list(NULL);
   set_array_buffers_list(Smi::FromInt(0));
   set_allocation_sites_list(Smi::FromInt(0));
+  set_encountered_weak_collections(Smi::FromInt(0));
   // Put a dummy entry in the remembered pages so we can find the list the
   // minidump even if there are no real unmapped pages.
   RememberUnmappedPage(NULL, false);
@@ -1535,6 +1534,9 @@ void Heap::Scavenge() {
     }
   }
 
+  // Copy objects reachable from the encountered weak collections list.
+  scavenge_visitor.VisitPointer(&encountered_weak_collections_);
+
   // Copy objects reachable from the code flushing candidates list.
   MarkCompactCollector* collector = mark_compact_collector();
   if (collector->is_code_flushing_enabled()) {
@@ -1814,7 +1816,9 @@ Address Heap::DoScavenge(ObjectVisitor* scavenge_visitor,
 
 STATIC_ASSERT((FixedDoubleArray::kHeaderSize &
                kDoubleAlignmentMask) == 0);  // NOLINT
-STATIC_ASSERT((ConstantPoolArray::kHeaderSize &
+STATIC_ASSERT((ConstantPoolArray::kFirstEntryOffset &
+               kDoubleAlignmentMask) == 0);  // NOLINT
+STATIC_ASSERT((ConstantPoolArray::kExtendedFirstOffset &
                kDoubleAlignmentMask) == 0);  // NOLINT
 
 
@@ -2382,7 +2386,7 @@ bool Heap::CreateInitialMaps() {
   set_meta_map(new_meta_map);
   new_meta_map->set_map(new_meta_map);
 
-  { // Partial map allocation
+  {  // Partial map allocation
 #define ALLOCATE_PARTIAL_MAP(instance_type, size, field_name)                  \
     { Map* map;                                                                \
       if (!AllocatePartialMap((instance_type), (size)).To(&map)) return false; \
@@ -2476,7 +2480,7 @@ bool Heap::CreateInitialMaps() {
   constant_pool_array_map()->set_prototype(null_value());
   constant_pool_array_map()->set_constructor(null_value());
 
-  { // Map allocation
+  {  // Map allocation
 #define ALLOCATE_MAP(instance_type, size, field_name)                          \
     { Map* map;                                                                \
       if (!AllocateMap((instance_type), size).To(&map)) return false;          \
@@ -3366,8 +3370,9 @@ AllocationResult Heap::AllocateCode(int object_size,
 
   result->set_map_no_write_barrier(code_map());
   Code* code = Code::cast(result);
-  ASSERT(!isolate_->code_range()->exists() ||
-      isolate_->code_range()->contains(code->address()));
+  ASSERT(isolate_->code_range() == NULL ||
+         !isolate_->code_range()->valid() ||
+         isolate_->code_range()->contains(code->address()));
   code->set_gc_metadata(Smi::FromInt(0));
   code->set_ic_age(global_ic_age_);
   return code;
@@ -3408,8 +3413,9 @@ AllocationResult Heap::CopyCode(Code* code) {
   new_code->set_constant_pool(new_constant_pool);
 
   // Relocate the copy.
-  ASSERT(!isolate_->code_range()->exists() ||
-      isolate_->code_range()->contains(code->address()));
+  ASSERT(isolate_->code_range() == NULL ||
+         !isolate_->code_range()->valid() ||
+         isolate_->code_range()->contains(code->address()));
   new_code->Relocate(new_addr - old_addr);
   return new_code;
 }
@@ -3472,8 +3478,9 @@ AllocationResult Heap::CopyCode(Code* code, Vector<byte> reloc_info) {
             static_cast<size_t>(reloc_info.length()));
 
   // Relocate the copy.
-  ASSERT(!isolate_->code_range()->exists() ||
-      isolate_->code_range()->contains(code->address()));
+  ASSERT(isolate_->code_range() == NULL ||
+         !isolate_->code_range()->valid() ||
+         isolate_->code_range()->contains(code->address()));
   new_code->Relocate(new_addr - old_addr);
 
 #ifdef VERIFY_HEAP
@@ -4059,23 +4066,26 @@ AllocationResult Heap::CopyFixedDoubleArrayWithMap(FixedDoubleArray* src,
 
 AllocationResult Heap::CopyConstantPoolArrayWithMap(ConstantPoolArray* src,
                                                     Map* map) {
-  int int64_entries = src->count_of_int64_entries();
-  int code_ptr_entries = src->count_of_code_ptr_entries();
-  int heap_ptr_entries = src->count_of_heap_ptr_entries();
-  int int32_entries = src->count_of_int32_entries();
   HeapObject* obj;
-  { AllocationResult allocation =
-        AllocateConstantPoolArray(int64_entries, code_ptr_entries,
-                                  heap_ptr_entries, int32_entries);
+  if (src->is_extended_layout()) {
+    ConstantPoolArray::NumberOfEntries small(src,
+        ConstantPoolArray::SMALL_SECTION);
+    ConstantPoolArray::NumberOfEntries extended(src,
+        ConstantPoolArray::EXTENDED_SECTION);
+    AllocationResult allocation =
+        AllocateExtendedConstantPoolArray(small, extended);
+    if (!allocation.To(&obj)) return allocation;
+  } else {
+    ConstantPoolArray::NumberOfEntries small(src,
+        ConstantPoolArray::SMALL_SECTION);
+    AllocationResult allocation = AllocateConstantPoolArray(small);
     if (!allocation.To(&obj)) return allocation;
   }
   obj->set_map_no_write_barrier(map);
-  int size = ConstantPoolArray::SizeFor(
-        int64_entries, code_ptr_entries, heap_ptr_entries, int32_entries);
   CopyBlock(
-      obj->address() + ConstantPoolArray::kLengthOffset,
-      src->address() + ConstantPoolArray::kLengthOffset,
-      size - ConstantPoolArray::kLengthOffset);
+      obj->address() + ConstantPoolArray::kFirstEntryOffset,
+      src->address() + ConstantPoolArray::kFirstEntryOffset,
+      src->size() - ConstantPoolArray::kFirstEntryOffset);
   return obj;
 }
 
@@ -4167,22 +4177,10 @@ AllocationResult Heap::AllocateRawFixedDoubleArray(int length,
 }
 
 
-AllocationResult Heap::AllocateConstantPoolArray(int number_of_int64_entries,
-                                                 int number_of_code_ptr_entries,
-                                                 int number_of_heap_ptr_entries,
-                                                 int number_of_int32_entries) {
-  CHECK(number_of_int64_entries >= 0 &&
-        number_of_int64_entries <= ConstantPoolArray::kMaxEntriesPerType &&
-        number_of_code_ptr_entries >= 0 &&
-        number_of_code_ptr_entries <= ConstantPoolArray::kMaxEntriesPerType &&
-        number_of_heap_ptr_entries >= 0 &&
-        number_of_heap_ptr_entries <= ConstantPoolArray::kMaxEntriesPerType &&
-        number_of_int32_entries >= 0 &&
-        number_of_int32_entries <= ConstantPoolArray::kMaxEntriesPerType);
-  int size = ConstantPoolArray::SizeFor(number_of_int64_entries,
-                                        number_of_code_ptr_entries,
-                                        number_of_heap_ptr_entries,
-                                        number_of_int32_entries);
+AllocationResult Heap::AllocateConstantPoolArray(
+      const ConstantPoolArray::NumberOfEntries& small) {
+  CHECK(small.are_in_range(0, ConstantPoolArray::kMaxSmallEntriesPerType));
+  int size = ConstantPoolArray::SizeFor(small);
 #ifndef V8_HOST_ARCH_64_BIT
   size += kPointerSize;
 #endif
@@ -4196,39 +4194,47 @@ AllocationResult Heap::AllocateConstantPoolArray(int number_of_int64_entries,
   object->set_map_no_write_barrier(constant_pool_array_map());
 
   ConstantPoolArray* constant_pool = ConstantPoolArray::cast(object);
-  constant_pool->Init(number_of_int64_entries,
-                      number_of_code_ptr_entries,
-                      number_of_heap_ptr_entries,
-                      number_of_int32_entries);
-  if (number_of_code_ptr_entries > 0) {
-    int offset =
-        constant_pool->OffsetOfElementAt(constant_pool->first_code_ptr_index());
-    MemsetPointer(
-        reinterpret_cast<Address*>(HeapObject::RawField(constant_pool, offset)),
-        isolate()->builtins()->builtin(Builtins::kIllegal)->entry(),
-        number_of_code_ptr_entries);
+  constant_pool->Init(small);
+  constant_pool->ClearPtrEntries(isolate());
+  return constant_pool;
+}
+
+
+AllocationResult Heap::AllocateExtendedConstantPoolArray(
+    const ConstantPoolArray::NumberOfEntries& small,
+    const ConstantPoolArray::NumberOfEntries& extended) {
+  CHECK(small.are_in_range(0, ConstantPoolArray::kMaxSmallEntriesPerType));
+  CHECK(extended.are_in_range(0, kMaxInt));
+  int size = ConstantPoolArray::SizeForExtended(small, extended);
+#ifndef V8_HOST_ARCH_64_BIT
+  size += kPointerSize;
+#endif
+  AllocationSpace space = SelectSpace(size, OLD_POINTER_SPACE, TENURED);
+
+  HeapObject* object;
+  { AllocationResult allocation = AllocateRaw(size, space, OLD_POINTER_SPACE);
+    if (!allocation.To(&object)) return allocation;
   }
-  if (number_of_heap_ptr_entries > 0) {
-    int offset =
-        constant_pool->OffsetOfElementAt(constant_pool->first_heap_ptr_index());
-    MemsetPointer(
-        HeapObject::RawField(constant_pool, offset),
-        undefined_value(),
-        number_of_heap_ptr_entries);
-  }
+  object = EnsureDoubleAligned(this, object, size);
+  object->set_map_no_write_barrier(constant_pool_array_map());
+
+  ConstantPoolArray* constant_pool = ConstantPoolArray::cast(object);
+  constant_pool->InitExtended(small, extended);
+  constant_pool->ClearPtrEntries(isolate());
   return constant_pool;
 }
 
 
 AllocationResult Heap::AllocateEmptyConstantPoolArray() {
-  int size = ConstantPoolArray::SizeFor(0, 0, 0, 0);
+  ConstantPoolArray::NumberOfEntries small(0, 0, 0, 0);
+  int size = ConstantPoolArray::SizeFor(small);
   HeapObject* result;
   { AllocationResult allocation =
         AllocateRaw(size, OLD_DATA_SPACE, OLD_DATA_SPACE);
     if (!allocation.To(&result)) return allocation;
   }
   result->set_map_no_write_barrier(constant_pool_array_map());
-  ConstantPoolArray::cast(result)->Init(0, 0, 0, 0);
+  ConstantPoolArray::cast(result)->Init(small);
   return result;
 }
 
@@ -4973,7 +4979,7 @@ bool Heap::ConfigureHeap(int max_semi_space_size,
     max_semi_space_size_ = Page::kPageSize;
   }
 
-  if (Snapshot::HaveASnapshotToStartFrom()) {
+  if (Snapshot::IsEnabled()) {
     // If we are using a snapshot we always reserve the default amount
     // of memory for each semispace because code in the snapshot has
     // write-barrier code that relies on the size and alignment of new
@@ -5018,11 +5024,6 @@ bool Heap::ConfigureHeap(int max_semi_space_size,
 
   initial_semispace_size_ = Min(initial_semispace_size_, max_semi_space_size_);
 
-  // The external allocation limit should be below 256 MB on all architectures
-  // to avoid that resource-constrained embedders run low on memory.
-  external_allocation_limit_ = 192 * MB;
-  ASSERT(external_allocation_limit_ <= 256 * MB);
-
   // The old generation is paged and needs at least one page for each space.
   int paged_space_count = LAST_PAGED_SPACE - FIRST_PAGED_SPACE + 1;
   max_old_generation_size_ =
@@ -5036,12 +5037,6 @@ bool Heap::ConfigureHeap(int max_semi_space_size,
           AllocationMemento::kSize));
 
   code_range_size_ = code_range_size * MB;
-
-  // We set the old generation growing factor to 2 to grow the heap slower on
-  // memory-constrained devices.
-  if (max_old_generation_size_ <= kMaxOldSpaceSizeMediumMemoryDevice) {
-    old_space_growing_factor_ = 2;
-  }
 
   configured_ = true;
   return true;
@@ -5163,7 +5158,7 @@ bool Heap::SetUp() {
     if (!ConfigureHeapDefault()) return false;
   }
 
-  CallOnce(&initialize_gc_once, &InitializeGCOnce);
+  base::CallOnce(&initialize_gc_once, &InitializeGCOnce);
 
   MarkMapPointersAsEncoded(false);
 

@@ -2287,11 +2287,13 @@ Block* Parser::ParseVariableDeclarations(
 
 static bool ContainsLabel(ZoneStringList* labels, Handle<String> label) {
   ASSERT(!label.is_null());
-  if (labels != NULL)
-    for (int i = labels->length(); i-- > 0; )
-      if (labels->at(i).is_identical_to(label))
+  if (labels != NULL) {
+    for (int i = labels->length(); i-- > 0; ) {
+      if (labels->at(i).is_identical_to(label)) {
         return true;
-
+      }
+    }
+  }
   return false;
 }
 
@@ -2776,21 +2778,46 @@ void Parser::InitializeForEachStatement(ForEachStatement* stmt,
 
   if (for_of != NULL) {
     Factory* heap_factory = isolate()->factory();
+    Variable* iterable = scope_->DeclarationScope()->NewTemporary(
+        heap_factory->dot_iterable_string());
     Variable* iterator = scope_->DeclarationScope()->NewTemporary(
         heap_factory->dot_iterator_string());
     Variable* result = scope_->DeclarationScope()->NewTemporary(
         heap_factory->dot_result_string());
 
+    Expression* assign_iterable;
     Expression* assign_iterator;
     Expression* next_result;
     Expression* result_done;
     Expression* assign_each;
 
-    // var iterator = iterable;
+    // var iterable = subject;
     {
+      Expression* iterable_proxy = factory()->NewVariableProxy(iterable);
+      assign_iterable = factory()->NewAssignment(
+          Token::ASSIGN, iterable_proxy, subject, subject->position());
+    }
+
+    // var iterator = iterable[Symbol.iterator]();
+    {
+      Expression* iterable_proxy = factory()->NewVariableProxy(iterable);
+      Handle<Symbol> iterator_symbol(
+          isolate()->native_context()->iterator_symbol(), isolate());
+      Expression* iterator_symbol_literal = factory()->NewLiteral(
+          iterator_symbol, RelocInfo::kNoPosition);
+      // FIXME(wingo): Unhappily, it will be a common error that the RHS of a
+      // for-of doesn't have a Symbol.iterator property.  We should do better
+      // than informing the user that "undefined is not a function".
+      int pos = subject->position();
+      Expression* iterator_property = factory()->NewProperty(
+          iterable_proxy, iterator_symbol_literal, pos);
+      ZoneList<Expression*>* iterator_arguments =
+          new(zone()) ZoneList<Expression*>(0, zone());
+      Expression* iterator_call = factory()->NewCall(
+          iterator_property, iterator_arguments, pos);
       Expression* iterator_proxy = factory()->NewVariableProxy(iterator);
       assign_iterator = factory()->NewAssignment(
-          Token::ASSIGN, iterator_proxy, subject, RelocInfo::kNoPosition);
+          Token::ASSIGN, iterator_proxy, iterator_call, RelocInfo::kNoPosition);
     }
 
     // var result = iterator.next();
@@ -2830,7 +2857,11 @@ void Parser::InitializeForEachStatement(ForEachStatement* stmt,
     }
 
     for_of->Initialize(each, subject, body,
-                       assign_iterator, next_result, result_done, assign_each);
+                       assign_iterable,
+                       assign_iterator,
+                       next_result,
+                       result_done,
+                       assign_each);
   } else {
     stmt->Initialize(each, subject, body);
   }
@@ -2948,7 +2979,7 @@ Statement* Parser::DesugarLetBindingsInForStatement(
       Expression* const1 = factory()->NewLiteral(smi1, RelocInfo::kNoPosition);
       VariableProxy* flag_proxy = factory()->NewVariableProxy(flag);
       compare = factory()->NewCompareOperation(
-          Token::EQ, flag_proxy, const1, RelocInfo::kNoPosition);
+          Token::EQ, flag_proxy, const1, pos);
     }
     Statement* clear_flag = NULL;
     // Make statement: flag = 0.
@@ -2971,7 +3002,7 @@ Statement* Parser::DesugarLetBindingsInForStatement(
     BreakableStatement* t = LookupBreakTarget(Handle<String>(), CHECK_OK);
     Statement* stop = factory()->NewBreakStatement(t, RelocInfo::kNoPosition);
     Statement* if_not_cond_break = factory()->NewIfStatement(
-        cond, empty, stop, RelocInfo::kNoPosition);
+        cond, empty, stop, cond->position());
     inner_block->AddStatement(if_not_cond_break, zone());
   }
 

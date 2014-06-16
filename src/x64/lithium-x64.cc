@@ -1885,7 +1885,9 @@ LInstruction* LChunkBuilder::DoChange(HChange* instr) {
         return AssignPointerMap(DefineSameAsFirst(result));
       } else {
         LOperand* value = UseRegister(val);
-        LNumberTagI* result = new(zone()) LNumberTagI(value);
+        LOperand* temp1 = SmiValuesAre32Bits() ? NULL : TempRegister();
+        LOperand* temp2 = SmiValuesAre32Bits() ? NULL : FixedTemp(xmm1);
+        LNumberTagI* result = new(zone()) LNumberTagI(value, temp1, temp2);
         return AssignPointerMap(DefineSameAsFirst(result));
       }
     } else if (to.IsSmi()) {
@@ -2108,6 +2110,11 @@ LInstruction* LChunkBuilder::DoLoadRoot(HLoadRoot* instr) {
 
 
 void LChunkBuilder::FindDehoistedKeyDefinitions(HValue* candidate) {
+  // We sign extend the dehoisted key at the definition point when the pointer
+  // size is 64-bit. For x32 port, we sign extend the dehoisted key at the use
+  // points and should not invoke this function. We can't use STATIC_ASSERT
+  // here as the pointer size is 32-bit for x32.
+  ASSERT(kPointerSize == kInt64Size);
   BitVector* dehoisted_key_ids = chunk_->GetDehoistedKeyIds();
   if (dehoisted_key_ids->Contains(candidate->id())) return;
   dehoisted_key_ids->Add(candidate->id());
@@ -2124,7 +2131,7 @@ LInstruction* LChunkBuilder::DoLoadKeyed(HLoadKeyed* instr) {
   LOperand* key = UseRegisterOrConstantAtStart(instr->key());
   LInstruction* result = NULL;
 
-  if (instr->IsDehoisted()) {
+  if ((kPointerSize == kInt64Size) && instr->IsDehoisted()) {
     FindDehoistedKeyDefinitions(instr->key());
   }
 
@@ -2169,7 +2176,7 @@ LInstruction* LChunkBuilder::DoLoadKeyedGeneric(HLoadKeyedGeneric* instr) {
 LInstruction* LChunkBuilder::DoStoreKeyed(HStoreKeyed* instr) {
   ElementsKind elements_kind = instr->elements_kind();
 
-  if (instr->IsDehoisted()) {
+  if ((kPointerSize == kInt64Size) && instr->IsDehoisted()) {
     FindDehoistedKeyDefinitions(instr->key());
   }
 
@@ -2580,6 +2587,22 @@ LInstruction* LChunkBuilder::DoLoadFieldByIndex(HLoadFieldByIndex* instr) {
   LLoadFieldByIndex* load = new(zone()) LLoadFieldByIndex(object, index);
   LInstruction* result = DefineSameAsFirst(load);
   return AssignPointerMap(result);
+}
+
+
+LInstruction* LChunkBuilder::DoStoreFrameContext(HStoreFrameContext* instr) {
+  LOperand* context = UseRegisterAtStart(instr->context());
+  return new(zone()) LStoreFrameContext(context);
+}
+
+
+LInstruction* LChunkBuilder::DoAllocateBlockContext(
+    HAllocateBlockContext* instr) {
+  LOperand* context = UseFixed(instr->context(), rsi);
+  LOperand* function = UseRegisterAtStart(instr->function());
+  LAllocateBlockContext* result =
+      new(zone()) LAllocateBlockContext(context, function);
+  return MarkAsCall(DefineFixed(result, rsi), instr);
 }
 
 

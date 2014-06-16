@@ -45,16 +45,15 @@
 #include "src/isolate-inl.h"
 #include "src/platform.h"
 
+#ifdef V8_FAST_TLS_SUPPORTED
+#include "src/base/atomicops.h"
+#endif
+
 namespace v8 {
 namespace internal {
 
 // 0 is never a valid thread id.
 static const pthread_t kNoThread = (pthread_t) 0;
-
-
-unsigned OS::CpuFeaturesImpliedByPlatform() {
-  return 0;  // Nothing special.
-}
 
 
 int OS::NumberOfProcessorsOnline() {
@@ -647,7 +646,7 @@ static pthread_key_t LocalKeyToPthreadKey(Thread::LocalStorageKey local_key) {
 
 #ifdef V8_FAST_TLS_SUPPORTED
 
-static Atomic32 tls_base_offset_initialized = 0;
+static base::Atomic32 tls_base_offset_initialized = 0;
 intptr_t kMacTlsBaseOffset = 0;
 
 // It's safe to do the initialization more that once, but it has to be
@@ -683,7 +682,7 @@ static void InitializeTlsBaseOffset() {
     kMacTlsBaseOffset = 0;
   }
 
-  Release_Store(&tls_base_offset_initialized, 1);
+  base::Release_Store(&tls_base_offset_initialized, 1);
 }
 
 

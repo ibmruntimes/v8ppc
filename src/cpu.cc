@@ -23,7 +23,7 @@
 
 #include "src/checks.h"
 #if V8_OS_WIN
-#include "src/win32-headers.h"
+#include "src/base/win32-headers.h"
 #endif
 
 namespace v8 {
@@ -300,6 +300,10 @@ CPU::CPU() : stepping_(0),
     has_sse42_ = (cpu_info[2] & 0x00100000) != 0;
   }
 
+#if V8_HOST_ARCH_IA32
+  // SAHF is always available in compat/legacy mode,
+  has_sahf_ = true;
+#else
   // Query extended IDs.
   __cpuid(cpu_info, 0x80000000);
   unsigned num_ext_ids = cpu_info[0];
@@ -307,14 +311,10 @@ CPU::CPU() : stepping_(0),
   // Interpret extended CPU feature information.
   if (num_ext_ids > 0x80000000) {
     __cpuid(cpu_info, 0x80000001);
-    // SAHF is always available in compat/legacy mode,
-    // but must be probed in long mode.
-#if V8_HOST_ARCH_IA32
-    has_sahf_ = true;
-#else
+    // SAHF must be probed in long mode.
     has_sahf_ = (cpu_info[2] & 0x00000001) != 0;
-#endif
   }
+#endif
 
 #elif V8_HOST_ARCH_ARM
 
@@ -395,11 +395,11 @@ CPU::CPU() : stepping_(0),
     has_neon_ = HasListItem(features, "neon");
     has_thumbee_ = HasListItem(features, "thumbee");
     has_vfp_ = HasListItem(features, "vfp");
-    if (HasListItem(features, "vfpv3")) {
+    if (HasListItem(features, "vfpv3d16")) {
+      has_vfp3_ = true;
+    } else if (HasListItem(features, "vfpv3")) {
       has_vfp3_ = true;
       has_vfp3_d32_ = true;
-    } else if (HasListItem(features, "vfpv3d16")) {
-      has_vfp3_ = true;
     }
     delete[] features;
   }

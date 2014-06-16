@@ -49,11 +49,9 @@
 
 #undef MAP_TYPE
 
-#include "v8.h"
-#include "v8threads.h"
+#include "src/v8.h"
 
-#include "platform.h"
-#include "vm-state-inl.h"
+#include "src/platform.h"
 
 
 namespace v8 {
@@ -117,10 +115,7 @@ void* OS::Allocate(const size_t requested,
   int prot = PROT_READ | PROT_WRITE | (executable ? PROT_EXEC : 0);
   void* mbase = mmapHelper(msize, prot, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
 
-  if (mbase == MAP_FAILED) {
-    LOG(i::Isolate::Current(), StringEvent("OS::Allocate", "mmap failed"));
-    return NULL;
-  }
+  if (mbase == MAP_FAILED) return NULL;
   *allocated = msize;
   return mbase;
 }
@@ -179,23 +174,24 @@ static unsigned StringToLong(char* buffer) {
 }
 
 
-void OS::LogSharedLibraryAddresses(Isolate *isolate) {
+std::vector<OS::SharedLibraryAddress> OS::GetSharedLibraryAddresses() {
+  std::vector<SharedLibraryAddress> result;
   static const int MAP_LENGTH = 1024;
   int fd = open("/proc/self/maps", O_RDONLY);
-  if (fd < 0) return;
+  if (fd < 0) return result;
   while (true) {
     char addr_buffer[11];
     addr_buffer[0] = '0';
     addr_buffer[1] = 'x';
     addr_buffer[10] = 0;
-    int result = read(fd, addr_buffer + 2, 8);
-    if (result < 8) break;
+    int rc = read(fd, addr_buffer + 2, 8);
+    if (rc < 8) break;
     unsigned start = StringToLong(addr_buffer);
-    result = read(fd, addr_buffer + 2, 1);
-    if (result < 1) break;
+    rc = read(fd, addr_buffer + 2, 1);
+    if (rc < 1) break;
     if (addr_buffer[2] != '-') break;
-    result = read(fd, addr_buffer + 2, 8);
-    if (result < 8) break;
+    rc = read(fd, addr_buffer + 2, 8);
+    if (rc < 8) break;
     unsigned end = StringToLong(addr_buffer);
     char buffer[MAP_LENGTH];
     int bytes_read = -1;
@@ -203,8 +199,8 @@ void OS::LogSharedLibraryAddresses(Isolate *isolate) {
       bytes_read++;
       if (bytes_read >= MAP_LENGTH - 1)
         break;
-      result = read(fd, buffer + bytes_read, 1);
-      if (result < 1) break;
+      rc = read(fd, buffer + bytes_read, 1);
+      if (rc < 1) break;
     } while (buffer[bytes_read] != '\n');
     buffer[bytes_read] = 0;
     // Ignore mappings that are not executable.
@@ -213,9 +209,10 @@ void OS::LogSharedLibraryAddresses(Isolate *isolate) {
     // There may be no filename in this line.  Skip to next.
     if (start_of_path == NULL) continue;
     buffer[bytes_read] = 0;
-    LOG(isolate, SharedLibraryEvent(start_of_path, start, end));
+    result.push_back(SharedLibraryAddress(start_of_path, start, end));
   }
   close(fd);
+  return result;
 }
 
 

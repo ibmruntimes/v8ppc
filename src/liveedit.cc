@@ -805,11 +805,17 @@ class FunctionInfoListener {
 };
 
 
-Address LiveEdit::AfterBreakTarget(FrameDropMode mode, Isolate* isolate) {
+void LiveEdit::InitializeThreadLocal(Debug* debug) {
+  debug->thread_local_.frame_drop_mode_ = LiveEdit::FRAMES_UNTOUCHED;
+}
+
+
+bool LiveEdit::SetAfterBreakTarget(Debug* debug) {
   Code* code = NULL;
-  switch (mode) {
+  Isolate* isolate = debug->isolate_;
+  switch (debug->thread_local_.frame_drop_mode_) {
     case FRAMES_UNTOUCHED:
-      break;
+      return false;
     case FRAME_DROPPED_IN_IC_CALL:
       // We must have been calling IC stub. Do not go there anymore.
       code = isolate->builtins()->builtin(Builtins::kPlainReturn_LiveEdit);
@@ -821,7 +827,7 @@ Address LiveEdit::AfterBreakTarget(FrameDropMode mode, Isolate* isolate) {
       break;
     case FRAME_DROPPED_IN_DIRECT_CALL:
       // Nothing to do, after_break_target is not used here.
-      break;
+      return true;
     case FRAME_DROPPED_IN_RETURN_CALL:
       code = isolate->builtins()->builtin(Builtins::kFrameDropper_LiveEdit);
       break;
@@ -829,8 +835,8 @@ Address LiveEdit::AfterBreakTarget(FrameDropMode mode, Isolate* isolate) {
       UNREACHABLE();
       break;
   }
-  if (code == NULL) return NULL;
-  return code->entry();
+  debug->after_break_target_ = code->entry();
+  return true;
 }
 
 
@@ -1188,8 +1194,6 @@ void LiveEdit::ReplaceFunctionCode(
 
   Handle<SharedFunctionInfo> shared_info = shared_info_wrapper.GetInfo();
 
-  isolate->heap()->MakeHeapIterable();
-
   if (IsJSFunctionCode(shared_info->code())) {
     Handle<Code> code = compile_info_wrapper.GetFunctionCode();
     ReplaceCodeObject(Handle<Code>(shared_info->code()), code);
@@ -1424,8 +1428,6 @@ void LiveEdit::PatchFunctionPositions(Handle<JSArray> shared_info_array,
   info->set_start_position(new_function_start);
   info->set_end_position(new_function_end);
   info->set_function_token_position(new_function_token_pos);
-
-  info->GetIsolate()->heap()->MakeHeapIterable();
 
   if (IsJSFunctionCode(info->code())) {
     // Patch relocation info section of the code.

@@ -261,8 +261,8 @@ void JSObject::JSObjectVerify() {
     for (int i = 0; i < map()->NumberOfOwnDescriptors(); i++) {
       if (descriptors->GetDetails(i).type() == FIELD) {
         Representation r = descriptors->GetDetails(i).representation();
-        int field = descriptors->GetFieldIndex(i);
-        Object* value = RawFastPropertyAt(field);
+        FieldIndex index = FieldIndex::ForDescriptor(map(), i);
+        Object* value = RawFastPropertyAt(index);
         if (r.IsDouble()) ASSERT(value->IsHeapNumber());
         if (value->IsUninitialized()) continue;
         if (r.IsSmi()) ASSERT(value->IsSmi());
@@ -378,12 +378,14 @@ void FixedDoubleArray::FixedDoubleArrayVerify() {
 
 void ConstantPoolArray::ConstantPoolArrayVerify() {
   CHECK(IsConstantPoolArray());
-  for (int i = 0; i < count_of_code_ptr_entries(); i++) {
-    Address code_entry = get_code_ptr_entry(first_code_ptr_index() + i);
+  ConstantPoolArray::Iterator code_iter(this, ConstantPoolArray::CODE_PTR);
+  while (!code_iter.is_finished()) {
+    Address code_entry = get_code_ptr_entry(code_iter.next_index());
     VerifyPointer(Code::GetCodeFromTargetAddress(code_entry));
   }
-  for (int i = 0; i < count_of_heap_ptr_entries(); i++) {
-    VerifyObjectField(OffsetOfElementAt(first_heap_ptr_index() + i));
+  ConstantPoolArray::Iterator heap_iter(this, ConstantPoolArray::HEAP_PTR);
+  while (!heap_iter.is_finished()) {
+    VerifyObjectField(OffsetOfElementAt(heap_iter.next_index()));
   }
 }
 

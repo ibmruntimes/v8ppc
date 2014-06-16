@@ -232,9 +232,9 @@ void JSObject::PrintProperties(FILE* out) {
       PrintF(out, ": ");
       switch (descs->GetType(i)) {
         case FIELD: {
-          int index = descs->GetFieldIndex(i);
+          FieldIndex index = FieldIndex::ForDescriptor(map(), i);
           RawFastPropertyAt(index)->ShortPrint(out);
-          PrintF(out, " (field at offset %d)\n", index);
+          PrintF(out, " (field at offset %d)\n", index.property_index());
           break;
         }
         case CONSTANT:
@@ -579,9 +579,9 @@ void FixedDoubleArray::FixedDoubleArrayPrint(FILE* out) {
 void ConstantPoolArray::ConstantPoolArrayPrint(FILE* out) {
   HeapObject::PrintHeader(out, "ConstantPoolArray");
   PrintF(out, " - length: %d", length());
-  for (int i = 0; i < length(); i++) {
+  for (int i = 0; i <= last_index(INT32, SMALL_SECTION); i++) {
     int offset = OffsetOfElementAt(i);
-    if (i < first_code_ptr_index()) {
+    if (i <= last_index(INT64, SMALL_SECTION)) {
 #if V8_HOST_ARCH_64_BIT
       PrintF(out, "\n  [%d]: 0x%" V8PRIxPTR " (int64)", offset,
              get_int64_entry(i));
@@ -589,15 +589,39 @@ void ConstantPoolArray::ConstantPoolArrayPrint(FILE* out) {
       PrintF(out, "\n  [%d]: %g (double)", offset,
              get_int64_entry_as_double(i));
 #endif
-    } else if (i < first_heap_ptr_index()) {
+    } else if (i <= last_index(CODE_PTR, SMALL_SECTION)) {
       PrintF(out, "\n  [%d]: 0x%" V8PRIxPTR " (code target pointer)", offset,
              reinterpret_cast<uintptr_t>(get_code_ptr_entry(i)));
-    } else if (i < first_int32_index()) {
+    } else if (i <= last_index(HEAP_PTR, SMALL_SECTION)) {
       PrintF(out, "\n  [%d]: 0x%" V8PRIxPTR " (heap pointer)", offset,
              reinterpret_cast<uintptr_t>(get_heap_ptr_entry(i)));
-    } else {
+    } else if (i <= last_index(INT32, SMALL_SECTION)) {
       PrintF(out, "\n  [%d]: 0x%x (int32)", offset, get_int32_entry(i));
     }
+  }
+  if (is_extended_layout()) {
+    PrintF(out, "\n  Extended section:");
+    for (int i = first_extended_section_index();
+         i <= last_index(INT32, EXTENDED_SECTION); i++) {
+    int offset = OffsetOfElementAt(i);
+    if (i <= last_index(INT64, EXTENDED_SECTION)) {
+#if V8_HOST_ARCH_64_BIT
+      PrintF(out, "\n  [%d]: 0x%" V8PRIxPTR " (int64)", offset,
+             get_int64_entry(i));
+#else
+      PrintF(out, "\n  [%d]: %g (double)", offset,
+             get_int64_entry_as_double(i));
+#endif
+    } else if (i <= last_index(CODE_PTR, EXTENDED_SECTION)) {
+      PrintF(out, "\n  [%d]: 0x%" V8PRIxPTR " (code target pointer)", offset,
+             reinterpret_cast<uintptr_t>(get_code_ptr_entry(i)));
+    } else if (i <= last_index(HEAP_PTR, EXTENDED_SECTION)) {
+      PrintF(out, "\n  [%d]: 0x%" V8PRIxPTR " (heap pointer)", offset,
+             reinterpret_cast<uintptr_t>(get_heap_ptr_entry(i)));
+    } else if (i <= last_index(INT32, EXTENDED_SECTION)) {
+      PrintF(out, "\n  [%d]: 0x%x (int32)", offset, get_int32_entry(i));
+    }
+  }
   }
   PrintF(out, "\n");
 }

@@ -21,6 +21,7 @@ class LCodeGen;
   V(AccessArgumentsAt)                          \
   V(AddI)                                       \
   V(Allocate)                                   \
+  V(AllocateBlockContext)                       \
   V(ApplyArguments)                             \
   V(ArgumentsElements)                          \
   V(ArgumentsLength)                            \
@@ -137,6 +138,7 @@ class LCodeGen;
   V(StackCheck)                                 \
   V(StoreCodeEntry)                             \
   V(StoreContextSlot)                           \
+  V(StoreFrameContext)                          \
   V(StoreGlobalCell)                            \
   V(StoreKeyed)                                 \
   V(StoreKeyedGeneric)                          \
@@ -1979,13 +1981,17 @@ class LUint32ToDouble V8_FINAL : public LTemplateInstruction<1, 1, 0> {
 };
 
 
-class LNumberTagI V8_FINAL : public LTemplateInstruction<1, 1, 0> {
+class LNumberTagI V8_FINAL : public LTemplateInstruction<1, 1, 2> {
  public:
-  explicit LNumberTagI(LOperand* value) {
+  LNumberTagI(LOperand* value, LOperand* temp1, LOperand* temp2) {
     inputs_[0] = value;
+    temps_[0] = temp1;
+    temps_[1] = temp2;
   }
 
   LOperand* value() { return inputs_[0]; }
+  LOperand* temp1() { return temps_[0]; }
+  LOperand* temp2() { return temps_[1]; }
 
   DECLARE_CONCRETE_INSTRUCTION(NumberTagI, "number-tag-i")
 };
@@ -2624,6 +2630,35 @@ class LLoadFieldByIndex V8_FINAL : public LTemplateInstruction<1, 2, 0> {
   LOperand* index() { return inputs_[1]; }
 
   DECLARE_CONCRETE_INSTRUCTION(LoadFieldByIndex, "load-field-by-index")
+};
+
+
+class LStoreFrameContext: public LTemplateInstruction<0, 1, 0> {
+ public:
+  explicit LStoreFrameContext(LOperand* context) {
+    inputs_[0] = context;
+  }
+
+  LOperand* context() { return inputs_[0]; }
+
+  DECLARE_CONCRETE_INSTRUCTION(StoreFrameContext, "store-frame-context")
+};
+
+
+class LAllocateBlockContext: public LTemplateInstruction<1, 2, 0> {
+ public:
+  LAllocateBlockContext(LOperand* context, LOperand* function) {
+    inputs_[0] = context;
+    inputs_[1] = function;
+  }
+
+  LOperand* context() { return inputs_[0]; }
+  LOperand* function() { return inputs_[1]; }
+
+  Handle<ScopeInfo> scope_info() { return hydrogen()->scope_info(); }
+
+  DECLARE_CONCRETE_INSTRUCTION(AllocateBlockContext, "allocate-block-context")
+  DECLARE_HYDROGEN_ACCESSOR(AllocateBlockContext)
 };
 
 

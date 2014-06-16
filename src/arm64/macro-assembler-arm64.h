@@ -81,7 +81,7 @@ enum BranchType {
 inline BranchType InvertBranchType(BranchType type) {
   if (kBranchTypeFirstCondition <= type && type <= kBranchTypeLastCondition) {
     return static_cast<BranchType>(
-        InvertCondition(static_cast<Condition>(type)));
+        NegateCondition(static_cast<Condition>(type)));
   } else {
     return static_cast<BranchType>(type ^ 1);
   }
@@ -394,13 +394,10 @@ class MacroAssembler : public Assembler {
   inline void Ldpsw(const Register& rt,
                     const Register& rt2,
                     const MemOperand& src);
-  // Provide both double and float interfaces for FP immediate loads, rather
-  // than relying on implicit C++ casts. This allows signalling NaNs to be
-  // preserved when the immediate matches the format of fd. Most systems convert
-  // signalling NaNs to quiet NaNs when converting between float and double.
-  inline void Ldr(const FPRegister& ft, double imm);
-  inline void Ldr(const FPRegister& ft, float imm);
-  inline void Ldr(const Register& rt, uint64_t imm);
+  // Load a literal from the inline constant pool.
+  inline void Ldr(const CPURegister& rt, const Immediate& imm);
+  // Helper function for double immediate.
+  inline void Ldr(const CPURegister& rt, double imm);
   inline void Lsl(const Register& rd, const Register& rn, unsigned shift);
   inline void Lsl(const Register& rd, const Register& rn, const Register& rm);
   inline void Lsr(const Register& rd, const Register& rn, unsigned shift);
@@ -872,6 +869,10 @@ class MacroAssembler : public Assembler {
   inline void SmiUntagToFloat(FPRegister dst,
                               Register src,
                               UntagMode mode = kNotSpeculativeUntag);
+
+  // Tag and push in one step.
+  inline void SmiTagAndPush(Register src);
+  inline void SmiTagAndPush(Register src1, Register src2);
 
   // Compute the absolute value of 'smi' and leave the result in 'smi'
   // register. If 'smi' is the most negative SMI, the absolute value cannot

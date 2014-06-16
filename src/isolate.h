@@ -8,7 +8,7 @@
 #include "include/v8-debug.h"
 #include "src/allocation.h"
 #include "src/assert-scope.h"
-#include "src/atomicops.h"
+#include "src/base/atomicops.h"
 #include "src/builtins.h"
 #include "src/contexts.h"
 #include "src/execution.h"
@@ -193,7 +193,7 @@ class ThreadId {
 
   int id_;
 
-  static Atomic32 highest_thread_id_;
+  static base::Atomic32 highest_thread_id_;
 
   friend class Isolate;
 };
@@ -614,7 +614,8 @@ class Isolate {
     thread_local_top_.scheduled_exception_ = heap_.the_hole_value();
   }
 
-  bool IsExternallyCaught();
+  bool HasExternalTryCatch();
+  bool IsFinallyOnTop();
 
   bool is_catchable_by_javascript(Object* exception) {
     return exception != heap()->termination_exception();
@@ -1087,7 +1088,7 @@ class Isolate {
   void RemoveCallCompletedCallback(CallCompletedCallback callback);
   void FireCallCompletedCallback();
 
-  void EnqueueMicrotask(Handle<JSFunction> microtask);
+  void EnqueueMicrotask(Handle<Object> microtask);
   void RunMicrotasks();
 
  private:
@@ -1158,7 +1159,7 @@ class Isolate {
   static ThreadDataTable* thread_data_table_;
 
   // A global counter for all generated Isolates, might overflow.
-  static Atomic32 isolate_counter_;
+  static base::Atomic32 isolate_counter_;
 
   void Deinit();
 
@@ -1189,13 +1190,16 @@ class Isolate {
 
   void FillCache();
 
-  void PropagatePendingExceptionToExternalTryCatch();
+  // Propagate pending exception message to the v8::TryCatch.
+  // If there is no external try-catch or message was successfully propagated,
+  // then return true.
+  bool PropagatePendingExceptionToExternalTryCatch();
 
   // Traverse prototype chain to find out whether the object is derived from
   // the Error object.
   bool IsErrorObject(Handle<Object> obj);
 
-  Atomic32 id_;
+  base::Atomic32 id_;
   EntryStackItem* entry_stack_;
   int stack_trace_nesting_level_;
   StringStream* incomplete_message_;
@@ -1206,7 +1210,7 @@ class Isolate {
   Counters* counters_;
   CodeRange* code_range_;
   RecursiveMutex break_access_;
-  Atomic32 debugger_initialized_;
+  base::Atomic32 debugger_initialized_;
   Logger* logger_;
   StackGuard stack_guard_;
   StatsTable* stats_table_;

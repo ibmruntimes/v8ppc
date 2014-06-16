@@ -105,6 +105,8 @@ function PlotScriptComposer(kResX, kResY, error_output) {
         new TimerEvent("recompile async", "#CC4499", false, 1),
       'V8.CompileEval':
         new TimerEvent("compile eval", "#CC4400",  true, 0),
+      'V8.IcMiss':
+        new TimerEvent("ic miss", "#CC9900", true, 0),
       'V8.Parse':
         new TimerEvent("parse", "#00CC00",  true, 0),
       'V8.PreParse':
@@ -411,7 +413,6 @@ function PlotScriptComposer(kResX, kResY, error_output) {
     for (var name in TimerEvents) {
       var event = TimerEvents[name];
       var ranges = RestrictRangesTo(event.ranges, range_start, range_end);
-      ranges = MergeRanges(ranges);
       var sum =
         ranges.map(function(range) { return range.duration(); })
             .reduce(function(a, b) { return a + b; }, 0);
@@ -502,7 +503,8 @@ function PlotScriptComposer(kResX, kResY, error_output) {
     execution_pauses.sort(
         function(a, b) { return b.duration() - a.duration(); });
 
-    var max_pause_time = execution_pauses[0].duration();
+    var max_pause_time = execution_pauses.length > 0
+        ? execution_pauses[0].duration() : 0;
     padding = kPauseLabelPadding * (range_end - range_start) / kResX;
     var y_scale = kY1Offset / max_pause_time / 2;
     for (var i = 0; i < execution_pauses.length && i < kNumPauseLabels; i++) {

@@ -9,6 +9,7 @@
 #include "src/assert-scope.h"
 #include "src/builtins.h"
 #include "src/elements-kind.h"
+#include "src/field-index.h"
 #include "src/flags.h"
 #include "src/list.h"
 #include "src/property-details.h"
@@ -863,6 +864,7 @@ class ElementsAccessor;
 class FixedArrayBase;
 class GlobalObject;
 class ObjectVisitor;
+class LookupIterator;
 class StringStream;
 // We cannot just say "class HeapType;" if it is created from a template... =8-?
 template<class> class TypeImpl;
@@ -1465,11 +1467,7 @@ class Object {
 
   void Lookup(Handle<Name> name, LookupResult* result);
 
-  MUST_USE_RESULT static MaybeHandle<Object> GetPropertyWithReceiver(
-      Handle<Object> object,
-      Handle<Object> receiver,
-      Handle<Name> name,
-      PropertyAttributes* attributes);
+  MUST_USE_RESULT static MaybeHandle<Object> GetProperty(LookupIterator* it);
   MUST_USE_RESULT static inline MaybeHandle<Object> GetPropertyOrElement(
       Handle<Object> object,
       Handle<Name> key);
@@ -1480,14 +1478,8 @@ class Object {
   MUST_USE_RESULT static inline MaybeHandle<Object> GetProperty(
       Handle<Object> object,
       Handle<Name> key);
-  MUST_USE_RESULT static MaybeHandle<Object> GetProperty(
-      Handle<Object> object,
-      Handle<Object> receiver,
-      LookupResult* result,
-      Handle<Name> key,
-      PropertyAttributes* attributes);
 
-  MUST_USE_RESULT static MaybeHandle<Object> GetPropertyWithCallback(
+  MUST_USE_RESULT static MaybeHandle<Object> GetPropertyWithAccessor(
       Handle<Object> receiver,
       Handle<Name> name,
       Handle<JSObject> holder,
@@ -1522,7 +1514,6 @@ class Object {
   // Return the object's prototype (might be Heap::null_value()).
   Object* GetPrototype(Isolate* isolate);
   static Handle<Object> GetPrototype(Isolate* isolate, Handle<Object> object);
-  Map* GetMarkerMap(Isolate* isolate);
 
   // Returns the permanent hash code associated with this object. May return
   // undefined if not yet created.
@@ -1973,14 +1964,11 @@ class JSReceiver: public HeapObject {
   // function that was used to instantiate the object).
   String* constructor_name();
 
-  static inline PropertyAttributes GetPropertyAttribute(
+  static inline PropertyAttributes GetPropertyAttributes(
       Handle<JSReceiver> object,
       Handle<Name> name);
-  static PropertyAttributes GetPropertyAttributeWithReceiver(
-      Handle<JSReceiver> object,
-      Handle<JSReceiver> receiver,
-      Handle<Name> name);
-  static PropertyAttributes GetOwnPropertyAttribute(
+  static PropertyAttributes GetPropertyAttributes(LookupIterator* it);
+  static PropertyAttributes GetOwnPropertyAttributes(
       Handle<JSReceiver> object,
       Handle<Name> name);
 
@@ -2021,13 +2009,6 @@ class JSReceiver: public HeapObject {
       KeyCollectionType type);
 
  private:
-  static PropertyAttributes GetPropertyAttributeForResult(
-      Handle<JSReceiver> object,
-      Handle<JSReceiver> receiver,
-      LookupResult* result,
-      Handle<Name> name,
-      bool continue_search);
-
   MUST_USE_RESULT static MaybeHandle<Object> SetProperty(
       Handle<JSReceiver> receiver,
       LookupResult* result,
@@ -2228,21 +2209,12 @@ class JSObject: public JSReceiver {
   InterceptorInfo* GetIndexedInterceptor();
 
   // Used from JSReceiver.
-  static PropertyAttributes GetPropertyAttributePostInterceptor(
-      Handle<JSObject> object,
-      Handle<JSObject> receiver,
-      Handle<Name> name,
-      bool check_prototype);
-  static PropertyAttributes GetPropertyAttributeWithInterceptor(
-      Handle<JSObject> object,
-      Handle<JSObject> receiver,
-      Handle<Name> name,
-      bool check_prototype);
-  static PropertyAttributes GetPropertyAttributeWithFailedAccessCheck(
-      Handle<JSObject> object,
-      LookupResult* result,
-      Handle<Name> name,
-      bool check_prototype);
+  static Maybe<PropertyAttributes> GetPropertyAttributesWithInterceptor(
+      Handle<JSObject> holder,
+      Handle<Object> receiver,
+      Handle<Name> name);
+  static PropertyAttributes GetPropertyAttributesWithFailedAccessCheck(
+      LookupIterator* it);
   static PropertyAttributes GetElementAttributeWithReceiver(
       Handle<JSObject> object,
       Handle<JSReceiver> receiver,
@@ -2274,13 +2246,7 @@ class JSObject: public JSReceiver {
   MUST_USE_RESULT static MaybeHandle<Object> GetPropertyWithInterceptor(
       Handle<JSObject> object,
       Handle<Object> receiver,
-      Handle<Name> name,
-      PropertyAttributes* attributes);
-  MUST_USE_RESULT static MaybeHandle<Object> GetPropertyPostInterceptor(
-      Handle<JSObject> object,
-      Handle<Object> receiver,
-      Handle<Name> name,
-      PropertyAttributes* attributes);
+      Handle<Name> name);
 
   // Returns true if this is an instance of an api function and has
   // been modified since it was created.  May give false positives.
@@ -2510,9 +2476,9 @@ class JSObject: public JSReceiver {
   // Access fast-case object properties at index.
   static Handle<Object> FastPropertyAt(Handle<JSObject> object,
                                        Representation representation,
-                                       int index);
-  inline Object* RawFastPropertyAt(int index);
-  inline void FastPropertyAtPut(int index, Object* value);
+                                       FieldIndex index);
+  inline Object* RawFastPropertyAt(FieldIndex index);
+  inline void FastPropertyAtPut(FieldIndex index, Object* value);
   void WriteToField(int descriptor, Object* value);
 
   // Access to in object properties.
@@ -2691,11 +2657,7 @@ class JSObject: public JSReceiver {
 
   // Used from Object::GetProperty().
   MUST_USE_RESULT static MaybeHandle<Object> GetPropertyWithFailedAccessCheck(
-      Handle<JSObject> object,
-      Handle<Object> receiver,
-      LookupResult* result,
-      Handle<Name> name,
-      PropertyAttributes* attributes);
+      LookupIterator* it);
 
   MUST_USE_RESULT static MaybeHandle<Object> GetElementWithCallback(
       Handle<JSObject> object,
@@ -3104,16 +3066,42 @@ class FixedDoubleArray: public FixedArrayBase {
 
 
 // ConstantPoolArray describes a fixed-sized array containing constant pool
-// entires.
-// The format of the pool is:
-//   [0]: Field holding the first index which is a raw code target pointer entry
-//   [1]: Field holding the first index which is a heap pointer entry
-//   [2]: Field holding the first index which is a int32 entry
-//   [3]                      ... [first_code_ptr_index() - 1] : 64 bit entries
-//   [first_code_ptr_index()] ... [first_heap_ptr_index() - 1] : code pointers
-//   [first_heap_ptr_index()] ... [first_int32_index() - 1]    : heap pointers
-//   [first_int32_index()]    ... [length - 1]                 : 32 bit entries
-class ConstantPoolArray: public FixedArrayBase {
+// entries.
+//
+// A ConstantPoolArray can be structured in two different ways depending upon
+// whether it is extended or small. The is_extended_layout() method can be used
+// to discover which layout the constant pool has.
+//
+// The format of a small constant pool is:
+//   [kSmallLayout1Offset]                    : Small section layout bitmap 1
+//   [kSmallLayout2Offset]                    : Small section layout bitmap 2
+//   [kSmallLayout3Offset]                    : Small section layout bitmap 3
+//   [first_index(INT64, SMALL_SECTION)]      : 64 bit entries
+//    ...                                     :  ...
+//   [first_index(CODE_PTR, SMALL_SECTION)]   : code pointer entries
+//    ...                                     :  ...
+//   [first_index(HEAP_PTR, SMALL_SECTION)]   : heap pointer entries
+//    ...                                     :  ...
+//   [first_index(INT32, SMALL_SECTION)]      : 32 bit entries
+//    ...                                     :  ...
+//
+// If the constant pool has an extended layout, the extended section constant
+// pool also contains an extended section, which has the following format at
+// location get_extended_section_header_offset():
+//   [kExtendedInt64CountOffset]              : count of extended 64 bit entries
+//   [kExtendedCodePtrCountOffset]            : count of extended code pointers
+//   [kExtendedHeapPtrCountOffset]            : count of extended heap pointers
+//   [kExtendedInt32CountOffset]              : count of extended 32 bit entries
+//   [first_index(INT64, EXTENDED_SECTION)]   : 64 bit entries
+//    ...                                     :  ...
+//   [first_index(CODE_PTR, EXTENDED_SECTION)]: code pointer entries
+//    ...                                     :  ...
+//   [first_index(HEAP_PTR, EXTENDED_SECTION)]: heap pointer entries
+//    ...                                     :  ...
+//   [first_index(INT32, EXTENDED_SECTION)]   : 32 bit entries
+//    ...                                     :  ...
+//
+class ConstantPoolArray: public HeapObject {
  public:
   enum WeakObjectState {
     NO_WEAK_OBJECTS,
@@ -3121,17 +3109,94 @@ class ConstantPoolArray: public FixedArrayBase {
     WEAK_OBJECTS_IN_IC
   };
 
-  // Getters for the field storing the first index for different type entries.
-  inline int first_code_ptr_index();
-  inline int first_heap_ptr_index();
-  inline int first_int64_index();
-  inline int first_int32_index();
+  enum Type {
+    INT64 = 0,
+    CODE_PTR,
+    HEAP_PTR,
+    INT32,
+    // Number of types stored by the ConstantPoolArrays.
+    NUMBER_OF_TYPES,
+    FIRST_TYPE = INT64,
+    LAST_TYPE = INT32
+  };
 
-  // Getters for counts of different type entries.
-  inline int count_of_code_ptr_entries();
-  inline int count_of_heap_ptr_entries();
-  inline int count_of_int64_entries();
-  inline int count_of_int32_entries();
+  enum LayoutSection {
+    SMALL_SECTION = 0,
+    EXTENDED_SECTION
+  };
+
+  class NumberOfEntries BASE_EMBEDDED {
+   public:
+    inline NumberOfEntries(int int64_count, int code_ptr_count,
+                           int heap_ptr_count, int int32_count) {
+      element_counts_[INT64] = int64_count;
+      element_counts_[CODE_PTR] = code_ptr_count;
+      element_counts_[HEAP_PTR] = heap_ptr_count;
+      element_counts_[INT32] = int32_count;
+    }
+
+    inline NumberOfEntries(ConstantPoolArray* array, LayoutSection section) {
+      element_counts_[INT64] = array->number_of_entries(INT64, section);
+      element_counts_[CODE_PTR] = array->number_of_entries(CODE_PTR, section);
+      element_counts_[HEAP_PTR] = array->number_of_entries(HEAP_PTR, section);
+      element_counts_[INT32] = array->number_of_entries(INT32, section);
+    }
+
+    inline int count_of(Type type) const {
+      ASSERT(type < NUMBER_OF_TYPES);
+      return element_counts_[type];
+    }
+
+    inline int total_count() const {
+      int count = 0;
+      for (int i = 0; i < NUMBER_OF_TYPES; i++) {
+        count += element_counts_[i];
+      }
+      return count;
+    }
+
+    inline int are_in_range(int min, int max) const {
+      for (int i = FIRST_TYPE; i < NUMBER_OF_TYPES; i++) {
+        if (element_counts_[i] < min || element_counts_[i] > max) {
+          return false;
+        }
+      }
+      return true;
+    }
+
+   private:
+    int element_counts_[NUMBER_OF_TYPES];
+  };
+
+  class Iterator BASE_EMBEDDED {
+   public:
+    inline Iterator(ConstantPoolArray* array, Type type)
+        : array_(array), type_(type), final_section_(array->final_section()) {
+      current_section_ = SMALL_SECTION;
+      next_index_ = array->first_index(type, SMALL_SECTION);
+      update_section();
+    }
+
+    inline int next_index();
+    inline bool is_finished();
+   private:
+    inline void update_section();
+    ConstantPoolArray* array_;
+    const Type type_;
+    const LayoutSection final_section_;
+
+    LayoutSection current_section_;
+    int next_index_;
+  };
+
+  // Getters for the first index, the last index and the count of entries of
+  // a given type for a given layout section.
+  inline int first_index(Type type, LayoutSection layout_section);
+  inline int last_index(Type type, LayoutSection layout_section);
+  inline int number_of_entries(Type type, LayoutSection layout_section);
+
+  // Returns the type of the entry at the given index.
+  inline Type get_type(int index);
 
   // Setter and getter for pool elements.
   inline Address get_code_ptr_entry(int index);
@@ -3140,49 +3205,98 @@ class ConstantPoolArray: public FixedArrayBase {
   inline int32_t get_int32_entry(int index);
   inline double get_int64_entry_as_double(int index);
 
-  // Setter and getter for weak objects state
-  inline void set_weak_object_state(WeakObjectState state);
-  inline WeakObjectState get_weak_object_state();
-
   inline void set(int index, Address value);
   inline void set(int index, Object* value);
   inline void set(int index, int64_t value);
   inline void set(int index, double value);
   inline void set(int index, int32_t value);
 
-  // Set up initial state.
-  inline void Init(int number_of_int64_entries,
-                   int number_of_code_ptr_entries,
-                   int number_of_heap_ptr_entries,
-                   int number_of_int32_entries);
+  // Setter and getter for weak objects state
+  inline void set_weak_object_state(WeakObjectState state);
+  inline WeakObjectState get_weak_object_state();
+
+  // Returns true if the constant pool has an extended layout, false if it has
+  // only the small layout.
+  inline bool is_extended_layout();
+
+  // Returns the last LayoutSection in this constant pool array.
+  inline LayoutSection final_section();
+
+  // Set up initial state for a small layout constant pool array.
+  inline void Init(const NumberOfEntries& small);
+
+  // Set up initial state for an extended layout constant pool array.
+  inline void InitExtended(const NumberOfEntries& small,
+                           const NumberOfEntries& extended);
+
+  // Clears the pointer entries with GC safe values.
+  void ClearPtrEntries(Isolate* isolate);
+
+  // returns the total number of entries in the constant pool array.
+  inline int length();
 
   // Garbage collection support.
-  inline static int SizeFor(int number_of_int64_entries,
-                            int number_of_code_ptr_entries,
-                            int number_of_heap_ptr_entries,
-                            int number_of_int32_entries) {
-    return RoundUp(OffsetAt(number_of_int64_entries,
-                            number_of_code_ptr_entries,
-                            number_of_heap_ptr_entries,
-                            number_of_int32_entries),
-                   kPointerSize);
+  inline int size();
+
+  inline static int SizeFor(const NumberOfEntries& small) {
+    int size = kFirstEntryOffset +
+        (small.count_of(INT64)  * kInt64Size) +
+        (small.count_of(CODE_PTR) * kPointerSize) +
+        (small.count_of(HEAP_PTR) * kPointerSize) +
+        (small.count_of(INT32) * kInt32Size);
+    return RoundUp(size, kPointerSize);
+  }
+
+  inline static int SizeForExtended(const NumberOfEntries& small,
+                                    const NumberOfEntries& extended) {
+    int size = SizeFor(small);
+    size = RoundUp(size, kInt64Size);  // Align extended header to 64 bits.
+    size += kExtendedFirstOffset +
+        (extended.count_of(INT64) * kInt64Size) +
+        (extended.count_of(CODE_PTR) * kPointerSize) +
+        (extended.count_of(HEAP_PTR) * kPointerSize) +
+        (extended.count_of(INT32) * kInt32Size);
+    return RoundUp(size, kPointerSize);
+  }
+
+  inline static int entry_size(Type type) {
+    switch (type) {
+      case INT32:
+        return kInt32Size;
+      case INT64:
+        return kInt64Size;
+      case CODE_PTR:
+      case HEAP_PTR:
+        return kPointerSize;
+      default:
+        UNREACHABLE();
+        return 0;
+    }
   }
 
   // Code Generation support.
   inline int OffsetOfElementAt(int index) {
-    ASSERT(index < length());
-    if (index >= first_int32_index()) {
-      return OffsetAt(count_of_int64_entries(), count_of_code_ptr_entries(),
-                      count_of_heap_ptr_entries(), index - first_int32_index());
-    } else if (index >= first_heap_ptr_index()) {
-      return OffsetAt(count_of_int64_entries(), count_of_code_ptr_entries(),
-                      index - first_heap_ptr_index(), 0);
-    } else if (index >= first_code_ptr_index()) {
-      return OffsetAt(count_of_int64_entries(), index - first_code_ptr_index(),
-                      0, 0);
+    int offset;
+    LayoutSection section;
+    if (is_extended_layout() && index >= first_extended_section_index()) {
+      section = EXTENDED_SECTION;
+      offset = get_extended_section_header_offset() + kExtendedFirstOffset;
     } else {
-      return OffsetAt(index, 0, 0, 0);
+      section = SMALL_SECTION;
+      offset = kFirstEntryOffset;
     }
+
+    // Add offsets for the preceding type sections.
+    ASSERT(index <= last_index(LAST_TYPE, section));
+    for (Type type = FIRST_TYPE; index > last_index(type, section);
+         type = next_type(type)) {
+      offset += entry_size(type) * number_of_entries(type, section);
+    }
+
+    // Add offset for the index in it's type.
+    Type type = get_type(index);
+    offset += entry_size(type) * (index - first_index(type, section));
+    return offset;
   }
 
   // Casting.
@@ -3193,20 +3307,40 @@ class ConstantPoolArray: public FixedArrayBase {
     return HeapObject::RawField(this, OffsetOfElementAt(index));
   }
 
-  // Layout description.
-  static const int kArrayLayout1Offset = FixedArray::kHeaderSize;
-  static const int kArrayLayout2Offset = kArrayLayout1Offset + kIntSize;
-  static const int kFirstOffset = kArrayLayout2Offset + kIntSize;
+  // Small Layout description.
+  static const int kSmallLayout1Offset = HeapObject::kHeaderSize;
+  static const int kSmallLayout2Offset = kSmallLayout1Offset + kInt32Size;
+  static const int kSmallLayout3Offset = kSmallLayout2Offset + kInt32Size;
+  static const int kHeaderSize = kSmallLayout3Offset + kInt32Size;
+  static const int kFirstEntryOffset = ROUND_UP(kHeaderSize, kInt64Size);
 
-  static const int kFieldBitSize = 15;
-  static const int kMaxEntriesPerType = (1 << kFieldBitSize) - 1;
+  static const int kSmallLayoutCountBits = 15;
+  static const int kMaxSmallEntriesPerType = (1 << kSmallLayoutCountBits) - 1;
 
-  // ArrayLayout1 (ensure LSB is clear)
-  class NumberOfInt64EntriesField: public BitField<int, 1, kFieldBitSize> {};
-  class NumberOfCodePtrEntriesField: public BitField<int, 17, kFieldBitSize> {};
-  // ArrayLayout2 (ensure LSB is clear)
-  class NumberOfHeapPtrEntriesField: public BitField<int, 1, kFieldBitSize> {};
-  class WeakObjectStateField: public BitField<WeakObjectState, 30, 2> {};
+  // Fields in kSmallLayout1Offset.
+  class Int64CountField: public BitField<int, 1, kSmallLayoutCountBits> {};
+  class CodePtrCountField: public BitField<int, 16, kSmallLayoutCountBits> {};
+  class IsExtendedField: public BitField<bool, 31, 1> {};
+
+  // Fields in kSmallLayout2Offset.
+  class HeapPtrCountField: public BitField<int, 1, kSmallLayoutCountBits> {};
+  class Int32CountField: public BitField<int, 16, kSmallLayoutCountBits> {};
+
+  // Fields in kSmallLayout3Offset.
+  class TotalCountField: public BitField<int, 1, 17> {};
+  class WeakObjectStateField: public BitField<WeakObjectState, 18, 2> {};
+
+  // Extended layout description, which starts at
+  // get_extended_section_header_offset().
+  static const int kExtendedInt64CountOffset = 0;
+  static const int kExtendedCodePtrCountOffset =
+      kExtendedInt64CountOffset + kInt32Size;
+  static const int kExtendedHeapPtrCountOffset =
+      kExtendedCodePtrCountOffset + kInt32Size;
+  static const int kExtendedInt32CountOffset =
+      kExtendedHeapPtrCountOffset + kInt32Size;
+  static const int kExtendedFirstOffset =
+      kExtendedInt32CountOffset + kInt32Size;
 
   // Dispatched behavior.
   void ConstantPoolIterateBody(ObjectVisitor* v);
@@ -3215,15 +3349,13 @@ class ConstantPoolArray: public FixedArrayBase {
   DECLARE_VERIFIER(ConstantPoolArray)
 
  private:
-  inline static int OffsetAt(int number_of_int64_entries,
-                             int number_of_code_ptr_entries,
-                             int number_of_heap_ptr_entries,
-                             int number_of_int32_entries) {
-    return kFirstOffset
-        + (number_of_int64_entries * kInt64Size)
-        + (number_of_code_ptr_entries * kPointerSize)
-        + (number_of_heap_ptr_entries * kPointerSize)
-        + (number_of_int32_entries * kInt32Size);
+  inline int first_extended_section_index();
+  inline int get_extended_section_header_offset();
+
+  inline static Type next_type(Type type) {
+    ASSERT(type >= FIRST_TYPE && type < NUMBER_OF_TYPES);
+    int type_int = static_cast<int>(type);
+    return static_cast<Type>(++type_int);
   }
 
   DISALLOW_IMPLICIT_CONSTRUCTORS(ConstantPoolArray);
@@ -6212,6 +6344,11 @@ class Map: public HeapObject {
       StoreMode store_mode,
       PropertyAttributes attributes,
       const char* reason);
+  static Handle<Map> CopyGeneralizeAllRepresentations(
+      Handle<Map> map,
+      int modify_index,
+      StoreMode store_mode,
+      const char* reason);
 
   static Handle<Map> Normalize(Handle<Map> map, PropertyNormalizationMode mode);
 
@@ -6488,6 +6625,10 @@ class Map: public HeapObject {
   bool IsJSObjectMap() {
     return instance_type() >= FIRST_JS_OBJECT_TYPE;
   }
+  bool IsJSProxyMap() {
+    InstanceType type = instance_type();
+    return FIRST_JS_PROXY_TYPE <= type && type <= LAST_JS_PROXY_TYPE;
+  }
   bool IsJSGlobalProxyMap() {
     return instance_type() == JS_GLOBAL_PROXY_TYPE;
   }
@@ -6577,10 +6718,18 @@ class Map: public HeapObject {
   static const int kVisitorIdOffset = kInstanceSizesOffset + kVisitorIdByte;
 
   // Byte offsets within kInstanceAttributesOffset attributes.
+#if V8_TARGET_LITTLE_ENDIAN
+  // Order instance type and bit field together such that they can be loaded
+  // together as a 16-bit word with instance type in the lower 8 bits regardless
+  // of endianess.
   static const int kInstanceTypeOffset = kInstanceAttributesOffset + 0;
-  static const int kUnusedPropertyFieldsOffset = kInstanceAttributesOffset + 1;
-  static const int kBitFieldOffset = kInstanceAttributesOffset + 2;
-  static const int kBitField2Offset = kInstanceAttributesOffset + 3;
+  static const int kBitFieldOffset = kInstanceAttributesOffset + 1;
+#else
+  static const int kBitFieldOffset = kInstanceAttributesOffset + 0;
+  static const int kInstanceTypeOffset = kInstanceAttributesOffset + 1;
+#endif
+  static const int kBitField2Offset = kInstanceAttributesOffset + 2;
+  static const int kUnusedPropertyFieldsOffset = kInstanceAttributesOffset + 3;
 
   STATIC_ASSERT(kInstanceTypeOffset == Internals::kMapInstanceTypeOffset);
 
@@ -8946,6 +9095,33 @@ class String: public Name {
  public:
   enum Encoding { ONE_BYTE_ENCODING, TWO_BYTE_ENCODING };
 
+  // Array index strings this short can keep their index in the hash field.
+  static const int kMaxCachedArrayIndexLength = 7;
+
+  // For strings which are array indexes the hash value has the string length
+  // mixed into the hash, mainly to avoid a hash value of zero which would be
+  // the case for the string '0'. 24 bits are used for the array index value.
+  static const int kArrayIndexValueBits = 24;
+  static const int kArrayIndexLengthBits =
+      kBitsPerInt - kArrayIndexValueBits - kNofHashBitFields;
+
+  STATIC_ASSERT((kArrayIndexLengthBits > 0));
+
+  class ArrayIndexValueBits : public BitField<unsigned int, kNofHashBitFields,
+      kArrayIndexValueBits> {};  // NOLINT
+  class ArrayIndexLengthBits : public BitField<unsigned int,
+      kNofHashBitFields + kArrayIndexValueBits,
+      kArrayIndexLengthBits> {};  // NOLINT
+
+  // Check that kMaxCachedArrayIndexLength + 1 is a power of two so we
+  // could use a mask to test if the length of string is less than or equal to
+  // kMaxCachedArrayIndexLength.
+  STATIC_ASSERT(IS_POWER_OF_TWO(kMaxCachedArrayIndexLength + 1));
+
+  static const unsigned int kContainsCachedArrayIndexMask =
+      (~kMaxCachedArrayIndexLength << ArrayIndexLengthBits::kShift) |
+      kIsNotArrayIndexMask;
+
   // Representation of the flat content of a String.
   // A non-flat string doesn't have flat content.
   // A flat string has content that's encoded as a sequence of either
@@ -9861,9 +10037,9 @@ class JSProxy: public JSReceiver {
       StrictMode strict_mode,
       bool* done);
 
-  static PropertyAttributes GetPropertyAttributeWithHandler(
+  static PropertyAttributes GetPropertyAttributesWithHandler(
       Handle<JSProxy> proxy,
-      Handle<JSReceiver> receiver,
+      Handle<Object> receiver,
       Handle<Name> name);
   static PropertyAttributes GetElementAttributeWithHandler(
       Handle<JSProxy> proxy,

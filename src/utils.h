@@ -234,6 +234,25 @@ inline int32_t WhichPowerOf2Abs(int32_t x) {
 }
 
 
+// Obtains the unsigned type corresponding to T
+// available in C++11 as std::make_unsigned
+template<typename T>
+struct make_unsigned {
+  typedef T type;
+};
+
+
+// Template specializations necessary to have make_unsigned work
+template<> struct make_unsigned<int32_t> {
+  typedef uint32_t type;
+};
+
+
+template<> struct make_unsigned<int64_t> {
+  typedef uint64_t type;
+};
+
+
 // ----------------------------------------------------------------------------
 // BitField is a help template for encoding and decode bitfield with
 // unsigned content.
@@ -248,6 +267,7 @@ class BitFieldBase {
   static const U kMask = ((kOne << shift) << size) - (kOne << shift);
   static const U kShift = shift;
   static const U kSize = size;
+  static const U kNext = kShift + kSize;
 
   // Value for the field with all bits set.
   static const T kMax = static_cast<T>((1U << size) - 1);

@@ -1384,7 +1384,7 @@ int Disassembler::SubstituteImmediateField(Instruction* instr,
       switch (format[2]) {
         case 'L': {  // ILLiteral - Immediate Load Literal.
           AppendToOutput("pc%+" PRId64,
-                         instr->ImmLLiteral() << kLiteralEntrySizeLog2);
+                         instr->ImmLLiteral() << kLoadLiteralScaleLog2);
           return 9;
         }
         case 'S': {  // ILS - Immediate Load/Store.
@@ -1559,7 +1559,7 @@ int Disassembler::SubstituteConditionField(Instruction* instr,
   switch (format[1]) {
     case 'B': cond = instr->ConditionBranch(); break;
     case 'I': {
-      cond = InvertCondition(static_cast<Condition>(instr->Condition()));
+      cond = NegateCondition(static_cast<Condition>(instr->Condition()));
       break;
     }
     default: cond = instr->Condition();

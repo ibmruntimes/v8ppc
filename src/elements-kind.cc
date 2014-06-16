@@ -5,6 +5,7 @@
 #include "src/elements-kind.h"
 
 #include "src/api.h"
+#include "src/base/lazy-instance.h"
 #include "src/elements.h"
 #include "src/objects.h"
 
@@ -52,8 +53,9 @@ int ElementsKindToShiftSize(ElementsKind elements_kind) {
 
 
 int GetDefaultHeaderSizeForElementsKind(ElementsKind elements_kind) {
+  STATIC_ASSERT(FixedArray::kHeaderSize == FixedDoubleArray::kHeaderSize);
   return IsExternalArrayElementsKind(elements_kind)
-      ? 0 : (FixedArray::kHeaderSize - kSmiTagSize);
+      ? 0 : (FixedArray::kHeaderSize - kHeapObjectTag);
 }
 
 
@@ -102,8 +104,8 @@ struct InitializeFastElementsKindSequence {
 };
 
 
-static LazyInstance<ElementsKind*,
-                    InitializeFastElementsKindSequence>::type
+static base::LazyInstance<ElementsKind*,
+                          InitializeFastElementsKindSequence>::type
     fast_elements_kind_sequence = LAZY_INSTANCE_INITIALIZER;
 
 

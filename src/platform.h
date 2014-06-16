@@ -22,10 +22,12 @@
 #define V8_PLATFORM_H_
 
 #include <stdarg.h>
+#include <string>
+#include <vector>
 
+#include "src/base/build_config.h"
 #include "src/platform/mutex.h"
 #include "src/platform/semaphore.h"
-#include "src/globals.h"
 #include "src/vector.h"
 
 #ifdef __sun
@@ -43,7 +45,7 @@ int signbit(double x);
 // Microsoft Visual C++ specific stuff.
 #if V8_LIBC_MSVCRT
 
-#include "src/win32-headers.h"
+#include "src/base/win32-headers.h"
 #include "src/win32-math.h"
 
 int strncasecmp(const char* s1, const char* s2, int n);
@@ -255,20 +257,23 @@ class OS {
 
   // Support for the profiler.  Can do nothing, in which case ticks
   // occuring in shared libraries will not be properly accounted for.
-  static void LogSharedLibraryAddresses(Isolate* isolate);
+  struct SharedLibraryAddress {
+    SharedLibraryAddress(
+        const std::string& library_path, uintptr_t start, uintptr_t end)
+        : library_path(library_path), start(start), end(end) {}
+
+    std::string library_path;
+    uintptr_t start;
+    uintptr_t end;
+  };
+
+  static std::vector<SharedLibraryAddress> GetSharedLibraryAddresses();
 
   // Support for the profiler.  Notifies the external profiling
   // process that a code moving garbage collection starts.  Can do
   // nothing, in which case the code objects must not move (e.g., by
   // using --never-compact) if accurate profiling is desired.
   static void SignalCodeMovingGC();
-
-  // The return value indicates the CPU features we are sure of because of the
-  // OS.
-  // This is a little messy because the interpretation is subject to the cross
-  // of the CPU and the OS.  The bits in the answer correspond to the bit
-  // positions indicated by the members of the CpuFeature enum from globals.h
-  static unsigned CpuFeaturesImpliedByPlatform();
 
   // Returns the number of processors online.
   static int NumberOfProcessorsOnline();

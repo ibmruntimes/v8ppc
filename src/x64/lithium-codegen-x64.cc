@@ -275,6 +275,11 @@ void LCodeGen::GenerateBodyInstructionPost(LInstruction* instr) {
   }
 
   if (instr->HasResult() && instr->MustSignExtendResult(chunk())) {
+    // We sign extend the dehoisted key at the definition point when the pointer
+    // size is 64-bit. For x32 port, we sign extend the dehoisted key at the use
+    // points and MustSignExtendResult is always false. We can't use
+    // STATIC_ASSERT here as the pointer size is 32-bit for x32.
+    ASSERT(kPointerSize == kInt64Size);
     if (instr->result()->IsRegister()) {
       Register result_reg = ToRegister(instr->result());
       __ movsxlq(result_reg, result_reg);
@@ -1134,16 +1139,17 @@ void LCodeGen::DoFlooringDivByPowerOf2I(LFlooringDivByPowerOf2I* instr) {
     DeoptimizeIf(zero, instr->environment());
   }
 
-  // If the negation could not overflow, simply shifting is OK.
-  if (!instr->hydrogen()->CheckFlag(HValue::kLeftCanBeMinInt)) {
-    __ sarl(dividend, Immediate(shift));
+  // Dividing by -1 is basically negation, unless we overflow.
+  if (divisor == -1) {
+    if (instr->hydrogen()->CheckFlag(HValue::kLeftCanBeMinInt)) {
+      DeoptimizeIf(overflow, instr->environment());
+    }
     return;
   }
 
-  // Note that we could emit branch-free code, but that would need one more
-  // register.
-  if (divisor == -1) {
-    DeoptimizeIf(overflow, instr->environment());
+  // If the negation could not overflow, simply shifting is OK.
+  if (!instr->hydrogen()->CheckFlag(HValue::kLeftCanBeMinInt)) {
+    __ sarl(dividend, Immediate(shift));
     return;
   }
 
@@ -2238,7 +2244,9 @@ void LCodeGen::DoCompareNumericAndBranch(LCompareNumericAndBranch* instr) {
   LOperand* left = instr->left();
   LOperand* right = instr->right();
   bool is_unsigned =
-      instr->is_double() || instr->hydrogen()->CheckFlag(HInstruction::kUint32);
+      instr->is_double() ||
+      instr->hydrogen()->left()->CheckFlag(HInstruction::kUint32) ||
+      instr->hydrogen()->right()->CheckFlag(HInstruction::kUint32);
   Condition cc = TokenToCondition(instr->op(), is_unsigned);
 
   if (left->IsConstantOperand() && right->IsConstantOperand()) {
@@ -2276,8 +2284,8 @@ void LCodeGen::DoCompareNumericAndBranch(LCompareNumericAndBranch* instr) {
         } else {
           __ cmpl(ToOperand(right), Immediate(value));
         }
-        // We transposed the operands. Reverse the condition.
-        cc = ReverseCondition(cc);
+        // We commuted the operands, so commute the condition.
+        cc = CommuteCondition(cc);
       } else if (instr->hydrogen_value()->representation().IsSmi()) {
         if (right->IsRegister()) {
           __ cmpp(ToRegister(left), ToRegister(right));
@@ -4118,7 +4126,7 @@ void LCodeGen::DoBoundsCheck(LBoundsCheck* instr) {
     } else {
       __ cmpl(index, Immediate(length));
     }
-    cc = ReverseCondition(cc);
+    cc = CommuteCondition(cc);
   } else if (instr->index()->IsConstantOperand()) {
     int32_t index = ToInteger32(LConstantOperand::cast(instr->index()));
     if (instr->length()->IsRegister()) {
@@ -4524,11 +4532,32 @@ void LCodeGen::DoUint32ToDouble(LUint32ToDouble* instr) {
 
 
 void LCodeGen::DoNumberTagI(LNumberTagI* instr) {
+  class DeferredNumberTagI V8_FINAL : public LDeferredCode {
+   public:
+    DeferredNumberTagI(LCodeGen* codegen, LNumberTagI* instr)
+        : LDeferredCode(codegen), instr_(instr) { }
+    virtual void Generate() V8_OVERRIDE {
+      codegen()->DoDeferredNumberTagIU(instr_, instr_->value(), instr_->temp1(),
+                                       instr_->temp2(), SIGNED_INT32);
+    }
+    virtual LInstruction* instr() V8_OVERRIDE { return instr_; }
+   private:
+    LNumberTagI* instr_;
+  };
+
   LOperand* input = instr->value();
   ASSERT(input->IsRegister() && input->Equals(instr->result()));
   Register reg = ToRegister(input);
 
-  __ Integer32ToSmi(reg, reg);
+  if (SmiValuesAre32Bits()) {
+    __ Integer32ToSmi(reg, reg);
+  } else {
+    ASSERT(SmiValuesAre31Bits());
+    DeferredNumberTagI* deferred = new(zone()) DeferredNumberTagI(this, instr);
+    __ Integer32ToSmi(reg, reg);
+    __ j(overflow, deferred->entry());
+    __ bind(deferred->exit());
+  }
 }
 
 
@@ -4538,7 +4567,8 @@ void LCodeGen::DoNumberTagU(LNumberTagU* instr) {
     DeferredNumberTagU(LCodeGen* codegen, LNumberTagU* instr)
         : LDeferredCode(codegen), instr_(instr) { }
     virtual void Generate() V8_OVERRIDE {
-      codegen()->DoDeferredNumberTagU(instr_);
+      codegen()->DoDeferredNumberTagIU(instr_, instr_->value(), instr_->temp1(),
+                                       instr_->temp2(), UNSIGNED_INT32);
     }
     virtual LInstruction* instr() V8_OVERRIDE { return instr_; }
    private:
@@ -4557,16 +4587,31 @@ void LCodeGen::DoNumberTagU(LNumberTagU* instr) {
 }
 
 
-void LCodeGen::DoDeferredNumberTagU(LNumberTagU* instr) {
+void LCodeGen::DoDeferredNumberTagIU(LInstruction* instr,
+                                     LOperand* value,
+                                     LOperand* temp1,
+                                     LOperand* temp2,
+                                     IntegerSignedness signedness) {
   Label done, slow;
-  Register reg = ToRegister(instr->value());
-  Register tmp = ToRegister(instr->temp1());
-  XMMRegister temp_xmm = ToDoubleRegister(instr->temp2());
+  Register reg = ToRegister(value);
+  Register tmp = ToRegister(temp1);
+  XMMRegister temp_xmm = ToDoubleRegister(temp2);
 
   // Load value into temp_xmm which will be preserved across potential call to
   // runtime (MacroAssembler::EnterExitFrameEpilogue preserves only allocatable
   // XMM registers on x64).
-  __ LoadUint32(temp_xmm, reg);
+  if (signedness == SIGNED_INT32) {
+    ASSERT(SmiValuesAre31Bits());
+    // There was overflow, so bits 30 and 31 of the original integer
+    // disagree. Try to allocate a heap number in new space and store
+    // the value in there. If that fails, call the runtime system.
+    __ SmiToInteger32(reg, reg);
+    __ xorl(reg, Immediate(0x80000000));
+    __ cvtlsi2sd(temp_xmm, reg);
+  } else {
+    ASSERT(signedness == UNSIGNED_INT32);
+    __ LoadUint32(temp_xmm, reg);
+  }
 
   if (FLAG_inline_new) {
     __ AllocateHeapNumber(reg, tmp, &slow);
@@ -4584,7 +4629,7 @@ void LCodeGen::DoDeferredNumberTagU(LNumberTagU* instr) {
     // Preserve the value of all registers.
     PushSafepointRegistersScope scope(this);
 
-    // NumberTagU uses the context from the frame, rather than
+    // NumberTagIU uses the context from the frame, rather than
     // the environment's HContext or HInlinedContext value.
     // They only call Runtime::kHiddenAllocateHeapNumber.
     // The corresponding HChange instructions are added in a phase that does
@@ -5682,6 +5727,21 @@ void LCodeGen::DoLoadFieldByIndex(LLoadFieldByIndex* instr) {
                                FixedArray::kHeaderSize - kPointerSize));
   __ bind(deferred->exit());
   __ bind(&done);
+}
+
+
+void LCodeGen::DoStoreFrameContext(LStoreFrameContext* instr) {
+  Register context = ToRegister(instr->context());
+  __ movp(Operand(rbp, StandardFrameConstants::kContextOffset), context);
+}
+
+
+void LCodeGen::DoAllocateBlockContext(LAllocateBlockContext* instr) {
+  Handle<ScopeInfo> scope_info = instr->scope_info();
+  __ Push(scope_info);
+  __ Push(ToRegister(instr->function()));
+  CallRuntime(Runtime::kHiddenPushBlockContext, 2, instr);
+  RecordSafepoint(Safepoint::kNoLazyDeopt);
 }
 
 

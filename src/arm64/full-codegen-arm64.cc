@@ -459,7 +459,7 @@ void FullCodeGenerator::EmitReturnSequence() {
       // TODO(all): This implementation is overkill as it supports 2**31+1
       // arguments, consider how to improve it without creating a security
       // hole.
-      __ LoadLiteral(ip0, 3 * kInstructionSize);
+      __ ldr_pcrel(ip0, (3 * kInstructionSize) >> kLoadLiteralScaleLog2);
       __ add(current_sp, current_sp, ip0);
       __ ret();
       __ dc64(kXRegSize * (info_->scope()->num_parameters() + 1));
@@ -711,7 +711,7 @@ void FullCodeGenerator::Split(Condition cond,
     __ B(cond, if_true);
   } else if (if_true == fall_through) {
     ASSERT(if_false != fall_through);
-    __ B(InvertCondition(cond), if_false);
+    __ B(NegateCondition(cond), if_false);
   } else {
     __ B(cond, if_true);
     __ B(if_false);
@@ -1175,11 +1175,8 @@ void FullCodeGenerator::VisitForInStatement(ForInStatement* stmt) {
          FieldMemOperand(x2, DescriptorArray::kEnumCacheBridgeCacheOffset));
 
   // Set up the four remaining stack slots.
-  __ Push(x0);  // Map.
-  __ Mov(x0, Smi::FromInt(0));
-  // Push enumeration cache, enumeration cache length (as smi) and zero.
-  __ SmiTag(x1);
-  __ Push(x2, x1, x0);
+  __ Push(x0, x2);              // Map, enumeration cache.
+  __ SmiTagAndPush(x1, xzr);    // Enum cache length, zero (both as smis).
   __ B(&loop);
 
   __ Bind(&no_descriptors);
@@ -1283,8 +1280,8 @@ void FullCodeGenerator::VisitForOfStatement(ForOfStatement* stmt) {
   Iteration loop_statement(this, stmt);
   increment_loop_depth();
 
-  // var iterator = iterable[@@iterator]()
-  VisitForAccumulatorValue(stmt->assign_iterator());
+  // var iterable = subject
+  VisitForAccumulatorValue(stmt->assign_iterable());
 
   // As with for-in, skip the loop if the iterator is null or undefined.
   Register iterator = x0;
@@ -1293,16 +1290,8 @@ void FullCodeGenerator::VisitForOfStatement(ForOfStatement* stmt) {
   __ JumpIfRoot(iterator, Heap::kNullValueRootIndex,
                 loop_statement.break_label());
 
-  // Convert the iterator to a JS object.
-  Label convert, done_convert;
-  __ JumpIfSmi(iterator, &convert);
-  __ CompareObjectType(iterator, x1, x1, FIRST_SPEC_OBJECT_TYPE);
-  __ B(ge, &done_convert);
-  __ Bind(&convert);
-  __ Push(iterator);
-  __ InvokeBuiltin(Builtins::TO_OBJECT, CALL_FUNCTION);
-  __ Bind(&done_convert);
-  __ Push(iterator);
+  // var iterator = iterable[Symbol.iterator]();
+  VisitForEffect(stmt->assign_iterator());
 
   // Loop entry.
   __ Bind(loop_statement.continue_label());

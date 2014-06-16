@@ -115,18 +115,23 @@ Handle<FixedArrayBase> Factory::NewFixedDoubleArrayWithHoles(
 
 
 Handle<ConstantPoolArray> Factory::NewConstantPoolArray(
-    int number_of_int64_entries,
-    int number_of_code_ptr_entries,
-    int number_of_heap_ptr_entries,
-    int number_of_int32_entries) {
-  ASSERT(number_of_int64_entries > 0 || number_of_code_ptr_entries > 0 ||
-         number_of_heap_ptr_entries > 0 || number_of_int32_entries > 0);
+    const ConstantPoolArray::NumberOfEntries& small) {
+  ASSERT(small.total_count() > 0);
   CALL_HEAP_FUNCTION(
       isolate(),
-      isolate()->heap()->AllocateConstantPoolArray(number_of_int64_entries,
-                                                   number_of_code_ptr_entries,
-                                                   number_of_heap_ptr_entries,
-                                                   number_of_int32_entries),
+      isolate()->heap()->AllocateConstantPoolArray(small),
+      ConstantPoolArray);
+}
+
+
+Handle<ConstantPoolArray> Factory::NewExtendedConstantPoolArray(
+    const ConstantPoolArray::NumberOfEntries& small,
+    const ConstantPoolArray::NumberOfEntries& extended) {
+  ASSERT(small.total_count() > 0);
+  ASSERT(extended.total_count() > 0);
+  CALL_HEAP_FUNCTION(
+      isolate(),
+      isolate()->heap()->AllocateExtendedConstantPoolArray(small, extended),
       ConstantPoolArray);
 }
 
@@ -1406,7 +1411,8 @@ Handle<Code> Factory::NewCode(const CodeDesc& desc,
   int obj_size = Code::SizeFor(body_size);
 
   Handle<Code> code = NewCodeRaw(obj_size, immovable);
-  ASSERT(!isolate()->code_range()->exists() ||
+  ASSERT(isolate()->code_range() == NULL ||
+         !isolate()->code_range()->valid() ||
          isolate()->code_range()->contains(code->address()));
 
   // The code object has not been fully initialized yet.  We rely on the
