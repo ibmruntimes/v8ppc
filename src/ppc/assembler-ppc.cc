@@ -56,54 +56,6 @@ static unsigned CpuFeaturesImpliedByCompiler() {
 }
 
 
-#if !V8_OS_AIX && !defined(USE_SIMULATOR)
-// This function uses types in elf.h
-static bool is_processor(const char* p) {
-  static bool read_tried = false;
-  static char *auxv_cpu_type = NULL;
-
-  if (!read_tried) {
-    // Open the AUXV (auxilliary vector) psuedo-file
-    int fd = open("/proc/self/auxv", O_RDONLY);
-
-    read_tried = true;
-    if (fd != -1) {
-#if V8_TARGET_ARCH_PPC64
-      static Elf64_auxv_t buffer[16];
-      Elf64_auxv_t *auxv_element;
-#else
-      static Elf32_auxv_t buffer[16];
-      Elf32_auxv_t *auxv_element;
-#endif
-      int bytes_read = 0;
-      while (bytes_read >= 0) {
-        // Read a chunk of the AUXV
-        bytes_read = read(fd, buffer, sizeof(buffer));
-        // Locate and read the platform field of AUXV if it is in the chunk
-        for (auxv_element = buffer;
-             auxv_element+sizeof(auxv_element) <= buffer+bytes_read &&
-             auxv_element->a_type != AT_NULL;
-             auxv_element++) {
-          if (auxv_element->a_type == AT_PLATFORM) {
-            /* Note: Both auxv_cpu_type and buffer are static */
-            auxv_cpu_type = reinterpret_cast<char*>(auxv_element->a_un.a_val);
-            goto done_reading;
-          }
-        }
-      }
-      done_reading:
-      close(fd);
-    }
-  }
-
-  if (auxv_cpu_type == NULL) {
-    return false;
-  }
-  return (strcmp(auxv_cpu_type, p) == 0);
-}
-#endif
-
-
 void CpuFeatures::ProbeImpl(bool cross_compile) {
   supported_ |= CpuFeaturesImpliedByCompiler();
   cache_line_size_ = 128;
@@ -114,14 +66,16 @@ void CpuFeatures::ProbeImpl(bool cross_compile) {
   // Detect whether frim instruction is supported (POWER5+)
   // For now we will just check for processors we know do not
   // support it
-#if !V8_OS_AIX && !defined(USE_SIMULATOR)
-  if (!is_processor("ppc970") /* G5 */ && !is_processor("ppc7450") /* G4 */) {
+#if V8_OS_LINUX && !defined(USE_SIMULATOR)
+  // Probe for additional features at runtime.
+  CPU cpu;
+  if (!(cpu.part() == CPU::PPC_G5 || cpu.part() == CPU::PPC_G4)) {
     // Assume support
     supported_ |= (1u << FPU);
   }
 #else
   // Fallback: assume frim is supported -- will implement processor
-  // detection for other PPC platforms in is_processor() if required
+  // detection for other PPC platforms if required
   supported_ |= (1u << FPU);
 #endif
 }
