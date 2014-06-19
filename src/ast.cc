@@ -1146,7 +1146,7 @@ Handle<String> Literal::ToString() {
   const char* str;
   if (value_->IsSmi()) {
     // Optimization only, the heap number case would subsume this.
-    OS::SNPrintF(buffer, "%d", Smi::cast(*value_)->value());
+    SNPrintF(buffer, "%d", Smi::cast(*value_)->value());
     str = arr;
   } else {
     str = DoubleToCString(value_->Number(), buffer);

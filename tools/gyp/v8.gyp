@@ -238,7 +238,7 @@
       'target_name': 'v8_base',
       'type': 'static_library',
       'dependencies': [
-        'v8_libbase.<(v8_target_arch)',
+        'v8_libbase',
       ],
       'variables': {
         'optimize': 'max',
@@ -1096,7 +1096,7 @@
       ],
     },
     {
-      'target_name': 'v8_libbase.<(v8_target_arch)',
+      'target_name': 'v8_libbase',
       'type': 'static_library',
       'variables': {
         'optimize': 'max',
@@ -1120,6 +1120,10 @@
         '../../src/base/macros.h',
         '../../src/base/once.cc',
         '../../src/base/once.h',
+        '../../src/base/safe_conversions.h',
+        '../../src/base/safe_conversions_impl.h',
+        '../../src/base/safe_math.h',
+        '../../src/base/safe_math_impl.h',
         '../../src/base/win32-headers.h',
       ],
       'conditions': [

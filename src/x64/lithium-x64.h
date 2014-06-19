@@ -1608,6 +1608,22 @@ class LLoadRoot V8_FINAL : public LTemplateInstruction<1, 0, 0> {
 };
 
 
+inline static bool ExternalArrayOpRequiresTemp(
+    Representation key_representation,
+    ElementsKind elements_kind) {
+  // Operations that require the key to be divided by two to be converted into
+  // an index cannot fold the scale operation into a load and need an extra
+  // temp register to do the work.
+  return SmiValuesAre31Bits() && key_representation.IsSmi() &&
+      (elements_kind == EXTERNAL_INT8_ELEMENTS ||
+       elements_kind == EXTERNAL_UINT8_ELEMENTS ||
+       elements_kind == EXTERNAL_UINT8_CLAMPED_ELEMENTS ||
+       elements_kind == UINT8_ELEMENTS ||
+       elements_kind == INT8_ELEMENTS ||
+       elements_kind == UINT8_CLAMPED_ELEMENTS);
+}
+
+
 class LLoadKeyed V8_FINAL : public LTemplateInstruction<1, 2, 0> {
  public:
   LLoadKeyed(LOperand* elements, LOperand* key) {
@@ -1755,15 +1771,15 @@ class LDrop V8_FINAL : public LTemplateInstruction<0, 0, 0> {
 };
 
 
-class LStoreCodeEntry V8_FINAL: public LTemplateInstruction<0, 1, 1> {
+class LStoreCodeEntry V8_FINAL: public LTemplateInstruction<0, 2, 0> {
  public:
   LStoreCodeEntry(LOperand* function, LOperand* code_object) {
     inputs_[0] = function;
-    temps_[0] = code_object;
+    inputs_[1] = code_object;
   }
 
   LOperand* function() { return inputs_[0]; }
-  LOperand* code_object() { return temps_[0]; }
+  LOperand* code_object() { return inputs_[1]; }
 
   virtual void PrintDataTo(StringStream* stream);
 

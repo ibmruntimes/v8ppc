@@ -752,10 +752,12 @@ FunctionLiteral* ParserTraits::ParseFunctionLiteral(
     bool is_generator,
     int function_token_position,
     FunctionLiteral::FunctionType type,
+    FunctionLiteral::ArityRestriction arity_restriction,
     bool* ok) {
   return parser_->ParseFunctionLiteral(name, function_name_location,
                                        name_is_strict_reserved, is_generator,
-                                       function_token_position, type, ok);
+                                       function_token_position, type,
+                                       arity_restriction, ok);
 }
 
 
@@ -1016,6 +1018,7 @@ FunctionLiteral* Parser::ParseLazy(Utf16CharacterStream* source) {
                                   shared_info->is_generator(),
                                   RelocInfo::kNoPosition,
                                   function_type,
+                                  FunctionLiteral::NORMAL_ARITY,
                                   &ok);
     // Make sure the results agree.
     ASSERT(ok == (result != NULL));
@@ -1865,6 +1868,7 @@ Statement* Parser::ParseFunctionDeclaration(ZoneStringList* names, bool* ok) {
                                               is_generator,
                                               pos,
                                               FunctionLiteral::DECLARATION,
+                                              FunctionLiteral::NORMAL_ARITY,
                                               CHECK_OK);
   // Even if we're not at the top-level of the global or a function
   // scope, we treat it as such and introduce the function with its
@@ -3304,9 +3308,16 @@ FunctionLiteral* Parser::ParseFunctionLiteral(
     bool is_generator,
     int function_token_pos,
     FunctionLiteral::FunctionType function_type,
+    FunctionLiteral::ArityRestriction arity_restriction,
     bool* ok) {
   // Function ::
   //   '(' FormalParameterList? ')' '{' FunctionBody '}'
+  //
+  // Getter ::
+  //   '(' ')' '{' FunctionBody '}'
+  //
+  // Setter ::
+  //   '(' PropertySetParameterList ')' '{' FunctionBody '}'
 
   int pos = function_token_pos == RelocInfo::kNoPosition
       ? peek_position() : function_token_pos;
@@ -3399,7 +3410,9 @@ FunctionLiteral* Parser::ParseFunctionLiteral(
     Scanner::Location dupe_error_loc = Scanner::Location::invalid();
     Scanner::Location reserved_loc = Scanner::Location::invalid();
 
-    bool done = (peek() == Token::RPAREN);
+    bool done = arity_restriction == FunctionLiteral::GETTER_ARITY ||
+        (peek() == Token::RPAREN &&
+         arity_restriction != FunctionLiteral::SETTER_ARITY);
     while (!done) {
       bool is_strict_reserved = false;
       Handle<String> param_name =
@@ -3424,6 +3437,7 @@ FunctionLiteral* Parser::ParseFunctionLiteral(
         *ok = false;
         return NULL;
       }
+      if (arity_restriction == FunctionLiteral::SETTER_ARITY) break;
       done = (peek() == Token::RPAREN);
       if (!done) Expect(Token::COMMA, CHECK_OK);
     }

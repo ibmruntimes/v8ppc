@@ -551,7 +551,7 @@ class Heap {
   bool ConfigureHeap(int max_semi_space_size,
                      int max_old_space_size,
                      int max_executable_size,
-                     int code_range_size);
+                     size_t code_range_size);
   bool ConfigureHeapDefault();
 
   // Prepares the heap, setting up memory areas that are needed in the isolate
@@ -1086,23 +1086,9 @@ class Heap {
       700 * kPointerMultiplier;
 
   intptr_t OldGenerationAllocationLimit(intptr_t old_gen_size) {
-    intptr_t limit;
-    if (FLAG_stress_compaction) {
-      limit = old_gen_size + old_gen_size / 10;
-    } else if (old_gen_size < max_old_generation_size_ / 8) {
-      if (max_old_generation_size_ <= kMaxOldSpaceSizeMediumMemoryDevice) {
-        limit = old_gen_size * 2;
-      } else {
-        limit = old_gen_size * 4;
-      }
-    } else if (old_gen_size < max_old_generation_size_ / 4) {
-      limit = static_cast<intptr_t>(old_gen_size * 1.5);
-    } else if (old_gen_size < max_old_generation_size_ / 2) {
-      limit = static_cast<intptr_t>(old_gen_size * 1.2);
-    } else {
-      limit = static_cast<intptr_t>(old_gen_size * 1.1);
-    }
-
+    intptr_t limit = FLAG_stress_compaction
+        ? old_gen_size + old_gen_size / 10
+        : old_gen_size * old_space_growing_factor_;
     limit = Max(limit, kMinimumOldGenerationAllocationLimit);
     limit += new_space_.Capacity();
     intptr_t halfway_to_the_max = (old_gen_size + max_old_generation_size_) / 2;
@@ -1519,13 +1505,18 @@ class Heap {
 
   Object* roots_[kRootListLength];
 
-  intptr_t code_range_size_;
+  size_t code_range_size_;
   int reserved_semispace_size_;
   int max_semi_space_size_;
   int initial_semispace_size_;
   intptr_t max_old_generation_size_;
   intptr_t max_executable_size_;
   intptr_t maximum_committed_;
+
+  // The old space growing factor is used in the old space heap growing
+  // strategy. The new old space size is the current old space size times
+  // old_space_growing_factor_.
+  int old_space_growing_factor_;
 
   // For keeping track of how much data has survived
   // scavenge since last new space expansion.
@@ -1800,29 +1791,6 @@ class Heap {
       int length, PretenureFlag pretenure);
   MUST_USE_RESULT AllocationResult AllocateRawTwoByteString(
       int length, PretenureFlag pretenure);
-
-  // Allocates and fully initializes a String.  There are two String
-  // encodings: ASCII and two byte. One should choose between the three string
-  // allocation functions based on the encoding of the string buffer used to
-  // initialized the string.
-  //   - ...FromAscii initializes the string from a buffer that is ASCII
-  //     encoded (it does not check that the buffer is ASCII encoded) and the
-  //     result will be ASCII encoded.
-  //   - ...FromUTF8 initializes the string from a buffer that is UTF-8
-  //     encoded.  If the characters are all single-byte characters, the
-  //     result will be ASCII encoded, otherwise it will converted to two
-  //     byte.
-  //   - ...FromTwoByte initializes the string from a buffer that is two-byte
-  //     encoded.  If the characters are all single-byte characters, the
-  //     result will be converted to ASCII, otherwise it will be left as
-  //     two-byte.
-  MUST_USE_RESULT AllocationResult AllocateStringFromUtf8Slow(
-      Vector<const char> str,
-      int non_ascii_start,
-      PretenureFlag pretenure = NOT_TENURED);
-  MUST_USE_RESULT AllocationResult AllocateStringFromTwoByte(
-      Vector<const uc16> str,
-      PretenureFlag pretenure = NOT_TENURED);
 
   bool CreateInitialMaps();
   void CreateInitialObjects();

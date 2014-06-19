@@ -10,6 +10,7 @@
 #include <string.h>
 
 #include "src/allocation.h"
+#include "src/base/macros.h"
 #include "src/checks.h"
 #include "src/globals.h"
 #include "src/list.h"
@@ -21,8 +22,6 @@ namespace internal {
 
 // ----------------------------------------------------------------------------
 // General helper functions
-
-#define IS_POWER_OF_TWO(x) ((x) != 0 && (((x) & ((x) - 1)) == 0))
 
 // Returns true iff x is a power of 2. Cannot be used with the maximally
 // negative value of the type T (the -1 overflows).
@@ -1163,6 +1162,13 @@ void FPRINTF_CHECKING PrintF(FILE* out, const char* format, ...);
 
 // Prepends the current process ID to the output.
 void PRINTF_CHECKING PrintPID(const char* format, ...);
+
+// Safe formatting print. Ensures that str is always null-terminated.
+// Returns the number of chars written, or -1 if output was truncated.
+int FPRINTF_CHECKING SNPrintF(Vector<char> str, const char* format, ...);
+int VSNPrintF(Vector<char> str, const char* format, va_list args);
+
+void StrNCpy(Vector<char> dest, const char* src, size_t n);
 
 // Our version of fflush.
 void Flush(FILE* out);

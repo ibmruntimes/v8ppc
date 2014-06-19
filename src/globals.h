@@ -117,11 +117,6 @@ typedef byte* Address;
 # endif
 #endif
 
-// The following macro works on both 32 and 64-bit platforms.
-// Usage: instead of writing 0x1234567890123456
-//      write V8_2PART_UINT64_C(0x12345678,90123456);
-#define V8_2PART_UINT64_C(a, b) (((static_cast<uint64_t>(a) << 32) + 0x##b##u))
-
 #define V8PRIxPTR V8_PTR_PREFIX "x"
 #define V8PRIdPTR V8_PTR_PREFIX "d"
 #define V8PRIuPTR V8_PTR_PREFIX "u"
@@ -169,12 +164,14 @@ const int kDoubleSizeLog2 = 3;
 const int kPointerSizeLog2 = 3;
 const intptr_t kIntptrSignBit = V8_INT64_C(0x8000000000000000);
 const uintptr_t kUintptrAllBitsSet = V8_UINT64_C(0xFFFFFFFFFFFFFFFF);
-const bool kIs64BitArch = true;
+const bool kRequiresCodeRange = true;
+const size_t kMaximalCodeRangeSize = 512 * MB;
 #else
 const int kPointerSizeLog2 = 2;
 const intptr_t kIntptrSignBit = 0x80000000;
 const uintptr_t kUintptrAllBitsSet = 0xFFFFFFFFu;
-const bool kIs64BitArch = false;
+const bool kRequiresCodeRange = false;
+const size_t kMaximalCodeRangeSize = 0 * MB;
 #endif
 
 const int kBitsPerByte = 8;
@@ -632,6 +629,7 @@ enum CpuFeature {
     VFP3,
     ARMv7,
     SUDIV,
+    MLS,
     UNALIGNED_ACCESSES,
     MOVW_MOVT_IMMEDIATE_LOADS,
     VFP32DREGS,
