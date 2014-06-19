@@ -144,14 +144,14 @@ void Decoder::PrintSoftwareInterrupt(SoftwareInterruptCodes svc) {
       return;
     default:
       if (svc >= kStopCode) {
-        out_buffer_pos_ += OS::SNPrintF(out_buffer_ + out_buffer_pos_,
-                                        "%d - 0x%x",
-                                        svc & kStopCodeMask,
-                                        svc & kStopCodeMask);
+        out_buffer_pos_ += SNPrintF(out_buffer_ + out_buffer_pos_,
+                                    "%d - 0x%x",
+                                    svc & kStopCodeMask,
+                                    svc & kStopCodeMask);
       } else {
-        out_buffer_pos_ += OS::SNPrintF(out_buffer_ + out_buffer_pos_,
-                                        "%d",
-                                        svc);
+        out_buffer_pos_ += SNPrintF(out_buffer_ + out_buffer_pos_,
+                                    "%d",
+                                    svc);
       }
       return;
   }
@@ -236,14 +236,14 @@ int Decoder::FormatOption(Instruction* instr, const char* format) {
     }
     case 'i': {  // int16
       int32_t value = (instr->Bits(15, 0) << 16) >> 16;
-      out_buffer_pos_ += OS::SNPrintF(out_buffer_ + out_buffer_pos_,
-                                      "%d", value);
+      out_buffer_pos_ += SNPrintF(out_buffer_ + out_buffer_pos_,
+                                  "%d", value);
       return 5;
     }
     case 'u': {  // uint16
       int32_t value = instr->Bits(15, 0);
-      out_buffer_pos_ += OS::SNPrintF(out_buffer_ + out_buffer_pos_,
-                                      "%d", value);
+      out_buffer_pos_ += SNPrintF(out_buffer_ + out_buffer_pos_,
+                                  "%d", value);
       return 6;
     }
     case 'l': {
@@ -265,18 +265,18 @@ int Decoder::FormatOption(Instruction* instr, const char* format) {
       ASSERT(STRING_STARTS_WITH(format, "target"));
       if ((format[6] == '2') && (format[7] == '6')) {
         int off = ((instr->Bits(25, 2)) << 8) >> 6;
-        out_buffer_pos_ += OS::SNPrintF(out_buffer_ + out_buffer_pos_,
-                                        "%+d -> %s",
-                                        off,
-                                        converter_.NameOfAddress(
+        out_buffer_pos_ += SNPrintF(out_buffer_ + out_buffer_pos_,
+                                    "%+d -> %s",
+                                    off,
+                                    converter_.NameOfAddress(
                                         reinterpret_cast<byte*>(instr) + off));
         return 8;
       } else if ((format[6] == '1') && (format[7] == '6')) {
         int off = ((instr->Bits(15, 2)) << 18) >> 16;
-        out_buffer_pos_ += OS::SNPrintF(out_buffer_ + out_buffer_pos_,
-                                        "%+d -> %s",
-                                        off,
-                                        converter_.NameOfAddress(
+        out_buffer_pos_ += SNPrintF(out_buffer_ + out_buffer_pos_,
+                                    "%+d -> %s",
+                                    off,
+                                    converter_.NameOfAddress(
                                         reinterpret_cast<byte*>(instr) + off));
         return 8;
       }
@@ -294,8 +294,7 @@ int Decoder::FormatOption(Instruction* instr, const char* format) {
          // SH Bits 15-11
          value = (sh << 26) >> 26;
        }
-       out_buffer_pos_ += OS::SNPrintF(out_buffer_ + out_buffer_pos_,
-                                     "%d", value);
+       out_buffer_pos_ += SNPrintF(out_buffer_ + out_buffer_pos_, "%d", value);
        return 2;
      }
      case 'm': {
@@ -319,16 +318,14 @@ int Decoder::FormatOption(Instruction* instr, const char* format) {
        } else {
          UNREACHABLE();  // bad format
        }
-       out_buffer_pos_ += OS::SNPrintF(out_buffer_ + out_buffer_pos_,
-                                     "%d", value);
+       out_buffer_pos_ += SNPrintF(out_buffer_ + out_buffer_pos_, "%d", value);
        return 2;
      }
     }
 #if V8_TARGET_ARCH_PPC64
     case 'd': {  // ds value for offset
       int32_t value = SIGN_EXT_IMM16(instr->Bits(15, 0) & ~3);
-      out_buffer_pos_ += OS::SNPrintF(out_buffer_ + out_buffer_pos_,
-                                      "%d", value);
+      out_buffer_pos_ += SNPrintF(out_buffer_ + out_buffer_pos_, "%d", value);
       return 1;
     }
 #endif
@@ -970,9 +967,9 @@ void Decoder::DecodeExt5(Instruction* instr) {
 int Decoder::InstructionDecode(byte* instr_ptr) {
   Instruction* instr = Instruction::At(instr_ptr);
   // Print raw instruction bytes.
-  out_buffer_pos_ += OS::SNPrintF(out_buffer_ + out_buffer_pos_,
-                                  "%08x       ",
-                                  instr->InstructionBits());
+  out_buffer_pos_ += SNPrintF(out_buffer_ + out_buffer_pos_,
+                              "%08x       ",
+                              instr->InstructionBits());
 
     switch (instr->OpcodeValue() << 26) {
     case TWI: {
@@ -1293,7 +1290,7 @@ namespace disasm {
 
 
 const char* NameConverter::NameOfAddress(byte* addr) const {
-  v8::internal::OS::SNPrintF(tmp_buffer_, "%p", addr);
+  v8::internal::SNPrintF(tmp_buffer_, "%p", addr);
   return tmp_buffer_.start();
 }
 

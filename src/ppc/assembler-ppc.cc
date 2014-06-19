@@ -1487,10 +1487,10 @@ int Assembler::DecodeInternalReference(Vector<char> buffer, Address pc) {
   uintptr_t *fd = reinterpret_cast<uintptr_t*>(pc);
   if (fd[1] == 0 && fd[2] == 0) {
     // Function descriptor
-    OS::SNPrintF(buffer,
-                 "[%08" V8PRIxPTR ", %08" V8PRIxPTR ", %08" V8PRIxPTR "]"
-                 "   function descriptor",
-                 fd[0], fd[1], fd[2]);
+    SNPrintF(buffer,
+             "[%08" V8PRIxPTR ", %08" V8PRIxPTR ", %08" V8PRIxPTR "]"
+             "   function descriptor",
+             fd[0], fd[1], fd[2]);
     return kPointerSize * 3;
   }
 #endif

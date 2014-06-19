@@ -90,28 +90,6 @@ class JumpPatchSite BASE_EMBEDDED {
 };
 
 
-static void EmitStackCheck(MacroAssembler* masm_,
-                           Register stack_limit_scratch,
-                           int pointers = 0,
-                           Register scratch = sp) {
-    Isolate* isolate = masm_->isolate();
-  Label ok;
-  ASSERT(scratch.is(sp) == (pointers == 0));
-  Heap::RootListIndex index;
-  if (pointers != 0) {
-    __ Add(scratch, sp, -(pointers * kPointerSize), r0);
-    index = Heap::kRealStackLimitRootIndex;
-  } else {
-    index = Heap::kStackLimitRootIndex;
-  }
-  __ LoadRoot(stack_limit_scratch, index);
-  __ cmpl(scratch, stack_limit_scratch);
-  __ bc_short(ge, &ok);
-  __ Call(isolate->builtins()->StackCheck(), RelocInfo::CODE_TARGET);
-  __ bind(&ok);
-}
-
-
 // Generate code for a JS function.  On entry to the function the receiver
 // and arguments have been pushed on the stack left to right.  The actual
 // argument count matches the formal parameter count expected by the
@@ -178,7 +156,13 @@ void FullCodeGenerator::Generate() {
     ASSERT(!info->function()->is_generator() || locals_count == 0);
     if (locals_count > 0) {
       if (locals_count >= 128) {
-        EmitStackCheck(masm_, r5, locals_count, ip);
+        Label ok;
+        __ Add(ip, sp, -(locals_count * kPointerSize), r0);
+        __ LoadRoot(r5, Heap::kRealStackLimitRootIndex);
+        __ cmpl(ip, r5);
+        __ bc_short(ge, &ok);
+        __ InvokeBuiltin(Builtins::STACK_OVERFLOW, CALL_FUNCTION);
+        __ bind(&ok);
       }
       __ LoadRoot(ip, Heap::kUndefinedValueRootIndex);
       int kMaxPushes = FLAG_optimize_for_size ? 4 : 32;
@@ -319,7 +303,12 @@ void FullCodeGenerator::Generate() {
 
     { Comment cmnt(masm_, "[ Stack check");
       PrepareForBailoutForId(BailoutId::Declarations(), NO_REGISTERS);
-      EmitStackCheck(masm_, ip);
+      Label ok;
+      __ LoadRoot(ip, Heap::kStackLimitRootIndex);
+      __ cmpl(sp, ip);
+      __ bc_short(ge, &ok);
+      __ Call(isolate()->builtins()->StackCheck(), RelocInfo::CODE_TARGET);
+      __ bind(&ok);
     }
 
     { Comment cmnt(masm_, "[ Body");
