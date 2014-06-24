@@ -45,11 +45,6 @@
 #define V8_PPC_ASSEMBLER_PPC_H_
 
 #include <stdio.h>
-#if !V8_OS_AIX
-#include <elf.h>
-#include <fcntl.h>
-#include <unistd.h>
-#endif
 #include <vector>
 
 #include "src/assembler.h"

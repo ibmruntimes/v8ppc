@@ -7,8 +7,8 @@
 
 #include "src/v8.h"
 
-#include "src/ppc/lithium-gap-resolver-ppc.h"
 #include "src/ppc/lithium-codegen-ppc.h"
+#include "src/ppc/lithium-gap-resolver-ppc.h"
 
 namespace v8 {
 namespace internal {

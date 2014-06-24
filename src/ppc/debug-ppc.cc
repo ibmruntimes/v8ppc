@@ -108,6 +108,14 @@ static void Generate_DebugBreakCallHelper(MacroAssembler* masm,
   {
     FrameAndConstantPoolScope scope(masm, StackFrame::INTERNAL);
 
+    // Load padding words on stack.
+    __ LoadSmiLiteral(ip, Smi::FromInt(LiveEdit::kFramePaddingValue));
+    for (int i = 0; i < LiveEdit::kFramePaddingInitialSize; i++) {
+      __ push(ip);
+    }
+    __ LoadSmiLiteral(ip, Smi::FromInt(LiveEdit::kFramePaddingInitialSize));
+    __ push(ip);
+
     // Store the registers containing live values on the expression stack to
     // make sure that these are correctly updated during GC. Non object values
     // are stored as a smi causing it to be untouched by GC.
@@ -153,6 +161,9 @@ static void Generate_DebugBreakCallHelper(MacroAssembler* masm,
         }
       }
     }
+
+    // Don't bother removing padding bytes pushed on the stack
+    // as the frame is going to be restored right away.
 
     // Leave the internal frame.
   }
@@ -297,16 +308,51 @@ void DebugCodegen::GenerateSlotDebugBreak(MacroAssembler* masm) {
 
 
 void DebugCodegen::GeneratePlainReturnLiveEdit(MacroAssembler* masm) {
-  masm->Abort(kLiveEditFrameDroppingIsNotSupportedOnPpc);
+  __ Ret();
 }
 
 
 void DebugCodegen::GenerateFrameDropperLiveEdit(MacroAssembler* masm) {
-  masm->Abort(kLiveEditFrameDroppingIsNotSupportedOnPpc);
+  ExternalReference restarter_frame_function_slot =
+      ExternalReference::debug_restarter_frame_function_pointer_address(
+          masm->isolate());
+#if V8_OOL_CONSTANT_POOL
+  int offset = 2 * kPointerSize;
+#else
+  int offset = kPointerSize;
+#endif
+
+  __ mov(ip, Operand(restarter_frame_function_slot));
+  __ li(r4, Operand::Zero());
+  __ StoreP(r4, MemOperand(ip, 0));
+
+  // We do not know our frame height, but set sp based on fp.
+  __ subi(sp, fp, Operand(offset));
+
+  // Return address, Frame, [Constant Pool Pointer,] Function.
+  // Function has been placed in "context" slot.
+  // (see SetUpFrameDropperFrame)
+#if V8_OOL_CONSTANT_POOL
+  __ Pop(r0, fp, kConstantPoolRegister, r4);
+#else
+  __ Pop(r0, fp, r4);
+#endif
+  __ mtlr(r0);
+
+  // Load context from the function.
+  __ LoadP(cp, FieldMemOperand(r4, JSFunction::kContextOffset));
+
+  // Get function code.
+  __ LoadP(ip, FieldMemOperand(r4, JSFunction::kSharedFunctionInfoOffset));
+  __ LoadP(ip, FieldMemOperand(ip, SharedFunctionInfo::kCodeOffset));
+  __ addi(ip, ip, Operand(Code::kHeaderSize - kHeapObjectTag));
+
+  // Re-run JSFunction, r4 is function, cp is context.
+  __ Jump(ip);
 }
 
 
-const bool LiveEdit::kFrameDropperSupported = false;
+const bool LiveEdit::kFrameDropperSupported = true;
 
 #undef __
 

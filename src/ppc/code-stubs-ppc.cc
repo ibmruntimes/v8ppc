@@ -13,6 +13,7 @@
 #include "src/code-stubs.h"
 #include "src/regexp-macro-assembler.h"
 #include "src/stub-cache.h"
+
 #include "src/ppc/regexp-macro-assembler-ppc.h"
 
 namespace v8 {

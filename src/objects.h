@@ -1157,8 +1157,6 @@ template <class C> inline bool Is(Object* obj);
     "LiveEdit frame dropping is not supported on arm64")                      \
   V(kLiveEditFrameDroppingIsNotSupportedOnMips,                               \
     "LiveEdit frame dropping is not supported on mips")                       \
-  V(kLiveEditFrameDroppingIsNotSupportedOnPpc,                                \
-    "LiveEdit frame dropping is not supported on ppc")                        \
   V(kLiveEdit, "LiveEdit")                                                    \
   V(kLookupVariableInCountOperation,                                          \
     "Lookup variable in count operation")                                     \

@@ -5,8 +5,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include <limits.h>  // For LONG_MIN, LONG_MAX.
 #include <assert.h>  // For assert
+#include <limits.h>  // For LONG_MIN, LONG_MAX.
 
 #include "src/v8.h"
 

@@ -63,9 +63,9 @@ class SimulatorStack : public v8::internal::AllStatic {
 #else  // !defined(USE_SIMULATOR)
 // Running with a simulator.
 
-#include "src/ppc/constants-ppc.h"
-#include "src/hashmap.h"
 #include "src/assembler.h"
+#include "src/hashmap.h"
+#include "src/ppc/constants-ppc.h"
 
 namespace v8 {
 namespace internal {

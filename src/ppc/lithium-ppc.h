@@ -9,8 +9,8 @@
 #define V8_PPC_LITHIUM_PPC_H_
 
 #include "src/hydrogen.h"
-#include "src/lithium-allocator.h"
 #include "src/lithium.h"
+#include "src/lithium-allocator.h"
 #include "src/safepoint-table.h"
 #include "src/utils.h"
 

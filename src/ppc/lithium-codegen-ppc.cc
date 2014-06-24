@@ -7,11 +7,12 @@
 
 #include "src/v8.h"
 
+#include "src/code-stubs.h"
+#include "src/hydrogen-osr.h"
+#include "src/stub-cache.h"
+
 #include "src/ppc/lithium-codegen-ppc.h"
 #include "src/ppc/lithium-gap-resolver-ppc.h"
-#include "src/code-stubs.h"
-#include "src/stub-cache.h"
-#include "src/hydrogen-osr.h"
 
 namespace v8 {
 namespace internal {
