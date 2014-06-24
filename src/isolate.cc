@@ -792,9 +792,8 @@ Object* Isolate::StackOverflow() {
       JSObject::GetDataProperty(Handle<JSObject>::cast(error),
                                 stackTraceLimit);
   if (!stack_trace_limit->IsNumber()) return heap()->exception();
-  double dlimit = stack_trace_limit->Number();
-  int limit = std::isnan(dlimit) ? 0 : static_cast<int>(dlimit);
-
+  int limit = FastD2IChecked(stack_trace_limit->Number());
+  if (limit < 0) limit = 0;
   Handle<JSArray> stack_trace = CaptureSimpleStackTrace(
       exception, factory()->undefined_value(), limit);
   JSObject::SetHiddenProperty(exception,
@@ -1481,7 +1480,8 @@ Isolate::Isolate()
       sweeper_thread_(NULL),
       num_sweeper_threads_(0),
       stress_deopt_count_(0),
-      next_optimization_id_(0) {
+      next_optimization_id_(0),
+      use_counter_callback_(NULL) {
   id_ = base::NoBarrier_AtomicIncrement(&isolate_counter_, 1);
   TRACE_ISOLATE(constructor);
 
@@ -2294,12 +2294,12 @@ void Isolate::EnqueueMicrotask(Handle<Object> microtask) {
 
 
 void Isolate::RunMicrotasks() {
-  // TODO(adamk): This ASSERT triggers in mjsunit tests which
-  // call the %RunMicrotasks runtime function. But it should
-  // never happen outside of tests, so it would be nice to
-  // uncomment it.
+  // %RunMicrotasks may be called in mjsunit tests, which violates
+  // this assertion, hence the check for --allow-natives-syntax.
+  // TODO(adamk): However, this also fails some layout tests.
   //
-  // ASSERT(handle_scope_implementer()->CallDepthIsZero());
+  // ASSERT(FLAG_allow_natives_syntax ||
+  //        handle_scope_implementer()->CallDepthIsZero());
 
   // Increase call depth to prevent recursive callbacks.
   v8::Isolate::SuppressMicrotaskExecutionScope suppress(
@@ -2319,6 +2319,8 @@ void Isolate::RunMicrotasks() {
       if (microtask->IsJSFunction()) {
         Handle<JSFunction> microtask_function =
             Handle<JSFunction>::cast(microtask);
+        SaveContext save(this);
+        set_context(microtask_function->context()->native_context());
         Handle<Object> exception;
         MaybeHandle<Object> result = Execution::TryCall(
             microtask_function, factory()->undefined_value(),
@@ -2341,6 +2343,19 @@ void Isolate::RunMicrotasks() {
         callback(data);
       }
     }
+  }
+}
+
+
+void Isolate::SetUseCounterCallback(v8::Isolate::UseCounterCallback callback) {
+  ASSERT(!use_counter_callback_);
+  use_counter_callback_ = callback;
+}
+
+
+void Isolate::CountUsage(v8::Isolate::UseCounterFeature feature) {
+  if (use_counter_callback_) {
+    use_counter_callback_(reinterpret_cast<v8::Isolate*>(this), feature);
   }
 }
 

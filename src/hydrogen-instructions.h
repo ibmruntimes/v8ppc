@@ -4383,12 +4383,6 @@ class HCompareObjectEqAndBranch : public HTemplateControlInstruction<2, 2> {
                             HBasicBlock* true_target = NULL,
                             HBasicBlock* false_target = NULL)
       : known_successor_index_(kNoKnownSuccessorIndex) {
-    ASSERT(!left->IsConstant() ||
-           (!HConstant::cast(left)->HasInteger32Value() ||
-            HConstant::cast(left)->HasSmiValue()));
-    ASSERT(!right->IsConstant() ||
-           (!HConstant::cast(right)->HasInteger32Value() ||
-            HConstant::cast(right)->HasSmiValue()));
     SetOperandAt(0, left);
     SetOperandAt(1, right);
     SetSuccessorAt(0, true_target);
@@ -6094,19 +6088,13 @@ class HObjectAccess V8_FINAL {
   }
 
   static HObjectAccess ForMapInstanceTypeAndBitField() {
-#if V8_TARGET_LITTLE_ENDIAN
-    STATIC_ASSERT((Map::kInstanceTypeOffset & 1) == 0);
-    STATIC_ASSERT(Map::kBitFieldOffset == Map::kInstanceTypeOffset + 1);
+    STATIC_ASSERT((Map::kInstanceTypeAndBitFieldOffset & 1) == 0);
+    // Ensure the two fields share one 16-bit word, endian-independent.
+    STATIC_ASSERT((Map::kBitFieldOffset & ~1) ==
+                  (Map::kInstanceTypeOffset & ~1));
     return HObjectAccess(kInobject,
-                         Map::kInstanceTypeOffset,
+                         Map::kInstanceTypeAndBitFieldOffset,
                          Representation::UInteger16());
-#else
-    STATIC_ASSERT((Map::kBitFieldOffset & 1) == 0);
-    STATIC_ASSERT(Map::kInstanceTypeOffset == Map::kBitFieldOffset + 1);
-    return HObjectAccess(kInobject,
-                         Map::kBitFieldOffset,
-                         Representation::UInteger16());
-#endif
   }
 
   static HObjectAccess ForPropertyCellValue() {
@@ -6123,6 +6111,11 @@ class HObjectAccess V8_FINAL {
 
   static HObjectAccess ForCounter() {
     return HObjectAccess(kExternalMemory, 0, Representation::Integer32(),
+                         Handle<String>::null(), false, false);
+  }
+
+  static HObjectAccess ForExternalUInteger8() {
+    return HObjectAccess(kExternalMemory, 0, Representation::UInteger8(),
                          Handle<String>::null(), false, false);
   }
 
@@ -6452,8 +6445,8 @@ class ArrayInstructionInterface {
   virtual HValue* GetKey() = 0;
   virtual void SetKey(HValue* key) = 0;
   virtual ElementsKind elements_kind() const = 0;
-  virtual void IncreaseBaseOffset(uint32_t base_offset) = 0;
-  virtual int MaxBaseOffsetBits() = 0;
+  // TryIncreaseBaseOffset returns false if overflow would result.
+  virtual bool TryIncreaseBaseOffset(uint32_t increase_by_value) = 0;
   virtual bool IsDehoisted() = 0;
   virtual void SetDehoisted(bool is_dehoisted) = 0;
   virtual ~ArrayInstructionInterface() { }
@@ -6500,17 +6493,7 @@ class HLoadKeyed V8_FINAL
   }
   bool HasDependency() const { return OperandAt(0) != OperandAt(2); }
   uint32_t base_offset() { return BaseOffsetField::decode(bit_field_); }
-  void IncreaseBaseOffset(uint32_t base_offset) {
-    // The base offset is usually simply the size of the array header, except
-    // with dehoisting adds an addition offset due to a array index key
-    // manipulation, in which case it becomes (array header size +
-    // constant-offset-from-key * kPointerSize)
-    base_offset += BaseOffsetField::decode(bit_field_);
-    bit_field_ = BaseOffsetField::update(bit_field_, base_offset);
-  }
-  virtual int MaxBaseOffsetBits() {
-    return kBitsForBaseOffset;
-  }
+  bool TryIncreaseBaseOffset(uint32_t increase_by_value);
   HValue* GetKey() { return key(); }
   void SetKey(HValue* key) { SetOperandAt(1, key); }
   bool IsDehoisted() { return IsDehoistedField::decode(bit_field_); }
@@ -6974,16 +6957,7 @@ class HStoreKeyed V8_FINAL
   StoreFieldOrKeyedMode store_mode() const { return store_mode_; }
   ElementsKind elements_kind() const { return elements_kind_; }
   uint32_t base_offset() { return base_offset_; }
-  void IncreaseBaseOffset(uint32_t base_offset) {
-    // The base offset is usually simply the size of the array header, except
-    // with dehoisting adds an addition offset due to a array index key
-    // manipulation, in which case it becomes (array header size +
-    // constant-offset-from-key * kPointerSize)
-    base_offset_ += base_offset;
-  }
-  virtual int MaxBaseOffsetBits() {
-    return 31 - ElementsKindToShiftSize(elements_kind_);
-  }
+  bool TryIncreaseBaseOffset(uint32_t increase_by_value);
   HValue* GetKey() { return key(); }
   void SetKey(HValue* key) { SetOperandAt(1, key); }
   bool IsDehoisted() { return is_dehoisted_; }

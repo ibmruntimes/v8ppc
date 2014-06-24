@@ -2939,7 +2939,8 @@ void FullCodeGenerator::EmitIsStringWrapperSafeForDefaultValueOf(
   // rcx: valid entries in the descriptor array.
   // Calculate the end of the descriptor array.
   __ imulp(rcx, rcx, Immediate(DescriptorArray::kDescriptorSize));
-  __ leap(rcx, Operand(r8, rcx, times_8, DescriptorArray::kFirstOffset));
+  __ leap(rcx,
+          Operand(r8, rcx, times_pointer_size, DescriptorArray::kFirstOffset));
   // Calculate location of the first key name.
   __ addp(r8, Immediate(DescriptorArray::kFirstOffset));
   // Loop through all the keys in the descriptor array. If one of these is the
@@ -4000,6 +4001,17 @@ void FullCodeGenerator::EmitFastAsciiArrayJoin(CallRuntime* expr) {
   // Drop temp values from the stack, and restore context register.
   __ addp(rsp, Immediate(3 * kPointerSize));
   __ movp(rsi, Operand(rbp, StandardFrameConstants::kContextOffset));
+  context()->Plug(rax);
+}
+
+
+void FullCodeGenerator::EmitDebugIsActive(CallRuntime* expr) {
+  ASSERT(expr->arguments()->length() == 0);
+  ExternalReference debug_is_active =
+      ExternalReference::debug_is_active_address(isolate());
+  __ Move(kScratchRegister, debug_is_active);
+  __ movzxbp(rax, Operand(kScratchRegister, 0));
+  __ Integer32ToSmi(rax, rax);
   context()->Plug(rax);
 }
 

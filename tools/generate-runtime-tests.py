@@ -51,7 +51,7 @@ EXPECTED_FUNCTION_COUNT = 358
 EXPECTED_FUZZABLE_COUNT = 326
 EXPECTED_CCTEST_COUNT = 6
 EXPECTED_UNKNOWN_COUNT = 4
-EXPECTED_BUILTINS_COUNT = 798
+EXPECTED_BUILTINS_COUNT = 800
 
 
 # Don't call these at all.
@@ -158,8 +158,7 @@ CUSTOM_KNOWN_GOOD_INPUT = {
   "NumberToRadixString": [None, "2", None],
   "ParseJson": ["\"{}\"", 1],
   "RegExpExecMultiple": [None, None, "['a']", "['a']", None],
-  "SetAccessorProperty": [None, None, "undefined", "undefined", None, None,
-                          None],
+  "SetAccessorProperty": [None, None, "undefined", "undefined", None, None],
   "SetIteratorInitialize": [None, None, "2", None],
   "SetDebugEventListener": ["undefined", None, None],
   "SetFunctionBreakPoint": [None, 200, None, None],

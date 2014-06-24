@@ -1987,7 +1987,7 @@ static void DiscoverGreyObjectsOnPage(MarkingDeque* marking_deque,
 }
 
 
-int MarkCompactCollector::DiscoverAndPromoteBlackObjectsOnPage(
+int MarkCompactCollector::DiscoverAndEvacuateBlackObjectsOnPage(
     NewSpace* new_space,
     NewSpacePage* p) {
   ASSERT(strcmp(Marking::kWhiteBitPattern, "00") == 0);
@@ -2020,8 +2020,10 @@ int MarkCompactCollector::DiscoverAndPromoteBlackObjectsOnPage(
 
       offset++;
       current_cell >>= 1;
-      // Aggressively promote young survivors to the old space.
-      if (TryPromoteObject(object, size)) {
+
+      // TODO(hpayer): Refactor EvacuateObject and call this function instead.
+      if (heap()->ShouldBePromoted(object->address(), size) &&
+          TryPromoteObject(object, size)) {
         continue;
       }
 
@@ -2798,6 +2800,19 @@ void MarkCompactCollector::ClearWeakCollections() {
 }
 
 
+void MarkCompactCollector::RecordMigratedSlot(Object* value, Address slot) {
+  if (heap_->InNewSpace(value)) {
+    heap_->store_buffer()->Mark(slot);
+  } else if (value->IsHeapObject() && IsOnEvacuationCandidate(value)) {
+    SlotsBuffer::AddTo(&slots_buffer_allocator_,
+                       &migration_slots_buffer_,
+                       reinterpret_cast<Object**>(slot),
+                       SlotsBuffer::IGNORE_OVERFLOW);
+  }
+}
+
+
+
 // We scavange new space simultaneously with sweeping. This is done in two
 // passes.
 //
@@ -2825,58 +2840,21 @@ void MarkCompactCollector::MigrateObject(HeapObject* dst,
     Address dst_slot = dst_addr;
     ASSERT(IsAligned(size, kPointerSize));
 
-#if V8_OOL_CONSTANT_POOL
-    ConstantPoolArray* constant_pool = NULL;
-    Address int64_start = 0;
-    Address int64_end = 0;
-    Address int32_start = 0;
-    Address int32_end = 0;
-    if (src->IsConstantPoolArray()) {
-      constant_pool = ConstantPoolArray::cast(src);
-      ConstantPoolArray::LayoutSection section =
-          ConstantPoolArray::SMALL_SECTION;
-      ConstantPoolArray::Type type = ConstantPoolArray::INT64;
-      int index = constant_pool->first_index(type, section);
-      int count = constant_pool->number_of_entries(type, section);
-      if (count) {
-        int64_start = src_addr + constant_pool->OffsetOfElementAt(index);
-        int64_end   = int64_start + count * kInt64Size;
-      }
-      type = ConstantPoolArray::INT32;
-      index = constant_pool->first_index(type, section);
-      count = constant_pool->number_of_entries(type, section);
-      if (count) {
-        int32_start = src_addr + constant_pool->OffsetOfElementAt(index);
-        int32_end   = int32_start + count * kInt32Size;
-      }
-    }
-#define CONSTANT_VALUE(src_slot)                                 \
-    (constant_pool &&                                            \
-     ((src_slot >= int64_start && src_slot < int64_end) ||       \
-      (src_slot >= int32_start && src_slot < int32_end)))
-#else
-#define CONSTANT_VALUE(src_slot) false
-#endif
     for (int remaining = size / kPointerSize; remaining > 0; remaining--) {
       Object* value = Memory::Object_at(src_slot);
 
       Memory::Object_at(dst_slot) = value;
 
-      if (!CONSTANT_VALUE(src_slot)) {
-        if (heap_->InNewSpace(value)) {
-          heap_->store_buffer()->Mark(dst_slot);
-        } else if (value->IsHeapObject() && IsOnEvacuationCandidate(value)) {
-          SlotsBuffer::AddTo(&slots_buffer_allocator_,
-                             &migration_slots_buffer_,
-                             reinterpret_cast<Object**>(dst_slot),
-                             SlotsBuffer::IGNORE_OVERFLOW);
-        }
+      // We special case ConstantPoolArrays below since they could contain
+      // integers value entries which look like tagged pointers.
+      // TODO(mstarzinger): restructure this code to avoid this special-casing.
+      if (!src->IsConstantPoolArray()) {
+        RecordMigratedSlot(value, dst_slot);
       }
 
       src_slot += kPointerSize;
       dst_slot += kPointerSize;
     }
-#undef CONSTANT_VALUE
 
     if (compacting_ && dst->IsJSFunction()) {
       Address code_entry_slot = dst_addr + JSFunction::kCodeEntryOffset;
@@ -2889,7 +2867,7 @@ void MarkCompactCollector::MigrateObject(HeapObject* dst,
                            code_entry_slot,
                            SlotsBuffer::IGNORE_OVERFLOW);
       }
-    } else if (compacting_ && dst->IsConstantPoolArray()) {
+    } else if (dst->IsConstantPoolArray()) {
       ConstantPoolArray* array = ConstantPoolArray::cast(dst);
       ConstantPoolArray::Iterator code_iter(array, ConstantPoolArray::CODE_PTR);
       while (!code_iter.is_finished()) {
@@ -2904,6 +2882,13 @@ void MarkCompactCollector::MigrateObject(HeapObject* dst,
                              code_entry_slot,
                              SlotsBuffer::IGNORE_OVERFLOW);
         }
+      }
+      ConstantPoolArray::Iterator heap_iter(array, ConstantPoolArray::HEAP_PTR);
+      while (!heap_iter.is_finished()) {
+        Address heap_slot =
+            dst_addr + array->OffsetOfElementAt(heap_iter.next_index());
+        Object* value = Memory::Object_at(heap_slot);
+        RecordMigratedSlot(value, heap_slot);
       }
     }
   } else if (dest == CODE_SPACE) {
@@ -3096,7 +3081,7 @@ void MarkCompactCollector::EvacuateNewSpace() {
   NewSpacePageIterator it(from_bottom, from_top);
   while (it.has_next()) {
     NewSpacePage* p = it.next();
-    survivors_size += DiscoverAndPromoteBlackObjectsOnPage(new_space, p);
+    survivors_size += DiscoverAndEvacuateBlackObjectsOnPage(new_space, p);
   }
 
   heap_->IncrementYoungSurvivorsCounter(survivors_size);

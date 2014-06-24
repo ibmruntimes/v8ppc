@@ -856,6 +856,12 @@ enum CompareResult {
   inline void set_##name(type* value,                                   \
                          WriteBarrierMode mode = UPDATE_WRITE_BARRIER); \
 
+
+#define DECLARE_CAST(type)                              \
+  INLINE(static type* cast(Object* object));            \
+  INLINE(static const type* cast(const Object* object));
+
+
 class AccessorPair;
 class AllocationSite;
 class AllocationSiteCreationContext;
@@ -1153,10 +1159,6 @@ template <class C> inline bool Is(Object* obj);
   V(kLetBindingReInitialization, "Let binding re-initialization")             \
   V(kLhsHasBeenClobbered, "lhs has been clobbered")                           \
   V(kLiveBytesCountOverflowChunkSize, "Live Bytes Count overflow chunk size") \
-  V(kLiveEditFrameDroppingIsNotSupportedOnARM64,                              \
-    "LiveEdit frame dropping is not supported on arm64")                      \
-  V(kLiveEditFrameDroppingIsNotSupportedOnMips,                               \
-    "LiveEdit frame dropping is not supported on mips")                       \
   V(kLiveEdit, "LiveEdit")                                                    \
   V(kLookupVariableInCountOperation,                                          \
     "Lookup variable in count operation")                                     \
@@ -1238,10 +1240,8 @@ template <class C> inline bool Is(Object* obj);
   V(kTheInstructionShouldBeAnOris, "The instruction should be an oris")       \
   V(kTheInstructionShouldBeALi, "The instruction should be a li")       \
   V(kTheInstructionShouldBeASldi, "The instruction should be a sldi")         \
-  V(kTheInstructionToPatchShouldBeALoadFromPc,                                \
-    "The instruction to patch should be a load from pc")                      \
-  V(kTheInstructionToPatchShouldBeALoadFromPp,                                \
-    "The instruction to patch should be a load from pp")                      \
+  V(kTheInstructionToPatchShouldBeALoadFromConstantPool,                      \
+    "The instruction to patch should be a load from the constant pool")       \
   V(kTheInstructionToPatchShouldBeAnLdrLiteral,                               \
     "The instruction to patch should be a ldr literal")                       \
   V(kTheInstructionToPatchShouldBeALis,                                       \
@@ -1358,43 +1358,49 @@ const char* GetBailoutReason(BailoutReason reason);
 class Object {
  public:
   // Type testing.
-  bool IsObject() { return true; }
+  bool IsObject() const { return true; }
 
-#define IS_TYPE_FUNCTION_DECL(type_)  inline bool Is##type_();
+#define IS_TYPE_FUNCTION_DECL(type_)  INLINE(bool Is##type_() const);
   OBJECT_TYPE_LIST(IS_TYPE_FUNCTION_DECL)
   HEAP_OBJECT_TYPE_LIST(IS_TYPE_FUNCTION_DECL)
 #undef IS_TYPE_FUNCTION_DECL
 
-  inline bool IsFixedArrayBase();
-  inline bool IsExternal();
-  inline bool IsAccessorInfo();
+  INLINE(bool IsFixedArrayBase() const);
+  INLINE(bool IsExternal() const);
+  INLINE(bool IsAccessorInfo() const);
 
-  inline bool IsStruct();
-#define DECLARE_STRUCT_PREDICATE(NAME, Name, name) inline bool Is##Name();
+  INLINE(bool IsStruct() const);
+#define DECLARE_STRUCT_PREDICATE(NAME, Name, name) \
+  INLINE(bool Is##Name() const);
   STRUCT_LIST(DECLARE_STRUCT_PREDICATE)
 #undef DECLARE_STRUCT_PREDICATE
 
-  INLINE(bool IsSpecObject());
-  INLINE(bool IsSpecFunction());
-  INLINE(bool IsTemplateInfo());
-  bool IsCallable();
+  INLINE(bool IsSpecObject()) const;
+  INLINE(bool IsSpecFunction()) const;
+  INLINE(bool IsTemplateInfo()) const;
+  INLINE(bool IsNameDictionary() const);
+  INLINE(bool IsSeededNumberDictionary() const);
+  INLINE(bool IsUnseededNumberDictionary() const);
+  INLINE(bool IsOrderedHashSet() const);
+  INLINE(bool IsOrderedHashMap() const);
+  bool IsCallable() const;
 
   // Oddball testing.
-  INLINE(bool IsUndefined());
-  INLINE(bool IsNull());
-  INLINE(bool IsTheHole());
-  INLINE(bool IsException());
-  INLINE(bool IsUninitialized());
-  INLINE(bool IsTrue());
-  INLINE(bool IsFalse());
-  inline bool IsArgumentsMarker();
+  INLINE(bool IsUndefined() const);
+  INLINE(bool IsNull() const);
+  INLINE(bool IsTheHole() const);
+  INLINE(bool IsException() const);
+  INLINE(bool IsUninitialized() const);
+  INLINE(bool IsTrue() const);
+  INLINE(bool IsFalse() const);
+  INLINE(bool IsArgumentsMarker() const);
 
   // Filler objects (fillers and free space objects).
-  inline bool IsFiller();
+  INLINE(bool IsFiller() const);
 
   // Extract the number.
   inline double Number();
-  inline bool IsNaN();
+  INLINE(bool IsNaN() const);
   bool ToInt32(int32_t* value);
   bool ToUint32(uint32_t* value);
 
@@ -1554,8 +1560,7 @@ class Object {
   // Prints this object without details to a message accumulator.
   void ShortPrint(StringStream* accumulator);
 
-  // Casting: This cast is only needed to satisfy macros in objects-inl.h.
-  static Object* cast(Object* value) { return value; }
+  DECLARE_CAST(Object)
 
   // Layout description.
   static const int kHeaderSize = 0;  // Object does not take up any space.
@@ -1592,8 +1597,7 @@ class Smi: public Object {
   // Returns whether value can be represented in a Smi.
   static inline bool IsValid(intptr_t value);
 
-  // Casting.
-  static inline Smi* cast(Object* object);
+  DECLARE_CAST(Smi)
 
   // Dispatched behavior.
   void SmiPrint(FILE* out = stdout);
@@ -1688,7 +1692,7 @@ class HeapObject: public Object {
   inline Heap* GetHeap() const;
 
   // Convenience method to get current isolate.
-  inline Isolate* GetIsolate();
+  inline Isolate* GetIsolate() const;
 
   // Converts an address to a HeapObject pointer.
   static inline HeapObject* FromAddress(Address address);
@@ -1726,8 +1730,7 @@ class HeapObject: public Object {
                                  Handle<Name> name,
                                  Handle<Code> code);
 
-  // Casting.
-  static inline HeapObject* cast(Object* obj);
+  DECLARE_CAST(HeapObject)
 
   // Return the write barrier mode for this. Callers of this function
   // must be able to present a reference to an DisallowHeapAllocation
@@ -1819,11 +1822,10 @@ class FlexibleBodyDescriptor {
 class HeapNumber: public HeapObject {
  public:
   // [value]: number value.
-  inline double value();
+  inline double value() const;
   inline void set_value(double value);
 
-  // Casting.
-  static inline HeapNumber* cast(Object* obj);
+  DECLARE_CAST(HeapNumber)
 
   // Dispatched behavior.
   bool HeapNumberBooleanValue();
@@ -1917,8 +1919,7 @@ class JSReceiver: public HeapObject {
     OMIT_EXTENSIBILITY_CHECK
   };
 
-  // Casting.
-  static inline JSReceiver* cast(Object* obj);
+  DECLARE_CAST(JSReceiver)
 
   // Implementation of [[Put]], ECMA-262 5th edition, section 8.12.5.
   MUST_USE_RESULT static MaybeHandle<Object> SetProperty(
@@ -1977,7 +1978,7 @@ class JSReceiver: public HeapObject {
       uint32_t index);
 
   // Return the object's prototype (might be Heap::null_value()).
-  inline Object* GetPrototype();
+  inline Object* GetPrototype() const;
 
   // Return the constructor function (may be Heap::null_value()).
   inline Object* GetConstructor();
@@ -2160,14 +2161,6 @@ class JSObject: public JSReceiver {
       StoreFromKeyed store_mode = MAY_BE_STORE_FROM_KEYED,
       ExecutableAccessorInfoHandling handling = DEFAULT_HANDLING);
 
-  static inline Handle<String> ExpectedTransitionKey(Handle<Map> map);
-  static inline Handle<Map> ExpectedTransitionTarget(Handle<Map> map);
-
-  // Try to follow an existing transition to a field with attributes NONE. The
-  // return value indicates whether the transition was successful.
-  static inline Handle<Map> FindTransitionToField(Handle<Map> map,
-                                                  Handle<Name> key);
-
   // Extend the receiver with a single fast property appeared first in the
   // passed map. This also extends the property backing store if necessary.
   static void AllocateStorageForMap(Handle<JSObject> object, Handle<Map> map);
@@ -2232,8 +2225,7 @@ class JSObject: public JSReceiver {
                              Handle<Name> name,
                              Handle<Object> getter,
                              Handle<Object> setter,
-                             PropertyAttributes attributes,
-                             v8::AccessControl access_control = v8::DEFAULT);
+                             PropertyAttributes attributes);
 
   // Defines an AccessorInfo property on the given object.
   MUST_USE_RESULT static MaybeHandle<Object> SetAccessor(
@@ -2322,9 +2314,6 @@ class JSObject: public JSReceiver {
   }
 
   // These methods do not perform access checks!
-  MUST_USE_RESULT static MaybeHandle<AccessorPair> GetOwnPropertyAccessorPair(
-      Handle<JSObject> object,
-      Handle<Name> name);
   MUST_USE_RESULT static MaybeHandle<AccessorPair> GetOwnElementAccessorPair(
       Handle<JSObject> object,
       uint32_t index);
@@ -2532,8 +2521,7 @@ class JSObject: public JSReceiver {
   static Handle<Object> GetDataProperty(Handle<JSObject> object,
                                         Handle<Name> key);
 
-  // Casting.
-  static inline JSObject* cast(Object* obj);
+  DECLARE_CAST(JSObject)
 
   // Dispatched behavior.
   void JSObjectShortPrint(StringStream* accumulator);
@@ -2643,6 +2631,10 @@ class JSObject: public JSReceiver {
                                   const char* type,
                                   Handle<Name> name,
                                   Handle<Object> old_value);
+
+  static void MigrateToNewProperty(Handle<JSObject> object,
+                                   Handle<Map> transition,
+                                   Handle<Object> value);
 
  private:
   friend class DictionaryElementsAccessor;
@@ -2771,10 +2763,6 @@ class JSObject: public JSReceiver {
                               ValueType value_type,
                               TransitionFlag flag);
 
-  static void MigrateToNewProperty(Handle<JSObject> object,
-                                   Handle<Map> transition,
-                                   Handle<Object> value);
-
   // Add a property to a slow-case object.
   static void AddSlowProperty(Handle<JSObject> object,
                               Handle<Name> name,
@@ -2828,16 +2816,14 @@ class JSObject: public JSReceiver {
                                     uint32_t index,
                                     Handle<Object> getter,
                                     Handle<Object> setter,
-                                    PropertyAttributes attributes,
-                                    v8::AccessControl access_control);
+                                    PropertyAttributes attributes);
   static Handle<AccessorPair> CreateAccessorPairFor(Handle<JSObject> object,
                                                     Handle<Name> name);
   static void DefinePropertyAccessor(Handle<JSObject> object,
                                      Handle<Name> name,
                                      Handle<Object> getter,
                                      Handle<Object> setter,
-                                     PropertyAttributes attributes,
-                                     v8::AccessControl access_control);
+                                     PropertyAttributes attributes);
 
   // Try to define a single accessor paying attention to map transitions.
   // Returns false if this was not possible and we have to use the slow case.
@@ -2883,7 +2869,7 @@ class FixedArrayBase: public HeapObject {
   inline int synchronized_length() const;
   inline void synchronized_set_length(int value);
 
-  inline static FixedArrayBase* cast(Object* object);
+  DECLARE_CAST(FixedArrayBase)
 
   // Layout description.
   // Length is smi tagged when it is stored.
@@ -2957,8 +2943,7 @@ class FixedArray: public FixedArrayBase {
     return HeapObject::RawField(this, OffsetOfElementAt(index));
   }
 
-  // Casting.
-  static inline FixedArray* cast(Object* obj);
+  DECLARE_CAST(FixedArray)
 
   // Maximal allowed size, in bytes, of a single FixedArray.
   // Prevents overflowing size computations, as well as extreme memory
@@ -3043,8 +3028,7 @@ class FixedDoubleArray: public FixedArrayBase {
   inline static double hole_nan_as_double();
   inline static double canonical_not_the_hole_nan_as_double();
 
-  // Casting.
-  static inline FixedDoubleArray* cast(Object* obj);
+  DECLARE_CAST(FixedDoubleArray)
 
   // Maximal allowed size, in bytes, of a single FixedDoubleArray.
   // Prevents overflowing size computations, as well as extreme memory
@@ -3296,8 +3280,7 @@ class ConstantPoolArray: public HeapObject {
     return offset;
   }
 
-  // Casting.
-  static inline ConstantPoolArray* cast(Object* obj);
+  DECLARE_CAST(ConstantPoolArray)
 
   // Garbage collection support.
   Object** RawFieldOfElementAt(int index) {
@@ -3493,8 +3476,7 @@ class DescriptorArray: public FixedArray {
                                           int number_of_descriptors,
                                           int slack = 0);
 
-  // Casting.
-  static inline DescriptorArray* cast(Object* obj);
+  DECLARE_CAST(DescriptorArray)
 
   // Constant for denoting key was not found.
   static const int kNotFound = -1;
@@ -3747,8 +3729,7 @@ class HashTable: public FixedArray {
   void IteratePrefix(ObjectVisitor* visitor);
   void IterateElements(ObjectVisitor* visitor);
 
-  // Casting.
-  static inline HashTable* cast(Object* obj);
+  DECLARE_CAST(HashTable)
 
   // Compute the probe offset (quadratic probing).
   INLINE(static uint32_t GetProbeOffset(uint32_t n)) {
@@ -3921,8 +3902,7 @@ class StringTable: public HashTable<StringTable,
       uint16_t c1,
       uint16_t c2);
 
-  // Casting.
-  static inline StringTable* cast(Object* obj);
+  DECLARE_CAST(StringTable)
 
  private:
   template <bool seq_ascii> friend class JsonParser;
@@ -3962,7 +3942,7 @@ class MapCache: public HashTable<MapCache, MapCacheShape, HashTableKey*> {
   Object* Lookup(FixedArray* key);
   static Handle<MapCache> Put(
       Handle<MapCache> map_cache, Handle<FixedArray> key, Handle<Map> value);
-  static inline MapCache* cast(Object* obj);
+  DECLARE_CAST(MapCache)
 
  private:
   DISALLOW_IMPLICIT_CONSTRUCTORS(MapCache);
@@ -3975,10 +3955,6 @@ class Dictionary: public HashTable<Derived, Shape, Key> {
   typedef HashTable<Derived, Shape, Key> DerivedHashTable;
 
  public:
-  static inline Dictionary* cast(Object* obj) {
-    return reinterpret_cast<Dictionary*>(obj);
-  }
-
   // Returns the value at entry.
   Object* ValueAt(int entry) {
     return this->get(DerivedHashTable::EntryToIndex(entry) + 1);
@@ -4116,10 +4092,7 @@ class NameDictionary: public Dictionary<NameDictionary,
       NameDictionary, NameDictionaryShape, Handle<Name> > DerivedDictionary;
 
  public:
-  static inline NameDictionary* cast(Object* obj) {
-    ASSERT(obj->IsDictionary());
-    return reinterpret_cast<NameDictionary*>(obj);
-  }
+  DECLARE_CAST(NameDictionary)
 
   // Copies enumerable keys to preallocated fixed array.
   void CopyEnumKeysTo(FixedArray* storage);
@@ -4167,10 +4140,7 @@ class SeededNumberDictionary
                         SeededNumberDictionaryShape,
                         uint32_t> {
  public:
-  static SeededNumberDictionary* cast(Object* obj) {
-    ASSERT(obj->IsDictionary());
-    return reinterpret_cast<SeededNumberDictionary*>(obj);
-  }
+  DECLARE_CAST(SeededNumberDictionary)
 
   // Type specific at put (default NONE attributes is used when adding).
   MUST_USE_RESULT static Handle<SeededNumberDictionary> AtNumberPut(
@@ -4218,10 +4188,7 @@ class UnseededNumberDictionary
                         UnseededNumberDictionaryShape,
                         uint32_t> {
  public:
-  static UnseededNumberDictionary* cast(Object* obj) {
-    ASSERT(obj->IsDictionary());
-    return reinterpret_cast<UnseededNumberDictionary*>(obj);
-  }
+  DECLARE_CAST(UnseededNumberDictionary)
 
   // Type specific at put (default NONE attributes is used when adding).
   MUST_USE_RESULT static Handle<UnseededNumberDictionary> AtNumberPut(
@@ -4261,10 +4228,7 @@ class ObjectHashTable: public HashTable<ObjectHashTable,
   typedef HashTable<
       ObjectHashTable, ObjectHashTableShape, Handle<Object> > DerivedHashTable;
  public:
-  static inline ObjectHashTable* cast(Object* obj) {
-    ASSERT(obj->IsHashTable());
-    return reinterpret_cast<ObjectHashTable*>(obj);
-  }
+  DECLARE_CAST(ObjectHashTable)
 
   // Attempt to shrink hash table after removal of key.
   MUST_USE_RESULT static inline Handle<ObjectHashTable> Shrink(
@@ -4473,10 +4437,7 @@ class JSSetIterator;
 class OrderedHashSet: public OrderedHashTable<
     OrderedHashSet, JSSetIterator, 1> {
  public:
-  static OrderedHashSet* cast(Object* obj) {
-    ASSERT(obj->IsOrderedHashTable());
-    return reinterpret_cast<OrderedHashSet*>(obj);
-  }
+  DECLARE_CAST(OrderedHashSet)
 
   bool Contains(Handle<Object> key);
   static Handle<OrderedHashSet> Add(
@@ -4490,10 +4451,7 @@ class JSMapIterator;
 class OrderedHashMap:public OrderedHashTable<
     OrderedHashMap, JSMapIterator, 2> {
  public:
-  static OrderedHashMap* cast(Object* obj) {
-    ASSERT(obj->IsOrderedHashTable());
-    return reinterpret_cast<OrderedHashMap*>(obj);
-  }
+  DECLARE_CAST(OrderedHashMap)
 
   Object* Lookup(Handle<Object> key);
   static Handle<OrderedHashMap> Put(
@@ -4531,10 +4489,7 @@ class WeakHashTable: public HashTable<WeakHashTable,
   typedef HashTable<
       WeakHashTable, WeakHashTableShape<2>, Handle<Object> > DerivedHashTable;
  public:
-  static inline WeakHashTable* cast(Object* obj) {
-    ASSERT(obj->IsHashTable());
-    return reinterpret_cast<WeakHashTable*>(obj);
-  }
+  DECLARE_CAST(WeakHashTable)
 
   // Looks up the value associated with the given key. The hole value is
   // returned in case the key is not present.
@@ -4596,8 +4551,7 @@ class JSFunctionResultCache: public FixedArray {
   inline int finger_index();
   inline void set_finger_index(int finger_index);
 
-  // Casting
-  static inline JSFunctionResultCache* cast(Object* obj);
+  DECLARE_CAST(JSFunctionResultCache)
 
   DECLARE_VERIFIER(JSFunctionResultCache)
 };
@@ -4612,7 +4566,7 @@ class JSFunctionResultCache: public FixedArray {
 // routines.
 class ScopeInfo : public FixedArray {
  public:
-  static inline ScopeInfo* cast(Object* object);
+  DECLARE_CAST(ScopeInfo)
 
   // Return the type of this scope.
   ScopeType scope_type();
@@ -4827,9 +4781,9 @@ class NormalizedMapCache: public FixedArray {
 
   void Clear();
 
-  // Casting
-  static inline NormalizedMapCache* cast(Object* obj);
-  static inline bool IsNormalizedMapCache(Object* obj);
+  DECLARE_CAST(NormalizedMapCache)
+
+  static inline bool IsNormalizedMapCache(const Object* obj);
 
   DECLARE_VERIFIER(NormalizedMapCache)
  private:
@@ -4875,8 +4829,7 @@ class ByteArray: public FixedArrayBase {
   // Returns a pointer to the ByteArray object for a given data start address.
   static inline ByteArray* FromDataStartAddress(Address address);
 
-  // Casting.
-  static inline ByteArray* cast(Object* obj);
+  DECLARE_CAST(ByteArray)
 
   // Dispatched behavior.
   inline int ByteArraySize() {
@@ -4911,8 +4864,7 @@ class FreeSpace: public HeapObject {
 
   inline int Size() { return size(); }
 
-  // Casting.
-  static inline FreeSpace* cast(Object* obj);
+  DECLARE_CAST(FreeSpace)
 
   // Dispatched behavior.
   DECLARE_PRINTER(FreeSpace)
@@ -4963,8 +4915,7 @@ class ExternalArray: public FixedArrayBase {
   // external array.
   DECL_ACCESSORS(external_pointer, void)  // Pointer to the data store.
 
-  // Casting.
-  static inline ExternalArray* cast(Object* obj);
+  DECLARE_CAST(ExternalArray)
 
   // Maximal acceptable length for an external array.
   static const int kMaxLength = 0x3fffffff;
@@ -5004,8 +4955,7 @@ class ExternalUint8ClampedArray: public ExternalArray {
                                  uint32_t index,
                                  Handle<Object> value);
 
-  // Casting.
-  static inline ExternalUint8ClampedArray* cast(Object* obj);
+  DECLARE_CAST(ExternalUint8ClampedArray)
 
   // Dispatched behavior.
   DECLARE_PRINTER(ExternalUint8ClampedArray)
@@ -5029,8 +4979,7 @@ class ExternalInt8Array: public ExternalArray {
                                  uint32_t index,
                                  Handle<Object> value);
 
-  // Casting.
-  static inline ExternalInt8Array* cast(Object* obj);
+  DECLARE_CAST(ExternalInt8Array)
 
   // Dispatched behavior.
   DECLARE_PRINTER(ExternalInt8Array)
@@ -5054,8 +5003,7 @@ class ExternalUint8Array: public ExternalArray {
                                  uint32_t index,
                                  Handle<Object> value);
 
-  // Casting.
-  static inline ExternalUint8Array* cast(Object* obj);
+  DECLARE_CAST(ExternalUint8Array)
 
   // Dispatched behavior.
   DECLARE_PRINTER(ExternalUint8Array)
@@ -5079,8 +5027,7 @@ class ExternalInt16Array: public ExternalArray {
                                  uint32_t index,
                                  Handle<Object> value);
 
-  // Casting.
-  static inline ExternalInt16Array* cast(Object* obj);
+  DECLARE_CAST(ExternalInt16Array)
 
   // Dispatched behavior.
   DECLARE_PRINTER(ExternalInt16Array)
@@ -5105,8 +5052,7 @@ class ExternalUint16Array: public ExternalArray {
                                  uint32_t index,
                                  Handle<Object> value);
 
-  // Casting.
-  static inline ExternalUint16Array* cast(Object* obj);
+  DECLARE_CAST(ExternalUint16Array)
 
   // Dispatched behavior.
   DECLARE_PRINTER(ExternalUint16Array)
@@ -5130,8 +5076,7 @@ class ExternalInt32Array: public ExternalArray {
                                  uint32_t index,
                                  Handle<Object> value);
 
-  // Casting.
-  static inline ExternalInt32Array* cast(Object* obj);
+  DECLARE_CAST(ExternalInt32Array)
 
   // Dispatched behavior.
   DECLARE_PRINTER(ExternalInt32Array)
@@ -5156,8 +5101,7 @@ class ExternalUint32Array: public ExternalArray {
                                  uint32_t index,
                                  Handle<Object> value);
 
-  // Casting.
-  static inline ExternalUint32Array* cast(Object* obj);
+  DECLARE_CAST(ExternalUint32Array)
 
   // Dispatched behavior.
   DECLARE_PRINTER(ExternalUint32Array)
@@ -5182,8 +5126,7 @@ class ExternalFloat32Array: public ExternalArray {
                                  uint32_t index,
                                  Handle<Object> value);
 
-  // Casting.
-  static inline ExternalFloat32Array* cast(Object* obj);
+  DECLARE_CAST(ExternalFloat32Array)
 
   // Dispatched behavior.
   DECLARE_PRINTER(ExternalFloat32Array)
@@ -5208,8 +5151,7 @@ class ExternalFloat64Array: public ExternalArray {
                                  uint32_t index,
                                  Handle<Object> value);
 
-  // Casting.
-  static inline ExternalFloat64Array* cast(Object* obj);
+  DECLARE_CAST(ExternalFloat64Array)
 
   // Dispatched behavior.
   DECLARE_PRINTER(ExternalFloat64Array)
@@ -5222,8 +5164,7 @@ class ExternalFloat64Array: public ExternalArray {
 
 class FixedTypedArrayBase: public FixedArrayBase {
  public:
-  // Casting:
-  static inline FixedTypedArrayBase* cast(Object* obj);
+  DECLARE_CAST(FixedTypedArrayBase)
 
   static const int kDataOffset = kHeaderSize;
 
@@ -5249,8 +5190,7 @@ class FixedTypedArray: public FixedTypedArrayBase {
   typedef typename Traits::ElementType ElementType;
   static const InstanceType kInstanceType = Traits::kInstanceType;
 
-  // Casting:
-  static inline FixedTypedArray<Traits>* cast(Object* obj);
+  DECLARE_CAST(FixedTypedArray<Traits>)
 
   static inline int ElementOffset(int index) {
     return kDataOffset + index * sizeof(ElementType);
@@ -5375,8 +5315,7 @@ class DeoptimizationInputData: public FixedArray {
                                              int deopt_entry_count,
                                              PretenureFlag pretenure);
 
-  // Casting.
-  static inline DeoptimizationInputData* cast(Object* obj);
+  DECLARE_CAST(DeoptimizationInputData)
 
 #ifdef ENABLE_DISASSEMBLER
   void DeoptimizationInputDataPrint(FILE* out);
@@ -5422,8 +5361,7 @@ class DeoptimizationOutputData: public FixedArray {
                                               int number_of_deopt_points,
                                               PretenureFlag pretenure);
 
-  // Casting.
-  static inline DeoptimizationOutputData* cast(Object* obj);
+  DECLARE_CAST(DeoptimizationOutputData)
 
 #if defined(OBJECT_PRINT) || defined(ENABLE_DISASSEMBLER)
   void DeoptimizationOutputDataPrint(FILE* out);
@@ -5644,7 +5582,6 @@ class Code: public HeapObject {
   inline void set_back_edge_table_offset(unsigned offset);
 
   inline bool back_edges_patched_for_osr();
-  inline void set_back_edges_patched_for_osr(bool value);
 
   // [to_boolean_foo]: For kind TO_BOOLEAN_IC tells what state the stub is in.
   inline byte to_boolean_state();
@@ -5780,8 +5717,7 @@ class Code: public HeapObject {
   int SourcePosition(Address pc);
   int SourceStatementPosition(Address pc);
 
-  // Casting.
-  static inline Code* cast(Object* obj);
+  DECLARE_CAST(Code)
 
   // Dispatched behavior.
   int CodeSize() { return SizeFor(body_size()); }
@@ -5890,8 +5826,7 @@ class Code: public HeapObject {
   class FullCodeFlagsHasDebugBreakSlotsField: public BitField<bool, 1, 1> {};
   class FullCodeFlagsIsCompiledOptimizable: public BitField<bool, 2, 1> {};
 
-  static const int kAllowOSRAtLoopNestingLevelOffset = kFullCodeFlags + 1;
-  static const int kProfilerTicksOffset = kAllowOSRAtLoopNestingLevelOffset + 1;
+  static const int kProfilerTicksOffset = kFullCodeFlags + 1;
 
   // Flags layout.  BitField<type, shift, size>.
   class ICStateField: public BitField<InlineCacheState, 0, 3> {};
@@ -5962,9 +5897,10 @@ class Code: public HeapObject {
 
   // KindSpecificFlags2 layout (FUNCTION)
   class BackEdgeTableOffsetField: public BitField<int,
-      kIsCrankshaftedBit + 1, 29> {};  // NOLINT
-  class BackEdgesPatchedForOSRField: public BitField<bool,
-      kIsCrankshaftedBit + 1 + 29, 1> {};  // NOLINT
+      kIsCrankshaftedBit + 1, 27> {};  // NOLINT
+  class AllowOSRAtLoopNestingLevelField: public BitField<int,
+      kIsCrankshaftedBit + 1 + 27, 4> {};  // NOLINT
+  STATIC_ASSERT(AllowOSRAtLoopNestingLevelField::kMax >= kMaxLoopNestingMarker);
 
   static const int kArgumentsBits = 16;
   static const int kMaxArguments = (1 << kArgumentsBits) - 1;
@@ -6098,7 +6034,7 @@ class DependentCode: public FixedArray {
   inline Object* object_at(int i);
   inline void clear_at(int i);
   inline void copy(int from, int to);
-  static inline DependentCode* cast(Object* object);
+  DECLARE_CAST(DependentCode)
 
   static DependentCode* ForObject(Handle<HeapObject> object,
                                   DependencyGroup group);
@@ -6302,13 +6238,20 @@ class Map: public HeapObject {
   inline bool HasTransitionArray() const;
   inline bool HasElementsTransition();
   inline Map* elements_transition_map();
-  static Handle<TransitionArray> SetElementsTransitionMap(
-      Handle<Map> map, Handle<Map> transitioned_map);
+
   inline Map* GetTransition(int transition_index);
   inline int SearchTransition(Name* name);
   inline FixedArrayBase* GetInitialElements();
 
   DECL_ACCESSORS(transitions, TransitionArray)
+
+  static inline Handle<String> ExpectedTransitionKey(Handle<Map> map);
+  static inline Handle<Map> ExpectedTransitionTarget(Handle<Map> map);
+
+  // Try to follow an existing transition to a field with attributes NONE. The
+  // return value indicates whether the transition was successful.
+  static inline Handle<Map> FindTransitionToField(Handle<Map> map,
+                                                  Handle<Name> key);
 
   Map* FindRootMap();
   Map* FindFieldOwner(int descriptor);
@@ -6317,15 +6260,17 @@ class Map: public HeapObject {
 
   int NumberOfFields();
 
+  // TODO(ishell): candidate with JSObject::MigrateToMap().
   bool InstancesNeedRewriting(Map* target,
                               int target_number_of_fields,
                               int target_inobject,
                               int target_unused);
+  // TODO(ishell): moveit!
   static Handle<Map> GeneralizeAllFieldRepresentations(Handle<Map> map);
-  static Handle<HeapType> GeneralizeFieldType(Handle<HeapType> type1,
+  MUST_USE_RESULT static Handle<HeapType> GeneralizeFieldType(
+      Handle<HeapType> type1,
                                               Handle<HeapType> type2,
-                                              Isolate* isolate)
-      V8_WARN_UNUSED_RESULT;
+      Isolate* isolate);
   static void GeneralizeFieldType(Handle<Map> map,
                                   int modify_index,
                                   Handle<HeapType> new_field_type);
@@ -6563,8 +6508,7 @@ class Map: public HeapObject {
         inobject_properties();
   }
 
-  // Casting.
-  static inline Map* cast(Object* obj);
+  DECLARE_CAST(Map)
 
   // Code cache operations.
 
@@ -6611,7 +6555,6 @@ class Map: public HeapObject {
   // elements_kind that's found in |candidates|, or null handle if no match is
   // found at all.
   Handle<Map> FindTransitionedMap(MapHandleList* candidates);
-  Map* FindTransitionedMap(MapList* candidates);
 
   bool CanTransition() {
     // Only JSObject and subtypes have map transitions and back pointers.
@@ -6718,17 +6661,20 @@ class Map: public HeapObject {
 #if V8_TARGET_LITTLE_ENDIAN
   // Order instance type and bit field together such that they can be loaded
   // together as a 16-bit word with instance type in the lower 8 bits regardless
-  // of endianess.
+  // of endianess. Also provide endian-independent offset to that 16-bit word.
   static const int kInstanceTypeOffset = kInstanceAttributesOffset + 0;
   static const int kBitFieldOffset = kInstanceAttributesOffset + 1;
 #else
   static const int kBitFieldOffset = kInstanceAttributesOffset + 0;
   static const int kInstanceTypeOffset = kInstanceAttributesOffset + 1;
 #endif
+  static const int kInstanceTypeAndBitFieldOffset =
+      kInstanceAttributesOffset + 0;
   static const int kBitField2Offset = kInstanceAttributesOffset + 2;
   static const int kUnusedPropertyFieldsOffset = kInstanceAttributesOffset + 3;
 
-  STATIC_ASSERT(kInstanceTypeOffset == Internals::kMapInstanceTypeOffset);
+  STATIC_ASSERT(kInstanceTypeAndBitFieldOffset ==
+                Internals::kMapInstanceTypeAndBitFieldOffset);
 
   // Bit positions for bit field.
   static const int kHasNonInstancePrototype = 0;
@@ -6770,6 +6716,9 @@ class Map: public HeapObject {
   bool EquivalentToForNormalization(Map* other, PropertyNormalizationMode mode);
 
  private:
+  static Handle<TransitionArray> SetElementsTransitionMap(
+      Handle<Map> map, Handle<Map> transitioned_map);
+
   bool EquivalentToForTransition(Map* other);
   static Handle<Map> RawCopy(Handle<Map> map, int instance_size);
   static Handle<Map> ShareDescriptor(Handle<Map> map,
@@ -6853,7 +6802,7 @@ class Map: public HeapObject {
 class Struct: public HeapObject {
  public:
   inline void InitializeBody(int object_size);
-  static inline Struct* cast(Object* that);
+  DECLARE_CAST(Struct)
 };
 
 
@@ -6863,7 +6812,7 @@ class Box : public Struct {
   // [value]: the boxed contents.
   DECL_ACCESSORS(value, Object)
 
-  static inline Box* cast(Object* obj);
+  DECLARE_CAST(Box)
 
   // Dispatched behavior.
   DECLARE_PRINTER(Box)
@@ -6954,7 +6903,7 @@ class Script: public Struct {
   // the 'flags' field.
   DECL_BOOLEAN_ACCESSORS(is_shared_cross_origin)
 
-  static inline Script* cast(Object* obj);
+  DECLARE_CAST(Script)
 
   // If script source is an external string, check that the underlying
   // resource is accessible. Otherwise, always return true.
@@ -7362,8 +7311,7 @@ class SharedFunctionInfo: public HeapObject {
 
   void ResetForNewContext(int new_ic_age);
 
-  // Casting.
-  static inline SharedFunctionInfo* cast(Object* obj);
+  DECLARE_CAST(SharedFunctionInfo)
 
   // Constants.
   static const int kDontAdaptArgumentsSentinel = -1;
@@ -7614,8 +7562,7 @@ class JSGeneratorObject: public JSObject {
   inline int stack_handler_index() const;
   inline void set_stack_handler_index(int stack_handler_index);
 
-  // Casting.
-  static inline JSGeneratorObject* cast(Object* obj);
+  DECLARE_CAST(JSGeneratorObject)
 
   // Dispatched behavior.
   DECLARE_PRINTER(JSGeneratorObject)
@@ -7663,8 +7610,7 @@ class JSModule: public JSObject {
   // [scope_info]: Scope info.
   DECL_ACCESSORS(scope_info, ScopeInfo)
 
-  // Casting.
-  static inline JSModule* cast(Object* obj);
+  DECLARE_CAST(JSModule)
 
   // Dispatched behavior.
   DECLARE_PRINTER(JSModule)
@@ -7849,8 +7795,7 @@ class JSFunction: public JSObject {
   // Prints the name of the function using PrintF.
   void PrintName(FILE* out = stdout);
 
-  // Casting.
-  static inline JSFunction* cast(Object* obj);
+  DECLARE_CAST(JSFunction)
 
   // Iterates the objects, including code objects indirectly referenced
   // through pointers to the first instruction in the code object.
@@ -7913,10 +7858,9 @@ class JSGlobalProxy : public JSObject {
   // [hash]: The hash code property (undefined if not initialized yet).
   DECL_ACCESSORS(hash, Object)
 
-  // Casting.
-  static inline JSGlobalProxy* cast(Object* obj);
+  DECLARE_CAST(JSGlobalProxy)
 
-  inline bool IsDetachedFrom(GlobalObject* global);
+  inline bool IsDetachedFrom(GlobalObject* global) const;
 
   // Dispatched behavior.
   DECLARE_PRINTER(JSGlobalProxy)
@@ -7954,8 +7898,7 @@ class GlobalObject: public JSObject {
   // Retrieve the property cell used to store a property.
   PropertyCell* GetPropertyCell(LookupResult* result);
 
-  // Casting.
-  static inline GlobalObject* cast(Object* obj);
+  DECLARE_CAST(GlobalObject)
 
   // Layout description.
   static const int kBuiltinsOffset = JSObject::kHeaderSize;
@@ -7972,8 +7915,7 @@ class GlobalObject: public JSObject {
 // JavaScript global object.
 class JSGlobalObject: public GlobalObject {
  public:
-  // Casting.
-  static inline JSGlobalObject* cast(Object* obj);
+  DECLARE_CAST(JSGlobalObject)
 
   // Ensure that the global object has a cell for the given property name.
   static Handle<PropertyCell> EnsurePropertyCell(Handle<JSGlobalObject> global,
@@ -8005,8 +7947,7 @@ class JSBuiltinsObject: public GlobalObject {
   inline Code* javascript_builtin_code(Builtins::JavaScript id);
   inline void set_javascript_builtin_code(Builtins::JavaScript id, Code* value);
 
-  // Casting.
-  static inline JSBuiltinsObject* cast(Object* obj);
+  DECLARE_CAST(JSBuiltinsObject)
 
   // Dispatched behavior.
   DECLARE_PRINTER(JSBuiltinsObject)
@@ -8041,8 +7982,7 @@ class JSValue: public JSObject {
   // [value]: the object being wrapped.
   DECL_ACCESSORS(value, Object)
 
-  // Casting.
-  static inline JSValue* cast(Object* obj);
+  DECLARE_CAST(JSValue)
 
   // Dispatched behavior.
   DECLARE_PRINTER(JSValue)
@@ -8083,8 +8023,7 @@ class JSDate: public JSObject {
   // moment when chached fields were cached.
   DECL_ACCESSORS(cache_stamp, Object)
 
-  // Casting.
-  static inline JSDate* cast(Object* obj);
+  DECLARE_CAST(JSDate)
 
   // Returns the date field with the specified index.
   // See FieldIndex for the list of date fields.
@@ -8179,8 +8118,7 @@ class JSMessageObject: public JSObject {
   inline int end_position() const;
   inline void set_end_position(int value);
 
-  // Casting.
-  static inline JSMessageObject* cast(Object* obj);
+  DECLARE_CAST(JSMessageObject)
 
   // Dispatched behavior.
   DECLARE_PRINTER(JSMessageObject)
@@ -8264,7 +8202,7 @@ class JSRegExp: public JSObject {
     }
   }
 
-  static inline JSRegExp* cast(Object* obj);
+  DECLARE_CAST(JSRegExp)
 
   // Dispatched behavior.
   DECLARE_VERIFIER(JSRegExp)
@@ -8382,7 +8320,7 @@ class CompilationCacheTable: public HashTable<CompilationCacheTable,
       JSRegExp::Flags flags, Handle<FixedArray> value);
   void Remove(Object* value);
 
-  static inline CompilationCacheTable* cast(Object* obj);
+  DECLARE_CAST(CompilationCacheTable)
 
  private:
   DISALLOW_IMPLICIT_CONSTRUCTORS(CompilationCacheTable);
@@ -8411,7 +8349,7 @@ class CodeCache: public Struct {
   // Remove an object from the cache with the provided internal index.
   void RemoveByIndex(Object* name, Code* code, int index);
 
-  static inline CodeCache* cast(Object* obj);
+  DECLARE_CAST(CodeCache)
 
   // Dispatched behavior.
   DECLARE_PRINTER(CodeCache)
@@ -8474,7 +8412,7 @@ class CodeCacheHashTable: public HashTable<CodeCacheHashTable,
   int GetIndex(Name* name, Code::Flags flags);
   void RemoveByIndex(int index);
 
-  static inline CodeCacheHashTable* cast(Object* obj);
+  DECLARE_CAST(CodeCacheHashTable)
 
   // Initial size of the fixed array backing the hash table.
   static const int kInitialSize = 64;
@@ -8497,7 +8435,7 @@ class PolymorphicCodeCache: public Struct {
   // Returns an undefined value if the entry is not found.
   Handle<Object> Lookup(MapHandleList* maps, Code::Flags flags);
 
-  static inline PolymorphicCodeCache* cast(Object* obj);
+  DECLARE_CAST(PolymorphicCodeCache)
 
   // Dispatched behavior.
   DECLARE_PRINTER(PolymorphicCodeCache)
@@ -8524,7 +8462,7 @@ class PolymorphicCodeCacheHashTable
       int code_kind,
       Handle<Code> code);
 
-  static inline PolymorphicCodeCacheHashTable* cast(Object* obj);
+  DECLARE_CAST(PolymorphicCodeCacheHashTable)
 
   static const int kInitialSize = 64;
  private:
@@ -8549,7 +8487,7 @@ class TypeFeedbackInfo: public Struct {
   inline bool matches_inlined_type_change_checksum(int checksum);
 
 
-  static inline TypeFeedbackInfo* cast(Object* obj);
+  DECLARE_CAST(TypeFeedbackInfo)
 
   // Dispatched behavior.
   DECLARE_PRINTER(TypeFeedbackInfo)
@@ -8758,7 +8696,7 @@ class AllocationSite: public Struct {
   DECLARE_PRINTER(AllocationSite)
   DECLARE_VERIFIER(AllocationSite)
 
-  static inline AllocationSite* cast(Object* obj);
+  DECLARE_CAST(AllocationSite)
   static inline AllocationSiteMode GetMode(
       ElementsKind boilerplate_elements_kind);
   static inline AllocationSiteMode GetMode(ElementsKind from, ElementsKind to);
@@ -8813,7 +8751,7 @@ class AllocationMemento: public Struct {
   DECLARE_PRINTER(AllocationMemento)
   DECLARE_VERIFIER(AllocationMemento)
 
-  static inline AllocationMemento* cast(Object* obj);
+  DECLARE_CAST(AllocationMemento)
 
  private:
   DISALLOW_IMPLICIT_CONSTRUCTORS(AllocationMemento);
@@ -8833,7 +8771,7 @@ class AliasedArgumentsEntry: public Struct {
   inline int aliased_context_slot() const;
   inline void set_aliased_context_slot(int count);
 
-  static inline AliasedArgumentsEntry* cast(Object* obj);
+  DECLARE_CAST(AliasedArgumentsEntry)
 
   // Dispatched behavior.
   DECLARE_PRINTER(AliasedArgumentsEntry)
@@ -8918,7 +8856,7 @@ class StringHasher {
 // concrete performance benefit at that particular point in the code.
 class StringShape BASE_EMBEDDED {
  public:
-  inline explicit StringShape(String* s);
+  inline explicit StringShape(const String* s);
   inline explicit StringShape(Map* s);
   inline explicit StringShape(InstanceType t);
   inline bool IsSequential();
@@ -8975,8 +8913,7 @@ class Name: public HeapObject {
   // Conversion.
   inline bool AsArrayIndex(uint32_t* index);
 
-  // Casting.
-  static inline Name* cast(Object* obj);
+  DECLARE_CAST(Name)
 
   DECLARE_PRINTER(Name)
 
@@ -9055,8 +8992,7 @@ class Symbol: public Name {
   // [is_private]: whether this is a private symbol.
   DECL_BOOLEAN_ACCESSORS(is_private)
 
-  // Casting.
-  static inline Symbol* cast(Object* obj);
+  DECLARE_CAST(Symbol)
 
   // Dispatched behavior.
   DECLARE_PRINTER(Symbol)
@@ -9184,8 +9120,8 @@ class String: public Name {
   // be ASCII encoded.  This might be the case even if the string is
   // two-byte.  Such strings may appear when the embedder prefers
   // two-byte external representations even for ASCII data.
-  inline bool IsOneByteRepresentation();
-  inline bool IsTwoByteRepresentation();
+  inline bool IsOneByteRepresentation() const;
+  inline bool IsTwoByteRepresentation() const;
 
   // Cons and slices have an encoding flag that may not represent the actual
   // encoding of the underlying string.  This is taken into account here.
@@ -9277,8 +9213,7 @@ class String: public Name {
   // Conversion.
   inline bool AsArrayIndex(uint32_t* index);
 
-  // Casting.
-  static inline String* cast(Object* obj);
+  DECLARE_CAST(String)
 
   void PrintOn(FILE* out);
 
@@ -9414,8 +9349,7 @@ class String: public Name {
 // The SeqString abstract class captures sequential string values.
 class SeqString: public String {
  public:
-  // Casting.
-  static inline SeqString* cast(Object* obj);
+  DECLARE_CAST(SeqString)
 
   // Layout description.
   static const int kHeaderSize = String::kSize;
@@ -9445,8 +9379,7 @@ class SeqOneByteString: public SeqString {
 
   inline uint8_t* GetChars();
 
-  // Casting
-  static inline SeqOneByteString* cast(Object* obj);
+  DECLARE_CAST(SeqOneByteString)
 
   // Garbage collection support.  This method is called by the
   // garbage collector to compute the actual size of an AsciiString
@@ -9485,8 +9418,7 @@ class SeqTwoByteString: public SeqString {
   // For regexp code.
   const uint16_t* SeqTwoByteStringGetData(unsigned start);
 
-  // Casting
-  static inline SeqTwoByteString* cast(Object* obj);
+  DECLARE_CAST(SeqTwoByteString)
 
   // Garbage collection support.  This method is called by the
   // garbage collector to compute the actual size of a TwoByteString
@@ -9537,8 +9469,7 @@ class ConsString: public String {
   // Dispatched behavior.
   uint16_t ConsStringGet(int index);
 
-  // Casting.
-  static inline ConsString* cast(Object* obj);
+  DECLARE_CAST(ConsString)
 
   // Layout description.
   static const int kFirstOffset = POINTER_SIZE_ALIGN(String::kSize);
@@ -9581,8 +9512,7 @@ class SlicedString: public String {
   // Dispatched behavior.
   uint16_t SlicedStringGet(int index);
 
-  // Casting.
-  static inline SlicedString* cast(Object* obj);
+  DECLARE_CAST(SlicedString)
 
   // Layout description.
   static const int kParentOffset = POINTER_SIZE_ALIGN(String::kSize);
@@ -9614,8 +9544,7 @@ class SlicedString: public String {
 // API.  Therefore, ExternalStrings should not be used internally.
 class ExternalString: public String {
  public:
-  // Casting
-  static inline ExternalString* cast(Object* obj);
+  DECLARE_CAST(ExternalString)
 
   // Layout description.
   static const int kResourceOffset = POINTER_SIZE_ALIGN(String::kSize);
@@ -9659,8 +9588,7 @@ class ExternalAsciiString: public ExternalString {
   // Dispatched behavior.
   inline uint16_t ExternalAsciiStringGet(int index);
 
-  // Casting.
-  static inline ExternalAsciiString* cast(Object* obj);
+  DECLARE_CAST(ExternalAsciiString)
 
   // Garbage collection support.
   inline void ExternalAsciiStringIterateBody(ObjectVisitor* v);
@@ -9699,8 +9627,7 @@ class ExternalTwoByteString: public ExternalString {
   // For regexp code.
   inline const uint16_t* ExternalTwoByteStringGetData(unsigned start);
 
-  // Casting.
-  static inline ExternalTwoByteString* cast(Object* obj);
+  DECLARE_CAST(ExternalTwoByteString)
 
   // Garbage collection support.
   inline void ExternalTwoByteStringIterateBody(ObjectVisitor* v);
@@ -9862,11 +9789,10 @@ class Oddball: public HeapObject {
   // [to_number]: Cached to_number computed at startup.
   DECL_ACCESSORS(to_number, Object)
 
-  inline byte kind();
+  inline byte kind() const;
   inline void set_kind(byte kind);
 
-  // Casting.
-  static inline Oddball* cast(Object* obj);
+  DECLARE_CAST(Oddball)
 
   // Dispatched behavior.
   DECLARE_VERIFIER(Oddball)
@@ -9913,8 +9839,7 @@ class Cell: public HeapObject {
   // [value]: value of the global property.
   DECL_ACCESSORS(value, Object)
 
-  // Casting.
-  static inline Cell* cast(Object* obj);
+  DECLARE_CAST(Cell)
 
   static inline Cell* FromValueAddress(Address value) {
     Object* result = FromAddress(value - kValueOffset);
@@ -9968,8 +9893,7 @@ class PropertyCell: public Cell {
   static void AddDependentCompilationInfo(Handle<PropertyCell> cell,
                                           CompilationInfo* info);
 
-  // Casting.
-  static inline PropertyCell* cast(Object* obj);
+  DECLARE_CAST(PropertyCell)
 
   inline Address TypeAddress() {
     return address() + kTypeOffset;
@@ -10006,8 +9930,7 @@ class JSProxy: public JSReceiver {
   // [hash]: The hash code property (undefined if not initialized yet).
   DECL_ACCESSORS(hash, Object)
 
-  // Casting.
-  static inline JSProxy* cast(Object* obj);
+  DECLARE_CAST(JSProxy)
 
   MUST_USE_RESULT static MaybeHandle<Object> GetPropertyWithHandler(
       Handle<JSProxy> proxy,
@@ -10122,8 +10045,7 @@ class JSFunctionProxy: public JSProxy {
   // [construct_trap]: The construct trap.
   DECL_ACCESSORS(construct_trap, Object)
 
-  // Casting.
-  static inline JSFunctionProxy* cast(Object* obj);
+  DECLARE_CAST(JSFunctionProxy)
 
   // Dispatched behavior.
   DECLARE_PRINTER(JSFunctionProxy)
@@ -10153,8 +10075,7 @@ class JSSet: public JSObject {
   // [set]: the backing hash set containing keys.
   DECL_ACCESSORS(table, Object)
 
-  // Casting.
-  static inline JSSet* cast(Object* obj);
+  DECLARE_CAST(JSSet)
 
   // Dispatched behavior.
   DECLARE_PRINTER(JSSet)
@@ -10174,8 +10095,7 @@ class JSMap: public JSObject {
   // [table]: the backing hash table mapping keys to values.
   DECL_ACCESSORS(table, Object)
 
-  // Casting.
-  static inline JSMap* cast(Object* obj);
+  DECLARE_CAST(JSMap)
 
   // Dispatched behavior.
   DECLARE_PRINTER(JSMap)
@@ -10249,8 +10169,7 @@ class JSSetIterator: public OrderedHashTableIterator<JSSetIterator,
   DECLARE_PRINTER(JSSetIterator)
   DECLARE_VERIFIER(JSSetIterator)
 
-  // Casting.
-  static inline JSSetIterator* cast(Object* obj);
+  DECLARE_CAST(JSSetIterator)
 
   static Handle<Object> ValueForKind(
       Handle<JSSetIterator> iterator,
@@ -10268,8 +10187,7 @@ class JSMapIterator: public OrderedHashTableIterator<JSMapIterator,
   DECLARE_PRINTER(JSMapIterator)
   DECLARE_VERIFIER(JSMapIterator)
 
-  // Casting.
-  static inline JSMapIterator* cast(Object* obj);
+  DECLARE_CAST(JSMapIterator)
 
   static Handle<Object> ValueForKind(
       Handle<JSMapIterator> iterator,
@@ -10301,8 +10219,7 @@ class JSWeakCollection: public JSObject {
 // The JSWeakMap describes EcmaScript Harmony weak maps
 class JSWeakMap: public JSWeakCollection {
  public:
-  // Casting.
-  static inline JSWeakMap* cast(Object* obj);
+  DECLARE_CAST(JSWeakMap)
 
   // Dispatched behavior.
   DECLARE_PRINTER(JSWeakMap)
@@ -10316,8 +10233,7 @@ class JSWeakMap: public JSWeakCollection {
 // The JSWeakSet describes EcmaScript Harmony weak sets
 class JSWeakSet: public JSWeakCollection {
  public:
-  // Casting.
-  static inline JSWeakSet* cast(Object* obj);
+  DECLARE_CAST(JSWeakSet)
 
   // Dispatched behavior.
   DECLARE_PRINTER(JSWeakSet)
@@ -10351,8 +10267,7 @@ class JSArrayBuffer: public JSObject {
   // [weak_first_array]: weak linked list of views.
   DECL_ACCESSORS(weak_first_view, Object)
 
-  // Casting.
-  static inline JSArrayBuffer* cast(Object* obj);
+  DECLARE_CAST(JSArrayBuffer)
 
   // Neutering. Only neuters the buffer, not associated typed arrays.
   void Neuter();
@@ -10394,8 +10309,7 @@ class JSArrayBufferView: public JSObject {
   // [weak_next]: linked list of typed arrays over the same array buffer.
   DECL_ACCESSORS(weak_next, Object)
 
-  // Casting.
-  static inline JSArrayBufferView* cast(Object* obj);
+  DECLARE_CAST(JSArrayBufferView)
 
   DECLARE_VERIFIER(JSArrayBufferView)
 
@@ -10421,8 +10335,7 @@ class JSTypedArray: public JSArrayBufferView {
   // Neutering. Only neuters this typed array.
   void Neuter();
 
-  // Casting.
-  static inline JSTypedArray* cast(Object* obj);
+  DECLARE_CAST(JSTypedArray)
 
   ExternalArrayType type();
   size_t element_size();
@@ -10452,8 +10365,7 @@ class JSDataView: public JSArrayBufferView {
   // Only neuters this DataView
   void Neuter();
 
-  // Casting.
-  static inline JSDataView* cast(Object* obj);
+  DECLARE_CAST(JSDataView)
 
   // Dispatched behavior.
   DECLARE_PRINTER(JSDataView)
@@ -10478,8 +10390,7 @@ class Foreign: public HeapObject {
   inline Address foreign_address();
   inline void set_foreign_address(Address value);
 
-  // Casting.
-  static inline Foreign* cast(Object* obj);
+  DECLARE_CAST(Foreign)
 
   // Dispatched behavior.
   inline void ForeignIterateBody(ObjectVisitor* v);
@@ -10541,8 +10452,7 @@ class JSArray: public JSObject {
   static inline void SetContent(Handle<JSArray> array,
                                 Handle<FixedArrayBase> storage);
 
-  // Casting.
-  static inline JSArray* cast(Object* obj);
+  DECLARE_CAST(JSArray)
 
   // Ensures that the fixed array backing the JSArray has at
   // least the stated size.
@@ -10612,7 +10522,7 @@ class AccessorInfo: public Struct {
   // Checks whether the given receiver is compatible with this accessor.
   inline bool IsCompatibleReceiver(Object* receiver);
 
-  static inline AccessorInfo* cast(Object* obj);
+  DECLARE_CAST(AccessorInfo)
 
   // Dispatched behavior.
   DECLARE_VERIFIER(AccessorInfo)
@@ -10710,7 +10620,7 @@ class DeclaredAccessorDescriptor: public Struct {
  public:
   DECL_ACCESSORS(serialized_data, ByteArray)
 
-  static inline DeclaredAccessorDescriptor* cast(Object* obj);
+  DECLARE_CAST(DeclaredAccessorDescriptor)
 
   static Handle<DeclaredAccessorDescriptor> Create(
       Isolate* isolate,
@@ -10733,7 +10643,7 @@ class DeclaredAccessorInfo: public AccessorInfo {
  public:
   DECL_ACCESSORS(descriptor, DeclaredAccessorDescriptor)
 
-  static inline DeclaredAccessorInfo* cast(Object* obj);
+  DECLARE_CAST(DeclaredAccessorInfo)
 
   // Dispatched behavior.
   DECLARE_PRINTER(DeclaredAccessorInfo)
@@ -10762,7 +10672,7 @@ class ExecutableAccessorInfo: public AccessorInfo {
   DECL_ACCESSORS(setter, Object)
   DECL_ACCESSORS(data, Object)
 
-  static inline ExecutableAccessorInfo* cast(Object* obj);
+  DECLARE_CAST(ExecutableAccessorInfo)
 
   // Dispatched behavior.
   DECLARE_PRINTER(ExecutableAccessorInfo)
@@ -10786,19 +10696,12 @@ class ExecutableAccessorInfo: public AccessorInfo {
 //   * undefined: considered an accessor by the spec, too, strangely enough
 //   * the hole: an accessor which has not been set
 //   * a pointer to a map: a transition used to ensure map sharing
-// access_flags provides the ability to override access checks on access check
-// failure.
 class AccessorPair: public Struct {
  public:
   DECL_ACCESSORS(getter, Object)
   DECL_ACCESSORS(setter, Object)
-  DECL_ACCESSORS(access_flags, Smi)
 
-  inline void set_access_flags(v8::AccessControl access_control);
-  inline bool all_can_read();
-  inline bool all_can_write();
-
-  static inline AccessorPair* cast(Object* obj);
+  DECLARE_CAST(AccessorPair)
 
   static Handle<AccessorPair> Copy(Handle<AccessorPair> pair);
 
@@ -10833,13 +10736,9 @@ class AccessorPair: public Struct {
 
   static const int kGetterOffset = HeapObject::kHeaderSize;
   static const int kSetterOffset = kGetterOffset + kPointerSize;
-  static const int kAccessFlagsOffset = kSetterOffset + kPointerSize;
-  static const int kSize = kAccessFlagsOffset + kPointerSize;
+  static const int kSize = kSetterOffset + kPointerSize;
 
  private:
-  static const int kAllCanReadBit = 0;
-  static const int kAllCanWriteBit = 1;
-
   // Strangely enough, in addition to functions and harmony proxies, the spec
   // requires us to consider undefined as a kind of accessor, too:
   //    var obj = {};
@@ -10859,7 +10758,7 @@ class AccessCheckInfo: public Struct {
   DECL_ACCESSORS(indexed_callback, Object)
   DECL_ACCESSORS(data, Object)
 
-  static inline AccessCheckInfo* cast(Object* obj);
+  DECLARE_CAST(AccessCheckInfo)
 
   // Dispatched behavior.
   DECLARE_PRINTER(AccessCheckInfo)
@@ -10884,7 +10783,7 @@ class InterceptorInfo: public Struct {
   DECL_ACCESSORS(enumerator, Object)
   DECL_ACCESSORS(data, Object)
 
-  static inline InterceptorInfo* cast(Object* obj);
+  DECLARE_CAST(InterceptorInfo)
 
   // Dispatched behavior.
   DECLARE_PRINTER(InterceptorInfo)
@@ -10908,7 +10807,7 @@ class CallHandlerInfo: public Struct {
   DECL_ACCESSORS(callback, Object)
   DECL_ACCESSORS(data, Object)
 
-  static inline CallHandlerInfo* cast(Object* obj);
+  DECLARE_CAST(CallHandlerInfo)
 
   // Dispatched behavior.
   DECLARE_PRINTER(CallHandlerInfo)
@@ -10970,7 +10869,7 @@ class FunctionTemplateInfo: public TemplateInfo {
   DECL_BOOLEAN_ACCESSORS(remove_prototype)
   DECL_BOOLEAN_ACCESSORS(do_not_cache)
 
-  static inline FunctionTemplateInfo* cast(Object* obj);
+  DECLARE_CAST(FunctionTemplateInfo)
 
   // Dispatched behavior.
   DECLARE_PRINTER(FunctionTemplateInfo)
@@ -11019,7 +10918,7 @@ class ObjectTemplateInfo: public TemplateInfo {
   DECL_ACCESSORS(constructor, Object)
   DECL_ACCESSORS(internal_field_count, Object)
 
-  static inline ObjectTemplateInfo* cast(Object* obj);
+  DECLARE_CAST(ObjectTemplateInfo)
 
   // Dispatched behavior.
   DECLARE_PRINTER(ObjectTemplateInfo)
@@ -11037,7 +10936,7 @@ class SignatureInfo: public Struct {
   DECL_ACCESSORS(receiver, Object)
   DECL_ACCESSORS(args, Object)
 
-  static inline SignatureInfo* cast(Object* obj);
+  DECLARE_CAST(SignatureInfo)
 
   // Dispatched behavior.
   DECLARE_PRINTER(SignatureInfo)
@@ -11056,7 +10955,7 @@ class TypeSwitchInfo: public Struct {
  public:
   DECL_ACCESSORS(types, Object)
 
-  static inline TypeSwitchInfo* cast(Object* obj);
+  DECLARE_CAST(TypeSwitchInfo)
 
   // Dispatched behavior.
   DECLARE_PRINTER(TypeSwitchInfo)
@@ -11101,7 +11000,7 @@ class DebugInfo: public Struct {
   // Get the number of break points for this function.
   int GetBreakPointCount();
 
-  static inline DebugInfo* cast(Object* obj);
+  DECLARE_CAST(DebugInfo)
 
   // Dispatched behavior.
   DECLARE_PRINTER(DebugInfo)
@@ -11155,7 +11054,7 @@ class BreakPointInfo: public Struct {
   // Get the number of break points for this code position.
   int GetBreakPointCount();
 
-  static inline BreakPointInfo* cast(Object* obj);
+  DECLARE_CAST(BreakPointInfo)
 
   // Dispatched behavior.
   DECLARE_PRINTER(BreakPointInfo)
@@ -11176,6 +11075,7 @@ class BreakPointInfo: public Struct {
 
 #undef DECL_BOOLEAN_ACCESSORS
 #undef DECL_ACCESSORS
+#undef DECLARE_CAST
 #undef DECLARE_VERIFIER
 
 #define VISITOR_SYNCHRONIZATION_TAGS_LIST(V)                            \

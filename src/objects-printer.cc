@@ -1024,8 +1024,6 @@ void AccessorPair::AccessorPairPrint(FILE* out) {
   getter()->ShortPrint(out);
   PrintF(out, "\n - setter: ");
   setter()->ShortPrint(out);
-  PrintF(out, "\n - flag: ");
-  access_flags()->ShortPrint(out);
 }
 
 
