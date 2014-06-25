@@ -389,6 +389,9 @@
 ##############################################################################
 ['arch == ppc or arch == ppc64', {
 
+  # Test does not handle increased precision of multiply-add optimization
+  'numops-fuzz-part2': [PASS, FAIL]
+
 }],  # 'arch == ppc or arch == ppc64'
 
 ##############################################################################

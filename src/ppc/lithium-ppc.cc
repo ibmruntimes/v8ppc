@@ -1506,7 +1506,8 @@ LInstruction* LChunkBuilder::DoMul(HMul* instr) {
         // multiply-add in DoAdd.
         return NULL;
       }
-      if (instr == use->right() && use->IsAdd() && !use->left()->IsMul()) {
+      if (instr == use->right() && use->IsAdd() &&
+          !(use->left()->IsMul() && use->left()->HasOneUse())) {
         // This mul is the rhs of an add, where the lhs is not another mul.
         // The add and mul will be folded into a multiply-add in DoAdd.
         return NULL;
