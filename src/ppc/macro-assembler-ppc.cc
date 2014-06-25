@@ -3758,7 +3758,7 @@ void MacroAssembler::SetRelocatedValue(Register location,
 #endif
     ExtractBitMask(scratch, scratch, 0x1f * B16);
     cmpi(scratch, Operand(kConstantPoolRegister.code()));
-    Check(eq, kTheInstructionToPatchShouldBeALoadFromPp);
+    Check(eq, kTheInstructionToPatchShouldBeALoadFromConstantPool);
     // Scratch was clobbered. Restore it.
     lwz(scratch, MemOperand(location));
   }
@@ -3862,7 +3862,7 @@ void MacroAssembler::GetRelocatedValue(Register location,
 #endif
     ExtractBitMask(result, result, 0x1f * B16);
     cmpi(result, Operand(kConstantPoolRegister.code()));
-    Check(eq, kTheInstructionToPatchShouldBeALoadFromPp);
+    Check(eq, kTheInstructionToPatchShouldBeALoadFromConstantPool);
     lwz(result, MemOperand(location));
   }
   // Get the address of the constant and retrieve it.

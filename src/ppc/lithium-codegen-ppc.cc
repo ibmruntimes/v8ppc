@@ -5625,22 +5625,20 @@ void LCodeGen::DoAllocate(LAllocate* instr) {
   __ bind(deferred->exit());
 
   if (instr->hydrogen()->MustPrefillWithFiller()) {
+    STATIC_ASSERT(kHeapObjectTag == 1);
     if (instr->size()->IsConstantOperand()) {
       int32_t size = ToInteger32(LConstantOperand::cast(instr->size()));
-      __ LoadIntLiteral(scratch, size);
+      __ LoadIntLiteral(scratch, size - kHeapObjectTag);
     } else {
-      scratch = ToRegister(instr->size());
+      __ subi(scratch, ToRegister(instr->size()), Operand(kHeapObjectTag));
     }
-    __ subi(scratch, scratch, Operand(kPointerSize));
-    __ subi(result, result, Operand(kHeapObjectTag));
+    __ mov(scratch2, Operand(isolate()->factory()->one_pointer_filler_map()));
     Label loop;
     __ bind(&loop);
-    __ mov(scratch2, Operand(isolate()->factory()->one_pointer_filler_map()));
-    __ StorePX(scratch2, MemOperand(result, scratch));
     __ subi(scratch, scratch, Operand(kPointerSize));
+    __ StorePX(scratch2, MemOperand(result, scratch));
     __ cmpi(scratch, Operand::Zero());
     __ bge(&loop);
-    __ addi(result, result, Operand(kHeapObjectTag));
   }
 }
 

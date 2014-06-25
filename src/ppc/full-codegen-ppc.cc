@@ -4108,6 +4108,17 @@ void FullCodeGenerator::EmitFastAsciiArrayJoin(CallRuntime* expr) {
 }
 
 
+void FullCodeGenerator::EmitDebugIsActive(CallRuntime* expr) {
+  ASSERT(expr->arguments()->length() == 0);
+  ExternalReference debug_is_active =
+      ExternalReference::debug_is_active_address(isolate());
+  __ mov(ip, Operand(debug_is_active));
+  __ lbz(r3, MemOperand(ip));
+  __ SmiTag(r3);
+  context()->Plug(r3);
+}
+
+
 void FullCodeGenerator::VisitCallRuntime(CallRuntime* expr) {
   if (expr->function() != NULL &&
       expr->function()->intrinsic_type == Runtime::INLINE) {
@@ -4832,9 +4843,8 @@ void BackEdgeTable::PatchAt(Code* unoptimized_code,
                             Address pc,
                             BackEdgeState target_state,
                             Code* replacement_code) {
-  static const int kInstrSize = Assembler::kInstrSize;
   Address mov_address = Assembler::target_address_from_return_address(pc);
-  Address cmp_address = mov_address - 2 * kInstrSize;
+  Address cmp_address = mov_address - 2 * Assembler::kInstrSize;
   CodePatcher patcher(cmp_address, 1);
 
   switch (target_state) {
@@ -4879,9 +4889,8 @@ BackEdgeTable::BackEdgeState BackEdgeTable::GetBackEdgeState(
     Isolate* isolate,
     Code* unoptimized_code,
     Address pc) {
-  static const int kInstrSize = Assembler::kInstrSize;
   Address mov_address = Assembler::target_address_from_return_address(pc);
-  Address cmp_address = mov_address - 2 * kInstrSize;
+  Address cmp_address = mov_address - 2 * Assembler::kInstrSize;
   Address interrupt_address = Assembler::target_address_at(mov_address,
                                                            unoptimized_code);
 
