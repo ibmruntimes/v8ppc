@@ -345,12 +345,4 @@
   'test-accessors/Gc' : [SKIP],
 
 }],  # 'arch == nacl_ia32 or arch == nacl_x64'
-
-##############################################################################
-['arch == ppc or arch == ppc64', {
-
-  # penguin - remove disasm tests for PPC as they are not
-  # converted to test PPC ISA yet
-  'test-disasm-ppc/*': [SKIP],
-}],  # 'arch == ppc or arch == ppc64'
 ]
