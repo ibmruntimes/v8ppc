@@ -48,6 +48,7 @@ class CPU V8_FINAL BASE_EMBEDDED {
   static const int QUALCOMM = 0x51;
   int architecture() const { return architecture_; }
   int part() const { return part_; }
+  int cache_line_size() const { return cache_line_size_; }
 
   // ARM-specific part codes
   static const int ARM_CORTEX_A5 = 0xc05;
@@ -64,7 +65,8 @@ class CPU V8_FINAL BASE_EMBEDDED {
     PPC_POWER7,
     PPC_POWER8,
     PPC_G4,
-    PPC_G5
+    PPC_G5,
+    PPC_PA6T
   };
 
   // General features
@@ -103,6 +105,7 @@ class CPU V8_FINAL BASE_EMBEDDED {
   int implementer_;
   int architecture_;
   int part_;
+  int cache_line_size_;
   bool has_fpu_;
   bool has_cmov_;
   bool has_sahf_;

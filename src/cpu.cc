@@ -250,6 +250,7 @@ CPU::CPU() : stepping_(0),
              implementer_(0),
              architecture_(0),
              part_(0),
+             cache_line_size_(0),
              has_fpu_(false),
              has_cmov_(false),
              has_sahf_(false),
@@ -500,6 +501,7 @@ CPU::CPU() : stepping_(0),
 #if V8_OS_LINUX && !defined(USE_SIMULATOR)
   // Read processor info from /proc/self/auxv.
   char *auxv_cpu_type = NULL;
+  unsigned auxv_cache_line_size = 0;
   FILE* fp = fopen("/proc/self/auxv", "r");
   if (fp != NULL) {
 #if V8_TARGET_ARCH_PPC64
@@ -515,6 +517,14 @@ CPU::CPU() : stepping_(0),
       if (entry.a_type == AT_PLATFORM) {
         auxv_cpu_type = reinterpret_cast<char*>(entry.a_un.a_val);
         break;
+      } else if (entry.a_type == AT_DCACHEBSIZE ||
+                 entry.a_type == AT_ICACHEBSIZE ||
+                 entry.a_type == AT_UCACHEBSIZE) {
+        unsigned cachebsize = entry.a_un.a_val;
+        if (cachebsize > 0 &&
+            (auxv_cache_line_size == 0 || cachebsize < auxv_cache_line_size)) {
+          auxv_cache_line_size = cachebsize;
+        }
       }
     }
     fclose(fp);
@@ -534,7 +544,13 @@ CPU::CPU() : stepping_(0),
       part_ = PPC_G5;
     } else if (strcmp(auxv_cpu_type, "ppc7450") == 0) {
       part_ = PPC_G4;
+    } else if (strcmp(auxv_cpu_type, "pa6t") == 0) {
+      part_ = PPC_PA6T;
     }
+  }
+
+  if (auxv_cache_line_size > 0) {
+    cache_line_size_ = auxv_cache_line_size;
   }
 #endif
 

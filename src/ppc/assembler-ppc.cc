@@ -74,6 +74,9 @@ void CpuFeatures::ProbeImpl(bool cross_compile) {
     // Assume support
     supported_ |= (1u << FPU);
   }
+  if (cpu.cache_line_size() != 0) {
+    cache_line_size_ = cpu.cache_line_size();
+  }
 #else
   // Fallback: assume frim is supported -- will implement processor
   // detection for other PPC platforms if required
