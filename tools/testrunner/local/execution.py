@@ -27,6 +27,7 @@
 
 
 import os
+import shutil
 import time
 
 from pool import Pool
@@ -60,9 +61,10 @@ def RunTest(job):
 class Runner(object):
 
   def __init__(self, suites, progress_indicator, context):
-    datapath = os.path.join("out", "testrunner_data")
-    self.perf_data_manager = perfdata.PerfDataManager(datapath)
+    self.datapath = os.path.join("out", "testrunner_data")
+    self.perf_data_manager = perfdata.PerfDataManager(self.datapath)
     self.perfdata = self.perf_data_manager.GetStore(context.arch, context.mode)
+    self.perf_failures = False
     self.tests = [ t for s in suites for t in s.tests ]
     if not context.no_sorting:
       for t in self.tests:
@@ -79,6 +81,50 @@ class Runner(object):
     self.remaining = num_tests
     self.failed = []
     self.crashed = 0
+    self.reran_tests = 0
+
+  def _RunPerfSafe(self, fun):
+    try:
+      fun()
+    except Exception, e:
+      print("PerfData exception: %s" % e)
+      self.perf_failures = True
+
+  def _GetJob(self, test):
+    command = self.GetCommand(test)
+    timeout = self.context.timeout
+    if ("--stress-opt" in test.flags or
+        "--stress-opt" in self.context.mode_flags or
+        "--stress-opt" in self.context.extra_flags):
+      timeout *= 4
+    if test.dependency is not None:
+      dep_command = [ c.replace(test.path, test.dependency) for c in command ]
+    else:
+      dep_command = None
+    return Job(command, dep_command, test.id, timeout, self.context.verbose)
+
+  def _MaybeRerun(self, pool, test):
+    if test.run <= self.context.rerun_failures_count + 1:
+      # Possibly rerun this test if its run count is below the maximum per
+      # test. +1 as the flag controls reruns not including the first run.
+      if test.run == 1:
+        # Count the overall number of reran tests on the first rerun.
+        if self.reran_tests < self.context.rerun_failures_max:
+          self.reran_tests += 1
+        else:
+          # Don't rerun this if the overall number of rerun tests has been
+          # reached.
+          return
+      if test.run >= 2 and test.duration > self.context.timeout / 20.0:
+        # Rerun slow tests at most once.
+        return
+
+      # Rerun this test.
+      test.duration = None
+      test.output = None
+      test.run += 1
+      pool.add([self._GetJob(test)])
+      self.remaining += 1
 
   def Run(self, jobs):
     self.indicator.Starting()
@@ -100,23 +146,12 @@ class Runner(object):
       assert test.id >= 0
       test_map[test.id] = test
       try:
-        command = self.GetCommand(test)
+        queue.append([self._GetJob(test)])
       except Exception, e:
         # If this failed, save the exception and re-raise it later (after
         # all other tests have had a chance to run).
         queued_exception = e
         continue
-      timeout = self.context.timeout
-      if ("--stress-opt" in test.flags or
-          "--stress-opt" in self.context.mode_flags or
-          "--stress-opt" in self.context.extra_flags):
-        timeout *= 4
-      if test.dependency is not None:
-        dep_command = [ c.replace(test.path, test.dependency) for c in command ]
-      else:
-        dep_command = None
-      job = Job(command, dep_command, test.id, timeout, self.context.verbose)
-      queue.append([job])
     try:
       it = pool.imap_unordered(RunTest, queue)
       for result in it:
@@ -130,17 +165,21 @@ class Runner(object):
           if test.output.HasCrashed():
             self.crashed += 1
         else:
+          self._RunPerfSafe(lambda: self.perfdata.UpdatePerfData(test))
           self.succeeded += 1
         self.remaining -= 1
-        try:
-          self.perfdata.UpdatePerfData(test)
-        except Exception, e:
-          print("UpdatePerfData exception: %s" % e)
-          pass  # Just keep working.
         self.indicator.HasRun(test, has_unexpected_output)
+        if has_unexpected_output:
+          # Rerun test failures after the indicator has processed the results.
+          self._MaybeRerun(pool, test)
     finally:
       pool.terminate()
-      self.perf_data_manager.close()
+      self._RunPerfSafe(lambda: self.perf_data_manager.close())
+      if self.perf_failures:
+        # Nuke perf data in case of failures. This might not work on windows as
+        # some files might still be open.
+        print "Deleting perf test data due to db corruption."
+        shutil.rmtree(self.datapath)
     if queued_exception:
       raise queued_exception
 

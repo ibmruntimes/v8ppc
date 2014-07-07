@@ -39,13 +39,13 @@
 #include "include/v8-util.h"
 #include "src/api.h"
 #include "src/arguments.h"
+#include "src/base/platform/platform.h"
 #include "src/compilation-cache.h"
 #include "src/cpu-profiler.h"
 #include "src/execution.h"
 #include "src/isolate.h"
 #include "src/objects.h"
 #include "src/parser.h"
-#include "src/platform.h"
 #include "src/snapshot.h"
 #include "src/unicode-inl.h"
 #include "src/utils.h"
@@ -5443,7 +5443,7 @@ THREADED_TEST(Equality) {
   CHECK(v8_num(1)->StrictEquals(v8_num(1)));
   CHECK(!v8_num(1)->StrictEquals(v8_num(2)));
   CHECK(v8_num(0.0)->StrictEquals(v8_num(-0.0)));
-  Local<Value> not_a_number = v8_num(i::OS::nan_value());
+  Local<Value> not_a_number = v8_num(v8::base::OS::nan_value());
   CHECK(!not_a_number->StrictEquals(not_a_number));
   CHECK(v8::False(isolate)->StrictEquals(v8::False(isolate)));
   CHECK(!v8::False(isolate)->StrictEquals(v8::Undefined(isolate)));
@@ -6738,6 +6738,33 @@ TEST(SimpleExtensions) {
   Context::Scope lock(context);
   v8::Handle<Value> result = CompileRun("Foo()");
   CHECK_EQ(result, v8::Integer::New(CcTest::isolate(), 4));
+}
+
+
+static const char* kStackTraceFromExtensionSource =
+  "function foo() {"
+  "  throw new Error();"
+  "}"
+  "function bar() {"
+  "  foo();"
+  "}";
+
+
+TEST(StackTraceInExtension) {
+  v8::HandleScope handle_scope(CcTest::isolate());
+  v8::RegisterExtension(new Extension("stacktracetest",
+                        kStackTraceFromExtensionSource));
+  const char* extension_names[] = { "stacktracetest" };
+  v8::ExtensionConfiguration extensions(1, extension_names);
+  v8::Handle<Context> context =
+      Context::New(CcTest::isolate(), &extensions);
+  Context::Scope lock(context);
+  CompileRun("function user() { bar(); }"
+             "var error;"
+             "try{ user(); } catch (e) { error = e; }");
+  CHECK_EQ(-1, CompileRun("error.stack.indexOf('foo')")->Int32Value());
+  CHECK_EQ(-1, CompileRun("error.stack.indexOf('bar')")->Int32Value());
+  CHECK_NE(-1, CompileRun("error.stack.indexOf('user')")->Int32Value());
 }
 
 
@@ -13167,7 +13194,7 @@ THREADED_TEST(ObjectGetConstructorName) {
 
 
 bool ApiTestFuzzer::fuzzing_ = false;
-i::Semaphore ApiTestFuzzer::all_tests_done_(0);
+v8::base::Semaphore ApiTestFuzzer::all_tests_done_(0);
 int ApiTestFuzzer::active_tests_;
 int ApiTestFuzzer::tests_being_run_;
 int ApiTestFuzzer::current_;
@@ -15229,7 +15256,7 @@ struct RegExpInterruptionData {
 } regexp_interruption_data;
 
 
-class RegExpInterruptionThread : public i::Thread {
+class RegExpInterruptionThread : public v8::base::Thread {
  public:
   explicit RegExpInterruptionThread(v8::Isolate* isolate)
       : Thread("TimeoutThread"), isolate_(isolate) {}
@@ -15238,10 +15265,10 @@ class RegExpInterruptionThread : public i::Thread {
     for (regexp_interruption_data.loop_count = 0;
          regexp_interruption_data.loop_count < 7;
          regexp_interruption_data.loop_count++) {
-      i::OS::Sleep(50);  // Wait a bit before requesting GC.
+      v8::base::OS::Sleep(50);  // Wait a bit before requesting GC.
       reinterpret_cast<i::Isolate*>(isolate_)->stack_guard()->RequestGC();
     }
-    i::OS::Sleep(50);  // Wait a bit before terminating.
+    v8::base::OS::Sleep(50);  // Wait a bit before terminating.
     v8::V8::TerminateExecution(isolate_);
   }
 
@@ -16323,7 +16350,7 @@ static void ObjectWithExternalArrayTestHelper(
   CHECK_EQ(0, result->Int32Value());
   if (array_type == v8::kExternalFloat64Array ||
       array_type == v8::kExternalFloat32Array) {
-    CHECK_EQ(static_cast<int>(i::OS::nan_value()),
+    CHECK_EQ(static_cast<int>(v8::base::OS::nan_value()),
              static_cast<int>(
                  i::Object::GetElement(
                      isolate, jsobj, 7).ToHandleChecked()->Number()));
@@ -18102,7 +18129,7 @@ static uint64_t DoubleToBits(double value) {
 static double DoubleToDateTime(double input) {
   double date_limit = 864e13;
   if (std::isnan(input) || input < -date_limit || input > date_limit) {
-    return i::OS::nan_value();
+    return v8::base::OS::nan_value();
   }
   return (input < 0) ? -(std::floor(-input)) : std::floor(input);
 }
@@ -19433,7 +19460,7 @@ static int CalcFibonacci(v8::Isolate* isolate, int limit) {
   return static_cast<int>(value->NumberValue());
 }
 
-class IsolateThread : public v8::internal::Thread {
+class IsolateThread : public v8::base::Thread {
  public:
   IsolateThread(v8::Isolate* isolate, int fib_limit)
       : Thread("IsolateThread"),
@@ -19507,7 +19534,7 @@ TEST(IsolateDifferentContexts) {
   isolate->Dispose();
 }
 
-class InitDefaultIsolateThread : public v8::internal::Thread {
+class InitDefaultIsolateThread : public v8::base::Thread {
  public:
   enum TestCase {
     SetResourceConstraints,
@@ -20617,13 +20644,13 @@ uint8_t callback_fired = 0;
 
 
 void CallCompletedCallback1() {
-  i::OS::Print("Firing callback 1.\n");
+  v8::base::OS::Print("Firing callback 1.\n");
   callback_fired ^= 1;  // Toggle first bit.
 }
 
 
 void CallCompletedCallback2() {
-  i::OS::Print("Firing callback 2.\n");
+  v8::base::OS::Print("Firing callback 2.\n");
   callback_fired ^= 2;  // Toggle second bit.
 }
 
@@ -20632,15 +20659,15 @@ void RecursiveCall(const v8::FunctionCallbackInfo<v8::Value>& args) {
   int32_t level = args[0]->Int32Value();
   if (level < 3) {
     level++;
-    i::OS::Print("Entering recursion level %d.\n", level);
+    v8::base::OS::Print("Entering recursion level %d.\n", level);
     char script[64];
     i::Vector<char> script_vector(script, sizeof(script));
     i::SNPrintF(script_vector, "recursion(%d)", level);
     CompileRun(script_vector.start());
-    i::OS::Print("Leaving recursion level %d.\n", level);
+    v8::base::OS::Print("Leaving recursion level %d.\n", level);
     CHECK_EQ(0, callback_fired);
   } else {
-    i::OS::Print("Recursion ends.\n");
+    v8::base::OS::Print("Recursion ends.\n");
     CHECK_EQ(0, callback_fired);
   }
 }
@@ -20657,19 +20684,19 @@ TEST(CallCompletedCallback) {
   env->GetIsolate()->AddCallCompletedCallback(CallCompletedCallback1);
   env->GetIsolate()->AddCallCompletedCallback(CallCompletedCallback1);
   env->GetIsolate()->AddCallCompletedCallback(CallCompletedCallback2);
-  i::OS::Print("--- Script (1) ---\n");
+  v8::base::OS::Print("--- Script (1) ---\n");
   Local<Script> script = v8::Script::Compile(
       v8::String::NewFromUtf8(env->GetIsolate(), "recursion(0)"));
   script->Run();
   CHECK_EQ(3, callback_fired);
 
-  i::OS::Print("\n--- Script (2) ---\n");
+  v8::base::OS::Print("\n--- Script (2) ---\n");
   callback_fired = 0;
   env->GetIsolate()->RemoveCallCompletedCallback(CallCompletedCallback1);
   script->Run();
   CHECK_EQ(2, callback_fired);
 
-  i::OS::Print("\n--- Function ---\n");
+  v8::base::OS::Print("\n--- Function ---\n");
   callback_fired = 0;
   Local<Function> recursive_function =
       Local<Function>::Cast(env->Global()->Get(v8_str("recursion")));
@@ -21577,7 +21604,7 @@ class ThreadInterruptTest {
  private:
   static const int kExpectedValue = 1;
 
-  class InterruptThread : public i::Thread {
+  class InterruptThread : public v8::base::Thread {
    public:
     explicit InterruptThread(ThreadInterruptTest* test)
         : Thread("InterruptThread"), test_(test) {}
@@ -21586,7 +21613,7 @@ class ThreadInterruptTest {
       struct sigaction action;
 
       // Ensure that we'll enter waiting condition
-      i::OS::Sleep(100);
+      v8::base::OS::Sleep(100);
 
       // Setup signal handler
       memset(&action, 0, sizeof(action));
@@ -21597,7 +21624,7 @@ class ThreadInterruptTest {
       kill(getpid(), SIGCHLD);
 
       // Ensure that if wait has returned because of error
-      i::OS::Sleep(100);
+      v8::base::OS::Sleep(100);
 
       // Set value and signal semaphore
       test_->sem_value_ = 1;
@@ -21611,7 +21638,7 @@ class ThreadInterruptTest {
      ThreadInterruptTest* test_;
   };
 
-  i::Semaphore sem_;
+  v8::base::Semaphore sem_;
   volatile int sem_value_;
 };
 
@@ -21790,8 +21817,8 @@ TEST(AccessCheckThrows) {
   CheckCorrectThrow("JSON.stringify(other)");
   CheckCorrectThrow("has_own_property(other, 'x')");
   CheckCorrectThrow("%GetProperty(other, 'x')");
-  CheckCorrectThrow("%SetProperty(other, 'x', 'foo', 1, 0)");
-  CheckCorrectThrow("%IgnoreAttributesAndSetProperty(other, 'x', 'foo')");
+  CheckCorrectThrow("%SetProperty(other, 'x', 'foo', 0)");
+  CheckCorrectThrow("%AddProperty(other, 'x', 'foo', 1)");
   CheckCorrectThrow("%DeleteProperty(other, 'x', 0)");
   CheckCorrectThrow("%DeleteProperty(other, '1', 0)");
   CheckCorrectThrow("%HasOwnProperty(other, 'x')");
@@ -21801,7 +21828,7 @@ TEST(AccessCheckThrows) {
   CheckCorrectThrow("%GetPropertyNames(other)");
   // PROPERTY_ATTRIBUTES_NONE = 0
   CheckCorrectThrow("%GetOwnPropertyNames(other, 0)");
-  CheckCorrectThrow("%DefineOrRedefineAccessorProperty("
+  CheckCorrectThrow("%DefineAccessorPropertyUnchecked("
                         "other, 'x', null, null, 1)");
 
   // Reset the failed access check callback so it does not influence
@@ -21971,7 +21998,7 @@ class RequestInterruptTestBase {
 
   LocalContext env_;
   v8::Isolate* isolate_;
-  i::Semaphore sem_;
+  v8::base::Semaphore sem_;
   int warmup_;
   bool should_continue_;
 };
@@ -21987,7 +22014,7 @@ class RequestInterruptTestBaseWithSimpleInterrupt
   }
 
  private:
-  class InterruptThread : public i::Thread {
+  class InterruptThread : public v8::base::Thread {
    public:
     explicit InterruptThread(RequestInterruptTestBase* test)
         : Thread("RequestInterruptTest"), test_(test) {}
@@ -22207,7 +22234,7 @@ class ClearInterruptFromAnotherThread
   }
 
  private:
-  class InterruptThread : public i::Thread {
+  class InterruptThread : public v8::base::Thread {
    public:
     explicit InterruptThread(ClearInterruptFromAnotherThread* test)
         : Thread("RequestInterruptTest"), test_(test) {}
@@ -22224,7 +22251,7 @@ class ClearInterruptFromAnotherThread
       ClearInterruptFromAnotherThread* test =
           reinterpret_cast<ClearInterruptFromAnotherThread*>(data);
       test->sem_.Signal();
-      bool success = test->sem2_.WaitFor(i::TimeDelta::FromSeconds(2));
+      bool success = test->sem2_.WaitFor(v8::base::TimeDelta::FromSeconds(2));
       // Crash instead of timeout to make this failure more prominent.
       CHECK(success);
       test->should_continue_ = false;
@@ -22235,7 +22262,7 @@ class ClearInterruptFromAnotherThread
   };
 
   InterruptThread i_thread;
-  i::Semaphore sem2_;
+  v8::base::Semaphore sem2_;
 };
 
 
@@ -22831,5 +22858,115 @@ TEST(CrossActivationEval) {
       v8::FunctionTemplate::New(isolate, CallEval)->GetFunction());
   Local<Value> result = CompileRun("CallEval();");
   CHECK_EQ(result, v8::Integer::New(isolate, 1));
+}
+
+
+void SourceURLHelper(const char* source, const char* expected_source_url,
+                     const char* expected_source_mapping_url) {
+  Local<Script> script = v8_compile(source);
+  if (expected_source_url != NULL) {
+    v8::String::Utf8Value url(script->GetUnboundScript()->GetSourceURL());
+    CHECK_EQ(expected_source_url, *url);
+  } else {
+    CHECK(script->GetUnboundScript()->GetSourceURL()->IsUndefined());
+  }
+  if (expected_source_mapping_url != NULL) {
+    v8::String::Utf8Value url(
+        script->GetUnboundScript()->GetSourceMappingURL());
+    CHECK_EQ(expected_source_mapping_url, *url);
+  } else {
+    CHECK(script->GetUnboundScript()->GetSourceMappingURL()->IsUndefined());
+  }
+}
+
+
+TEST(ScriptSourceURLAndSourceMappingURL) {
+  LocalContext env;
+  v8::Isolate* isolate = env->GetIsolate();
+  v8::HandleScope scope(isolate);
+  SourceURLHelper("function foo() {}\n"
+                  "//# sourceURL=bar1.js\n", "bar1.js", NULL);
+  SourceURLHelper("function foo() {}\n"
+                  "//# sourceMappingURL=bar2.js\n", NULL, "bar2.js");
+
+  // Both sourceURL and sourceMappingURL.
+  SourceURLHelper("function foo() {}\n"
+                  "//# sourceURL=bar3.js\n"
+                  "//# sourceMappingURL=bar4.js\n", "bar3.js", "bar4.js");
+
+  // Two source URLs; the first one is ignored.
+  SourceURLHelper("function foo() {}\n"
+                  "//# sourceURL=ignoreme.js\n"
+                  "//# sourceURL=bar5.js\n", "bar5.js", NULL);
+  SourceURLHelper("function foo() {}\n"
+                  "//# sourceMappingURL=ignoreme.js\n"
+                  "//# sourceMappingURL=bar6.js\n", NULL, "bar6.js");
+
+  // SourceURL or sourceMappingURL in the middle of the script.
+  SourceURLHelper("function foo() {}\n"
+                  "//# sourceURL=bar7.js\n"
+                  "function baz() {}\n", "bar7.js", NULL);
+  SourceURLHelper("function foo() {}\n"
+                  "//# sourceMappingURL=bar8.js\n"
+                  "function baz() {}\n", NULL, "bar8.js");
+
+  // Too much whitespace.
+  SourceURLHelper("function foo() {}\n"
+                  "//#  sourceURL=bar9.js\n"
+                  "//#  sourceMappingURL=bar10.js\n", NULL, NULL);
+  SourceURLHelper("function foo() {}\n"
+                  "//# sourceURL =bar11.js\n"
+                  "//# sourceMappingURL =bar12.js\n", NULL, NULL);
+
+  // Disallowed characters in value.
+  SourceURLHelper("function foo() {}\n"
+                  "//# sourceURL=bar13 .js   \n"
+                  "//# sourceMappingURL=bar14 .js \n",
+                  NULL, NULL);
+  SourceURLHelper("function foo() {}\n"
+                  "//# sourceURL=bar15\t.js   \n"
+                  "//# sourceMappingURL=bar16\t.js \n",
+                  NULL, NULL);
+  SourceURLHelper("function foo() {}\n"
+                  "//# sourceURL=bar17'.js   \n"
+                  "//# sourceMappingURL=bar18'.js \n",
+                  NULL, NULL);
+  SourceURLHelper("function foo() {}\n"
+                  "//# sourceURL=bar19\".js   \n"
+                  "//# sourceMappingURL=bar20\".js \n",
+                  NULL, NULL);
+
+  // Not too much whitespace.
+  SourceURLHelper("function foo() {}\n"
+                  "//# sourceURL=  bar21.js   \n"
+                  "//# sourceMappingURL=  bar22.js \n", "bar21.js", "bar22.js");
+}
+
+
+TEST(GetOwnPropertyDescriptor) {
+  LocalContext env;
+  v8::Isolate* isolate = env->GetIsolate();
+  v8::HandleScope scope(isolate);
+  CompileRun(
+    "var x = { value : 13};"
+    "Object.defineProperty(x, 'p0', {value : 12});"
+    "Object.defineProperty(x, 'p1', {"
+    "  set : function(value) { this.value = value; },"
+    "  get : function() { return this.value; },"
+    "});");
+  Local<Object> x = Local<Object>::Cast(env->Global()->Get(v8_str("x")));
+  Local<Value> desc = x->GetOwnPropertyDescriptor(v8_str("no_prop"));
+  CHECK(desc->IsUndefined());
+  desc = x->GetOwnPropertyDescriptor(v8_str("p0"));
+  CHECK_EQ(v8_num(12), Local<Object>::Cast(desc)->Get(v8_str("value")));
+  desc = x->GetOwnPropertyDescriptor(v8_str("p1"));
+  Local<Function> set =
+    Local<Function>::Cast(Local<Object>::Cast(desc)->Get(v8_str("set")));
+  Local<Function> get =
+    Local<Function>::Cast(Local<Object>::Cast(desc)->Get(v8_str("get")));
+  CHECK_EQ(v8_num(13), get->Call(x, 0, NULL));
+  Handle<Value> args[] = { v8_num(14) };
+  set->Call(x, 1, args);
+  CHECK_EQ(v8_num(14), get->Call(x, 0, NULL));
 }
 #endif  // !TEST_API_IN_PARTS || TEST_API_PART2

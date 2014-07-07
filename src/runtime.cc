@@ -11,12 +11,13 @@
 #include "src/allocation-site-scopes.h"
 #include "src/api.h"
 #include "src/arguments.h"
+#include "src/base/cpu.h"
+#include "src/base/platform/platform.h"
 #include "src/bootstrapper.h"
 #include "src/codegen.h"
 #include "src/compilation-cache.h"
 #include "src/compiler.h"
 #include "src/conversions.h"
-#include "src/cpu.h"
 #include "src/cpu-profiler.h"
 #include "src/date.h"
 #include "src/dateparser-inl.h"
@@ -33,7 +34,6 @@
 #include "src/liveedit.h"
 #include "src/misc-intrinsics.h"
 #include "src/parser.h"
-#include "src/platform.h"
 #include "src/runtime.h"
 #include "src/runtime-profiler.h"
 #include "src/scopeinfo.h"
@@ -273,8 +273,12 @@ MUST_USE_RESULT static MaybeHandle<Object> CreateObjectLiteralBoilerplate(
     if (key->IsInternalizedString()) {
       if (Handle<String>::cast(key)->AsArrayIndex(&element_index)) {
         // Array index as string (uint32).
-        maybe_result = JSObject::SetOwnElement(
-            boilerplate, element_index, value, SLOPPY);
+        if (value->IsUninitialized()) {
+          maybe_result = value;
+        } else {
+          maybe_result = JSObject::SetOwnElement(
+              boilerplate, element_index, value, SLOPPY);
+        }
       } else {
         Handle<String> name(String::cast(*key));
         ASSERT(!name->AsArrayIndex(&element_index));
@@ -284,8 +288,12 @@ MUST_USE_RESULT static MaybeHandle<Object> CreateObjectLiteralBoilerplate(
       }
     } else if (key->ToArrayIndex(&element_index)) {
       // Array index (uint32).
-      maybe_result = JSObject::SetOwnElement(
-          boilerplate, element_index, value, SLOPPY);
+      if (value->IsUninitialized()) {
+        maybe_result = value;
+      } else {
+        maybe_result = JSObject::SetOwnElement(
+            boilerplate, element_index, value, SLOPPY);
+      }
     } else {
       // Non-uint32 number.
       ASSERT(key->IsNumber());
@@ -295,8 +303,7 @@ MUST_USE_RESULT static MaybeHandle<Object> CreateObjectLiteralBoilerplate(
       const char* str = DoubleToCString(num, buffer);
       Handle<String> name = isolate->factory()->NewStringFromAsciiChecked(str);
       maybe_result = JSObject::SetOwnPropertyIgnoreAttributes(
-          boilerplate, name, value, NONE,
-          value_type, mode);
+          boilerplate, name, value, NONE, value_type, mode);
     }
     // If setting the property on the boilerplate throws an
     // exception, the exception is converted to an empty handle in
@@ -310,7 +317,7 @@ MUST_USE_RESULT static MaybeHandle<Object> CreateObjectLiteralBoilerplate(
   // computed properties have been assigned so that we can generate
   // constant function properties.
   if (should_transform && !has_function_literal) {
-    JSObject::TransformToFastProperties(
+    JSObject::MigrateSlowToFast(
         boilerplate, boilerplate->map()->unused_property_fields());
   }
 
@@ -460,7 +467,7 @@ MUST_USE_RESULT static MaybeHandle<Object> CreateLiteralBoilerplate(
 }
 
 
-RUNTIME_FUNCTION(RuntimeHidden_CreateObjectLiteral) {
+RUNTIME_FUNCTION(Runtime_CreateObjectLiteral) {
   HandleScope scope(isolate);
   ASSERT(args.length() == 4);
   CONVERT_ARG_HANDLE_CHECKED(FixedArray, literals, 0);
@@ -574,7 +581,7 @@ static MaybeHandle<JSObject> CreateArrayLiteralImpl(Isolate* isolate,
 }
 
 
-RUNTIME_FUNCTION(RuntimeHidden_CreateArrayLiteral) {
+RUNTIME_FUNCTION(Runtime_CreateArrayLiteral) {
   HandleScope scope(isolate);
   ASSERT(args.length() == 4);
   CONVERT_ARG_HANDLE_CHECKED(FixedArray, literals, 0);
@@ -590,7 +597,7 @@ RUNTIME_FUNCTION(RuntimeHidden_CreateArrayLiteral) {
 }
 
 
-RUNTIME_FUNCTION(RuntimeHidden_CreateArrayLiteralStubBailout) {
+RUNTIME_FUNCTION(Runtime_CreateArrayLiteralStubBailout) {
   HandleScope scope(isolate);
   ASSERT(args.length() == 3);
   CONVERT_ARG_HANDLE_CHECKED(FixedArray, literals, 0);
@@ -1542,7 +1549,7 @@ RUNTIME_FUNCTION(Runtime_SetAdd) {
   Handle<OrderedHashSet> table(OrderedHashSet::cast(holder->table()));
   table = OrderedHashSet::Add(table, key);
   holder->set_table(*table);
-  return isolate->heap()->undefined_value();
+  return *holder;
 }
 
 
@@ -1606,10 +1613,11 @@ RUNTIME_FUNCTION(Runtime_SetIteratorInitialize) {
 
 
 RUNTIME_FUNCTION(Runtime_SetIteratorNext) {
-  HandleScope scope(isolate);
-  ASSERT(args.length() == 1);
-  CONVERT_ARG_HANDLE_CHECKED(JSSetIterator, holder, 0);
-  return *JSSetIterator::Next(holder);
+  SealHandleScope shs(isolate);
+  ASSERT(args.length() == 2);
+  CONVERT_ARG_CHECKED(JSSetIterator, holder, 0);
+  CONVERT_ARG_CHECKED(JSArray, value_array, 1);
+  return holder->Next(value_array);
 }
 
 
@@ -1679,7 +1687,7 @@ RUNTIME_FUNCTION(Runtime_MapSet) {
   Handle<OrderedHashMap> table(OrderedHashMap::cast(holder->table()));
   Handle<OrderedHashMap> new_table = OrderedHashMap::Put(table, key, value);
   holder->set_table(*new_table);
-  return isolate->heap()->undefined_value();
+  return *holder;
 }
 
 
@@ -1710,10 +1718,11 @@ RUNTIME_FUNCTION(Runtime_MapIteratorInitialize) {
 
 
 RUNTIME_FUNCTION(Runtime_MapIteratorNext) {
-  HandleScope scope(isolate);
-  ASSERT(args.length() == 1);
-  CONVERT_ARG_HANDLE_CHECKED(JSMapIterator, holder, 0);
-  return *JSMapIterator::Next(holder);
+  SealHandleScope shs(isolate);
+  ASSERT(args.length() == 2);
+  CONVERT_ARG_CHECKED(JSMapIterator, holder, 0);
+  CONVERT_ARG_CHECKED(JSArray, value_array, 1);
+  return holder->Next(value_array);
 }
 
 
@@ -1792,7 +1801,7 @@ RUNTIME_FUNCTION(Runtime_WeakCollectionSet) {
   RUNTIME_ASSERT(table->IsKey(*key));
   Handle<ObjectHashTable> new_table = ObjectHashTable::Put(table, key, value);
   weak_collection->set_table(*new_table);
-  return isolate->heap()->undefined_value();
+  return *weak_collection;
 }
 
 
@@ -2097,37 +2106,6 @@ RUNTIME_FUNCTION(Runtime_EnableAccessChecks) {
 }
 
 
-// Transform getter or setter into something DefineAccessor can handle.
-static Handle<Object> InstantiateAccessorComponent(Isolate* isolate,
-                                                   Handle<Object> component) {
-  if (component->IsUndefined()) return isolate->factory()->null_value();
-  Handle<FunctionTemplateInfo> info =
-      Handle<FunctionTemplateInfo>::cast(component);
-  return Utils::OpenHandle(*Utils::ToLocal(info)->GetFunction());
-}
-
-
-RUNTIME_FUNCTION(Runtime_SetAccessorProperty) {
-  HandleScope scope(isolate);
-  ASSERT(args.length() == 5);
-  CONVERT_ARG_HANDLE_CHECKED(JSObject, object, 0);
-  CONVERT_ARG_HANDLE_CHECKED(Name, name, 1);
-  CONVERT_ARG_HANDLE_CHECKED(Object, getter, 2);
-  CONVERT_ARG_HANDLE_CHECKED(Object, setter, 3);
-  CONVERT_SMI_ARG_CHECKED(attribute, 4);
-  RUNTIME_ASSERT(getter->IsUndefined() || getter->IsFunctionTemplateInfo());
-  RUNTIME_ASSERT(setter->IsUndefined() || setter->IsFunctionTemplateInfo());
-  RUNTIME_ASSERT(PropertyDetails::AttributesField::is_valid(
-      static_cast<PropertyAttributes>(attribute)));
-  JSObject::DefineAccessor(object,
-                           name,
-                           InstantiateAccessorComponent(isolate, getter),
-                           InstantiateAccessorComponent(isolate, setter),
-                           static_cast<PropertyAttributes>(attribute));
-  return isolate->heap()->undefined_value();
-}
-
-
 static Object* ThrowRedeclarationError(Isolate* isolate, Handle<String> name) {
   HandleScope scope(isolate);
   Handle<Object> args[1] = { name };
@@ -2137,11 +2115,10 @@ static Object* ThrowRedeclarationError(Isolate* isolate, Handle<String> name) {
 }
 
 
-RUNTIME_FUNCTION(RuntimeHidden_DeclareGlobals) {
+RUNTIME_FUNCTION(Runtime_DeclareGlobals) {
   HandleScope scope(isolate);
   ASSERT(args.length() == 3);
-  Handle<GlobalObject> global = Handle<GlobalObject>(
-      isolate->context()->global_object());
+  Handle<GlobalObject> global(isolate->global_object());
 
   CONVERT_ARG_HANDLE_CHECKED(Context, context, 0);
   CONVERT_ARG_HANDLE_CHECKED(FixedArray, pairs, 1);
@@ -2233,7 +2210,7 @@ RUNTIME_FUNCTION(RuntimeHidden_DeclareGlobals) {
 }
 
 
-RUNTIME_FUNCTION(RuntimeHidden_DeclareContextSlot) {
+RUNTIME_FUNCTION(Runtime_DeclareContextSlot) {
   HandleScope scope(isolate);
   ASSERT(args.length() == 4);
 
@@ -2393,7 +2370,7 @@ RUNTIME_FUNCTION(Runtime_InitializeVarGlobal) {
 }
 
 
-RUNTIME_FUNCTION(RuntimeHidden_InitializeConstGlobal) {
+RUNTIME_FUNCTION(Runtime_InitializeConstGlobal) {
   SealHandleScope shs(isolate);
   // All constants are declared with an initial value. The name
   // of the constant is the first argument and the initial value
@@ -2419,10 +2396,7 @@ RUNTIME_FUNCTION(RuntimeHidden_InitializeConstGlobal) {
   if (!lookup.IsFound()) {
     HandleScope handle_scope(isolate);
     Handle<GlobalObject> global(isolate->context()->global_object());
-    RETURN_FAILURE_ON_EXCEPTION(
-        isolate,
-        JSObject::SetOwnPropertyIgnoreAttributes(global, name, value,
-                                                 attributes));
+    JSObject::AddProperty(global, name, value, attributes);
     return *value;
   }
 
@@ -2469,7 +2443,7 @@ RUNTIME_FUNCTION(RuntimeHidden_InitializeConstGlobal) {
 }
 
 
-RUNTIME_FUNCTION(RuntimeHidden_InitializeConstContextSlot) {
+RUNTIME_FUNCTION(Runtime_InitializeConstContextSlot) {
   HandleScope scope(isolate);
   ASSERT(args.length() == 3);
 
@@ -2580,7 +2554,7 @@ RUNTIME_FUNCTION(Runtime_OptimizeObjectForAddingMultipleProperties) {
 }
 
 
-RUNTIME_FUNCTION(RuntimeHidden_RegExpExec) {
+RUNTIME_FUNCTION(Runtime_RegExpExecRT) {
   HandleScope scope(isolate);
   ASSERT(args.length() == 4);
   CONVERT_ARG_HANDLE_CHECKED(JSRegExp, regexp, 0);
@@ -2600,7 +2574,7 @@ RUNTIME_FUNCTION(RuntimeHidden_RegExpExec) {
 }
 
 
-RUNTIME_FUNCTION(RuntimeHidden_RegExpConstructResult) {
+RUNTIME_FUNCTION(Runtime_RegExpConstructResult) {
   HandleScope handle_scope(isolate);
   ASSERT(args.length() == 3);
   CONVERT_SMI_ARG_CHECKED(size, 0);
@@ -2766,13 +2740,11 @@ RUNTIME_FUNCTION(Runtime_GetDefaultReceiver) {
   // Returns undefined for strict or native functions, or
   // the associated global receiver for "normal" functions.
 
-  Context* native_context =
-      function->context()->global_object()->native_context();
-  return native_context->global_object()->global_receiver();
+  return function->global_proxy();
 }
 
 
-RUNTIME_FUNCTION(RuntimeHidden_MaterializeRegExpLiteral) {
+RUNTIME_FUNCTION(Runtime_MaterializeRegExpLiteral) {
   HandleScope scope(isolate);
   ASSERT(args.length() == 4);
   CONVERT_ARG_HANDLE_CHECKED(FixedArray, literals, 0);
@@ -3021,7 +2993,7 @@ RUNTIME_FUNCTION(Runtime_SetCode) {
 }
 
 
-RUNTIME_FUNCTION(RuntimeHidden_CreateJSGeneratorObject) {
+RUNTIME_FUNCTION(Runtime_CreateJSGeneratorObject) {
   HandleScope scope(isolate);
   ASSERT(args.length() == 0);
 
@@ -3047,7 +3019,7 @@ RUNTIME_FUNCTION(RuntimeHidden_CreateJSGeneratorObject) {
 }
 
 
-RUNTIME_FUNCTION(RuntimeHidden_SuspendJSGeneratorObject) {
+RUNTIME_FUNCTION(Runtime_SuspendJSGeneratorObject) {
   HandleScope handle_scope(isolate);
   ASSERT(args.length() == 1);
   CONVERT_ARG_HANDLE_CHECKED(JSGeneratorObject, generator_object, 0);
@@ -3097,7 +3069,7 @@ RUNTIME_FUNCTION(RuntimeHidden_SuspendJSGeneratorObject) {
 // inlined into GeneratorNext and GeneratorThrow.  EmitGeneratorResumeResume is
 // called in any case, as it needs to reconstruct the stack frame and make space
 // for arguments and operands.
-RUNTIME_FUNCTION(RuntimeHidden_ResumeJSGeneratorObject) {
+RUNTIME_FUNCTION(Runtime_ResumeJSGeneratorObject) {
   SealHandleScope shs(isolate);
   ASSERT(args.length() == 3);
   CONVERT_ARG_CHECKED(JSGeneratorObject, generator_object, 0);
@@ -3145,7 +3117,7 @@ RUNTIME_FUNCTION(RuntimeHidden_ResumeJSGeneratorObject) {
 }
 
 
-RUNTIME_FUNCTION(RuntimeHidden_ThrowGeneratorStateError) {
+RUNTIME_FUNCTION(Runtime_ThrowGeneratorStateError) {
   HandleScope scope(isolate);
   ASSERT(args.length() == 1);
   CONVERT_ARG_HANDLE_CHECKED(JSGeneratorObject, generator, 0);
@@ -3174,7 +3146,7 @@ RUNTIME_FUNCTION(Runtime_ObjectFreeze) {
 }
 
 
-RUNTIME_FUNCTION(RuntimeHidden_StringCharCodeAt) {
+RUNTIME_FUNCTION(Runtime_StringCharCodeAtRT) {
   HandleScope handle_scope(isolate);
   ASSERT(args.length() == 2);
 
@@ -4450,7 +4422,7 @@ RUNTIME_FUNCTION(Runtime_StringLocaleCompare) {
 }
 
 
-RUNTIME_FUNCTION(RuntimeHidden_SubString) {
+RUNTIME_FUNCTION(Runtime_SubString) {
   HandleScope scope(isolate);
   ASSERT(args.length() == 3);
 
@@ -4475,6 +4447,14 @@ RUNTIME_FUNCTION(RuntimeHidden_SubString) {
   isolate->counters()->sub_string_runtime()->Increment();
 
   return *isolate->factory()->NewSubString(string, start, end);
+}
+
+
+RUNTIME_FUNCTION(Runtime_InternalizeString) {
+  HandleScope handles(isolate);
+  RUNTIME_ASSERT(args.length() == 1);
+  CONVERT_ARG_HANDLE_CHECKED(String, string, 0);
+  return *isolate->factory()->InternalizeString(string);
 }
 
 
@@ -5039,7 +5019,7 @@ static bool IsValidAccessor(Handle<Object> obj) {
 // Steps 9c & 12 - replace an existing data property with an accessor property.
 // Step 12 - update an existing accessor property with an accessor or generic
 //           descriptor.
-RUNTIME_FUNCTION(Runtime_DefineOrRedefineAccessorProperty) {
+RUNTIME_FUNCTION(Runtime_DefineAccessorPropertyUnchecked) {
   HandleScope scope(isolate);
   ASSERT(args.length() == 5);
   CONVERT_ARG_HANDLE_CHECKED(JSObject, obj, 0);
@@ -5057,7 +5037,7 @@ RUNTIME_FUNCTION(Runtime_DefineOrRedefineAccessorProperty) {
   // DefineAccessor checks access rights.
   JSObject::DefineAccessor(obj, name, getter, setter, attr);
   RETURN_FAILURE_IF_SCHEDULED_EXCEPTION(isolate);
-  if (fast) JSObject::TransformToFastProperties(obj, 0);
+  if (fast) JSObject::MigrateSlowToFast(obj, 0);
   return isolate->heap()->undefined_value();
 }
 
@@ -5068,7 +5048,7 @@ RUNTIME_FUNCTION(Runtime_DefineOrRedefineAccessorProperty) {
 // Steps 9b & 12 - replace an existing accessor property with a data property.
 // Step 12 - update an existing data property with a data or generic
 //           descriptor.
-RUNTIME_FUNCTION(Runtime_DefineOrRedefineDataProperty) {
+RUNTIME_FUNCTION(Runtime_DefineDataPropertyUnchecked) {
   HandleScope scope(isolate);
   ASSERT(args.length() == 4);
   CONVERT_ARG_HANDLE_CHECKED(JSObject, js_object, 0);
@@ -5126,7 +5106,7 @@ RUNTIME_FUNCTION(Runtime_DefineOrRedefineDataProperty) {
   Handle<Object> result;
   ASSIGN_RETURN_FAILURE_ON_EXCEPTION(
       isolate, result,
-      Runtime::ForceSetObjectProperty(
+      Runtime::DefineObjectProperty(
           js_object, name, obj_value, attr,
           JSReceiver::CERTAINLY_NOT_STORE_FROM_KEYED));
   return *result;
@@ -5147,10 +5127,8 @@ MaybeHandle<Object> Runtime::SetObjectProperty(Isolate* isolate,
                                                Handle<Object> object,
                                                Handle<Object> key,
                                                Handle<Object> value,
-                                               PropertyAttributes attr,
-                                               StrictMode strict_mode) {
-  SetPropertyMode set_mode = attr == NONE ? SET_PROPERTY : DEFINE_PROPERTY;
-
+                                               StrictMode strict_mode,
+                                               PropertyAttributes attrs) {
   if (object->IsUndefined() || object->IsNull()) {
     Handle<Object> args[2] = { key, object };
     Handle<Object> error =
@@ -5169,8 +5147,7 @@ MaybeHandle<Object> Runtime::SetObjectProperty(Isolate* isolate,
     }
     Handle<Name> name = Handle<Name>::cast(name_object);
     return JSReceiver::SetProperty(Handle<JSProxy>::cast(object), name, value,
-                                   attr,
-                                   strict_mode);
+                                   attrs, strict_mode);
   }
 
   // If the object isn't a JavaScript object, we ignore the store.
@@ -5202,7 +5179,7 @@ MaybeHandle<Object> Runtime::SetObjectProperty(Isolate* isolate,
     }
 
     MaybeHandle<Object> result = JSObject::SetElement(
-        js_object, index, value, attr, strict_mode, true, set_mode);
+        js_object, index, value, attrs, strict_mode, true, SET_PROPERTY);
     JSObject::ValidateElements(js_object);
 
     return result.is_null() ? result : value;
@@ -5217,11 +5194,12 @@ MaybeHandle<Object> Runtime::SetObjectProperty(Isolate* isolate,
               isolate, value, Execution::ToNumber(isolate, value), Object);
         }
       }
-      return JSObject::SetElement(js_object, index, value, attr,
-                                  strict_mode, true, set_mode);
+      return JSObject::SetElement(js_object, index, value, attrs,
+                                  strict_mode, true, SET_PROPERTY);
     } else {
       if (name->IsString()) name = String::Flatten(Handle<String>::cast(name));
-      return JSReceiver::SetProperty(js_object, name, value, attr, strict_mode);
+      return JSReceiver::SetProperty(
+          js_object, name, value, attrs, strict_mode);
     }
   }
 
@@ -5232,15 +5210,15 @@ MaybeHandle<Object> Runtime::SetObjectProperty(Isolate* isolate,
   Handle<String> name = Handle<String>::cast(converted);
 
   if (name->AsArrayIndex(&index)) {
-    return JSObject::SetElement(js_object, index, value, attr,
-                                strict_mode, true, set_mode);
+    return JSObject::SetElement(js_object, index, value, attrs,
+                                strict_mode, true, SET_PROPERTY);
   } else {
-    return JSReceiver::SetProperty(js_object, name, value, attr, strict_mode);
+    return JSReceiver::SetProperty(js_object, name, value, attrs, strict_mode);
   }
 }
 
 
-MaybeHandle<Object> Runtime::ForceSetObjectProperty(
+MaybeHandle<Object> Runtime::DefineObjectProperty(
     Handle<JSObject> js_object,
     Handle<Object> key,
     Handle<Object> value,
@@ -5345,11 +5323,11 @@ RUNTIME_FUNCTION(Runtime_SetHiddenProperty) {
 }
 
 
-RUNTIME_FUNCTION(Runtime_SetProperty) {
+RUNTIME_FUNCTION(Runtime_AddProperty) {
   HandleScope scope(isolate);
-  RUNTIME_ASSERT(args.length() == 4 || args.length() == 5);
+  RUNTIME_ASSERT(args.length() == 4);
 
-  CONVERT_ARG_HANDLE_CHECKED(Object, object, 0);
+  CONVERT_ARG_HANDLE_CHECKED(JSObject, object, 0);
   CONVERT_ARG_HANDLE_CHECKED(Object, key, 1);
   CONVERT_ARG_HANDLE_CHECKED(Object, value, 2);
   CONVERT_SMI_ARG_CHECKED(unchecked_attributes, 3);
@@ -5359,17 +5337,85 @@ RUNTIME_FUNCTION(Runtime_SetProperty) {
   PropertyAttributes attributes =
       static_cast<PropertyAttributes>(unchecked_attributes);
 
-  StrictMode strict_mode = SLOPPY;
-  if (args.length() == 5) {
-    CONVERT_STRICT_MODE_ARG_CHECKED(strict_mode_arg, 4);
-    strict_mode = strict_mode_arg;
+#ifdef DEBUG
+  bool duplicate;
+  if (key->IsName()) {
+    LookupIterator it(object, Handle<Name>::cast(key),
+                      LookupIterator::CHECK_OWN_REAL);
+    JSReceiver::GetPropertyAttributes(&it);
+    duplicate = it.IsFound();
+  } else {
+    uint32_t index = 0;
+    RUNTIME_ASSERT(key->ToArrayIndex(&index));
+    duplicate = JSReceiver::HasOwnElement(object, index);
   }
+  RUNTIME_ASSERT(!duplicate);
+#endif
 
   Handle<Object> result;
   ASSIGN_RETURN_FAILURE_ON_EXCEPTION(
       isolate, result,
-      Runtime::SetObjectProperty(
-          isolate, object, key, value, attributes, strict_mode));
+      Runtime::DefineObjectProperty(object, key, value, attributes));
+  return *result;
+}
+
+
+RUNTIME_FUNCTION(Runtime_AddPropertyForTemplate) {
+  HandleScope scope(isolate);
+  RUNTIME_ASSERT(args.length() == 4);
+
+  CONVERT_ARG_HANDLE_CHECKED(JSObject, object, 0);
+  CONVERT_ARG_HANDLE_CHECKED(Object, key, 1);
+  CONVERT_ARG_HANDLE_CHECKED(Object, value, 2);
+  CONVERT_SMI_ARG_CHECKED(unchecked_attributes, 3);
+  RUNTIME_ASSERT(
+      (unchecked_attributes & ~(READ_ONLY | DONT_ENUM | DONT_DELETE)) == 0);
+  // Compute attributes.
+  PropertyAttributes attributes =
+      static_cast<PropertyAttributes>(unchecked_attributes);
+
+#ifdef DEBUG
+  bool duplicate;
+  if (key->IsName()) {
+    LookupIterator it(object, Handle<Name>::cast(key),
+                      LookupIterator::CHECK_OWN_REAL);
+    JSReceiver::GetPropertyAttributes(&it);
+    duplicate = it.IsFound();
+  } else {
+    uint32_t index = 0;
+    RUNTIME_ASSERT(key->ToArrayIndex(&index));
+    duplicate = JSReceiver::HasOwnElement(object, index);
+  }
+  if (duplicate) {
+    Handle<Object> args[1] = { key };
+    Handle<Object> error = isolate->factory()->NewTypeError(
+        "duplicate_template_property", HandleVector(args, 1));
+    return isolate->Throw(*error);
+  }
+#endif
+
+  Handle<Object> result;
+  ASSIGN_RETURN_FAILURE_ON_EXCEPTION(
+      isolate, result,
+      Runtime::DefineObjectProperty(object, key, value, attributes));
+  return *result;
+}
+
+
+RUNTIME_FUNCTION(Runtime_SetProperty) {
+  HandleScope scope(isolate);
+  RUNTIME_ASSERT(args.length() == 4);
+
+  CONVERT_ARG_HANDLE_CHECKED(Object, object, 0);
+  CONVERT_ARG_HANDLE_CHECKED(Object, key, 1);
+  CONVERT_ARG_HANDLE_CHECKED(Object, value, 2);
+  CONVERT_STRICT_MODE_ARG_CHECKED(strict_mode_arg, 3);
+  StrictMode strict_mode = strict_mode_arg;
+
+  Handle<Object> result;
+  ASSIGN_RETURN_FAILURE_ON_EXCEPTION(
+      isolate, result,
+      Runtime::SetObjectProperty(isolate, object, key, value, strict_mode));
   return *result;
 }
 
@@ -5523,29 +5569,21 @@ RUNTIME_FUNCTION(Runtime_DebugPromiseHandleEpilogue) {
 }
 
 
-// Set an own property, even if it is READ_ONLY.  If the property does not
-// exist, it will be added with attributes NONE.
-RUNTIME_FUNCTION(Runtime_IgnoreAttributesAndSetProperty) {
+RUNTIME_FUNCTION(Runtime_DebugPromiseEvent) {
+  ASSERT(args.length() == 1);
   HandleScope scope(isolate);
-  RUNTIME_ASSERT(args.length() == 3 || args.length() == 4);
-  CONVERT_ARG_HANDLE_CHECKED(JSObject, object, 0);
-  CONVERT_ARG_HANDLE_CHECKED(Name, name, 1);
-  CONVERT_ARG_HANDLE_CHECKED(Object, value, 2);
-  // Compute attributes.
-  PropertyAttributes attributes = NONE;
-  if (args.length() == 4) {
-    CONVERT_SMI_ARG_CHECKED(unchecked_value, 3);
-    // Only attribute bits should be set.
-    RUNTIME_ASSERT(
-        (unchecked_value & ~(READ_ONLY | DONT_ENUM | DONT_DELETE)) == 0);
-    attributes = static_cast<PropertyAttributes>(unchecked_value);
-  }
-  Handle<Object> result;
-  ASSIGN_RETURN_FAILURE_ON_EXCEPTION(
-      isolate, result,
-      JSObject::SetOwnPropertyIgnoreAttributes(
-          object, name, value, attributes));
-  return *result;
+  CONVERT_ARG_HANDLE_CHECKED(JSObject, data, 0);
+  isolate->debug()->OnPromiseEvent(data);
+  return isolate->heap()->undefined_value();
+}
+
+
+RUNTIME_FUNCTION(Runtime_DebugAsyncTaskEvent) {
+  ASSERT(args.length() == 1);
+  HandleScope scope(isolate);
+  CONVERT_ARG_HANDLE_CHECKED(JSObject, data, 0);
+  isolate->debug()->OnAsyncTaskEvent(data);
+  return isolate->heap()->undefined_value();
 }
 
 
@@ -6038,7 +6076,7 @@ RUNTIME_FUNCTION(Runtime_ToFastProperties) {
   ASSERT(args.length() == 1);
   CONVERT_ARG_HANDLE_CHECKED(Object, object, 0);
   if (object->IsJSObject() && !object->IsGlobalObject()) {
-    JSObject::TransformToFastProperties(Handle<JSObject>::cast(object), 0);
+    JSObject::MigrateSlowToFast(Handle<JSObject>::cast(object), 0);
   }
   return *object;
 }
@@ -6298,8 +6336,8 @@ RUNTIME_FUNCTION(Runtime_StringParseFloat) {
   CONVERT_ARG_HANDLE_CHECKED(String, subject, 0);
 
   subject = String::Flatten(subject);
-  double value = StringToDouble(
-      isolate->unicode_cache(), *subject, ALLOW_TRAILING_JUNK, OS::nan_value());
+  double value = StringToDouble(isolate->unicode_cache(), *subject,
+                                ALLOW_TRAILING_JUNK, base::OS::nan_value());
 
   return *isolate->factory()->NewNumber(value);
 }
@@ -6835,7 +6873,7 @@ bool Runtime::IsUpperCaseChar(RuntimeState* runtime_state, uint16_t ch) {
 }
 
 
-RUNTIME_FUNCTION(RuntimeHidden_NumberToString) {
+RUNTIME_FUNCTION(Runtime_NumberToStringRT) {
   HandleScope scope(isolate);
   ASSERT(args.length() == 1);
   CONVERT_NUMBER_ARG_HANDLE_CHECKED(number, 0);
@@ -6844,7 +6882,7 @@ RUNTIME_FUNCTION(RuntimeHidden_NumberToString) {
 }
 
 
-RUNTIME_FUNCTION(RuntimeHidden_NumberToStringSkipCache) {
+RUNTIME_FUNCTION(Runtime_NumberToStringSkipCache) {
   HandleScope scope(isolate);
   ASSERT(args.length() == 1);
   CONVERT_NUMBER_ARG_HANDLE_CHECKED(number, 0);
@@ -6895,7 +6933,7 @@ RUNTIME_FUNCTION(Runtime_NumberToJSInt32) {
 
 // Converts a Number to a Smi, if possible. Returns NaN if the number is not
 // a small integer.
-RUNTIME_FUNCTION(RuntimeHidden_NumberToSmi) {
+RUNTIME_FUNCTION(Runtime_NumberToSmi) {
   SealHandleScope shs(isolate);
   ASSERT(args.length() == 1);
   CONVERT_ARG_CHECKED(Object, obj, 0);
@@ -6913,7 +6951,7 @@ RUNTIME_FUNCTION(RuntimeHidden_NumberToSmi) {
 }
 
 
-RUNTIME_FUNCTION(RuntimeHidden_AllocateHeapNumber) {
+RUNTIME_FUNCTION(Runtime_AllocateHeapNumber) {
   HandleScope scope(isolate);
   ASSERT(args.length() == 0);
   return *isolate->factory()->NewHeapNumber(0);
@@ -6989,7 +7027,7 @@ RUNTIME_FUNCTION(Runtime_NumberImul) {
 }
 
 
-RUNTIME_FUNCTION(RuntimeHidden_StringAdd) {
+RUNTIME_FUNCTION(Runtime_StringAdd) {
   HandleScope scope(isolate);
   ASSERT(args.length() == 2);
   CONVERT_ARG_HANDLE_CHECKED(String, str1, 0);
@@ -7574,7 +7612,7 @@ RUNTIME_FUNCTION(Runtime_SmiLexicographicCompare) {
 }
 
 
-RUNTIME_FUNCTION(RuntimeHidden_StringCompare) {
+RUNTIME_FUNCTION(Runtime_StringCompare) {
   HandleScope handle_scope(isolate);
   ASSERT(args.length() == 2);
 
@@ -7735,7 +7773,7 @@ RUNTIME_FUNCTION(Runtime_MathFloorRT) {
 
 // Slow version of Math.pow.  We check for fast paths for special cases.
 // Used if VFP3 is not available.
-RUNTIME_FUNCTION(RuntimeHidden_MathPowSlow) {
+RUNTIME_FUNCTION(Runtime_MathPowSlow) {
   HandleScope scope(isolate);
   ASSERT(args.length() == 2);
   isolate->counters()->math_pow()->Increment();
@@ -7758,7 +7796,7 @@ RUNTIME_FUNCTION(RuntimeHidden_MathPowSlow) {
 
 // Fast version of Math.pow if we know that y is not an integer and y is not
 // -0.5 or 0.5.  Used as slow case from full codegen.
-RUNTIME_FUNCTION(RuntimeHidden_MathPow) {
+RUNTIME_FUNCTION(Runtime_MathPowRT) {
   HandleScope scope(isolate);
   ASSERT(args.length() == 2);
   isolate->counters()->math_pow()->Increment();
@@ -7886,7 +7924,7 @@ RUNTIME_FUNCTION(Runtime_DateSetValue) {
 }
 
 
-RUNTIME_FUNCTION(RuntimeHidden_NewSloppyArguments) {
+RUNTIME_FUNCTION(Runtime_NewSloppyArguments) {
   HandleScope scope(isolate);
   ASSERT(args.length() == 3);
 
@@ -7980,7 +8018,7 @@ RUNTIME_FUNCTION(RuntimeHidden_NewSloppyArguments) {
 }
 
 
-RUNTIME_FUNCTION(RuntimeHidden_NewStrictArguments) {
+RUNTIME_FUNCTION(Runtime_NewStrictArguments) {
   HandleScope scope(isolate);
   ASSERT(args.length() == 3);
   CONVERT_ARG_HANDLE_CHECKED(JSFunction, callee, 0)
@@ -8004,7 +8042,7 @@ RUNTIME_FUNCTION(RuntimeHidden_NewStrictArguments) {
 }
 
 
-RUNTIME_FUNCTION(RuntimeHidden_NewClosureFromStubFailure) {
+RUNTIME_FUNCTION(Runtime_NewClosureFromStubFailure) {
   HandleScope scope(isolate);
   ASSERT(args.length() == 1);
   CONVERT_ARG_HANDLE_CHECKED(SharedFunctionInfo, shared, 0);
@@ -8015,7 +8053,7 @@ RUNTIME_FUNCTION(RuntimeHidden_NewClosureFromStubFailure) {
 }
 
 
-RUNTIME_FUNCTION(RuntimeHidden_NewClosure) {
+RUNTIME_FUNCTION(Runtime_NewClosure) {
   HandleScope scope(isolate);
   ASSERT(args.length() == 3);
   CONVERT_ARG_HANDLE_CHECKED(Context, context, 0);
@@ -8143,8 +8181,8 @@ RUNTIME_FUNCTION(Runtime_FunctionBindArguments) {
       static_cast<PropertyAttributes>(DONT_DELETE | DONT_ENUM | READ_ONLY);
   RETURN_FAILURE_ON_EXCEPTION(
       isolate,
-      JSObject::SetOwnPropertyIgnoreAttributes(bound_function, length_string,
-                                               new_length, attr));
+      JSObject::SetOwnPropertyIgnoreAttributes(
+          bound_function, length_string, new_length, attr));
   return *bound_function;
 }
 
@@ -8248,7 +8286,7 @@ static Object* Runtime_NewObjectHelper(Isolate* isolate,
       // instead of a new JSFunction object. This way, errors are
       // reported the same way whether or not 'Function' is called
       // using 'new'.
-      return isolate->context()->global_object();
+      return isolate->global_proxy();
     }
   }
 
@@ -8270,7 +8308,7 @@ static Object* Runtime_NewObjectHelper(Isolate* isolate,
 }
 
 
-RUNTIME_FUNCTION(RuntimeHidden_NewObject) {
+RUNTIME_FUNCTION(Runtime_NewObject) {
   HandleScope scope(isolate);
   ASSERT(args.length() == 1);
   CONVERT_ARG_HANDLE_CHECKED(Object, constructor, 0);
@@ -8280,7 +8318,7 @@ RUNTIME_FUNCTION(RuntimeHidden_NewObject) {
 }
 
 
-RUNTIME_FUNCTION(RuntimeHidden_NewObjectWithAllocationSite) {
+RUNTIME_FUNCTION(Runtime_NewObjectWithAllocationSite) {
   HandleScope scope(isolate);
   ASSERT(args.length() == 2);
   CONVERT_ARG_HANDLE_CHECKED(Object, constructor, 1);
@@ -8294,7 +8332,7 @@ RUNTIME_FUNCTION(RuntimeHidden_NewObjectWithAllocationSite) {
 }
 
 
-RUNTIME_FUNCTION(RuntimeHidden_FinalizeInstanceSize) {
+RUNTIME_FUNCTION(Runtime_FinalizeInstanceSize) {
   HandleScope scope(isolate);
   ASSERT(args.length() == 1);
 
@@ -8305,7 +8343,7 @@ RUNTIME_FUNCTION(RuntimeHidden_FinalizeInstanceSize) {
 }
 
 
-RUNTIME_FUNCTION(RuntimeHidden_CompileUnoptimized) {
+RUNTIME_FUNCTION(Runtime_CompileUnoptimized) {
   HandleScope scope(isolate);
   ASSERT(args.length() == 1);
   CONVERT_ARG_HANDLE_CHECKED(JSFunction, function, 0);
@@ -8334,7 +8372,7 @@ RUNTIME_FUNCTION(RuntimeHidden_CompileUnoptimized) {
 }
 
 
-RUNTIME_FUNCTION(RuntimeHidden_CompileOptimized) {
+RUNTIME_FUNCTION(Runtime_CompileOptimized) {
   HandleScope scope(isolate);
   ASSERT(args.length() == 2);
   CONVERT_ARG_HANDLE_CHECKED(JSFunction, function, 0);
@@ -8402,7 +8440,7 @@ class ActivationsFinder : public ThreadVisitor {
 };
 
 
-RUNTIME_FUNCTION(RuntimeHidden_NotifyStubFailure) {
+RUNTIME_FUNCTION(Runtime_NotifyStubFailure) {
   HandleScope scope(isolate);
   ASSERT(args.length() == 0);
   Deoptimizer* deoptimizer = Deoptimizer::Grab(isolate);
@@ -8412,7 +8450,7 @@ RUNTIME_FUNCTION(RuntimeHidden_NotifyStubFailure) {
 }
 
 
-RUNTIME_FUNCTION(RuntimeHidden_NotifyDeoptimized) {
+RUNTIME_FUNCTION(Runtime_NotifyDeoptimized) {
   HandleScope scope(isolate);
   ASSERT(args.length() == 1);
   CONVERT_SMI_ARG_CHECKED(type_arg, 0);
@@ -8574,7 +8612,7 @@ RUNTIME_FUNCTION(Runtime_GetOptimizationStatus) {
       sync_with_compiler_thread) {
     while (function->IsInOptimizationQueue()) {
       isolate->optimizing_compiler_thread()->InstallOptimizedFunctions();
-      OS::Sleep(50);
+      base::OS::Sleep(50);
     }
   }
   if (FLAG_always_opt) {
@@ -8872,7 +8910,7 @@ RUNTIME_FUNCTION(Runtime_GetConstructorDelegate) {
 }
 
 
-RUNTIME_FUNCTION(RuntimeHidden_NewGlobalContext) {
+RUNTIME_FUNCTION(Runtime_NewGlobalContext) {
   HandleScope scope(isolate);
   ASSERT(args.length() == 2);
 
@@ -8888,7 +8926,7 @@ RUNTIME_FUNCTION(RuntimeHidden_NewGlobalContext) {
 }
 
 
-RUNTIME_FUNCTION(RuntimeHidden_NewFunctionContext) {
+RUNTIME_FUNCTION(Runtime_NewFunctionContext) {
   HandleScope scope(isolate);
   ASSERT(args.length() == 1);
 
@@ -8898,7 +8936,7 @@ RUNTIME_FUNCTION(RuntimeHidden_NewFunctionContext) {
 }
 
 
-RUNTIME_FUNCTION(RuntimeHidden_PushWithContext) {
+RUNTIME_FUNCTION(Runtime_PushWithContext) {
   HandleScope scope(isolate);
   ASSERT(args.length() == 2);
   Handle<JSReceiver> extension_object;
@@ -8922,7 +8960,7 @@ RUNTIME_FUNCTION(RuntimeHidden_PushWithContext) {
     // A smi sentinel indicates a context nested inside global code rather
     // than some function.  There is a canonical empty function that can be
     // gotten from the native context.
-    function = handle(isolate->context()->native_context()->closure());
+    function = handle(isolate->native_context()->closure());
   } else {
     function = args.at<JSFunction>(1);
   }
@@ -8935,7 +8973,7 @@ RUNTIME_FUNCTION(RuntimeHidden_PushWithContext) {
 }
 
 
-RUNTIME_FUNCTION(RuntimeHidden_PushCatchContext) {
+RUNTIME_FUNCTION(Runtime_PushCatchContext) {
   HandleScope scope(isolate);
   ASSERT(args.length() == 3);
   CONVERT_ARG_HANDLE_CHECKED(String, name, 0);
@@ -8945,7 +8983,7 @@ RUNTIME_FUNCTION(RuntimeHidden_PushCatchContext) {
     // A smi sentinel indicates a context nested inside global code rather
     // than some function.  There is a canonical empty function that can be
     // gotten from the native context.
-    function = handle(isolate->context()->native_context()->closure());
+    function = handle(isolate->native_context()->closure());
   } else {
     function = args.at<JSFunction>(2);
   }
@@ -8957,7 +8995,7 @@ RUNTIME_FUNCTION(RuntimeHidden_PushCatchContext) {
 }
 
 
-RUNTIME_FUNCTION(RuntimeHidden_PushBlockContext) {
+RUNTIME_FUNCTION(Runtime_PushBlockContext) {
   HandleScope scope(isolate);
   ASSERT(args.length() == 2);
   CONVERT_ARG_HANDLE_CHECKED(ScopeInfo, scope_info, 0);
@@ -8966,7 +9004,7 @@ RUNTIME_FUNCTION(RuntimeHidden_PushBlockContext) {
     // A smi sentinel indicates a context nested inside global code rather
     // than some function.  There is a canonical empty function that can be
     // gotten from the native context.
-    function = handle(isolate->context()->native_context()->closure());
+    function = handle(isolate->native_context()->closure());
   } else {
     function = args.at<JSFunction>(1);
   }
@@ -8986,7 +9024,7 @@ RUNTIME_FUNCTION(Runtime_IsJSModule) {
 }
 
 
-RUNTIME_FUNCTION(RuntimeHidden_PushModuleContext) {
+RUNTIME_FUNCTION(Runtime_PushModuleContext) {
   SealHandleScope shs(isolate);
   ASSERT(args.length() == 2);
   CONVERT_SMI_ARG_CHECKED(index, 0);
@@ -9021,7 +9059,7 @@ RUNTIME_FUNCTION(RuntimeHidden_PushModuleContext) {
 }
 
 
-RUNTIME_FUNCTION(RuntimeHidden_DeclareModules) {
+RUNTIME_FUNCTION(Runtime_DeclareModules) {
   HandleScope scope(isolate);
   ASSERT(args.length() == 1);
   CONVERT_ARG_HANDLE_CHECKED(FixedArray, descriptions, 0);
@@ -9075,7 +9113,7 @@ RUNTIME_FUNCTION(RuntimeHidden_DeclareModules) {
 }
 
 
-RUNTIME_FUNCTION(RuntimeHidden_DeleteContextSlot) {
+RUNTIME_FUNCTION(Runtime_DeleteContextSlot) {
   HandleScope scope(isolate);
   ASSERT(args.length() == 2);
 
@@ -9286,17 +9324,17 @@ static ObjectPair LoadContextSlotHelper(Arguments args,
 }
 
 
-RUNTIME_FUNCTION_RETURN_PAIR(RuntimeHidden_LoadContextSlot) {
+RUNTIME_FUNCTION_RETURN_PAIR(Runtime_LoadContextSlot) {
   return LoadContextSlotHelper(args, isolate, true);
 }
 
 
-RUNTIME_FUNCTION_RETURN_PAIR(RuntimeHidden_LoadContextSlotNoReferenceError) {
+RUNTIME_FUNCTION_RETURN_PAIR(Runtime_LoadContextSlotNoReferenceError) {
   return LoadContextSlotHelper(args, isolate, false);
 }
 
 
-RUNTIME_FUNCTION(RuntimeHidden_StoreContextSlot) {
+RUNTIME_FUNCTION(Runtime_StoreContextSlot) {
   HandleScope scope(isolate);
   ASSERT(args.length() == 4);
 
@@ -9381,7 +9419,7 @@ RUNTIME_FUNCTION(RuntimeHidden_StoreContextSlot) {
 }
 
 
-RUNTIME_FUNCTION(RuntimeHidden_Throw) {
+RUNTIME_FUNCTION(Runtime_Throw) {
   HandleScope scope(isolate);
   ASSERT(args.length() == 1);
 
@@ -9389,7 +9427,7 @@ RUNTIME_FUNCTION(RuntimeHidden_Throw) {
 }
 
 
-RUNTIME_FUNCTION(RuntimeHidden_ReThrow) {
+RUNTIME_FUNCTION(Runtime_ReThrow) {
   HandleScope scope(isolate);
   ASSERT(args.length() == 1);
 
@@ -9397,14 +9435,14 @@ RUNTIME_FUNCTION(RuntimeHidden_ReThrow) {
 }
 
 
-RUNTIME_FUNCTION(RuntimeHidden_PromoteScheduledException) {
+RUNTIME_FUNCTION(Runtime_PromoteScheduledException) {
   SealHandleScope shs(isolate);
   ASSERT(args.length() == 0);
   return isolate->PromoteScheduledException();
 }
 
 
-RUNTIME_FUNCTION(RuntimeHidden_ThrowReferenceError) {
+RUNTIME_FUNCTION(Runtime_ThrowReferenceError) {
   HandleScope scope(isolate);
   ASSERT(args.length() == 1);
   CONVERT_ARG_HANDLE_CHECKED(Object, name, 0);
@@ -9415,7 +9453,7 @@ RUNTIME_FUNCTION(RuntimeHidden_ThrowReferenceError) {
 }
 
 
-RUNTIME_FUNCTION(RuntimeHidden_ThrowNotDateError) {
+RUNTIME_FUNCTION(Runtime_ThrowNotDateError) {
   HandleScope scope(isolate);
   ASSERT(args.length() == 0);
   return isolate->Throw(*isolate->factory()->NewTypeError(
@@ -9423,7 +9461,7 @@ RUNTIME_FUNCTION(RuntimeHidden_ThrowNotDateError) {
 }
 
 
-RUNTIME_FUNCTION(RuntimeHidden_StackGuard) {
+RUNTIME_FUNCTION(Runtime_StackGuard) {
   SealHandleScope shs(isolate);
   ASSERT(args.length() == 0);
 
@@ -9437,7 +9475,7 @@ RUNTIME_FUNCTION(RuntimeHidden_StackGuard) {
 }
 
 
-RUNTIME_FUNCTION(RuntimeHidden_TryInstallOptimizedCode) {
+RUNTIME_FUNCTION(Runtime_TryInstallOptimizedCode) {
   HandleScope scope(isolate);
   ASSERT(args.length() == 1);
   CONVERT_ARG_HANDLE_CHECKED(JSFunction, function, 0);
@@ -9455,7 +9493,7 @@ RUNTIME_FUNCTION(RuntimeHidden_TryInstallOptimizedCode) {
 }
 
 
-RUNTIME_FUNCTION(RuntimeHidden_Interrupt) {
+RUNTIME_FUNCTION(Runtime_Interrupt) {
   SealHandleScope shs(isolate);
   ASSERT(args.length() == 0);
   return isolate->stack_guard()->HandleInterrupts();
@@ -9561,7 +9599,7 @@ RUNTIME_FUNCTION(Runtime_DateCurrentTime) {
     millis = 1388534400000.0;  // Jan 1 2014 00:00:00 GMT+0000
     millis += std::floor(isolate->heap()->synthetic_time());
   } else {
-    millis = std::floor(OS::TimeCurrentMillis());
+    millis = std::floor(base::OS::TimeCurrentMillis());
   }
   return *isolate->factory()->NewNumber(millis);
 }
@@ -9652,12 +9690,12 @@ RUNTIME_FUNCTION(Runtime_DateCacheVersion) {
 }
 
 
-RUNTIME_FUNCTION(Runtime_GlobalReceiver) {
+RUNTIME_FUNCTION(Runtime_GlobalProxy) {
   SealHandleScope shs(isolate);
   ASSERT(args.length() == 1);
   CONVERT_ARG_CHECKED(Object, global, 0);
   if (!global->IsJSGlobalObject()) return isolate->heap()->null_value();
-  return JSGlobalObject::cast(global)->global_receiver();
+  return JSGlobalObject::cast(global)->global_proxy();
 }
 
 
@@ -9764,7 +9802,7 @@ RUNTIME_FUNCTION(Runtime_CompileString) {
   CONVERT_BOOLEAN_ARG_CHECKED(function_literal_only, 1);
 
   // Extract native context.
-  Handle<Context> context(isolate->context()->native_context());
+  Handle<Context> context(isolate->native_context());
 
   // Filter cross security context calls.
   if (!TokensMatchForCompileString(isolate)) {
@@ -9825,7 +9863,7 @@ static ObjectPair CompileGlobalEval(Isolate* isolate,
 }
 
 
-RUNTIME_FUNCTION_RETURN_PAIR(RuntimeHidden_ResolvePossiblyDirectEval) {
+RUNTIME_FUNCTION_RETURN_PAIR(Runtime_ResolvePossiblyDirectEval) {
   HandleScope scope(isolate);
   ASSERT(args.length() == 5);
 
@@ -9853,7 +9891,7 @@ RUNTIME_FUNCTION_RETURN_PAIR(RuntimeHidden_ResolvePossiblyDirectEval) {
 }
 
 
-RUNTIME_FUNCTION(RuntimeHidden_AllocateInNewSpace) {
+RUNTIME_FUNCTION(Runtime_AllocateInNewSpace) {
   HandleScope scope(isolate);
   ASSERT(args.length() == 1);
   CONVERT_SMI_ARG_CHECKED(size, 0);
@@ -9864,7 +9902,7 @@ RUNTIME_FUNCTION(RuntimeHidden_AllocateInNewSpace) {
 }
 
 
-RUNTIME_FUNCTION(RuntimeHidden_AllocateInTargetSpace) {
+RUNTIME_FUNCTION(Runtime_AllocateInTargetSpace) {
   HandleScope scope(isolate);
   ASSERT(args.length() == 2);
   CONVERT_SMI_ARG_CHECKED(size, 0);
@@ -11367,8 +11405,7 @@ RUNTIME_FUNCTION(Runtime_GetFrameDetails) {
     // native context.
     it.Advance();
     if (receiver->IsUndefined()) {
-      Context* context = function->context();
-      receiver = handle(context->global_object()->global_receiver());
+      receiver = handle(function->global_proxy());
     } else {
       ASSERT(!receiver->IsNull());
       Context* context = Context::cast(it.frame()->context());
@@ -11418,7 +11455,7 @@ static MaybeHandle<JSObject> MaterializeStackLocalsWithFrameInspector(
 
     RETURN_ON_EXCEPTION(
         isolate,
-        Runtime::SetObjectProperty(isolate, target, name, value, NONE, SLOPPY),
+        Runtime::SetObjectProperty(isolate, target, name, value, SLOPPY),
         JSObject);
   }
 
@@ -11431,7 +11468,7 @@ static MaybeHandle<JSObject> MaterializeStackLocalsWithFrameInspector(
 
     RETURN_ON_EXCEPTION(
         isolate,
-        Runtime::SetObjectProperty(isolate, target, name, value, NONE, SLOPPY),
+        Runtime::SetObjectProperty(isolate, target, name, value, SLOPPY),
         JSObject);
   }
 
@@ -11520,8 +11557,7 @@ MUST_USE_RESULT static MaybeHandle<JSObject> MaterializeLocalContext(
             isolate, value, Object::GetPropertyOrElement(ext, key), JSObject);
         RETURN_ON_EXCEPTION(
             isolate,
-            Runtime::SetObjectProperty(
-                isolate, target, key, value, NONE, SLOPPY),
+            Runtime::SetObjectProperty(isolate, target, key, value, SLOPPY),
             JSObject);
       }
     }
@@ -11626,7 +11662,7 @@ static bool SetLocalVariableValue(Isolate* isolate,
           // We don't expect this to do anything except replacing
           // property value.
           Runtime::SetObjectProperty(isolate, ext, variable_name, new_value,
-                                     NONE, SLOPPY).Assert();
+                                     SLOPPY).Assert();
           return true;
         }
       }
@@ -11677,8 +11713,7 @@ MUST_USE_RESULT static MaybeHandle<JSObject> MaterializeClosure(
           isolate, value, Object::GetPropertyOrElement(ext, key), JSObject);
       RETURN_ON_EXCEPTION(
           isolate,
-          Runtime::SetObjectProperty(
-              isolate, closure_scope, key, value, NONE, SLOPPY),
+          Runtime::DefineObjectProperty(closure_scope, key, value, NONE),
           JSObject);
     }
   }
@@ -11709,8 +11744,8 @@ static bool SetClosureVariableValue(Isolate* isolate,
     Handle<JSObject> ext(JSObject::cast(context->extension()));
     if (JSReceiver::HasProperty(ext, variable_name)) {
       // We don't expect this to do anything except replacing property value.
-      Runtime::SetObjectProperty(isolate, ext, variable_name, new_value,
-                                 NONE, SLOPPY).Assert();
+      Runtime::DefineObjectProperty(
+          ext, variable_name, new_value, NONE).Assert();
       return true;
     }
   }
@@ -11732,8 +11767,7 @@ MUST_USE_RESULT static MaybeHandle<JSObject> MaterializeCatchScope(
       isolate->factory()->NewJSObject(isolate->object_function());
   RETURN_ON_EXCEPTION(
       isolate,
-      Runtime::SetObjectProperty(isolate, catch_scope, name, thrown_object,
-                                 NONE, SLOPPY),
+      Runtime::DefineObjectProperty(catch_scope, name, thrown_object, NONE),
       JSObject);
   return catch_scope;
 }
@@ -12796,8 +12830,7 @@ MUST_USE_RESULT static MaybeHandle<JSObject> MaterializeArgumentsObject(
   Handle<String> arguments_str = isolate->factory()->arguments_string();
   RETURN_ON_EXCEPTION(
       isolate,
-      Runtime::SetObjectProperty(
-          isolate, target, arguments_str, arguments, ::NONE, SLOPPY),
+      Runtime::DefineObjectProperty(target, arguments_str, arguments, NONE),
       JSObject);
   return target;
 }
@@ -12943,7 +12976,7 @@ RUNTIME_FUNCTION(Runtime_DebugEvaluateGlobal) {
   // Get the native context now set to the top context from before the
   // debugger was invoked.
   Handle<Context> context = isolate->native_context();
-  Handle<Object> receiver = isolate->global_object();
+  Handle<JSObject> receiver(context->global_proxy());
   Handle<Object> result;
   ASSIGN_RETURN_FAILURE_ON_EXCEPTION(
       isolate, result,
@@ -13069,7 +13102,7 @@ RUNTIME_FUNCTION(Runtime_DebugReferencedBy) {
 
   // Get the constructor function for context extension and arguments array.
   Handle<JSObject> arguments_boilerplate(
-      isolate->context()->native_context()->sloppy_arguments_boilerplate());
+      isolate->sloppy_arguments_boilerplate());
   Handle<JSFunction> arguments_function(
       JSFunction::cast(arguments_boilerplate->map()->constructor()));
 
@@ -13098,8 +13131,7 @@ RUNTIME_FUNCTION(Runtime_DebugReferencedBy) {
   }
 
   // Return result as JS array.
-  Handle<JSFunction> constructor(
-      isolate->context()->native_context()->array_function());
+  Handle<JSFunction> constructor = isolate->array_function();
 
   Handle<JSObject> result = isolate->factory()->NewJSObject(constructor);
   JSArray::SetContent(Handle<JSArray>::cast(result), instances);
@@ -13181,8 +13213,7 @@ RUNTIME_FUNCTION(Runtime_DebugConstructedBy) {
   }
 
   // Return result as JS array.
-  Handle<JSFunction> array_function(
-      isolate->context()->native_context()->array_function());
+  Handle<JSFunction> array_function = isolate->array_function();
   Handle<JSObject> result = isolate->factory()->NewJSObject(array_function);
   JSArray::SetContent(Handle<JSArray>::cast(result), instances);
   return *result;
@@ -13221,7 +13252,7 @@ RUNTIME_FUNCTION(Runtime_DebugSetScriptSource) {
 RUNTIME_FUNCTION(Runtime_SystemBreak) {
   SealHandleScope shs(isolate);
   ASSERT(args.length() == 0);
-  OS::DebugBreak();
+  base::OS::DebugBreak();
   return isolate->heap()->undefined_value();
 }
 
@@ -13483,6 +13514,7 @@ RUNTIME_FUNCTION(Runtime_LiveEditCheckAndDropActivations) {
   CONVERT_ARG_HANDLE_CHECKED(JSArray, shared_array, 0);
   CONVERT_BOOLEAN_ARG_CHECKED(do_drop, 1);
   RUNTIME_ASSERT(shared_array->length()->IsSmi());
+  RUNTIME_ASSERT(shared_array->HasFastElements())
   int array_length = Smi::cast(shared_array->length())->value();
   for (int i = 0; i < array_length; i++) {
     Handle<Object> element =
@@ -13595,14 +13627,14 @@ RUNTIME_FUNCTION(Runtime_ExecuteInDebugContext) {
   if (without_debugger) {
     maybe_result = Execution::Call(isolate,
                                    function,
-                                   isolate->global_object(),
+                                   handle(function->global_proxy()),
                                    0,
                                    NULL);
   } else {
     DebugScope debug_scope(isolate->debug());
     maybe_result = Execution::Call(isolate,
                                    function,
-                                   isolate->global_object(),
+                                   handle(function->global_proxy()),
                                    0,
                                    NULL);
   }
@@ -13823,18 +13855,10 @@ RUNTIME_FUNCTION(Runtime_GetLanguageTagVariants) {
     }
 
     Handle<JSObject> result = factory->NewJSObject(isolate->object_function());
-    RETURN_FAILURE_ON_EXCEPTION(isolate,
-        JSObject::SetOwnPropertyIgnoreAttributes(
-            result,
-            maximized,
-            factory->NewStringFromAsciiChecked(base_max_locale),
-            NONE));
-    RETURN_FAILURE_ON_EXCEPTION(isolate,
-        JSObject::SetOwnPropertyIgnoreAttributes(
-            result,
-            base,
-            factory->NewStringFromAsciiChecked(base_locale),
-            NONE));
+    Handle<String> value = factory->NewStringFromAsciiChecked(base_max_locale);
+    JSObject::AddProperty(result, maximized, value, NONE);
+    value = factory->NewStringFromAsciiChecked(base_locale);
+    JSObject::AddProperty(result, base, value, NONE);
     output->set(i, *result);
   }
 
@@ -13951,12 +13975,10 @@ RUNTIME_FUNCTION(Runtime_CreateDateTimeFormat) {
 
   local_object->SetInternalField(0, reinterpret_cast<Smi*>(date_format));
 
-  RETURN_FAILURE_ON_EXCEPTION(isolate,
-      JSObject::SetOwnPropertyIgnoreAttributes(
-          local_object,
-          isolate->factory()->NewStringFromStaticAscii("dateFormat"),
-          isolate->factory()->NewStringFromStaticAscii("valid"),
-          NONE));
+  Factory* factory = isolate->factory();
+  Handle<String> key = factory->NewStringFromStaticAscii("dateFormat");
+  Handle<String> value = factory->NewStringFromStaticAscii("valid");
+  JSObject::AddProperty(local_object, key, value, NONE);
 
   // Make object handle weak so we can delete the data format once GC kicks in.
   Handle<Object> wrapper = isolate->global_handles()->Create(*local_object);
@@ -14050,12 +14072,10 @@ RUNTIME_FUNCTION(Runtime_CreateNumberFormat) {
 
   local_object->SetInternalField(0, reinterpret_cast<Smi*>(number_format));
 
-  RETURN_FAILURE_ON_EXCEPTION(isolate,
-      JSObject::SetOwnPropertyIgnoreAttributes(
-          local_object,
-          isolate->factory()->NewStringFromStaticAscii("numberFormat"),
-          isolate->factory()->NewStringFromStaticAscii("valid"),
-          NONE));
+  Factory* factory = isolate->factory();
+  Handle<String> key = factory->NewStringFromStaticAscii("numberFormat");
+  Handle<String> value = factory->NewStringFromStaticAscii("valid");
+  JSObject::AddProperty(local_object, key, value, NONE);
 
   Handle<Object> wrapper = isolate->global_handles()->Create(*local_object);
   GlobalHandles::MakeWeak(wrapper.location(),
@@ -14158,12 +14178,10 @@ RUNTIME_FUNCTION(Runtime_CreateCollator) {
 
   local_object->SetInternalField(0, reinterpret_cast<Smi*>(collator));
 
-  RETURN_FAILURE_ON_EXCEPTION(isolate,
-      JSObject::SetOwnPropertyIgnoreAttributes(
-          local_object,
-          isolate->factory()->NewStringFromStaticAscii("collator"),
-          isolate->factory()->NewStringFromStaticAscii("valid"),
-          NONE));
+  Factory* factory = isolate->factory();
+  Handle<String> key = factory->NewStringFromStaticAscii("collator");
+  Handle<String> value = factory->NewStringFromStaticAscii("valid");
+  JSObject::AddProperty(local_object, key, value, NONE);
 
   Handle<Object> wrapper = isolate->global_handles()->Create(*local_object);
   GlobalHandles::MakeWeak(wrapper.location(),
@@ -14264,12 +14282,10 @@ RUNTIME_FUNCTION(Runtime_CreateBreakIterator) {
   // Make sure that the pointer to adopted text is NULL.
   local_object->SetInternalField(1, reinterpret_cast<Smi*>(NULL));
 
-  RETURN_FAILURE_ON_EXCEPTION(isolate,
-      JSObject::SetOwnPropertyIgnoreAttributes(
-          local_object,
-          isolate->factory()->NewStringFromStaticAscii("breakIterator"),
-          isolate->factory()->NewStringFromStaticAscii("valid"),
-          NONE));
+  Factory* factory = isolate->factory();
+  Handle<String> key = factory->NewStringFromStaticAscii("breakIterator");
+  Handle<String> value = factory->NewStringFromStaticAscii("valid");
+  JSObject::AddProperty(local_object, key, value, NONE);
 
   // Make object handle weak so we can delete the break iterator once GC kicks
   // in.
@@ -14442,30 +14458,17 @@ RUNTIME_FUNCTION(Runtime_GetScript) {
 // native code offset.
 RUNTIME_FUNCTION(Runtime_CollectStackTrace) {
   HandleScope scope(isolate);
-  ASSERT(args.length() == 3);
+  ASSERT(args.length() == 2);
   CONVERT_ARG_HANDLE_CHECKED(JSObject, error_object, 0);
   CONVERT_ARG_HANDLE_CHECKED(Object, caller, 1);
-  CONVERT_NUMBER_CHECKED(int32_t, limit, Int32, args[2]);
 
-  // Optionally capture a more detailed stack trace for the message.
-  isolate->CaptureAndSetDetailedStackTrace(error_object);
-  // Capture a simple stack trace for the stack property.
-  return *isolate->CaptureSimpleStackTrace(error_object, caller, limit);
-}
-
-
-// Retrieve the stack trace.  This is the raw stack trace that yet has to
-// be formatted.  Since we only need this once, clear it afterwards.
-RUNTIME_FUNCTION(Runtime_GetAndClearOverflowedStackTrace) {
-  HandleScope scope(isolate);
-  ASSERT(args.length() == 1);
-  CONVERT_ARG_HANDLE_CHECKED(JSObject, error_object, 0);
-  Handle<String> key = isolate->factory()->hidden_stack_trace_string();
-  Handle<Object> result(error_object->GetHiddenProperty(key), isolate);
-  if (result->IsTheHole()) return isolate->heap()->undefined_value();
-  RUNTIME_ASSERT(result->IsJSArray() || result->IsUndefined());
-  JSObject::DeleteHiddenProperty(error_object, key);
-  return *result;
+  if (!isolate->bootstrapper()->IsActive()) {
+    // Optionally capture a more detailed stack trace for the message.
+    isolate->CaptureAndSetDetailedStackTrace(error_object);
+    // Capture a simple stack trace for the stack property.
+    isolate->CaptureAndSetSimpleStackTrace(error_object, caller);
+  }
+  return isolate->heap()->undefined_value();
 }
 
 
@@ -14486,9 +14489,9 @@ RUNTIME_FUNCTION(Runtime_Abort) {
   CONVERT_SMI_ARG_CHECKED(message_id, 0);
   const char* message = GetBailoutReason(
       static_cast<BailoutReason>(message_id));
-  OS::PrintError("abort: %s\n", message);
+  base::OS::PrintError("abort: %s\n", message);
   isolate->PrintStack(stderr);
-  OS::Abort();
+  base::OS::Abort();
   UNREACHABLE();
   return NULL;
 }
@@ -14498,9 +14501,9 @@ RUNTIME_FUNCTION(Runtime_AbortJS) {
   HandleScope scope(isolate);
   ASSERT(args.length() == 1);
   CONVERT_ARG_HANDLE_CHECKED(String, message, 0);
-  OS::PrintError("abort: %s\n", message->ToCString().get());
+  base::OS::PrintError("abort: %s\n", message->ToCString().get());
   isolate->PrintStack(stderr);
-  OS::Abort();
+  base::OS::Abort();
   UNREACHABLE();
   return NULL;
 }
@@ -14538,8 +14541,8 @@ RUNTIME_FUNCTION(Runtime_LoadMutableDouble) {
                    object->properties()->length());
   }
   Handle<Object> raw_value(object->RawFastPropertyAt(field_index), isolate);
-  RUNTIME_ASSERT(raw_value->IsNumber() || raw_value->IsUninitialized());
-  return *Object::NewStorageFor(isolate, raw_value, Representation::Double());
+  RUNTIME_ASSERT(raw_value->IsMutableHeapNumber());
+  return *Object::WrapForRead(isolate, raw_value, Representation::Double());
 }
 
 
@@ -14559,7 +14562,7 @@ RUNTIME_FUNCTION(Runtime_TryMigrateInstance) {
 }
 
 
-RUNTIME_FUNCTION(RuntimeHidden_GetFromCache) {
+RUNTIME_FUNCTION(Runtime_GetFromCache) {
   SealHandleScope shs(isolate);
   // This is only called from codegen, so checks might be more lax.
   CONVERT_ARG_CHECKED(JSFunctionResultCache, cache, 0);
@@ -14607,8 +14610,7 @@ RUNTIME_FUNCTION(RuntimeHidden_GetFromCache) {
     Handle<JSFunction> factory(JSFunction::cast(
           cache_handle->get(JSFunctionResultCache::kFactoryIndex)));
     // TODO(antonm): consider passing a receiver when constructing a cache.
-    Handle<Object> receiver(isolate->native_context()->global_object(),
-                            isolate);
+    Handle<JSObject> receiver(isolate->global_proxy());
     // This handle is nor shared, nor used later, so it's safe.
     Handle<Object> argv[] = { key_handle };
     ASSIGN_RETURN_FAILURE_ON_EXCEPTION(
@@ -14682,7 +14684,6 @@ RUNTIME_FUNCTION(Runtime_ListNatives) {
 #define COUNT_ENTRY(Name, argc, ressize) + 1
   int entry_count = 0
       RUNTIME_FUNCTION_LIST(COUNT_ENTRY)
-      RUNTIME_HIDDEN_FUNCTION_LIST(COUNT_ENTRY)
       INLINE_FUNCTION_LIST(COUNT_ENTRY)
       INLINE_OPTIMIZED_FUNCTION_LIST(COUNT_ENTRY);
 #undef COUNT_ENTRY
@@ -14709,8 +14710,6 @@ RUNTIME_FUNCTION(Runtime_ListNatives) {
   inline_runtime_functions = false;
   RUNTIME_FUNCTION_LIST(ADD_ENTRY)
   INLINE_OPTIMIZED_FUNCTION_LIST(ADD_ENTRY)
-  // Calling hidden runtime functions should just throw.
-  RUNTIME_HIDDEN_FUNCTION_LIST(ADD_ENTRY)
   inline_runtime_functions = true;
   INLINE_FUNCTION_LIST(ADD_ENTRY)
 #undef ADD_ENTRY
@@ -14862,8 +14861,7 @@ RUNTIME_FUNCTION(Runtime_ObserverObjectAndRecordHaveSameOrigin) {
   CONVERT_ARG_HANDLE_CHECKED(JSObject, object, 1);
   CONVERT_ARG_HANDLE_CHECKED(JSObject, record, 2);
 
-  Handle<Context> observer_context(observer->context()->native_context(),
-      isolate);
+  Handle<Context> observer_context(observer->context()->native_context());
   Handle<Context> object_context(object->GetCreationContext());
   Handle<Context> record_context(record->GetCreationContext());
 
@@ -14992,7 +14990,7 @@ static Object* ArrayConstructorCommon(Isolate* isolate,
 }
 
 
-RUNTIME_FUNCTION(RuntimeHidden_ArrayConstructor) {
+RUNTIME_FUNCTION(Runtime_ArrayConstructor) {
   HandleScope scope(isolate);
   // If we get 2 arguments then they are the stub parameters (constructor, type
   // info).  If we get 4, then the first one is a pointer to the arguments
@@ -15029,7 +15027,7 @@ RUNTIME_FUNCTION(RuntimeHidden_ArrayConstructor) {
 }
 
 
-RUNTIME_FUNCTION(RuntimeHidden_InternalArrayConstructor) {
+RUNTIME_FUNCTION(Runtime_InternalArrayConstructor) {
   HandleScope scope(isolate);
   Arguments empty_args(0, NULL);
   bool no_caller_args = args.length() == 1;
@@ -15066,11 +15064,6 @@ RUNTIME_FUNCTION(Runtime_MaxSmi) {
     FUNCTION_ADDR(Runtime_##name), number_of_args, result_size },
 
 
-#define FH(name, number_of_args, result_size)                             \
-  { Runtime::kHidden##name, Runtime::RUNTIME_HIDDEN, NULL,   \
-    FUNCTION_ADDR(RuntimeHidden_##name), number_of_args, result_size },
-
-
 #define I(name, number_of_args, result_size)                             \
   { Runtime::kInline##name, Runtime::INLINE,     \
     "_" #name, NULL, number_of_args, result_size },
@@ -15084,14 +15077,12 @@ RUNTIME_FUNCTION(Runtime_MaxSmi) {
 static const Runtime::Function kIntrinsicFunctions[] = {
   RUNTIME_FUNCTION_LIST(F)
   INLINE_OPTIMIZED_FUNCTION_LIST(F)
-  RUNTIME_HIDDEN_FUNCTION_LIST(FH)
   INLINE_FUNCTION_LIST(I)
   INLINE_OPTIMIZED_FUNCTION_LIST(IO)
 };
 
 #undef IO
 #undef I
-#undef FH
 #undef F
 
 

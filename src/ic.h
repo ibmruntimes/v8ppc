@@ -354,8 +354,6 @@ class CallIC: public IC {
 
     bool CallAsMethod() const { return call_type_ == METHOD; }
 
-    void Print(StringStream* stream) const;
-
    private:
     class ArgcBits: public BitField<int, 0, Code::kArgumentsBits> {};
     class CallTypeBits: public BitField<CallType, Code::kArgumentsBits, 1> {};
@@ -392,11 +390,22 @@ class CallIC: public IC {
 };
 
 
+OStream& operator<<(OStream& os, const CallIC::State& s);
+
+
 class LoadIC: public IC {
  public:
   // ExtraICState bits
   class ContextualModeBits: public BitField<ContextualMode, 0, 1> {};
   STATIC_ASSERT(static_cast<int>(NOT_CONTEXTUAL) == 0);
+
+  enum RegisterInfo {
+    kReceiverIndex,
+    kNameIndex,
+    kRegisterArgumentCount
+  };
+  static const Register ReceiverRegister();
+  static const Register NameRegister();
 
   static ExtraICState ComputeExtraICState(ContextualMode contextual_mode) {
     return ContextualModeBits::encode(contextual_mode);
@@ -854,8 +863,6 @@ class BinaryOpIC: public IC {
     }
     Type* GetResultType(Zone* zone) const;
 
-    void Print(StringStream* stream) const;
-
     void Update(Handle<Object> left,
                 Handle<Object> right,
                 Handle<Object> result);
@@ -863,6 +870,8 @@ class BinaryOpIC: public IC {
     Isolate* isolate() const { return isolate_; }
 
    private:
+    friend OStream& operator<<(OStream& os, const BinaryOpIC::State& s);
+
     enum Kind { NONE, SMI, INT32, NUMBER, STRING, GENERIC };
 
     Kind UpdateKind(Handle<Object> object, Kind kind) const;
@@ -902,6 +911,9 @@ class BinaryOpIC: public IC {
                                  Handle<Object> left,
                                  Handle<Object> right) V8_WARN_UNUSED_RESULT;
 };
+
+
+OStream& operator<<(OStream& os, const BinaryOpIC::State& s);
 
 
 class CompareIC: public IC {

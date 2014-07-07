@@ -8,6 +8,7 @@
 #include "src/allocation.h"
 #include "src/assert-scope.h"
 #include "src/builtins.h"
+#include "src/checks.h"
 #include "src/elements-kind.h"
 #include "src/field-index.h"
 #include "src/flags.h"
@@ -15,7 +16,6 @@
 #include "src/property-details.h"
 #include "src/smart-pointers.h"
 #include "src/unicode-inl.h"
-#include "src/v8checks.h"
 #include "src/zone.h"
 
 #if V8_TARGET_ARCH_ARM
@@ -167,6 +167,12 @@ enum KeyedAccessStoreMode {
 enum ContextualMode {
   NOT_CONTEXTUAL,
   CONTEXTUAL
+};
+
+
+enum MutableMode {
+  MUTABLE,
+  IMMUTABLE
 };
 
 
@@ -354,6 +360,7 @@ const int kStubMinorKeyBits = kBitsPerInt - kSmiTagSize - kStubMajorKeyBits;
   V(PROPERTY_CELL_TYPE)                                                        \
                                                                                \
   V(HEAP_NUMBER_TYPE)                                                          \
+  V(MUTABLE_HEAP_NUMBER_TYPE)                                                  \
   V(FOREIGN_TYPE)                                                              \
   V(BYTE_ARRAY_TYPE)                                                           \
   V(FREE_SPACE_TYPE)                                                           \
@@ -682,6 +689,7 @@ enum InstanceType {
   // "Data", objects that cannot contain non-map-word pointers to heap
   // objects.
   HEAP_NUMBER_TYPE,
+  MUTABLE_HEAP_NUMBER_TYPE,
   FOREIGN_TYPE,
   BYTE_ARRAY_TYPE,
   FREE_SPACE_TYPE,
@@ -902,6 +910,7 @@ template <class C> inline bool Is(Object* obj);
 
 #define HEAP_OBJECT_TYPE_LIST(V)               \
   V(HeapNumber)                                \
+  V(MutableHeapNumber)                         \
   V(Name)                                      \
   V(UniqueName)                                \
   V(String)                                    \
@@ -1045,7 +1054,7 @@ template <class C> inline bool Is(Object* obj);
   V(kCopyBuffersOverlap, "Copy buffers overlap")                              \
   V(kCouldNotGenerateZero, "Could not generate +0.0")                         \
   V(kCouldNotGenerateNegativeZero, "Could not generate -0.0")                 \
-  V(kDebuggerIsActive, "Debugger is active")                                  \
+  V(kDebuggerHasBreakPoints, "Debugger has break points")                     \
   V(kDebuggerStatement, "DebuggerStatement")                                  \
   V(kDeclarationInCatchContext, "Declaration in catch context")               \
   V(kDeclarationInWithContext, "Declaration in with context")                 \
@@ -1435,7 +1444,7 @@ class Object {
     } else if (FLAG_track_fields && representation.IsSmi()) {
       return IsSmi();
     } else if (FLAG_track_double_fields && representation.IsDouble()) {
-      return IsNumber();
+      return IsMutableHeapNumber() || IsNumber();
     } else if (FLAG_track_heap_object_fields && representation.IsHeapObject()) {
       return IsHeapObject();
     }
@@ -1447,6 +1456,10 @@ class Object {
   inline static Handle<Object> NewStorageFor(Isolate* isolate,
                                              Handle<Object> object,
                                              Representation representation);
+
+  inline static Handle<Object> WrapForRead(Isolate* isolate,
+                                           Handle<Object> object,
+                                           Representation representation);
 
   // Returns true if the object is of the correct type to be used as a
   // implementation of a JSObject's elements.
@@ -2161,6 +2174,13 @@ class JSObject: public JSReceiver {
       StoreFromKeyed store_mode = MAY_BE_STORE_FROM_KEYED,
       ExecutableAccessorInfoHandling handling = DEFAULT_HANDLING);
 
+  static void AddProperty(Handle<JSObject> object,
+                          Handle<Name> key,
+                          Handle<Object> value,
+                          PropertyAttributes attributes,
+                          ValueType value_type = OPTIMAL_REPRESENTATION,
+                          StoreMode mode = ALLOW_AS_CONSTANT);
+
   // Extend the receiver with a single fast property appeared first in the
   // passed map. This also extends the property backing store if necessary.
   static void AllocateStorageForMap(Handle<JSObject> object, Handle<Map> map);
@@ -2434,13 +2454,7 @@ class JSObject: public JSReceiver {
   static void TransitionElementsKind(Handle<JSObject> object,
                                      ElementsKind to_kind);
 
-  // TODO(mstarzinger): Both public because of ConvertAndSetOwnProperty().
   static void MigrateToMap(Handle<JSObject> object, Handle<Map> new_map);
-  static void GeneralizeFieldRepresentation(Handle<JSObject> object,
-                                            int modify_index,
-                                            Representation new_representation,
-                                            Handle<HeapType> new_field_type,
-                                            StoreMode store_mode);
 
   // Convert the object to use the canonical dictionary
   // representation. If the object is expected to have additional properties
@@ -2456,8 +2470,8 @@ class JSObject: public JSReceiver {
       Handle<JSObject> object);
 
   // Transform slow named properties to fast variants.
-  static void TransformToFastProperties(Handle<JSObject> object,
-                                        int unused_property_fields);
+  static void MigrateSlowToFast(Handle<JSObject> object,
+                                int unused_property_fields);
 
   // Access fast-case object properties at index.
   static Handle<Object> FastPropertyAt(Handle<JSObject> object,
@@ -2641,6 +2655,28 @@ class JSObject: public JSReceiver {
   friend class JSReceiver;
   friend class Object;
 
+  static void MigrateFastToFast(Handle<JSObject> object, Handle<Map> new_map);
+  static void MigrateFastToSlow(Handle<JSObject> object,
+                                Handle<Map> new_map,
+                                int expected_additional_properties);
+
+  static void SetPropertyToField(LookupResult* lookup, Handle<Object> value);
+
+  static void ConvertAndSetOwnProperty(LookupResult* lookup,
+                                       Handle<Name> name,
+                                       Handle<Object> value,
+                                       PropertyAttributes attributes);
+
+  static void SetPropertyToFieldWithAttributes(LookupResult* lookup,
+                                               Handle<Name> name,
+                                               Handle<Object> value,
+                                               PropertyAttributes attributes);
+  static void GeneralizeFieldRepresentation(Handle<JSObject> object,
+                                            int modify_index,
+                                            Representation new_representation,
+                                            Handle<HeapType> new_field_type,
+                                            StoreMode store_mode);
+
   static void UpdateAllocationSite(Handle<JSObject> object,
                                    ElementsKind to_kind);
 
@@ -2742,7 +2778,7 @@ class JSObject: public JSReceiver {
       StrictMode strict_mode);
 
   // Add a property to an object.
-  MUST_USE_RESULT static MaybeHandle<Object> AddProperty(
+  MUST_USE_RESULT static MaybeHandle<Object> AddPropertyInternal(
       Handle<JSObject> object,
       Handle<Name> name,
       Handle<Object> value,
@@ -3108,6 +3144,12 @@ class ConstantPoolArray: public HeapObject {
 
   class NumberOfEntries BASE_EMBEDDED {
    public:
+    inline NumberOfEntries() {
+      for (int i = 0; i < NUMBER_OF_TYPES; i++) {
+        element_counts_[i] = 0;
+      }
+    }
+
     inline NumberOfEntries(int int64_count, int code_ptr_count,
                            int heap_ptr_count, int int32_count) {
       element_counts_[INT64] = int64_count;
@@ -3123,27 +3165,13 @@ class ConstantPoolArray: public HeapObject {
       element_counts_[INT32] = array->number_of_entries(INT32, section);
     }
 
-    inline int count_of(Type type) const {
-      ASSERT(type < NUMBER_OF_TYPES);
-      return element_counts_[type];
-    }
-
-    inline int total_count() const {
-      int count = 0;
-      for (int i = 0; i < NUMBER_OF_TYPES; i++) {
-        count += element_counts_[i];
-      }
-      return count;
-    }
-
-    inline int are_in_range(int min, int max) const {
-      for (int i = FIRST_TYPE; i < NUMBER_OF_TYPES; i++) {
-        if (element_counts_[i] < min || element_counts_[i] > max) {
-          return false;
-        }
-      }
-      return true;
-    }
+    inline void increment(Type type);
+    inline int equals(const NumberOfEntries& other) const;
+    inline bool is_empty() const;
+    inline int count_of(Type type) const;
+    inline int base_of(Type type) const;
+    inline int total_count() const;
+    inline int are_in_range(int min, int max) const;
 
    private:
     int element_counts_[NUMBER_OF_TYPES];
@@ -3152,14 +3180,26 @@ class ConstantPoolArray: public HeapObject {
   class Iterator BASE_EMBEDDED {
    public:
     inline Iterator(ConstantPoolArray* array, Type type)
-        : array_(array), type_(type), final_section_(array->final_section()) {
-      current_section_ = SMALL_SECTION;
-      next_index_ = array->first_index(type, SMALL_SECTION);
+        : array_(array),
+          type_(type),
+          final_section_(array->final_section()),
+          current_section_(SMALL_SECTION),
+          next_index_(array->first_index(type, SMALL_SECTION)) {
+      update_section();
+    }
+
+    inline Iterator(ConstantPoolArray* array, Type type, LayoutSection section)
+        : array_(array),
+          type_(type),
+          final_section_(section),
+          current_section_(section),
+          next_index_(array->first_index(type, section)) {
       update_section();
     }
 
     inline int next_index();
     inline bool is_finished();
+
    private:
     inline void update_section();
     ConstantPoolArray* array_;
@@ -3218,6 +3258,11 @@ class ConstantPoolArray: public HeapObject {
 
   // Garbage collection support.
   inline int size();
+
+
+  inline static int MaxInt64Offset(int number_of_int64) {
+    return kFirstEntryOffset + (number_of_int64 * kInt64Size);
+  }
 
   inline static int SizeFor(const NumberOfEntries& small) {
     int size = kFirstEntryOffset +
@@ -4459,11 +4504,11 @@ class OrderedHashMap:public OrderedHashTable<
       Handle<Object> key,
       Handle<Object> value);
 
- private:
   Object* ValueAt(int entry) {
     return get(EntryToIndex(entry) + kValueOffset);
   }
 
+ private:
   static const int kValueOffset = 1;
 };
 
@@ -5533,6 +5578,7 @@ class Code: public HeapObject {
   // For kind STUB or ICs, tells whether or not a code object was generated by
   // the optimizing compiler (but it may not be an optimized function).
   bool is_crankshafted();
+  bool is_hydrogen_stub();  // Crankshafted, but not a function.
   inline void set_is_crankshafted(bool value);
 
   // [optimizable]: For FUNCTION kind, tells if it is optimizable.
@@ -6261,10 +6307,9 @@ class Map: public HeapObject {
   int NumberOfFields();
 
   // TODO(ishell): candidate with JSObject::MigrateToMap().
-  bool InstancesNeedRewriting(Map* target,
-                              int target_number_of_fields,
-                              int target_inobject,
-                              int target_unused);
+  bool InstancesNeedRewriting(Map* target, int target_number_of_fields,
+                              int target_inobject, int target_unused,
+                              int* old_number_of_fields);
   // TODO(ishell): moveit!
   static Handle<Map> GeneralizeAllFieldRepresentations(Handle<Map> map);
   MUST_USE_RESULT static Handle<HeapType> GeneralizeFieldType(
@@ -6887,6 +6932,12 @@ class Script: public Struct {
   // [flags]: Holds an exciting bitfield.
   DECL_ACCESSORS(flags, Smi)
 
+  // [source_url]: sourceURL from magic comment
+  DECL_ACCESSORS(source_url, Object)
+
+  // [source_url]: sourceMappingURL magic comment
+  DECL_ACCESSORS(source_mapping_url, Object)
+
   // [compilation_type]: how the the script was compiled. Encoded in the
   // 'flags' field.
   inline CompilationType compilation_type();
@@ -6943,7 +6994,9 @@ class Script: public Struct {
       kEvalFromSharedOffset + kPointerSize;
   static const int kFlagsOffset =
       kEvalFrominstructionsOffsetOffset + kPointerSize;
-  static const int kSize = kFlagsOffset + kPointerSize;
+  static const int kSourceUrlOffset = kFlagsOffset + kPointerSize;
+  static const int kSourceMappingUrlOffset = kSourceUrlOffset + kPointerSize;
+  static const int kSize = kSourceMappingUrlOffset + kPointerSize;
 
  private:
   int GetLineNumberWithArray(int code_pos);
@@ -7219,12 +7272,6 @@ class SharedFunctionInfo: public HeapObject {
   // Is this a function or top-level/eval code.
   DECL_BOOLEAN_ACCESSORS(is_function)
 
-  // Indicates that the function cannot be optimized.
-  DECL_BOOLEAN_ACCESSORS(dont_optimize)
-
-  // Indicates that the function cannot be inlined.
-  DECL_BOOLEAN_ACCESSORS(dont_inline)
-
   // Indicates that code for this function cannot be cached.
   DECL_BOOLEAN_ACCESSORS(dont_cache)
 
@@ -7284,11 +7331,6 @@ class SharedFunctionInfo: public HeapObject {
     set_opt_count_and_bailout_reason(
         DisabledOptimizationReasonBits::update(opt_count_and_bailout_reason(),
                                                reason));
-  }
-
-  void set_dont_optimize_reason(BailoutReason reason) {
-    set_bailout_reason(reason);
-    set_dont_optimize(reason != kNoReason);
   }
 
   // Check whether or not this function is inlineable.
@@ -7472,8 +7514,6 @@ class SharedFunctionInfo: public HeapObject {
     kIsAnonymous,
     kNameShouldPrintAsAnonymous,
     kIsFunction,
-    kDontOptimize,
-    kDontInline,
     kDontCache,
     kDontFlush,
     kIsGenerator,
@@ -7639,6 +7679,7 @@ class JSFunction: public JSObject {
   // [context]: The context for this function.
   inline Context* context();
   inline void set_context(Object* context);
+  inline JSObject* global_proxy();
 
   // [code]: The generated code object for this function.  Executed
   // when the function is invoked, e.g. foo() or new foo(). See
@@ -7653,7 +7694,10 @@ class JSFunction: public JSObject {
   inline bool IsBuiltin();
 
   // Tells whether this function is defined in a native script.
-  inline bool IsNative();
+  inline bool IsFromNativeScript();
+
+  // Tells whether this function is defined in an extension script.
+  inline bool IsFromExtensionScript();
 
   // Tells whether or not the function needs arguments adaption.
   inline bool NeedsArgumentsAdaption();
@@ -7892,8 +7936,8 @@ class GlobalObject: public JSObject {
   // [global context]: the most recent (i.e. innermost) global context.
   DECL_ACCESSORS(global_context, Context)
 
-  // [global receiver]: the global receiver object of the context
-  DECL_ACCESSORS(global_receiver, JSObject)
+  // [global proxy]: the global proxy object of the context
+  DECL_ACCESSORS(global_proxy, JSObject)
 
   // Retrieve the property cell used to store a property.
   PropertyCell* GetPropertyCell(LookupResult* result);
@@ -7904,8 +7948,8 @@ class GlobalObject: public JSObject {
   static const int kBuiltinsOffset = JSObject::kHeaderSize;
   static const int kNativeContextOffset = kBuiltinsOffset + kPointerSize;
   static const int kGlobalContextOffset = kNativeContextOffset + kPointerSize;
-  static const int kGlobalReceiverOffset = kGlobalContextOffset + kPointerSize;
-  static const int kHeaderSize = kGlobalReceiverOffset + kPointerSize;
+  static const int kGlobalProxyOffset = kGlobalContextOffset + kPointerSize;
+  static const int kHeaderSize = kGlobalProxyOffset + kPointerSize;
 
  private:
   DISALLOW_IMPLICIT_CONSTRUCTORS(GlobalObject);
@@ -10148,13 +10192,26 @@ class OrderedHashTableIterator: public JSObject {
     kKindEntries = 3
   };
 
-  // Returns an iterator result object: {value: any, done: boolean} and moves
-  // the index to the next valid entry. Closes the iterator if moving past the
-  // end.
-  static Handle<JSObject> Next(Handle<Derived> iterator);
+  // Whether the iterator has more elements. This needs to be called before
+  // calling |CurrentKey| and/or |CurrentValue|.
+  bool HasMore();
+
+  // Move the index forward one.
+  void MoveNext() {
+    set_index(Smi::FromInt(Smi::cast(index())->value() + 1));
+  }
+
+  // Populates the array with the next key and value and then moves the iterator
+  // forward.
+  // This returns the |kind| or 0 if the iterator is already at the end.
+  Smi* Next(JSArray* value_array);
+
+  // Returns the current key of the iterator. This should only be called when
+  // |HasMore| returns true.
+  inline Object* CurrentKey();
 
  private:
-  // Transitions the iterator to the non obsolote backing store. This is a NOP
+  // Transitions the iterator to the non obsolete backing store. This is a NOP
   // if the [table] is not obsolete.
   void Transition();
 
@@ -10171,9 +10228,9 @@ class JSSetIterator: public OrderedHashTableIterator<JSSetIterator,
 
   DECLARE_CAST(JSSetIterator)
 
-  static Handle<Object> ValueForKind(
-      Handle<JSSetIterator> iterator,
-      int entry_index);
+  // Called by |Next| to populate the array. This allows the subclasses to
+  // populate the array differently.
+  inline void PopulateValueArray(FixedArray* array);
 
  private:
   DISALLOW_IMPLICIT_CONSTRUCTORS(JSSetIterator);
@@ -10189,11 +10246,15 @@ class JSMapIterator: public OrderedHashTableIterator<JSMapIterator,
 
   DECLARE_CAST(JSMapIterator)
 
-  static Handle<Object> ValueForKind(
-      Handle<JSMapIterator> iterator,
-      int entry_index);
+  // Called by |Next| to populate the array. This allows the subclasses to
+  // populate the array differently.
+  inline void PopulateValueArray(FixedArray* array);
 
  private:
+  // Returns the current value of the iterator. This should only be called when
+  // |HasMore| returns true.
+  inline Object* CurrentValue();
+
   DISALLOW_IMPLICIT_CONSTRUCTORS(JSMapIterator);
 };
 

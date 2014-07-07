@@ -927,6 +927,9 @@ class HValue : public ZoneObject {
 };
 
 
+OStream& operator<<(OStream& os, const HValue& v);
+
+
 #define DECLARE_INSTRUCTION_FACTORY_P0(I)                                      \
   static I* New(Zone* zone, HValue* context) {                                 \
     return new(zone) I();                                                      \
@@ -7470,7 +7473,7 @@ class HToFastProperties V8_FINAL : public HUnaryOperation {
     ASSERT(value->IsCallRuntime());
 #ifdef DEBUG
     const Runtime::Function* function = HCallRuntime::cast(value)->function();
-    ASSERT(function->function_id == Runtime::kHiddenCreateObjectLiteral);
+    ASSERT(function->function_id == Runtime::kCreateObjectLiteral);
 #endif
   }
 

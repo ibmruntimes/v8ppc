@@ -1166,9 +1166,7 @@ MUST_USE_RESULT static Object* HandleApiCallHelper(
   if (shared->strict_mode() == SLOPPY && !shared->native()) {
     Object* recv = args[0];
     ASSERT(!recv->IsNull());
-    if (recv->IsUndefined()) {
-      args[0] = function->context()->global_object()->global_receiver();
-    }
+    if (recv->IsUndefined()) args[0] = function->global_proxy();
   }
 
   Object* raw_holder = TypeCheck(heap, args.length(), &args[0], *fun_data);
@@ -1684,12 +1682,12 @@ const char* Builtins::Lookup(byte* pc) {
 
 
 void Builtins::Generate_InterruptCheck(MacroAssembler* masm) {
-  masm->TailCallRuntime(Runtime::kHiddenInterrupt, 0, 1);
+  masm->TailCallRuntime(Runtime::kInterrupt, 0, 1);
 }
 
 
 void Builtins::Generate_StackCheck(MacroAssembler* masm) {
-  masm->TailCallRuntime(Runtime::kHiddenStackGuard, 0, 1);
+  masm->TailCallRuntime(Runtime::kStackGuard, 0, 1);
 }
 
 

@@ -42,6 +42,7 @@ namespace internal {
   V(Map, shared_function_info_map, SharedFunctionInfoMap)                      \
   V(Map, meta_map, MetaMap)                                                    \
   V(Map, heap_number_map, HeapNumberMap)                                       \
+  V(Map, mutable_heap_number_map, MutableHeapNumberMap)                        \
   V(Map, native_context_map, NativeContextMap)                                 \
   V(Map, fixed_array_map, FixedArrayMap)                                       \
   V(Map, code_map, CodeMap)                                                    \
@@ -193,6 +194,8 @@ namespace internal {
   V(Symbol, observed_symbol, ObservedSymbol)                                   \
   V(Symbol, uninitialized_symbol, UninitializedSymbol)                         \
   V(Symbol, megamorphic_symbol, MegamorphicSymbol)                             \
+  V(Symbol, stack_trace_symbol, StackTraceSymbol)                              \
+  V(Symbol, detailed_stack_trace_symbol, DetailedStackTraceSymbol)             \
   V(FixedArray, materialized_objects, MaterializedObjects)                     \
   V(FixedArray, allocation_sites_scratchpad, AllocationSitesScratchpad)        \
   V(FixedArray, microtask_queue, MicrotaskQueue)
@@ -230,6 +233,7 @@ namespace internal {
   V(shared_function_info_map)             \
   V(meta_map)                             \
   V(heap_number_map)                      \
+  V(mutable_heap_number_map)              \
   V(native_context_map)                   \
   V(fixed_array_map)                      \
   V(code_map)                             \
@@ -288,6 +292,8 @@ namespace internal {
   V(nan_string, "NaN")                                                   \
   V(RegExp_string, "RegExp")                                             \
   V(source_string, "source")                                             \
+  V(source_url_string, "source_url")                                     \
+  V(source_mapping_url_string, "source_mapping_url")                     \
   V(global_string, "global")                                             \
   V(ignore_case_string, "ignoreCase")                                    \
   V(multiline_string, "multiline")                                       \
@@ -340,7 +346,6 @@ namespace internal {
   V(strict_compare_ic_string, "===")                                     \
   V(infinity_string, "Infinity")                                         \
   V(minus_infinity_string, "-Infinity")                                  \
-  V(hidden_stack_trace_string, "v8::hidden_stack_trace")                 \
   V(query_colon_string, "(?:)")                                          \
   V(Generator_string, "Generator")                                       \
   V(throw_string, "throw")                                               \
@@ -423,6 +428,18 @@ class PromotionQueue {
     }
 
     RelocateQueueHead();
+  }
+
+  bool IsBelowPromotionQueue(Address to_space_top) {
+    // If the given to-space top pointer and the head of the promotion queue
+    // are not on the same page, then the to-space objects are below the
+    // promotion queue.
+    if (GetHeadPage() != Page::FromAddress(to_space_top)) {
+      return true;
+    }
+    // If the to space top pointer is smaller or equal than the promotion
+    // queue head, then the to-space objects are below the promotion queue.
+    return reinterpret_cast<intptr_t*>(to_space_top) <= rear_;
   }
 
   bool is_empty() {
@@ -1077,15 +1094,8 @@ class Heap {
   static const int kMaxExecutableSizeHugeMemoryDevice =
       700 * kPointerMultiplier;
 
-  intptr_t OldGenerationAllocationLimit(intptr_t old_gen_size) {
-    intptr_t limit = FLAG_stress_compaction
-        ? old_gen_size + old_gen_size / 10
-        : old_gen_size * old_space_growing_factor_;
-    limit = Max(limit, kMinimumOldGenerationAllocationLimit);
-    limit += new_space_.Capacity();
-    intptr_t halfway_to_the_max = (old_gen_size + max_old_generation_size_) / 2;
-    return Min(limit, halfway_to_the_max);
-  }
+  intptr_t OldGenerationAllocationLimit(intptr_t old_gen_size,
+                                        int freed_global_handles);
 
   // Indicates whether inline bump-pointer allocation has been disabled.
   bool inline_allocation_disabled() { return inline_allocation_disabled_; }
@@ -1200,10 +1210,8 @@ class Heap {
 
   void VisitExternalResources(v8::ExternalResourceVisitor* visitor);
 
-  // Helper function that governs the promotion policy from new space to
-  // old.  If the object's old address lies below the new space's age
-  // mark or if we've already filled the bottom 1/16th of the to space,
-  // we try to promote this object.
+  // An object should be promoted if the object has survived a
+  // scavenge operation.
   inline bool ShouldBePromoted(Address old_address, int object_size);
 
   void ClearJSFunctionResultCaches();
@@ -1469,7 +1477,9 @@ class Heap {
 
   // Allocated a HeapNumber from value.
   MUST_USE_RESULT AllocationResult AllocateHeapNumber(
-      double value, PretenureFlag pretenure = NOT_TENURED);
+      double value,
+      MutableMode mode = IMMUTABLE,
+      PretenureFlag pretenure = NOT_TENURED);
 
   // Allocate a byte array of the specified length
   MUST_USE_RESULT AllocationResult AllocateByteArray(
@@ -1515,11 +1525,6 @@ class Heap {
   intptr_t max_old_generation_size_;
   intptr_t max_executable_size_;
   intptr_t maximum_committed_;
-
-  // The old space growing factor is used in the old space heap growing
-  // strategy. The new old space size is the current old space size times
-  // old_space_growing_factor_.
-  int old_space_growing_factor_;
 
   // For keeping track of how much data has survived
   // scavenge since last new space expansion.
@@ -1599,9 +1604,6 @@ class Heap {
   // which collector to invoke, before expanding a paged space in the old
   // generation and on every allocation in large object space.
   intptr_t old_generation_allocation_limit_;
-
-  // Used to adjust the limits that control the timing of the next GC.
-  intptr_t size_of_old_gen_at_last_old_space_gc_;
 
   // Indicates that an allocation has failed in the old generation since the
   // last GC.
@@ -2163,7 +2165,7 @@ class Heap {
 
   MemoryChunk* chunks_queued_for_free_;
 
-  Mutex relocation_mutex_;
+  base::Mutex relocation_mutex_;
 
   int gc_callbacks_depth_;
 
@@ -2524,6 +2526,9 @@ class GCTracer BASE_EMBEDDED {
       MC_SWEEP,
       MC_SWEEP_NEWSPACE,
       MC_SWEEP_OLDSPACE,
+      MC_SWEEP_CODE,
+      MC_SWEEP_CELL,
+      MC_SWEEP_MAP,
       MC_EVACUATE_PAGES,
       MC_UPDATE_NEW_TO_NEW_POINTERS,
       MC_UPDATE_ROOT_TO_NEW_POINTERS,
@@ -2540,12 +2545,12 @@ class GCTracer BASE_EMBEDDED {
     Scope(GCTracer* tracer, ScopeId scope)
         : tracer_(tracer),
         scope_(scope) {
-      start_time_ = OS::TimeCurrentMillis();
+      start_time_ = base::OS::TimeCurrentMillis();
     }
 
     ~Scope() {
       ASSERT(scope_ < kNumberOfScopes);  // scope_ is unsigned.
-      tracer_->scopes_[scope_] += OS::TimeCurrentMillis() - start_time_;
+      tracer_->scopes_[scope_] += base::OS::TimeCurrentMillis() - start_time_;
     }
 
    private:

@@ -6,13 +6,13 @@
 
 #include "src/api.h"
 #include "src/ast.h"
+#include "src/base/platform/platform.h"
 #include "src/bootstrapper.h"
 #include "src/char-predicates-inl.h"
 #include "src/codegen.h"
 #include "src/compiler.h"
 #include "src/messages.h"
 #include "src/parser.h"
-#include "src/platform.h"
 #include "src/preparser.h"
 #include "src/runtime.h"
 #include "src/scanner-character-streams.h"
@@ -453,11 +453,10 @@ void ParserTraits::CheckPossibleEvalCall(Expression* expression,
 }
 
 
-Expression* ParserTraits::MarkExpressionAsLValue(Expression* expression) {
-  VariableProxy* proxy = expression != NULL
-      ? expression->AsVariableProxy()
-      : NULL;
-  if (proxy != NULL) proxy->MarkAsLValue();
+Expression* ParserTraits::MarkExpressionAsAssigned(Expression* expression) {
+  VariableProxy* proxy =
+      expression != NULL ? expression->AsVariableProxy() : NULL;
+  if (proxy != NULL) proxy->set_is_assigned();
   return expression;
 }
 
@@ -593,8 +592,7 @@ Expression* ParserTraits::NewThrowError(
   Zone* zone = parser_->zone();
   int argc = arg != NULL ? 1 : 0;
   const AstRawString* type =
-      parser_->ast_value_factory_->GetOneByteString(Vector<const uint8_t>(
-          reinterpret_cast<const uint8_t*>(message), StrLength(message)));
+      parser_->ast_value_factory_->GetOneByteString(message);
   ZoneList<const AstRawString*>* array =
       new (zone) ZoneList<const AstRawString*>(argc, zone);
   if (arg != NULL) {
@@ -785,6 +783,10 @@ Parser::Parser(CompilationInfo* info)
   set_allow_generators(FLAG_harmony_generators);
   set_allow_for_of(FLAG_harmony_iteration);
   set_allow_harmony_numeric_literals(FLAG_harmony_numeric_literals);
+  for (int feature = 0; feature < v8::Isolate::kUseCounterFeatureCount;
+       ++feature) {
+    use_counts_[feature] = 0;
+  }
 }
 
 
@@ -794,7 +796,7 @@ FunctionLiteral* Parser::ParseProgram() {
   HistogramTimerScope timer_scope(isolate()->counters()->parse(), true);
   Handle<String> source(String::cast(script_->source()));
   isolate()->counters()->total_parse_size()->Increment(source->length());
-  ElapsedTimer timer;
+  base::ElapsedTimer timer;
   if (FLAG_trace_parse) {
     timer.Start();
   }
@@ -893,6 +895,9 @@ FunctionLiteral* Parser::DoParseProgram(CompilationInfo* info,
     bool ok = true;
     int beg_pos = scanner()->location().beg_pos;
     ParseSourceElements(body, Token::EOS, info->is_eval(), true, &ok);
+
+    HandleSourceURLComments();
+
     if (ok && strict_mode() == STRICT) {
       CheckOctalLiteral(beg_pos, scanner()->location().end_pos, &ok);
     }
@@ -949,7 +954,7 @@ FunctionLiteral* Parser::ParseLazy() {
   HistogramTimerScope timer_scope(isolate()->counters()->parse_lazy());
   Handle<String> source(String::cast(script_->source()));
   isolate()->counters()->total_parse_size()->Increment(source->length());
-  ElapsedTimer timer;
+  base::ElapsedTimer timer;
   if (FLAG_trace_parse) {
     timer.Start();
   }
@@ -1089,11 +1094,13 @@ void* Parser::ParseSourceElements(ZoneList<Statement*>* processor,
       if ((e_stat = stat->AsExpressionStatement()) != NULL &&
           (literal = e_stat->expression()->AsLiteral()) != NULL &&
           literal->raw_value()->IsString()) {
-        // Check "use strict" directive (ES5 14.1).
+        // Check "use strict" directive (ES5 14.1) and "use asm" directive. Only
+        // one can be present.
         if (strict_mode() == SLOPPY &&
             literal->raw_value()->AsString() ==
                 ast_value_factory_->use_strict_string() &&
-            token_loc.end_pos - token_loc.beg_pos == 12) {
+            token_loc.end_pos - token_loc.beg_pos ==
+                ast_value_factory_->use_strict_string()->length() + 2) {
           // TODO(mstarzinger): Global strict eval calls, need their own scope
           // as specified in ES5 10.4.2(3). The correct fix would be to always
           // add this scope in DoParseProgram(), but that requires adaptations
@@ -1110,6 +1117,13 @@ void* Parser::ParseSourceElements(ZoneList<Statement*>* processor,
           scope_->SetStrictMode(STRICT);
           // "use strict" is the only directive for now.
           directive_prologue = false;
+        } else if (literal->raw_value()->AsString() ==
+                       ast_value_factory_->use_asm_string() &&
+                   token_loc.end_pos - token_loc.beg_pos ==
+                       ast_value_factory_->use_asm_string()->length() + 2) {
+          // Store the usage count; The actual use counter on the isolate is
+          // incremented after parsing is done.
+          ++use_counts_[v8::Isolate::kUseAsm];
         }
       } else {
         // End of the directive prologue.
@@ -1722,6 +1736,8 @@ void Parser::Declare(Declaration* declaration, bool resolve, bool* ok) {
       Expression* expression = NewThrowTypeError(
           "var_redeclaration", name, declaration->position());
       declaration_scope->SetIllegalRedeclaration(expression);
+    } else if (mode == VAR) {
+      var->set_maybe_assigned();
     }
   }
 
@@ -2222,7 +2238,7 @@ Block* Parser::ParseVariableDeclarations(
         // the number of arguments (1 or 2).
         initialize = factory()->NewCallRuntime(
             ast_value_factory_->initialize_const_global_string(),
-            Runtime::FunctionForId(Runtime::kHiddenInitializeConstGlobal),
+            Runtime::FunctionForId(Runtime::kInitializeConstGlobal),
             arguments, pos);
       } else {
         // Add strict mode.
@@ -3676,7 +3692,7 @@ ZoneList<Statement*>* Parser::ParseEagerFunctionBody(
         new(zone()) ZoneList<Expression*>(0, zone());
     CallRuntime* allocation = factory()->NewCallRuntime(
         ast_value_factory_->empty_string(),
-        Runtime::FunctionForId(Runtime::kHiddenCreateJSGeneratorObject),
+        Runtime::FunctionForId(Runtime::kCreateJSGeneratorObject),
         arguments, pos);
     VariableProxy* init_proxy = factory()->NewVariableProxy(
         function_state_->generator_object_variable());
@@ -3869,6 +3885,19 @@ void Parser::RegisterTargetUse(Label* target, Target* stop) {
 }
 
 
+void Parser::HandleSourceURLComments() {
+  if (scanner_.source_url()->length() > 0) {
+    Handle<String> source_url = scanner_.source_url()->Internalize(isolate());
+    info_->script()->set_source_url(*source_url);
+  }
+  if (scanner_.source_mapping_url()->length() > 0) {
+    Handle<String> source_mapping_url =
+        scanner_.source_mapping_url()->Internalize(isolate());
+    info_->script()->set_source_mapping_url(*source_mapping_url);
+  }
+}
+
+
 void Parser::ThrowPendingError() {
   ASSERT(ast_value_factory_->IsInternalized());
   if (has_pending_error_) {
@@ -3888,11 +3917,23 @@ void Parser::ThrowPendingError() {
           .ToHandleChecked();
       elements->set(0, *arg_string);
     }
+    isolate()->debug()->OnCompileError(script_);
+
     Handle<JSArray> array = factory->NewJSArrayWithElements(elements);
     Handle<Object> result = pending_error_is_reference_error_
         ? factory->NewReferenceError(pending_error_message_, array)
         : factory->NewSyntaxError(pending_error_message_, array);
     isolate()->Throw(*result, &location);
+  }
+}
+
+
+void Parser::InternalizeUseCounts() {
+  for (int feature = 0; feature < v8::Isolate::kUseCounterFeatureCount;
+       ++feature) {
+    for (int i = 0; i < use_counts_[feature]; ++i) {
+      isolate()->CountUsage(v8::Isolate::UseCounterFeature(feature));
+    }
   }
 }
 
@@ -4838,6 +4879,9 @@ bool Parser::Parse() {
     info()->SetAstValueFactory(ast_value_factory_);
   }
   ast_value_factory_ = NULL;
+
+  InternalizeUseCounts();
+
   return (result != NULL);
 }
 

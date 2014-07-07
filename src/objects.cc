@@ -761,7 +761,7 @@ Handle<Object> JSObject::DeleteNormalizedProperty(Handle<JSObject> object,
         // the hole value.
         Handle<Map> new_map = Map::CopyDropDescriptors(handle(object->map()));
         ASSERT(new_map->is_dictionary_map());
-        object->set_map(*new_map);
+        JSObject::MigrateToMap(object, new_map);
       }
       Handle<PropertyCell> cell(PropertyCell::cast(dictionary->ValueAt(entry)));
       Handle<Object> value = isolate->factory()->the_hole_value();
@@ -1378,37 +1378,35 @@ void Map::PrintGeneralization(FILE* file,
                               Representation new_representation,
                               HeapType* old_field_type,
                               HeapType* new_field_type) {
-  PrintF(file, "[generalizing ");
+  OFStream os(file);
+  os << "[generalizing ";
   constructor_name()->PrintOn(file);
-  PrintF(file, "] ");
+  os << "] ";
   Name* name = instance_descriptors()->GetKey(modify_index);
   if (name->IsString()) {
     String::cast(name)->PrintOn(file);
   } else {
-    PrintF(file, "{symbol %p}", static_cast<void*>(name));
+    os << "{symbol " << static_cast<void*>(name) << "}";
   }
-  PrintF(file, ":");
+  os << ":";
   if (constant_to_field) {
-    PrintF(file, "c");
+    os << "c";
   } else {
-    PrintF(file, "%s", old_representation.Mnemonic());
-    PrintF(file, "{");
-    old_field_type->TypePrint(file, HeapType::SEMANTIC_DIM);
-    PrintF(file, "}");
+    os << old_representation.Mnemonic() << "{";
+    old_field_type->PrintTo(os, HeapType::SEMANTIC_DIM);
+    os << "}";
   }
-  PrintF(file, "->%s", new_representation.Mnemonic());
-  PrintF(file, "{");
-  new_field_type->TypePrint(file, HeapType::SEMANTIC_DIM);
-  PrintF(file, "}");
-  PrintF(file, " (");
+  os << "->" << new_representation.Mnemonic() << "{";
+  new_field_type->PrintTo(os, HeapType::SEMANTIC_DIM);
+  os << "} (";
   if (strlen(reason) > 0) {
-    PrintF(file, "%s", reason);
+    os << reason;
   } else {
-    PrintF(file, "+%i maps", descriptors - split);
+    os << "+" << (descriptors - split) << " maps";
   }
-  PrintF(file, ") [");
+  os << ") [";
   JavaScriptFrame::PrintTop(GetIsolate(), file, false, true);
-  PrintF(file, "]\n");
+  os << "]\n";
 }
 
 
@@ -1547,6 +1545,11 @@ void HeapObject::HeapObjectShortPrint(StringStream* accumulator) {
       HeapNumber::cast(this)->HeapNumberPrint(accumulator);
       accumulator->Put('>');
       break;
+    case MUTABLE_HEAP_NUMBER_TYPE:
+      accumulator->Add("<MutableNumber: ");
+      HeapNumber::cast(this)->HeapNumberPrint(accumulator);
+      accumulator->Put('>');
+      break;
     case JS_PROXY_TYPE:
       accumulator->Add("<JSProxy>");
       break;
@@ -1672,6 +1675,7 @@ void HeapObject::IterateBody(InstanceType type, int object_size,
       break;
 
     case HEAP_NUMBER_TYPE:
+    case MUTABLE_HEAP_NUMBER_TYPE:
     case FILLER_TYPE:
     case BYTE_ARRAY_TYPE:
     case FREE_SPACE_TYPE:
@@ -1713,7 +1717,7 @@ bool HeapNumber::HeapNumberBooleanValue() {
 
 
 void HeapNumber::HeapNumberPrint(FILE* out) {
-  PrintF(out, "%.16g", Number());
+  PrintF(out, "%.16g", value());
 }
 
 
@@ -1725,7 +1729,7 @@ void HeapNumber::HeapNumberPrint(StringStream* accumulator) {
   // print that using vsnprintf (which may truncate but never allocate if
   // there is no more space in the buffer).
   EmbeddedVector<char, 100> buffer;
-  SNPrintF(buffer, "%.16g", Number());
+  SNPrintF(buffer, "%.16g", value());
   accumulator->Add("%s", buffer.start());
 }
 
@@ -1880,7 +1884,7 @@ void JSObject::AddSlowProperty(Handle<JSObject> object,
 }
 
 
-MaybeHandle<Object> JSObject::AddProperty(
+MaybeHandle<Object> JSObject::AddPropertyInternal(
     Handle<JSObject> object,
     Handle<Name> name,
     Handle<Object> value,
@@ -2063,22 +2067,21 @@ static void RightTrimFixedArray(Heap* heap, FixedArray* elms, int to_trim) {
 }
 
 
-bool Map::InstancesNeedRewriting(Map* target,
-                                 int target_number_of_fields,
-                                 int target_inobject,
-                                 int target_unused) {
+bool Map::InstancesNeedRewriting(Map* target, int target_number_of_fields,
+                                 int target_inobject, int target_unused,
+                                 int* old_number_of_fields) {
   // If fields were added (or removed), rewrite the instance.
-  int number_of_fields = NumberOfFields();
-  ASSERT(target_number_of_fields >= number_of_fields);
-  if (target_number_of_fields != number_of_fields) return true;
+  *old_number_of_fields = NumberOfFields();
+  ASSERT(target_number_of_fields >= *old_number_of_fields);
+  if (target_number_of_fields != *old_number_of_fields) return true;
 
   // If smi descriptors were replaced by double descriptors, rewrite.
   DescriptorArray* old_desc = instance_descriptors();
   DescriptorArray* new_desc = target->instance_descriptors();
   int limit = NumberOfOwnDescriptors();
   for (int i = 0; i < limit; i++) {
-    if (new_desc->GetDetails(i).representation().IsDouble() &&
-        !old_desc->GetDetails(i).representation().IsDouble()) {
+    if (new_desc->GetDetails(i).representation().IsDouble() !=
+        old_desc->GetDetails(i).representation().IsDouble()) {
       return true;
     }
   }
@@ -2111,7 +2114,26 @@ Handle<TransitionArray> Map::SetElementsTransitionMap(
 }
 
 
-// To migrate an instance to a map:
+void JSObject::MigrateToMap(Handle<JSObject> object, Handle<Map> new_map) {
+  if (object->map() == *new_map) return;
+  if (object->HasFastProperties()) {
+    if (!new_map->is_dictionary_map()) {
+      MigrateFastToFast(object, new_map);
+    } else {
+      MigrateFastToSlow(object, new_map, 0);
+    }
+  } else {
+    // For slow-to-fast migrations JSObject::TransformToFastProperties()
+    // must be used instead.
+    CHECK(new_map->is_dictionary_map());
+
+    // Slow-to-slow migration is trivial.
+    object->set_map(*new_map);
+  }
+}
+
+
+// To migrate a fast instance to a fast map:
 // - First check whether the instance needs to be rewritten. If not, simply
 //   change the map.
 // - Otherwise, allocate a fixed array large enough to hold all fields, in
@@ -2126,19 +2148,18 @@ Handle<TransitionArray> Map::SetElementsTransitionMap(
 //     to temporarily store the inobject properties.
 //   * If there are properties left in the backing store, install the backing
 //     store.
-void JSObject::MigrateToMap(Handle<JSObject> object, Handle<Map> new_map) {
+void JSObject::MigrateFastToFast(Handle<JSObject> object, Handle<Map> new_map) {
   Isolate* isolate = object->GetIsolate();
   Handle<Map> old_map(object->map());
+  int old_number_of_fields;
   int number_of_fields = new_map->NumberOfFields();
   int inobject = new_map->inobject_properties();
   int unused = new_map->unused_property_fields();
 
   // Nothing to do if no functions were converted to fields and no smis were
   // converted to doubles.
-  if (!old_map->InstancesNeedRewriting(
-          *new_map, number_of_fields, inobject, unused)) {
-    // Writing the new map here does not require synchronization since it does
-    // not change the actual object size.
+  if (!old_map->InstancesNeedRewriting(*new_map, number_of_fields, inobject,
+                                       unused, &old_number_of_fields)) {
     object->synchronized_set_map(*new_map);
     return;
   }
@@ -2147,7 +2168,9 @@ void JSObject::MigrateToMap(Handle<JSObject> object, Handle<Map> new_map) {
   int external = total_size - inobject;
 
   if ((old_map->unused_property_fields() == 0) &&
+      (number_of_fields != old_number_of_fields) &&
       (new_map->GetBackPointer() == *old_map)) {
+    ASSERT(number_of_fields == old_number_of_fields + 1);
     // This migration is a transition from a map that has run out out property
     // space. Therefore it could be done by extending the backing store.
     Handle<FixedArray> old_storage = handle(object->properties(), isolate);
@@ -2158,7 +2181,7 @@ void JSObject::MigrateToMap(Handle<JSObject> object, Handle<Map> new_map) {
     PropertyDetails details = new_map->GetLastDescriptorDetails();
     Handle<Object> value;
     if (details.representation().IsDouble()) {
-      value = isolate->factory()->NewHeapNumber(0);
+      value = isolate->factory()->NewHeapNumber(0, MUTABLE);
     } else {
       value = isolate->factory()->uninitialized_value();
     }
@@ -2172,9 +2195,7 @@ void JSObject::MigrateToMap(Handle<JSObject> object, Handle<Map> new_map) {
 
     // Set the new property value and do the map transition.
     object->set_properties(*new_storage);
-    // Writing the new map here does not require synchronization since it does
-    // not change the actual object size.
-    object->set_map(*new_map);
+    object->synchronized_set_map(*new_map);
     return;
   }
   Handle<FixedArray> array = isolate->factory()->NewFixedArray(total_size);
@@ -2208,6 +2229,9 @@ void JSObject::MigrateToMap(Handle<JSObject> object, Handle<Map> new_map) {
         value = handle(Smi::FromInt(0), isolate);
       }
       value = Object::NewStorageFor(isolate, value, details.representation());
+    } else if (old_details.representation().IsDouble() &&
+               !details.representation().IsDouble()) {
+      value = Object::WrapForRead(isolate, value, old_details.representation());
     }
     ASSERT(!(details.representation().IsDouble() && value->IsSmi()));
     int target_index = new_descriptors->GetFieldIndex(i) - inobject;
@@ -2220,7 +2244,7 @@ void JSObject::MigrateToMap(Handle<JSObject> object, Handle<Map> new_map) {
     if (details.type() != FIELD) continue;
     Handle<Object> value;
     if (details.representation().IsDouble()) {
-      value = isolate->factory()->NewHeapNumber(0);
+      value = isolate->factory()->NewHeapNumber(0, MUTABLE);
     } else {
       value = isolate->factory()->uninitialized_value();
     }
@@ -2240,30 +2264,30 @@ void JSObject::MigrateToMap(Handle<JSObject> object, Handle<Map> new_map) {
     object->FastPropertyAtPut(index, array->get(external + i));
   }
 
-  // Create filler object past the new instance size.
-  int new_instance_size = new_map->instance_size();
-  int instance_size_delta = old_map->instance_size() - new_instance_size;
-  ASSERT(instance_size_delta >= 0);
-  Address address = object->address() + new_instance_size;
-
-  // The trimming is performed on a newly allocated object, which is on a
-  // freshly allocated page or on an already swept page. Hence, the sweeper
-  // thread can not get confused with the filler creation. No synchronization
-  // needed.
-  isolate->heap()->CreateFillerObjectAt(address, instance_size_delta);
+  Heap* heap = isolate->heap();
 
   // If there are properties in the new backing store, trim it to the correct
   // size and install the backing store into the object.
   if (external > 0) {
-    RightTrimFixedArray<Heap::FROM_MUTATOR>(isolate->heap(), *array, inobject);
+    RightTrimFixedArray<Heap::FROM_MUTATOR>(heap, *array, inobject);
     object->set_properties(*array);
   }
 
-  // The trimming is performed on a newly allocated object, which is on a
-  // freshly allocated page or on an already swept page. Hence, the sweeper
-  // thread can not get confused with the filler creation. No synchronization
-  // needed.
-  object->set_map(*new_map);
+  // Create filler object past the new instance size.
+  int new_instance_size = new_map->instance_size();
+  int instance_size_delta = old_map->instance_size() - new_instance_size;
+  ASSERT(instance_size_delta >= 0);
+
+  if (instance_size_delta > 0) {
+    Address address = object->address();
+    heap->CreateFillerObjectAt(
+        address + new_instance_size, instance_size_delta);
+    heap->AdjustLiveBytes(address, -instance_size_delta, Heap::FROM_MUTATOR);
+  }
+
+  // We are storing the new map using release store after creating a filler for
+  // the left-over space to avoid races with the sweeper thread.
+  object->synchronized_set_map(*new_map);
 }
 
 
@@ -2275,8 +2299,7 @@ void JSObject::GeneralizeFieldRepresentation(Handle<JSObject> object,
   Handle<Map> new_map = Map::GeneralizeRepresentation(
       handle(object->map()), modify_index, new_representation,
       new_field_type, store_mode);
-  if (object->map() == *new_map) return;
-  return MigrateToMap(object, new_map);
+  MigrateToMap(object, new_map);
 }
 
 
@@ -3919,10 +3942,10 @@ MaybeHandle<Object> JSObject::SetPropertyUsingTransition(
   PropertyDetails details = descriptors->GetDetails(descriptor);
 
   if (details.type() == CALLBACKS || attributes != details.attributes()) {
-    // AddProperty will either normalize the object, or create a new fast copy
-    // of the map. If we get a fast copy of the map, all field representations
-    // will be tagged since the transition is omitted.
-    return JSObject::AddProperty(
+    // AddPropertyInternal will either normalize the object, or create a new
+    // fast copy of the map. If we get a fast copy of the map, all field
+    // representations will be tagged since the transition is omitted.
+    return JSObject::AddPropertyInternal(
         object, name, value, attributes, SLOPPY,
         JSReceiver::CERTAINLY_NOT_STORE_FROM_KEYED,
         JSReceiver::OMIT_EXTENSIBILITY_CHECK,
@@ -3968,6 +3991,7 @@ void JSObject::WriteToField(int descriptor, Object* value) {
     // Nothing more to be done.
     if (value->IsUninitialized()) return;
     HeapNumber* box = HeapNumber::cast(RawFastPropertyAt(index));
+    ASSERT(box->IsMutableHeapNumber());
     box->set_value(value->Number());
   } else {
     FastPropertyAtPut(index, value);
@@ -3975,8 +3999,7 @@ void JSObject::WriteToField(int descriptor, Object* value) {
 }
 
 
-static void SetPropertyToField(LookupResult* lookup,
-                               Handle<Object> value) {
+void JSObject::SetPropertyToField(LookupResult* lookup, Handle<Object> value) {
   if (lookup->type() == CONSTANT || !lookup->CanHoldValue(value)) {
     Representation field_representation = value->OptimalRepresentation();
     Handle<HeapType> field_type = value->OptimalType(
@@ -3990,10 +4013,10 @@ static void SetPropertyToField(LookupResult* lookup,
 }
 
 
-static void ConvertAndSetOwnProperty(LookupResult* lookup,
-                                     Handle<Name> name,
-                                     Handle<Object> value,
-                                     PropertyAttributes attributes) {
+void JSObject::ConvertAndSetOwnProperty(LookupResult* lookup,
+                                        Handle<Name> name,
+                                        Handle<Object> value,
+                                        PropertyAttributes attributes) {
   Handle<JSObject> object(lookup->holder());
   if (object->TooManyFastProperties()) {
     JSObject::NormalizeProperties(object, CLEAR_INOBJECT_PROPERTIES, 0);
@@ -4020,10 +4043,10 @@ static void ConvertAndSetOwnProperty(LookupResult* lookup,
 }
 
 
-static void SetPropertyToFieldWithAttributes(LookupResult* lookup,
-                                             Handle<Name> name,
-                                             Handle<Object> value,
-                                             PropertyAttributes attributes) {
+void JSObject::SetPropertyToFieldWithAttributes(LookupResult* lookup,
+                                                Handle<Name> name,
+                                                Handle<Object> value,
+                                                PropertyAttributes attributes) {
   if (lookup->GetAttributes() == attributes) {
     if (value->IsUninitialized()) return;
     SetPropertyToField(lookup, value);
@@ -4087,7 +4110,7 @@ MaybeHandle<Object> JSObject::SetPropertyForResult(
 
   if (!lookup->IsFound()) {
     // Neither properties nor transitions found.
-    return AddProperty(
+    return AddPropertyInternal(
         object, name, value, attributes, strict_mode, store_mode);
   }
 
@@ -4167,6 +4190,28 @@ MaybeHandle<Object> JSObject::SetPropertyForResult(
 }
 
 
+void JSObject::AddProperty(
+    Handle<JSObject> object,
+    Handle<Name> name,
+    Handle<Object> value,
+    PropertyAttributes attributes,
+    ValueType value_type,
+    StoreMode store_mode) {
+#ifdef DEBUG
+  uint32_t index;
+  ASSERT(!object->IsJSProxy());
+  ASSERT(!name->AsArrayIndex(&index));
+  LookupIterator it(object, name, LookupIterator::CHECK_OWN_REAL);
+  GetPropertyAttributes(&it);
+  ASSERT(!it.IsFound());
+  ASSERT(object->map()->is_extensible());
+#endif
+  SetOwnPropertyIgnoreAttributes(
+      object, name, value, attributes, value_type, store_mode,
+      OMIT_EXTENSIBILITY_CHECK).Check();
+}
+
+
 // Set a real own property, even if it is READ_ONLY.  If the property is not
 // present, add it with attributes NONE.  This code is an exact clone of
 // SetProperty, with the check for IsReadOnly and the check for a
@@ -4222,7 +4267,7 @@ MaybeHandle<Object> JSObject::SetOwnPropertyIgnoreAttributes(
     TransitionFlag flag = lookup.IsFound()
         ? OMIT_TRANSITION : INSERT_TRANSITION;
     // Neither properties nor transitions found.
-    return AddProperty(object, name, value, attributes, SLOPPY,
+    return AddPropertyInternal(object, name, value, attributes, SLOPPY,
         store_from_keyed, extensibility_check, value_type, mode, flag);
   }
 
@@ -4569,6 +4614,16 @@ void JSObject::NormalizeProperties(Handle<JSObject> object,
                                    int expected_additional_properties) {
   if (!object->HasFastProperties()) return;
 
+  Handle<Map> map(object->map());
+  Handle<Map> new_map = Map::Normalize(map, mode);
+
+  MigrateFastToSlow(object, new_map, expected_additional_properties);
+}
+
+
+void JSObject::MigrateFastToSlow(Handle<JSObject> object,
+                                 Handle<Map> new_map,
+                                 int expected_additional_properties) {
   // The global object is always normalized.
   ASSERT(!object->IsGlobalObject());
   // JSGlobalProxy must never be normalized
@@ -4577,7 +4632,6 @@ void JSObject::NormalizeProperties(Handle<JSObject> object,
   Isolate* isolate = object->GetIsolate();
   HandleScope scope(isolate);
   Handle<Map> map(object->map());
-  Handle<Map> new_map = Map::Normalize(map, mode);
 
   // Allocate new content.
   int real_size = map->NumberOfOwnDescriptors();
@@ -4607,6 +4661,11 @@ void JSObject::NormalizeProperties(Handle<JSObject> object,
         FieldIndex index = FieldIndex::ForDescriptor(*map, i);
         Handle<Object> value(
             object->RawFastPropertyAt(index), isolate);
+        if (details.representation().IsDouble()) {
+          ASSERT(value->IsMutableHeapNumber());
+          Handle<HeapNumber> old = Handle<HeapNumber>::cast(value);
+          value = isolate->factory()->NewHeapNumber(old->value());
+        }
         PropertyDetails d =
             PropertyDetails(details.attributes(), NORMAL, i + 1);
         dictionary = NameDictionary::Add(dictionary, key, value, d);
@@ -4664,8 +4723,8 @@ void JSObject::NormalizeProperties(Handle<JSObject> object,
 }
 
 
-void JSObject::TransformToFastProperties(Handle<JSObject> object,
-                                         int unused_property_fields) {
+void JSObject::MigrateSlowToFast(Handle<JSObject> object,
+                                 int unused_property_fields) {
   if (object->HasFastProperties()) return;
   ASSERT(!object->IsGlobalObject());
   Isolate* isolate = object->GetIsolate();
@@ -4710,7 +4769,7 @@ void JSObject::TransformToFastProperties(Handle<JSObject> object,
     ASSERT_LE(unused_property_fields, inobject_props);
     // Transform the object.
     new_map->set_unused_property_fields(inobject_props);
-    object->set_map(*new_map);
+    object->synchronized_set_map(*new_map);
     object->set_properties(isolate->heap()->empty_fixed_array());
     // Check that it really works.
     ASSERT(object->HasFastProperties());
@@ -4791,7 +4850,7 @@ void JSObject::TransformToFastProperties(Handle<JSObject> object,
   new_map->set_unused_property_fields(unused_property_fields);
 
   // Transform the object.
-  object->set_map(*new_map);
+  object->synchronized_set_map(*new_map);
 
   object->set_properties(*fields);
   ASSERT(object->IsJSObject());
@@ -5139,13 +5198,8 @@ Handle<ObjectHashTable> JSObject::GetOrCreateHiddenPropertiesHashtable(
   }
 
   JSObject::SetOwnPropertyIgnoreAttributes(
-      object,
-      isolate->factory()->hidden_string(),
-      hashtable,
-      DONT_ENUM,
-      OPTIMAL_REPRESENTATION,
-      ALLOW_AS_CONSTANT,
-      OMIT_EXTENSIBILITY_CHECK).Assert();
+      object, isolate->factory()->hidden_string(),
+      hashtable, DONT_ENUM).Assert();
 
   return hashtable;
 }
@@ -5632,7 +5686,8 @@ static void FreezeDictionary(Dictionary* dictionary) {
   int capacity = dictionary->Capacity();
   for (int i = 0; i < capacity; i++) {
     Object* k = dictionary->KeyAt(i);
-    if (dictionary->IsKey(k)) {
+    if (dictionary->IsKey(k) &&
+        !(k->IsSymbol() && Symbol::cast(k)->is_private())) {
       PropertyDetails details = dictionary->DetailsAt(i);
       int attrs = DONT_DELETE;
       // READ_ONLY is an invalid attribute for JS setters/getters.
@@ -5779,7 +5834,7 @@ Handle<Object> JSObject::FastPropertyAt(Handle<JSObject> object,
                                         FieldIndex index) {
   Isolate* isolate = object->GetIsolate();
   Handle<Object> raw_value(object->RawFastPropertyAt(index), isolate);
-  return Object::NewStorageFor(isolate, raw_value, representation);
+  return Object::WrapForRead(isolate, raw_value, representation);
 }
 
 
@@ -6633,7 +6688,7 @@ void JSObject::SetPropertyCallback(Handle<JSObject> object,
   if (object->IsGlobalObject()) {
     Handle<Map> new_map = Map::CopyDropDescriptors(handle(object->map()));
     ASSERT(new_map->is_dictionary_map());
-    object->set_map(*new_map);
+    JSObject::MigrateToMap(object, new_map);
 
     // When running crankshaft, changing the map is not enough. We
     // need to deoptimize all functions that rely on this global
@@ -6970,7 +7025,7 @@ Object* JSObject::SlowReverseLookup(Object* value) {
         Object* property =
             RawFastPropertyAt(FieldIndex::ForDescriptor(map(), i));
         if (descs->GetDetails(i).representation().IsDouble()) {
-          ASSERT(property->IsHeapNumber());
+          ASSERT(property->IsMutableHeapNumber());
           if (value->IsNumber() && property->Number() == value->Number()) {
             return descs->GetKey(i);
           }
@@ -7406,17 +7461,20 @@ Handle<DescriptorArray> DescriptorArray::CopyUpToAddAttributes(
   if (attributes != NONE) {
     for (int i = 0; i < size; ++i) {
       Object* value = desc->GetValue(i);
+      Name* key = desc->GetKey(i);
       PropertyDetails details = desc->GetDetails(i);
-      int mask = DONT_DELETE | DONT_ENUM;
-      // READ_ONLY is an invalid attribute for JS setters/getters.
-      if (details.type() != CALLBACKS || !value->IsAccessorPair()) {
-        mask |= READ_ONLY;
+      // Bulk attribute changes never affect private properties.
+      if (!key->IsSymbol() || !Symbol::cast(key)->is_private()) {
+        int mask = DONT_DELETE | DONT_ENUM;
+        // READ_ONLY is an invalid attribute for JS setters/getters.
+        if (details.type() != CALLBACKS || !value->IsAccessorPair()) {
+          mask |= READ_ONLY;
+        }
+        details = details.CopyAddAttributes(
+            static_cast<PropertyAttributes>(attributes & mask));
       }
-      details = details.CopyAddAttributes(
-          static_cast<PropertyAttributes>(attributes & mask));
-      Descriptor inner_desc(handle(desc->GetKey(i)),
-                            handle(value, desc->GetIsolate()),
-                            details);
+      Descriptor inner_desc(
+          handle(key), handle(value, desc->GetIsolate()), details);
       descriptors->Set(i, &inner_desc, witness);
     }
   } else {
@@ -9659,17 +9717,25 @@ bool Map::EquivalentToForNormalization(Map* other,
 
 
 void ConstantPoolArray::ConstantPoolIterateBody(ObjectVisitor* v) {
+  // Unfortunately the serializer relies on pointers within an object being
+  // visited in-order, so we have to iterate both the code and heap pointers in
+  // the small section before doing so in the extended section.
   WeakObjectState state = get_weak_object_state();
-  ConstantPoolArray::Iterator code_iter(this, ConstantPoolArray::CODE_PTR);
-  while (!code_iter.is_finished()) {
-    v->VisitCodeEntry(reinterpret_cast<Address>(
-        RawFieldOfElementAt(code_iter.next_index())));
-  }
+  for (int s = 0; s <= final_section(); ++s) {
+    LayoutSection section = static_cast<LayoutSection>(s);
+    ConstantPoolArray::Iterator code_iter(this, ConstantPoolArray::CODE_PTR,
+                                          section);
+    while (!code_iter.is_finished()) {
+      v->VisitCodeEntry(reinterpret_cast<Address>(
+          RawFieldOfElementAt(code_iter.next_index())));
+    }
 
-  ConstantPoolArray::Iterator heap_iter(this, ConstantPoolArray::HEAP_PTR);
-  while (!heap_iter.is_finished()) {
-    v->VisitConstantPoolEmbeddedPointer(
-        RawFieldOfElementAt(heap_iter.next_index()), state);
+    ConstantPoolArray::Iterator heap_iter(this, ConstantPoolArray::HEAP_PTR,
+                                          section);
+    while (!heap_iter.is_finished()) {
+      v->VisitConstantPoolEmbeddedPointer(
+          RawFieldOfElementAt(heap_iter.next_index()), state);
+    }
   }
 }
 
@@ -9902,7 +9968,7 @@ void JSObject::OptimizeAsPrototype(Handle<JSObject> object) {
   // Make sure prototypes are fast objects and their maps have the bit set
   // so they remain fast.
   if (!object->HasFastProperties()) {
-    TransformToFastProperties(object, 0);
+    MigrateSlowToFast(object, 0);
   }
 }
 
@@ -10673,7 +10739,7 @@ void Code::Relocate(intptr_t delta) {
   for (RelocIterator it(this, RelocInfo::kApplyMask); !it.done(); it.next()) {
     it.rinfo()->apply(delta, SKIP_ICACHE_FLUSH);
   }
-  CPU::FlushICache(instruction_start(), instruction_size());
+  CpuFeatures::FlushICache(instruction_start(), instruction_size());
 }
 
 
@@ -10727,7 +10793,7 @@ void Code::CopyFrom(const CodeDesc& desc) {
       it.rinfo()->apply(delta, SKIP_ICACHE_FLUSH);
     }
   }
-  CPU::FlushICache(instruction_start(), instruction_size());
+  CpuFeatures::FlushICache(instruction_start(), instruction_size());
 }
 
 
@@ -11124,7 +11190,9 @@ void Code::PrintDeoptLocation(FILE* out, int bailout_id) {
       if ((bailout_id == Deoptimizer::GetDeoptimizationId(
               GetIsolate(), info->target_address(), Deoptimizer::EAGER)) ||
           (bailout_id == Deoptimizer::GetDeoptimizationId(
-              GetIsolate(), info->target_address(), Deoptimizer::SOFT))) {
+              GetIsolate(), info->target_address(), Deoptimizer::SOFT)) ||
+          (bailout_id == Deoptimizer::GetDeoptimizationId(
+              GetIsolate(), info->target_address(), Deoptimizer::LAZY))) {
         CHECK(RelocInfo::IsRuntimeEntry(info->rmode()));
         PrintF(out, "            %s\n", last_comment);
         return;
@@ -15076,7 +15144,7 @@ Handle<Object> ExternalFloat32Array::SetValue(
     Handle<ExternalFloat32Array> array,
     uint32_t index,
     Handle<Object> value) {
-  float cast_value = static_cast<float>(OS::nan_value());
+  float cast_value = static_cast<float>(base::OS::nan_value());
   if (index < static_cast<uint32_t>(array->length())) {
     if (value->IsSmi()) {
       int int_value = Handle<Smi>::cast(value)->value();
@@ -15099,7 +15167,7 @@ Handle<Object> ExternalFloat64Array::SetValue(
     Handle<ExternalFloat64Array> array,
     uint32_t index,
     Handle<Object> value) {
-  double double_value = OS::nan_value();
+  double double_value = base::OS::nan_value();
   if (index < static_cast<uint32_t>(array->length())) {
     if (value->IsNumber()) {
       double_value = value->Number();
@@ -16247,47 +16315,14 @@ Handle<OrderedHashMap> OrderedHashMap::Put(Handle<OrderedHashMap> table,
 
 
 template<class Derived, class TableType>
-Handle<JSObject> OrderedHashTableIterator<Derived, TableType>::Next(
-    Handle<Derived> iterator) {
-  Isolate* isolate = iterator->GetIsolate();
-  Factory* factory = isolate->factory();
-
-  Handle<Object> maybe_table(iterator->table(), isolate);
-  if (!maybe_table->IsUndefined()) {
-    iterator->Transition();
-
-    Handle<TableType> table(TableType::cast(iterator->table()), isolate);
-    int index = Smi::cast(iterator->index())->value();
-    int used_capacity = table->UsedCapacity();
-
-    while (index < used_capacity && table->KeyAt(index)->IsTheHole()) {
-      index++;
-    }
-
-    if (index < used_capacity) {
-      int entry_index = table->EntryToIndex(index);
-      Handle<Object> value =
-          Derived::ValueForKind(iterator, entry_index);
-      iterator->set_index(Smi::FromInt(index + 1));
-      return factory->NewIteratorResultObject(value, false);
-    }
-
-    iterator->set_table(iterator->GetHeap()->undefined_value());
-  }
-
-  return factory->NewIteratorResultObject(factory->undefined_value(), true);
-}
-
-
-template<class Derived, class TableType>
 void OrderedHashTableIterator<Derived, TableType>::Transition() {
-  Isolate* isolate = GetIsolate();
-  Handle<TableType> table(TableType::cast(this->table()), isolate);
+  DisallowHeapAllocation no_allocation;
+  TableType* table = TableType::cast(this->table());
   if (!table->IsObsolete()) return;
 
   int index = Smi::cast(this->index())->value();
   while (table->IsObsolete()) {
-    Handle<TableType> next_table(table->NextTable(), isolate);
+    TableType* next_table = table->NextTable();
 
     if (index > 0) {
       int nod = table->NumberOfDeletedElements();
@@ -16308,82 +16343,80 @@ void OrderedHashTableIterator<Derived, TableType>::Transition() {
     table = next_table;
   }
 
-  set_table(*table);
+  set_table(table);
   set_index(Smi::FromInt(index));
 }
 
 
-template Handle<JSObject>
+template<class Derived, class TableType>
+bool OrderedHashTableIterator<Derived, TableType>::HasMore() {
+  DisallowHeapAllocation no_allocation;
+  if (this->table()->IsUndefined()) return false;
+
+  Transition();
+
+  TableType* table = TableType::cast(this->table());
+  int index = Smi::cast(this->index())->value();
+  int used_capacity = table->UsedCapacity();
+
+  while (index < used_capacity && table->KeyAt(index)->IsTheHole()) {
+    index++;
+  }
+
+  set_index(Smi::FromInt(index));
+
+  if (index < used_capacity) return true;
+
+  set_table(GetHeap()->undefined_value());
+  return false;
+}
+
+
+template<class Derived, class TableType>
+Smi* OrderedHashTableIterator<Derived, TableType>::Next(JSArray* value_array) {
+  DisallowHeapAllocation no_allocation;
+  if (HasMore()) {
+    FixedArray* array = FixedArray::cast(value_array->elements());
+    static_cast<Derived*>(this)->PopulateValueArray(array);
+    MoveNext();
+    return kind();
+  }
+  return Smi::FromInt(0);
+}
+
+
+template Smi*
 OrderedHashTableIterator<JSSetIterator, OrderedHashSet>::Next(
-    Handle<JSSetIterator> iterator);
+    JSArray* value_array);
+
+template bool
+OrderedHashTableIterator<JSSetIterator, OrderedHashSet>::HasMore();
+
+template void
+OrderedHashTableIterator<JSSetIterator, OrderedHashSet>::MoveNext();
+
+template Object*
+OrderedHashTableIterator<JSSetIterator, OrderedHashSet>::CurrentKey();
 
 template void
 OrderedHashTableIterator<JSSetIterator, OrderedHashSet>::Transition();
 
 
-template Handle<JSObject>
+template Smi*
 OrderedHashTableIterator<JSMapIterator, OrderedHashMap>::Next(
-    Handle<JSMapIterator> iterator);
+    JSArray* value_array);
+
+template bool
+OrderedHashTableIterator<JSMapIterator, OrderedHashMap>::HasMore();
+
+template void
+OrderedHashTableIterator<JSMapIterator, OrderedHashMap>::MoveNext();
+
+template Object*
+OrderedHashTableIterator<JSMapIterator, OrderedHashMap>::CurrentKey();
 
 template void
 OrderedHashTableIterator<JSMapIterator, OrderedHashMap>::Transition();
-
-
-Handle<Object> JSSetIterator::ValueForKind(
-    Handle<JSSetIterator> iterator, int entry_index) {
-  int kind = iterator->kind()->value();
-  // Set.prototype only has values and entries.
-  ASSERT(kind == kKindValues || kind == kKindEntries);
-
-  Isolate* isolate = iterator->GetIsolate();
-  Factory* factory = isolate->factory();
-
-  Handle<OrderedHashSet> table(
-      OrderedHashSet::cast(iterator->table()), isolate);
-  Handle<Object> value = Handle<Object>(table->get(entry_index), isolate);
-
-  if (kind == kKindEntries) {
-    Handle<FixedArray> array = factory->NewFixedArray(2);
-    array->set(0, *value);
-    array->set(1, *value);
-    return factory->NewJSArrayWithElements(array);
-  }
-
-  return value;
-}
-
-
-Handle<Object> JSMapIterator::ValueForKind(
-    Handle<JSMapIterator> iterator, int entry_index) {
-  int kind = iterator->kind()->value();
-  ASSERT(kind == kKindKeys || kind == kKindValues || kind == kKindEntries);
-
-  Isolate* isolate = iterator->GetIsolate();
-  Factory* factory = isolate->factory();
-
-  Handle<OrderedHashMap> table(
-      OrderedHashMap::cast(iterator->table()), isolate);
-
-  switch (kind) {
-    case kKindKeys:
-      return Handle<Object>(table->get(entry_index), isolate);
-
-    case kKindValues:
-      return Handle<Object>(table->get(entry_index + 1), isolate);
-
-    case kKindEntries: {
-      Handle<Object> key(table->get(entry_index), isolate);
-      Handle<Object> value(table->get(entry_index + 1), isolate);
-      Handle<FixedArray> array = factory->NewFixedArray(2);
-      array->set(0, *key);
-      array->set(1, *value);
-      return factory->NewJSArrayWithElements(array);
-    }
-  }
-
-  UNREACHABLE();
-  return factory->undefined_value();
-}
 
 
 DeclaredAccessorDescriptorIterator::DeclaredAccessorDescriptorIterator(

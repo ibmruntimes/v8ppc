@@ -1039,34 +1039,39 @@ void HGraphBuilder::IfBuilder::End() {
 }
 
 
-HGraphBuilder::LoopBuilder::LoopBuilder(HGraphBuilder* builder,
-                                        HValue* context,
-                                        LoopBuilder::Direction direction)
-    : builder_(builder),
-      context_(context),
-      direction_(direction),
-      finished_(false) {
-  header_block_ = builder->CreateLoopHeaderBlock();
-  body_block_ = NULL;
-  exit_block_ = NULL;
-  exit_trampoline_block_ = NULL;
-  increment_amount_ = builder_->graph()->GetConstant1();
+HGraphBuilder::LoopBuilder::LoopBuilder(HGraphBuilder* builder) {
+  Initialize(builder, NULL, kWhileTrue, NULL);
 }
 
 
-HGraphBuilder::LoopBuilder::LoopBuilder(HGraphBuilder* builder,
-                                        HValue* context,
+HGraphBuilder::LoopBuilder::LoopBuilder(HGraphBuilder* builder, HValue* context,
+                                        LoopBuilder::Direction direction) {
+  Initialize(builder, context, direction, builder->graph()->GetConstant1());
+}
+
+
+HGraphBuilder::LoopBuilder::LoopBuilder(HGraphBuilder* builder, HValue* context,
                                         LoopBuilder::Direction direction,
-                                        HValue* increment_amount)
-    : builder_(builder),
-      context_(context),
-      direction_(direction),
-      finished_(false) {
+                                        HValue* increment_amount) {
+  Initialize(builder, context, direction, increment_amount);
+  increment_amount_ = increment_amount;
+}
+
+
+void HGraphBuilder::LoopBuilder::Initialize(HGraphBuilder* builder,
+                                            HValue* context,
+                                            Direction direction,
+                                            HValue* increment_amount) {
+  builder_ = builder;
+  context_ = context;
+  direction_ = direction;
+  increment_amount_ = increment_amount;
+
+  finished_ = false;
   header_block_ = builder->CreateLoopHeaderBlock();
   body_block_ = NULL;
   exit_block_ = NULL;
   exit_trampoline_block_ = NULL;
-  increment_amount_ = increment_amount;
 }
 
 
@@ -1074,6 +1079,7 @@ HValue* HGraphBuilder::LoopBuilder::BeginBody(
     HValue* initial,
     HValue* terminating,
     Token::Value token) {
+  ASSERT(direction_ != kWhileTrue);
   HEnvironment* env = builder_->environment();
   phi_ = header_block_->AddNewPhi(env->values()->length());
   phi_->AddInput(initial);
@@ -1110,12 +1116,26 @@ HValue* HGraphBuilder::LoopBuilder::BeginBody(
 }
 
 
+void HGraphBuilder::LoopBuilder::BeginBody(int drop_count) {
+  ASSERT(direction_ == kWhileTrue);
+  HEnvironment* env = builder_->environment();
+  builder_->GotoNoSimulate(header_block_);
+  builder_->set_current_block(header_block_);
+  env->Drop(drop_count);
+}
+
+
 void HGraphBuilder::LoopBuilder::Break() {
   if (exit_trampoline_block_ == NULL) {
     // Its the first time we saw a break.
-    HEnvironment* env = exit_block_->last_environment()->Copy();
-    exit_trampoline_block_ = builder_->CreateBasicBlock(env);
-    builder_->GotoNoSimulate(exit_block_, exit_trampoline_block_);
+    if (direction_ == kWhileTrue) {
+      HEnvironment* env = builder_->environment()->Copy();
+      exit_trampoline_block_ = builder_->CreateBasicBlock(env);
+    } else {
+      HEnvironment* env = exit_block_->last_environment()->Copy();
+      exit_trampoline_block_ = builder_->CreateBasicBlock(env);
+      builder_->GotoNoSimulate(exit_block_, exit_trampoline_block_);
+    }
   }
 
   builder_->GotoNoSimulate(exit_trampoline_block_);
@@ -1136,8 +1156,11 @@ void HGraphBuilder::LoopBuilder::EndBody() {
     builder_->AddInstruction(increment_);
   }
 
-  // Push the new increment value on the expression stack to merge into the phi.
-  builder_->environment()->Push(increment_);
+  if (direction_ != kWhileTrue) {
+    // Push the new increment value on the expression stack to merge into
+    // the phi.
+    builder_->environment()->Push(increment_);
+  }
   HBasicBlock* last_block = builder_->current_block();
   builder_->GotoNoSimulate(last_block, header_block_);
   header_block_->loop_information()->RegisterBackEdge(last_block);
@@ -1433,7 +1456,8 @@ void HGraphBuilder::BuildJSObjectCheck(HValue* receiver,
                                              mask);
   HValue* sub_result = AddUncasted<HSub>(and_result,
                                          Add<HConstant>(JS_OBJECT_TYPE));
-  Add<HBoundsCheck>(sub_result, Add<HConstant>(0x100 - JS_OBJECT_TYPE));
+  Add<HBoundsCheck>(sub_result,
+                    Add<HConstant>(LAST_JS_OBJECT_TYPE + 1 - JS_OBJECT_TYPE));
 }
 
 
@@ -1515,13 +1539,23 @@ void HGraphBuilder::BuildKeyedIndexCheck(HValue* key,
               Token::BIT_AND,
               instance_type,
               Add<HConstant>(static_cast<int>(kIsNotInternalizedMask)));
-          DeoptimizeIf<HCompareNumericAndBranch>(
-              not_internalized_bit,
-              graph()->GetConstant0(),
-              Token::NE,
-              "BuildKeyedIndexCheck: string isn't internalized");
-          // Key guaranteed to be a unqiue string
+
+          IfBuilder internalized(this);
+          internalized.If<HCompareNumericAndBranch>(not_internalized_bit,
+                                                    graph()->GetConstant0(),
+                                                    Token::EQ);
+          internalized.Then();
           Push(key);
+
+          internalized.Else();
+          Add<HPushArguments>(key);
+          HValue* intern_key = Add<HCallRuntime>(
+              isolate()->factory()->empty_string(),
+              Runtime::FunctionForId(Runtime::kInternalizeString), 1);
+          Push(intern_key);
+
+          internalized.End();
+          // Key guaranteed to be a unique string
         }
         string_index_if.JoinContinuation(join_continuation);
       }
@@ -1935,7 +1969,7 @@ HValue* HGraphBuilder::BuildNumberToString(HValue* object, Type* type) {
     Add<HPushArguments>(object);
     Push(Add<HCallRuntime>(
             isolate()->factory()->empty_string(),
-            Runtime::FunctionForId(Runtime::kHiddenNumberToStringSkipCache),
+            Runtime::FunctionForId(Runtime::kNumberToStringSkipCache),
             1));
   }
   if_found.End();
@@ -2259,7 +2293,7 @@ HValue* HGraphBuilder::BuildUncheckedStringAdd(
       Add<HPushArguments>(left, right);
       Push(Add<HCallRuntime>(
             isolate()->factory()->empty_string(),
-            Runtime::FunctionForId(Runtime::kHiddenStringAdd),
+            Runtime::FunctionForId(Runtime::kStringAdd),
             2));
     }
     if_sameencodingandsequential.End();
@@ -2675,7 +2709,7 @@ HValue* HGraphBuilder::BuildGrowElementsCapacity(HValue* object,
                                                  HValue* new_capacity) {
   Add<HBoundsCheck>(new_capacity, Add<HConstant>(
           (Page::kMaxRegularHeapObjectSize - FixedArray::kHeaderSize) >>
-          ElementsKindToShiftSize(kind)));
+          ElementsKindToShiftSize(new_kind)));
 
   HValue* new_elements = BuildAllocateElementsAndInitializeElementsHeader(
       new_kind, new_capacity);
@@ -5485,7 +5519,7 @@ void HOptimizedGraphBuilder::VisitObjectLiteral(ObjectLiteral* expr) {
     // TODO(mvstanton): Add a flag to turn off creation of any
     // AllocationMementos for this call: we are in crankshaft and should have
     // learned enough about transition behavior to stop emitting mementos.
-    Runtime::FunctionId function_id = Runtime::kHiddenCreateObjectLiteral;
+    Runtime::FunctionId function_id = Runtime::kCreateObjectLiteral;
     literal = Add<HCallRuntime>(isolate()->factory()->empty_string(),
                                 Runtime::FunctionForId(function_id),
                                 4);
@@ -5643,7 +5677,7 @@ void HOptimizedGraphBuilder::VisitArrayLiteral(ArrayLiteral* expr) {
     // TODO(mvstanton): Consider a flag to turn off creation of any
     // AllocationMementos for this call: we are in crankshaft and should have
     // learned enough about transition behavior to stop emitting mementos.
-    Runtime::FunctionId function_id = Runtime::kHiddenCreateArrayLiteral;
+    Runtime::FunctionId function_id = Runtime::kCreateArrayLiteral;
     literal = Add<HCallRuntime>(isolate()->factory()->empty_string(),
                                 Runtime::FunctionForId(function_id),
                                 4);
@@ -5773,8 +5807,9 @@ HInstruction* HOptimizedGraphBuilder::BuildStoreNamedField(
       HInstruction* heap_number = Add<HAllocate>(heap_number_size,
           HType::HeapObject(),
           NOT_TENURED,
-          HEAP_NUMBER_TYPE);
-      AddStoreMapConstant(heap_number, isolate()->factory()->heap_number_map());
+          MUTABLE_HEAP_NUMBER_TYPE);
+      AddStoreMapConstant(
+          heap_number, isolate()->factory()->mutable_heap_number_map());
       Add<HStoreNamedField>(heap_number, HObjectAccess::ForHeapNumberValue(),
                             value);
       instr = New<HStoreNamedField>(checked_object->ActualValue(),
@@ -6655,7 +6690,7 @@ void HOptimizedGraphBuilder::VisitThrow(Throw* expr) {
   if (!FLAG_hydrogen_track_positions) SetSourcePosition(expr->position());
   Add<HPushArguments>(value);
   Add<HCallRuntime>(isolate()->factory()->empty_string(),
-                    Runtime::FunctionForId(Runtime::kHiddenThrow), 1);
+                    Runtime::FunctionForId(Runtime::kThrow), 1);
   Add<HSimulate>(expr->id());
 
   // If the throw definitely exits the function, we can finish with a dummy
@@ -7571,7 +7606,7 @@ int HOptimizedGraphBuilder::InliningAstSize(Handle<JSFunction> target) {
     TraceInline(target, caller, "target not inlineable");
     return kNotInlinable;
   }
-  if (target_shared->dont_inline() || target_shared->dont_optimize()) {
+  if (target_shared->DisableOptimizationReason() != kNoReason) {
     TraceInline(target, caller, "target contains unsupported syntax [early]");
     return kNotInlinable;
   }
@@ -7658,8 +7693,7 @@ bool HOptimizedGraphBuilder::TryInline(Handle<JSFunction> target,
     TraceInline(target, caller, "target AST is too large [late]");
     return false;
   }
-  AstProperties::Flags* flags(function->flags());
-  if (flags->Contains(kDontInline) || function->dont_optimize()) {
+  if (function->dont_optimize()) {
     TraceInline(target, caller, "target contains unsupported syntax [late]");
     return false;
   }
@@ -7743,19 +7777,19 @@ bool HOptimizedGraphBuilder::TryInline(Handle<JSFunction> target,
   HConstant* context = Add<HConstant>(Handle<Context>(target->context()));
   inner_env->BindContext(context);
 
-  HArgumentsObject* arguments_object = NULL;
-
-  // If the function uses arguments object create and bind one, also copy
+  // Create a dematerialized arguments object for the function, also copy the
   // current arguments values to use them for materialization.
+  HEnvironment* arguments_env = inner_env->arguments_environment();
+  int parameter_count = arguments_env->parameter_count();
+  HArgumentsObject* arguments_object = Add<HArgumentsObject>(parameter_count);
+  for (int i = 0; i < parameter_count; i++) {
+    arguments_object->AddArgument(arguments_env->Lookup(i), zone());
+  }
+
+  // If the function uses arguments object then bind bind one.
   if (function->scope()->arguments() != NULL) {
     ASSERT(function->scope()->arguments()->IsStackAllocated());
-    HEnvironment* arguments_env = inner_env->arguments_environment();
-    int arguments_count = arguments_env->parameter_count();
-    arguments_object = Add<HArgumentsObject>(arguments_count);
     inner_env->Bind(function->scope()->arguments(), arguments_object);
-    for (int i = 0; i < arguments_count; i++) {
-      arguments_object->AddArgument(arguments_env->Lookup(i), zone());
-    }
   }
 
   // Capture the state before invoking the inlined function for deopt in the
@@ -8437,9 +8471,7 @@ bool HOptimizedGraphBuilder::TryInlineApiCall(Handle<JSFunction> function,
     // as it maybe dropped on deserialization.
     CHECK(!isolate()->serializer_enabled());
     ASSERT_EQ(0, receiver_maps->length());
-    receiver_maps->Add(handle(
-        function->context()->global_object()->global_receiver()->map()),
-        zone());
+    receiver_maps->Add(handle(function->global_proxy()->map()), zone());
   }
   CallOptimization::HolderLookup holder_lookup =
       CallOptimization::kHolderNotFound;
@@ -8624,9 +8656,8 @@ HValue* HOptimizedGraphBuilder::ImplicitReceiverFor(HValue* function,
     // Cannot embed a direct reference to the global proxy
     // as is it dropped on deserialization.
     CHECK(!isolate()->serializer_enabled());
-    Handle<JSObject> global_receiver(
-        target->context()->global_object()->global_receiver());
-    return Add<HConstant>(global_receiver);
+    Handle<JSObject> global_proxy(target->context()->global_proxy());
+    return Add<HConstant>(global_proxy);
   }
   return graph()->GetConstantUndefined();
 }
@@ -9950,7 +9981,7 @@ HInstruction* HOptimizedGraphBuilder::BuildStringCharCodeAt(
       int32_t i = c_index->NumberValueAsInteger32();
       Handle<String> s = c_string->StringValue();
       if (i < 0 || i >= s->length()) {
-        return New<HConstant>(OS::nan_value());
+        return New<HConstant>(base::OS::nan_value());
       }
       return New<HConstant>(s->Get(i));
     }
@@ -10949,11 +10980,14 @@ void HOptimizedGraphBuilder::BuildEmitInObjectProperties(
         // 2) we can just use the mode of the parent object for pretenuring
         HInstruction* double_box =
             Add<HAllocate>(heap_number_constant, HType::HeapObject(),
-                pretenure_flag, HEAP_NUMBER_TYPE);
+                pretenure_flag, MUTABLE_HEAP_NUMBER_TYPE);
         AddStoreMapConstant(double_box,
-            isolate()->factory()->heap_number_map());
-        Add<HStoreNamedField>(double_box, HObjectAccess::ForHeapNumberValue(),
-                              Add<HConstant>(value));
+            isolate()->factory()->mutable_heap_number_map());
+        // Unwrap the mutable heap number from the boilerplate.
+        HValue* double_value =
+            Add<HConstant>(Handle<HeapNumber>::cast(value)->value());
+        Add<HStoreNamedField>(
+            double_box, HObjectAccess::ForHeapNumberValue(), double_value);
         value_instruction = double_box;
       } else if (representation.IsSmi()) {
         value_instruction = value->IsUninitialized()
@@ -11315,30 +11349,42 @@ void HOptimizedGraphBuilder::GenerateIsConstructCall(CallRuntime* call) {
 
 // Support for arguments.length and arguments[?].
 void HOptimizedGraphBuilder::GenerateArgumentsLength(CallRuntime* call) {
-  // Our implementation of arguments (based on this stack frame or an
-  // adapter below it) does not work for inlined functions.  This runtime
-  // function is blacklisted by AstNode::IsInlineable.
-  ASSERT(function_state()->outer() == NULL);
   ASSERT(call->arguments()->length() == 0);
-  HInstruction* elements = Add<HArgumentsElements>(false);
-  HArgumentsLength* result = New<HArgumentsLength>(elements);
+  HInstruction* result = NULL;
+  if (function_state()->outer() == NULL) {
+    HInstruction* elements = Add<HArgumentsElements>(false);
+    result = New<HArgumentsLength>(elements);
+  } else {
+    // Number of arguments without receiver.
+    int argument_count = environment()->
+        arguments_environment()->parameter_count() - 1;
+    result = New<HConstant>(argument_count);
+  }
   return ast_context()->ReturnInstruction(result, call->id());
 }
 
 
 void HOptimizedGraphBuilder::GenerateArguments(CallRuntime* call) {
-  // Our implementation of arguments (based on this stack frame or an
-  // adapter below it) does not work for inlined functions.  This runtime
-  // function is blacklisted by AstNode::IsInlineable.
-  ASSERT(function_state()->outer() == NULL);
   ASSERT(call->arguments()->length() == 1);
   CHECK_ALIVE(VisitForValue(call->arguments()->at(0)));
   HValue* index = Pop();
-  HInstruction* elements = Add<HArgumentsElements>(false);
-  HInstruction* length = Add<HArgumentsLength>(elements);
-  HInstruction* checked_index = Add<HBoundsCheck>(index, length);
-  HAccessArgumentsAt* result = New<HAccessArgumentsAt>(
-      elements, length, checked_index);
+  HInstruction* result = NULL;
+  if (function_state()->outer() == NULL) {
+    HInstruction* elements = Add<HArgumentsElements>(false);
+    HInstruction* length = Add<HArgumentsLength>(elements);
+    HInstruction* checked_index = Add<HBoundsCheck>(index, length);
+    result = New<HAccessArgumentsAt>(elements, length, checked_index);
+  } else {
+    EnsureArgumentsArePushedForAccess();
+
+    // Number of arguments without receiver.
+    HInstruction* elements = function_state()->arguments_elements();
+    int argument_count = environment()->
+        arguments_environment()->parameter_count() - 1;
+    HInstruction* length = Add<HConstant>(argument_count);
+    HInstruction* checked_key = Add<HBoundsCheck>(index, length);
+    result = New<HAccessArgumentsAt>(elements, length, checked_key);
+  }
   return ast_context()->ReturnInstruction(result, call->id());
 }
 
@@ -12040,7 +12086,8 @@ void HTracer::TraceCompilation(CompilationInfo* info) {
     PrintStringProperty("name", CodeStub::MajorName(major_key, false));
     PrintStringProperty("method", "stub");
   }
-  PrintLongProperty("date", static_cast<int64_t>(OS::TimeCurrentMillis()));
+  PrintLongProperty("date",
+                    static_cast<int64_t>(base::OS::TimeCurrentMillis()));
 }
 
 
@@ -12287,7 +12334,7 @@ void HStatistics::Initialize(CompilationInfo* info) {
 
 void HStatistics::Print() {
   PrintF("Timing results:\n");
-  TimeDelta sum;
+  base::TimeDelta sum;
   for (int i = 0; i < times_.length(); ++i) {
     sum += times_[i];
   }
@@ -12305,7 +12352,7 @@ void HStatistics::Print() {
 
   PrintF("----------------------------------------"
          "---------------------------------------\n");
-  TimeDelta total = create_graph_ + optimize_graph_ + generate_code_;
+  base::TimeDelta total = create_graph_ + optimize_graph_ + generate_code_;
   PrintF("%32s %8.3f ms / %4.1f %% \n",
          "Create graph",
          create_graph_.InMillisecondsF(),
@@ -12338,7 +12385,8 @@ void HStatistics::Print() {
 }
 
 
-void HStatistics::SaveTiming(const char* name, TimeDelta time, unsigned size) {
+void HStatistics::SaveTiming(const char* name, base::TimeDelta time,
+                             unsigned size) {
   total_size_ += size;
   for (int i = 0; i < names_.length(); ++i) {
     if (strcmp(names_[i], name) == 0) {

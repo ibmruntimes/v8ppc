@@ -176,15 +176,9 @@ void DebugCodegen::GenerateCallICStubDebugBreak(MacroAssembler* masm) {
 
 void DebugCodegen::GenerateLoadICDebugBreak(MacroAssembler* masm) {
   // Calling convention for IC load (from ic-arm.cc).
-  // ----------- S t a t e -------------
-  //  -- r2    : name
-  //  -- lr    : return address
-  //  -- r0    : receiver
-  //  -- [sp]  : receiver
-  // -----------------------------------
-  // Registers r0 and r2 contain objects that need to be pushed on the
-  // expression stack of the fake JS frame.
-  Generate_DebugBreakCallHelper(masm, r0.bit() | r2.bit(), 0);
+  Register receiver = LoadIC::ReceiverRegister();
+  Register name = LoadIC::NameRegister();
+  Generate_DebugBreakCallHelper(masm, receiver.bit() | name.bit(), 0);
 }
 
 
@@ -203,11 +197,8 @@ void DebugCodegen::GenerateStoreICDebugBreak(MacroAssembler* masm) {
 
 
 void DebugCodegen::GenerateKeyedLoadICDebugBreak(MacroAssembler* masm) {
-  // ---------- S t a t e --------------
-  //  -- lr     : return address
-  //  -- r0     : key
-  //  -- r1     : receiver
-  Generate_DebugBreakCallHelper(masm, r0.bit() | r1.bit(), 0);
+  // Calling convention for keyed IC load (from ic-arm.cc).
+  GenerateLoadICDebugBreak(masm);
 }
 
 
@@ -305,21 +296,26 @@ void DebugCodegen::GenerateFrameDropperLiveEdit(MacroAssembler* masm) {
   __ mov(r1, Operand::Zero());
   __ str(r1, MemOperand(ip, 0));
 
-  // We do not know our frame height, but set sp based on fp.
-  __ sub(sp, fp, Operand(kPointerSize));
+  // Load the function pointer off of our current stack frame.
+  __ ldr(r1, MemOperand(fp,
+         StandardFrameConstants::kConstantPoolOffset - kPointerSize));
 
-  __ Pop(lr, fp, r1);  // Return address, Frame, Function.
+  // Pop return address, frame and constant pool pointer (if
+  // FLAG_enable_ool_constant_pool).
+  __ LeaveFrame(StackFrame::INTERNAL);
 
-  // Load context from the function.
-  __ ldr(cp, FieldMemOperand(r1, JSFunction::kContextOffset));
+  { ConstantPoolUnavailableScope constant_pool_unavailable(masm);
+    // Load context from the function.
+    __ ldr(cp, FieldMemOperand(r1, JSFunction::kContextOffset));
 
-  // Get function code.
-  __ ldr(ip, FieldMemOperand(r1, JSFunction::kSharedFunctionInfoOffset));
-  __ ldr(ip, FieldMemOperand(ip, SharedFunctionInfo::kCodeOffset));
-  __ add(ip, ip, Operand(Code::kHeaderSize - kHeapObjectTag));
+    // Get function code.
+    __ ldr(ip, FieldMemOperand(r1, JSFunction::kSharedFunctionInfoOffset));
+    __ ldr(ip, FieldMemOperand(ip, SharedFunctionInfo::kCodeOffset));
+    __ add(ip, ip, Operand(Code::kHeaderSize - kHeapObjectTag));
 
-  // Re-run JSFunction, r1 is function, cp is context.
-  __ Jump(ip);
+    // Re-run JSFunction, r1 is function, cp is context.
+    __ Jump(ip);
+  }
 }
 
 

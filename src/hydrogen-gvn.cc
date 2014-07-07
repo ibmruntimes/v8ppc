@@ -98,7 +98,7 @@ class HSideEffectMap V8_FINAL BASE_EMBEDDED {
 void TraceGVN(const char* msg, ...) {
   va_list arguments;
   va_start(arguments, msg);
-  OS::VPrint(msg, arguments);
+  base::OS::VPrint(msg, arguments);
   va_end(arguments);
 }
 
@@ -449,11 +449,9 @@ bool SideEffectsTracker::ComputeGlobalVar(Unique<Cell> cell, int* index) {
   }
   if (num_global_vars_ < kNumberOfGlobalVars) {
     if (FLAG_trace_gvn) {
-      HeapStringAllocator allocator;
-      StringStream stream(&allocator);
-      stream.Add("Tracking global var [%p] (mapped to index %d)\n",
-                 *cell.handle(), num_global_vars_);
-      stream.OutputToStdOut();
+      OFStream os(stdout);
+      os << "Tracking global var [" << *cell.handle() << "] "
+         << "(mapped to index " << num_global_vars_ << ")" << endl;
     }
     *index = num_global_vars_;
     global_vars_[num_global_vars_++] = cell;

@@ -1311,10 +1311,11 @@ class HGraphBuilder {
 
   template <class BitFieldClass>
   HValue* BuildDecodeField(HValue* encoded_field) {
-    HValue* shifted_field = AddUncasted<HShr>(encoded_field,
-        Add<HConstant>(static_cast<int>(BitFieldClass::kShift)));
     HValue* mask_value = Add<HConstant>(static_cast<int>(BitFieldClass::kMask));
-    return AddUncasted<HBitwise>(Token::BIT_AND, shifted_field, mask_value);
+    HValue* masked_field =
+        AddUncasted<HBitwise>(Token::BIT_AND, encoded_field, mask_value);
+    return AddUncasted<HShr>(masked_field,
+        Add<HConstant>(static_cast<int>(BitFieldClass::kShift)));
   }
 
   HValue* BuildGetElementsKind(HValue* object);
@@ -1668,9 +1669,11 @@ class HGraphBuilder {
       kPreIncrement,
       kPostIncrement,
       kPreDecrement,
-      kPostDecrement
+      kPostDecrement,
+      kWhileTrue
     };
 
+    explicit LoopBuilder(HGraphBuilder* builder);  // while (true) {...}
     LoopBuilder(HGraphBuilder* builder,
                 HValue* context,
                 Direction direction);
@@ -1688,11 +1691,15 @@ class HGraphBuilder {
         HValue* terminating,
         Token::Value token);
 
+    void BeginBody(int drop_count);
+
     void Break();
 
     void EndBody();
 
    private:
+    void Initialize(HGraphBuilder* builder, HValue* context,
+                    Direction direction, HValue* increment_amount);
     Zone* zone() { return builder_->zone(); }
 
     HGraphBuilder* builder_;
@@ -2753,29 +2760,29 @@ class HStatistics V8_FINAL: public Malloced {
 
   void Initialize(CompilationInfo* info);
   void Print();
-  void SaveTiming(const char* name, TimeDelta time, unsigned size);
+  void SaveTiming(const char* name, base::TimeDelta time, unsigned size);
 
-  void IncrementFullCodeGen(TimeDelta full_code_gen) {
+  void IncrementFullCodeGen(base::TimeDelta full_code_gen) {
     full_code_gen_ += full_code_gen;
   }
 
-  void IncrementSubtotals(TimeDelta create_graph,
-                          TimeDelta optimize_graph,
-                          TimeDelta generate_code) {
+  void IncrementSubtotals(base::TimeDelta create_graph,
+                          base::TimeDelta optimize_graph,
+                          base::TimeDelta generate_code) {
     create_graph_ += create_graph;
     optimize_graph_ += optimize_graph;
     generate_code_ += generate_code;
   }
 
  private:
-  List<TimeDelta> times_;
+  List<base::TimeDelta> times_;
   List<const char*> names_;
   List<unsigned> sizes_;
-  TimeDelta create_graph_;
-  TimeDelta optimize_graph_;
-  TimeDelta generate_code_;
+  base::TimeDelta create_graph_;
+  base::TimeDelta optimize_graph_;
+  base::TimeDelta generate_code_;
   unsigned total_size_;
-  TimeDelta full_code_gen_;
+  base::TimeDelta full_code_gen_;
   double source_size_;
 };
 
@@ -2804,7 +2811,7 @@ class HTracer V8_FINAL : public Malloced {
     if (FLAG_trace_hydrogen_file == NULL) {
       SNPrintF(filename_,
                "hydrogen-%d-%d.cfg",
-               OS::GetCurrentProcessId(),
+               base::OS::GetCurrentProcessId(),
                isolate_id);
     } else {
       StrNCpy(filename_, FLAG_trace_hydrogen_file, filename_.length());

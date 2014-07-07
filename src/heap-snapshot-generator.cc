@@ -83,21 +83,21 @@ void HeapEntry::SetIndexedReference(HeapGraphEdge::Type type,
 void HeapEntry::Print(
     const char* prefix, const char* edge_name, int max_depth, int indent) {
   STATIC_ASSERT(sizeof(unsigned) == sizeof(id()));
-  OS::Print("%6" V8PRIuPTR " @%6u %*c %s%s: ",
-            self_size(), id(), indent, ' ', prefix, edge_name);
+  base::OS::Print("%6" V8PRIuPTR " @%6u %*c %s%s: ", self_size(), id(), indent,
+                  ' ', prefix, edge_name);
   if (type() != kString) {
-    OS::Print("%s %.40s\n", TypeAsString(), name_);
+    base::OS::Print("%s %.40s\n", TypeAsString(), name_);
   } else {
-    OS::Print("\"");
+    base::OS::Print("\"");
     const char* c = name_;
     while (*c && (c - name_) <= 40) {
       if (*c != '\n')
-        OS::Print("%c", *c);
+        base::OS::Print("%c", *c);
       else
-        OS::Print("\\n");
+        base::OS::Print("\\n");
       ++c;
     }
-    OS::Print("\"\n");
+    base::OS::Print("\"\n");
   }
   if (--max_depth == 0) return;
   Vector<HeapGraphEdge*> ch = children();
@@ -1216,8 +1216,8 @@ void V8HeapExplorer::ExtractJSObjectReferences(
                          "global_context", global_obj->global_context(),
                          GlobalObject::kGlobalContextOffset);
     SetInternalReference(global_obj, entry,
-                         "global_receiver", global_obj->global_receiver(),
-                         GlobalObject::kGlobalReceiverOffset);
+                         "global_proxy", global_obj->global_proxy(),
+                         GlobalObject::kGlobalProxyOffset);
     STATIC_ASSERT(GlobalObject::kHeaderSize - JSObject::kHeaderSize ==
                  4 * kPointerSize);
   } else if (obj->IsJSArrayBufferView()) {
@@ -1641,6 +1641,8 @@ void V8HeapExplorer::ExtractPropertyReferences(JSObject* js_obj, int entry) {
     for (int i = 0; i < real_size; i++) {
       switch (descs->GetType(i)) {
         case FIELD: {
+          Representation r = descs->GetDetails(i).representation();
+          if (r.IsSmi() || r.IsDouble()) break;
           int index = descs->GetFieldIndex(i);
 
           Name* k = descs->GetKey(i);
@@ -2586,13 +2588,12 @@ bool HeapSnapshotGenerator::GenerateSnapshot() {
 
 #ifdef VERIFY_HEAP
   Heap* debug_heap = heap_;
-  CHECK(!debug_heap->old_data_space()->was_swept_conservatively());
-  CHECK(!debug_heap->old_pointer_space()->was_swept_conservatively());
-  CHECK(!debug_heap->code_space()->was_swept_conservatively());
-  CHECK(!debug_heap->cell_space()->was_swept_conservatively());
-  CHECK(!debug_heap->property_cell_space()->
-        was_swept_conservatively());
-  CHECK(!debug_heap->map_space()->was_swept_conservatively());
+  CHECK(debug_heap->old_data_space()->is_iterable());
+  CHECK(debug_heap->old_pointer_space()->is_iterable());
+  CHECK(debug_heap->code_space()->is_iterable());
+  CHECK(debug_heap->cell_space()->is_iterable());
+  CHECK(debug_heap->property_cell_space()->is_iterable());
+  CHECK(debug_heap->map_space()->is_iterable());
 #endif
 
 #ifdef VERIFY_HEAP

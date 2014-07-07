@@ -165,7 +165,7 @@ Handle<Code> CodeGenerator::MakeCodeEpilogue(MacroAssembler* masm,
       isolate->factory()->NewCode(desc, flags, masm->CodeObject(),
                                   false, is_crankshafted,
                                   info->prologue_offset(),
-                                  info->is_debug());
+                                  info->is_debug() && !is_crankshafted);
   isolate->counters()->total_compiled_code_size()->Increment(
       code->instruction_size());
   isolate->heap()->IncrementCodeGeneratedBytes(is_crankshafted,
@@ -271,7 +271,7 @@ void ArgumentsAccessStub::Generate(MacroAssembler* masm) {
 }
 
 
-int CEntryStub::MinorKey() {
+int CEntryStub::MinorKey() const {
   int result = (save_doubles_ == kSaveFPRegs) ? 1 : 0;
   ASSERT(result_size_ == 1 || result_size_ == 2);
 #if defined(_WIN64) || defined(V8_TARGET_ARCH_PPC64)

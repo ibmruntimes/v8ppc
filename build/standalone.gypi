@@ -199,7 +199,8 @@
        or OS=="netbsd" or OS=="aix"', {
       'target_defaults': {
         'cflags': [ '-Wall', '<(werror)', '-W', '-Wno-unused-parameter',
-                    '-pthread', '-fno-exceptions', '-pedantic' ],
+                    '-Wno-long-long', '-pthread', '-fno-exceptions',
+                    '-pedantic' ],
         'cflags_cc': [ '-Wnon-virtual-dtor', '-fno-rtti' ],
         'ldflags': [ '-pthread', ],
         'conditions': [

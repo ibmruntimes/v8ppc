@@ -306,8 +306,10 @@ OptimizedCompileJob::Status OptimizedCompileJob::CreateGraph() {
   // generated code for this from the shared function object.
   if (FLAG_always_full_compiler) return AbortOptimization();
 
-  // Do not use crankshaft if compiling for debugging.
-  if (info()->is_debug()) return AbortOptimization(kDebuggerIsActive);
+  // Do not use crankshaft if we need to be able to set break points.
+  if (isolate()->DebuggerHasBreakPoints()) {
+    return AbortOptimization(kDebuggerHasBreakPoints);
+  }
 
   // Limit the number of times we re-compile a functions with
   // the optimizing compiler.
@@ -351,7 +353,7 @@ OptimizedCompileJob::Status OptimizedCompileJob::CreateGraph() {
   // performance of the hydrogen-based compiler.
   bool should_recompile = !info()->shared_info()->has_deoptimization_support();
   if (should_recompile || FLAG_hydrogen_stats) {
-    ElapsedTimer timer;
+    base::ElapsedTimer timer;
     if (FLAG_hydrogen_stats) {
       timer.Start();
     }
@@ -394,7 +396,7 @@ OptimizedCompileJob::Status OptimizedCompileJob::CreateGraph() {
   // Type-check the function.
   AstTyper::Run(info());
 
-  graph_builder_ = FLAG_hydrogen_track_positions
+  graph_builder_ = (FLAG_hydrogen_track_positions || FLAG_trace_ic)
       ? new(info()->zone()) HOptimizedGraphBuilderWithPositions(info())
       : new(info()->zone()) HOptimizedGraphBuilder(info());
 
@@ -452,6 +454,7 @@ OptimizedCompileJob::Status OptimizedCompileJob::GenerateCode() {
   ASSERT(last_status() == SUCCEEDED);
   ASSERT(!info()->HasAbortedDueToDependencyChange());
   DisallowCodeDependencyChange no_dependency_change;
+  DisallowJavascriptExecution no_js(isolate());
   {  // Scope for timer.
     Timer timer(this, &time_taken_to_codegen_);
     ASSERT(chunk_ != NULL);
@@ -577,8 +580,7 @@ static void UpdateSharedFunctionInfo(CompilationInfo* info) {
 
   // Check the function has compiled code.
   ASSERT(shared->is_compiled());
-  shared->set_dont_optimize_reason(lit->dont_optimize_reason());
-  shared->set_dont_inline(lit->flags()->Contains(kDontInline));
+  shared->set_bailout_reason(lit->dont_optimize_reason());
   shared->set_ast_node_count(lit->ast_node_count());
   shared->set_strict_mode(lit->strict_mode());
 }
@@ -610,8 +612,7 @@ static void SetFunctionInfo(Handle<SharedFunctionInfo> function_info,
   function_info->set_has_duplicate_parameters(lit->has_duplicate_parameters());
   function_info->set_ast_node_count(lit->ast_node_count());
   function_info->set_is_function(lit->is_function());
-  function_info->set_dont_optimize_reason(lit->dont_optimize_reason());
-  function_info->set_dont_inline(lit->flags()->Contains(kDontInline));
+  function_info->set_bailout_reason(lit->dont_optimize_reason());
   function_info->set_dont_cache(lit->flags()->Contains(kDontCache));
   function_info->set_is_generator(lit->is_generator());
 }
@@ -858,7 +859,7 @@ static Handle<SharedFunctionInfo> CompileToplevel(CompilationInfo* info) {
     live_edit_tracker.RecordFunctionInfo(result, lit, info->zone());
   }
 
-  isolate->debug()->OnAfterCompile(script, Debug::NO_AFTER_COMPILE_FLAGS);
+  isolate->debug()->OnAfterCompile(script);
 
   return result;
 }
@@ -1312,7 +1313,7 @@ bool CompilationPhase::ShouldProduceTraceOutput() const {
       : (FLAG_trace_hydrogen &&
          info()->closure()->PassesFilter(FLAG_trace_hydrogen_filter));
   return (tracing_on &&
-      OS::StrChr(const_cast<char*>(FLAG_trace_phase), name_[0]) != NULL);
+      base::OS::StrChr(const_cast<char*>(FLAG_trace_phase), name_[0]) != NULL);
 }
 
 } }  // namespace v8::internal

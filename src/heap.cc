@@ -7,6 +7,7 @@
 #include "src/accessors.h"
 #include "src/api.h"
 #include "src/base/once.h"
+#include "src/base/utils/random-number-generator.h"
 #include "src/bootstrapper.h"
 #include "src/codegen.h"
 #include "src/compilation-cache.h"
@@ -27,7 +28,6 @@
 #include "src/snapshot.h"
 #include "src/store-buffer.h"
 #include "src/utils.h"
-#include "src/utils/random-number-generator.h"
 #include "src/v8threads.h"
 #include "src/vm-state-inl.h"
 
@@ -66,7 +66,6 @@ Heap::Heap()
 // Will be 4 * reserved_semispace_size_ to ensure that young
 // generation can be aligned to its size.
       maximum_committed_(0),
-      old_space_growing_factor_(4),
       survived_since_last_expansion_(0),
       sweep_generation_(0),
       always_allocate_scope_depth_(0),
@@ -95,7 +94,6 @@ Heap::Heap()
       allocation_timeout_(0),
 #endif  // DEBUG
       old_generation_allocation_limit_(kMinimumOldGenerationAllocationLimit),
-      size_of_old_gen_at_last_old_space_gc_(0),
       old_gen_exhausted_(false),
       inline_allocation_disabled_(false),
       store_buffer_rebuilder_(store_buffer()),
@@ -724,7 +722,6 @@ void Heap::GarbageCollectionEpilogue() {
 #ifdef DEBUG
   ReportStatisticsAfterGC();
 #endif  // DEBUG
-  isolate_->debug()->AfterGarbageCollection();
 
   // Remember the last top pointer so that we can later find out
   // whether we allocated in new space since the last GC.
@@ -1062,7 +1059,7 @@ bool Heap::PerformGarbageCollection(
     GarbageCollector collector,
     GCTracer* tracer,
     const v8::GCCallbackFlags gc_callback_flags) {
-  bool next_gc_likely_to_collect_more = false;
+  int freed_global_handles = 0;
 
   if (collector != SCAVENGER) {
     PROFILE(isolate_, CodeMovingGCEvent());
@@ -1102,12 +1099,11 @@ bool Heap::PerformGarbageCollection(
     // Perform mark-sweep with optional compaction.
     MarkCompact(tracer);
     sweep_generation_++;
-
-    size_of_old_gen_at_last_old_space_gc_ = PromotedSpaceSizeOfObjects();
-
+    // Temporarily set the limit for case when PostGarbageCollectionProcessing
+    // allocates and triggers GC. The real limit is set at after
+    // PostGarbageCollectionProcessing.
     old_generation_allocation_limit_ =
-        OldGenerationAllocationLimit(size_of_old_gen_at_last_old_space_gc_);
-
+        OldGenerationAllocationLimit(PromotedSpaceSizeOfObjects(), 0);
     old_gen_exhausted_ = false;
   } else {
     tracer_ = tracer;
@@ -1126,7 +1122,7 @@ bool Heap::PerformGarbageCollection(
   gc_post_processing_depth_++;
   { AllowHeapAllocation allow_allocation;
     GCTracer::Scope scope(tracer, GCTracer::Scope::EXTERNAL);
-    next_gc_likely_to_collect_more =
+    freed_global_handles =
         isolate_->global_handles()->PostGarbageCollectionProcessing(
             collector, tracer);
   }
@@ -1141,6 +1137,9 @@ bool Heap::PerformGarbageCollection(
     // Register the amount of external allocated memory.
     amount_of_external_allocated_memory_at_last_global_gc_ =
         amount_of_external_allocated_memory_;
+    old_generation_allocation_limit_ =
+        OldGenerationAllocationLimit(PromotedSpaceSizeOfObjects(),
+                                     freed_global_handles);
   }
 
   { GCCallbacksScope scope(this);
@@ -1159,7 +1158,7 @@ bool Heap::PerformGarbageCollection(
   }
 #endif
 
-  return next_gc_likely_to_collect_more;
+  return freed_global_handles > 0;
 }
 
 
@@ -1304,7 +1303,7 @@ static void VerifyNonPointerSpacePointers(Heap* heap) {
 
   // The old data space was normally swept conservatively so that the iterator
   // doesn't work, so we normally skip the next bit.
-  if (!heap->old_data_space()->was_swept_conservatively()) {
+  if (heap->old_data_space()->is_iterable()) {
     HeapObjectIterator data_it(heap->old_data_space());
     for (HeapObject* object = data_it.Next();
          object != NULL; object = data_it.Next())
@@ -1957,6 +1956,19 @@ class ScavengingVisitor : public StaticVisitorBase {
                                    HeapObject* source,
                                    HeapObject* target,
                                    int size)) {
+    // If we migrate into to-space, then the to-space top pointer should be
+    // right after the target object. Incorporate double alignment
+    // over-allocation.
+    ASSERT(!heap->InToSpace(target) ||
+        target->address() + size == heap->new_space()->top() ||
+        target->address() + size + kPointerSize == heap->new_space()->top());
+
+    // Make sure that we do not overwrite the promotion queue which is at
+    // the end of to-space.
+    ASSERT(!heap->InToSpace(target) ||
+        heap->promotion_queue()->IsBelowPromotionQueue(
+            heap->new_space()->top()));
+
     // Copy the content of source to target.
     heap->CopyBlock(target->address(), source->address(), size);
 
@@ -1976,6 +1988,95 @@ class ScavengingVisitor : public StaticVisitorBase {
     }
   }
 
+  template<int alignment>
+  static inline bool SemiSpaceCopyObject(Map* map,
+                                         HeapObject** slot,
+                                         HeapObject* object,
+                                         int object_size) {
+    Heap* heap = map->GetHeap();
+
+    int allocation_size = object_size;
+    if (alignment != kObjectAlignment) {
+      ASSERT(alignment == kDoubleAlignment);
+      allocation_size += kPointerSize;
+    }
+
+    ASSERT(heap->AllowedToBeMigrated(object, NEW_SPACE));
+    AllocationResult allocation =
+        heap->new_space()->AllocateRaw(allocation_size);
+
+    HeapObject* target = NULL;  // Initialization to please compiler.
+    if (allocation.To(&target)) {
+      if (alignment != kObjectAlignment) {
+        target = EnsureDoubleAligned(heap, target, allocation_size);
+      }
+
+      // Order is important here: Set the promotion limit before migrating
+      // the object. Otherwise we may end up overwriting promotion queue
+      // entries when we migrate the object.
+      heap->promotion_queue()->SetNewLimit(heap->new_space()->top());
+
+      // Order is important: slot might be inside of the target if target
+      // was allocated over a dead object and slot comes from the store
+      // buffer.
+      *slot = target;
+      MigrateObject(heap, object, target, object_size);
+
+      heap->IncrementSemiSpaceCopiedObjectSize(object_size);
+      return true;
+    }
+    return false;
+  }
+
+
+  template<ObjectContents object_contents, int alignment>
+  static inline bool PromoteObject(Map* map,
+                                   HeapObject** slot,
+                                   HeapObject* object,
+                                   int object_size) {
+    Heap* heap = map->GetHeap();
+
+    int allocation_size = object_size;
+    if (alignment != kObjectAlignment) {
+      ASSERT(alignment == kDoubleAlignment);
+      allocation_size += kPointerSize;
+    }
+
+    AllocationResult allocation;
+    if (object_contents == DATA_OBJECT) {
+      ASSERT(heap->AllowedToBeMigrated(object, OLD_DATA_SPACE));
+      allocation = heap->old_data_space()->AllocateRaw(allocation_size);
+    } else {
+      ASSERT(heap->AllowedToBeMigrated(object, OLD_POINTER_SPACE));
+      allocation = heap->old_pointer_space()->AllocateRaw(allocation_size);
+    }
+
+    HeapObject* target = NULL;  // Initialization to please compiler.
+    if (allocation.To(&target)) {
+      if (alignment != kObjectAlignment) {
+        target = EnsureDoubleAligned(heap, target, allocation_size);
+      }
+
+      // Order is important: slot might be inside of the target if target
+      // was allocated over a dead object and slot comes from the store
+      // buffer.
+      *slot = target;
+      MigrateObject(heap, object, target, object_size);
+
+      if (object_contents == POINTER_OBJECT) {
+        if (map->instance_type() == JS_FUNCTION_TYPE) {
+          heap->promotion_queue()->insert(
+              target, JSFunction::kNonWeakFieldsEndOffset);
+        } else {
+          heap->promotion_queue()->insert(target, object_size);
+        }
+      }
+      heap->IncrementPromotedObjectsSize(object_size);
+      return true;
+    }
+    return false;
+  }
+
 
   template<ObjectContents object_contents, int alignment>
   static inline void EvacuateObject(Map* map,
@@ -1984,67 +2085,25 @@ class ScavengingVisitor : public StaticVisitorBase {
                                     int object_size) {
     SLOW_ASSERT(object_size <= Page::kMaxRegularHeapObjectSize);
     SLOW_ASSERT(object->Size() == object_size);
-
-    int allocation_size = object_size;
-    if (alignment != kObjectAlignment) {
-      ASSERT(alignment == kDoubleAlignment);
-      allocation_size += kPointerSize;
-    }
-
     Heap* heap = map->GetHeap();
-    if (heap->ShouldBePromoted(object->address(), object_size)) {
-      AllocationResult allocation;
 
-      if (object_contents == DATA_OBJECT) {
-        ASSERT(heap->AllowedToBeMigrated(object, OLD_DATA_SPACE));
-        allocation = heap->old_data_space()->AllocateRaw(allocation_size);
-      } else {
-        ASSERT(heap->AllowedToBeMigrated(object, OLD_POINTER_SPACE));
-        allocation = heap->old_pointer_space()->AllocateRaw(allocation_size);
-      }
-
-      HeapObject* target = NULL;  // Initialization to please compiler.
-      if (allocation.To(&target)) {
-        if (alignment != kObjectAlignment) {
-          target = EnsureDoubleAligned(heap, target, allocation_size);
-        }
-
-        // Order is important: slot might be inside of the target if target
-        // was allocated over a dead object and slot comes from the store
-        // buffer.
-        *slot = target;
-        MigrateObject(heap, object, target, object_size);
-
-        if (object_contents == POINTER_OBJECT) {
-          if (map->instance_type() == JS_FUNCTION_TYPE) {
-            heap->promotion_queue()->insert(
-                target, JSFunction::kNonWeakFieldsEndOffset);
-          } else {
-            heap->promotion_queue()->insert(target, object_size);
-          }
-        }
-
-        heap->IncrementPromotedObjectsSize(object_size);
+    if (!heap->ShouldBePromoted(object->address(), object_size)) {
+      // A semi-space copy may fail due to fragmentation. In that case, we
+      // try to promote the object.
+      if (SemiSpaceCopyObject<alignment>(map, slot, object, object_size)) {
         return;
       }
     }
-    ASSERT(heap->AllowedToBeMigrated(object, NEW_SPACE));
-    AllocationResult allocation =
-        heap->new_space()->AllocateRaw(allocation_size);
-    heap->promotion_queue()->SetNewLimit(heap->new_space()->top());
-    HeapObject* target = HeapObject::cast(allocation.ToObjectChecked());
 
-    if (alignment != kObjectAlignment) {
-      target = EnsureDoubleAligned(heap, target, allocation_size);
+    if (PromoteObject<object_contents, alignment>(
+        map, slot, object, object_size)) {
+      return;
     }
 
-    // Order is important: slot might be inside of the target if target
-    // was allocated over a dead object and slot comes from the store
-    // buffer.
-    *slot = target;
-    MigrateObject(heap, object, target, object_size);
-    heap->IncrementSemiSpaceCopiedObjectSize(object_size);
-    return;
+    // If promotion failed, we try to copy the object to the other semi-space
+    if (SemiSpaceCopyObject<alignment>(map, slot, object, object_size)) return;
+
+    UNREACHABLE();
   }
 
 
@@ -2488,6 +2547,8 @@ bool Heap::CreateInitialMaps() {
 
     ALLOCATE_VARSIZE_MAP(FIXED_ARRAY_TYPE, scope_info)
     ALLOCATE_MAP(HEAP_NUMBER_TYPE, HeapNumber::kSize, heap_number)
+    ALLOCATE_MAP(
+        MUTABLE_HEAP_NUMBER_TYPE, HeapNumber::kSize, mutable_heap_number)
     ALLOCATE_MAP(SYMBOL_TYPE, Symbol::kSize, symbol)
     ALLOCATE_MAP(FOREIGN_TYPE, Foreign::kSize, foreign)
 
@@ -2612,6 +2673,7 @@ bool Heap::CreateInitialMaps() {
 
 
 AllocationResult Heap::AllocateHeapNumber(double value,
+                                          MutableMode mode,
                                           PretenureFlag pretenure) {
   // Statically ensure that it is safe to allocate heap numbers in paged
   // spaces.
@@ -2625,7 +2687,8 @@ AllocationResult Heap::AllocateHeapNumber(double value,
     if (!allocation.To(&result)) return allocation;
   }
 
-  result->set_map_no_write_barrier(heap_number_map());
+  Map* map = mode == MUTABLE ? mutable_heap_number_map() : heap_number_map();
+  HeapObject::cast(result)->set_map_no_write_barrier(map);
   HeapNumber::cast(result)->set_value(value);
   return result;
 }
@@ -2731,12 +2794,13 @@ void Heap::CreateInitialObjects() {
   HandleScope scope(isolate());
   Factory* factory = isolate()->factory();
 
-  // The -0 value must be set before NumberFromDouble works.
-  set_minus_zero_value(*factory->NewHeapNumber(-0.0, TENURED));
+  // The -0 value must be set before NewNumber works.
+  set_minus_zero_value(*factory->NewHeapNumber(-0.0, IMMUTABLE, TENURED));
   ASSERT(std::signbit(minus_zero_value()->Number()) != 0);
 
-  set_nan_value(*factory->NewHeapNumber(OS::nan_value(), TENURED));
-  set_infinity_value(*factory->NewHeapNumber(V8_INFINITY, TENURED));
+  set_nan_value(
+      *factory->NewHeapNumber(base::OS::nan_value(), IMMUTABLE, TENURED));
+  set_infinity_value(*factory->NewHeapNumber(V8_INFINITY, IMMUTABLE, TENURED));
 
   // The hole has not been created yet, but we want to put something
   // predictable in the gaps in the string table, so lets make that Smi zero.
@@ -2877,6 +2941,8 @@ void Heap::CreateInitialObjects() {
   set_uninitialized_symbol(*factory->NewPrivateSymbol());
   set_megamorphic_symbol(*factory->NewPrivateSymbol());
   set_observed_symbol(*factory->NewPrivateSymbol());
+  set_stack_trace_symbol(*factory->NewPrivateSymbol());
+  set_detailed_stack_trace_symbol(*factory->NewPrivateSymbol());
 
   Handle<SeededNumberDictionary> slow_element_dictionary =
       SeededNumberDictionary::New(isolate(), 0, TENURED);
@@ -4213,8 +4279,8 @@ STRUCT_LIST(MAKE_CASE)
 
 
 bool Heap::IsHeapIterable() {
-  return (!old_pointer_space()->was_swept_conservatively() &&
-          !old_data_space()->was_swept_conservatively() &&
+  return (old_pointer_space()->is_iterable() &&
+          old_data_space()->is_iterable() &&
           new_space_top_after_last_gc_ == new_space()->top());
 }
 
@@ -4239,7 +4305,8 @@ void Heap::AdvanceIdleIncrementalMarking(intptr_t step_size) {
       isolate_->compilation_cache()->Clear();
       uncommit = true;
     }
-    CollectAllGarbage(kNoGCFlags, "idle notification: finalize incremental");
+    CollectAllGarbage(kReduceMemoryFootprintMask,
+                      "idle notification: finalize incremental");
     mark_sweeps_since_idle_round_started_++;
     gc_count_at_last_idle_gc_ = gc_count_;
     if (uncommit) {
@@ -4959,12 +5026,6 @@ bool Heap::ConfigureHeap(int max_semi_space_size,
 
   code_range_size_ = code_range_size * MB;
 
-  // We set the old generation growing factor to 2 to grow the heap slower on
-  // memory-constrained devices.
-  if (max_old_generation_size_ <= kMaxOldSpaceSizeMediumMemoryDevice) {
-    old_space_growing_factor_ = 2;
-  }
-
   configured_ = true;
   return true;
 }
@@ -4998,7 +5059,7 @@ void Heap::RecordStats(HeapStats* stats, bool take_snapshot) {
   *stats->memory_allocator_capacity =
       isolate()->memory_allocator()->Size() +
       isolate()->memory_allocator()->Available();
-  *stats->os_error = OS::GetLastError();
+  *stats->os_error = base::OS::GetLastError();
       isolate()->memory_allocator()->Available();
   if (take_snapshot) {
     HeapIterator iterator(this);
@@ -5030,6 +5091,47 @@ int64_t Heap::PromotedExternalMemorySize() {
       <= amount_of_external_allocated_memory_at_last_global_gc_) return 0;
   return amount_of_external_allocated_memory_
       - amount_of_external_allocated_memory_at_last_global_gc_;
+}
+
+
+intptr_t Heap::OldGenerationAllocationLimit(intptr_t old_gen_size,
+                                            int freed_global_handles) {
+  const int kMaxHandles = 1000;
+  const int kMinHandles = 100;
+  double min_factor = 1.1;
+  double max_factor = 4;
+  // We set the old generation growing factor to 2 to grow the heap slower on
+  // memory-constrained devices.
+  if (max_old_generation_size_ <= kMaxOldSpaceSizeMediumMemoryDevice) {
+    max_factor = 2;
+  }
+  // If there are many freed global handles, then the next full GC will
+  // likely collect a lot of garbage. Choose the heap growing factor
+  // depending on freed global handles.
+  // TODO(ulan, hpayer): Take into account mutator utilization.
+  double factor;
+  if (freed_global_handles <= kMinHandles) {
+    factor = max_factor;
+  } else if (freed_global_handles >= kMaxHandles) {
+    factor = min_factor;
+  } else {
+    // Compute factor using linear interpolation between points
+    // (kMinHandles, max_factor) and (kMaxHandles, min_factor).
+    factor = max_factor -
+             (freed_global_handles - kMinHandles) * (max_factor - min_factor) /
+             (kMaxHandles - kMinHandles);
+  }
+
+  if (FLAG_stress_compaction ||
+      mark_compact_collector()->reduce_memory_footprint_) {
+    factor = min_factor;
+  }
+
+  intptr_t limit = static_cast<intptr_t>(old_gen_size * factor);
+  limit = Max(limit, kMinimumOldGenerationAllocationLimit);
+  limit += new_space_.Capacity();
+  intptr_t halfway_to_the_max = (old_gen_size + max_old_generation_size_) / 2;
+  return Min(limit, halfway_to_the_max);
 }
 
 
@@ -5937,7 +6039,7 @@ GCTracer::GCTracer(Heap* heap,
       gc_reason_(gc_reason),
       collector_reason_(collector_reason) {
   if (!FLAG_trace_gc && !FLAG_print_cumulative_gc_stat) return;
-  start_time_ = OS::TimeCurrentMillis();
+  start_time_ = base::OS::TimeCurrentMillis();
   start_object_size_ = heap_->SizeOfObjects();
   start_memory_size_ = heap_->isolate()->memory_allocator()->Size();
 
@@ -5971,7 +6073,7 @@ GCTracer::~GCTracer() {
   bool first_gc = (heap_->last_gc_end_timestamp_ == 0);
 
   heap_->alive_after_last_gc_ = heap_->SizeOfObjects();
-  heap_->last_gc_end_timestamp_ = OS::TimeCurrentMillis();
+  heap_->last_gc_end_timestamp_ = base::OS::TimeCurrentMillis();
 
   double time = heap_->last_gc_end_timestamp_ - start_time_;
 
@@ -6055,6 +6157,9 @@ GCTracer::~GCTracer() {
     PrintF("sweep=%.2f ", scopes_[Scope::MC_SWEEP]);
     PrintF("sweepns=%.2f ", scopes_[Scope::MC_SWEEP_NEWSPACE]);
     PrintF("sweepos=%.2f ", scopes_[Scope::MC_SWEEP_OLDSPACE]);
+    PrintF("sweepcode=%.2f ", scopes_[Scope::MC_SWEEP_CODE]);
+    PrintF("sweepcell=%.2f ", scopes_[Scope::MC_SWEEP_CELL]);
+    PrintF("sweepmap=%.2f ", scopes_[Scope::MC_SWEEP_MAP]);
     PrintF("evacuate=%.1f ", scopes_[Scope::MC_EVACUATE_PAGES]);
     PrintF("new_new=%.1f ", scopes_[Scope::MC_UPDATE_NEW_TO_NEW_POINTERS]);
     PrintF("root_new=%.1f ", scopes_[Scope::MC_UPDATE_ROOT_TO_NEW_POINTERS]);
@@ -6315,11 +6420,12 @@ void Heap::ClearObjectStats(bool clear_last_time_stats) {
 }
 
 
-static LazyMutex checkpoint_object_stats_mutex = LAZY_MUTEX_INITIALIZER;
+static base::LazyMutex checkpoint_object_stats_mutex = LAZY_MUTEX_INITIALIZER;
 
 
 void Heap::CheckpointObjectStats() {
-  LockGuard<Mutex> lock_guard(checkpoint_object_stats_mutex.Pointer());
+  base::LockGuard<base::Mutex> lock_guard(
+      checkpoint_object_stats_mutex.Pointer());
   Counters* counters = isolate()->counters();
 #define ADJUST_LAST_TIME_OBJECT_COUNT(name)                                    \
   counters->count_of_##name()->Increment(                                      \

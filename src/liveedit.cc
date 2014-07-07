@@ -1477,7 +1477,7 @@ Handle<Object> LiveEdit::ChangeScriptSource(Handle<Script> original_script,
     Handle<Script> old_script = CreateScriptCopy(original_script);
     old_script->set_name(String::cast(*old_script_name));
     old_script_object = old_script;
-    isolate->debug()->OnAfterCompile(old_script, Debug::SEND_WHEN_DEBUGGING);
+    isolate->debug()->OnAfterCompile(old_script);
   } else {
     old_script_object = isolate->factory()->null_value();
   }
@@ -1957,7 +1957,7 @@ Handle<JSArray> LiveEdit::CheckAndDropActivations(
   Isolate* isolate = shared_info_array->GetIsolate();
   int len = GetArrayLength(shared_info_array);
 
-  CHECK(shared_info_array->HasFastElements());
+  ASSERT(shared_info_array->HasFastElements());
   Handle<FixedArray> shared_info_array_elements(
       FixedArray::cast(shared_info_array->elements()));
 
