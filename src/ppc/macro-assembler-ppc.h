@@ -106,17 +106,22 @@ class MacroAssembler: public Assembler {
   // macro assembler.
   MacroAssembler(Isolate* isolate, void* buffer, int size);
 
+
+  // Returns the size of a call in instructions. Note, the value returned is
+  // only valid as long as no entries are added to the constant pool between
+  // checking the call size and emitting the actual call.
+  static int CallSize(Register target, Condition cond = al);
+  int CallSize(Address target, RelocInfo::Mode rmode, Condition cond = al);
+  static int CallSizeNotPredictableCodeSize(Address target,
+                                            RelocInfo::Mode rmode,
+                                            Condition cond = al);
+
   // Jump, Call, and Ret pseudo instructions implementing inter-working.
   void Jump(Register target, Condition cond = al);
   void Jump(Address target, RelocInfo::Mode rmode, Condition cond = al,
             CRegister cr = cr7);
   void Jump(Handle<Code> code, RelocInfo::Mode rmode, Condition cond = al);
-  static int CallSize(Register target, Condition cond = al);
   void Call(Register target, Condition cond = al);
-  int CallSize(Address target, RelocInfo::Mode rmode, Condition cond = al);
-  static int CallSizeNotPredictableCodeSize(Address target,
-                                            RelocInfo::Mode rmode,
-                                            Condition cond = al);
   void Call(Address target, RelocInfo::Mode rmode, Condition cond = al);
   int CallSize(Handle<Code> code,
                RelocInfo::Mode rmode = RelocInfo::CODE_TARGET,
@@ -403,7 +408,8 @@ class MacroAssembler: public Assembler {
   // into register dst.
   void LoadFromSafepointRegisterSlot(Register dst, Register src);
 
-  // Flush the I-cache from asm code. You should use CPU::FlushICache from C.
+  // Flush the I-cache from asm code. You should use CpuFeatures::FlushICache
+  // from C.
   // Does not handle errors.
   void FlushICache(Register address, size_t size,
                    Register scratch);
@@ -776,7 +782,8 @@ class MacroAssembler: public Assembler {
                           Register scratch2,
                           Register heap_number_map,
                           Label* gc_required,
-                          TaggingMode tagging_mode = TAG_RESULT);
+                          TaggingMode tagging_mode = TAG_RESULT,
+                          MutableMode mode = IMMUTABLE);
   void AllocateHeapNumberWithValue(Register result,
                                    DoubleRegister value,
                                    Register scratch1,

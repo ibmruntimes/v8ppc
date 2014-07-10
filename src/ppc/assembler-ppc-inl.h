@@ -43,7 +43,7 @@
 
 #include "src/ppc/assembler-ppc.h"
 
-#include "src/cpu.h"
+#include "src/assembler.h"
 #include "src/debug.h"
 
 
@@ -602,7 +602,7 @@ void Assembler::set_target_address_at(Address pc,
     *(p+3) = instr4;
     *(p+4) = instr5;
     if (icache_flush_mode != SKIP_ICACHE_FLUSH) {
-      CPU::FlushICache(p, 20);
+      CpuFeatures::FlushICache(p, 5 * kInstrSize);
     }
 #else
     uint32_t* p = reinterpret_cast<uint32_t*>(pc);
@@ -617,7 +617,7 @@ void Assembler::set_target_address_at(Address pc,
     *p = instr1;
     *(p+1) = instr2;
     if (icache_flush_mode != SKIP_ICACHE_FLUSH) {
-      CPU::FlushICache(p, 8);
+      CpuFeatures::FlushICache(p, 2 * kInstrSize);
     }
 #endif
   } else {

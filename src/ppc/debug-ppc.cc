@@ -191,15 +191,9 @@ void DebugCodegen::GenerateCallICStubDebugBreak(MacroAssembler* masm) {
 
 void DebugCodegen::GenerateLoadICDebugBreak(MacroAssembler* masm) {
   // Calling convention for IC load (from ic-ppc.cc).
-  // ----------- S t a t e -------------
-  //  -- r5    : name
-  //  -- lr    : return address
-  //  -- r3    : receiver
-  //  -- [sp]  : receiver
-  // -----------------------------------
-  // Registers r3 and r5 contain objects that need to be pushed on the
-  // expression stack of the fake JS frame.
-  Generate_DebugBreakCallHelper(masm, r3.bit() | r5.bit(), 0);
+  Register receiver = LoadIC::ReceiverRegister();
+  Register name = LoadIC::NameRegister();
+  Generate_DebugBreakCallHelper(masm, receiver.bit() | name.bit(), 0);
 }
 
 
@@ -218,11 +212,8 @@ void DebugCodegen::GenerateStoreICDebugBreak(MacroAssembler* masm) {
 
 
 void DebugCodegen::GenerateKeyedLoadICDebugBreak(MacroAssembler* masm) {
-  // ---------- S t a t e --------------
-  //  -- lr     : return address
-  //  -- r3     : key
-  //  -- r4     : receiver
-  Generate_DebugBreakCallHelper(masm, r3.bit() | r4.bit(), 0);
+  // Calling convention for keyed IC load (from ic-arm.cc).
+  GenerateLoadICDebugBreak(masm);
 }
 
 
@@ -316,28 +307,17 @@ void DebugCodegen::GenerateFrameDropperLiveEdit(MacroAssembler* masm) {
   ExternalReference restarter_frame_function_slot =
       ExternalReference::debug_restarter_frame_function_pointer_address(
           masm->isolate());
-#if V8_OOL_CONSTANT_POOL
-  int offset = 2 * kPointerSize;
-#else
-  int offset = kPointerSize;
-#endif
-
   __ mov(ip, Operand(restarter_frame_function_slot));
   __ li(r4, Operand::Zero());
   __ StoreP(r4, MemOperand(ip, 0));
 
-  // We do not know our frame height, but set sp based on fp.
-  __ subi(sp, fp, Operand(offset));
+  // Load the function pointer off of our current stack frame.
+  __ LoadP(r4, MemOperand(fp,
+           StandardFrameConstants::kConstantPoolOffset - kPointerSize));
 
-  // Return address, Frame, [Constant Pool Pointer,] Function.
-  // Function has been placed in "context" slot.
-  // (see SetUpFrameDropperFrame)
-#if V8_OOL_CONSTANT_POOL
-  __ Pop(r0, fp, kConstantPoolRegister, r4);
-#else
-  __ Pop(r0, fp, r4);
-#endif
-  __ mtlr(r0);
+  // Pop return address, frame and constant pool pointer (if
+  // FLAG_enable_ool_constant_pool).
+  __ LeaveFrame(StackFrame::INTERNAL);
 
   // Load context from the function.
   __ LoadP(cp, FieldMemOperand(r4, JSFunction::kContextOffset));

@@ -528,7 +528,7 @@ void PPCDebugger::Debug() {
         }
       } else if (strcmp(cmd, "gdb") == 0) {
         PrintF("relinquishing control to gdb\n");
-        v8::internal::OS::DebugBreak();
+        v8::base::OS::DebugBreak();
         PrintF("regaining control from gdb\n");
       } else if (strcmp(cmd, "break") == 0) {
         if (argc == 2) {
@@ -3659,8 +3659,8 @@ intptr_t Simulator::Call(byte* entry, int argument_count, ...) {
   intptr_t entry_stack = (original_stack -
                           (kNumRequiredStackFrameSlots + stack_arg_count) *
                           sizeof(intptr_t));
-  if (OS::ActivationFrameAlignment() != 0) {
-    entry_stack &= -OS::ActivationFrameAlignment();
+  if (base::OS::ActivationFrameAlignment() != 0) {
+    entry_stack &= -base::OS::ActivationFrameAlignment();
   }
   // Store remaining arguments on stack, from low to high memory.
   // +2 is a hack for the LR slot + old SP on PPC

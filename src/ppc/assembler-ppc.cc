@@ -42,6 +42,7 @@
 
 #if V8_TARGET_ARCH_PPC
 
+#include "src/base/cpu.h"
 #include "src/ppc/assembler-ppc-inl.h"
 
 #include "src/macro-assembler.h"
@@ -69,8 +70,8 @@ void CpuFeatures::ProbeImpl(bool cross_compile) {
   // support it
 #if V8_OS_LINUX && !defined(USE_SIMULATOR)
   // Probe for additional features at runtime.
-  CPU cpu;
-  if (!(cpu.part() == CPU::PPC_G5 || cpu.part() == CPU::PPC_G4)) {
+  base::CPU cpu;
+  if (!(cpu.part() == base::CPU::PPC_G5 || cpu.part() == base::CPU::PPC_G4)) {
     // Assume support
     supported_ |= (1u << FPU);
   }
@@ -170,7 +171,7 @@ void RelocInfo::PatchCode(byte* instructions, int instruction_count) {
   }
 
   // Indicate that code has changed.
-  CPU::FlushICache(pc_, instruction_count * Assembler::kInstrSize);
+  CpuFeatures::FlushICache(pc_, instruction_count * Assembler::kInstrSize);
 }
 
 
@@ -247,7 +248,6 @@ Assembler::Assembler(Isolate* isolate, void* buffer, int buffer_size)
 
 #if V8_OOL_CONSTANT_POOL
   constant_pool_available_ = false;
-  constant_pool_full_ = false;
 #endif
 
   ClearRecordedAstId();
@@ -1503,6 +1503,69 @@ int Assembler::DecodeInternalReference(Vector<char> buffer, Address pc) {
 #endif
 
 
+int Assembler::instructions_required_for_mov(const Operand& x) const {
+#if V8_OOL_CONSTANT_POOL
+  bool canOptimize;
+  if (use_constant_pool_for_mov(x, &canOptimize)) {
+    if (use_extended_constant_pool()) {
+      return kMovInstructionsExtendedConstantPool;
+    }
+    return kMovInstructionsConstantPool;
+  }
+  ASSERT(!canOptimize);
+#endif
+  return kMovInstructionsNoConstantPool;
+}
+
+
+#if V8_OOL_CONSTANT_POOL
+bool Assembler::use_constant_pool_for_mov(const Operand& x,
+                                          bool *canOptimize) const {
+  *canOptimize = !(x.must_output_reloc_info(this) ||
+                   is_trampoline_pool_blocked());
+
+  if (!is_constant_pool_available()) {
+    // If there is no constant pool available, we must use a mov
+    // immediate sequence.
+    return false;
+  }
+
+  intptr_t value = x.immediate();
+  if (*canOptimize && is_int16(value)) {
+    // Prefer a single-instruction load-immediate.
+    return false;
+  }
+
+  if (use_extended_constant_pool()) {
+    // Prefer a two instruction mov immediate sequence over the constant
+    // pool's extended section.
+#if V8_TARGET_ARCH_PPC64
+    // TODO(mbrandy): enable extended constant pool usage for 64-bit.
+    //                See ARM commit e27ab337 for a reference.
+    // if (*canOptimize && is_int32(value)) {
+      return false;
+    // }
+#else
+    return false;
+#endif
+  }
+
+  return true;
+}
+#endif
+
+
+bool Operand::must_output_reloc_info(const Assembler* assembler) const {
+  if (rmode_ == RelocInfo::EXTERNAL_REFERENCE) {
+    if (assembler != NULL && assembler->predictable_code_size()) return true;
+    return assembler->serializer_enabled();
+  } else if (RelocInfo::IsNone(rmode_)) {
+    return false;
+  }
+  return true;
+}
+
+
 // Primarily used for loading constants
 // This should really move to be in macro-assembler as it
 // is really a pseudo instruction
@@ -1511,30 +1574,45 @@ int Assembler::DecodeInternalReference(Vector<char> buffer, Address pc) {
 // and only use the generic version when we require a fixed sequence
 void Assembler::mov(Register dst, const Operand& src) {
   intptr_t value = src.immediate();
-  bool canOptimize = (RelocInfo::IsNone(src.rmode_) &&
-                      !is_trampoline_pool_blocked());
+  bool canOptimize;
   RelocInfo rinfo(pc_, src.rmode_, value, NULL);
 
-  if (!RelocInfo::IsNone(src.rmode_)) {
-    // some form of relocation needed
+  if (src.must_output_reloc_info(this)) {
     RecordRelocInfo(rinfo);
   }
 
 #if V8_OOL_CONSTANT_POOL
-  if (can_use_constant_pool() &&
-      !(canOptimize && is_int16(value))) {
-    ConstantPoolAddEntry(rinfo);
+  if (use_constant_pool_for_mov(src, &canOptimize)) {
+    ASSERT(is_constant_pool_available());
 #if V8_TARGET_ARCH_PPC64
-    BlockTrampolinePoolScope block_trampoline_pool(this);
     // We don't support 32-bit entries at this time
-    ASSERT(rinfo.rmode() != RelocInfo::NONE32);
-    // We are forced to use 2 instruction sequence since the constant
-    // pool pointer is tagged.
-    li(dst, Operand::Zero());
-    ldx(dst, MemOperand(kConstantPoolRegister, dst));
-#else
-    lwz(dst, MemOperand(kConstantPoolRegister, 0));
+    ASSERT(src.rmode_ != RelocInfo::NONE32);
 #endif
+    ConstantPoolArray::LayoutSection section = ConstantPoolAddEntry(rinfo);
+    if (section == ConstantPoolArray::EXTENDED_SECTION) {
+      BlockTrampolinePoolScope block_trampoline_pool(this);
+#if V8_TARGET_ARCH_PPC64
+      // We are forced to use 3 instruction sequence since the constant
+      // pool pointer is tagged.
+      lis(dst, Operand::Zero());
+      ori(dst, dst, Operand::Zero());
+      ldx(dst, MemOperand(kConstantPoolRegister, dst));
+#else
+      addis(dst, kConstantPoolRegister, Operand::Zero());
+      lwz(dst, MemOperand(dst, 0));
+#endif
+    } else {
+      ASSERT(section == ConstantPoolArray::SMALL_SECTION);
+#if V8_TARGET_ARCH_PPC64
+      BlockTrampolinePoolScope block_trampoline_pool(this);
+      // We are forced to use 2 instruction sequence since the constant
+      // pool pointer is tagged.
+      li(dst, Operand::Zero());
+      ldx(dst, MemOperand(kConstantPoolRegister, dst));
+#else
+      lwz(dst, MemOperand(kConstantPoolRegister, 0));
+#endif
+    }
     return;
   }
 #endif
@@ -2271,12 +2349,7 @@ void Assembler::PopulateConstantPool(ConstantPoolArray* constant_pool) {
 
 #if V8_OOL_CONSTANT_POOL
 ConstantPoolBuilder::ConstantPoolBuilder()
-    : entries_(),
-      merged_indexes_(),
-      count_of_64bit_(0),
-      count_of_code_ptr_(0),
-      count_of_heap_ptr_(0),
-      count_of_32bit_(0) { }
+    : entries_(), current_section_(ConstantPoolArray::SMALL_SECTION) {}
 
 
 bool ConstantPoolBuilder::IsEmpty() {
@@ -2284,36 +2357,30 @@ bool ConstantPoolBuilder::IsEmpty() {
 }
 
 
-bool ConstantPoolBuilder::Is64BitEntry(RelocInfo::Mode rmode) {
+ConstantPoolArray::Type ConstantPoolBuilder::GetConstantPoolType(
+    RelocInfo::Mode rmode) {
 #if V8_TARGET_ARCH_PPC64
-  return !RelocInfo::IsGCRelocMode(rmode) && rmode != RelocInfo::NONE32;
+  if (rmode == RelocInfo::NONE32) {
+    return ConstantPoolArray::INT32;
+  } else if (!RelocInfo::IsGCRelocMode(rmode)) {
+    return ConstantPoolArray::INT64;
 #else
-  return rmode == RelocInfo::NONE64;
+  if (rmode == RelocInfo::NONE64) {
+    return ConstantPoolArray::INT64;
+  } else if (!RelocInfo::IsGCRelocMode(rmode)) {
+    return ConstantPoolArray::INT32;
 #endif
+  } else if (RelocInfo::IsCodeTarget(rmode)) {
+    return ConstantPoolArray::CODE_PTR;
+  } else {
+    ASSERT(RelocInfo::IsGCRelocMode(rmode) && !RelocInfo::IsCodeTarget(rmode));
+    return ConstantPoolArray::HEAP_PTR;
+  }
 }
 
 
-bool ConstantPoolBuilder::Is32BitEntry(RelocInfo::Mode rmode) {
-#if V8_TARGET_ARCH_PPC64
-  return rmode == RelocInfo::NONE32;
-#else
-  return !RelocInfo::IsGCRelocMode(rmode) && rmode != RelocInfo::NONE64;
-#endif
-}
-
-
-bool ConstantPoolBuilder::IsCodePtrEntry(RelocInfo::Mode rmode) {
-  return RelocInfo::IsCodeTarget(rmode);
-}
-
-
-bool ConstantPoolBuilder::IsHeapPtrEntry(RelocInfo::Mode rmode) {
-  return RelocInfo::IsGCRelocMode(rmode) && !RelocInfo::IsCodeTarget(rmode);
-}
-
-
-void ConstantPoolBuilder::AddEntry(Assembler* assm,
-                                   const RelocInfo& rinfo) {
+ConstantPoolArray::LayoutSection ConstantPoolBuilder::AddEntry(
+    Assembler* assm, const RelocInfo& rinfo) {
   RelocInfo::Mode rmode = rinfo.rmode();
   ASSERT(rmode != RelocInfo::COMMENT &&
          rmode != RelocInfo::POSITION &&
@@ -2323,54 +2390,44 @@ void ConstantPoolBuilder::AddEntry(Assembler* assm,
 
   // Try to merge entries which won't be patched.
   int merged_index = -1;
+  ConstantPoolArray::LayoutSection entry_section = current_section_;
   if (RelocInfo::IsNone(rmode) ||
       (!assm->serializer_enabled() && (rmode >= RelocInfo::CELL))) {
     size_t i;
-    std::vector<RelocInfo>::const_iterator it;
+    std::vector<ConstantPoolEntry>::const_iterator it;
     for (it = entries_.begin(), i = 0; it != entries_.end(); it++, i++) {
-      if (RelocInfo::IsEqual(rinfo, *it)) {
+      if (RelocInfo::IsEqual(rinfo, it->rinfo_)) {
+        // Merge with found entry.
         merged_index = i;
+        entry_section = entries_[i].section_;
         break;
       }
     }
   }
 
-  entries_.push_back(rinfo);
-  merged_indexes_.push_back(merged_index);
+  ASSERT(entry_section <= current_section_);
+  entries_.push_back(ConstantPoolEntry(rinfo, entry_section, merged_index));
 
   if (merged_index == -1) {
     // Not merged, so update the appropriate count.
-    if (Is64BitEntry(rmode)) {
-      count_of_64bit_++;
-    } else if (Is32BitEntry(rmode)) {
-      count_of_32bit_++;
-    } else if (IsCodePtrEntry(rmode)) {
-      count_of_code_ptr_++;
-    } else {
-      ASSERT(IsHeapPtrEntry(rmode));
-      count_of_heap_ptr_++;
-    }
+    number_of_entries_[entry_section].increment(GetConstantPoolType(rmode));
   }
 
-  // Check if we still have room for another entry given PPC's load
-  // immediate offset range.
-  // TODO(rmcilroy): Avoid creating a new object here when we support
-  //                 extended constant pools.
-  ConstantPoolArray::NumberOfEntries total(count_of_64bit_,
-                                           count_of_code_ptr_,
-                                           count_of_heap_ptr_,
-                                           count_of_32bit_);
-  if (!(is_int16(ConstantPoolArray::SizeFor(total)))) {
-    assm->set_constant_pool_full();
+  // Check if we still have room for another entry in the small section
+  // given PPC's load immediate offset range.
+  if (current_section_ == ConstantPoolArray::SMALL_SECTION &&
+      !is_int16(ConstantPoolArray::SizeFor(*small_entries()))) {
+    current_section_ = ConstantPoolArray::EXTENDED_SECTION;
   }
+  return entry_section;
 }
 
 
 void ConstantPoolBuilder::Relocate(intptr_t pc_delta) {
-  for (std::vector<RelocInfo>::iterator rinfo = entries_.begin();
-       rinfo != entries_.end(); rinfo++) {
-    ASSERT(rinfo->rmode() != RelocInfo::JS_RETURN);
-    rinfo->set_pc(rinfo->pc() + pc_delta);
+  for (std::vector<ConstantPoolEntry>::iterator entry = entries_.begin();
+       entry != entries_.end(); entry++) {
+    ASSERT(entry->rinfo_.rmode() != RelocInfo::JS_RETURN);
+    entry->rinfo_.set_pc(entry->rinfo_.pc() + pc_delta);
   }
 }
 
@@ -2378,74 +2435,71 @@ void ConstantPoolBuilder::Relocate(intptr_t pc_delta) {
 Handle<ConstantPoolArray> ConstantPoolBuilder::New(Isolate* isolate) {
   if (IsEmpty()) {
     return isolate->factory()->empty_constant_pool_array();
+  } else if (extended_entries()->is_empty()) {
+    return isolate->factory()->NewConstantPoolArray(*small_entries());
   } else {
-    ConstantPoolArray::NumberOfEntries small(count_of_64bit_,
-                                             count_of_code_ptr_,
-                                             count_of_heap_ptr_,
-                                             count_of_32bit_);
-    return isolate->factory()->NewConstantPoolArray(small);
+    ASSERT(current_section_ == ConstantPoolArray::EXTENDED_SECTION);
+    return isolate->factory()->NewExtendedConstantPoolArray(
+        *small_entries(), *extended_entries());
   }
 }
 
 
 void ConstantPoolBuilder::Populate(Assembler* assm,
                                    ConstantPoolArray* constant_pool) {
-  ASSERT(count_of_64bit_ == constant_pool->number_of_entries(
-             ConstantPoolArray::INT64, ConstantPoolArray::SMALL_SECTION));
-  ASSERT(count_of_code_ptr_ == constant_pool->number_of_entries(
-             ConstantPoolArray::CODE_PTR, ConstantPoolArray::SMALL_SECTION));
-  ASSERT(count_of_heap_ptr_ == constant_pool->number_of_entries(
-             ConstantPoolArray::HEAP_PTR, ConstantPoolArray::SMALL_SECTION));
-  ASSERT(count_of_32bit_ == constant_pool->number_of_entries(
-             ConstantPoolArray::INT32, ConstantPoolArray::SMALL_SECTION));
-  ASSERT(entries_.size() == merged_indexes_.size());
+  ASSERT_EQ(extended_entries()->is_empty(),
+            !constant_pool->is_extended_layout());
+  ASSERT(small_entries()->equals(ConstantPoolArray::NumberOfEntries(
+      constant_pool, ConstantPoolArray::SMALL_SECTION)));
+  if (constant_pool->is_extended_layout()) {
+    ASSERT(extended_entries()->equals(ConstantPoolArray::NumberOfEntries(
+        constant_pool, ConstantPoolArray::EXTENDED_SECTION)));
+  }
 
-  int index_64bit = 0;
-  int index_code_ptr = count_of_64bit_;
-  int index_heap_ptr = count_of_64bit_ + count_of_code_ptr_;
-  int index_32bit = count_of_64bit_ + count_of_code_ptr_ + count_of_heap_ptr_;
-
-  size_t i;
-  std::vector<RelocInfo>::const_iterator rinfo;
-  for (rinfo = entries_.begin(), i = 0; rinfo != entries_.end(); rinfo++, i++) {
-    RelocInfo::Mode rmode = rinfo->rmode();
+  ConstantPoolArray::NumberOfEntries small_idx;
+  ConstantPoolArray::NumberOfEntries extended_idx;
+  for (std::vector<ConstantPoolEntry>::iterator entry = entries_.begin();
+       entry != entries_.end(); entry++) {
+    RelocInfo rinfo = entry->rinfo_;
+    RelocInfo::Mode rmode = entry->rinfo_.rmode();
+    ConstantPoolArray::Type type = GetConstantPoolType(rmode);
 
     // Update constant pool if necessary and get the entry's offset.
     int offset;
-    if (merged_indexes_[i] == -1) {
-      if (Is64BitEntry(rmode)) {
-        offset = constant_pool->OffsetOfElementAt(index_64bit) - kHeapObjectTag;
-        constant_pool->set(index_64bit++, rinfo->data64());
-      } else if (Is32BitEntry(rmode)) {
-        offset = constant_pool->OffsetOfElementAt(index_32bit) - kHeapObjectTag;
-        constant_pool->set(index_32bit++, static_cast<int32_t>(rinfo->data()));
-      } else if (IsCodePtrEntry(rmode)) {
-        offset = constant_pool->OffsetOfElementAt(index_code_ptr) -
-            kHeapObjectTag;
-        constant_pool->set(index_code_ptr++,
-                           reinterpret_cast<Address>(rinfo->data()));
+    if (entry->merged_index_ == -1) {
+      int index;
+      if (entry->section_ == ConstantPoolArray::EXTENDED_SECTION) {
+        index = small_entries()->total_count() +
+                extended_entries()->base_of(type) + extended_idx.count_of(type);
+        extended_idx.increment(type);
       } else {
-        ASSERT(IsHeapPtrEntry(rmode));
-        offset = constant_pool->OffsetOfElementAt(index_heap_ptr) -
-            kHeapObjectTag;
-        constant_pool->set(index_heap_ptr++,
-                           reinterpret_cast<Object *>(rinfo->data()));
+        ASSERT(entry->section_ == ConstantPoolArray::SMALL_SECTION);
+        index = small_entries()->base_of(type) + small_idx.count_of(type);
+        small_idx.increment(type);
       }
-      merged_indexes_[i] = offset;  // Stash offset for merged entries.
+      if (type == ConstantPoolArray::INT64) {
+        constant_pool->set(index, rinfo.data64());
+      } else if (type == ConstantPoolArray::INT32) {
+        constant_pool->set(index, static_cast<int32_t>(rinfo.data()));
+      } else if (type == ConstantPoolArray::CODE_PTR) {
+        constant_pool->set(index, reinterpret_cast<Address>(rinfo.data()));
+      } else {
+        ASSERT(type == ConstantPoolArray::HEAP_PTR);
+        constant_pool->set(index, reinterpret_cast<Object*>(rinfo.data()));
+      }
+      offset = constant_pool->OffsetOfElementAt(index) - kHeapObjectTag;
+      entry->merged_index_ = offset;  // Stash offset for merged entries.
     } else {
-      size_t merged_index = static_cast<size_t>(merged_indexes_[i]);
-      ASSERT(merged_index < merged_indexes_.size() && merged_index < i);
-      offset = merged_indexes_[merged_index];
+      ASSERT(entry->merged_index_ < (entry - entries_.begin()));
+      offset = entries_[entry->merged_index_].merged_index_;
     }
 
     // Patch load instruction with correct offset.
-    Assembler::SetConstantPoolOffset(rinfo->pc(), offset);
+    Assembler::SetConstantPoolOffset(rinfo.pc(), offset);
   }
 
-  ASSERT((index_64bit == count_of_64bit_) &&
-         (index_code_ptr == (index_64bit + count_of_code_ptr_)) &&
-         (index_heap_ptr == (index_code_ptr + count_of_heap_ptr_)) &&
-         (index_32bit == (index_heap_ptr + count_of_32bit_)));
+  ASSERT(small_idx.equals(*small_entries()));
+  ASSERT(extended_idx.equals(*extended_entries()));
 }
 #endif
 

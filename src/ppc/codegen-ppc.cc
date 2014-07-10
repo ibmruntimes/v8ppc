@@ -32,7 +32,8 @@ double fast_exp_simulator(double x) {
 UnaryMathFunction CreateExpFunction() {
   if (!FLAG_fast_math) return &std::exp;
   size_t actual_size;
-  byte* buffer = static_cast<byte*>(OS::Allocate(1 * KB, &actual_size, true));
+  byte* buffer =
+      static_cast<byte*>(base::OS::Allocate(1 * KB, &actual_size, true));
   if (buffer == NULL) return &std::exp;
   ExternalReference::InitializeMathExpData();
 
@@ -67,8 +68,8 @@ UnaryMathFunction CreateExpFunction() {
   ASSERT(!RelocInfo::RequiresRelocation(desc));
 #endif
 
-  CPU::FlushICache(buffer, actual_size);
-  OS::ProtectCode(buffer, actual_size);
+  CpuFeatures::FlushICache(buffer, actual_size);
+  base::OS::ProtectCode(buffer, actual_size);
 
 #if !defined(USE_SIMULATOR)
   return FUNCTION_CAST<UnaryMathFunction>(buffer);
@@ -84,7 +85,8 @@ UnaryMathFunction CreateSqrtFunction() {
   return &std::sqrt;
 #else
   size_t actual_size;
-  byte* buffer = static_cast<byte*>(OS::Allocate(1 * KB, &actual_size, true));
+  byte* buffer =
+      static_cast<byte*>(base::OS::Allocate(1 * KB, &actual_size, true));
   if (buffer == NULL) return &std::sqrt;
 
   MacroAssembler masm(NULL, buffer, static_cast<int>(actual_size));
@@ -105,8 +107,8 @@ UnaryMathFunction CreateSqrtFunction() {
   ASSERT(!RelocInfo::RequiresRelocation(desc));
 #endif
 
-  CPU::FlushICache(buffer, actual_size);
-  OS::ProtectCode(buffer, actual_size);
+  CpuFeatures::FlushICache(buffer, actual_size);
+  base::OS::ProtectCode(buffer, actual_size);
   return FUNCTION_CAST<UnaryMathFunction>(buffer);
 #endif
 }
@@ -688,7 +690,7 @@ void Code::PatchPlatformCodeAge(Isolate* isolate,
   uint32_t young_length = isolate->code_aging_helper()->young_sequence_length();
   if (age == kNoAgeCodeAge) {
     isolate->code_aging_helper()->CopyYoungSequenceTo(sequence);
-    CPU::FlushICache(sequence, young_length);
+    CpuFeatures::FlushICache(sequence, young_length);
   } else {
     // FIXED_SEQUENCE
     Code* stub = GetCodeAgeStub(isolate, age, parity);

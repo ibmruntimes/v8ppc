@@ -306,7 +306,7 @@ void Builtins::Generate_InOptimizationQueue(MacroAssembler* masm) {
   __ cmpl(sp, ip);
   __ bge(&ok);
 
-  CallRuntimePassFunction(masm, Runtime::kHiddenTryInstallOptimizedCode);
+  CallRuntimePassFunction(masm, Runtime::kTryInstallOptimizedCode);
   GenerateTailCallToReturnedCode(masm);
 
   __ bind(&ok);
@@ -390,7 +390,7 @@ static void Generate_JSConstructStubHelper(MacroAssembler* masm,
         __ push(r4);
 
         __ Push(r5, r4);  // r4 = constructor
-        __ CallRuntime(Runtime::kHiddenFinalizeInstanceSize, 1);
+        __ CallRuntime(Runtime::kFinalizeInstanceSize, 1);
 
         __ Pop(r4, r5);
 
@@ -586,9 +586,9 @@ static void Generate_JSConstructStubHelper(MacroAssembler* masm,
 
     __ push(r4);  // argument for Runtime_NewObject
     if (create_memento) {
-      __ CallRuntime(Runtime::kHiddenNewObjectWithAllocationSite, 2);
+      __ CallRuntime(Runtime::kNewObjectWithAllocationSite, 2);
     } else {
-      __ CallRuntime(Runtime::kHiddenNewObject, 1);
+      __ CallRuntime(Runtime::kNewObject, 1);
     }
     __ mr(r7, r3);
 
@@ -818,7 +818,7 @@ void Builtins::Generate_JSConstructEntryTrampoline(MacroAssembler* masm) {
 
 
 void Builtins::Generate_CompileUnoptimized(MacroAssembler* masm) {
-  CallRuntimePassFunction(masm, Runtime::kHiddenCompileUnoptimized);
+  CallRuntimePassFunction(masm, Runtime::kCompileUnoptimized);
   GenerateTailCallToReturnedCode(masm);
 }
 
@@ -831,7 +831,7 @@ static void CallCompileOptimized(MacroAssembler* masm, bool concurrent) {
   // Whether to compile in a background thread.
   __ Push(masm->isolate()->factory()->ToBoolean(concurrent));
 
-  __ CallRuntime(Runtime::kHiddenCompileOptimized, 2);
+  __ CallRuntime(Runtime::kCompileOptimized, 2);
   // Restore receiver.
   __ pop(r4);
 }
@@ -939,7 +939,7 @@ static void Generate_NotifyStubFailureHelper(MacroAssembler* masm,
     // registers.
     __ MultiPush(kJSCallerSaved | kCalleeSaved);
     // Pass the function and deoptimization type to the runtime system.
-    __ CallRuntime(Runtime::kHiddenNotifyStubFailure, 0, save_doubles);
+    __ CallRuntime(Runtime::kNotifyStubFailure, 0, save_doubles);
     __ MultiPop(kJSCallerSaved | kCalleeSaved);
   }
 
@@ -965,7 +965,7 @@ static void Generate_NotifyDeoptimizedHelper(MacroAssembler* masm,
     // Pass the function and deoptimization type to the runtime system.
     __ LoadSmiLiteral(r3, Smi::FromInt(static_cast<int>(type)));
     __ push(r3);
-    __ CallRuntime(Runtime::kHiddenNotifyDeoptimized, 1);
+    __ CallRuntime(Runtime::kNotifyDeoptimized, 1);
   }
 
   // Get the full codegen state from the stack and untag it -> r9.
@@ -1061,7 +1061,7 @@ void Builtins::Generate_OsrAfterStackCheck(MacroAssembler* masm) {
   __ bge(&ok);
   {
     FrameAndConstantPoolScope scope(masm, StackFrame::INTERNAL);
-    __ CallRuntime(Runtime::kHiddenStackGuard, 0);
+    __ CallRuntime(Runtime::kStackGuard, 0);
   }
   __ Jump(masm->isolate()->builtins()->OnStackReplacement(),
           RelocInfo::CODE_TARGET);
@@ -1099,7 +1099,7 @@ void Builtins::Generate_FunctionCall(MacroAssembler* masm) {
   // r4: function
   Label shift_arguments;
   __ li(r7, Operand::Zero());  // indicate regular JS_FUNCTION
-  { Label convert_to_object, use_global_receiver, patch_receiver;
+  { Label convert_to_object, use_global_proxy, patch_receiver;
     // Change context eagerly in case we need the global receiver.
     __ LoadP(cp, FieldMemOperand(r4, JSFunction::kContextOffset));
 
@@ -1136,10 +1136,10 @@ void Builtins::Generate_FunctionCall(MacroAssembler* masm) {
 
     __ LoadRoot(r6, Heap::kUndefinedValueRootIndex);
     __ cmp(r5, r6);
-    __ beq(&use_global_receiver);
+    __ beq(&use_global_proxy);
     __ LoadRoot(r6, Heap::kNullValueRootIndex);
     __ cmp(r5, r6);
-    __ beq(&use_global_receiver);
+    __ beq(&use_global_proxy);
 
     STATIC_ASSERT(LAST_SPEC_OBJECT_TYPE == LAST_TYPE);
     __ CompareObjectType(r5, r6, r6, FIRST_SPEC_OBJECT_TYPE);
@@ -1168,9 +1168,9 @@ void Builtins::Generate_FunctionCall(MacroAssembler* masm) {
     __ li(r7, Operand::Zero());
     __ b(&patch_receiver);
 
-    __ bind(&use_global_receiver);
+    __ bind(&use_global_proxy);
     __ LoadP(r5, ContextOperand(cp, Context::GLOBAL_OBJECT_INDEX));
-    __ LoadP(r5, FieldMemOperand(r5, GlobalObject::kGlobalReceiverOffset));
+    __ LoadP(r5, FieldMemOperand(r5, GlobalObject::kGlobalProxyOffset));
 
     __ bind(&patch_receiver);
     __ ShiftLeftImm(ip, r3, Operand(kPointerSizeLog2));
@@ -1329,7 +1329,7 @@ void Builtins::Generate_FunctionApply(MacroAssembler* masm) {
 
     // Compute the receiver.
     // Do not transform the receiver for strict mode functions.
-    Label call_to_object, use_global_receiver;
+    Label call_to_object, use_global_proxy;
     __ lwz(r5, FieldMemOperand(r5, SharedFunctionInfo::kCompilerHintsOffset));
     __ TestBit(r5,
 #if V8_TARGET_ARCH_PPC64
@@ -1354,10 +1354,10 @@ void Builtins::Generate_FunctionApply(MacroAssembler* masm) {
     __ JumpIfSmi(r3, &call_to_object);
     __ LoadRoot(r4, Heap::kNullValueRootIndex);
     __ cmp(r3, r4);
-    __ beq(&use_global_receiver);
+    __ beq(&use_global_proxy);
     __ LoadRoot(r4, Heap::kUndefinedValueRootIndex);
     __ cmp(r3, r4);
-    __ beq(&use_global_receiver);
+    __ beq(&use_global_proxy);
 
     // Check if the receiver is already a JavaScript object.
     // r3: receiver
@@ -1372,9 +1372,9 @@ void Builtins::Generate_FunctionApply(MacroAssembler* masm) {
     __ InvokeBuiltin(Builtins::TO_OBJECT, CALL_FUNCTION);
     __ b(&push_receiver);
 
-    __ bind(&use_global_receiver);
+    __ bind(&use_global_proxy);
     __ LoadP(r3, ContextOperand(cp, Context::GLOBAL_OBJECT_INDEX));
-    __ LoadP(r3, FieldMemOperand(r3, GlobalObject::kGlobalReceiverOffset));
+    __ LoadP(r3, FieldMemOperand(r3, GlobalObject::kGlobalProxyOffset));
 
     // Push the receiver.
     // r3: receiver

@@ -404,6 +404,15 @@ class Operand BASE_EMBEDDED {
   // Return true if this is a register operand.
   INLINE(bool is_reg() const);
 
+  // For mov.  Return the number of actual instructions required to
+  // load the operand into a register.  This can be anywhere from
+  // one (constant pool small section) to five instructions (full
+  // 64-bit sequence).
+  //
+  // The value returned is only valid as long as no entries are added to the
+  // constant pool between this call and the actual instruction being emitted.
+  bool must_output_reloc_info(const Assembler* assembler) const;
+
   inline intptr_t immediate() const {
     ASSERT(!rm_.is_valid());
     return imm_;
@@ -460,29 +469,46 @@ class MemOperand BASE_EMBEDDED {
 class ConstantPoolBuilder BASE_EMBEDDED {
  public:
   explicit ConstantPoolBuilder();
-  void AddEntry(Assembler* assm, const RelocInfo& rinfo);
+  ConstantPoolArray::LayoutSection AddEntry(Assembler* assm,
+                                            const RelocInfo& rinfo);
   void Relocate(intptr_t pc_delta);
   bool IsEmpty();
   Handle<ConstantPoolArray> New(Isolate* isolate);
   void Populate(Assembler* assm, ConstantPoolArray* constant_pool);
 
-  inline int count_of_64bit() const { return count_of_64bit_; }
-  inline int count_of_code_ptr() const { return count_of_code_ptr_; }
-  inline int count_of_heap_ptr() const { return count_of_heap_ptr_; }
-  inline int count_of_32bit() const { return count_of_32bit_; }
+  inline ConstantPoolArray::LayoutSection current_section() const {
+    return current_section_;
+  }
+
+  inline ConstantPoolArray::NumberOfEntries* number_of_entries(
+      ConstantPoolArray::LayoutSection section) {
+    return &number_of_entries_[section];
+  }
+
+  inline ConstantPoolArray::NumberOfEntries* small_entries() {
+    return number_of_entries(ConstantPoolArray::SMALL_SECTION);
+  }
+
+  inline ConstantPoolArray::NumberOfEntries* extended_entries() {
+    return number_of_entries(ConstantPoolArray::EXTENDED_SECTION);
+  }
 
  private:
-  bool Is64BitEntry(RelocInfo::Mode rmode);
-  bool Is32BitEntry(RelocInfo::Mode rmode);
-  bool IsCodePtrEntry(RelocInfo::Mode rmode);
-  bool IsHeapPtrEntry(RelocInfo::Mode rmode);
+  struct ConstantPoolEntry {
+    ConstantPoolEntry(RelocInfo rinfo, ConstantPoolArray::LayoutSection section,
+                      int merged_index)
+        : rinfo_(rinfo), section_(section), merged_index_(merged_index) {}
 
-  std::vector<RelocInfo> entries_;
-  std::vector<int> merged_indexes_;
-  int count_of_64bit_;
-  int count_of_code_ptr_;
-  int count_of_heap_ptr_;
-  int count_of_32bit_;
+    RelocInfo rinfo_;
+    ConstantPoolArray::LayoutSection section_;
+    int merged_index_;
+  };
+
+  ConstantPoolArray::Type GetConstantPoolType(RelocInfo::Mode rmode);
+
+  std::vector<ConstantPoolEntry> entries_;
+  ConstantPoolArray::LayoutSection current_section_;
+  ConstantPoolArray::NumberOfEntries number_of_entries_[2];
 };
 #endif
 
@@ -599,9 +625,11 @@ class Assembler : public AssemblerBase {
   // Number of instructions to load an address via a mov sequence.
 #if V8_TARGET_ARCH_PPC64
   static const int kMovInstructionsConstantPool = 2;
+  static const int kMovInstructionsExtendedConstantPool = 3;
   static const int kMovInstructionsNoConstantPool = 5;
 #else
   static const int kMovInstructionsConstantPool = 1;
+  static const int kMovInstructionsExtendedConstantPool = 2;
   static const int kMovInstructionsNoConstantPool = 2;
 #endif
 #if V8_OOL_CONSTANT_POOL
@@ -1160,6 +1188,13 @@ class Assembler : public AssemblerBase {
   void BlockTrampolinePoolFor(int instructions);
   void CheckTrampolinePool();
 
+  int instructions_required_for_mov(const Operand& x) const;
+
+#if V8_OOL_CONSTANT_POOL
+  // Decide between using the constant pool vs. a mov immediate sequence.
+  bool use_constant_pool_for_mov(const Operand& x, bool *canOptimize) const;
+#endif
+
   // Allocate a constant pool of the correct size for the generated code.
   Handle<ConstantPoolArray> NewConstantPool(Isolate* isolate);
 
@@ -1167,12 +1202,11 @@ class Assembler : public AssemblerBase {
   void PopulateConstantPool(ConstantPoolArray* constant_pool);
 
 #if V8_OOL_CONSTANT_POOL
-  bool can_use_constant_pool() const {
-    return is_constant_pool_available() && !constant_pool_full_;
-  }
+  bool is_constant_pool_available() const { return constant_pool_available_; }
 
-  void set_constant_pool_full() {
-    constant_pool_full_ = true;
+  bool use_extended_constant_pool() const {
+    return constant_pool_builder_.current_section() ==
+           ConstantPoolArray::EXTENDED_SECTION;
   }
 #endif
 
@@ -1202,8 +1236,9 @@ class Assembler : public AssemblerBase {
   void RecordRelocInfo(RelocInfo::Mode rmode, intptr_t data = 0);
   void RecordRelocInfo(const RelocInfo& rinfo);
 #if V8_OOL_CONSTANT_POOL
-  void ConstantPoolAddEntry(const RelocInfo& rinfo) {
-    constant_pool_builder_.AddEntry(this, rinfo);
+  ConstantPoolArray::LayoutSection ConstantPoolAddEntry(
+    const RelocInfo& rinfo) {
+    return constant_pool_builder_.AddEntry(this, rinfo);
   }
 #endif
 
@@ -1234,10 +1269,6 @@ class Assembler : public AssemblerBase {
   }
 
 #if V8_OOL_CONSTANT_POOL
-  bool is_constant_pool_available() const {
-    return constant_pool_available_;
-  }
-
   void set_constant_pool_available(bool available) {
     constant_pool_available_ = available;
   }
@@ -1274,9 +1305,6 @@ class Assembler : public AssemblerBase {
   // Indicates whether the constant pool can be accessed, which is only possible
   // if kConstantPoolRegister points to the current code object's constant pool.
   bool constant_pool_available_;
-  // Indicates whether the constant pool is too full to accept new entries due
-  // to the load instruction's limitted immediate offset range.
-  bool constant_pool_full_;
 #endif
 
   // Code emission

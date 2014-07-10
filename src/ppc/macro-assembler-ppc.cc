@@ -99,34 +99,14 @@ void MacroAssembler::Call(Register target, Condition cond) {
 
 int MacroAssembler::CallSize(
     Address target, RelocInfo::Mode rmode, Condition cond) {
-  int size;
-  int movSize;
-
-#if V8_OOL_CONSTANT_POOL
-  if (can_use_constant_pool()) {
-    movSize = kMovInstructionsConstantPool;
-  } else {
-#endif
-    movSize = kMovInstructionsNoConstantPool;
-#if V8_OOL_CONSTANT_POOL
-  }
-#endif
-
-  size = (2 + movSize) * kInstrSize;
-
-  return size;
+  Operand mov_operand = Operand(reinterpret_cast<intptr_t>(target), rmode);
+  return (2 + instructions_required_for_mov(mov_operand)) * kInstrSize;
 }
 
 
 int MacroAssembler::CallSizeNotPredictableCodeSize(
     Address target, RelocInfo::Mode rmode, Condition cond) {
-  int size;
-  int movSize;
-
-  movSize = kMovInstructionsNoConstantPool;
-  size = (2 + movSize) * kInstrSize;
-
-  return size;
+  return (2 + kMovInstructionsNoConstantPool) * kInstrSize;
 }
 
 
@@ -1012,7 +992,7 @@ int MacroAssembler::ActivationFrameAlignment() {
   // environment.
   // Note: This will break if we ever start generating snapshots on one PPC
   // platform for another PPC platform with a different alignment.
-  return OS::ActivationFrameAlignment();
+  return base::OS::ActivationFrameAlignment();
 #else  // Simulated
   // If we are using the simulator then we should always align to the expected
   // alignment. As the simulator is used to generate snapshots we do not know
@@ -2483,7 +2463,7 @@ void MacroAssembler::CallApiFunctionAndReturn(
   {
     FrameScope frame(this, StackFrame::INTERNAL);
     CallExternalReference(
-        ExternalReference(Runtime::kHiddenPromoteScheduledException, isolate()),
+        ExternalReference(Runtime::kPromoteScheduledException, isolate()),
         0);
   }
   jmp(&exception_handled);
@@ -3296,14 +3276,19 @@ void MacroAssembler::AllocateHeapNumber(Register result,
                                         Register scratch2,
                                         Register heap_number_map,
                                         Label* gc_required,
-                                        TaggingMode tagging_mode) {
+                                        TaggingMode tagging_mode,
+                                        MutableMode mode) {
   // Allocate an object in the heap for the heap number and tag it as a heap
   // object.
   Allocate(HeapNumber::kSize, result, scratch1, scratch2, gc_required,
            tagging_mode == TAG_RESULT ? TAG_OBJECT : NO_ALLOCATION_FLAGS);
 
+  Heap::RootListIndex map_index = mode == MUTABLE
+      ? Heap::kMutableHeapNumberMapRootIndex
+      : Heap::kHeapNumberMapRootIndex;
+  AssertIsRoot(heap_number_map, map_index);
+
   // Store heap number map in the allocated object.
-  AssertIsRoot(heap_number_map, Heap::kHeapNumberMapRootIndex);
   if (tagging_mode == TAG_RESULT) {
     StoreP(heap_number_map, FieldMemOperand(result, HeapObject::kMapOffset),
            r0);
@@ -4322,16 +4307,25 @@ void MacroAssembler::LoadDoubleLiteral(DoubleRegister result,
                                        double value,
                                        Register scratch) {
 #if V8_OOL_CONSTANT_POOL
-  if (can_use_constant_pool()) {
+  // TODO(mbrandy): enable extended constant pool usage for doubles.
+  //                See ARM commit e27ab337 for a reference.
+  if (is_constant_pool_available() && !use_extended_constant_pool()) {
     RelocInfo rinfo(pc_, value);
-    ConstantPoolAddEntry(rinfo);
+    ConstantPoolArray::LayoutSection section = ConstantPoolAddEntry(rinfo);
+    if (section == ConstantPoolArray::EXTENDED_SECTION) {
+      BlockTrampolinePoolScope block_trampoline_pool(this);
+      addis(scratch, kConstantPoolRegister, Operand::Zero());
+      lfd(result, MemOperand(scratch, 0));
+    } else {
+      ASSERT(section == ConstantPoolArray::SMALL_SECTION);
 #if V8_TARGET_ARCH_PPC64
-    // We use 2 instruction sequence here for consistency with mov.
-    li(scratch, Operand::Zero());
-    lfdx(result, MemOperand(kConstantPoolRegister, scratch));
+      // We use 2 instruction sequence here for consistency with mov.
+      li(scratch, Operand::Zero());
+      lfdx(result, MemOperand(kConstantPoolRegister, scratch));
 #else
-    lfd(result, MemOperand(kConstantPoolRegister, 0));
+      lfd(result, MemOperand(kConstantPoolRegister, 0));
 #endif
+    }
     return;
   }
 #endif
@@ -4985,7 +4979,7 @@ CodePatcher::CodePatcher(byte* address,
 CodePatcher::~CodePatcher() {
   // Indicate that code has changed.
   if (flush_cache_ == FLUSH) {
-    CPU::FlushICache(address_, size_);
+    CpuFeatures::FlushICache(address_, size_);
   }
 
   // Check that the code was patched as expected.

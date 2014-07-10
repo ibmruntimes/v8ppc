@@ -133,7 +133,7 @@ bool LCodeGen::GeneratePrologue() {
       __ bne(&ok);
 
       __ LoadP(r5, GlobalObjectOperand());
-      __ LoadP(r5, FieldMemOperand(r5, GlobalObject::kGlobalReceiverOffset));
+      __ LoadP(r5, FieldMemOperand(r5, GlobalObject::kGlobalProxyOffset));
 
       __ StoreP(r5, MemOperand(sp, receiver_offset));
 
@@ -187,7 +187,7 @@ bool LCodeGen::GeneratePrologue() {
       need_write_barrier = false;
     } else {
       __ push(r4);
-      __ CallRuntime(Runtime::kHiddenNewFunctionContext, 1);
+      __ CallRuntime(Runtime::kNewFunctionContext, 1);
     }
     RecordSafepoint(Safepoint::kNoLazyDeopt);
     // Context is returned in both r3 and cp.  It replaces the context
@@ -3037,10 +3037,10 @@ void LCodeGen::DoLoadGlobalCell(LLoadGlobalCell* instr) {
 
 void LCodeGen::DoLoadGlobalGeneric(LLoadGlobalGeneric* instr) {
   ASSERT(ToRegister(instr->context()).is(cp));
-  ASSERT(ToRegister(instr->global_object()).is(r3));
+  ASSERT(ToRegister(instr->global_object()).is(LoadIC::ReceiverRegister()));
   ASSERT(ToRegister(instr->result()).is(r3));
 
-  __ mov(r5, Operand(instr->name()));
+  __ mov(LoadIC::NameRegister(), Operand(instr->name()));
   ContextualMode mode = instr->for_typeof() ? NOT_CONTEXTUAL : CONTEXTUAL;
   Handle<Code> ic = LoadIC::initialize_stub(isolate(), mode);
   CallCode(ic, RelocInfo::CODE_TARGET, instr);
@@ -3176,11 +3176,10 @@ void LCodeGen::DoLoadNamedField(LLoadNamedField* instr) {
 
 void LCodeGen::DoLoadNamedGeneric(LLoadNamedGeneric* instr) {
   ASSERT(ToRegister(instr->context()).is(cp));
-  ASSERT(ToRegister(instr->object()).is(r3));
+  ASSERT(ToRegister(instr->object()).is(LoadIC::ReceiverRegister()));
   ASSERT(ToRegister(instr->result()).is(r3));
 
-  // Name is always in r5.
-  __ mov(r5, Operand(instr->name()));
+  __ mov(LoadIC::NameRegister(), Operand(instr->name()));
   Handle<Code> ic = LoadIC::initialize_stub(isolate(), NOT_CONTEXTUAL);
   CallCode(ic, RelocInfo::CODE_TARGET, instr);
 }
@@ -3550,8 +3549,8 @@ MemOperand LCodeGen::PrepareKeyedOperand(Register key,
 
 void LCodeGen::DoLoadKeyedGeneric(LLoadKeyedGeneric* instr) {
   ASSERT(ToRegister(instr->context()).is(cp));
-  ASSERT(ToRegister(instr->object()).is(r4));
-  ASSERT(ToRegister(instr->key()).is(r3));
+  ASSERT(ToRegister(instr->object()).is(LoadIC::ReceiverRegister()));
+  ASSERT(ToRegister(instr->key()).is(LoadIC::NameRegister()));
 
   Handle<Code> ic = isolate()->builtins()->KeyedLoadIC_Initialize();
   CallCode(ic, RelocInfo::CODE_TARGET, instr);
@@ -3664,8 +3663,7 @@ void LCodeGen::DoWrapReceiver(LWrapReceiver* instr) {
   __ LoadP(result, FieldMemOperand(function, JSFunction::kContextOffset));
   __ LoadP(result,
            ContextOperand(result, Context::GLOBAL_OBJECT_INDEX));
-  __ LoadP(result,
-           FieldMemOperand(result, GlobalObject::kGlobalReceiverOffset));
+  __ LoadP(result, FieldMemOperand(result, GlobalObject::kGlobalProxyOffset));
   if (result.is(receiver)) {
     __ bind(&result_in_receiver);
   } else {
@@ -3768,7 +3766,7 @@ void LCodeGen::DoDeclareGlobals(LDeclareGlobals* instr) {
   __ push(scratch0());
   __ LoadSmiLiteral(scratch0(), Smi::FromInt(instr->hydrogen()->flags()));
   __ push(scratch0());
-  CallRuntime(Runtime::kHiddenDeclareGlobals, 3, instr);
+  CallRuntime(Runtime::kDeclareGlobals, 3, instr);
 }
 
 
@@ -3863,7 +3861,7 @@ void LCodeGen::DoDeferredMathAbsTaggedHeapNumber(LMathAbs* instr) {
     // Slow case: Call the runtime system to do the number allocation.
     __ bind(&slow);
 
-    CallRuntimeFromDeferred(Runtime::kHiddenAllocateHeapNumber, 0, instr,
+    CallRuntimeFromDeferred(Runtime::kAllocateHeapNumber, 0, instr,
                             instr->context());
     // Set the pointer to the new heap number in tmp.
     if (!tmp1.is(r3)) __ mr(tmp1, r3);
@@ -4793,7 +4791,7 @@ void LCodeGen::DoDeferredStringCharCodeAt(LStringCharCodeAt* instr) {
     __ SmiTag(index);
     __ push(index);
   }
-  CallRuntimeFromDeferred(Runtime::kHiddenStringCharCodeAt, 2, instr,
+  CallRuntimeFromDeferred(Runtime::kStringCharCodeAtRT, 2, instr,
                           instr->context());
   __ AssertSmi(r3);
   __ SmiUntag(r3);
@@ -4978,11 +4976,11 @@ void LCodeGen::DoDeferredNumberTagIU(LInstruction* instr,
 
     // NumberTagI and NumberTagD use the context from the frame, rather than
     // the environment's HContext or HInlinedContext value.
-    // They only call Runtime::kHiddenAllocateHeapNumber.
+    // They only call Runtime::kAllocateHeapNumber.
     // The corresponding HChange instructions are added in a phase that does
     // not have easy access to the local context.
     __ LoadP(cp, MemOperand(fp, StandardFrameConstants::kContextOffset));
-    __ CallRuntimeSaveDoubles(Runtime::kHiddenAllocateHeapNumber);
+    __ CallRuntimeSaveDoubles(Runtime::kAllocateHeapNumber);
     RecordSafepointWithRegisters(
         instr->pointer_map(), 0, Safepoint::kNoLazyDeopt);
     __ StoreToSafepointRegisterSlot(r3, dst);
@@ -5036,11 +5034,11 @@ void LCodeGen::DoDeferredNumberTagD(LNumberTagD* instr) {
   PushSafepointRegistersScope scope(this, Safepoint::kWithRegisters);
   // NumberTagI and NumberTagD use the context from the frame, rather than
   // the environment's HContext or HInlinedContext value.
-  // They only call Runtime::kHiddenAllocateHeapNumber.
+  // They only call Runtime::kAllocateHeapNumber.
   // The corresponding HChange instructions are added in a phase that does
   // not have easy access to the local context.
   __ LoadP(cp, MemOperand(fp, StandardFrameConstants::kContextOffset));
-  __ CallRuntimeSaveDoubles(Runtime::kHiddenAllocateHeapNumber);
+  __ CallRuntimeSaveDoubles(Runtime::kAllocateHeapNumber);
   RecordSafepointWithRegisters(
       instr->pointer_map(), 0, Safepoint::kNoLazyDeopt);
   __ StoreToSafepointRegisterSlot(r3, reg);
@@ -5687,7 +5685,7 @@ void LCodeGen::DoDeferredAllocate(LAllocate* instr) {
   __ Push(Smi::FromInt(flags));
 
   CallRuntimeFromDeferred(
-      Runtime::kHiddenAllocateInTargetSpace, 2, instr, instr->context());
+      Runtime::kAllocateInTargetSpace, 2, instr, instr->context());
   __ StoreToSafepointRegisterSlot(r3, result);
 }
 
@@ -5721,7 +5719,7 @@ void LCodeGen::DoRegExpLiteral(LRegExpLiteral* instr) {
   __ mov(r8, Operand(instr->hydrogen()->pattern()));
   __ mov(r7, Operand(instr->hydrogen()->flags()));
   __ Push(r10, r9, r8, r7);
-  CallRuntime(Runtime::kHiddenMaterializeRegExpLiteral, 4, instr);
+  CallRuntime(Runtime::kMaterializeRegExpLiteral, 4, instr);
   __ mr(r4, r3);
 
   __ bind(&materialized);
@@ -5734,7 +5732,7 @@ void LCodeGen::DoRegExpLiteral(LRegExpLiteral* instr) {
   __ bind(&runtime_allocate);
   __ LoadSmiLiteral(r3, Smi::FromInt(size));
   __ Push(r4, r3);
-  CallRuntime(Runtime::kHiddenAllocateInNewSpace, 1, instr);
+  CallRuntime(Runtime::kAllocateInNewSpace, 1, instr);
   __ pop(r4);
 
   __ bind(&allocated);
@@ -5759,7 +5757,7 @@ void LCodeGen::DoFunctionLiteral(LFunctionLiteral* instr) {
     __ mov(r4, Operand(pretenure ? factory()->true_value()
                        : factory()->false_value()));
     __ Push(cp, r5, r4);
-    CallRuntime(Runtime::kHiddenNewClosure, 3, instr);
+    CallRuntime(Runtime::kNewClosure, 3, instr);
   }
 }
 
@@ -5950,7 +5948,7 @@ void LCodeGen::DoDummyUse(LDummyUse* instr) {
 void LCodeGen::DoDeferredStackCheck(LStackCheck* instr) {
   PushSafepointRegistersScope scope(this, Safepoint::kWithRegisters);
   LoadContextFromDeferred(instr->context());
-  __ CallRuntimeSaveDoubles(Runtime::kHiddenStackGuard);
+  __ CallRuntimeSaveDoubles(Runtime::kStackGuard);
   RecordSafepointWithLazyDeopt(
       instr, RECORD_SAFEPOINT_WITH_REGISTERS_AND_NO_ARGUMENTS);
   ASSERT(instr->HasEnvironment());
@@ -6175,7 +6173,7 @@ void LCodeGen::DoAllocateBlockContext(LAllocateBlockContext* instr) {
   Handle<ScopeInfo> scope_info = instr->scope_info();
   __ Push(scope_info);
   __ push(ToRegister(instr->function()));
-  CallRuntime(Runtime::kHiddenPushBlockContext, 2, instr);
+  CallRuntime(Runtime::kPushBlockContext, 2, instr);
   RecordSafepoint(Safepoint::kNoLazyDeopt);
 }
 
