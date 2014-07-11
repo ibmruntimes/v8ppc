@@ -916,20 +916,24 @@ class ScriptOrigin {
       Handle<Value> resource_name,
       Handle<Integer> resource_line_offset = Handle<Integer>(),
       Handle<Integer> resource_column_offset = Handle<Integer>(),
-      Handle<Boolean> resource_is_shared_cross_origin = Handle<Boolean>())
+      Handle<Boolean> resource_is_shared_cross_origin = Handle<Boolean>(),
+      Handle<Integer> script_id = Handle<Integer>())
       : resource_name_(resource_name),
         resource_line_offset_(resource_line_offset),
         resource_column_offset_(resource_column_offset),
-        resource_is_shared_cross_origin_(resource_is_shared_cross_origin) { }
+        resource_is_shared_cross_origin_(resource_is_shared_cross_origin),
+        script_id_(script_id) { }
   V8_INLINE Handle<Value> ResourceName() const;
   V8_INLINE Handle<Integer> ResourceLineOffset() const;
   V8_INLINE Handle<Integer> ResourceColumnOffset() const;
   V8_INLINE Handle<Boolean> ResourceIsSharedCrossOrigin() const;
+  V8_INLINE Handle<Integer> ScriptID() const;
  private:
   Handle<Value> resource_name_;
   Handle<Integer> resource_line_offset_;
   Handle<Integer> resource_column_offset_;
   Handle<Boolean> resource_is_shared_cross_origin_;
+  Handle<Integer> script_id_;
 };
 
 
@@ -1083,6 +1087,12 @@ class V8_EXPORT ScriptCompiler {
 
   /**
    * Compiles the specified script (context-independent).
+   * Cached data as part of the source object can be optionally produced to be
+   * consumed later to speed up compilation of identical source scripts.
+   *
+   * Note that when producing cached data, the source must point to NULL for
+   * cached data. When consuming cached data, the cached data must have been
+   * produced by the same version of V8.
    *
    * \param source Script source code.
    * \return Compiled script object (context independent; for running it must be
@@ -4430,6 +4440,21 @@ class V8_EXPORT Isolate {
    */
   void SetUseCounterCallback(UseCounterCallback callback);
 
+  /**
+   * Enables the host application to provide a mechanism for recording
+   * statistics counters.
+   */
+  void SetCounterFunction(CounterLookupCallback);
+
+  /**
+   * Enables the host application to provide a mechanism for recording
+   * histograms. The CreateHistogram function returns a
+   * histogram which will later be passed to the AddHistogramSample
+   * function.
+   */
+  void SetCreateHistogramFunction(CreateHistogramCallback);
+  void SetAddHistogramSampleFunction(AddHistogramSampleCallback);
+
  private:
   template<class K, class V, class Traits> friend class PersistentValueMap;
 
@@ -4740,21 +4765,6 @@ class V8_EXPORT V8 {
 
   /** Get the version string. */
   static const char* GetVersion();
-
-  /**
-   * Enables the host application to provide a mechanism for recording
-   * statistics counters.
-   */
-  static void SetCounterFunction(CounterLookupCallback);
-
-  /**
-   * Enables the host application to provide a mechanism for recording
-   * histograms. The CreateHistogram function returns a
-   * histogram which will later be passed to the AddHistogramSample
-   * function.
-   */
-  static void SetCreateHistogramFunction(CreateHistogramCallback);
-  static void SetAddHistogramSampleFunction(AddHistogramSampleCallback);
 
   /** Callback function for reporting failed access checks.*/
   static void SetFailedAccessCheckCallbackFunction(FailedAccessCheckCallback);
@@ -6125,8 +6135,14 @@ Handle<Integer> ScriptOrigin::ResourceColumnOffset() const {
   return resource_column_offset_;
 }
 
+
 Handle<Boolean> ScriptOrigin::ResourceIsSharedCrossOrigin() const {
   return resource_is_shared_cross_origin_;
+}
+
+
+Handle<Integer> ScriptOrigin::ScriptID() const {
+  return script_id_;
 }
 
 

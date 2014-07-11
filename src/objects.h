@@ -13,6 +13,7 @@
 #include "src/field-index.h"
 #include "src/flags.h"
 #include "src/list.h"
+#include "src/ostreams.h"
 #include "src/property-details.h"
 #include "src/smart-pointers.h"
 #include "src/unicode-inl.h"
@@ -24,6 +25,8 @@
 #include "src/arm64/constants-arm64.h"  // NOLINT
 #elif V8_TARGET_ARCH_MIPS
 #include "src/mips/constants-mips.h"  // NOLINT
+#elif V8_TARGET_ARCH_MIPS64
+#include "src/mips64/constants-mips64.h"  // NOLINT
 #elif V8_TARGET_ARCH_PPC
 #include "src/ppc/constants-ppc.h"  // NOLINT
 #endif
@@ -43,8 +46,9 @@
 //         - JSArrayBufferView
 //           - JSTypedArray
 //           - JSDataView
-//         - JSSet
-//         - JSMap
+//         - JSCollection
+//           - JSSet
+//           - JSMap
 //         - JSSetIterator
 //         - JSMapIterator
 //         - JSWeakCollection
@@ -897,7 +901,7 @@ template <class C> inline bool Is(Object* obj);
 #endif
 
 #ifdef OBJECT_PRINT
-#define DECLARE_PRINTER(Name) void Name##Print(FILE* out = stdout);
+#define DECLARE_PRINTER(Name) void Name##Print(OStream& os);  // NOLINT
 #else
 #define DECLARE_PRINTER(Name)
 #endif
@@ -1413,17 +1417,8 @@ class Object {
   bool ToInt32(int32_t* value);
   bool ToUint32(uint32_t* value);
 
-  // Indicates whether OptimalRepresentation can do its work, or whether it
-  // always has to return Representation::Tagged().
-  enum ValueType {
-    OPTIMAL_REPRESENTATION,
-    FORCE_TAGGED
-  };
-
-  inline Representation OptimalRepresentation(
-      ValueType type = OPTIMAL_REPRESENTATION) {
+  inline Representation OptimalRepresentation() {
     if (!FLAG_track_fields) return Representation::Tagged();
-    if (type == FORCE_TAGGED) return Representation::Tagged();
     if (IsSmi()) {
       return Representation::Smi();
     } else if (FLAG_track_double_fields && IsHeapNumber()) {
@@ -1579,16 +1574,25 @@ class Object {
   static const int kHeaderSize = 0;  // Object does not take up any space.
 
 #ifdef OBJECT_PRINT
-  // Prints this object with details.
+  // For our gdb macros, we should perhaps change these in the future.
   void Print();
-  void Print(FILE* out);
-  void PrintLn();
-  void PrintLn(FILE* out);
+
+  // Prints this object with details.
+  void Print(OStream& os);  // NOLINT
 #endif
 
  private:
   DISALLOW_IMPLICIT_CONSTRUCTORS(Object);
 };
+
+
+struct Brief {
+  explicit Brief(const Object* const v) : value(v) {}
+  const Object* value;
+};
+
+
+OStream& operator<<(OStream& os, const Brief& v);
 
 
 // Smi represents integer Numbers that can be stored in 31 bits.
@@ -1613,9 +1617,7 @@ class Smi: public Object {
   DECLARE_CAST(Smi)
 
   // Dispatched behavior.
-  void SmiPrint(FILE* out = stdout);
-  void SmiPrint(StringStream* accumulator);
-
+  void SmiPrint(OStream& os) const;  // NOLINT
   DECLARE_VERIFIER(Smi)
 
   static const int kMinValue =
@@ -1754,9 +1756,9 @@ class HeapObject: public Object {
       const DisallowHeapAllocation& promise);
 
   // Dispatched behavior.
-  void HeapObjectShortPrint(StringStream* accumulator);
+  void HeapObjectShortPrint(OStream& os);  // NOLINT
 #ifdef OBJECT_PRINT
-  void PrintHeader(FILE* out, const char* id);
+  void PrintHeader(OStream& os, const char* id);  // NOLINT
 #endif
   DECLARE_PRINTER(HeapObject)
   DECLARE_VERIFIER(HeapObject)
@@ -1843,8 +1845,7 @@ class HeapNumber: public HeapObject {
   // Dispatched behavior.
   bool HeapNumberBooleanValue();
 
-  void HeapNumberPrint(FILE* out = stdout);
-  void HeapNumberPrint(StringStream* accumulator);
+  void HeapNumberPrint(OStream& os);  // NOLINT
   DECLARE_VERIFIER(HeapNumber)
 
   inline int get_exponent();
@@ -2168,7 +2169,6 @@ class JSObject: public JSReceiver {
       Handle<Name> key,
       Handle<Object> value,
       PropertyAttributes attributes,
-      ValueType value_type = OPTIMAL_REPRESENTATION,
       StoreMode mode = ALLOW_AS_CONSTANT,
       ExtensibilityCheck extensibility_check = PERFORM_EXTENSIBILITY_CHECK,
       StoreFromKeyed store_mode = MAY_BE_STORE_FROM_KEYED,
@@ -2178,7 +2178,6 @@ class JSObject: public JSReceiver {
                           Handle<Name> key,
                           Handle<Object> value,
                           PropertyAttributes attributes,
-                          ValueType value_type = OPTIMAL_REPRESENTATION,
                           StoreMode mode = ALLOW_AS_CONSTANT);
 
   // Extend the receiver with a single fast property appeared first in the
@@ -2518,10 +2517,7 @@ class JSObject: public JSReceiver {
   static void SetObserved(Handle<JSObject> object);
 
   // Copy object.
-  enum DeepCopyHints {
-    kNoHints = 0,
-    kObjectIsShallowArray = 1
-  };
+  enum DeepCopyHints { kNoHints = 0, kObjectIsShallow = 1 };
 
   static Handle<JSObject> Copy(Handle<JSObject> object);
   MUST_USE_RESULT static MaybeHandle<JSObject> DeepCopy(
@@ -2542,9 +2538,9 @@ class JSObject: public JSReceiver {
   DECLARE_PRINTER(JSObject)
   DECLARE_VERIFIER(JSObject)
 #ifdef OBJECT_PRINT
-  void PrintProperties(FILE* out = stdout);
-  void PrintElements(FILE* out = stdout);
-  void PrintTransitions(FILE* out = stdout);
+  void PrintProperties(OStream& os);   // NOLINT
+  void PrintElements(OStream& os);     // NOLINT
+  void PrintTransitions(OStream& os);  // NOLINT
 #endif
 
   static void PrintElementsTransition(
@@ -2786,7 +2782,6 @@ class JSObject: public JSReceiver {
       StrictMode strict_mode,
       StoreFromKeyed store_mode = MAY_BE_STORE_FROM_KEYED,
       ExtensibilityCheck extensibility_check = PERFORM_EXTENSIBILITY_CHECK,
-      ValueType value_type = OPTIMAL_REPRESENTATION,
       StoreMode mode = ALLOW_AS_CONSTANT,
       TransitionFlag flag = INSERT_TRANSITION);
 
@@ -2796,7 +2791,6 @@ class JSObject: public JSReceiver {
                               Handle<Object> value,
                               PropertyAttributes attributes,
                               StoreFromKeyed store_mode,
-                              ValueType value_type,
                               TransitionFlag flag);
 
   // Add a property to a slow-case object.
@@ -3139,7 +3133,8 @@ class ConstantPoolArray: public HeapObject {
 
   enum LayoutSection {
     SMALL_SECTION = 0,
-    EXTENDED_SECTION
+    EXTENDED_SECTION,
+    NUMBER_OF_LAYOUT_SECTIONS
   };
 
   class NumberOfEntries BASE_EMBEDDED {
@@ -3218,6 +3213,7 @@ class ConstantPoolArray: public HeapObject {
 
   // Returns the type of the entry at the given index.
   inline Type get_type(int index);
+  inline bool offset_is_type(int offset, Type type);
 
   // Setter and getter for pool elements.
   inline Address get_code_ptr_entry(int index);
@@ -3231,6 +3227,13 @@ class ConstantPoolArray: public HeapObject {
   inline void set(int index, int64_t value);
   inline void set(int index, double value);
   inline void set(int index, int32_t value);
+
+  // Setters which take a raw offset rather than an index (for code generation).
+  inline void set_at_offset(int offset, int32_t value);
+  inline void set_at_offset(int offset, int64_t value);
+  inline void set_at_offset(int offset, double value);
+  inline void set_at_offset(int offset, Address value);
+  inline void set_at_offset(int offset, Object* value);
 
   // Setter and getter for weak objects state
   inline void set_weak_object_state(WeakObjectState state);
@@ -3551,7 +3554,7 @@ class DescriptorArray: public FixedArray {
 
 #ifdef OBJECT_PRINT
   // Print all the descriptors.
-  void PrintDescriptors(FILE* out = stdout);
+  void PrintDescriptors(OStream& os);  // NOLINT
 #endif
 
 #ifdef DEBUG
@@ -4076,7 +4079,7 @@ class Dictionary: public HashTable<Derived, Shape, Key> {
   static Handle<Derived> EnsureCapacity(Handle<Derived> obj, int n, Key key);
 
 #ifdef OBJECT_PRINT
-  void Print(FILE* out = stdout);
+  void Print(OStream& os);  // NOLINT
 #endif
   // Returns the key (slow).
   Object* SlowReverseLookup(Object* value);
@@ -4368,6 +4371,9 @@ class OrderedHashTable: public FixedArray {
       bool* was_present);
 
   // Returns kNotFound if the key isn't present.
+  int FindEntry(Handle<Object> key, int hash);
+
+  // Like the above, but doesn't require the caller to provide a hash.
   int FindEntry(Handle<Object> key);
 
   int NumberOfElements() {
@@ -5363,7 +5369,7 @@ class DeoptimizationInputData: public FixedArray {
   DECLARE_CAST(DeoptimizationInputData)
 
 #ifdef ENABLE_DISASSEMBLER
-  void DeoptimizationInputDataPrint(FILE* out);
+  void DeoptimizationInputDataPrint(OStream& os);  // NOLINT
 #endif
 
  private:
@@ -5409,7 +5415,7 @@ class DeoptimizationOutputData: public FixedArray {
   DECLARE_CAST(DeoptimizationOutputData)
 
 #if defined(OBJECT_PRINT) || defined(ENABLE_DISASSEMBLER)
-  void DeoptimizationOutputDataPrint(FILE* out);
+  void DeoptimizationOutputDataPrint(OStream& os);  // NOLINT
 #endif
 };
 
@@ -5475,8 +5481,9 @@ class Code: public HeapObject {
   // Printing
   static const char* ICState2String(InlineCacheState state);
   static const char* StubType2String(StubType type);
-  static void PrintExtraICState(FILE* out, Kind kind, ExtraICState extra);
-  void Disassemble(const char* name, FILE* out = stdout);
+  static void PrintExtraICState(OStream& os,  // NOLINT
+                                Kind kind, ExtraICState extra);
+  void Disassemble(const char* name, OStream& os);  // NOLINT
 #endif  // ENABLE_DISASSEMBLER
 
   // [instruction_size]: Size of the native instructions
@@ -7190,7 +7197,7 @@ class SharedFunctionInfo: public HeapObject {
   inline void set_function_token_position(int function_token_position);
 
   // Position of this function in the script source.
-  inline int start_position();
+  inline int start_position() const;
   inline void set_start_position(int start_position);
 
   // End position of this function in the script source.
@@ -7300,7 +7307,7 @@ class SharedFunctionInfo: public HeapObject {
   bool VerifyBailoutId(BailoutId id);
 
   // [source code]: Source code for the function.
-  bool HasSourceCode();
+  bool HasSourceCode() const;
   Handle<Object> GetSourceCode();
 
   // Number of times the function was optimized.
@@ -7346,8 +7353,6 @@ class SharedFunctionInfo: public HeapObject {
   int CalculateInObjectProperties();
 
   // Dispatched behavior.
-  // Set max_length to -1 for unlimited length.
-  void SourceCodePrint(StringStream* accumulator, int max_length);
   DECLARE_PRINTER(SharedFunctionInfo)
   DECLARE_VERIFIER(SharedFunctionInfo)
 
@@ -7570,6 +7575,18 @@ class SharedFunctionInfo: public HeapObject {
  private:
   DISALLOW_IMPLICIT_CONSTRUCTORS(SharedFunctionInfo);
 };
+
+
+// Printing support.
+struct SourceCodeOf {
+  SourceCodeOf(SharedFunctionInfo* v, int max = -1)
+      : value(v), max_length(max) {}
+  const SharedFunctionInfo* value;
+  int max_length;
+};
+
+
+OStream& operator<<(OStream& os, const SourceCodeOf& v);
 
 
 class JSGeneratorObject: public JSObject {
@@ -9266,6 +9283,7 @@ class String: public Name {
 
   // Dispatched behavior.
   void StringShortPrint(StringStream* accumulator);
+  void PrintUC16(OStream& os, int start = 0, int end = -1);  // NOLINT
 #ifdef OBJECT_PRINT
   char* ToAsciiArray();
 #endif
@@ -10113,20 +10131,27 @@ class JSFunctionProxy: public JSProxy {
 };
 
 
-// The JSSet describes EcmaScript Harmony sets
-class JSSet: public JSObject {
+class JSCollection : public JSObject {
  public:
-  // [set]: the backing hash set containing keys.
+  // [table]: the backing hash table
   DECL_ACCESSORS(table, Object)
 
+  static const int kTableOffset = JSObject::kHeaderSize;
+  static const int kSize = kTableOffset + kPointerSize;
+
+ private:
+  DISALLOW_IMPLICIT_CONSTRUCTORS(JSCollection);
+};
+
+
+// The JSSet describes EcmaScript Harmony sets
+class JSSet : public JSCollection {
+ public:
   DECLARE_CAST(JSSet)
 
   // Dispatched behavior.
   DECLARE_PRINTER(JSSet)
   DECLARE_VERIFIER(JSSet)
-
-  static const int kTableOffset = JSObject::kHeaderSize;
-  static const int kSize = kTableOffset + kPointerSize;
 
  private:
   DISALLOW_IMPLICIT_CONSTRUCTORS(JSSet);
@@ -10134,19 +10159,13 @@ class JSSet: public JSObject {
 
 
 // The JSMap describes EcmaScript Harmony maps
-class JSMap: public JSObject {
+class JSMap : public JSCollection {
  public:
-  // [table]: the backing hash table mapping keys to values.
-  DECL_ACCESSORS(table, Object)
-
   DECLARE_CAST(JSMap)
 
   // Dispatched behavior.
   DECLARE_PRINTER(JSMap)
   DECLARE_VERIFIER(JSMap)
-
-  static const int kTableOffset = JSObject::kHeaderSize;
-  static const int kSize = kTableOffset + kPointerSize;
 
  private:
   DISALLOW_IMPLICIT_CONSTRUCTORS(JSMap);
@@ -10178,7 +10197,7 @@ class OrderedHashTableIterator: public JSObject {
   DECL_ACCESSORS(kind, Smi)
 
 #ifdef OBJECT_PRINT
-  void OrderedHashTableIteratorPrint(FILE* out);
+  void OrderedHashTableIteratorPrint(OStream& os);  // NOLINT
 #endif
 
   static const int kTableOffset = JSObject::kHeaderSize;

@@ -256,6 +256,12 @@ class SimulatorHelper {
         Simulator::sp));
     state->fp = reinterpret_cast<Address>(simulator_->get_register(
         Simulator::fp));
+#elif V8_TARGET_ARCH_MIPS64
+    state->pc = reinterpret_cast<Address>(simulator_->get_pc());
+    state->sp = reinterpret_cast<Address>(simulator_->get_register(
+        Simulator::sp));
+    state->fp = reinterpret_cast<Address>(simulator_->get_register(
+        Simulator::fp));
 #elif V8_TARGET_ARCH_PPC
     state->pc = reinterpret_cast<Address>(simulator_->get_pc());
     state->sp = reinterpret_cast<Address>(simulator_->get_register(
@@ -341,7 +347,7 @@ void SignalHandler::HandleProfilerSignal(int signal, siginfo_t* info,
 #else
   USE(info);
   if (signal != SIGPROF) return;
-  Isolate* isolate = Isolate::UncheckedCurrent();
+  Isolate* isolate = Isolate::UnsafeCurrent();
   if (isolate == NULL || !isolate->IsInitialized() || !isolate->IsInUse()) {
     // We require a fully initialized and entered isolate.
     return;
@@ -400,6 +406,10 @@ void SignalHandler::HandleProfilerSignal(int signal, siginfo_t* info,
   // FP is an alias for x29.
   state.fp = reinterpret_cast<Address>(mcontext.regs[29]);
 #elif V8_HOST_ARCH_MIPS
+  state.pc = reinterpret_cast<Address>(mcontext.pc);
+  state.sp = reinterpret_cast<Address>(mcontext.gregs[29]);
+  state.fp = reinterpret_cast<Address>(mcontext.gregs[30]);
+#elif V8_HOST_ARCH_MIPS64
   state.pc = reinterpret_cast<Address>(mcontext.pc);
   state.sp = reinterpret_cast<Address>(mcontext.gregs[29]);
   state.fp = reinterpret_cast<Address>(mcontext.gregs[30]);

@@ -17,6 +17,8 @@
 #include "src/ppc/simulator-ppc.h"
 #elif V8_TARGET_ARCH_MIPS
 #include "src/mips/simulator-mips.h"
+#elif V8_TARGET_ARCH_MIPS64
+#include "src/mips64/simulator-mips64.h"
 #elif V8_TARGET_ARCH_X87
 #include "src/x87/simulator-x87.h"
 #else

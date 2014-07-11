@@ -14885,131 +14885,18 @@ TEST(PreCompileSerialization) {
                               v8::ScriptCompiler::kProduceDataToCache);
   // Serialize.
   const v8::ScriptCompiler::CachedData* cd = source.GetCachedData();
-  char* serialized_data = i::NewArray<char>(cd->length);
+  i::byte* serialized_data = i::NewArray<i::byte>(cd->length);
   i::MemCopy(serialized_data, cd->data, cd->length);
 
   // Deserialize.
-  i::ScriptData* deserialized = i::ScriptData::New(serialized_data, cd->length);
+  i::ScriptData* deserialized = new i::ScriptData(serialized_data, cd->length);
 
   // Verify that the original is the same as the deserialized.
-  CHECK_EQ(cd->length, deserialized->Length());
-  CHECK_EQ(0, memcmp(cd->data, deserialized->Data(), cd->length));
+  CHECK_EQ(cd->length, deserialized->length());
+  CHECK_EQ(0, memcmp(cd->data, deserialized->data(), cd->length));
 
   delete deserialized;
   i::DeleteArray(serialized_data);
-}
-
-
-// Attempts to deserialize bad data.
-TEST(PreCompileDeserializationError) {
-  v8::V8::Initialize();
-  const char* data = "DONT CARE";
-  int invalid_size = 3;
-  i::ScriptData* sd = i::ScriptData::New(data, invalid_size);
-  CHECK_EQ(NULL, sd);
-}
-
-
-TEST(CompileWithInvalidCachedData) {
-  v8::V8::Initialize();
-  v8::Isolate* isolate = CcTest::isolate();
-  LocalContext context;
-  v8::HandleScope scope(context->GetIsolate());
-  i::FLAG_min_preparse_length = 0;
-
-  const char* script = "function foo(){ return 5;}\n"
-      "function bar(){ return 6 + 7;}  foo();";
-  v8::ScriptCompiler::Source source(v8_str(script));
-  v8::ScriptCompiler::Compile(isolate, &source,
-                              v8::ScriptCompiler::kProduceDataToCache);
-  // source owns its cached data. Create a ScriptData based on it. The user
-  // never needs to create ScriptDatas any more; we only need it here because we
-  // want to modify the data before passing it back.
-  const v8::ScriptCompiler::CachedData* cd = source.GetCachedData();
-  // ScriptData does not take ownership of the buffers passed to it.
-  i::ScriptData* sd =
-      i::ScriptData::New(reinterpret_cast<const char*>(cd->data), cd->length);
-  CHECK(!sd->HasError());
-  // ScriptData private implementation details
-  const int kHeaderSize = i::PreparseDataConstants::kHeaderSize;
-  const int kFunctionEntrySize = i::FunctionEntry::kSize;
-  const int kFunctionEntryStartOffset = 0;
-  const int kFunctionEntryEndOffset = 1;
-  unsigned* sd_data =
-      reinterpret_cast<unsigned*>(const_cast<char*>(sd->Data()));
-
-  // Overwrite function bar's end position with 0.
-  sd_data[kHeaderSize + 1 * kFunctionEntrySize + kFunctionEntryEndOffset] = 0;
-  v8::TryCatch try_catch;
-
-  // Make the script slightly different so that we don't hit the compilation
-  // cache. Don't change the lenghts of tokens.
-  const char* script2 = "function foo(){ return 6;}\n"
-      "function bar(){ return 6 + 7;}  foo();";
-  v8::ScriptCompiler::Source source2(
-      v8_str(script2),
-      // CachedData doesn't take ownership of the buffers, Source takes
-      // ownership of CachedData.
-      new v8::ScriptCompiler::CachedData(
-          reinterpret_cast<const uint8_t*>(sd->Data()), sd->Length()));
-  Local<v8::UnboundScript> compiled_script =
-      v8::ScriptCompiler::CompileUnbound(isolate, &source2);
-
-  CHECK(try_catch.HasCaught());
-  {
-    String::Utf8Value exception_value(try_catch.Message()->Get());
-    CHECK_EQ("Uncaught SyntaxError: Invalid cached data for function bar",
-             *exception_value);
-  }
-
-  try_catch.Reset();
-  delete sd;
-
-  // Overwrite function bar's start position with 200. The function entry will
-  // not be found when searching for it by position, and the compilation fails.
-
-  // ScriptData does not take ownership of the buffers passed to it.
-  sd = i::ScriptData::New(reinterpret_cast<const char*>(cd->data), cd->length);
-  sd_data = reinterpret_cast<unsigned*>(const_cast<char*>(sd->Data()));
-  sd_data[kHeaderSize + 1 * kFunctionEntrySize + kFunctionEntryStartOffset] =
-      200;
-  const char* script3 = "function foo(){ return 7;}\n"
-      "function bar(){ return 6 + 7;}  foo();";
-  v8::ScriptCompiler::Source source3(
-      v8_str(script3),
-      new v8::ScriptCompiler::CachedData(
-          reinterpret_cast<const uint8_t*>(sd->Data()), sd->Length()));
-  compiled_script =
-      v8::ScriptCompiler::CompileUnbound(isolate, &source3);
-  CHECK(try_catch.HasCaught());
-  {
-    String::Utf8Value exception_value(try_catch.Message()->Get());
-    CHECK_EQ("Uncaught SyntaxError: Invalid cached data for function bar",
-             *exception_value);
-  }
-  CHECK(compiled_script.IsEmpty());
-  try_catch.Reset();
-  delete sd;
-
-  // Try passing in cached data which is obviously invalid (wrong length).
-  sd = i::ScriptData::New(reinterpret_cast<const char*>(cd->data), cd->length);
-  const char* script4 =
-      "function foo(){ return 8;}\n"
-      "function bar(){ return 6 + 7;}  foo();";
-  v8::ScriptCompiler::Source source4(
-      v8_str(script4),
-      new v8::ScriptCompiler::CachedData(
-          reinterpret_cast<const uint8_t*>(sd->Data()), sd->Length() - 1));
-  compiled_script =
-      v8::ScriptCompiler::CompileUnbound(isolate, &source4);
-  CHECK(try_catch.HasCaught());
-  {
-    String::Utf8Value exception_value(try_catch.Message()->Get());
-    CHECK_EQ("Uncaught SyntaxError: Invalid cached data",
-             *exception_value);
-  }
-  CHECK(compiled_script.IsEmpty());
-  delete sd;
 }
 
 
@@ -18196,7 +18083,8 @@ THREADED_TEST(QuietSignalingNaNs) {
     } else {
       uint64_t stored_bits = DoubleToBits(stored_number);
       // Check if quiet nan (bits 51..62 all set).
-#if defined(V8_TARGET_ARCH_MIPS) && !defined(USE_SIMULATOR)
+#if (defined(V8_TARGET_ARCH_MIPS) || defined(V8_TARGET_ARCH_MIPS64)) && \
+    !defined(USE_SIMULATOR)
       // Most significant fraction bit for quiet nan is set to 0
       // on MIPS architecture. Allowed by IEEE-754.
       CHECK_EQ(0xffe, static_cast<int>((stored_bits >> 51) & 0xfff));
@@ -18216,7 +18104,8 @@ THREADED_TEST(QuietSignalingNaNs) {
     } else {
       uint64_t stored_bits = DoubleToBits(stored_date);
       // Check if quiet nan (bits 51..62 all set).
-#if defined(V8_TARGET_ARCH_MIPS) && !defined(USE_SIMULATOR)
+#if (defined(V8_TARGET_ARCH_MIPS) || defined(V8_TARGET_ARCH_MIPS64)) && \
+    !defined(USE_SIMULATOR)
       // Most significant fraction bit for quiet nan is set to 0
       // on MIPS architecture. Allowed by IEEE-754.
       CHECK_EQ(0xffe, static_cast<int>((stored_bits >> 51) & 0xfff));
@@ -18607,8 +18496,7 @@ TEST(SetterOnConstructorPrototype) {
   v8::Isolate* isolate = CcTest::isolate();
   v8::HandleScope scope(isolate);
   Local<ObjectTemplate> templ = ObjectTemplate::New(isolate);
-  templ->SetAccessor(v8_str("x"),
-                     GetterWhichReturns42,
+  templ->SetAccessor(v8_str("x"), GetterWhichReturns42,
                      SetterWhichSetsYOnThisTo23);
   LocalContext context;
   context->Global()->Set(v8_str("P"), templ->NewInstance());
@@ -18721,8 +18609,7 @@ TEST(Regress618) {
 
   // Use an API object with accessors as prototype.
   Local<ObjectTemplate> templ = ObjectTemplate::New(isolate);
-  templ->SetAccessor(v8_str("x"),
-                     GetterWhichReturns42,
+  templ->SetAccessor(v8_str("x"), GetterWhichReturns42,
                      SetterWhichSetsYOnThisTo23);
   context->Global()->Set(v8_str("P"), templ->NewInstance());
 
@@ -19566,15 +19453,15 @@ class InitDefaultIsolateThread : public v8::base::Thread {
         break;
 
       case SetCounterFunction:
-        v8::V8::SetCounterFunction(NULL);
+        CcTest::isolate()->SetCounterFunction(NULL);
         break;
 
       case SetCreateHistogramFunction:
-        v8::V8::SetCreateHistogramFunction(NULL);
+        CcTest::isolate()->SetCreateHistogramFunction(NULL);
         break;
 
       case SetAddHistogramSampleFunction:
-        v8::V8::SetAddHistogramSampleFunction(NULL);
+        CcTest::isolate()->SetAddHistogramSampleFunction(NULL);
         break;
     }
     isolate->Exit();
@@ -20957,6 +20844,7 @@ TEST(Regress385349) {
 }
 
 
+#ifdef DEBUG
 static int probes_counter = 0;
 static int misses_counter = 0;
 static int updates_counter = 0;
@@ -20986,11 +20874,10 @@ static const char* kMegamorphicTestProgram =
     "  fooify(a);"
     "  fooify(b);"
     "}";
+#endif
 
 
 static void StubCacheHelper(bool primary) {
-  V8::SetCounterFunction(LookupCounter);
-  USE(kMegamorphicTestProgram);
 #ifdef DEBUG
   i::FLAG_native_code_counters = true;
   if (primary) {
@@ -21000,6 +20887,7 @@ static void StubCacheHelper(bool primary) {
   }
   i::FLAG_crankshaft = false;
   LocalContext env;
+  env->GetIsolate()->SetCounterFunction(LookupCounter);
   v8::HandleScope scope(env->GetIsolate());
   int initial_probes = probes_counter;
   int initial_misses = misses_counter;
@@ -21029,6 +20917,7 @@ TEST(PrimaryStubCache) {
 }
 
 
+#ifdef DEBUG
 static int cow_arrays_created_runtime = 0;
 
 
@@ -21038,13 +20927,14 @@ static int* LookupCounterCOWArrays(const char* name) {
   }
   return NULL;
 }
+#endif
 
 
 TEST(CheckCOWArraysCreatedRuntimeCounter) {
-  V8::SetCounterFunction(LookupCounterCOWArrays);
 #ifdef DEBUG
   i::FLAG_native_code_counters = true;
   LocalContext env;
+  env->GetIsolate()->SetCounterFunction(LookupCounterCOWArrays);
   v8::HandleScope scope(env->GetIsolate());
   int initial_cow_arrays = cow_arrays_created_runtime;
   CompileRun("var o = [1, 2, 3];");
@@ -21135,8 +21025,7 @@ static void InstanceCheckedSetter(Local<String> name,
 }
 
 
-static void CheckInstanceCheckedResult(int getters,
-                                       int setters,
+static void CheckInstanceCheckedResult(int getters, int setters,
                                        bool expects_callbacks,
                                        TryCatch* try_catch) {
   if (expects_callbacks) {
@@ -21259,10 +21148,8 @@ THREADED_TEST(InstanceCheckOnPrototypeAccessor) {
 
   Local<FunctionTemplate> templ = FunctionTemplate::New(context->GetIsolate());
   Local<ObjectTemplate> proto = templ->PrototypeTemplate();
-  proto->SetAccessor(v8_str("foo"),
-                     InstanceCheckedGetter, InstanceCheckedSetter,
-                     Handle<Value>(),
-                     v8::DEFAULT,
+  proto->SetAccessor(v8_str("foo"), InstanceCheckedGetter,
+                     InstanceCheckedSetter, Handle<Value>(), v8::DEFAULT,
                      v8::None,
                      v8::AccessorSignature::New(context->GetIsolate(), templ));
   context->Global()->Set(v8_str("f"), templ->GetFunction());

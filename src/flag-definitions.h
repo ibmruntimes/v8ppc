@@ -423,6 +423,8 @@ DEFINE_BOOL(trace_deopt, false, "trace optimize function deoptimization")
 DEFINE_BOOL(trace_stub_failures, false,
             "trace deoptimization of generated code stubs")
 
+DEFINE_BOOL(serialize_toplevel, false, "enable caching of toplevel scripts")
+
 // compiler.cc
 DEFINE_INT(min_preparse_length, 1024,
            "minimum length for automatic enable preparsing")
@@ -536,6 +538,7 @@ DEFINE_BOOL(use_idle_notification, true,
             "Use idle notification to reduce memory footprint.")
 // ic.cc
 DEFINE_BOOL(use_ic, true, "use inline caching")
+DEFINE_BOOL(trace_ic, false, "trace inline cache state transitions")
 
 // macro-assembler-ia32.cc
 DEFINE_BOOL(native_code_counters, false,
@@ -575,7 +578,8 @@ DEFINE_BOOL(debug_sim, false, "Enable debugging the simulator")
 DEFINE_BOOL(check_icache, false,
             "Check icache flushes in ARM and MIPS simulator")
 DEFINE_INT(stop_sim_at, 0, "Simulator stop after x number of instructions")
-#if defined(V8_TARGET_ARCH_ARM64) || defined(V8_TARGET_ARCH_PPC64)
+#if defined(V8_TARGET_ARCH_ARM64) || defined(V8_TARGET_ARCH_MIPS64) || \
+    defined(V8_TARGET_ARCH_PPC64)
 DEFINE_INT(sim_stack_alignment, 16,
            "Stack alignment in bytes in simulator. This must be a power of two "
            "and it must be at least 16. 16 is default.")
@@ -584,7 +588,8 @@ DEFINE_INT(sim_stack_alignment, 8,
            "Stack alingment in bytes in simulator (4 or 8, 8 is default)")
 #endif
 DEFINE_INT(sim_stack_size, 2 * MB / KB,
-           "Stack size of the ARM64 simulator in kBytes (default is 2 MB)")
+           "Stack size of the ARM64 and MIPS64 simulator "
+           "in kBytes (default is 2 MB)")
 DEFINE_BOOL(log_regs_modified, true,
             "When logging register values, only print modified registers.")
 DEFINE_BOOL(log_colour, true, "When logging, try to use coloured output.")
@@ -724,9 +729,6 @@ DEFINE_BOOL(verify_native_context_separation, false,
             "verify that code holds on to at most one native context after GC")
 DEFINE_BOOL(print_handles, false, "report handles after GC")
 DEFINE_BOOL(print_global_handles, false, "report global handles after GC")
-
-// ic.cc
-DEFINE_BOOL(trace_ic, false, "trace inline cache state transitions")
 
 // interface.cc
 DEFINE_BOOL(print_interfaces, false, "print interfaces")

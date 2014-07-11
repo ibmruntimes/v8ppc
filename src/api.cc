@@ -370,14 +370,14 @@ void V8::SetSnapshotDataBlob(StartupData* snapshot_blob) {
 
 
 void V8::SetFatalErrorHandler(FatalErrorCallback that) {
-  i::Isolate* isolate = i::Isolate::UncheckedCurrent();
+  i::Isolate* isolate = i::Isolate::Current();
   isolate->set_exception_behavior(that);
 }
 
 
 void V8::SetAllowCodeGenerationFromStringsCallback(
     AllowCodeGenerationFromStringsCallback callback) {
-  i::Isolate* isolate = i::Isolate::UncheckedCurrent();
+  i::Isolate* isolate = i::Isolate::Current();
   isolate->set_allow_code_gen_callback(callback);
 }
 
@@ -1699,43 +1699,19 @@ Local<UnboundScript> ScriptCompiler::CompileUnbound(
     Isolate* v8_isolate,
     Source* source,
     CompileOptions options) {
-  i::ScriptData* script_data_impl = NULL;
+  i::ScriptData* script_data = NULL;
   i::CachedDataMode cached_data_mode = i::NO_CACHED_DATA;
   i::Isolate* isolate = reinterpret_cast<i::Isolate*>(v8_isolate);
   ON_BAILOUT(isolate, "v8::ScriptCompiler::CompileUnbound()",
              return Local<UnboundScript>());
   if (options & kProduceDataToCache) {
     cached_data_mode = i::PRODUCE_CACHED_DATA;
-    ASSERT(source->cached_data == NULL);
-    if (source->cached_data) {
-      // Asked to produce cached data even though there is some already -> not
-      // good. Fail the compilation.
-      EXCEPTION_PREAMBLE(isolate);
-      i::Handle<i::Object> result = isolate->factory()->NewSyntaxError(
-          "invalid_cached_data", isolate->factory()->NewJSArray(0));
-      isolate->Throw(*result);
-      isolate->ReportPendingMessages();
-      has_pending_exception = true;
-      EXCEPTION_BAILOUT_CHECK(isolate, Local<UnboundScript>());
-    }
+    CHECK(source->cached_data == NULL);
   } else if (source->cached_data) {
     cached_data_mode = i::CONSUME_CACHED_DATA;
-    // ScriptData takes care of aligning, in case the data is not aligned
-    // correctly.
-    script_data_impl = i::ScriptData::New(
-        reinterpret_cast<const char*>(source->cached_data->data),
-        source->cached_data->length);
-    // If the cached data is not valid, fail the compilation.
-    if (script_data_impl == NULL || !script_data_impl->SanityCheck()) {
-      EXCEPTION_PREAMBLE(isolate);
-      i::Handle<i::Object> result = isolate->factory()->NewSyntaxError(
-          "invalid_cached_data", isolate->factory()->NewJSArray(0));
-      isolate->Throw(*result);
-      isolate->ReportPendingMessages();
-      delete script_data_impl;
-      has_pending_exception = true;
-      EXCEPTION_BAILOUT_CHECK(isolate, Local<UnboundScript>());
-    }
+    // ScriptData takes care of pointer-aligning the data.
+    script_data = new i::ScriptData(source->cached_data->data,
+                                    source->cached_data->length);
   }
 
   i::Handle<i::String> str = Utils::OpenHandle(*(source->source_string));
@@ -1763,36 +1739,28 @@ Local<UnboundScript> ScriptCompiler::CompileUnbound(
           source->resource_is_shared_cross_origin == v8::True(v8_isolate);
     }
     EXCEPTION_PREAMBLE(isolate);
-    i::Handle<i::SharedFunctionInfo> result =
-        i::Compiler::CompileScript(str,
-                                   name_obj,
-                                   line_offset,
-                                   column_offset,
-                                   is_shared_cross_origin,
-                                   isolate->global_context(),
-                                   NULL,
-                                   &script_data_impl,
-                                   cached_data_mode,
-                                   i::NOT_NATIVES_CODE);
+    i::Handle<i::SharedFunctionInfo> result = i::Compiler::CompileScript(
+        str, name_obj, line_offset, column_offset, is_shared_cross_origin,
+        isolate->global_context(), NULL, &script_data, cached_data_mode,
+        i::NOT_NATIVES_CODE);
     has_pending_exception = result.is_null();
     if (has_pending_exception && cached_data_mode == i::CONSUME_CACHED_DATA) {
       // This case won't happen during normal operation; we have compiled
       // successfully and produced cached data, and but the second compilation
       // of the same source code fails.
-      delete script_data_impl;
-      script_data_impl = NULL;
+      delete script_data;
+      script_data = NULL;
     }
     EXCEPTION_BAILOUT_CHECK(isolate, Local<UnboundScript>());
     raw_result = *result;
-    if ((options & kProduceDataToCache) && script_data_impl != NULL) {
+    if ((options & kProduceDataToCache) && script_data != NULL) {
       // script_data_impl now contains the data that was generated. source will
       // take the ownership.
       source->cached_data = new CachedData(
-          reinterpret_cast<const uint8_t*>(script_data_impl->Data()),
-          script_data_impl->Length(), CachedData::BufferOwned);
-      script_data_impl->owns_store_ = false;
+          script_data->data(), script_data->length(), CachedData::BufferOwned);
+      script_data->ReleaseDataOwnership();
     }
-    delete script_data_impl;
+    delete script_data;
   }
   i::Handle<i::SharedFunctionInfo> result(raw_result, isolate);
   return ToApiHandle<UnboundScript>(result);
@@ -1998,7 +1966,9 @@ ScriptOrigin Message::GetScriptOrigin() const {
   v8::ScriptOrigin origin(
       Utils::ToLocal(scriptName),
       v8::Integer::New(v8_isolate, script->line_offset()->value()),
-      v8::Integer::New(v8_isolate, script->column_offset()->value()));
+      v8::Integer::New(v8_isolate, script->column_offset()->value()),
+      Handle<Boolean>(),
+      v8::Integer::New(v8_isolate, script->id()->value()));
   return origin;
 }
 
@@ -6349,32 +6319,6 @@ void V8::SetCaptureStackTraceForUncaughtExceptions(
 }
 
 
-void V8::SetCounterFunction(CounterLookupCallback callback) {
-  i::Isolate* isolate = i::Isolate::UncheckedCurrent();
-  // TODO(svenpanne) The Isolate should really be a parameter.
-  if (isolate == NULL) return;
-  isolate->stats_table()->SetCounterFunction(callback);
-}
-
-
-void V8::SetCreateHistogramFunction(CreateHistogramCallback callback) {
-  i::Isolate* isolate = i::Isolate::UncheckedCurrent();
-  // TODO(svenpanne) The Isolate should really be a parameter.
-  if (isolate == NULL) return;
-  isolate->stats_table()->SetCreateHistogramFunction(callback);
-  isolate->InitializeLoggingAndCounters();
-  isolate->counters()->ResetHistograms();
-}
-
-
-void V8::SetAddHistogramSampleFunction(AddHistogramSampleCallback callback) {
-  i::Isolate* isolate = i::Isolate::UncheckedCurrent();
-  // TODO(svenpanne) The Isolate should really be a parameter.
-  if (isolate == NULL) return;
-  isolate->stats_table()->
-      SetAddHistogramSampleFunction(callback);
-}
-
 void V8::SetFailedAccessCheckCallbackFunction(
     FailedAccessCheckCallback callback) {
   i::Isolate* isolate = i::Isolate::Current();
@@ -6602,7 +6546,7 @@ void Isolate::RequestGarbageCollectionForTesting(GarbageCollectionType type) {
 
 
 Isolate* Isolate::GetCurrent() {
-  i::Isolate* isolate = i::Isolate::UncheckedCurrent();
+  i::Isolate* isolate = i::Isolate::Current();
   return reinterpret_cast<Isolate*>(isolate);
 }
 
@@ -6765,6 +6709,30 @@ bool Isolate::WillAutorunMicrotasks() const {
 
 void Isolate::SetUseCounterCallback(UseCounterCallback callback) {
   reinterpret_cast<i::Isolate*>(this)->SetUseCounterCallback(callback);
+}
+
+
+void Isolate::SetCounterFunction(CounterLookupCallback callback) {
+  i::Isolate* isolate = reinterpret_cast<i::Isolate*>(this);
+  isolate->stats_table()->SetCounterFunction(callback);
+  isolate->InitializeLoggingAndCounters();
+  isolate->counters()->ResetCounters();
+}
+
+
+void Isolate::SetCreateHistogramFunction(CreateHistogramCallback callback) {
+  i::Isolate* isolate = reinterpret_cast<i::Isolate*>(this);
+  isolate->stats_table()->SetCreateHistogramFunction(callback);
+  isolate->InitializeLoggingAndCounters();
+  isolate->counters()->ResetHistograms();
+}
+
+
+void Isolate::SetAddHistogramSampleFunction(
+    AddHistogramSampleCallback callback) {
+  reinterpret_cast<i::Isolate*>(this)
+      ->stats_table()
+      ->SetAddHistogramSampleFunction(callback);
 }
 
 

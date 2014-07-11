@@ -643,8 +643,8 @@ BUILTIN(ArraySlice) {
     } else {
       // Array.slice(arguments, ...) is quite a common idiom (notably more
       // than 50% of invocations in Web apps).  Treat it in C++ as well.
-      Map* arguments_map = isolate->context()->native_context()->
-          sloppy_arguments_boilerplate()->map();
+      Map* arguments_map =
+          isolate->context()->native_context()->sloppy_arguments_map();
 
       bool is_arguments_object_with_fast_elements =
           receiver->IsJSObject() &&
@@ -1635,14 +1635,14 @@ void Builtins::SetUp(Isolate* isolate, bool create_heap_objects) {
       // Log the event and add the code to the builtins array.
       PROFILE(isolate,
               CodeCreateEvent(Logger::BUILTIN_TAG, *code, functions[i].s_name));
-      GDBJIT(AddCode(GDBJITInterface::BUILTIN, functions[i].s_name, *code));
       builtins_[i] = *code;
 #ifdef ENABLE_DISASSEMBLER
       if (FLAG_print_builtin_code) {
         CodeTracer::Scope trace_scope(isolate->GetCodeTracer());
-        PrintF(trace_scope.file(), "Builtin: %s\n", functions[i].s_name);
-        code->Disassemble(functions[i].s_name, trace_scope.file());
-        PrintF(trace_scope.file(), "\n");
+        OFStream os(trace_scope.file());
+        os << "Builtin: " << functions[i].s_name << "\n";
+        code->Disassemble(functions[i].s_name, os);
+        os << "\n";
       }
 #endif
     } else {

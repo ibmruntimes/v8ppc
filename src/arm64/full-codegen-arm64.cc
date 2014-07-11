@@ -1165,8 +1165,9 @@ void FullCodeGenerator::VisitForInStatement(ForInStatement* stmt) {
          FieldMemOperand(x2, DescriptorArray::kEnumCacheBridgeCacheOffset));
 
   // Set up the four remaining stack slots.
-  __ Push(x0, x2);              // Map, enumeration cache.
-  __ SmiTagAndPush(x1, xzr);    // Enum cache length, zero (both as smis).
+  __ SmiTag(x1);
+  // Map, enumeration cache, enum cache length, zero (both last as smis).
+  __ Push(x0, x2, x1, xzr);
   __ B(&loop);
 
   __ Bind(&no_descriptors);
@@ -1187,9 +1188,9 @@ void FullCodeGenerator::VisitForInStatement(ForInStatement* stmt) {
   __ CompareObjectType(x10, x11, x12, LAST_JS_PROXY_TYPE);
   ASSERT(Smi::FromInt(0) == 0);
   __ CzeroX(x1, le);  // Zero indicates proxy.
-  __ Push(x1, x0);  // Smi and array
-  __ Ldr(x1, FieldMemOperand(x0, FixedArray::kLengthOffset));
-  __ Push(x1, xzr);  // Fixed array length (as smi) and initial index.
+  __ Ldr(x2, FieldMemOperand(x0, FixedArray::kLengthOffset));
+  // Smi and array, fixed array length (as smi) and initial index.
+  __ Push(x1, x0, x2, xzr);
 
   // Generate code for doing the condition check.
   PrepareForBailoutForId(stmt->BodyId(), NO_REGISTERS);
@@ -1681,8 +1682,9 @@ void FullCodeGenerator::VisitObjectLiteral(ObjectLiteral* expr) {
         if (key->value()->IsInternalizedString()) {
           if (property->emit_store()) {
             VisitForAccumulatorValue(value);
-            __ Mov(x2, Operand(key->value()));
-            __ Peek(x1, 0);
+            ASSERT(StoreIC::ValueRegister().is(x0));
+            __ Mov(StoreIC::NameRegister(), Operand(key->value()));
+            __ Peek(StoreIC::ReceiverRegister(), 0);
             CallStoreIC(key->LiteralFeedbackId());
             PrepareForBailoutForId(key->id(), NO_REGISTERS);
           } else {
@@ -1696,9 +1698,9 @@ void FullCodeGenerator::VisitObjectLiteral(ObjectLiteral* expr) {
           __ Push(x0);
           VisitForStackValue(key);
           VisitForStackValue(value);
-          __ Mov(x0, Smi::FromInt(NONE));  // PropertyAttributes
+          __ Mov(x0, Smi::FromInt(SLOPPY));  // Strict mode
           __ Push(x0);
-          __ CallRuntime(Runtime::kAddProperty, 4);
+          __ CallRuntime(Runtime::kSetProperty, 4);
         } else {
           VisitForEffect(key);
           VisitForEffect(value);
@@ -1802,8 +1804,8 @@ void FullCodeGenerator::VisitArrayLiteral(ArrayLiteral* expr) {
     if (CompileTimeValue::IsCompileTimeValue(subexpr)) continue;
 
     if (!result_saved) {
-      __ Push(x0);
-      __ Push(Smi::FromInt(expr->literal_index()));
+      __ Mov(x1, Smi::FromInt(expr->literal_index()));
+      __ Push(x0, x1);
       result_saved = true;
     }
     VisitForAccumulatorValue(subexpr);
@@ -2028,11 +2030,12 @@ void FullCodeGenerator::EmitInlineSmiBinaryOp(BinaryOperation* expr,
       break;
     case Token::MUL: {
       Label not_minus_zero, done;
+      STATIC_ASSERT(static_cast<unsigned>(kSmiShift) == (kXRegSizeInBits / 2));
+      STATIC_ASSERT(kSmiTag == 0);
       __ Smulh(x10, left, right);
       __ Cbnz(x10, &not_minus_zero);
       __ Eor(x11, left, right);
       __ Tbnz(x11, kXSignBit, &stub_call);
-      STATIC_ASSERT(kSmiTag == 0);
       __ Mov(result, x10);
       __ B(&done);
       __ Bind(&not_minus_zero);
@@ -2102,9 +2105,10 @@ void FullCodeGenerator::EmitAssignment(Expression* expr) {
       VisitForAccumulatorValue(prop->obj());
       // TODO(all): We could introduce a VisitForRegValue(reg, expr) to avoid
       // this copy.
-      __ Mov(x1, x0);
-      __ Pop(x0);  // Restore value.
-      __ Mov(x2, Operand(prop->key()->AsLiteral()->value()));
+      __ Mov(StoreIC::ReceiverRegister(), x0);
+      __ Pop(StoreIC::ValueRegister());  // Restore value.
+      __ Mov(StoreIC::NameRegister(),
+             Operand(prop->key()->AsLiteral()->value()));
       CallStoreIC();
       break;
     }
@@ -2112,8 +2116,8 @@ void FullCodeGenerator::EmitAssignment(Expression* expr) {
       __ Push(x0);  // Preserve value.
       VisitForStackValue(prop->obj());
       VisitForAccumulatorValue(prop->key());
-      __ Mov(x1, x0);
-      __ Pop(x2, x0);
+      __ Mov(KeyedStoreIC::NameRegister(), x0);
+      __ Pop(KeyedStoreIC::ReceiverRegister(), KeyedStoreIC::ValueRegister());
       Handle<Code> ic = strict_mode() == SLOPPY
           ? isolate()->builtins()->KeyedStoreIC_Initialize()
           : isolate()->builtins()->KeyedStoreIC_Initialize_Strict();
@@ -2156,17 +2160,16 @@ void FullCodeGenerator::EmitVariableAssignment(Variable* var,
   ASM_LOCATION("FullCodeGenerator::EmitVariableAssignment");
   if (var->IsUnallocated()) {
     // Global var, const, or let.
-    __ Mov(x2, Operand(var->name()));
-    __ Ldr(x1, GlobalObjectMemOperand());
+    __ Mov(StoreIC::NameRegister(), Operand(var->name()));
+    __ Ldr(StoreIC::ReceiverRegister(), GlobalObjectMemOperand());
     CallStoreIC();
 
   } else if (op == Token::INIT_CONST_LEGACY) {
     // Const initializers need a write barrier.
     ASSERT(!var->IsParameter());  // No const parameters.
     if (var->IsLookupSlot()) {
-      __ Push(x0);
-      __ Mov(x0, Operand(var->name()));
-      __ Push(cp, x0);  // Context and name.
+      __ Mov(x1, Operand(var->name()));
+      __ Push(x0, cp, x1);
       __ CallRuntime(Runtime::kInitializeConstContextSlot, 3);
     } else {
       ASSERT(var->IsStackLocal() || var->IsContextSlot());
@@ -2225,9 +2228,8 @@ void FullCodeGenerator::EmitNamedPropertyAssignment(Assignment* expr) {
 
   // Record source code position before IC call.
   SetSourcePosition(expr->position());
-  __ Mov(x2, Operand(prop->key()->AsLiteral()->value()));
-  __ Pop(x1);
-
+  __ Mov(StoreIC::NameRegister(), Operand(prop->key()->AsLiteral()->value()));
+  __ Pop(StoreIC::ReceiverRegister());
   CallStoreIC(expr->AssignmentFeedbackId());
 
   PrepareForBailoutForId(expr->AssignmentId(), TOS_REG);
@@ -2242,7 +2244,8 @@ void FullCodeGenerator::EmitKeyedPropertyAssignment(Assignment* expr) {
   // Record source code position before IC call.
   SetSourcePosition(expr->position());
   // TODO(all): Could we pass this in registers rather than on the stack?
-  __ Pop(x1, x2);  // Key and object holding the property.
+  __ Pop(KeyedStoreIC::NameRegister(), KeyedStoreIC::ReceiverRegister());
+  ASSERT(KeyedStoreIC::ValueRegister().is(x0));
 
   Handle<Code> ic = strict_mode() == SLOPPY
       ? isolate()->builtins()->KeyedStoreIC_Initialize()
@@ -2380,16 +2383,13 @@ void FullCodeGenerator::EmitResolvePossiblyDirectEval(int arg_count) {
   int receiver_offset = 2 + info_->scope()->num_parameters();
   __ Ldr(x11, MemOperand(fp, receiver_offset * kPointerSize));
 
-  // Push.
-  __ Push(x10, x11);
-
   // Prepare to push the language mode.
-  __ Mov(x10, Smi::FromInt(strict_mode()));
+  __ Mov(x12, Smi::FromInt(strict_mode()));
   // Prepare to push the start position of the scope the calls resides in.
-  __ Mov(x11, Smi::FromInt(scope()->start_position()));
+  __ Mov(x13, Smi::FromInt(scope()->start_position()));
 
   // Push.
-  __ Push(x10, x11);
+  __ Push(x10, x11, x12, x13);
 
   // Do the runtime call.
   __ CallRuntime(Runtime::kResolvePossiblyDirectEval, 5);
@@ -2466,9 +2466,8 @@ void FullCodeGenerator::VisitCall(Call* expr) {
     __ Bind(&slow);
     // Call the runtime to find the function to call (returned in x0)
     // and the object holding it (returned in x1).
-    __ Push(context_register());
     __ Mov(x10, Operand(proxy->name()));
-    __ Push(x10);
+    __ Push(context_register(), x10);
     __ CallRuntime(Runtime::kLoadContextSlot, 2);
     __ Push(x0, x1);  // Receiver, function.
 
@@ -2480,11 +2479,10 @@ void FullCodeGenerator::VisitCall(Call* expr) {
       __ B(&call);
       __ Bind(&done);
       // Push function.
-      __ Push(x0);
       // The receiver is implicitly the global receiver. Indicate this
       // by passing the undefined to the call function stub.
       __ LoadRoot(x1, Heap::kUndefinedValueRootIndex);
-      __ Push(x1);
+      __ Push(x0, x1);
       __ Bind(&call);
     }
 
@@ -2597,9 +2595,10 @@ void FullCodeGenerator::EmitIsNonNegativeSmi(CallRuntime* expr) {
   context()->PrepareTest(&materialize_true, &materialize_false,
                          &if_true, &if_false, &fall_through);
 
+  uint64_t sign_mask = V8_UINT64_C(1) << (kSmiShift + kSmiValueSize - 1);
+
   PrepareForBailoutBeforeSplit(expr, true, if_true, if_false);
-  __ TestAndSplit(x0, kSmiTagMask | (0x80000000UL << kSmiShift), if_true,
-                  if_false, fall_through);
+  __ TestAndSplit(x0, kSmiTagMask | sign_mask, if_true, if_false, fall_through);
 
   context()->Plug(if_true, if_false);
 }
@@ -4046,8 +4045,9 @@ void FullCodeGenerator::VisitCountOperation(CountOperation* expr) {
       }
       break;
     case NAMED_PROPERTY: {
-      __ Mov(x2, Operand(prop->key()->AsLiteral()->value()));
-      __ Pop(x1);
+      __ Mov(StoreIC::NameRegister(),
+             Operand(prop->key()->AsLiteral()->value()));
+      __ Pop(StoreIC::ReceiverRegister());
       CallStoreIC(expr->CountStoreFeedbackId());
       PrepareForBailoutForId(expr->AssignmentId(), TOS_REG);
       if (expr->is_postfix()) {
@@ -4060,8 +4060,8 @@ void FullCodeGenerator::VisitCountOperation(CountOperation* expr) {
       break;
     }
     case KEYED_PROPERTY: {
-      __ Pop(x1);  // Key.
-      __ Pop(x2);  // Receiver.
+      __ Pop(KeyedStoreIC::NameRegister());
+      __ Pop(KeyedStoreIC::ReceiverRegister());
       Handle<Code> ic = strict_mode() == SLOPPY
           ? isolate()->builtins()->KeyedStoreIC_Initialize()
           : isolate()->builtins()->KeyedStoreIC_Initialize_Strict();

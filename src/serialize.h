@@ -5,6 +5,7 @@
 #ifndef V8_SERIALIZE_H_
 #define V8_SERIALIZE_H_
 
+#include "src/compiler.h"
 #include "src/hashmap.h"
 #include "src/heap-profiler.h"
 #include "src/isolate.h"
@@ -248,6 +249,8 @@ class Deserializer: public SerializerDeserializer {
     reservations_[space_number] = reservation;
   }
 
+  void FlushICacheForNewCodeObjects();
+
  private:
   virtual void VisitPointers(Object** start, Object** end);
 
@@ -284,8 +287,6 @@ class Deserializer: public SerializerDeserializer {
     offset <<= kObjectAlignmentBits;
     return HeapObject::FromAddress(high_water_[space] - offset);
   }
-
-  void FlushICacheForNewCodeObjects();
 
   // Cached current isolate.
   Isolate* isolate_;
@@ -551,6 +552,90 @@ class StartupSerializer : public Serializer {
 };
 
 
+class CodeSerializer : public Serializer {
+ public:
+  CodeSerializer(Isolate* isolate, SnapshotByteSink* sink)
+      : Serializer(isolate, sink) {
+    set_root_index_wave_front(Heap::kStrongRootListLength);
+    InitializeCodeAddressMap();
+  }
+
+  static ScriptData* Serialize(Handle<SharedFunctionInfo> info);
+  virtual void SerializeObject(Object* o, HowToCode how_to_code,
+                               WhereToPoint where_to_point, int skip);
+
+  static Object* Deserialize(Isolate* isolate, ScriptData* data);
+
+  // The data header consists of int-sized entries:
+  // [0] version hash
+  // [1] length in bytes
+  // [2..8] reservation sizes for spaces from NEW_SPACE to PROPERTY_CELL_SPACE.
+  static const int kHeaderSize = 9;
+  static const int kVersionHashOffset = 0;
+  static const int kPayloadLengthOffset = 1;
+  static const int kReservationsOffset = 2;
+};
+
+
+// Wrapper around ScriptData to provide code-serializer-specific functionality.
+class SerializedCodeData {
+ public:
+  // Used by when consuming.
+  explicit SerializedCodeData(ScriptData* data)
+      : script_data_(data), owns_script_data_(false) {
+    CHECK(IsSane());
+  }
+
+  // Used when producing.
+  SerializedCodeData(List<byte>* payload, CodeSerializer* cs);
+
+  ~SerializedCodeData() {
+    if (owns_script_data_) delete script_data_;
+  }
+
+  // Return ScriptData object and relinquish ownership over it to the caller.
+  ScriptData* GetScriptData() {
+    ScriptData* result = script_data_;
+    script_data_ = NULL;
+    ASSERT(owns_script_data_);
+    owns_script_data_ = false;
+    return result;
+  }
+
+  const byte* Payload() const {
+    return script_data_->data() + kHeaderEntries * kIntSize;
+  }
+
+  int PayloadLength() const {
+    return script_data_->length() - kHeaderEntries * kIntSize;
+  }
+
+  int GetReservation(int space) const {
+    return GetHeaderValue(kReservationsOffset + space);
+  }
+
+ private:
+  void SetHeaderValue(int offset, int value) {
+    reinterpret_cast<int*>(const_cast<byte*>(script_data_->data()))[offset] =
+        value;
+  }
+
+  int GetHeaderValue(int offset) const {
+    return reinterpret_cast<const int*>(script_data_->data())[offset];
+  }
+
+  bool IsSane();
+
+  // The data header consists of int-sized entries:
+  // [0] version hash
+  // [1..7] reservation sizes for spaces from NEW_SPACE to PROPERTY_CELL_SPACE.
+  static const int kVersionHashOffset = 0;
+  static const int kReservationsOffset = 1;
+  static const int kHeaderEntries = 8;
+
+  ScriptData* script_data_;
+  bool owns_script_data_;
+};
 } }  // namespace v8::internal
 
 #endif  // V8_SERIALIZE_H_

@@ -21,6 +21,8 @@
 #include "src/ppc/frames-ppc.h"  // NOLINT
 #elif V8_TARGET_ARCH_MIPS
 #include "src/mips/frames-mips.h"  // NOLINT
+#elif V8_TARGET_ARCH_MIPS64
+#include "src/mips64/frames-mips64.h"  // NOLINT
 #elif V8_TARGET_ARCH_X87
 #include "src/x87/frames-x87.h"  // NOLINT
 #else

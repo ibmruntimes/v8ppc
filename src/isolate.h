@@ -83,7 +83,8 @@ class Debugger;
     !defined(__arm__) && V8_TARGET_ARCH_ARM || \
     !defined(__aarch64__) && V8_TARGET_ARCH_ARM64 || \
     !defined(__PPC__) && V8_TARGET_ARCH_PPC || \
-    !defined(__mips__) && V8_TARGET_ARCH_MIPS
+    !defined(__mips__) && V8_TARGET_ARCH_MIPS || \
+    !defined(__mips__) && V8_TARGET_ARCH_MIPS64
 class Redirection;
 class Simulator;
 #endif
@@ -297,7 +298,8 @@ class ThreadLocalTop BASE_EMBEDDED {
     V8_TARGET_ARCH_ARM && !defined(__arm__) || \
     V8_TARGET_ARCH_ARM64 && !defined(__aarch64__) || \
     V8_TARGET_ARCH_PPC && !defined(__PPC__) || \
-    V8_TARGET_ARCH_MIPS && !defined(__mips__)
+    V8_TARGET_ARCH_MIPS && !defined(__mips__) || \
+    V8_TARGET_ARCH_MIPS64 && !defined(__mips__)
 
 #define ISOLATE_INIT_SIMULATOR_LIST(V)                                         \
   V(bool, simulator_initialized, false)                                        \
@@ -398,7 +400,8 @@ class Isolate {
     !defined(__arm__) && V8_TARGET_ARCH_ARM || \
     !defined(__aarch64__) && V8_TARGET_ARCH_ARM64 || \
     !defined(__PPC__) && V8_TARGET_ARCH_PPC || \
-    !defined(__mips__) && V8_TARGET_ARCH_MIPS
+    !defined(__mips__) && V8_TARGET_ARCH_MIPS || \
+    !defined(__mips__) && V8_TARGET_ARCH_MIPS64
           simulator_(NULL),
 #endif
           next_(NULL),
@@ -414,7 +417,8 @@ class Isolate {
     !defined(__arm__) && V8_TARGET_ARCH_ARM || \
     !defined(__aarch64__) && V8_TARGET_ARCH_ARM64 || \
     !defined(__PPC__) && V8_TARGET_ARCH_PPC || \
-    !defined(__mips__) && V8_TARGET_ARCH_MIPS
+    !defined(__mips__) && V8_TARGET_ARCH_MIPS || \
+    !defined(__mips__) && V8_TARGET_ARCH_MIPS64
     FIELD_ACCESSOR(Simulator*, simulator)
 #endif
 
@@ -432,7 +436,8 @@ class Isolate {
     !defined(__arm__) && V8_TARGET_ARCH_ARM || \
     !defined(__aarch64__) && V8_TARGET_ARCH_ARM64 || \
     !defined(__PPC__) && V8_TARGET_ARCH_PPC || \
-    !defined(__mips__) && V8_TARGET_ARCH_MIPS
+    !defined(__mips__) && V8_TARGET_ARCH_MIPS || \
+    !defined(__mips__) && V8_TARGET_ARCH_MIPS64
     Simulator* simulator_;
 #endif
 
@@ -457,12 +462,14 @@ class Isolate {
   // Returns the PerIsolateThreadData for the current thread (or NULL if one is
   // not currently set).
   static PerIsolateThreadData* CurrentPerIsolateThreadData() {
+    EnsureInitialized();
     return reinterpret_cast<PerIsolateThreadData*>(
         base::Thread::GetThreadLocal(per_isolate_thread_data_key_));
   }
 
   // Returns the isolate inside which the current thread is running.
   INLINE(static Isolate* Current()) {
+    EnsureInitialized();
     Isolate* isolate = reinterpret_cast<Isolate*>(
         base::Thread::GetExistingThreadLocal(isolate_key_));
     ASSERT(isolate != NULL);
@@ -470,6 +477,14 @@ class Isolate {
   }
 
   INLINE(static Isolate* UncheckedCurrent()) {
+    EnsureInitialized();
+    return reinterpret_cast<Isolate*>(
+        base::Thread::GetThreadLocal(isolate_key_));
+  }
+
+  // Like UncheckedCurrent, but skips the check that |isolate_key_| was
+  // initialized. Callers have to ensure that themselves.
+  INLINE(static Isolate* UnsafeCurrent()) {
     return reinterpret_cast<Isolate*>(
         base::Thread::GetThreadLocal(isolate_key_));
   }
@@ -495,13 +510,6 @@ class Isolate {
 
   static void GlobalTearDown();
 
-  static void SetCrashIfDefaultIsolateInitialized();
-  // Ensures that process-wide resources and the default isolate have been
-  // allocated. It is only necessary to call this method in rare cases, for
-  // example if you are using V8 from within the body of a static initializer.
-  // Safe to call multiple times.
-  static void EnsureDefaultIsolate();
-
   // Find the PerThread for this particular (isolate, thread) combination
   // If one does not yet exist, return null.
   PerIsolateThreadData* FindPerThreadDataForThisThread();
@@ -514,11 +522,13 @@ class Isolate {
   // Used internally for V8 threads that do not execute JavaScript but still
   // are part of the domain of an isolate (like the context switcher).
   static base::Thread::LocalStorageKey isolate_key() {
+    EnsureInitialized();
     return isolate_key_;
   }
 
   // Returns the key used to store process-wide thread IDs.
   static base::Thread::LocalStorageKey thread_id_key() {
+    EnsureInitialized();
     return thread_id_key_;
   }
 
@@ -1099,6 +1109,8 @@ class Isolate {
   void CountUsage(v8::Isolate::UseCounterFeature feature);
 
  private:
+  static void EnsureInitialized();
+
   Isolate();
 
   friend struct GlobalState;
@@ -1158,7 +1170,7 @@ class Isolate {
   };
 
   // This mutex protects highest_thread_id_ and thread_data_table_.
-  static base::Mutex process_wide_mutex_;
+  static base::LazyMutex process_wide_mutex_;
 
   static base::Thread::LocalStorageKey per_isolate_thread_data_key_;
   static base::Thread::LocalStorageKey isolate_key_;

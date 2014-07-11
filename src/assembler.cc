@@ -68,6 +68,8 @@
 #include "src/ppc/assembler-ppc-inl.h"  // NOLINT
 #elif V8_TARGET_ARCH_MIPS
 #include "src/mips/assembler-mips-inl.h"  // NOLINT
+#elif V8_TARGET_ARCH_MIPS64
+#include "src/mips64/assembler-mips64-inl.h"  // NOLINT
 #elif V8_TARGET_ARCH_X87
 #include "src/x87/assembler-x87-inl.h"  // NOLINT
 #else
@@ -88,6 +90,8 @@
 #include "src/ppc/regexp-macro-assembler-ppc.h"  // NOLINT
 #elif V8_TARGET_ARCH_MIPS
 #include "src/mips/regexp-macro-assembler-mips.h"  // NOLINT
+#elif V8_TARGET_ARCH_MIPS64
+#include "src/mips64/regexp-macro-assembler-mips64.h"  // NOLINT
 #elif V8_TARGET_ARCH_X87
 #include "src/x87/regexp-macro-assembler-x87.h"  // NOLINT
 #else  // Unknown architecture.
@@ -817,39 +821,36 @@ const char* RelocInfo::RelocModeName(RelocInfo::Mode rmode) {
 }
 
 
-void RelocInfo::Print(Isolate* isolate, FILE* out) {
-  PrintF(out, "%p  %s", pc_, RelocModeName(rmode_));
+void RelocInfo::Print(Isolate* isolate, OStream& os) {  // NOLINT
+  os << pc_ << "  " << RelocModeName(rmode_);
   if (IsComment(rmode_)) {
-    PrintF(out, "  (%s)", reinterpret_cast<char*>(data_));
+    os << "  (" << reinterpret_cast<char*>(data_) << ")";
   } else if (rmode_ == EMBEDDED_OBJECT) {
-    PrintF(out, "  (");
-    target_object()->ShortPrint(out);
-    PrintF(out, ")");
+    os << "  (" << Brief(target_object()) << ")";
   } else if (rmode_ == EXTERNAL_REFERENCE) {
     ExternalReferenceEncoder ref_encoder(isolate);
-    PrintF(out, " (%s)  (%p)",
-           ref_encoder.NameOfAddress(target_reference()),
-           target_reference());
+    os << " (" << ref_encoder.NameOfAddress(target_reference()) << ")  ("
+       << target_reference() << ")";
   } else if (IsCodeTarget(rmode_)) {
     Code* code = Code::GetCodeFromTargetAddress(target_address());
-    PrintF(out, " (%s)  (%p)", Code::Kind2String(code->kind()),
-           target_address());
+    os << " (" << Code::Kind2String(code->kind()) << ")  (" << target_address()
+       << ")";
     if (rmode_ == CODE_TARGET_WITH_ID) {
-      PrintF(out, " (id=%d)", static_cast<int>(data_));
+      os << " (id=" << static_cast<int>(data_) << ")";
     }
   } else if (IsPosition(rmode_)) {
-    PrintF(out, "  (%" V8_PTR_PREFIX "d)", data());
+    os << "  (" << data() << ")";
   } else if (IsRuntimeEntry(rmode_) &&
              isolate->deoptimizer_data() != NULL) {
     // Depotimization bailouts are stored as runtime entries.
     int id = Deoptimizer::GetDeoptimizationId(
         isolate, target_address(), Deoptimizer::EAGER);
     if (id != Deoptimizer::kNotDeoptimizationEntry) {
-      PrintF(out, "  (deoptimization bailout %d)", id);
+      os << "  (deoptimization bailout " << id << ")";
     }
   }
 
-  PrintF(out, "\n");
+  os << "\n";
 }
 #endif  // ENABLE_DISASSEMBLER
 
@@ -1361,6 +1362,8 @@ ExternalReference ExternalReference::re_check_stack_guard_state(
   function = FUNCTION_ADDR(RegExpMacroAssemblerPPC::CheckStackGuardState);
 #elif V8_TARGET_ARCH_MIPS
   function = FUNCTION_ADDR(RegExpMacroAssemblerMIPS::CheckStackGuardState);
+#elif V8_TARGET_ARCH_MIPS64
+  function = FUNCTION_ADDR(RegExpMacroAssemblerMIPS::CheckStackGuardState);
 #elif V8_TARGET_ARCH_X87
   function = FUNCTION_ADDR(RegExpMacroAssemblerX87::CheckStackGuardState);
 #else
@@ -1602,11 +1605,6 @@ void PositionsRecorder::RecordPosition(int pos) {
   ASSERT(pos != RelocInfo::kNoPosition);
   ASSERT(pos >= 0);
   state_.current_position = pos;
-#ifdef ENABLE_GDB_JIT_INTERFACE
-  if (gdbjit_lineinfo_ != NULL) {
-    gdbjit_lineinfo_->SetPosition(assembler_->pc_offset(), pos, false);
-  }
-#endif
   LOG_CODE_EVENT(assembler_->isolate(),
                  CodeLinePosInfoAddPositionEvent(jit_handler_data_,
                                                  assembler_->pc_offset(),
@@ -1618,11 +1616,6 @@ void PositionsRecorder::RecordStatementPosition(int pos) {
   ASSERT(pos != RelocInfo::kNoPosition);
   ASSERT(pos >= 0);
   state_.current_statement_position = pos;
-#ifdef ENABLE_GDB_JIT_INTERFACE
-  if (gdbjit_lineinfo_ != NULL) {
-    gdbjit_lineinfo_->SetPosition(assembler_->pc_offset(), pos, true);
-  }
-#endif
   LOG_CODE_EVENT(assembler_->isolate(),
                  CodeLinePosInfoAddStatementPositionEvent(
                      jit_handler_data_,

@@ -3,10 +3,12 @@
 // found in the LICENSE file.
 
 #include <algorithm>
+#include <cmath>
 
+#include "src/base/platform/platform.h"  // For isinf/isnan with MSVC
 #include "src/ostreams.h"
 
-#if V8_CC_MSVC
+#if V8_OS_WIN
 #define snprintf sprintf_s
 #endif
 
@@ -63,6 +65,8 @@ OStream& OStream::operator<<(unsigned long long x) {  // NOLINT(runtime/int)
 
 
 OStream& OStream::operator<<(double x) {
+  if (std::isinf(x)) return *this << (x < 0 ? "-inf" : "inf");
+  if (std::isnan(x)) return *this << "nan";
   return print("%g", x);
 }
 
@@ -158,4 +162,13 @@ OFStream& OFStream::flush() {
   return *this;
 }
 
+
+OStream& operator<<(OStream& os, const AsUC16& c) {
+  char buf[10];
+  const char* format = (0x20 <= c.value && c.value <= 0x7F)
+                           ? "%c"
+                           : (c.value <= 0xff) ? "\\x%02x" : "\\u%04x";
+  snprintf(buf, sizeof(buf), format, c.value);
+  return os << buf;
+}
 } }  // namespace v8::internal

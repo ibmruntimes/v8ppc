@@ -321,6 +321,8 @@ void OS::DebugBreak() {
   asm("brk 0");
 #elif V8_HOST_ARCH_MIPS
   asm("break");
+#elif V8_HOST_ARCH_MIPS64
+  asm("break");
 #elif V8_HOST_ARCH_PPC
   asm("twge 2,2");
   //  asm("nop");  // roohack - nothing for now;

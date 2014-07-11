@@ -116,7 +116,6 @@ void CodeStub::RecordCodeGeneration(Handle<Code> code) {
   OStringStream os;
   os << *this;
   PROFILE(isolate(), CodeCreateEvent(Logger::STUB_TAG, *code, os.c_str()));
-  GDBJIT(AddCode(GDBJITInterface::STUB, os.c_str(), *code));
   Counters* counters = isolate()->counters();
   counters->total_stubs_code_size()->Increment(code->instruction_size());
 }
@@ -189,10 +188,11 @@ Handle<Code> CodeStub::GetCode() {
 #ifdef ENABLE_DISASSEMBLER
     if (FLAG_print_code_stubs) {
       CodeTracer::Scope trace_scope(isolate()->GetCodeTracer());
-      OStringStream os;
-      os << *this;
-      new_object->Disassemble(os.c_str(), trace_scope.file());
-      PrintF(trace_scope.file(), "\n");
+      OFStream os(trace_scope.file());
+      OStringStream name;
+      name << *this;
+      new_object->Disassemble(name.c_str(), os);
+      os << "\n";
     }
 #endif
 
@@ -630,6 +630,27 @@ void KeyedStringLengthStub::InitializeInterfaceDescriptor(
   Register registers[] = { LoadIC::ReceiverRegister(),
                            LoadIC::NameRegister() };
   descriptor->Initialize(ARRAY_SIZE(registers), registers);
+}
+
+
+void KeyedStoreFastElementStub::InitializeInterfaceDescriptor(
+    CodeStubInterfaceDescriptor* descriptor) {
+  Register registers[] = { KeyedStoreIC::ReceiverRegister(),
+                           KeyedStoreIC::NameRegister(),
+                           KeyedStoreIC::ValueRegister() };
+  descriptor->Initialize(
+      ARRAY_SIZE(registers), registers,
+      FUNCTION_ADDR(KeyedStoreIC_MissFromStubFailure));
+}
+
+
+void StoreGlobalStub::InitializeInterfaceDescriptor(
+    CodeStubInterfaceDescriptor* descriptor) {
+  Register registers[] = { StoreIC::ReceiverRegister(),
+                           StoreIC::NameRegister(),
+                           StoreIC::ValueRegister() };
+  descriptor->Initialize(ARRAY_SIZE(registers), registers,
+                         FUNCTION_ADDR(StoreIC_MissFromStubFailure));
 }
 
 

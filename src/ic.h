@@ -170,11 +170,8 @@ class IC {
 
   bool is_target_set() { return target_set_; }
 
-#ifdef DEBUG
   char TransitionMarkFromState(IC::State state);
-
   void TraceIC(const char* type, Handle<Object> name);
-#endif
 
   MaybeHandle<Object> TypeError(const char* type,
                                 Handle<Object> object,
@@ -467,6 +464,7 @@ class LoadIC: public IC {
   }
 
   virtual Handle<Code> megamorphic_stub();
+  virtual Handle<Code> generic_stub() const;
 
   // Update the inline cache and the global stub cache based on the
   // lookup result.
@@ -585,6 +583,16 @@ class StoreIC: public IC {
   static const ExtraICState kStrictModeState =
       1 << StrictModeState::kShift;
 
+  enum RegisterInfo {
+    kReceiverIndex,
+    kNameIndex,
+    kValueIndex,
+    kRegisterArgumentCount
+  };
+  static const Register ReceiverRegister();
+  static const Register NameRegister();
+  static const Register ValueRegister();
+
   StoreIC(FrameDepth depth, Isolate* isolate)
       : IC(depth, isolate) {
     ASSERT(IsStoreStub());
@@ -692,6 +700,10 @@ class KeyedStoreIC: public StoreIC {
       ExtraICState extra_state) {
     return ExtraICStateKeyedAccessStoreMode::decode(extra_state);
   }
+
+  static const Register ReceiverRegister();
+  static const Register NameRegister();
+  static const Register ValueRegister();
 
   KeyedStoreIC(FrameDepth depth, Isolate* isolate)
       : StoreIC(depth, isolate) {

@@ -19,6 +19,7 @@
 #include "src/snapshot-source-sink.h"
 #include "src/stub-cache.h"
 #include "src/v8threads.h"
+#include "src/version.h"
 
 namespace v8 {
 namespace internal {
@@ -560,8 +561,8 @@ uint32_t ExternalReferenceEncoder::Encode(Address key) const {
 
 const char* ExternalReferenceEncoder::NameOfAddress(Address key) const {
   int index = IndexOf(key);
-  return index >= 0 ?
-      ExternalReferenceTable::instance(isolate_)->name(index) : NULL;
+  return index >= 0 ? ExternalReferenceTable::instance(isolate_)->name(index)
+                    : "<unknown>";
 }
 
 
@@ -897,12 +898,12 @@ void Deserializer::ReadChunk(Object** current,
   while (current < limit) {
     int data = source_->Get();
     switch (data) {
-#define CASE_STATEMENT(where, how, within, space_number)                       \
-      case where + how + within + space_number:                                \
-      ASSERT((where & ~kPointedToMask) == 0);                                  \
-      ASSERT((how & ~kHowToCodeMask) == 0);                                    \
-      ASSERT((within & ~kWhereToPointMask) == 0);                              \
-      ASSERT((space_number & ~kSpaceMask) == 0);
+#define CASE_STATEMENT(where, how, within, space_number) \
+  case where + how + within + space_number:              \
+    STATIC_ASSERT((where & ~kPointedToMask) == 0);       \
+    STATIC_ASSERT((how & ~kHowToCodeMask) == 0);         \
+    STATIC_ASSERT((within & ~kWhereToPointMask) == 0);   \
+    STATIC_ASSERT((space_number & ~kSpaceMask) == 0);
 
 #define CASE_BODY(where, how, within, space_number_if_any)                     \
       {                                                                        \
@@ -1124,8 +1125,8 @@ void Deserializer::ReadChunk(Object** current,
       // allocation point and write a pointer to it to the current object.
       ALL_SPACES(kBackref, kPlain, kStartOfObject)
       ALL_SPACES(kBackrefWithSkip, kPlain, kStartOfObject)
-#if defined(V8_TARGET_ARCH_MIPS) || defined(V8_TARGET_ARCH_PPC) || \
-    V8_OOL_CONSTANT_POOL
+#if defined(V8_TARGET_ARCH_MIPS) || defined(V8_TARGET_ARCH_MIPS64) || \
+    defined(V8_TARGET_ARCH_PPC) || V8_OOL_CONSTANT_POOL
       // Deserialize a new object from pointer found in code and write
       // a pointer to it to the current object. Required only for MIPS, PPC or
       // ARM with ool constant pool, and omitted on the other architectures
@@ -1343,8 +1344,8 @@ int Serializer::RootIndex(HeapObject* heap_object, HowToCode from) {
   for (int i = 0; i < root_index_wave_front_; i++) {
     Object* root = heap->roots_array_start()[i];
     if (!root->IsSmi() && root == heap_object) {
-#if defined(V8_TARGET_ARCH_MIPS) || defined(V8_TARGET_ARCH_PPC) || \
-    V8_OOL_CONSTANT_POOL
+#if defined(V8_TARGET_ARCH_MIPS) || defined(V8_TARGET_ARCH_MIPS64) || \
+    defined(V8_TARGET_ARCH_PPC) || V8_OOL_CONSTANT_POOL
       if (from == kFromCode) {
         // In order to avoid code bloat in the deserializer we don't have
         // support for the encoding that specifies a particular root should
@@ -1830,4 +1831,101 @@ void Serializer::InitializeCodeAddressMap() {
 }
 
 
+ScriptData* CodeSerializer::Serialize(Handle<SharedFunctionInfo> info) {
+  // Serialize code object.
+  List<byte> payload;
+  ListSnapshotSink list_sink(&payload);
+  CodeSerializer cs(info->GetIsolate(), &list_sink);
+  DisallowHeapAllocation no_gc;
+  Object** location = Handle<Object>::cast(info).location();
+  cs.VisitPointer(location);
+  cs.Pad();
+
+  SerializedCodeData data(&payload, &cs);
+  return data.GetScriptData();
+}
+
+
+void CodeSerializer::SerializeObject(Object* o, HowToCode how_to_code,
+                                     WhereToPoint where_to_point, int skip) {
+  CHECK(o->IsHeapObject());
+  HeapObject* heap_object = HeapObject::cast(o);
+
+  // The code-caches link to context-specific code objects, which
+  // the startup and context serializes cannot currently handle.
+  ASSERT(!heap_object->IsMap() ||
+         Map::cast(heap_object)->code_cache() ==
+             heap_object->GetHeap()->empty_fixed_array());
+
+  int root_index;
+  if ((root_index = RootIndex(heap_object, how_to_code)) != kInvalidRootIndex) {
+    PutRoot(root_index, heap_object, how_to_code, where_to_point, skip);
+    return;
+  }
+
+  // TODO(yangguo) wire up builtins.
+  // TODO(yangguo) wire up stubs from stub cache.
+  // TODO(yangguo) wire up script source.
+  // TODO(yangguo) wire up internalized strings
+  ASSERT(!heap_object->IsInternalizedString());
+  // TODO(yangguo) We cannot deal with different hash seeds yet.
+  ASSERT(!heap_object->IsHashTable());
+
+  if (address_mapper_.IsMapped(heap_object)) {
+    int space = SpaceOfObject(heap_object);
+    int address = address_mapper_.MappedTo(heap_object);
+    SerializeReferenceToPreviousObject(space, address, how_to_code,
+                                       where_to_point, skip);
+    return;
+  }
+
+  if (skip != 0) {
+    sink_->Put(kSkip, "SkipFromSerializeObject");
+    sink_->PutInt(skip, "SkipDistanceFromSerializeObject");
+  }
+  // Object has not yet been serialized.  Serialize it here.
+  ObjectSerializer serializer(this, heap_object, sink_, how_to_code,
+                              where_to_point);
+  serializer.Serialize();
+}
+
+
+Object* CodeSerializer::Deserialize(Isolate* isolate, ScriptData* data) {
+  SerializedCodeData scd(data);
+  SnapshotByteSource payload(scd.Payload(), scd.PayloadLength());
+  Deserializer deserializer(&payload);
+  STATIC_ASSERT(NEW_SPACE == 0);
+  // TODO(yangguo) what happens if remaining new space is too small?
+  for (int i = NEW_SPACE; i <= PROPERTY_CELL_SPACE; i++) {
+    deserializer.set_reservation(i, scd.GetReservation(i));
+  }
+  Object* root;
+  deserializer.DeserializePartial(isolate, &root);
+  deserializer.FlushICacheForNewCodeObjects();
+  ASSERT(root->IsSharedFunctionInfo());
+  return root;
+}
+
+
+SerializedCodeData::SerializedCodeData(List<byte>* payload, CodeSerializer* cs)
+    : owns_script_data_(true) {
+  int data_length = payload->length() + kHeaderEntries * kIntSize;
+  byte* data = NewArray<byte>(data_length);
+  ASSERT(IsAligned(reinterpret_cast<intptr_t>(data), kPointerAlignment));
+  CopyBytes(data + kHeaderEntries * kIntSize, payload->begin(),
+            static_cast<size_t>(payload->length()));
+  script_data_ = new ScriptData(data, data_length);
+  script_data_->AcquireDataOwnership();
+  SetHeaderValue(kVersionHashOffset, Version::Hash());
+  STATIC_ASSERT(NEW_SPACE == 0);
+  for (int i = NEW_SPACE; i <= PROPERTY_CELL_SPACE; i++) {
+    SetHeaderValue(kReservationsOffset + i, cs->CurrentAllocationAddress(i));
+  }
+}
+
+
+bool SerializedCodeData::IsSane() {
+  return GetHeaderValue(kVersionHashOffset) == Version::Hash() &&
+         PayloadLength() >= SharedFunctionInfo::kSize;
+}
 } }  // namespace v8::internal

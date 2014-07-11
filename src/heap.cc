@@ -43,6 +43,10 @@
 #include "src/regexp-macro-assembler.h"  // NOLINT
 #include "src/mips/regexp-macro-assembler-mips.h"  // NOLINT
 #endif
+#if V8_TARGET_ARCH_MIPS64 && !V8_INTERPRETED_REGEXP
+#include "src/regexp-macro-assembler.h"
+#include "src/mips64/regexp-macro-assembler-mips64.h"
+#endif
 #include "src/full-codegen.h"
 
 namespace v8 {
@@ -3575,65 +3579,6 @@ AllocationResult Heap::Allocate(Map* map, AllocationSpace space,
 }
 
 
-#if defined(__GNUC__) && (__GNUC__ == 4) && (__GNUC_MINOR__ <= 4)
-// Work around bad optimization by GCC 4.4.6 on PPC Linux
-#pragma GCC optimize "O0"
-#endif
-AllocationResult Heap::AllocateArgumentsObject(Object* callee, int length) {
-  // To get fast allocation and map sharing for arguments objects we
-  // allocate them based on an arguments boilerplate.
-
-  JSObject* boilerplate;
-  int arguments_object_size;
-  bool strict_mode_callee = callee->IsJSFunction() &&
-      JSFunction::cast(callee)->shared()->strict_mode() == STRICT;
-  if (strict_mode_callee) {
-    boilerplate =
-        isolate()->context()->native_context()->strict_arguments_boilerplate();
-    arguments_object_size = kStrictArgumentsObjectSize;
-  } else {
-    boilerplate =
-        isolate()->context()->native_context()->sloppy_arguments_boilerplate();
-    arguments_object_size = kSloppyArgumentsObjectSize;
-  }
-
-  // Check that the size of the boilerplate matches our
-  // expectations. The ArgumentsAccessStub::GenerateNewObject relies
-  // on the size being a known constant.
-  ASSERT(arguments_object_size == boilerplate->map()->instance_size());
-
-  // Do the allocation.
-  HeapObject* result;
-  { AllocationResult allocation =
-        AllocateRaw(arguments_object_size, NEW_SPACE, OLD_POINTER_SPACE);
-    if (!allocation.To(&result)) return allocation;
-  }
-
-  // Copy the content. The arguments boilerplate doesn't have any
-  // fields that point to new space so it's safe to skip the write
-  // barrier here.
-  CopyBlock(result->address(), boilerplate->address(), JSObject::kHeaderSize);
-
-  // Set the length property.
-  JSObject* js_obj = JSObject::cast(result);
-  js_obj->InObjectPropertyAtPut(
-      kArgumentsLengthIndex, Smi::FromInt(length), SKIP_WRITE_BARRIER);
-  // Set the callee property for sloppy mode arguments object only.
-  if (!strict_mode_callee) {
-    js_obj->InObjectPropertyAtPut(kArgumentsCalleeIndex, callee);
-  }
-
-  // Check the state of the object
-  ASSERT(js_obj->HasFastProperties());
-  ASSERT(js_obj->HasFastObjectElements());
-
-  return js_obj;
-}
-#if defined(__GNUC__) && (__GNUC__ == 4) && (__GNUC_MINOR__ <= 4)
-#pragma GCC reset_options
-#endif
-
-
 void Heap::InitializeJSObjectFromMap(JSObject* obj,
                                      FixedArray* properties,
                                      Map* map) {
@@ -5966,17 +5911,17 @@ void PathTracer::UnmarkRecursively(Object** p, UnmarkVisitor* unmark_visitor) {
 
 void PathTracer::ProcessResults() {
   if (found_target_) {
-    PrintF("=====================================\n");
-    PrintF("====        Path to object       ====\n");
-    PrintF("=====================================\n\n");
+    OFStream os(stdout);
+    os << "=====================================\n"
+       << "====        Path to object       ====\n"
+       << "=====================================\n\n";
 
     ASSERT(!object_stack_.is_empty());
     for (int i = 0; i < object_stack_.length(); i++) {
-      if (i > 0) PrintF("\n     |\n     |\n     V\n\n");
-      Object* obj = object_stack_[i];
-      obj->Print();
+      if (i > 0) os << "\n     |\n     |\n     V\n\n";
+      object_stack_[i]->Print(os);
     }
-    PrintF("=====================================\n");
+    os << "=====================================\n";
   }
 }
 

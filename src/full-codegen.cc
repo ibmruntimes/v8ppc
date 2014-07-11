@@ -301,9 +301,8 @@ bool FullCodeGenerator::MakeCode(CompilationInfo* info) {
   CodeGenerator::MakeCodePrologue(info, "full");
   const int kInitialBufferSize = 4 * KB;
   MacroAssembler masm(info->isolate(), NULL, kInitialBufferSize);
-#ifdef ENABLE_GDB_JIT_INTERFACE
-  masm.positions_recorder()->StartGDBJITLineInfoRecording();
-#endif
+  if (info->will_serialize()) masm.enable_serializer();
+
   LOG_CODE_EVENT(isolate,
                  CodeStartLinePosInfoRecordEvent(masm.positions_recorder()));
 
@@ -330,13 +329,6 @@ bool FullCodeGenerator::MakeCode(CompilationInfo* info) {
   code->set_back_edge_table_offset(table_offset);
   CodeGenerator::PrintCode(code, info);
   info->SetCode(code);
-#ifdef ENABLE_GDB_JIT_INTERFACE
-  if (FLAG_gdbjit) {
-    GDBJITLineInfo* lineinfo =
-        masm.positions_recorder()->DetachGDBJITLineInfo();
-    GDBJIT(RegisterDetailedLineInfo(*code, lineinfo));
-  }
-#endif
   void* line_info = masm.positions_recorder()->DetachJITHandlerData();
   LOG_CODE_EVENT(isolate, CodeEndLinePosInfoRecordEvent(*code, line_info));
   return true;
