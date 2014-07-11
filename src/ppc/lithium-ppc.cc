@@ -320,8 +320,9 @@ void LAccessArgumentsAt::PrintDataTo(StringStream* stream) {
 
 void LStoreNamedField::PrintDataTo(StringStream* stream) {
   object()->PrintTo(stream);
-  hydrogen()->access().PrintTo(stream);
-  stream->Add(" <- ");
+  OStringStream os;
+  os << hydrogen()->access() << " <- ";
+  stream->Add(os.c_str());
   value()->PrintTo(stream);
 }
 
@@ -2247,9 +2248,9 @@ LInstruction* LChunkBuilder::DoStoreKeyed(HStoreKeyed* instr) {
 
 LInstruction* LChunkBuilder::DoStoreKeyedGeneric(HStoreKeyedGeneric* instr) {
   LOperand* context = UseFixed(instr->context(), cp);
-  LOperand* obj = UseFixed(instr->object(), r5);
-  LOperand* key = UseFixed(instr->key(), r4);
-  LOperand* val = UseFixed(instr->value(), r3);
+  LOperand* obj = UseFixed(instr->object(), KeyedStoreIC::ReceiverRegister());
+  LOperand* key = UseFixed(instr->key(), KeyedStoreIC::NameRegister());
+  LOperand* val = UseFixed(instr->value(), KeyedStoreIC::ValueRegister());
 
   ASSERT(instr->object()->representation().IsTagged());
   ASSERT(instr->key()->representation().IsTagged());
@@ -2323,8 +2324,8 @@ LInstruction* LChunkBuilder::DoStoreNamedField(HStoreNamedField* instr) {
 
 LInstruction* LChunkBuilder::DoStoreNamedGeneric(HStoreNamedGeneric* instr) {
   LOperand* context = UseFixed(instr->context(), cp);
-  LOperand* obj = UseFixed(instr->object(), r4);
-  LOperand* val = UseFixed(instr->value(), r3);
+  LOperand* obj = UseFixed(instr->object(), StoreIC::ReceiverRegister());
+  LOperand* val = UseFixed(instr->value(), StoreIC::ValueRegister());
 
   LInstruction* result = new(zone()) LStoreNamedGeneric(context, obj, val);
   return MarkAsCall(result, instr);

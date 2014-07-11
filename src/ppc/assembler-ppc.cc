@@ -1584,10 +1584,6 @@ void Assembler::mov(Register dst, const Operand& src) {
 #if V8_OOL_CONSTANT_POOL
   if (use_constant_pool_for_mov(src, &canOptimize)) {
     ASSERT(is_constant_pool_available());
-#if V8_TARGET_ARCH_PPC64
-    // We don't support 32-bit entries at this time
-    ASSERT(src.rmode_ != RelocInfo::NONE32);
-#endif
     ConstantPoolArray::LayoutSection section = ConstantPoolAddEntry(rinfo);
     if (section == ConstantPoolArray::EXTENDED_SECTION) {
       BlockTrampolinePoolScope block_trampoline_pool(this);
@@ -2360,9 +2356,8 @@ bool ConstantPoolBuilder::IsEmpty() {
 ConstantPoolArray::Type ConstantPoolBuilder::GetConstantPoolType(
     RelocInfo::Mode rmode) {
 #if V8_TARGET_ARCH_PPC64
-  if (rmode == RelocInfo::NONE32) {
-    return ConstantPoolArray::INT32;
-  } else if (!RelocInfo::IsGCRelocMode(rmode)) {
+  // We don't support 32-bit entries at this time.
+  if (!RelocInfo::IsGCRelocMode(rmode)) {
     return ConstantPoolArray::INT64;
 #else
   if (rmode == RelocInfo::NONE64) {
@@ -2386,7 +2381,6 @@ ConstantPoolArray::LayoutSection ConstantPoolBuilder::AddEntry(
          rmode != RelocInfo::POSITION &&
          rmode != RelocInfo::STATEMENT_POSITION &&
          rmode != RelocInfo::CONST_POOL);
-
 
   // Try to merge entries which won't be patched.
   int merged_index = -1;
@@ -2456,8 +2450,22 @@ void ConstantPoolBuilder::Populate(Assembler* assm,
         constant_pool, ConstantPoolArray::EXTENDED_SECTION)));
   }
 
-  ConstantPoolArray::NumberOfEntries small_idx;
-  ConstantPoolArray::NumberOfEntries extended_idx;
+  // Set up initial offsets.
+  int offsets[ConstantPoolArray::NUMBER_OF_LAYOUT_SECTIONS]
+             [ConstantPoolArray::NUMBER_OF_TYPES];
+  for (int section = 0; section <= constant_pool->final_section(); section++) {
+    int section_start = (section == ConstantPoolArray::EXTENDED_SECTION)
+                            ? small_entries()->total_count()
+                            : 0;
+    for (int i = 0; i < ConstantPoolArray::NUMBER_OF_TYPES; i++) {
+      ConstantPoolArray::Type type = static_cast<ConstantPoolArray::Type>(i);
+      if (number_of_entries_[section].count_of(type) != 0) {
+        offsets[section][type] = constant_pool->OffsetOfElementAt(
+            number_of_entries_[section].base_of(type) + section_start);
+      }
+    }
+  }
+
   for (std::vector<ConstantPoolEntry>::iterator entry = entries_.begin();
        entry != entries_.end(); entry++) {
     RelocInfo rinfo = entry->rinfo_;
@@ -2467,27 +2475,26 @@ void ConstantPoolBuilder::Populate(Assembler* assm,
     // Update constant pool if necessary and get the entry's offset.
     int offset;
     if (entry->merged_index_ == -1) {
-      int index;
-      if (entry->section_ == ConstantPoolArray::EXTENDED_SECTION) {
-        index = small_entries()->total_count() +
-                extended_entries()->base_of(type) + extended_idx.count_of(type);
-        extended_idx.increment(type);
-      } else {
-        ASSERT(entry->section_ == ConstantPoolArray::SMALL_SECTION);
-        index = small_entries()->base_of(type) + small_idx.count_of(type);
-        small_idx.increment(type);
-      }
+      offset = offsets[entry->section_][type];
+      offsets[entry->section_][type] += ConstantPoolArray::entry_size(type);
       if (type == ConstantPoolArray::INT64) {
-        constant_pool->set(index, rinfo.data64());
+#if V8_TARGET_ARCH_PPC64
+        constant_pool->set_at_offset(offset, rinfo.data());
+#else
+        constant_pool->set_at_offset(offset, rinfo.data64());
       } else if (type == ConstantPoolArray::INT32) {
-        constant_pool->set(index, static_cast<int32_t>(rinfo.data()));
+        constant_pool->set_at_offset(offset,
+                                     static_cast<int32_t>(rinfo.data()));
+#endif
       } else if (type == ConstantPoolArray::CODE_PTR) {
-        constant_pool->set(index, reinterpret_cast<Address>(rinfo.data()));
+        constant_pool->set_at_offset(offset,
+                                     reinterpret_cast<Address>(rinfo.data()));
       } else {
         ASSERT(type == ConstantPoolArray::HEAP_PTR);
-        constant_pool->set(index, reinterpret_cast<Object*>(rinfo.data()));
+        constant_pool->set_at_offset(offset,
+                                     reinterpret_cast<Object*>(rinfo.data()));
       }
-      offset = constant_pool->OffsetOfElementAt(index) - kHeapObjectTag;
+      offset -= kHeapObjectTag;
       entry->merged_index_ = offset;  // Stash offset for merged entries.
     } else {
       ASSERT(entry->merged_index_ < (entry - entries_.begin()));
@@ -2497,9 +2504,6 @@ void ConstantPoolBuilder::Populate(Assembler* assm,
     // Patch load instruction with correct offset.
     Assembler::SetConstantPoolOffset(rinfo.pc(), offset);
   }
-
-  ASSERT(small_idx.equals(*small_entries()));
-  ASSERT(extended_idx.equals(*extended_entries()));
 }
 #endif
 

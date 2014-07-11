@@ -509,31 +509,32 @@ void KeyedLoadIC::GenerateSloppyArguments(MacroAssembler* masm) {
 
 
 void KeyedStoreIC::GenerateSloppyArguments(MacroAssembler* masm) {
-  // ---------- S t a t e --------------
-  //  -- r3     : value
-  //  -- r4     : key
-  //  -- r5     : receiver
-  //  -- lr     : return address
-  // -----------------------------------
+  Register receiver = ReceiverRegister();
+  Register key = NameRegister();
+  Register value = ValueRegister();
+  ASSERT(receiver.is(r5));
+  ASSERT(key.is(r4));
+  ASSERT(value.is(r3));
+
   Label slow, notin;
-  MemOperand mapped_location =
-      GenerateMappedArgumentsLookup(masm, r5, r4, r6, r7, r8, &notin, &slow);
+  MemOperand mapped_location = GenerateMappedArgumentsLookup(
+      masm, receiver, key, r6, r7, r8, &notin, &slow);
   Register mapped_base = mapped_location.ra();
   Register mapped_offset = mapped_location.rb();
-  __ StorePX(r3, mapped_location);
+  __ StorePX(value, mapped_location);
   __ add(r9, mapped_base, mapped_offset);
-  __ mr(r11, r3);
+  __ mr(r11, value);
   __ RecordWrite(mapped_base, r9, r11, kLRHasNotBeenSaved, kDontSaveFPRegs);
   __ Ret();
   __ bind(&notin);
   // The unmapped lookup expects that the parameter map is in r6.
   MemOperand unmapped_location =
-      GenerateUnmappedArgumentsLookup(masm, r4, r6, r7, &slow);
+      GenerateUnmappedArgumentsLookup(masm, key, r6, r7, &slow);
   Register unmapped_base = unmapped_location.ra();
   Register unmapped_offset = unmapped_location.rb();
-  __ StorePX(r3, unmapped_location);
+  __ StorePX(value, unmapped_location);
   __ add(r9, unmapped_base, unmapped_offset);
-  __ mr(r11, r3);
+  __ mr(r11, value);
   __ RecordWrite(unmapped_base, r9, r11, kLRHasNotBeenSaved, kDontSaveFPRegs);
   __ Ret();
   __ bind(&slow);
@@ -560,6 +561,16 @@ void KeyedLoadIC::GenerateMiss(MacroAssembler* masm) {
 // IC register specifications
 const Register LoadIC::ReceiverRegister() { return r4; }
 const Register LoadIC::NameRegister() { return r5; }
+
+
+const Register StoreIC::ReceiverRegister() { return r4; }
+const Register StoreIC::NameRegister() { return r5; }
+const Register StoreIC::ValueRegister() { return r3; }
+
+
+const Register KeyedStoreIC::ReceiverRegister() { return r5; }
+const Register KeyedStoreIC::NameRegister() { return r4; }
+const Register KeyedStoreIC::ValueRegister() { return r3; }
 
 
 void KeyedLoadIC::GenerateRuntimeGetProperty(MacroAssembler* masm) {
@@ -820,15 +831,8 @@ void KeyedLoadIC::GenerateIndexedInterceptor(MacroAssembler* masm) {
 
 
 void KeyedStoreIC::GenerateMiss(MacroAssembler* masm) {
-  // ---------- S t a t e --------------
-  //  -- r3     : value
-  //  -- r4     : key
-  //  -- r5     : receiver
-  //  -- lr     : return address
-  // -----------------------------------
-
   // Push receiver, key and value for runtime call.
-  __ Push(r5, r4, r3);
+  __ Push(ReceiverRegister(), NameRegister(), ValueRegister());
 
   ExternalReference ref =
       ExternalReference(IC_Utility(kKeyedStoreIC_Miss), masm->isolate());
@@ -837,15 +841,8 @@ void KeyedStoreIC::GenerateMiss(MacroAssembler* masm) {
 
 
 void StoreIC::GenerateSlow(MacroAssembler* masm) {
-  // ---------- S t a t e --------------
-  //  -- r3     : value
-  //  -- r5     : key
-  //  -- r4     : receiver
-  //  -- lr     : return address
-  // -----------------------------------
-
   // Push receiver, key and value for runtime call.
-  __ Push(r4, r5, r3);
+  __ Push(ReceiverRegister(), NameRegister(), ValueRegister());
 
   // The slow case calls into the runtime to complete the store without causing
   // an IC miss that would otherwise cause a transition to the generic stub.
@@ -856,15 +853,8 @@ void StoreIC::GenerateSlow(MacroAssembler* masm) {
 
 
 void KeyedStoreIC::GenerateSlow(MacroAssembler* masm) {
-  // ---------- S t a t e --------------
-  //  -- r3     : receiver
-  //  -- r4     : target map
-  //  -- r5     : receiver
-  //  -- lr     : return address
-  // -----------------------------------
-
   // Push receiver, key and value for runtime call.
-  __ Push(r5, r4, r3);
+  __ Push(ReceiverRegister(), NameRegister(), ValueRegister());
 
   // The slow case calls into the runtime to complete the store without causing
   // an IC miss that would otherwise cause a transition to the generic stub.
@@ -876,15 +866,8 @@ void KeyedStoreIC::GenerateSlow(MacroAssembler* masm) {
 
 void KeyedStoreIC::GenerateRuntimeSetProperty(MacroAssembler* masm,
                                               StrictMode strict_mode) {
-  // ---------- S t a t e --------------
-  //  -- r3     : value
-  //  -- r4     : key
-  //  -- r5     : receiver
-  //  -- lr     : return address
-  // -----------------------------------
-
   // Push receiver, key and value for runtime call.
-  __ Push(r5, r4, r3);
+  __ Push(ReceiverRegister(), NameRegister(), ValueRegister());
 
   __ LoadSmiLiteral(r3, Smi::FromInt(strict_mode));   // Strict mode.
   __ Push(r3);
@@ -1076,9 +1059,12 @@ void KeyedStoreIC::GenerateGeneric(MacroAssembler* masm,
   Label array, extra, check_if_double_array;
 
   // Register usage.
-  Register value = r3;
-  Register key = r4;
-  Register receiver = r5;
+  Register value = ValueRegister();
+  Register key = NameRegister();
+  Register receiver = ReceiverRegister();
+  ASSERT(receiver.is(r5));
+  ASSERT(key.is(r4));
+  ASSERT(value.is(r3));
   Register receiver_map = r6;
   Register elements_map = r9;
   Register elements = r10;  // Elements array of the receiver.
@@ -1165,18 +1151,17 @@ void KeyedStoreIC::GenerateGeneric(MacroAssembler* masm,
 
 
 void StoreIC::GenerateMegamorphic(MacroAssembler* masm) {
-  // ----------- S t a t e -------------
-  //  -- r3    : value
-  //  -- r4    : receiver
-  //  -- r5    : name
-  //  -- lr    : return address
-  // -----------------------------------
+  Register receiver = ReceiverRegister();
+  Register name = NameRegister();
+  ASSERT(receiver.is(r4));
+  ASSERT(name.is(r5));
+  ASSERT(ValueRegister().is(r3));
 
   // Get the receiver from the stack and probe the stub cache.
   Code::Flags flags = Code::ComputeHandlerFlags(Code::STORE_IC);
 
   masm->isolate()->stub_cache()->GenerateProbe(
-      masm, flags, r4, r5, r6, r7, r8, r9);
+      masm, flags, receiver, name, r6, r7, r8, r9);
 
   // Cache miss: Jump to runtime.
   GenerateMiss(masm);
@@ -1184,14 +1169,7 @@ void StoreIC::GenerateMegamorphic(MacroAssembler* masm) {
 
 
 void StoreIC::GenerateMiss(MacroAssembler* masm) {
-  // ----------- S t a t e -------------
-  //  -- r3    : value
-  //  -- r4    : receiver
-  //  -- r5    : name
-  //  -- lr    : return address
-  // -----------------------------------
-
-  __ Push(r4, r5, r3);
+  __ Push(ReceiverRegister(), NameRegister(), ValueRegister());
 
   // Perform tail call to the entry.
   ExternalReference ref =
@@ -1201,17 +1179,17 @@ void StoreIC::GenerateMiss(MacroAssembler* masm) {
 
 
 void StoreIC::GenerateNormal(MacroAssembler* masm) {
-  // ----------- S t a t e -------------
-  //  -- r3    : value
-  //  -- r4    : receiver
-  //  -- r5    : name
-  //  -- lr    : return address
-  // -----------------------------------
   Label miss;
+  Register receiver = ReceiverRegister();
+  Register name = NameRegister();
+  Register value = ValueRegister();
+  ASSERT(receiver.is(r4));
+  ASSERT(name.is(r5));
+  ASSERT(value.is(r3));
 
-  GenerateNameDictionaryReceiverCheck(masm, r4, r6, r7, r8, &miss);
+  GenerateNameDictionaryReceiverCheck(masm, receiver, r6, r7, r8, &miss);
 
-  GenerateDictionaryStore(masm, &miss, r6, r5, r3, r7, r8);
+  GenerateDictionaryStore(masm, &miss, r6, name, value, r7, r8);
   Counters* counters = masm->isolate()->counters();
   __ IncrementCounter(counters->store_normal_hit(), 1, r7, r8);
   __ Ret();
@@ -1224,14 +1202,7 @@ void StoreIC::GenerateNormal(MacroAssembler* masm) {
 
 void StoreIC::GenerateRuntimeSetProperty(MacroAssembler* masm,
                                          StrictMode strict_mode) {
-  // ----------- S t a t e -------------
-  //  -- r3    : value
-  //  -- r4    : receiver
-  //  -- r5    : name
-  //  -- lr    : return address
-  // -----------------------------------
-
-  __ Push(r4, r5, r3);
+  __ Push(ReceiverRegister(), NameRegister(), ValueRegister());
 
   __ LoadSmiLiteral(r3, Smi::FromInt(strict_mode));
   __ Push(r3);

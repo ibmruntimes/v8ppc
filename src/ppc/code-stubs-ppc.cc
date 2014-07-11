@@ -91,15 +91,6 @@ void RegExpConstructResultStub::InitializeInterfaceDescriptor(
 }
 
 
-void KeyedStoreFastElementStub::InitializeInterfaceDescriptor(
-    CodeStubInterfaceDescriptor* descriptor) {
-  Register registers[] = { r5, r4, r3 };
-  descriptor->Initialize(
-      ARRAY_SIZE(registers), registers,
-      FUNCTION_ADDR(KeyedStoreIC_MissFromStubFailure));
-}
-
-
 void TransitionElementsKindStub::InitializeInterfaceDescriptor(
     CodeStubInterfaceDescriptor* descriptor) {
   Register registers[] = { r3, r4 };
@@ -231,14 +222,6 @@ void InternalArraySingleArgumentConstructorStub::InitializeInterfaceDescriptor(
 void InternalArrayNArgumentsConstructorStub::InitializeInterfaceDescriptor(
     CodeStubInterfaceDescriptor* descriptor) {
   InitializeInternalArrayConstructorDescriptor(descriptor, -1);
-}
-
-
-void StoreGlobalStub::InitializeInterfaceDescriptor(
-    CodeStubInterfaceDescriptor* descriptor) {
-  Register registers[] = { r4, r5, r3 };
-  descriptor->Initialize(ARRAY_SIZE(registers), registers,
-                         FUNCTION_ADDR(StoreIC_MissFromStubFailure));
 }
 
 
@@ -2112,12 +2095,12 @@ void ArgumentsAccessStub::GenerateNewSloppyFast(MacroAssembler* masm) {
   __ Allocate(r11, r3, r6, r7, &runtime, TAG_OBJECT);
 
   // r3 = address of new object(s) (tagged)
-  // r5 = argument count (tagged)
+  // r5 = argument count (smi-tagged)
   // Get the arguments boilerplate from the current native context into r4.
   const int kNormalOffset =
-      Context::SlotOffset(Context::SLOPPY_ARGUMENTS_BOILERPLATE_INDEX);
+      Context::SlotOffset(Context::SLOPPY_ARGUMENTS_MAP_INDEX);
   const int kAliasedOffset =
-      Context::SlotOffset(Context::ALIASED_ARGUMENTS_BOILERPLATE_INDEX);
+      Context::SlotOffset(Context::ALIASED_ARGUMENTS_MAP_INDEX);
 
   __ LoadP(r7, MemOperand(cp,
              Context::SlotOffset(Context::GLOBAL_OBJECT_INDEX)));
@@ -2133,22 +2116,23 @@ void ArgumentsAccessStub::GenerateNewSloppyFast(MacroAssembler* masm) {
 
   // r3 = address of new object (tagged)
   // r4 = mapped parameter count (tagged)
-  // r5 = argument count (tagged)
-  // r7 = address of boilerplate object (tagged)
-  // Copy the JS object part.
-  for (int i = 0; i < JSObject::kHeaderSize; i += kPointerSize) {
-    __ LoadP(r6, FieldMemOperand(r7, i));
-    __ StoreP(r6, FieldMemOperand(r3, i), r0);
-  }
+  // r5 = argument count (smi-tagged)
+  // r7 = address of arguments map (tagged)
+  __ StoreP(r7, FieldMemOperand(r3, JSObject::kMapOffset), r0);
+  __ LoadRoot(r6, Heap::kEmptyFixedArrayRootIndex);
+  __ StoreP(r6, FieldMemOperand(r3, JSObject::kPropertiesOffset), r0);
+  __ StoreP(r6, FieldMemOperand(r3, JSObject::kElementsOffset), r0);
 
   // Set up the callee in-object property.
   STATIC_ASSERT(Heap::kArgumentsCalleeIndex == 1);
   __ LoadP(r6, MemOperand(sp, 2 * kPointerSize));
+  __ AssertNotSmi(r6);
   const int kCalleeOffset = JSObject::kHeaderSize +
       Heap::kArgumentsCalleeIndex * kPointerSize;
   __ StoreP(r6, FieldMemOperand(r3, kCalleeOffset), r0);
 
   // Use the length (smi tagged) and set that as an in-object property too.
+  __ AssertSmi(r5);
   STATIC_ASSERT(Heap::kArgumentsLengthIndex == 0);
   const int kLengthOffset = JSObject::kHeaderSize +
       Heap::kArgumentsLengthIndex * kPointerSize;
@@ -2311,14 +2295,17 @@ void ArgumentsAccessStub::GenerateNewStrict(MacroAssembler* masm) {
            MemOperand(cp, Context::SlotOffset(Context::GLOBAL_OBJECT_INDEX)));
   __ LoadP(r7, FieldMemOperand(r7, GlobalObject::kNativeContextOffset));
   __ LoadP(r7, MemOperand(r7, Context::SlotOffset(
-      Context::STRICT_ARGUMENTS_BOILERPLATE_INDEX)));
+         Context::STRICT_ARGUMENTS_MAP_INDEX)));
 
-  // Copy the JS object part.
-  __ CopyFields(r3, r7, r6.bit(), JSObject::kHeaderSize / kPointerSize);
+  __ StoreP(r7, FieldMemOperand(r3, JSObject::kMapOffset), r0);
+  __ LoadRoot(r6, Heap::kEmptyFixedArrayRootIndex);
+  __ StoreP(r6, FieldMemOperand(r3, JSObject::kPropertiesOffset), r0);
+  __ StoreP(r6, FieldMemOperand(r3, JSObject::kElementsOffset), r0);
 
   // Get the length (smi tagged) and set that as an in-object property too.
   STATIC_ASSERT(Heap::kArgumentsLengthIndex == 0);
   __ LoadP(r4, MemOperand(sp, 0 * kPointerSize));
+  __ AssertSmi(r4);
   __ StoreP(r4, FieldMemOperand(r3, JSObject::kHeaderSize +
                                 Heap::kArgumentsLengthIndex * kPointerSize),
             r0);
