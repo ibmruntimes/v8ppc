@@ -290,8 +290,7 @@ void BreakableStatementChecker::VisitThisFunction(ThisFunction* expr) {
 bool FullCodeGenerator::MakeCode(CompilationInfo* info) {
   Isolate* isolate = info->isolate();
 
-  Logger::TimerEventScope timer(
-      isolate, Logger::TimerEventScope::v8_compile_full_code);
+  TimerEventScope<TimerEventCompileFullCode> timer(info->isolate());
 
   Handle<Script> script = info->script();
   if (!script->IsUndefined() && !script->source()->IsUndefined()) {
@@ -1539,10 +1538,11 @@ void FullCodeGenerator::VisitNativeFunctionLiteral(
   Handle<Code> code = Handle<Code>(fun->shared()->code());
   Handle<Code> construct_stub = Handle<Code>(fun->shared()->construct_stub());
   bool is_generator = false;
+  bool is_arrow = false;
   Handle<SharedFunctionInfo> shared =
       isolate()->factory()->NewSharedFunctionInfo(
-          name, literals, is_generator,
-          code, Handle<ScopeInfo>(fun->shared()->scope_info()),
+          name, literals, is_generator, is_arrow, code,
+          Handle<ScopeInfo>(fun->shared()->scope_info()),
           Handle<FixedArray>(fun->shared()->feedback_vector()));
   shared->set_construct_stub(*construct_stub);
 

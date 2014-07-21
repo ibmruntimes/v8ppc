@@ -1296,8 +1296,7 @@ static String* TypeOfString(HConstant* constant, Isolate* isolate) {
         return heap->boolean_string();
       }
       if (unique.IsKnownGlobal(heap->null_value())) {
-        return FLAG_harmony_typeof ? heap->null_string()
-                                   : heap->object_string();
+        return heap->object_string();
       }
       ASSERT(unique.IsKnownGlobal(heap->undefined_value()));
       return heap->undefined_string();
@@ -4069,10 +4068,9 @@ HInstruction* HStringAdd::New(Zone* zone,
       Handle<String> right_string = c_right->StringValue();
       // Prevent possible exception by invalid string length.
       if (left_string->length() + right_string->length() < String::kMaxLength) {
-        Handle<String> concat = zone->isolate()->factory()->NewFlatConcatString(
+        MaybeHandle<String> concat = zone->isolate()->factory()->NewConsString(
             c_left->StringValue(), c_right->StringValue());
-        ASSERT(!concat.is_null());
-        return HConstant::New(zone, context, concat);
+        return HConstant::New(zone, context, concat.ToHandleChecked());
       }
     }
   }

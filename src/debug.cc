@@ -373,7 +373,7 @@ bool BreakLocationIterator::IsStepInLocation(Isolate* isolate) {
     Address target = original_rinfo()->target_address();
     Handle<Code> target_code(Code::GetCodeFromTargetAddress(target));
     if (target_code->kind() == Code::STUB) {
-      return target_code->major_key() == CodeStub::CallFunction;
+      return CodeStub::GetMajorKey(*target_code) == CodeStub::CallFunction;
     }
     return target_code->is_call_stub();
   }
@@ -398,7 +398,8 @@ void BreakLocationIterator::PrepareStepIn(Isolate* isolate) {
   }
   bool is_call_function_stub =
       (maybe_call_function_stub->kind() == Code::STUB &&
-       maybe_call_function_stub->major_key() == CodeStub::CallFunction);
+       CodeStub::GetMajorKey(*maybe_call_function_stub) ==
+           CodeStub::CallFunction);
 
   // Step in through construct call requires no changes to the running code.
   // Step in through getters/setters should already be prepared as well
@@ -475,7 +476,7 @@ static Handle<Code> DebugBreakForIC(Handle<Code> code, RelocInfo::Mode mode) {
     }
   }
   if (code->kind() == Code::STUB) {
-    ASSERT(code->major_key() == CodeStub::CallFunction);
+    ASSERT(CodeStub::GetMajorKey(*code) == CodeStub::CallFunction);
     return isolate->builtins()->CallFunctionStub_DebugBreak();
   }
 
@@ -738,12 +739,9 @@ bool Debug::CompileDebuggerScript(Isolate* isolate, int index) {
 
   // Compile the script.
   Handle<SharedFunctionInfo> function_info;
-  function_info = Compiler::CompileScript(source_code,
-                                          script_name, 0, 0,
-                                          false,
-                                          context,
-                                          NULL, NULL, NO_CACHED_DATA,
-                                          NATIVES_CODE);
+  function_info = Compiler::CompileScript(
+      source_code, script_name, 0, 0, false, context, NULL, NULL,
+      ScriptCompiler::kNoCompileOptions, NATIVES_CODE);
 
   // Silently ignore stack overflows during compilation.
   if (function_info.is_null()) {
@@ -826,9 +824,7 @@ bool Debug::Load() {
   Handle<JSBuiltinsObject> builtin =
       Handle<JSBuiltinsObject>(global->builtins(), isolate_);
   RETURN_ON_EXCEPTION_VALUE(
-      isolate_,
-      JSReceiver::SetProperty(global, key, builtin, NONE, SLOPPY),
-      false);
+      isolate_, JSReceiver::SetProperty(global, key, builtin, SLOPPY), false);
 
   // Compile the JavaScript for the debugger in the debugger context.
   bool caught_exception =
@@ -1424,7 +1420,8 @@ void Debug::PrepareStep(StepAction step_action,
             Code::GetCodeFromTargetAddress(original_target);
       }
       if ((maybe_call_function_stub->kind() == Code::STUB &&
-           maybe_call_function_stub->major_key() == CodeStub::CallFunction) ||
+           CodeStub::GetMajorKey(maybe_call_function_stub) ==
+               CodeStub::CallFunction) ||
           maybe_call_function_stub->kind() == Code::CALL_IC) {
         // Save reference to the code as we may need it to find out arguments
         // count for 'step in' later.
@@ -1504,7 +1501,8 @@ void Debug::PrepareStep(StepAction step_action,
               CodeStub::MinorKeyFromKey(key));
 
       ASSERT(is_call_ic ||
-             call_function_stub->major_key() == CodeStub::MajorKeyFromKey(key));
+             CodeStub::GetMajorKey(*call_function_stub) ==
+                 CodeStub::MajorKeyFromKey(key));
 
       // Find target function on the expression stack.
       // Expression stack looks like this (top to bottom):
@@ -1552,7 +1550,7 @@ void Debug::PrepareStep(StepAction step_action,
     if (is_load_or_store) {
       // Remember source position and frame to handle step in getter/setter. If
       // there is a custom getter/setter it will be handled in
-      // Object::Get/SetPropertyWithCallback, otherwise the step action will be
+      // Object::Get/SetPropertyWithAccessor, otherwise the step action will be
       // propagated on the next Debug::Break.
       thread_local_.last_statement_position_ =
           debug_info->code()->SourceStatementPosition(frame->pc());
@@ -2467,12 +2465,10 @@ void Debug::ClearMirrorCache() {
   JSObject::SetProperty(global,
       factory->NewStringFromAsciiChecked("next_handle_"),
       handle(Smi::FromInt(0), isolate_),
-      NONE,
       SLOPPY).Check();
   JSObject::SetProperty(global,
       factory->NewStringFromAsciiChecked("mirror_cache_"),
       factory->NewJSArray(0, FAST_ELEMENTS),
-      NONE,
       SLOPPY).Check();
 }
 

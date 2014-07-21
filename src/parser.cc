@@ -254,11 +254,11 @@ int ParseData::FunctionsSize() {
 
 
 void Parser::SetCachedData() {
-  if (cached_data_mode() == NO_CACHED_DATA) {
+  if (compile_options() == ScriptCompiler::kNoCompileOptions) {
     cached_parse_data_ = NULL;
   } else {
     ASSERT(info_->cached_data() != NULL);
-    if (cached_data_mode() == CONSUME_CACHED_DATA) {
+    if (compile_options() == ScriptCompiler::kConsumeParserCache) {
       cached_parse_data_ = new ParseData(*info_->cached_data());
     }
   }
@@ -615,9 +615,8 @@ const AstRawString* ParserTraits::GetNextSymbol(Scanner* scanner) {
 
 
 Expression* ParserTraits::ThisExpression(
-    Scope* scope,
-    AstNodeFactory<AstConstructionVisitor>* factory) {
-  return factory->NewVariableProxy(scope->receiver());
+    Scope* scope, AstNodeFactory<AstConstructionVisitor>* factory, int pos) {
+  return factory->NewVariableProxy(scope->receiver(), pos);
 }
 
 
@@ -718,6 +717,7 @@ Parser::Parser(CompilationInfo* info)
   set_allow_lazy(false);  // Must be explicitly enabled.
   set_allow_generators(FLAG_harmony_generators);
   set_allow_for_of(FLAG_harmony_iteration);
+  set_allow_arrow_functions(FLAG_harmony_arrow_functions);
   set_allow_harmony_numeric_literals(FLAG_harmony_numeric_literals);
   for (int feature = 0; feature < v8::Isolate::kUseCounterFeatureCount;
        ++feature) {
@@ -740,9 +740,10 @@ FunctionLiteral* Parser::ParseProgram() {
 
   // Initialize parser state.
   CompleteParserRecorder recorder;
-  if (cached_data_mode() == PRODUCE_CACHED_DATA) {
+
+  if (compile_options() == ScriptCompiler::kProduceParserCache) {
     log_ = &recorder;
-  } else if (cached_data_mode() == CONSUME_CACHED_DATA) {
+  } else if (compile_options() == ScriptCompiler::kConsumeParserCache) {
     cached_parse_data_->Initialize();
   }
 
@@ -775,7 +776,7 @@ FunctionLiteral* Parser::ParseProgram() {
     }
     PrintF(" - took %0.3f ms]\n", ms);
   }
-  if (cached_data_mode() == PRODUCE_CACHED_DATA) {
+  if (compile_options() == ScriptCompiler::kProduceParserCache) {
     if (result != NULL) *info_->cached_data() = recorder.GetScriptData();
     log_ = NULL;
   }
@@ -852,19 +853,13 @@ FunctionLiteral* Parser::DoParseProgram(CompilationInfo* info,
     ast_value_factory_->Internalize(isolate());
     if (ok) {
       result = factory()->NewFunctionLiteral(
-          ast_value_factory_->empty_string(),
-          ast_value_factory_,
-          scope_,
-          body,
+          ast_value_factory_->empty_string(), ast_value_factory_, scope_, body,
           function_state.materialized_literal_count(),
           function_state.expected_property_count(),
-          function_state.handler_count(),
-          0,
+          function_state.handler_count(), 0,
           FunctionLiteral::kNoDuplicateParameters,
-          FunctionLiteral::ANONYMOUS_EXPRESSION,
-          FunctionLiteral::kGlobalOrEval,
-          FunctionLiteral::kNotParenthesized,
-          FunctionLiteral::kNotGenerator,
+          FunctionLiteral::ANONYMOUS_EXPRESSION, FunctionLiteral::kGlobalOrEval,
+          FunctionLiteral::kNotParenthesized, FunctionLiteral::kNormalFunction,
           0);
       result->set_ast_properties(factory()->visitor()->ast_properties());
       result->set_dont_optimize_reason(
@@ -954,15 +949,21 @@ FunctionLiteral* Parser::ParseLazy(Utf16CharacterStream* source) {
               ? FunctionLiteral::ANONYMOUS_EXPRESSION
               : FunctionLiteral::NAMED_EXPRESSION)
         : FunctionLiteral::DECLARATION;
+    bool is_generator = shared_info->is_generator();
     bool ok = true;
-    result = ParseFunctionLiteral(raw_name,
-                                  Scanner::Location::invalid(),
-                                  false,  // Strict mode name already checked.
-                                  shared_info->is_generator(),
-                                  RelocInfo::kNoPosition,
-                                  function_type,
-                                  FunctionLiteral::NORMAL_ARITY,
-                                  &ok);
+
+    if (shared_info->is_arrow()) {
+      ASSERT(!is_generator);
+      Expression* expression = ParseExpression(false, &ok);
+      ASSERT(expression->IsFunctionLiteral());
+      result = expression->AsFunctionLiteral();
+    } else {
+      result = ParseFunctionLiteral(raw_name, Scanner::Location::invalid(),
+                                    false,  // Strict mode name already checked.
+                                    is_generator, RelocInfo::kNoPosition,
+                                    function_type,
+                                    FunctionLiteral::NORMAL_ARITY, &ok);
+    }
     // Make sure the results agree.
     ASSERT(ok == (result != NULL));
   }
@@ -1703,7 +1704,7 @@ void Parser::Declare(Declaration* declaration, bool resolve, bool* ok) {
   // same variable if it is declared several times. This is not a
   // semantic issue as long as we keep the source order, but it may be
   // a performance issue since it may lead to repeated
-  // RuntimeHidden_DeclareContextSlot calls.
+  // RuntimeHidden_DeclareLookupSlot calls.
   declaration_scope->AddDeclaration(declaration);
 
   if (mode == CONST_LEGACY && declaration_scope->is_global_scope()) {
@@ -1717,7 +1718,7 @@ void Parser::Declare(Declaration* declaration, bool resolve, bool* ok) {
              declaration_scope->strict_mode() == SLOPPY) {
     // For variable declarations in a sloppy eval scope the proxy is bound
     // to a lookup variable to force a dynamic declaration using the
-    // DeclareContextSlot runtime function.
+    // DeclareLookupSlot runtime function.
     Variable::Kind kind = Variable::NORMAL;
     var = new(zone()) Variable(
         declaration_scope, name, mode, true, kind,
@@ -2188,21 +2189,22 @@ Block* Parser::ParseVariableDeclarations(
         if (value != NULL && !inside_with()) {
           arguments->Add(value, zone());
           value = NULL;  // zap the value to avoid the unnecessary assignment
+          // Construct the call to Runtime_InitializeVarGlobal
+          // and add it to the initialization statement block.
+          initialize = factory()->NewCallRuntime(
+              ast_value_factory_->initialize_var_global_string(),
+              Runtime::FunctionForId(Runtime::kInitializeVarGlobal), arguments,
+              pos);
+        } else {
+          initialize = NULL;
         }
-
-        // Construct the call to Runtime_InitializeVarGlobal
-        // and add it to the initialization statement block.
-        // Note that the function does different things depending on
-        // the number of arguments (2 or 3).
-        initialize = factory()->NewCallRuntime(
-            ast_value_factory_->initialize_var_global_string(),
-            Runtime::FunctionForId(Runtime::kInitializeVarGlobal),
-            arguments, pos);
       }
 
-      block->AddStatement(
-          factory()->NewExpressionStatement(initialize, RelocInfo::kNoPosition),
-          zone());
+      if (initialize != NULL) {
+        block->AddStatement(factory()->NewExpressionStatement(
+                                initialize, RelocInfo::kNoPosition),
+                            zone());
+      }
     } else if (needs_init) {
       // Constant initializations always assign to the declared constant which
       // is always at the function scope level. This is only relevant for
@@ -3271,6 +3273,68 @@ Handle<FixedArray> CompileTimeValue::GetElements(Handle<FixedArray> value) {
 }
 
 
+bool CheckAndDeclareArrowParameter(ParserTraits* traits, Expression* expression,
+                                   Scope* scope, int* num_params,
+                                   Scanner::Location* dupe_loc) {
+  // Case for empty parameter lists:
+  //   () => ...
+  if (expression == NULL) return true;
+
+  // Too many parentheses around expression:
+  //   (( ... )) => ...
+  if (expression->parenthesization_level() > 1) return false;
+
+  // Case for a single parameter:
+  //   (foo) => ...
+  //   foo => ...
+  if (expression->IsVariableProxy()) {
+    if (expression->AsVariableProxy()->is_this()) return false;
+
+    const AstRawString* raw_name = expression->AsVariableProxy()->raw_name();
+    if (traits->IsEvalOrArguments(raw_name) ||
+        traits->IsFutureStrictReserved(raw_name))
+      return false;
+
+    if (scope->IsDeclared(raw_name)) {
+      *dupe_loc = Scanner::Location(
+          expression->position(), expression->position() + raw_name->length());
+      return false;
+    }
+
+    scope->DeclareParameter(raw_name, VAR);
+    ++(*num_params);
+    return true;
+  }
+
+  // Case for more than one parameter:
+  //   (foo, bar [, ...]) => ...
+  if (expression->IsBinaryOperation()) {
+    BinaryOperation* binop = expression->AsBinaryOperation();
+    if (binop->op() != Token::COMMA || binop->left()->is_parenthesized() ||
+        binop->right()->is_parenthesized())
+      return false;
+
+    return CheckAndDeclareArrowParameter(traits, binop->left(), scope,
+                                         num_params, dupe_loc) &&
+           CheckAndDeclareArrowParameter(traits, binop->right(), scope,
+                                         num_params, dupe_loc);
+  }
+
+  // Any other kind of expression is not a valid parameter list.
+  return false;
+}
+
+
+int ParserTraits::DeclareArrowParametersFromExpression(
+    Expression* expression, Scope* scope, Scanner::Location* dupe_loc,
+    bool* ok) {
+  int num_params = 0;
+  *ok = CheckAndDeclareArrowParameter(this, expression, scope, &num_params,
+                                      dupe_loc);
+  return num_params;
+}
+
+
 FunctionLiteral* Parser::ParseFunctionLiteral(
     const AstRawString* function_name,
     Scanner::Location function_name_location,
@@ -3512,24 +3576,14 @@ FunctionLiteral* Parser::ParseFunctionLiteral(
     }
   }
 
-  FunctionLiteral::IsGeneratorFlag generator = is_generator
-      ? FunctionLiteral::kIsGenerator
-      : FunctionLiteral::kNotGenerator;
-  FunctionLiteral* function_literal =
-      factory()->NewFunctionLiteral(function_name,
-                                    ast_value_factory_,
-                                    scope,
-                                    body,
-                                    materialized_literal_count,
-                                    expected_property_count,
-                                    handler_count,
-                                    num_parameters,
-                                    duplicate_parameters,
-                                    function_type,
-                                    FunctionLiteral::kIsFunction,
-                                    parenthesized,
-                                    generator,
-                                    pos);
+  FunctionLiteral::KindFlag kind = is_generator
+                                       ? FunctionLiteral::kGeneratorFunction
+                                       : FunctionLiteral::kNormalFunction;
+  FunctionLiteral* function_literal = factory()->NewFunctionLiteral(
+      function_name, ast_value_factory_, scope, body,
+      materialized_literal_count, expected_property_count, handler_count,
+      num_parameters, duplicate_parameters, function_type,
+      FunctionLiteral::kIsFunction, parenthesized, kind, pos);
   function_literal->set_function_token_position(function_token_pos);
   function_literal->set_ast_properties(&ast_properties);
   function_literal->set_dont_optimize_reason(dont_optimize_reason);
@@ -3544,7 +3598,7 @@ void Parser::SkipLazyFunctionBody(const AstRawString* function_name,
                                   int* expected_property_count,
                                   bool* ok) {
   int function_block_pos = position();
-  if (cached_data_mode() == CONSUME_CACHED_DATA) {
+  if (compile_options() == ScriptCompiler::kConsumeParserCache) {
     // If we have cached data, we use it to skip parsing the function body. The
     // data contains the information we need to construct the lazy function.
     FunctionEntry entry =
@@ -3594,7 +3648,7 @@ void Parser::SkipLazyFunctionBody(const AstRawString* function_name,
     *materialized_literal_count = logger.literals();
     *expected_property_count = logger.properties();
     scope_->SetStrictMode(logger.strict_mode());
-    if (cached_data_mode() == PRODUCE_CACHED_DATA) {
+    if (compile_options() == ScriptCompiler::kProduceParserCache) {
       ASSERT(log_);
       // Position right after terminal '}'.
       int body_end = scanner()->location().end_pos;
@@ -3680,6 +3734,7 @@ PreParser::PreParseResult Parser::ParseLazyFunctionBodyWithPreParser(
     reusable_preparser_->set_allow_lazy(true);
     reusable_preparser_->set_allow_generators(allow_generators());
     reusable_preparser_->set_allow_for_of(allow_for_of());
+    reusable_preparser_->set_allow_arrow_functions(allow_arrow_functions());
     reusable_preparser_->set_allow_harmony_numeric_literals(
         allow_harmony_numeric_literals());
   }

@@ -211,23 +211,28 @@ TEST(UsingCachedData) {
       "var v = /RegExp Literal/;"
       "var w = /RegExp Literal\\u0020With Escape/gin;"
       "var y = { get getter() { return 42; }, "
-      "          set setter(v) { this.value = v; }};";
+      "          set setter(v) { this.value = v; }};"
+      "var f = a => function (b) { return a + b; };"
+      "var g = a => b => a + b;";
   int source_length = i::StrLength(source);
 
   // ScriptResource will be deleted when the corresponding String is GCd.
   v8::ScriptCompiler::Source script_source(v8::String::NewExternal(
       isolate, new ScriptResource(source, source_length)));
+  i::FLAG_harmony_arrow_functions = true;
   i::FLAG_min_preparse_length = 0;
   v8::ScriptCompiler::Compile(isolate, &script_source,
-                              v8::ScriptCompiler::kProduceDataToCache);
+                              v8::ScriptCompiler::kProduceParserCache);
   CHECK(script_source.GetCachedData());
 
   // Compile the script again, using the cached data.
   bool lazy_flag = i::FLAG_lazy;
   i::FLAG_lazy = true;
-  v8::ScriptCompiler::Compile(isolate, &script_source);
+  v8::ScriptCompiler::Compile(isolate, &script_source,
+                              v8::ScriptCompiler::kConsumeParserCache);
   i::FLAG_lazy = false;
-  v8::ScriptCompiler::CompileUnbound(isolate, &script_source);
+  v8::ScriptCompiler::CompileUnbound(isolate, &script_source,
+                                     v8::ScriptCompiler::kConsumeParserCache);
   i::FLAG_lazy = lazy_flag;
 }
 
@@ -238,6 +243,7 @@ TEST(PreparseFunctionDataIsUsed) {
 
   // Make preparsing work for short scripts.
   i::FLAG_min_preparse_length = 0;
+  i::FLAG_harmony_arrow_functions = true;
 
   v8::Isolate* isolate = CcTest::isolate();
   v8::HandleScope handles(isolate);
@@ -246,31 +252,38 @@ TEST(PreparseFunctionDataIsUsed) {
   CcTest::i_isolate()->stack_guard()->SetStackLimit(GetCurrentStackPosition() -
                                                     128 * 1024);
 
-  const char* good_code =
-      "function this_is_lazy() { var a; } function foo() { return 25; } foo();";
+  const char* good_code[] = {
+      "function this_is_lazy() { var a; } function foo() { return 25; } foo();",
+      "var this_is_lazy = () => { var a; }; var foo = () => 25; foo();",
+  };
 
   // Insert a syntax error inside the lazy function.
-  const char* bad_code =
-      "function this_is_lazy() { if (   } function foo() { return 25; } foo();";
+  const char* bad_code[] = {
+      "function this_is_lazy() { if (   } function foo() { return 25; } foo();",
+      "var this_is_lazy = () => { if (   }; var foo = () => 25; foo();",
+  };
 
-  v8::ScriptCompiler::Source good_source(v8_str(good_code));
-  v8::ScriptCompiler::Compile(isolate, &good_source,
-                              v8::ScriptCompiler::kProduceDataToCache);
+  for (unsigned i = 0; i < ARRAY_SIZE(good_code); i++) {
+    v8::ScriptCompiler::Source good_source(v8_str(good_code[i]));
+    v8::ScriptCompiler::Compile(isolate, &good_source,
+                                v8::ScriptCompiler::kProduceDataToCache);
 
-  const v8::ScriptCompiler::CachedData* cached_data =
-      good_source.GetCachedData();
-  CHECK(cached_data->data != NULL);
-  CHECK_GT(cached_data->length, 0);
+    const v8::ScriptCompiler::CachedData* cached_data =
+        good_source.GetCachedData();
+    CHECK(cached_data->data != NULL);
+    CHECK_GT(cached_data->length, 0);
 
-  // Now compile the erroneous code with the good preparse data. If the preparse
-  // data is used, the lazy function is skipped and it should compile fine.
-  v8::ScriptCompiler::Source bad_source(
-      v8_str(bad_code), new v8::ScriptCompiler::CachedData(
-                            cached_data->data, cached_data->length));
-  v8::Local<v8::Value> result =
-      v8::ScriptCompiler::Compile(isolate, &bad_source)->Run();
-  CHECK(result->IsInt32());
-  CHECK_EQ(25, result->Int32Value());
+    // Now compile the erroneous code with the good preparse data. If the
+    // preparse data is used, the lazy function is skipped and it should
+    // compile fine.
+    v8::ScriptCompiler::Source bad_source(
+        v8_str(bad_code[i]), new v8::ScriptCompiler::CachedData(
+                                 cached_data->data, cached_data->length));
+    v8::Local<v8::Value> result =
+        v8::ScriptCompiler::Compile(isolate, &bad_source)->Run();
+    CHECK(result->IsInt32());
+    CHECK_EQ(25, result->Int32Value());
+  }
 }
 
 
@@ -286,6 +299,7 @@ TEST(StandAlonePreParser) {
       "function foo(x, y) { return x + y; }",
       "%ArgleBargle(glop);",
       "var x = new new Function('this.x = 42');",
+      "var f = (x, y) => x + y;",
       NULL
   };
 
@@ -302,6 +316,7 @@ TEST(StandAlonePreParser) {
     i::PreParser preparser(&scanner, &log, stack_limit);
     preparser.set_allow_lazy(true);
     preparser.set_allow_natives_syntax(true);
+    preparser.set_allow_arrow_functions(true);
     i::PreParser::PreParseResult result = preparser.PreParseProgram();
     CHECK_EQ(i::PreParser::kPreParseSuccess, result);
     CHECK(!log.HasError());
@@ -353,7 +368,7 @@ TEST(PreparsingObjectLiterals) {
 
   {
     const char* source = "var myo = {if: \"foo\"}; myo.if;";
-    v8::Local<v8::Value> result = PreCompileCompileRun(source);
+    v8::Local<v8::Value> result = ParserCacheCompileRun(source);
     CHECK(result->IsString());
     v8::String::Utf8Value utf8(result);
     CHECK_EQ("foo", *utf8);
@@ -361,7 +376,7 @@ TEST(PreparsingObjectLiterals) {
 
   {
     const char* source = "var myo = {\"bar\": \"foo\"}; myo[\"bar\"];";
-    v8::Local<v8::Value> result = PreCompileCompileRun(source);
+    v8::Local<v8::Value> result = ParserCacheCompileRun(source);
     CHECK(result->IsString());
     v8::String::Utf8Value utf8(result);
     CHECK_EQ("foo", *utf8);
@@ -369,7 +384,7 @@ TEST(PreparsingObjectLiterals) {
 
   {
     const char* source = "var myo = {1: \"foo\"}; myo[1];";
-    v8::Local<v8::Value> result = PreCompileCompileRun(source);
+    v8::Local<v8::Value> result = ParserCacheCompileRun(source);
     CHECK(result->IsString());
     v8::String::Utf8Value utf8(result);
     CHECK_EQ("foo", *utf8);
@@ -477,6 +492,7 @@ TEST(PreParseOverflow) {
 
   i::PreParser preparser(&scanner, &log, stack_limit);
   preparser.set_allow_lazy(true);
+  preparser.set_allow_arrow_functions(true);
   i::PreParser::PreParseResult result = preparser.PreParseProgram();
   CHECK_EQ(i::PreParser::kPreParseStackOverflow, result);
 }
@@ -954,7 +970,13 @@ TEST(ScopePositions) {
       "    infunction;\n"
       "  }", "\n"
       "  more;", i::FUNCTION_SCOPE, i::SLOPPY },
-    { "  (function fun", "(a,b) { infunction; }", ")();",
+    // TODO(aperez): Change to use i::ARROW_SCOPE when implemented
+    { "  start;\n", "(a,b) => a + b", "; more;",
+      i::FUNCTION_SCOPE, i::SLOPPY },
+    { "  start;\n", "(a,b) => { return a+b; }", "\nmore;",
+      i::FUNCTION_SCOPE, i::SLOPPY },
+    { "  start;\n"
+      "  (function fun", "(a,b) { infunction; }", ")();",
       i::FUNCTION_SCOPE, i::SLOPPY },
     { "  for ", "(let x = 1 ; x < 10; ++ x) { block; }", " more;",
       i::BLOCK_SCOPE, i::STRICT },
@@ -1107,6 +1129,7 @@ TEST(ScopePositions) {
     i::Parser parser(&info);
     parser.set_allow_lazy(true);
     parser.set_allow_harmony_scoping(true);
+    parser.set_allow_arrow_functions(true);
     info.MarkAsGlobal();
     info.SetStrictMode(source_data[i].strict_mode);
     parser.Parse();
@@ -1185,7 +1208,8 @@ enum ParserFlag {
   kAllowModules,
   kAllowGenerators,
   kAllowForOf,
-  kAllowHarmonyNumericLiterals
+  kAllowHarmonyNumericLiterals,
+  kAllowArrowFunctions
 };
 
 
@@ -1206,6 +1230,7 @@ void SetParserFlags(i::ParserBase<Traits>* parser,
   parser->set_allow_for_of(flags.Contains(kAllowForOf));
   parser->set_allow_harmony_numeric_literals(
       flags.Contains(kAllowHarmonyNumericLiterals));
+  parser->set_allow_arrow_functions(flags.Contains(kAllowArrowFunctions));
 }
 
 
@@ -1412,7 +1437,7 @@ TEST(ParserSync) {
 
   static const ParserFlag flags1[] = {
     kAllowLazy, kAllowHarmonyScoping, kAllowModules, kAllowGenerators,
-    kAllowForOf
+    kAllowForOf, kAllowArrowFunctions
   };
   for (int i = 0; context_data[i][0] != NULL; ++i) {
     for (int j = 0; statement_data[j] != NULL; ++j) {
@@ -1489,7 +1514,7 @@ void RunParserSyncTest(const char* context_data[][2],
 
   static const ParserFlag default_flags[] = {
     kAllowLazy, kAllowHarmonyScoping, kAllowModules, kAllowGenerators,
-    kAllowForOf, kAllowNativesSyntax
+    kAllowForOf, kAllowNativesSyntax, kAllowArrowFunctions
   };
   ParserFlag* generated_flags = NULL;
   if (flags == NULL) {
@@ -1566,6 +1591,10 @@ TEST(ErrorsEvalAndArguments) {
     "function foo(arguments) { }",
     "function foo(bar, eval) { }",
     "function foo(bar, arguments) { }",
+    "(eval) => { }",
+    "(arguments) => { }",
+    "(foo, eval) => { }",
+    "(foo, arguments) => { }",
     "eval = 1;",
     "arguments = 1;",
     "var foo = eval = 1;",
@@ -1622,6 +1651,7 @@ TEST(NoErrorsEvalAndArgumentsStrict) {
   const char* context_data[][2] = {
     { "\"use strict\";", "" },
     { "function test_func() { \"use strict\";", "}" },
+    { "() => { \"use strict\"; ", "}" },
     { NULL, NULL }
   };
 
@@ -1637,7 +1667,9 @@ TEST(NoErrorsEvalAndArgumentsStrict) {
     NULL
   };
 
-  RunParserSyncTest(context_data, statement_data, kSuccess);
+  static const ParserFlag always_flags[] = {kAllowArrowFunctions};
+  RunParserSyncTest(context_data, statement_data, kSuccess, NULL, 0,
+                    always_flags, ARRAY_SIZE(always_flags));
 }
 
 
@@ -1649,6 +1681,7 @@ TEST(ErrorsFutureStrictReservedWords) {
   const char* context_data[][2] = {
     { "\"use strict\";", "" },
     { "function test_func() {\"use strict\"; ", "}"},
+    { "() => { \"use strict\"; ", "}" },
     { NULL, NULL }
   };
 
@@ -1667,7 +1700,9 @@ TEST(ErrorsFutureStrictReservedWords) {
     NULL
   };
 
-  RunParserSyncTest(context_data, statement_data, kError);
+  static const ParserFlag always_flags[] = {kAllowArrowFunctions};
+  RunParserSyncTest(context_data, statement_data, kError, NULL, 0, always_flags,
+                    ARRAY_SIZE(always_flags));
 }
 
 
@@ -1675,6 +1710,7 @@ TEST(NoErrorsFutureStrictReservedWords) {
   const char* context_data[][2] = {
     { "", "" },
     { "function test_func() {", "}"},
+    { "() => {", "}" },
     { NULL, NULL }
   };
 
@@ -1693,7 +1729,9 @@ TEST(NoErrorsFutureStrictReservedWords) {
     NULL
   };
 
-  RunParserSyncTest(context_data, statement_data, kSuccess);
+  static const ParserFlag always_flags[] = {kAllowArrowFunctions};
+  RunParserSyncTest(context_data, statement_data, kSuccess, NULL, 0,
+                    always_flags, ARRAY_SIZE(always_flags));
 }
 
 
@@ -1706,6 +1744,8 @@ TEST(ErrorsReservedWords) {
     { "\"use strict\";", "" },
     { "var eval; function test_func() {", "}"},
     { "var eval; function test_func() {\"use strict\"; ", "}"},
+    { "var eval; () => {", "}"},
+    { "var eval; () => {\"use strict\"; ", "}"},
     { NULL, NULL }
   };
 
@@ -1716,6 +1756,8 @@ TEST(ErrorsReservedWords) {
     "function super() { }",
     "function foo(super) { }",
     "function foo(bar, super) { }",
+    "(super) => { }",
+    "(bar, super) => { }",
     "super = 1;",
     "var foo = super = 1;",
     "++super;",
@@ -1849,6 +1891,7 @@ TEST(ErrorsYieldStrict) {
     { "\"use strict\"; function * gen() { function not_gen() {", "} }" },
     { "\"use strict\"; (function not_gen() {", "})" },
     { "\"use strict\"; (function * gen() { (function not_gen() {", "}) })" },
+    { "() => {\"use strict\"; ", "}" },
     { NULL, NULL }
   };
 
@@ -2059,6 +2102,7 @@ TEST(ErrorsIllegalWordsAsLabelsSloppy) {
   const char* context_data[][2] = {
     { "", ""},
     { "function test_func() {", "}" },
+    { "() => {", "}" },
     { NULL, NULL }
   };
 
@@ -2076,6 +2120,7 @@ TEST(ErrorsIllegalWordsAsLabelsStrict) {
   const char* context_data[][2] = {
     { "\"use strict\";", "" },
     { "function test_func() {\"use strict\"; ", "}"},
+    { "() => {\"use strict\"; ", "}" },
     { NULL, NULL }
   };
 
@@ -2095,8 +2140,10 @@ TEST(NoErrorsIllegalWordsAsLabels) {
   const char* context_data[][2] = {
     { "", ""},
     { "function test_func() {", "}" },
+    { "() => {", "}" },
     { "\"use strict\";", "" },
     { "\"use strict\"; function test_func() {", "}" },
+    { "\"use strict\"; () => {", "}" },
     { NULL, NULL }
   };
 
@@ -2107,7 +2154,9 @@ TEST(NoErrorsIllegalWordsAsLabels) {
     NULL
   };
 
-  RunParserSyncTest(context_data, statement_data, kSuccess);
+  static const ParserFlag always_flags[] = {kAllowArrowFunctions};
+  RunParserSyncTest(context_data, statement_data, kSuccess, NULL, 0,
+                    always_flags, ARRAY_SIZE(always_flags));
 }
 
 
@@ -2116,6 +2165,7 @@ TEST(ErrorsParenthesizedLabels) {
   const char* context_data[][2] = {
     { "", ""},
     { "function test_func() {", "}" },
+    { "() => {", "}" },
     { NULL, NULL }
   };
 
@@ -2222,7 +2272,7 @@ TEST(DontRegressPreParserDataSizes) {
     i::Handle<i::Script> script = factory->NewScript(source);
     i::CompilationInfoWithZone info(script);
     i::ScriptData* sd = NULL;
-    info.SetCachedData(&sd, i::PRODUCE_CACHED_DATA);
+    info.SetCachedData(&sd, v8::ScriptCompiler::kProduceParserCache);
     i::Parser::Parse(&info, true);
     i::ParseData pd(sd);
 
@@ -2955,4 +3005,167 @@ TEST(UseAsmUseCount) {
              "\"use asm\";\n"  // Only the first one counts.
              "function bar() { \"use asm\"; var baz = 1; }");
   CHECK_EQ(2, use_counts[v8::Isolate::kUseAsm]);
+}
+
+
+TEST(ErrorsArrowFunctions) {
+  // Tests that parser and preparser generate the same kind of errors
+  // on invalid arrow function syntax.
+  const char* context_data[][2] = {
+    {"", ";"},
+    {"v = ", ";"},
+    {"bar ? (", ") : baz;"},
+    {"bar ? baz : (", ");"},
+    {"bar[", "];"},
+    {"bar, ", ";"},
+    {"", ", bar;"},
+    {NULL, NULL}
+  };
+
+  const char* statement_data[] = {
+    "=> 0",
+    "=>",
+    "() =>",
+    "=> {}",
+    ") => {}",
+    ", => {}",
+    "(,) => {}",
+    "return => {}",
+    "() => {'value': 42}",
+
+    // Check that the early return introduced in ParsePrimaryExpression
+    // does not accept stray closing parentheses.
+    ")",
+    ") => 0",
+    "foo[()]",
+    "()",
+
+    // Parameter lists with extra parens should be recognized as errors.
+    "(()) => 0",
+    "((x)) => 0",
+    "((x, y)) => 0",
+    "(x, (y)) => 0",
+    "((x, y, z)) => 0",
+    "(x, (y, z)) => 0",
+    "((x, y), z) => 0",
+
+    // Parameter lists are always validated as strict, so those are errors.
+    "eval => {}",
+    "arguments => {}",
+    "yield => {}",
+    "interface => {}",
+    "(eval) => {}",
+    "(arguments) => {}",
+    "(yield) => {}",
+    "(interface) => {}",
+    "(eval, bar) => {}",
+    "(bar, eval) => {}",
+    "(bar, arguments) => {}",
+    "(bar, yield) => {}",
+    "(bar, interface) => {}",
+    // TODO(aperez): Detecting duplicates does not work in PreParser.
+    // "(bar, bar) => {}",
+
+    // The parameter list is parsed as an expression, but only
+    // a comma-separated list of identifier is valid.
+    "32 => {}",
+    "(32) => {}",
+    "(a, 32) => {}",
+    "if => {}",
+    "(if) => {}",
+    "(a, if) => {}",
+    "a + b => {}",
+    "(a + b) => {}",
+    "(a + b, c) => {}",
+    "(a, b - c) => {}",
+    "\"a\" => {}",
+    "(\"a\") => {}",
+    "(\"a\", b) => {}",
+    "(a, \"b\") => {}",
+    "-a => {}",
+    "(-a) => {}",
+    "(-a, b) => {}",
+    "(a, -b) => {}",
+    "{} => {}",
+    "({}) => {}",
+    "(a, {}) => {}",
+    "({}, a) => {}",
+    "a++ => {}",
+    "(a++) => {}",
+    "(a++, b) => {}",
+    "(a, b++) => {}",
+    "[] => {}",
+    "([]) => {}",
+    "(a, []) => {}",
+    "([], a) => {}",
+    "(a = b) => {}",
+    "(a = b, c) => {}",
+    "(a, b = c) => {}",
+    "(foo ? bar : baz) => {}",
+    "(a, foo ? bar : baz) => {}",
+    "(foo ? bar : baz, a) => {}",
+    NULL
+  };
+
+  // The test is quite slow, so run it with a reduced set of flags.
+  static const ParserFlag flags[] = {
+    kAllowLazy, kAllowHarmonyScoping, kAllowGenerators
+  };
+  static const ParserFlag always_flags[] = { kAllowArrowFunctions };
+  RunParserSyncTest(context_data, statement_data, kError, flags,
+                    ARRAY_SIZE(flags), always_flags, ARRAY_SIZE(always_flags));
+}
+
+
+TEST(NoErrorsArrowFunctions) {
+  // Tests that parser and preparser accept valid arrow functions syntax.
+  const char* context_data[][2] = {
+    {"", ";"},
+    {"bar ? (", ") : baz;"},
+    {"bar ? baz : (", ");"},
+    {"bar, ", ";"},
+    {"", ", bar;"},
+    {NULL, NULL}
+  };
+
+  const char* statement_data[] = {
+    "() => {}",
+    "() => { return 42 }",
+    "x => { return x; }",
+    "(x) => { return x; }",
+    "(x, y) => { return x + y; }",
+    "(x, y, z) => { return x + y + z; }",
+    "(x, y) => { x.a = y; }",
+    "() => 42",
+    "x => x",
+    "x => x * x",
+    "(x) => x",
+    "(x) => x * x",
+    "(x, y) => x + y",
+    "(x, y, z) => x, y, z",
+    "(x, y) => x.a = y",
+    "() => ({'value': 42})",
+    "x => y => x + y",
+    "(x, y) => (u, v) => x*u + y*v",
+    "(x, y) => z => z * (x + y)",
+    "x => (y, z) => z * (x + y)",
+
+    // Those are comma-separated expressions, with arrow functions as items.
+    // They stress the code for validating arrow function parameter lists.
+    "a, b => 0",
+    "a, b, (c, d) => 0",
+    "(a, b, (c, d) => 0)",
+    "(a, b) => 0, (c, d) => 1",
+    "(a, b => {}, a => a + 1)",
+    "((a, b) => {}, (a => a + 1))",
+    "(a, (a, (b, c) => 0))",
+
+    // Arrow has more precedence, this is the same as: foo ? bar : (baz = {})
+    "foo ? bar : baz => {}",
+    NULL
+  };
+
+  static const ParserFlag always_flags[] = {kAllowArrowFunctions};
+  RunParserSyncTest(context_data, statement_data, kSuccess, NULL, 0,
+                    always_flags, ARRAY_SIZE(always_flags));
 }

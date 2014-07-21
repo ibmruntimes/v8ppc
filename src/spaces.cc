@@ -67,7 +67,7 @@ void HeapObjectIterator::Initialize(PagedSpace* space,
                                     HeapObjectIterator::PageMode mode,
                                     HeapObjectCallback size_f) {
   // Check that we actually can iterate this space.
-  ASSERT(space->is_iterable());
+  ASSERT(space->swept_precisely());
 
   space_ = space;
   cur_addr_ = cur;
@@ -479,7 +479,7 @@ MemoryChunk* MemoryChunk::Initialize(Heap* heap,
   chunk->write_barrier_counter_ = kWriteBarrierCounterGranularity;
   chunk->progress_bar_ = 0;
   chunk->high_water_mark_ = static_cast<int>(area_start - base);
-  chunk->set_parallel_sweeping(PARALLEL_SWEEPING_DONE);
+  chunk->set_parallel_sweeping(SWEEPING_DONE);
   chunk->available_in_small_free_list_ = 0;
   chunk->available_in_medium_free_list_ = 0;
   chunk->available_in_large_free_list_ = 0;
@@ -935,8 +935,7 @@ PagedSpace::PagedSpace(Heap* heap,
                        Executability executable)
     : Space(heap, id, executable),
       free_list_(this),
-      is_iterable_(true),
-      is_swept_concurrently_(false),
+      swept_precisely_(true),
       unswept_free_bytes_(0),
       end_of_unswept_pages_(NULL) {
   if (id == CODE_SPACE) {
@@ -1158,7 +1157,7 @@ void PagedSpace::Print() { }
 #ifdef VERIFY_HEAP
 void PagedSpace::Verify(ObjectVisitor* visitor) {
   // We can only iterate over the pages if they were swept precisely.
-  if (!is_iterable_) return;
+  if (!swept_precisely_) return;
 
   bool allocation_pointer_found_in_space =
       (allocation_info_.top() == allocation_info_.limit());
@@ -2547,8 +2546,8 @@ void PagedSpace::PrepareForMarkCompact() {
 
 
 intptr_t PagedSpace::SizeOfObjects() {
-  ASSERT(heap()->mark_compact_collector()->
-      IsConcurrentSweepingInProgress(this) || (unswept_free_bytes_ == 0));
+  ASSERT(heap()->mark_compact_collector()->sweeping_in_progress() ||
+      (unswept_free_bytes_ == 0));
   return Size() - unswept_free_bytes_ - (limit() - top());
 }
 
@@ -2578,24 +2577,12 @@ void PagedSpace::EvictEvacuationCandidatesFromFreeLists() {
 }
 
 
-HeapObject* PagedSpace::EnsureSweepingProgress(
+HeapObject* PagedSpace::WaitForSweeperThreadsAndRetryAllocation(
     int size_in_bytes) {
   MarkCompactCollector* collector = heap()->mark_compact_collector();
-
-  if (collector->IsConcurrentSweepingInProgress(this)) {
-    // If sweeping is still in progress try to sweep pages on the main thread.
-    int free_chunk =
-        collector->SweepInParallel(this, size_in_bytes);
-    if (free_chunk >= size_in_bytes) {
-      HeapObject* object = free_list_.Allocate(size_in_bytes);
-      // We should be able to allocate an object here since we just freed that
-      // much memory.
-      ASSERT(object != NULL);
-      if (object != NULL) return object;
-    }
-
+  if (collector->sweeping_in_progress()) {
     // Wait for the sweeper threads here and complete the sweeping phase.
-    collector->WaitUntilSweepingCompleted();
+    collector->EnsureSweepingCompleted();
 
     // After waiting for the sweeper threads, there may be new free-list
     // entries.
@@ -2608,14 +2595,28 @@ HeapObject* PagedSpace::EnsureSweepingProgress(
 HeapObject* PagedSpace::SlowAllocateRaw(int size_in_bytes) {
   // Allocation in this space has failed.
 
-  // If sweeper threads are active, try to re-fill the free-lists.
   MarkCompactCollector* collector = heap()->mark_compact_collector();
-  if (collector->IsConcurrentSweepingInProgress(this)) {
+  // Sweeping is still in progress.
+  if (collector->sweeping_in_progress()) {
+    // First try to refill the free-list, concurrent sweeper threads
+    // may have freed some objects in the meantime.
     collector->RefillFreeList(this);
 
     // Retry the free list allocation.
     HeapObject* object = free_list_.Allocate(size_in_bytes);
     if (object != NULL) return object;
+
+    // If sweeping is still in progress try to sweep pages on the main thread.
+    int free_chunk =
+        collector->SweepInParallel(this, size_in_bytes);
+    collector->RefillFreeList(this);
+    if (free_chunk >= size_in_bytes) {
+      HeapObject* object = free_list_.Allocate(size_in_bytes);
+      // We should be able to allocate an object here since we just freed that
+      // much memory.
+      ASSERT(object != NULL);
+      if (object != NULL) return object;
+    }
   }
 
   // Free list allocation failed and there is no next page.  Fail if we have
@@ -2625,7 +2626,7 @@ HeapObject* PagedSpace::SlowAllocateRaw(int size_in_bytes) {
       && heap()->OldGenerationAllocationLimitReached()) {
     // If sweeper threads are active, wait for them at that point and steal
     // elements form their free-lists.
-    HeapObject* object = EnsureSweepingProgress(size_in_bytes);
+    HeapObject* object = WaitForSweeperThreadsAndRetryAllocation(size_in_bytes);
     if (object != NULL) return object;
   }
 
@@ -2638,7 +2639,7 @@ HeapObject* PagedSpace::SlowAllocateRaw(int size_in_bytes) {
   // If sweeper threads are active, wait for them at that point and steal
   // elements form their free-lists. Allocation may still fail their which
   // would indicate that there is not enough memory for the given allocation.
-  return EnsureSweepingProgress(size_in_bytes);
+  return WaitForSweeperThreadsAndRetryAllocation(size_in_bytes);
 }
 
 
@@ -2774,7 +2775,7 @@ void PagedSpace::ReportStatistics() {
              ", available: %" V8_PTR_PREFIX "d, %%%d\n",
          Capacity(), Waste(), Available(), pct);
 
-  if (!is_iterable_) return;
+  if (!swept_precisely_) return;
   ClearHistograms(heap()->isolate());
   HeapObjectIterator obj_it(this);
   for (HeapObject* obj = obj_it.Next(); obj != NULL; obj = obj_it.Next())
@@ -3062,10 +3063,12 @@ void LargeObjectSpace::Verify() {
 
     // We have only code, sequential strings, external strings
     // (sequential strings that have been morphed into external
-    // strings), fixed arrays, and byte arrays in large object space.
+    // strings), fixed arrays, byte arrays, and constant pool arrays in the
+    // large object space.
     CHECK(object->IsCode() || object->IsSeqString() ||
-           object->IsExternalString() || object->IsFixedArray() ||
-           object->IsFixedDoubleArray() || object->IsByteArray());
+          object->IsExternalString() || object->IsFixedArray() ||
+          object->IsFixedDoubleArray() || object->IsByteArray() ||
+          object->IsConstantPoolArray());
 
     // The object itself should look OK.
     object->ObjectVerify();

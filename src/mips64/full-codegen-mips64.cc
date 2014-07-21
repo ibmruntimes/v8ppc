@@ -852,7 +852,7 @@ void FullCodeGenerator::VisitVariableDeclaration(
         __ mov(a0, zero_reg);  // Smi::FromInt(0) indicates no initial value.
         __ Push(cp, a2, a1, a0);
       }
-      __ CallRuntime(Runtime::kDeclareContextSlot, 4);
+      __ CallRuntime(Runtime::kDeclareLookupSlot, 4);
       break;
     }
   }
@@ -908,7 +908,7 @@ void FullCodeGenerator::VisitFunctionDeclaration(
       __ Push(cp, a2, a1);
       // Push initial value for function declaration.
       VisitForStackValue(declaration->fun());
-      __ CallRuntime(Runtime::kDeclareContextSlot, 4);
+      __ CallRuntime(Runtime::kDeclareLookupSlot, 4);
       break;
     }
   }
@@ -1561,7 +1561,7 @@ void FullCodeGenerator::EmitVariableLoad(VariableProxy* proxy) {
       __ bind(&slow);
       __ li(a1, Operand(var->name()));
       __ Push(cp, a1);  // Context and name.
-      __ CallRuntime(Runtime::kLoadContextSlot, 2);
+      __ CallRuntime(Runtime::kLoadLookupSlot, 2);
       __ bind(&done);
       context()->Plug(v0);
     }
@@ -2447,15 +2447,6 @@ void FullCodeGenerator::EmitStoreToStackLocalOrContextSlot(
 }
 
 
-void FullCodeGenerator::EmitCallStoreContextSlot(
-    Handle<String> name, StrictMode strict_mode) {
-  __ li(a1, Operand(name));
-  __ li(a0, Operand(Smi::FromInt(strict_mode)));
-  __ Push(v0, cp, a1, a0);  // Value, context, name, strict mode.
-  __ CallRuntime(Runtime::kStoreContextSlot, 4);
-}
-
-
 void FullCodeGenerator::EmitVariableAssignment(Variable* var, Token::Value op) {
   if (var->IsUnallocated()) {
     // Global var, const, or let.
@@ -2469,7 +2460,7 @@ void FullCodeGenerator::EmitVariableAssignment(Variable* var, Token::Value op) {
     if (var->IsLookupSlot()) {
       __ li(a0, Operand(var->name()));
       __ Push(v0, cp, a0);  // Context and name.
-      __ CallRuntime(Runtime::kInitializeConstContextSlot, 3);
+      __ CallRuntime(Runtime::kInitializeLegacyConstLookupSlot, 3);
     } else {
       ASSERT(var->IsStackAllocated() || var->IsContextSlot());
       Label skip;
@@ -2483,29 +2474,34 @@ void FullCodeGenerator::EmitVariableAssignment(Variable* var, Token::Value op) {
 
   } else if (var->mode() == LET && op != Token::INIT_LET) {
     // Non-initializing assignment to let variable needs a write barrier.
-    if (var->IsLookupSlot()) {
-      EmitCallStoreContextSlot(var->name(), strict_mode());
-    } else {
-      ASSERT(var->IsStackAllocated() || var->IsContextSlot());
-      Label assign;
-      MemOperand location = VarOperand(var, a1);
-      __ ld(a3, location);
-      __ LoadRoot(a4, Heap::kTheHoleValueRootIndex);
-      __ Branch(&assign, ne, a3, Operand(a4));
-      __ li(a3, Operand(var->name()));
-      __ push(a3);
-      __ CallRuntime(Runtime::kThrowReferenceError, 1);
-      // Perform the assignment.
-      __ bind(&assign);
-      EmitStoreToStackLocalOrContextSlot(var, location);
-    }
+    ASSERT(!var->IsLookupSlot());
+    ASSERT(var->IsStackAllocated() || var->IsContextSlot());
+    Label assign;
+    MemOperand location = VarOperand(var, a1);
+    __ ld(a3, location);
+    __ LoadRoot(a4, Heap::kTheHoleValueRootIndex);
+    __ Branch(&assign, ne, a3, Operand(a4));
+    __ li(a3, Operand(var->name()));
+    __ push(a3);
+    __ CallRuntime(Runtime::kThrowReferenceError, 1);
+    // Perform the assignment.
+    __ bind(&assign);
+    EmitStoreToStackLocalOrContextSlot(var, location);
 
   } else if (!var->is_const_mode() || op == Token::INIT_CONST) {
-    // Assignment to var or initializing assignment to let/const
-    // in harmony mode.
     if (var->IsLookupSlot()) {
-      EmitCallStoreContextSlot(var->name(), strict_mode());
+      // Assignment to var.
+      __ li(a4, Operand(var->name()));
+      __ li(a3, Operand(Smi::FromInt(strict_mode())));
+      // jssp[0]  : mode.
+      // jssp[8]  : name.
+      // jssp[16] : context.
+      // jssp[24] : value.
+      __ Push(v0, cp, a4, a3);
+      __ CallRuntime(Runtime::kStoreLookupSlot, 4);
     } else {
+      // Assignment to var or initializing assignment to let/const in harmony
+      // mode.
       ASSERT((var->IsStackAllocated() || var->IsContextSlot()));
       MemOperand location = VarOperand(var, a1);
       if (generate_debug_code_ && op == Token::INIT_LET) {
@@ -2766,7 +2762,7 @@ void FullCodeGenerator::VisitCall(Call* expr) {
     ASSERT(!context_register().is(a2));
     __ li(a2, Operand(proxy->name()));
     __ Push(context_register(), a2);
-    __ CallRuntime(Runtime::kLoadContextSlot, 2);
+    __ CallRuntime(Runtime::kLoadLookupSlot, 2);
     __ Push(v0, v1);  // Function, receiver.
 
     // If fast case code has been generated, emit code to push the
@@ -4159,7 +4155,7 @@ void FullCodeGenerator::VisitUnaryOperation(UnaryOperation* expr) {
           ASSERT(!context_register().is(a2));
           __ li(a2, Operand(var->name()));
           __ Push(context_register(), a2);
-          __ CallRuntime(Runtime::kDeleteContextSlot, 2);
+          __ CallRuntime(Runtime::kDeleteLookupSlot, 2);
           context()->Plug(v0);
         }
       } else {
@@ -4442,7 +4438,7 @@ void FullCodeGenerator::VisitForTypeofValue(Expression* expr) {
     __ bind(&slow);
     __ li(a0, Operand(proxy->name()));
     __ Push(cp, a0);
-    __ CallRuntime(Runtime::kLoadContextSlotNoReferenceError, 2);
+    __ CallRuntime(Runtime::kLoadLookupSlotNoReferenceError, 2);
     PrepareForBailout(expr, TOS_REG);
     __ bind(&done);
 
@@ -4492,10 +4488,6 @@ void FullCodeGenerator::EmitLiteralCompareTypeof(Expression* expr,
     __ Branch(if_true, eq, v0, Operand(at));
     __ LoadRoot(at, Heap::kFalseValueRootIndex);
     Split(eq, v0, Operand(at), if_true, if_false, fall_through);
-  } else if (FLAG_harmony_typeof &&
-             String::Equals(check, factory->null_string())) {
-    __ LoadRoot(at, Heap::kNullValueRootIndex);
-    Split(eq, v0, Operand(at), if_true, if_false, fall_through);
   } else if (String::Equals(check, factory->undefined_string())) {
     __ LoadRoot(at, Heap::kUndefinedValueRootIndex);
     __ Branch(if_true, eq, v0, Operand(at));
@@ -4514,10 +4506,8 @@ void FullCodeGenerator::EmitLiteralCompareTypeof(Expression* expr,
           if_true, if_false, fall_through);
   } else if (String::Equals(check, factory->object_string())) {
     __ JumpIfSmi(v0, if_false);
-    if (!FLAG_harmony_typeof) {
-      __ LoadRoot(at, Heap::kNullValueRootIndex);
-      __ Branch(if_true, eq, v0, Operand(at));
-    }
+    __ LoadRoot(at, Heap::kNullValueRootIndex);
+    __ Branch(if_true, eq, v0, Operand(at));
     // Check for JS objects => true.
     __ GetObjectType(v0, v0, a1);
     __ Branch(if_false, lt, a1, Operand(FIRST_NONCALLABLE_SPEC_OBJECT_TYPE));

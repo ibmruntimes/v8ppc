@@ -3433,8 +3433,8 @@ HGraph::HGraph(CompilationInfo* info)
   if (info->IsStub()) {
     HydrogenCodeStub* stub = info->code_stub();
     CodeStubInterfaceDescriptor* descriptor = stub->GetInterfaceDescriptor();
-    start_environment_ =
-        new(zone_) HEnvironment(zone_, descriptor->environment_length());
+    start_environment_ = new(zone_) HEnvironment(
+        zone_, descriptor->GetEnvironmentParameterCount());
   } else {
     TraceInlinedFunction(info->shared_info(), HSourcePosition::Unknown());
     start_environment_ =
@@ -5373,6 +5373,13 @@ void HOptimizedGraphBuilder::VisitVariableProxy(VariableProxy* expr) {
             New<HLoadGlobalGeneric>(global_object,
                                     variable->name(),
                                     ast_context()->is_for_typeof());
+        if (FLAG_vector_ics) {
+          Handle<SharedFunctionInfo> current_shared =
+              function_state()->compilation_info()->shared_info();
+          instr->SetVectorAndSlot(
+              handle(current_shared->feedback_vector(), isolate()),
+              expr->VariableFeedbackSlot());
+        }
         return ast_context()->ReturnInstruction(instr, expr->id());
       }
     }
@@ -5591,7 +5598,7 @@ void HOptimizedGraphBuilder::VisitObjectLiteral(ObjectLiteral* expr) {
             if (map.is_null()) {
               // If we don't know the monomorphic type, do a generic store.
               CHECK_ALIVE(store = BuildNamedGeneric(
-                  STORE, literal, name, value));
+                  STORE, NULL, literal, name, value));
             } else {
               PropertyAccessInfo info(this, STORE, ToType(map), name);
               if (info.CanAccessMonomorphic()) {
@@ -5602,7 +5609,7 @@ void HOptimizedGraphBuilder::VisitObjectLiteral(ObjectLiteral* expr) {
                     BailoutId::None(), BailoutId::None());
               } else {
                 CHECK_ALIVE(store = BuildNamedGeneric(
-                    STORE, literal, name, value));
+                    STORE, NULL, literal, name, value));
               }
             }
             AddInstruction(store);
@@ -5794,9 +5801,8 @@ HInstruction* HOptimizedGraphBuilder::BuildLoadNamedField(
       Handle<JSObject>::cast(object)->Lookup(info->name(), &lookup);
       Handle<Object> value(lookup.GetLazyValue(), isolate());
 
-      if (!value->IsTheHole()) {
-        return New<HConstant>(value);
-      }
+      ASSERT(!value->IsTheHole());
+      return New<HConstant>(value);
     }
   }
 
@@ -6127,6 +6133,14 @@ bool HOptimizedGraphBuilder::PropertyAccessInfo::CanAccessAsMonomorphic(
 }
 
 
+Handle<Map> HOptimizedGraphBuilder::PropertyAccessInfo::map() {
+  JSFunction* ctor = IC::GetRootConstructor(
+      type_, current_info()->closure()->context()->native_context());
+  if (ctor != NULL) return handle(ctor->initial_map());
+  return type_->AsClass()->Map();
+}
+
+
 static bool NeedsWrappingFor(Type* type, Handle<JSFunction> target) {
   return type->Is(Type::NumberOrString()) &&
       target->shared()->strict_mode() == SLOPPY &&
@@ -6208,6 +6222,7 @@ HInstruction* HOptimizedGraphBuilder::BuildMonomorphicAccess(
 
 void HOptimizedGraphBuilder::HandlePolymorphicNamedFieldAccess(
     PropertyAccessType access_type,
+    Expression* expr,
     BailoutId ast_id,
     BailoutId return_id,
     HValue* object,
@@ -6321,7 +6336,8 @@ void HOptimizedGraphBuilder::HandlePolymorphicNamedFieldAccess(
   if (count == types->length() && FLAG_deoptimize_uncommon_cases) {
     FinishExitWithHardDeoptimization("Uknown map in polymorphic access");
   } else {
-    HInstruction* instr = BuildNamedGeneric(access_type, object, name, value);
+    HInstruction* instr = BuildNamedGeneric(access_type, expr, object, name,
+                                            value);
     AddInstruction(instr);
     if (!ast_context()->IsEffect()) Push(access_type == LOAD ? instr : value);
 
@@ -6768,6 +6784,7 @@ HInstruction* HGraphBuilder::AddLoadStringLength(HValue* string) {
 
 HInstruction* HOptimizedGraphBuilder::BuildNamedGeneric(
     PropertyAccessType access_type,
+    Expression* expr,
     HValue* object,
     Handle<String> name,
     HValue* value,
@@ -6777,7 +6794,15 @@ HInstruction* HOptimizedGraphBuilder::BuildNamedGeneric(
                      Deoptimizer::SOFT);
   }
   if (access_type == LOAD) {
-    return New<HLoadNamedGeneric>(object, name);
+    HLoadNamedGeneric* result = New<HLoadNamedGeneric>(object, name);
+    if (FLAG_vector_ics) {
+      Handle<SharedFunctionInfo> current_shared =
+          function_state()->compilation_info()->shared_info();
+      result->SetVectorAndSlot(
+          handle(current_shared->feedback_vector(), isolate()),
+          expr->AsProperty()->PropertyFeedbackSlot());
+    }
+    return result;
   } else {
     return New<HStoreNamedGeneric>(object, name, value, function_strict_mode());
   }
@@ -6787,11 +6812,20 @@ HInstruction* HOptimizedGraphBuilder::BuildNamedGeneric(
 
 HInstruction* HOptimizedGraphBuilder::BuildKeyedGeneric(
     PropertyAccessType access_type,
+    Expression* expr,
     HValue* object,
     HValue* key,
     HValue* value) {
   if (access_type == LOAD) {
-    return New<HLoadKeyedGeneric>(object, key);
+    HLoadKeyedGeneric* result = New<HLoadKeyedGeneric>(object, key);
+    if (FLAG_vector_ics) {
+      Handle<SharedFunctionInfo> current_shared =
+          function_state()->compilation_info()->shared_info();
+      result->SetVectorAndSlot(
+          handle(current_shared->feedback_vector(), isolate()),
+          expr->AsProperty()->PropertyFeedbackSlot());
+    }
+    return result;
   } else {
     return New<HStoreKeyedGeneric>(object, key, value, function_strict_mode());
   }
@@ -6831,14 +6865,16 @@ HInstruction* HOptimizedGraphBuilder::BuildMonomorphicElementAccess(
     // monomorphic stores need a prototype chain check because shape
     // changes could allow callbacks on elements in the chain that
     // aren't compatible with monomorphic keyed stores.
-    Handle<JSObject> prototype(JSObject::cast(map->prototype()));
-    JSObject* holder = JSObject::cast(map->prototype());
-    while (!holder->GetPrototype()->IsNull()) {
-      holder = JSObject::cast(holder->GetPrototype());
+    PrototypeIterator iter(map);
+    JSObject* holder = NULL;
+    while (!iter.IsAtEnd()) {
+      holder = JSObject::cast(*PrototypeIterator::GetCurrent(iter));
+      iter.Advance();
     }
+    ASSERT(holder && holder->IsJSObject());
 
-    BuildCheckPrototypeMaps(prototype,
-                            Handle<JSObject>(JSObject::cast(holder)));
+    BuildCheckPrototypeMaps(handle(JSObject::cast(map->prototype())),
+                            Handle<JSObject>(holder));
   }
 
   LoadKeyedHoleMode load_mode = BuildKeyedHoleMode(map);
@@ -6917,6 +6953,7 @@ HInstruction* HOptimizedGraphBuilder::TryBuildConsolidatedElementLoad(
 
 
 HValue* HOptimizedGraphBuilder::HandlePolymorphicElementAccess(
+    Expression* expr,
     HValue* object,
     HValue* key,
     HValue* val,
@@ -6948,7 +6985,8 @@ HValue* HOptimizedGraphBuilder::HandlePolymorphicElementAccess(
       possible_transitioned_maps.Add(map);
     }
     if (elements_kind == SLOPPY_ARGUMENTS_ELEMENTS) {
-      HInstruction* result = BuildKeyedGeneric(access_type, object, key, val);
+      HInstruction* result = BuildKeyedGeneric(access_type, expr, object, key,
+                                               val);
       *has_side_effects = result->HasObservableSideEffects();
       return AddInstruction(result);
     }
@@ -6985,7 +7023,8 @@ HValue* HOptimizedGraphBuilder::HandlePolymorphicElementAccess(
     HInstruction* instr = NULL;
     if (untransitionable_map->has_slow_elements_kind() ||
         !untransitionable_map->IsJSObjectMap()) {
-      instr = AddInstruction(BuildKeyedGeneric(access_type, object, key, val));
+      instr = AddInstruction(BuildKeyedGeneric(access_type, expr, object, key,
+                                               val));
     } else {
       instr = BuildMonomorphicElementAccess(
           object, key, val, transition, untransitionable_map, access_type,
@@ -7010,7 +7049,8 @@ HValue* HOptimizedGraphBuilder::HandlePolymorphicElementAccess(
     set_current_block(this_map);
     HInstruction* access = NULL;
     if (IsDictionaryElementsKind(elements_kind)) {
-      access = AddInstruction(BuildKeyedGeneric(access_type, object, key, val));
+      access = AddInstruction(BuildKeyedGeneric(access_type, expr, object, key,
+                                                val));
     } else {
       ASSERT(IsFastElementsKind(elements_kind) ||
              IsExternalArrayElementsKind(elements_kind) ||
@@ -7081,7 +7121,8 @@ HValue* HOptimizedGraphBuilder::HandleKeyedElementAccess(
   if (monomorphic) {
     Handle<Map> map = types->first();
     if (map->has_slow_elements_kind() || !map->IsJSObjectMap()) {
-      instr = AddInstruction(BuildKeyedGeneric(access_type, obj, key, val));
+      instr = AddInstruction(BuildKeyedGeneric(access_type, expr, obj, key,
+                                               val));
     } else {
       BuildCheckHeapObject(obj);
       instr = BuildMonomorphicElementAccess(
@@ -7089,7 +7130,7 @@ HValue* HOptimizedGraphBuilder::HandleKeyedElementAccess(
     }
   } else if (!force_generic && (types != NULL && !types->is_empty())) {
     return HandlePolymorphicElementAccess(
-        obj, key, val, types, access_type,
+        expr, obj, key, val, types, access_type,
         expr->GetStoreMode(), has_side_effects);
   } else {
     if (access_type == STORE) {
@@ -7104,7 +7145,7 @@ HValue* HOptimizedGraphBuilder::HandleKeyedElementAccess(
                          Deoptimizer::SOFT);
       }
     }
-    instr = AddInstruction(BuildKeyedGeneric(access_type, obj, key, val));
+    instr = AddInstruction(BuildKeyedGeneric(access_type, expr, obj, key, val));
   }
   *has_side_effects = instr->HasObservableSideEffects();
   return instr;
@@ -7205,7 +7246,7 @@ HInstruction* HOptimizedGraphBuilder::BuildNamedAccess(
     PropertyAccessInfo info(this, access, ToType(types->first()), name);
     if (!info.CanAccessAsMonomorphic(types)) {
       HandlePolymorphicNamedFieldAccess(
-          access, ast_id, return_id, object, value, types, name);
+          access, expr, ast_id, return_id, object, value, types, name);
       return NULL;
     }
 
@@ -7223,7 +7264,7 @@ HInstruction* HOptimizedGraphBuilder::BuildNamedAccess(
         &info, object, checked_object, value, ast_id, return_id);
   }
 
-  return BuildNamedGeneric(access, object, name, value, is_uninitialized);
+  return BuildNamedGeneric(access, expr, object, name, value, is_uninitialized);
 }
 
 
@@ -7310,14 +7351,19 @@ HInstruction* HGraphBuilder::BuildConstantMapCheck(Handle<JSObject> constant) {
 
 HInstruction* HGraphBuilder::BuildCheckPrototypeMaps(Handle<JSObject> prototype,
                                                      Handle<JSObject> holder) {
-  while (holder.is_null() || !prototype.is_identical_to(holder)) {
-    BuildConstantMapCheck(prototype);
-    Object* next_prototype = prototype->GetPrototype();
-    if (next_prototype->IsNull()) return NULL;
-    CHECK(next_prototype->IsJSObject());
-    prototype = handle(JSObject::cast(next_prototype));
+  PrototypeIterator iter(isolate(), prototype,
+                         PrototypeIterator::START_AT_RECEIVER);
+  while (holder.is_null() ||
+         !PrototypeIterator::GetCurrent(iter).is_identical_to(holder)) {
+    BuildConstantMapCheck(
+        Handle<JSObject>::cast(PrototypeIterator::GetCurrent(iter)));
+    iter.Advance();
+    if (iter.IsAtEnd()) {
+      return NULL;
+    }
   }
-  return BuildConstantMapCheck(prototype);
+  return BuildConstantMapCheck(
+      Handle<JSObject>::cast(PrototypeIterator::GetCurrent(iter)));
 }
 
 
@@ -7345,7 +7391,7 @@ HInstruction* HOptimizedGraphBuilder::NewArgumentAdaptorCall(
 
   HValue* arity = Add<HConstant>(argument_count - 1);
 
-  HValue* op_vals[] = { fun, context, arity, expected_param_count };
+  HValue* op_vals[] = { context, fun, arity, expected_param_count };
 
   Handle<Code> adaptor =
       isolate()->builtins()->ArgumentsAdaptorTrampoline();
@@ -7353,7 +7399,7 @@ HInstruction* HOptimizedGraphBuilder::NewArgumentAdaptorCall(
 
   return New<HCallWithDescriptor>(
       adaptor_value, argument_count, descriptor,
-      Vector<HValue*>(op_vals, descriptor->environment_length()));
+      Vector<HValue*>(op_vals, descriptor->GetEnvironmentLength()));
 }
 
 
@@ -7550,7 +7596,7 @@ void HOptimizedGraphBuilder::HandlePolymorphicCallNamed(
   } else {
     Property* prop = expr->expression()->AsProperty();
     HInstruction* function = BuildNamedGeneric(
-        LOAD, receiver, name, NULL, prop->IsUninitialized());
+        LOAD, prop, receiver, name, NULL, prop->IsUninitialized());
     AddInstruction(function);
     Push(function);
     AddSimulate(prop->LoadId(), REMOVABLE_SIMULATE);
@@ -8586,11 +8632,11 @@ bool HOptimizedGraphBuilder::TryInlineApiCall(Handle<JSFunction> function,
   HValue* api_function_address = Add<HConstant>(ExternalReference(ref));
 
   HValue* op_vals[] = {
+    context(),
     Add<HConstant>(function),
     call_data,
     holder,
-    api_function_address,
-    context()
+    api_function_address
   };
 
   CallInterfaceDescriptor* descriptor =
@@ -8601,11 +8647,11 @@ bool HOptimizedGraphBuilder::TryInlineApiCall(Handle<JSFunction> function,
   HConstant* code_value = Add<HConstant>(code);
 
   ASSERT((sizeof(op_vals) / kPointerSize) ==
-         descriptor->environment_length());
+         descriptor->GetEnvironmentLength());
 
   HInstruction* call = New<HCallWithDescriptor>(
       code_value, argc + 1, descriptor,
-      Vector<HValue*>(op_vals, descriptor->environment_length()));
+      Vector<HValue*>(op_vals, descriptor->GetEnvironmentLength()));
 
   if (drop_extra) Drop(1);  // Drop function.
   ast_context()->ReturnInstruction(call, ast_id);

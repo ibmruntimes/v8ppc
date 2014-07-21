@@ -34,51 +34,6 @@ static void GenerateGlobalInstanceTypeCheck(MacroAssembler* masm,
 }
 
 
-// Generated code falls through if the receiver is a regular non-global
-// JS object with slow properties and no interceptors.
-//
-// "receiver" holds the receiver on entry and is unchanged.
-// "elements" holds the property dictionary on fall through.
-static void GenerateNameDictionaryReceiverCheck(MacroAssembler* masm,
-                                                Register receiver,
-                                                Register elements,
-                                                Register scratch0,
-                                                Register scratch1,
-                                                Label* miss) {
-  ASSERT(!AreAliased(receiver, elements, scratch0, scratch1));
-
-  // Check that the receiver isn't a smi.
-  __ JumpIfSmi(receiver, miss);
-
-  // Check that the receiver is a valid JS object.
-  // Let t be the object instance type, we want:
-  //   FIRST_SPEC_OBJECT_TYPE <= t <= LAST_SPEC_OBJECT_TYPE.
-  // Since LAST_SPEC_OBJECT_TYPE is the last possible instance type we only
-  // check the lower bound.
-  STATIC_ASSERT(LAST_TYPE == LAST_SPEC_OBJECT_TYPE);
-
-  __ JumpIfObjectType(receiver, scratch0, scratch1, FIRST_SPEC_OBJECT_TYPE,
-                      miss, lt);
-
-  // scratch0 now contains the map of the receiver and scratch1 the object type.
-  Register map = scratch0;
-  Register type = scratch1;
-
-  // Check if the receiver is a global JS object.
-  GenerateGlobalInstanceTypeCheck(masm, type, miss);
-
-  // Check that the object does not require access checks.
-  __ Ldrb(scratch1, FieldMemOperand(map, Map::kBitFieldOffset));
-  __ Tbnz(scratch1, Map::kIsAccessCheckNeeded, miss);
-  __ Tbnz(scratch1, Map::kHasNamedInterceptor, miss);
-
-  // Check that the properties dictionary is valid.
-  __ Ldr(elements, FieldMemOperand(receiver, JSObject::kPropertiesOffset));
-  __ Ldr(scratch1, FieldMemOperand(elements, HeapObject::kMapOffset));
-  __ JumpIfNotRoot(scratch1, Heap::kHashTableMapRootIndex, miss);
-}
-
-
 // Helper function used from LoadIC GenerateNormal.
 //
 // elements: Property dictionary. It is not clobbered if a jump to the miss
@@ -414,7 +369,8 @@ void LoadIC::GenerateMegamorphic(MacroAssembler* masm) {
   ASSERT(name.is(x2));
 
   // Probe the stub cache.
-  Code::Flags flags = Code::ComputeHandlerFlags(Code::LOAD_IC);
+  Code::Flags flags = Code::RemoveTypeAndHolderFromFlags(
+      Code::ComputeHandlerFlags(Code::LOAD_IC));
   masm->isolate()->stub_cache()->GenerateProbe(
       masm, flags, receiver, name, x3, x4, x5, x6);
 
@@ -424,28 +380,19 @@ void LoadIC::GenerateMegamorphic(MacroAssembler* masm) {
 
 
 void LoadIC::GenerateNormal(MacroAssembler* masm) {
-  // ----------- S t a t e -------------
-  //  -- x2    : name
-  //  -- lr    : return address
-  //  -- x1    : receiver
-  // -----------------------------------
-  ASSERT(x1.is(ReceiverRegister()));
-  ASSERT(x2.is(NameRegister()));
-  Label miss, slow;
+  Register dictionary = x0;
+  ASSERT(!dictionary.is(ReceiverRegister()));
+  ASSERT(!dictionary.is(NameRegister()));
+  Label slow;
 
-  GenerateNameDictionaryReceiverCheck(masm, x1, x0, x3, x4, &miss);
-
-  // x0 now holds the property dictionary.
-  GenerateDictionaryLoad(masm, &slow, x0, x2, x0, x3, x4);
+  __ Ldr(dictionary,
+         FieldMemOperand(ReceiverRegister(), JSObject::kPropertiesOffset));
+  GenerateDictionaryLoad(masm, &slow, dictionary, NameRegister(), x0, x3, x4);
   __ Ret();
 
   // Dictionary load failed, go slow (but don't miss).
   __ Bind(&slow);
   GenerateRuntimeGetProperty(masm);
-
-  // Cache miss: Jump to runtime.
-  __ Bind(&miss);
-  GenerateMiss(masm);
 }
 
 
@@ -506,8 +453,8 @@ void KeyedStoreIC::GenerateSloppyArguments(MacroAssembler* masm) {
   Register value = ValueRegister();
   Register key = NameRegister();
   Register receiver = ReceiverRegister();
-  ASSERT(receiver.is(x2));
-  ASSERT(key.is(x1));
+  ASSERT(receiver.is(x1));
+  ASSERT(key.is(x2));
   ASSERT(value.is(x0));
 
   Register map = x3;
@@ -568,15 +515,41 @@ void KeyedLoadIC::GenerateMiss(MacroAssembler* masm) {
 const Register LoadIC::ReceiverRegister() { return x1; }
 const Register LoadIC::NameRegister() { return x2; }
 
+const Register LoadIC::SlotRegister() {
+  ASSERT(FLAG_vector_ics);
+  return x0;
+}
+
+
+const Register LoadIC::VectorRegister() {
+  ASSERT(FLAG_vector_ics);
+  return x3;
+}
+
 
 const Register StoreIC::ReceiverRegister() { return x1; }
 const Register StoreIC::NameRegister() { return x2; }
 const Register StoreIC::ValueRegister() { return x0; }
 
 
-const Register KeyedStoreIC::ReceiverRegister() { return x2; }
-const Register KeyedStoreIC::NameRegister() { return x1; }
-const Register KeyedStoreIC::ValueRegister() { return x0; }
+const Register KeyedStoreIC::ReceiverRegister() {
+  return StoreIC::ReceiverRegister();
+}
+
+
+const Register KeyedStoreIC::NameRegister() {
+  return StoreIC::NameRegister();
+}
+
+
+const Register KeyedStoreIC::ValueRegister() {
+  return StoreIC::ValueRegister();
+}
+
+
+const Register KeyedStoreIC::MapRegister() {
+  return x3;
+}
 
 
 void KeyedLoadIC::GenerateRuntimeGetProperty(MacroAssembler* masm) {
@@ -1013,10 +986,10 @@ static void KeyedStoreGenerateGenericHelper(
                                          x10,
                                          x11,
                                          slow);
-  ASSERT(receiver_map.Is(x3));  // Transition code expects map in x3.
   AllocationSiteMode mode = AllocationSite::GetMode(FAST_SMI_ELEMENTS,
                                                     FAST_DOUBLE_ELEMENTS);
-  ElementsTransitionGenerator::GenerateSmiToDouble(masm, mode, slow);
+  ElementsTransitionGenerator::GenerateSmiToDouble(
+      masm, receiver, key, value, receiver_map, mode, slow);
   __ Ldr(elements, FieldMemOperand(receiver, JSObject::kElementsOffset));
   __ B(&fast_double_without_map_check);
 
@@ -1028,10 +1001,11 @@ static void KeyedStoreGenerateGenericHelper(
                                          x10,
                                          x11,
                                          slow);
-  ASSERT(receiver_map.Is(x3));  // Transition code expects map in x3.
+
   mode = AllocationSite::GetMode(FAST_SMI_ELEMENTS, FAST_ELEMENTS);
-  ElementsTransitionGenerator::GenerateMapChangeElementsTransition(masm, mode,
-                                                                   slow);
+  ElementsTransitionGenerator::GenerateMapChangeElementsTransition(
+      masm, receiver, key, value, receiver_map, mode, slow);
+
   __ Ldr(elements, FieldMemOperand(receiver, JSObject::kElementsOffset));
   __ B(&finish_store);
 
@@ -1045,9 +1019,9 @@ static void KeyedStoreGenerateGenericHelper(
                                          x10,
                                          x11,
                                          slow);
-  ASSERT(receiver_map.Is(x3));  // Transition code expects map in x3.
   mode = AllocationSite::GetMode(FAST_DOUBLE_ELEMENTS, FAST_ELEMENTS);
-  ElementsTransitionGenerator::GenerateDoubleToObject(masm, mode, slow);
+  ElementsTransitionGenerator::GenerateDoubleToObject(
+      masm, receiver, key, value, receiver_map, mode, slow);
   __ Ldr(elements, FieldMemOperand(receiver, JSObject::kElementsOffset));
   __ B(&finish_store);
 }
@@ -1067,8 +1041,8 @@ void KeyedStoreIC::GenerateGeneric(MacroAssembler* masm,
   Register value = ValueRegister();
   Register key = NameRegister();
   Register receiver = ReceiverRegister();
-  ASSERT(receiver.is(x2));
-  ASSERT(key.is(x1));
+  ASSERT(receiver.is(x1));
+  ASSERT(key.is(x2));
   ASSERT(value.is(x0));
 
   Register receiver_map = x3;
@@ -1160,7 +1134,8 @@ void StoreIC::GenerateMegamorphic(MacroAssembler* masm) {
   ASSERT(!AreAliased(receiver, name, ValueRegister(), x3, x4, x5, x6));
 
   // Probe the stub cache.
-  Code::Flags flags = Code::ComputeHandlerFlags(Code::STORE_IC);
+  Code::Flags flags = Code::RemoveTypeAndHolderFromFlags(
+      Code::ComputeHandlerFlags(Code::STORE_IC));
   masm->isolate()->stub_cache()->GenerateProbe(
       masm, flags, receiver, name, x3, x4, x5, x6);
 
@@ -1187,8 +1162,7 @@ void StoreIC::GenerateNormal(MacroAssembler* masm) {
   Register dictionary = x3;
   ASSERT(!AreAliased(value, receiver, name, x3, x4, x5));
 
-  GenerateNameDictionaryReceiverCheck(
-      masm, receiver, dictionary, x4, x5, &miss);
+  __ Ldr(dictionary, FieldMemOperand(receiver, JSObject::kPropertiesOffset));
 
   GenerateDictionaryStore(masm, &miss, dictionary, name, value, x4, x5);
   Counters* counters = masm->isolate()->counters();
