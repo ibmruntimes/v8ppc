@@ -87,12 +87,14 @@
       # This is set when building the Android WebView inside the Android build
       # system, using the 'android' gyp backend.
       'android_webview_build%': 0,
-  },
+    },
     # Copy it out one scope.
     'android_webview_build%': '<(android_webview_build)',
   },
   'conditions': [
-    ['host_arch=="ia32" or host_arch=="x64" or clang==1', {
+    ['host_arch=="ia32" or host_arch=="x64" or \
+      host_arch=="ppc" or host_arch=="ppc64" or \
+      clang==1', {
       'variables': {
         'host_cxx_is_biarch%': 1,
        },
@@ -102,6 +104,7 @@
       },
     }],
     ['target_arch=="ia32" or target_arch=="x64" or target_arch=="x87" or \
+      target_arch=="ppc" or target_arch=="ppc64" or \
       clang==1', {
       'variables': {
         'target_cxx_is_biarch%': 1,
@@ -486,7 +489,7 @@
          or OS=="netbsd" or OS=="mac" or OS=="android" or OS=="qnx") and \
         (v8_target_arch=="arm" or v8_target_arch=="ia32" or \
          v8_target_arch=="x87" or v8_target_arch=="mips" or \
-         v8_target_arch=="mipsel")', {
+         v8_target_arch=="mipsel" or v8_target_arch=="ppc")', {
         'target_conditions': [
           ['_toolset=="host"', {
             'conditions': [
@@ -513,7 +516,8 @@
         ],
       }],
       ['(OS=="linux" or OS=="android") and \
-        (v8_target_arch=="x64" or v8_target_arch=="arm64")', {
+        (v8_target_arch=="x64" or v8_target_arch=="arm64" or \
+         v8_target_arch=="ppc64")', {
         'target_conditions': [
           ['_toolset=="host"', {
             'conditions': [
@@ -522,16 +526,16 @@
                 'ldflags': [ '-m64' ]
               }],
              ],
-          }],
-          ['_toolset=="target"', {
-            'conditions': [
+           }],
+           ['_toolset=="target"', {
+             'conditions': [
                ['target_cxx_is_biarch==1', {
                  'cflags': [ '-m64' ],
                  'ldflags': [ '-m64' ],
                }],
              ]
-              }],
-            ],
+           }],
+         ],
       }],
       ['OS=="linux" or OS=="freebsd" or OS=="openbsd" or OS=="solaris" \
          or OS=="netbsd" or OS=="qnx" or OS=="aix"', {

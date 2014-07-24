@@ -362,7 +362,7 @@ void ElementsTransitionGenerator::GenerateDoubleToObject(
   __ li(array_size, Operand(FixedDoubleArray::kHeaderSize));
   __ SmiToPtrArrayOffset(r0, length);
   __ add(array_size, array_size, r0);
-  __ Allocate(array_size, array, r10, scratch, &gc_required,
+  __ Allocate(array_size, array, allocate_scratch, scratch, &gc_required,
               NO_ALLOCATION_FLAGS);
   // array: destination FixedArray, not tagged as heap object
   // Set destination FixedDoubleArray's length and map.
