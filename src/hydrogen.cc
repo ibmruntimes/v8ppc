@@ -2481,6 +2481,9 @@ HInstruction* HGraphBuilder::BuildUncheckedMonomorphicElementAccess(
 
   if (IsGrowStoreMode(store_mode)) {
     NoObservableSideEffectsScope no_effects(this);
+    Representation representation = HStoreKeyed::RequiredValueRepresentation(
+        elements_kind, STORE_TO_INITIALIZED_ENTRY);
+    val = AddUncasted<HForceRepresentation>(val, representation);
     elements = BuildCheckForCapacityGrow(checked_object, elements,
                                          elements_kind, length, key,
                                          is_js_array, access_type);
@@ -2677,9 +2680,7 @@ HInstruction* HGraphBuilder::AddElementAccess(
       val = Add<HClampToUint8>(val);
     }
     return Add<HStoreKeyed>(elements, checked_key, val, elements_kind,
-                            elements_kind == FAST_SMI_ELEMENTS
-                              ? STORE_TO_INITIALIZED_ENTRY
-                              : INITIALIZING_STORE);
+                            STORE_TO_INITIALIZED_ENTRY);
   }
 
   ASSERT(access_type == LOAD);
@@ -5228,7 +5229,8 @@ void HOptimizedGraphBuilder::VisitFunctionLiteral(FunctionLiteral* expr) {
   ASSERT(current_block()->HasPredecessor());
   Handle<SharedFunctionInfo> shared_info = expr->shared_info();
   if (shared_info.is_null()) {
-    shared_info = Compiler::BuildFunctionInfo(expr, current_info()->script());
+    shared_info =
+        Compiler::BuildFunctionInfo(expr, current_info()->script(), top_info());
   }
   // We also have a stack overflow if the recursive compilation did.
   if (HasStackOverflow()) return;
@@ -6072,6 +6074,11 @@ bool HOptimizedGraphBuilder::PropertyAccessInfo::LookupInPrototypes() {
 bool HOptimizedGraphBuilder::PropertyAccessInfo::CanAccessMonomorphic() {
   if (!CanInlinePropertyAccess(type_)) return false;
   if (IsJSObjectFieldAccessor()) return IsLoad();
+  if (this->map()->function_with_prototype() &&
+      !this->map()->has_non_instance_prototype() &&
+      name_.is_identical_to(isolate()->factory()->prototype_string())) {
+    return IsLoad();
+  }
   if (!LookupDescriptor()) return false;
   if (lookup_.IsFound()) {
     if (IsLoad()) return true;
@@ -6161,6 +6168,12 @@ HInstruction* HOptimizedGraphBuilder::BuildMonomorphicAccess(
   if (info->GetJSObjectFieldAccess(&access)) {
     ASSERT(info->IsLoad());
     return New<HLoadNamedField>(object, checked_object, access);
+  }
+
+  if (info->name().is_identical_to(isolate()->factory()->prototype_string()) &&
+      info->map()->function_with_prototype()) {
+    ASSERT(!info->map()->has_non_instance_prototype());
+    return New<HLoadFunctionPrototype>(checked_object);
   }
 
   HValue* checked_holder = checked_object;
@@ -6577,8 +6590,7 @@ void HOptimizedGraphBuilder::HandleCompoundAssignment(Assignment* expr) {
     CHECK_ALIVE(VisitForValue(prop->obj()));
     HValue* object = Top();
     HValue* key = NULL;
-    if ((!prop->IsFunctionPrototype() && !prop->key()->IsPropertyName()) ||
-        prop->IsStringAccess()) {
+    if (!prop->key()->IsPropertyName() || prop->IsStringAccess()) {
       CHECK_ALIVE(VisitForValue(prop->key()));
       key = Top();
     }
@@ -7288,11 +7300,6 @@ void HOptimizedGraphBuilder::BuildLoad(Property* expr,
     AddInstruction(char_code);
     instr = NewUncasted<HStringCharFromCode>(char_code);
 
-  } else if (expr->IsFunctionPrototype()) {
-    HValue* function = Pop();
-    BuildCheckHeapObject(function);
-    instr = New<HLoadFunctionPrototype>(function);
-
   } else if (expr->key()->IsPropertyName()) {
     Handle<String> name = expr->key()->AsLiteral()->AsPropertyName();
     HValue* object = Pop();
@@ -7332,8 +7339,7 @@ void HOptimizedGraphBuilder::VisitProperty(Property* expr) {
   if (TryArgumentsAccess(expr)) return;
 
   CHECK_ALIVE(VisitForValue(expr->obj()));
-  if ((!expr->IsFunctionPrototype() && !expr->key()->IsPropertyName()) ||
-      expr->IsStringAccess()) {
+  if (!expr->key()->IsPropertyName() || expr->IsStringAccess()) {
     CHECK_ALIVE(VisitForValue(expr->key()));
   }
 
@@ -10030,8 +10036,7 @@ void HOptimizedGraphBuilder::VisitCountOperation(CountOperation* expr) {
   HValue* object = Top();
 
   HValue* key = NULL;
-  if ((!prop->IsFunctionPrototype() && !prop->key()->IsPropertyName()) ||
-      prop->IsStringAccess()) {
+  if (!prop->key()->IsPropertyName() || prop->IsStringAccess()) {
     CHECK_ALIVE(VisitForValue(prop->key()));
     key = Top();
   }
@@ -11241,7 +11246,7 @@ void HOptimizedGraphBuilder::VisitFunctionDeclaration(
     case Variable::UNALLOCATED: {
       globals_.Add(variable->name(), zone());
       Handle<SharedFunctionInfo> function = Compiler::BuildFunctionInfo(
-          declaration->fun(), current_info()->script());
+          declaration->fun(), current_info()->script(), top_info());
       // Check for stack-overflow exception.
       if (function.is_null()) return SetStackOverflow();
       globals_.Add(function, zone());

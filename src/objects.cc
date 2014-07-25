@@ -135,11 +135,11 @@ MaybeHandle<Object> Object::GetProperty(LookupIterator* it) {
       case LookupIterator::NOT_FOUND:
         UNREACHABLE();
       case LookupIterator::JSPROXY:
-        return JSProxy::GetPropertyWithHandler(
-            it->GetJSProxy(), it->GetReceiver(), it->name());
+        return JSProxy::GetPropertyWithHandler(it->GetHolder<JSProxy>(),
+                                               it->GetReceiver(), it->name());
       case LookupIterator::INTERCEPTOR: {
         MaybeHandle<Object> maybe_result = JSObject::GetPropertyWithInterceptor(
-            it->GetHolder(), it->GetReceiver(), it->name());
+            it->GetHolder<JSObject>(), it->GetReceiver(), it->name());
         if (!maybe_result.is_null()) return maybe_result;
         if (it->isolate()->has_pending_exception()) return maybe_result;
         break;
@@ -151,9 +151,9 @@ MaybeHandle<Object> Object::GetProperty(LookupIterator* it) {
         if (it->HasProperty()) {
           switch (it->property_kind()) {
             case LookupIterator::ACCESSOR:
-              return GetPropertyWithAccessor(
-                  it->GetReceiver(), it->name(),
-                  it->GetHolder(), it->GetAccessors());
+              return GetPropertyWithAccessor(it->GetReceiver(), it->name(),
+                                             it->GetHolder<JSObject>(),
+                                             it->GetAccessors());
             case LookupIterator::DATA:
               return it->GetDataValue();
           }
@@ -471,6 +471,8 @@ MaybeHandle<Object> Object::SetPropertyWithAccessor(
   // value since a const declaration would conflict with the setter.
   ASSERT(!structure->IsForeign());
   if (structure->IsExecutableAccessorInfo()) {
+    // Don't call executable accessor setters with non-JSObject receivers.
+    if (!receiver->IsJSObject()) return value;
     // api style callbacks
     ExecutableAccessorInfo* data = ExecutableAccessorInfo::cast(*structure);
     if (!data->IsCompatibleReceiver(*receiver)) {
@@ -554,10 +556,9 @@ MaybeHandle<Object> Object::SetPropertyWithDefinedSetter(
   }
 
   Handle<Object> argv[] = { value };
-  RETURN_ON_EXCEPTION(
-      isolate,
-      Execution::Call(isolate, setter, receiver, ARRAY_SIZE(argv), argv),
-      Object);
+  RETURN_ON_EXCEPTION(isolate, Execution::Call(isolate, setter, receiver,
+                                               ARRAY_SIZE(argv), argv, true),
+                      Object);
   return value;
 }
 
@@ -581,10 +582,11 @@ static bool FindAllCanReadHolder(LookupIterator* it) {
 
 MaybeHandle<Object> JSObject::GetPropertyWithFailedAccessCheck(
     LookupIterator* it) {
-  Handle<JSObject> checked = Handle<JSObject>::cast(it->GetHolder());
+  Handle<JSObject> checked = it->GetHolder<JSObject>();
   if (FindAllCanReadHolder(it)) {
-    return GetPropertyWithAccessor(
-        it->GetReceiver(), it->name(), it->GetHolder(), it->GetAccessors());
+    return GetPropertyWithAccessor(it->GetReceiver(), it->name(),
+                                   it->GetHolder<JSObject>(),
+                                   it->GetAccessors());
   }
   it->isolate()->ReportFailedAccessCheck(checked, v8::ACCESS_GET);
   RETURN_EXCEPTION_IF_SCHEDULED_EXCEPTION(it->isolate(), Object);
@@ -594,7 +596,7 @@ MaybeHandle<Object> JSObject::GetPropertyWithFailedAccessCheck(
 
 PropertyAttributes JSObject::GetPropertyAttributesWithFailedAccessCheck(
     LookupIterator* it) {
-  Handle<JSObject> checked = Handle<JSObject>::cast(it->GetHolder());
+  Handle<JSObject> checked = it->GetHolder<JSObject>();
   if (FindAllCanReadHolder(it)) return it->property_details().attributes();
   it->isolate()->ReportFailedAccessCheck(checked, v8::ACCESS_HAS);
   // TODO(yangguo): Issue 3269, check for scheduled exception missing?
@@ -620,11 +622,11 @@ static bool FindAllCanWriteHolder(LookupIterator* it) {
 
 MaybeHandle<Object> JSObject::SetPropertyWithFailedAccessCheck(
     LookupIterator* it, Handle<Object> value, StrictMode strict_mode) {
-  Handle<JSObject> checked = Handle<JSObject>::cast(it->GetHolder());
+  Handle<JSObject> checked = it->GetHolder<JSObject>();
   if (FindAllCanWriteHolder(it)) {
     return SetPropertyWithAccessor(it->GetReceiver(), it->name(), value,
-                                   it->GetHolder(), it->GetAccessors(),
-                                   strict_mode);
+                                   it->GetHolder<JSObject>(),
+                                   it->GetAccessors(), strict_mode);
   }
 
   it->isolate()->ReportFailedAccessCheck(checked, v8::ACCESS_SET);
@@ -2947,7 +2949,7 @@ MaybeHandle<Object> JSObject::SetPropertyWithInterceptor(LookupIterator* it,
   if (it->name()->IsSymbol()) return value;
 
   Handle<String> name_string = Handle<String>::cast(it->name());
-  Handle<JSObject> holder = it->GetHolder();
+  Handle<JSObject> holder = it->GetHolder<JSObject>();
   Handle<InterceptorInfo> interceptor(holder->GetNamedInterceptor());
   if (interceptor->setter()->IsUndefined()) return MaybeHandle<Object>();
 
@@ -2966,13 +2968,12 @@ MaybeHandle<Object> JSObject::SetPropertyWithInterceptor(LookupIterator* it,
 }
 
 
-MaybeHandle<Object> JSReceiver::SetProperty(Handle<JSReceiver> object,
-                                            Handle<Name> name,
-                                            Handle<Object> value,
-                                            StrictMode strict_mode,
-                                            StoreFromKeyed store_mode) {
+MaybeHandle<Object> Object::SetProperty(Handle<Object> object,
+                                        Handle<Name> name, Handle<Object> value,
+                                        StrictMode strict_mode,
+                                        StoreFromKeyed store_mode) {
   LookupIterator it(object, name);
-  return Object::SetProperty(&it, value, strict_mode, store_mode);
+  return SetProperty(&it, value, strict_mode, store_mode);
 }
 
 
@@ -3000,7 +3001,7 @@ MaybeHandle<Object> Object::SetProperty(LookupIterator* it,
 
       case LookupIterator::JSPROXY:
         if (it->HolderIsReceiver()) {
-          return JSProxy::SetPropertyWithHandler(it->GetJSProxy(),
+          return JSProxy::SetPropertyWithHandler(it->GetHolder<JSProxy>(),
                                                  it->GetReceiver(), it->name(),
                                                  value, strict_mode);
         } else {
@@ -3008,8 +3009,8 @@ MaybeHandle<Object> Object::SetProperty(LookupIterator* it,
           bool has_result = false;
           MaybeHandle<Object> maybe_result =
               JSProxy::SetPropertyViaPrototypesWithHandler(
-                  it->GetJSProxy(), it->GetReceiver(), it->name(), value,
-                  strict_mode, &has_result);
+                  it->GetHolder<JSProxy>(), it->GetReceiver(), it->name(),
+                  value, strict_mode, &has_result);
           if (has_result) return maybe_result;
           done = true;
         }
@@ -3024,7 +3025,7 @@ MaybeHandle<Object> Object::SetProperty(LookupIterator* it,
         } else {
           Maybe<PropertyAttributes> maybe_attributes =
               JSObject::GetPropertyAttributesWithInterceptor(
-                  it->GetHolder(), it->GetReceiver(), it->name());
+                  it->GetHolder<JSObject>(), it->GetReceiver(), it->name());
           RETURN_EXCEPTION_IF_SCHEDULED_EXCEPTION(it->isolate(), Object);
           done = maybe_attributes.has_value;
           if (done && (maybe_attributes.value & READ_ONLY) != 0) {
@@ -3043,7 +3044,7 @@ MaybeHandle<Object> Object::SetProperty(LookupIterator* it,
             if (it->HolderIsReceiver() ||
                 !it->GetAccessors()->IsDeclaredAccessorInfo()) {
               return SetPropertyWithAccessor(it->GetReceiver(), it->name(),
-                                             value, it->GetHolder(),
+                                             value, it->GetHolder<JSObject>(),
                                              it->GetAccessors(), strict_mode);
             }
             break;
@@ -3114,8 +3115,10 @@ MaybeHandle<Object> Object::AddDataProperty(LookupIterator* it,
                                             StrictMode strict_mode,
                                             StoreFromKeyed store_mode) {
   ASSERT(!it->GetReceiver()->IsJSProxy());
-  // Transitions to data properties of value wrappers are not observable.
-  if (!it->GetReceiver()->IsJSObject()) return value;
+  if (!it->GetReceiver()->IsJSObject()) {
+    // TODO(verwaest): Throw a TypeError with a more specific message.
+    return WriteToReadOnlyProperty(it, value, strict_mode);
+  }
   Handle<JSObject> receiver = Handle<JSObject>::cast(it->GetReceiver());
 
   // If the receiver is a JSGlobalProxy, store on the prototype (JSGlobalObject)
@@ -4338,11 +4341,11 @@ PropertyAttributes JSReceiver::GetPropertyAttributes(LookupIterator* it) {
         UNREACHABLE();
       case LookupIterator::JSPROXY:
         return JSProxy::GetPropertyAttributesWithHandler(
-            it->GetJSProxy(), it->GetReceiver(), it->name());
+            it->GetHolder<JSProxy>(), it->GetReceiver(), it->name());
       case LookupIterator::INTERCEPTOR: {
         Maybe<PropertyAttributes> result =
             JSObject::GetPropertyAttributesWithInterceptor(
-                it->GetHolder(), it->GetReceiver(), it->name());
+                it->GetHolder<JSObject>(), it->GetReceiver(), it->name());
         if (result.has_value) return result.value;
         break;
       }
@@ -10291,16 +10294,21 @@ Handle<Object> Script::GetNameOrSourceURL(Handle<Script> script) {
 // collector will call the weak callback on the global handle
 // associated with the wrapper and get rid of both the wrapper and the
 // handle.
-static void ClearWrapperCache(
+static void ClearWrapperCacheWeakCallback(
     const v8::WeakCallbackData<v8::Value, void>& data) {
   Object** location = reinterpret_cast<Object**>(data.GetParameter());
   JSValue* wrapper = JSValue::cast(*location);
-  Foreign* foreign = Script::cast(wrapper->value())->wrapper();
+  Script::cast(wrapper->value())->ClearWrapperCache();
+}
+
+
+void Script::ClearWrapperCache() {
+  Foreign* foreign = wrapper();
+  Object** location = reinterpret_cast<Object**>(foreign->foreign_address());
   ASSERT_EQ(foreign->foreign_address(), reinterpret_cast<Address>(location));
   foreign->set_foreign_address(0);
   GlobalHandles::Destroy(location);
-  Isolate* isolate = reinterpret_cast<Isolate*>(data.GetIsolate());
-  isolate->counters()->script_wrappers()->Decrement();
+  GetIsolate()->counters()->script_wrappers()->Decrement();
 }
 
 
@@ -10325,7 +10333,7 @@ Handle<JSObject> Script::GetWrapper(Handle<Script> script) {
   Handle<Object> handle = isolate->global_handles()->Create(*result);
   GlobalHandles::MakeWeak(handle.location(),
                           reinterpret_cast<void*>(handle.location()),
-                          &ClearWrapperCache);
+                          &ClearWrapperCacheWeakCallback);
   script->wrapper()->set_foreign_address(
       reinterpret_cast<Address>(handle.location()));
   return result;
@@ -14606,10 +14614,6 @@ Dictionary<UnseededNumberDictionary, UnseededNumberDictionaryShape, uint32_t>::
 
 template Object*
 Dictionary<SeededNumberDictionary, SeededNumberDictionaryShape, uint32_t>::
-    SlowReverseLookup(Object* value);
-
-template Object*
-Dictionary<UnseededNumberDictionary, UnseededNumberDictionaryShape, uint32_t>::
     SlowReverseLookup(Object* value);
 
 template Object*

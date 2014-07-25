@@ -960,13 +960,21 @@ Handle<SharedFunctionInfo> Compiler::CompileScript(
   MaybeHandle<SharedFunctionInfo> maybe_result;
   Handle<SharedFunctionInfo> result;
   if (extension == NULL) {
-    maybe_result = compilation_cache->LookupScript(
-        source, script_name, line_offset, column_offset,
-        is_shared_cross_origin, context);
-    if (maybe_result.is_null() && FLAG_serialize_toplevel &&
-        compile_options == ScriptCompiler::kConsumeCodeCache) {
+    if (FLAG_serialize_toplevel &&
+        compile_options == ScriptCompiler::kConsumeCodeCache &&
+        !isolate->debug()->is_loaded()) {
       return CodeSerializer::Deserialize(isolate, *cached_data, source);
+    } else {
+      maybe_result = compilation_cache->LookupScript(
+          source, script_name, line_offset, column_offset,
+          is_shared_cross_origin, context);
     }
+  }
+
+  base::ElapsedTimer timer;
+  if (FLAG_profile_deserialization && FLAG_serialize_toplevel &&
+      compile_options == ScriptCompiler::kProduceCodeCache) {
+    timer.Start();
   }
 
   if (!maybe_result.ToHandle(&result)) {
@@ -1002,6 +1010,10 @@ Handle<SharedFunctionInfo> Compiler::CompileScript(
       if (FLAG_serialize_toplevel &&
           compile_options == ScriptCompiler::kProduceCodeCache) {
         *cached_data = CodeSerializer::Serialize(isolate, result, source);
+        if (FLAG_profile_deserialization) {
+          PrintF("[Compiling and serializing %d bytes took %0.3f ms]\n",
+                 (*cached_data)->length(), timer.Elapsed().InMillisecondsF());
+        }
       }
     }
 
@@ -1013,13 +1025,15 @@ Handle<SharedFunctionInfo> Compiler::CompileScript(
 }
 
 
-Handle<SharedFunctionInfo> Compiler::BuildFunctionInfo(FunctionLiteral* literal,
-                                                       Handle<Script> script) {
+Handle<SharedFunctionInfo> Compiler::BuildFunctionInfo(
+    FunctionLiteral* literal, Handle<Script> script,
+    CompilationInfo* outer_info) {
   // Precondition: code has been parsed and scopes have been analyzed.
   CompilationInfoWithZone info(script);
   info.SetFunction(literal);
   info.PrepareForCompilation(literal->scope());
   info.SetStrictMode(literal->scope()->strict_mode());
+  if (outer_info->will_serialize()) info.PrepareForSerializing();
 
   Isolate* isolate = info.isolate();
   Factory* factory = isolate->factory();

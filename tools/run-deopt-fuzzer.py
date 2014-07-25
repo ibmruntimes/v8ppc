@@ -390,6 +390,7 @@ def Execute(arch, mode, args, options, suites, workspace):
     "no_snap": False,
     "simulator": utils.UseSimulator(arch),
     "system": utils.GuessOS(),
+    "tsan": False,
   }
   all_tests = []
   num_tests = 0

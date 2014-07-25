@@ -1480,6 +1480,24 @@ int HeapObject::Size() {
 }
 
 
+bool HeapObject::MayContainNewSpacePointers() {
+  InstanceType type = map()->instance_type();
+  if (type <= LAST_NAME_TYPE) {
+    if (type == SYMBOL_TYPE) {
+      return true;
+    }
+    ASSERT(type < FIRST_NONSTRING_TYPE);
+    // There are four string representations: sequential strings, external
+    // strings, cons strings, and sliced strings.
+    // Only the latter two contain non-map-word pointers to heap objects.
+    return ((type & kIsIndirectStringMask) == kIsIndirectStringTag);
+  }
+  // The ConstantPoolArray contains heap pointers, but not new space pointers.
+  if (type == CONSTANT_POOL_ARRAY_TYPE) return false;
+  return (type > LAST_DATA_TYPE);
+}
+
+
 void HeapObject::IteratePointers(ObjectVisitor* v, int start, int end) {
   v->VisitPointers(reinterpret_cast<Object**>(FIELD_ADDR(this, start)),
                    reinterpret_cast<Object**>(FIELD_ADDR(this, end)));
@@ -6584,6 +6602,32 @@ bool String::AsArrayIndex(uint32_t* index) {
     return false;
   }
   return SlowAsArrayIndex(index);
+}
+
+
+void String::SetForwardedInternalizedString(String* canonical) {
+  ASSERT(IsInternalizedString());
+  ASSERT(HasHashCode());
+  if (canonical == this) return;  // No need to forward.
+  ASSERT(SlowEquals(canonical));
+  ASSERT(canonical->IsInternalizedString());
+  ASSERT(canonical->HasHashCode());
+  WRITE_FIELD(this, kHashFieldOffset, canonical);
+  // Setting the hash field to a tagged value sets the LSB, causing the hash
+  // code to be interpreted as uninitialized.  We use this fact to recognize
+  // that we have a forwarded string.
+  ASSERT(!HasHashCode());
+}
+
+
+String* String::GetForwardedInternalizedString() {
+  ASSERT(IsInternalizedString());
+  if (HasHashCode()) return this;
+  String* canonical = String::cast(READ_FIELD(this, kHashFieldOffset));
+  ASSERT(canonical->IsInternalizedString());
+  ASSERT(SlowEquals(canonical));
+  ASSERT(canonical->HasHashCode());
+  return canonical;
 }
 
 

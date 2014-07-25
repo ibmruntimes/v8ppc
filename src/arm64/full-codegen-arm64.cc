@@ -874,7 +874,7 @@ void FullCodeGenerator::VisitFunctionDeclaration(
     case Variable::UNALLOCATED: {
       globals_->Add(variable->name(), zone());
       Handle<SharedFunctionInfo> function =
-          Compiler::BuildFunctionInfo(declaration->fun(), script());
+          Compiler::BuildFunctionInfo(declaration->fun(), script(), info_);
       // Check for stack overflow exception.
       if (function.is_null()) return SetStackOverflow();
       globals_->Add(function, zone());
@@ -1270,16 +1270,6 @@ void FullCodeGenerator::VisitForOfStatement(ForOfStatement* stmt) {
 
   Iteration loop_statement(this, stmt);
   increment_loop_depth();
-
-  // var iterable = subject
-  VisitForAccumulatorValue(stmt->assign_iterable());
-
-  // As with for-in, skip the loop if the iterator is null or undefined.
-  Register iterator = x0;
-  __ JumpIfRoot(iterator, Heap::kUndefinedValueRootIndex,
-                loop_statement.break_label());
-  __ JumpIfRoot(iterator, Heap::kNullValueRootIndex,
-                loop_statement.break_label());
 
   // var iterator = iterable[Symbol.iterator]();
   VisitForEffect(stmt->assign_iterator());

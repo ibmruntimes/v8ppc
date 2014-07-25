@@ -961,13 +961,11 @@ class ForOfStatement V8_FINAL : public ForEachStatement {
   void Initialize(Expression* each,
                   Expression* subject,
                   Statement* body,
-                  Expression* assign_iterable,
                   Expression* assign_iterator,
                   Expression* next_result,
                   Expression* result_done,
                   Expression* assign_each) {
     ForEachStatement::Initialize(each, subject, body);
-    assign_iterable_ = assign_iterable;
     assign_iterator_ = assign_iterator;
     next_result_ = next_result;
     result_done_ = result_done;
@@ -978,12 +976,7 @@ class ForOfStatement V8_FINAL : public ForEachStatement {
     return subject();
   }
 
-  // var iterable = subject;
-  Expression* assign_iterable() const {
-    return assign_iterable_;
-  }
-
-  // var iterator = iterable[Symbol.iterator]();
+  // var iterator = subject[Symbol.iterator]();
   Expression* assign_iterator() const {
     return assign_iterator_;
   }
@@ -1018,7 +1011,6 @@ class ForOfStatement V8_FINAL : public ForEachStatement {
         back_edge_id_(GetNextId(zone)) {
   }
 
-  Expression* assign_iterable_;
   Expression* assign_iterator_;
   Expression* next_result_;
   Expression* result_done_;
@@ -1684,7 +1676,6 @@ class Property V8_FINAL : public Expression, public FeedbackSlotInterface {
   BailoutId LoadId() const { return load_id_; }
 
   bool IsStringAccess() const { return is_string_access_; }
-  bool IsFunctionPrototype() const { return is_function_prototype_; }
 
   // Type feedback information.
   virtual bool IsMonomorphic() V8_OVERRIDE {
@@ -1702,7 +1693,6 @@ class Property V8_FINAL : public Expression, public FeedbackSlotInterface {
   }
   void set_is_uninitialized(bool b) { is_uninitialized_ = b; }
   void set_is_string_access(bool b) { is_string_access_ = b; }
-  void set_is_function_prototype(bool b) { is_function_prototype_ = b; }
   void mark_for_call() { is_for_call_ = true; }
   bool IsForCall() { return is_for_call_; }
 
@@ -1716,10 +1706,7 @@ class Property V8_FINAL : public Expression, public FeedbackSlotInterface {
   int PropertyFeedbackSlot() const { return property_feedback_slot_; }
 
  protected:
-  Property(Zone* zone,
-           Expression* obj,
-           Expression* key,
-           int pos)
+  Property(Zone* zone, Expression* obj, Expression* key, int pos)
       : Expression(zone, pos),
         obj_(obj),
         key_(key),
@@ -1727,8 +1714,7 @@ class Property V8_FINAL : public Expression, public FeedbackSlotInterface {
         property_feedback_slot_(kInvalidFeedbackSlot),
         is_for_call_(false),
         is_uninitialized_(false),
-        is_string_access_(false),
-        is_function_prototype_(false) { }
+        is_string_access_(false) {}
 
  private:
   Expression* obj_;
@@ -1740,7 +1726,6 @@ class Property V8_FINAL : public Expression, public FeedbackSlotInterface {
   bool is_for_call_ : 1;
   bool is_uninitialized_ : 1;
   bool is_string_access_ : 1;
-  bool is_function_prototype_ : 1;
 };
 
 

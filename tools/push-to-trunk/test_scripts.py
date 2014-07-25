@@ -616,8 +616,8 @@ class ScriptTest(unittest.TestCase):
 
     self.ExpectGit([
       Git("checkout -f hash1 -- %s" % TEST_CONFIG[VERSION_FILE], ""),
-      Git("checkout -f master -- %s" % TEST_CONFIG[VERSION_FILE], "",
-          cb=lambda: self.WriteFakeVersionFile(22, 6)),
+      Git("checkout -f svn/bleeding_edge -- %s" % TEST_CONFIG[VERSION_FILE],
+          "", cb=lambda: self.WriteFakeVersionFile(22, 6)),
     ])
 
     self.ExpectReadline([
@@ -1373,7 +1373,8 @@ LOG=N
 
     self.ExpectReadURL([
       URL("https://v8-status.appspot.com/revisions?format=json",
-          "[{\"revision\": \"123\", \"status\": true},"
+          "[{\"revision\": \"126\", \"status\": true},"
+           "{\"revision\": \"123\", \"status\": true},"
            "{\"revision\": \"112\", \"status\": true}]"),
     ])
 

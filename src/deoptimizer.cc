@@ -3268,10 +3268,10 @@ Handle<Object> SlotRef::GetValue(Isolate* isolate) {
       return Handle<Object>(Memory::Object_at(addr_), isolate);
 
     case INT32: {
-#if V8_TARGET_LITTLE_ENDIAN || !V8_HOST_ARCH_64_BIT
-      int value = Memory::int32_at(addr_);
-#else
+#if V8_TARGET_BIG_ENDIAN && V8_HOST_ARCH_64_BIT
       int value = Memory::int32_at(addr_ + kIntSize);
+#else
+      int value = Memory::int32_at(addr_);
 #endif
       if (Smi::IsValid(value)) {
         return Handle<Object>(Smi::FromInt(value), isolate);
@@ -3281,10 +3281,10 @@ Handle<Object> SlotRef::GetValue(Isolate* isolate) {
     }
 
     case UINT32: {
-#if V8_TARGET_LITTLE_ENDIAN || !V8_HOST_ARCH_64_BIT
-      uint32_t value = Memory::uint32_at(addr_);
-#else
+#if V8_TARGET_BIG_ENDIAN && V8_HOST_ARCH_64_BIT
       uint32_t value = Memory::uint32_at(addr_ + kIntSize);
+#else
+      uint32_t value = Memory::uint32_at(addr_);
 #endif
       if (value <= static_cast<uint32_t>(Smi::kMaxValue)) {
         return Handle<Object>(Smi::FromInt(static_cast<int>(value)), isolate);

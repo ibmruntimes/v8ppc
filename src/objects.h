@@ -1491,6 +1491,13 @@ class Object {
   void Lookup(Handle<Name> name, LookupResult* result);
 
   MUST_USE_RESULT static MaybeHandle<Object> GetProperty(LookupIterator* it);
+
+  // Implementation of [[Put]], ECMA-262 5th edition, section 8.12.5.
+  MUST_USE_RESULT static MaybeHandle<Object> SetProperty(
+      Handle<Object> object, Handle<Name> key, Handle<Object> value,
+      StrictMode strict_mode,
+      StoreFromKeyed store_mode = MAY_BE_STORE_FROM_KEYED);
+
   MUST_USE_RESULT static MaybeHandle<Object> SetProperty(
       LookupIterator* it, Handle<Object> value, StrictMode strict_mode,
       StoreFromKeyed store_mode);
@@ -1748,6 +1755,10 @@ class HeapObject: public Object {
   // Returns the heap object's size in bytes
   inline int Size();
 
+  // Returns true if this heap object may contain pointers to objects in new
+  // space.
+  inline bool MayContainNewSpacePointers();
+
   // Given a heap object's map pointer, returns the heap size in bytes
   // Useful when the map pointer field is used for other purposes.
   // GC internal.
@@ -1949,13 +1960,6 @@ class JSReceiver: public HeapObject {
 
   DECLARE_CAST(JSReceiver)
 
-  // Implementation of [[Put]], ECMA-262 5th edition, section 8.12.5.
-  MUST_USE_RESULT static MaybeHandle<Object> SetProperty(
-      Handle<JSReceiver> object,
-      Handle<Name> key,
-      Handle<Object> value,
-      StrictMode strict_mode,
-      StoreFromKeyed store_mode = MAY_BE_STORE_FROM_KEYED);
   MUST_USE_RESULT static MaybeHandle<Object> SetElement(
       Handle<JSReceiver> object,
       uint32_t index,
@@ -2031,14 +2035,6 @@ class JSReceiver: public HeapObject {
       KeyCollectionType type);
 
  private:
-  MUST_USE_RESULT static MaybeHandle<Object> SetProperty(
-      Handle<JSReceiver> receiver,
-      LookupResult* result,
-      Handle<Name> key,
-      Handle<Object> value,
-      StrictMode strict_mode,
-      StoreFromKeyed store_from_keyed);
-
   DISALLOW_IMPLICIT_CONSTRUCTORS(JSReceiver);
 };
 
@@ -6954,6 +6950,7 @@ class Script: public Struct {
 
   // Get the JS object wrapping the given script; create it if none exists.
   static Handle<JSObject> GetWrapper(Handle<Script> script);
+  void ClearWrapperCache();
 
   // Dispatched behavior.
   DECLARE_PRINTER(Script)
@@ -9373,6 +9370,11 @@ class String: public Name {
 
   static Handle<FixedArray> CalculateLineEnds(Handle<String> string,
                                               bool include_ending_line);
+
+  // Use the hash field to forward to the canonical internalized string
+  // when deserializing an internalized string.
+  inline void SetForwardedInternalizedString(String* string);
+  inline String* GetForwardedInternalizedString();
 
  private:
   friend class Name;
