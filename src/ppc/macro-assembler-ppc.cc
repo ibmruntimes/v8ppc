@@ -2250,14 +2250,15 @@ void MacroAssembler::TryGetFunctionPrototype(Register function,
                                              Register scratch,
                                              Label* miss,
                                              bool miss_on_bound_function) {
-  // Check that the receiver isn't a smi.
-  JumpIfSmi(function, miss);
-
-  // Check that the function really is a function.  Load map into result reg.
-  CompareObjectType(function, result, scratch, JS_FUNCTION_TYPE);
-  bne(miss);
-
+  Label non_instance;
   if (miss_on_bound_function) {
+    // Check that the receiver isn't a smi.
+    JumpIfSmi(function, miss);
+
+    // Check that the function really is a function.  Load map into result reg.
+    CompareObjectType(function, result, scratch, JS_FUNCTION_TYPE);
+    bne(miss);
+
     LoadP(scratch,
           FieldMemOperand(function, JSFunction::kSharedFunctionInfoOffset));
     lwz(scratch,
@@ -2270,13 +2271,12 @@ void MacroAssembler::TryGetFunctionPrototype(Register function,
 #endif
             r0);
     bne(miss, cr0);
-  }
 
-  // Make sure that the function has an instance prototype.
-  Label non_instance;
-  lbz(scratch, FieldMemOperand(result, Map::kBitFieldOffset));
-  andi(r0, scratch, Operand(1 << Map::kHasNonInstancePrototype));
-  bne(&non_instance, cr0);
+    // Make sure that the function has an instance prototype.
+    lbz(scratch, FieldMemOperand(result, Map::kBitFieldOffset));
+    andi(r0, scratch, Operand(1 << Map::kHasNonInstancePrototype));
+    bne(&non_instance, cr0);
+  }
 
   // Get the prototype or initial map from the function.
   LoadP(result,
@@ -2296,12 +2296,15 @@ void MacroAssembler::TryGetFunctionPrototype(Register function,
 
   // Get the prototype from the initial map.
   LoadP(result, FieldMemOperand(result, Map::kPrototypeOffset));
-  b(&done);
 
-  // Non-instance prototype: Fetch prototype from constructor field
-  // in initial map.
-  bind(&non_instance);
-  LoadP(result, FieldMemOperand(result, Map::kConstructorOffset));
+  if (miss_on_bound_function) {
+    b(&done);
+
+    // Non-instance prototype: Fetch prototype from constructor field
+    // in initial map.
+    bind(&non_instance);
+    LoadP(result, FieldMemOperand(result, Map::kConstructorOffset));
+  }
 
   // All done.
   bind(&done);

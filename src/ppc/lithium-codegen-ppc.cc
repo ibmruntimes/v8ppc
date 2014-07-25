@@ -3231,17 +3231,6 @@ void LCodeGen::DoLoadFunctionPrototype(LLoadFunctionPrototype* instr) {
   Register function = ToRegister(instr->function());
   Register result = ToRegister(instr->result());
 
-  // Check that the function really is a function. Load map into the
-  // result register.
-  __ CompareObjectType(function, result, scratch, JS_FUNCTION_TYPE);
-  DeoptimizeIf(ne, instr->environment());
-
-  // Make sure that the function has an instance prototype.
-  Label non_instance;
-  __ lbz(scratch, FieldMemOperand(result, Map::kBitFieldOffset));
-  __ TestBit(scratch, Map::kHasNonInstancePrototype, r0);
-  __ bne(&non_instance, cr0);
-
   // Get the prototype or initial map from the function.
   __ LoadP(result,
            FieldMemOperand(function, JSFunction::kPrototypeOrInitialMapOffset));
@@ -3258,12 +3247,6 @@ void LCodeGen::DoLoadFunctionPrototype(LLoadFunctionPrototype* instr) {
 
   // Get the prototype from the initial map.
   __ LoadP(result, FieldMemOperand(result, Map::kPrototypeOffset));
-  __ b(&done);
-
-  // Non-instance prototype: Fetch prototype from constructor field
-  // in initial map.
-  __ bind(&non_instance);
-  __ LoadP(result, FieldMemOperand(result, Map::kConstructorOffset));
 
   // All done.
   __ bind(&done);
