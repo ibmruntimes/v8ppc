@@ -1321,7 +1321,7 @@ Register* KeyedStoreStubCompiler::registers() {
   Register receiver = KeyedStoreIC::ReceiverRegister();
   Register name = KeyedStoreIC::NameRegister();
   Register map = KeyedStoreIC::MapRegister();
-  static Register registers[] = { receiver, name, map, r6, r7, r8 };
+  static Register registers[] = { receiver, name, map, r7, r8 };
   return registers;
 }
 
