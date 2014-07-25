@@ -103,6 +103,10 @@ TEST(NumericFormatting) {
 }
 
 
+#if defined(__GNUC__) && (__GNUC__ == 4) && (__GNUC_MINOR__ <= 4)
+// Work around bad optimization by GCC 4.4.6 on PPC Linux
+#pragma GCC optimize "O0"
+#endif
 TEST(CharacterOutput) {
   check<char>("a a", 'a');
   check<signed char>("B B", 'B');
@@ -113,6 +117,9 @@ TEST(CharacterOutput) {
   os.put('H').write("ello", 4);
   CHECK_EQ("Hello", os.c_str());
 }
+#if defined(__GNUC__) && (__GNUC__ == 4) && (__GNUC_MINOR__ <= 4)
+#pragma GCC reset_options
+#endif
 
 
 TEST(Manipulators) {
