@@ -1192,7 +1192,7 @@ class Assembler : public AssemblerBase {
 
 #if V8_OOL_CONSTANT_POOL
   // Decide between using the constant pool vs. a mov immediate sequence.
-  bool use_constant_pool_for_mov(const Operand& x, bool *canOptimize) const;
+  bool use_constant_pool_for_mov(const Operand& x, bool canOptimize) const;
 #endif
 
   // Allocate a constant pool of the correct size for the generated code.

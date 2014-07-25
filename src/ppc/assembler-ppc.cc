@@ -1504,26 +1504,26 @@ int Assembler::DecodeInternalReference(Vector<char> buffer, Address pc) {
 
 
 int Assembler::instructions_required_for_mov(const Operand& x) const {
+#if V8_OOL_CONSTANT_POOL || DEBUG
+  bool canOptimize = !(x.must_output_reloc_info(this) ||
+                       is_trampoline_pool_blocked());
+#endif
 #if V8_OOL_CONSTANT_POOL
-  bool canOptimize;
-  if (use_constant_pool_for_mov(x, &canOptimize)) {
+  if (use_constant_pool_for_mov(x, canOptimize)) {
     if (use_extended_constant_pool()) {
       return kMovInstructionsExtendedConstantPool;
     }
     return kMovInstructionsConstantPool;
   }
-  ASSERT(!canOptimize);
 #endif
+  ASSERT(!canOptimize);
   return kMovInstructionsNoConstantPool;
 }
 
 
 #if V8_OOL_CONSTANT_POOL
 bool Assembler::use_constant_pool_for_mov(const Operand& x,
-                                          bool *canOptimize) const {
-  *canOptimize = !(x.must_output_reloc_info(this) ||
-                   is_trampoline_pool_blocked());
-
+                                          bool canOptimize) const {
   if (!is_constant_pool_available()) {
     // If there is no constant pool available, we must use a mov
     // immediate sequence.
@@ -1531,7 +1531,7 @@ bool Assembler::use_constant_pool_for_mov(const Operand& x,
   }
 
   intptr_t value = x.immediate();
-  if (*canOptimize && is_int16(value)) {
+  if (canOptimize && is_int16(value)) {
     // Prefer a single-instruction load-immediate.
     return false;
   }
@@ -1542,7 +1542,7 @@ bool Assembler::use_constant_pool_for_mov(const Operand& x,
 #if V8_TARGET_ARCH_PPC64
     // TODO(mbrandy): enable extended constant pool usage for 64-bit.
     //                See ARM commit e27ab337 for a reference.
-    // if (*canOptimize && is_int32(value)) {
+    // if (canOptimize && is_int32(value)) {
       return false;
     // }
 #else
@@ -1581,8 +1581,11 @@ void Assembler::mov(Register dst, const Operand& src) {
     RecordRelocInfo(rinfo);
   }
 
+  canOptimize = !(src.must_output_reloc_info(this) ||
+                  is_trampoline_pool_blocked());
+
 #if V8_OOL_CONSTANT_POOL
-  if (use_constant_pool_for_mov(src, &canOptimize)) {
+  if (use_constant_pool_for_mov(src, canOptimize)) {
     ASSERT(is_constant_pool_available());
     ConstantPoolArray::LayoutSection section = ConstantPoolAddEntry(rinfo);
     if (section == ConstantPoolArray::EXTENDED_SECTION) {
