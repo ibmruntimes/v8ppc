@@ -825,6 +825,26 @@ void Decoder::DecodeExt2(Instruction* instr) {
       Format(instr, "stdux   'rt, 'ra, 'rb");
       break;
     }
+    case MFVSRD: {
+      Format(instr, "mffprd  'ra, 'Dt");
+      break;
+    }
+    case MFVSRWZ: {
+      Format(instr, "mffprwz 'ra, 'Dt");
+      break;
+    }
+    case MTVSRD: {
+      Format(instr, "mtfprd  'Dt, 'ra");
+      break;
+    }
+    case MTVSRWA: {
+      Format(instr, "mtfprwa 'Dt, 'ra");
+      break;
+    }
+    case MTVSRWZ: {
+      Format(instr, "mtfprwz 'Dt, 'ra");
+      break;
+    }
 #endif
     default: {
       Unknown(instr);  // not used by V8

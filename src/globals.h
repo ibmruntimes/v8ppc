@@ -606,6 +606,8 @@ enum CpuFeature {
     FPU,
     // ARM64
     ALWAYS_ALIGN_CSP,
+    // PPC
+    FPR_GPR_MOV,
     NUMBER_OF_CPU_FEATURES
 };
 
