@@ -1045,6 +1045,13 @@ class Assembler : public AssemblerBase {
   void mtxer(Register src);
   void mcrfs(int bf, int bfa);
   void mfcr(Register dst);
+#if V8_TARGET_ARCH_PPC64
+  void mffprd(Register dst, DoubleRegister src);
+  void mffprwz(Register dst, DoubleRegister src);
+  void mtfprd(DoubleRegister dst, Register src);
+  void mtfprwz(DoubleRegister dst, Register src);
+  void mtfprwa(DoubleRegister dst, Register src);
+#endif
 
   void fake_asm(enum FAKE_OPCODE_T fopcode);
   void marker_asm(int mcode);

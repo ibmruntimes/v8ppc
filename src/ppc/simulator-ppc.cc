@@ -2083,6 +2083,51 @@ bool Simulator::ExecuteExt2_9bit_part1(Instruction* instr) {
       }
       break;
     }
+    case MFVSRD: {
+      ASSERT(!instr->Bit(0));
+      int frt = instr->RTValue();
+      int ra = instr->RAValue();
+      double frt_val = get_double_from_d_register(frt);
+      int64_t *p = reinterpret_cast<int64_t *>(&frt_val);
+      set_register(ra, *p);
+      break;
+    }
+    case MFVSRWZ: {
+      ASSERT(!instr->Bit(0));
+      int frt = instr->RTValue();
+      int ra = instr->RAValue();
+      double frt_val = get_double_from_d_register(frt);
+      int64_t *p = reinterpret_cast<int64_t *>(&frt_val);
+      set_register(ra, static_cast<uint32_t>(*p));
+      break;
+    }
+    case MTVSRD: {
+      ASSERT(!instr->Bit(0));
+      int frt = instr->RTValue();
+      int ra = instr->RAValue();
+      int64_t ra_val = get_register(ra);
+      double *p = reinterpret_cast<double*>(&ra_val);
+      set_d_register_from_double(frt, *p);
+      break;
+    }
+    case MTVSRWA: {
+      ASSERT(!instr->Bit(0));
+      int frt = instr->RTValue();
+      int ra = instr->RAValue();
+      int64_t ra_val = static_cast<int32_t>(get_register(ra));
+      double *p = reinterpret_cast<double*>(&ra_val);
+      set_d_register_from_double(frt, *p);
+      break;
+    }
+    case MTVSRWZ: {
+      ASSERT(!instr->Bit(0));
+      int frt = instr->RTValue();
+      int ra = instr->RAValue();
+      uint64_t ra_val = static_cast<uint32_t>(get_register(ra));
+      double *p = reinterpret_cast<double*>(&ra_val);
+      set_d_register_from_double(frt, *p);
+      break;
+    }
 #endif
     default: {
       found = false;

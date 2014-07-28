@@ -586,11 +586,11 @@ void DoubleToIStub::Generate(MacroAssembler* masm) {
     __ lfd(double_scratch, MemOperand(input_reg, double_offset));
 
     // Do fast-path convert from double to int.
-    __ ConvertDoubleToInt64(double_scratch, result_reg,
+    __ ConvertDoubleToInt64(double_scratch,
 #if !V8_TARGET_ARCH_PPC64
                             scratch,
 #endif
-                            d0);
+                            result_reg, d0);
 
     // Test for overflow
 #if V8_TARGET_ARCH_PPC64

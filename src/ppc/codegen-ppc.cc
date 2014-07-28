@@ -567,13 +567,7 @@ void MathExpGenerator::EmitMathExp(MacroAssembler* masm,
   __ lfd(result, ExpConstant(4, temp3));
   __ fmul(double_scratch1, double_scratch1, input);
   __ fadd(double_scratch1, double_scratch1, result);
-
-  // Move low word of double_scratch1 to temp2
-  __ subi(sp, sp, Operand(kDoubleSize));
-  __ stfd(double_scratch1, MemOperand(sp));
-  __ nop();  // LHS/RAW optimization
-  __ lwz(temp2, MemOperand(sp, Register::kMantissaOffset));
-
+  __ MovDoubleLowToInt(temp2, double_scratch1);
   __ fsub(double_scratch1, double_scratch1, result);
   __ lfd(result, ExpConstant(6, temp3));
   __ lfd(double_scratch2, ExpConstant(5, temp3));
@@ -598,19 +592,15 @@ void MathExpGenerator::EmitMathExp(MacroAssembler* masm,
   __ ldx(temp2, MemOperand(temp3, temp2));
   __ sldi(temp1, temp1, Operand(52));
   __ orx(temp2, temp1, temp2);
-  __ std(temp2, MemOperand(sp, 0));
+  __ MovInt64ToDouble(double_scratch1, temp2);
 #else
   __ add(ip, temp3, temp2);
   __ lwz(temp3, MemOperand(ip, Register::kExponentOffset));
   __ lwz(temp2, MemOperand(ip, Register::kMantissaOffset));
   __ slwi(temp1, temp1, Operand(20));
   __ orx(temp3, temp1, temp3);
-  __ stw(temp3, MemOperand(sp, Register::kExponentOffset));
-  __ stw(temp2, MemOperand(sp, Register::kMantissaOffset));
+  __ MovInt64ToDouble(double_scratch1, temp3, temp2);
 #endif
-  __ nop();  // LHS/RAW optimization
-  __ lfd(double_scratch1, MemOperand(sp, 0));
-  __ addi(sp, sp, Operand(kDoubleSize));
 
   __ fmul(result, result, double_scratch1);
   __ b(&done);

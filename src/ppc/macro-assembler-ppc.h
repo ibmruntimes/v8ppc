@@ -417,10 +417,10 @@ class MacroAssembler: public Assembler {
   // Converts the double_input to an integer.  Note that, upon return,
   // the contents of double_dst will also hold the fixed point representation.
   void ConvertDoubleToInt64(const DoubleRegister double_input,
-                            const Register dst,
 #if !V8_TARGET_ARCH_PPC64
                             const Register dst_hi,
 #endif
+                            const Register dst,
                             const DoubleRegister double_dst,
                             FPRoundingMode rounding_mode = kRoundToZero);
 
@@ -527,7 +527,34 @@ class MacroAssembler: public Assembler {
                            Representation r,
                            Register scratch = no_reg);
 
-
+  // Move values between integer and floating point registers.
+  void MovIntToDouble(DoubleRegister dst,
+                      Register src,
+                      Register scratch);
+  void MovUnsignedIntToDouble(DoubleRegister dst,
+                              Register src,
+                              Register scratch);
+  void MovInt64ToDouble(DoubleRegister dst,
+#if !V8_TARGET_ARCH_PPC64
+                        Register src_hi,
+#endif
+                        Register src);
+#if V8_TARGET_ARCH_PPC64
+  void MovInt64ComponentsToDouble(DoubleRegister dst,
+                                  Register src_hi,
+                                  Register src_lo,
+                                  Register scratch);
+#endif
+  void MovDoubleLowToInt(Register dst,
+                         DoubleRegister src);
+  void MovDoubleHighToInt(Register dst,
+                          DoubleRegister src);
+  void MovDoubleToInt64(
+#if !V8_TARGET_ARCH_PPC64
+                        Register dst_hi,
+#endif
+                        Register dst,
+                        DoubleRegister src);
 
   void Add(Register dst, Register src, intptr_t value, Register scratch);
   void Cmpi(Register src1, const Operand& src2, Register scratch,

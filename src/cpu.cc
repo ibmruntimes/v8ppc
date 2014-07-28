@@ -16,6 +16,12 @@
 #if V8_OS_LINUX && V8_HOST_ARCH_PPC
 #include <elf.h>
 #endif
+#if V8_OS_AIX
+#include <sys/systemcfg.h>  // _system_configuration
+#ifndef POWER_8
+#define POWER_8         0x10000
+#endif
+#endif
 
 #include <ctype.h>
 #include <limits.h>
@@ -469,7 +475,8 @@ CPU::CPU() : stepping_(0),
 
 #elif V8_HOST_ARCH_PPC
 
-#if V8_OS_LINUX && !defined(USE_SIMULATOR)
+#ifndef USE_SIMULATOR
+#if V8_OS_LINUX
   // Read processor info from /proc/self/auxv.
   char *auxv_cpu_type = NULL;
   FILE* fp = fopen("/proc/self/auxv", "r");
@@ -508,9 +515,24 @@ CPU::CPU() : stepping_(0),
       part_ = PPC_G4;
     }
   }
-#endif
-
-#endif
+#elif V8_OS_AIX
+  switch (_system_configuration.implementation) {
+    case POWER_8:
+      part_ = PPC_POWER8;
+      break;
+    case POWER_7:
+      part_ = PPC_POWER7;
+      break;
+    case POWER_6:
+      part_ = PPC_POWER6;
+      break;
+    case POWER_5:
+      part_ = PPC_POWER5;
+      break;
+  }
+#endif  // V8_OS_AIX
+#endif  // !USE_SIMULATOR
+#endif  // V8_HOST_ARCH_PPC
 }
 
 

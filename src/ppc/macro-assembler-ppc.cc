@@ -625,54 +625,14 @@ void MacroAssembler::CanonicalizeNaN(const DoubleRegister dst,
 
 void MacroAssembler::ConvertIntToDouble(Register src,
                                         DoubleRegister double_dst) {
-  ASSERT(!src.is(r0));
-
-  subi(sp, sp, Operand(8));  // reserve one temporary double on the stack
-
-  // sign-extend src to 64-bit and store it to temp double on the stack
-#if V8_TARGET_ARCH_PPC64
-  extsw(r0, src);
-  std(r0, MemOperand(sp, 0));
-#else
-  srawi(r0, src, 31);
-  stw(r0, MemOperand(sp, Register::kExponentOffset));
-  stw(src, MemOperand(sp, Register::kMantissaOffset));
-#endif
-
-  // load into FPR
-  nop();  // LHS/RAW optimization
-  lfd(double_dst, MemOperand(sp, 0));
-
-  addi(sp, sp, Operand(8));  // restore stack
-
-  // convert to double
+  MovIntToDouble(double_dst, src, r0);
   fcfid(double_dst, double_dst);
 }
 
 
 void MacroAssembler::ConvertUnsignedIntToDouble(Register src,
                                                 DoubleRegister double_dst) {
-  ASSERT(!src.is(r0));
-
-  subi(sp, sp, Operand(8));  // reserve one temporary double on the stack
-
-  // zero-extend src to 64-bit and store it to temp double on the stack
-#if V8_TARGET_ARCH_PPC64
-  clrldi(r0, src, Operand(32));
-  std(r0, MemOperand(sp, 0));
-#else
-  li(r0, Operand::Zero());
-  stw(r0, MemOperand(sp, Register::kExponentOffset));
-  stw(src, MemOperand(sp, Register::kMantissaOffset));
-#endif
-
-  // load into FPR
-  nop();  // LHS/RAW optimization
-  lfd(double_dst, MemOperand(sp, 0));
-
-  addi(sp, sp, Operand(8));  // restore stack
-
-  // convert to double
+  MovUnsignedIntToDouble(double_dst, src, r0);
   fcfid(double_dst, double_dst);
 }
 
@@ -680,34 +640,17 @@ void MacroAssembler::ConvertUnsignedIntToDouble(Register src,
 void MacroAssembler::ConvertIntToFloat(const DoubleRegister dst,
                                        const Register src,
                                        const Register int_scratch) {
-  subi(sp, sp, Operand(8));  // reserve one temporary double on the stack
-
-  // sign-extend src to 64-bit and store it to temp double on the stack
-#if V8_TARGET_ARCH_PPC64
-  extsw(int_scratch, src);
-  std(int_scratch, MemOperand(sp, 0));
-#else
-  srawi(int_scratch, src, 31);
-  stw(int_scratch, MemOperand(sp, Register::kExponentOffset));
-  stw(src, MemOperand(sp, Register::kMantissaOffset));
-#endif
-
-  // load sign-extended src into FPR
-  nop();  // LHS/RAW optimization
-  lfd(dst, MemOperand(sp, 0));
-
-  addi(sp, sp, Operand(8));  // restore stack
-
+  MovIntToDouble(dst, src, int_scratch);
   fcfid(dst, dst);
   frsp(dst, dst);
 }
 
 
 void MacroAssembler::ConvertDoubleToInt64(const DoubleRegister double_input,
-                                          const Register dst,
 #if !V8_TARGET_ARCH_PPC64
                                           const Register dst_hi,
 #endif
+                                          const Register dst,
                                           const DoubleRegister double_dst,
                                           FPRoundingMode rounding_mode) {
   if (rounding_mode == kRoundToZero) {
@@ -718,15 +661,11 @@ void MacroAssembler::ConvertDoubleToInt64(const DoubleRegister double_input,
     ResetRoundingMode();
   }
 
-  stfdu(double_dst, MemOperand(sp, -kDoubleSize));
-  nop();  // LHS/RAW optimization
-#if V8_TARGET_ARCH_PPC64
-  ld(dst, MemOperand(sp, 0));
-#else
-  lwz(dst_hi, MemOperand(sp, Register::kExponentOffset));
-  lwz(dst, MemOperand(sp, Register::kMantissaOffset));
+  MovDoubleToInt64(
+#if !V8_TARGET_ARCH_PPC64
+                   dst_hi,
 #endif
-  addi(sp, sp, Operand(kDoubleSize));
+                   dst, double_dst);
 }
 
 
@@ -2483,11 +2422,11 @@ void MacroAssembler::TryDoubleToInt32Exact(Register result,
   Label done;
   ASSERT(!double_input.is(double_scratch));
 
-  ConvertDoubleToInt64(double_input, result,
+  ConvertDoubleToInt64(double_input,
 #if !V8_TARGET_ARCH_PPC64
                        scratch,
 #endif
-                       double_scratch);
+                       result, double_scratch);
 
 #if V8_TARGET_ARCH_PPC64
   TestIfInt32(result, scratch, r0);
@@ -2514,11 +2453,7 @@ void MacroAssembler::TryInt32Floor(Register result,
   ASSERT(!double_input.is(double_scratch));
   Label exception;
 
-  // Move high word into input_high
-  stfdu(double_input, MemOperand(sp, -kDoubleSize));
-  nop();  // LHS/RAW optimization
-  lwz(input_high, MemOperand(sp, Register::kExponentOffset));
-  addi(sp, sp, Operand(kDoubleSize));
+  MovDoubleHighToInt(input_high, double_input);
 
   // Test for NaN/Inf
   ExtractBitMask(result, input_high, HeapNumber::kExponentMask);
@@ -2526,11 +2461,11 @@ void MacroAssembler::TryInt32Floor(Register result,
   beq(&exception);
 
   // Convert (rounding to -Inf)
-  ConvertDoubleToInt64(double_input, result,
+  ConvertDoubleToInt64(double_input,
 #if !V8_TARGET_ARCH_PPC64
                        scratch,
 #endif
-                       double_scratch,
+                       result, double_scratch,
                        kRoundToMinusInf);
 
   // Test for overflow
@@ -2557,11 +2492,11 @@ void MacroAssembler::TryInlineTruncateDoubleToI(Register result,
   DoubleRegister double_scratch = kScratchDoubleReg;
   Register scratch = ip;
 
-  ConvertDoubleToInt64(double_input, result,
+  ConvertDoubleToInt64(double_input,
 #if !V8_TARGET_ARCH_PPC64
                        scratch,
 #endif
-                       double_scratch);
+                       result, double_scratch);
 
   // Test for overflow
 #if V8_TARGET_ARCH_PPC64
@@ -4171,14 +4106,7 @@ void MacroAssembler::ClampDoubleToUint8(Register result_reg,
 
   // round to nearest (default rounding mode)
   fctiw(double_scratch, input_reg);
-
-  // reserve a slot on the stack
-  stfdu(double_scratch, MemOperand(sp, -kDoubleSize));
-  nop();  // LHS/RAW optimization
-  lwz(result_reg, MemOperand(sp, Register::kMantissaOffset));
-  // restore the stack
-  addi(sp, sp, Operand(kDoubleSize));
-
+  MovDoubleLowToInt(result_reg, double_scratch);
   bind(&done);
 }
 
@@ -4316,8 +4244,6 @@ void MacroAssembler::LoadDoubleLiteral(DoubleRegister result,
   }
 #endif
 
-  addi(sp, sp, Operand(-8));  // reserve 1 temp double on the stack
-
   // avoid gcc strict aliasing error using union cast
   union {
     double dval;
@@ -4329,6 +4255,16 @@ void MacroAssembler::LoadDoubleLiteral(DoubleRegister result,
   } litVal;
 
   litVal.dval = value;
+
+#if V8_TARGET_ARCH_PPC64
+  if (CpuFeatures::IsSupported(FPR_GPR_MOV)) {
+    mov(scratch, Operand(litVal.ival));
+    mtfprd(result, scratch);
+    return;
+  }
+#endif
+
+  addi(sp, sp, Operand(-kDoubleSize));
 #if V8_TARGET_ARCH_PPC64
   mov(scratch, Operand(litVal.ival));
   std(scratch, MemOperand(sp));
@@ -4340,8 +4276,169 @@ void MacroAssembler::LoadDoubleLiteral(DoubleRegister result,
 #endif
   nop();  // LHS/RAW optimization
   lfd(result, MemOperand(sp, 0));
+  addi(sp, sp, Operand(kDoubleSize));
+}
 
-  addi(sp, sp, Operand(8));  // restore the stack ptr
+
+void MacroAssembler::MovIntToDouble(DoubleRegister dst,
+                                    Register src,
+                                    Register scratch) {
+  // sign-extend src to 64-bit
+#if V8_TARGET_ARCH_PPC64
+  if (CpuFeatures::IsSupported(FPR_GPR_MOV)) {
+    mtfprwa(dst, src);
+    return;
+  }
+#endif
+
+  ASSERT(!src.is(scratch));
+  subi(sp, sp, Operand(kDoubleSize));
+#if V8_TARGET_ARCH_PPC64
+  extsw(scratch, src);
+  std(scratch, MemOperand(sp, 0));
+#else
+  srawi(scratch, src, 31);
+  stw(scratch, MemOperand(sp, Register::kExponentOffset));
+  stw(src, MemOperand(sp, Register::kMantissaOffset));
+#endif
+  nop();  // LHS/RAW optimization
+  lfd(dst, MemOperand(sp, 0));
+  addi(sp, sp, Operand(kDoubleSize));
+}
+
+
+void MacroAssembler::MovUnsignedIntToDouble(DoubleRegister dst,
+                                            Register src,
+                                            Register scratch) {
+  // zero-extend src to 64-bit
+#if V8_TARGET_ARCH_PPC64
+  if (CpuFeatures::IsSupported(FPR_GPR_MOV)) {
+    mtfprwz(dst, src);
+    return;
+  }
+#endif
+
+  ASSERT(!src.is(scratch));
+  subi(sp, sp, Operand(kDoubleSize));
+#if V8_TARGET_ARCH_PPC64
+  clrldi(scratch, src, Operand(32));
+  std(scratch, MemOperand(sp, 0));
+#else
+  li(scratch, Operand::Zero());
+  stw(scratch, MemOperand(sp, Register::kExponentOffset));
+  stw(src, MemOperand(sp, Register::kMantissaOffset));
+#endif
+  nop();  // LHS/RAW optimization
+  lfd(dst, MemOperand(sp, 0));
+  addi(sp, sp, Operand(kDoubleSize));
+}
+
+
+void MacroAssembler::MovInt64ToDouble(DoubleRegister dst,
+#if !V8_TARGET_ARCH_PPC64
+                                      Register src_hi,
+#endif
+                                      Register src) {
+#if V8_TARGET_ARCH_PPC64
+  if (CpuFeatures::IsSupported(FPR_GPR_MOV)) {
+    mtfprd(dst, src);
+    return;
+  }
+#endif
+
+  subi(sp, sp, Operand(kDoubleSize));
+#if V8_TARGET_ARCH_PPC64
+  std(src, MemOperand(sp, 0));
+#else
+  stw(src_hi, MemOperand(sp, Register::kExponentOffset));
+  stw(src, MemOperand(sp, Register::kMantissaOffset));
+#endif
+  nop();  // LHS/RAW optimization
+  lfd(dst, MemOperand(sp, 0));
+  addi(sp, sp, Operand(kDoubleSize));
+}
+
+
+#if V8_TARGET_ARCH_PPC64
+void MacroAssembler::MovInt64ComponentsToDouble(DoubleRegister dst,
+                                                Register src_hi,
+                                                Register src_lo,
+                                                Register scratch) {
+  if (CpuFeatures::IsSupported(FPR_GPR_MOV)) {
+    sldi(scratch, src_hi, Operand(32));
+    rldimi(scratch, src_lo, 0, 32);
+    mtfprd(dst, scratch);
+    return;
+  }
+
+  subi(sp, sp, Operand(kDoubleSize));
+  stw(src_hi, MemOperand(sp, Register::kExponentOffset));
+  stw(src_lo, MemOperand(sp, Register::kMantissaOffset));
+  nop();  // LHS/RAW optimization
+  lfd(dst, MemOperand(sp));
+  addi(sp, sp, Operand(kDoubleSize));
+}
+#endif
+
+
+void MacroAssembler::MovDoubleLowToInt(Register dst,
+                                       DoubleRegister src) {
+#if V8_TARGET_ARCH_PPC64
+  if (CpuFeatures::IsSupported(FPR_GPR_MOV)) {
+    mffprwz(dst, src);
+    return;
+  }
+#endif
+
+  subi(sp, sp, Operand(kDoubleSize));
+  stfd(src, MemOperand(sp));
+  nop();  // LHS/RAW optimization
+  lwz(dst, MemOperand(sp, Register::kMantissaOffset));
+  addi(sp, sp, Operand(kDoubleSize));
+}
+
+
+void MacroAssembler::MovDoubleHighToInt(Register dst,
+                                        DoubleRegister src) {
+#if V8_TARGET_ARCH_PPC64
+  if (CpuFeatures::IsSupported(FPR_GPR_MOV)) {
+    mffprd(dst, src);
+    srdi(dst, dst, Operand(32));
+    return;
+  }
+#endif
+
+  subi(sp, sp, Operand(kDoubleSize));
+  stfd(src, MemOperand(sp));
+  nop();  // LHS/RAW optimization
+  lwz(dst, MemOperand(sp, Register::kExponentOffset));
+  addi(sp, sp, Operand(kDoubleSize));
+}
+
+
+void MacroAssembler::MovDoubleToInt64(
+#if !V8_TARGET_ARCH_PPC64
+                                      Register dst_hi,
+#endif
+                                      Register dst,
+                                      DoubleRegister src) {
+#if V8_TARGET_ARCH_PPC64
+  if (CpuFeatures::IsSupported(FPR_GPR_MOV)) {
+    mffprd(dst, src);
+    return;
+  }
+#endif
+
+  subi(sp, sp, Operand(kDoubleSize));
+  stfd(src, MemOperand(sp));
+  nop();  // LHS/RAW optimization
+#if V8_TARGET_ARCH_PPC64
+  ld(dst, MemOperand(sp, 0));
+#else
+  lwz(dst_hi, MemOperand(sp, Register::kExponentOffset));
+  lwz(dst, MemOperand(sp, Register::kMantissaOffset));
+#endif
+  addi(sp, sp, Operand(kDoubleSize));
 }
 
 

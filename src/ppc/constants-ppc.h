@@ -176,6 +176,7 @@ enum OpcodeExt2 {
   ANDX = 28 << 1,
   CMPL = 32 << 1,
   SUBFX = 40 << 1,
+  MFVSRD = 51 << 1,  // Move From VSR Doubleword
   LDUX = 53 << 1,
   DCBST = 54 << 1,
   LWZUX = 55 << 1,   // load word zero w/ update x-form
@@ -185,12 +186,14 @@ enum OpcodeExt2 {
   DCBF = 86 << 1,
   LBZX = 87 << 1,    // load byte zero w/ x-form
   NEGX = 104 << 1,
+  MFVSRWZ = 115 << 1,  // Move From VSR Word And Zero
   LBZUX = 119 << 1,  // load byte zero w/ update x-form
   NORX = 124 << 1,
   SUBFEX = 136 << 1,
   ADDEX = 138 << 1,
   STDX = 149 << 1,
   STWX = 151 << 1,    // store word w/ x-form
+  MTVSRD = 179 << 1,  // Move To VSR Doubleword
   STDUX = 181 << 1,
   STWUX = 183 << 1,   // store word w/ update x-form
 /*
@@ -203,9 +206,11 @@ enum OpcodeExt2 {
 /*
   MTSR
 */
+  MTVSRWA = 211 << 1,  // Move To VSR Word Algebraic
   STBX = 215 << 1,    // store byte w/ x-form
   MULLD  = 233 << 1,  // Multiply Low Double Word
   MULLW  = 235 << 1,  // Multiply Low Word
+  MTVSRWZ = 243 << 1,  // Move To VSR Word And Zero
   STBUX = 247 << 1,   // store byte w/ update x-form
   ADDX = 266 << 1,    // Add
   LHZX = 279 << 1,    // load half-word zero w/ x-form

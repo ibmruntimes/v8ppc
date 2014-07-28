@@ -2472,10 +2472,7 @@ void LCodeGen::DoCmpHoleAndBranch(LCmpHoleAndBranch* instr) {
   EmitFalseBranch(instr, ordered);
 
   Register scratch = scratch0();
-  __ stfdu(input_reg, MemOperand(sp, -kDoubleSize));
-  __ nop();  // LHS/RAW optimization
-  __ lwz(scratch, MemOperand(sp, Register::kExponentOffset));
-  __ addi(sp, sp, Operand(kDoubleSize));
+  __ MovDoubleHighToInt(scratch, input_reg);
   __ Cmpi(scratch, Operand(kHoleNanUpper32), r0);
   EmitBranch(instr, eq);
 }
@@ -2490,11 +2487,12 @@ void LCodeGen::DoCompareMinusZeroAndBranch(LCompareMinusZeroAndBranch* instr) {
     DoubleRegister value = ToDoubleRegister(instr->value());
     __ fcmpu(value, kDoubleRegZero);
     EmitFalseBranch(instr, ne);
-    __ stfdu(value, MemOperand(sp, -kDoubleSize));
-    __ nop();  // LHS/RAW optimization
-    __ lwz(scratch, MemOperand(sp, Register::kExponentOffset));
-    __ addi(sp, sp, Operand(kDoubleSize));
-    __ cmpwi(scratch, Operand::Zero());
+#if V8_TARGET_ARCH_PPC64
+    __ MovDoubleToInt64(scratch, value);
+#else
+    __ MovDoubleHighToInt(scratch, value);
+#endif
+    __ cmpi(scratch, Operand::Zero());
     EmitBranch(instr, lt);
   } else {
     Register value = ToRegister(instr->value());
@@ -3968,8 +3966,8 @@ void LCodeGen::DoMathRound(LMathRound* instr) {
   Register result = ToRegister(instr->result());
   DoubleRegister double_scratch1 = ToDoubleRegister(instr->temp());
   DoubleRegister input_plus_dot_five = double_scratch1;
-  Register input_high = scratch0();
-  Register scratch = ip;
+  Register scratch1 = scratch0();
+  Register scratch2 = ip;
   DoubleRegister dot_five = double_scratch0();
   Label convert, done;
 
@@ -3982,11 +3980,12 @@ void LCodeGen::DoMathRound(LMathRound* instr) {
   // If the input is +0.5, the result is 1.
   __ bgt(&convert);  // Out of [-0.5, +0.5].
   if (instr->hydrogen()->CheckFlag(HValue::kBailoutOnMinusZero)) {
-    __ stfdu(input, MemOperand(sp, -kDoubleSize));
-    __ nop();  // LHS/RAW optimization
-    __ lwz(input_high, MemOperand(sp, Register::kExponentOffset));
-    __ addi(sp, sp, Operand(kDoubleSize));
-    __ cmpwi(input_high, Operand::Zero());
+#if V8_TARGET_ARCH_PPC64
+    __ MovDoubleToInt64(scratch1, input);
+#else
+    __ MovDoubleHighToInt(scratch1, input);
+#endif
+    __ cmpi(scratch1, Operand::Zero());
     DeoptimizeIf(lt, instr->environment());  // [-0.5, -0].
   }
   Label return_zero;
@@ -4003,8 +4002,8 @@ void LCodeGen::DoMathRound(LMathRound* instr) {
   __ bind(&convert);
   __ fadd(input_plus_dot_five, input, dot_five);
   // Reuse dot_five (double_scratch0) as we no longer need this value.
-  __ TryInt32Floor(result, input_plus_dot_five, input_high,
-                   scratch, double_scratch0(),
+  __ TryInt32Floor(result, input_plus_dot_five, scratch1,
+                   scratch2, double_scratch0(),
                    &done, &done);
   DeoptimizeIf(al, instr->environment());
   __ bind(&done);
@@ -5104,15 +5103,17 @@ void LCodeGen::EmitNumberUntagD(Register input_reg,
     // load heap number
     __ lfd(result_reg, FieldMemOperand(input_reg, HeapNumber::kValueOffset));
     if (deoptimize_on_minus_zero) {
-      __ stfdu(result_reg, MemOperand(sp, -kDoubleSize));
-      __ nop();  // LHS/RAW optimization
-      __ lwz(scratch, MemOperand(sp, Register::kExponentOffset));
-      __ lwz(ip, MemOperand(sp, Register::kMantissaOffset));
-      __ addi(sp, sp, Operand(kDoubleSize));
-
+#if V8_TARGET_ARCH_PPC64
+      __ MovDoubleToInt64(scratch, result_reg);
+      // rotate left by one for simple compare.
+      __ rldicl(scratch, scratch, 1, 0);
+      __ cmpi(scratch, Operand(1));
+#else
+      __ MovDoubleToInt64(scratch, ip, result_reg);
       __ cmpi(ip, Operand::Zero());
       __ bne(&done);
       __ Cmpi(scratch, Operand(HeapNumber::kSignMask), r0);
+#endif
       DeoptimizeIf(eq, env);
     }
     __ b(&done);
@@ -5283,11 +5284,12 @@ void LCodeGen::DoDoubleToI(LDoubleToI* instr) {
       Label done;
       __ cmpi(result_reg, Operand::Zero());
       __ bne(&done);
-      __ stfdu(double_input, MemOperand(sp, -kDoubleSize));
-      __ nop();  // LHS/RAW optimization
-      __ lwz(scratch1, MemOperand(sp, Register::kExponentOffset));
-      __ addi(sp, sp, Operand(kDoubleSize));
-      __ cmpwi(scratch1, Operand::Zero());
+#if V8_TARGET_ARCH_PPC64
+      __ MovDoubleToInt64(scratch1, double_input);
+#else
+      __ MovDoubleHighToInt(scratch1, double_input);
+#endif
+      __ cmpi(scratch1, Operand::Zero());
       DeoptimizeIf(lt, instr->environment());
       __ bind(&done);
     }
@@ -5312,11 +5314,12 @@ void LCodeGen::DoDoubleToSmi(LDoubleToSmi* instr) {
       Label done;
       __ cmpi(result_reg, Operand::Zero());
       __ bne(&done);
-      __ stfdu(double_input, MemOperand(sp, -kDoubleSize));
-      __ nop();  // LHS/RAW optimization
-      __ lwz(scratch1, MemOperand(sp, Register::kExponentOffset));
-      __ addi(sp, sp, Operand(kDoubleSize));
-      __ cmpwi(scratch1, Operand::Zero());
+#if V8_TARGET_ARCH_PPC64
+      __ MovDoubleToInt64(scratch1, double_input);
+#else
+      __ MovDoubleHighToInt(scratch1, double_input);
+#endif
+      __ cmpi(scratch1, Operand::Zero());
       DeoptimizeIf(lt, instr->environment());
       __ bind(&done);
     }
@@ -5534,14 +5537,12 @@ void LCodeGen::DoClampTToUint8(LClampTToUint8* instr) {
 void LCodeGen::DoDoubleBits(LDoubleBits* instr) {
   DoubleRegister value_reg = ToDoubleRegister(instr->value());
   Register result_reg = ToRegister(instr->result());
-  __ stfdu(value_reg, MemOperand(sp, -kDoubleSize));
-  __ nop();  // LHS/RAW optimization
+
   if (instr->hydrogen()->bits() == HDoubleBits::HIGH) {
-    __ lwz(result_reg, MemOperand(sp, Register::kExponentOffset));
+    __ MovDoubleHighToInt(result_reg, value_reg);
   } else {
-    __ lwz(result_reg, MemOperand(sp, Register::kMantissaOffset));
+    __ MovDoubleLowToInt(result_reg, value_reg);
   }
-  __ addi(sp, sp, Operand(kDoubleSize));
 }
 
 
@@ -5549,16 +5550,11 @@ void LCodeGen::DoConstructDouble(LConstructDouble* instr) {
   Register hi_reg = ToRegister(instr->hi());
   Register lo_reg = ToRegister(instr->lo());
   DoubleRegister result_reg = ToDoubleRegister(instr->result());
-#if V8_TARGET_LITTLE_ENDIAN
-  __ stwu(hi_reg, MemOperand(sp, -kDoubleSize / 2));
-  __ stwu(lo_reg, MemOperand(sp, -kDoubleSize / 2));
+#if V8_TARGET_ARCH_PPC64
+  __ MovInt64ComponentsToDouble(result_reg, hi_reg, lo_reg, r0);
 #else
-  __ stwu(lo_reg, MemOperand(sp, -kDoubleSize / 2));
-  __ stwu(hi_reg, MemOperand(sp, -kDoubleSize / 2));
+  __ MovInt64ToDouble(result_reg, hi_reg, lo_reg);
 #endif
-  __ nop();  // LHS/RAW optimization
-  __ lfd(result_reg, MemOperand(sp));
-  __ addi(sp, sp, Operand(kDoubleSize));
 }
 
 

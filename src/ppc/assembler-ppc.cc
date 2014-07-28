@@ -93,9 +93,15 @@ void CpuFeatures::Probe(bool serializer_enabled) {
   // Detect whether frim instruction is supported (POWER5+)
   // For now we will just check for processors we know do not
   // support it
-#if V8_OS_LINUX && !defined(USE_SIMULATOR)
+#ifndef USE_SIMULATOR
   // Probe for additional features at runtime.
   CPU cpu;
+#if V8_TARGET_ARCH_PPC64
+  if (cpu.part() == CPU::PPC_POWER8) {
+    supported_ |= (1u << FPR_GPR_MOV);
+  }
+#endif
+#if V8_OS_LINUX
   if (!(cpu.part() == CPU::PPC_G5 || cpu.part() == CPU::PPC_G4)) {
     // Assume support
     supported_ |= (1u << FPU);
@@ -105,11 +111,16 @@ void CpuFeatures::Probe(bool serializer_enabled) {
       cpu.part() == CPU::PPC_POWER8) {
     supported_ |= (1u << LWSYNC);
   }
-#else
-  // Fallback: assume frim is supported -- will implement processor
-  // detection for other PPC platforms if required
+#elif V8_OS_AIX
+  // Assume support FP support and default cache line size
   supported_ |= (1u << FPU);
   supported_ |= (1u << LWSYNC);
+#endif
+#else  // Simulator
+  supported_ |= (1u << FPU);
+#if V8_TARGET_ARCH_PPC64
+  supported_ |= (1u << FPR_GPR_MOV);
+#endif
 #endif
 }
 
@@ -1689,6 +1700,33 @@ void Assembler::mcrfs(int bf, int bfa) {
 void Assembler::mfcr(Register dst) {
   emit(EXT2 | MFCR | dst.code()*B21);
 }
+
+
+#if V8_TARGET_ARCH_PPC64
+void Assembler::mffprd(Register dst, DoubleRegister src) {
+  emit(EXT2 | MFVSRD | src.code()*B21 | dst.code()*B16);
+}
+
+
+void Assembler::mffprwz(Register dst, DoubleRegister src) {
+  emit(EXT2 | MFVSRWZ | src.code()*B21 | dst.code()*B16);
+}
+
+
+void Assembler::mtfprd(DoubleRegister dst, Register src) {
+  emit(EXT2 | MTVSRD | dst.code()*B21 | src.code()*B16);
+}
+
+
+void Assembler::mtfprwz(DoubleRegister dst, Register src) {
+  emit(EXT2 | MTVSRWZ | dst.code()*B21 | src.code()*B16);
+}
+
+
+void Assembler::mtfprwa(DoubleRegister dst, Register src) {
+  emit(EXT2 | MTVSRWA | dst.code()*B21 | src.code()*B16);
+}
+#endif
 
 
 // Exception-generating instructions and debugging support.
