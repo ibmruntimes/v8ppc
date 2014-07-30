@@ -1205,14 +1205,24 @@ OStream& HCompareMap::PrintDataTo(OStream& os) const {  // NOLINT
 
 const char* HUnaryMathOperation::OpName() const {
   switch (op()) {
-    case kMathFloor: return "floor";
-    case kMathRound: return "round";
-    case kMathAbs: return "abs";
-    case kMathLog: return "log";
-    case kMathExp: return "exp";
-    case kMathSqrt: return "sqrt";
-    case kMathPowHalf: return "pow-half";
-    case kMathClz32: return "clz32";
+    case kMathFloor:
+      return "floor";
+    case kMathFround:
+      return "fround";
+    case kMathRound:
+      return "round";
+    case kMathAbs:
+      return "abs";
+    case kMathLog:
+      return "log";
+    case kMathExp:
+      return "exp";
+    case kMathSqrt:
+      return "sqrt";
+    case kMathPowHalf:
+      return "pow-half";
+    case kMathClz32:
+      return "clz32";
     default:
       UNREACHABLE();
       return NULL;
@@ -4137,6 +4147,7 @@ HInstruction* HUnaryMathOperation::New(
         case kMathAbs:
           return H_CONSTANT_DOUBLE((d > 0.0) ? d : -d);
         case kMathRound:
+        case kMathFround:
         case kMathFloor:
           return H_CONSTANT_DOUBLE(d);
         case kMathClz32:
@@ -4163,9 +4174,11 @@ HInstruction* HUnaryMathOperation::New(
         // Doubles are represented as Significant * 2 ^ Exponent. If the
         // Exponent is not negative, the double value is already an integer.
         if (Double(d).Exponent() >= 0) return H_CONSTANT_DOUBLE(d);
-        return H_CONSTANT_DOUBLE(std::floor(d + 0.5));
+        return H_CONSTANT_DOUBLE(Floor(d + 0.5));
+      case kMathFround:
+        return H_CONSTANT_DOUBLE(static_cast<double>(static_cast<float>(d)));
       case kMathFloor:
-        return H_CONSTANT_DOUBLE(std::floor(d));
+        return H_CONSTANT_DOUBLE(Floor(d));
       case kMathClz32: {
         uint32_t i = DoubleToUint32(d);
         return H_CONSTANT_INT(

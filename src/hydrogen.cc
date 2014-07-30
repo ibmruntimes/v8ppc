@@ -8077,6 +8077,7 @@ bool HOptimizedGraphBuilder::TryInlineBuiltinFunctionCall(Call* expr) {
       if (!FLAG_fast_math) break;
       // Fall through if FLAG_fast_math.
     case kMathRound:
+    case kMathFround:
     case kMathFloor:
     case kMathAbs:
     case kMathSqrt:
@@ -8148,6 +8149,7 @@ bool HOptimizedGraphBuilder::TryInlineBuiltinMethodCall(
       if (!FLAG_fast_math) break;
       // Fall through if FLAG_fast_math.
     case kMathRound:
+    case kMathFround:
     case kMathFloor:
     case kMathAbs:
     case kMathSqrt:
@@ -10243,7 +10245,9 @@ HValue* HGraphBuilder::BuildBinaryOperation(
 
   bool maybe_string_add = op == Token::ADD &&
                           (left_type->Maybe(Type::String()) ||
-                           right_type->Maybe(Type::String()));
+                           left_type->Maybe(Type::Receiver()) ||
+                           right_type->Maybe(Type::String()) ||
+                           right_type->Maybe(Type::Receiver()));
 
   if (left_type->Is(Type::None())) {
     Add<HDeoptimize>("Insufficient type feedback for LHS of binary operation",

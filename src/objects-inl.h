@@ -1166,7 +1166,8 @@ MaybeHandle<Object> JSProxy::SetElementWithHandler(Handle<JSProxy> proxy,
 }
 
 
-bool JSProxy::HasElementWithHandler(Handle<JSProxy> proxy, uint32_t index) {
+Maybe<bool> JSProxy::HasElementWithHandler(Handle<JSProxy> proxy,
+                                           uint32_t index) {
   Isolate* isolate = proxy->GetIsolate();
   Handle<String> name = isolate->factory()->Uint32ToString(index);
   return HasPropertyWithHandler(proxy, name);
@@ -2539,6 +2540,7 @@ void ConstantPoolArray::set(int index, Address value) {
 
 void ConstantPoolArray::set(int index, Object* value) {
   ASSERT(map() == GetHeap()->constant_pool_array_map());
+  ASSERT(!GetHeap()->InNewSpace(value));
   ASSERT(get_type(index) == HEAP_PTR);
   WRITE_FIELD(this, OffsetOfElementAt(index), value);
   WRITE_BARRIER(GetHeap(), this, OffsetOfElementAt(index), value);
@@ -2583,6 +2585,7 @@ void ConstantPoolArray::set_at_offset(int offset, Address value) {
 
 void ConstantPoolArray::set_at_offset(int offset, Object* value) {
   ASSERT(map() == GetHeap()->constant_pool_array_map());
+  ASSERT(!GetHeap()->InNewSpace(value));
   ASSERT(offset_is_type(offset, HEAP_PTR));
   WRITE_FIELD(this, offset, value);
   WRITE_BARRIER(GetHeap(), this, offset, value);
@@ -6636,27 +6639,32 @@ Object* JSReceiver::GetConstructor() {
 }
 
 
-bool JSReceiver::HasProperty(Handle<JSReceiver> object,
-                             Handle<Name> name) {
+Maybe<bool> JSReceiver::HasProperty(Handle<JSReceiver> object,
+                                    Handle<Name> name) {
   if (object->IsJSProxy()) {
     Handle<JSProxy> proxy = Handle<JSProxy>::cast(object);
     return JSProxy::HasPropertyWithHandler(proxy, name);
   }
-  return GetPropertyAttributes(object, name) != ABSENT;
+  Maybe<PropertyAttributes> result = GetPropertyAttributes(object, name);
+  if (!result.has_value) return Maybe<bool>();
+  return maybe(result.value != ABSENT);
 }
 
 
-bool JSReceiver::HasOwnProperty(Handle<JSReceiver> object, Handle<Name> name) {
+Maybe<bool> JSReceiver::HasOwnProperty(Handle<JSReceiver> object,
+                                       Handle<Name> name) {
   if (object->IsJSProxy()) {
     Handle<JSProxy> proxy = Handle<JSProxy>::cast(object);
     return JSProxy::HasPropertyWithHandler(proxy, name);
   }
-  return GetOwnPropertyAttributes(object, name) != ABSENT;
+  Maybe<PropertyAttributes> result = GetOwnPropertyAttributes(object, name);
+  if (!result.has_value) return Maybe<bool>();
+  return maybe(result.value != ABSENT);
 }
 
 
-PropertyAttributes JSReceiver::GetPropertyAttributes(Handle<JSReceiver> object,
-                                                     Handle<Name> key) {
+Maybe<PropertyAttributes> JSReceiver::GetPropertyAttributes(
+    Handle<JSReceiver> object, Handle<Name> key) {
   uint32_t index;
   if (object->IsJSObject() && key->AsArrayIndex(&index)) {
     return GetElementAttribute(object, index);
@@ -6666,8 +6674,8 @@ PropertyAttributes JSReceiver::GetPropertyAttributes(Handle<JSReceiver> object,
 }
 
 
-PropertyAttributes JSReceiver::GetElementAttribute(Handle<JSReceiver> object,
-                                                   uint32_t index) {
+Maybe<PropertyAttributes> JSReceiver::GetElementAttribute(
+    Handle<JSReceiver> object, uint32_t index) {
   if (object->IsJSProxy()) {
     return JSProxy::GetElementAttributeWithHandler(
         Handle<JSProxy>::cast(object), object, index);
@@ -6703,27 +6711,32 @@ Object* JSReceiver::GetIdentityHash() {
 }
 
 
-bool JSReceiver::HasElement(Handle<JSReceiver> object, uint32_t index) {
+Maybe<bool> JSReceiver::HasElement(Handle<JSReceiver> object, uint32_t index) {
   if (object->IsJSProxy()) {
     Handle<JSProxy> proxy = Handle<JSProxy>::cast(object);
     return JSProxy::HasElementWithHandler(proxy, index);
   }
-  return JSObject::GetElementAttributeWithReceiver(
-      Handle<JSObject>::cast(object), object, index, true) != ABSENT;
+  Maybe<PropertyAttributes> result = JSObject::GetElementAttributeWithReceiver(
+      Handle<JSObject>::cast(object), object, index, true);
+  if (!result.has_value) return Maybe<bool>();
+  return maybe(result.value != ABSENT);
 }
 
 
-bool JSReceiver::HasOwnElement(Handle<JSReceiver> object, uint32_t index) {
+Maybe<bool> JSReceiver::HasOwnElement(Handle<JSReceiver> object,
+                                      uint32_t index) {
   if (object->IsJSProxy()) {
     Handle<JSProxy> proxy = Handle<JSProxy>::cast(object);
     return JSProxy::HasElementWithHandler(proxy, index);
   }
-  return JSObject::GetElementAttributeWithReceiver(
-      Handle<JSObject>::cast(object), object, index, false) != ABSENT;
+  Maybe<PropertyAttributes> result = JSObject::GetElementAttributeWithReceiver(
+      Handle<JSObject>::cast(object), object, index, false);
+  if (!result.has_value) return Maybe<bool>();
+  return maybe(result.value != ABSENT);
 }
 
 
-PropertyAttributes JSReceiver::GetOwnElementAttribute(
+Maybe<PropertyAttributes> JSReceiver::GetOwnElementAttribute(
     Handle<JSReceiver> object, uint32_t index) {
   if (object->IsJSProxy()) {
     return JSProxy::GetElementAttributeWithHandler(
@@ -6765,9 +6778,10 @@ void AccessorInfo::set_property_attributes(PropertyAttributes attributes) {
 
 
 bool AccessorInfo::IsCompatibleReceiver(Object* receiver) {
-  Object* function_template = expected_receiver_type();
-  if (!function_template->IsFunctionTemplateInfo()) return true;
-  return FunctionTemplateInfo::cast(function_template)->IsTemplateFor(receiver);
+  if (!HasExpectedReceiverType()) return true;
+  if (!receiver->IsJSObject()) return false;
+  return FunctionTemplateInfo::cast(expected_receiver_type())
+      ->IsTemplateFor(JSObject::cast(receiver)->map());
 }
 
 

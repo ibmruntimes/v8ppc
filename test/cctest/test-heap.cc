@@ -210,7 +210,9 @@ TEST(HeapObjects) {
 
   Handle<String> object_string = Handle<String>::cast(factory->Object_string());
   Handle<GlobalObject> global(CcTest::i_isolate()->context()->global_object());
-  CHECK(JSReceiver::HasOwnProperty(global, object_string));
+  v8::Maybe<bool> maybe = JSReceiver::HasOwnProperty(global, object_string);
+  CHECK(maybe.has_value);
+  CHECK(maybe.value);
 
   // Check ToString for oddballs
   CheckOddball(isolate, heap->true_value(), "true");
@@ -277,7 +279,9 @@ TEST(GarbageCollection) {
   heap->CollectGarbage(NEW_SPACE);
 
   // Function should be alive.
-  CHECK(JSReceiver::HasOwnProperty(global, name));
+  v8::Maybe<bool> maybe = JSReceiver::HasOwnProperty(global, name);
+  CHECK(maybe.has_value);
+  CHECK(maybe.value);
   // Check function is retained.
   Handle<Object> func_value =
       Object::GetProperty(global, name).ToHandleChecked();
@@ -295,7 +299,9 @@ TEST(GarbageCollection) {
   // After gc, it should survive.
   heap->CollectGarbage(NEW_SPACE);
 
-  CHECK(JSReceiver::HasOwnProperty(global, obj_name));
+  maybe = JSReceiver::HasOwnProperty(global, obj_name);
+  CHECK(maybe.has_value);
+  CHECK(maybe.value);
   Handle<Object> obj =
       Object::GetProperty(global, obj_name).ToHandleChecked();
   CHECK(obj->IsJSObject());
@@ -652,55 +658,85 @@ TEST(ObjectProperties) {
   Handle<Smi> two(Smi::FromInt(2), isolate);
 
   // check for empty
-  CHECK(!JSReceiver::HasOwnProperty(obj, first));
+  v8::Maybe<bool> maybe = JSReceiver::HasOwnProperty(obj, first);
+  CHECK(maybe.has_value);
+  CHECK(!maybe.value);
 
   // add first
   JSReceiver::SetProperty(obj, first, one, SLOPPY).Check();
-  CHECK(JSReceiver::HasOwnProperty(obj, first));
+  maybe = JSReceiver::HasOwnProperty(obj, first);
+  CHECK(maybe.has_value);
+  CHECK(maybe.value);
 
   // delete first
   JSReceiver::DeleteProperty(obj, first, JSReceiver::NORMAL_DELETION).Check();
-  CHECK(!JSReceiver::HasOwnProperty(obj, first));
+  maybe = JSReceiver::HasOwnProperty(obj, first);
+  CHECK(maybe.has_value);
+  CHECK(!maybe.value);
 
   // add first and then second
   JSReceiver::SetProperty(obj, first, one, SLOPPY).Check();
   JSReceiver::SetProperty(obj, second, two, SLOPPY).Check();
-  CHECK(JSReceiver::HasOwnProperty(obj, first));
-  CHECK(JSReceiver::HasOwnProperty(obj, second));
+  maybe = JSReceiver::HasOwnProperty(obj, first);
+  CHECK(maybe.has_value);
+  CHECK(maybe.value);
+  maybe = JSReceiver::HasOwnProperty(obj, second);
+  CHECK(maybe.has_value);
+  CHECK(maybe.value);
 
   // delete first and then second
   JSReceiver::DeleteProperty(obj, first, JSReceiver::NORMAL_DELETION).Check();
-  CHECK(JSReceiver::HasOwnProperty(obj, second));
+  maybe = JSReceiver::HasOwnProperty(obj, second);
+  CHECK(maybe.has_value);
+  CHECK(maybe.value);
   JSReceiver::DeleteProperty(obj, second, JSReceiver::NORMAL_DELETION).Check();
-  CHECK(!JSReceiver::HasOwnProperty(obj, first));
-  CHECK(!JSReceiver::HasOwnProperty(obj, second));
+  maybe = JSReceiver::HasOwnProperty(obj, first);
+  CHECK(maybe.has_value);
+  CHECK(!maybe.value);
+  maybe = JSReceiver::HasOwnProperty(obj, second);
+  CHECK(maybe.has_value);
+  CHECK(!maybe.value);
 
   // add first and then second
   JSReceiver::SetProperty(obj, first, one, SLOPPY).Check();
   JSReceiver::SetProperty(obj, second, two, SLOPPY).Check();
-  CHECK(JSReceiver::HasOwnProperty(obj, first));
-  CHECK(JSReceiver::HasOwnProperty(obj, second));
+  maybe = JSReceiver::HasOwnProperty(obj, first);
+  CHECK(maybe.has_value);
+  CHECK(maybe.value);
+  maybe = JSReceiver::HasOwnProperty(obj, second);
+  CHECK(maybe.has_value);
+  CHECK(maybe.value);
 
   // delete second and then first
   JSReceiver::DeleteProperty(obj, second, JSReceiver::NORMAL_DELETION).Check();
-  CHECK(JSReceiver::HasOwnProperty(obj, first));
+  maybe = JSReceiver::HasOwnProperty(obj, first);
+  CHECK(maybe.has_value);
+  CHECK(maybe.value);
   JSReceiver::DeleteProperty(obj, first, JSReceiver::NORMAL_DELETION).Check();
-  CHECK(!JSReceiver::HasOwnProperty(obj, first));
-  CHECK(!JSReceiver::HasOwnProperty(obj, second));
+  maybe = JSReceiver::HasOwnProperty(obj, first);
+  CHECK(maybe.has_value);
+  CHECK(!maybe.value);
+  maybe = JSReceiver::HasOwnProperty(obj, second);
+  CHECK(maybe.has_value);
+  CHECK(!maybe.value);
 
   // check string and internalized string match
   const char* string1 = "fisk";
   Handle<String> s1 = factory->NewStringFromAsciiChecked(string1);
   JSReceiver::SetProperty(obj, s1, one, SLOPPY).Check();
   Handle<String> s1_string = factory->InternalizeUtf8String(string1);
-  CHECK(JSReceiver::HasOwnProperty(obj, s1_string));
+  maybe = JSReceiver::HasOwnProperty(obj, s1_string);
+  CHECK(maybe.has_value);
+  CHECK(maybe.value);
 
   // check internalized string and string match
   const char* string2 = "fugl";
   Handle<String> s2_string = factory->InternalizeUtf8String(string2);
   JSReceiver::SetProperty(obj, s2_string, one, SLOPPY).Check();
   Handle<String> s2 = factory->NewStringFromAsciiChecked(string2);
-  CHECK(JSReceiver::HasOwnProperty(obj, s2));
+  maybe = JSReceiver::HasOwnProperty(obj, s2);
+  CHECK(maybe.has_value);
+  CHECK(maybe.value);
 }
 
 
@@ -4402,6 +4438,58 @@ TEST(PromotionQueue) {
 
   // This scavenge will corrupt memory if the promotion queue is not evacuated.
   heap->CollectGarbage(NEW_SPACE);
+}
+
+
+TEST(Regress388880) {
+  i::FLAG_expose_gc = true;
+  CcTest::InitializeVM();
+  v8::HandleScope scope(CcTest::isolate());
+  Isolate* isolate = CcTest::i_isolate();
+  Factory* factory = isolate->factory();
+  Heap* heap = isolate->heap();
+
+  Handle<Map> map1 = Map::Create(isolate->object_function(), 1);
+  Handle<Map> map2 =
+      Map::CopyWithField(map1, factory->NewStringFromStaticAscii("foo"),
+                         HeapType::Any(isolate), NONE, Representation::Tagged(),
+                         OMIT_TRANSITION).ToHandleChecked();
+
+  int desired_offset = Page::kPageSize - map1->instance_size();
+
+  // Allocate fixed array in old pointer space so, that object allocated
+  // afterwards would end at the end of the page.
+  {
+    SimulateFullSpace(heap->old_pointer_space());
+    int padding_size = desired_offset - Page::kObjectStartOffset;
+    int padding_array_length =
+        (padding_size - FixedArray::kHeaderSize) / kPointerSize;
+
+    Handle<FixedArray> temp2 =
+        factory->NewFixedArray(padding_array_length, TENURED);
+    Page* page = Page::FromAddress(temp2->address());
+    CHECK_EQ(Page::kObjectStartOffset, page->Offset(temp2->address()));
+  }
+
+  Handle<JSObject> o = factory->NewJSObjectFromMap(map1, TENURED, false);
+  o->set_properties(*factory->empty_fixed_array());
+
+  // Ensure that the object allocated where we need it.
+  Page* page = Page::FromAddress(o->address());
+  CHECK_EQ(desired_offset, page->Offset(o->address()));
+
+  // Now we have an object right at the end of the page.
+
+  // Enable incremental marking to trigger actions in Heap::AdjustLiveBytes()
+  // that would cause crash.
+  IncrementalMarking* marking = CcTest::heap()->incremental_marking();
+  marking->Abort();
+  marking->Start();
+  CHECK(marking->IsMarking());
+
+  // Now everything is set up for crashing in JSObject::MigrateFastToFast()
+  // when it calls heap->AdjustLiveBytes(...).
+  JSObject::MigrateToMap(o, map2);
 }
 
 

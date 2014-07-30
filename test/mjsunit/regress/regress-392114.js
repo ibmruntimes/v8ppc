@@ -1,4 +1,4 @@
-// Copyright 2013 the V8 project authors. All rights reserved.
+// Copyright 2014 the V8 project authors. All rights reserved.
 // Redistribution and use in source and binary forms, with or without
 // modification, are permitted provided that the following conditions are
 // met:
@@ -25,7 +25,42 @@
 // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-// Test that we can create arrays of any size.
-for (var i = 1000; i < 1000000; i += 19703) {
-  new Array(i);
+// Flags: --expose-debug-as debug --allow-natives-syntax
+
+Debug = debug.Debug;
+
+function dummy(x) {
+  return x + 100;
 }
+
+function create_closure() {
+  var f = function(arg) {
+    if (arg) { %DeoptimizeFunction(f); }
+    var a = Array(10);
+    for (var i = 0; i < a.length; i++) {
+      a[i] = i;
+    }
+  }
+  return f;
+}
+
+var c = create_closure();
+c();
+
+// c CallIC state now has custom Array handler installed.
+
+// Turn on the debugger.
+Debug.setListener(function () {});
+
+var d = create_closure();
+%OptimizeFunctionOnNextCall(d);
+// Thanks to the debugger, we recreate the full code too. We deopt and run
+// it, stomping on the unexpected AllocationSite in the type vector slot.
+d(true);
+
+// CallIC in c misinterprets type vector slot contents as an AllocationSite,
+// corrupting the heap.
+c();
+
+// CallIC MISS - crash due to corruption.
+dummy();

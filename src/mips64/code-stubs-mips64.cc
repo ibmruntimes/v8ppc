@@ -1016,17 +1016,28 @@ void ICCompareStub::GenerateGeneric(MacroAssembler* masm) {
 
   // Check if LESS condition is satisfied. If true, move conditionally
   // result to v0.
-  __ c(OLT, D, f12, f14);
-  __ Movt(v0, a4);
-  // Use previous check to store conditionally to v0 oposite condition
-  // (GREATER). If rhs is equal to lhs, this will be corrected in next
-  // check.
-  __ Movf(v0, a5);
-  // Check if EQUAL condition is satisfied. If true, move conditionally
-  // result to v0.
-  __ c(EQ, D, f12, f14);
-  __ Movt(v0, a6);
+  if (kArchVariant != kMips64r6) {
+    __ c(OLT, D, f12, f14);
+    __ Movt(v0, a4);
+    // Use previous check to store conditionally to v0 oposite condition
+    // (GREATER). If rhs is equal to lhs, this will be corrected in next
+    // check.
+    __ Movf(v0, a5);
+    // Check if EQUAL condition is satisfied. If true, move conditionally
+    // result to v0.
+    __ c(EQ, D, f12, f14);
+    __ Movt(v0, a6);
+  } else {
+    Label skip;
+    __ BranchF(USE_DELAY_SLOT, &skip, NULL, lt, f12, f14);
+    __ mov(v0, a4);  // Return LESS as result.
 
+    __ BranchF(USE_DELAY_SLOT, &skip, NULL, eq, f12, f14);
+    __ mov(v0, a6);  // Return EQUAL as result.
+
+    __ mov(v0, a5);  // Return GREATER as result.
+    __ bind(&skip);
+  }
   __ Ret();
 
   __ bind(&nan);
@@ -1938,20 +1949,11 @@ void InstanceofStub::Generate(MacroAssembler* masm) {
 void FunctionPrototypeStub::Generate(MacroAssembler* masm) {
   Label miss;
   Register receiver = LoadIC::ReceiverRegister();
-  Register name = LoadIC::NameRegister();
-
-  ASSERT(kind() == Code::LOAD_IC ||
-         kind() == Code::KEYED_LOAD_IC);
-
-  if (kind() == Code::KEYED_LOAD_IC) {
-    __ Branch(&miss, ne, name,
-        Operand(isolate()->factory()->prototype_string()));
-  }
-
-  StubCompiler::GenerateLoadFunctionPrototype(masm, receiver, a3, a4, &miss);
+  NamedLoadHandlerCompiler::GenerateLoadFunctionPrototype(masm, receiver, a3,
+                                                          a4, &miss);
   __ bind(&miss);
-  StubCompiler::TailCallBuiltin(
-      masm, BaseLoadStoreStubCompiler::MissBuiltin(kind()));
+  PropertyAccessCompiler::TailCallBuiltin(
+      masm, PropertyAccessCompiler::MissBuiltin(Code::LOAD_IC));
 }
 
 
@@ -3180,9 +3182,14 @@ void CallIC_ArrayStub::Generate(MacroAssembler* masm) {
   __ li(a0, Operand(arg_count()));
   __ dsrl(at, a3, 32 - kPointerSizeLog2);
   __ Daddu(at, a2, Operand(at));
-  __ ld(a2, FieldMemOperand(at, FixedArray::kHeaderSize));
-  // Verify that a2 contains an AllocationSite
-  __ AssertUndefinedOrAllocationSite(a2, at);
+  __ ld(a4, FieldMemOperand(at, FixedArray::kHeaderSize));
+
+  // Verify that a4 contains an AllocationSite
+  __ ld(a5, FieldMemOperand(a4, HeapObject::kMapOffset));
+  __ LoadRoot(at, Heap::kAllocationSiteMapRootIndex);
+  __ Branch(&miss, ne, a5, Operand(at));
+
+  __ mov(a2, a4);
   ArrayConstructorStub stub(masm->isolate(), arg_count());
   __ TailCallStub(&stub);
 
@@ -3249,7 +3256,11 @@ void CallICStub::Generate(MacroAssembler* masm) {
   __ Branch(&miss, eq, a4, Operand(at));
 
   if (!FLAG_trace_ic) {
-    // We are going megamorphic, and we don't want to visit the runtime.
+    // We are going megamorphic. If the feedback is a JSFunction, it is fine
+    // to handle it here. More complex cases are dealt with in the runtime.
+    __ AssertNotSmi(a4);
+    __ GetObjectType(a4, a5, a5);
+    __ Branch(&miss, ne, a5, Operand(JS_FUNCTION_TYPE));
     __ dsrl(a4, a3, 32 - kPointerSizeLog2);
     __ Daddu(a4, a2, Operand(a4));
     __ LoadRoot(at, Heap::kMegamorphicSymbolRootIndex);

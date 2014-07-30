@@ -401,6 +401,14 @@
                     'cflags': ['-msoft-float'],
                     'ldflags': ['-msoft-float'],
                   }],
+                  ['mips_arch_variant=="r6"', {
+                    'cflags': ['-mips64r6', '-mabi=64', '-Wa,-mips64r6'],
+                    'ldflags': [
+                      '-mips64r6', '-mabi=64',
+                      '-Wl,--dynamic-linker=$(LDSO_PATH)',
+                      '-Wl,--rpath=$(LD_R_PATH)',
+                    ],
+                  }],
                   ['mips_arch_variant=="r2"', {
                     'cflags': ['-mips64r2', '-mabi=64', '-Wa,-mips64r2'],
                     'ldflags': [
@@ -408,9 +416,6 @@
                       '-Wl,--dynamic-linker=$(LDSO_PATH)',
                       '-Wl,--rpath=$(LD_R_PATH)',
                     ],
-                  }],
-                  ['mips_arch_variant=="loongson"', {
-                    'cflags': ['-mips3', '-Wa,-mips3'],
                   }],
                 ],
               }],
@@ -431,11 +436,11 @@
               '__mips_soft_float=1'
             ],
           }],
+          ['mips_arch_variant=="r6"', {
+            'defines': ['_MIPS_ARCH_MIPS64R6',],
+          }],
           ['mips_arch_variant=="r2"', {
             'defines': ['_MIPS_ARCH_MIPS64R2',],
-          }],
-          ['mips_arch_variant=="loongson"', {
-            'defines': ['_MIPS_ARCH_LOONGSON',],
           }],
         ],
       }],  # v8_target_arch=="mips64el"
@@ -476,6 +481,12 @@
           'OutputDirectory': '<(DEPTH)\\build\\$(ConfigurationName)',
           'IntermediateDirectory': '$(OutDir)\\obj\\$(ProjectName)',
           'CharacterSet': '1',
+        },
+        'msvs_settings': {
+          'VCCLCompilerTool': {
+            # Ensure no surprising artifacts from 80bit double math with x86.
+            'AdditionalOptions': ['/arch:SSE2'],
+          },
         },
       }],
       ['OS=="win" and v8_enable_prof==1', {
