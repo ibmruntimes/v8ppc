@@ -9711,7 +9711,6 @@ void ConstantPoolArray::ConstantPoolIterateBody(ObjectVisitor* v) {
   // Unfortunately the serializer relies on pointers within an object being
   // visited in-order, so we have to iterate both the code and heap pointers in
   // the small section before doing so in the extended section.
-  WeakObjectState state = get_weak_object_state();
   for (int s = 0; s <= final_section(); ++s) {
     LayoutSection section = static_cast<LayoutSection>(s);
     ConstantPoolArray::Iterator code_iter(this, ConstantPoolArray::CODE_PTR,
@@ -9724,8 +9723,7 @@ void ConstantPoolArray::ConstantPoolIterateBody(ObjectVisitor* v) {
     ConstantPoolArray::Iterator heap_iter(this, ConstantPoolArray::HEAP_PTR,
                                           section);
     while (!heap_iter.is_finished()) {
-      v->VisitConstantPoolEmbeddedPointer(
-          RawFieldOfElementAt(heap_iter.next_index()), state);
+      v->VisitPointer(RawFieldOfElementAt(heap_iter.next_index()));
     }
   }
 }

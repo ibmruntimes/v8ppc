@@ -4219,23 +4219,16 @@ void MacroAssembler::LoadDoubleLiteral(DoubleRegister result,
 #if V8_OOL_CONSTANT_POOL
   // TODO(mbrandy): enable extended constant pool usage for doubles.
   //                See ARM commit e27ab337 for a reference.
-  if (is_constant_pool_available() && !use_extended_constant_pool()) {
+  if (is_constant_pool_available() && !is_constant_pool_full()) {
     RelocInfo rinfo(pc_, value);
-    ConstantPoolArray::LayoutSection section = ConstantPoolAddEntry(rinfo);
-    if (section == ConstantPoolArray::EXTENDED_SECTION) {
-      BlockTrampolinePoolScope block_trampoline_pool(this);
-      addis(scratch, kConstantPoolRegister, Operand::Zero());
-      lfd(result, MemOperand(scratch, 0));
-    } else {
-      ASSERT(section == ConstantPoolArray::SMALL_SECTION);
+    ConstantPoolAddEntry(rinfo);
 #if V8_TARGET_ARCH_PPC64
-      // We use 2 instruction sequence here for consistency with mov.
-      li(scratch, Operand::Zero());
-      lfdx(result, MemOperand(kConstantPoolRegister, scratch));
+    // We use 2 instruction sequence here for consistency with mov.
+    li(scratch, Operand::Zero());
+    lfdx(result, MemOperand(kConstantPoolRegister, scratch));
 #else
-      lfd(result, MemOperand(kConstantPoolRegister, 0));
+    lfd(result, MemOperand(kConstantPoolRegister, 0));
 #endif
-    }
     return;
   }
 #endif

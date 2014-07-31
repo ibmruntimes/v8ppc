@@ -1512,9 +1512,8 @@ int Assembler::instructions_required_for_mov(const Operand& x) const {
 #endif
 #if V8_OOL_CONSTANT_POOL
   if (use_constant_pool_for_mov(x, canOptimize)) {
-    if (use_extended_constant_pool()) {
-      return kMovInstructionsExtendedConstantPool;
-    }
+    // Current usage guarantees that all constant pool references can
+    // use the same sequence.
     return kMovInstructionsConstantPool;
   }
 #endif
@@ -1526,7 +1525,7 @@ int Assembler::instructions_required_for_mov(const Operand& x) const {
 #if V8_OOL_CONSTANT_POOL
 bool Assembler::use_constant_pool_for_mov(const Operand& x,
                                           bool canOptimize) const {
-  if (!is_constant_pool_available()) {
+  if (!is_constant_pool_available() || is_constant_pool_full()) {
     // If there is no constant pool available, we must use a mov
     // immediate sequence.
     return false;
@@ -1536,20 +1535,6 @@ bool Assembler::use_constant_pool_for_mov(const Operand& x,
   if (canOptimize && is_int16(value)) {
     // Prefer a single-instruction load-immediate.
     return false;
-  }
-
-  if (use_extended_constant_pool()) {
-    // Prefer a two instruction mov immediate sequence over the constant
-    // pool's extended section.
-#if V8_TARGET_ARCH_PPC64
-    // TODO(mbrandy): enable extended constant pool usage for 64-bit.
-    //                See ARM commit e27ab337 for a reference.
-    // if (canOptimize && is_int32(value)) {
-      return false;
-    // }
-#else
-    return false;
-#endif
   }
 
   return true;
@@ -1589,31 +1574,16 @@ void Assembler::mov(Register dst, const Operand& src) {
 #if V8_OOL_CONSTANT_POOL
   if (use_constant_pool_for_mov(src, canOptimize)) {
     ASSERT(is_constant_pool_available());
-    ConstantPoolArray::LayoutSection section = ConstantPoolAddEntry(rinfo);
-    if (section == ConstantPoolArray::EXTENDED_SECTION) {
-      BlockTrampolinePoolScope block_trampoline_pool(this);
+    ConstantPoolAddEntry(rinfo);
 #if V8_TARGET_ARCH_PPC64
-      // We are forced to use 3 instruction sequence since the constant
-      // pool pointer is tagged.
-      lis(dst, Operand::Zero());
-      ori(dst, dst, Operand::Zero());
-      ldx(dst, MemOperand(kConstantPoolRegister, dst));
+    BlockTrampolinePoolScope block_trampoline_pool(this);
+    // We are forced to use 2 instruction sequence since the constant
+    // pool pointer is tagged.
+    li(dst, Operand::Zero());
+    ldx(dst, MemOperand(kConstantPoolRegister, dst));
 #else
-      addis(dst, kConstantPoolRegister, Operand::Zero());
-      lwz(dst, MemOperand(dst, 0));
+    lwz(dst, MemOperand(kConstantPoolRegister, 0));
 #endif
-    } else {
-      ASSERT(section == ConstantPoolArray::SMALL_SECTION);
-#if V8_TARGET_ARCH_PPC64
-      BlockTrampolinePoolScope block_trampoline_pool(this);
-      // We are forced to use 2 instruction sequence since the constant
-      // pool pointer is tagged.
-      li(dst, Operand::Zero());
-      ldx(dst, MemOperand(kConstantPoolRegister, dst));
-#else
-      lwz(dst, MemOperand(kConstantPoolRegister, 0));
-#endif
-    }
     return;
   }
 #endif
@@ -2377,7 +2347,10 @@ void Assembler::PopulateConstantPool(ConstantPoolArray* constant_pool) {
 
 #if V8_OOL_CONSTANT_POOL
 ConstantPoolBuilder::ConstantPoolBuilder()
-    : entries_(), current_section_(ConstantPoolArray::SMALL_SECTION) {}
+    : size_(0),
+      entries_(),
+      current_section_(ConstantPoolArray::SMALL_SECTION) {
+}
 
 
 bool ConstantPoolBuilder::IsEmpty() {
@@ -2430,7 +2403,6 @@ ConstantPoolArray::LayoutSection ConstantPoolBuilder::AddEntry(
       }
     }
   }
-
   ASSERT(entry_section <= current_section_);
   entries_.push_back(ConstantPoolEntry(rinfo, entry_section, merged_index));
 
@@ -2440,11 +2412,17 @@ ConstantPoolArray::LayoutSection ConstantPoolBuilder::AddEntry(
   }
 
   // Check if we still have room for another entry in the small section
-  // given PPC's load immediate offset range.
-  if (current_section_ == ConstantPoolArray::SMALL_SECTION &&
-      !is_int16(ConstantPoolArray::SizeFor(*small_entries()))) {
-    current_section_ = ConstantPoolArray::EXTENDED_SECTION;
+  // given the limitations of the header's layout fields.
+  if (current_section_ == ConstantPoolArray::SMALL_SECTION) {
+    size_ = ConstantPoolArray::SizeFor(*small_entries());
+    if (!is_uint12(size_)) {
+      current_section_ = ConstantPoolArray::EXTENDED_SECTION;
+    }
+  } else {
+    size_ = ConstantPoolArray::SizeForExtended(*small_entries(),
+                                               *extended_entries());
   }
+
   return entry_section;
 }
 

@@ -3036,7 +3036,6 @@ class FixedDoubleArray: public FixedArrayBase {
 // The format of a small constant pool is:
 //   [kSmallLayout1Offset]                    : Small section layout bitmap 1
 //   [kSmallLayout2Offset]                    : Small section layout bitmap 2
-//   [kSmallLayout3Offset]                    : Small section layout bitmap 3
 //   [first_index(INT64, SMALL_SECTION)]      : 64 bit entries
 //    ...                                     :  ...
 //   [first_index(CODE_PTR, SMALL_SECTION)]   : code pointer entries
@@ -3288,25 +3287,22 @@ class ConstantPoolArray: public HeapObject {
   // Small Layout description.
   static const int kSmallLayout1Offset = HeapObject::kHeaderSize;
   static const int kSmallLayout2Offset = kSmallLayout1Offset + kInt32Size;
-  static const int kSmallLayout3Offset = kSmallLayout2Offset + kInt32Size;
-  static const int kHeaderSize = kSmallLayout3Offset + kInt32Size;
+  static const int kHeaderSize = kSmallLayout2Offset + kInt32Size;
   static const int kFirstEntryOffset = ROUND_UP(kHeaderSize, kInt64Size);
 
-  static const int kSmallLayoutCountBits = 15;
+  static const int kSmallLayoutCountBits = 10;
   static const int kMaxSmallEntriesPerType = (1 << kSmallLayoutCountBits) - 1;
 
   // Fields in kSmallLayout1Offset.
   class Int64CountField: public BitField<int, 1, kSmallLayoutCountBits> {};
-  class CodePtrCountField: public BitField<int, 16, kSmallLayoutCountBits> {};
+  class CodePtrCountField: public BitField<int, 11, kSmallLayoutCountBits> {};
+  class HeapPtrCountField: public BitField<int, 21, kSmallLayoutCountBits> {};
   class IsExtendedField: public BitField<bool, 31, 1> {};
 
   // Fields in kSmallLayout2Offset.
-  class HeapPtrCountField: public BitField<int, 1, kSmallLayoutCountBits> {};
-  class Int32CountField: public BitField<int, 16, kSmallLayoutCountBits> {};
-
-  // Fields in kSmallLayout3Offset.
-  class TotalCountField: public BitField<int, 1, 17> {};
-  class WeakObjectStateField: public BitField<WeakObjectState, 18, 2> {};
+  class Int32CountField: public BitField<int, 1, kSmallLayoutCountBits> {};
+  class TotalCountField: public BitField<int, 11, 12> {};
+  class WeakObjectStateField: public BitField<WeakObjectState, 23, 2> {};
 
   // Extended layout description, which starts at
   // get_extended_section_header_offset().
@@ -6268,7 +6264,7 @@ class Map: public HeapObject {
   static Handle<Map> GeneralizeAllFieldRepresentations(Handle<Map> map);
   MUST_USE_RESULT static Handle<HeapType> GeneralizeFieldType(
       Handle<HeapType> type1,
-                                              Handle<HeapType> type2,
+      Handle<HeapType> type2,
       Isolate* isolate);
   static void GeneralizeFieldType(Handle<Map> map,
                                   int modify_index,
@@ -11194,13 +11190,6 @@ class ObjectVisitor BASE_EMBEDDED {
 
   // Visit weak next_code_link in Code object.
   virtual void VisitNextCodeLink(Object** p) { VisitPointers(p, p + 1); }
-
-  // Visit pointer embedded in ool constant pool
-  virtual void VisitConstantPoolEmbeddedPointer(
-      Object** p,
-      ConstantPoolArray::WeakObjectState state) {
-    VisitPointers(p, p + 1);
-  }
 
   // To allow lazy clearing of inline caches the visitor has
   // a rich interface for iterating over Code objects..

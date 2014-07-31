@@ -2368,8 +2368,8 @@ ConstantPoolArray::LayoutSection ConstantPoolArray::final_section() {
 
 int ConstantPoolArray::first_extended_section_index() {
   ASSERT(is_extended_layout());
-  uint32_t small_layout_3 = READ_UINT32_FIELD(this, kSmallLayout3Offset);
-  return TotalCountField::decode(small_layout_3);
+  uint32_t small_layout_2 = READ_UINT32_FIELD(this, kSmallLayout2Offset);
+  return TotalCountField::decode(small_layout_2);
 }
 
 
@@ -2379,16 +2379,16 @@ int ConstantPoolArray::get_extended_section_header_offset() {
 
 
 ConstantPoolArray::WeakObjectState ConstantPoolArray::get_weak_object_state() {
-  uint32_t small_layout_3 = READ_UINT32_FIELD(this, kSmallLayout3Offset);
-  return WeakObjectStateField::decode(small_layout_3);
+  uint32_t small_layout_2 = READ_UINT32_FIELD(this, kSmallLayout2Offset);
+  return WeakObjectStateField::decode(small_layout_2);
 }
 
 
 void ConstantPoolArray::set_weak_object_state(
       ConstantPoolArray::WeakObjectState state) {
-  uint32_t small_layout_3 = READ_UINT32_FIELD(this, kSmallLayout3Offset);
-  small_layout_3 = WeakObjectStateField::update(small_layout_3, state);
-  WRITE_INT32_FIELD(this, kSmallLayout3Offset, small_layout_3);
+  uint32_t small_layout_2 = READ_UINT32_FIELD(this, kSmallLayout2Offset);
+  small_layout_2 = WeakObjectStateField::update(small_layout_2, state);
+  WRITE_INT32_FIELD(this, kSmallLayout2Offset, small_layout_2);
 }
 
 
@@ -2423,7 +2423,7 @@ int ConstantPoolArray::number_of_entries(Type type, LayoutSection section) {
       case CODE_PTR:
         return CodePtrCountField::decode(small_layout_1);
       case HEAP_PTR:
-        return HeapPtrCountField::decode(small_layout_2);
+        return HeapPtrCountField::decode(small_layout_1);
       case INT32:
         return Int32CountField::decode(small_layout_2);
       default:
@@ -2596,16 +2596,14 @@ void ConstantPoolArray::Init(const NumberOfEntries& small) {
   uint32_t small_layout_1 =
       Int64CountField::encode(small.count_of(INT64)) |
       CodePtrCountField::encode(small.count_of(CODE_PTR)) |
+      HeapPtrCountField::encode(small.count_of(HEAP_PTR)) |
       IsExtendedField::encode(false);
   uint32_t small_layout_2 =
-      HeapPtrCountField::encode(small.count_of(HEAP_PTR)) |
-      Int32CountField::encode(small.count_of(INT32));
-  uint32_t small_layout_3 =
+      Int32CountField::encode(small.count_of(INT32)) |
       TotalCountField::encode(small.total_count()) |
       WeakObjectStateField::encode(NO_WEAK_OBJECTS);
   WRITE_UINT32_FIELD(this, kSmallLayout1Offset, small_layout_1);
   WRITE_UINT32_FIELD(this, kSmallLayout2Offset, small_layout_2);
-  WRITE_UINT32_FIELD(this, kSmallLayout3Offset, small_layout_3);
   if (kHeaderSize != kFirstEntryOffset) {
     ASSERT(kFirstEntryOffset - kHeaderSize == kInt32Size);
     WRITE_UINT32_FIELD(this, kHeaderSize, 0);  // Zero out header padding.
@@ -2648,8 +2646,8 @@ int ConstantPoolArray::size() {
 
 
 int ConstantPoolArray::length() {
-  uint32_t small_layout_3 = READ_UINT32_FIELD(this, kSmallLayout3Offset);
-  int length = TotalCountField::decode(small_layout_3);
+  uint32_t small_layout_2 = READ_UINT32_FIELD(this, kSmallLayout2Offset);
+  int length = TotalCountField::decode(small_layout_2);
   if (is_extended_layout()) {
     length += number_of_entries(INT64, EXTENDED_SECTION) +
               number_of_entries(CODE_PTR, EXTENDED_SECTION) +
