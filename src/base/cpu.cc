@@ -248,6 +248,8 @@ static bool HasListItem(const char* list, const char* item) {
 
 #endif  // V8_HOST_ARCH_IA32 || V8_HOST_ARCH_X64
 
+#define UNKNOWN_CACHE_LINE_SIZE 0
+
 CPU::CPU() : stepping_(0),
              model_(0),
              ext_model_(0),
@@ -257,7 +259,7 @@ CPU::CPU() : stepping_(0),
              implementer_(0),
              architecture_(0),
              part_(0),
-             cache_line_size_(0),
+             cache_line_size_(UNKNOWN_CACHE_LINE_SIZE),
              has_fpu_(false),
              has_cmov_(false),
              has_sahf_(false),
