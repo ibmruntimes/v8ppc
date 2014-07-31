@@ -366,10 +366,6 @@ void MacroAssembler::RecordWriteForMap(Register object,
     return;
   }
 
-  // Count number of write barriers in generated code.
-  isolate()->counters()->write_barriers_static()->Increment();
-  // TODO(mstarzinger): Dynamic counter missing.
-
   if (emit_debug_code()) {
     LoadP(ip, FieldMemOperand(object, HeapObject::kMapOffset));
     cmp(ip, map);
@@ -412,6 +408,10 @@ void MacroAssembler::RecordWriteForMap(Register object,
 
   bind(&done);
 
+  // Count number of write barriers in generated code.
+  isolate()->counters()->write_barriers_static()->Increment();
+  IncrementCounter(isolate()->counters()->write_barriers_dynamic(), 1, ip, dst);
+
   // Clobber clobbered registers when running with the debug-code flag
   // turned on to provoke errors.
   if (emit_debug_code()) {
@@ -444,10 +444,6 @@ void MacroAssembler::RecordWrite(
       !FLAG_incremental_marking) {
     return;
   }
-
-  // Count number of write barriers in generated code.
-  isolate()->counters()->write_barriers_static()->Increment();
-  // TODO(mstarzinger): Dynamic counter missing.
 
   // First, check if a write barrier is even needed. The tests below
   // catch stores of smis and stores into the young generation.
@@ -484,6 +480,11 @@ void MacroAssembler::RecordWrite(
   }
 
   bind(&done);
+
+  // Count number of write barriers in generated code.
+  isolate()->counters()->write_barriers_static()->Increment();
+  IncrementCounter(isolate()->counters()->write_barriers_dynamic(), 1, ip,
+                   value);
 
   // Clobber clobbered registers when running with the debug-code flag
   // turned on to provoke errors.
@@ -1437,7 +1438,7 @@ void MacroAssembler::CheckAccessGlobalProxy(Register holder_reg,
 
 
 // Compute the hash code from the untagged key.  This must be kept in sync with
-// ComputeIntegerHash in utils.h and KeyedLoadGenericElementStub in
+// ComputeIntegerHash in utils.h and KeyedLoadGenericStub in
 // code-stub-hydrogen.cc
 void MacroAssembler::GetNumberHash(Register t0, Register scratch) {
   // First of all we assign the hash seed to scratch.

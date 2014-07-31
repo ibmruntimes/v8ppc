@@ -4066,6 +4066,13 @@ void LCodeGen::DoMathRound(LMathRound* instr) {
 }
 
 
+void LCodeGen::DoMathFround(LMathFround* instr) {
+  DoubleRegister input_reg = ToDoubleRegister(instr->value());
+  DoubleRegister output_reg = ToDoubleRegister(instr->result());
+  __ frsp(output_reg, input_reg);
+}
+
+
 void LCodeGen::DoMathSqrt(LMathSqrt* instr) {
   DoubleRegister input = ToDoubleRegister(instr->value());
   DoubleRegister result = ToDoubleRegister(instr->result());
