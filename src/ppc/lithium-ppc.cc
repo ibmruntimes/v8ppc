@@ -8,9 +8,8 @@
 #include "src/v8.h"
 
 #include "src/hydrogen-osr.h"
-#include "src/lithium-allocator-inl.h"
+#include "src/lithium-inl.h"
 #include "src/ppc/lithium-codegen-ppc.h"
-#include "src/ppc/lithium-ppc.h"
 
 namespace v8 {
 namespace internal {

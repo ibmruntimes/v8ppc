@@ -11,6 +11,10 @@
 #define MACHINE_ASSEMBLER_SUPPORTS_CALL_C 1
 #endif
 
+#if defined(_AIX)
+#include <alloca.h>
+#endif
+
 #include "src/v8.h"
 
 #include "src/compiler/machine-operator.h"

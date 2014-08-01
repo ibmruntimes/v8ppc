@@ -10,6 +10,9 @@
 using namespace v8::internal;
 using namespace v8::internal::compiler;
 
+// PPC builds fail on GCC 4.4.6 due to a warning in Operator1.
+#pragma GCC diagnostic ignored "-Wstrict-aliasing"
+
 #define NaN (v8::base::OS::nan_value())
 #define Infinity (std::numeric_limits<double>::infinity())
 
