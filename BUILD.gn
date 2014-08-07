@@ -166,18 +166,6 @@ config("toolchain") {
 # Actions
 #
 
-action("generate_trig_table") {
-  visibility = ":*"  # Only targets in this file can depend on this.
-
-  script = "tools/generate-trig-table.py"
-
-  outputs = [
-    "$target_gen_dir/trig-table.cc"
-  ]
-
-  args = rebase_path(outputs, root_build_dir)
-}
-
 action("js2c") {
   visibility = ":*"  # Only targets in this file can depend on this.
 
@@ -192,7 +180,9 @@ action("js2c") {
     "src/v8natives.js",
     "src/array.js",
     "src/string.js",
+    "src/symbol.js",
     "src/uri.js",
+    "third_party/fdlibm/fdlibm.js",
     "src/math.js",
     "src/messages.js",
     "src/apinatives.js",
@@ -204,10 +194,14 @@ action("js2c") {
     "src/regexp.js",
     "src/arraybuffer.js",
     "src/typedarray.js",
+    "src/collection.js",
+    "src/collection-iterator.js",
     "src/weak_collection.js",
     "src/promise.js",
     "src/object-observe.js",
     "src/macros.py",
+    "src/array-iterator.js",
+    "src/string-iterator.js",
   ]
 
   outputs = [
@@ -244,14 +238,11 @@ action("js2c_experimental") {
 
   sources = [
     "src/macros.py",
-    "src/symbol.js",
     "src/proxy.js",
-    "src/collection.js",
-    "src/collection-iterator.js",
     "src/generator.js",
-    "src/array-iterator.js",
     "src/harmony-string.js",
     "src/harmony-array.js",
+    "src/unscopables.js",
   ]
 
   outputs = [
@@ -360,14 +351,12 @@ source_set("v8_nosnapshot") {
   deps = [
     ":js2c",
     ":js2c_experimental",
-    ":generate_trig_table",
     ":v8_base",
   ]
 
   sources = [
     "$target_gen_dir/libraries.cc",
     "$target_gen_dir/experimental-libraries.cc",
-    "$target_gen_dir/trig-table.cc",
     "src/snapshot-empty.cc",
     "src/snapshot-common.cc",
   ]
@@ -383,7 +372,6 @@ source_set("v8_snapshot") {
   deps = [
     ":js2c",
     ":js2c_experimental",
-    ":generate_trig_table",
     ":run_mksnapshot",
     ":v8_base",
   ]
@@ -391,7 +379,6 @@ source_set("v8_snapshot") {
   sources = [
     "$target_gen_dir/libraries.cc",
     "$target_gen_dir/experimental-libraries.cc",
-    "$target_gen_dir/trig-table.cc",
     "$target_gen_dir/snapshot.cc",
     "src/snapshot-common.cc",
   ]
@@ -408,14 +395,12 @@ if (v8_use_external_startup_data) {
     deps = [
       ":js2c",
       ":js2c_experimental",
-      ":generate_trig_table",
       ":run_mksnapshot",
       ":v8_base",
       ":natives_blob",
     ]
 
     sources = [
-      "$target_gen_dir/trig-table.cc",
       "src/natives-external.cc",
       "src/snapshot-external.cc",
     ]
@@ -632,8 +617,6 @@ source_set("v8_base") {
     "src/full-codegen.h",
     "src/func-name-inferrer.cc",
     "src/func-name-inferrer.h",
-    "src/gc-tracer.cc",
-    "src/gc-tracer.h",
     "src/gdb-jit.cc",
     "src/gdb-jit.h",
     "src/global-handles.cc",
@@ -643,14 +626,29 @@ source_set("v8_base") {
     "src/handles.cc",
     "src/handles.h",
     "src/hashmap.h",
-    "src/heap-inl.h",
     "src/heap-profiler.cc",
     "src/heap-profiler.h",
     "src/heap-snapshot-generator-inl.h",
     "src/heap-snapshot-generator.cc",
     "src/heap-snapshot-generator.h",
-    "src/heap.cc",
-    "src/heap.h",
+    "src/heap/gc-tracer.cc",
+    "src/heap/gc-tracer.h",
+    "src/heap/heap-inl.h",
+    "src/heap/heap.cc",
+    "src/heap/heap.h",
+    "src/heap/incremental-marking.cc",
+    "src/heap/incremental-marking.h",
+    "src/heap/mark-compact-inl.h",
+    "src/heap/mark-compact.cc",
+    "src/heap/mark-compact.h",
+    "src/heap/objects-visiting-inl.h",
+    "src/heap/objects-visiting.cc",
+    "src/heap/objects-visiting.h",
+    "src/heap/spaces-inl.h",
+    "src/heap/spaces.cc",
+    "src/heap/spaces.h",
+    "src/heap/sweeper-thread.h",
+    "src/heap/sweeper-thread.cc",
     "src/hydrogen-alias-analysis.h",
     "src/hydrogen-bce.cc",
     "src/hydrogen-bce.h",
@@ -710,8 +708,6 @@ source_set("v8_base") {
     "src/ic-inl.h",
     "src/ic.cc",
     "src/ic.h",
-    "src/incremental-marking.cc",
-    "src/incremental-marking.h",
     "src/interface.cc",
     "src/interface.h",
     "src/interpreter-irregexp.cc",
@@ -739,11 +735,10 @@ source_set("v8_base") {
     "src/log-utils.h",
     "src/log.cc",
     "src/log.h",
+    "src/lookup-inl.h",
     "src/lookup.cc",
     "src/lookup.h",
     "src/macro-assembler.h",
-    "src/mark-compact.cc",
-    "src/mark-compact.h",
     "src/messages.cc",
     "src/messages.h",
     "src/msan.h",
@@ -751,8 +746,6 @@ source_set("v8_base") {
     "src/objects-debug.cc",
     "src/objects-inl.h",
     "src/objects-printer.cc",
-    "src/objects-visiting.cc",
-    "src/objects-visiting.h",
     "src/objects.cc",
     "src/objects.h",
     "src/optimizing-compiler-thread.cc",
@@ -811,9 +804,6 @@ source_set("v8_base") {
     "src/snapshot-source-sink.cc",
     "src/snapshot-source-sink.h",
     "src/snapshot.h",
-    "src/spaces-inl.h",
-    "src/spaces.cc",
-    "src/spaces.h",
     "src/store-buffer-inl.h",
     "src/store-buffer.cc",
     "src/store-buffer.h",
@@ -825,8 +815,6 @@ source_set("v8_base") {
     "src/strtod.h",
     "src/stub-cache.cc",
     "src/stub-cache.h",
-    "src/sweeper-thread.h",
-    "src/sweeper-thread.cc",
     "src/token.cc",
     "src/token.h",
     "src/transitions-inl.h",
@@ -863,6 +851,8 @@ source_set("v8_base") {
     "src/zone-inl.h",
     "src/zone.cc",
     "src/zone.h",
+    "third_party/fdlibm/fdlibm.cc",
+    "third_party/fdlibm/fdlibm.h",
   ]
 
   if (v8_target_arch == "x86") {

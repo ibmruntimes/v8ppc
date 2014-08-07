@@ -282,7 +282,7 @@ void PerfBasicLogger::LogRecordedBuffer(Code* code,
                                        SharedFunctionInfo*,
                                        const char* name,
                                        int length) {
-  ASSERT(code->instruction_start() == code->address() + Code::kHeaderSize);
+  DCHECK(code->instruction_start() == code->address() + Code::kHeaderSize);
 
   base::OS::FPrint(perf_output_handle_, "%llx %x %.*s\n",
                    reinterpret_cast<uint64_t>(code->instruction_start()),
@@ -420,7 +420,7 @@ void LowLevelLogger::LogRecordedBuffer(Code* code,
   CodeCreateStruct event;
   event.name_size = length;
   event.code_address = code->instruction_start();
-  ASSERT(event.code_address == code->address() + Code::kHeaderSize);
+  DCHECK(event.code_address == code->address() + Code::kHeaderSize);
   event.code_size = code->instruction_size();
   LogWriteStruct(event);
   LogWriteBytes(name, length);
@@ -455,7 +455,7 @@ void LowLevelLogger::SnapshotPositionEvent(Address addr, int pos) {
 
 void LowLevelLogger::LogWriteBytes(const char* bytes, int size) {
   size_t rv = fwrite(bytes, 1, size, ll_output_handle_);
-  ASSERT(static_cast<size_t>(size) == rv);
+  DCHECK(static_cast<size_t>(size) == rv);
   USE(rv);
 }
 
@@ -674,7 +674,7 @@ class Ticker: public Sampler {
   }
 
   void SetProfiler(Profiler* profiler) {
-    ASSERT(profiler_ == NULL);
+    DCHECK(profiler_ == NULL);
     profiler_ = profiler;
     IncreaseProfilingDepth();
     if (!IsActive()) Start();
@@ -786,13 +786,13 @@ Logger::~Logger() {
 
 
 void Logger::addCodeEventListener(CodeEventListener* listener) {
-  ASSERT(!hasCodeEventListener(listener));
+  DCHECK(!hasCodeEventListener(listener));
   listeners_.Add(listener);
 }
 
 
 void Logger::removeCodeEventListener(CodeEventListener* listener) {
-  ASSERT(hasCodeEventListener(listener));
+  DCHECK(hasCodeEventListener(listener));
   listeners_.RemoveElement(listener);
 }
 
@@ -861,7 +861,7 @@ void Logger::HandleEvent(const char* name, Object** location) {
 // caller's responsibility to ensure that log is enabled and that
 // FLAG_log_api is true.
 void Logger::ApiEvent(const char* format, ...) {
-  ASSERT(log_->IsEnabled() && FLAG_log_api);
+  DCHECK(log_->IsEnabled() && FLAG_log_api);
   Log::MessageBuilder msg(log_);
   va_list ap;
   va_start(ap, format);
@@ -908,7 +908,7 @@ void Logger::SharedLibraryEvent(const std::string& library_path,
 
 void Logger::CodeDeoptEvent(Code* code) {
   if (!log_->IsEnabled()) return;
-  ASSERT(FLAG_log_internal_timer_events);
+  DCHECK(FLAG_log_internal_timer_events);
   Log::MessageBuilder msg(log_);
   int since_epoch = static_cast<int>(timer_.Elapsed().InMicroseconds());
   msg.Append("code-deopt,%ld,%d", since_epoch, code->CodeSize());
@@ -918,7 +918,7 @@ void Logger::CodeDeoptEvent(Code* code) {
 
 void Logger::CurrentTimeEvent() {
   if (!log_->IsEnabled()) return;
-  ASSERT(FLAG_log_internal_timer_events);
+  DCHECK(FLAG_log_internal_timer_events);
   Log::MessageBuilder msg(log_);
   int since_epoch = static_cast<int>(timer_.Elapsed().InMicroseconds());
   msg.Append("current-time,%ld", since_epoch);
@@ -928,7 +928,7 @@ void Logger::CurrentTimeEvent() {
 
 void Logger::TimerEvent(Logger::StartEnd se, const char* name) {
   if (!log_->IsEnabled()) return;
-  ASSERT(FLAG_log_internal_timer_events);
+  DCHECK(FLAG_log_internal_timer_events);
   Log::MessageBuilder msg(log_);
   int since_epoch = static_cast<int>(timer_.Elapsed().InMicroseconds());
   const char* format = (se == START) ? "timer-event-start,\"%s\",%ld"
@@ -940,14 +940,14 @@ void Logger::TimerEvent(Logger::StartEnd se, const char* name) {
 
 void Logger::EnterExternal(Isolate* isolate) {
   LOG(isolate, TimerEvent(START, TimerEventExternal::name()));
-  ASSERT(isolate->current_vm_state() == JS);
+  DCHECK(isolate->current_vm_state() == JS);
   isolate->set_current_vm_state(EXTERNAL);
 }
 
 
 void Logger::LeaveExternal(Isolate* isolate) {
   LOG(isolate, TimerEvent(END, TimerEventExternal::name()));
-  ASSERT(isolate->current_vm_state() == EXTERNAL);
+  DCHECK(isolate->current_vm_state() == EXTERNAL);
   isolate->set_current_vm_state(JS);
 }
 
@@ -1040,7 +1040,7 @@ void Logger::ApiIndexedSecurityCheck(uint32_t index) {
 void Logger::ApiNamedPropertyAccess(const char* tag,
                                     JSObject* holder,
                                     Object* name) {
-  ASSERT(name->IsName());
+  DCHECK(name->IsName());
   if (!log_->IsEnabled() || !FLAG_log_api) return;
   String* class_name_obj = holder->class_name();
   SmartArrayPointer<char> class_name =
@@ -1165,7 +1165,7 @@ void Logger::SetterCallbackEvent(Name* name, Address entry_point) {
 static void AppendCodeCreateHeader(Log::MessageBuilder* msg,
                                    Logger::LogEventsAndTags tag,
                                    Code* code) {
-  ASSERT(msg);
+  DCHECK(msg);
   msg->Append("%s,%s,%d,",
               kLogEventsNames[Logger::CODE_CREATION_EVENT],
               kLogEventsNames[tag],
@@ -1579,7 +1579,7 @@ class EnumerateOptimizedFunctionsVisitor: public OptimizedFunctionVisitor {
       sfis_[*count_] = Handle<SharedFunctionInfo>(sfi);
     }
     if (code_objects_ != NULL) {
-      ASSERT(function->code()->kind() == Code::OPTIMIZED_FUNCTION);
+      DCHECK(function->code()->kind() == Code::OPTIMIZED_FUNCTION);
       code_objects_[*count_] = Handle<Code>(function->code());
     }
     *count_ = *count_ + 1;

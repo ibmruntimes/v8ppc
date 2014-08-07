@@ -30,14 +30,17 @@ Operator* NewConstantOperator<double>(CommonOperatorBuilder* common,
 
 class ReducerTester : public HandleAndZoneScope {
  public:
-  ReducerTester()
+  explicit ReducerTester(int num_parameters = 0)
       : isolate(main_isolate()),
         binop(NULL),
         unop(NULL),
         machine(main_zone()),
         common(main_zone()),
         graph(main_zone()),
-        maxuint32(Constant<int32_t>(kMaxUInt32)) {}
+        maxuint32(Constant<int32_t>(kMaxUInt32)) {
+    Node* s = graph.NewNode(common.Start(num_parameters));
+    graph.SetStart(s);
+  }
 
   Isolate* isolate;
   Operator* binop;
@@ -168,7 +171,7 @@ class ReducerTester : public HandleAndZoneScope {
   }
 
   Node* Parameter(int32_t index = 0) {
-    return graph.NewNode(common.Parameter(index));
+    return graph.NewNode(common.Parameter(index), graph.start());
   }
 };
 
@@ -636,8 +639,8 @@ TEST(ReduceLoadStore) {
   }
 
   {
-    Node* store =
-        R.graph.NewNode(R.machine.Store(kMachineWord32), base, index, load);
+    Node* store = R.graph.NewNode(
+        R.machine.Store(kMachineWord32, kNoWriteBarrier), base, index, load);
     MachineOperatorReducer reducer(&R.graph);
     Reduction reduction = reducer.Reduce(store);
     CHECK(!reduction.Changed());  // stores should not be reduced.

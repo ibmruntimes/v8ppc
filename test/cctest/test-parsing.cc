@@ -672,7 +672,7 @@ TEST(Utf8CharacterStream) {
                                     i,
                                     unibrow::Utf16::kNoPreviousCharacter);
   }
-  ASSERT(cursor == kAllUtf8CharsSizeU);
+  DCHECK(cursor == kAllUtf8CharsSizeU);
 
   i::Utf8ToUtf16CharacterStream stream(reinterpret_cast<const i::byte*>(buffer),
                                        kAllUtf8CharsSizeU);
@@ -761,8 +761,8 @@ TEST(StreamScanner) {
       i::Token::EOS,
       i::Token::ILLEGAL
   };
-  ASSERT_EQ('{', str2[19]);
-  ASSERT_EQ('}', str2[37]);
+  DCHECK_EQ('{', str2[19]);
+  DCHECK_EQ('}', str2[37]);
   TestStreamScanner(&stream2, expectations2, 20, 37);
 
   const char* str3 = "{}}}}";
@@ -1208,7 +1208,6 @@ enum ParserFlag {
   kAllowHarmonyScoping,
   kAllowModules,
   kAllowGenerators,
-  kAllowForOf,
   kAllowHarmonyNumericLiterals,
   kAllowArrowFunctions
 };
@@ -1228,7 +1227,6 @@ void SetParserFlags(i::ParserBase<Traits>* parser,
   parser->set_allow_harmony_scoping(flags.Contains(kAllowHarmonyScoping));
   parser->set_allow_modules(flags.Contains(kAllowModules));
   parser->set_allow_generators(flags.Contains(kAllowGenerators));
-  parser->set_allow_for_of(flags.Contains(kAllowForOf));
   parser->set_allow_harmony_numeric_literals(
       flags.Contains(kAllowHarmonyNumericLiterals));
   parser->set_allow_arrow_functions(flags.Contains(kAllowArrowFunctions));
@@ -1436,10 +1434,9 @@ TEST(ParserSync) {
   CcTest::i_isolate()->stack_guard()->SetStackLimit(GetCurrentStackPosition() -
                                                     128 * 1024);
 
-  static const ParserFlag flags1[] = {
-    kAllowLazy, kAllowHarmonyScoping, kAllowModules, kAllowGenerators,
-    kAllowForOf, kAllowArrowFunctions
-  };
+  static const ParserFlag flags1[] = {kAllowLazy, kAllowHarmonyScoping,
+                                      kAllowModules, kAllowGenerators,
+                                      kAllowArrowFunctions};
   for (int i = 0; context_data[i][0] != NULL; ++i) {
     for (int j = 0; statement_data[j] != NULL; ++j) {
       for (int k = 0; termination_data[k] != NULL; ++k) {
@@ -1514,9 +1511,8 @@ void RunParserSyncTest(const char* context_data[][2],
                                                     128 * 1024);
 
   static const ParserFlag default_flags[] = {
-    kAllowLazy, kAllowHarmonyScoping, kAllowModules, kAllowGenerators,
-    kAllowForOf, kAllowNativesSyntax, kAllowArrowFunctions
-  };
+      kAllowLazy,       kAllowHarmonyScoping, kAllowModules,
+      kAllowGenerators, kAllowNativesSyntax,  kAllowArrowFunctions};
   ParserFlag* generated_flags = NULL;
   if (flags == NULL) {
     flags = default_flags;
@@ -2894,8 +2890,8 @@ TEST(SerializationOfMaybeAssignmentFlag) {
       new (&zone) i::Scope(NULL, i::GLOBAL_SCOPE, &avf, &zone);
   global_scope->Initialize();
   i::Scope* s = i::Scope::DeserializeScopeChain(context, global_scope, &zone);
-  ASSERT(s != global_scope);
-  ASSERT(name != NULL);
+  DCHECK(s != global_scope);
+  DCHECK(name != NULL);
 
   // Get result from h's function context (that is f's context)
   i::Variable* var = s->Lookup(name);
@@ -2941,7 +2937,7 @@ TEST(IfArgumentsArrayAccessedThenParametersMaybeAssigned) {
       new (&zone) i::Scope(NULL, i::GLOBAL_SCOPE, &avf, &zone);
   global_scope->Initialize();
   i::Scope* s = i::Scope::DeserializeScopeChain(context, global_scope, &zone);
-  ASSERT(s != global_scope);
+  DCHECK(s != global_scope);
   const i::AstRawString* name_x = avf.GetOneByteString("x");
 
   // Get result from f's function context (that is g's outer context)
@@ -2988,7 +2984,7 @@ TEST(ExportsMaybeAssigned) {
       new (&zone) i::Scope(NULL, i::GLOBAL_SCOPE, &avf, &zone);
   global_scope->Initialize();
   i::Scope* s = i::Scope::DeserializeScopeChain(context, global_scope, &zone);
-  ASSERT(s != global_scope);
+  DCHECK(s != global_scope);
   const i::AstRawString* name_x = avf.GetOneByteString("x");
   const i::AstRawString* name_f = avf.GetOneByteString("f");
   const i::AstRawString* name_y = avf.GetOneByteString("y");

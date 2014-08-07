@@ -376,7 +376,7 @@ class EntryFrame: public StackFrame {
   virtual void Iterate(ObjectVisitor* v) const;
 
   static EntryFrame* cast(StackFrame* frame) {
-    ASSERT(frame->is_entry());
+    DCHECK(frame->is_entry());
     return static_cast<EntryFrame*>(frame);
   }
   virtual void SetCallerFp(Address caller_fp);
@@ -404,7 +404,7 @@ class EntryConstructFrame: public EntryFrame {
   virtual Code* unchecked_code() const;
 
   static EntryConstructFrame* cast(StackFrame* frame) {
-    ASSERT(frame->is_entry_construct());
+    DCHECK(frame->is_entry_construct());
     return static_cast<EntryConstructFrame*>(frame);
   }
 
@@ -432,7 +432,7 @@ class ExitFrame: public StackFrame {
   virtual void SetCallerFp(Address caller_fp);
 
   static ExitFrame* cast(StackFrame* frame) {
-    ASSERT(frame->is_exit());
+    DCHECK(frame->is_exit());
     return static_cast<ExitFrame*>(frame);
   }
 
@@ -472,7 +472,7 @@ class StandardFrame: public StackFrame {
   virtual void SetCallerFp(Address caller_fp);
 
   static StandardFrame* cast(StackFrame* frame) {
-    ASSERT(frame->is_standard());
+    DCHECK(frame->is_standard());
     return static_cast<StandardFrame*>(frame);
   }
 
@@ -615,7 +615,7 @@ class JavaScriptFrame: public StandardFrame {
   static Register constant_pool_pointer_register();
 
   static JavaScriptFrame* cast(StackFrame* frame) {
-    ASSERT(frame->is_java_script());
+    DCHECK(frame->is_java_script());
     return static_cast<JavaScriptFrame*>(frame);
   }
 
@@ -704,7 +704,7 @@ class ArgumentsAdaptorFrame: public JavaScriptFrame {
   virtual Code* unchecked_code() const;
 
   static ArgumentsAdaptorFrame* cast(StackFrame* frame) {
-    ASSERT(frame->is_arguments_adaptor());
+    DCHECK(frame->is_arguments_adaptor());
     return static_cast<ArgumentsAdaptorFrame*>(frame);
   }
 
@@ -736,7 +736,7 @@ class InternalFrame: public StandardFrame {
   virtual Code* unchecked_code() const;
 
   static InternalFrame* cast(StackFrame* frame) {
-    ASSERT(frame->is_internal());
+    DCHECK(frame->is_internal());
     return static_cast<InternalFrame*>(frame);
   }
 
@@ -791,7 +791,7 @@ class ConstructFrame: public InternalFrame {
   virtual Type type() const { return CONSTRUCT; }
 
   static ConstructFrame* cast(StackFrame* frame) {
-    ASSERT(frame->is_construct());
+    DCHECK(frame->is_construct());
     return static_cast<ConstructFrame*>(frame);
   }
 
@@ -822,7 +822,7 @@ class StackFrameIteratorBase BASE_EMBEDDED {
   const bool can_access_heap_objects_;
 
   StackHandler* handler() const {
-    ASSERT(!done());
+    DCHECK(!done());
     return handler_;
   }
 
@@ -845,7 +845,7 @@ class StackFrameIterator: public StackFrameIteratorBase {
   StackFrameIterator(Isolate* isolate, ThreadLocalTop* t);
 
   StackFrame* frame() const {
-    ASSERT(!done());
+    DCHECK(!done());
     return frame_;
   }
   void Advance();

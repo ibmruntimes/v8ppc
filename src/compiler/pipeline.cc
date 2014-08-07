@@ -9,6 +9,7 @@
 #include "src/compiler/code-generator.h"
 #include "src/compiler/graph-replay.h"
 #include "src/compiler/graph-visualizer.h"
+#include "src/compiler/instruction.h"
 #include "src/compiler/instruction-selector.h"
 #include "src/compiler/js-context-specialization.h"
 #include "src/compiler/js-generic-lowering.h"
@@ -244,10 +245,10 @@ Handle<Code> Pipeline::GenerateCodeForMachineGraph(Linkage* linkage,
 Handle<Code> Pipeline::GenerateCode(Linkage* linkage, Graph* graph,
                                     Schedule* schedule,
                                     SourcePositionTable* source_positions) {
-  ASSERT_NOT_NULL(graph);
-  ASSERT_NOT_NULL(linkage);
-  ASSERT_NOT_NULL(schedule);
-  ASSERT(SupportedTarget());
+  DCHECK_NOT_NULL(graph);
+  DCHECK_NOT_NULL(linkage);
+  DCHECK_NOT_NULL(schedule);
+  DCHECK(SupportedTarget());
 
   InstructionSequence sequence(linkage, graph, schedule);
 
@@ -286,6 +287,16 @@ Handle<Code> Pipeline::GenerateCode(Linkage* linkage, Graph* graph,
   // Generate native sequence.
   CodeGenerator generator(&sequence);
   return generator.GenerateCode();
+}
+
+
+void Pipeline::SetUp() {
+  InstructionOperand::SetUpCaches();
+}
+
+
+void Pipeline::TearDown() {
+  InstructionOperand::TearDownCaches();
 }
 
 }  // namespace compiler
