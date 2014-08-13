@@ -42,7 +42,7 @@ void Builtins::Generate_Adaptor(MacroAssembler* masm,
     num_extra_args = 1;
     __ push(r4);
   } else {
-    ASSERT(extra_args == NO_EXTRA_ARGUMENTS);
+    DCHECK(extra_args == NO_EXTRA_ARGUMENTS);
   }
 
   // JumpToExternalReference expects r0 to contain the number of arguments
@@ -326,7 +326,7 @@ static void Generate_JSConstructStubHelper(MacroAssembler* masm,
   // -----------------------------------
 
   // Should never create mementos for api functions.
-  ASSERT(!is_api_function || !create_memento);
+  DCHECK(!is_api_function || !create_memento);
 
   Isolate* isolate = masm->isolate();
 
@@ -430,7 +430,7 @@ static void Generate_JSConstructStubHelper(MacroAssembler* masm,
       // r7: JSObject (not tagged)
       // r8: First in-object property of JSObject (not tagged)
       // r9: End of object
-      ASSERT_EQ(3 * kPointerSize, JSObject::kHeaderSize);
+      DCHECK_EQ(3 * kPointerSize, JSObject::kHeaderSize);
       __ LoadRoot(r10, Heap::kUndefinedValueRootIndex);
 
       if (!is_api_function) {
@@ -526,9 +526,9 @@ static void Generate_JSConstructStubHelper(MacroAssembler* masm,
       // r8: FixedArray (not tagged)
       __ LoadRoot(r9, Heap::kFixedArrayMapRootIndex);
       __ mr(r5, r8);
-      ASSERT_EQ(0 * kPointerSize, JSObject::kMapOffset);
+      DCHECK_EQ(0 * kPointerSize, JSObject::kMapOffset);
       __ StoreP(r9, MemOperand(r5));
-      ASSERT_EQ(1 * kPointerSize, FixedArray::kLengthOffset);
+      DCHECK_EQ(1 * kPointerSize, FixedArray::kLengthOffset);
       __ SmiTag(r3, r6);
       __ StorePU(r3, MemOperand(r5, kPointerSize));
       __ addi(r5, r5, Operand(kPointerSize));
@@ -539,7 +539,7 @@ static void Generate_JSConstructStubHelper(MacroAssembler* masm,
       // r6: number of elements in properties array
       // r7: JSObject
       // r8: FixedArray (not tagged)
-      ASSERT_EQ(2 * kPointerSize, FixedArray::kHeaderSize);
+      DCHECK_EQ(2 * kPointerSize, FixedArray::kHeaderSize);
       { Label done;
         __ cmpi(r6, Operand::Zero());
         __ beq(&done);

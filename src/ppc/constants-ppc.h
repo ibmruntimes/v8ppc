@@ -56,7 +56,7 @@ enum Condition {
 
 
 inline Condition NegateCondition(Condition cond) {
-  ASSERT(cond != al);
+  DCHECK(cond != al);
   return static_cast<Condition>(cond ^ ne);
 }
 

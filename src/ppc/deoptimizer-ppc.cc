@@ -72,13 +72,13 @@ void Deoptimizer::PatchCodeForDeoptimization(Isolate* isolate, Code* code) {
         MacroAssembler::CallSizeNotPredictableCodeSize(deopt_entry,
                                                        kRelocInfo_NONEPTR);
     int call_size_in_words = call_size_in_bytes / Assembler::kInstrSize;
-    ASSERT(call_size_in_bytes % Assembler::kInstrSize == 0);
-    ASSERT(call_size_in_bytes <= patch_size());
+    DCHECK(call_size_in_bytes % Assembler::kInstrSize == 0);
+    DCHECK(call_size_in_bytes <= patch_size());
     CodePatcher patcher(call_address, call_size_in_words);
     patcher.masm()->Call(deopt_entry, kRelocInfo_NONEPTR);
-    ASSERT(prev_call_address == NULL ||
+    DCHECK(prev_call_address == NULL ||
            call_address >= prev_call_address + patch_size());
-    ASSERT(call_address + patch_size() <= code->instruction_end());
+    DCHECK(call_address + patch_size() <= code->instruction_end());
 #ifdef DEBUG
     prev_call_address = call_address;
 #endif
@@ -201,7 +201,7 @@ void Deoptimizer::EntryGenerator::Generate() {
   __ LoadP(r4, MemOperand(r3, Deoptimizer::input_offset()));
 
   // Copy core registers into FrameDescription::registers_[kNumRegisters].
-  ASSERT(Register::kNumRegisters == kNumberOfRegisters);
+  DCHECK(Register::kNumRegisters == kNumberOfRegisters);
   for (int i = 0; i < kNumberOfRegisters; i++) {
     int offset = (i * kPointerSize) + FrameDescription::registers_offset();
     __ LoadP(r5, MemOperand(sp, i * kPointerSize));
@@ -301,7 +301,7 @@ void Deoptimizer::EntryGenerator::Generate() {
   __ push(r9);
 
   // Restore the registers from the last output frame.
-  ASSERT(!(ip.bit() & restored_regs));
+  DCHECK(!(ip.bit() & restored_regs));
   __ mr(ip, r5);
   for (int i = kNumberOfRegisters - 1; i >= 0; i--) {
     int offset = (i * kPointerSize) + FrameDescription::registers_offset();
@@ -331,7 +331,7 @@ void Deoptimizer::TableEntryGenerator::GeneratePrologue() {
     USE(start);
     __ li(ip, Operand(i));
     __ b(&done);
-    ASSERT(masm()->pc_offset() - start == table_entry_size_);
+    DCHECK(masm()->pc_offset() - start == table_entry_size_);
   }
   __ bind(&done);
   __ push(ip);
@@ -350,7 +350,7 @@ void FrameDescription::SetCallerFp(unsigned offset, intptr_t value) {
 
 void FrameDescription::SetCallerConstantPool(unsigned offset, intptr_t value) {
 #if V8_OOL_CONSTANT_POOL
-  ASSERT(FLAG_enable_ool_constant_pool);
+  DCHECK(FLAG_enable_ool_constant_pool);
   SetFrameSlot(offset, value);
 #else
   // No out-of-line constant pool support.

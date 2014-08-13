@@ -65,7 +65,7 @@ UnaryMathFunction CreateExpFunction() {
   CodeDesc desc;
   masm.GetCode(&desc);
 #if !ABI_USES_FUNCTION_DESCRIPTORS
-  ASSERT(!RelocInfo::RequiresRelocation(desc));
+  DCHECK(!RelocInfo::RequiresRelocation(desc));
 #endif
 
   CpuFeatures::FlushICache(buffer, actual_size);
@@ -104,7 +104,7 @@ UnaryMathFunction CreateSqrtFunction() {
   CodeDesc desc;
   masm.GetCode(&desc);
 #if !ABI_USES_FUNCTION_DESCRIPTORS
-  ASSERT(!RelocInfo::RequiresRelocation(desc));
+  DCHECK(!RelocInfo::RequiresRelocation(desc));
 #endif
 
   CpuFeatures::FlushICache(buffer, actual_size);
@@ -121,14 +121,14 @@ UnaryMathFunction CreateSqrtFunction() {
 
 void StubRuntimeCallHelper::BeforeCall(MacroAssembler* masm) const {
   masm->EnterFrame(StackFrame::INTERNAL);
-  ASSERT(!masm->has_frame());
+  DCHECK(!masm->has_frame());
   masm->set_has_frame(true);
 }
 
 
 void StubRuntimeCallHelper::AfterCall(MacroAssembler* masm) const {
   masm->LeaveFrame(StackFrame::INTERNAL);
-  ASSERT(masm->has_frame());
+  DCHECK(masm->has_frame());
   masm->set_has_frame(false);
 }
 
@@ -147,11 +147,11 @@ void ElementsTransitionGenerator::GenerateMapChangeElementsTransition(
     AllocationSiteMode mode,
     Label* allocation_memento_found) {
   Register scratch_elements = r7;
-  ASSERT(!AreAliased(receiver, key, value, target_map,
+  DCHECK(!AreAliased(receiver, key, value, target_map,
                      scratch_elements));
 
   if (mode == TRACK_ALLOCATION_SITE) {
-    ASSERT(allocation_memento_found != NULL);
+    DCHECK(allocation_memento_found != NULL);
     __ JumpIfJSArrayHasAllocationMemento(
        receiver, scratch_elements, allocation_memento_found);
   }
@@ -189,7 +189,7 @@ void ElementsTransitionGenerator::GenerateSmiToDouble(
   Register scratch2 = r11;
 
   // Verify input registers don't conflict with locals.
-  ASSERT(!AreAliased(receiver, key, value, target_map,
+  DCHECK(!AreAliased(receiver, key, value, target_map,
                      elements, length, array, scratch2));
 
   if (mode == TRACK_ALLOCATION_SITE) {
@@ -336,7 +336,7 @@ void ElementsTransitionGenerator::GenerateDoubleToObject(
   Register scratch = r11;
 
   // Verify input registers don't conflict with locals.
-  ASSERT(!AreAliased(receiver, key, value, target_map,
+  DCHECK(!AreAliased(receiver, key, value, target_map,
                      elements, array, length, scratch));
 
   if (mode == TRACK_ALLOCATION_SITE) {
@@ -578,16 +578,17 @@ void MathExpGenerator::EmitMathExp(MacroAssembler* masm,
                                    Register temp1,
                                    Register temp2,
                                    Register temp3) {
-  ASSERT(!input.is(result));
-  ASSERT(!input.is(double_scratch1));
-  ASSERT(!input.is(double_scratch2));
-  ASSERT(!result.is(double_scratch1));
-  ASSERT(!result.is(double_scratch2));
-  ASSERT(!double_scratch1.is(double_scratch2));
-  ASSERT(!temp1.is(temp2));
-  ASSERT(!temp1.is(temp3));
-  ASSERT(!temp2.is(temp3));
-  ASSERT(ExternalReference::math_exp_constants(0).address() != NULL);
+  DCHECK(!input.is(result));
+  DCHECK(!input.is(double_scratch1));
+  DCHECK(!input.is(double_scratch2));
+  DCHECK(!result.is(double_scratch1));
+  DCHECK(!result.is(double_scratch2));
+  DCHECK(!double_scratch1.is(double_scratch2));
+  DCHECK(!temp1.is(temp2));
+  DCHECK(!temp1.is(temp3));
+  DCHECK(!temp2.is(temp3));
+  DCHECK(ExternalReference::math_exp_constants(0).address() != NULL);
+  DCHECK(!masm->serializer_enabled());  // External references not serializable.
 
   Label zero, infinity, done;
 
@@ -663,7 +664,7 @@ static const uint32_t kCodeAgePatchFirstInstruction = 0x7d8802a6;
 #endif
 
 CodeAgingHelper::CodeAgingHelper() {
-  ASSERT(young_sequence_.length() == kNoCodeAgeSequenceLength);
+  DCHECK(young_sequence_.length() == kNoCodeAgeSequenceLength);
   // Since patcher is a large object, allocate it dynamically when needed,
   // to avoid overloading the stack in stress conditions.
   // DONT_FLUSH is used because the CodeAgingHelper is initialized early in
@@ -691,7 +692,7 @@ bool CodeAgingHelper::IsOld(byte* candidate) const {
 
 bool Code::IsYoungSequence(Isolate* isolate, byte* sequence) {
   bool result = isolate->code_aging_helper()->IsYoung(sequence);
-  ASSERT(result || isolate->code_aging_helper()->IsOld(sequence));
+  DCHECK(result || isolate->code_aging_helper()->IsOld(sequence));
   return result;
 }
 

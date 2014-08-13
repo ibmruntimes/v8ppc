@@ -161,7 +161,7 @@ void Decoder::PrintSoftwareInterrupt(SoftwareInterruptCodes svc) {
 // Handle all register based formatting in this function to reduce the
 // complexity of FormatOption.
 int Decoder::FormatRegister(Instruction* instr, const char* format) {
-  ASSERT(format[0] == 'r');
+  DCHECK(format[0] == 'r');
 
   if ((format[1] == 't') || (format[1] == 's')) {  // 'rt & 'rs register
     int reg = instr->RTValue();
@@ -185,7 +185,7 @@ int Decoder::FormatRegister(Instruction* instr, const char* format) {
 // Handle all FP register based formatting in this function to reduce the
 // complexity of FormatOption.
 int Decoder::FormatFPRegister(Instruction* instr, const char* format) {
-  ASSERT(format[0] == 'D');
+  DCHECK(format[0] == 'D');
 
   int retval = 2;
   int reg = -1;
@@ -262,7 +262,7 @@ int Decoder::FormatOption(Instruction* instr, const char* format) {
     }
     case 't': {  // 'target: target of branch instructions
       // target26 or target16
-      ASSERT(STRING_STARTS_WITH(format, "target"));
+      DCHECK(STRING_STARTS_WITH(format, "target"));
       if ((format[6] == '2') && (format[7] == '6')) {
         int off = ((instr->Bits(25, 2)) << 8) >> 6;
         out_buffer_pos_ += SNPrintF(out_buffer_ + out_buffer_pos_,
@@ -281,7 +281,7 @@ int Decoder::FormatOption(Instruction* instr, const char* format) {
         return 8;
       }
      case 's': {
-       ASSERT(format[1] == 'h');
+       DCHECK(format[1] == 'h');
        int32_t value = 0;
        int32_t opcode = instr->OpcodeValue() << 26;
        int32_t sh = instr->Bits(15, 11);
@@ -1282,7 +1282,7 @@ int Decoder::InstructionDecode(byte* instr_ptr) {
     case FAKE_OPCODE: {
       if (instr->Bits(MARKER_SUBOPCODE_BIT, MARKER_SUBOPCODE_BIT) == 1) {
         int marker_code = instr->Bits(STUB_MARKER_HIGH_BIT, 0);
-        ASSERT(marker_code < F_NEXT_AVAILABLE_STUB_MARKER);
+        DCHECK(marker_code < F_NEXT_AVAILABLE_STUB_MARKER);
         MarkerFormat(instr, "stub-marker ", marker_code);
       } else {
         int fake_opcode = instr->Bits(FAKE_OPCODE_HIGH_BIT, 0);

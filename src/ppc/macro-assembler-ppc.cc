@@ -34,7 +34,7 @@ MacroAssembler::MacroAssembler(Isolate* arg_isolate, void* buffer, int size)
 
 
 void MacroAssembler::Jump(Register target, Condition cond) {
-  ASSERT(cond == al);
+  DCHECK(cond == al);
   mtctr(target);
   bctr();
 }
@@ -46,7 +46,7 @@ void MacroAssembler::Jump(intptr_t target, RelocInfo::Mode rmode,
 
   if (cond != al) b(NegateCondition(cond), &skip, cr);
 
-  ASSERT(rmode == RelocInfo::CODE_TARGET ||
+  DCHECK(rmode == RelocInfo::CODE_TARGET ||
          rmode == RelocInfo::RUNTIME_ENTRY);
 
   mov(r0, Operand(target, rmode));
@@ -60,14 +60,14 @@ void MacroAssembler::Jump(intptr_t target, RelocInfo::Mode rmode,
 
 void MacroAssembler::Jump(Address target, RelocInfo::Mode rmode,
                           Condition cond, CRegister cr) {
-  ASSERT(!RelocInfo::IsCodeTarget(rmode));
+  DCHECK(!RelocInfo::IsCodeTarget(rmode));
   Jump(reinterpret_cast<intptr_t>(target), rmode, cond, cr);
 }
 
 
 void MacroAssembler::Jump(Handle<Code> code, RelocInfo::Mode rmode,
                           Condition cond) {
-  ASSERT(RelocInfo::IsCodeTarget(rmode));
+  DCHECK(RelocInfo::IsCodeTarget(rmode));
   // 'code' is always generated ppc code, never THUMB code
   AllowDeferredHandleDereference embedding_raw_address;
   Jump(reinterpret_cast<intptr_t>(code.location()), rmode, cond);
@@ -83,7 +83,7 @@ void MacroAssembler::Call(Register target, Condition cond) {
   BlockTrampolinePoolScope block_trampoline_pool(this);
   Label start;
   bind(&start);
-  ASSERT(cond == al);  // in prep of removal of condition
+  DCHECK(cond == al);  // in prep of removal of condition
 
   // Statement positions are expected to be recorded when the target
   // address is loaded.
@@ -93,7 +93,7 @@ void MacroAssembler::Call(Register target, Condition cond) {
   mtlr(target);
   bclr(BA, SetLK);
 
-  ASSERT_EQ(CallSize(target, cond), SizeOfCodeGeneratedSince(&start));
+  DCHECK_EQ(CallSize(target, cond), SizeOfCodeGeneratedSince(&start));
 }
 
 
@@ -114,7 +114,7 @@ void MacroAssembler::Call(Address target,
                           RelocInfo::Mode rmode,
                           Condition cond) {
   BlockTrampolinePoolScope block_trampoline_pool(this);
-  ASSERT(cond == al);
+  DCHECK(cond == al);
 
 #ifdef DEBUG
   // Check the expected size before generating code to ensure we assume the same
@@ -138,7 +138,7 @@ void MacroAssembler::Call(Address target,
   mtlr(ip);
   bclr(BA, SetLK);
 
-  ASSERT_EQ(expected_size, SizeOfCodeGeneratedSince(&start));
+  DCHECK_EQ(expected_size, SizeOfCodeGeneratedSince(&start));
 }
 
 
@@ -156,7 +156,7 @@ void MacroAssembler::Call(Handle<Code> code,
                           TypeFeedbackId ast_id,
                           Condition cond) {
   BlockTrampolinePoolScope block_trampoline_pool(this);
-  ASSERT(RelocInfo::IsCodeTarget(rmode));
+  DCHECK(RelocInfo::IsCodeTarget(rmode));
 
 #ifdef DEBUG
   // Check the expected size before generating code to ensure we assume the same
@@ -172,18 +172,18 @@ void MacroAssembler::Call(Handle<Code> code,
   }
   AllowDeferredHandleDereference using_raw_address;
   Call(reinterpret_cast<Address>(code.location()), rmode, cond);
-  ASSERT_EQ(expected_size, SizeOfCodeGeneratedSince(&start));
+  DCHECK_EQ(expected_size, SizeOfCodeGeneratedSince(&start));
 }
 
 
 void MacroAssembler::Ret(Condition cond) {
-  ASSERT(cond == al);
+  DCHECK(cond == al);
   blr();
 }
 
 
 void MacroAssembler::Drop(int count, Condition cond) {
-  ASSERT(cond == al);
+  DCHECK(cond == al);
   if (count > 0) {
     Add(sp, sp, count * kPointerSize, r0);
   }
@@ -212,7 +212,7 @@ void MacroAssembler::Move(Register dst, Handle<Object> value) {
   if (value->IsSmi()) {
     LoadSmiLiteral(dst, reinterpret_cast<Smi *>(*value));
   } else {
-    ASSERT(value->IsHeapObject());
+    DCHECK(value->IsHeapObject());
     if (isolate()->heap()->InNewSpace(*value)) {
       Handle<Cell> cell = isolate()->factory()->NewCell(value);
       mov(dst, Operand(cell));
@@ -225,7 +225,7 @@ void MacroAssembler::Move(Register dst, Handle<Object> value) {
 
 
 void MacroAssembler::Move(Register dst, Register src, Condition cond) {
-  ASSERT(cond == al);
+  DCHECK(cond == al);
   if (!dst.is(src)) {
     mr(dst, src);
   }
@@ -269,7 +269,7 @@ void MacroAssembler::MultiPop(RegList regs) {
 void MacroAssembler::LoadRoot(Register destination,
                               Heap::RootListIndex index,
                               Condition cond) {
-  ASSERT(cond == al);
+  DCHECK(cond == al);
   LoadP(destination, MemOperand(kRootRegister,
                                 index << kPointerSizeLog2), r0);
 }
@@ -278,7 +278,7 @@ void MacroAssembler::LoadRoot(Register destination,
 void MacroAssembler::StoreRoot(Register source,
                                Heap::RootListIndex index,
                                Condition cond) {
-  ASSERT(cond == al);
+  DCHECK(cond == al);
   StoreP(source, MemOperand(kRootRegister, index << kPointerSizeLog2), r0);
 }
 
@@ -288,7 +288,7 @@ void MacroAssembler::InNewSpace(Register object,
                                 Condition cond,
                                 Label* branch) {
   // N.B. scratch may be same register as object
-  ASSERT(cond == eq || cond == ne);
+  DCHECK(cond == eq || cond == ne);
   mov(r0, Operand(ExternalReference::new_space_mask(isolate())));
   and_(scratch, object, r0);
   mov(r0, Operand(ExternalReference::new_space_start(isolate())));
@@ -318,7 +318,7 @@ void MacroAssembler::RecordWriteField(
 
   // Although the object register is tagged, the offset is relative to the start
   // of the object, so so offset must be a multiple of kPointerSize.
-  ASSERT(IsAligned(offset, kPointerSize));
+  DCHECK(IsAligned(offset, kPointerSize));
 
   Add(dst, object, offset - kHeapObjectTag, r0);
   if (emit_debug_code()) {
@@ -433,7 +433,7 @@ void MacroAssembler::RecordWrite(
     RememberedSetAction remembered_set_action,
     SmiCheck smi_check,
     PointersToHereCheck pointers_to_here_check_for_value) {
-  ASSERT(!object.is(value));
+  DCHECK(!object.is(value));
   if (emit_debug_code()) {
     LoadP(ip, MemOperand(address));
     cmp(ip, value);
@@ -525,7 +525,7 @@ void MacroAssembler::RememberedSetHelper(Register object,  // For debug tests.
   if (and_then == kFallThroughAtEnd) {
     beq(&done, cr0);
   } else {
-    ASSERT(and_then == kReturnAtEnd);
+    DCHECK(and_then == kReturnAtEnd);
     beq(&done, cr0);
   }
   mflr(r0);
@@ -583,7 +583,7 @@ void MacroAssembler::PushSafepointRegisters() {
   // Safepoints expect a block of kNumSafepointRegisters values on the
   // stack, so adjust the stack for unsaved registers.
   const int num_unsaved = kNumSafepointRegisters - kNumSafepointSavedRegisters;
-  ASSERT(num_unsaved >= 0);
+  DCHECK(num_unsaved >= 0);
   if (num_unsaved > 0) {
     subi(sp, sp, Operand(num_unsaved * kPointerSize));
   }
@@ -616,7 +616,7 @@ int MacroAssembler::SafepointRegisterStackIndex(int reg_code) {
   RegList regs = kSafepointSavedRegisters;
   int index = 0;
 
-  ASSERT(reg_code >= 0 && reg_code < kNumRegisters);
+  DCHECK(reg_code >= 0 && reg_code < kNumRegisters);
 
   for (int16_t i = 0; i < reg_code; i++) {
     if ((regs & (1 << i)) != 0) {
@@ -829,10 +829,10 @@ int MacroAssembler::LeaveFrame(StackFrame::Type type) {
 
 void MacroAssembler::EnterExitFrame(bool save_doubles, int stack_space) {
   // Set up the frame structure on the stack.
-  ASSERT_EQ(2 * kPointerSize, ExitFrameConstants::kCallerSPDisplacement);
-  ASSERT_EQ(1 * kPointerSize, ExitFrameConstants::kCallerPCOffset);
-  ASSERT_EQ(0 * kPointerSize, ExitFrameConstants::kCallerFPOffset);
-  ASSERT(stack_space > 0);
+  DCHECK_EQ(2 * kPointerSize, ExitFrameConstants::kCallerSPDisplacement);
+  DCHECK_EQ(1 * kPointerSize, ExitFrameConstants::kCallerPCOffset);
+  DCHECK_EQ(0 * kPointerSize, ExitFrameConstants::kCallerFPOffset);
+  DCHECK(stack_space > 0);
 
   // This is an opportunity to build a frame to wrap
   // all of the pushes that have happened inside of V8
@@ -877,7 +877,7 @@ void MacroAssembler::EnterExitFrame(bool save_doubles, int stack_space) {
   // function.
   const int frame_alignment = ActivationFrameAlignment();
   if (frame_alignment > kPointerSize) {
-    ASSERT(IsPowerOf2(frame_alignment));
+    DCHECK(IsPowerOf2(frame_alignment));
     ClearRightImm(sp, sp, Operand(WhichPowerOf2(frame_alignment)));
   }
   li(r0, Operand::Zero());
@@ -1002,13 +1002,13 @@ void MacroAssembler::InvokePrologue(const ParameterCount& expected,
   // passed in registers.
 
   // roohack - remove these 3 checks temporarily
-  //  ASSERT(actual.is_immediate() || actual.reg().is(r3));
-  //  ASSERT(expected.is_immediate() || expected.reg().is(r5));
-  //  ASSERT((!code_constant.is_null() && code_reg.is(no_reg))
+  //  DCHECK(actual.is_immediate() || actual.reg().is(r3));
+  //  DCHECK(expected.is_immediate() || expected.reg().is(r5));
+  //  DCHECK((!code_constant.is_null() && code_reg.is(no_reg))
   //          || code_reg.is(r6));
 
   if (expected.is_immediate()) {
-    ASSERT(actual.is_immediate());
+    DCHECK(actual.is_immediate());
     if (expected.immediate() == actual.immediate()) {
       definitely_matches = true;
     } else {
@@ -1065,7 +1065,7 @@ void MacroAssembler::InvokeCode(Register code,
                                 InvokeFlag flag,
                                 const CallWrapper& call_wrapper) {
   // You can't call a function without a valid frame.
-  ASSERT(flag == JUMP_FUNCTION || has_frame());
+  DCHECK(flag == JUMP_FUNCTION || has_frame());
 
   Label done;
   bool definitely_mismatches = false;
@@ -1078,7 +1078,7 @@ void MacroAssembler::InvokeCode(Register code,
       Call(code);
       call_wrapper.AfterCall();
     } else {
-      ASSERT(flag == JUMP_FUNCTION);
+      DCHECK(flag == JUMP_FUNCTION);
       Jump(code);
     }
 
@@ -1094,10 +1094,10 @@ void MacroAssembler::InvokeFunction(Register fun,
                                     InvokeFlag flag,
                                     const CallWrapper& call_wrapper) {
   // You can't call a function without a valid frame.
-  ASSERT(flag == JUMP_FUNCTION || has_frame());
+  DCHECK(flag == JUMP_FUNCTION || has_frame());
 
   // Contract with called JS functions requires that function is passed in r4.
-  ASSERT(fun.is(r4));
+  DCHECK(fun.is(r4));
 
   Register expected_reg = r5;
   Register code_reg = r6;
@@ -1124,10 +1124,10 @@ void MacroAssembler::InvokeFunction(Register function,
                                     InvokeFlag flag,
                                     const CallWrapper& call_wrapper) {
   // You can't call a function without a valid frame.
-  ASSERT(flag == JUMP_FUNCTION || has_frame());
+  DCHECK(flag == JUMP_FUNCTION || has_frame());
 
   // Contract with called JS functions requires that function is passed in r4.
-  ASSERT(function.is(r4));
+  DCHECK(function.is(r4));
 
   // Get the function and setup the context.
   LoadP(cp, FieldMemOperand(r4, JSFunction::kContextOffset));
@@ -1173,7 +1173,7 @@ void MacroAssembler::IsInstanceJSObjectType(Register map,
 void MacroAssembler::IsObjectJSStringType(Register object,
                                           Register scratch,
                                           Label* fail) {
-  ASSERT(kNotStringTag != 0);
+  DCHECK(kNotStringTag != 0);
 
   LoadP(scratch, FieldMemOperand(object, HeapObject::kMapOffset));
   lbz(scratch, FieldMemOperand(scratch, Map::kInstanceTypeOffset));
@@ -1196,7 +1196,7 @@ void MacroAssembler::DebugBreak() {
   li(r3, Operand::Zero());
   mov(r4, Operand(ExternalReference(Runtime::kDebugBreak, isolate())));
   CEntryStub ces(isolate(), 1);
-  ASSERT(AllowThisStubCall(&ces));
+  DCHECK(AllowThisStubCall(&ces));
   Call(ces.GetCode(), RelocInfo::DEBUG_BREAK);
 }
 
@@ -1366,9 +1366,9 @@ void MacroAssembler::CheckAccessGlobalProxy(Register holder_reg,
                                             Label* miss) {
   Label same_contexts;
 
-  ASSERT(!holder_reg.is(scratch));
-  ASSERT(!holder_reg.is(ip));
-  ASSERT(!scratch.is(ip));
+  DCHECK(!holder_reg.is(scratch));
+  DCHECK(!holder_reg.is(ip));
+  DCHECK(!scratch.is(ip));
 
   // Load current lexical context from the stack frame.
   LoadP(scratch, MemOperand(fp, StandardFrameConstants::kContextOffset));
@@ -1523,7 +1523,7 @@ void MacroAssembler::LoadFromNumberDictionary(Label* miss,
     and_(t2, t2, t1);
 
     // Scale the index by multiplying by the element size.
-    ASSERT(SeededNumberDictionary::kEntrySize == 3);
+    DCHECK(SeededNumberDictionary::kEntrySize == 3);
     slwi(ip, t2, Operand(1));
     add(t2, t2, ip);  // t2 = t2 * 3
 
@@ -1563,7 +1563,7 @@ void MacroAssembler::Allocate(int object_size,
                               Register scratch2,
                               Label* gc_required,
                               AllocationFlags flags) {
-  ASSERT(object_size <= Page::kMaxRegularHeapObjectSize);
+  DCHECK(object_size <= Page::kMaxRegularHeapObjectSize);
   if (!FLAG_inline_new) {
     if (emit_debug_code()) {
       // Trash the registers to simulate an allocation failure.
@@ -1575,17 +1575,17 @@ void MacroAssembler::Allocate(int object_size,
     return;
   }
 
-  ASSERT(!result.is(scratch1));
-  ASSERT(!result.is(scratch2));
-  ASSERT(!scratch1.is(scratch2));
-  ASSERT(!scratch1.is(ip));
-  ASSERT(!scratch2.is(ip));
+  DCHECK(!result.is(scratch1));
+  DCHECK(!result.is(scratch2));
+  DCHECK(!scratch1.is(scratch2));
+  DCHECK(!scratch1.is(ip));
+  DCHECK(!scratch2.is(ip));
 
   // Make object size into bytes.
   if ((flags & SIZE_IN_WORDS) != 0) {
     object_size *= kPointerSize;
   }
-  ASSERT_EQ(0, static_cast<int>(object_size & kObjectAlignmentMask));
+  DCHECK_EQ(0, static_cast<int>(object_size & kObjectAlignmentMask));
 
   // Check relative positions of allocation top and limit addresses.
   ExternalReference allocation_top =
@@ -1597,7 +1597,7 @@ void MacroAssembler::Allocate(int object_size,
       reinterpret_cast<intptr_t>(allocation_top.address());
   intptr_t limit =
       reinterpret_cast<intptr_t>(allocation_limit.address());
-  ASSERT((limit - top) == kPointerSize);
+  DCHECK((limit - top) == kPointerSize);
 
   // Set up allocation top address register.
   Register topaddr = scratch1;
@@ -1625,7 +1625,7 @@ void MacroAssembler::Allocate(int object_size,
   if ((flags & DOUBLE_ALIGNMENT) != 0) {
     // Align the next allocation. Storing the filler map without checking top is
     // safe in new-space because the limit of the heap is aligned there.
-    ASSERT((flags & PRETENURE_OLD_POINTER_SPACE) == 0);
+    DCHECK((flags & PRETENURE_OLD_POINTER_SPACE) == 0);
 #if V8_TARGET_ARCH_PPC64
     STATIC_ASSERT(kPointerAlignment == kDoubleAlignment);
 #else
@@ -1685,13 +1685,13 @@ void MacroAssembler::Allocate(Register object_size,
 
   // Assert that the register arguments are different and that none of
   // them are ip. ip is used explicitly in the code generated below.
-  ASSERT(!result.is(scratch1));
-  ASSERT(!result.is(scratch2));
-  ASSERT(!scratch1.is(scratch2));
-  ASSERT(!object_size.is(ip));
-  ASSERT(!result.is(ip));
-  ASSERT(!scratch1.is(ip));
-  ASSERT(!scratch2.is(ip));
+  DCHECK(!result.is(scratch1));
+  DCHECK(!result.is(scratch2));
+  DCHECK(!scratch1.is(scratch2));
+  DCHECK(!object_size.is(ip));
+  DCHECK(!result.is(ip));
+  DCHECK(!scratch1.is(ip));
+  DCHECK(!scratch2.is(ip));
 
   // Check relative positions of allocation top and limit addresses.
   ExternalReference allocation_top =
@@ -1702,7 +1702,7 @@ void MacroAssembler::Allocate(Register object_size,
       reinterpret_cast<intptr_t>(allocation_top.address());
   intptr_t limit =
       reinterpret_cast<intptr_t>(allocation_limit.address());
-  ASSERT((limit - top) == kPointerSize);
+  DCHECK((limit - top) == kPointerSize);
 
   // Set up allocation top address.
   Register topaddr = scratch1;
@@ -1730,7 +1730,7 @@ void MacroAssembler::Allocate(Register object_size,
   if ((flags & DOUBLE_ALIGNMENT) != 0) {
     // Align the next allocation. Storing the filler map without checking top is
     // safe in new-space because the limit of the heap is aligned there.
-    ASSERT((flags & PRETENURE_OLD_POINTER_SPACE) == 0);
+    DCHECK((flags & PRETENURE_OLD_POINTER_SPACE) == 0);
 #if V8_TARGET_ARCH_PPC64
     STATIC_ASSERT(kPointerAlignment == kDoubleAlignment);
 #else
@@ -1808,7 +1808,7 @@ void MacroAssembler::AllocateTwoByteString(Register result,
                                            Label* gc_required) {
   // Calculate the number of bytes needed for the characters in the string while
   // observing object alignment.
-  ASSERT((SeqTwoByteString::kHeaderSize & kObjectAlignmentMask) == 0);
+  DCHECK((SeqTwoByteString::kHeaderSize & kObjectAlignmentMask) == 0);
   slwi(scratch1, length, Operand(1));  // Length in bytes, not chars.
   addi(scratch1, scratch1,
        Operand(kObjectAlignmentMask + SeqTwoByteString::kHeaderSize));
@@ -1840,8 +1840,8 @@ void MacroAssembler::AllocateAsciiString(Register result,
                                          Label* gc_required) {
   // Calculate the number of bytes needed for the characters in the string while
   // observing object alignment.
-  ASSERT((SeqOneByteString::kHeaderSize & kObjectAlignmentMask) == 0);
-  ASSERT(kCharSize == 1);
+  DCHECK((SeqOneByteString::kHeaderSize & kObjectAlignmentMask) == 0);
+  DCHECK(kCharSize == 1);
   addi(scratch1, length,
        Operand(kObjectAlignmentMask + SeqOneByteString::kHeaderSize));
   li(r0, Operand(~kObjectAlignmentMask));
@@ -1970,7 +1970,7 @@ void MacroAssembler::CompareInstanceType(Register map,
 
 void MacroAssembler::CompareRoot(Register obj,
                                  Heap::RootListIndex index) {
-  ASSERT(!obj.is(ip));
+  DCHECK(!obj.is(ip));
   LoadRoot(ip, index);
   cmp(obj, ip);
 }
@@ -2059,11 +2059,11 @@ void MacroAssembler::AddAndCheckForOverflow(Register dst,
                                             Register right,
                                             Register overflow_dst,
                                             Register scratch) {
-  ASSERT(!dst.is(overflow_dst));
-  ASSERT(!dst.is(scratch));
-  ASSERT(!overflow_dst.is(scratch));
-  ASSERT(!overflow_dst.is(left));
-  ASSERT(!overflow_dst.is(right));
+  DCHECK(!dst.is(overflow_dst));
+  DCHECK(!dst.is(scratch));
+  DCHECK(!overflow_dst.is(scratch));
+  DCHECK(!overflow_dst.is(left));
+  DCHECK(!overflow_dst.is(right));
 
   // C = A+B; C overflows if A/B have same sign and C has diff sign than A
   if (dst.is(left)) {
@@ -2091,11 +2091,11 @@ void MacroAssembler::SubAndCheckForOverflow(Register dst,
                                             Register right,
                                             Register overflow_dst,
                                             Register scratch) {
-  ASSERT(!dst.is(overflow_dst));
-  ASSERT(!dst.is(scratch));
-  ASSERT(!overflow_dst.is(scratch));
-  ASSERT(!overflow_dst.is(left));
-  ASSERT(!overflow_dst.is(right));
+  DCHECK(!dst.is(overflow_dst));
+  DCHECK(!dst.is(scratch));
+  DCHECK(!overflow_dst.is(scratch));
+  DCHECK(!overflow_dst.is(left));
+  DCHECK(!overflow_dst.is(right));
 
   // C = A-B; C overflows if A/B have diff signs and C has diff sign than A
   if (dst.is(left)) {
@@ -2254,7 +2254,7 @@ void MacroAssembler::TryGetFunctionPrototype(Register function,
 void MacroAssembler::CallStub(CodeStub* stub,
                               TypeFeedbackId ast_id,
                               Condition cond) {
-  ASSERT(AllowThisStubCall(stub));  // Stub calls are not allowed in some stubs.
+  DCHECK(AllowThisStubCall(stub));  // Stub calls are not allowed in some stubs.
   Call(stub->GetCode(), RelocInfo::CODE_TARGET, ast_id, cond);
 }
 
@@ -2285,7 +2285,7 @@ void MacroAssembler::CallApiFunctionAndReturn(
     ExternalReference::handle_scope_level_address(isolate()),
     next_address);
 
-  ASSERT(function_address.is(r4) || function_address.is(r5));
+  DCHECK(function_address.is(r4) || function_address.is(r5));
   Register scratch = r6;
 
   Label profiler_disabled;
@@ -2412,7 +2412,7 @@ void MacroAssembler::IndexFromHash(Register hash, Register index) {
   // that the constants for the maximum number of digits for an array index
   // cached in the hash field and the number of bits reserved for it does not
   // conflict.
-  ASSERT(TenToThe(String::kMaxCachedArrayIndexLength) <
+  DCHECK(TenToThe(String::kMaxCachedArrayIndexLength) <
          (1 << String::kArrayIndexValueBits));
   DecodeFieldToSmi<String::ArrayIndexValueBits>(index, hash);
 }
@@ -2437,7 +2437,7 @@ void MacroAssembler::TryDoubleToInt32Exact(Register result,
                                            Register scratch,
                                            DoubleRegister double_scratch) {
   Label done;
-  ASSERT(!double_input.is(double_scratch));
+  DCHECK(!double_input.is(double_scratch));
 
   ConvertDoubleToInt64(double_input,
 #if !V8_TARGET_ARCH_PPC64
@@ -2466,8 +2466,8 @@ void MacroAssembler::TryInt32Floor(Register result,
                                    DoubleRegister double_scratch,
                                    Label* done,
                                    Label* exact) {
-  ASSERT(!result.is(input_high));
-  ASSERT(!double_input.is(double_scratch));
+  DCHECK(!result.is(input_high));
+  DCHECK(!double_input.is(double_scratch));
   Label exception;
 
   MovDoubleHighToInt(input_high, double_input);
@@ -2552,7 +2552,7 @@ void MacroAssembler::TruncateHeapNumberToI(Register result,
                                            Register object) {
   Label done;
   DoubleRegister double_scratch = kScratchDoubleReg;
-  ASSERT(!result.is(object));
+  DCHECK(!result.is(object));
 
   lfd(double_scratch, FieldMemOperand(object, HeapNumber::kValueOffset));
   TryInlineTruncateDoubleToI(result, double_scratch, &done);
@@ -2580,7 +2580,7 @@ void MacroAssembler::TruncateNumberToI(Register object,
                                        Register scratch1,
                                        Label* not_number) {
   Label done;
-  ASSERT(!result.is(object));
+  DCHECK(!result.is(object));
 
   UntagAndJumpIfSmi(result, object, &done);
   JumpIfNotHeapNumber(object, heap_number_map, scratch1, not_number);
@@ -2679,7 +2679,7 @@ void MacroAssembler::InvokeBuiltin(Builtins::JavaScript id,
                                    InvokeFlag flag,
                                    const CallWrapper& call_wrapper) {
   // You can't call a builtin without a valid frame.
-  ASSERT(flag == JUMP_FUNCTION || has_frame());
+  DCHECK(flag == JUMP_FUNCTION || has_frame());
 
   GetBuiltinEntry(r5, id);
   if (flag == CALL_FUNCTION) {
@@ -2687,7 +2687,7 @@ void MacroAssembler::InvokeBuiltin(Builtins::JavaScript id,
     Call(r5);
     call_wrapper.AfterCall();
   } else {
-    ASSERT(flag == JUMP_FUNCTION);
+    DCHECK(flag == JUMP_FUNCTION);
     Jump(r5);
   }
 }
@@ -2707,7 +2707,7 @@ void MacroAssembler::GetBuiltinFunction(Register target,
 
 
 void MacroAssembler::GetBuiltinEntry(Register target, Builtins::JavaScript id) {
-  ASSERT(!target.is(r4));
+  DCHECK(!target.is(r4));
   GetBuiltinFunction(r4, id);
   // Load the code entry point from the builtins object.
   LoadP(target, FieldMemOperand(r4, JSFunction::kCodeEntryOffset));
@@ -2726,7 +2726,7 @@ void MacroAssembler::SetCounter(StatsCounter* counter, int value,
 
 void MacroAssembler::IncrementCounter(StatsCounter* counter, int value,
                                       Register scratch1, Register scratch2) {
-  ASSERT(value > 0);
+  DCHECK(value > 0);
   if (FLAG_native_code_counters && counter->Enabled()) {
     mov(scratch2, Operand(ExternalReference(counter)));
     lwz(scratch1, MemOperand(scratch2));
@@ -2738,7 +2738,7 @@ void MacroAssembler::IncrementCounter(StatsCounter* counter, int value,
 
 void MacroAssembler::DecrementCounter(StatsCounter* counter, int value,
                                       Register scratch1, Register scratch2) {
-  ASSERT(value > 0);
+  DCHECK(value > 0);
   if (FLAG_native_code_counters && counter->Enabled()) {
     mov(scratch2, Operand(ExternalReference(counter)));
     lwz(scratch1, MemOperand(scratch2));
@@ -2757,7 +2757,7 @@ void MacroAssembler::Assert(Condition cond, BailoutReason reason,
 
 void MacroAssembler::AssertFastElements(Register elements) {
   if (emit_debug_code()) {
-    ASSERT(!elements.is(ip));
+    DCHECK(!elements.is(ip));
     Label ok;
     push(elements);
     LoadP(elements, FieldMemOperand(elements, HeapObject::kMapOffset));
@@ -2916,7 +2916,7 @@ void MacroAssembler::JumpIfNotPowerOfTwoOrZeroAndNeg(
 
 #if !V8_TARGET_ARCH_PPC64
 void MacroAssembler::SmiTagCheckOverflow(Register reg, Register overflow) {
-  ASSERT(!reg.is(overflow));
+  DCHECK(!reg.is(overflow));
   mr(overflow, reg);  // Save original value.
   SmiTag(reg);
   xor_(overflow, overflow, reg, SetRC);  // Overflow if (value ^ 2 * value) < 0.
@@ -2930,9 +2930,9 @@ void MacroAssembler::SmiTagCheckOverflow(Register dst,
     // Fall back to slower case.
     SmiTagCheckOverflow(dst, overflow);
   } else {
-    ASSERT(!dst.is(src));
-    ASSERT(!dst.is(overflow));
-    ASSERT(!src.is(overflow));
+    DCHECK(!dst.is(src));
+    DCHECK(!dst.is(overflow));
+    DCHECK(!src.is(overflow));
     SmiTag(dst, src);
     xor_(overflow, dst, src, SetRC);  // Overflow if (value ^ 2 * value) < 0.
   }
@@ -2943,7 +2943,7 @@ void MacroAssembler::JumpIfNotBothSmi(Register reg1,
                                       Register reg2,
                                       Label* on_not_both_smi) {
   STATIC_ASSERT(kSmiTag == 0);
-  ASSERT_EQ(1, static_cast<int>(kSmiTagMask));
+  DCHECK_EQ(1, static_cast<int>(kSmiTagMask));
   orx(r0, reg1, reg2, LeaveRC);
   JumpIfNotSmi(r0, on_not_both_smi);
 }
@@ -3232,9 +3232,9 @@ void MacroAssembler::CopyFields(Register dst,
                                 RegList temps,
                                 int field_count) {
   // At least one bit set in the first 15 registers.
-  ASSERT((temps & ((1 << 15) - 1)) != 0);
-  ASSERT((temps & dst.bit()) == 0);
-  ASSERT((temps & src.bit()) == 0);
+  DCHECK((temps & ((1 << 15) - 1)) != 0);
+  DCHECK((temps & dst.bit()) == 0);
+  DCHECK((temps & src.bit()) == 0);
   // Primitive implementation using only one temporary register.
 
   Register tmp = no_reg;
@@ -3245,7 +3245,7 @@ void MacroAssembler::CopyFields(Register dst,
       break;
     }
   }
-  ASSERT(!tmp.is(no_reg));
+  DCHECK(!tmp.is(no_reg));
 
   for (int i = 0; i < field_count; i++) {
     LoadP(tmp, FieldMemOperand(src, i * kPointerSize), r0);
@@ -3260,7 +3260,7 @@ void MacroAssembler::CopyBytes(Register src,
                                Register scratch) {
   Label align_loop, aligned, word_loop, byte_loop, byte_loop_1, done;
 
-  ASSERT(!scratch.is(r0));
+  DCHECK(!scratch.is(r0));
 
   cmpi(length, Operand::Zero());
   beq(&done);
@@ -3387,7 +3387,7 @@ void MacroAssembler::InitializeFieldsWithFiller(Register start_offset,
 
 
 void MacroAssembler::SaveFPRegs(Register location, int first, int count) {
-  ASSERT(count > 0);
+  DCHECK(count > 0);
   int cur = first;
   subi(location, location, Operand(count * kDoubleSize));
   for (int i = 0; i < count; i++) {
@@ -3398,7 +3398,7 @@ void MacroAssembler::SaveFPRegs(Register location, int first, int count) {
 
 
 void MacroAssembler::RestoreFPRegs(Register location, int first, int count) {
-  ASSERT(count > 0);
+  DCHECK(count > 0);
   int cur = first + count - 1;
   for (int i = count - 1; i >= 0; i--) {
     DoubleRegister reg = DoubleRegister::from_code(cur--);
@@ -3491,7 +3491,7 @@ void MacroAssembler::EmitSeqStringSetCharCheck(Register string,
   cmp(index, ip);
   Check(lt, kIndexIsTooLarge);
 
-  ASSERT(Smi::FromInt(0) == 0);
+  DCHECK(Smi::FromInt(0) == 0);
   cmpi(index, Operand::Zero());
   Check(ge, kIndexIsNegative);
 
@@ -3512,7 +3512,7 @@ void MacroAssembler::PrepareCallCFunction(int num_reg_arguments,
     // -- preserving original value of sp.
     mr(scratch, sp);
     addi(sp, sp, Operand(-(stack_passed_arguments + 1) * kPointerSize));
-    ASSERT(IsPowerOf2(frame_alignment));
+    DCHECK(IsPowerOf2(frame_alignment));
     ClearRightImm(sp, sp, Operand(WhichPowerOf2(frame_alignment)));
     StoreP(scratch, MemOperand(sp, stack_passed_arguments * kPointerSize));
   } else {
@@ -3545,7 +3545,7 @@ void MacroAssembler::MovToFloatResult(DoubleRegister src) {
 void MacroAssembler::MovToFloatParameters(DoubleRegister src1,
                                           DoubleRegister src2) {
   if (src2.is(d1)) {
-    ASSERT(!src1.is(d2));
+    DCHECK(!src1.is(d2));
     Move(d2, src2);
     Move(d1, src1);
   } else {
@@ -3585,7 +3585,7 @@ void MacroAssembler::CallCFunction(Register function,
 void MacroAssembler::CallCFunctionHelper(Register function,
                                          int num_reg_arguments,
                                          int num_double_arguments) {
-  ASSERT(has_frame());
+  DCHECK(has_frame());
   // Just call directly. The function called cannot cause a GC, or
   // allow preemption, so the return address in the link register
   // stays correct.
@@ -3629,7 +3629,7 @@ void MacroAssembler::FlushICache(Register address, size_t size,
   // scratch is last cacheline which intersects range.
   const int kCacheLineSizeLog2 = WhichPowerOf2(CpuFeatures::cache_line_size());
 
-  ASSERT(size > 0 && size <= (size_t)(1 << kCacheLineSizeLog2));
+  DCHECK(size > 0 && size <= (size_t)(1 << kCacheLineSizeLog2));
   addi(scratch, address, Operand(size - 1));
   ClearRightImm(scratch, scratch, Operand(kCacheLineSizeLog2));
   cmpl(scratch, address);
@@ -3833,7 +3833,7 @@ void MacroAssembler::CheckPageFlag(
     int mask,
     Condition cc,
     Label* condition_met) {
-  ASSERT(cc == ne || cc == eq);
+  DCHECK(cc == ne || cc == eq);
   ClearRightImm(scratch, object, Operand(kPageSizeBits));
   LoadP(scratch, MemOperand(scratch, MemoryChunk::kFlagsOffset));
 
@@ -3865,7 +3865,7 @@ void MacroAssembler::JumpIfBlack(Register object,
                                  Register scratch1,
                                  Label* on_black) {
   HasColor(object, scratch0, scratch1, on_black, 1, 0);  // kBlackBitPattern.
-  ASSERT(strcmp(Marking::kBlackBitPattern, "10") == 0);
+  DCHECK(strcmp(Marking::kBlackBitPattern, "10") == 0);
 }
 
 
@@ -3875,7 +3875,7 @@ void MacroAssembler::HasColor(Register object,
                               Label* has_color,
                               int first_bit,
                               int second_bit) {
-  ASSERT(!AreAliased(object, bitmap_scratch, mask_scratch, no_reg));
+  DCHECK(!AreAliased(object, bitmap_scratch, mask_scratch, no_reg));
 
   GetMarkBits(object, bitmap_scratch, mask_scratch);
 
@@ -3912,8 +3912,8 @@ void MacroAssembler::JumpIfDataObject(Register value,
   LoadP(scratch, FieldMemOperand(value, HeapObject::kMapOffset));
   CompareRoot(scratch, Heap::kHeapNumberMapRootIndex);
   beq(&is_data_object);
-  ASSERT(kIsIndirectStringTag == 1 && kIsIndirectStringMask == 1);
-  ASSERT(kNotStringTag == 0x80 && kIsNotStringMask == 0x80);
+  DCHECK(kIsIndirectStringTag == 1 && kIsIndirectStringMask == 1);
+  DCHECK(kNotStringTag == 0x80 && kIsNotStringMask == 0x80);
   // If it's a string and it's not a cons string then it's an object containing
   // no GC pointers.
   lbz(scratch, FieldMemOperand(scratch, Map::kInstanceTypeOffset));
@@ -3927,8 +3927,8 @@ void MacroAssembler::JumpIfDataObject(Register value,
 void MacroAssembler::GetMarkBits(Register addr_reg,
                                  Register bitmap_reg,
                                  Register mask_reg) {
-  ASSERT(!AreAliased(addr_reg, bitmap_reg, mask_reg, no_reg));
-  ASSERT((~Page::kPageAlignmentMask & 0xffff) == 0);
+  DCHECK(!AreAliased(addr_reg, bitmap_reg, mask_reg, no_reg));
+  DCHECK((~Page::kPageAlignmentMask & 0xffff) == 0);
   lis(r0, Operand((~Page::kPageAlignmentMask >> 16)));
   and_(bitmap_reg, addr_reg, r0);
   const int kLowBits = kPointerSizeLog2 + Bitmap::kBitsPerCellLog2;
@@ -3951,14 +3951,14 @@ void MacroAssembler::EnsureNotWhite(
     Register mask_scratch,
     Register load_scratch,
     Label* value_is_white_and_not_data) {
-  ASSERT(!AreAliased(value, bitmap_scratch, mask_scratch, ip));
+  DCHECK(!AreAliased(value, bitmap_scratch, mask_scratch, ip));
   GetMarkBits(value, bitmap_scratch, mask_scratch);
 
   // If the value is black or grey we don't need to do anything.
-  ASSERT(strcmp(Marking::kWhiteBitPattern, "00") == 0);
-  ASSERT(strcmp(Marking::kBlackBitPattern, "10") == 0);
-  ASSERT(strcmp(Marking::kGreyBitPattern, "11") == 0);
-  ASSERT(strcmp(Marking::kImpossibleBitPattern, "01") == 0);
+  DCHECK(strcmp(Marking::kWhiteBitPattern, "00") == 0);
+  DCHECK(strcmp(Marking::kBlackBitPattern, "10") == 0);
+  DCHECK(strcmp(Marking::kGreyBitPattern, "11") == 0);
+  DCHECK(strcmp(Marking::kImpossibleBitPattern, "01") == 0);
 
   Label done;
 
@@ -3998,8 +3998,8 @@ void MacroAssembler::EnsureNotWhite(
   bind(&maybe_string_object);
 
   // Check for strings.
-  ASSERT(kIsIndirectStringTag == 1 && kIsIndirectStringMask == 1);
-  ASSERT(kNotStringTag == 0x80 && kIsNotStringMask == 0x80);
+  DCHECK(kIsIndirectStringTag == 1 && kIsIndirectStringMask == 1);
+  DCHECK(kNotStringTag == 0x80 && kIsNotStringMask == 0x80);
   // If it's a string and it's not a cons string then it's an object containing
   // no GC pointers.
   Register instance_type = load_scratch;
@@ -4011,8 +4011,8 @@ void MacroAssembler::EnsureNotWhite(
   // Otherwise it's String::kHeaderSize + string->length() * (1 or 2).
   // External strings are the only ones with the kExternalStringTag bit
   // set.
-  ASSERT_EQ(0, kSeqStringTag & kExternalStringTag);
-  ASSERT_EQ(0, kConsStringTag & kExternalStringTag);
+  DCHECK_EQ(0, kSeqStringTag & kExternalStringTag);
+  DCHECK_EQ(0, kConsStringTag & kExternalStringTag);
   andi(r0, instance_type, Operand(kExternalStringTag));
   beq(&is_string_object, cr0);
   li(length, Operand(ExternalString::kSize));
@@ -4025,7 +4025,7 @@ void MacroAssembler::EnsureNotWhite(
   //   - (32-bit) we just leave the smi tag in place, thereby getting
   //              the length multiplied by 2.
   //   - (64-bit) we compute the offset in the 2-byte array
-  ASSERT(kOneByteStringTag == 4 && kStringEncodingMask == 4);
+  DCHECK(kOneByteStringTag == 4 && kStringEncodingMask == 4);
   LoadP(ip, FieldMemOperand(value, String::kLengthOffset));
   andi(r0, instance_type, Operand(kStringEncodingMask));
   beq(&is_encoded, cr0);
@@ -4038,7 +4038,7 @@ void MacroAssembler::EnsureNotWhite(
   SmiToShortArrayOffset(ip, ip);
   bind(&length_computed);
 #else
-  ASSERT(kSmiShift == 1);
+  DCHECK(kSmiShift == 1);
 #endif
   addi(length, ip, Operand(SeqString::kHeaderSize + kObjectAlignmentMask));
   li(r0, Operand(~kObjectAlignmentMask));
@@ -4280,7 +4280,7 @@ void MacroAssembler::MovIntToDouble(DoubleRegister dst,
   }
 #endif
 
-  ASSERT(!src.is(scratch));
+  DCHECK(!src.is(scratch));
   subi(sp, sp, Operand(kDoubleSize));
 #if V8_TARGET_ARCH_PPC64
   extsw(scratch, src);
@@ -4307,7 +4307,7 @@ void MacroAssembler::MovUnsignedIntToDouble(DoubleRegister dst,
   }
 #endif
 
-  ASSERT(!src.is(scratch));
+  DCHECK(!src.is(scratch));
   subi(sp, sp, Operand(kDoubleSize));
 #if V8_TARGET_ARCH_PPC64
   clrldi(scratch, src, Operand(32));
@@ -4499,7 +4499,7 @@ void MacroAssembler::And(Register ra, Register rs, const Operand& rb,
       andi(ra, rs, rb);
     } else {
       // mov handles the relocation.
-      ASSERT(!rs.is(r0));
+      DCHECK(!rs.is(r0));
       mov(r0, rb);
       and_(ra, rs, r0, rc);
     }
@@ -4515,7 +4515,7 @@ void MacroAssembler::Or(Register ra, Register rs, const Operand& rb, RCBit rc) {
       ori(ra, rs, rb);
     } else {
       // mov handles the relocation.
-      ASSERT(!rs.is(r0));
+      DCHECK(!rs.is(r0));
       mov(r0, rb);
       orx(ra, rs, r0, rc);
     }
@@ -4532,7 +4532,7 @@ void MacroAssembler::Xor(Register ra, Register rs, const Operand& rb,
       xori(ra, rs, rb);
     } else {
       // mov handles the relocation.
-      ASSERT(!rs.is(r0));
+      DCHECK(!rs.is(r0));
       mov(r0, rb);
       xor_(ra, rs, r0, rc);
     }
@@ -4614,7 +4614,7 @@ void MacroAssembler::LoadP(Register dst, const MemOperand& mem,
     if (misaligned) {
       // adjust base to conform to offset alignment requirements
       // Todo: enhance to use scratch if dst is unsuitable
-      ASSERT(!dst.is(r0));
+      DCHECK(!dst.is(r0));
       addi(dst, mem.ra(), Operand((offset & 3) - 4));
       ld(dst, MemOperand(dst, (offset & ~3) + 4));
     } else {
@@ -4646,7 +4646,7 @@ void MacroAssembler::StoreP(Register src, const MemOperand& mem,
     if (misaligned) {
       // adjust base to conform to offset alignment requirements
       // a suitable scratch is required here
-      ASSERT(!scratch.is(no_reg));
+      DCHECK(!scratch.is(no_reg));
       if (scratch.is(r0)) {
         LoadIntLiteral(scratch, offset);
         stdx(src, MemOperand(mem.ra(), scratch));
@@ -4672,7 +4672,7 @@ void MacroAssembler::LoadWordArith(Register dst, const MemOperand& mem,
     LoadIntLiteral(scratch, offset);
 #if V8_TARGET_ARCH_PPC64
     // lwax(dst, MemOperand(mem.ra(), scratch));
-    ASSERT(0);  // lwax not yet implemented
+    DCHECK(0);  // lwax not yet implemented
 #else
     lwzx(dst, MemOperand(mem.ra(), scratch));
 #endif
@@ -4682,7 +4682,7 @@ void MacroAssembler::LoadWordArith(Register dst, const MemOperand& mem,
     if (misaligned) {
       // adjust base to conform to offset alignment requirements
       // Todo: enhance to use scratch if dst is unsuitable
-      ASSERT(!dst.is(r0));
+      DCHECK(!dst.is(r0));
       addi(dst, mem.ra(), Operand((offset & 3) - 4));
       lwa(dst, MemOperand(dst, (offset & ~3) + 4));
     } else {
@@ -4893,7 +4893,7 @@ void MacroAssembler::LoadRepresentation(Register dst,
                                         const MemOperand& mem,
                                         Representation r,
                                         Register scratch) {
-  ASSERT(!r.IsDouble());
+  DCHECK(!r.IsDouble());
   if (r.IsInteger8()) {
     LoadByte(dst, mem, scratch);
     extsb(dst, dst);
@@ -4918,7 +4918,7 @@ void MacroAssembler::StoreRepresentation(Register src,
                                          const MemOperand& mem,
                                          Representation r,
                                          Register scratch) {
-  ASSERT(!r.IsDouble());
+  DCHECK(!r.IsDouble());
   if (r.IsInteger8() || r.IsUInteger8()) {
     StoreByte(src, mem, scratch);
   } else if (r.IsInteger16() || r.IsUInteger16()) {
@@ -4989,7 +4989,7 @@ void MacroAssembler::JumpIfDictionaryInPrototypeChain(
     Register scratch0,
     Register scratch1,
     Label* found) {
-  ASSERT(!scratch1.is(scratch0));
+  DCHECK(!scratch1.is(scratch0));
   Factory* factory = isolate()->factory();
   Register current = scratch0;
   Label loop_again;
@@ -5049,7 +5049,7 @@ CodePatcher::CodePatcher(byte* address,
   // Create a new macro assembler pointing to the address of the code to patch.
   // The size is adjusted with kGap on order for the assembler to generate size
   // bytes of instructions without failing with buffer size constraints.
-  ASSERT(masm_.reloc_info_writer.pos() == address_ + size_ + Assembler::kGap);
+  DCHECK(masm_.reloc_info_writer.pos() == address_ + size_ + Assembler::kGap);
 }
 
 
@@ -5060,8 +5060,8 @@ CodePatcher::~CodePatcher() {
   }
 
   // Check that the code was patched as expected.
-  ASSERT(masm_.pc_ == address_ + size_);
-  ASSERT(masm_.reloc_info_writer.pos() == address_ + size_ + Assembler::kGap);
+  DCHECK(masm_.pc_ == address_ + size_);
+  DCHECK(masm_.reloc_info_writer.pos() == address_ + size_ + Assembler::kGap);
 }
 
 
@@ -5089,9 +5089,9 @@ void CodePatcher::EmitCondition(Condition cond) {
 void MacroAssembler::TruncatingDiv(Register result,
                                    Register dividend,
                                    int32_t divisor) {
-  ASSERT(!dividend.is(result));
-  ASSERT(!dividend.is(r0));
-  ASSERT(!result.is(r0));
+  DCHECK(!dividend.is(result));
+  DCHECK(!dividend.is(r0));
+  DCHECK(!result.is(r0));
   MultiplierAndShift ms(divisor);
   mov(r0, Operand(ms.multiplier()));
   mulhw(result, dividend, r0);

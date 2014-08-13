@@ -115,7 +115,7 @@ RegExpMacroAssemblerPPC::RegExpMacroAssemblerPPC(
       backtrack_label_(),
       exit_label_(),
       internal_failure_label_() {
-  ASSERT_EQ(0, registers_to_save % 2);
+  DCHECK_EQ(0, registers_to_save % 2);
 
   // Called from C
 #if ABI_USES_FUNCTION_DESCRIPTORS
@@ -160,8 +160,8 @@ void RegExpMacroAssemblerPPC::AdvanceCurrentPosition(int by) {
 
 
 void RegExpMacroAssemblerPPC::AdvanceRegister(int reg, int by) {
-  ASSERT(reg >= 0);
-  ASSERT(reg < num_registers_);
+  DCHECK(reg >= 0);
+  DCHECK(reg < num_registers_);
   if (by != 0) {
     __ LoadP(r3, register_location(reg), r0);
     __ mov(r0, Operand(by));
@@ -315,7 +315,7 @@ void RegExpMacroAssemblerPPC::CheckNotBackReferenceIgnoreCase(
     // Compute new value of character position after the matched part.
     __ sub(current_input_offset(), r5, end_of_input_address());
   } else {
-    ASSERT(mode_ == UC16);
+    DCHECK(mode_ == UC16);
     int argument_count = 4;
     __ PrepareCallCFunction(argument_count, r5);
 
@@ -388,7 +388,7 @@ void RegExpMacroAssemblerPPC::CheckNotBackReference(
     __ lbz(r25, MemOperand(r5));
     __ addi(r5, r5, Operand(char_size()));
   } else {
-    ASSERT(mode_ == UC16);
+    DCHECK(mode_ == UC16);
     __ lhz(r6, MemOperand(r3));
     __ addi(r3, r3, Operand(char_size()));
     __ lhz(r25, MemOperand(r5));
@@ -445,7 +445,7 @@ void RegExpMacroAssemblerPPC::CheckNotCharacterAfterMinusAnd(
     uc16 minus,
     uc16 mask,
     Label* on_not_equal) {
-  ASSERT(minus < String::kMaxUtf16CodeUnit);
+  DCHECK(minus < String::kMaxUtf16CodeUnit);
   __ subi(r3, current_character(), Operand(minus));
   __ mov(r0, Operand(mask));
   __ and_(r3, r3, r0);
@@ -636,13 +636,13 @@ Handle<HeapObject> RegExpMacroAssemblerPPC::GetCode(Handle<String> source) {
     FrameScope scope(masm_, StackFrame::MANUAL);
 
     // Ensure register assigments are consistent with callee save mask
-    ASSERT(r25.bit() & kRegExpCalleeSaved);
-    ASSERT(code_pointer().bit() & kRegExpCalleeSaved);
-    ASSERT(current_input_offset().bit() & kRegExpCalleeSaved);
-    ASSERT(current_character().bit() & kRegExpCalleeSaved);
-    ASSERT(backtrack_stackpointer().bit() & kRegExpCalleeSaved);
-    ASSERT(end_of_input_address().bit() & kRegExpCalleeSaved);
-    ASSERT(frame_pointer().bit() & kRegExpCalleeSaved);
+    DCHECK(r25.bit() & kRegExpCalleeSaved);
+    DCHECK(code_pointer().bit() & kRegExpCalleeSaved);
+    DCHECK(current_input_offset().bit() & kRegExpCalleeSaved);
+    DCHECK(current_character().bit() & kRegExpCalleeSaved);
+    DCHECK(backtrack_stackpointer().bit() & kRegExpCalleeSaved);
+    DCHECK(end_of_input_address().bit() & kRegExpCalleeSaved);
+    DCHECK(frame_pointer().bit() & kRegExpCalleeSaved);
 
     // Actually emit code to start a new stack frame.
     // Push arguments
@@ -771,7 +771,7 @@ Handle<HeapObject> RegExpMacroAssemblerPPC::GetCode(Handle<String> source) {
         __ add(r4, r4, r5);
         // r4 is length of string in characters.
 
-        ASSERT_EQ(0, num_saved_registers_ % 2);
+        DCHECK_EQ(0, num_saved_registers_ % 2);
         // Always an even number of capture registers. This allows us to
         // unroll the loop once to add an operation between a load of a register
         // and the following use of that register.
@@ -964,8 +964,8 @@ void RegExpMacroAssemblerPPC::LoadCurrentCharacter(int cp_offset,
                                                    Label* on_end_of_input,
                                                    bool check_bounds,
                                                    int characters) {
-  ASSERT(cp_offset >= -1);      // ^ and \b can look behind one character.
-  ASSERT(cp_offset < (1<<30));  // Be sane! (And ensure negation works)
+  DCHECK(cp_offset >= -1);      // ^ and \b can look behind one character.
+  DCHECK(cp_offset < (1<<30));  // Be sane! (And ensure negation works)
   if (check_bounds) {
     CheckPosition(cp_offset + characters - 1, on_end_of_input);
   }
@@ -1030,7 +1030,7 @@ void RegExpMacroAssemblerPPC::SetCurrentPositionFromEnd(int by) {
 
 
 void RegExpMacroAssemblerPPC::SetRegister(int register_index, int to) {
-  ASSERT(register_index >= num_saved_registers_);  // Reserved for positions!
+  DCHECK(register_index >= num_saved_registers_);  // Reserved for positions!
   __ mov(r3, Operand(to));
   __ StoreP(r3, register_location(register_index), r0);
 }
@@ -1055,7 +1055,7 @@ void RegExpMacroAssemblerPPC::WriteCurrentPositionToRegister(int reg,
 
 
 void RegExpMacroAssemblerPPC::ClearRegisters(int reg_from, int reg_to) {
-  ASSERT(reg_from <= reg_to);
+  DCHECK(reg_from <= reg_to);
   __ LoadP(r3, MemOperand(frame_pointer(), kInputStartMinusOne));
   for (int reg = reg_from; reg <= reg_to; reg++) {
     __ StoreP(r3, register_location(reg), r0);
@@ -1085,7 +1085,7 @@ void RegExpMacroAssemblerPPC::CallCheckStackGuardState(Register scratch) {
     // -- preserving original value of sp.
     __ mr(scratch, sp);
     __ addi(sp, sp, Operand(-(stack_passed_arguments + 1) * kPointerSize));
-    ASSERT(IsPowerOf2(frame_alignment));
+    DCHECK(IsPowerOf2(frame_alignment));
     __ ClearRightImm(sp, sp, Operand(WhichPowerOf2(frame_alignment)));
     __ StoreP(scratch, MemOperand(sp, stack_passed_arguments * kPointerSize));
   } else {
@@ -1157,8 +1157,8 @@ int RegExpMacroAssemblerPPC::CheckStackGuardState(Address* return_address,
   // Current string.
   bool is_ascii = subject->IsOneByteRepresentationUnderneath();
 
-  ASSERT(re_code->instruction_start() <= *return_address);
-  ASSERT(*return_address <=
+  DCHECK(re_code->instruction_start() <= *return_address);
+  DCHECK(*return_address <=
       re_code->instruction_start() + re_code->instruction_size());
 
   Object* result = isolate->stack_guard()->HandleInterrupts();
@@ -1197,7 +1197,7 @@ int RegExpMacroAssemblerPPC::CheckStackGuardState(Address* return_address,
   // be a sequential or external string with the same content.
   // Update the start and end pointers in the stack frame to the current
   // location (whether it has actually moved or not).
-  ASSERT(StringShape(*subject_tmp).IsSequential() ||
+  DCHECK(StringShape(*subject_tmp).IsSequential() ||
       StringShape(*subject_tmp).IsExternal());
 
   // The original start address of the characters to match.
@@ -1229,7 +1229,7 @@ int RegExpMacroAssemblerPPC::CheckStackGuardState(Address* return_address,
 
 
 MemOperand RegExpMacroAssemblerPPC::register_location(int register_index) {
-  ASSERT(register_index < (1<<30));
+  DCHECK(register_index < (1<<30));
   if (num_registers_ <= register_index) {
     num_registers_ = register_index + 1;
   }
@@ -1289,13 +1289,13 @@ void RegExpMacroAssemblerPPC::SafeCallTarget(Label* name) {
 
 
 void RegExpMacroAssemblerPPC::Push(Register source) {
-  ASSERT(!source.is(backtrack_stackpointer()));
+  DCHECK(!source.is(backtrack_stackpointer()));
   __ StorePU(source, MemOperand(backtrack_stackpointer(), -kPointerSize));
 }
 
 
 void RegExpMacroAssemblerPPC::Pop(Register target) {
-  ASSERT(!target.is(backtrack_stackpointer()));
+  DCHECK(!target.is(backtrack_stackpointer()));
   __ LoadP(target, MemOperand(backtrack_stackpointer()));
   __ addi(backtrack_stackpointer(), backtrack_stackpointer(),
           Operand(kPointerSize));
@@ -1341,12 +1341,12 @@ void RegExpMacroAssemblerPPC::LoadCurrentCharacterUnchecked(int cp_offset,
   // We assume we don't want to do unaligned loads on PPC, so this function
   // must only be used to load a single character at a time.
 
-  ASSERT(characters == 1);
+  DCHECK(characters == 1);
   __ add(current_character(), end_of_input_address(), offset);
   if (mode_ == ASCII) {
     __ lbz(current_character(), MemOperand(current_character()));
   } else {
-    ASSERT(mode_ == UC16);
+    DCHECK(mode_ == UC16);
     __ lhz(current_character(), MemOperand(current_character()));
   }
 }

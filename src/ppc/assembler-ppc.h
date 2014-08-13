@@ -143,12 +143,12 @@ struct Register {
       // high range
       index = code - kAllocatableHighRangeBegin + kNumAllocatableLow;
     }
-    ASSERT(index >= 0 && index < kMaxNumAllocatableRegisters);
+    DCHECK(index >= 0 && index < kMaxNumAllocatableRegisters);
     return index;
   }
 
   static Register FromAllocationIndex(int index) {
-    ASSERT(index >= 0 && index < kMaxNumAllocatableRegisters);
+    DCHECK(index >= 0 && index < kMaxNumAllocatableRegisters);
     // Last index is always the 'cp' register.
     if (index == kMaxNumAllocatableRegisters - 1) {
       return from_code(kAllocatableContext);
@@ -159,7 +159,7 @@ struct Register {
   }
 
   static const char* AllocationIndexToString(int index) {
-    ASSERT(index >= 0 && index < kMaxNumAllocatableRegisters);
+    DCHECK(index >= 0 && index < kMaxNumAllocatableRegisters);
     const char* const names[] = {
       "r3", "r4", "r5", "r6", "r7", "r8", "r9", "r10",
       "r14", "r15", "r16", "r17", "r18",
@@ -181,17 +181,17 @@ struct Register {
   bool is_valid() const { return 0 <= code_ && code_ < kNumRegisters; }
   bool is(Register reg) const { return code_ == reg.code_; }
   int code() const {
-    ASSERT(is_valid());
+    DCHECK(is_valid());
     return code_;
   }
   int bit() const {
-    ASSERT(is_valid());
+    DCHECK(is_valid());
     return 1 << code_;
   }
 
   void set_code(int code) {
     code_ = code;
-    ASSERT(is_valid());
+    DCHECK(is_valid());
   }
 
   // Unfortunately we can't make this private in a struct.
@@ -302,12 +302,12 @@ struct DoubleRegister {
     int index = (code <= kAllocatableLowRangeEnd)
       ? code - kAllocatableLowRangeBegin
       : code - kAllocatableHighRangeBegin + kNumAllocatableLow;
-    ASSERT(index < kMaxNumAllocatableRegisters);
+    DCHECK(index < kMaxNumAllocatableRegisters);
     return index;
   }
 
   static DoubleRegister FromAllocationIndex(int index) {
-    ASSERT(index >= 0 && index < kMaxNumAllocatableRegisters);
+    DCHECK(index >= 0 && index < kMaxNumAllocatableRegisters);
     return (index < kNumAllocatableLow)
         ? from_code(index + kAllocatableLowRangeBegin)
         : from_code(index - kNumAllocatableLow + kAllocatableHighRangeBegin);
@@ -324,15 +324,15 @@ struct DoubleRegister {
   bool is(DoubleRegister reg) const { return code_ == reg.code_; }
 
   int code() const {
-    ASSERT(is_valid());
+    DCHECK(is_valid());
     return code_;
   }
   int bit() const {
-    ASSERT(is_valid());
+    DCHECK(is_valid());
     return 1 << code_;
   }
   void split_code(int* vm, int* m) const {
-    ASSERT(is_valid());
+    DCHECK(is_valid());
     *m = (code_ & 0x10) >> 4;
     *vm = code_ & 0x0F;
   }
@@ -390,11 +390,11 @@ struct CRegister {
   bool is_valid() const { return 0 <= code_ && code_ < 16; }
   bool is(CRegister creg) const { return code_ == creg.code_; }
   int code() const {
-    ASSERT(is_valid());
+    DCHECK(is_valid());
     return code_;
   }
   int bit() const {
-    ASSERT(is_valid());
+    DCHECK(is_valid());
     return 1 << code_;
   }
 
@@ -460,7 +460,7 @@ class Operand BASE_EMBEDDED {
   bool must_output_reloc_info(const Assembler* assembler) const;
 
   inline intptr_t immediate() const {
-    ASSERT(!rm_.is_valid());
+    DCHECK(!rm_.is_valid());
     return imm_;
   }
 
@@ -486,18 +486,18 @@ class MemOperand BASE_EMBEDDED {
   explicit MemOperand(Register ra, Register rb);
 
   int32_t offset() const {
-    ASSERT(rb_.is(no_reg));
+    DCHECK(rb_.is(no_reg));
     return offset_;
   }
 
   // PowerPC - base register
   Register ra() const {
-    ASSERT(!ra_.is(no_reg));
+    DCHECK(!ra_.is(no_reg));
     return ra_;
   }
 
   Register rb() const {
-    ASSERT(offset_ == 0 && !rb_.is(no_reg));
+    DCHECK(offset_ == 0 && !rb_.is(no_reg));
     return rb_;
   }
 
@@ -676,6 +676,9 @@ class Assembler : public AssemblerBase {
   // in the instruction stream that the call will return to.
   INLINE(static Address return_address_from_call_start(Address pc));
 
+  // Return the code target address of the patch debug break slot
+  INLINE(static Address break_address_from_return_address(Address pc));
+
   // This sets the branch destination.
   // This is for calls and branches within generated code.
   inline static void deserialization_set_special_target_at(
@@ -775,8 +778,8 @@ class Assembler : public AssemblerBase {
 
   void bc_short(Condition cond, Label* L, CRegister cr = cr7,
                 LKBit lk = LeaveLK)  {
-    ASSERT(cond != al);
-    ASSERT(cr.code() >= 0 && cr.code() <= 7);
+    DCHECK(cond != al);
+    DCHECK(cr.code() >= 0 && cr.code() <= 7);
 
     int b_offset = branch_offset(L, false);
 
@@ -1198,12 +1201,12 @@ class Assembler : public AssemblerBase {
   // Record the AST id of the CallIC being compiled, so that it can be placed
   // in the relocation information.
   void SetRecordedAstId(TypeFeedbackId ast_id) {
-// PPC - this shouldn't be failing roohack   ASSERT(recorded_ast_id_.IsNone());
+// PPC - this shouldn't be failing roohack   DCHECK(recorded_ast_id_.IsNone());
     recorded_ast_id_ = ast_id;
   }
 
   TypeFeedbackId RecordedAstId() {
-    // roohack - another issue??? ASSERT(!recorded_ast_id_.IsNone());
+    // roohack - another issue??? DCHECK(!recorded_ast_id_.IsNone());
     return recorded_ast_id_;
   }
 
@@ -1359,7 +1362,7 @@ class Assembler : public AssemblerBase {
   // the generated instructions. This is so that multi-instruction sequences do
   // not have to check for overflow. The same is true for writes of large
   // relocation info entries.
-  static const int kGap = 32;
+  static const int kGap = 64;  // was 32 roohack
 
   // Repeated checking whether the trampoline pool should be emitted is rather
   // expensive. By default we only check again once a number of instructions
@@ -1427,7 +1430,7 @@ class Assembler : public AssemblerBase {
         // We have run out of space on trampolines.
         // Make sure we fail in debug mode, so we become aware of each case
         // when this happens.
-        ASSERT(0);
+        DCHECK(0);
         // Internal exception will be caught.
       } else {
         trampoline_slot = next_slot_;

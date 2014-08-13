@@ -58,7 +58,7 @@ const char* FPRegisters::names_[kNumFPRegisters] = {
 
 
 const char* FPRegisters::Name(int reg) {
-  ASSERT((0 <= reg) && (reg < kNumFPRegisters));
+  DCHECK((0 <= reg) && (reg < kNumFPRegisters));
   return names_[reg];
 }
 

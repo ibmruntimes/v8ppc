@@ -710,7 +710,7 @@ class MacroAssembler: public Assembler {
   // These instructions are generated to mark special location in the code,
   // like some special IC code.
   static inline bool IsMarkedCode(Instr instr, int type) {
-    ASSERT((FIRST_IC_MARKER <= type) && (type < LAST_CODE_MARKER));
+    DCHECK((FIRST_IC_MARKER <= type) && (type < LAST_CODE_MARKER));
     return IsNop(instr, type);
   }
 
@@ -730,7 +730,7 @@ class MacroAssembler: public Assembler {
                (FIRST_IC_MARKER <= dst_reg) && (dst_reg < LAST_CODE_MARKER)
                    ? src_reg
                    : -1;
-    ASSERT((type == -1) ||
+    DCHECK((type == -1) ||
            ((FIRST_IC_MARKER <= type) && (type < LAST_CODE_MARKER)));
     return type;
   }
@@ -972,7 +972,7 @@ class MacroAssembler: public Assembler {
     LoadP(type, FieldMemOperand(obj, HeapObject::kMapOffset));
     lbz(type, FieldMemOperand(type, Map::kInstanceTypeOffset));
     andi(r0, type, Operand(kIsNotStringMask));
-    ASSERT_EQ(0, kStringTag);
+    DCHECK_EQ(0, kStringTag);
     return eq;
   }
 
@@ -1212,7 +1212,7 @@ class MacroAssembler: public Assembler {
   void GetBuiltinFunction(Register target, Builtins::JavaScript id);
 
   Handle<Object> CodeObject() {
-    ASSERT(!code_object_.is_null());
+    DCHECK(!code_object_.is_null());
     return code_object_;
   }
 
@@ -1285,7 +1285,7 @@ class MacroAssembler: public Assembler {
   inline void ExtractBitRange(Register dst, Register src,
                               int rangeStart, int rangeEnd,
                               RCBit rc = LeaveRC) {
-    ASSERT(rangeStart >= rangeEnd && rangeStart < kBitsPerPointer);
+    DCHECK(rangeStart >= rangeEnd && rangeStart < kBitsPerPointer);
     int rotate = (rangeEnd == 0) ? 0 : kBitsPerPointer - rangeEnd;
     int width  = rangeStart - rangeEnd + 1;
 #if V8_TARGET_ARCH_PPC64
@@ -1321,7 +1321,7 @@ class MacroAssembler: public Assembler {
     }
 
     // 1-bits in mask must be contiguous
-    ASSERT(bit == 0 || (mask & ((bit << 1) - 1)) == 0);
+    DCHECK(bit == 0 || (mask & ((bit << 1) - 1)) == 0);
 
     ExtractBitRange(dst, src, start, end, rc);
   }
@@ -1798,7 +1798,7 @@ class FrameAndConstantPoolScope {
         old_constant_pool_available_(masm->is_constant_pool_available())  {
     // We only want to enable constant pool access for non-manual frame scopes
     // to ensure the constant pool pointer is valid throughout the scope.
-    ASSERT(type_ != StackFrame::MANUAL && type_ != StackFrame::NONE);
+    DCHECK(type_ != StackFrame::MANUAL && type_ != StackFrame::NONE);
     masm->set_has_frame(true);
     masm->set_constant_pool_available(true);
     masm->EnterFrame(type, !old_constant_pool_available_);
@@ -1816,7 +1816,7 @@ class FrameAndConstantPoolScope {
   // scope, the MacroAssembler is still marked as being in a frame scope, and
   // the code will be generated again when it goes out of scope.
   void GenerateLeaveFrame() {
-    ASSERT(type_ != StackFrame::MANUAL && type_ != StackFrame::NONE);
+    DCHECK(type_ != StackFrame::MANUAL && type_ != StackFrame::NONE);
     masm_->LeaveFrame(type_);
   }
 
