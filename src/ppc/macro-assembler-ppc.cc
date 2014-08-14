@@ -715,6 +715,11 @@ void MacroAssembler::ConvertDoubleToInt64(const DoubleRegister double_input,
 #if V8_OOL_CONSTANT_POOL
 void MacroAssembler::LoadConstantPoolPointerRegister() {
   ConstantPoolUnavailableScope constant_pool_unavailable(this);
+
+  // CheckBuffer() is called too frequently. This will pre-grow
+  // the buffer if needed to avoid spliting the relocation and instructions
+  EnsureSpaceFor(kMovInstructionsNoConstantPool * kInstrSize);
+
   uintptr_t code_start = reinterpret_cast<uintptr_t>(pc_) - pc_offset();
   int constant_pool_offset = Code::kConstantPoolOffset - Code::kHeaderSize;
   mov(kConstantPoolRegister,

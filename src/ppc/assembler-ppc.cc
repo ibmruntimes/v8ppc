@@ -1539,6 +1539,13 @@ bool Assembler::use_constant_pool_for_mov(const Operand& x,
 
   return true;
 }
+
+
+void Assembler::EnsureSpaceFor(int space_needed) {
+  if (buffer_space() <= (kGap + space_needed)) {
+    GrowBuffer();
+  }
+}
 #endif
 
 
@@ -1562,13 +1569,6 @@ bool Operand::must_output_reloc_info(const Assembler* assembler) const {
 void Assembler::mov(Register dst, const Operand& src) {
   intptr_t value = src.immediate();
   bool canOptimize;
-  // We call CheckBuffer() too frequently
-  // This works around it for LoadConstantPoolPointerRegister()
-  if(src.rmode_ == RelocInfo::INTERNAL_REFERENCE) {
-    if(buffer_space() <= (kGap * 2)) {
-      GrowBuffer();
-    }
-  }
   RelocInfo rinfo(pc_, src.rmode_, value, NULL);
 
   if (src.must_output_reloc_info(this)) {

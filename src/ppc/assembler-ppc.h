@@ -1271,6 +1271,16 @@ class Assembler : public AssemblerBase {
 #if V8_OOL_CONSTANT_POOL
   // Decide between using the constant pool vs. a mov immediate sequence.
   bool use_constant_pool_for_mov(const Operand& x, bool canOptimize) const;
+
+  // The code currently calls CheckBuffer() too often. This has the side
+  // effect of randomly growing the buffer in the middle of multi-instruction
+  // sequences.
+  // MacroAssembler::LoadConstantPoolPointerRegister() includes a relocation
+  // and multiple instructions. We cannot grow the buffer until the
+  // relocation and all of the instructions are written.
+  //
+  // This function allows outside callers to check and grow the buffer
+  void EnsureSpaceFor(int space_needed);
 #endif
 
   // Allocate a constant pool of the correct size for the generated code.
@@ -1362,7 +1372,7 @@ class Assembler : public AssemblerBase {
   // the generated instructions. This is so that multi-instruction sequences do
   // not have to check for overflow. The same is true for writes of large
   // relocation info entries.
-  static const int kGap = 64;  // was 32, but that caused instability
+  static const int kGap = 32;
 
   // Repeated checking whether the trampoline pool should be emitted is rather
   // expensive. By default we only check again once a number of instructions
