@@ -640,6 +640,7 @@ enum CpuFeature {
     ALWAYS_ALIGN_CSP,
     // PPC
     FPR_GPR_MOV,
+    LWSYNC,
     NUMBER_OF_CPU_FEATURES
 };
 
