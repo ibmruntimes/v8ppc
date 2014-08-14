@@ -3623,6 +3623,13 @@ void MacroAssembler::CallCFunctionHelper(Register function,
 
 void MacroAssembler::FlushICache(Register address, size_t size,
                                  Register scratch) {
+  if (CpuFeatures::IsSupported(INSTR_AND_DATA_CACHE_COHERENCY)) {
+    sync();
+    icbi(r0, address);
+    isync();
+    return;
+  }
+
   Label done;
 
   dcbf(r0, address);

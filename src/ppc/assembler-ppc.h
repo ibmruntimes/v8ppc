@@ -75,6 +75,8 @@
 #define ABI_TOC_REGISTER kRegister_r13_Code
 #endif
 
+#define INSTR_AND_DATA_CACHE_COHERENCY LWSYNC
+
 namespace v8 {
 namespace internal {
 
@@ -1057,6 +1059,7 @@ class Assembler : public AssemblerBase {
 
   void dcbf(Register ra, Register rb);
   void sync();
+  void lwsync();
   void icbi(Register ra, Register rb);
   void isync();
 

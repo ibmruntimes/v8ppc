@@ -32,6 +32,16 @@ void CpuFeatures::FlushICache(void* buffer, size_t size) {
   Simulator::FlushICache(Isolate::Current()->simulator_i_cache(), buffer, size);
 #else
 
+  if (CpuFeatures::IsSupported(INSTR_AND_DATA_CACHE_COHERENCY)) {
+    __asm__ __volatile__("sync \n"  \
+                         "icbi 0, %0  \n"  \
+                         "isync  \n"
+                         : /* no output */
+                         : "r" (buffer)
+                         : "memory");
+    return;
+  }
+
   const int kCacheLineSize = CpuFeatures::cache_line_size();
   intptr_t mask = kCacheLineSize - 1;
   byte *start = reinterpret_cast<byte *>(
