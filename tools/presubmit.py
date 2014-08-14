@@ -54,7 +54,7 @@ build/class
 build/deprecated
 build/endif_comment
 build/forward_decl
-build/include_alpha
+#build/include_alpha  // roohack - disable until next upstream merge
 build/include_order
 build/printf_format
 build/storage_class
@@ -73,7 +73,7 @@ readability/utf8
 runtime/arrays
 runtime/casting
 runtime/deprecated_fn
-runtime/explicit
+#runtime/explicit  // roohack - disable until next upstream merge
 runtime/int
 runtime/memset
 runtime/mutex
