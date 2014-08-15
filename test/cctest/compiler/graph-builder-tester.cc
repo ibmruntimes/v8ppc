@@ -31,6 +31,7 @@ void MachineCallHelper::InitParameters(GraphBuilder* builder,
 
 byte* MachineCallHelper::Generate() {
   DCHECK(parameter_count() == 0 || parameters_ != NULL);
+  if (!Pipeline::SupportedBackend()) return NULL;
   if (code_.is_null()) {
     Zone* zone = graph_->zone();
     CompilationInfo info(zone->isolate(), zone);
@@ -42,10 +43,10 @@ byte* MachineCallHelper::Generate() {
 }
 
 
-void MachineCallHelper::VerifyParameters(
-    int parameter_count, MachineRepresentation* parameter_types) {
+void MachineCallHelper::VerifyParameters(int parameter_count,
+                                         MachineType* parameter_types) {
   CHECK_EQ(this->parameter_count(), parameter_count);
-  const MachineRepresentation* expected_types =
+  const MachineType* expected_types =
       call_descriptor_builder_->parameter_types();
   for (int i = 0; i < parameter_count; i++) {
     CHECK_EQ(expected_types[i], parameter_types[i]);

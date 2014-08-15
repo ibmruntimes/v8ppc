@@ -37,6 +37,7 @@
         'gtest/src/gtest-test-part.cc',
         'gtest/src/gtest-typed-test.cc',
         'gtest/src/gtest.cc',
+        'gtest-support.h',
       ],
       'sources!': [
         'gtest/src/gtest-all.cc',  # Not needed by our build.
@@ -79,7 +80,7 @@
             ],
           },
         }],
-        ['OS=="android" and android_app_abi=="x86"', {
+        ['OS=="android"', {
           'defines': [
             'GTEST_HAS_CLONE=0',
           ],

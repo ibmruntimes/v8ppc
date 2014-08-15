@@ -25,14 +25,14 @@ typedef v8::internal::compiler::InstructionSequence TestInstrSeq;
 // A testing helper for the register code abstraction.
 class InstructionTester : public HandleAndZoneScope {
  public:  // We're all friends here.
-  explicit InstructionTester()
+  InstructionTester()
       : isolate(main_isolate()),
         graph(zone()),
         schedule(zone()),
         info(static_cast<HydrogenCodeStub*>(NULL), main_isolate()),
         linkage(&info),
         common(zone()),
-        machine(zone(), kMachineWord32),
+        machine(zone()),
         code(NULL) {}
 
   ~InstructionTester() { delete code; }
@@ -51,8 +51,7 @@ class InstructionTester : public HandleAndZoneScope {
   void allocCode() {
     if (schedule.rpo_order()->size() == 0) {
       // Compute the RPO order.
-      Scheduler scheduler(zone(), &graph, &schedule);
-      scheduler.ComputeSpecialRPO();
+      Scheduler::ComputeSpecialRPO(&schedule);
       DCHECK(schedule.rpo_order()->size() > 0);
     }
     code = new TestInstrSeq(&linkage, &graph, &schedule);

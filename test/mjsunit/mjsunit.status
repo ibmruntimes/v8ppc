@@ -66,8 +66,6 @@
   # Some tests are over-restrictive about object layout.
   'array-constructor-feedback': [PASS, NO_VARIANTS],
   'array-feedback': [PASS, NO_VARIANTS],
-  'fast-non-keyed': [PASS, NO_VARIANTS],
-  'track-fields': [PASS, NO_VARIANTS],
 
   # Some tests are just too slow to run for now.
   'big-object-literal': [PASS, NO_VARIANTS],
@@ -129,6 +127,7 @@
   'es6/debug-promises/throw-uncaught-all': [PASS, NO_VARIANTS],
   'es6/debug-promises/throw-uncaught-uncaught': [PASS, NO_VARIANTS],
   'es6/debug-promises/reject-uncaught-late': [PASS, NO_VARIANTS],
+  'es6/debug-promises/throw-caught-by-default-reject-handler': [PASS, NO_VARIANTS],
   'harmony/debug-blockscopes': [PASS, NO_VARIANTS],
   'harmony/generators-debug-scopes': [PASS, NO_VARIANTS],
   'regress/regress-1081309': [PASS, NO_VARIANTS],
@@ -265,7 +264,10 @@
   'regress/short-circuit': [SKIP],
   'stack-traces-overflow': [SKIP],
   'unicode-test': [SKIP],
-  'whitespaces': [SKIP]
+  'whitespaces': [SKIP],
+
+  # TODO(mstarzinger): Takes too long with TF.
+  'array-sort': [PASS, NO_VARIANTS],
 }],  # 'gc_stress == True'
 
 ##############################################################################
@@ -297,6 +299,9 @@
 
 ##############################################################################
 ['arch == arm64 or arch == android_arm64', {
+
+  # arm64 TF timeout.
+  'regress/regress-1257': [PASS, TIMEOUT],
 
   # Requires bigger stack size in the Genesis and if stack size is increased,
   # the test requires too much time to run.  However, the problem test covers
@@ -344,7 +349,7 @@
   'bit-not': [PASS, SLOW],
   'compiler/alloc-number': [PASS, SLOW],
   'compiler/osr-assert': [PASS, SLOW],
-  'compiler/osr-warm': [PASS, SLOW],
+  'compiler/osr-warm': [PASS, TIMEOUT, SLOW],
   'compiler/osr-with-args': [PASS, SLOW],
   'debug-scopes': [PASS, SLOW],
   'generated-transition-stub': [PASS, SLOW],

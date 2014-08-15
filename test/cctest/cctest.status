@@ -75,17 +75,13 @@
   # BUG(2999). (test/cpu-profiler/CollectCpuProfile)
   # BUG(3287). (test-cpu-profiler/SampleWhenFrameIsNotSetup)
   'test-cpu-profiler/*': [PASS, FLAKY],
+  'test-cpu-profiler/*': [SKIP],
 
   ##############################################################################
   # TurboFan compiler failures.
 
   # TODO(mstarzinger): These need investigation and are not categorized yet.
-  'test-cpu-profiler/*': [SKIP],
   'test-heap/NextCodeLinkIsWeak': [PASS, NO_VARIANTS],
-
-  # TODO(mstarzinger/verwaest): This access check API is borked.
-  'test-api/TurnOnAccessCheck': [PASS, NO_VARIANTS],
-  'test-api/TurnOnAccessCheckAndRecompile': [PASS, NO_VARIANTS],
 
   # TODO(mstarzinger): Sometimes the try-catch blacklist fails.
   'test-debug/DebugEvaluateWithoutStack': [PASS, NO_VARIANTS],
@@ -100,20 +96,13 @@
 
   # Some tests are just too slow to run for now.
   'test-api/Threading*': [PASS, NO_VARIANTS],
-  'test-api/RequestInterruptTestWithMathAbs': [PASS, NO_VARIANTS],
   'test-heap/IncrementalMarkingStepMakesBigProgressWithLargeObjects': [PASS, NO_VARIANTS],
   'test-heap-profiler/ManyLocalsInSharedContext': [PASS, NO_VARIANTS],
   'test-debug/ThreadedDebugging': [PASS, NO_VARIANTS],
   'test-debug/DebugBreakLoop': [PASS, NO_VARIANTS],
 
   # Support for lazy deoptimization is missing.
-  'test-deoptimization/DeoptimizeSimple': [PASS, NO_VARIANTS],
-  'test-deoptimization/DeoptimizeSimpleNested': [PASS, NO_VARIANTS],
-  'test-deoptimization/DeoptimizeSimpleWithArguments': [PASS, NO_VARIANTS],
-  'test-deoptimization/DeoptimizeBinaryOperation*': [PASS, NO_VARIANTS],
   'test-deoptimization/DeoptimizeCompare': [PASS, NO_VARIANTS],
-  'test-deoptimization/DeoptimizeLoadICStoreIC': [PASS, NO_VARIANTS],
-  'test-deoptimization/DeoptimizeLoadICStoreICNested': [PASS, NO_VARIANTS],
 
   # Support for breakpoints requires using LoadICs and StoreICs.
   'test-debug/BreakPointICStore': [PASS, NO_VARIANTS],
@@ -295,6 +284,10 @@
   'test-api/Threading2': [PASS, SLOW],
   'test-api/Threading3': [PASS, SLOW],
   'test-api/Threading4': [PASS, SLOW],
+
+  # Crashes due to OOM in simulator.
+  'test-types/Distributivity1': [PASS, FLAKY],
+  'test-types/Distributivity2': [PASS, FLAKY],
 }],  # 'arch == arm'
 
 ##############################################################################

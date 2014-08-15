@@ -91,6 +91,9 @@ class CPU V8_FINAL {
   bool has_vfp3() const { return has_vfp3_; }
   bool has_vfp3_d32() const { return has_vfp3_d32_; }
 
+  // mips features
+  bool is_fp64_mode() const { return is_fp64_mode_; }
+
  private:
   char vendor_[13];
   int stepping_;
@@ -119,6 +122,7 @@ class CPU V8_FINAL {
   bool has_vfp_;
   bool has_vfp3_;
   bool has_vfp3_d32_;
+  bool is_fp64_mode_;
 };
 
 } }  // namespace v8::base

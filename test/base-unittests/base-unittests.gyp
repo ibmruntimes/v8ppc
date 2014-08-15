@@ -20,12 +20,22 @@
         '../..',
       ],
       'sources': [  ### gcmole(all) ###
+        'bits-unittest.cc',
         'cpu-unittest.cc',
         'platform/condition-variable-unittest.cc',
         'platform/mutex-unittest.cc',
         'platform/platform-unittest.cc',
         'platform/time-unittest.cc',
         'utils/random-number-generator-unittest.cc',
+      ],
+      'conditions': [
+        ['os_posix == 1', {
+          # TODO(svenpanne): This is a temporary work-around to fix the warnings
+          # that show up because we use -std=gnu++0x instead of -std=c++11.
+          'cflags!': [
+            '-pedantic',
+          ],
+        }],
       ],
     },
   ],

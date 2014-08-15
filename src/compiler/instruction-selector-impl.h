@@ -145,7 +145,7 @@ class OperandGenerator {
 
   InstructionOperand* Label(BasicBlock* block) {
     // TODO(bmeurer): We misuse ImmediateOperand here.
-    return ImmediateOperand::Create(block->id(), zone());
+    return TempImmediate(block->id());
   }
 
  protected:
@@ -201,7 +201,7 @@ class OperandGenerator {
       return new (zone()) UnallocatedOperand(UnallocatedOperand::FIXED_SLOT,
                                              location.location_);
     }
-    if (location.rep_ == kMachineFloat64) {
+    if (RepresentationOf(location.rep_) == kRepFloat64) {
       return new (zone()) UnallocatedOperand(
           UnallocatedOperand::FIXED_DOUBLE_REGISTER, location.location_);
     }

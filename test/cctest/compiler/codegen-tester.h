@@ -22,10 +22,9 @@ class MachineAssemblerTester : public HandleAndZoneScope,
                                public CallHelper,
                                public MachineAssembler {
  public:
-  MachineAssemblerTester(MachineRepresentation return_type,
-                         MachineRepresentation p0, MachineRepresentation p1,
-                         MachineRepresentation p2, MachineRepresentation p3,
-                         MachineRepresentation p4)
+  MachineAssemblerTester(MachineType return_type, MachineType p0,
+                         MachineType p1, MachineType p2, MachineType p3,
+                         MachineType p4)
       : HandleAndZoneScope(),
         CallHelper(main_isolate()),
         MachineAssembler(new (main_zone()) Graph(main_zone()),
@@ -33,13 +32,12 @@ class MachineAssemblerTester : public HandleAndZoneScope,
                                                  p1, p2, p3, p4),
                          MachineOperatorBuilder::pointer_rep()) {}
 
-  Node* LoadFromPointer(void* address, MachineRepresentation rep,
-                        int32_t offset = 0) {
+  Node* LoadFromPointer(void* address, MachineType rep, int32_t offset = 0) {
     return this->Load(rep, this->PointerConstant(address),
                       this->Int32Constant(offset));
   }
 
-  void StoreToPointer(void* address, MachineRepresentation rep, Node* node) {
+  void StoreToPointer(void* address, MachineType rep, Node* node) {
     this->Store(rep, this->PointerConstant(address), node);
   }
 
@@ -62,9 +60,9 @@ class MachineAssemblerTester : public HandleAndZoneScope,
 
  protected:
   virtual void VerifyParameters(int parameter_count,
-                                MachineRepresentation* parameter_types) {
+                                MachineType* parameter_types) {
     CHECK_EQ(this->parameter_count(), parameter_count);
-    const MachineRepresentation* expected_types = this->parameter_types();
+    const MachineType* expected_types = this->parameter_types();
     for (int i = 0; i < parameter_count; i++) {
       CHECK_EQ(expected_types[i], parameter_types[i]);
     }
@@ -93,11 +91,11 @@ class RawMachineAssemblerTester
     : public MachineAssemblerTester<RawMachineAssembler>,
       public CallHelper2<ReturnType, RawMachineAssemblerTester<ReturnType> > {
  public:
-  RawMachineAssemblerTester(MachineRepresentation p0 = kMachineLast,
-                            MachineRepresentation p1 = kMachineLast,
-                            MachineRepresentation p2 = kMachineLast,
-                            MachineRepresentation p3 = kMachineLast,
-                            MachineRepresentation p4 = kMachineLast)
+  RawMachineAssemblerTester(MachineType p0 = kMachNone,
+                            MachineType p1 = kMachNone,
+                            MachineType p2 = kMachNone,
+                            MachineType p3 = kMachNone,
+                            MachineType p4 = kMachNone)
       : MachineAssemblerTester<RawMachineAssembler>(
             ReturnValueTraits<ReturnType>::Representation(), p0, p1, p2, p3,
             p4) {}
@@ -129,11 +127,11 @@ class StructuredMachineAssemblerTester
       public CallHelper2<ReturnType,
                          StructuredMachineAssemblerTester<ReturnType> > {
  public:
-  StructuredMachineAssemblerTester(MachineRepresentation p0 = kMachineLast,
-                                   MachineRepresentation p1 = kMachineLast,
-                                   MachineRepresentation p2 = kMachineLast,
-                                   MachineRepresentation p3 = kMachineLast,
-                                   MachineRepresentation p4 = kMachineLast)
+  StructuredMachineAssemblerTester(MachineType p0 = kMachNone,
+                                   MachineType p1 = kMachNone,
+                                   MachineType p2 = kMachNone,
+                                   MachineType p3 = kMachNone,
+                                   MachineType p4 = kMachNone)
       : MachineAssemblerTester<StructuredMachineAssembler>(
             ReturnValueTraits<ReturnType>::Representation(), p0, p1, p2, p3,
             p4) {}
@@ -147,7 +145,7 @@ static const int32_t CHECK_VALUE = 0x99BEEDCE;
 
 // TODO(titzer): use the C-style calling convention, or any register-based
 // calling convention for binop tests.
-template <typename CType, MachineRepresentation rep, bool use_result_buffer>
+template <typename CType, MachineType rep, bool use_result_buffer>
 class BinopTester {
  public:
   explicit BinopTester(RawMachineAssemblerTester<int32_t>* tester)
@@ -203,15 +201,25 @@ class BinopTester {
 // A helper class for testing code sequences that take two int parameters and
 // return an int value.
 class Int32BinopTester
-    : public BinopTester<int32_t, kMachineWord32, USE_RETURN_REGISTER> {
+    : public BinopTester<int32_t, kMachInt32, USE_RETURN_REGISTER> {
  public:
   explicit Int32BinopTester(RawMachineAssemblerTester<int32_t>* tester)
-      : BinopTester<int32_t, kMachineWord32, USE_RETURN_REGISTER>(tester) {}
+      : BinopTester<int32_t, kMachInt32, USE_RETURN_REGISTER>(tester) {}
+};
 
-  int32_t call(uint32_t a0, uint32_t a1) {
-    p0 = static_cast<int32_t>(a0);
-    p1 = static_cast<int32_t>(a1);
-    return T->Call();
+
+// A helper class for testing code sequences that take two uint parameters and
+// return an uint value.
+class Uint32BinopTester
+    : public BinopTester<uint32_t, kMachUint32, USE_RETURN_REGISTER> {
+ public:
+  explicit Uint32BinopTester(RawMachineAssemblerTester<int32_t>* tester)
+      : BinopTester<uint32_t, kMachUint32, USE_RETURN_REGISTER>(tester) {}
+
+  uint32_t call(uint32_t a0, uint32_t a1) {
+    p0 = a0;
+    p1 = a1;
+    return static_cast<uint32_t>(T->Call());
   }
 };
 
@@ -220,10 +228,10 @@ class Int32BinopTester
 // return a double value.
 // TODO(titzer): figure out how to return doubles correctly on ia32.
 class Float64BinopTester
-    : public BinopTester<double, kMachineFloat64, USE_RESULT_BUFFER> {
+    : public BinopTester<double, kMachFloat64, USE_RESULT_BUFFER> {
  public:
   explicit Float64BinopTester(RawMachineAssemblerTester<int32_t>* tester)
-      : BinopTester<double, kMachineFloat64, USE_RESULT_BUFFER>(tester) {}
+      : BinopTester<double, kMachFloat64, USE_RESULT_BUFFER>(tester) {}
 };
 
 
@@ -232,10 +240,10 @@ class Float64BinopTester
 // TODO(titzer): pick word size of pointers based on V8_TARGET.
 template <typename Type>
 class PointerBinopTester
-    : public BinopTester<Type*, kMachineWord32, USE_RETURN_REGISTER> {
+    : public BinopTester<Type*, kMachPtr, USE_RETURN_REGISTER> {
  public:
   explicit PointerBinopTester(RawMachineAssemblerTester<int32_t>* tester)
-      : BinopTester<Type*, kMachineWord32, USE_RETURN_REGISTER>(tester) {}
+      : BinopTester<Type*, kMachPtr, USE_RETURN_REGISTER>(tester) {}
 };
 
 
@@ -243,10 +251,10 @@ class PointerBinopTester
 // return a tagged value.
 template <typename Type>
 class TaggedBinopTester
-    : public BinopTester<Type*, kMachineTagged, USE_RETURN_REGISTER> {
+    : public BinopTester<Type*, kMachAnyTagged, USE_RETURN_REGISTER> {
  public:
   explicit TaggedBinopTester(RawMachineAssemblerTester<int32_t>* tester)
-      : BinopTester<Type*, kMachineTagged, USE_RETURN_REGISTER>(tester) {}
+      : BinopTester<Type*, kMachAnyTagged, USE_RETURN_REGISTER>(tester) {}
 };
 
 // A helper class for testing compares. Wraps a machine opcode and provides
