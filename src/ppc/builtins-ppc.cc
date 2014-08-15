@@ -1482,6 +1482,8 @@ static void LeaveArgumentsAdaptorFrame(MacroAssembler* masm) {
   // then tear down the parameters.
   __ LoadP(r4, MemOperand(fp, -(StandardFrameConstants::kFixedFrameSizeFromFp +
                                 kPointerSize)));
+  // Could use LeaveFrame(StackFrame::ARGUMENTS_ADAPTER) here
+  // however, the sequence below is slightly more optimal
 #if V8_OOL_CONSTANT_POOL
   __ addi(sp, fp, Operand(StandardFrameConstants::kConstantPoolOffset));
   __ LoadP(kConstantPoolRegister, MemOperand(sp));
