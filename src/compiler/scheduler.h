@@ -37,13 +37,17 @@ class Scheduler {
   NodeVector deopts_;
   NodeVector returns_;
   NodeVector loops_and_merges_;
-  BasicBlockVector node_block_placement_;
   IntVector unscheduled_uses_;
   NodeVectorVector scheduled_nodes_;
   NodeVector schedule_root_nodes_;
   IntVector schedule_early_rpo_index_;
 
   Scheduler(Zone* zone, Graph* graph, Schedule* schedule);
+
+  bool IsBasicBlockBegin(Node* node);
+  bool CanBeScheduled(Node* node);
+  bool HasFixedSchedulePosition(Node* node);
+  bool IsScheduleRoot(Node* node);
 
   int GetRPONumber(BasicBlock* block) {
     DCHECK(block->rpo_number_ >= 0 &&

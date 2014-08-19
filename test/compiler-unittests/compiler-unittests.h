@@ -33,6 +33,16 @@ namespace compiler {
 #endif
 
 
+// The TARGET_TEST_P(Case, Name) macro works just like
+// TEST_P(Case, Name), except that the test is disabled
+// if the platform is not a supported TurboFan target.
+#if V8_TURBOFAN_TARGET
+#define TARGET_TEST_P(Case, Name) TEST_P(Case, Name)
+#else
+#define TARGET_TEST_P(Case, Name) TEST_P(Case, DISABLED_##Name)
+#endif
+
+
 // The TARGET_TYPED_TEST(Case, Name) macro works just like
 // TYPED_TEST(Case, Name), except that the test is disabled
 // if the platform is not a supported TurboFan target.
@@ -48,6 +58,7 @@ class CompilerTest : public ::testing::Test {
   CompilerTest();
   virtual ~CompilerTest();
 
+  Factory* factory() const;
   Isolate* isolate() const { return reinterpret_cast<Isolate*>(isolate_); }
   Zone* zone() { return &zone_; }
 
@@ -61,6 +72,11 @@ class CompilerTest : public ::testing::Test {
   v8::Context::Scope context_scope_;
   Zone zone_;
 };
+
+
+template <typename T>
+class CompilerTestWithParam : public CompilerTest,
+                              public ::testing::WithParamInterface<T> {};
 
 }  // namespace compiler
 }  // namespace internal
