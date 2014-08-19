@@ -3373,7 +3373,7 @@ void FullCodeGenerator::EmitClassOf(CallRuntime* expr) {
 
   // Functions have class 'Function'.
   __ bind(&function);
-  __ LoadRoot(r3, Heap::kfunction_class_stringRootIndex);
+  __ LoadRoot(r3, Heap::kFunction_stringRootIndex);
   __ b(&done);
 
   // Objects with a non-function constructor have class 'Object'.
