@@ -41,10 +41,11 @@ class MachineCallHelper : public CallHelper {
 
   Node* Parameter(int offset);
 
+  void GenerateCode() { Generate(); }
+
  protected:
   virtual byte* Generate();
-  virtual void VerifyParameters(int parameter_count,
-                                MachineRepresentation* parameters);
+  virtual void VerifyParameters(int parameter_count, MachineType* parameters);
   void InitParameters(GraphBuilder* builder, CommonOperatorBuilder* common);
 
  protected:
@@ -71,7 +72,7 @@ class GraphAndBuilders {
 
  protected:
   // Prefixed with main_ to avoid naiming conflicts.
-  Graph* const main_graph_;
+  Graph* main_graph_;
   CommonOperatorBuilder main_common_;
   MachineOperatorBuilder main_machine_;
   SimplifiedOperatorBuilder main_simplified_;
@@ -86,11 +87,11 @@ class GraphBuilderTester
       public SimplifiedGraphBuilder,
       public CallHelper2<ReturnType, GraphBuilderTester<ReturnType> > {
  public:
-  explicit GraphBuilderTester(MachineRepresentation p0 = kMachineLast,
-                              MachineRepresentation p1 = kMachineLast,
-                              MachineRepresentation p2 = kMachineLast,
-                              MachineRepresentation p3 = kMachineLast,
-                              MachineRepresentation p4 = kMachineLast)
+  explicit GraphBuilderTester(MachineType p0 = kMachineLast,
+                              MachineType p1 = kMachineLast,
+                              MachineType p2 = kMachineLast,
+                              MachineType p3 = kMachineLast,
+                              MachineType p4 = kMachineLast)
       : GraphAndBuilders(main_zone()),
         MachineCallHelper(
             main_zone(),

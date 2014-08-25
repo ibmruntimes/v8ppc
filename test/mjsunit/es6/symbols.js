@@ -149,8 +149,8 @@ function TestToNumber() {
   for (var i in symbols) {
     assertThrows(function() { Number(Object(symbols[i])) }, TypeError)
     assertThrows(function() { +Object(symbols[i]) }, TypeError)
-    assertSame(NaN, Number(symbols[i]).valueOf())
-    assertSame(NaN, symbols[i] + 0)
+    assertThrows(function() { Number(symbols[i]) }, TypeError)
+    assertThrows(function() { symbols[i] + 0 }, TypeError)
   }
 }
 TestToNumber()
@@ -447,7 +447,7 @@ function TestWellKnown() {
   var symbols = [
     // TODO(rossberg): reactivate once implemented.
     // "hasInstance", "isConcatSpreadable", "isRegExp",
-    "iterator" //, "toStringTag", "unscopables"
+    "iterator", /* "toStringTag", */ "unscopables"
   ]
 
   for (var i in symbols) {

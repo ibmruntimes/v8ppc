@@ -1316,13 +1316,11 @@ Handle<Object> Debug::GetPromiseOnStackOnThrow() {
       return thread_local_.promise_on_stack_->promise();
     }
     handler = handler->next();
-    // There must be a try-catch handler if a promise is on stack.
-    DCHECK_NE(NULL, handler);
     // Throwing inside a Promise can be intercepted by an inner try-catch, so
     // we stop at the first try-catch handler.
-  } while (!handler->is_catch());
+  } while (handler != NULL && !handler->is_catch());
   return undefined;
-  }
+}
 
 
 bool Debug::PromiseHasRejectHandler(Handle<JSObject> promise) {

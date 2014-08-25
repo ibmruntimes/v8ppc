@@ -96,7 +96,7 @@ function SetUpLockedPrototype(constructor, fields, methods) {
     %AddNamedProperty(prototype, key, f, DONT_ENUM | DONT_DELETE | READ_ONLY);
     %SetNativeFlag(f);
   }
-  %SetPrototype(prototype, null);
+  %InternalSetPrototype(prototype, null);
   %ToFastProperties(prototype);
 }
 
@@ -925,34 +925,36 @@ function DefineArrayProperty(obj, p, desc, should_throw) {
   }
 
   // Step 4 - Special handling for array index.
-  var index = ToUint32(p);
-  var emit_splice = false;
-  if (ToString(index) == p && index != 4294967295) {
-    var length = obj.length;
-    if (index >= length && %IsObserved(obj)) {
-      emit_splice = true;
-      BeginPerformSplice(obj);
-    }
-
-    var length_desc = GetOwnPropertyJS(obj, "length");
-    if ((index >= length && !length_desc.isWritable()) ||
-        !DefineObjectProperty(obj, p, desc, true)) {
-      if (emit_splice)
-        EndPerformSplice(obj);
-      if (should_throw) {
-        throw MakeTypeError("define_disallowed", [p]);
-      } else {
-        return false;
+  if (!IS_SYMBOL(p)) {
+    var index = ToUint32(p);
+    var emit_splice = false;
+    if (ToString(index) == p && index != 4294967295) {
+      var length = obj.length;
+      if (index >= length && %IsObserved(obj)) {
+        emit_splice = true;
+        BeginPerformSplice(obj);
       }
+
+      var length_desc = GetOwnPropertyJS(obj, "length");
+      if ((index >= length && !length_desc.isWritable()) ||
+          !DefineObjectProperty(obj, p, desc, true)) {
+        if (emit_splice)
+          EndPerformSplice(obj);
+        if (should_throw) {
+          throw MakeTypeError("define_disallowed", [p]);
+        } else {
+          return false;
+        }
+      }
+      if (index >= length) {
+        obj.length = index + 1;
+      }
+      if (emit_splice) {
+        EndPerformSplice(obj);
+        EnqueueSpliceRecord(obj, length, [], index + 1 - length);
+      }
+      return true;
     }
-    if (index >= length) {
-      obj.length = index + 1;
-    }
-    if (emit_splice) {
-      EndPerformSplice(obj);
-      EnqueueSpliceRecord(obj, length, [], index + 1 - length);
-    }
-    return true;
   }
 
   // Step 5 - Fallback to default implementation.
@@ -1125,7 +1127,8 @@ function ObjectCreate(proto, properties) {
   if (!IS_SPEC_OBJECT(proto) && proto !== null) {
     throw MakeTypeError("proto_object_or_null", [proto]);
   }
-  var obj = { __proto__: proto };
+  var obj = {};
+  %InternalSetPrototype(obj, proto);
   if (!IS_UNDEFINED(properties)) ObjectDefineProperties(obj, properties);
   return obj;
 }
@@ -1875,3 +1878,33 @@ function SetUpFunction() {
 }
 
 SetUpFunction();
+
+
+// ----------------------------------------------------------------------------
+// Iterator related spec functions.
+
+// ES6 rev 26, 2014-07-18
+// 7.4.1 CheckIterable ( obj )
+function ToIterable(obj) {
+  if (!IS_SPEC_OBJECT(obj)) {
+    return UNDEFINED;
+  }
+  return obj[symbolIterator];
+}
+
+
+// ES6 rev 26, 2014-07-18
+// 7.4.2 GetIterator ( obj, method )
+function GetIterator(obj, method) {
+  if (IS_UNDEFINED(method)) {
+    method = ToIterable(obj);
+  }
+  if (!IS_SPEC_FUNCTION(method)) {
+    throw MakeTypeError('not_iterable', [obj]);
+  }
+  var iterator = %_CallFunction(obj, method);
+  if (!IS_SPEC_OBJECT(iterator)) {
+    throw MakeTypeError('not_an_iterator', [iterator]);
+  }
+  return iterator;
+}

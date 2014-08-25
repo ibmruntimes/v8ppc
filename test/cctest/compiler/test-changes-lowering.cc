@@ -27,7 +27,7 @@ using namespace v8::internal::compiler;
 template <typename ReturnType>
 class ChangesLoweringTester : public GraphBuilderTester<ReturnType> {
  public:
-  explicit ChangesLoweringTester(MachineRepresentation p0 = kMachineLast)
+  explicit ChangesLoweringTester(MachineType p0 = kMachineLast)
       : GraphBuilderTester<ReturnType>(p0),
         typer(this->zone()),
         source_positions(this->graph()),
@@ -108,7 +108,7 @@ class ChangesLoweringTester : public GraphBuilderTester<ReturnType> {
                                        this->start(), this->start());
     Node* end = this->graph()->NewNode(this->common()->End(), ret);
     this->graph()->SetEnd(end);
-    this->lowering.Lower(change);
+    this->lowering.LowerChange(change, this->start(), this->start());
     Verifier::Run(this->graph());
   }
 
@@ -124,7 +124,7 @@ class ChangesLoweringTester : public GraphBuilderTester<ReturnType> {
         this->common()->Return(), this->Int32Constant(0), store, this->start());
     Node* end = this->graph()->NewNode(this->common()->End(), ret);
     this->graph()->SetEnd(end);
-    this->lowering.Lower(change);
+    this->lowering.LowerChange(change, this->start(), this->start());
     Verifier::Run(this->graph());
   }
 
@@ -139,7 +139,7 @@ class ChangesLoweringTester : public GraphBuilderTester<ReturnType> {
                                        this->start(), this->start());
     Node* end = this->graph()->NewNode(this->common()->End(), ret);
     this->graph()->SetEnd(end);
-    this->lowering.Lower(change);
+    this->lowering.LowerChange(change, this->start(), this->start());
     Verifier::Run(this->graph());
   }
 
