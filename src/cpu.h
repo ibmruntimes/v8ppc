@@ -47,12 +47,24 @@ class CPU V8_FINAL BASE_EMBEDDED {
   static const int QUALCOMM = 0x51;
   int architecture() const { return architecture_; }
   int part() const { return part_; }
+
+  // ARM-specific part codes
   static const int ARM_CORTEX_A5 = 0xc05;
   static const int ARM_CORTEX_A7 = 0xc07;
   static const int ARM_CORTEX_A8 = 0xc08;
   static const int ARM_CORTEX_A9 = 0xc09;
   static const int ARM_CORTEX_A12 = 0xc0c;
   static const int ARM_CORTEX_A15 = 0xc0f;
+
+  // PPC-specific part codes
+  enum {
+    PPC_POWER5,
+    PPC_POWER6,
+    PPC_POWER7,
+    PPC_POWER8,
+    PPC_G4,
+    PPC_G5
+  };
 
   // General features
   bool has_fpu() const { return has_fpu_; }
