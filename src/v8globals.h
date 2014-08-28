@@ -412,6 +412,7 @@ enum CpuFeature { SSE4_1 = 32 + 19,  // x86
                   MOVW_MOVT_IMMEDIATE_LOADS = 5,  // ARM
                   VFP32DREGS = 6,  // ARM
                   NEON = 7,    // ARM
+                  LWSYNC = 8,  // PPC
                   SAHF = 0,    // x86
                   FPU = 1};    // MIPS
 

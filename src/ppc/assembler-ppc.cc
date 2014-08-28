@@ -100,10 +100,16 @@ void CpuFeatures::Probe(bool serializer_enabled) {
     // Assume support
     supported_ |= (1u << FPU);
   }
+  if (cpu.part() == CPU::PPC_POWER6 ||
+      cpu.part() == CPU::PPC_POWER7 ||
+      cpu.part() == CPU::PPC_POWER8) {
+    supported_ |= (1u << LWSYNC);
+  }
 #else
   // Fallback: assume frim is supported -- will implement processor
   // detection for other PPC platforms if required
   supported_ |= (1u << FPU);
+  supported_ |= (1u << LWSYNC);
 #endif
 }
 
@@ -1737,6 +1743,11 @@ void Assembler::dcbf(Register ra, Register rb) {
 
 void Assembler::sync() {
     emit(EXT2 | SYNC);
+}
+
+
+void Assembler::lwsync() {
+  emit(EXT2 | SYNC | 1*B21);
 }
 
 
