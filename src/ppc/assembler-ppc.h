@@ -1130,6 +1130,7 @@ class Assembler : public AssemblerBase {
   // states of the generated code.
   enum NopMarkerTypes {
     NON_MARKING_NOP = 0,
+    GROUP_ENDING_NOP,
     DEBUG_BREAK_NOP,
     // IC markers.
     PROPERTY_ACCESS_INLINED,
