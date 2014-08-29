@@ -2130,24 +2130,39 @@ void Assembler::fmsub(const DoubleRegister frt, const DoubleRegister fra,
 
 // Pseudo instructions.
 void Assembler::nop(int type) {
+  Register reg = r0;
   switch (type) {
-    case 0:
-      ori(r0, r0, Operand::Zero());
+    case NON_MARKING_NOP:
+      reg = r0;
+      break;
+    case GROUP_ENDING_NOP:
+      reg = r2;
       break;
     case DEBUG_BREAK_NOP:
-      ori(r3, r3, Operand::Zero());
+      reg = r3;
       break;
     default:
       UNIMPLEMENTED();
   }
+
+  ori(reg, reg, Operand::Zero());
 }
 
 
 bool Assembler::IsNop(Instr instr, int type) {
-  DCHECK((0 == type) || (DEBUG_BREAK_NOP == type));
   int reg = 0;
-  if (DEBUG_BREAK_NOP == type) {
-    reg = 3;
+  switch (type) {
+    case NON_MARKING_NOP:
+      reg = 0;
+      break;
+    case GROUP_ENDING_NOP:
+      reg = 2;
+      break;
+    case DEBUG_BREAK_NOP:
+      reg = 3;
+      break;
+    default:
+      UNIMPLEMENTED();
   }
   return instr == (ORI | reg*B21 | reg*B16);
 }
