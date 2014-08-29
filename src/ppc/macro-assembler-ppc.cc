@@ -4274,7 +4274,7 @@ void MacroAssembler::LoadDoubleLiteral(DoubleRegister result,
   LoadIntLiteral(scratch, litVal.ival[1]);
   stw(scratch, MemOperand(sp, 4));
 #endif
-  nop();  // LHS/RAW optimization
+  nop(GROUP_ENDING_NOP);  // LHS/RAW optimization
   lfd(result, MemOperand(sp, 0));
   addi(sp, sp, Operand(kDoubleSize));
 }
@@ -4301,7 +4301,7 @@ void MacroAssembler::MovIntToDouble(DoubleRegister dst,
   stw(scratch, MemOperand(sp, Register::kExponentOffset));
   stw(src, MemOperand(sp, Register::kMantissaOffset));
 #endif
-  nop();  // LHS/RAW optimization
+  nop(GROUP_ENDING_NOP);  // LHS/RAW optimization
   lfd(dst, MemOperand(sp, 0));
   addi(sp, sp, Operand(kDoubleSize));
 }
@@ -4328,7 +4328,7 @@ void MacroAssembler::MovUnsignedIntToDouble(DoubleRegister dst,
   stw(scratch, MemOperand(sp, Register::kExponentOffset));
   stw(src, MemOperand(sp, Register::kMantissaOffset));
 #endif
-  nop();  // LHS/RAW optimization
+  nop(GROUP_ENDING_NOP);  // LHS/RAW optimization
   lfd(dst, MemOperand(sp, 0));
   addi(sp, sp, Operand(kDoubleSize));
 }
@@ -4353,7 +4353,7 @@ void MacroAssembler::MovInt64ToDouble(DoubleRegister dst,
   stw(src_hi, MemOperand(sp, Register::kExponentOffset));
   stw(src, MemOperand(sp, Register::kMantissaOffset));
 #endif
-  nop();  // LHS/RAW optimization
+  nop(GROUP_ENDING_NOP);  // LHS/RAW optimization
   lfd(dst, MemOperand(sp, 0));
   addi(sp, sp, Operand(kDoubleSize));
 }
@@ -4374,7 +4374,7 @@ void MacroAssembler::MovInt64ComponentsToDouble(DoubleRegister dst,
   subi(sp, sp, Operand(kDoubleSize));
   stw(src_hi, MemOperand(sp, Register::kExponentOffset));
   stw(src_lo, MemOperand(sp, Register::kMantissaOffset));
-  nop();  // LHS/RAW optimization
+  nop(GROUP_ENDING_NOP);  // LHS/RAW optimization
   lfd(dst, MemOperand(sp));
   addi(sp, sp, Operand(kDoubleSize));
 }
@@ -4392,7 +4392,7 @@ void MacroAssembler::MovDoubleLowToInt(Register dst,
 
   subi(sp, sp, Operand(kDoubleSize));
   stfd(src, MemOperand(sp));
-  nop();  // LHS/RAW optimization
+  nop(GROUP_ENDING_NOP);  // LHS/RAW optimization
   lwz(dst, MemOperand(sp, Register::kMantissaOffset));
   addi(sp, sp, Operand(kDoubleSize));
 }
@@ -4410,7 +4410,7 @@ void MacroAssembler::MovDoubleHighToInt(Register dst,
 
   subi(sp, sp, Operand(kDoubleSize));
   stfd(src, MemOperand(sp));
-  nop();  // LHS/RAW optimization
+  nop(GROUP_ENDING_NOP);  // LHS/RAW optimization
   lwz(dst, MemOperand(sp, Register::kExponentOffset));
   addi(sp, sp, Operand(kDoubleSize));
 }
@@ -4431,7 +4431,7 @@ void MacroAssembler::MovDoubleToInt64(
 
   subi(sp, sp, Operand(kDoubleSize));
   stfd(src, MemOperand(sp));
-  nop();  // LHS/RAW optimization
+  nop(GROUP_ENDING_NOP);  // LHS/RAW optimization
 #if V8_TARGET_ARCH_PPC64
   ld(dst, MemOperand(sp, 0));
 #else
