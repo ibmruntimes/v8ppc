@@ -32,29 +32,29 @@ class GraphBuilder {
 
   Node* NewNode(Operator* op, Node* n1, Node* n2) {
     Node* buffer[] = {n1, n2};
-    return MakeNode(op, ARRAY_SIZE(buffer), buffer);
+    return MakeNode(op, arraysize(buffer), buffer);
   }
 
   Node* NewNode(Operator* op, Node* n1, Node* n2, Node* n3) {
     Node* buffer[] = {n1, n2, n3};
-    return MakeNode(op, ARRAY_SIZE(buffer), buffer);
+    return MakeNode(op, arraysize(buffer), buffer);
   }
 
   Node* NewNode(Operator* op, Node* n1, Node* n2, Node* n3, Node* n4) {
     Node* buffer[] = {n1, n2, n3, n4};
-    return MakeNode(op, ARRAY_SIZE(buffer), buffer);
+    return MakeNode(op, arraysize(buffer), buffer);
   }
 
   Node* NewNode(Operator* op, Node* n1, Node* n2, Node* n3, Node* n4,
                 Node* n5) {
     Node* buffer[] = {n1, n2, n3, n4, n5};
-    return MakeNode(op, ARRAY_SIZE(buffer), buffer);
+    return MakeNode(op, arraysize(buffer), buffer);
   }
 
   Node* NewNode(Operator* op, Node* n1, Node* n2, Node* n3, Node* n4, Node* n5,
                 Node* n6) {
     Node* nodes[] = {n1, n2, n3, n4, n5, n6};
-    return MakeNode(op, ARRAY_SIZE(nodes), nodes);
+    return MakeNode(op, arraysize(nodes), nodes);
   }
 
   Node* NewNode(Operator* op, int value_input_count, Node** value_inputs) {
@@ -101,6 +101,7 @@ class StructuredGraphBuilder : public GraphBuilder {
 
  protected:
   class Environment;
+  friend class Environment;
   friend class ControlBuilder;
 
   // The following method creates a new node having the specified operator and
@@ -201,6 +202,8 @@ class StructuredGraphBuilder::Environment : public ZoneObject {
     PrepareForLoop();
     return builder()->CopyEnvironment(this);
   }
+
+  Node* GetContext() { return builder_->current_context(); }
 
  protected:
   // TODO(mstarzinger): Use phase-local zone instead!

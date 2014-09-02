@@ -86,9 +86,21 @@ struct ReturnValueTraits<int16_t> {
 };
 
 template <>
+struct ReturnValueTraits<uint16_t> {
+  static uint16_t Cast(uintptr_t r) { return static_cast<uint16_t>(r); }
+  static MachineType Representation() { return kMachUint16; }
+};
+
+template <>
 struct ReturnValueTraits<int8_t> {
   static int8_t Cast(uintptr_t r) { return static_cast<int8_t>(r); }
   static MachineType Representation() { return kMachInt8; }
+};
+
+template <>
+struct ReturnValueTraits<uint8_t> {
+  static uint8_t Cast(uintptr_t r) { return static_cast<uint8_t>(r); }
+  static MachineType Representation() { return kMachUint8; }
 };
 
 template <>
@@ -268,14 +280,14 @@ class CallHelper {
   template <typename P1>
   void VerifyParameters1() {
     MachineType parameters[] = {ReturnValueTraits<P1>::Representation()};
-    VerifyParameters(ARRAY_SIZE(parameters), parameters);
+    VerifyParameters(arraysize(parameters), parameters);
   }
 
   template <typename P1, typename P2>
   void VerifyParameters2() {
     MachineType parameters[] = {ReturnValueTraits<P1>::Representation(),
                                 ReturnValueTraits<P2>::Representation()};
-    VerifyParameters(ARRAY_SIZE(parameters), parameters);
+    VerifyParameters(arraysize(parameters), parameters);
   }
 
   template <typename P1, typename P2, typename P3>
@@ -283,7 +295,7 @@ class CallHelper {
     MachineType parameters[] = {ReturnValueTraits<P1>::Representation(),
                                 ReturnValueTraits<P2>::Representation(),
                                 ReturnValueTraits<P3>::Representation()};
-    VerifyParameters(ARRAY_SIZE(parameters), parameters);
+    VerifyParameters(arraysize(parameters), parameters);
   }
 
   template <typename P1, typename P2, typename P3, typename P4>
@@ -292,7 +304,7 @@ class CallHelper {
                                 ReturnValueTraits<P2>::Representation(),
                                 ReturnValueTraits<P3>::Representation(),
                                 ReturnValueTraits<P4>::Representation()};
-    VerifyParameters(ARRAY_SIZE(parameters), parameters);
+    VerifyParameters(arraysize(parameters), parameters);
   }
 #endif
 

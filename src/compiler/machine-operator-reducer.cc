@@ -5,45 +5,34 @@
 #include "src/compiler/machine-operator-reducer.h"
 
 #include "src/base/bits.h"
-#include "src/compiler/common-node-cache.h"
 #include "src/compiler/generic-node-inl.h"
 #include "src/compiler/graph.h"
+#include "src/compiler/js-graph.h"
 #include "src/compiler/node-matchers.h"
 
 namespace v8 {
 namespace internal {
 namespace compiler {
 
-MachineOperatorReducer::MachineOperatorReducer(Graph* graph)
-    : graph_(graph),
-      cache_(new (graph->zone()) CommonNodeCache(graph->zone())),
-      common_(graph->zone()),
-      machine_(graph->zone()) {}
+MachineOperatorReducer::MachineOperatorReducer(JSGraph* jsgraph)
+    : jsgraph_(jsgraph), machine_(jsgraph->zone()) {}
 
 
-MachineOperatorReducer::MachineOperatorReducer(Graph* graph,
-                                               CommonNodeCache* cache)
-    : graph_(graph),
-      cache_(cache),
-      common_(graph->zone()),
-      machine_(graph->zone()) {}
-
-
-Node* MachineOperatorReducer::Int32Constant(int32_t value) {
-  Node** loc = cache_->FindInt32Constant(value);
-  if (*loc == NULL) {
-    *loc = graph_->NewNode(common_.Int32Constant(value));
-  }
-  return *loc;
-}
+MachineOperatorReducer::~MachineOperatorReducer() {}
 
 
 Node* MachineOperatorReducer::Float64Constant(volatile double value) {
-  Node** loc = cache_->FindFloat64Constant(value);
-  if (*loc == NULL) {
-    *loc = graph_->NewNode(common_.Float64Constant(value));
-  }
-  return *loc;
+  return jsgraph()->Float64Constant(value);
+}
+
+
+Node* MachineOperatorReducer::Int32Constant(int32_t value) {
+  return jsgraph()->Int32Constant(value);
+}
+
+
+Node* MachineOperatorReducer::Int64Constant(int64_t value) {
+  return graph()->NewNode(common()->Int64Constant(value));
 }
 
 
@@ -77,7 +66,7 @@ Reduction MachineOperatorReducer::Reduce(Node* node) {
             Int32BinopMatcher mrightright(mright.right().node());
             if (mrightright.left().Is(32) &&
                 mrightright.right().node() == mleft.right().node()) {
-              graph_->ChangeOperator(node, machine_.Word32Ror());
+              graph()->ChangeOperator(node, machine()->Word32Ror());
               node->ReplaceInput(0, mleft.left().node());
               node->ReplaceInput(1, mleft.right().node());
               return Changed(node);
@@ -86,7 +75,7 @@ Reduction MachineOperatorReducer::Reduce(Node* node) {
           // (x << K) | (x >> (32 - K)) => x ror K
           if (mleft.right().IsInRange(0, 31) &&
               mright.right().Is(32 - mleft.right().Value())) {
-            graph_->ChangeOperator(node, machine_.Word32Ror());
+            graph()->ChangeOperator(node, machine()->Word32Ror());
             node->ReplaceInput(0, mleft.left().node());
             node->ReplaceInput(1, mleft.right().node());
             return Changed(node);
@@ -102,7 +91,7 @@ Reduction MachineOperatorReducer::Reduce(Node* node) {
             Int32BinopMatcher mleftright(mleft.right().node());
             if (mleftright.left().Is(32) &&
                 mleftright.right().node() == mright.right().node()) {
-              graph_->ChangeOperator(node, machine_.Word32Ror());
+              graph()->ChangeOperator(node, machine()->Word32Ror());
               node->ReplaceInput(0, mright.left().node());
               node->ReplaceInput(1, mright.right().node());
               return Changed(node);
@@ -111,7 +100,7 @@ Reduction MachineOperatorReducer::Reduce(Node* node) {
           // (x >> (32 - K)) | (x << K) => x ror K
           if (mright.right().IsInRange(0, 31) &&
               mleft.right().Is(32 - mright.right().Value())) {
-            graph_->ChangeOperator(node, machine_.Word32Ror());
+            graph()->ChangeOperator(node, machine()->Word32Ror());
             node->ReplaceInput(0, mright.left().node());
             node->ReplaceInput(1, mright.right().node());
             return Changed(node);
@@ -204,13 +193,13 @@ Reduction MachineOperatorReducer::Reduce(Node* node) {
         return ReplaceInt32(m.left().Value() * m.right().Value());
       }
       if (m.right().Is(-1)) {  // x * -1 => 0 - x
-        graph_->ChangeOperator(node, machine_.Int32Sub());
+        graph()->ChangeOperator(node, machine()->Int32Sub());
         node->ReplaceInput(0, Int32Constant(0));
         node->ReplaceInput(1, m.left().node());
         return Changed(node);
       }
       if (m.right().IsPowerOf2()) {  // x * 2^n => x << n
-        graph_->ChangeOperator(node, machine_.Word32Shl());
+        graph()->ChangeOperator(node, machine()->Word32Shl());
         node->ReplaceInput(1, Int32Constant(WhichPowerOf2(m.right().Value())));
         return Changed(node);
       }
@@ -228,7 +217,7 @@ Reduction MachineOperatorReducer::Reduce(Node* node) {
         return ReplaceInt32(m.left().Value() / m.right().Value());
       }
       if (m.right().Is(-1)) {  // x / -1 => 0 - x
-        graph_->ChangeOperator(node, machine_.Int32Sub());
+        graph()->ChangeOperator(node, machine()->Int32Sub());
         node->ReplaceInput(0, Int32Constant(0));
         node->ReplaceInput(1, m.left().node());
         return Changed(node);
@@ -245,7 +234,7 @@ Reduction MachineOperatorReducer::Reduce(Node* node) {
         return ReplaceInt32(m.left().Value() / m.right().Value());
       }
       if (m.right().IsPowerOf2()) {  // x / 2^n => x >> n
-        graph_->ChangeOperator(node, machine_.Word32Shr());
+        graph()->ChangeOperator(node, machine()->Word32Shr());
         node->ReplaceInput(1, Int32Constant(WhichPowerOf2(m.right().Value())));
         return Changed(node);
       }
@@ -274,7 +263,7 @@ Reduction MachineOperatorReducer::Reduce(Node* node) {
         return ReplaceInt32(m.left().Value() % m.right().Value());
       }
       if (m.right().IsPowerOf2()) {  // x % 2^n => x & 2^n-1
-        graph_->ChangeOperator(node, machine_.Word32And());
+        graph()->ChangeOperator(node, machine()->Word32And());
         node->ReplaceInput(1, Int32Constant(m.right().Value() - 1));
         return Changed(node);
       }
@@ -392,12 +381,65 @@ Reduction MachineOperatorReducer::Reduce(Node* node) {
       }
       break;
     }
+    case IrOpcode::kChangeFloat64ToInt32: {
+      Float64Matcher m(node->InputAt(0));
+      if (m.HasValue()) return ReplaceInt32(FastD2I(m.Value()));
+      if (m.IsChangeInt32ToFloat64()) return Replace(m.node()->InputAt(0));
+      break;
+    }
+    case IrOpcode::kChangeFloat64ToUint32: {
+      Float64Matcher m(node->InputAt(0));
+      if (m.HasValue()) return ReplaceInt32(FastD2UI(m.Value()));
+      if (m.IsChangeUint32ToFloat64()) return Replace(m.node()->InputAt(0));
+      break;
+    }
+    case IrOpcode::kChangeInt32ToFloat64: {
+      Int32Matcher m(node->InputAt(0));
+      if (m.HasValue()) return ReplaceFloat64(FastI2D(m.Value()));
+      break;
+    }
+    case IrOpcode::kChangeInt32ToInt64: {
+      Int32Matcher m(node->InputAt(0));
+      if (m.HasValue()) return ReplaceInt64(m.Value());
+      break;
+    }
+    case IrOpcode::kChangeUint32ToFloat64: {
+      Uint32Matcher m(node->InputAt(0));
+      if (m.HasValue()) return ReplaceFloat64(FastUI2D(m.Value()));
+      break;
+    }
+    case IrOpcode::kChangeUint32ToUint64: {
+      Uint32Matcher m(node->InputAt(0));
+      if (m.HasValue()) return ReplaceInt64(static_cast<uint64_t>(m.Value()));
+      break;
+    }
+    case IrOpcode::kTruncateFloat64ToInt32: {
+      Float64Matcher m(node->InputAt(0));
+      if (m.HasValue()) return ReplaceInt32(DoubleToInt32(m.Value()));
+      if (m.IsChangeInt32ToFloat64()) return Replace(m.node()->InputAt(0));
+      break;
+    }
+    case IrOpcode::kTruncateInt64ToInt32: {
+      Int64Matcher m(node->InputAt(0));
+      if (m.HasValue()) return ReplaceInt32(static_cast<int32_t>(m.Value()));
+      if (m.IsChangeInt32ToInt64()) return Replace(m.node()->InputAt(0));
+      break;
+    }
     // TODO(turbofan): strength-reduce and fold floating point operations.
     default:
       break;
   }
   return NoChange();
 }
+
+
+CommonOperatorBuilder* MachineOperatorReducer::common() const {
+  return jsgraph()->common();
 }
-}
-}  // namespace v8::internal::compiler
+
+
+Graph* MachineOperatorReducer::graph() const { return jsgraph()->graph(); }
+
+}  // namespace compiler
+}  // namespace internal
+}  // namespace v8

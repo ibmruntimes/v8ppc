@@ -11,14 +11,14 @@
 #include "src/deoptimizer.h"
 #include "src/execution.h"
 #include "src/global-handles.h"
-#include "src/ic-inl.h"
+#include "src/ic/ic.h"
+#include "src/ic/stub-cache.h"
 #include "src/natives.h"
 #include "src/objects.h"
 #include "src/runtime.h"
 #include "src/serialize.h"
 #include "src/snapshot.h"
 #include "src/snapshot-source-sink.h"
-#include "src/stub-cache.h"
 #include "src/v8threads.h"
 #include "src/version.h"
 
@@ -314,7 +314,7 @@ void ExternalReferenceTable::PopulateTable(Isolate* isolate) {
 #undef IC_ENTRY
   };  // end of ref_table[].
 
-  for (size_t i = 0; i < ARRAY_SIZE(ref_table); ++i) {
+  for (size_t i = 0; i < arraysize(ref_table); ++i) {
     AddFromId(ref_table[i].type,
               ref_table[i].id,
               ref_table[i].name,
@@ -340,7 +340,7 @@ void ExternalReferenceTable::PopulateTable(Isolate* isolate) {
   };  // end of stats_ref_table[].
 
   Counters* counters = isolate->counters();
-  for (size_t i = 0; i < ARRAY_SIZE(stats_ref_table); ++i) {
+  for (size_t i = 0; i < arraysize(stats_ref_table); ++i) {
     Add(reinterpret_cast<Address>(GetInternalPointer(
             (counters->*(stats_ref_table[i].counter))())),
         STATS_COUNTER,
@@ -727,14 +727,14 @@ class StringTableInsertionKey : public HashTableKey {
     return string_->SlowEquals(String::cast(string));
   }
 
-  virtual uint32_t Hash() V8_OVERRIDE { return hash_; }
+  virtual uint32_t Hash() OVERRIDE { return hash_; }
 
-  virtual uint32_t HashForObject(Object* key) V8_OVERRIDE {
+  virtual uint32_t HashForObject(Object* key) OVERRIDE {
     return String::cast(key)->Hash();
   }
 
   MUST_USE_RESULT virtual Handle<Object> AsHandle(Isolate* isolate)
-      V8_OVERRIDE {
+      OVERRIDE {
     return handle(string_, isolate);
   }
 
@@ -1104,6 +1104,12 @@ void Deserializer::ReadChunk(Object** current,
       // current object.
       CASE_STATEMENT(kRootArray, kPlain, kStartOfObject, 0)
       CASE_BODY(kRootArray, kPlain, kStartOfObject, 0)
+#if defined(V8_TARGET_ARCH_MIPS) || V8_OOL_CONSTANT_POOL || \
+    defined(V8_TARGET_ARCH_MIPS64)
+      // Find an object in the roots array and write a pointer to it to in code.
+      CASE_STATEMENT(kRootArray, kFromCode, kStartOfObject, 0)
+      CASE_BODY(kRootArray, kFromCode, kStartOfObject, 0)
+#endif
       // Find an object in the partial snapshots cache and write a pointer to it
       // to the current object.
       CASE_STATEMENT(kPartialSnapshotCache, kPlain, kStartOfObject, 0)
@@ -1135,6 +1141,12 @@ void Deserializer::ReadChunk(Object** current,
       // Find a builtin and write a pointer to it to the current object.
       CASE_STATEMENT(kBuiltin, kPlain, kStartOfObject, 0)
       CASE_BODY(kBuiltin, kPlain, kStartOfObject, 0)
+#if V8_OOL_CONSTANT_POOL
+      // Find a builtin code entry and write a pointer to it to the current
+      // object.
+      CASE_STATEMENT(kBuiltin, kPlain, kInnerPointer, 0)
+      CASE_BODY(kBuiltin, kPlain, kInnerPointer, 0)
+#endif
       // Find a builtin and write a pointer to it in the current code object.
       CASE_STATEMENT(kBuiltin, kFromCode, kInnerPointer, 0)
       CASE_BODY(kBuiltin, kFromCode, kInnerPointer, 0)
@@ -1308,15 +1320,6 @@ int Serializer::RootIndex(HeapObject* heap_object, HowToCode from) {
   for (int i = 0; i < root_index_wave_front_; i++) {
     Object* root = heap->roots_array_start()[i];
     if (!root->IsSmi() && root == heap_object) {
-#if defined(V8_TARGET_ARCH_MIPS) || defined(V8_TARGET_ARCH_MIPS64) || \
-    defined(V8_TARGET_ARCH_PPC) || V8_OOL_CONSTANT_POOL
-      if (from == kFromCode) {
-        // In order to avoid code bloat in the deserializer we don't have
-        // support for the encoding that specifies a particular root should
-        // be written from within code.
-        return kInvalidRootIndex;
-      }
-#endif
       return i;
     }
   }
@@ -1546,7 +1549,8 @@ void Serializer::ObjectSerializer::VisitPointers(Object** start,
           current_contents == current[-1]) {
         DCHECK(!serializer_->isolate()->heap()->InNewSpace(current_contents));
         int repeat_count = 1;
-        while (current < end - 1 && current[repeat_count] == current_contents) {
+        while (&current[repeat_count] < end - 1 &&
+               current[repeat_count] == current_contents) {
           repeat_count++;
         }
         current += repeat_count;
@@ -1643,6 +1647,7 @@ void Serializer::ObjectSerializer::VisitCell(RelocInfo* rinfo) {
   int skip = OutputRawData(rinfo->pc(), kCanReturnSkipInsteadOfSkipping);
   Cell* object = Cell::cast(rinfo->target_cell());
   serializer_->SerializeObject(object, kPlain, kInnerPointer, skip);
+  bytes_processed_so_far_ += kPointerSize;
 }
 
 
@@ -1883,6 +1888,7 @@ void CodeSerializer::SerializeBuiltin(Code* builtin, HowToCode how_to_code,
   }
 
   DCHECK((how_to_code == kPlain && where_to_point == kStartOfObject) ||
+         (how_to_code == kPlain && where_to_point == kInnerPointer) ||
          (how_to_code == kFromCode && where_to_point == kInnerPointer));
   int builtin_index = builtin->builtin_index();
   DCHECK_LT(builtin_index, Builtins::builtin_count);

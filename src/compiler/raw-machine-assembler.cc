@@ -76,30 +76,38 @@ void RawMachineAssembler::Return(Node* value) {
 }
 
 
-void RawMachineAssembler::Deoptimize(Node* state) {
-  Node* deopt = graph()->NewNode(common()->Deoptimize(), state);
-  schedule()->AddDeoptimize(CurrentBlock(), deopt);
-  current_block_ = NULL;
+Node* RawMachineAssembler::CallFunctionStub0(Node* function, Node* receiver,
+                                             Node* context, Node* frame_state,
+                                             CallFunctionFlags flags) {
+  CallFunctionStub stub(isolate(), 0, flags);
+  CodeStubInterfaceDescriptor* d = isolate()->code_stub_interface_descriptor(
+      reinterpret_cast<CodeStub*>(&stub)->MajorKey());
+  stub.InitializeInterfaceDescriptor(d);
+
+  CallDescriptor* desc = Linkage::GetStubCallDescriptor(
+      d, 1, CallDescriptor::kNeedsFrameState, zone());
+  Node* stub_code = HeapConstant(stub.GetCode());
+  Node* call = graph()->NewNode(common()->Call(desc), stub_code, function,
+                                receiver, context, frame_state);
+  schedule()->AddNode(CurrentBlock(), call);
+  return call;
 }
 
 
 Node* RawMachineAssembler::CallJS0(Node* function, Node* receiver,
-                                   Label* continuation, Label* deoptimization) {
+                                   Node* frame_state) {
   CallDescriptor* descriptor = Linkage::GetJSCallDescriptor(1, zone());
-  Node* call = graph()->NewNode(common()->Call(descriptor), function, receiver);
-  schedule()->AddCall(CurrentBlock(), call, Use(continuation),
-                      Use(deoptimization));
-  current_block_ = NULL;
+  Node* call = graph()->NewNode(common()->Call(descriptor), function, receiver,
+                                frame_state);
+  schedule()->AddNode(CurrentBlock(), call);
   return call;
 }
 
 
 Node* RawMachineAssembler::CallRuntime1(Runtime::FunctionId function,
-                                        Node* arg0, Label* continuation,
-                                        Label* deoptimization) {
-  CallDescriptor* descriptor =
-      Linkage::GetRuntimeCallDescriptor(function, 1, Operator::kNoProperties,
-                                        CallDescriptor::kCanDeoptimize, zone());
+                                        Node* arg0, Node* frame_state) {
+  CallDescriptor* descriptor = Linkage::GetRuntimeCallDescriptor(
+      function, 1, Operator::kNoProperties, zone());
 
   Node* centry = HeapConstant(CEntryStub(isolate(), 1).GetCode());
   Node* ref = NewNode(
@@ -108,10 +116,8 @@ Node* RawMachineAssembler::CallRuntime1(Runtime::FunctionId function,
   Node* context = Parameter(1);
 
   Node* call = graph()->NewNode(common()->Call(descriptor), centry, arg0, ref,
-                                arity, context);
-  schedule()->AddCall(CurrentBlock(), call, Use(continuation),
-                      Use(deoptimization));
-  current_block_ = NULL;
+                                arity, context, frame_state);
+  schedule()->AddNode(CurrentBlock(), call);
   return call;
 }
 

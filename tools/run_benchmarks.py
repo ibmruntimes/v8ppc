@@ -92,6 +92,7 @@ Path pieces are concatenated. D8 is always run with the suite's path as cwd.
 """
 
 import json
+import math
 import optparse
 import os
 import re
@@ -112,6 +113,18 @@ SUPPORTED_ARCHS = ["android_arm",
                    "nacl_x64",
                    "x64",
                    "arm64"]
+
+GENERIC_RESULTS_RE = re.compile(
+    r"^Trace\(([^\)]+)\), Result\(([^\)]+)\), StdDev\(([^\)]+)\)$")
+
+
+def GeometricMean(values):
+  """Returns the geometric mean of a list of values.
+
+  The mean is calculated using log to avoid overflow.
+  """
+  values = map(float, values)
+  return str(math.exp(sum(map(math.log, values)) / len(values)))
 
 
 class Results(object):
@@ -158,6 +171,7 @@ class DefaultSentinel(Node):
     self.results_regexp = None
     self.stddev_regexp = None
     self.units = "score"
+    self.total = False
 
 
 class Graph(Node):
@@ -185,6 +199,7 @@ class Graph(Node):
     self.run_count = suite.get("run_count", parent.run_count)
     self.run_count = suite.get("run_count_%s" % arch, self.run_count)
     self.units = suite.get("units", parent.units)
+    self.total = suite.get("total", parent.total)
 
     # A regular expression for results. If the parent graph provides a
     # regexp and the current suite has none, a string place holder for the
@@ -249,7 +264,7 @@ class Runnable(Graph):
   """
   @property
   def main(self):
-    return self._suite["main"]
+    return self._suite.get("main", "")
 
   def ChangeCWD(self, suite_path):
     """Changes the cwd to to path defined in the current graph.
@@ -274,8 +289,29 @@ class Runnable(Graph):
     for stdout in runner():
       for trace in self._children:
         trace.ConsumeOutput(stdout)
-    return reduce(lambda r, t: r + t.GetResults(), self._children, Results())
+    res = reduce(lambda r, t: r + t.GetResults(), self._children, Results())
 
+    if not res.traces or not self.total:
+      return res
+
+    # Assume all traces have the same structure.
+    if len(set(map(lambda t: len(t["results"]), res.traces))) != 1:
+      res.errors.append("Not all traces have the same number of results.")
+      return res
+
+    # Calculate the geometric means for all traces. Above we made sure that
+    # there is at least one trace and that the number of results is the same
+    # for each trace.
+    n_results = len(res.traces[0]["results"])
+    total_results = [GeometricMean(t["results"][i] for t in res.traces)
+                     for i in range(0, n_results)]
+    res.traces.append({
+      "graphs": self.graphs + ["Total"],
+      "units": res.traces[0]["units"],
+      "results": total_results,
+      "stddev": "",
+    })
+    return res
 
 class RunnableTrace(Trace, Runnable):
   """Represents a runnable benchmark suite definition that is a leaf."""
@@ -287,6 +323,33 @@ class RunnableTrace(Trace, Runnable):
     for stdout in runner():
       self.ConsumeOutput(stdout)
     return self.GetResults()
+
+
+class RunnableGeneric(Runnable):
+  """Represents a runnable benchmark suite definition with generic traces."""
+  def __init__(self, suite, parent, arch):
+    super(RunnableGeneric, self).__init__(suite, parent, arch)
+
+  def Run(self, runner):
+    """Iterates over several runs and handles the output."""
+    traces = {}
+    for stdout in runner():
+      for line in stdout.strip().splitlines():
+        match = GENERIC_RESULTS_RE.match(line)
+        if match:
+          trace = match.group(1)
+          result = match.group(2)
+          stddev = match.group(3)
+          trace_result = traces.setdefault(trace, Results([{
+            "graphs": self.graphs + [trace],
+            "units": self.units,
+            "results": [],
+            "stddev": "",
+          }], []))
+          trace_result.traces[0]["results"].append(result)
+          trace_result.traces[0]["stddev"] = stddev
+
+    return reduce(lambda r, t: r + t, traces.itervalues(), Results())
 
 
 def MakeGraph(suite, arch, parent):
@@ -302,6 +365,10 @@ def MakeGraph(suite, arch, parent):
     else:
       # This graph has no subbenchmarks, it's a leaf.
       return RunnableTrace(suite, parent, arch)
+  elif suite.get("generic"):
+    # This is a generic suite definition. It is either a runnable executable
+    # or has a main js file.
+    return RunnableGeneric(suite, parent, arch)
   elif suite.get("benchmarks"):
     # This is neither a leaf nor a runnable.
     return Graph(suite, parent, arch)

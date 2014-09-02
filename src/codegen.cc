@@ -16,7 +16,6 @@
 #include "src/prettyprinter.h"
 #include "src/rewriter.h"
 #include "src/runtime.h"
-#include "src/stub-cache.h"
 
 namespace v8 {
 namespace internal {
@@ -248,35 +247,5 @@ bool CodeGenerator::RecordPositions(MacroAssembler* masm,
   }
   return false;
 }
-
-
-void ArgumentsAccessStub::Generate(MacroAssembler* masm) {
-  switch (type_) {
-    case READ_ELEMENT:
-      GenerateReadElement(masm);
-      break;
-    case NEW_SLOPPY_FAST:
-      GenerateNewSloppyFast(masm);
-      break;
-    case NEW_SLOPPY_SLOW:
-      GenerateNewSloppySlow(masm);
-      break;
-    case NEW_STRICT:
-      GenerateNewStrict(masm);
-      break;
-  }
-}
-
-
-int CEntryStub::MinorKey() const {
-  int result = (save_doubles_ == kSaveFPRegs) ? 1 : 0;
-  DCHECK(result_size_ == 1 || result_size_ == 2);
-#if defined(_WIN64) || defined(V8_TARGET_ARCH_PPC64)
-  return result | ((result_size_ == 1) ? 0 : 2);
-#else
-  return result;
-#endif
-}
-
 
 } }  // namespace v8::internal

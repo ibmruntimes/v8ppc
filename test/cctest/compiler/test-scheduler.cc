@@ -16,10 +16,12 @@
 #include "src/compiler/operator.h"
 #include "src/compiler/schedule.h"
 #include "src/compiler/scheduler.h"
+#include "src/compiler/verifier.h"
 
 using namespace v8::internal;
 using namespace v8::internal::compiler;
 
+// TODO(titzer): pull RPO tests out to their own file.
 struct TestLoop {
   int count;
   BasicBlock** nodes;
@@ -62,6 +64,42 @@ static void CheckLoopContains(BasicBlock** blocks, int body_size) {
     CHECK(header->LoopContains(blocks[i]));
     CHECK(header->IsLoopHeader() || blocks[i]->loop_header_ == header);
   }
+}
+
+
+static int GetScheduledNodeCount(Schedule* schedule) {
+  int node_count = 0;
+  for (BasicBlockVectorIter i = schedule->rpo_order()->begin();
+       i != schedule->rpo_order()->end(); ++i) {
+    BasicBlock* block = *i;
+    for (BasicBlock::const_iterator j = block->begin(); j != block->end();
+         ++j) {
+      ++node_count;
+    }
+    BasicBlock::Control control = block->control_;
+    if (control != BasicBlock::kNone) {
+      ++node_count;
+    }
+  }
+  return node_count;
+}
+
+
+static Schedule* ComputeAndVerifySchedule(int expected, Graph* graph) {
+  if (FLAG_trace_turbo) {
+    OFStream os(stdout);
+    os << AsDOT(*graph);
+  }
+
+  Schedule* schedule = Scheduler::ComputeSchedule(graph);
+
+  if (FLAG_trace_turbo_scheduler) {
+    OFStream os(stdout);
+    os << *schedule << endl;
+  }
+  ScheduleVerifier::Run(schedule);
+  CHECK_EQ(expected, GetScheduledNodeCount(schedule));
+  return schedule;
 }
 
 
@@ -605,36 +643,6 @@ TEST(BuildScheduleOneParameter) {
 }
 
 
-static int GetScheduledNodeCount(Schedule* schedule) {
-  int node_count = 0;
-  for (BasicBlockVectorIter i = schedule->rpo_order()->begin();
-       i != schedule->rpo_order()->end(); ++i) {
-    BasicBlock* block = *i;
-    for (BasicBlock::const_iterator j = block->begin(); j != block->end();
-         ++j) {
-      ++node_count;
-    }
-    BasicBlock::Control control = block->control_;
-    if (control != BasicBlock::kNone) {
-      ++node_count;
-    }
-  }
-  return node_count;
-}
-
-
-static void PrintGraph(Graph* graph) {
-  OFStream os(stdout);
-  os << AsDOT(*graph);
-}
-
-
-static void PrintSchedule(Schedule* schedule) {
-  OFStream os(stdout);
-  os << *schedule << endl;
-}
-
-
 TEST(BuildScheduleIfSplit) {
   HandleAndZoneScope scope;
   Graph graph(scope.main_zone());
@@ -658,14 +666,7 @@ TEST(BuildScheduleIfSplit) {
   Node* merge = graph.NewNode(builder.Merge(2), ret1, ret2);
   graph.SetEnd(graph.NewNode(builder.End(), merge));
 
-  PrintGraph(&graph);
-
-  Schedule* schedule = Scheduler::ComputeSchedule(&graph);
-
-  PrintSchedule(schedule);
-
-
-  CHECK_EQ(13, GetScheduledNodeCount(schedule));
+  ComputeAndVerifySchedule(13, &graph);
 }
 
 
@@ -811,13 +812,7 @@ TEST(BuildScheduleIfSplitWithEffects) {
   graph.SetStart(n0);
   graph.SetEnd(n23);
 
-  PrintGraph(&graph);
-
-  Schedule* schedule = Scheduler::ComputeSchedule(&graph);
-
-  PrintSchedule(schedule);
-
-  CHECK_EQ(20, GetScheduledNodeCount(schedule));
+  ComputeAndVerifySchedule(20, &graph);
 }
 
 
@@ -930,13 +925,7 @@ TEST(BuildScheduleSimpleLoop) {
   graph.SetStart(n0);
   graph.SetEnd(n20);
 
-  PrintGraph(&graph);
-
-  Schedule* schedule = Scheduler::ComputeSchedule(&graph);
-
-  PrintSchedule(schedule);
-
-  CHECK_EQ(19, GetScheduledNodeCount(schedule));
+  ComputeAndVerifySchedule(19, &graph);
 }
 
 
@@ -1184,13 +1173,7 @@ TEST(BuildScheduleComplexLoops) {
   graph.SetStart(n0);
   graph.SetEnd(n46);
 
-  PrintGraph(&graph);
-
-  Schedule* schedule = Scheduler::ComputeSchedule(&graph);
-
-  PrintSchedule(schedule);
-
-  CHECK_EQ(46, GetScheduledNodeCount(schedule));
+  ComputeAndVerifySchedule(46, &graph);
 }
 
 
@@ -1520,13 +1503,7 @@ TEST(BuildScheduleBreakAndContinue) {
   graph.SetStart(n0);
   graph.SetEnd(n58);
 
-  PrintGraph(&graph);
-
-  Schedule* schedule = Scheduler::ComputeSchedule(&graph);
-
-  PrintSchedule(schedule);
-
-  CHECK_EQ(62, GetScheduledNodeCount(schedule));
+  ComputeAndVerifySchedule(62, &graph);
 }
 
 
@@ -1651,14 +1628,7 @@ TEST(BuildScheduleSimpleLoopWithCodeMotion) {
   graph.SetStart(n0);
   graph.SetEnd(n22);
 
-  PrintGraph(&graph);
-
-  Schedule* schedule = Scheduler::ComputeSchedule(&graph);
-
-  PrintSchedule(schedule);
-
-  CHECK_EQ(19, GetScheduledNodeCount(schedule));
-
+  Schedule* schedule = ComputeAndVerifySchedule(19, &graph);
   // Make sure the integer-only add gets hoisted to a different block that the
   // JSAdd.
   CHECK(schedule->block(n19) != schedule->block(n20));
@@ -1667,143 +1637,82 @@ TEST(BuildScheduleSimpleLoopWithCodeMotion) {
 
 #if V8_TURBOFAN_TARGET
 
-// So we can get a real JS function.
-static Handle<JSFunction> Compile(const char* source) {
-  Isolate* isolate = CcTest::i_isolate();
-  Handle<String> source_code = isolate->factory()
-                                   ->NewStringFromUtf8(CStrVector(source))
-                                   .ToHandleChecked();
-  Handle<SharedFunctionInfo> shared_function = Compiler::CompileScript(
-      source_code, Handle<String>(), 0, 0, false,
-      Handle<Context>(isolate->native_context()), NULL, NULL,
-      v8::ScriptCompiler::kNoCompileOptions, NOT_NATIVES_CODE);
-  return isolate->factory()->NewFunctionFromSharedFunctionInfo(
-      shared_function, isolate->native_context());
+static Node* CreateDiamond(Graph* graph, CommonOperatorBuilder* common,
+                           Node* cond) {
+  Node* tv = graph->NewNode(common->Int32Constant(6));
+  Node* fv = graph->NewNode(common->Int32Constant(7));
+  Node* br = graph->NewNode(common->Branch(), cond, graph->start());
+  Node* t = graph->NewNode(common->IfTrue(), br);
+  Node* f = graph->NewNode(common->IfFalse(), br);
+  Node* m = graph->NewNode(common->Merge(2), t, f);
+  Node* phi = graph->NewNode(common->Phi(2), tv, fv, m);
+  return phi;
 }
 
 
-TEST(BuildScheduleTrivialLazyDeoptCall) {
-  FLAG_turbo_deoptimization = true;
-
+TEST(FloatingDiamond1) {
   HandleAndZoneScope scope;
-  Isolate* isolate = scope.main_isolate();
   Graph graph(scope.main_zone());
   CommonOperatorBuilder common(scope.main_zone());
-  JSOperatorBuilder js_builder(scope.main_zone());
 
-  InitializedHandleScope handles;
-  Handle<JSFunction> function = Compile("m()");
-  CompilationInfoWithZone info(function);
-  Linkage linkage(&info);
+  Node* start = graph.NewNode(common.Start(1));
+  graph.SetStart(start);
 
-  // Manually transcribed code for:
-  // function turbo_fan_test() {
-  //   m();
-  // }
-  // where m can lazy deopt (so it has a deopt block associated with it).
+  Node* p0 = graph.NewNode(common.Parameter(0), start);
+  Node* d1 = CreateDiamond(&graph, &common, p0);
+  Node* ret = graph.NewNode(common.Return(), d1, start, start);
+  Node* end = graph.NewNode(common.End(), ret, start);
+
+  graph.SetEnd(end);
+
+  ComputeAndVerifySchedule(13, &graph);
+}
 
 
-  //                  Start                                    //
-  //                    ^                                      //
-  //                    | (EC)                                 //
-  //                    |                                      //
-  //         /------> Call <--------------\                    //
-  //        /        ^    ^                \                   //
-  //       /         |    |                 \        undef     //
-  //      /          /    \                  \         ^       //
-  //  (E) |     (C) /      \  (C)             \ (E)    |       //
-  //      | Continuation  LazyDeoptimization  |        |       //
-  //      \___    ^           ^               /        |       //
-  //          \   |           |        ______/    Framestate   //
-  //    undef  \  | (VC)      | (C)   /            ^           //
-  //         \  \ |           |      /            /            //
-  //          Return    Deoptimization ----------/             //
-  //              ^           ^                                //
-  //               \         /                                 //
-  //            (C) \       / (C)                              //
-  //                 \     /                                   //
-  //                  Merge                                    //
-  //                    ^                                      //
-  //                    |                                      //
-  //                   End                                     //
+TEST(FloatingDiamond2) {
+  HandleAndZoneScope scope;
+  Graph graph(scope.main_zone());
+  CommonOperatorBuilder common(scope.main_zone());
+  MachineOperatorBuilder machine(scope.main_zone());
 
-  Handle<Object> undef_object =
-      Handle<Object>(isolate->heap()->undefined_value(), isolate);
-  PrintableUnique<Object> undef_constant =
-      PrintableUnique<Object>::CreateUninitialized(scope.main_zone(),
-                                                   undef_object);
+  Node* start = graph.NewNode(common.Start(2));
+  graph.SetStart(start);
 
-  Node* undef_node = graph.NewNode(common.HeapConstant(undef_constant));
+  Node* p0 = graph.NewNode(common.Parameter(0), start);
+  Node* p1 = graph.NewNode(common.Parameter(1), start);
+  Node* d1 = CreateDiamond(&graph, &common, p0);
+  Node* d2 = CreateDiamond(&graph, &common, p1);
+  Node* add = graph.NewNode(machine.Int32Add(), d1, d2);
+  Node* ret = graph.NewNode(common.Return(), add, start, start);
+  Node* end = graph.NewNode(common.End(), ret, start);
 
-  Node* start_node = graph.NewNode(common.Start(0));
+  graph.SetEnd(end);
 
-  CallDescriptor* descriptor = linkage.GetJSCallDescriptor(0);
-  Node* call_node = graph.NewNode(common.Call(descriptor),
-                                  undef_node,   // function
-                                  undef_node,   // context
-                                  start_node,   // effect
-                                  start_node);  // control
+  ComputeAndVerifySchedule(24, &graph);
+}
 
-  Node* cont_node = graph.NewNode(common.Continuation(), call_node);
-  Node* lazy_deopt_node = graph.NewNode(common.LazyDeoptimization(), call_node);
 
-  Node* parameters = graph.NewNode(common.StateValues(1), undef_node);
-  Node* locals = graph.NewNode(common.StateValues(0));
-  Node* stack = graph.NewNode(common.StateValues(0));
+TEST(FloatingDiamond3) {
+  HandleAndZoneScope scope;
+  Graph graph(scope.main_zone());
+  CommonOperatorBuilder common(scope.main_zone());
+  MachineOperatorBuilder machine(scope.main_zone());
 
-  Node* state_node = graph.NewNode(common.FrameState(BailoutId(1234)),
-                                   parameters, locals, stack);
+  Node* start = graph.NewNode(common.Start(2));
+  graph.SetStart(start);
 
-  Node* return_node = graph.NewNode(common.Return(),
-                                    undef_node,  // return value
-                                    call_node,   // effect
-                                    cont_node);  // control
-  Node* deoptimization_node = graph.NewNode(common.Deoptimize(),
-                                            state_node,  // deopt environment
-                                            call_node,   // effect
-                                            lazy_deopt_node);  // control
+  Node* p0 = graph.NewNode(common.Parameter(0), start);
+  Node* p1 = graph.NewNode(common.Parameter(1), start);
+  Node* d1 = CreateDiamond(&graph, &common, p0);
+  Node* d2 = CreateDiamond(&graph, &common, p1);
+  Node* add = graph.NewNode(machine.Int32Add(), d1, d2);
+  Node* d3 = CreateDiamond(&graph, &common, add);
+  Node* ret = graph.NewNode(common.Return(), d3, start, start);
+  Node* end = graph.NewNode(common.End(), ret, start);
 
-  Node* merge_node =
-      graph.NewNode(common.Merge(2), return_node, deoptimization_node);
+  graph.SetEnd(end);
 
-  Node* end_node = graph.NewNode(common.End(), merge_node);
-
-  graph.SetStart(start_node);
-  graph.SetEnd(end_node);
-
-  PrintGraph(&graph);
-
-  Schedule* schedule = Scheduler::ComputeSchedule(&graph);
-
-  PrintSchedule(schedule);
-
-  // Tests:
-  // Continuation and deopt have basic blocks.
-  BasicBlock* cont_block = schedule->block(cont_node);
-  BasicBlock* deopt_block = schedule->block(lazy_deopt_node);
-  BasicBlock* call_block = schedule->block(call_node);
-  CHECK_NE(NULL, cont_block);
-  CHECK_NE(NULL, deopt_block);
-  CHECK_NE(NULL, call_block);
-  // The basic blocks are different.
-  CHECK_NE(cont_block, deopt_block);
-  CHECK_NE(cont_block, call_block);
-  CHECK_NE(deopt_block, call_block);
-  // The call node finishes its own basic block.
-  CHECK_EQ(BasicBlock::kCall, call_block->control_);
-  CHECK_EQ(call_node, call_block->control_input_);
-  // The lazy deopt block is deferred.
-  CHECK(deopt_block->deferred_);
-  CHECK(!call_block->deferred_);
-  CHECK(!cont_block->deferred_);
-  // The lazy deopt block contains framestate + bailout (and nothing else).
-  CHECK_EQ(deoptimization_node, deopt_block->control_input_);
-  CHECK_EQ(5, static_cast<int>(deopt_block->nodes_.size()));
-  CHECK_EQ(lazy_deopt_node, deopt_block->nodes_[0]);
-  CHECK_EQ(IrOpcode::kStateValues, deopt_block->nodes_[1]->op()->opcode());
-  CHECK_EQ(IrOpcode::kStateValues, deopt_block->nodes_[2]->op()->opcode());
-  CHECK_EQ(IrOpcode::kStateValues, deopt_block->nodes_[3]->op()->opcode());
-  CHECK_EQ(state_node, deopt_block->nodes_[4]);
+  ComputeAndVerifySchedule(33, &graph);
 }
 
 #endif

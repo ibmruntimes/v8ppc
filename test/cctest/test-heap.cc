@@ -34,8 +34,8 @@
 #include "src/execution.h"
 #include "src/factory.h"
 #include "src/global-handles.h"
+#include "src/ic/ic.h"
 #include "src/macro-assembler.h"
-#include "src/stub-cache.h"
 #include "test/cctest/cctest.h"
 
 using namespace v8::internal;
@@ -4050,6 +4050,7 @@ static int GetCodeChainLength(Code* code) {
 
 TEST(NextCodeLinkIsWeak) {
   i::FLAG_allow_natives_syntax = true;
+  i::FLAG_turbo_deoptimization = true;
   CcTest::InitializeVM();
   Isolate* isolate = CcTest::i_isolate();
   v8::internal::Heap* heap = CcTest::heap();

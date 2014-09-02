@@ -7,6 +7,7 @@
 
 #include "include/v8stdint.h"
 #include "src/base/build_config.h"
+#include "src/base/compiler-specific.h"
 #include "src/base/logging.h"
 
 
@@ -20,13 +21,85 @@
   (reinterpret_cast<intptr_t>(&(reinterpret_cast<type*>(4)->field)) - 4)
 
 
-// The expression ARRAY_SIZE(a) is a compile-time constant of type
-// size_t which represents the number of elements of the given
-// array. You should only use ARRAY_SIZE on statically allocated
-// arrays.
-#define ARRAY_SIZE(a)                                   \
-  ((sizeof(a) / sizeof(*(a))) /                         \
-  static_cast<size_t>(!(sizeof(a) % sizeof(*(a)))))
+// ARRAYSIZE_UNSAFE performs essentially the same calculation as arraysize,
+// but can be used on anonymous types or types defined inside
+// functions.  It's less safe than arraysize as it accepts some
+// (although not all) pointers.  Therefore, you should use arraysize
+// whenever possible.
+//
+// The expression ARRAYSIZE_UNSAFE(a) is a compile-time constant of type
+// size_t.
+//
+// ARRAYSIZE_UNSAFE catches a few type errors.  If you see a compiler error
+//
+//   "warning: division by zero in ..."
+//
+// when using ARRAYSIZE_UNSAFE, you are (wrongfully) giving it a pointer.
+// You should only use ARRAYSIZE_UNSAFE on statically allocated arrays.
+//
+// The following comments are on the implementation details, and can
+// be ignored by the users.
+//
+// ARRAYSIZE_UNSAFE(arr) works by inspecting sizeof(arr) (the # of bytes in
+// the array) and sizeof(*(arr)) (the # of bytes in one array
+// element).  If the former is divisible by the latter, perhaps arr is
+// indeed an array, in which case the division result is the # of
+// elements in the array.  Otherwise, arr cannot possibly be an array,
+// and we generate a compiler error to prevent the code from
+// compiling.
+//
+// Since the size of bool is implementation-defined, we need to cast
+// !(sizeof(a) & sizeof(*(a))) to size_t in order to ensure the final
+// result has type size_t.
+//
+// This macro is not perfect as it wrongfully accepts certain
+// pointers, namely where the pointer size is divisible by the pointee
+// size.  Since all our code has to go through a 32-bit compiler,
+// where a pointer is 4 bytes, this means all pointers to a type whose
+// size is 3 or greater than 4 will be (righteously) rejected.
+#define ARRAYSIZE_UNSAFE(a)     \
+  ((sizeof(a) / sizeof(*(a))) / \
+   static_cast<size_t>(!(sizeof(a) % sizeof(*(a)))))  // NOLINT
+
+
+#if V8_OS_NACL || ((__GNUC__ >= 4) && (__GNUC_MINOR__ >= 4))
+
+// TODO(bmeurer): For some reason, the NaCl toolchain cannot handle the correct
+// definition of arraysize() below, so we have to use the unsafe version for
+// now.
+#define arraysize ARRAYSIZE_UNSAFE
+
+#else  // V8_OS_NACL
+
+// The arraysize(arr) macro returns the # of elements in an array arr.
+// The expression is a compile-time constant, and therefore can be
+// used in defining new arrays, for example.  If you use arraysize on
+// a pointer by mistake, you will get a compile-time error.
+//
+// One caveat is that arraysize() doesn't accept any array of an
+// anonymous type or a type defined inside a function.  In these rare
+// cases, you have to use the unsafe ARRAYSIZE_UNSAFE() macro below.  This is
+// due to a limitation in C++'s template system.  The limitation might
+// eventually be removed, but it hasn't happened yet.
+#define arraysize(array) (sizeof(ArraySizeHelper(array)))
+
+
+// This template function declaration is used in defining arraysize.
+// Note that the function doesn't need an implementation, as we only
+// use its type.
+template <typename T, size_t N>
+char (&ArraySizeHelper(T (&array)[N]))[N];
+
+
+#if !V8_CC_MSVC
+// That gcc wants both of these prototypes seems mysterious. VC, for
+// its part, can't decide which to use (another mystery). Matching of
+// template overloads: the final frontier.
+template <typename T, size_t N>
+char (&ArraySizeHelper(const T (&array)[N]))[N];
+#endif
+
+#endif  // V8_OS_NACL
 
 
 // A macro to disallow the evil copy constructor and operator= functions
@@ -52,8 +125,8 @@
 #define NO_INLINE(declarator) V8_NOINLINE declarator
 
 
-// Newly written code should use V8_WARN_UNUSED_RESULT.
-#define MUST_USE_RESULT V8_WARN_UNUSED_RESULT
+// Newly written code should use WARN_UNUSED_RESULT.
+#define MUST_USE_RESULT WARN_UNUSED_RESULT
 
 
 // Define V8_USE_ADDRESS_SANITIZER macros.
@@ -101,7 +174,7 @@ template <int> class StaticAssertionHelper { };
 #define STATIC_ASSERT(test)                                                    \
   typedef                                                                     \
     StaticAssertionHelper<sizeof(StaticAssertion<static_cast<bool>((test))>)> \
-    SEMI_STATIC_JOIN(__StaticAssertTypedef__, __LINE__) V8_UNUSED
+    SEMI_STATIC_JOIN(__StaticAssertTypedef__, __LINE__) ALLOW_UNUSED
 
 #endif
 
@@ -113,14 +186,6 @@ inline void USE(T) { }
 
 
 #define IS_POWER_OF_TWO(x) ((x) != 0 && (((x) & ((x) - 1)) == 0))
-
-
-// Returns true iff x is a power of 2. Cannot be used with the maximally
-// negative value of the type T (the -1 overflows).
-template <typename T>
-inline bool IsPowerOf2(T x) {
-  return IS_POWER_OF_TWO(x);
-}
 
 
 // Define our own macros for writing 64-bit constants.  This is less fragile
@@ -199,7 +264,7 @@ inline T AddressFrom(intptr_t x) {
 // Return the largest multiple of m which is <= x.
 template <typename T>
 inline T RoundDown(T x, intptr_t m) {
-  DCHECK(IsPowerOf2(m));
+  DCHECK(IS_POWER_OF_TWO(m));
   return AddressFrom<T>(OffsetFrom(x) & -m);
 }
 
@@ -211,43 +276,9 @@ inline T RoundUp(T x, intptr_t m) {
 }
 
 
-// Increment a pointer until it has the specified alignment.
-// This works like RoundUp, but it works correctly on pointer types where
-// sizeof(*pointer) might not be 1.
-template<class T>
-T AlignUp(T pointer, size_t alignment) {
-  DCHECK(sizeof(pointer) == sizeof(uintptr_t));
-  uintptr_t pointer_raw = reinterpret_cast<uintptr_t>(pointer);
-  return reinterpret_cast<T>(RoundUp(pointer_raw, alignment));
-}
-
-
 template <typename T, typename U>
 inline bool IsAligned(T value, U alignment) {
   return (value & (alignment - 1)) == 0;
-}
-
-
-// Returns the smallest power of two which is >= x. If you pass in a
-// number that is already a power of two, it is returned as is.
-// Implementation is from "Hacker's Delight" by Henry S. Warren, Jr.,
-// figure 3-3, page 48, where the function is called clp2.
-inline uint32_t RoundUpToPowerOf2(uint32_t x) {
-  DCHECK(x <= 0x80000000u);
-  x = x - 1;
-  x = x | (x >> 1);
-  x = x | (x >> 2);
-  x = x | (x >> 4);
-  x = x | (x >> 8);
-  x = x | (x >> 16);
-  return x + 1;
-}
-
-
-inline uint32_t RoundDownToPowerOf2(uint32_t x) {
-  uint32_t rounded_up = RoundUpToPowerOf2(x);
-  if (rounded_up > x) return rounded_up >> 1;
-  return rounded_up;
 }
 
 

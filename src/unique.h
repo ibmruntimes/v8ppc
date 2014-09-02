@@ -138,6 +138,9 @@ template <class T>
 class PrintableUnique : public Unique<T> {
  public:
   // TODO(titzer): make private and introduce a uniqueness scope.
+  PrintableUnique() : string_("null") {}
+
+  // TODO(titzer): make private and introduce a uniqueness scope.
   explicit PrintableUnique(Zone* zone, Handle<T> handle) : Unique<T>(handle) {
     InitializeString(zone);
   }
@@ -196,7 +199,7 @@ class PrintableUnique : public Unique<T> {
 
 
 template <typename T>
-class UniqueSet V8_FINAL : public ZoneObject {
+class UniqueSet FINAL : public ZoneObject {
  public:
   // Constructor. A new set will be empty.
   UniqueSet() : size_(0), capacity_(0), array_(NULL) { }

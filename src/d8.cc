@@ -45,6 +45,7 @@
 #include "src/base/cpu.h"
 #include "src/base/logging.h"
 #include "src/base/platform/platform.h"
+#include "src/base/sys-info.h"
 #include "src/d8-debug.h"
 #include "src/debug.h"
 #include "src/natives.h"
@@ -1532,13 +1533,13 @@ class ShellArrayBufferAllocator : public v8::ArrayBuffer::Allocator {
 
 class MockArrayBufferAllocator : public v8::ArrayBuffer::Allocator {
  public:
-  virtual void* Allocate(size_t) V8_OVERRIDE {
+  virtual void* Allocate(size_t) OVERRIDE {
     return malloc(0);
   }
-  virtual void* AllocateUninitialized(size_t length) V8_OVERRIDE {
+  virtual void* AllocateUninitialized(size_t length) OVERRIDE {
     return malloc(0);
   }
-  virtual void Free(void* p, size_t) V8_OVERRIDE {
+  virtual void Free(void* p, size_t) OVERRIDE {
     free(p);
   }
 };
@@ -1618,9 +1619,9 @@ int Shell::Main(int argc, char* argv[]) {
   Isolate* isolate = Isolate::New();
 #ifndef V8_SHARED
   v8::ResourceConstraints constraints;
-  constraints.ConfigureDefaults(base::OS::TotalPhysicalMemory(),
-                                base::OS::MaxVirtualMemory(),
-                                base::OS::NumberOfProcessorsOnline());
+  constraints.ConfigureDefaults(base::SysInfo::AmountOfPhysicalMemory(),
+                                base::SysInfo::AmountOfVirtualMemory(),
+                                base::SysInfo::NumberOfProcessors());
   v8::SetResourceConstraints(isolate, &constraints);
 #endif
   DumbLineEditor dumb_line_editor(isolate);

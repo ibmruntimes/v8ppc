@@ -111,6 +111,39 @@ void CodeGenerator::AssembleArchInstruction(Instruction* instr) {
   IA32OperandConverter i(this, instr);
 
   switch (ArchOpcodeField::decode(instr->opcode())) {
+    case kArchCallAddress:
+      if (HasImmediateInput(instr, 0)) {
+        // TODO(dcarney): wire up EXTERNAL_REFERENCE instead of RUNTIME_ENTRY.
+        __ call(reinterpret_cast<byte*>(i.InputInt32(0)),
+                RelocInfo::RUNTIME_ENTRY);
+      } else {
+        __ call(i.InputRegister(0));
+      }
+      break;
+    case kArchCallCodeObject: {
+      if (HasImmediateInput(instr, 0)) {
+        Handle<Code> code = Handle<Code>::cast(i.InputHeapObject(0));
+        __ call(code, RelocInfo::CODE_TARGET);
+      } else {
+        Register reg = i.InputRegister(0);
+        __ call(Operand(reg, Code::kHeaderSize - kHeapObjectTag));
+      }
+      AddSafepointAndDeopt(instr);
+      break;
+    }
+    case kArchCallJSFunction: {
+      // TODO(jarin) The load of the context should be separated from the call.
+      Register func = i.InputRegister(0);
+      __ mov(esi, FieldOperand(func, JSFunction::kContextOffset));
+      __ call(FieldOperand(func, JSFunction::kCodeEntryOffset));
+      AddSafepointAndDeopt(instr);
+      break;
+    }
+    case kArchDrop: {
+      int words = MiscField::decode(instr->opcode());
+      __ add(esp, Immediate(kPointerSize * words));
+      break;
+    }
     case kArchJmp:
       __ jmp(code()->GetLabel(i.InputBlock(0)));
       break;
@@ -120,15 +153,9 @@ void CodeGenerator::AssembleArchInstruction(Instruction* instr) {
     case kArchRet:
       AssembleReturn();
       break;
-    case kArchDeoptimize: {
-      int deoptimization_id = MiscField::decode(instr->opcode());
-      BuildTranslation(instr, deoptimization_id);
-
-      Address deopt_entry = Deoptimizer::GetDeoptimizationEntry(
-          isolate(), deoptimization_id, Deoptimizer::LAZY);
-      __ call(deopt_entry, RelocInfo::RUNTIME_ENTRY);
+    case kArchTruncateDoubleToI:
+      __ TruncateDoubleToI(i.OutputRegister(), i.InputDoubleRegister(0));
       break;
-    }
     case kIA32Add:
       if (HasImmediateInput(instr, 1)) {
         __ add(i.InputOperand(0), i.InputImmediate(1));
@@ -227,58 +254,6 @@ void CodeGenerator::AssembleArchInstruction(Instruction* instr) {
         __ ror_cl(i.OutputRegister());
       }
       break;
-    case kIA32Push:
-      if (HasImmediateInput(instr, 0)) {
-        __ push(i.InputImmediate(0));
-      } else {
-        __ push(i.InputOperand(0));
-      }
-      break;
-    case kIA32CallCodeObject: {
-      if (HasImmediateInput(instr, 0)) {
-        Handle<Code> code = Handle<Code>::cast(i.InputHeapObject(0));
-        __ call(code, RelocInfo::CODE_TARGET);
-      } else {
-        Register reg = i.InputRegister(0);
-        int entry = Code::kHeaderSize - kHeapObjectTag;
-        __ call(Operand(reg, entry));
-      }
-      RecordSafepoint(instr->pointer_map(), Safepoint::kSimple, 0,
-                      Safepoint::kNoLazyDeopt);
-
-      bool lazy_deopt = (MiscField::decode(instr->opcode()) == 1);
-      if (lazy_deopt) {
-        RecordLazyDeoptimizationEntry(instr);
-      }
-      AddNopForSmiCodeInlining();
-      break;
-    }
-    case kIA32CallAddress:
-      if (HasImmediateInput(instr, 0)) {
-        // TODO(dcarney): wire up EXTERNAL_REFERENCE instead of RUNTIME_ENTRY.
-        __ call(reinterpret_cast<byte*>(i.InputInt32(0)),
-                RelocInfo::RUNTIME_ENTRY);
-      } else {
-        __ call(i.InputRegister(0));
-      }
-      break;
-    case kPopStack: {
-      int words = MiscField::decode(instr->opcode());
-      __ add(esp, Immediate(kPointerSize * words));
-      break;
-    }
-    case kIA32CallJSFunction: {
-      Register func = i.InputRegister(0);
-
-      // TODO(jarin) The load of the context should be separated from the call.
-      __ mov(esi, FieldOperand(func, JSFunction::kContextOffset));
-      __ call(FieldOperand(func, JSFunction::kCodeEntryOffset));
-
-      RecordSafepoint(instr->pointer_map(), Safepoint::kSimple, 0,
-                      Safepoint::kNoLazyDeopt);
-      RecordLazyDeoptimizationEntry(instr);
-      break;
-    }
     case kSSEFloat64Cmp:
       __ ucomisd(i.InputDoubleRegister(0), i.InputOperand(1));
       break;
@@ -338,60 +313,78 @@ void CodeGenerator::AssembleArchInstruction(Instruction* instr) {
       // TODO(turbofan): IA32 SSE LoadUint32() should take an operand.
       __ LoadUint32(i.OutputDoubleRegister(), i.InputRegister(0));
       break;
-    case kSSELoad:
-      __ movsd(i.OutputDoubleRegister(), i.MemoryOperand());
+    case kIA32Movsxbl:
+      __ movsx_b(i.OutputRegister(), i.MemoryOperand());
       break;
-    case kSSEStore: {
-      int index = 0;
-      Operand operand = i.MemoryOperand(&index);
-      __ movsd(operand, i.InputDoubleRegister(index));
-      break;
-    }
-    case kIA32LoadWord8:
+    case kIA32Movzxbl:
       __ movzx_b(i.OutputRegister(), i.MemoryOperand());
       break;
-    case kIA32StoreWord8: {
+    case kIA32Movb: {
       int index = 0;
       Operand operand = i.MemoryOperand(&index);
-      __ mov_b(operand, i.InputRegister(index));
+      if (HasImmediateInput(instr, index)) {
+        __ mov_b(operand, i.InputInt8(index));
+      } else {
+        __ mov_b(operand, i.InputRegister(index));
+      }
       break;
     }
-    case kIA32StoreWord8I: {
-      int index = 0;
-      Operand operand = i.MemoryOperand(&index);
-      __ mov_b(operand, i.InputInt8(index));
+    case kIA32Movsxwl:
+      __ movsx_w(i.OutputRegister(), i.MemoryOperand());
       break;
-    }
-    case kIA32LoadWord16:
+    case kIA32Movzxwl:
       __ movzx_w(i.OutputRegister(), i.MemoryOperand());
       break;
-    case kIA32StoreWord16: {
+    case kIA32Movw: {
       int index = 0;
       Operand operand = i.MemoryOperand(&index);
-      __ mov_w(operand, i.InputRegister(index));
+      if (HasImmediateInput(instr, index)) {
+        __ mov_w(operand, i.InputInt16(index));
+      } else {
+        __ mov_w(operand, i.InputRegister(index));
+      }
       break;
     }
-    case kIA32StoreWord16I: {
-      int index = 0;
-      Operand operand = i.MemoryOperand(&index);
-      __ mov_w(operand, i.InputInt16(index));
+    case kIA32Movl:
+      if (instr->HasOutput()) {
+        __ mov(i.OutputRegister(), i.MemoryOperand());
+      } else {
+        int index = 0;
+        Operand operand = i.MemoryOperand(&index);
+        if (HasImmediateInput(instr, index)) {
+          __ mov(operand, i.InputImmediate(index));
+        } else {
+          __ mov(operand, i.InputRegister(index));
+        }
+      }
       break;
-    }
-    case kIA32LoadWord32:
-      __ mov(i.OutputRegister(), i.MemoryOperand());
+    case kIA32Movsd:
+      if (instr->HasOutput()) {
+        __ movsd(i.OutputDoubleRegister(), i.MemoryOperand());
+      } else {
+        int index = 0;
+        Operand operand = i.MemoryOperand(&index);
+        __ movsd(operand, i.InputDoubleRegister(index));
+      }
       break;
-    case kIA32StoreWord32: {
-      int index = 0;
-      Operand operand = i.MemoryOperand(&index);
-      __ mov(operand, i.InputRegister(index));
+    case kIA32Movss:
+      if (instr->HasOutput()) {
+        __ movss(i.OutputDoubleRegister(), i.MemoryOperand());
+        __ cvtss2sd(i.OutputDoubleRegister(), i.OutputDoubleRegister());
+      } else {
+        int index = 0;
+        Operand operand = i.MemoryOperand(&index);
+        __ cvtsd2ss(xmm0, i.InputDoubleRegister(index));
+        __ movss(operand, xmm0);
+      }
       break;
-    }
-    case kIA32StoreWord32I: {
-      int index = 0;
-      Operand operand = i.MemoryOperand(&index);
-      __ mov(operand, i.InputImmediate(index));
+    case kIA32Push:
+      if (HasImmediateInput(instr, 0)) {
+        __ push(i.InputImmediate(0));
+      } else {
+        __ push(i.InputOperand(0));
+      }
       break;
-    }
     case kIA32StoreWriteBarrier: {
       Register object = i.InputRegister(0);
       Register index = i.InputRegister(1);
@@ -578,6 +571,13 @@ void CodeGenerator::AssembleArchBoolean(Instruction* instr,
     __ mov(reg, Immediate(1));
   }
   __ bind(&done);
+}
+
+
+void CodeGenerator::AssembleDeoptimizerCall(int deoptimization_id) {
+  Address deopt_entry = Deoptimizer::GetDeoptimizationEntry(
+      isolate(), deoptimization_id, Deoptimizer::LAZY);
+  __ call(deopt_entry, RelocInfo::RUNTIME_ENTRY);
 }
 
 
@@ -945,6 +945,6 @@ void CodeGenerator::AddNopForSmiCodeInlining() { __ nop(); }
 
 #undef __
 
-}
-}
-}  // namespace v8::internal::compiler
+}  // namespace compiler
+}  // namespace internal
+}  // namespace v8

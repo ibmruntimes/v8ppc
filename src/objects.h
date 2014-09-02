@@ -7,6 +7,7 @@
 
 #include "src/allocation.h"
 #include "src/assert-scope.h"
+#include "src/base/bits.h"
 #include "src/builtins.h"
 #include "src/checks.h"
 #include "src/elements-kind.h"
@@ -1494,8 +1495,8 @@ class Object {
       StoreFromKeyed store_mode);
   MUST_USE_RESULT static MaybeHandle<Object> WriteToReadOnlyProperty(
       LookupIterator* it, Handle<Object> value, StrictMode strict_mode);
-  MUST_USE_RESULT static MaybeHandle<Object> SetDataProperty(
-      LookupIterator* it, Handle<Object> value);
+  static Handle<Object> SetDataProperty(LookupIterator* it,
+                                        Handle<Object> value);
   MUST_USE_RESULT static MaybeHandle<Object> AddDataProperty(
       LookupIterator* it, Handle<Object> value, PropertyAttributes attributes,
       StrictMode strict_mode, StoreFromKeyed store_mode);
@@ -2005,11 +2006,6 @@ class JSReceiver: public HeapObject {
   inline static Handle<Smi> GetOrCreateIdentityHash(
       Handle<JSReceiver> object);
 
-  // Lookup a property.  If found, the result is valid and has
-  // detailed information.
-  void LookupOwn(Handle<Name> name, LookupResult* result);
-  void Lookup(Handle<Name> name, LookupResult* result);
-
   enum KeyCollectionType { OWN_ONLY, INCLUDE_PROTOS };
 
   // Computes the enumerable keys for a JSObject. Used for implementing
@@ -2161,12 +2157,6 @@ class JSObject: public JSReceiver {
   // Migrates the given object only if the target map is already available,
   // or returns false if such a map is not yet available.
   static bool TryMigrateInstance(Handle<JSObject> instance);
-
-  // Retrieve a value in a normalized object given a lookup result.
-  // Handles the special representation of JS global objects.
-  Object* GetNormalizedProperty(const LookupResult* result);
-  static Handle<Object> GetNormalizedProperty(Handle<JSObject> object,
-                                              const LookupResult* result);
 
   // Sets the property value in a normalized object given (key, value, details).
   // Handles the special representation of JS global objects.
@@ -2382,12 +2372,6 @@ class JSObject: public JSReceiver {
   inline void SetInternalField(int index, Object* value);
   inline void SetInternalField(int index, Smi* value);
 
-  // The following lookup functions skip interceptors.
-  void LookupOwnRealNamedProperty(Handle<Name> name, LookupResult* result);
-  void LookupRealNamedProperty(Handle<Name> name, LookupResult* result);
-  void LookupRealNamedPropertyInPrototypes(Handle<Name> name,
-                                           LookupResult* result);
-
   // Returns the number of properties on this object filtering out properties
   // with the specified attributes (ignoring interceptors).
   int NumberOfOwnProperties(PropertyAttributes filter = NONE);
@@ -2493,6 +2477,7 @@ class JSObject: public JSReceiver {
 
   static Handle<Object> GetDataProperty(Handle<JSObject> object,
                                         Handle<Name> key);
+  static Handle<Object> GetDataProperty(LookupIterator* it);
 
   DECLARE_CAST(JSObject)
 
@@ -2737,22 +2722,6 @@ class JSObject: public JSReceiver {
                                     Handle<Object> getter,
                                     Handle<Object> setter,
                                     PropertyAttributes attributes);
-  static Handle<AccessorPair> CreateAccessorPairFor(Handle<JSObject> object,
-                                                    Handle<Name> name);
-  static void DefinePropertyAccessor(Handle<JSObject> object,
-                                     Handle<Name> name,
-                                     Handle<Object> getter,
-                                     Handle<Object> setter,
-                                     PropertyAttributes attributes);
-
-  // Try to define a single accessor paying attention to map transitions.
-  // Returns false if this was not possible and we have to use the slow case.
-  static bool DefineFastAccessor(Handle<JSObject> object,
-                                 Handle<Name> name,
-                                 AccessorComponent component,
-                                 Handle<Object> accessor,
-                                 PropertyAttributes attributes);
-
 
   // Return the hash table backing store or the inline stored identity hash,
   // whatever is found.
@@ -3524,8 +3493,6 @@ class DescriptorArray: public FixedArray {
                   Descriptor* desc,
                   const WhitenessWitness&);
 
-  inline void Append(Descriptor* desc, const WhitenessWitness&);
-
   // Swap first and second descriptor.
   inline void SwapSortedKeys(int first, int second);
 
@@ -3736,7 +3703,7 @@ class HashTable: public FixedArray {
 
   // Returns probe entry.
   static uint32_t GetProbe(uint32_t hash, uint32_t number, uint32_t size) {
-    DCHECK(IsPowerOf2(size));
+    DCHECK(base::bits::IsPowerOfTwo32(size));
     return (hash + GetProbeOffset(number)) & (size - 1);
   }
 
@@ -5191,16 +5158,14 @@ TYPED_ARRAYS(FIXED_TYPED_ARRAY_TRAITS)
 class DeoptimizationInputData: public FixedArray {
  public:
   // Layout description.  Indices in the array.
-  static const int kDeoptEntryCountIndex = 0;
-  static const int kReturnAddressPatchEntryCountIndex = 1;
-  static const int kTranslationByteArrayIndex = 2;
-  static const int kInlinedFunctionCountIndex = 3;
-  static const int kLiteralArrayIndex = 4;
-  static const int kOsrAstIdIndex = 5;
-  static const int kOsrPcOffsetIndex = 6;
-  static const int kOptimizationIdIndex = 7;
-  static const int kSharedFunctionInfoIndex = 8;
-  static const int kFirstDeoptEntryIndex = 9;
+  static const int kTranslationByteArrayIndex = 0;
+  static const int kInlinedFunctionCountIndex = 1;
+  static const int kLiteralArrayIndex = 2;
+  static const int kOsrAstIdIndex = 3;
+  static const int kOsrPcOffsetIndex = 4;
+  static const int kOptimizationIdIndex = 5;
+  static const int kSharedFunctionInfoIndex = 6;
+  static const int kFirstDeoptEntryIndex = 7;
 
   // Offsets of deopt entry elements relative to the start of the entry.
   static const int kAstIdRawOffset = 0;
@@ -5208,12 +5173,6 @@ class DeoptimizationInputData: public FixedArray {
   static const int kArgumentsStackHeightOffset = 2;
   static const int kPcOffset = 3;
   static const int kDeoptEntrySize = 4;
-
-  // Offsets of return address patch entry elements relative to the start of the
-  // entry
-  static const int kReturnAddressPcOffset = 0;
-  static const int kPatchedAddressPcOffset = 1;
-  static const int kReturnAddressPatchEntrySize = 2;
 
   // Simple element accessors.
 #define DEFINE_ELEMENT_ACCESSORS(name, type)      \
@@ -5235,7 +5194,7 @@ class DeoptimizationInputData: public FixedArray {
 #undef DEFINE_ELEMENT_ACCESSORS
 
   // Accessors for elements of the ith deoptimization entry.
-#define DEFINE_DEOPT_ENTRY_ACCESSORS(name, type)                \
+#define DEFINE_ENTRY_ACCESSORS(name, type)                      \
   type* name(int i) {                                           \
     return type::cast(get(IndexForEntry(i) + k##name##Offset)); \
   }                                                             \
@@ -5243,27 +5202,12 @@ class DeoptimizationInputData: public FixedArray {
     set(IndexForEntry(i) + k##name##Offset, value);             \
   }
 
-  DEFINE_DEOPT_ENTRY_ACCESSORS(AstIdRaw, Smi)
-  DEFINE_DEOPT_ENTRY_ACCESSORS(TranslationIndex, Smi)
-  DEFINE_DEOPT_ENTRY_ACCESSORS(ArgumentsStackHeight, Smi)
-  DEFINE_DEOPT_ENTRY_ACCESSORS(Pc, Smi)
+  DEFINE_ENTRY_ACCESSORS(AstIdRaw, Smi)
+  DEFINE_ENTRY_ACCESSORS(TranslationIndex, Smi)
+  DEFINE_ENTRY_ACCESSORS(ArgumentsStackHeight, Smi)
+  DEFINE_ENTRY_ACCESSORS(Pc, Smi)
 
 #undef DEFINE_DEOPT_ENTRY_ACCESSORS
-
-// Accessors for elements of the ith deoptimization entry.
-#define DEFINE_PATCH_ENTRY_ACCESSORS(name, type)                      \
-  type* name(int i) {                                                 \
-    return type::cast(                                                \
-        get(IndexForReturnAddressPatchEntry(i) + k##name##Offset));   \
-  }                                                                   \
-  void Set##name(int i, type* value) {                                \
-    set(IndexForReturnAddressPatchEntry(i) + k##name##Offset, value); \
-  }
-
-  DEFINE_PATCH_ENTRY_ACCESSORS(ReturnAddressPc, Smi)
-  DEFINE_PATCH_ENTRY_ACCESSORS(PatchedAddressPc, Smi)
-
-#undef DEFINE_PATCH_ENTRY_ACCESSORS
 
   BailoutId AstId(int i) {
     return BailoutId(AstIdRaw(i)->value());
@@ -5274,19 +5218,12 @@ class DeoptimizationInputData: public FixedArray {
   }
 
   int DeoptCount() {
-    return length() == 0 ? 0 : Smi::cast(get(kDeoptEntryCountIndex))->value();
-  }
-
-  int ReturnAddressPatchCount() {
-    return length() == 0
-               ? 0
-               : Smi::cast(get(kReturnAddressPatchEntryCountIndex))->value();
+    return (length() - kFirstDeoptEntryIndex) / kDeoptEntrySize;
   }
 
   // Allocates a DeoptimizationInputData.
   static Handle<DeoptimizationInputData> New(Isolate* isolate,
                                              int deopt_entry_count,
-                                             int return_address_patch_count,
                                              PretenureFlag pretenure);
 
   DECLARE_CAST(DeoptimizationInputData)
@@ -5296,21 +5233,12 @@ class DeoptimizationInputData: public FixedArray {
 #endif
 
  private:
-  friend class Object;  // For accessing LengthFor.
-
   static int IndexForEntry(int i) {
     return kFirstDeoptEntryIndex + (i * kDeoptEntrySize);
   }
 
-  int IndexForReturnAddressPatchEntry(int i) {
-    return kFirstDeoptEntryIndex + (DeoptCount() * kDeoptEntrySize) +
-           (i * kReturnAddressPatchEntrySize);
-  }
 
-  static int LengthFor(int deopt_count, int return_address_patch_count) {
-    return kFirstDeoptEntryIndex + (deopt_count * kDeoptEntrySize) +
-           (return_address_patch_count * kReturnAddressPatchEntrySize);
-  }
+  static int LengthFor(int entry_count) { return IndexForEntry(entry_count); }
 };
 
 
@@ -5964,9 +5892,10 @@ class DependentCode: public FixedArray {
     kAllocationSiteTenuringChangedGroup,
     // Group of code that depends on element transition information in
     // AllocationSites not being changed.
-    kAllocationSiteTransitionChangedGroup,
-    kGroupCount = kAllocationSiteTransitionChangedGroup + 1
+    kAllocationSiteTransitionChangedGroup
   };
+
+  static const int kGroupCount = kAllocationSiteTransitionChangedGroup + 1;
 
   // Array for holding the index of the first code object of each group.
   // The last element stores the total number of code objects.
@@ -6422,10 +6351,10 @@ class Map: public HeapObject {
   // is found by re-transitioning from the root of the transition tree using the
   // descriptor array of the map. Returns NULL if no updated map is found.
   // This method also applies any pending migrations along the prototype chain.
-  static MaybeHandle<Map> TryUpdate(Handle<Map> map) V8_WARN_UNUSED_RESULT;
+  static MaybeHandle<Map> TryUpdate(Handle<Map> map) WARN_UNUSED_RESULT;
   // Same as above, but does not touch the prototype chain.
   static MaybeHandle<Map> TryUpdateInternal(Handle<Map> map)
-      V8_WARN_UNUSED_RESULT;
+      WARN_UNUSED_RESULT;
 
   // Returns a non-deprecated version of the input. This method may deprecate
   // existing maps along the way if encodings conflict. Not for use while
@@ -6475,6 +6404,9 @@ class Map: public HeapObject {
                                               Handle<Object> value,
                                               PropertyAttributes attributes,
                                               StoreFromKeyed store_mode);
+  static Handle<Map> TransitionToAccessorProperty(
+      Handle<Map> map, Handle<Name> name, AccessorComponent component,
+      Handle<Object> accessor, PropertyAttributes attributes);
   static Handle<Map> ReconfigureDataProperty(Handle<Map> map, int descriptor,
                                              PropertyAttributes attributes);
 
@@ -7779,6 +7711,11 @@ class JSFunction: public JSObject {
   static void SetInstancePrototype(Handle<JSFunction> function,
                                    Handle<Object> value);
 
+  // Creates a new closure for the fucntion with the same bindings,
+  // bound values, and prototype. An equivalent of spec operations
+  // ``CloneMethod`` and ``CloneBoundFunction``.
+  static Handle<JSFunction> CloneClosure(Handle<JSFunction> function);
+
   // After prototype is removed, it will not be created when accessed, and
   // [[Construct]] from this function will not be allowed.
   bool RemovePrototype();
@@ -7906,9 +7843,6 @@ class GlobalObject: public JSObject {
 
   // [global proxy]: the global proxy object of the context
   DECL_ACCESSORS(global_proxy, JSObject)
-
-  // Retrieve the property cell used to store a property.
-  PropertyCell* GetPropertyCell(LookupResult* result);
 
   DECLARE_CAST(GlobalObject)
 
@@ -8519,6 +8453,12 @@ class TypeFeedbackInfo: public Struct {
 
   // The object that indicates a megamorphic state.
   static inline Handle<Object> MegamorphicSentinel(Isolate* isolate);
+
+  // The object that indicates a premonomorphic state.
+  static inline Handle<Object> PremonomorphicSentinel(Isolate* isolate);
+
+  // The object that indicates a generic state.
+  static inline Handle<Object> GenericSentinel(Isolate* isolate);
 
   // The object that indicates a monomorphic state of Array with
   // ElementsKind

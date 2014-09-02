@@ -31,7 +31,7 @@ struct StoreRepresentation {
 // for generating code to run on architectures such as ia32, x64, arm, etc.
 class MachineOperatorBuilder {
  public:
-  explicit MachineOperatorBuilder(Zone* zone, MachineType word = pointer_rep())
+  explicit MachineOperatorBuilder(Zone* zone, MachineType word = kMachPtr)
       : zone_(zone), word_(word) {
     CHECK(word == kRepWord32 || word == kRepWord64);
   }
@@ -134,6 +134,9 @@ class MachineOperatorBuilder {
   Operator* ChangeInt32ToInt64() { UNOP(ChangeInt32ToInt64); }
   Operator* ChangeUint32ToUint64() { UNOP(ChangeUint32ToUint64); }
 
+  // Truncate double to int32 using JavaScript semantics.
+  Operator* TruncateFloat64ToInt32() { UNOP(TruncateFloat64ToInt32); }
+
   // Truncate the high order bits and convert the remaining bits to int32.
   Operator* TruncateInt64ToInt32() { UNOP(TruncateInt64ToInt32); }
 
@@ -152,10 +155,6 @@ class MachineOperatorBuilder {
   inline bool is32() const { return word_ == kRepWord32; }
   inline bool is64() const { return word_ == kRepWord64; }
   inline MachineType word() const { return word_; }
-
-  static inline MachineType pointer_rep() {
-    return kPointerSize == 8 ? kRepWord64 : kRepWord32;
-  }
 
 #undef WORD_SIZE
 #undef UNOP

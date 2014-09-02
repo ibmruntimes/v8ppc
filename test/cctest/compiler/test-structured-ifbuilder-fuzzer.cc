@@ -267,9 +267,7 @@ class IfBuilderModel {
 class IfBuilderGenerator : public StructuredMachineAssemblerTester<int32_t> {
  public:
   IfBuilderGenerator()
-      : StructuredMachineAssemblerTester<int32_t>(
-            MachineOperatorBuilder::pointer_rep(),
-            MachineOperatorBuilder::pointer_rep()),
+      : StructuredMachineAssemblerTester<int32_t>(kMachPtr, kMachPtr),
         var_(NewVariable(Int32Constant(kInitalVar))),
         c_(this),
         m_(this->zone()),
@@ -606,7 +604,7 @@ TEST(RunExpressionStrings) {
       "v|(v)",   "v|(v&v)", "v|(v&v)|v", "v|(((v)|(v&v)|(v)|v)&(v))|v",
   };
   v8::base::RandomNumberGenerator rng;
-  for (size_t i = 0; i < ARRAY_SIZE(strings); i++) {
+  for (size_t i = 0; i < arraysize(strings); i++) {
     IfBuilderGenerator m;
     m.ParseExpression(strings[i]);
     m.RunRandom(&rng);
@@ -619,7 +617,7 @@ TEST(RunSimpleIfElseTester) {
       "i(v)",   "i(v)t",   "i(v)te",
       "i(v)er", "i(v)ter", "i(v)ti(v)trei(v)ei(v)ei(v)ei(v)ei(v)ei(v)ei(v)e"};
   v8::base::RandomNumberGenerator rng;
-  for (size_t i = 0; i < ARRAY_SIZE(tests); ++i) {
+  for (size_t i = 0; i < arraysize(tests); ++i) {
     IfBuilderGenerator m;
     m.ParseIfThenElse(tests[i]);
     m.RunRandom(&rng);

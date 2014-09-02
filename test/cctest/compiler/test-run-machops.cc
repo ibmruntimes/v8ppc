@@ -6,6 +6,7 @@
 #include <limits>
 
 #include "src/base/bits.h"
+#include "src/compiler/generic-node-inl.h"
 #include "test/cctest/cctest.h"
 #include "test/cctest/compiler/codegen-tester.h"
 #include "test/cctest/compiler/value-helper.h"
@@ -101,7 +102,7 @@ TEST(RunGotoMultiple) {
   int constant = 9999977;
 
   MLabel labels[10];
-  for (size_t i = 0; i < ARRAY_SIZE(labels); i++) {
+  for (size_t i = 0; i < arraysize(labels); i++) {
     m.Goto(&labels[i]);
     m.Bind(&labels[i]);
   }
@@ -511,7 +512,7 @@ TEST(RunLoadInt32Offset) {
   int32_t offsets[] = {-2000000, -100, -101, 1,          3,
                        7,        120,  2000, 2000000000, 0xff};
 
-  for (size_t i = 0; i < ARRAY_SIZE(offsets); i++) {
+  for (size_t i = 0; i < arraysize(offsets); i++) {
     RawMachineAssemblerTester<int32_t> m;
     int32_t offset = offsets[i];
     byte* pointer = reinterpret_cast<byte*>(&p1) - offset;
@@ -740,7 +741,7 @@ TEST(RunInt32AddInBranch) {
     RawMachineAssemblerTester<void> m;
     Operator* shops[] = {m.machine()->Word32Sar(), m.machine()->Word32Shl(),
                          m.machine()->Word32Shr()};
-    for (size_t n = 0; n < ARRAY_SIZE(shops); n++) {
+    for (size_t n = 0; n < arraysize(shops); n++) {
       RawMachineAssemblerTester<int32_t> m(kMachUint32, kMachInt32,
                                            kMachUint32);
       MLabel blocka, blockb;
@@ -831,7 +832,7 @@ TEST(RunInt32AddInComparison) {
     RawMachineAssemblerTester<void> m;
     Operator* shops[] = {m.machine()->Word32Sar(), m.machine()->Word32Shl(),
                          m.machine()->Word32Shr()};
-    for (size_t n = 0; n < ARRAY_SIZE(shops); n++) {
+    for (size_t n = 0; n < arraysize(shops); n++) {
       RawMachineAssemblerTester<int32_t> m(kMachUint32, kMachInt32,
                                            kMachUint32);
       m.Return(m.Word32Equal(
@@ -1075,7 +1076,7 @@ TEST(RunInt32SubInBranch) {
     RawMachineAssemblerTester<void> m;
     Operator* shops[] = {m.machine()->Word32Sar(), m.machine()->Word32Shl(),
                          m.machine()->Word32Shr()};
-    for (size_t n = 0; n < ARRAY_SIZE(shops); n++) {
+    for (size_t n = 0; n < arraysize(shops); n++) {
       RawMachineAssemblerTester<int32_t> m(kMachUint32, kMachInt32,
                                            kMachUint32);
       MLabel blocka, blockb;
@@ -1166,7 +1167,7 @@ TEST(RunInt32SubInComparison) {
     RawMachineAssemblerTester<void> m;
     Operator* shops[] = {m.machine()->Word32Sar(), m.machine()->Word32Shl(),
                          m.machine()->Word32Shr()};
-    for (size_t n = 0; n < ARRAY_SIZE(shops); n++) {
+    for (size_t n = 0; n < arraysize(shops); n++) {
       RawMachineAssemblerTester<int32_t> m(kMachUint32, kMachInt32,
                                            kMachUint32);
       m.Return(m.Word32Equal(
@@ -1698,7 +1699,7 @@ TEST(RunWord32AndInBranch) {
     RawMachineAssemblerTester<void> m;
     Operator* shops[] = {m.machine()->Word32Sar(), m.machine()->Word32Shl(),
                          m.machine()->Word32Shr()};
-    for (size_t n = 0; n < ARRAY_SIZE(shops); n++) {
+    for (size_t n = 0; n < arraysize(shops); n++) {
       RawMachineAssemblerTester<int32_t> m(kMachUint32, kMachInt32,
                                            kMachUint32);
       MLabel blocka, blockb;
@@ -1925,7 +1926,7 @@ TEST(RunWord32OrInBranch) {
     RawMachineAssemblerTester<void> m;
     Operator* shops[] = {m.machine()->Word32Sar(), m.machine()->Word32Shl(),
                          m.machine()->Word32Shr()};
-    for (size_t n = 0; n < ARRAY_SIZE(shops); n++) {
+    for (size_t n = 0; n < arraysize(shops); n++) {
       RawMachineAssemblerTester<int32_t> m(kMachUint32, kMachInt32,
                                            kMachUint32);
       MLabel blocka, blockb;
@@ -2149,7 +2150,7 @@ TEST(RunWord32XorInBranch) {
     RawMachineAssemblerTester<void> m;
     Operator* shops[] = {m.machine()->Word32Sar(), m.machine()->Word32Shl(),
                          m.machine()->Word32Shr()};
-    for (size_t n = 0; n < ARRAY_SIZE(shops); n++) {
+    for (size_t n = 0; n < arraysize(shops); n++) {
       RawMachineAssemblerTester<int32_t> m(kMachUint32, kMachInt32,
                                            kMachUint32);
       MLabel blocka, blockb;
@@ -2671,10 +2672,10 @@ TEST(RunDeadInt32Binops) {
 }
 
 
-template <typename Type, typename CType>
+template <typename Type>
 static void RunLoadImmIndex(MachineType rep) {
   const int kNumElems = 3;
-  CType buffer[kNumElems];
+  Type buffer[kNumElems];
 
   // initialize the buffer with raw data.
   byte* raw = reinterpret_cast<byte*>(buffer);
@@ -2691,19 +2692,21 @@ static void RunLoadImmIndex(MachineType rep) {
       m.Return(m.Load(rep, base, index));
 
       Type expected = buffer[i];
-      Type actual = static_cast<CType>(m.Call());
-      CHECK_EQ(expected, actual);
-      printf("XXX\n");
+      Type actual = m.Call();
+      CHECK(expected == actual);
     }
   }
 }
 
 
 TEST(RunLoadImmIndex) {
-  RunLoadImmIndex<int8_t, uint8_t>(kMachInt8);
-  RunLoadImmIndex<int16_t, uint16_t>(kMachInt16);
-  RunLoadImmIndex<int32_t, uint32_t>(kMachInt32);
-  RunLoadImmIndex<int32_t*, int32_t*>(kMachAnyTagged);
+  RunLoadImmIndex<int8_t>(kMachInt8);
+  RunLoadImmIndex<uint8_t>(kMachUint8);
+  RunLoadImmIndex<int16_t>(kMachInt16);
+  RunLoadImmIndex<uint16_t>(kMachUint16);
+  RunLoadImmIndex<int32_t>(kMachInt32);
+  RunLoadImmIndex<uint32_t>(kMachUint32);
+  RunLoadImmIndex<int32_t*>(kMachAnyTagged);
 
   // TODO(titzer): test kRepBit loads
   // TODO(titzer): test kMachFloat64 loads
@@ -2733,18 +2736,22 @@ static void RunLoadStore(MachineType rep) {
     m.Store(rep, base, index1, load);
     m.Return(m.Int32Constant(OK));
 
-    CHECK_NE(buffer[x], buffer[y]);
+    CHECK(buffer[x] != buffer[y]);
     CHECK_EQ(OK, m.Call());
-    CHECK_EQ(buffer[x], buffer[y]);
+    CHECK(buffer[x] == buffer[y]);
   }
 }
 
 
 TEST(RunLoadStore) {
   RunLoadStore<int8_t>(kMachInt8);
+  RunLoadStore<uint8_t>(kMachUint8);
   RunLoadStore<int16_t>(kMachInt16);
+  RunLoadStore<uint16_t>(kMachUint16);
   RunLoadStore<int32_t>(kMachInt32);
+  RunLoadStore<uint32_t>(kMachUint32);
   RunLoadStore<void*>(kMachAnyTagged);
+  RunLoadStore<float>(kMachFloat32);
   RunLoadStore<double>(kMachFloat64);
 }
 
@@ -3527,10 +3534,9 @@ TEST(RunCallSeven) {
     RawMachineAssemblerTester<int32_t> m;
     Node** args = NULL;
     MachineType* arg_types = NULL;
-    Node* function =
-        call_direct ? m.PointerConstant(function_address)
-                    : m.LoadFromPointer(&function_address,
-                                        MachineOperatorBuilder::pointer_rep());
+    Node* function = call_direct
+                         ? m.PointerConstant(function_address)
+                         : m.LoadFromPointer(&function_address, kMachPtr);
     m.Return(m.CallC(function, kMachInt32, arg_types, args, 0));
 
     CHECK_EQ(7, m.Call());
@@ -3547,10 +3553,9 @@ TEST(RunCallUnaryMinus) {
     RawMachineAssemblerTester<int32_t> m(kMachInt32);
     Node* args[] = {m.Parameter(0)};
     MachineType arg_types[] = {kMachInt32};
-    Node* function =
-        call_direct ? m.PointerConstant(function_address)
-                    : m.LoadFromPointer(&function_address,
-                                        MachineOperatorBuilder::pointer_rep());
+    Node* function = call_direct
+                         ? m.PointerConstant(function_address)
+                         : m.LoadFromPointer(&function_address, kMachPtr);
     m.Return(m.CallC(function, kMachInt32, arg_types, args, 1));
 
     FOR_INT32_INPUTS(i) {
@@ -3570,10 +3575,9 @@ TEST(RunCallAPlusTwoB) {
     RawMachineAssemblerTester<int32_t> m(kMachInt32, kMachInt32);
     Node* args[] = {m.Parameter(0), m.Parameter(1)};
     MachineType arg_types[] = {kMachInt32, kMachInt32};
-    Node* function =
-        call_direct ? m.PointerConstant(function_address)
-                    : m.LoadFromPointer(&function_address,
-                                        MachineOperatorBuilder::pointer_rep());
+    Node* function = call_direct
+                         ? m.PointerConstant(function_address)
+                         : m.LoadFromPointer(&function_address, kMachPtr);
     m.Return(m.CallC(function, kMachInt32, arg_types, args, 2));
 
     FOR_INT32_INPUTS(i) {
@@ -3694,7 +3698,7 @@ TEST(RunFloat64Compare) {
   for (int test = 0; test < kFloat64CompareHelperTestCases; test++) {
     for (int node_type = 0; node_type < kFloat64CompareHelperNodeType;
          node_type++) {
-      for (size_t input = 0; input < ARRAY_SIZE(inputs); input += 2) {
+      for (size_t input = 0; input < arraysize(inputs); input += 2) {
         RawMachineAssemblerTester<int32_t> m;
         int expected = Float64CompareHelper(&m, test, node_type, inputs[input],
                                             inputs[input + 1]);
@@ -3715,7 +3719,7 @@ TEST(RunFloat64UnorderedCompare) {
   double nan = v8::base::OS::nan_value();
 
   FOR_FLOAT64_INPUTS(i) {
-    for (size_t o = 0; o < ARRAY_SIZE(operators); ++o) {
+    for (size_t o = 0; o < arraysize(operators); ++o) {
       for (int j = 0; j < 2; j++) {
         RawMachineAssemblerTester<int32_t> m;
         Node* a = m.Float64Constant(*i);
@@ -3791,15 +3795,15 @@ static void LoadStoreTruncation() {
 
   // Test lower bound.
   input = min;
-  CHECK_EQ(max + 2, m.Call());
+  CHECK_EQ(static_cast<IntType>(max + 2), m.Call());
   CHECK_EQ(min + 1, input);
 
   // Test all one byte values that are not one byte bounds.
   for (int i = -127; i < 127; i++) {
     input = i;
     int expected = i >= 0 ? i + 1 : max + (i - min) + 2;
-    CHECK_EQ(expected, m.Call());
-    CHECK_EQ(i + 1, input);
+    CHECK_EQ(static_cast<IntType>(expected), m.Call());
+    CHECK_EQ(static_cast<IntType>(i + 1), input);
   }
 }
 
@@ -3812,8 +3816,7 @@ TEST(RunLoadStoreTruncation) {
 
 static void IntPtrCompare(intptr_t left, intptr_t right) {
   for (int test = 0; test < 7; test++) {
-    RawMachineAssemblerTester<bool> m(MachineOperatorBuilder::pointer_rep(),
-                                      MachineOperatorBuilder::pointer_rep());
+    RawMachineAssemblerTester<bool> m(kMachPtr, kMachPtr);
     Node* p0 = m.Parameter(0);
     Node* p1 = m.Parameter(1);
     Node* res = NULL;
@@ -3863,7 +3866,7 @@ TEST(RunIntPtrCompare) {
   intptr_t max = std::numeric_limits<intptr_t>::max();
   // An ascending chain of intptr_t
   intptr_t inputs[] = {min, min / 2, -1, 0, 1, max / 2, max};
-  for (size_t i = 0; i < ARRAY_SIZE(inputs) - 1; i++) {
+  for (size_t i = 0; i < arraysize(inputs) - 1; i++) {
     IntPtrCompare(inputs[i], inputs[i + 1]);
   }
 }
@@ -4242,6 +4245,76 @@ TEST(RunTruncateInt64ToInt32P) {
       expected = (static_cast<uint64_t>(*j) << 32) | *i;
       CHECK_UINT32_EQ(expected, m.Call());
     }
+  }
+}
+
+
+TEST(RunTruncateFloat64ToInt32P) {
+  struct {
+    double from;
+    double raw;
+  } kValues[] = {{0, 0},
+                 {0.5, 0},
+                 {-0.5, 0},
+                 {1.5, 1},
+                 {-1.5, -1},
+                 {5.5, 5},
+                 {-5.0, -5},
+                 {v8::base::OS::nan_value(), 0},
+                 {std::numeric_limits<double>::infinity(), 0},
+                 {-v8::base::OS::nan_value(), 0},
+                 {-std::numeric_limits<double>::infinity(), 0},
+                 {4.94065645841e-324, 0},
+                 {-4.94065645841e-324, 0},
+                 {0.9999999999999999, 0},
+                 {-0.9999999999999999, 0},
+                 {4294967296.0, 0},
+                 {-4294967296.0, 0},
+                 {9223372036854775000.0, 4294966272.0},
+                 {-9223372036854775000.0, -4294966272.0},
+                 {4.5036e+15, 372629504},
+                 {-4.5036e+15, -372629504},
+                 {287524199.5377777, 0x11234567},
+                 {-287524199.5377777, -0x11234567},
+                 {2300193596.302222, 2300193596.0},
+                 {-2300193596.302222, -2300193596.0},
+                 {4600387192.604444, 305419896},
+                 {-4600387192.604444, -305419896},
+                 {4823855600872397.0, 1737075661},
+                 {-4823855600872397.0, -1737075661},
+                 {4503603922337791.0, -1},
+                 {-4503603922337791.0, 1},
+                 {4503601774854143.0, 2147483647},
+                 {-4503601774854143.0, -2147483647},
+                 {9007207844675582.0, -2},
+                 {-9007207844675582.0, 2},
+                 {2.4178527921507624e+24, -536870912},
+                 {-2.4178527921507624e+24, 536870912},
+                 {2.417853945072267e+24, -536870912},
+                 {-2.417853945072267e+24, 536870912},
+                 {4.8357055843015248e+24, -1073741824},
+                 {-4.8357055843015248e+24, 1073741824},
+                 {4.8357078901445341e+24, -1073741824},
+                 {-4.8357078901445341e+24, 1073741824},
+                 {2147483647.0, 2147483647.0},
+                 {-2147483648.0, -2147483648.0},
+                 {9.6714111686030497e+24, -2147483648.0},
+                 {-9.6714111686030497e+24, -2147483648.0},
+                 {9.6714157802890681e+24, -2147483648.0},
+                 {-9.6714157802890681e+24, -2147483648.0},
+                 {1.9342813113834065e+25, 2147483648.0},
+                 {-1.9342813113834065e+25, 2147483648.0},
+                 {3.868562622766813e+25, 0},
+                 {-3.868562622766813e+25, 0},
+                 {1.7976931348623157e+308, 0},
+                 {-1.7976931348623157e+308, 0}};
+  double input = -1.0;
+  RawMachineAssemblerTester<int32_t> m;
+  m.Return(m.TruncateFloat64ToInt32(m.LoadFromPointer(&input, kMachFloat64)));
+  for (size_t i = 0; i < arraysize(kValues); ++i) {
+    input = kValues[i].from;
+    uint64_t expected = static_cast<int64_t>(kValues[i].raw);
+    CHECK_EQ(static_cast<int>(expected), m.Call());
   }
 }
 

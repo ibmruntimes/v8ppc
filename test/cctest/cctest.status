@@ -35,10 +35,6 @@
   # BUG(382): Weird test. Can't guarantee that it never times out.
   'test-api/ApplyInterruption': [PASS, TIMEOUT],
 
-  # TODO(mstarzinger): Fail gracefully on multiple V8::Dispose calls.
-  'test-api/InitializeAndDisposeOnce': [SKIP],
-  'test-api/InitializeAndDisposeMultiple': [SKIP],
-
   # These tests always fail.  They are here to test test.py.  If
   # they don't fail then test.py has failed.
   'test-serialize/TestThatAlwaysFails': [FAIL],
@@ -77,11 +73,15 @@
   'test-cpu-profiler/*': [PASS, FLAKY],
   'test-cpu-profiler/*': [SKIP],
 
+  # BUG(3525). Test crashes flakily.
+  'test-debug/RecursiveBreakpoints': [PASS, FLAKY],
+  'test-debug/RecursiveBreakpointsGlobal': [PASS, FLAKY],
+
   ##############################################################################
   # TurboFan compiler failures.
 
-  # TODO(mstarzinger): These need investigation and are not categorized yet.
-  'test-heap/NextCodeLinkIsWeak': [PASS, NO_VARIANTS],
+  # Scheduler cannot handle free-floating loops yet
+  'test-run-inlining/InlineLoop': [SKIP],
 
   # TODO(mstarzinger): Sometimes the try-catch blacklist fails.
   'test-debug/DebugEvaluateWithoutStack': [PASS, NO_VARIANTS],
@@ -100,9 +100,6 @@
   'test-heap-profiler/ManyLocalsInSharedContext': [PASS, NO_VARIANTS],
   'test-debug/ThreadedDebugging': [PASS, NO_VARIANTS],
   'test-debug/DebugBreakLoop': [PASS, NO_VARIANTS],
-
-  # Support for lazy deoptimization is missing.
-  'test-deoptimization/DeoptimizeCompare': [PASS, NO_VARIANTS],
 
   # Support for breakpoints requires using LoadICs and StoreICs.
   'test-debug/BreakPointICStore': [PASS, NO_VARIANTS],
@@ -194,7 +191,7 @@
   'test-mark-compact/Promotion': [PASS, FAIL],
 
   # BUG(v8:3434).
-  ' test-api/LoadICFastApi_DirectCall_GCMoveStubWithProfiler': [SKIP]
+  ' test-api/LoadICFastApi_DirectCall_GCMoveStubWithProfiler': [SKIP],
 }],  # 'arch == arm64'
 
 ['arch == arm64 and simulator_run == True', {

@@ -59,8 +59,9 @@ bool Expression::IsUndefinedLiteral(Isolate* isolate) const {
 }
 
 
-VariableProxy::VariableProxy(Zone* zone, Variable* var, int position)
-    : Expression(zone, position),
+VariableProxy::VariableProxy(Zone* zone, Variable* var, int position,
+                             IdGen* id_gen)
+    : Expression(zone, position, id_gen),
       name_(var->raw_name()),
       var_(NULL),  // Will be set by the call to BindTo.
       is_this_(var->is_this()),
@@ -71,19 +72,15 @@ VariableProxy::VariableProxy(Zone* zone, Variable* var, int position)
 }
 
 
-VariableProxy::VariableProxy(Zone* zone,
-                             const AstRawString* name,
-                             bool is_this,
-                             Interface* interface,
-                             int position)
-    : Expression(zone, position),
+VariableProxy::VariableProxy(Zone* zone, const AstRawString* name, bool is_this,
+                             Interface* interface, int position, IdGen* id_gen)
+    : Expression(zone, position, id_gen),
       name_(name),
       var_(NULL),
       is_this_(is_this),
       is_assigned_(false),
       interface_(interface),
-      variable_feedback_slot_(kInvalidFeedbackSlot) {
-}
+      variable_feedback_slot_(kInvalidFeedbackSlot) {}
 
 
 void VariableProxy::BindTo(Variable* var) {
@@ -101,19 +98,16 @@ void VariableProxy::BindTo(Variable* var) {
 }
 
 
-Assignment::Assignment(Zone* zone,
-                       Token::Value op,
-                       Expression* target,
-                       Expression* value,
-                       int pos)
-    : Expression(zone, pos),
+Assignment::Assignment(Zone* zone, Token::Value op, Expression* target,
+                       Expression* value, int pos, IdGen* id_gen)
+    : Expression(zone, pos, id_gen),
       op_(op),
       target_(target),
       value_(value),
       binary_operation_(NULL),
-      assignment_id_(GetNextId(zone)),
+      assignment_id_(id_gen->GetNextId()),
       is_uninitialized_(false),
-      store_mode_(STANDARD_STORE) { }
+      store_mode_(STANDARD_STORE) {}
 
 
 Token::Value Assignment::binary_op() const {
@@ -590,18 +584,16 @@ Call::CallType Call::GetCallType(Isolate* isolate) const {
 
 
 bool Call::ComputeGlobalTarget(Handle<GlobalObject> global,
-                               LookupResult* lookup) {
+                               LookupIterator* it) {
   target_ = Handle<JSFunction>::null();
   cell_ = Handle<Cell>::null();
-  DCHECK(lookup->IsFound() &&
-         lookup->type() == NORMAL &&
-         lookup->holder() == *global);
-  cell_ = Handle<Cell>(global->GetPropertyCell(lookup));
+  DCHECK(it->IsFound() && it->GetHolder<JSObject>().is_identical_to(global));
+  cell_ = it->GetPropertyCell();
   if (cell_->value()->IsJSFunction()) {
     Handle<JSFunction> candidate(JSFunction::cast(cell_->value()));
     // If the function is in new space we assume it's more likely to
     // change and thus prefer the general IC code.
-    if (!lookup->isolate()->heap()->InNewSpace(*candidate)) {
+    if (!it->isolate()->heap()->InNewSpace(*candidate)) {
       target_ = candidate;
       return true;
     }
@@ -799,12 +791,12 @@ bool RegExpCapture::IsAnchoredAtEnd() {
 // in as many cases as possible, to make it more difficult for incorrect
 // parses to look as correct ones which is likely if the input and
 // output formats are alike.
-class RegExpUnparser V8_FINAL : public RegExpVisitor {
+class RegExpUnparser FINAL : public RegExpVisitor {
  public:
   RegExpUnparser(OStream& os, Zone* zone) : os_(os), zone_(zone) {}
   void VisitCharacterRange(CharacterRange that);
 #define MAKE_CASE(Name) virtual void* Visit##Name(RegExp##Name*,          \
-                                                  void* data) V8_OVERRIDE;
+                                                  void* data) OVERRIDE;
   FOR_EACH_REG_EXP_TREE_TYPE(MAKE_CASE)
 #undef MAKE_CASE
  private:
@@ -995,17 +987,14 @@ RegExpAlternative::RegExpAlternative(ZoneList<RegExpTree*>* nodes)
 }
 
 
-CaseClause::CaseClause(Zone* zone,
-                       Expression* label,
-                       ZoneList<Statement*>* statements,
-                       int pos)
-    : Expression(zone, pos),
+CaseClause::CaseClause(Zone* zone, Expression* label,
+                       ZoneList<Statement*>* statements, int pos, IdGen* id_gen)
+    : Expression(zone, pos, id_gen),
       label_(label),
       statements_(statements),
       compare_type_(Type::None(zone)),
-      compare_id_(AstNode::GetNextId(zone)),
-      entry_id_(AstNode::GetNextId(zone)) {
-}
+      compare_id_(id_gen->GetNextId()),
+      entry_id_(id_gen->GetNextId()) {}
 
 
 #define REGULAR_NODE(NodeType) \
@@ -1130,7 +1119,7 @@ Handle<String> Literal::ToString() {
   if (value_->IsString()) return value_->AsString()->string();
   DCHECK(value_->IsNumber());
   char arr[100];
-  Vector<char> buffer(arr, ARRAY_SIZE(arr));
+  Vector<char> buffer(arr, arraysize(arr));
   const char* str;
   if (value()->IsSmi()) {
     // Optimization only, the heap number case would subsume this.

@@ -17,25 +17,33 @@ class JSGraph;
 class Linkage;
 class MachineOperatorBuilder;
 
-class ChangeLowering V8_FINAL : public Reducer {
+class ChangeLowering FINAL : public Reducer {
  public:
   ChangeLowering(JSGraph* jsgraph, Linkage* linkage,
                  MachineOperatorBuilder* machine)
       : jsgraph_(jsgraph), linkage_(linkage), machine_(machine) {}
   virtual ~ChangeLowering();
 
-  virtual Reduction Reduce(Node* node) V8_OVERRIDE;
+  virtual Reduction Reduce(Node* node) OVERRIDE;
 
- protected:
+ private:
+  enum Signedness { kSigned, kUnsigned };
+
   Node* HeapNumberValueIndexConstant();
+  Node* SmiMaxValueConstant();
   Node* SmiShiftBitsConstant();
+
+  Node* AllocateHeapNumberWithValue(Node* value, Node* control);
+  Node* ChangeSmiToInt32(Node* value);
+  Node* LoadHeapNumberValue(Node* value, Node* control);
 
   Reduction ChangeBitToBool(Node* val, Node* control);
   Reduction ChangeBoolToBit(Node* val);
   Reduction ChangeFloat64ToTagged(Node* val, Node* control);
   Reduction ChangeInt32ToTagged(Node* val, Node* control);
   Reduction ChangeTaggedToFloat64(Node* val, Node* control);
-  Reduction ChangeTaggedToInt32(Node* val, Node* control);
+  Reduction ChangeTaggedToUI32(Node* val, Node* control, Signedness signedness);
+  Reduction ChangeUint32ToTagged(Node* val, Node* control);
 
   Graph* graph() const;
   Isolate* isolate() const;
@@ -43,9 +51,6 @@ class ChangeLowering V8_FINAL : public Reducer {
   Linkage* linkage() const { return linkage_; }
   CommonOperatorBuilder* common() const;
   MachineOperatorBuilder* machine() const { return machine_; }
-
- private:
-  Node* AllocateHeapNumberWithValue(Node* value, Node* control);
 
   JSGraph* jsgraph_;
   Linkage* linkage_;

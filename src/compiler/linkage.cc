@@ -34,8 +34,8 @@ OStream& operator<<(OStream& os, const CallDescriptor::Kind& k) {
 OStream& operator<<(OStream& os, const CallDescriptor& d) {
   // TODO(svenpanne) Output properties etc. and be less cryptic.
   return os << d.kind() << ":" << d.debug_name() << ":r" << d.ReturnCount()
-            << "p" << d.ParameterCount() << "i" << d.InputCount()
-            << (d.CanLazilyDeoptimize() ? "deopt" : "");
+            << "p" << d.ParameterCount() << "i" << d.InputCount() << "f"
+            << d.FrameStateCount();
 }
 
 
@@ -95,18 +95,37 @@ CallDescriptor* Linkage::GetJSCallDescriptor(int parameter_count) {
 
 CallDescriptor* Linkage::GetRuntimeCallDescriptor(
     Runtime::FunctionId function, int parameter_count,
-    Operator::Property properties,
-    CallDescriptor::DeoptimizationSupport can_deoptimize) {
+    Operator::Properties properties) {
   return GetRuntimeCallDescriptor(function, parameter_count, properties,
-                                  can_deoptimize, this->info_->zone());
+                                  this->info_->zone());
 }
 
 
 CallDescriptor* Linkage::GetStubCallDescriptor(
     CodeStubInterfaceDescriptor* descriptor, int stack_parameter_count,
-    CallDescriptor::DeoptimizationSupport can_deoptimize) {
-  return GetStubCallDescriptor(descriptor, stack_parameter_count,
-                               can_deoptimize, this->info_->zone());
+    CallDescriptor::Flags flags) {
+  return GetStubCallDescriptor(descriptor, stack_parameter_count, flags,
+                               this->info_->zone());
+}
+
+
+// static
+bool Linkage::NeedsFrameState(Runtime::FunctionId function) {
+  if (!FLAG_turbo_deoptimization) {
+    return false;
+  }
+  // TODO(jarin) At the moment, we only add frame state for
+  // few chosen runtime functions.
+  switch (function) {
+    case Runtime::kDebugBreak:
+    case Runtime::kDeoptimizeFunction:
+    case Runtime::kSetScriptBreakPoint:
+    case Runtime::kDebugGetLoadedScripts:
+    case Runtime::kStackGuard:
+      return true;
+    default:
+      return false;
+  }
 }
 
 
@@ -122,8 +141,7 @@ CallDescriptor* Linkage::GetJSCallDescriptor(int parameter_count, Zone* zone) {
 
 CallDescriptor* Linkage::GetRuntimeCallDescriptor(
     Runtime::FunctionId function, int parameter_count,
-    Operator::Property properties,
-    CallDescriptor::DeoptimizationSupport can_deoptimize, Zone* zone) {
+    Operator::Properties properties, Zone* zone) {
   UNIMPLEMENTED();
   return NULL;
 }
@@ -131,7 +149,7 @@ CallDescriptor* Linkage::GetRuntimeCallDescriptor(
 
 CallDescriptor* Linkage::GetStubCallDescriptor(
     CodeStubInterfaceDescriptor* descriptor, int stack_parameter_count,
-    CallDescriptor::DeoptimizationSupport can_deoptimize, Zone* zone) {
+    CallDescriptor::Flags flags, Zone* zone) {
   UNIMPLEMENTED();
   return NULL;
 }

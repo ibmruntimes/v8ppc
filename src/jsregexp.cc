@@ -55,7 +55,7 @@ MaybeHandle<Object> RegExpImpl::CreateRegExpLiteral(
     Handle<String> flags) {
   // Call the construct code with 2 arguments.
   Handle<Object> argv[] = { pattern, flags };
-  return Execution::New(constructor, ARRAY_SIZE(argv), argv);
+  return Execution::New(constructor, arraysize(argv), argv);
 }
 
 
@@ -90,8 +90,8 @@ static inline MaybeHandle<Object> ThrowRegExpException(
   elements->set(0, *pattern);
   elements->set(1, *error_text);
   Handle<JSArray> array = factory->NewJSArrayWithElements(elements);
-  Handle<Object> regexp_err = factory->NewSyntaxError(message, array);
-  return isolate->Throw<Object>(regexp_err);
+  Handle<Object> regexp_err;
+  THROW_NEW_ERROR(isolate, NewSyntaxError(message, array), Object);
 }
 
 
@@ -374,8 +374,7 @@ bool RegExpImpl::EnsureCompiledIrregexp(
 }
 
 
-static bool CreateRegExpErrorObjectAndThrow(Handle<JSRegExp> re,
-                                            bool is_ascii,
+static void CreateRegExpErrorObjectAndThrow(Handle<JSRegExp> re, bool is_ascii,
                                             Handle<String> error_message,
                                             Isolate* isolate) {
   Factory* factory = isolate->factory();
@@ -383,10 +382,10 @@ static bool CreateRegExpErrorObjectAndThrow(Handle<JSRegExp> re,
   elements->set(0, re->Pattern());
   elements->set(1, *error_message);
   Handle<JSArray> array = factory->NewJSArrayWithElements(elements);
-  Handle<Object> regexp_err =
+  Handle<Object> error;
+  MaybeHandle<Object> maybe_error =
       factory->NewSyntaxError("malformed_regexp", array);
-  isolate->Throw(*regexp_err);
-  return false;
+  if (maybe_error.ToHandle(&error)) isolate->Throw(*error);
 }
 
 
@@ -3590,18 +3589,18 @@ static const int kSpaceRanges[] = { '\t', '\r' + 1, ' ', ' ' + 1,
     0x00A0, 0x00A1, 0x1680, 0x1681, 0x180E, 0x180F, 0x2000, 0x200B,
     0x2028, 0x202A, 0x202F, 0x2030, 0x205F, 0x2060, 0x3000, 0x3001,
     0xFEFF, 0xFF00, 0x10000 };
-static const int kSpaceRangeCount = ARRAY_SIZE(kSpaceRanges);
+static const int kSpaceRangeCount = arraysize(kSpaceRanges);
 
 static const int kWordRanges[] = {
     '0', '9' + 1, 'A', 'Z' + 1, '_', '_' + 1, 'a', 'z' + 1, 0x10000 };
-static const int kWordRangeCount = ARRAY_SIZE(kWordRanges);
+static const int kWordRangeCount = arraysize(kWordRanges);
 static const int kDigitRanges[] = { '0', '9' + 1, 0x10000 };
-static const int kDigitRangeCount = ARRAY_SIZE(kDigitRanges);
+static const int kDigitRangeCount = arraysize(kDigitRanges);
 static const int kSurrogateRanges[] = { 0xd800, 0xe000, 0x10000 };
-static const int kSurrogateRangeCount = ARRAY_SIZE(kSurrogateRanges);
+static const int kSurrogateRangeCount = arraysize(kSurrogateRanges);
 static const int kLineTerminatorRanges[] = { 0x000A, 0x000B, 0x000D, 0x000E,
     0x2028, 0x202A, 0x10000 };
-static const int kLineTerminatorRangeCount = ARRAY_SIZE(kLineTerminatorRanges);
+static const int kLineTerminatorRangeCount = arraysize(kLineTerminatorRanges);
 
 
 void BoyerMoorePositionInfo::Set(int character) {

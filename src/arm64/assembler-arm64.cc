@@ -33,6 +33,7 @@
 #define ARM64_DEFINE_REG_STATICS
 
 #include "src/arm64/assembler-arm64-inl.h"
+#include "src/base/bits.h"
 #include "src/base/cpu.h"
 
 namespace v8 {
@@ -227,7 +228,7 @@ bool AreAliased(const CPURegister& reg1, const CPURegister& reg2,
 
   const CPURegister regs[] = {reg1, reg2, reg3, reg4, reg5, reg6, reg7, reg8};
 
-  for (unsigned i = 0; i < ARRAY_SIZE(regs); i++) {
+  for (unsigned i = 0; i < arraysize(regs); i++) {
     if (regs[i].IsRegister()) {
       number_of_valid_regs++;
       unique_regs |= regs[i].Bit();
@@ -601,7 +602,7 @@ void Assembler::GetCode(CodeDesc* desc) {
 
 
 void Assembler::Align(int m) {
-  DCHECK(m >= 4 && IsPowerOf2(m));
+  DCHECK(m >= 4 && base::bits::IsPowerOfTwo32(m));
   while ((pc_offset() & (m - 1)) != 0) {
     nop();
   }
@@ -2208,6 +2209,17 @@ void Assembler::brk(int code) {
 }
 
 
+void Assembler::EmitStringData(const char* string) {
+  size_t len = strlen(string) + 1;
+  DCHECK(RoundUp(len, kInstructionSize) <= static_cast<size_t>(kGap));
+  EmitData(string, len);
+  // Pad with NULL characters until pc_ is aligned.
+  const char pad[] = {'\0', '\0', '\0', '\0'};
+  STATIC_ASSERT(sizeof(pad) == kInstructionSize);
+  EmitData(pad, RoundUp(pc_offset(), kInstructionSize) - pc_offset());
+}
+
+
 void Assembler::debug(const char* message, uint32_t code, Instr params) {
 #ifdef USE_SIMULATOR
   // Don't generate simulator specific code if we are building a snapshot, which
@@ -2664,7 +2676,7 @@ bool Assembler::IsImmLogical(uint64_t value,
   int multiplier_idx = CountLeadingZeros(d, kXRegSizeInBits) - 57;
   // Ensure that the index to the multipliers array is within bounds.
   DCHECK((multiplier_idx >= 0) &&
-         (static_cast<size_t>(multiplier_idx) < ARRAY_SIZE(multipliers)));
+         (static_cast<size_t>(multiplier_idx) < arraysize(multipliers)));
   uint64_t multiplier = multipliers[multiplier_idx];
   uint64_t candidate = (b - a) * multiplier;
 

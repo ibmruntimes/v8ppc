@@ -16,14 +16,11 @@
 #include "src/execution.h"
 #include "src/full-codegen.h"
 #include "src/global-handles.h"
-#include "src/ic.h"
-#include "src/ic-inl.h"
 #include "src/isolate-inl.h"
 #include "src/list.h"
 #include "src/log.h"
 #include "src/messages.h"
 #include "src/natives.h"
-#include "src/stub-cache.h"
 
 #include "include/v8-debug.h"
 
@@ -760,13 +757,9 @@ bool Debug::CompileDebuggerScript(Isolate* isolate, int index) {
   Handle<JSFunction> function =
       factory->NewFunctionFromSharedFunctionInfo(function_info, context);
 
-  Handle<Object> exception;
-  MaybeHandle<Object> result =
-      Execution::TryCall(function,
-                         handle(context->global_proxy()),
-                         0,
-                         NULL,
-                         &exception);
+  MaybeHandle<Object> maybe_exception;
+  MaybeHandle<Object> result = Execution::TryCall(
+      function, handle(context->global_proxy()), 0, NULL, &maybe_exception);
 
   // Check for caught exceptions.
   if (result.is_null()) {
@@ -777,7 +770,8 @@ bool Debug::CompileDebuggerScript(Isolate* isolate, int index) {
         isolate, "error_loading_debugger", &computed_location,
         Vector<Handle<Object> >::empty(), Handle<JSArray>());
     DCHECK(!isolate->has_pending_exception());
-    if (!exception.is_null()) {
+    Handle<Object> exception;
+    if (maybe_exception.ToHandle(&exception)) {
       isolate->set_pending_exception(*exception);
       MessageHandler::ReportMessage(isolate, NULL, message);
       isolate->clear_pending_exception();
@@ -1054,7 +1048,7 @@ bool Debug::CheckBreakPoint(Handle<Object> break_point_object) {
   Handle<Object> result;
   if (!Execution::TryCall(check_break_point,
                           isolate_->js_builtins_object(),
-                          ARRAY_SIZE(argv),
+                          arraysize(argv),
                           argv).ToHandle(&result)) {
     return false;
   }
@@ -2461,7 +2455,7 @@ MaybeHandle<Object> Debug::MakeJSObject(const char* constructor_name,
 MaybeHandle<Object> Debug::MakeExecutionState() {
   // Create the execution state object.
   Handle<Object> argv[] = { isolate_->factory()->NewNumberFromInt(break_id()) };
-  return MakeJSObject("MakeExecutionState", ARRAY_SIZE(argv), argv);
+  return MakeJSObject("MakeExecutionState", arraysize(argv), argv);
 }
 
 
@@ -2469,7 +2463,7 @@ MaybeHandle<Object> Debug::MakeBreakEvent(Handle<Object> break_points_hit) {
   // Create the new break event object.
   Handle<Object> argv[] = { isolate_->factory()->NewNumberFromInt(break_id()),
                             break_points_hit };
-  return MakeJSObject("MakeBreakEvent", ARRAY_SIZE(argv), argv);
+  return MakeJSObject("MakeBreakEvent", arraysize(argv), argv);
 }
 
 
@@ -2481,7 +2475,7 @@ MaybeHandle<Object> Debug::MakeExceptionEvent(Handle<Object> exception,
                             exception,
                             isolate_->factory()->ToBoolean(uncaught),
                             promise };
-  return MakeJSObject("MakeExceptionEvent", ARRAY_SIZE(argv), argv);
+  return MakeJSObject("MakeExceptionEvent", arraysize(argv), argv);
 }
 
 
@@ -2491,21 +2485,21 @@ MaybeHandle<Object> Debug::MakeCompileEvent(Handle<Script> script,
   Handle<Object> script_wrapper = Script::GetWrapper(script);
   Handle<Object> argv[] = { script_wrapper,
                             isolate_->factory()->NewNumberFromInt(type) };
-  return MakeJSObject("MakeCompileEvent", ARRAY_SIZE(argv), argv);
+  return MakeJSObject("MakeCompileEvent", arraysize(argv), argv);
 }
 
 
 MaybeHandle<Object> Debug::MakePromiseEvent(Handle<JSObject> event_data) {
   // Create the promise event object.
   Handle<Object> argv[] = { event_data };
-  return MakeJSObject("MakePromiseEvent", ARRAY_SIZE(argv), argv);
+  return MakeJSObject("MakePromiseEvent", arraysize(argv), argv);
 }
 
 
 MaybeHandle<Object> Debug::MakeAsyncTaskEvent(Handle<JSObject> task_event) {
   // Create the async task event object.
   Handle<Object> argv[] = { task_event };
-  return MakeJSObject("MakeAsyncTaskEvent", ARRAY_SIZE(argv), argv);
+  return MakeJSObject("MakeAsyncTaskEvent", arraysize(argv), argv);
 }
 
 
@@ -2651,7 +2645,7 @@ void Debug::OnAfterCompile(Handle<Script> script) {
   Handle<Object> argv[] = { wrapper };
   if (Execution::TryCall(Handle<JSFunction>::cast(update_script_break_points),
                          isolate_->js_builtins_object(),
-                         ARRAY_SIZE(argv),
+                         arraysize(argv),
                          argv).is_null()) {
     return;
   }
@@ -2768,7 +2762,7 @@ void Debug::CallEventCallback(v8::DebugEvent event,
                               event_listener_data_ };
     Handle<JSReceiver> global(isolate_->global_proxy());
     Execution::TryCall(Handle<JSFunction>::cast(event_listener_),
-                       global, ARRAY_SIZE(argv), argv);
+                       global, arraysize(argv), argv);
   }
 }
 
@@ -2868,11 +2862,12 @@ void Debug::NotifyMessageHandler(v8::DebugEvent event,
     Handle<String> request_text = isolate_->factory()->NewStringFromTwoByte(
         command_text).ToHandleChecked();
     Handle<Object> request_args[] = { request_text };
-    Handle<Object> exception;
     Handle<Object> answer_value;
     Handle<String> answer;
-    MaybeHandle<Object> maybe_result = Execution::TryCall(
-        process_debug_request, cmd_processor, 1, request_args, &exception);
+    MaybeHandle<Object> maybe_exception;
+    MaybeHandle<Object> maybe_result =
+        Execution::TryCall(process_debug_request, cmd_processor, 1,
+                           request_args, &maybe_exception);
 
     if (maybe_result.ToHandle(&answer_value)) {
       if (answer_value->IsUndefined()) {
@@ -2890,10 +2885,15 @@ void Debug::NotifyMessageHandler(v8::DebugEvent event,
       Handle<Object> is_running_args[] = { answer };
       maybe_result = Execution::Call(
           isolate_, is_running, cmd_processor, 1, is_running_args);
-      running = maybe_result.ToHandleChecked()->IsTrue();
+      Handle<Object> result;
+      if (!maybe_result.ToHandle(&result)) break;
+      running = result->IsTrue();
     } else {
-      answer = Handle<String>::cast(
-          Execution::ToString(isolate_, exception).ToHandleChecked());
+      Handle<Object> exception;
+      if (!maybe_exception.ToHandle(&exception)) break;
+      Handle<Object> result;
+      if (!Execution::ToString(isolate_, exception).ToHandle(&result)) break;
+      answer = Handle<String>::cast(result);
     }
 
     // Return the result.
@@ -2906,6 +2906,7 @@ void Debug::NotifyMessageHandler(v8::DebugEvent event,
     // running state (through a continue command) or auto continue is active
     // and there are no more commands queued.
   } while (!running || has_commands());
+  command_queue_.Clear();
 }
 
 
@@ -3007,7 +3008,7 @@ MaybeHandle<Object> Debug::Call(Handle<JSFunction> fun, Handle<Object> data) {
       isolate_,
       fun,
       Handle<Object>(debug_context()->global_proxy(), isolate_),
-      ARRAY_SIZE(argv),
+      arraysize(argv),
       argv);
 }
 
