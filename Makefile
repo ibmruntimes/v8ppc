@@ -217,8 +217,6 @@ ifeq ($(nativesim), true)
   GYPFLAGS += -Dv8_native_sim=true
 endif
 
-GYPFLAGS += -Dv8_host_byteorder=$(shell python -c "import sys; print sys.byteorder")
-
 # ----------------- available targets: --------------------
 # - "dependencies": pulls in external dependencies (currently: GYP)
 # - "grokdump": rebuilds heap constants lists used by grokdump

@@ -33,6 +33,7 @@
     'gcc_version%': 'unknown',
     'CXX%': '${CXX:-$(which g++)}',  # Used to assemble a shell command.
     'v8_target_arch%': '<(target_arch)',
+    'v8_host_byteorder%': '<!(python -c "import sys; print sys.byteorder")',
     # Native Client builds currently use the V8 ARM JIT and
     # arm/simulator-arm.cc to defer the significant effort required
     # for NaCl JIT support. The nacl_target_arch variable provides
