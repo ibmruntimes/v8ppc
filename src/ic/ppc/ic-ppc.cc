@@ -9,14 +9,10 @@
 
 #if V8_TARGET_ARCH_PPC
 
-#include "src/ppc/assembler-ppc.h"
-
-#include "src/code-stubs.h"
 #include "src/codegen.h"
-#include "src/disasm.h"
-#include "src/ic-inl.h"
-#include "src/runtime.h"
-#include "src/stub-cache.h"
+#include "src/ic/ic.h"
+#include "src/ic/ic-compiler.h"
+#include "src/ic/stub-cache.h"
 
 namespace v8 {
 namespace internal {
@@ -29,8 +25,7 @@ namespace internal {
 #define __ ACCESS_MASM(masm)
 
 
-static void GenerateGlobalInstanceTypeCheck(MacroAssembler* masm,
-                                            Register type,
+static void GenerateGlobalInstanceTypeCheck(MacroAssembler* masm, Register type,
                                             Label* global_object) {
   // Register usage:
   //   type: holds the receiver instance type on entry.
@@ -56,12 +51,9 @@ static void GenerateGlobalInstanceTypeCheck(MacroAssembler* masm,
 // result.
 // The generated code assumes that the receiver has slow properties,
 // is not a global object and does not have interceptors.
-static void GenerateDictionaryLoad(MacroAssembler* masm,
-                                   Label* miss,
-                                   Register elements,
-                                   Register name,
-                                   Register result,
-                                   Register scratch1,
+static void GenerateDictionaryLoad(MacroAssembler* masm, Label* miss,
+                                   Register elements, Register name,
+                                   Register result, Register scratch1,
                                    Register scratch2) {
   // Main use of the scratch registers.
   // scratch1: Used as temporary and to hold the capacity of the property
@@ -70,13 +62,8 @@ static void GenerateDictionaryLoad(MacroAssembler* masm,
   Label done;
 
   // Probe the dictionary.
-  NameDictionaryLookupStub::GeneratePositiveLookup(masm,
-                                                   miss,
-                                                   &done,
-                                                   elements,
-                                                   name,
-                                                   scratch1,
-                                                   scratch2);
+  NameDictionaryLookupStub::GeneratePositiveLookup(masm, miss, &done, elements,
+                                                   name, scratch1, scratch2);
 
   // If probing finds an entry check that the value is a normal
   // property.
@@ -108,12 +95,9 @@ static void GenerateDictionaryLoad(MacroAssembler* masm,
 // result.
 // The generated code assumes that the receiver has slow properties,
 // is not a global object and does not have interceptors.
-static void GenerateDictionaryStore(MacroAssembler* masm,
-                                    Label* miss,
-                                    Register elements,
-                                    Register name,
-                                    Register value,
-                                    Register scratch1,
+static void GenerateDictionaryStore(MacroAssembler* masm, Label* miss,
+                                    Register elements, Register name,
+                                    Register value, Register scratch1,
                                     Register scratch2) {
   // Main use of the scratch registers.
   // scratch1: Used as temporary and to hold the capacity of the property
@@ -122,13 +106,8 @@ static void GenerateDictionaryStore(MacroAssembler* masm,
   Label done;
 
   // Probe the dictionary.
-  NameDictionaryLookupStub::GeneratePositiveLookup(masm,
-                                                   miss,
-                                                   &done,
-                                                   elements,
-                                                   name,
-                                                   scratch1,
-                                                   scratch2);
+  NameDictionaryLookupStub::GeneratePositiveLookup(masm, miss, &done, elements,
+                                                   name, scratch1, scratch2);
 
   // If probing finds an entry in the dictionary check that the value
   // is a normal property that is not read only.
@@ -160,11 +139,9 @@ static void GenerateDictionaryStore(MacroAssembler* masm,
 // Checks the receiver for special cases (value type, slow case bits).
 // Falls through for regular JS object.
 static void GenerateKeyedLoadReceiverCheck(MacroAssembler* masm,
-                                           Register receiver,
-                                           Register map,
+                                           Register receiver, Register map,
                                            Register scratch,
-                                           int interceptor_bit,
-                                           Label* slow) {
+                                           int interceptor_bit, Label* slow) {
   // Check that the object isn't a smi.
   __ JumpIfSmi(receiver, slow);
   // Get the map of the receiver.
@@ -188,14 +165,10 @@ static void GenerateKeyedLoadReceiverCheck(MacroAssembler* masm,
 
 // Loads an indexed element from a fast case array.
 // If not_fast_array is NULL, doesn't perform the elements map check.
-static void GenerateFastArrayLoad(MacroAssembler* masm,
-                                  Register receiver,
-                                  Register key,
-                                  Register elements,
-                                  Register scratch1,
-                                  Register scratch2,
-                                  Register result,
-                                  Label* not_fast_array,
+static void GenerateFastArrayLoad(MacroAssembler* masm, Register receiver,
+                                  Register key, Register elements,
+                                  Register scratch1, Register scratch2,
+                                  Register result, Label* not_fast_array,
                                   Label* out_of_range) {
   // Register use:
   //
@@ -250,12 +223,9 @@ static void GenerateFastArrayLoad(MacroAssembler* masm,
 
 // Checks whether a key is an array index string or a unique name.
 // Falls through if a key is a unique name.
-static void GenerateKeyNameCheck(MacroAssembler* masm,
-                                 Register key,
-                                 Register map,
-                                 Register hash,
-                                 Label* index_string,
-                                 Label* not_unique) {
+static void GenerateKeyNameCheck(MacroAssembler* masm, Register key,
+                                 Register map, Register hash,
+                                 Label* index_string, Label* not_unique) {
   // The key is not a smi.
   Label unique;
   // Is it a name?
@@ -284,8 +254,8 @@ static void GenerateKeyNameCheck(MacroAssembler* masm,
 
 void LoadIC::GenerateMegamorphic(MacroAssembler* masm) {
   // The return address is in lr.
-  Register receiver = ReceiverRegister();
-  Register name = NameRegister();
+  Register receiver = LoadConvention::ReceiverRegister();
+  Register name = LoadConvention::NameRegister();
   DCHECK(receiver.is(r4));
   DCHECK(name.is(r5));
 
@@ -302,14 +272,15 @@ void LoadIC::GenerateMegamorphic(MacroAssembler* masm) {
 
 void LoadIC::GenerateNormal(MacroAssembler* masm) {
   Register dictionary = r3;
-  DCHECK(!dictionary.is(ReceiverRegister()));
-  DCHECK(!dictionary.is(NameRegister()));
+  DCHECK(!dictionary.is(LoadConvention::ReceiverRegister()));
+  DCHECK(!dictionary.is(LoadConvention::NameRegister()));
 
   Label slow;
 
-  __ LoadP(dictionary,
-         FieldMemOperand(ReceiverRegister(), JSObject::kPropertiesOffset));
-  GenerateDictionaryLoad(masm, &slow, dictionary, NameRegister(), r3, r6, r7);
+  __ LoadP(dictionary, FieldMemOperand(LoadConvention::ReceiverRegister(),
+                                     JSObject::kPropertiesOffset));
+  GenerateDictionaryLoad(masm, &slow, dictionary,
+                         LoadConvention::NameRegister(), r3, r6, r7);
   __ Ret();
 
   // Dictionary load failed, go slow (but don't miss).
@@ -328,12 +299,11 @@ void LoadIC::GenerateMiss(MacroAssembler* masm) {
 
   __ IncrementCounter(isolate->counters()->load_miss(), 1, r6, r7);
 
-  __ mr(LoadIC_TempRegister(), ReceiverRegister());
-  __ Push(LoadIC_TempRegister(), NameRegister());
+  __ mr(LoadIC_TempRegister(), LoadConvention::ReceiverRegister());
+  __ Push(LoadIC_TempRegister(), LoadConvention::NameRegister());
 
   // Perform tail call to the entry.
-  ExternalReference ref =
-      ExternalReference(IC_Utility(kLoadIC_Miss), isolate);
+  ExternalReference ref = ExternalReference(IC_Utility(kLoadIC_Miss), isolate);
   __ TailCallExternalReference(ref, 2, 1);
 }
 
@@ -341,20 +311,16 @@ void LoadIC::GenerateMiss(MacroAssembler* masm) {
 void LoadIC::GenerateRuntimeGetProperty(MacroAssembler* masm) {
   // The return address is in lr.
 
-  __ mr(LoadIC_TempRegister(), ReceiverRegister());
-  __ Push(LoadIC_TempRegister(), NameRegister());
+  __ mr(LoadIC_TempRegister(), LoadConvention::ReceiverRegister());
+  __ Push(LoadIC_TempRegister(), LoadConvention::NameRegister());
 
   __ TailCallRuntime(Runtime::kGetProperty, 2, 1);
 }
 
 
-static MemOperand GenerateMappedArgumentsLookup(MacroAssembler* masm,
-                                                Register object,
-                                                Register key,
-                                                Register scratch1,
-                                                Register scratch2,
-                                                Register scratch3,
-                                                Label* unmapped_case,
+static MemOperand GenerateMappedArgumentsLookup(
+    MacroAssembler* masm, Register object, Register key, Register scratch1,
+    Register scratch2, Register scratch3, Label* unmapped_case,
                                                 Label* slow_case) {
   Heap* heap = masm->isolate()->heap();
 
@@ -433,8 +399,8 @@ static MemOperand GenerateUnmappedArgumentsLookup(MacroAssembler* masm,
 
 void KeyedLoadIC::GenerateSloppyArguments(MacroAssembler* masm) {
   // The return address is in lr.
-  Register receiver = ReceiverRegister();
-  Register key = NameRegister();
+  Register receiver = LoadConvention::ReceiverRegister();
+  Register key = LoadConvention::NameRegister();
   DCHECK(receiver.is(r4));
   DCHECK(key.is(r5));
 
@@ -459,9 +425,9 @@ void KeyedLoadIC::GenerateSloppyArguments(MacroAssembler* masm) {
 
 
 void KeyedStoreIC::GenerateSloppyArguments(MacroAssembler* masm) {
-  Register receiver = ReceiverRegister();
-  Register key = NameRegister();
-  Register value = ValueRegister();
+  Register receiver = StoreConvention::ReceiverRegister();
+  Register key = StoreConvention::NameRegister();
+  Register value = StoreConvention::ValueRegister();
   DCHECK(receiver.is(r4));
   DCHECK(key.is(r5));
   DCHECK(value.is(r3));
@@ -498,7 +464,7 @@ void KeyedLoadIC::GenerateMiss(MacroAssembler* masm) {
 
   __ IncrementCounter(isolate->counters()->keyed_load_miss(), 1, r6, r7);
 
-  __ Push(ReceiverRegister(), NameRegister());
+  __ Push(LoadConvention::ReceiverRegister(), LoadConvention::NameRegister());
 
   // Perform tail call to the entry.
   ExternalReference ref =
@@ -508,37 +474,10 @@ void KeyedLoadIC::GenerateMiss(MacroAssembler* masm) {
 }
 
 
-// IC register specifications
-const Register LoadIC::ReceiverRegister() { return r4; }
-const Register LoadIC::NameRegister() { return r5; }
-
-
-const Register LoadIC::SlotRegister() {
-  DCHECK(FLAG_vector_ics);
-  return r3;
-}
-
-
-const Register LoadIC::VectorRegister() {
-  DCHECK(FLAG_vector_ics);
-  return r6;
-}
-
-
-const Register StoreIC::ReceiverRegister() { return r4; }
-const Register StoreIC::NameRegister() { return r5; }
-const Register StoreIC::ValueRegister() { return r3; }
-
-
-const Register KeyedStoreIC::MapRegister() {
-  return r6;
-}
-
-
 void KeyedLoadIC::GenerateRuntimeGetProperty(MacroAssembler* masm) {
   // The return address is in lr.
 
-  __ Push(ReceiverRegister(), NameRegister());
+  __ Push(LoadConvention::ReceiverRegister(), LoadConvention::NameRegister());
 
   __ TailCallRuntime(Runtime::kKeyedGetProperty, 2, 1);
 }
@@ -549,8 +488,8 @@ void KeyedLoadIC::GenerateGeneric(MacroAssembler* masm) {
   Label slow, check_name, index_smi, index_name, property_array_property;
   Label probe_dictionary, check_number_dictionary;
 
-  Register key = NameRegister();
-  Register receiver = ReceiverRegister();
+  Register key = LoadConvention::NameRegister();
+  Register receiver = LoadConvention::ReceiverRegister();
   DCHECK(key.is(r5));
   DCHECK(receiver.is(r4));
 
@@ -724,16 +663,13 @@ void KeyedLoadIC::GenerateString(MacroAssembler* masm) {
   // Return address is in lr.
   Label miss;
 
-  Register receiver = ReceiverRegister();
-  Register index = NameRegister();
+  Register receiver = LoadConvention::ReceiverRegister();
+  Register index = LoadConvention::NameRegister();
   Register scratch = r6;
   Register result = r3;
   DCHECK(!scratch.is(receiver) && !scratch.is(index));
 
-  StringCharAtGenerator char_at_generator(receiver,
-                                          index,
-                                          scratch,
-                                          result,
+  StringCharAtGenerator char_at_generator(receiver, index, scratch, result,
                                           &miss,  // When not a string.
                                           &miss,  // When not a number.
                                           &miss,  // When index out of range.
@@ -753,8 +689,8 @@ void KeyedLoadIC::GenerateIndexedInterceptor(MacroAssembler* masm) {
   // Return address is in lr.
   Label slow;
 
-  Register receiver = ReceiverRegister();
-  Register key = NameRegister();
+  Register receiver = LoadConvention::ReceiverRegister();
+  Register key = LoadConvention::NameRegister();
   Register scratch1 = r6;
   Register scratch2 = r7;
   DCHECK(!scratch1.is(receiver) && !scratch1.is(key));
@@ -793,7 +729,8 @@ void KeyedLoadIC::GenerateIndexedInterceptor(MacroAssembler* masm) {
 
 void KeyedStoreIC::GenerateMiss(MacroAssembler* masm) {
   // Push receiver, key and value for runtime call.
-  __ Push(ReceiverRegister(), NameRegister(), ValueRegister());
+  __ Push(StoreConvention::ReceiverRegister(), StoreConvention::NameRegister(),
+          StoreConvention::ValueRegister());
 
   ExternalReference ref =
       ExternalReference(IC_Utility(kKeyedStoreIC_Miss), masm->isolate());
@@ -801,55 +738,11 @@ void KeyedStoreIC::GenerateMiss(MacroAssembler* masm) {
 }
 
 
-void StoreIC::GenerateSlow(MacroAssembler* masm) {
-  // Push receiver, key and value for runtime call.
-  __ Push(ReceiverRegister(), NameRegister(), ValueRegister());
-
-  // The slow case calls into the runtime to complete the store without causing
-  // an IC miss that would otherwise cause a transition to the generic stub.
-  ExternalReference ref =
-      ExternalReference(IC_Utility(kStoreIC_Slow), masm->isolate());
-  __ TailCallExternalReference(ref, 3, 1);
-}
-
-
-void KeyedStoreIC::GenerateSlow(MacroAssembler* masm) {
-  // Push receiver, key and value for runtime call.
-  __ Push(ReceiverRegister(), NameRegister(), ValueRegister());
-
-  // The slow case calls into the runtime to complete the store without causing
-  // an IC miss that would otherwise cause a transition to the generic stub.
-  ExternalReference ref =
-      ExternalReference(IC_Utility(kKeyedStoreIC_Slow), masm->isolate());
-  __ TailCallExternalReference(ref, 3, 1);
-}
-
-
-void KeyedStoreIC::GenerateRuntimeSetProperty(MacroAssembler* masm,
-                                              StrictMode strict_mode) {
-  // Push receiver, key and value for runtime call.
-  __ Push(ReceiverRegister(), NameRegister(), ValueRegister());
-
-  __ LoadSmiLiteral(r3, Smi::FromInt(strict_mode));   // Strict mode.
-  __ Push(r3);
-
-  __ TailCallRuntime(Runtime::kSetProperty, 4, 1);
-}
-
-
 static void KeyedStoreGenerateGenericHelper(
-    MacroAssembler* masm,
-    Label* fast_object,
-    Label* fast_double,
-    Label* slow,
-    KeyedStoreCheckMap check_map,
-    KeyedStoreIncrementLength increment_length,
-    Register value,
-    Register key,
-    Register receiver,
-    Register receiver_map,
-    Register elements_map,
-    Register elements) {
+    MacroAssembler* masm, Label* fast_object, Label* fast_double, Label* slow,
+    KeyedStoreCheckMap check_map, KeyedStoreIncrementLength increment_length,
+    Register value, Register key, Register receiver, Register receiver_map,
+    Register elements_map, Register elements) {
   Label transition_smi_elements;
   Label finish_object_store, non_double_value, transition_double_elements;
   Label fast_double_without_map_check;
@@ -915,13 +808,8 @@ static void KeyedStoreGenerateGenericHelper(
   __ StorePUX(value, MemOperand(address, scratch_value));
   // Update write barrier for the elements array address.
   __ mr(scratch_value, value);  // Preserve the value which is returned.
-  __ RecordWrite(elements,
-                 address,
-                 scratch_value,
-                 kLRHasNotBeenSaved,
-                 kDontSaveFPRegs,
-                 EMIT_REMEMBERED_SET,
-                 OMIT_SMI_CHECK);
+  __ RecordWrite(elements, address, scratch_value, kLRHasNotBeenSaved,
+                 kDontSaveFPRegs, EMIT_REMEMBERED_SET, OMIT_SMI_CHECK);
   __ Ret();
 
   __ bind(fast_double);
@@ -1019,9 +907,9 @@ void KeyedStoreIC::GenerateGeneric(MacroAssembler* masm,
   Label array, extra, check_if_double_array;
 
   // Register usage.
-  Register value = ValueRegister();
-  Register key = NameRegister();
-  Register receiver = ReceiverRegister();
+  Register value = StoreConvention::ValueRegister();
+  Register key = StoreConvention::NameRegister();
+  Register receiver = StoreConvention::ReceiverRegister();
   DCHECK(receiver.is(r4));
   DCHECK(key.is(r5));
   DCHECK(value.is(r3));
@@ -1063,7 +951,7 @@ void KeyedStoreIC::GenerateGeneric(MacroAssembler* masm,
   // r3: value.
   // r4: key.
   // r5: receiver.
-  GenerateRuntimeSetProperty(masm, strict_mode);
+  PropertyICCompiler::GenerateRuntimeSetProperty(masm, strict_mode);
 
   // Extra capacity case: Check if there is extra capacity to
   // perform the store and update the length. Used for adding one
@@ -1111,11 +999,11 @@ void KeyedStoreIC::GenerateGeneric(MacroAssembler* masm,
 
 
 void StoreIC::GenerateMegamorphic(MacroAssembler* masm) {
-  Register receiver = ReceiverRegister();
-  Register name = NameRegister();
+  Register receiver = StoreConvention::ReceiverRegister();
+  Register name = StoreConvention::NameRegister();
   DCHECK(receiver.is(r4));
   DCHECK(name.is(r5));
-  DCHECK(ValueRegister().is(r3));
+  DCHECK(StoreConvention::ValueRegister().is(r3));
 
   // Get the receiver from the stack and probe the stub cache.
   Code::Flags flags = Code::RemoveTypeAndHolderFromFlags(
@@ -1130,7 +1018,8 @@ void StoreIC::GenerateMegamorphic(MacroAssembler* masm) {
 
 
 void StoreIC::GenerateMiss(MacroAssembler* masm) {
-  __ Push(ReceiverRegister(), NameRegister(), ValueRegister());
+  __ Push(StoreConvention::ReceiverRegister(), StoreConvention::NameRegister(),
+          StoreConvention::ValueRegister());
 
   // Perform tail call to the entry.
   ExternalReference ref =
@@ -1141,9 +1030,9 @@ void StoreIC::GenerateMiss(MacroAssembler* masm) {
 
 void StoreIC::GenerateNormal(MacroAssembler* masm) {
   Label miss;
-  Register receiver = ReceiverRegister();
-  Register name = NameRegister();
-  Register value = ValueRegister();
+  Register receiver = StoreConvention::ReceiverRegister();
+  Register name = StoreConvention::NameRegister();
+  Register value = StoreConvention::ValueRegister();
   Register dictionary = r6;
   DCHECK(receiver.is(r4));
   DCHECK(name.is(r5));
@@ -1159,18 +1048,6 @@ void StoreIC::GenerateNormal(MacroAssembler* masm) {
   __ bind(&miss);
   __ IncrementCounter(counters->store_normal_miss(), 1, r7, r8);
   GenerateMiss(masm);
-}
-
-
-void StoreIC::GenerateRuntimeSetProperty(MacroAssembler* masm,
-                                         StrictMode strict_mode) {
-  __ Push(ReceiverRegister(), NameRegister(), ValueRegister());
-
-  __ LoadSmiLiteral(r3, Smi::FromInt(strict_mode));
-  __ Push(r3);
-
-  // Do tail-call to runtime routine.
-  __ TailCallRuntime(Runtime::kSetProperty, 4, 1);
 }
 
 
@@ -1277,8 +1154,7 @@ void PatchInlinedSmiCode(Address address, InlinedSmiCheck check) {
     patcher.EmitCondition(eq);
   }
 }
-
-
-} }  // namespace v8::internal
+}
+}  // namespace v8::internal
 
 #endif  // V8_TARGET_ARCH_PPC

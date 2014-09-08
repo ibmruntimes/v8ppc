@@ -42,9 +42,9 @@
 
 #if V8_TARGET_ARCH_PPC
 
+#include "src/base/bits.h"
 #include "src/base/cpu.h"
 #include "src/ppc/assembler-ppc-inl.h"
-
 #include "src/macro-assembler.h"
 #include "src/serialize.h"
 
@@ -273,7 +273,11 @@ void Assembler::GetCode(CodeDesc* desc) {
 
 
 void Assembler::Align(int m) {
-  DCHECK(m >= 4 && IsPowerOf2(m));
+#if V8_TARGET_ARCH_PPC64
+  DCHECK(m >= 4 && base::bits::IsPowerOfTwo64(m));
+#else
+  DCHECK(m >= 4 && base::bits::IsPowerOfTwo32(m));
+#endif
   while ((pc_offset() & (m - 1)) != 0) {
     nop();
   }

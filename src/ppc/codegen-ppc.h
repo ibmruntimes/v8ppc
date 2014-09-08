@@ -9,7 +9,7 @@
 #define V8_PPC_CODEGEN_PPC_H_
 
 #include "src/ast.h"
-#include "src/ic-inl.h"
+#include "src/macro-assembler.h"
 
 namespace v8 {
 namespace internal {

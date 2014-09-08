@@ -1489,7 +1489,7 @@ class CEntryStub : public PlatformCodeStub {
       : PlatformCodeStub(isolate) {
     minor_key_ = SaveDoublesBits::encode(save_doubles == kSaveFPRegs);
     DCHECK(result_size == 1 || result_size == 2);
-#ifdef _WIN64
+#if _WIN64 || (V8_TARGET_ARCH_PPC64 && !ABI_RETURNS_OBJECT_PAIRS_IN_REGS)
     minor_key_ = ResultSizeBits::update(minor_key_, result_size);
 #endif  // _WIN64
   }
@@ -1506,7 +1506,7 @@ class CEntryStub : public PlatformCodeStub {
   virtual Major MajorKey() const OVERRIDE { return CEntry; }
 
   bool save_doubles() const { return SaveDoublesBits::decode(minor_key_); }
-#ifdef _WIN64
+#if _WIN64 || (V8_TARGET_ARCH_PPC64 && !ABI_RETURNS_OBJECT_PAIRS_IN_REGS)
   int result_size() const { return ResultSizeBits::decode(minor_key_); }
 #endif  // _WIN64
 

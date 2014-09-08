@@ -8,7 +8,7 @@
 #ifndef V8_PPC_CODE_STUBS_PPC_H_
 #define V8_PPC_CODE_STUBS_PPC_H_
 
-#include "src/ic-inl.h"
+#include "src/code-stubs.h"
 
 namespace v8 {
 namespace internal {
@@ -31,7 +31,7 @@ class StoreBufferOverflowStub: public PlatformCodeStub {
   SaveFPRegsMode save_doubles_;
 
   Major MajorKey() const { return StoreBufferOverflow; }
-  int MinorKey() const { return (save_doubles_ == kSaveFPRegs) ? 1 : 0; }
+  uint32_t MinorKey() const { return (save_doubles_ == kSaveFPRegs) ? 1 : 0; }
 };
 
 
@@ -75,7 +75,7 @@ class SubStringStub: public PlatformCodeStub {
 
  private:
   Major MajorKey() const { return SubString; }
-  int MinorKey() const { return 0; }
+  uint32_t MinorKey() const { return 0; }
 
   void Generate(MacroAssembler* masm);
 };
@@ -104,7 +104,7 @@ class StringCompareStub: public PlatformCodeStub {
 
  private:
   virtual Major MajorKey() const { return StringCompare; }
-  virtual int MinorKey() const { return 0; }
+  virtual uint32_t MinorKey() const { return 0; }
   virtual void Generate(MacroAssembler* masm);
 
   static void GenerateAsciiCharsCompareLoop(MacroAssembler* masm,
@@ -280,7 +280,7 @@ class RecordWriteStub: public PlatformCodeStub {
 
   Major MajorKey() const { return RecordWrite; }
 
-  int MinorKey() const {
+  uint32_t MinorKey() const {
     return ObjectBits::encode(object_.code()) |
         ValueBits::encode(value_.code()) |
         AddressBits::encode(address_.code()) |
@@ -321,7 +321,7 @@ class DirectCEntryStub: public PlatformCodeStub {
 
  private:
   Major MajorKey() const { return DirectCEntry; }
-  int MinorKey() const { return 0; }
+  uint32_t MinorKey() const { return 0; }
 
   bool NeedsImmovableCode() { return true; }
 };
@@ -368,7 +368,7 @@ class NameDictionaryLookupStub: public PlatformCodeStub {
 
   Major MajorKey() const { return NameDictionaryLookup; }
 
-  int MinorKey() const { return LookupModeBits::encode(mode_); }
+  uint32_t MinorKey() const { return LookupModeBits::encode(mode_); }
 
   class LookupModeBits: public BitField<LookupMode, 0, 1> {};
 

@@ -7,10 +7,9 @@
 
 #include "src/v8.h"
 
+#include "src/base/bits.h"
 #include "src/code-stubs.h"
 #include "src/hydrogen-osr.h"
-#include "src/stub-cache.h"
-
 #include "src/ppc/lithium-codegen-ppc.h"
 #include "src/ppc/lithium-gap-resolver-ppc.h"
 
@@ -18,7 +17,7 @@ namespace v8 {
 namespace internal {
 
 
-class SafepointGenerator V8_FINAL : public CallWrapper {
+class SafepointGenerator FINAL : public CallWrapper {
  public:
   SafepointGenerator(LCodeGen* codegen,
                      LPointerMap* pointers,
@@ -28,9 +27,9 @@ class SafepointGenerator V8_FINAL : public CallWrapper {
         deopt_mode_(mode) { }
   virtual ~SafepointGenerator() { }
 
-  virtual void BeforeCall(int call_size) const V8_OVERRIDE {}
+  virtual void BeforeCall(int call_size) const OVERRIDE {}
 
-  virtual void AfterCall() const V8_OVERRIDE {
+  virtual void AfterCall() const OVERRIDE {
     codegen_->RecordSafepoint(pointers_, deopt_mode_);
   }
 
@@ -117,6 +116,7 @@ bool LCodeGen::GeneratePrologue() {
 
     // r4: Callee's JS function.
     // cp: Callee's context.
+    // pp: Callee's constant pool pointer (if FLAG_enable_ool_constant_pool)
     // fp: Caller's frame pointer.
     // lr: Caller's pc.
 
@@ -862,7 +862,7 @@ void LCodeGen::PopulateDeoptimizationData(Handle<Code> code) {
   int length = deoptimizations_.length();
   if (length == 0) return;
   Handle<DeoptimizationInputData> data =
-      DeoptimizationInputData::New(isolate(), length, 0, TENURED);
+      DeoptimizationInputData::New(isolate(), length, TENURED);
 
   Handle<ByteArray> translations =
       translations_.CreateByteArray(isolate()->factory());
@@ -1193,7 +1193,7 @@ void LCodeGen::DoDivByPowerOf2I(LDivByPowerOf2I* instr) {
   Register dividend = ToRegister(instr->dividend());
   int32_t divisor = instr->divisor();
   Register result = ToRegister(instr->result());
-  DCHECK(divisor == kMinInt || IsPowerOf2(Abs(divisor)));
+  DCHECK(divisor == kMinInt || base::bits::IsPowerOfTwo32(Abs(divisor)));
   DCHECK(!result.is(dividend));
 
   // Check for (0 / -x) that will produce negative zero.
@@ -1593,18 +1593,18 @@ void LCodeGen::DoMulI(LMulI* instr) {
         int32_t mask = constant >> 31;
         uint32_t constant_abs = (constant + mask) ^ mask;
 
-        if (IsPowerOf2(constant_abs)) {
+        if (base::bits::IsPowerOfTwo32(constant_abs)) {
           int32_t shift = WhichPowerOf2(constant_abs);
           __ ShiftLeftImm(result, left, Operand(shift));
           // Correct the sign of the result if the constant is negative.
           if (constant < 0)  __ neg(result, result);
-        } else if (IsPowerOf2(constant_abs - 1)) {
+        } else if (base::bits::IsPowerOfTwo32(constant_abs - 1)) {
           int32_t shift = WhichPowerOf2(constant_abs - 1);
           __ ShiftLeftImm(scratch, left, Operand(shift));
           __ add(result, scratch, left);
           // Correct the sign of the result if the constant is negative.
           if (constant < 0)  __ neg(result, result);
-        } else if (IsPowerOf2(constant_abs + 1)) {
+        } else if (base::bits::IsPowerOfTwo32(constant_abs + 1)) {
           int32_t shift = WhichPowerOf2(constant_abs + 1);
           __ ShiftLeftImm(scratch, left, Operand(shift));
           __ sub(result, scratch, left);
@@ -2869,15 +2869,15 @@ void LCodeGen::DoInstanceOf(LInstanceOf* instr) {
 
 
 void LCodeGen::DoInstanceOfKnownGlobal(LInstanceOfKnownGlobal* instr) {
-  class DeferredInstanceOfKnownGlobal V8_FINAL : public LDeferredCode {
+  class DeferredInstanceOfKnownGlobal FINAL : public LDeferredCode {
    public:
     DeferredInstanceOfKnownGlobal(LCodeGen* codegen,
                                   LInstanceOfKnownGlobal* instr)
         : LDeferredCode(codegen), instr_(instr) { }
-    virtual void Generate() V8_OVERRIDE {
+    virtual void Generate() OVERRIDE {
       codegen()->DoDeferredInstanceOfKnownGlobal(instr_, &map_check_);
     }
-    virtual LInstruction* instr() V8_OVERRIDE { return instr_; }
+    virtual LInstruction* instr() OVERRIDE { return instr_; }
     Label* map_check() { return &map_check_; }
    private:
     LInstanceOfKnownGlobal* instr_;
@@ -3023,23 +3023,25 @@ void LCodeGen::DoReturn(LReturn* instr) {
   if (NeedsEagerFrame()) {
     no_frame_start = masm_->LeaveFrame(StackFrame::JAVA_SCRIPT);
   }
-  if (instr->has_constant_parameter_count()) {
-    int parameter_count = ToInteger32(instr->constant_parameter_count());
-    int32_t sp_delta = (parameter_count + 1) * kPointerSize;
-    if (sp_delta != 0) {
-      __ addi(sp, sp, Operand(sp_delta));
+  { ConstantPoolUnavailableScope constant_pool_unavailable(masm());
+    if (instr->has_constant_parameter_count()) {
+      int parameter_count = ToInteger32(instr->constant_parameter_count());
+      int32_t sp_delta = (parameter_count + 1) * kPointerSize;
+      if (sp_delta != 0) {
+        __ addi(sp, sp, Operand(sp_delta));
+      }
+    } else {
+      Register reg = ToRegister(instr->parameter_count());
+      // The argument count parameter is a smi
+      __ SmiToPtrArrayOffset(r0, reg);
+      __ add(sp, sp, r0);
     }
-  } else {
-    Register reg = ToRegister(instr->parameter_count());
-    // The argument count parameter is a smi
-    __ SmiToPtrArrayOffset(r0, reg);
-    __ add(sp, sp, r0);
-  }
 
-  __ blr();
+    __ blr();
 
-  if (no_frame_start != -1) {
-    info_->AddNoFrameRange(no_frame_start, masm_->pc_offset());
+    if (no_frame_start != -1) {
+      info_->AddNoFrameRange(no_frame_start, masm_->pc_offset());
+    }
   }
 }
 
@@ -3056,20 +3058,28 @@ void LCodeGen::DoLoadGlobalCell(LLoadGlobalCell* instr) {
 }
 
 
+template <class T>
+void LCodeGen::EmitVectorLoadICRegisters(T* instr) {
+  DCHECK(FLAG_vector_ics);
+  Register vector = ToRegister(instr->temp_vector());
+  DCHECK(vector.is(FullVectorLoadConvention::VectorRegister()));
+  __ Move(vector, instr->hydrogen()->feedback_vector());
+  // No need to allocate this register.
+  DCHECK(FullVectorLoadConvention::SlotRegister().is(r3));
+  __ mov(FullVectorLoadConvention::SlotRegister(),
+         Operand(Smi::FromInt(instr->hydrogen()->slot())));
+}
+
+
 void LCodeGen::DoLoadGlobalGeneric(LLoadGlobalGeneric* instr) {
   DCHECK(ToRegister(instr->context()).is(cp));
-  DCHECK(ToRegister(instr->global_object()).is(LoadIC::ReceiverRegister()));
+  DCHECK(ToRegister(instr->global_object())
+             .is(LoadConvention::ReceiverRegister()));
   DCHECK(ToRegister(instr->result()).is(r3));
 
-  __ mov(LoadIC::NameRegister(), Operand(instr->name()));
+  __ mov(LoadConvention::NameRegister(), Operand(instr->name()));
   if (FLAG_vector_ics) {
-    Register vector = ToRegister(instr->temp_vector());
-    DCHECK(vector.is(LoadIC::VectorRegister()));
-    __ Move(vector, instr->hydrogen()->feedback_vector());
-    // No need to allocate this register.
-    DCHECK(LoadIC::SlotRegister().is(r0));
-    __ mov(LoadIC::SlotRegister(),
-           Operand(Smi::FromInt(instr->hydrogen()->slot())));
+    EmitVectorLoadICRegisters<LLoadGlobalGeneric>(instr);
   }
   ContextualMode mode = instr->for_typeof() ? NOT_CONTEXTUAL : CONTEXTUAL;
   Handle<Code> ic = LoadIC::initialize_stub(isolate(), mode);
@@ -3206,18 +3216,12 @@ void LCodeGen::DoLoadNamedField(LLoadNamedField* instr) {
 
 void LCodeGen::DoLoadNamedGeneric(LLoadNamedGeneric* instr) {
   DCHECK(ToRegister(instr->context()).is(cp));
-  DCHECK(ToRegister(instr->object()).is(LoadIC::ReceiverRegister()));
+  DCHECK(ToRegister(instr->object()).is(LoadConvention::ReceiverRegister()));
   DCHECK(ToRegister(instr->result()).is(r3));
 
-  __ mov(LoadIC::NameRegister(), Operand(instr->name()));
+  __ mov(LoadConvention::NameRegister(), Operand(instr->name()));
   if (FLAG_vector_ics) {
-    Register vector = ToRegister(instr->temp_vector());
-    DCHECK(vector.is(LoadIC::VectorRegister()));
-    __ Move(vector, instr->hydrogen()->feedback_vector());
-    // No need to allocate this register.
-    DCHECK(LoadIC::SlotRegister().is(r0));
-    __ mov(LoadIC::SlotRegister(),
-           Operand(Smi::FromInt(instr->hydrogen()->slot())));
+    EmitVectorLoadICRegisters<LLoadNamedGeneric>(instr);
   }
   Handle<Code> ic = LoadIC::initialize_stub(isolate(), NOT_CONTEXTUAL);
   CallCode(ic, RelocInfo::CODE_TARGET, instr);
@@ -3571,17 +3575,11 @@ MemOperand LCodeGen::PrepareKeyedOperand(Register key,
 
 void LCodeGen::DoLoadKeyedGeneric(LLoadKeyedGeneric* instr) {
   DCHECK(ToRegister(instr->context()).is(cp));
-  DCHECK(ToRegister(instr->object()).is(LoadIC::ReceiverRegister()));
-  DCHECK(ToRegister(instr->key()).is(LoadIC::NameRegister()));
+  DCHECK(ToRegister(instr->object()).is(LoadConvention::ReceiverRegister()));
+  DCHECK(ToRegister(instr->key()).is(LoadConvention::NameRegister()));
 
   if (FLAG_vector_ics) {
-    Register vector = ToRegister(instr->temp_vector());
-    DCHECK(vector.is(LoadIC::VectorRegister()));
-    __ Move(vector, instr->hydrogen()->feedback_vector());
-    // No need to allocate this register.
-    DCHECK(LoadIC::SlotRegister().is(r0));
-    __ mov(LoadIC::SlotRegister(),
-           Operand(Smi::FromInt(instr->hydrogen()->slot())));
+    EmitVectorLoadICRegisters<LLoadKeyedGeneric>(instr);
   }
 
   Handle<Code> ic = isolate()->builtins()->KeyedLoadIC_Initialize();
@@ -3955,14 +3953,14 @@ void LCodeGen::EmitInteger32MathAbs(LMathAbs* instr) {
 
 void LCodeGen::DoMathAbs(LMathAbs* instr) {
   // Class for deferred case.
-  class DeferredMathAbsTaggedHeapNumber V8_FINAL : public LDeferredCode {
+  class DeferredMathAbsTaggedHeapNumber FINAL : public LDeferredCode {
    public:
     DeferredMathAbsTaggedHeapNumber(LCodeGen* codegen, LMathAbs* instr)
         : LDeferredCode(codegen), instr_(instr) { }
-    virtual void Generate() V8_OVERRIDE {
+    virtual void Generate() OVERRIDE {
       codegen()->DoDeferredMathAbsTaggedHeapNumber(instr_);
     }
-    virtual LInstruction* instr() V8_OVERRIDE { return instr_; }
+    virtual LInstruction* instr() OVERRIDE { return instr_; }
    private:
     LMathAbs* instr_;
   };
@@ -4436,10 +4434,10 @@ void LCodeGen::DoStoreNamedField(LStoreNamedField* instr) {
 
 void LCodeGen::DoStoreNamedGeneric(LStoreNamedGeneric* instr) {
   DCHECK(ToRegister(instr->context()).is(cp));
-  DCHECK(ToRegister(instr->object()).is(StoreIC::ReceiverRegister()));
-  DCHECK(ToRegister(instr->value()).is(StoreIC::ValueRegister()));
+  DCHECK(ToRegister(instr->object()).is(StoreConvention::ReceiverRegister()));
+  DCHECK(ToRegister(instr->value()).is(StoreConvention::ValueRegister()));
 
-  __ mov(StoreIC::NameRegister(), Operand(instr->name()));
+  __ mov(StoreConvention::NameRegister(), Operand(instr->name()));
   Handle<Code> ic = StoreIC::initialize_stub(isolate(), instr->strict_mode());
   CallCode(ic, RelocInfo::CODE_TARGET, instr);
 }
@@ -4709,11 +4707,11 @@ void LCodeGen::DoStoreKeyed(LStoreKeyed* instr) {
 
 void LCodeGen::DoStoreKeyedGeneric(LStoreKeyedGeneric* instr) {
   DCHECK(ToRegister(instr->context()).is(cp));
-  DCHECK(ToRegister(instr->object()).is(KeyedStoreIC::ReceiverRegister()));
-  DCHECK(ToRegister(instr->key()).is(KeyedStoreIC::NameRegister()));
-  DCHECK(ToRegister(instr->value()).is(KeyedStoreIC::ValueRegister()));
+  DCHECK(ToRegister(instr->object()).is(StoreConvention::ReceiverRegister()));
+  DCHECK(ToRegister(instr->key()).is(StoreConvention::NameRegister()));
+  DCHECK(ToRegister(instr->value()).is(StoreConvention::ValueRegister()));
 
-  Handle<Code> ic = (instr->strict_mode() == STRICT)
+  Handle<Code> ic = instr->strict_mode() == STRICT
       ? isolate()->builtins()->KeyedStoreIC_Initialize_Strict()
       : isolate()->builtins()->KeyedStoreIC_Initialize();
   CallCode(ic, RelocInfo::CODE_TARGET, instr);
@@ -4782,14 +4780,14 @@ void LCodeGen::DoStringAdd(LStringAdd* instr) {
 
 
 void LCodeGen::DoStringCharCodeAt(LStringCharCodeAt* instr) {
-  class DeferredStringCharCodeAt V8_FINAL : public LDeferredCode {
+  class DeferredStringCharCodeAt FINAL : public LDeferredCode {
    public:
     DeferredStringCharCodeAt(LCodeGen* codegen, LStringCharCodeAt* instr)
         : LDeferredCode(codegen), instr_(instr) { }
-    virtual void Generate() V8_OVERRIDE {
+    virtual void Generate() OVERRIDE {
       codegen()->DoDeferredStringCharCodeAt(instr_);
     }
-    virtual LInstruction* instr() V8_OVERRIDE { return instr_; }
+    virtual LInstruction* instr() OVERRIDE { return instr_; }
    private:
     LStringCharCodeAt* instr_;
   };
@@ -4838,14 +4836,14 @@ void LCodeGen::DoDeferredStringCharCodeAt(LStringCharCodeAt* instr) {
 
 
 void LCodeGen::DoStringCharFromCode(LStringCharFromCode* instr) {
-  class DeferredStringCharFromCode: public LDeferredCode {
+  class DeferredStringCharFromCode FINAL : public LDeferredCode {
    public:
     DeferredStringCharFromCode(LCodeGen* codegen, LStringCharFromCode* instr)
         : LDeferredCode(codegen), instr_(instr) { }
-    virtual void Generate() V8_OVERRIDE {
+    virtual void Generate() OVERRIDE {
       codegen()->DoDeferredStringCharFromCode(instr_);
     }
-    virtual LInstruction* instr() V8_OVERRIDE { return instr_; }
+    virtual LInstruction* instr() OVERRIDE { return instr_; }
    private:
     LStringCharFromCode* instr_;
   };
@@ -4911,18 +4909,18 @@ void LCodeGen::DoUint32ToDouble(LUint32ToDouble* instr) {
 
 
 void LCodeGen::DoNumberTagI(LNumberTagI* instr) {
-  class DeferredNumberTagI V8_FINAL : public LDeferredCode {
+  class DeferredNumberTagI FINAL : public LDeferredCode {
    public:
     DeferredNumberTagI(LCodeGen* codegen, LNumberTagI* instr)
         : LDeferredCode(codegen), instr_(instr) { }
-    virtual void Generate() V8_OVERRIDE {
+    virtual void Generate() OVERRIDE {
       codegen()->DoDeferredNumberTagIU(instr_,
                                        instr_->value(),
                                        instr_->temp1(),
                                        instr_->temp2(),
                                        SIGNED_INT32);
     }
-    virtual LInstruction* instr() V8_OVERRIDE { return instr_; }
+    virtual LInstruction* instr() OVERRIDE { return instr_; }
    private:
     LNumberTagI* instr_;
   };
@@ -4942,18 +4940,18 @@ void LCodeGen::DoNumberTagI(LNumberTagI* instr) {
 
 
 void LCodeGen::DoNumberTagU(LNumberTagU* instr) {
-  class DeferredNumberTagU V8_FINAL : public LDeferredCode {
+  class DeferredNumberTagU FINAL : public LDeferredCode {
    public:
     DeferredNumberTagU(LCodeGen* codegen, LNumberTagU* instr)
         : LDeferredCode(codegen), instr_(instr) { }
-    virtual void Generate() V8_OVERRIDE {
+    virtual void Generate() OVERRIDE {
       codegen()->DoDeferredNumberTagIU(instr_,
                                        instr_->value(),
                                        instr_->temp1(),
                                        instr_->temp2(),
                                        UNSIGNED_INT32);
     }
-    virtual LInstruction* instr() V8_OVERRIDE { return instr_; }
+    virtual LInstruction* instr() OVERRIDE { return instr_; }
    private:
     LNumberTagU* instr_;
   };
@@ -5032,14 +5030,14 @@ void LCodeGen::DoDeferredNumberTagIU(LInstruction* instr,
 
 
 void LCodeGen::DoNumberTagD(LNumberTagD* instr) {
-  class DeferredNumberTagD V8_FINAL : public LDeferredCode {
+  class DeferredNumberTagD FINAL : public LDeferredCode {
    public:
     DeferredNumberTagD(LCodeGen* codegen, LNumberTagD* instr)
         : LDeferredCode(codegen), instr_(instr) { }
-    virtual void Generate() V8_OVERRIDE {
+    virtual void Generate() OVERRIDE {
       codegen()->DoDeferredNumberTagD(instr_);
     }
-    virtual LInstruction* instr() V8_OVERRIDE { return instr_; }
+    virtual LInstruction* instr() OVERRIDE { return instr_; }
    private:
     LNumberTagD* instr_;
   };
@@ -5260,14 +5258,14 @@ void LCodeGen::DoDeferredTaggedToI(LTaggedToI* instr) {
 
 
 void LCodeGen::DoTaggedToI(LTaggedToI* instr) {
-  class DeferredTaggedToI V8_FINAL : public LDeferredCode {
+  class DeferredTaggedToI FINAL : public LDeferredCode {
    public:
     DeferredTaggedToI(LCodeGen* codegen, LTaggedToI* instr)
         : LDeferredCode(codegen), instr_(instr) { }
-    virtual void Generate() V8_OVERRIDE {
+    virtual void Generate() OVERRIDE {
       codegen()->DoDeferredTaggedToI(instr_);
     }
-    virtual LInstruction* instr() V8_OVERRIDE { return instr_; }
+    virtual LInstruction* instr() OVERRIDE { return instr_; }
    private:
     LTaggedToI* instr_;
   };
@@ -5425,8 +5423,8 @@ void LCodeGen::DoCheckInstanceType(LCheckInstanceType* instr) {
     uint8_t tag;
     instr->hydrogen()->GetCheckMaskAndTag(&mask, &tag);
 
-    if (IsPowerOf2(mask)) {
-      DCHECK(tag == 0 || IsPowerOf2(tag));
+    if (base::bits::IsPowerOfTwo32(mask)) {
+      DCHECK(tag == 0 || base::bits::IsPowerOfTwo32(tag));
       __ andi(r0, scratch, Operand(mask));
       DeoptimizeIf(tag == 0 ? ne : eq, instr->environment(), cr0);
     } else {
@@ -5471,17 +5469,17 @@ void LCodeGen::DoDeferredInstanceMigration(LCheckMaps* instr, Register object) {
 
 
 void LCodeGen::DoCheckMaps(LCheckMaps* instr) {
-  class DeferredCheckMaps V8_FINAL : public LDeferredCode {
+  class DeferredCheckMaps FINAL : public LDeferredCode {
    public:
     DeferredCheckMaps(LCodeGen* codegen, LCheckMaps* instr, Register object)
         : LDeferredCode(codegen), instr_(instr), object_(object) {
       SetExit(check_maps());
     }
-    virtual void Generate() V8_OVERRIDE {
+    virtual void Generate() OVERRIDE {
       codegen()->DoDeferredInstanceMigration(instr_, object_);
     }
     Label* check_maps() { return &check_maps_; }
-    virtual LInstruction* instr() V8_OVERRIDE { return instr_; }
+    virtual LInstruction* instr() OVERRIDE { return instr_; }
    private:
     LCheckMaps* instr_;
     Label check_maps_;
@@ -5605,14 +5603,14 @@ void LCodeGen::DoConstructDouble(LConstructDouble* instr) {
 
 
 void LCodeGen::DoAllocate(LAllocate* instr) {
-  class DeferredAllocate V8_FINAL : public LDeferredCode {
+  class DeferredAllocate FINAL : public LDeferredCode {
    public:
     DeferredAllocate(LCodeGen* codegen, LAllocate* instr)
         : LDeferredCode(codegen), instr_(instr) { }
-    virtual void Generate() V8_OVERRIDE {
+    virtual void Generate() OVERRIDE {
       codegen()->DoDeferredAllocate(instr_);
     }
-    virtual LInstruction* instr() V8_OVERRIDE { return instr_; }
+    virtual LInstruction* instr() OVERRIDE { return instr_; }
    private:
     LAllocate* instr_;
   };
@@ -5986,14 +5984,14 @@ void LCodeGen::DoDeferredStackCheck(LStackCheck* instr) {
 
 
 void LCodeGen::DoStackCheck(LStackCheck* instr) {
-  class DeferredStackCheck V8_FINAL : public LDeferredCode {
+  class DeferredStackCheck FINAL : public LDeferredCode {
    public:
     DeferredStackCheck(LCodeGen* codegen, LStackCheck* instr)
         : LDeferredCode(codegen), instr_(instr) { }
-    virtual void Generate() V8_OVERRIDE {
+    virtual void Generate() OVERRIDE {
       codegen()->DoDeferredStackCheck(instr_);
     }
-    virtual LInstruction* instr() V8_OVERRIDE { return instr_; }
+    virtual LInstruction* instr() OVERRIDE { return instr_; }
    private:
     LStackCheck* instr_;
   };
@@ -6131,7 +6129,7 @@ void LCodeGen::DoDeferredLoadMutableDouble(LLoadFieldByIndex* instr,
 
 
 void LCodeGen::DoLoadFieldByIndex(LLoadFieldByIndex* instr) {
-  class DeferredLoadMutableDouble V8_FINAL : public LDeferredCode {
+  class DeferredLoadMutableDouble FINAL : public LDeferredCode {
    public:
     DeferredLoadMutableDouble(LCodeGen* codegen,
                               LLoadFieldByIndex* instr,
@@ -6144,10 +6142,10 @@ void LCodeGen::DoLoadFieldByIndex(LLoadFieldByIndex* instr) {
           object_(object),
           index_(index) {
     }
-    virtual void Generate() V8_OVERRIDE {
+    virtual void Generate() OVERRIDE {
       codegen()->DoDeferredLoadMutableDouble(instr_, result_, object_, index_);
     }
-    virtual LInstruction* instr() V8_OVERRIDE { return instr_; }
+    virtual LInstruction* instr() OVERRIDE { return instr_; }
    private:
     LLoadFieldByIndex* instr_;
     Register result_;

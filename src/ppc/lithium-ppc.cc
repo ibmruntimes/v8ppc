@@ -1088,7 +1088,7 @@ LInstruction* LChunkBuilder::DoCallJSFunction(
 
 LInstruction* LChunkBuilder::DoCallWithDescriptor(
     HCallWithDescriptor* instr) {
-  const InterfaceDescriptor* descriptor = instr->descriptor();
+  const CallInterfaceDescriptor* descriptor = instr->descriptor();
 
   LOperand* target = UseRegisterOrConstantAtStart(instr->target());
   ZoneList<LOperand*> ops(instr->OperandCount(), zone());
@@ -2098,10 +2098,10 @@ LInstruction* LChunkBuilder::DoLoadGlobalCell(HLoadGlobalCell* instr) {
 LInstruction* LChunkBuilder::DoLoadGlobalGeneric(HLoadGlobalGeneric* instr) {
   LOperand* context = UseFixed(instr->context(), cp);
   LOperand* global_object = UseFixed(instr->global_object(),
-                                     LoadIC::ReceiverRegister());
+                                     LoadConvention::ReceiverRegister());
   LOperand* vector = NULL;
   if (FLAG_vector_ics) {
-    vector = FixedTemp(LoadIC::VectorRegister());
+    vector = FixedTemp(FullVectorLoadConvention::VectorRegister());
   }
   LLoadGlobalGeneric* result =
       new(zone()) LLoadGlobalGeneric(context, global_object, vector);
@@ -2156,10 +2156,11 @@ LInstruction* LChunkBuilder::DoLoadNamedField(HLoadNamedField* instr) {
 
 LInstruction* LChunkBuilder::DoLoadNamedGeneric(HLoadNamedGeneric* instr) {
   LOperand* context = UseFixed(instr->context(), cp);
-  LOperand* object = UseFixed(instr->object(), LoadIC::ReceiverRegister());
+  LOperand* object =
+      UseFixed(instr->object(), LoadConvention::ReceiverRegister());
   LOperand* vector = NULL;
   if (FLAG_vector_ics) {
-    vector = FixedTemp(LoadIC::VectorRegister());
+    vector = FixedTemp(FullVectorLoadConvention::VectorRegister());
   }
 
   LInstruction* result =
@@ -2220,11 +2221,12 @@ LInstruction* LChunkBuilder::DoLoadKeyed(HLoadKeyed* instr) {
 
 LInstruction* LChunkBuilder::DoLoadKeyedGeneric(HLoadKeyedGeneric* instr) {
   LOperand* context = UseFixed(instr->context(), cp);
-  LOperand* object = UseFixed(instr->object(), LoadIC::ReceiverRegister());
-  LOperand* key = UseFixed(instr->key(), LoadIC::NameRegister());
+  LOperand* object =
+      UseFixed(instr->object(), LoadConvention::ReceiverRegister());
+  LOperand* key = UseFixed(instr->key(), LoadConvention::NameRegister());
   LOperand* vector = NULL;
   if (FLAG_vector_ics) {
-    vector = FixedTemp(LoadIC::VectorRegister());
+    vector = FixedTemp(FullVectorLoadConvention::VectorRegister());
   }
 
   LInstruction* result =
@@ -2279,9 +2281,10 @@ LInstruction* LChunkBuilder::DoStoreKeyed(HStoreKeyed* instr) {
 
 LInstruction* LChunkBuilder::DoStoreKeyedGeneric(HStoreKeyedGeneric* instr) {
   LOperand* context = UseFixed(instr->context(), cp);
-  LOperand* obj = UseFixed(instr->object(), KeyedStoreIC::ReceiverRegister());
-  LOperand* key = UseFixed(instr->key(), KeyedStoreIC::NameRegister());
-  LOperand* val = UseFixed(instr->value(), KeyedStoreIC::ValueRegister());
+  LOperand* obj =
+      UseFixed(instr->object(), StoreConvention::ReceiverRegister());
+  LOperand* key = UseFixed(instr->key(), StoreConvention::NameRegister());
+  LOperand* val = UseFixed(instr->value(), StoreConvention::ValueRegister());
 
   DCHECK(instr->object()->representation().IsTagged());
   DCHECK(instr->key()->representation().IsTagged());
@@ -2355,8 +2358,9 @@ LInstruction* LChunkBuilder::DoStoreNamedField(HStoreNamedField* instr) {
 
 LInstruction* LChunkBuilder::DoStoreNamedGeneric(HStoreNamedGeneric* instr) {
   LOperand* context = UseFixed(instr->context(), cp);
-  LOperand* obj = UseFixed(instr->object(), StoreIC::ReceiverRegister());
-  LOperand* val = UseFixed(instr->value(), StoreIC::ValueRegister());
+  LOperand* obj =
+      UseFixed(instr->object(), StoreConvention::ReceiverRegister());
+  LOperand* val = UseFixed(instr->value(), StoreConvention::ValueRegister());
 
   LInstruction* result = new(zone()) LStoreNamedGeneric(context, obj, val);
   return MarkAsCall(result, instr);
@@ -2548,6 +2552,7 @@ LInstruction* LChunkBuilder::DoEnterInlined(HEnterInlined* instr) {
   if (instr->arguments_var() != NULL && instr->arguments_object()->IsLinked()) {
     inner->Bind(instr->arguments_var(), instr->arguments_object());
   }
+  inner->BindContext(instr->closure_context());
   inner->set_entry(instr);
   current_block_->UpdateEnvironment(inner);
   chunk_->AddInlinedClosure(instr->closure());

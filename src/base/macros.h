@@ -62,7 +62,7 @@
    static_cast<size_t>(!(sizeof(a) % sizeof(*(a)))))  // NOLINT
 
 
-#if V8_OS_NACL || ((__GNUC__ >= 4) && (__GNUC_MINOR__ >= 4))
+#if 1 // V8_OS_NACL || ((__GNUC__ >= 4) && (__GNUC_MINOR__ >= 4))
 
 // TODO(bmeurer): For some reason, the NaCl toolchain cannot handle the correct
 // definition of arraysize() below, so we have to use the unsafe version for
