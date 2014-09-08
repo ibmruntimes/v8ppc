@@ -1975,6 +1975,7 @@ void SymbolAccessorSetter(Local<Name> name, Local<Value> value,
   SimpleAccessorSetter(Local<String>::Cast(sym->Name()), value, info);
 }
 
+
 // AIX Workaround: file split into two parts: test-api.cc and test-api2.cc
 static void EmptyInterceptorGetter(Local<String> name,
                             const v8::PropertyCallbackInfo<v8::Value>& info) {

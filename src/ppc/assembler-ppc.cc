@@ -44,8 +44,8 @@
 
 #include "src/base/bits.h"
 #include "src/base/cpu.h"
-#include "src/ppc/assembler-ppc-inl.h"
 #include "src/macro-assembler.h"
+#include "src/ppc/assembler-ppc-inl.h"
 #include "src/serialize.h"
 
 namespace v8 {
