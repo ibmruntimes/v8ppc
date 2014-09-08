@@ -54,7 +54,7 @@
 #include <sys/prctl.h>  // NOLINT, for prctl
 #endif
 
-#if !V8_OS_NACL
+#if !defined(V8_OS_NACL) && !defined(_AIX)
 #include <sys/syscall.h>
 #endif
 
