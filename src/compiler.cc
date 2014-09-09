@@ -321,11 +321,6 @@ OptimizedCompileJob::Status OptimizedCompileJob::CreateGraph() {
   // shared function info.
   DCHECK(!info()->shared_info()->optimization_disabled());
 
-  // Fall back to using the full code generator if it's not possible
-  // to use the Hydrogen-based optimizing compiler. We already have
-  // generated code for this from the shared function object.
-  if (FLAG_always_full_compiler) return AbortOptimization();
-
   // Do not use crankshaft if we need to be able to set break points.
   if (isolate()->DebuggerHasBreakPoints()) {
     return AbortOptimization(kDebuggerHasBreakPoints);
@@ -406,6 +401,8 @@ OptimizedCompileJob::Status OptimizedCompileJob::CreateGraph() {
       // TODO(turbofan): Make try-catch work and remove this bailout.
       info()->function()->dont_optimize_reason() != kTryCatchStatement &&
       info()->function()->dont_optimize_reason() != kTryFinallyStatement &&
+      // TODO(turbofan): Make ES6 for-of work and remove this bailout.
+      info()->function()->dont_optimize_reason() != kForOfStatement &&
       // TODO(turbofan): Make OSR work and remove this bailout.
       !info()->is_osr()) {
     compiler::Pipeline pipeline(info());
@@ -1246,7 +1243,16 @@ MaybeHandle<Code> Compiler::GetOptimizedCode(Handle<JSFunction> function,
   PostponeInterruptsScope postpone(isolate);
 
   Handle<SharedFunctionInfo> shared = info->shared_info();
-  DCHECK_NE(ScopeInfo::Empty(isolate), shared->scope_info());
+  if (shared->code()->kind() != Code::FUNCTION ||
+      ScopeInfo::Empty(isolate) == shared->scope_info()) {
+    // The function was never compiled. Compile it unoptimized first.
+    CompilationInfoWithZone nested(function);
+    nested.EnableDeoptimizationSupport();
+    if (!GetUnoptimizedCodeCommon(&nested).ToHandle(&current_code)) {
+      return MaybeHandle<Code>();
+    }
+    shared->ReplaceCode(*current_code);
+  }
   int compiled_size = shared->end_position() - shared->start_position();
   isolate->counters()->total_compile_size()->Increment(compiled_size);
   current_code->set_profiler_ticks(0);

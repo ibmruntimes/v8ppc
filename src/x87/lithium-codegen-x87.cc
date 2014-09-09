@@ -6,6 +6,7 @@
 
 #if V8_TARGET_ARCH_X87
 
+#include "src/base/bits.h"
 #include "src/code-stubs.h"
 #include "src/codegen.h"
 #include "src/deoptimizer.h"
@@ -1411,7 +1412,7 @@ void LCodeGen::DoDivByPowerOf2I(LDivByPowerOf2I* instr) {
   Register dividend = ToRegister(instr->dividend());
   int32_t divisor = instr->divisor();
   Register result = ToRegister(instr->result());
-  DCHECK(divisor == kMinInt || IsPowerOf2(Abs(divisor)));
+  DCHECK(divisor == kMinInt || base::bits::IsPowerOfTwo32(Abs(divisor)));
   DCHECK(!result.is(dividend));
 
   // Check for (0 / -x) that will produce negative zero.
@@ -1907,7 +1908,7 @@ void LCodeGen::DoConstantS(LConstantS* instr) {
 
 void LCodeGen::DoConstantD(LConstantD* instr) {
   double v = instr->value();
-  uint64_t int_val = BitCast<uint64_t, double>(v);
+  uint64_t int_val = bit_cast<uint64_t, double>(v);
   int32_t lower = static_cast<int32_t>(int_val);
   int32_t upper = static_cast<int32_t>(int_val >> (kBitsPerInt));
   DCHECK(instr->result()->IsDoubleRegister());
@@ -2967,11 +2968,11 @@ template <class T>
 void LCodeGen::EmitVectorLoadICRegisters(T* instr) {
   DCHECK(FLAG_vector_ics);
   Register vector = ToRegister(instr->temp_vector());
-  DCHECK(vector.is(FullVectorLoadConvention::VectorRegister()));
+  DCHECK(vector.is(VectorLoadICDescriptor::VectorRegister()));
   __ mov(vector, instr->hydrogen()->feedback_vector());
   // No need to allocate this register.
-  DCHECK(FullVectorLoadConvention::SlotRegister().is(eax));
-  __ mov(FullVectorLoadConvention::SlotRegister(),
+  DCHECK(VectorLoadICDescriptor::SlotRegister().is(eax));
+  __ mov(VectorLoadICDescriptor::SlotRegister(),
          Immediate(Smi::FromInt(instr->hydrogen()->slot())));
 }
 
@@ -2979,10 +2980,10 @@ void LCodeGen::EmitVectorLoadICRegisters(T* instr) {
 void LCodeGen::DoLoadGlobalGeneric(LLoadGlobalGeneric* instr) {
   DCHECK(ToRegister(instr->context()).is(esi));
   DCHECK(ToRegister(instr->global_object())
-             .is(LoadConvention::ReceiverRegister()));
+             .is(LoadDescriptor::ReceiverRegister()));
   DCHECK(ToRegister(instr->result()).is(eax));
 
-  __ mov(LoadConvention::NameRegister(), instr->name());
+  __ mov(LoadDescriptor::NameRegister(), instr->name());
   if (FLAG_vector_ics) {
     EmitVectorLoadICRegisters<LLoadGlobalGeneric>(instr);
   }
@@ -3114,10 +3115,10 @@ void LCodeGen::EmitPushTaggedOperand(LOperand* operand) {
 
 void LCodeGen::DoLoadNamedGeneric(LLoadNamedGeneric* instr) {
   DCHECK(ToRegister(instr->context()).is(esi));
-  DCHECK(ToRegister(instr->object()).is(LoadConvention::ReceiverRegister()));
+  DCHECK(ToRegister(instr->object()).is(LoadDescriptor::ReceiverRegister()));
   DCHECK(ToRegister(instr->result()).is(eax));
 
-  __ mov(LoadConvention::NameRegister(), instr->name());
+  __ mov(LoadDescriptor::NameRegister(), instr->name());
   if (FLAG_vector_ics) {
     EmitVectorLoadICRegisters<LLoadNamedGeneric>(instr);
   }
@@ -3339,8 +3340,8 @@ Operand LCodeGen::BuildFastArrayOperand(
 
 void LCodeGen::DoLoadKeyedGeneric(LLoadKeyedGeneric* instr) {
   DCHECK(ToRegister(instr->context()).is(esi));
-  DCHECK(ToRegister(instr->object()).is(LoadConvention::ReceiverRegister()));
-  DCHECK(ToRegister(instr->key()).is(LoadConvention::NameRegister()));
+  DCHECK(ToRegister(instr->object()).is(LoadDescriptor::ReceiverRegister()));
+  DCHECK(ToRegister(instr->key()).is(LoadDescriptor::NameRegister()));
 
   if (FLAG_vector_ics) {
     EmitVectorLoadICRegisters<LLoadKeyedGeneric>(instr);
@@ -3975,10 +3976,10 @@ void LCodeGen::DoStoreNamedField(LStoreNamedField* instr) {
 
 void LCodeGen::DoStoreNamedGeneric(LStoreNamedGeneric* instr) {
   DCHECK(ToRegister(instr->context()).is(esi));
-  DCHECK(ToRegister(instr->object()).is(StoreConvention::ReceiverRegister()));
-  DCHECK(ToRegister(instr->value()).is(StoreConvention::ValueRegister()));
+  DCHECK(ToRegister(instr->object()).is(StoreDescriptor::ReceiverRegister()));
+  DCHECK(ToRegister(instr->value()).is(StoreDescriptor::ValueRegister()));
 
-  __ mov(StoreConvention::NameRegister(), instr->name());
+  __ mov(StoreDescriptor::NameRegister(), instr->name());
   Handle<Code> ic = StoreIC::initialize_stub(isolate(), instr->strict_mode());
   CallCode(ic, RelocInfo::CODE_TARGET, instr);
 }
@@ -4087,7 +4088,7 @@ void LCodeGen::DoStoreKeyedFixedDoubleArray(LStoreKeyed* instr) {
     // This means we should store the (double) hole. No floating point
     // registers required.
     double nan_double = FixedDoubleArray::hole_nan_as_double();
-    uint64_t int_val = BitCast<uint64_t, double>(nan_double);
+    uint64_t int_val = bit_cast<uint64_t, double>(nan_double);
     int32_t lower = static_cast<int32_t>(int_val);
     int32_t upper = static_cast<int32_t>(int_val >> (kBitsPerInt));
 
@@ -4186,9 +4187,9 @@ void LCodeGen::DoStoreKeyed(LStoreKeyed* instr) {
 
 void LCodeGen::DoStoreKeyedGeneric(LStoreKeyedGeneric* instr) {
   DCHECK(ToRegister(instr->context()).is(esi));
-  DCHECK(ToRegister(instr->object()).is(StoreConvention::ReceiverRegister()));
-  DCHECK(ToRegister(instr->key()).is(StoreConvention::NameRegister()));
-  DCHECK(ToRegister(instr->value()).is(StoreConvention::ValueRegister()));
+  DCHECK(ToRegister(instr->object()).is(StoreDescriptor::ReceiverRegister()));
+  DCHECK(ToRegister(instr->key()).is(StoreDescriptor::NameRegister()));
+  DCHECK(ToRegister(instr->value()).is(StoreDescriptor::ValueRegister()));
 
   Handle<Code> ic = instr->strict_mode() == STRICT
       ? isolate()->builtins()->KeyedStoreIC_Initialize_Strict()
@@ -4870,8 +4871,8 @@ void LCodeGen::DoCheckInstanceType(LCheckInstanceType* instr) {
     uint8_t tag;
     instr->hydrogen()->GetCheckMaskAndTag(&mask, &tag);
 
-    if (IsPowerOf2(mask)) {
-      DCHECK(tag == 0 || IsPowerOf2(tag));
+    if (base::bits::IsPowerOfTwo32(mask)) {
+      DCHECK(tag == 0 || base::bits::IsPowerOfTwo32(tag));
       __ test_b(FieldOperand(temp, Map::kInstanceTypeOffset), mask);
       DeoptimizeIf(tag == 0 ? not_zero : zero, instr->environment());
     } else {

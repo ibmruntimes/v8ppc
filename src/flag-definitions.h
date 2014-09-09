@@ -178,8 +178,6 @@ DEFINE_IMPLICATION(harmony, es_staging)
 DEFINE_IMPLICATION(es_staging, harmony_generators)
 
 // Flags for experimental implementation features.
-DEFINE_BOOL(compiled_keyed_dictionary_loads, true,
-            "use optimizing compiler to generate keyed dictionary load stubs")
 DEFINE_BOOL(compiled_keyed_generic_loads, false,
             "use optimizing compiler to generate keyed generic load stubs")
 DEFINE_BOOL(clever_optimizations, true,
@@ -436,8 +434,6 @@ DEFINE_BOOL(serialize_toplevel, false, "enable caching of toplevel scripts")
 // compiler.cc
 DEFINE_INT(min_preparse_length, 1024,
            "minimum length for automatic enable preparsing")
-DEFINE_BOOL(always_full_compiler, false,
-            "try to use the dedicated run-once backend for all code")
 DEFINE_INT(max_opt_count, 10,
            "maximum number of optimization attempts before giving up.")
 

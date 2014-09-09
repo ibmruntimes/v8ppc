@@ -1344,6 +1344,7 @@ template <class C> inline bool Is(Object* obj);
   V(kWeShouldNotHaveAnEmptyLexicalContext,                                    \
     "We should not have an empty lexical context")                            \
   V(kWithStatement, "WithStatement")                                          \
+  V(kWrongFunctionContext, "Wrong context passed to function")                 \
   V(kWrongAddressOrValuePassedToRecordWrite,                                  \
     "Wrong address or value passed to RecordWrite")                           \
   V(kYield, "Yield")
@@ -1747,9 +1748,9 @@ class HeapObject: public Object {
   // Returns the heap object's size in bytes
   inline int Size();
 
-  // Returns true if this heap object may contain pointers to objects in new
-  // space.
-  inline bool MayContainNewSpacePointers();
+  // Returns true if this heap object may contain raw values, i.e., values that
+  // look like pointers to heap objects.
+  inline bool MayContainRawValues();
 
   // Given a heap object's map pointer, returns the heap size in bytes
   // Useful when the map pointer field is used for other purposes.

@@ -16,12 +16,12 @@ class MachineOperatorReducerTest : public GraphTest {
  public:
   explicit MachineOperatorReducerTest(int num_parameters = 2)
       : GraphTest(num_parameters), machine_(zone()) {}
-  virtual ~MachineOperatorReducerTest() {}
 
  protected:
   Reduction Reduce(Node* node) {
     Typer typer(zone());
-    JSGraph jsgraph(graph(), common(), &typer);
+    JSOperatorBuilder javascript(zone());
+    JSGraph jsgraph(graph(), common(), &javascript, &typer, &machine_);
     MachineOperatorReducer reducer(&jsgraph);
     return reducer.Reduce(node);
   }
@@ -250,7 +250,7 @@ TEST_F(MachineOperatorReducerTest, ChangeFloat64ToUint32WithConstant) {
     Reduction reduction = Reduce(graph()->NewNode(
         machine()->ChangeFloat64ToUint32(), Float64Constant(FastUI2D(x))));
     ASSERT_TRUE(reduction.Changed());
-    EXPECT_THAT(reduction.replacement(), IsInt32Constant(BitCast<int32_t>(x)));
+    EXPECT_THAT(reduction.replacement(), IsInt32Constant(bit_cast<int32_t>(x)));
   }
 }
 
@@ -291,7 +291,7 @@ TEST_F(MachineOperatorReducerTest, ChangeUint32ToFloat64WithConstant) {
   TRACED_FOREACH(uint32_t, x, kUint32Values) {
     Reduction reduction =
         Reduce(graph()->NewNode(machine()->ChangeUint32ToFloat64(),
-                                Int32Constant(BitCast<int32_t>(x))));
+                                Int32Constant(bit_cast<int32_t>(x))));
     ASSERT_TRUE(reduction.Changed());
     EXPECT_THAT(reduction.replacement(), IsFloat64Constant(FastUI2D(x)));
   }
@@ -304,11 +304,12 @@ TEST_F(MachineOperatorReducerTest, ChangeUint32ToFloat64WithConstant) {
 
 TEST_F(MachineOperatorReducerTest, ChangeUint32ToUint64WithConstant) {
   TRACED_FOREACH(uint32_t, x, kUint32Values) {
-    Reduction reduction = Reduce(graph()->NewNode(
-        machine()->ChangeUint32ToUint64(), Int32Constant(BitCast<int32_t>(x))));
+    Reduction reduction =
+        Reduce(graph()->NewNode(machine()->ChangeUint32ToUint64(),
+                                Int32Constant(bit_cast<int32_t>(x))));
     ASSERT_TRUE(reduction.Changed());
     EXPECT_THAT(reduction.replacement(),
-                IsInt64Constant(BitCast<int64_t>(static_cast<uint64_t>(x))));
+                IsInt64Constant(bit_cast<int64_t>(static_cast<uint64_t>(x))));
   }
 }
 
@@ -358,8 +359,8 @@ TEST_F(MachineOperatorReducerTest, TruncateInt64ToInt32WithConstant) {
         graph()->NewNode(machine()->TruncateInt64ToInt32(), Int64Constant(x)));
     ASSERT_TRUE(reduction.Changed());
     EXPECT_THAT(reduction.replacement(),
-                IsInt32Constant(BitCast<int32_t>(
-                    static_cast<uint32_t>(BitCast<uint64_t>(x)))));
+                IsInt32Constant(bit_cast<int32_t>(
+                    static_cast<uint32_t>(bit_cast<uint64_t>(x)))));
   }
 }
 
@@ -438,6 +439,98 @@ TEST_F(MachineOperatorReducerTest, Word32RorWithConstants) {
       EXPECT_TRUE(reduction.Changed());
       EXPECT_THAT(reduction.replacement(),
                   IsInt32Constant(base::bits::RotateRight32(x, y)));
+    }
+  }
+}
+
+
+// -----------------------------------------------------------------------------
+// Int32AddWithOverflow
+
+
+TEST_F(MachineOperatorReducerTest, Int32AddWithOverflowWithZero) {
+  Node* p0 = Parameter(0);
+  {
+    Node* add = graph()->NewNode(machine()->Int32AddWithOverflow(),
+                                 Int32Constant(0), p0);
+
+    Reduction r = Reduce(graph()->NewNode(common()->Projection(1), add));
+    ASSERT_TRUE(r.Changed());
+    EXPECT_THAT(r.replacement(), IsInt32Constant(0));
+
+    r = Reduce(graph()->NewNode(common()->Projection(0), add));
+    ASSERT_TRUE(r.Changed());
+    EXPECT_EQ(p0, r.replacement());
+  }
+  {
+    Node* add = graph()->NewNode(machine()->Int32AddWithOverflow(), p0,
+                                 Int32Constant(0));
+
+    Reduction r = Reduce(graph()->NewNode(common()->Projection(1), add));
+    ASSERT_TRUE(r.Changed());
+    EXPECT_THAT(r.replacement(), IsInt32Constant(0));
+
+    r = Reduce(graph()->NewNode(common()->Projection(0), add));
+    ASSERT_TRUE(r.Changed());
+    EXPECT_EQ(p0, r.replacement());
+  }
+}
+
+
+TEST_F(MachineOperatorReducerTest, Int32AddWithOverflowWithConstant) {
+  TRACED_FOREACH(int32_t, x, kInt32Values) {
+    TRACED_FOREACH(int32_t, y, kInt32Values) {
+      int32_t z;
+      Node* add = graph()->NewNode(machine()->Int32AddWithOverflow(),
+                                   Int32Constant(x), Int32Constant(y));
+
+      Reduction r = Reduce(graph()->NewNode(common()->Projection(1), add));
+      ASSERT_TRUE(r.Changed());
+      EXPECT_THAT(r.replacement(),
+                  IsInt32Constant(base::bits::SignedAddOverflow32(x, y, &z)));
+
+      r = Reduce(graph()->NewNode(common()->Projection(0), add));
+      ASSERT_TRUE(r.Changed());
+      EXPECT_THAT(r.replacement(), IsInt32Constant(z));
+    }
+  }
+}
+
+
+// -----------------------------------------------------------------------------
+// Int32SubWithOverflow
+
+
+TEST_F(MachineOperatorReducerTest, Int32SubWithOverflowWithZero) {
+  Node* p0 = Parameter(0);
+  Node* add =
+      graph()->NewNode(machine()->Int32SubWithOverflow(), p0, Int32Constant(0));
+
+  Reduction r = Reduce(graph()->NewNode(common()->Projection(1), add));
+  ASSERT_TRUE(r.Changed());
+  EXPECT_THAT(r.replacement(), IsInt32Constant(0));
+
+  r = Reduce(graph()->NewNode(common()->Projection(0), add));
+  ASSERT_TRUE(r.Changed());
+  EXPECT_EQ(p0, r.replacement());
+}
+
+
+TEST_F(MachineOperatorReducerTest, Int32SubWithOverflowWithConstant) {
+  TRACED_FOREACH(int32_t, x, kInt32Values) {
+    TRACED_FOREACH(int32_t, y, kInt32Values) {
+      int32_t z;
+      Node* add = graph()->NewNode(machine()->Int32SubWithOverflow(),
+                                   Int32Constant(x), Int32Constant(y));
+
+      Reduction r = Reduce(graph()->NewNode(common()->Projection(1), add));
+      ASSERT_TRUE(r.Changed());
+      EXPECT_THAT(r.replacement(),
+                  IsInt32Constant(base::bits::SignedSubOverflow32(x, y, &z)));
+
+      r = Reduce(graph()->NewNode(common()->Projection(0), add));
+      ASSERT_TRUE(r.Changed());
+      EXPECT_THAT(r.replacement(), IsInt32Constant(z));
     }
   }
 }

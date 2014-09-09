@@ -101,9 +101,7 @@ Handle<Code> PropertyICCompiler::ComputeKeyedLoadMonomorphic(
                                receiver_map->instance_type() == JS_ARRAY_TYPE,
                                elements_kind).GetCode();
   } else {
-    stub = FLAG_compiled_keyed_dictionary_loads
-               ? LoadDictionaryElementStub(isolate).GetCode()
-               : LoadDictionaryElementPlatformStub(isolate).GetCode();
+    stub = LoadDictionaryElementStub(isolate).GetCode();
   }
   PropertyICCompiler compiler(isolate, Code::KEYED_LOAD_IC);
   Handle<Code> code =
@@ -180,8 +178,6 @@ Handle<Code> PropertyICCompiler::ComputeLoad(Isolate* isolate,
     code = compiler.CompileLoadInitialize(flags);
   } else if (ic_state == PREMONOMORPHIC) {
     code = compiler.CompileLoadPreMonomorphic(flags);
-  } else if (ic_state == MEGAMORPHIC) {
-    code = compiler.CompileLoadMegamorphic(flags);
   } else {
     UNREACHABLE();
   }
@@ -318,14 +314,6 @@ Handle<Code> PropertyICCompiler::CompileLoadPreMonomorphic(Code::Flags flags) {
   Handle<Code> code = GetCodeWithFlags(flags, "CompileLoadPreMonomorphic");
   PROFILE(isolate(),
           CodeCreateEvent(Logger::LOAD_PREMONOMORPHIC_TAG, *code, 0));
-  return code;
-}
-
-
-Handle<Code> PropertyICCompiler::CompileLoadMegamorphic(Code::Flags flags) {
-  LoadIC::GenerateMegamorphic(masm());
-  Handle<Code> code = GetCodeWithFlags(flags, "CompileLoadMegamorphic");
-  PROFILE(isolate(), CodeCreateEvent(Logger::LOAD_MEGAMORPHIC_TAG, *code, 0));
   return code;
 }
 

@@ -1852,7 +1852,7 @@ v8::TryCatch::TryCatch()
   // Special handling for simulators which have a separate JS stack.
   js_stack_comparable_address_ =
       reinterpret_cast<void*>(v8::internal::SimulatorStack::RegisterCTryCatch(
-          GetCurrentStackPosition()));
+          v8::internal::GetCurrentStackPosition()));
   isolate_->RegisterTryCatchHandler(this);
 }
 
@@ -3612,7 +3612,7 @@ Local<Value> v8::Object::GetRealNamedPropertyInPrototypeChain(
   if (iter.IsAtEnd()) return Local<Value>();
   i::Handle<i::Object> proto = i::PrototypeIterator::GetCurrent(iter);
   i::LookupIterator it(self_obj, key_obj, i::Handle<i::JSReceiver>::cast(proto),
-                       i::LookupIterator::PROTOTYPE_CHAIN_PROPERTY);
+                       i::LookupIterator::PROTOTYPE_CHAIN_SKIP_INTERCEPTOR);
   return GetPropertyByLookup(&it);
 }
 
@@ -3625,7 +3625,7 @@ Local<Value> v8::Object::GetRealNamedProperty(Handle<String> key) {
   i::Handle<i::JSObject> self_obj = Utils::OpenHandle(this);
   i::Handle<i::String> key_obj = Utils::OpenHandle(*key);
   i::LookupIterator it(self_obj, key_obj,
-                       i::LookupIterator::PROTOTYPE_CHAIN_PROPERTY);
+                       i::LookupIterator::PROTOTYPE_CHAIN_SKIP_INTERCEPTOR);
   return GetPropertyByLookup(&it);
 }
 

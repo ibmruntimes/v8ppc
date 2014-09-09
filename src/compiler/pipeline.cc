@@ -24,6 +24,7 @@
 #include "src/compiler/simplified-lowering.h"
 #include "src/compiler/simplified-operator-reducer.h"
 #include "src/compiler/typer.h"
+#include "src/compiler/value-numbering-reducer.h"
 #include "src/compiler/verifier.h"
 #include "src/hydrogen.h"
 #include "src/ostreams.h"
@@ -169,7 +170,9 @@ Handle<Code> Pipeline::GenerateCode() {
   // typer could sweep over later.
   Typer typer(zone());
   CommonOperatorBuilder common(zone());
-  JSGraph jsgraph(&graph, &common, &typer);
+  JSOperatorBuilder javascript(zone());
+  MachineOperatorBuilder machine(zone());
+  JSGraph jsgraph(&graph, &common, &javascript, &typer, &machine);
   Node* context_node;
   {
     PhaseStats graph_builder_stats(info(), PhaseStats::CREATE_GRAPH,
@@ -220,6 +223,7 @@ Handle<Code> Pipeline::GenerateCode() {
       // Type the graph.
       PhaseStats typer_stats(info(), PhaseStats::CREATE_GRAPH, "typer");
       typer.Run(&graph, info()->context());
+      VerifyAndPrintGraph(&graph, "Typed");
     }
     // All new nodes must be typed.
     typer.DecorateGraph(&graph);
@@ -254,12 +258,13 @@ Handle<Code> Pipeline::GenerateCode() {
       SourcePositionTable::Scope pos(&source_positions,
                                      SourcePosition::Unknown());
       Linkage linkage(info());
-      MachineOperatorBuilder machine(zone());
+      ValueNumberingReducer vn_reducer(zone());
       SimplifiedOperatorReducer simple_reducer(&jsgraph, &machine);
       ChangeLowering lowering(&jsgraph, &linkage, &machine);
       MachineOperatorReducer mach_reducer(&jsgraph);
       GraphReducer graph_reducer(&graph);
       // TODO(titzer): Figure out if we should run all reducers at once here.
+      graph_reducer.AddReducer(&vn_reducer);
       graph_reducer.AddReducer(&simple_reducer);
       graph_reducer.AddReducer(&lowering);
       graph_reducer.AddReducer(&mach_reducer);
@@ -277,7 +282,6 @@ Handle<Code> Pipeline::GenerateCode() {
                                 "generic lowering");
       SourcePositionTable::Scope pos(&source_positions,
                                      SourcePosition::Unknown());
-      MachineOperatorBuilder machine(zone());
       JSGenericLowering lowering(info(), &jsgraph, &machine);
       GraphReducer graph_reducer(&graph);
       graph_reducer.AddReducer(&lowering);

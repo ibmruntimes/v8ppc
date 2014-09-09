@@ -149,9 +149,15 @@ void CodeGenerator::AssembleArchInstruction(Instruction* instr) {
       break;
     }
     case kArchCallJSFunction: {
-      // TODO(jarin) The load of the context should be separated from the call.
       Register func = i.InputRegister(0);
-      __ Ldr(cp, FieldMemOperand(func, JSFunction::kContextOffset));
+      if (FLAG_debug_code) {
+        // Check the function's context matches the context argument.
+        UseScratchRegisterScope scope(masm());
+        Register temp = scope.AcquireX();
+        __ Ldr(temp, FieldMemOperand(func, JSFunction::kContextOffset));
+        __ cmp(cp, temp);
+        __ Assert(eq, kWrongFunctionContext);
+      }
       __ Ldr(x10, FieldMemOperand(func, JSFunction::kCodeEntryOffset));
       __ Call(x10);
       AddSafepointAndDeopt(instr);
@@ -332,6 +338,12 @@ void CodeGenerator::AssembleArchInstruction(Instruction* instr) {
       break;
     case kArm64Cmp32:
       __ Cmp(i.InputRegister32(0), i.InputOperand32(1));
+      break;
+    case kArm64Cmn:
+      __ Cmn(i.InputRegister(0), i.InputOperand(1));
+      break;
+    case kArm64Cmn32:
+      __ Cmn(i.InputRegister32(0), i.InputOperand32(1));
       break;
     case kArm64Tst:
       __ Tst(i.InputRegister(0), i.InputOperand(1));
@@ -701,8 +713,9 @@ void CodeGenerator::AssembleReturn() {
   } else {
     __ Mov(jssp, fp);
     __ Pop(fp, lr);
-    int pop_count =
-        descriptor->IsJSFunctionCall() ? descriptor->ParameterCount() : 0;
+    int pop_count = descriptor->IsJSFunctionCall()
+                        ? static_cast<int>(descriptor->JSParameterCount())
+                        : 0;
     __ Drop(pop_count);
     __ Ret();
   }

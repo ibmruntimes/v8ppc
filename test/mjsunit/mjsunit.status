@@ -118,24 +118,6 @@
   'regress/regress-crbug-259300': [PASS, NO_VARIANTS],
   'regress/regress-frame-details-null-receiver': [PASS, NO_VARIANTS],
 
-  # Support for ES6 generators is missing.
-  'regress-3225': [PASS, NO_VARIANTS],
-  'es6/generators-debug-liveedit': [PASS, NO_VARIANTS],
-  'es6/generators-iteration': [PASS, NO_VARIANTS],
-  'es6/generators-parsing': [PASS, NO_VARIANTS],
-  'es6/generators-poisoned-properties': [PASS, NO_VARIANTS],
-  'es6/generators-relocation': [PASS, NO_VARIANTS],
-  'es6/regress/regress-2681': [PASS, NO_VARIANTS],
-  'es6/regress/regress-2691': [PASS, NO_VARIANTS],
-  'es6/regress/regress-3280': [PASS, NO_VARIANTS],
-
-  # Support for ES6 for-of iteration is missing.
-  'es6/array-iterator': [PASS, NO_VARIANTS],
-  'es6/iteration-semantics': [PASS, NO_VARIANTS],
-  'es6/string-iterator': [PASS, NO_VARIANTS],
-  'es6/typed-array-iterator': [PASS, NO_VARIANTS],
-  'es6/arguments-iterator': [PASS, NO_VARIANTS],
-
   ##############################################################################
   # Too slow in debug mode with --stress-opt mode.
   'compiler/regress-stacktrace-methods': [PASS, ['mode == debug', SKIP]],
@@ -246,33 +228,6 @@
   # TODO(mstarzinger): Takes too long with TF.
   'array-sort': [PASS, NO_VARIANTS],
 }],  # 'gc_stress == True'
-
-##############################################################################
-['no_i18n', {
-  # Don't call runtime functions that don't exist without i18n support.
-  'runtime-gen/availablelocalesof': [SKIP],
-  'runtime-gen/breakiteratoradopttext': [SKIP],
-  'runtime-gen/breakiteratorbreaktype': [SKIP],
-  'runtime-gen/breakiteratorbreaktype': [SKIP],
-  'runtime-gen/breakiteratorcurrent': [SKIP],
-  'runtime-gen/breakiteratorfirst': [SKIP],
-  'runtime-gen/breakiteratornext': [SKIP],
-  'runtime-gen/canonicalizelanguagetag': [SKIP],
-  'runtime-gen/createbreakiterator': [SKIP],
-  'runtime-gen/createcollator': [SKIP],
-  'runtime-gen/getdefaulticulocale': [SKIP],
-  'runtime-gen/getimplfrominitializedintlobject': [SKIP],
-  'runtime-gen/getlanguagetagvariants': [SKIP],
-  'runtime-gen/internalcompare': [SKIP],
-  'runtime-gen/internaldateformat': [SKIP],
-  'runtime-gen/internaldateparse': [SKIP],
-  'runtime-gen/internalnumberformat': [SKIP],
-  'runtime-gen/internalnumberparse': [SKIP],
-  'runtime-gen/isinitializedintlobject': [SKIP],
-  'runtime-gen/isinitializedintlobjectoftype': [SKIP],
-  'runtime-gen/markasinitializedintlobjectoftype': [SKIP],
-  'runtime-gen/stringnormalize': [SKIP],
-}],
 
 ##############################################################################
 ['arch == arm64 or arch == android_arm64', {
@@ -510,6 +465,9 @@
 }],
 ##############################################################################
 ['system == windows', {
+  # TODO(mstarzinger): Too slow with turbo fan.
+  'big-object-literal': [PASS, ['mode == debug', SKIP]],
+
   # BUG(v8:3435)
   'debug-script-breakpoints': [PASS, FAIL],
 }],  # 'system == windows'

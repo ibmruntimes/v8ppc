@@ -25,13 +25,16 @@ class RepresentationChangerTester : public HandleAndZoneScope,
   explicit RepresentationChangerTester(int num_parameters = 0)
       : GraphAndBuilders(main_zone()),
         typer_(main_zone()),
-        jsgraph_(main_graph_, &main_common_, &typer_),
+        javascript_(main_zone()),
+        jsgraph_(main_graph_, &main_common_, &javascript_, &typer_,
+                 &main_machine_),
         changer_(&jsgraph_, &main_simplified_, &main_machine_, main_isolate()) {
     Node* s = graph()->NewNode(common()->Start(num_parameters));
     graph()->SetStart(s);
   }
 
   Typer typer_;
+  JSOperatorBuilder javascript_;
   JSGraph jsgraph_;
   RepresentationChanger changer_;
 
@@ -43,19 +46,19 @@ class RepresentationChangerTester : public HandleAndZoneScope,
 
   // TODO(titzer): use ValueChecker / ValueUtil
   void CheckInt32Constant(Node* n, int32_t expected) {
-    ValueMatcher<int32_t> m(n);
+    Int32Matcher m(n);
     CHECK(m.HasValue());
     CHECK_EQ(expected, m.Value());
   }
 
-  void CheckHeapConstant(Node* n, Object* expected) {
-    ValueMatcher<Handle<Object> > m(n);
+  void CheckHeapConstant(Node* n, HeapObject* expected) {
+    HeapObjectMatcher<HeapObject> m(n);
     CHECK(m.HasValue());
-    CHECK_EQ(expected, *m.Value());
+    CHECK_EQ(expected, *m.Value().handle());
   }
 
   void CheckNumberConstant(Node* n, double expected) {
-    ValueMatcher<double> m(n);
+    NumberMatcher m(n);
     CHECK_EQ(IrOpcode::kNumberConstant, n->opcode());
     CHECK(m.HasValue());
     CHECK_EQ(expected, m.Value());

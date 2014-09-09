@@ -7,6 +7,7 @@
 #if V8_TARGET_ARCH_ARM64
 
 #include "src/base/bits.h"
+#include "src/base/division-by-constant.h"
 #include "src/bootstrapper.h"
 #include "src/codegen.h"
 #include "src/cpu-profiler.h"
@@ -4441,8 +4442,8 @@ void MacroAssembler::RecordWriteField(
   // Clobber clobbered input registers when running with the debug-code flag
   // turned on to provoke errors.
   if (emit_debug_code()) {
-    Mov(value, Operand(BitCast<int64_t>(kZapValue + 4)));
-    Mov(scratch, Operand(BitCast<int64_t>(kZapValue + 8)));
+    Mov(value, Operand(bit_cast<int64_t>(kZapValue + 4)));
+    Mov(scratch, Operand(bit_cast<int64_t>(kZapValue + 8)));
   }
 }
 
@@ -4513,8 +4514,8 @@ void MacroAssembler::RecordWriteForMap(Register object,
   // Clobber clobbered registers when running with the debug-code flag
   // turned on to provoke errors.
   if (emit_debug_code()) {
-    Mov(dst, Operand(BitCast<int64_t>(kZapValue + 12)));
-    Mov(map, Operand(BitCast<int64_t>(kZapValue + 16)));
+    Mov(dst, Operand(bit_cast<int64_t>(kZapValue + 12)));
+    Mov(map, Operand(bit_cast<int64_t>(kZapValue + 16)));
   }
 }
 
@@ -4586,8 +4587,8 @@ void MacroAssembler::RecordWrite(
   // Clobber clobbered registers when running with the debug-code flag
   // turned on to provoke errors.
   if (emit_debug_code()) {
-    Mov(address, Operand(BitCast<int64_t>(kZapValue + 12)));
-    Mov(value, Operand(BitCast<int64_t>(kZapValue + 16)));
+    Mov(address, Operand(bit_cast<int64_t>(kZapValue + 12)));
+    Mov(value, Operand(bit_cast<int64_t>(kZapValue + 16)));
   }
 }
 
@@ -5332,13 +5333,15 @@ void MacroAssembler::TruncatingDiv(Register result,
                                    int32_t divisor) {
   DCHECK(!AreAliased(result, dividend));
   DCHECK(result.Is32Bits() && dividend.Is32Bits());
-  MultiplierAndShift ms(divisor);
-  Mov(result, ms.multiplier());
+  base::MagicNumbersForDivision<uint32_t> mag =
+      base::SignedDivisionByConstant(static_cast<uint32_t>(divisor));
+  Mov(result, mag.multiplier);
   Smull(result.X(), dividend, result);
   Asr(result.X(), result.X(), 32);
-  if (divisor > 0 && ms.multiplier() < 0) Add(result, result, dividend);
-  if (divisor < 0 && ms.multiplier() > 0) Sub(result, result, dividend);
-  if (ms.shift() > 0) Asr(result, result, ms.shift());
+  bool neg = (mag.multiplier & (static_cast<uint32_t>(1) << 31)) != 0;
+  if (divisor > 0 && neg) Add(result, result, dividend);
+  if (divisor < 0 && !neg && mag.multiplier > 0) Sub(result, result, dividend);
+  if (mag.shift > 0) Asr(result, result, mag.shift);
   Add(result, result, Operand(dividend, LSR, 31));
 }
 

@@ -19,9 +19,8 @@ namespace internal {
 
 // TODO(bmeurer): Find a new home for these functions.
 template <typename T>
-inline std::ostream& operator<<(std::ostream& os,
-                                const PrintableUnique<T>& value) {
-  return os << value.string();
+inline std::ostream& operator<<(std::ostream& os, const Unique<T>& value) {
+  return os << *value.handle();
 }
 inline std::ostream& operator<<(std::ostream& os,
                                 const ExternalReference& value) {
@@ -65,32 +64,32 @@ Node* GraphTest::NumberConstant(double value) {
 }
 
 
-Node* GraphTest::HeapConstant(const PrintableUnique<HeapObject>& value) {
+Node* GraphTest::HeapConstant(const Unique<HeapObject>& value) {
   return graph()->NewNode(common()->HeapConstant(value));
 }
 
 
 Node* GraphTest::FalseConstant() {
-  return HeapConstant(PrintableUnique<HeapObject>::CreateImmovable(
-      zone(), factory()->false_value()));
+  return HeapConstant(
+      Unique<HeapObject>::CreateImmovable(factory()->false_value()));
 }
 
 
 Node* GraphTest::TrueConstant() {
-  return HeapConstant(PrintableUnique<HeapObject>::CreateImmovable(
-      zone(), factory()->true_value()));
+  return HeapConstant(
+      Unique<HeapObject>::CreateImmovable(factory()->true_value()));
 }
 
 
 Matcher<Node*> GraphTest::IsFalseConstant() {
-  return IsHeapConstant(PrintableUnique<HeapObject>::CreateImmovable(
-      zone(), factory()->false_value()));
+  return IsHeapConstant(
+      Unique<HeapObject>::CreateImmovable(factory()->false_value()));
 }
 
 
 Matcher<Node*> GraphTest::IsTrueConstant() {
-  return IsHeapConstant(PrintableUnique<HeapObject>::CreateImmovable(
-      zone(), factory()->true_value()));
+  return IsHeapConstant(
+      Unique<HeapObject>::CreateImmovable(factory()->true_value()));
 }
 
 namespace {
@@ -286,17 +285,21 @@ class IsConstantMatcher FINAL : public NodeMatcher {
 
 class IsPhiMatcher FINAL : public NodeMatcher {
  public:
-  IsPhiMatcher(const Matcher<Node*>& value0_matcher,
+  IsPhiMatcher(const Matcher<MachineType>& type_matcher,
+               const Matcher<Node*>& value0_matcher,
                const Matcher<Node*>& value1_matcher,
                const Matcher<Node*>& control_matcher)
       : NodeMatcher(IrOpcode::kPhi),
+        type_matcher_(type_matcher),
         value0_matcher_(value0_matcher),
         value1_matcher_(value1_matcher),
         control_matcher_(control_matcher) {}
 
   virtual void DescribeTo(std::ostream* os) const OVERRIDE {
     NodeMatcher::DescribeTo(os);
-    *os << " whose value0 (";
+    *os << " whose type (";
+    type_matcher_.DescribeTo(os);
+    *os << "), value0 (";
     value0_matcher_.DescribeTo(os);
     *os << "), value1 (";
     value1_matcher_.DescribeTo(os);
@@ -308,6 +311,8 @@ class IsPhiMatcher FINAL : public NodeMatcher {
   virtual bool MatchAndExplain(Node* node, MatchResultListener* listener) const
       OVERRIDE {
     return (NodeMatcher::MatchAndExplain(node, listener) &&
+            PrintMatchAndExplain(OpParameter<MachineType>(node), "type",
+                                 type_matcher_, listener) &&
             PrintMatchAndExplain(NodeProperties::GetValueInput(node, 0),
                                  "value0", value0_matcher_, listener) &&
             PrintMatchAndExplain(NodeProperties::GetValueInput(node, 1),
@@ -317,6 +322,7 @@ class IsPhiMatcher FINAL : public NodeMatcher {
   }
 
  private:
+  const Matcher<MachineType> type_matcher_;
   const Matcher<Node*> value0_matcher_;
   const Matcher<Node*> value1_matcher_;
   const Matcher<Node*> control_matcher_;
@@ -325,7 +331,7 @@ class IsPhiMatcher FINAL : public NodeMatcher {
 
 class IsProjectionMatcher FINAL : public NodeMatcher {
  public:
-  IsProjectionMatcher(const Matcher<int32_t>& index_matcher,
+  IsProjectionMatcher(const Matcher<size_t>& index_matcher,
                       const Matcher<Node*>& base_matcher)
       : NodeMatcher(IrOpcode::kProjection),
         index_matcher_(index_matcher),
@@ -343,14 +349,14 @@ class IsProjectionMatcher FINAL : public NodeMatcher {
   virtual bool MatchAndExplain(Node* node, MatchResultListener* listener) const
       OVERRIDE {
     return (NodeMatcher::MatchAndExplain(node, listener) &&
-            PrintMatchAndExplain(OpParameter<int32_t>(node), "index",
+            PrintMatchAndExplain(OpParameter<size_t>(node), "index",
                                  index_matcher_, listener) &&
             PrintMatchAndExplain(NodeProperties::GetValueInput(node, 0), "base",
                                  base_matcher_, listener));
   }
 
  private:
-  const Matcher<int32_t> index_matcher_;
+  const Matcher<size_t> index_matcher_;
   const Matcher<Node*> base_matcher_;
 };
 
@@ -640,8 +646,8 @@ Matcher<Node*> IsExternalConstant(
 
 
 Matcher<Node*> IsHeapConstant(
-    const Matcher<PrintableUnique<HeapObject> >& value_matcher) {
-  return MakeMatcher(new IsConstantMatcher<PrintableUnique<HeapObject> >(
+    const Matcher<Unique<HeapObject> >& value_matcher) {
+  return MakeMatcher(new IsConstantMatcher<Unique<HeapObject> >(
       IrOpcode::kHeapConstant, value_matcher));
 }
 
@@ -670,15 +676,16 @@ Matcher<Node*> IsNumberConstant(const Matcher<double>& value_matcher) {
 }
 
 
-Matcher<Node*> IsPhi(const Matcher<Node*>& value0_matcher,
+Matcher<Node*> IsPhi(const Matcher<MachineType>& type_matcher,
+                     const Matcher<Node*>& value0_matcher,
                      const Matcher<Node*>& value1_matcher,
                      const Matcher<Node*>& merge_matcher) {
-  return MakeMatcher(
-      new IsPhiMatcher(value0_matcher, value1_matcher, merge_matcher));
+  return MakeMatcher(new IsPhiMatcher(type_matcher, value0_matcher,
+                                      value1_matcher, merge_matcher));
 }
 
 
-Matcher<Node*> IsProjection(const Matcher<int32_t>& index_matcher,
+Matcher<Node*> IsProjection(const Matcher<size_t>& index_matcher,
                             const Matcher<Node*>& base_matcher) {
   return MakeMatcher(new IsProjectionMatcher(index_matcher, base_matcher));
 }

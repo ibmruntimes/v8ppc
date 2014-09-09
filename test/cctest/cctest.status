@@ -94,6 +94,10 @@
   'test-run-machops/RunLoadImmIndex': [SKIP],
   'test-run-machops/RunSpillLotsOfThingsWithCall': [SKIP],
 
+  # TODO(sigurds): The schedule is borked with multiple inlinees.
+  'test-run-inlining/InlineTwiceDependentDiamond': [SKIP],
+  'test-run-inlining/InlineTwiceDependentDiamondDifferent': [SKIP],
+
   # Some tests are just too slow to run for now.
   'test-api/Threading*': [PASS, NO_VARIANTS],
   'test-heap/IncrementalMarkingStepMakesBigProgressWithLargeObjects': [PASS, NO_VARIANTS],
@@ -298,6 +302,11 @@
   'test-serialize/DeserializeFromSecondSerializationAndRunScript2': [SKIP],
   'test-serialize/DeserializeAndRunScript2': [SKIP],
   'test-serialize/DeserializeFromSecondSerialization': [SKIP],
+
+  # Test requires turbofan:
+  'test-simplified-lowering/LowerStringOps_to_call_and_compare': [SKIP],
+  'codegen-tester/CompareWrapper': [SKIP],
+  'codegen-tester/ParametersEqual': [SKIP],
 }],  # 'arch == mipsel or arch == mips'
 
 ##############################################################################
@@ -314,6 +323,11 @@
   'test-serialize/DeserializeFromSecondSerializationAndRunScript2': [SKIP],
   'test-serialize/DeserializeAndRunScript2': [SKIP],
   'test-serialize/DeserializeFromSecondSerialization': [SKIP],
+
+  # Test requires turbofan:
+  'test-simplified-lowering/LowerStringOps_to_call_and_compare': [SKIP],
+  'codegen-tester/CompareWrapper': [SKIP],
+  'codegen-tester/ParametersEqual': [SKIP],
 }],  # 'arch == mips64el'
 
 ##############################################################################
@@ -331,6 +345,11 @@
   'test-serialize/DeserializeAndRunScript2': [PASS, ['mode == debug', SKIP]],
   'test-serialize/DeserializeFromSecondSerializationAndRunScript2': [PASS, ['mode == debug', SKIP]],
   'test-serialize/DeserializeFromSecondSerialization': [PASS, ['mode == debug', SKIP]],
+
+  # Test requires turbofan:
+  'codegen-tester/CompareWrapper': [SKIP],
+  'codegen-tester/ParametersEqual': [SKIP],
+  'test-simplified-lowering/LowerStringOps_to_call_and_compare': [SKIP],
 }],  # 'arch == x87'
 
 ##############################################################################

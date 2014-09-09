@@ -151,6 +151,15 @@ namespace internal {
   StrictMode name = static_cast<StrictMode>(args.smi_at(index));
 
 
+// Assert that the given argument is a number within the Int32 range
+// and convert it to int32_t.  If the argument is not an Int32 call
+// IllegalOperation and return.
+#define CONVERT_INT32_ARG_CHECKED(name, index)                       \
+  RUNTIME_ASSERT(args[index]->IsNumber());                           \
+  int32_t name = 0;                                                  \
+  RUNTIME_ASSERT(args[index]->ToInt32(&name));
+
+
 static Handle<Map> ComputeObjectLiteralMap(
     Handle<Context> context,
     Handle<FixedArray> constant_properties,
@@ -1992,8 +2001,7 @@ MUST_USE_RESULT static MaybeHandle<Object> GetOwnProperty(Isolate* isolate,
     if (attrs == ABSENT) return factory->undefined_value();
 
     // Get AccessorPair if present.
-    if (it.state() == LookupIterator::PROPERTY &&
-        it.property_kind() == LookupIterator::ACCESSOR &&
+    if (it.state() == LookupIterator::ACCESSOR &&
         it.GetAccessors()->IsAccessorPair()) {
       maybe_accessors = Handle<AccessorPair>::cast(it.GetAccessors());
     }
@@ -2182,12 +2190,12 @@ static Object* DeclareGlobals(Isolate* isolate, Handle<GlobalObject> global,
                               PropertyAttributes attr, bool is_var,
                               bool is_const, bool is_function) {
   // Do the lookup own properties only, see ES5 erratum.
-  LookupIterator it(global, name, LookupIterator::HIDDEN_PROPERTY);
+  LookupIterator it(global, name, LookupIterator::HIDDEN_SKIP_INTERCEPTOR);
   Maybe<PropertyAttributes> maybe = JSReceiver::GetPropertyAttributes(&it);
-  DCHECK(maybe.has_value);
-  PropertyAttributes old_attributes = maybe.value;
+  if (!maybe.has_value) return isolate->heap()->exception();
 
-  if (old_attributes != ABSENT) {
+  if (it.IsFound()) {
+    PropertyAttributes old_attributes = maybe.value;
     // The name was declared before; check for conflicting re-declarations.
     if (is_const) return ThrowRedeclarationError(isolate, name);
 
@@ -2312,7 +2320,7 @@ RUNTIME_FUNCTION(Runtime_InitializeConstGlobal) {
   Handle<GlobalObject> global = isolate->global_object();
 
   // Lookup the property as own on the global object.
-  LookupIterator it(global, name, LookupIterator::HIDDEN_PROPERTY);
+  LookupIterator it(global, name, LookupIterator::HIDDEN_SKIP_INTERCEPTOR);
   Maybe<PropertyAttributes> maybe = JSReceiver::GetPropertyAttributes(&it);
   DCHECK(maybe.has_value);
   PropertyAttributes old_attributes = maybe.value;
@@ -2325,7 +2333,7 @@ RUNTIME_FUNCTION(Runtime_InitializeConstGlobal) {
     // Ignore if we can't reconfigure the value.
     if ((old_attributes & DONT_DELETE) != 0) {
       if ((old_attributes & READ_ONLY) != 0 ||
-          it.property_kind() == LookupIterator::ACCESSOR) {
+          it.state() == LookupIterator::ACCESSOR) {
         return *value;
       }
       attr = static_cast<PropertyAttributes>(old_attributes | READ_ONLY);
@@ -2462,7 +2470,7 @@ RUNTIME_FUNCTION(Runtime_InitializeLegacyConstLookupSlot) {
     // code can run in between that modifies the declared property.
     DCHECK(holder->IsJSGlobalObject() || holder->IsJSContextExtensionObject());
 
-    LookupIterator it(holder, name, LookupIterator::HIDDEN_PROPERTY);
+    LookupIterator it(holder, name, LookupIterator::HIDDEN_SKIP_INTERCEPTOR);
     Maybe<PropertyAttributes> maybe = JSReceiver::GetPropertyAttributes(&it);
     if (!maybe.has_value) return isolate->heap()->exception();
     PropertyAttributes old_attributes = maybe.value;
@@ -2470,7 +2478,7 @@ RUNTIME_FUNCTION(Runtime_InitializeLegacyConstLookupSlot) {
     // Ignore if we can't reconfigure the value.
     if ((old_attributes & DONT_DELETE) != 0) {
       if ((old_attributes & READ_ONLY) != 0 ||
-          it.property_kind() == LookupIterator::ACCESSOR) {
+          it.state() == LookupIterator::ACCESSOR) {
         return *value;
       }
       attr = static_cast<PropertyAttributes>(old_attributes | READ_ONLY);
@@ -2504,10 +2512,10 @@ RUNTIME_FUNCTION(Runtime_RegExpExecRT) {
   DCHECK(args.length() == 4);
   CONVERT_ARG_HANDLE_CHECKED(JSRegExp, regexp, 0);
   CONVERT_ARG_HANDLE_CHECKED(String, subject, 1);
+  CONVERT_INT32_ARG_CHECKED(index, 2);
+  CONVERT_ARG_HANDLE_CHECKED(JSArray, last_match_info, 3);
   // Due to the way the JS calls are constructed this must be less than the
   // length of a string, i.e. it is always a Smi.  We check anyway for security.
-  CONVERT_SMI_ARG_CHECKED(index, 2);
-  CONVERT_ARG_HANDLE_CHECKED(JSArray, last_match_info, 3);
   RUNTIME_ASSERT(index >= 0);
   RUNTIME_ASSERT(index <= subject->length());
   isolate->counters()->regexp_entry_runtime()->Increment();
@@ -4893,8 +4901,8 @@ RUNTIME_FUNCTION(Runtime_KeyedGetProperty) {
         // Lookup cache miss.  Perform lookup and update the cache if
         // appropriate.
         LookupIterator it(receiver, key, LookupIterator::OWN);
-        if (it.IsFound() && it.state() == LookupIterator::PROPERTY &&
-            it.HasProperty() && it.property_details().type() == FIELD) {
+        if (it.state() == LookupIterator::DATA &&
+            it.property_details().type() == FIELD) {
           FieldIndex field_index = it.GetFieldIndex();
           // Do not track double fields in the keyed lookup cache. Reading
           // double values requires boxing.
@@ -5042,18 +5050,17 @@ RUNTIME_FUNCTION(Runtime_DefineDataPropertyUnchecked) {
   RUNTIME_ASSERT((unchecked & ~(READ_ONLY | DONT_ENUM | DONT_DELETE)) == 0);
   PropertyAttributes attr = static_cast<PropertyAttributes>(unchecked);
 
-  // Check access rights if needed.
-  if (js_object->IsAccessCheckNeeded() &&
-      !isolate->MayNamedAccess(js_object, name, v8::ACCESS_SET)) {
-    return isolate->heap()->undefined_value();
+  LookupIterator it(js_object, name, LookupIterator::OWN_SKIP_INTERCEPTOR);
+  if (it.IsFound() && it.state() == LookupIterator::ACCESS_CHECK) {
+    if (!isolate->MayNamedAccess(js_object, name, v8::ACCESS_SET)) {
+      return isolate->heap()->undefined_value();
+    }
+    it.Next();
   }
-
-  LookupIterator it(js_object, name, LookupIterator::OWN_PROPERTY);
 
   // Take special care when attributes are different and there is already
   // a property.
-  if (it.IsFound() && it.HasProperty() &&
-      it.property_kind() == LookupIterator::ACCESSOR) {
+  if (it.state() == LookupIterator::ACCESSOR) {
     // Use IgnoreAttributes version since a readonly property may be
     // overridden and SetProperty does not allow this.
     Handle<Object> result;
@@ -5295,9 +5302,9 @@ RUNTIME_FUNCTION(Runtime_AddNamedProperty) {
 #ifdef DEBUG
   uint32_t index = 0;
   DCHECK(!key->ToArrayIndex(&index));
-  LookupIterator it(object, key, LookupIterator::OWN_PROPERTY);
+  LookupIterator it(object, key, LookupIterator::OWN_SKIP_INTERCEPTOR);
   Maybe<PropertyAttributes> maybe = JSReceiver::GetPropertyAttributes(&it);
-  DCHECK(maybe.has_value);
+  if (!maybe.has_value) return isolate->heap()->exception();
   RUNTIME_ASSERT(!it.IsFound());
 #endif
 
@@ -5327,7 +5334,7 @@ RUNTIME_FUNCTION(Runtime_AddPropertyForTemplate) {
   bool duplicate;
   if (key->IsName()) {
     LookupIterator it(object, Handle<Name>::cast(key),
-                      LookupIterator::OWN_PROPERTY);
+                      LookupIterator::OWN_SKIP_INTERCEPTOR);
     Maybe<PropertyAttributes> maybe = JSReceiver::GetPropertyAttributes(&it);
     DCHECK(maybe.has_value);
     duplicate = it.IsFound();
@@ -6247,7 +6254,7 @@ RUNTIME_FUNCTION(Runtime_StringToNumber) {
 RUNTIME_FUNCTION(Runtime_NewString) {
   HandleScope scope(isolate);
   DCHECK(args.length() == 2);
-  CONVERT_SMI_ARG_CHECKED(length, 0);
+  CONVERT_INT32_ARG_CHECKED(length, 0);
   CONVERT_BOOLEAN_ARG_CHECKED(is_one_byte, 1);
   if (length == 0) return isolate->heap()->empty_string();
   Handle<String> result;
@@ -6266,7 +6273,7 @@ RUNTIME_FUNCTION(Runtime_TruncateString) {
   HandleScope scope(isolate);
   DCHECK(args.length() == 2);
   CONVERT_ARG_HANDLE_CHECKED(SeqString, string, 0);
-  CONVERT_SMI_ARG_CHECKED(new_length, 1);
+  CONVERT_INT32_ARG_CHECKED(new_length, 1);
   RUNTIME_ASSERT(new_length >= 0);
   return *SeqString::Truncate(string, new_length);
 }
@@ -8459,15 +8466,9 @@ RUNTIME_FUNCTION(Runtime_CompileOptimized) {
   CONVERT_BOOLEAN_ARG_CHECKED(concurrent, 1);
 
   Handle<Code> unoptimized(function->shared()->code());
-  if (!function->shared()->is_compiled()) {
-    // If the function is not compiled, do not optimize.
-    // This can happen if the debugger is activated and
-    // the function is returned to the not compiled state.
-    // TODO(yangguo): reconsider this.
-    function->ReplaceCode(function->shared()->code());
-  } else if (!isolate->use_crankshaft() ||
-             function->shared()->optimization_disabled() ||
-             isolate->DebuggerHasBreakPoints()) {
+  if (!isolate->use_crankshaft() ||
+      function->shared()->optimization_disabled() ||
+      isolate->DebuggerHasBreakPoints()) {
     // If the function is not optimizable or debugger is active continue
     // using the code from the full compiler.
     if (FLAG_trace_opt) {
@@ -8478,16 +8479,16 @@ RUNTIME_FUNCTION(Runtime_CompileOptimized) {
           isolate->DebuggerHasBreakPoints() ? "T" : "F");
     }
     function->ReplaceCode(*unoptimized);
+    return function->code();
+  }
+
+  Compiler::ConcurrencyMode mode =
+      concurrent ? Compiler::CONCURRENT : Compiler::NOT_CONCURRENT;
+  Handle<Code> code;
+  if (Compiler::GetOptimizedCode(function, unoptimized, mode).ToHandle(&code)) {
+    function->ReplaceCode(*code);
   } else {
-    Compiler::ConcurrencyMode mode = concurrent ? Compiler::CONCURRENT
-                                                : Compiler::NOT_CONCURRENT;
-    Handle<Code> code;
-    if (Compiler::GetOptimizedCode(
-            function, unoptimized, mode).ToHandle(&code)) {
-      function->ReplaceCode(*code);
-    } else {
-      function->ReplaceCode(*unoptimized);
-    }
+    function->ReplaceCode(function->shared()->code());
   }
 
   DCHECK(function->code()->kind() == Code::FUNCTION ||
@@ -8642,12 +8643,15 @@ RUNTIME_FUNCTION(Runtime_OptimizeFunctionOnNextCall) {
   HandleScope scope(isolate);
   RUNTIME_ASSERT(args.length() == 1 || args.length() == 2);
   CONVERT_ARG_HANDLE_CHECKED(JSFunction, function, 0);
+  // The following two assertions are lifted from the DCHECKs inside
+  // JSFunction::MarkForOptimization().
+  RUNTIME_ASSERT(!function->shared()->is_generator());
+  RUNTIME_ASSERT(function->shared()->allows_lazy_compilation() ||
+                 (function->code()->kind() == Code::FUNCTION &&
+                  function->code()->optimizable()));
 
-  if (!function->IsOptimizable() &&
-      !function->IsMarkedForConcurrentOptimization() &&
-      !function->IsInOptimizationQueue()) {
-    return isolate->heap()->undefined_value();
-  }
+  // If the function is optimized, just return.
+  if (function->IsOptimized()) return isolate->heap()->undefined_value();
 
   function->MarkForOptimization();
 
@@ -8947,8 +8951,8 @@ RUNTIME_FUNCTION(Runtime_Apply) {
   CONVERT_ARG_HANDLE_CHECKED(JSReceiver, fun, 0);
   CONVERT_ARG_HANDLE_CHECKED(Object, receiver, 1);
   CONVERT_ARG_HANDLE_CHECKED(JSObject, arguments, 2);
-  CONVERT_SMI_ARG_CHECKED(offset, 3);
-  CONVERT_SMI_ARG_CHECKED(argc, 4);
+  CONVERT_INT32_ARG_CHECKED(offset, 3);
+  CONVERT_INT32_ARG_CHECKED(argc, 4);
   RUNTIME_ASSERT(offset >= 0);
   // Loose upper bound to allow fuzzing. We'll most likely run out of
   // stack space before hitting this limit.
@@ -10910,6 +10914,7 @@ static Handle<Object> DebugGetProperty(LookupIterator* it,
     switch (it->state()) {
       case LookupIterator::NOT_FOUND:
       case LookupIterator::TRANSITION:
+      case LookupIterator::UNKNOWN:
         UNREACHABLE();
       case LookupIterator::ACCESS_CHECK:
         // Ignore access checks.
@@ -10917,30 +10922,25 @@ static Handle<Object> DebugGetProperty(LookupIterator* it,
       case LookupIterator::INTERCEPTOR:
       case LookupIterator::JSPROXY:
         return it->isolate()->factory()->undefined_value();
-      case LookupIterator::PROPERTY:
-        if (!it->HasProperty()) continue;
-        switch (it->property_kind()) {
-          case LookupIterator::ACCESSOR: {
-            Handle<Object> accessors = it->GetAccessors();
-            if (!accessors->IsAccessorInfo()) {
-              return it->isolate()->factory()->undefined_value();
-            }
-            MaybeHandle<Object> maybe_result =
-                JSObject::GetPropertyWithAccessor(it->GetReceiver(), it->name(),
-                                                  it->GetHolder<JSObject>(),
-                                                  accessors);
-            Handle<Object> result;
-            if (!maybe_result.ToHandle(&result)) {
-              result =
-                  handle(it->isolate()->pending_exception(), it->isolate());
-              it->isolate()->clear_pending_exception();
-              if (has_caught != NULL) *has_caught = true;
-            }
-            return result;
-          }
-          case LookupIterator::DATA:
-            return it->GetDataValue();
+      case LookupIterator::ACCESSOR: {
+        Handle<Object> accessors = it->GetAccessors();
+        if (!accessors->IsAccessorInfo()) {
+          return it->isolate()->factory()->undefined_value();
         }
+        MaybeHandle<Object> maybe_result = JSObject::GetPropertyWithAccessor(
+            it->GetReceiver(), it->name(), it->GetHolder<JSObject>(),
+            accessors);
+        Handle<Object> result;
+        if (!maybe_result.ToHandle(&result)) {
+          result = handle(it->isolate()->pending_exception(), it->isolate());
+          it->isolate()->clear_pending_exception();
+          if (has_caught != NULL) *has_caught = true;
+        }
+        return result;
+      }
+
+      case LookupIterator::DATA:
+        return it->GetDataValue();
     }
   }
 
@@ -10995,8 +10995,7 @@ RUNTIME_FUNCTION(Runtime_DebugGetPropertyDetails) {
   if (!it.IsFound()) return isolate->heap()->undefined_value();
 
   Handle<Object> maybe_pair;
-  if (it.state() == LookupIterator::PROPERTY &&
-      it.property_kind() == LookupIterator::ACCESSOR) {
+  if (it.state() == LookupIterator::ACCESSOR) {
     maybe_pair = it.GetAccessors();
   }
 
@@ -15239,17 +15238,17 @@ RUNTIME_FUNCTION(Runtime_ForInCacheArrayLength) {
 RUNTIME_FUNCTION_RETURN_PAIR(Runtime_ForInNext) {
   SealHandleScope scope(isolate);
   DCHECK(args.length() == 4);
+  int32_t index;
   // This simulates CONVERT_ARG_HANDLE_CHECKED for calls returning pairs.
   // Not worth creating a macro atm as this function should be removed.
   if (!args[0]->IsJSReceiver() || !args[1]->IsFixedArray() ||
-      !args[2]->IsObject() || !args[3]->IsSmi()) {
+      !args[2]->IsObject() || !args[3]->ToInt32(&index)) {
     Object* error = isolate->ThrowIllegalOperation();
     return MakePair(error, isolate->heap()->undefined_value());
   }
   Handle<JSReceiver> object = args.at<JSReceiver>(0);
   Handle<FixedArray> array = args.at<FixedArray>(1);
   Handle<Object> cache_type = args.at<Object>(2);
-  int index = args.smi_at(3);
   // Figure out first if a slow check is needed for this object.
   bool slow_check_needed = false;
   if (cache_type->IsMap()) {
@@ -15280,8 +15279,6 @@ RUNTIME_FUNCTION_RETURN_PAIR(Runtime_ForInNext) {
   }
 
 U(IsStringWrapperSafeForDefaultValueOf)
-U(GeneratorNext)
-U(GeneratorThrow)
 U(DebugBreakInOptimizedCode)
 
 #undef U
@@ -15409,8 +15406,8 @@ RUNTIME_FUNCTION(RuntimeReference_OneByteSeqStringSetChar) {
   SealHandleScope shs(isolate);
   DCHECK(args.length() == 3);
   CONVERT_ARG_CHECKED(SeqOneByteString, string, 0);
-  CONVERT_SMI_ARG_CHECKED(index, 1);
-  CONVERT_SMI_ARG_CHECKED(value, 2);
+  CONVERT_INT32_ARG_CHECKED(index, 1);
+  CONVERT_INT32_ARG_CHECKED(value, 2);
   string->SeqOneByteStringSet(index, value);
   return string;
 }
@@ -15420,8 +15417,8 @@ RUNTIME_FUNCTION(RuntimeReference_TwoByteSeqStringSetChar) {
   SealHandleScope shs(isolate);
   DCHECK(args.length() == 3);
   CONVERT_ARG_CHECKED(SeqTwoByteString, string, 0);
-  CONVERT_SMI_ARG_CHECKED(index, 1);
-  CONVERT_SMI_ARG_CHECKED(value, 2);
+  CONVERT_INT32_ARG_CHECKED(index, 1);
+  CONVERT_INT32_ARG_CHECKED(value, 2);
   string->SeqTwoByteStringSet(index, value);
   return string;
 }
@@ -15509,6 +15506,18 @@ RUNTIME_FUNCTION(RuntimeReference_FastAsciiArrayJoin) {
   SealHandleScope shs(isolate);
   DCHECK(args.length() == 2);
   return isolate->heap()->undefined_value();
+}
+
+
+RUNTIME_FUNCTION(RuntimeReference_GeneratorNext) {
+  UNREACHABLE();  // Optimization disabled in SetUpGenerators().
+  return NULL;
+}
+
+
+RUNTIME_FUNCTION(RuntimeReference_GeneratorThrow) {
+  UNREACHABLE();  // Optimization disabled in SetUpGenerators().
+  return NULL;
 }
 
 

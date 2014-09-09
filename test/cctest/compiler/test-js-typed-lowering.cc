@@ -50,7 +50,7 @@ class JSTypedLoweringTester : public HandleAndZoneScope {
   }
 
   Node* reduce(Node* node) {
-    JSGraph jsgraph(&graph, &common, &typer);
+    JSGraph jsgraph(&graph, &common, &javascript, &typer, &machine);
     JSTypedLowering reducer(&jsgraph);
     Reduction reduction = reducer.Reduce(node);
     if (reduction.Changed()) return reduction.replacement();
@@ -108,17 +108,17 @@ class JSTypedLoweringTester : public HandleAndZoneScope {
 
   void CheckInt32Constant(int32_t expected, Node* result) {
     CHECK_EQ(IrOpcode::kInt32Constant, result->opcode());
-    CHECK_EQ(expected, ValueOf<int32_t>(result->op()));
+    CHECK_EQ(expected, OpParameter<int32_t>(result));
   }
 
   void CheckNumberConstant(double expected, Node* result) {
     CHECK_EQ(IrOpcode::kNumberConstant, result->opcode());
-    CHECK_EQ(expected, ValueOf<double>(result->op()));
+    CHECK_EQ(expected, OpParameter<double>(result));
   }
 
   void CheckNaN(Node* result) {
     CHECK_EQ(IrOpcode::kNumberConstant, result->opcode());
-    double value = ValueOf<double>(result->op());
+    double value = OpParameter<double>(result);
     CHECK(std::isnan(value));
   }
 
@@ -132,7 +132,7 @@ class JSTypedLoweringTester : public HandleAndZoneScope {
 
   void CheckHandle(Handle<Object> expected, Node* result) {
     CHECK_EQ(IrOpcode::kHeapConstant, result->opcode());
-    Handle<Object> value = ValueOf<Handle<Object> >(result->op());
+    Handle<Object> value = OpParameter<Unique<Object> >(result).handle();
     CHECK_EQ(*expected, *value);
   }
 };
@@ -240,7 +240,7 @@ static void CheckToI32(Node* old_input, Node* new_input, bool is_signed) {
     CHECK_EQ(old_input, new_input);
   } else if (new_input->opcode() == IrOpcode::kNumberConstant) {
     CHECK(NodeProperties::GetBounds(new_input).upper->Is(expected_type));
-    double v = ValueOf<double>(new_input->op());
+    double v = OpParameter<double>(new_input);
     double e = static_cast<double>(is_signed ? FastD2I(v) : FastD2UI(v));
     CHECK_EQ(e, v);
   } else {
@@ -506,7 +506,8 @@ TEST(JSToBoolean) {
 TEST(JSToBoolean_replacement) {
   JSTypedLoweringTester R;
 
-  Type* types[] = {Type::Null(), Type::Undefined(), Type::Boolean(),
+  Type* types[] = {Type::Null(),             Type::Undefined(),
+                   Type::Boolean(),          Type::Number(),
                    Type::DetectableObject(), Type::Undetectable()};
 
   for (size_t i = 0; i < arraysize(types); i++) {
@@ -521,6 +522,8 @@ TEST(JSToBoolean_replacement) {
 
     if (types[i]->Is(Type::Boolean())) {
       CHECK_EQ(n, r);
+    } else if (types[i]->Is(Type::Number())) {
+      CHECK_EQ(IrOpcode::kBooleanNot, r->opcode());
     } else {
       CHECK_EQ(IrOpcode::kHeapConstant, r->opcode());
     }

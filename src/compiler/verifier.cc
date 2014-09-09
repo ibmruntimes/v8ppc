@@ -76,7 +76,10 @@ GenericGraphVisit::Control Verifier::Visitor::Pre(Node* node) {
   // Verify that frame state has been inserted for the nodes that need it.
   if (OperatorProperties::HasFrameStateInput(node->op())) {
     Node* frame_state = NodeProperties::GetFrameStateInput(node);
-    CHECK(frame_state->opcode() == IrOpcode::kFrameState);
+    CHECK(frame_state->opcode() == IrOpcode::kFrameState ||
+          // kFrameState uses undefined as a sentinel.
+          (node->opcode() == IrOpcode::kFrameState &&
+           frame_state->opcode() == IrOpcode::kHeapConstant));
     CHECK(IsDefUseChainLinkPresent(frame_state, node));
     CHECK(IsUseDefChainLinkPresent(frame_state, node));
   }
@@ -171,7 +174,7 @@ GenericGraphVisit::Control Verifier::Visitor::Pre(Node* node) {
       CHECK_EQ(IrOpcode::kStart,
                NodeProperties::GetValueInput(node, 0)->opcode());
       // Parameter has an input that produces enough values.
-      int index = static_cast<Operator1<int>*>(node->op())->parameter();
+      int index = OpParameter<int>(node);
       Node* input = NodeProperties::GetValueInput(node, 0);
       // Currently, parameter indices start at -1 instead of 0.
       CHECK_GT(OperatorProperties::GetValueOutputCount(input->op()), index + 1);
@@ -210,9 +213,10 @@ GenericGraphVisit::Control Verifier::Visitor::Pre(Node* node) {
       break;
     case IrOpcode::kProjection: {
       // Projection has an input that produces enough values.
-      int index = static_cast<Operator1<int>*>(node->op())->parameter();
+      size_t index = OpParameter<size_t>(node);
       Node* input = NodeProperties::GetValueInput(node, 0);
-      CHECK_GT(OperatorProperties::GetValueOutputCount(input->op()), index);
+      CHECK_GT(OperatorProperties::GetValueOutputCount(input->op()),
+               static_cast<int>(index));
       break;
     }
     default:

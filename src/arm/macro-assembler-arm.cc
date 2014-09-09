@@ -9,6 +9,7 @@
 #if V8_TARGET_ARCH_ARM
 
 #include "src/base/bits.h"
+#include "src/base/division-by-constant.h"
 #include "src/bootstrapper.h"
 #include "src/codegen.h"
 #include "src/cpu-profiler.h"
@@ -499,8 +500,8 @@ void MacroAssembler::RecordWriteField(
   // Clobber clobbered input registers when running with the debug-code flag
   // turned on to provoke errors.
   if (emit_debug_code()) {
-    mov(value, Operand(BitCast<int32_t>(kZapValue + 4)));
-    mov(dst, Operand(BitCast<int32_t>(kZapValue + 8)));
+    mov(value, Operand(bit_cast<int32_t>(kZapValue + 4)));
+    mov(dst, Operand(bit_cast<int32_t>(kZapValue + 8)));
   }
 }
 
@@ -569,8 +570,8 @@ void MacroAssembler::RecordWriteForMap(Register object,
   // Clobber clobbered registers when running with the debug-code flag
   // turned on to provoke errors.
   if (emit_debug_code()) {
-    mov(dst, Operand(BitCast<int32_t>(kZapValue + 12)));
-    mov(map, Operand(BitCast<int32_t>(kZapValue + 16)));
+    mov(dst, Operand(bit_cast<int32_t>(kZapValue + 12)));
+    mov(map, Operand(bit_cast<int32_t>(kZapValue + 16)));
   }
 }
 
@@ -641,8 +642,8 @@ void MacroAssembler::RecordWrite(
   // Clobber clobbered registers when running with the debug-code flag
   // turned on to provoke errors.
   if (emit_debug_code()) {
-    mov(address, Operand(BitCast<int32_t>(kZapValue + 12)));
-    mov(value, Operand(BitCast<int32_t>(kZapValue + 16)));
+    mov(address, Operand(bit_cast<int32_t>(kZapValue + 12)));
+    mov(value, Operand(bit_cast<int32_t>(kZapValue + 16)));
   }
 }
 
@@ -4093,16 +4094,18 @@ void MacroAssembler::TruncatingDiv(Register result,
   DCHECK(!dividend.is(result));
   DCHECK(!dividend.is(ip));
   DCHECK(!result.is(ip));
-  MultiplierAndShift ms(divisor);
-  mov(ip, Operand(ms.multiplier()));
+  base::MagicNumbersForDivision<uint32_t> mag =
+      base::SignedDivisionByConstant(static_cast<uint32_t>(divisor));
+  mov(ip, Operand(mag.multiplier));
   smull(ip, result, dividend, ip);
-  if (divisor > 0 && ms.multiplier() < 0) {
+  bool neg = (mag.multiplier & (static_cast<uint32_t>(1) << 31)) != 0;
+  if (divisor > 0 && neg) {
     add(result, result, Operand(dividend));
   }
-  if (divisor < 0 && ms.multiplier() > 0) {
+  if (divisor < 0 && !neg && mag.multiplier > 0) {
     sub(result, result, Operand(dividend));
   }
-  if (ms.shift() > 0) mov(result, Operand(result, ASR, ms.shift()));
+  if (mag.shift > 0) mov(result, Operand(result, ASR, mag.shift));
   add(result, result, Operand(dividend, LSR, 31));
 }
 

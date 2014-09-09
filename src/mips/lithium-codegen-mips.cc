@@ -27,8 +27,10 @@
 
 #include "src/v8.h"
 
+#include "src/base/bits.h"
 #include "src/code-stubs.h"
 #include "src/hydrogen-osr.h"
+#include "src/ic/stub-cache.h"
 #include "src/mips/lithium-codegen-mips.h"
 #include "src/mips/lithium-gap-resolver-mips.h"
 
@@ -1201,7 +1203,7 @@ void LCodeGen::DoDivByPowerOf2I(LDivByPowerOf2I* instr) {
   Register dividend = ToRegister(instr->dividend());
   int32_t divisor = instr->divisor();
   Register result = ToRegister(instr->result());
-  DCHECK(divisor == kMinInt || IsPowerOf2(Abs(divisor)));
+  DCHECK(divisor == kMinInt || base::bits::IsPowerOfTwo32(Abs(divisor)));
   DCHECK(!result.is(dividend));
 
   // Check for (0 / -x) that will produce negative zero.
@@ -1514,18 +1516,18 @@ void LCodeGen::DoMulI(LMulI* instr) {
         int32_t mask = constant >> 31;
         uint32_t constant_abs = (constant + mask) ^ mask;
 
-        if (IsPowerOf2(constant_abs)) {
+        if (base::bits::IsPowerOfTwo32(constant_abs)) {
           int32_t shift = WhichPowerOf2(constant_abs);
           __ sll(result, left, shift);
           // Correct the sign of the result if the constant is negative.
           if (constant < 0)  __ Subu(result, zero_reg, result);
-        } else if (IsPowerOf2(constant_abs - 1)) {
+        } else if (base::bits::IsPowerOfTwo32(constant_abs - 1)) {
           int32_t shift = WhichPowerOf2(constant_abs - 1);
           __ sll(scratch, left, shift);
           __ Addu(result, scratch, left);
           // Correct the sign of the result if the constant is negative.
           if (constant < 0)  __ Subu(result, zero_reg, result);
-        } else if (IsPowerOf2(constant_abs + 1)) {
+        } else if (base::bits::IsPowerOfTwo32(constant_abs + 1)) {
           int32_t shift = WhichPowerOf2(constant_abs + 1);
           __ sll(scratch, left, shift);
           __ Subu(result, scratch, left);
@@ -2891,11 +2893,11 @@ template <class T>
 void LCodeGen::EmitVectorLoadICRegisters(T* instr) {
   DCHECK(FLAG_vector_ics);
   Register vector = ToRegister(instr->temp_vector());
-  DCHECK(vector.is(FullVectorLoadConvention::VectorRegister()));
+  DCHECK(vector.is(VectorLoadICDescriptor::VectorRegister()));
   __ li(vector, instr->hydrogen()->feedback_vector());
   // No need to allocate this register.
-  DCHECK(FullVectorLoadConvention::SlotRegister().is(a0));
-  __ li(FullVectorLoadConvention::SlotRegister(),
+  DCHECK(VectorLoadICDescriptor::SlotRegister().is(a0));
+  __ li(VectorLoadICDescriptor::SlotRegister(),
         Operand(Smi::FromInt(instr->hydrogen()->slot())));
 }
 
@@ -2903,10 +2905,10 @@ void LCodeGen::EmitVectorLoadICRegisters(T* instr) {
 void LCodeGen::DoLoadGlobalGeneric(LLoadGlobalGeneric* instr) {
   DCHECK(ToRegister(instr->context()).is(cp));
   DCHECK(ToRegister(instr->global_object())
-             .is(LoadConvention::ReceiverRegister()));
+             .is(LoadDescriptor::ReceiverRegister()));
   DCHECK(ToRegister(instr->result()).is(v0));
 
-  __ li(LoadConvention::NameRegister(), Operand(instr->name()));
+  __ li(LoadDescriptor::NameRegister(), Operand(instr->name()));
   if (FLAG_vector_ics) {
     EmitVectorLoadICRegisters<LLoadGlobalGeneric>(instr);
   }
@@ -3030,11 +3032,11 @@ void LCodeGen::DoLoadNamedField(LLoadNamedField* instr) {
 
 void LCodeGen::DoLoadNamedGeneric(LLoadNamedGeneric* instr) {
   DCHECK(ToRegister(instr->context()).is(cp));
-  DCHECK(ToRegister(instr->object()).is(LoadConvention::ReceiverRegister()));
+  DCHECK(ToRegister(instr->object()).is(LoadDescriptor::ReceiverRegister()));
   DCHECK(ToRegister(instr->result()).is(v0));
 
   // Name is always in a2.
-  __ li(LoadConvention::NameRegister(), Operand(instr->name()));
+  __ li(LoadDescriptor::NameRegister(), Operand(instr->name()));
   if (FLAG_vector_ics) {
     EmitVectorLoadICRegisters<LLoadNamedGeneric>(instr);
   }
@@ -3339,8 +3341,8 @@ MemOperand LCodeGen::PrepareKeyedOperand(Register key,
 
 void LCodeGen::DoLoadKeyedGeneric(LLoadKeyedGeneric* instr) {
   DCHECK(ToRegister(instr->context()).is(cp));
-  DCHECK(ToRegister(instr->object()).is(LoadConvention::ReceiverRegister()));
-  DCHECK(ToRegister(instr->key()).is(LoadConvention::NameRegister()));
+  DCHECK(ToRegister(instr->object()).is(LoadDescriptor::ReceiverRegister()));
+  DCHECK(ToRegister(instr->key()).is(LoadDescriptor::NameRegister()));
 
   if (FLAG_vector_ics) {
     EmitVectorLoadICRegisters<LLoadKeyedGeneric>(instr);
@@ -3933,6 +3935,34 @@ void LCodeGen::DoInvokeFunction(LInvokeFunction* instr) {
 }
 
 
+void LCodeGen::DoTailCallThroughMegamorphicCache(
+    LTailCallThroughMegamorphicCache* instr) {
+  Register receiver = ToRegister(instr->receiver());
+  Register name = ToRegister(instr->name());
+  DCHECK(receiver.is(LoadDescriptor::ReceiverRegister()));
+  DCHECK(name.is(LoadDescriptor::NameRegister()));
+  DCHECK(receiver.is(a1));
+  DCHECK(name.is(a2));
+
+  Register scratch = a3;
+  Register extra = t0;
+  Register extra2 = t1;
+  Register extra3 = t2;
+
+  // Important for the tail-call.
+  bool must_teardown_frame = NeedsEagerFrame();
+
+  // The probe will tail call to a handler if found.
+  isolate()->stub_cache()->GenerateProbe(masm(), instr->hydrogen()->flags(),
+                                         must_teardown_frame, receiver, name,
+                                         scratch, extra, extra2, extra3);
+
+  // Tail call to miss if we ended up here.
+  if (must_teardown_frame) __ LeaveFrame(StackFrame::INTERNAL);
+  LoadIC::GenerateMiss(masm());
+}
+
+
 void LCodeGen::DoCallWithDescriptor(LCallWithDescriptor* instr) {
   DCHECK(ToRegister(instr->result()).is(v0));
 
@@ -4155,10 +4185,10 @@ void LCodeGen::DoStoreNamedField(LStoreNamedField* instr) {
 
 void LCodeGen::DoStoreNamedGeneric(LStoreNamedGeneric* instr) {
   DCHECK(ToRegister(instr->context()).is(cp));
-  DCHECK(ToRegister(instr->object()).is(StoreConvention::ReceiverRegister()));
-  DCHECK(ToRegister(instr->value()).is(StoreConvention::ValueRegister()));
+  DCHECK(ToRegister(instr->object()).is(StoreDescriptor::ReceiverRegister()));
+  DCHECK(ToRegister(instr->value()).is(StoreDescriptor::ValueRegister()));
 
-  __ li(StoreConvention::NameRegister(), Operand(instr->name()));
+  __ li(StoreDescriptor::NameRegister(), Operand(instr->name()));
   Handle<Code> ic = StoreIC::initialize_stub(isolate(), instr->strict_mode());
   CallCode(ic, RelocInfo::CODE_TARGET, instr);
 }
@@ -4386,9 +4416,9 @@ void LCodeGen::DoStoreKeyed(LStoreKeyed* instr) {
 
 void LCodeGen::DoStoreKeyedGeneric(LStoreKeyedGeneric* instr) {
   DCHECK(ToRegister(instr->context()).is(cp));
-  DCHECK(ToRegister(instr->object()).is(StoreConvention::ReceiverRegister()));
-  DCHECK(ToRegister(instr->key()).is(StoreConvention::NameRegister()));
-  DCHECK(ToRegister(instr->value()).is(StoreConvention::ValueRegister()));
+  DCHECK(ToRegister(instr->object()).is(StoreDescriptor::ReceiverRegister()));
+  DCHECK(ToRegister(instr->key()).is(StoreDescriptor::NameRegister()));
+  DCHECK(ToRegister(instr->value()).is(StoreDescriptor::ValueRegister()));
 
   Handle<Code> ic = (instr->strict_mode() == STRICT)
       ? isolate()->builtins()->KeyedStoreIC_Initialize_Strict()
@@ -5100,8 +5130,8 @@ void LCodeGen::DoCheckInstanceType(LCheckInstanceType* instr) {
     uint8_t tag;
     instr->hydrogen()->GetCheckMaskAndTag(&mask, &tag);
 
-    if (IsPowerOf2(mask)) {
-      DCHECK(tag == 0 || IsPowerOf2(tag));
+    if (base::bits::IsPowerOfTwo32(mask)) {
+      DCHECK(tag == 0 || base::bits::IsPowerOfTwo32(tag));
       __ And(at, scratch, mask);
       DeoptimizeIf(tag == 0 ? ne : eq, instr->environment(),
           at, Operand(zero_reg));

@@ -2070,7 +2070,10 @@ class ScavengingVisitor : public StaticVisitorBase {
     ObjectEvacuationStrategy<POINTER_OBJECT>::template VisitSpecialized<
         JSFunction::kSize>(map, slot, object);
 
-    HeapObject* target = *slot;
+    MapWord map_word = object->map_word();
+    DCHECK(map_word.IsForwardingAddress());
+    HeapObject* target = map_word.ToForwardingAddress();
+
     MarkBit mark_bit = Marking::MarkBitFrom(target);
     if (Marking::IsBlack(mark_bit)) {
       // This object is black and it might not be rescanned by marker.
@@ -2697,13 +2700,13 @@ void Heap::CreateApiObjects() {
 
 
 void Heap::CreateJSEntryStub() {
-  JSEntryStub stub(isolate());
+  JSEntryStub stub(isolate(), StackFrame::ENTRY);
   set_js_entry_code(*stub.GetCode());
 }
 
 
 void Heap::CreateJSConstructEntryStub() {
-  JSConstructEntryStub stub(isolate());
+  JSEntryStub stub(isolate(), StackFrame::ENTRY_CONSTRUCT);
   set_js_construct_entry_code(*stub.GetCode());
 }
 
@@ -4727,7 +4730,7 @@ void Heap::IterateStrongRoots(ObjectVisitor* v, VisitMode mode) {
   v->VisitPointers(&roots_[0], &roots_[kStrongRootListLength]);
   v->Synchronize(VisitorSynchronization::kStrongRootList);
 
-  v->VisitPointer(BitCast<Object**>(&hidden_string_));
+  v->VisitPointer(bit_cast<Object**>(&hidden_string_));
   v->Synchronize(VisitorSynchronization::kInternalizedString);
 
   isolate_->bootstrapper()->Iterate(v);

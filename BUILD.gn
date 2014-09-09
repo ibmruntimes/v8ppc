@@ -25,7 +25,7 @@ v8_random_seed = "314159265"
 # Configurations
 #
 config("internal_config") {
-  visibility = ":*"  # Only targets in this file can depend on this.
+  visibility = [ ":*" ]  # Only targets in this file can depend on this.
 
   include_dirs = [ "." ]
 
@@ -38,7 +38,7 @@ config("internal_config") {
 }
 
 config("internal_config_base") {
-  visibility = ":*"  # Only targets in this file can depend on this.
+  visibility = [ ":*" ]  # Only targets in this file can depend on this.
 
   include_dirs = [ "." ]
 }
@@ -56,7 +56,7 @@ config("external_config") {
 }
 
 config("features") {
-  visibility = ":*"  # Only targets in this file can depend on this.
+  visibility = [ ":*" ]  # Only targets in this file can depend on this.
 
   defines = []
 
@@ -118,7 +118,7 @@ config("features") {
 }
 
 config("toolchain") {
-  visibility = ":*"  # Only targets in this file can depend on this.
+  visibility = [ ":*" ]  # Only targets in this file can depend on this.
 
   defines = []
   cflags = []
@@ -167,7 +167,7 @@ config("toolchain") {
 #
 
 action("js2c") {
-  visibility = ":*"  # Only targets in this file can depend on this.
+  visibility = [ ":*" ]  # Only targets in this file can depend on this.
 
   script = "tools/js2c.py"
 
@@ -228,7 +228,7 @@ action("js2c") {
 }
 
 action("js2c_experimental") {
-  visibility = ":*"  # Only targets in this file can depend on this.
+  visibility = [ ":*" ]  # Only targets in this file can depend on this.
 
   script = "tools/js2c.py"
 
@@ -266,7 +266,7 @@ action("js2c_experimental") {
 
 if (v8_use_external_startup_data) {
   action("natives_blob") {
-    visibility = ":*"  # Only targets in this file can depend on this.
+    visibility = [ ":*" ]  # Only targets in this file can depend on this.
 
     deps = [
       ":js2c",
@@ -289,7 +289,7 @@ if (v8_use_external_startup_data) {
 }
 
 action("postmortem-metadata") {
-  visibility = ":*"  # Only targets in this file can depend on this.
+  visibility = [ ":*" ]  # Only targets in this file can depend on this.
 
   script = "tools/gen-postmortem-metadata.py"
 
@@ -308,7 +308,7 @@ action("postmortem-metadata") {
 }
 
 action("run_mksnapshot") {
-  visibility = ":*"  # Only targets in this file can depend on this.
+  visibility = [ ":*" ]  # Only targets in this file can depend on this.
 
   deps = [ ":mksnapshot($host_toolchain)" ]
 
@@ -346,7 +346,7 @@ action("run_mksnapshot") {
 #
 
 source_set("v8_nosnapshot") {
-  visibility = ":*"  # Only targets in this file can depend on this.
+  visibility = [ ":*" ]  # Only targets in this file can depend on this.
 
   deps = [
     ":js2c",
@@ -367,7 +367,7 @@ source_set("v8_nosnapshot") {
 }
 
 source_set("v8_snapshot") {
-  visibility = ":*"  # Only targets in this file can depend on this.
+  visibility = [ ":*" ]  # Only targets in this file can depend on this.
 
   deps = [
     ":js2c",
@@ -390,7 +390,7 @@ source_set("v8_snapshot") {
 
 if (v8_use_external_startup_data) {
   source_set("v8_external_snapshot") {
-    visibility = ":*"  # Only targets in this file can depend on this.
+    visibility = [ ":*" ]  # Only targets in this file can depend on this.
 
     deps = [
       ":js2c",
@@ -412,7 +412,7 @@ if (v8_use_external_startup_data) {
 }
 
 source_set("v8_base") {
-  visibility = ":*"  # Only targets in this file can depend on this.
+  visibility = [ ":*" ]  # Only targets in this file can depend on this.
 
   sources = [
     "src/accessors.cc",
@@ -512,7 +512,6 @@ source_set("v8_base") {
     "src/compiler/linkage-impl.h",
     "src/compiler/linkage.cc",
     "src/compiler/linkage.h",
-    "src/compiler/machine-node-factory.h",
     "src/compiler/machine-operator-reducer.cc",
     "src/compiler/machine-operator-reducer.h",
     "src/compiler/machine-operator.h",
@@ -546,17 +545,16 @@ source_set("v8_base") {
     "src/compiler/scheduler.h",
     "src/compiler/simplified-lowering.cc",
     "src/compiler/simplified-lowering.h",
-    "src/compiler/simplified-node-factory.h",
     "src/compiler/simplified-operator-reducer.cc",
     "src/compiler/simplified-operator-reducer.h",
     "src/compiler/simplified-operator.cc",
     "src/compiler/simplified-operator.h",
     "src/compiler/source-position.cc",
     "src/compiler/source-position.h",
-    "src/compiler/structured-machine-assembler.cc",
-    "src/compiler/structured-machine-assembler.h",
     "src/compiler/typer.cc",
     "src/compiler/typer.h",
+    "src/compiler/value-numbering-reducer.cc",
+    "src/compiler/value-numbering-reducer.h",
     "src/compiler/verifier.cc",
     "src/compiler/verifier.h",
     "src/compiler.cc",
@@ -730,7 +728,6 @@ source_set("v8_base") {
     "src/ic/ic.h",
     "src/ic/ic-compiler.cc",
     "src/ic/ic-compiler.h",
-    "src/ic/ic-conventions.h",
     "src/ic/stub-cache.cc",
     "src/ic/stub-cache.h",
     "src/interface.cc",
@@ -910,8 +907,7 @@ source_set("v8_base") {
       "src/compiler/ia32/instruction-selector-ia32.cc",
       "src/compiler/ia32/linkage-ia32.cc",
       "src/ic/ia32/ic-ia32.cc",
-      "src/ic/ia32/ic-conventions-ia32.cc",
-      "src/ic/ia32/handler-ia32.cc",
+      "src/ic/ia32/ic-compiler-ia32.cc",
       "src/ic/ia32/stub-cache-ia32.cc",
     ]
   } else if (v8_target_arch == "x64") {
@@ -950,7 +946,6 @@ source_set("v8_base") {
       "src/ic/x64/handler-compiler-x64.cc",
       "src/ic/x64/ic-x64.cc",
       "src/ic/x64/ic-compiler-x64.cc",
-      "src/ic/x64/ic-conventions-x64.cc",
       "src/ic/x64/stub-cache-x64.cc",
     ]
   } else if (v8_target_arch == "arm") {
@@ -993,7 +988,6 @@ source_set("v8_base") {
       "src/ic/arm/handler-compiler-arm.cc",
       "src/ic/arm/ic-arm.cc",
       "src/ic/arm/ic-compiler-arm.cc",
-      "src/ic/arm/ic-conventions-arm.cc",
       "src/ic/arm/stub-cache-arm.cc",
     ]
   } else if (v8_target_arch == "arm64") {
@@ -1047,7 +1041,6 @@ source_set("v8_base") {
       "src/ic/arm64/handler-compiler-arm64.cc",
       "src/ic/arm64/ic-arm64.cc",
       "src/ic/arm64/ic-compiler-arm64.cc",
-      "src/ic/arm64/ic-conventions-arm64.cc",
       "src/ic/arm64/stub-cache-arm64.cc",
     ]
   } else if (v8_target_arch == "mipsel") {
@@ -1085,7 +1078,6 @@ source_set("v8_base") {
       "src/ic/mips/handler-compiler-mips.cc",
       "src/ic/mips/ic-mips.cc",
       "src/ic/mips/ic-compiler-mips.cc",
-      "src/ic/mips/ic-conventions-mips.cc",
       "src/ic/mips/stub-cache-mips.cc",
     ]
   } else if (v8_target_arch == "mips64el") {
@@ -1123,7 +1115,6 @@ source_set("v8_base") {
       "src/ic/mips64/handler-compiler-mips64.cc",
       "src/ic/mips64/ic-mips64.cc",
       "src/ic/mips64/ic-compiler-mips64.cc",
-      "src/ic/mips64/ic-conventions-mips64.cc",
       "src/ic/mips64/stub-cache-mips64.cc",
     ]
   }
@@ -1135,6 +1126,10 @@ source_set("v8_base") {
   defines = []
   deps = [ ":v8_libbase" ]
 
+  if (is_win) {
+    # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
+    cflags = [ "/wd4267" ]
+  }
   if (is_linux) {
     if (v8_compress_startup_data == "bz2") {
       libs += [ "bz2" ]
@@ -1162,7 +1157,7 @@ source_set("v8_base") {
 }
 
 source_set("v8_libbase") {
-  visibility = ":*"  # Only targets in this file can depend on this.
+  visibility = [ ":*" ]  # Only targets in this file can depend on this.
 
   sources = [
     "src/base/atomicops.h",
@@ -1180,6 +1175,8 @@ source_set("v8_libbase") {
     "src/base/build_config.h",
     "src/base/cpu.cc",
     "src/base/cpu.h",
+    "src/base/division-by-constant.cc",
+    "src/base/division-by-constant.h",
     "src/base/flags.h",
     "src/base/lazy-instance.h",
     "src/base/logging.cc",
@@ -1285,7 +1282,7 @@ source_set("v8_libplatform") {
 
 if (current_toolchain == host_toolchain) {
   executable("mksnapshot") {
-    visibility = ":*"  # Only targets in this file can depend on this.
+    visibility = [ ":*" ]  # Only targets in this file can depend on this.
 
     sources = [
       "src/mksnapshot.cc",

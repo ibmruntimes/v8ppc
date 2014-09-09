@@ -39,6 +39,8 @@ Node* MachineOperatorReducer::Int64Constant(int64_t value) {
 // Perform constant folding and strength reduction on machine operators.
 Reduction MachineOperatorReducer::Reduce(Node* node) {
   switch (node->opcode()) {
+    case IrOpcode::kProjection:
+      return ReduceProjection(OpParameter<size_t>(node), node->InputAt(0));
     case IrOpcode::kWord32And: {
       Int32BinopMatcher m(node);
       if (m.right().Is(0)) return Replace(m.right().node());  // x & 0  => 0
@@ -66,7 +68,7 @@ Reduction MachineOperatorReducer::Reduce(Node* node) {
             Int32BinopMatcher mrightright(mright.right().node());
             if (mrightright.left().Is(32) &&
                 mrightright.right().node() == mleft.right().node()) {
-              graph()->ChangeOperator(node, machine()->Word32Ror());
+              node->set_op(machine()->Word32Ror());
               node->ReplaceInput(0, mleft.left().node());
               node->ReplaceInput(1, mleft.right().node());
               return Changed(node);
@@ -75,7 +77,7 @@ Reduction MachineOperatorReducer::Reduce(Node* node) {
           // (x << K) | (x >> (32 - K)) => x ror K
           if (mleft.right().IsInRange(0, 31) &&
               mright.right().Is(32 - mleft.right().Value())) {
-            graph()->ChangeOperator(node, machine()->Word32Ror());
+            node->set_op(machine()->Word32Ror());
             node->ReplaceInput(0, mleft.left().node());
             node->ReplaceInput(1, mleft.right().node());
             return Changed(node);
@@ -91,7 +93,7 @@ Reduction MachineOperatorReducer::Reduce(Node* node) {
             Int32BinopMatcher mleftright(mleft.right().node());
             if (mleftright.left().Is(32) &&
                 mleftright.right().node() == mright.right().node()) {
-              graph()->ChangeOperator(node, machine()->Word32Ror());
+              node->set_op(machine()->Word32Ror());
               node->ReplaceInput(0, mright.left().node());
               node->ReplaceInput(1, mright.right().node());
               return Changed(node);
@@ -100,7 +102,7 @@ Reduction MachineOperatorReducer::Reduce(Node* node) {
           // (x >> (32 - K)) | (x << K) => x ror K
           if (mright.right().IsInRange(0, 31) &&
               mleft.right().Is(32 - mright.right().Value())) {
-            graph()->ChangeOperator(node, machine()->Word32Ror());
+            node->set_op(machine()->Word32Ror());
             node->ReplaceInput(0, mright.left().node());
             node->ReplaceInput(1, mright.right().node());
             return Changed(node);
@@ -193,13 +195,13 @@ Reduction MachineOperatorReducer::Reduce(Node* node) {
         return ReplaceInt32(m.left().Value() * m.right().Value());
       }
       if (m.right().Is(-1)) {  // x * -1 => 0 - x
-        graph()->ChangeOperator(node, machine()->Int32Sub());
+        node->set_op(machine()->Int32Sub());
         node->ReplaceInput(0, Int32Constant(0));
         node->ReplaceInput(1, m.left().node());
         return Changed(node);
       }
       if (m.right().IsPowerOf2()) {  // x * 2^n => x << n
-        graph()->ChangeOperator(node, machine()->Word32Shl());
+        node->set_op(machine()->Word32Shl());
         node->ReplaceInput(1, Int32Constant(WhichPowerOf2(m.right().Value())));
         return Changed(node);
       }
@@ -217,7 +219,7 @@ Reduction MachineOperatorReducer::Reduce(Node* node) {
         return ReplaceInt32(m.left().Value() / m.right().Value());
       }
       if (m.right().Is(-1)) {  // x / -1 => 0 - x
-        graph()->ChangeOperator(node, machine()->Int32Sub());
+        node->set_op(machine()->Int32Sub());
         node->ReplaceInput(0, Int32Constant(0));
         node->ReplaceInput(1, m.left().node());
         return Changed(node);
@@ -234,7 +236,7 @@ Reduction MachineOperatorReducer::Reduce(Node* node) {
         return ReplaceInt32(m.left().Value() / m.right().Value());
       }
       if (m.right().IsPowerOf2()) {  // x / 2^n => x >> n
-        graph()->ChangeOperator(node, machine()->Word32Shr());
+        node->set_op(machine()->Word32Shr());
         node->ReplaceInput(1, Int32Constant(WhichPowerOf2(m.right().Value())));
         return Changed(node);
       }
@@ -263,7 +265,7 @@ Reduction MachineOperatorReducer::Reduce(Node* node) {
         return ReplaceInt32(m.left().Value() % m.right().Value());
       }
       if (m.right().IsPowerOf2()) {  // x % 2^n => x & 2^n-1
-        graph()->ChangeOperator(node, machine()->Word32And());
+        node->set_op(machine()->Word32And());
         node->ReplaceInput(1, Int32Constant(m.right().Value() - 1));
         return Changed(node);
       }
@@ -426,6 +428,43 @@ Reduction MachineOperatorReducer::Reduce(Node* node) {
       break;
     }
     // TODO(turbofan): strength-reduce and fold floating point operations.
+    default:
+      break;
+  }
+  return NoChange();
+}
+
+
+Reduction MachineOperatorReducer::ReduceProjection(size_t index, Node* node) {
+  switch (node->opcode()) {
+    case IrOpcode::kInt32AddWithOverflow: {
+      DCHECK(index == 0 || index == 1);
+      Int32BinopMatcher m(node);
+      if (m.IsFoldable()) {
+        int32_t val;
+        bool ovf = base::bits::SignedAddOverflow32(m.left().Value(),
+                                                   m.right().Value(), &val);
+        return ReplaceInt32((index == 0) ? val : ovf);
+      }
+      if (m.right().Is(0)) {
+        return (index == 0) ? Replace(m.left().node()) : ReplaceInt32(0);
+      }
+      break;
+    }
+    case IrOpcode::kInt32SubWithOverflow: {
+      DCHECK(index == 0 || index == 1);
+      Int32BinopMatcher m(node);
+      if (m.IsFoldable()) {
+        int32_t val;
+        bool ovf = base::bits::SignedSubOverflow32(m.left().Value(),
+                                                   m.right().Value(), &val);
+        return ReplaceInt32((index == 0) ? val : ovf);
+      }
+      if (m.right().Is(0)) {
+        return (index == 0) ? Replace(m.left().node()) : ReplaceInt32(0);
+      }
+      break;
+    }
     default:
       break;
   }

@@ -405,7 +405,6 @@ class LoadIC : public IC {
     GenerateMiss(masm);
   }
   static void GenerateMiss(MacroAssembler* masm);
-  static void GenerateMegamorphic(MacroAssembler* masm);
   static void GenerateNormal(MacroAssembler* masm);
   static void GenerateRuntimeGetProperty(MacroAssembler* masm);
 
@@ -845,10 +844,6 @@ class CompareIC : public IC {
 
   static Type* StateToType(Zone* zone, State state,
                            Handle<Map> map = Handle<Map>());
-
-  static void StubInfoToType(uint32_t stub_key, Type** left_type,
-                             Type** right_type, Type** overall_type,
-                             Handle<Map> map, Zone* zone);
 
   CompareIC(Isolate* isolate, Token::Value op)
       : IC(EXTRA_CALL_FRAME, isolate), op_(op) {}

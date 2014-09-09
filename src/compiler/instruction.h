@@ -658,11 +658,11 @@ class Constant FINAL {
 
   explicit Constant(int32_t v) : type_(kInt32), value_(v) {}
   explicit Constant(int64_t v) : type_(kInt64), value_(v) {}
-  explicit Constant(double v) : type_(kFloat64), value_(BitCast<int64_t>(v)) {}
+  explicit Constant(double v) : type_(kFloat64), value_(bit_cast<int64_t>(v)) {}
   explicit Constant(ExternalReference ref)
-      : type_(kExternalReference), value_(BitCast<intptr_t>(ref)) {}
+      : type_(kExternalReference), value_(bit_cast<intptr_t>(ref)) {}
   explicit Constant(Handle<HeapObject> obj)
-      : type_(kHeapObject), value_(BitCast<intptr_t>(obj)) {}
+      : type_(kHeapObject), value_(bit_cast<intptr_t>(obj)) {}
 
   Type type() const { return type_; }
 
@@ -680,17 +680,17 @@ class Constant FINAL {
   double ToFloat64() const {
     if (type() == kInt32) return ToInt32();
     DCHECK_EQ(kFloat64, type());
-    return BitCast<double>(value_);
+    return bit_cast<double>(value_);
   }
 
   ExternalReference ToExternalReference() const {
     DCHECK_EQ(kExternalReference, type());
-    return BitCast<ExternalReference>(static_cast<intptr_t>(value_));
+    return bit_cast<ExternalReference>(static_cast<intptr_t>(value_));
   }
 
   Handle<HeapObject> ToHeapObject() const {
     DCHECK_EQ(kHeapObject, type());
-    return BitCast<Handle<HeapObject> >(static_cast<intptr_t>(value_));
+    return bit_cast<Handle<HeapObject> >(static_cast<intptr_t>(value_));
   }
 
  private:
@@ -702,22 +702,46 @@ class Constant FINAL {
 class FrameStateDescriptor : public ZoneObject {
  public:
   FrameStateDescriptor(const FrameStateCallInfo& state_info,
-                       int parameters_count, int locals_count, int stack_count)
+                       int parameters_count, int locals_count, int stack_count,
+                       FrameStateDescriptor* outer_state = NULL)
       : bailout_id_(state_info.bailout_id()),
         frame_state_combine_(state_info.state_combine()),
         parameters_count_(parameters_count),
         locals_count_(locals_count),
-        stack_count_(stack_count) {}
+        stack_count_(stack_count),
+        outer_state_(outer_state) {}
 
   BailoutId bailout_id() const { return bailout_id_; }
   OutputFrameStateCombine state_combine() const { return frame_state_combine_; }
   int parameters_count() { return parameters_count_; }
   int locals_count() { return locals_count_; }
   int stack_count() { return stack_count_; }
+  FrameStateDescriptor* outer_state() { return outer_state_; }
+  void set_outer_state(FrameStateDescriptor* outer_state) {
+    outer_state_ = outer_state;
+  }
 
   int size() {
     return parameters_count_ + locals_count_ + stack_count_ +
            1;  // Includes context.
+  }
+
+  int total_size() {
+    int total_size = 0;
+    for (FrameStateDescriptor* iter = this; iter != NULL;
+         iter = iter->outer_state_) {
+      total_size += iter->size();
+    }
+    return total_size;
+  }
+
+  int GetFrameCount() {
+    int count = 0;
+    for (FrameStateDescriptor* iter = this; iter != NULL;
+         iter = iter->outer_state_) {
+      ++count;
+    }
+    return count;
   }
 
  private:
@@ -726,6 +750,7 @@ class FrameStateDescriptor : public ZoneObject {
   int parameters_count_;
   int locals_count_;
   int stack_count_;
+  FrameStateDescriptor* outer_state_;
 };
 
 OStream& operator<<(OStream& os, const Constant& constant);

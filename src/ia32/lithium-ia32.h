@@ -155,6 +155,7 @@ class LCodeGen;
   V(StringCompareAndBranch)                  \
   V(SubI)                                    \
   V(TaggedToI)                               \
+  V(TailCallThroughMegamorphicCache)         \
   V(ThisFunction)                            \
   V(ToFastProperties)                        \
   V(TransitionElementsKind)                  \
@@ -476,6 +477,27 @@ class LCallStub FINAL : public LTemplateInstruction<1, 1, 0> {
 
   DECLARE_CONCRETE_INSTRUCTION(CallStub, "call-stub")
   DECLARE_HYDROGEN_ACCESSOR(CallStub)
+};
+
+
+class LTailCallThroughMegamorphicCache FINAL
+    : public LTemplateInstruction<0, 3, 0> {
+ public:
+  explicit LTailCallThroughMegamorphicCache(LOperand* context,
+                                            LOperand* receiver,
+                                            LOperand* name) {
+    inputs_[0] = context;
+    inputs_[1] = receiver;
+    inputs_[2] = name;
+  }
+
+  LOperand* context() { return inputs_[0]; }
+  LOperand* receiver() { return inputs_[1]; }
+  LOperand* name() { return inputs_[2]; }
+
+  DECLARE_CONCRETE_INSTRUCTION(TailCallThroughMegamorphicCache,
+                               "tail-call-through-megamorphic-cache")
+  DECLARE_HYDROGEN_ACCESSOR(TailCallThroughMegamorphicCache)
 };
 
 
@@ -1891,18 +1913,19 @@ class LCallJSFunction FINAL : public LTemplateInstruction<1, 1, 0> {
 
 class LCallWithDescriptor FINAL : public LTemplateResultInstruction<1> {
  public:
-  LCallWithDescriptor(const CallInterfaceDescriptor* descriptor,
+  LCallWithDescriptor(CallInterfaceDescriptor descriptor,
                       const ZoneList<LOperand*>& operands, Zone* zone)
-      : inputs_(descriptor->GetRegisterParameterCount() + 1, zone) {
-    DCHECK(descriptor->GetRegisterParameterCount() + 1 == operands.length());
+      : inputs_(descriptor.GetRegisterParameterCount() + 1, zone) {
+    DCHECK(descriptor.GetRegisterParameterCount() + 1 == operands.length());
     inputs_.AddAll(operands, zone);
   }
 
   LOperand* target() const { return inputs_[0]; }
 
+  DECLARE_HYDROGEN_ACCESSOR(CallWithDescriptor)
+
  private:
   DECLARE_CONCRETE_INSTRUCTION(CallWithDescriptor, "call-with-descriptor")
-  DECLARE_HYDROGEN_ACCESSOR(CallWithDescriptor)
 
   virtual void PrintDataTo(StringStream* stream) OVERRIDE;
 

@@ -84,8 +84,6 @@
         'compiler/test-schedule.cc',
         'compiler/test-scheduler.cc',
         'compiler/test-simplified-lowering.cc',
-        'compiler/test-structured-ifbuilder-fuzzer.cc',
-        'compiler/test-structured-machine-assembler.cc',
         'cctest.cc',
         'gay-fixed.cc',
         'gay-precision.cc',

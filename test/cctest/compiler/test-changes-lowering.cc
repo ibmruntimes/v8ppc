@@ -10,7 +10,6 @@
 #include "src/compiler/js-graph.h"
 #include "src/compiler/node-properties-inl.h"
 #include "src/compiler/pipeline.h"
-#include "src/compiler/simplified-node-factory.h"
 #include "src/compiler/typer.h"
 #include "src/compiler/verifier.h"
 #include "src/execution.h"
@@ -32,10 +31,13 @@ class ChangesLoweringTester : public GraphBuilderTester<ReturnType> {
   explicit ChangesLoweringTester(MachineType p0 = kMachNone)
       : GraphBuilderTester<ReturnType>(p0),
         typer(this->zone()),
-        jsgraph(this->graph(), this->common(), &typer),
+        javascript(this->zone()),
+        jsgraph(this->graph(), this->common(), &javascript, &typer,
+                this->machine()),
         function(Handle<JSFunction>::null()) {}
 
   Typer typer;
+  JSOperatorBuilder javascript;
   JSGraph jsgraph;
   Handle<JSFunction> function;
 

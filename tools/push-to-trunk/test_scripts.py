@@ -27,6 +27,7 @@
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 import os
+import shutil
 import tempfile
 import traceback
 import unittest
@@ -44,7 +45,6 @@ import push_to_trunk
 from push_to_trunk import *
 import chromium_roll
 from chromium_roll import CHROMIUM
-from chromium_roll import DEPS_FILE
 from chromium_roll import ChromiumRoll
 import releases
 from releases import Releases
@@ -56,6 +56,7 @@ from auto_tag import AutoTag
 
 
 TEST_CONFIG = {
+  "DEFAULT_CWD": "[DEFAULT_CWD]",
   BRANCHNAME: "test-prepare-push",
   TRUNKBRANCH: "test-trunk-push",
   PERSISTFILE_BASENAME: "/tmp/test-v8-push-to-trunk-tempfile",
@@ -66,7 +67,6 @@ TEST_CONFIG = {
   PATCH_FILE: "/tmp/test-v8-push-to-trunk-tempfile-patch",
   COMMITMSG_FILE: "/tmp/test-v8-push-to-trunk-tempfile-commitmsg",
   CHROMIUM: "/tmp/test-v8-push-to-trunk-tempfile-chromium",
-  DEPS_FILE: "/tmp/test-v8-push-to-trunk-tempfile-chromium/DEPS",
   SETTINGS_LOCATION: None,
   ALREADY_MERGING_SENTINEL_FILE:
       "/tmp/test-merge-to-branch-tempfile-already-merging",
@@ -253,18 +253,25 @@ Committed: https://code.google.com/p/v8/source/detail?r=18210
 
 
 def Cmd(*args, **kwargs):
-  """Convenience function returning a git test expectation."""
+  """Convenience function returning a shell command test expectation."""
   return {
-    "name": "git",
+    "name": "command",
     "args": args,
     "ret": args[-1],
     "cb": kwargs.get("cb"),
+    "cwd": kwargs.get("cwd", "[DEFAULT_CWD]"),
   }
 
 
 def RL(text, cb=None):
   """Convenience function returning a readline test expectation."""
-  return {"name": "readline", "args": [], "ret": text, "cb": cb}
+  return {
+    "name": "readline",
+    "args": [],
+    "ret": text,
+    "cb": cb,
+    "cwd": None,
+  }
 
 
 def URL(*args, **kwargs):
@@ -274,42 +281,53 @@ def URL(*args, **kwargs):
     "args": args[:-1],
     "ret": args[-1],
     "cb": kwargs.get("cb"),
+    "cwd": None,
   }
 
 
 class SimpleMock(object):
-  def __init__(self, name):
-    self._name = name
+  def __init__(self):
     self._recipe = []
     self._index = -1
 
   def Expect(self, recipe):
     self._recipe = recipe
 
-  def Call(self, *args):  # pragma: no cover
+  def Call(self, name, *args, **kwargs):  # pragma: no cover
     self._index += 1
     try:
       expected_call = self._recipe[self._index]
     except IndexError:
-      raise NoRetryException("Calling %s %s" % (self._name, " ".join(args)))
+      raise NoRetryException("Calling %s %s" % (name, " ".join(args)))
 
     if not isinstance(expected_call, dict):
-      raise NoRetryException("Found wrong expectation type for %s %s"
-                             % (self._name, " ".join(args)))
+      raise NoRetryException("Found wrong expectation type for %s %s" %
+                             (name, " ".join(args)))
 
+    if expected_call["name"] != name:
+      raise NoRetryException("Expected action: %s %s - Actual: %s" %
+          (expected_call["name"], expected_call["args"], name))
+
+    # Check if the given working directory matches the expected one.
+    if expected_call["cwd"] != kwargs.get("cwd"):
+      raise NoRetryException("Expected cwd: %s in %s %s - Actual: %s" %
+          (expected_call["cwd"],
+           expected_call["name"],
+           expected_call["args"],
+           kwargs.get("cwd")))
 
     # The number of arguments in the expectation must match the actual
     # arguments.
     if len(args) > len(expected_call['args']):
       raise NoRetryException("When calling %s with arguments, the "
           "expectations must consist of at least as many arguments." %
-          self._name)
+          name)
 
     # Compare expected and actual arguments.
     for (expected_arg, actual_arg) in zip(expected_call['args'], args):
       if expected_arg != actual_arg:
-        raise NoRetryException("Expected: %s - Actual: %s"
-                               % (expected_arg, actual_arg))
+        raise NoRetryException("Expected: %s - Actual: %s" %
+                               (expected_arg, actual_arg))
 
     # The expected call contains an optional callback for checking the context
     # at the time of the call.
@@ -327,8 +345,8 @@ class SimpleMock(object):
 
   def AssertFinished(self):  # pragma: no cover
     if self._index < len(self._recipe) -1:
-      raise NoRetryException("Called %s too seldom: %d vs. %d"
-                             % (self._name, self._index, len(self._recipe)))
+      raise NoRetryException("Called mock too seldom: %d vs. %d" %
+                             (self._index, len(self._recipe)))
 
 
 class ScriptTest(unittest.TestCase):
@@ -337,6 +355,12 @@ class ScriptTest(unittest.TestCase):
     os.close(handle)
     self._tmp_files.append(name)
     return name
+
+  def MakeEmptyTempDirectory(self):
+    name = tempfile.mkdtemp()
+    self._tmp_files.append(name)
+    return name
+
 
   def WriteFakeVersionFile(self, minor=22, build=4, patch=0):
     with open(TEST_CONFIG[VERSION_FILE], "w") as f:
@@ -361,24 +385,22 @@ class ScriptTest(unittest.TestCase):
     args = args if args is not None else ["-m"]
     return script(TEST_CONFIG, self, self._state).RunSteps([step_class], args)
 
-  def CmdMock(self, cmd, args="", pipe=True):
-    print "%s %s" % (cmd, args)
-    return self._cmd_mock.Call(cmd + " " + args)
-
   def Call(self, fun, *args, **kwargs):
     print "Calling %s with %s and %s" % (str(fun), str(args), str(kwargs))
 
-  def Command(self, cmd, args="", prefix="", pipe=True):
-    return self.CmdMock(cmd, args)
+  def Command(self, cmd, args="", prefix="", pipe=True, cwd=None):
+    print "%s %s" % (cmd, args)
+    print "in %s" % cwd
+    return self._mock.Call("command", cmd + " " + args, cwd=cwd)
 
   def ReadLine(self):
-    return self._rl_mock.Call()
+    return self._mock.Call("readline")
 
   def ReadURL(self, url, params):
     if params is not None:
-      return self._url_mock.Call(url, params)
+      return self._mock.Call("readurl", url, params)
     else:
-      return self._url_mock.Call(url)
+      return self._mock.Call("readurl", url)
 
   def ReadClusterFuzzAPI(self, api_key, **params):
     # TODO(machenbach): Use a mock for this and add a test that stops rolling
@@ -394,80 +416,68 @@ class ScriptTest(unittest.TestCase):
   def GetUTCStamp(self):
     return "100000"
 
-  def ExpectCmd(self, *args):
+  def Expect(self, *args):
     """Convenience wrapper."""
-    self._cmd_mock.Expect(*args)
-
-  def ExpectReadline(self, *args):
-    """Convenience wrapper."""
-    self._rl_mock.Expect(*args)
-
-  def ExpectReadURL(self, *args):
-    """Convenience wrapper."""
-    self._url_mock.Expect(*args)
+    self._mock.Expect(*args)
 
   def setUp(self):
-    self._cmd_mock = SimpleMock("command")
-    self._rl_mock = SimpleMock("readline")
-    self._url_mock = SimpleMock("readurl")
+    self._mock = SimpleMock()
     self._tmp_files = []
     self._state = {}
 
   def tearDown(self):
-    Command("rm", "-rf %s*" % TEST_CONFIG[PERSISTFILE_BASENAME])
+    if os.path.exists(TEST_CONFIG[PERSISTFILE_BASENAME]):
+      shutil.rmtree(TEST_CONFIG[PERSISTFILE_BASENAME])
 
     # Clean up temps. Doesn't work automatically.
     for name in self._tmp_files:
-      if os.path.exists(name):
+      if os.path.isfile(name):
         os.remove(name)
+      if os.path.isdir(name):
+        shutil.rmtree(name)
 
-    self._cmd_mock.AssertFinished()
-    self._rl_mock.AssertFinished()
-    self._url_mock.AssertFinished()
-
-  def testGitOrig(self):
-    self.assertTrue(Command("git", "--version").startswith("git version"))
+    self._mock.AssertFinished()
 
   def testGitMock(self):
-    self.ExpectCmd([Cmd("git --version", "git version 1.2.3"),
-                    Cmd("git dummy", "")])
+    self.Expect([Cmd("git --version", "git version 1.2.3"),
+                 Cmd("git dummy", "")])
     self.assertEquals("git version 1.2.3", self.MakeStep().Git("--version"))
     self.assertEquals("", self.MakeStep().Git("dummy"))
 
   def testCommonPrepareDefault(self):
-    self.ExpectCmd([
+    self.Expect([
       Cmd("git status -s -uno", ""),
       Cmd("git status -s -b -uno", "## some_branch"),
       Cmd("git svn fetch", ""),
       Cmd("git branch", "  branch1\n* %s" % TEST_CONFIG[BRANCHNAME]),
+      RL("Y"),
       Cmd("git branch -D %s" % TEST_CONFIG[BRANCHNAME], ""),
     ])
-    self.ExpectReadline([RL("Y")])
     self.MakeStep().CommonPrepare()
     self.MakeStep().PrepareBranch()
     self.assertEquals("some_branch", self._state["current_branch"])
 
   def testCommonPrepareNoConfirm(self):
-    self.ExpectCmd([
+    self.Expect([
       Cmd("git status -s -uno", ""),
       Cmd("git status -s -b -uno", "## some_branch"),
       Cmd("git svn fetch", ""),
       Cmd("git branch", "  branch1\n* %s" % TEST_CONFIG[BRANCHNAME]),
+      RL("n"),
     ])
-    self.ExpectReadline([RL("n")])
     self.MakeStep().CommonPrepare()
     self.assertRaises(Exception, self.MakeStep().PrepareBranch)
     self.assertEquals("some_branch", self._state["current_branch"])
 
   def testCommonPrepareDeleteBranchFailure(self):
-    self.ExpectCmd([
+    self.Expect([
       Cmd("git status -s -uno", ""),
       Cmd("git status -s -b -uno", "## some_branch"),
       Cmd("git svn fetch", ""),
       Cmd("git branch", "  branch1\n* %s" % TEST_CONFIG[BRANCHNAME]),
+      RL("Y"),
       Cmd("git branch -D %s" % TEST_CONFIG[BRANCHNAME], None),
     ])
-    self.ExpectReadline([RL("Y")])
     self.MakeStep().CommonPrepare()
     self.assertRaises(Exception, self.MakeStep().PrepareBranch)
     self.assertEquals("some_branch", self._state["current_branch"])
@@ -475,6 +485,9 @@ class ScriptTest(unittest.TestCase):
   def testInitialEnvironmentChecks(self):
     TEST_CONFIG[DOT_GIT_LOCATION] = self.MakeEmptyTempFile()
     os.environ["EDITOR"] = "vi"
+    self.Expect([
+      Cmd("which vi", "/usr/bin/vi"),
+    ])
     self.MakeStep().InitialEnvironmentChecks()
 
   def testReadAndPersistVersion(self):
@@ -510,7 +523,7 @@ class ScriptTest(unittest.TestCase):
 
   def testPreparePushRevision(self):
     # Tests the default push hash used when the --revision option is not set.
-    self.ExpectCmd([
+    self.Expect([
       Cmd("git log -1 --format=%H HEAD", "push_hash")
     ])
 
@@ -522,7 +535,7 @@ class ScriptTest(unittest.TestCase):
     self.WriteFakeVersionFile()
     TEST_CONFIG[CHANGELOG_ENTRY_FILE] = self.MakeEmptyTempFile()
 
-    self.ExpectCmd([
+    self.Expect([
       Cmd("git log --format=%H 1234..push_hash", "rev1\nrev2\nrev3\nrev4"),
       Cmd("git log -1 --format=%s rev1", "Title text 1"),
       Cmd("git log -1 --format=%B rev1", "Title\n\nBUG=\nLOG=y\n"),
@@ -537,13 +550,9 @@ class ScriptTest(unittest.TestCase):
       Cmd("git log -1 --format=%B rev4",
        ("Title\n\nBUG=456\nLOG=Y\n\n"
         "Review URL: https://codereview.chromium.org/9876543210\n")),
-      Cmd("git log -1 --format=%an rev4", "author4@chromium.org"),
-    ])
-
-    # The cl for rev4 on rietveld has an updated LOG flag.
-    self.ExpectReadURL([
       URL("https://codereview.chromium.org/9876543210/description",
           "Title\n\nBUG=456\nLOG=N\n\n"),
+      Cmd("git log -1 --format=%an rev4", "author4@chromium.org"),
     ])
 
     self._state["last_push_bleeding_edge"] = "1234"
@@ -585,11 +594,9 @@ class ScriptTest(unittest.TestCase):
     TEST_CONFIG[CHANGELOG_ENTRY_FILE] = self.MakeEmptyTempFile()
     TextToFile("  New  \n\tLines  \n", TEST_CONFIG[CHANGELOG_ENTRY_FILE])
     os.environ["EDITOR"] = "vi"
-    self.ExpectCmd([
-      Cmd("vi %s" % TEST_CONFIG[CHANGELOG_ENTRY_FILE], ""),
-    ])
-    self.ExpectReadline([
+    self.Expect([
       RL(""),  # Open editor.
+      Cmd("vi %s" % TEST_CONFIG[CHANGELOG_ENTRY_FILE], ""),
     ])
 
     self.RunStep(PushToTrunk, EditChangeLog)
@@ -606,14 +613,11 @@ class ScriptTest(unittest.TestCase):
     self._state["latest_build"] = "6"
     self._state["latest_version"] = "3.22.6.0"
 
-    self.ExpectCmd([
+    self.Expect([
       Cmd("git checkout -f hash1 -- %s" % TEST_CONFIG[VERSION_FILE], ""),
       Cmd(("git checkout -f svn/bleeding_edge -- %s" %
            TEST_CONFIG[VERSION_FILE]),
           "", cb=lambda: self.WriteFakeVersionFile(22, 6)),
-    ])
-
-    self.ExpectReadline([
       RL("Y"),  # Increment build number.
     ])
 
@@ -629,7 +633,7 @@ class ScriptTest(unittest.TestCase):
     with open(TEST_CONFIG[CHANGELOG_ENTRY_FILE], "w") as f:
       f.write(change_log)
 
-    self.ExpectCmd([
+    self.Expect([
       Cmd("git diff svn/trunk hash1", "patch content"),
       Cmd("git svn find-rev hash1", "123455\n"),
     ])
@@ -733,7 +737,10 @@ Performance and stability improvements on all platforms.""", commit)
           change_log)
 
     force_flag = " -f" if not manual else ""
-    expectations = [
+    expectations = []
+    if not force:
+      expectations.append(Cmd("which vi", "/usr/bin/vi"))
+    expectations += [
       Cmd("git status -s -uno", ""),
       Cmd("git status -s -b -uno", "## some_branch\n"),
       Cmd("git svn fetch", ""),
@@ -746,6 +753,10 @@ Performance and stability improvements on all platforms.""", commit)
            "\"^Version [[:digit:]]*\.[[:digit:]]*\.[[:digit:]]* (based\" "
            "svn/trunk"), "hash2\n"),
       Cmd("git log -1 hash2", "Log message\n"),
+    ]
+    if manual:
+      expectations.append(RL("Y"))  # Confirm last push.
+    expectations += [
       Cmd("git log -1 --format=%s hash2",
        "Version 3.4.5 (based on bleeding_edge revision r1234)\n"),
       Cmd("git svn find-rev r1234", "hash3\n"),
@@ -754,11 +765,17 @@ Performance and stability improvements on all platforms.""", commit)
           "", cb=self.WriteFakeVersionFile),
       Cmd("git checkout -f hash2 -- %s" % TEST_CONFIG[VERSION_FILE], "",
           cb=self.WriteFakeVersionFile),
+    ]
+    if manual:
+      expectations.append(RL(""))  # Increment build number.
+    expectations += [
       Cmd("git log --format=%H hash3..push_hash", "rev1\n"),
       Cmd("git log -1 --format=%s rev1", "Log text 1.\n"),
       Cmd("git log -1 --format=%B rev1", "Text\nLOG=YES\nBUG=v8:321\nText\n"),
       Cmd("git log -1 --format=%an rev1", "author1@chromium.org\n"),
     ]
+    if manual:
+      expectations.append(RL(""))  # Open editor.
     if not force:
       expectations.append(Cmd("vi %s" % TEST_CONFIG[CHANGELOG_ENTRY_FILE], ""))
     expectations += [
@@ -775,6 +792,10 @@ Performance and stability improvements on all platforms.""", commit)
           cb=self.WriteFakeVersionFile),
       Cmd("git commit -aF \"%s\"" % TEST_CONFIG[COMMITMSG_FILE], "",
           cb=CheckSVNCommit),
+    ]
+    if manual:
+      expectations.append(RL("Y"))  # Sanity check.
+    expectations += [
       Cmd("git svn dcommit 2>&1",
           "Some output\nCommitted r123456\nSome output\n"),
       Cmd("git svn tag 3.22.5 -m \"Tagging version 3.22.5\"", ""),
@@ -782,20 +803,7 @@ Performance and stability improvements on all platforms.""", commit)
       Cmd("git branch -D %s" % TEST_CONFIG[BRANCHNAME], ""),
       Cmd("git branch -D %s" % TEST_CONFIG[TRUNKBRANCH], ""),
     ]
-    self.ExpectCmd(expectations)
-
-    # Expected keyboard input in manual mode:
-    if manual:
-      self.ExpectReadline([
-        RL("Y"),  # Confirm last push.
-        RL(""),  # Open editor.
-        RL("Y"),  # Increment build number.
-        RL("Y"),  # Sanity check.
-      ])
-
-    # Expected keyboard input in semi-automatic mode and forced mode:
-    if not manual:
-      self.ExpectReadline([])
+    self.Expect(expectations)
 
     args = ["-a", "author@chromium.org", "--revision", "123455"]
     if force: args.append("-f")
@@ -821,7 +829,25 @@ Performance and stability improvements on all platforms.""", commit)
   def testPushToTrunkForced(self):
     self._PushToTrunk(force=True)
 
-  def _ChromiumRoll(self, force=False, manual=False):
+  C_V8_22624_LOG = """V8 CL.
+
+git-svn-id: https://v8.googlecode.com/svn/branches/bleeding_edge@22624 123
+
+"""
+
+  C_V8_123455_LOG = """V8 CL.
+
+git-svn-id: https://v8.googlecode.com/svn/branches/bleeding_edge@123455 123
+
+"""
+
+  C_V8_123456_LOG = """V8 CL.
+
+git-svn-id: https://v8.googlecode.com/svn/branches/bleeding_edge@123456 123
+
+"""
+
+  def testChromiumRoll(self):
     googlers_mapping_py = "%s-mapping.py" % TEST_CONFIG[PERSISTFILE_BASENAME]
     with open(googlers_mapping_py, "w") as f:
       f.write("""
@@ -830,81 +856,57 @@ def list_to_dict(entries):
 def get_list():
   pass""")
 
+    # Setup fake directory structures.
     TEST_CONFIG[DOT_GIT_LOCATION] = self.MakeEmptyTempFile()
-    if not os.path.exists(TEST_CONFIG[CHROMIUM]):
-      os.makedirs(TEST_CONFIG[CHROMIUM])
-    if not os.path.exists(os.path.join(TEST_CONFIG[CHROMIUM], "v8")):
-      os.makedirs(os.path.join(TEST_CONFIG[CHROMIUM], "v8"))
-    TextToFile("Some line\n   \"v8_revision\": \"123444\",\n  some line",
-               TEST_CONFIG[DEPS_FILE])
-    def WriteDeps():
-      TextToFile("Some line\n   \"v8_revision\": \"123455\",\n  some line",
-                 TEST_CONFIG[DEPS_FILE])
+    TEST_CONFIG[CHROMIUM] = self.MakeEmptyTempDirectory()
+    chrome_dir = TEST_CONFIG[CHROMIUM]
+    os.makedirs(os.path.join(chrome_dir, "v8"))
 
-    os.environ["EDITOR"] = "vi"
-    force_flag = " -f" if not manual else ""
-    self.ExpectCmd([
-      Cmd("git status -s -uno", ""),
-      Cmd("git status -s -b -uno", "## some_branch\n"),
-      Cmd("git svn fetch", ""),
+    # Write fake deps file.
+    TextToFile("Some line\n   \"v8_revision\": \"123444\",\n  some line",
+               os.path.join(chrome_dir, "DEPS"))
+    def WriteDeps():
+      TextToFile("Some line\n   \"v8_revision\": \"22624\",\n  some line",
+                 os.path.join(chrome_dir, "DEPS"))
+
+    expectations = [
+      Cmd("git fetch origin", ""),
       Cmd(("git log -1 --format=%H --grep="
            "\"^Version [[:digit:]]*\.[[:digit:]]*\.[[:digit:]]*\" "
-           "svn/trunk"), "push_hash\n"),
-      Cmd("git svn find-rev push_hash", "123455\n"),
+           "origin/master"), "push_hash\n"),
+      Cmd("git log -1 --format=%B push_hash", self.C_V8_22624_LOG),
       Cmd("git log -1 --format=%s push_hash",
-          "Version 3.22.5 (based on bleeding_edge revision r123454)\n"),
-      Cmd("git status -s -uno", ""),
-      Cmd("git checkout -f master", ""),
-      Cmd("gclient sync --nohooks", "syncing..."),
-      Cmd("git pull", ""),
-      Cmd("git fetch origin", ""),
-      Cmd("git checkout -b v8-roll-123455", ""),
-      Cmd("roll-dep v8 123455", "rolled", cb=WriteDeps),
-      Cmd(("git commit -am \"Update V8 to version 3.22.5 "
-           "(based on bleeding_edge revision r123454).\n\n"
-           "Please reply to the V8 sheriff c_name@chromium.org in "
-           "case of problems.\n\nTBR=c_name@chromium.org\""),
-          ""),
-      Cmd(("git cl upload --send-mail --email \"author@chromium.org\"%s"
-           % force_flag), ""),
-    ])
-
-    self.ExpectReadURL([
+          "Version 3.22.5 (based on bleeding_edge revision r22622)\n"),
       URL("https://chromium-build.appspot.com/p/chromium/sheriff_v8.js",
           "document.write('g_name')"),
-    ])
+      Cmd("git status -s -uno", "", cwd=chrome_dir),
+      Cmd("git checkout -f master", "", cwd=chrome_dir),
+      Cmd("gclient sync --nohooks", "syncing...", cwd=chrome_dir),
+      Cmd("git pull", "", cwd=chrome_dir),
+      Cmd("git fetch origin", ""),
+      Cmd("git checkout -b v8-roll-22624", "", cwd=chrome_dir),
+      Cmd("roll-dep v8 22624", "rolled", cb=WriteDeps, cwd=chrome_dir),
+      Cmd(("git commit -am \"Update V8 to version 3.22.5 "
+           "(based on bleeding_edge revision r22622).\n\n"
+           "Please reply to the V8 sheriff c_name@chromium.org in "
+           "case of problems.\n\nTBR=c_name@chromium.org\" "
+           "--author \"author@chromium.org <author@chromium.org>\""),
+          "", cwd=chrome_dir),
+      Cmd("git cl upload --send-mail --email \"author@chromium.org\" -f", "",
+          cwd=chrome_dir),
+    ]
+    self.Expect(expectations)
 
-    # Expected keyboard input in manual mode:
-    if manual:
-      self.ExpectReadline([
-        RL("c_name@chromium.org"),  # Chromium reviewer.
-      ])
-
-    # Expected keyboard input in semi-automatic mode and forced mode:
-    if not manual:
-      self.ExpectReadline([])
-
-    args = ["-a", "author@chromium.org", "-c", TEST_CONFIG[CHROMIUM],
-            "--sheriff", "--googlers-mapping", googlers_mapping_py]
-    if force: args.append("-f")
-    if manual: args.append("-m")
-    else: args += ["-r", "reviewer@chromium.org"]
+    args = ["-a", "author@chromium.org", "-c", chrome_dir,
+            "--sheriff", "--googlers-mapping", googlers_mapping_py,
+            "-r", "reviewer@chromium.org"]
     ChromiumRoll(TEST_CONFIG, self).Run(args)
 
-    deps = FileToText(TEST_CONFIG[DEPS_FILE])
-    self.assertTrue(re.search("\"v8_revision\": \"123455\"", deps))
-
-  def testChromiumRollManual(self):
-    self._ChromiumRoll(manual=True)
-
-  def testChromiumRollSemiAutomatic(self):
-    self._ChromiumRoll()
-
-  def testChromiumRollForced(self):
-    self._ChromiumRoll(force=True)
+    deps = FileToText(os.path.join(chrome_dir, "DEPS"))
+    self.assertTrue(re.search("\"v8_revision\": \"22624\"", deps))
 
   def testCheckLastPushRecently(self):
-    self.ExpectCmd([
+    self.Expect([
       Cmd(("git log -1 --format=%H --grep="
            "\"^Version [[:digit:]]*\.[[:digit:]]*\.[[:digit:]]* (based\" "
            "svn/trunk"), "hash2\n"),
@@ -922,17 +924,14 @@ def get_list():
     TEST_CONFIG[DOT_GIT_LOCATION] = self.MakeEmptyTempFile()
     TEST_CONFIG[SETTINGS_LOCATION] = "~/.doesnotexist"
 
-    self.ExpectReadURL([
+    self.Expect([
+      Cmd("git status -s -uno", ""),
+      Cmd("git status -s -b -uno", "## some_branch\n"),
+      Cmd("git svn fetch", ""),
       URL("https://v8-status.appspot.com/current?format=json",
           "{\"message\": \"Tree is throttled\"}"),
       URL("https://v8-status.appspot.com/lkgr", Exception("Network problem")),
       URL("https://v8-status.appspot.com/lkgr", "100"),
-    ])
-
-    self.ExpectCmd([
-      Cmd("git status -s -uno", ""),
-      Cmd("git status -s -b -uno", "## some_branch\n"),
-      Cmd("git svn fetch", ""),
       Cmd(("git log -1 --format=%H --grep=\""
            "^Version [[:digit:]]*\.[[:digit:]]*\.[[:digit:]]* (based\""
            " svn/trunk"), "push_hash\n"),
@@ -952,9 +951,7 @@ def get_list():
     TEST_CONFIG[SETTINGS_LOCATION] = self.MakeEmptyTempFile()
     TextToFile("{\"enable_auto_push\": false}", TEST_CONFIG[SETTINGS_LOCATION])
 
-    self.ExpectReadURL([])
-
-    self.ExpectCmd([
+    self.Expect([
       Cmd("git status -s -uno", ""),
       Cmd("git status -s -b -uno", "## some_branch\n"),
       Cmd("git svn fetch", ""),
@@ -968,15 +965,12 @@ def get_list():
     TEST_CONFIG[DOT_GIT_LOCATION] = self.MakeEmptyTempFile()
     TEST_CONFIG[SETTINGS_LOCATION] = "~/.doesnotexist"
 
-    self.ExpectReadURL([
-      URL("https://v8-status.appspot.com/current?format=json",
-          "{\"message\": \"Tree is throttled (no push)\"}"),
-    ])
-
-    self.ExpectCmd([
+    self.Expect([
       Cmd("git status -s -uno", ""),
       Cmd("git status -s -b -uno", "## some_branch\n"),
       Cmd("git svn fetch", ""),
+      URL("https://v8-status.appspot.com/current?format=json",
+          "{\"message\": \"Tree is throttled (no push)\"}"),
     ])
 
     def RunAutoPush():
@@ -984,7 +978,7 @@ def get_list():
     self.assertRaises(Exception, RunAutoPush)
 
   def testAutoRollExistingRoll(self):
-    self.ExpectReadURL([
+    self.Expect([
       URL("https://codereview.chromium.org/search",
           "owner=author%40chromium.org&limit=30&closed=3&format=json",
           ("{\"results\": [{\"subject\": \"different\"},"
@@ -993,12 +987,12 @@ def get_list():
 
     result = auto_roll.AutoRoll(TEST_CONFIG, self).Run(
         AUTO_PUSH_ARGS + ["-c", TEST_CONFIG[CHROMIUM]])
-    self.assertEquals(1, result)
+    self.assertEquals(0, result)
 
   # Snippet from the original DEPS file.
   FAKE_DEPS = """
 vars = {
-  "v8_revision": "123455",
+  "v8_revision": "abcd123455",
 }
 deps = {
   "src/v8":
@@ -1008,41 +1002,38 @@ deps = {
 """
 
   def testAutoRollUpToDate(self):
-    self.ExpectReadURL([
+    TEST_CONFIG[CHROMIUM] = self.MakeEmptyTempDirectory()
+    TextToFile(self.FAKE_DEPS, os.path.join(TEST_CONFIG[CHROMIUM], "DEPS"))
+    self.Expect([
       URL("https://codereview.chromium.org/search",
           "owner=author%40chromium.org&limit=30&closed=3&format=json",
           ("{\"results\": [{\"subject\": \"different\"}]}")),
-      URL("http://src.chromium.org/svn/trunk/src/DEPS",
-          self.FAKE_DEPS),
-    ])
-
-    self.ExpectCmd([
       Cmd(("git log -1 --format=%H --grep="
            "\"^Version [[:digit:]]*\.[[:digit:]]*\.[[:digit:]]*\" "
-           "svn/trunk"), "push_hash\n"),
-      Cmd("git svn find-rev push_hash", "123455\n"),
+           "origin/master"), "push_hash\n"),
+      Cmd("git log -1 --format=%B push_hash", self.C_V8_22624_LOG),
+      Cmd("git log -1 --format=%B abcd123455", self.C_V8_123455_LOG),
     ])
 
     result = auto_roll.AutoRoll(TEST_CONFIG, self).Run(
         AUTO_PUSH_ARGS + ["-c", TEST_CONFIG[CHROMIUM]])
-    self.assertEquals(1, result)
+    self.assertEquals(0, result)
 
   def testAutoRoll(self):
+    TEST_CONFIG[CHROMIUM] = self.MakeEmptyTempDirectory()
+    TextToFile(self.FAKE_DEPS, os.path.join(TEST_CONFIG[CHROMIUM], "DEPS"))
     TEST_CONFIG[CLUSTERFUZZ_API_KEY_FILE]  = self.MakeEmptyTempFile()
     TextToFile("fake key", TEST_CONFIG[CLUSTERFUZZ_API_KEY_FILE])
-    self.ExpectReadURL([
+
+    self.Expect([
       URL("https://codereview.chromium.org/search",
           "owner=author%40chromium.org&limit=30&closed=3&format=json",
           ("{\"results\": [{\"subject\": \"different\"}]}")),
-      URL("http://src.chromium.org/svn/trunk/src/DEPS",
-          self.FAKE_DEPS),
-    ])
-
-    self.ExpectCmd([
       Cmd(("git log -1 --format=%H --grep="
            "\"^Version [[:digit:]]*\.[[:digit:]]*\.[[:digit:]]*\" "
-           "svn/trunk"), "push_hash\n"),
-      Cmd("git svn find-rev push_hash", "123456\n"),
+           "origin/master"), "push_hash\n"),
+      Cmd("git log -1 --format=%B push_hash", self.C_V8_123456_LOG),
+      Cmd("git log -1 --format=%B abcd123455", self.C_V8_123455_LOG),
     ])
 
     result = auto_roll.AutoRoll(TEST_CONFIG, self).Run(
@@ -1086,7 +1077,7 @@ LOG=N
       self.assertTrue(re.search(r"#define PATCH_LEVEL\s+1", version))
       self.assertTrue(re.search(r"#define IS_CANDIDATE_VERSION\s+0", version))
 
-    self.ExpectCmd([
+    self.Expect([
       Cmd("git status -s -uno", ""),
       Cmd("git status -s -b -uno", "## some_branch\n"),
       Cmd("git svn fetch", ""),
@@ -1107,6 +1098,7 @@ LOG=N
           "hash3"),
       Cmd("git svn find-rev hash3 svn/bleeding_edge", "56789"),
       Cmd("git log -1 --format=%s hash3", "Title3"),
+      RL("Y"),  # Automatically add corresponding ports (34567, 56789)?
       Cmd("git svn find-rev r12345 svn/bleeding_edge", "hash4"),
       # Simulate svn being down which stops the script.
       Cmd("git svn find-rev r23456 svn/bleeding_edge", None),
@@ -1147,9 +1139,12 @@ LOG=N
            TEST_CONFIG[TEMPORARY_PATCH_FILE]),
           "", cb=VerifyPatch("patch5\n")),
       Cmd("git apply --index --reject \"%s\"" % extra_patch, ""),
+      RL("Y"),  # Automatically increment patch level?
       Cmd("git commit -aF \"%s\"" % TEST_CONFIG[COMMITMSG_FILE], ""),
+      RL("reviewer@chromium.org"),  # V8 reviewer.
       Cmd("git cl upload --send-mail -r \"reviewer@chromium.org\"", ""),
       Cmd("git checkout -f %s" % TEST_CONFIG[BRANCHNAME], ""),
+      RL("LGTM"),  # Enter LGTM for V8 CL.
       Cmd("git cl presubmit", "Presubmit successfull\n"),
       Cmd("git cl dcommit -f --bypass-hooks", "Closing issue\n",
           cb=VerifySVNCommit),
@@ -1162,13 +1157,6 @@ LOG=N
            "\"Tagging version 3.22.5.1\""), ""),
       Cmd("git checkout -f some_branch", ""),
       Cmd("git branch -D %s" % TEST_CONFIG[BRANCHNAME], ""),
-    ])
-
-    self.ExpectReadline([
-      RL("Y"),  # Automatically add corresponding ports (34567, 56789)?
-      RL("Y"),  # Automatically increment patch level?
-      RL("reviewer@chromium.org"),  # V8 reviewer.
-      RL("LGTM"),  # Enter LGTM for V8 CL.
     ])
 
     # r12345 and r34567 are patches. r23456 (included) and r45678 are the MIPS
@@ -1232,24 +1220,19 @@ git-svn-id: svn://svn.chromium.org/chrome/trunk/src@4567 0039-1c4b
 git-svn-id: svn://svn.chromium.org/chrome/trunk/src@3456 0039-1c4b
 
 """
-    c_v8_22624_log = """V8 CL.
-
-git-svn-id: https://v8.googlecode.com/svn/branches/bleeding_edge@22624 123
-
-"""
     json_output = self.MakeEmptyTempFile()
     csv_output = self.MakeEmptyTempFile()
     TEST_CONFIG[VERSION_FILE] = self.MakeEmptyTempFile()
     self.WriteFakeVersionFile()
 
     TEST_CONFIG[DOT_GIT_LOCATION] = self.MakeEmptyTempFile()
-    if not os.path.exists(TEST_CONFIG[CHROMIUM]):
-      os.makedirs(TEST_CONFIG[CHROMIUM])
-    if not os.path.exists(os.path.join(TEST_CONFIG[CHROMIUM], "v8")):
-      os.makedirs(os.path.join(TEST_CONFIG[CHROMIUM], "v8"))
+    TEST_CONFIG[CHROMIUM] = self.MakeEmptyTempDirectory()
+    chrome_dir = TEST_CONFIG[CHROMIUM]
+    chrome_v8_dir = os.path.join(chrome_dir, "v8")
+    os.makedirs(chrome_v8_dir)
     def WriteDEPS(revision):
       TextToFile("Line\n   \"v8_revision\": \"%s\",\n  line\n" % revision,
-                 TEST_CONFIG[DEPS_FILE])
+                 os.path.join(chrome_dir, "DEPS"))
     WriteDEPS(567)
 
     def ResetVersion(minor, build, patch=0):
@@ -1260,7 +1243,7 @@ git-svn-id: https://v8.googlecode.com/svn/branches/bleeding_edge@22624 123
     def ResetDEPS(revision):
       return lambda: WriteDEPS(revision)
 
-    self.ExpectCmd([
+    self.Expect([
       Cmd("git status -s -uno", ""),
       Cmd("git status -s -b -uno", "## some_branch\n"),
       Cmd("git svn fetch", ""),
@@ -1311,34 +1294,38 @@ git-svn-id: https://v8.googlecode.com/svn/branches/bleeding_edge@22624 123
       Cmd("git svn find-rev r22624", "hash_22624"),
       Cmd("git svn find-rev hash_22624", "22624"),
       Cmd("git log -1 --format=%ci hash_22624", "02:34"),
-      Cmd("git status -s -uno", ""),
-      Cmd("git checkout -f master", ""),
-      Cmd("git pull", ""),
-      Cmd("git checkout -b %s" % TEST_CONFIG[BRANCHNAME], ""),
-      Cmd("git fetch origin", ""),
-      Cmd("git log --format=%H --grep=\"V8\"", "c_hash1\nc_hash2\nc_hash3\n"),
-      Cmd("git diff --name-only c_hash1 c_hash1^", ""),
-      Cmd("git diff --name-only c_hash2 c_hash2^", TEST_CONFIG[DEPS_FILE]),
-      Cmd("git checkout -f c_hash2 -- %s" % TEST_CONFIG[DEPS_FILE], "",
-          cb=ResetDEPS("0123456789012345678901234567890123456789")),
-      Cmd("git log -1 --format=%B c_hash2", c_hash2_commit_log),
+      Cmd("git status -s -uno", "", cwd=chrome_dir),
+      Cmd("git checkout -f master", "", cwd=chrome_dir),
+      Cmd("git pull", "", cwd=chrome_dir),
+      Cmd("git checkout -b %s" % TEST_CONFIG[BRANCHNAME], "", cwd=chrome_dir),
+      Cmd("git fetch origin", "", cwd=chrome_v8_dir),
+      Cmd("git log --format=%H --grep=\"V8\"", "c_hash1\nc_hash2\nc_hash3\n",
+          cwd=chrome_dir),
+      Cmd("git diff --name-only c_hash1 c_hash1^", "", cwd=chrome_dir),
+      Cmd("git diff --name-only c_hash2 c_hash2^", "DEPS", cwd=chrome_dir),
+      Cmd("git checkout -f c_hash2 -- DEPS", "",
+          cb=ResetDEPS("0123456789012345678901234567890123456789"),
+          cwd=chrome_dir),
+      Cmd("git log -1 --format=%B c_hash2", c_hash2_commit_log,
+          cwd=chrome_dir),
       Cmd("git rev-list -n 1 0123456789012345678901234567890123456789",
-          "0123456789012345678901234567890123456789"),
+          "0123456789012345678901234567890123456789", cwd=chrome_v8_dir),
       Cmd("git log -1 --format=%B 0123456789012345678901234567890123456789",
-          c_v8_22624_log),
-      Cmd("git diff --name-only c_hash3 c_hash3^", TEST_CONFIG[DEPS_FILE]),
-      Cmd("git checkout -f c_hash3 -- %s" % TEST_CONFIG[DEPS_FILE], "",
-          cb=ResetDEPS(345)),
-      Cmd("git log -1 --format=%B c_hash3", c_hash3_commit_log),
-      Cmd("git checkout -f HEAD -- %s" % TEST_CONFIG[DEPS_FILE], "",
-          cb=ResetDEPS(567)),
-      Cmd("git branch -r", " weird/123\n  branch-heads/7\n"),
-      Cmd("git checkout -f branch-heads/7 -- %s" % TEST_CONFIG[DEPS_FILE], "",
-          cb=ResetDEPS(345)),
-      Cmd("git checkout -f HEAD -- %s" % TEST_CONFIG[DEPS_FILE], "",
-          cb=ResetDEPS(567)),
-      Cmd("git checkout -f master", ""),
-      Cmd("git branch -D %s" % TEST_CONFIG[BRANCHNAME], ""),
+          self.C_V8_22624_LOG, cwd=chrome_v8_dir),
+      Cmd("git diff --name-only c_hash3 c_hash3^", "DEPS", cwd=chrome_dir),
+      Cmd("git checkout -f c_hash3 -- DEPS", "", cb=ResetDEPS(345),
+          cwd=chrome_dir),
+      Cmd("git log -1 --format=%B c_hash3", c_hash3_commit_log,
+          cwd=chrome_dir),
+      Cmd("git checkout -f HEAD -- DEPS", "", cb=ResetDEPS(567),
+          cwd=chrome_dir),
+      Cmd("git branch -r", " weird/123\n  branch-heads/7\n", cwd=chrome_dir),
+      Cmd("git checkout -f branch-heads/7 -- DEPS", "", cb=ResetDEPS(345),
+          cwd=chrome_dir),
+      Cmd("git checkout -f HEAD -- DEPS", "", cb=ResetDEPS(567),
+          cwd=chrome_dir),
+      Cmd("git checkout -f master", "", cwd=chrome_dir),
+      Cmd("git branch -D %s" % TEST_CONFIG[BRANCHNAME], "", cwd=chrome_dir),
       Cmd("git checkout -f some_branch", ""),
       Cmd("git branch -D %s" % TEST_CONFIG[BRANCHNAME], ""),
     ])
@@ -1383,7 +1370,7 @@ git-svn-id: https://v8.googlecode.com/svn/branches/bleeding_edge@22624 123
     self.assertEquals(expected_json, json.loads(FileToText(json_output)))
 
 
-  def testBumpUpVersion(self):
+  def _bumpUpVersion(self):
     TEST_CONFIG[VERSION_FILE] = self.MakeEmptyTempFile()
     self.WriteFakeVersionFile()
 
@@ -1392,7 +1379,7 @@ git-svn-id: https://v8.googlecode.com/svn/branches/bleeding_edge@22624 123
                                                build=build,
                                                patch=patch)
 
-    self.ExpectCmd([
+    return [
       Cmd("git status -s -uno", ""),
       Cmd("git checkout -f bleeding_edge", "", cb=ResetVersion(11, 4)),
       Cmd("git pull", ""),
@@ -1400,6 +1387,7 @@ git-svn-id: https://v8.googlecode.com/svn/branches/bleeding_edge@22624 123
       Cmd("git checkout -f bleeding_edge", ""),
       Cmd("git log -1 --format=%H", "latest_hash"),
       Cmd("git diff --name-only latest_hash latest_hash^", ""),
+      URL("https://v8-status.appspot.com/lkgr", "12345"),
       Cmd("git checkout -f bleeding_edge", ""),
       Cmd(("git log --format=%H --grep="
            "\"^git-svn-id: [^@]*@12345 [A-Za-z0-9-]*$\""),
@@ -1410,25 +1398,51 @@ git-svn-id: https://v8.googlecode.com/svn/branches/bleeding_edge@22624 123
       Cmd("git diff --name-only lkgr_hash lkgr_hash^", ""),
       Cmd("git checkout -f master", "", cb=ResetVersion(11, 5)),
       Cmd("git pull", ""),
+      URL("https://v8-status.appspot.com/current?format=json",
+          "{\"message\": \"Tree is open\"}"),
       Cmd("git checkout -b auto-bump-up-version bleeding_edge", "",
           cb=ResetVersion(11, 4)),
       Cmd("git commit -am \"[Auto-roll] Bump up version to 3.11.6.0\n\n"
-          "TBR=author@chromium.org\"", ""),
+          "TBR=author@chromium.org\" "
+          "--author \"author@chromium.org <author@chromium.org>\"", ""),
+    ]
+
+  def testBumpUpVersionGit(self):
+    expectations = self._bumpUpVersion()
+    expectations += [
       Cmd("git cl upload --send-mail --email \"author@chromium.org\" -f "
           "--bypass-hooks", ""),
       Cmd("git cl dcommit -f --bypass-hooks", ""),
       Cmd("git checkout -f bleeding_edge", ""),
       Cmd("git branch", "auto-bump-up-version\n* bleeding_edge"),
       Cmd("git branch -D auto-bump-up-version", ""),
-    ])
-
-    self.ExpectReadURL([
-      URL("https://v8-status.appspot.com/lkgr", "12345"),
-      URL("https://v8-status.appspot.com/current?format=json",
-          "{\"message\": \"Tree is open\"}"),
-    ])
+    ]
+    self.Expect(expectations)
 
     BumpUpVersion(TEST_CONFIG, self).Run(["-a", "author@chromium.org"])
+
+  def testBumpUpVersionSvn(self):
+    expectations = self._bumpUpVersion()
+    expectations += [
+      Cmd("git diff HEAD^ HEAD", "patch content"),
+      Cmd("svn update", "", cwd="[SVN_ROOT]"),
+      Cmd("svn status", "", cwd="[SVN_ROOT]"),
+      Cmd("patch -d branches/bleeding_edge -p1 -i %s" %
+          TEST_CONFIG[PATCH_FILE], "Applied patch...", cwd="[SVN_ROOT]"),
+      Cmd("svn commit --non-interactive --username=author@chromium.org "
+          "--config-dir=[CONFIG_DIR] "
+          "-m \"[Auto-roll] Bump up version to 3.11.6.0\"",
+          "", cwd="[SVN_ROOT]"),
+      Cmd("git checkout -f bleeding_edge", ""),
+      Cmd("git branch", "auto-bump-up-version\n* bleeding_edge"),
+      Cmd("git branch -D auto-bump-up-version", ""),
+    ]
+    self.Expect(expectations)
+
+    BumpUpVersion(TEST_CONFIG, self).Run(
+        ["-a", "author@chromium.org",
+         "--svn", "[SVN_ROOT]",
+         "--svn-config", "[CONFIG_DIR]"])
 
   def testAutoTag(self):
     TEST_CONFIG[VERSION_FILE] = self.MakeEmptyTempFile()
@@ -1439,7 +1453,7 @@ git-svn-id: https://v8.googlecode.com/svn/branches/bleeding_edge@22624 123
                                                build=build,
                                                patch=patch)
 
-    self.ExpectCmd([
+    self.Expect([
       Cmd("git status -s -uno", ""),
       Cmd("git status -s -b -uno", "## some_branch\n"),
       Cmd("git svn fetch", ""),
@@ -1465,6 +1479,10 @@ git-svn-id: https://v8.googlecode.com/svn/branches/bleeding_edge@22624 123
           cb=ResetVersion(4, 2)),
       Cmd("git checkout -f HEAD -- %s" % TEST_CONFIG[VERSION_FILE], "",
           cb=ResetVersion(4, 5)),
+      URL("https://v8-status.appspot.com/revisions?format=json",
+          "[{\"revision\": \"126\", \"status\": true},"
+           "{\"revision\": \"123\", \"status\": true},"
+           "{\"revision\": \"112\", \"status\": true}]"),
       Cmd("git svn find-rev hash118", "118"),
       Cmd("git svn find-rev hash125", "125"),
       Cmd("git svn find-rev r123", "hash123"),
@@ -1475,13 +1493,6 @@ git-svn-id: https://v8.googlecode.com/svn/branches/bleeding_edge@22624 123
       Cmd("git branch -D %s" % TEST_CONFIG[BRANCHNAME], ""),
     ])
 
-    self.ExpectReadURL([
-      URL("https://v8-status.appspot.com/revisions?format=json",
-          "[{\"revision\": \"126\", \"status\": true},"
-           "{\"revision\": \"123\", \"status\": true},"
-           "{\"revision\": \"112\", \"status\": true}]"),
-    ])
-
     AutoTag(TEST_CONFIG, self).Run(["-a", "author@chromium.org"])
 
   # Test that we bail out if the last change was a version change.
@@ -1489,12 +1500,12 @@ git-svn-id: https://v8.googlecode.com/svn/branches/bleeding_edge@22624 123
     TEST_CONFIG[VERSION_FILE] = self.MakeEmptyTempFile()
     self._state["latest"] = "latest_hash"
 
-    self.ExpectCmd([
+    self.Expect([
       Cmd("git diff --name-only latest_hash latest_hash^",
           TEST_CONFIG[VERSION_FILE]),
     ])
 
-    self.assertEquals(1,
+    self.assertEquals(0,
         self.RunStep(BumpUpVersion, LastChangeBailout, ["--dry_run"]))
 
   # Test that we bail out if the lkgr was a version change.
@@ -1502,12 +1513,12 @@ git-svn-id: https://v8.googlecode.com/svn/branches/bleeding_edge@22624 123
     TEST_CONFIG[VERSION_FILE] = self.MakeEmptyTempFile()
     self._state["lkgr"] = "lkgr_hash"
 
-    self.ExpectCmd([
+    self.Expect([
       Cmd("git diff --name-only lkgr_hash lkgr_hash^",
           TEST_CONFIG[VERSION_FILE]),
     ])
 
-    self.assertEquals(1,
+    self.assertEquals(0,
         self.RunStep(BumpUpVersion, LKGRVersionUpToDateBailout, ["--dry_run"]))
 
   # Test that we bail out if the last version is already newer than the lkgr's
@@ -1518,11 +1529,11 @@ git-svn-id: https://v8.googlecode.com/svn/branches/bleeding_edge@22624 123
     self._state["lkgr_version"] = "3.22.4.0"
     self._state["latest_version"] = "3.22.5.0"
 
-    self.ExpectCmd([
+    self.Expect([
       Cmd("git diff --name-only lkgr_hash lkgr_hash^", ""),
     ])
 
-    self.assertEquals(1,
+    self.assertEquals(0,
         self.RunStep(BumpUpVersion, LKGRVersionUpToDateBailout, ["--dry_run"]))
 
 

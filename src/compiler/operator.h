@@ -171,39 +171,33 @@ struct StaticParameterTraits<double> {
     return os << val;
   }
   static int HashCode(double a) {
-    return static_cast<int>(BitCast<int64_t>(a));
+    return static_cast<int>(bit_cast<int64_t>(a));
   }
   static bool Equals(double a, double b) {
-    return BitCast<int64_t>(a) == BitCast<int64_t>(b);
+    return bit_cast<int64_t>(a) == bit_cast<int64_t>(b);
   }
 };
 
-// Specialization for static parameters of type {PrintableUnique<Object>}.
+// Specialization for static parameters of type {Unique<Object>}.
 template <>
-struct StaticParameterTraits<PrintableUnique<Object> > {
-  static OStream& PrintTo(OStream& os, PrintableUnique<Object> val) {  // NOLINT
-    return os << val.string();
+struct StaticParameterTraits<Unique<Object> > {
+  static OStream& PrintTo(OStream& os, Unique<Object> val) {  // NOLINT
+    return os << Brief(*val.handle());
   }
-  static int HashCode(PrintableUnique<Object> a) {
+  static int HashCode(Unique<Object> a) {
     return static_cast<int>(a.Hashcode());
   }
-  static bool Equals(PrintableUnique<Object> a, PrintableUnique<Object> b) {
-    return a == b;
-  }
+  static bool Equals(Unique<Object> a, Unique<Object> b) { return a == b; }
 };
 
-// Specialization for static parameters of type {PrintableUnique<Name>}.
+// Specialization for static parameters of type {Unique<Name>}.
 template <>
-struct StaticParameterTraits<PrintableUnique<Name> > {
-  static OStream& PrintTo(OStream& os, PrintableUnique<Name> val) {  // NOLINT
-    return os << val.string();
+struct StaticParameterTraits<Unique<Name> > {
+  static OStream& PrintTo(OStream& os, Unique<Name> val) {  // NOLINT
+    return os << Brief(*val.handle());
   }
-  static int HashCode(PrintableUnique<Name> a) {
-    return static_cast<int>(a.Hashcode());
-  }
-  static bool Equals(PrintableUnique<Name> a, PrintableUnique<Name> b) {
-    return a == b;
-  }
+  static int HashCode(Unique<Name> a) { return static_cast<int>(a.Hashcode()); }
+  static bool Equals(Unique<Name> a, Unique<Name> b) { return a == b; }
 };
 
 #if DEBUG
@@ -212,15 +206,15 @@ struct StaticParameterTraits<PrintableUnique<Name> > {
 template <>
 struct StaticParameterTraits<Handle<Object> > {
   static OStream& PrintTo(OStream& os, Handle<Object> val) {  // NOLINT
-    UNREACHABLE();  // Should use PrintableUnique<Object> instead
+    UNREACHABLE();  // Should use Unique<Object> instead
     return os;
   }
   static int HashCode(Handle<Object> a) {
-    UNREACHABLE();  // Should use PrintableUnique<Object> instead
+    UNREACHABLE();  // Should use Unique<Object> instead
     return 0;
   }
   static bool Equals(Handle<Object> a, Handle<Object> b) {
-    UNREACHABLE();  // Should use PrintableUnique<Object> instead
+    UNREACHABLE();  // Should use Unique<Object> instead
     return false;
   }
 };
@@ -267,7 +261,14 @@ class Operator1 : public Operator {
 };
 
 // Type definitions for operators with specific types of parameters.
-typedef Operator1<PrintableUnique<Name> > NameOperator;
+typedef Operator1<Unique<Name> > NameOperator;
+
+
+// Helper to extract parameters from Operator1<*> operator.
+template <typename T>
+static inline const T& OpParameter(const Operator* op) {
+  return reinterpret_cast<const Operator1<T>*>(op)->parameter();
+}
 
 }  // namespace compiler
 }  // namespace internal

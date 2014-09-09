@@ -191,16 +191,16 @@ void Isolate::Iterate(ObjectVisitor* v, ThreadLocalTop* thread) {
   // Visit the roots from the top for a given thread.
   v->VisitPointer(&thread->pending_exception_);
   v->VisitPointer(&(thread->pending_message_obj_));
-  v->VisitPointer(BitCast<Object**>(&(thread->pending_message_script_)));
-  v->VisitPointer(BitCast<Object**>(&(thread->context_)));
+  v->VisitPointer(bit_cast<Object**>(&(thread->pending_message_script_)));
+  v->VisitPointer(bit_cast<Object**>(&(thread->context_)));
   v->VisitPointer(&thread->scheduled_exception_);
 
   for (v8::TryCatch* block = thread->try_catch_handler();
        block != NULL;
        block = block->next_) {
-    v->VisitPointer(BitCast<Object**>(&(block->exception_)));
-    v->VisitPointer(BitCast<Object**>(&(block->message_obj_)));
-    v->VisitPointer(BitCast<Object**>(&(block->message_script_)));
+    v->VisitPointer(bit_cast<Object**>(&(block->exception_)));
+    v->VisitPointer(bit_cast<Object**>(&(block->message_obj_)));
+    v->VisitPointer(bit_cast<Object**>(&(block->message_script_)));
   }
 
   // Iterate over pointers on native execution stack.
@@ -1055,7 +1055,7 @@ void Isolate::DoThrow(Object* exception, MessageLocation* location) {
           // probably not a valid Error object.  In that case, we fall through
           // and capture the stack trace at this throw site.
           LookupIterator lookup(exception_handle, key,
-                                LookupIterator::OWN_PROPERTY);
+                                LookupIterator::OWN_SKIP_INTERCEPTOR);
           Handle<Object> stack_trace_property;
           if (Object::GetProperty(&lookup).ToHandle(&stack_trace_property) &&
               stack_trace_property->IsJSArray()) {
@@ -1504,8 +1504,7 @@ Isolate::Isolate()
       string_tracker_(NULL),
       regexp_stack_(NULL),
       date_cache_(NULL),
-      code_stub_interface_descriptors_(NULL),
-      call_descriptors_(NULL),
+      call_descriptor_data_(NULL),
       // TODO(bmeurer) Initialized lazily because it depends on flags; can
       // be fixed once the default isolate cleanup is done.
       random_number_generator_(NULL),
@@ -1701,11 +1700,8 @@ Isolate::~Isolate() {
   delete date_cache_;
   date_cache_ = NULL;
 
-  delete[] code_stub_interface_descriptors_;
-  code_stub_interface_descriptors_ = NULL;
-
-  delete[] call_descriptors_;
-  call_descriptors_ = NULL;
+  delete[] call_descriptor_data_;
+  call_descriptor_data_ = NULL;
 
   delete regexp_stack_;
   regexp_stack_ = NULL;
@@ -1880,10 +1876,8 @@ bool Isolate::Init(Deserializer* des) {
   regexp_stack_ = new RegExpStack();
   regexp_stack_->isolate_ = this;
   date_cache_ = new DateCache();
-  code_stub_interface_descriptors_ =
-      new CodeStubInterfaceDescriptor[CodeStub::NUMBER_OF_IDS];
-  call_descriptors_ =
-      new CallInterfaceDescriptor[NUMBER_OF_CALL_DESCRIPTORS];
+  call_descriptor_data_ =
+      new CallInterfaceDescriptorData[CallDescriptors::NUMBER_OF_DESCRIPTORS];
   cpu_profiler_ = new CpuProfiler(this);
   heap_profiler_ = new HeapProfiler(heap());
 
@@ -1917,8 +1911,6 @@ bool Isolate::Init(Deserializer* des) {
   }
 
   deoptimizer_data_ = new DeoptimizerData(memory_allocator_);
-
-  CallDescriptors::InitializeForIsolate(this);
 
   const bool create_heap_objects = (des == NULL);
   if (create_heap_objects && !heap_.CreateHeapObjects()) {
@@ -2037,24 +2029,6 @@ bool Isolate::Init(Deserializer* des) {
     CodeStub::GenerateFPStubs(this);
     StoreBufferOverflowStub::GenerateFixedRegStubsAheadOfTime(this);
     StubFailureTrampolineStub::GenerateAheadOfTime(this);
-    // Ensure interface descriptors are initialized even when stubs have been
-    // deserialized out of the snapshot without using the graph builder.
-    FastCloneShallowArrayStub::InstallDescriptors(this);
-    BinaryOpICStub::InstallDescriptors(this);
-    BinaryOpWithAllocationSiteStub::InstallDescriptors(this);
-    CompareNilICStub::InstallDescriptors(this);
-    ToBooleanStub::InstallDescriptors(this);
-    ToNumberStub::InstallDescriptors(this);
-    ArrayConstructorStubBase::InstallDescriptors(this);
-    InternalArrayConstructorStubBase::InstallDescriptors(this);
-    FastNewClosureStub::InstallDescriptors(this);
-    FastNewContextStub::InstallDescriptors(this);
-    NumberToStringStub::InstallDescriptors(this);
-    StringAddStub::InstallDescriptors(this);
-    RegExpConstructResultStub::InstallDescriptors(this);
-    KeyedLoadGenericStub::InstallDescriptors(this);
-    StoreFieldStub::InstallDescriptors(this);
-    LoadFastElementStub::InstallDescriptors(this);
   }
 
   initialized_from_snapshot_ = (des != NULL);
@@ -2234,15 +2208,9 @@ bool Isolate::IsFastArrayConstructorPrototypeChainIntact() {
 }
 
 
-CodeStubInterfaceDescriptor*
-    Isolate::code_stub_interface_descriptor(int index) {
-  return code_stub_interface_descriptors_ + index;
-}
-
-
-CallInterfaceDescriptor* Isolate::call_descriptor(int index) {
-  DCHECK(0 <= index && index < CallDescriptorKey::NUMBER_OF_CALL_DESCRIPTORS);
-  return &call_descriptors_[index];
+CallInterfaceDescriptorData* Isolate::call_descriptor_data(int index) {
+  DCHECK(0 <= index && index < CallDescriptors::NUMBER_OF_DESCRIPTORS);
+  return &call_descriptor_data_[index];
 }
 
 

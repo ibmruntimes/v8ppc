@@ -224,9 +224,18 @@
     ['OS=="linux" or OS=="freebsd" or OS=="openbsd" or OS=="solaris" \
        or OS=="netbsd" or OS=="aix"', {
       'target_defaults': {
-        'cflags': [ '-Wall', '<(werror)', '-W', '-Wno-unused-parameter',
-                    '-Wno-long-long', '-pthread', '-fno-exceptions',
-                    '-pedantic' ],
+        'cflags': [
+          '-Wall',
+          '<(werror)',
+          '-W',
+          '-Wno-unused-parameter',
+          '-Wno-long-long',
+          '-pthread',
+          '-fno-exceptions',
+          '-pedantic',
+          # Don't warn about the "struct foo f = {0};" initialization pattern.
+          '-Wno-missing-field-initializers',
+        ],
         'cflags_cc': [ '-Wnon-virtual-dtor', '-fno-rtti', '-std=gnu++0x' ],
         'ldflags': [ '-pthread', ],
         'conditions': [
@@ -246,8 +255,15 @@
     #  or OS=="netbsd"'
     ['OS=="qnx"', {
       'target_defaults': {
-        'cflags': [ '-Wall', '<(werror)', '-W', '-Wno-unused-parameter',
-                    '-fno-exceptions' ],
+        'cflags': [
+          '-Wall',
+          '<(werror)',
+          '-W',
+          '-Wno-unused-parameter',
+          '-fno-exceptions',
+          # Don't warn about the "struct foo f = {0};" initialization pattern.
+          '-Wno-missing-field-initializers',
+        ],
         'cflags_cc': [ '-Wnon-virtual-dtor', '-fno-rtti', '-std=gnu++0x' ],
         'conditions': [
           [ 'visibility=="hidden"', {
@@ -373,6 +389,8 @@
             '-Wendif-labels',
             '-W',
             '-Wno-unused-parameter',
+            # Don't warn about the "struct foo f = {0};" initialization pattern.
+            '-Wno-missing-field-initializers',
           ],
         },
         'conditions': [

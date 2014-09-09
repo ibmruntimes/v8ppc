@@ -23,7 +23,8 @@ class SimplifiedOperatorReducerTest : public GraphTest {
   Reduction Reduce(Node* node) {
     Typer typer(zone());
     MachineOperatorBuilder machine(zone());
-    JSGraph jsgraph(graph(), common(), &typer);
+    JSOperatorBuilder javascript(zone());
+    JSGraph jsgraph(graph(), common(), &javascript, &typer, &machine);
     SimplifiedOperatorReducer reducer(&jsgraph, &machine);
     return reducer.Reduce(node);
   }
@@ -439,7 +440,7 @@ TEST_F(SimplifiedOperatorReducerTest, ChangeTaggedToUint32WithConstant) {
         simplified()->ChangeTaggedToUint32(), NumberConstant(n)));
     ASSERT_TRUE(reduction.Changed());
     EXPECT_THAT(reduction.replacement(),
-                IsInt32Constant(BitCast<int32_t>(DoubleToUint32(n))));
+                IsInt32Constant(bit_cast<int32_t>(DoubleToUint32(n))));
   }
 }
 
@@ -470,7 +471,7 @@ TEST_F(SimplifiedOperatorReducerTest, ChangeUint32ToTagged) {
   TRACED_FOREACH(uint32_t, n, kUint32Values) {
     Reduction reduction =
         Reduce(graph()->NewNode(simplified()->ChangeUint32ToTagged(),
-                                Int32Constant(BitCast<int32_t>(n))));
+                                Int32Constant(bit_cast<int32_t>(n))));
     ASSERT_TRUE(reduction.Changed());
     EXPECT_THAT(reduction.replacement(), IsNumberConstant(FastUI2D(n)));
   }

@@ -1473,21 +1473,22 @@ int HeapObject::Size() {
 }
 
 
-bool HeapObject::MayContainNewSpacePointers() {
+bool HeapObject::MayContainRawValues() {
   InstanceType type = map()->instance_type();
   if (type <= LAST_NAME_TYPE) {
     if (type == SYMBOL_TYPE) {
-      return true;
+      return false;
     }
     DCHECK(type < FIRST_NONSTRING_TYPE);
     // There are four string representations: sequential strings, external
     // strings, cons strings, and sliced strings.
-    // Only the latter two contain non-map-word pointers to heap objects.
-    return ((type & kIsIndirectStringMask) == kIsIndirectStringTag);
+    // Only the former two contain raw values and no heap pointers (besides the
+    // map-word).
+    return ((type & kIsIndirectStringMask) != kIsIndirectStringTag);
   }
-  // The ConstantPoolArray contains heap pointers, but not new space pointers.
-  if (type == CONSTANT_POOL_ARRAY_TYPE) return false;
-  return (type > LAST_DATA_TYPE);
+  // The ConstantPoolArray contains heap pointers, but also raw values.
+  if (type == CONSTANT_POOL_ARRAY_TYPE) return true;
+  return (type <= LAST_DATA_TYPE);
 }
 
 
@@ -2193,18 +2194,18 @@ void FixedArray::set(int index, Object* value) {
 
 
 inline bool FixedDoubleArray::is_the_hole_nan(double value) {
-  return BitCast<uint64_t, double>(value) == kHoleNanInt64;
+  return bit_cast<uint64_t, double>(value) == kHoleNanInt64;
 }
 
 
 inline double FixedDoubleArray::hole_nan_as_double() {
-  return BitCast<double, uint64_t>(kHoleNanInt64);
+  return bit_cast<double, uint64_t>(kHoleNanInt64);
 }
 
 
 inline double FixedDoubleArray::canonical_not_the_hole_nan_as_double() {
-  DCHECK(BitCast<uint64_t>(base::OS::nan_value()) != kHoleNanInt64);
-  DCHECK((BitCast<uint64_t>(base::OS::nan_value()) >> 32) != kHoleNanUpper32);
+  DCHECK(bit_cast<uint64_t>(base::OS::nan_value()) != kHoleNanInt64);
+  DCHECK((bit_cast<uint64_t>(base::OS::nan_value()) >> 32) != kHoleNanUpper32);
   return base::OS::nan_value();
 }
 
@@ -2897,9 +2898,6 @@ FixedArrayBase* Map::GetInitialElements() {
       GetHeap()->EmptyFixedTypedArrayForMap(this);
     DCHECK(!GetHeap()->InNewSpace(empty_array));
     return empty_array;
-  } else if (has_dictionary_elements()) {
-    DCHECK(!GetHeap()->InNewSpace(GetHeap()->empty_slow_element_dictionary()));
-    return GetHeap()->empty_slow_element_dictionary();
   } else {
     UNREACHABLE();
   }
@@ -4774,9 +4772,10 @@ int Code::profiler_ticks() {
 
 
 void Code::set_profiler_ticks(int ticks) {
-  DCHECK_EQ(FUNCTION, kind());
   DCHECK(ticks < 256);
-  WRITE_BYTE_FIELD(this, kProfilerTicksOffset, ticks);
+  if (kind() == FUNCTION) {
+    WRITE_BYTE_FIELD(this, kProfilerTicksOffset, ticks);
+  }
 }
 
 

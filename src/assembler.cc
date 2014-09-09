@@ -887,7 +887,7 @@ void ExternalReference::SetUp() {
   double_constants.one_half = 0.5;
   double_constants.minus_one_half = -0.5;
   double_constants.canonical_non_hole_nan = base::OS::nan_value();
-  double_constants.the_hole_nan = BitCast<double>(kHoleNanInt64);
+  double_constants.the_hole_nan = bit_cast<double>(kHoleNanInt64);
   double_constants.negative_infinity = -V8_INFINITY;
   double_constants.uint32_bias =
     static_cast<double>(static_cast<uint32_t>(0xFFFFFFFF)) + 1;
@@ -928,9 +928,9 @@ void ExternalReference::InitializeMathExpData() {
     math_exp_log_table_array = new double[kTableSize];
     for (int i = 0; i < kTableSize; i++) {
       double value = std::pow(2, i / kTableSizeDouble);
-      uint64_t bits = BitCast<uint64_t, double>(value);
+      uint64_t bits = bit_cast<uint64_t, double>(value);
       bits &= (static_cast<uint64_t>(1) << 52) - 1;
-      double mantissa = BitCast<double, uint64_t>(bits);
+      double mantissa = bit_cast<double, uint64_t>(bits);
       math_exp_log_table_array[i] = mantissa;
     }
 
@@ -1602,40 +1602,6 @@ bool PositionsRecorder::WriteRecordedPositions() {
 
   // Return whether something was written.
   return written;
-}
-
-
-MultiplierAndShift::MultiplierAndShift(int32_t d) {
-  DCHECK(d <= -2 || 2 <= d);
-  const uint32_t two31 = 0x80000000;
-  uint32_t ad = Abs(d);
-  uint32_t t = two31 + (uint32_t(d) >> 31);
-  uint32_t anc = t - 1 - t % ad;   // Absolute value of nc.
-  int32_t p = 31;                  // Init. p.
-  uint32_t q1 = two31 / anc;       // Init. q1 = 2**p/|nc|.
-  uint32_t r1 = two31 - q1 * anc;  // Init. r1 = rem(2**p, |nc|).
-  uint32_t q2 = two31 / ad;        // Init. q2 = 2**p/|d|.
-  uint32_t r2 = two31 - q2 * ad;   // Init. r2 = rem(2**p, |d|).
-  uint32_t delta;
-  do {
-    p++;
-    q1 *= 2;          // Update q1 = 2**p/|nc|.
-    r1 *= 2;          // Update r1 = rem(2**p, |nc|).
-    if (r1 >= anc) {  // Must be an unsigned comparison here.
-      q1++;
-      r1 = r1 - anc;
-    }
-    q2 *= 2;          // Update q2 = 2**p/|d|.
-    r2 *= 2;          // Update r2 = rem(2**p, |d|).
-    if (r2 >= ad) {   // Must be an unsigned comparison here.
-      q2++;
-      r2 = r2 - ad;
-    }
-    delta = ad - r2;
-  } while (q1 < delta || (q1 == delta && r1 == 0));
-  int32_t mul = static_cast<int32_t>(q2 + 1);
-  multiplier_ = (d < 0) ? -mul : mul;
-  shift_ = p - 32;
 }
 
 } }  // namespace v8::internal
