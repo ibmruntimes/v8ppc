@@ -2230,9 +2230,10 @@ class V8_EXPORT Object : public Value {
   void SetInternalField(int index, Handle<Value> value);
 
   /**
-   * Gets a 2-byte-aligned native pointer from an internal field. This field
-   * must have been set by SetAlignedPointerInInternalField, everything else
-   * leads to undefined behavior.
+   * Gets a (2^kSmiTagSize)-byte-aligned native pointer from an
+   * internal field. This field must have been set by
+   * SetAlignedPointerInInternalField, everything else leads to
+   * undefined behavior.
    */
   V8_INLINE void* GetAlignedPointerFromInternalField(int index);
 
@@ -2243,8 +2244,9 @@ class V8_EXPORT Object : public Value {
   }
 
   /**
-   * Sets a 2-byte-aligned native pointer in an internal field. To retrieve such
-   * a field, GetAlignedPointerFromInternalField must be used, everything else
+   * Sets a (2^kSmiTagSize)-byte-aligned native pointer in an internal
+   * field. To retrieve such a field,
+   * GetAlignedPointerFromInternalField must be used, everything else
    * leads to undefined behavior.
    */
   void SetAlignedPointerInInternalField(int index, void* value);
@@ -5234,17 +5236,19 @@ class V8_EXPORT Context {
   void SetEmbedderData(int index, Handle<Value> value);
 
   /**
-   * Gets a 2-byte-aligned native pointer from the embedder data with the given
-   * index, which must have bees set by a previous call to
-   * SetAlignedPointerInEmbedderData with the same index. Note that index 0
-   * currently has a special meaning for Chrome's debugger.
+   * Gets a (2^kSmiTagSize)-byte-aligned native pointer from the
+   * embedder data with the given index, which must have bees set by a
+   * previous call to SetAlignedPointerInEmbedderData with the same
+   * index. Note that index 0 currently has a special meaning for
+   * Chrome's debugger.
    */
   V8_INLINE void* GetAlignedPointerFromEmbedderData(int index);
 
   /**
-   * Sets a 2-byte-aligned native pointer in the embedder data with the given
-   * index, growing the data as needed. Note that index 0 currently has a
-   * special meaning for Chrome's debugger.
+   * Sets a (2^kSmiTagSize)-byte-aligned native pointer in the
+   * embedder data with the given index, growing the data as
+   * needed. Note that index 0 currently has a special meaning for
+   * Chrome's debugger.
    */
   void SetAlignedPointerInEmbedderData(int index, void* value);
 

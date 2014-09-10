@@ -195,13 +195,13 @@ class StubCache {
 
   // Hash algorithm for the primary table.  This algorithm is replicated in
   // assembler for every architecture.  Returns an index into the table that
-  // is scaled by 1 << kHeapObjectTagSize.
+  // is scaled by 1 << Name::kHashShift.
   static int PrimaryOffset(Name* name, Code::Flags flags, Map* map) {
-    // This works well because the heap object tag size and the hash
-    // shift are equal.  Shifting down the length field to get the
+    // This works well because the hash shift is not greater than the heap
+    // object tag size.  Shifting down the length field to get the
     // hash code would effectively throw away two bits of the hash
     // code.
-    STATIC_ASSERT(kHeapObjectTagSize == Name::kHashShift);
+    STATIC_ASSERT(kHeapObjectTagSize >= Name::kHashShift);
     // Compute the hash of the name (use entire hash field).
     ASSERT(name->HasHashCode());
     uint32_t field = name->hash_field();
@@ -216,12 +216,12 @@ class StubCache {
         (static_cast<uint32_t>(flags) & ~Code::kFlagsNotUsedInLookup);
     // Base the offset on a simple combination of name, flags, and map.
     uint32_t key = (map_low32bits + field) ^ iflags;
-    return key & ((kPrimaryTableSize - 1) << kHeapObjectTagSize);
+    return key & ((kPrimaryTableSize - 1) << Name::kHashShift);
   }
 
   // Hash algorithm for the secondary table.  This algorithm is replicated in
   // assembler for every architecture.  Returns an index into the table that
-  // is scaled by 1 << kHeapObjectTagSize.
+  // is scaled by 1 << Name::kHashShift.
   static int SecondaryOffset(Name* name, Code::Flags flags, int seed) {
     // Use the seed from the primary cache in the secondary cache.
     uint32_t name_low32bits =
@@ -231,7 +231,7 @@ class StubCache {
     uint32_t iflags =
         (static_cast<uint32_t>(flags) & ~Code::kFlagsNotUsedInLookup);
     uint32_t key = (seed - name_low32bits) + iflags;
-    return key & ((kSecondaryTableSize - 1) << kHeapObjectTagSize);
+    return key & ((kSecondaryTableSize - 1) << Name::kHashShift);
   }
 
   // Compute the entry for a given offset in exactly the same way as
