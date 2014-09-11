@@ -369,7 +369,7 @@ void PPCDebugger::Debug() {
           } else if (strcmp(arg1, "allf") == 0) {
             for (int i = 0; i < DoubleRegister::kNumRegisters; i++) {
               dvalue = GetFPDoubleRegisterValue(i);
-              uint64_t as_words = BitCast<uint64_t>(dvalue);
+              uint64_t as_words = bit_cast<uint64_t>(dvalue);
               PrintF("%3s: %f 0x%08x %08x\n",
                      FPRegisters::Name(i),
                      dvalue,
@@ -394,7 +394,7 @@ void PPCDebugger::Debug() {
               PrintF("%s: 0x%08" V8PRIxPTR " %" V8PRIdPTR "\n",
                      arg1, value, value);
             } else if (GetFPDoubleValue(arg1, &dvalue)) {
-              uint64_t as_words = BitCast<uint64_t>(dvalue);
+              uint64_t as_words = bit_cast<uint64_t>(dvalue);
               PrintF("%s: %f 0x%08x %08x\n",
                      arg1,
                      dvalue,

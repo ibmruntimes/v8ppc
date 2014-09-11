@@ -1955,7 +1955,7 @@ void SimpleAccessorSetter(Local<String> name, Local<Value> value,
   Handle<Object> self = Handle<Object>::Cast(info.This());
   self->Set(String::Concat(v8_str("accessor_"), name), value);
 }
-#endif
+
 
 void SymbolAccessorGetter(Local<Name> name,
                           const v8::PropertyCallbackInfo<v8::Value>& info) {
@@ -1966,6 +1966,7 @@ void SymbolAccessorGetter(Local<Name> name,
   SimpleAccessorGetter(Local<String>::Cast(sym->Name()), info);
 }
 
+
 void SymbolAccessorSetter(Local<Name> name, Local<Value> value,
                           const v8::PropertyCallbackInfo<void>& info) {
   CHECK(name->IsSymbol());
@@ -1974,6 +1975,7 @@ void SymbolAccessorSetter(Local<Name> name, Local<Value> value,
     return;
   SimpleAccessorSetter(Local<String>::Cast(sym->Name()), value, info);
 }
+#endif
 
 
 // AIX Workaround: file split into two parts: test-api.cc and test-api2.cc

@@ -1,8 +1,9 @@
 // Copyright 2014 the V8 project authors. All rights reserved.
-// Use of this source code is governed by a BSD-style license that can be
-// found in the LICENSE file.
 //
 // Copyright IBM Corp. 2012, 2013. All rights reserved.
+//
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
 
 #include "src/v8.h"
 
@@ -24,8 +25,8 @@ void PropertyAccessCompiler::GenerateTailCall(MacroAssembler* masm,
 
 Register* PropertyAccessCompiler::load_calling_convention() {
   // receiver, name, scratch1, scratch2, scratch3, scratch4.
-  Register receiver = LoadConvention::ReceiverRegister();
-  Register name = LoadConvention::NameRegister();
+  Register receiver = LoadDescriptor::ReceiverRegister();
+  Register name = LoadDescriptor::NameRegister();
   static Register registers[] = {receiver, name, r6, r3, r7, r8};
   return registers;
 }
@@ -33,9 +34,9 @@ Register* PropertyAccessCompiler::load_calling_convention() {
 
 Register* PropertyAccessCompiler::store_calling_convention() {
   // receiver, name, scratch1, scratch2, scratch3.
-  Register receiver = StoreConvention::ReceiverRegister();
-  Register name = StoreConvention::NameRegister();
-  DCHECK(r6.is(StoreConvention::MapRegister()));
+  Register receiver = StoreDescriptor::ReceiverRegister();
+  Register name = StoreDescriptor::NameRegister();
+  DCHECK(r6.is(ElementTransitionAndStoreDescriptor::MapRegister()));
   static Register registers[] = {receiver, name, r6, r7, r8};
   return registers;
 }

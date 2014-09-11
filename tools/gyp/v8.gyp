@@ -1119,7 +1119,6 @@
             '../../src/ic/ppc/handler-compiler-ppc.cc',
             '../../src/ic/ppc/ic-ppc.cc',
             '../../src/ic/ppc/ic-compiler-ppc.cc',
-            '../../src/ic/ppc/ic-conventions-ppc.cc',
             '../../src/ic/ppc/stub-cache-ppc.cc',
           ],
         }],

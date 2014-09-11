@@ -13,6 +13,7 @@
 #if V8_TARGET_ARCH_PPC
 
 #include "src/base/bits.h"
+#include "src/base/division-by-constant.h"
 #include "src/bootstrapper.h"
 #include "src/codegen.h"
 #include "src/cpu-profiler.h"
@@ -344,8 +345,8 @@ void MacroAssembler::RecordWriteField(
   // Clobber clobbered input registers when running with the debug-code flag
   // turned on to provoke errors.
   if (emit_debug_code()) {
-    mov(value, Operand(BitCast<intptr_t>(kZapValue + 4)));
-    mov(dst, Operand(BitCast<intptr_t>(kZapValue + 8)));
+    mov(value, Operand(bit_cast<intptr_t>(kZapValue + 4)));
+    mov(dst, Operand(bit_cast<intptr_t>(kZapValue + 8)));
   }
 }
 
@@ -416,8 +417,8 @@ void MacroAssembler::RecordWriteForMap(Register object,
   // Clobber clobbered registers when running with the debug-code flag
   // turned on to provoke errors.
   if (emit_debug_code()) {
-    mov(dst, Operand(BitCast<intptr_t>(kZapValue + 12)));
-    mov(map, Operand(BitCast<intptr_t>(kZapValue + 16)));
+    mov(dst, Operand(bit_cast<intptr_t>(kZapValue + 12)));
+    mov(map, Operand(bit_cast<intptr_t>(kZapValue + 16)));
   }
 }
 
@@ -490,8 +491,8 @@ void MacroAssembler::RecordWrite(
   // Clobber clobbered registers when running with the debug-code flag
   // turned on to provoke errors.
   if (emit_debug_code()) {
-    mov(address, Operand(BitCast<intptr_t>(kZapValue + 12)));
-    mov(value, Operand(BitCast<intptr_t>(kZapValue + 16)));
+    mov(address, Operand(bit_cast<intptr_t>(kZapValue + 12)));
+    mov(value, Operand(bit_cast<intptr_t>(kZapValue + 16)));
   }
 }
 
@@ -5104,16 +5105,18 @@ void MacroAssembler::TruncatingDiv(Register result,
   DCHECK(!dividend.is(result));
   DCHECK(!dividend.is(r0));
   DCHECK(!result.is(r0));
-  MultiplierAndShift ms(divisor);
-  mov(r0, Operand(ms.multiplier()));
+  base::MagicNumbersForDivision<uint32_t> mag =
+      base::SignedDivisionByConstant(static_cast<uint32_t>(divisor));
+  mov(r0, Operand(mag.multiplier));
   mulhw(result, dividend, r0);
-  if (divisor > 0 && ms.multiplier() < 0) {
+  bool neg = (mag.multiplier & (static_cast<uint32_t>(1) << 31)) != 0;
+  if (divisor > 0 && neg) {
     add(result, result, dividend);
   }
-  if (divisor < 0 && ms.multiplier() > 0) {
+  if (divisor < 0 && !neg && mag.multiplier > 0) {
     sub(result, result, dividend);
   }
-  if (ms.shift() > 0) srawi(result, result, ms.shift());
+  if (mag.shift > 0) srawi(result, result, mag.shift);
   ExtractBit(r0, dividend, 31);
   add(result, result, r0);
 }

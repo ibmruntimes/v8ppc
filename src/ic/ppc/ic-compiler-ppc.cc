@@ -1,4 +1,7 @@
 // Copyright 2014 the V8 project authors. All rights reserved.
+//
+// Copyright IBM Corp. 2012, 2013. All rights reserved.
+//
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -16,8 +19,8 @@ namespace internal {
 
 void PropertyICCompiler::GenerateRuntimeSetProperty(MacroAssembler* masm,
                                                     StrictMode strict_mode) {
-  __ Push(StoreConvention::ReceiverRegister(), StoreConvention::NameRegister(),
-          StoreConvention::ValueRegister());
+  __ Push(StoreDescriptor::ReceiverRegister(), StoreDescriptor::NameRegister(),
+          StoreDescriptor::ValueRegister());
 
   __ mov(r0, Operand(Smi::FromInt(strict_mode)));
   __ Push(r0);
@@ -57,7 +60,7 @@ Handle<Code> PropertyICCompiler::CompilePolymorphic(TypeHandleList* types,
   // Polymorphic keyed stores may use the map register
   Register map_reg = scratch1();
   DCHECK(kind() != Code::KEYED_STORE_IC ||
-         map_reg.is(StoreConvention::MapRegister()));
+         map_reg.is(ElementTransitionAndStoreDescriptor::MapRegister()));
 
   int receiver_count = types->length();
   int number_of_handled_maps = 0;
@@ -100,10 +103,7 @@ Handle<Code> PropertyICCompiler::CompileKeyedStorePolymorphic(
     __ mov(ip, Operand(receiver_maps->at(i)));
     __ cmp(scratch1(), ip);
     if (transitioned_maps->at(i).is_null()) {
-      Label skip;
-      __ bne(&skip);
-      __ Jump(handler_stubs->at(i), RelocInfo::CODE_TARGET);
-      __ bind(&skip);
+      __ Jump(handler_stubs->at(i), RelocInfo::CODE_TARGET, eq);
     } else {
       Label next_map;
       __ bne(&next_map);
