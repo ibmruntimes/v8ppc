@@ -6,6 +6,7 @@
 
 #if V8_TARGET_ARCH_ARM64
 
+#include "src/code-factory.h"
 #include "src/code-stubs.h"
 #include "src/codegen.h"
 #include "src/compiler.h"
@@ -1050,7 +1051,8 @@ void FullCodeGenerator::VisitSwitchStatement(SwitchStatement* stmt) {
 
     // Record position before stub call for type feedback.
     SetSourcePosition(clause->position());
-    Handle<Code> ic = CompareIC::GetUninitialized(isolate(), Token::EQ_STRICT);
+    Handle<Code> ic =
+        CodeFactory::CompareIC(isolate(), Token::EQ_STRICT).code();
     CallIC(ic, clause->CompareId());
     patch_site.EmitPatchInfo();
 
@@ -1318,9 +1320,7 @@ void FullCodeGenerator::EmitNewClosure(Handle<SharedFunctionInfo> info,
       !pretenure &&
       scope()->is_function_scope() &&
       info->num_literals() == 0) {
-    FastNewClosureStub stub(isolate(),
-                            info->strict_mode(),
-                            info->is_generator());
+    FastNewClosureStub stub(isolate(), info->strict_mode(), info->kind());
     __ Mov(x2, Operand(info));
     __ CallStub(&stub);
   } else {
@@ -1962,7 +1962,7 @@ void FullCodeGenerator::EmitNamedPropertyLoad(Property* prop) {
 void FullCodeGenerator::EmitKeyedPropertyLoad(Property* prop) {
   SetSourcePosition(prop->position());
   // Call keyed load IC. It has arguments key and receiver in r0 and r1.
-  Handle<Code> ic = isolate()->builtins()->KeyedLoadIC_Initialize();
+  Handle<Code> ic = CodeFactory::KeyedLoadIC(isolate()).code();
   if (FLAG_vector_ics) {
     __ Mov(VectorLoadICDescriptor::SlotRegister(),
            Smi::FromInt(prop->PropertyFeedbackSlot()));
@@ -1992,10 +1992,11 @@ void FullCodeGenerator::EmitInlineSmiBinaryOp(BinaryOperation* expr,
   patch_site.EmitJumpIfSmi(x10, &both_smis);
 
   __ Bind(&stub_call);
-  BinaryOpICStub stub(isolate(), op, mode);
+
+  Handle<Code> code = CodeFactory::BinaryOpIC(isolate(), op, mode).code();
   {
     Assembler::BlockPoolsScope scope(masm_);
-    CallIC(stub.GetCode(), expr->BinaryOperationFeedbackId());
+    CallIC(code, expr->BinaryOperationFeedbackId());
     patch_site.EmitPatchInfo();
   }
   __ B(&done);
@@ -2076,11 +2077,11 @@ void FullCodeGenerator::EmitBinaryOp(BinaryOperation* expr,
                                      Token::Value op,
                                      OverwriteMode mode) {
   __ Pop(x1);
-  BinaryOpICStub stub(isolate(), op, mode);
+  Handle<Code> code = CodeFactory::BinaryOpIC(isolate(), op, mode).code();
   JumpPatchSite patch_site(masm_);    // Unbound, signals no inlined smi code.
   {
     Assembler::BlockPoolsScope scope(masm_);
-    CallIC(stub.GetCode(), expr->BinaryOperationFeedbackId());
+    CallIC(code, expr->BinaryOperationFeedbackId());
     patch_site.EmitPatchInfo();
   }
   context()->Plug(x0);
@@ -2127,9 +2128,8 @@ void FullCodeGenerator::EmitAssignment(Expression* expr) {
       __ Mov(StoreDescriptor::NameRegister(), x0);
       __ Pop(StoreDescriptor::ReceiverRegister(),
              StoreDescriptor::ValueRegister());
-      Handle<Code> ic = strict_mode() == SLOPPY
-          ? isolate()->builtins()->KeyedStoreIC_Initialize()
-          : isolate()->builtins()->KeyedStoreIC_Initialize_Strict();
+      Handle<Code> ic =
+          CodeFactory::KeyedStoreIC(isolate(), strict_mode()).code();
       CallIC(ic);
       break;
     }
@@ -2249,9 +2249,7 @@ void FullCodeGenerator::EmitKeyedPropertyAssignment(Assignment* expr) {
   __ Pop(StoreDescriptor::NameRegister(), StoreDescriptor::ReceiverRegister());
   DCHECK(StoreDescriptor::ValueRegister().is(x0));
 
-  Handle<Code> ic = strict_mode() == SLOPPY
-      ? isolate()->builtins()->KeyedStoreIC_Initialize()
-      : isolate()->builtins()->KeyedStoreIC_Initialize_Strict();
+  Handle<Code> ic = CodeFactory::KeyedStoreIC(isolate(), strict_mode()).code();
   CallIC(ic, expr->AssignmentFeedbackId());
 
   PrepareForBailoutForId(expr->AssignmentId(), TOS_REG);
@@ -3506,8 +3504,8 @@ void FullCodeGenerator::EmitGetCachedArrayIndex(CallRuntime* expr) {
 }
 
 
-void FullCodeGenerator::EmitFastAsciiArrayJoin(CallRuntime* expr) {
-  ASM_LOCATION("FullCodeGenerator::EmitFastAsciiArrayJoin");
+void FullCodeGenerator::EmitFastOneByteArrayJoin(CallRuntime* expr) {
+  ASM_LOCATION("FullCodeGenerator::EmitFastOneByteArrayJoin");
 
   ZoneList<Expression*>* args = expr->arguments();
   DCHECK(args->length() == 2);
@@ -3559,7 +3557,7 @@ void FullCodeGenerator::EmitFastAsciiArrayJoin(CallRuntime* expr) {
   // Get the FixedArray containing array's elements.
   __ Ldr(elements, FieldMemOperand(array, JSArray::kElementsOffset));
 
-  // Check that all array elements are sequential ASCII strings, and
+  // Check that all array elements are sequential one-byte strings, and
   // accumulate the sum of their lengths.
   __ Mov(string_length, 0);
   __ Add(element, elements, FixedArray::kHeaderSize - kHeapObjectTag);
@@ -3574,14 +3572,14 @@ void FullCodeGenerator::EmitFastAsciiArrayJoin(CallRuntime* expr) {
   //   elements_end: Array end.
   if (FLAG_debug_code) {
     __ Cmp(array_length, 0);
-    __ Assert(gt, kNoEmptyArraysHereInEmitFastAsciiArrayJoin);
+    __ Assert(gt, kNoEmptyArraysHereInEmitFastOneByteArrayJoin);
   }
   __ Bind(&loop);
   __ Ldr(string, MemOperand(element, kPointerSize, PostIndex));
   __ JumpIfSmi(string, &bailout);
   __ Ldr(scratch1, FieldMemOperand(string, HeapObject::kMapOffset));
   __ Ldrb(scratch1, FieldMemOperand(scratch1, Map::kInstanceTypeOffset));
-  __ JumpIfInstanceTypeIsNotSequentialAscii(scratch1, scratch2, &bailout);
+  __ JumpIfInstanceTypeIsNotSequentialOneByte(scratch1, scratch2, &bailout);
   __ Ldrsw(scratch1,
            UntagSmiFieldMemOperand(string, SeqOneByteString::kLengthOffset));
   __ Adds(string_length, string_length, scratch1);
@@ -3603,11 +3601,11 @@ void FullCodeGenerator::EmitFastAsciiArrayJoin(CallRuntime* expr) {
   //   string_length: Sum of string lengths (not smi).
   //   elements: FixedArray of strings.
 
-  // Check that the separator is a flat ASCII string.
+  // Check that the separator is a flat one-byte string.
   __ JumpIfSmi(separator, &bailout);
   __ Ldr(scratch1, FieldMemOperand(separator, HeapObject::kMapOffset));
   __ Ldrb(scratch1, FieldMemOperand(scratch1, Map::kInstanceTypeOffset));
-  __ JumpIfInstanceTypeIsNotSequentialAscii(scratch1, scratch2, &bailout);
+  __ JumpIfInstanceTypeIsNotSequentialOneByte(scratch1, scratch2, &bailout);
 
   // Add (separator length times array_length) - separator length to the
   // string_length to get the length of the result string.
@@ -3627,13 +3625,13 @@ void FullCodeGenerator::EmitFastAsciiArrayJoin(CallRuntime* expr) {
   //   separator: Separator string
   //   string_length: Length of result string (not smi)
   //   array_length: Length of the array (not smi).
-  __ AllocateAsciiString(result, string_length, scratch1, scratch2, scratch3,
-                         &bailout);
+  __ AllocateOneByteString(result, string_length, scratch1, scratch2, scratch3,
+                           &bailout);
 
   // Prepare for looping. Set up elements_end to end of the array. Set
   // result_pos to the position of the result where to write the first
   // character.
-  // TODO(all): useless unless AllocateAsciiString trashes the register.
+  // TODO(all): useless unless AllocateOneByteString trashes the register.
   __ Add(elements_end, element, Operand(array_length, LSL, kPointerSizeLog2));
   __ Add(result_pos, result, SeqOneByteString::kHeaderSize - kHeapObjectTag);
 
@@ -3661,7 +3659,7 @@ void FullCodeGenerator::EmitFastAsciiArrayJoin(CallRuntime* expr) {
 
   // One-character separator case
   __ Bind(&one_char_separator);
-  // Replace separator with its ASCII character value.
+  // Replace separator with its one-byte character value.
   __ Ldrb(separator, FieldMemOperand(separator, SeqOneByteString::kHeaderSize));
   // Jump into the loop after the code that copies the separator, so the first
   // element is not preceded by a separator
@@ -3672,7 +3670,7 @@ void FullCodeGenerator::EmitFastAsciiArrayJoin(CallRuntime* expr) {
   //   result_pos: the position to which we are currently copying characters.
   //   element: Current array element.
   //   elements_end: Array end.
-  //   separator: Single separator ASCII char (in lower byte).
+  //   separator: Single separator one-byte char (in lower byte).
 
   // Copy the separator character to the result.
   __ Strb(separator, MemOperand(result_pos, 1, PostIndex));
@@ -4024,8 +4022,9 @@ void FullCodeGenerator::VisitCountOperation(CountOperation* expr) {
 
   {
     Assembler::BlockPoolsScope scope(masm_);
-    BinaryOpICStub stub(isolate(), Token::ADD, NO_OVERWRITE);
-    CallIC(stub.GetCode(), expr->CountBinOpFeedbackId());
+    Handle<Code> code =
+        CodeFactory::BinaryOpIC(isolate(), Token::ADD, NO_OVERWRITE).code();
+    CallIC(code, expr->CountBinOpFeedbackId());
     patch_site.EmitPatchInfo();
   }
   __ Bind(&done);
@@ -4070,9 +4069,8 @@ void FullCodeGenerator::VisitCountOperation(CountOperation* expr) {
     case KEYED_PROPERTY: {
       __ Pop(StoreDescriptor::NameRegister());
       __ Pop(StoreDescriptor::ReceiverRegister());
-      Handle<Code> ic = strict_mode() == SLOPPY
-          ? isolate()->builtins()->KeyedStoreIC_Initialize()
-          : isolate()->builtins()->KeyedStoreIC_Initialize_Strict();
+      Handle<Code> ic =
+          CodeFactory::KeyedStoreIC(isolate(), strict_mode()).code();
       CallIC(ic, expr->CountStoreFeedbackId());
       PrepareForBailoutForId(expr->AssignmentId(), TOS_REG);
       if (expr->is_postfix()) {
@@ -4270,7 +4268,7 @@ void FullCodeGenerator::VisitCompareOperation(CompareOperation* expr) {
 
       // Record position and call the compare IC.
       SetSourcePosition(expr->position());
-      Handle<Code> ic = CompareIC::GetUninitialized(isolate(), op);
+      Handle<Code> ic = CodeFactory::CompareIC(isolate(), op).code();
       CallIC(ic, expr->CompareOperationFeedbackId());
       patch_site.EmitPatchInfo();
       PrepareForBailoutBeforeSplit(expr, true, if_true, if_false);
@@ -4456,7 +4454,7 @@ void FullCodeGenerator::VisitYield(Yield* expr) {
         __ Mov(VectorLoadICDescriptor::SlotRegister(),
                Smi::FromInt(expr->KeyedLoadFeedbackSlot()));
       }
-      Handle<Code> ic = isolate()->builtins()->KeyedLoadIC_Initialize();
+      Handle<Code> ic = CodeFactory::KeyedLoadIC(isolate()).code();
       CallIC(ic, TypeFeedbackId::None());
       __ Mov(x1, x0);
       __ Poke(x1, 2 * kPointerSize);

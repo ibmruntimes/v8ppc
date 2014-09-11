@@ -4,6 +4,7 @@
 
 #include "src/v8.h"
 
+#include "src/code-factory.h"
 #include "src/codegen.h"
 #include "src/compiler.h"
 #include "src/debug.h"
@@ -408,14 +409,13 @@ void FullCodeGenerator::PrepareForBailout(Expression* node, State state) {
 
 void FullCodeGenerator::CallLoadIC(ContextualMode contextual_mode,
                                    TypeFeedbackId id) {
-  ExtraICState extra_state = LoadIC::ComputeExtraICState(contextual_mode);
-  Handle<Code> ic = LoadIC::initialize_stub(isolate(), extra_state);
+  Handle<Code> ic = CodeFactory::LoadIC(isolate(), contextual_mode).code();
   CallIC(ic, id);
 }
 
 
 void FullCodeGenerator::CallStoreIC(TypeFeedbackId id) {
-  Handle<Code> ic = StoreIC::initialize_stub(isolate(), strict_mode());
+  Handle<Code> ic = CodeFactory::StoreIC(isolate(), strict_mode()).code();
   CallIC(ic, id);
 }
 
@@ -1547,11 +1547,9 @@ void FullCodeGenerator::VisitNativeFunctionLiteral(
   const int literals = fun->NumberOfLiterals();
   Handle<Code> code = Handle<Code>(fun->shared()->code());
   Handle<Code> construct_stub = Handle<Code>(fun->shared()->construct_stub());
-  bool is_generator = false;
-  bool is_arrow = false;
   Handle<SharedFunctionInfo> shared =
       isolate()->factory()->NewSharedFunctionInfo(
-          name, literals, is_generator, is_arrow, code,
+          name, literals, FunctionKind::kNormalFunction, code,
           Handle<ScopeInfo>(fun->shared()->scope_info()),
           Handle<FixedArray>(fun->shared()->feedback_vector()));
   shared->set_construct_stub(*construct_stub);

@@ -139,7 +139,11 @@ void CompilationInfo::Initialize(Isolate* isolate,
   if (script_->type()->value() == Script::TYPE_NATIVE) MarkAsNative();
   if (isolate_->debug()->is_active()) MarkAsDebug();
   if (FLAG_context_specialization) MarkAsContextSpecializing();
+  if (FLAG_turbo_inlining) MarkAsInliningEnabled();
+#if !V8_TARGET_ARCH_ARM64
+  // TODO(mstarzinger): Bugs in ARM64 back-end block enabling typed pipeline.
   if (FLAG_turbo_types) MarkAsTypingEnabled();
+#endif
 
   if (!shared_info_.is_null()) {
     DCHECK(strict_mode() == SLOPPY);
@@ -654,8 +658,7 @@ static void SetFunctionInfo(Handle<SharedFunctionInfo> function_info,
   function_info->set_is_function(lit->is_function());
   function_info->set_bailout_reason(lit->dont_optimize_reason());
   function_info->set_dont_cache(lit->flags()->Contains(kDontCache));
-  function_info->set_is_generator(lit->is_generator());
-  function_info->set_is_arrow(lit->is_arrow());
+  function_info->set_kind(lit->kind());
 }
 
 
@@ -871,9 +874,8 @@ static Handle<SharedFunctionInfo> CompileToplevel(CompilationInfo* info) {
     // Allocate function.
     DCHECK(!info->code().is_null());
     result = isolate->factory()->NewSharedFunctionInfo(
-        lit->name(), lit->materialized_literal_count(), lit->is_generator(),
-        lit->is_arrow(), info->code(),
-        ScopeInfo::Create(info->scope(), info->zone()),
+        lit->name(), lit->materialized_literal_count(), lit->kind(),
+        info->code(), ScopeInfo::Create(info->scope(), info->zone()),
         info->feedback_vector());
 
     DCHECK_EQ(RelocInfo::kNoPosition, lit->function_token_position());
@@ -1094,9 +1096,8 @@ Handle<SharedFunctionInfo> Compiler::BuildFunctionInfo(
 
   // Create a shared function info object.
   Handle<SharedFunctionInfo> result = factory->NewSharedFunctionInfo(
-      literal->name(), literal->materialized_literal_count(),
-      literal->is_generator(), literal->is_arrow(), info.code(), scope_info,
-      info.feedback_vector());
+      literal->name(), literal->materialized_literal_count(), literal->kind(),
+      info.code(), scope_info, info.feedback_vector());
   SetFunctionInfo(result, literal, false, script);
   RecordFunctionCompilation(Logger::FUNCTION_TAG, &info, result);
   result->set_allows_lazy_compilation(allow_lazy);

@@ -31,13 +31,10 @@ class ChangesLoweringTester : public GraphBuilderTester<ReturnType> {
   explicit ChangesLoweringTester(MachineType p0 = kMachNone)
       : GraphBuilderTester<ReturnType>(p0),
         typer(this->zone()),
-        javascript(this->zone()),
-        jsgraph(this->graph(), this->common(), &javascript, &typer,
-                this->machine()),
+        jsgraph(this->graph(), this->common(), &typer),
         function(Handle<JSFunction>::null()) {}
 
   Typer typer;
-  JSOperatorBuilder javascript;
   JSGraph jsgraph;
   Handle<JSFunction> function;
 
@@ -102,7 +99,7 @@ class ChangesLoweringTester : public GraphBuilderTester<ReturnType> {
     CHECK(this->isolate()->factory()->NewNumber(expected)->SameValue(number));
   }
 
-  void BuildAndLower(Operator* op) {
+  void BuildAndLower(const Operator* op) {
     // We build a graph by hand here, because the raw machine assembler
     // does not add the correct control and effect nodes.
     Node* p0 = this->Parameter(0);
@@ -114,7 +111,8 @@ class ChangesLoweringTester : public GraphBuilderTester<ReturnType> {
     LowerChange(change);
   }
 
-  void BuildStoreAndLower(Operator* op, Operator* store_op, void* location) {
+  void BuildStoreAndLower(const Operator* op, const Operator* store_op,
+                          void* location) {
     // We build a graph by hand here, because the raw machine assembler
     // does not add the correct control and effect nodes.
     Node* p0 = this->Parameter(0);
@@ -129,7 +127,8 @@ class ChangesLoweringTester : public GraphBuilderTester<ReturnType> {
     LowerChange(change);
   }
 
-  void BuildLoadAndLower(Operator* op, Operator* load_op, void* location) {
+  void BuildLoadAndLower(const Operator* op, const Operator* load_op,
+                         void* location) {
     // We build a graph by hand here, because the raw machine assembler
     // does not add the correct control and effect nodes.
     Node* load =
@@ -223,9 +222,10 @@ TEST(RunChangeTaggedToFloat64) {
   ChangesLoweringTester<int32_t> t(kMachAnyTagged);
   double result;
 
-  t.BuildStoreAndLower(t.simplified()->ChangeTaggedToFloat64(),
-                       t.machine()->Store(kMachFloat64, kNoWriteBarrier),
-                       &result);
+  t.BuildStoreAndLower(
+      t.simplified()->ChangeTaggedToFloat64(),
+      t.machine()->Store(StoreRepresentation(kMachFloat64, kNoWriteBarrier)),
+      &result);
 
   if (Pipeline::SupportedTarget()) {
     FOR_INT32_INPUTS(i) {

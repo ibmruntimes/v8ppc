@@ -15,13 +15,12 @@ namespace compiler {
 class MachineOperatorReducerTest : public GraphTest {
  public:
   explicit MachineOperatorReducerTest(int num_parameters = 2)
-      : GraphTest(num_parameters), machine_(zone()) {}
+      : GraphTest(num_parameters) {}
 
  protected:
   Reduction Reduce(Node* node) {
     Typer typer(zone());
-    JSOperatorBuilder javascript(zone());
-    JSGraph jsgraph(graph(), common(), &javascript, &typer, &machine_);
+    JSGraph jsgraph(graph(), common(), &typer);
     MachineOperatorReducer reducer(&jsgraph);
     return reducer.Reduce(node);
   }
@@ -165,7 +164,7 @@ static const uint32_t kUint32Values[] = {
 namespace {
 
 struct UnaryOperator {
-  Operator* (MachineOperatorBuilder::*constructor)();
+  const Operator* (MachineOperatorBuilder::*constructor)();
   const char* constructor_name;
 };
 

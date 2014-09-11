@@ -23,26 +23,21 @@ class StringHelper : public AllStatic {
                                      Register count,
                                      String::Encoding encoding);
 
-  // Compares two flat ASCII strings and returns result in rax.
-  static void GenerateCompareFlatAsciiStrings(
+  // Compares two flat one-byte strings and returns result in rax.
+  static void GenerateCompareFlatOneByteStrings(
       MacroAssembler* masm, Register left, Register right, Register scratch1,
       Register scratch2, Register scratch3, Register scratch4);
 
-  // Compares two flat ASCII strings for equality and returns result in rax.
-  static void GenerateFlatAsciiStringEquals(MacroAssembler* masm,
-                                            Register left,
-                                            Register right,
-                                            Register scratch1,
-                                            Register scratch2);
+  // Compares two flat one-byte strings for equality and returns result in rax.
+  static void GenerateFlatOneByteStringEquals(MacroAssembler* masm,
+                                              Register left, Register right,
+                                              Register scratch1,
+                                              Register scratch2);
 
  private:
-  static void GenerateAsciiCharsCompareLoop(
-      MacroAssembler* masm,
-      Register left,
-      Register right,
-      Register length,
-      Register scratch,
-      Label* chars_not_equal,
+  static void GenerateOneByteCharsCompareLoop(
+      MacroAssembler* masm, Register left, Register right, Register length,
+      Register scratch, Label* chars_not_equal,
       Label::Distance near_jump = Label::kFar);
 
   DISALLOW_IMPLICIT_CONSTRUCTORS(StringHelper);
@@ -109,6 +104,7 @@ class NameDictionaryLookupStub: public PlatformCodeStub {
   class IndexBits: public BitField<int, 8, 4> {};
   class LookupModeBits: public BitField<LookupMode, 12, 1> {};
 
+  DEFINE_NULL_CALL_INTERFACE_DESCRIPTOR();
   DEFINE_PLATFORM_CODE_STUB(NameDictionaryLookup, PlatformCodeStub);
 };
 
@@ -186,6 +182,8 @@ class RecordWriteStub: public PlatformCodeStub {
     DCHECK(GetMode(stub) == mode);
     CpuFeatures::FlushICache(stub->instruction_start(), 7);
   }
+
+  DEFINE_NULL_CALL_INTERFACE_DESCRIPTOR();
 
  private:
   // This is a helper class for freeing up 3 scratch registers, where the third

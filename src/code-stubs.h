@@ -189,10 +189,7 @@ class CodeStub BASE_EMBEDDED {
   // Lookup the code in the (possibly custom) cache.
   bool FindCodeInCache(Code** code_out);
 
-  virtual CallInterfaceDescriptor GetCallInterfaceDescriptor() {
-    UNREACHABLE();  // Default returns an uninitialized descriptor.
-    return CallInterfaceDescriptor();
-  }
+  virtual CallInterfaceDescriptor GetCallInterfaceDescriptor() = 0;
 
   virtual void InitializeDescriptor(CodeStubDescriptor* descriptor) {}
 
@@ -321,6 +318,16 @@ class CodeStub BASE_EMBEDDED {
  public:                                                                  \
   virtual CallInterfaceDescriptor GetCallInterfaceDescriptor() OVERRIDE { \
     return NAME##Descriptor(isolate());                                   \
+  }
+
+// There are some code stubs we just can't describe right now with a
+// CallInterfaceDescriptor. Isolate behavior for those cases with this macro.
+// An attempt to retrieve a descriptor will fail.
+#define DEFINE_NULL_CALL_INTERFACE_DESCRIPTOR()                           \
+ public:                                                                  \
+  virtual CallInterfaceDescriptor GetCallInterfaceDescriptor() OVERRIDE { \
+    UNREACHABLE();                                                        \
+    return CallInterfaceDescriptor();                                     \
   }
 
 
@@ -562,21 +569,27 @@ class NumberToStringStub FINAL : public HydrogenCodeStub {
 class FastNewClosureStub : public HydrogenCodeStub {
  public:
   FastNewClosureStub(Isolate* isolate, StrictMode strict_mode,
-                     bool is_generator)
+                     FunctionKind kind)
       : HydrogenCodeStub(isolate) {
+    DCHECK(IsValidFunctionKind(kind));
     set_sub_minor_key(StrictModeBits::encode(strict_mode) |
-                      IsGeneratorBits::encode(is_generator));
+                      FunctionKindBits::encode(kind));
   }
 
   StrictMode strict_mode() const {
     return StrictModeBits::decode(sub_minor_key());
   }
 
-  bool is_generator() const { return IsGeneratorBits::decode(sub_minor_key()); }
+  FunctionKind kind() const {
+    return FunctionKindBits::decode(sub_minor_key());
+  }
+  bool is_arrow() const { return IsArrowFunction(kind()); }
+  bool is_generator() const { return IsGeneratorFunction(kind()); }
+  bool is_concise_method() const { return IsConciseMethod(kind()); }
 
  private:
   class StrictModeBits : public BitField<StrictMode, 0, 1> {};
-  class IsGeneratorBits : public BitField<bool, 1, 1> {};
+  class FunctionKindBits : public BitField<FunctionKind, 1, 3> {};
 
   DEFINE_CALL_INTERFACE_DESCRIPTOR(FastNewClosure);
   DEFINE_HYDROGEN_CODE_STUB(FastNewClosure, HydrogenCodeStub);
@@ -675,6 +688,13 @@ class InstanceofStub: public PlatformCodeStub {
   static Register left() { return InstanceofDescriptor::left(); }
   static Register right() { return InstanceofDescriptor::right(); }
 
+  virtual CallInterfaceDescriptor GetCallInterfaceDescriptor() OVERRIDE {
+    if (HasArgsInRegisters()) {
+      return InstanceofDescriptor(isolate());
+    }
+    return ContextOnlyDescriptor(isolate());
+  }
+
  private:
   Flags flags() const { return FlagBits::decode(minor_key_); }
 
@@ -692,7 +712,6 @@ class InstanceofStub: public PlatformCodeStub {
 
   class FlagBits : public BitField<Flags, 0, 3> {};
 
-  DEFINE_CALL_INTERFACE_DESCRIPTOR(Instanceof);
   DEFINE_PLATFORM_CODE_STUB(Instanceof, PlatformCodeStub);
 };
 
@@ -724,6 +743,7 @@ class ArrayConstructorStub: public PlatformCodeStub {
 
   class ArgumentCountBits : public BitField<ArgumentCountKey, 0, 2> {};
 
+  DEFINE_CALL_INTERFACE_DESCRIPTOR(ArrayConstructor);
   DEFINE_PLATFORM_CODE_STUB(ArrayConstructor, PlatformCodeStub);
 };
 
@@ -735,6 +755,7 @@ class InternalArrayConstructorStub: public PlatformCodeStub {
  private:
   void GenerateCase(MacroAssembler* masm, ElementsKind kind);
 
+  DEFINE_CALL_INTERFACE_DESCRIPTOR(InternalArrayConstructor);
   DEFINE_PLATFORM_CODE_STUB(InternalArrayConstructor, PlatformCodeStub);
 };
 
@@ -746,6 +767,16 @@ class MathPowStub: public PlatformCodeStub {
   MathPowStub(Isolate* isolate, ExponentType exponent_type)
       : PlatformCodeStub(isolate) {
     minor_key_ = ExponentTypeBits::encode(exponent_type);
+  }
+
+  virtual CallInterfaceDescriptor GetCallInterfaceDescriptor() OVERRIDE {
+    if (exponent_type() == TAGGED) {
+      return MathPowTaggedDescriptor(isolate());
+    } else if (exponent_type() == INTEGER) {
+      return MathPowIntegerDescriptor(isolate());
+    }
+    // A CallInterfaceDescriptor doesn't specify double registers (yet).
+    return ContextOnlyDescriptor(isolate());
   }
 
  private:
@@ -794,6 +825,7 @@ class CallICStub: public PlatformCodeStub {
  private:
   virtual void PrintState(OStream& os) const OVERRIDE;  // NOLINT
 
+  DEFINE_CALL_INTERFACE_DESCRIPTOR(CallFunctionWithFeedback);
   DEFINE_PLATFORM_CODE_STUB(CallIC, PlatformCodeStub);
 };
 
@@ -822,6 +854,10 @@ class FunctionPrototypeStub : public PlatformCodeStub {
 
   virtual Code::Kind GetCodeKind() const { return Code::HANDLER; }
 
+  // TODO(mvstanton): only the receiver register is accessed. When this is
+  // translated to a hydrogen code stub, a new CallInterfaceDescriptor
+  // should be created that just uses that register for more efficient code.
+  DEFINE_CALL_INTERFACE_DESCRIPTOR(Load);
   DEFINE_PLATFORM_CODE_STUB(FunctionPrototype, PlatformCodeStub);
 };
 
@@ -1014,6 +1050,7 @@ class CallApiFunctionStub : public PlatformCodeStub {
   class ArgumentBits: public BitField<int, 2, Code::kArgumentsBits> {};
   STATIC_ASSERT(Code::kArgumentsBits + 2 <= kStubMinorKeyBits);
 
+  DEFINE_CALL_INTERFACE_DESCRIPTOR(ApiFunction);
   DEFINE_PLATFORM_CODE_STUB(CallApiFunction, PlatformCodeStub);
 };
 
@@ -1022,6 +1059,7 @@ class CallApiGetterStub : public PlatformCodeStub {
  public:
   explicit CallApiGetterStub(Isolate* isolate) : PlatformCodeStub(isolate) {}
 
+  DEFINE_CALL_INTERFACE_DESCRIPTOR(ApiGetter);
   DEFINE_PLATFORM_CODE_STUB(CallApiGetter, PlatformCodeStub);
 };
 
@@ -1113,6 +1151,7 @@ class BinaryOpICWithAllocationSiteStub FINAL : public PlatformCodeStub {
   static void GenerateAheadOfTime(Isolate* isolate,
                                   const BinaryOpIC::State& state);
 
+  DEFINE_CALL_INTERFACE_DESCRIPTOR(BinaryOpWithAllocationSite);
   DEFINE_PLATFORM_CODE_STUB(BinaryOpICWithAllocationSite, PlatformCodeStub);
 };
 
@@ -1235,6 +1274,7 @@ class CompareICStub : public PlatformCodeStub {
 
   Handle<Map> known_map_;
 
+  DEFINE_CALL_INTERFACE_DESCRIPTOR(BinaryOp);
   DEFINE_PLATFORM_CODE_STUB(CompareIC, PlatformCodeStub);
 };
 
@@ -1358,6 +1398,7 @@ class CEntryStub : public PlatformCodeStub {
   class SaveDoublesBits : public BitField<bool, 0, 1> {};
   class ResultSizeBits : public BitField<int, 1, 3> {};
 
+  DEFINE_NULL_CALL_INTERFACE_DESCRIPTOR();
   DEFINE_PLATFORM_CODE_STUB(CEntry, PlatformCodeStub);
 };
 
@@ -1386,6 +1427,7 @@ class JSEntryStub : public PlatformCodeStub {
 
   int handler_offset_;
 
+  DEFINE_NULL_CALL_INTERFACE_DESCRIPTOR();
   DEFINE_PLATFORM_CODE_STUB(JSEntry, PlatformCodeStub);
 };
 
@@ -1401,6 +1443,13 @@ class ArgumentsAccessStub: public PlatformCodeStub {
 
   ArgumentsAccessStub(Isolate* isolate, Type type) : PlatformCodeStub(isolate) {
     minor_key_ = TypeBits::encode(type);
+  }
+
+  virtual CallInterfaceDescriptor GetCallInterfaceDescriptor() OVERRIDE {
+    if (type() == READ_ELEMENT) {
+      return ArgumentsAccessReadDescriptor(isolate());
+    }
+    return ContextOnlyDescriptor(isolate());
   }
 
  private:
@@ -1423,6 +1472,7 @@ class RegExpExecStub: public PlatformCodeStub {
  public:
   explicit RegExpExecStub(Isolate* isolate) : PlatformCodeStub(isolate) { }
 
+  DEFINE_CALL_INTERFACE_DESCRIPTOR(ContextOnly);
   DEFINE_PLATFORM_CODE_STUB(RegExpExec, PlatformCodeStub);
 };
 
@@ -1721,6 +1771,7 @@ class LoadICTrampolineStub : public PlatformCodeStub {
     return LoadIC::State(static_cast<ExtraICState>(minor_key_));
   }
 
+  DEFINE_CALL_INTERFACE_DESCRIPTOR(VectorLoadICTrampoline);
   DEFINE_PLATFORM_CODE_STUB(LoadICTrampoline, PlatformCodeStub);
 };
 
@@ -1841,6 +1892,7 @@ class DoubleToIStub : public PlatformCodeStub {
   class SSE3Bits:
       public BitField<int, 2 * kBitsPerRegisterNumber + 5, 1> {};  // NOLINT
 
+  DEFINE_NULL_CALL_INTERFACE_DESCRIPTOR();
   DEFINE_PLATFORM_CODE_STUB(DoubleToI, PlatformCodeStub);
 };
 
@@ -2107,6 +2159,7 @@ class StoreElementStub : public PlatformCodeStub {
 
   class ElementsKindBits : public BitField<ElementsKind, 0, 8> {};
 
+  DEFINE_CALL_INTERFACE_DESCRIPTOR(Store);
   DEFINE_PLATFORM_CODE_STUB(StoreElement, PlatformCodeStub);
 };
 
@@ -2257,6 +2310,7 @@ class StoreArrayLiteralElementStub : public PlatformCodeStub {
   explicit StoreArrayLiteralElementStub(Isolate* isolate)
       : PlatformCodeStub(isolate) { }
 
+  DEFINE_CALL_INTERFACE_DESCRIPTOR(StoreArrayLiteralElement);
   DEFINE_PLATFORM_CODE_STUB(StoreArrayLiteralElement, PlatformCodeStub);
 };
 
@@ -2277,6 +2331,7 @@ class StubFailureTrampolineStub : public PlatformCodeStub {
 
   class FunctionModeField : public BitField<StubFunctionMode, 0, 1> {};
 
+  DEFINE_NULL_CALL_INTERFACE_DESCRIPTOR();
   DEFINE_PLATFORM_CODE_STUB(StubFailureTrampoline, PlatformCodeStub);
 };
 
@@ -2296,6 +2351,9 @@ class ProfileEntryHookStub : public PlatformCodeStub {
                                   intptr_t stack_pointer,
                                   Isolate* isolate);
 
+  // ProfileEntryHookStub is called at the start of a function, so it has the
+  // same register set.
+  DEFINE_CALL_INTERFACE_DESCRIPTOR(CallFunction)
   DEFINE_PLATFORM_CODE_STUB(ProfileEntryHook, PlatformCodeStub);
 };
 
@@ -2315,6 +2373,7 @@ class StoreBufferOverflowStub : public PlatformCodeStub {
 
   class SaveDoublesBits : public BitField<bool, 0, 1> {};
 
+  DEFINE_NULL_CALL_INTERFACE_DESCRIPTOR();
   DEFINE_PLATFORM_CODE_STUB(StoreBufferOverflow, PlatformCodeStub);
 };
 
@@ -2323,6 +2382,7 @@ class SubStringStub : public PlatformCodeStub {
  public:
   explicit SubStringStub(Isolate* isolate) : PlatformCodeStub(isolate) {}
 
+  DEFINE_CALL_INTERFACE_DESCRIPTOR(ContextOnly);
   DEFINE_PLATFORM_CODE_STUB(SubString, PlatformCodeStub);
 };
 
@@ -2331,6 +2391,7 @@ class StringCompareStub : public PlatformCodeStub {
  public:
   explicit StringCompareStub(Isolate* isolate) : PlatformCodeStub(isolate) {}
 
+  DEFINE_CALL_INTERFACE_DESCRIPTOR(ContextOnly);
   DEFINE_PLATFORM_CODE_STUB(StringCompare, PlatformCodeStub);
 };
 

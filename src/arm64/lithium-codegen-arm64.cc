@@ -7,6 +7,7 @@
 #include "src/arm64/lithium-codegen-arm64.h"
 #include "src/arm64/lithium-gap-resolver-arm64.h"
 #include "src/base/bits.h"
+#include "src/code-factory.h"
 #include "src/code-stubs.h"
 #include "src/hydrogen-osr.h"
 #include "src/ic/stub-cache.h"
@@ -1248,7 +1249,7 @@ Operand LCodeGen::ToOperand32(LOperand* op) {
 }
 
 
-static ptrdiff_t ArgumentsOffsetWithoutFrame(ptrdiff_t index) {
+static int64_t ArgumentsOffsetWithoutFrame(int index) {
   DCHECK(index < 0);
   return -(index + 1) * kPointerSize;
 }
@@ -1782,8 +1783,9 @@ void LCodeGen::DoArithmeticT(LArithmeticT* instr) {
   DCHECK(ToRegister(instr->right()).is(x0));
   DCHECK(ToRegister(instr->result()).is(x0));
 
-  BinaryOpICStub stub(isolate(), instr->op(), NO_OVERWRITE);
-  CallCode(stub.GetCode(), RelocInfo::CODE_TARGET, instr);
+  Handle<Code> code =
+      CodeFactory::BinaryOpIC(isolate(), instr->op(), NO_OVERWRITE).code();
+  CallCode(code, RelocInfo::CODE_TARGET, instr);
 }
 
 
@@ -2548,7 +2550,7 @@ void LCodeGen::DoCmpT(LCmpT* instr) {
 
   DCHECK(ToRegister(instr->left()).Is(x1));
   DCHECK(ToRegister(instr->right()).Is(x0));
-  Handle<Code> ic = CompareIC::GetUninitialized(isolate(), op);
+  Handle<Code> ic = CodeFactory::CompareIC(isolate(), op).code();
   CallCode(ic, RelocInfo::CODE_TARGET, instr);
   // Signal that we don't inline smi code before this stub.
   InlineSmiCheckInfo::EmitNotInlined(masm());
@@ -2864,9 +2866,8 @@ void LCodeGen::DoFunctionLiteral(LFunctionLiteral* instr) {
   // space for nested functions that don't need literals cloning.
   bool pretenure = instr->hydrogen()->pretenure();
   if (!pretenure && instr->hydrogen()->has_no_literals()) {
-    FastNewClosureStub stub(isolate(),
-                            instr->hydrogen()->strict_mode(),
-                            instr->hydrogen()->is_generator());
+    FastNewClosureStub stub(isolate(), instr->hydrogen()->strict_mode(),
+                            instr->hydrogen()->kind());
     __ Mov(x2, Operand(instr->hydrogen()->shared_info()));
     CallCode(stub.GetCode(), RelocInfo::CODE_TARGET, instr);
   } else {
@@ -3397,7 +3398,7 @@ void LCodeGen::DoLoadGlobalGeneric(LLoadGlobalGeneric* instr) {
     EmitVectorLoadICRegisters<LLoadGlobalGeneric>(instr);
   }
   ContextualMode mode = instr->for_typeof() ? NOT_CONTEXTUAL : CONTEXTUAL;
-  Handle<Code> ic = LoadIC::initialize_stub(isolate(), mode);
+  Handle<Code> ic = CodeFactory::LoadIC(isolate(), mode).code();
   CallCode(ic, RelocInfo::CODE_TARGET, instr);
 }
 
@@ -3652,7 +3653,7 @@ void LCodeGen::DoLoadKeyedGeneric(LLoadKeyedGeneric* instr) {
     EmitVectorLoadICRegisters<LLoadKeyedGeneric>(instr);
   }
 
-  Handle<Code> ic = isolate()->builtins()->KeyedLoadIC_Initialize();
+  Handle<Code> ic = CodeFactory::KeyedLoadIC(isolate()).code();
   CallCode(ic, RelocInfo::CODE_TARGET, instr);
 
   DCHECK(ToRegister(instr->result()).Is(x0));
@@ -3708,7 +3709,7 @@ void LCodeGen::DoLoadNamedGeneric(LLoadNamedGeneric* instr) {
     EmitVectorLoadICRegisters<LLoadNamedGeneric>(instr);
   }
 
-  Handle<Code> ic = LoadIC::initialize_stub(isolate(), NOT_CONTEXTUAL);
+  Handle<Code> ic = CodeFactory::LoadIC(isolate(), NOT_CONTEXTUAL).code();
   CallCode(ic, RelocInfo::CODE_TARGET, instr);
 
   DCHECK(ToRegister(instr->result()).is(x0));
@@ -4087,11 +4088,14 @@ void LCodeGen::DoPower(LPower* instr) {
   Representation exponent_type = instr->hydrogen()->right()->representation();
   // Having marked this as a call, we can use any registers.
   // Just make sure that the input/output registers are the expected ones.
+  Register tagged_exponent = MathPowTaggedDescriptor::exponent();
+  Register integer_exponent = MathPowIntegerDescriptor::exponent();
   DCHECK(!instr->right()->IsDoubleRegister() ||
          ToDoubleRegister(instr->right()).is(d1));
   DCHECK(exponent_type.IsInteger32() || !instr->right()->IsRegister() ||
-         ToRegister(instr->right()).is(x11));
-  DCHECK(!exponent_type.IsInteger32() || ToRegister(instr->right()).is(x12));
+         ToRegister(instr->right()).is(tagged_exponent));
+  DCHECK(!exponent_type.IsInteger32() ||
+         ToRegister(instr->right()).is(integer_exponent));
   DCHECK(ToDoubleRegister(instr->left()).is(d0));
   DCHECK(ToDoubleRegister(instr->result()).is(d0));
 
@@ -4100,8 +4104,9 @@ void LCodeGen::DoPower(LPower* instr) {
     __ CallStub(&stub);
   } else if (exponent_type.IsTagged()) {
     Label no_deopt;
-    __ JumpIfSmi(x11, &no_deopt);
-    __ Ldr(x0, FieldMemOperand(x11, HeapObject::kMapOffset));
+    __ JumpIfSmi(tagged_exponent, &no_deopt);
+    DCHECK(!x0.is(tagged_exponent));
+    __ Ldr(x0, FieldMemOperand(tagged_exponent, HeapObject::kMapOffset));
     DeoptimizeIfNotRoot(x0, Heap::kHeapNumberMapRootIndex,
                         instr->environment());
     __ Bind(&no_deopt);
@@ -4110,8 +4115,7 @@ void LCodeGen::DoPower(LPower* instr) {
   } else if (exponent_type.IsInteger32()) {
     // Ensure integer exponent has no garbage in top 32-bits, as MathPowStub
     // supports large integer exponents.
-    Register exponent = ToRegister(instr->right());
-    __ Sxtw(exponent, exponent);
+    __ Sxtw(integer_exponent, integer_exponent);
     MathPowStub stub(isolate(), MathPowStub::INTEGER);
     __ CallStub(&stub);
   } else {
@@ -5343,9 +5347,8 @@ void LCodeGen::DoStoreKeyedGeneric(LStoreKeyedGeneric* instr) {
   DCHECK(ToRegister(instr->key()).is(StoreDescriptor::NameRegister()));
   DCHECK(ToRegister(instr->value()).is(StoreDescriptor::ValueRegister()));
 
-  Handle<Code> ic = instr->strict_mode() == STRICT
-      ? isolate()->builtins()->KeyedStoreIC_Initialize_Strict()
-      : isolate()->builtins()->KeyedStoreIC_Initialize();
+  Handle<Code> ic =
+      CodeFactory::KeyedStoreIC(isolate(), instr->strict_mode()).code();
   CallCode(ic, RelocInfo::CODE_TARGET, instr);
 }
 
@@ -5562,7 +5565,7 @@ void LCodeGen::DoStringCompareAndBranch(LStringCompareAndBranch* instr) {
   DCHECK(ToRegister(instr->context()).is(cp));
   Token::Value op = instr->op();
 
-  Handle<Code> ic = CompareIC::GetUninitialized(isolate(), op);
+  Handle<Code> ic = CodeFactory::CompareIC(isolate(), op).code();
   CallCode(ic, RelocInfo::CODE_TARGET, instr);
   InlineSmiCheckInfo::EmitNotInlined(masm());
 

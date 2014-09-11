@@ -2069,11 +2069,11 @@ HValue* HGraphBuilder::BuildCreateConsString(
   HInstruction* right_instance_type = AddLoadStringInstanceType(right);
 
   // Allocate the cons string object. HAllocate does not care whether we
-  // pass CONS_STRING_TYPE or CONS_ASCII_STRING_TYPE here, so we just use
+  // pass CONS_STRING_TYPE or CONS_ONE_BYTE_STRING_TYPE here, so we just use
   // CONS_STRING_TYPE here. Below we decide whether the cons string is
   // one-byte or two-byte and set the appropriate map.
   DCHECK(HAllocate::CompatibleInstanceTypes(CONS_STRING_TYPE,
-                                            CONS_ASCII_STRING_TYPE));
+                                            CONS_ONE_BYTE_STRING_TYPE));
   HAllocate* result = BuildAllocate(Add<HConstant>(ConsString::kSize),
                                     HType::String(), CONS_STRING_TYPE,
                                     allocation_mode);
@@ -2118,7 +2118,7 @@ HValue* HGraphBuilder::BuildCreateConsString(
     // We can safely skip the write barrier for storing the map here.
     Add<HStoreNamedField>(
         result, HObjectAccess::ForMap(),
-        Add<HConstant>(isolate()->factory()->cons_ascii_string_map()));
+        Add<HConstant>(isolate()->factory()->cons_one_byte_string_map()));
   }
   if_onebyte.Else();
   {
@@ -2246,8 +2246,8 @@ HValue* HGraphBuilder::BuildUncheckedStringAdd(
     {
       HConstant* string_map =
           Add<HConstant>(isolate()->factory()->string_map());
-      HConstant* ascii_string_map =
-          Add<HConstant>(isolate()->factory()->ascii_string_map());
+      HConstant* one_byte_string_map =
+          Add<HConstant>(isolate()->factory()->one_byte_string_map());
 
       // Determine map and size depending on whether result is one-byte string.
       IfBuilder if_onebyte(this);
@@ -2261,7 +2261,7 @@ HValue* HGraphBuilder::BuildUncheckedStringAdd(
       {
         // Allocate sequential one-byte string object.
         Push(length);
-        Push(ascii_string_map);
+        Push(one_byte_string_map);
       }
       if_onebyte.Else();
       {
@@ -2281,7 +2281,7 @@ HValue* HGraphBuilder::BuildUncheckedStringAdd(
       HValue* size = BuildObjectSizeAlignment(Pop(), SeqString::kHeaderSize);
 
       // Allocate the string object. HAllocate does not care whether we pass
-      // STRING_TYPE or ASCII_STRING_TYPE here, so we just use STRING_TYPE here.
+      // STRING_TYPE or ONE_BYTE_STRING_TYPE here, so we just use STRING_TYPE.
       HAllocate* result = BuildAllocate(
           size, HType::String(), STRING_TYPE, allocation_mode);
       Add<HStoreNamedField>(result, HObjectAccess::ForMap(), map);
@@ -8232,7 +8232,7 @@ bool HOptimizedGraphBuilder::TryInlineBuiltinMethodCall(
       ElementsKind elements_kind = receiver_map->elements_kind();
       if (!IsFastElementsKind(elements_kind)) return false;
       if (receiver_map->is_observed()) return false;
-      DCHECK(receiver_map->is_extensible());
+      if (!receiver_map->is_extensible()) return false;
 
       Drop(expr->arguments()->length());
       HValue* result;
@@ -8297,7 +8297,7 @@ bool HOptimizedGraphBuilder::TryInlineBuiltinMethodCall(
       if (!IsFastElementsKind(elements_kind)) return false;
       if (receiver_map->is_observed()) return false;
       if (JSArray::IsReadOnlyLengthDescriptor(receiver_map)) return false;
-      DCHECK(receiver_map->is_extensible());
+      if (!receiver_map->is_extensible()) return false;
 
       // If there may be elements accessors in the prototype chain, the fast
       // inlined version can't be used.
@@ -8464,7 +8464,7 @@ bool HOptimizedGraphBuilder::TryInlineBuiltinMethodCall(
       if (!IsFastElementsKind(kind)) return false;
       if (receiver_map->is_observed()) return false;
       if (argument_count != 2) return false;
-      DCHECK(receiver_map->is_extensible());
+      if (!receiver_map->is_extensible()) return false;
 
       // If there may be elements accessors in the prototype chain, the fast
       // inlined version can't be used.
@@ -10258,7 +10258,7 @@ HValue* HGraphBuilder::BuildBinaryOperation(
                            right_type->Maybe(Type::String()) ||
                            right_type->Maybe(Type::Receiver()));
 
-  if (left_type->Is(Type::None())) {
+  if (!left_type->IsInhabited()) {
     Add<HDeoptimize>("Insufficient type feedback for LHS of binary operation",
                      Deoptimizer::SOFT);
     // TODO(rossberg): we should be able to get rid of non-continuous
@@ -10269,7 +10269,7 @@ HValue* HGraphBuilder::BuildBinaryOperation(
     left_rep = Representation::FromType(left_type);
   }
 
-  if (right_type->Is(Type::None())) {
+  if (!right_type->IsInhabited()) {
     Add<HDeoptimize>("Insufficient type feedback for RHS of binary operation",
                      Deoptimizer::SOFT);
     right_type = Type::Any(zone());
@@ -10465,7 +10465,7 @@ static bool IsClassOfTest(CompareOperation* expr) {
   Literal* literal = expr->right()->AsLiteral();
   if (literal == NULL) return false;
   if (!literal->value()->IsString()) return false;
-  if (!call->name()->IsOneByteEqualTo(STATIC_ASCII_VECTOR("_ClassOf"))) {
+  if (!call->name()->IsOneByteEqualTo(STATIC_CHAR_VECTOR("_ClassOf"))) {
     return false;
   }
   DCHECK(call->arguments()->length() == 1);
@@ -10766,7 +10766,7 @@ HControlInstruction* HOptimizedGraphBuilder::BuildCompareInstruction(
     BailoutId bailout_id) {
   // Cases handled below depend on collected type feedback. They should
   // soft deoptimize when there is no type feedback.
-  if (combined_type->Is(Type::None())) {
+  if (!combined_type->IsInhabited()) {
     Add<HDeoptimize>("Insufficient type feedback for combined type "
                      "of binary operation",
                      Deoptimizer::SOFT);
@@ -11847,8 +11847,8 @@ void HOptimizedGraphBuilder::GenerateGetCachedArrayIndex(CallRuntime* call) {
 }
 
 
-void HOptimizedGraphBuilder::GenerateFastAsciiArrayJoin(CallRuntime* call) {
-  return Bailout(kInlinedRuntimeFunctionFastAsciiArrayJoin);
+void HOptimizedGraphBuilder::GenerateFastOneByteArrayJoin(CallRuntime* call) {
+  return Bailout(kInlinedRuntimeFunctionFastOneByteArrayJoin);
 }
 
 

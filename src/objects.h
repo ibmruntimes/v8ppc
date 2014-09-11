@@ -102,7 +102,7 @@
 //         - SlicedString
 //         - ConsString
 //         - ExternalString
-//           - ExternalAsciiString
+//           - ExternalOneByteString
 //           - ExternalTwoByteString
 //         - InternalizedString
 //           - SeqInternalizedString
@@ -110,7 +110,7 @@
 //             - SeqTwoByteInternalizedString
 //           - ConsInternalizedString
 //           - ExternalInternalizedString
-//             - ExternalAsciiInternalizedString
+//             - ExternalOneByteInternalizedString
 //             - ExternalTwoByteInternalizedString
 //       - Symbol
 //     - HeapNumber
@@ -321,7 +321,7 @@ const int kStubMinorKeyBits = kSmiValueSize - kStubMajorKeyBits - 1;
 //
 // The names of the string instance types are intended to systematically
 // mirror their encoding in the instance_type field of the map.  The default
-// encoding is considered TWO_BYTE.  It is not mentioned in the name.  ASCII
+// encoding is considered TWO_BYTE.  It is not mentioned in the name.  ONE_BYTE
 // encoding is mentioned explicitly in the name.  Likewise, the default
 // representation is considered sequential.  It is not mentioned in the
 // name.  The other representations (e.g. CONS, EXTERNAL) are explicitly
@@ -336,206 +336,172 @@ const int kStubMinorKeyBits = kSmiValueSize - kStubMajorKeyBits - 1;
 // NOTE: Everything following JS_VALUE_TYPE is considered a
 // JSObject for GC purposes. The first four entries here have typeof
 // 'object', whereas JS_FUNCTION_TYPE has typeof 'function'.
-#define INSTANCE_TYPE_LIST(V)                                                  \
-  V(STRING_TYPE)                                                               \
-  V(ASCII_STRING_TYPE)                                                         \
-  V(CONS_STRING_TYPE)                                                          \
-  V(CONS_ASCII_STRING_TYPE)                                                    \
-  V(SLICED_STRING_TYPE)                                                        \
-  V(SLICED_ASCII_STRING_TYPE)                                                  \
-  V(EXTERNAL_STRING_TYPE)                                                      \
-  V(EXTERNAL_ASCII_STRING_TYPE)                                                \
-  V(EXTERNAL_STRING_WITH_ONE_BYTE_DATA_TYPE)                                   \
-  V(SHORT_EXTERNAL_STRING_TYPE)                                                \
-  V(SHORT_EXTERNAL_ASCII_STRING_TYPE)                                          \
-  V(SHORT_EXTERNAL_STRING_WITH_ONE_BYTE_DATA_TYPE)                             \
-                                                                               \
-  V(INTERNALIZED_STRING_TYPE)                                                  \
-  V(ASCII_INTERNALIZED_STRING_TYPE)                                            \
-  V(EXTERNAL_INTERNALIZED_STRING_TYPE)                                         \
-  V(EXTERNAL_ASCII_INTERNALIZED_STRING_TYPE)                                   \
-  V(EXTERNAL_INTERNALIZED_STRING_WITH_ONE_BYTE_DATA_TYPE)                      \
-  V(SHORT_EXTERNAL_INTERNALIZED_STRING_TYPE)                                   \
-  V(SHORT_EXTERNAL_ASCII_INTERNALIZED_STRING_TYPE)                             \
-  V(SHORT_EXTERNAL_INTERNALIZED_STRING_WITH_ONE_BYTE_DATA_TYPE)                \
-                                                                               \
-  V(SYMBOL_TYPE)                                                               \
-                                                                               \
-  V(MAP_TYPE)                                                                  \
-  V(CODE_TYPE)                                                                 \
-  V(ODDBALL_TYPE)                                                              \
-  V(CELL_TYPE)                                                                 \
-  V(PROPERTY_CELL_TYPE)                                                        \
-                                                                               \
-  V(HEAP_NUMBER_TYPE)                                                          \
-  V(MUTABLE_HEAP_NUMBER_TYPE)                                                  \
-  V(FOREIGN_TYPE)                                                              \
-  V(BYTE_ARRAY_TYPE)                                                           \
-  V(FREE_SPACE_TYPE)                                                           \
-  /* Note: the order of these external array */                                \
-  /* types is relied upon in */                                                \
-  /* Object::IsExternalArray(). */                                             \
-  V(EXTERNAL_INT8_ARRAY_TYPE)                                                  \
-  V(EXTERNAL_UINT8_ARRAY_TYPE)                                                 \
-  V(EXTERNAL_INT16_ARRAY_TYPE)                                                 \
-  V(EXTERNAL_UINT16_ARRAY_TYPE)                                                \
-  V(EXTERNAL_INT32_ARRAY_TYPE)                                                 \
-  V(EXTERNAL_UINT32_ARRAY_TYPE)                                                \
-  V(EXTERNAL_FLOAT32_ARRAY_TYPE)                                               \
-  V(EXTERNAL_FLOAT64_ARRAY_TYPE)                                               \
-  V(EXTERNAL_UINT8_CLAMPED_ARRAY_TYPE)                                         \
-                                                                               \
-  V(FIXED_INT8_ARRAY_TYPE)                                                     \
-  V(FIXED_UINT8_ARRAY_TYPE)                                                    \
-  V(FIXED_INT16_ARRAY_TYPE)                                                    \
-  V(FIXED_UINT16_ARRAY_TYPE)                                                   \
-  V(FIXED_INT32_ARRAY_TYPE)                                                    \
-  V(FIXED_UINT32_ARRAY_TYPE)                                                   \
-  V(FIXED_FLOAT32_ARRAY_TYPE)                                                  \
-  V(FIXED_FLOAT64_ARRAY_TYPE)                                                  \
-  V(FIXED_UINT8_CLAMPED_ARRAY_TYPE)                                            \
-                                                                               \
-  V(FILLER_TYPE)                                                               \
-                                                                               \
-  V(DECLARED_ACCESSOR_DESCRIPTOR_TYPE)                                         \
-  V(DECLARED_ACCESSOR_INFO_TYPE)                                               \
-  V(EXECUTABLE_ACCESSOR_INFO_TYPE)                                             \
-  V(ACCESSOR_PAIR_TYPE)                                                        \
-  V(ACCESS_CHECK_INFO_TYPE)                                                    \
-  V(INTERCEPTOR_INFO_TYPE)                                                     \
-  V(CALL_HANDLER_INFO_TYPE)                                                    \
-  V(FUNCTION_TEMPLATE_INFO_TYPE)                                               \
-  V(OBJECT_TEMPLATE_INFO_TYPE)                                                 \
-  V(SIGNATURE_INFO_TYPE)                                                       \
-  V(TYPE_SWITCH_INFO_TYPE)                                                     \
-  V(ALLOCATION_MEMENTO_TYPE)                                                   \
-  V(ALLOCATION_SITE_TYPE)                                                      \
-  V(SCRIPT_TYPE)                                                               \
-  V(CODE_CACHE_TYPE)                                                           \
-  V(POLYMORPHIC_CODE_CACHE_TYPE)                                               \
-  V(TYPE_FEEDBACK_INFO_TYPE)                                                   \
-  V(ALIASED_ARGUMENTS_ENTRY_TYPE)                                              \
-  V(BOX_TYPE)                                                                  \
-                                                                               \
-  V(FIXED_ARRAY_TYPE)                                                          \
-  V(FIXED_DOUBLE_ARRAY_TYPE)                                                   \
-  V(CONSTANT_POOL_ARRAY_TYPE)                                                  \
-  V(SHARED_FUNCTION_INFO_TYPE)                                                 \
-                                                                               \
-  V(JS_MESSAGE_OBJECT_TYPE)                                                    \
-                                                                               \
-  V(JS_VALUE_TYPE)                                                             \
-  V(JS_DATE_TYPE)                                                              \
-  V(JS_OBJECT_TYPE)                                                            \
-  V(JS_CONTEXT_EXTENSION_OBJECT_TYPE)                                          \
-  V(JS_GENERATOR_OBJECT_TYPE)                                                  \
-  V(JS_MODULE_TYPE)                                                            \
-  V(JS_GLOBAL_OBJECT_TYPE)                                                     \
-  V(JS_BUILTINS_OBJECT_TYPE)                                                   \
-  V(JS_GLOBAL_PROXY_TYPE)                                                      \
-  V(JS_ARRAY_TYPE)                                                             \
-  V(JS_ARRAY_BUFFER_TYPE)                                                      \
-  V(JS_TYPED_ARRAY_TYPE)                                                       \
-  V(JS_DATA_VIEW_TYPE)                                                         \
-  V(JS_PROXY_TYPE)                                                             \
-  V(JS_SET_TYPE)                                                               \
-  V(JS_MAP_TYPE)                                                               \
-  V(JS_SET_ITERATOR_TYPE)                                                      \
-  V(JS_MAP_ITERATOR_TYPE)                                                      \
-  V(JS_WEAK_MAP_TYPE)                                                          \
-  V(JS_WEAK_SET_TYPE)                                                          \
-  V(JS_REGEXP_TYPE)                                                            \
-                                                                               \
-  V(JS_FUNCTION_TYPE)                                                          \
-  V(JS_FUNCTION_PROXY_TYPE)                                                    \
-  V(DEBUG_INFO_TYPE)                                                           \
+#define INSTANCE_TYPE_LIST(V)                                   \
+  V(STRING_TYPE)                                                \
+  V(ONE_BYTE_STRING_TYPE)                                       \
+  V(CONS_STRING_TYPE)                                           \
+  V(CONS_ONE_BYTE_STRING_TYPE)                                  \
+  V(SLICED_STRING_TYPE)                                         \
+  V(SLICED_ONE_BYTE_STRING_TYPE)                                \
+  V(EXTERNAL_STRING_TYPE)                                       \
+  V(EXTERNAL_ONE_BYTE_STRING_TYPE)                              \
+  V(EXTERNAL_STRING_WITH_ONE_BYTE_DATA_TYPE)                    \
+  V(SHORT_EXTERNAL_STRING_TYPE)                                 \
+  V(SHORT_EXTERNAL_ONE_BYTE_STRING_TYPE)                        \
+  V(SHORT_EXTERNAL_STRING_WITH_ONE_BYTE_DATA_TYPE)              \
+                                                                \
+  V(INTERNALIZED_STRING_TYPE)                                   \
+  V(ONE_BYTE_INTERNALIZED_STRING_TYPE)                          \
+  V(EXTERNAL_INTERNALIZED_STRING_TYPE)                          \
+  V(EXTERNAL_ONE_BYTE_INTERNALIZED_STRING_TYPE)                 \
+  V(EXTERNAL_INTERNALIZED_STRING_WITH_ONE_BYTE_DATA_TYPE)       \
+  V(SHORT_EXTERNAL_INTERNALIZED_STRING_TYPE)                    \
+  V(SHORT_EXTERNAL_ONE_BYTE_INTERNALIZED_STRING_TYPE)           \
+  V(SHORT_EXTERNAL_INTERNALIZED_STRING_WITH_ONE_BYTE_DATA_TYPE) \
+                                                                \
+  V(SYMBOL_TYPE)                                                \
+                                                                \
+  V(MAP_TYPE)                                                   \
+  V(CODE_TYPE)                                                  \
+  V(ODDBALL_TYPE)                                               \
+  V(CELL_TYPE)                                                  \
+  V(PROPERTY_CELL_TYPE)                                         \
+                                                                \
+  V(HEAP_NUMBER_TYPE)                                           \
+  V(MUTABLE_HEAP_NUMBER_TYPE)                                   \
+  V(FOREIGN_TYPE)                                               \
+  V(BYTE_ARRAY_TYPE)                                            \
+  V(FREE_SPACE_TYPE)                                            \
+  /* Note: the order of these external array */                 \
+  /* types is relied upon in */                                 \
+  /* Object::IsExternalArray(). */                              \
+  V(EXTERNAL_INT8_ARRAY_TYPE)                                   \
+  V(EXTERNAL_UINT8_ARRAY_TYPE)                                  \
+  V(EXTERNAL_INT16_ARRAY_TYPE)                                  \
+  V(EXTERNAL_UINT16_ARRAY_TYPE)                                 \
+  V(EXTERNAL_INT32_ARRAY_TYPE)                                  \
+  V(EXTERNAL_UINT32_ARRAY_TYPE)                                 \
+  V(EXTERNAL_FLOAT32_ARRAY_TYPE)                                \
+  V(EXTERNAL_FLOAT64_ARRAY_TYPE)                                \
+  V(EXTERNAL_UINT8_CLAMPED_ARRAY_TYPE)                          \
+                                                                \
+  V(FIXED_INT8_ARRAY_TYPE)                                      \
+  V(FIXED_UINT8_ARRAY_TYPE)                                     \
+  V(FIXED_INT16_ARRAY_TYPE)                                     \
+  V(FIXED_UINT16_ARRAY_TYPE)                                    \
+  V(FIXED_INT32_ARRAY_TYPE)                                     \
+  V(FIXED_UINT32_ARRAY_TYPE)                                    \
+  V(FIXED_FLOAT32_ARRAY_TYPE)                                   \
+  V(FIXED_FLOAT64_ARRAY_TYPE)                                   \
+  V(FIXED_UINT8_CLAMPED_ARRAY_TYPE)                             \
+                                                                \
+  V(FILLER_TYPE)                                                \
+                                                                \
+  V(DECLARED_ACCESSOR_DESCRIPTOR_TYPE)                          \
+  V(DECLARED_ACCESSOR_INFO_TYPE)                                \
+  V(EXECUTABLE_ACCESSOR_INFO_TYPE)                              \
+  V(ACCESSOR_PAIR_TYPE)                                         \
+  V(ACCESS_CHECK_INFO_TYPE)                                     \
+  V(INTERCEPTOR_INFO_TYPE)                                      \
+  V(CALL_HANDLER_INFO_TYPE)                                     \
+  V(FUNCTION_TEMPLATE_INFO_TYPE)                                \
+  V(OBJECT_TEMPLATE_INFO_TYPE)                                  \
+  V(SIGNATURE_INFO_TYPE)                                        \
+  V(TYPE_SWITCH_INFO_TYPE)                                      \
+  V(ALLOCATION_MEMENTO_TYPE)                                    \
+  V(ALLOCATION_SITE_TYPE)                                       \
+  V(SCRIPT_TYPE)                                                \
+  V(CODE_CACHE_TYPE)                                            \
+  V(POLYMORPHIC_CODE_CACHE_TYPE)                                \
+  V(TYPE_FEEDBACK_INFO_TYPE)                                    \
+  V(ALIASED_ARGUMENTS_ENTRY_TYPE)                               \
+  V(BOX_TYPE)                                                   \
+                                                                \
+  V(FIXED_ARRAY_TYPE)                                           \
+  V(FIXED_DOUBLE_ARRAY_TYPE)                                    \
+  V(CONSTANT_POOL_ARRAY_TYPE)                                   \
+  V(SHARED_FUNCTION_INFO_TYPE)                                  \
+                                                                \
+  V(JS_MESSAGE_OBJECT_TYPE)                                     \
+                                                                \
+  V(JS_VALUE_TYPE)                                              \
+  V(JS_DATE_TYPE)                                               \
+  V(JS_OBJECT_TYPE)                                             \
+  V(JS_CONTEXT_EXTENSION_OBJECT_TYPE)                           \
+  V(JS_GENERATOR_OBJECT_TYPE)                                   \
+  V(JS_MODULE_TYPE)                                             \
+  V(JS_GLOBAL_OBJECT_TYPE)                                      \
+  V(JS_BUILTINS_OBJECT_TYPE)                                    \
+  V(JS_GLOBAL_PROXY_TYPE)                                       \
+  V(JS_ARRAY_TYPE)                                              \
+  V(JS_ARRAY_BUFFER_TYPE)                                       \
+  V(JS_TYPED_ARRAY_TYPE)                                        \
+  V(JS_DATA_VIEW_TYPE)                                          \
+  V(JS_PROXY_TYPE)                                              \
+  V(JS_SET_TYPE)                                                \
+  V(JS_MAP_TYPE)                                                \
+  V(JS_SET_ITERATOR_TYPE)                                       \
+  V(JS_MAP_ITERATOR_TYPE)                                       \
+  V(JS_WEAK_MAP_TYPE)                                           \
+  V(JS_WEAK_SET_TYPE)                                           \
+  V(JS_REGEXP_TYPE)                                             \
+                                                                \
+  V(JS_FUNCTION_TYPE)                                           \
+  V(JS_FUNCTION_PROXY_TYPE)                                     \
+  V(DEBUG_INFO_TYPE)                                            \
   V(BREAK_POINT_INFO_TYPE)
 
 
 // Since string types are not consecutive, this macro is used to
 // iterate over them.
-#define STRING_TYPE_LIST(V)                                                    \
-  V(STRING_TYPE,                                                               \
-    kVariableSizeSentinel,                                                     \
-    string,                                                                    \
-    String)                                                                    \
-  V(ASCII_STRING_TYPE,                                                         \
-    kVariableSizeSentinel,                                                     \
-    ascii_string,                                                              \
-    AsciiString)                                                               \
-  V(CONS_STRING_TYPE,                                                          \
-    ConsString::kSize,                                                         \
-    cons_string,                                                               \
-    ConsString)                                                                \
-  V(CONS_ASCII_STRING_TYPE,                                                    \
-    ConsString::kSize,                                                         \
-    cons_ascii_string,                                                         \
-    ConsAsciiString)                                                           \
-  V(SLICED_STRING_TYPE,                                                        \
-    SlicedString::kSize,                                                       \
-    sliced_string,                                                             \
-    SlicedString)                                                              \
-  V(SLICED_ASCII_STRING_TYPE,                                                  \
-    SlicedString::kSize,                                                       \
-    sliced_ascii_string,                                                       \
-    SlicedAsciiString)                                                         \
-  V(EXTERNAL_STRING_TYPE,                                                      \
-    ExternalTwoByteString::kSize,                                              \
-    external_string,                                                           \
-    ExternalString)                                                            \
-  V(EXTERNAL_ASCII_STRING_TYPE,                                                \
-    ExternalAsciiString::kSize,                                                \
-    external_ascii_string,                                                     \
-    ExternalAsciiString)                                                       \
-  V(EXTERNAL_STRING_WITH_ONE_BYTE_DATA_TYPE,                                   \
-    ExternalTwoByteString::kSize,                                              \
-    external_string_with_one_byte_data,                                        \
-    ExternalStringWithOneByteData)                                             \
-  V(SHORT_EXTERNAL_STRING_TYPE,                                                \
-    ExternalTwoByteString::kShortSize,                                         \
-    short_external_string,                                                     \
-    ShortExternalString)                                                       \
-  V(SHORT_EXTERNAL_ASCII_STRING_TYPE,                                          \
-    ExternalAsciiString::kShortSize,                                           \
-    short_external_ascii_string,                                               \
-    ShortExternalAsciiString)                                                  \
-  V(SHORT_EXTERNAL_STRING_WITH_ONE_BYTE_DATA_TYPE,                             \
-    ExternalTwoByteString::kShortSize,                                         \
-    short_external_string_with_one_byte_data,                                  \
-    ShortExternalStringWithOneByteData)                                        \
-                                                                               \
-  V(INTERNALIZED_STRING_TYPE,                                                  \
-    kVariableSizeSentinel,                                                     \
-    internalized_string,                                                       \
-    InternalizedString)                                                        \
-  V(ASCII_INTERNALIZED_STRING_TYPE,                                            \
-    kVariableSizeSentinel,                                                     \
-    ascii_internalized_string,                                                 \
-    AsciiInternalizedString)                                                   \
-  V(EXTERNAL_INTERNALIZED_STRING_TYPE,                                         \
-    ExternalTwoByteString::kSize,                                              \
-    external_internalized_string,                                              \
-    ExternalInternalizedString)                                                \
-  V(EXTERNAL_ASCII_INTERNALIZED_STRING_TYPE,                                   \
-    ExternalAsciiString::kSize,                                                \
-    external_ascii_internalized_string,                                        \
-    ExternalAsciiInternalizedString)                                           \
-  V(EXTERNAL_INTERNALIZED_STRING_WITH_ONE_BYTE_DATA_TYPE,                      \
-    ExternalTwoByteString::kSize,                                              \
-    external_internalized_string_with_one_byte_data,                           \
-    ExternalInternalizedStringWithOneByteData)                                 \
-  V(SHORT_EXTERNAL_INTERNALIZED_STRING_TYPE,                                   \
-    ExternalTwoByteString::kShortSize,                                         \
-    short_external_internalized_string,                                        \
-    ShortExternalInternalizedString)                                           \
-  V(SHORT_EXTERNAL_ASCII_INTERNALIZED_STRING_TYPE,                             \
-    ExternalAsciiString::kShortSize,                                           \
-    short_external_ascii_internalized_string,                                  \
-    ShortExternalAsciiInternalizedString)                                      \
-  V(SHORT_EXTERNAL_INTERNALIZED_STRING_WITH_ONE_BYTE_DATA_TYPE,                \
-    ExternalTwoByteString::kShortSize,                                         \
-    short_external_internalized_string_with_one_byte_data,                     \
-    ShortExternalInternalizedStringWithOneByteData)                            \
+#define STRING_TYPE_LIST(V)                                                   \
+  V(STRING_TYPE, kVariableSizeSentinel, string, String)                       \
+  V(ONE_BYTE_STRING_TYPE, kVariableSizeSentinel, one_byte_string,             \
+    OneByteString)                                                            \
+  V(CONS_STRING_TYPE, ConsString::kSize, cons_string, ConsString)             \
+  V(CONS_ONE_BYTE_STRING_TYPE, ConsString::kSize, cons_one_byte_string,       \
+    ConsOneByteString)                                                        \
+  V(SLICED_STRING_TYPE, SlicedString::kSize, sliced_string, SlicedString)     \
+  V(SLICED_ONE_BYTE_STRING_TYPE, SlicedString::kSize, sliced_one_byte_string, \
+    SlicedOneByteString)                                                      \
+  V(EXTERNAL_STRING_TYPE, ExternalTwoByteString::kSize, external_string,      \
+    ExternalString)                                                           \
+  V(EXTERNAL_ONE_BYTE_STRING_TYPE, ExternalOneByteString::kSize,              \
+    external_one_byte_string, ExternalOneByteString)                          \
+  V(EXTERNAL_STRING_WITH_ONE_BYTE_DATA_TYPE, ExternalTwoByteString::kSize,    \
+    external_string_with_one_byte_data, ExternalStringWithOneByteData)        \
+  V(SHORT_EXTERNAL_STRING_TYPE, ExternalTwoByteString::kShortSize,            \
+    short_external_string, ShortExternalString)                               \
+  V(SHORT_EXTERNAL_ONE_BYTE_STRING_TYPE, ExternalOneByteString::kShortSize,   \
+    short_external_one_byte_string, ShortExternalOneByteString)               \
+  V(SHORT_EXTERNAL_STRING_WITH_ONE_BYTE_DATA_TYPE,                            \
+    ExternalTwoByteString::kShortSize,                                        \
+    short_external_string_with_one_byte_data,                                 \
+    ShortExternalStringWithOneByteData)                                       \
+                                                                              \
+  V(INTERNALIZED_STRING_TYPE, kVariableSizeSentinel, internalized_string,     \
+    InternalizedString)                                                       \
+  V(ONE_BYTE_INTERNALIZED_STRING_TYPE, kVariableSizeSentinel,                 \
+    one_byte_internalized_string, OneByteInternalizedString)                  \
+  V(EXTERNAL_INTERNALIZED_STRING_TYPE, ExternalTwoByteString::kSize,          \
+    external_internalized_string, ExternalInternalizedString)                 \
+  V(EXTERNAL_ONE_BYTE_INTERNALIZED_STRING_TYPE, ExternalOneByteString::kSize, \
+    external_one_byte_internalized_string, ExternalOneByteInternalizedString) \
+  V(EXTERNAL_INTERNALIZED_STRING_WITH_ONE_BYTE_DATA_TYPE,                     \
+    ExternalTwoByteString::kSize,                                             \
+    external_internalized_string_with_one_byte_data,                          \
+    ExternalInternalizedStringWithOneByteData)                                \
+  V(SHORT_EXTERNAL_INTERNALIZED_STRING_TYPE,                                  \
+    ExternalTwoByteString::kShortSize, short_external_internalized_string,    \
+    ShortExternalInternalizedString)                                          \
+  V(SHORT_EXTERNAL_ONE_BYTE_INTERNALIZED_STRING_TYPE,                         \
+    ExternalOneByteString::kShortSize,                                        \
+    short_external_one_byte_internalized_string,                              \
+    ShortExternalOneByteInternalizedString)                                   \
+  V(SHORT_EXTERNAL_INTERNALIZED_STRING_WITH_ONE_BYTE_DATA_TYPE,               \
+    ExternalTwoByteString::kShortSize,                                        \
+    short_external_internalized_string_with_one_byte_data,                    \
+    ShortExternalInternalizedStringWithOneByteData)
 
 // A struct is a simple object a set of object-valued fields.  Including an
 // object type in this causes the compiler to generate most of the boilerplate
@@ -643,51 +609,50 @@ static inline bool IsShortcutCandidate(int type) {
 
 enum InstanceType {
   // String types.
-  INTERNALIZED_STRING_TYPE = kTwoByteStringTag | kSeqStringTag
-      | kInternalizedTag,
-  ASCII_INTERNALIZED_STRING_TYPE = kOneByteStringTag | kSeqStringTag
-      | kInternalizedTag,
-  EXTERNAL_INTERNALIZED_STRING_TYPE = kTwoByteStringTag | kExternalStringTag
-      | kInternalizedTag,
-  EXTERNAL_ASCII_INTERNALIZED_STRING_TYPE = kOneByteStringTag
-      | kExternalStringTag | kInternalizedTag,
+  INTERNALIZED_STRING_TYPE =
+      kTwoByteStringTag | kSeqStringTag | kInternalizedTag,
+  ONE_BYTE_INTERNALIZED_STRING_TYPE =
+      kOneByteStringTag | kSeqStringTag | kInternalizedTag,
+  EXTERNAL_INTERNALIZED_STRING_TYPE =
+      kTwoByteStringTag | kExternalStringTag | kInternalizedTag,
+  EXTERNAL_ONE_BYTE_INTERNALIZED_STRING_TYPE =
+      kOneByteStringTag | kExternalStringTag | kInternalizedTag,
   EXTERNAL_INTERNALIZED_STRING_WITH_ONE_BYTE_DATA_TYPE =
-      EXTERNAL_INTERNALIZED_STRING_TYPE | kOneByteDataHintTag
-      | kInternalizedTag,
-  SHORT_EXTERNAL_INTERNALIZED_STRING_TYPE =
-      EXTERNAL_INTERNALIZED_STRING_TYPE | kShortExternalStringTag
-      | kInternalizedTag,
-  SHORT_EXTERNAL_ASCII_INTERNALIZED_STRING_TYPE =
-      EXTERNAL_ASCII_INTERNALIZED_STRING_TYPE | kShortExternalStringTag
-      | kInternalizedTag,
+      EXTERNAL_INTERNALIZED_STRING_TYPE | kOneByteDataHintTag |
+      kInternalizedTag,
+  SHORT_EXTERNAL_INTERNALIZED_STRING_TYPE = EXTERNAL_INTERNALIZED_STRING_TYPE |
+                                            kShortExternalStringTag |
+                                            kInternalizedTag,
+  SHORT_EXTERNAL_ONE_BYTE_INTERNALIZED_STRING_TYPE =
+      EXTERNAL_ONE_BYTE_INTERNALIZED_STRING_TYPE | kShortExternalStringTag |
+      kInternalizedTag,
   SHORT_EXTERNAL_INTERNALIZED_STRING_WITH_ONE_BYTE_DATA_TYPE =
-      EXTERNAL_INTERNALIZED_STRING_WITH_ONE_BYTE_DATA_TYPE
-      | kShortExternalStringTag | kInternalizedTag,
-
+      EXTERNAL_INTERNALIZED_STRING_WITH_ONE_BYTE_DATA_TYPE |
+      kShortExternalStringTag | kInternalizedTag,
   STRING_TYPE = INTERNALIZED_STRING_TYPE | kNotInternalizedTag,
-  ASCII_STRING_TYPE = ASCII_INTERNALIZED_STRING_TYPE | kNotInternalizedTag,
+  ONE_BYTE_STRING_TYPE =
+      ONE_BYTE_INTERNALIZED_STRING_TYPE | kNotInternalizedTag,
   CONS_STRING_TYPE = kTwoByteStringTag | kConsStringTag | kNotInternalizedTag,
-  CONS_ASCII_STRING_TYPE =
+  CONS_ONE_BYTE_STRING_TYPE =
       kOneByteStringTag | kConsStringTag | kNotInternalizedTag,
-
   SLICED_STRING_TYPE =
       kTwoByteStringTag | kSlicedStringTag | kNotInternalizedTag,
-  SLICED_ASCII_STRING_TYPE =
+  SLICED_ONE_BYTE_STRING_TYPE =
       kOneByteStringTag | kSlicedStringTag | kNotInternalizedTag,
   EXTERNAL_STRING_TYPE =
-  EXTERNAL_INTERNALIZED_STRING_TYPE | kNotInternalizedTag,
-  EXTERNAL_ASCII_STRING_TYPE =
-  EXTERNAL_ASCII_INTERNALIZED_STRING_TYPE | kNotInternalizedTag,
+      EXTERNAL_INTERNALIZED_STRING_TYPE | kNotInternalizedTag,
+  EXTERNAL_ONE_BYTE_STRING_TYPE =
+      EXTERNAL_ONE_BYTE_INTERNALIZED_STRING_TYPE | kNotInternalizedTag,
   EXTERNAL_STRING_WITH_ONE_BYTE_DATA_TYPE =
-      EXTERNAL_INTERNALIZED_STRING_WITH_ONE_BYTE_DATA_TYPE
-      | kNotInternalizedTag,
+      EXTERNAL_INTERNALIZED_STRING_WITH_ONE_BYTE_DATA_TYPE |
+      kNotInternalizedTag,
   SHORT_EXTERNAL_STRING_TYPE =
       SHORT_EXTERNAL_INTERNALIZED_STRING_TYPE | kNotInternalizedTag,
-  SHORT_EXTERNAL_ASCII_STRING_TYPE =
-      SHORT_EXTERNAL_ASCII_INTERNALIZED_STRING_TYPE | kNotInternalizedTag,
+  SHORT_EXTERNAL_ONE_BYTE_STRING_TYPE =
+      SHORT_EXTERNAL_ONE_BYTE_INTERNALIZED_STRING_TYPE | kNotInternalizedTag,
   SHORT_EXTERNAL_STRING_WITH_ONE_BYTE_DATA_TYPE =
-      SHORT_EXTERNAL_INTERNALIZED_STRING_WITH_ONE_BYTE_DATA_TYPE
-      | kNotInternalizedTag,
+      SHORT_EXTERNAL_INTERNALIZED_STRING_WITH_ONE_BYTE_DATA_TYPE |
+      kNotInternalizedTag,
 
   // Non-string names
   SYMBOL_TYPE = kNotStringTag,  // FIRST_NONSTRING_TYPE, LAST_NAME_TYPE
@@ -706,7 +671,6 @@ enum InstanceType {
   FOREIGN_TYPE,
   BYTE_ARRAY_TYPE,
   FREE_SPACE_TYPE,
-
   EXTERNAL_INT8_ARRAY_TYPE,  // FIRST_EXTERNAL_ARRAY_TYPE
   EXTERNAL_UINT8_ARRAY_TYPE,
   EXTERNAL_INT16_ARRAY_TYPE,
@@ -716,8 +680,7 @@ enum InstanceType {
   EXTERNAL_FLOAT32_ARRAY_TYPE,
   EXTERNAL_FLOAT64_ARRAY_TYPE,
   EXTERNAL_UINT8_CLAMPED_ARRAY_TYPE,  // LAST_EXTERNAL_ARRAY_TYPE
-
-  FIXED_INT8_ARRAY_TYPE,  // FIRST_FIXED_TYPED_ARRAY_TYPE
+  FIXED_INT8_ARRAY_TYPE,              // FIRST_FIXED_TYPED_ARRAY_TYPE
   FIXED_UINT8_ARRAY_TYPE,
   FIXED_INT16_ARRAY_TYPE,
   FIXED_UINT16_ARRAY_TYPE,
@@ -726,7 +689,6 @@ enum InstanceType {
   FIXED_FLOAT32_ARRAY_TYPE,
   FIXED_FLOAT64_ARRAY_TYPE,
   FIXED_UINT8_CLAMPED_ARRAY_TYPE,  // LAST_FIXED_TYPED_ARRAY_TYPE
-
   FIXED_DOUBLE_ARRAY_TYPE,
   FILLER_TYPE,  // LAST_DATA_TYPE
 
@@ -752,7 +714,6 @@ enum InstanceType {
   BOX_TYPE,
   DEBUG_INFO_TYPE,
   BREAK_POINT_INFO_TYPE,
-
   FIXED_ARRAY_TYPE,
   CONSTANT_POOL_ARRAY_TYPE,
   SHARED_FUNCTION_INFO_TYPE,
@@ -763,9 +724,8 @@ enum InstanceType {
   // compares for checking the JS_RECEIVER/SPEC_OBJECT range and the
   // NONCALLABLE_JS_OBJECT range.
   JS_FUNCTION_PROXY_TYPE,  // FIRST_JS_RECEIVER_TYPE, FIRST_JS_PROXY_TYPE
-  JS_PROXY_TYPE,  // LAST_JS_PROXY_TYPE
-
-  JS_VALUE_TYPE,  // FIRST_JS_OBJECT_TYPE
+  JS_PROXY_TYPE,           // LAST_JS_PROXY_TYPE
+  JS_VALUE_TYPE,           // FIRST_JS_OBJECT_TYPE
   JS_MESSAGE_OBJECT_TYPE,
   JS_DATE_TYPE,
   JS_OBJECT_TYPE,
@@ -785,9 +745,7 @@ enum InstanceType {
   JS_MAP_ITERATOR_TYPE,
   JS_WEAK_MAP_TYPE,
   JS_WEAK_SET_TYPE,
-
   JS_REGEXP_TYPE,
-
   JS_FUNCTION_TYPE,  // LAST_JS_OBJECT_TYPE, LAST_JS_RECEIVER_TYPE
 
   // Pseudo-types
@@ -916,437 +874,437 @@ template <class C> inline bool Is(Object* obj);
 #endif
 
 
-#define OBJECT_TYPE_LIST(V)                    \
-  V(Smi)                                       \
-  V(HeapObject)                                \
-  V(Number)                                    \
+#define OBJECT_TYPE_LIST(V) \
+  V(Smi)                    \
+  V(HeapObject)             \
+  V(Number)
 
-#define HEAP_OBJECT_TYPE_LIST(V)               \
-  V(HeapNumber)                                \
-  V(MutableHeapNumber)                         \
-  V(Name)                                      \
-  V(UniqueName)                                \
-  V(String)                                    \
-  V(SeqString)                                 \
-  V(ExternalString)                            \
-  V(ConsString)                                \
-  V(SlicedString)                              \
-  V(ExternalTwoByteString)                     \
-  V(ExternalAsciiString)                       \
-  V(SeqTwoByteString)                          \
-  V(SeqOneByteString)                          \
-  V(InternalizedString)                        \
-  V(Symbol)                                    \
-                                               \
-  V(ExternalArray)                             \
-  V(ExternalInt8Array)                         \
-  V(ExternalUint8Array)                        \
-  V(ExternalInt16Array)                        \
-  V(ExternalUint16Array)                       \
-  V(ExternalInt32Array)                        \
-  V(ExternalUint32Array)                       \
-  V(ExternalFloat32Array)                      \
-  V(ExternalFloat64Array)                      \
-  V(ExternalUint8ClampedArray)                 \
-  V(FixedTypedArrayBase)                       \
-  V(FixedUint8Array)                           \
-  V(FixedInt8Array)                            \
-  V(FixedUint16Array)                          \
-  V(FixedInt16Array)                           \
-  V(FixedUint32Array)                          \
-  V(FixedInt32Array)                           \
-  V(FixedFloat32Array)                         \
-  V(FixedFloat64Array)                         \
-  V(FixedUint8ClampedArray)                    \
-  V(ByteArray)                                 \
-  V(FreeSpace)                                 \
-  V(JSReceiver)                                \
-  V(JSObject)                                  \
-  V(JSContextExtensionObject)                  \
-  V(JSGeneratorObject)                         \
-  V(JSModule)                                  \
-  V(Map)                                       \
-  V(DescriptorArray)                           \
-  V(TransitionArray)                           \
-  V(DeoptimizationInputData)                   \
-  V(DeoptimizationOutputData)                  \
-  V(DependentCode)                             \
-  V(FixedArray)                                \
-  V(FixedDoubleArray)                          \
-  V(ConstantPoolArray)                         \
-  V(Context)                                   \
-  V(NativeContext)                             \
-  V(ScopeInfo)                                 \
-  V(JSFunction)                                \
-  V(Code)                                      \
-  V(Oddball)                                   \
-  V(SharedFunctionInfo)                        \
-  V(JSValue)                                   \
-  V(JSDate)                                    \
-  V(JSMessageObject)                           \
-  V(StringWrapper)                             \
-  V(Foreign)                                   \
-  V(Boolean)                                   \
-  V(JSArray)                                   \
-  V(JSArrayBuffer)                             \
-  V(JSArrayBufferView)                         \
-  V(JSTypedArray)                              \
-  V(JSDataView)                                \
-  V(JSProxy)                                   \
-  V(JSFunctionProxy)                           \
-  V(JSSet)                                     \
-  V(JSMap)                                     \
-  V(JSSetIterator)                             \
-  V(JSMapIterator)                             \
-  V(JSWeakCollection)                          \
-  V(JSWeakMap)                                 \
-  V(JSWeakSet)                                 \
-  V(JSRegExp)                                  \
-  V(HashTable)                                 \
-  V(Dictionary)                                \
-  V(StringTable)                               \
-  V(JSFunctionResultCache)                     \
-  V(NormalizedMapCache)                        \
-  V(CompilationCacheTable)                     \
-  V(CodeCacheHashTable)                        \
-  V(PolymorphicCodeCacheHashTable)             \
-  V(MapCache)                                  \
-  V(Primitive)                                 \
-  V(GlobalObject)                              \
-  V(JSGlobalObject)                            \
-  V(JSBuiltinsObject)                          \
-  V(JSGlobalProxy)                             \
-  V(UndetectableObject)                        \
-  V(AccessCheckNeeded)                         \
-  V(Cell)                                      \
-  V(PropertyCell)                              \
-  V(ObjectHashTable)                           \
-  V(WeakHashTable)                             \
+#define HEAP_OBJECT_TYPE_LIST(V)   \
+  V(HeapNumber)                    \
+  V(MutableHeapNumber)             \
+  V(Name)                          \
+  V(UniqueName)                    \
+  V(String)                        \
+  V(SeqString)                     \
+  V(ExternalString)                \
+  V(ConsString)                    \
+  V(SlicedString)                  \
+  V(ExternalTwoByteString)         \
+  V(ExternalOneByteString)         \
+  V(SeqTwoByteString)              \
+  V(SeqOneByteString)              \
+  V(InternalizedString)            \
+  V(Symbol)                        \
+                                   \
+  V(ExternalArray)                 \
+  V(ExternalInt8Array)             \
+  V(ExternalUint8Array)            \
+  V(ExternalInt16Array)            \
+  V(ExternalUint16Array)           \
+  V(ExternalInt32Array)            \
+  V(ExternalUint32Array)           \
+  V(ExternalFloat32Array)          \
+  V(ExternalFloat64Array)          \
+  V(ExternalUint8ClampedArray)     \
+  V(FixedTypedArrayBase)           \
+  V(FixedUint8Array)               \
+  V(FixedInt8Array)                \
+  V(FixedUint16Array)              \
+  V(FixedInt16Array)               \
+  V(FixedUint32Array)              \
+  V(FixedInt32Array)               \
+  V(FixedFloat32Array)             \
+  V(FixedFloat64Array)             \
+  V(FixedUint8ClampedArray)        \
+  V(ByteArray)                     \
+  V(FreeSpace)                     \
+  V(JSReceiver)                    \
+  V(JSObject)                      \
+  V(JSContextExtensionObject)      \
+  V(JSGeneratorObject)             \
+  V(JSModule)                      \
+  V(Map)                           \
+  V(DescriptorArray)               \
+  V(TransitionArray)               \
+  V(DeoptimizationInputData)       \
+  V(DeoptimizationOutputData)      \
+  V(DependentCode)                 \
+  V(FixedArray)                    \
+  V(FixedDoubleArray)              \
+  V(ConstantPoolArray)             \
+  V(Context)                       \
+  V(NativeContext)                 \
+  V(ScopeInfo)                     \
+  V(JSFunction)                    \
+  V(Code)                          \
+  V(Oddball)                       \
+  V(SharedFunctionInfo)            \
+  V(JSValue)                       \
+  V(JSDate)                        \
+  V(JSMessageObject)               \
+  V(StringWrapper)                 \
+  V(Foreign)                       \
+  V(Boolean)                       \
+  V(JSArray)                       \
+  V(JSArrayBuffer)                 \
+  V(JSArrayBufferView)             \
+  V(JSTypedArray)                  \
+  V(JSDataView)                    \
+  V(JSProxy)                       \
+  V(JSFunctionProxy)               \
+  V(JSSet)                         \
+  V(JSMap)                         \
+  V(JSSetIterator)                 \
+  V(JSMapIterator)                 \
+  V(JSWeakCollection)              \
+  V(JSWeakMap)                     \
+  V(JSWeakSet)                     \
+  V(JSRegExp)                      \
+  V(HashTable)                     \
+  V(Dictionary)                    \
+  V(StringTable)                   \
+  V(JSFunctionResultCache)         \
+  V(NormalizedMapCache)            \
+  V(CompilationCacheTable)         \
+  V(CodeCacheHashTable)            \
+  V(PolymorphicCodeCacheHashTable) \
+  V(MapCache)                      \
+  V(Primitive)                     \
+  V(GlobalObject)                  \
+  V(JSGlobalObject)                \
+  V(JSBuiltinsObject)              \
+  V(JSGlobalProxy)                 \
+  V(UndetectableObject)            \
+  V(AccessCheckNeeded)             \
+  V(Cell)                          \
+  V(PropertyCell)                  \
+  V(ObjectHashTable)               \
+  V(WeakHashTable)                 \
   V(OrderedHashTable)
 
 
-#define ERROR_MESSAGES_LIST(V)                                                \
-  V(kNoReason, "no reason")                                                   \
-                                                                              \
-  V(k32BitValueInRegisterIsNotZeroExtended,                                   \
-    "32 bit value in register is not zero-extended")                          \
-  V(kAlignmentMarkerExpected, "Alignment marker expected")                    \
-  V(kAllocationIsNotDoubleAligned, "Allocation is not double aligned")        \
-  V(kAPICallReturnedInvalidObject, "API call returned invalid object")        \
-  V(kArgumentsObjectValueInATestContext,                                      \
-    "Arguments object value in a test context")                               \
-  V(kArrayBoilerplateCreationFailed, "Array boilerplate creation failed")     \
-  V(kArrayIndexConstantValueTooBig, "Array index constant value too big")     \
-  V(kAssignmentToArguments, "Assignment to arguments")                        \
-  V(kAssignmentToLetVariableBeforeInitialization,                             \
-    "Assignment to let variable before initialization")                       \
-  V(kAssignmentToLOOKUPVariable, "Assignment to LOOKUP variable")             \
-  V(kAssignmentToParameterFunctionUsesArgumentsObject,                        \
-    "Assignment to parameter, function uses arguments object")                \
-  V(kAssignmentToParameterInArgumentsObject,                                  \
-    "Assignment to parameter in arguments object")                            \
-  V(kAttemptToUseUndefinedCache, "Attempt to use undefined cache")            \
-  V(kBadValueContextForArgumentsObjectValue,                                  \
-    "Bad value context for arguments object value")                           \
-  V(kBadValueContextForArgumentsValue,                                        \
-    "Bad value context for arguments value")                                  \
-  V(kBailedOutDueToDependencyChange, "Bailed out due to dependency change")   \
-  V(kBailoutWasNotPrepared, "Bailout was not prepared")                       \
-  V(kBinaryStubGenerateFloatingPointCode,                                     \
-    "BinaryStub_GenerateFloatingPointCode")                                   \
-  V(kBothRegistersWereSmisInSelectNonSmi,                                     \
-    "Both registers were smis in SelectNonSmi")                               \
-  V(kCallToAJavaScriptRuntimeFunction,                                        \
-    "Call to a JavaScript runtime function")                                  \
-  V(kCannotTranslatePositionInChangedArea,                                    \
-    "Cannot translate position in changed area")                              \
-  V(kCodeGenerationFailed, "Code generation failed")                          \
-  V(kCodeObjectNotProperlyPatched, "Code object not properly patched")        \
-  V(kCompoundAssignmentToLookupSlot, "Compound assignment to lookup slot")    \
-  V(kContextAllocatedArguments, "Context-allocated arguments")                \
-  V(kCopyBuffersOverlap, "Copy buffers overlap")                              \
-  V(kCouldNotGenerateZero, "Could not generate +0.0")                         \
-  V(kCouldNotGenerateNegativeZero, "Could not generate -0.0")                 \
-  V(kDebuggerHasBreakPoints, "Debugger has break points")                     \
-  V(kDebuggerStatement, "DebuggerStatement")                                  \
-  V(kDeclarationInCatchContext, "Declaration in catch context")               \
-  V(kDeclarationInWithContext, "Declaration in with context")                 \
-  V(kDefaultNaNModeNotSet, "Default NaN mode not set")                        \
-  V(kDeleteWithGlobalVariable, "Delete with global variable")                 \
-  V(kDeleteWithNonGlobalVariable, "Delete with non-global variable")          \
-  V(kDestinationOfCopyNotAligned, "Destination of copy not aligned")          \
-  V(kDontDeleteCellsCannotContainTheHole,                                     \
-    "DontDelete cells can't contain the hole")                                \
-  V(kDoPushArgumentNotImplementedForDoubleType,                               \
-    "DoPushArgument not implemented for double type")                         \
-  V(kEliminatedBoundsCheckFailed, "Eliminated bounds check failed")           \
-  V(kEmitLoadRegisterUnsupportedDoubleImmediate,                              \
-    "EmitLoadRegister: Unsupported double immediate")                         \
-  V(kEval, "eval")                                                            \
-  V(kExpected0AsASmiSentinel, "Expected 0 as a Smi sentinel")                 \
-  V(kExpectedAlignmentMarker, "Expected alignment marker")                    \
-  V(kExpectedAllocationSite, "Expected allocation site")                      \
-  V(kExpectedFunctionObject, "Expected function object in register")          \
-  V(kExpectedHeapNumber, "Expected HeapNumber")                               \
-  V(kExpectedNativeContext, "Expected native context")                        \
-  V(kExpectedNonIdenticalObjects, "Expected non-identical objects")           \
-  V(kExpectedNonNullContext, "Expected non-null context")                     \
-  V(kExpectedPositiveZero, "Expected +0.0")                                   \
-  V(kExpectedAllocationSiteInCell, "Expected AllocationSite in property cell")\
-  V(kExpectedFixedArrayInFeedbackVector,                                      \
-    "Expected fixed array in feedback vector")                                \
-  V(kExpectedFixedArrayInRegisterA2, "Expected fixed array in register a2")   \
-  V(kExpectedFixedArrayInRegisterEbx, "Expected fixed array in register ebx") \
-  V(kExpectedFixedArrayInRegisterR2, "Expected fixed array in register r2")   \
-  V(kExpectedFixedArrayInRegisterRbx, "Expected fixed array in register rbx") \
-  V(kExpectedNewSpaceObject, "Expected new space object")                     \
-  V(kExpectedSmiOrHeapNumber, "Expected smi or HeapNumber")                   \
-  V(kExpectedUndefinedOrCell, "Expected undefined or cell in register")       \
-  V(kExpectingAlignmentForCopyBytes, "Expecting alignment for CopyBytes")     \
-  V(kExportDeclaration, "Export declaration")                                 \
-  V(kExternalStringExpectedButNotFound,                                       \
-    "External string expected, but not found")                                \
-  V(kFailedBailedOutLastTime, "Failed/bailed out last time")                  \
-  V(kForInStatementIsNotFastCase, "ForInStatement is not fast case")          \
-  V(kForInStatementOptimizationIsDisabled,                                    \
-    "ForInStatement optimization is disabled")                                \
-  V(kForInStatementWithNonLocalEachVariable,                                  \
-    "ForInStatement with non-local each variable")                            \
-  V(kForOfStatement, "ForOfStatement")                                        \
-  V(kFrameIsExpectedToBeAligned, "Frame is expected to be aligned")           \
-  V(kFunctionCallsEval, "Function calls eval")                                \
-  V(kFunctionIsAGenerator, "Function is a generator")                         \
-  V(kFunctionWithIllegalRedeclaration, "Function with illegal redeclaration") \
-  V(kGeneratedCodeIsTooLarge, "Generated code is too large")                  \
-  V(kGeneratorFailedToResume, "Generator failed to resume")                   \
-  V(kGenerator, "Generator")                                                  \
-  V(kGlobalFunctionsMustHaveInitialMap,                                       \
-    "Global functions must have initial map")                                 \
-  V(kHeapNumberMapRegisterClobbered, "HeapNumberMap register clobbered")      \
-  V(kHydrogenFilter, "Optimization disabled by filter")                       \
-  V(kImportDeclaration, "Import declaration")                                 \
-  V(kImproperObjectOnPrototypeChainForStore,                                  \
-    "Improper object on prototype chain for store")                           \
-  V(kIndexIsNegative, "Index is negative")                                    \
-  V(kIndexIsTooLarge, "Index is too large")                                   \
-  V(kInlinedRuntimeFunctionClassOf, "Inlined runtime function: ClassOf")      \
-  V(kInlinedRuntimeFunctionFastAsciiArrayJoin,                                \
-    "Inlined runtime function: FastAsciiArrayJoin")                           \
-  V(kInlinedRuntimeFunctionGeneratorNext,                                     \
-    "Inlined runtime function: GeneratorNext")                                \
-  V(kInlinedRuntimeFunctionGeneratorThrow,                                    \
-    "Inlined runtime function: GeneratorThrow")                               \
-  V(kInlinedRuntimeFunctionGetFromCache,                                      \
-    "Inlined runtime function: GetFromCache")                                 \
-  V(kInlinedRuntimeFunctionIsNonNegativeSmi,                                  \
-    "Inlined runtime function: IsNonNegativeSmi")                             \
-  V(kInlinedRuntimeFunctionIsStringWrapperSafeForDefaultValueOf,              \
-    "Inlined runtime function: IsStringWrapperSafeForDefaultValueOf")         \
-  V(kInliningBailedOut, "Inlining bailed out")                                \
-  V(kInputGPRIsExpectedToHaveUpper32Cleared,                                  \
-    "Input GPR is expected to have upper32 cleared")                          \
-  V(kInputStringTooLong, "Input string too long")                             \
-  V(kInstanceofStubUnexpectedCallSiteCacheCheck,                              \
-    "InstanceofStub unexpected call site cache (check)")                      \
-  V(kInstanceofStubUnexpectedCallSiteCacheCmp1,                               \
-    "InstanceofStub unexpected call site cache (cmp 1)")                      \
-  V(kInstanceofStubUnexpectedCallSiteCacheCmp2,                               \
-    "InstanceofStub unexpected call site cache (cmp 2)")                      \
-  V(kInstanceofStubUnexpectedCallSiteCacheMov,                                \
-    "InstanceofStub unexpected call site cache (mov)")                        \
-  V(kInteger32ToSmiFieldWritingToNonSmiLocation,                              \
-    "Integer32ToSmiField writing to non-smi location")                        \
-  V(kInvalidCaptureReferenced, "Invalid capture referenced")                  \
-  V(kInvalidElementsKindForInternalArrayOrInternalPackedArray,                \
-    "Invalid ElementsKind for InternalArray or InternalPackedArray")          \
-  V(kInvalidFullCodegenState, "invalid full-codegen state")                   \
-  V(kInvalidHandleScopeLevel, "Invalid HandleScope level")                    \
-  V(kInvalidLeftHandSideInAssignment, "Invalid left-hand side in assignment") \
-  V(kInvalidLhsInCompoundAssignment, "Invalid lhs in compound assignment")    \
-  V(kInvalidLhsInCountOperation, "Invalid lhs in count operation")            \
-  V(kInvalidMinLength, "Invalid min_length")                                  \
-  V(kJSGlobalObjectNativeContextShouldBeANativeContext,                       \
-    "JSGlobalObject::native_context should be a native context")              \
-  V(kJSGlobalProxyContextShouldNotBeNull,                                     \
-    "JSGlobalProxy::context() should not be null")                            \
-  V(kJSObjectWithFastElementsMapHasSlowElements,                              \
-    "JSObject with fast elements map has slow elements")                      \
-  V(kLetBindingReInitialization, "Let binding re-initialization")             \
-  V(kLhsHasBeenClobbered, "lhs has been clobbered")                           \
-  V(kLiveBytesCountOverflowChunkSize, "Live Bytes Count overflow chunk size") \
-  V(kLiveEdit, "LiveEdit")                                                    \
-  V(kLookupVariableInCountOperation, "Lookup variable in count operation")    \
-  V(kMapBecameDeprecated, "Map became deprecated")                            \
-  V(kMapBecameUnstable, "Map became unstable")                                \
-  V(kMapIsNoLongerInEax, "Map is no longer in eax")                           \
-  V(kModuleDeclaration, "Module declaration")                                 \
-  V(kModuleLiteral, "Module literal")                                         \
-  V(kModulePath, "Module path")                                               \
-  V(kModuleStatement, "Module statement")                                     \
-  V(kModuleVariable, "Module variable")                                       \
-  V(kModuleUrl, "Module url")                                                 \
-  V(kNativeFunctionLiteral, "Native function literal")                        \
-  V(kSuperReference, "Super reference")                                       \
-  V(kNeedSmiLiteral, "Need a Smi literal here")                               \
-  V(kNoCasesLeft, "No cases left")                                            \
-  V(kNoEmptyArraysHereInEmitFastAsciiArrayJoin,                               \
-    "No empty arrays here in EmitFastAsciiArrayJoin")                         \
-  V(kNonInitializerAssignmentToConst, "Non-initializer assignment to const")  \
-  V(kNonSmiIndex, "Non-smi index")                                            \
-  V(kNonSmiKeyInArrayLiteral, "Non-smi key in array literal")                 \
-  V(kNonSmiValue, "Non-smi value")                                            \
-  V(kNonObject, "Non-object value")                                           \
-  V(kNotEnoughVirtualRegistersForValues,                                      \
-    "Not enough virtual registers for values")                                \
-  V(kNotEnoughSpillSlotsForOsr, "Not enough spill slots for OSR")             \
-  V(kNotEnoughVirtualRegistersRegalloc,                                       \
-    "Not enough virtual registers (regalloc)")                                \
-  V(kObjectFoundInSmiOnlyArray, "Object found in smi-only array")             \
-  V(kObjectLiteralWithComplexProperty, "Object literal with complex property")\
-  V(kOddballInStringTableIsNotUndefinedOrTheHole,                             \
-    "Oddball in string table is not undefined or the hole")                   \
-  V(kOffsetOutOfRange, "Offset out of range")                                 \
-  V(kOperandIsASmiAndNotAName, "Operand is a smi and not a name")             \
-  V(kOperandIsASmiAndNotAString, "Operand is a smi and not a string")         \
-  V(kOperandIsASmi, "Operand is a smi")                                       \
-  V(kOperandIsNotAName, "Operand is not a name")                              \
-  V(kOperandIsNotANumber, "Operand is not a number")                          \
-  V(kOperandIsNotASmi, "Operand is not a smi")                                \
-  V(kOperandIsNotAString, "Operand is not a string")                          \
-  V(kOperandIsNotSmi, "Operand is not smi")                                   \
-  V(kOperandNotANumber, "Operand not a number")                               \
-  V(kObjectTagged, "The object is tagged")                                    \
-  V(kObjectNotTagged, "The object is not tagged")                             \
-  V(kOptimizationDisabled, "Optimization is disabled")                        \
-  V(kOptimizedTooManyTimes, "Optimized too many times")                       \
-  V(kOutOfVirtualRegistersWhileTryingToAllocateTempRegister,                  \
-    "Out of virtual registers while trying to allocate temp register")        \
-  V(kParseScopeError, "Parse/scope error")                                    \
-  V(kPossibleDirectCallToEval, "Possible direct call to eval")                \
-  V(kPreconditionsWereNotMet, "Preconditions were not met")                   \
-  V(kPropertyAllocationCountFailed, "Property allocation count failed")       \
-  V(kReceivedInvalidReturnAddress, "Received invalid return address")         \
-  V(kReferenceToAVariableWhichRequiresDynamicLookup,                          \
-    "Reference to a variable which requires dynamic lookup")                  \
-  V(kReferenceToGlobalLexicalVariable, "Reference to global lexical variable")\
-  V(kReferenceToUninitializedVariable, "Reference to uninitialized variable") \
-  V(kRegisterDidNotMatchExpectedRoot, "Register did not match expected root") \
-  V(kRegisterWasClobbered, "Register was clobbered")                          \
-  V(kRememberedSetPointerInNewSpace, "Remembered set pointer is in new space")\
-  V(kReturnAddressNotFoundInFrame, "Return address not found in frame")       \
-  V(kRhsHasBeenClobbered, "Rhs has been clobbered")                           \
-  V(kScopedBlock, "ScopedBlock")                                              \
-  V(kSmiAdditionOverflow, "Smi addition overflow")                            \
-  V(kSmiSubtractionOverflow, "Smi subtraction overflow")                      \
-  V(kStackAccessBelowStackPointer, "Stack access below stack pointer")        \
-  V(kStackFrameTypesMustMatch, "Stack frame types must match")                \
-  V(kSwitchStatementMixedOrNonLiteralSwitchLabels,                            \
-    "SwitchStatement: mixed or non-literal switch labels")                    \
-  V(kSwitchStatementTooManyClauses, "SwitchStatement: too many clauses")      \
-  V(kTheCurrentStackPointerIsBelowCsp,                                        \
-    "The current stack pointer is below csp")                                 \
+#define ERROR_MESSAGES_LIST(V)                                                 \
+  V(kNoReason, "no reason")                                                    \
+                                                                               \
+  V(k32BitValueInRegisterIsNotZeroExtended,                                    \
+    "32 bit value in register is not zero-extended")                           \
+  V(kAlignmentMarkerExpected, "Alignment marker expected")                     \
+  V(kAllocationIsNotDoubleAligned, "Allocation is not double aligned")         \
+  V(kAPICallReturnedInvalidObject, "API call returned invalid object")         \
+  V(kArgumentsObjectValueInATestContext,                                       \
+    "Arguments object value in a test context")                                \
+  V(kArrayBoilerplateCreationFailed, "Array boilerplate creation failed")      \
+  V(kArrayIndexConstantValueTooBig, "Array index constant value too big")      \
+  V(kAssignmentToArguments, "Assignment to arguments")                         \
+  V(kAssignmentToLetVariableBeforeInitialization,                              \
+    "Assignment to let variable before initialization")                        \
+  V(kAssignmentToLOOKUPVariable, "Assignment to LOOKUP variable")              \
+  V(kAssignmentToParameterFunctionUsesArgumentsObject,                         \
+    "Assignment to parameter, function uses arguments object")                 \
+  V(kAssignmentToParameterInArgumentsObject,                                   \
+    "Assignment to parameter in arguments object")                             \
+  V(kAttemptToUseUndefinedCache, "Attempt to use undefined cache")             \
+  V(kBadValueContextForArgumentsObjectValue,                                   \
+    "Bad value context for arguments object value")                            \
+  V(kBadValueContextForArgumentsValue,                                         \
+    "Bad value context for arguments value")                                   \
+  V(kBailedOutDueToDependencyChange, "Bailed out due to dependency change")    \
+  V(kBailoutWasNotPrepared, "Bailout was not prepared")                        \
+  V(kBinaryStubGenerateFloatingPointCode,                                      \
+    "BinaryStub_GenerateFloatingPointCode")                                    \
+  V(kBothRegistersWereSmisInSelectNonSmi,                                      \
+    "Both registers were smis in SelectNonSmi")                                \
+  V(kCallToAJavaScriptRuntimeFunction,                                         \
+    "Call to a JavaScript runtime function")                                   \
+  V(kCannotTranslatePositionInChangedArea,                                     \
+    "Cannot translate position in changed area")                               \
+  V(kCodeGenerationFailed, "Code generation failed")                           \
+  V(kCodeObjectNotProperlyPatched, "Code object not properly patched")         \
+  V(kCompoundAssignmentToLookupSlot, "Compound assignment to lookup slot")     \
+  V(kContextAllocatedArguments, "Context-allocated arguments")                 \
+  V(kCopyBuffersOverlap, "Copy buffers overlap")                               \
+  V(kCouldNotGenerateZero, "Could not generate +0.0")                          \
+  V(kCouldNotGenerateNegativeZero, "Could not generate -0.0")                  \
+  V(kDebuggerHasBreakPoints, "Debugger has break points")                      \
+  V(kDebuggerStatement, "DebuggerStatement")                                   \
+  V(kDeclarationInCatchContext, "Declaration in catch context")                \
+  V(kDeclarationInWithContext, "Declaration in with context")                  \
+  V(kDefaultNaNModeNotSet, "Default NaN mode not set")                         \
+  V(kDeleteWithGlobalVariable, "Delete with global variable")                  \
+  V(kDeleteWithNonGlobalVariable, "Delete with non-global variable")           \
+  V(kDestinationOfCopyNotAligned, "Destination of copy not aligned")           \
+  V(kDontDeleteCellsCannotContainTheHole,                                      \
+    "DontDelete cells can't contain the hole")                                 \
+  V(kDoPushArgumentNotImplementedForDoubleType,                                \
+    "DoPushArgument not implemented for double type")                          \
+  V(kEliminatedBoundsCheckFailed, "Eliminated bounds check failed")            \
+  V(kEmitLoadRegisterUnsupportedDoubleImmediate,                               \
+    "EmitLoadRegister: Unsupported double immediate")                          \
+  V(kEval, "eval")                                                             \
+  V(kExpected0AsASmiSentinel, "Expected 0 as a Smi sentinel")                  \
+  V(kExpectedAlignmentMarker, "Expected alignment marker")                     \
+  V(kExpectedAllocationSite, "Expected allocation site")                       \
+  V(kExpectedFunctionObject, "Expected function object in register")           \
+  V(kExpectedHeapNumber, "Expected HeapNumber")                                \
+  V(kExpectedNativeContext, "Expected native context")                         \
+  V(kExpectedNonIdenticalObjects, "Expected non-identical objects")            \
+  V(kExpectedNonNullContext, "Expected non-null context")                      \
+  V(kExpectedPositiveZero, "Expected +0.0")                                    \
+  V(kExpectedAllocationSiteInCell, "Expected AllocationSite in property cell") \
+  V(kExpectedFixedArrayInFeedbackVector,                                       \
+    "Expected fixed array in feedback vector")                                 \
+  V(kExpectedFixedArrayInRegisterA2, "Expected fixed array in register a2")    \
+  V(kExpectedFixedArrayInRegisterEbx, "Expected fixed array in register ebx")  \
+  V(kExpectedFixedArrayInRegisterR2, "Expected fixed array in register r2")    \
+  V(kExpectedFixedArrayInRegisterRbx, "Expected fixed array in register rbx")  \
+  V(kExpectedNewSpaceObject, "Expected new space object")                      \
+  V(kExpectedSmiOrHeapNumber, "Expected smi or HeapNumber")                    \
+  V(kExpectedUndefinedOrCell, "Expected undefined or cell in register")        \
+  V(kExpectingAlignmentForCopyBytes, "Expecting alignment for CopyBytes")      \
+  V(kExportDeclaration, "Export declaration")                                  \
+  V(kExternalStringExpectedButNotFound,                                        \
+    "External string expected, but not found")                                 \
+  V(kFailedBailedOutLastTime, "Failed/bailed out last time")                   \
+  V(kForInStatementIsNotFastCase, "ForInStatement is not fast case")           \
+  V(kForInStatementOptimizationIsDisabled,                                     \
+    "ForInStatement optimization is disabled")                                 \
+  V(kForInStatementWithNonLocalEachVariable,                                   \
+    "ForInStatement with non-local each variable")                             \
+  V(kForOfStatement, "ForOfStatement")                                         \
+  V(kFrameIsExpectedToBeAligned, "Frame is expected to be aligned")            \
+  V(kFunctionCallsEval, "Function calls eval")                                 \
+  V(kFunctionIsAGenerator, "Function is a generator")                          \
+  V(kFunctionWithIllegalRedeclaration, "Function with illegal redeclaration")  \
+  V(kGeneratedCodeIsTooLarge, "Generated code is too large")                   \
+  V(kGeneratorFailedToResume, "Generator failed to resume")                    \
+  V(kGenerator, "Generator")                                                   \
+  V(kGlobalFunctionsMustHaveInitialMap,                                        \
+    "Global functions must have initial map")                                  \
+  V(kHeapNumberMapRegisterClobbered, "HeapNumberMap register clobbered")       \
+  V(kHydrogenFilter, "Optimization disabled by filter")                        \
+  V(kImportDeclaration, "Import declaration")                                  \
+  V(kImproperObjectOnPrototypeChainForStore,                                   \
+    "Improper object on prototype chain for store")                            \
+  V(kIndexIsNegative, "Index is negative")                                     \
+  V(kIndexIsTooLarge, "Index is too large")                                    \
+  V(kInlinedRuntimeFunctionClassOf, "Inlined runtime function: ClassOf")       \
+  V(kInlinedRuntimeFunctionFastOneByteArrayJoin,                               \
+    "Inlined runtime function: FastOneByteArrayJoin")                          \
+  V(kInlinedRuntimeFunctionGeneratorNext,                                      \
+    "Inlined runtime function: GeneratorNext")                                 \
+  V(kInlinedRuntimeFunctionGeneratorThrow,                                     \
+    "Inlined runtime function: GeneratorThrow")                                \
+  V(kInlinedRuntimeFunctionGetFromCache,                                       \
+    "Inlined runtime function: GetFromCache")                                  \
+  V(kInlinedRuntimeFunctionIsNonNegativeSmi,                                   \
+    "Inlined runtime function: IsNonNegativeSmi")                              \
+  V(kInlinedRuntimeFunctionIsStringWrapperSafeForDefaultValueOf,               \
+    "Inlined runtime function: IsStringWrapperSafeForDefaultValueOf")          \
+  V(kInliningBailedOut, "Inlining bailed out")                                 \
+  V(kInputGPRIsExpectedToHaveUpper32Cleared,                                   \
+    "Input GPR is expected to have upper32 cleared")                           \
+  V(kInputStringTooLong, "Input string too long")                              \
+  V(kInstanceofStubUnexpectedCallSiteCacheCheck,                               \
+    "InstanceofStub unexpected call site cache (check)")                       \
+  V(kInstanceofStubUnexpectedCallSiteCacheCmp1,                                \
+    "InstanceofStub unexpected call site cache (cmp 1)")                       \
+  V(kInstanceofStubUnexpectedCallSiteCacheCmp2,                                \
+    "InstanceofStub unexpected call site cache (cmp 2)")                       \
+  V(kInstanceofStubUnexpectedCallSiteCacheMov,                                 \
+    "InstanceofStub unexpected call site cache (mov)")                         \
+  V(kInteger32ToSmiFieldWritingToNonSmiLocation,                               \
+    "Integer32ToSmiField writing to non-smi location")                         \
+  V(kInvalidCaptureReferenced, "Invalid capture referenced")                   \
+  V(kInvalidElementsKindForInternalArrayOrInternalPackedArray,                 \
+    "Invalid ElementsKind for InternalArray or InternalPackedArray")           \
+  V(kInvalidFullCodegenState, "invalid full-codegen state")                    \
+  V(kInvalidHandleScopeLevel, "Invalid HandleScope level")                     \
+  V(kInvalidLeftHandSideInAssignment, "Invalid left-hand side in assignment")  \
+  V(kInvalidLhsInCompoundAssignment, "Invalid lhs in compound assignment")     \
+  V(kInvalidLhsInCountOperation, "Invalid lhs in count operation")             \
+  V(kInvalidMinLength, "Invalid min_length")                                   \
+  V(kJSGlobalObjectNativeContextShouldBeANativeContext,                        \
+    "JSGlobalObject::native_context should be a native context")               \
+  V(kJSGlobalProxyContextShouldNotBeNull,                                      \
+    "JSGlobalProxy::context() should not be null")                             \
+  V(kJSObjectWithFastElementsMapHasSlowElements,                               \
+    "JSObject with fast elements map has slow elements")                       \
+  V(kLetBindingReInitialization, "Let binding re-initialization")              \
+  V(kLhsHasBeenClobbered, "lhs has been clobbered")                            \
+  V(kLiveBytesCountOverflowChunkSize, "Live Bytes Count overflow chunk size")  \
+  V(kLiveEdit, "LiveEdit")                                                     \
+  V(kLookupVariableInCountOperation, "Lookup variable in count operation")     \
+  V(kMapBecameDeprecated, "Map became deprecated")                             \
+  V(kMapBecameUnstable, "Map became unstable")                                 \
+  V(kMapIsNoLongerInEax, "Map is no longer in eax")                            \
+  V(kModuleDeclaration, "Module declaration")                                  \
+  V(kModuleLiteral, "Module literal")                                          \
+  V(kModulePath, "Module path")                                                \
+  V(kModuleStatement, "Module statement")                                      \
+  V(kModuleVariable, "Module variable")                                        \
+  V(kModuleUrl, "Module url")                                                  \
+  V(kNativeFunctionLiteral, "Native function literal")                         \
+  V(kSuperReference, "Super reference")                                        \
+  V(kNeedSmiLiteral, "Need a Smi literal here")                                \
+  V(kNoCasesLeft, "No cases left")                                             \
+  V(kNoEmptyArraysHereInEmitFastOneByteArrayJoin,                              \
+    "No empty arrays here in EmitFastOneByteArrayJoin")                        \
+  V(kNonInitializerAssignmentToConst, "Non-initializer assignment to const")   \
+  V(kNonSmiIndex, "Non-smi index")                                             \
+  V(kNonSmiKeyInArrayLiteral, "Non-smi key in array literal")                  \
+  V(kNonSmiValue, "Non-smi value")                                             \
+  V(kNonObject, "Non-object value")                                            \
+  V(kNotEnoughVirtualRegistersForValues,                                       \
+    "Not enough virtual registers for values")                                 \
+  V(kNotEnoughSpillSlotsForOsr, "Not enough spill slots for OSR")              \
+  V(kNotEnoughVirtualRegistersRegalloc,                                        \
+    "Not enough virtual registers (regalloc)")                                 \
+  V(kObjectFoundInSmiOnlyArray, "Object found in smi-only array")              \
+  V(kObjectLiteralWithComplexProperty, "Object literal with complex property") \
+  V(kOddballInStringTableIsNotUndefinedOrTheHole,                              \
+    "Oddball in string table is not undefined or the hole")                    \
+  V(kOffsetOutOfRange, "Offset out of range")                                  \
+  V(kOperandIsASmiAndNotAName, "Operand is a smi and not a name")              \
+  V(kOperandIsASmiAndNotAString, "Operand is a smi and not a string")          \
+  V(kOperandIsASmi, "Operand is a smi")                                        \
+  V(kOperandIsNotAName, "Operand is not a name")                               \
+  V(kOperandIsNotANumber, "Operand is not a number")                           \
+  V(kOperandIsNotASmi, "Operand is not a smi")                                 \
+  V(kOperandIsNotAString, "Operand is not a string")                           \
+  V(kOperandIsNotSmi, "Operand is not smi")                                    \
+  V(kOperandNotANumber, "Operand not a number")                                \
+  V(kObjectTagged, "The object is tagged")                                     \
+  V(kObjectNotTagged, "The object is not tagged")                              \
+  V(kOptimizationDisabled, "Optimization is disabled")                         \
+  V(kOptimizedTooManyTimes, "Optimized too many times")                        \
+  V(kOutOfVirtualRegistersWhileTryingToAllocateTempRegister,                   \
+    "Out of virtual registers while trying to allocate temp register")         \
+  V(kParseScopeError, "Parse/scope error")                                     \
+  V(kPossibleDirectCallToEval, "Possible direct call to eval")                 \
+  V(kPreconditionsWereNotMet, "Preconditions were not met")                    \
+  V(kPropertyAllocationCountFailed, "Property allocation count failed")        \
+  V(kReceivedInvalidReturnAddress, "Received invalid return address")          \
+  V(kReferenceToAVariableWhichRequiresDynamicLookup,                           \
+    "Reference to a variable which requires dynamic lookup")                   \
+  V(kReferenceToGlobalLexicalVariable, "Reference to global lexical variable") \
+  V(kReferenceToUninitializedVariable, "Reference to uninitialized variable")  \
+  V(kRegisterDidNotMatchExpectedRoot, "Register did not match expected root")  \
+  V(kRegisterWasClobbered, "Register was clobbered")                           \
+  V(kRememberedSetPointerInNewSpace, "Remembered set pointer is in new space") \
+  V(kReturnAddressNotFoundInFrame, "Return address not found in frame")        \
+  V(kRhsHasBeenClobbered, "Rhs has been clobbered")                            \
+  V(kScopedBlock, "ScopedBlock")                                               \
+  V(kSmiAdditionOverflow, "Smi addition overflow")                             \
+  V(kSmiSubtractionOverflow, "Smi subtraction overflow")                       \
+  V(kStackAccessBelowStackPointer, "Stack access below stack pointer")         \
+  V(kStackFrameTypesMustMatch, "Stack frame types must match")                 \
+  V(kSwitchStatementMixedOrNonLiteralSwitchLabels,                             \
+    "SwitchStatement: mixed or non-literal switch labels")                     \
+  V(kSwitchStatementTooManyClauses, "SwitchStatement: too many clauses")       \
+  V(kTheCurrentStackPointerIsBelowCsp,                                         \
+    "The current stack pointer is below csp")                                  \
   V(kTheInstructionShouldBeALis, "The instruction should be a lis")           \
-  V(kTheInstructionShouldBeALui, "The instruction should be a lui")           \
-  V(kTheInstructionShouldBeAnOri, "The instruction should be an ori")         \
+  V(kTheInstructionShouldBeALui, "The instruction should be a lui")            \
+  V(kTheInstructionShouldBeAnOri, "The instruction should be an ori")          \
   V(kTheInstructionShouldBeAnOris, "The instruction should be an oris")       \
   V(kTheInstructionShouldBeALi, "The instruction should be a li")       \
   V(kTheInstructionShouldBeASldi, "The instruction should be a sldi")         \
-  V(kTheInstructionToPatchShouldBeALoadFromConstantPool,                      \
-    "The instruction to patch should be a load from the constant pool")       \
-  V(kTheInstructionToPatchShouldBeAnLdrLiteral,                               \
-    "The instruction to patch should be a ldr literal")                       \
+  V(kTheInstructionToPatchShouldBeALoadFromConstantPool,                       \
+    "The instruction to patch should be a load from the constant pool")        \
+  V(kTheInstructionToPatchShouldBeAnLdrLiteral,                                \
+    "The instruction to patch should be a ldr literal")                        \
   V(kTheInstructionToPatchShouldBeALis,                                       \
     "The instruction to patch should be a lis")                               \
-  V(kTheInstructionToPatchShouldBeALui,                                       \
-    "The instruction to patch should be a lui")                               \
-  V(kTheInstructionToPatchShouldBeAnOri,                                      \
-    "The instruction to patch should be an ori")                              \
-  V(kTheSourceAndDestinationAreTheSame,                                       \
-    "The source and destination are the same")                                \
-  V(kTheStackPointerIsNotAligned, "The stack pointer is not aligned.")        \
-  V(kTheStackWasCorruptedByMacroAssemblerCall,                                \
-    "The stack was corrupted by MacroAssembler::Call()")                      \
-  V(kTooManyParametersLocals, "Too many parameters/locals")                   \
-  V(kTooManyParameters, "Too many parameters")                                \
-  V(kTooManySpillSlotsNeededForOSR, "Too many spill slots needed for OSR")    \
-  V(kToOperand32UnsupportedImmediate, "ToOperand32 unsupported immediate.")   \
-  V(kToOperandIsDoubleRegisterUnimplemented,                                  \
-    "ToOperand IsDoubleRegister unimplemented")                               \
-  V(kToOperandUnsupportedDoubleImmediate,                                     \
-    "ToOperand Unsupported double immediate")                                 \
-  V(kTryCatchStatement, "TryCatchStatement")                                  \
-  V(kTryFinallyStatement, "TryFinallyStatement")                              \
-  V(kUnableToEncodeValueAsSmi, "Unable to encode value as smi")               \
-  V(kUnalignedAllocationInNewSpace, "Unaligned allocation in new space")      \
-  V(kUnalignedCellInWriteBarrier, "Unaligned cell in write barrier")          \
-  V(kUndefinedValueNotLoaded, "Undefined value not loaded")                   \
-  V(kUndoAllocationOfNonAllocatedMemory,                                      \
-    "Undo allocation of non allocated memory")                                \
-  V(kUnexpectedAllocationTop, "Unexpected allocation top")                    \
-  V(kUnexpectedColorFound, "Unexpected color bit pattern found")              \
-  V(kUnexpectedElementsKindInArrayConstructor,                                \
-    "Unexpected ElementsKind in array constructor")                           \
-  V(kUnexpectedFallthroughFromCharCodeAtSlowCase,                             \
-    "Unexpected fallthrough from CharCodeAt slow case")                       \
-  V(kUnexpectedFallthroughFromCharFromCodeSlowCase,                           \
-    "Unexpected fallthrough from CharFromCode slow case")                     \
-  V(kUnexpectedFallThroughFromStringComparison,                               \
-    "Unexpected fall-through from string comparison")                         \
-  V(kUnexpectedFallThroughInBinaryStubGenerateFloatingPointCode,              \
-    "Unexpected fall-through in BinaryStub_GenerateFloatingPointCode")        \
-  V(kUnexpectedFallthroughToCharCodeAtSlowCase,                               \
-    "Unexpected fallthrough to CharCodeAt slow case")                         \
-  V(kUnexpectedFallthroughToCharFromCodeSlowCase,                             \
-    "Unexpected fallthrough to CharFromCode slow case")                       \
-  V(kUnexpectedFPUStackDepthAfterInstruction,                                 \
-    "Unexpected FPU stack depth after instruction")                           \
-  V(kUnexpectedInitialMapForArrayFunction1,                                   \
-    "Unexpected initial map for Array function (1)")                          \
-  V(kUnexpectedInitialMapForArrayFunction2,                                   \
-    "Unexpected initial map for Array function (2)")                          \
-  V(kUnexpectedInitialMapForArrayFunction,                                    \
-    "Unexpected initial map for Array function")                              \
-  V(kUnexpectedInitialMapForInternalArrayFunction,                            \
-    "Unexpected initial map for InternalArray function")                      \
-  V(kUnexpectedLevelAfterReturnFromApiCall,                                   \
-    "Unexpected level after return from api call")                            \
-  V(kUnexpectedNegativeValue, "Unexpected negative value")                    \
-  V(kUnexpectedNumberOfPreAllocatedPropertyFields,                            \
-    "Unexpected number of pre-allocated property fields")                     \
-  V(kUnexpectedFPCRMode, "Unexpected FPCR mode.")                             \
-  V(kUnexpectedSmi, "Unexpected smi value")                                   \
-  V(kUnexpectedStringFunction, "Unexpected String function")                  \
-  V(kUnexpectedStringType, "Unexpected string type")                          \
-  V(kUnexpectedStringWrapperInstanceSize,                                     \
-    "Unexpected string wrapper instance size")                                \
-  V(kUnexpectedTypeForRegExpDataFixedArrayExpected,                           \
-    "Unexpected type for RegExp data, FixedArray expected")                   \
-  V(kUnexpectedValue, "Unexpected value")                                     \
-  V(kUnexpectedUnusedPropertiesOfStringWrapper,                               \
-    "Unexpected unused properties of string wrapper")                         \
-  V(kUnimplemented, "unimplemented")                                          \
-  V(kUninitializedKSmiConstantRegister, "Uninitialized kSmiConstantRegister") \
-  V(kUnknown, "Unknown")                                                      \
-  V(kUnsupportedConstCompoundAssignment,                                      \
-    "Unsupported const compound assignment")                                  \
-  V(kUnsupportedCountOperationWithConst,                                      \
-    "Unsupported count operation with const")                                 \
-  V(kUnsupportedDoubleImmediate, "Unsupported double immediate")              \
-  V(kUnsupportedLetCompoundAssignment, "Unsupported let compound assignment") \
-  V(kUnsupportedLookupSlotInDeclaration,                                      \
-    "Unsupported lookup slot in declaration")                                 \
-  V(kUnsupportedNonPrimitiveCompare, "Unsupported non-primitive compare")     \
-  V(kUnsupportedPhiUseOfArguments, "Unsupported phi use of arguments")        \
-  V(kUnsupportedPhiUseOfConstVariable,                                        \
-    "Unsupported phi use of const variable")                                  \
-  V(kUnsupportedTaggedImmediate, "Unsupported tagged immediate")              \
-  V(kVariableResolvedToWithContext, "Variable resolved to with context")      \
-  V(kWeShouldNotHaveAnEmptyLexicalContext,                                    \
-    "We should not have an empty lexical context")                            \
-  V(kWithStatement, "WithStatement")                                          \
+  V(kTheInstructionToPatchShouldBeALui,                                        \
+    "The instruction to patch should be a lui")                                \
+  V(kTheInstructionToPatchShouldBeAnOri,                                       \
+    "The instruction to patch should be an ori")                               \
+  V(kTheSourceAndDestinationAreTheSame,                                        \
+    "The source and destination are the same")                                 \
+  V(kTheStackPointerIsNotAligned, "The stack pointer is not aligned.")         \
+  V(kTheStackWasCorruptedByMacroAssemblerCall,                                 \
+    "The stack was corrupted by MacroAssembler::Call()")                       \
+  V(kTooManyParametersLocals, "Too many parameters/locals")                    \
+  V(kTooManyParameters, "Too many parameters")                                 \
+  V(kTooManySpillSlotsNeededForOSR, "Too many spill slots needed for OSR")     \
+  V(kToOperand32UnsupportedImmediate, "ToOperand32 unsupported immediate.")    \
+  V(kToOperandIsDoubleRegisterUnimplemented,                                   \
+    "ToOperand IsDoubleRegister unimplemented")                                \
+  V(kToOperandUnsupportedDoubleImmediate,                                      \
+    "ToOperand Unsupported double immediate")                                  \
+  V(kTryCatchStatement, "TryCatchStatement")                                   \
+  V(kTryFinallyStatement, "TryFinallyStatement")                               \
+  V(kUnableToEncodeValueAsSmi, "Unable to encode value as smi")                \
+  V(kUnalignedAllocationInNewSpace, "Unaligned allocation in new space")       \
+  V(kUnalignedCellInWriteBarrier, "Unaligned cell in write barrier")           \
+  V(kUndefinedValueNotLoaded, "Undefined value not loaded")                    \
+  V(kUndoAllocationOfNonAllocatedMemory,                                       \
+    "Undo allocation of non allocated memory")                                 \
+  V(kUnexpectedAllocationTop, "Unexpected allocation top")                     \
+  V(kUnexpectedColorFound, "Unexpected color bit pattern found")               \
+  V(kUnexpectedElementsKindInArrayConstructor,                                 \
+    "Unexpected ElementsKind in array constructor")                            \
+  V(kUnexpectedFallthroughFromCharCodeAtSlowCase,                              \
+    "Unexpected fallthrough from CharCodeAt slow case")                        \
+  V(kUnexpectedFallthroughFromCharFromCodeSlowCase,                            \
+    "Unexpected fallthrough from CharFromCode slow case")                      \
+  V(kUnexpectedFallThroughFromStringComparison,                                \
+    "Unexpected fall-through from string comparison")                          \
+  V(kUnexpectedFallThroughInBinaryStubGenerateFloatingPointCode,               \
+    "Unexpected fall-through in BinaryStub_GenerateFloatingPointCode")         \
+  V(kUnexpectedFallthroughToCharCodeAtSlowCase,                                \
+    "Unexpected fallthrough to CharCodeAt slow case")                          \
+  V(kUnexpectedFallthroughToCharFromCodeSlowCase,                              \
+    "Unexpected fallthrough to CharFromCode slow case")                        \
+  V(kUnexpectedFPUStackDepthAfterInstruction,                                  \
+    "Unexpected FPU stack depth after instruction")                            \
+  V(kUnexpectedInitialMapForArrayFunction1,                                    \
+    "Unexpected initial map for Array function (1)")                           \
+  V(kUnexpectedInitialMapForArrayFunction2,                                    \
+    "Unexpected initial map for Array function (2)")                           \
+  V(kUnexpectedInitialMapForArrayFunction,                                     \
+    "Unexpected initial map for Array function")                               \
+  V(kUnexpectedInitialMapForInternalArrayFunction,                             \
+    "Unexpected initial map for InternalArray function")                       \
+  V(kUnexpectedLevelAfterReturnFromApiCall,                                    \
+    "Unexpected level after return from api call")                             \
+  V(kUnexpectedNegativeValue, "Unexpected negative value")                     \
+  V(kUnexpectedNumberOfPreAllocatedPropertyFields,                             \
+    "Unexpected number of pre-allocated property fields")                      \
+  V(kUnexpectedFPCRMode, "Unexpected FPCR mode.")                              \
+  V(kUnexpectedSmi, "Unexpected smi value")                                    \
+  V(kUnexpectedStringFunction, "Unexpected String function")                   \
+  V(kUnexpectedStringType, "Unexpected string type")                           \
+  V(kUnexpectedStringWrapperInstanceSize,                                      \
+    "Unexpected string wrapper instance size")                                 \
+  V(kUnexpectedTypeForRegExpDataFixedArrayExpected,                            \
+    "Unexpected type for RegExp data, FixedArray expected")                    \
+  V(kUnexpectedValue, "Unexpected value")                                      \
+  V(kUnexpectedUnusedPropertiesOfStringWrapper,                                \
+    "Unexpected unused properties of string wrapper")                          \
+  V(kUnimplemented, "unimplemented")                                           \
+  V(kUninitializedKSmiConstantRegister, "Uninitialized kSmiConstantRegister")  \
+  V(kUnknown, "Unknown")                                                       \
+  V(kUnsupportedConstCompoundAssignment,                                       \
+    "Unsupported const compound assignment")                                   \
+  V(kUnsupportedCountOperationWithConst,                                       \
+    "Unsupported count operation with const")                                  \
+  V(kUnsupportedDoubleImmediate, "Unsupported double immediate")               \
+  V(kUnsupportedLetCompoundAssignment, "Unsupported let compound assignment")  \
+  V(kUnsupportedLookupSlotInDeclaration,                                       \
+    "Unsupported lookup slot in declaration")                                  \
+  V(kUnsupportedNonPrimitiveCompare, "Unsupported non-primitive compare")      \
+  V(kUnsupportedPhiUseOfArguments, "Unsupported phi use of arguments")         \
+  V(kUnsupportedPhiUseOfConstVariable,                                         \
+    "Unsupported phi use of const variable")                                   \
+  V(kUnsupportedTaggedImmediate, "Unsupported tagged immediate")               \
+  V(kVariableResolvedToWithContext, "Variable resolved to with context")       \
+  V(kWeShouldNotHaveAnEmptyLexicalContext,                                     \
+    "We should not have an empty lexical context")                             \
+  V(kWithStatement, "WithStatement")                                           \
   V(kWrongFunctionContext, "Wrong context passed to function")                 \
-  V(kWrongAddressOrValuePassedToRecordWrite,                                  \
-    "Wrong address or value passed to RecordWrite")                           \
+  V(kWrongAddressOrValuePassedToRecordWrite,                                   \
+    "Wrong address or value passed to RecordWrite")                            \
   V(kYield, "Yield")
 
 
@@ -3810,7 +3768,8 @@ class StringTable: public HashTable<StringTable,
   DECLARE_CAST(StringTable)
 
  private:
-  template <bool seq_ascii> friend class JsonParser;
+  template <bool seq_one_byte>
+  friend class JsonParser;
 
   DISALLOW_IMPLICIT_CONSTRUCTORS(StringTable);
 };
@@ -7170,6 +7129,12 @@ class SharedFunctionInfo: public HeapObject {
   // Indicates that this function is an arrow function.
   DECL_BOOLEAN_ACCESSORS(is_arrow)
 
+  // Indicates that this function is a concise method.
+  DECL_BOOLEAN_ACCESSORS(is_concise_method)
+
+  inline FunctionKind kind();
+  inline void set_kind(FunctionKind kind);
+
   // Indicates whether or not the code in the shared function support
   // deoptimization.
   inline bool has_deoptimization_support();
@@ -7403,17 +7368,20 @@ class SharedFunctionInfo: public HeapObject {
     kIsFunction,
     kDontCache,
     kDontFlush,
-    kIsGenerator,
     kIsArrow,
+    kIsGenerator,
+    kIsConciseMethod,
     kCompilerHintsCount  // Pseudo entry
   };
 
-  class DeoptCountBits: public BitField<int, 0, 4> {};
-  class OptReenableTriesBits: public BitField<int, 4, 18> {};
-  class ICAgeBits: public BitField<int, 22, 8> {};
+  class FunctionKindBits : public BitField<FunctionKind, kIsArrow, 3> {};
 
-  class OptCountBits: public BitField<int, 0, 22> {};
-  class DisabledOptimizationReasonBits: public BitField<int, 22, 8> {};
+  class DeoptCountBits : public BitField<int, 0, 4> {};
+  class OptReenableTriesBits : public BitField<int, 4, 18> {};
+  class ICAgeBits : public BitField<int, 22, 8> {};
+
+  class OptCountBits : public BitField<int, 0, 22> {};
+  class DisabledOptimizationReasonBits : public BitField<int, 22, 8> {};
 
  private:
 #if V8_HOST_ARCH_32_BIT
@@ -8096,7 +8064,7 @@ class JSMessageObject: public JSObject {
 // If it is an atom regexp
 // - a reference to a literal string to search for
 // If it is an irregexp regexp:
-// - a reference to code for ASCII inputs (bytecode or compiled), or a smi
+// - a reference to code for Latin1 inputs (bytecode or compiled), or a smi
 // used for tracking the last usage (used for code flushing).
 // - a reference to code for UC16 inputs (bytecode or compiled), or a smi
 // used for tracking the last usage (used for code flushing)..
@@ -8133,17 +8101,17 @@ class JSRegExp: public JSObject {
   // Set implementation data after the object has been prepared.
   inline void SetDataAt(int index, Object* value);
 
-  static int code_index(bool is_ascii) {
-    if (is_ascii) {
-      return kIrregexpASCIICodeIndex;
+  static int code_index(bool is_latin1) {
+    if (is_latin1) {
+      return kIrregexpLatin1CodeIndex;
     } else {
       return kIrregexpUC16CodeIndex;
     }
   }
 
-  static int saved_code_index(bool is_ascii) {
-    if (is_ascii) {
-      return kIrregexpASCIICodeSavedIndex;
+  static int saved_code_index(bool is_latin1) {
+    if (is_latin1) {
+      return kIrregexpLatin1CodeSavedIndex;
     } else {
       return kIrregexpUC16CodeSavedIndex;
     }
@@ -8169,23 +8137,23 @@ class JSRegExp: public JSObject {
 
   static const int kAtomDataSize = kAtomPatternIndex + 1;
 
-  // Irregexp compiled code or bytecode for ASCII. If compilation
+  // Irregexp compiled code or bytecode for Latin1. If compilation
   // fails, this fields hold an exception object that should be
   // thrown if the regexp is used again.
-  static const int kIrregexpASCIICodeIndex = kDataIndex;
+  static const int kIrregexpLatin1CodeIndex = kDataIndex;
   // Irregexp compiled code or bytecode for UC16.  If compilation
   // fails, this fields hold an exception object that should be
   // thrown if the regexp is used again.
   static const int kIrregexpUC16CodeIndex = kDataIndex + 1;
 
-  // Saved instance of Irregexp compiled code or bytecode for ASCII that
+  // Saved instance of Irregexp compiled code or bytecode for Latin1 that
   // is a potential candidate for flushing.
-  static const int kIrregexpASCIICodeSavedIndex = kDataIndex + 2;
+  static const int kIrregexpLatin1CodeSavedIndex = kDataIndex + 2;
   // Saved instance of Irregexp compiled code or bytecode for UC16 that is
   // a potential candidate for flushing.
   static const int kIrregexpUC16CodeSavedIndex = kDataIndex + 3;
 
-  // Maximal number of registers used by either ASCII or UC16.
+  // Maximal number of registers used by either Latin1 or UC16.
   // Only used to check that there is enough stack space
   static const int kIrregexpMaxRegisterCountIndex = kDataIndex + 4;
   // Number of captures in the compiled regexp.
@@ -8196,8 +8164,8 @@ class JSRegExp: public JSObject {
   // Offsets directly into the data fixed array.
   static const int kDataTagOffset =
       FixedArray::kHeaderSize + kTagIndex * kPointerSize;
-  static const int kDataAsciiCodeOffset =
-      FixedArray::kHeaderSize + kIrregexpASCIICodeIndex * kPointerSize;
+  static const int kDataOneByteCodeOffset =
+      FixedArray::kHeaderSize + kIrregexpLatin1CodeIndex * kPointerSize;
   static const int kDataUC16CodeOffset =
       FixedArray::kHeaderSize + kIrregexpUC16CodeIndex * kPointerSize;
   static const int kIrregexpCaptureCountOffset =
@@ -8834,9 +8802,9 @@ class StringShape BASE_EMBEDDED {
   inline bool IsCons();
   inline bool IsSliced();
   inline bool IsIndirect();
-  inline bool IsExternalAscii();
+  inline bool IsExternalOneByte();
   inline bool IsExternalTwoByte();
-  inline bool IsSequentialAscii();
+  inline bool IsSequentialOneByte();
   inline bool IsSequentialTwoByte();
   inline bool IsInternalized();
   inline StringRepresentationTag representation_tag();
@@ -9036,21 +9004,21 @@ class String: public Name {
   // Representation of the flat content of a String.
   // A non-flat string doesn't have flat content.
   // A flat string has content that's encoded as a sequence of either
-  // ASCII chars or two-byte UC16.
+  // one-byte chars or two-byte UC16.
   // Returned by String::GetFlatContent().
   class FlatContent {
    public:
     // Returns true if the string is flat and this structure contains content.
     bool IsFlat() { return state_ != NON_FLAT; }
-    // Returns true if the structure contains ASCII content.
-    bool IsAscii() { return state_ == ASCII; }
+    // Returns true if the structure contains one-byte content.
+    bool IsOneByte() { return state_ == ONE_BYTE; }
     // Returns true if the structure contains two-byte content.
     bool IsTwoByte() { return state_ == TWO_BYTE; }
 
-    // Return the one byte content of the string. Only use if IsAscii() returns
-    // true.
+    // Return the one byte content of the string. Only use if IsOneByte()
+    // returns true.
     Vector<const uint8_t> ToOneByteVector() {
-      DCHECK_EQ(ASCII, state_);
+      DCHECK_EQ(ONE_BYTE, state_);
       return Vector<const uint8_t>(onebyte_start, length_);
     }
     // Return the two-byte content of the string. Only use if IsTwoByte()
@@ -9063,16 +9031,16 @@ class String: public Name {
     uc16 Get(int i) {
       DCHECK(i < length_);
       DCHECK(state_ != NON_FLAT);
-      if (state_ == ASCII) return onebyte_start[i];
+      if (state_ == ONE_BYTE) return onebyte_start[i];
       return twobyte_start[i];
     }
 
    private:
-    enum State { NON_FLAT, ASCII, TWO_BYTE };
+    enum State { NON_FLAT, ONE_BYTE, TWO_BYTE };
 
     // Constructors only used by String::GetFlatContent().
     explicit FlatContent(const uint8_t* start, int length)
-        : onebyte_start(start), length_(length), state_(ASCII) { }
+        : onebyte_start(start), length_(length), state_(ONE_BYTE) {}
     explicit FlatContent(const uc16* start, int length)
         : twobyte_start(start), length_(length), state_(TWO_BYTE) { }
     FlatContent() : onebyte_start(NULL), length_(0), state_(NON_FLAT) { }
@@ -9096,10 +9064,10 @@ class String: public Name {
   inline int synchronized_length() const;
   inline void synchronized_set_length(int value);
 
-  // Returns whether this string has only ASCII chars, i.e. all of them can
-  // be ASCII encoded.  This might be the case even if the string is
+  // Returns whether this string has only one-byte chars, i.e. all of them can
+  // be one-byte encoded.  This might be the case even if the string is
   // two-byte.  Such strings may appear when the embedder prefers
-  // two-byte external representations even for ASCII data.
+  // two-byte external representations even for one-byte data.
   inline bool IsOneByteRepresentation() const;
   inline bool IsTwoByteRepresentation() const;
 
@@ -9147,7 +9115,7 @@ class String: public Name {
   inline String* GetUnderlying();
 
   // Mark the string as an undetectable object. It only applies to
-  // ASCII and two byte string types.
+  // one-byte and two-byte string types.
   bool MarkAsUndetectable();
 
   // String equality operations.
@@ -9188,7 +9156,7 @@ class String: public Name {
 
   // Externalization.
   bool MakeExternal(v8::String::ExternalStringResource* resource);
-  bool MakeExternal(v8::String::ExternalAsciiStringResource* resource);
+  bool MakeExternal(v8::String::ExternalOneByteStringResource* resource);
 
   // Conversion.
   inline bool AsArrayIndex(uint32_t* index);
@@ -9249,17 +9217,18 @@ class String: public Name {
                           int from,
                           int to);
 
-  // The return value may point to the first aligned word containing the
-  // first non-ascii character, rather than directly to the non-ascii character.
-  // If the return value is >= the passed length, the entire string was ASCII.
+  // The return value may point to the first aligned word containing the first
+  // non-one-byte character, rather than directly to the non-one-byte character.
+  // If the return value is >= the passed length, the entire string was
+  // one-byte.
   static inline int NonAsciiStart(const char* chars, int length) {
     const char* start = chars;
     const char* limit = chars + length;
 #ifdef V8_HOST_CAN_READ_UNALIGNED
     DCHECK(unibrow::Utf8::kMaxOneByteChar == 0x7F);
-    const uintptr_t non_ascii_mask = kUintptrAllBitsSet / 0xFF * 0x80;
+    const uintptr_t non_one_byte_mask = kUintptrAllBitsSet / 0xFF * 0x80;
     while (chars + sizeof(uintptr_t) <= limit) {
-      if (*reinterpret_cast<const uintptr_t*>(chars) & non_ascii_mask) {
+      if (*reinterpret_cast<const uintptr_t*>(chars) & non_one_byte_mask) {
         return static_cast<int>(chars - start);
       }
       chars += sizeof(uintptr_t);
@@ -9351,11 +9320,11 @@ class SeqString: public String {
 };
 
 
-// The AsciiString class captures sequential ASCII string objects.
-// Each character in the AsciiString is an ASCII character.
+// The OneByteString class captures sequential one-byte string objects.
+// Each character in the OneByteString is an one-byte character.
 class SeqOneByteString: public SeqString {
  public:
-  static const bool kHasAsciiEncoding = true;
+  static const bool kHasOneByteEncoding = true;
 
   // Dispatched behavior.
   inline uint16_t SeqOneByteStringGet(int index);
@@ -9369,16 +9338,16 @@ class SeqOneByteString: public SeqString {
   DECLARE_CAST(SeqOneByteString)
 
   // Garbage collection support.  This method is called by the
-  // garbage collector to compute the actual size of an AsciiString
+  // garbage collector to compute the actual size of an OneByteString
   // instance.
   inline int SeqOneByteStringSize(InstanceType instance_type);
 
-  // Computes the size for an AsciiString instance of a given length.
+  // Computes the size for an OneByteString instance of a given length.
   static int SizeFor(int length) {
     return OBJECT_POINTER_ALIGN(kHeaderSize + length * kCharSize);
   }
 
-  // Maximal memory usage for a single sequential ASCII string.
+  // Maximal memory usage for a single sequential one-byte string.
   static const int kMaxSize = 512 * MB - 1;
   STATIC_ASSERT((kMaxSize - kHeaderSize) >= String::kMaxLength);
 
@@ -9391,7 +9360,7 @@ class SeqOneByteString: public SeqString {
 // Each character in the TwoByteString is a two-byte uint16_t.
 class SeqTwoByteString: public SeqString {
  public:
-  static const bool kHasAsciiEncoding = false;
+  static const bool kHasOneByteEncoding = false;
 
   // Dispatched behavior.
   inline uint16_t SeqTwoByteStringGet(int index);
@@ -9552,13 +9521,13 @@ class ExternalString: public String {
 };
 
 
-// The ExternalAsciiString class is an external string backed by an
-// ASCII string.
-class ExternalAsciiString: public ExternalString {
+// The ExternalOneByteString class is an external string backed by an
+// one-byte string.
+class ExternalOneByteString : public ExternalString {
  public:
-  static const bool kHasAsciiEncoding = true;
+  static const bool kHasOneByteEncoding = true;
 
-  typedef v8::String::ExternalAsciiStringResource Resource;
+  typedef v8::String::ExternalOneByteStringResource Resource;
 
   // The underlying resource.
   inline const Resource* resource();
@@ -9573,18 +9542,18 @@ class ExternalAsciiString: public ExternalString {
   inline const uint8_t* GetChars();
 
   // Dispatched behavior.
-  inline uint16_t ExternalAsciiStringGet(int index);
+  inline uint16_t ExternalOneByteStringGet(int index);
 
-  DECLARE_CAST(ExternalAsciiString)
+  DECLARE_CAST(ExternalOneByteString)
 
   // Garbage collection support.
-  inline void ExternalAsciiStringIterateBody(ObjectVisitor* v);
+  inline void ExternalOneByteStringIterateBody(ObjectVisitor* v);
 
-  template<typename StaticVisitor>
-  inline void ExternalAsciiStringIterateBody();
+  template <typename StaticVisitor>
+  inline void ExternalOneByteStringIterateBody();
 
  private:
-  DISALLOW_IMPLICIT_CONSTRUCTORS(ExternalAsciiString);
+  DISALLOW_IMPLICIT_CONSTRUCTORS(ExternalOneByteString);
 };
 
 
@@ -9592,7 +9561,7 @@ class ExternalAsciiString: public ExternalString {
 // encoded string.
 class ExternalTwoByteString: public ExternalString {
  public:
-  static const bool kHasAsciiEncoding = false;
+  static const bool kHasOneByteEncoding = false;
 
   typedef v8::String::ExternalStringResource Resource;
 
@@ -9663,7 +9632,7 @@ class FlatStringReader : public Relocatable {
   int length() { return length_; }
  private:
   String** str_;
-  bool is_ascii_;
+  bool is_one_byte_;
   int length_;
   const void* start_;
 };
@@ -11144,9 +11113,9 @@ class ObjectVisitor BASE_EMBEDDED {
   // Visits a runtime entry in the instruction stream.
   virtual void VisitRuntimeEntry(RelocInfo* rinfo) {}
 
-  // Visits the resource of an ASCII or two-byte string.
-  virtual void VisitExternalAsciiString(
-      v8::String::ExternalAsciiStringResource** resource) {}
+  // Visits the resource of an one-byte or two-byte string.
+  virtual void VisitExternalOneByteString(
+      v8::String::ExternalOneByteStringResource** resource) {}
   virtual void VisitExternalTwoByteString(
       v8::String::ExternalStringResource** resource) {}
 

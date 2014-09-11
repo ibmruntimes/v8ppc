@@ -1013,7 +1013,7 @@ bool String::MakeExternal(v8::String::ExternalStringResource* resource) {
   // Abort if size does not allow in-place conversion.
   if (size < ExternalString::kShortSize) return false;
   Heap* heap = GetHeap();
-  bool is_ascii = this->IsOneByteRepresentation();
+  bool is_one_byte = this->IsOneByteRepresentation();
   bool is_internalized = this->IsInternalizedString();
 
   // Morph the string to an external string by replacing the map and
@@ -1025,21 +1025,18 @@ bool String::MakeExternal(v8::String::ExternalStringResource* resource) {
   Map* new_map;
   if (size < ExternalString::kSize) {
     new_map = is_internalized
-        ? (is_ascii
-            ? heap->
-                short_external_internalized_string_with_one_byte_data_map()
-            : heap->short_external_internalized_string_map())
-        : (is_ascii
-            ? heap->short_external_string_with_one_byte_data_map()
-            : heap->short_external_string_map());
+        ? (is_one_byte
+           ? heap->short_external_internalized_string_with_one_byte_data_map()
+           : heap->short_external_internalized_string_map())
+        : (is_one_byte ? heap->short_external_string_with_one_byte_data_map()
+                       : heap->short_external_string_map());
   } else {
     new_map = is_internalized
-        ? (is_ascii
-            ? heap->external_internalized_string_with_one_byte_data_map()
-            : heap->external_internalized_string_map())
-        : (is_ascii
-            ? heap->external_string_with_one_byte_data_map()
-            : heap->external_string_map());
+        ? (is_one_byte
+           ? heap->external_internalized_string_with_one_byte_data_map()
+           : heap->external_internalized_string_map())
+        : (is_one_byte ? heap->external_string_with_one_byte_data_map()
+                       : heap->external_string_map());
   }
 
   // Byte size of the external String object.
@@ -1059,7 +1056,7 @@ bool String::MakeExternal(v8::String::ExternalStringResource* resource) {
 }
 
 
-bool String::MakeExternal(v8::String::ExternalAsciiStringResource* resource) {
+bool String::MakeExternal(v8::String::ExternalOneByteStringResource* resource) {
   // Externalizing twice leaks the external resource, so it's
   // prohibited by the API.
   DCHECK(!this->IsExternalString());
@@ -1094,12 +1091,12 @@ bool String::MakeExternal(v8::String::ExternalAsciiStringResource* resource) {
   Map* new_map;
   if (size < ExternalString::kSize) {
     new_map = is_internalized
-        ? heap->short_external_ascii_internalized_string_map()
-        : heap->short_external_ascii_string_map();
+                  ? heap->short_external_one_byte_internalized_string_map()
+                  : heap->short_external_one_byte_string_map();
   } else {
     new_map = is_internalized
-        ? heap->external_ascii_internalized_string_map()
-        : heap->external_ascii_string_map();
+                  ? heap->external_one_byte_internalized_string_map()
+                  : heap->external_one_byte_string_map();
   }
 
   // Byte size of the external String object.
@@ -1110,7 +1107,7 @@ bool String::MakeExternal(v8::String::ExternalAsciiStringResource* resource) {
   // the left-over space to avoid races with the sweeper thread.
   this->synchronized_set_map(new_map);
 
-  ExternalAsciiString* self = ExternalAsciiString::cast(this);
+  ExternalOneByteString* self = ExternalOneByteString::cast(this);
   self->set_resource(resource);
   if (is_internalized) self->Hash();  // Force regeneration of the hash value.
 
@@ -1139,16 +1136,16 @@ void String::StringShortPrint(StringStream* accumulator) {
     len = kMaxShortPrintLength;
     truncated = true;
   }
-  bool ascii = true;
+  bool one_byte = true;
   for (int i = 0; i < len; i++) {
     uint16_t c = stream.GetNext();
 
     if (c < 32 || c >= 127) {
-      ascii = false;
+      one_byte = false;
     }
   }
   stream.Reset(this);
-  if (ascii) {
+  if (one_byte) {
     accumulator->Add("<String[%u]: ", length());
     for (int i = 0; i < len; i++) {
       accumulator->Put(static_cast<char>(stream.GetNext()));
@@ -1562,8 +1559,8 @@ void HeapObject::IterateBody(InstanceType type, int object_size,
         break;
       case kExternalStringTag:
         if ((type & kStringEncodingMask) == kOneByteStringTag) {
-          reinterpret_cast<ExternalAsciiString*>(this)->
-              ExternalAsciiStringIterateBody(v);
+          reinterpret_cast<ExternalOneByteString*>(this)
+              ->ExternalOneByteStringIterateBody(v);
         } else {
           reinterpret_cast<ExternalTwoByteString*>(this)->
               ExternalTwoByteStringIterateBody(v);
@@ -3465,14 +3462,13 @@ MaybeHandle<Object> JSProxy::SetPropertyViaPrototypesWithHandler(
   // [[GetProperty]] requires to check that all properties are configurable.
   Handle<String> configurable_name =
       isolate->factory()->InternalizeOneByteString(
-          STATIC_ASCII_VECTOR("configurable_"));
+          STATIC_CHAR_VECTOR("configurable_"));
   Handle<Object> configurable =
       Object::GetProperty(desc, configurable_name).ToHandleChecked();
   DCHECK(configurable->IsBoolean());
   if (configurable->IsFalse()) {
-    Handle<String> trap =
-        isolate->factory()->InternalizeOneByteString(
-            STATIC_ASCII_VECTOR("getPropertyDescriptor"));
+    Handle<String> trap = isolate->factory()->InternalizeOneByteString(
+        STATIC_CHAR_VECTOR("getPropertyDescriptor"));
     Handle<Object> args[] = { handler, trap, name };
     THROW_NEW_ERROR(isolate, NewTypeError("proxy_prop_not_configurable",
                                           HandleVector(args, arraysize(args))),
@@ -3483,14 +3479,13 @@ MaybeHandle<Object> JSProxy::SetPropertyViaPrototypesWithHandler(
   // Check for DataDescriptor.
   Handle<String> hasWritable_name =
       isolate->factory()->InternalizeOneByteString(
-          STATIC_ASCII_VECTOR("hasWritable_"));
+          STATIC_CHAR_VECTOR("hasWritable_"));
   Handle<Object> hasWritable =
       Object::GetProperty(desc, hasWritable_name).ToHandleChecked();
   DCHECK(hasWritable->IsBoolean());
   if (hasWritable->IsTrue()) {
-    Handle<String> writable_name =
-        isolate->factory()->InternalizeOneByteString(
-            STATIC_ASCII_VECTOR("writable_"));
+    Handle<String> writable_name = isolate->factory()->InternalizeOneByteString(
+        STATIC_CHAR_VECTOR("writable_"));
     Handle<Object> writable =
         Object::GetProperty(desc, writable_name).ToHandleChecked();
     DCHECK(writable->IsBoolean());
@@ -3504,8 +3499,8 @@ MaybeHandle<Object> JSProxy::SetPropertyViaPrototypesWithHandler(
   }
 
   // We have an AccessorDescriptor.
-  Handle<String> set_name = isolate->factory()->InternalizeOneByteString(
-      STATIC_ASCII_VECTOR("set_"));
+  Handle<String> set_name =
+      isolate->factory()->InternalizeOneByteString(STATIC_CHAR_VECTOR("set_"));
   Handle<Object> setter = Object::GetProperty(desc, set_name).ToHandleChecked();
   if (!setter->IsUndefined()) {
     // TODO(rossberg): nicer would be to cast to some JSCallable here...
@@ -3543,7 +3538,7 @@ MaybeHandle<Object> JSProxy::DeletePropertyWithHandler(
   if (mode == STRICT_DELETION && !result_bool) {
     Handle<Object> handler(proxy->handler(), isolate);
     Handle<String> trap_name = isolate->factory()->InternalizeOneByteString(
-        STATIC_ASCII_VECTOR("delete"));
+        STATIC_CHAR_VECTOR("delete"));
     Handle<Object> args[] = { handler, trap_name };
     THROW_NEW_ERROR(isolate, NewTypeError("handler_failed",
                                           HandleVector(args, arraysize(args))),
@@ -3589,26 +3584,26 @@ Maybe<PropertyAttributes> JSProxy::GetPropertyAttributesWithHandler(
 
   // Convert result to PropertyAttributes.
   Handle<String> enum_n = isolate->factory()->InternalizeOneByteString(
-      STATIC_ASCII_VECTOR("enumerable_"));
+      STATIC_CHAR_VECTOR("enumerable_"));
   Handle<Object> enumerable;
   ASSIGN_RETURN_ON_EXCEPTION_VALUE(isolate, enumerable,
                                    Object::GetProperty(desc, enum_n),
                                    Maybe<PropertyAttributes>());
   Handle<String> conf_n = isolate->factory()->InternalizeOneByteString(
-      STATIC_ASCII_VECTOR("configurable_"));
+      STATIC_CHAR_VECTOR("configurable_"));
   Handle<Object> configurable;
   ASSIGN_RETURN_ON_EXCEPTION_VALUE(isolate, configurable,
                                    Object::GetProperty(desc, conf_n),
                                    Maybe<PropertyAttributes>());
   Handle<String> writ_n = isolate->factory()->InternalizeOneByteString(
-      STATIC_ASCII_VECTOR("writable_"));
+      STATIC_CHAR_VECTOR("writable_"));
   Handle<Object> writable;
   ASSIGN_RETURN_ON_EXCEPTION_VALUE(isolate, writable,
                                    Object::GetProperty(desc, writ_n),
                                    Maybe<PropertyAttributes>());
   if (!writable->BooleanValue()) {
     Handle<String> set_n = isolate->factory()->InternalizeOneByteString(
-        STATIC_ASCII_VECTOR("set_"));
+        STATIC_CHAR_VECTOR("set_"));
     Handle<Object> setter;
     ASSIGN_RETURN_ON_EXCEPTION_VALUE(isolate, setter,
                                      Object::GetProperty(desc, set_n),
@@ -3619,7 +3614,7 @@ Maybe<PropertyAttributes> JSProxy::GetPropertyAttributesWithHandler(
   if (configurable->IsFalse()) {
     Handle<Object> handler(proxy->handler(), isolate);
     Handle<String> trap = isolate->factory()->InternalizeOneByteString(
-        STATIC_ASCII_VECTOR("getPropertyDescriptor"));
+        STATIC_CHAR_VECTOR("getPropertyDescriptor"));
     Handle<Object> args[] = { handler, trap, name };
     Handle<Object> error;
     MaybeHandle<Object> maybe_error = isolate->factory()->NewTypeError(
@@ -4691,8 +4686,10 @@ void JSObject::DeleteHiddenProperty(Handle<JSObject> object, Handle<Name> key) {
 bool JSObject::HasHiddenProperties(Handle<JSObject> object) {
   Handle<Name> hidden = object->GetIsolate()->factory()->hidden_string();
   LookupIterator it(object, hidden, LookupIterator::OWN_SKIP_INTERCEPTOR);
-  CHECK_NE(LookupIterator::ACCESS_CHECK, it.state());
-  return it.IsFound();
+  Maybe<PropertyAttributes> maybe = GetPropertyAttributes(&it);
+  // Cannot get an exception since the hidden_string isn't accessible to JS.
+  DCHECK(maybe.has_value);
+  return maybe.value != ABSENT;
 }
 
 
@@ -4724,12 +4721,8 @@ Object* JSObject::GetHiddenPropertiesHashTable() {
     Isolate* isolate = GetIsolate();
     LookupIterator it(handle(this), isolate->factory()->hidden_string(),
                       LookupIterator::OWN_SKIP_INTERCEPTOR);
-    CHECK_NE(LookupIterator::ACCESS_CHECK, it.state());
-    if (it.state() == LookupIterator::DATA) {
-      return *it.GetDataValue();
-    }
-    DCHECK(!it.IsFound());
-    return GetHeap()->undefined_value();
+    // Access check is always skipped for the hidden string anyways.
+    return *GetDataProperty(&it);
   }
 }
 
@@ -6161,7 +6154,10 @@ MaybeHandle<Object> JSObject::DefineAccessor(Handle<JSObject> object,
     // At least one of the accessors needs to be a new value.
     DCHECK(!getter->IsNull() || !setter->IsNull());
     LookupIterator it(object, name, LookupIterator::OWN_SKIP_INTERCEPTOR);
-    CHECK_NE(LookupIterator::ACCESS_CHECK, it.state());
+    if (it.state() == LookupIterator::ACCESS_CHECK) {
+      // We already did an access check before. We do have access.
+      it.Next();
+    }
     if (!getter->IsNull()) {
       it.TransitionToAccessorProperty(ACCESSOR_GETTER, getter, attributes);
     }
@@ -7984,7 +7980,7 @@ String::FlatContent String::GetFlatContent() {
     if (shape.representation_tag() == kSeqStringTag) {
       start = SeqOneByteString::cast(string)->GetChars();
     } else {
-      start = ExternalAsciiString::cast(string)->GetChars();
+      start = ExternalOneByteString::cast(string)->GetChars();
     }
     return FlatContent(start + offset, length);
   } else {
@@ -8169,9 +8165,9 @@ FlatStringReader::FlatStringReader(Isolate* isolate, Handle<String> str)
 FlatStringReader::FlatStringReader(Isolate* isolate, Vector<const char> input)
     : Relocatable(isolate),
       str_(0),
-      is_ascii_(true),
+      is_one_byte_(true),
       length_(input.length()),
-      start_(input.start()) { }
+      start_(input.start()) {}
 
 
 void FlatStringReader::PostGarbageCollection() {
@@ -8182,8 +8178,8 @@ void FlatStringReader::PostGarbageCollection() {
   // This does not actually prevent the vector from being relocated later.
   String::FlatContent content = str->GetFlatContent();
   DCHECK(content.IsFlat());
-  is_ascii_ = content.IsAscii();
-  if (is_ascii_) {
+  is_one_byte_ = content.IsOneByte();
+  if (is_one_byte_) {
     start_ = content.ToOneByteVector().start();
   } else {
     start_ = content.ToUC16Vector().start();
@@ -8377,8 +8373,7 @@ void String::WriteToFlat(String* src,
     DCHECK(0 <= from && from <= to && to <= source->length());
     switch (StringShape(source).full_representation_tag()) {
       case kOneByteStringTag | kExternalStringTag: {
-        CopyChars(sink,
-                  ExternalAsciiString::cast(source)->GetChars() + from,
+        CopyChars(sink, ExternalOneByteString::cast(source)->GetChars() + from,
                   to - from);
         return;
       }
@@ -8424,7 +8419,7 @@ void String::WriteToFlat(String* src,
             String* second = cons_string->second();
             // When repeatedly appending to a string, we get a cons string that
             // is unbalanced to the left, a list, essentially.  We inline the
-            // common case of sequential ascii right child.
+            // common case of sequential one-byte right child.
             if (to - boundary == 1) {
               sink[boundary - from] = static_cast<sinkchar>(second->Get(0));
             } else if (second->IsSeqOneByteString()) {
@@ -8462,7 +8457,7 @@ static void CalculateLineEndsImpl(Isolate* isolate,
                                   Vector<const SourceChar> src,
                                   bool include_ending_line) {
   const int src_len = src.length();
-  StringSearch<uint8_t, SourceChar> search(isolate, STATIC_ASCII_VECTOR("\n"));
+  StringSearch<uint8_t, SourceChar> search(isolate, STATIC_CHAR_VECTOR("\n"));
 
   // Find and record line ends.
   int position = 0;
@@ -8492,7 +8487,7 @@ Handle<FixedArray> String::CalculateLineEnds(Handle<String> src,
     // Dispatch on type of strings.
     String::FlatContent content = src->GetFlatContent();
     DCHECK(content.IsFlat());
-    if (content.IsAscii()) {
+    if (content.IsOneByte()) {
       CalculateLineEndsImpl(isolate,
                             &line_ends,
                             content.ToOneByteVector(),
@@ -8779,7 +8774,7 @@ bool String::SlowEquals(Handle<String> one, Handle<String> two) {
   String::FlatContent flat1 = one->GetFlatContent();
   String::FlatContent flat2 = two->GetFlatContent();
 
-  if (flat1.IsAscii() && flat2.IsAscii()) {
+  if (flat1.IsOneByte() && flat2.IsOneByte()) {
       return CompareRawStringContents(flat1.ToOneByteVector().start(),
                                       flat2.ToOneByteVector().start(),
                                       one_length);
@@ -8800,8 +8795,8 @@ bool String::MarkAsUndetectable() {
   if (map == heap->string_map()) {
     this->set_map(heap->undetectable_string_map());
     return true;
-  } else if (map == heap->ascii_string_map()) {
-    this->set_map(heap->undetectable_ascii_string_map());
+  } else if (map == heap->one_byte_string_map()) {
+    this->set_map(heap->undetectable_one_byte_string_map());
     return true;
   }
   // Rest cannot be marked as undetectable
@@ -8844,7 +8839,7 @@ bool String::IsOneByteEqualTo(Vector<const uint8_t> str) {
   if (str.length() != slen) return false;
   DisallowHeapAllocation no_gc;
   FlatContent content = GetFlatContent();
-  if (content.IsAscii()) {
+  if (content.IsOneByte()) {
     return CompareChars(content.ToOneByteVector().start(),
                         str.start(), slen) == 0;
   }
@@ -9721,7 +9716,7 @@ Handle<Object> Script::GetNameOrSourceURL(Handle<Script> script) {
   Isolate* isolate = script->GetIsolate();
   Handle<String> name_or_source_url_key =
       isolate->factory()->InternalizeOneByteString(
-          STATIC_ASCII_VECTOR("nameOrSourceURL"));
+          STATIC_CHAR_VECTOR("nameOrSourceURL"));
   Handle<JSObject> script_wrapper = Script::GetWrapper(script);
   Handle<Object> property = Object::GetProperty(
       script_wrapper, name_or_source_url_key).ToHandleChecked();

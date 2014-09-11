@@ -14,23 +14,22 @@ void ArrayNativeCode(MacroAssembler* masm, Label* call_generic_code);
 
 class StringHelper : public AllStatic {
  public:
-  // Compares two flat ASCII strings and returns result in x0.
-  static void GenerateCompareFlatAsciiStrings(
+  // Compares two flat one-byte strings and returns result in x0.
+  static void GenerateCompareFlatOneByteStrings(
       MacroAssembler* masm, Register left, Register right, Register scratch1,
       Register scratch2, Register scratch3, Register scratch4);
 
-  // Compare two flat ASCII strings for equality and returns result in x0.
-  static void GenerateFlatAsciiStringEquals(MacroAssembler* masm, Register left,
-                                            Register right, Register scratch1,
-                                            Register scratch2,
-                                            Register scratch3);
+  // Compare two flat one-byte strings for equality and returns result in x0.
+  static void GenerateFlatOneByteStringEquals(MacroAssembler* masm,
+                                              Register left, Register right,
+                                              Register scratch1,
+                                              Register scratch2,
+                                              Register scratch3);
 
  private:
-  static void GenerateAsciiCharsCompareLoop(MacroAssembler* masm, Register left,
-                                            Register right, Register length,
-                                            Register scratch1,
-                                            Register scratch2,
-                                            Label* chars_not_equal);
+  static void GenerateOneByteCharsCompareLoop(
+      MacroAssembler* masm, Register left, Register right, Register length,
+      Register scratch1, Register scratch2, Label* chars_not_equal);
 
   DISALLOW_IMPLICIT_CONSTRUCTORS(StringHelper);
 };
@@ -46,6 +45,7 @@ class StoreRegistersStateStub: public PlatformCodeStub {
   static void GenerateAheadOfTime(Isolate* isolate);
 
  private:
+  DEFINE_NULL_CALL_INTERFACE_DESCRIPTOR();
   DEFINE_PLATFORM_CODE_STUB(StoreRegistersState, PlatformCodeStub);
 };
 
@@ -58,6 +58,7 @@ class RestoreRegistersStateStub: public PlatformCodeStub {
   static void GenerateAheadOfTime(Isolate* isolate);
 
  private:
+  DEFINE_NULL_CALL_INTERFACE_DESCRIPTOR();
   DEFINE_PLATFORM_CODE_STUB(RestoreRegistersState, PlatformCodeStub);
 };
 
@@ -160,6 +161,8 @@ class RecordWriteStub: public PlatformCodeStub {
     }
     DCHECK(GetMode(stub) == mode);
   }
+
+  DEFINE_NULL_CALL_INTERFACE_DESCRIPTOR();
 
  private:
   // This is a helper class to manage the registers associated with the stub.
@@ -327,6 +330,7 @@ class DirectCEntryStub: public PlatformCodeStub {
  private:
   bool NeedsImmovableCode() { return true; }
 
+  DEFINE_NULL_CALL_INTERFACE_DESCRIPTOR();
   DEFINE_PLATFORM_CODE_STUB(DirectCEntry, PlatformCodeStub);
 };
 
@@ -374,6 +378,7 @@ class NameDictionaryLookupStub: public PlatformCodeStub {
 
   class LookupModeBits: public BitField<LookupMode, 0, 1> {};
 
+  DEFINE_NULL_CALL_INTERFACE_DESCRIPTOR();
   DEFINE_PLATFORM_CODE_STUB(NameDictionaryLookup, PlatformCodeStub);
 };
 

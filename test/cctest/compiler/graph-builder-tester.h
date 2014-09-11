@@ -26,8 +26,8 @@ class DirectGraphBuilder : public GraphBuilder {
   virtual ~DirectGraphBuilder() {}
 
  protected:
-  virtual Node* MakeNode(Operator* op, int value_input_count,
-                         Node** value_inputs) {
+  virtual Node* MakeNode(const Operator* op, int value_input_count,
+                         Node** value_inputs) FINAL {
     return graph()->NewNode(op, value_input_count, value_inputs);
   }
 };
@@ -61,7 +61,6 @@ class GraphAndBuilders {
   explicit GraphAndBuilders(Zone* zone)
       : main_graph_(new (zone) Graph(zone)),
         main_common_(zone),
-        main_machine_(zone),
         main_simplified_(zone) {}
 
  protected:

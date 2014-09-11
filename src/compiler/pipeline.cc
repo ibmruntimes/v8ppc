@@ -169,10 +169,9 @@ Handle<Code> Pipeline::GenerateCode() {
   // construction.  This is currently only needed for the node cache, which the
   // typer could sweep over later.
   Typer typer(zone());
+  MachineOperatorBuilder machine;
   CommonOperatorBuilder common(zone());
-  JSOperatorBuilder javascript(zone());
-  MachineOperatorBuilder machine(zone());
-  JSGraph jsgraph(&graph, &common, &javascript, &typer, &machine);
+  JSGraph jsgraph(&graph, &common, &typer);
   Node* context_node;
   {
     PhaseStats graph_builder_stats(info(), PhaseStats::CREATE_GRAPH,

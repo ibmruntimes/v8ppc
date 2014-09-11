@@ -15,17 +15,18 @@ using namespace v8::internal;
 using namespace v8::internal::compiler;
 
 template <typename T>
-Operator* NewConstantOperator(CommonOperatorBuilder* common, volatile T value);
+const Operator* NewConstantOperator(CommonOperatorBuilder* common,
+                                    volatile T value);
 
 template <>
-Operator* NewConstantOperator<int32_t>(CommonOperatorBuilder* common,
-                                       volatile int32_t value) {
+const Operator* NewConstantOperator<int32_t>(CommonOperatorBuilder* common,
+                                             volatile int32_t value) {
   return common->Int32Constant(value);
 }
 
 template <>
-Operator* NewConstantOperator<double>(CommonOperatorBuilder* common,
-                                      volatile double value) {
+const Operator* NewConstantOperator<double>(CommonOperatorBuilder* common,
+                                            volatile double value) {
   return common->Float64Constant(value);
 }
 
@@ -52,24 +53,21 @@ class ReducerTester : public HandleAndZoneScope {
       : isolate(main_isolate()),
         binop(NULL),
         unop(NULL),
-        machine(main_zone()),
         common(main_zone()),
         graph(main_zone()),
-        javascript(main_zone()),
         typer(main_zone()),
-        jsgraph(&graph, &common, &javascript, &typer, &machine),
+        jsgraph(&graph, &common, &typer),
         maxuint32(Constant<int32_t>(kMaxUInt32)) {
     Node* s = graph.NewNode(common.Start(num_parameters));
     graph.SetStart(s);
   }
 
   Isolate* isolate;
-  Operator* binop;
-  Operator* unop;
+  const Operator* binop;
+  const Operator* unop;
   MachineOperatorBuilder machine;
   CommonOperatorBuilder common;
   Graph graph;
-  JSOperatorBuilder javascript;
   Typer typer;
   JSGraph jsgraph;
   Node* maxuint32;
@@ -132,7 +130,7 @@ class ReducerTester : public HandleAndZoneScope {
   // Check that the reduction of this binop applied to {left} and {right} yields
   // the {op_expect} applied to {left_expect} and {right_expect}.
   template <typename T>
-  void CheckFoldBinop(volatile T left_expect, Operator* op_expect,
+  void CheckFoldBinop(volatile T left_expect, const Operator* op_expect,
                       Node* right_expect, Node* left, Node* right) {
     CHECK_NE(NULL, binop);
     Node* n = graph.NewNode(binop, left, right);
@@ -147,7 +145,7 @@ class ReducerTester : public HandleAndZoneScope {
   // Check that the reduction of this binop applied to {left} and {right} yields
   // the {op_expect} applied to {left_expect} and {right_expect}.
   template <typename T>
-  void CheckFoldBinop(Node* left_expect, Operator* op_expect,
+  void CheckFoldBinop(Node* left_expect, const Operator* op_expect,
                       volatile T right_expect, Node* left, Node* right) {
     CHECK_NE(NULL, binop);
     Node* n = graph.NewNode(binop, left, right);
@@ -668,8 +666,9 @@ TEST(ReduceLoadStore) {
   }
 
   {
-    Node* store = R.graph.NewNode(R.machine.Store(kMachInt32, kNoWriteBarrier),
-                                  base, index, load);
+    Node* store = R.graph.NewNode(
+        R.machine.Store(StoreRepresentation(kMachInt32, kNoWriteBarrier)), base,
+        index, load);
     MachineOperatorReducer reducer(&R.jsgraph);
     Reduction reduction = reducer.Reduce(store);
     CHECK(!reduction.Changed());  // stores should not be reduced.

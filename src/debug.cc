@@ -818,7 +818,7 @@ bool Debug::Load() {
 
   // Expose the builtins object in the debugger context.
   Handle<String> key = isolate_->factory()->InternalizeOneByteString(
-      STATIC_ASCII_VECTOR("builtins"));
+      STATIC_CHAR_VECTOR("builtins"));
   Handle<GlobalObject> global =
       Handle<GlobalObject>(context->global_object(), isolate_);
   Handle<JSBuiltinsObject> builtin =
@@ -1034,7 +1034,7 @@ bool Debug::CheckBreakPoint(Handle<Object> break_point_object) {
   // Get the function IsBreakPointTriggered (defined in debug-debugger.js).
   Handle<String> is_break_point_triggered_string =
       factory->InternalizeOneByteString(
-          STATIC_ASCII_VECTOR("IsBreakPointTriggered"));
+          STATIC_CHAR_VECTOR("IsBreakPointTriggered"));
   Handle<GlobalObject> debug_global(debug_context()->global_object());
   Handle<JSFunction> check_break_point =
     Handle<JSFunction>::cast(Object::GetProperty(
@@ -1265,7 +1265,7 @@ bool Debug::IsBreakOnException(ExceptionBreakType type) {
 bool Debug::PromiseHasRejectHandler(Handle<JSObject> promise) {
   Handle<JSFunction> fun = Handle<JSFunction>::cast(
       JSObject::GetDataProperty(isolate_->js_builtins_object(),
-                                isolate_->factory()->NewStringFromStaticAscii(
+                                isolate_->factory()->NewStringFromStaticChars(
                                     "PromiseHasRejectHandler")));
   Handle<Object> result =
       Execution::Call(isolate_, fun, promise, 0, NULL).ToHandleChecked();
@@ -2393,13 +2393,11 @@ void Debug::ClearMirrorCache() {
   Factory* factory = isolate_->factory();
   Handle<GlobalObject> global(isolate_->global_object());
   JSObject::SetProperty(global,
-      factory->NewStringFromAsciiChecked("next_handle_"),
-      handle(Smi::FromInt(0), isolate_),
-      SLOPPY).Check();
+                        factory->NewStringFromAsciiChecked("next_handle_"),
+                        handle(Smi::FromInt(0), isolate_), SLOPPY).Check();
   JSObject::SetProperty(global,
-      factory->NewStringFromAsciiChecked("mirror_cache_"),
-      factory->NewJSArray(0, FAST_ELEMENTS),
-      SLOPPY).Check();
+                        factory->NewStringFromAsciiChecked("mirror_cache_"),
+                        factory->NewJSArray(0, FAST_ELEMENTS), SLOPPY).Check();
 }
 
 
@@ -2505,8 +2503,18 @@ MaybeHandle<Object> Debug::MakeAsyncTaskEvent(Handle<JSObject> task_event) {
 
 void Debug::OnThrow(Handle<Object> exception, bool uncaught) {
   if (in_debug_scope() || ignore_events()) return;
+  // Temporarily clear any scheduled_exception to allow evaluating
+  // JavaScript from the debug event handler.
   HandleScope scope(isolate_);
+  Handle<Object> scheduled_exception;
+  if (isolate_->has_scheduled_exception()) {
+    scheduled_exception = handle(isolate_->scheduled_exception(), isolate_);
+    isolate_->clear_scheduled_exception();
+  }
   OnException(exception, uncaught, isolate_->GetPromiseOnStackOnThrow());
+  if (!scheduled_exception.is_null()) {
+    isolate_->thread_local_top()->scheduled_exception_ = *scheduled_exception;
+  }
 }
 
 
@@ -2627,7 +2635,7 @@ void Debug::OnAfterCompile(Handle<Script> script) {
   // Get the function UpdateScriptBreakPoints (defined in debug-debugger.js).
   Handle<String> update_script_break_points_string =
       isolate_->factory()->InternalizeOneByteString(
-          STATIC_ASCII_VECTOR("UpdateScriptBreakPoints"));
+          STATIC_CHAR_VECTOR("UpdateScriptBreakPoints"));
   Handle<GlobalObject> debug_global(debug_context()->global_object());
   Handle<Object> update_script_break_points =
       Object::GetProperty(

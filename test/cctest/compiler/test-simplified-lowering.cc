@@ -36,13 +36,10 @@ class SimplifiedLoweringTester : public GraphBuilderTester<ReturnType> {
                            MachineType p4 = kMachNone)
       : GraphBuilderTester<ReturnType>(p0, p1, p2, p3, p4),
         typer(this->zone()),
-        javascript(this->zone()),
-        jsgraph(this->graph(), this->common(), &javascript, &typer,
-                this->machine()),
+        jsgraph(this->graph(), this->common(), &typer),
         lowering(&jsgraph) {}
 
   Typer typer;
-  JSOperatorBuilder javascript;
   JSGraph jsgraph;
   SimplifiedLowering lowering;
 
@@ -629,7 +626,6 @@ TEST(RunAccessTests_Smi) {
 class TestingGraph : public HandleAndZoneScope, public GraphAndBuilders {
  public:
   Typer typer;
-  JSOperatorBuilder javascript;
   JSGraph jsgraph;
   Node* p0;
   Node* p1;
@@ -640,8 +636,7 @@ class TestingGraph : public HandleAndZoneScope, public GraphAndBuilders {
   explicit TestingGraph(Type* p0_type, Type* p1_type = Type::None())
       : GraphAndBuilders(main_zone()),
         typer(main_zone()),
-        javascript(main_zone()),
-        jsgraph(graph(), common(), &javascript, &typer, machine()) {
+        jsgraph(graph(), common(), &typer) {
     start = graph()->NewNode(common()->Start(2));
     graph()->SetStart(start);
     ret =
@@ -654,14 +649,14 @@ class TestingGraph : public HandleAndZoneScope, public GraphAndBuilders {
     NodeProperties::SetBounds(p1, Bounds(p1_type));
   }
 
-  void CheckLoweringBinop(IrOpcode::Value expected, Operator* op) {
+  void CheckLoweringBinop(IrOpcode::Value expected, const Operator* op) {
     Node* node = Return(graph()->NewNode(op, p0, p1));
     Lower();
     CHECK_EQ(expected, node->opcode());
   }
 
-  void CheckLoweringTruncatedBinop(IrOpcode::Value expected, Operator* op,
-                                   Operator* trunc) {
+  void CheckLoweringTruncatedBinop(IrOpcode::Value expected, const Operator* op,
+                                   const Operator* trunc) {
     Node* node = graph()->NewNode(op, p0, p1);
     Return(graph()->NewNode(trunc, node));
     Lower();
@@ -1113,7 +1108,7 @@ TEST(InsertBasicChanges) {
 }
 
 
-static void CheckChangesAroundBinop(TestingGraph* t, Operator* op,
+static void CheckChangesAroundBinop(TestingGraph* t, const Operator* op,
                                     IrOpcode::Value input_change,
                                     IrOpcode::Value output_change) {
   Node* binop = t->graph()->NewNode(op, t->p0, t->p1);
@@ -1131,11 +1126,11 @@ static void CheckChangesAroundBinop(TestingGraph* t, Operator* op,
 TEST(InsertChangesAroundInt32Binops) {
   TestingGraph t(Type::Signed32(), Type::Signed32());
 
-  Operator* ops[] = {t.machine()->Int32Add(),  t.machine()->Int32Sub(),
-                     t.machine()->Int32Mul(),  t.machine()->Int32Div(),
-                     t.machine()->Int32Mod(),  t.machine()->Word32And(),
-                     t.machine()->Word32Or(),  t.machine()->Word32Xor(),
-                     t.machine()->Word32Shl(), t.machine()->Word32Sar()};
+  const Operator* ops[] = {t.machine()->Int32Add(),  t.machine()->Int32Sub(),
+                           t.machine()->Int32Mul(),  t.machine()->Int32Div(),
+                           t.machine()->Int32Mod(),  t.machine()->Word32And(),
+                           t.machine()->Word32Or(),  t.machine()->Word32Xor(),
+                           t.machine()->Word32Shl(), t.machine()->Word32Sar()};
 
   for (size_t i = 0; i < arraysize(ops); i++) {
     CheckChangesAroundBinop(&t, ops[i], IrOpcode::kChangeTaggedToInt32,
@@ -1147,8 +1142,8 @@ TEST(InsertChangesAroundInt32Binops) {
 TEST(InsertChangesAroundInt32Cmp) {
   TestingGraph t(Type::Signed32(), Type::Signed32());
 
-  Operator* ops[] = {t.machine()->Int32LessThan(),
-                     t.machine()->Int32LessThanOrEqual()};
+  const Operator* ops[] = {t.machine()->Int32LessThan(),
+                           t.machine()->Int32LessThanOrEqual()};
 
   for (size_t i = 0; i < arraysize(ops); i++) {
     CheckChangesAroundBinop(&t, ops[i], IrOpcode::kChangeTaggedToInt32,
@@ -1160,8 +1155,8 @@ TEST(InsertChangesAroundInt32Cmp) {
 TEST(InsertChangesAroundUint32Cmp) {
   TestingGraph t(Type::Unsigned32(), Type::Unsigned32());
 
-  Operator* ops[] = {t.machine()->Uint32LessThan(),
-                     t.machine()->Uint32LessThanOrEqual()};
+  const Operator* ops[] = {t.machine()->Uint32LessThan(),
+                           t.machine()->Uint32LessThanOrEqual()};
 
   for (size_t i = 0; i < arraysize(ops); i++) {
     CheckChangesAroundBinop(&t, ops[i], IrOpcode::kChangeTaggedToUint32,
@@ -1173,7 +1168,7 @@ TEST(InsertChangesAroundUint32Cmp) {
 TEST(InsertChangesAroundFloat64Binops) {
   TestingGraph t(Type::Number(), Type::Number());
 
-  Operator* ops[] = {
+  const Operator* ops[] = {
       t.machine()->Float64Add(), t.machine()->Float64Sub(),
       t.machine()->Float64Mul(), t.machine()->Float64Div(),
       t.machine()->Float64Mod(),
@@ -1189,9 +1184,9 @@ TEST(InsertChangesAroundFloat64Binops) {
 TEST(InsertChangesAroundFloat64Cmp) {
   TestingGraph t(Type::Number(), Type::Number());
 
-  Operator* ops[] = {t.machine()->Float64Equal(),
-                     t.machine()->Float64LessThan(),
-                     t.machine()->Float64LessThanOrEqual()};
+  const Operator* ops[] = {t.machine()->Float64Equal(),
+                           t.machine()->Float64LessThan(),
+                           t.machine()->Float64LessThanOrEqual()};
 
   for (size_t i = 0; i < arraysize(ops); i++) {
     CheckChangesAroundBinop(&t, ops[i], IrOpcode::kChangeTaggedToFloat64,
@@ -1270,9 +1265,9 @@ TEST(LowerStoreField_to_store) {
 
     StoreRepresentation rep = OpParameter<StoreRepresentation>(store);
     if (machine_reps[i] & kRepTagged) {
-      CHECK_EQ(kFullWriteBarrier, rep.write_barrier_kind);
+      CHECK_EQ(kFullWriteBarrier, rep.write_barrier_kind());
     }
-    CHECK_EQ(machine_reps[i], rep.machine_type);
+    CHECK_EQ(machine_reps[i], rep.machine_type());
   }
 }
 
@@ -1317,9 +1312,9 @@ TEST(LowerStoreElement_to_store) {
 
     StoreRepresentation rep = OpParameter<StoreRepresentation>(store);
     if (machine_reps[i] & kRepTagged) {
-      CHECK_EQ(kFullWriteBarrier, rep.write_barrier_kind);
+      CHECK_EQ(kFullWriteBarrier, rep.write_barrier_kind());
     }
-    CHECK_EQ(machine_reps[i], rep.machine_type);
+    CHECK_EQ(machine_reps[i], rep.machine_type());
   }
 }
 
