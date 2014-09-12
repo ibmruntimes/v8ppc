@@ -682,7 +682,7 @@ void NamedLoadHandlerCompiler::GenerateLoadCallback(
   __ push(name());
 
   // Abi for CallApiGetter
-  Register getter_address_reg = r5;
+  Register getter_address_reg = ApiGetterDescriptor::function_address();
 
   Address getter_address = v8::ToCData<Address>(callback->getter());
   ApiFunction fun(getter_address);

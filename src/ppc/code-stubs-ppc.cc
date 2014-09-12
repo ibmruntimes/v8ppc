@@ -18,8 +18,7 @@
 #include "src/jsregexp.h"
 #include "src/regexp-macro-assembler.h"
 #include "src/runtime.h"
-
-#include "src/ppc/regexp-macro-assembler-ppc.h"
+// #include "src/ppc/regexp-macro-assembler-ppc.h"
 
 namespace v8 {
 namespace internal {
@@ -725,18 +724,18 @@ void CompareICStub::GenerateGeneric(MacroAssembler* masm) {
         masm, lhs, rhs, &flat_string_check, &slow);
   }
 
-  // Check for both being sequential ASCII strings, and inline if that is the
-  // case.
+  // Check for both being sequential one-byte strings,
+  // and inline if that is the case.
   __ bind(&flat_string_check);
 
-  __ JumpIfNonSmisNotBothSequentialAsciiStrings(lhs, rhs, r5, r6, &slow);
+  __ JumpIfNonSmisNotBothSequentialOneByteStrings(lhs, rhs, r5, r6, &slow);
 
   __ IncrementCounter(isolate()->counters()->string_compare_native(), 1, r5,
                       r6);
   if (cc == eq) {
-    StringHelper::GenerateFlatAsciiStringEquals(masm, lhs, rhs, r5, r6);
+    StringHelper::GenerateFlatOneByteStringEquals(masm, lhs, rhs, r5, r6);
   } else {
-    StringHelper::GenerateCompareFlatAsciiStrings(masm, lhs, rhs, r5, r6,
+    StringHelper::GenerateCompareFlatOneByteStrings(masm, lhs, rhs, r5, r6,
                                                   r7);
   }
   // Never falls through to here.
@@ -800,7 +799,8 @@ void StoreBufferOverflowStub::Generate(MacroAssembler* masm) {
 
 void MathPowStub::Generate(MacroAssembler* masm) {
   const Register base = r4;
-  const Register exponent = r5;
+  const Register exponent = MathPowTaggedDescriptor::exponent();
+  DCHECK(exponent.is(r5));
   const Register heapnumbermap = r8;
   const Register heapnumber = r3;
   const DoubleRegister double_base = d1;
@@ -1595,6 +1595,8 @@ void ArgumentsAccessStub::GenerateReadElement(MacroAssembler* masm) {
   // relative to the frame pointer.
   const int kDisplacement =
       StandardFrameConstants::kCallerSPOffset - kPointerSize;
+  DCHECK(r4.is(ArgumentsAccessReadDescriptor::index()));
+  DCHECK(r3.is(ArgumentsAccessReadDescriptor::parameter_count()));
 
   // Check that the key is a smi.
   Label slow;
@@ -2173,7 +2175,8 @@ void RegExpExecStub::Generate(MacroAssembler* masm) {
   STATIC_ASSERT(kStringEncodingMask == 4);
   __ ExtractBitMask(r6, r3, kStringEncodingMask, SetRC);
   __ beq(&encoding_type_UC16, cr0);
-  __ LoadP(code, FieldMemOperand(regexp_data, JSRegExp::kDataAsciiCodeOffset));
+  __ LoadP(code, FieldMemOperand(regexp_data,
+                                 JSRegExp::kDataOneByteCodeOffset));
   __ b(&br_over);
   __ bind(&encoding_type_UC16);
   __ LoadP(code, FieldMemOperand(regexp_data, JSRegExp::kDataUC16CodeOffset));
@@ -2187,7 +2190,7 @@ void RegExpExecStub::Generate(MacroAssembler* masm) {
   __ JumpIfSmi(code, &runtime);
 
   // r4: previous index
-  // r6: encoding of subject string (1 if ASCII, 0 if two_byte);
+  // r6: encoding of subject string (1 if one_byte, 0 if two_byte);
   // code: Address of generated regexp code
   // subject: Subject string
   // regexp_data: RegExp data (FixedArray)
@@ -2229,9 +2232,8 @@ void RegExpExecStub::Generate(MacroAssembler* masm) {
          Operand(ExternalReference::address_of_static_offsets_vector(
                    isolate())));
 
-  // For arguments 4 (r6) and 3 (r5) get string length, calculate start of
-  // string data and calculate the shift of the index (0 for ASCII and 1 for
-  // two byte).
+  // For arguments 4 (r6) and 3 (r5) get string length, calculate start of data
+  // and calculate the shift of the index (0 for one-byte and 1 for two-byte).
   __ addi(r18, subject, Operand(SeqString::kHeaderSize - kHeapObjectTag));
   __ xori(r6, r6, Operand(1));
   // Load the length from the original subject string from the previous stack
@@ -2900,11 +2902,6 @@ void CallICStub::GenerateMiss(MacroAssembler* masm, IC::UtilityId id) {
 
 // StringCharCodeAtGenerator
 void StringCharCodeAtGenerator::GenerateFast(MacroAssembler* masm) {
-  Label flat_string;
-  Label ascii_string;
-  Label got_char_code;
-  Label sliced_string;
-
   // If the receiver is a smi trigger the non-string case.
   __ JumpIfSmi(object_, receiver_not_string_);
 
@@ -3002,7 +2999,7 @@ void StringCharCodeAtGenerator::GenerateSlow(
   __ bne(&slow_case_);
 
   __ LoadRoot(result_, Heap::kSingleCharacterStringCacheRootIndex);
-  // At this point code register contains smi tagged ASCII char code.
+  // At this point code register contains smi tagged one-byte char code.
   __ mr(r0, code_);
   __ SmiToPtrArrayOffset(code_, code_);
   __ add(result_, result_, code_);
@@ -3031,10 +3028,7 @@ void StringCharFromCodeGenerator::GenerateSlow(
 }
 
 
-enum CopyCharactersFlags {
-  COPY_ASCII = 1,
-  DEST_ALWAYS_ALIGNED = 2
-};
+enum CopyCharactersFlags { COPY_ONE_BYTE = 1, DEST_ALWAYS_ALIGNED = 2 };
 
 
 void StringHelper::GenerateCopyCharacters(MacroAssembler* masm,
@@ -3195,7 +3189,7 @@ void SubStringStub::Generate(MacroAssembler* masm) {
     STATIC_ASSERT((kStringEncodingMask & kTwoByteStringTag) == 0);
     __ andi(r0, r4, Operand(kStringEncodingMask));
     __ beq(&two_byte_slice, cr0);
-    __ AllocateAsciiSlicedString(r3, r5, r9, r10, &runtime);
+    __ AllocateOneByteSlicedString(r3, r5, r9, r10, &runtime);
     __ b(&set_slice_header);
     __ bind(&two_byte_slice);
     __ AllocateTwoByteSlicedString(r3, r5, r9, r10, &runtime);
@@ -3238,8 +3232,8 @@ void SubStringStub::Generate(MacroAssembler* masm) {
   __ andi(r0, r4, Operand(kStringEncodingMask));
   __ beq(&two_byte_sequential, cr0);
 
-  // Allocate and copy the resulting ASCII string.
-  __ AllocateAsciiString(r3, r5, r7, r9, r10, &runtime);
+  // Allocate and copy the resulting one-byte string.
+  __ AllocateOneByteString(r3, r5, r7, r9, r10, &runtime);
 
   // Locate first character of substring to copy.
   __ add(r8, r8, r6);
@@ -3298,10 +3292,9 @@ void SubStringStub::Generate(MacroAssembler* masm) {
 }
 
 
-void StringHelper::GenerateFlatAsciiStringEquals(MacroAssembler* masm,
-                                                 Register left, Register right,
-                                                 Register scratch1,
-                                                 Register scratch2) {
+void StringHelper::GenerateFlatOneByteStringEquals(
+    MacroAssembler* masm, Register left, Register right, Register scratch1,
+    Register scratch2) {
   Register length = scratch1;
 
   // Compare lengths.
@@ -3325,9 +3318,8 @@ void StringHelper::GenerateFlatAsciiStringEquals(MacroAssembler* masm,
 
   // Compare characters.
   __ bind(&compare_chars);
-  GenerateAsciiCharsCompareLoop(masm,
-                                left, right, length, scratch2,
-                                &strings_not_equal);
+  GenerateOneByteCharsCompareLoop(masm, left, right, length, scratch2,
+                                  &strings_not_equal);
 
   // Characters are equal.
   __ LoadSmiLiteral(r3, Smi::FromInt(EQUAL));
@@ -3335,7 +3327,7 @@ void StringHelper::GenerateFlatAsciiStringEquals(MacroAssembler* masm,
 }
 
 
-void StringHelper::GenerateCompareFlatAsciiStrings(
+void StringHelper::GenerateCompareFlatOneByteStrings(
     MacroAssembler* masm, Register left, Register right, Register scratch1,
     Register scratch2, Register scratch3) {
   Label skip, result_not_equal, compare_lengths;
@@ -3353,9 +3345,8 @@ void StringHelper::GenerateCompareFlatAsciiStrings(
   __ beq(&compare_lengths);
 
   // Compare loop.
-  GenerateAsciiCharsCompareLoop(masm,
-                                left, right, min_length, scratch2,
-                                &result_not_equal);
+  GenerateOneByteCharsCompareLoop(masm, left, right, min_length, scratch2,
+                                  &result_not_equal);
 
   // Compare lengths - strings up to min-length are equal.
   __ bind(&compare_lengths);
@@ -3378,7 +3369,7 @@ void StringHelper::GenerateCompareFlatAsciiStrings(
 }
 
 
-void StringHelper::GenerateAsciiCharsCompareLoop(
+void StringHelper::GenerateOneByteCharsCompareLoop(
     MacroAssembler* masm, Register left, Register right, Register length,
     Register scratch1, Label* chars_not_equal) {
   // Change index to run from -length to -1 by adding length to string
@@ -3428,13 +3419,13 @@ void StringCompareStub::Generate(MacroAssembler* masm) {
 
   __ bind(&not_same);
 
-  // Check that both objects are sequential ASCII strings.
-  __ JumpIfNotBothSequentialAsciiStrings(r4, r3, r5, r6, &runtime);
+  // Check that both objects are sequential one-byte strings.
+  __ JumpIfNotBothSequentialOneByteStrings(r4, r3, r5, r6, &runtime);
 
-  // Compare flat ASCII strings natively. Remove arguments from stack first.
+  // Compare flat one-byte strings natively. Remove arguments from stack first.
   __ IncrementCounter(counters->string_compare_native(), 1, r5, r6);
   __ addi(sp, sp, Operand(2 * kPointerSize));
-  StringHelper::GenerateCompareFlatAsciiStrings(masm, r4, r3, r5, r6, r7);
+  StringHelper::GenerateCompareFlatOneByteStrings(masm, r4, r3, r5, r6, r7);
 
   // Call the runtime; it returns -1 (less), 0 (equal), or 1 (greater)
   // tagged as a small integer.
@@ -3716,18 +3707,18 @@ void CompareICStub::GenerateStrings(MacroAssembler* masm) {
     __ bind(&is_symbol);
   }
 
-  // Check that both strings are sequential ASCII.
+  // Check that both strings are sequential one-byte.
   Label runtime;
-  __ JumpIfBothInstanceTypesAreNotSequentialAscii(
-      tmp1, tmp2, tmp3, tmp4, &runtime);
+  __ JumpIfBothInstanceTypesAreNotSequentialOneByte(tmp1, tmp2, tmp3, tmp4,
+                                                    &runtime);
 
-  // Compare flat ASCII strings. Returns when done.
+  // Compare flat one-byte strings. Returns when done.
   if (equality) {
-    StringHelper::GenerateFlatAsciiStringEquals(
-        masm, left, right, tmp1, tmp2);
+    StringHelper::GenerateFlatOneByteStringEquals(masm, left, right, tmp1,
+                                                  tmp2);
   } else {
-    StringHelper::GenerateCompareFlatAsciiStrings(
-        masm, left, right, tmp1, tmp2, tmp3);
+    StringHelper::GenerateCompareFlatOneByteStrings(masm, left, right, tmp1,
+                                                    tmp2, tmp3);
   }
 
   // Handle more complex cases in runtime.
@@ -4897,7 +4888,8 @@ void CallApiGetterStub::Generate(MacroAssembler* masm) {
   //  -- r5                     : api_function_address
   // -----------------------------------
 
-  Register api_function_address = r5;
+  Register api_function_address = ApiGetterDescriptor::function_address();
+  DCHECK(api_function_address.is(r5));
 
   __ mr(r3, sp);  // r0 = Handle<Name>
   __ addi(r4, r3, Operand(1 * kPointerSize));  // r4 = PCA

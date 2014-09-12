@@ -8,6 +8,7 @@
 #include "src/v8.h"
 
 #include "src/base/bits.h"
+#include "src/code-factory.h"
 #include "src/code-stubs.h"
 #include "src/hydrogen-osr.h"
 #include "src/ic/stub-cache.h"
@@ -2203,8 +2204,9 @@ void LCodeGen::DoArithmeticT(LArithmeticT* instr) {
   DCHECK(ToRegister(instr->right()).is(r3));
   DCHECK(ToRegister(instr->result()).is(r3));
 
-  BinaryOpICStub stub(isolate(), instr->op(), NO_OVERWRITE);
-  CallCode(stub.GetCode(), RelocInfo::CODE_TARGET, instr);
+  Handle<Code> code =
+      CodeFactory::BinaryOpIC(isolate(), instr->op(), NO_OVERWRITE).code();
+  CallCode(code, RelocInfo::CODE_TARGET, instr);
 }
 
 
@@ -2691,7 +2693,7 @@ void LCodeGen::DoStringCompareAndBranch(LStringCompareAndBranch* instr) {
   DCHECK(ToRegister(instr->context()).is(cp));
   Token::Value op = instr->op();
 
-  Handle<Code> ic = CompareIC::GetUninitialized(isolate(), op);
+  Handle<Code> ic = CodeFactory::CompareIC(isolate(), op).code();
   CallCode(ic, RelocInfo::CODE_TARGET, instr);
   // This instruction also signals no smi code inlined
   __ cmpi(r3, Operand::Zero());
@@ -2804,7 +2806,7 @@ void LCodeGen::EmitClassOfTest(Label* is_true,
 
   // Objects with a non-function constructor have class 'Object'.
   __ CompareObjectType(temp, temp2, temp2, JS_FUNCTION_TYPE);
-  if (class_name->IsOneByteEqualTo(STATIC_ASCII_VECTOR("Object"))) {
+  if (class_name->IsOneByteEqualTo(STATIC_CHAR_VECTOR("Object"))) {
     __ bne(is_true);
   } else {
     __ bne(is_false);
@@ -2987,7 +2989,7 @@ void LCodeGen::DoCmpT(LCmpT* instr) {
   DCHECK(ToRegister(instr->context()).is(cp));
   Token::Value op = instr->op();
 
-  Handle<Code> ic = CompareIC::GetUninitialized(isolate(), op);
+  Handle<Code> ic = CodeFactory::CompareIC(isolate(), op).code();
   CallCode(ic, RelocInfo::CODE_TARGET, instr);
   // This instruction also signals no smi code inlined
   __ cmpi(r3, Operand::Zero());
@@ -3083,7 +3085,7 @@ void LCodeGen::DoLoadGlobalGeneric(LLoadGlobalGeneric* instr) {
     EmitVectorLoadICRegisters<LLoadGlobalGeneric>(instr);
   }
   ContextualMode mode = instr->for_typeof() ? NOT_CONTEXTUAL : CONTEXTUAL;
-  Handle<Code> ic = LoadIC::initialize_stub(isolate(), mode);
+  Handle<Code> ic = CodeFactory::LoadIC(isolate(), mode).code();
   CallCode(ic, RelocInfo::CODE_TARGET, instr);
 }
 
@@ -3225,7 +3227,7 @@ void LCodeGen::DoLoadNamedGeneric(LLoadNamedGeneric* instr) {
   if (FLAG_vector_ics) {
     EmitVectorLoadICRegisters<LLoadNamedGeneric>(instr);
   }
-  Handle<Code> ic = LoadIC::initialize_stub(isolate(), NOT_CONTEXTUAL);
+  Handle<Code> ic = CodeFactory::LoadIC(isolate(), NOT_CONTEXTUAL).code();
   CallCode(ic, RelocInfo::CODE_TARGET, instr);
 }
 
@@ -3584,7 +3586,7 @@ void LCodeGen::DoLoadKeyedGeneric(LLoadKeyedGeneric* instr) {
     EmitVectorLoadICRegisters<LLoadKeyedGeneric>(instr);
   }
 
-  Handle<Code> ic = isolate()->builtins()->KeyedLoadIC_Initialize();
+  Handle<Code> ic = CodeFactory::KeyedLoadIC(isolate()).code();
   CallCode(ic, RelocInfo::CODE_TARGET, instr);
 }
 
@@ -4108,10 +4110,13 @@ void LCodeGen::DoPower(LPower* instr) {
   Representation exponent_type = instr->hydrogen()->right()->representation();
   // Having marked this as a call, we can use any registers.
   // Just make sure that the input/output registers are the expected ones.
+#ifdef DEBUG
+  Register tagged_exponent = MathPowTaggedDescriptor::exponent();
+#endif
   DCHECK(!instr->right()->IsDoubleRegister() ||
          ToDoubleRegister(instr->right()).is(d2));
   DCHECK(!instr->right()->IsRegister() ||
-         ToRegister(instr->right()).is(r5));
+         ToRegister(instr->right()).is(tagged_exponent));
   DCHECK(ToDoubleRegister(instr->left()).is(d1));
   DCHECK(ToDoubleRegister(instr->result()).is(d3));
 
@@ -4741,9 +4746,8 @@ void LCodeGen::DoStoreKeyedGeneric(LStoreKeyedGeneric* instr) {
   DCHECK(ToRegister(instr->key()).is(StoreDescriptor::NameRegister()));
   DCHECK(ToRegister(instr->value()).is(StoreDescriptor::ValueRegister()));
 
-  Handle<Code> ic = instr->strict_mode() == STRICT
-      ? isolate()->builtins()->KeyedStoreIC_Initialize_Strict()
-      : isolate()->builtins()->KeyedStoreIC_Initialize();
+  Handle<Code> ic =
+      CodeFactory::KeyedStoreIC(isolate(), instr->strict_mode()).code();
   CallCode(ic, RelocInfo::CODE_TARGET, instr);
 }
 
@@ -5810,9 +5814,8 @@ void LCodeGen::DoFunctionLiteral(LFunctionLiteral* instr) {
   // space for nested functions that don't need literals cloning.
   bool pretenure = instr->hydrogen()->pretenure();
   if (!pretenure && instr->hydrogen()->has_no_literals()) {
-    FastNewClosureStub stub(isolate(),
-                            instr->hydrogen()->strict_mode(),
-                            instr->hydrogen()->is_generator());
+    FastNewClosureStub stub(isolate(), instr->hydrogen()->strict_mode(),
+                            instr->hydrogen()->kind());
     __ mov(r5, Operand(instr->hydrogen()->shared_info()));
     CallCode(stub.GetCode(), RelocInfo::CODE_TARGET, instr);
   } else {

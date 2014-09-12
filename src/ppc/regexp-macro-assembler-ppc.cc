@@ -265,7 +265,7 @@ void RegExpMacroAssemblerPPC::CheckNotBackReferenceIgnoreCase(
 //  __ cmn(r1, Operand(current_input_offset()));
   BranchOrBacktrack(gt, on_no_match, cr0);
 
-  if (mode_ == ASCII) {
+  if (mode_ == LATIN1) {
     Label success;
     Label fail;
     Label loop_check;
@@ -383,7 +383,7 @@ void RegExpMacroAssemblerPPC::CheckNotBackReference(
 
   Label loop;
   __ bind(&loop);
-  if (mode_ == ASCII) {
+  if (mode_ == LATIN1) {
     __ lbz(r6, MemOperand(r3));
     __ addi(r3, r3, Operand(char_size()));
     __ lbz(r25, MemOperand(r5));
@@ -481,7 +481,7 @@ void RegExpMacroAssemblerPPC::CheckBitInTable(
     Handle<ByteArray> table,
     Label* on_bit_set) {
   __ mov(r3, Operand(table));
-  if (mode_ != ASCII || kTableMask != String::kMaxOneByteCharCode) {
+  if (mode_ != LATIN1 || kTableMask != String::kMaxOneByteCharCode) {
     __ andi(r4, current_character(), Operand(kTableSize - 1));
     __ addi(r4, r4, Operand(ByteArray::kHeaderSize - kHeapObjectTag));
   } else {
@@ -502,7 +502,7 @@ bool RegExpMacroAssemblerPPC::CheckSpecialCharacterClass(uc16 type,
   switch (type) {
   case 's':
     // Match space-characters
-    if (mode_ == ASCII) {
+    if (mode_ == LATIN1) {
       // One byte space characters are '\t'..'\r', ' ' and \u00a0.
       Label success;
       __ cmpi(current_character(), Operand(' '));
@@ -556,7 +556,7 @@ bool RegExpMacroAssemblerPPC::CheckSpecialCharacterClass(uc16 type,
     // See if current character is '\n'^1 or '\r'^1, i.e., 0x0b or 0x0c
     __ subi(r3, r3, Operand(0x0b));
     __ cmpli(r3, Operand(0x0c - 0x0b));
-    if (mode_ == ASCII) {
+    if (mode_ == LATIN1) {
       BranchOrBacktrack(gt, on_no_match);
     } else {
       Label done;
@@ -572,8 +572,8 @@ bool RegExpMacroAssemblerPPC::CheckSpecialCharacterClass(uc16 type,
     return true;
   }
   case 'w': {
-    if (mode_ != ASCII) {
-      // Table is 128 entries, so all ASCII characters can be tested.
+    if (mode_ != LATIN1) {
+      // Table is 256 entries, so all Latin1 characters can be tested.
       __ cmpi(current_character(), Operand('z'));
       BranchOrBacktrack(gt, on_no_match);
     }
@@ -586,8 +586,8 @@ bool RegExpMacroAssemblerPPC::CheckSpecialCharacterClass(uc16 type,
   }
   case 'W': {
     Label done;
-    if (mode_ != ASCII) {
-      // Table is 128 entries, so all ASCII characters can be tested.
+    if (mode_ != LATIN1) {
+      // Table is 256 entries, so all Latin1 characters can be tested.
       __ cmpli(current_character(), Operand('z'));
       __ bgt(&done);
     }
@@ -596,7 +596,7 @@ bool RegExpMacroAssemblerPPC::CheckSpecialCharacterClass(uc16 type,
     __ lbzx(r3, MemOperand(r3, current_character()));
     __ cmpli(r3, Operand::Zero());
     BranchOrBacktrack(ne, on_no_match);
-    if (mode_ != ASCII) {
+    if (mode_ != LATIN1) {
       __ bind(&done);
     }
     return true;
@@ -1156,7 +1156,7 @@ int RegExpMacroAssemblerPPC::CheckStackGuardState(Address* return_address,
   Handle<String> subject(frame_entry<String*>(re_frame, kInputString));
 
   // Current string.
-  bool is_ascii = subject->IsOneByteRepresentationUnderneath();
+  bool is_one_byte = subject->IsOneByteRepresentationUnderneath();
 
   DCHECK(re_code->instruction_start() <= *return_address);
   DCHECK(*return_address <=
@@ -1187,8 +1187,8 @@ int RegExpMacroAssemblerPPC::CheckStackGuardState(Address* return_address,
   }
 
   // String might have changed.
-  if (subject_tmp->IsOneByteRepresentation() != is_ascii) {
-    // If we changed between an ASCII and an UC16 string, the specialized
+  if (subject_tmp->IsOneByteRepresentation() != is_one_byte) {
+    // If we changed between an Latin1 and an UC16 string, the specialized
     // code cannot be used, and we need to restart regexp matching from
     // scratch (including, potentially, compiling a new version of the code).
     return RETRY;
@@ -1344,7 +1344,7 @@ void RegExpMacroAssemblerPPC::LoadCurrentCharacterUnchecked(int cp_offset,
 
   DCHECK(characters == 1);
   __ add(current_character(), end_of_input_address(), offset);
-  if (mode_ == ASCII) {
+  if (mode_ == LATIN1) {
     __ lbz(current_character(), MemOperand(current_character()));
   } else {
     DCHECK(mode_ == UC16);
