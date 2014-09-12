@@ -10992,6 +10992,7 @@ void Code::Disassemble(const char* name, OStream& os) {  // NOLINT
   }
   os << "\n";
 
+#ifdef OBJECT_PRINT
   if (FLAG_enable_ool_constant_pool) {
     ConstantPoolArray *pool = constant_pool();
     if (pool->length()) {
@@ -11000,6 +11001,7 @@ void Code::Disassemble(const char* name, OStream& os) {  // NOLINT
       os << "\n";
     }
   }
+#endif
 }
 #endif  // ENABLE_DISASSEMBLER
 

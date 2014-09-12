@@ -209,8 +209,6 @@ ifeq ($(nativesim), true)
   GYPFLAGS += -Dv8_native_sim=true
 endif
 
-GYPFLAGS += -Dv8_host_byteorder=$(shell python -c "import sys; print sys.byteorder")
-
 # ----------------- available targets: --------------------
 # - "builddeps": pulls in external dependencies for building
 # - "dependencies": pulls in all external dependencies
