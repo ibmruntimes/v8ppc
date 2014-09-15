@@ -11544,10 +11544,9 @@ void HOptimizedGraphBuilder::GenerateDateField(CallRuntime* call) {
 void HOptimizedGraphBuilder::GenerateOneByteSeqStringSetChar(
     CallRuntime* call) {
   DCHECK(call->arguments()->length() == 3);
-  // We need to follow the evaluation order of full codegen.
+  CHECK_ALIVE(VisitForValue(call->arguments()->at(0)));
   CHECK_ALIVE(VisitForValue(call->arguments()->at(1)));
   CHECK_ALIVE(VisitForValue(call->arguments()->at(2)));
-  CHECK_ALIVE(VisitForValue(call->arguments()->at(0)));
   HValue* string = Pop();
   HValue* value = Pop();
   HValue* index = Pop();
@@ -11561,10 +11560,9 @@ void HOptimizedGraphBuilder::GenerateOneByteSeqStringSetChar(
 void HOptimizedGraphBuilder::GenerateTwoByteSeqStringSetChar(
     CallRuntime* call) {
   DCHECK(call->arguments()->length() == 3);
-  // We need to follow the evaluation order of full codegen.
+  CHECK_ALIVE(VisitForValue(call->arguments()->at(0)));
   CHECK_ALIVE(VisitForValue(call->arguments()->at(1)));
   CHECK_ALIVE(VisitForValue(call->arguments()->at(2)));
-  CHECK_ALIVE(VisitForValue(call->arguments()->at(0)));
   HValue* string = Pop();
   HValue* value = Pop();
   HValue* index = Pop();

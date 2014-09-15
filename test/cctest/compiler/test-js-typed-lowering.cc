@@ -48,8 +48,26 @@ class JSTypedLoweringTester : public HandleAndZoneScope {
     return n;
   }
 
+  Node* UndefinedConstant() {
+    Unique<Object> unique =
+        Unique<Object>::CreateImmovable(isolate->factory()->undefined_value());
+    return graph.NewNode(common.HeapConstant(unique));
+  }
+
+  Node* EmptyFrameState(Node* context) {
+    Node* parameters = graph.NewNode(common.StateValues(0));
+    Node* locals = graph.NewNode(common.StateValues(0));
+    Node* stack = graph.NewNode(common.StateValues(0));
+
+    Node* state_node =
+        graph.NewNode(common.FrameState(BailoutId(0), kIgnoreOutput),
+                      parameters, locals, stack, context, UndefinedConstant());
+
+    return state_node;
+  }
+
   Node* reduce(Node* node) {
-    JSGraph jsgraph(&graph, &common, &typer);
+    JSGraph jsgraph(&graph, &common, &javascript, &typer, &machine);
     JSTypedLowering reducer(&jsgraph);
     Reduction reduction = reducer.Reduce(node);
     if (reduction.Changed()) return reduction.replacement();
@@ -775,12 +793,15 @@ TEST(UnaryNot) {
 
 
 TEST(RemoveToNumberEffects) {
+  FLAG_turbo_deoptimization = true;
+
   JSTypedLoweringTester R;
 
   Node* effect_use = NULL;
   for (int i = 0; i < 10; i++) {
     Node* p0 = R.Parameter(Type::Number());
     Node* ton = R.Unop(R.javascript.ToNumber(), p0);
+    Node* frame_state = R.EmptyFrameState(R.context());
     effect_use = NULL;
 
     switch (i) {
@@ -796,11 +817,11 @@ TEST(RemoveToNumberEffects) {
         effect_use = R.graph.NewNode(R.common.EffectPhi(1), ton, R.start());
       case 3:
         effect_use = R.graph.NewNode(R.javascript.Add(), ton, ton, R.context(),
-                                     ton, R.start());
+                                     frame_state, ton, R.start());
         break;
       case 4:
         effect_use = R.graph.NewNode(R.javascript.Add(), p0, p0, R.context(),
-                                     ton, R.start());
+                                     frame_state, ton, R.start());
         break;
       case 5:
         effect_use = R.graph.NewNode(R.common.Return(), p0, ton, R.start());
@@ -1024,7 +1045,7 @@ TEST(OrderNumberBinopEffects2) {
   };
 
   for (size_t j = 0; j < arraysize(ops); j += 2) {
-    BinopEffectsTester B(ops[j], Type::Number(), Type::Object());
+    BinopEffectsTester B(ops[j], Type::Number(), Type::Boolean());
 
     Node* i0 = B.CheckNoOp(0);
     Node* i1 = B.CheckConvertedInput(IrOpcode::kJSToNumber, 1, true);
@@ -1037,7 +1058,7 @@ TEST(OrderNumberBinopEffects2) {
   }
 
   for (size_t j = 0; j < arraysize(ops); j += 2) {
-    BinopEffectsTester B(ops[j], Type::Object(), Type::Number());
+    BinopEffectsTester B(ops[j], Type::Boolean(), Type::Number());
 
     Node* i0 = B.CheckConvertedInput(IrOpcode::kJSToNumber, 0, true);
     Node* i1 = B.CheckNoOp(1);

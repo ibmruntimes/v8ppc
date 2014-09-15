@@ -4322,7 +4322,6 @@ bool Heap::IdleNotification(int idle_time_in_ms) {
   GCIdleTimeAction action =
       gc_idle_time_handler_.Compute(idle_time_in_ms, heap_state);
 
-  contexts_disposed_ = 0;
   bool result = false;
   switch (action.type) {
     case DO_INCREMENTAL_MARKING:
@@ -4358,6 +4357,7 @@ bool Heap::IdleNotification(int idle_time_in_ms) {
     PrintF("]\n");
   }
 
+  contexts_disposed_ = 0;
   return result;
 }
 
