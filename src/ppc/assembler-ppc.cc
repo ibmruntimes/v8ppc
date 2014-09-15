@@ -1555,13 +1555,9 @@ void Assembler::mov(Register dst, const Operand& src) {
       !(canOptimize && is_int16(value))) {
     ConstantPoolAddEntry(rinfo);
 #if V8_TARGET_ARCH_PPC64
-    BlockTrampolinePoolScope block_trampoline_pool(this);
     // We don't support 32-bit entries at this time
     ASSERT(rinfo.rmode() != RelocInfo::NONE32);
-    // We are forced to use 2 instruction sequence since the constant
-    // pool pointer is tagged.
-    li(dst, Operand::Zero());
-    ldx(dst, MemOperand(kConstantPoolRegister, dst));
+    ld(dst, MemOperand(kConstantPoolRegister, 0));
 #else
     lwz(dst, MemOperand(kConstantPoolRegister, 0));
 #endif

@@ -5118,22 +5118,23 @@ SMI_ACCESSORS(SharedFunctionInfo, profiler_ticks, kProfilerTicksOffset)
 #define PSEUDO_SMI_LO_ALIGN kIntSize
 #define PSEUDO_SMI_HI_ALIGN 0
 #endif
+#ifdef DEBUG
+#define PSEUDO_SMI_LO_MASK ~((1 << (31 - kSmiTagSize)) - 1)
+#endif
 
 #define PSEUDO_SMI_ACCESSORS_LO(holder, name, offset)                   \
   STATIC_ASSERT(holder::offset % kPointerSize == PSEUDO_SMI_LO_ALIGN);  \
   int holder::name() {                                                  \
     int value = READ_INT_FIELD(this, offset);                           \
-    ASSERT(kHeapObjectTag == 1);                                        \
-    ASSERT((value & kHeapObjectTag) == 0);                              \
-    return value >> 1;                                                  \
+    ASSERT((value & kSmiTagMask) == kSmiTag);                           \
+    return value >> kSmiTagSize;                                        \
   }                                                                     \
   void holder::set_##name(int value) {                                  \
-    ASSERT(kHeapObjectTag == 1);                                        \
-    ASSERT((value & 0xC0000000) == 0xC0000000 ||                        \
-           (value & 0xC0000000) == 0x000000000);                        \
+    ASSERT((value & PSEUDO_SMI_LO_MASK) == PSEUDO_SMI_LO_MASK ||        \
+           (value & PSEUDO_SMI_LO_MASK) == 0x000000000);                \
     WRITE_INT_FIELD(this,                                               \
                     offset,                                             \
-                    (value << 1) & ~kHeapObjectTag);                    \
+                    value << kSmiTagSize);                              \
   }
 
 #define PSEUDO_SMI_ACCESSORS_HI(holder, name, offset)                   \
@@ -5160,12 +5161,12 @@ PSEUDO_SMI_ACCESSORS_LO(SharedFunctionInfo,
                         function_token_position,
                         kFunctionTokenPositionOffset)
 PSEUDO_SMI_ACCESSORS_HI(SharedFunctionInfo,
-                        compiler_hints,
-                        kCompilerHintsOffset)
-
-PSEUDO_SMI_ACCESSORS_LO(SharedFunctionInfo,
                         opt_count_and_bailout_reason,
                         kOptCountAndBailoutReasonOffset)
+
+PSEUDO_SMI_ACCESSORS_LO(SharedFunctionInfo,
+                        compiler_hints,
+                        kCompilerHintsOffset)
 PSEUDO_SMI_ACCESSORS_HI(SharedFunctionInfo, counters, kCountersOffset)
 
 PSEUDO_SMI_ACCESSORS_LO(SharedFunctionInfo,

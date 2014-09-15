@@ -3186,14 +3186,14 @@ class ConstantPoolArray: public FixedArrayBase {
   static const int kArrayLayout2Offset = kArrayLayout1Offset + kIntSize;
   static const int kFirstOffset = kArrayLayout2Offset + kIntSize;
 
-  static const int kFieldBitSize = 15;
+  static const int kFieldBitSize = 13;
   static const int kMaxEntriesPerType = (1 << kFieldBitSize) - 1;
 
-  // ArrayLayout1 (ensure LSB is clear)
-  class NumberOfInt64EntriesField: public BitField<int, 1, kFieldBitSize> {};
-  class NumberOfCodePtrEntriesField: public BitField<int, 17, kFieldBitSize> {};
-  // ArrayLayout2 (ensure LSB is clear)
-  class NumberOfHeapPtrEntriesField: public BitField<int, 1, kFieldBitSize> {};
+  // ArrayLayout1 (ensure heap object tag is clear)
+  class NumberOfInt64EntriesField: public BitField<int, 3, kFieldBitSize> {};
+  class NumberOfCodePtrEntriesField: public BitField<int, 19, kFieldBitSize> {};
+  // ArrayLayout2 (ensure heap object tag is clear)
+  class NumberOfHeapPtrEntriesField: public BitField<int, 3, kFieldBitSize> {};
   class WeakObjectStateField: public BitField<WeakObjectState, 30, 2> {};
 
   // Dispatched behavior.
@@ -7338,13 +7338,13 @@ class SharedFunctionInfo: public HeapObject {
 
   static const int kFunctionTokenPositionOffset =
       kStartPositionAndTypeOffset + kIntSize;
-  static const int kCompilerHintsOffset =
+  static const int kOptCountAndBailoutReasonOffset =
       kFunctionTokenPositionOffset + kIntSize;
 
-  static const int kOptCountAndBailoutReasonOffset =
-      kCompilerHintsOffset + kIntSize;
-  static const int kCountersOffset =
+  static const int kCompilerHintsOffset =
       kOptCountAndBailoutReasonOffset + kIntSize;
+  static const int kCountersOffset =
+      kCompilerHintsOffset + kIntSize;
 
   static const int kAstNodeCountOffset =
       kCountersOffset + kIntSize;
@@ -7370,18 +7370,18 @@ class SharedFunctionInfo: public HeapObject {
   static const int kEndPositionOffset =
       kStartPositionAndTypeOffset + kIntSize;
 
-  static const int kCompilerHintsOffset =
+  static const int kOptCountAndBailoutReasonOffset =
       kEndPositionOffset + kIntSize;
   static const int kFunctionTokenPositionOffset =
-      kCompilerHintsOffset + kIntSize;
+      kOptCountAndBailoutReasonOffset + kIntSize;
 
   static const int kCountersOffset =
       kFunctionTokenPositionOffset + kIntSize;
-  static const int kOptCountAndBailoutReasonOffset =
+  static const int kCompilerHintsOffset =
       kCountersOffset + kIntSize;
 
   static const int kProfilerTicksOffset =
-      kOptCountAndBailoutReasonOffset + kIntSize;
+      kCompilerHintsOffset + kIntSize;
   static const int kAstNodeCountOffset =
       kProfilerTicksOffset + kIntSize;
 
