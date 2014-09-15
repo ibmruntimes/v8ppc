@@ -163,9 +163,7 @@ void CompilationInfo::Initialize(Isolate* isolate,
   if (isolate_->debug()->is_active()) MarkAsDebug();
   if (FLAG_context_specialization) MarkAsContextSpecializing();
   if (FLAG_turbo_inlining) MarkAsInliningEnabled();
-#if V8_TURBOFAN_BACKEND  // possibly not required
   if (FLAG_turbo_types) MarkAsTypingEnabled();
-#endif
 
   if (!shared_info_.is_null()) {
     DCHECK(strict_mode() == SLOPPY);
