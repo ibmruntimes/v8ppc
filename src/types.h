@@ -251,10 +251,10 @@ class TypeImpl : public Config::Base {
  public:
   // Auxiliary types.
 
-  typedef uintptr_t bitset;  // Internal
-  class BitsetType;          // Internal
-  class StructuralType;      // Internal
-  class UnionType;           // Internal
+  typedef uint32_t bitset;  // Internal
+  class BitsetType;         // Internal
+  class StructuralType;     // Internal
+  class UnionType;          // Internal
 
   class ClassType;
   class ConstantType;
@@ -275,13 +275,12 @@ class TypeImpl : public Config::Base {
 
   // Constructors.
 
-  // Explicitly mask, since VS on Win64 (wrongly?) sign extends the enum value.
   #define DEFINE_TYPE_CONSTRUCTOR(type, value)                                \
     static TypeImpl* type() {                                                 \
-      return BitsetType::New(BitsetType::k##type & 0xffffffffu);              \
+      return BitsetType::New(BitsetType::k##type);                            \
     }                                                                         \
     static TypeHandle type(Region* region) {                                  \
-      return BitsetType::New(BitsetType::k##type & 0xffffffffu, region);      \
+      return BitsetType::New(BitsetType::k##type, region);                    \
     }
   BITSET_TYPE_LIST(DEFINE_TYPE_CONSTRUCTOR)
   #undef DEFINE_TYPE_CONSTRUCTOR
@@ -488,7 +487,7 @@ class TypeImpl : public Config::Base {
 
 template<class Config>
 class TypeImpl<Config>::BitsetType : public TypeImpl<Config> {
- public:  // protected:
+ protected:
   friend class TypeImpl<Config>;
 
   enum {

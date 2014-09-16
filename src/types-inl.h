@@ -89,7 +89,7 @@ bool ZoneTypeConfig::is_class(Type* type) {
 // static
 ZoneTypeConfig::Type::bitset ZoneTypeConfig::as_bitset(Type* type) {
   DCHECK(is_bitset(type));
-  return reinterpret_cast<Type::bitset>(type) ^ 1u;
+  return static_cast<Type::bitset>(reinterpret_cast<uintptr_t>(type) ^ 1u);
 }
 
 
@@ -109,7 +109,7 @@ i::Handle<i::Map> ZoneTypeConfig::as_class(Type* type) {
 
 // static
 ZoneTypeConfig::Type* ZoneTypeConfig::from_bitset(Type::bitset bitset) {
-  return reinterpret_cast<Type*>(bitset | 1u);
+  return reinterpret_cast<Type*>(static_cast<uintptr_t>(bitset | 1u));
 }
 
 
@@ -232,7 +232,7 @@ bool HeapTypeConfig::is_struct(Type* type, int tag) {
 // static
 HeapTypeConfig::Type::bitset HeapTypeConfig::as_bitset(Type* type) {
   // TODO(rossberg): Breaks the Smi abstraction. Fix once there is a better way.
-  return reinterpret_cast<Type::bitset>(type);
+  return static_cast<Type::bitset>(reinterpret_cast<uintptr_t>(type));
 }
 
 
@@ -251,7 +251,7 @@ i::Handle<HeapTypeConfig::Struct> HeapTypeConfig::as_struct(Type* type) {
 // static
 HeapTypeConfig::Type* HeapTypeConfig::from_bitset(Type::bitset bitset) {
   // TODO(rossberg): Breaks the Smi abstraction. Fix once there is a better way.
-  return reinterpret_cast<Type*>(bitset);
+  return reinterpret_cast<Type*>(static_cast<uintptr_t>(bitset));
 }
 
 

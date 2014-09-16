@@ -12,7 +12,7 @@
 using namespace v8::internal;
 
 // Testing auxiliaries (breaking the Type abstraction).
-typedef uintptr_t bitset;
+typedef uint32_t bitset;
 
 struct ZoneRep {
   typedef void* Struct;
@@ -20,14 +20,14 @@ struct ZoneRep {
   static bool IsStruct(Type* t, int tag) {
     return !IsBitset(t) && reinterpret_cast<intptr_t>(AsStruct(t)[0]) == tag;
   }
-  static bool IsBitset(Type* t) { return reinterpret_cast<bitset>(t) & 1; }
+  static bool IsBitset(Type* t) { return reinterpret_cast<uintptr_t>(t) & 1; }
   static bool IsUnion(Type* t) { return IsStruct(t, 6); }
 
   static Struct* AsStruct(Type* t) {
     return reinterpret_cast<Struct*>(t);
   }
   static bitset AsBitset(Type* t) {
-    return reinterpret_cast<bitset>(t) ^ 1u;
+    return static_cast<bitset>(reinterpret_cast<uintptr_t>(t) ^ 1u);
   }
   static Struct* AsUnion(Type* t) {
     return AsStruct(t);
@@ -58,7 +58,7 @@ struct HeapRep {
 
   static Struct* AsStruct(Handle<HeapType> t) { return FixedArray::cast(*t); }
   static bitset AsBitset(Handle<HeapType> t) {
-    return reinterpret_cast<bitset>(*t);
+    return static_cast<bitset>(reinterpret_cast<uintptr_t>(*t));
   }
   static Struct* AsUnion(Handle<HeapType> t) { return AsStruct(t); }
   static int Length(Struct* structured) { return structured->length() - 1; }
@@ -409,14 +409,6 @@ struct Tests : Rep {
     CHECK(this->IsBitset(T.Any));
 
     CHECK(bitset(0) == this->AsBitset(T.None));
-    printf("[BitSet] value=%p enum=%p bitset=%p any=%p this=%p any=%p\n",
-           reinterpret_cast<void*>(bitset(0xfffffffeu)),
-           reinterpret_cast<void*>(bitset(HeapType::BitsetType::kAny)),
-           reinterpret_cast<void*>(
-               HeapTypeConfig::from_bitset(HeapType::BitsetType::kAny)),
-           reinterpret_cast<void*>(HeapType::Any()),
-           reinterpret_cast<void*>(this->AsBitset(T.Any)),
-           reinterpret_cast<void*>(*T.Any));
     CHECK(bitset(0xfffffffeu) == this->AsBitset(T.Any));
 
     // Union(T1, T2) is bitset for bitsets T1,T2
@@ -590,10 +582,7 @@ struct Tests : Rep {
       for (DoubleIterator j = T.doubles.begin(); j != T.doubles.end(); ++j) {
         double min = T.dmin(*i, *j);
         double max = T.dmax(*i, *j);
-        printf("RangeType: min, max = %f, %f\n", min, max);
         TypeHandle type = T.Range(min, max);
-        printf("RangeType: Min, Max = %f, %f\n",
-               type->AsRange()->Min(), type->AsRange()->Max());
         CHECK(min == type->AsRange()->Min());
         CHECK(max == type->AsRange()->Max());
       }
@@ -1831,7 +1820,7 @@ typedef Tests<HeapType, Handle<HeapType>, Isolate, HeapRep> HeapTests;
 
 TEST(BitsetType) {
   CcTest::InitializeVM();
-//  ZoneTests().Bitset();
+  ZoneTests().Bitset();
   HeapTests().Bitset();
 }
 
