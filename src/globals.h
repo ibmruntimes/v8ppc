@@ -58,7 +58,12 @@
 
 #ifdef _AIX
 #undef V8_INFINITY
+#ifdef __xlC__
+#include <limits>
+#define V8_INFINITY std::numeric_limits<double>::infinity()
+#else
 #define V8_INFINITY (__builtin_inff())
+#endif
 #endif
 
 

@@ -473,7 +473,8 @@ class V8EXPORT HandleScope {
   HandleScope(const HandleScope&);
   void operator=(const HandleScope&);
   void* operator new(size_t size);
-  void operator delete(void*, size_t);
+  void operator delete(void* a, size_t b){}
+  void operator delete(void* a){}
 
   // This Data class is accessible internally as HandleScopeData through a
   // typedef in the ImplementationUtilities class.

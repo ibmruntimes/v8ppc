@@ -102,10 +102,9 @@
     ['OS=="linux" or OS=="freebsd" or OS=="openbsd" or OS=="solaris" \
        or OS=="netbsd" or OS=="aix"', {
       'target_defaults': {
-        'cflags': [ '-Wall', '<(werror)', '-W', '-Wno-unused-parameter',
-                    '-Wnon-virtual-dtor', '-pthread', '-fno-rtti',
+        'cflags': [ '-qstrict=ieeefp', '-qsmp=noopt', '-lpthread', '-fno-rtti',
                     '-fno-exceptions', '-pedantic' ],
-        'ldflags': [ '-pthread', ],
+        'ldflags': [ '-lpthread', ],
         'conditions': [
           [ 'OS=="linux"', {
             'cflags': [ '-ansi' ],

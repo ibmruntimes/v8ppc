@@ -69,7 +69,7 @@ class ObjectGroup {
 
  private:
   void* operator new(size_t size);
-  void operator delete(void* p);
+  void operator delete(void* p){}
   ~ObjectGroup();
   DISALLOW_IMPLICIT_CONSTRUCTORS(ObjectGroup);
 };
