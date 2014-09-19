@@ -34,8 +34,8 @@
   # This should go into the build tree, but it's easier to keep it here for now.
   SHARED_HEADER = ("""\
 
---- a/build/gyp/pylib/gyp/generator/make.py
-+++ b/build/gyp/pylib/gyp/generator/make.py
+--- build/gyp/pylib/gyp/generator/make.py
++++ build/gyp/pylib/gyp/generator/make.py
 313c317
 < DEPFLAGS = -MMD -MF $(depfile).raw
 ---
