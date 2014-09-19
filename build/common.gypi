@@ -184,6 +184,11 @@
           }],
         ],
       }],  # v8_target_arch=="arm"
+      ['v8_target_arch=="xlc"', {
+        'defines': [
+          'V8_TARGET_ARCH_PPC',
+        ],
+      }],  # v8_target_arch=="xlc"
       ['v8_target_arch=="ppc"', {
         'defines': [
           'V8_TARGET_ARCH_PPC',
