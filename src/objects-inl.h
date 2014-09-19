@@ -2640,13 +2640,13 @@ void ConstantPoolArray::InitExtended(const NumberOfEntries& small,
 
   // Initialize the extended layout fields.
   int extended_header_offset = get_extended_section_header_offset();
-  WRITE_INT_FIELD(this, extended_header_offset + kExtendedInt64CountOffset,
+  WRITE_INT32_FIELD(this, extended_header_offset + kExtendedInt64CountOffset,
       extended.count_of(INT64));
-  WRITE_INT_FIELD(this, extended_header_offset + kExtendedCodePtrCountOffset,
+  WRITE_INT32_FIELD(this, extended_header_offset + kExtendedCodePtrCountOffset,
       extended.count_of(CODE_PTR));
-  WRITE_INT_FIELD(this, extended_header_offset + kExtendedHeapPtrCountOffset,
+  WRITE_INT32_FIELD(this, extended_header_offset + kExtendedHeapPtrCountOffset,
       extended.count_of(HEAP_PTR));
-  WRITE_INT_FIELD(this, extended_header_offset + kExtendedInt32CountOffset,
+  WRITE_INT32_FIELD(this, extended_header_offset + kExtendedInt32CountOffset,
       extended.count_of(INT32));
 }
 
@@ -3338,7 +3338,14 @@ uint32_t Name::hash_field() {
 
 
 void Name::set_hash_field(uint32_t value) {
-  WRITE_INTPTR_FIELD(this, kHashFieldSlot, value);
+  WRITE_UINT32_FIELD(this, kHashFieldOffset, value);
+#if V8_HOST_ARCH_64_BIT
+#if V8_TARGET_LITTLE_ENDIAN
+  WRITE_UINT32_FIELD(this, kHashFieldSlot + kIntSize, 0);
+#else
+  WRITE_UINT32_FIELD(this, kHashFieldSlot, 0);
+#endif
+#endif
 }
 
 
