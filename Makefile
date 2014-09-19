@@ -27,8 +27,8 @@
 
 
 # Variable default definitions. Override them by exporting them in your shell.
-CXX ?= g++
-LINK ?= g++
+CXX = xlc++_r
+LINK = xlc++_r
 OUTDIR ?= out
 TESTJOBS ?=
 GYPFLAGS ?=
