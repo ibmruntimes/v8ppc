@@ -22,6 +22,8 @@ void GetStackPointer(const v8::FunctionCallbackInfo<v8::Value>& args) {
   __asm__ __volatile__("mov x16, sp; str x16, %0" : "=g"(sp_addr));
 #elif V8_HOST_ARCH_MIPS
   __asm__ __volatile__("sw $sp, %0" : "=g"(sp_addr));
+#elif V8_HOST_ARCH_MIPS64
+  __asm__ __volatile__("sd $sp, %0" : "=g"(sp_addr));
 #elif defined(__PPC64__) || defined(_ARCH_PPC64)
   __asm__ __volatile__("std 1, %0" : "=g" (sp_addr));
 #elif defined(__PPC__) || defined(_ARCH_PPC)

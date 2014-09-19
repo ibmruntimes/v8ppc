@@ -224,7 +224,7 @@ Node* AstGraphBuilder::Environment::Checkpoint(
   UpdateStateValues(&stack_node_, parameters_count() + locals_count(),
                     stack_height());
 
-  const Operator* op = common()->FrameState(ast_id, combine);
+  const Operator* op = common()->FrameState(JS_FRAME, ast_id, combine);
 
   return graph()->NewNode(op, parameters_node_, locals_node_, stack_node_,
                           GetContext(),
@@ -809,6 +809,12 @@ void AstGraphBuilder::VisitFunctionLiteral(FunctionLiteral* expr) {
   const Operator* op = javascript()->Runtime(Runtime::kNewClosure, 3);
   Node* value = NewNode(op, context, info, pretenure);
   ast_context()->ProduceValue(value);
+}
+
+
+void AstGraphBuilder::VisitClassLiteral(ClassLiteral* expr) {
+  // TODO(arv): Implement.
+  UNREACHABLE();
 }
 
 
@@ -1931,9 +1937,8 @@ Node* AstGraphBuilder::BuildVariableAssignment(Variable* variable, Node* value,
 
 Node* AstGraphBuilder::BuildLoadObjectField(Node* object, int offset) {
   // TODO(sigurds) Use simplified load here once it is ready.
-  MachineOperatorBuilder machine;
-  Node* field_load = NewNode(machine.Load(kMachAnyTagged), object,
-                             jsgraph_->Int32Constant(offset - kHeapObjectTag));
+  Node* field_load = NewNode(jsgraph()->machine()->Load(kMachAnyTagged), object,
+                             jsgraph()->Int32Constant(offset - kHeapObjectTag));
   return field_load;
 }
 
@@ -2015,12 +2020,10 @@ Node* AstGraphBuilder::BuildBinaryOp(Node* left, Node* right, Token::Value op) {
 void AstGraphBuilder::PrepareFrameState(Node* node, BailoutId ast_id,
                                         OutputFrameStateCombine combine) {
   if (OperatorProperties::HasFrameStateInput(node->op())) {
-    int frame_state_index = NodeProperties::GetFrameStateIndex(node);
-
-    DCHECK(node->InputAt(frame_state_index)->op()->opcode() == IrOpcode::kDead);
-
-    Node* frame_state_node = environment()->Checkpoint(ast_id, combine);
-    node->ReplaceInput(frame_state_index, frame_state_node);
+    DCHECK(NodeProperties::GetFrameStateInput(node)->opcode() ==
+           IrOpcode::kDead);
+    NodeProperties::ReplaceFrameStateInput(
+        node, environment()->Checkpoint(ast_id, combine));
   }
 }
 

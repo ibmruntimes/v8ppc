@@ -55,8 +55,6 @@ class ChangesLoweringTester : public GraphBuilderTester<ReturnType> {
               "(function() { 'use strict'; return 2.7123; })")));
       CompilationInfoWithZone info(function);
       CHECK(Parser::Parse(&info));
-      StrictMode strict_mode = info.function()->strict_mode();
-      info.SetStrictMode(strict_mode);
       info.SetOptimizing(BailoutId::None(), Handle<Code>(function->code()));
       CHECK(Rewriter::Rewrite(&info));
       CHECK(Scope::Analyze(&info));
@@ -149,7 +147,7 @@ class ChangesLoweringTester : public GraphBuilderTester<ReturnType> {
     // Run the graph reducer with changes lowering on a single node.
     CompilationInfo info(this->isolate(), this->zone());
     Linkage linkage(&info);
-    ChangeLowering lowering(&jsgraph, &linkage, this->machine());
+    ChangeLowering lowering(&jsgraph, &linkage);
     GraphReducer reducer(this->graph());
     reducer.AddReducer(&lowering);
     reducer.ReduceNode(change);

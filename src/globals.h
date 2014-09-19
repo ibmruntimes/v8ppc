@@ -79,6 +79,18 @@ namespace internal {
 #define V8_OOL_CONSTANT_POOL 0
 #endif
 
+#ifdef V8_TARGET_ARCH_ARM
+// Set stack limit lower for ARM than for other architectures because
+// stack allocating MacroAssembler takes 120K bytes.
+// See issue crbug.com/405338
+#define V8_DEFAULT_STACK_SIZE_KB 864
+#else
+// Slightly less than 1MB, since Windows' default stack size for
+// the main execution thread is 1MB for both 32 and 64-bit.
+#define V8_DEFAULT_STACK_SIZE_KB 984
+#endif
+
+
 // Support for alternative bool type. This is only enabled if the code is
 // compiled with USE_MYBOOL defined. This catches some nasty type bugs.
 // For instance, 'bool b = "false";' results in b == true! This is a hidden
@@ -775,17 +787,17 @@ enum FunctionKind {
   kNormalFunction = 0,
   kArrowFunction = 1,
   kGeneratorFunction = 2,
-  kConciseMethod = 4
+  kConciseMethod = 4,
+  kConciseGeneratorMethod = kGeneratorFunction | kConciseMethod
 };
 
 
 inline bool IsValidFunctionKind(FunctionKind kind) {
-  // At the moment these are mutually exclusive but in the future that wont be
-  // the case since ES6 allows concise generator methods.
   return kind == FunctionKind::kNormalFunction ||
          kind == FunctionKind::kArrowFunction ||
          kind == FunctionKind::kGeneratorFunction ||
-         kind == FunctionKind::kConciseMethod;
+         kind == FunctionKind::kConciseMethod ||
+         kind == FunctionKind::kConciseGeneratorMethod;
 }
 
 

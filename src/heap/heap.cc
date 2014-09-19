@@ -1288,8 +1288,8 @@ static void VerifyNonPointerSpacePointers(Heap* heap) {
 
 
 void Heap::CheckNewSpaceExpansionCriteria() {
-  if (new_space_.Capacity() < new_space_.MaximumCapacity() &&
-      survived_since_last_expansion_ > new_space_.Capacity()) {
+  if (new_space_.TotalCapacity() < new_space_.MaximumCapacity() &&
+      survived_since_last_expansion_ > new_space_.TotalCapacity()) {
     // Grow the size of new space if there is room to grow, enough data
     // has survived scavenge since the last expansion and we are not in
     // high promotion mode.
@@ -4296,9 +4296,7 @@ bool Heap::IdleNotification(int idle_time_in_ms) {
   // If incremental marking is off, we do not perform idle notification.
   if (!FLAG_incremental_marking) return true;
   base::ElapsedTimer timer;
-  if (FLAG_trace_idle_notification) {
-    timer.Start();
-  }
+  timer.Start();
   isolate()->counters()->gc_idle_time_allotted_in_ms()->AddSample(
       idle_time_in_ms);
   HistogramTimerScope idle_notification_scope(
@@ -4321,6 +4319,9 @@ bool Heap::IdleNotification(int idle_time_in_ms) {
       static_cast<size_t>(tracer()->ScavengeSpeedInBytesPerMillisecond());
   heap_state.available_new_space_memory = new_space_.Available();
   heap_state.new_space_capacity = new_space_.Capacity();
+  heap_state.new_space_allocation_throughput_in_bytes_per_ms =
+      static_cast<size_t>(
+          tracer()->NewSpaceAllocationThroughputInBytesPerMillisecond());
 
   GCIdleTimeAction action =
       gc_idle_time_handler_.Compute(idle_time_in_ms, heap_state);
@@ -4354,8 +4355,17 @@ bool Heap::IdleNotification(int idle_time_in_ms) {
     case DO_NOTHING:
       break;
   }
+
+  int actual_time_ms = static_cast<int>(timer.Elapsed().InMilliseconds());
+  if (actual_time_ms <= idle_time_in_ms) {
+    isolate()->counters()->gc_idle_time_limit_undershot()->AddSample(
+        idle_time_in_ms - actual_time_ms);
+  } else {
+    isolate()->counters()->gc_idle_time_limit_overshot()->AddSample(
+        actual_time_ms - idle_time_in_ms);
+  }
+
   if (FLAG_trace_idle_notification) {
-    int actual_time_ms = static_cast<int>(timer.Elapsed().InMilliseconds());
     PrintF("Idle notification: requested idle time %d ms, actual time %d ms [",
            idle_time_in_ms, actual_time_ms);
     action.Print();

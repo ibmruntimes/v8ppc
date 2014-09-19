@@ -21,10 +21,9 @@ namespace compiler {
 class RepresentationChanger {
  public:
   RepresentationChanger(JSGraph* jsgraph, SimplifiedOperatorBuilder* simplified,
-                        MachineOperatorBuilder* machine, Isolate* isolate)
+                        Isolate* isolate)
       : jsgraph_(jsgraph),
         simplified_(simplified),
-        machine_(machine),
         isolate_(isolate),
         testing_type_errors_(false),
         type_error_(false) {}
@@ -54,6 +53,8 @@ class RepresentationChanger {
       return GetTaggedRepresentationFor(node, output_type);
     } else if (use_type & kRepFloat64) {
       return GetFloat64RepresentationFor(node, output_type);
+    } else if (use_type & kRepFloat32) {
+      return TypeError(node, output_type, use_type);  // TODO(titzer): handle
     } else if (use_type & kRepBit) {
       return GetBitRepresentationFor(node, output_type);
     } else if (use_type & rWord) {
@@ -309,7 +310,6 @@ class RepresentationChanger {
  private:
   JSGraph* jsgraph_;
   SimplifiedOperatorBuilder* simplified_;
-  MachineOperatorBuilder* machine_;
   Isolate* isolate_;
 
   friend class RepresentationChangerTester;  // accesses the below fields.
@@ -339,7 +339,7 @@ class RepresentationChanger {
   JSGraph* jsgraph() { return jsgraph_; }
   Isolate* isolate() { return isolate_; }
   SimplifiedOperatorBuilder* simplified() { return simplified_; }
-  MachineOperatorBuilder* machine() { return machine_; }
+  MachineOperatorBuilder* machine() { return jsgraph()->machine(); }
 };
 }
 }

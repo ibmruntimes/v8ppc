@@ -90,7 +90,6 @@ using namespace v8::internal;
 
 
 static bool CheckParse(const char* input) {
-  V8::Initialize(NULL);
   v8::HandleScope scope(CcTest::isolate());
   Zone zone(CcTest::i_isolate());
   FlatStringReader reader(CcTest::i_isolate(), CStrVector(input));
@@ -101,7 +100,6 @@ static bool CheckParse(const char* input) {
 
 
 static void CheckParseEq(const char* input, const char* expected) {
-  V8::Initialize(NULL);
   v8::HandleScope scope(CcTest::isolate());
   Zone zone(CcTest::i_isolate());
   FlatStringReader reader(CcTest::i_isolate(), CStrVector(input));
@@ -117,7 +115,6 @@ static void CheckParseEq(const char* input, const char* expected) {
 
 
 static bool CheckSimple(const char* input) {
-  V8::Initialize(NULL);
   v8::HandleScope scope(CcTest::isolate());
   Zone zone(CcTest::i_isolate());
   FlatStringReader reader(CcTest::i_isolate(), CStrVector(input));
@@ -136,7 +133,6 @@ struct MinMaxPair {
 
 
 static MinMaxPair CheckMinMaxMatch(const char* input) {
-  V8::Initialize(NULL);
   v8::HandleScope scope(CcTest::isolate());
   Zone zone(CcTest::i_isolate());
   FlatStringReader reader(CcTest::i_isolate(), CStrVector(input));
@@ -161,8 +157,6 @@ static MinMaxPair CheckMinMaxMatch(const char* input) {
   }
 
 TEST(Parser) {
-  V8::Initialize(NULL);
-
   CHECK_PARSE_ERROR("?");
 
   CheckParseEq("abc", "'abc'");
@@ -412,7 +406,6 @@ TEST(ParserRegression) {
 
 static void ExpectError(const char* input,
                         const char* expected) {
-  V8::Initialize(NULL);
   v8::HandleScope scope(CcTest::isolate());
   Zone zone(CcTest::i_isolate());
   FlatStringReader reader(CcTest::i_isolate(), CStrVector(input));
@@ -499,7 +492,6 @@ static void TestCharacterClassEscapes(uc16 c, bool (pred)(uc16 c)) {
 
 
 TEST(CharacterClassEscapes) {
-  v8::internal::V8::Initialize(NULL);
   TestCharacterClassEscapes('.', IsRegExpNewline);
   TestCharacterClassEscapes('d', IsDigit);
   TestCharacterClassEscapes('D', NotDigit);
@@ -512,7 +504,6 @@ TEST(CharacterClassEscapes) {
 
 static RegExpNode* Compile(const char* input, bool multiline, bool is_one_byte,
                            Zone* zone) {
-  V8::Initialize(NULL);
   Isolate* isolate = CcTest::i_isolate();
   FlatStringReader reader(isolate, CStrVector(input));
   RegExpCompileData compile_data;
@@ -523,7 +514,7 @@ static RegExpNode* Compile(const char* input, bool multiline, bool is_one_byte,
       NewStringFromUtf8(CStrVector(input)).ToHandleChecked();
   Handle<String> sample_subject =
       isolate->factory()->NewStringFromUtf8(CStrVector("")).ToHandleChecked();
-  RegExpEngine::Compile(&compile_data, false, false, multiline, pattern,
+  RegExpEngine::Compile(&compile_data, false, false, multiline, false, pattern,
                         sample_subject, is_one_byte, zone);
   return compile_data.node;
 }
@@ -569,7 +560,6 @@ static unsigned PseudoRandom(int i, int j) {
 
 
 TEST(SplayTreeSimple) {
-  v8::internal::V8::Initialize(NULL);
   static const unsigned kLimit = 1000;
   Zone zone(CcTest::i_isolate());
   ZoneSplayTree<TestConfig> tree(&zone);
@@ -622,7 +612,6 @@ TEST(SplayTreeSimple) {
 
 
 TEST(DispatchTableConstruction) {
-  v8::internal::V8::Initialize(NULL);
   // Initialize test data.
   static const int kLimit = 1000;
   static const int kRangeCount = 8;
@@ -1369,7 +1358,6 @@ TEST(MacroAssemblerNativeLotsOfRegisters) {
 #else  // V8_INTERPRETED_REGEXP
 
 TEST(MacroAssembler) {
-  V8::Initialize(NULL);
   byte codes[1024];
   Zone zone(CcTest::i_isolate());
   RegExpMacroAssemblerIrregexp m(Vector<byte>(codes, 1024), &zone);
@@ -1435,7 +1423,6 @@ TEST(MacroAssembler) {
 
 
 TEST(AddInverseToTable) {
-  v8::internal::V8::Initialize(NULL);
   static const int kLimit = 1000;
   static const int kRangeCount = 16;
   for (int t = 0; t < 10; t++) {
@@ -1595,7 +1582,6 @@ static void TestSimpleRangeCaseIndependence(CharacterRange input,
 
 
 TEST(CharacterRangeCaseIndependence) {
-  v8::internal::V8::Initialize(NULL);
   TestSimpleRangeCaseIndependence(CharacterRange::Singleton('a'),
                                   CharacterRange::Singleton('A'));
   TestSimpleRangeCaseIndependence(CharacterRange::Singleton('z'),
@@ -1637,7 +1623,6 @@ static bool InClass(uc16 c, ZoneList<CharacterRange>* ranges) {
 
 
 TEST(CharClassDifference) {
-  v8::internal::V8::Initialize(NULL);
   Zone zone(CcTest::i_isolate());
   ZoneList<CharacterRange>* base =
       new(&zone) ZoneList<CharacterRange>(1, &zone);
@@ -1665,7 +1650,6 @@ TEST(CharClassDifference) {
 
 
 TEST(CanonicalizeCharacterSets) {
-  v8::internal::V8::Initialize(NULL);
   Zone zone(CcTest::i_isolate());
   ZoneList<CharacterRange>* list =
       new(&zone) ZoneList<CharacterRange>(4, &zone);
@@ -1727,7 +1711,6 @@ TEST(CanonicalizeCharacterSets) {
 
 
 TEST(CharacterRangeMerge) {
-  v8::internal::V8::Initialize(NULL);
   Zone zone(CcTest::i_isolate());
   ZoneList<CharacterRange> l1(4, &zone);
   ZoneList<CharacterRange> l2(4, &zone);
@@ -1815,6 +1798,5 @@ TEST(CharacterRangeMerge) {
 
 
 TEST(Graph) {
-  V8::Initialize(NULL);
   Execute("\\b\\w+\\b", false, true, true);
 }
