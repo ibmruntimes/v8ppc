@@ -379,33 +379,6 @@ static MemOperand GenerateUnmappedArgumentsLookup(MacroAssembler* masm,
 }
 
 
-void KeyedLoadIC::GenerateSloppyArguments(MacroAssembler* masm) {
-  // The return address is in lr.
-  Register receiver = LoadDescriptor::ReceiverRegister();
-  Register key = LoadDescriptor::NameRegister();
-  DCHECK(receiver.is(r4));
-  DCHECK(key.is(r5));
-
-  Label slow, notin;
-  MemOperand mapped_location =
-      GenerateMappedArgumentsLookup(
-          masm, receiver, key, r3, r6, r7, &notin, &slow);
-  __ LoadPX(r3, mapped_location);
-  __ Ret();
-  __ bind(&notin);
-  // The unmapped lookup expects that the parameter map is in r3.
-  MemOperand unmapped_location =
-      GenerateUnmappedArgumentsLookup(masm, key, r3, r6, &slow);
-  __ LoadPX(r3, unmapped_location);
-  __ LoadRoot(r6, Heap::kTheHoleValueRootIndex);
-  __ cmp(r3, r6);
-  __ beq(&slow);
-  __ Ret();
-  __ bind(&slow);
-  GenerateMiss(masm);
-}
-
-
 void KeyedStoreIC::GenerateSloppyArguments(MacroAssembler* masm) {
   Register receiver = StoreDescriptor::ReceiverRegister();
   Register key = StoreDescriptor::NameRegister();
