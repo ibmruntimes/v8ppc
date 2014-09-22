@@ -175,7 +175,7 @@ class LCodeGen: public LCodeGenBase {
   void GenerateBodyInstructionPre(LInstruction* instr) OVERRIDE;
   bool GeneratePrologue();
   bool GenerateDeferredCode();
-  bool GenerateDeoptJumpTable();
+  bool GenerateJumpTable();
   bool GenerateSafepointTable();
 
   // Generates the custom OSR entrypoint and sets the osr_pc_offset.
@@ -233,12 +233,12 @@ class LCodeGen: public LCodeGenBase {
 
   void RegisterEnvironmentForDeoptimization(LEnvironment* environment,
                                             Safepoint::DeoptMode mode);
-  void DeoptimizeIf(Condition condition,
-                    LEnvironment* environment,
-                    Deoptimizer::BailoutType bailout_type,
+  void DeoptimizeIf(Condition condition, LInstruction* instr,
+                    const char* reason, Deoptimizer::BailoutType bailout_type,
                     CRegister cr = cr7);
-  void DeoptimizeIf(Condition condition, LEnvironment* environment,
-                    CRegister cr = cr7);
+  void DeoptimizeIf(Condition condition, LInstruction* instr,
+                    CRegister cr = cr7,
+                    const char* reason = NULL);
 
   void AddToTranslation(LEnvironment* environment,
                         Translation* translation,
@@ -286,12 +286,8 @@ class LCodeGen: public LCodeGenBase {
   template<class InstrType>
   void EmitFalseBranch(InstrType instr, Condition condition,
                        CRegister cr = cr7);
-  void EmitNumberUntagD(Register input,
-                        DoubleRegister result,
-                        bool allow_undefined_as_nan,
-                        bool deoptimize_on_minus_zero,
-                        LEnvironment* env,
-                        NumberUntagDMode mode);
+  void EmitNumberUntagD(LNumberUntagD* instr, Register input,
+                        DoubleRegister result, NumberUntagDMode mode);
 
   // Emits optimized code for typeof x == "y".  Modifies input register.
   // Returns the condition on which a final split to
