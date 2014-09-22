@@ -288,15 +288,15 @@ class MacroAssembler: public Assembler {
 
   // Push two registers.  Pushes leftmost register first (to highest address).
   void Push(Register src1, Register src2) {
-    StorePU(src1, MemOperand(sp, -kPointerSize));
-    StorePU(src2, MemOperand(sp, -kPointerSize));
+    StorePU(src2, MemOperand(sp, -2 * kPointerSize));
+    StoreP(src1, MemOperand(sp, kPointerSize));
   }
 
   // Push three registers.  Pushes leftmost register first (to highest address).
   void Push(Register src1, Register src2, Register src3) {
-    StorePU(src1, MemOperand(sp, -kPointerSize));
-    StorePU(src2, MemOperand(sp, -kPointerSize));
-    StorePU(src3, MemOperand(sp, -kPointerSize));
+    StorePU(src3, MemOperand(sp, -3 * kPointerSize));
+    StoreP(src2, MemOperand(sp, kPointerSize));
+    StoreP(src1, MemOperand(sp, 2 * kPointerSize));
   }
 
   // Push four registers.  Pushes leftmost register first (to highest address).
@@ -304,10 +304,10 @@ class MacroAssembler: public Assembler {
             Register src2,
             Register src3,
             Register src4) {
-    StorePU(src1, MemOperand(sp, -kPointerSize));
-    StorePU(src2, MemOperand(sp, -kPointerSize));
-    StorePU(src3, MemOperand(sp, -kPointerSize));
-    StorePU(src4, MemOperand(sp, -kPointerSize));
+    StorePU(src4, MemOperand(sp, -4 * kPointerSize));
+    StoreP(src3, MemOperand(sp, kPointerSize));
+    StoreP(src2, MemOperand(sp, 2 * kPointerSize));
+    StoreP(src1, MemOperand(sp, 3 * kPointerSize));
   }
 
   // Push five registers.  Pushes leftmost register first (to highest address).
@@ -316,11 +316,11 @@ class MacroAssembler: public Assembler {
             Register src3,
             Register src4,
             Register src5) {
-    StorePU(src1, MemOperand(sp, -kPointerSize));
-    StorePU(src2, MemOperand(sp, -kPointerSize));
-    StorePU(src3, MemOperand(sp, -kPointerSize));
-    StorePU(src4, MemOperand(sp, -kPointerSize));
-    StorePU(src5, MemOperand(sp, -kPointerSize));
+    StorePU(src5, MemOperand(sp, -5 * kPointerSize));
+    StoreP(src4, MemOperand(sp, kPointerSize));
+    StoreP(src3, MemOperand(sp, 2 * kPointerSize));
+    StoreP(src2, MemOperand(sp, 3 * kPointerSize));
+    StoreP(src1, MemOperand(sp, 4 * kPointerSize));
   }
 
   void Pop(Register dst) { pop(dst); }
@@ -485,8 +485,7 @@ class MacroAssembler: public Assembler {
 
   void LoadWord(Register dst,
                 const MemOperand& mem,
-                Register scratch,
-                bool updateForm = false);
+                Register scratch);
 
   void LoadWordArith(Register dst,
                      const MemOperand& mem,
@@ -494,28 +493,23 @@ class MacroAssembler: public Assembler {
 
   void StoreWord(Register src,
                  const MemOperand& mem,
-                 Register scratch,
-                 bool updateForm = false);
+                 Register scratch);
 
   void LoadHalfWord(Register dst,
                     const MemOperand& mem,
-                    Register scratch,
-                    bool updateForm = false);
+                    Register scratch);
 
   void StoreHalfWord(Register src,
                      const MemOperand& mem,
-                     Register scratch,
-                     bool updateForm = false);
+                     Register scratch);
 
   void LoadByte(Register dst,
                 const MemOperand& mem,
-                Register scratch,
-                bool updateForm = false);
+                Register scratch);
 
   void StoreByte(Register src,
                  const MemOperand& mem,
-                 Register scratch,
-                 bool updateForm = false);
+                 Register scratch);
 
   void LoadRepresentation(Register dst,
                           const MemOperand& mem,
