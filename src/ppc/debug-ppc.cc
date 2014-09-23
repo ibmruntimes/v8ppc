@@ -166,7 +166,7 @@ static void Generate_DebugBreakCallHelper(MacroAssembler* masm,
       ExternalReference(Debug_Address::AfterBreakTarget(), masm->isolate());
   __ mov(ip, Operand(after_break_target));
   __ LoadP(ip, MemOperand(ip));
-  __ Jump(ip);
+  __ JumpToJSEntry(ip);
 }
 
 

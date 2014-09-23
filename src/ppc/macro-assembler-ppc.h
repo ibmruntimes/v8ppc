@@ -103,12 +103,14 @@ class MacroAssembler: public Assembler {
   MacroAssembler(Isolate* isolate, void* buffer, int size);
 
   // Jump, Call, and Ret pseudo instructions implementing inter-working.
-  void Jump(Register target, Condition cond = al);
+  void Jump(Register target);
+  void JumpToJSEntry(Register target);
   void Jump(Address target, RelocInfo::Mode rmode, Condition cond = al,
             CRegister cr = cr7);
   void Jump(Handle<Code> code, RelocInfo::Mode rmode, Condition cond = al);
-  static int CallSize(Register target, Condition cond = al);
-  void Call(Register target, Condition cond = al);
+  static int CallSize(Register target);
+  void Call(Register target);
+  void CallJSEntry(Register target);
   int CallSize(Address target, RelocInfo::Mode rmode, Condition cond = al);
   static int CallSizeNotPredictableCodeSize(Address target,
                                             RelocInfo::Mode rmode,
@@ -425,7 +427,8 @@ class MacroAssembler: public Assembler {
                             FPRoundingMode rounding_mode = kRoundToZero);
 
   // Generates function and stub prologue code.
-  void Prologue(PrologueFrameMode frame_mode);
+  void Prologue(PrologueFrameMode frame_mode,
+                int prologue_offset = 0);
 
   // Enter exit frame.
   // stack_space - extra stack space, used for alignment before call to C.
@@ -1691,7 +1694,12 @@ class MacroAssembler: public Assembler {
 
 #if V8_OOL_CONSTANT_POOL
   // Loads the constant pool pointer (kConstantPoolRegister).
-  void LoadConstantPoolPointerRegister();
+  enum CodeObjectAccessMethod {
+    CAN_USE_IP,
+    CONSTRUCT_INTERNAL_REFERENCE
+  };
+  void LoadConstantPoolPointerRegister(CodeObjectAccessMethod access_method,
+                                       int ip_code_entry_delta = 0);
 #endif
 
   bool generating_stub_;
