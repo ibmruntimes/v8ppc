@@ -1656,7 +1656,7 @@ void LCodeGen::DoMulI(LMulI* instr) {
         __ mullw(result, left, right);
       }
       __ TestIfInt32(scratch, result, r0);
-      DeoptimizeIf(ne, instr->environment());
+      DeoptimizeIf(ne, instr);
 #endif
     } else {
       if (instr->hydrogen()->representation().IsSmi()) {
