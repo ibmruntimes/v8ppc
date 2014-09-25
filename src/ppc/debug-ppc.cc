@@ -39,8 +39,8 @@ void BreakLocationIterator::SetDebugBreakAtReturn() {
   Assembler::BlockTrampolinePoolScope block_trampoline_pool(patcher.masm());
   patcher.masm()->mov(v8::internal::r0, Operand(reinterpret_cast<intptr_t>(
       debug_info_->GetIsolate()->builtins()->Return_DebugBreak()->entry())));
-  patcher.masm()->mtlr(v8::internal::r0);
-  patcher.masm()->bclr(BA, SetLK);
+  patcher.masm()->mtctr(v8::internal::r0);
+  patcher.masm()->bctrl();
   patcher.masm()->bkpt(0);
 }
 
@@ -87,8 +87,8 @@ void BreakLocationIterator::SetDebugBreakAtSlot() {
   Assembler::BlockTrampolinePoolScope block_trampoline_pool(patcher.masm());
   patcher.masm()->mov(v8::internal::r0, Operand(reinterpret_cast<intptr_t>(
       debug_info_->GetIsolate()->builtins()->Slot_DebugBreak()->entry())));
-  patcher.masm()->mtlr(v8::internal::r0);
-  patcher.masm()->bclr(BA, SetLK);
+  patcher.masm()->mtctr(v8::internal::r0);
+  patcher.masm()->bctrl();
 }
 
 
