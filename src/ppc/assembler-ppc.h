@@ -735,7 +735,8 @@ class Assembler : public AssemblerBase {
   void b(int branch_offset, LKBit lk);
 
   void bcctr(BOfield bo, LKBit lk);
-  void bcr();
+  void bctr();
+  void bctrl();
 
   // Convenience branch instructions using labels
   void b(Label* L, LKBit lk = LeaveLK)  {

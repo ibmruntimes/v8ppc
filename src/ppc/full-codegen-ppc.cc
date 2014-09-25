@@ -4572,7 +4572,7 @@ void FullCodeGenerator::ExitFinallyBlock() {
   __ mov(ip, Operand(masm_->CodeObject()));
   __ add(ip, ip, r4);
   __ mtctr(ip);
-  __ bcr();
+  __ bctr();
 }
 
 

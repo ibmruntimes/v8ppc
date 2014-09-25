@@ -58,7 +58,7 @@ MacroAssembler::MacroAssembler(Isolate* arg_isolate, void* buffer, int size)
 void MacroAssembler::Jump(Register target, Condition cond) {
   ASSERT(cond == al);
   mtctr(target);
-  bcr();
+  bctr();
 }
 
 
@@ -73,7 +73,7 @@ void MacroAssembler::Jump(intptr_t target, RelocInfo::Mode rmode,
 
   mov(r0, Operand(target, rmode));
   mtctr(r0);
-  bcr();
+  bctr();
 
   bind(&skip);
   //  mov(pc, Operand(target, rmode), LeaveCC, cond);
@@ -111,8 +111,8 @@ void MacroAssembler::Call(Register target, Condition cond) {
   positions_recorder()->WriteRecordedPositions();
 
   // branch via link register and set LK bit for return point
-  mtlr(target);
-  bclr(BA, SetLK);
+  mtctr(target);
+  bctrl();
 
   ASSERT_EQ(CallSize(target, cond), SizeOfCodeGeneratedSince(&start));
 }
@@ -193,8 +193,8 @@ void MacroAssembler::Call(Address target,
   //
 
   mov(ip, Operand(reinterpret_cast<intptr_t>(target), rmode));
-  mtlr(ip);
-  bclr(BA, SetLK);
+  mtctr(ip);
+  bctrl();
 
 #if V8_TARGET_ARCH_PPC64
   ASSERT(kCallTargetAddressOffset == 7 * kInstrSize);
@@ -1068,7 +1068,7 @@ void MacroAssembler::JumpToHandlerEntry() {
   SmiUntag(ip, r5);
   add(r0, r4, ip);
   mtctr(r0);
-  bcr();
+  bctr();
 }
 
 

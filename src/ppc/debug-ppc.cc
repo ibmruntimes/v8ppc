@@ -79,8 +79,8 @@ void BreakLocationIterator::SetDebugBreakAtReturn() {
   patcher.masm()->mov(v8::internal::r0,
     Operand(reinterpret_cast<intptr_t>(
       Isolate::Current()->debug()->debug_break_return()->entry())));
-  patcher.masm()->mtlr(v8::internal::r0);
-  patcher.masm()->bclr(BA, SetLK);
+  patcher.masm()->mtctr(v8::internal::r0);
+  patcher.masm()->bctrl();
   patcher.masm()->bkpt(0);
 }
 
@@ -132,8 +132,8 @@ void BreakLocationIterator::SetDebugBreakAtSlot() {
   patcher.masm()->mov(v8::internal::r0,
             Operand(reinterpret_cast<intptr_t>(
                    Isolate::Current()->debug()->debug_break_slot()->entry())));
-  patcher.masm()->mtlr(v8::internal::r0);
-  patcher.masm()->bclr(BA, SetLK);
+  patcher.masm()->mtctr(v8::internal::r0);
+  patcher.masm()->bctrl();
 }
 
 
