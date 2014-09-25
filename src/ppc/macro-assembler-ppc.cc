@@ -95,8 +95,8 @@ void MacroAssembler::Call(Register target) {
   positions_recorder()->WriteRecordedPositions();
 
   // branch via link register and set LK bit for return point
-  mtlr(target);
-  bclr(BA, SetLK);
+  mtctr(target);
+  bctrl();
 
   DCHECK_EQ(CallSize(target), SizeOfCodeGeneratedSince(&start));
 }
@@ -146,8 +146,8 @@ void MacroAssembler::Call(Address target,
   //
 
   mov(ip, Operand(reinterpret_cast<intptr_t>(target), rmode));
-  mtlr(ip);
-  bclr(BA, SetLK);
+  mtctr(ip);
+  bctrl();
 
   DCHECK_EQ(expected_size, SizeOfCodeGeneratedSince(&start));
 }
