@@ -724,6 +724,11 @@ void Assembler::bctr() {
 }
 
 
+void Assembler::bctrl() {
+  bcctr(BA, SetLK);
+}
+
+
 void Assembler::bc(int branch_offset, BOfield bo, int condition_bit, LKBit lk) {
   if (lk == SetLK) {
     positions_recorder()->WriteRecordedPositions();
