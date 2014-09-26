@@ -27,8 +27,9 @@
 
 
 # Variable default definitions. Override them by exporting them in your shell.
-CXX = xlc++_r
-LINK = xlc++_r
+v8_target_compiler ?= gcc
+CXX ?= g++
+LINK ?= g++
 OUTDIR ?= out
 TESTJOBS ?=
 GYPFLAGS ?=
@@ -265,6 +266,7 @@ $(OUT_MAKEFILES): $(GYPFILES) $(ENVFILE)
 	build/gyp/gyp --generator-output="$(OUTDIR)" build/all.gyp \
 	              -Ibuild/standalone.gypi --depth=. \
 	              -Dv8_target_arch=$(subst .,,$(suffix $@)) \
+                      -Dv8_target_compiler=$(v8_target_compiler) \
 	              -S.$(subst .,,$(suffix $@)) $(GYPFLAGS)
 
 $(OUTDIR)/Makefile.native: $(GYPFILES) $(ENVFILE)
@@ -296,3 +298,10 @@ $(ENVFILE).new:
 dependencies:
 	svn checkout --force http://gyp.googlecode.com/svn/trunk build/gyp \
 	    --revision 1501
+xlc xlc.release xlc.debug: xlc_init $$(subst xlc,ppc,$$@)
+xlc64 xlc64.release xlc64.debug: xlc_init $$(subst xlc,ppc,$$@)
+xlc_init:
+	$(eval CXX := xlc++_r)
+	$(eval LINK := xlc++_r)
+	$(eval v8_target_compiler := xlc)
+

@@ -69,7 +69,11 @@ class ObjectGroup {
 
  private:
   void* operator new(size_t size);
+#ifdef __xlC__
   void operator delete(void* p){}
+#else
+void operator delete(void* p);
+#endif
   ~ObjectGroup();
   DISALLOW_IMPLICIT_CONSTRUCTORS(ObjectGroup);
 };

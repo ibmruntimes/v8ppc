@@ -185,7 +185,12 @@ UNARY_MATH_FUNCTION(sqrt, CreateSqrtFunction())
 
 
 #ifdef _AIX
+#ifdef __xlC__
 #define __builtin_nanf NAN
+#else
+#undef NAN
+#define NAN (__builtin_nanf(""))
+#endif
 #endif
 
 double OS::nan_value() {

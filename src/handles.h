@@ -146,7 +146,11 @@ class HandleScope {
   HandleScope(const HandleScope&);
   void operator=(const HandleScope&);
   void* operator new(size_t size);
+#ifdef __xlC__
   void operator delete(void* size_t){}
+#else
+  void operator delete(void* size_t);
+#endif
 
   inline void CloseScope();
 

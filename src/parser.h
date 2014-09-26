@@ -137,6 +137,7 @@ class ScriptDataImpl : public ScriptData {
   unsigned magic() { return store_[PreparseDataConstants::kMagicOffset]; }
   unsigned version() { return store_[PreparseDataConstants::kVersionOffset]; }
 
+#ifdef __xlC__
   ScriptDataImpl(const char* backing_store, int length)
       : store_(reinterpret_cast<unsigned*>(const_cast<char*>(backing_store)),
                length / static_cast<int>(sizeof(unsigned))),
@@ -144,6 +145,7 @@ class ScriptDataImpl : public ScriptData {
     ASSERT_EQ(0, static_cast<int>(
         reinterpret_cast<intptr_t>(backing_store) % sizeof(unsigned)));
   }
+#endif
  private:
   Vector<unsigned> store_;
   unsigned char* symbol_data_;
@@ -156,6 +158,15 @@ class ScriptDataImpl : public ScriptData {
   // Reads a number from the current symbols
   int ReadNumber(byte** source);
 
+#ifndef __xlC__
+  ScriptDataImpl(const char* backing_store, int length)
+      : store_(reinterpret_cast<unsigned*>(const_cast<char*>(backing_store)),
+               length / static_cast<int>(sizeof(unsigned))),
+        owns_store_(false) {
+    ASSERT_EQ(0, static_cast<int>(
+        reinterpret_cast<intptr_t>(backing_store) % sizeof(unsigned)));
+  }
+#endif
 
   // Read strings written by ParserRecorder::WriteString.
   static const char* ReadString(unsigned* start, int* chars);

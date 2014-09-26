@@ -66,6 +66,7 @@ class List {
     Initialize(0);
   }
 
+#ifdef __xlC__
   INLINE(void* operator new(size_t size, AllocationPolicy allocator)) {
     return allocator.New(static_cast<int>(size));
   }
@@ -73,6 +74,13 @@ class List {
     AllocationPolicy allocator = AllocationPolicy();
     return allocator.New(static_cast<int>(size));
   }
+#else
+INLINE(void* operator new(size_t size,
+ AllocationPolicy allocator = AllocationPolicy())) {
+    return allocator.New(static_cast<int>(size));
+  }
+#endif
+
   INLINE(void operator delete(void* p)) {
     AllocationPolicy::Delete(p);
   }

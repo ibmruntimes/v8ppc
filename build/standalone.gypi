@@ -100,11 +100,12 @@
   },
   'conditions': [
     ['OS=="linux" or OS=="freebsd" or OS=="openbsd" or OS=="solaris" \
-       or OS=="netbsd" or OS=="aix"', {
+       or OS=="netbsd" or (OS=="aix" and v8_target_compiler=="gcc")', {
       'target_defaults': {
-        'cflags': [ '-qstrict=ieeefp', '-qsmp=noopt', '-lpthread', '-fno-rtti',
+        'cflags': [ '-Wall', '<(werror)', '-W', '-Wno-unused-parameter',
+                    '-Wnon-virtual-dtor', '-pthread', '-fno-rtti',
                     '-fno-exceptions', '-pedantic' ],
-        'ldflags': [ '-lpthread', ],
+        'ldflags': [ '-pthread', ],
         'conditions': [
           [ 'OS=="linux"', {
             'cflags': [ '-ansi' ],
@@ -123,6 +124,18 @@
     }],
     # 'OS=="linux" or OS=="freebsd" or OS=="openbsd" or OS=="solaris"
     #  or OS=="netbsd"'
+    ['OS=="aix" and v8_target_compiler=="xlc"', {
+      'target_defaults': {
+        'cflags': [ '-lpthread', '-qstrict=ieeefp', '-qsmp=noopt',
+                  '-qflag=i:i', '-qnortti', '-qlanglvl=stdc89', '-qfuncsect' ],
+        'ldflags': [ '-lpthread', ],
+        'conditions': [
+          [ 'component=="shared_library"', {
+            'cflags': [ '-qpic=large', ],
+          }],
+        ],
+      },
+    }],
     ['OS=="win"', {
       'target_defaults': {
         'defines': [

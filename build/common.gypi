@@ -184,11 +184,6 @@
           }],
         ],
       }],  # v8_target_arch=="arm"
-      ['v8_target_arch=="xlc"', {
-        'defines': [
-          'V8_TARGET_ARCH_PPC',
-        ],
-      }],  # v8_target_arch=="xlc"
       ['v8_target_arch=="ppc"', {
         'defines': [
           'V8_TARGET_ARCH_PPC',
@@ -367,9 +362,13 @@
           [ 'v8_target_arch=="ppc"', {
             'ldflags': [ '-Wl,-bmaxdata:0x60000000/dsa' ],
           }],
-          [ 'v8_target_arch=="ppc64"', {
+          [ 'v8_target_arch=="ppc64" and v8_target_compiler=="gcc"', {
             'cflags': [ '-maix64' ],
             'ldflags': [ '-maix64' ],
+          }],
+          [ 'v8_target_arch=="ppc64" and v8_target_compiler=="xlc"', {
+            'cflags': [ '-q64' ],
+            'ldflags': [ '-q64' ],
           }],
         ],
       }],
@@ -401,9 +400,12 @@
         },
         'conditions': [
           ['OS=="linux" or OS=="freebsd" or OS=="openbsd" or OS=="netbsd" \
-            or OS=="aix"', {
+            or (OS=="aix" and v8_target_compiler=="gcc")', {
             'cflags': [ '-Wall', '<(werror)', '-W', '-Wno-unused-parameter',
                         '-Wnon-virtual-dtor', '-Woverloaded-virtual' ],
+          }],
+          [ 'OS=="aix" and v8_target_compiler=="xlc"', {
+            'cflags': [ '' ],
           }],
           ['OS=="aix"', {
             'ldflags': [ '-Wl,-bbigtoc' ],
@@ -427,7 +429,7 @@
       'Release': {
         'conditions': [
           ['OS=="linux" or OS=="freebsd" or OS=="openbsd" or OS=="netbsd" \
-            or OS=="android" or OS=="aix"', {
+            or OS=="android" or (OS=="aix" and v8_target_compiler=="gcc")', {
             'cflags!': [
               '-O2',
               '-Os',
@@ -444,6 +446,15 @@
                   '-fno-tree-vrp',
                 ],
               }],
+            ],
+          }],
+          ['OS=="aix" and v8_target_compiler=="xlc"', {
+            'cflags!': [
+              '-O2',
+              '-Os',
+            ],
+            'cflags': [
+              '-O3',
             ],
           }],
           ['OS=="mac"', {
