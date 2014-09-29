@@ -1676,17 +1676,16 @@ void MacroAssembler::Allocate(int object_size,
 
   // Calculate new top and bail out if new space is exhausted. Use result
   // to calculate the new top.
-  li(r0, Operand(-1));
+  sub(r0, ip, result);
   if (is_int16(object_size)) {
-    addic(scratch2, result, Operand(object_size));
+    cmpi(r0, Operand(object_size));
+    blt(gc_required);
+    addi(scratch2, result, Operand(object_size));
   } else {
-    mov(scratch2, Operand(object_size));
-    addc(scratch2, result, scratch2);
+    Cmpi(r0, Operand(object_size), scratch2);
+    blt(gc_required);
+    add(scratch2, result, scratch2);
   }
-  addze(r0, r0, LeaveOE, SetRC);
-  beq(gc_required, cr0);
-  cmpl(scratch2, ip);
-  bgt(gc_required);
   StoreP(scratch2, MemOperand(topaddr));
 
   // Tag object if requested.
@@ -1782,17 +1781,17 @@ void MacroAssembler::Allocate(Register object_size,
   // Calculate new top and bail out if new space is exhausted. Use result
   // to calculate the new top. Object size may be in words so a shift is
   // required to get the number of bytes.
-  li(r0, Operand(-1));
+  sub(r0, ip, result);
   if ((flags & SIZE_IN_WORDS) != 0) {
     ShiftLeftImm(scratch2, object_size, Operand(kPointerSizeLog2));
-    addc(scratch2, result, scratch2);
+    cmp(r0, scratch2);
+    blt(gc_required);
+    add(scratch2, result, scratch2);
   } else {
-    addc(scratch2, result, object_size);
+    cmp(r0, object_size);
+    blt(gc_required);
+    add(scratch2, result, object_size);
   }
-  addze(r0, r0, LeaveOE, SetRC);
-  beq(gc_required, cr0);
-  cmpl(scratch2, ip);
-  bgt(gc_required);
 
   // Update allocation top. result temporarily holds the new top.
   if (emit_debug_code()) {
