@@ -2099,20 +2099,46 @@ void MacroAssembler::AddAndCheckForOverflow(Register dst,
     add(dst, left, right);        // Left is overwritten.
     xor_(scratch, dst, scratch);  // Original left.
     xor_(overflow_dst, dst, right);
-    and_(overflow_dst, overflow_dst, scratch, SetRC);
   } else if (dst.is(right)) {
     mr(scratch, right);           // Preserve right.
     add(dst, left, right);        // Right is overwritten.
     xor_(scratch, dst, scratch);  // Original right.
     xor_(overflow_dst, dst, left);
-    and_(overflow_dst, overflow_dst, scratch, SetRC);
   } else {
     add(dst, left, right);
     xor_(overflow_dst, dst, left);
     xor_(scratch, dst, right);
-    and_(overflow_dst, scratch, overflow_dst, SetRC);
+  }
+  and_(overflow_dst, scratch, overflow_dst, SetRC);
+}
+
+
+void MacroAssembler::AddAndCheckForOverflow(Register dst,
+                                            Register left,
+                                            intptr_t right,
+                                            Register overflow_dst,
+                                            Register scratch) {
+  Register original_left = left;
+  DCHECK(!dst.is(overflow_dst));
+  DCHECK(!dst.is(scratch));
+  DCHECK(!overflow_dst.is(scratch));
+  DCHECK(!overflow_dst.is(left));
+
+  // C = A+B; C overflows if A/B have same sign and C has diff sign than A
+  if (dst.is(left)) {
+    // Preserve left.
+    original_left = overflow_dst;
+    mr(original_left, left);
+  }
+  Add(dst, left, right, scratch);
+  xor_(overflow_dst, dst, original_left);
+  if (right >= 0) {
+    and_(overflow_dst, overflow_dst, dst, SetRC);
+  } else {
+    andc(overflow_dst, overflow_dst, dst, SetRC);
   }
 }
+
 
 void MacroAssembler::SubAndCheckForOverflow(Register dst,
                                             Register left,
