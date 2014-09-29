@@ -1850,27 +1850,31 @@ void LCodeGen::DoSubI(LSubI* instr) {
   Register left = ToRegister(instr->left());
   Register result = ToRegister(instr->result());
   bool can_overflow = instr->hydrogen()->CheckFlag(HValue::kCanOverflow);
-  if (!can_overflow && right->IsConstantOperand()) {
-    Operand right_operand = ToOperand(right);
-    __ Add(result, left, -right_operand.immediate(), r0);
+  if (!can_overflow) {
+    if (right->IsConstantOperand()) {
+      __ Add(result, left, -(ToOperand(right).immediate()), r0);
+    } else {
+      __ sub(result, left, EmitLoadRegister(right, ip));
+    }
   } else {
-    Register right_reg = EmitLoadRegister(right, ip);
-
-    if (!can_overflow) {
-      __ sub(result, left, right_reg);
+    if (right->IsConstantOperand()) {
+      __ AddAndCheckForOverflow(result,
+                                left,
+                                -(ToOperand(right).immediate()),
+                                scratch0(), r0);
     } else {
       __ SubAndCheckForOverflow(result,
                                 left,
-                                right_reg,
+                                EmitLoadRegister(right, ip),
                                 scratch0(), r0);
-      // Doptimize on overflow
-#if V8_TARGET_ARCH_PPC64
-      if (!instr->hydrogen()->representation().IsSmi()) {
-        __ extsw(scratch0(), scratch0(), SetRC);
-      }
-#endif
-      DeoptimizeIf(lt, instr->environment(), cr0);
     }
+    // Doptimize on overflow
+#if V8_TARGET_ARCH_PPC64
+    if (!instr->hydrogen()->representation().IsSmi()) {
+      __ extsw(scratch0(), scratch0(), SetRC);
+    }
+#endif
+    DeoptimizeIf(lt, instr->environment(), cr0);
   }
 
 #if V8_TARGET_ARCH_PPC64
@@ -2064,27 +2068,31 @@ void LCodeGen::DoAddI(LAddI* instr) {
                      instr->hydrogen()->representation().IsExternal());
 #endif
 
-  if (!can_overflow && right->IsConstantOperand()) {
-    Operand right_operand = ToOperand(right);
-    __ Add(result, left, right_operand.immediate(), r0);
+  if (!can_overflow) {
+    if (right->IsConstantOperand()) {
+      __ Add(result, left, ToOperand(right).immediate(), r0);
+    } else {
+      __ add(result, left, EmitLoadRegister(right, ip));
+    }
   } else {
-    Register right_reg = EmitLoadRegister(right, ip);
-
-    if (!can_overflow) {
-      __ add(result, left, right_reg);
-    } else {  // can_overflow.
+    if (right->IsConstantOperand()) {
       __ AddAndCheckForOverflow(result,
                                 left,
-                                right_reg,
+                                ToOperand(right).immediate(),
                                 scratch0(), r0);
-#if V8_TARGET_ARCH_PPC64
-      if (isInteger) {
-        __ extsw(scratch0(), scratch0(), SetRC);
-      }
-#endif
-      // Doptimize on overflow
-      DeoptimizeIf(lt, instr->environment(), cr0);
+    } else {
+      __ AddAndCheckForOverflow(result,
+                                left,
+                                EmitLoadRegister(right, ip),
+                                scratch0(), r0);
     }
+    // Doptimize on overflow
+#if V8_TARGET_ARCH_PPC64
+    if (isInteger) {
+      __ extsw(scratch0(), scratch0(), SetRC);
+    }
+#endif
+    DeoptimizeIf(lt, instr->environment(), cr0);
   }
 
 #if V8_TARGET_ARCH_PPC64

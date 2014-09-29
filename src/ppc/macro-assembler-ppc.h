@@ -1054,6 +1054,11 @@ class MacroAssembler: public Assembler {
                               Register right,
                               Register overflow_dst,
                               Register scratch = r0);
+  void AddAndCheckForOverflow(Register dst,
+                              Register left,
+                              intptr_t right,
+                              Register overflow_dst,
+                              Register scratch = r0);
 
   // Compute dst = left - right, setting condition codes. dst may be same as
   // either left or right (or a unique register). left and right must not be
