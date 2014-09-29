@@ -38,8 +38,9 @@
 #include "src/property.h"
 #include "src/property-details.h"
 #include "src/prototype.h"
-#include "src/runtime.h"
+#include "src/runtime/runtime.h"
 #include "src/runtime-profiler.h"
+#include "src/sampler.h"
 #include "src/scanner-character-streams.h"
 #include "src/simulator.h"
 #include "src/snapshot.h"
@@ -51,9 +52,9 @@
 
 #define LOG_API(isolate, expr) LOG(isolate, ApiEntryCall(expr))
 
-#define ENTER_V8(isolate)                                          \
-  DCHECK((isolate)->IsInitialized());                              \
-  i::VMState<i::OTHER> __state__((isolate))
+#define ENTER_V8(isolate)             \
+  DCHECK((isolate)->IsInitialized()); \
+  i::VMState<v8::OTHER> __state__((isolate))
 
 namespace v8 {
 
@@ -2565,6 +2566,19 @@ bool Value::IsNativeError() const {
 bool Value::IsRegExp() const {
   i::Handle<i::Object> obj = Utils::OpenHandle(this);
   return obj->IsJSRegExp();
+}
+
+
+bool Value::IsGeneratorFunction() const {
+  i::Handle<i::Object> obj = Utils::OpenHandle(this);
+  if (!obj->IsJSFunction()) return false;
+  i::Handle<i::JSFunction> func = i::Handle<i::JSFunction>::cast(obj);
+  return func->shared()->is_generator();
+}
+
+
+bool Value::IsGeneratorObject() const {
+  return Utils::OpenHandle(this)->IsJSGeneratorObject();
 }
 
 
@@ -5483,21 +5497,15 @@ Local<String> v8::String::Concat(Handle<String> left, Handle<String> right) {
 }
 
 
-static i::Handle<i::String> NewExternalStringHandle(
-    i::Isolate* isolate,
-    v8::String::ExternalStringResource* resource) {
-  // We do not expect this to fail. Change this if it does.
-  return isolate->factory()->NewExternalStringFromTwoByte(
-      resource).ToHandleChecked();
+static i::MaybeHandle<i::String> NewExternalStringHandle(
+    i::Isolate* isolate, v8::String::ExternalStringResource* resource) {
+  return isolate->factory()->NewExternalStringFromTwoByte(resource);
 }
 
 
-static i::Handle<i::String> NewExternalOneByteStringHandle(
+static i::MaybeHandle<i::String> NewExternalOneByteStringHandle(
     i::Isolate* isolate, v8::String::ExternalOneByteStringResource* resource) {
-  // We do not expect this to fail. Change this if it does.
-  return isolate->factory()
-      ->NewExternalStringFromOneByte(resource)
-      .ToHandleChecked();
+  return isolate->factory()->NewExternalStringFromOneByte(resource);
 }
 
 
@@ -5508,9 +5516,13 @@ Local<String> v8::String::NewExternal(
   LOG_API(i_isolate, "String::NewExternal");
   ENTER_V8(i_isolate);
   CHECK(resource && resource->data());
-  i::Handle<i::String> result = NewExternalStringHandle(i_isolate, resource);
-  i_isolate->heap()->external_string_table()->AddString(*result);
-  return Utils::ToLocal(result);
+  EXCEPTION_PREAMBLE(i_isolate);
+  i::Handle<i::String> string;
+  has_pending_exception =
+      !NewExternalStringHandle(i_isolate, resource).ToHandle(&string);
+  EXCEPTION_BAILOUT_CHECK(i_isolate, Local<String>());
+  i_isolate->heap()->external_string_table()->AddString(*string);
+  return Utils::ToLocal(string);
 }
 
 
@@ -5546,10 +5558,13 @@ Local<String> v8::String::NewExternal(
   LOG_API(i_isolate, "String::NewExternal");
   ENTER_V8(i_isolate);
   CHECK(resource && resource->data());
-  i::Handle<i::String> result =
-      NewExternalOneByteStringHandle(i_isolate, resource);
-  i_isolate->heap()->external_string_table()->AddString(*result);
-  return Utils::ToLocal(result);
+  EXCEPTION_PREAMBLE(i_isolate);
+  i::Handle<i::String> string;
+  has_pending_exception =
+      !NewExternalOneByteStringHandle(i_isolate, resource).ToHandle(&string);
+  EXCEPTION_BAILOUT_CHECK(i_isolate, Local<String>());
+  i_isolate->heap()->external_string_table()->AddString(*string);
+  return Utils::ToLocal(string);
 }
 
 
@@ -6567,9 +6582,6 @@ Isolate* Isolate::GetCurrent() {
 
 
 Isolate* Isolate::New(const Isolate::CreateParams& params) {
-  // TODO(jochen): Remove again soon.
-  V8::Initialize();
-
   i::Isolate* isolate = new i::Isolate();
   Isolate* v8_isolate = reinterpret_cast<Isolate*>(isolate);
   if (params.entry_hook) {
@@ -6688,6 +6700,14 @@ void Isolate::GetHeapStatistics(HeapStatistics* heap_statistics) {
   heap_statistics->total_physical_size_ = heap->CommittedPhysicalMemory();
   heap_statistics->used_heap_size_ = heap->SizeOfObjects();
   heap_statistics->heap_size_limit_ = heap->MaxReserved();
+}
+
+
+void Isolate::GetStackSample(const RegisterState& state, void** frames,
+                             size_t frames_limit, SampleInfo* sample_info) {
+  i::Isolate* isolate = reinterpret_cast<i::Isolate*>(this);
+  i::TickSample::GetStackSample(isolate, state, frames, frames_limit,
+                                sample_info);
 }
 
 
@@ -6812,6 +6832,18 @@ void v8::Isolate::SetStackLimit(uintptr_t stack_limit) {
   i::Isolate* isolate = reinterpret_cast<i::Isolate*>(this);
   CHECK(stack_limit);
   isolate->stack_guard()->SetStackLimit(stack_limit);
+}
+
+
+void v8::Isolate::GetCodeRange(void** start, size_t* length_in_bytes) {
+  i::Isolate* isolate = reinterpret_cast<i::Isolate*>(this);
+  if (isolate->code_range()->valid()) {
+    *start = isolate->code_range()->start();
+    *length_in_bytes = isolate->code_range()->size();
+  } else {
+    *start = NULL;
+    *length_in_bytes = 0;
+  }
 }
 
 
@@ -7176,13 +7208,13 @@ const CpuProfile* CpuProfiler::StopCpuProfiling(Handle<String> title) {
 
 void CpuProfiler::SetIdle(bool is_idle) {
   i::Isolate* isolate = reinterpret_cast<i::CpuProfiler*>(this)->isolate();
-  i::StateTag state = isolate->current_vm_state();
-  DCHECK(state == i::EXTERNAL || state == i::IDLE);
+  v8::StateTag state = isolate->current_vm_state();
+  DCHECK(state == v8::EXTERNAL || state == v8::IDLE);
   if (isolate->js_entry_sp() != NULL) return;
   if (is_idle) {
-    isolate->set_current_vm_state(i::IDLE);
-  } else if (state == i::IDLE) {
-    isolate->set_current_vm_state(i::EXTERNAL);
+    isolate->set_current_vm_state(v8::IDLE);
+  } else if (state == v8::IDLE) {
+    isolate->set_current_vm_state(v8::EXTERNAL);
   }
 }
 

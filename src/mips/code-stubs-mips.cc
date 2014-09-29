@@ -15,7 +15,7 @@
 #include "src/isolate.h"
 #include "src/jsregexp.h"
 #include "src/regexp-macro-assembler.h"
-#include "src/runtime.h"
+#include "src/runtime/runtime.h"
 
 namespace v8 {
 namespace internal {
@@ -1099,22 +1099,18 @@ void CEntryStub::GenerateAheadOfTime(Isolate* isolate) {
 
 void CEntryStub::Generate(MacroAssembler* masm) {
   // Called from JavaScript; parameters are on stack as if calling JS function
-  // s0: number of arguments including receiver
-  // s1: size of arguments excluding receiver
-  // s2: pointer to builtin function
+  // a0: number of arguments including receiver
+  // a1: pointer to builtin function
   // fp: frame pointer    (restored after C call)
   // sp: stack pointer    (restored as callee's sp after C call)
   // cp: current context  (C callee-saved)
 
   ProfileEntryHookStub::MaybeCallEntryHook(masm);
 
-  // NOTE: s0-s2 hold the arguments of this function instead of a0-a2.
-  // The reason for this is that these arguments would need to be saved anyway
-  // so it's faster to set them up directly.
-  // See MacroAssembler::PrepareCEntryArgs and PrepareCEntryFunction.
-
   // Compute the argv pointer in a callee-saved register.
+  __ sll(s1, a0, kPointerSizeLog2);
   __ Addu(s1, sp, s1);
+  __ Subu(s1, s1, kPointerSize);
 
   // Enter the exit frame that transitions from JavaScript to C++.
   FrameScope scope(masm, StackFrame::MANUAL);
@@ -1126,7 +1122,8 @@ void CEntryStub::Generate(MacroAssembler* masm) {
 
   // Prepare arguments for C routine.
   // a0 = argc
-  __ mov(a0, s0);
+  __ mov(s0, a0);
+  __ mov(s2, a1);
   // a1 = argv (set in the delay slot after find_ra below).
 
   // We are calling compiled C/C++ code. a0 and a1 hold our two arguments. We
@@ -1417,8 +1414,6 @@ void JSEntryStub::Generate(MacroAssembler* masm) {
 void InstanceofStub::Generate(MacroAssembler* masm) {
   // Call site inlining and patching implies arguments in registers.
   DCHECK(HasArgsInRegisters() || !HasCallSiteInlineCheck());
-  // ReturnTrueFalse is only implemented for inlined call sites.
-  DCHECK(!ReturnTrueFalseObject() || HasCallSiteInlineCheck());
 
   // Fixed register usage throughout the stub:
   const Register object = a0;  // Object (lhs).
@@ -1443,7 +1438,7 @@ void InstanceofStub::Generate(MacroAssembler* masm) {
 
   // If there is a call site cache don't look in the global cache, but do the
   // real lookup and update the call site cache.
-  if (!HasCallSiteInlineCheck()) {
+  if (!HasCallSiteInlineCheck() && !ReturnTrueFalseObject()) {
     Label miss;
     __ LoadRoot(at, Heap::kInstanceofCacheFunctionRootIndex);
     __ Branch(&miss, ne, function, Operand(at));
@@ -1502,6 +1497,9 @@ void InstanceofStub::Generate(MacroAssembler* masm) {
   if (!HasCallSiteInlineCheck()) {
     __ mov(v0, zero_reg);
     __ StoreRoot(v0, Heap::kInstanceofCacheAnswerRootIndex);
+    if (ReturnTrueFalseObject()) {
+      __ LoadRoot(v0, Heap::kTrueValueRootIndex);
+    }
   } else {
     // Patch the call site to return true.
     __ LoadRoot(v0, Heap::kTrueValueRootIndex);
@@ -1520,6 +1518,9 @@ void InstanceofStub::Generate(MacroAssembler* masm) {
   if (!HasCallSiteInlineCheck()) {
     __ li(v0, Operand(Smi::FromInt(1)));
     __ StoreRoot(v0, Heap::kInstanceofCacheAnswerRootIndex);
+    if (ReturnTrueFalseObject()) {
+      __ LoadRoot(v0, Heap::kFalseValueRootIndex);
+    }
   } else {
     // Patch the call site to return false.
     __ LoadRoot(v0, Heap::kFalseValueRootIndex);
@@ -1547,19 +1548,31 @@ void InstanceofStub::Generate(MacroAssembler* masm) {
             ne,
             scratch,
             Operand(isolate()->factory()->null_value()));
-  __ li(v0, Operand(Smi::FromInt(1)));
+  if (ReturnTrueFalseObject()) {
+    __ LoadRoot(v0, Heap::kFalseValueRootIndex);
+  } else {
+    __ li(v0, Operand(Smi::FromInt(1)));
+  }
   __ DropAndRet(HasArgsInRegisters() ? 0 : 2);
 
   __ bind(&object_not_null);
   // Smi values are not instances of anything.
   __ JumpIfNotSmi(object, &object_not_null_or_smi);
-  __ li(v0, Operand(Smi::FromInt(1)));
+  if (ReturnTrueFalseObject()) {
+    __ LoadRoot(v0, Heap::kFalseValueRootIndex);
+  } else {
+    __ li(v0, Operand(Smi::FromInt(1)));
+  }
   __ DropAndRet(HasArgsInRegisters() ? 0 : 2);
 
   __ bind(&object_not_null_or_smi);
   // String values are not instances of anything.
   __ IsObjectJSStringType(object, scratch, &slow);
-  __ li(v0, Operand(Smi::FromInt(1)));
+  if (ReturnTrueFalseObject()) {
+    __ LoadRoot(v0, Heap::kFalseValueRootIndex);
+  } else {
+    __ li(v0, Operand(Smi::FromInt(1)));
+  }
   __ DropAndRet(HasArgsInRegisters() ? 0 : 2);
 
   // Slow-case.  Tail call builtin.
@@ -3644,8 +3657,8 @@ void CompareICStub::GenerateUniqueNames(MacroAssembler* masm) {
   __ lbu(tmp1, FieldMemOperand(tmp1, Map::kInstanceTypeOffset));
   __ lbu(tmp2, FieldMemOperand(tmp2, Map::kInstanceTypeOffset));
 
-  __ JumpIfNotUniqueName(tmp1, &miss);
-  __ JumpIfNotUniqueName(tmp2, &miss);
+  __ JumpIfNotUniqueNameInstanceType(tmp1, &miss);
+  __ JumpIfNotUniqueNameInstanceType(tmp2, &miss);
 
   // Use a0 as result
   __ mov(v0, a0);
@@ -3899,7 +3912,7 @@ void NameDictionaryLookupStub::GenerateNegativeLookup(MacroAssembler* masm,
     __ lw(entity_name, FieldMemOperand(entity_name, HeapObject::kMapOffset));
     __ lbu(entity_name,
            FieldMemOperand(entity_name, Map::kInstanceTypeOffset));
-    __ JumpIfNotUniqueName(entity_name, miss);
+    __ JumpIfNotUniqueNameInstanceType(entity_name, miss);
     __ bind(&good);
 
     // Restore the properties.
@@ -4076,7 +4089,7 @@ void NameDictionaryLookupStub::Generate(MacroAssembler* masm) {
       __ lw(entry_key, FieldMemOperand(entry_key, HeapObject::kMapOffset));
       __ lbu(entry_key,
              FieldMemOperand(entry_key, Map::kInstanceTypeOffset));
-      __ JumpIfNotUniqueName(entry_key, &maybe_in_dictionary);
+      __ JumpIfNotUniqueNameInstanceType(entry_key, &maybe_in_dictionary);
     }
   }
 

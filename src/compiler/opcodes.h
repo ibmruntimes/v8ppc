@@ -218,6 +218,7 @@
   V(Float64Mul)               \
   V(Float64Div)               \
   V(Float64Mod)               \
+  V(Float64Sqrt)              \
   V(Float64Equal)             \
   V(Float64LessThan)          \
   V(Float64LessThanOrEqual)
@@ -282,6 +283,18 @@ class IrOpcode {
   case k##x:           \
     return true;
       CONTROL_OP_LIST(RETURN_NAME)
+#undef RETURN_NAME
+      default:
+        return false;
+    }
+  }
+
+  static bool IsLeafOpcode(Value val) {
+    switch (val) {
+#define RETURN_NAME(x) \
+  case k##x:           \
+    return true;
+      LEAF_OP_LIST(RETURN_NAME)
 #undef RETURN_NAME
       default:
         return false;

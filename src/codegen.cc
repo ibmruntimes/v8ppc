@@ -15,7 +15,7 @@
 #include "src/debug.h"
 #include "src/prettyprinter.h"
 #include "src/rewriter.h"
-#include "src/runtime.h"
+#include "src/runtime/runtime.h"
 
 namespace v8 {
 namespace internal {

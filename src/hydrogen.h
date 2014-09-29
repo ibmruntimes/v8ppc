@@ -10,6 +10,7 @@
 #include "src/accessors.h"
 #include "src/allocation.h"
 #include "src/ast.h"
+#include "src/bailout-reason.h"
 #include "src/compiler.h"
 #include "src/hydrogen-instructions.h"
 #include "src/scopes.h"
@@ -1804,8 +1805,9 @@ class HGraphBuilder {
                                      ElementsKind kind,
                                      HValue* capacity);
 
-  HValue* BuildAllocateElementsAndInitializeElementsHeader(ElementsKind kind,
-                                                           HValue* capacity);
+  // Build allocation and header initialization code for respective successor
+  // of FixedArrayBase.
+  HValue* BuildAllocateAndInitializeArray(ElementsKind kind, HValue* capacity);
 
   // |array| must have been allocated with enough room for
   // 1) the JSArray and 2) an AllocationMemento if mode requires it.
@@ -1836,6 +1838,9 @@ class HGraphBuilder {
                                  ElementsKind elements_kind,
                                  HValue* from,
                                  HValue* to);
+
+  void BuildCopyProperties(HValue* from_properties, HValue* to_properties,
+                           HValue* length, HValue* capacity);
 
   void BuildCopyElements(HValue* from_elements,
                          ElementsKind from_elements_kind,
@@ -2108,8 +2113,6 @@ class HOptimizedGraphBuilder : public HGraphBuilder, public AstVisitor {
   // Simple accessors.
   BreakAndContinueScope* break_scope() const { return break_scope_; }
   void set_break_scope(BreakAndContinueScope* head) { break_scope_ = head; }
-
-  bool inline_bailout() { return inline_bailout_; }
 
   HValue* context() { return environment()->context(); }
 

@@ -1415,6 +1415,27 @@ class V8_EXPORT StackFrame {
 };
 
 
+// A StateTag represents a possible state of the VM.
+enum StateTag { JS, GC, COMPILER, OTHER, EXTERNAL, IDLE };
+
+
+// A RegisterState represents the current state of registers used
+// by the sampling profiler API.
+struct RegisterState {
+  RegisterState() : pc(NULL), sp(NULL), fp(NULL) {}
+  void* pc;  // Instruction pointer.
+  void* sp;  // Stack pointer.
+  void* fp;  // Frame pointer.
+};
+
+
+// The output structure filled up by GetStackSample API function.
+struct SampleInfo {
+  size_t frames_count;
+  StateTag vm_state;
+};
+
+
 /**
  * A JSON Parser.
  */
@@ -1559,6 +1580,18 @@ class V8_EXPORT Value : public Data {
    * Returns true if this value is a RegExp.
    */
   bool IsRegExp() const;
+
+  /**
+   * Returns true if this value is a Generator function.
+   * This is an experimental feature.
+   */
+  bool IsGeneratorFunction() const;
+
+  /**
+   * Returns true if this value is a Generator object (iterator).
+   * This is an experimental feature.
+   */
+  bool IsGeneratorObject() const;
 
   /**
    * Returns true if this value is a Promise.
@@ -4548,6 +4581,21 @@ class V8_EXPORT Isolate {
   void GetHeapStatistics(HeapStatistics* heap_statistics);
 
   /**
+   * Get a call stack sample from the isolate.
+   * \param state Execution state.
+   * \param frames Caller allocated buffer to store stack frames.
+   * \param frames_limit Maximum number of frames to capture. The buffer must
+   *                     be large enough to hold the number of frames.
+   * \param sample_info The sample info is filled up by the function
+   *                    provides number of actual captured stack frames and
+   *                    the current VM state.
+   * \note GetStackSample should only be called when the JS thread is paused or
+   *       interrupted. Otherwise the behavior is undefined.
+   */
+  void GetStackSample(const RegisterState& state, void** frames,
+                      size_t frames_limit, SampleInfo* sample_info);
+
+  /**
    * Adjusts the amount of registered external memory. Used to give V8 an
    * indication of the amount of externally allocated memory that is kept alive
    * by JavaScript objects. V8 uses this to decide when to perform global
@@ -4834,6 +4882,18 @@ class V8_EXPORT Isolate {
    *     limit separately for each thread.
    */
   void SetStackLimit(uintptr_t stack_limit);
+
+  /**
+   * Returns a memory range that can potentially contain jitted code.
+   *
+   * On Win64, embedders are advised to install function table callbacks for
+   * these ranges, as default SEH won't be able to unwind through jitted code.
+   *
+   * Might be empty on other platforms.
+   *
+   * https://code.google.com/p/v8/issues/detail?id=3598
+   */
+  void GetCodeRange(void** start, size_t* length_in_bytes);
 
  private:
   template<class K, class V, class Traits> friend class PersistentValueMap;
