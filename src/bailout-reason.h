@@ -226,6 +226,8 @@ namespace internal {
   V(kStackFrameTypesMustMatch, "Stack frame types must match")                 \
   V(kTheCurrentStackPointerIsBelowCsp,                                         \
     "The current stack pointer is below csp")                                  \
+  V(kTheInstructionShouldBeALi, "The instruction should be a li")              \
+  V(kTheInstructionShouldBeALis, "The instruction should be a lis")            \
   V(kTheInstructionShouldBeALui, "The instruction should be a lui")            \
   V(kTheInstructionShouldBeAnOri, "The instruction should be an ori")          \
   V(kTheInstructionToPatchShouldBeALoadFromConstantPool,                       \

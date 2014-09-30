@@ -130,6 +130,7 @@ struct Register {
       kAllocatableHighRangeEnd - kAllocatableHighRangeBegin + 1;
   static const int kMaxNumAllocatableRegisters =
       kNumAllocatableLow + kNumAllocatableHigh + 1;  // cp
+
   static int NumAllocatableRegisters() { return kMaxNumAllocatableRegisters; }
 
   static int ToAllocationIndex(Register reg) {
@@ -298,6 +299,11 @@ struct DoubleRegister {
   static const int kMaxNumAllocatableRegisters =
       kNumAllocatableLow + kNumAllocatableHigh;
   static int NumAllocatableRegisters() { return kMaxNumAllocatableRegisters; }
+
+  // TODO(turbofan)
+  inline static int NumAllocatableAliasedRegisters() {
+    return NumAllocatableRegisters();
+  }
 
   static int ToAllocationIndex(DoubleRegister reg) {
     int code = reg.code();

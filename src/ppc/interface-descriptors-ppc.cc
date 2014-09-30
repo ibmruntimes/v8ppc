@@ -32,6 +32,9 @@ const Register StoreDescriptor::NameRegister() { return r5; }
 const Register StoreDescriptor::ValueRegister() { return r3; }
 
 
+const Register ExtendStorageDescriptor::MapRegister() { return r6; }
+
+
 const Register ElementTransitionAndStoreDescriptor::MapRegister() { return r6; }
 
 
@@ -44,6 +47,7 @@ const Register ArgumentsAccessReadDescriptor::parameter_count() { return r3; }
 
 
 const Register ApiGetterDescriptor::function_address() { return r5; }
+
 
 const Register MathPowTaggedDescriptor::exponent() { return r5; }
 

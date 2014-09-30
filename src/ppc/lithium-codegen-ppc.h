@@ -237,8 +237,8 @@ class LCodeGen: public LCodeGenBase {
                     const char* detail, Deoptimizer::BailoutType bailout_type,
                     CRegister cr = cr7);
   void DeoptimizeIf(Condition condition, LInstruction* instr,
-                    CRegister cr = cr7,
-                    const char* detail = NULL);
+                    const char* detail,
+                    CRegister cr = cr7);
 
   void AddToTranslation(LEnvironment* environment,
                         Translation* translation,

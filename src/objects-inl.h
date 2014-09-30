@@ -6631,7 +6631,7 @@ void String::SetForwardedInternalizedString(String* canonical) {
   DCHECK(SlowEquals(canonical));
   DCHECK(canonical->IsInternalizedString());
   DCHECK(canonical->HasHashCode());
-  WRITE_FIELD(this, kHashFieldOffset, canonical);
+  WRITE_FIELD(this, kHashFieldSlot, canonical);
   // Setting the hash field to a tagged value sets the LSB, causing the hash
   // code to be interpreted as uninitialized.  We use this fact to recognize
   // that we have a forwarded string.
@@ -6642,7 +6642,7 @@ void String::SetForwardedInternalizedString(String* canonical) {
 String* String::GetForwardedInternalizedString() {
   DCHECK(IsInternalizedString());
   if (HasHashCode()) return this;
-  String* canonical = String::cast(READ_FIELD(this, kHashFieldOffset));
+  String* canonical = String::cast(READ_FIELD(this, kHashFieldSlot));
   DCHECK(canonical->IsInternalizedString());
   DCHECK(SlowEquals(canonical));
   DCHECK(canonical->HasHashCode());

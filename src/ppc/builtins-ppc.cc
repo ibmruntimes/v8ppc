@@ -13,13 +13,14 @@
 #include "src/debug.h"
 #include "src/deoptimizer.h"
 #include "src/full-codegen.h"
-#include "src/runtime.h"
+#include "src/runtime/runtime.h"
 
 namespace v8 {
 namespace internal {
 
 
 #define __ ACCESS_MASM(masm)
+
 
 void Builtins::Generate_Adaptor(MacroAssembler* masm,
                                 CFunctionId id,
