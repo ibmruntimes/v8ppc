@@ -3851,8 +3851,10 @@ void LCodeGen::CallKnownFunction(Handle<JSFunction> function,
       __ mov(r3, Operand(arity));
     }
 
+    bool is_self_call = function.is_identical_to(info()->closure());
+
     // Invoke function.
-    if (function.is_identical_to(info()->closure())) {
+    if (is_self_call) {
       __ CallSelf();
     } else {
       __ LoadP(ip, FieldMemOperand(r4, JSFunction::kCodeEntryOffset));
@@ -4277,9 +4279,20 @@ void LCodeGen::DoCallJSFunction(LCallJSFunction* instr) {
   // Change context.
   __ LoadP(cp, FieldMemOperand(r4, JSFunction::kContextOffset));
 
-  // Load the code entry address
-  __ LoadP(ip, FieldMemOperand(r4, JSFunction::kCodeEntryOffset));
-  __ CallJSEntry(ip);
+  bool is_self_call = false;
+  if (instr->hydrogen()->function()->IsConstant()) {
+    HConstant* fun_const = HConstant::cast(instr->hydrogen()->function());
+    Handle<JSFunction> jsfun =
+      Handle<JSFunction>::cast(fun_const->handle(isolate()));
+    is_self_call = jsfun.is_identical_to(info()->closure());
+  }
+
+  if (is_self_call) {
+    __ CallSelf();
+  } else {
+    __ LoadP(ip, FieldMemOperand(r4, JSFunction::kCodeEntryOffset));
+    __ CallJSEntry(ip);
+  }
 
   RecordSafepointWithLazyDeopt(instr, RECORD_SIMPLE_SAFEPOINT);
 }
