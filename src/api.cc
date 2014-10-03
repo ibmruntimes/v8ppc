@@ -5608,6 +5608,12 @@ bool v8::String::CanMakeExternal() {
 }
 
 
+Isolate* v8::Object::GetIsolate() {
+  i::Isolate* i_isolate = Utils::OpenHandle(this)->GetIsolate();
+  return reinterpret_cast<Isolate*>(i_isolate);
+}
+
+
 Local<v8::Object> v8::Object::New(Isolate* isolate) {
   i::Isolate* i_isolate = reinterpret_cast<i::Isolate*>(isolate);
   LOG_API(i_isolate, "Object::New");
@@ -5982,6 +5988,16 @@ Local<Promise> Promise::Then(Handle<Function> handler) {
       false).ToHandle(&result);
   EXCEPTION_BAILOUT_CHECK(isolate, Local<Promise>());
   return Local<Promise>::Cast(Utils::ToLocal(result));
+}
+
+
+bool Promise::HasHandler() {
+  i::Handle<i::JSObject> promise = Utils::OpenHandle(this);
+  i::Isolate* isolate = promise->GetIsolate();
+  LOG_API(isolate, "Promise::HasRejectHandler");
+  ENTER_V8(isolate);
+  i::Handle<i::Symbol> key = isolate->factory()->promise_has_handler_symbol();
+  return i::JSObject::GetDataProperty(promise, key)->IsTrue();
 }
 
 
@@ -6729,6 +6745,13 @@ void Isolate::AddCallCompletedCallback(CallCompletedCallback callback) {
 void Isolate::RemoveCallCompletedCallback(CallCompletedCallback callback) {
   i::Isolate* isolate = reinterpret_cast<i::Isolate*>(this);
   isolate->RemoveCallCompletedCallback(callback);
+}
+
+
+void Isolate::SetPromiseRejectCallback(PromiseRejectCallback callback) {
+  if (callback == NULL) return;
+  i::Isolate* isolate = reinterpret_cast<i::Isolate*>(this);
+  isolate->SetPromiseRejectCallback(callback);
 }
 
 

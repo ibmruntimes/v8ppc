@@ -744,7 +744,6 @@
           ['OS=="linux" or OS=="freebsd" or OS=="openbsd" or OS=="netbsd" or \
             OS=="qnx" or OS=="aix"', {
             'cflags!': [
-              '-O0',
               '-O3',
               '-O2',
               '-O1',

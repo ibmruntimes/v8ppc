@@ -1121,6 +1121,19 @@ MaybeHandle<Object> Object::GetElement(Isolate* isolate,
 }
 
 
+Handle<Object> Object::GetPrototypeSkipHiddenPrototypes(
+    Isolate* isolate, Handle<Object> receiver) {
+  PrototypeIterator iter(isolate, receiver);
+  while (!iter.IsAtEnd(PrototypeIterator::END_AT_NON_HIDDEN)) {
+    if (PrototypeIterator::GetCurrent(iter)->IsJSProxy()) {
+      return PrototypeIterator::GetCurrent(iter);
+    }
+    iter.Advance();
+  }
+  return PrototypeIterator::GetCurrent(iter);
+}
+
+
 MaybeHandle<Object> Object::GetPropertyOrElement(Handle<Object> object,
                                                  Handle<Name> name) {
   uint32_t index;
@@ -2623,13 +2636,13 @@ void ConstantPoolArray::InitExtended(const NumberOfEntries& small,
   // Initialize the extended layout fields.
   int extended_header_offset = get_extended_section_header_offset();
   WRITE_INT32_FIELD(this, extended_header_offset + kExtendedInt64CountOffset,
-      extended.count_of(INT64));
+                    extended.count_of(INT64));
   WRITE_INT32_FIELD(this, extended_header_offset + kExtendedCodePtrCountOffset,
-      extended.count_of(CODE_PTR));
+                    extended.count_of(CODE_PTR));
   WRITE_INT32_FIELD(this, extended_header_offset + kExtendedHeapPtrCountOffset,
-      extended.count_of(HEAP_PTR));
+                    extended.count_of(HEAP_PTR));
   WRITE_INT32_FIELD(this, extended_header_offset + kExtendedInt32CountOffset,
-      extended.count_of(INT32));
+                    extended.count_of(INT32));
 }
 
 
@@ -5484,25 +5497,22 @@ SMI_ACCESSORS(SharedFunctionInfo, profiler_ticks, kProfilerTicksOffset)
 #define PSEUDO_SMI_HI_ALIGN 0
 #endif
 
-#define PSEUDO_SMI_ACCESSORS_LO(holder, name, offset)             \
-  STATIC_ASSERT(holder::offset % kPointerSize == PSEUDO_SMI_LO_ALIGN);  \
-  int holder::name() const {                                      \
-    int value = READ_INT_FIELD(this, offset);                     \
-    DCHECK(kHeapObjectTag == 1);                                  \
-    DCHECK((value & kHeapObjectTag) == 0);                        \
-    return value >> 1;                                            \
-  }                                                               \
-  void holder::set_##name(int value) {                            \
-    DCHECK(kHeapObjectTag == 1);                                  \
-    DCHECK((value & 0xC0000000) == 0xC0000000 ||                  \
-           (value & 0xC0000000) == 0x0);                          \
-    WRITE_INT_FIELD(this,                                         \
-                    offset,                                       \
-                    (value << 1) & ~kHeapObjectTag);              \
+#define PSEUDO_SMI_ACCESSORS_LO(holder, name, offset)                          \
+  STATIC_ASSERT(holder::offset % kPointerSize == PSEUDO_SMI_LO_ALIGN);         \
+  int holder::name() const {                                                   \
+    int value = READ_INT_FIELD(this, offset);                                  \
+    DCHECK(kHeapObjectTag == 1);                                               \
+    DCHECK((value & kHeapObjectTag) == 0);                                     \
+    return value >> 1;                                                         \
+  }                                                                            \
+  void holder::set_##name(int value) {                                         \
+    DCHECK(kHeapObjectTag == 1);                                               \
+    DCHECK((value & 0xC0000000) == 0xC0000000 || (value & 0xC0000000) == 0x0); \
+    WRITE_INT_FIELD(this, offset, (value << 1) & ~kHeapObjectTag);             \
   }
 
-#define PSEUDO_SMI_ACCESSORS_HI(holder, name, offset)             \
-  STATIC_ASSERT(holder::offset % kPointerSize == PSEUDO_SMI_HI_ALIGN);  \
+#define PSEUDO_SMI_ACCESSORS_HI(holder, name, offset)                  \
+  STATIC_ASSERT(holder::offset % kPointerSize == PSEUDO_SMI_HI_ALIGN); \
   INT_ACCESSORS(holder, name, offset)
 
 

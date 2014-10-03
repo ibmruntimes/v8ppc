@@ -85,6 +85,7 @@ class ObjectOperationDescriptor;
 class ObjectTemplate;
 class Platform;
 class Primitive;
+class Promise;
 class RawOperationDescriptor;
 class Script;
 class Signature;
@@ -2585,6 +2586,11 @@ class V8_EXPORT Object : public Value {
    */
   Local<Value> CallAsConstructor(int argc, Handle<Value> argv[]);
 
+  /**
+   * Return the isolate to which the Object belongs to.
+   */
+  Isolate* GetIsolate();
+
   static Local<Object> New(Isolate* isolate);
 
   V8_INLINE static Object* Cast(Value* obj);
@@ -2850,6 +2856,12 @@ class V8_EXPORT Promise : public Object {
   Local<Promise> Chain(Handle<Function> handler);
   Local<Promise> Catch(Handle<Function> handler);
   Local<Promise> Then(Handle<Function> handler);
+
+  /**
+   * Returns true if the promise has at least one derived promise, and
+   * therefore resolve/reject handlers (including default handler).
+   */
+  bool HasHandler();
 
   V8_INLINE static Promise* Cast(Value* obj);
 
@@ -4196,6 +4208,16 @@ typedef void (*MemoryAllocationCallback)(ObjectSpace space,
 // --- Leave Script Callback ---
 typedef void (*CallCompletedCallback)();
 
+// --- Promise Reject Callback ---
+enum PromiseRejectEvent {
+  kPromiseRejectWithNoHandler = 0,
+  kPromiseHandlerAddedAfterReject = 1
+};
+
+typedef void (*PromiseRejectCallback)(Handle<Promise> promise,
+                                      Handle<Value> value,
+                                      PromiseRejectEvent event);
+
 // --- Microtask Callback ---
 typedef void (*MicrotaskCallback)(void* data);
 
@@ -4506,6 +4528,7 @@ class V8_EXPORT Isolate {
    */
   enum UseCounterFeature {
     kUseAsm = 0,
+    kBreakIterator = 1,
     kUseCounterFeatureCount  // This enum value must be last.
   };
 
@@ -4771,6 +4794,13 @@ class V8_EXPORT Isolate {
    */
   void RemoveCallCompletedCallback(CallCompletedCallback callback);
 
+
+  /**
+   * Set callback to notify about promise reject with no handler, or
+   * revocation of such a previous notification once the handler is added.
+   */
+  void SetPromiseRejectCallback(PromiseRejectCallback callback);
+
   /**
    * Experimental: Runs the Microtask Work Queue until empty
    * Any exceptions thrown by microtask callbacks are swallowed.
@@ -4888,6 +4918,9 @@ class V8_EXPORT Isolate {
    *
    * On Win64, embedders are advised to install function table callbacks for
    * these ranges, as default SEH won't be able to unwind through jitted code.
+   *
+   * The first page of the code range is reserved for the embedder and is
+   * committed, writable, and executable.
    *
    * Might be empty on other platforms.
    *
@@ -5880,7 +5913,7 @@ class Internals {
   static const int kNullValueRootIndex = 7;
   static const int kTrueValueRootIndex = 8;
   static const int kFalseValueRootIndex = 9;
-  static const int kEmptyStringRootIndex = 164;
+  static const int kEmptyStringRootIndex = 153;
 
   // The external allocation limit should be below 256 MB on all architectures
   // to avoid that resource-constrained embedders run low on memory.

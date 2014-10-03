@@ -33,8 +33,6 @@ class IA32OperandConverter : public InstructionOperandConverter {
 
   Operand OutputOperand() { return ToOperand(instr_->Output()); }
 
-  Operand TempOperand(int index) { return ToOperand(instr_->TempAt(index)); }
-
   Operand ToOperand(InstructionOperand* op, int extra = 0) {
     if (op->IsRegister()) {
       DCHECK(extra == 0);
@@ -205,6 +203,9 @@ void CodeGenerator::AssembleArchInstruction(Instruction* instr) {
     case kArchRet:
       AssembleReturn();
       break;
+    case kArchStackPointer:
+      __ mov(i.OutputRegister(), esp);
+      break;
     case kArchTruncateDoubleToI:
       __ TruncateDoubleToI(i.OutputRegister(), i.InputDoubleRegister(0));
       break;
@@ -280,30 +281,30 @@ void CodeGenerator::AssembleArchInstruction(Instruction* instr) {
       break;
     case kIA32Shl:
       if (HasImmediateInput(instr, 1)) {
-        __ shl(i.OutputRegister(), i.InputInt5(1));
+        __ shl(i.OutputOperand(), i.InputInt5(1));
       } else {
-        __ shl_cl(i.OutputRegister());
+        __ shl_cl(i.OutputOperand());
       }
       break;
     case kIA32Shr:
       if (HasImmediateInput(instr, 1)) {
-        __ shr(i.OutputRegister(), i.InputInt5(1));
+        __ shr(i.OutputOperand(), i.InputInt5(1));
       } else {
-        __ shr_cl(i.OutputRegister());
+        __ shr_cl(i.OutputOperand());
       }
       break;
     case kIA32Sar:
       if (HasImmediateInput(instr, 1)) {
-        __ sar(i.OutputRegister(), i.InputInt5(1));
+        __ sar(i.OutputOperand(), i.InputInt5(1));
       } else {
-        __ sar_cl(i.OutputRegister());
+        __ sar_cl(i.OutputOperand());
       }
       break;
     case kIA32Ror:
       if (HasImmediateInput(instr, 1)) {
-        __ ror(i.OutputRegister(), i.InputInt5(1));
+        __ ror(i.OutputOperand(), i.InputInt5(1));
       } else {
-        __ ror_cl(i.OutputRegister());
+        __ ror_cl(i.OutputOperand());
       }
       break;
     case kSSEFloat64Cmp:
@@ -370,8 +371,7 @@ void CodeGenerator::AssembleArchInstruction(Instruction* instr) {
       __ cvtsi2sd(i.OutputDoubleRegister(), i.InputOperand(0));
       break;
     case kSSEUint32ToFloat64:
-      // TODO(turbofan): IA32 SSE LoadUint32() should take an operand.
-      __ LoadUint32(i.OutputDoubleRegister(), i.InputRegister(0));
+      __ LoadUint32(i.OutputDoubleRegister(), i.InputOperand(0));
       break;
     case kIA32Movsxbl:
       __ movsx_b(i.OutputRegister(), i.MemoryOperand());
@@ -435,6 +435,9 @@ void CodeGenerator::AssembleArchInstruction(Instruction* instr) {
         Operand operand = i.MemoryOperand(&index);
         __ movss(operand, i.InputDoubleRegister(index));
       }
+      break;
+    case kIA32Lea:
+      __ lea(i.OutputRegister(), i.MemoryOperand());
       break;
     case kIA32Push:
       if (HasImmediateInput(instr, 0)) {

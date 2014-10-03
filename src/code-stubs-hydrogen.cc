@@ -271,13 +271,11 @@ static Handle<Code> DoGenerateCode(Stub* stub) {
   }
   CodeStubGraphBuilder<Stub> builder(isolate, stub);
   LChunk* chunk = OptimizeGraph(builder.CreateGraph());
-  // TODO(yangguo) remove this once the code serializer handles code stubs.
-  if (FLAG_serialize_toplevel) chunk->info()->PrepareForSerializing();
   Handle<Code> code = chunk->Codegen();
   if (FLAG_profile_hydrogen_code_stub_compilation) {
     OFStream os(stdout);
     os << "[Lazy compilation of " << stub << " took "
-       << timer.Elapsed().InMillisecondsF() << " ms]" << endl;
+       << timer.Elapsed().InMillisecondsF() << " ms]" << std::endl;
   }
   return code;
 }
@@ -776,44 +774,56 @@ Handle<Code> StoreFieldStub::GenerateCode() { return DoGenerateCode(this); }
 
 
 template <>
-HValue* CodeStubGraphBuilder<ExtendStorageStub>::BuildCodeStub() {
-  HValue* object = GetParameter(ExtendStorageDescriptor::kReceiverIndex);
-  HValue* properties =
-      Add<HLoadNamedField>(object, static_cast<HValue*>(NULL),
-                           HObjectAccess::ForPropertiesPointer());
-  HValue* length = AddLoadFixedArrayLength(properties);
-  HValue* delta = Add<HConstant>(static_cast<int32_t>(JSObject::kFieldsAdded));
-  HValue* new_capacity = AddUncasted<HAdd>(length, delta);
+HValue* CodeStubGraphBuilder<StoreTransitionStub>::BuildCodeStub() {
+  HValue* object = GetParameter(StoreTransitionDescriptor::kReceiverIndex);
 
-  // Grow properties array.
-  ElementsKind kind = FAST_ELEMENTS;
-  Add<HBoundsCheck>(new_capacity,
-                    Add<HConstant>((Page::kMaxRegularHeapObjectSize -
-                                    FixedArray::kHeaderSize) >>
-                                   ElementsKindToShiftSize(kind)));
+  switch (casted_stub()->store_mode()) {
+    case StoreTransitionStub::ExtendStorageAndStoreMapAndValue: {
+      HValue* properties =
+          Add<HLoadNamedField>(object, static_cast<HValue*>(NULL),
+                               HObjectAccess::ForPropertiesPointer());
+      HValue* length = AddLoadFixedArrayLength(properties);
+      HValue* delta =
+          Add<HConstant>(static_cast<int32_t>(JSObject::kFieldsAdded));
+      HValue* new_capacity = AddUncasted<HAdd>(length, delta);
 
-  // Reuse this code for properties backing store allocation.
-  HValue* new_properties = BuildAllocateAndInitializeArray(kind, new_capacity);
+      // Grow properties array.
+      ElementsKind kind = FAST_ELEMENTS;
+      Add<HBoundsCheck>(new_capacity,
+                        Add<HConstant>((Page::kMaxRegularHeapObjectSize -
+                                        FixedArray::kHeaderSize) >>
+                                       ElementsKindToShiftSize(kind)));
 
-  BuildCopyProperties(properties, new_properties, length, new_capacity);
+      // Reuse this code for properties backing store allocation.
+      HValue* new_properties =
+          BuildAllocateAndInitializeArray(kind, new_capacity);
 
-  // Store the new value into the "extended" object.
-  Add<HStoreNamedField>(object, HObjectAccess::ForPropertiesPointer(),
-                        new_properties);
+      BuildCopyProperties(properties, new_properties, length, new_capacity);
 
-  BuildStoreNamedField(
-      object, GetParameter(ExtendStorageDescriptor::kValueIndex),
-      casted_stub()->index(), casted_stub()->representation(), true);
+      // Store the new value into the "extended" object.
+      Add<HStoreNamedField>(object, HObjectAccess::ForPropertiesPointer(),
+                            new_properties);
+    }
+    // Fall through.
+    case StoreTransitionStub::StoreMapAndValue:
+      BuildStoreNamedField(
+          object, GetParameter(StoreTransitionDescriptor::kValueIndex),
+          casted_stub()->index(), casted_stub()->representation(), true);
+    // Fall through.
 
-  // And finally update the map after the new field is added.
-  Add<HStoreNamedField>(object, HObjectAccess::ForMap(),
-                        GetParameter(ExtendStorageDescriptor::kMapIndex));
-
-  return GetParameter(ExtendStorageDescriptor::kValueIndex);
+    case StoreTransitionStub::StoreMapOnly:
+      // And finally update the map.
+      Add<HStoreNamedField>(object, HObjectAccess::ForMap(),
+                            GetParameter(StoreTransitionDescriptor::kMapIndex));
+      break;
+  }
+  return GetParameter(StoreTransitionDescriptor::kValueIndex);
 }
 
 
-Handle<Code> ExtendStorageStub::GenerateCode() { return DoGenerateCode(this); }
+Handle<Code> StoreTransitionStub::GenerateCode() {
+  return DoGenerateCode(this);
+}
 
 
 template <>

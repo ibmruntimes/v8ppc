@@ -26,7 +26,7 @@
 #endif
 
 #if V8_TARGET_ARCH_IA32 || V8_TARGET_ARCH_X64 || V8_TARGET_ARCH_ARM || \
-    V8_TARGET_ARCH_ARM64
+    V8_TARGET_ARCH_ARM64 || V8_TARGET_ARCH_MIPS
 #define V8_TURBOFAN_BACKEND 1
 #else
 #define V8_TURBOFAN_BACKEND 0
@@ -154,6 +154,13 @@ const intptr_t kIntptrSignBit = V8_INT64_C(0x8000000000000000);
 const uintptr_t kUintptrAllBitsSet = V8_UINT64_C(0xFFFFFFFFFFFFFFFF);
 const bool kRequiresCodeRange = true;
 const size_t kMaximalCodeRangeSize = 512 * MB;
+#if V8_OS_WIN
+const size_t kMinimumCodeRangeSize = 4 * MB;
+const size_t kReservedCodeRangePages = 1;
+#else
+const size_t kMinimumCodeRangeSize = 3 * MB;
+const size_t kReservedCodeRangePages = 0;
+#endif
 #else
 const int kPointerSizeLog2 = 2;
 const intptr_t kIntptrSignBit = 0x80000000;
@@ -162,9 +169,13 @@ const uintptr_t kUintptrAllBitsSet = 0xFFFFFFFFu;
 // x32 port also requires code range.
 const bool kRequiresCodeRange = true;
 const size_t kMaximalCodeRangeSize = 256 * MB;
+const size_t kMinimumCodeRangeSize = 3 * MB;
+const size_t kReservedCodeRangePages = 0;
 #else
 const bool kRequiresCodeRange = false;
 const size_t kMaximalCodeRangeSize = 0 * MB;
+const size_t kMinimumCodeRangeSize = 0 * MB;
+const size_t kReservedCodeRangePages = 0;
 #endif
 #endif
 
