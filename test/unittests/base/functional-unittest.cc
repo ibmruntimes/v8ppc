@@ -81,6 +81,8 @@ TYPED_TEST(FunctionalTest, HashIsStateless) {
 }
 
 
+// Older GCC fails, make sure to use 4.7 or better
+#if ((__GNUC__ >= 4) && (__GNUC_MINOR__ >= 7))
 TYPED_TEST(FunctionalTest, HashIsOkish) {
   std::set<TypeParam> vs;
   for (size_t i = 0; i < 128; ++i) {
@@ -95,6 +97,7 @@ TYPED_TEST(FunctionalTest, HashIsOkish) {
   }
   EXPECT_LE(vs.size() / 4u, hs.size());
 }
+#endif
 
 
 namespace {
