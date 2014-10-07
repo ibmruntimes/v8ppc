@@ -101,7 +101,8 @@ class JumpPatchSite BASE_EMBEDDED {
 //   o cp: our context
 //   o fp: our caller's frame pointer (aka r31)
 //   o sp: stack pointer
-//   o lr: return address  (bogus.. PPC has no lr reg)
+//   o lr: return address
+//   o ip: our own function entry (required by the prologue)
 //
 // The function builds a JS frame.  Please see JavaScriptFrameConstants in
 // frames-ppc.h for its layout.
@@ -146,9 +147,16 @@ void FullCodeGenerator::Generate() {
   // MANUAL indicates that the scope shouldn't actually generate code to set up
   // the frame (that is done below).
   FrameScope frame_scope(masm_, StackFrame::MANUAL);
+  int prologue_offset = masm_->pc_offset();
 
-  info->set_prologue_offset(masm_->pc_offset());
-  __ Prologue(info->IsCodePreAgingActive());
+  if (prologue_offset) {
+    // Prologue logic requires it's starting address in ip and the
+    // corresponding offset from the function entry.
+    prologue_offset += Instruction::kInstrSize;
+    __ addi(ip, ip, Operand(prologue_offset));
+  }
+  info->set_prologue_offset(prologue_offset);
+  __ Prologue(info->IsCodePreAgingActive(), prologue_offset);
   info->AddNoFrameRange(0, masm_->pc_offset());
 
   { Comment cmnt(masm_, "[ Allocate locals");
@@ -2210,21 +2218,21 @@ void FullCodeGenerator::EmitGeneratorResume(Expression *generator,
   if (resume_mode == JSGeneratorObject::NEXT) {
     Label slow_resume;
     __ bne(&slow_resume, cr0);
-    __ LoadP(r6, FieldMemOperand(r7, JSFunction::kCodeEntryOffset));
+    __ LoadP(ip, FieldMemOperand(r7, JSFunction::kCodeEntryOffset));
 #if V8_OOL_CONSTANT_POOL
     { ConstantPoolUnavailableScope constant_pool_unavailable(masm_);
       // Load the new code object's constant pool pointer.
       __ LoadP(kConstantPoolRegister,
-               MemOperand(r6, Code::kConstantPoolOffset - Code::kHeaderSize));
+               MemOperand(ip, Code::kConstantPoolOffset - Code::kHeaderSize));
 #endif
       __ LoadP(r5, FieldMemOperand(r4, JSGeneratorObject::kContinuationOffset));
       __ SmiUntag(r5);
-      __ add(r6, r6, r5);
+      __ add(ip, ip, r5);
       __ LoadSmiLiteral(r5,
                         Smi::FromInt(JSGeneratorObject::kGeneratorExecuting));
       __ StoreP(r5, FieldMemOperand(r4, JSGeneratorObject::kContinuationOffset),
                 r0);
-      __ Jump(r6);
+      __ Jump(ip);
       __ bind(&slow_resume);
 #if V8_OOL_CONSTANT_POOL
     }

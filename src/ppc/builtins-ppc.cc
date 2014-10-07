@@ -281,16 +281,16 @@ static void CallRuntimePassFunction(
 
 
 static void GenerateTailCallToSharedCode(MacroAssembler* masm) {
-  __ LoadP(r5, FieldMemOperand(r4, JSFunction::kSharedFunctionInfoOffset));
-  __ LoadP(r5, FieldMemOperand(r5, SharedFunctionInfo::kCodeOffset));
-  __ addi(r5, r5, Operand(Code::kHeaderSize - kHeapObjectTag));
-  __ Jump(r5);
+  __ LoadP(ip, FieldMemOperand(r4, JSFunction::kSharedFunctionInfoOffset));
+  __ LoadP(ip, FieldMemOperand(ip, SharedFunctionInfo::kCodeOffset));
+  __ addi(ip, ip, Operand(Code::kHeaderSize - kHeapObjectTag));
+  __ JumpToJSEntry(ip);
 }
 
 
 static void GenerateTailCallToReturnedCode(MacroAssembler* masm) {
-  __ addi(r3, r3, Operand(Code::kHeaderSize - kHeapObjectTag));
-  __ Jump(r3);
+  __ addi(ip, r3, Operand(Code::kHeaderSize - kHeapObjectTag));
+  __ JumpToJSEntry(ip);
 }
 
 
@@ -855,24 +855,25 @@ static void GenerateMakeCodeYoungAgainCommon(MacroAssembler* masm) {
   // internal frame to make the code faster, since we shouldn't have to do stack
   // crawls in MakeCodeYoung. This seems a bit fragile.
 
-  __ mflr(r3);
-  // Adjust r3 to point to the start of the PlatformCodeAge sequence
-  __ subi(r3, r3, Operand(kCodeAgingPatchDelta));
+  // Point r3 at the start of the PlatformCodeAge sequence.
+  __ mr(r3, ip);
 
   // The following registers must be saved and restored when calling through to
   // the runtime:
   //   r3 - contains return address (beginning of patch sequence)
   //   r4 - isolate
-  //   ip - return address
+  //   lr - return address
   FrameScope scope(masm, StackFrame::MANUAL);
-  __ MultiPush(ip.bit() | r3.bit() | r4.bit() | fp.bit());
+  __ mflr(r0);
+  __ MultiPush(r0.bit() | r3.bit() | r4.bit() | fp.bit());
   __ PrepareCallCFunction(2, 0, r5);
   __ mov(r4, Operand(ExternalReference::isolate_address(masm->isolate())));
   __ CallCFunction(
       ExternalReference::get_make_code_young_function(masm->isolate()), 2);
-  __ MultiPop(ip.bit() | r3.bit() | r4.bit() | fp.bit());
-  __ mtlr(ip);
-  __ Jump(r3);
+  __ MultiPop(r0.bit() | r3.bit() | r4.bit() | fp.bit());
+  __ mtlr(r0);
+  __ mr(ip, r3);
+  __ Jump(ip);
 }
 
 #define DEFINE_CODE_AGE_BUILTIN_GENERATOR(C)                 \
@@ -895,30 +896,31 @@ void Builtins::Generate_MarkCodeAsExecutedOnce(MacroAssembler* masm) {
   // internal frame to make the code faster, since we shouldn't have to do stack
   // crawls in MakeCodeYoung. This seems a bit fragile.
 
-  __ mflr(r3);
-  // Adjust r3 to point to the start of the PlatformCodeAge sequence
-  __ subi(r3, r3, Operand(kCodeAgingPatchDelta));
+  // Point r3 at the start of the PlatformCodeAge sequence.
+  __ mr(r3, ip);
 
   // The following registers must be saved and restored when calling through to
   // the runtime:
   //   r3 - contains return address (beginning of patch sequence)
   //   r4 - isolate
-  //   ip - return address
+  //   lr - return address
   FrameScope scope(masm, StackFrame::MANUAL);
-  __ MultiPush(ip.bit() | r3.bit() | r4.bit() | fp.bit());
+  __ mflr(r0);
+  __ MultiPush(r0.bit() | r3.bit() | r4.bit() | fp.bit());
   __ PrepareCallCFunction(2, 0, r5);
   __ mov(r4, Operand(ExternalReference::isolate_address(masm->isolate())));
   __ CallCFunction(ExternalReference::get_mark_code_as_executed_function(
         masm->isolate()), 2);
-  __ MultiPop(ip.bit() | r3.bit() | r4.bit() | fp.bit());
-  __ mtlr(ip);
+  __ MultiPop(r0.bit() | r3.bit() | r4.bit() | fp.bit());
+  __ mtlr(r0);
+  __ mr(ip, r3);
 
   // Perform prologue operations usually performed by the young code stub.
   __ PushFixedFrame(r4);
   __ addi(fp, sp, Operand(StandardFrameConstants::kFixedFrameSizeFromFp));
 
   // Jump to point after the code-age stub.
-  __ addi(r3, r3, Operand(kNoCodeAgeSequenceLength));
+  __ addi(r3, ip, Operand(kNoCodeAgeSequenceLength));
   __ Jump(r3);
 }
 
@@ -1264,9 +1266,9 @@ void Builtins::Generate_FunctionCall(MacroAssembler* masm) {
           RelocInfo::CODE_TARGET,
           ne);
 
-  __ LoadP(r6, FieldMemOperand(r4, JSFunction::kCodeEntryOffset));
+  __ LoadP(ip, FieldMemOperand(r4, JSFunction::kCodeEntryOffset));
   ParameterCount expected(0);
-  __ InvokeCode(r6, expected, expected, JUMP_FUNCTION, NullCallWrapper());
+  __ InvokeCode(ip, expected, expected, JUMP_FUNCTION, NullCallWrapper());
 }
 
 
@@ -1515,7 +1517,7 @@ void Builtins::Generate_ArgumentsAdaptorTrampoline(MacroAssembler* masm) {
   Label invoke, dont_adapt_arguments;
 
   Label enough, too_few;
-  __ LoadP(r6, FieldMemOperand(r4, JSFunction::kCodeEntryOffset));
+  __ LoadP(ip, FieldMemOperand(r4, JSFunction::kCodeEntryOffset));
   __ cmp(r3, r5);
   __ blt(&too_few);
   __ cmpi(r5, Operand(SharedFunctionInfo::kDontAdaptArgumentsSentinel));
@@ -1529,7 +1531,7 @@ void Builtins::Generate_ArgumentsAdaptorTrampoline(MacroAssembler* masm) {
     // r3: actual number of arguments as a smi
     // r4: function
     // r5: expected number of arguments
-    // r6: code entry to call
+    // ip: code entry to call
     __ SmiToPtrArrayOffset(r3, r3);
     __ add(r3, r3, fp);
     // adjust for return address and receiver
@@ -1541,12 +1543,12 @@ void Builtins::Generate_ArgumentsAdaptorTrampoline(MacroAssembler* masm) {
     // r3: copy start address
     // r4: function
     // r5: copy end address
-    // r6: code entry to call
+    // ip: code entry to call
 
     Label copy;
     __ bind(&copy);
-    __ LoadP(ip, MemOperand(r3, 0));
-    __ push(ip);
+    __ LoadP(r0, MemOperand(r3, 0));
+    __ push(r0);
     __ cmp(r3, r5);  // Compare before moving to next argument.
     __ subi(r3, r3, Operand(kPointerSize));
     __ bne(&copy);
@@ -1562,7 +1564,7 @@ void Builtins::Generate_ArgumentsAdaptorTrampoline(MacroAssembler* masm) {
     // r3: actual number of arguments as a smi
     // r4: function
     // r5: expected number of arguments
-    // r6: code entry to call
+    // ip: code entry to call
     __ SmiToPtrArrayOffset(r3, r3);
     __ add(r3, r3, fp);
 
@@ -1570,12 +1572,12 @@ void Builtins::Generate_ArgumentsAdaptorTrampoline(MacroAssembler* masm) {
     // r3: copy start address
     // r4: function
     // r5: expected number of arguments
-    // r6: code entry to call
+    // ip: code entry to call
     Label copy;
     __ bind(&copy);
     // Adjust load for return address and receiver.
-    __ LoadP(ip, MemOperand(r3, 2 * kPointerSize));
-    __ push(ip);
+    __ LoadP(r0, MemOperand(r3, 2 * kPointerSize));
+    __ push(r0);
     __ cmp(r3, fp);  // Compare before moving to next argument.
     __ subi(r3, r3, Operand(kPointerSize));
     __ bne(&copy);
@@ -1583,8 +1585,8 @@ void Builtins::Generate_ArgumentsAdaptorTrampoline(MacroAssembler* masm) {
     // Fill the remaining expected arguments with undefined.
     // r4: function
     // r5: expected number of arguments
-    // r6: code entry to call
-    __ LoadRoot(ip, Heap::kUndefinedValueRootIndex);
+    // ip: code entry to call
+    __ LoadRoot(r0, Heap::kUndefinedValueRootIndex);
     __ ShiftLeftImm(r5, r5, Operand(kPointerSizeLog2));
     __ sub(r5, fp, r5);
     // Adjust for frame.
@@ -1593,14 +1595,14 @@ void Builtins::Generate_ArgumentsAdaptorTrampoline(MacroAssembler* masm) {
 
     Label fill;
     __ bind(&fill);
-    __ push(ip);
+    __ push(r0);
     __ cmp(sp, r5);
     __ bne(&fill);
   }
 
   // Call the entry point.
   __ bind(&invoke);
-  __ Call(r6);
+  __ CallJSEntry(ip);
 
   // Store offset of return address for deoptimizer.
   masm->isolate()->heap()->SetArgumentsAdaptorDeoptPCOffset(masm->pc_offset());
@@ -1614,7 +1616,7 @@ void Builtins::Generate_ArgumentsAdaptorTrampoline(MacroAssembler* masm) {
   // Dont adapt arguments.
   // -------------------------------------------
   __ bind(&dont_adapt_arguments);
-  __ Jump(r6);
+  __ JumpToJSEntry(ip);
 
   __ bind(&stack_overflow);
   {
