@@ -658,11 +658,6 @@ void MathExpGenerator::EmitMathExp(MacroAssembler* masm,
 
 #undef __
 
-#ifdef DEBUG
-// mflr ip
-static const uint32_t kCodeAgePatchFirstInstruction = 0x7d8802a6;
-#endif
-
 CodeAgingHelper::CodeAgingHelper() {
   DCHECK(young_sequence_.length() == kNoCodeAgeSequenceLength);
   // Since patcher is a large object, allocate it dynamically when needed,
@@ -685,7 +680,7 @@ CodeAgingHelper::CodeAgingHelper() {
 
 #ifdef DEBUG
 bool CodeAgingHelper::IsOld(byte* candidate) const {
-  return Memory::uint32_at(candidate) == kCodeAgePatchFirstInstruction;
+  return Assembler::IsNop(Assembler::instr_at(candidate));
 }
 #endif
 
@@ -726,12 +721,11 @@ void Code::PatchPlatformCodeAge(Isolate* isolate,
     CodePatcher patcher(sequence, young_length / Assembler::kInstrSize);
     Assembler::BlockTrampolinePoolScope block_trampoline_pool(patcher.masm());
     intptr_t target = reinterpret_cast<intptr_t>(stub->instruction_start());
-    // We use Call to compute the address of this patch sequence.
-    // Preserve lr since it will be clobbered.  See
+    // Don't use Call -- we need to preserve ip and lr.
     // GenerateMakeCodeYoungAgainCommon for the stub code.
-    patcher.masm()->mflr(ip);
+    patcher.masm()->nop();  // marker to detect sequence (see IsOld)
     patcher.masm()->mov(r3, Operand(target));
-    patcher.masm()->Call(r3);
+    patcher.masm()->Jump(r3);
     for (int i = 0; i < kCodeAgingSequenceNops; i++) {
       patcher.masm()->nop();
     }

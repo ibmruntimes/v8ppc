@@ -113,18 +113,20 @@ class MacroAssembler: public Assembler {
   // Returns the size of a call in instructions. Note, the value returned is
   // only valid as long as no entries are added to the constant pool between
   // checking the call size and emitting the actual call.
-  static int CallSize(Register target, Condition cond = al);
+  static int CallSize(Register target);
   int CallSize(Address target, RelocInfo::Mode rmode, Condition cond = al);
   static int CallSizeNotPredictableCodeSize(Address target,
                                             RelocInfo::Mode rmode,
                                             Condition cond = al);
 
   // Jump, Call, and Ret pseudo instructions implementing inter-working.
-  void Jump(Register target, Condition cond = al);
+  void Jump(Register target);
+  void JumpToJSEntry(Register target);
   void Jump(Address target, RelocInfo::Mode rmode, Condition cond = al,
             CRegister cr = cr7);
   void Jump(Handle<Code> code, RelocInfo::Mode rmode, Condition cond = al);
-  void Call(Register target, Condition cond = al);
+  void Call(Register target);
+  void CallJSEntry(Register target);
   void Call(Address target, RelocInfo::Mode rmode, Condition cond = al);
   int CallSize(Handle<Code> code,
                RelocInfo::Mode rmode = RelocInfo::CODE_TARGET,
@@ -449,8 +451,8 @@ class MacroAssembler: public Assembler {
                             FPRoundingMode rounding_mode = kRoundToZero);
 
   // Generates function and stub prologue code.
-  void StubPrologue();
-  void Prologue(bool code_pre_aging);
+  void StubPrologue(int prologue_offset = 0);
+  void Prologue(bool code_pre_aging, int prologue_offset = 0);
 
   // Enter exit frame.
   // stack_space - extra stack space, used for alignment before call to C.
@@ -1722,7 +1724,12 @@ class MacroAssembler: public Assembler {
 
 #if V8_OOL_CONSTANT_POOL
   // Loads the constant pool pointer (kConstantPoolRegister).
-  void LoadConstantPoolPointerRegister();
+  enum CodeObjectAccessMethod {
+    CAN_USE_IP,
+    CONSTRUCT_INTERNAL_REFERENCE
+  };
+  void LoadConstantPoolPointerRegister(CodeObjectAccessMethod access_method,
+                                       int ip_code_entry_delta = 0);
 #endif
 
   bool generating_stub_;
