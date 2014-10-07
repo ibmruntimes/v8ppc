@@ -1973,18 +1973,17 @@ void ArgumentsAccessStub::GenerateNewStrict(MacroAssembler* masm) {
 
   // Copy the fixed array slots.
   Label loop;
-  // Set up r7 to point to the first array slot.
-  __ addi(r7, r7, Operand(FixedArray::kHeaderSize - kHeapObjectTag));
+  // Set up r7 to point just prior to the first array slot.
+  __ addi(r7, r7, Operand(FixedArray::kHeaderSize - kHeapObjectTag -
+                          kPointerSize));
+  __ mtctr(r4);
   __ bind(&loop);
   // Pre-decrement r5 with kPointerSize on each iteration.
   // Pre-decrement in order to skip receiver.
   __ LoadPU(r6, MemOperand(r5, -kPointerSize));
-  // Post-increment r7 with kPointerSize on each iteration.
-  __ StoreP(r6, MemOperand(r7));
-  __ addi(r7, r7, Operand(kPointerSize));
-  __ subi(r4, r4, Operand(1));
-  __ cmpi(r4, Operand::Zero());
-  __ bne(&loop);
+  // Pre-increment r7 with kPointerSize on each iteration.
+  __ StorePU(r6, MemOperand(r7, kPointerSize));
+  __ bdnz(&loop);
 
   // Return and remove the on-stack parameters.
   __ bind(&done);

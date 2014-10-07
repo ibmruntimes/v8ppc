@@ -283,9 +283,8 @@ bool LCodeGen::GenerateDeferredCode() {
         DCHECK(!frame_is_built_);
         DCHECK(info()->IsStub());
         frame_is_built_ = true;
-        __ PushFixedFrame();
         __ LoadSmiLiteral(scratch0(), Smi::FromInt(StackFrame::STUB));
-        __ push(scratch0());
+        __ PushFixedFrame(scratch0());
         __ addi(fp, sp, Operand(StandardFrameConstants::kFixedFrameSizeFromFp));
         Comment(";;; Deferred code");
       }
@@ -347,13 +346,12 @@ bool LCodeGen::GenerateJumpTable() {
         } else {
           __ bind(&needs_frame);
           Comment(";;; call deopt with frame");
-          __ PushFixedFrame();
           // This variant of deopt can only be used with stubs. Since we don't
           // have a function pointer to install in the stack frame that we're
           // building, install a special marker there instead.
           DCHECK(info()->IsStub());
-          __ LoadSmiLiteral(r0, Smi::FromInt(StackFrame::STUB));
-          __ push(r0);
+          __ LoadSmiLiteral(ip, Smi::FromInt(StackFrame::STUB));
+          __ PushFixedFrame(ip);
           __ addi(fp, sp,
                   Operand(StandardFrameConstants::kFixedFrameSizeFromFp));
           __ bind(&call_deopt_entry);

@@ -732,8 +732,8 @@ void MacroAssembler::LoadConstantPoolPointerRegister() {
 
 
 void MacroAssembler::StubPrologue() {
-  PushFixedFrame();
-  Push(Smi::FromInt(StackFrame::STUB));
+  LoadSmiLiteral(ip, Smi::FromInt(StackFrame::STUB));
+  PushFixedFrame(ip);
   // Adjust FP to point to saved FP.
   addi(fp, sp, Operand(StandardFrameConstants::kFixedFrameSizeFromFp));
 #if V8_OOL_CONSTANT_POOL
@@ -779,19 +779,22 @@ void MacroAssembler::Prologue(bool code_pre_aging) {
 
 void MacroAssembler::EnterFrame(StackFrame::Type type,
                                 bool load_constant_pool) {
-  PushFixedFrame();
+  if (FLAG_enable_ool_constant_pool && load_constant_pool) {
+    PushFixedFrame();
 #if V8_OOL_CONSTANT_POOL
-  if (load_constant_pool) {
     LoadConstantPoolPointerRegister();
-  }
 #endif
-  LoadSmiLiteral(r0, Smi::FromInt(type));
-  push(r0);
+    LoadSmiLiteral(ip, Smi::FromInt(type));
+    push(ip);
+  } else {
+    LoadSmiLiteral(ip, Smi::FromInt(type));
+    PushFixedFrame(ip);
+  }
+  // Adjust FP to point to saved FP.
+  addi(fp, sp, Operand(StandardFrameConstants::kFixedFrameSizeFromFp));
+
   mov(r0, Operand(CodeObject()));
   push(r0);
-  // Adjust FP to point to saved FP.
-  addi(fp, sp,
-       Operand(StandardFrameConstants::kFixedFrameSizeFromFp + kPointerSize));
 }
 
 
@@ -4687,28 +4690,15 @@ void MacroAssembler::LoadWordArith(Register dst, const MemOperand& mem,
 // Variable length depending on whether offset fits into immediate field
 // MemOperand currently only supports d-form
 void MacroAssembler::LoadWord(Register dst, const MemOperand& mem,
-                              Register scratch, bool updateForm) {
+                              Register scratch) {
   Register base = mem.ra();
   int offset = mem.offset();
 
-  bool use_dform = true;
   if (!is_int16(offset)) {
-    use_dform = false;
     LoadIntLiteral(scratch, offset);
-  }
-
-  if (!updateForm) {
-    if (use_dform) {
-      lwz(dst, mem);
-    } else {
-      lwzx(dst, MemOperand(base, scratch));
-    }
+    lwzx(dst, MemOperand(base, scratch));
   } else {
-    if (use_dform) {
-      lwzu(dst, mem);
-    } else {
-      lwzux(dst, MemOperand(base, scratch));
-    }
+    lwz(dst, mem);
   }
 }
 
@@ -4716,28 +4706,15 @@ void MacroAssembler::LoadWord(Register dst, const MemOperand& mem,
 // Variable length depending on whether offset fits into immediate field
 // MemOperand current only supports d-form
 void MacroAssembler::StoreWord(Register src, const MemOperand& mem,
-                               Register scratch, bool updateForm) {
+                               Register scratch) {
   Register base = mem.ra();
   int offset = mem.offset();
 
-  bool use_dform = true;
   if (!is_int16(offset)) {
-    use_dform = false;
     LoadIntLiteral(scratch, offset);
-  }
-
-  if (!updateForm) {
-    if (use_dform) {
-      stw(src, mem);
-    } else {
-      stwx(src, MemOperand(base, scratch));
-    }
+    stwx(src, MemOperand(base, scratch));
   } else {
-    if (use_dform) {
-      stwu(src, mem);
-    } else {
-      stwux(src, MemOperand(base, scratch));
-    }
+    stw(src, mem);
   }
 }
 
@@ -4745,33 +4722,15 @@ void MacroAssembler::StoreWord(Register src, const MemOperand& mem,
 // Variable length depending on whether offset fits into immediate field
 // MemOperand currently only supports d-form
 void MacroAssembler::LoadHalfWord(Register dst, const MemOperand& mem,
-                                  Register scratch, bool updateForm) {
+                                  Register scratch) {
   Register base = mem.ra();
   int offset = mem.offset();
 
-  bool use_dform = true;
   if (!is_int16(offset)) {
-    use_dform = false;
     LoadIntLiteral(scratch, offset);
-  }
-
-  if (!updateForm) {
-    if (use_dform) {
-      lhz(dst, mem);
-    } else {
-      lhzx(dst, MemOperand(base, scratch));
-    }
+    lhzx(dst, MemOperand(base, scratch));
   } else {
-    // If updateForm is ever true, then lhzu will
-    // need to be implemented
-    assert(0);
-#if 0  // LoadHalfWord w\ update not yet needed
-    if (use_dform) {
-      lhzu(dst, mem);
-    } else {
-      lhzux(dst, MemOperand(base, scratch));
-    }
-#endif
+    lhz(dst, mem);
   }
 }
 
@@ -4779,33 +4738,15 @@ void MacroAssembler::LoadHalfWord(Register dst, const MemOperand& mem,
 // Variable length depending on whether offset fits into immediate field
 // MemOperand current only supports d-form
 void MacroAssembler::StoreHalfWord(Register src, const MemOperand& mem,
-                                   Register scratch, bool updateForm) {
+                                   Register scratch) {
   Register base = mem.ra();
   int offset = mem.offset();
 
-  bool use_dform = true;
   if (!is_int16(offset)) {
-    use_dform = false;
     LoadIntLiteral(scratch, offset);
-  }
-
-  if (!updateForm) {
-    if (use_dform) {
-      sth(src, mem);
-    } else {
-      sthx(src, MemOperand(base, scratch));
-    }
+    sthx(src, MemOperand(base, scratch));
   } else {
-    // If updateForm is ever true, then sthu will
-    // need to be implemented
-    assert(0);
-#if 0  // StoreHalfWord w\ update not yet needed
-    if (use_dform) {
-      sthu(src, mem);
-    } else {
-      sthux(src, MemOperand(base, scratch));
-    }
-#endif
+    sth(src, mem);
   }
 }
 
@@ -4813,33 +4754,15 @@ void MacroAssembler::StoreHalfWord(Register src, const MemOperand& mem,
 // Variable length depending on whether offset fits into immediate field
 // MemOperand currently only supports d-form
 void MacroAssembler::LoadByte(Register dst, const MemOperand& mem,
-                              Register scratch, bool updateForm) {
+                              Register scratch) {
   Register base = mem.ra();
   int offset = mem.offset();
 
-  bool use_dform = true;
   if (!is_int16(offset)) {
-    use_dform = false;
     LoadIntLiteral(scratch, offset);
-  }
-
-  if (!updateForm) {
-    if (use_dform) {
-      lbz(dst, mem);
-    } else {
-      lbzx(dst, MemOperand(base, scratch));
-    }
+    lbzx(dst, MemOperand(base, scratch));
   } else {
-    // If updateForm is ever true, then lbzu will
-    // need to be implemented
-    assert(0);
-#if 0  // LoadByte w\ update not yet needed
-    if (use_dform) {
-      lbzu(dst, mem);
-    } else {
-      lbzux(dst, MemOperand(base, scratch));
-    }
-#endif
+    lbz(dst, mem);
   }
 }
 
@@ -4847,33 +4770,15 @@ void MacroAssembler::LoadByte(Register dst, const MemOperand& mem,
 // Variable length depending on whether offset fits into immediate field
 // MemOperand current only supports d-form
 void MacroAssembler::StoreByte(Register src, const MemOperand& mem,
-                               Register scratch, bool updateForm) {
+                               Register scratch) {
   Register base = mem.ra();
   int offset = mem.offset();
 
-  bool use_dform = true;
   if (!is_int16(offset)) {
-    use_dform = false;
     LoadIntLiteral(scratch, offset);
-  }
-
-  if (!updateForm) {
-    if (use_dform) {
-      stb(src, mem);
-    } else {
-      stbx(src, MemOperand(base, scratch));
-    }
+    stbx(src, MemOperand(base, scratch));
   } else {
-    // If updateForm is ever true, then stbu will
-    // need to be implemented
-    assert(0);
-#if 0  // StoreByte w\ update not yet needed
-    if (use_dform) {
-      stbu(src, mem);
-    } else {
-      stbux(src, MemOperand(base, scratch));
-    }
-#endif
+    stb(src, mem);
   }
 }
 

@@ -1145,20 +1145,19 @@ class Assembler : public AssemblerBase {
 
   void push(Register src) {
 #if V8_TARGET_ARCH_PPC64
-    stdu(src, MemOperand(sp, -8));
+    stdu(src, MemOperand(sp, -kPointerSize));
 #else
-    stwu(src, MemOperand(sp, -4));
+    stwu(src, MemOperand(sp, -kPointerSize));
 #endif
   }
 
   void pop(Register dst) {
 #if V8_TARGET_ARCH_PPC64
     ld(dst, MemOperand(sp));
-    addi(sp, sp, Operand(8));
 #else
     lwz(dst, MemOperand(sp));
-    addi(sp, sp, Operand(4));
 #endif
+    addi(sp, sp, Operand(kPointerSize));
   }
 
   void pop() {
