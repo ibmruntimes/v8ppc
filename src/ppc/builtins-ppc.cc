@@ -530,8 +530,8 @@ static void Generate_JSConstructStubHelper(MacroAssembler* masm,
       __ StoreP(r9, MemOperand(r5));
       DCHECK_EQ(1 * kPointerSize, FixedArray::kLengthOffset);
       __ SmiTag(r3, r6);
-      __ StorePU(r3, MemOperand(r5, kPointerSize));
-      __ addi(r5, r5, Operand(kPointerSize));
+      __ StoreP(r3, MemOperand(r5, kPointerSize));
+      __ addi(r5, r5, Operand(2 * kPointerSize));
 
       // Initialize the fields to undefined.
       // r4: constructor function
