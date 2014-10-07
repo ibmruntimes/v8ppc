@@ -2271,14 +2271,14 @@ void RegExpExecStub::Generate(MacroAssembler* masm) {
   // Argument 4, r6: End of string data
   // Argument 3, r5: Start of string data
   // Prepare start and end index of the input.
-  __ ShiftLeft(r11, r11, r6);
+  __ ShiftLeft_(r11, r11, r6);
   __ add(r11, r18, r11);
-  __ ShiftLeft(r5, r4, r6);
+  __ ShiftLeft_(r5, r4, r6);
   __ add(r5, r11, r5);
 
   __ LoadP(r18, FieldMemOperand(subject, String::kLengthOffset));
   __ SmiUntag(r18);
-  __ ShiftLeft(r6, r18, r6);
+  __ ShiftLeft_(r6, r18, r6);
   __ add(r6, r11, r6);
 
   // Argument 2 (r4): Previous index.
@@ -2529,14 +2529,14 @@ static void GenerateRecordCallTarget(MacroAssembler* masm) {
 
   // A monomorphic miss (i.e, here the cache is not uninitialized) goes
   // megamorphic.
-  __ CompareRoot(r7, Heap::kUninitializedSymbolRootIndex);
+  __ CompareRoot(r7, Heap::kuninitialized_symbolRootIndex);
   __ beq(&initialize);
   // MegamorphicSentinel is an immortal immovable object (undefined) so no
   // write-barrier is needed.
   __ bind(&megamorphic);
   __ SmiToPtrArrayOffset(r7, r6);
   __ add(r7, r5, r7);
-  __ LoadRoot(ip, Heap::kMegamorphicSymbolRootIndex);
+  __ LoadRoot(ip, Heap::kmegamorphic_symbolRootIndex);
   __ StoreP(ip, FieldMemOperand(r7, FixedArray::kHeaderSize), r0);
   __ jmp(&done);
 
@@ -2870,9 +2870,9 @@ void CallICStub::Generate(MacroAssembler* masm) {
   __ bind(&extra_checks_or_miss);
   Label miss;
 
-  __ CompareRoot(r7, Heap::kMegamorphicSymbolRootIndex);
+  __ CompareRoot(r7, Heap::kmegamorphic_symbolRootIndex);
   __ beq(&slow_start);
-  __ CompareRoot(r7, Heap::kUninitializedSymbolRootIndex);
+  __ CompareRoot(r7, Heap::kuninitialized_symbolRootIndex);
   __ beq(&miss);
 
   if (!FLAG_trace_ic) {
@@ -2883,7 +2883,7 @@ void CallICStub::Generate(MacroAssembler* masm) {
     __ bne(&miss);
     __ SmiToPtrArrayOffset(r7, r6);
     __ add(r7, r5, r7);
-    __ LoadRoot(ip, Heap::kMegamorphicSymbolRootIndex);
+    __ LoadRoot(ip, Heap::kmegamorphic_symbolRootIndex);
     __ StoreP(ip, FieldMemOperand(r7, FixedArray::kHeaderSize), r0);
     __ jmp(&slow_start);
   }

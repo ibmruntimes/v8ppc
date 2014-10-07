@@ -75,8 +75,8 @@ bool AreAliased(Register reg1,
 #define ClearLeftImm       clrldi
 #define ClearRightImm      clrrdi
 #define ShiftRightArithImm sradi
-#define ShiftLeft          sld
-#define ShiftRight         srd
+#define ShiftLeft_         sld
+#define ShiftRight_        srd
 #define ShiftRightArith    srad
 #define Mul                mulld
 #define Div                divd
@@ -92,8 +92,8 @@ bool AreAliased(Register reg1,
 #define ClearLeftImm       clrlwi
 #define ClearRightImm      clrrwi
 #define ShiftRightArithImm srawi
-#define ShiftLeft          slw
-#define ShiftRight         srw
+#define ShiftLeft_         slw
+#define ShiftRight_        srw
 #define ShiftRightArith    sraw
 #define Mul                mullw
 #define Div                divw

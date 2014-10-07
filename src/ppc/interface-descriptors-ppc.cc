@@ -32,7 +32,7 @@ const Register StoreDescriptor::NameRegister() { return r5; }
 const Register StoreDescriptor::ValueRegister() { return r3; }
 
 
-const Register ExtendStorageDescriptor::MapRegister() { return r6; }
+const Register StoreTransitionDescriptor::MapRegister() { return r6; }
 
 
 const Register ElementTransitionAndStoreDescriptor::MapRegister() { return r6; }
