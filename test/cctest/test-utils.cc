@@ -222,8 +222,8 @@ TEST(SequenceCollectorRegression) {
 }
 
 
-// TODO(svenpanne) Unconditionally test this when our infrastructure is fixed.
-#if !(V8_OS_NACL || ((__GNUC__ >= 4) && (__GNUC_MINOR__ >= 4)))
+// Older GCC fails, make sure to use 4.4 or better
+#if ((__GNUC__ >= 4) && (__GNUC_MINOR__ >= 4)))
 TEST(CPlusPlus11Features) {
   struct S {
     bool x;

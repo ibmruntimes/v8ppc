@@ -190,6 +190,7 @@ namespace internal {
   F(ThrowNonMethodError, 0, 1)                             \
   F(ThrowUnsupportedSuperError, 0, 1)                      \
   F(LoadFromSuper, 3, 1)                                   \
+  F(LoadKeyedFromSuper, 3, 1)                              \
   F(StoreToSuper_Strict, 4, 1)                             \
   F(StoreToSuper_Sloppy, 4, 1)
 
@@ -852,6 +853,9 @@ class Runtime : public AllStatic {
   MUST_USE_RESULT static MaybeHandle<Object> GetObjectProperty(
       Isolate* isolate, Handle<Object> object, Handle<Object> key);
 
+  MUST_USE_RESULT static MaybeHandle<Name> ToName(Isolate* isolate,
+                                                  Handle<Object> key);
+
   static void SetupArrayBuffer(Isolate* isolate,
                                Handle<JSArrayBuffer> array_buffer,
                                bool is_external, void* data,
@@ -894,6 +898,8 @@ class Runtime : public AllStatic {
 };
 
 
+std::ostream& operator<<(std::ostream&, Runtime::FunctionId);
+
 //---------------------------------------------------------------------------
 // Constants used by interface to runtime functions.
 
@@ -903,7 +909,8 @@ class AllocateTargetSpace : public BitField<AllocationSpace, 1, 3> {};
 class DeclareGlobalsEvalFlag : public BitField<bool, 0, 1> {};
 class DeclareGlobalsNativeFlag : public BitField<bool, 1, 1> {};
 class DeclareGlobalsStrictMode : public BitField<StrictMode, 2, 1> {};
-}
-}  // namespace v8::internal
+
+}  // namespace internal
+}  // namespace v8
 
 #endif  // V8_RUNTIME_H_

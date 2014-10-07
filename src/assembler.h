@@ -965,14 +965,6 @@ class ExternalReference BASE_EMBEDDED {
 
   static ExternalReference stress_deopt_count(Isolate* isolate);
 
-  bool operator==(const ExternalReference& other) const {
-    return address_ == other.address_;
-  }
-
-  bool operator!=(const ExternalReference& other) const {
-    return !(*this == other);
-  }
-
  private:
   explicit ExternalReference(void* address)
       : address_(address) {}
@@ -992,6 +984,13 @@ class ExternalReference BASE_EMBEDDED {
 
   void* address_;
 };
+
+bool operator==(ExternalReference, ExternalReference);
+bool operator!=(ExternalReference, ExternalReference);
+
+size_t hash_value(ExternalReference);
+
+std::ostream& operator<<(std::ostream&, ExternalReference);
 
 
 // -----------------------------------------------------------------------------
