@@ -834,9 +834,9 @@ int MacroAssembler::LeaveFrame(StackFrame::Type type,
   LoadP(r0, MemOperand(fp, StandardFrameConstants::kCallerPCOffset));
   LoadP(ip, MemOperand(fp, StandardFrameConstants::kCallerFPOffset));
 #if V8_OOL_CONSTANT_POOL
-  int offset = ((type == StackFrame::EXIT)
-                ? ExitFrameConstants::kConstantPoolOffset
-                : StandardFrameConstants::kConstantPoolOffset);
+  const int exitOffset = ExitFrameConstants::kConstantPoolOffset;
+  const int standardOffset = StandardFrameConstants::kConstantPoolOffset;
+  const int offset = ((type == StackFrame::EXIT) ? exitOffset : standardOffset);
   LoadP(kConstantPoolRegister, MemOperand(fp, offset));
 #endif
   mtlr(r0);
