@@ -24,7 +24,6 @@ void BreakLocationIterator::SetDebugBreakAtReturn() {
   // Patch the code changing the return from JS function sequence from
   //
   //   LeaveFrame
-  //   addi sp, sp, <delta>
   //   blr
   //
   // to a call to the debug break return code.
