@@ -1419,8 +1419,7 @@ void Builtins::Generate_FunctionApply(MacroAssembler* masm) {
     __ bne(&call_proxy);
     __ InvokeFunction(r4, actual, CALL_FUNCTION, NullCallWrapper());
 
-    frame_scope.GenerateLeaveFrame();
-    __ addi(sp, sp, Operand(3 * kPointerSize));
+    frame_scope.GenerateLeaveFrame(3 * kPointerSize);
     __ blr();
 
     // Call the function proxy.
@@ -1483,25 +1482,10 @@ static void LeaveArgumentsAdaptorFrame(MacroAssembler* masm) {
   // then tear down the parameters.
   __ LoadP(r4, MemOperand(fp, -(StandardFrameConstants::kFixedFrameSizeFromFp +
                                 kPointerSize)));
-  // Could use LeaveFrame(StackFrame::ARGUMENTS_ADAPTER) here
-  // however, the sequence below is slightly more optimal
-#if V8_OOL_CONSTANT_POOL
-  __ addi(sp, fp, Operand(StandardFrameConstants::kConstantPoolOffset));
-  __ LoadP(kConstantPoolRegister, MemOperand(sp));
-  __ LoadP(fp, MemOperand(sp, kPointerSize));
-  __ LoadP(r0, MemOperand(sp, 2 * kPointerSize));
-  int slots = 3;  // adjust for kConstantPoolRegister + fp + lr below
-#else
-  __ mr(sp, fp);
-  __ LoadP(fp, MemOperand(sp));
-  __ LoadP(r0, MemOperand(sp, kPointerSize));
-  int slots = 2;  // adjust for fp + lr below
-#endif
-  __ mtlr(r0);
+  int stack_adjustment = kPointerSize;  // adjust for receiver
+  __ LeaveFrame(StackFrame::ARGUMENTS_ADAPTOR, stack_adjustment);
   __ SmiToPtrArrayOffset(r0, r4);
   __ add(sp, sp, r0);
-  __ addi(sp, sp,
-          Operand((1 + slots) * kPointerSize));  // adjust for receiver + others
 }
 
 

@@ -1644,7 +1644,7 @@ class MacroAssembler: public Assembler {
   // Activation support.
   void EnterFrame(StackFrame::Type type, bool load_constant_pool = false);
   // Returns the pc offset at which the frame ends.
-  int LeaveFrame(StackFrame::Type type);
+  int LeaveFrame(StackFrame::Type type, int stack_adjustment = 0);
 
   // Expects object in r0 and returns map with validated enum cache
   // in r0.  Assumes that any other register can be used as a scratch.
@@ -1805,9 +1805,9 @@ class FrameAndConstantPoolScope {
   // in addition.  Calling this will achieve that, but the object stays in
   // scope, the MacroAssembler is still marked as being in a frame scope, and
   // the code will be generated again when it goes out of scope.
-  void GenerateLeaveFrame() {
+  void GenerateLeaveFrame(int stack_adjustment = 0) {
     DCHECK(type_ != StackFrame::MANUAL && type_ != StackFrame::NONE);
-    masm_->LeaveFrame(type_);
+    masm_->LeaveFrame(type_, stack_adjustment);
   }
 
  private:

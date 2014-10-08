@@ -42,8 +42,8 @@ void MacroAssembler::Jump(Register target) {
 
 
 void MacroAssembler::JumpToJSEntry(Register target) {
-  DCHECK(target.is(ip));
-  Jump(target);
+  Move(ip, target);
+  Jump(ip);
 }
 
 
@@ -820,7 +820,11 @@ void MacroAssembler::EnterFrame(StackFrame::Type type,
 }
 
 
-int MacroAssembler::LeaveFrame(StackFrame::Type type) {
+int MacroAssembler::LeaveFrame(StackFrame::Type type,
+                               int stack_adjustment) {
+#if V8_OOL_CONSTANT_POOL
+  ConstantPoolUnavailableScope constant_pool_unavailable(this);
+#endif
   // r3: preserved
   // r4: preserved
   // r5: preserved
@@ -828,16 +832,18 @@ int MacroAssembler::LeaveFrame(StackFrame::Type type) {
   // Drop the execution stack down to the frame pointer and restore
   // the caller frame pointer, return address and constant pool pointer.
   int frame_ends;
+  LoadP(r0, MemOperand(fp, StandardFrameConstants::kCallerPCOffset));
+  LoadP(ip, MemOperand(fp, StandardFrameConstants::kCallerFPOffset));
 #if V8_OOL_CONSTANT_POOL
-  addi(sp, fp, Operand(StandardFrameConstants::kConstantPoolOffset));
-  frame_ends = pc_offset();
-  Pop(r0, fp, kConstantPoolRegister);
-#else
-  mr(sp, fp);
-  frame_ends = pc_offset();
-  Pop(r0, fp);
+  int offset = ((type == StackFrame::EXIT)
+                ? ExitFrameConstants::kConstantPoolOffset
+                : StandardFrameConstants::kConstantPoolOffset);
+  LoadP(kConstantPoolRegister, MemOperand(fp, offset));
 #endif
   mtlr(r0);
+  frame_ends = pc_offset();
+  Add(sp, fp, StandardFrameConstants::kCallerSPOffset + stack_adjustment, r0);
+  mr(fp, ip);
   return frame_ends;
 }
 
@@ -984,14 +990,7 @@ void MacroAssembler::LeaveExitFrame(bool save_doubles,
 #endif
 
   // Tear down the exit frame, pop the arguments, and return.
-#if V8_OOL_CONSTANT_POOL
-  LoadP(kConstantPoolRegister,
-        MemOperand(fp, ExitFrameConstants::kConstantPoolOffset));
-#endif
-  mr(sp, fp);
-  pop(fp);
-  pop(r0);
-  mtlr(r0);
+  LeaveFrame(StackFrame::EXIT);
 
   if (argument_count.is_valid()) {
     ShiftLeftImm(argument_count, argument_count, Operand(kPointerSizeLog2));
