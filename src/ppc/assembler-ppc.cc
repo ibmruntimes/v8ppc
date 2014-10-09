@@ -1594,11 +1594,7 @@ void Assembler::mov(Register dst, const Operand& src) {
     DCHECK(is_constant_pool_available());
     ConstantPoolAddEntry(rinfo);
 #if V8_TARGET_ARCH_PPC64
-    BlockTrampolinePoolScope block_trampoline_pool(this);
-    // We are forced to use 2 instruction sequence since the constant
-    // pool pointer is tagged.
-    li(dst, Operand::Zero());
-    ldx(dst, MemOperand(kConstantPoolRegister, dst));
+    ld(dst, MemOperand(kConstantPoolRegister, 0));
 #else
     lwz(dst, MemOperand(kConstantPoolRegister, 0));
 #endif
