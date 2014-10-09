@@ -5506,19 +5506,32 @@ const int kApiPointerSize = sizeof(void*);  // NOLINT
 const int kApiIntSize = sizeof(int);  // NOLINT
 const int kApiInt64Size = sizeof(int64_t);  // NOLINT
 
-// Tag information for HeapObject.
-const int kHeapObjectTag = 1;
-const int kHeapObjectTagSize = 2;
+// Tag information for Heap Objects.
+
+template <size_t ptr_size> struct HeapObjectTagging;
+
+// HeapObject tagging for 32-bit systems.
+template <> struct HeapObjectTagging<4> {
+  static const int kHeapObjectTagSize = 2;
+  static const int kHeapObjectTag = 1;
+};
+
+// HeapObject tagging for 64-bit systems.
+template <> struct HeapObjectTagging<8> {
+  static const int kHeapObjectTagSize = 3;
+  static const int kHeapObjectTag = 4;
+};
+
+typedef HeapObjectTagging<kApiPointerSize> PlatformHeapObjectTagging;
+const int kHeapObjectTag = PlatformHeapObjectTagging::kHeapObjectTag;
+const int kHeapObjectTagSize = PlatformHeapObjectTagging::kHeapObjectTagSize;
 const intptr_t kHeapObjectTagMask = (1 << kHeapObjectTagSize) - 1;
 
 // Tag information for Smi.
-const int kSmiTag = 0;
-const int kSmiTagSize = 1;
-const intptr_t kSmiTagMask = (1 << kSmiTagSize) - 1;
 
 template <size_t ptr_size> struct SmiTagging;
 
-template<int kSmiShiftSize>
+template<int kSmiTag, int kSmiTagSize, int kSmiShiftSize>
 V8_INLINE internal::Object* IntToSmi(int value) {
   int smi_shift_bits = kSmiTagSize + kSmiShiftSize;
   intptr_t tagged_value =
@@ -5528,15 +5541,17 @@ V8_INLINE internal::Object* IntToSmi(int value) {
 
 // Smi constants for 32-bit systems.
 template <> struct SmiTagging<4> {
-  static const int kSmiShiftSize = 0;
+  static const int kSmiTag = 0;
+  static const int kSmiTagSize = 1;
   static const int kSmiValueSize = 31;
+  static const int kSmiShiftSize = 32 - (kSmiValueSize + kSmiTagSize);
   V8_INLINE static int SmiToInt(const internal::Object* value) {
     int shift_bits = kSmiTagSize + kSmiShiftSize;
     // Throw away top 32 bits and shift down (requires >> to be sign extending).
     return static_cast<int>(reinterpret_cast<intptr_t>(value)) >> shift_bits;
   }
   V8_INLINE static internal::Object* IntToSmi(int value) {
-    return internal::IntToSmi<kSmiShiftSize>(value);
+    return internal::IntToSmi<kSmiTag, kSmiTagSize, kSmiShiftSize>(value);
   }
   V8_INLINE static bool IsValidSmi(intptr_t value) {
     // To be representable as an tagged small integer, the two
@@ -5556,15 +5571,17 @@ template <> struct SmiTagging<4> {
 
 // Smi constants for 64-bit systems.
 template <> struct SmiTagging<8> {
-  static const int kSmiShiftSize = 31;
+  static const int kSmiTag = 0;
+  static const int kSmiTagSize = 3;
   static const int kSmiValueSize = 32;
+  static const int kSmiShiftSize = 64 - (kSmiValueSize + kSmiTagSize);
   V8_INLINE static int SmiToInt(const internal::Object* value) {
     int shift_bits = kSmiTagSize + kSmiShiftSize;
     // Shift down and throw away top 32 bits.
     return static_cast<int>(reinterpret_cast<intptr_t>(value) >> shift_bits);
   }
   V8_INLINE static internal::Object* IntToSmi(int value) {
-    return internal::IntToSmi<kSmiShiftSize>(value);
+    return internal::IntToSmi<kSmiTag, kSmiTagSize, kSmiShiftSize>(value);
   }
   V8_INLINE static bool IsValidSmi(intptr_t value) {
     // To be representable as a long smi, the value must be a 32-bit integer.
@@ -5573,10 +5590,14 @@ template <> struct SmiTagging<8> {
 };
 
 typedef SmiTagging<kApiPointerSize> PlatformSmiTagging;
+const int kSmiTag = PlatformSmiTagging::kSmiTag;
+const int kSmiTagSize = PlatformSmiTagging::kSmiTagSize;
 const int kSmiShiftSize = PlatformSmiTagging::kSmiShiftSize;
 const int kSmiValueSize = PlatformSmiTagging::kSmiValueSize;
+const intptr_t kSmiTagMask = (1 << kSmiTagSize) - 1;
 V8_INLINE static bool SmiValuesAre31Bits() { return kSmiValueSize == 31; }
 V8_INLINE static bool SmiValuesAre32Bits() { return kSmiValueSize == 32; }
+
 
 /**
  * This class exports constants and functionality from within v8 that

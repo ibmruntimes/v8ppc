@@ -2257,11 +2257,7 @@ void MacroAssembler::TryGetFunctionPrototype(Register function,
     lwz(scratch,
         FieldMemOperand(scratch, SharedFunctionInfo::kCompilerHintsOffset));
     TestBit(scratch,
-#if V8_TARGET_ARCH_PPC64
-            SharedFunctionInfo::kBoundFunction,
-#else
             SharedFunctionInfo::kBoundFunction + kSmiTagSize,
-#endif
             r0);
     bne(miss, cr0);
 
@@ -3709,12 +3705,6 @@ void MacroAssembler::SetRelocatedValue(Register location,
 #if V8_OOL_CONSTANT_POOL
   if (emit_debug_code()) {
     // Check that the instruction sequence is a load from the constant pool
-#if V8_TARGET_ARCH_PPC64
-    And(scratch, scratch, Operand(kOpcodeMask | (0x1f * B16)));
-    Cmpi(scratch, Operand(ADDI), r0);
-    Check(eq, kTheInstructionShouldBeALi);
-    lwz(scratch, MemOperand(location, kInstrSize));
-#endif
     ExtractBitMask(scratch, scratch, 0x1f * B16);
     cmpi(scratch, Operand(kConstantPoolRegister.code()));
     Check(eq, kTheInstructionToPatchShouldBeALoadFromConstantPool);
@@ -3813,12 +3803,6 @@ void MacroAssembler::GetRelocatedValue(Register location,
 #if V8_OOL_CONSTANT_POOL
   if (emit_debug_code()) {
     // Check that the instruction sequence is a load from the constant pool
-#if V8_TARGET_ARCH_PPC64
-    And(result, result, Operand(kOpcodeMask | (0x1f * B16)));
-    Cmpi(result, Operand(ADDI), r0);
-    Check(eq, kTheInstructionShouldBeALi);
-    lwz(result, MemOperand(location, kInstrSize));
-#endif
     ExtractBitMask(result, result, 0x1f * B16);
     cmpi(result, Operand(kConstantPoolRegister.code()));
     Check(eq, kTheInstructionToPatchShouldBeALoadFromConstantPool);
@@ -4279,13 +4263,7 @@ void MacroAssembler::LoadDoubleLiteral(DoubleRegister result,
   if (is_constant_pool_available() && !is_constant_pool_full()) {
     RelocInfo rinfo(pc_, value);
     ConstantPoolAddEntry(rinfo);
-#if V8_TARGET_ARCH_PPC64
-    // We use 2 instruction sequence here for consistency with mov.
-    li(scratch, Operand::Zero());
-    lfdx(result, MemOperand(kConstantPoolRegister, scratch));
-#else
     lfd(result, MemOperand(kConstantPoolRegister, 0));
-#endif
     return;
   }
 #endif
@@ -4657,9 +4635,10 @@ void MacroAssembler::LoadP(Register dst, const MemOperand& mem,
                            Register scratch) {
   int offset = mem.offset();
 
-  if (!scratch.is(no_reg) && !is_int16(offset)) {
+  if (!is_int16(offset)) {
     /* cannot use d-form */
-    LoadIntLiteral(scratch, offset);
+    DCHECK(!scratch.is(no_reg));
+    mov(scratch, Operand(offset));
 #if V8_TARGET_ARCH_PPC64
     ldx(dst, MemOperand(mem.ra(), scratch));
 #else
@@ -4667,16 +4646,7 @@ void MacroAssembler::LoadP(Register dst, const MemOperand& mem,
 #endif
   } else {
 #if V8_TARGET_ARCH_PPC64
-    int misaligned = (offset & 3);
-    if (misaligned) {
-      // adjust base to conform to offset alignment requirements
-      // Todo: enhance to use scratch if dst is unsuitable
-      DCHECK(!dst.is(r0));
-      addi(dst, mem.ra(), Operand((offset & 3) - 4));
-      ld(dst, MemOperand(dst, (offset & ~3) + 4));
-    } else {
-      ld(dst, mem);
-    }
+    ld(dst, mem);
 #else
     lwz(dst, mem);
 #endif
@@ -4689,9 +4659,10 @@ void MacroAssembler::StoreP(Register src, const MemOperand& mem,
                             Register scratch) {
   int offset = mem.offset();
 
-  if (!scratch.is(no_reg) && !is_int16(offset)) {
+  if (!is_int16(offset)) {
     /* cannot use d-form */
-    LoadIntLiteral(scratch, offset);
+    DCHECK(!scratch.is(no_reg));
+    mov(scratch, Operand(offset));
 #if V8_TARGET_ARCH_PPC64
     stdx(src, MemOperand(mem.ra(), scratch));
 #else
@@ -4699,21 +4670,7 @@ void MacroAssembler::StoreP(Register src, const MemOperand& mem,
 #endif
   } else {
 #if V8_TARGET_ARCH_PPC64
-    int misaligned = (offset & 3);
-    if (misaligned) {
-      // adjust base to conform to offset alignment requirements
-      // a suitable scratch is required here
-      DCHECK(!scratch.is(no_reg));
-      if (scratch.is(r0)) {
-        LoadIntLiteral(scratch, offset);
-        stdx(src, MemOperand(mem.ra(), scratch));
-      } else {
-        addi(scratch, mem.ra(), Operand((offset & 3) - 4));
-        std(src, MemOperand(scratch, (offset & ~3) + 4));
-      }
-    } else {
-      std(src, mem);
-    }
+    std(src, mem);
 #else
     stw(src, mem);
 #endif
@@ -4724,9 +4681,10 @@ void MacroAssembler::LoadWordArith(Register dst, const MemOperand& mem,
                                    Register scratch) {
   int offset = mem.offset();
 
-  if (!scratch.is(no_reg) && !is_int16(offset)) {
+  if (!is_int16(offset)) {
     /* cannot use d-form */
-    LoadIntLiteral(scratch, offset);
+    DCHECK(!scratch.is(no_reg));
+    mov(scratch, Operand(offset));
 #if V8_TARGET_ARCH_PPC64
     // lwax(dst, MemOperand(mem.ra(), scratch));
     DCHECK(0);  // lwax not yet implemented
@@ -4735,16 +4693,7 @@ void MacroAssembler::LoadWordArith(Register dst, const MemOperand& mem,
 #endif
   } else {
 #if V8_TARGET_ARCH_PPC64
-    int misaligned = (offset & 3);
-    if (misaligned) {
-      // adjust base to conform to offset alignment requirements
-      // Todo: enhance to use scratch if dst is unsuitable
-      DCHECK(!dst.is(r0));
-      addi(dst, mem.ra(), Operand((offset & 3) - 4));
-      lwa(dst, MemOperand(dst, (offset & ~3) + 4));
-    } else {
-      lwa(dst, mem);
-    }
+    lwa(dst, mem);
 #else
     lwz(dst, mem);
 #endif
