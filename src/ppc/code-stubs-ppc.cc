@@ -4221,20 +4221,17 @@ void ICCompareStub::GenerateMiss(MacroAssembler* masm) {
 
     FrameAndConstantPoolScope scope(masm, StackFrame::INTERNAL);
     __ Push(r4, r3);
-    __ mflr(r0);
-    __ Push(r0, r4, r3);
+    __ Push(r4, r3);
     __ LoadSmiLiteral(r0, Smi::FromInt(op_));
     __ push(r0);
     __ CallExternalReference(miss, 3);
     // Compute the entry point of the rewritten stub.
-    __ addi(ip, r3, Operand(Code::kHeaderSize - kHeapObjectTag));
+    __ addi(r5, r3, Operand(Code::kHeaderSize - kHeapObjectTag));
     // Restore registers.
-    __ pop(r0);
-    __ mtlr(r0);
     __ Pop(r4, r3);
   }
 
-  __ JumpToJSEntry(ip);
+  __ JumpToJSEntry(r5);
 }
 
 

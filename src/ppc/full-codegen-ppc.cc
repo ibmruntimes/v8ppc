@@ -432,21 +432,22 @@ void FullCodeGenerator::EmitReturnSequence() {
     // Make sure that the constant pool is not emitted inside of the return
     // sequence.
     { Assembler::BlockTrampolinePoolScope block_trampoline_pool(masm_);
-#if V8_OOL_CONSTANT_POOL
-      ConstantPoolUnavailableScope constant_pool_unavailable(masm_);
-#endif
       int32_t sp_delta = (info_->scope()->num_parameters() + 1) * kPointerSize;
       CodeGenerator::RecordPositions(masm_, function()->end_position() - 1);
       __ RecordJSReturn();
-      int no_frame_start = __ LeaveFrame(StackFrame::JAVA_SCRIPT);
-      __ Add(sp, sp, sp_delta, r0);
+      int no_frame_start = __ LeaveFrame(StackFrame::JAVA_SCRIPT, sp_delta);
+#if V8_TARGET_ARCH_PPC64
+      // With 64bit we may need nop() instructions to ensure we have
+      // enough space to SetDebugBreakAtReturn()
+      if (is_int16(sp_delta)) {
+#if !V8_OOL_CONSTANT_POOL
+        masm_->nop();
+#endif
+        masm_->nop();
+      }
+#endif
       __ blr();
       info_->AddNoFrameRange(no_frame_start, masm_->pc_offset());
-#if V8_TARGET_ARCH_PPC64 && !V8_OOL_CONSTANT_POOL
-      // With 64bit we need a nop() instructions to ensure we have
-      // enough space to SetDebugBreakAtReturn()
-      masm_->nop();
-#endif
     }
 
 #ifdef DEBUG
