@@ -1351,7 +1351,7 @@ class MacroAssembler: public Assembler {
   // ---------------------------------------------------------------------------
   // Smi utilities
 
-  // Shift left by 1
+  // Shift left by kSmiShift
   void SmiTag(Register reg, RCBit rc = LeaveRC) {
     SmiTag(reg, reg, rc);
   }
@@ -1367,6 +1367,7 @@ class MacroAssembler: public Assembler {
   inline void JumpIfNotSmiCandidate(Register value, Register scratch,
                                     Label* not_smi_label) {
     // High bits must be identical to fit into an Smi
+    STATIC_ASSERT(kSmiShift == 1);
     addis(scratch, value, Operand(0x40000000u >> 16));
     cmpi(scratch, Operand::Zero());
     blt(not_smi_label);
@@ -1471,16 +1472,15 @@ class MacroAssembler: public Assembler {
   void UntagAndJumpIfNotSmi(Register dst, Register src, Label* non_smi_case);
 
   inline void TestIfSmi(Register value, Register scratch) {
-    TestBit(value, 0, scratch);  // tst(value, Operand(kSmiTagMask));
+    TestBitRange(value, kSmiTagSize - 1, 0, scratch);
   }
 
   inline void TestIfPositiveSmi(Register value, Register scratch) {
-    STATIC_ASSERT((kSmiTagMask | kSmiSignMask) ==
-                  (intptr_t)(1UL << (kBitsPerPointer - 1) | 1));
 #if V8_TARGET_ARCH_PPC64
-    rldicl(scratch, value, 1, kBitsPerPointer - 2, SetRC);
+    rldicl(scratch, value, 1, kBitsPerPointer - (1 + kSmiTagSize), SetRC);
 #else
-    rlwinm(scratch, value, 1, kBitsPerPointer - 2, kBitsPerPointer - 1, SetRC);
+    rlwinm(scratch, value, 1, kBitsPerPointer - (1 + kSmiTagSize),
+           kBitsPerPointer - 1, SetRC);
 #endif
   }
 
@@ -1520,6 +1520,18 @@ class MacroAssembler: public Assembler {
     srawi(scratch, lo_word, 31);
     cmp(scratch, hi_word, cr);
   }
+#endif
+
+#if V8_TARGET_ARCH_PPC64
+  // Ensure it is permissable to read/write int value directly from
+  // upper half of the smi.
+  STATIC_ASSERT(kSmiTag == 0);
+  STATIC_ASSERT(kSmiTagSize + kSmiShiftSize == 32);
+#endif
+#if V8_TARGET_ARCH_PPC64 && V8_TARGET_LITTLE_ENDIAN
+#define SmiWordOffset(offset) (offset + kPointerSize / 2)
+#else
+#define SmiWordOffset(offset) offset
 #endif
 
   // Abort execution if argument is not a string, enabled via --debug-code.

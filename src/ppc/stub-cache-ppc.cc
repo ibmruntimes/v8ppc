@@ -57,8 +57,14 @@ static void ProbeTable(Isolate* isolate,
 
   // Calculate the base address of the entry.
   __ mov(base_addr, Operand(key_offset));
-  __ ShiftLeftImm(scratch2, offset_scratch, Operand(kPointerSizeLog2));
-  __ add(base_addr, base_addr, scratch2);
+#if V8_TARGET_ARCH_PPC64
+  DCHECK(kPointerSizeLog2 > StubCache::kCacheIndexShift);
+  __ ShiftLeftImm(offset_scratch, offset_scratch,
+                  Operand(kPointerSizeLog2 - StubCache::kCacheIndexShift));
+#else
+  DCHECK(kPointerSizeLog2 == StubCache::kCacheIndexShift);
+#endif
+  __ add(base_addr, base_addr, offset_scratch);
 
   // Check that the key in the entry matches the name.
   __ LoadP(ip, MemOperand(base_addr, 0));
@@ -210,19 +216,10 @@ void StubCache::GenerateProbe(MacroAssembler* masm,
   __ lwz(scratch, FieldMemOperand(name, Name::kHashFieldOffset));
   __ LoadP(ip, FieldMemOperand(receiver, HeapObject::kMapOffset));
   __ add(scratch, scratch, ip);
-#if V8_TARGET_ARCH_PPC64
-  // Use only the low 32 bits of the map pointer.
-  __ rldicl(scratch, scratch, 0, 32);
-#endif
-  uint32_t mask = kPrimaryTableSize - 1;
-  // We shift out the last two bits because they are not part of the hash and
-  // they are always 01 for maps.
-  __ ShiftRightImm(scratch, scratch, Operand(kCacheIndexShift));
-  // Mask down the eor argument to the minimum to keep the immediate
-  // encodable.
-  __ xori(scratch, scratch, Operand((flags >> kCacheIndexShift) & mask));
-  // Prefer and_ to ubfx here because ubfx takes 2 cycles.
-  __ andi(scratch, scratch, Operand(mask));
+  __ xori(scratch, scratch, Operand(flags));
+  // The mask omits the last two bits because they are not part of the hash.
+  __ andi(scratch, scratch,
+          Operand((kPrimaryTableSize - 1) << kCacheIndexShift));
 
   // Probe the primary table.
   ProbeTable(isolate,
@@ -237,11 +234,10 @@ void StubCache::GenerateProbe(MacroAssembler* masm,
              extra3);
 
   // Primary miss: Compute hash for secondary probe.
-  __ ShiftRightImm(extra, name, Operand(kCacheIndexShift));
-  __ sub(scratch, scratch, extra);
-  uint32_t mask2 = kSecondaryTableSize - 1;
-  __ addi(scratch, scratch, Operand((flags >> kCacheIndexShift) & mask2));
-  __ andi(scratch, scratch, Operand(mask2));
+  __ sub(scratch, scratch, name);
+  __ addi(scratch, scratch, Operand(flags));
+  __ andi(scratch, scratch,
+          Operand((kSecondaryTableSize - 1) << kCacheIndexShift));
 
   // Probe the secondary table.
   ProbeTable(isolate,

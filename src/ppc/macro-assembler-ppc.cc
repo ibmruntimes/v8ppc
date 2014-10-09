@@ -1812,8 +1812,7 @@ void MacroAssembler::UndoAllocationInNewSpace(Register object,
       ExternalReference::new_space_allocation_top_address(isolate());
 
   // Make sure the object has no tag before resetting top.
-  mov(r0, Operand(~kHeapObjectTagMask));
-  and_(object, object, r0);
+  ClearRightImm(object, object, Operand(kHeapObjectTagSize));
   // was.. and_(object, object, Operand(~kHeapObjectTagMask));
 #ifdef DEBUG
   // Check that the object un-allocated is below the current top.
@@ -2997,7 +2996,6 @@ void MacroAssembler::JumpIfNotBothSmi(Register reg1,
                                       Register reg2,
                                       Label* on_not_both_smi) {
   STATIC_ASSERT(kSmiTag == 0);
-  DCHECK_EQ(1, static_cast<int>(kSmiTagMask));
   orx(r0, reg1, reg2, LeaveRC);
   JumpIfNotSmi(r0, on_not_both_smi);
 }
@@ -3006,8 +3004,7 @@ void MacroAssembler::JumpIfNotBothSmi(Register reg1,
 void MacroAssembler::UntagAndJumpIfSmi(
     Register dst, Register src, Label* smi_case) {
   STATIC_ASSERT(kSmiTag == 0);
-  STATIC_ASSERT(kSmiTagSize == 1);
-  TestBit(src, 0, r0);
+  TestBitRange(src, kSmiTagSize - 1, 0, r0);
   SmiUntag(dst, src);
   beq(smi_case, cr0);
 }
@@ -3016,8 +3013,7 @@ void MacroAssembler::UntagAndJumpIfSmi(
 void MacroAssembler::UntagAndJumpIfNotSmi(
     Register dst, Register src, Label* non_smi_case) {
   STATIC_ASSERT(kSmiTag == 0);
-  STATIC_ASSERT(kSmiTagSize == 1);
-  TestBit(src, 0, r0);
+  TestBitRange(src, kSmiTagSize - 1, 0, r0);
   SmiUntag(dst, src);
   bne(non_smi_case, cr0);
 }

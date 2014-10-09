@@ -183,7 +183,6 @@ TARGET_TEST_F(ChangeLowering32Test, ChangeTaggedToFloat64) {
   Node* branch = NodeProperties::GetControlInput(if_true);
   EXPECT_EQ(branch, NodeProperties::GetControlInput(if_false));
   STATIC_ASSERT(kSmiTag == 0);
-  STATIC_ASSERT(kSmiTagSize == 1);
   EXPECT_THAT(branch, IsBranch(IsWord32And(val, IsInt32Constant(kSmiTagMask)),
                                graph()->start()));
 }
@@ -247,7 +246,6 @@ TARGET_TEST_F(ChangeLowering64Test, ChangeTaggedToFloat64) {
   Node* branch = NodeProperties::GetControlInput(if_true);
   EXPECT_EQ(branch, NodeProperties::GetControlInput(if_false));
   STATIC_ASSERT(kSmiTag == 0);
-  STATIC_ASSERT(kSmiTagSize == 1);
   EXPECT_THAT(branch, IsBranch(IsWord64And(val, IsInt32Constant(kSmiTagMask)),
                                graph()->start()));
 }
