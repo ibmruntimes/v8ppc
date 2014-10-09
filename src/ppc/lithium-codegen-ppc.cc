@@ -119,6 +119,7 @@ bool LCodeGen::GeneratePrologue() {
     // cp: Callee's context.
     // fp: Caller's frame pointer.
     // lr: Caller's pc.
+    // ip: Our own function entry (required by the prologue)
 
     // Sloppy mode functions and builtins need to replace the receiver with the
     // global proxy when called as functions (without an explicit receiver
@@ -141,12 +142,20 @@ bool LCodeGen::GeneratePrologue() {
     }
   }
 
-  info()->set_prologue_offset(masm_->pc_offset());
+  int prologue_offset = masm_->pc_offset();
+
+  if (prologue_offset) {
+    // Prologue logic requires it's starting address in ip and the
+    // corresponding offset from the function entry.
+    prologue_offset += Instruction::kInstrSize;
+    __ addi(ip, ip, Operand(prologue_offset));
+  }
+  info()->set_prologue_offset(prologue_offset);
   if (NeedsEagerFrame()) {
     if (info()->IsStub()) {
-      __ StubPrologue();
+      __ StubPrologue(prologue_offset);
     } else {
-      __ Prologue(info()->IsCodePreAgingActive());
+      __ Prologue(info()->IsCodePreAgingActive(), prologue_offset);
     }
     frame_is_built_ = true;
     info_->AddNoFrameRange(0, masm_->pc_offset());
@@ -292,8 +301,7 @@ bool LCodeGen::GenerateDeferredCode() {
       if (NeedsDeferredFrame()) {
         Comment(";;; Destroy frame");
         DCHECK(frame_is_built_);
-        __ pop(ip);
-        __ PopFixedFrame();
+        __ PopFixedFrame(ip);
         frame_is_built_ = false;
       }
       __ b(code->exit());
@@ -3831,7 +3839,7 @@ void LCodeGen::CallKnownFunction(Handle<JSFunction> function,
       __ CallSelf();
     } else {
       __ LoadP(ip, FieldMemOperand(r4, JSFunction::kCodeEntryOffset));
-      __ Call(ip);
+      __ CallJSEntry(ip);
     }
 
     // Set up deoptimization.
@@ -4203,8 +4211,8 @@ void LCodeGen::DoCallWithDescriptor(LCallWithDescriptor* instr) {
     DCHECK(instr->target()->IsRegister());
     Register target = ToRegister(instr->target());
     generator.BeforeCall(__ CallSize(target));
-    __ addi(target, target, Operand(Code::kHeaderSize - kHeapObjectTag));
-    __ Call(target);
+    __ addi(ip, target, Operand(Code::kHeaderSize - kHeapObjectTag));
+    __ CallJSEntry(ip);
   }
   generator.AfterCall();
 }
@@ -4223,7 +4231,7 @@ void LCodeGen::DoCallJSFunction(LCallJSFunction* instr) {
 
   // Load the code entry address
   __ LoadP(ip, FieldMemOperand(r4, JSFunction::kCodeEntryOffset));
-  __ Call(ip);
+  __ CallJSEntry(ip);
 
   RecordSafepointWithLazyDeopt(instr, RECORD_SIMPLE_SAFEPOINT);
 }
