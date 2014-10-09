@@ -3206,11 +3206,7 @@ void LCodeGen::DoLoadNamedField(LLoadNamedField* instr) {
   if (representation.IsSmi() &&
       instr->hydrogen()->representation().IsInteger32()) {
     // Read int value directly from upper half of the smi.
-    STATIC_ASSERT(kSmiTag == 0);
-    STATIC_ASSERT(kSmiTagSize + kSmiShiftSize == 32);
-#if V8_TARGET_LITTLE_ENDIAN
-    offset += kPointerSize / 2;
-#endif
+    offset = SmiWordOffset(offset);
     representation = Representation::Integer32();
   }
 #endif
@@ -3516,11 +3512,7 @@ void LCodeGen::DoLoadKeyedFixedArray(LLoadKeyed* instr) {
       hinstr->elements_kind() == FAST_SMI_ELEMENTS) {
     DCHECK(!requires_hole_check);
     // Read int value directly from upper half of the smi.
-    STATIC_ASSERT(kSmiTag == 0);
-    STATIC_ASSERT(kSmiTagSize + kSmiShiftSize == 32);
-#if V8_TARGET_LITTLE_ENDIAN
-    offset += kPointerSize / 2;
-#endif
+    offset = SmiWordOffset(offset);
   }
 #endif
 
@@ -4418,11 +4410,7 @@ void LCodeGen::DoStoreNamedField(LStoreNamedField* instr) {
       hinstr->value()->representation().IsInteger32()) {
     DCHECK(hinstr->store_mode() == STORE_TO_INITIALIZED_ENTRY);
     // Store int value directly to upper half of the smi.
-    STATIC_ASSERT(kSmiTag == 0);
-    STATIC_ASSERT(kSmiTagSize + kSmiShiftSize == 32);
-#if V8_TARGET_LITTLE_ENDIAN
-    offset += kPointerSize / 2;
-#endif
+    offset = SmiWordOffset(offset);
     representation = Representation::Integer32();
   }
 #endif
@@ -4696,11 +4684,7 @@ void LCodeGen::DoStoreKeyedFixedArray(LStoreKeyed* instr) {
     DCHECK(hinstr->store_mode() == STORE_TO_INITIALIZED_ENTRY);
     DCHECK(hinstr->elements_kind() == FAST_SMI_ELEMENTS);
     // Store int value directly to upper half of the smi.
-    STATIC_ASSERT(kSmiTag == 0);
-    STATIC_ASSERT(kSmiTagSize + kSmiShiftSize == 32);
-#if V8_TARGET_LITTLE_ENDIAN
-    offset += kPointerSize / 2;
-#endif
+    offset = SmiWordOffset(offset);
   }
 #endif
 
@@ -5140,7 +5124,6 @@ void LCodeGen::DoSmiUntag(LSmiUntag* instr) {
   Register input = ToRegister(instr->value());
   Register result = ToRegister(instr->result());
   if (instr->needs_check()) {
-    STATIC_ASSERT(kHeapObjectTag == 1);
     // If the input is a HeapObject, value of scratch won't be zero.
     __ andi(scratch, input, Operand(kHeapObjectTag));
     __ SmiUntag(result, input);
@@ -5687,7 +5670,6 @@ void LCodeGen::DoAllocate(LAllocate* instr) {
   __ bind(deferred->exit());
 
   if (instr->hydrogen()->MustPrefillWithFiller()) {
-    STATIC_ASSERT(kHeapObjectTag == 1);
     if (instr->size()->IsConstantOperand()) {
       int32_t size = ToInteger32(LConstantOperand::cast(instr->size()));
       __ LoadIntLiteral(scratch, size - kHeapObjectTag);
