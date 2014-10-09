@@ -253,8 +253,6 @@ static const int kNoCodeAgeSequenceNops = (kNoCodeAgeSequenceInstructions -
 static const int kCodeAgingSequenceNops = (kNoCodeAgeSequenceInstructions -
                                            kCodeAgingInstructions);
 static const int kCodeAgingTargetDelta = 1 * Assembler::kInstrSize;
-static const int kCodeAgingPatchDelta = (kCodeAgingInstructions *
-                                         Assembler::kInstrSize);
 static const int kNoCodeAgeSequenceLength = (kNoCodeAgeSequenceInstructions *
                                              Assembler::kInstrSize);
 

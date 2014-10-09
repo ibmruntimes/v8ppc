@@ -1685,8 +1685,8 @@ void JSEntryStub::GenerateBody(MacroAssembler* masm, bool is_construct) {
 
   // Branch and link to JSEntryTrampoline.
   // the address points to the start of the code object, skip the header
-  __ addi(r0, ip, Operand(Code::kHeaderSize - kHeapObjectTag));
-  __ mtlr(r0);
+  __ addi(ip, ip, Operand(Code::kHeaderSize - kHeapObjectTag));
+  __ mtlr(ip);
   __ bclr(BA, SetLK);  // make the call
 
   // Unlink this frame from the handler chain.
@@ -3088,8 +3088,8 @@ void CallConstructStub::Generate(MacroAssembler* masm) {
   __ LoadP(jmp_reg, FieldMemOperand(r4, JSFunction::kSharedFunctionInfoOffset));
   __ LoadP(jmp_reg, FieldMemOperand(jmp_reg,
                                   SharedFunctionInfo::kConstructStubOffset));
-  __ addi(r0, jmp_reg, Operand(Code::kHeaderSize - kHeapObjectTag));
-  __ Jump(r0);
+  __ addi(ip, jmp_reg, Operand(Code::kHeaderSize - kHeapObjectTag));
+  __ JumpToJSEntry(ip);
 
   // r3: number of arguments
   // r4: called object
@@ -4223,18 +4223,18 @@ void ICCompareStub::GenerateMiss(MacroAssembler* masm) {
     __ Push(r4, r3);
     __ mflr(r0);
     __ Push(r0, r4, r3);
-    __ LoadSmiLiteral(ip, Smi::FromInt(op_));
-    __ push(ip);
+    __ LoadSmiLiteral(r0, Smi::FromInt(op_));
+    __ push(r0);
     __ CallExternalReference(miss, 3);
     // Compute the entry point of the rewritten stub.
-    __ addi(r5, r3, Operand(Code::kHeaderSize - kHeapObjectTag));
+    __ addi(ip, r3, Operand(Code::kHeaderSize - kHeapObjectTag));
     // Restore registers.
     __ pop(r0);
     __ mtlr(r0);
     __ Pop(r4, r3);
   }
 
-  __ Jump(r5);
+  __ JumpToJSEntry(ip);
 }
 
 
@@ -4822,24 +4822,24 @@ void ProfileEntryHookStub::MaybeCallEntryHook(MacroAssembler* masm) {
   if (masm->isolate()->function_entry_hook() != NULL) {
     PredictableCodeSizeScope predictable(masm,
 #if V8_TARGET_ARCH_PPC64
-                                         12 * Assembler::kInstrSize);
+                                         14 * Assembler::kInstrSize);
 #else
-                                         9 * Assembler::kInstrSize);
+                                         11 * Assembler::kInstrSize);
 #endif
     ProfileEntryHookStub stub(masm->isolate());
     __ mflr(r0);
-    __ push(r0);
+    __ Push(r0, ip);
     __ CallStub(&stub);
-    __ pop(r0);
+    __ Pop(r0, ip);
     __ mtlr(r0);
   }
 }
 
 
 void ProfileEntryHookStub::Generate(MacroAssembler* masm) {
-  // The entry hook is a "push lr" instruction, followed by a call.
+  // The entry hook is a "push lr, ip" instruction, followed by a call.
   const int32_t kReturnAddressDistanceFromFunctionStart =
-      Assembler::kCallTargetAddressOffset + 2 * Assembler::kInstrSize;
+      Assembler::kCallTargetAddressOffset + 3 * Assembler::kInstrSize;
 
   // This should contain all kJSCallerSaved registers.
   const RegList kSavedRegs =
@@ -4850,16 +4850,15 @@ void ProfileEntryHookStub::Generate(MacroAssembler* masm) {
   const int32_t kNumSavedRegs = kNumJSCallerSaved + 2;
 
   // Save all caller-save registers as this may be called from anywhere.
-  __ mflr(r0);
-  __ MultiPush(kSavedRegs | r0.bit());
+  __ mflr(ip);
+  __ MultiPush(kSavedRegs | ip.bit());
 
   // Compute the function's address for the first argument.
-  __ mr(r3, r0);
-  __ subi(r3, r3, Operand(kReturnAddressDistanceFromFunctionStart));
+  __ subi(r3, ip, Operand(kReturnAddressDistanceFromFunctionStart));
 
-  // The caller's return address is above the saved temporaries.
+  // The caller's return address is two slots above the saved temporaries.
   // Grab that for the second argument to the hook.
-  __ addi(r4, sp, Operand(kNumSavedRegs * kPointerSize));
+  __ addi(r4, sp, Operand((kNumSavedRegs + 1) * kPointerSize));
 
   // Align the stack if necessary.
   int frame_alignment = masm->ActivationFrameAlignment();
@@ -4908,8 +4907,8 @@ void ProfileEntryHookStub::Generate(MacroAssembler* masm) {
   }
 
   // Also pop lr to get Ret(0).
-  __ MultiPop(kSavedRegs | r0.bit());
-  __ mtlr(r0);
+  __ MultiPop(kSavedRegs | ip.bit());
+  __ mtlr(ip);
   __ Ret();
 }
 
