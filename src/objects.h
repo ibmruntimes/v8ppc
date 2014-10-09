@@ -9001,6 +9001,9 @@ class Name: public HeapObject {
   // Conversion.
   inline bool AsArrayIndex(uint32_t* index);
 
+  // Whether name can only name own properties.
+  inline bool IsOwn();
+
   DECLARE_CAST(Name)
 
   DECLARE_PRINTER(Name)
@@ -9081,6 +9084,10 @@ class Symbol: public Name {
   // [is_private]: whether this is a private symbol.
   DECL_BOOLEAN_ACCESSORS(is_private)
 
+  // [is_own]: whether this is an own symbol, that is, only used to designate
+  // own properties of objects.
+  DECL_BOOLEAN_ACCESSORS(is_own)
+
   DECLARE_CAST(Symbol)
 
   // Dispatched behavior.
@@ -9096,6 +9103,7 @@ class Symbol: public Name {
 
  private:
   static const int kPrivateBit = 0;
+  static const int kOwnBit = 1;
 
   DISALLOW_IMPLICIT_CONSTRUCTORS(Symbol);
 };

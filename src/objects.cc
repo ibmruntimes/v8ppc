@@ -3567,6 +3567,11 @@ void JSObject::LookupRealNamedProperty(Handle<Name> name,
 
 void JSObject::LookupRealNamedPropertyInPrototypes(Handle<Name> name,
                                                    LookupResult* result) {
+  if (name->IsOwn()) {
+    result->NotFound();
+    return;
+  }
+
   DisallowHeapAllocation no_gc;
   Isolate* isolate = GetIsolate();
   for (PrototypeIterator iter(isolate, this); !iter.IsAtEnd(); iter.Advance()) {
@@ -6114,7 +6119,7 @@ void JSReceiver::LookupOwn(
   }
 
   js_object->LookupOwnRealNamedProperty(name, result);
-  if (result->IsFound() || !search_hidden_prototypes) return;
+  if (result->IsFound() || name->IsOwn() || !search_hidden_prototypes) return;
 
   PrototypeIterator iter(GetIsolate(), js_object);
   if (!iter.GetCurrent()->IsJSReceiver()) return;
@@ -6133,6 +6138,10 @@ void JSReceiver::Lookup(Handle<Name> name, LookupResult* result) {
        !iter.IsAtEnd(); iter.Advance()) {
     JSReceiver::cast(iter.GetCurrent())->LookupOwn(name, result, false);
     if (result->IsFound()) return;
+    if (name->IsOwn()) {
+      result->NotFound();
+      return;
+    }
   }
   result->NotFound();
 }
