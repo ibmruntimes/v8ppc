@@ -677,7 +677,7 @@ Handle<Code> NamedLoadHandlerCompiler::CompileLoadGlobal(
   __ LoadP(result, FieldMemOperand(result, Cell::kValueOffset));
 
   // Check for deleted property if property can actually be deleted.
-  if (!is_configurable) {
+  if (is_configurable) {
     __ LoadRoot(ip, Heap::kTheHoleValueRootIndex);
     __ cmp(result, ip);
     __ beq(&miss);
