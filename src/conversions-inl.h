@@ -69,7 +69,12 @@ inline unsigned int FastD2UI(double x) {
 inline double DoubleToInteger(double x) {
   if (std::isnan(x)) return 0;
   if (!std::isfinite(x) || x == 0) return x;
+#if V8_OS_AIX
+  // AIX ceil does not return negative zero.
+  return (x >= 0) ? std::floor(x) : -std::floor(-x);
+#else
   return (x >= 0) ? std::floor(x) : std::ceil(x);
+#endif
 }
 
 
