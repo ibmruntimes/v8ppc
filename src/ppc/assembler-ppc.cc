@@ -81,6 +81,10 @@ void CpuFeatures::ProbeImpl(bool cross_compile) {
       cpu.part() == base::CPU::PPC_POWER8) {
     supported_ |= (1u << LWSYNC);
   }
+  if (cpu.part() == base::CPU::PPC_POWER7 ||
+      cpu.part() == base::CPU::PPC_POWER8) {
+    supported_ |= (1u << ISELECT);
+  }
 #if V8_OS_LINUX
   if (!(cpu.part() == base::CPU::PPC_G5 || cpu.part() == base::CPU::PPC_G4)) {
     // Assume support
@@ -96,6 +100,7 @@ void CpuFeatures::ProbeImpl(bool cross_compile) {
 #else  // Simulator
   supported_ |= (1u << FPU);
   supported_ |= (1u << LWSYNC);
+  supported_ |= (1u << ISELECT);
 #if V8_TARGET_ARCH_PPC64
   supported_ |= (1u << FPR_GPR_MOV);
 #endif
@@ -1062,6 +1067,11 @@ void Assembler::cmplw(Register src1, Register src2, CRegister cr) {
   DCHECK(cr.code() >= 0 && cr.code() <= 7);
   emit(EXT2 | CMPL | cr.code()*B23 | L*B21 | src1.code()*B16 |
        src2.code()*B11);
+}
+
+
+void Assembler::isel(Register rt, Register ra, Register rb, int cb) {
+  emit(EXT2 | ISEL | rt.code()*B21 | ra.code()*B16 | rb.code()*B11 | cb*B6);
 }
 
 

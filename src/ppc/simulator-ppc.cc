@@ -2434,6 +2434,18 @@ void Simulator::ExecuteExt2_9bit_part2(Instruction* instr) {
       set_register(rt, condition_reg_);
       break;
     }
+    case ISEL: {
+      int rt = instr->RTValue();
+      int ra = instr->RAValue();
+      int rb = instr->RBValue();
+      int condition_bit = instr->RCValue();
+      int condition_mask = 0x80000000 >> condition_bit;
+      intptr_t ra_val = (ra == 0) ? 0 : get_register(ra);
+      intptr_t rb_val = get_register(rb);
+      intptr_t value = (condition_reg_ & condition_mask) ? ra_val : rb_val;
+      set_register(rt, value);
+      break;
+    }
     case STWUX:
     case STWX: {
       int rs = instr->RSValue();

@@ -1881,7 +1881,6 @@ void LCodeGen::DoSubI(LSubI* instr) {
     }
 #endif
   }
-
 }
 
 
@@ -2121,12 +2120,16 @@ void LCodeGen::DoMathMinMax(LMathMinMax* instr) {
       __ cmpw(left_reg, right_reg);
     }
 #endif
-    __ b(cond, &return_left);
-    __ Move(result_reg, right_reg);
-    __ b(&done);
-    __ bind(&return_left);
-    __ Move(result_reg, left_reg);
-    __ bind(&done);
+    if (CpuFeatures::IsSupported(ISELECT)) {
+      __ isel(cond, result_reg, left_reg, right_reg);
+    } else {
+      __ b(cond, &return_left);
+      __ Move(result_reg, right_reg);
+      __ b(&done);
+      __ bind(&return_left);
+      __ Move(result_reg, left_reg);
+      __ bind(&done);
+    }
   } else {
     DCHECK(instr->hydrogen()->representation().IsDouble());
     DoubleRegister left_reg = ToDoubleRegister(left);
@@ -2869,15 +2872,22 @@ void LCodeGen::DoInstanceOf(LInstanceOf* instr) {
   InstanceofStub stub(isolate(), InstanceofStub::kArgsInRegisters);
   CallCode(stub.GetCode(), RelocInfo::CODE_TARGET, instr);
 
-  Label equal, done;
-  __ cmpi(r3, Operand::Zero());
-  __ beq(&equal);
-  __ mov(r3, Operand(factory()->false_value()));
-  __ b(&done);
+  if (CpuFeatures::IsSupported(ISELECT)) {
+    __ mov(r4, Operand(factory()->true_value()));
+    __ mov(r5, Operand(factory()->false_value()));
+    __ cmpi(r3, Operand::Zero());
+    __ isel(eq, r3, r4, r5);
+  } else {
+    Label equal, done;
+    __ cmpi(r3, Operand::Zero());
+    __ beq(&equal);
+    __ mov(r3, Operand(factory()->false_value()));
+    __ b(&done);
 
-  __ bind(&equal);
-  __ mov(r3, Operand(factory()->true_value()));
-  __ bind(&done);
+    __ bind(&equal);
+    __ mov(r3, Operand(factory()->true_value()));
+    __ bind(&done);
+  }
 }
 
 
@@ -3005,17 +3015,23 @@ void LCodeGen::DoCmpT(LCmpT* instr) {
   __ cmpi(r3, Operand::Zero());
 
   Condition condition = ComputeCompareCondition(op);
-  Label true_value, done;
+  if (CpuFeatures::IsSupported(ISELECT)) {
+    __ LoadRoot(r4, Heap::kTrueValueRootIndex);
+    __ LoadRoot(r5, Heap::kFalseValueRootIndex);
+    __ isel(condition, ToRegister(instr->result()), r4, r5);
+  } else {
+    Label true_value, done;
 
-  __ b(condition, &true_value);
+    __ b(condition, &true_value);
 
-  __ LoadRoot(ToRegister(instr->result()), Heap::kFalseValueRootIndex);
-  __ b(&done);
+    __ LoadRoot(ToRegister(instr->result()), Heap::kFalseValueRootIndex);
+    __ b(&done);
 
-  __ bind(&true_value);
-  __ LoadRoot(ToRegister(instr->result()), Heap::kTrueValueRootIndex);
+    __ bind(&true_value);
+    __ LoadRoot(ToRegister(instr->result()), Heap::kTrueValueRootIndex);
 
-  __ bind(&done);
+    __ bind(&done);
+  }
 }
 
 
@@ -3123,14 +3139,22 @@ void LCodeGen::DoLoadContextSlot(LLoadContextSlot* instr) {
   __ LoadP(result, ContextOperand(context, instr->slot_index()));
   if (instr->hydrogen()->RequiresHoleCheck()) {
     __ LoadRoot(ip, Heap::kTheHoleValueRootIndex);
-    __ cmp(result, ip);
     if (instr->hydrogen()->DeoptimizesOnHole()) {
+      __ cmp(result, ip);
       DeoptimizeIf(eq, instr->environment());
     } else {
-      Label skip;
-      __ bne(&skip);
-      __ mov(result, Operand(factory()->undefined_value()));
-      __ bind(&skip);
+      if (CpuFeatures::IsSupported(ISELECT)) {
+        Register scratch = scratch0();
+        __ mov(scratch, Operand(factory()->undefined_value()));
+        __ cmp(result, ip);
+        __ isel(eq, result, scratch, result);
+      } else {
+        Label skip;
+        __ cmp(result, ip);
+        __ bne(&skip);
+        __ mov(result, Operand(factory()->undefined_value()));
+        __ bind(&skip);
+      }
     }
   }
 }
@@ -3250,15 +3274,22 @@ void LCodeGen::DoLoadFunctionPrototype(LLoadFunctionPrototype* instr) {
   DeoptimizeIf(eq, instr->environment());
 
   // If the function does not have an initial map, we're done.
-  Label done;
-  __ CompareObjectType(result, scratch, scratch, MAP_TYPE);
-  __ bne(&done);
+  if (CpuFeatures::IsSupported(ISELECT)) {
+    // Get the prototype from the initial map (optimistic).
+    __ LoadP(ip, FieldMemOperand(result, Map::kPrototypeOffset));
+    __ CompareObjectType(result, scratch, scratch, MAP_TYPE);
+    __ isel(eq, result, ip, result);
+  } else {
+    Label done;
+    __ CompareObjectType(result, scratch, scratch, MAP_TYPE);
+    __ bne(&done);
 
-  // Get the prototype from the initial map.
-  __ LoadP(result, FieldMemOperand(result, Map::kPrototypeOffset));
+    // Get the prototype from the initial map.
+    __ LoadP(result, FieldMemOperand(result, Map::kPrototypeOffset));
 
-  // All done.
-  __ bind(&done);
+    // All done.
+    __ bind(&done);
+  }
 }
 
 
@@ -3604,7 +3635,6 @@ void LCodeGen::DoArgumentsElements(LArgumentsElements* instr) {
     __ subi(result, sp, Operand(2 * kPointerSize));
   } else {
     // Check if the calling frame is an arguments adaptor frame.
-    Label done, adapted;
     __ LoadP(scratch, MemOperand(fp, StandardFrameConstants::kCallerFPOffset));
     __ LoadP(result,
              MemOperand(scratch, StandardFrameConstants::kContextOffset));
@@ -3612,13 +3642,18 @@ void LCodeGen::DoArgumentsElements(LArgumentsElements* instr) {
 
     // Result is the frame pointer for the frame if not adapted and for the real
     // frame below the adaptor frame if adapted.
-    __ beq(&adapted);
-    __ mr(result, fp);
-    __ b(&done);
+    if (CpuFeatures::IsSupported(ISELECT)) {
+      __ isel(eq, result, scratch, fp);
+    } else {
+      Label done, adapted;
+      __ beq(&adapted);
+      __ mr(result, fp);
+      __ b(&done);
 
-    __ bind(&adapted);
-    __ mr(result, scratch);
-    __ bind(&done);
+      __ bind(&adapted);
+      __ mr(result, scratch);
+      __ bind(&done);
+    }
   }
 }
 
