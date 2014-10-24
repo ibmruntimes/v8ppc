@@ -4350,7 +4350,7 @@ TEST(ArrayShiftSweeping) {
 
 TEST(PromotionQueue) {
   i::FLAG_expose_gc = true;
-  i::FLAG_max_semi_space_size = 2;
+  i::FLAG_max_semi_space_size = 2 * (Page::kPageSize / MB);
   CcTest::InitializeVM();
   v8::HandleScope scope(CcTest::isolate());
   Isolate* isolate = CcTest::i_isolate();

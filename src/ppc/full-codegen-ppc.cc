@@ -366,7 +366,8 @@ void FullCodeGenerator::EmitBackEdgeBookkeeping(IterationStatement* stmt,
   Label ok;
 
   DCHECK(back_edge_target->is_bound());
-  int distance = masm_->SizeOfCodeGeneratedSince(back_edge_target);
+  int distance =
+    masm_->SizeOfCodeGeneratedSince(back_edge_target) + kCodeSizeMultiplier / 2;
   int weight = Min(kMaxBackEdgeWeight,
                    Max(1, distance / kCodeSizeMultiplier));
   EmitProfilingCounterDecrement(weight);
@@ -409,7 +410,7 @@ void FullCodeGenerator::EmitReturnSequence() {
     if (info_->ShouldSelfOptimize()) {
       weight = FLAG_interrupt_budget / FLAG_self_opt_count;
     } else {
-      int distance = masm_->pc_offset();
+      int distance = masm_->pc_offset() + kCodeSizeMultiplier / 2;
       weight = Min(kMaxBackEdgeWeight,
                    Max(1, distance / kCodeSizeMultiplier));
     }
