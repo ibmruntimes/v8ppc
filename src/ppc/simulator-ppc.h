@@ -251,7 +251,8 @@ class Simulator {
   void ExecuteExt1(Instruction* instr);
   bool ExecuteExt2_10bit(Instruction* instr);
   bool ExecuteExt2_9bit_part1(Instruction* instr);
-  void ExecuteExt2_9bit_part2(Instruction* instr);
+  bool ExecuteExt2_9bit_part2(Instruction* instr);
+  void ExecuteExt2_5bit(Instruction* instr);
   void ExecuteExt2(Instruction* instr);
   void ExecuteExt4(Instruction* instr);
 #if V8_TARGET_ARCH_PPC64
