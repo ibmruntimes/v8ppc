@@ -2494,6 +2494,15 @@ bool Simulator::ExecuteExt2_9bit_part2(Instruction* instr) {
       break;
     }
 #if V8_TARGET_ARCH_PPC64
+    case LWAX: {
+      int rt = instr->RTValue();
+      int ra = instr->RAValue();
+      int rb = instr->RBValue();
+      intptr_t ra_val = ra == 0 ? 0 : get_register(ra);
+      intptr_t rb_val = get_register(rb);
+      set_register(rt, ReadW(ra_val+rb_val, instr));
+      break;
+    }
     case LDX:
     case LDUX: {
       int rt = instr->RTValue();
@@ -2548,6 +2557,20 @@ bool Simulator::ExecuteExt2_9bit_part2(Instruction* instr) {
       intptr_t rb_val = get_register(rb);
       set_register(rt, ReadHU(ra_val+rb_val, instr) & 0xFFFF);
       if (opcode == LHZUX) {
+        DCHECK(ra != 0 && ra != rt);
+        set_register(ra, ra_val+rb_val);
+      }
+      break;
+    }
+    case LHAX:
+    case LHAUX: {
+      int rt = instr->RTValue();
+      int ra = instr->RAValue();
+      int rb = instr->RBValue();
+      intptr_t ra_val = ra == 0 ? 0 : get_register(ra);
+      intptr_t rb_val = get_register(rb);
+      set_register(rt, ReadH(ra_val+rb_val, instr));
+      if (opcode == LHAUX) {
         DCHECK(ra != 0 && ra != rt);
         set_register(ra, ra_val+rb_val);
       }
@@ -3360,7 +3383,6 @@ void Simulator::ExecuteGeneric(Instruction* instr) {
       uintptr_t result = ReadHU(ra_val+offset, instr) & 0xffff;
       set_register(rt, result);
       if (opcode == LHZU) {
-        DCHECK(ra != 0);
         set_register(ra, ra_val+offset);
       }
       break;
@@ -3368,7 +3390,15 @@ void Simulator::ExecuteGeneric(Instruction* instr) {
 
     case LHA:
     case LHAU: {
-      UNIMPLEMENTED();
+      int ra = instr->RAValue();
+      int rt = instr->RTValue();
+      intptr_t ra_val = ra == 0 ? 0 : get_register(ra);
+      int offset = SIGN_EXT_IMM16(instr->Bits(15, 0));
+      intptr_t result = ReadH(ra_val+offset, instr);
+      set_register(rt, result);
+      if (opcode == LHAU) {
+        set_register(ra, ra_val+offset);
+      }
       break;
     }
 

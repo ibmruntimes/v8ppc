@@ -1875,11 +1875,6 @@ void LCodeGen::DoSubI(LSubI* instr) {
     }
 #endif
     DeoptimizeIf(lt, instr->environment(), cr0);
-#if V8_TARGET_ARCH_PPC64
-    if (!instr->hydrogen()->representation().IsSmi()) {
-      __ extsw(result, result);
-    }
-#endif
   }
 }
 
@@ -2092,11 +2087,6 @@ void LCodeGen::DoAddI(LAddI* instr) {
     }
 #endif
     DeoptimizeIf(lt, instr->environment(), cr0);
-#if V8_TARGET_ARCH_PPC64
-    if (isInteger) {
-      __ extsw(result, result);
-    }
-#endif
   }
 }
 
@@ -3404,11 +3394,10 @@ void LCodeGen::DoLoadKeyedExternalArray(LLoadKeyed* instr) {
       case EXTERNAL_INT16_ELEMENTS:
       case INT16_ELEMENTS:
         if (key_is_constant) {
-          __ LoadHalfWord(result, mem_operand, r0);
+          __ LoadHalfWordArith(result, mem_operand, r0);
         } else {
-          __ lhzx(result, mem_operand);
+          __ lhax(result, mem_operand);
         }
-        __ extsh(result, result);
         break;
       case EXTERNAL_UINT16_ELEMENTS:
       case UINT16_ELEMENTS:
@@ -3421,13 +3410,10 @@ void LCodeGen::DoLoadKeyedExternalArray(LLoadKeyed* instr) {
       case EXTERNAL_INT32_ELEMENTS:
       case INT32_ELEMENTS:
         if (key_is_constant) {
-          __ LoadWord(result, mem_operand, r0);
+          __ LoadWordArith(result, mem_operand, r0);
         } else {
-          __ lwzx(result, mem_operand);
+          __ lwax(result, mem_operand);
         }
-#if V8_TARGET_ARCH_PPC64
-        __ extsw(result, result);
-#endif
         break;
       case EXTERNAL_UINT32_ELEMENTS:
       case UINT32_ELEMENTS:
