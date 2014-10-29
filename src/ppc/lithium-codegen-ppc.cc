@@ -2986,12 +2986,12 @@ void LCodeGen::DoDeferredInstanceOfKnownGlobal(LInstanceOfKnownGlobal* instr,
 
   __ Move(InstanceofStub::right(), instr->function());
   // Include instructions below in delta: mov + call = mov + (mov + 2)
-  static const int kAdditionalDelta = (2 * Assembler::kMovInstructions) + 2;
+  static const int kAdditionalDelta = Assembler::kMovInstructions + 3;
   int delta = masm_->InstructionsGeneratedSince(map_check) + kAdditionalDelta;
   {
     Assembler::BlockTrampolinePoolScope block_trampoline_pool(masm_);
     // r8 is used to communicate the offset to the location of the map check.
-    __ mov(r8, Operand(delta * Instruction::kInstrSize));
+    __ li(r8, Operand(delta * Instruction::kInstrSize));
   }
   CallCodeGeneric(stub.GetCode(),
                   RelocInfo::CODE_TARGET,

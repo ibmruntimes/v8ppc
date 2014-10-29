@@ -1585,7 +1585,7 @@ void Assembler::mov(Register dst, const Operand& src) {
   }
 
   canOptimize = !(src.must_output_reloc_info(this) ||
-                  is_trampoline_pool_blocked());
+                  (is_trampoline_pool_blocked() && !is_int16(value)));
 
 #if V8_OOL_CONSTANT_POOL
   if (use_constant_pool_for_mov(src, canOptimize)) {
