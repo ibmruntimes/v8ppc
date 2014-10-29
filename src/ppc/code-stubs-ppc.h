@@ -116,6 +116,34 @@ class StringCompareStub: public PlatformCodeStub {
 };
 
 
+class StoreRegistersStateStub: public PlatformCodeStub {
+ public:
+  explicit StoreRegistersStateStub(Isolate* isolate)
+      : PlatformCodeStub(isolate) {}
+
+  static void GenerateAheadOfTime(Isolate* isolate);
+ private:
+  Major MajorKey() const { return StoreRegistersState; }
+  int MinorKey() const { return 0; }
+
+  void Generate(MacroAssembler* masm);
+};
+
+
+class RestoreRegistersStateStub: public PlatformCodeStub {
+ public:
+  explicit RestoreRegistersStateStub(Isolate* isolate)
+      : PlatformCodeStub(isolate) {}
+
+  static void GenerateAheadOfTime(Isolate* isolate);
+ private:
+  Major MajorKey() const { return RestoreRegistersState; }
+  int MinorKey() const { return 0; }
+
+  void Generate(MacroAssembler* masm);
+};
+
+
 class RecordWriteStub: public PlatformCodeStub {
  public:
   RecordWriteStub(Isolate* isolate,
