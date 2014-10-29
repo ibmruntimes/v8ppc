@@ -363,12 +363,14 @@ class LCodeGen: public LCodeGenBase {
       DCHECK(codegen_->info()->is_calling());
       DCHECK(codegen_->expected_safepoint_kind_ == Safepoint::kSimple);
       codegen_->expected_safepoint_kind_ = Safepoint::kWithRegisters;
-          codegen_->masm_->PushSafepointRegisters();
+      StoreRegistersStateStub stub(codegen_->isolate());
+      codegen_->masm_->CallStub(&stub);
     }
 
     ~PushSafepointRegistersScope() {
       DCHECK(codegen_->expected_safepoint_kind_ == Safepoint::kWithRegisters);
-          codegen_->masm_->PopSafepointRegisters();
+      RestoreRegistersStateStub stub(codegen_->isolate());
+      codegen_->masm_->CallStub(&stub);
       codegen_->expected_safepoint_kind_ = Safepoint::kSimple;
     }
 

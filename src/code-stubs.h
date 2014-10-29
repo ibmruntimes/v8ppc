@@ -110,7 +110,9 @@ namespace internal {
   V(GetProperty)               \
   V(SetProperty)               \
   V(InvokeBuiltin)             \
-  V(DirectCEntry)
+  V(DirectCEntry)              \
+  V(StoreRegistersState)       \
+  V(RestoreRegistersState)
 #else
 #define CODE_STUB_LIST_PPC(V)
 #endif
