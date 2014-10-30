@@ -85,13 +85,23 @@ void CreateAllocationSiteStub::InitializeInterfaceDescriptor(
 
 void CallFunctionStub::InitializeInterfaceDescriptor(
     CodeStubInterfaceDescriptor* descriptor) {
-  UNIMPLEMENTED();  // turbofan
+  // r4  function    the function to call
+  Register registers[] = {cp, r4};
+  descriptor->Initialize(MajorKey(), ARRAY_SIZE(registers), registers);
 }
 
 
 void CallConstructStub::InitializeInterfaceDescriptor(
     CodeStubInterfaceDescriptor* descriptor) {
-  UNIMPLEMENTED();  // turbofan
+  // r3 : number of arguments
+  // r4 : the function to call
+  // r5 : feedback vector
+  // r6 : (only if r5 is not the megamorphic symbol) slot in feedback
+  //      vector (Smi)
+  // TODO(turbofan): So far we don't gather type feedback and hence skip the
+  // slot parameter, but ArrayConstructStub needs the vector to be undefined.
+  Register registers[] = {cp, r3, r4, r5};
+  descriptor->Initialize(MajorKey(), ARRAY_SIZE(registers), registers);
 }
 
 

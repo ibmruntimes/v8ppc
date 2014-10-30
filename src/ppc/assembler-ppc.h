@@ -847,6 +847,12 @@ class Assembler : public AssemblerBase {
       case ge:
         isel(rt, rb, ra, encode_crbit(cr, CR_LT));
         break;
+      case unordered:
+        isel(rt, ra, rb, encode_crbit(cr, CR_FU));
+        break;
+      case ordered:
+        isel(rt, rb, ra, encode_crbit(cr, CR_FU));
+        break;
       case overflow:
         isel(rt, ra, rb, encode_crbit(cr, CR_SO));
         break;
@@ -929,6 +935,8 @@ class Assembler : public AssemblerBase {
 
   void divw(Register dst, Register src1, Register src2,
             OEBit o = LeaveOE, RCBit r = LeaveRC);
+  void divwu(Register dst, Register src1, Register src2,
+             OEBit o = LeaveOE, RCBit r = LeaveRC);
 
   void addi(Register dst, Register src, const Operand& imm);
   void addis(Register dst, Register src, const Operand& imm);
@@ -1017,6 +1025,8 @@ class Assembler : public AssemblerBase {
              OEBit o = LeaveOE, RCBit r = LeaveRC);
   void divd(Register dst, Register src1, Register src2,
             OEBit o = LeaveOE, RCBit r = LeaveRC);
+  void divdu(Register dst, Register src1, Register src2,
+             OEBit o = LeaveOE, RCBit r = LeaveRC);
 #endif
 
   void rlwinm(Register ra, Register rs, int sh, int mb, int me,

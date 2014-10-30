@@ -1039,6 +1039,10 @@
             '../../src/ppc/regexp-macro-assembler-ppc.h',
             '../../src/ppc/simulator-ppc.cc',
             '../../src/ppc/stub-cache-ppc.cc',
+            '../../src/compiler/ppc/code-generator-ppc.cc',
+            '../../src/compiler/ppc/instruction-codes-ppc.h',
+            '../../src/compiler/ppc/instruction-selector-ppc.cc',
+            '../../src/compiler/ppc/linkage-ppc.cc',
           ],
         }],
         ['OS=="linux"', {
