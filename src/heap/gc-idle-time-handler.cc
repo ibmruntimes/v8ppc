@@ -63,6 +63,9 @@ size_t GCIdleTimeHandler::EstimateMarkingStepSize(
 
 size_t GCIdleTimeHandler::EstimateMarkCompactTime(
     size_t size_of_objects, size_t mark_compact_speed_in_bytes_per_ms) {
+  // TODO(hpayer): Be more precise about the type of mark-compact event. It
+  // makes a huge difference if it is incremental or non-incremental and if
+  // compaction is happening.
   if (mark_compact_speed_in_bytes_per_ms == 0) {
     mark_compact_speed_in_bytes_per_ms = kInitialConservativeMarkCompactSpeed;
   }
@@ -71,7 +74,7 @@ size_t GCIdleTimeHandler::EstimateMarkCompactTime(
 }
 
 
-bool GCIdleTimeHandler::DoScavenge(
+bool GCIdleTimeHandler::ShouldDoScavenge(
     size_t idle_time_in_ms, size_t new_space_size, size_t used_new_space_size,
     size_t scavenge_speed_in_bytes_per_ms,
     size_t new_space_allocation_throughput_in_bytes_per_ms) {
@@ -110,28 +113,51 @@ bool GCIdleTimeHandler::DoScavenge(
 }
 
 
+bool GCIdleTimeHandler::ShouldDoMarkCompact(
+    size_t idle_time_in_ms, size_t size_of_objects,
+    size_t mark_compact_speed_in_bytes_per_ms) {
+  return idle_time_in_ms >=
+         EstimateMarkCompactTime(size_of_objects,
+                                 mark_compact_speed_in_bytes_per_ms);
+}
+
+
 // The following logic is implemented by the controller:
-// (1) If the new space is almost full and we can affort a Scavenge or if the
+// (1) If we don't have any idle time, do nothing, unless a context was
+// disposed, incremental marking is stopped, and the heap is small. Then do
+// a full GC.
+// (2) If the new space is almost full and we can affort a Scavenge or if the
 // next Scavenge will very likely take long, then a Scavenge is performed.
-// (2) If there is currently no MarkCompact idle round going on, we start a
+// (3) If there is currently no MarkCompact idle round going on, we start a
 // new idle round if enough garbage was created or we received a context
 // disposal event. Otherwise we do not perform garbage collection to keep
 // system utilization low.
-// (3) If incremental marking is done, we perform a full garbage collection
+// (4) If incremental marking is done, we perform a full garbage collection
 // if context was disposed or if we are allowed to still do full garbage
 // collections during this idle round or if we are not allowed to start
 // incremental marking. Otherwise we do not perform garbage collection to
 // keep system utilization low.
-// (4) If sweeping is in progress and we received a large enough idle time
+// (5) If sweeping is in progress and we received a large enough idle time
 // request, we finalize sweeping here.
-// (5) If incremental marking is in progress, we perform a marking step. Note,
+// (6) If incremental marking is in progress, we perform a marking step. Note,
 // that this currently may trigger a full garbage collection.
 GCIdleTimeAction GCIdleTimeHandler::Compute(size_t idle_time_in_ms,
                                             HeapState heap_state) {
-  if (DoScavenge(idle_time_in_ms, heap_state.new_space_capacity,
-                 heap_state.used_new_space_size,
-                 heap_state.scavenge_speed_in_bytes_per_ms,
-                 heap_state.new_space_allocation_throughput_in_bytes_per_ms)) {
+  if (idle_time_in_ms == 0) {
+    if (heap_state.incremental_marking_stopped) {
+      if (heap_state.size_of_objects < kSmallHeapSize &&
+          heap_state.contexts_disposed > 0) {
+        return GCIdleTimeAction::FullGC();
+      }
+    }
+    return GCIdleTimeAction::Nothing();
+  }
+
+  if (ShouldDoScavenge(
+          idle_time_in_ms, heap_state.new_space_capacity,
+          heap_state.used_new_space_size,
+          heap_state.scavenge_speed_in_bytes_per_ms,
+          heap_state.new_space_allocation_throughput_in_bytes_per_ms)) {
     return GCIdleTimeAction::Scavenge();
   }
 
@@ -143,15 +169,10 @@ GCIdleTimeAction GCIdleTimeHandler::Compute(size_t idle_time_in_ms,
     }
   }
 
-  if (idle_time_in_ms == 0) {
-    return GCIdleTimeAction::Nothing();
-  }
-
   if (heap_state.incremental_marking_stopped) {
-    size_t estimated_time_in_ms =
-        EstimateMarkCompactTime(heap_state.size_of_objects,
-                                heap_state.mark_compact_speed_in_bytes_per_ms);
-    if (idle_time_in_ms >= estimated_time_in_ms ||
+    // TODO(jochen): Remove context disposal dependant logic.
+    if (ShouldDoMarkCompact(idle_time_in_ms, heap_state.size_of_objects,
+                            heap_state.mark_compact_speed_in_bytes_per_ms) ||
         (heap_state.size_of_objects < kSmallHeapSize &&
          heap_state.contexts_disposed > 0)) {
       // If there are no more than two GCs left in this idle round and we are

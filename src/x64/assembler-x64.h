@@ -810,8 +810,11 @@ class Assembler : public AssemblerBase {
   // Sign-extends eax into edx:eax.
   void cdq();
 
+  // Multiply eax by src, put the result in edx:eax.
+  void mull(Register src);
+  void mull(const Operand& src);
   // Multiply rax by src, put the result in rdx:rax.
-  void mul(Register src);
+  void mulq(Register src);
 
 #define DECLARE_SHIFT_INSTRUCTION(instruction, subcode)                       \
   void instruction##p(Register dst, Immediate imm8) {                         \
@@ -1061,6 +1064,9 @@ class Assembler : public AssemblerBase {
   void movapd(XMMRegister dst, XMMRegister src);
 
   void psllq(XMMRegister reg, byte imm8);
+  void psrlq(XMMRegister reg, byte imm8);
+  void pslld(XMMRegister reg, byte imm8);
+  void psrld(XMMRegister reg, byte imm8);
 
   void cvttsd2si(Register dst, const Operand& src);
   void cvttsd2si(Register dst, XMMRegister src);
@@ -1076,6 +1082,7 @@ class Assembler : public AssemblerBase {
   void cvtss2sd(XMMRegister dst, XMMRegister src);
   void cvtss2sd(XMMRegister dst, const Operand& src);
   void cvtsd2ss(XMMRegister dst, XMMRegister src);
+  void cvtsd2ss(XMMRegister dst, const Operand& src);
 
   void cvtsd2si(Register dst, XMMRegister src);
   void cvtsd2siq(Register dst, XMMRegister src);
@@ -1083,9 +1090,11 @@ class Assembler : public AssemblerBase {
   void addsd(XMMRegister dst, XMMRegister src);
   void addsd(XMMRegister dst, const Operand& src);
   void subsd(XMMRegister dst, XMMRegister src);
+  void subsd(XMMRegister dst, const Operand& src);
   void mulsd(XMMRegister dst, XMMRegister src);
   void mulsd(XMMRegister dst, const Operand& src);
   void divsd(XMMRegister dst, XMMRegister src);
+  void divsd(XMMRegister dst, const Operand& src);
 
   void andpd(XMMRegister dst, XMMRegister src);
   void orpd(XMMRegister dst, XMMRegister src);
@@ -1096,6 +1105,7 @@ class Assembler : public AssemblerBase {
   void ucomisd(XMMRegister dst, XMMRegister src);
   void ucomisd(XMMRegister dst, const Operand& src);
   void cmpltsd(XMMRegister dst, XMMRegister src);
+  void pcmpeqd(XMMRegister dst, XMMRegister src);
 
   void movmskpd(Register dst, XMMRegister src);
 
@@ -1270,6 +1280,7 @@ class Assembler : public AssemblerBase {
   // Optionally do as emit_rex_32(Register) if the register number has
   // the high bit set.
   inline void emit_optional_rex_32(Register rm_reg);
+  inline void emit_optional_rex_32(XMMRegister rm_reg);
 
   // Optionally do as emit_rex_32(const Operand&) if the operand register
   // numbers have a high bit set.
@@ -1465,6 +1476,7 @@ class Assembler : public AssemblerBase {
   // Signed multiply instructions.
   // rdx:rax = rax * src when size is 64 or edx:eax = eax * src when size is 32.
   void emit_imul(Register src, int size);
+  void emit_imul(const Operand& src, int size);
   void emit_imul(Register dst, Register src, int size);
   void emit_imul(Register dst, const Operand& src, int size);
   void emit_imul(Register dst, Register src, Immediate imm, int size);

@@ -88,6 +88,8 @@ class AstRawString : public AstString {
     return *c;
   }
 
+  V8_INLINE bool IsArguments(AstValueFactory* ast_value_factory) const;
+
   // For storing AstRawStrings in a hash map.
   uint32_t hash() const {
     return hash_;
@@ -192,7 +194,6 @@ class AstValue : public ZoneObject {
     NUMBER,
     SMI,
     BOOLEAN,
-    STRING_ARRAY,
     NULL_TYPE,
     UNDEFINED,
     THE_HOLE
@@ -210,10 +211,6 @@ class AstValue : public ZoneObject {
   }
 
   explicit AstValue(bool b) : type_(BOOLEAN) { bool_ = b; }
-
-  explicit AstValue(ZoneList<const AstRawString*>* s) : type_(STRING_ARRAY) {
-    strings_ = s;
-  }
 
   explicit AstValue(Type t) : type_(t) {
     DCHECK(t == NULL_TYPE || t == UNDEFINED || t == THE_HOLE);
@@ -236,36 +233,42 @@ class AstValue : public ZoneObject {
 };
 
 
-// For generating string constants.
-#define STRING_CONSTANTS(F)                           \
-  F(anonymous_function, "(anonymous function)")       \
-  F(arguments, "arguments")                           \
-  F(constructor, "constructor")                       \
-  F(done, "done")                                     \
-  F(dot, ".")                                         \
-  F(dot_for, ".for")                                  \
-  F(dot_generator, ".generator")                      \
-  F(dot_generator_object, ".generator_object")        \
-  F(dot_iterator, ".iterator")                        \
-  F(dot_module, ".module")                            \
-  F(dot_result, ".result")                            \
-  F(empty, "")                                        \
-  F(eval, "eval")                                     \
-  F(initialize_const_global, "initializeConstGlobal") \
-  F(initialize_var_global, "initializeVarGlobal")     \
-  F(make_reference_error, "MakeReferenceError")       \
-  F(make_syntax_error, "MakeSyntaxError")             \
-  F(make_type_error, "MakeTypeError")                 \
-  F(module, "module")                                 \
-  F(native, "native")                                 \
-  F(next, "next")                                     \
-  F(proto, "__proto__")                               \
-  F(prototype, "prototype")                           \
-  F(this, "this")                                     \
-  F(use_asm, "use asm")                               \
-  F(use_strict, "use strict")                         \
+// For generating constants.
+#define STRING_CONSTANTS(F)                             \
+  F(anonymous_function, "(anonymous function)")         \
+  F(arguments, "arguments")                             \
+  F(constructor, "constructor")                         \
+  F(done, "done")                                       \
+  F(dot, ".")                                           \
+  F(dot_for, ".for")                                    \
+  F(dot_generator, ".generator")                        \
+  F(dot_generator_object, ".generator_object")          \
+  F(dot_iterator, ".iterator")                          \
+  F(dot_module, ".module")                              \
+  F(dot_result, ".result")                              \
+  F(empty, "")                                          \
+  F(eval, "eval")                                       \
+  F(initialize_const_global, "initializeConstGlobal")   \
+  F(initialize_var_global, "initializeVarGlobal")       \
+  F(make_reference_error, "MakeReferenceErrorEmbedded") \
+  F(make_syntax_error, "MakeSyntaxErrorEmbedded")       \
+  F(make_type_error, "MakeTypeErrorEmbedded")           \
+  F(module, "module")                                   \
+  F(native, "native")                                   \
+  F(next, "next")                                       \
+  F(proto, "__proto__")                                 \
+  F(prototype, "prototype")                             \
+  F(this, "this")                                       \
+  F(use_asm, "use asm")                                 \
+  F(use_strict, "use strict")                           \
   F(value, "value")
 
+#define OTHER_CONSTANTS(F) \
+  F(true_value)            \
+  F(false_value)           \
+  F(null_value)            \
+  F(undefined_value)       \
+  F(the_hole_value)
 
 class AstValueFactory {
  public:
@@ -274,11 +277,15 @@ class AstValueFactory {
         zone_(zone),
         isolate_(NULL),
         hash_seed_(hash_seed) {
-#define F(name, str) \
-    name##_string_ = NULL;
+#define F(name, str) name##_string_ = NULL;
     STRING_CONSTANTS(F)
 #undef F
+#define F(name) name##_ = NULL;
+    OTHER_CONSTANTS(F)
+#undef F
   }
+
+  Zone* zone() const { return zone_; }
 
   const AstRawString* GetOneByteString(Vector<const uint8_t> literal);
   const AstRawString* GetOneByteString(const char* string) {
@@ -295,15 +302,15 @@ class AstValueFactory {
     return isolate_ != NULL;
   }
 
-#define F(name, str) \
-  const AstRawString* name##_string() { \
-    if (name##_string_ == NULL) { \
-      const char* data = str; \
-      name##_string_ = GetOneByteString( \
+#define F(name, str)                                                    \
+  const AstRawString* name##_string() {                                 \
+    if (name##_string_ == NULL) {                                       \
+      const char* data = str;                                           \
+      name##_string_ = GetOneByteString(                                \
           Vector<const uint8_t>(reinterpret_cast<const uint8_t*>(data), \
-                                static_cast<int>(strlen(data)))); \
-    } \
-    return name##_string_; \
+                                static_cast<int>(strlen(data))));       \
+    }                                                                   \
+    return name##_string_;                                              \
   }
   STRING_CONSTANTS(F)
 #undef F
@@ -334,14 +341,22 @@ class AstValueFactory {
 
   uint32_t hash_seed_;
 
-#define F(name, str) \
-  const AstRawString* name##_string_;
+#define F(name, str) const AstRawString* name##_string_;
   STRING_CONSTANTS(F)
+#undef F
+
+#define F(name) AstValue* name##_;
+  OTHER_CONSTANTS(F)
 #undef F
 };
 
+
+bool AstRawString::IsArguments(AstValueFactory* ast_value_factory) const {
+  return ast_value_factory->arguments_string() == this;
+}
 } }  // namespace v8::internal
 
 #undef STRING_CONSTANTS
+#undef OTHER_CONSTANTS
 
 #endif  // V8_AST_VALUE_FACTORY_H_

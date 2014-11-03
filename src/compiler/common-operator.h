@@ -19,8 +19,42 @@ namespace compiler {
 
 // Forward declarations.
 class CallDescriptor;
-struct CommonOperatorBuilderImpl;
+struct CommonOperatorGlobalCache;
 class Operator;
+
+
+// Prediction hint for branches.
+enum class BranchHint : uint8_t { kNone, kTrue, kFalse };
+
+inline size_t hash_value(BranchHint hint) { return static_cast<size_t>(hint); }
+
+std::ostream& operator<<(std::ostream&, BranchHint);
+
+BranchHint BranchHintOf(const Operator* const);
+
+
+class SelectParameters FINAL {
+ public:
+  explicit SelectParameters(MachineType type,
+                            BranchHint hint = BranchHint::kNone)
+      : type_(type), hint_(hint) {}
+
+  MachineType type() const { return type_; }
+  BranchHint hint() const { return hint_; }
+
+ private:
+  const MachineType type_;
+  const BranchHint hint_;
+};
+
+bool operator==(SelectParameters const&, SelectParameters const&);
+bool operator!=(SelectParameters const&, SelectParameters const&);
+
+size_t hash_value(SelectParameters const& p);
+
+std::ostream& operator<<(std::ostream&, SelectParameters const& p);
+
+SelectParameters const& SelectParametersOf(const Operator* const);
 
 
 // Flag that describes how to combine the current environment with
@@ -55,6 +89,10 @@ class OutputFrameStateCombine {
 
   bool IsOutputIgnored() const {
     return kind_ == kPushOutput && parameter_ == 0;
+  }
+
+  size_t ConsumedOutputCount() const {
+    return kind_ == kPushOutput ? GetPushCount() : 1;
   }
 
   bool operator==(OutputFrameStateCombine const& other) const {
@@ -117,16 +155,17 @@ std::ostream& operator<<(std::ostream&, FrameStateCallInfo const&);
 
 // Interface for building common operators that can be used at any level of IR,
 // including JavaScript, mid-level, and low-level.
-class CommonOperatorBuilder FINAL {
+class CommonOperatorBuilder FINAL : public ZoneObject {
  public:
   explicit CommonOperatorBuilder(Zone* zone);
 
   const Operator* Dead();
   const Operator* End();
-  const Operator* Branch();
+  const Operator* Branch(BranchHint = BranchHint::kNone);
   const Operator* IfTrue();
   const Operator* IfFalse();
   const Operator* Throw();
+  const Operator* Terminate(int effects);
   const Operator* Return();
 
   const Operator* Start(int num_formal_parameters);
@@ -142,6 +181,7 @@ class CommonOperatorBuilder FINAL {
   const Operator* NumberConstant(volatile double);
   const Operator* HeapConstant(const Unique<HeapObject>&);
 
+  const Operator* Select(MachineType, BranchHint = BranchHint::kNone);
   const Operator* Phi(MachineType type, int arguments);
   const Operator* EffectPhi(int arguments);
   const Operator* ValueEffect(int arguments);
@@ -157,8 +197,10 @@ class CommonOperatorBuilder FINAL {
  private:
   Zone* zone() const { return zone_; }
 
-  const CommonOperatorBuilderImpl& impl_;
+  const CommonOperatorGlobalCache& cache_;
   Zone* const zone_;
+
+  DISALLOW_COPY_AND_ASSIGN(CommonOperatorBuilder);
 };
 
 }  // namespace compiler

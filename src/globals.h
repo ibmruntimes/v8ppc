@@ -5,7 +5,8 @@
 #ifndef V8_GLOBALS_H_
 #define V8_GLOBALS_H_
 
-#include "include/v8stdint.h"
+#include <stddef.h>
+#include <stdint.h>
 
 #include "src/base/build_config.h"
 #include "src/base/logging.h"
@@ -73,7 +74,7 @@ namespace internal {
 #endif
 
 // Determine whether the architecture uses an out-of-line constant pool.
-#if (V8_TARGET_ARCH_PPC || V8_TARGET_ARCH_ARM)
+#if V8_TARGET_ARCH_PPC
 #define V8_OOL_CONSTANT_POOL 1
 #else
 #define V8_OOL_CONSTANT_POOL 0
@@ -298,6 +299,7 @@ const uint32_t kFreeListZapValue = 0xfeed1eaf;
 #endif
 
 const int kCodeZapValue = 0xbadc0de;
+const uint32_t kPhantomReferenceZap = 0xca11bac;
 
 // On Intel architecture, cache line size is 64 bytes.
 // On ARM it may be less (32 bytes), but as far this constant is
@@ -386,7 +388,6 @@ enum AllocationSpace {
   CELL_SPACE,           // Only and all cell objects.
   PROPERTY_CELL_SPACE,  // Only and all global property cell objects.
   LO_SPACE,             // Promoted large objects.
-  INVALID_SPACE,        // Only used in AllocationResult to signal success.
 
   FIRST_SPACE = NEW_SPACE,
   LAST_SPACE = LO_SPACE,
@@ -615,31 +616,32 @@ struct AccessorDescriptor {
 
 // CPU feature flags.
 enum CpuFeature {
-    // x86
-    SSE4_1,
-    SSE3,
-    SAHF,
-    // ARM
-    VFP3,
-    ARMv7,
-    SUDIV,
-    MLS,
-    UNALIGNED_ACCESSES,
-    MOVW_MOVT_IMMEDIATE_LOADS,
-    VFP32DREGS,
-    NEON,
-    // MIPS, MIPS64
-    FPU,
-    FP64FPU,
-    MIPSr1,
-    MIPSr2,
-    MIPSr6,
-    // ARM64
-    ALWAYS_ALIGN_CSP,
-    // PPC
-    FPR_GPR_MOV,
-    LWSYNC,
-    NUMBER_OF_CPU_FEATURES
+  // x86
+  SSE4_1,
+  SSE3,
+  SAHF,
+  // ARM
+  VFP3,
+  ARMv7,
+  ARMv8,
+  SUDIV,
+  MLS,
+  UNALIGNED_ACCESSES,
+  MOVW_MOVT_IMMEDIATE_LOADS,
+  VFP32DREGS,
+  NEON,
+  // MIPS, MIPS64
+  FPU,
+  FP64FPU,
+  MIPSr1,
+  MIPSr2,
+  MIPSr6,
+  // ARM64
+  ALWAYS_ALIGN_CSP,
+  // PPC
+  FPR_GPR_MOV,
+  LWSYNC,
+  NUMBER_OF_CPU_FEATURES
 };
 
 
@@ -658,7 +660,8 @@ enum ScopeType {
   GLOBAL_SCOPE,    // The top-level scope for a program or a top-level eval.
   CATCH_SCOPE,     // The scope introduced by catch.
   BLOCK_SCOPE,     // The scope introduced by a new block.
-  WITH_SCOPE       // The scope introduced by with.
+  WITH_SCOPE,      // The scope introduced by with.
+  ARROW_SCOPE      // The top-level scope for an arrow function literal.
 };
 
 

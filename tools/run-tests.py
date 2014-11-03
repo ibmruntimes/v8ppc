@@ -51,8 +51,13 @@ from testrunner.objects import context
 
 
 ARCH_GUESS = utils.DefaultArch()
-DEFAULT_TESTS = ["mjsunit", "fuzz-natives", "unittests",
-                 "cctest", "message", "preparser"]
+DEFAULT_TESTS = [
+  "mjsunit",
+  "unittests",
+  "cctest",
+  "message",
+  "preparser",
+]
 
 # Map of test name synonyms to lists of test suites. Should be ordered by
 # expected runtimes (suites with slow test cases first). These groups are
@@ -60,7 +65,6 @@ DEFAULT_TESTS = ["mjsunit", "fuzz-natives", "unittests",
 TEST_MAP = {
   "default": [
     "mjsunit",
-    "fuzz-natives",
     "cctest",
     "message",
     "preparser",
@@ -255,6 +259,9 @@ def BuildOptions():
                     default="v8tests")
   result.add_option("--random-seed", default=0, dest="random_seed",
                     help="Default seed for initializing random generator")
+  result.add_option("--msan",
+                    help="Regard test expectations for MSAN",
+                    default=False, action="store_true")
   return result
 
 
@@ -307,6 +314,11 @@ def ProcessOptions(options):
 
   if options.tsan:
     VARIANTS = ["default"]
+    suppressions_file = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                     'sanitizers', 'tsan_suppressions.txt')
+    tsan_options = '%s suppressions=%s' % (
+        os.environ.get('TSAN_OPTIONS', ''), suppressions_file)
+    os.environ['TSAN_OPTIONS'] = tsan_options
 
   if options.j == 0:
     options.j = multiprocessing.cpu_count()
@@ -502,6 +514,7 @@ def Execute(arch, mode, args, options, suites, workspace):
     "simulator": utils.UseSimulator(arch),
     "system": utils.GuessOS(),
     "tsan": options.tsan,
+    "msan": options.msan,
   }
   all_tests = []
   num_tests = 0

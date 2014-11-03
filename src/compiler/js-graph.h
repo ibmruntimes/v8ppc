@@ -24,12 +24,10 @@ class Typer;
 class JSGraph : public ZoneObject {
  public:
   JSGraph(Graph* graph, CommonOperatorBuilder* common,
-          JSOperatorBuilder* javascript, Typer* typer,
-          MachineOperatorBuilder* machine)
+          JSOperatorBuilder* javascript, MachineOperatorBuilder* machine)
       : graph_(graph),
         common_(common),
         javascript_(javascript),
-        typer_(typer),
         machine_(machine),
         cache_(zone()) {}
 
@@ -69,6 +67,26 @@ class JSGraph : public ZoneObject {
     return Int32Constant(bit_cast<int32_t>(value));
   }
 
+  // Creates a HeapConstant node for either true or false.
+  Node* BooleanConstant(bool is_true) {
+    return is_true ? TrueConstant() : FalseConstant();
+  }
+
+  // Creates a Int64Constant node, usually canonicalized.
+  Node* Int64Constant(int64_t value);
+  Node* Uint64Constant(uint64_t value) {
+    return Int64Constant(bit_cast<int64_t>(value));
+  }
+
+  // Creates a Int32Constant/Int64Constant node, depending on the word size of
+  // the target machine.
+  // TODO(turbofan): Code using Int32Constant/Int64Constant to store pointer
+  // constants is probably not serializable.
+  Node* IntPtrConstant(intptr_t value) {
+    return machine()->Is32() ? Int32Constant(static_cast<int32_t>(value))
+                             : Int64Constant(static_cast<int64_t>(value));
+  }
+
   // Creates a Float32Constant node, usually canonicalized.
   Node* Float32Constant(float value);
 
@@ -90,13 +108,15 @@ class JSGraph : public ZoneObject {
   Zone* zone() { return graph()->zone(); }
   Isolate* isolate() { return zone()->isolate(); }
 
+  void GetCachedNodes(NodeVector* nodes);
+
  private:
   Graph* graph_;
   CommonOperatorBuilder* common_;
   JSOperatorBuilder* javascript_;
-  Typer* typer_;
   MachineOperatorBuilder* machine_;
 
+  // TODO(titzer): make this into a simple array.
   SetOncePointer<Node> c_entry_stub_constant_;
   SetOncePointer<Node> undefined_constant_;
   SetOncePointer<Node> the_hole_constant_;
@@ -111,9 +131,10 @@ class JSGraph : public ZoneObject {
 
   Node* ImmovableHeapConstant(Handle<HeapObject> value);
   Node* NumberConstant(double value);
-  Node* NewNode(const Operator* op);
 
   Factory* factory() { return isolate()->factory(); }
+
+  DISALLOW_COPY_AND_ASSIGN(JSGraph);
 };
 
 }  // namespace compiler

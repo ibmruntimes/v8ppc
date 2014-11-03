@@ -4,11 +4,12 @@
 
 // Features shared by parsing and pre-parsing scanners.
 
+#include <stdint.h>
+
 #include <cmath>
 
 #include "src/v8.h"
 
-#include "include/v8stdint.h"
 #include "src/ast-value-factory.h"
 #include "src/char-predicates-inl.h"
 #include "src/conversions-inl.h"
@@ -56,20 +57,10 @@ void Scanner::Initialize(Utf16CharacterStream* source) {
 uc32 Scanner::ScanHexNumber(int expected_length) {
   DCHECK(expected_length <= 4);  // prevent overflow
 
-  uc32 digits[4] = { 0, 0, 0, 0 };
   uc32 x = 0;
   for (int i = 0; i < expected_length; i++) {
-    digits[i] = c0_;
     int d = HexValue(c0_);
     if (d < 0) {
-      // According to ECMA-262, 3rd, 7.8.4, page 18, these hex escapes
-      // should be illegal, but other JS VMs just return the
-      // non-escaped version of the original character.
-
-      // Push back digits that we have advanced past.
-      for (int j = i-1; j >= 0; j--) {
-        PushBack(digits[j]);
-      }
       return -1;
     }
     x = x * 16 + d;
@@ -893,9 +884,7 @@ uc32 Scanner::ScanIdentifierUnicodeEscape() {
   Advance();
   if (c0_ != 'u') return -1;
   Advance();
-  uc32 result = ScanHexNumber(4);
-  if (result < 0) PushBack('u');
-  return result;
+  return ScanHexNumber(4);
 }
 
 
@@ -1144,31 +1133,19 @@ bool Scanner::ScanRegExpPattern(bool seen_equal) {
 
 bool Scanner::ScanLiteralUnicodeEscape() {
   DCHECK(c0_ == '\\');
-  uc32 chars_read[6] = {'\\', 'u', 0, 0, 0, 0};
+  AddLiteralChar(c0_);
   Advance();
-  int i = 1;
+  int hex_digits_read = 0;
   if (c0_ == 'u') {
-    i++;
-    while (i < 6) {
+    AddLiteralChar(c0_);
+    while (hex_digits_read < 4) {
       Advance();
       if (!IsHexDigit(c0_)) break;
-      chars_read[i] = c0_;
-      i++;
+      AddLiteralChar(c0_);
+      ++hex_digits_read;
     }
   }
-  if (i < 6) {
-    // Incomplete escape. Undo all advances and return false.
-    while (i > 0) {
-      i--;
-      PushBack(chars_read[i]);
-    }
-    return false;
-  }
-  // Complete escape. Add all chars to current literal buffer.
-  for (int i = 0; i < 6; i++) {
-    AddLiteralChar(chars_read[i]);
-  }
-  return true;
+  return hex_digits_read == 4;
 }
 
 
@@ -1180,7 +1157,7 @@ bool Scanner::ScanRegExpFlags() {
       AddLiteralCharAdvance();
     } else {
       if (!ScanLiteralUnicodeEscape()) {
-        break;
+        return false;
       }
       Advance();
     }

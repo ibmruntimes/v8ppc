@@ -25,7 +25,7 @@ namespace compiler {
 
 // Forward declarations.
 class Operator;
-struct SimplifiedOperatorBuilderImpl;
+struct SimplifiedOperatorGlobalCache;
 
 
 enum BaseTaggedness { kUntaggedBase, kTaggedBase };
@@ -146,6 +146,9 @@ class SimplifiedOperatorBuilder FINAL {
   const Operator* ChangeBoolToBit();
   const Operator* ChangeBitToBool();
 
+  const Operator* ObjectIsSmi();
+  const Operator* ObjectIsNonNegativeSmi();
+
   const Operator* LoadField(const FieldAccess&);
   const Operator* StoreField(const FieldAccess&);
 
@@ -158,7 +161,7 @@ class SimplifiedOperatorBuilder FINAL {
  private:
   Zone* zone() const { return zone_; }
 
-  const SimplifiedOperatorBuilderImpl& impl_;
+  const SimplifiedOperatorGlobalCache& cache_;
   Zone* const zone_;
 
   DISALLOW_COPY_AND_ASSIGN(SimplifiedOperatorBuilder);

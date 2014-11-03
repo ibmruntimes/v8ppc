@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef V8_RUNTIME_H_
-#define V8_RUNTIME_H_
+#ifndef V8_RUNTIME_RUNTIME_H_
+#define V8_RUNTIME_RUNTIME_H_
 
 #include "src/allocation.h"
 #include "src/objects.h"
@@ -187,12 +187,19 @@ namespace internal {
   /* Classes support */                                    \
   F(ToMethod, 2, 1)                                        \
   F(HomeObjectSymbol, 0, 1)                                \
+  F(DefineClass, 6, 1)                                     \
+  F(DefineClassMethod, 3, 1)                               \
+  F(DefineClassGetter, 3, 1)                               \
+  F(DefineClassSetter, 3, 1)                               \
+  F(ClassGetSourceCode, 1, 1)                              \
   F(ThrowNonMethodError, 0, 1)                             \
   F(ThrowUnsupportedSuperError, 0, 1)                      \
   F(LoadFromSuper, 3, 1)                                   \
   F(LoadKeyedFromSuper, 3, 1)                              \
   F(StoreToSuper_Strict, 4, 1)                             \
-  F(StoreToSuper_Sloppy, 4, 1)
+  F(StoreToSuper_Sloppy, 4, 1)                             \
+  F(StoreKeyedToSuper_Strict, 4, 1)                        \
+  F(StoreKeyedToSuper_Sloppy, 4, 1)
 
 
 #define RUNTIME_FUNCTION_LIST_ALWAYS_2(F)              \
@@ -264,6 +271,7 @@ namespace internal {
   F(MoveArrayContents, 2, 1)                           \
   F(EstimateNumberOfElements, 1, 1)                    \
   F(NormalizeElements, 1, 1)                           \
+  F(HasComplexElements, 1, 1)                          \
                                                        \
   /* Getters and Setters */                            \
   F(LookupAccessor, 3, 1)                              \
@@ -287,7 +295,6 @@ namespace internal {
   /* Harmony proxies */                                \
   F(CreateJSProxy, 2, 1)                               \
   F(CreateJSFunctionProxy, 4, 1)                       \
-  F(IsJSProxy, 1, 1)                                   \
   F(IsJSFunctionProxy, 1, 1)                           \
   F(GetHandler, 1, 1)                                  \
   F(GetCallTrap, 1, 1)                                 \
@@ -348,6 +355,7 @@ namespace internal {
   F(ArrayBufferIsView, 1, 1)                           \
   F(ArrayBufferNeuter, 1, 1)                           \
                                                        \
+  F(IsTypedArray, 1, 1)                                \
   F(TypedArrayInitializeFromArrayLike, 4, 1)           \
   F(TypedArrayGetBuffer, 1, 1)                         \
   F(TypedArraySetFastCases, 3, 1)                      \
@@ -386,6 +394,7 @@ namespace internal {
   F(TraceExit, 1, 1)                                   \
   F(Abort, 1, 1)                                       \
   F(AbortJS, 1, 1)                                     \
+  F(NativeScriptsCount, 0, 1)                          \
   /* ES5 */                                            \
   F(OwnKeys, 1, 1)                                     \
                                                        \
@@ -515,7 +524,7 @@ namespace internal {
 #define RUNTIME_FUNCTION_LIST_RETURN_PAIR(F)              \
   F(LoadLookupSlot, 2, 2)                                 \
   F(LoadLookupSlotNoReferenceError, 2, 2)                 \
-  F(ResolvePossiblyDirectEval, 5, 2)                      \
+  F(ResolvePossiblyDirectEval, 6, 2)                      \
   F(ForInInit, 2, 2) /* TODO(turbofan): Only temporary */ \
   F(ForInNext, 4, 2) /* TODO(turbofan): Only temporary */
 
@@ -628,14 +637,6 @@ namespace internal {
 #endif
 
 
-#ifdef DEBUG
-#define RUNTIME_FUNCTION_LIST_DEBUG(F) \
-  /* Testing */                        \
-  F(ListNatives, 0, 1)
-#else
-#define RUNTIME_FUNCTION_LIST_DEBUG(F)
-#endif
-
 // ----------------------------------------------------------------------------
 // RUNTIME_FUNCTION_LIST defines all runtime functions accessed
 // either directly by id (via the code generator), or indirectly
@@ -646,7 +647,6 @@ namespace internal {
   RUNTIME_FUNCTION_LIST_ALWAYS_1(F)            \
   RUNTIME_FUNCTION_LIST_ALWAYS_2(F)            \
   RUNTIME_FUNCTION_LIST_ALWAYS_3(F)            \
-  RUNTIME_FUNCTION_LIST_DEBUG(F)               \
   RUNTIME_FUNCTION_LIST_DEBUGGER(F)            \
   RUNTIME_FUNCTION_LIST_I18N_SUPPORT(F)
 
@@ -664,6 +664,7 @@ namespace internal {
   F(IsNonNegativeSmi, 1, 1)                                 \
   F(IsArray, 1, 1)                                          \
   F(IsRegExp, 1, 1)                                         \
+  F(IsJSProxy, 1, 1)                                        \
   F(IsConstructCall, 0, 1)                                  \
   F(CallFunction, -1 /* receiver + n args + function */, 1) \
   F(ArgumentsLength, 0, 1)                                  \
@@ -732,44 +733,26 @@ namespace internal {
 
 class RuntimeState {
  public:
-  StaticResource<ConsStringIteratorOp>* string_iterator() {
-    return &string_iterator_;
-  }
   unibrow::Mapping<unibrow::ToUppercase, 128>* to_upper_mapping() {
     return &to_upper_mapping_;
   }
   unibrow::Mapping<unibrow::ToLowercase, 128>* to_lower_mapping() {
     return &to_lower_mapping_;
   }
-  ConsStringIteratorOp* string_iterator_compare_x() {
-    return &string_iterator_compare_x_;
-  }
-  ConsStringIteratorOp* string_iterator_compare_y() {
-    return &string_iterator_compare_y_;
-  }
-  ConsStringIteratorOp* string_locale_compare_it1() {
-    return &string_locale_compare_it1_;
-  }
-  ConsStringIteratorOp* string_locale_compare_it2() {
-    return &string_locale_compare_it2_;
-  }
 
  private:
   RuntimeState() {}
-  // Non-reentrant string buffer for efficient general use in the runtime.
-  StaticResource<ConsStringIteratorOp> string_iterator_;
   unibrow::Mapping<unibrow::ToUppercase, 128> to_upper_mapping_;
   unibrow::Mapping<unibrow::ToLowercase, 128> to_lower_mapping_;
-  ConsStringIteratorOp string_iterator_compare_x_;
-  ConsStringIteratorOp string_iterator_compare_y_;
-  ConsStringIteratorOp string_locale_compare_it1_;
-  ConsStringIteratorOp string_locale_compare_it2_;
 
   friend class Isolate;
   friend class Runtime;
 
   DISALLOW_COPY_AND_ASSIGN(RuntimeState);
 };
+
+
+class JavaScriptFrameIterator;  // Forward declaration.
 
 
 class Runtime : public AllStatic {
@@ -823,10 +806,6 @@ class Runtime : public AllStatic {
   // Get the intrinsic function with the given function entry address.
   static const Function* FunctionForEntry(Address ref);
 
-  // General-purpose helper functions for runtime system.
-  static int StringMatch(Isolate* isolate, Handle<String> sub,
-                         Handle<String> pat, int index);
-
   // TODO(1240886): Some of the following methods are *not* handle safe, but
   // accept handle arguments. This seems fragile.
 
@@ -842,13 +821,6 @@ class Runtime : public AllStatic {
   MUST_USE_RESULT static MaybeHandle<Object> DefineObjectProperty(
       Handle<JSObject> object, Handle<Object> key, Handle<Object> value,
       PropertyAttributes attr);
-
-  MUST_USE_RESULT static MaybeHandle<Object> DeleteObjectProperty(
-      Isolate* isolate, Handle<JSReceiver> object, Handle<Object> key,
-      JSReceiver::DeleteMode mode);
-
-  MUST_USE_RESULT static MaybeHandle<Object> HasObjectProperty(
-      Isolate* isolate, Handle<JSReceiver> object, Handle<Object> key);
 
   MUST_USE_RESULT static MaybeHandle<Object> GetObjectProperty(
       Isolate* isolate, Handle<Object> object, Handle<Object> key);
@@ -870,6 +842,8 @@ class Runtime : public AllStatic {
 
   static void FreeArrayBuffer(Isolate* isolate,
                               JSArrayBuffer* phantom_array_buffer);
+
+  static int FindIndexedNonNativeFrame(JavaScriptFrameIterator* it, int index);
 
   enum TypedArrayId {
     // arrayIds below should be synchromized with typedarray.js natives.
@@ -913,4 +887,4 @@ class DeclareGlobalsStrictMode : public BitField<StrictMode, 2, 1> {};
 }  // namespace internal
 }  // namespace v8
 
-#endif  // V8_RUNTIME_H_
+#endif  // V8_RUNTIME_RUNTIME_H_

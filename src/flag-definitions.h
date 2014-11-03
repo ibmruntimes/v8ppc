@@ -114,6 +114,11 @@ struct MaybeBoolFlag {
 #else
 #define ENABLE_ARMV7_DEFAULT false
 #endif
+#if (defined CAN_USE_ARMV8_INSTRUCTIONS) || !(defined ARM_TEST_NO_FEATURE_PROBE)
+#define ENABLE_ARMV8_DEFAULT true
+#else
+#define ENABLE_ARMV8_DEFAULT false
+#endif
 #if (defined CAN_USE_VFP32DREGS) || !(defined ARM_TEST_NO_FEATURE_PROBE)
 #define ENABLE_32DREGS_DEFAULT true
 #else
@@ -126,6 +131,8 @@ struct MaybeBoolFlag {
 #endif
 
 #define DEFINE_BOOL(nam, def, cmt) FLAG(BOOL, bool, nam, def, cmt)
+#define DEFINE_BOOL_READONLY(nam, def, cmt) \
+  FLAG_READONLY(BOOL, bool, nam, def, cmt)
 #define DEFINE_MAYBE_BOOL(nam, cmt) \
   FLAG(MAYBE_BOOL, MaybeBoolFlag, nam, {false COMMA false}, cmt)
 #define DEFINE_INT(nam, def, cmt) FLAG(INT, int, nam, def, cmt)
@@ -147,39 +154,55 @@ struct MaybeBoolFlag {
 
 // Flags for language modes and experimental language features.
 DEFINE_BOOL(use_strict, false, "enforce strict mode")
+
 DEFINE_BOOL(es_staging, false, "enable upcoming ES6+ features")
-
-DEFINE_BOOL(harmony_scoping, false, "enable harmony block scoping")
-DEFINE_BOOL(harmony_modules, false,
-            "enable harmony modules (implies block scoping)")
-DEFINE_BOOL(harmony_proxies, false, "enable harmony proxies")
-DEFINE_BOOL(harmony_numeric_literals, false,
-            "enable harmony numeric literals (0o77, 0b11)")
-DEFINE_BOOL(harmony_strings, false, "enable harmony string")
-DEFINE_BOOL(harmony_arrays, false, "enable harmony arrays")
-DEFINE_BOOL(harmony_arrow_functions, false, "enable harmony arrow functions")
-DEFINE_BOOL(harmony_classes, false, "enable harmony classes")
-DEFINE_BOOL(harmony_object_literals, false,
-            "enable harmony object literal extensions")
-DEFINE_BOOL(harmony_regexps, false, "enable regexp-related harmony features")
 DEFINE_BOOL(harmony, false, "enable all harmony features (except proxies)")
+DEFINE_IMPLICATION(harmony, es_staging)
 
-DEFINE_IMPLICATION(harmony, harmony_scoping)
-DEFINE_IMPLICATION(harmony, harmony_modules)
-// TODO(rossberg): Reenable when problems are sorted out.
-// DEFINE_IMPLICATION(harmony, harmony_proxies)
-DEFINE_IMPLICATION(harmony, harmony_strings)
-DEFINE_IMPLICATION(harmony, harmony_arrays)
-DEFINE_IMPLICATION(harmony, harmony_arrow_functions)
-DEFINE_IMPLICATION(harmony, harmony_classes)
-DEFINE_IMPLICATION(harmony, harmony_object_literals)
-DEFINE_IMPLICATION(harmony, harmony_regexps)
+#define HARMONY_FEATURES(V)                                       \
+  V(harmony_scoping, "harmony block scoping")                     \
+  V(harmony_modules, "harmony modules (implies block scoping)")   \
+  V(harmony_arrays, "harmony arrays")                             \
+  V(harmony_classes, "harmony classes")                           \
+  V(harmony_object_literals, "harmony object literal extensions") \
+  V(harmony_regexps, "reg-exp related harmony features")          \
+  V(harmony_arrow_functions, "harmony arrow functions")           \
+  V(harmony_tostring, "harmony Symbol.toStringTag")
+
+#define STAGED_FEATURES(V)              \
+  V(harmony_strings, "harmony strings") \
+  V(harmony_numeric_literals, "harmony numeric literals (0o77, 0b11)")
+
+#define SHIPPING_FEATURES(V)
+
+#define FLAG_FEATURES(id, description)           \
+  DEFINE_BOOL(id, false, "enable " #description) \
+  DEFINE_IMPLICATION(harmony, id)
+
+HARMONY_FEATURES(FLAG_FEATURES)
+STAGED_FEATURES(FLAG_FEATURES)
+#undef FLAG_FEATURES
+
+#define FLAG_STAGED_FEATURES(id, description) DEFINE_IMPLICATION(es_staging, id)
+
+STAGED_FEATURES(FLAG_STAGED_FEATURES)
+#undef FLAG_STAGED_FEATURES
+
+#define FLAG_SHIPPING_FEATURES(id, description) \
+  DEFINE_BOOL_READONLY(id, true, "enable " #description)
+
+SHIPPING_FEATURES(FLAG_SHIPPING_FEATURES)
+#undef FLAG_SHIPPING_FEATURES
+
+// Feature dependencies.
 DEFINE_IMPLICATION(harmony_modules, harmony_scoping)
 DEFINE_IMPLICATION(harmony_classes, harmony_scoping)
 DEFINE_IMPLICATION(harmony_classes, harmony_object_literals)
 
-DEFINE_IMPLICATION(harmony, es_staging)
-DEFINE_IMPLICATION(es_staging, harmony_numeric_literals)
+DEFINE_BOOL(harmony_proxies, false, "enable harmony proxies")
+// TODO(rossberg): Reenable when problems are sorted out.
+// DEFINE_IMPLICATION(harmony, harmony_proxies)
+
 
 // Flags for experimental implementation features.
 DEFINE_BOOL(compiled_keyed_generic_loads, false,
@@ -333,8 +356,11 @@ DEFINE_BOOL(omit_map_checks_for_leaf_maps, true,
 // Flags for TurboFan.
 DEFINE_STRING(turbo_filter, "~", "optimization filter for TurboFan compiler")
 DEFINE_BOOL(trace_turbo, false, "trace generated TurboFan IR")
-DEFINE_BOOL(trace_turbo_types, true, "trace generated TurboFan types")
-DEFINE_BOOL(trace_turbo_scheduler, false, "trace generated TurboFan scheduler")
+DEFINE_STRING(trace_turbo_cfg_file, NULL,
+              "trace turbo cfg graph (for C1 visualizer) to a given file name")
+DEFINE_BOOL(trace_turbo_types, true, "trace TurboFan's types")
+DEFINE_BOOL(trace_turbo_scheduler, false, "trace TurboFan's scheduler")
+DEFINE_BOOL(trace_turbo_reduction, false, "trace TurboFan's various reducers")
 DEFINE_BOOL(turbo_asm, false, "enable TurboFan for asm.js code")
 DEFINE_BOOL(turbo_verify, false, "verify TurboFan graphs at each phase")
 DEFINE_BOOL(turbo_stats, false, "print TurboFan statistics")
@@ -345,7 +371,11 @@ DEFINE_BOOL(context_specialization, false,
             "enable context specialization in TurboFan")
 DEFINE_BOOL(turbo_deoptimization, false, "enable deoptimization in TurboFan")
 DEFINE_BOOL(turbo_inlining, false, "enable inlining in TurboFan")
+DEFINE_BOOL(turbo_inlining_intrinsics, false,
+            "enable inlining of intrinsics in TurboFan")
 DEFINE_BOOL(trace_turbo_inlining, false, "trace TurboFan inlining")
+DEFINE_BOOL(loop_assignment_analysis, true, "perform loop assignment analysis")
+DEFINE_IMPLICATION(turbo_inlining_intrinsics, turbo_inlining)
 DEFINE_IMPLICATION(turbo_inlining, turbo_types)
 DEFINE_BOOL(turbo_profiling, false, "enable profiling in TurboFan")
 
@@ -378,6 +408,8 @@ DEFINE_BOOL(enable_vfp3, ENABLE_VFP3_DEFAULT,
             "enable use of VFP3 instructions if available")
 DEFINE_BOOL(enable_armv7, ENABLE_ARMV7_DEFAULT,
             "enable use of ARMv7 instructions if available (ARM only)")
+DEFINE_BOOL(enable_armv8, ENABLE_ARMV8_DEFAULT,
+            "enable use of ARMv8 instructions if available (ARM 32-bit only)")
 DEFINE_BOOL(enable_neon, ENABLE_NEON_DEFAULT,
             "enable use of NEON instructions if available (ARM only)")
 DEFINE_BOOL(enable_sudiv, true,
@@ -439,8 +471,8 @@ DEFINE_BOOL(trace_deopt, false, "trace optimize function deoptimization")
 DEFINE_BOOL(trace_stub_failures, false,
             "trace deoptimization of generated code stubs")
 
-DEFINE_BOOL(serialize_toplevel, false, "enable caching of toplevel scripts")
-DEFINE_BOOL(trace_code_serializer, false, "trace code serializer")
+DEFINE_BOOL(serialize_toplevel, true, "enable caching of toplevel scripts")
+DEFINE_BOOL(trace_code_serializer, false, "print code serializer trace")
 
 // compiler.cc
 DEFINE_INT(min_preparse_length, 1024,
@@ -486,6 +518,8 @@ DEFINE_BOOL(always_inline_smi_code, false,
 DEFINE_INT(min_semi_space_size, 0,
            "min size of a semi-space (in MBytes), the new space consists of two"
            "semi-spaces")
+DEFINE_INT(target_semi_space_size, 0,
+           "target size of a semi-space (in MBytes) before triggering a GC")
 DEFINE_INT(max_semi_space_size, 0,
            "max size of a semi-space (in MBytes), the new space consists of two"
            "semi-spaces")
@@ -733,8 +767,6 @@ DEFINE_BOOL(trace_contexts, false, "trace contexts operations")
 DEFINE_BOOL(gc_verbose, false, "print stuff during garbage collection")
 DEFINE_BOOL(heap_stats, false, "report heap statistics before and after GC")
 DEFINE_BOOL(code_stats, false, "report code statistics after GC")
-DEFINE_BOOL(verify_native_context_separation, false,
-            "verify that code holds on to at most one native context after GC")
 DEFINE_BOOL(print_handles, false, "report handles after GC")
 DEFINE_BOOL(print_global_handles, false, "report global handles after GC")
 
@@ -905,7 +937,7 @@ DEFINE_INT(dump_allocations_digest_at_alloc, 0,
 #undef FLAG
 #define FLAG FLAG_READONLY
 
-// assembler-arm.h
+// assembler.h
 DEFINE_BOOL(enable_ool_constant_pool, V8_OOL_CONSTANT_POOL,
             "enable use of out-of-line constant pools (ARM only)")
 

@@ -125,6 +125,9 @@ void HeapObject::HeapObjectVerify() {
     case PROPERTY_CELL_TYPE:
       PropertyCell::cast(this)->PropertyCellVerify();
       break;
+    case WEAK_CELL_TYPE:
+      WeakCell::cast(this)->WeakCellVerify();
+      break;
     case JS_ARRAY_TYPE:
       JSArray::cast(this)->JSArrayVerify();
       break;
@@ -256,9 +259,17 @@ void JSObject::JSObjectVerify() {
   }
 
   if (HasFastProperties()) {
-    CHECK_EQ(map()->unused_property_fields(),
-             (map()->inobject_properties() + properties()->length() -
-              map()->NextFreePropertyIndex()));
+    int actual_unused_property_fields = map()->inobject_properties() +
+                                        properties()->length() -
+                                        map()->NextFreePropertyIndex();
+    if (map()->unused_property_fields() != actual_unused_property_fields) {
+      // This could actually happen in the middle of StoreTransitionStub
+      // when the new extended backing store is already set into the object and
+      // the allocation of the MutableHeapNumber triggers GC (in this case map
+      // is not updated yet).
+      CHECK_EQ(map()->unused_property_fields(),
+               actual_unused_property_fields - JSObject::kFieldsAdded);
+    }
     DescriptorArray* descriptors = map()->instance_descriptors();
     for (int i = 0; i < map()->NumberOfOwnDescriptors(); i++) {
       if (descriptors->GetDetails(i).type() == FIELD) {
@@ -624,6 +635,13 @@ void PropertyCell::PropertyCellVerify() {
   CHECK(IsPropertyCell());
   VerifyObjectField(kValueOffset);
   VerifyObjectField(kTypeOffset);
+}
+
+
+void WeakCell::WeakCellVerify() {
+  CHECK(IsWeakCell());
+  VerifyObjectField(kValueOffset);
+  VerifyObjectField(kNextOffset);
 }
 
 
@@ -1197,6 +1215,24 @@ bool TransitionArray::IsConsistentWithBackPointers(Map* current_map) {
     if (!CheckOneBackPointer(current_map, GetTarget(i))) return false;
   }
   return true;
+}
+
+
+void Code::VerifyEmbeddedObjectsInFullCode() {
+  // Check that no context-specific object has been embedded.
+  Heap* heap = GetIsolate()->heap();
+  int mask = RelocInfo::ModeMask(RelocInfo::EMBEDDED_OBJECT);
+  for (RelocIterator it(this, mask); !it.done(); it.next()) {
+    Object* obj = it.rinfo()->target_object();
+    if (obj->IsCell()) obj = Cell::cast(obj)->value();
+    if (obj->IsPropertyCell()) obj = PropertyCell::cast(obj)->value();
+    if (!obj->IsHeapObject()) continue;
+    Map* map = obj->IsMap() ? Map::cast(obj) : HeapObject::cast(obj)->map();
+    int i = 0;
+    while (map != heap->roots_array_start()[i++]) {
+      CHECK_LT(i, Heap::kStrongRootListLength);
+    }
+  }
 }
 
 

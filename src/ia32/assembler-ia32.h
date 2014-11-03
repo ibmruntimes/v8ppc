@@ -958,18 +958,24 @@ class Assembler : public AssemblerBase {
 
   void cvtsi2sd(XMMRegister dst, Register src) { cvtsi2sd(dst, Operand(src)); }
   void cvtsi2sd(XMMRegister dst, const Operand& src);
-  void cvtss2sd(XMMRegister dst, XMMRegister src);
-  void cvtsd2ss(XMMRegister dst, XMMRegister src);
-
-  void addsd(XMMRegister dst, XMMRegister src);
+  void cvtss2sd(XMMRegister dst, const Operand& src);
+  void cvtss2sd(XMMRegister dst, XMMRegister src) {
+    cvtss2sd(dst, Operand(src));
+  }
+  void cvtsd2ss(XMMRegister dst, const Operand& src);
+  void cvtsd2ss(XMMRegister dst, XMMRegister src) {
+    cvtsd2ss(dst, Operand(src));
+  }
+  void addsd(XMMRegister dst, XMMRegister src) { addsd(dst, Operand(src)); }
   void addsd(XMMRegister dst, const Operand& src);
-  void subsd(XMMRegister dst, XMMRegister src);
+  void subsd(XMMRegister dst, XMMRegister src) { subsd(dst, Operand(src)); }
   void subsd(XMMRegister dst, const Operand& src);
-  void mulsd(XMMRegister dst, XMMRegister src);
+  void mulsd(XMMRegister dst, XMMRegister src) { mulsd(dst, Operand(src)); }
   void mulsd(XMMRegister dst, const Operand& src);
-  void divsd(XMMRegister dst, XMMRegister src);
+  void divsd(XMMRegister dst, XMMRegister src) { divsd(dst, Operand(src)); }
+  void divsd(XMMRegister dst, const Operand& src);
   void xorpd(XMMRegister dst, XMMRegister src);
-  void sqrtsd(XMMRegister dst, XMMRegister src);
+  void sqrtsd(XMMRegister dst, XMMRegister src) { sqrtsd(dst, Operand(src)); }
   void sqrtsd(XMMRegister dst, const Operand& src);
 
   void andpd(XMMRegister dst, XMMRegister src);
@@ -1024,6 +1030,8 @@ class Assembler : public AssemblerBase {
   void por(XMMRegister dst, XMMRegister src);
   void ptest(XMMRegister dst, XMMRegister src);
 
+  void pslld(XMMRegister reg, int8_t shift);
+  void psrld(XMMRegister reg, int8_t shift);
   void psllq(XMMRegister reg, int8_t shift);
   void psllq(XMMRegister dst, XMMRegister src);
   void psrlq(XMMRegister reg, int8_t shift);

@@ -2,12 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "test/unittests/compiler/graph-unittest.h"
-
 #include "src/compiler/js-builtin-reducer.h"
 #include "src/compiler/js-graph.h"
 #include "src/compiler/node-properties-inl.h"
 #include "src/compiler/typer.h"
+#include "test/unittests/compiler/graph-unittest.h"
+#include "test/unittests/compiler/node-test-utils.h"
 #include "testing/gmock-support.h"
 
 using testing::Capture;
@@ -16,15 +16,15 @@ namespace v8 {
 namespace internal {
 namespace compiler {
 
-class JSBuiltinReducerTest : public GraphTest {
+class JSBuiltinReducerTest : public TypedGraphTest {
  public:
   JSBuiltinReducerTest() : javascript_(zone()) {}
 
  protected:
-  Reduction Reduce(Node* node) {
-    Typer typer(zone());
-    MachineOperatorBuilder machine;
-    JSGraph jsgraph(graph(), common(), javascript(), &typer, &machine);
+  Reduction Reduce(Node* node, MachineOperatorBuilder::Flags flags =
+                                   MachineOperatorBuilder::Flag::kNoFlags) {
+    MachineOperatorBuilder machine(kMachPtr, flags);
+    JSGraph jsgraph(graph(), common(), javascript(), &machine);
     JSBuiltinReducer reducer(&jsgraph);
     return reducer.Reduce(node);
   }
@@ -33,6 +33,18 @@ class JSBuiltinReducerTest : public GraphTest {
     Node* n = graph()->NewNode(common()->Parameter(index), graph()->start());
     NodeProperties::SetBounds(n, Bounds(Type::None(), t));
     return n;
+  }
+
+  Handle<JSFunction> MathFunction(const char* name) {
+    Handle<Object> m =
+        JSObject::GetProperty(isolate()->global_object(),
+                              isolate()->factory()->NewStringFromAsciiChecked(
+                                  "Math")).ToHandleChecked();
+    Handle<JSFunction> f = Handle<JSFunction>::cast(
+        JSObject::GetProperty(
+            m, isolate()->factory()->NewStringFromAsciiChecked(name))
+            .ToHandleChecked());
+    return f;
   }
 
   JSOperatorBuilder* javascript() { return &javascript_; }
@@ -60,7 +72,7 @@ Type* const kNumberTypes[] = {
 
 
 TEST_F(JSBuiltinReducerTest, MathAbs) {
-  Handle<JSFunction> f(isolate()->context()->math_abs_fun());
+  Handle<JSFunction> f = MathFunction("abs");
 
   TRACED_FOREACH(Type*, t0, kNumberTypes) {
     Node* p0 = Parameter(t0, 0);
@@ -94,7 +106,7 @@ TEST_F(JSBuiltinReducerTest, MathAbs) {
 
 
 TEST_F(JSBuiltinReducerTest, MathSqrt) {
-  Handle<JSFunction> f(isolate()->context()->math_sqrt_fun());
+  Handle<JSFunction> f = MathFunction("sqrt");
 
   TRACED_FOREACH(Type*, t0, kNumberTypes) {
     Node* p0 = Parameter(t0, 0);
@@ -115,7 +127,7 @@ TEST_F(JSBuiltinReducerTest, MathSqrt) {
 
 
 TEST_F(JSBuiltinReducerTest, MathMax0) {
-  Handle<JSFunction> f(isolate()->context()->math_max_fun());
+  Handle<JSFunction> f = MathFunction("max");
 
   Node* fun = HeapConstant(Unique<HeapObject>::CreateUninitialized(f));
   Node* call =
@@ -129,7 +141,7 @@ TEST_F(JSBuiltinReducerTest, MathMax0) {
 
 
 TEST_F(JSBuiltinReducerTest, MathMax1) {
-  Handle<JSFunction> f(isolate()->context()->math_max_fun());
+  Handle<JSFunction> f = MathFunction("max");
 
   TRACED_FOREACH(Type*, t0, kNumberTypes) {
     Node* p0 = Parameter(t0, 0);
@@ -146,7 +158,7 @@ TEST_F(JSBuiltinReducerTest, MathMax1) {
 
 
 TEST_F(JSBuiltinReducerTest, MathMax2) {
-  Handle<JSFunction> f(isolate()->context()->math_max_fun());
+  Handle<JSFunction> f = MathFunction("max");
 
   TRACED_FOREACH(Type*, t0, kNumberTypes) {
     TRACED_FOREACH(Type*, t1, kNumberTypes) {
@@ -182,7 +194,7 @@ TEST_F(JSBuiltinReducerTest, MathMax2) {
 
 
 TEST_F(JSBuiltinReducerTest, MathImul) {
-  Handle<JSFunction> f(isolate()->context()->math_imul_fun());
+  Handle<JSFunction> f = MathFunction("imul");
 
   TRACED_FOREACH(Type*, t0, kNumberTypes) {
     TRACED_FOREACH(Type*, t1, kNumberTypes) {
@@ -211,13 +223,7 @@ TEST_F(JSBuiltinReducerTest, MathImul) {
 
 
 TEST_F(JSBuiltinReducerTest, MathFround) {
-  Handle<Object> m =
-      JSObject::GetProperty(isolate()->global_object(),
-                            isolate()->factory()->NewStringFromAsciiChecked(
-                                "Math")).ToHandleChecked();
-  Handle<JSFunction> f = Handle<JSFunction>::cast(
-      JSObject::GetProperty(m, isolate()->factory()->NewStringFromAsciiChecked(
-                                   "fround")).ToHandleChecked());
+  Handle<JSFunction> f = MathFunction("fround");
 
   TRACED_FOREACH(Type*, t0, kNumberTypes) {
     Node* p0 = Parameter(t0, 0);
@@ -232,6 +238,79 @@ TEST_F(JSBuiltinReducerTest, MathFround) {
   }
 }
 
+
+// -----------------------------------------------------------------------------
+// Math.floor
+
+
+TEST_F(JSBuiltinReducerTest, MathFloorAvailable) {
+  Handle<JSFunction> f = MathFunction("floor");
+
+  TRACED_FOREACH(Type*, t0, kNumberTypes) {
+    Node* p0 = Parameter(t0, 0);
+    Node* fun = HeapConstant(Unique<HeapObject>::CreateUninitialized(f));
+    Node* call =
+        graph()->NewNode(javascript()->CallFunction(3, NO_CALL_FUNCTION_FLAGS),
+                         fun, UndefinedConstant(), p0);
+    Reduction r = Reduce(call, MachineOperatorBuilder::Flag::kFloat64Floor);
+
+    ASSERT_TRUE(r.Changed());
+    EXPECT_THAT(r.replacement(), IsFloat64Floor(p0));
+  }
+}
+
+
+TEST_F(JSBuiltinReducerTest, MathFloorUnavailable) {
+  Handle<JSFunction> f = MathFunction("floor");
+
+  TRACED_FOREACH(Type*, t0, kNumberTypes) {
+    Node* p0 = Parameter(t0, 0);
+    Node* fun = HeapConstant(Unique<HeapObject>::CreateUninitialized(f));
+    Node* call =
+        graph()->NewNode(javascript()->CallFunction(3, NO_CALL_FUNCTION_FLAGS),
+                         fun, UndefinedConstant(), p0);
+    Reduction r = Reduce(call, MachineOperatorBuilder::Flag::kNoFlags);
+
+    ASSERT_FALSE(r.Changed());
+  }
+}
+
+
+// -----------------------------------------------------------------------------
+// Math.ceil
+
+
+TEST_F(JSBuiltinReducerTest, MathCeilAvailable) {
+  Handle<JSFunction> f = MathFunction("ceil");
+
+  TRACED_FOREACH(Type*, t0, kNumberTypes) {
+    Node* p0 = Parameter(t0, 0);
+    Node* fun = HeapConstant(Unique<HeapObject>::CreateUninitialized(f));
+    Node* call =
+        graph()->NewNode(javascript()->CallFunction(3, NO_CALL_FUNCTION_FLAGS),
+                         fun, UndefinedConstant(), p0);
+    Reduction r = Reduce(call, MachineOperatorBuilder::Flag::kFloat64Ceil);
+
+    ASSERT_TRUE(r.Changed());
+    EXPECT_THAT(r.replacement(), IsFloat64Ceil(p0));
+  }
+}
+
+
+TEST_F(JSBuiltinReducerTest, MathCeilUnavailable) {
+  Handle<JSFunction> f = MathFunction("ceil");
+
+  TRACED_FOREACH(Type*, t0, kNumberTypes) {
+    Node* p0 = Parameter(t0, 0);
+    Node* fun = HeapConstant(Unique<HeapObject>::CreateUninitialized(f));
+    Node* call =
+        graph()->NewNode(javascript()->CallFunction(3, NO_CALL_FUNCTION_FLAGS),
+                         fun, UndefinedConstant(), p0);
+    Reduction r = Reduce(call, MachineOperatorBuilder::Flag::kNoFlags);
+
+    ASSERT_FALSE(r.Changed());
+  }
+}
 }  // namespace compiler
 }  // namespace internal
 }  // namespace v8

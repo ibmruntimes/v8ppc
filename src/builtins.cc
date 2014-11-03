@@ -202,6 +202,19 @@ static bool ArrayPrototypeHasNoElements(Heap* heap,
 }
 
 
+static inline bool IsJSArrayFastElementMovingAllowed(Heap* heap,
+                                                     JSArray* receiver) {
+  if (!FLAG_clever_optimizations) return false;
+  DisallowHeapAllocation no_gc;
+  Context* native_context = heap->isolate()->context()->native_context();
+  JSObject* array_proto =
+      JSObject::cast(native_context->array_function()->prototype());
+  PrototypeIterator iter(heap->isolate(), receiver);
+  return iter.GetCurrent() == array_proto &&
+         ArrayPrototypeHasNoElements(heap, native_context, array_proto);
+}
+
+
 // Returns empty handle if not applicable.
 MUST_USE_RESULT
 static inline MaybeHandle<FixedArrayBase> EnsureJSArrayWithWritableFastElements(
@@ -213,13 +226,13 @@ static inline MaybeHandle<FixedArrayBase> EnsureJSArrayWithWritableFastElements(
   Handle<JSArray> array = Handle<JSArray>::cast(receiver);
   // If there may be elements accessors in the prototype chain, the fast path
   // cannot be used if there arguments to add to the array.
-  if (args != NULL && array->map()->DictionaryElementsInPrototypeChainOnly()) {
+  Heap* heap = isolate->heap();
+  if (args != NULL && !IsJSArrayFastElementMovingAllowed(heap, *array)) {
     return MaybeHandle<FixedArrayBase>();
   }
   if (array->map()->is_observed()) return MaybeHandle<FixedArrayBase>();
   if (!array->map()->is_extensible()) return MaybeHandle<FixedArrayBase>();
   Handle<FixedArrayBase> elms(array->elements(), isolate);
-  Heap* heap = isolate->heap();
   Map* map = elms->map();
   if (map == heap->fixed_array_map()) {
     if (args == NULL || array->HasFastObjectElements()) return elms;
@@ -261,19 +274,6 @@ static inline MaybeHandle<FixedArrayBase> EnsureJSArrayWithWritableFastElements(
     return handle(array->elements(), isolate);
   }
   return elms;
-}
-
-
-static inline bool IsJSArrayFastElementMovingAllowed(Heap* heap,
-                                                     JSArray* receiver) {
-  if (!FLAG_clever_optimizations) return false;
-  DisallowHeapAllocation no_gc;
-  Context* native_context = heap->isolate()->context()->native_context();
-  JSObject* array_proto =
-      JSObject::cast(native_context->array_function()->prototype());
-  PrototypeIterator iter(heap->isolate(), receiver);
-  return iter.GetCurrent() == array_proto &&
-         ArrayPrototypeHasNoElements(heap, native_context, array_proto);
 }
 
 
@@ -453,8 +453,7 @@ BUILTIN(ArrayShift) {
       EnsureJSArrayWithWritableFastElements(isolate, receiver, NULL, 0);
   Handle<FixedArrayBase> elms_obj;
   if (!maybe_elms_obj.ToHandle(&elms_obj) ||
-      !IsJSArrayFastElementMovingAllowed(heap,
-                                         *Handle<JSArray>::cast(receiver))) {
+      !IsJSArrayFastElementMovingAllowed(heap, JSArray::cast(*receiver))) {
     return CallJsBuiltin(isolate, "ArrayShift", args);
   }
   Handle<JSArray> array = Handle<JSArray>::cast(receiver);
@@ -499,11 +498,9 @@ BUILTIN(ArrayUnshift) {
   Heap* heap = isolate->heap();
   Handle<Object> receiver = args.receiver();
   MaybeHandle<FixedArrayBase> maybe_elms_obj =
-      EnsureJSArrayWithWritableFastElements(isolate, receiver, NULL, 0);
+      EnsureJSArrayWithWritableFastElements(isolate, receiver, &args, 1);
   Handle<FixedArrayBase> elms_obj;
-  if (!maybe_elms_obj.ToHandle(&elms_obj) ||
-      !IsJSArrayFastElementMovingAllowed(heap,
-                                         *Handle<JSArray>::cast(receiver))) {
+  if (!maybe_elms_obj.ToHandle(&elms_obj)) {
     return CallJsBuiltin(isolate, "ArrayUnshift", args);
   }
   Handle<JSArray> array = Handle<JSArray>::cast(receiver);
@@ -523,9 +520,6 @@ BUILTIN(ArrayUnshift) {
   }
 
   Handle<FixedArray> elms = Handle<FixedArray>::cast(elms_obj);
-
-  JSObject::EnsureCanContainElements(array, &args, 1, to_add,
-                                     DONT_ALLOW_DOUBLE_ELEMENTS);
 
   if (new_length > elms->length()) {
     // New backing storage is needed.
@@ -708,9 +702,7 @@ BUILTIN(ArraySplice) {
   MaybeHandle<FixedArrayBase> maybe_elms_obj =
       EnsureJSArrayWithWritableFastElements(isolate, receiver, &args, 3);
   Handle<FixedArrayBase> elms_obj;
-  if (!maybe_elms_obj.ToHandle(&elms_obj) ||
-      !IsJSArrayFastElementMovingAllowed(heap,
-                                         *Handle<JSArray>::cast(receiver))) {
+  if (!maybe_elms_obj.ToHandle(&elms_obj)) {
     return CallJsBuiltin(isolate, "ArraySplice", args);
   }
   Handle<JSArray> array = Handle<JSArray>::cast(receiver);
@@ -1279,11 +1271,6 @@ static void Generate_KeyedLoadIC_Generic(MacroAssembler* masm) {
 }
 
 
-static void Generate_KeyedLoadIC_String(MacroAssembler* masm) {
-  KeyedLoadIC::GenerateString(masm);
-}
-
-
 static void Generate_KeyedLoadIC_PreMonomorphic(MacroAssembler* masm) {
   KeyedLoadIC::GeneratePreMonomorphic(masm);
 }
@@ -1311,6 +1298,16 @@ static void Generate_KeyedStoreIC_Slow(MacroAssembler* masm) {
 
 static void Generate_StoreIC_Setter_ForDeopt(MacroAssembler* masm) {
   NamedStoreHandlerCompiler::GenerateStoreViaSetterForDeopt(masm);
+}
+
+
+static void Generate_KeyedStoreIC_Megamorphic(MacroAssembler* masm) {
+  KeyedStoreIC::GenerateMegamorphic(masm, SLOPPY);
+}
+
+
+static void Generate_KeyedStoreIC_Megamorphic_Strict(MacroAssembler* masm) {
+  KeyedStoreIC::GenerateMegamorphic(masm, STRICT);
 }
 
 
@@ -1569,7 +1566,7 @@ void Builtins::SetUp(Isolate* isolate, bool create_heap_objects) {
       PROFILE(isolate,
               CodeCreateEvent(Logger::BUILTIN_TAG, *code, functions[i].s_name));
       builtins_[i] = *code;
-      if (code->kind() == Code::BUILTIN) code->set_builtin_index(i);
+      code->set_builtin_index(i);
 #ifdef ENABLE_DISASSEMBLER
       if (FLAG_print_builtin_code) {
         CodeTracer::Scope trace_scope(isolate->GetCodeTracer());

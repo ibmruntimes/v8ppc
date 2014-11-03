@@ -41,9 +41,6 @@
 using namespace v8::internal;
 
 
-// IA32 builds fail on GCC 4.4.6 due to a warning in this function
-// Use a pragma to disable the checking for this function
-#pragma GCC diagnostic ignored "-Wstrict-aliasing"
 int STDCALL ConvertDToICVersion(double d) {
   union { double d; uint32_t u[2]; } dbl;
   dbl.d = d;

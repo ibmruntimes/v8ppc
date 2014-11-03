@@ -2,14 +2,19 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "src/compiler/instruction.h"
-
 #include "src/compiler/common-operator.h"
 #include "src/compiler/generic-node-inl.h"
+#include "src/compiler/graph.h"
+#include "src/compiler/instruction.h"
+#include "src/macro-assembler.h"
 
 namespace v8 {
 namespace internal {
 namespace compiler {
+
+STATIC_ASSERT(kMaxGeneralRegisters >= Register::kNumRegisters);
+STATIC_ASSERT(kMaxDoubleRegisters >= DoubleRegister::kMaxNumRegisters);
+
 
 std::ostream& operator<<(std::ostream& os, const InstructionOperand& op) {
   switch (op.kind()) {
@@ -291,7 +296,7 @@ std::ostream& operator<<(std::ostream& os, const Instruction& instr) {
       os << " " << *instr.InputAt(i);
     }
   }
-  return os << "\n";
+  return os;
 }
 
 
@@ -316,12 +321,78 @@ std::ostream& operator<<(std::ostream& os, const Constant& constant) {
 }
 
 
-InstructionSequence::InstructionSequence(Linkage* linkage, Graph* graph,
-                                         Schedule* schedule)
-    : graph_(graph),
-      node_map_(zone()->NewArray<int>(graph->NodeCount())),
-      linkage_(linkage),
-      schedule_(schedule),
+static BasicBlock::RpoNumber GetRpo(BasicBlock* block) {
+  if (block == NULL) return BasicBlock::RpoNumber::Invalid();
+  return block->GetRpoNumber();
+}
+
+
+static BasicBlock::RpoNumber GetLoopEndRpo(const BasicBlock* block) {
+  if (!block->IsLoopHeader()) return BasicBlock::RpoNumber::Invalid();
+  return BasicBlock::RpoNumber::FromInt(block->loop_end());
+}
+
+
+InstructionBlock::InstructionBlock(Zone* zone, const BasicBlock* block)
+    : successors_(static_cast<int>(block->SuccessorCount()),
+                  BasicBlock::RpoNumber::Invalid(), zone),
+      predecessors_(static_cast<int>(block->PredecessorCount()),
+                    BasicBlock::RpoNumber::Invalid(), zone),
+      phis_(zone),
+      id_(block->id()),
+      ao_number_(block->GetAoNumber()),
+      rpo_number_(block->GetRpoNumber()),
+      loop_header_(GetRpo(block->loop_header())),
+      loop_end_(GetLoopEndRpo(block)),
+      code_start_(-1),
+      code_end_(-1),
+      deferred_(block->deferred()) {
+  // Map successors and precessors
+  size_t index = 0;
+  for (BasicBlock::Successors::const_iterator it = block->successors_begin();
+       it != block->successors_end(); ++it, ++index) {
+    successors_[index] = (*it)->GetRpoNumber();
+  }
+  index = 0;
+  for (BasicBlock::Predecessors::const_iterator
+           it = block->predecessors_begin();
+       it != block->predecessors_end(); ++it, ++index) {
+    predecessors_[index] = (*it)->GetRpoNumber();
+  }
+}
+
+
+size_t InstructionBlock::PredecessorIndexOf(
+    BasicBlock::RpoNumber rpo_number) const {
+  size_t j = 0;
+  for (InstructionBlock::Predecessors::const_iterator i = predecessors_.begin();
+       i != predecessors_.end(); ++i, ++j) {
+    if (*i == rpo_number) break;
+  }
+  return j;
+}
+
+
+InstructionBlocks* InstructionSequence::InstructionBlocksFor(
+    Zone* zone, const Schedule* schedule) {
+  InstructionBlocks* blocks = zone->NewArray<InstructionBlocks>(1);
+  new (blocks) InstructionBlocks(
+      static_cast<int>(schedule->rpo_order()->size()), NULL, zone);
+  size_t rpo_number = 0;
+  for (BasicBlockVector::const_iterator it = schedule->rpo_order()->begin();
+       it != schedule->rpo_order()->end(); ++it, ++rpo_number) {
+    DCHECK_EQ(NULL, (*blocks)[rpo_number]);
+    DCHECK((*it)->GetRpoNumber().ToSize() == rpo_number);
+    (*blocks)[rpo_number] = new (zone) InstructionBlock(zone, *it);
+  }
+  return blocks;
+}
+
+
+InstructionSequence::InstructionSequence(Zone* instruction_zone,
+                                         InstructionBlocks* instruction_blocks)
+    : zone_(instruction_zone),
+      instruction_blocks_(instruction_blocks),
       constants_(ConstantMap::key_compare(),
                  ConstantMap::allocator_type(zone())),
       immediates_(zone()),
@@ -330,47 +401,42 @@ InstructionSequence::InstructionSequence(Linkage* linkage, Graph* graph,
       pointer_maps_(zone()),
       doubles_(std::less<int>(), VirtualRegisterSet::allocator_type(zone())),
       references_(std::less<int>(), VirtualRegisterSet::allocator_type(zone())),
-      deoptimization_entries_(zone()) {
-  for (int i = 0; i < graph->NodeCount(); ++i) {
-    node_map_[i] = -1;
-  }
+      deoptimization_entries_(zone()) {}
+
+
+Label* InstructionSequence::GetLabel(BasicBlock::RpoNumber rpo) {
+  return GetBlockStart(rpo)->label();
 }
 
 
-int InstructionSequence::GetVirtualRegister(const Node* node) {
-  if (node_map_[node->id()] == -1) {
-    node_map_[node->id()] = NextVirtualRegister();
-  }
-  return node_map_[node->id()];
+BlockStartInstruction* InstructionSequence::GetBlockStart(
+    BasicBlock::RpoNumber rpo) {
+  InstructionBlock* block = InstructionBlockAt(rpo);
+  BlockStartInstruction* block_start =
+      BlockStartInstruction::cast(InstructionAt(block->code_start()));
+  DCHECK_EQ(rpo.ToInt(), block_start->rpo_number().ToInt());
+  return block_start;
 }
 
 
-Label* InstructionSequence::GetLabel(BasicBlock* block) {
-  return GetBlockStart(block)->label();
-}
-
-
-BlockStartInstruction* InstructionSequence::GetBlockStart(BasicBlock* block) {
-  return BlockStartInstruction::cast(InstructionAt(block->code_start()));
-}
-
-
-void InstructionSequence::StartBlock(BasicBlock* block) {
+void InstructionSequence::StartBlock(BasicBlock* basic_block) {
+  InstructionBlock* block = InstructionBlockAt(basic_block->GetRpoNumber());
   block->set_code_start(static_cast<int>(instructions_.size()));
   BlockStartInstruction* block_start =
-      BlockStartInstruction::New(zone(), block);
-  AddInstruction(block_start, block);
+      BlockStartInstruction::New(zone(), basic_block);
+  AddInstruction(block_start);
 }
 
 
-void InstructionSequence::EndBlock(BasicBlock* block) {
+void InstructionSequence::EndBlock(BasicBlock* basic_block) {
   int end = static_cast<int>(instructions_.size());
+  InstructionBlock* block = InstructionBlockAt(basic_block->GetRpoNumber());
   DCHECK(block->code_start() >= 0 && block->code_start() < end);
   block->set_code_end(end);
 }
 
 
-int InstructionSequence::AddInstruction(Instruction* instr, BasicBlock* block) {
+int InstructionSequence::AddInstruction(Instruction* instr) {
   // TODO(titzer): the order of these gaps is a holdover from Lithium.
   GapInstruction* gap = GapInstruction::New(zone());
   if (instr->IsControl()) instructions_.push_back(gap);
@@ -388,13 +454,15 @@ int InstructionSequence::AddInstruction(Instruction* instr, BasicBlock* block) {
 }
 
 
-BasicBlock* InstructionSequence::GetBasicBlock(int instruction_index) {
+const InstructionBlock* InstructionSequence::GetInstructionBlock(
+    int instruction_index) const {
   // TODO(turbofan): Optimize this.
   for (;;) {
     DCHECK_LE(0, instruction_index);
     Instruction* instruction = InstructionAt(instruction_index--);
     if (instruction->IsBlockStart()) {
-      return BlockStartInstruction::cast(instruction)->block();
+      return instruction_blocks_->at(
+          BlockStartInstruction::cast(instruction)->rpo_number().ToSize());
     }
   }
 }
@@ -445,6 +513,78 @@ int InstructionSequence::GetFrameStateDescriptorCount() {
 }
 
 
+FrameStateDescriptor::FrameStateDescriptor(
+    Zone* zone, const FrameStateCallInfo& state_info, size_t parameters_count,
+    size_t locals_count, size_t stack_count, FrameStateDescriptor* outer_state)
+    : type_(state_info.type()),
+      bailout_id_(state_info.bailout_id()),
+      frame_state_combine_(state_info.state_combine()),
+      parameters_count_(parameters_count),
+      locals_count_(locals_count),
+      stack_count_(stack_count),
+      types_(zone),
+      outer_state_(outer_state),
+      jsfunction_(state_info.jsfunction()) {
+  types_.resize(GetSize(), kMachNone);
+}
+
+size_t FrameStateDescriptor::GetSize(OutputFrameStateCombine combine) const {
+  size_t size = parameters_count() + locals_count() + stack_count() +
+                (HasContext() ? 1 : 0);
+  switch (combine.kind()) {
+    case OutputFrameStateCombine::kPushOutput:
+      size += combine.GetPushCount();
+      break;
+    case OutputFrameStateCombine::kPokeAt:
+      break;
+  }
+  return size;
+}
+
+
+size_t FrameStateDescriptor::GetTotalSize() const {
+  size_t total_size = 0;
+  for (const FrameStateDescriptor* iter = this; iter != NULL;
+       iter = iter->outer_state_) {
+    total_size += iter->GetSize();
+  }
+  return total_size;
+}
+
+
+size_t FrameStateDescriptor::GetFrameCount() const {
+  size_t count = 0;
+  for (const FrameStateDescriptor* iter = this; iter != NULL;
+       iter = iter->outer_state_) {
+    ++count;
+  }
+  return count;
+}
+
+
+size_t FrameStateDescriptor::GetJSFrameCount() const {
+  size_t count = 0;
+  for (const FrameStateDescriptor* iter = this; iter != NULL;
+       iter = iter->outer_state_) {
+    if (iter->type_ == JS_FRAME) {
+      ++count;
+    }
+  }
+  return count;
+}
+
+
+MachineType FrameStateDescriptor::GetType(size_t index) const {
+  return types_[index];
+}
+
+
+void FrameStateDescriptor::SetType(size_t index, MachineType type) {
+  DCHECK(index < GetSize());
+  types_[index] = type;
+}
+
+
 std::ostream& operator<<(std::ostream& os, const InstructionSequence& code) {
   for (size_t i = 0; i < code.immediates_.size(); ++i) {
     Constant constant = code.immediates_[i];
@@ -455,11 +595,15 @@ std::ostream& operator<<(std::ostream& os, const InstructionSequence& code) {
        it != code.constants_.end(); ++i, ++it) {
     os << "CST#" << i << ": v" << it->first << " = " << it->second << "\n";
   }
-  for (int i = 0; i < code.BasicBlockCount(); i++) {
-    BasicBlock* block = code.BlockAt(i);
+  for (int i = 0; i < code.InstructionBlockCount(); i++) {
+    BasicBlock::RpoNumber rpo = BasicBlock::RpoNumber::FromInt(i);
+    const InstructionBlock* block = code.InstructionBlockAt(rpo);
+    CHECK(block->rpo_number() == rpo);
 
-    os << "RPO#" << block->rpo_number() << ": B" << block->id();
-    CHECK(block->rpo_number() == i);
+    os << "RPO#" << block->rpo_number();
+    os << ": AO#" << block->ao_number();
+    os << ": B" << block->id();
+    if (block->IsDeferred()) os << " (deferred)";
     if (block->IsLoopHeader()) {
       os << " loop blocks: [" << block->rpo_number() << ", "
          << block->loop_end() << ")";
@@ -467,21 +611,16 @@ std::ostream& operator<<(std::ostream& os, const InstructionSequence& code) {
     os << "  instructions: [" << block->code_start() << ", "
        << block->code_end() << ")\n  predecessors:";
 
-    for (BasicBlock::Predecessors::iterator iter = block->predecessors_begin();
-         iter != block->predecessors_end(); ++iter) {
-      os << " B" << (*iter)->id();
+    for (auto pred : block->predecessors()) {
+      const InstructionBlock* pred_block = code.InstructionBlockAt(pred);
+      os << " B" << pred_block->id();
     }
     os << "\n";
 
-    for (BasicBlock::const_iterator j = block->begin(); j != block->end();
-         ++j) {
-      Node* phi = *j;
-      if (phi->opcode() != IrOpcode::kPhi) continue;
-      os << "     phi: v" << phi->id() << " =";
-      Node::Inputs inputs = phi->inputs();
-      for (Node::Inputs::iterator iter(inputs.begin()); iter != inputs.end();
-           ++iter) {
-        os << " v" << (*iter)->id();
+    for (auto phi : block->phis()) {
+      os << "     phi: v" << phi->virtual_register() << " =";
+      for (auto op_vreg : phi->operands()) {
+        os << " v" << op_vreg;
       }
       os << "\n";
     }
@@ -491,18 +630,19 @@ std::ostream& operator<<(std::ostream& os, const InstructionSequence& code) {
          j <= block->last_instruction_index(); j++) {
       // TODO(svenpanne) Add some basic formatting to our streams.
       SNPrintF(buf, "%5d", j);
-      os << "   " << buf.start() << ": " << *code.InstructionAt(j);
+      os << "   " << buf.start() << ": " << *code.InstructionAt(j) << "\n";
     }
 
-    os << "  " << block->control();
+    // TODO(dcarney): add this back somehow?
+    // os << "  " << block->control();
 
-    if (block->control_input() != NULL) {
-      os << " v" << block->control_input()->id();
-    }
+    // if (block->control_input() != NULL) {
+    //   os << " v" << block->control_input()->id();
+    // }
 
-    for (BasicBlock::Successors::iterator iter = block->successors_begin();
-         iter != block->successors_end(); ++iter) {
-      os << " B" << (*iter)->id();
+    for (auto succ : block->successors()) {
+      const InstructionBlock* succ_block = code.InstructionBlockAt(succ);
+      os << " B" << succ_block->id();
     }
     os << "\n";
   }

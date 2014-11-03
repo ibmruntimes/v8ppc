@@ -278,7 +278,7 @@ void MacroAssembler::TruncateHeapNumberToI(Register result_reg,
 }
 
 
-void MacroAssembler::LoadUint32NoSSE2(Register src) {
+void MacroAssembler::LoadUint32NoSSE2(const Operand& src) {
   Label done;
   push(src);
   fild_s(Operand(esp, 0));
@@ -860,6 +860,13 @@ void MacroAssembler::Prologue(bool code_pre_aging) {
 }
 
 
+void MacroAssembler::EnterFrame(StackFrame::Type type,
+                                bool load_constant_pool_pointer_reg) {
+  // Out-of-line constant pool not implemented on x87.
+  UNREACHABLE();
+}
+
+
 void MacroAssembler::EnterFrame(StackFrame::Type type) {
   push(ebp);
   mov(ebp, esp);
@@ -899,8 +906,10 @@ void MacroAssembler::EnterExitFramePrologue() {
   // Save the frame pointer and the context in top.
   ExternalReference c_entry_fp_address(Isolate::kCEntryFPAddress, isolate());
   ExternalReference context_address(Isolate::kContextAddress, isolate());
+  ExternalReference c_function_address(Isolate::kCFunctionAddress, isolate());
   mov(Operand::StaticVariable(c_entry_fp_address), ebp);
   mov(Operand::StaticVariable(context_address), esi);
+  mov(Operand::StaticVariable(c_function_address), ebx);
 }
 
 

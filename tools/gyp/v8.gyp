@@ -229,56 +229,65 @@
       'target_name': 'v8_external_snapshot',
       'type': 'static_library',
       'conditions': [
-        ['want_separate_host_toolset==1', {
-          'toolsets': ['host', 'target'],
-          'dependencies': [
-            'mksnapshot#host',
-            'js2c#host',
-            'natives_blob',
-        ]}, {
-          'toolsets': ['target'],
-          'dependencies': [
-            'mksnapshot',
-            'js2c',
-            'natives_blob',
-          ],
-        }],
-        ['component=="shared_library"', {
-          'defines': [
-            'V8_SHARED',
-            'BUILDING_V8_SHARED',
-          ],
-          'direct_dependent_settings': {
-            'defines': [
-              'V8_SHARED',
-              'USING_V8_SHARED',
-            ],
-          },
-        }],
-      ],
-      'dependencies': [
-        'v8_base',
-      ],
-      'include_dirs+': [
-        '../..',
-      ],
-      'sources': [
-        '../../src/natives-external.cc',
-        '../../src/snapshot-external.cc',
-      ],
-      'actions': [
-        {
-          'action_name': 'run_mksnapshot (external)',
-          'inputs': [
-            '<(PRODUCT_DIR)/<(EXECUTABLE_PREFIX)mksnapshot<(EXECUTABLE_SUFFIX)',
-          ],
+        [ 'v8_use_external_startup_data==1', {
           'conditions': [
             ['want_separate_host_toolset==1', {
-              'target_conditions': [
-                ['_toolset=="host"', {
-                  'outputs': [
-                    '<(INTERMEDIATE_DIR)/snapshot.cc',
-                    '<(PRODUCT_DIR)/snapshot_blob_host.bin',
+              'toolsets': ['host', 'target'],
+              'dependencies': [
+                'mksnapshot#host',
+                'js2c#host',
+                'natives_blob',
+            ]}, {
+              'toolsets': ['target'],
+              'dependencies': [
+                'mksnapshot',
+                'js2c',
+                'natives_blob',
+              ],
+            }],
+            ['component=="shared_library"', {
+              'defines': [
+                'V8_SHARED',
+                'BUILDING_V8_SHARED',
+              ],
+              'direct_dependent_settings': {
+                'defines': [
+                  'V8_SHARED',
+                  'USING_V8_SHARED',
+                ],
+              },
+            }],
+          ],
+          'dependencies': [
+            'v8_base',
+          ],
+          'include_dirs+': [
+            '../..',
+          ],
+          'sources': [
+            '../../src/natives-external.cc',
+            '../../src/snapshot-external.cc',
+          ],
+          'actions': [
+            {
+              'action_name': 'run_mksnapshot (external)',
+              'inputs': [
+                '<(PRODUCT_DIR)/<(EXECUTABLE_PREFIX)mksnapshot<(EXECUTABLE_SUFFIX)',
+              ],
+              'conditions': [
+                ['want_separate_host_toolset==1', {
+                  'target_conditions': [
+                    ['_toolset=="host"', {
+                      'outputs': [
+                        '<(INTERMEDIATE_DIR)/snapshot.cc',
+                        '<(PRODUCT_DIR)/snapshot_blob_host.bin',
+                      ],
+                    }, {
+                      'outputs': [
+                        '<(INTERMEDIATE_DIR)/snapshot.cc',
+                        '<(PRODUCT_DIR)/snapshot_blob.bin',
+                      ],
+                    }],
                   ],
                 }, {
                   'outputs': [
@@ -287,31 +296,26 @@
                   ],
                 }],
               ],
-            }, {
-              'outputs': [
-                '<(INTERMEDIATE_DIR)/snapshot.cc',
-                '<(PRODUCT_DIR)/snapshot_blob.bin',
+              'variables': {
+                'mksnapshot_flags': [
+                  '--log-snapshot-positions',
+                  '--logfile', '<(INTERMEDIATE_DIR)/snapshot.log',
+                ],
+                'conditions': [
+                  ['v8_random_seed!=0', {
+                    'mksnapshot_flags': ['--random-seed', '<(v8_random_seed)'],
+                  }],
+                ],
+              },
+              'action': [
+                '<@(_inputs)',
+                '<@(mksnapshot_flags)',
+                '<@(INTERMEDIATE_DIR)/snapshot.cc',
+                '--startup_blob', '<(PRODUCT_DIR)/snapshot_blob.bin',
               ],
-            }],
+            },
           ],
-          'variables': {
-            'mksnapshot_flags': [
-              '--log-snapshot-positions',
-              '--logfile', '<(INTERMEDIATE_DIR)/snapshot.log',
-            ],
-            'conditions': [
-              ['v8_random_seed!=0', {
-                'mksnapshot_flags': ['--random-seed', '<(v8_random_seed)'],
-              }],
-            ],
-          },
-          'action': [
-            '<@(_inputs)',
-            '<@(mksnapshot_flags)',
-            '<@(INTERMEDIATE_DIR)/snapshot.cc',
-            '--startup_blob', '<(PRODUCT_DIR)/snapshot_blob.bin',
-          ],
-        },
+        }],
       ],
     },
     {
@@ -345,6 +349,8 @@
         '../../src/assert-scope.cc',
         '../../src/ast-value-factory.cc',
         '../../src/ast-value-factory.h',
+        '../../src/ast-numbering.cc',
+        '../../src/ast-numbering.h',
         '../../src/ast.cc',
         '../../src/ast.h',
         '../../src/background-parsing-task.cc',
@@ -357,6 +363,8 @@
         '../../src/bignum-dtoa.h',
         '../../src/bignum.cc',
         '../../src/bignum.h',
+        '../../src/bit-vector.cc',
+        '../../src/bit-vector.h',
         '../../src/bootstrapper.cc',
         '../../src/bootstrapper.h',
         '../../src/builtins.cc',
@@ -364,6 +372,7 @@
         '../../src/bytecodes-irregexp.h',
         '../../src/cached-powers.cc',
         '../../src/cached-powers.h',
+        '../../src/char-predicates.cc',
         '../../src/char-predicates-inl.h',
         '../../src/char-predicates.h',
         '../../src/checks.cc',
@@ -380,10 +389,14 @@
         '../../src/codegen.h',
         '../../src/compilation-cache.cc',
         '../../src/compilation-cache.h',
+        '../../src/compilation-statistics.cc',
+        '../../src/compilation-statistics.h',
         '../../src/compiler/access-builder.cc',
         '../../src/compiler/access-builder.h',
         '../../src/compiler/ast-graph-builder.cc',
         '../../src/compiler/ast-graph-builder.h',
+        '../../src/compiler/ast-loop-assignment-analyzer.cc',
+        '../../src/compiler/ast-loop-assignment-analyzer.h',
         '../../src/compiler/basic-block-instrumentor.cc',
         '../../src/compiler/basic-block-instrumentor.h',
         '../../src/compiler/change-lowering.cc',
@@ -396,6 +409,8 @@
         '../../src/compiler/common-operator.h',
         '../../src/compiler/control-builders.cc',
         '../../src/compiler/control-builders.h',
+        '../../src/compiler/control-reducer.cc',
+        '../../src/compiler/control-reducer.h',
         '../../src/compiler/frame.h',
         '../../src/compiler/gap-resolver.cc',
         '../../src/compiler/gap-resolver.h',
@@ -431,6 +446,8 @@
         '../../src/compiler/js-graph.h',
         '../../src/compiler/js-inlining.cc',
         '../../src/compiler/js-inlining.h',
+        '../../src/compiler/js-intrinsic-builder.cc',
+        '../../src/compiler/js-intrinsic-builder.h',
         '../../src/compiler/js-operator.cc',
         '../../src/compiler/js-operator.h',
         '../../src/compiler/js-typed-lowering.cc',
@@ -448,7 +465,6 @@
         '../../src/compiler/node-aux-data.h',
         '../../src/compiler/node-cache.cc',
         '../../src/compiler/node-cache.h',
-        '../../src/compiler/node-matchers.cc',
         '../../src/compiler/node-matchers.h',
         '../../src/compiler/node-properties-inl.h',
         '../../src/compiler/node-properties.h',
@@ -462,6 +478,8 @@
         '../../src/compiler/phi-reducer.h',
         '../../src/compiler/pipeline.cc',
         '../../src/compiler/pipeline.h',
+        '../../src/compiler/pipeline-statistics.cc',
+        '../../src/compiler/pipeline-statistics.h',
         '../../src/compiler/raw-machine-assembler.cc',
         '../../src/compiler/raw-machine-assembler.h',
         '../../src/compiler/register-allocator.cc',
@@ -471,6 +489,8 @@
         '../../src/compiler/schedule.h',
         '../../src/compiler/scheduler.cc',
         '../../src/compiler/scheduler.h',
+        '../../src/compiler/select-lowering.cc',
+        '../../src/compiler/select-lowering.h',
         '../../src/compiler/simplified-lowering.cc',
         '../../src/compiler/simplified-lowering.h',
         '../../src/compiler/simplified-operator-reducer.cc',
@@ -485,6 +505,8 @@
         '../../src/compiler/value-numbering-reducer.h',
         '../../src/compiler/verifier.cc',
         '../../src/compiler/verifier.h',
+        '../../src/compiler/zone-pool.cc',
+        '../../src/compiler/zone-pool.h',
         '../../src/compiler.cc',
         '../../src/compiler.h',
         '../../src/contexts.cc',
@@ -497,8 +519,6 @@
         '../../src/cpu-profiler-inl.h',
         '../../src/cpu-profiler.cc',
         '../../src/cpu-profiler.h',
-        '../../src/data-flow.cc',
-        '../../src/data-flow.h',
         '../../src/date.cc',
         '../../src/date.h',
         '../../src/dateparser-inl.h',
@@ -537,7 +557,6 @@
         '../../src/factory.h',
         '../../src/fast-dtoa.cc',
         '../../src/fast-dtoa.h',
-        '../../src/feedback-slots.h',
         '../../src/field-index.h',
         '../../src/field-index-inl.h',
         '../../src/fixed-dtoa.cc',
@@ -735,6 +754,8 @@
         '../../src/rewriter.h',
         '../../src/runtime-profiler.cc',
         '../../src/runtime-profiler.h',
+        '../../src/runtime/runtime-api.cc',
+        '../../src/runtime/runtime-array.cc',
         '../../src/runtime/runtime-classes.cc',
         '../../src/runtime/runtime-collections.cc',
         '../../src/runtime/runtime-compiler.cc',
@@ -743,11 +764,13 @@
         '../../src/runtime/runtime-function.cc',
         '../../src/runtime/runtime-generator.cc',
         '../../src/runtime/runtime-i18n.cc',
+        '../../src/runtime/runtime-internal.cc',
         '../../src/runtime/runtime-json.cc',
         '../../src/runtime/runtime-literals.cc',
         '../../src/runtime/runtime-liveedit.cc',
         '../../src/runtime/runtime-maths.cc',
         '../../src/runtime/runtime-numbers.cc',
+        '../../src/runtime/runtime-object.cc',
         '../../src/runtime/runtime-observe.cc',
         '../../src/runtime/runtime-proxy.cc',
         '../../src/runtime/runtime-regexp.cc',
@@ -808,8 +831,9 @@
         '../../src/unicode-inl.h',
         '../../src/unicode.cc',
         '../../src/unicode.h',
+        '../../src/unicode-decoder.cc',
+        '../../src/unicode-decoder.h',
         '../../src/unique.h',
-        '../../src/uri.h',
         '../../src/utils-inl.h',
         '../../src/utils.cc',
         '../../src/utils.h',
@@ -828,8 +852,8 @@
         '../../src/zone-inl.h',
         '../../src/zone.cc',
         '../../src/zone.h',
-        '../../third_party/fdlibm/fdlibm.cc',
-        '../../third_party/fdlibm/fdlibm.h',
+        '../../src/third_party/fdlibm/fdlibm.cc',
+        '../../src/third_party/fdlibm/fdlibm.h',
       ],
       'conditions': [
         ['want_separate_host_toolset==1', {
@@ -1473,8 +1497,6 @@
                   'sources': [
                     '../../src/base/platform/platform-win32.cc',
                     '../../src/base/win32-headers.h',
-                    '../../src/base/win32-math.cc',
-                    '../../src/base/win32-math.h'
                   ],
                 }],
               ],
@@ -1485,8 +1507,6 @@
               'sources': [
                 '../../src/base/platform/platform-win32.cc',
                 '../../src/base/win32-headers.h',
-                '../../src/base/win32-math.cc',
-                '../../src/base/win32-math.h'
               ],
               'msvs_disabled_warnings': [4351, 4355, 4800],
               'link_settings':  {
@@ -1611,7 +1631,7 @@
           '../../src/array.js',
           '../../src/string.js',
           '../../src/uri.js',
-          '../../third_party/fdlibm/fdlibm.js',
+          '../../src/third_party/fdlibm/fdlibm.js',
           '../../src/math.js',
           '../../src/apinatives.js',
           '../../src/date.js',
@@ -1639,6 +1659,8 @@
           '../../src/generator.js',
           '../../src/harmony-string.js',
           '../../src/harmony-array.js',
+          '../../src/harmony-tostring.js',
+          '../../src/harmony-typedarray.js',
           '../../src/harmony-classes.js',
         ],
         'libraries_bin_file': '<(SHARED_INTERMEDIATE_DIR)/libraries.bin',
@@ -1740,6 +1762,12 @@
         '../../src/mksnapshot.cc',
       ],
       'conditions': [
+        ['v8_enable_i18n_support==1', {
+          'dependencies': [
+            '<(icu_gyp_path):icui18n',
+            '<(icu_gyp_path):icuuc',
+          ]
+        }],
         ['want_separate_host_toolset==1', {
           'toolsets': ['host'],
         }, {

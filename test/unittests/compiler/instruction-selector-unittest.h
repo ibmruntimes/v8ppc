@@ -11,6 +11,7 @@
 #include "src/base/utils/random-number-generator.h"
 #include "src/compiler/instruction-selector.h"
 #include "src/compiler/raw-machine-assembler.h"
+#include "src/macro-assembler.h"
 #include "test/unittests/test-utils.h"
 
 namespace v8 {
@@ -146,12 +147,20 @@ class InstructionSelectorTest : public TestWithContext, public TestWithZone {
       return ToConstant(operand).ToFloat32();
     }
 
+    double ToFloat64(const InstructionOperand* operand) const {
+      return ToConstant(operand).ToFloat64();
+    }
+
     int32_t ToInt32(const InstructionOperand* operand) const {
       return ToConstant(operand).ToInt32();
     }
 
     int64_t ToInt64(const InstructionOperand* operand) const {
       return ToConstant(operand).ToInt64();
+    }
+
+    Handle<HeapObject> ToHeapObject(const InstructionOperand* operand) const {
+      return ToConstant(operand).ToHeapObject();
     }
 
     int ToVreg(const InstructionOperand* operand) const {
@@ -161,6 +170,10 @@ class InstructionSelectorTest : public TestWithContext, public TestWithZone {
     }
 
     int ToVreg(const Node* node) const;
+
+    bool IsFixed(const InstructionOperand* operand, Register reg) const;
+    bool IsSameAsFirst(const InstructionOperand* operand) const;
+    bool IsUsedAtStart(const InstructionOperand* operand) const;
 
     FrameStateDescriptor* GetFrameStateDescriptor(int deoptimization_id) {
       EXPECT_LT(deoptimization_id, GetFrameStateDescriptorCount());
