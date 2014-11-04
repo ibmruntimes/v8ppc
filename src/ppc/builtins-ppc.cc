@@ -1420,7 +1420,7 @@ void Builtins::Generate_FunctionApply(MacroAssembler* masm) {
     __ bne(&call_proxy);
     __ InvokeFunction(r4, actual, CALL_FUNCTION, NullCallWrapper());
 
-    frame_scope.GenerateLeaveFrame(3 * kPointerSize);
+    __ LeaveFrame(StackFrame::INTERNAL, 3 * kPointerSize);
     __ blr();
 
     // Call the function proxy.

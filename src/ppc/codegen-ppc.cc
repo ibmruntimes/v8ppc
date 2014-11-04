@@ -369,6 +369,7 @@ void ElementsTransitionGenerator::GenerateDoubleToObject(
   __ LoadRoot(scratch, Heap::kFixedArrayMapRootIndex);
   __ StoreP(length, MemOperand(array, FixedDoubleArray::kLengthOffset));
   __ StoreP(scratch, MemOperand(array, HeapObject::kMapOffset));
+  __ addi(array, array, Operand(kHeapObjectTag));
 
   // Prepare for conversion loop.
   Register src_elements = elements;
@@ -377,11 +378,26 @@ void ElementsTransitionGenerator::GenerateDoubleToObject(
   Register heap_number_map = scratch;
   __ addi(src_elements, elements,
          Operand(FixedDoubleArray::kHeaderSize - kHeapObjectTag));
-  __ addi(dst_elements, array, Operand(FixedArray::kHeaderSize));
-  __ addi(array, array, Operand(kHeapObjectTag));
   __ SmiToPtrArrayOffset(length, length);
-  __ add(dst_end, dst_elements, length);
   __ LoadRoot(r10, Heap::kTheHoleValueRootIndex);
+
+  Label initialization_loop, loop_done;
+  __ ShiftRightImm(r0, length, Operand(kPointerSizeLog2), SetRC);
+  __ beq(&loop_done, cr0);
+
+  // Allocating heap numbers in the loop below can fail and cause a jump to
+  // gc_required. We can't leave a partly initialized FixedArray behind,
+  // so pessimistically fill it with holes now.
+  __ mtctr(r0);
+  __ addi(dst_elements, array, Operand(FixedArray::kHeaderSize -
+                                       kHeapObjectTag - kPointerSize));
+  __ bind(&initialization_loop);
+  __ StorePU(r10, MemOperand(dst_elements, kPointerSize));
+  __ bdnz(&initialization_loop);
+
+  __ addi(dst_elements, array, Operand(FixedArray::kHeaderSize -
+                                       kHeapObjectTag));
+  __ add(dst_end, dst_elements, length);
   __ LoadRoot(heap_number_map, Heap::kHeapNumberMapRootIndex);
   // Using offsetted addresses in src_elements to fully take advantage of
   // post-indexing.
@@ -392,12 +408,19 @@ void ElementsTransitionGenerator::GenerateDoubleToObject(
   // array: destination FixedArray
   // r10: the-hole pointer
   // heap_number_map: heap number map
-  __ b(&entry);
+  __ b(&loop);
 
   // Call into runtime if GC is required.
   __ bind(&gc_required);
   __ Pop(target_map, receiver, key, value);
   __ b(fail);
+
+  // Replace the-hole NaN with the-hole pointer.
+  __ bind(&convert_hole);
+  __ StoreP(r10, MemOperand(dst_elements));
+  __ addi(dst_elements, dst_elements, Operand(kPointerSize));
+  __ cmpl(dst_elements, dst_end);
+  __ bge(&loop_done);
 
   __ bind(&loop);
   Register upper_bits = key;
@@ -416,7 +439,8 @@ void ElementsTransitionGenerator::GenerateDoubleToObject(
   // heap_number: new heap number
 #if V8_TARGET_ARCH_PPC64
   __ ld(scratch2, MemOperand(src_elements, -kDoubleSize));
-  __ addi(upper_bits, heap_number, Operand(-1));  // subtract tag for std
+  // subtract tag for std
+  __ addi(upper_bits, heap_number, Operand(-kHeapObjectTag));
   __ std(scratch2, MemOperand(upper_bits, HeapNumber::kValueOffset));
 #else
   __ lwz(scratch2, MemOperand(src_elements,
@@ -436,16 +460,9 @@ void ElementsTransitionGenerator::GenerateDoubleToObject(
                  kDontSaveFPRegs,
                  EMIT_REMEMBERED_SET,
                  OMIT_SMI_CHECK);
-  __ b(&entry);
-
-  // Replace the-hole NaN with the-hole pointer.
-  __ bind(&convert_hole);
-  __ StoreP(r10, MemOperand(dst_elements));
-  __ addi(dst_elements, dst_elements, Operand(kPointerSize));
-
-  __ bind(&entry);
   __ cmpl(dst_elements, dst_end);
   __ blt(&loop);
+  __ bind(&loop_done);
 
   __ Pop(target_map, receiver, key, value);
   // Replace receiver's backing store with newly created and filled FixedArray.

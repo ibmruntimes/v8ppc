@@ -250,14 +250,8 @@ Assembler::Assembler(Isolate* isolate, void* buffer, int buffer_size)
       ? kMaxInt : kMaxCondBranchReach - kMaxBlockTrampolineSectionSize;
   internal_trampoline_exception_ = false;
   last_bound_pos_ = 0;
-
   trampoline_emitted_ = FLAG_force_long_branches;
   unbound_labels_count_ = 0;
-
-#if V8_OOL_CONSTANT_POOL
-  constant_pool_available_ = false;
-#endif
-
   ClearRecordedAstId();
 }
 
@@ -1540,7 +1534,7 @@ int Assembler::instructions_required_for_mov(const Operand& x) const {
 #if V8_OOL_CONSTANT_POOL
 bool Assembler::use_constant_pool_for_mov(const Operand& x,
                                           bool canOptimize) const {
-  if (!is_constant_pool_available() || is_constant_pool_full()) {
+  if (!is_ool_constant_pool_available() || is_constant_pool_full()) {
     // If there is no constant pool available, we must use a mov
     // immediate sequence.
     return false;
@@ -1595,7 +1589,7 @@ void Assembler::mov(Register dst, const Operand& src) {
 
 #if V8_OOL_CONSTANT_POOL
   if (use_constant_pool_for_mov(src, canOptimize)) {
-    DCHECK(is_constant_pool_available());
+    DCHECK(is_ool_constant_pool_available());
     ConstantPoolAddEntry(rinfo);
 #if V8_TARGET_ARCH_PPC64
     BlockTrampolinePoolScope block_trampoline_pool(this);

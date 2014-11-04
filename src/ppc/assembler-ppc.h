@@ -1300,8 +1300,6 @@ class Assembler : public AssemblerBase {
   void PopulateConstantPool(ConstantPoolArray* constant_pool);
 
 #if V8_OOL_CONSTANT_POOL
-  bool is_constant_pool_available() const { return constant_pool_available_; }
-
   bool is_constant_pool_full() const {
     return constant_pool_builder_.is_full();
   }
@@ -1370,12 +1368,6 @@ class Assembler : public AssemblerBase {
     return trampoline_emitted_;
   }
 
-#if V8_OOL_CONSTANT_POOL
-  void set_constant_pool_available(bool available) {
-    constant_pool_available_ = available;
-  }
-#endif
-
  private:
   // Code generation
   // The relocation writer's position is at least kGap bytes below the end of
@@ -1403,10 +1395,6 @@ class Assembler : public AssemblerBase {
 
 #if V8_OOL_CONSTANT_POOL
   ConstantPoolBuilder constant_pool_builder_;
-
-  // Indicates whether the constant pool can be accessed, which is only possible
-  // if kConstantPoolRegister points to the current code object's constant pool.
-  bool constant_pool_available_;
 #endif
 
   // Code emission
@@ -1485,11 +1473,6 @@ class Assembler : public AssemblerBase {
   friend class RelocInfo;
   friend class CodePatcher;
   friend class BlockTrampolinePoolScope;
-#if V8_OOL_CONSTANT_POOL
-  friend class FrameAndConstantPoolScope;
-  friend class ConstantPoolUnavailableScope;
-#endif
-
   PositionsRecorder positions_recorder_;
   friend class PositionsRecorder;
   friend class EnsureSpace;

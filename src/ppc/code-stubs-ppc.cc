@@ -1520,7 +1520,7 @@ void InstanceofStub::Generate(MacroAssembler* masm) {
   __ bne(&slow);
 
   // Null is not instance of anything.
-  __ Cmpi(scratch, Operand(isolate()->factory()->null_value()), r0);
+  __ Cmpi(object, Operand(isolate()->factory()->null_value()), r0);
   __ bne(&object_not_null);
   if (ReturnTrueFalseObject()) {
     __ Move(r3, factory->false_value());
@@ -1587,6 +1587,34 @@ void FunctionPrototypeStub::Generate(MacroAssembler* masm) {
   __ bind(&miss);
   PropertyAccessCompiler::TailCallBuiltin(
       masm, PropertyAccessCompiler::MissBuiltin(Code::LOAD_IC));
+}
+
+
+void LoadIndexedStringStub::Generate(MacroAssembler* masm) {
+  // Return address is in lr.
+  Label miss;
+
+  Register receiver = LoadDescriptor::ReceiverRegister();
+  Register index = LoadDescriptor::NameRegister();
+  Register scratch = r6;
+  Register result = r3;
+  DCHECK(!scratch.is(receiver) && !scratch.is(index));
+
+  StringCharAtGenerator char_at_generator(receiver, index, scratch, result,
+                                          &miss,  // When not a string.
+                                          &miss,  // When not a number.
+                                          &miss,  // When index out of range.
+                                          STRING_INDEX_IS_ARRAY_INDEX,
+                                          RECEIVER_IS_STRING);
+  char_at_generator.GenerateFast(masm);
+  __ Ret();
+
+  StubRuntimeCallHelper call_helper;
+  char_at_generator.GenerateSlow(masm, call_helper);
+
+  __ bind(&miss);
+  PropertyAccessCompiler::TailCallBuiltin(
+      masm, PropertyAccessCompiler::MissBuiltin(Code::KEYED_LOAD_IC));
 }
 
 
@@ -2884,6 +2912,17 @@ void CallICStub::Generate(MacroAssembler* masm) {
     __ add(r7, r5, r7);
     __ LoadRoot(ip, Heap::kmegamorphic_symbolRootIndex);
     __ StoreP(ip, FieldMemOperand(r7, FixedArray::kHeaderSize), r0);
+    // We have to update statistics for runtime profiling.
+    const int with_types_offset =
+        FixedArray::OffsetOfElementAt(TypeFeedbackVector::kWithTypesIndex);
+    __ LoadP(r7, FieldMemOperand(r5, with_types_offset));
+    __ SubSmiLiteral(r7, r7, Smi::FromInt(1), r0);
+    __ StoreP(r7, FieldMemOperand(r5, with_types_offset), r0);
+    const int generic_offset =
+        FixedArray::OffsetOfElementAt(TypeFeedbackVector::kGenericCountIndex);
+    __ LoadP(r7, FieldMemOperand(r5, generic_offset));
+    __ AddSmiLiteral(r7, r7, Smi::FromInt(1), r0);
+    __ StoreP(r7, FieldMemOperand(r5, generic_offset), r0);
     __ jmp(&slow_start);
   }
 
@@ -2931,14 +2970,16 @@ void CallICStub::GenerateMiss(MacroAssembler* masm) {
 // StringCharCodeAtGenerator
 void StringCharCodeAtGenerator::GenerateFast(MacroAssembler* masm) {
   // If the receiver is a smi trigger the non-string case.
-  __ JumpIfSmi(object_, receiver_not_string_);
+  if (check_mode_ == RECEIVER_IS_UNKNOWN) {
+    __ JumpIfSmi(object_, receiver_not_string_);
 
-  // Fetch the instance type of the receiver into result register.
-  __ LoadP(result_, FieldMemOperand(object_, HeapObject::kMapOffset));
-  __ lbz(result_, FieldMemOperand(result_, Map::kInstanceTypeOffset));
-  // If the receiver is not a string trigger the non-string case.
-  __ andi(r0, result_, Operand(kIsNotStringMask));
-  __ bne(receiver_not_string_, cr0);
+    // Fetch the instance type of the receiver into result register.
+    __ LoadP(result_, FieldMemOperand(object_, HeapObject::kMapOffset));
+    __ lbz(result_, FieldMemOperand(result_, Map::kInstanceTypeOffset));
+    // If the receiver is not a string trigger the non-string case.
+    __ andi(r0, result_, Operand(kIsNotStringMask));
+    __ bne(receiver_not_string_, cr0);
+  }
 
   // If the index is non-smi trigger the non-smi case.
   __ JumpIfNotSmi(index_, &index_not_smi_);
@@ -3311,8 +3352,8 @@ void SubStringStub::Generate(MacroAssembler* masm) {
   // r5: length
   // r6: from index (untagged)
   __ SmiTag(r6, r6);
-  StringCharAtGenerator generator(
-      r3, r6, r5, r3, &runtime, &runtime, &runtime, STRING_INDEX_IS_NUMBER);
+  StringCharAtGenerator generator(r3, r6, r5, r3, &runtime, &runtime, &runtime,
+                                  STRING_INDEX_IS_NUMBER, RECEIVER_IS_STRING);
   generator.GenerateFast(masm);
   __ Drop(3);
   __ Ret();

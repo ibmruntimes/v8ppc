@@ -756,7 +756,7 @@ void MacroAssembler::StubPrologue(int prologue_offset) {
 #if V8_OOL_CONSTANT_POOL
   // ip contains prologue address
   LoadConstantPoolPointerRegister(CAN_USE_IP, -prologue_offset);
-  set_constant_pool_available(true);
+  set_ool_constant_pool_available(true);
 #endif
 }
 
@@ -793,14 +793,14 @@ void MacroAssembler::Prologue(bool code_pre_aging,
 #if V8_OOL_CONSTANT_POOL
   // ip contains prologue address
   LoadConstantPoolPointerRegister(CAN_USE_IP, -prologue_offset);
-  set_constant_pool_available(true);
+  set_ool_constant_pool_available(true);
 #endif
 }
 
 
 void MacroAssembler::EnterFrame(StackFrame::Type type,
-                                bool load_constant_pool) {
-  if (FLAG_enable_ool_constant_pool && load_constant_pool) {
+                                bool load_constant_pool_pointer_reg) {
+  if (FLAG_enable_ool_constant_pool && load_constant_pool_pointer_reg) {
     PushFixedFrame();
 #if V8_OOL_CONSTANT_POOL
     // This path should not rely on ip containing code entry.
@@ -4257,7 +4257,7 @@ void MacroAssembler::LoadDoubleLiteral(DoubleRegister result,
 #if V8_OOL_CONSTANT_POOL
   // TODO(mbrandy): enable extended constant pool usage for doubles.
   //                See ARM commit e27ab337 for a reference.
-  if (is_constant_pool_available() && !is_constant_pool_full()) {
+  if (is_ool_constant_pool_available() && !is_constant_pool_full()) {
     RelocInfo rinfo(pc_, value);
     ConstantPoolAddEntry(rinfo);
 #if V8_TARGET_ARCH_PPC64
@@ -5048,7 +5048,7 @@ void MacroAssembler::TruncatingDiv(Register result,
   add(result, result, r0);
 }
 
-
-} }  // namespace v8::internal
+}  // namespace internal
+}  // namespace v8
 
 #endif  // V8_TARGET_ARCH_PPC
