@@ -797,6 +797,18 @@ void StoreBufferOverflowStub::Generate(MacroAssembler* masm) {
 }
 
 
+void StoreRegistersStateStub::Generate(MacroAssembler* masm) {
+  __ PushSafepointRegisters();
+  __ blr();
+}
+
+
+void RestoreRegistersStateStub::Generate(MacroAssembler* masm) {
+  __ PopSafepointRegisters();
+  __ blr();
+}
+
+
 void MathPowStub::Generate(MacroAssembler* masm) {
   const Register base = r4;
   const Register exponent = MathPowTaggedDescriptor::exponent();
@@ -1016,7 +1028,21 @@ void CodeStub::GenerateStubsAheadOfTime(Isolate* isolate) {
   ArrayConstructorStubBase::GenerateStubsAheadOfTime(isolate);
   CreateAllocationSiteStub::GenerateAheadOfTime(isolate);
   BinaryOpICStub::GenerateAheadOfTime(isolate);
+  StoreRegistersStateStub::GenerateAheadOfTime(isolate);
+  RestoreRegistersStateStub::GenerateAheadOfTime(isolate);
   BinaryOpICWithAllocationSiteStub::GenerateAheadOfTime(isolate);
+}
+
+
+void StoreRegistersStateStub::GenerateAheadOfTime(Isolate* isolate) {
+  StoreRegistersStateStub stub(isolate);
+  stub.GetCode();
+}
+
+
+void RestoreRegistersStateStub::GenerateAheadOfTime(Isolate* isolate) {
+  RestoreRegistersStateStub stub(isolate);
+  stub.GetCode();
 }
 
 
