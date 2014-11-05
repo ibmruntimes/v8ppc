@@ -113,13 +113,11 @@ class FullCodeGenerator: public AstVisitor {
   static const int kCodeSizeMultiplier = 149;
   static const int kBootCodeSizeMultiplier = 110;
 #elif V8_TARGET_ARCH_PPC64
-// TODO(all): Copied ARM value. Check this is sensible for PPC64.
-  static const int kCodeSizeMultiplier = 142;
-  static const int kBootCodeSizeMultiplier = 175;
+  static const int kCodeSizeMultiplier = 200;
+  static const int kBootCodeSizeMultiplier = 120;
 #elif V8_TARGET_ARCH_PPC
-// TODO(all): Copied ARM value. Check this is sensible for PPC.
-  static const int kCodeSizeMultiplier = 142;
-  static const int kBootCodeSizeMultiplier = 130;
+  static const int kCodeSizeMultiplier = 200;
+  static const int kBootCodeSizeMultiplier = 120;
 #elif V8_TARGET_ARCH_MIPS
   static const int kCodeSizeMultiplier = 149;
   static const int kBootCodeSizeMultiplier = 120;
