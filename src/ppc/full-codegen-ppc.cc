@@ -2923,12 +2923,9 @@ void FullCodeGenerator::EmitSuperCallWithLoadIC(Call* expr) {
   const Register scratch = r4;
   SuperReference* super_ref = prop->obj()->AsSuperReference();
   EmitLoadHomeObject(super_ref);
-  __ Push(r3);
+  __ mr(scratch, r3);
   VisitForAccumulatorValue(super_ref->this_var());
-  __ Push(r3);
-  __ Push(r3);
-  __ LoadP(scratch, MemOperand(sp, kPointerSize));
-  __ Push(scratch);
+  __ Push(scratch, r3, r3, scratch);
   __ Push(key->value());
 
   // Stack here:
