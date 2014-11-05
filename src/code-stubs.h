@@ -111,7 +111,9 @@ namespace internal {
 // List of code stubs only used on PPC platforms.
 #ifdef V8_TARGET_ARCH_PPC
 #define CODE_STUB_LIST_PPC(V)  \
-  V(DirectCEntry)
+  V(DirectCEntry)              \
+  V(StoreRegistersState)       \
+  V(RestoreRegistersState)
 #else
 #define CODE_STUB_LIST_PPC(V)
 #endif
