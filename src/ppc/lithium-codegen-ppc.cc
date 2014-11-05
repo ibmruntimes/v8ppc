@@ -3711,7 +3711,7 @@ void LCodeGen::DoWrapReceiver(LWrapReceiver* instr) {
 
   // Deoptimize if the receiver is not a JS object.
   __ TestIfSmi(receiver, r0);
-  DeoptimizeIf(eq, instr, "Smi");
+  DeoptimizeIf(eq, instr, "Smi", cr0);
   __ CompareObjectType(receiver, scratch, scratch, FIRST_SPEC_OBJECT_TYPE);
   DeoptimizeIf(lt, instr, "not a JavaScript object");
 
@@ -5300,10 +5300,10 @@ void LCodeGen::DoDeferredTaggedToI(LTaggedToI* instr) {
     __ bind(&check_false);
     __ LoadRoot(ip, Heap::kFalseValueRootIndex);
     __ cmp(input_reg, ip);
-    DeoptimizeIf(ne, instr, "not a heap number/undefined/true/false", cr7);
+    DeoptimizeIf(ne, instr, "not a heap number/undefined/true/false");
     __ li(input_reg, Operand::Zero());
   } else {
-    DeoptimizeIf(ne, instr, "not a heap number", cr7);
+    DeoptimizeIf(ne, instr, "not a heap number");
 
     __ lfd(double_scratch2,
            FieldMemOperand(input_reg, HeapNumber::kValueOffset));
@@ -5313,7 +5313,7 @@ void LCodeGen::DoDeferredTaggedToI(LTaggedToI* instr) {
     }
     __ TryDoubleToInt32Exact(input_reg, double_scratch2,
                              scratch1, double_scratch);
-    DeoptimizeIf(ne, instr, "lost precision or NaN", cr7);
+    DeoptimizeIf(ne, instr, "lost precision or NaN");
 
     if (instr->hydrogen()->CheckFlag(HValue::kBailoutOnMinusZero)) {
       __ cmpi(input_reg, Operand::Zero());
@@ -5321,7 +5321,7 @@ void LCodeGen::DoDeferredTaggedToI(LTaggedToI* instr) {
       __ lwz(scratch1, FieldMemOperand(scratch2, HeapNumber::kValueOffset +
                                        Register::kExponentOffset));
       __ cmpwi(scratch1, Operand::Zero());
-      DeoptimizeIf(lt, instr, "minus zero", cr7);
+      DeoptimizeIf(lt, instr, "minus zero");
     }
   }
   __ bind(&done);
