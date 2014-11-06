@@ -1510,12 +1510,11 @@ class MacroAssembler: public Assembler {
 
 #if V8_TARGET_ARCH_PPC64
   inline void TestIfInt32(Register value,
-                          Register scratch1, Register scratch2,
+                          Register scratch,
                           CRegister cr = cr7) {
     // High bits must be identical to fit into an 32-bit integer
-    srawi(scratch1, value, 31);
-    sradi(scratch2, value, 32);
-    cmp(scratch1, scratch2, cr);
+    extsw(scratch, value);
+    cmp(scratch, value, cr);
   }
 #else
   inline void TestIfInt32(Register hi_word, Register lo_word,
