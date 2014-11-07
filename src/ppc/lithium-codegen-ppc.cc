@@ -4106,16 +4106,22 @@ void LCodeGen::DoMathRound(LMathRound* instr) {
     // [-0.5, -0].
     DeoptimizeIf(lt, instr, "minus zero");
   }
-  Label return_zero;
   __ fcmpu(input, dot_five);
-  __ bne(&return_zero);
-  __ li(result, Operand(1));  // +0.5.
-  __ b(&done);
-  // Remaining cases: [+0, +0.5[ or [-0.5, +0.5[, depending on
-  // flag kBailoutOnMinusZero.
-  __ bind(&return_zero);
-  __ li(result, Operand::Zero());
-  __ b(&done);
+  if (CpuFeatures::IsSupported(ISELECT)) {
+    __ li(result, Operand(1));
+    __ isel(lt, result, r0, result);
+    __ b(&done);
+  } else {
+    Label return_zero;
+    __ bne(&return_zero);
+    __ li(result, Operand(1));  // +0.5.
+    __ b(&done);
+    // Remaining cases: [+0, +0.5[ or [-0.5, +0.5[, depending on
+    // flag kBailoutOnMinusZero.
+    __ bind(&return_zero);
+    __ li(result, Operand::Zero());
+    __ b(&done);
+  }
 
   __ bind(&convert);
   __ fadd(input_plus_dot_five, input, dot_five);
