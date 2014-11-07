@@ -642,6 +642,7 @@ enum CpuFeature {
   // PPC
   FPR_GPR_MOV,
   LWSYNC,
+  ISELECT,
   NUMBER_OF_CPU_FEATURES
 };
 
