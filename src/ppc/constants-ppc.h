@@ -166,6 +166,7 @@ enum OpcodeExt2 {
   SUBFCX = 8 << 1,
   ADDCX = 10 << 1,
   MULHWUX = 11 << 1,
+  ISEL = 15 << 1,
   MFCR = 19 << 1,
   LWARX = 20 << 1,
   LDX = 21 << 1,

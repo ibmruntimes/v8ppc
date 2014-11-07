@@ -2328,23 +2328,27 @@ void MacroAssembler::CallApiFunctionAndReturn(
     ExternalReference::handle_scope_level_address(isolate()),
     next_address);
 
+  // Additional parameter is the address of the actual callback.
   DCHECK(function_address.is(r4) || function_address.is(r5));
   Register scratch = r6;
 
-  Label profiler_disabled;
-  Label end_profiler_check;
   mov(scratch, Operand(ExternalReference::is_profiling_address(isolate())));
   lbz(scratch, MemOperand(scratch, 0));
   cmpi(scratch, Operand::Zero());
-  beq(&profiler_disabled);
 
-  // Additional parameter is the address of the actual callback.
-  mov(scratch, Operand(thunk_ref));
-  jmp(&end_profiler_check);
-
-  bind(&profiler_disabled);
-  mr(scratch, function_address);
-  bind(&end_profiler_check);
+  if (CpuFeatures::IsSupported(ISELECT)) {
+    mov(scratch, Operand(thunk_ref));
+    isel(eq, scratch, function_address, scratch);
+  } else {
+    Label profiler_disabled;
+    Label end_profiler_check;
+    beq(&profiler_disabled);
+    mov(scratch, Operand(thunk_ref));
+    b(&end_profiler_check);
+    bind(&profiler_disabled);
+    mr(scratch, function_address);
+    bind(&end_profiler_check);
+  }
 
   // Allocate HandleScope in callee-save registers.
   // r17 - next_address
@@ -4104,28 +4108,38 @@ void MacroAssembler::EnsureNotWhite(
 //   if input_value > 255, output_value is 255
 //   otherwise output_value is the input_value
 void MacroAssembler::ClampUint8(Register output_reg, Register input_reg) {
-  Label done, negative_label, overflow_label;
   int satval = (1 << 8) - 1;
 
-  cmpi(input_reg, Operand::Zero());
-  blt(&negative_label);
+  if (CpuFeatures::IsSupported(ISELECT)) {
+    // set to 0 if negative
+    cmpi(input_reg, Operand::Zero());
+    isel(lt, output_reg, r0, input_reg);
 
-  cmpi(input_reg, Operand(satval));
-  bgt(&overflow_label);
-  if (!output_reg.is(input_reg)) {
-    mr(output_reg, input_reg);
+    // set to satval if > satval
+    li(r0, Operand(satval));
+    cmpi(output_reg, Operand(satval));
+    isel(lt, output_reg, output_reg, r0);
+  } else {
+    Label done, negative_label, overflow_label;
+    cmpi(input_reg, Operand::Zero());
+    blt(&negative_label);
+
+    cmpi(input_reg, Operand(satval));
+    bgt(&overflow_label);
+    if (!output_reg.is(input_reg)) {
+      mr(output_reg, input_reg);
+    }
+    b(&done);
+
+    bind(&negative_label);
+    li(output_reg, Operand::Zero());  // set to 0 if negative
+    b(&done);
+
+    bind(&overflow_label);  // set to satval if > satval
+    li(output_reg, Operand(satval));
+
+    bind(&done);
   }
-  b(&done);
-
-  bind(&negative_label);
-  li(output_reg, Operand::Zero());  // set to 0 if negative
-  b(&done);
-
-
-  bind(&overflow_label);  // set to satval if > satval
-  li(output_reg, Operand(satval));
-
-  bind(&done);
 }
 
 
