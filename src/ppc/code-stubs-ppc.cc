@@ -2882,6 +2882,10 @@ void CallIC_ArrayStub::Generate(MacroAssembler* masm) {
 void CallICStub::Generate(MacroAssembler* masm) {
   // r4 - function
   // r6 - slot id (Smi)
+  const int with_types_offset =
+      FixedArray::OffsetOfElementAt(TypeFeedbackVector::kWithTypesIndex);
+  const int generic_offset =
+      FixedArray::OffsetOfElementAt(TypeFeedbackVector::kGenericCountIndex);
   Label extra_checks_or_miss, slow_start;
   Label slow, non_function, wrap, cont;
   Label have_js_function;
@@ -2921,38 +2925,72 @@ void CallICStub::Generate(MacroAssembler* masm) {
   }
 
   __ bind(&extra_checks_or_miss);
-  Label miss;
+  Label uninitialized, miss;
 
   __ CompareRoot(r7, Heap::kmegamorphic_symbolRootIndex);
   __ beq(&slow_start);
-  __ CompareRoot(r7, Heap::kuninitialized_symbolRootIndex);
-  __ beq(&miss);
 
-  if (!FLAG_trace_ic) {
-    // We are going megamorphic. If the feedback is a JSFunction, it is fine
-    // to handle it here. More complex cases are dealt with in the runtime.
-    __ AssertNotSmi(r7);
-    __ CompareObjectType(r7, r8, r8, JS_FUNCTION_TYPE);
-    __ bne(&miss);
-    __ SmiToPtrArrayOffset(r7, r6);
-    __ add(r7, r5, r7);
-    __ LoadRoot(ip, Heap::kmegamorphic_symbolRootIndex);
-    __ StoreP(ip, FieldMemOperand(r7, FixedArray::kHeaderSize), r0);
-    // We have to update statistics for runtime profiling.
-    const int with_types_offset =
-        FixedArray::OffsetOfElementAt(TypeFeedbackVector::kWithTypesIndex);
-    __ LoadP(r7, FieldMemOperand(r5, with_types_offset));
-    __ SubSmiLiteral(r7, r7, Smi::FromInt(1), r0);
-    __ StoreP(r7, FieldMemOperand(r5, with_types_offset), r0);
-    const int generic_offset =
-        FixedArray::OffsetOfElementAt(TypeFeedbackVector::kGenericCountIndex);
-    __ LoadP(r7, FieldMemOperand(r5, generic_offset));
-    __ AddSmiLiteral(r7, r7, Smi::FromInt(1), r0);
-    __ StoreP(r7, FieldMemOperand(r5, generic_offset), r0);
-    __ jmp(&slow_start);
+  // The following cases attempt to handle MISS cases without going to the
+  // runtime.
+  if (FLAG_trace_ic) {
+    __ b(&miss);
   }
 
-  // We are here because tracing is on or we are going monomorphic.
+  __ CompareRoot(r7, Heap::kuninitialized_symbolRootIndex);
+  __ beq(&uninitialized);
+
+  // We are going megamorphic. If the feedback is a JSFunction, it is fine
+  // to handle it here. More complex cases are dealt with in the runtime.
+  __ AssertNotSmi(r7);
+  __ CompareObjectType(r7, r8, r8, JS_FUNCTION_TYPE);
+  __ bne(&miss);
+  __ SmiToPtrArrayOffset(r7, r6);
+  __ add(r7, r5, r7);
+  __ LoadRoot(ip, Heap::kmegamorphic_symbolRootIndex);
+  __ StoreP(ip, FieldMemOperand(r7, FixedArray::kHeaderSize), r0);
+  // We have to update statistics for runtime profiling.
+  __ LoadP(r7, FieldMemOperand(r5, with_types_offset));
+  __ SubSmiLiteral(r7, r7, Smi::FromInt(1), r0);
+  __ StoreP(r7, FieldMemOperand(r5, with_types_offset), r0);
+  __ LoadP(r7, FieldMemOperand(r5, generic_offset));
+  __ AddSmiLiteral(r7, r7, Smi::FromInt(1), r0);
+  __ StoreP(r7, FieldMemOperand(r5, generic_offset), r0);
+  __ b(&slow_start);
+
+  __ bind(&uninitialized);
+
+  // We are going monomorphic, provided we actually have a JSFunction.
+  __ JumpIfSmi(r4, &miss);
+
+  // Goto miss case if we do not have a function.
+  __ CompareObjectType(r4, r7, r7, JS_FUNCTION_TYPE);
+  __ bne(&miss);
+
+  // Make sure the function is not the Array() function, which requires special
+  // behavior on MISS.
+  __ LoadGlobalFunction(Context::ARRAY_FUNCTION_INDEX, r7);
+  __ cmp(r4, r7);
+  __ beq(&miss);
+
+  // Update stats.
+  __ LoadP(r7, FieldMemOperand(r5, with_types_offset));
+  __ AddSmiLiteral(r7, r7, Smi::FromInt(1), r0);
+  __ StoreP(r7, FieldMemOperand(r5, with_types_offset), r0);
+
+  // Store the function.
+  __ SmiToPtrArrayOffset(r7, r6);
+  __ add(r7, r5, r7);
+  __ addi(r7, r7, Operand(FixedArray::kHeaderSize - kHeapObjectTag));
+  __ StoreP(r4, MemOperand(r7, 0));
+
+  // Update the write barrier.
+  __ mr(r8, r4);
+  __ RecordWrite(r5, r7, r8, kLRHasNotBeenSaved, kDontSaveFPRegs,
+                 EMIT_REMEMBERED_SET, OMIT_SMI_CHECK);
+  __ b(&have_js_function);
+
+  // We are here because tracing is on or we encountered a MISS case we can't
+  // handle here.
   __ bind(&miss);
   GenerateMiss(masm);
 
@@ -3384,6 +3422,24 @@ void SubStringStub::Generate(MacroAssembler* masm) {
   __ Drop(3);
   __ Ret();
   generator.SkipSlow(masm, &runtime);
+}
+
+
+void ToNumberStub::Generate(MacroAssembler* masm) {
+  // The ToNumber stub takes one argument in r0.
+  Label check_heap_number, call_builtin;
+  __ JumpIfNotSmi(r3, &check_heap_number);
+  __ blr();
+
+  __ bind(&check_heap_number);
+  __ LoadP(r4, FieldMemOperand(r3, HeapObject::kMapOffset));
+  __ CompareRoot(r4, Heap::kHeapNumberMapRootIndex);
+  __ bne(&call_builtin);
+  __ blr();
+
+  __ bind(&call_builtin);
+  __ push(r3);
+  __ InvokeBuiltin(Builtins::TO_NUMBER, JUMP_FUNCTION);
 }
 
 
