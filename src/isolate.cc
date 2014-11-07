@@ -1047,15 +1047,15 @@ void Isolate::ComputeLocation(MessageLocation* target) {
 }
 
 
-void Isolate::ComputeLocationFromStackTrace(MessageLocation* target,
+bool Isolate::ComputeLocationFromStackTrace(MessageLocation* target,
                                             Handle<Object> exception) {
   *target = MessageLocation(Handle<Script>(heap_.empty_script()), -1, -1);
 
-  if (!exception->IsJSObject()) return;
+  if (!exception->IsJSObject()) return false;
   Handle<Name> key = factory()->stack_trace_symbol();
   Handle<Object> property =
       JSObject::GetDataProperty(Handle<JSObject>::cast(exception), key);
-  if (!property->IsJSArray()) return;
+  if (!property->IsJSArray()) return false;
   Handle<JSArray> simple_stack_trace = Handle<JSArray>::cast(property);
 
   Handle<FixedArray> elements(FixedArray::cast(simple_stack_trace->elements()));
@@ -1075,9 +1075,10 @@ void Isolate::ComputeLocationFromStackTrace(MessageLocation* target,
       int pos = code->SourcePosition(pc);
       Handle<Script> casted_script(Script::cast(script));
       *target = MessageLocation(casted_script, pos, pos + 1);
-      break;
+      return true;
     }
   }
+  return false;
 }
 
 
@@ -1149,10 +1150,6 @@ Handle<JSMessageObject> Isolate::CreateMessage(Handle<Object> exception,
       // at this throw site.
       stack_trace_object =
           GetDetailedStackTrace(Handle<JSObject>::cast(exception));
-      if (!location) {
-        ComputeLocationFromStackTrace(&potential_computed_location, exception);
-        location = &potential_computed_location;
-      }
     }
     if (stack_trace_object.is_null()) {
       // Not an error object, we capture stack and location at throw site.
@@ -1162,7 +1159,10 @@ Handle<JSMessageObject> Isolate::CreateMessage(Handle<Object> exception,
     }
   }
   if (!location) {
-    ComputeLocation(&potential_computed_location);
+    if (!ComputeLocationFromStackTrace(&potential_computed_location,
+                                       exception)) {
+      ComputeLocation(&potential_computed_location);
+    }
     location = &potential_computed_location;
   }
 
@@ -1650,6 +1650,9 @@ Isolate::Isolate(bool enable_serializer)
       optimizing_compiler_thread_(NULL),
       stress_deopt_count_(0),
       next_optimization_id_(0),
+#if TRACE_MAPS
+      next_unique_sfi_id_(0),
+#endif
       use_counter_callback_(NULL),
       basic_block_profiler_(NULL) {
   {
@@ -2357,7 +2360,8 @@ Handle<JSObject> Isolate::GetSymbolRegistry() {
     for (unsigned i = 0; i < arraysize(nested); ++i) {
       Handle<String> name = factory()->InternalizeUtf8String(nested[i]);
       Handle<JSObject> obj = factory()->NewJSObjectFromMap(map);
-      JSObject::NormalizeProperties(obj, KEEP_INOBJECT_PROPERTIES, 8);
+      JSObject::NormalizeProperties(obj, KEEP_INOBJECT_PROPERTIES, 8,
+                                    "SetupSymbolRegistry");
       JSObject::SetProperty(registry, name, obj, STRICT).Assert();
     }
   }

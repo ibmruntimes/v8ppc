@@ -870,6 +870,7 @@ int Heap::NotifyContextDisposed() {
   }
   flush_monomorphic_ics_ = true;
   AgeInlineCaches();
+  tracer()->AddContextDisposalTime(base::OS::TimeCurrentMillis());
   return ++contexts_disposed_;
 }
 
@@ -2043,7 +2044,17 @@ class ScavengingVisitor : public StaticVisitorBase {
       // Order is important: slot might be inside of the target if target
       // was allocated over a dead object and slot comes from the store
       // buffer.
-      *slot = target;
+
+      // Unfortunately, the allocation can also write over the slot if the slot
+      // was in free space and the allocation wrote free list data (such as the
+      // free list map or entry size) over the slot.  We guard against this by
+      // checking that the slot still points to the object being moved.  This
+      // should be sufficient because neither the free list map nor the free
+      // list entry size should look like a new space pointer (the former is an
+      // old space pointer, the latter is word-aligned).
+      if (*slot == object) {
+        *slot = target;
+      }
       MigrateObject(heap, object, target, object_size);
 
       if (object_contents == POINTER_OBJECT) {
@@ -2603,6 +2614,7 @@ bool Heap::CreateInitialMaps() {
     ALLOCATE_VARSIZE_MAP(FIXED_ARRAY_TYPE, block_context)
     ALLOCATE_VARSIZE_MAP(FIXED_ARRAY_TYPE, module_context)
     ALLOCATE_VARSIZE_MAP(FIXED_ARRAY_TYPE, global_context)
+    ALLOCATE_VARSIZE_MAP(FIXED_ARRAY_TYPE, global_context_table)
 
     ALLOCATE_VARSIZE_MAP(FIXED_ARRAY_TYPE, native_context)
     native_context_map()->set_dictionary_map(true);
@@ -4358,6 +4370,8 @@ bool Heap::IdleNotification(int idle_time_in_ms) {
 
   GCIdleTimeHandler::HeapState heap_state;
   heap_state.contexts_disposed = contexts_disposed_;
+  heap_state.contexts_disposal_rate =
+      tracer()->ContextDisposalRateInMilliseconds();
   heap_state.size_of_objects = static_cast<size_t>(SizeOfObjects());
   heap_state.incremental_marking_stopped = incremental_marking()->IsStopped();
   // TODO(ulan): Start incremental marking only for large heaps.
@@ -5318,7 +5332,7 @@ void Heap::TearDown() {
     PrintF("total_gc_time=%.1f ", total_gc_time_ms_);
     PrintF("min_in_mutator=%.1f ", get_min_in_mutator());
     PrintF("max_alive_after_gc=%" V8_PTR_PREFIX "d ", get_max_alive_after_gc());
-    PrintF("total_marking_time=%.1f ", tracer_.cumulative_sweeping_duration());
+    PrintF("total_marking_time=%.1f ", tracer_.cumulative_marking_duration());
     PrintF("total_sweeping_time=%.1f ", tracer_.cumulative_sweeping_duration());
     PrintF("\n\n");
   }

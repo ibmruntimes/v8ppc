@@ -811,7 +811,7 @@ class Isolate {
   // Attempts to compute the current source location, storing the
   // result in the target out parameter.
   void ComputeLocation(MessageLocation* target);
-  void ComputeLocationFromStackTrace(MessageLocation* target,
+  bool ComputeLocationFromStackTrace(MessageLocation* target,
                                      Handle<Object> exception);
 
   Handle<JSMessageObject> CreateMessage(Handle<Object> exception,
@@ -1119,6 +1119,10 @@ class Isolate {
 
   std::string GetTurboCfgFileName();
 
+#if TRACE_MAPS
+  int GetNextUniqueSharedFunctionInfoId() { return next_unique_sfi_id_++; }
+#endif
+
  private:
   explicit Isolate(bool enable_serializer);
 
@@ -1320,6 +1324,10 @@ class Isolate {
   unsigned int stress_deopt_count_;
 
   int next_optimization_id_;
+
+#if TRACE_MAPS
+  int next_unique_sfi_id_;
+#endif
 
   // List of callbacks when a Call completes.
   List<CallCompletedCallback> call_completed_callbacks_;

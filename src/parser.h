@@ -547,7 +547,8 @@ class ParserTraits {
                               ZoneList<ObjectLiteral::Property*>* properties,
                               int start_position, int end_position,
                               AstNodeFactory<AstConstructionVisitor>* factory);
-
+  Expression* DefaultConstructor(bool call_super, Scope* scope, int pos,
+                                 int end_pos);
   Literal* ExpressionFromLiteral(
       Token::Value token, int pos, Scanner* scanner,
       AstNodeFactory<AstConstructionVisitor>* factory);
@@ -804,6 +805,9 @@ class Parser : public ParserBase<ParserTraits> {
 
   Scope* NewScope(Scope* parent, ScopeType type);
 
+  FunctionLiteral* DefaultConstructor(bool call_super, Scope* scope, int pos,
+                                      int end_pos);
+
   // Skip over a lazy function, either using cached data if we have it, or
   // by parsing the function with PreParser. Consumes the ending }.
   void SkipLazyFunctionBody(const AstRawString* function_name,
@@ -853,8 +857,7 @@ class Parser : public ParserBase<ParserTraits> {
 
 bool ParserTraits::IsFutureStrictReserved(
     const AstRawString* identifier) const {
-  return identifier->IsOneByteEqualTo("yield") ||
-         parser_->scanner()->IdentifierIsFutureStrictReserved(identifier);
+  return parser_->scanner()->IdentifierIsFutureStrictReserved(identifier);
 }
 
 

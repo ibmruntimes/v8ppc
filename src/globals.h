@@ -26,8 +26,8 @@
 # define V8_INFINITY INFINITY
 #endif
 
-#if V8_TARGET_ARCH_IA32 || V8_TARGET_ARCH_X64 || V8_TARGET_ARCH_ARM || \
-    V8_TARGET_ARCH_ARM64 || V8_TARGET_ARCH_MIPS
+#if V8_TARGET_ARCH_IA32 || (V8_TARGET_ARCH_X64 && !V8_TARGET_ARCH_32_BIT) || \
+    V8_TARGET_ARCH_ARM || V8_TARGET_ARCH_ARM64 || V8_TARGET_ARCH_MIPS
 #define V8_TURBOFAN_BACKEND 1
 #else
 #define V8_TURBOFAN_BACKEND 0
@@ -365,6 +365,7 @@ template <typename Config, class Allocator = FreeStoreAllocationPolicy>
 class String;
 class Name;
 class Struct;
+class Symbol;
 class Variable;
 class RelocInfo;
 class Deserializer;
@@ -789,7 +790,9 @@ enum FunctionKind {
   kArrowFunction = 1,
   kGeneratorFunction = 2,
   kConciseMethod = 4,
-  kConciseGeneratorMethod = kGeneratorFunction | kConciseMethod
+  kConciseGeneratorMethod = kGeneratorFunction | kConciseMethod,
+  kDefaultConstructor = 8,
+  kDefaultConstructorCallSuper = 16
 };
 
 
@@ -798,7 +801,9 @@ inline bool IsValidFunctionKind(FunctionKind kind) {
          kind == FunctionKind::kArrowFunction ||
          kind == FunctionKind::kGeneratorFunction ||
          kind == FunctionKind::kConciseMethod ||
-         kind == FunctionKind::kConciseGeneratorMethod;
+         kind == FunctionKind::kConciseGeneratorMethod ||
+         kind == FunctionKind::kDefaultConstructor ||
+         kind == FunctionKind::kDefaultConstructorCallSuper;
 }
 
 
@@ -817,6 +822,18 @@ inline bool IsGeneratorFunction(FunctionKind kind) {
 inline bool IsConciseMethod(FunctionKind kind) {
   DCHECK(IsValidFunctionKind(kind));
   return kind & FunctionKind::kConciseMethod;
+}
+
+
+inline bool IsDefaultConstructor(FunctionKind kind) {
+  DCHECK(IsValidFunctionKind(kind));
+  return kind & FunctionKind::kDefaultConstructor;
+}
+
+
+inline bool IsDefaultConstructorCallSuper(FunctionKind kind) {
+  DCHECK(IsValidFunctionKind(kind));
+  return kind & FunctionKind::kDefaultConstructorCallSuper;
 }
 } }  // namespace v8::internal
 

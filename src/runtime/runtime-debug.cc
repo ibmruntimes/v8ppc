@@ -1984,7 +1984,7 @@ RUNTIME_FUNCTION(Runtime_PrepareStep) {
   StepAction step_action = static_cast<StepAction>(NumberToInt32(args[1]));
   if (step_action != StepIn && step_action != StepNext &&
       step_action != StepOut && step_action != StepInMin &&
-      step_action != StepMin) {
+      step_action != StepMin && step_action != StepFrame) {
     return isolate->Throw(isolate->heap()->illegal_argument_string());
   }
 
@@ -2083,7 +2083,8 @@ static MaybeHandle<Object> DebugEvaluate(Isolate* isolate,
 static Handle<JSObject> NewJSObjectWithNullProto(Isolate* isolate) {
   Handle<JSObject> result =
       isolate->factory()->NewJSObject(isolate->object_function());
-  Handle<Map> new_map = Map::Copy(Handle<Map>(result->map()));
+  Handle<Map> new_map =
+      Map::Copy(Handle<Map>(result->map()), "ObjectWithNullProto");
   new_map->set_prototype(*isolate->factory()->null_value());
   JSObject::MigrateToMap(result, new_map);
   return result;

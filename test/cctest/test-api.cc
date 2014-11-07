@@ -8692,6 +8692,8 @@ static void ThrowV8Exception(const v8::FunctionCallbackInfo<v8::Value>& info) {
 THREADED_TEST(ExceptionGetMessage) {
   LocalContext context;
   v8::HandleScope scope(context->GetIsolate());
+  v8::Handle<String> foo_str = v8_str("foo");
+  v8::Handle<String> message_str = v8_str("message");
 
   v8::V8::SetCaptureStackTraceForUncaughtExceptions(true);
 
@@ -8709,8 +8711,6 @@ THREADED_TEST(ExceptionGetMessage) {
   CHECK(try_catch.HasCaught());
 
   v8::Handle<v8::Value> error = try_catch.Exception();
-  v8::Handle<String> foo_str = v8_str("foo");
-  v8::Handle<String> message_str = v8_str("message");
   CHECK(error->IsObject());
   CHECK(error.As<v8::Object>()->Get(message_str)->Equals(foo_str));
 
@@ -8724,6 +8724,30 @@ THREADED_TEST(ExceptionGetMessage) {
   CHECK_EQ(2, stackTrace->GetFrameCount());
 
   v8::V8::SetCaptureStackTraceForUncaughtExceptions(false);
+
+  // Now check message location when SetCaptureStackTraceForUncaughtExceptions
+  // is false.
+  try_catch.Reset();
+
+  CompileRun(
+      "function f2() {\n"
+      "  return throwV8Exception();\n"
+      "};\n"
+      "f2();");
+  CHECK(try_catch.HasCaught());
+
+  error = try_catch.Exception();
+  CHECK(error->IsObject());
+  CHECK(error.As<v8::Object>()->Get(message_str)->Equals(foo_str));
+
+  message = v8::Exception::GetMessage(error);
+  CHECK(!message.IsEmpty());
+  CHECK_EQ(2, message->GetLineNumber());
+  CHECK_EQ(9, message->GetStartColumn());
+
+  // Should be empty stack trace.
+  stackTrace = message->GetStackTrace();
+  CHECK(stackTrace.IsEmpty());
 }
 
 
@@ -8842,6 +8866,33 @@ TEST(ApiUncaughtException) {
   CHECK_EQ(1, report_count);
   v8::V8::RemoveMessageListeners(ApiUncaughtExceptionTestListener);
 }
+
+
+TEST(ApiUncaughtExceptionInObjectObserve) {
+  v8::internal::FLAG_stack_size = 150;
+  report_count = 0;
+  LocalContext env;
+  v8::Isolate* isolate = env->GetIsolate();
+  v8::HandleScope scope(isolate);
+  v8::V8::AddMessageListener(ApiUncaughtExceptionTestListener);
+  CompileRun(
+      "var obj = {};"
+      "var observe_count = 0;"
+      "function observer1() { ++observe_count; };"
+      "function observer2() { ++observe_count; };"
+      "function observer_throws() { throw new Error(); };"
+      "function stack_overflow() { return (function f(x) { f(x+1); })(0); };"
+      "Object.observe(obj, observer_throws.bind());"
+      "Object.observe(obj, observer1);"
+      "Object.observe(obj, stack_overflow);"
+      "Object.observe(obj, observer2);"
+      "Object.observe(obj, observer_throws.bind());"
+      "obj.foo = 'bar';");
+  CHECK_EQ(3, report_count);
+  ExpectInt32("observe_count", 2);
+  v8::V8::RemoveMessageListeners(ApiUncaughtExceptionTestListener);
+}
+
 
 static const char* script_resource_name = "ExceptionInNativeScript.js";
 static void ExceptionInNativeScriptTestListener(v8::Handle<v8::Message> message,
@@ -15217,7 +15268,7 @@ THREADED_TEST(PropertyEnumeration2) {
   v8::Handle<v8::Array> props = val.As<v8::Object>()->GetPropertyNames();
   CHECK_EQ(0, props->Length());
   for (uint32_t i = 0; i < props->Length(); i++) {
-    printf("p[%d]\n", i);
+    printf("p[%u]\n", i);
   }
 }
 

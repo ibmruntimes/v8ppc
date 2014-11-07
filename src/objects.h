@@ -89,6 +89,7 @@
 //         - JSFunctionResultCache
 //         - ScopeInfo
 //         - TransitionArray
+//         - GlobalContextTable
 //       - FixedDoubleArray
 //       - ExternalArray
 //         - ExternalUint8ClampedArray
@@ -282,8 +283,9 @@ enum DebugExtraICState {
 // either extends the current map with a new property, or it modifies the
 // property that was added last to the current map.
 enum SimpleTransitionFlag {
-  SIMPLE_TRANSITION,
-  FULL_TRANSITION
+  SIMPLE_PROPERTY_TRANSITION,
+  PROPERTY_TRANSITION,
+  SPECIAL_TRANSITION
 };
 
 
@@ -945,6 +947,7 @@ template <class C> inline bool Is(Object* obj);
   V(FixedDoubleArray)              \
   V(ConstantPoolArray)             \
   V(Context)                       \
+  V(GlobalContextTable)            \
   V(NativeContext)                 \
   V(ScopeInfo)                     \
   V(JSFunction)                    \
@@ -2050,7 +2053,8 @@ class JSObject: public JSReceiver {
   // an initial capacity for holding these properties.
   static void NormalizeProperties(Handle<JSObject> object,
                                   PropertyNormalizationMode mode,
-                                  int expected_additional_properties);
+                                  int expected_additional_properties,
+                                  const char* reason);
 
   // Convert and update the elements backing store to be a
   // SeededNumberDictionary dictionary.  Returns the backing after conversion.
@@ -2059,7 +2063,7 @@ class JSObject: public JSReceiver {
 
   // Transform slow named properties to fast variants.
   static void MigrateSlowToFast(Handle<JSObject> object,
-                                int unused_property_fields);
+                                int unused_property_fields, const char* reason);
 
   // Access fast-case object properties at index.
   static Handle<Object> FastPropertyAt(Handle<JSObject> object,
@@ -3147,12 +3151,9 @@ class DescriptorArray: public FixedArray {
 
 enum SearchMode { ALL_ENTRIES, VALID_ENTRIES };
 
-template<SearchMode search_mode, typename T>
-inline int LinearSearch(T* array, Name* name, int len, int valid_entries);
-
-
-template<SearchMode search_mode, typename T>
-inline int Search(T* array, Name* name, int valid_entries = 0);
+template <SearchMode search_mode, typename T>
+inline int Search(T* array, Name* name, int valid_entries = 0,
+                  int* out_insertion_index = NULL);
 
 
 // HashTable is a subclass of FixedArray that implements a hash table
@@ -5825,7 +5826,9 @@ class Map: public HeapObject {
   inline Map* elements_transition_map();
 
   inline Map* GetTransition(int transition_index);
-  inline int SearchTransition(Name* name);
+  inline int SearchSpecialTransition(Symbol* name);
+  inline int SearchTransition(PropertyType type, Name* name,
+                              PropertyAttributes attributes);
   inline FixedArrayBase* GetInitialElements();
 
   DECL_ACCESSORS(transitions, TransitionArray)
@@ -5880,7 +5883,8 @@ class Map: public HeapObject {
                                             int descriptor_number,
                                             Handle<Object> value);
 
-  static Handle<Map> Normalize(Handle<Map> map, PropertyNormalizationMode mode);
+  static Handle<Map> Normalize(Handle<Map> map, PropertyNormalizationMode mode,
+                               const char* reason);
 
   // Returns the constructor name (the name (possibly, inferred name) of the
   // function that was used to instantiate the object).
@@ -5963,8 +5967,8 @@ class Map: public HeapObject {
                                Name* name,
                                LookupResult* result);
 
-  inline void LookupTransition(JSObject* holder,
-                               Name* name,
+  inline void LookupTransition(JSObject* holder, Name* name,
+                               PropertyAttributes attributes,
                                LookupResult* result);
 
   inline PropertyDetails GetLastDescriptorDetails();
@@ -6089,7 +6093,7 @@ class Map: public HeapObject {
 
   // Returns a copy of the map, with all transitions dropped from the
   // instance descriptors.
-  static Handle<Map> Copy(Handle<Map> map);
+  static Handle<Map> Copy(Handle<Map> map, const char* reason);
   static Handle<Map> Create(Isolate* isolate, int inobject_properties);
 
   // Returns the next free property index (only valid for FAST MODE).
@@ -6317,6 +6321,11 @@ class Map: public HeapObject {
   // The "shared" flags of both this map and |other| are ignored.
   bool EquivalentToForNormalization(Map* other, PropertyNormalizationMode mode);
 
+#if TRACE_MAPS
+  static void TraceTransition(const char* what, Map* from, Map* to, Name* name);
+  static void TraceAllTransitions(Map* map);
+#endif
+
  private:
   static void ConnectElementsTransition(Handle<Map> parent, Handle<Map> child);
   static void ConnectTransition(Handle<Map> parent, Handle<Map> child,
@@ -6334,12 +6343,12 @@ class Map: public HeapObject {
   static Handle<Map> CopyAddDescriptor(Handle<Map> map,
                                        Descriptor* descriptor,
                                        TransitionFlag flag);
-  static Handle<Map> CopyReplaceDescriptors(
-      Handle<Map> map,
-      Handle<DescriptorArray> descriptors,
-      TransitionFlag flag,
-      MaybeHandle<Name> maybe_name,
-      SimpleTransitionFlag simple_flag = FULL_TRANSITION);
+  static Handle<Map> CopyReplaceDescriptors(Handle<Map> map,
+                                            Handle<DescriptorArray> descriptors,
+                                            TransitionFlag flag,
+                                            MaybeHandle<Name> maybe_name,
+                                            const char* reason,
+                                            SimpleTransitionFlag simple_flag);
   static Handle<Map> CopyReplaceDescriptor(Handle<Map> map,
                                            Handle<DescriptorArray> descriptors,
                                            Descriptor* descriptor,
@@ -6367,7 +6376,9 @@ class Map: public HeapObject {
   void ZapTransitions();
 
   void DeprecateTransitionTree();
-  void DeprecateTarget(Name* key, DescriptorArray* new_descriptors);
+  void DeprecateTarget(PropertyType type, Name* key,
+                       PropertyAttributes attributes,
+                       DescriptorArray* new_descriptors);
 
   Map* FindLastMatchMap(int verbatim, int length, DescriptorArray* descriptors);
 
@@ -6710,6 +6721,13 @@ class SharedFunctionInfo: public HeapObject {
   // available.
   DECL_ACCESSORS(feedback_vector, TypeFeedbackVector)
 
+#if TRACE_MAPS
+  // [unique_id] - For --trace-maps purposes, an identifier that's persistent
+  // even if the GC moves this SharedFunctionInfo.
+  inline int unique_id() const;
+  inline void set_unique_id(int value);
+#endif
+
   // [instance class name]: class name for instances.
   DECL_ACCESSORS(instance_class_name, Object)
 
@@ -6856,6 +6874,13 @@ class SharedFunctionInfo: public HeapObject {
   // Indicates that this function is a concise method.
   DECL_BOOLEAN_ACCESSORS(is_concise_method)
 
+  // Indicates that this function is a default constructor.
+  DECL_BOOLEAN_ACCESSORS(is_default_constructor)
+
+  // Indicates that this function is a default constructor that needs to call
+  // super.
+  DECL_BOOLEAN_ACCESSORS(is_default_constructor_call_super)
+
   // Indicates that this function is an asm function.
   DECL_BOOLEAN_ACCESSORS(asm_function)
 
@@ -6956,10 +6981,16 @@ class SharedFunctionInfo: public HeapObject {
   static const int kInferredNameOffset = kDebugInfoOffset + kPointerSize;
   static const int kFeedbackVectorOffset =
       kInferredNameOffset + kPointerSize;
+#if TRACE_MAPS
+  static const int kUniqueIdOffset = kFeedbackVectorOffset + kPointerSize;
+  static const int kLastPointerFieldOffset = kUniqueIdOffset;
+#else
+  static const int kLastPointerFieldOffset = kFeedbackVectorOffset;
+#endif
+
 #if V8_HOST_ARCH_32_BIT
   // Smi fields.
-  static const int kLengthOffset =
-      kFeedbackVectorOffset + kPointerSize;
+  static const int kLengthOffset = kLastPointerFieldOffset + kPointerSize;
   static const int kFormalParameterCountOffset = kLengthOffset + kPointerSize;
   static const int kExpectedNofPropertiesOffset =
       kFormalParameterCountOffset + kPointerSize;
@@ -6995,8 +7026,7 @@ class SharedFunctionInfo: public HeapObject {
 // word is not set and thus this word cannot be treated as pointer
 // to HeapObject during old space traversal.
 #if V8_TARGET_LITTLE_ENDIAN
-  static const int kLengthOffset =
-      kFeedbackVectorOffset + kPointerSize;
+  static const int kLengthOffset = kLastPointerFieldOffset + kPointerSize;
   static const int kFormalParameterCountOffset =
       kLengthOffset + kIntSize;
 
@@ -7030,7 +7060,7 @@ class SharedFunctionInfo: public HeapObject {
 
 #elif V8_TARGET_BIG_ENDIAN
   static const int kFormalParameterCountOffset =
-      kFeedbackVectorOffset + kPointerSize;
+      kLastPointerFieldOffset + kPointerSize;
   static const int kLengthOffset = kFormalParameterCountOffset + kIntSize;
 
   static const int kNumLiteralsOffset = kLengthOffset + kIntSize;
@@ -7063,7 +7093,7 @@ class SharedFunctionInfo: public HeapObject {
   static const int kAlignedSize = POINTER_SIZE_ALIGN(kSize);
 
   typedef FixedBodyDescriptor<kNameOffset,
-                              kFeedbackVectorOffset + kPointerSize,
+                              kLastPointerFieldOffset + kPointerSize,
                               kSize> BodyDescriptor;
 
   // Bit positions in start_position_and_type.
@@ -7093,12 +7123,14 @@ class SharedFunctionInfo: public HeapObject {
     kIsArrow,
     kIsGenerator,
     kIsConciseMethod,
+    kIsDefaultConstructor,
+    kIsDefaultConstructorCallSuper,
     kIsAsmFunction,
     kDeserialized,
     kCompilerHintsCount  // Pseudo entry
   };
 
-  class FunctionKindBits : public BitField<FunctionKind, kIsArrow, 3> {};
+  class FunctionKindBits : public BitField<FunctionKind, kIsArrow, 5> {};
 
   class DeoptCountBits : public BitField<int, 0, 4> {};
   class OptReenableTriesBits : public BitField<int, 4, 18> {};
@@ -7538,6 +7570,9 @@ class GlobalObject: public JSObject {
   DECL_ACCESSORS(global_proxy, JSObject)
 
   DECLARE_CAST(GlobalObject)
+
+  static void InvalidatePropertyCell(Handle<GlobalObject> object,
+                                     Handle<Name> name);
 
   // Layout description.
   static const int kBuiltinsOffset = JSObject::kHeaderSize;
@@ -8579,6 +8614,10 @@ class Name: public HeapObject {
   DECLARE_CAST(Name)
 
   DECLARE_PRINTER(Name)
+#if TRACE_MAPS
+  void NameShortPrint();
+  int NameShortPrint(Vector<char> str);
+#endif
 
   // Layout description.
   static const int kHashFieldSlot = HeapObject::kHeaderSize;
@@ -8680,6 +8719,10 @@ class Symbol: public Name {
   static const int kOwnBit = 1;
 
   const char* PrivateSymbolToName() const;
+
+#if TRACE_MAPS
+  friend class Name;  // For PrivateSymbolToName.
+#endif
 
   DISALLOW_IMPLICIT_CONSTRUCTORS(Symbol);
 };

@@ -1626,6 +1626,18 @@ class V8_EXPORT Value : public Data {
   bool IsSet() const;
 
   /**
+   * Returns true if this value is a Map Iterator.
+   * This is an experimental feature.
+   */
+  bool IsMapIterator() const;
+
+  /**
+   * Returns true if this value is a Set Iterator.
+   * This is an experimental feature.
+   */
+  bool IsSetIterator() const;
+
+  /**
    * Returns true if this value is a WeakMap.
    * This is an experimental feature.
    */
@@ -6098,7 +6110,7 @@ class Internals {
   static const int kNullValueRootIndex = 7;
   static const int kTrueValueRootIndex = 8;
   static const int kFalseValueRootIndex = 9;
-  static const int kEmptyStringRootIndex = 154;
+  static const int kEmptyStringRootIndex = 155;
 
   // The external allocation limit should be below 256 MB on all architectures
   // to avoid that resource-constrained embedders run low on memory.

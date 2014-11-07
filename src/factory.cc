@@ -708,6 +708,16 @@ Handle<Context> Factory::NewGlobalContext(Handle<JSFunction> function,
 }
 
 
+Handle<GlobalContextTable> Factory::NewGlobalContextTable() {
+  Handle<FixedArray> array = NewFixedArray(1);
+  array->set_map_no_write_barrier(*global_context_table_map());
+  Handle<GlobalContextTable> context_table =
+      Handle<GlobalContextTable>::cast(array);
+  context_table->set_used(0);
+  return context_table;
+}
+
+
 Handle<Context> Factory::NewModuleContext(Handle<ScopeInfo> scope_info) {
   Handle<FixedArray> array =
       NewFixedArray(scope_info->ContextLength(), TENURED);
@@ -1722,6 +1732,22 @@ Handle<JSDataView> Factory::NewJSDataView() {
 }
 
 
+Handle<JSMapIterator> Factory::NewJSMapIterator() {
+  Handle<Map> map(isolate()->native_context()->map_iterator_map());
+  CALL_HEAP_FUNCTION(isolate(),
+                     isolate()->heap()->AllocateJSObjectFromMap(*map),
+                     JSMapIterator);
+}
+
+
+Handle<JSSetIterator> Factory::NewJSSetIterator() {
+  Handle<Map> map(isolate()->native_context()->set_iterator_map());
+  CALL_HEAP_FUNCTION(isolate(),
+                     isolate()->heap()->AllocateJSObjectFromMap(*map),
+                     JSSetIterator);
+}
+
+
 namespace {
 
 ElementsKind GetExternalArrayElementsKind(ExternalArrayType type) {
@@ -2061,6 +2087,9 @@ Handle<SharedFunctionInfo> Factory::NewSharedFunctionInfo(
   share->set_inferred_name(*empty_string(), SKIP_WRITE_BARRIER);
   Handle<TypeFeedbackVector> feedback_vector = NewTypeFeedbackVector(0, 0);
   share->set_feedback_vector(*feedback_vector, SKIP_WRITE_BARRIER);
+#if TRACE_MAPS
+  share->set_unique_id(isolate()->GetNextUniqueSharedFunctionInfoId());
+#endif
   share->set_profiler_ticks(0);
   share->set_ast_node_count(0);
   share->set_counters(0);

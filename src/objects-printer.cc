@@ -1098,18 +1098,19 @@ void TransitionArray::PrintTransitions(std::ostream& os,
   }
   for (int i = 0; i < number_of_transitions(); i++) {
     Name* key = GetKey(i);
+    Map* target = GetTarget(i);
     os << "   ";
     key->NamePrint(os);
     os << ": ";
     if (key == GetHeap()->frozen_symbol()) {
       os << " (transition to frozen)";
     } else if (key == GetHeap()->elements_transition_symbol()) {
-      os << " (transition to "
-         << ElementsKindToString(GetTarget(i)->elements_kind()) << ")";
+      os << " (transition to " << ElementsKindToString(target->elements_kind())
+         << ")";
     } else if (key == GetHeap()->observed_symbol()) {
       os << " (transition to Object.observe)";
     } else {
-      PropertyDetails details = GetTargetDetails(i);
+      PropertyDetails details = GetTargetDetails(key, target);
       switch (details.type()) {
         case FIELD: {
           os << " (transition to field)";
@@ -1128,7 +1129,7 @@ void TransitionArray::PrintTransitions(std::ostream& os,
       }
       os << ", attrs: " << details.attributes();
     }
-    os << " -> " << Brief(GetTarget(i)) << "\n";
+    os << " -> " << Brief(target) << "\n";
   }
 }
 
@@ -1136,4 +1137,38 @@ void TransitionArray::PrintTransitions(std::ostream& os,
 #endif  // OBJECT_PRINT
 
 
+#if TRACE_MAPS
+
+
+void Name::NameShortPrint() {
+  if (this->IsString()) {
+    PrintF("%s", String::cast(this)->ToCString().get());
+  } else {
+    DCHECK(this->IsSymbol());
+    Symbol* s = Symbol::cast(this);
+    if (s->name()->IsUndefined()) {
+      PrintF("#<%s>", s->PrivateSymbolToName());
+    } else {
+      PrintF("<%s>", String::cast(s->name())->ToCString().get());
+    }
+  }
+}
+
+
+int Name::NameShortPrint(Vector<char> str) {
+  if (this->IsString()) {
+    return SNPrintF(str, "%s", String::cast(this)->ToCString().get());
+  } else {
+    DCHECK(this->IsSymbol());
+    Symbol* s = Symbol::cast(this);
+    if (s->name()->IsUndefined()) {
+      return SNPrintF(str, "#<%s>", s->PrivateSymbolToName());
+    } else {
+      return SNPrintF(str, "<%s>", String::cast(s->name())->ToCString().get());
+    }
+  }
+}
+
+
+#endif  // TRACE_MAPS
 } }  // namespace v8::internal

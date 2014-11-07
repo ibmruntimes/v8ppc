@@ -2571,6 +2571,16 @@ bool Value::IsGeneratorObject() const {
 }
 
 
+bool Value::IsMapIterator() const {
+  return Utils::OpenHandle(this)->IsJSMapIterator();
+}
+
+
+bool Value::IsSetIterator() const {
+  return Utils::OpenHandle(this)->IsJSSetIterator();
+}
+
+
 Local<String> Value::ToString(Isolate* v8_isolate) const {
   i::Handle<i::Object> obj = Utils::OpenHandle(this);
   i::Handle<i::Object> str;
@@ -3626,7 +3636,9 @@ static inline bool ObjectSetAccessor(Object* obj,
       i::JSObject::SetAccessor(Utils::OpenHandle(obj), info),
       false);
   if (result->IsUndefined()) return false;
-  if (fast) i::JSObject::MigrateSlowToFast(Utils::OpenHandle(obj), 0);
+  if (fast) {
+    i::JSObject::MigrateSlowToFast(Utils::OpenHandle(obj), 0, "APISetAccessor");
+  }
   return true;
 }
 
@@ -3812,7 +3824,8 @@ void v8::Object::TurnOnAccessCheck() {
   // as optimized code does not always handle access checks.
   i::Deoptimizer::DeoptimizeGlobalObject(*obj);
 
-  i::Handle<i::Map> new_map = i::Map::Copy(i::Handle<i::Map>(obj->map()));
+  i::Handle<i::Map> new_map =
+      i::Map::Copy(i::Handle<i::Map>(obj->map()), "APITurnOnAccessCheck");
   new_map->set_is_access_check_needed(true);
   i::JSObject::MigrateToMap(obj, new_map);
 }
@@ -7159,6 +7172,19 @@ int CpuProfileNode::GetLineNumber() const {
 int CpuProfileNode::GetColumnNumber() const {
   return reinterpret_cast<const i::ProfileNode*>(this)->
       entry()->column_number();
+}
+
+
+unsigned int CpuProfileNode::GetHitLineCount() const {
+  const i::ProfileNode* node = reinterpret_cast<const i::ProfileNode*>(this);
+  return node->GetHitLineCount();
+}
+
+
+bool CpuProfileNode::GetLineTicks(LineTick* entries,
+                                  unsigned int length) const {
+  const i::ProfileNode* node = reinterpret_cast<const i::ProfileNode*>(this);
+  return node->GetLineTicks(entries, length);
 }
 
 
