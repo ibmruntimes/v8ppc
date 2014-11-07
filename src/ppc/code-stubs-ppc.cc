@@ -337,15 +337,20 @@ static void EmitIdenticalObjectComparison(MacroAssembler* masm,
     // not (it's a NaN).  For <= and >= we need to load r0 with the failing
     // value if it's a NaN.
     if (cond != eq) {
-      Label not_equal;
-      __ bne(&not_equal);
-      // All-zero means Infinity means equal.
-      __ Ret();
-      __ bind(&not_equal);
-      if (cond == le) {
-        __ li(r3, Operand(GREATER));  // NaN <= NaN should fail.
+      if (CpuFeatures::IsSupported(ISELECT)) {
+        __ li(r4, Operand((cond == le) ? GREATER : LESS));
+        __ isel(eq, r3, r3, r4);
       } else {
-        __ li(r3, Operand(LESS));     // NaN >= NaN should fail.
+        Label not_equal;
+        __ bne(&not_equal);
+        // All-zero means Infinity means equal.
+        __ Ret();
+        __ bind(&not_equal);
+        if (cond == le) {
+          __ li(r3, Operand(GREATER));  // NaN <= NaN should fail.
+        } else {
+          __ li(r3, Operand(LESS));     // NaN >= NaN should fail.
+        }
       }
     }
     __ Ret();
@@ -612,16 +617,25 @@ void CompareICStub::GenerateGeneric(MacroAssembler* masm) {
 
   Label nan, equal, less_than;
   __ bunordered(&nan);
-  __ beq(&equal);
-  __ blt(&less_than);
-  __ li(r3, Operand(GREATER));
-  __ Ret();
-  __ bind(&equal);
-  __ li(r3, Operand(EQUAL));
-  __ Ret();
-  __ bind(&less_than);
-  __ li(r3, Operand(LESS));
-  __ Ret();
+  if (CpuFeatures::IsSupported(ISELECT)) {
+    DCHECK(EQUAL == 0);
+    __ li(r4, Operand(GREATER));
+    __ li(r5, Operand(LESS));
+    __ isel(eq, r3, r0, r4);
+    __ isel(lt, r3, r5, r3);
+    __ Ret();
+  } else {
+    __ beq(&equal);
+    __ blt(&less_than);
+    __ li(r3, Operand(GREATER));
+    __ Ret();
+    __ bind(&equal);
+    __ li(r3, Operand(EQUAL));
+    __ Ret();
+    __ bind(&less_than);
+    __ li(r3, Operand(LESS));
+    __ Ret();
+  }
 
   __ bind(&nan);
   // If one of the sides was a NaN then the v flag is set.  Load r3 with
@@ -888,11 +902,16 @@ void MathPowStub::Generate(MacroAssembler* masm) {
   __ ConvertIntToDouble(scratch2, double_result);
 
   // Get absolute value of exponent.
-  Label positive_exponent;
   __ cmpi(scratch, Operand::Zero());
-  __ bge(&positive_exponent);
-  __ neg(scratch, scratch);
-  __ bind(&positive_exponent);
+  if (CpuFeatures::IsSupported(ISELECT)) {
+    __ neg(scratch2, scratch);
+    __ isel(lt, scratch, scratch2, scratch);
+  } else {
+    Label positive_exponent;
+    __ bge(&positive_exponent);
+    __ neg(scratch, scratch);
+    __ bind(&positive_exponent);
+  }
 
   Label while_true, no_carry, loop_end;
   __ bind(&while_true);
@@ -1531,17 +1550,24 @@ void InstanceofStub::Generate(MacroAssembler* masm) {
       __ Push(r3, r4);
       __ InvokeBuiltin(Builtins::INSTANCE_OF, CALL_FUNCTION);
     }
-    Label true_value, done;
-    __ cmpi(r3, Operand::Zero());
-    __ beq(&true_value);
+    if (CpuFeatures::IsSupported(ISELECT)) {
+      __ cmpi(r3, Operand::Zero());
+      __ LoadRoot(r3, Heap::kTrueValueRootIndex);
+      __ LoadRoot(r4, Heap::kFalseValueRootIndex);
+      __ isel(eq, r3, r3, r4);
+    } else {
+      Label true_value, done;
+      __ cmpi(r3, Operand::Zero());
+      __ beq(&true_value);
 
-    __ LoadRoot(r3, Heap::kFalseValueRootIndex);
-    __ b(&done);
+      __ LoadRoot(r3, Heap::kFalseValueRootIndex);
+      __ b(&done);
 
-    __ bind(&true_value);
-    __ LoadRoot(r3, Heap::kTrueValueRootIndex);
+      __ bind(&true_value);
+      __ LoadRoot(r3, Heap::kTrueValueRootIndex);
 
-    __ bind(&done);
+      __ bind(&done);
+    }
     __ Ret(HasArgsInRegisters() ? 0 : 2);
   }
 }
@@ -1705,11 +1731,15 @@ void ArgumentsAccessStub::GenerateNewSloppyFast(MacroAssembler* masm) {
   // r4 = parameter count (tagged)
   // r5 = argument count (tagged)
   // Compute the mapped parameter count = min(r4, r5) in r4.
-  Label skip;
   __ cmp(r4, r5);
-  __ blt(&skip);
-  __ mr(r4, r5);
-  __ bind(&skip);
+  if (CpuFeatures::IsSupported(ISELECT)) {
+    __ isel(lt, r4, r4, r5);
+  } else {
+    Label skip;
+    __ blt(&skip);
+    __ mr(r4, r5);
+    __ bind(&skip);
+  }
 
   __ bind(&try_allocate);
 
@@ -1718,15 +1748,21 @@ void ArgumentsAccessStub::GenerateNewSloppyFast(MacroAssembler* masm) {
   const int kParameterMapHeaderSize =
       FixedArray::kHeaderSize + 2 * kPointerSize;
   // If there are no mapped parameters, we do not need the parameter_map.
-  Label skip2, skip3;
   __ CmpSmiLiteral(r4, Smi::FromInt(0), r0);
-  __ bne(&skip2);
-  __ li(r11, Operand::Zero());
-  __ b(&skip3);
-  __ bind(&skip2);
-  __ SmiToPtrArrayOffset(r11, r4);
-  __ addi(r11, r11, Operand(kParameterMapHeaderSize));
-  __ bind(&skip3);
+  if (CpuFeatures::IsSupported(ISELECT)) {
+    __ SmiToPtrArrayOffset(r11, r4);
+    __ addi(r11, r11, Operand(kParameterMapHeaderSize));
+    __ isel(eq, r11, r0, r11);
+  } else {
+    Label skip2, skip3;
+    __ bne(&skip2);
+    __ li(r11, Operand::Zero());
+    __ b(&skip3);
+    __ bind(&skip2);
+    __ SmiToPtrArrayOffset(r11, r4);
+    __ addi(r11, r11, Operand(kParameterMapHeaderSize));
+    __ bind(&skip3);
+  }
 
   // 2. Backing store.
   __ SmiToPtrArrayOffset(r7, r5);
@@ -1750,14 +1786,20 @@ void ArgumentsAccessStub::GenerateNewSloppyFast(MacroAssembler* masm) {
   __ LoadP(r7, MemOperand(cp,
              Context::SlotOffset(Context::GLOBAL_OBJECT_INDEX)));
   __ LoadP(r7, FieldMemOperand(r7, GlobalObject::kNativeContextOffset));
-  Label skip4, skip5;
   __ cmpi(r4, Operand::Zero());
-  __ bne(&skip4);
-  __ LoadP(r7, MemOperand(r7, kNormalOffset));
-  __ b(&skip5);
-  __ bind(&skip4);
-  __ LoadP(r7, MemOperand(r7, kAliasedOffset));
-  __ bind(&skip5);
+  if (CpuFeatures::IsSupported(ISELECT)) {
+    __ LoadP(r11, MemOperand(r7, kNormalOffset));
+    __ LoadP(r7, MemOperand(r7, kAliasedOffset));
+    __ isel(eq, r7, r11, r7);
+  } else {
+    Label skip4, skip5;
+    __ bne(&skip4);
+    __ LoadP(r7, MemOperand(r7, kNormalOffset));
+    __ b(&skip5);
+    __ bind(&skip4);
+    __ LoadP(r7, MemOperand(r7, kAliasedOffset));
+    __ bind(&skip5);
+  }
 
   // r3 = address of new object (tagged)
   // r4 = mapped parameter count (tagged)
@@ -1794,14 +1836,20 @@ void ArgumentsAccessStub::GenerateNewSloppyFast(MacroAssembler* masm) {
   // r5 = argument count (tagged)
   // r7 = address of parameter map or backing store (tagged)
   // Initialize parameter map. If there are no mapped arguments, we're done.
-  Label skip_parameter_map, skip6;
+  Label skip_parameter_map;
   __ CmpSmiLiteral(r4, Smi::FromInt(0), r0);
-  __ bne(&skip6);
-  // Move backing store address to r6, because it is
-  // expected there when filling in the unmapped arguments.
-  __ mr(r6, r7);
-  __ b(&skip_parameter_map);
-  __ bind(&skip6);
+  if (CpuFeatures::IsSupported(ISELECT)) {
+    __ isel(eq, r6, r7, r6);
+    __ beq(&skip_parameter_map);
+  } else {
+    Label skip6;
+    __ bne(&skip6);
+    // Move backing store address to r6, because it is
+    // expected there when filling in the unmapped arguments.
+    __ mr(r6, r7);
+    __ b(&skip_parameter_map);
+    __ bind(&skip6);
+  }
 
   __ LoadRoot(r9, Heap::kSloppyArgumentsElementsMapRootIndex);
   __ StoreP(r9, FieldMemOperand(r7, FixedArray::kMapOffset), r0);
@@ -2730,14 +2778,19 @@ void CallConstructStub::Generate(MacroAssembler* masm) {
       // entry is at the feedback vector slot given by r6 + 1.
       __ LoadP(r5, FieldMemOperand(r8, FixedArray::kHeaderSize + kPointerSize));
     } else {
-      Label feedback_register_initialized;
       // Put the AllocationSite from the feedback vector into r5, or undefined.
       __ LoadP(r5, FieldMemOperand(r8, FixedArray::kHeaderSize));
       __ LoadP(r8, FieldMemOperand(r5, AllocationSite::kMapOffset));
       __ CompareRoot(r8, Heap::kAllocationSiteMapRootIndex);
-      __ beq(&feedback_register_initialized);
-      __ LoadRoot(r5, Heap::kUndefinedValueRootIndex);
-      __ bind(&feedback_register_initialized);
+      if (CpuFeatures::IsSupported(ISELECT)) {
+        __ LoadRoot(r8, Heap::kUndefinedValueRootIndex);
+        __ isel(eq, r5, r5, r8);
+      } else {
+        Label feedback_register_initialized;
+        __ beq(&feedback_register_initialized);
+        __ LoadRoot(r5, Heap::kUndefinedValueRootIndex);
+        __ bind(&feedback_register_initialized);
+      }
     }
 
     __ AssertUndefinedOrAllocationSite(r5, r8);
@@ -3424,15 +3477,20 @@ void StringHelper::GenerateFlatOneByteStringEquals(
 void StringHelper::GenerateCompareFlatOneByteStrings(
     MacroAssembler* masm, Register left, Register right, Register scratch1,
     Register scratch2, Register scratch3) {
-  Label skip, result_not_equal, compare_lengths;
+  Label result_not_equal, compare_lengths;
   // Find minimum length and length difference.
   __ LoadP(scratch1, FieldMemOperand(left, String::kLengthOffset));
   __ LoadP(scratch2, FieldMemOperand(right, String::kLengthOffset));
   __ sub(scratch3, scratch1, scratch2, LeaveOE, SetRC);
   Register length_delta = scratch3;
-  __ ble(&skip, cr0);
-  __ mr(scratch1, scratch2);
-  __ bind(&skip);
+  if (CpuFeatures::IsSupported(ISELECT)) {
+    __ isel(gt, scratch1, scratch2, scratch1, cr0);
+  } else {
+    Label skip;
+    __ ble(&skip, cr0);
+    __ mr(scratch1, scratch2);
+    __ bind(&skip);
+  }
   Register min_length = scratch1;
   STATIC_ASSERT(kSmiTag == 0);
   __ cmpi(min_length, Operand::Zero());
@@ -3451,15 +3509,23 @@ void StringHelper::GenerateCompareFlatOneByteStrings(
   __ bind(&result_not_equal);
   // Conditionally update the result based either on length_delta or
   // the last comparion performed in the loop above.
-  Label less_equal, equal;
-  __ ble(&less_equal);
-  __ LoadSmiLiteral(r3, Smi::FromInt(GREATER));
-  __ Ret();
-  __ bind(&less_equal);
-  __ beq(&equal);
-  __ LoadSmiLiteral(r3, Smi::FromInt(LESS));
-  __ bind(&equal);
-  __ Ret();
+  if (CpuFeatures::IsSupported(ISELECT)) {
+    __ li(r4, Operand(GREATER));
+    __ li(r5, Operand(LESS));
+    __ isel(eq, r3, r0, r4);
+    __ isel(lt, r3, r5, r3);
+    __ Ret();
+  } else {
+    Label less_equal, equal;
+    __ ble(&less_equal);
+    __ LoadSmiLiteral(r3, Smi::FromInt(GREATER));
+    __ Ret();
+    __ bind(&less_equal);
+    __ beq(&equal);
+    __ LoadSmiLiteral(r3, Smi::FromInt(LESS));
+    __ bind(&equal);
+    __ Ret();
+  }
 }
 
 
@@ -3627,17 +3693,26 @@ void CompareICStub::GenerateNumbers(MacroAssembler* masm) {
   __ bunordered(&unordered);
 
   // Return a result of -1, 0, or 1, based on status bits.
-  __ beq(&equal);
-  __ blt(&less_than);
-  //  assume greater than
-  __ li(r3, Operand(GREATER));
-  __ Ret();
-  __ bind(&equal);
-  __ li(r3, Operand(EQUAL));
-  __ Ret();
-  __ bind(&less_than);
-  __ li(r3, Operand(LESS));
-  __ Ret();
+  if (CpuFeatures::IsSupported(ISELECT)) {
+    DCHECK(EQUAL == 0);
+    __ li(r4, Operand(GREATER));
+    __ li(r5, Operand(LESS));
+    __ isel(eq, r3, r0, r4);
+    __ isel(lt, r3, r5, r3);
+    __ Ret();
+  } else {
+    __ beq(&equal);
+    __ blt(&less_than);
+    //  assume greater than
+    __ li(r3, Operand(GREATER));
+    __ Ret();
+    __ bind(&equal);
+    __ li(r3, Operand(EQUAL));
+    __ Ret();
+    __ bind(&less_than);
+    __ li(r3, Operand(LESS));
+    __ Ret();
+  }
 
   __ bind(&unordered);
   __ bind(&generic_stub);
