@@ -216,7 +216,8 @@ enum OpcodeExt2 {
   ADDX = 266 << 1,    // Add
   LHZX = 279 << 1,    // load half-word zero w/ x-form
   LHZUX = 311 << 1,   // load half-word zero w/ update x-form
-  LHAX =343 << 1,     // load half-word algebraic w/ x-form
+  LWAX = 341 << 1,    // load word algebraic w/ x-form
+  LHAX = 343 << 1,    // load half-word algebraic w/ x-form
   LHAUX = 375 << 1,   // load half-word algebraic w/ update x-form
   XORX = 316 << 1,    // Exclusive OR
   MFSPR = 339 <<1,    // Move from Special-Purpose-Register
