@@ -165,7 +165,7 @@ void DoubleToIStub::Generate(MacroAssembler* masm) {
 
     // Test for overflow
 #if V8_TARGET_ARCH_PPC64
-    __ TestIfInt32(result_reg, scratch, r0);
+    __ TestIfInt32(result_reg, r0);
 #else
     __ TestIfInt32(scratch, result_reg, r0);
 #endif
