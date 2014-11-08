@@ -1161,9 +1161,10 @@ void LCodeGen::DoModI(LModI* instr) {
   Register right_reg = ToRegister(instr->right());
   Register result_reg = ToRegister(instr->result());
   Register scratch = scratch0();
+  bool can_overflow = hmod->CheckFlag(HValue::kCanOverflow);
   Label done;
 
-  if (hmod->CheckFlag(HValue::kCanOverflow)) {
+  if (can_overflow) {
     __ li(r0, Operand::Zero());  // clear xer
     __ mtxer(r0);
   }
@@ -1178,16 +1179,21 @@ void LCodeGen::DoModI(LModI* instr) {
 
   // Check for kMinInt % -1, divw will return undefined, which is not what we
   // want. We have to deopt if we care about -0, because we can't return that.
-  if (hmod->CheckFlag(HValue::kCanOverflow)) {
-    Label no_overflow_possible;
+  if (can_overflow) {
     if (hmod->CheckFlag(HValue::kBailoutOnMinusZero)) {
       DeoptimizeIf(overflow, instr, "minus zero", cr0);
     } else {
-      __ bnooverflow(&no_overflow_possible, cr0);
-      __ li(result_reg, Operand::Zero());
-      __ b(&done);
+      if (CpuFeatures::IsSupported(ISELECT)) {
+        __ isel(overflow, result_reg, r0, result_reg, cr0);
+        __ boverflow(&done, cr0);
+      } else {
+        Label no_overflow_possible;
+        __ bnooverflow(&no_overflow_possible, cr0);
+        __ li(result_reg, Operand::Zero());
+        __ b(&done);
+        __ bind(&no_overflow_possible);
+      }
     }
-    __ bind(&no_overflow_possible);
   }
 
   __ mullw(scratch, right_reg, scratch);
@@ -1289,11 +1295,12 @@ void LCodeGen::DoDivI(LDivI* instr) {
   const Register dividend = ToRegister(instr->dividend());
   const Register divisor = ToRegister(instr->divisor());
   Register result = ToRegister(instr->result());
+  bool can_overflow = hdiv->CheckFlag(HValue::kCanOverflow);
 
   DCHECK(!dividend.is(result));
   DCHECK(!divisor.is(result));
 
-  if (hdiv->CheckFlag(HValue::kCanOverflow)) {
+  if (can_overflow) {
     __ li(r0, Operand::Zero());  // clear xer
     __ mtxer(r0);
   }
@@ -1317,16 +1324,20 @@ void LCodeGen::DoDivI(LDivI* instr) {
   }
 
   // Check for (kMinInt / -1).
-  if (hdiv->CheckFlag(HValue::kCanOverflow)) {
-    Label no_overflow_possible;
+  if (can_overflow) {
     if (!hdiv->CheckFlag(HValue::kAllUsesTruncatingToInt32)) {
       DeoptimizeIf(overflow, instr, "overflow", cr0);
     } else {
       // When truncating, we want kMinInt / -1 = kMinInt.
-      __ bnooverflow(&no_overflow_possible, cr0);
-      __ mr(result, dividend);
+      if (CpuFeatures::IsSupported(ISELECT)) {
+        __ isel(overflow, result, dividend, result, cr0);
+      } else {
+        Label no_overflow_possible;
+        __ bnooverflow(&no_overflow_possible, cr0);
+        __ mr(result, dividend);
+        __ bind(&no_overflow_possible);
+      }
     }
-    __ bind(&no_overflow_possible);
   }
 
   if (!hdiv->CheckFlag(HInstruction::kAllUsesTruncatingToInt32)) {
@@ -1344,6 +1355,7 @@ void LCodeGen::DoFlooringDivByPowerOf2I(LFlooringDivByPowerOf2I* instr) {
   Register dividend = ToRegister(instr->dividend());
   Register result = ToRegister(instr->result());
   int32_t divisor = instr->divisor();
+  bool can_overflow = hdiv->CheckFlag(HValue::kLeftCanBeMinInt);
 
   // If the divisor is positive, things are easy: There can be no deopts and we
   // can simply do an arithmetic right shift.
@@ -1358,13 +1370,13 @@ void LCodeGen::DoFlooringDivByPowerOf2I(LFlooringDivByPowerOf2I* instr) {
   // If the divisor is negative, we have to negate and handle edge cases.
   OEBit oe = LeaveOE;
 #if V8_TARGET_ARCH_PPC64
-  if (divisor == -1 && hdiv->CheckFlag(HValue::kLeftCanBeMinInt)) {
+  if (divisor == -1 && can_overflow) {
     __ lis(r0, Operand(SIGN_EXT_IMM16(0x8000)));
     __ cmpw(dividend, r0);
     DeoptimizeIf(eq, instr, "overflow");
   }
 #else
-  if (hdiv->CheckFlag(HValue::kLeftCanBeMinInt)) {
+  if (can_overflow) {
     __ li(r0, Operand::Zero());  // clear xer
     __ mtxer(r0);
     oe = SetOE;
@@ -1378,7 +1390,7 @@ void LCodeGen::DoFlooringDivByPowerOf2I(LFlooringDivByPowerOf2I* instr) {
 
   // If the negation could not overflow, simply shifting is OK.
 #if !V8_TARGET_ARCH_PPC64
-  if (!instr->hydrogen()->CheckFlag(HValue::kLeftCanBeMinInt)) {
+  if (!can_overflow) {
 #endif
     if (shift) {
       __ ShiftRightArithImm(result, result, shift);
@@ -1456,11 +1468,12 @@ void LCodeGen::DoFlooringDivI(LFlooringDivI* instr) {
   const Register dividend = ToRegister(instr->dividend());
   const Register divisor = ToRegister(instr->divisor());
   Register result = ToRegister(instr->result());
+  bool can_overflow = hdiv->CheckFlag(HValue::kCanOverflow);
 
   DCHECK(!dividend.is(result));
   DCHECK(!divisor.is(result));
 
-  if (hdiv->CheckFlag(HValue::kCanOverflow)) {
+  if (can_overflow) {
     __ li(r0, Operand::Zero());  // clear xer
     __ mtxer(r0);
   }
@@ -1484,16 +1497,20 @@ void LCodeGen::DoFlooringDivI(LFlooringDivI* instr) {
   }
 
   // Check for (kMinInt / -1).
-  if (hdiv->CheckFlag(HValue::kCanOverflow)) {
-    Label no_overflow_possible;
+  if (can_overflow) {
     if (!hdiv->CheckFlag(HValue::kAllUsesTruncatingToInt32)) {
       DeoptimizeIf(overflow, instr, "overflow", cr0);
     } else {
       // When truncating, we want kMinInt / -1 = kMinInt.
-      __ bnooverflow(&no_overflow_possible, cr0);
-      __ mr(result, dividend);
+      if (CpuFeatures::IsSupported(ISELECT)) {
+        __ isel(overflow, result, dividend, result, cr0);
+      } else {
+        Label no_overflow_possible;
+        __ bnooverflow(&no_overflow_possible, cr0);
+        __ mr(result, dividend);
+        __ bind(&no_overflow_possible);
+      }
     }
-    __ bind(&no_overflow_possible);
   }
 
   Label done;
@@ -1573,7 +1590,7 @@ void LCodeGen::DoMulI(LMulI* instr) {
 #if V8_TARGET_ARCH_PPC64
           } else {
             __ neg(result, left);
-            __ TestIfInt32(result, scratch, r0);
+            __ TestIfInt32(result, r0);
             DeoptimizeIf(ne, instr, "overflow");
           }
 #endif
@@ -1646,7 +1663,7 @@ void LCodeGen::DoMulI(LMulI* instr) {
       } else {
         __ Mul(result, left, right);
       }
-      __ TestIfInt32(result, scratch, r0);
+      __ TestIfInt32(result, r0);
       DeoptimizeIf(ne, instr, "overflow");
       if (instr->hydrogen()->representation().IsSmi()) {
         __ SmiTag(result);
@@ -1859,12 +1876,23 @@ void LCodeGen::DoSubI(LSubI* instr) {
   Register left = ToRegister(instr->left());
   Register result = ToRegister(instr->result());
   bool can_overflow = instr->hydrogen()->CheckFlag(HValue::kCanOverflow);
-  if (!can_overflow) {
+#if V8_TARGET_ARCH_PPC64
+  const bool isInteger = !instr->hydrogen()->representation().IsSmi();
+#else
+  const bool isInteger = false;
+#endif
+  if (!can_overflow || isInteger) {
     if (right->IsConstantOperand()) {
       __ Add(result, left, -(ToOperand(right).immediate()), r0);
     } else {
       __ sub(result, left, EmitLoadRegister(right, ip));
     }
+#if V8_TARGET_ARCH_PPC64
+    if (can_overflow) {
+      __ TestIfInt32(result, r0);
+      DeoptimizeIf(ne, instr, "overflow");
+    }
+#endif
   } else {
     if (right->IsConstantOperand()) {
       __ AddAndCheckForOverflow(result,
@@ -1877,12 +1905,6 @@ void LCodeGen::DoSubI(LSubI* instr) {
                                 EmitLoadRegister(right, ip),
                                 scratch0(), r0);
     }
-    // Doptimize on overflow
-#if V8_TARGET_ARCH_PPC64
-    if (!instr->hydrogen()->representation().IsSmi()) {
-      __ extsw(scratch0(), scratch0(), SetRC);
-    }
-#endif
     DeoptimizeIf(lt, instr, "overflow", cr0);
   }
 }
@@ -2067,16 +2089,24 @@ void LCodeGen::DoAddI(LAddI* instr) {
   Register result = ToRegister(instr->result());
   bool can_overflow = instr->hydrogen()->CheckFlag(HValue::kCanOverflow);
 #if V8_TARGET_ARCH_PPC64
-  bool isInteger = !(instr->hydrogen()->representation().IsSmi() ||
-                     instr->hydrogen()->representation().IsExternal());
+  const bool isInteger = !(instr->hydrogen()->representation().IsSmi() ||
+                           instr->hydrogen()->representation().IsExternal());
+#else
+  const bool isInteger = false;
 #endif
 
-  if (!can_overflow) {
+  if (!can_overflow || isInteger) {
     if (right->IsConstantOperand()) {
       __ Add(result, left, ToOperand(right).immediate(), r0);
     } else {
       __ add(result, left, EmitLoadRegister(right, ip));
     }
+#if V8_TARGET_ARCH_PPC64
+    if (can_overflow) {
+      __ TestIfInt32(result, r0);
+      DeoptimizeIf(ne, instr, "overflow");
+    }
+#endif
   } else {
     if (right->IsConstantOperand()) {
       __ AddAndCheckForOverflow(result,
@@ -2089,12 +2119,6 @@ void LCodeGen::DoAddI(LAddI* instr) {
                                 EmitLoadRegister(right, ip),
                                 scratch0(), r0);
     }
-    // Doptimize on overflow
-#if V8_TARGET_ARCH_PPC64
-    if (isInteger) {
-      __ extsw(scratch0(), scratch0(), SetRC);
-    }
-#endif
     DeoptimizeIf(lt, instr, "overflow", cr0);
   }
 }
