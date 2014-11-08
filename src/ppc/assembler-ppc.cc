@@ -1135,6 +1135,14 @@ void Assembler::lhzux(Register rt, const MemOperand & src) {
 }
 
 
+void Assembler::lhax(Register rt, const MemOperand &src) {
+  Register ra = src.ra();
+  Register rb = src.rb();
+  DCHECK(!ra.is(r0));
+  emit(EXT2 | LHAX | rt.code()*B21 | ra.code()*B16 | rb.code()*B11);
+}
+
+
 void Assembler::lwz(Register dst, const MemOperand &src) {
   DCHECK(!src.ra_.is(r0));
   d_form(LWZ, dst, src.ra(), src.offset(), true);
@@ -1163,6 +1171,12 @@ void Assembler::lwzux(Register rt, const MemOperand & src) {
 }
 
 
+void Assembler::lha(Register dst, const MemOperand &src) {
+  DCHECK(!src.ra_.is(r0));
+  d_form(LHA, dst, src.ra(), src.offset(), true);
+}
+
+
 void Assembler::lwa(Register dst, const MemOperand &src) {
 #if V8_TARGET_ARCH_PPC64
   int offset = src.offset();
@@ -1172,6 +1186,18 @@ void Assembler::lwa(Register dst, const MemOperand &src) {
   emit(LD | dst.code()*B21 | src.ra().code()*B16 | offset | 2);
 #else
   lwz(dst, src);
+#endif
+}
+
+
+void Assembler::lwax(Register rt, const MemOperand &src) {
+#if V8_TARGET_ARCH_PPC64
+  Register ra = src.ra();
+  Register rb = src.rb();
+  DCHECK(!ra.is(r0));
+  emit(EXT2 | LWAX | rt.code()*B21 | ra.code()*B16 | rb.code()*B11);
+#else
+  lwzx(rt, src);
 #endif
 }
 
