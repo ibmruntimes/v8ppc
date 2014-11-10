@@ -1024,7 +1024,6 @@ class RepresentationSelector {
 
 Node* SimplifiedLowering::IsTagged(Node* node) {
   // TODO(titzer): factor this out to a TaggingScheme abstraction.
-  STATIC_ASSERT(kSmiTagMask == 1);  // Only works if tag is the low bit.
   return graph()->NewNode(machine()->WordAnd(), node,
                           jsgraph()->Int32Constant(kSmiTagMask));
 }

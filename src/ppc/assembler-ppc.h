@@ -711,7 +711,7 @@ class Assembler : public AssemblerBase {
 
 // Number of instructions to load an address via a mov sequence.
 #if V8_TARGET_ARCH_PPC64
-  static const int kMovInstructionsConstantPool = 2;
+  static const int kMovInstructionsConstantPool = 1;
   static const int kMovInstructionsNoConstantPool = 5;
 #else
   static const int kMovInstructionsConstantPool = 1;

@@ -154,23 +154,24 @@ namespace internal {
 // Values for bitset types
 
 #define MASK_BITSET_TYPE_LIST(V) \
-  V(Representation, 0xff800000u) \
-  V(Semantic,       0x007ffffeu)
+  V(Representation, 0x7fc00000u) \
+  V(Semantic,       0x003fffffu)
 
 #define REPRESENTATION(k) ((k) & BitsetType::kRepresentation)
 #define SEMANTIC(k)       ((k) & BitsetType::kSemantic)
+#define BIT(n)            (1u << (n))
 
 #define REPRESENTATION_BITSET_TYPE_LIST(V) \
   V(None,             0)                   \
-  V(UntaggedInt1,     1u << 23 | kSemantic) \
-  V(UntaggedInt8,     1u << 24 | kSemantic) \
-  V(UntaggedInt16,    1u << 25 | kSemantic) \
-  V(UntaggedInt32,    1u << 26 | kSemantic) \
-  V(UntaggedFloat32,  1u << 27 | kSemantic) \
-  V(UntaggedFloat64,  1u << 28 | kSemantic) \
-  V(UntaggedPtr,      1u << 29 | kSemantic) \
-  V(TaggedInt,        1u << 30 | kSemantic) \
-  V(TaggedPtr,        1u << 31 | kSemantic) \
+  V(UntaggedInt1,     BIT(22) | kSemantic) \
+  V(UntaggedInt8,     BIT(23) | kSemantic) \
+  V(UntaggedInt16,    BIT(24) | kSemantic) \
+  V(UntaggedInt32,    BIT(25) | kSemantic) \
+  V(UntaggedFloat32,  BIT(26) | kSemantic) \
+  V(UntaggedFloat64,  BIT(27) | kSemantic) \
+  V(UntaggedPtr,      BIT(28) | kSemantic) \
+  V(TaggedInt,        BIT(29) | kSemantic) \
+  V(TaggedPtr,        BIT(30) | kSemantic) \
   \
   V(UntaggedInt,      kUntaggedInt1 | kUntaggedInt8 |      \
                       kUntaggedInt16 | kUntaggedInt32)     \
@@ -180,28 +181,28 @@ namespace internal {
   V(Tagged,           kTaggedInt | kTaggedPtr)
 
 #define SEMANTIC_BITSET_TYPE_LIST(V) \
-  V(Null,                1u << 1  | REPRESENTATION(kTaggedPtr)) \
-  V(Undefined,           1u << 2  | REPRESENTATION(kTaggedPtr)) \
-  V(Boolean,             1u << 3  | REPRESENTATION(kTaggedPtr)) \
-  V(UnsignedSmall,       1u << 4  | REPRESENTATION(kTagged | kUntaggedNumber)) \
-  V(OtherSignedSmall,    1u << 5  | REPRESENTATION(kTagged | kUntaggedNumber)) \
-  V(OtherUnsigned31,     1u << 6  | REPRESENTATION(kTagged | kUntaggedNumber)) \
-  V(OtherUnsigned32,     1u << 7  | REPRESENTATION(kTagged | kUntaggedNumber)) \
-  V(OtherSigned32,       1u << 8  | REPRESENTATION(kTagged | kUntaggedNumber)) \
-  V(MinusZero,           1u << 9  | REPRESENTATION(kTagged | kUntaggedNumber)) \
-  V(NaN,                 1u << 10 | REPRESENTATION(kTagged | kUntaggedNumber)) \
-  V(OtherNumber,         1u << 11 | REPRESENTATION(kTagged | kUntaggedNumber)) \
-  V(Symbol,              1u << 12 | REPRESENTATION(kTaggedPtr)) \
-  V(InternalizedString,  1u << 13 | REPRESENTATION(kTaggedPtr)) \
-  V(OtherString,         1u << 14 | REPRESENTATION(kTaggedPtr)) \
-  V(Undetectable,        1u << 15 | REPRESENTATION(kTaggedPtr)) \
-  V(Array,               1u << 16 | REPRESENTATION(kTaggedPtr)) \
-  V(Buffer,              1u << 17 | REPRESENTATION(kTaggedPtr)) \
-  V(Function,            1u << 18 | REPRESENTATION(kTaggedPtr)) \
-  V(RegExp,              1u << 19 | REPRESENTATION(kTaggedPtr)) \
-  V(OtherObject,         1u << 20 | REPRESENTATION(kTaggedPtr)) \
-  V(Proxy,               1u << 21 | REPRESENTATION(kTaggedPtr)) \
-  V(Internal,            1u << 22 | REPRESENTATION(kTagged | kUntagged)) \
+  V(Null,                BIT(0)  | REPRESENTATION(kTaggedPtr)) \
+  V(Undefined,           BIT(1)  | REPRESENTATION(kTaggedPtr)) \
+  V(Boolean,             BIT(2)  | REPRESENTATION(kTaggedPtr)) \
+  V(UnsignedSmall,       BIT(3)  | REPRESENTATION(kTagged | kUntaggedNumber)) \
+  V(OtherSignedSmall,    BIT(4)  | REPRESENTATION(kTagged | kUntaggedNumber)) \
+  V(OtherUnsigned31,     BIT(5)  | REPRESENTATION(kTagged | kUntaggedNumber)) \
+  V(OtherUnsigned32,     BIT(6)  | REPRESENTATION(kTagged | kUntaggedNumber)) \
+  V(OtherSigned32,       BIT(7)  | REPRESENTATION(kTagged | kUntaggedNumber)) \
+  V(MinusZero,           BIT(8)  | REPRESENTATION(kTagged | kUntaggedNumber)) \
+  V(NaN,                 BIT(9)  | REPRESENTATION(kTagged | kUntaggedNumber)) \
+  V(OtherNumber,         BIT(10) | REPRESENTATION(kTagged | kUntaggedNumber)) \
+  V(Symbol,              BIT(11) | REPRESENTATION(kTaggedPtr)) \
+  V(InternalizedString,  BIT(12) | REPRESENTATION(kTaggedPtr)) \
+  V(OtherString,         BIT(13) | REPRESENTATION(kTaggedPtr)) \
+  V(Undetectable,        BIT(14) | REPRESENTATION(kTaggedPtr)) \
+  V(Array,               BIT(15) | REPRESENTATION(kTaggedPtr)) \
+  V(Buffer,              BIT(16) | REPRESENTATION(kTaggedPtr)) \
+  V(Function,            BIT(17) | REPRESENTATION(kTaggedPtr)) \
+  V(RegExp,              BIT(18) | REPRESENTATION(kTaggedPtr)) \
+  V(OtherObject,         BIT(19) | REPRESENTATION(kTaggedPtr)) \
+  V(Proxy,               BIT(20) | REPRESENTATION(kTaggedPtr)) \
+  V(Internal,            BIT(21) | REPRESENTATION(kTagged | kUntagged)) \
   \
   V(SignedSmall,         kUnsignedSmall | kOtherSignedSmall) \
   V(Signed32,            kSignedSmall | kOtherUnsigned31 | kOtherSigned32) \
@@ -222,7 +223,7 @@ namespace internal {
   V(Unique,              kBoolean | kUniqueName | kNull | kUndefined | \
                          kReceiver) \
   V(NonNumber,           kUnique | kString | kInternal) \
-  V(Any,                 0xfffffffeu)
+  V(Any,                 0x7fffffffu)
 
 /*
  * The following diagrams show how integers (in the mathematical sense) are
