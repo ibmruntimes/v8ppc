@@ -1813,8 +1813,7 @@ void MacroAssembler::UndoAllocationInNewSpace(Register object,
       ExternalReference::new_space_allocation_top_address(isolate());
 
   // Make sure the object has no tag before resetting top.
-  mov(r0, Operand(~kHeapObjectTagMask));
-  and_(object, object, r0);
+  ClearRightImm(object, object, Operand(kHeapObjectTagSize));
   // was.. and_(object, object, Operand(~kHeapObjectTagMask));
 #ifdef DEBUG
   // Check that the object un-allocated is below the current top.
@@ -2992,7 +2991,6 @@ void MacroAssembler::JumpIfNotBothSmi(Register reg1,
                                       Register reg2,
                                       Label* on_not_both_smi) {
   STATIC_ASSERT(kSmiTag == 0);
-  DCHECK_EQ(1, static_cast<int>(kSmiTagMask));
   orx(r0, reg1, reg2, LeaveRC);
   JumpIfNotSmi(r0, on_not_both_smi);
 }
@@ -3001,8 +2999,7 @@ void MacroAssembler::JumpIfNotBothSmi(Register reg1,
 void MacroAssembler::UntagAndJumpIfSmi(
     Register dst, Register src, Label* smi_case) {
   STATIC_ASSERT(kSmiTag == 0);
-  STATIC_ASSERT(kSmiTagSize == 1);
-  TestBit(src, 0, r0);
+  TestBitRange(src, kSmiTagSize - 1, 0, r0);
   SmiUntag(dst, src);
   beq(smi_case, cr0);
 }
@@ -3011,8 +3008,7 @@ void MacroAssembler::UntagAndJumpIfSmi(
 void MacroAssembler::UntagAndJumpIfNotSmi(
     Register dst, Register src, Label* non_smi_case) {
   STATIC_ASSERT(kSmiTag == 0);
-  STATIC_ASSERT(kSmiTagSize == 1);
-  TestBit(src, 0, r0);
+  TestBitRange(src, kSmiTagSize - 1, 0, r0);
   SmiUntag(dst, src);
   bne(non_smi_case, cr0);
 }
@@ -4654,9 +4650,10 @@ void MacroAssembler::LoadP(Register dst, const MemOperand& mem,
                            Register scratch) {
   int offset = mem.offset();
 
-  if (!scratch.is(no_reg) && !is_int16(offset)) {
+  if (!is_int16(offset)) {
     /* cannot use d-form */
-    LoadIntLiteral(scratch, offset);
+    DCHECK(!scratch.is(no_reg));
+    mov(scratch, Operand(offset));
 #if V8_TARGET_ARCH_PPC64
     ldx(dst, MemOperand(mem.ra(), scratch));
 #else
@@ -4686,9 +4683,10 @@ void MacroAssembler::StoreP(Register src, const MemOperand& mem,
                             Register scratch) {
   int offset = mem.offset();
 
-  if (!scratch.is(no_reg) && !is_int16(offset)) {
+  if (!is_int16(offset)) {
     /* cannot use d-form */
-    LoadIntLiteral(scratch, offset);
+    DCHECK(!scratch.is(no_reg));
+    mov(scratch, Operand(offset));
 #if V8_TARGET_ARCH_PPC64
     stdx(src, MemOperand(mem.ra(), scratch));
 #else
@@ -4721,8 +4719,9 @@ void MacroAssembler::LoadWordArith(Register dst, const MemOperand& mem,
                                    Register scratch) {
   int offset = mem.offset();
 
-  if (!scratch.is(no_reg) && !is_int16(offset)) {
-    LoadIntLiteral(scratch, offset);
+  if (!is_int16(offset)) {
+    DCHECK(!scratch.is(no_reg));
+    mov(scratch, Operand(offset));
     lwax(dst, MemOperand(mem.ra(), scratch));
   } else {
 #if V8_TARGET_ARCH_PPC64
