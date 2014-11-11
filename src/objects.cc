@@ -14207,8 +14207,6 @@ template class HashTable<CompilationCacheTable,
                          CompilationCacheShape,
                          HashTableKey*>;
 
-template class HashTable<MapCache, MapCacheShape, HashTableKey*>;
-
 template class HashTable<ObjectHashTable,
                          ObjectHashTableShape,
                          Handle<Object> >;
@@ -15014,16 +15012,19 @@ Handle<CompilationCacheTable> CompilationCacheTable::Put(
   Handle<SharedFunctionInfo> shared(context->closure()->shared());
   StringSharedKey key(src, shared, FLAG_use_strict ? STRICT : SLOPPY,
                       RelocInfo::kNoPosition);
-  int entry = cache->FindEntry(&key);
-  if (entry != kNotFound) {
+  {
     Handle<Object> k = key.AsHandle(isolate);
-    cache->set(EntryToIndex(entry), *k);
-    cache->set(EntryToIndex(entry) + 1, *value);
-    return cache;
+    DisallowHeapAllocation no_allocation_scope;
+    int entry = cache->FindEntry(&key);
+    if (entry != kNotFound) {
+      cache->set(EntryToIndex(entry), *k);
+      cache->set(EntryToIndex(entry) + 1, *value);
+      return cache;
+    }
   }
 
   cache = EnsureCapacity(cache, 1, &key);
-  entry = cache->FindInsertionEntry(key.Hash());
+  int entry = cache->FindInsertionEntry(key.Hash());
   Handle<Object> k =
       isolate->factory()->NewNumber(static_cast<double>(key.Hash()));
   cache->set(EntryToIndex(entry), *k);
@@ -15039,16 +15040,19 @@ Handle<CompilationCacheTable> CompilationCacheTable::PutEval(
     int scope_position) {
   Isolate* isolate = cache->GetIsolate();
   StringSharedKey key(src, outer_info, value->strict_mode(), scope_position);
-  int entry = cache->FindEntry(&key);
-  if (entry != kNotFound) {
+  {
     Handle<Object> k = key.AsHandle(isolate);
-    cache->set(EntryToIndex(entry), *k);
-    cache->set(EntryToIndex(entry) + 1, *value);
-    return cache;
+    DisallowHeapAllocation no_allocation_scope;
+    int entry = cache->FindEntry(&key);
+    if (entry != kNotFound) {
+      cache->set(EntryToIndex(entry), *k);
+      cache->set(EntryToIndex(entry) + 1, *value);
+      return cache;
+    }
   }
 
   cache = EnsureCapacity(cache, 1, &key);
-  entry = cache->FindInsertionEntry(key.Hash());
+  int entry = cache->FindInsertionEntry(key.Hash());
   Handle<Object> k =
       isolate->factory()->NewNumber(static_cast<double>(key.Hash()));
   cache->set(EntryToIndex(entry), *k);
@@ -15150,28 +15154,6 @@ class StringsKey : public HashTableKey {
  private:
   Handle<FixedArray> strings_;
 };
-
-
-Object* MapCache::Lookup(FixedArray* array) {
-  DisallowHeapAllocation no_alloc;
-  StringsKey key(handle(array));
-  int entry = FindEntry(&key);
-  if (entry == kNotFound) return GetHeap()->undefined_value();
-  return get(EntryToIndex(entry) + 1);
-}
-
-
-Handle<MapCache> MapCache::Put(
-    Handle<MapCache> map_cache, Handle<FixedArray> array, Handle<Map> value) {
-  StringsKey key(array);
-
-  Handle<MapCache> new_cache = EnsureCapacity(map_cache, 1, &key);
-  int entry = new_cache->FindInsertionEntry(key.Hash());
-  new_cache->set(EntryToIndex(entry), *array);
-  new_cache->set(EntryToIndex(entry) + 1, *value);
-  new_cache->ElementAdded();
-  return new_cache;
-}
 
 
 template<typename Derived, typename Shape, typename Key>
