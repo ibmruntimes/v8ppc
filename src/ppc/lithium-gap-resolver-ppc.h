@@ -1,7 +1,4 @@
-// Copyright 2011 the V8 project authors. All rights reserved.
-//
-// Copyright IBM Corp. 2012, 2013. All rights reserved.
-//
+// Copyright 2014 the V8 project authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -57,7 +54,7 @@ class LGapResolver FINAL BASE_EMBEDDED {
   bool in_cycle_;
   LOperand* saved_destination_;
 };
-
-} }  // namespace v8::internal
+}
+}  // namespace v8::internal
 
 #endif  // V8_PPC_LITHIUM_GAP_RESOLVER_PPC_H_

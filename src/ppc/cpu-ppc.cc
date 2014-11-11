@@ -1,7 +1,4 @@
-// Copyright 2006-2009 the V8 project authors. All rights reserved.
-//
-// Copyright IBM Corp. 2012, 2013. All rights reserved.
-//
+// Copyright 2014 the V8 project authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -23,7 +20,7 @@ void CpuFeatures::FlushICache(void* buffer, size_t size) {
     return;
   }
 
-#if defined (USE_SIMULATOR)
+#if defined(USE_SIMULATOR)
   // Not generating PPC instructions for C-code. This means that we are
   // building an PPC emulator based target.  We should notify the simulator
   // that the Icache was flushed.
@@ -33,33 +30,34 @@ void CpuFeatures::FlushICache(void* buffer, size_t size) {
 #else
 
   if (CpuFeatures::IsSupported(INSTR_AND_DATA_CACHE_COHERENCY)) {
-    __asm__ __volatile__("sync \n"  \
-                         "icbi 0, %0  \n"  \
-                         "isync  \n"
-                         : /* no output */
-                         : "r" (buffer)
-                         : "memory");
+    __asm__ __volatile__(
+        "sync \n"
+        "icbi 0, %0  \n"
+        "isync  \n"
+        : /* no output */
+        : "r"(buffer)
+        : "memory");
     return;
   }
 
   const int kCacheLineSize = CpuFeatures::cache_line_size();
   intptr_t mask = kCacheLineSize - 1;
-  byte *start = reinterpret_cast<byte *>(
-                 reinterpret_cast<intptr_t>(buffer) & ~mask);
+  byte *start =
+      reinterpret_cast<byte *>(reinterpret_cast<intptr_t>(buffer) & ~mask);
   byte *end = static_cast<byte *>(buffer) + size;
   for (byte *pointer = start; pointer < end; pointer += kCacheLineSize) {
     __asm__(
-      "dcbf 0, %0  \n"  \
-      "sync        \n"  \
-      "icbi 0, %0  \n"  \
-      "isync       \n"
-      : /* no output */
-      : "r" (pointer));
+        "dcbf 0, %0  \n"
+        "sync        \n"
+        "icbi 0, %0  \n"
+        "isync       \n"
+        : /* no output */
+        : "r"(pointer));
   }
 
 #endif  // USE_SIMULATOR
 }
-
-} }  // namespace v8::internal
+}
+}  // namespace v8::internal
 
 #endif  // V8_TARGET_ARCH_PPC

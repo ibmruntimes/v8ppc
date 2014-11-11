@@ -1,8 +1,6 @@
 // Copyright 2014 the V8 project authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-//
-// Copyright IBM Corp. 2012, 2013. All rights reserved.
 
 #include "src/v8.h"
 
@@ -152,8 +150,8 @@ void NamedLoadHandlerCompiler::GenerateDirectLoadGlobalFunctionPrototype(
   Register scratch = prototype;
   const int offset = Context::SlotOffset(Context::GLOBAL_OBJECT_INDEX);
   __ LoadP(scratch, MemOperand(cp, offset));
-  __ LoadP(scratch, FieldMemOperand(scratch,
-                                    GlobalObject::kNativeContextOffset));
+  __ LoadP(scratch,
+           FieldMemOperand(scratch, GlobalObject::kNativeContextOffset));
   __ LoadP(scratch, MemOperand(scratch, Context::SlotOffset(index)));
   __ Move(ip, function);
   __ cmp(ip, scratch);
@@ -270,7 +268,7 @@ void PropertyHandlerCompiler::GenerateFastApiCall(
   if (isolate->heap()->InNewSpace(*call_data_obj)) {
     __ Move(call_data, api_call_info);
     __ LoadP(call_data,
-         FieldMemOperand(call_data, CallHandlerInfo::kDataOffset));
+             FieldMemOperand(call_data, CallHandlerInfo::kDataOffset));
   } else if (call_data_obj->IsUndefined()) {
     call_data_undefined = true;
     __ LoadRoot(call_data, Heap::kUndefinedValueRootIndex);
@@ -376,8 +374,8 @@ Register PropertyHandlerCompiler::CheckPrototypes(
 
   // Make sure there's no overlap between holder and object registers.
   DCHECK(!scratch1.is(object_reg) && !scratch1.is(holder_reg));
-  DCHECK(!scratch2.is(object_reg) && !scratch2.is(holder_reg)
-         && !scratch2.is(scratch1));
+  DCHECK(!scratch2.is(object_reg) && !scratch2.is(holder_reg) &&
+         !scratch2.is(scratch1));
 
   // Keep track of the current object in register reg.
   Register reg = object_reg;
@@ -403,14 +401,14 @@ Register PropertyHandlerCompiler::CheckPrototypes(
     prototype = handle(JSObject::cast(current_map->prototype()));
     if (current_map->is_dictionary_map() &&
         !current_map->IsJSGlobalObjectMap()) {
-        DCHECK(!current_map->IsJSGlobalProxyMap());  // Proxy maps are fast.
+      DCHECK(!current_map->IsJSGlobalProxyMap());  // Proxy maps are fast.
       if (!name->IsUniqueName()) {
         DCHECK(name->IsString());
         name = factory()->InternalizeString(Handle<String>::cast(name));
       }
       DCHECK(current.is_null() ||
              current->property_dictionary()->FindEntry(name) ==
-             NameDictionary::kNotFound);
+                 NameDictionary::kNotFound);
 
       GenerateDictionaryNegativeLookup(masm(), miss, reg, name, scratch1,
                                        scratch2);
@@ -526,8 +524,8 @@ void NamedLoadHandlerCompiler::GenerateLoadCallback(
   __ push(receiver());
   if (heap()->InNewSpace(callback->data())) {
     __ Move(scratch3(), callback);
-    __ LoadP(scratch3(), FieldMemOperand(scratch3(),
-                                       ExecutableAccessorInfo::kDataOffset));
+    __ LoadP(scratch3(),
+             FieldMemOperand(scratch3(), ExecutableAccessorInfo::kDataOffset));
   } else {
     __ Move(scratch3(), Handle<Object>(callback->data(), isolate()));
   }
@@ -535,8 +533,7 @@ void NamedLoadHandlerCompiler::GenerateLoadCallback(
   __ LoadRoot(scratch3(), Heap::kUndefinedValueRootIndex);
   __ mr(scratch4(), scratch3());
   __ Push(scratch3(), scratch4());
-  __ mov(scratch4(),
-         Operand(ExternalReference::isolate_address(isolate())));
+  __ mov(scratch4(), Operand(ExternalReference::isolate_address(isolate())));
   __ Push(scratch4(), reg);
   __ push(name());
 
@@ -632,7 +629,7 @@ Handle<Code> NamedStoreHandlerCompiler::CompileStoreCallback(
   Register holder_reg = Frontend(receiver(), name);
 
   __ Push(receiver(), holder_reg);  // receiver
-  __ mov(ip, Operand(callback));  // callback info
+  __ mov(ip, Operand(callback));    // callback info
   __ push(ip);
   __ mov(ip, Operand(name));
   __ Push(ip, value());

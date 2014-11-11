@@ -1,7 +1,4 @@
-// Copyright 2012 the V8 project authors. All rights reserved.
-//
-// Copyright IBM Corp. 2012, 2013. All rights reserved.
-//
+// Copyright 2014 the V8 project authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -84,7 +81,7 @@ void NumberToStringDescriptor::Initialize(CallInterfaceDescriptorData* data) {
 void FastCloneShallowArrayDescriptor::Initialize(
     CallInterfaceDescriptorData* data) {
   Register registers[] = {cp, r6, r5, r4};
-    Representation representations[] = {
+  Representation representations[] = {
       Representation::Tagged(), Representation::Tagged(), Representation::Smi(),
       Representation::Tagged()};
   data->Initialize(arraysize(registers), registers, representations);
@@ -93,14 +90,14 @@ void FastCloneShallowArrayDescriptor::Initialize(
 
 void FastCloneShallowObjectDescriptor::Initialize(
     CallInterfaceDescriptorData* data) {
-    Register registers[] = {cp, r6, r5, r4, r3};
+  Register registers[] = {cp, r6, r5, r4, r3};
   data->Initialize(arraysize(registers), registers, NULL);
 }
 
 
 void CreateAllocationSiteDescriptor::Initialize(
     CallInterfaceDescriptorData* data) {
-    Register registers[] = {cp, r5, r6};
+  Register registers[] = {cp, r5, r6};
   data->Initialize(arraysize(registers), registers, NULL);
 }
 
@@ -113,7 +110,7 @@ void StoreArrayLiteralElementDescriptor::Initialize(
 
 
 void CallFunctionDescriptor::Initialize(CallInterfaceDescriptorData* data) {
-    Register registers[] = {cp, r4};
+  Register registers[] = {cp, r4};
   data->Initialize(arraysize(registers), registers, NULL);
 }
 
@@ -177,11 +174,11 @@ void ArrayConstructorConstantArgCountDescriptor::Initialize(
 
 
 void ArrayConstructorDescriptor::Initialize(CallInterfaceDescriptorData* data) {
-    // stack param count needs (constructor pointer, and single argument)
-    Register registers[] = {cp, r4, r5, r3};
-    Representation representations[] = {
-        Representation::Tagged(), Representation::Tagged(),
-        Representation::Tagged(), Representation::Integer32()};
+  // stack param count needs (constructor pointer, and single argument)
+  Register registers[] = {cp, r4, r5, r3};
+  Representation representations[] = {
+      Representation::Tagged(), Representation::Tagged(),
+      Representation::Tagged(), Representation::Integer32()};
   data->Initialize(arraysize(registers), registers, representations);
 }
 
@@ -199,12 +196,12 @@ void InternalArrayConstructorConstantArgCountDescriptor::Initialize(
 
 void InternalArrayConstructorDescriptor::Initialize(
     CallInterfaceDescriptorData* data) {
-    // stack param count needs (constructor pointer, and single argument)
-    Register registers[] = {cp, r4, r3};
-    Representation representations[] = {Representation::Tagged(),
-                                        Representation::Tagged(),
-                                        Representation::Integer32()};
-    data->Initialize(arraysize(registers), registers, representations);
+  // stack param count needs (constructor pointer, and single argument)
+  Register registers[] = {cp, r4, r3};
+  Representation representations[] = {Representation::Tagged(),
+                                      Representation::Tagged(),
+                                      Representation::Integer32()};
+  data->Initialize(arraysize(registers), registers, representations);
 }
 
 
@@ -245,7 +242,7 @@ void KeyedDescriptor::Initialize(CallInterfaceDescriptorData* data) {
       r5,  // key
   };
   Representation representations[] = {
-      Representation::Tagged(),     // context
+      Representation::Tagged(),  // context
       Representation::Tagged(),  // key
   };
   data->Initialize(arraysize(registers), registers, representations);
@@ -253,9 +250,9 @@ void KeyedDescriptor::Initialize(CallInterfaceDescriptorData* data) {
 
 
 void NamedDescriptor::Initialize(CallInterfaceDescriptorData* data) {
-    Register registers[] = {
-        cp,  // context
-        r5,  // name
+  Register registers[] = {
+      cp,  // context
+      r5,  // name
   };
   Representation representations[] = {
       Representation::Tagged(),  // context
@@ -273,7 +270,7 @@ void CallHandlerDescriptor::Initialize(CallInterfaceDescriptorData* data) {
   Representation representations[] = {
       Representation::Tagged(),  // context
       Representation::Tagged(),  // receiver
-    };
+  };
   data->Initialize(arraysize(registers), registers, representations);
 }
 

@@ -1,7 +1,4 @@
-// Copyright 2012 the V8 project authors. All rights reserved.
-//
-// Copyright IBM Corp. 2012, 2013. All rights reserved.
-//
+// Copyright 2014 the V8 project authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -17,7 +14,7 @@ namespace internal {
 
 
 #ifndef V8_INTERPRETED_REGEXP
-class RegExpMacroAssemblerPPC: public NativeRegExpMacroAssembler {
+class RegExpMacroAssemblerPPC : public NativeRegExpMacroAssembler {
  public:
   RegExpMacroAssemblerPPC(Mode mode, int registers_to_save, Zone* zone);
   virtual ~RegExpMacroAssemblerPPC();
@@ -28,8 +25,7 @@ class RegExpMacroAssemblerPPC: public NativeRegExpMacroAssembler {
   virtual void Bind(Label* label);
   virtual void CheckAtStart(Label* on_at_start);
   virtual void CheckCharacter(unsigned c, Label* on_equal);
-  virtual void CheckCharacterAfterAnd(unsigned c,
-                                      unsigned mask,
+  virtual void CheckCharacterAfterAnd(unsigned c, unsigned mask,
                                       Label* on_equal);
   virtual void CheckCharacterGT(uc16 limit, Label* on_greater);
   virtual void CheckCharacterLT(uc16 limit, Label* on_less);
@@ -41,26 +37,19 @@ class RegExpMacroAssemblerPPC: public NativeRegExpMacroAssembler {
   virtual void CheckNotBackReferenceIgnoreCase(int start_reg,
                                                Label* on_no_match);
   virtual void CheckNotCharacter(unsigned c, Label* on_not_equal);
-  virtual void CheckNotCharacterAfterAnd(unsigned c,
-                                         unsigned mask,
+  virtual void CheckNotCharacterAfterAnd(unsigned c, unsigned mask,
                                          Label* on_not_equal);
-  virtual void CheckNotCharacterAfterMinusAnd(uc16 c,
-                                              uc16 minus,
-                                              uc16 mask,
+  virtual void CheckNotCharacterAfterMinusAnd(uc16 c, uc16 minus, uc16 mask,
                                               Label* on_not_equal);
-  virtual void CheckCharacterInRange(uc16 from,
-                                     uc16 to,
-                                     Label* on_in_range);
-  virtual void CheckCharacterNotInRange(uc16 from,
-                                        uc16 to,
+  virtual void CheckCharacterInRange(uc16 from, uc16 to, Label* on_in_range);
+  virtual void CheckCharacterNotInRange(uc16 from, uc16 to,
                                         Label* on_not_in_range);
   virtual void CheckBitInTable(Handle<ByteArray> table, Label* on_bit_set);
 
   // Checks whether the given offset from the current position is before
   // the end of the string.
   virtual void CheckPosition(int cp_offset, Label* on_outside_input);
-  virtual bool CheckSpecialCharacterClass(uc16 type,
-                                          Label* on_no_match);
+  virtual bool CheckSpecialCharacterClass(uc16 type, Label* on_no_match);
   virtual void Fail();
   virtual Handle<HeapObject> GetCode(Handle<String> source);
   virtual void GoTo(Label* label);
@@ -68,8 +57,7 @@ class RegExpMacroAssemblerPPC: public NativeRegExpMacroAssembler {
   virtual void IfRegisterLT(int reg, int comparand, Label* if_lt);
   virtual void IfRegisterEqPos(int reg, Label* if_eq);
   virtual IrregexpImplementation Implementation();
-  virtual void LoadCurrentCharacter(int cp_offset,
-                                    Label* on_end_of_input,
+  virtual void LoadCurrentCharacter(int cp_offset, Label* on_end_of_input,
                                     bool check_bounds = true,
                                     int characters = 1);
   virtual void PopCurrentPosition();
@@ -91,8 +79,7 @@ class RegExpMacroAssemblerPPC: public NativeRegExpMacroAssembler {
   // Called from RegExp if the stack-guard is triggered.
   // If the code object is relocated, the return address is fixed before
   // returning.
-  static int CheckStackGuardState(Address* return_address,
-                                  Code* re_code,
+  static int CheckStackGuardState(Address* return_address, Code* re_code,
                                   Address re_frame);
 
  private:
@@ -106,8 +93,8 @@ class RegExpMacroAssemblerPPC: public NativeRegExpMacroAssembler {
   static const int kReturnAddress = kStoredRegisters + 7 * kPointerSize;
   static const int kCallerFrame = kReturnAddress + kPointerSize;
   // Stack parameters placed by caller.
-  static const int kSecondaryReturnAddress = kCallerFrame +
-    kStackFrameExtraParamSlot * kPointerSize;
+  static const int kSecondaryReturnAddress =
+      kCallerFrame + kStackFrameExtraParamSlot * kPointerSize;
   static const int kIsolate = kSecondaryReturnAddress + kPointerSize;
 
   // Below the frame pointer.
@@ -216,17 +203,10 @@ class RegExpMacroAssemblerPPC: public NativeRegExpMacroAssembler {
 
 // Set of non-volatile registers saved/restored by generated regexp code.
 const RegList kRegExpCalleeSaved =
-  1 <<  25 |
-  1 <<  26 |
-  1 <<  27 |
-  1 <<  28 |
-  1 <<  29 |
-  1 <<  30 |
-  1 <<  31;
+    1 << 25 | 1 << 26 | 1 << 27 | 1 << 28 | 1 << 29 | 1 << 30 | 1 << 31;
 
 #endif  // V8_INTERPRETED_REGEXP
-
-
-}}  // namespace v8::internal
+}
+}  // namespace v8::internal
 
 #endif  // V8_PPC_REGEXP_MACRO_ASSEMBLER_PPC_H_

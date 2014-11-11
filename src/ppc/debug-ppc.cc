@@ -1,7 +1,4 @@
-// Copyright 2012 the V8 project authors. All rights reserved.
-//
-// Copyright IBM Corp. 2012, 2013. All rights reserved.
-//
+// Copyright 2014 the V8 project authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -36,8 +33,12 @@ void BreakLocationIterator::SetDebugBreakAtReturn() {
   //
   CodePatcher patcher(rinfo()->pc(), Assembler::kJSReturnSequenceInstructions);
   Assembler::BlockTrampolinePoolScope block_trampoline_pool(patcher.masm());
-  patcher.masm()->mov(v8::internal::r0, Operand(reinterpret_cast<intptr_t>(
-      debug_info_->GetIsolate()->builtins()->Return_DebugBreak()->entry())));
+  patcher.masm()->mov(
+      v8::internal::r0,
+      Operand(reinterpret_cast<intptr_t>(debug_info_->GetIsolate()
+                                             ->builtins()
+                                             ->Return_DebugBreak()
+                                             ->entry())));
   patcher.masm()->mtctr(v8::internal::r0);
   patcher.masm()->bctrl();
   patcher.masm()->bkpt(0);
@@ -84,8 +85,10 @@ void BreakLocationIterator::SetDebugBreakAtSlot() {
   //
   CodePatcher patcher(rinfo()->pc(), Assembler::kDebugBreakSlotInstructions);
   Assembler::BlockTrampolinePoolScope block_trampoline_pool(patcher.masm());
-  patcher.masm()->mov(v8::internal::r0, Operand(reinterpret_cast<intptr_t>(
-      debug_info_->GetIsolate()->builtins()->Slot_DebugBreak()->entry())));
+  patcher.masm()->mov(
+      v8::internal::r0,
+      Operand(reinterpret_cast<intptr_t>(
+          debug_info_->GetIsolate()->builtins()->Slot_DebugBreak()->entry())));
   patcher.masm()->mtctr(v8::internal::r0);
   patcher.masm()->bctrl();
 }
@@ -124,7 +127,7 @@ static void Generate_DebugBreakCallHelper(MacroAssembler* masm,
     if ((object_regs | non_object_regs) != 0) {
       for (int i = 0; i < kNumJSCallerSaved; i++) {
         int r = JSCallerSavedCode(i);
-        Register reg = { r };
+        Register reg = {r};
         if ((non_object_regs & (1 << r)) != 0) {
           if (FLAG_debug_code) {
             __ TestUnsignedSmiCandidate(reg, r0);
@@ -150,12 +153,12 @@ static void Generate_DebugBreakCallHelper(MacroAssembler* masm,
       __ MultiPop(object_regs | non_object_regs);
       for (int i = 0; i < kNumJSCallerSaved; i++) {
         int r = JSCallerSavedCode(i);
-        Register reg = { r };
+        Register reg = {r};
         if ((non_object_regs & (1 << r)) != 0) {
           __ SmiUntag(reg);
         }
         if (FLAG_debug_code &&
-            (((object_regs |non_object_regs) & (1 << r)) == 0)) {
+            (((object_regs | non_object_regs) & (1 << r)) == 0)) {
           __ mov(reg, Operand(kDebugZapValue));
         }
       }
@@ -205,8 +208,8 @@ void DebugCodegen::GenerateStoreICDebugBreak(MacroAssembler* masm) {
   Register receiver = StoreDescriptor::ReceiverRegister();
   Register name = StoreDescriptor::NameRegister();
   Register value = StoreDescriptor::ValueRegister();
-  Generate_DebugBreakCallHelper(
-      masm, receiver.bit() | name.bit() | value.bit(), 0);
+  Generate_DebugBreakCallHelper(masm, receiver.bit() | name.bit() | value.bit(),
+                                0);
 }
 
 
@@ -221,8 +224,8 @@ void DebugCodegen::GenerateKeyedStoreICDebugBreak(MacroAssembler* masm) {
   Register receiver = StoreDescriptor::ReceiverRegister();
   Register name = StoreDescriptor::NameRegister();
   Register value = StoreDescriptor::ValueRegister();
-  Generate_DebugBreakCallHelper(
-      masm, receiver.bit() | name.bit() | value.bit(), 0);
+  Generate_DebugBreakCallHelper(masm, receiver.bit() | name.bit() | value.bit(),
+                                0);
 }
 
 
@@ -311,8 +314,8 @@ void DebugCodegen::GenerateFrameDropperLiveEdit(MacroAssembler* masm) {
   __ StoreP(r4, MemOperand(ip, 0));
 
   // Load the function pointer off of our current stack frame.
-  __ LoadP(r4, MemOperand(fp,
-           StandardFrameConstants::kConstantPoolOffset - kPointerSize));
+  __ LoadP(r4, MemOperand(fp, StandardFrameConstants::kConstantPoolOffset -
+                                  kPointerSize));
 
   // Pop return address, frame and constant pool pointer (if
   // FLAG_enable_ool_constant_pool).
@@ -334,7 +337,7 @@ void DebugCodegen::GenerateFrameDropperLiveEdit(MacroAssembler* masm) {
 const bool LiveEdit::kFrameDropperSupported = true;
 
 #undef __
-
-} }  // namespace v8::internal
+}
+}  // namespace v8::internal
 
 #endif  // V8_TARGET_ARCH_PPC

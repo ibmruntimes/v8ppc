@@ -1,7 +1,4 @@
-// Copyright 2012 the V8 project authors. All rights reserved.
-//
-// Copyright IBM Corp. 2012, 2013. All rights reserved.
-//
+// Copyright 2014 the V8 project authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -30,7 +27,7 @@ static void ProbeTable(Isolate* isolate, MacroAssembler* masm,
 
   uintptr_t key_off_addr = reinterpret_cast<uintptr_t>(key_offset.address());
   uintptr_t value_off_addr =
-                         reinterpret_cast<uintptr_t>(value_offset.address());
+      reinterpret_cast<uintptr_t>(value_offset.address());
   uintptr_t map_off_addr = reinterpret_cast<uintptr_t>(map_offset.address());
 
   // Check the relative positions of the address fields.
@@ -89,11 +86,11 @@ static void ProbeTable(Isolate* isolate, MacroAssembler* masm,
   __ bne(&miss);
 
 #ifdef DEBUG
-    if (FLAG_test_secondary_stub_cache && table == StubCache::kPrimary) {
-      __ b(&miss);
-    } else if (FLAG_test_primary_stub_cache && table == StubCache::kSecondary) {
-      __ b(&miss);
-    }
+  if (FLAG_test_secondary_stub_cache && table == StubCache::kPrimary) {
+    __ b(&miss);
+  } else if (FLAG_test_primary_stub_cache && table == StubCache::kSecondary) {
+    __ b(&miss);
+  }
 #endif
 
   if (leave_frame) __ LeaveFrame(StackFrame::INTERNAL);
@@ -184,7 +181,7 @@ void StubCache::GenerateProbe(MacroAssembler* masm, Code::Flags flags,
 
 
 #undef __
-  }
+}
 }  // namespace v8::internal
 
 #endif  // V8_TARGET_ARCH_PPC

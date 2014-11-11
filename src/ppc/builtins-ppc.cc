@@ -1,7 +1,4 @@
-// Copyright 2012 the V8 project authors. All rights reserved.
-//
-// Copyright IBM Corp. 2012, 2013. All rights reserved.
-//
+// Copyright 2014 the V8 project authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -22,8 +19,7 @@ namespace internal {
 #define __ ACCESS_MASM(masm)
 
 
-void Builtins::Generate_Adaptor(MacroAssembler* masm,
-                                CFunctionId id,
+void Builtins::Generate_Adaptor(MacroAssembler* masm, CFunctionId id,
                                 BuiltinExtraArguments extra_args) {
   // ----------- S t a t e -------------
   //  -- r3                 : number of arguments excluding receiver
@@ -59,13 +55,11 @@ static void GenerateLoadInternalArrayFunction(MacroAssembler* masm,
 
   __ LoadP(result,
            MemOperand(cp, Context::SlotOffset(Context::GLOBAL_OBJECT_INDEX)));
-  __ LoadP(result,
-           FieldMemOperand(result, GlobalObject::kNativeContextOffset));
+  __ LoadP(result, FieldMemOperand(result, GlobalObject::kNativeContextOffset));
   // Load the InternalArray function from the native context.
   __ LoadP(result,
-           MemOperand(result,
-                      Context::SlotOffset(
-                        Context::INTERNAL_ARRAY_FUNCTION_INDEX)));
+           MemOperand(result, Context::SlotOffset(
+                                  Context::INTERNAL_ARRAY_FUNCTION_INDEX)));
 }
 
 
@@ -75,12 +69,11 @@ static void GenerateLoadArrayFunction(MacroAssembler* masm, Register result) {
 
   __ LoadP(result,
            MemOperand(cp, Context::SlotOffset(Context::GLOBAL_OBJECT_INDEX)));
-  __ LoadP(result,
-           FieldMemOperand(result, GlobalObject::kNativeContextOffset));
+  __ LoadP(result, FieldMemOperand(result, GlobalObject::kNativeContextOffset));
   // Load the Array function from the native context.
-  __ LoadP(result,
-           MemOperand(result,
-                      Context::SlotOffset(Context::ARRAY_FUNCTION_INDEX)));
+  __ LoadP(
+      result,
+      MemOperand(result, Context::SlotOffset(Context::ARRAY_FUNCTION_INDEX)));
 }
 
 
@@ -192,8 +185,7 @@ void Builtins::Generate_StringConstructCode(MacroAssembler* masm) {
               r3,  // Result.
               r6,  // Scratch.
               r7,  // Scratch.
-              &gc_required,
-              TAG_OBJECT);
+              &gc_required, TAG_OBJECT);
 
   // Initialising the String Object.
   Register map = r6;
@@ -268,8 +260,8 @@ void Builtins::Generate_StringConstructCode(MacroAssembler* masm) {
 }
 
 
-static void CallRuntimePassFunction(
-    MacroAssembler* masm, Runtime::FunctionId function_id) {
+static void CallRuntimePassFunction(MacroAssembler* masm,
+                                    Runtime::FunctionId function_id) {
   FrameAndConstantPoolScope scope(masm, StackFrame::INTERNAL);
   // Push a copy of the function onto the stack.
   // Push function as parameter to the runtime call.
@@ -358,8 +350,8 @@ static void Generate_JSConstructStubHelper(MacroAssembler* masm,
 
       // Load the initial map and verify that it is in fact a map.
       // r4: constructor function
-      __ LoadP(r5, FieldMemOperand(r4,
-                                   JSFunction::kPrototypeOrInitialMapOffset));
+      __ LoadP(r5,
+               FieldMemOperand(r4, JSFunction::kPrototypeOrInitialMapOffset));
       __ JumpIfSmi(r5, &rt_call);
       __ CompareObjectType(r5, r6, r7, MAP_TYPE);
       __ bne(&rt_call);
@@ -450,7 +442,8 @@ static void Generate_JSConstructStubHelper(MacroAssembler* masm,
           __ cmp(r0, r9);
           __ Assert(le, kUnexpectedNumberOfPreAllocatedPropertyFields);
         }
-        { Label done;
+        {
+          Label done;
           __ cmpi(r3, Operand::Zero());
           __ beq(&done);
           __ InitializeNFieldsWithFiller(r8, r3, r10);
@@ -512,11 +505,7 @@ static void Generate_JSConstructStubHelper(MacroAssembler* masm,
       // r8: start of next object
       __ addi(r3, r6, Operand(FixedArray::kHeaderSize / kPointerSize));
       __ Allocate(
-          r3,
-          r8,
-          r9,
-          r5,
-          &undo_allocation,
+          r3, r8, r9, r5, &undo_allocation,
           static_cast<AllocationFlags>(RESULT_CONTAINS_TOP | SIZE_IN_WORDS));
 
       // Initialize the FixedArray.
@@ -540,7 +529,8 @@ static void Generate_JSConstructStubHelper(MacroAssembler* masm,
       // r7: JSObject
       // r8: FixedArray (not tagged)
       DCHECK_EQ(2 * kPointerSize, FixedArray::kHeaderSize);
-      { Label done;
+      {
+        Label done;
         __ cmpi(r6, Operand::Zero());
         __ beq(&done);
         if (!is_api_function || create_memento) {
@@ -611,12 +601,12 @@ static void Generate_JSConstructStubHelper(MacroAssembler* masm,
       __ beq(&count_incremented);
       // r5 is an AllocationSite. We are creating a memento from it, so we
       // need to increment the memento create count.
-      __ LoadP(r6, FieldMemOperand(r5,
-                                AllocationSite::kPretenureCreateCountOffset));
+      __ LoadP(
+          r6, FieldMemOperand(r5, AllocationSite::kPretenureCreateCountOffset));
       __ AddSmiLiteral(r6, r6, Smi::FromInt(1), r0);
-      __ StoreP(r6, FieldMemOperand(r5,
-                                AllocationSite::kPretenureCreateCountOffset),
-                r0);
+      __ StoreP(
+          r6, FieldMemOperand(r5, AllocationSite::kPretenureCreateCountOffset),
+          r0);
       __ bind(&count_incremented);
     }
 
@@ -662,8 +652,7 @@ static void Generate_JSConstructStubHelper(MacroAssembler* masm,
     // r4: constructor function
     if (is_api_function) {
       __ LoadP(cp, FieldMemOperand(r4, JSFunction::kContextOffset));
-      Handle<Code> code =
-          masm->isolate()->builtins()->HandleApiCallConstruct();
+      Handle<Code> code = masm->isolate()->builtins()->HandleApiCallConstruct();
       __ Call(code, RelocInfo::CODE_TARGET);
     } else {
       ParameterCount actual(r3);
@@ -774,7 +763,7 @@ static void Generate_JSEntryTrampolineHelper(MacroAssembler* masm,
     __ LoadP(r8, MemOperand(r7));  // read next parameter
     __ addi(r7, r7, Operand(kPointerSize));
     __ LoadP(r0, MemOperand(r8));  // dereference handle
-    __ push(r0);  // push parameter
+    __ push(r0);                   // push parameter
     __ bind(&entry);
     __ cmp(r7, r5);
     __ bne(&loop);
@@ -877,15 +866,15 @@ static void GenerateMakeCodeYoungAgainCommon(MacroAssembler* masm) {
   __ Jump(ip);
 }
 
-#define DEFINE_CODE_AGE_BUILTIN_GENERATOR(C)                 \
-void Builtins::Generate_Make##C##CodeYoungAgainEvenMarking(  \
-    MacroAssembler* masm) {                                  \
-  GenerateMakeCodeYoungAgainCommon(masm);                    \
-}                                                            \
-void Builtins::Generate_Make##C##CodeYoungAgainOddMarking(   \
-    MacroAssembler* masm) {                                  \
-  GenerateMakeCodeYoungAgainCommon(masm);                    \
-}
+#define DEFINE_CODE_AGE_BUILTIN_GENERATOR(C)                  \
+  void Builtins::Generate_Make##C##CodeYoungAgainEvenMarking( \
+      MacroAssembler* masm) {                                 \
+    GenerateMakeCodeYoungAgainCommon(masm);                   \
+  }                                                           \
+  void Builtins::Generate_Make##C##CodeYoungAgainOddMarking(  \
+      MacroAssembler* masm) {                                 \
+    GenerateMakeCodeYoungAgainCommon(masm);                   \
+  }
 CODE_AGE_LIST(DEFINE_CODE_AGE_BUILTIN_GENERATOR)
 #undef DEFINE_CODE_AGE_BUILTIN_GENERATOR
 
@@ -910,8 +899,9 @@ void Builtins::Generate_MarkCodeAsExecutedOnce(MacroAssembler* masm) {
   __ MultiPush(r0.bit() | r3.bit() | r4.bit() | fp.bit());
   __ PrepareCallCFunction(2, 0, r5);
   __ mov(r4, Operand(ExternalReference::isolate_address(masm->isolate())));
-  __ CallCFunction(ExternalReference::get_mark_code_as_executed_function(
-        masm->isolate()), 2);
+  __ CallCFunction(
+      ExternalReference::get_mark_code_as_executed_function(masm->isolate()),
+      2);
   __ MultiPop(r0.bit() | r3.bit() | r4.bit() | fp.bit());
   __ mtlr(r0);
   __ mr(ip, r3);
@@ -946,7 +936,7 @@ static void Generate_NotifyStubFailureHelper(MacroAssembler* masm,
   }
 
   __ addi(sp, sp, Operand(kPointerSize));  // Ignore state
-  __ blr();  // Jump to miss handler
+  __ blr();                                // Jump to miss handler
 }
 
 
@@ -1030,15 +1020,17 @@ void Builtins::Generate_OnStackReplacement(MacroAssembler* masm) {
   __ LoadP(r4, FieldMemOperand(r3, Code::kDeoptimizationDataOffset));
 
 #if V8_OOL_CONSTANT_POOL
-  { ConstantPoolUnavailableScope constant_pool_unavailable(masm);
+  {
+    ConstantPoolUnavailableScope constant_pool_unavailable(masm);
     __ LoadP(kConstantPoolRegister,
              FieldMemOperand(r3, Code::kConstantPoolOffset));
 #endif
 
     // Load the OSR entrypoint offset from the deoptimization data.
     // <osr_offset> = <deopt_data>[#header_size + #osr_pc_offset]
-    __ LoadP(r4, FieldMemOperand(r4, FixedArray::OffsetOfElementAt(
-                                 DeoptimizationInputData::kOsrPcOffsetIndex)));
+    __ LoadP(r4, FieldMemOperand(
+                     r4, FixedArray::OffsetOfElementAt(
+                             DeoptimizationInputData::kOsrPcOffsetIndex)));
     __ SmiUntag(r4);
 
     // Compute the target address = code_obj + header_size + osr_offset
@@ -1076,7 +1068,8 @@ void Builtins::Generate_OsrAfterStackCheck(MacroAssembler* masm) {
 void Builtins::Generate_FunctionCall(MacroAssembler* masm) {
   // 1. Make sure we have at least one argument.
   // r3: actual number of arguments
-  { Label done;
+  {
+    Label done;
     __ cmpi(r3, Operand::Zero());
     __ bne(&done);
     __ LoadRoot(r5, Heap::kUndefinedValueRootIndex);
@@ -1101,7 +1094,8 @@ void Builtins::Generate_FunctionCall(MacroAssembler* masm) {
   // r4: function
   Label shift_arguments;
   __ li(r7, Operand::Zero());  // indicate regular JS_FUNCTION
-  { Label convert_to_object, use_global_proxy, patch_receiver;
+  {
+    Label convert_to_object, use_global_proxy, patch_receiver;
     // Change context eagerly in case we need the global receiver.
     __ LoadP(cp, FieldMemOperand(r4, JSFunction::kContextOffset));
 
@@ -1208,7 +1202,8 @@ void Builtins::Generate_FunctionCall(MacroAssembler* masm) {
   // r4: function
   // r7: call type (0: JS function, 1: function proxy, 2: non-function)
   __ bind(&shift_arguments);
-  { Label loop;
+  {
+    Label loop;
     // Calculate the copy start address (destination). Copy end address is sp.
     __ ShiftLeftImm(ip, r3, Operand(kPointerSizeLog2));
     __ add(r5, sp, ip);
@@ -1230,7 +1225,8 @@ void Builtins::Generate_FunctionCall(MacroAssembler* masm) {
   // r3: actual number of arguments
   // r4: function
   // r7: call type (0: JS function, 1: function proxy, 2: non-function)
-  { Label function, non_proxy;
+  {
+    Label function, non_proxy;
     __ cmpi(r7, Operand::Zero());
     __ beq(&function);
     // Expected number of arguments is 0 for CALL_NON_FUNCTION.
@@ -1257,15 +1253,14 @@ void Builtins::Generate_FunctionCall(MacroAssembler* masm) {
   // r3: actual number of arguments
   // r4: function
   __ LoadP(r6, FieldMemOperand(r4, JSFunction::kSharedFunctionInfoOffset));
-  __ LoadWordArith(r5,
-         FieldMemOperand(r6, SharedFunctionInfo::kFormalParameterCountOffset));
+  __ LoadWordArith(
+      r5, FieldMemOperand(r6, SharedFunctionInfo::kFormalParameterCountOffset));
 #if !V8_TARGET_ARCH_PPC64
   __ SmiUntag(r5);
 #endif
   __ cmp(r5, r3);  // Check formal and actual parameter counts.
   __ Jump(masm->isolate()->builtins()->ArgumentsAdaptorTrampoline(),
-          RelocInfo::CODE_TARGET,
-          ne);
+          RelocInfo::CODE_TARGET, ne);
 
   __ LoadP(ip, FieldMemOperand(r4, JSFunction::kCodeEntryOffset));
   ParameterCount expected(0);
@@ -1274,12 +1269,12 @@ void Builtins::Generate_FunctionCall(MacroAssembler* masm) {
 
 
 void Builtins::Generate_FunctionApply(MacroAssembler* masm) {
-  const int kIndexOffset    =
+  const int kIndexOffset =
       StandardFrameConstants::kExpressionsOffset - (2 * kPointerSize);
-  const int kLimitOffset    =
+  const int kLimitOffset =
       StandardFrameConstants::kExpressionsOffset - (1 * kPointerSize);
-  const int kArgsOffset     = 2 * kPointerSize;
-  const int kRecvOffset     = 3 * kPointerSize;
+  const int kArgsOffset = 2 * kPointerSize;
+  const int kRecvOffset = 3 * kPointerSize;
   const int kFunctionOffset = 4 * kPointerSize;
 
   {
@@ -1470,8 +1465,8 @@ static void EnterArgumentsAdaptorFrame(MacroAssembler* masm) {
 #else
   __ Push(fp, r7, r4, r3);
 #endif
-  __ addi(fp, sp,
-         Operand(StandardFrameConstants::kFixedFrameSizeFromFp + kPointerSize));
+  __ addi(fp, sp, Operand(StandardFrameConstants::kFixedFrameSizeFromFp +
+                          kPointerSize));
 }
 
 
@@ -1614,7 +1609,7 @@ void Builtins::Generate_ArgumentsAdaptorTrampoline(MacroAssembler* masm) {
 
 
 #undef __
-
-} }  // namespace v8::internal
+}
+}  // namespace v8::internal
 
 #endif  // V8_TARGET_ARCH_PPC

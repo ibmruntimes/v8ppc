@@ -1,7 +1,4 @@
-// Copyright 2012 the V8 project authors. All rights reserved.
-//
-// Copyright IBM Corp. 2012, 2013. All rights reserved.
-//
+// Copyright 2014 the V8 project authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -13,11 +10,14 @@
 namespace v8 {
 namespace internal {
 
-static const Register kSavedValueRegister = { 11 };
+static const Register kSavedValueRegister = {11};
 
 LGapResolver::LGapResolver(LCodeGen* owner)
-    : cgen_(owner), moves_(32, owner->zone()), root_index_(0), in_cycle_(false),
-      saved_destination_(NULL) { }
+    : cgen_(owner),
+      moves_(32, owner->zone()),
+      root_index_(0),
+      in_cycle_(false),
+      saved_destination_(NULL) {}
 
 
 void LGapResolver::Resolve(LParallelMove* parallel_move) {
@@ -234,8 +234,7 @@ void LGapResolver::EmitMove(int index) {
       if (cgen_->IsInteger32(constant_source)) {
         cgen_->EmitLoadIntegerConstant(constant_source, kSavedValueRegister);
       } else {
-        __ Move(kSavedValueRegister,
-                cgen_->ToHandle(constant_source));
+        __ Move(kSavedValueRegister, cgen_->ToHandle(constant_source));
       }
       __ StoreP(kSavedValueRegister, cgen_->ToMemOperand(destination));
     }
@@ -257,14 +256,13 @@ void LGapResolver::EmitMove(int index) {
       DCHECK(destination->IsDoubleStackSlot());
       MemOperand destination_operand = cgen_->ToMemOperand(destination);
       if (in_cycle_) {
-        // kSavedDoubleValueRegister was used to break the cycle,
-        // but kSavedValueRegister is free.
+// kSavedDoubleValueRegister was used to break the cycle,
+// but kSavedValueRegister is free.
 #if V8_TARGET_ARCH_PPC64
         __ ld(kSavedValueRegister, source_operand);
         __ std(kSavedValueRegister, destination_operand);
 #else
-        MemOperand source_high_operand =
-            cgen_->ToHighMemOperand(source);
+        MemOperand source_high_operand = cgen_->ToHighMemOperand(source);
         MemOperand destination_high_operand =
             cgen_->ToHighMemOperand(destination);
         __ lwz(kSavedValueRegister, source_operand);
@@ -286,5 +284,5 @@ void LGapResolver::EmitMove(int index) {
 
 
 #undef __
-
-} }  // namespace v8::internal
+}
+}  // namespace v8::internal
