@@ -3174,6 +3174,7 @@ void LCodeGen::DoLoadNamedField(LLoadNamedField* instr) {
   }
 
   if (instr->hydrogen()->representation().IsDouble()) {
+    DCHECK(access.IsInobject());
     DoubleRegister result = ToDoubleRegister(instr->result());
     __ lfd(result, FieldMemOperand(object, offset));
     return;
@@ -4381,7 +4382,7 @@ void LCodeGen::DoStoreNamedField(LStoreNamedField* instr) {
   DCHECK(!representation.IsSmi() || !instr->value()->IsConstantOperand() ||
          IsSmi(LConstantOperand::cast(instr->value())));
 #endif
-  if (representation.IsDouble()) {
+  if (!FLAG_unbox_double_fields && representation.IsDouble()) {
     DCHECK(access.IsInobject());
     DCHECK(!hinstr->has_transition());
     DCHECK(!hinstr->NeedsWriteBarrier());
@@ -4404,41 +4405,51 @@ void LCodeGen::DoStoreNamedField(LStoreNamedField* instr) {
   }
 
   // Do the store.
-  Register value = ToRegister(instr->value());
-
+  Register record_dest = object;
+  Register record_value = no_reg;
+  Register record_scratch = scratch;
 #if V8_TARGET_ARCH_PPC64
-  // 64-bit Smi optimization
-  if (representation.IsSmi() &&
-      hinstr->value()->representation().IsInteger32()) {
-    DCHECK(hinstr->store_mode() == STORE_TO_INITIALIZED_ENTRY);
-    // Store int value directly to upper half of the smi.
-    offset = SmiWordOffset(offset);
-    representation = Representation::Integer32();
+  if (FLAG_unbox_double_fields && representation.IsDouble()) {
+    DCHECK(access.IsInobject());
+    DoubleRegister value = ToDoubleRegister(instr->value());
+    __ stfd(value, FieldMemOperand(object, offset));
+    if (hinstr->NeedsWriteBarrier()) {
+      record_value = ToRegister(instr->value());
+    }
+  } else {
+    if (representation.IsSmi() &&
+        hinstr->value()->representation().IsInteger32()) {
+      DCHECK(hinstr->store_mode() == STORE_TO_INITIALIZED_ENTRY);
+      // 64-bit Smi optimization
+      // Store int value directly to upper half of the smi.
+      offset = SmiWordOffset(offset);
+      representation = Representation::Integer32();
+    }
+#endif
+    if (access.IsInobject()) {
+      Register value = ToRegister(instr->value());
+      MemOperand operand = FieldMemOperand(object, offset);
+      __ StoreRepresentation(value, operand, representation, r0);
+      record_value = value;
+    } else {
+      Register value = ToRegister(instr->value());
+      __ LoadP(scratch, FieldMemOperand(object, JSObject::kPropertiesOffset));
+      MemOperand operand = FieldMemOperand(scratch, offset);
+      __ StoreRepresentation(value, operand, representation, r0);
+      record_dest = scratch;
+      record_value =  value;
+      record_scratch = object;
+    }
+#if V8_TARGET_ARCH_PPC64
   }
 #endif
 
-  if (access.IsInobject()) {
-    MemOperand operand = FieldMemOperand(object, offset);
-    __ StoreRepresentation(value, operand, representation, r0);
-    if (hinstr->NeedsWriteBarrier()) {
-      // Update the write barrier for the object for in-object properties.
-      __ RecordWriteField(
-          object, offset, value, scratch, GetLinkRegisterState(), kSaveFPRegs,
-          EMIT_REMEMBERED_SET, hinstr->SmiCheckForWriteBarrier(),
-          hinstr->PointersToHereCheckForValue());
-    }
-  } else {
-    __ LoadP(scratch, FieldMemOperand(object, JSObject::kPropertiesOffset));
-    MemOperand operand = FieldMemOperand(scratch, offset);
-    __ StoreRepresentation(value, operand, representation, r0);
-    if (hinstr->NeedsWriteBarrier()) {
-      // Update the write barrier for the properties array.
-      // object is used as a scratch register.
-      __ RecordWriteField(
-          scratch, offset, value, object, GetLinkRegisterState(), kSaveFPRegs,
-          EMIT_REMEMBERED_SET, hinstr->SmiCheckForWriteBarrier(),
-          hinstr->PointersToHereCheckForValue());
-    }
+  if (hinstr->NeedsWriteBarrier()) {
+    __ RecordWriteField(
+        record_dest, offset, record_value, record_scratch,
+        GetLinkRegisterState(), kSaveFPRegs, EMIT_REMEMBERED_SET,
+        hinstr->SmiCheckForWriteBarrier(),
+        hinstr->PointersToHereCheckForValue());
   }
 }
 
