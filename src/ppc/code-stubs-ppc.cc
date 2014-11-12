@@ -3395,8 +3395,7 @@ void StringHelper::GenerateHashGetHash(MacroAssembler* masm,
   __ and_(hash, hash, scratch, SetRC);
 
   // if (hash == 0) hash = 27;
-  if (CpuFeatures::IsSupported(ISELECT)) {
-    DCHECK(!scratch.is(r0));
+  if (CpuFeatures::IsSupported(ISELECT) && !scratch.is(r0)) {
     __ li(scratch, Operand(StringHasher::kZeroHash));
     __ isel(eq, hash, scratch, hash, cr0);
   } else {
