@@ -2664,8 +2664,7 @@ void HEnterInlined::RegisterReturnTarget(HBasicBlock* return_target,
 
 
 std::ostream& HEnterInlined::PrintDataTo(std::ostream& os) const {  // NOLINT
-  return os << function()->debug_name()->ToCString().get()
-            << ", id=" << function()->id().ToInt();
+  return os << function()->debug_name()->ToCString().get();
 }
 
 
@@ -4643,6 +4642,14 @@ HObjectAccess HObjectAccess::ForContextSlot(int index) {
   Portion portion = kInobject;
   int offset = Context::kHeaderSize + index * kPointerSize;
   DCHECK_EQ(offset, Context::SlotOffset(index) + kHeapObjectTag);
+  return HObjectAccess(portion, offset, Representation::Tagged());
+}
+
+
+HObjectAccess HObjectAccess::ForGlobalContext(int index) {
+  DCHECK(index >= 0);
+  Portion portion = kInobject;
+  int offset = GlobalContextTable::GetContextOffset(index);
   return HObjectAccess(portion, offset, Representation::Tagged());
 }
 

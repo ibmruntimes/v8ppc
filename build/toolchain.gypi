@@ -30,7 +30,6 @@
 {
   'variables': {
     'msvs_use_common_release': 0,
-    'gcc_version%': 'unknown',
     'clang%': 0,
     'v8_target_arch%': '<(target_arch)',
     'v8_host_byteorder%': '<!(python -c "import sys; print sys.byteorder")',
@@ -984,14 +983,6 @@
               '-ffunction-sections',
               '-O1', # TODO(2807) should be -O3.
             ],
-            'conditions': [
-              ['gcc_version==44 and clang==0', {
-                'cflags': [
-                  # Avoid crashes with gcc 4.4 in the v8 test suite.
-                  '-fno-tree-vrp',
-                ],
-              }],
-            ],
           }],
           ['OS=="mac"', {
             'xcode_settings': {
@@ -1049,12 +1040,6 @@
                 }, {
                 'cflags': ['-O2'],
                 'cflags!': ['-O3'],
-              }],
-              ['gcc_version==44 and clang==0', {
-                'cflags': [
-                  # Avoid crashes with gcc 4.4 in the v8 test suite.
-                  '-fno-tree-vrp',
-                ],
               }],
             ],
           }],
@@ -1132,12 +1117,6 @@
               '<(wno_array_bounds)',
             ],
             'conditions': [
-              [ 'gcc_version==44 and clang==0', {
-                'cflags': [
-                  # Avoid crashes with gcc 4.4 in the v8 test suite.
-                  '-fno-tree-vrp',
-                ],
-              }],
               # TODO(crbug.com/272548): Avoid -O3 in NaCl
               ['nacl_target_arch=="none"', {
                 'cflags': ['-O3'],
@@ -1157,14 +1136,6 @@
               '-fdata-sections',
               '-ffunction-sections',
               '-O2',
-            ],
-            'conditions': [
-              [ 'gcc_version==44 and clang==0', {
-                'cflags': [
-                  # Avoid crashes with gcc 4.4 in the v8 test suite.
-                  '-fno-tree-vrp',
-                ],
-              }],
             ],
           }],
           ['OS=="mac"', {
