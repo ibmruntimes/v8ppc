@@ -1066,6 +1066,7 @@ void FullCodeGenerator::VisitForInStatement(ForInStatement* stmt) {
 
   // Get the object to enumerate over. If the object is null or undefined, skip
   // over the loop.  See ECMA-262 version 5, section 12.6.4.
+  SetExpressionPosition(stmt->enumerable());
   VisitForAccumulatorValue(stmt->enumerable());
   __ LoadRoot(ip, Heap::kUndefinedValueRootIndex);
   __ cmp(r3, ip);
@@ -1171,6 +1172,8 @@ void FullCodeGenerator::VisitForInStatement(ForInStatement* stmt) {
   // Generate code for doing the condition check.
   PrepareForBailoutForId(stmt->BodyId(), NO_REGISTERS);
   __ bind(&loop);
+  SetExpressionPosition(stmt->each());
+
   // Load the current count to r3, load the length to r4.
   __ LoadP(r3, MemOperand(sp, 0 * kPointerSize));
   __ LoadP(r4, MemOperand(sp, 1 * kPointerSize));
@@ -1239,46 +1242,6 @@ void FullCodeGenerator::VisitForInStatement(ForInStatement* stmt) {
   // Exit and decrement the loop depth.
   PrepareForBailoutForId(stmt->ExitId(), NO_REGISTERS);
   __ bind(&exit);
-  decrement_loop_depth();
-}
-
-
-void FullCodeGenerator::VisitForOfStatement(ForOfStatement* stmt) {
-  Comment cmnt(masm_, "[ ForOfStatement");
-  SetStatementPosition(stmt);
-
-  Iteration loop_statement(this, stmt);
-  increment_loop_depth();
-
-  // var iterator = iterable[Symbol.iterator]();
-  VisitForEffect(stmt->assign_iterator());
-
-  // Loop entry.
-  __ bind(loop_statement.continue_label());
-
-  // result = iterator.next()
-  VisitForEffect(stmt->next_result());
-
-  // if (result.done) break;
-  Label result_not_done;
-  VisitForControl(stmt->result_done(), loop_statement.break_label(),
-                  &result_not_done, &result_not_done);
-  __ bind(&result_not_done);
-
-  // each = result.value
-  VisitForEffect(stmt->assign_each());
-
-  // Generate code for the body of the loop.
-  Visit(stmt->body());
-
-  // Check stack before looping.
-  PrepareForBailoutForId(stmt->BackEdgeId(), NO_REGISTERS);
-  EmitBackEdgeBookkeeping(stmt, loop_statement.continue_label());
-  __ b(loop_statement.continue_label());
-
-  // Exit and decrement the loop depth.
-  PrepareForBailoutForId(stmt->ExitId(), NO_REGISTERS);
-  __ bind(loop_statement.break_label());
   decrement_loop_depth();
 }
 
@@ -2180,15 +2143,6 @@ void FullCodeGenerator::EmitGeneratorResume(
   VisitForAccumulatorValue(value);
   __ pop(r4);
 
-  // Check generator state.
-  Label wrong_state, closed_state, done;
-  __ LoadP(r6, FieldMemOperand(r4, JSGeneratorObject::kContinuationOffset));
-  STATIC_ASSERT(JSGeneratorObject::kGeneratorExecuting < 0);
-  STATIC_ASSERT(JSGeneratorObject::kGeneratorClosed == 0);
-  __ CmpSmiLiteral(r6, Smi::FromInt(0), r0);
-  __ beq(&closed_state);
-  __ blt(&wrong_state);
-
   // Load suspended function and context.
   __ LoadP(cp, FieldMemOperand(r4, JSGeneratorObject::kContextOffset));
   __ LoadP(r7, FieldMemOperand(r4, JSGeneratorObject::kFunctionOffset));
@@ -2217,7 +2171,7 @@ void FullCodeGenerator::EmitGeneratorResume(
 
   // Enter a new JavaScript frame, and initialize its slots as they were when
   // the generator was suspended.
-  Label resume_frame;
+  Label resume_frame, done;
   __ bind(&push_frame);
   __ b(&resume_frame, SetLK);
   __ b(&done);
@@ -2280,26 +2234,6 @@ void FullCodeGenerator::EmitGeneratorResume(
   __ CallRuntime(Runtime::kResumeJSGeneratorObject, 3);
   // Not reached: the runtime call returns elsewhere.
   __ stop("not-reached");
-
-  // Reach here when generator is closed.
-  __ bind(&closed_state);
-  if (resume_mode == JSGeneratorObject::NEXT) {
-    // Return completed iterator result when generator is closed.
-    __ LoadRoot(r5, Heap::kUndefinedValueRootIndex);
-    __ push(r5);
-    // Pop value from top-of-stack slot; box result into result register.
-    EmitCreateIteratorResult(true);
-  } else {
-    // Throw the provided value.
-    __ push(r3);
-    __ CallRuntime(Runtime::kThrow, 1);
-  }
-  __ b(&done);
-
-  // Throw error if we attempt to operate on a running generator.
-  __ bind(&wrong_state);
-  __ push(r4);
-  __ CallRuntime(Runtime::kThrowGeneratorStateError, 1);
 
   __ bind(&done);
   context()->Plug(result_register());
