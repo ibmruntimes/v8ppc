@@ -34,7 +34,7 @@ namespace internal {
 
 
 ScriptData::ScriptData(const byte* data, int length)
-    : owns_data_(false), data_(data), length_(length) {
+    : owns_data_(false), rejected_(false), data_(data), length_(length) {
   if (!IsAligned(reinterpret_cast<intptr_t>(data), kPointerAlignment)) {
     byte* copy = NewArray<byte>(length);
     DCHECK(IsAligned(reinterpret_cast<intptr_t>(copy), kPointerAlignment));
@@ -144,7 +144,7 @@ void CompilationInfo::Initialize(Isolate* isolate,
   isolate_ = isolate;
   function_ = NULL;
   scope_ = NULL;
-  global_scope_ = NULL;
+  script_scope_ = NULL;
   extension_ = NULL;
   cached_data_ = NULL;
   compile_options_ = ScriptCompiler::kNoCompileOptions;
@@ -291,9 +291,11 @@ bool CompilationInfo::ShouldSelfOptimize() {
 void CompilationInfo::PrepareForCompilation(Scope* scope) {
   DCHECK(scope_ == NULL);
   scope_ = scope;
+}
 
+
+void CompilationInfo::EnsureFeedbackVector() {
   if (feedback_vector_.is_null()) {
-    // Allocate the feedback vector too.
     feedback_vector_ = isolate()->factory()->NewTypeFeedbackVector(
         function()->slot_count(), function()->ic_slot_count());
   }
@@ -578,6 +580,14 @@ void SetExpectedNofPropertiesFromEstimate(Handle<SharedFunctionInfo> shared,
 }
 
 
+static void MaybeDisableOptimization(Handle<SharedFunctionInfo> shared_info,
+                                     BailoutReason bailout_reason) {
+  if (bailout_reason != kNoReason) {
+    shared_info->DisableOptimization(bailout_reason);
+  }
+}
+
+
 // Sets the function info on a function.
 // The start_position points to the first '(' character after the function name
 // in the full script source. When counting characters in the script source the
@@ -604,9 +614,10 @@ static void SetFunctionInfo(Handle<SharedFunctionInfo> function_info,
   function_info->set_has_duplicate_parameters(lit->has_duplicate_parameters());
   function_info->set_ast_node_count(lit->ast_node_count());
   function_info->set_is_function(lit->is_function());
-  function_info->set_bailout_reason(lit->dont_optimize_reason());
+  MaybeDisableOptimization(function_info, lit->dont_optimize_reason());
   function_info->set_dont_cache(lit->flags()->Contains(kDontCache));
   function_info->set_kind(lit->kind());
+  function_info->set_uses_super(lit->uses_super());
   function_info->set_asm_function(lit->scope()->asm_function());
 }
 
@@ -667,7 +678,7 @@ MUST_USE_RESULT static MaybeHandle<Code> GetUnoptimizedCodeCommon(
   FunctionLiteral* lit = info->function();
   shared->set_strict_mode(lit->strict_mode());
   SetExpectedNofPropertiesFromEstimate(shared, lit->expected_property_count());
-  shared->set_bailout_reason(lit->dont_optimize_reason());
+  MaybeDisableOptimization(shared, lit->dont_optimize_reason());
 
   // Compile unoptimized code.
   if (!CompileUnoptimizedCode(info)) return MaybeHandle<Code>();
@@ -740,7 +751,10 @@ static void InsertCodeIntoOptimizedCodeMap(CompilationInfo* info) {
 static bool Renumber(CompilationInfo* info) {
   if (!AstNumbering::Renumber(info->function(), info->zone())) return false;
   if (!info->shared_info().is_null()) {
-    info->shared_info()->set_ast_node_count(info->function()->ast_node_count());
+    FunctionLiteral* lit = info->function();
+    info->shared_info()->set_ast_node_count(lit->ast_node_count());
+    MaybeDisableOptimization(info->shared_info(), lit->dont_optimize_reason());
+    info->shared_info()->set_dont_cache(lit->flags()->Contains(kDontCache));
   }
   return true;
 }
@@ -862,7 +876,6 @@ MaybeHandle<Code> Compiler::GetLazyCode(Handle<JSFunction> function) {
 
     info.MarkAsContextSpecializing();
     info.MarkAsTypingEnabled();
-    info.MarkAsInliningDisabled();
 
     if (GetOptimizedCodeNow(&info)) {
       DCHECK(function->shared()->is_compiled());
@@ -1243,10 +1256,7 @@ Handle<SharedFunctionInfo> Compiler::CompileScript(
     result = CompileToplevel(&info);
     if (extension == NULL && !result.is_null() && !result->dont_cache()) {
       compilation_cache->PutScript(source, context, result);
-      // TODO(yangguo): Issue 3628
-      // With block scoping, top-level variables may resolve to a global,
-      // context, which makes the code context-dependent.
-      if (FLAG_serialize_toplevel && !FLAG_harmony_scoping &&
+      if (FLAG_serialize_toplevel &&
           compile_options == ScriptCompiler::kProduceCodeCache) {
         HistogramTimerScope histogram_timer(
             isolate->counters()->compile_serialize());
@@ -1317,8 +1327,18 @@ Handle<SharedFunctionInfo> Compiler::BuildFunctionInfo(
   if (FLAG_lazy && allow_lazy && !literal->is_parenthesized()) {
     Handle<Code> code = isolate->builtins()->CompileLazy();
     info.SetCode(code);
+    // There's no need in theory for a lazy-compiled function to have a type
+    // feedback vector, but some parts of the system expect all
+    // SharedFunctionInfo instances to have one.  The size of the vector depends
+    // on how many feedback-needing nodes are in the tree, and when lazily
+    // parsing we might not know that, if this function was never parsed before.
+    // In that case the vector will be replaced the next time MakeCode is
+    // called.
+    info.EnsureFeedbackVector();
     scope_info = Handle<ScopeInfo>(ScopeInfo::Empty(isolate));
   } else if (Renumber(&info) && FullCodeGenerator::MakeCode(&info)) {
+    // MakeCode will ensure that the feedback vector is present and
+    // appropriately sized.
     DCHECK(!info.code().is_null());
     scope_info = ScopeInfo::Create(info.scope(), info.zone());
   } else {
@@ -1333,6 +1353,7 @@ Handle<SharedFunctionInfo> Compiler::BuildFunctionInfo(
   RecordFunctionCompilation(Logger::FUNCTION_TAG, &info, result);
   result->set_allows_lazy_compilation(allow_lazy);
   result->set_allows_lazy_compilation_without_context(allow_lazy_without_ctx);
+  result->set_uses_super(literal->uses_super());
 
   // Set the expected number of properties for instances and return
   // the resulting function.
@@ -1361,6 +1382,7 @@ MaybeHandle<Code> Compiler::GetOptimizedCode(Handle<JSFunction> function,
   PostponeInterruptsScope postpone(isolate);
 
   Handle<SharedFunctionInfo> shared = info->shared_info();
+  shared->set_optimize_next_closure(false);
   if (shared->code()->kind() != Code::FUNCTION ||
       ScopeInfo::Empty(isolate) == shared->scope_info()) {
     // The function was never compiled. Compile it unoptimized first.

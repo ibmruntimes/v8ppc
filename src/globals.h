@@ -372,7 +372,6 @@ template <typename Config, class Allocator = FreeStoreAllocationPolicy>
 class String;
 class Name;
 class Struct;
-class Symbol;
 class Variable;
 class RelocInfo;
 class Deserializer;
@@ -666,7 +665,7 @@ enum ScopeType {
   EVAL_SCOPE,      // The top-level scope for an eval source.
   FUNCTION_SCOPE,  // The top-level scope for a function.
   MODULE_SCOPE,    // The scope introduced by a module literal
-  GLOBAL_SCOPE,    // The top-level scope for a program or a top-level eval.
+  SCRIPT_SCOPE,    // The top-level scope for a script or a top-level eval.
   CATCH_SCOPE,     // The scope introduced by catch.
   BLOCK_SCOPE,     // The scope introduced by a new block.
   WITH_SCOPE,      // The scope introduced by with.
@@ -799,8 +798,7 @@ enum FunctionKind {
   kGeneratorFunction = 2,
   kConciseMethod = 4,
   kConciseGeneratorMethod = kGeneratorFunction | kConciseMethod,
-  kDefaultConstructor = 8,
-  kDefaultConstructorCallSuper = 16
+  kDefaultConstructor = 8
 };
 
 
@@ -810,8 +808,7 @@ inline bool IsValidFunctionKind(FunctionKind kind) {
          kind == FunctionKind::kGeneratorFunction ||
          kind == FunctionKind::kConciseMethod ||
          kind == FunctionKind::kConciseGeneratorMethod ||
-         kind == FunctionKind::kDefaultConstructor ||
-         kind == FunctionKind::kDefaultConstructorCallSuper;
+         kind == FunctionKind::kDefaultConstructor;
 }
 
 
@@ -839,10 +836,6 @@ inline bool IsDefaultConstructor(FunctionKind kind) {
 }
 
 
-inline bool IsDefaultConstructorCallSuper(FunctionKind kind) {
-  DCHECK(IsValidFunctionKind(kind));
-  return kind & FunctionKind::kDefaultConstructorCallSuper;
-}
 } }  // namespace v8::internal
 
 namespace i = v8::internal;

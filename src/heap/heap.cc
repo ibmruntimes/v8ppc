@@ -2640,8 +2640,8 @@ bool Heap::CreateInitialMaps() {
     ALLOCATE_VARSIZE_MAP(FIXED_ARRAY_TYPE, with_context)
     ALLOCATE_VARSIZE_MAP(FIXED_ARRAY_TYPE, block_context)
     ALLOCATE_VARSIZE_MAP(FIXED_ARRAY_TYPE, module_context)
-    ALLOCATE_VARSIZE_MAP(FIXED_ARRAY_TYPE, global_context)
-    ALLOCATE_VARSIZE_MAP(FIXED_ARRAY_TYPE, global_context_table)
+    ALLOCATE_VARSIZE_MAP(FIXED_ARRAY_TYPE, script_context)
+    ALLOCATE_VARSIZE_MAP(FIXED_ARRAY_TYPE, script_context_table)
 
     ALLOCATE_VARSIZE_MAP(FIXED_ARRAY_TYPE, native_context)
     native_context_map()->set_dictionary_map(true);
@@ -2923,6 +2923,17 @@ void Heap::CreateInitialObjects() {
   Handle<Symbol> name = factory->NewPrivateOwnSymbol(); \
   roots_[k##name##RootIndex] = *name;
     PRIVATE_SYMBOL_LIST(SYMBOL_INIT)
+#undef SYMBOL_INIT
+  }
+
+  {
+    HandleScope scope(isolate());
+#define SYMBOL_INIT(name, varname, description)                             \
+  Handle<Symbol> name = factory->NewSymbol();                               \
+  Handle<String> name##d = factory->NewStringFromStaticChars(#description); \
+  name->set_name(*name##d);                                                 \
+  roots_[k##name##RootIndex] = *name;
+    PUBLIC_SYMBOL_LIST(SYMBOL_INIT)
 #undef SYMBOL_INIT
   }
 
@@ -4386,8 +4397,6 @@ bool Heap::WorthActivatingIncrementalMarking() {
 
 
 bool Heap::IdleNotification(int idle_time_in_ms) {
-  // If incremental marking is off, we do not perform idle notification.
-  if (!FLAG_incremental_marking) return true;
   base::ElapsedTimer timer;
   timer.Start();
   isolate()->counters()->gc_idle_time_allotted_in_ms()->AddSample(
@@ -4403,7 +4412,7 @@ bool Heap::IdleNotification(int idle_time_in_ms) {
   heap_state.incremental_marking_stopped = incremental_marking()->IsStopped();
   // TODO(ulan): Start incremental marking only for large heaps.
   heap_state.can_start_incremental_marking =
-      incremental_marking()->ShouldActivate();
+      incremental_marking()->ShouldActivate() && FLAG_incremental_marking;
   heap_state.sweeping_in_progress =
       mark_compact_collector()->sweeping_in_progress();
   heap_state.mark_compact_speed_in_bytes_per_ms =
@@ -4481,7 +4490,13 @@ bool Heap::IdleNotification(int idle_time_in_ms) {
     PrintF("Idle notification: requested idle time %d ms, actual time %d ms [",
            idle_time_in_ms, actual_time_in_ms);
     action.Print();
-    PrintF("]\n");
+    PrintF("]");
+    if (FLAG_trace_idle_notification_verbose) {
+      PrintF("[");
+      heap_state.Print();
+      PrintF("]");
+    }
+    PrintF("\n");
   }
 
   contexts_disposed_ = 0;

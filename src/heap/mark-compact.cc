@@ -470,12 +470,12 @@ void MarkCompactCollector::EnsureSweepingCompleted() {
 
   // If sweeping is not completed or not running at all, we try to complete it
   // here.
-  if (FLAG_predictable || !IsSweepingCompleted()) {
+  if (!FLAG_concurrent_sweeping || !IsSweepingCompleted()) {
     SweepInParallel(heap()->paged_space(OLD_DATA_SPACE), 0);
     SweepInParallel(heap()->paged_space(OLD_POINTER_SPACE), 0);
   }
   // Wait twice for both jobs.
-  if (!FLAG_predictable) {
+  if (FLAG_concurrent_sweeping) {
     pending_sweeper_jobs_semaphore_.Wait();
     pending_sweeper_jobs_semaphore_.Wait();
   }
@@ -2882,7 +2882,8 @@ class PointersUpdatingVisitor : public ObjectVisitor {
   }
 
   static inline void UpdateSlot(Heap* heap, Object** slot) {
-    Object* obj = *slot;
+    Object* obj = reinterpret_cast<Object*>(
+        base::NoBarrier_Load(reinterpret_cast<base::AtomicWord*>(slot)));
 
     if (!obj->IsHeapObject()) return;
 
@@ -2893,7 +2894,10 @@ class PointersUpdatingVisitor : public ObjectVisitor {
       DCHECK(heap->InFromSpace(heap_obj) ||
              MarkCompactCollector::IsOnEvacuationCandidate(heap_obj));
       HeapObject* target = map_word.ToForwardingAddress();
-      *slot = target;
+      base::NoBarrier_CompareAndSwap(
+          reinterpret_cast<base::AtomicWord*>(slot),
+          reinterpret_cast<base::AtomicWord>(obj),
+          reinterpret_cast<base::AtomicWord>(target));
       DCHECK(!heap->InFromSpace(target) &&
              !MarkCompactCollector::IsOnEvacuationCandidate(target));
     }
@@ -4141,7 +4145,7 @@ void MarkCompactCollector::SweepSpaces() {
       SweepSpace(heap()->old_data_space(), CONCURRENT_SWEEPING);
     }
     sweeping_in_progress_ = true;
-    if (!FLAG_predictable) {
+    if (FLAG_concurrent_sweeping) {
       StartSweeperThreads();
     }
   }

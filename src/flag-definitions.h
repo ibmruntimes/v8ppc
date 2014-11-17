@@ -172,7 +172,8 @@ DEFINE_IMPLICATION(harmony, es_staging)
   V(harmony_regexps, "harmony regular expression extensions")     \
   V(harmony_arrow_functions, "harmony arrow functions")           \
   V(harmony_tostring, "harmony toString")                         \
-  V(harmony_proxies, "harmony proxies")
+  V(harmony_proxies, "harmony proxies")                           \
+  V(harmony_templates, "harmony template literals")
 
 // Features that are complete (but still behind --harmony/es-staging flag).
 #define HARMONY_STAGED(V) V(harmony_strings, "harmony string methods")
@@ -541,6 +542,8 @@ DEFINE_BOOL(trace_gc_ignore_scavenger, false,
             "do not print trace line after scavenger collection")
 DEFINE_BOOL(trace_idle_notification, false,
             "print one trace line following each idle notification")
+DEFINE_BOOL(trace_idle_notification_verbose, false,
+            "prints the heap state used by the idle notification")
 DEFINE_BOOL(print_cumulative_gc_stat, false,
             "print cumulative GC statistics in name=value format on exit")
 DEFINE_BOOL(print_max_heap_committed, false,
@@ -568,6 +571,7 @@ DEFINE_BOOL(age_code, true,
             "old code (required for code flushing)")
 DEFINE_BOOL(incremental_marking, true, "use incremental marking")
 DEFINE_BOOL(incremental_marking_steps, true, "do incremental marking steps")
+DEFINE_BOOL(concurrent_sweeping, true, "use concurrent sweeping")
 DEFINE_BOOL(trace_incremental_marking, false,
             "trace progress of the incremental marking")
 DEFINE_BOOL(track_gc_object_stats, false,
@@ -705,6 +709,7 @@ DEFINE_BOOL(profile_hydrogen_code_stub_compilation, false,
 DEFINE_BOOL(predictable, false, "enable predictable mode")
 DEFINE_NEG_IMPLICATION(predictable, concurrent_recompilation)
 DEFINE_NEG_IMPLICATION(predictable, concurrent_osr)
+DEFINE_NEG_IMPLICATION(predictable, concurrent_sweeping)
 
 
 //

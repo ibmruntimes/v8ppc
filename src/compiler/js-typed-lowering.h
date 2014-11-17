@@ -43,6 +43,7 @@ class JSTypedLowering FINAL : public Reducer {
   Reduction ReduceJSToNumberInput(Node* input);
   Reduction ReduceJSToStringInput(Node* input);
   Reduction ReduceJSToBooleanInput(Node* input);
+  Reduction ReduceJSToBoolean(Node* node);
   Reduction ReduceNumberBinop(Node* node, const Operator* numberOp);
   Reduction ReduceI32Binop(Node* node, bool left_signed, bool right_signed,
                            const Operator* intOp);
@@ -58,6 +59,7 @@ class JSTypedLowering FINAL : public Reducer {
   SimplifiedOperatorBuilder simplified_;
   Type* zero_range_;
   Type* one_range_;
+  Type* zero_thirtyone_range_;
 };
 
 }  // namespace compiler

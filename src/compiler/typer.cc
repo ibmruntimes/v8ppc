@@ -717,16 +717,26 @@ Type* Typer::Visitor::JSBitwiseOrTyper(Type* lhs, Type* rhs, Typer* t) {
   double rmax = rhs->Max();
   // Or-ing any two values results in a value no smaller than their minimum.
   // Even no smaller than their maximum if both values are non-negative.
-  Handle<Object> min = f->NewNumber(
-      lmin >= 0 && rmin >= 0 ? std::max(lmin, rmin) : std::min(lmin, rmin));
+  double min =
+      lmin >= 0 && rmin >= 0 ? std::max(lmin, rmin) : std::min(lmin, rmin);
+  double max = Type::Signed32()->Max();
+
+  // Or-ing with 0 is essentially a conversion to int32.
+  if (rmin == 0 && rmax == 0) {
+    min = lmin;
+    max = lmax;
+  }
+  if (lmin == 0 && lmax == 0) {
+    min = rmin;
+    max = rmax;
+  }
+
   if (lmax < 0 || rmax < 0) {
     // Or-ing two values of which at least one is negative results in a negative
     // value.
-    Handle<Object> max = f->NewNumber(-1);
-    return Type::Range(min, max, t->zone());
+    max = std::min(max, -1.0);
   }
-  Handle<Object> max = f->NewNumber(Type::Signed32()->Max());
-  return Type::Range(min, max, t->zone());
+  return Type::Range(f->NewNumber(min), f->NewNumber(max), t->zone());
   // TODO(neis): Be precise for singleton inputs, here and elsewhere.
 }
 
@@ -739,18 +749,22 @@ Type* Typer::Visitor::JSBitwiseAndTyper(Type* lhs, Type* rhs, Typer* t) {
   double rmin = rhs->Min();
   double lmax = lhs->Max();
   double rmax = rhs->Max();
+  double min = Type::Signed32()->Min();
   // And-ing any two values results in a value no larger than their maximum.
   // Even no larger than their minimum if both values are non-negative.
-  Handle<Object> max = f->NewNumber(
-      lmin >= 0 && rmin >= 0 ? std::min(lmax, rmax) : std::max(lmax, rmax));
-  if (lmin >= 0 || rmin >= 0) {
-    // And-ing two values of which at least one is non-negative results in a
-    // non-negative value.
-    Handle<Object> min = f->NewNumber(0);
-    return Type::Range(min, max, t->zone());
+  double max =
+      lmin >= 0 && rmin >= 0 ? std::min(lmax, rmax) : std::max(lmax, rmax);
+  // And-ing with a non-negative value x causes the result to be between
+  // zero and x.
+  if (lmin >= 0) {
+    min = 0;
+    max = std::min(max, lmax);
   }
-  Handle<Object> min = f->NewNumber(Type::Signed32()->Min());
-  return Type::Range(min, max, t->zone());
+  if (rmin >= 0) {
+    min = 0;
+    max = std::min(max, rmax);
+  }
+  return Type::Range(f->NewNumber(min), f->NewNumber(max), t->zone());
 }
 
 
@@ -780,18 +794,31 @@ Type* Typer::Visitor::JSShiftLeftTyper(Type* lhs, Type* rhs, Typer* t) {
 
 Type* Typer::Visitor::JSShiftRightTyper(Type* lhs, Type* rhs, Typer* t) {
   lhs = NumberToInt32(ToNumber(lhs, t), t);
-  Factory* f = t->isolate()->factory();
+  rhs = NumberToUint32(ToNumber(rhs, t), t);
+  double min = kMinInt;
+  double max = kMaxInt;
   if (lhs->Min() >= 0) {
     // Right-shifting a non-negative value cannot make it negative, nor larger.
-    Handle<Object> min = f->NewNumber(0);
-    Handle<Object> max = f->NewNumber(lhs->Max());
-    return Type::Range(min, max, t->zone());
+    min = std::max(min, 0.0);
+    max = std::min(max, lhs->Max());
   }
   if (lhs->Max() < 0) {
     // Right-shifting a negative value cannot make it non-negative, nor smaller.
-    Handle<Object> min = f->NewNumber(lhs->Min());
-    Handle<Object> max = f->NewNumber(-1);
-    return Type::Range(min, max, t->zone());
+    min = std::max(min, lhs->Min());
+    max = std::min(max, -1.0);
+  }
+  if (rhs->Min() > 0 && rhs->Max() <= 31) {
+    // Right-shifting by a positive value yields a small integer value.
+    double shift_min = kMinInt >> static_cast<int>(rhs->Min());
+    double shift_max = kMaxInt >> static_cast<int>(rhs->Min());
+    min = std::max(min, shift_min);
+    max = std::min(max, shift_max);
+  }
+  // TODO(jarin) Ideally, the following micro-optimization should be performed
+  // by the type constructor.
+  if (max != Type::Signed32()->Max() || min != Type::Signed32()->Min()) {
+    Factory* f = t->isolate()->factory();
+    return Type::Range(f->NewNumber(min), f->NewNumber(max), t->zone());
   }
   return Type::Signed32();
 }
@@ -1119,10 +1146,9 @@ Bounds Typer::Visitor::TypeJSLoadNamed(Node* node) {
 // in the graph. In the current implementation, we are
 // increasing the limits to the closest power of two.
 Type* Typer::Visitor::Weaken(Type* current_type, Type* previous_type) {
-  if (current_type->IsRange() && previous_type->IsRange()) {
-    Type::RangeType* previous = previous_type->AsRange();
-    Type::RangeType* current = current_type->AsRange();
-
+  Type::RangeType* previous = previous_type->GetRange();
+  Type::RangeType* current = current_type->GetRange();
+  if (previous != NULL && current != NULL) {
     double current_min = current->Min()->Number();
     Handle<Object> new_min = current->Min();
 
@@ -1152,7 +1178,9 @@ Type* Typer::Visitor::Weaken(Type* current_type, Type* previous_type) {
       }
     }
 
-    return Type::Range(new_min, new_max, typer_->zone());
+    return Type::Union(current_type,
+                       Type::Range(new_min, new_max, typer_->zone()),
+                       typer_->zone());
   }
   return current_type;
 }
@@ -1264,7 +1292,7 @@ Bounds Typer::Visitor::TypeJSCreateModuleContext(Node* node) {
 }
 
 
-Bounds Typer::Visitor::TypeJSCreateGlobalContext(Node* node) {
+Bounds Typer::Visitor::TypeJSCreateScriptContext(Node* node) {
   Bounds outer = ContextOperand(node);
   return Bounds(Type::Context(outer.upper, zone()));
 }

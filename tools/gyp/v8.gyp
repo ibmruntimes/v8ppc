@@ -790,7 +790,6 @@
         '../../src/runtime/runtime-utils.h',
         '../../src/runtime/runtime.cc',
         '../../src/runtime/runtime.h',
-        '../../src/runtime/string-builder.h',
         '../../src/safepoint-table.cc',
         '../../src/safepoint-table.h',
         '../../src/sampler.cc',
@@ -810,6 +809,8 @@
         '../../src/snapshot.h',
         '../../src/snapshot-source-sink.cc',
         '../../src/snapshot-source-sink.h',
+        '../../src/string-builder.cc',
+        '../../src/string-builder.h',
         '../../src/string-search.cc',
         '../../src/string-search.h',
         '../../src/string-stream.cc',
@@ -1472,7 +1473,7 @@
         ['OS=="solaris"', {
             'link_settings': {
               'libraries': [
-                '-lnsl',
+                '-lnsl -lrt',
             ]},
             'sources': [
               '../../src/base/platform/platform-solaris.cc',
@@ -1673,6 +1674,7 @@
           '../../src/harmony-tostring.js',
           '../../src/harmony-typedarray.js',
           '../../src/harmony-classes.js',
+          '../../src/harmony-templates.js'
         ],
         'libraries_bin_file': '<(SHARED_INTERMEDIATE_DIR)/libraries.bin',
         'libraries_experimental_bin_file': '<(SHARED_INTERMEDIATE_DIR)/libraries-experimental.bin',

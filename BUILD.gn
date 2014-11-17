@@ -245,7 +245,8 @@ action("js2c_experimental") {
     "src/harmony-array.js",
     "src/harmony-typedarray.js",
     "src/harmony-classes.js",
-    "src/harmony-tostring.js"
+    "src/harmony-tostring.js",
+    "src/harmony-templates.js"
   ]
 
   outputs = [
@@ -877,7 +878,6 @@ source_set("v8_base") {
     "src/runtime/runtime-utils.h",
     "src/runtime/runtime.cc",
     "src/runtime/runtime.h",
-    "src/runtime/string-builder.h",
     "src/safepoint-table.cc",
     "src/safepoint-table.h",
     "src/sampler.cc",
@@ -897,6 +897,8 @@ source_set("v8_base") {
     "src/snapshot-source-sink.cc",
     "src/snapshot-source-sink.h",
     "src/snapshot.h",
+    "src/string-builder.cc",
+    "src/string-builder.h",
     "src/string-search.cc",
     "src/string-search.h",
     "src/string-stream.cc",

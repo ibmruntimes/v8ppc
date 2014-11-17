@@ -201,12 +201,13 @@ TEST(RPOSelfLoop) {
 TEST(RPOEntryLoop) {
   HandleAndZoneScope scope;
   Schedule schedule(scope.main_zone());
-  schedule.AddSuccessorForTesting(schedule.start(), schedule.end());
-  schedule.AddSuccessorForTesting(schedule.end(), schedule.start());
+  BasicBlock* body = schedule.NewBasicBlock();
+  schedule.AddSuccessorForTesting(schedule.start(), body);
+  schedule.AddSuccessorForTesting(body, schedule.start());
   BasicBlockVector* order =
       Scheduler::ComputeSpecialRPO(scope.main_zone(), &schedule);
   CheckRPONumbers(order, 2, true);
-  BasicBlock* loop[] = {schedule.start(), schedule.end()};
+  BasicBlock* loop[] = {schedule.start(), body};
   CheckLoop(order, loop, 2);
 }
 
@@ -648,7 +649,7 @@ TEST(RPOLoopMultibackedge) {
   BasicBlock* A = schedule.start();
   BasicBlock* B = schedule.NewBasicBlock();
   BasicBlock* C = schedule.NewBasicBlock();
-  BasicBlock* D = schedule.end();
+  BasicBlock* D = schedule.NewBasicBlock();
   BasicBlock* E = schedule.NewBasicBlock();
 
   schedule.AddSuccessorForTesting(A, B);
@@ -1824,10 +1825,8 @@ TEST(NestedFloatingDiamondWithLoop) {
   Node* loop = graph.NewNode(common.Loop(2), f, start);
   Node* ind = graph.NewNode(common.Phi(kMachAnyTagged, 2), p0, p0, loop);
 
-  // TODO(mstarzinger): Make scheduler deal with non-empty loops here.
-  // Node* add = graph.NewNode(&kIntAdd, ind, fv);
-
-  Node* br1 = graph.NewNode(common.Branch(), ind, loop);
+  Node* add = graph.NewNode(&kIntAdd, ind, fv);
+  Node* br1 = graph.NewNode(common.Branch(), add, loop);
   Node* t1 = graph.NewNode(common.IfTrue(), br1);
   Node* f1 = graph.NewNode(common.IfFalse(), br1);
 
@@ -1842,7 +1841,7 @@ TEST(NestedFloatingDiamondWithLoop) {
 
   graph.SetEnd(end);
 
-  ComputeAndVerifySchedule(19, &graph);
+  ComputeAndVerifySchedule(20, &graph);
 }
 
 

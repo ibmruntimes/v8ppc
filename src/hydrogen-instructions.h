@@ -6171,6 +6171,18 @@ class HObjectAccess FINAL {
                          SharedFunctionInfo::kOptimizedCodeMapOffset);
   }
 
+  static HObjectAccess ForCompileHint() {
+// Compile hints are stored in the upper half of a pseudo-smi, which for
+// 64-bit means that the representation is an integer.
+#if V8_HOST_ARCH_32_BIT
+    Representation repr = Representation::Smi();
+#else
+    Representation repr = Representation::Integer32();
+#endif
+    return HObjectAccess(kInobject, SharedFunctionInfo::kCompilerHintsOffset,
+                         repr);
+  }
+
   static HObjectAccess ForFunctionContextPointer() {
     return HObjectAccess(kInobject, JSFunction::kContextOffset);
   }
@@ -6276,7 +6288,7 @@ class HObjectAccess FINAL {
 
   static HObjectAccess ForContextSlot(int index);
 
-  static HObjectAccess ForGlobalContext(int index);
+  static HObjectAccess ForScriptContext(int index);
 
   // Create an access to the backing store of an object.
   static HObjectAccess ForBackingStoreOffset(int offset,
@@ -7567,9 +7579,6 @@ class HFunctionLiteral FINAL : public HTemplateInstruction<1> {
   bool is_generator() const { return IsGeneratorFunction(kind()); }
   bool is_concise_method() const { return IsConciseMethod(kind()); }
   bool is_default_constructor() const { return IsDefaultConstructor(kind()); }
-  bool is_default_constructor_call_super() const {
-    return IsDefaultConstructorCallSuper(kind());
-  }
   FunctionKind kind() const { return FunctionKindField::decode(bit_field_); }
   StrictMode strict_mode() const { return StrictModeField::decode(bit_field_); }
 
@@ -7589,7 +7598,7 @@ class HFunctionLiteral FINAL : public HTemplateInstruction<1> {
 
   virtual bool IsDeletable() const OVERRIDE { return true; }
 
-  class FunctionKindField : public BitField<FunctionKind, 0, 5> {};
+  class FunctionKindField : public BitField<FunctionKind, 0, 4> {};
   class PretenureField : public BitField<bool, 5, 1> {};
   class HasNoLiteralsField : public BitField<bool, 6, 1> {};
   class StrictModeField : public BitField<StrictMode, 7, 1> {};

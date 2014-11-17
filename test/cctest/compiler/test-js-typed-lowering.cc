@@ -327,9 +327,13 @@ TEST(Int32BitwiseShifts) {
 
         CheckToI32(p0, r0, R.signedness[k]);
 
-        R.CheckPureBinop(IrOpcode::kWord32And, r1);
-        CheckToI32(p1, r1->InputAt(0), R.signedness[k + 1]);
-        R.CheckInt32Constant(0x1F, r1->InputAt(1));
+        if (r1->opcode() == IrOpcode::kWord32And) {
+          R.CheckPureBinop(IrOpcode::kWord32And, r1);
+          CheckToI32(p1, r1->InputAt(0), R.signedness[k + 1]);
+          R.CheckInt32Constant(0x1F, r1->InputAt(1));
+        } else {
+          CheckToI32(p1, r1, R.signedness[k]);
+        }
       }
     }
   }
@@ -1227,11 +1231,7 @@ TEST(Int32AddNarrowing) {
             Node* r = R.reduce(or_node);
 
             CHECK_EQ(R.ops[o + 1]->opcode(), r->op()->opcode());
-            CHECK_EQ(IrOpcode::kInt32Add, add_node->opcode());
-            bool is_signed = l ? R.signedness[o] : R.signedness[o + 1];
-
-            Type* add_type = NodeProperties::GetBounds(add_node).upper;
-            CHECK(add_type->Is(I32Type(is_signed)));
+            CHECK_EQ(IrOpcode::kNumberAdd, add_node->opcode());
           }
         }
       }
@@ -1254,40 +1254,33 @@ TEST(Int32AddNarrowing) {
             Node* r = R.reduce(or_node);
 
             CHECK_EQ(R.ops[o + 1]->opcode(), r->op()->opcode());
-            CHECK_EQ(IrOpcode::kInt32Add, add_node->opcode());
-            bool is_signed = l ? R.signedness[o] : R.signedness[o + 1];
-
-            Type* add_type = NodeProperties::GetBounds(add_node).upper;
-            CHECK(add_type->Is(I32Type(is_signed)));
+            CHECK_EQ(IrOpcode::kNumberAdd, add_node->opcode());
           }
         }
       }
     }
   }
-}
+  {
+    JSBitwiseTypedLoweringTester R;
 
+    for (int o = 0; o < R.kNumberOps; o += 2) {
+      Node* n0 = R.Parameter(I32Type(R.signedness[o]));
+      Node* n1 = R.Parameter(I32Type(R.signedness[o + 1]));
+      Node* one = R.graph.NewNode(R.common.NumberConstant(1));
 
-TEST(Int32AddNarrowingNotOwned) {
-  JSBitwiseTypedLoweringTester R;
-
-  for (int o = 0; o < R.kNumberOps; o += 2) {
-    Node* n0 = R.Parameter(I32Type(R.signedness[o]));
-    Node* n1 = R.Parameter(I32Type(R.signedness[o + 1]));
-    Node* one = R.graph.NewNode(R.common.NumberConstant(1));
-
-    Node* add_node = R.Binop(R.simplified.NumberAdd(), n0, n1);
-    Node* or_node = R.Binop(R.ops[o], add_node, one);
-    Node* other_use = R.Binop(R.simplified.NumberAdd(), add_node, one);
-    Node* r = R.reduce(or_node);
-    CHECK_EQ(R.ops[o + 1]->opcode(), r->op()->opcode());
-    // Should not be reduced to Int32Add because of the other number add.
-    CHECK_EQ(IrOpcode::kNumberAdd, add_node->opcode());
-    // Conversion to int32 should be done.
-    CheckToI32(add_node, r->InputAt(0), R.signedness[o]);
-    CheckToI32(one, r->InputAt(1), R.signedness[o + 1]);
-    // The other use should also not be touched.
-    CHECK_EQ(add_node, other_use->InputAt(0));
-    CHECK_EQ(one, other_use->InputAt(1));
+      Node* add_node = R.Binop(R.simplified.NumberAdd(), n0, n1);
+      Node* or_node = R.Binop(R.ops[o], add_node, one);
+      Node* other_use = R.Binop(R.simplified.NumberAdd(), add_node, one);
+      Node* r = R.reduce(or_node);
+      CHECK_EQ(R.ops[o + 1]->opcode(), r->op()->opcode());
+      CHECK_EQ(IrOpcode::kNumberAdd, add_node->opcode());
+      // Conversion to int32 should be done.
+      CheckToI32(add_node, r->InputAt(0), R.signedness[o]);
+      CheckToI32(one, r->InputAt(1), R.signedness[o + 1]);
+      // The other use should also not be touched.
+      CHECK_EQ(add_node, other_use->InputAt(0));
+      CHECK_EQ(one, other_use->InputAt(1));
+    }
   }
 }
 

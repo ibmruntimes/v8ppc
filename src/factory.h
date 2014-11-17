@@ -225,12 +225,12 @@ class Factory FINAL {
   // Create a global (but otherwise uninitialized) context.
   Handle<Context> NewNativeContext();
 
-  // Create a global context.
-  Handle<Context> NewGlobalContext(Handle<JSFunction> function,
+  // Create a script context.
+  Handle<Context> NewScriptContext(Handle<JSFunction> function,
                                    Handle<ScopeInfo> scope_info);
 
-  // Create an empty global context table.
-  Handle<GlobalContextTable> NewGlobalContextTable();
+  // Create an empty script context table.
+  Handle<ScriptContextTable> NewScriptContextTable();
 
   // Create a module context.
   Handle<Context> NewModuleContext(Handle<ScopeInfo> scope_info);
@@ -485,12 +485,11 @@ class Factory FINAL {
       Handle<Context> context,
       PretenureFlag pretenure = TENURED);
 
-  Handle<JSFunction> NewFunction(Handle<String> name,
-                                 Handle<Code> code,
-                                 Handle<Object> prototype,
-                                 InstanceType type,
+  Handle<JSFunction> NewFunction(Handle<String> name, Handle<Code> code,
+                                 Handle<Object> prototype, InstanceType type,
                                  int instance_size,
-                                 bool read_only_prototype = false);
+                                 bool read_only_prototype = false,
+                                 bool install_constructor = false);
   Handle<JSFunction> NewFunction(Handle<String> name,
                                  Handle<Code> code,
                                  InstanceType type,
@@ -610,6 +609,14 @@ class Factory FINAL {
         &isolate()->heap()->roots_[Heap::k##name##RootIndex])); \
   }
   PRIVATE_SYMBOL_LIST(SYMBOL_ACCESSOR)
+#undef SYMBOL_ACCESSOR
+
+#define SYMBOL_ACCESSOR(name, varname, description)             \
+  inline Handle<Symbol> name() {                                \
+    return Handle<Symbol>(bit_cast<Symbol**>(                   \
+        &isolate()->heap()->roots_[Heap::k##name##RootIndex])); \
+  }
+  PUBLIC_SYMBOL_LIST(SYMBOL_ACCESSOR)
 #undef SYMBOL_ACCESSOR
 
   inline void set_string_table(Handle<StringTable> table) {

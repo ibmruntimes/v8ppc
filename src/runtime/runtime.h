@@ -251,7 +251,7 @@ namespace internal {
   F(DateCacheVersion, 0, 1)                            \
                                                        \
   /* Globals */                                        \
-  F(CompileString, 2, 1)                               \
+  F(CompileString, 3, 1)                               \
                                                        \
   /* Eval */                                           \
   F(GlobalProxy, 1, 1)                                 \
@@ -313,6 +313,7 @@ namespace internal {
   F(SetIteratorInitialize, 3, 1)                       \
   F(SetIteratorClone, 1, 1)                            \
   F(SetIteratorNext, 2, 1)                             \
+  F(SetIteratorDetails, 1, 1)                          \
                                                        \
   /* Harmony maps */                                   \
   F(MapInitialize, 1, 1)                               \
@@ -326,6 +327,7 @@ namespace internal {
   F(MapIteratorInitialize, 3, 1)                       \
   F(MapIteratorClone, 1, 1)                            \
   F(MapIteratorNext, 2, 1)                             \
+  F(MapIteratorDetails, 1, 1)                          \
                                                        \
   /* Harmony weak maps and sets */                     \
   F(WeakCollectionInitialize, 1, 1)                    \
@@ -477,7 +479,7 @@ namespace internal {
   F(CreateJSGeneratorObject, 0, 1)                           \
   F(SuspendJSGeneratorObject, 1, 1)                          \
   F(ResumeJSGeneratorObject, 3, 1)                           \
-  F(ThrowGeneratorStateError, 1, 1)                          \
+  F(GeneratorClose, 1, 1)                                    \
                                                              \
   /* Arrays */                                               \
   F(ArrayConstructor, -1, 1)                                 \
@@ -504,7 +506,7 @@ namespace internal {
   F(PromoteScheduledException, 0, 1)                         \
                                                              \
   /* Contexts */                                             \
-  F(NewGlobalContext, 2, 1)                                  \
+  F(NewScriptContext, 2, 1)                                  \
   F(NewFunctionContext, 1, 1)                                \
   F(PushWithContext, 2, 1)                                   \
   F(PushCatchContext, 3, 1)                                  \

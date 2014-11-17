@@ -4646,10 +4646,10 @@ HObjectAccess HObjectAccess::ForContextSlot(int index) {
 }
 
 
-HObjectAccess HObjectAccess::ForGlobalContext(int index) {
+HObjectAccess HObjectAccess::ForScriptContext(int index) {
   DCHECK(index >= 0);
   Portion portion = kInobject;
-  int offset = GlobalContextTable::GetContextOffset(index);
+  int offset = ScriptContextTable::GetContextOffset(index);
   return HObjectAccess(portion, offset, Representation::Tagged());
 }
 

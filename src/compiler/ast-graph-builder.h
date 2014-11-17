@@ -58,10 +58,6 @@ class AstGraphBuilder : public StructuredGraphBuilder, public AstVisitor {
   typedef StructuredGraphBuilder::Environment BaseEnvironment;
   virtual BaseEnvironment* CopyEnvironment(BaseEnvironment* env) OVERRIDE;
 
-  // TODO(mstarzinger): The pipeline only needs to be a friend to access the
-  // function context. Remove as soon as the context is a parameter.
-  friend class Pipeline;
-
   // Getters for values in the activation record.
   Node* GetFunctionClosure();
   Node* GetFunctionContext();
@@ -71,6 +67,9 @@ class AstGraphBuilder : public StructuredGraphBuilder, public AstVisitor {
   // resulting node. The operand stack height remains the same, variables and
   // other dependencies tracked by the environment might be mutated though.
   //
+
+  // Builder to create a receiver check for sloppy mode.
+  Node* BuildPatchReceiverToGlobalProxy(Node* receiver);
 
   // Builder to create a local function context.
   Node* BuildLocalFunctionContext(Node* context, Node* closure);
@@ -92,6 +91,7 @@ class AstGraphBuilder : public StructuredGraphBuilder, public AstVisitor {
   // Builders for accessing the function context.
   Node* BuildLoadBuiltinsObject();
   Node* BuildLoadGlobalObject();
+  Node* BuildLoadGlobalProxy();
   Node* BuildLoadClosure();
   Node* BuildLoadObjectField(Node* object, int offset);
 

@@ -3121,7 +3121,7 @@ void HGraphBuilder::BuildCreateAllocationMemento(
 
 
 HInstruction* HGraphBuilder::BuildGetNativeContext(HValue* closure) {
-  // Get the global context, then the native context
+  // Get the global object, then the native context
   HInstruction* context =
       Add<HLoadNamedField>(closure, static_cast<HValue*>(NULL),
                            HObjectAccess::ForFunctionContextPointer());
@@ -3135,18 +3135,18 @@ HInstruction* HGraphBuilder::BuildGetNativeContext(HValue* closure) {
 }
 
 
-HInstruction* HGraphBuilder::BuildGetGlobalContext(int context_index) {
+HInstruction* HGraphBuilder::BuildGetScriptContext(int context_index) {
   HValue* native_context = BuildGetNativeContext();
-  HValue* global_context_table = Add<HLoadNamedField>(
+  HValue* script_context_table = Add<HLoadNamedField>(
       native_context, static_cast<HValue*>(NULL),
-      HObjectAccess::ForContextSlot(Context::GLOBAL_CONTEXT_TABLE_INDEX));
-  return Add<HLoadNamedField>(global_context_table, static_cast<HValue*>(NULL),
-                              HObjectAccess::ForGlobalContext(context_index));
+      HObjectAccess::ForContextSlot(Context::SCRIPT_CONTEXT_TABLE_INDEX));
+  return Add<HLoadNamedField>(script_context_table, static_cast<HValue*>(NULL),
+                              HObjectAccess::ForScriptContext(context_index));
 }
 
 
 HInstruction* HGraphBuilder::BuildGetNativeContext() {
-  // Get the global context, then the native context
+  // Get the global object, then the native context
   HValue* global_object = Add<HLoadNamedField>(
       context(), static_cast<HValue*>(NULL),
       HObjectAccess::ForContextSlot(Context::GLOBAL_OBJECT_INDEX));
@@ -4567,7 +4567,7 @@ void HOptimizedGraphBuilder::VisitBlock(Block* stmt) {
       Scope* declaration_scope = scope->DeclarationScope();
       HInstruction* function;
       HValue* outer_context = environment()->context();
-      if (declaration_scope->is_global_scope() ||
+      if (declaration_scope->is_script_scope() ||
           declaration_scope->is_eval_scope()) {
         function = new(zone()) HLoadContextSlot(
             outer_context, Context::CLOSURE_INDEX, HLoadContextSlot::kNoCheck);
@@ -5390,15 +5390,15 @@ void HOptimizedGraphBuilder::VisitVariableProxy(VariableProxy* expr) {
       Handle<GlobalObject> global(current_info()->global_object());
 
       if (FLAG_harmony_scoping) {
-        Handle<GlobalContextTable> global_contexts(
-            global->native_context()->global_context_table());
-        GlobalContextTable::LookupResult lookup;
-        if (GlobalContextTable::Lookup(global_contexts, variable->name(),
+        Handle<ScriptContextTable> script_contexts(
+            global->native_context()->script_context_table());
+        ScriptContextTable::LookupResult lookup;
+        if (ScriptContextTable::Lookup(script_contexts, variable->name(),
                                        &lookup)) {
-          Handle<Context> global_context = GlobalContextTable::GetContext(
-              global_contexts, lookup.context_index);
+          Handle<Context> script_context = ScriptContextTable::GetContext(
+              script_contexts, lookup.context_index);
           HInstruction* result = New<HLoadNamedField>(
-              Add<HConstant>(global_context), static_cast<HValue*>(NULL),
+              Add<HConstant>(script_context), static_cast<HValue*>(NULL),
               HObjectAccess::ForContextSlot(lookup.slot_index));
           return ast_context()->ReturnInstruction(result, expr->id());
         }
@@ -6156,7 +6156,7 @@ bool HOptimizedGraphBuilder::PropertyAccessInfo::CanAccessMonomorphic() {
 
   if (IsAccessor()) return true;
   Handle<Map> map = this->map();
-  map->LookupTransition(NULL, *name_, NONE, &lookup_);
+  map->LookupTransition(NULL, *name_, &lookup_);
   if (lookup_.IsTransitionToField() && map->unused_property_fields() > 0) {
     // Construct the object field access.
     int descriptor = transition()->LastAdded();
@@ -6546,14 +6546,14 @@ void HOptimizedGraphBuilder::HandleGlobalVariableAssignment(
   Handle<GlobalObject> global(current_info()->global_object());
 
   if (FLAG_harmony_scoping) {
-    Handle<GlobalContextTable> global_contexts(
-        global->native_context()->global_context_table());
-    GlobalContextTable::LookupResult lookup;
-    if (GlobalContextTable::Lookup(global_contexts, var->name(), &lookup)) {
-      Handle<Context> global_context =
-          GlobalContextTable::GetContext(global_contexts, lookup.context_index);
+    Handle<ScriptContextTable> script_contexts(
+        global->native_context()->script_context_table());
+    ScriptContextTable::LookupResult lookup;
+    if (ScriptContextTable::Lookup(script_contexts, var->name(), &lookup)) {
+      Handle<Context> script_context =
+          ScriptContextTable::GetContext(script_contexts, lookup.context_index);
       HStoreNamedField* instr = Add<HStoreNamedField>(
-          Add<HConstant>(global_context),
+          Add<HConstant>(script_context),
           HObjectAccess::ForContextSlot(lookup.slot_index), value);
       USE(instr);
       DCHECK(instr->HasObservableSideEffects());
@@ -7845,7 +7845,7 @@ int HOptimizedGraphBuilder::InliningAstSize(Handle<JSFunction> target) {
     TraceInline(target, caller, "target not inlineable");
     return kNotInlinable;
   }
-  if (target_shared->DisableOptimizationReason() != kNoReason) {
+  if (target_shared->disable_optimization_reason() != kNoReason) {
     TraceInline(target, caller, "target contains unsupported syntax [early]");
     return kNotInlinable;
   }

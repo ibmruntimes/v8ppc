@@ -864,7 +864,6 @@ void Genesis::HookUpGlobalProxy(Handle<GlobalObject> global_object,
                                 Handle<JSGlobalProxy> global_proxy) {
   // Set the native context for the global object.
   global_object->set_native_context(*native_context());
-  global_object->set_global_context(*native_context());
   global_object->set_global_proxy(*global_proxy);
   global_proxy->set_native_context(*native_context());
   native_context()->set_global_proxy(*global_proxy);
@@ -909,9 +908,9 @@ void Genesis::InitializeGlobal(Handle<GlobalObject> global_object,
   Factory* factory = isolate->factory();
   Heap* heap = isolate->heap();
 
-  Handle<GlobalContextTable> global_context_table =
-      factory->NewGlobalContextTable();
-  native_context()->set_global_context_table(*global_context_table);
+  Handle<ScriptContextTable> script_context_table =
+      factory->NewScriptContextTable();
+  native_context()->set_script_context_table(*script_context_table);
 
   Handle<String> object_name = factory->Object_string();
   JSObject::AddProperty(
@@ -1562,9 +1561,6 @@ void Genesis::InstallNativeFunctions() {
                  native_object_get_notifier);
   INSTALL_NATIVE(JSFunction, "NativeObjectNotifierPerformChange",
                  native_object_notifier_perform_change);
-
-  INSTALL_NATIVE(Symbol, "symbolIterator", iterator_symbol);
-  INSTALL_NATIVE(Symbol, "symbolUnscopables", unscopables_symbol);
   INSTALL_NATIVE(JSFunction, "ArrayValues", array_values_iterator);
 
 #define INSTALL_NATIVE_FUNCTIONS_FOR(id, descr) InstallNativeFunctions_##id();
@@ -1601,6 +1597,7 @@ EMPTY_NATIVE_FUNCTIONS_FOR_FEATURE(harmony_regexps)
 EMPTY_NATIVE_FUNCTIONS_FOR_FEATURE(harmony_arrow_functions)
 EMPTY_NATIVE_FUNCTIONS_FOR_FEATURE(harmony_numeric_literals)
 EMPTY_NATIVE_FUNCTIONS_FOR_FEATURE(harmony_tostring)
+EMPTY_NATIVE_FUNCTIONS_FOR_FEATURE(harmony_templates)
 
 
 void Genesis::InstallNativeFunctions_harmony_proxies() {
@@ -1627,6 +1624,7 @@ EMPTY_INITIALIZE_GLOBAL_FOR_FEATURE(harmony_arrow_functions)
 EMPTY_INITIALIZE_GLOBAL_FOR_FEATURE(harmony_numeric_literals)
 EMPTY_INITIALIZE_GLOBAL_FOR_FEATURE(harmony_tostring)
 EMPTY_INITIALIZE_GLOBAL_FOR_FEATURE(harmony_proxies)
+EMPTY_INITIALIZE_GLOBAL_FOR_FEATURE(harmony_templates)
 
 void Genesis::InitializeGlobal_harmony_regexps() {
   Handle<JSObject> builtins(native_context()->builtins());
@@ -1707,7 +1705,6 @@ bool Genesis::InstallNatives() {
       Handle<JSBuiltinsObject>::cast(factory()->NewGlobalObject(builtins_fun));
   builtins->set_builtins(*builtins);
   builtins->set_native_context(*native_context());
-  builtins->set_global_context(*native_context());
   builtins->set_global_proxy(native_context()->global_proxy());
 
 
@@ -1990,6 +1987,17 @@ bool Genesis::InstallNatives() {
     return true;
   }
 
+  // Install public symbols.
+  {
+    static const PropertyAttributes attributes =
+        static_cast<PropertyAttributes>(READ_ONLY | DONT_DELETE);
+#define INSTALL_PUBLIC_SYMBOL(name, varname, description)                 \
+  Handle<String> varname = factory()->NewStringFromStaticChars(#varname); \
+  JSObject::AddProperty(builtins, varname, factory()->name(), attributes);
+    PUBLIC_SYMBOL_LIST(INSTALL_PUBLIC_SYMBOL)
+#undef INSTALL_PUBLIC_SYMBOL
+  }
+
   // Install natives.
   for (int i = Natives::GetDebuggerCount();
        i < Natives::GetBuiltinsCount();
@@ -2116,22 +2124,22 @@ bool Genesis::InstallNatives() {
     Handle<AccessorInfo> arguments_iterator =
         Accessors::ArgumentsIteratorInfo(isolate(), attribs);
     {
-      CallbacksDescriptor d(Handle<Name>(native_context()->iterator_symbol()),
-                            arguments_iterator, attribs);
+      CallbacksDescriptor d(factory()->iterator_symbol(), arguments_iterator,
+                            attribs);
       Handle<Map> map(native_context()->sloppy_arguments_map());
       Map::EnsureDescriptorSlack(map, 1);
       map->AppendDescriptor(&d);
     }
     {
-      CallbacksDescriptor d(Handle<Name>(native_context()->iterator_symbol()),
-                            arguments_iterator, attribs);
+      CallbacksDescriptor d(factory()->iterator_symbol(), arguments_iterator,
+                            attribs);
       Handle<Map> map(native_context()->aliased_arguments_map());
       Map::EnsureDescriptorSlack(map, 1);
       map->AppendDescriptor(&d);
     }
     {
-      CallbacksDescriptor d(Handle<Name>(native_context()->iterator_symbol()),
-                            arguments_iterator, attribs);
+      CallbacksDescriptor d(factory()->iterator_symbol(), arguments_iterator,
+                            attribs);
       Handle<Map> map(native_context()->strict_arguments_map());
       Map::EnsureDescriptorSlack(map, 1);
       map->AppendDescriptor(&d);
@@ -2170,6 +2178,8 @@ bool Genesis::InstallExperimentalNatives() {
   static const char* harmony_numeric_literals_natives[] = {NULL};
   static const char* harmony_tostring_natives[] = {"native harmony-tostring.js",
                                                    NULL};
+  static const char* harmony_templates_natives[] = {
+      "native harmony-templates.js", NULL};
 
   for (int i = ExperimentalNatives::GetDebuggerCount();
        i < ExperimentalNatives::GetBuiltinsCount(); i++) {

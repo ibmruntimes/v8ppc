@@ -9,9 +9,8 @@ var kMessages = {
   cyclic_proto:                  ["Cyclic __proto__ value"],
   code_gen_from_strings:         ["%0"],
   constructor_special_method:    ["Class constructor may not be an accessor"],
-  generator_running:             ["Generator is already running"],
-  generator_finished:            ["Generator has already finished"],
   // TypeError
+  generator_running:             ["Generator is already running"],
   unexpected_token:              ["Unexpected token ", "%0"],
   unexpected_token_number:       ["Unexpected number"],
   unexpected_token_string:       ["Unexpected string"],
@@ -19,9 +18,12 @@ var kMessages = {
   unexpected_reserved:           ["Unexpected reserved word"],
   unexpected_strict_reserved:    ["Unexpected strict mode reserved word"],
   unexpected_eos:                ["Unexpected end of input"],
+  unexpected_template_string:    ["Unexpected template string"],
   malformed_regexp:              ["Invalid regular expression: /", "%0", "/: ", "%1"],
   malformed_regexp_flags:        ["Invalid regular expression flags"],
   unterminated_regexp:           ["Invalid regular expression: missing /"],
+  unterminated_template:         ["Unterminated template literal"],
+  unterminated_template_expr:    ["Missing } in template expression"],
   regexp_flags:                  ["Cannot supply flags when constructing one RegExp from another"],
   incompatible_method_receiver:  ["Method ", "%0", " called on incompatible receiver ", "%1"],
   multiple_defaults_in_switch:   ["More than one default clause in switch statement"],
@@ -392,34 +394,26 @@ function MakeReferenceErrorEmbedded(type, arg) {
        else the line number.
  */
 function ScriptLineFromPosition(position) {
-  var lower = 0;
-  var upper = this.lineCount() - 1;
   var line_ends = this.line_ends;
+  var upper = line_ends.length - 1;
+  if (upper < 0) return -1;
 
   // We'll never find invalid positions so bail right away.
-  if (position > line_ends[upper]) {
-    return -1;
-  }
+  if (position > line_ends[upper]) return -1;
+  if (position <= line_ends[0]) return 0;
 
-  // This means we don't have to safe-guard indexing line_ends[i - 1].
-  if (position <= line_ends[0]) {
-    return 0;
-  }
-
-  // Binary search to find line # from position range.
-  while (upper >= 1) {
-    var i = (lower + upper) >> 1;
-
-    if (position > line_ends[i]) {
-      lower = i + 1;
-    } else if (position <= line_ends[i - 1]) {
-      upper = i - 1;
+  var lower = 1;
+  // Binary search.
+  while (true) {
+    var mid = (upper + lower) >> 1;
+    if (position <= line_ends[mid - 1]) {
+      upper = mid - 1;
+    } else if (position > line_ends[mid]){
+      lower = mid + 1;
     } else {
-      return i;
+      return mid;
     }
   }
-
-  return -1;
 }
 
 /**
@@ -1221,13 +1215,13 @@ function SetUpError() {
     %AddNamedProperty(f.prototype, "name", name, DONT_ENUM);
     %SetCode(f, function(m) {
       if (%_IsConstructCall()) {
+        try { captureStackTrace(this, f); } catch (e) { }
         // Define all the expected properties directly on the error
         // object. This avoids going through getters and setters defined
         // on prototype objects.
         if (!IS_UNDEFINED(m)) {
           %AddNamedProperty(this, 'message', ToString(m), DONT_ENUM);
         }
-        try { captureStackTrace(this, f); } catch (e) { }
       } else {
         return new f(m);
       }

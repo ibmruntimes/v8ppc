@@ -3,9 +3,7 @@
 // found in the LICENSE file.
 
 #include "src/compiler/linkage.h"
-#include "src/compiler/pipeline-statistics.h"
 #include "src/compiler/register-allocator.h"
-#include "src/compiler/register-allocator-verifier.h"
 #include "src/string-stream.h"
 
 namespace v8 {
@@ -537,6 +535,12 @@ RegisterAllocator::RegisterAllocator(const RegisterConfiguration* config,
   // when allocating local arrays.
   DCHECK(this->config()->num_double_registers() >=
          this->config()->num_general_registers());
+  assigned_registers_ =
+      new (code_zone()) BitVector(config->num_general_registers(), code_zone());
+  assigned_double_registers_ = new (code_zone())
+      BitVector(config->num_aliased_double_registers(), code_zone());
+  frame->SetAllocatedRegisters(assigned_registers_);
+  frame->SetAllocatedDoubleRegisters(assigned_double_registers_);
 }
 
 
@@ -1117,64 +1121,6 @@ void RegisterAllocator::ResolvePhis(const InstructionBlock* block) {
 }
 
 
-bool RegisterAllocator::Allocate(PipelineStatistics* stats,
-                                 VerificationType verification_type) {
-  SmartPointer<Zone> verifier_zone;
-  RegisterAllocatorVerifier* verifier = NULL;
-  if (verification_type == kVerifyAssignment) {
-    // Don't track usage for this zone in compiler stats.
-    verifier_zone.Reset(new Zone(local_zone()->isolate()));
-    verifier = new (verifier_zone.get())
-        RegisterAllocatorVerifier(verifier_zone.get(), code());
-  }
-  assigned_registers_ = new (code_zone())
-      BitVector(config()->num_general_registers(), code_zone());
-  assigned_double_registers_ = new (code_zone())
-      BitVector(config()->num_aliased_double_registers(), code_zone());
-  {
-    PhaseScope phase_scope(stats, "meet register constraints");
-    MeetRegisterConstraints();
-  }
-  if (!AllocationOk()) return false;
-  {
-    PhaseScope phase_scope(stats, "resolve phis");
-    ResolvePhis();
-  }
-  {
-    PhaseScope phase_scope(stats, "build live ranges");
-    BuildLiveRanges();
-  }
-  {
-    PhaseScope phase_scope(stats, "allocate general registers");
-    AllocateGeneralRegisters();
-  }
-  if (!AllocationOk()) return false;
-  {
-    PhaseScope phase_scope(stats, "allocate double registers");
-    AllocateDoubleRegisters();
-  }
-  if (!AllocationOk()) return false;
-  {
-    PhaseScope phase_scope(stats, "populate pointer maps");
-    PopulatePointerMaps();
-  }
-  {
-    PhaseScope phase_scope(stats, "connect ranges");
-    ConnectRanges();
-  }
-  {
-    PhaseScope phase_scope(stats, "resolve control flow");
-    ResolveControlFlow();
-  }
-  frame()->SetAllocatedRegisters(assigned_registers_);
-  frame()->SetAllocatedDoubleRegisters(assigned_double_registers_);
-  if (verifier != NULL) {
-    verifier->VerifyAssignment();
-  }
-  return true;
-}
-
-
 void RegisterAllocator::MeetRegisterConstraints() {
   for (auto block : code()->instruction_blocks()) {
     MeetRegisterConstraints(block);
@@ -1500,28 +1446,6 @@ void RegisterAllocator::BuildLiveRanges() {
         live_in_sets_[i]->Union(*live);
       }
     }
-
-#ifdef DEBUG
-    if (block_id == 0) {
-      BitVector::Iterator iterator(live);
-      bool found = false;
-      while (!iterator.Done()) {
-        found = true;
-        int operand_index = iterator.Current();
-        PrintF("Register allocator error: live v%d reached first block.\n",
-               operand_index);
-        LiveRange* range = LiveRangeFor(operand_index);
-        PrintF("  (first use is at %d)\n", range->first_pos()->pos().Value());
-        if (debug_name() == nullptr) {
-          PrintF("\n");
-        } else {
-          PrintF("  (function: %s)\n", debug_name());
-        }
-        iterator.Advance();
-      }
-      DCHECK(!found);
-    }
-#endif
   }
 
   for (int i = 0; i < live_ranges_.length(); ++i) {
@@ -1549,6 +1473,27 @@ void RegisterAllocator::BuildLiveRanges() {
       }
     }
   }
+}
+
+
+bool RegisterAllocator::ExistsUseWithoutDefinition() {
+  bool found = false;
+  BitVector::Iterator iterator(live_in_sets_[0]);
+  while (!iterator.Done()) {
+    found = true;
+    int operand_index = iterator.Current();
+    PrintF("Register allocator error: live v%d reached first block.\n",
+           operand_index);
+    LiveRange* range = LiveRangeFor(operand_index);
+    PrintF("  (first use is at %d)\n", range->first_pos()->pos().Value());
+    if (debug_name() == nullptr) {
+      PrintF("\n");
+    } else {
+      PrintF("  (function: %s)\n", debug_name());
+    }
+    iterator.Advance();
+  }
+  return found;
 }
 
 

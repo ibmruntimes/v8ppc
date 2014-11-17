@@ -172,12 +172,10 @@ class Arm64OperandConverter FINAL : public InstructionOperandConverter {
   } while (0)
 
 
-#define ASSEMBLE_TEST_AND_BRANCH(asm_instr, width)           \
-  do {                                                       \
-    bool fallthrough = IsNextInAssemblyOrder(i.InputRpo(3)); \
-    __ asm_instr(i.InputRegister##width(0), i.InputInt6(1),  \
-                 GetLabel(i.InputRpo(2)));                   \
-    if (!fallthrough) __ B(GetLabel(i.InputRpo(3)));         \
+#define ASSEMBLE_BRANCH_TO(target)                    \
+  do {                                                \
+    bool fallthrough = IsNextInAssemblyOrder(target); \
+    if (!fallthrough) __ B(GetLabel(target));         \
   } while (0)
 
 
@@ -430,16 +428,28 @@ void CodeGenerator::AssembleArchInstruction(Instruction* instr) {
               i.InputInt8(2));
       break;
     case kArm64Tbz:
-      ASSEMBLE_TEST_AND_BRANCH(Tbz, 64);
+      __ Tbz(i.InputRegister64(0), i.InputInt6(1), GetLabel(i.InputRpo(2)));
+      ASSEMBLE_BRANCH_TO(i.InputRpo(3));
       break;
     case kArm64Tbz32:
-      ASSEMBLE_TEST_AND_BRANCH(Tbz, 32);
+      __ Tbz(i.InputRegister32(0), i.InputInt5(1), GetLabel(i.InputRpo(2)));
+      ASSEMBLE_BRANCH_TO(i.InputRpo(3));
       break;
     case kArm64Tbnz:
-      ASSEMBLE_TEST_AND_BRANCH(Tbnz, 64);
+      __ Tbnz(i.InputRegister64(0), i.InputInt6(1), GetLabel(i.InputRpo(2)));
+      ASSEMBLE_BRANCH_TO(i.InputRpo(3));
       break;
     case kArm64Tbnz32:
-      ASSEMBLE_TEST_AND_BRANCH(Tbnz, 32);
+      __ Tbnz(i.InputRegister32(0), i.InputInt5(1), GetLabel(i.InputRpo(2)));
+      ASSEMBLE_BRANCH_TO(i.InputRpo(3));
+      break;
+    case kArm64Cbz32:
+      __ Cbz(i.InputRegister32(0), GetLabel(i.InputRpo(1)));
+      ASSEMBLE_BRANCH_TO(i.InputRpo(2));
+      break;
+    case kArm64Cbnz32:
+      __ Cbnz(i.InputRegister32(0), GetLabel(i.InputRpo(1)));
+      ASSEMBLE_BRANCH_TO(i.InputRpo(2));
       break;
     case kArm64Claim: {
       int words = MiscField::decode(instr->opcode());
@@ -792,23 +802,6 @@ void CodeGenerator::AssemblePrologue() {
     __ Prologue(info->IsCodePreAgingActive());
     frame()->SetRegisterSaveAreaSize(
         StandardFrameConstants::kFixedFrameSizeFromFp);
-
-    // Sloppy mode functions and builtins need to replace the receiver with the
-    // global proxy when called as functions (without an explicit receiver
-    // object).
-    // TODO(mstarzinger/verwaest): Should this be moved back into the CallIC?
-    if (info->strict_mode() == SLOPPY && !info->is_native()) {
-      Label ok;
-      // +2 for return address and saved frame pointer.
-      int receiver_slot = info->scope()->num_parameters() + 2;
-      __ Ldr(x10, MemOperand(fp, receiver_slot * kXRegSize));
-      __ JumpIfNotRoot(x10, Heap::kUndefinedValueRootIndex, &ok);
-      __ Ldr(x10, GlobalObjectMemOperand());
-      __ Ldr(x10, FieldMemOperand(x10, GlobalObject::kGlobalProxyOffset));
-      __ Str(x10, MemOperand(fp, receiver_slot * kXRegSize));
-      __ Bind(&ok);
-    }
-
   } else {
     __ SetStackPointer(jssp);
     __ StubPrologue();

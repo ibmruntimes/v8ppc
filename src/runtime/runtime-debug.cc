@@ -986,6 +986,17 @@ static bool SetClosureVariableValue(Isolate* isolate, Handle<Context> context,
 }
 
 
+static bool SetBlockContextVariableValue(Handle<Context> block_context,
+                                         Handle<String> variable_name,
+                                         Handle<Object> new_value) {
+  DCHECK(block_context->IsBlockContext());
+  Handle<ScopeInfo> scope_info(ScopeInfo::cast(block_context->extension()));
+
+  return SetContextLocalValue(block_context->GetIsolate(), scope_info,
+                              block_context, variable_name, new_value);
+}
+
+
 // Create a plain JSObject which materializes the scope for the specified
 // catch context.
 MUST_USE_RESULT static MaybeHandle<JSObject> MaterializeCatchScope(
@@ -1147,7 +1158,7 @@ class ScopeIterator {
           scope_info->scope_type() != ARROW_SCOPE) {
         // Global or eval code.
         CompilationInfoWithZone info(script);
-        if (scope_info->scope_type() == GLOBAL_SCOPE) {
+        if (scope_info->scope_type() == SCRIPT_SCOPE) {
           info.MarkAsGlobal();
         } else {
           DCHECK(scope_info->scope_type() == EVAL_SCOPE);
@@ -1223,7 +1234,7 @@ class ScopeIterator {
         case MODULE_SCOPE:
           DCHECK(context_->IsModuleContext());
           return ScopeTypeModule;
-        case GLOBAL_SCOPE:
+        case SCRIPT_SCOPE:
           DCHECK(context_->IsNativeContext());
           return ScopeTypeGlobal;
         case WITH_SCOPE:
@@ -1304,8 +1315,8 @@ class ScopeIterator {
         return SetClosureVariableValue(isolate_, CurrentContext(),
                                        variable_name, new_value);
       case ScopeIterator::ScopeTypeBlock:
-        // TODO(2399): should we implement it?
-        break;
+        return SetBlockContextVariableValue(CurrentContext(), variable_name,
+                                            new_value);
       case ScopeIterator::ScopeTypeModule:
         // TODO(2399): should we implement it?
         break;

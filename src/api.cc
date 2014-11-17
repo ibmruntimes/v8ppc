@@ -14,6 +14,7 @@
 #include "include/v8-testing.h"
 #include "src/assert-scope.h"
 #include "src/background-parsing-task.h"
+#include "src/base/functional.h"
 #include "src/base/platform/platform.h"
 #include "src/base/platform/time.h"
 #include "src/base/utils/random-number-generator.h"
@@ -1536,7 +1537,10 @@ void ObjectTemplate::SetInternalFieldCount(int value) {
 
 ScriptCompiler::CachedData::CachedData(const uint8_t* data_, int length_,
                                        BufferPolicy buffer_policy_)
-    : data(data_), length(length_), buffer_policy(buffer_policy_) {}
+    : data(data_),
+      length(length_),
+      rejected(false),
+      buffer_policy(buffer_policy_) {}
 
 
 ScriptCompiler::CachedData::~CachedData() {
@@ -1567,7 +1571,7 @@ Local<Script> UnboundScript::BindToCurrentContext() {
       function_info(i::SharedFunctionInfo::cast(*obj), obj->GetIsolate());
   i::Handle<i::JSFunction> function =
       obj->GetIsolate()->factory()->NewFunctionFromSharedFunctionInfo(
-          function_info, obj->GetIsolate()->global_context());
+          function_info, obj->GetIsolate()->native_context());
   return ToApiHandle<Script>(function);
 }
 
@@ -1732,7 +1736,7 @@ Local<UnboundScript> ScriptCompiler::CompileUnbound(
     EXCEPTION_PREAMBLE(isolate);
     i::Handle<i::SharedFunctionInfo> result = i::Compiler::CompileScript(
         str, name_obj, line_offset, column_offset, is_shared_cross_origin,
-        isolate->global_context(), NULL, &script_data, options,
+        isolate->native_context(), NULL, &script_data, options,
         i::NOT_NATIVES_CODE);
     has_pending_exception = result.is_null();
     if (has_pending_exception && script_data != NULL) {
@@ -1752,6 +1756,8 @@ Local<UnboundScript> ScriptCompiler::CompileUnbound(
       source->cached_data = new CachedData(
           script_data->data(), script_data->length(), CachedData::BufferOwned);
       script_data->ReleaseDataOwnership();
+    } else if (options == kConsumeParserCache || options == kConsumeCodeCache) {
+      source->cached_data->rejected = script_data->rejected();
     }
     delete script_data;
   }
@@ -1777,17 +1783,6 @@ Local<Script> ScriptCompiler::Compile(
 ScriptCompiler::ScriptStreamingTask* ScriptCompiler::StartStreamingScript(
     Isolate* v8_isolate, StreamedSource* source, CompileOptions options) {
   i::Isolate* isolate = reinterpret_cast<i::Isolate*>(v8_isolate);
-  if (!isolate->global_context().is_null() &&
-      !isolate->global_context()->IsNativeContext()) {
-    // The context chain is non-trivial, and constructing the corresponding
-    // non-trivial Scope chain outside the V8 heap is not implemented. Don't
-    // stream the script. This will only occur if Harmony scoping is enabled and
-    // a previous script has introduced "let" or "const" variables. TODO(marja):
-    // Implement externalizing ScopeInfos and constructing non-trivial Scope
-    // chains independent of the V8 heap so that we can stream also in this
-    // case.
-    return NULL;
-  }
   return new i::BackgroundParsingTask(source->impl(), options,
                                       i::FLAG_stack_size, isolate);
 }
@@ -1824,7 +1819,7 @@ Local<Script> ScriptCompiler::Compile(Isolate* v8_isolate,
                                          v8::True(v8_isolate));
     }
     source->info->set_script(script);
-    source->info->SetContext(isolate->global_context());
+    source->info->SetContext(isolate->native_context());
 
     EXCEPTION_PREAMBLE(isolate);
 
@@ -1854,6 +1849,13 @@ Local<Script> ScriptCompiler::Compile(Isolate* v8_isolate,
     return Local<Script>();
   }
   return generic->BindToCurrentContext();
+}
+
+
+uint32_t ScriptCompiler::CachedDataVersionTag() {
+  return static_cast<uint32_t>(base::hash_combine(
+      internal::Version::Hash(), internal::FlagList::Hash(),
+      static_cast<uint32_t>(internal::CpuFeatures::SupportedFeatures())));
 }
 
 
@@ -6238,27 +6240,21 @@ Local<Symbol> v8::Symbol::ForApi(Isolate* isolate, Local<String> name) {
 }
 
 
-static Local<Symbol> GetWellKnownSymbol(Isolate* isolate, const char* name) {
-  i::Isolate* i_isolate = reinterpret_cast<i::Isolate*>(isolate);
-  i::Handle<i::String> i_name =
-      Utils::OpenHandle(*String::NewFromUtf8(isolate, name));
-  i::Handle<i::String> part = i_isolate->factory()->for_intern_string();
-  return Utils::ToLocal(SymbolFor(i_isolate, i_name, part));
-}
-
-
 Local<Symbol> v8::Symbol::GetIterator(Isolate* isolate) {
-  return GetWellKnownSymbol(isolate, "Symbol.iterator");
+  i::Isolate* i_isolate = reinterpret_cast<i::Isolate*>(isolate);
+  return Utils::ToLocal(i_isolate->factory()->iterator_symbol());
 }
 
 
 Local<Symbol> v8::Symbol::GetUnscopables(Isolate* isolate) {
-  return GetWellKnownSymbol(isolate, "Symbol.unscopables");
+  i::Isolate* i_isolate = reinterpret_cast<i::Isolate*>(isolate);
+  return Utils::ToLocal(i_isolate->factory()->unscopables_symbol());
 }
 
 
 Local<Symbol> v8::Symbol::GetToStringTag(Isolate* isolate) {
-  return GetWellKnownSymbol(isolate, "Symbol.toStringTag");
+  i::Isolate* i_isolate = reinterpret_cast<i::Isolate*>(isolate);
+  return Utils::ToLocal(i_isolate->factory()->to_string_tag_symbol());
 }
 
 
