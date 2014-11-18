@@ -74,7 +74,8 @@ class JSGenericLowering : public LoweringBuilder {
   JSGraph* jsgraph_;
   Linkage* linkage_;
   MachineOperatorBuilder* machine_;
-  SetOncePointer<Node> centrystub_constant_;
+  SetOncePointer<Node> centrystub_constant1_;
+  SetOncePointer<Node> centrystub_constant2_;
 };
 }
 }

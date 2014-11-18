@@ -364,14 +364,17 @@ void JSGenericLowering::ReplaceWithRuntimeCall(Node* node,
   Operator::Property props = node->op()->properties();
   const Runtime::Function* fun = Runtime::FunctionForId(f);
   int nargs = (nargs_override < 0) ? fun->nargs : nargs_override;
+  int result_size = fun->result_size;
   CallDescriptor* desc = linkage()->GetRuntimeCallDescriptor(
       f, nargs, props, DeoptimizationSupportForNode(node));
   Node* ref = ExternalConstant(ExternalReference(f, isolate()));
   Node* arity = Int32Constant(nargs);
-  if (!centrystub_constant_.is_set()) {
-    centrystub_constant_.set(CodeConstant(CEntryStub(isolate(), 1).GetCode()));
+  SetOncePointer<Node>* stub = (result_size == 1) ?
+    &centrystub_constant1_ : &centrystub_constant2_;
+  if (!stub->is_set()) {
+    stub->set(CodeConstant(CEntryStub(isolate(), result_size).GetCode()));
   }
-  PatchInsertInput(node, 0, centrystub_constant_.get());
+  PatchInsertInput(node, 0, stub->get());
   PatchInsertInput(node, nargs + 1, ref);
   PatchInsertInput(node, nargs + 2, arity);
   PatchOperator(node, common()->Call(desc));
