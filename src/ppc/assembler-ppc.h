@@ -954,11 +954,14 @@ class Assembler : public AssemblerBase {
   void lhz(Register dst, const MemOperand& src);
   void lhzx(Register dst, const MemOperand& src);
   void lhzux(Register dst, const MemOperand& src);
+  void lha(Register dst, const MemOperand& src);
+  void lhax(Register dst, const MemOperand& src);
   void lwz(Register dst, const MemOperand& src);
   void lwzu(Register dst, const MemOperand& src);
   void lwzx(Register dst, const MemOperand& src);
   void lwzux(Register dst, const MemOperand& src);
   void lwa(Register dst, const MemOperand& src);
+  void lwax(Register dst, const MemOperand& src);
   void stb(Register dst, const MemOperand& src);
   void stbx(Register dst, const MemOperand& src);
   void stbux(Register dst, const MemOperand& src);

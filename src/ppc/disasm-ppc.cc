@@ -792,6 +792,10 @@ void Decoder::DecodeExt2(Instruction* instr) {
       Format(instr, "lwzux   'rt, 'ra, 'rb");
       return;
     }
+    case LWAX: {
+      Format(instr, "lwax    'rt, 'ra, 'rb");
+      return;
+    }
     case LBZX: {
       Format(instr, "lbzx    'rt, 'ra, 'rb");
       return;
@@ -806,6 +810,10 @@ void Decoder::DecodeExt2(Instruction* instr) {
     }
     case LHZUX: {
       Format(instr, "lhzux   'rt, 'ra, 'rb");
+      return;
+    }
+    case LHAX: {
+      Format(instr, "lhax    'rt, 'ra, 'rb");
       return;
     }
 #if V8_TARGET_ARCH_PPC64

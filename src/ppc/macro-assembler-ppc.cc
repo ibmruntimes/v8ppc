@@ -4720,14 +4720,8 @@ void MacroAssembler::LoadWordArith(Register dst, const MemOperand& mem,
   int offset = mem.offset();
 
   if (!scratch.is(no_reg) && !is_int16(offset)) {
-    /* cannot use d-form */
     LoadIntLiteral(scratch, offset);
-#if V8_TARGET_ARCH_PPC64
-    // lwax(dst, MemOperand(mem.ra(), scratch));
-    DCHECK(0);  // lwax not yet implemented
-#else
-    lwzx(dst, MemOperand(mem.ra(), scratch));
-#endif
+    lwax(dst, MemOperand(mem.ra(), scratch));
   } else {
 #if V8_TARGET_ARCH_PPC64
     int misaligned = (offset & 3);
@@ -4775,6 +4769,20 @@ void MacroAssembler::StoreWord(Register src, const MemOperand& mem,
     stwx(src, MemOperand(base, scratch));
   } else {
     stw(src, mem);
+  }
+}
+
+
+void MacroAssembler::LoadHalfWordArith(Register dst, const MemOperand& mem,
+                                       Register scratch) {
+  int offset = mem.offset();
+
+  if (!is_int16(offset)) {
+    DCHECK(!scratch.is(no_reg));
+    mov(scratch, Operand(offset));
+    lhax(dst, MemOperand(mem.ra(), scratch));
+  } else {
+    lha(dst, mem);
   }
 }
 
@@ -4854,13 +4862,12 @@ void MacroAssembler::LoadRepresentation(Register dst,
   } else if (r.IsUInteger8()) {
     LoadByte(dst, mem, scratch);
   } else if (r.IsInteger16()) {
-    LoadHalfWord(dst, mem, scratch);
-    extsh(dst, dst);
+    LoadHalfWordArith(dst, mem, scratch);
   } else if (r.IsUInteger16()) {
     LoadHalfWord(dst, mem, scratch);
 #if V8_TARGET_ARCH_PPC64
   } else if (r.IsInteger32()) {
-    LoadWord(dst, mem, scratch);
+    LoadWordArith(dst, mem, scratch);
 #endif
   } else {
     LoadP(dst, mem, scratch);

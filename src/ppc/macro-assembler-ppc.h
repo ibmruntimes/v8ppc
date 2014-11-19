@@ -526,6 +526,10 @@ class MacroAssembler: public Assembler {
                     const MemOperand& mem,
                     Register scratch);
 
+  void LoadHalfWordArith(Register dst,
+                         const MemOperand& mem,
+                         Register scratch = no_reg);
+
   void StoreHalfWord(Register src,
                      const MemOperand& mem,
                      Register scratch);
