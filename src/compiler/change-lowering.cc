@@ -161,7 +161,6 @@ Reduction ChangeLowering::ChangeInt32ToTagged(Node* val, Node* control) {
 Reduction ChangeLowering::ChangeTaggedToUI32(Node* val, Node* control,
                                              Signedness signedness) {
   STATIC_ASSERT(kSmiTag == 0);
-  STATIC_ASSERT(kSmiTagMask == 1);
 
   Node* tag = graph()->NewNode(machine()->WordAnd(), val,
                                jsgraph()->Int32Constant(kSmiTagMask));
@@ -187,7 +186,6 @@ Reduction ChangeLowering::ChangeTaggedToUI32(Node* val, Node* control,
 
 Reduction ChangeLowering::ChangeTaggedToFloat64(Node* val, Node* control) {
   STATIC_ASSERT(kSmiTag == 0);
-  STATIC_ASSERT(kSmiTagMask == 1);
 
   Node* tag = graph()->NewNode(machine()->WordAnd(), val,
                                jsgraph()->Int32Constant(kSmiTagMask));
@@ -210,7 +208,6 @@ Reduction ChangeLowering::ChangeTaggedToFloat64(Node* val, Node* control) {
 
 Reduction ChangeLowering::ChangeUint32ToTagged(Node* val, Node* control) {
   STATIC_ASSERT(kSmiTag == 0);
-  STATIC_ASSERT(kSmiTagMask == 1);
 
   Node* cmp = graph()->NewNode(machine()->Uint32LessThanOrEqual(), val,
                                SmiMaxValueConstant());

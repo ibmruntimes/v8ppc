@@ -27,7 +27,7 @@ struct ZoneRep {
     return reinterpret_cast<Struct*>(t);
   }
   static bitset AsBitset(Type* t) {
-    return static_cast<bitset>(reinterpret_cast<uintptr_t>(t) ^ 1u);
+    return static_cast<bitset>(reinterpret_cast<uintptr_t>(t) >> 1);
   }
   static Struct* AsUnion(Type* t) {
     return AsStruct(t);
@@ -58,7 +58,8 @@ struct HeapRep {
 
   static Struct* AsStruct(Handle<HeapType> t) { return FixedArray::cast(*t); }
   static bitset AsBitset(Handle<HeapType> t) {
-    return static_cast<bitset>(reinterpret_cast<uintptr_t>(*t));
+    return static_cast<bitset>(
+      reinterpret_cast<uintptr_t>(*t) >> (kSmiTagSize + kSmiShiftSize));
   }
   static Struct* AsUnion(Handle<HeapType> t) { return AsStruct(t); }
   static int Length(Struct* structured) { return structured->length() - 1; }
@@ -412,7 +413,7 @@ struct Tests : Rep {
     CHECK(this->IsBitset(T.Any));
 
     CHECK(bitset(0) == this->AsBitset(T.None));
-    CHECK(bitset(0xfffffffeu) == this->AsBitset(T.Any));
+    CHECK(bitset(0x7fffffffu) == this->AsBitset(T.Any));
 
     // Union(T1, T2) is bitset for bitsets T1,T2
     for (TypeIterator it1 = T.types.begin(); it1 != T.types.end(); ++it1) {
