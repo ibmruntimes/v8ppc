@@ -206,22 +206,23 @@ static void VerifyMemoryChunk(Isolate* isolate,
 TEST(Regress3540) {
   Isolate* isolate = CcTest::i_isolate();
   Heap* heap = isolate->heap();
+  const int pageSize = Page::kPageSize;
   MemoryAllocator* memory_allocator = new MemoryAllocator(isolate);
   CHECK(
       memory_allocator->SetUp(heap->MaxReserved(), heap->MaxExecutableSize()));
   TestMemoryAllocatorScope test_allocator_scope(isolate, memory_allocator);
   CodeRange* code_range = new CodeRange(isolate);
-  const size_t code_range_size = 4 * MB;
+  const size_t code_range_size = 4 * pageSize;
   if (!code_range->SetUp(code_range_size)) return;
   Address address;
   size_t size;
-  address = code_range->AllocateRawMemory(code_range_size - MB,
-                                          code_range_size - MB, &size);
+  address = code_range->AllocateRawMemory(code_range_size - pageSize,
+                                          code_range_size - pageSize, &size);
   CHECK(address != NULL);
   Address null_address;
   size_t null_size;
   null_address = code_range->AllocateRawMemory(
-      code_range_size - MB, code_range_size - MB, &null_size);
+      code_range_size - pageSize, code_range_size - pageSize, &null_size);
   CHECK(null_address == NULL);
   code_range->FreeRawMemory(address, size);
   delete code_range;
