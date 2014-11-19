@@ -67,7 +67,8 @@ class JSGenericLowering : public Reducer {
   CompilationInfo* info_;
   JSGraph* jsgraph_;
   Linkage* linkage_;
-  SetOncePointer<Node> centrystub_constant_;
+  SetOncePointer<Node> centrystub_constant1_;
+  SetOncePointer<Node> centrystub_constant2_;
 };
 
 }  // namespace compiler
