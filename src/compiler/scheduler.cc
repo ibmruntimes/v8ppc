@@ -1446,9 +1446,9 @@ void Scheduler::FuseFloatingControl(BasicBlock* block, Node* node) {
   // Iterate on phase 2: Compute special RPO and dominator tree.
   special_rpo_->UpdateSpecialRPO(block, schedule_->block(node));
   // TODO(mstarzinger): Currently "iterate on" means "re-run". Fix that.
-  for (BasicBlock* block : schedule_->all_blocks_) {
-    block->set_dominator_depth(-1);
-    block->set_dominator(NULL);
+  for (BasicBlock* b : schedule_->all_blocks_) {
+    b->set_dominator_depth(-1);
+    b->set_dominator(NULL);
   }
   GenerateImmediateDominatorTree();
 
@@ -1457,8 +1457,8 @@ void Scheduler::FuseFloatingControl(BasicBlock* block, Node* node) {
   // temporary solution and should be merged into the rest of the scheduler as
   // soon as the approach settled for all floating loops.
   NodeVector propagation_roots(cfg_builder.control_);
-  for (Node* node : cfg_builder.control_) {
-    for (Node* use : node->uses()) {
+  for (Node* n : cfg_builder.control_) {
+    for (Node* use : n->uses()) {
       if (use->opcode() == IrOpcode::kPhi ||
           use->opcode() == IrOpcode::kEffectPhi) {
         propagation_roots.push_back(use);
