@@ -1884,13 +1884,13 @@ void LCodeGen::DoSubI(LSubI* instr) {
     }
 #endif
     DeoptimizeIf(lt, instr, cr0);
+#if V8_TARGET_ARCH_PPC64
+    if (!instr->hydrogen()->representation().IsSmi()) {
+      __ extsw(result, result);
+    }
+#endif
   }
 
-#if V8_TARGET_ARCH_PPC64
-  if (!instr->hydrogen()->representation().IsSmi()) {
-    __ extsw(result, result);
-  }
-#endif
 }
 
 
@@ -2102,13 +2102,12 @@ void LCodeGen::DoAddI(LAddI* instr) {
     }
 #endif
     DeoptimizeIf(lt, instr, cr0);
-  }
-
 #if V8_TARGET_ARCH_PPC64
-  if (isInteger) {
-    __ extsw(result, result);
-  }
+    if (isInteger) {
+      __ extsw(result, result);
+    }
 #endif
+  }
 }
 
 
