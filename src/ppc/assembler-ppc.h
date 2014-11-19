@@ -847,6 +847,12 @@ class Assembler : public AssemblerBase {
       case ge:
         isel(rt, rb, ra, encode_crbit(cr, CR_LT));
         break;
+      case overflow:
+        isel(rt, ra, rb, encode_crbit(cr, CR_SO));
+        break;
+      case nooverflow:
+        isel(rt, rb, ra, encode_crbit(cr, CR_SO));
+        break;
       default:
         UNIMPLEMENTED();
     }

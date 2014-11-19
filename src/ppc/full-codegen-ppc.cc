@@ -2425,13 +2425,13 @@ void FullCodeGenerator::EmitInlineSmiBinaryOp(BinaryOperation* expr,
     }
     case Token::ADD: {
       __ AddAndCheckForOverflow(scratch1, left, right, scratch2, r0);
-      __ bne(&stub_call, cr0);
+      __ BranchOnOverflow(&stub_call);
       __ mr(right, scratch1);
       break;
     }
     case Token::SUB: {
       __ SubAndCheckForOverflow(scratch1, left, right, scratch2, r0);
-      __ bne(&stub_call, cr0);
+      __ BranchOnOverflow(&stub_call);
       __ mr(right, scratch1);
       break;
     }
@@ -2444,7 +2444,7 @@ void FullCodeGenerator::EmitInlineSmiBinaryOp(BinaryOperation* expr,
       __ Mul(scratch1, r0, ip);
       // Check for overflowing the smi range - no overflow if higher 33 bits of
       // the result are identical.
-      __ TestIfInt32(scratch1, scratch2, ip);
+      __ TestIfInt32(scratch1, r0);
       __ bne(&stub_call);
 #else
       __ SmiUntag(ip, right);

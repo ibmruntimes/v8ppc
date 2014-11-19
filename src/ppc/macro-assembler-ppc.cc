@@ -2493,7 +2493,7 @@ void MacroAssembler::TryDoubleToInt32Exact(Register result,
                        result, double_scratch);
 
 #if V8_TARGET_ARCH_PPC64
-  TestIfInt32(result, scratch, r0);
+  TestIfInt32(result, r0);
 #else
   TestIfInt32(scratch, result, r0);
 #endif
@@ -2534,7 +2534,7 @@ void MacroAssembler::TryInt32Floor(Register result,
 
   // Test for overflow
 #if V8_TARGET_ARCH_PPC64
-  TestIfInt32(result, scratch, r0);
+  TestIfInt32(result, r0);
 #else
   TestIfInt32(scratch, result, r0);
 #endif
@@ -2554,7 +2554,9 @@ void MacroAssembler::TryInlineTruncateDoubleToI(Register result,
                                                 DoubleRegister double_input,
                                                 Label* done) {
   DoubleRegister double_scratch = kScratchDoubleReg;
+#if !V8_TARGET_ARCH_PPC64
   Register scratch = ip;
+#endif
 
   ConvertDoubleToInt64(double_input,
 #if !V8_TARGET_ARCH_PPC64
@@ -2564,7 +2566,7 @@ void MacroAssembler::TryInlineTruncateDoubleToI(Register result,
 
   // Test for overflow
 #if V8_TARGET_ARCH_PPC64
-  TestIfInt32(result, scratch, r0);
+  TestIfInt32(result, r0);
 #else
   TestIfInt32(scratch, result, r0);
 #endif
