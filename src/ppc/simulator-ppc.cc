@@ -2341,6 +2341,29 @@ bool Simulator::ExecuteExt2_9bit_part2(Instruction* instr) {
       }
       break;
     }
+    case DIVWU: {
+      int rt = instr->RTValue();
+      int ra = instr->RAValue();
+      int rb = instr->RBValue();
+      uint32_t ra_val = get_register(ra);
+      uint32_t rb_val = get_register(rb);
+      bool overflow = (rb_val == 0);
+      // result is undefined if divisor is zero
+      uint32_t alu_out = (overflow) ? -1 : ra_val / rb_val;
+      set_register(rt, alu_out);
+      if (instr->Bit(10)) {  // OE bit set
+        if (overflow) {
+            special_reg_xer_ |= 0xC0000000;  // set SO,OV
+        } else {
+            special_reg_xer_ &= ~0x40000000;  // clear OV
+        }
+      }
+      if (instr->Bit(0)) {  // RC bit set
+        bool setSO = (special_reg_xer_ & 0x80000000);
+        SetCR0(alu_out, setSO);
+      }
+      break;
+    }
 #if V8_TARGET_ARCH_PPC64
     case DIVD: {
       int rt = instr->RTValue();
@@ -2356,6 +2379,21 @@ bool Simulator::ExecuteExt2_9bit_part2(Instruction* instr) {
                          (ra_val == kMinLongLong && rb_val == -1)) ?
         -1 :
         ra_val / rb_val;
+      set_register(rt, alu_out);
+      if (instr->Bit(0)) {  // RC bit set
+        SetCR0(alu_out);
+      }
+      // todo - handle OE bit
+      break;
+    }
+    case DIVDU: {
+      int rt = instr->RTValue();
+      int ra = instr->RAValue();
+      int rb = instr->RBValue();
+      uint64_t ra_val = get_register(ra);
+      uint64_t rb_val = get_register(rb);
+      // result is undefined if divisor is zero
+      uint64_t alu_out = (rb_val == 0) ? -1 : ra_val / rb_val;
       set_register(rt, alu_out);
       if (instr->Bit(0)) {  // RC bit set
         SetCR0(alu_out);

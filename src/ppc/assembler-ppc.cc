@@ -934,6 +934,13 @@ void Assembler::divw(Register dst, Register src1, Register src2,
 }
 
 
+// Divide word unsigned
+void Assembler::divwu(Register dst, Register src1, Register src2,
+                      OEBit o, RCBit r) {
+  xo_form(EXT2 | DIVWU, dst, src1, src2, o, r);
+}
+
+
 void Assembler::addi(Register dst, Register src, const Operand& imm) {
   DCHECK(!src.is(r0));  // use li instead to show intent
   d_form(ADDI, dst, src, imm.imm_, true);
@@ -1480,6 +1487,12 @@ void Assembler::mulld(Register dst, Register src1, Register src2,
 void Assembler::divd(Register dst, Register src1, Register src2,
                      OEBit o, RCBit r) {
   xo_form(EXT2 | DIVD, dst, src1, src2, o, r);
+}
+
+
+void Assembler::divdu(Register dst, Register src1, Register src2,
+                      OEBit o, RCBit r) {
+  xo_form(EXT2 | DIVDU, dst, src1, src2, o, r);
 }
 #endif
 

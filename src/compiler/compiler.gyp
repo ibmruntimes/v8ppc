@@ -54,6 +54,11 @@
             'x64/instruction-selector-x64-unittest.cc',
           ],
         }],
+        ['v8_target_arch=="ppc" or v8_target_arch=="ppc64"', {
+          'sources': [  ### gcmole(arch:ppc) ###
+            'ppc/instruction-selector-ppc-unittest.cc',
+          ],
+        }],
       ],
     },
   ],
