@@ -112,6 +112,7 @@ void CodeGenerator::AssembleArchInstruction(Instruction* instr) {
 
   switch (ArchOpcodeField::decode(instr->opcode())) {
     case kArchCallCodeObject: {
+      EnsureSpaceForLazyDeopt();
       if (HasImmediateInput(instr, 0)) {
         Handle<Code> code = Handle<Code>::cast(i.InputHeapObject(0));
         __ call(code, RelocInfo::CODE_TARGET);
@@ -123,6 +124,7 @@ void CodeGenerator::AssembleArchInstruction(Instruction* instr) {
       break;
     }
     case kArchCallJSFunction: {
+      EnsureSpaceForLazyDeopt();
       Register func = i.InputRegister(0);
       if (FLAG_debug_code) {
         // Check the function's context matches the context argument.
@@ -283,6 +285,9 @@ void CodeGenerator::AssembleArchInstruction(Instruction* instr) {
       __ add(esp, Immediate(kDoubleSize));
       break;
     }
+    case kSSEFloat64Sqrt:
+      __ sqrtsd(i.OutputDoubleRegister(), i.InputOperand(0));
+      break;
     case kSSEFloat64ToInt32:
       __ cvttsd2si(i.OutputRegister(), i.InputOperand(0));
       break;
@@ -931,6 +936,21 @@ void CodeGenerator::AssembleSwap(InstructionOperand* source,
 
 
 void CodeGenerator::AddNopForSmiCodeInlining() { __ nop(); }
+
+
+void CodeGenerator::EnsureSpaceForLazyDeopt() {
+  int space_needed = Deoptimizer::patch_size();
+  if (!linkage()->info()->IsStub()) {
+    // Ensure that we have enough space after the previous lazy-bailout
+    // instruction for patching the code here.
+    int current_pc = masm()->pc_offset();
+    if (current_pc < last_lazy_deopt_pc_ + space_needed) {
+      int padding_size = last_lazy_deopt_pc_ + space_needed - current_pc;
+      __ Nop(padding_size);
+    }
+  }
+  MarkLazyDeoptSite();
+}
 
 #undef __
 

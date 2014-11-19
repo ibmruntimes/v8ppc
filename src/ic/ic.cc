@@ -929,7 +929,14 @@ Handle<Code> IC::ComputeHandler(LookupIterator* lookup, Handle<Object> value) {
   code = CompileHandler(lookup, value, flag);
   DCHECK(code->is_handler());
 
-  if (code->type() != Code::NORMAL) {
+  // TODO(mvstanton): we'd only like to cache code on the map when it's custom
+  // code compiled for this map, otherwise it's already cached in the global
+  // code
+  // cache. We are also guarding against installing code with flags that don't
+  // match the desired CacheHolderFlag computed above, which would lead to
+  // invalid lookups later.
+  if (code->type() != Code::NORMAL &&
+      Code::ExtractCacheHolderFromFlags(code->flags()) == flag) {
     Map::UpdateCodeCache(stub_holder_map, lookup->name(), code);
   }
 
@@ -1346,13 +1353,42 @@ Handle<Code> StoreIC::initialize_stub(Isolate* isolate,
 
 
 Handle<Code> StoreIC::megamorphic_stub() {
-  return PropertyICCompiler::ComputeStore(isolate(), MEGAMORPHIC,
-                                          extra_ic_state());
+  if (kind() == Code::STORE_IC) {
+    return PropertyICCompiler::ComputeStore(isolate(), MEGAMORPHIC,
+                                            extra_ic_state());
+  } else {
+    DCHECK(kind() == Code::KEYED_STORE_IC);
+    if (strict_mode() == STRICT) {
+      return isolate()->builtins()->KeyedStoreIC_Generic_Strict();
+    } else {
+      return isolate()->builtins()->KeyedStoreIC_Generic();
+    }
+  }
 }
 
 
 Handle<Code> StoreIC::generic_stub() const {
-  return PropertyICCompiler::ComputeStore(isolate(), GENERIC, extra_ic_state());
+  if (kind() == Code::STORE_IC) {
+    return PropertyICCompiler::ComputeStore(isolate(), GENERIC,
+                                            extra_ic_state());
+  } else {
+    DCHECK(kind() == Code::KEYED_STORE_IC);
+    if (strict_mode() == STRICT) {
+      return isolate()->builtins()->KeyedStoreIC_Generic_Strict();
+    } else {
+      return isolate()->builtins()->KeyedStoreIC_Generic();
+    }
+  }
+}
+
+
+Handle<Code> StoreIC::slow_stub() const {
+  if (kind() == Code::STORE_IC) {
+    return isolate()->builtins()->StoreIC_Slow();
+  } else {
+    DCHECK(kind() == Code::KEYED_STORE_IC);
+    return isolate()->builtins()->KeyedStoreIC_Slow();
+  }
 }
 
 
