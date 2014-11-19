@@ -822,6 +822,36 @@ class Assembler : public AssemblerBase {
     }
   }
 
+  void isel(Register rt, Register ra, Register rb, int cb);
+  void isel(Condition cond, Register rt, Register ra, Register rb,
+            CRegister cr = cr7)  {
+    DCHECK(cond != al);
+    DCHECK(cr.code() >= 0 && cr.code() <= 7);
+
+    switch (cond) {
+      case eq:
+        isel(rt, ra, rb, encode_crbit(cr, CR_EQ));
+        break;
+      case ne:
+        isel(rt, rb, ra, encode_crbit(cr, CR_EQ));
+        break;
+      case gt:
+        isel(rt, ra, rb, encode_crbit(cr, CR_GT));
+        break;
+      case le:
+        isel(rt, rb, ra, encode_crbit(cr, CR_GT));
+        break;
+      case lt:
+        isel(rt, ra, rb, encode_crbit(cr, CR_LT));
+        break;
+      case ge:
+        isel(rt, rb, ra, encode_crbit(cr, CR_LT));
+        break;
+      default:
+        UNIMPLEMENTED();
+    }
+  }
+
   void b(Condition cond, Label* L, CRegister cr = cr7, LKBit lk = LeaveLK)  {
     if (cond == al) {
         b(L, lk);
