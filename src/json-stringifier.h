@@ -526,7 +526,11 @@ BasicJsonStringifier::Result BasicJsonStringifier::SerializeSmi(Smi* object) {
 
 BasicJsonStringifier::Result BasicJsonStringifier::SerializeDouble(
     double number) {
+#ifdef __xlC__
+  if (isinf(number) || isnan(number)) {
+#else
   if (std::isinf(number) || std::isnan(number)) {
+#endif
     AppendAscii("null");
     return SUCCESS;
   }

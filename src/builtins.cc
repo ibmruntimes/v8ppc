@@ -631,7 +631,11 @@ BUILTIN(ArraySlice) {
           AllowHeapAllocation allow_allocation;
           return CallJsBuiltin(isolate, "ArraySlice", args);
         }
+#ifdef __xlC__
+        relative_start = isnan(start) ? 0 : static_cast<int>(start);
+#else
         relative_start = std::isnan(start) ? 0 : static_cast<int>(start);
+#endif
       } else if (!arg1->IsUndefined()) {
         AllowHeapAllocation allow_allocation;
         return CallJsBuiltin(isolate, "ArraySlice", args);
@@ -646,7 +650,11 @@ BUILTIN(ArraySlice) {
             AllowHeapAllocation allow_allocation;
             return CallJsBuiltin(isolate, "ArraySlice", args);
           }
+#ifdef __xlC__
+          relative_end = isnan(end) ? 0 : static_cast<int>(end);
+#else
           relative_end = std::isnan(end) ? 0 : static_cast<int>(end);
+#endif
         } else if (!arg2->IsUndefined()) {
           AllowHeapAllocation allow_allocation;
           return CallJsBuiltin(isolate, "ArraySlice", args);
@@ -732,7 +740,11 @@ BUILTIN(ArraySplice) {
         AllowHeapAllocation allow_allocation;
         return CallJsBuiltin(isolate, "ArraySplice", args);
       }
+#ifdef __xlC__
+      relative_start = isnan(start) ? 0 : static_cast<int>(start);
+#else
       relative_start = std::isnan(start) ? 0 : static_cast<int>(start);
+#endif
     } else if (!arg1->IsUndefined()) {
       AllowHeapAllocation allow_allocation;
       return CallJsBuiltin(isolate, "ArraySplice", args);

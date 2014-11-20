@@ -1484,7 +1484,11 @@ class HCompareMap V8_FINAL : public HUnaryControlInstruction {
                                  HBasicBlock*, HBasicBlock*);
 
   virtual bool KnownSuccessorBlock(HBasicBlock** block) V8_OVERRIDE {
+#ifdef __xlC__
+    if ((known_successor_index() | 0x80000000) != kNoKnownSuccessorIndex) {
+#else
     if (known_successor_index() != kNoKnownSuccessorIndex) {
+#endif
       *block = SuccessorAt(known_successor_index());
       return true;
     }
@@ -3541,10 +3545,17 @@ class HConstant V8_FINAL : public HTemplateInstruction<0> {
   }
 
   bool IsSpecialDouble() const {
+#ifdef __xlC__
+    return has_double_value_ &&
+        (BitCast<int64_t>(double_value_) == BitCast<int64_t>(-0.0) ||
+         FixedDoubleArray::is_the_hole_nan(double_value_) ||
+         isnan(double_value_));
+#else
     return has_double_value_ &&
         (BitCast<int64_t>(double_value_) == BitCast<int64_t>(-0.0) ||
          FixedDoubleArray::is_the_hole_nan(double_value_) ||
          std::isnan(double_value_));
+#endif
   }
 
   bool NotInNewSpace() const {

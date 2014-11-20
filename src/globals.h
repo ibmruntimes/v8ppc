@@ -26,7 +26,7 @@
 #endif
 
 #if V8_TARGET_ARCH_IA32 || V8_TARGET_ARCH_X64 || V8_TARGET_ARCH_ARM || \
-    V8_TARGET_ARCH_ARM64 || V8_TARGET_ARCH_PPC
+    V8_TARGET_ARCH_ARM64
 #define V8_TURBOFAN_BACKEND 1
 #else
 #define V8_TURBOFAN_BACKEND 0
@@ -38,7 +38,12 @@
 #endif
 #if V8_OS_AIX
 #undef V8_INFINITY
+#ifdef __xlC__
+#include <limits>
+#define V8_INFINITY std::numeric_limits<double>::infinity()
+#else
 #define V8_INFINITY (__builtin_inff())
+#endif
 #endif
 
 namespace v8 {

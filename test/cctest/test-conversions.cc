@@ -124,6 +124,16 @@ TEST(MalformedOctal) {
   CHECK_EQ(81.0, StringToDouble(&uc, "081", ALLOW_HEX | ALLOW_IMPLICIT_OCTAL));
   CHECK_EQ(78.0, StringToDouble(&uc, "078", ALLOW_HEX | ALLOW_IMPLICIT_OCTAL));
 
+#ifdef __xlC__
+  CHECK(isnan(StringToDouble(&uc, "07.7",
+                                  ALLOW_HEX | ALLOW_IMPLICIT_OCTAL)));
+  CHECK(isnan(StringToDouble(&uc, "07.8",
+                                  ALLOW_HEX | ALLOW_IMPLICIT_OCTAL)));
+  CHECK(isnan(StringToDouble(&uc, "07e8",
+                                  ALLOW_HEX | ALLOW_IMPLICIT_OCTAL)));
+  CHECK(isnan(StringToDouble(&uc, "07e7",
+                                  ALLOW_HEX | ALLOW_IMPLICIT_OCTAL)));
+#else
   CHECK(std::isnan(StringToDouble(&uc, "07.7",
                                   ALLOW_HEX | ALLOW_IMPLICIT_OCTAL)));
   CHECK(std::isnan(StringToDouble(&uc, "07.8",
@@ -132,6 +142,7 @@ TEST(MalformedOctal) {
                                   ALLOW_HEX | ALLOW_IMPLICIT_OCTAL)));
   CHECK(std::isnan(StringToDouble(&uc, "07e7",
                                   ALLOW_HEX | ALLOW_IMPLICIT_OCTAL)));
+#endif
 
   CHECK_EQ(8.7, StringToDouble(&uc, "08.7", ALLOW_HEX | ALLOW_IMPLICIT_OCTAL));
   CHECK_EQ(8e7, StringToDouble(&uc, "08e7", ALLOW_HEX | ALLOW_IMPLICIT_OCTAL));
@@ -172,12 +183,21 @@ TEST(TrailingJunk) {
 
 TEST(NonStrDecimalLiteral) {
   UnicodeCache uc;
+#ifdef __xlC__
+  CHECK(isnan(
+      StringToDouble(&uc, " ", NO_FLAGS, v8::base::OS::nan_value())));
+  CHECK(
+      isnan(StringToDouble(&uc, "", NO_FLAGS, v8::base::OS::nan_value())));
+  CHECK(isnan(
+      StringToDouble(&uc, " ", NO_FLAGS, v8::base::OS::nan_value())));
+#else
   CHECK(std::isnan(
       StringToDouble(&uc, " ", NO_FLAGS, v8::base::OS::nan_value())));
   CHECK(
       std::isnan(StringToDouble(&uc, "", NO_FLAGS, v8::base::OS::nan_value())));
   CHECK(std::isnan(
       StringToDouble(&uc, " ", NO_FLAGS, v8::base::OS::nan_value())));
+#endif
   CHECK_EQ(0.0, StringToDouble(&uc, "", NO_FLAGS));
   CHECK_EQ(0.0, StringToDouble(&uc, " ", NO_FLAGS));
 }
@@ -193,8 +213,13 @@ TEST(IntegerStrLiteral) {
   CHECK_EQ(-1.0, StringToDouble(&uc, "-1", NO_FLAGS));
   CHECK_EQ(-1.0, StringToDouble(&uc, "  -1  ", NO_FLAGS));
   CHECK_EQ(1.0, StringToDouble(&uc, "  +1  ", NO_FLAGS));
+#ifdef __xlC__
+  CHECK(isnan(StringToDouble(&uc, "  -  1  ", NO_FLAGS)));
+  CHECK(isnan(StringToDouble(&uc, "  +  1  ", NO_FLAGS)));
+#else
   CHECK(std::isnan(StringToDouble(&uc, "  -  1  ", NO_FLAGS)));
   CHECK(std::isnan(StringToDouble(&uc, "  +  1  ", NO_FLAGS)));
+#endif
 
   CHECK_EQ(0.0, StringToDouble(&uc, "0e0", ALLOW_HEX | ALLOW_IMPLICIT_OCTAL));
   CHECK_EQ(0.0, StringToDouble(&uc, "0e1", ALLOW_HEX | ALLOW_IMPLICIT_OCTAL));

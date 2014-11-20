@@ -816,7 +816,11 @@ bool ToBooleanStub::Types::UpdateStatus(Handle<Object> object) {
     DCHECK(!object->IsUndetectableObject());
     Add(HEAP_NUMBER);
     double value = HeapNumber::cast(*object)->value();
+#ifdef __xlC__
+    return value != 0 && !isnan(value);
+#else
     return value != 0 && !std::isnan(value);
+#endif
   } else {
     // We should never see an internal object at runtime here!
     UNREACHABLE();

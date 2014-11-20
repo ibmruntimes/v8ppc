@@ -2760,7 +2760,11 @@ HConstant::HConstant(double double_value,
     has_double_value_(true),
     has_external_reference_value_(false),
     is_not_in_new_space_(is_not_in_new_space),
+#ifdef __xlC__
+    boolean_value_(double_value != 0 && !isnan(double_value)),
+#else
     boolean_value_(double_value != 0 && !std::isnan(double_value)),
+#endif
     is_undetectable_(false),
     int32_value_(DoubleToInt32(double_value)),
     double_value_(double_value),
@@ -4113,7 +4117,11 @@ HInstruction* HStringCharFromCode::New(
     HConstant* c_code = HConstant::cast(char_code);
     Isolate* isolate = zone->isolate();
     if (c_code->HasNumberValue()) {
+#ifdef __xlC__
+      if (isfinite(c_code->DoubleValue())) {
+#else
       if (std::isfinite(c_code->DoubleValue())) {
+#endif
         uint32_t code = c_code->NumberValueAsInteger32() & 0xffff;
         return HConstant::New(zone, context,
             isolate->factory()->LookupSingleCharacterStringFromCode(code));
@@ -4133,10 +4141,18 @@ HInstruction* HUnaryMathOperation::New(
     HConstant* constant = HConstant::cast(value);
     if (!constant->HasNumberValue()) break;
     double d = constant->DoubleValue();
+#ifdef __xlC__
+    if (isnan(d)) {  // NaN poisons everything.
+#else
     if (std::isnan(d)) {  // NaN poisons everything.
+#endif
       return H_CONSTANT_DOUBLE(base::OS::nan_value());
     }
+#ifdef __xlC__
+    if (isinf(d)) {  // +Infinity and -Infinity.
+#else
     if (std::isinf(d)) {  // +Infinity and -Infinity.
+#endif
       switch (op) {
         case kMathExp:
           return H_CONSTANT_DOUBLE((d > 0.0) ? d : 0.0);
@@ -4240,8 +4256,13 @@ HInstruction* HPower::New(Zone* zone,
     if (c_left->HasNumberValue() && c_right->HasNumberValue()) {
       double result = power_helper(c_left->DoubleValue(),
                                    c_right->DoubleValue());
+#ifdef __xlC__
+      return H_CONSTANT_DOUBLE(isnan(result) ? base::OS::nan_value()
+                                                  : result);
+#else
       return H_CONSTANT_DOUBLE(std::isnan(result) ? base::OS::nan_value()
                                                   : result);
+#endif
     }
   }
   return new(zone) HPower(left, right);

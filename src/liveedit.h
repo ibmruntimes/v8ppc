@@ -56,7 +56,11 @@ class LiveEditFunctionTracker {
 };
 
 
+#ifdef __xlC__
+class LiveEdit : private AllStatic {
+#else
 class LiveEdit : AllStatic {
+#endif
  public:
   // Describes how exactly a frame has been dropped from stack.
   enum FrameDropMode {

@@ -251,7 +251,11 @@ void StructuredMachineAssembler::Merge(EnvironmentVector* environments,
       CHECK(resolved != NULL);
       // Init scratch buffer.
       if (scratch == NULL) {
+#ifdef __xlC__
+        scratch = (Node**) alloca(n_envs * sizeof(resolved));
+#else
         scratch = static_cast<Node**>(alloca(n_envs * sizeof(resolved)));
+#endif
       }
       for (size_t k = 0; k < i; k++) {
         scratch[k] = resolved;

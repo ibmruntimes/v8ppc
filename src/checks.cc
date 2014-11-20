@@ -17,7 +17,11 @@ intptr_t HeapObjectTagMask() { return kHeapObjectTagMask; }
 static bool CheckEqualsStrict(volatile double* exp, volatile double* val) {
   v8::internal::DoubleRepresentation exp_rep(*exp);
   v8::internal::DoubleRepresentation val_rep(*val);
+#ifdef __xlC__
+  if (isnan(exp_rep.value) && isnan(val_rep.value)) return true;
+#else
   if (std::isnan(exp_rep.value) && std::isnan(val_rep.value)) return true;
+#endif
   return exp_rep.bits == val_rep.bits;
 }
 

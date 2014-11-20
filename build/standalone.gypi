@@ -222,7 +222,7 @@
       },
     }],
     ['OS=="linux" or OS=="freebsd" or OS=="openbsd" or OS=="solaris" \
-       or OS=="netbsd" or OS=="aix"', {
+       or OS=="netbsd" or (OS=="aix" and v8_target_compiler=="gcc")', {
       'target_defaults': {
         'cflags': [ '-Wall', '<(werror)', '-W', '-Wno-unused-parameter',
                     '-Wno-long-long', '-pthread', '-fno-exceptions',
@@ -244,6 +244,23 @@
     }],
     # 'OS=="linux" or OS=="freebsd" or OS=="openbsd" or OS=="solaris"
     #  or OS=="netbsd"'
+    ['OS=="aix" and  v8_target_compiler=="xlc"', {
+      'target_defaults': {
+        'cflags': [  '-lpthread', '-qflag=i:i', '-qnortti', '-qlanglvl=stdc89', '-qfuncsect' ],
+        'cflags_cc': [ '-fno-rtti' ],
+        'conditions': [
+          [ 'host_arch=="ppc64"', {
+            'cflags': [ '-mminimal-toc' ],
+          }],
+          [ 'visibility=="hidden" and v8_enable_backtrace==0', {
+            'cflags': [ '-fvisibility=hidden' ],
+          }],
+          [ 'component=="shared_library"', {
+            'cflags': [ '-fPIC', ],
+          }],
+        ],
+      },
+    }],
     ['OS=="qnx"', {
       'target_defaults': {
         'cflags': [ '-Wall', '<(werror)', '-W', '-Wno-unused-parameter',

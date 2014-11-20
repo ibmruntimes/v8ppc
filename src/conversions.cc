@@ -19,7 +19,9 @@
 
 #ifndef _STLP_VENDOR_CSTD
 // STLPort doesn't import fpclassify into the std namespace.
+#ifndef __xlC__
 using std::fpclassify;
+#endif
 #endif
 
 namespace v8 {

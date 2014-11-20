@@ -27,6 +27,7 @@
 
 
 # Variable default definitions. Override them by exporting them in your shell.
+v8_target_compiler ?= gcc
 CXX ?= g++
 LINK ?= g++
 OUTDIR ?= out
@@ -416,6 +417,7 @@ $(OUT_MAKEFILES): $(GYPFILES) $(ENVFILE)
 	build/gyp/gyp --generator-output="$(OUTDIR)" build/all.gyp \
 	              -Ibuild/standalone.gypi --depth=. \
 	              -Dv8_target_arch=$(V8_TARGET_ARCH) \
+                      -Dv8_target_compiler=$(v8_target_compiler) \
 	              $(if $(findstring $(CXX_TARGET_ARCH),$(V8_TARGET_ARCH)), \
 	              -Dtarget_arch=$(V8_TARGET_ARCH),) \
 	              $(if $(findstring optdebug,$@),-Dv8_optimized_debug=2,) \
@@ -499,3 +501,14 @@ builddeps:
 dependencies: builddeps
 	# The spec is a copy of the hooks in v8's DEPS file.
 	gclient sync -r fb782d4369d5ae04f17a2fceef7de5a63e50f07b --spec="solutions = [{u'managed': False, u'name': u'buildtools', u'url': u'https://chromium.googlesource.com/chromium/buildtools.git', u'custom_deps': {}, u'custom_hooks': [{u'name': u'clang_format_win',u'pattern': u'.',u'action': [u'download_from_google_storage',u'--no_resume',u'--platform=win32',u'--no_auth',u'--bucket',u'chromium-clang-format',u'-s',u'buildtools/win/clang-format.exe.sha1']},{u'name': u'clang_format_mac',u'pattern': u'.',u'action': [u'download_from_google_storage',u'--no_resume',u'--platform=darwin',u'--no_auth',u'--bucket',u'chromium-clang-format',u'-s',u'buildtools/mac/clang-format.sha1']},{u'name': u'clang_format_linux',u'pattern': u'.',u'action': [u'download_from_google_storage',u'--no_resume',u'--platform=linux*',u'--no_auth',u'--bucket',u'chromium-clang-format',u'-s',u'buildtools/linux64/clang-format.sha1']}],u'deps_file': u'.DEPS.git', u'safesync_url': u''}]"
+
+xlc xlc.release xlc.debug: xlc_init $$(subst xlc,ppc,$$@)
+xlc64 xlc64.release xlc64.debug: xlc_init $$(subst xlc,ppc,$$@)
+xlc.clean xlc64.clean: $$(subst xlc,ppc,$$@)
+xlc_init:
+	$(eval CXX := xlc++_r)
+	$(eval CC := xlc++_r)
+	$(eval LINK := xlc++_r)
+	$(eval v8_target_compiler := xlc)
+
+

@@ -1257,7 +1257,11 @@ int DuplicateFinder::AddNumber(Vector<const uint8_t> key, int value) {
       unicode_constants_, key, flags, 0.0);
   int length;
   const char* string;
+#ifdef __xlC__
+  if (!isfinite(double_value)) {
+#else
   if (!std::isfinite(double_value)) {
+#endif
     string = "Infinity";
     length = 8;  // strlen("Infinity");
   } else {

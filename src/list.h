@@ -45,10 +45,15 @@ class List {
     Initialize(0);
   }
 
-  INLINE(void* operator new(size_t size,
-                            AllocationPolicy allocator = AllocationPolicy())) {
+  INLINE(void* operator new(size_t size, AllocationPolicy allocator)) {
     return allocator.New(static_cast<int>(size));
   }
+
+  INLINE(void* operator new(size_t size)) {
+    AllocationPolicy allocator = AllocationPolicy();
+    return allocator.New(static_cast<int>(size));
+  }
+
   INLINE(void operator delete(void* p)) {
     AllocationPolicy::Delete(p);
   }

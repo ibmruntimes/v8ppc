@@ -183,7 +183,11 @@ TEST(HeapObjects) {
 
   // nan oddball checks
   CHECK(factory->nan_value()->IsNumber());
+#ifdef __xlC__
+  CHECK(isnan(factory->nan_value()->Number()));
+#else
   CHECK(std::isnan(factory->nan_value()->Number()));
+#endif
 
   Handle<String> s = factory->NewStringFromStaticAscii("fisk hest ");
   CHECK(s->IsString());

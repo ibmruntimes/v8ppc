@@ -24,7 +24,21 @@ class CompilerIntrinsics {
   INLINE(static int CountSetBits(uint32_t value));
 };
 
-#ifdef __GNUC__
+#ifdef __xlC__
+#include "/usr/vacpp/include/builtins.h"
+int CompilerIntrinsics::CountTrailingZeros(uint32_t value) {
+ return __cnttz4(value);
+}
+
+int CompilerIntrinsics::CountLeadingZeros(uint32_t value) {
+ return __cntlz4(value);
+}
+
+int CompilerIntrinsics::CountSetBits(uint32_t value) {
+ return __popcnt4(value);
+}
+
+#elif __GNUC__
 int CompilerIntrinsics::CountTrailingZeros(uint32_t value) {
   return __builtin_ctz(value);
 }

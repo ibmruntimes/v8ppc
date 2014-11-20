@@ -1087,7 +1087,11 @@ double Object::Number() {
 
 
 bool Object::IsNaN() const {
+#ifdef __xlC__
+  return this->IsHeapNumber() && isnan(HeapNumber::cast(this)->value());
+#else
   return this->IsHeapNumber() && std::isnan(HeapNumber::cast(this)->value());
+#endif
 }
 
 
@@ -2263,7 +2267,11 @@ void FixedDoubleArray::set(int index, double value) {
   DCHECK(map() != GetHeap()->fixed_cow_array_map() &&
          map() != GetHeap()->fixed_array_map());
   int offset = kHeaderSize + index * kDoubleSize;
+#ifdef __xlC__
+  if (isnan(value)) value = canonical_not_the_hole_nan_as_double();
+#else
   if (std::isnan(value)) value = canonical_not_the_hole_nan_as_double();
+#endif
   WRITE_DOUBLE_FIELD(this, offset, value);
 }
 

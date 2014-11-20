@@ -930,7 +930,11 @@ bool Object::SameValue(Object* other) {
     double other_value = other->Number();
     bool equal = this_value == other_value;
     // SameValue(NaN, NaN) is true.
+#ifdef __xlC__
+    if (!equal) return isnan(this_value) && isnan(other_value);
+#else
     if (!equal) return std::isnan(this_value) && std::isnan(other_value);
+#endif
     // SameValue(0.0, -0.0) is false.
     return (this_value != 0) || ((1 / this_value) == (1 / other_value));
   }
@@ -950,8 +954,13 @@ bool Object::SameValueZero(Object* other) {
     double this_value = Number();
     double other_value = other->Number();
     // +0 == -0 is true
+#ifdef __xlC__
+    return this_value == other_value
+        || (isnan(this_value) && isnan(other_value));
+#else
     return this_value == other_value
         || (std::isnan(this_value) && std::isnan(other_value));
+#endif
   }
   if (IsString() && other->IsString()) {
     return String::cast(this)->Equals(String::cast(other));
@@ -16710,7 +16719,11 @@ Object* JSDate::DoGetField(FieldIndex index) {
   }
 
   double time = value()->Number();
+#ifdef __xlC__
+  if (isnan(time)) return GetIsolate()->heap()->nan_value();
+#else
   if (std::isnan(time)) return GetIsolate()->heap()->nan_value();
+#endif
 
   int64_t local_time_ms = date_cache->ToLocal(static_cast<int64_t>(time));
   int days = DateCache::DaysFromTime(local_time_ms);
@@ -16729,7 +16742,11 @@ Object* JSDate::GetUTCField(FieldIndex index,
                             DateCache* date_cache) {
   DCHECK(index >= kFirstUTCField);
 
+#ifdef __xlC__
+  if (isnan(value)) return GetIsolate()->heap()->nan_value();
+#else
   if (std::isnan(value)) return GetIsolate()->heap()->nan_value();
+#endif
 
   int64_t time_ms = static_cast<int64_t>(value);
 

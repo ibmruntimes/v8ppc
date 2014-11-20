@@ -523,7 +523,9 @@ class TypeImpl<Config>::BitsetType : public TypeImpl<Config> {
 
   static const char* Name(int bitset);
   static void Print(OStream& os, int bitset);  // NOLINT
+#ifndef __xlC__
   using TypeImpl::PrintTo;
+#endif
 };
 
 
@@ -533,6 +535,16 @@ class TypeImpl<Config>::BitsetType : public TypeImpl<Config> {
 
 template<class Config>
 class TypeImpl<Config>::StructuralType : public TypeImpl<Config> {
+#ifdef __xlC__
+ public:
+  int Length() {
+    return Config::struct_length(Config::as_struct(this));
+  }
+  TypeHandle Get(int i) {
+    DCHECK(0 <= i && i < this->Length());
+    return Config::struct_get(Config::as_struct(this), i);
+  }
+#endif
  protected:
   template<class> friend class TypeImpl;
   friend struct ZoneTypeConfig;  // For tags.
@@ -548,6 +560,7 @@ class TypeImpl<Config>::StructuralType : public TypeImpl<Config> {
     kUnionTag
   };
 
+#ifndef __xlC__
   int Length() {
     return Config::struct_length(Config::as_struct(this));
   }
@@ -555,6 +568,7 @@ class TypeImpl<Config>::StructuralType : public TypeImpl<Config> {
     DCHECK(0 <= i && i < this->Length());
     return Config::struct_get(Config::as_struct(this), i);
   }
+#endif
   void Set(int i, TypeHandle type) {
     DCHECK(0 <= i && i < this->Length());
     Config::struct_set(Config::as_struct(this), i, type);

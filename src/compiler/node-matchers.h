@@ -86,7 +86,11 @@ template <typename T>
 struct FloatMatcher V8_FINAL : public ValueMatcher<T> {
   explicit FloatMatcher(Node* node) : ValueMatcher<T>(node) {}
 
+#ifdef __xlC__
+  bool IsNaN() const { return this->HasValue() && isnan(this->Value()); }
+#else
   bool IsNaN() const { return this->HasValue() && std::isnan(this->Value()); }
+#endif
 };
 
 typedef FloatMatcher<double> Float64Matcher;

@@ -344,8 +344,12 @@ void OS::DebugBreak() {
 // Math functions
 
 #if V8_OS_AIX
+#ifdef __xlC__
+#define __builtin_nanf NAN
+#else
 #undef NAN
 #define NAN (__builtin_nanf(""))
+#endif
 #endif
 
 double OS::nan_value() {
@@ -408,7 +412,11 @@ void OS::ClearTimezoneCache(TimezoneCache* cache) {
 
 
 double OS::DaylightSavingsOffset(double time, TimezoneCache*) {
+#ifdef __xlC__
+  if (isnan(time)) return nan_value();
+#else
   if (std::isnan(time)) return nan_value();
+#endif
   time_t tv = static_cast<time_t>(std::floor(time/msPerSecond));
   struct tm* t = localtime(&tv);
   if (NULL == t) return nan_value();

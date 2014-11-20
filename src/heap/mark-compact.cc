@@ -4170,6 +4170,7 @@ static inline Address StartOfLiveObject(Address block_address, uint32_t cell) {
 }
 
 
+#ifndef __xlC__
 // Force instantiation of templatized SweepConservatively method for
 // SWEEP_ON_MAIN_THREAD mode.
 template int MarkCompactCollector::SweepConservatively<
@@ -4180,6 +4181,7 @@ template int MarkCompactCollector::SweepConservatively<
 // SWEEP_IN_PARALLEL mode.
 template int MarkCompactCollector::SweepConservatively<
     MarkCompactCollector::SWEEP_IN_PARALLEL>(PagedSpace*, FreeList*, Page*);
+#endif
 
 
 // Sweeps a space conservatively.  After this has been done the larger free

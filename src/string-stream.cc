@@ -129,12 +129,20 @@ void StringStream::Add(Vector<const char> format, Vector<FmtElm> elms) {
     }
     case 'f': case 'g': case 'G': case 'e': case 'E': {
       double value = current.data_.u_double_;
+#ifdef __xlC__
+      int inf = isinf(value);
+#else
       int inf = std::isinf(value);
+#endif
       if (inf == -1) {
         Add("-inf");
       } else if (inf == 1) {
         Add("inf");
+#ifdef __xlC__
+      } else if (isnan(value)) {
+#else
       } else if (std::isnan(value)) {
+#endif
         Add("nan");
       } else {
         EmbeddedVector<char, 28> formatted;

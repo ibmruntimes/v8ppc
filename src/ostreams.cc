@@ -65,8 +65,13 @@ OStream& OStream::operator<<(unsigned long long x) {  // NOLINT(runtime/int)
 
 
 OStream& OStream::operator<<(double x) {
+#ifdef __xlC__
+  if (isinf(x)) return *this << (x < 0 ? "-inf" : "inf");
+  if (isnan(x)) return *this << "nan";
+#else
   if (std::isinf(x)) return *this << (x < 0 ? "-inf" : "inf");
   if (std::isnan(x)) return *this << "nan";
+#endif
   return print("%g", x);
 }
 

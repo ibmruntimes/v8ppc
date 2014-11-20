@@ -368,6 +368,9 @@ template <class T> class Local : public Handle<T> {
   V8_INLINE static Local<T> New(Isolate* isolate, Handle<T> that);
   V8_INLINE static Local<T> New(Isolate* isolate,
                                 const PersistentBase<T>& that);
+#ifdef __xlC__
+  V8_INLINE static Local<T> New(Isolate* isolate, T* that);
+#endif
 
  private:
   friend class Utils;
@@ -388,7 +391,9 @@ template <class T> class Local : public Handle<T> {
   template<class F1, class F2> friend class PersistentValueVector;
 
   template <class S> V8_INLINE Local(S* that) : Handle<T>(that) { }
+#ifndef __xlC__
   V8_INLINE static Local<T> New(Isolate* isolate, T* that);
+#endif
 };
 
 
@@ -830,7 +835,12 @@ class V8_EXPORT HandleScope {
   HandleScope(const HandleScope&);
   void operator=(const HandleScope&);
   void* operator new(size_t size);
+#ifdef __xlC__
+  void operator delete(void* a, size_t b){}
+  void operator delete(void* a){}
+#else
   void operator delete(void*, size_t);
+#endif
 
   internal::Isolate* isolate_;
   internal::Object** prev_next_;
@@ -874,7 +884,11 @@ class V8_EXPORT EscapableHandleScope : public HandleScope {
   EscapableHandleScope(const EscapableHandleScope&);
   void operator=(const EscapableHandleScope&);
   void* operator new(size_t size);
+#ifdef __xlC__
+  void operator delete(void* a, size_t b){}
+#else
   void operator delete(void*, size_t);
+#endif
 
   internal::Object** escape_slot_;
 };
@@ -5166,7 +5180,11 @@ class V8_EXPORT TryCatch {
   TryCatch(const TryCatch&);
   void operator=(const TryCatch&);
   void* operator new(size_t size);
+#ifdef __xlC__
+  void operator delete(void* a, size_t b){}
+#else
   void operator delete(void*, size_t);
+#endif
 
   v8::internal::Isolate* isolate_;
   v8::TryCatch* next_;
