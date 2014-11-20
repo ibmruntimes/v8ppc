@@ -24,6 +24,8 @@ namespace compiler {
   V(PPC_Shr64)                     \
   V(PPC_Sar32)                     \
   V(PPC_Sar64)                     \
+  V(PPC_Ror32)                     \
+  V(PPC_Ror64)                     \
   V(PPC_Not32)                     \
   V(PPC_Not64)                     \
   V(PPC_Add32)                     \
@@ -50,31 +52,33 @@ namespace compiler {
   V(PPC_Neg32)                     \
   V(PPC_Neg64)                     \
   V(PPC_NegFloat64)                \
+  V(PPC_SqrtFloat64)               \
   V(PPC_Cmp32)                     \
   V(PPC_Cmp64)                     \
   V(PPC_CmpFloat64)                \
   V(PPC_Tst32)                     \
   V(PPC_Tst64)                     \
-  V(PPC_CallCodeObject)            \
-  V(PPC_CallJSFunction)            \
-  V(PPC_CallAddress)               \
   V(PPC_Push)                      \
-  V(PPC_Drop)                      \
   V(PPC_Int32ToInt64)              \
+  V(PPC_Uint32ToUint64)            \
   V(PPC_Int64ToInt32)              \
   V(PPC_Int32ToFloat64)            \
   V(PPC_Uint32ToFloat64)           \
   V(PPC_Float64ToInt32)            \
   V(PPC_Float64ToUint32)           \
-  V(PPC_LoadWord8)                 \
-  V(PPC_LoadWord16)                \
-  V(PPC_LoadWord32)                \
+  V(PPC_LoadWordS8)                \
+  V(PPC_LoadWordU8)                \
+  V(PPC_LoadWordS16)               \
+  V(PPC_LoadWordU16)               \
+  V(PPC_LoadWordS32)               \
   V(PPC_LoadWord64)                \
+  V(PPC_LoadFloat32)               \
   V(PPC_LoadFloat64)               \
   V(PPC_StoreWord8)                \
   V(PPC_StoreWord16)               \
   V(PPC_StoreWord32)               \
   V(PPC_StoreWord64)               \
+  V(PPC_StoreFloat32)              \
   V(PPC_StoreFloat64)              \
   V(PPC_StoreWriteBarrier)
 
