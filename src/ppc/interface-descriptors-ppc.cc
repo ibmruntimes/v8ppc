@@ -143,7 +143,7 @@ void CallConstructDescriptor::Initialize(CallInterfaceDescriptorData* data) {
 
 void RegExpConstructResultDescriptor::Initialize(
     CallInterfaceDescriptorData* data) {
-    Register registers[] = {cp, r5, r4, r3};
+  Register registers[] = {cp, r5, r4, r3};
   data->Initialize(arraysize(registers), registers, NULL);
 }
 
@@ -152,6 +152,15 @@ void TransitionElementsKindDescriptor::Initialize(
     CallInterfaceDescriptorData* data) {
   Register registers[] = {cp, r3, r4};
   data->Initialize(arraysize(registers), registers, NULL);
+}
+
+
+void AllocateHeapNumberDescriptor::Initialize(
+    CallInterfaceDescriptorData* data) {
+  // register state
+  // cp -- context
+  Register registers[] = {cp};
+  data->Initialize(arraysize(registers), registers, nullptr);
 }
 
 
