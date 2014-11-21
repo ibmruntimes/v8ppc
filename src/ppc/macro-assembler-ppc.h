@@ -513,7 +513,6 @@ class MacroAssembler: public Assembler {
   void LoadWord(Register dst,
                 const MemOperand& mem,
                 Register scratch);
-
   void LoadWordArith(Register dst,
                      const MemOperand& mem,
                      Register scratch = no_reg);
@@ -521,7 +520,6 @@ class MacroAssembler: public Assembler {
   void StoreWord(Register src,
                  const MemOperand& mem,
                  Register scratch);
-
   void LoadHalfWord(Register dst,
                     const MemOperand& mem,
                     Register scratch);
@@ -529,7 +527,6 @@ class MacroAssembler: public Assembler {
   void LoadHalfWordArith(Register dst,
                          const MemOperand& mem,
                          Register scratch = no_reg);
-
   void StoreHalfWord(Register src,
                      const MemOperand& mem,
                      Register scratch);
@@ -537,7 +534,6 @@ class MacroAssembler: public Assembler {
   void LoadByte(Register dst,
                 const MemOperand& mem,
                 Register scratch);
-
   void StoreByte(Register src,
                  const MemOperand& mem,
                  Register scratch);
@@ -546,11 +542,15 @@ class MacroAssembler: public Assembler {
                           const MemOperand& mem,
                           Representation r,
                           Register scratch = no_reg);
-
   void StoreRepresentation(Register src,
                            const MemOperand& mem,
                            Representation r,
                            Register scratch = no_reg);
+
+  void LoadDouble(DoubleRegister dst, const MemOperand& mem,
+                  Register scratch);
+  void StoreDouble(DoubleRegister src, const MemOperand& mem,
+                   Register scratch);
 
   // Move values between integer and floating point registers.
   void MovIntToDouble(DoubleRegister dst,
