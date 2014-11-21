@@ -1449,9 +1449,9 @@ void Scheduler::FuseFloatingControl(BasicBlock* block, Node* node) {
   // Iterate on phase 2: Compute special RPO and dominator tree.
   special_rpo_->UpdateSpecialRPO(block, schedule_->block(node));
   // TODO(mstarzinger): Currently "iterate on" means "re-run". Fix that.
-  for (BasicBlock* block : schedule_->all_blocks_) {
-    block->set_dominator_depth(-1);
-    block->set_dominator(NULL);
+  for (BasicBlock* b : schedule_->all_blocks_) {
+    b->set_dominator_depth(-1);
+    b->set_dominator(NULL);
   }
   GenerateImmediateDominatorTree();
 
