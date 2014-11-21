@@ -6116,7 +6116,7 @@ bool HOptimizedGraphBuilder::PropertyAccessInfo::CanAccessMonomorphic() {
 
   if (IsAccessor()) return true;
   Handle<Map> map = this->map();
-  map->LookupTransition(NULL, *name_, &lookup_);
+  map->LookupTransition(NULL, *name_, NONE, &lookup_);
   if (lookup_.IsTransitionToField() && map->unused_property_fields() > 0) {
     // Construct the object field access.
     int descriptor = transition()->LastAdded();
@@ -12645,9 +12645,10 @@ void HStatistics::Print() {
   double normalized_time =  source_size_in_kb > 0
       ? total.InMillisecondsF() / source_size_in_kb
       : 0;
-  double normalized_size_in_kb = source_size_in_kb > 0
-      ? total_size_ / 1024 / source_size_in_kb
-      : 0;
+  double normalized_size_in_kb =
+      source_size_in_kb > 0
+          ? static_cast<double>(total_size_) / 1024 / source_size_in_kb
+          : 0;
   PrintF("%33s %8.3f ms           %7.3f kB allocated\n",
          "Average per kB source", normalized_time, normalized_size_in_kb);
 }
