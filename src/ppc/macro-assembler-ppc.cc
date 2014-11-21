@@ -4842,6 +4842,34 @@ void MacroAssembler::StoreRepresentation(Register src,
 }
 
 
+void MacroAssembler::LoadDouble(DoubleRegister dst, const MemOperand& mem,
+                                Register scratch) {
+  Register base = mem.ra();
+  int offset = mem.offset();
+
+  if (!is_int16(offset)) {
+    mov(scratch, Operand(offset));
+    lfdx(dst, MemOperand(base, scratch));
+  } else {
+    lfd(dst, mem);
+  }
+}
+
+
+void MacroAssembler::StoreDouble(DoubleRegister src, const MemOperand& mem,
+                                 Register scratch) {
+  Register base = mem.ra();
+  int offset = mem.offset();
+
+  if (!is_int16(offset)) {
+    mov(scratch, Operand(offset));
+    stfdx(src, MemOperand(base, scratch));
+  } else {
+    stfd(src, mem);
+  }
+}
+
+
 void MacroAssembler::TestJSArrayForAllocationMemento(
     Register receiver_reg,
     Register scratch_reg,
