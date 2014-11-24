@@ -760,6 +760,7 @@ THREADED_TEST(UsingExternalOneByteString) {
   CcTest::heap()->CollectAllGarbage(i::Heap::kNoGCFlags);
   CcTest::heap()->CollectAllGarbage(i::Heap::kNoGCFlags);
 }
+#endif
 
 
 class RandomLengthResource : public v8::String::ExternalStringResource {
@@ -787,6 +788,7 @@ class RandomLengthOneByteResource
 };
 
 
+#if !defined(TEST_API_IN_PARTS) || defined(TEST_API_PART1)
 THREADED_TEST(NewExternalForVeryLongString) {
   {
     LocalContext env;
