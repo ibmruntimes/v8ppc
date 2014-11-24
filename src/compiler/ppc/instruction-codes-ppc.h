@@ -14,20 +14,28 @@ namespace compiler {
 #define TARGET_ARCH_OPCODE_LIST(V) \
   V(PPC_And32)                     \
   V(PPC_And64)                     \
+  V(PPC_AndCompliment32)           \
+  V(PPC_AndCompliment64)           \
   V(PPC_Or32)                      \
   V(PPC_Or64)                      \
+  V(PPC_OrCompliment32)            \
+  V(PPC_OrCompliment64)            \
   V(PPC_Xor32)                     \
   V(PPC_Xor64)                     \
-  V(PPC_Shl32)                     \
-  V(PPC_Shl64)                     \
-  V(PPC_Shr32)                     \
-  V(PPC_Shr64)                     \
-  V(PPC_Sar32)                     \
-  V(PPC_Sar64)                     \
-  V(PPC_Ror32)                     \
-  V(PPC_Ror64)                     \
+  V(PPC_ShiftLeft32)               \
+  V(PPC_ShiftLeft64)               \
+  V(PPC_ShiftRight32)              \
+  V(PPC_ShiftRight64)              \
+  V(PPC_ShiftRightAlg32)           \
+  V(PPC_ShiftRightAlg64)           \
+  V(PPC_RotRight32)                \
+  V(PPC_RotRight64)                \
   V(PPC_Not32)                     \
   V(PPC_Not64)                     \
+  V(PPC_RotLeftAndMask32)          \
+  V(PPC_RotLeftAndClear64)         \
+  V(PPC_RotLeftAndClearLeft64)     \
+  V(PPC_RotLeftAndClearRight64)    \
   V(PPC_Add32)                     \
   V(PPC_AddWithOverflow32)         \
   V(PPC_Add64)                     \
@@ -38,6 +46,8 @@ namespace compiler {
   V(PPC_SubFloat64)                \
   V(PPC_Mul32)                     \
   V(PPC_Mul64)                     \
+  V(PPC_MulHigh32)                 \
+  V(PPC_MulHighU32)                \
   V(PPC_MulFloat64)                \
   V(PPC_Div32)                     \
   V(PPC_Div64)                     \
@@ -53,6 +63,10 @@ namespace compiler {
   V(PPC_Neg64)                     \
   V(PPC_NegFloat64)                \
   V(PPC_SqrtFloat64)               \
+  V(PPC_FloorFloat64)              \
+  V(PPC_CeilFloat64)               \
+  V(PPC_TruncateFloat64)           \
+  V(PPC_RoundFloat64)              \
   V(PPC_Cmp32)                     \
   V(PPC_Cmp64)                     \
   V(PPC_CmpFloat64)                \
@@ -64,8 +78,10 @@ namespace compiler {
   V(PPC_Int64ToInt32)              \
   V(PPC_Int32ToFloat64)            \
   V(PPC_Uint32ToFloat64)           \
+  V(PPC_Float32ToFloat64)          \
   V(PPC_Float64ToInt32)            \
   V(PPC_Float64ToUint32)           \
+  V(PPC_Float64ToFloat32)          \
   V(PPC_LoadWordS8)                \
   V(PPC_LoadWordU8)                \
   V(PPC_LoadWordS16)               \

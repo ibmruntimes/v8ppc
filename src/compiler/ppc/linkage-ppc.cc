@@ -37,8 +37,9 @@ struct PPCLinkageHelperTraits {
 
 typedef LinkageHelper<PPCLinkageHelperTraits> LH;
 
-CallDescriptor* Linkage::GetJSCallDescriptor(int parameter_count, Zone* zone) {
-  return LH::GetJSCallDescriptor(zone, parameter_count);
+CallDescriptor* Linkage::GetJSCallDescriptor(int parameter_count, Zone* zone,
+                                             CallDescriptor::Flags flags) {
+  return LH::GetJSCallDescriptor(zone, parameter_count, flags);
 }
 
 
@@ -51,7 +52,7 @@ CallDescriptor* Linkage::GetRuntimeCallDescriptor(
 
 
 CallDescriptor* Linkage::GetStubCallDescriptor(
-    CallInterfaceDescriptor descriptor, int stack_parameter_count,
+    const CallInterfaceDescriptor& descriptor, int stack_parameter_count,
     CallDescriptor::Flags flags, Zone* zone) {
   return LH::GetStubCallDescriptor(zone, descriptor, stack_parameter_count,
                                    flags);

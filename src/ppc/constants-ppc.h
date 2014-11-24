@@ -222,6 +222,7 @@ enum OpcodeExt2 {
   XORX = 316 << 1,    // Exclusive OR
   MFSPR = 339 <<1,    // Move from Special-Purpose-Register
   STHX = 407 << 1,    // store half-word w/ x-form
+  ORC = 412 << 1,     // Or with Compliment
   STHUX = 439 << 1,   // store half-word w/ update x-form
   ORX = 444 << 1,     // Or
   DIVDU = 457 << 1,   // Divide Double Word Unsigned
@@ -274,6 +275,9 @@ enum OpcodeExt4 {
   FMR    =  72 << 1,  // Floating Move Register
   MTFSFI = 134 << 1,  // Move to FPSCR Field Immediate
   FABS   = 264 << 1,  // Floating Absolute Value
+  FRIN   = 392 << 1,  // Floating Round to Integer Nearest
+  FRIZ   = 424 << 1,  // Floating Round to Integer Toward Zero
+  FRIP   = 456 << 1,  // Floating Round to Integer Plus
   FRIM   = 488 << 1,  // Floating Round to Integer Minus
   MFFS   = 583 << 1,  // move from FPSCR x-form
   MTFSF  = 711 << 1,  // move to FPSCR fields XFL-form
