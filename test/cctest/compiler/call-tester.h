@@ -167,7 +167,7 @@ class CallHelper {
   virtual byte* Generate() = 0;
 
  private:
-#if USE_SIMULATOR && V8_TARGET_ARCH_ARM64
+#if USE_SIMULATOR && (V8_TARGET_ARCH_ARM64 || V8_TARGET_ARCH_PPC64)
   uintptr_t CallSimulator(byte* f, Simulator::CallArgument* args) {
     Simulator* simulator = Simulator::current(isolate_);
     return static_cast<uintptr_t>(simulator->CallInt64(f, args));
@@ -207,7 +207,8 @@ class CallHelper {
         Simulator::CallArgument::End()};
     return ReturnValueTraits<R>::Cast(CallSimulator(FUNCTION_ADDR(f), args));
   }
-#elif USE_SIMULATOR && (V8_TARGET_ARCH_ARM || V8_TARGET_ARCH_MIPS)
+#elif USE_SIMULATOR && \
+      (V8_TARGET_ARCH_ARM || V8_TARGET_ARCH_MIPS || V8_TARGET_ARCH_PPC)
   uintptr_t CallSimulator(byte* f, int32_t p1 = 0, int32_t p2 = 0,
                           int32_t p3 = 0, int32_t p4 = 0) {
     Simulator* simulator = Simulator::current(isolate_);
