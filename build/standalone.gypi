@@ -246,7 +246,7 @@
     #  or OS=="netbsd"'
     ['OS=="aix" and  v8_target_compiler=="xlc"', {
       'target_defaults': {
-        'cflags': [  '-lpthread', '-qflag=i:i', '-qnortti', '-qlanglvl=stdc89', '-qfuncsect' ],
+        'cflags': [  '-qstrict=ieeefp', '-lpthread', '-qflag=i:i', '-qnortti', '-qlanglvl=stdc89', '-qfuncsect' ],
         'cflags_cc': [ '-fno-rtti' ],
         'conditions': [
           [ 'host_arch=="ppc64"', {
