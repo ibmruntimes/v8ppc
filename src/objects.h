@@ -5105,6 +5105,12 @@ class Code: public HeapObject {
   inline bool is_compiled_optimizable();
   inline void set_compiled_optimizable(bool value);
 
+  // [has_reloc_info_for_serialization]: For FUNCTION kind, tells if its
+  // reloc info includes runtime and external references to support
+  // serialization/deserialization.
+  inline bool has_reloc_info_for_serialization();
+  inline void set_has_reloc_info_for_serialization(bool value);
+
   // [allow_osr_at_loop_nesting_level]: For FUNCTION kind, tells for
   // how long the function has been marked for OSR and therefore which
   // level of loop nesting we are willing to do on-stack replacement
@@ -5391,6 +5397,8 @@ class Code: public HeapObject {
       public BitField<bool, 0, 1> {};  // NOLINT
   class FullCodeFlagsHasDebugBreakSlotsField: public BitField<bool, 1, 1> {};
   class FullCodeFlagsIsCompiledOptimizable: public BitField<bool, 2, 1> {};
+  class FullCodeFlagsHasRelocInfoForSerialization
+      : public BitField<bool, 3, 1> {};
 
   static const int kProfilerTicksOffset = kFullCodeFlags + 1;
 
@@ -6368,7 +6376,7 @@ class Map: public HeapObject {
   void ZapTransitions();
 
   void DeprecateTransitionTree();
-  void DeprecateTarget(Name* key, DescriptorArray* new_descriptors,
+  bool DeprecateTarget(Name* key, DescriptorArray* new_descriptors,
                        LayoutDescriptor* new_layout_descriptor);
 
   Map* FindLastMatchMap(int verbatim, int length, DescriptorArray* descriptors);
@@ -7929,12 +7937,11 @@ class JSRegExp: public JSObject {
       FixedArray::kHeaderSize + kIrregexpCaptureCountIndex * kPointerSize;
 
   // In-object fields.
-  static const int kSourceFieldIndex = 0;
-  static const int kGlobalFieldIndex = 1;
-  static const int kIgnoreCaseFieldIndex = 2;
-  static const int kMultilineFieldIndex = 3;
-  static const int kLastIndexFieldIndex = 4;
-  static const int kInObjectFieldCount = 5;
+  static const int kGlobalFieldIndex = 0;
+  static const int kIgnoreCaseFieldIndex = 1;
+  static const int kMultilineFieldIndex = 2;
+  static const int kLastIndexFieldIndex = 3;
+  static const int kInObjectFieldCount = 4;
 
   // The uninitialized value for a regexp code object.
   static const int kUninitializedValue = -1;
@@ -8357,14 +8364,11 @@ class AllocationSite: public Struct {
   static void DigestTransitionFeedback(Handle<AllocationSite> site,
                                        ElementsKind to_kind);
 
-  enum Reason {
-    TENURING,
-    TRANSITIONS
-  };
+  static void RegisterForDeoptOnTenureChange(Handle<AllocationSite> site,
+                                             CompilationInfo* info);
 
-  static void AddDependentCompilationInfo(Handle<AllocationSite> site,
-                                          Reason reason,
-                                          CompilationInfo* info);
+  static void RegisterForDeoptOnTransitionChange(Handle<AllocationSite> site,
+                                                 CompilationInfo* info);
 
   DECLARE_PRINTER(AllocationSite)
   DECLARE_VERIFIER(AllocationSite)
@@ -8396,7 +8400,10 @@ class AllocationSite: public Struct {
                               kSize> BodyDescriptor;
 
  private:
-  inline DependentCode::DependencyGroup ToDependencyGroup(Reason reason);
+  static void AddDependentCompilationInfo(Handle<AllocationSite> site,
+                                          DependentCode::DependencyGroup group,
+                                          CompilationInfo* info);
+
   bool PretenuringDecisionMade() {
     return pretenure_decision() != kUndecided;
   }
@@ -8814,6 +8821,9 @@ class String: public Name {
 
     friend class String;
   };
+
+  template <typename Char>
+  Vector<const Char> GetCharVector();
 
   // Get and set the length of the string.
   inline int length() const;
@@ -9400,6 +9410,8 @@ class FlatStringReader : public Relocatable {
   FlatStringReader(Isolate* isolate, Vector<const char> input);
   void PostGarbageCollection();
   inline uc32 Get(int index);
+  template <typename Char>
+  inline Char Get(int index);
   int length() { return length_; }
  private:
   String** str_;

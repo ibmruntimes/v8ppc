@@ -608,6 +608,21 @@ void InstructionSelector::VisitWord64Shr(Node* node) {
 
 
 void InstructionSelector::VisitWord32Sar(Node* node) {
+  Arm64OperandGenerator g(this);
+  Int32BinopMatcher m(node);
+  // Select Sxth/Sxtb for (x << K) >> K where K is 16 or 24.
+  if (CanCover(node, m.left().node()) && m.left().IsWord32Shl()) {
+    Int32BinopMatcher mleft(m.left().node());
+    if (mleft.right().Is(16) && m.right().Is(16)) {
+      Emit(kArm64Sxth32, g.DefineAsRegister(node),
+           g.UseRegister(mleft.left().node()));
+      return;
+    } else if (mleft.right().Is(24) && m.right().Is(24)) {
+      Emit(kArm64Sxtb32, g.DefineAsRegister(node),
+           g.UseRegister(mleft.left().node()));
+      return;
+    }
+  }
   VisitRRO(this, kArm64Asr32, node, kShift32Imm);
 }
 
@@ -882,7 +897,41 @@ void InstructionSelector::VisitChangeInt32ToInt64(Node* node) {
 
 void InstructionSelector::VisitChangeUint32ToUint64(Node* node) {
   Arm64OperandGenerator g(this);
-  Emit(kArm64Mov32, g.DefineAsRegister(node), g.UseRegister(node->InputAt(0)));
+  Node* value = node->InputAt(0);
+  switch (value->opcode()) {
+    case IrOpcode::kWord32And:
+    case IrOpcode::kWord32Or:
+    case IrOpcode::kWord32Xor:
+    case IrOpcode::kWord32Shl:
+    case IrOpcode::kWord32Shr:
+    case IrOpcode::kWord32Sar:
+    case IrOpcode::kWord32Ror:
+    case IrOpcode::kWord32Equal:
+    case IrOpcode::kInt32Add:
+    case IrOpcode::kInt32AddWithOverflow:
+    case IrOpcode::kInt32Sub:
+    case IrOpcode::kInt32SubWithOverflow:
+    case IrOpcode::kInt32Mul:
+    case IrOpcode::kInt32MulHigh:
+    case IrOpcode::kInt32Div:
+    case IrOpcode::kInt32Mod:
+    case IrOpcode::kInt32LessThan:
+    case IrOpcode::kInt32LessThanOrEqual:
+    case IrOpcode::kUint32Div:
+    case IrOpcode::kUint32LessThan:
+    case IrOpcode::kUint32LessThanOrEqual:
+    case IrOpcode::kUint32Mod:
+    case IrOpcode::kUint32MulHigh: {
+      // 32-bit operations will write their result in a W register (implicitly
+      // clearing the top 32-bit of the corresponding X register) so the
+      // zero-extension is a no-op.
+      Emit(kArchNop, g.DefineSameAsFirst(node), g.Use(value));
+      return;
+    }
+    default:
+      break;
+  }
+  Emit(kArm64Mov32, g.DefineAsRegister(node), g.UseRegister(value));
 }
 
 
@@ -1119,12 +1168,6 @@ void InstructionSelector::VisitBranch(Node* branch, BasicBlock* tbranch,
   Node* value = branch->InputAt(0);
 
   FlagsContinuation cont(kNotEqual, tbranch, fbranch);
-
-  // If we can fall through to the true block, invert the branch.
-  if (IsNextInAssemblyOrder(tbranch)) {
-    cont.Negate();
-    cont.SwapBlocks();
-  }
 
   // Try to combine with comparisons against 0 by simply inverting the branch.
   while (CanCover(user, value)) {
@@ -1414,7 +1457,8 @@ InstructionSelector::SupportedMachineOperatorFlags() {
   return MachineOperatorBuilder::kFloat64Floor |
          MachineOperatorBuilder::kFloat64Ceil |
          MachineOperatorBuilder::kFloat64RoundTruncate |
-         MachineOperatorBuilder::kFloat64RoundTiesAway;
+         MachineOperatorBuilder::kFloat64RoundTiesAway |
+         MachineOperatorBuilder::kWord32ShiftIsSafe;
 }
 }  // namespace compiler
 }  // namespace internal

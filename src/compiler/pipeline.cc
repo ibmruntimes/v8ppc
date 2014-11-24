@@ -542,6 +542,15 @@ struct AllocateDoubleRegistersPhase {
 };
 
 
+struct ReuseSpillSlotsPhase {
+  static const char* phase_name() { return "reuse spill slots"; }
+
+  void Run(PipelineData* data, Zone* temp_zone) {
+    data->register_allocator()->ReuseSpillSlots();
+  }
+};
+
+
 struct PopulatePointerMapsPhase {
   static const char* phase_name() { return "populate pointer maps"; }
 
@@ -602,25 +611,34 @@ struct PrintGraphPhase {
     std::replace(filename.start(), filename.start() + filename.length(), ' ',
                  '_');
 
-    char dot_buffer[256];
-    Vector<char> dot_filename(dot_buffer, sizeof(dot_buffer));
-    SNPrintF(dot_filename, "%s.dot", filename.start());
-    FILE* dot_file = base::OS::FOpen(dot_filename.start(), "w+");
-    OFStream dot_of(dot_file);
-    dot_of << AsDOT(*graph);
-    fclose(dot_file);
+    {  // Print dot.
+      char dot_buffer[256];
+      Vector<char> dot_filename(dot_buffer, sizeof(dot_buffer));
+      SNPrintF(dot_filename, "%s.dot", filename.start());
+      FILE* dot_file = base::OS::FOpen(dot_filename.start(), "w+");
+      OFStream dot_of(dot_file);
+      dot_of << AsDOT(*graph);
+      fclose(dot_file);
+    }
 
-    char json_buffer[256];
-    Vector<char> json_filename(json_buffer, sizeof(json_buffer));
-    SNPrintF(json_filename, "%s.json", filename.start());
-    FILE* json_file = base::OS::FOpen(json_filename.start(), "w+");
-    OFStream json_of(json_file);
-    json_of << AsJSON(*graph);
-    fclose(json_file);
+    {  // Print JSON.
+      char json_buffer[256];
+      Vector<char> json_filename(json_buffer, sizeof(json_buffer));
+      SNPrintF(json_filename, "%s.json", filename.start());
+      FILE* json_file = base::OS::FOpen(json_filename.start(), "w+");
+      OFStream json_of(json_file);
+      json_of << AsJSON(*graph);
+      fclose(json_file);
+    }
 
     OFStream os(stdout);
+    if (FLAG_trace_turbo_graph) {  // Simple textual RPO.
+      os << "-- Graph after " << phase << " -- " << std::endl;
+      os << AsRPO(*graph);
+    }
+
     os << "-- " << phase << " graph printed to file " << filename.start()
-       << "\n";
+       << std::endl;
   }
 };
 
@@ -638,7 +656,7 @@ struct VerifyGraphPhase {
 
 void Pipeline::BeginPhaseKind(const char* phase_kind_name) {
   if (data_->pipeline_statistics() != NULL) {
-    data_->pipeline_statistics()->BeginPhaseKind("phase_kind_name");
+    data_->pipeline_statistics()->BeginPhaseKind(phase_kind_name);
   }
 }
 
@@ -944,6 +962,9 @@ void Pipeline::AllocateRegisters(const RegisterConfiguration* config,
   if (!data->register_allocator()->AllocationOk()) {
     data->set_compilation_failed();
     return;
+  }
+  if (FLAG_turbo_reuse_spill_slots) {
+    Run<ReuseSpillSlotsPhase>();
   }
   Run<PopulatePointerMapsPhase>();
   Run<ConnectRangesPhase>();

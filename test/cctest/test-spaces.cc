@@ -217,13 +217,15 @@ TEST(Regress3540) {
   if (!code_range->SetUp(
           code_range_size +
           RoundUp(v8::base::OS::CommitPageSize() * kReservedCodeRangePages,
-                  MemoryChunk::kAlignment))) {
+                  MemoryChunk::kAlignment) +
+          v8::internal::MemoryAllocator::CodePageAreaSize())) {
     return;
   }
   Address address;
   size_t size;
-  address = code_range->AllocateRawMemory(code_range_size - pageSize,
-                                          code_range_size - pageSize, &size);
+  address = code_range->AllocateRawMemory(code_range_size - 2 * pageSize,
+                                          code_range_size - 2 * pageSize,
+                                          &size);
   CHECK(address != NULL);
   Address null_address;
   size_t null_size;

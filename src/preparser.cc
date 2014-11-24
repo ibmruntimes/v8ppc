@@ -350,6 +350,12 @@ PreParser::Statement PreParser::ParseFunctionDeclaration(bool* ok) {
 
 PreParser::Statement PreParser::ParseClassDeclaration(bool* ok) {
   Expect(Token::CLASS, CHECK_OK);
+  if (!allow_harmony_sloppy() && strict_mode() == SLOPPY) {
+    ReportMessage("sloppy_lexical");
+    *ok = false;
+    return Statement::Default();
+  }
+
   int pos = position();
   bool is_strict_reserved = false;
   Identifier name =
@@ -509,6 +515,13 @@ PreParser::Statement PreParser::ParseExpressionOrLabelledStatement(bool* ok) {
     // accept "native function" in the preparser.
   }
   // Parsed expression statement.
+  // Detect attempts at 'let' declarations in sloppy mode.
+  if (peek() == Token::IDENTIFIER && strict_mode() == SLOPPY &&
+      expr.IsIdentifier() && expr.AsIdentifier().IsLet()) {
+    ReportMessage("sloppy_lexical", NULL);
+    *ok = false;
+    return Statement::Default();
+  }
   ExpectSemicolon(CHECK_OK);
   return Statement::ExpressionStatement(expr);
 }
@@ -688,6 +701,7 @@ PreParser::Statement PreParser::ParseForStatement(bool* ok) {
 
   Expect(Token::FOR, CHECK_OK);
   Expect(Token::LPAREN, CHECK_OK);
+  bool is_let_identifier_expression = false;
   if (peek() != Token::SEMICOLON) {
     if (peek() == Token::VAR || peek() == Token::CONST ||
         (peek() == Token::LET && strict_mode() == STRICT)) {
@@ -709,6 +723,8 @@ PreParser::Statement PreParser::ParseForStatement(bool* ok) {
       }
     } else {
       Expression lhs = ParseExpression(false, CHECK_OK);
+      is_let_identifier_expression =
+          lhs.IsIdentifier() && lhs.AsIdentifier().IsLet();
       if (CheckInOrOf(lhs.IsIdentifier())) {
         ParseExpression(true, CHECK_OK);
         Expect(Token::RPAREN, CHECK_OK);
@@ -720,6 +736,13 @@ PreParser::Statement PreParser::ParseForStatement(bool* ok) {
   }
 
   // Parsed initializer at this point.
+  // Detect attempts at 'let' declarations in sloppy mode.
+  if (peek() == Token::IDENTIFIER && strict_mode() == SLOPPY &&
+      is_let_identifier_expression) {
+    ReportMessage("sloppy_lexical", NULL);
+    *ok = false;
+    return Statement::Default();
+  }
   Expect(Token::SEMICOLON, CHECK_OK);
 
   if (peek() != Token::SEMICOLON) {
@@ -981,7 +1004,7 @@ PreParser::Expression PreParser::ParseV8Intrinsic(bool* ok) {
   // CallRuntime ::
   //   '%' Identifier Arguments
   Expect(Token::MOD, CHECK_OK);
-  if (!allow_natives_syntax()) {
+  if (!allow_natives()) {
     *ok = false;
     return Expression::Default();
   }

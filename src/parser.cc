@@ -795,15 +795,16 @@ Parser::Parser(CompilationInfo* info, ParseInfo* parse_info)
       total_preparse_skipped_(0),
       pre_parse_timer_(NULL) {
   DCHECK(!script().is_null() || info->source_stream() != NULL);
-  set_allow_harmony_scoping(!info->is_native() && FLAG_harmony_scoping);
-  set_allow_modules(!info->is_native() && FLAG_harmony_modules);
-  set_allow_natives_syntax(FLAG_allow_natives_syntax || info->is_native());
   set_allow_lazy(false);  // Must be explicitly enabled.
-  set_allow_arrow_functions(FLAG_harmony_arrow_functions);
+  set_allow_natives(FLAG_allow_natives_syntax || info->is_native());
+  set_allow_harmony_scoping(!info->is_native() && FLAG_harmony_scoping);
+  set_allow_harmony_modules(!info->is_native() && FLAG_harmony_modules);
+  set_allow_harmony_arrow_functions(FLAG_harmony_arrow_functions);
   set_allow_harmony_numeric_literals(FLAG_harmony_numeric_literals);
-  set_allow_classes(FLAG_harmony_classes);
+  set_allow_harmony_classes(FLAG_harmony_classes);
   set_allow_harmony_object_literals(FLAG_harmony_object_literals);
   set_allow_harmony_templates(FLAG_harmony_templates);
+  set_allow_harmony_sloppy(FLAG_harmony_sloppy);
   for (int feature = 0; feature < v8::Isolate::kUseCounterFeatureCount;
        ++feature) {
     use_counts_[feature] = 0;
@@ -916,7 +917,7 @@ FunctionLiteral* Parser::DoParseProgram(CompilationInfo* info, Scope** scope,
 
     // Compute the parsing mode.
     Mode mode = (FLAG_lazy && allow_lazy()) ? PARSE_LAZILY : PARSE_EAGERLY;
-    if (allow_natives_syntax() || extension_ != NULL ||
+    if (allow_natives() || extension_ != NULL ||
         (*scope)->is_eval_scope()) {
       mode = PARSE_EAGERLY;
     }
@@ -1992,6 +1993,12 @@ Statement* Parser::ParseClassDeclaration(ZoneList<const AstRawString*>* names,
   // so rewrite it as such.
 
   Expect(Token::CLASS, CHECK_OK);
+  if (!allow_harmony_sloppy() && strict_mode() == SLOPPY) {
+    ReportMessage("sloppy_lexical");
+    *ok = false;
+    return NULL;
+  }
+
   int pos = position();
   bool is_strict_reserved = false;
   const AstRawString* name =
@@ -2479,12 +2486,20 @@ Statement* Parser::ParseExpressionOrLabelledStatement(
 
   // Parsed expression statement, or the context-sensitive 'module' keyword.
   // Only expect semicolon in the former case.
+  // Also detect attempts at 'let' declarations in sloppy mode.
   if (!FLAG_harmony_modules || peek() != Token::IDENTIFIER ||
       scanner()->HasAnyLineTerminatorBeforeNext() ||
       expr->AsVariableProxy() == NULL ||
       expr->AsVariableProxy()->raw_name() !=
           ast_value_factory()->module_string() ||
       scanner()->literal_contains_escapes()) {
+    if (peek() == Token::IDENTIFIER && expr->AsVariableProxy() != NULL &&
+        expr->AsVariableProxy()->raw_name() ==
+            ast_value_factory()->let_string()) {
+      ReportMessage("sloppy_lexical", NULL);
+      *ok = false;
+      return NULL;
+    }
     ExpectSemicolon(CHECK_OK);
   }
   return factory()->NewExpressionStatement(expr, pos);
@@ -3214,6 +3229,7 @@ Statement* Parser::ParseForStatement(ZoneList<const AstRawString*>* labels,
   Expect(Token::FOR, CHECK_OK);
   Expect(Token::LPAREN, CHECK_OK);
   for_scope->set_start_position(scanner()->location().beg_pos);
+  bool is_let_identifier_expression = false;
   if (peek() != Token::SEMICOLON) {
     if (peek() == Token::VAR ||
         (peek() == Token::CONST && strict_mode() == SLOPPY)) {
@@ -3325,6 +3341,10 @@ Statement* Parser::ParseForStatement(ZoneList<const AstRawString*>* labels,
       Expression* expression = ParseExpression(false, CHECK_OK);
       ForEachStatement::VisitMode mode;
       bool accept_OF = expression->IsVariableProxy();
+      is_let_identifier_expression =
+        expression->IsVariableProxy() &&
+        expression->AsVariableProxy()->raw_name() ==
+            ast_value_factory()->let_string();
 
       if (CheckInOrOf(accept_OF, &mode)) {
         expression = this->CheckAndRewriteReferenceExpression(
@@ -3357,6 +3377,13 @@ Statement* Parser::ParseForStatement(ZoneList<const AstRawString*>* labels,
   Target target(&this->target_stack_, loop);
 
   // Parsed initializer at this point.
+  // Detect attempts at 'let' declarations in sloppy mode.
+  if (peek() == Token::IDENTIFIER && strict_mode() == SLOPPY &&
+      is_let_identifier_expression) {
+    ReportMessage("sloppy_lexical", NULL);
+    *ok = false;
+    return NULL;
+  }
   Expect(Token::SEMICOLON, CHECK_OK);
 
   // If there are let bindings, then condition and the next statement of the
@@ -3944,17 +3971,19 @@ PreParser::PreParseResult Parser::ParseLazyFunctionBodyWithPreParser(
 
   if (reusable_preparser_ == NULL) {
     reusable_preparser_ = new PreParser(&scanner_, NULL, stack_limit_);
-    reusable_preparser_->set_allow_harmony_scoping(allow_harmony_scoping());
-    reusable_preparser_->set_allow_modules(allow_modules());
-    reusable_preparser_->set_allow_natives_syntax(allow_natives_syntax());
     reusable_preparser_->set_allow_lazy(true);
-    reusable_preparser_->set_allow_arrow_functions(allow_arrow_functions());
+    reusable_preparser_->set_allow_natives(allow_natives());
+    reusable_preparser_->set_allow_harmony_scoping(allow_harmony_scoping());
+    reusable_preparser_->set_allow_harmony_modules(allow_harmony_modules());
+    reusable_preparser_->set_allow_harmony_arrow_functions(
+        allow_harmony_arrow_functions());
     reusable_preparser_->set_allow_harmony_numeric_literals(
         allow_harmony_numeric_literals());
-    reusable_preparser_->set_allow_classes(allow_classes());
+    reusable_preparser_->set_allow_harmony_classes(allow_harmony_classes());
     reusable_preparser_->set_allow_harmony_object_literals(
         allow_harmony_object_literals());
     reusable_preparser_->set_allow_harmony_templates(allow_harmony_templates());
+    reusable_preparser_->set_allow_harmony_sloppy(allow_harmony_sloppy());
   }
   PreParser::PreParseResult result =
       reusable_preparser_->PreParseLazyFunction(strict_mode(),
@@ -5089,7 +5118,7 @@ bool Parser::Parse() {
   DCHECK(info()->function() == NULL);
   FunctionLiteral* result = NULL;
   pre_parse_timer_ = isolate()->counters()->pre_parse();
-  if (FLAG_trace_parse || allow_natives_syntax() || extension_ != NULL) {
+  if (FLAG_trace_parse || allow_natives() || extension_ != NULL) {
     // If intrinsics are allowed, the Parser cannot operate independent of the
     // V8 heap because of Runtime. Tell the string table to internalize strings
     // and values right after they're created.
@@ -5211,7 +5240,8 @@ Expression* Parser::CloseTemplateLiteral(TemplateLiteralState* state, int start,
     }
     return expr;
   } else {
-    ZoneList<Expression*>* raw_strings = TemplateRawStrings(lit);
+    uint32_t hash;
+    ZoneList<Expression*>* raw_strings = TemplateRawStrings(lit, &hash);
     Handle<String> source(String::cast(script()->source()));
 
     int cooked_idx = function_state_->NextMaterializedLiteralIndex();
@@ -5227,6 +5257,11 @@ Expression* Parser::CloseTemplateLiteral(TemplateLiteralState* state, int start,
         factory()->NewArrayLiteral(
             const_cast<ZoneList<Expression*>*>(raw_strings), raw_idx, pos),
         zone());
+
+    // Ensure hash is suitable as an Smi value
+    Smi* hash_obj = Smi::cast(Internals::IntToSmi(static_cast<int>(hash)));
+    args->Add(factory()->NewSmiLiteral(hash_obj->value(), pos), zone());
+
     this->CheckPossibleEvalCall(tag, scope_);
     Expression* call_site = factory()->NewCallRuntime(
         ast_value_factory()->get_template_callsite_string(), NULL, args, start);
@@ -5241,7 +5276,8 @@ Expression* Parser::CloseTemplateLiteral(TemplateLiteralState* state, int start,
 }
 
 
-ZoneList<Expression*>* Parser::TemplateRawStrings(const TemplateLiteral* lit) {
+ZoneList<Expression*>* Parser::TemplateRawStrings(const TemplateLiteral* lit,
+                                                  uint32_t* hash) {
   const ZoneList<int>* lengths = lit->lengths();
   const ZoneList<Expression*>* cooked_strings = lit->cooked();
   int total = lengths->length();
@@ -5261,11 +5297,26 @@ ZoneList<Expression*>* Parser::TemplateRawStrings(const TemplateLiteral* lit) {
 
   raw_strings = new (zone()) ZoneList<Expression*>(total, zone());
 
+  int num_hash_chars = (total - 1) * 3;
+  for (int index = 0; index < total; ++index) {
+    // Allow about length * 4 to handle most UTF8 sequences.
+    num_hash_chars += lengths->at(index) * 4;
+  }
+
+  Vector<uint8_t> hash_string = Vector<uint8_t>::New(num_hash_chars);
+  num_hash_chars = 0;
+
   for (int index = 0; index < total; ++index) {
     int span_start = cooked_strings->at(index)->position() + 1;
     int span_end = lengths->at(index) - 1;
     int length;
     int to_index = 0;
+
+    if (index) {
+      hash_string[num_hash_chars++] = '$';
+      hash_string[num_hash_chars++] = '{';
+      hash_string[num_hash_chars++] = '}';
+    }
 
     SmartArrayPointer<char> raw_chars =
         source->ToCString(ALLOW_NULLS, FAST_STRING_TRAVERSAL, span_start,
@@ -5281,6 +5332,7 @@ ZoneList<Expression*>* Parser::TemplateRawStrings(const TemplateLiteral* lit) {
           ++from_index;
         }
       }
+      hash_string[num_hash_chars++] = ch;
       raw_chars[to_index++] = ch;
     }
 
@@ -5289,6 +5341,12 @@ ZoneList<Expression*>* Parser::TemplateRawStrings(const TemplateLiteral* lit) {
     Literal* raw_lit = factory()->NewStringLiteral(raw_str, span_start - 1);
     raw_strings->Add(raw_lit, zone());
   }
+
+  hash_string.Truncate(num_hash_chars);
+  int utf16_length;
+  *hash = StringHasher::ComputeUtf8Hash(Vector<const char>::cast(hash_string),
+      num_hash_chars, &utf16_length);
+  hash_string.Dispose();
 
   return raw_strings;
 }

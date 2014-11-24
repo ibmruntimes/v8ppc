@@ -274,28 +274,6 @@
               'inputs': [
                 '<(PRODUCT_DIR)/<(EXECUTABLE_PREFIX)mksnapshot<(EXECUTABLE_SUFFIX)',
               ],
-              'conditions': [
-                ['want_separate_host_toolset==1', {
-                  'target_conditions': [
-                    ['_toolset=="host"', {
-                      'outputs': [
-                        '<(INTERMEDIATE_DIR)/snapshot.cc',
-                        '<(PRODUCT_DIR)/snapshot_blob_host.bin',
-                      ],
-                    }, {
-                      'outputs': [
-                        '<(INTERMEDIATE_DIR)/snapshot.cc',
-                        '<(PRODUCT_DIR)/snapshot_blob.bin',
-                      ],
-                    }],
-                  ],
-                }, {
-                  'outputs': [
-                    '<(INTERMEDIATE_DIR)/snapshot.cc',
-                    '<(PRODUCT_DIR)/snapshot_blob.bin',
-                  ],
-                }],
-              ],
               'variables': {
                 'mksnapshot_flags': [
                   '--log-snapshot-positions',
@@ -307,11 +285,45 @@
                   }],
                 ],
               },
-              'action': [
-                '<@(_inputs)',
-                '<@(mksnapshot_flags)',
-                '<@(INTERMEDIATE_DIR)/snapshot.cc',
-                '--startup_blob', '<(PRODUCT_DIR)/snapshot_blob.bin',
+              'conditions': [
+                ['want_separate_host_toolset==1', {
+                  'target_conditions': [
+                    ['_toolset=="host"', {
+                      'outputs': [
+                        '<(INTERMEDIATE_DIR)/snapshot.cc',
+                        '<(PRODUCT_DIR)/snapshot_blob_host.bin',
+                      ],
+                      'action': [
+                        '<@(_inputs)',
+                        '<@(mksnapshot_flags)',
+                        '<@(INTERMEDIATE_DIR)/snapshot.cc',
+                        '--startup_blob', '<(PRODUCT_DIR)/snapshot_blob_host.bin',
+                      ],
+                    }, {
+                      'outputs': [
+                        '<(INTERMEDIATE_DIR)/snapshot.cc',
+                        '<(PRODUCT_DIR)/snapshot_blob.bin',
+                      ],
+                      'action': [
+                        '<@(_inputs)',
+                        '<@(mksnapshot_flags)',
+                        '<@(INTERMEDIATE_DIR)/snapshot.cc',
+                        '--startup_blob', '<(PRODUCT_DIR)/snapshot_blob.bin',
+                      ],
+                    }],
+                  ],
+                }, {
+                  'outputs': [
+                    '<(INTERMEDIATE_DIR)/snapshot.cc',
+                    '<(PRODUCT_DIR)/snapshot_blob.bin',
+                  ],
+                  'action': [
+                    '<@(_inputs)',
+                    '<@(mksnapshot_flags)',
+                    '<@(INTERMEDIATE_DIR)/snapshot.cc',
+                    '--startup_blob', '<(PRODUCT_DIR)/snapshot_blob.bin',
+                  ],
+                }],
               ],
             },
           ],
@@ -1116,6 +1128,10 @@
             '../../src/mips64/regexp-macro-assembler-mips64.cc',
             '../../src/mips64/regexp-macro-assembler-mips64.h',
             '../../src/mips64/simulator-mips64.cc',
+            '../../src/compiler/mips64/code-generator-mips64.cc',
+            '../../src/compiler/mips64/instruction-codes-mips64.h',
+            '../../src/compiler/mips64/instruction-selector-mips64.cc',
+            '../../src/compiler/mips64/linkage-mips64.cc',
             '../../src/ic/mips64/access-compiler-mips64.cc',
             '../../src/ic/mips64/handler-compiler-mips64.cc',
             '../../src/ic/mips64/ic-mips64.cc',
@@ -1205,18 +1221,6 @@
             '../../src/ic/ppc/stub-cache-ppc.cc',
           ],
         }],
-        ['OS=="linux"', {
-            'link_settings': {
-              'conditions': [
-                ['v8_compress_startup_data=="bz2"', {
-                  'libraries': [
-                    '-lbz2',
-                  ]
-                }],
-              ],
-            },
-          }
-        ],
         ['OS=="win"', {
           'variables': {
             'gyp_generators': '<!(echo $GYP_GENERATORS)',
@@ -1695,7 +1699,6 @@
             '../../tools/js2c.py',
             '<(SHARED_INTERMEDIATE_DIR)/libraries.cc',
             'CORE',
-            '<(v8_compress_startup_data)',
             '<@(library_files)',
             '<@(i18n_library_files)',
           ],
@@ -1722,7 +1725,6 @@
             '../../tools/js2c.py',
             '<(SHARED_INTERMEDIATE_DIR)/experimental-libraries.cc',
             'EXPERIMENTAL',
-            '<(v8_compress_startup_data)',
             '<@(experimental_library_files)'
           ],
           'conditions': [
@@ -1785,11 +1787,6 @@
           'toolsets': ['host'],
         }, {
           'toolsets': ['target'],
-        }],
-        ['v8_compress_startup_data=="bz2"', {
-          'libraries': [
-            '-lbz2',
-          ]
         }],
       ],
     },

@@ -196,149 +196,13 @@ static inline bool IsExecutionTerminatingCheck(i::Isolate* isolate) {
 }
 
 
-StartupDataDecompressor::StartupDataDecompressor()
-    : raw_data(i::NewArray<char*>(V8::GetCompressedStartupDataCount())) {
-  for (int i = 0; i < V8::GetCompressedStartupDataCount(); ++i) {
-    raw_data[i] = NULL;
-  }
-}
-
-
-StartupDataDecompressor::~StartupDataDecompressor() {
-  for (int i = 0; i < V8::GetCompressedStartupDataCount(); ++i) {
-    i::DeleteArray(raw_data[i]);
-  }
-  i::DeleteArray(raw_data);
-}
-
-
-int StartupDataDecompressor::Decompress() {
-  int compressed_data_count = V8::GetCompressedStartupDataCount();
-  StartupData* compressed_data =
-      i::NewArray<StartupData>(compressed_data_count);
-  V8::GetCompressedStartupData(compressed_data);
-  for (int i = 0; i < compressed_data_count; ++i) {
-    char* decompressed = raw_data[i] =
-        i::NewArray<char>(compressed_data[i].raw_size);
-    if (compressed_data[i].compressed_size != 0) {
-      int result = DecompressData(decompressed,
-                                  &compressed_data[i].raw_size,
-                                  compressed_data[i].data,
-                                  compressed_data[i].compressed_size);
-      if (result != 0) return result;
-    } else {
-      DCHECK_EQ(0, compressed_data[i].raw_size);
-    }
-    compressed_data[i].data = decompressed;
-  }
-  V8::SetDecompressedStartupData(compressed_data);
-  i::DeleteArray(compressed_data);
-  return 0;
-}
-
-
-StartupData::CompressionAlgorithm V8::GetCompressedStartupDataAlgorithm() {
-#ifdef COMPRESS_STARTUP_DATA_BZ2
-  return StartupData::kBZip2;
-#else
-  return StartupData::kUncompressed;
-#endif
-}
-
-
-enum CompressedStartupDataItems {
-  kSnapshot = 0,
-  kSnapshotContext,
-  kLibraries,
-  kExperimentalLibraries,
-  kCompressedStartupDataCount
-};
-
-
-int V8::GetCompressedStartupDataCount() {
-#ifdef COMPRESS_STARTUP_DATA_BZ2
-  return kCompressedStartupDataCount;
-#else
-  return 0;
-#endif
-}
-
-
-void V8::GetCompressedStartupData(StartupData* compressed_data) {
-#ifdef COMPRESS_STARTUP_DATA_BZ2
-  compressed_data[kSnapshot].data =
-      reinterpret_cast<const char*>(i::Snapshot::data());
-  compressed_data[kSnapshot].compressed_size = i::Snapshot::size();
-  compressed_data[kSnapshot].raw_size = i::Snapshot::raw_size();
-
-  compressed_data[kSnapshotContext].data =
-      reinterpret_cast<const char*>(i::Snapshot::context_data());
-  compressed_data[kSnapshotContext].compressed_size =
-      i::Snapshot::context_size();
-  compressed_data[kSnapshotContext].raw_size = i::Snapshot::context_raw_size();
-
-  i::Vector<const i::byte> libraries_source = i::Natives::GetScriptsSource();
-  compressed_data[kLibraries].data =
-      reinterpret_cast<const char*>(libraries_source.start());
-  compressed_data[kLibraries].compressed_size = libraries_source.length();
-  compressed_data[kLibraries].raw_size = i::Natives::GetRawScriptsSize();
-
-  i::Vector<const i::byte> exp_libraries_source =
-      i::ExperimentalNatives::GetScriptsSource();
-  compressed_data[kExperimentalLibraries].data =
-      reinterpret_cast<const char*>(exp_libraries_source.start());
-  compressed_data[kExperimentalLibraries].compressed_size =
-      exp_libraries_source.length();
-  compressed_data[kExperimentalLibraries].raw_size =
-      i::ExperimentalNatives::GetRawScriptsSize();
-#endif
-}
-
-
-void V8::SetDecompressedStartupData(StartupData* decompressed_data) {
-#ifdef COMPRESS_STARTUP_DATA_BZ2
-  DCHECK_EQ(i::Snapshot::raw_size(), decompressed_data[kSnapshot].raw_size);
-  i::Snapshot::set_raw_data(
-      reinterpret_cast<const i::byte*>(decompressed_data[kSnapshot].data));
-
-  DCHECK_EQ(i::Snapshot::context_raw_size(),
-            decompressed_data[kSnapshotContext].raw_size);
-  i::Snapshot::set_context_raw_data(
-      reinterpret_cast<const i::byte*>(
-          decompressed_data[kSnapshotContext].data));
-
-  DCHECK_EQ(i::Natives::GetRawScriptsSize(),
-            decompressed_data[kLibraries].raw_size);
-  i::Vector<const char> libraries_source(
-      decompressed_data[kLibraries].data,
-      decompressed_data[kLibraries].raw_size);
-  i::Natives::SetRawScriptsSource(libraries_source);
-
-  DCHECK_EQ(i::ExperimentalNatives::GetRawScriptsSize(),
-            decompressed_data[kExperimentalLibraries].raw_size);
-  i::Vector<const char> exp_libraries_source(
-      decompressed_data[kExperimentalLibraries].data,
-      decompressed_data[kExperimentalLibraries].raw_size);
-  i::ExperimentalNatives::SetRawScriptsSource(exp_libraries_source);
-#endif
-}
-
-
 void V8::SetNativesDataBlob(StartupData* natives_blob) {
-#ifdef V8_USE_EXTERNAL_STARTUP_DATA
-  i::SetNativesFromFile(natives_blob);
-#else
-  CHECK(false);
-#endif
+  i::V8::SetNativesBlob(natives_blob);
 }
 
 
 void V8::SetSnapshotDataBlob(StartupData* snapshot_blob) {
-#ifdef V8_USE_EXTERNAL_STARTUP_DATA
-  i::SetSnapshotFromFile(snapshot_blob);
-#else
-  CHECK(false);
-#endif
+  i::V8::SetSnapshotBlob(snapshot_blob);
 }
 
 
@@ -3024,8 +2888,13 @@ int32_t Value::Int32Value() const {
 
 
 bool Value::Equals(Handle<Value> that) const {
-  i::Isolate* isolate = i::Isolate::Current();
   i::Handle<i::Object> obj = Utils::OpenHandle(this, true);
+  i::Handle<i::Object> other = Utils::OpenHandle(*that);
+  if (obj->IsSmi() && other->IsSmi()) {
+    return obj->Number() == other->Number();
+  }
+  i::Object* ho = obj->IsSmi() ? *other : *obj;
+  i::Isolate* isolate = i::HeapObject::cast(ho)->GetIsolate();
   if (!Utils::ApiCheck(!obj.is_null() && !that.IsEmpty(),
                        "v8::Value::Equals()",
                        "Reading from empty handle")) {
@@ -3033,7 +2902,6 @@ bool Value::Equals(Handle<Value> that) const {
   }
   LOG_API(isolate, "Equals");
   ENTER_V8(isolate);
-  i::Handle<i::Object> other = Utils::OpenHandle(*that);
   // If both obj and other are JSObjects, we'd better compare by identity
   // immediately when going into JS builtin.  The reason is Invoke
   // would overwrite global object receiver with global proxy.
@@ -3052,15 +2920,18 @@ bool Value::Equals(Handle<Value> that) const {
 
 
 bool Value::StrictEquals(Handle<Value> that) const {
-  i::Isolate* isolate = i::Isolate::Current();
   i::Handle<i::Object> obj = Utils::OpenHandle(this, true);
+  i::Handle<i::Object> other = Utils::OpenHandle(*that);
+  if (obj->IsSmi()) {
+    return other->IsNumber() && obj->Number() == other->Number();
+  }
+  i::Isolate* isolate = i::HeapObject::cast(*obj)->GetIsolate();
   if (!Utils::ApiCheck(!obj.is_null() && !that.IsEmpty(),
                        "v8::Value::StrictEquals()",
                        "Reading from empty handle")) {
     return false;
   }
   LOG_API(isolate, "StrictEquals");
-  i::Handle<i::Object> other = Utils::OpenHandle(*that);
   // Must check HeapNumber first, since NaN !== NaN.
   if (obj->IsHeapNumber()) {
     if (!other->IsNumber()) return false;
@@ -5550,7 +5421,11 @@ Local<String> v8::String::Concat(Handle<String> left, Handle<String> right) {
   LOG_API(isolate, "String::New(char)");
   ENTER_V8(isolate);
   i::Handle<i::String> right_string = Utils::OpenHandle(*right);
-  // We do not expect this to fail. Change this if it does.
+  // If we are steering towards a range error, do not wait for the error to be
+  // thrown, and return the null handle instead.
+  if (left_string->length() + right_string->length() > i::String::kMaxLength) {
+    return Local<String>();
+  }
   i::Handle<i::String> result = isolate->factory()->NewConsString(
       left_string, right_string).ToHandleChecked();
   return Utils::ToLocal(result);
@@ -5656,7 +5531,6 @@ bool v8::String::MakeExternal(
 
 
 bool v8::String::CanMakeExternal() {
-  if (!internal::FLAG_clever_optimizations) return false;
   i::Handle<i::String> obj = Utils::OpenHandle(this);
   i::Isolate* isolate = obj->GetIsolate();
 

@@ -15,6 +15,8 @@
 #include "src/compiler/ia32/instruction-codes-ia32.h"
 #elif V8_TARGET_ARCH_MIPS
 #include "src/compiler/mips/instruction-codes-mips.h"
+#elif V8_TARGET_ARCH_MIPS64
+#include "src/compiler/mips64/instruction-codes-mips64.h"
 #elif V8_TARGET_ARCH_X64
 #include "src/compiler/x64/instruction-codes-x64.h"
 #else
@@ -95,6 +97,10 @@ enum FlagsCondition {
   kOverflow,
   kNotOverflow
 };
+
+inline FlagsCondition NegateFlagsCondition(FlagsCondition condition) {
+  return static_cast<FlagsCondition>(condition ^ 1);
+}
 
 std::ostream& operator<<(std::ostream& os, const FlagsCondition& fc);
 

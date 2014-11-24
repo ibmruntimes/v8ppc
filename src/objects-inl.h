@@ -473,12 +473,24 @@ STATIC_ASSERT((kExternalStringTag | kTwoByteStringTag) ==
 
 STATIC_ASSERT(v8::String::TWO_BYTE_ENCODING == kTwoByteStringTag);
 
+
 uc32 FlatStringReader::Get(int index) {
-  DCHECK(0 <= index && index <= length_);
   if (is_one_byte_) {
-    return static_cast<const byte*>(start_)[index];
+    return Get<uint8_t>(index);
   } else {
-    return static_cast<const uc16*>(start_)[index];
+    return Get<uc16>(index);
+  }
+}
+
+
+template <typename Char>
+Char FlatStringReader::Get(int index) {
+  DCHECK_EQ(is_one_byte_, sizeof(Char) == 1);
+  DCHECK(0 <= index && index <= length_);
+  if (sizeof(Char) == 1) {
+    return static_cast<Char>(static_cast<const uint8_t*>(start_)[index]);
+  } else {
+    return static_cast<Char>(static_cast<const uc16*>(start_)[index]);
   }
 }
 
@@ -1649,21 +1661,6 @@ inline bool AllocationSite::CanTrack(InstanceType type) {
         type < FIRST_NONSTRING_TYPE;
   }
   return type == JS_ARRAY_TYPE;
-}
-
-
-inline DependentCode::DependencyGroup AllocationSite::ToDependencyGroup(
-    Reason reason) {
-  switch (reason) {
-    case TENURING:
-      return DependentCode::kAllocationSiteTenuringChangedGroup;
-      break;
-    case TRANSITIONS:
-      return DependentCode::kAllocationSiteTransitionChangedGroup;
-      break;
-  }
-  UNREACHABLE();
-  return DependentCode::kAllocationSiteTransitionChangedGroup;
 }
 
 
@@ -4857,6 +4854,21 @@ void Code::set_compiled_optimizable(bool value) {
   DCHECK_EQ(FUNCTION, kind());
   byte flags = READ_BYTE_FIELD(this, kFullCodeFlags);
   flags = FullCodeFlagsIsCompiledOptimizable::update(flags, value);
+  WRITE_BYTE_FIELD(this, kFullCodeFlags, flags);
+}
+
+
+bool Code::has_reloc_info_for_serialization() {
+  DCHECK_EQ(FUNCTION, kind());
+  byte flags = READ_BYTE_FIELD(this, kFullCodeFlags);
+  return FullCodeFlagsHasRelocInfoForSerialization::decode(flags);
+}
+
+
+void Code::set_has_reloc_info_for_serialization(bool value) {
+  DCHECK_EQ(FUNCTION, kind());
+  byte flags = READ_BYTE_FIELD(this, kFullCodeFlags);
+  flags = FullCodeFlagsHasRelocInfoForSerialization::update(flags, value);
   WRITE_BYTE_FIELD(this, kFullCodeFlags, flags);
 }
 

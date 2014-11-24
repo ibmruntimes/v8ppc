@@ -97,9 +97,6 @@ class BasicJsonStringifier BASE_EMBEDDED {
   template <typename Char>
   INLINE(static bool DoNotEscape(Char c));
 
-  template <typename Char>
-  INLINE(static Vector<const Char> GetCharVector(Handle<String> string));
-
   Result StackPush(Handle<Object> object);
   void StackPop();
 
@@ -634,22 +631,14 @@ void BasicJsonStringifier::SerializeString_(Handle<String> string) {
   int worst_case_length = length << 3;
   if (builder_.CurrentPartCanFit(worst_case_length)) {
     DisallowHeapAllocation no_gc;
-    Vector<const SrcChar> vector = GetCharVector<SrcChar>(string);
+    Vector<const SrcChar> vector = string->GetCharVector<SrcChar>();
     IncrementalStringBuilder::NoExtendBuilder<DestChar> no_extend(
         &builder_, worst_case_length);
     SerializeStringUnchecked_(vector, &no_extend);
   } else {
-    String* string_location = NULL;
-    Vector<const SrcChar> vector(NULL, 0);
-    for (int i = 0; i < length; i++) {
-      // If GC moved the string, we need to refresh the vector.
-      if (*string != string_location) {
-        DisallowHeapAllocation no_gc;
-        // This does not actually prevent the string from being relocated later.
-        vector = GetCharVector<SrcChar>(string);
-        string_location = *string;
-      }
-      SrcChar c = vector[i];
+    FlatStringReader reader(isolate_, string);
+    for (int i = 0; i < reader.length(); i++) {
+      SrcChar c = reader.Get<SrcChar>(i);
       if (DoNotEscape(c)) {
         builder_.Append<SrcChar, DestChar>(c);
       } else {
@@ -671,23 +660,6 @@ bool BasicJsonStringifier::DoNotEscape(uint8_t c) {
 template <>
 bool BasicJsonStringifier::DoNotEscape(uint16_t c) {
   return c >= '#' && c != '\\' && c != 0x7f;
-}
-
-
-template <>
-Vector<const uint8_t> BasicJsonStringifier::GetCharVector(
-    Handle<String> string) {
-  String::FlatContent flat = string->GetFlatContent();
-  DCHECK(flat.IsOneByte());
-  return flat.ToOneByteVector();
-}
-
-
-template <>
-Vector<const uc16> BasicJsonStringifier::GetCharVector(Handle<String> string) {
-  String::FlatContent flat = string->GetFlatContent();
-  DCHECK(flat.IsTwoByte());
-  return flat.ToUC16Vector();
 }
 
 

@@ -136,8 +136,7 @@ RUNTIME_FUNCTION(Runtime_DebugGetPropertyDetails) {
         isolate, element_or_char,
         Runtime::GetElementOrCharAt(isolate, obj, index));
     details->set(0, *element_or_char);
-    details->set(1,
-                 PropertyDetails(NONE, NORMAL, Representation::None()).AsSmi());
+    details->set(1, PropertyDetails(NONE, FIELD, 0).AsSmi());
     return *isolate->factory()->NewJSArrayWithElements(details);
   }
 
@@ -159,7 +158,7 @@ RUNTIME_FUNCTION(Runtime_DebugGetPropertyDetails) {
   details->set(0, *value);
   // TODO(verwaest): Get rid of this random way of handling interceptors.
   PropertyDetails d = it.state() == LookupIterator::INTERCEPTOR
-                          ? PropertyDetails(NONE, NORMAL, 0)
+                          ? PropertyDetails(NONE, FIELD, 0)
                           : it.property_details();
   details->set(1, d.AsSmi());
   details->set(
@@ -214,7 +213,7 @@ RUNTIME_FUNCTION(Runtime_DebugPropertyIndexFromDetails) {
   SealHandleScope shs(isolate);
   DCHECK(args.length() == 1);
   CONVERT_PROPERTY_DETAILS_CHECKED(details, 0);
-  // TODO(verwaest): Depends on the type of details.
+  // TODO(verwaest): Works only for dictionary mode holders.
   return Smi::FromInt(details.dictionary_index());
 }
 
@@ -801,6 +800,29 @@ MUST_USE_RESULT static MaybeHandle<JSObject> MaterializeLocalContext(
 }
 
 
+MUST_USE_RESULT static MaybeHandle<JSObject> MaterializeScriptScope(
+    Handle<GlobalObject> global) {
+  Isolate* isolate = global->GetIsolate();
+  Handle<ScriptContextTable> script_contexts(
+      global->native_context()->script_context_table());
+
+  Handle<JSObject> script_scope =
+      isolate->factory()->NewJSObject(isolate->object_function());
+
+  for (int context_index = 0; context_index < script_contexts->used();
+       context_index++) {
+    Handle<Context> context =
+        ScriptContextTable::GetContext(script_contexts, context_index);
+    Handle<ScopeInfo> scope_info(ScopeInfo::cast(context->extension()));
+    if (!ScopeInfo::CopyContextLocalsToScopeObject(scope_info, context,
+                                                   script_scope)) {
+      return MaybeHandle<JSObject>();
+    }
+  }
+  return script_scope;
+}
+
+
 MUST_USE_RESULT static MaybeHandle<JSObject> MaterializeLocalScope(
     Isolate* isolate, JavaScriptFrame* frame, int inlined_jsframe_index) {
   FrameInspector frame_inspector(frame, inlined_jsframe_index, isolate);
@@ -997,6 +1019,24 @@ static bool SetBlockContextVariableValue(Handle<Context> block_context,
 }
 
 
+static bool SetScriptVariableValue(Handle<Context> context,
+                                   Handle<String> variable_name,
+                                   Handle<Object> new_value) {
+  Handle<ScriptContextTable> script_contexts(
+      context->global_object()->native_context()->script_context_table());
+  ScriptContextTable::LookupResult lookup_result;
+  if (ScriptContextTable::Lookup(script_contexts, variable_name,
+                                 &lookup_result)) {
+    Handle<Context> script_context = ScriptContextTable::GetContext(
+        script_contexts, lookup_result.context_index);
+    script_context->set(lookup_result.slot_index, *new_value);
+    return true;
+  }
+
+  return false;
+}
+
+
 // Create a plain JSObject which materializes the scope for the specified
 // catch context.
 MUST_USE_RESULT static MaybeHandle<JSObject> MaterializeCatchScope(
@@ -1084,6 +1124,7 @@ class ScopeIterator {
     ScopeTypeClosure,
     ScopeTypeCatch,
     ScopeTypeBlock,
+    ScopeTypeScript,
     ScopeTypeModule
   };
 
@@ -1095,6 +1136,7 @@ class ScopeIterator {
         function_(frame->function()),
         context_(Context::cast(frame->context())),
         nested_scope_chain_(4),
+        seen_script_scope_(false),
         failed_(false) {
     // Catch the case when the debugger stops in an internal function.
     Handle<SharedFunctionInfo> shared_info(function_->shared());
@@ -1186,6 +1228,7 @@ class ScopeIterator {
         inlined_jsframe_index_(0),
         function_(function),
         context_(function->context()),
+        seen_script_scope_(false),
         failed_(false) {
     if (function->IsBuiltin()) {
       context_ = Handle<Context>();
@@ -1210,8 +1253,16 @@ class ScopeIterator {
       context_ = Handle<Context>();
       return;
     }
+    if (scope_type == ScopeTypeScript) seen_script_scope_ = true;
     if (nested_scope_chain_.is_empty()) {
-      context_ = Handle<Context>(context_->previous(), isolate_);
+      if (scope_type == ScopeTypeScript) {
+        if (context_->IsScriptContext()) {
+          context_ = Handle<Context>(context_->previous(), isolate_);
+        }
+        CHECK(context_->IsNativeContext());
+      } else {
+        context_ = Handle<Context>(context_->previous(), isolate_);
+      }
     } else {
       if (nested_scope_chain_.last()->HasContext()) {
         DCHECK(context_->previous() != NULL);
@@ -1235,8 +1286,8 @@ class ScopeIterator {
           DCHECK(context_->IsModuleContext());
           return ScopeTypeModule;
         case SCRIPT_SCOPE:
-          DCHECK(context_->IsNativeContext());
-          return ScopeTypeGlobal;
+          DCHECK(context_->IsScriptContext() || context_->IsNativeContext());
+          return ScopeTypeScript;
         case WITH_SCOPE:
           DCHECK(context_->IsWithContext());
           return ScopeTypeWith;
@@ -1252,7 +1303,9 @@ class ScopeIterator {
     }
     if (context_->IsNativeContext()) {
       DCHECK(context_->global_object()->IsGlobalObject());
-      return ScopeTypeGlobal;
+      // If we are at the native context and have not yet seen script scope,
+      // fake it.
+      return seen_script_scope_ ? ScopeTypeGlobal : ScopeTypeScript;
     }
     if (context_->IsFunctionContext()) {
       return ScopeTypeClosure;
@@ -1266,6 +1319,9 @@ class ScopeIterator {
     if (context_->IsModuleContext()) {
       return ScopeTypeModule;
     }
+    if (context_->IsScriptContext()) {
+      return ScopeTypeScript;
+    }
     DCHECK(context_->IsWithContext());
     return ScopeTypeWith;
   }
@@ -1276,6 +1332,9 @@ class ScopeIterator {
     switch (Type()) {
       case ScopeIterator::ScopeTypeGlobal:
         return Handle<JSObject>(CurrentContext()->global_object());
+      case ScopeIterator::ScopeTypeScript:
+        return MaterializeScriptScope(
+            Handle<GlobalObject>(CurrentContext()->global_object()));
       case ScopeIterator::ScopeTypeLocal:
         // Materialize the content of the local scope into a JSObject.
         DCHECK(nested_scope_chain_.length() == 1);
@@ -1314,6 +1373,9 @@ class ScopeIterator {
       case ScopeIterator::ScopeTypeClosure:
         return SetClosureVariableValue(isolate_, CurrentContext(),
                                        variable_name, new_value);
+      case ScopeIterator::ScopeTypeScript:
+        return SetScriptVariableValue(CurrentContext(), variable_name,
+                                      new_value);
       case ScopeIterator::ScopeTypeBlock:
         return SetBlockContextVariableValue(CurrentContext(), variable_name,
                                             new_value);
@@ -1340,7 +1402,8 @@ class ScopeIterator {
   // be an actual context.
   Handle<Context> CurrentContext() {
     DCHECK(!failed_);
-    if (Type() == ScopeTypeGlobal || nested_scope_chain_.is_empty()) {
+    if (Type() == ScopeTypeGlobal || Type() == ScopeTypeScript ||
+        nested_scope_chain_.is_empty()) {
       return context_;
     } else if (nested_scope_chain_.last()->HasContext()) {
       return context_;
@@ -1397,6 +1460,15 @@ class ScopeIterator {
         }
         break;
 
+      case ScopeIterator::ScopeTypeScript:
+        os << "Script:\n";
+        CurrentContext()
+            ->global_object()
+            ->native_context()
+            ->script_context_table()
+            ->Print(os);
+        break;
+
       default:
         UNREACHABLE();
     }
@@ -1411,6 +1483,7 @@ class ScopeIterator {
   Handle<JSFunction> function_;
   Handle<Context> context_;
   List<Handle<ScopeInfo> > nested_scope_chain_;
+  bool seen_script_scope_;
   bool failed_;
 
   void RetrieveScopeChain(Scope* scope,
@@ -2175,6 +2248,7 @@ RUNTIME_FUNCTION(Runtime_DebugEvaluate) {
   // We iterate to find the function's context. If the function has no
   // context-allocated variables, we iterate until we hit the outer context.
   while (!function_context->IsFunctionContext() &&
+         !function_context->IsScriptContext() &&
          !function_context.is_identical_to(outer_context)) {
     inner_context = function_context;
     function_context = Handle<Context>(function_context->previous(), isolate);
@@ -2657,7 +2731,9 @@ RUNTIME_FUNCTION(Runtime_GetScript) {
 // to a built-in function such as Array.forEach.
 RUNTIME_FUNCTION(Runtime_DebugCallbackSupportsStepping) {
   DCHECK(args.length() == 1);
-  if (!isolate->debug()->is_active() || !isolate->debug()->StepInActive()) {
+  Debug* debug = isolate->debug();
+  if (!debug->is_active() || !debug->IsStepping() ||
+      debug->last_step_action() != StepIn) {
     return isolate->heap()->false_value();
   }
   CONVERT_ARG_CHECKED(Object, callback, 0);

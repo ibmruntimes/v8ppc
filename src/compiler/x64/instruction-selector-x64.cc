@@ -275,12 +275,6 @@ void VisitWord32Shift(InstructionSelector* selector, Node* node,
     selector->Emit(opcode, g.DefineSameAsFirst(node), g.UseRegister(left),
                    g.UseImmediate(right));
   } else {
-    if (m.right().IsWord32And()) {
-      Int32BinopMatcher mright(right);
-      if (mright.right().Is(0x1F)) {
-        right = mright.left().node();
-      }
-    }
     selector->Emit(opcode, g.DefineSameAsFirst(node), g.UseRegister(left),
                    g.UseFixed(right, rcx));
   }
@@ -346,6 +340,18 @@ void InstructionSelector::VisitWord64Shr(Node* node) {
 
 
 void InstructionSelector::VisitWord32Sar(Node* node) {
+  X64OperandGenerator g(this);
+  Int32BinopMatcher m(node);
+  if (CanCover(m.node(), m.left().node()) && m.left().IsWord32Shl()) {
+    Int32BinopMatcher mleft(m.left().node());
+    if (mleft.right().Is(16) && m.right().Is(16)) {
+      Emit(kX64Movsxwl, g.DefineAsRegister(node), g.Use(mleft.left().node()));
+      return;
+    } else if (mleft.right().Is(24) && m.right().Is(24)) {
+      Emit(kX64Movsxbl, g.DefineAsRegister(node), g.Use(mleft.left().node()));
+      return;
+    }
+  }
   VisitWord32Shift(this, node, kX64Sar32);
 }
 
@@ -363,6 +369,7 @@ void InstructionSelector::VisitWord32Ror(Node* node) {
 void InstructionSelector::VisitWord64Ror(Node* node) {
   VisitWord64Shift(this, node, kX64Ror);
 }
+
 
 namespace {
 
@@ -420,10 +427,39 @@ void InstructionSelector::VisitInt32Add(Node* node) {
   // Try to match the Add to a leal pattern
   ScaledWithOffset32Matcher m(node);
   X64OperandGenerator g(this);
+  // It's possible to use a "leal", but it may not be smaller/cheaper. In the
+  // case that there are only two operands to the add and one of them isn't
+  // live, use a plain "addl".
   if (m.matches() && (m.constant() == NULL || g.CanBeImmediate(m.constant()))) {
+    if (m.offset() != NULL) {
+      if (m.constant() == NULL) {
+        if (m.scaled() != NULL && m.scale_exponent() == 0) {
+          if (!IsLive(m.offset())) {
+            Emit(kX64Add32, g.DefineSameAsFirst(node),
+                 g.UseRegister(m.offset()), g.Use(m.scaled()));
+            return;
+          } else if (!IsLive(m.scaled())) {
+            Emit(kX64Add32, g.DefineSameAsFirst(node),
+                 g.UseRegister(m.scaled()), g.Use(m.offset()));
+            return;
+          }
+        }
+      } else {
+        if (m.scale_exponent() == 0) {
+          if (m.scaled() == NULL || m.offset() == NULL) {
+            Node* non_constant = m.scaled() == NULL ? m.offset() : m.scaled();
+            if (!IsLive(non_constant)) {
+              Emit(kX64Add32, g.DefineSameAsFirst(node),
+                   g.UseRegister(non_constant), g.UseImmediate(m.constant()));
+              return;
+            }
+          }
+        }
+      }
+    }
+
     InstructionOperand* inputs[4];
     size_t input_count = 0;
-
     AddressingMode mode = GenerateMemoryOperandInputs(
         &g, m.scaled(), m.scale_exponent(), m.offset(), m.constant(), inputs,
         &input_count);
@@ -455,6 +491,17 @@ void InstructionSelector::VisitInt32Sub(Node* node) {
   if (m.left().Is(0)) {
     Emit(kX64Neg32, g.DefineSameAsFirst(node), g.UseRegister(m.right().node()));
   } else {
+    if (m.right().HasValue() && g.CanBeImmediate(m.right().node())) {
+      if (IsLive(m.left().node())) {
+        // Special handling for subtraction of constants where the non-constant
+        // input is used elsewhere. To eliminate the gap move before the sub to
+        // copy the destination register, use a "leal" instead.
+        Emit(kX64Lea32 | AddressingModeField::encode(kMode_MRI),
+             g.DefineAsRegister(node), g.UseRegister(m.left().node()),
+             g.TempImmediate(-m.right().Value()));
+        return;
+      }
+    }
     VisitBinop(this, node, kX64Sub32);
   }
 }
@@ -886,12 +933,6 @@ void InstructionSelector::VisitBranch(Node* branch, BasicBlock* tbranch,
 
   FlagsContinuation cont(kNotEqual, tbranch, fbranch);
 
-  // If we can fall through to the true block, invert the branch.
-  if (IsNextInAssemblyOrder(tbranch)) {
-    cont.Negate();
-    cont.SwapBlocks();
-  }
-
   // Try to combine with comparisons against 0 by simply inverting the branch.
   while (CanCover(user, value)) {
     if (value->opcode() == IrOpcode::kWord32Equal) {
@@ -1157,10 +1198,12 @@ InstructionSelector::SupportedMachineOperatorFlags() {
   if (CpuFeatures::IsSupported(SSE4_1)) {
     return MachineOperatorBuilder::kFloat64Floor |
            MachineOperatorBuilder::kFloat64Ceil |
-           MachineOperatorBuilder::kFloat64RoundTruncate;
+           MachineOperatorBuilder::kFloat64RoundTruncate |
+           MachineOperatorBuilder::kWord32ShiftIsSafe;
   }
   return MachineOperatorBuilder::kNoFlags;
 }
+
 }  // namespace compiler
 }  // namespace internal
 }  // namespace v8

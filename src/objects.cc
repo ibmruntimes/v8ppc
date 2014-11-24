@@ -1836,7 +1836,7 @@ void JSObject::AddSlowProperty(Handle<JSObject> object,
       // Assign an enumeration index to the property and update
       // SetNextEnumerationIndex.
       int index = dict->NextEnumerationIndex();
-      PropertyDetails details = PropertyDetails(attributes, NORMAL, index);
+      PropertyDetails details(attributes, FIELD, index);
       dict->SetNextEnumerationIndex(index + 1);
       dict->SetEntry(entry, name, cell, details);
       return;
@@ -1845,7 +1845,7 @@ void JSObject::AddSlowProperty(Handle<JSObject> object,
     PropertyCell::SetValueInferType(cell, value);
     value = cell;
   }
-  PropertyDetails details = PropertyDetails(attributes, NORMAL, 0);
+  PropertyDetails details(attributes, FIELD, 0);
   Handle<NameDictionary> result =
       NameDictionary::Add(dict, name, value, details);
   if (*dict != *result) object->set_properties(*result);
@@ -2259,18 +2259,21 @@ void Map::DeprecateTransitionTree() {
 // Invalidates a transition target at |key|, and installs |new_descriptors| over
 // the current instance_descriptors to ensure proper sharing of descriptor
 // arrays.
-void Map::DeprecateTarget(Name* key, DescriptorArray* new_descriptors,
+// Returns true if the transition target at given key was deprecated.
+bool Map::DeprecateTarget(Name* key, DescriptorArray* new_descriptors,
                           LayoutDescriptor* new_layout_descriptor) {
+  bool transition_target_deprecated = false;
   if (HasTransitionArray()) {
     TransitionArray* transitions = this->transitions();
     int transition = transitions->Search(key);
     if (transition != TransitionArray::kNotFound) {
       transitions->GetTarget(transition)->DeprecateTransitionTree();
+      transition_target_deprecated = true;
     }
   }
 
   // Don't overwrite the empty descriptor array.
-  if (NumberOfOwnDescriptors() == 0) return;
+  if (NumberOfOwnDescriptors() == 0) return transition_target_deprecated;
 
   DescriptorArray* to_replace = instance_descriptors();
   Map* current = this;
@@ -2284,6 +2287,7 @@ void Map::DeprecateTarget(Name* key, DescriptorArray* new_descriptors,
   }
 
   set_owns_descriptors(false);
+  return transition_target_deprecated;
 }
 
 
@@ -2731,8 +2735,17 @@ Handle<Map> Map::GeneralizeRepresentation(Handle<Map> old_map,
 
   Handle<LayoutDescriptor> new_layout_descriptor =
       LayoutDescriptor::New(split_map, new_descriptors, old_nof);
-  split_map->DeprecateTarget(old_descriptors->GetKey(split_nof),
-                             *new_descriptors, *new_layout_descriptor);
+  bool transition_target_deprecated =
+      split_map->DeprecateTarget(old_descriptors->GetKey(split_nof),
+                                 *new_descriptors, *new_layout_descriptor);
+
+  // If |transition_target_deprecated| is true then the transition array
+  // already contains entry for given descriptor. This means that the transition
+  // could be inserted regardless of whether transitions array is full or not.
+  if (!transition_target_deprecated && !split_map->CanHaveMoreTransitions()) {
+    return CopyGeneralizeAllRepresentations(old_map, modify_index, store_mode,
+                                            "GenAll_CantHaveMoreTransitions");
+  }
 
   if (FLAG_trace_generalization) {
     PropertyDetails old_details = old_descriptors->GetDetails(modify_index);
@@ -2755,10 +2768,6 @@ Handle<Map> Map::GeneralizeRepresentation(Handle<Map> old_map,
   // Add missing transitions.
   Handle<Map> new_map = split_map;
   for (int i = split_nof; i < old_nof; ++i) {
-    if (!new_map->CanHaveMoreTransitions()) {
-      return CopyGeneralizeAllRepresentations(old_map, modify_index, store_mode,
-                                              "can't have more transitions");
-    }
     new_map = CopyInstallDescriptors(new_map, i, new_descriptors,
                                      new_layout_descriptor);
   }
@@ -2855,9 +2864,6 @@ MaybeHandle<Map> Map::TryUpdateInternal(Handle<Map> old_map) {
           return MaybeHandle<Map>();
         }
         break;
-
-      case NORMAL:
-        UNREACHABLE();
     }
   }
   if (new_map->NumberOfOwnDescriptors() != old_nof) return MaybeHandle<Map>();
@@ -4347,8 +4353,7 @@ void JSObject::MigrateFastToSlow(Handle<JSObject> object,
       case CONSTANT: {
         Handle<Name> key(descs->GetKey(i));
         Handle<Object> value(descs->GetConstant(i), isolate);
-        PropertyDetails d = PropertyDetails(
-            details.attributes(), NORMAL, i + 1);
+        PropertyDetails d(details.attributes(), FIELD, i + 1);
         dictionary = NameDictionary::Add(dictionary, key, value, d);
         break;
       }
@@ -4367,22 +4372,17 @@ void JSObject::MigrateFastToSlow(Handle<JSObject> object,
             value = isolate->factory()->NewHeapNumber(old->value());
           }
         }
-        PropertyDetails d =
-            PropertyDetails(details.attributes(), NORMAL, i + 1);
+        PropertyDetails d(details.attributes(), FIELD, i + 1);
         dictionary = NameDictionary::Add(dictionary, key, value, d);
         break;
       }
       case CALLBACKS: {
         Handle<Name> key(descs->GetKey(i));
         Handle<Object> value(descs->GetCallbacksObject(i), isolate);
-        PropertyDetails d = PropertyDetails(
-            details.attributes(), CALLBACKS, i + 1);
+        PropertyDetails d(details.attributes(), CALLBACKS, i + 1);
         dictionary = NameDictionary::Add(dictionary, key, value, d);
         break;
       }
-      case NORMAL:
-        UNREACHABLE();
-        break;
     }
   }
 
@@ -4455,8 +4455,7 @@ void JSObject::MigrateSlowToFast(Handle<JSObject> object,
 
     Object* value = dictionary->ValueAt(index);
     PropertyType type = dictionary->DetailsAt(index).type();
-    DCHECK(type != FIELD);
-    if (type == NORMAL && !value->IsJSFunction()) {
+    if (type == FIELD && !value->IsJSFunction()) {
       number_of_fields += 1;
     }
   }
@@ -4527,7 +4526,7 @@ void JSObject::MigrateSlowToFast(Handle<JSObject> object,
     if (value->IsJSFunction()) {
       ConstantDescriptor d(key, handle(value, isolate), details.attributes());
       descriptors->Set(enumeration_index - 1, &d);
-    } else if (type == NORMAL) {
+    } else if (type == FIELD) {
       if (current_offset < inobject_props) {
         object->InObjectPropertyAtPut(current_offset, value,
                                       UPDATE_WRITE_BARRIER);
@@ -4603,7 +4602,7 @@ static Handle<SeededNumberDictionary> CopyFastElementsToDictionary(
       value = handle(Handle<FixedArray>::cast(array)->get(i), isolate);
     }
     if (!value->IsTheHole()) {
-      PropertyDetails details = PropertyDetails(NONE, NORMAL, 0);
+      PropertyDetails details(NONE, FIELD, 0);
       dictionary =
           SeededNumberDictionary::AddNumberEntry(dictionary, i, value, details);
     }
@@ -7005,10 +7004,6 @@ bool DescriptorArray::CanHoldValue(int descriptor, Object* value) {
 
     case CALLBACKS:
       return false;
-
-    case NORMAL:
-      UNREACHABLE();
-      break;
   }
 
   UNREACHABLE();
@@ -8300,6 +8295,22 @@ String::FlatContent String::GetFlatContent() {
     }
     return FlatContent(start + offset, length);
   }
+}
+
+
+template <>
+Vector<const uint8_t> String::GetCharVector() {
+  String::FlatContent flat = GetFlatContent();
+  DCHECK(flat.IsOneByte());
+  return flat.ToOneByteVector();
+}
+
+
+template <>
+Vector<const uc16> String::GetCharVector() {
+  String::FlatContent flat = GetFlatContent();
+  DCHECK(flat.IsTwoByte());
+  return flat.ToUC16Vector();
 }
 
 
@@ -10214,7 +10225,6 @@ bool SharedFunctionInfo::VerifyBailoutId(BailoutId id) {
 void JSFunction::StartInobjectSlackTracking() {
   DCHECK(has_initial_map() && !IsInobjectSlackTrackingInProgress());
 
-  if (!FLAG_clever_optimizations) return;
   Map* map = initial_map();
 
   // Only initiate the tracking the first time.
@@ -12393,8 +12403,8 @@ MaybeHandle<Object> JSObject::SetDictionaryElement(
       // is read-only (a declared const that has not been initialized).  If a
       // value is being defined we skip attribute checks completely.
       if (set_mode == DEFINE_PROPERTY) {
-        details = PropertyDetails(
-            attributes, NORMAL, details.dictionary_index());
+        details =
+            PropertyDetails(attributes, FIELD, details.dictionary_index());
         dictionary->DetailsAtPut(entry, details);
       } else if (details.IsReadOnly() && !element->IsTheHole()) {
         if (strict_mode == SLOPPY) {
@@ -12445,7 +12455,7 @@ MaybeHandle<Object> JSObject::SetDictionaryElement(
       }
     }
 
-    PropertyDetails details = PropertyDetails(attributes, NORMAL, 0);
+    PropertyDetails details(attributes, FIELD, 0);
     Handle<SeededNumberDictionary> new_dictionary =
         SeededNumberDictionary::AddNumberEntry(dictionary, index, value,
                                                details);
@@ -12959,10 +12969,32 @@ void AllocationSite::DigestTransitionFeedback(Handle<AllocationSite> site,
 
 
 // static
-void AllocationSite::AddDependentCompilationInfo(Handle<AllocationSite> site,
-                                                 Reason reason,
-                                                 CompilationInfo* info) {
-  DependentCode::DependencyGroup group = site->ToDependencyGroup(reason);
+void AllocationSite::RegisterForDeoptOnTenureChange(Handle<AllocationSite> site,
+                                                    CompilationInfo* info) {
+  AddDependentCompilationInfo(
+      site, DependentCode::kAllocationSiteTenuringChangedGroup, info);
+}
+
+
+// static
+void AllocationSite::RegisterForDeoptOnTransitionChange(
+    Handle<AllocationSite> site, CompilationInfo* info) {
+  // Do nothing if the object doesn't have any useful element transitions left.
+  ElementsKind kind =
+      site->SitePointsToLiteral()
+          ? JSObject::cast(site->transition_info())->GetElementsKind()
+          : site->GetElementsKind();
+  if (AllocationSite::GetMode(kind) == TRACK_ALLOCATION_SITE) {
+    AddDependentCompilationInfo(
+        site, DependentCode::kAllocationSiteTransitionChangedGroup, info);
+  }
+}
+
+
+// static
+void AllocationSite::AddDependentCompilationInfo(
+    Handle<AllocationSite> site, DependentCode::DependencyGroup group,
+    CompilationInfo* info) {
   Handle<DependentCode> dep(site->dependent_code());
   Handle<DependentCode> codes =
       DependentCode::Insert(dep, group, info->object_wrapper());
@@ -14556,7 +14588,7 @@ Handle<Object> JSObject::PrepareSlowElementsForSort(
   }
 
   uint32_t result = pos;
-  PropertyDetails no_details = PropertyDetails(NONE, NORMAL, 0);
+  PropertyDetails no_details(NONE, FIELD, 0);
   while (undefs > 0) {
     if (pos > static_cast<uint32_t>(Smi::kMaxValue)) {
       // Adding an entry with the key beyond smi-range requires
@@ -14942,7 +14974,7 @@ Handle<PropertyCell> JSGlobalObject::EnsurePropertyCell(
     Isolate* isolate = global->GetIsolate();
     Handle<PropertyCell> cell = isolate->factory()->NewPropertyCell(
         isolate->factory()->the_hole_value());
-    PropertyDetails details(NONE, NORMAL, 0);
+    PropertyDetails details(NONE, FIELD, 0);
     details = details.AsDeleted();
     Handle<NameDictionary> dictionary = NameDictionary::Add(
         handle(global->property_dictionary()), name, cell, details);
@@ -15422,7 +15454,7 @@ Handle<Derived> Dictionary<Derived, Shape, Key>::AtPut(
 #ifdef DEBUG
   USE(Shape::AsHandle(dictionary->GetIsolate(), key));
 #endif
-  PropertyDetails details = PropertyDetails(NONE, NORMAL, 0);
+  PropertyDetails details(NONE, FIELD, 0);
 
   AddEntry(dictionary, key, value, details, dictionary->Hash(key));
   return dictionary;
@@ -15510,7 +15542,7 @@ Handle<UnseededNumberDictionary> UnseededNumberDictionary::AddNumberEntry(
     uint32_t key,
     Handle<Object> value) {
   SLOW_DCHECK(dictionary->FindEntry(key) == kNotFound);
-  return Add(dictionary, key, value, PropertyDetails(NONE, NORMAL, 0));
+  return Add(dictionary, key, value, PropertyDetails(NONE, FIELD, 0));
 }
 
 

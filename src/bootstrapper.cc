@@ -1044,11 +1044,10 @@ void Genesis::InitializeGlobal(Handle<GlobalObject> global_object,
 
     {
       // ECMA-262, section 15.10.7.1.
-      FieldDescriptor field(factory->source_string(),
-                            JSRegExp::kSourceFieldIndex,
-                            final,
-                            Representation::Tagged());
-      initial_map->AppendDescriptor(&field);
+      Handle<AccessorInfo> regexp_source(
+          Accessors::RegExpSourceInfo(isolate, final));
+      CallbacksDescriptor d(factory->source_string(), regexp_source, final);
+      initial_map->AppendDescriptor(&d);
     }
     {
       // ECMA-262, section 15.10.7.2.
@@ -1085,18 +1084,17 @@ void Genesis::InitializeGlobal(Handle<GlobalObject> global_object,
       initial_map->AppendDescriptor(&field);
     }
 
-    initial_map->set_inobject_properties(5);
-    initial_map->set_pre_allocated_property_fields(5);
+    static const int num_fields = JSRegExp::kInObjectFieldCount;
+    initial_map->set_inobject_properties(num_fields);
+    initial_map->set_pre_allocated_property_fields(num_fields);
     initial_map->set_unused_property_fields(0);
-    initial_map->set_instance_size(
-        initial_map->instance_size() + 5 * kPointerSize);
+    initial_map->set_instance_size(initial_map->instance_size() +
+                                   num_fields * kPointerSize);
 
     // RegExp prototype object is itself a RegExp.
     Handle<Map> proto_map = Map::Copy(initial_map, "RegExpPrototype");
     proto_map->set_prototype(native_context()->initial_object_prototype());
     Handle<JSObject> proto = factory->NewJSObjectFromMap(proto_map);
-    proto->InObjectPropertyAtPut(JSRegExp::kSourceFieldIndex,
-                                 heap->query_colon_string());
     proto->InObjectPropertyAtPut(JSRegExp::kGlobalFieldIndex,
                                  heap->false_value());
     proto->InObjectPropertyAtPut(JSRegExp::kIgnoreCaseFieldIndex,
@@ -1598,6 +1596,7 @@ EMPTY_NATIVE_FUNCTIONS_FOR_FEATURE(harmony_arrow_functions)
 EMPTY_NATIVE_FUNCTIONS_FOR_FEATURE(harmony_numeric_literals)
 EMPTY_NATIVE_FUNCTIONS_FOR_FEATURE(harmony_tostring)
 EMPTY_NATIVE_FUNCTIONS_FOR_FEATURE(harmony_templates)
+EMPTY_NATIVE_FUNCTIONS_FOR_FEATURE(harmony_sloppy)
 
 
 void Genesis::InstallNativeFunctions_harmony_proxies() {
@@ -1625,6 +1624,7 @@ EMPTY_INITIALIZE_GLOBAL_FOR_FEATURE(harmony_numeric_literals)
 EMPTY_INITIALIZE_GLOBAL_FOR_FEATURE(harmony_tostring)
 EMPTY_INITIALIZE_GLOBAL_FOR_FEATURE(harmony_proxies)
 EMPTY_INITIALIZE_GLOBAL_FOR_FEATURE(harmony_templates)
+EMPTY_INITIALIZE_GLOBAL_FOR_FEATURE(harmony_sloppy)
 
 void Genesis::InitializeGlobal_harmony_regexps() {
   Handle<JSObject> builtins(native_context()->builtins());
@@ -2180,6 +2180,7 @@ bool Genesis::InstallExperimentalNatives() {
                                                    NULL};
   static const char* harmony_templates_natives[] = {
       "native harmony-templates.js", NULL};
+  static const char* harmony_sloppy_natives[] = {NULL};
 
   for (int i = ExperimentalNatives::GetDebuggerCount();
        i < ExperimentalNatives::GetBuiltinsCount(); i++) {
@@ -2599,10 +2600,6 @@ void Genesis::TransferNamedProperties(Handle<JSObject> from,
           JSObject::SetNormalizedProperty(to, key, callbacks, d);
           break;
         }
-        // Do not occur since the from object has fast properties.
-        case NORMAL:
-          UNREACHABLE();
-          break;
       }
     }
   } else {

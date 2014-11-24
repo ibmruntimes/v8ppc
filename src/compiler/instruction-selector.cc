@@ -295,7 +295,7 @@ void InstructionSelector::InitializeCallBuffer(Node* call, CallBuffer* buffer,
                                                bool call_code_immediate,
                                                bool call_address_immediate) {
   OperandGenerator g(this);
-  DCHECK_EQ(call->op()->OutputCount(),
+  DCHECK_EQ(call->op()->ValueOutputCount(),
             static_cast<int>(buffer->descriptor->ReturnCount()));
   DCHECK_EQ(
       call->op()->ValueInputCount(),
@@ -925,16 +925,15 @@ void InstructionSelector::VisitParameter(Node* node) {
 
 
 void InstructionSelector::VisitPhi(Node* node) {
-  // TODO(bmeurer): Emit a PhiInstruction here.
+  const int input_count = node->op()->ValueInputCount();
   PhiInstruction* phi = new (instruction_zone())
-      PhiInstruction(instruction_zone(), GetVirtualRegister(node));
+      PhiInstruction(instruction_zone(), GetVirtualRegister(node),
+                     static_cast<size_t>(input_count));
   sequence()->InstructionBlockAt(current_block_->GetRpoNumber())->AddPhi(phi);
-  const int input_count = node->op()->InputCount();
-  phi->operands().reserve(static_cast<size_t>(input_count));
   for (int i = 0; i < input_count; ++i) {
     Node* const input = node->InputAt(i);
     MarkAsUsed(input);
-    phi->operands().push_back(GetVirtualRegister(input));
+    phi->Extend(instruction_zone(), GetVirtualRegister(input));
   }
 }
 
@@ -967,14 +966,9 @@ void InstructionSelector::VisitConstant(Node* node) {
 
 
 void InstructionSelector::VisitGoto(BasicBlock* target) {
-  if (IsNextInAssemblyOrder(target)) {
-    // fall through to the next block.
-    Emit(kArchNop, NULL)->MarkAsControl();
-  } else {
-    // jump to the next block.
-    OperandGenerator g(this);
-    Emit(kArchJmp, NULL, g.Label(target))->MarkAsControl();
-  }
+  // jump to the next block.
+  OperandGenerator g(this);
+  Emit(kArchJmp, NULL, g.Label(target))->MarkAsControl();
 }
 
 

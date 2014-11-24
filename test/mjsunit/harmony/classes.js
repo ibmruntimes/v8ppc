@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// Flags: --harmony-classes
+// Flags: --harmony-classes --harmony-sloppy
 
 (function TestBasics() {
   var C = class C {}
@@ -159,6 +159,15 @@
   assertThrows('class C extends function B() { with ({}); return B; }() {}',
                SyntaxError);
 
+  var D = class extends function() {
+    arguments.caller;
+  } {};
+  assertThrows(function() {
+    Object.getPrototypeOf(D).arguments;
+  }, TypeError);
+  assertThrows(function() {
+    new D;
+  }, TypeError);
 })();
 
 

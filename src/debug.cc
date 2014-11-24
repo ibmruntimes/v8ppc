@@ -40,6 +40,7 @@ Debug::Debug(Isolate* isolate)
       live_edit_enabled_(true),  // TODO(yangguo): set to false by default.
       has_break_points_(false),
       break_disabled_(false),
+      in_debug_event_listener_(false),
       break_on_exception_(false),
       break_on_uncaught_exception_(false),
       script_cache_(NULL),
@@ -872,7 +873,7 @@ void Debug::Break(Arguments args, JavaScriptFrame* frame) {
   LiveEdit::InitializeThreadLocal(this);
 
   // Just continue if breaks are disabled or debugger cannot be loaded.
-  if (break_disabled_) return;
+  if (break_disabled()) return;
 
   // Enter the debugger.
   DebugScope debug_scope(this);
@@ -1199,6 +1200,9 @@ void Debug::ClearAllBreakPoints() {
 
 void Debug::FloodWithOneShot(Handle<JSFunction> function,
                              BreakLocatorType type) {
+  // Do not ever break in native functions.
+  if (function->IsFromNativeScript()) return;
+
   PrepareForBreakPoints();
 
   // Make sure the function is compiled and has set up the debug info.
@@ -1249,7 +1253,7 @@ void Debug::FloodWithOneShotGeneric(Handle<JSFunction> function,
     FloodBoundFunctionWithOneShot(function);
   } else if (function->shared()->is_default_constructor()) {
     FloodDefaultConstructorWithOneShot(function);
-  } else if (!function->IsFromNativeScript()) {
+  } else {
     Isolate* isolate = function->GetIsolate();
     // Don't allow step into functions in the native context.
     if (function->shared()->code() ==
@@ -2812,7 +2816,8 @@ void Debug::CallEventCallback(v8::DebugEvent event,
                               Handle<Object> exec_state,
                               Handle<Object> event_data,
                               v8::Debug::ClientData* client_data) {
-  DisableBreak no_break(this, true);
+  bool previous = in_debug_event_listener_;
+  in_debug_event_listener_ = true;
   if (event_listener_->IsForeign()) {
     // Invoke the C debug event listener.
     v8::Debug::EventCallback callback =
@@ -2836,6 +2841,7 @@ void Debug::CallEventCallback(v8::DebugEvent event,
     Execution::TryCall(Handle<JSFunction>::cast(event_listener_),
                        global, arraysize(argv), argv);
   }
+  in_debug_event_listener_ = previous;
 }
 
 
@@ -3089,7 +3095,7 @@ void Debug::HandleDebugBreak() {
   // Ignore debug break during bootstrapping.
   if (isolate_->bootstrapper()->IsActive()) return;
   // Just continue if breaks are disabled.
-  if (break_disabled_) return;
+  if (break_disabled()) return;
   // Ignore debug break if debugger is not active.
   if (!is_active()) return;
 

@@ -173,7 +173,8 @@ DEFINE_IMPLICATION(harmony, es_staging)
   V(harmony_arrow_functions, "harmony arrow functions")           \
   V(harmony_tostring, "harmony toString")                         \
   V(harmony_proxies, "harmony proxies")                           \
-  V(harmony_templates, "harmony template literals")
+  V(harmony_templates, "harmony template literals")               \
+  V(harmony_sloppy, "harmony features in sloppy mode")
 
 // Features that are complete (but still behind --harmony/es-staging flag).
 #define HARMONY_STAGED(V) V(harmony_strings, "harmony string methods")
@@ -218,8 +219,6 @@ DEFINE_IMPLICATION(harmony_classes, harmony_object_literals)
 // Flags for experimental implementation features.
 DEFINE_BOOL(compiled_keyed_generic_loads, false,
             "use optimizing compiler to generate keyed generic load stubs")
-DEFINE_BOOL(clever_optimizations, true,
-            "Optimize object size, Array shift, DOM strings and string +")
 // TODO(hpayer): We will remove this flag as soon as we have pretenuring
 // support for specific allocation sites.
 DEFINE_BOOL(pretenuring_call_new, false, "pretenure call new")
@@ -367,6 +366,8 @@ DEFINE_BOOL(omit_map_checks_for_leaf_maps, true,
 // Flags for TurboFan.
 DEFINE_STRING(turbo_filter, "~", "optimization filter for TurboFan compiler")
 DEFINE_BOOL(trace_turbo, false, "trace generated TurboFan IR")
+DEFINE_BOOL(trace_turbo_graph, false, "trace generated TurboFan graphs")
+DEFINE_IMPLICATION(trace_turbo_graph, trace_turbo)
 DEFINE_STRING(trace_turbo_cfg_file, NULL,
               "trace turbo cfg graph (for C1 visualizer) to a given file name")
 DEFINE_BOOL(trace_turbo_types, true, "trace TurboFan's types")
@@ -389,6 +390,11 @@ DEFINE_BOOL(loop_assignment_analysis, true, "perform loop assignment analysis")
 DEFINE_IMPLICATION(turbo_inlining_intrinsics, turbo_inlining)
 DEFINE_IMPLICATION(turbo_inlining, turbo_types)
 DEFINE_BOOL(turbo_profiling, false, "enable profiling in TurboFan")
+// TODO(dcarney): this is just for experimentation, remove when default.
+DEFINE_BOOL(turbo_reuse_spill_slots, false, "reuse spill slots in TurboFan")
+// TODO(dcarney): this is just for experimentation, remove when default.
+DEFINE_BOOL(turbo_delay_ssa_decon, false,
+            "delay ssa deconstruction in TurboFan register allocator")
 
 DEFINE_INT(typed_array_max_size_in_heap, 64,
            "threshold for in-heap typed array")
@@ -478,6 +484,7 @@ DEFINE_BOOL(trace_stub_failures, false,
             "trace deoptimization of generated code stubs")
 
 DEFINE_BOOL(serialize_toplevel, true, "enable caching of toplevel scripts")
+DEFINE_BOOL(serialize_inner, false, "enable caching of inner functions")
 DEFINE_BOOL(trace_code_serializer, false, "print code serializer trace")
 
 // compiler.cc
@@ -529,6 +536,7 @@ DEFINE_INT(target_semi_space_size, 0,
 DEFINE_INT(max_semi_space_size, 0,
            "max size of a semi-space (in MBytes), the new space consists of two"
            "semi-spaces")
+DEFINE_INT(semi_space_growth_factor, 2, "factor by which to grow the new space")
 DEFINE_INT(max_old_space_size, 0, "max size of the old space (in Mbytes)")
 DEFINE_INT(max_executable_size, 0, "max size of executable memory (in Mbytes)")
 DEFINE_BOOL(gc_global, false, "always perform global GCs")

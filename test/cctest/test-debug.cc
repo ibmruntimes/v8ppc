@@ -621,7 +621,7 @@ static void DebugEventBreakPointHitCount(
         last_function_hit[0] = '\0';
       } else {
         CHECK(result->IsString());
-        v8::Handle<v8::String> function_name(result->ToString());
+        v8::Handle<v8::String> function_name(result.As<v8::String>());
         function_name->WriteUtf8(last_function_hit);
       }
     }
@@ -656,7 +656,7 @@ static void DebugEventBreakPointHitCount(
         last_script_name_hit[0] = '\0';
       } else {
         CHECK(result->IsString());
-        v8::Handle<v8::String> script_name(result->ToString());
+        v8::Handle<v8::String> script_name(result.As<v8::String>());
         script_name->WriteUtf8(last_script_name_hit);
       }
     }
@@ -775,7 +775,7 @@ static void DebugEventEvaluate(
       v8::Handle<v8::Value> result =
           evaluate_check_function->Call(exec_state, argc, argv);
       if (!result->IsTrue()) {
-        v8::String::Utf8Value utf8(checks[i].expected->ToString());
+        v8::String::Utf8Value utf8(checks[i].expected);
         V8_Fatal(__FILE__, __LINE__, "%s != %s", checks[i].expr, *utf8);
       }
     }
@@ -849,7 +849,7 @@ static void DebugEventStepSequence(
     v8::Handle<v8::Value> result = frame_function_name->Call(exec_state,
                                                              argc, argv);
     CHECK(result->IsString());
-    v8::String::Utf8Value function_name(result->ToString());
+    v8::String::Utf8Value function_name(result->ToString(CcTest::isolate()));
     CHECK_EQ(1, StrLength(*function_name));
     CHECK_EQ((*function_name)[0],
               expected_step_sequence[break_point_hit_count]);
@@ -6159,7 +6159,8 @@ static void DebugEventDebugBreak(
         last_function_hit[0] = '\0';
       } else {
         CHECK(result->IsString());
-        v8::Handle<v8::String> function_name(result->ToString());
+        v8::Handle<v8::String> function_name(
+            result->ToString(CcTest::isolate()));
         function_name->WriteUtf8(last_function_hit);
       }
     }
@@ -7042,7 +7043,8 @@ static void DebugEventBreakDeoptimize(
       if (!result->IsUndefined()) {
         char fn[80];
         CHECK(result->IsString());
-        v8::Handle<v8::String> function_name(result->ToString());
+        v8::Handle<v8::String> function_name(
+            result->ToString(CcTest::isolate()));
         function_name->WriteUtf8(fn);
         if (strcmp(fn, "bar") == 0) {
           i::Deoptimizer::DeoptimizeAll(CcTest::i_isolate());
@@ -7107,12 +7109,12 @@ static void DebugEventBreakWithOptimizedStack(
         v8::Handle<v8::Value> result =
             frame_function_name->Call(exec_state, argc, argv);
         CHECK(result->IsString());
-        v8::Handle<v8::String> function_name(result->ToString());
+        v8::Handle<v8::String> function_name(result->ToString(isolate));
         CHECK(function_name->Equals(v8::String::NewFromUtf8(isolate, "loop")));
         // Get the name of the first argument in frame i.
         result = frame_argument_name->Call(exec_state, argc, argv);
         CHECK(result->IsString());
-        v8::Handle<v8::String> argument_name(result->ToString());
+        v8::Handle<v8::String> argument_name(result->ToString(isolate));
         CHECK(argument_name->Equals(v8::String::NewFromUtf8(isolate, "count")));
         // Get the value of the first argument in frame i. If the
         // funtion is optimized the value will be undefined, otherwise
@@ -7125,7 +7127,7 @@ static void DebugEventBreakWithOptimizedStack(
         // Get the name of the first local variable.
         result = frame_local_name->Call(exec_state, argc, argv);
         CHECK(result->IsString());
-        v8::Handle<v8::String> local_name(result->ToString());
+        v8::Handle<v8::String> local_name(result->ToString(isolate));
         CHECK(local_name->Equals(v8::String::NewFromUtf8(isolate, "local")));
         // Get the value of the first local variable. If the function
         // is optimized the value will be undefined, otherwise it will
@@ -7630,9 +7632,25 @@ static void DebugHarmonyScopingListener(
   char script[128];
   i::Vector<char> script_vector(script, sizeof(script));
   SNPrintF(script_vector, "%%GetFrameCount(%d)", break_id);
-  v8::Local<v8::Value> result = CompileRun(script);
+  ExpectInt32(script, 1);
 
-  CHECK_EQ(1, result->Int32Value());
+  SNPrintF(script_vector, "var frame = new FrameMirror(%d, 0);", break_id);
+  CompileRun(script);
+  ExpectInt32("frame.evaluate('x').value_", 1);
+  ExpectInt32("frame.evaluate('y').value_", 2);
+
+  CompileRun("var allScopes = frame.allScopes()");
+  ExpectInt32("allScopes.length", 2);
+
+  ExpectBoolean("allScopes[0].scopeType() === ScopeType.Script", true);
+
+  ExpectInt32("allScopes[0].scopeObject().value_.x", 1);
+
+  ExpectInt32("allScopes[0].scopeObject().value_.y", 2);
+
+  CompileRun("allScopes[0].setVariableValue('x', 5);");
+  CompileRun("allScopes[0].setVariableValue('y', 6);");
+  ExpectInt32("frame.evaluate('x + y').value_", 11);
 }
 
 
@@ -7648,8 +7666,15 @@ TEST(DebugBreakInLexicalScopes) {
   CompileRun(
       "'use strict';            \n"
       "let x = 1;               \n");
-  CompileRun(
+  ExpectInt32(
       "'use strict';            \n"
-      "let y = 1;               \n"
-      "debugger                 \n");
+      "let y = 2;               \n"
+      "debugger;                \n"
+      "x * y",
+      30);
+  ExpectInt32(
+      "x = 1; y = 2; \n"
+      "debugger;"
+      "x * y",
+      30);
 }

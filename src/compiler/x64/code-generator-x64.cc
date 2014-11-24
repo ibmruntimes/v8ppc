@@ -238,7 +238,7 @@ void CodeGenerator::AssembleArchInstruction(Instruction* instr) {
       break;
     }
     case kArchJmp:
-      __ jmp(GetLabel(i.InputRpo(0)));
+      AssembleArchJump(i.InputRpo(0));
       break;
     case kArchNop:
       // don't emit code for nops.
@@ -483,7 +483,14 @@ void CodeGenerator::AssembleArchInstruction(Instruction* instr) {
       __ cvtqsi2sd(i.OutputDoubleRegister(), kScratchRegister);
       break;
     case kX64Movsxbl:
-      __ movsxbl(i.OutputRegister(), i.MemoryOperand());
+      if (instr->addressing_mode() != kMode_None) {
+        __ movsxbl(i.OutputRegister(), i.MemoryOperand());
+      } else if (instr->InputAt(0)->IsRegister()) {
+        __ movsxbl(i.OutputRegister(), i.InputRegister(0));
+      } else {
+        __ movsxbl(i.OutputRegister(), i.InputOperand(0));
+      }
+      __ AssertZeroExtended(i.OutputRegister());
       break;
     case kX64Movzxbl:
       __ movzxbl(i.OutputRegister(), i.MemoryOperand());
@@ -499,10 +506,18 @@ void CodeGenerator::AssembleArchInstruction(Instruction* instr) {
       break;
     }
     case kX64Movsxwl:
-      __ movsxwl(i.OutputRegister(), i.MemoryOperand());
+      if (instr->addressing_mode() != kMode_None) {
+        __ movsxwl(i.OutputRegister(), i.MemoryOperand());
+      } else if (instr->InputAt(0)->IsRegister()) {
+        __ movsxwl(i.OutputRegister(), i.InputRegister(0));
+      } else {
+        __ movsxwl(i.OutputRegister(), i.InputOperand(0));
+      }
+      __ AssertZeroExtended(i.OutputRegister());
       break;
     case kX64Movzxwl:
       __ movzxwl(i.OutputRegister(), i.MemoryOperand());
+      __ AssertZeroExtended(i.OutputRegister());
       break;
     case kX64Movw: {
       int index = 0;
@@ -525,6 +540,7 @@ void CodeGenerator::AssembleArchInstruction(Instruction* instr) {
         } else {
           __ movl(i.OutputRegister(), i.MemoryOperand());
         }
+        __ AssertZeroExtended(i.OutputRegister());
       } else {
         int index = 0;
         Operand operand = i.MemoryOperand(&index);
@@ -576,9 +592,16 @@ void CodeGenerator::AssembleArchInstruction(Instruction* instr) {
       break;
     case kX64Lea32:
       __ leal(i.OutputRegister(), i.MemoryOperand());
+      __ AssertZeroExtended(i.OutputRegister());
       break;
     case kX64Lea:
       __ leaq(i.OutputRegister(), i.MemoryOperand());
+      break;
+    case kX64Dec32:
+      __ decl(i.OutputRegister());
+      break;
+    case kX64Inc32:
+      __ incl(i.OutputRegister());
       break;
     case kX64Push:
       if (HasImmediateInput(instr, 0)) {
@@ -608,22 +631,13 @@ void CodeGenerator::AssembleArchInstruction(Instruction* instr) {
 
 
 // Assembles branches after this instruction.
-void CodeGenerator::AssembleArchBranch(Instruction* instr,
-                                       FlagsCondition condition) {
+void CodeGenerator::AssembleArchBranch(Instruction* instr, BranchInfo* branch) {
   X64OperandConverter i(this, instr);
-  Label done;
-
-  // Emit a branch. The true and false targets are always the last two inputs
-  // to the instruction.
-  BasicBlock::RpoNumber tblock =
-      i.InputRpo(static_cast<int>(instr->InputCount()) - 2);
-  BasicBlock::RpoNumber fblock =
-      i.InputRpo(static_cast<int>(instr->InputCount()) - 1);
-  bool fallthru = IsNextInAssemblyOrder(fblock);
-  Label* tlabel = GetLabel(tblock);
-  Label* flabel = fallthru ? &done : GetLabel(fblock);
-  Label::Distance flabel_distance = fallthru ? Label::kNear : Label::kFar;
-  switch (condition) {
+  Label::Distance flabel_distance =
+      branch->fallthru ? Label::kNear : Label::kFar;
+  Label* tlabel = branch->true_label;
+  Label* flabel = branch->false_label;
+  switch (branch->condition) {
     case kUnorderedEqual:
       __ j(parity_even, flabel, flabel_distance);
     // Fall through.
@@ -679,8 +693,12 @@ void CodeGenerator::AssembleArchBranch(Instruction* instr,
       __ j(no_overflow, tlabel);
       break;
   }
-  if (!fallthru) __ jmp(flabel, flabel_distance);  // no fallthru to flabel.
-  __ bind(&done);
+  if (!branch->fallthru) __ jmp(flabel, flabel_distance);
+}
+
+
+void CodeGenerator::AssembleArchJump(BasicBlock::RpoNumber target) {
+  if (!IsNextInAssemblyOrder(target)) __ jmp(GetLabel(target));
 }
 
 
@@ -984,7 +1002,7 @@ void CodeGenerator::AssembleSwap(InstructionOperand* source,
     __ movsd(xmm0, src);
     __ movsd(src, dst);
     __ movsd(dst, xmm0);
-  } else if (source->IsDoubleRegister() && destination->IsDoubleRegister()) {
+  } else if (source->IsDoubleRegister() && destination->IsDoubleStackSlot()) {
     // XMM register-memory swap.  We rely on having xmm0
     // available as a fixed scratch register.
     XMMRegister src = g.ToDoubleRegister(source);
