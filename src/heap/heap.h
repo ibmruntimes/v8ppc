@@ -1104,6 +1104,7 @@ class Heap {
   void DisableInlineAllocation();
 
   // Implements the corresponding V8 API function.
+  bool IdleNotification(double deadline_in_seconds);
   bool IdleNotification(int idle_time_in_ms);
 
   // Declare all the root indices.  This defines the root list order.
@@ -1195,6 +1196,7 @@ class Heap {
 
   inline void IncrementYoungSurvivorsCounter(int survived) {
     DCHECK(survived >= 0);
+    survived_last_scavenge_ = survived;
     survived_since_last_expansion_ += survived;
   }
 
@@ -1506,6 +1508,9 @@ class Heap {
   // scavenge since last new space expansion.
   int survived_since_last_expansion_;
 
+  // ... and since the last scavenge.
+  int survived_last_scavenge_;
+
   // For keeping track on when to flush RegExp code.
   int sweep_generation_;
 
@@ -1725,6 +1730,8 @@ class Heap {
     if (object_size > Page::kMaxRegularHeapObjectSize) return LO_SPACE;
     return (pretenure == TENURED) ? preferred_old_space : NEW_SPACE;
   }
+
+  HeapObject* DoubleAlignForDeserialization(HeapObject* object, int size);
 
   // Allocate an uninitialized object.  The memory is non-executable if the
   // hardware and OS allow.  This is the single choke-point for allocations
@@ -2002,7 +2009,7 @@ class Heap {
   void IdleMarkCompact(const char* message);
 
   void TryFinalizeIdleIncrementalMarking(
-      size_t idle_time_in_ms, size_t size_of_objects,
+      double idle_time_in_ms, size_t size_of_objects,
       size_t mark_compact_speed_in_bytes_per_ms);
 
   bool WorthActivatingIncrementalMarking();

@@ -441,6 +441,10 @@ class Instruction : public ZoneObject {
     DCHECK(i < InputCount());
     return operands_[OutputCount() + i];
   }
+  void SetInputAt(size_t i, InstructionOperand* operand) {
+    DCHECK(i < InputCount());
+    operands_[OutputCount() + i] = operand;
+  }
 
   size_t TempCount() const { return TempCountField::decode(bit_field_); }
   InstructionOperand* TempAt(size_t i) const {
@@ -520,6 +524,17 @@ class Instruction : public ZoneObject {
 
   void operator delete(void* pointer, void* location) { UNREACHABLE(); }
 
+  void OverwriteWithNop() {
+    opcode_ = ArchOpcodeField::encode(kArchNop);
+    bit_field_ = 0;
+    pointer_map_ = NULL;
+  }
+
+  bool IsNop() const {
+    return arch_opcode() == kArchNop && InputCount() == 0 &&
+           OutputCount() == 0 && TempCount() == 0;
+  }
+
  protected:
   explicit Instruction(InstructionCode opcode)
       : opcode_(opcode),
@@ -598,6 +613,10 @@ class GapInstruction : public Instruction {
   const ParallelMove* GetParallelMove(InnerPosition pos) const {
     return parallel_moves_[pos];
   }
+
+  bool IsRedundant() const;
+
+  ParallelMove** parallel_moves() { return parallel_moves_; }
 
   static GapInstruction* New(Zone* zone) {
     void* buffer = zone->New(sizeof(GapInstruction));
@@ -692,7 +711,8 @@ class Constant FINAL {
     kFloat32,
     kFloat64,
     kExternalReference,
-    kHeapObject
+    kHeapObject,
+    kRpoNumber
   };
 
   explicit Constant(int32_t v) : type_(kInt32), value_(v) {}
@@ -703,6 +723,8 @@ class Constant FINAL {
       : type_(kExternalReference), value_(bit_cast<intptr_t>(ref)) {}
   explicit Constant(Handle<HeapObject> obj)
       : type_(kHeapObject), value_(bit_cast<intptr_t>(obj)) {}
+  explicit Constant(BasicBlock::RpoNumber rpo)
+      : type_(kRpoNumber), value_(rpo.ToInt()) {}
 
   Type type() const { return type_; }
 
@@ -733,6 +755,11 @@ class Constant FINAL {
   ExternalReference ToExternalReference() const {
     DCHECK_EQ(kExternalReference, type());
     return bit_cast<ExternalReference>(static_cast<intptr_t>(value_));
+  }
+
+  BasicBlock::RpoNumber ToRpoNumber() const {
+    DCHECK_EQ(kRpoNumber, type());
+    return BasicBlock::RpoNumber::FromInt(static_cast<int>(value_));
   }
 
   Handle<HeapObject> ToHeapObject() const {
@@ -885,13 +912,16 @@ class InstructionBlock FINAL : public ZoneObject {
   const PhiInstructions& phis() const { return phis_; }
   void AddPhi(PhiInstruction* phi) { phis_.push_back(phi); }
 
+  void set_ao_number(BasicBlock::RpoNumber ao_number) {
+    ao_number_ = ao_number;
+  }
+
  private:
   Successors successors_;
   Predecessors predecessors_;
   PhiInstructions phis_;
   const BasicBlock::Id id_;
-  const BasicBlock::RpoNumber ao_number_;  // Assembly order number.
-  // TODO(dcarney): probably dont't need this.
+  BasicBlock::RpoNumber ao_number_;  // Assembly order number.
   const BasicBlock::RpoNumber rpo_number_;
   const BasicBlock::RpoNumber loop_header_;
   const BasicBlock::RpoNumber loop_end_;
@@ -984,6 +1014,8 @@ class InstructionSequence FINAL : public ZoneObject {
   void EndBlock(BasicBlock::RpoNumber rpo);
 
   int AddConstant(int virtual_register, Constant constant) {
+    // TODO(titzer): allow RPO numbers as constants?
+    DCHECK(constant.type() != Constant::kRpoNumber);
     DCHECK(virtual_register >= 0 && virtual_register < next_virtual_register_);
     DCHECK(constants_.find(virtual_register) == constants_.end());
     constants_.insert(std::make_pair(virtual_register, constant));
@@ -996,8 +1028,8 @@ class InstructionSequence FINAL : public ZoneObject {
     return it->second;
   }
 
-  typedef ConstantDeque Immediates;
-  const Immediates& immediates() const { return immediates_; }
+  typedef ZoneVector<Constant> Immediates;
+  Immediates& immediates() { return immediates_; }
 
   int AddImmediate(Constant constant) {
     int index = static_cast<int>(immediates_.size());
@@ -1024,6 +1056,13 @@ class InstructionSequence FINAL : public ZoneObject {
   FrameStateDescriptor* GetFrameStateDescriptor(StateId deoptimization_id);
   int GetFrameStateDescriptorCount();
 
+  BasicBlock::RpoNumber InputRpo(Instruction* instr, size_t index) {
+    InstructionOperand* operand = instr->InputAt(index);
+    Constant constant = operand->IsImmediate() ? GetImmediate(operand->index())
+                                               : GetConstant(operand->index());
+    return constant.ToRpoNumber();
+  }
+
  private:
   friend std::ostream& operator<<(std::ostream& os,
                                   const PrintableInstructionSequence& code);
@@ -1034,7 +1073,7 @@ class InstructionSequence FINAL : public ZoneObject {
   InstructionBlocks* const instruction_blocks_;
   IntVector block_starts_;
   ConstantMap constants_;
-  ConstantDeque immediates_;
+  Immediates immediates_;
   InstructionDeque instructions_;
   int next_virtual_register_;
   PointerMapDeque pointer_maps_;

@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 #include "src/compiler/common-operator.h"
-#include "src/compiler/generic-node-inl.h"
 #include "src/compiler/graph.h"
 #include "src/compiler/instruction.h"
 
@@ -115,6 +114,16 @@ std::ostream& operator<<(std::ostream& os,
 bool ParallelMove::IsRedundant() const {
   for (int i = 0; i < move_operands_.length(); ++i) {
     if (!move_operands_[i].IsRedundant()) return false;
+  }
+  return true;
+}
+
+
+bool GapInstruction::IsRedundant() const {
+  for (int i = GapInstruction::FIRST_INNER_POSITION;
+       i <= GapInstruction::LAST_INNER_POSITION; i++) {
+    if (parallel_moves_[i] != NULL && !parallel_moves_[i]->IsRedundant())
+      return false;
   }
   return true;
 }
@@ -332,6 +341,8 @@ std::ostream& operator<<(std::ostream& os, const Constant& constant) {
                        constant.ToExternalReference().address());
     case Constant::kHeapObject:
       return os << Brief(*constant.ToHeapObject());
+    case Constant::kRpoNumber:
+      return os << "RPO" << constant.ToRpoNumber().ToInt();
   }
   UNREACHABLE();
   return os;

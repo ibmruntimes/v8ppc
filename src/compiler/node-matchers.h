@@ -5,8 +5,8 @@
 #ifndef V8_COMPILER_NODE_MATCHERS_H_
 #define V8_COMPILER_NODE_MATCHERS_H_
 
-#include "src/compiler/generic-node.h"
-#include "src/compiler/generic-node-inl.h"
+#include <cmath>
+
 #include "src/compiler/node.h"
 #include "src/compiler/operator.h"
 #include "src/unique.h"
@@ -104,6 +104,9 @@ template <typename T, IrOpcode::Value kOpcode>
 struct FloatMatcher FINAL : public ValueMatcher<T, kOpcode> {
   explicit FloatMatcher(Node* node) : ValueMatcher<T, kOpcode>(node) {}
 
+  bool IsMinusZero() const {
+    return this->Is(0.0) && std::signbit(this->Value());
+  }
   bool IsNaN() const { return this->HasValue() && std::isnan(this->Value()); }
 };
 
@@ -166,6 +169,7 @@ typedef BinopMatcher<IntPtrMatcher, IntPtrMatcher> IntPtrBinopMatcher;
 typedef BinopMatcher<UintPtrMatcher, UintPtrMatcher> UintPtrBinopMatcher;
 typedef BinopMatcher<Float64Matcher, Float64Matcher> Float64BinopMatcher;
 typedef BinopMatcher<NumberMatcher, NumberMatcher> NumberBinopMatcher;
+
 
 template <class BinopMatcher, IrOpcode::Value kAddOpcode,
           IrOpcode::Value kMulOpcode, IrOpcode::Value kShiftOpcode>
@@ -298,14 +302,16 @@ struct ScaledWithOffsetMatcher {
         Node* left_left = left_matcher.left().node();
         Node* left_right = left_matcher.right().node();
         if (left_matcher.HasScaledInput() && left_left->OwnedBy(left)) {
-          scaled_ = left_matcher.ScaledInput();
-          scale_exponent_ = left_matcher.ScaleExponent();
           if (left_matcher.right().HasValue()) {
             // ((S + C) + O)
+            scaled_ = left_matcher.ScaledInput();
+            scale_exponent_ = left_matcher.ScaleExponent();
             constant_ = left_right;
             offset_ = right;
           } else if (base_matcher.right().HasValue()) {
             // ((S + O) + C)
+            scaled_ = left_matcher.ScaledInput();
+            scale_exponent_ = left_matcher.ScaleExponent();
             offset_ = left_right;
             constant_ = right;
           } else {

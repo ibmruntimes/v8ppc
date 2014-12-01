@@ -1577,6 +1577,14 @@ void HeapObject::HeapObjectShortPrint(std::ostream& os) {  // NOLINT
       os << accumulator.ToCString().get();
       break;
     }
+    case WEAK_CELL_TYPE: {
+      os << "WeakCell for ";
+      HeapStringAllocator allocator;
+      StringStream accumulator(&allocator);
+      WeakCell::cast(this)->value()->ShortPrint(&accumulator);
+      os << accumulator.ToCString().get();
+      break;
+    }
     default:
       os << "<Other heap object (" << map()->instance_type() << ")>";
       break;
@@ -2183,16 +2191,23 @@ Handle<Map> Map::CopyGeneralizeAllRepresentations(Handle<Map> map,
                                                   PropertyAttributes attributes,
                                                   const char* reason) {
   Isolate* isolate = map->GetIsolate();
-  Handle<Map> new_map = Copy(map, reason);
+  Handle<DescriptorArray> old_descriptors(map->instance_descriptors(), isolate);
+  int number_of_own_descriptors = map->NumberOfOwnDescriptors();
+  Handle<DescriptorArray> descriptors =
+      DescriptorArray::CopyUpTo(old_descriptors, number_of_own_descriptors);
 
-  DescriptorArray* descriptors = new_map->instance_descriptors();
-  int length = descriptors->number_of_descriptors();
-  for (int i = 0; i < length; i++) {
+  for (int i = 0; i < number_of_own_descriptors; i++) {
     descriptors->SetRepresentation(i, Representation::Tagged());
     if (descriptors->GetDetails(i).type() == FIELD) {
       descriptors->SetValue(i, HeapType::Any());
     }
   }
+
+  Handle<LayoutDescriptor> new_layout_descriptor(
+      LayoutDescriptor::FastPointerLayout(), isolate);
+  Handle<Map> new_map =
+      CopyReplaceDescriptors(map, descriptors, new_layout_descriptor,
+                             OMIT_TRANSITION, MaybeHandle<Name>(), reason);
 
   // Unless the instance is being migrated, ensure that modify_index is a field.
   PropertyDetails details = descriptors->GetDetails(modify_index);
@@ -2873,22 +2888,23 @@ MaybeHandle<Map> Map::TryUpdateInternal(Handle<Map> old_map) {
 
 MaybeHandle<Object> JSObject::SetPropertyWithInterceptor(LookupIterator* it,
                                                          Handle<Object> value) {
-  // TODO(rossberg): Support symbols in the API.
-  if (it->name()->IsSymbol()) return value;
-
-  Handle<String> name_string = Handle<String>::cast(it->name());
+  Handle<Name> name = it->name();
   Handle<JSObject> holder = it->GetHolder<JSObject>();
   Handle<InterceptorInfo> interceptor(holder->GetNamedInterceptor());
-  if (interceptor->setter()->IsUndefined()) return MaybeHandle<Object>();
+  if (interceptor->setter()->IsUndefined() ||
+      (name->IsSymbol() && !interceptor->can_intercept_symbols())) {
+    return MaybeHandle<Object>();
+  }
 
   LOG(it->isolate(),
-      ApiNamedPropertyAccess("interceptor-named-set", *holder, *name_string));
+      ApiNamedPropertyAccess("interceptor-named-set", *holder, *name));
   PropertyCallbackArguments args(it->isolate(), interceptor->data(), *holder,
                                  *holder);
-  v8::NamedPropertySetterCallback setter =
-      v8::ToCData<v8::NamedPropertySetterCallback>(interceptor->setter());
-  v8::Handle<v8::Value> result = args.Call(
-      setter, v8::Utils::ToLocal(name_string), v8::Utils::ToLocal(value));
+  v8::GenericNamedPropertySetterCallback setter =
+      v8::ToCData<v8::GenericNamedPropertySetterCallback>(
+          interceptor->setter());
+  v8::Handle<v8::Value> result =
+      args.Call(setter, v8::Utils::ToLocal(name), v8::Utils::ToLocal(value));
   RETURN_EXCEPTION_IF_SCHEDULED_EXCEPTION(it->isolate(), Object);
   if (!result.IsEmpty()) return value;
 
@@ -3414,6 +3430,21 @@ bool Map::IsMapInArrayPrototypeChain() {
   }
 
   return false;
+}
+
+
+Handle<WeakCell> Map::WeakCellForMap(Handle<Map> map) {
+  Isolate* isolate = map->GetIsolate();
+  if (map->code_cache()->IsFixedArray()) {
+    return isolate->factory()->NewWeakCell(map);
+  }
+  Handle<CodeCache> code_cache(CodeCache::cast(map->code_cache()), isolate);
+  if (code_cache->weak_cell_cache()->IsWeakCell()) {
+    return Handle<WeakCell>(WeakCell::cast(code_cache->weak_cell_cache()));
+  }
+  Handle<WeakCell> weak_cell = isolate->factory()->NewWeakCell(map);
+  code_cache->set_weak_cell_cache(*weak_cell);
+  return weak_cell;
 }
 
 
@@ -4074,9 +4105,6 @@ Maybe<PropertyAttributes> JSObject::GetPropertyAttributesWithInterceptor(
     Handle<JSObject> holder,
     Handle<Object> receiver,
     Handle<Name> name) {
-  // TODO(rossberg): Support symbols in the API.
-  if (name->IsSymbol()) return maybe(ABSENT);
-
   Isolate* isolate = holder->GetIsolate();
   HandleScope scope(isolate);
 
@@ -4085,26 +4113,29 @@ Maybe<PropertyAttributes> JSObject::GetPropertyAttributesWithInterceptor(
   AssertNoContextChange ncc(isolate);
 
   Handle<InterceptorInfo> interceptor(holder->GetNamedInterceptor());
+  if (name->IsSymbol() && !interceptor->can_intercept_symbols()) {
+    return maybe(ABSENT);
+  }
   PropertyCallbackArguments args(
       isolate, interceptor->data(), *receiver, *holder);
   if (!interceptor->query()->IsUndefined()) {
-    v8::NamedPropertyQueryCallback query =
-        v8::ToCData<v8::NamedPropertyQueryCallback>(interceptor->query());
+    v8::GenericNamedPropertyQueryCallback query =
+        v8::ToCData<v8::GenericNamedPropertyQueryCallback>(
+            interceptor->query());
     LOG(isolate,
         ApiNamedPropertyAccess("interceptor-named-has", *holder, *name));
-    v8::Handle<v8::Integer> result =
-        args.Call(query, v8::Utils::ToLocal(Handle<String>::cast(name)));
+    v8::Handle<v8::Integer> result = args.Call(query, v8::Utils::ToLocal(name));
     if (!result.IsEmpty()) {
       DCHECK(result->IsInt32());
       return maybe(static_cast<PropertyAttributes>(result->Int32Value()));
     }
   } else if (!interceptor->getter()->IsUndefined()) {
-    v8::NamedPropertyGetterCallback getter =
-        v8::ToCData<v8::NamedPropertyGetterCallback>(interceptor->getter());
+    v8::GenericNamedPropertyGetterCallback getter =
+        v8::ToCData<v8::GenericNamedPropertyGetterCallback>(
+            interceptor->getter());
     LOG(isolate,
         ApiNamedPropertyAccess("interceptor-named-get-has", *holder, *name));
-    v8::Handle<v8::Value> result =
-        args.Call(getter, v8::Utils::ToLocal(Handle<String>::cast(name)));
+    v8::Handle<v8::Value> result = args.Call(getter, v8::Utils::ToLocal(name));
     if (!result.IsEmpty()) return maybe(DONT_ENUM);
   }
 
@@ -4410,6 +4441,14 @@ void JSObject::MigrateFastToSlow(Handle<JSObject> object,
   object->synchronized_set_map(*new_map);
 
   object->set_properties(*dictionary);
+
+  // Ensure that in-object space of slow-mode object does not contain random
+  // garbage.
+  int inobject_properties = new_map->inobject_properties();
+  for (int i = 0; i < inobject_properties; i++) {
+    FieldIndex index = FieldIndex::ForPropertyIndex(*new_map, i);
+    object->RawFastPropertyAtPut(index, Smi::FromInt(0));
+  }
 
   isolate->counters()->props_to_dictionary()->Increment();
 
@@ -4932,20 +4971,20 @@ MaybeHandle<Object> JSObject::DeletePropertyWithInterceptor(
     Handle<JSObject> holder, Handle<JSObject> receiver, Handle<Name> name) {
   Isolate* isolate = holder->GetIsolate();
 
-  // TODO(rossberg): Support symbols in the API.
-  if (name->IsSymbol()) return MaybeHandle<Object>();
-
   Handle<InterceptorInfo> interceptor(holder->GetNamedInterceptor());
-  if (interceptor->deleter()->IsUndefined()) return MaybeHandle<Object>();
+  if (interceptor->deleter()->IsUndefined() ||
+      (name->IsSymbol() && !interceptor->can_intercept_symbols())) {
+    return MaybeHandle<Object>();
+  }
 
-  v8::NamedPropertyDeleterCallback deleter =
-      v8::ToCData<v8::NamedPropertyDeleterCallback>(interceptor->deleter());
+  v8::GenericNamedPropertyDeleterCallback deleter =
+      v8::ToCData<v8::GenericNamedPropertyDeleterCallback>(
+          interceptor->deleter());
   LOG(isolate,
       ApiNamedPropertyAccess("interceptor-named-delete", *holder, *name));
   PropertyCallbackArguments args(isolate, interceptor->data(), *receiver,
                                  *holder);
-  v8::Handle<v8::Boolean> result =
-      args.Call(deleter, v8::Utils::ToLocal(Handle<String>::cast(name)));
+  v8::Handle<v8::Boolean> result = args.Call(deleter, v8::Utils::ToLocal(name));
   RETURN_EXCEPTION_IF_SCHEDULED_EXCEPTION(isolate, Object);
   if (result.IsEmpty()) return MaybeHandle<Object>();
 
@@ -5855,7 +5894,7 @@ static bool ContainsOnlyValidKeys(Handle<FixedArray> array) {
   int len = array->length();
   for (int i = 0; i < len; i++) {
     Object* e = array->get(i);
-    if (!(e->IsString() || e->IsNumber())) return false;
+    if (!(e->IsName() || e->IsNumber())) return false;
   }
   return true;
 }
@@ -6063,14 +6102,14 @@ MaybeHandle<FixedArray> JSReceiver::GetKeys(Handle<JSReceiver> object,
         FixedArray);
     DCHECK(ContainsOnlyValidKeys(content));
 
-    // Add the property keys from the interceptor.
+    // Add the non-symbol property keys from the interceptor.
     if (current->HasNamedInterceptor()) {
       Handle<JSObject> result;
       if (JSObject::GetKeysForNamedInterceptor(
               current, object).ToHandle(&result)) {
         ASSIGN_RETURN_ON_EXCEPTION(
-            isolate, content,
-            FixedArray::AddKeysFromArrayLike(content, result),
+            isolate, content, FixedArray::AddKeysFromArrayLike(
+                                  content, result, FixedArray::NON_SYMBOL_KEYS),
             FixedArray);
       }
       DCHECK(ContainsOnlyValidKeys(content));
@@ -7995,14 +8034,13 @@ void FixedArray::Shrink(int new_length) {
 
 
 MaybeHandle<FixedArray> FixedArray::AddKeysFromArrayLike(
-    Handle<FixedArray> content,
-    Handle<JSObject> array) {
+    Handle<FixedArray> content, Handle<JSObject> array, KeyFilter filter) {
   DCHECK(array->IsJSArray() || array->HasSloppyArgumentsElements());
   ElementsAccessor* accessor = array->GetElementsAccessor();
   Handle<FixedArray> result;
   ASSIGN_RETURN_ON_EXCEPTION(
       array->GetIsolate(), result,
-      accessor->AddElementsToFixedArray(array, array, content),
+      accessor->AddElementsToFixedArray(array, array, content, filter),
       FixedArray);
 
 #ifdef ENABLE_SLOW_DCHECKS
@@ -8025,10 +8063,9 @@ MaybeHandle<FixedArray> FixedArray::UnionOfKeys(Handle<FixedArray> first,
   ASSIGN_RETURN_ON_EXCEPTION(
       first->GetIsolate(), result,
       accessor->AddElementsToFixedArray(
-          Handle<Object>::null(),     // receiver
-          Handle<JSObject>::null(),   // holder
-          first,
-          Handle<FixedArrayBase>::cast(second)),
+          Handle<Object>::null(),    // receiver
+          Handle<JSObject>::null(),  // holder
+          first, Handle<FixedArrayBase>::cast(second), ALL_KEYS),
       FixedArray);
 
 #ifdef ENABLE_SLOW_DCHECKS
@@ -8295,22 +8332,6 @@ String::FlatContent String::GetFlatContent() {
     }
     return FlatContent(start + offset, length);
   }
-}
-
-
-template <>
-Vector<const uint8_t> String::GetCharVector() {
-  String::FlatContent flat = GetFlatContent();
-  DCHECK(flat.IsOneByte());
-  return flat.ToOneByteVector();
-}
-
-
-template <>
-Vector<const uc16> String::GetCharVector() {
-  String::FlatContent flat = GetFlatContent();
-  DCHECK(flat.IsTwoByte());
-  return flat.ToUC16Vector();
 }
 
 
@@ -9299,6 +9320,35 @@ uint32_t StringHasher::ComputeUtf8Hash(Vector<const char> chars,
 }
 
 
+void IteratingStringHasher::VisitConsString(ConsString* cons_string) {
+  // Run small ConsStrings through ConsStringIterator.
+  if (cons_string->length() < 64) {
+    ConsStringIterator iter(cons_string);
+    int offset;
+    String* string;
+    while (nullptr != (string = iter.Next(&offset))) {
+      DCHECK_EQ(0, offset);
+      String::VisitFlat(this, string, 0);
+    }
+    return;
+  }
+  // Slow case.
+  const int max_length = String::kMaxHashCalcLength;
+  int length = std::min(cons_string->length(), max_length);
+  if (cons_string->HasOnlyOneByteChars()) {
+    uint8_t* buffer = new uint8_t[length];
+    String::WriteToFlat(cons_string, buffer, 0, length);
+    AddCharacters(buffer, length);
+    delete[] buffer;
+  } else {
+    uint16_t* buffer = new uint16_t[length];
+    String::WriteToFlat(cons_string, buffer, 0, length);
+    AddCharacters(buffer, length);
+    delete[] buffer;
+  }
+}
+
+
 void String::PrintOn(FILE* file) {
   int length = this->length();
   for (int i = 0; i < length; i++) {
@@ -9409,12 +9459,14 @@ void JSFunction::JSFunctionIterateBody(int object_size, ObjectVisitor* v) {
 
 
 void JSFunction::MarkForOptimization() {
+  Isolate* isolate = GetIsolate();
+  DCHECK(isolate->use_crankshaft());
   DCHECK(!IsOptimized());
   DCHECK(shared()->allows_lazy_compilation() ||
          code()->optimizable());
   DCHECK(!shared()->is_generator());
   set_code_no_write_barrier(
-      GetIsolate()->builtins()->builtin(Builtins::kCompileOptimized));
+      isolate->builtins()->builtin(Builtins::kCompileOptimized));
   // No write barrier required, since the builtin is part of the root set.
 }
 
@@ -9434,6 +9486,7 @@ void JSFunction::AttemptConcurrentOptimization() {
     // recompilation race.  This goes away as soon as OSR becomes one-shot.
     return;
   }
+  DCHECK(isolate->use_crankshaft());
   DCHECK(!IsInOptimizationQueue());
   DCHECK(is_compiled() || isolate->DebuggerHasBreakPoints());
   DCHECK(!IsOptimized());
@@ -9447,24 +9500,6 @@ void JSFunction::AttemptConcurrentOptimization() {
   }
   set_code_no_write_barrier(
       GetIsolate()->builtins()->builtin(Builtins::kCompileOptimizedConcurrent));
-  // No write barrier required, since the builtin is part of the root set.
-}
-
-
-void JSFunction::MarkInOptimizationQueue() {
-  // We can only arrive here via the concurrent-recompilation builtin.  If
-  // break points were set, the code would point to the lazy-compile builtin.
-  DCHECK(!GetIsolate()->DebuggerHasBreakPoints());
-  DCHECK(IsMarkedForConcurrentOptimization() && !IsOptimized());
-  DCHECK(shared()->allows_lazy_compilation() || code()->optimizable());
-  DCHECK(GetIsolate()->concurrent_recompilation_enabled());
-  if (FLAG_trace_concurrent_recompilation) {
-    PrintF("  ** Queueing ");
-    ShortPrint();
-    PrintF(" for concurrent recompilation.\n");
-  }
-  set_code_no_write_barrier(
-      GetIsolate()->builtins()->builtin(Builtins::kInOptimizationQueue));
   // No write barrier required, since the builtin is part of the root set.
 }
 
@@ -10555,6 +10590,7 @@ Object* Code::FindNthObject(int n, Map* match_map) {
   for (RelocIterator it(this, mask); !it.done(); it.next()) {
     RelocInfo* info = it.rinfo();
     Object* object = info->target_object();
+    if (object->IsWeakCell()) object = WeakCell::cast(object)->value();
     if (object->IsHeapObject()) {
       if (HeapObject::cast(object)->map() == match_map) {
         if (--n == 0) return object;
@@ -10587,6 +10623,7 @@ void Code::FindAndReplace(const FindAndReplacePattern& pattern) {
     RelocInfo* info = it.rinfo();
     Object* object = info->target_object();
     if (object->IsHeapObject()) {
+      DCHECK(!object->IsWeakCell());
       Map* map = HeapObject::cast(object)->map();
       if (map == *pattern.find_[current_pattern]) {
         info->set_target_object(*pattern.replace_[current_pattern]);
@@ -10605,6 +10642,7 @@ void Code::FindAllMaps(MapHandleList* maps) {
   for (RelocIterator it(this, mask); !it.done(); it.next()) {
     RelocInfo* info = it.rinfo();
     Object* object = info->target_object();
+    if (object->IsWeakCell()) object = WeakCell::cast(object)->value();
     if (object->IsMap()) maps->Add(handle(Map::cast(object)));
   }
 }
@@ -10613,11 +10651,21 @@ void Code::FindAllMaps(MapHandleList* maps) {
 Code* Code::FindFirstHandler() {
   DCHECK(is_inline_cache_stub());
   DisallowHeapAllocation no_allocation;
-  int mask = RelocInfo::ModeMask(RelocInfo::CODE_TARGET);
+  int mask = RelocInfo::ModeMask(RelocInfo::CODE_TARGET) |
+             RelocInfo::ModeMask(RelocInfo::EMBEDDED_OBJECT);
+  bool skip_next_handler = false;
   for (RelocIterator it(this, mask); !it.done(); it.next()) {
     RelocInfo* info = it.rinfo();
-    Code* code = Code::GetCodeFromTargetAddress(info->target_address());
-    if (code->kind() == Code::HANDLER) return code;
+    if (info->rmode() == RelocInfo::EMBEDDED_OBJECT) {
+      Object* obj = info->target_object();
+      skip_next_handler |= obj->IsWeakCell() && WeakCell::cast(obj)->cleared();
+    } else {
+      Code* code = Code::GetCodeFromTargetAddress(info->target_address());
+      if (code->kind() == Code::HANDLER) {
+        if (!skip_next_handler) return code;
+        skip_next_handler = false;
+      }
+    }
   }
   return NULL;
 }
@@ -10626,17 +10674,27 @@ Code* Code::FindFirstHandler() {
 bool Code::FindHandlers(CodeHandleList* code_list, int length) {
   DCHECK(is_inline_cache_stub());
   DisallowHeapAllocation no_allocation;
-  int mask = RelocInfo::ModeMask(RelocInfo::CODE_TARGET);
+  int mask = RelocInfo::ModeMask(RelocInfo::CODE_TARGET) |
+             RelocInfo::ModeMask(RelocInfo::EMBEDDED_OBJECT);
+  bool skip_next_handler = false;
   int i = 0;
   for (RelocIterator it(this, mask); !it.done(); it.next()) {
     if (i == length) return true;
     RelocInfo* info = it.rinfo();
-    Code* code = Code::GetCodeFromTargetAddress(info->target_address());
-    // IC stubs with handlers never contain non-handler code objects before
-    // handler targets.
-    if (code->kind() != Code::HANDLER) break;
-    code_list->Add(Handle<Code>(code));
-    i++;
+    if (info->rmode() == RelocInfo::EMBEDDED_OBJECT) {
+      Object* obj = info->target_object();
+      skip_next_handler |= obj->IsWeakCell() && WeakCell::cast(obj)->cleared();
+    } else {
+      Code* code = Code::GetCodeFromTargetAddress(info->target_address());
+      // IC stubs with handlers never contain non-handler code objects before
+      // handler targets.
+      if (code->kind() != Code::HANDLER) break;
+      if (!skip_next_handler) {
+        code_list->Add(Handle<Code>(code));
+        i++;
+      }
+      skip_next_handler = false;
+    }
   }
   return i == length;
 }
@@ -10651,6 +10709,7 @@ MaybeHandle<Code> Code::FindHandlerForMap(Map* map) {
     RelocInfo* info = it.rinfo();
     if (info->rmode() == RelocInfo::EMBEDDED_OBJECT) {
       Object* object = info->target_object();
+      if (object->IsWeakCell()) object = WeakCell::cast(object)->value();
       if (object == map) return_next = true;
     } else if (return_next) {
       Code* code = Code::GetCodeFromTargetAddress(info->target_address());
@@ -10753,9 +10812,9 @@ static Code::Age EffectiveAge(Code::Age age) {
 }
 
 
-void Code::MakeYoung() {
+void Code::MakeYoung(Isolate* isolate) {
   byte* sequence = FindCodeAgeSequence();
-  if (sequence != NULL) MakeCodeAgeSequenceYoung(sequence, GetIsolate());
+  if (sequence != NULL) MakeCodeAgeSequenceYoung(sequence, isolate);
 }
 
 
@@ -13462,22 +13521,21 @@ MaybeHandle<Object> JSObject::GetPropertyWithInterceptor(
     Handle<Name> name) {
   Isolate* isolate = holder->GetIsolate();
 
-  // TODO(rossberg): Support symbols in the API.
-  if (name->IsSymbol()) return isolate->factory()->undefined_value();
-
   Handle<InterceptorInfo> interceptor(holder->GetNamedInterceptor(), isolate);
-  Handle<String> name_string = Handle<String>::cast(name);
-
   if (interceptor->getter()->IsUndefined()) return MaybeHandle<Object>();
 
-  v8::NamedPropertyGetterCallback getter =
-      v8::ToCData<v8::NamedPropertyGetterCallback>(interceptor->getter());
+  if (name->IsSymbol() && !interceptor->can_intercept_symbols()) {
+    return MaybeHandle<Object>();
+  }
+
+  v8::GenericNamedPropertyGetterCallback getter =
+      v8::ToCData<v8::GenericNamedPropertyGetterCallback>(
+          interceptor->getter());
   LOG(isolate,
       ApiNamedPropertyAccess("interceptor-named-get", *holder, *name));
   PropertyCallbackArguments
       args(isolate, interceptor->data(), *receiver, *holder);
-  v8::Handle<v8::Value> result =
-      args.Call(getter, v8::Utils::ToLocal(name_string));
+  v8::Handle<v8::Value> result = args.Call(getter, v8::Utils::ToLocal(name));
   RETURN_EXCEPTION_IF_SCHEDULED_EXCEPTION(isolate, Object);
   if (result.IsEmpty()) return MaybeHandle<Object>();
 
@@ -13489,7 +13547,6 @@ MaybeHandle<Object> JSObject::GetPropertyWithInterceptor(
 
 
 // Compute the property keys from the interceptor.
-// TODO(rossberg): support symbols in API, and filter here if needed.
 MaybeHandle<JSObject> JSObject::GetKeysForNamedInterceptor(
     Handle<JSObject> object, Handle<JSReceiver> receiver) {
   Isolate* isolate = receiver->GetIsolate();
@@ -13498,8 +13555,8 @@ MaybeHandle<JSObject> JSObject::GetKeysForNamedInterceptor(
       args(isolate, interceptor->data(), *receiver, *object);
   v8::Handle<v8::Object> result;
   if (!interceptor->enumerator()->IsUndefined()) {
-    v8::NamedPropertyEnumeratorCallback enum_fun =
-        v8::ToCData<v8::NamedPropertyEnumeratorCallback>(
+    v8::GenericNamedPropertyEnumeratorCallback enum_fun =
+        v8::ToCData<v8::GenericNamedPropertyEnumeratorCallback>(
             interceptor->enumerator());
     LOG(isolate, ApiObjectAccess("interceptor-named-enum", *object));
     result = args.Call(enum_fun);

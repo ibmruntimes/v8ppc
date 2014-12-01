@@ -157,13 +157,12 @@ DEFINE_BOOL(use_strict, false, "enforce strict mode")
 
 DEFINE_BOOL(es_staging, false, "enable all completed harmony features")
 DEFINE_BOOL(harmony, false, "enable all completed harmony features")
+DEFINE_BOOL(harmony_shipping, true, "enable all shipped harmony fetaures")
 DEFINE_IMPLICATION(harmony, es_staging)
-// TODO(rossberg): activate once we have staged scoping:
-// DEFINE_IMPLICATION(es_staging, harmony)
+DEFINE_IMPLICATION(es_staging, harmony)
 
 // Features that are still work in progress (behind individual flags).
 #define HARMONY_INPROGRESS(V)                                     \
-  V(harmony_scoping, "harmony block scoping")                     \
   V(harmony_modules, "harmony modules (implies block scoping)")   \
   V(harmony_arrays, "harmony array methods")                      \
   V(harmony_classes,                                              \
@@ -171,17 +170,19 @@ DEFINE_IMPLICATION(harmony, es_staging)
   V(harmony_object_literals, "harmony object literal extensions") \
   V(harmony_regexps, "harmony regular expression extensions")     \
   V(harmony_arrow_functions, "harmony arrow functions")           \
-  V(harmony_tostring, "harmony toString")                         \
   V(harmony_proxies, "harmony proxies")                           \
   V(harmony_templates, "harmony template literals")               \
   V(harmony_sloppy, "harmony features in sloppy mode")
 
 // Features that are complete (but still behind --harmony/es-staging flag).
-#define HARMONY_STAGED(V) V(harmony_strings, "harmony string methods")
+#define HARMONY_STAGED(V)                 \
+  V(harmony_tostring, "harmony toString") \
+  V(harmony_scoping, "harmony block scoping")
 
 // Features that are shipping (turned on by default, but internal flag remains).
-#define HARMONY_SHIPPING(V) \
-  V(harmony_numeric_literals, "harmony numeric literals")
+#define HARMONY_SHIPPING(V)                               \
+  V(harmony_numeric_literals, "harmony numeric literals") \
+  V(harmony_strings, "harmony string methods")
 
 // Once a shipping feature has proved stable in the wild, it will be dropped
 // from HARMONY_SHIPPING, all occurrences of the FLAG_ variable are removed,
@@ -194,18 +195,15 @@ DEFINE_IMPLICATION(harmony, es_staging)
 HARMONY_INPROGRESS(FLAG_INPROGRESS_FEATURES)
 #undef FLAG_INPROGRESS_FEATURES
 
-// TODO(rossberg): temporary, remove once we have staged scoping.
-// After that, --harmony will be synonymous to --es-staging.
-DEFINE_IMPLICATION(harmony, harmony_scoping)
-
 #define FLAG_STAGED_FEATURES(id, description) \
   DEFINE_BOOL(id, false, "enable " #description) \
   DEFINE_IMPLICATION(es_staging, id)
 HARMONY_STAGED(FLAG_STAGED_FEATURES)
 #undef FLAG_STAGED_FEATURES
 
-#define FLAG_SHIPPING_FEATURES(id, description) \
-  DEFINE_BOOL_READONLY(id, true, "enable " #description)
+#define FLAG_SHIPPING_FEATURES(id, description)  \
+  DEFINE_BOOL(id, false, "enable " #description) \
+  DEFINE_IMPLICATION(harmony_shipping, id)
 HARMONY_SHIPPING(FLAG_SHIPPING_FEATURES)
 #undef FLAG_SHIPPING_FEATURES
 
@@ -373,6 +371,7 @@ DEFINE_STRING(trace_turbo_cfg_file, NULL,
 DEFINE_BOOL(trace_turbo_types, true, "trace TurboFan's types")
 DEFINE_BOOL(trace_turbo_scheduler, false, "trace TurboFan's scheduler")
 DEFINE_BOOL(trace_turbo_reduction, false, "trace TurboFan's various reducers")
+DEFINE_BOOL(trace_turbo_jt, false, "trace TurboFan's jump threading")
 DEFINE_BOOL(turbo_asm, false, "enable TurboFan for asm.js code")
 DEFINE_BOOL(turbo_verify, false, "verify TurboFan graphs at each phase")
 DEFINE_BOOL(turbo_stats, false, "print TurboFan statistics")
@@ -395,6 +394,7 @@ DEFINE_BOOL(turbo_reuse_spill_slots, false, "reuse spill slots in TurboFan")
 // TODO(dcarney): this is just for experimentation, remove when default.
 DEFINE_BOOL(turbo_delay_ssa_decon, false,
             "delay ssa deconstruction in TurboFan register allocator")
+DEFINE_BOOL(turbo_jt, true, "enable jump threading")
 
 DEFINE_INT(typed_array_max_size_in_heap, 64,
            "threshold for in-heap typed array")
@@ -421,6 +421,8 @@ DEFINE_BOOL(enable_sse4_1, true,
             "enable use of SSE4.1 instructions if available")
 DEFINE_BOOL(enable_sahf, true,
             "enable use of SAHF instruction if available (X64 only)")
+DEFINE_BOOL(enable_avx, true, "enable use of AVX instructions if available")
+DEFINE_BOOL(enable_fma3, true, "enable use of FMA3 instructions if available")
 DEFINE_BOOL(enable_vfp3, ENABLE_VFP3_DEFAULT,
             "enable use of VFP3 instructions if available")
 DEFINE_BOOL(enable_armv7, ENABLE_ARMV7_DEFAULT,
@@ -537,6 +539,9 @@ DEFINE_INT(max_semi_space_size, 0,
            "max size of a semi-space (in MBytes), the new space consists of two"
            "semi-spaces")
 DEFINE_INT(semi_space_growth_factor, 2, "factor by which to grow the new space")
+DEFINE_BOOL(experimental_new_space_growth_heuristic, false,
+            "Grow the new space based on the percentage of survivors instead "
+            "of their absolute value.")
 DEFINE_INT(max_old_space_size, 0, "max size of the old space (in Mbytes)")
 DEFINE_INT(max_executable_size, 0, "max size of executable memory (in Mbytes)")
 DEFINE_BOOL(gc_global, false, "always perform global GCs")

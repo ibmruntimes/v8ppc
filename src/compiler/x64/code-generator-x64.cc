@@ -207,6 +207,19 @@ static bool HasImmediateInput(Instruction* instr, int index) {
   } while (0)
 
 
+#define ASSEMBLE_AVX_DOUBLE_BINOP(asm_instr)                           \
+  do {                                                                 \
+    CpuFeatureScope avx_scope(masm(), AVX);                            \
+    if (instr->InputAt(1)->IsDoubleRegister()) {                       \
+      __ asm_instr(i.OutputDoubleRegister(), i.InputDoubleRegister(0), \
+                   i.InputDoubleRegister(1));                          \
+    } else {                                                           \
+      __ asm_instr(i.OutputDoubleRegister(), i.InputDoubleRegister(0), \
+                   i.InputOperand(1));                                 \
+    }                                                                  \
+  } while (0)
+
+
 // Assembles an instruction after register allocation, producing machine code.
 void CodeGenerator::AssembleArchInstruction(Instruction* instr) {
   X64OperandConverter i(this, instr);
@@ -482,6 +495,18 @@ void CodeGenerator::AssembleArchInstruction(Instruction* instr) {
       }
       __ cvtqsi2sd(i.OutputDoubleRegister(), kScratchRegister);
       break;
+    case kAVXFloat64Add:
+      ASSEMBLE_AVX_DOUBLE_BINOP(vaddsd);
+      break;
+    case kAVXFloat64Sub:
+      ASSEMBLE_AVX_DOUBLE_BINOP(vsubsd);
+      break;
+    case kAVXFloat64Mul:
+      ASSEMBLE_AVX_DOUBLE_BINOP(vmulsd);
+      break;
+    case kAVXFloat64Div:
+      ASSEMBLE_AVX_DOUBLE_BINOP(vdivsd);
+      break;
     case kX64Movsxbl:
       if (instr->addressing_mode() != kMode_None) {
         __ movsxbl(i.OutputRegister(), i.MemoryOperand());
@@ -590,10 +615,26 @@ void CodeGenerator::AssembleArchInstruction(Instruction* instr) {
         __ movsd(operand, i.InputDoubleRegister(index));
       }
       break;
-    case kX64Lea32:
-      __ leal(i.OutputRegister(), i.MemoryOperand());
+    case kX64Lea32: {
+      AddressingMode mode = AddressingModeField::decode(instr->opcode());
+      // Shorten "leal" to "addl" or "subl" if the register allocation just
+      // happens to work out for operations with immediate operands where the
+      // non-constant input register is the same as output register. The
+      // "addl"/"subl" forms in these cases are faster based on empirical
+      // measurements.
+      if (mode == kMode_MRI && i.InputRegister(0).is(i.OutputRegister())) {
+        int32_t constant_summand = i.InputInt32(1);
+        if (constant_summand > 0) {
+          __ addl(i.OutputRegister(), Immediate(constant_summand));
+        } else if (constant_summand < 0) {
+          __ subl(i.OutputRegister(), Immediate(-constant_summand));
+        }
+      } else {
+        __ leal(i.OutputRegister(), i.MemoryOperand());
+      }
       __ AssertZeroExtended(i.OutputRegister());
       break;
+    }
     case kX64Lea:
       __ leaq(i.OutputRegister(), i.MemoryOperand());
       break;
@@ -918,6 +959,9 @@ void CodeGenerator::AssembleMove(InstructionOperand* source,
           break;
         case Constant::kHeapObject:
           __ Move(dst, src.ToHeapObject());
+          break;
+        case Constant::kRpoNumber:
+          UNREACHABLE();  // TODO(dcarney): load of labels on x64.
           break;
       }
       if (destination->IsStackSlot()) {

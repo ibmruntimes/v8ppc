@@ -496,6 +496,7 @@ class Isolate {
 
   // Returns the isolate inside which the current thread is running.
   INLINE(static Isolate* Current()) {
+    DCHECK(base::NoBarrier_Load(&isolate_key_created_) == 1);
     Isolate* isolate = reinterpret_cast<Isolate*>(
         base::Thread::GetExistingThreadLocal(isolate_key_));
     DCHECK(isolate != NULL);
@@ -503,6 +504,7 @@ class Isolate {
   }
 
   INLINE(static Isolate* UncheckedCurrent()) {
+    DCHECK(base::NoBarrier_Load(&isolate_key_created_) == 1);
     return reinterpret_cast<Isolate*>(
         base::Thread::GetThreadLocal(isolate_key_));
   }
@@ -1186,6 +1188,10 @@ class Isolate {
 
   // A global counter for all generated Isolates, might overflow.
   static base::Atomic32 isolate_counter_;
+
+#if DEBUG
+  static base::Atomic32 isolate_key_created_;
+#endif
 
   void Deinit();
 

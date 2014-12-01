@@ -301,7 +301,7 @@ FunctionLiteral* Parser::DefaultConstructor(bool call_super, Scope* scope,
           Runtime::FunctionForId(Runtime::kDefaultConstructorSuperCall), args,
           pos);
       body->Add(factory()->NewExpressionStatement(call, pos), zone());
-      function_scope->RecordSuperUsage();
+      function_scope->RecordSuperConstructorCallUsage();
     }
 
     materialized_literal_count = function_state.materialized_literal_count();
@@ -1053,8 +1053,8 @@ FunctionLiteral* Parser::ParseLazy(Utf16CharacterStream* source) {
       DCHECK(expression->IsFunctionLiteral());
       result = expression->AsFunctionLiteral();
     } else if (shared_info->is_default_constructor()) {
-      result = DefaultConstructor(shared_info->uses_super(), scope,
-                                  shared_info->start_position(),
+      result = DefaultConstructor(shared_info->uses_super_constructor_call(),
+                                  scope, shared_info->start_position(),
                                   shared_info->end_position());
     } else {
       result = ParseFunctionLiteral(raw_name, Scanner::Location::invalid(),
@@ -2796,9 +2796,7 @@ TryStatement* Parser::ParseTryStatement(bool* ok) {
     Expect(Token::RPAREN, CHECK_OK);
 
     Target target(&this->target_stack_, &catch_collector);
-    VariableMode mode =
-        allow_harmony_scoping() && strict_mode() == STRICT ? LET : VAR;
-    catch_variable = catch_scope->DeclareLocal(name, mode, kCreatedInitialized);
+    catch_variable = catch_scope->DeclareLocal(name, VAR, kCreatedInitialized);
     BlockState block_state(&scope_, catch_scope);
     catch_block = ParseBlock(NULL, CHECK_OK);
 
@@ -5297,14 +5295,7 @@ ZoneList<Expression*>* Parser::TemplateRawStrings(const TemplateLiteral* lit,
 
   raw_strings = new (zone()) ZoneList<Expression*>(total, zone());
 
-  int num_hash_chars = (total - 1) * 3;
-  for (int index = 0; index < total; ++index) {
-    // Allow about length * 4 to handle most UTF8 sequences.
-    num_hash_chars += lengths->at(index) * 4;
-  }
-
-  Vector<uint8_t> hash_string = Vector<uint8_t>::New(num_hash_chars);
-  num_hash_chars = 0;
+  uint32_t running_hash = 0;
 
   for (int index = 0; index < total; ++index) {
     int span_start = cooked_strings->at(index)->position() + 1;
@@ -5313,9 +5304,8 @@ ZoneList<Expression*>* Parser::TemplateRawStrings(const TemplateLiteral* lit,
     int to_index = 0;
 
     if (index) {
-      hash_string[num_hash_chars++] = '$';
-      hash_string[num_hash_chars++] = '{';
-      hash_string[num_hash_chars++] = '}';
+      running_hash = StringHasher::ComputeRunningHashOneByte(
+          running_hash, "${}", 3);
     }
 
     SmartArrayPointer<char> raw_chars =
@@ -5332,21 +5322,35 @@ ZoneList<Expression*>* Parser::TemplateRawStrings(const TemplateLiteral* lit,
           ++from_index;
         }
       }
-      hash_string[num_hash_chars++] = ch;
       raw_chars[to_index++] = ch;
     }
 
-    const AstRawString* raw_str = ast_value_factory()->GetOneByteString(
-        OneByteVector(raw_chars.get(), to_index));
-    Literal* raw_lit = factory()->NewStringLiteral(raw_str, span_start - 1);
+    Access<UnicodeCache::Utf8Decoder>
+        decoder(isolate()->unicode_cache()->utf8_decoder());
+    decoder->Reset(raw_chars.get(), to_index);
+    int utf16_length = decoder->Utf16Length();
+    Literal* raw_lit = NULL;
+    if (utf16_length > 0) {
+      uc16* utf16_buffer = zone()->NewArray<uc16>(utf16_length);
+      to_index = decoder->WriteUtf16(utf16_buffer, utf16_length);
+      running_hash = StringHasher::ComputeRunningHash(
+          running_hash, utf16_buffer, to_index);
+      const uint16_t* data = reinterpret_cast<const uint16_t*>(utf16_buffer);
+      const AstRawString* raw_str = ast_value_factory()->GetTwoByteString(
+          Vector<const uint16_t>(data, to_index));
+      raw_lit = factory()->NewStringLiteral(raw_str, span_start - 1);
+    } else {
+      raw_lit = factory()->NewStringLiteral(
+          ast_value_factory()->empty_string(), span_start - 1);
+    }
+    DCHECK_NOT_NULL(raw_lit);
     raw_strings->Add(raw_lit, zone());
   }
 
-  hash_string.Truncate(num_hash_chars);
-  int utf16_length;
-  *hash = StringHasher::ComputeUtf8Hash(Vector<const char>::cast(hash_string),
-      num_hash_chars, &utf16_length);
-  hash_string.Dispose();
+  // Hash key is used exclusively by template call site caching. There are no
+  // real security implications for unseeded hashes, and no issues with changing
+  // the hashing algorithm to improve performance or entropy.
+  *hash = running_hash;
 
   return raw_strings;
 }

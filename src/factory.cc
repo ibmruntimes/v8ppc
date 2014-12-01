@@ -802,6 +802,7 @@ Handle<CodeCache> Factory::NewCodeCache() {
       Handle<CodeCache>::cast(NewStruct(CODE_CACHE_TYPE));
   code_cache->set_default_cache(*empty_fixed_array(), SKIP_WRITE_BARRIER);
   code_cache->set_normal_type_cache(*undefined_value(), SKIP_WRITE_BARRIER);
+  code_cache->set_weak_cell_cache(*undefined_value(), SKIP_WRITE_BARRIER);
   return code_cache;
 }
 
@@ -1419,9 +1420,6 @@ Handle<JSFunction> Factory::NewFunctionFromSharedFunctionInfo(
 
   if (FLAG_always_opt && ShouldOptimizeNewClosure(isolate(), info)) {
     result->MarkForOptimization();
-  } else if (info->optimize_next_closure() &&
-             ShouldOptimizeNewClosure(isolate(), info)) {
-    result->AttemptConcurrentOptimization();
   }
   return result;
 }
@@ -2017,9 +2015,9 @@ void Factory::BecomeJSFunction(Handle<JSProxy> proxy) {
 }
 
 
-Handle<TypeFeedbackVector> Factory::NewTypeFeedbackVector(int slot_count,
-                                                          int ic_slot_count) {
-  return TypeFeedbackVector::Allocate(isolate(), slot_count, ic_slot_count);
+Handle<TypeFeedbackVector> Factory::NewTypeFeedbackVector(
+    const FeedbackVectorSpec& spec) {
+  return TypeFeedbackVector::Allocate(isolate(), spec);
 }
 
 
@@ -2094,7 +2092,9 @@ Handle<SharedFunctionInfo> Factory::NewSharedFunctionInfo(
   share->set_script(*undefined_value(), SKIP_WRITE_BARRIER);
   share->set_debug_info(*undefined_value(), SKIP_WRITE_BARRIER);
   share->set_inferred_name(*empty_string(), SKIP_WRITE_BARRIER);
-  Handle<TypeFeedbackVector> feedback_vector = NewTypeFeedbackVector(0, 0);
+  FeedbackVectorSpec empty_spec;
+  Handle<TypeFeedbackVector> feedback_vector =
+      NewTypeFeedbackVector(empty_spec);
   share->set_feedback_vector(*feedback_vector, SKIP_WRITE_BARRIER);
 #if TRACE_MAPS
   share->set_unique_id(isolate()->GetNextUniqueSharedFunctionInfoId());

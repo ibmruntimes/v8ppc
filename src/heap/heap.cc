@@ -75,6 +75,7 @@ Heap::Heap()
       // generation can be aligned to its size.
       maximum_committed_(0),
       survived_since_last_expansion_(0),
+      survived_last_scavenge_(0),
       sweep_generation_(0),
       always_allocate_scope_depth_(0),
       contexts_disposed_(0),
@@ -849,7 +850,7 @@ bool Heap::CollectGarbage(GarbageCollector collector, const char* gc_reason,
     }
 
     GarbageCollectionEpilogue();
-    tracer()->Stop();
+    tracer()->Stop(collector);
   }
 
   // Start incremental marking for the next cycle. The heap snapshot
@@ -1306,11 +1307,18 @@ static void VerifyNonPointerSpacePointers(Heap* heap) {
 
 
 void Heap::CheckNewSpaceExpansionCriteria() {
-  if (new_space_.TotalCapacity() < new_space_.MaximumCapacity() &&
-      survived_since_last_expansion_ > new_space_.TotalCapacity()) {
-    // Grow the size of new space if there is room to grow, enough data
-    // has survived scavenge since the last expansion and we are not in
-    // high promotion mode.
+  if (FLAG_experimental_new_space_growth_heuristic) {
+    if (new_space_.TotalCapacity() < new_space_.MaximumCapacity() &&
+        survived_last_scavenge_ * 100 / new_space_.TotalCapacity() >= 10) {
+      // Grow the size of new space if there is room to grow, and more than 10%
+      // have survived the last scavenge.
+      new_space_.Grow();
+      survived_since_last_expansion_ = 0;
+    }
+  } else if (new_space_.TotalCapacity() < new_space_.MaximumCapacity() &&
+             survived_since_last_expansion_ > new_space_.TotalCapacity()) {
+    // Grow the size of new space if there is room to grow, and enough data
+    // has survived scavenge since the last expansion.
     new_space_.Grow();
     survived_since_last_expansion_ = 0;
   }
@@ -1797,8 +1805,29 @@ Address Heap::DoScavenge(ObjectVisitor* scavenge_visitor,
         // for pointers to from semispace instead of looking for pointers
         // to new space.
         DCHECK(!target->IsMap());
-        IterateAndMarkPointersToFromSpace(
-            target->address(), target->address() + size, &ScavengeObject);
+        Address start_address = target->address();
+        Address end_address = start_address + size;
+#if V8_DOUBLE_FIELDS_UNBOXING
+        InobjectPropertiesHelper helper(target->map());
+        bool has_only_tagged_fields = helper.all_fields_tagged();
+
+        if (!has_only_tagged_fields) {
+          for (Address slot = start_address; slot < end_address;
+               slot += kPointerSize) {
+            if (helper.IsTagged(static_cast<int>(slot - start_address))) {
+              // TODO(ishell): call this once for contiguous region
+              // of tagged fields.
+              IterateAndMarkPointersToFromSpace(slot, slot + kPointerSize,
+                                                &ScavengeObject);
+            }
+          }
+        } else {
+#endif
+          IterateAndMarkPointersToFromSpace(start_address, end_address,
+                                            &ScavengeObject);
+#if V8_DOUBLE_FIELDS_UNBOXING
+        }
+#endif
       }
     }
 
@@ -1831,6 +1860,11 @@ static HeapObject* EnsureDoubleAligned(Heap* heap, HeapObject* object,
                                kPointerSize);
     return object;
   }
+}
+
+
+HeapObject* Heap::DoubleAlignForDeserialization(HeapObject* object, int size) {
+  return EnsureDoubleAligned(this, object, size);
 }
 
 
@@ -4378,14 +4412,14 @@ void Heap::IdleMarkCompact(const char* message) {
 
 
 void Heap::TryFinalizeIdleIncrementalMarking(
-    size_t idle_time_in_ms, size_t size_of_objects,
-    size_t mark_compact_speed_in_bytes_per_ms) {
+    double idle_time_in_ms, size_t size_of_objects,
+    size_t final_incremental_mark_compact_speed_in_bytes_per_ms) {
   if (incremental_marking()->IsComplete() ||
-      (mark_compact_collector()->IsMarkingDequeEmpty() &&
-       gc_idle_time_handler_.ShouldDoMarkCompact(
-           idle_time_in_ms, size_of_objects,
-           mark_compact_speed_in_bytes_per_ms))) {
-    IdleMarkCompact("idle notification: finalize incremental");
+      (incremental_marking()->IsMarkingDequeEmpty() &&
+       gc_idle_time_handler_.ShouldDoFinalIncrementalMarkCompact(
+           static_cast<size_t>(idle_time_in_ms), size_of_objects,
+           final_incremental_mark_compact_speed_in_bytes_per_ms))) {
+    CollectAllGarbage(kNoGCFlags, "idle notification: finalize incremental");
   }
 }
 
@@ -4396,11 +4430,24 @@ bool Heap::WorthActivatingIncrementalMarking() {
 }
 
 
+static double MonotonicallyIncreasingTimeInMs() {
+  return V8::GetCurrentPlatform()->MonotonicallyIncreasingTime() *
+         static_cast<double>(base::Time::kMillisecondsPerSecond);
+}
+
+
 bool Heap::IdleNotification(int idle_time_in_ms) {
-  base::ElapsedTimer timer;
-  timer.Start();
-  isolate()->counters()->gc_idle_time_allotted_in_ms()->AddSample(
-      idle_time_in_ms);
+  return IdleNotification(
+      V8::GetCurrentPlatform()->MonotonicallyIncreasingTime() +
+      (static_cast<double>(idle_time_in_ms) /
+       static_cast<double>(base::Time::kMillisecondsPerSecond)));
+}
+
+
+bool Heap::IdleNotification(double deadline_in_seconds) {
+  double deadline_in_ms =
+      deadline_in_seconds *
+      static_cast<double>(base::Time::kMillisecondsPerSecond);
   HistogramTimerScope idle_notification_scope(
       isolate_->counters()->gc_idle_notification());
 
@@ -4419,6 +4466,9 @@ bool Heap::IdleNotification(int idle_time_in_ms) {
       static_cast<size_t>(tracer()->MarkCompactSpeedInBytesPerMillisecond());
   heap_state.incremental_marking_speed_in_bytes_per_ms = static_cast<size_t>(
       tracer()->IncrementalMarkingSpeedInBytesPerMillisecond());
+  heap_state.final_incremental_mark_compact_speed_in_bytes_per_ms =
+      static_cast<size_t>(
+          tracer()->FinalIncrementalMarkCompactSpeedInBytesPerMillisecond());
   heap_state.scavenge_speed_in_bytes_per_ms =
       static_cast<size_t>(tracer()->ScavengeSpeedInBytesPerMillisecond());
   heap_state.used_new_space_size = new_space_.Size();
@@ -4427,11 +4477,13 @@ bool Heap::IdleNotification(int idle_time_in_ms) {
       static_cast<size_t>(
           tracer()->NewSpaceAllocationThroughputInBytesPerMillisecond());
 
+  double idle_time_in_ms = deadline_in_ms - MonotonicallyIncreasingTimeInMs();
   GCIdleTimeAction action =
       gc_idle_time_handler_.Compute(idle_time_in_ms, heap_state);
+  isolate()->counters()->gc_idle_time_allotted_in_ms()->AddSample(
+      static_cast<int>(idle_time_in_ms));
 
   bool result = false;
-  int actual_time_in_ms = 0;
   switch (action.type) {
     case DONE:
       result = true;
@@ -4444,20 +4496,19 @@ bool Heap::IdleNotification(int idle_time_in_ms) {
                                   IncrementalMarking::NO_GC_VIA_STACK_GUARD,
                                   IncrementalMarking::FORCE_MARKING,
                                   IncrementalMarking::DO_NOT_FORCE_COMPLETION);
-      actual_time_in_ms = static_cast<int>(timer.Elapsed().InMilliseconds());
-      int remaining_idle_time_in_ms = idle_time_in_ms - actual_time_in_ms;
-      if (remaining_idle_time_in_ms > 0) {
+      double remaining_idle_time_in_ms =
+          deadline_in_ms - MonotonicallyIncreasingTimeInMs();
+      if (remaining_idle_time_in_ms > 0.0) {
         TryFinalizeIdleIncrementalMarking(
             remaining_idle_time_in_ms, heap_state.size_of_objects,
-            heap_state.mark_compact_speed_in_bytes_per_ms);
+            heap_state.final_incremental_mark_compact_speed_in_bytes_per_ms);
       }
       break;
     }
     case DO_FULL_GC: {
-      HistogramTimerScope scope(isolate_->counters()->gc_context());
       if (contexts_disposed_) {
-        CollectAllGarbage(kReduceMemoryFootprintMask,
-                          "idle notification: contexts disposed");
+        HistogramTimerScope scope(isolate_->counters()->gc_context());
+        CollectAllGarbage(kNoGCFlags, "idle notification: contexts disposed");
         gc_idle_time_handler_.NotifyIdleMarkCompact();
         gc_count_at_last_idle_gc_ = gc_count_;
       } else {
@@ -4475,20 +4526,25 @@ bool Heap::IdleNotification(int idle_time_in_ms) {
       break;
   }
 
-  actual_time_in_ms = static_cast<int>(timer.Elapsed().InMilliseconds());
-  if (actual_time_in_ms <= idle_time_in_ms) {
+  double current_time = MonotonicallyIncreasingTimeInMs();
+  double deadline_difference = deadline_in_ms - current_time;
+
+  if (deadline_difference >= 0) {
     if (action.type != DONE && action.type != DO_NOTHING) {
       isolate()->counters()->gc_idle_time_limit_undershot()->AddSample(
-          idle_time_in_ms - actual_time_in_ms);
+          static_cast<int>(deadline_difference));
     }
   } else {
     isolate()->counters()->gc_idle_time_limit_overshot()->AddSample(
-        actual_time_in_ms - idle_time_in_ms);
+        static_cast<int>(-deadline_difference));
   }
 
-  if (FLAG_trace_idle_notification) {
-    PrintF("Idle notification: requested idle time %d ms, actual time %d ms [",
-           idle_time_in_ms, actual_time_in_ms);
+  if ((FLAG_trace_idle_notification && action.type > DO_NOTHING) ||
+      FLAG_trace_idle_notification_verbose) {
+    PrintF(
+        "Idle notification: requested idle time %.2f ms, used idle time %.2f "
+        "ms, deadline usage %.2f ms [",
+        idle_time_in_ms, current_time, deadline_difference);
     action.Print();
     PrintF("]");
     if (FLAG_trace_idle_notification_verbose) {

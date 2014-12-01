@@ -11,6 +11,7 @@ namespace internal {
 
 const double GCIdleTimeHandler::kConservativeTimeRatio = 0.9;
 const size_t GCIdleTimeHandler::kMaxMarkCompactTimeInMs = 1000;
+const size_t GCIdleTimeHandler::kMaxFinalIncrementalMarkCompactTimeInMs = 1000;
 const size_t GCIdleTimeHandler::kMinTimeForFinalizeSweeping = 100;
 const int GCIdleTimeHandler::kMaxMarkCompactsInIdleRound = 7;
 const int GCIdleTimeHandler::kIdleScavengeThreshold = 5;
@@ -84,13 +85,25 @@ size_t GCIdleTimeHandler::EstimateMarkingStepSize(
 size_t GCIdleTimeHandler::EstimateMarkCompactTime(
     size_t size_of_objects, size_t mark_compact_speed_in_bytes_per_ms) {
   // TODO(hpayer): Be more precise about the type of mark-compact event. It
-  // makes a huge difference if it is incremental or non-incremental and if
-  // compaction is happening.
+  // makes a huge difference if compaction is happening.
   if (mark_compact_speed_in_bytes_per_ms == 0) {
     mark_compact_speed_in_bytes_per_ms = kInitialConservativeMarkCompactSpeed;
   }
   size_t result = size_of_objects / mark_compact_speed_in_bytes_per_ms;
   return Min(result, kMaxMarkCompactTimeInMs);
+}
+
+
+size_t GCIdleTimeHandler::EstimateFinalIncrementalMarkCompactTime(
+    size_t size_of_objects,
+    size_t final_incremental_mark_compact_speed_in_bytes_per_ms) {
+  if (final_incremental_mark_compact_speed_in_bytes_per_ms == 0) {
+    final_incremental_mark_compact_speed_in_bytes_per_ms =
+        kInitialConservativeFinalIncrementalMarkCompactSpeed;
+  }
+  size_t result =
+      size_of_objects / final_incremental_mark_compact_speed_in_bytes_per_ms;
+  return Min(result, kMaxFinalIncrementalMarkCompactTimeInMs);
 }
 
 
@@ -142,6 +155,23 @@ bool GCIdleTimeHandler::ShouldDoMarkCompact(
 }
 
 
+bool GCIdleTimeHandler::ShouldDoContextDisposalMarkCompact(
+    bool context_disposed, double contexts_disposal_rate) {
+  return context_disposed && contexts_disposal_rate > 0 &&
+         contexts_disposal_rate < kHighContextDisposalRate;
+}
+
+
+bool GCIdleTimeHandler::ShouldDoFinalIncrementalMarkCompact(
+    size_t idle_time_in_ms, size_t size_of_objects,
+    size_t final_incremental_mark_compact_speed_in_bytes_per_ms) {
+  return idle_time_in_ms >=
+         EstimateFinalIncrementalMarkCompactTime(
+             size_of_objects,
+             final_incremental_mark_compact_speed_in_bytes_per_ms);
+}
+
+
 // The following logic is implemented by the controller:
 // (1) If we don't have any idle time, do nothing, unless a context was
 // disposed, incremental marking is stopped, and the heap is small. Then do
@@ -159,12 +189,13 @@ bool GCIdleTimeHandler::ShouldDoMarkCompact(
 // request, we finalize sweeping here.
 // (6) If incremental marking is in progress, we perform a marking step. Note,
 // that this currently may trigger a full garbage collection.
-GCIdleTimeAction GCIdleTimeHandler::Compute(size_t idle_time_in_ms,
+GCIdleTimeAction GCIdleTimeHandler::Compute(double idle_time_in_ms,
                                             HeapState heap_state) {
-  if (idle_time_in_ms == 0) {
+  if (static_cast<int>(idle_time_in_ms) <= 0) {
     if (heap_state.incremental_marking_stopped) {
-      if (heap_state.contexts_disposed > 0 &&
-          heap_state.contexts_disposal_rate < kHighContextDisposalRate) {
+      if (ShouldDoContextDisposalMarkCompact(
+              heap_state.contexts_disposed,
+              heap_state.contexts_disposal_rate)) {
         return GCIdleTimeAction::FullGC();
       }
     }
@@ -172,7 +203,7 @@ GCIdleTimeAction GCIdleTimeHandler::Compute(size_t idle_time_in_ms,
   }
 
   if (ShouldDoScavenge(
-          idle_time_in_ms, heap_state.new_space_capacity,
+          static_cast<size_t>(idle_time_in_ms), heap_state.new_space_capacity,
           heap_state.used_new_space_size,
           heap_state.scavenge_speed_in_bytes_per_ms,
           heap_state.new_space_allocation_throughput_in_bytes_per_ms)) {
@@ -188,7 +219,8 @@ GCIdleTimeAction GCIdleTimeHandler::Compute(size_t idle_time_in_ms,
   }
 
   if (heap_state.incremental_marking_stopped) {
-    if (ShouldDoMarkCompact(idle_time_in_ms, heap_state.size_of_objects,
+    if (ShouldDoMarkCompact(static_cast<size_t>(idle_time_in_ms),
+                            heap_state.size_of_objects,
                             heap_state.mark_compact_speed_in_bytes_per_ms)) {
       // If there are no more than two GCs left in this idle round and we are
       // allowed to do a full GC, then make those GCs full in order to compact
@@ -197,7 +229,7 @@ GCIdleTimeAction GCIdleTimeHandler::Compute(size_t idle_time_in_ms,
       // can get rid of this special case and always start incremental marking.
       int remaining_mark_sweeps =
           kMaxMarkCompactsInIdleRound - mark_compacts_since_idle_round_started_;
-      if (idle_time_in_ms > kMaxFrameRenderingIdleTime &&
+      if (static_cast<size_t>(idle_time_in_ms) > kMaxFrameRenderingIdleTime &&
           (remaining_mark_sweeps <= 2 ||
            !heap_state.can_start_incremental_marking)) {
         return GCIdleTimeAction::FullGC();
@@ -209,7 +241,7 @@ GCIdleTimeAction GCIdleTimeHandler::Compute(size_t idle_time_in_ms,
   }
   // TODO(hpayer): Estimate finalize sweeping time.
   if (heap_state.sweeping_in_progress &&
-      idle_time_in_ms >= kMinTimeForFinalizeSweeping) {
+      static_cast<size_t>(idle_time_in_ms) >= kMinTimeForFinalizeSweeping) {
     return GCIdleTimeAction::FinalizeSweeping();
   }
 
@@ -218,7 +250,8 @@ GCIdleTimeAction GCIdleTimeHandler::Compute(size_t idle_time_in_ms,
     return GCIdleTimeAction::Nothing();
   }
   size_t step_size = EstimateMarkingStepSize(
-      idle_time_in_ms, heap_state.incremental_marking_speed_in_bytes_per_ms);
+      static_cast<size_t>(idle_time_in_ms),
+      heap_state.incremental_marking_speed_in_bytes_per_ms);
   return GCIdleTimeAction::IncrementalMarking(step_size);
 }
 }

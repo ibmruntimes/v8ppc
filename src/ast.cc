@@ -151,12 +151,21 @@ StrictMode FunctionLiteral::strict_mode() const {
 }
 
 
-bool FunctionLiteral::uses_super() const {
+bool FunctionLiteral::uses_super_property() const {
   DCHECK_NOT_NULL(scope());
-  return scope()->uses_super() || scope()->inner_uses_super();
+  return scope()->uses_super_property() || scope()->inner_uses_super_property();
 }
 
 
+bool FunctionLiteral::uses_super_constructor_call() const {
+  DCHECK_NOT_NULL(scope());
+  return scope()->uses_super_constructor_call() ||
+         scope()->inner_uses_super_constructor_call();
+}
+
+
+// Helper to find an existing shared function info in the baseline code for the
+// given function literal. Used to canonicalize SharedFunctionInfo objects.
 void FunctionLiteral::InitializeSharedInfo(
     Handle<Code> unoptimized_code) {
   for (RelocIterator it(*unoptimized_code); !it.done(); it.next()) {
@@ -570,6 +579,12 @@ void Expression::RecordToBooleanTypeFeedback(TypeFeedbackOracle* oracle) {
 bool Call::IsUsingCallFeedbackSlot(Isolate* isolate) const {
   CallType call_type = GetCallType(isolate);
   return (call_type != POSSIBLY_EVAL_CALL);
+}
+
+
+FeedbackVectorRequirements Call::ComputeFeedbackRequirements(Isolate* isolate) {
+  int ic_slots = IsUsingCallFeedbackSlot(isolate) ? 1 : 0;
+  return FeedbackVectorRequirements(0, ic_slots);
 }
 
 

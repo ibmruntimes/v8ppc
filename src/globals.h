@@ -95,7 +95,7 @@ namespace internal {
 
 // Determine whether double field unboxing feature is enabled.
 #if (V8_TARGET_ARCH_X64 || V8_TARGET_ARCH_ARM64 || V8_TARGET_ARCH_PPC64)
-#define V8_DOUBLE_FIELDS_UNBOXING 0
+#define V8_DOUBLE_FIELDS_UNBOXING 1
 #else
 #define V8_DOUBLE_FIELDS_UNBOXING 0
 #endif
@@ -628,6 +628,8 @@ enum CpuFeature {
   SSE4_1,
   SSE3,
   SAHF,
+  AVX,
+  FMA3,
   // ARM
   VFP3,
   ARMv7,

@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "src/compiler/generic-node-inl.h"
 #include "src/compiler/instruction-selector-impl.h"
 #include "src/compiler/node-matchers.h"
 
@@ -431,33 +430,6 @@ void InstructionSelector::VisitInt32Add(Node* node) {
   // case that there are only two operands to the add and one of them isn't
   // live, use a plain "addl".
   if (m.matches() && (m.constant() == NULL || g.CanBeImmediate(m.constant()))) {
-    if (m.offset() != NULL) {
-      if (m.constant() == NULL) {
-        if (m.scaled() != NULL && m.scale_exponent() == 0) {
-          if (!IsLive(m.offset())) {
-            Emit(kX64Add32, g.DefineSameAsFirst(node),
-                 g.UseRegister(m.offset()), g.Use(m.scaled()));
-            return;
-          } else if (!IsLive(m.scaled())) {
-            Emit(kX64Add32, g.DefineSameAsFirst(node),
-                 g.UseRegister(m.scaled()), g.Use(m.offset()));
-            return;
-          }
-        }
-      } else {
-        if (m.scale_exponent() == 0) {
-          if (m.scaled() == NULL || m.offset() == NULL) {
-            Node* non_constant = m.scaled() == NULL ? m.offset() : m.scaled();
-            if (!IsLive(non_constant)) {
-              Emit(kX64Add32, g.DefineSameAsFirst(node),
-                   g.UseRegister(non_constant), g.UseImmediate(m.constant()));
-              return;
-            }
-          }
-        }
-      }
-    }
-
     InstructionOperand* inputs[4];
     size_t input_count = 0;
     AddressingMode mode = GenerateMemoryOperandInputs(
@@ -492,15 +464,12 @@ void InstructionSelector::VisitInt32Sub(Node* node) {
     Emit(kX64Neg32, g.DefineSameAsFirst(node), g.UseRegister(m.right().node()));
   } else {
     if (m.right().HasValue() && g.CanBeImmediate(m.right().node())) {
-      if (IsLive(m.left().node())) {
-        // Special handling for subtraction of constants where the non-constant
-        // input is used elsewhere. To eliminate the gap move before the sub to
-        // copy the destination register, use a "leal" instead.
-        Emit(kX64Lea32 | AddressingModeField::encode(kMode_MRI),
-             g.DefineAsRegister(node), g.UseRegister(m.left().node()),
-             g.TempImmediate(-m.right().Value()));
-        return;
-      }
+      // Turn subtractions of constant values into immediate "leal" instructions
+      // by negating the value.
+      Emit(kX64Lea32 | AddressingModeField::encode(kMode_MRI),
+           g.DefineAsRegister(node), g.UseRegister(m.left().node()),
+           g.TempImmediate(-m.right().Value()));
+      return;
     }
     VisitBinop(this, node, kX64Sub32);
   }
@@ -736,29 +705,49 @@ void InstructionSelector::VisitTruncateInt64ToInt32(Node* node) {
 
 void InstructionSelector::VisitFloat64Add(Node* node) {
   X64OperandGenerator g(this);
-  Emit(kSSEFloat64Add, g.DefineSameAsFirst(node),
-       g.UseRegister(node->InputAt(0)), g.Use(node->InputAt(1)));
+  if (IsSupported(AVX)) {
+    Emit(kAVXFloat64Add, g.DefineAsRegister(node),
+         g.UseRegister(node->InputAt(0)), g.Use(node->InputAt(1)));
+  } else {
+    Emit(kSSEFloat64Add, g.DefineSameAsFirst(node),
+         g.UseRegister(node->InputAt(0)), g.Use(node->InputAt(1)));
+  }
 }
 
 
 void InstructionSelector::VisitFloat64Sub(Node* node) {
   X64OperandGenerator g(this);
-  Emit(kSSEFloat64Sub, g.DefineSameAsFirst(node),
-       g.UseRegister(node->InputAt(0)), g.Use(node->InputAt(1)));
+  if (IsSupported(AVX)) {
+    Emit(kAVXFloat64Sub, g.DefineAsRegister(node),
+         g.UseRegister(node->InputAt(0)), g.Use(node->InputAt(1)));
+  } else {
+    Emit(kSSEFloat64Sub, g.DefineSameAsFirst(node),
+         g.UseRegister(node->InputAt(0)), g.Use(node->InputAt(1)));
+  }
 }
 
 
 void InstructionSelector::VisitFloat64Mul(Node* node) {
   X64OperandGenerator g(this);
-  Emit(kSSEFloat64Mul, g.DefineSameAsFirst(node),
-       g.UseRegister(node->InputAt(0)), g.Use(node->InputAt(1)));
+  if (IsSupported(AVX)) {
+    Emit(kAVXFloat64Mul, g.DefineAsRegister(node),
+         g.UseRegister(node->InputAt(0)), g.Use(node->InputAt(1)));
+  } else {
+    Emit(kSSEFloat64Mul, g.DefineSameAsFirst(node),
+         g.UseRegister(node->InputAt(0)), g.Use(node->InputAt(1)));
+  }
 }
 
 
 void InstructionSelector::VisitFloat64Div(Node* node) {
   X64OperandGenerator g(this);
-  Emit(kSSEFloat64Div, g.DefineSameAsFirst(node),
-       g.UseRegister(node->InputAt(0)), g.Use(node->InputAt(1)));
+  if (IsSupported(AVX)) {
+    Emit(kAVXFloat64Div, g.DefineAsRegister(node),
+         g.UseRegister(node->InputAt(0)), g.Use(node->InputAt(1)));
+  } else {
+    Emit(kSSEFloat64Div, g.DefineSameAsFirst(node),
+         g.UseRegister(node->InputAt(0)), g.Use(node->InputAt(1)));
+  }
 }
 
 

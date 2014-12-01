@@ -7,6 +7,7 @@
 #include "src/compiler.h"
 
 #include "src/ast-numbering.h"
+#include "src/ast-this-access-visitor.h"
 #include "src/bootstrapper.h"
 #include "src/codegen.h"
 #include "src/compilation-cache.h"
@@ -20,6 +21,7 @@
 #include "src/isolate-inl.h"
 #include "src/lithium.h"
 #include "src/liveedit.h"
+#include "src/messages.h"
 #include "src/parser.h"
 #include "src/rewriter.h"
 #include "src/runtime-profiler.h"
@@ -297,10 +299,8 @@ void CompilationInfo::PrepareForCompilation(Scope* scope) {
 void CompilationInfo::EnsureFeedbackVector() {
   if (feedback_vector_.is_null()) {
     feedback_vector_ = isolate()->factory()->NewTypeFeedbackVector(
-        function()->slot_count(), function()->ic_slot_count());
+        function()->feedback_vector_spec());
   }
-  DCHECK(feedback_vector_->Slots() == function()->slot_count() &&
-         feedback_vector_->ICSlots() == function()->ic_slot_count());
 }
 
 
@@ -344,9 +344,11 @@ OptimizedCompileJob::Status OptimizedCompileJob::CreateGraph() {
   DCHECK(info()->IsOptimizing());
   DCHECK(!info()->IsCompilingForDebugging());
 
-  // We should never arrive here if optimization has been disabled on the
-  // shared function info.
-  DCHECK(!info()->shared_info()->optimization_disabled());
+  // Optimization could have been disabled by the parser.
+  if (info()->shared_info()->optimization_disabled()) {
+    return AbortOptimization(
+        info()->shared_info()->disable_optimization_reason());
+  }
 
   // Do not use crankshaft if we need to be able to set break points.
   if (isolate()->DebuggerHasBreakPoints()) {
@@ -615,7 +617,9 @@ static void SetFunctionInfo(Handle<SharedFunctionInfo> function_info,
   MaybeDisableOptimization(function_info, lit->dont_optimize_reason());
   function_info->set_dont_cache(lit->flags()->Contains(kDontCache));
   function_info->set_kind(lit->kind());
-  function_info->set_uses_super(lit->uses_super());
+  function_info->set_uses_super_property(lit->uses_super_property());
+  function_info->set_uses_super_constructor_call(
+      lit->uses_super_constructor_call());
   function_info->set_asm_function(lit->scope()->asm_function());
 }
 
@@ -758,12 +762,84 @@ static bool Renumber(CompilationInfo* info) {
 }
 
 
+static void ThrowSuperConstructorCheckError(CompilationInfo* info) {
+  MaybeHandle<Object> obj = info->isolate()->factory()->NewTypeError(
+      "super_constructor_call", HandleVector<Object>(nullptr, 0));
+  Handle<Object> exception;
+  if (!obj.ToHandle(&exception)) return;
+
+  FunctionLiteral* lit = info->function();
+  MessageLocation location(info->script(), lit->start_position(),
+                           lit->end_position());
+  USE(info->isolate()->Throw(*exception, &location));
+}
+
+
+static bool CheckSuperConstructorCall(CompilationInfo* info) {
+  FunctionLiteral* function = info->function();
+  if (!function->uses_super_constructor_call()) return true;
+
+  if (function->is_default_constructor()) return true;
+
+  ZoneList<Statement*>* body = function->body();
+  CHECK(body->length() > 0);
+
+  int super_call_index = 0;
+  // Allow 'use strict' and similiar and empty statements.
+  while (true) {
+    CHECK(super_call_index < body->length());  // We know there is a super call.
+    Statement* stmt = body->at(super_call_index);
+    if (stmt->IsExpressionStatement() &&
+        stmt->AsExpressionStatement()->expression()->IsLiteral()) {
+      super_call_index++;
+      continue;
+    }
+    if (stmt->IsEmptyStatement()) {
+      super_call_index++;
+      continue;
+    }
+    break;
+  }
+
+  ExpressionStatement* exprStm =
+      body->at(super_call_index)->AsExpressionStatement();
+  if (exprStm == nullptr) {
+    ThrowSuperConstructorCheckError(info);
+    return false;
+  }
+  Call* callExpr = exprStm->expression()->AsCall();
+  if (callExpr == nullptr) {
+    ThrowSuperConstructorCheckError(info);
+    return false;
+  }
+
+  if (!callExpr->expression()->IsSuperReference()) {
+    ThrowSuperConstructorCheckError(info);
+    return false;
+  }
+
+  ZoneList<Expression*>* arguments = callExpr->arguments();
+
+  AstThisAccessVisitor this_access_visitor(info->zone());
+  this_access_visitor.VisitExpressions(arguments);
+
+  if (this_access_visitor.HasStackOverflow()) return false;
+  if (this_access_visitor.UsesThis()) {
+    ThrowSuperConstructorCheckError(info);
+    return false;
+  }
+
+  return true;
+}
+
+
 bool Compiler::Analyze(CompilationInfo* info) {
   DCHECK(info->function() != NULL);
   if (!Rewriter::Rewrite(info)) return false;
   if (!Scope::Analyze(info)) return false;
   if (!Renumber(info)) return false;
   DCHECK(info->scope() != NULL);
+  if (!CheckSuperConstructorCall(info)) return false;
   return true;
 }
 
@@ -1382,11 +1458,11 @@ MaybeHandle<Code> Compiler::GetOptimizedCode(Handle<JSFunction> function,
   Isolate* isolate = info->isolate();
   DCHECK(AllowCompilation::IsAllowed(isolate));
   VMState<COMPILER> state(isolate);
+  DCHECK(isolate->use_crankshaft());
   DCHECK(!isolate->has_pending_exception());
   PostponeInterruptsScope postpone(isolate);
 
   Handle<SharedFunctionInfo> shared = info->shared_info();
-  shared->set_optimize_next_closure(false);
   if (shared->code()->kind() != Code::FUNCTION ||
       ScopeInfo::Empty(isolate) == shared->scope_info()) {
     // The function was never compiled. Compile it unoptimized first.

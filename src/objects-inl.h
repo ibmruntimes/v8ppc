@@ -2758,6 +2758,17 @@ WriteBarrierMode HeapObject::GetWriteBarrierMode(
 }
 
 
+bool HeapObject::NeedsToEnsureDoubleAlignment() {
+#ifndef V8_HOST_ARCH_64_BIT
+  return (IsFixedFloat64Array() || IsFixedDoubleArray() ||
+          IsConstantPoolArray()) &&
+         FixedArrayBase::cast(this)->length() != 0;
+#else
+  return false;
+#endif  // V8_HOST_ARCH_64_BIT
+}
+
+
 void FixedArray::set(int index,
                      Object* value,
                      WriteBarrierMode mode) {
@@ -2850,8 +2861,10 @@ void DescriptorArray::SetNumberOfDescriptors(int number_of_descriptors) {
 // Perform a binary search in a fixed array. Low and high are entry indices. If
 // there are three entries in this array it should be called with low=0 and
 // high=2.
-template<SearchMode search_mode, typename T>
-int BinarySearch(T* array, Name* name, int low, int high, int valid_entries) {
+template <SearchMode search_mode, typename T>
+int BinarySearch(T* array, Name* name, int low, int high, int valid_entries,
+                 int* out_insertion_index) {
+  DCHECK(search_mode == ALL_ENTRIES || out_insertion_index == NULL);
   uint32_t hash = name->Hash();
   int limit = high;
 
@@ -2872,7 +2885,13 @@ int BinarySearch(T* array, Name* name, int low, int high, int valid_entries) {
   for (; low <= limit; ++low) {
     int sort_index = array->GetSortedKeyIndex(low);
     Name* entry = array->GetKey(sort_index);
-    if (entry->Hash() != hash) break;
+    uint32_t current_hash = entry->Hash();
+    if (current_hash != hash) {
+      if (out_insertion_index != NULL) {
+        *out_insertion_index = sort_index + (current_hash > hash ? 0 : 1);
+      }
+      return T::kNotFound;
+    }
     if (entry->Equals(name)) {
       if (search_mode == ALL_ENTRIES || sort_index < valid_entries) {
         return sort_index;
@@ -2881,37 +2900,45 @@ int BinarySearch(T* array, Name* name, int low, int high, int valid_entries) {
     }
   }
 
+  if (out_insertion_index != NULL) *out_insertion_index = limit + 1;
   return T::kNotFound;
 }
 
 
 // Perform a linear search in this fixed array. len is the number of entry
 // indices that are valid.
-template<SearchMode search_mode, typename T>
-int LinearSearch(T* array, Name* name, int len, int valid_entries) {
+template <SearchMode search_mode, typename T>
+int LinearSearch(T* array, Name* name, int len, int valid_entries,
+                 int* out_insertion_index) {
   uint32_t hash = name->Hash();
   if (search_mode == ALL_ENTRIES) {
     for (int number = 0; number < len; number++) {
       int sorted_index = array->GetSortedKeyIndex(number);
       Name* entry = array->GetKey(sorted_index);
       uint32_t current_hash = entry->Hash();
-      if (current_hash > hash) break;
+      if (current_hash > hash) {
+        if (out_insertion_index != NULL) *out_insertion_index = sorted_index;
+        return T::kNotFound;
+      }
       if (current_hash == hash && entry->Equals(name)) return sorted_index;
     }
+    if (out_insertion_index != NULL) *out_insertion_index = len;
+    return T::kNotFound;
   } else {
     DCHECK(len >= valid_entries);
+    DCHECK_EQ(NULL, out_insertion_index);  // Not supported here.
     for (int number = 0; number < valid_entries; number++) {
       Name* entry = array->GetKey(number);
       uint32_t current_hash = entry->Hash();
       if (current_hash == hash && entry->Equals(name)) return number;
     }
+    return T::kNotFound;
   }
-  return T::kNotFound;
 }
 
 
-template<SearchMode search_mode, typename T>
-int Search(T* array, Name* name, int valid_entries) {
+template <SearchMode search_mode, typename T>
+int Search(T* array, Name* name, int valid_entries, int* out_insertion_index) {
   if (search_mode == VALID_ENTRIES) {
     SLOW_DCHECK(array->IsSortedNoDuplicates(valid_entries));
   } else {
@@ -2919,7 +2946,10 @@ int Search(T* array, Name* name, int valid_entries) {
   }
 
   int nof = array->number_of_entries();
-  if (nof == 0) return T::kNotFound;
+  if (nof == 0) {
+    if (out_insertion_index != NULL) *out_insertion_index = 0;
+    return T::kNotFound;
+  }
 
   // Fast case: do linear search for small arrays.
   const int kMaxElementsForLinearSearch = 8;
@@ -2927,16 +2957,18 @@ int Search(T* array, Name* name, int valid_entries) {
        nof <= kMaxElementsForLinearSearch) ||
       (search_mode == VALID_ENTRIES &&
        valid_entries <= (kMaxElementsForLinearSearch * 3))) {
-    return LinearSearch<search_mode>(array, name, nof, valid_entries);
+    return LinearSearch<search_mode>(array, name, nof, valid_entries,
+                                     out_insertion_index);
   }
 
   // Slow case: perform binary search.
-  return BinarySearch<search_mode>(array, name, 0, nof - 1, valid_entries);
+  return BinarySearch<search_mode>(array, name, 0, nof - 1, valid_entries,
+                                   out_insertion_index);
 }
 
 
 int DescriptorArray::Search(Name* name, int valid_descriptors) {
-  return internal::Search<VALID_ENTRIES>(this, name, valid_descriptors);
+  return internal::Search<VALID_ENTRIES>(this, name, valid_descriptors, NULL);
 }
 
 
@@ -3557,6 +3589,22 @@ ConsString* String::VisitFlat(Visitor* visitor,
         return NULL;
     }
   }
+}
+
+
+template <>
+inline Vector<const uint8_t> String::GetCharVector() {
+  String::FlatContent flat = GetFlatContent();
+  DCHECK(flat.IsOneByte());
+  return flat.ToOneByteVector();
+}
+
+
+template <>
+inline Vector<const uc16> String::GetCharVector() {
+  String::FlatContent flat = GetFlatContent();
+  DCHECK(flat.IsTwoByte());
+  return flat.ToUC16Vector();
 }
 
 
@@ -5220,6 +5268,12 @@ LayoutDescriptor* Map::layout_descriptor_gc_safe() {
 }
 
 
+bool Map::HasFastPointerLayout() const {
+  Object* layout_desc = READ_FIELD(this, kLayoutDecriptorOffset);
+  return LayoutDescriptor::IsFastPointerLayout(layout_desc);
+}
+
+
 void Map::UpdateDescriptors(DescriptorArray* descriptors,
                             LayoutDescriptor* layout_desc) {
   set_instance_descriptors(descriptors);
@@ -5288,7 +5342,7 @@ void Map::AppendDescriptor(Descriptor* desc) {
 
 Object* Map::GetBackPointer() {
   Object* object = READ_FIELD(this, kTransitionsOrBackPointerOffset);
-  if (object->IsDescriptorArray()) {
+  if (object->IsTransitionArray()) {
     return TransitionArray::cast(object)->back_pointer_storage();
   } else {
     DCHECK(object->IsMap() || object->IsUndefined());
@@ -5460,6 +5514,9 @@ ACCESSORS(InterceptorInfo, query, Object, kQueryOffset)
 ACCESSORS(InterceptorInfo, deleter, Object, kDeleterOffset)
 ACCESSORS(InterceptorInfo, enumerator, Object, kEnumeratorOffset)
 ACCESSORS(InterceptorInfo, data, Object, kDataOffset)
+SMI_ACCESSORS(InterceptorInfo, flags, kFlagsOffset)
+BOOL_ACCESSORS(InterceptorInfo, flags, can_intercept_symbols,
+               kCanInterceptSymbolsBit)
 
 ACCESSORS(CallHandlerInfo, callback, Object, kCallbackOffset)
 ACCESSORS(CallHandlerInfo, data, Object, kDataOffset)
@@ -5585,8 +5642,6 @@ BOOL_ACCESSORS(SharedFunctionInfo, start_position_and_type, is_expression,
 BOOL_ACCESSORS(SharedFunctionInfo, start_position_and_type, is_toplevel,
                kIsTopLevelBit)
 
-BOOL_ACCESSORS(SharedFunctionInfo, compiler_hints, optimize_next_closure,
-               kOptimizeNextClosure)
 BOOL_ACCESSORS(SharedFunctionInfo, compiler_hints, allows_lazy_compilation,
                kAllowLazyCompilation)
 BOOL_ACCESSORS(SharedFunctionInfo,
@@ -5737,7 +5792,10 @@ void SharedFunctionInfo::set_kind(FunctionKind kind) {
 }
 
 
-BOOL_ACCESSORS(SharedFunctionInfo, compiler_hints, uses_super, kUsesSuper)
+BOOL_ACCESSORS(SharedFunctionInfo, compiler_hints, uses_super_property,
+               kUsesSuperProperty)
+BOOL_ACCESSORS(SharedFunctionInfo, compiler_hints, uses_super_constructor_call,
+               kUsesSuperConstructorCall)
 BOOL_ACCESSORS(SharedFunctionInfo, compiler_hints, native, kNative)
 BOOL_ACCESSORS(SharedFunctionInfo, compiler_hints, inline_builtin,
                kInlineBuiltin)
@@ -5758,6 +5816,7 @@ BOOL_ACCESSORS(SharedFunctionInfo, compiler_hints, is_default_constructor,
 
 ACCESSORS(CodeCache, default_cache, FixedArray, kDefaultCacheOffset)
 ACCESSORS(CodeCache, normal_type_cache, Object, kNormalTypeCacheOffset)
+ACCESSORS(CodeCache, weak_cell_cache, Object, kWeakCellCacheOffset)
 
 ACCESSORS(PolymorphicCodeCache, cache, Object, kCacheOffset)
 
@@ -6681,6 +6740,30 @@ uint32_t StringHasher::GetHashCore(uint32_t running_hash) {
 }
 
 
+uint32_t StringHasher::ComputeRunningHash(uint32_t running_hash,
+                                          const uc16* chars, int length) {
+  DCHECK_NOT_NULL(chars);
+  DCHECK(length >= 0);
+  for (int i = 0; i < length; ++i) {
+    running_hash = AddCharacterCore(running_hash, *chars++);
+  }
+  return running_hash;
+}
+
+
+uint32_t StringHasher::ComputeRunningHashOneByte(uint32_t running_hash,
+                                                 const char* chars,
+                                                 int length) {
+  DCHECK_NOT_NULL(chars);
+  DCHECK(length >= 0);
+  for (int i = 0; i < length; ++i) {
+    uint16_t c = static_cast<uint16_t>(*chars++);
+    running_hash = AddCharacterCore(running_hash, c);
+  }
+  return running_hash;
+}
+
+
 void StringHasher::AddCharacter(uint16_t c) {
   // Use the Jenkins one-at-a-time hash function to update the hash
   // for the given character.
@@ -6746,14 +6829,8 @@ uint32_t IteratingStringHasher::Hash(String* string, uint32_t seed) {
   // Nothing to do.
   if (hasher.has_trivial_hash()) return hasher.GetHashField();
   ConsString* cons_string = String::VisitFlat(&hasher, string);
-  // The string was flat.
-  if (cons_string == NULL) return hasher.GetHashField();
-  // This is a ConsString, iterate across it.
-  ConsStringIterator iter(cons_string);
-  int offset;
-  while (NULL != (string = iter.Next(&offset))) {
-    String::VisitFlat(&hasher, string, offset);
-  }
+  if (cons_string == nullptr) return hasher.GetHashField();
+  hasher.VisitConsString(cons_string);
   return hasher.GetHashField();
 }
 
@@ -7357,8 +7434,7 @@ template<int start_offset, int end_offset, int size>
 void FixedBodyDescriptor<start_offset, end_offset, size>::IterateBody(
     HeapObject* obj,
     ObjectVisitor* v) {
-  if (!FLAG_unbox_double_fields ||
-      obj->map()->layout_descriptor()->IsFastPointerLayout()) {
+  if (!FLAG_unbox_double_fields || obj->map()->HasFastPointerLayout()) {
     v->VisitPointers(HeapObject::RawField(obj, start_offset),
                      HeapObject::RawField(obj, end_offset));
   } else {
@@ -7371,8 +7447,7 @@ template<int start_offset>
 void FlexibleBodyDescriptor<start_offset>::IterateBody(HeapObject* obj,
                                                        int object_size,
                                                        ObjectVisitor* v) {
-  if (!FLAG_unbox_double_fields ||
-      obj->map()->layout_descriptor()->IsFastPointerLayout()) {
+  if (!FLAG_unbox_double_fields || obj->map()->HasFastPointerLayout()) {
     v->VisitPointers(HeapObject::RawField(obj, start_offset),
                      HeapObject::RawField(obj, object_size));
   } else {

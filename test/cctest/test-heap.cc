@@ -3295,18 +3295,18 @@ TEST(IncrementalMarkingClearsTypeFeedbackInfo) {
 
   int expected_slots = 2;
   CHECK_EQ(expected_slots, feedback_vector->ICSlots());
-  for (int i = 0; i < expected_slots; i++) {
-    CHECK(feedback_vector->Get(FeedbackVectorICSlot(i))->IsJSFunction());
-  }
+  int slot1 = 0;
+  int slot2 = 1;
+  CHECK(feedback_vector->Get(FeedbackVectorICSlot(slot1))->IsJSFunction());
+  CHECK(feedback_vector->Get(FeedbackVectorICSlot(slot2))->IsJSFunction());
 
   SimulateIncrementalMarking(CcTest::heap());
   CcTest::heap()->CollectAllGarbage(Heap::kNoGCFlags);
 
-  CHECK_EQ(expected_slots, feedback_vector->ICSlots());
-  for (int i = 0; i < expected_slots; i++) {
-    CHECK_EQ(feedback_vector->Get(FeedbackVectorICSlot(i)),
-             *TypeFeedbackVector::UninitializedSentinel(CcTest::i_isolate()));
-  }
+  CHECK_EQ(feedback_vector->Get(FeedbackVectorICSlot(slot1)),
+           *TypeFeedbackVector::UninitializedSentinel(CcTest::i_isolate()));
+  CHECK_EQ(feedback_vector->Get(FeedbackVectorICSlot(slot2)),
+           *TypeFeedbackVector::UninitializedSentinel(CcTest::i_isolate()));
 }
 
 
@@ -3325,6 +3325,25 @@ static Code* FindFirstIC(Code* code, Code::Kind kind) {
 }
 
 
+static void CheckVectorIC(Handle<JSFunction> f, int ic_slot_index,
+                          InlineCacheState desired_state) {
+  Handle<TypeFeedbackVector> vector =
+      Handle<TypeFeedbackVector>(f->shared()->feedback_vector());
+  FeedbackVectorICSlot slot(ic_slot_index);
+  LoadICNexus nexus(vector, slot);
+  CHECK(nexus.StateFromFeedback() == desired_state);
+}
+
+
+static void CheckVectorICCleared(Handle<JSFunction> f, int ic_slot_index) {
+  Handle<TypeFeedbackVector> vector =
+      Handle<TypeFeedbackVector>(f->shared()->feedback_vector());
+  FeedbackVectorICSlot slot(ic_slot_index);
+  LoadICNexus nexus(vector, slot);
+  CHECK(IC::IsCleared(&nexus));
+}
+
+
 TEST(IncrementalMarkingPreservesMonomorphicIC) {
   if (i::FLAG_always_opt) return;
   CcTest::InitializeVM();
@@ -3340,13 +3359,23 @@ TEST(IncrementalMarkingPreservesMonomorphicIC) {
               CcTest::global()->Get(v8_str("f"))));
 
   Code* ic_before = FindFirstIC(f->shared()->code(), Code::LOAD_IC);
-  CHECK(ic_before->ic_state() == MONOMORPHIC);
+  if (FLAG_vector_ics) {
+    CheckVectorIC(f, 0, MONOMORPHIC);
+    CHECK(ic_before->ic_state() == DEFAULT);
+  } else {
+    CHECK(ic_before->ic_state() == MONOMORPHIC);
+  }
 
   SimulateIncrementalMarking(CcTest::heap());
   CcTest::heap()->CollectAllGarbage(Heap::kNoGCFlags);
 
   Code* ic_after = FindFirstIC(f->shared()->code(), Code::LOAD_IC);
-  CHECK(ic_after->ic_state() == MONOMORPHIC);
+  if (FLAG_vector_ics) {
+    CheckVectorIC(f, 0, MONOMORPHIC);
+    CHECK(ic_after->ic_state() == DEFAULT);
+  } else {
+    CHECK(ic_after->ic_state() == MONOMORPHIC);
+  }
 }
 
 
@@ -3372,7 +3401,12 @@ TEST(IncrementalMarkingClearsMonomorphicIC) {
               CcTest::global()->Get(v8_str("f"))));
 
   Code* ic_before = FindFirstIC(f->shared()->code(), Code::LOAD_IC);
-  CHECK(ic_before->ic_state() == MONOMORPHIC);
+  if (FLAG_vector_ics) {
+    CheckVectorIC(f, 0, MONOMORPHIC);
+    CHECK(ic_before->ic_state() == DEFAULT);
+  } else {
+    CHECK(ic_before->ic_state() == MONOMORPHIC);
+  }
 
   // Fire context dispose notification.
   CcTest::isolate()->ContextDisposedNotification();
@@ -3380,7 +3414,50 @@ TEST(IncrementalMarkingClearsMonomorphicIC) {
   CcTest::heap()->CollectAllGarbage(Heap::kNoGCFlags);
 
   Code* ic_after = FindFirstIC(f->shared()->code(), Code::LOAD_IC);
-  CHECK(IC::IsCleared(ic_after));
+  if (FLAG_vector_ics) {
+    CheckVectorICCleared(f, 0);
+    CHECK(ic_after->ic_state() == DEFAULT);
+  } else {
+    CHECK(IC::IsCleared(ic_after));
+  }
+}
+
+
+TEST(IncrementalMarkingPreservesPolymorphicIC) {
+  if (i::FLAG_always_opt) return;
+  CcTest::InitializeVM();
+  v8::HandleScope scope(CcTest::isolate());
+  v8::Local<v8::Value> obj1, obj2;
+
+  {
+    LocalContext env;
+    CompileRun("function fun() { this.x = 1; }; var obj = new fun();");
+    obj1 = env->Global()->Get(v8_str("obj"));
+  }
+
+  {
+    LocalContext env;
+    CompileRun("function fun() { this.x = 2; }; var obj = new fun();");
+    obj2 = env->Global()->Get(v8_str("obj"));
+  }
+
+  // Prepare function f that contains a polymorphic IC for objects
+  // originating from two different native contexts.
+  CcTest::global()->Set(v8_str("obj1"), obj1);
+  CcTest::global()->Set(v8_str("obj2"), obj2);
+  CompileRun("function f(o) { return o.x; } f(obj1); f(obj1); f(obj2);");
+  Handle<JSFunction> f = v8::Utils::OpenHandle(
+      *v8::Handle<v8::Function>::Cast(CcTest::global()->Get(v8_str("f"))));
+
+  Code* ic_before = FindFirstIC(f->shared()->code(), Code::LOAD_IC);
+  CHECK(ic_before->ic_state() == POLYMORPHIC);
+
+  // Fire context dispose notification.
+  SimulateIncrementalMarking(CcTest::heap());
+  CcTest::heap()->CollectAllGarbage(Heap::kNoGCFlags);
+
+  Code* ic_after = FindFirstIC(f->shared()->code(), Code::LOAD_IC);
+  CHECK(ic_after->ic_state() == POLYMORPHIC);
 }
 
 
@@ -3413,7 +3490,12 @@ TEST(IncrementalMarkingClearsPolymorphicIC) {
               CcTest::global()->Get(v8_str("f"))));
 
   Code* ic_before = FindFirstIC(f->shared()->code(), Code::LOAD_IC);
-  CHECK(ic_before->ic_state() == POLYMORPHIC);
+  if (FLAG_vector_ics) {
+    CheckVectorIC(f, 0, POLYMORPHIC);
+    CHECK(ic_before->ic_state() == DEFAULT);
+  } else {
+    CHECK(ic_before->ic_state() == POLYMORPHIC);
+  }
 
   // Fire context dispose notification.
   CcTest::isolate()->ContextDisposedNotification();
@@ -3421,7 +3503,12 @@ TEST(IncrementalMarkingClearsPolymorphicIC) {
   CcTest::heap()->CollectAllGarbage(Heap::kNoGCFlags);
 
   Code* ic_after = FindFirstIC(f->shared()->code(), Code::LOAD_IC);
-  CHECK(IC::IsCleared(ic_after));
+  if (FLAG_vector_ics) {
+    CheckVectorICCleared(f, 0);
+    CHECK(ic_before->ic_state() == DEFAULT);
+  } else {
+    CHECK(IC::IsCleared(ic_after));
+  }
 }
 
 
@@ -4047,6 +4134,10 @@ TEST(EnsureAllocationSiteDependentCodesProcessed) {
     heap->CollectAllGarbage(Heap::kNoGCFlags);
   }
 
+  // TODO(mvstanton): this test fails when FLAG_vector_ics is true because
+  // monomorphic load ics are preserved, but also strongly walked. They
+  // end up keeping function bar alive.
+
   // The site still exists because of our global handle, but the code is no
   // longer referred to by dependent_code().
   DependentCode::GroupStartIndexes starts(site->dependent_code());
@@ -4311,6 +4402,8 @@ void CheckWeakness(const char* source) {
 // Each of the following "weak IC" tests creates an IC that embeds a map with
 // the prototype pointing to _proto_ and checks that the _proto_ dies on GC.
 TEST(WeakMapInMonomorphicLoadIC) {
+  // TODO(mvstanton): vector ics need weak support!
+  if (FLAG_vector_ics) return;
   CheckWeakness("function loadIC(obj) {"
                 "  return obj.name;"
                 "}"
@@ -4325,7 +4418,28 @@ TEST(WeakMapInMonomorphicLoadIC) {
 }
 
 
+TEST(WeakMapInPolymorphicLoadIC) {
+  CheckWeakness(
+      "function loadIC(obj) {"
+      "  return obj.name;"
+      "}"
+      " (function() {"
+      "   var proto = {'name' : 'weak'};"
+      "   var obj = Object.create(proto);"
+      "   loadIC(obj);"
+      "   loadIC(obj);"
+      "   loadIC(obj);"
+      "   var poly = Object.create(proto);"
+      "   poly.x = true;"
+      "   loadIC(poly);"
+      "   return proto;"
+      " })();");
+}
+
+
 TEST(WeakMapInMonomorphicKeyedLoadIC) {
+  // TODO(mvstanton): vector ics need weak support!
+  if (FLAG_vector_ics) return;
   CheckWeakness("function keyedLoadIC(obj, field) {"
                 "  return obj[field];"
                 "}"
@@ -4337,6 +4451,25 @@ TEST(WeakMapInMonomorphicKeyedLoadIC) {
                 "   keyedLoadIC(obj, 'name');"
                 "   return proto;"
                 " })();");
+}
+
+
+TEST(WeakMapInPolymorphicKeyedLoadIC) {
+  CheckWeakness(
+      "function keyedLoadIC(obj, field) {"
+      "  return obj[field];"
+      "}"
+      " (function() {"
+      "   var proto = {'name' : 'weak'};"
+      "   var obj = Object.create(proto);"
+      "   keyedLoadIC(obj, 'name');"
+      "   keyedLoadIC(obj, 'name');"
+      "   keyedLoadIC(obj, 'name');"
+      "   var poly = Object.create(proto);"
+      "   poly.x = true;"
+      "   keyedLoadIC(poly, 'name');"
+      "   return proto;"
+      " })();");
 }
 
 
@@ -4355,6 +4488,25 @@ TEST(WeakMapInMonomorphicStoreIC) {
 }
 
 
+TEST(WeakMapInPolymorphicStoreIC) {
+  CheckWeakness(
+      "function storeIC(obj, value) {"
+      "  obj.name = value;"
+      "}"
+      " (function() {"
+      "   var proto = {'name' : 'weak'};"
+      "   var obj = Object.create(proto);"
+      "   storeIC(obj, 'x');"
+      "   storeIC(obj, 'x');"
+      "   storeIC(obj, 'x');"
+      "   var poly = Object.create(proto);"
+      "   poly.x = true;"
+      "   storeIC(poly, 'x');"
+      "   return proto;"
+      " })();");
+}
+
+
 TEST(WeakMapInMonomorphicKeyedStoreIC) {
   CheckWeakness("function keyedStoreIC(obj, field, value) {"
                 "  obj[field] = value;"
@@ -4367,6 +4519,25 @@ TEST(WeakMapInMonomorphicKeyedStoreIC) {
                 "   keyedStoreIC(obj, 'x');"
                 "   return proto;"
                 " })();");
+}
+
+
+TEST(WeakMapInPolymorphicKeyedStoreIC) {
+  CheckWeakness(
+      "function keyedStoreIC(obj, field, value) {"
+      "  obj[field] = value;"
+      "}"
+      " (function() {"
+      "   var proto = {'name' : 'weak'};"
+      "   var obj = Object.create(proto);"
+      "   keyedStoreIC(obj, 'x');"
+      "   keyedStoreIC(obj, 'x');"
+      "   keyedStoreIC(obj, 'x');"
+      "   var poly = Object.create(proto);"
+      "   poly.x = true;"
+      "   keyedStoreIC(poly, 'x');"
+      "   return proto;"
+      " })();");
 }
 
 

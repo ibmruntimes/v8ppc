@@ -21,7 +21,9 @@
 #include "src/compiler/js-generic-lowering.h"
 #include "src/compiler/js-inlining.h"
 #include "src/compiler/js-typed-lowering.h"
+#include "src/compiler/jump-threading.h"
 #include "src/compiler/machine-operator-reducer.h"
+#include "src/compiler/move-optimizer.h"
 #include "src/compiler/pipeline-statistics.h"
 #include "src/compiler/register-allocator.h"
 #include "src/compiler/register-allocator-verifier.h"
@@ -578,6 +580,28 @@ struct ResolveControlFlowPhase {
 };
 
 
+struct OptimizeMovesPhase {
+  static const char* phase_name() { return "optimize moves"; }
+
+  void Run(PipelineData* data, Zone* temp_zone) {
+    MoveOptimizer move_optimizer(temp_zone, data->sequence());
+    move_optimizer.Run();
+  }
+};
+
+
+struct JumpThreadingPhase {
+  static const char* phase_name() { return "jump threading"; }
+
+  void Run(PipelineData* data, Zone* temp_zone) {
+    ZoneVector<BasicBlock::RpoNumber> result(temp_zone);
+    if (JumpThreading::ComputeForwarding(temp_zone, result, data->sequence())) {
+      JumpThreading::ApplyForwarding(result, data->sequence());
+    }
+  }
+};
+
+
 struct GenerateCodePhase {
   static const char* phase_name() { return "generate code"; }
 
@@ -902,7 +926,12 @@ void Pipeline::GenerateCode(Linkage* linkage) {
 
   BeginPhaseKind("code generation");
 
-  // Generate native sequence.
+  // Optimimize jumps.
+  if (FLAG_turbo_jt) {
+    Run<JumpThreadingPhase>();
+  }
+
+  // Generate final machine code.
   Run<GenerateCodePhase>(linkage);
 
   if (profiler_data != NULL) {
@@ -969,6 +998,7 @@ void Pipeline::AllocateRegisters(const RegisterConfiguration* config,
   Run<PopulatePointerMapsPhase>();
   Run<ConnectRangesPhase>();
   Run<ResolveControlFlowPhase>();
+  Run<OptimizeMovesPhase>();
 
   if (FLAG_trace_turbo) {
     OFStream os(stdout);

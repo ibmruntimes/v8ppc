@@ -1944,11 +1944,6 @@ void MarkCompactCollector::MarkAllocationSite(AllocationSite* site) {
 }
 
 
-bool MarkCompactCollector::IsMarkingDequeEmpty() {
-  return marking_deque_.IsEmpty();
-}
-
-
 void MarkCompactCollector::MarkRoots(RootMarkingVisitor* visitor) {
   // Mark the heap roots including global variables, stack variables,
   // etc., and all objects reachable from them.
@@ -2764,7 +2759,8 @@ void MarkCompactCollector::MigrateObject(HeapObject* dst, HeapObject* src,
 
 #if V8_DOUBLE_FIELDS_UNBOXING
       if (!may_contain_raw_values &&
-          (has_only_tagged_fields || helper.IsTagged(src_slot - src_addr)))
+          (has_only_tagged_fields ||
+           helper.IsTagged(static_cast<int>(src_slot - src_addr))))
 #else
       if (!may_contain_raw_values)
 #endif
