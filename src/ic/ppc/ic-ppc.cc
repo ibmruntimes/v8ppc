@@ -275,18 +275,32 @@ void LoadIC::GenerateNormal(MacroAssembler* masm) {
 static const Register LoadIC_TempRegister() { return r6; }
 
 
+static void LoadIC_PushArgs(MacroAssembler* masm) {
+  Register receiver = LoadDescriptor::ReceiverRegister();
+  Register name = LoadDescriptor::NameRegister();
+  if (FLAG_vector_ics) {
+    Register slot = VectorLoadICDescriptor::SlotRegister();
+    Register vector = VectorLoadICDescriptor::VectorRegister();
+
+    __ Push(receiver, name, slot, vector);
+  } else {
+    __ Push(receiver, name);
+  }
+}
+
+
 void LoadIC::GenerateMiss(MacroAssembler* masm) {
   // The return address is in lr.
   Isolate* isolate = masm->isolate();
 
   __ IncrementCounter(isolate->counters()->load_miss(), 1, r6, r7);
 
-  __ mr(LoadIC_TempRegister(), LoadDescriptor::ReceiverRegister());
-  __ Push(LoadIC_TempRegister(), LoadDescriptor::NameRegister());
+  LoadIC_PushArgs(masm);
 
   // Perform tail call to the entry.
   ExternalReference ref = ExternalReference(IC_Utility(kLoadIC_Miss), isolate);
-  __ TailCallExternalReference(ref, 2, 1);
+  int arg_count = FLAG_vector_ics ? 4 : 2;
+  __ TailCallExternalReference(ref, arg_count, 1);
 }
 
 
@@ -417,13 +431,13 @@ void KeyedLoadIC::GenerateMiss(MacroAssembler* masm) {
 
   __ IncrementCounter(isolate->counters()->keyed_load_miss(), 1, r6, r7);
 
-  __ Push(LoadDescriptor::ReceiverRegister(), LoadDescriptor::NameRegister());
+  LoadIC_PushArgs(masm);
 
   // Perform tail call to the entry.
   ExternalReference ref =
       ExternalReference(IC_Utility(kKeyedLoadIC_Miss), isolate);
-
-  __ TailCallExternalReference(ref, 2, 1);
+  int arg_count = FLAG_vector_ics ? 4 : 2;
+  __ TailCallExternalReference(ref, arg_count, 1);
 }
 
 

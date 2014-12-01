@@ -2099,6 +2099,22 @@ void MacroAssembler::DispatchMap(Register obj, Register scratch,
 }
 
 
+void MacroAssembler::CmpWeakValue(Register value, Handle<WeakCell> cell,
+                                  Register scratch, CRegister cr) {
+  mov(scratch, Operand(cell));
+  LoadP(scratch, FieldMemOperand(scratch, WeakCell::kValueOffset));
+  cmp(value, scratch, cr);
+}
+
+
+void MacroAssembler::LoadWeakValue(Register value, Handle<WeakCell> cell,
+                                   Label* miss) {
+  mov(value, Operand(cell));
+  LoadP(value, FieldMemOperand(value, WeakCell::kValueOffset));
+  JumpIfSmi(value, miss);
+}
+
+
 void MacroAssembler::TryGetFunctionPrototype(Register function, Register result,
                                              Register scratch, Label* miss,
                                              bool miss_on_bound_function) {
