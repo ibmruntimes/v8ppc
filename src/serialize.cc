@@ -1193,7 +1193,7 @@ void Deserializer::ReadData(Object** current, Object** limit, int source_space,
       CASE_STATEMENT(kRootArray, kPlain, kStartOfObject, 0)
       CASE_BODY(kRootArray, kPlain, kStartOfObject, 0)
 #if defined(V8_TARGET_ARCH_MIPS) || V8_OOL_CONSTANT_POOL || \
-    defined(V8_TARGET_ARCH_MIPS64)
+    defined(V8_TARGET_ARCH_MIPS64) || defined(V8_TARGET_ARCH_PPC)
       // Find an object in the roots array and write a pointer to it to in code.
       CASE_STATEMENT(kRootArray, kFromCode, kStartOfObject, 0)
       CASE_BODY(kRootArray, kFromCode, kStartOfObject, 0)
