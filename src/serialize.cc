@@ -1613,11 +1613,13 @@ void Serializer::ObjectSerializer::SerializePrologue(AllocationSpace space,
     if (object_->NeedsToEnsureDoubleAlignment()) {
       // Add wriggle room for double alignment padding.
       back_reference = serializer_->Allocate(space, size + kPointerSize);
-      sink_->PutInt(kDoubleAlignmentSentinel, "double align");
     } else {
       back_reference = serializer_->Allocate(space, size);
     }
     sink_->Put(kNewObject + reference_representation_ + space, "new object");
+    if (object_->NeedsToEnsureDoubleAlignment()) {
+      sink_->PutInt(kDoubleAlignmentSentinel, "double align");
+    }
     int encoded_size = size >> kObjectAlignmentBits;
     DCHECK_NE(kDoubleAlignmentSentinel, encoded_size);
     sink_->PutInt(encoded_size, "Size in words");
