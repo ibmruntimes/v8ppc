@@ -27,7 +27,11 @@ void GCIdleTimeAction::Print() {
       PrintF("no action");
       break;
     case DO_INCREMENTAL_MARKING:
-      PrintF("incremental marking with step %" V8_PTR_PREFIX "d", parameter);
+      PrintF("incremental marking with step %" V8_PTR_PREFIX "d / ms",
+             parameter);
+      if (additional_work) {
+        PrintF("; finalized marking");
+      }
       break;
     case DO_SCAVENGE:
       PrintF("scavenge");
@@ -156,8 +160,8 @@ bool GCIdleTimeHandler::ShouldDoMarkCompact(
 
 
 bool GCIdleTimeHandler::ShouldDoContextDisposalMarkCompact(
-    bool context_disposed, double contexts_disposal_rate) {
-  return context_disposed && contexts_disposal_rate > 0 &&
+    int contexts_disposed, double contexts_disposal_rate) {
+  return contexts_disposed > 0 && contexts_disposal_rate > 0 &&
          contexts_disposal_rate < kHighContextDisposalRate;
 }
 
@@ -192,6 +196,9 @@ bool GCIdleTimeHandler::ShouldDoFinalIncrementalMarkCompact(
 GCIdleTimeAction GCIdleTimeHandler::Compute(double idle_time_in_ms,
                                             HeapState heap_state) {
   if (static_cast<int>(idle_time_in_ms) <= 0) {
+    if (heap_state.contexts_disposed > 0) {
+      StartIdleRound();
+    }
     if (heap_state.incremental_marking_stopped) {
       if (ShouldDoContextDisposalMarkCompact(
               heap_state.contexts_disposed,
@@ -250,7 +257,7 @@ GCIdleTimeAction GCIdleTimeHandler::Compute(double idle_time_in_ms,
     return GCIdleTimeAction::Nothing();
   }
   size_t step_size = EstimateMarkingStepSize(
-      static_cast<size_t>(idle_time_in_ms),
+      static_cast<size_t>(kIncrementalMarkingStepTimeInMs),
       heap_state.incremental_marking_speed_in_bytes_per_ms);
   return GCIdleTimeAction::IncrementalMarking(step_size);
 }

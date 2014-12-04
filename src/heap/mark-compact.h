@@ -655,6 +655,14 @@ class MarkCompactCollector {
   // to artificially keep AllocationSites alive for a time.
   void MarkAllocationSite(AllocationSite* site);
 
+  MarkingDeque* marking_deque() { return &marking_deque_; }
+
+  void EnsureMarkingDequeIsCommittedAndInitialize();
+
+  void InitializeMarkingDeque();
+
+  void UncommitMarkingDeque();
+
  private:
   class SweeperTask;
 
@@ -764,7 +772,8 @@ class MarkCompactCollector {
   //    - Processing of objects reachable through Harmony WeakMaps.
   //    - Objects reachable due to host application logic like object groups
   //      or implicit references' groups.
-  void ProcessEphemeralMarking(ObjectVisitor* visitor);
+  void ProcessEphemeralMarking(ObjectVisitor* visitor,
+                               bool only_process_harmony_weak_collections);
 
   // If the call-site of the top optimized code was not prepared for
   // deoptimization, then treat the maps in the code as strong pointers,
@@ -875,6 +884,8 @@ class MarkCompactCollector {
 #endif
 
   Heap* heap_;
+  base::VirtualMemory* marking_deque_memory_;
+  bool marking_deque_memory_committed_;
   MarkingDeque marking_deque_;
   CodeFlusher* code_flusher_;
   bool have_code_to_deoptimize_;

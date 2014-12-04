@@ -1357,7 +1357,8 @@ enum ParserFlag {
   kAllowHarmonyClasses,
   kAllowHarmonyObjectLiterals,
   kAllowHarmonyTemplates,
-  kAllowHarmonySloppy
+  kAllowHarmonySloppy,
+  kAllowHarmonyUnicode
 };
 
 
@@ -1383,6 +1384,7 @@ void SetParserFlags(i::ParserBase<Traits>* parser,
   parser->set_allow_harmony_classes(flags.Contains(kAllowHarmonyClasses));
   parser->set_allow_harmony_templates(flags.Contains(kAllowHarmonyTemplates));
   parser->set_allow_harmony_sloppy(flags.Contains(kAllowHarmonySloppy));
+  parser->set_allow_harmony_unicode(flags.Contains(kAllowHarmonyUnicode));
 }
 
 
@@ -1519,9 +1521,7 @@ void TestParserSync(const char* source,
 }
 
 
-// TODO(marja) This needs to be turned into a fuzzing test, trying all those
-// combinations below takes at least 2 orders of magnitude too long.
-DISABLED_TEST(ParserSync) {
+TEST(ParserSync) {
   const char* context_data[][2] = {
     { "", "" },
     { "{", "}" },
@@ -1550,7 +1550,7 @@ DISABLED_TEST(ParserSync) {
     "if (false) {} else ;",
     "if (false) {} else {}",
     "if (false) {} else 12",
-    "if (false) ;"
+    "if (false) ;",
     "if (false) {}",
     "if (false) 12",
     "do {} while (false)",
@@ -1570,8 +1570,8 @@ DISABLED_TEST(ParserSync) {
     "with ({}) ;",
     "with ({}) {}",
     "with ({}) 12",
-    "switch ({}) { default: }"
-    "label3: "
+    "switch ({}) { default: }",
+    "label3: ",
     "throw",
     "throw  12",
     "throw\n12",
@@ -1598,17 +1598,6 @@ DISABLED_TEST(ParserSync) {
   CcTest::i_isolate()->stack_guard()->SetStackLimit(
       i::GetCurrentStackPosition() - 128 * 1024);
 
-  static const ParserFlag flags1[] = {
-    kAllowHarmonyArrowFunctions,
-    kAllowHarmonyClasses,
-    kAllowHarmonyNumericLiterals,
-    kAllowHarmonyObjectLiterals,
-    kAllowHarmonyScoping,
-    kAllowHarmonyModules,
-    kAllowHarmonySloppy,
-    kAllowLazy,
-  };
-
   for (int i = 0; context_data[i][0] != NULL; ++i) {
     for (int j = 0; statement_data[j] != NULL; ++j) {
       for (int k = 0; termination_data[k] != NULL; ++k) {
@@ -1628,7 +1617,7 @@ DISABLED_TEST(ParserSync) {
             termination_data[k],
             context_data[i][1]);
         CHECK(length == kProgramSize);
-        TestParserSync(program.start(), flags1, arraysize(flags1));
+        TestParserSync(program.start(), NULL, 0);
       }
     }
   }
@@ -1684,15 +1673,9 @@ void RunParserSyncTest(const char* context_data[][2],
   CcTest::i_isolate()->stack_guard()->SetStackLimit(
       i::GetCurrentStackPosition() - 128 * 1024);
 
+  // Experimental feature flags should not go here; pass the flags as
+  // always_true_flags if the test needs them.
   static const ParserFlag default_flags[] = {
-    kAllowHarmonyArrowFunctions,
-    kAllowHarmonyClasses,
-    kAllowHarmonyNumericLiterals,
-    kAllowHarmonyObjectLiterals,
-    kAllowHarmonyScoping,
-    kAllowHarmonyModules,
-    kAllowHarmonyTemplates,
-    kAllowHarmonySloppy,
     kAllowLazy,
     kAllowNatives,
   };
@@ -1701,13 +1684,10 @@ void RunParserSyncTest(const char* context_data[][2],
     flags = default_flags;
     flags_len = arraysize(default_flags);
     if (always_true_flags != NULL || always_false_flags != NULL) {
-      // Remove always_true/false_flags from default_flags.
+      // Remove always_true/false_flags from default_flags (if present).
       CHECK((always_true_flags != NULL) == (always_true_len > 0));
       CHECK((always_false_flags != NULL) == (always_false_len > 0));
-      CHECK(always_true_flags == NULL || always_true_len < flags_len);
-      CHECK(always_false_flags == NULL || always_false_len < flags_len);
-      generated_flags =
-          new ParserFlag[flags_len - always_true_len - always_false_len];
+      generated_flags = new ParserFlag[flags_len + always_true_len];
       int flag_index = 0;
       for (int i = 0; i < flags_len; ++i) {
         bool use_flag = true;
@@ -1719,7 +1699,6 @@ void RunParserSyncTest(const char* context_data[][2],
         }
         if (use_flag) generated_flags[flag_index++] = flags[i];
       }
-      CHECK(flag_index == flags_len - always_true_len - always_false_len);
       flags_len = flag_index;
       flags = generated_flags;
     }
@@ -1909,14 +1888,8 @@ TEST(ErrorsFutureStrictReservedWords) {
     NULL
   };
 
-  static const ParserFlag always_flags[] = {kAllowHarmonyArrowFunctions};
-  RunParserSyncTest(context_data, statement_data, kError, NULL, 0, always_flags,
-                    arraysize(always_flags));
-
-  static const ParserFlag classes_flags[] = {
-      kAllowHarmonyArrowFunctions, kAllowHarmonyClasses, kAllowHarmonyScoping};
-  RunParserSyncTest(context_data, statement_data, kError, NULL, 0,
-                    classes_flags, arraysize(classes_flags));
+  RunParserSyncTest(context_data, statement_data, kError);
+  RunParserSyncTest(context_data, statement_data, kError);
 }
 
 
@@ -4374,8 +4347,52 @@ TEST(InvalidUnicodeEscapes) {
     // No escapes allowed in regexp flags
     "/regex/\\u0069g",
     "/regex/\\u006g",
+    // Braces gone wrong
+    "var foob\\u{c481r = 0;",
+    "var foob\\uc481}r = 0;",
+    "var \\u{0052oo = 0;",
+    "var \\u0052}oo = 0;",
+    "\"foob\\u{c481r\"",
+    "var foob\\u{}ar = 0;",
+    // Too high value for the unicode escape
+    "\"\\u{110000}\"",
+    // Not an unicode escape
+    "var foob\\v1234r = 0;",
+    "var foob\\U1234r = 0;",
+    "var foob\\v{1234}r = 0;",
+    "var foob\\U{1234}r = 0;",
     NULL};
-  RunParserSyncTest(context_data, data, kError);
+  static const ParserFlag always_flags[] = {kAllowHarmonyUnicode};
+  RunParserSyncTest(context_data, data, kError, NULL, 0, always_flags,
+                    arraysize(always_flags));
+}
+
+
+TEST(UnicodeEscapes) {
+  const char* context_data[][2] = {{"", ""},
+                                   {"'use strict';", ""},
+                                   {NULL, NULL}};
+  const char* data[] = {
+    // Identifier starting with escape
+    "var \\u0052oo = 0;",
+    "var \\u{0052}oo = 0;",
+    "var \\u{52}oo = 0;",
+    "var \\u{00000000052}oo = 0;",
+    // Identifier with an escape but not starting with an escape
+    "var foob\\uc481r = 0;",
+    "var foob\\u{c481}r = 0;",
+    // String with an escape
+    "\"foob\\uc481r\"",
+    "\"foob\\{uc481}r\"",
+    // This character is a valid unicode character, representable as a surrogate
+    // pair, not representable as 4 hex digits.
+    "\"foo\\u{10e6d}\"",
+    // Max value for the unicode escape
+    "\"\\u{10ffff}\"",
+    NULL};
+  static const ParserFlag always_flags[] = {kAllowHarmonyUnicode};
+  RunParserSyncTest(context_data, data, kSuccess, NULL, 0, always_flags,
+                    arraysize(always_flags));
 }
 
 

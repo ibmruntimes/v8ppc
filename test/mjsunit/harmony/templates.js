@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// Flags: --harmony-templates
+// Flags: --harmony-templates --harmony-unicode
 
 var num = 5;
 var str = "str";
@@ -427,4 +427,47 @@ var obj = {
   });
   function tag(){}
   tag`a${1}b`;
+})();
+
+
+(function testRawLineNormalization() {
+  function raw0(callSiteObj) {
+    return callSiteObj.raw[0];
+  }
+  assertEquals(eval("raw0`\r`"), "\n");
+  assertEquals(eval("raw0`\r\n`"), "\n");
+  assertEquals(eval("raw0`\r\r\n`"), "\n\n");
+  assertEquals(eval("raw0`\r\n\r\n`"), "\n\n");
+  assertEquals(eval("raw0`\r\r\r\n`"), "\n\n\n");
+})();
+
+
+(function testHarmonyUnicode() {
+  function raw0(callSiteObj) {
+    return callSiteObj.raw[0];
+  }
+  assertEquals(raw0`a\u{62}c`, "a\\u{62}c");
+  assertEquals(raw0`a\u{000062}c`, "a\\u{000062}c");
+  assertEquals(raw0`a\u{0}c`, "a\\u{0}c");
+
+  assertEquals(`a\u{62}c`, "abc");
+  assertEquals(`a\u{000062}c`, "abc");
+})();
+
+
+(function testLiteralAfterRightBrace() {
+  // Regression test for https://code.google.com/p/v8/issues/detail?id=3734
+  function f() {}
+  `abc`;
+
+  function g() {}`def`;
+
+  {
+    // block
+  }
+  `ghi`;
+
+  {
+    // block
+  }`jkl`;
 })();

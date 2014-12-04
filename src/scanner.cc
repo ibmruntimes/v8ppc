@@ -34,12 +34,14 @@ Handle<String> LiteralBuffer::Internalize(Isolate* isolate) const {
 
 Scanner::Scanner(UnicodeCache* unicode_cache)
     : unicode_cache_(unicode_cache),
+      capturing_raw_literal_(false),
       octal_pos_(Location::invalid()),
       harmony_scoping_(false),
       harmony_modules_(false),
       harmony_numeric_literals_(false),
       harmony_classes_(false),
-      harmony_templates_(false) {}
+      harmony_templates_(false),
+      harmony_unicode_(false) {}
 
 
 void Scanner::Initialize(Utf16CharacterStream* source) {
@@ -68,6 +70,22 @@ uc32 Scanner::ScanHexNumber(int expected_length) {
     Advance();
   }
 
+  return x;
+}
+
+
+uc32 Scanner::ScanUnlimitedLengthHexNumber(int max_value) {
+  uc32 x = 0;
+  int d = HexValue(c0_);
+  if (d < 0) {
+    return -1;
+  }
+  while (d >= 0) {
+    x = x * 16 + d;
+    if (x > max_value) return -1;
+    Advance();
+    d = HexValue(c0_);
+  }
   return x;
 }
 
@@ -403,6 +421,7 @@ Token::Value Scanner::ScanHtmlComment() {
 
 void Scanner::Scan() {
   next_.literal_chars = NULL;
+  next_.raw_literal_chars = NULL;
   Token::Value token;
   do {
     // Remember the position of the next token
@@ -628,7 +647,7 @@ void Scanner::Scan() {
 
       case '`':
         if (HarmonyTemplates()) {
-          token = ScanTemplateSpan();
+          token = ScanTemplateStart();
           break;
         }
 
@@ -700,7 +719,7 @@ bool Scanner::ScanEscape() {
     case 'r' : c = '\r'; break;
     case 't' : c = '\t'; break;
     case 'u' : {
-      c = ScanHexNumber(4);
+      c = ScanUnicodeEscape();
       if (c < 0) return false;
       break;
     }
@@ -789,28 +808,20 @@ Token::Value Scanner::ScanTemplateSpan() {
   // A TEMPLATE_SPAN should always be followed by an Expression, while a
   // TEMPLATE_TAIL terminates a TemplateLiteral and does not need to be
   // followed by an Expression.
-  //
 
-  if (next_.token == Token::RBRACE) {
-    // After parsing an Expression, the source position is incorrect due to
-    // having scanned the brace. Push the RBRACE back into the stream.
-    PushBack('}');
-  }
-
-  next_.location.beg_pos = source_pos();
   Token::Value result = Token::TEMPLATE_SPAN;
-  DCHECK(c0_ == '`' || c0_ == '}');
-  Advance();  // Consume ` or }
+  LiteralScope literal(this, true);
 
-  LiteralScope literal(this);
   while (true) {
     uc32 c = c0_;
     Advance();
     if (c == '`') {
       result = Token::TEMPLATE_TAIL;
+      ReduceRawLiteralLength(1);
       break;
     } else if (c == '$' && c0_ == '{') {
       Advance();  // Consume '{'
+      ReduceRawLiteralLength(2);
       break;
     } else if (c == '\\') {
       if (unicode_cache_->IsLineTerminator(c0_)) {
@@ -818,7 +829,14 @@ Token::Value Scanner::ScanTemplateSpan() {
         // code unit sequence.
         uc32 lastChar = c0_;
         Advance();
-        if (lastChar == '\r' && c0_ == '\n') Advance();
+        if (lastChar == '\r') {
+          ReduceRawLiteralLength(1);  // Remove \r
+          if (c0_ == '\n') {
+            Advance();  // Adds \n
+          } else {
+            AddRawLiteralChar('\n');
+          }
+        }
       } else if (c0_ == '0') {
         Advance();
         AddLiteralChar('0');
@@ -834,7 +852,12 @@ Token::Value Scanner::ScanTemplateSpan() {
       // The TRV of LineTerminatorSequence :: <CR><LF> is the sequence
       // consisting of the CV 0x000A.
       if (c == '\r') {
-        if (c0_ == '\n') Advance();
+        ReduceRawLiteralLength(1);  // Remove \r
+        if (c0_ == '\n') {
+          Advance();  // Adds \n
+        } else {
+          AddRawLiteralChar('\n');
+        }
         c = '\n';
       }
       AddLiteralChar(c);
@@ -844,6 +867,21 @@ Token::Value Scanner::ScanTemplateSpan() {
   next_.location.end_pos = source_pos();
   next_.token = result;
   return result;
+}
+
+
+Token::Value Scanner::ScanTemplateStart() {
+  DCHECK(c0_ == '`');
+  next_.location.beg_pos = source_pos();
+  Advance();  // Consume `
+  return ScanTemplateSpan();
+}
+
+
+Token::Value Scanner::ScanTemplateContinuation() {
+  DCHECK_EQ(next_.token, Token::RBRACE);
+  next_.location.beg_pos = source_pos() - 1;  // We already consumed }
+  return ScanTemplateSpan();
 }
 
 
@@ -964,6 +1002,26 @@ uc32 Scanner::ScanIdentifierUnicodeEscape() {
   Advance();
   if (c0_ != 'u') return -1;
   Advance();
+  return ScanUnicodeEscape();
+}
+
+
+uc32 Scanner::ScanUnicodeEscape() {
+  // Accept both \uxxxx and \u{xxxxxx} (if harmony unicode escapes are
+  // allowed). In the latter case, the number of hex digits between { } is
+  // arbitrary. \ and u have already been read.
+  if (c0_ == '{' && HarmonyUnicode()) {
+    Advance();
+    uc32 cp = ScanUnlimitedLengthHexNumber(0x10ffff);
+    if (cp < 0) {
+      return -1;
+    }
+    if (c0_ != '}') {
+      return -1;
+    }
+    Advance();
+    return cp;
+  }
   return ScanHexNumber(4);
 }
 
@@ -1245,6 +1303,15 @@ const AstRawString* Scanner::NextSymbol(AstValueFactory* ast_value_factory) {
     return ast_value_factory->GetOneByteString(next_literal_one_byte_string());
   }
   return ast_value_factory->GetTwoByteString(next_literal_two_byte_string());
+}
+
+
+const AstRawString* Scanner::CurrentRawSymbol(
+    AstValueFactory* ast_value_factory) {
+  if (is_raw_literal_one_byte()) {
+    return ast_value_factory->GetOneByteString(raw_literal_one_byte_string());
+  }
+  return ast_value_factory->GetTwoByteString(raw_literal_two_byte_string());
 }
 
 

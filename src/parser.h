@@ -593,20 +593,18 @@ class ParserTraits {
   class TemplateLiteral : public ZoneObject {
    public:
     TemplateLiteral(Zone* zone, int pos)
-        : cooked_(8, zone),
-          lengths_(8, zone),
-          expressions_(8, zone),
-          pos_(pos) {}
+        : cooked_(8, zone), raw_(8, zone), expressions_(8, zone), pos_(pos) {}
 
     const ZoneList<Expression*>* cooked() const { return &cooked_; }
-    const ZoneList<int>* lengths() const { return &lengths_; }
+    const ZoneList<Expression*>* raw() const { return &raw_; }
     const ZoneList<Expression*>* expressions() const { return &expressions_; }
     int position() const { return pos_; }
 
-    void AddTemplateSpan(Literal* cooked, int end, Zone* zone) {
+    void AddTemplateSpan(Literal* cooked, Literal* raw, int end, Zone* zone) {
       DCHECK_NOT_NULL(cooked);
+      DCHECK_NOT_NULL(raw);
       cooked_.Add(cooked, zone);
-      lengths_.Add(end - cooked->position(), zone);
+      raw_.Add(raw, zone);
     }
 
     void AddExpression(Expression* expression, Zone* zone) {
@@ -616,7 +614,7 @@ class ParserTraits {
 
    private:
     ZoneList<Expression*> cooked_;
-    ZoneList<int> lengths_;
+    ZoneList<Expression*> raw_;
     ZoneList<Expression*> expressions_;
     int pos_;
   };
@@ -884,8 +882,8 @@ class Parser : public ParserBase<ParserTraits> {
                              Expression* expression);
   Expression* CloseTemplateLiteral(TemplateLiteralState* state, int start,
                                    Expression* tag);
-  ZoneList<Expression*>* TemplateRawStrings(const TemplateLiteral* lit,
-                                            uint32_t* hash);
+  uint32_t ComputeTemplateLiteralHash(const TemplateLiteral* lit);
+
   Scanner scanner_;
   PreParser* reusable_preparser_;
   Scope* original_scope_;  // for ES5 function declarations in sloppy eval
@@ -907,10 +905,6 @@ class Parser : public ParserBase<ParserTraits> {
   int use_counts_[v8::Isolate::kUseCounterFeatureCount];
   int total_preparse_skipped_;
   HistogramTimer* pre_parse_timer_;
-
-  // Temporary; for debugging. See Parser::SkipLazyFunctionBody. TODO(marja):
-  // remove this once done.
-  ScriptCompiler::CompileOptions debug_saved_compile_options_;
 };
 
 

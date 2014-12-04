@@ -26,6 +26,7 @@ class GCIdleTimeAction {
     GCIdleTimeAction result;
     result.type = DONE;
     result.parameter = 0;
+    result.additional_work = false;
     return result;
   }
 
@@ -33,6 +34,7 @@ class GCIdleTimeAction {
     GCIdleTimeAction result;
     result.type = DO_NOTHING;
     result.parameter = 0;
+    result.additional_work = false;
     return result;
   }
 
@@ -40,6 +42,7 @@ class GCIdleTimeAction {
     GCIdleTimeAction result;
     result.type = DO_INCREMENTAL_MARKING;
     result.parameter = step_size;
+    result.additional_work = false;
     return result;
   }
 
@@ -47,6 +50,7 @@ class GCIdleTimeAction {
     GCIdleTimeAction result;
     result.type = DO_SCAVENGE;
     result.parameter = 0;
+    result.additional_work = false;
     return result;
   }
 
@@ -54,6 +58,7 @@ class GCIdleTimeAction {
     GCIdleTimeAction result;
     result.type = DO_FULL_GC;
     result.parameter = 0;
+    result.additional_work = false;
     return result;
   }
 
@@ -61,6 +66,7 @@ class GCIdleTimeAction {
     GCIdleTimeAction result;
     result.type = DO_FINALIZE_SWEEPING;
     result.parameter = 0;
+    result.additional_work = false;
     return result;
   }
 
@@ -68,6 +74,7 @@ class GCIdleTimeAction {
 
   GCIdleTimeActionType type;
   intptr_t parameter;
+  bool additional_work;
 };
 
 
@@ -125,6 +132,9 @@ class GCIdleTimeHandler {
   // If contexts are disposed at a higher rate a full gc is triggered.
   static const double kHighContextDisposalRate;
 
+  // Incremental marking step time.
+  static const size_t kIncrementalMarkingStepTimeInMs = 1;
+
   class HeapState {
    public:
     void Print();
@@ -175,7 +185,7 @@ class GCIdleTimeHandler {
                                   size_t size_of_objects,
                                   size_t mark_compact_speed_in_bytes_per_ms);
 
-  static bool ShouldDoContextDisposalMarkCompact(bool context_disposed,
+  static bool ShouldDoContextDisposalMarkCompact(int context_disposed,
                                                  double contexts_disposal_rate);
 
   static bool ShouldDoFinalIncrementalMarkCompact(

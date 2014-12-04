@@ -1295,6 +1295,8 @@ class Heap {
 
   int gc_count() const { return gc_count_; }
 
+  bool RecentIdleNotifcationHappened();
+
   // Completely clear the Instanceof cache (to stop it keeping objects alive
   // around a GC).
   inline void CompletelyClearInstanceofCache();
@@ -1934,6 +1936,7 @@ class Heap {
 
   // Code to be run before and after mark-compact.
   void MarkCompactPrologue();
+  void MarkCompactEpilogue();
 
   void ProcessNativeContexts(WeakObjectRetainer* retainer);
   void ProcessArrayBuffers(WeakObjectRetainer* retainer);
@@ -2008,7 +2011,7 @@ class Heap {
 
   void IdleMarkCompact(const char* message);
 
-  void TryFinalizeIdleIncrementalMarking(
+  bool TryFinalizeIdleIncrementalMarking(
       double idle_time_in_ms, size_t size_of_objects,
       size_t mark_compact_speed_in_bytes_per_ms);
 
@@ -2056,6 +2059,9 @@ class Heap {
 
   // Cumulative GC time spent in sweeping
   double sweeping_time_;
+
+  // Last time an idle notification happened
+  double last_idle_notification_time_;
 
   MarkCompactCollector mark_compact_collector_;
 

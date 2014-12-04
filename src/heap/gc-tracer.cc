@@ -121,7 +121,7 @@ void GCTracer::Start(GarbageCollector collector, const char* gc_reason,
   if (collector == SCAVENGER) {
     current_ = Event(Event::SCAVENGER, gc_reason, collector_reason);
   } else if (collector == MARK_COMPACTOR) {
-    if (heap_->incremental_marking()->IsMarking()) {
+    if (heap_->incremental_marking()->WasActivated()) {
       current_ =
           Event(Event::INCREMENTAL_MARK_COMPACTOR, gc_reason, collector_reason);
     } else {
@@ -339,6 +339,7 @@ void GCTracer::PrintNVP() const {
          current_.scopes[Scope::MC_UPDATE_POINTERS_BETWEEN_EVACUATED]);
   PrintF("misc_compaction=%.1f ",
          current_.scopes[Scope::MC_UPDATE_MISC_POINTERS]);
+  PrintF("weak_closure=%.1f ", current_.scopes[Scope::MC_WEAKCLOSURE]);
   PrintF("weakcollection_process=%.1f ",
          current_.scopes[Scope::MC_WEAKCOLLECTION_PROCESS]);
   PrintF("weakcollection_clear=%.1f ",

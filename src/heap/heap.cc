@@ -125,6 +125,7 @@ Heap::Heap()
       min_in_mutator_(kMaxInt),
       marking_time_(0.0),
       sweeping_time_(0.0),
+      last_idle_notification_time_(0.0),
       mark_compact_collector_(this),
       store_buffer_(this),
       marking_(this),
@@ -773,7 +774,6 @@ void Heap::CollectAllAvailableGarbage(const char* gc_reason) {
   mark_compact_collector()->SetFlags(kNoGCFlags);
   new_space_.Shrink();
   UncommitFromSpace();
-  incremental_marking()->UncommitMarkingDeque();
 }
 
 
@@ -1138,6 +1138,9 @@ bool Heap::PerformGarbageCollection(
         amount_of_external_allocated_memory_;
     old_generation_allocation_limit_ = OldGenerationAllocationLimit(
         PromotedSpaceSizeOfObjects(), freed_global_handles);
+    // We finished a marking cycle. We can uncommit the marking deque until
+    // we start marking again.
+    mark_compact_collector_.UncommitMarkingDeque();
   }
 
   {
@@ -1212,15 +1215,22 @@ void Heap::MarkCompact() {
 
   LOG(isolate_, ResourceEvent("markcompact", "end"));
 
+  MarkCompactEpilogue();
+
+  if (FLAG_allocation_site_pretenuring) {
+    EvaluateOldSpaceLocalPretenuring(size_of_objects_before_gc);
+  }
+}
+
+
+void Heap::MarkCompactEpilogue() {
   gc_state_ = NOT_IN_GC;
 
   isolate_->counters()->objs_since_last_full()->Set(0);
 
   flush_monomorphic_ics_ = false;
 
-  if (FLAG_allocation_site_pretenuring) {
-    EvaluateOldSpaceLocalPretenuring(size_of_objects_before_gc);
-  }
+  incremental_marking()->Epilogue();
 }
 
 
@@ -4411,16 +4421,18 @@ void Heap::IdleMarkCompact(const char* message) {
 }
 
 
-void Heap::TryFinalizeIdleIncrementalMarking(
+bool Heap::TryFinalizeIdleIncrementalMarking(
     double idle_time_in_ms, size_t size_of_objects,
     size_t final_incremental_mark_compact_speed_in_bytes_per_ms) {
   if (incremental_marking()->IsComplete() ||
-      (incremental_marking()->IsMarkingDequeEmpty() &&
+      (mark_compact_collector_.marking_deque()->IsEmpty() &&
        gc_idle_time_handler_.ShouldDoFinalIncrementalMarkCompact(
            static_cast<size_t>(idle_time_in_ms), size_of_objects,
            final_incremental_mark_compact_speed_in_bytes_per_ms))) {
     CollectAllGarbage(kNoGCFlags, "idle notification: finalize incremental");
+    return true;
   }
+  return false;
 }
 
 
@@ -4492,14 +4504,20 @@ bool Heap::IdleNotification(double deadline_in_seconds) {
       if (incremental_marking()->IsStopped()) {
         incremental_marking()->Start();
       }
-      incremental_marking()->Step(action.parameter,
-                                  IncrementalMarking::NO_GC_VIA_STACK_GUARD,
-                                  IncrementalMarking::FORCE_MARKING,
-                                  IncrementalMarking::DO_NOT_FORCE_COMPLETION);
-      double remaining_idle_time_in_ms =
-          deadline_in_ms - MonotonicallyIncreasingTimeInMs();
+      double remaining_idle_time_in_ms = 0.0;
+      do {
+        incremental_marking()->Step(
+            action.parameter, IncrementalMarking::NO_GC_VIA_STACK_GUARD,
+            IncrementalMarking::FORCE_MARKING,
+            IncrementalMarking::DO_NOT_FORCE_COMPLETION);
+        remaining_idle_time_in_ms =
+            deadline_in_ms - MonotonicallyIncreasingTimeInMs();
+      } while (remaining_idle_time_in_ms >=
+                   2.0 * GCIdleTimeHandler::kIncrementalMarkingStepTimeInMs &&
+               !incremental_marking()->IsComplete() &&
+               !mark_compact_collector_.marking_deque()->IsEmpty());
       if (remaining_idle_time_in_ms > 0.0) {
-        TryFinalizeIdleIncrementalMarking(
+        action.additional_work = TryFinalizeIdleIncrementalMarking(
             remaining_idle_time_in_ms, heap_state.size_of_objects,
             heap_state.final_incremental_mark_compact_speed_in_bytes_per_ms);
       }
@@ -4527,6 +4545,7 @@ bool Heap::IdleNotification(double deadline_in_seconds) {
   }
 
   double current_time = MonotonicallyIncreasingTimeInMs();
+  last_idle_notification_time_ = current_time;
   double deadline_difference = deadline_in_ms - current_time;
 
   if (deadline_difference >= 0) {
@@ -4544,7 +4563,8 @@ bool Heap::IdleNotification(double deadline_in_seconds) {
     PrintF(
         "Idle notification: requested idle time %.2f ms, used idle time %.2f "
         "ms, deadline usage %.2f ms [",
-        idle_time_in_ms, current_time, deadline_difference);
+        idle_time_in_ms, idle_time_in_ms - deadline_difference,
+        deadline_difference);
     action.Print();
     PrintF("]");
     if (FLAG_trace_idle_notification_verbose) {
@@ -4557,6 +4577,13 @@ bool Heap::IdleNotification(double deadline_in_seconds) {
 
   contexts_disposed_ = 0;
   return result;
+}
+
+
+bool Heap::RecentIdleNotifcationHappened() {
+  return (last_idle_notification_time_ +
+          GCIdleTimeHandler::kMaxFrameRenderingIdleTime) >
+         MonotonicallyIncreasingTimeInMs();
 }
 
 
@@ -5521,7 +5548,6 @@ void Heap::TearDown() {
   }
 
   store_buffer()->TearDown();
-  incremental_marking()->TearDown();
 
   isolate_->memory_allocator()->TearDown();
 }

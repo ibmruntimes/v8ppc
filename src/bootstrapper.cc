@@ -48,7 +48,7 @@ Handle<String> Bootstrapper::NativesSourceLookup(int index) {
   Heap* heap = isolate_->heap();
   if (heap->natives_source_cache()->get(index)->IsUndefined()) {
     // We can use external strings for the natives.
-    Vector<const char> source = Natives::GetRawScriptSource(index);
+    Vector<const char> source = Natives::GetScriptSource(index);
     NativesExternalStringResource* resource =
         new NativesExternalStringResource(this,
                                           source.start(),
@@ -1394,8 +1394,8 @@ bool Genesis::CompileExperimentalBuiltin(Isolate* isolate, int index) {
   Factory* factory = isolate->factory();
   Handle<String> source_code;
   ASSIGN_RETURN_ON_EXCEPTION_VALUE(
-      isolate, source_code, factory->NewStringFromAscii(
-                                ExperimentalNatives::GetRawScriptSource(index)),
+      isolate, source_code,
+      factory->NewStringFromAscii(ExperimentalNatives::GetScriptSource(index)),
       false);
   return CompileNative(isolate, name, source_code);
 }
@@ -1590,6 +1590,7 @@ EMPTY_NATIVE_FUNCTIONS_FOR_FEATURE(harmony_numeric_literals)
 EMPTY_NATIVE_FUNCTIONS_FOR_FEATURE(harmony_tostring)
 EMPTY_NATIVE_FUNCTIONS_FOR_FEATURE(harmony_templates)
 EMPTY_NATIVE_FUNCTIONS_FOR_FEATURE(harmony_sloppy)
+EMPTY_NATIVE_FUNCTIONS_FOR_FEATURE(harmony_unicode)
 
 
 void Genesis::InstallNativeFunctions_harmony_proxies() {
@@ -1618,6 +1619,7 @@ EMPTY_INITIALIZE_GLOBAL_FOR_FEATURE(harmony_tostring)
 EMPTY_INITIALIZE_GLOBAL_FOR_FEATURE(harmony_proxies)
 EMPTY_INITIALIZE_GLOBAL_FOR_FEATURE(harmony_templates)
 EMPTY_INITIALIZE_GLOBAL_FOR_FEATURE(harmony_sloppy)
+EMPTY_INITIALIZE_GLOBAL_FOR_FEATURE(harmony_unicode)
 
 void Genesis::InitializeGlobal_harmony_regexps() {
   Handle<JSObject> builtins(native_context()->builtins());
@@ -2149,14 +2151,6 @@ bool Genesis::InstallNatives() {
 }
 
 
-#define INSTALL_EXPERIMENTAL_NATIVE(i, flag, file)                             \
-  if (FLAG_##flag &&                                                           \
-      strcmp(ExperimentalNatives::GetScriptName(i).start(), "native " file) == \
-          0) {                                                                 \
-    if (!CompileExperimentalBuiltin(isolate(), i)) return false;               \
-  }
-
-
 bool Genesis::InstallExperimentalNatives() {
   static const char* harmony_arrays_natives[] = {
       "native harmony-array.js", "native harmony-typedarray.js", NULL};
@@ -2176,17 +2170,19 @@ bool Genesis::InstallExperimentalNatives() {
   static const char* harmony_templates_natives[] = {
       "native harmony-templates.js", NULL};
   static const char* harmony_sloppy_natives[] = {NULL};
+  static const char* harmony_unicode_natives[] = {NULL};
 
   for (int i = ExperimentalNatives::GetDebuggerCount();
        i < ExperimentalNatives::GetBuiltinsCount(); i++) {
-#define INSTALL_EXPERIMENTAL_NATIVES(id, desc)                       \
-  if (FLAG_##id) {                                                   \
-    for (size_t j = 0; id##_natives[j] != NULL; j++) {               \
-      if (strcmp(ExperimentalNatives::GetScriptName(i).start(),      \
-                 id##_natives[j]) == 0) {                            \
-        if (!CompileExperimentalBuiltin(isolate(), i)) return false; \
-      }                                                              \
-    }                                                                \
+#define INSTALL_EXPERIMENTAL_NATIVES(id, desc)                                \
+  if (FLAG_##id) {                                                            \
+    for (size_t j = 0; id##_natives[j] != NULL; j++) {                        \
+      Vector<const char> script_name = ExperimentalNatives::GetScriptName(i); \
+      if (strncmp(script_name.start(), id##_natives[j],                       \
+                  script_name.length()) == 0) {                               \
+        if (!CompileExperimentalBuiltin(isolate(), i)) return false;          \
+      }                                                                       \
+    }                                                                         \
   }
     HARMONY_INPROGRESS(INSTALL_EXPERIMENTAL_NATIVES);
     HARMONY_STAGED(INSTALL_EXPERIMENTAL_NATIVES);
