@@ -3710,17 +3710,6 @@ void MacroAssembler::CheckPageFlag(
 }
 
 
-void MacroAssembler::CheckMapDeprecated(Handle<Map> map, Register scratch,
-                                        Label* if_deprecated) {
-  if (map->CanBeDeprecated()) {
-    mov(scratch, Operand(map));
-    lwz(scratch, FieldMemOperand(scratch, Map::kBitField3Offset));
-    ExtractBitMask(scratch, scratch, Map::Deprecated::kMask, SetRC);
-    bne(if_deprecated, cr0);
-  }
-}
-
-
 void MacroAssembler::JumpIfBlack(Register object, Register scratch0,
                                  Register scratch1, Label* on_black) {
   HasColor(object, scratch0, scratch1, on_black, 1, 0);  // kBlackBitPattern.

@@ -177,9 +177,6 @@ class MacroAssembler : public Assembler {
   void CheckPageFlag(Register object, Register scratch, int mask, Condition cc,
                      Label* condition_met);
 
-  void CheckMapDeprecated(Handle<Map> map, Register scratch,
-                          Label* if_deprecated);
-
   // Check if object is in new space.  Jumps if the object is not in new space.
   // The register scratch can be object itself, but scratch will be clobbered.
   void JumpIfNotInNewSpace(Register object, Register scratch, Label* branch) {
@@ -1393,13 +1390,14 @@ class MacroAssembler : public Assembler {
   void NumberOfOwnDescriptors(Register dst, Register map);
 
   template <typename Field>
-  void DecodeField(Register dst, Register src) {
-    ExtractBitRange(dst, src, Field::kShift + Field::kSize - 1, Field::kShift);
+  void DecodeField(Register dst, Register src, RCBit rc = LeaveRC) {
+    ExtractBitRange(dst, src, Field::kShift + Field::kSize - 1, Field::kShift,
+                    rc);
   }
 
   template <typename Field>
-  void DecodeField(Register reg) {
-    DecodeField<Field>(reg, reg);
+  void DecodeField(Register reg, RCBit rc = LeaveRC) {
+    DecodeField<Field>(reg, reg, rc);
   }
 
   template <typename Field>
