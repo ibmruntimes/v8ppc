@@ -815,6 +815,7 @@ void CodeGenerator::AssembleArchBranch(Instruction* instr,
     case kSignedGreaterThan:
     case kUnsignedGreaterThan:
       cond = gt;
+      break;
     case kOverflow:
     case kNotOverflow:
       UNREACHABLE();
@@ -990,7 +991,7 @@ void CodeGenerator::AssemblePrologue() {
   }
   int stack_slots = frame()->GetSpillSlotCount();
   if (stack_slots > 0) {
-    __ subi(sp, sp, Operand(stack_slots * kPointerSize));
+    __ Add(sp, sp, -stack_slots * kPointerSize, r0);
   }
 }
 
@@ -1002,7 +1003,7 @@ void CodeGenerator::AssembleReturn() {
       // Remove this frame's spill slots first.
       int stack_slots = frame()->GetSpillSlotCount();
       if (stack_slots > 0) {
-        __ addi(sp, sp, Operand(stack_slots * kPointerSize));
+        __ Add(sp, sp, stack_slots * kPointerSize, r0);
       }
       // Restore registers.
       RegList frame_saves = fp.bit();
@@ -1037,17 +1038,17 @@ void CodeGenerator::AssembleMove(InstructionOperand* source,
     if (destination->IsRegister()) {
       __ Move(g.ToRegister(destination), src);
     } else {
-      __ StoreP(src, g.ToMemOperand(destination));
+      __ StoreP(src, g.ToMemOperand(destination), r0);
     }
   } else if (source->IsStackSlot()) {
     DCHECK(destination->IsRegister() || destination->IsStackSlot());
     MemOperand src = g.ToMemOperand(source);
     if (destination->IsRegister()) {
-      __ LoadP(g.ToRegister(destination), src);
+      __ LoadP(g.ToRegister(destination), src, r0);
     } else {
       Register temp = kScratchReg;
-      __ LoadP(temp, src);
-      __ StoreP(temp, g.ToMemOperand(destination));
+      __ LoadP(temp, src, r0);
+      __ StoreP(temp, g.ToMemOperand(destination), r0);
     }
   } else if (source->IsConstant()) {
     if (destination->IsRegister() || destination->IsStackSlot()) {
@@ -1073,7 +1074,7 @@ void CodeGenerator::AssembleMove(InstructionOperand* source,
           break;
       }
       if (destination->IsStackSlot()) {
-        __ StoreP(dst, g.ToMemOperand(destination));
+        __ StoreP(dst, g.ToMemOperand(destination), r0);
       }
     } else if (destination->IsDoubleRegister()) {
       DoubleRegister result = g.ToDoubleRegister(destination);
@@ -1082,7 +1083,7 @@ void CodeGenerator::AssembleMove(InstructionOperand* source,
       DCHECK(destination->IsDoubleStackSlot());
       DoubleRegister temp = kScratchDoubleReg;
       __ LoadDoubleLiteral(temp, g.ToDouble(source), kScratchReg);
-      __ stfd(temp, g.ToMemOperand(destination));
+      __ StoreDouble(temp, g.ToMemOperand(destination), r0);
     }
   } else if (source->IsDoubleRegister()) {
     DoubleRegister src = g.ToDoubleRegister(source);
@@ -1091,17 +1092,17 @@ void CodeGenerator::AssembleMove(InstructionOperand* source,
       __ Move(dst, src);
     } else {
       DCHECK(destination->IsDoubleStackSlot());
-      __ stfd(src, g.ToMemOperand(destination));
+      __ StoreDouble(src, g.ToMemOperand(destination), r0);
     }
   } else if (source->IsDoubleStackSlot()) {
     DCHECK(destination->IsDoubleRegister() || destination->IsDoubleStackSlot());
     MemOperand src = g.ToMemOperand(source);
     if (destination->IsDoubleRegister()) {
-      __ lfd(g.ToDoubleRegister(destination), src);
+      __ LoadDouble(g.ToDoubleRegister(destination), src, r0);
     } else {
       DoubleRegister temp = kScratchDoubleReg;
-      __ lfd(temp, src);
-      __ stfd(temp, g.ToMemOperand(destination));
+      __ LoadDouble(temp, src, r0);
+      __ StoreDouble(temp, g.ToMemOperand(destination), r0);
     }
   } else {
     UNREACHABLE();
