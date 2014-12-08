@@ -221,6 +221,8 @@ enum OpcodeExt2 {
   STHX = 407 << 1,     // store half-word w/ x-form
   STHUX = 439 << 1,    // store half-word w/ update x-form
   ORX = 444 << 1,      // Or
+  DIVDU = 457 << 1,    // Divide Double Word Unsigned
+  DIVWU = 459 << 1,    // Divide Word Unsigned
   MTSPR = 467 << 1,    // Move to Special-Purpose-Register
   DIVD = 489 << 1,     // Divide Double Word
   DIVW = 491 << 1,     // Divide Word
