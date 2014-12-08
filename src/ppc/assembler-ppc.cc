@@ -866,9 +866,14 @@ void Assembler::mullw(Register dst, Register src1, Register src2, OEBit o,
 
 
 // Multiply hi word
-void Assembler::mulhw(Register dst, Register src1, Register src2, OEBit o,
-                      RCBit r) {
-  xo_form(EXT2 | MULHWX, dst, src1, src2, o, r);
+void Assembler::mulhw(Register dst, Register src1, Register src2, RCBit r) {
+  xo_form(EXT2 | MULHWX, dst, src1, src2, LeaveOE, r);
+}
+
+
+// Multiply hi word unsigned
+void Assembler::mulhwu(Register dst, Register src1, Register src2, RCBit r) {
+  xo_form(EXT2 | MULHWUX, dst, src1, src2, LeaveOE, r);
 }
 
 
@@ -935,6 +940,11 @@ void Assembler::oris(Register dst, Register src, const Operand& imm) {
 
 void Assembler::orx(Register dst, Register src1, Register src2, RCBit rc) {
   x_form(EXT2 | ORX, dst, src1, src2, rc);
+}
+
+
+void Assembler::orc(Register dst, Register src1, Register src2, RCBit rc) {
+  x_form(EXT2 | ORC, dst, src1, src2, rc);
 }
 
 
@@ -2035,8 +2045,27 @@ void Assembler::fctiw(const DoubleRegister frt, const DoubleRegister frb) {
 }
 
 
-void Assembler::frim(const DoubleRegister frt, const DoubleRegister frb) {
-  emit(EXT4 | FRIM | frt.code() * B21 | frb.code() * B11);
+void Assembler::frin(const DoubleRegister frt, const DoubleRegister frb,
+                     RCBit rc) {
+  emit(EXT4 | FRIN | frt.code() * B21 | frb.code() * B11 | rc);
+}
+
+
+void Assembler::friz(const DoubleRegister frt, const DoubleRegister frb,
+                     RCBit rc) {
+  emit(EXT4 | FRIZ | frt.code() * B21 | frb.code() * B11 | rc);
+}
+
+
+void Assembler::frip(const DoubleRegister frt, const DoubleRegister frb,
+                     RCBit rc) {
+  emit(EXT4 | FRIP | frt.code() * B21 | frb.code() * B11 | rc);
+}
+
+
+void Assembler::frim(const DoubleRegister frt, const DoubleRegister frb,
+                     RCBit rc) {
+  emit(EXT4 | FRIM | frt.code() * B21 | frb.code() * B11 | rc);
 }
 
 

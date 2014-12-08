@@ -2015,7 +2015,20 @@ bool Simulator::ExecuteExt2_9bit_part1(Instruction* instr) {
       if (instr->Bit(0)) {  // RC bit set
         SetCR0(static_cast<intptr_t>(alu_out));
       }
-      // todo - handle OE bit
+      break;
+    }
+    case MULHWUX: {
+      int rt = instr->RTValue();
+      int ra = instr->RAValue();
+      int rb = instr->RBValue();
+      uint32_t ra_val = (get_register(ra) & 0xFFFFFFFF);
+      uint32_t rb_val = (get_register(rb) & 0xFFFFFFFF);
+      uint64_t alu_out = (uint64_t)ra_val * (uint64_t)rb_val;
+      alu_out >>= 32;
+      set_register(rt, alu_out);
+      if (instr->Bit(0)) {  // RC bit set
+        SetCR0(static_cast<intptr_t>(alu_out));
+      }
       break;
     }
     case NEGX: {
@@ -2447,6 +2460,19 @@ bool Simulator::ExecuteExt2_9bit_part2(Instruction* instr) {
       }
       break;
     }
+    case ORC: {
+      int rs = instr->RSValue();
+      int ra = instr->RAValue();
+      int rb = instr->RBValue();
+      intptr_t rs_val = get_register(rs);
+      intptr_t rb_val = get_register(rb);
+      intptr_t alu_out = rs_val | ~rb_val;
+      set_register(ra, alu_out);
+      if (instr->Bit(0)) {  // RC bit set
+        SetCR0(alu_out);
+      }
+      break;
+    }
     case MFSPR: {
       int rt = instr->RTValue();
       int spr = instr->Bits(20, 11);
@@ -2778,6 +2804,50 @@ void Simulator::ExecuteExt4(Instruction* instr) {
       condition_reg_ = (condition_reg_ & ~condition_mask) | condition;
       return;
     }
+    case FRIN: {
+      int frt = instr->RTValue();
+      int frb = instr->RBValue();
+      double frb_val = get_double_from_d_register(frb);
+      double frt_val = std::round(frb_val);
+      set_d_register_from_double(frt, frt_val);
+      if (instr->Bit(0)) {  // RC bit set
+        //  UNIMPLEMENTED();
+      }
+      return;
+    }
+    case FRIZ: {
+      int frt = instr->RTValue();
+      int frb = instr->RBValue();
+      double frb_val = get_double_from_d_register(frb);
+      double frt_val = std::trunc(frb_val);
+      set_d_register_from_double(frt, frt_val);
+      if (instr->Bit(0)) {  // RC bit set
+        //  UNIMPLEMENTED();
+      }
+      return;
+    }
+    case FRIP: {
+      int frt = instr->RTValue();
+      int frb = instr->RBValue();
+      double frb_val = get_double_from_d_register(frb);
+      double frt_val = std::ceil(frb_val);
+      set_d_register_from_double(frt, frt_val);
+      if (instr->Bit(0)) {  // RC bit set
+        //  UNIMPLEMENTED();
+      }
+      return;
+    }
+    case FRIM: {
+      int frt = instr->RTValue();
+      int frb = instr->RBValue();
+      double frb_val = get_double_from_d_register(frb);
+      double frt_val = std::floor(frb_val);
+      set_d_register_from_double(frt, frt_val);
+      if (instr->Bit(0)) {  // RC bit set
+        //  UNIMPLEMENTED();
+      }
+      return;
+    }
     case FRSP: {
       int frt = instr->RTValue();
       int frb = instr->RBValue();
@@ -2956,16 +3026,6 @@ void Simulator::ExecuteExt4(Instruction* instr) {
       int frb = instr->RBValue();
       double frb_val = get_double_from_d_register(frb);
       double frt_val = std::fabs(frb_val);
-      set_d_register_from_double(frt, frt_val);
-      return;
-    }
-    case FRIM: {
-      int frt = instr->RTValue();
-      int frb = instr->RBValue();
-      double frb_val = get_double_from_d_register(frb);
-      int64_t floor_val = (int64_t)frb_val;
-      if (floor_val > frb_val) floor_val--;
-      double frt_val = static_cast<double>(floor_val);
       set_d_register_from_double(frt, frt_val);
       return;
     }

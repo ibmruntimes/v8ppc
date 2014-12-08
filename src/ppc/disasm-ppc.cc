@@ -928,8 +928,20 @@ void Decoder::DecodeExt4(Instruction* instr) {
       Format(instr, "fabs'.   'Dt, 'Db");
       break;
     }
+    case FRIN: {
+      Format(instr, "frin.   'Dt, 'Db");
+      break;
+    }
+    case FRIZ: {
+      Format(instr, "friz.   'Dt, 'Db");
+      break;
+    }
+    case FRIP: {
+      Format(instr, "frip.   'Dt, 'Db");
+      break;
+    }
     case FRIM: {
-      Format(instr, "frim    'Dt, 'Db");
+      Format(instr, "frim.   'Dt, 'Db");
       break;
     }
     case FNEG: {

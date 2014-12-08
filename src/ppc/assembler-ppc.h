@@ -949,8 +949,8 @@ class Assembler : public AssemblerBase {
   void mullw(Register dst, Register src1, Register src2, OEBit o = LeaveOE,
              RCBit r = LeaveRC);
 
-  void mulhw(Register dst, Register src1, Register src2, OEBit o = LeaveOE,
-             RCBit r = LeaveRC);
+  void mulhw(Register dst, Register src1, Register src2, RCBit r = LeaveRC);
+  void mulhwu(Register dst, Register src1, Register src2, RCBit r = LeaveRC);
 
   void divw(Register dst, Register src1, Register src2, OEBit o = LeaveOE,
             RCBit r = LeaveRC);
@@ -970,6 +970,7 @@ class Assembler : public AssemblerBase {
   void ori(Register dst, Register src, const Operand& imm);
   void oris(Register dst, Register src, const Operand& imm);
   void orx(Register dst, Register src1, Register src2, RCBit rc = LeaveRC);
+  void orc(Register dst, Register src1, Register src2, RCBit rc = LeaveRC);
   void xori(Register dst, Register src, const Operand& imm);
   void xoris(Register ra, Register rs, const Operand& imm);
   void xor_(Register dst, Register src1, Register src2, RCBit rc = LeaveRC);
@@ -1160,7 +1161,14 @@ class Assembler : public AssemblerBase {
            RCBit rc = LeaveRC);
   void fctiwz(const DoubleRegister frt, const DoubleRegister frb);
   void fctiw(const DoubleRegister frt, const DoubleRegister frb);
-  void frim(const DoubleRegister frt, const DoubleRegister frb);
+  void frin(const DoubleRegister frt, const DoubleRegister frb,
+            RCBit rc = LeaveRC);
+  void friz(const DoubleRegister frt, const DoubleRegister frb,
+            RCBit rc = LeaveRC);
+  void frip(const DoubleRegister frt, const DoubleRegister frb,
+            RCBit rc = LeaveRC);
+  void frim(const DoubleRegister frt, const DoubleRegister frb,
+            RCBit rc = LeaveRC);
   void frsp(const DoubleRegister frt, const DoubleRegister frb,
             RCBit rc = LeaveRC);
   void fcfid(const DoubleRegister frt, const DoubleRegister frb,
