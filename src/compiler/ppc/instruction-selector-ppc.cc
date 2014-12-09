@@ -269,6 +269,76 @@ void InstructionSelector::VisitStore(Node* node) {
 }
 
 
+void InstructionSelector::VisitCheckedLoad(Node* node) {
+  MachineType rep = RepresentationOf(OpParameter<MachineType>(node));
+  MachineType typ = TypeOf(OpParameter<MachineType>(node));
+  PPCOperandGenerator g(this);
+  Node* const buffer = node->InputAt(0);
+  Node* const offset = node->InputAt(1);
+  Node* const length = node->InputAt(2);
+  ArchOpcode opcode;
+  switch (rep) {
+    case kRepWord8:
+      opcode = typ == kTypeInt32 ? kCheckedLoadInt8 : kCheckedLoadUint8;
+      break;
+    case kRepWord16:
+      opcode = typ == kTypeInt32 ? kCheckedLoadInt16 : kCheckedLoadUint16;
+      break;
+    case kRepWord32:
+      opcode = kCheckedLoadWord32;
+      break;
+    case kRepFloat32:
+      opcode = kCheckedLoadFloat32;
+      break;
+    case kRepFloat64:
+      opcode = kCheckedLoadFloat64;
+      break;
+    default:
+      UNREACHABLE();
+      return;
+  }
+  InstructionOperand* offset_operand = g.UseRegister(offset);
+  Emit(opcode | AddressingModeField::encode(kMode_MRR),
+       g.DefineAsRegister(node), offset_operand, g.UseRegister(length),
+       g.UseRegister(buffer), offset_operand);
+}
+
+
+void InstructionSelector::VisitCheckedStore(Node* node) {
+  MachineType rep = RepresentationOf(OpParameter<MachineType>(node));
+  PPCOperandGenerator g(this);
+  Node* const buffer = node->InputAt(0);
+  Node* const offset = node->InputAt(1);
+  Node* const length = node->InputAt(2);
+  Node* const value = node->InputAt(3);
+  ArchOpcode opcode;
+  switch (rep) {
+    case kRepWord8:
+      opcode = kCheckedStoreWord8;
+      break;
+    case kRepWord16:
+      opcode = kCheckedStoreWord16;
+      break;
+    case kRepWord32:
+      opcode = kCheckedStoreWord32;
+      break;
+    case kRepFloat32:
+      opcode = kCheckedStoreFloat32;
+      break;
+    case kRepFloat64:
+      opcode = kCheckedStoreFloat64;
+      break;
+    default:
+      UNREACHABLE();
+      return;
+  }
+  InstructionOperand* offset_operand = g.UseRegister(offset);
+  Emit(opcode | AddressingModeField::encode(kMode_MRR), nullptr, offset_operand,
+       g.UseRegister(length), g.UseRegister(value), g.UseRegister(buffer),
+       offset_operand);
+}
+
+
 template <typename Matcher>
 static void VisitLogical(InstructionSelector* selector, Node* node, Matcher* m,
                          ArchOpcode opcode, bool left_can_cover,
@@ -514,6 +584,7 @@ void InstructionSelector::VisitWord32Shl(Node* node) {
 void InstructionSelector::VisitWord64Shl(Node* node) {
   PPCOperandGenerator g(this);
   Int64BinopMatcher m(node);
+  // TODO(mbrandy): eliminate left sign extension if right >= 32
   if (m.left().IsWord64And() && m.right().IsInRange(0, 63)) {
     // Try to absorb logical-and into rldic
     Int64BinopMatcher mleft(m.left().node());
@@ -624,6 +695,21 @@ void InstructionSelector::VisitWord64Shr(Node* node) {
 
 
 void InstructionSelector::VisitWord32Sar(Node* node) {
+  PPCOperandGenerator g(this);
+  Int32BinopMatcher m(node);
+  // Replace with sign extension for (x << K) >> K where K is 16 or 24.
+  if (CanCover(node, m.left().node()) && m.left().IsWord32Shl()) {
+    Int32BinopMatcher mleft(m.left().node());
+    if (mleft.right().Is(16) && m.right().Is(16)) {
+      Emit(kPPC_ExtendSignWord16, g.DefineAsRegister(node),
+           g.UseRegister(mleft.left().node()));
+      return;
+    } else if (mleft.right().Is(24) && m.right().Is(24)) {
+      Emit(kPPC_ExtendSignWord8, g.DefineAsRegister(node),
+           g.UseRegister(mleft.left().node()));
+      return;
+    }
+  }
   VisitRRO(this, node, kPPC_ShiftRightAlg32, kShift32Imm);
 }
 
@@ -796,13 +882,15 @@ void InstructionSelector::VisitChangeFloat64ToUint32(Node* node) {
 
 #if V8_TARGET_ARCH_PPC64
 void InstructionSelector::VisitChangeInt32ToInt64(Node* node) {
+  // TODO(mbrandy): inspect input to see if nop is appropriate.
   PPCOperandGenerator g(this);
-  Emit(kPPC_Int32ToInt64, g.DefineAsRegister(node),
+  Emit(kPPC_ExtendSignWord32, g.DefineAsRegister(node),
        g.UseRegister(node->InputAt(0)));
 }
 
 
 void InstructionSelector::VisitChangeUint32ToUint64(Node* node) {
+  // TODO(mbrandy): inspect input to see if nop is appropriate.
   PPCOperandGenerator g(this);
   Emit(kPPC_Uint32ToUint64, g.DefineAsRegister(node),
        g.UseRegister(node->InputAt(0)));
@@ -820,6 +908,7 @@ void InstructionSelector::VisitTruncateFloat64ToFloat32(Node* node) {
 #if V8_TARGET_ARCH_PPC64
 void InstructionSelector::VisitTruncateInt64ToInt32(Node* node) {
   PPCOperandGenerator g(this);
+  // TODO(mbrandy): inspect input to see if nop is appropriate.
   Emit(kPPC_Int64ToInt32, g.DefineAsRegister(node),
        g.UseRegister(node->InputAt(0)));
 }
@@ -1140,10 +1229,6 @@ static void VisitWord64CompareZero(InstructionSelector* selector, Node* user,
 void InstructionSelector::VisitBranch(Node* branch, BasicBlock* tbranch,
                                       BasicBlock* fbranch) {
   FlagsContinuation cont(kNotEqual, tbranch, fbranch);
-  if (IsNextInAssemblyOrder(tbranch)) {  // We can fallthru to the true block.
-    cont.Negate();
-    cont.SwapBlocks();
-  }
   VisitWord32CompareZero(this, branch, branch->InputAt(0), &cont);
 }
 
@@ -1285,13 +1370,12 @@ void InstructionSelector::VisitCall(Node* node) {
 MachineOperatorBuilder::Flags
 InstructionSelector::SupportedMachineOperatorFlags() {
   return MachineOperatorBuilder::kInt32DivIsSafe |
-         MachineOperatorBuilder::kInt32ModIsSafe |
          MachineOperatorBuilder::kUint32DivIsSafe |
-         MachineOperatorBuilder::kUint32ModIsSafe |
          MachineOperatorBuilder::kFloat64Floor |
          MachineOperatorBuilder::kFloat64Ceil |
          MachineOperatorBuilder::kFloat64RoundTruncate |
          MachineOperatorBuilder::kFloat64RoundTiesAway;
+  // We omit kWord32ShiftIsSafe as s[rl]w use 0x3f as a mask rather than 0x1f.
 }
 
 }  // namespace compiler

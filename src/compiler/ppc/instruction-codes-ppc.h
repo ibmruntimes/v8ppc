@@ -73,7 +73,9 @@ namespace compiler {
   V(PPC_Tst32)                     \
   V(PPC_Tst64)                     \
   V(PPC_Push)                      \
-  V(PPC_Int32ToInt64)              \
+  V(PPC_ExtendSignWord8)           \
+  V(PPC_ExtendSignWord16)          \
+  V(PPC_ExtendSignWord32)          \
   V(PPC_Uint32ToUint64)            \
   V(PPC_Int64ToInt32)              \
   V(PPC_Int32ToFloat64)            \

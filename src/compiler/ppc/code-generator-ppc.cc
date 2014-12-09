@@ -70,13 +70,14 @@ class PPCOperandConverter FINAL : public InstructionOperandConverter {
 #endif
       case Constant::kExternalReference:
       case Constant::kHeapObject:
+      case Constant::kRpoNumber:
         break;
     }
     UNREACHABLE();
     return Operand::Zero();
   }
 
-  MemOperand MemoryOperand(int* first_index, AddressingMode* mode) {
+  MemOperand MemoryOperand(AddressingMode* mode, int* first_index) {
     const int index = *first_index;
     *mode = AddressingModeField::decode(instr_->opcode());
     switch (*mode) {
@@ -93,9 +94,8 @@ class PPCOperandConverter FINAL : public InstructionOperandConverter {
     return MemOperand(r0);
   }
 
-  MemOperand MemoryOperand(AddressingMode* mode) {
-    int index = 0;
-    return MemoryOperand(&index, mode);
+  MemOperand MemoryOperand(AddressingMode* mode, int first_index = 0) {
+    return MemoryOperand(mode, &first_index);
   }
 
   MemOperand ToMemOperand(InstructionOperand* op) const {
@@ -113,6 +113,210 @@ class PPCOperandConverter FINAL : public InstructionOperandConverter {
 static inline bool HasRegisterInput(Instruction* instr, int index) {
   return instr->InputAt(index)->IsRegister();
 }
+
+
+namespace {
+
+class OutOfLineLoadFloat32 FINAL : public OutOfLineCode {
+ public:
+  OutOfLineLoadFloat32(CodeGenerator* gen, DoubleRegister result)
+      : OutOfLineCode(gen), result_(result) {}
+
+  void Generate() FINAL {
+    __ LoadDoubleLiteral(result_, std::numeric_limits<float>::quiet_NaN(),
+                         kScratchReg);
+  }
+
+ private:
+  DoubleRegister const result_;
+};
+
+
+class OutOfLineLoadFloat64 FINAL : public OutOfLineCode {
+ public:
+  OutOfLineLoadFloat64(CodeGenerator* gen, DoubleRegister result)
+      : OutOfLineCode(gen), result_(result) {}
+
+  void Generate() FINAL {
+    __ LoadDoubleLiteral(result_, std::numeric_limits<double>::quiet_NaN(),
+                         kScratchReg);
+  }
+
+ private:
+  DoubleRegister const result_;
+};
+
+
+class OutOfLineLoadInteger FINAL : public OutOfLineCode {
+ public:
+  OutOfLineLoadInteger(CodeGenerator* gen, Register result)
+      : OutOfLineCode(gen), result_(result) {}
+
+  void Generate() FINAL { __ li(result_, Operand::Zero()); }
+
+ private:
+  Register const result_;
+};
+
+}  // namespace
+
+
+#define ASSEMBLE_LOAD_FLOAT(asm_instr, asm_instrx)              \
+  do {                                                          \
+    DoubleRegister result = i.OutputDoubleRegister();           \
+    AddressingMode mode = kMode_None;                           \
+    MemOperand operand = i.MemoryOperand(&mode);                \
+    if (mode == kMode_MRI) {                                    \
+      __ asm_instr(result, operand);                            \
+    } else {                                                    \
+      DCHECK_EQ(kMode_MRR, mode);                               \
+      __ asm_instrx(result, operand);                           \
+    }                                                           \
+    DCHECK_EQ(LeaveRC, i.OutputRCBit());                        \
+  } while (0)
+
+
+#define ASSEMBLE_LOAD_INTEGER(asm_instr, asm_instrx)            \
+  do {                                                          \
+    Register result = i.OutputRegister();                       \
+    AddressingMode mode = kMode_None;                           \
+    MemOperand operand = i.MemoryOperand(&mode);                \
+    if (mode == kMode_MRI) {                                    \
+      __ asm_instr(result, operand);                            \
+    } else {                                                    \
+      DCHECK_EQ(kMode_MRR, mode);                               \
+      __ asm_instrx(result, operand);                           \
+    }                                                           \
+    DCHECK_EQ(LeaveRC, i.OutputRCBit());                        \
+  } while (0)
+
+
+#define ASSEMBLE_STORE_FLOAT(asm_instr, asm_instrx)             \
+  do {                                                          \
+    int index = 0;                                              \
+    AddressingMode mode = kMode_None;                           \
+    MemOperand operand = i.MemoryOperand(&mode, &index);        \
+    DoubleRegister value = i.InputDoubleRegister(index);        \
+    if (mode == kMode_MRI) {                                    \
+      __ asm_instr(value, operand);                             \
+    } else {                                                    \
+      DCHECK_EQ(kMode_MRR, mode);                               \
+      __ asm_instrx(value, operand);                            \
+    }                                                           \
+    DCHECK_EQ(LeaveRC, i.OutputRCBit());                        \
+  } while (0)
+
+
+#define ASSEMBLE_STORE_INTEGER(asm_instr, asm_instrx)           \
+  do {                                                          \
+    int index = 0;                                              \
+    AddressingMode mode = kMode_None;                           \
+    MemOperand operand = i.MemoryOperand(&mode, &index);        \
+    Register value = i.InputRegister(index);                    \
+    if (mode == kMode_MRI) {                                    \
+      __ asm_instr(value, operand);                             \
+    } else {                                                    \
+      DCHECK_EQ(kMode_MRR, mode);                               \
+      __ asm_instrx(value, operand);                            \
+    }                                                           \
+    DCHECK_EQ(LeaveRC, i.OutputRCBit());                        \
+  } while (0)
+
+
+#define ASSEMBLE_CHECKED_LOAD_FLOAT(asm_instr, asm_instrx, width)    \
+  do {                                                               \
+    auto result = i.OutputDoubleRegister();                          \
+    auto offset = i.InputRegister(0);                                \
+    if (HasRegisterInput(instr, 1)) {                                \
+      __ cmpl(offset, i.InputRegister(1));                           \
+    } else {                                                         \
+      __ cmpli(offset, i.InputImmediate(1));                         \
+    }                                                                \
+    AddressingMode mode = kMode_None;                                \
+    MemOperand operand = i.MemoryOperand(&mode, 2);                  \
+    auto ool = new (zone()) OutOfLineLoadFloat##width(this, result); \
+    __ bge(ool->entry());                                            \
+    if (mode == kMode_MRI) {                                         \
+      __ asm_instr(result, operand);                                 \
+    } else {                                                         \
+      DCHECK_EQ(kMode_MRR, mode);                                    \
+      __ asm_instrx(result, operand);                                \
+    }                                                                \
+    __ bind(ool->exit());                                            \
+    DCHECK_EQ(LeaveRC, i.OutputRCBit());                             \
+  } while (0)
+
+
+#define ASSEMBLE_CHECKED_LOAD_INTEGER(asm_instr, asm_instrx)    \
+  do {                                                          \
+    auto result = i.OutputRegister();                           \
+    auto offset = i.InputRegister(0);                           \
+    if (HasRegisterInput(instr, 1)) {                           \
+      __ cmpl(offset, i.InputRegister(1));                      \
+    } else {                                                    \
+      __ cmpli(offset, i.InputImmediate(1));                    \
+    }                                                           \
+    AddressingMode mode = kMode_None;                           \
+    MemOperand operand = i.MemoryOperand(&mode, 2);             \
+    auto ool = new (zone()) OutOfLineLoadInteger(this, result); \
+    __ bge(ool->entry());                                       \
+    if (mode == kMode_MRI) {                                    \
+      __ asm_instr(result, operand);                            \
+    } else {                                                    \
+      DCHECK_EQ(kMode_MRR, mode);                               \
+      __ asm_instrx(result, operand);                           \
+    }                                                           \
+    __ bind(ool->exit());                                       \
+    DCHECK_EQ(LeaveRC, i.OutputRCBit());                        \
+  } while (0)
+
+
+#define ASSEMBLE_CHECKED_STORE_FLOAT(asm_instr, asm_instrx)             \
+  do {                                                                  \
+    Label done;                                                         \
+    auto offset = i.InputRegister(0);                                   \
+    if (HasRegisterInput(instr, 1)) {                                   \
+      __ cmpl(offset, i.InputRegister(1));                              \
+    } else {                                                            \
+      __ cmpli(offset, i.InputImmediate(1));                            \
+    }                                                                   \
+    __ bge(&done);                                                      \
+    auto value = i.InputDoubleRegister(2);                              \
+    AddressingMode mode = kMode_None;                                   \
+    MemOperand operand = i.MemoryOperand(&mode, 3);                     \
+    if (mode == kMode_MRI) {                                            \
+      __ asm_instr(value, operand);                                     \
+    } else {                                                            \
+      DCHECK_EQ(kMode_MRR, mode);                                       \
+      __ asm_instrx(value, operand);                                    \
+    }                                                                   \
+    __ bind(&done);                                                     \
+    DCHECK_EQ(LeaveRC, i.OutputRCBit());                                \
+  } while (0)
+
+
+#define ASSEMBLE_CHECKED_STORE_INTEGER(asm_instr, asm_instrx)      \
+  do {                                                             \
+    Label done;                                                    \
+    auto offset = i.InputRegister(0);                              \
+    if (HasRegisterInput(instr, 1)) {                              \
+      __ cmpl(offset, i.InputRegister(1));                         \
+    } else {                                                       \
+      __ cmpli(offset, i.InputImmediate(1));                       \
+    }                                                              \
+    __ bge(&done);                                                 \
+    auto value = i.InputRegister(2);                               \
+    AddressingMode mode = kMode_None;                              \
+    MemOperand operand = i.MemoryOperand(&mode, 3);                \
+    if (mode == kMode_MRI) {                                       \
+      __ asm_instr(value, operand);                                \
+    } else {                                                       \
+      DCHECK_EQ(kMode_MRR, mode);                                  \
+      __ asm_instrx(value, operand);                               \
+    }                                                              \
+    __ bind(&done);                                                \
+    DCHECK_EQ(LeaveRC, i.OutputRCBit());                           \
+  } while (0)
 
 
 // Assembles an instruction after register allocation, producing machine code.
@@ -152,7 +356,7 @@ void CodeGenerator::AssembleArchInstruction(Instruction* instr) {
       break;
     }
     case kArchJmp:
-      __ b(GetLabel(i.InputRpo(0)));
+      AssembleArchJump(i.InputRpo(0));
       DCHECK_EQ(LeaveRC, i.OutputRCBit());
       break;
     case kArchNop:
@@ -580,12 +784,21 @@ void CodeGenerator::AssembleArchInstruction(Instruction* instr) {
       __ Push(i.InputRegister(0));
       DCHECK_EQ(LeaveRC, i.OutputRCBit());
       break;
+    case kPPC_ExtendSignWord8:
+      __ extsb(i.OutputRegister(), i.InputRegister(0));
+      DCHECK_EQ(LeaveRC, i.OutputRCBit());
+      break;
+    case kPPC_ExtendSignWord16:
+      __ extsh(i.OutputRegister(), i.InputRegister(0));
+      DCHECK_EQ(LeaveRC, i.OutputRCBit());
+      break;
 #if V8_TARGET_ARCH_PPC64
-    case kPPC_Int32ToInt64:
+    case kPPC_ExtendSignWord32:
       __ extsw(i.OutputRegister(), i.InputRegister(0));
       DCHECK_EQ(LeaveRC, i.OutputRCBit());
       break;
     case kPPC_Uint32ToUint64:
+      // TODO(mbrandy): zero extend?
       __ Move(i.OutputRegister(), i.InputRegister(0));
       DCHECK_EQ(LeaveRC, i.OutputRCBit());
       break;
@@ -624,167 +837,52 @@ void CodeGenerator::AssembleArchInstruction(Instruction* instr) {
       DCHECK_EQ(LeaveRC, i.OutputRCBit());
       break;
     case kPPC_LoadWordU8:
+      ASSEMBLE_LOAD_INTEGER(lbz, lbzx);
+      break;
     case kPPC_LoadWordS8:
+      ASSEMBLE_LOAD_INTEGER(lbz, lbzx);
+      __ extsb(i.OutputRegister(), i.OutputRegister());
+      break;
     case kPPC_LoadWordU16:
+      ASSEMBLE_LOAD_INTEGER(lhz, lhzx);
+      break;
     case kPPC_LoadWordS16:
+      ASSEMBLE_LOAD_INTEGER(lha, lhax);
+      break;
     case kPPC_LoadWordS32:
-    case kPPC_LoadWord64: {
-      AddressingMode mode = kMode_None;
-      MemOperand operand = i.MemoryOperand(&mode);
-      if (mode == kMode_MRI) {
-        switch (opcode) {
-          case kPPC_LoadWordU8:
-            __ lbz(i.OutputRegister(), operand);
-            break;
-          case kPPC_LoadWordS8:
-            __ lbz(i.OutputRegister(), operand);
-            __ extsb(i.OutputRegister(), i.OutputRegister());
-            break;
-          case kPPC_LoadWordU16:
-            __ lhz(i.OutputRegister(), operand);
-            break;
-          case kPPC_LoadWordS16:
-            __ lha(i.OutputRegister(), operand);
-            break;
-          case kPPC_LoadWordS32:
-            __ lwa(i.OutputRegister(), operand);
-            break;
-#if V8_TARGET_ARCH_PPC64
-          case kPPC_LoadWord64:
-            __ ld(i.OutputRegister(), operand);
-            break;
-#endif
-          default:
-            UNREACHABLE();
-            break;
-        }
-      } else {
-        DCHECK_EQ(kMode_MRR, mode);
-        switch (opcode) {
-          case kPPC_LoadWordU8:
-            __ lbzx(i.OutputRegister(), operand);
-            break;
-          case kPPC_LoadWordS8:
-            __ lbzx(i.OutputRegister(), operand);
-            __ extsb(i.OutputRegister(), i.OutputRegister());
-            break;
-          case kPPC_LoadWordU16:
-            __ lhzx(i.OutputRegister(), operand);
-            break;
-          case kPPC_LoadWordS16:
-            __ lhax(i.OutputRegister(), operand);
-            break;
-          case kPPC_LoadWordS32:
-            __ lwax(i.OutputRegister(), operand);
-            break;
-#if V8_TARGET_ARCH_PPC64
-          case kPPC_LoadWord64:
-            __ ldx(i.OutputRegister(), operand);
-            break;
-#endif
-          default:
-            UNREACHABLE();
-            break;
-        }
-      }
-      DCHECK_EQ(LeaveRC, i.OutputRCBit());
+      ASSEMBLE_LOAD_INTEGER(lwa, lwax);
       break;
-    }
+#if V8_TARGET_ARCH_PPC64
+    case kPPC_LoadWord64:
+      ASSEMBLE_LOAD_INTEGER(ld, ldx);
+      break;
+#endif
     case kPPC_LoadFloat32:
-    case kPPC_LoadFloat64: {
-      AddressingMode mode = kMode_None;
-      MemOperand operand = i.MemoryOperand(&mode);
-      if (mode == kMode_MRI) {
-        if (opcode == kPPC_LoadFloat32) {
-          __ lfs(i.OutputDoubleRegister(), operand);
-        } else {
-          __ lfd(i.OutputDoubleRegister(), operand);
-        }
-      } else {
-        DCHECK_EQ(kMode_MRR, mode);
-        if (opcode == kPPC_LoadFloat32) {
-          __ lfsx(i.OutputDoubleRegister(), operand);
-        } else {
-          __ lfdx(i.OutputDoubleRegister(), operand);
-        }
-      }
-      DCHECK_EQ(LeaveRC, i.OutputRCBit());
+      ASSEMBLE_LOAD_FLOAT(lfs, lfsx);
       break;
-    }
+    case kPPC_LoadFloat64:
+      ASSEMBLE_LOAD_FLOAT(lfd, lfdx);
+      break;
     case kPPC_StoreWord8:
+      ASSEMBLE_STORE_INTEGER(stb, stbx);
+      break;
     case kPPC_StoreWord16:
+      ASSEMBLE_STORE_INTEGER(sth, sthx);
+      break;
     case kPPC_StoreWord32:
-    case kPPC_StoreWord64: {
-      int index = 0;
-      AddressingMode mode = kMode_None;
-      MemOperand operand = i.MemoryOperand(&index, &mode);
-      if (mode == kMode_MRI) {
-        switch (opcode) {
-          case kPPC_StoreWord8:
-            __ stb(i.InputRegister(index), operand);
-            break;
-          case kPPC_StoreWord16:
-            __ sth(i.InputRegister(index), operand);
-            break;
-          case kPPC_StoreWord32:
-            __ stw(i.InputRegister(index), operand);
-            break;
-#if V8_TARGET_ARCH_PPC64
-          case kPPC_StoreWord64:
-            __ std(i.InputRegister(index), operand);
-            break;
-#endif
-          default:
-            UNREACHABLE();
-            break;
-        }
-      } else {
-        DCHECK_EQ(kMode_MRR, mode);
-        switch (opcode) {
-          case kPPC_StoreWord8:
-            __ stbx(i.InputRegister(index), operand);
-            break;
-          case kPPC_StoreWord16:
-            __ sthx(i.InputRegister(index), operand);
-            break;
-          case kPPC_StoreWord32:
-            __ stwx(i.InputRegister(index), operand);
-            break;
-#if V8_TARGET_ARCH_PPC64
-          case kPPC_StoreWord64:
-            __ stdx(i.InputRegister(index), operand);
-            break;
-#endif
-          default:
-            UNREACHABLE();
-            break;
-        }
-      }
-      DCHECK_EQ(LeaveRC, i.OutputRCBit());
+      ASSEMBLE_STORE_INTEGER(stw, stwx);
       break;
-    }
+#if V8_TARGET_ARCH_PPC64
+    case kPPC_StoreWord64:
+      ASSEMBLE_STORE_INTEGER(std, stdx);
+      break;
+#endif
     case kPPC_StoreFloat32:
-    case kPPC_StoreFloat64: {
-      int index = 0;
-      AddressingMode mode = kMode_None;
-      MemOperand operand = i.MemoryOperand(&index, &mode);
-      if (mode == kMode_MRI) {
-        if (opcode == kPPC_StoreFloat32) {
-          __ stfs(i.InputDoubleRegister(index), operand);
-        } else {
-          __ stfd(i.InputDoubleRegister(index), operand);
-        }
-      } else {
-        DCHECK_EQ(kMode_MRR, mode);
-        if (opcode == kPPC_StoreFloat32) {
-          __ stfsx(i.InputDoubleRegister(index), operand);
-        } else {
-          __ stfdx(i.InputDoubleRegister(index), operand);
-        }
-      }
-      DCHECK_EQ(LeaveRC, i.OutputRCBit());
+      ASSEMBLE_STORE_FLOAT(stfs, stfsx);
       break;
-    }
+    case kPPC_StoreFloat64:
+      ASSEMBLE_STORE_FLOAT(stfd, stfdx);
+      break;
     case kPPC_StoreWriteBarrier: {
       Register object = i.InputRegister(0);
       Register index = i.InputRegister(1);
@@ -798,6 +896,43 @@ void CodeGenerator::AssembleArchInstruction(Instruction* instr) {
       DCHECK_EQ(LeaveRC, i.OutputRCBit());
       break;
     }
+    case kCheckedLoadInt8:
+      ASSEMBLE_CHECKED_LOAD_INTEGER(lbz, lbzx);
+      __ extsb(i.OutputRegister(), i.OutputRegister());
+      break;
+    case kCheckedLoadUint8:
+      ASSEMBLE_CHECKED_LOAD_INTEGER(lbz, lbzx);
+      break;
+    case kCheckedLoadInt16:
+      ASSEMBLE_CHECKED_LOAD_INTEGER(lha, lhax);
+      break;
+    case kCheckedLoadUint16:
+      ASSEMBLE_CHECKED_LOAD_INTEGER(lhz, lhzx);
+      break;
+    case kCheckedLoadWord32:
+      ASSEMBLE_CHECKED_LOAD_INTEGER(lwa, lwax);
+      break;
+    case kCheckedLoadFloat32:
+      ASSEMBLE_CHECKED_LOAD_FLOAT(lfs, lfsx, 32);
+      break;
+    case kCheckedLoadFloat64:
+      ASSEMBLE_CHECKED_LOAD_FLOAT(lfd, lfdx, 64);
+      break;
+    case kCheckedStoreWord8:
+      ASSEMBLE_CHECKED_STORE_INTEGER(stb, stbx);
+      break;
+    case kCheckedStoreWord16:
+      ASSEMBLE_CHECKED_STORE_INTEGER(sth, sthx);
+      break;
+    case kCheckedStoreWord32:
+      ASSEMBLE_CHECKED_STORE_INTEGER(stw, stwx);
+      break;
+    case kCheckedStoreFloat32:
+      ASSEMBLE_CHECKED_STORE_FLOAT(stfs, stfsx);
+      break;
+    case kCheckedStoreFloat64:
+      ASSEMBLE_CHECKED_STORE_FLOAT(stfd, stfdx);
+      break;
     default:
       UNREACHABLE();
       break;
@@ -806,26 +941,16 @@ void CodeGenerator::AssembleArchInstruction(Instruction* instr) {
 
 
 // Assembles branches after an instruction.
-void CodeGenerator::AssembleArchBranch(Instruction* instr,
-                                       FlagsCondition condition) {
+void CodeGenerator::AssembleArchBranch(Instruction* instr, BranchInfo* branch) {
   PPCOperandConverter i(this, instr);
-  Label done;
+  Label* tlabel = branch->true_label;
+  Label* flabel = branch->false_label;
+  FlagsCondition condition = branch->condition;
   Condition cond = kNoCondition;
   CRegister cr = cr0;
 #if DEBUG
   ArchOpcode op = ArchOpcodeField::decode(instr->opcode());
 #endif
-
-  // Emit a branch. The true and false targets are always the last two inputs
-  // to the instruction.
-  BasicBlock::RpoNumber tblock =
-      i.InputRpo(static_cast<int>(instr->InputCount()) - 2);
-  BasicBlock::RpoNumber fblock =
-      i.InputRpo(static_cast<int>(instr->InputCount()) - 1);
-  bool fallthru = IsNextInAssemblyOrder(fblock);
-  Label* tlabel = GetLabel(tblock);
-  Label* flabel = fallthru ? &done : GetLabel(fblock);
-
   switch (condition) {
     case kUnorderedEqual:
     case kUnorderedLessThan:
@@ -894,8 +1019,12 @@ void CodeGenerator::AssembleArchBranch(Instruction* instr,
       break;
   }
   __ b(cond, tlabel, cr);
-  if (!fallthru) __ b(flabel);  // no fallthru to flabel.
-  __ bind(&done);
+  if (!branch->fallthru) __ b(flabel);  // no fallthru to flabel.
+}
+
+
+void CodeGenerator::AssembleArchJump(BasicBlock::RpoNumber target) {
+  if (!IsNextInAssemblyOrder(target)) __ b(GetLabel(target));
 }
 
 
@@ -1038,24 +1167,6 @@ void CodeGenerator::AssemblePrologue() {
     __ Prologue(info->IsCodePreAgingActive());
     frame()->SetRegisterSaveAreaSize(
         StandardFrameConstants::kFixedFrameSizeFromFp);
-
-    // Sloppy mode functions and builtins need to replace the receiver with the
-    // global proxy when called as functions (without an explicit receiver
-    // object).
-    // TODO(mstarzinger/verwaest): Should this be moved back into the CallIC?
-    if (info->strict_mode() == SLOPPY && !info->is_native()) {
-      Label ok;
-      // +2 for return address and saved frame pointer.
-      int receiver_slot = info->scope()->num_parameters() + 2;
-      __ LoadP(r5, MemOperand(fp, receiver_slot * kPointerSize));
-      __ CompareRoot(r5, Heap::kUndefinedValueRootIndex);
-      __ bne(&ok);
-      __ LoadP(r5, GlobalObjectOperand());
-      __ LoadP(r5, FieldMemOperand(r5, GlobalObject::kGlobalProxyOffset));
-      __ StoreP(r5, MemOperand(fp, receiver_slot * kPointerSize));
-      __ bind(&ok);
-    }
-
   } else {
     __ StubPrologue();
     frame()->SetRegisterSaveAreaSize(
@@ -1147,6 +1258,9 @@ void CodeGenerator::AssembleMove(InstructionOperand* source,
           break;
         case Constant::kHeapObject:
           __ Move(dst, src.ToHeapObject());
+          break;
+        case Constant::kRpoNumber:
+          UNREACHABLE();  // TODO(dcarney): loading RPO constants on PPC.
           break;
       }
       if (destination->IsStackSlot()) {
