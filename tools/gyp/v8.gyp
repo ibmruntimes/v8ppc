@@ -164,7 +164,6 @@
         '<(SHARED_INTERMEDIATE_DIR)/libraries.cc',
         '<(SHARED_INTERMEDIATE_DIR)/experimental-libraries.cc',
         '<(INTERMEDIATE_DIR)/snapshot.cc',
-        '../../src/snapshot-common.cc',
       ],
       'actions': [
         {
@@ -206,7 +205,6 @@
       'sources': [
         '<(SHARED_INTERMEDIATE_DIR)/libraries.cc',
         '<(SHARED_INTERMEDIATE_DIR)/experimental-libraries.cc',
-        '../../src/snapshot-common.cc',
         '../../src/snapshot-empty.cc',
       ],
       'conditions': [
@@ -469,6 +467,8 @@
         '../../src/compiler/linkage-impl.h',
         '../../src/compiler/linkage.cc',
         '../../src/compiler/linkage.h',
+        '../../src/compiler/load-elimination.cc',
+        '../../src/compiler/load-elimination.h',
         '../../src/compiler/machine-operator-reducer.cc',
         '../../src/compiler/machine-operator-reducer.h',
         '../../src/compiler/machine-operator.cc',
@@ -822,6 +822,7 @@
         '../../src/small-pointer-list.h',
         '../../src/smart-pointers.h',
         '../../src/snapshot.h',
+        '../../src/snapshot-common.cc',
         '../../src/snapshot-source-sink.cc',
         '../../src/snapshot-source-sink.h',
         '../../src/string-builder.cc',
@@ -1682,6 +1683,7 @@
           '../../src/generator.js',
           '../../src/harmony-string.js',
           '../../src/harmony-array.js',
+          '../../src/harmony-array-includes.js',
           '../../src/harmony-tostring.js',
           '../../src/harmony-typedarray.js',
           '../../src/harmony-classes.js',

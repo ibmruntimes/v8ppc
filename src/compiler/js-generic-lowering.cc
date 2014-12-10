@@ -79,18 +79,18 @@ REPLACE_BINARY_OP_IC_CALL(JSModulus, Token::MOD)
 #undef REPLACE_BINARY_OP_IC_CALL
 
 
-#define REPLACE_COMPARE_IC_CALL(op, token, pure)  \
+#define REPLACE_COMPARE_IC_CALL(op, token)        \
   void JSGenericLowering::Lower##op(Node* node) { \
-    ReplaceWithCompareIC(node, token, pure);      \
+    ReplaceWithCompareIC(node, token);            \
   }
-REPLACE_COMPARE_IC_CALL(JSEqual, Token::EQ, false)
-REPLACE_COMPARE_IC_CALL(JSNotEqual, Token::NE, false)
-REPLACE_COMPARE_IC_CALL(JSStrictEqual, Token::EQ_STRICT, true)
-REPLACE_COMPARE_IC_CALL(JSStrictNotEqual, Token::NE_STRICT, true)
-REPLACE_COMPARE_IC_CALL(JSLessThan, Token::LT, false)
-REPLACE_COMPARE_IC_CALL(JSGreaterThan, Token::GT, false)
-REPLACE_COMPARE_IC_CALL(JSLessThanOrEqual, Token::LTE, false)
-REPLACE_COMPARE_IC_CALL(JSGreaterThanOrEqual, Token::GTE, false)
+REPLACE_COMPARE_IC_CALL(JSEqual, Token::EQ)
+REPLACE_COMPARE_IC_CALL(JSNotEqual, Token::NE)
+REPLACE_COMPARE_IC_CALL(JSStrictEqual, Token::EQ_STRICT)
+REPLACE_COMPARE_IC_CALL(JSStrictNotEqual, Token::NE_STRICT)
+REPLACE_COMPARE_IC_CALL(JSLessThan, Token::LT)
+REPLACE_COMPARE_IC_CALL(JSGreaterThan, Token::GT)
+REPLACE_COMPARE_IC_CALL(JSLessThanOrEqual, Token::LTE)
+REPLACE_COMPARE_IC_CALL(JSGreaterThanOrEqual, Token::GTE)
 #undef REPLACE_COMPARE_IC_CALL
 
 
@@ -126,8 +126,7 @@ static CallDescriptor::Flags FlagsForNode(Node* node) {
 }
 
 
-void JSGenericLowering::ReplaceWithCompareIC(Node* node, Token::Value token,
-                                             bool pure) {
+void JSGenericLowering::ReplaceWithCompareIC(Node* node, Token::Value token) {
   Callable callable = CodeFactory::CompareIC(isolate(), token);
   bool has_frame_state = OperatorProperties::HasFrameStateInput(node->op());
   CallDescriptor* desc_compare = linkage()->GetStubCallDescriptor(
@@ -139,7 +138,7 @@ void JSGenericLowering::ReplaceWithCompareIC(Node* node, Token::Value token,
   inputs.push_back(NodeProperties::GetValueInput(node, 0));
   inputs.push_back(NodeProperties::GetValueInput(node, 1));
   inputs.push_back(NodeProperties::GetContextInput(node));
-  if (pure) {
+  if (node->op()->HasProperty(Operator::kPure)) {
     // A pure (strict) comparison doesn't have an effect, control or frame
     // state.  But for the graph, we need to add control and effect inputs.
     DCHECK(!has_frame_state);
@@ -171,8 +170,9 @@ void JSGenericLowering::ReplaceWithCompareIC(Node* node, Token::Value token,
 
 void JSGenericLowering::ReplaceWithStubCall(Node* node, Callable callable,
                                             CallDescriptor::Flags flags) {
+  Operator::Properties properties = node->op()->properties();
   CallDescriptor* desc = linkage()->GetStubCallDescriptor(
-      callable.descriptor(), 0, flags | FlagsForNode(node));
+      callable.descriptor(), 0, flags | FlagsForNode(node), properties);
   Node* stub_code = jsgraph()->HeapConstant(callable.code());
   PatchInsertInput(node, 0, stub_code);
   PatchOperator(node, common()->Call(desc));
@@ -182,10 +182,11 @@ void JSGenericLowering::ReplaceWithStubCall(Node* node, Callable callable,
 void JSGenericLowering::ReplaceWithBuiltinCall(Node* node,
                                                Builtins::JavaScript id,
                                                int nargs) {
+  Operator::Properties properties = node->op()->properties();
   Callable callable =
       CodeFactory::CallFunction(isolate(), nargs - 1, NO_CALL_FUNCTION_FLAGS);
   CallDescriptor* desc = linkage()->GetStubCallDescriptor(
-      callable.descriptor(), nargs, FlagsForNode(node));
+      callable.descriptor(), nargs, FlagsForNode(node), properties);
   // TODO(mstarzinger): Accessing the builtins object this way prevents sharing
   // of code across native contexts. Fix this by loading from given context.
   Handle<JSFunction> function(
@@ -231,6 +232,12 @@ void JSGenericLowering::LowerJSToBoolean(Node* node) {
 
 void JSGenericLowering::LowerJSToNumber(Node* node) {
   Callable callable = CodeFactory::ToNumber(isolate());
+  // TODO(mstarzinger): Embedding the context this way prevents sharing of code
+  // across native contexts.
+  if (!info_context_constant_.is_set()) {
+    info_context_constant_.set(jsgraph()->HeapConstant(info()->context()));
+  }
+  node->ReplaceInput(1, info_context_constant_.get());
   ReplaceWithStubCall(node, callable, FlagsForNode(node));
 }
 

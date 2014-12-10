@@ -167,17 +167,19 @@ static Type* kStringTypes[] = {Type::InternalizedString(), Type::OtherString(),
 
 
 static Type* kInt32Types[] = {
-    Type::UnsignedSmall(),   Type::OtherSignedSmall(), Type::OtherUnsigned31(),
-    Type::OtherUnsigned32(), Type::OtherSigned32(),    Type::SignedSmall(),
-    Type::Signed32(),        Type::Unsigned32(),       Type::Integral32()};
+    Type::UnsignedSmall(),       Type::NegativeSigned32(),
+    Type::NonNegativeSigned32(), Type::SignedSmall(),
+    Type::Signed32(),            Type::Unsigned32(),
+    Type::Integral32()};
 
 
 static Type* kNumberTypes[] = {
-    Type::UnsignedSmall(),   Type::OtherSignedSmall(), Type::OtherUnsigned31(),
-    Type::OtherUnsigned32(), Type::OtherSigned32(),    Type::SignedSmall(),
-    Type::Signed32(),        Type::Unsigned32(),       Type::Integral32(),
-    Type::MinusZero(),       Type::NaN(),              Type::OtherNumber(),
-    Type::OrderedNumber(),   Type::Number()};
+    Type::UnsignedSmall(),       Type::NegativeSigned32(),
+    Type::NonNegativeSigned32(), Type::SignedSmall(),
+    Type::Signed32(),            Type::Unsigned32(),
+    Type::Integral32(),          Type::MinusZero(),
+    Type::NaN(),                 Type::OrderedNumber(),
+    Type::PlainNumber(),         Type::Number()};
 
 
 static Type* kJSTypes[] = {Type::Undefined(), Type::Null(),   Type::Boolean(),
@@ -304,12 +306,13 @@ class JSBitwiseShiftTypedLoweringTester : public JSTypedLoweringTester {
 TEST(Int32BitwiseShifts) {
   JSBitwiseShiftTypedLoweringTester R;
 
-  Type* types[] = {
-      Type::SignedSmall(), Type::UnsignedSmall(), Type::OtherSigned32(),
-      Type::Unsigned32(),  Type::Signed32(),      Type::MinusZero(),
-      Type::NaN(),         Type::OtherNumber(),   Type::Undefined(),
-      Type::Null(),        Type::Boolean(),       Type::Number(),
-      Type::String()};
+  Type* types[] = {Type::SignedSmall(),      Type::UnsignedSmall(),
+                   Type::NegativeSigned32(), Type::NonNegativeSigned32(),
+                   Type::Unsigned32(),       Type::Signed32(),
+                   Type::MinusZero(),        Type::NaN(),
+                   Type::Undefined(),        Type::Null(),
+                   Type::Boolean(),          Type::Number(),
+                   Type::PlainNumber(),      Type::String()};
 
   for (size_t i = 0; i < arraysize(types); ++i) {
     Node* p0 = R.Parameter(types[i], 0);
@@ -369,10 +372,11 @@ TEST(Int32BitwiseBinops) {
   JSBitwiseTypedLoweringTester R;
 
   Type* types[] = {
-      Type::SignedSmall(), Type::UnsignedSmall(), Type::Unsigned32(),
-      Type::Signed32(),    Type::MinusZero(),     Type::NaN(),
-      Type::OtherNumber(), Type::Undefined(),     Type::Null(),
-      Type::Boolean(),     Type::Number(),        Type::String()};
+      Type::SignedSmall(),   Type::UnsignedSmall(), Type::Unsigned32(),
+      Type::Signed32(),      Type::MinusZero(),     Type::NaN(),
+      Type::OrderedNumber(), Type::PlainNumber(),   Type::Undefined(),
+      Type::Null(),          Type::Boolean(),       Type::Number(),
+      Type::String()};
 
   for (size_t i = 0; i < arraysize(types); ++i) {
     Node* p0 = R.Parameter(types[i], 0);
@@ -547,12 +551,7 @@ TEST(JSToBoolean_replacement) {
 
   for (size_t i = 0; i < arraysize(types); i++) {
     Node* n = R.Parameter(types[i]);
-    Node* c = R.graph.NewNode(R.javascript.ToBoolean(), n, R.context(),
-                              R.start(), R.start());
-    Node* effect_use = R.UseForEffect(c);
-    Node* add = R.graph.NewNode(R.simplified.ReferenceEqual(Type::Any()), n, c);
-
-    R.CheckEffectInput(c, effect_use);
+    Node* c = R.graph.NewNode(R.javascript.ToBoolean(), n, R.context());
     Node* r = R.reduce(c);
 
     if (types[i]->Is(Type::Boolean())) {
@@ -562,10 +561,6 @@ TEST(JSToBoolean_replacement) {
     } else {
       CHECK_EQ(IrOpcode::kHeapConstant, r->opcode());
     }
-
-    CHECK_EQ(n, add->InputAt(0));
-    CHECK_EQ(r, add->InputAt(1));
-    R.CheckEffectInput(R.start(), effect_use);
   }
 }
 
@@ -757,15 +752,12 @@ TEST(UnaryNot) {
 
   for (size_t i = 0; i < arraysize(kJSTypes); i++) {
     Node* orig = R.Unop(opnot, R.Parameter(kJSTypes[i]));
-    Node* use = R.graph.NewNode(R.common.Return(), orig);
     Node* r = R.reduce(orig);
-    // TODO(titzer): test will break if/when js-typed-lowering constant folds.
-    CHECK_EQ(IrOpcode::kBooleanNot, use->InputAt(0)->opcode());
 
     if (r == orig && orig->opcode() == IrOpcode::kJSToBoolean) {
       // The original node was turned into a ToBoolean.
       CHECK_EQ(IrOpcode::kJSToBoolean, r->opcode());
-    } else {
+    } else if (r->opcode() != IrOpcode::kHeapConstant) {
       CHECK_EQ(IrOpcode::kBooleanNot, r->opcode());
     }
   }
@@ -1182,33 +1174,6 @@ TEST(Int32BinopEffects) {
     CHECK_EQ(B.p1, ii1->InputAt(0));
 
     B.CheckEffectOrdering(ii0, ii1);
-  }
-}
-
-
-TEST(UnaryNotEffects) {
-  JSTypedLoweringTester R;
-  const Operator* opnot = R.javascript.UnaryNot();
-
-  for (size_t i = 0; i < arraysize(kJSTypes); i++) {
-    Node* p0 = R.Parameter(kJSTypes[i], 0);
-    Node* orig = R.Unop(opnot, p0);
-    Node* effect_use = R.UseForEffect(orig);
-    Node* value_use = R.graph.NewNode(R.common.Return(), orig);
-    Node* r = R.reduce(orig);
-    // TODO(titzer): test will break if/when js-typed-lowering constant folds.
-    CHECK_EQ(IrOpcode::kBooleanNot, value_use->InputAt(0)->opcode());
-
-    if (r == orig && orig->opcode() == IrOpcode::kJSToBoolean) {
-      // The original node was turned into a ToBoolean, which has an effect.
-      CHECK_EQ(IrOpcode::kJSToBoolean, r->opcode());
-      R.CheckEffectInput(R.start(), orig);
-      R.CheckEffectInput(orig, effect_use);
-    } else {
-      // effect should have been removed from this node.
-      CHECK_EQ(IrOpcode::kBooleanNot, r->opcode());
-      R.CheckEffectInput(R.start(), effect_use);
-    }
   }
 }
 

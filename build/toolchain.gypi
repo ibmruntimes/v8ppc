@@ -955,6 +955,9 @@
             },
           }],
         ],
+        'defines': [
+          'ENABLE_SLOW_DCHECKS',
+        ],
       },  # DebugBase0
       # Abstract configuration for v8_optimized_debug == 1.
       'DebugBase1': {
@@ -979,6 +982,9 @@
             'LinkIncremental': '2',
           },
         },
+        'defines': [
+          'ENABLE_SLOW_DCHECKS',
+        ],
         'conditions': [
           ['OS=="linux" or OS=="freebsd" or OS=="openbsd" or OS=="netbsd" or \
             OS=="qnx" or OS=="aix"', {
@@ -1039,9 +1045,6 @@
               '-fdata-sections',
               '-ffunction-sections',
             ],
-            'defines': [
-              'OPTIMIZED_DEBUG'
-            ],
             'conditions': [
               # TODO(crbug.com/272548): Avoid -O3 in NaCl
               ['nacl_target_arch=="none"', {
@@ -1094,6 +1097,7 @@
                 # TODO(2304): pass DISABLE_DEBUG_ASSERT instead of hiding DEBUG.
                 'defines!': [
                   'DEBUG',
+                  'ENABLE_SLOW_DCHECKS',
                 ],
               }],
             ],

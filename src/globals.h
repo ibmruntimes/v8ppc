@@ -357,6 +357,7 @@ template <typename Config, class Allocator = FreeStoreAllocationPolicy>
 class String;
 class Name;
 class Struct;
+class Symbol;
 class Variable;
 class RelocInfo;
 class Deserializer;

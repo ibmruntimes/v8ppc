@@ -6179,6 +6179,10 @@ class HObjectAccess FINAL {
     return HObjectAccess(kMaps, JSObject::kMapOffset);
   }
 
+  static HObjectAccess ForPrototype() {
+    return HObjectAccess(kMaps, Map::kPrototypeOffset);
+  }
+
   static HObjectAccess ForMapAsInteger32() {
     return HObjectAccess(kMaps, JSObject::kMapOffset,
                          Representation::Integer32());
@@ -6353,6 +6357,13 @@ class HObjectAccess FINAL {
   template <typename CollectionType>
   static HObjectAccess ForOrderedHashTableNumberOfElements() {
     return HObjectAccess(kInobject, CollectionType::kNumberOfElementsOffset,
+                         Representation::Smi());
+  }
+
+  template <typename CollectionType>
+  static HObjectAccess ForOrderedHashTableNumberOfDeletedElements() {
+    return HObjectAccess(kInobject,
+                         CollectionType::kNumberOfDeletedElementsOffset,
                          Representation::Smi());
   }
 

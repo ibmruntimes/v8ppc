@@ -6,9 +6,7 @@
 
 // CAUTION: Some of the functions specified in this file are called
 // directly from compiled code. These are the functions with names in
-// ALL CAPS. The compiled code passes the first argument in 'this' and
-// it does not push the function onto the stack. This means that you
-// cannot use contexts in all these functions.
+// ALL CAPS. The compiled code passes the first argument in 'this'.
 
 
 /* -----------------------------------
@@ -599,6 +597,15 @@ function SameValue(x, y) {
     if (x === 0 && y === 0 && %_IsMinusZero(x) != %_IsMinusZero(y)) {
       return false;
     }
+  }
+  return x === y;
+}
+
+// ES6, section 7.2.4
+function SameValueZero(x, y) {
+  if (typeof x != typeof y) return false;
+  if (IS_NUMBER(x)) {
+    if (NUMBER_IS_NAN(x) && NUMBER_IS_NAN(y)) return true;
   }
   return x === y;
 }

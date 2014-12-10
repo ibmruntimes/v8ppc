@@ -162,11 +162,9 @@ Typer::Typer(Graph* graph, MaybeHandle<Context> context)
                               Type::Constant(minusinfinity, zone), zone),
                   nan_or_minuszero, zone);
 
-  negative_signed32 = Type::Union(
-      Type::SignedSmall(), Type::OtherSigned32(), zone);
-  non_negative_signed32 = Type::Union(
-      Type::UnsignedSmall(), Type::OtherUnsigned31(), zone);
+  boolean_or_number = Type::Union(Type::Boolean(), Type::Number(), zone);
   undefined_or_null = Type::Union(Type::Undefined(), Type::Null(), zone);
+  undefined_or_number = Type::Union(Type::Undefined(), Type::Number(), zone);
   singleton_false = Type::Constant(f->false_value(), zone);
   singleton_true = Type::Constant(f->true_value(), zone);
   singleton_zero = Type::Range(zero, zero, zone);
@@ -191,8 +189,7 @@ Typer::Typer(Graph* graph, MaybeHandle<Context> context)
   number_fun2_ = Type::Function(number, number, number, zone);
 
   weakint_fun1_ = Type::Function(weakint, number, zone);
-  random_fun_ = Type::Function(Type::Union(
-      Type::UnsignedSmall(), Type::OtherNumber(), zone), zone);
+  random_fun_ = Type::Function(Type::OrderedNumber(), zone);
 
   const int limits_count = 20;
 
@@ -520,10 +517,22 @@ Type* Typer::Visitor::ToBoolean(Type* type, Typer* t) {
 
 Type* Typer::Visitor::ToNumber(Type* type, Typer* t) {
   if (type->Is(Type::Number())) return type;
+  if (type->Is(Type::Null())) return t->singleton_zero;
   if (type->Is(Type::Undefined())) return Type::NaN();
+  if (type->Is(t->undefined_or_null)) {
+    return Type::Union(Type::NaN(), t->singleton_zero, t->zone());
+  }
+  if (type->Is(t->undefined_or_number)) {
+    return Type::Union(Type::Intersect(type, Type::Number(), t->zone()),
+                       Type::NaN(), t->zone());
+  }
   if (type->Is(t->singleton_false)) return t->singleton_zero;
   if (type->Is(t->singleton_true)) return t->singleton_one;
   if (type->Is(Type::Boolean())) return t->zero_or_one;
+  if (type->Is(t->boolean_or_number)) {
+    return Type::Union(Type::Intersect(type, Type::Number(), t->zone()),
+                       t->zero_or_one, t->zone());
+  }
   return Type::Number();
 }
 
@@ -856,11 +865,12 @@ Type* Typer::Visitor::JSBitwiseXorTyper(Type* lhs, Type* rhs, Typer* t) {
   double rmax = rhs->Max();
   if ((lmin >= 0 && rmin >= 0) || (lmax < 0 && rmax < 0)) {
     // Xor-ing negative or non-negative values results in a non-negative value.
-    return t->non_negative_signed32;
+    return Type::NonNegativeSigned32();
   }
   if ((lmax < 0 && rmin >= 0) || (lmin >= 0 && rmax < 0)) {
     // Xor-ing a negative and a non-negative value results in a negative value.
-    return t->negative_signed32;
+    // TODO(jarin) Use a range here.
+    return Type::NegativeSigned32();
   }
   return Type::Signed32();
 }
@@ -1172,7 +1182,7 @@ Bounds Typer::Visitor::TypeJSToBoolean(Node* node) {
 
 
 Bounds Typer::Visitor::TypeJSToNumber(Node* node) {
-  return Bounds(Type::None(zone()), Type::Number(zone()));
+  return TypeUnaryOp(node, ToNumber);
 }
 
 

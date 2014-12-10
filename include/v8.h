@@ -3876,6 +3876,31 @@ struct NamedPropertyHandlerConfiguration {
 };
 
 
+struct IndexedPropertyHandlerConfiguration {
+  IndexedPropertyHandlerConfiguration(
+      /** Note: getter is required **/
+      IndexedPropertyGetterCallback getter = 0,
+      IndexedPropertySetterCallback setter = 0,
+      IndexedPropertyQueryCallback query = 0,
+      IndexedPropertyDeleterCallback deleter = 0,
+      IndexedPropertyEnumeratorCallback enumerator = 0,
+      Handle<Value> data = Handle<Value>())
+      : getter(getter),
+        setter(setter),
+        query(query),
+        deleter(deleter),
+        enumerator(enumerator),
+        data(data) {}
+
+  IndexedPropertyGetterCallback getter;
+  IndexedPropertySetterCallback setter;
+  IndexedPropertyQueryCallback query;
+  IndexedPropertyDeleterCallback deleter;
+  IndexedPropertyEnumeratorCallback enumerator;
+  Handle<Value> data;
+};
+
+
 /**
  * An ObjectTemplate is used to create objects at runtime.
  *
@@ -3958,6 +3983,7 @@ class V8_EXPORT ObjectTemplate : public Template {
    * \param data A piece of data that will be passed to the callbacks
    *   whenever they are invoked.
    */
+  // TODO(dcarney): deprecate
   void SetNamedPropertyHandler(
       NamedPropertyGetterCallback getter,
       NamedPropertySetterCallback setter = 0,
@@ -3983,14 +4009,18 @@ class V8_EXPORT ObjectTemplate : public Template {
    * \param data A piece of data that will be passed to the callbacks
    *   whenever they are invoked.
    */
+  void SetHandler(const IndexedPropertyHandlerConfiguration& configuration);
+  // TODO(dcarney): deprecate
   void SetIndexedPropertyHandler(
       IndexedPropertyGetterCallback getter,
       IndexedPropertySetterCallback setter = 0,
       IndexedPropertyQueryCallback query = 0,
       IndexedPropertyDeleterCallback deleter = 0,
       IndexedPropertyEnumeratorCallback enumerator = 0,
-      Handle<Value> data = Handle<Value>());
-
+      Handle<Value> data = Handle<Value>()) {
+    SetHandler(IndexedPropertyHandlerConfiguration(getter, setter, query,
+                                                   deleter, enumerator, data));
+  }
   /**
    * Sets the callback to be used when calling instances created from
    * this template as a function.  If no callback is set, instances
@@ -5329,6 +5359,13 @@ class V8_EXPORT V8 {
    */
   static void SetNativesDataBlob(StartupData* startup_blob);
   static void SetSnapshotDataBlob(StartupData* startup_blob);
+
+  /**
+   * Create a new isolate and context for the purpose of capturing a snapshot
+   * Returns { NULL, 0 } on failure.
+   * The caller owns the data array in the return value.
+   */
+  static StartupData CreateSnapshotDataBlob();
 
   /**
    * Adds a message listener.
