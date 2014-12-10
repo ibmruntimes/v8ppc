@@ -1965,23 +1965,26 @@ void MacroAssembler::AddAndCheckForOverflow(Register dst, Register left,
   DCHECK(!overflow_dst.is(left));
   DCHECK(!overflow_dst.is(right));
 
+  bool left_is_right = left.is(right);
+  RCBit xorRC = left_is_right ? SetRC : LeaveRC;
+
   // C = A+B; C overflows if A/B have same sign and C has diff sign than A
   if (dst.is(left)) {
     mr(scratch, left);            // Preserve left.
     add(dst, left, right);        // Left is overwritten.
-    xor_(scratch, dst, scratch);  // Original left.
-    xor_(overflow_dst, dst, right);
+    xor_(overflow_dst, dst, scratch, xorRC);  // Original left.
+    if (!left_is_right) xor_(scratch, dst, right);
   } else if (dst.is(right)) {
     mr(scratch, right);           // Preserve right.
     add(dst, left, right);        // Right is overwritten.
-    xor_(scratch, dst, scratch);  // Original right.
-    xor_(overflow_dst, dst, left);
+    xor_(overflow_dst, dst, left, xorRC);
+    if (!left_is_right) xor_(scratch, dst, scratch);  // Original right.
   } else {
     add(dst, left, right);
-    xor_(overflow_dst, dst, left);
-    xor_(scratch, dst, right);
+    xor_(overflow_dst, dst, left, xorRC);
+    if (!left_is_right) xor_(scratch, dst, right);
   }
-  and_(overflow_dst, scratch, overflow_dst, SetRC);
+  if (!left_is_right) and_(overflow_dst, scratch, overflow_dst, SetRC);
 }
 
 
