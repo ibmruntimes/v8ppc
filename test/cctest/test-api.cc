@@ -10139,6 +10139,7 @@ TEST(AccessControlES5) {
   value = CompileRun("other.accessible_prop == 42");
   CHECK(value->IsTrue());
 }
+#endif
 
 
 static bool BlockEverythingNamed(Local<v8::Object> object, Local<Value> name,
@@ -10153,6 +10154,7 @@ static bool BlockEverythingIndexed(Local<v8::Object> object, uint32_t key,
 }
 
 
+#if !defined(TEST_API_IN_PARTS) || defined(TEST_API_PART1)
 THREADED_TEST(AccessControlGetOwnPropertyNames) {
   v8::Isolate* isolate = CcTest::isolate();
   v8::HandleScope handle_scope(isolate);

@@ -298,6 +298,10 @@ void InstructionSelector::VisitCheckedLoad(Node* node) {
       return;
   }
   InstructionOperand* offset_operand = g.UseRegister(offset);
+#if V8_TARGET_ARCH_PPC64
+  // TODO(mbrandy): fix paths that produce garbage in upper 32-bits.
+  Emit(kPPC_ExtendSignWord32, offset_operand, offset_operand);
+#endif
   Emit(opcode | AddressingModeField::encode(kMode_MRR),
        g.DefineAsRegister(node), offset_operand, g.UseRegister(length),
        g.UseRegister(buffer), offset_operand);
@@ -333,6 +337,10 @@ void InstructionSelector::VisitCheckedStore(Node* node) {
       return;
   }
   InstructionOperand* offset_operand = g.UseRegister(offset);
+#if V8_TARGET_ARCH_PPC64
+  // TODO(mbrandy): fix paths that produce garbage in upper 32-bits.
+  Emit(kPPC_ExtendSignWord32, offset_operand, offset_operand);
+#endif
   Emit(opcode | AddressingModeField::encode(kMode_MRR), nullptr, offset_operand,
        g.UseRegister(length), g.UseRegister(value), g.UseRegister(buffer),
        offset_operand);

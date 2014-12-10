@@ -228,9 +228,9 @@ class OutOfLineLoadInteger FINAL : public OutOfLineCode {
     auto result = i.OutputDoubleRegister();                          \
     auto offset = i.InputRegister(0);                                \
     if (HasRegisterInput(instr, 1)) {                                \
-      __ cmpl(offset, i.InputRegister(1));                           \
+      __ cmplw(offset, i.InputRegister(1));                          \
     } else {                                                         \
-      __ cmpli(offset, i.InputImmediate(1));                         \
+      __ cmplwi(offset, i.InputImmediate(1));                        \
     }                                                                \
     AddressingMode mode = kMode_None;                                \
     MemOperand operand = i.MemoryOperand(&mode, 2);                  \
@@ -252,9 +252,9 @@ class OutOfLineLoadInteger FINAL : public OutOfLineCode {
     auto result = i.OutputRegister();                           \
     auto offset = i.InputRegister(0);                           \
     if (HasRegisterInput(instr, 1)) {                           \
-      __ cmpl(offset, i.InputRegister(1));                      \
+      __ cmplw(offset, i.InputRegister(1));                     \
     } else {                                                    \
-      __ cmpli(offset, i.InputImmediate(1));                    \
+      __ cmplwi(offset, i.InputImmediate(1));                   \
     }                                                           \
     AddressingMode mode = kMode_None;                           \
     MemOperand operand = i.MemoryOperand(&mode, 2);             \
@@ -276,9 +276,9 @@ class OutOfLineLoadInteger FINAL : public OutOfLineCode {
     Label done;                                                         \
     auto offset = i.InputRegister(0);                                   \
     if (HasRegisterInput(instr, 1)) {                                   \
-      __ cmpl(offset, i.InputRegister(1));                              \
+      __ cmplw(offset, i.InputRegister(1));                             \
     } else {                                                            \
-      __ cmpli(offset, i.InputImmediate(1));                            \
+      __ cmplwi(offset, i.InputImmediate(1));                           \
     }                                                                   \
     __ bge(&done);                                                      \
     auto value = i.InputDoubleRegister(2);                              \
@@ -300,9 +300,9 @@ class OutOfLineLoadInteger FINAL : public OutOfLineCode {
     Label done;                                                    \
     auto offset = i.InputRegister(0);                              \
     if (HasRegisterInput(instr, 1)) {                              \
-      __ cmpl(offset, i.InputRegister(1));                         \
+      __ cmplw(offset, i.InputRegister(1));                        \
     } else {                                                       \
-      __ cmpli(offset, i.InputImmediate(1));                       \
+      __ cmplwi(offset, i.InputImmediate(1));                      \
     }                                                              \
     __ bge(&done);                                                 \
     auto value = i.InputRegister(2);                               \
@@ -372,6 +372,7 @@ void CodeGenerator::AssembleArchInstruction(Instruction* instr) {
       DCHECK_EQ(LeaveRC, i.OutputRCBit());
       break;
     case kArchTruncateDoubleToI:
+      // TODO(mbrandy): move slow call to stub out of line.
       __ TruncateDoubleToI(i.OutputRegister(), i.InputDoubleRegister(0));
       DCHECK_EQ(LeaveRC, i.OutputRCBit());
       break;
