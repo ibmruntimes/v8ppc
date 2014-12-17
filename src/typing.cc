@@ -394,7 +394,8 @@ void AstTyper::VisitLiteral(Literal* expr) {
 
 
 void AstTyper::VisitRegExpLiteral(RegExpLiteral* expr) {
-  NarrowType(expr, Bounds(Type::RegExp(zone())));
+  // TODO(rossberg): Reintroduce RegExp type.
+  NarrowType(expr, Bounds(Type::Object(zone())));
 }
 
 
@@ -506,14 +507,17 @@ void AstTyper::VisitProperty(Property* expr) {
       }
     } else {
       bool is_string;
+      IcCheckType key_type;
       if (FLAG_vector_ics) {
         oracle()->KeyedPropertyReceiverTypes(slot, expr->GetReceiverTypes(),
                                              &is_string);
+        key_type = ELEMENT;
       } else {
         oracle()->KeyedPropertyReceiverTypes(id, expr->GetReceiverTypes(),
-                                             &is_string);
+                                             &is_string, &key_type);
       }
       expr->set_is_string_access(is_string);
+      expr->set_key_type(key_type);
     }
   }
 

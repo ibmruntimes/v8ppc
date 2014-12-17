@@ -1412,6 +1412,11 @@ void JSEntryStub::Generate(MacroAssembler* masm) {
 void FunctionPrototypeStub::Generate(MacroAssembler* masm) {
   Label miss;
   Register receiver = LoadDescriptor::ReceiverRegister();
+  // Ensure that the vector and slot registers won't be clobbered before
+  // calling the miss handler.
+  DCHECK(!FLAG_vector_ics ||
+         !AreAliased(x10, x11, VectorLoadICDescriptor::VectorRegister(),
+                     VectorLoadICDescriptor::SlotRegister()));
 
   NamedLoadHandlerCompiler::GenerateLoadFunctionPrototype(masm, receiver, x10,
                                                           x11, &miss);
@@ -1429,9 +1434,15 @@ void LoadIndexedStringStub::Generate(MacroAssembler* masm) {
   Register receiver = LoadDescriptor::ReceiverRegister();
   Register index = LoadDescriptor::NameRegister();
   Register result = x0;
-  Register scratch = x3;
+  Register scratch = x10;
   DCHECK(!scratch.is(receiver) && !scratch.is(index));
+  DCHECK(!FLAG_vector_ics ||
+         (!scratch.is(VectorLoadICDescriptor::VectorRegister()) &&
+          result.is(VectorLoadICDescriptor::SlotRegister())));
 
+  // StringCharAtGenerator doesn't use the result register until it's passed
+  // the different miss possibilities. If it did, we would have a conflict
+  // when FLAG_vector_ics is true.
   StringCharAtGenerator char_at_generator(receiver, index, scratch, result,
                                           &miss,  // When not a string.
                                           &miss,  // When not a number.
@@ -3876,16 +3887,43 @@ void SubStringStub::Generate(MacroAssembler* masm) {
 
 void ToNumberStub::Generate(MacroAssembler* masm) {
   // The ToNumber stub takes one argument in x0.
-  Label check_heap_number, call_builtin;
-  __ JumpIfNotSmi(x0, &check_heap_number);
+  Label not_smi;
+  __ JumpIfNotSmi(x0, &not_smi);
   __ Ret();
+  __ Bind(&not_smi);
 
-  __ bind(&check_heap_number);
-  __ JumpIfNotHeapNumber(x0, &call_builtin);
+  Label not_heap_number;
+  __ Ldr(x1, FieldMemOperand(x0, HeapObject::kMapOffset));
+  __ Ldrb(x1, FieldMemOperand(x1, Map::kInstanceTypeOffset));
+  // x0: object
+  // x1: instance type
+  __ Cmp(x1, HEAP_NUMBER_TYPE);
+  __ B(ne, &not_heap_number);
   __ Ret();
+  __ Bind(&not_heap_number);
 
-  __ bind(&call_builtin);
-  __ push(x0);
+  Label not_string, slow_string;
+  __ Cmp(x1, FIRST_NONSTRING_TYPE);
+  __ B(hs, &not_string);
+  // Check if string has a cached array index.
+  __ Ldr(x2, FieldMemOperand(x0, String::kHashFieldOffset));
+  __ Tst(x2, Operand(String::kContainsCachedArrayIndexMask));
+  __ B(ne, &slow_string);
+  __ IndexFromHash(x2, x0);
+  __ Ret();
+  __ Bind(&slow_string);
+  __ Push(x0);  // Push argument.
+  __ TailCallRuntime(Runtime::kStringToNumber, 1, 1);
+  __ Bind(&not_string);
+
+  Label not_oddball;
+  __ Cmp(x1, ODDBALL_TYPE);
+  __ B(ne, &not_oddball);
+  __ Ldr(x0, FieldMemOperand(x0, Oddball::kToNumberOffset));
+  __ Ret();
+  __ Bind(&not_oddball);
+
+  __ Push(x0);  // Push argument.
   __ InvokeBuiltin(Builtins::TO_NUMBER, JUMP_FUNCTION);
 }
 

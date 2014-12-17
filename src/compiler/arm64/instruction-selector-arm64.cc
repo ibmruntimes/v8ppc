@@ -219,9 +219,8 @@ static void VisitBinop(InstructionSelector* selector, Node* node,
   DCHECK_GE(arraysize(inputs), input_count);
   DCHECK_GE(arraysize(outputs), output_count);
 
-  Instruction* instr = selector->Emit(cont->Encode(opcode), output_count,
-                                      outputs, input_count, inputs);
-  if (cont->IsBranch()) instr->MarkAsControl();
+  selector->Emit(cont->Encode(opcode), output_count, outputs, input_count,
+                 inputs);
 }
 
 
@@ -1085,7 +1084,7 @@ void InstructionSelector::VisitFloat64RoundTiesAway(Node* node) {
 
 void InstructionSelector::VisitCall(Node* node) {
   Arm64OperandGenerator g(this);
-  CallDescriptor* descriptor = OpParameter<CallDescriptor*>(node);
+  const CallDescriptor* descriptor = OpParameter<const CallDescriptor*>(node);
 
   FrameStateDescriptor* frame_state_descriptor = NULL;
   if (descriptor->NeedsFrameState()) {
@@ -1163,7 +1162,7 @@ static void VisitCompare(InstructionSelector* selector, InstructionCode opcode,
   opcode = cont->Encode(opcode);
   if (cont->IsBranch()) {
     selector->Emit(opcode, NULL, left, right, g.Label(cont->true_block()),
-                   g.Label(cont->false_block()))->MarkAsControl();
+                   g.Label(cont->false_block()));
   } else {
     DCHECK(cont->IsSet());
     selector->Emit(opcode, g.DefineAsRegister(cont->result()), left, right);
@@ -1347,13 +1346,11 @@ void InstructionSelector::VisitBranch(Node* branch, BasicBlock* tbranch,
           // If the mask has only one bit set, we can use tbz/tbnz.
           DCHECK((cont.condition() == kEqual) ||
                  (cont.condition() == kNotEqual));
-          ArchOpcode opcode =
-              (cont.condition() == kEqual) ? kArm64Tbz32 : kArm64Tbnz32;
-          Emit(opcode, NULL, g.UseRegister(m.left().node()),
+          Emit(cont.Encode(kArm64TestAndBranch32), NULL,
+               g.UseRegister(m.left().node()),
                g.TempImmediate(
                    base::bits::CountTrailingZeros32(m.right().Value())),
-               g.Label(cont.true_block()),
-               g.Label(cont.false_block()))->MarkAsControl();
+               g.Label(cont.true_block()), g.Label(cont.false_block()));
           return;
         }
         return VisitWordCompare(this, value, kArm64Tst32, &cont, true,
@@ -1366,13 +1363,11 @@ void InstructionSelector::VisitBranch(Node* branch, BasicBlock* tbranch,
           // If the mask has only one bit set, we can use tbz/tbnz.
           DCHECK((cont.condition() == kEqual) ||
                  (cont.condition() == kNotEqual));
-          ArchOpcode opcode =
-              (cont.condition() == kEqual) ? kArm64Tbz : kArm64Tbnz;
-          Emit(opcode, NULL, g.UseRegister(m.left().node()),
+          Emit(cont.Encode(kArm64TestAndBranch), NULL,
+               g.UseRegister(m.left().node()),
                g.TempImmediate(
                    base::bits::CountTrailingZeros64(m.right().Value())),
-               g.Label(cont.true_block()),
-               g.Label(cont.false_block()))->MarkAsControl();
+               g.Label(cont.true_block()), g.Label(cont.false_block()));
           return;
         }
         return VisitWordCompare(this, value, kArm64Tst, &cont, true,
@@ -1384,10 +1379,8 @@ void InstructionSelector::VisitBranch(Node* branch, BasicBlock* tbranch,
   }
 
   // Branch could not be combined with a compare, compare against 0 and branch.
-  DCHECK((cont.condition() == kEqual) || (cont.condition() == kNotEqual));
-  ArchOpcode opcode = (cont.condition() == kEqual) ? kArm64Cbz32 : kArm64Cbnz32;
-  Emit(opcode, NULL, g.UseRegister(value), g.Label(cont.true_block()),
-       g.Label(cont.false_block()))->MarkAsControl();
+  Emit(cont.Encode(kArm64CompareAndBranch32), NULL, g.UseRegister(value),
+       g.Label(cont.true_block()), g.Label(cont.false_block()));
 }
 
 

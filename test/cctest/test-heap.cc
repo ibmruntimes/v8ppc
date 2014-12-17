@@ -1694,6 +1694,64 @@ TEST(TestInternalWeakListsTraverseWithGC) {
 }
 
 
+TEST(TestSizeOfRegExpCode) {
+  if (!FLAG_regexp_optimization) return;
+
+  v8::V8::Initialize();
+
+  Isolate* isolate = CcTest::i_isolate();
+  HandleScope scope(isolate);
+
+  LocalContext context;
+
+  // Adjust source below and this check to match
+  // RegExpImple::kRegExpTooLargeToOptimize.
+  DCHECK_EQ(i::RegExpImpl::kRegExpTooLargeToOptimize, 10 * KB);
+
+  // Compile a regexp that is much larger if we are using regexp optimizations.
+  CompileRun(
+      "var reg_exp_source = '(?:a|bc|def|ghij|klmno|pqrstu)';"
+      "var half_size_reg_exp;"
+      "while (reg_exp_source.length < 10 * 1024) {"
+      "  half_size_reg_exp = reg_exp_source;"
+      "  reg_exp_source = reg_exp_source + reg_exp_source;"
+      "}"
+      // Flatten string.
+      "reg_exp_source.match(/f/);");
+
+  // Get initial heap size after several full GCs, which will stabilize
+  // the heap size and return with sweeping finished completely.
+  CcTest::heap()->CollectAllGarbage(Heap::kNoGCFlags);
+  CcTest::heap()->CollectAllGarbage(Heap::kNoGCFlags);
+  CcTest::heap()->CollectAllGarbage(Heap::kNoGCFlags);
+  CcTest::heap()->CollectAllGarbage(Heap::kNoGCFlags);
+  CcTest::heap()->CollectAllGarbage(Heap::kNoGCFlags);
+  MarkCompactCollector* collector = CcTest::heap()->mark_compact_collector();
+  if (collector->sweeping_in_progress()) {
+    collector->EnsureSweepingCompleted();
+  }
+  int initial_size = static_cast<int>(CcTest::heap()->SizeOfObjects());
+
+  CompileRun("'foo'.match(reg_exp_source);");
+  CcTest::heap()->CollectAllGarbage(Heap::kNoGCFlags);
+  int size_with_regexp = static_cast<int>(CcTest::heap()->SizeOfObjects());
+
+  CompileRun("'foo'.match(half_size_reg_exp);");
+  CcTest::heap()->CollectAllGarbage(Heap::kNoGCFlags);
+  int size_with_optimized_regexp =
+      static_cast<int>(CcTest::heap()->SizeOfObjects());
+
+  int size_of_regexp_code = size_with_regexp - initial_size;
+
+  CHECK_LE(size_of_regexp_code, 1 * MB);
+
+  // Small regexp is half the size, but compiles to more than twice the code
+  // due to the optimization steps.
+  CHECK_GE(size_with_optimized_regexp,
+           size_with_regexp + size_of_regexp_code * 2);
+}
+
+
 TEST(TestSizeOfObjects) {
   v8::V8::Initialize();
 
@@ -3346,6 +3404,8 @@ static void CheckVectorICCleared(Handle<JSFunction> f, int ic_slot_index) {
 
 TEST(IncrementalMarkingPreservesMonomorphicIC) {
   if (i::FLAG_always_opt) return;
+  // TODO(mvstanton): vector-ics need to treat maps weakly.
+  if (i::FLAG_vector_ics) return;
   CcTest::InitializeVM();
   v8::HandleScope scope(CcTest::isolate());
 
@@ -3450,14 +3510,24 @@ TEST(IncrementalMarkingPreservesPolymorphicIC) {
       *v8::Handle<v8::Function>::Cast(CcTest::global()->Get(v8_str("f"))));
 
   Code* ic_before = FindFirstIC(f->shared()->code(), Code::LOAD_IC);
-  CHECK(ic_before->ic_state() == POLYMORPHIC);
+  if (FLAG_vector_ics) {
+    CheckVectorIC(f, 0, POLYMORPHIC);
+    CHECK(ic_before->ic_state() == DEFAULT);
+  } else {
+    CHECK(ic_before->ic_state() == POLYMORPHIC);
+  }
 
   // Fire context dispose notification.
   SimulateIncrementalMarking(CcTest::heap());
   CcTest::heap()->CollectAllGarbage(Heap::kNoGCFlags);
 
   Code* ic_after = FindFirstIC(f->shared()->code(), Code::LOAD_IC);
-  CHECK(ic_after->ic_state() == POLYMORPHIC);
+  if (FLAG_vector_ics) {
+    CheckVectorIC(f, 0, POLYMORPHIC);
+    CHECK(ic_after->ic_state() == DEFAULT);
+  } else {
+    CHECK(ic_after->ic_state() == POLYMORPHIC);
+  }
 }
 
 
@@ -3733,6 +3803,8 @@ TEST(Regress169209) {
   i::FLAG_stress_compaction = false;
   i::FLAG_allow_natives_syntax = true;
   i::FLAG_flush_code_incrementally = true;
+  // TODO(mvstanton): vector ics need weak support.
+  if (i::FLAG_vector_ics) return;
 
   CcTest::InitializeVM();
   Isolate* isolate = CcTest::i_isolate();
@@ -4086,6 +4158,8 @@ static int AllocationSitesCount(Heap* heap) {
 
 
 TEST(EnsureAllocationSiteDependentCodesProcessed) {
+  // TODO(mvstanton): vector ics need weak support!
+  if (FLAG_vector_ics) return;
   if (i::FLAG_always_opt || !i::FLAG_crankshaft) return;
   i::FLAG_allow_natives_syntax = true;
   CcTest::InitializeVM();
@@ -4148,6 +4222,8 @@ TEST(EnsureAllocationSiteDependentCodesProcessed) {
 
 TEST(CellsInOptimizedCodeAreWeak) {
   if (i::FLAG_always_opt || !i::FLAG_crankshaft) return;
+  // TODO(mvstanton): vector-ics need to treat maps weakly.
+  if (i::FLAG_vector_ics) return;
   i::FLAG_weak_embedded_objects_in_optimized_code = true;
   i::FLAG_allow_natives_syntax = true;
   CcTest::InitializeVM();
@@ -4190,6 +4266,8 @@ TEST(CellsInOptimizedCodeAreWeak) {
 
 
 TEST(ObjectsInOptimizedCodeAreWeak) {
+  // TODO(mvstanton): vector ics need weak support!
+  if (FLAG_vector_ics) return;
   if (i::FLAG_always_opt || !i::FLAG_crankshaft) return;
   i::FLAG_weak_embedded_objects_in_optimized_code = true;
   i::FLAG_allow_natives_syntax = true;
@@ -4233,6 +4311,8 @@ TEST(ObjectsInOptimizedCodeAreWeak) {
 TEST(NoWeakHashTableLeakWithIncrementalMarking) {
   if (i::FLAG_always_opt || !i::FLAG_crankshaft) return;
   if (!i::FLAG_incremental_marking) return;
+  // TODO(mvstanton): vector ics need weak support.
+  if (FLAG_vector_ics) return;
   i::FLAG_weak_embedded_objects_in_optimized_code = true;
   i::FLAG_allow_natives_syntax = true;
   i::FLAG_compilation_cache = false;
@@ -4256,8 +4336,9 @@ TEST(NoWeakHashTableLeakWithIncrementalMarking) {
                "bar%d();"
                "bar%d();"
                "bar%d();"
-               "%%OptimizeFunctionOnNextCall(bar%d);"
-               "bar%d();", i, i, i, i, i, i, i, i);
+               "%%OptimizeFwunctionOnNextCall(bar%d);"
+               "bar%d();",
+               i, i, i, i, i, i, i, i);
       CompileRun(source.start());
     }
     heap->CollectAllGarbage(i::Heap::kNoGCFlags);
@@ -4419,6 +4500,8 @@ TEST(WeakMapInMonomorphicLoadIC) {
 
 
 TEST(WeakMapInPolymorphicLoadIC) {
+  // TODO(mvstanton): vector-ics need to treat maps weakly.
+  if (i::FLAG_vector_ics) return;
   CheckWeakness(
       "function loadIC(obj) {"
       "  return obj.name;"

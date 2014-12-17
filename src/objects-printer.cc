@@ -241,11 +241,16 @@ void JSObject::PrintProperties(std::ostream& os) {  // NOLINT
           os << " (field at offset " << index.property_index() << ")\n";
           break;
         }
+        case ACCESSOR_FIELD: {
+          FieldIndex index = FieldIndex::ForDescriptor(map(), i);
+          os << " (accessor at offset " << index.property_index() << ")\n";
+          break;
+        }
         case CONSTANT:
           os << Brief(descs->GetConstant(i)) << " (constant)\n";
           break;
         case CALLBACKS:
-          os << Brief(descs->GetCallbacksObject(i)) << " (callback)\n";
+          os << Brief(descs->GetCallbacksObject(i)) << " (callbacks)\n";
           break;
       }
     }
@@ -408,6 +413,7 @@ void Map::MapPrint(std::ostream& os) {  // NOLINT
   os << "\n - pre-allocated property fields: "
      << pre_allocated_property_fields() << "\n";
   os << " - unused property fields: " << unused_property_fields() << "\n";
+  if (is_deprecated()) os << " - deprecated_map\n";
   if (is_dictionary_map()) os << " - dictionary_map\n";
   if (is_prototype_map()) os << " - prototype_map\n";
   if (is_hidden_prototype()) os << " - hidden_prototype\n";
@@ -416,11 +422,7 @@ void Map::MapPrint(std::ostream& os) {  // NOLINT
   if (is_undetectable()) os << " - undetectable\n";
   if (has_instance_call_handler()) os << " - instance_call_handler\n";
   if (is_access_check_needed()) os << " - access_check_needed\n";
-  if (is_frozen()) {
-    os << " - frozen\n";
-  } else if (!is_extensible()) {
-    os << " - sealed\n";
-  }
+  if (!is_extensible()) os << " - non-extensible\n";
   os << " - back pointer: " << Brief(GetBackPointer());
   os << "\n - instance descriptors " << (owns_descriptors() ? "(own) " : "")
      << "#" << NumberOfOwnDescriptors() << ": "
@@ -1187,7 +1189,11 @@ void TransitionArray::PrintTransitions(std::ostream& os,
     key->ShortPrint(os);
 #endif
     os << ": ";
-    if (key == GetHeap()->frozen_symbol()) {
+    if (key == GetHeap()->nonextensible_symbol()) {
+      os << " (transition to non-extensible)";
+    } else if (key == GetHeap()->sealed_symbol()) {
+      os << " (transition to sealed)";
+    } else if (key == GetHeap()->frozen_symbol()) {
       os << " (transition to frozen)";
     } else if (key == GetHeap()->elements_transition_symbol()) {
       os << " (transition to " << ElementsKindToString(target->elements_kind())
@@ -1196,19 +1202,15 @@ void TransitionArray::PrintTransitions(std::ostream& os,
       os << " (transition to Object.observe)";
     } else {
       PropertyDetails details = GetTargetDetails(key, target);
-      switch (details.type()) {
-        case FIELD: {
-          os << " (transition to field)";
-          break;
-        }
-        case CONSTANT:
-          os << " (transition to constant " << Brief(GetTargetValue(i)) << ")";
-          break;
-        case CALLBACKS:
-          os << " (transition to callback " << Brief(GetTargetValue(i)) << ")";
-          break;
+      os << " (transition to ";
+      if (details.location() == IN_DESCRIPTOR) {
+        os << "immutable ";
       }
-      os << ", attrs: " << details.attributes();
+      os << (details.kind() == DATA ? "data" : "accessor");
+      if (details.location() == IN_DESCRIPTOR) {
+        os << " " << Brief(GetTargetValue(i));
+      }
+      os << "), attrs: " << details.attributes();
     }
     os << " -> " << Brief(target) << "\n";
   }

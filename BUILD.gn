@@ -243,7 +243,8 @@ action("js2c_experimental") {
     "src/harmony-typedarray.js",
     "src/harmony-classes.js",
     "src/harmony-tostring.js",
-    "src/harmony-templates.js"
+    "src/harmony-templates.js",
+    "src/harmony-regexp.js"
   ]
 
   outputs = [
@@ -279,7 +280,7 @@ if (v8_use_external_startup_data) {
     ]
 
     outputs = [
-      "$root_gen_dir/natives_blob.bin"
+      "$root_out_dir/natives_blob.bin"
     ]
 
     script = "tools/concatenate-files.py"
@@ -332,10 +333,10 @@ action("run_mksnapshot") {
   }
 
   if (v8_use_external_startup_data) {
-    outputs += [ "$root_gen_dir/snapshot_blob.bin" ]
+    outputs += [ "$root_out_dir/snapshot_blob.bin" ]
     args += [
       "--startup_blob",
-      rebase_path("$root_gen_dir/snapshot_blob.bin", root_build_dir)
+      rebase_path("$root_out_dir/snapshot_blob.bin", root_build_dir)
     ]
   }
 }
@@ -541,6 +542,8 @@ source_set("v8_base") {
     "src/compiler/linkage.h",
     "src/compiler/load-elimination.cc",
     "src/compiler/load-elimination.h",
+    "src/compiler/loop-analysis.cc",
+    "src/compiler/loop-analysis.h",
     "src/compiler/machine-operator-reducer.cc",
     "src/compiler/machine-operator-reducer.h",
     "src/compiler/machine-operator.cc",
@@ -1261,6 +1264,7 @@ source_set("v8_libbase") {
     "src/base/flags.h",
     "src/base/functional.cc",
     "src/base/functional.h",
+    "src/base/iterator.h",
     "src/base/lazy-instance.h",
     "src/base/logging.cc",
     "src/base/logging.h",

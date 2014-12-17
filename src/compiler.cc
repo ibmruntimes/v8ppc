@@ -310,29 +310,29 @@ class HOptimizedGraphBuilderWithPositions: public HOptimizedGraphBuilder {
       : HOptimizedGraphBuilder(info) {
   }
 
-#define DEF_VISIT(type)                                 \
-  virtual void Visit##type(type* node) OVERRIDE {    \
-    if (node->position() != RelocInfo::kNoPosition) {   \
-      SetSourcePosition(node->position());              \
-    }                                                   \
-    HOptimizedGraphBuilder::Visit##type(node);          \
+#define DEF_VISIT(type)                               \
+  void Visit##type(type* node) OVERRIDE {             \
+    if (node->position() != RelocInfo::kNoPosition) { \
+      SetSourcePosition(node->position());            \
+    }                                                 \
+    HOptimizedGraphBuilder::Visit##type(node);        \
   }
   EXPRESSION_NODE_LIST(DEF_VISIT)
 #undef DEF_VISIT
 
-#define DEF_VISIT(type)                                          \
-  virtual void Visit##type(type* node) OVERRIDE {             \
-    if (node->position() != RelocInfo::kNoPosition) {            \
-      SetSourcePosition(node->position());                       \
-    }                                                            \
-    HOptimizedGraphBuilder::Visit##type(node);                   \
+#define DEF_VISIT(type)                               \
+  void Visit##type(type* node) OVERRIDE {             \
+    if (node->position() != RelocInfo::kNoPosition) { \
+      SetSourcePosition(node->position());            \
+    }                                                 \
+    HOptimizedGraphBuilder::Visit##type(node);        \
   }
   STATEMENT_NODE_LIST(DEF_VISIT)
 #undef DEF_VISIT
 
-#define DEF_VISIT(type)                                            \
-  virtual void Visit##type(type* node) OVERRIDE {               \
-    HOptimizedGraphBuilder::Visit##type(node);                     \
+#define DEF_VISIT(type)                        \
+  void Visit##type(type* node) OVERRIDE {      \
+    HOptimizedGraphBuilder::Visit##type(node); \
   }
   MODULE_NODE_LIST(DEF_VISIT)
   DECLARATION_NODE_LIST(DEF_VISIT)
@@ -1257,19 +1257,20 @@ Handle<SharedFunctionInfo> Compiler::CompileScript(
     int column_offset, bool is_shared_cross_origin, Handle<Context> context,
     v8::Extension* extension, ScriptData** cached_data,
     ScriptCompiler::CompileOptions compile_options, NativesFlag natives) {
+  Isolate* isolate = source->GetIsolate();
   if (compile_options == ScriptCompiler::kNoCompileOptions) {
     cached_data = NULL;
   } else if (compile_options == ScriptCompiler::kProduceParserCache ||
              compile_options == ScriptCompiler::kProduceCodeCache) {
     DCHECK(cached_data && !*cached_data);
     DCHECK(extension == NULL);
+    DCHECK(!isolate->debug()->is_loaded());
   } else {
     DCHECK(compile_options == ScriptCompiler::kConsumeParserCache ||
            compile_options == ScriptCompiler::kConsumeCodeCache);
     DCHECK(cached_data && *cached_data);
     DCHECK(extension == NULL);
   }
-  Isolate* isolate = source->GetIsolate();
   int source_length = source->length();
   isolate->counters()->total_load_size()->Increment(source_length);
   isolate->counters()->total_compile_size()->Increment(source_length);

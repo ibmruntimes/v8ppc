@@ -4,6 +4,8 @@
 
 #include "src/compiler/simplified-lowering.h"
 
+#include <limits>
+
 #include "src/base/bits.h"
 #include "src/code-factory.h"
 #include "src/compiler/common-operator.h"
@@ -68,7 +70,6 @@ class RepresentationSelector {
         info_(zone->NewArray<NodeInfo>(count_)),
         nodes_(zone),
         replacements_(zone),
-        contains_js_nodes_(false),
         phase_(PROPAGATE),
         changer_(changer),
         queue_(zone) {
@@ -513,7 +514,6 @@ class RepresentationSelector {
 #define DEFINE_JS_CASE(x) case IrOpcode::k##x:
         JS_OP_LIST(DEFINE_JS_CASE)
 #undef DEFINE_JS_CASE
-        contains_js_nodes_ = true;
         VisitInputs(node);
         return SetOutput(node, kRepTagged);
 
@@ -764,8 +764,20 @@ class RepresentationSelector {
         ProcessRemainingInputs(node, 3);
         // Tagged overrides everything if we have to do a typed array bounds
         // check, because we may need to return undefined then.
-        MachineType output_type =
-            (use & kRepTagged) ? kMachAnyTagged : access.machine_type();
+        MachineType output_type;
+        if (use & kRepTagged) {
+          output_type = kMachAnyTagged;
+        } else if (use & kRepFloat64) {
+          if (access.machine_type() & kRepFloat32) {
+            output_type = access.machine_type();
+          } else {
+            output_type = kMachFloat64;
+          }
+        } else if (use & kRepFloat32) {
+          output_type = kMachFloat32;
+        } else {
+          output_type = access.machine_type();
+        }
         SetOutput(node, output_type);
         if (lower()) lowering->DoLoadBuffer(node, output_type, changer_);
         break;
@@ -1018,7 +1030,6 @@ class RepresentationSelector {
   NodeInfo* info_;                  // node id -> usage information
   NodeVector nodes_;                // collected nodes
   NodeVector replacements_;         // replacements to be done after lowering
-  bool contains_js_nodes_;          // {true} if a JS operator was seen
   Phase phase_;                     // current phase of algorithm
   RepresentationChanger* changer_;  // for inserting representation changes
   ZoneQueue<Node*> queue_;          // queue for traversing the graph
@@ -1130,7 +1141,7 @@ void SimplifiedLowering::DoLoadBuffer(Node* node, MachineType output_type,
   DCHECK_EQ(IrOpcode::kLoadBuffer, node->opcode());
   DCHECK_NE(kMachNone, RepresentationOf(output_type));
   MachineType const type = BufferAccessOf(node->op()).machine_type();
-  if (output_type & kRepTagged) {
+  if (output_type != type) {
     Node* const buffer = node->InputAt(0);
     Node* const offset = node->InputAt(1);
     Node* const length = node->InputAt(2);
@@ -1144,11 +1155,22 @@ void SimplifiedLowering::DoLoadBuffer(Node* node, MachineType output_type,
     Node* if_true = graph()->NewNode(common()->IfTrue(), branch);
     Node* etrue = graph()->NewNode(machine()->Load(type), buffer, offset,
                                    effect, if_true);
-    Node* vtrue = changer->GetTaggedRepresentationFor(etrue, type);
+    Node* vtrue = changer->GetRepresentationFor(etrue, type, output_type);
 
     Node* if_false = graph()->NewNode(common()->IfFalse(), branch);
-    Node* vfalse = jsgraph()->UndefinedConstant();
     Node* efalse = effect;
+    Node* vfalse;
+    if (output_type & kRepTagged) {
+      vfalse = jsgraph()->UndefinedConstant();
+    } else if (output_type & kRepFloat64) {
+      vfalse =
+          jsgraph()->Float64Constant(std::numeric_limits<double>::quiet_NaN());
+    } else if (output_type & kRepFloat32) {
+      vfalse =
+          jsgraph()->Float32Constant(std::numeric_limits<float>::quiet_NaN());
+    } else {
+      vfalse = jsgraph()->Int32Constant(0);
+    }
 
     Node* merge = graph()->NewNode(common()->Merge(2), if_true, if_false);
     Node* ephi = graph()->NewNode(common()->EffectPhi(2), etrue, efalse, merge);
@@ -1157,7 +1179,7 @@ void SimplifiedLowering::DoLoadBuffer(Node* node, MachineType output_type,
     NodeProperties::ReplaceWithValue(node, node, ephi);
 
     // Turn the {node} into a Phi.
-    node->set_op(common()->Phi(kMachAnyTagged, 2));
+    node->set_op(common()->Phi(output_type, 2));
     node->ReplaceInput(0, vtrue);
     node->ReplaceInput(1, vfalse);
     node->ReplaceInput(2, merge);

@@ -184,30 +184,46 @@ InstructionSequenceTest::VReg InstructionSequenceTest::DefineConstant(
 int InstructionSequenceTest::EmitNop() { return Emit(NewIndex(), kArchNop); }
 
 
-int InstructionSequenceTest::EmitI(TestOperand input_op_0) {
-  InstructionOperand* inputs[1]{ConvertInputOp(input_op_0)};
-  return Emit(NewIndex(), kArchNop, 0, nullptr, 1, inputs);
+static size_t CountInputs(size_t size,
+                          InstructionSequenceTest::TestOperand* inputs) {
+  size_t i = 0;
+  for (; i < size; ++i) {
+    if (inputs[i].type_ == InstructionSequenceTest::kInvalid) break;
+  }
+  return i;
+}
+
+
+int InstructionSequenceTest::EmitI(size_t input_size, TestOperand* inputs) {
+  InstructionOperand** mapped_inputs = ConvertInputs(input_size, inputs);
+  return Emit(NewIndex(), kArchNop, 0, nullptr, input_size, mapped_inputs);
+}
+
+
+int InstructionSequenceTest::EmitI(TestOperand input_op_0,
+                                   TestOperand input_op_1,
+                                   TestOperand input_op_2,
+                                   TestOperand input_op_3) {
+  TestOperand inputs[] = {input_op_0, input_op_1, input_op_2, input_op_3};
+  return EmitI(CountInputs(arraysize(inputs), inputs), inputs);
 }
 
 
 InstructionSequenceTest::VReg InstructionSequenceTest::EmitOI(
-    TestOperand output_op, TestOperand input_op_0) {
+    TestOperand output_op, size_t input_size, TestOperand* inputs) {
   VReg output_vreg = NewReg();
   InstructionOperand* outputs[1]{ConvertOutputOp(output_vreg, output_op)};
-  InstructionOperand* inputs[1]{ConvertInputOp(input_op_0)};
-  Emit(output_vreg.value_, kArchNop, 1, outputs, 1, inputs);
+  InstructionOperand** mapped_inputs = ConvertInputs(input_size, inputs);
+  Emit(output_vreg.value_, kArchNop, 1, outputs, input_size, mapped_inputs);
   return output_vreg;
 }
 
 
-InstructionSequenceTest::VReg InstructionSequenceTest::EmitOII(
-    TestOperand output_op, TestOperand input_op_0, TestOperand input_op_1) {
-  VReg output_vreg = NewReg();
-  InstructionOperand* outputs[1]{ConvertOutputOp(output_vreg, output_op)};
-  InstructionOperand* inputs[2]{ConvertInputOp(input_op_0),
-                                ConvertInputOp(input_op_1)};
-  Emit(output_vreg.value_, kArchNop, 1, outputs, 2, inputs);
-  return output_vreg;
+InstructionSequenceTest::VReg InstructionSequenceTest::EmitOI(
+    TestOperand output_op, TestOperand input_op_0, TestOperand input_op_1,
+    TestOperand input_op_2, TestOperand input_op_3) {
+  TestOperand inputs[] = {input_op_0, input_op_1, input_op_2, input_op_3};
+  return EmitOI(output_op, CountInputs(arraysize(inputs), inputs), inputs);
 }
 
 
@@ -216,11 +232,7 @@ InstructionSequenceTest::VReg InstructionSequenceTest::EmitCall(
   VReg output_vreg = NewReg();
   InstructionOperand* outputs[1]{ConvertOutputOp(output_vreg, output_op)};
   CHECK(UnallocatedOperand::cast(outputs[0])->HasFixedPolicy());
-  InstructionOperand** mapped_inputs =
-      zone()->NewArray<InstructionOperand*>(static_cast<int>(input_size));
-  for (size_t i = 0; i < input_size; ++i) {
-    mapped_inputs[i] = ConvertInputOp(inputs[i]);
-  }
+  InstructionOperand** mapped_inputs = ConvertInputs(input_size, inputs);
   Emit(output_vreg.value_, kArchCallCodeObject, 1, outputs, input_size,
        mapped_inputs, 0, nullptr, true);
   return output_vreg;
@@ -231,11 +243,7 @@ InstructionSequenceTest::VReg InstructionSequenceTest::EmitCall(
     TestOperand output_op, TestOperand input_op_0, TestOperand input_op_1,
     TestOperand input_op_2, TestOperand input_op_3) {
   TestOperand inputs[] = {input_op_0, input_op_1, input_op_2, input_op_3};
-  size_t size = 0;
-  for (; size < arraysize(inputs); ++size) {
-    if (inputs[size].type_ == kInvalid) break;
-  }
-  return EmitCall(output_op, size, inputs);
+  return EmitCall(output_op, CountInputs(arraysize(inputs), inputs), inputs);
 }
 
 
@@ -252,22 +260,20 @@ int InstructionSequenceTest::EmitBranch(TestOperand input_op) {
                                 ConvertInputOp(Imm()), ConvertInputOp(Imm())};
   InstructionCode opcode = kArchJmp | FlagsModeField::encode(kFlags_branch) |
                            FlagsConditionField::encode(kEqual);
-  auto instruction =
-      NewInstruction(opcode, 0, nullptr, 4, inputs)->MarkAsControl();
+  auto instruction = NewInstruction(opcode, 0, nullptr, 4, inputs);
   return AddInstruction(NewIndex(), instruction);
 }
 
 
 int InstructionSequenceTest::EmitFallThrough() {
-  auto instruction = NewInstruction(kArchNop, 0, nullptr)->MarkAsControl();
+  auto instruction = NewInstruction(kArchNop, 0, nullptr);
   return AddInstruction(NewIndex(), instruction);
 }
 
 
 int InstructionSequenceTest::EmitJump() {
   InstructionOperand* inputs[1]{ConvertInputOp(Imm())};
-  auto instruction =
-      NewInstruction(kArchJmp, 0, nullptr, 1, inputs)->MarkAsControl();
+  auto instruction = NewInstruction(kArchJmp, 0, nullptr, 1, inputs);
   return AddInstruction(NewIndex(), instruction);
 }
 
@@ -315,6 +321,17 @@ InstructionOperand* InstructionSequenceTest::Unallocated(
 }
 
 
+InstructionOperand** InstructionSequenceTest::ConvertInputs(
+    size_t input_size, TestOperand* inputs) {
+  InstructionOperand** mapped_inputs =
+      zone()->NewArray<InstructionOperand*>(static_cast<int>(input_size));
+  for (size_t i = 0; i < input_size; ++i) {
+    mapped_inputs[i] = ConvertInputOp(inputs[i]);
+  }
+  return mapped_inputs;
+}
+
+
 InstructionOperand* InstructionSequenceTest::ConvertInputOp(TestOperand op) {
   if (op.type_ == kImmediate) {
     CHECK_EQ(op.vreg_.value_, kNoValue);
@@ -325,6 +342,10 @@ InstructionOperand* InstructionSequenceTest::ConvertInputOp(TestOperand op) {
     case kNone:
       return Unallocated(op, UnallocatedOperand::NONE,
                          UnallocatedOperand::USED_AT_START);
+    case kUnique:
+      return Unallocated(op, UnallocatedOperand::NONE);
+    case kUniqueRegister:
+      return Unallocated(op, UnallocatedOperand::MUST_HAVE_REGISTER);
     case kRegister:
       return Unallocated(op, UnallocatedOperand::MUST_HAVE_REGISTER,
                          UnallocatedOperand::USED_AT_START);
@@ -385,8 +406,8 @@ InstructionBlock* InstructionSequenceTest::NewBlock() {
     }
   }
   // Construct instruction block.
-  auto instruction_block = new (zone()) InstructionBlock(
-      zone(), block_id, rpo, rpo, loop_header, loop_end, false);
+  auto instruction_block = new (zone())
+      InstructionBlock(zone(), block_id, rpo, loop_header, loop_end, false);
   instruction_blocks_.push_back(instruction_block);
   current_block_ = instruction_block;
   sequence()->StartBlock(rpo);

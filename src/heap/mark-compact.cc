@@ -446,7 +446,7 @@ class MarkCompactCollector::SweeperTask : public v8::Task {
 
  private:
   // v8::Task overrides.
-  virtual void Run() OVERRIDE {
+  void Run() OVERRIDE {
     heap_->mark_compact_collector()->SweepInParallel(space_, 0);
     heap_->mark_compact_collector()->pending_sweeper_jobs_semaphore_.Signal();
   }
@@ -2783,7 +2783,7 @@ void MarkCompactCollector::MigrateObject(HeapObject* dst, HeapObject* src,
 
     bool may_contain_raw_values = src->MayContainRawValues();
 #if V8_DOUBLE_FIELDS_UNBOXING
-    InobjectPropertiesHelper helper(src->map());
+    LayoutDescriptorHelper helper(src->map());
     bool has_only_tagged_fields = helper.all_fields_tagged();
 #endif
     for (int remaining = size / kPointerSize; remaining > 0; remaining--) {
@@ -3243,7 +3243,7 @@ static int Sweep(PagedSpace* space, FreeList* free_list, Page* p,
       }
       HeapObject* live_object = HeapObject::FromAddress(free_end);
       DCHECK(Marking::IsBlack(Marking::MarkBitFrom(live_object)));
-      Map* map = live_object->map();
+      Map* map = live_object->synchronized_map();
       int size = live_object->SizeFromMap(map);
       if (sweeping_mode == SWEEP_AND_VISIT_LIVE_OBJECTS) {
         live_object->IterateBody(map->instance_type(), size, v);

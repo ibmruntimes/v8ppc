@@ -173,11 +173,6 @@ Instruction* InstructionSelector::Emit(Instruction* instr) {
 }
 
 
-bool InstructionSelector::IsNextInAssemblyOrder(const BasicBlock* block) const {
-  return current_block_->GetAoNumber().IsNext(block->GetAoNumber());
-}
-
-
 bool InstructionSelector::CanCover(Node* user, Node* node) const {
   return node->OwnedBy(user) &&
          schedule()->block(node) == schedule()->block(user);
@@ -298,7 +293,7 @@ void InstructionSelector::MarkAsRepresentation(MachineType rep, Node* node) {
 
 // TODO(bmeurer): Get rid of the CallBuffer business and make
 // InstructionSelector::VisitCall platform independent instead.
-CallBuffer::CallBuffer(Zone* zone, CallDescriptor* d,
+CallBuffer::CallBuffer(Zone* zone, const CallDescriptor* d,
                        FrameStateDescriptor* frame_desc)
     : descriptor(d),
       frame_state_descriptor(frame_desc),
@@ -1002,7 +997,7 @@ void InstructionSelector::VisitConstant(Node* node) {
 void InstructionSelector::VisitGoto(BasicBlock* target) {
   // jump to the next block.
   OperandGenerator g(this);
-  Emit(kArchJmp, NULL, g.Label(target))->MarkAsControl();
+  Emit(kArchJmp, NULL, g.Label(target));
 }
 
 

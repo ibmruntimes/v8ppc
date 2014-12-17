@@ -90,6 +90,7 @@
 //         - ScopeInfo
 //         - TransitionArray
 //         - ScriptContextTable
+//         - WeakFixedArray
 //       - FixedDoubleArray
 //       - ExternalArray
 //         - ExternalUint8ClampedArray
@@ -244,10 +245,7 @@ enum WriteBarrierMode { SKIP_WRITE_BARRIER, UPDATE_WRITE_BARRIER };
 
 
 // Indicates whether a value can be loaded as a constant.
-enum StoreMode {
-  ALLOW_AS_CONSTANT,
-  FORCE_FIELD
-};
+enum StoreMode { ALLOW_IN_DESCRIPTOR, FORCE_IN_OBJECT };
 
 
 // PropertyNormalizationMode is used to specify whether to keep
@@ -948,6 +946,7 @@ template <class C> inline bool Is(Object* obj);
   V(DependentCode)                 \
   V(FixedArray)                    \
   V(FixedDoubleArray)              \
+  V(WeakFixedArray)                \
   V(ConstantPoolArray)             \
   V(Context)                       \
   V(ScriptContextTable)            \
@@ -1826,6 +1825,10 @@ class JSObject: public JSReceiver {
   static void OptimizeAsPrototype(Handle<JSObject> object,
                                   PrototypeOptimizationMode mode);
   static void ReoptimizeIfPrototype(Handle<JSObject> object);
+  static void RegisterPrototypeUser(Handle<JSObject> prototype,
+                                    Handle<HeapObject> user);
+  static void UnregisterPrototypeUser(Handle<JSObject> prototype,
+                                      Handle<HeapObject> user);
 
   // Retrieve interceptors.
   InterceptorInfo* GetNamedInterceptor();
@@ -2117,6 +2120,9 @@ class JSObject: public JSReceiver {
   MUST_USE_RESULT static MaybeHandle<Object> PreventExtensions(
       Handle<JSObject> object);
 
+  // ES5 Object.seal
+  MUST_USE_RESULT static MaybeHandle<Object> Seal(Handle<JSObject> object);
+
   // ES5 Object.freeze
   MUST_USE_RESULT static MaybeHandle<Object> Freeze(Handle<JSObject> object);
 
@@ -2406,6 +2412,15 @@ class JSObject: public JSReceiver {
 
   static Handle<Smi> GetOrCreateIdentityHash(Handle<JSObject> object);
 
+  static Handle<SeededNumberDictionary> GetNormalizedElementDictionary(
+      Handle<JSObject> object);
+
+  // Helper for fast versions of preventExtensions, seal, and freeze.
+  // attrs is one of NONE, SEALED, or FROZEN (depending on the operation).
+  template <PropertyAttributes attrs>
+  MUST_USE_RESULT static MaybeHandle<Object> PreventExtensionsWithTransition(
+      Handle<JSObject> object);
+
   DISALLOW_IMPLICIT_CONSTRUCTORS(JSObject);
 };
 
@@ -2598,6 +2613,45 @@ class FixedDoubleArray: public FixedArrayBase {
 
  private:
   DISALLOW_IMPLICIT_CONSTRUCTORS(FixedDoubleArray);
+};
+
+
+class WeakFixedArray : public FixedArray {
+ public:
+  enum SearchForDuplicates { kAlwaysAdd, kAddIfNotFound };
+
+  // If |maybe_array| is not a WeakFixedArray, a fresh one will be allocated.
+  static Handle<WeakFixedArray> Add(
+      Handle<Object> maybe_array, Handle<HeapObject> value,
+      SearchForDuplicates search_for_duplicates = kAlwaysAdd);
+
+  void Remove(Handle<HeapObject> value);
+
+  inline Object* Get(int index) const;
+  inline int Length() const;
+
+  DECLARE_CAST(WeakFixedArray)
+
+ private:
+  static const int kLastUsedIndexIndex = 0;
+  static const int kFirstIndex = 1;
+
+  static Handle<WeakFixedArray> Allocate(
+      Isolate* isolate, int size, Handle<WeakFixedArray> initialize_from);
+
+  static void Set(Handle<WeakFixedArray> array, int index,
+                  Handle<HeapObject> value);
+  inline void clear(int index);
+  inline bool IsEmptySlot(int index) const;
+
+  inline int last_used_index() const;
+  inline void set_last_used_index(int index);
+
+  // Disallow inherited setters.
+  void set(int index, Smi* value);
+  void set(int index, Object* value);
+  void set(int index, Object* value, WriteBarrierMode mode);
+  DISALLOW_IMPLICIT_CONSTRUCTORS(WeakFixedArray);
 };
 
 
@@ -3923,6 +3977,7 @@ class OrderedHashTable: public FixedArray {
   static const int kNumberOfElementsIndex = kNumberOfBucketsIndex + 1;
   static const int kNumberOfDeletedElementsIndex = kNumberOfElementsIndex + 1;
   static const int kHashTableStartIndex = kNumberOfDeletedElementsIndex + 1;
+  static const int kNextTableIndex = kNumberOfElementsIndex;
 
   static const int kNumberOfBucketsOffset =
       kHeaderSize + kNumberOfBucketsIndex * kPointerSize;
@@ -3930,11 +3985,20 @@ class OrderedHashTable: public FixedArray {
       kHeaderSize + kNumberOfElementsIndex * kPointerSize;
   static const int kNumberOfDeletedElementsOffset =
       kHeaderSize + kNumberOfDeletedElementsIndex * kPointerSize;
+  static const int kHashTableStartOffset =
+      kHeaderSize + kHashTableStartIndex * kPointerSize;
+  static const int kNextTableOffset =
+      kHeaderSize + kNextTableIndex * kPointerSize;
 
   static const int kEntrySize = entrysize + 1;
   static const int kChainOffset = entrysize;
 
   static const int kLoadFactor = 2;
+
+  // NumberOfDeletedElements is set to kClearedTableSentinel when
+  // the table is cleared, which allows iterator transitions to
+  // optimize that case.
+  static const int kClearedTableSentinel = -1;
 
  private:
   static Handle<Derived> Rehash(Handle<Derived> table, int new_capacity);
@@ -3977,7 +4041,6 @@ class OrderedHashTable: public FixedArray {
     return set(kRemovedHolesIndex + index, Smi::FromInt(removed_index));
   }
 
-  static const int kNextTableIndex = kNumberOfElementsIndex;
   static const int kRemovedHolesIndex = kHashTableStartIndex;
 
   static const int kMaxCapacity =
@@ -5678,10 +5741,9 @@ class Map: public HeapObject {
   class OwnsDescriptors : public BitField<bool, 21, 1> {};
   class HasInstanceCallHandler : public BitField<bool, 22, 1> {};
   class Deprecated : public BitField<bool, 23, 1> {};
-  class IsFrozen : public BitField<bool, 24, 1> {};
-  class IsUnstable : public BitField<bool, 25, 1> {};
-  class IsMigrationTarget : public BitField<bool, 26, 1> {};
-  // Bit 27 is free.
+  class IsUnstable : public BitField<bool, 24, 1> {};
+  class IsMigrationTarget : public BitField<bool, 25, 1> {};
+  // Bits 26 and 27 are free.
 
   // Keep this bit field at the very end for better code in
   // Builtins::kJSConstructStubGeneric stub.
@@ -5831,7 +5893,7 @@ class Map: public HeapObject {
 
   inline Map* GetTransition(int transition_index);
   inline int SearchSpecialTransition(Symbol* name);
-  inline int SearchTransition(PropertyType type, Name* name,
+  inline int SearchTransition(PropertyKind kind, Name* name,
                               PropertyAttributes attributes);
   inline FixedArrayBase* GetInitialElements();
 
@@ -5911,6 +5973,11 @@ class Map: public HeapObject {
 
   // [prototype]: implicit prototype object.
   DECL_ACCESSORS(prototype, Object)
+  // TODO(jkummerow): make set_prototype private.
+  void SetPrototype(Handle<Object> prototype,
+                    PrototypeOptimizationMode proto_mode = FAST_PROTOTYPE);
+  bool ShouldRegisterAsPrototypeUser(Handle<JSObject> prototype);
+  bool CanUseOptimizationsBasedOnPrototypeRegistry();
 
   // [constructor]: points back to the function responsible for this map.
   DECL_ACCESSORS(constructor, Object)
@@ -6031,8 +6098,6 @@ class Map: public HeapObject {
   inline void set_owns_descriptors(bool owns_descriptors);
   inline bool has_instance_call_handler();
   inline void set_has_instance_call_handler();
-  inline void freeze();
-  inline bool is_frozen();
   inline void mark_unstable();
   inline bool is_stable();
   inline void set_migration_target(bool value);
@@ -6090,7 +6155,10 @@ class Map: public HeapObject {
 
   static Handle<Map> CopyForObserved(Handle<Map> map);
 
-  static Handle<Map> CopyForFreeze(Handle<Map> map);
+  static Handle<Map> CopyForPreventExtensions(Handle<Map> map,
+                                              PropertyAttributes attrs_to_add,
+                                              Handle<Symbol> transition_marker,
+                                              const char* reason);
   // Maximal number of fast properties. Used to restrict the number of map
   // transitions to avoid an explosion in the number of maps for objects used as
   // dictionaries.
@@ -6241,10 +6309,11 @@ class Map: public HeapObject {
   // the original map.  That way we can transition to the same map if the same
   // prototype is set, rather than creating a new map every time.  The
   // transitions are in the form of a map where the keys are prototype objects
-  // and the values are the maps the are transitioned to.
+  // and the values are the maps they transition to.
   static const int kMaxCachedPrototypeTransitions = 256;
   static Handle<Map> TransitionToPrototype(Handle<Map> map,
-                                           Handle<Object> prototype);
+                                           Handle<Object> prototype,
+                                           PrototypeOptimizationMode mode);
 
   static const int kMaxPreAllocatedPropertyFields = 255;
 
@@ -6407,7 +6476,7 @@ class Map: public HeapObject {
   void ZapTransitions();
 
   void DeprecateTransitionTree();
-  bool DeprecateTarget(PropertyType type, Name* key,
+  bool DeprecateTarget(PropertyKind kind, Name* key,
                        PropertyAttributes attributes,
                        DescriptorArray* new_descriptors,
                        LayoutDescriptor* new_layout_descriptor);
@@ -9642,8 +9711,10 @@ class PropertyCell: public Cell {
   // of the cell's current type and the value's type. If the change causes
   // a change of the type of the cell's contents, code dependent on the cell
   // will be deoptimized.
-  static void SetValueInferType(Handle<PropertyCell> cell,
-                                Handle<Object> value);
+  // Usually returns the value that was passed in, but may perform
+  // non-observable modifications on it, such as internalize strings.
+  static Handle<Object> SetValueInferType(Handle<PropertyCell> cell,
+                                          Handle<Object> value);
 
   // Computes the new type of the cell's contents for the given value, but
   // without actually modifying the 'type' field.

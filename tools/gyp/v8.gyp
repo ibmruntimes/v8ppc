@@ -469,6 +469,8 @@
         '../../src/compiler/linkage.h',
         '../../src/compiler/load-elimination.cc',
         '../../src/compiler/load-elimination.h',
+        '../../src/compiler/loop-analysis.cc',
+        '../../src/compiler/loop-analysis.h',
         '../../src/compiler/machine-operator-reducer.cc',
         '../../src/compiler/machine-operator-reducer.h',
         '../../src/compiler/machine-operator.cc',
@@ -1307,6 +1309,7 @@
         '../../src/base/flags.h',
         '../../src/base/functional.cc',
         '../../src/base/functional.h',
+        '../../src/base/iterator.h',
         '../../src/base/lazy-instance.h',
         '../../src/base/logging.cc',
         '../../src/base/logging.h',
@@ -1687,7 +1690,8 @@
           '../../src/harmony-tostring.js',
           '../../src/harmony-typedarray.js',
           '../../src/harmony-classes.js',
-          '../../src/harmony-templates.js'
+          '../../src/harmony-templates.js',
+          '../../src/harmony-regexp.js'
         ],
         'libraries_bin_file': '<(SHARED_INTERMEDIATE_DIR)/libraries.bin',
         'libraries_experimental_bin_file': '<(SHARED_INTERMEDIATE_DIR)/libraries-experimental.bin',

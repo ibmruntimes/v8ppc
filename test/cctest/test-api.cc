@@ -19240,6 +19240,9 @@ TEST(ExternalInternalizedStringCollectedAtTearDown) {
 
 
 TEST(ExternalInternalizedStringCollectedAtGC) {
+  // TODO(mvstanton): vector ics need weak support.
+  if (i::FLAG_vector_ics) return;
+
   int destroyed = 0;
   { LocalContext env;
     v8::HandleScope handle_scope(env->GetIsolate());
@@ -24704,5 +24707,17 @@ TEST(GetPrototypeHidden) {
       "%OptimizeFunctionOnNextCall(f);"
       "f()");
   CHECK(result->Equals(proto2));
+}
+
+
+TEST(ClassPrototypeCreationContext) {
+  i::FLAG_harmony_classes = true;
+  v8::Isolate* isolate = CcTest::isolate();
+  v8::HandleScope handle_scope(isolate);
+  LocalContext env;
+
+  Handle<Object> result = Handle<Object>::Cast(
+      CompileRun("'use strict'; class Example { }; Example.prototype"));
+  CHECK(env.local() == result->CreationContext());
 }
 #endif  // !TEST_API_IN_PARTS || TEST_API_PART2

@@ -46,7 +46,7 @@ class JSTypedLoweringTest : public TypedGraphTest {
   Reduction Reduce(Node* node) {
     MachineOperatorBuilder machine(zone());
     JSGraph jsgraph(graph(), common(), javascript(), &machine);
-    JSTypedLowering reducer(&jsgraph);
+    JSTypedLowering reducer(&jsgraph, zone());
     return reducer.Reduce(node);
   }
 
@@ -193,6 +193,23 @@ TEST_F(JSTypedLoweringTest, JSToBooleanWithSelect) {
   EXPECT_THAT(r.replacement(),
               IsSelect(kMachAnyTagged, p0, IsTrueConstant(),
                        IsBooleanNot(IsNumberEqual(p2, IsNumberConstant(0)))));
+}
+
+
+// -----------------------------------------------------------------------------
+// JSToNumber
+
+
+TEST_F(JSTypedLoweringTest, JSToNumberWithPlainPrimitive) {
+  Node* const input = Parameter(Type::PlainPrimitive(), 0);
+  Node* const context = Parameter(Type::Any(), 1);
+  Node* const effect = graph()->start();
+  Node* const control = graph()->start();
+  Reduction r = Reduce(graph()->NewNode(javascript()->ToNumber(), input,
+                                        context, effect, control));
+  ASSERT_TRUE(r.Changed());
+  EXPECT_THAT(r.replacement(), IsToNumber(input, IsNumberConstant(0),
+                                          graph()->start(), control));
 }
 
 

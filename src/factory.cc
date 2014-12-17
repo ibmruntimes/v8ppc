@@ -139,12 +139,12 @@ Handle<ConstantPoolArray> Factory::NewExtendedConstantPoolArray(
 
 
 Handle<OrderedHashSet> Factory::NewOrderedHashSet() {
-  return OrderedHashSet::Allocate(isolate(), 4);
+  return OrderedHashSet::Allocate(isolate(), OrderedHashSet::kMinCapacity);
 }
 
 
 Handle<OrderedHashMap> Factory::NewOrderedHashMap() {
-  return OrderedHashMap::Allocate(isolate(), 4);
+  return OrderedHashMap::Allocate(isolate(), OrderedHashMap::kMinCapacity);
 }
 
 
@@ -1592,7 +1592,7 @@ Handle<GlobalObject> Factory::NewGlobalObject(Handle<JSFunction> constructor) {
   for (int i = 0; i < map->NumberOfOwnDescriptors(); i++) {
     PropertyDetails details = descs->GetDetails(i);
     DCHECK(details.type() == CALLBACKS);  // Only accessors are expected.
-    PropertyDetails d = PropertyDetails(details.attributes(), CALLBACKS, i + 1);
+    PropertyDetails d(details.attributes(), CALLBACKS, i + 1);
     Handle<Name> name(descs->GetKey(i));
     Handle<Object> value(descs->GetCallbacksObject(i), isolate());
     Handle<PropertyCell> cell = NewPropertyCell(value);
@@ -1878,7 +1878,7 @@ Handle<JSProxy> Factory::NewJSProxy(Handle<Object> handler,
   // TODO(rossberg): Once we optimize proxies, think about a scheme to share
   // maps. Will probably depend on the identity of the handler object, too.
   Handle<Map> map = NewMap(JS_PROXY_TYPE, JSProxy::kSize);
-  map->set_prototype(*prototype);
+  map->SetPrototype(prototype);
 
   // Allocate the proxy object.
   Handle<JSProxy> result = New<JSProxy>(map, NEW_SPACE);
@@ -1897,7 +1897,7 @@ Handle<JSProxy> Factory::NewJSFunctionProxy(Handle<Object> handler,
   // TODO(rossberg): Once we optimize proxies, think about a scheme to share
   // maps. Will probably depend on the identity of the handler object, too.
   Handle<Map> map = NewMap(JS_FUNCTION_PROXY_TYPE, JSFunctionProxy::kSize);
-  map->set_prototype(*prototype);
+  map->SetPrototype(prototype);
 
   // Allocate the proxy object.
   Handle<JSFunctionProxy> result = New<JSFunctionProxy>(map, NEW_SPACE);
@@ -1922,7 +1922,7 @@ void Factory::ReinitializeJSProxy(Handle<JSProxy> proxy, InstanceType type,
   int size_difference = proxy->map()->instance_size() - map->instance_size();
   DCHECK(size_difference >= 0);
 
-  map->set_prototype(proxy->map()->prototype());
+  map->SetPrototype(handle(proxy->map()->prototype(), proxy->GetIsolate()));
 
   // Allocate the backing storage for the properties.
   int prop_size = map->InitialPropertiesLength();

@@ -365,15 +365,11 @@ void ExternalReferenceTable::PopulateTable(Isolate* isolate) {
   }
 
   // Accessors
-#define ACCESSOR_INFO_DECLARATION(name) \
-  Add(FUNCTION_ADDR(&Accessors::name##Getter), \
-      ACCESSOR, \
-      Accessors::k##name##Getter, \
-      "Accessors::" #name "Getter"); \
-  Add(FUNCTION_ADDR(&Accessors::name##Setter), \
-      ACCESSOR, \
-      Accessors::k##name##Setter, \
-      "Accessors::" #name "Setter");
+#define ACCESSOR_INFO_DECLARATION(name)                          \
+  Add(FUNCTION_ADDR(&Accessors::name##Getter), ACCESSOR_CODE,    \
+      Accessors::k##name##Getter, "Accessors::" #name "Getter"); \
+  Add(FUNCTION_ADDR(&Accessors::name##Setter), ACCESSOR_CODE,    \
+      Accessors::k##name##Setter, "Accessors::" #name "Setter");
   ACCESSOR_INFO_LIST(ACCESSOR_INFO_DECLARATION)
 #undef ACCESSOR_INFO_DECLARATION
 
@@ -491,7 +487,9 @@ RootIndexMap::RootIndexMap(Isolate* isolate) {
       if (LookupEntry(map_, heap_object, false) != NULL) {
         // Some root values are initialized to the empty FixedArray();
         // Do not add them to the map.
-        DCHECK_EQ(isolate->heap()->empty_fixed_array(), heap_object);
+        // TODO(yangguo): This assert is not true. Some roots like
+        // instanceof_cache_answer can be e.g. null.
+        // DCHECK_EQ(isolate->heap()->empty_fixed_array(), heap_object);
       } else {
         SetValue(LookupEntry(map_, heap_object, true), i);
       }
@@ -756,7 +754,7 @@ class StringTableInsertionKey : public HashTableKey {
     DCHECK(string->IsInternalizedString());
   }
 
-  virtual bool IsMatch(Object* string) OVERRIDE {
+  bool IsMatch(Object* string) OVERRIDE {
     // We know that all entries in a hash table had their hash keys created.
     // Use that knowledge to have fast failure.
     if (hash_ != HashForObject(string)) return false;
@@ -764,9 +762,9 @@ class StringTableInsertionKey : public HashTableKey {
     return string_->SlowEquals(String::cast(string));
   }
 
-  virtual uint32_t Hash() OVERRIDE { return hash_; }
+  uint32_t Hash() OVERRIDE { return hash_; }
 
-  virtual uint32_t HashForObject(Object* key) OVERRIDE {
+  uint32_t HashForObject(Object* key) OVERRIDE {
     return String::cast(key)->Hash();
   }
 
@@ -1674,16 +1672,17 @@ void Serializer::ObjectSerializer::SerializePrologue(AllocationSpace space,
     }
     back_reference = serializer_->AllocateLargeObject(size);
   } else {
+    bool needs_double_align = false;
     if (object_->NeedsToEnsureDoubleAlignment()) {
       // Add wriggle room for double alignment padding.
       back_reference = serializer_->Allocate(space, size + kPointerSize);
+      needs_double_align = true;
     } else {
       back_reference = serializer_->Allocate(space, size);
     }
     sink_->Put(kNewObject + reference_representation_ + space, "NewObject");
-    if (object_->NeedsToEnsureDoubleAlignment()) {
+    if (needs_double_align)
       sink_->PutInt(kDoubleAlignmentSentinel, "DoubleAlignSentinel");
-    }
     int encoded_size = size >> kObjectAlignmentBits;
     DCHECK_NE(kDoubleAlignmentSentinel, encoded_size);
     sink_->PutInt(encoded_size, "ObjectSizeInWords");
