@@ -285,7 +285,7 @@ class LTemplateResultInstruction : public LInstruction {
   STATIC_ASSERT(R == 0 || R == 1);
   bool HasResult() const FINAL { return R != 0 && result() != NULL; }
   void set_result(LOperand* operand) { results_[0] = operand; }
-  LOperand* result() const { return results_[0]; }
+  LOperand* result() const OVERRIDE { return results_[0]; }
 
  protected:
   EmbeddedContainer<LOperand*, R> results_;
@@ -466,24 +466,29 @@ class LCallStub FINAL : public LTemplateInstruction<1, 1, 0> {
 
 
 class LTailCallThroughMegamorphicCache FINAL
-    : public LTemplateInstruction<0, 3, 0> {
+    : public LTemplateInstruction<0, 5, 0> {
  public:
-  explicit LTailCallThroughMegamorphicCache(LOperand* context,
-                                            LOperand* receiver,
-                                            LOperand* name) {
+  LTailCallThroughMegamorphicCache(LOperand* context, LOperand* receiver,
+                                   LOperand* name, LOperand* slot,
+                                   LOperand* vector) {
     inputs_[0] = context;
     inputs_[1] = receiver;
     inputs_[2] = name;
+    inputs_[3] = slot;
+    inputs_[4] = vector;
   }
 
   LOperand* context() { return inputs_[0]; }
   LOperand* receiver() { return inputs_[1]; }
   LOperand* name() { return inputs_[2]; }
+  LOperand* slot() { return inputs_[3]; }
+  LOperand* vector() { return inputs_[4]; }
 
   DECLARE_CONCRETE_INSTRUCTION(TailCallThroughMegamorphicCache,
                                "tail-call-through-megamorphic-cache")
   DECLARE_HYDROGEN_ACCESSOR(TailCallThroughMegamorphicCache)
 };
+
 
 class LUnknownOSRValue FINAL : public LTemplateInstruction<1, 0, 0> {
  public:
@@ -1745,7 +1750,7 @@ class LStoreCodeEntry FINAL : public LTemplateInstruction<0, 2, 0> {
   LOperand* function() { return inputs_[0]; }
   LOperand* code_object() { return inputs_[1]; }
 
-  virtual void PrintDataTo(StringStream* stream);
+  void PrintDataTo(StringStream* stream) OVERRIDE;
 
   DECLARE_CONCRETE_INSTRUCTION(StoreCodeEntry, "store-code-entry")
   DECLARE_HYDROGEN_ACCESSOR(StoreCodeEntry)
@@ -1822,9 +1827,10 @@ class LCallWithDescriptor FINAL : public LTemplateResultInstruction<1> {
 
   const CallInterfaceDescriptor descriptor() { return descriptor_; }
 
+  DECLARE_HYDROGEN_ACCESSOR(CallWithDescriptor)
+
  private:
   DECLARE_CONCRETE_INSTRUCTION(CallWithDescriptor, "call-with-descriptor")
-  DECLARE_HYDROGEN_ACCESSOR(CallWithDescriptor)
 
   void PrintDataTo(StringStream* stream) OVERRIDE;
 

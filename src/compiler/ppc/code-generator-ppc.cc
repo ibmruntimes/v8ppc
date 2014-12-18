@@ -955,11 +955,17 @@ void CodeGenerator::AssembleArchBranch(Instruction* instr, BranchInfo* branch) {
   switch (condition) {
     case kUnorderedEqual:
     case kUnorderedLessThan:
+      // No branch to false if unordered needed since only FU bit will be set.
+      // __ bunordered(flabel, cr);
+      break;
     case kUnorderedLessThanOrEqual:
       __ bunordered(flabel, cr);
       break;
     case kUnorderedNotEqual:
     case kUnorderedGreaterThanOrEqual:
+      // No branch to true if unordered needed since only FU bit will be set.
+      // __ bunordered(tlabel, cr);
+      break;
     case kUnorderedGreaterThan:
       __ bunordered(tlabel, cr);
       break;
