@@ -248,7 +248,6 @@ void OS::DebugBreak() {
   asm("break");
 #elif V8_HOST_ARCH_PPC
   asm("twge 2,2");
-  //  asm("nop");  // roohack - nothing for now;
 #elif V8_HOST_ARCH_IA32
 #if V8_OS_NACL
   asm("hlt");
