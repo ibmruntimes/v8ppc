@@ -1109,8 +1109,6 @@ class Assembler : public AssemblerBase {
   void mtfprwa(DoubleRegister dst, Register src);
 #endif
 
-  void fake_asm(enum FAKE_OPCODE_T fopcode);
-  void marker_asm(int mcode);
   void function_descriptor();
 
   // Exception-generating instructions and debugging support
@@ -1118,10 +1116,6 @@ class Assembler : public AssemblerBase {
             int32_t code = kDefaultStopCode, CRegister cr = cr7);
 
   void bkpt(uint32_t imm16);  // v5 and above
-
-  // Informational messages when simulating
-  void info(const char* msg, Condition cond = al,
-            int32_t code = kDefaultStopCode, CRegister cr = cr7);
 
   void dcbf(Register ra, Register rb);
   void sync();

@@ -1464,20 +1464,6 @@ void Assembler::divdu(Register dst, Register src1, Register src2,
 #endif
 
 
-void Assembler::fake_asm(enum FAKE_OPCODE_T fopcode) {
-  DCHECK(fopcode < fLastFaker);
-  emit(FAKE_OPCODE | FAKER_SUBOPCODE | fopcode);
-}
-
-
-void Assembler::marker_asm(int mcode) {
-  if (::v8::internal::FLAG_trace_sim_stubs) {
-    DCHECK(mcode < F_NEXT_AVAILABLE_STUB_MARKER);
-    emit(FAKE_OPCODE | MARKER_SUBOPCODE | mcode);
-  }
-}
-
-
 // Function descriptor for AIX.
 // Code address skips the function descriptor "header".
 // TOC and static chain are ignored and set to 0.
@@ -1801,21 +1787,6 @@ void Assembler::stop(const char* msg, Condition cond, int32_t code,
 
 
 void Assembler::bkpt(uint32_t imm16) { emit(0x7d821008); }
-
-
-void Assembler::info(const char* msg, Condition cond, int32_t code,
-                     CRegister cr) {
-  if (::v8::internal::FLAG_trace_sim_stubs) {
-    emit(0x7d9ff808);
-#if V8_TARGET_ARCH_PPC64
-    uint64_t value = reinterpret_cast<uint64_t>(msg);
-    emit(static_cast<uint32_t>(value >> 32));
-    emit(static_cast<uint32_t>(value & 0xFFFFFFFF));
-#else
-    emit(reinterpret_cast<Instr>(msg));
-#endif
-  }
-}
 
 
 void Assembler::dcbf(Register ra, Register rb) {

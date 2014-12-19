@@ -37,7 +37,6 @@ class PPCDebugger {
   ~PPCDebugger();
 
   void Stop(Instruction* instr);
-  void Info(Instruction* instr);
   void Debug();
 
  private:
@@ -130,15 +129,6 @@ void PPCDebugger::Stop(Instruction* instr) {
   Debug();
 }
 #endif
-
-
-void PPCDebugger::Info(Instruction* instr) {
-  // Retrieve the encoded address immediately following the Info breakpoint.
-  char* msg =
-      *reinterpret_cast<char**>(sim_->get_pc() + Instruction::kInstrSize);
-  PrintF("Simulator info %s\n", msg);
-  sim_->set_pc(sim_->get_pc() + Instruction::kInstrSize + kPointerSize);
-}
 
 
 intptr_t PPCDebugger::GetRegisterValue(int regnum) {
@@ -1453,11 +1443,6 @@ void Simulator::SoftwareInterrupt(Instruction* instr) {
     case kBreakpoint: {
       PPCDebugger dbg(this);
       dbg.Debug();
-      break;
-    }
-    case kInfo: {
-      PPCDebugger dbg(this);
-      dbg.Info(instr);
       break;
     }
     // stop uses all codes greater than 1 << 23.
@@ -3669,27 +3654,6 @@ void Simulator::ExecuteGeneric(Instruction* instr) {
       break;
     }
 #endif
-
-    case FAKE_OPCODE: {
-      if (instr->Bits(MARKER_SUBOPCODE_BIT, MARKER_SUBOPCODE_BIT) == 1) {
-        int marker_code = instr->Bits(STUB_MARKER_HIGH_BIT, 0);
-        DCHECK(marker_code < F_NEXT_AVAILABLE_STUB_MARKER);
-        PrintF("Hit stub-marker: %d (EMIT_STUB_MARKER)\n", marker_code);
-      } else {
-        int fake_opcode = instr->Bits(FAKE_OPCODE_HIGH_BIT, 0);
-        if (fake_opcode == fBKPT) {
-          PPCDebugger dbg(this);
-          PrintF("Simulator hit BKPT.\n");
-          dbg.Debug();
-        } else {
-          DCHECK(fake_opcode < fLastFaker);
-          PrintF("Hit ARM opcode: %d(FAKE_OPCODE defined in constant-ppc.h)\n",
-                 fake_opcode);
-          UNIMPLEMENTED();
-        }
-      }
-      break;
-    }
 
     default: {
       UNIMPLEMENTED();

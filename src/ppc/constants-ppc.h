@@ -342,26 +342,6 @@ enum {
   kTOMask = 0x1f << 21
 };
 
-// the following is to differentiate different faked opcodes for
-// the BOGUS PPC instruction we invented (when bit 25 is 0) or to mark
-// different stub code (when bit 25 is 1)
-//   - use primary opcode 1 for undefined instruction
-//   - use bit 25 to indicate whether the opcode is for fake-arm
-//     instr or stub-marker
-//   - use the least significant 6-bit to indicate FAKE_OPCODE_T or
-//     MARKER_T
-#define FAKE_OPCODE 1 << 26
-#define MARKER_SUBOPCODE_BIT 25
-#define MARKER_SUBOPCODE 1 << MARKER_SUBOPCODE_BIT
-#define FAKER_SUBOPCODE 0 << MARKER_SUBOPCODE_BIT
-
-enum FAKE_OPCODE_T {
-  fBKPT = 14,
-  fLastFaker  // can't be more than 128 (2^^7)
-};
-#define FAKE_OPCODE_HIGH_BIT 7  // fake opcode has to fall into bit 0~7
-#define F_NEXT_AVAILABLE_STUB_MARKER 369  // must be less than 2^^9 (512)
-#define STUB_MARKER_HIGH_BIT 9  // stub marker has to fall into bit 0~9
 // -----------------------------------------------------------------------------
 // Addressing modes and instruction variants.
 
@@ -419,9 +399,7 @@ enum SoftwareInterruptCodes {
   // break point
   kBreakpoint = 0x821008,  // bits23-0 of 0x7d821008 = twge r2, r2
   // stop
-  kStopCode = 1 << 23,
-  // info
-  kInfo = 0x9ff808  // bits23-0 of 0x7d9ff808 = twge r31, r31
+  kStopCode = 1 << 23
 };
 const uint32_t kStopCodeMask = kStopCode - 1;
 const uint32_t kMaxStopCode = kStopCode - 1;

@@ -77,7 +77,6 @@ class Decoder {
   void Format(Instruction* instr, const char* format);
   void Unknown(Instruction* instr);
   void UnknownFormat(Instruction* instr, const char* opcname);
-  void MarkerFormat(Instruction* instr, const char* opcname, int id);
 
   void DecodeExt1(Instruction* instr);
   void DecodeExt2(Instruction* instr);
@@ -356,13 +355,6 @@ void Decoder::Unknown(Instruction* instr) { Format(instr, "unknown"); }
 void Decoder::UnknownFormat(Instruction* instr, const char* name) {
   char buffer[100];
   snprintf(buffer, sizeof(buffer), "%s (unknown-format)", name);
-  Format(instr, buffer);
-}
-
-
-void Decoder::MarkerFormat(Instruction* instr, const char* name, int id) {
-  char buffer[100];
-  snprintf(buffer, sizeof(buffer), "%s %d", name, id);
   Format(instr, buffer);
 }
 
@@ -1279,18 +1271,6 @@ int Decoder::InstructionDecode(byte* instr_ptr) {
       break;
     }
 #endif
-
-    case FAKE_OPCODE: {
-      if (instr->Bits(MARKER_SUBOPCODE_BIT, MARKER_SUBOPCODE_BIT) == 1) {
-        int marker_code = instr->Bits(STUB_MARKER_HIGH_BIT, 0);
-        DCHECK(marker_code < F_NEXT_AVAILABLE_STUB_MARKER);
-        MarkerFormat(instr, "stub-marker ", marker_code);
-      } else {
-        int fake_opcode = instr->Bits(FAKE_OPCODE_HIGH_BIT, 0);
-        MarkerFormat(instr, "faker-opcode ", fake_opcode);
-      }
-      break;
-    }
     default: {
       Unknown(instr);
       break;
