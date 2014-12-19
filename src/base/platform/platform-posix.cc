@@ -181,7 +181,7 @@ void* OS::GetRandomMmapAddr() {
   raw_addr &= V8_UINT64_C(0x3ffff000);
   // Use extra address space to isolate the mmap regions.
   raw_addr += V8_UINT64_C(0x400000000000);
-# elif V8_TARGET_ARCH_PPC_BE
+# elif V8_TARGET_BIG_ENDIAN
   // Big-endian Linux: 44 bits of virtual addressing.
   raw_addr &= V8_UINT64_C(0x03fffffff000);
 # else
