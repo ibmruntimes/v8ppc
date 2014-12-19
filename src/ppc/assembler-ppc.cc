@@ -430,7 +430,6 @@ int Assembler::target_at(int pos) {
     }
   }
 
-  PPCPORT_UNIMPLEMENTED();
   DCHECK(false);
   return -1;
 }

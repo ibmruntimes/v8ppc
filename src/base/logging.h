@@ -237,18 +237,4 @@ void DumpBacktrace();
 #define EXTRA_CHECK(condition) ((void) 0)
 #endif
 
-// PENGUIN: Extra checks for PPC PORT
-//   - PPCPORT_UNIMPLEMENTED: for unimplemented features
-//   - PPCPORT_CHECK: for development phase
-//   - PPCPORT_UNSAFE_IMPLEMENTATION: unsafe implementation
-#ifdef ENABLE_EXTRA_PPCCHECKS
-#define PPCPORT_CHECK(condition) CHECK(condition)
-#define PPCPORT_UNIMPLEMENTED() UNIMPLEMENTED()
-#define PPCPORT_UNSAFE_IMPLEMENTATION() ((void)0)
-#else
-#define PPCPORT_CHECK(condition) ((void) 0)
-#define PPCPORT_UNIMPLEMENTED() ((void) 0)
-#define PPCPORT_UNSAFE_IMPLEMENTATION() ((void)0)
-#endif
-
 #endif  // V8_BASE_LOGGING_H_

@@ -92,10 +92,6 @@ endif
 ifeq ($(extrachecks), off)
   GYPFLAGS += -Dv8_enable_extra_checks=0 -Dv8_enable_handle_zapping=0
 endif
-# extrachecks=off
-ifeq ($(extrappcchecks), on)
-  GYPFLAGS += -Dv8_enable_extra_ppcchecks=1
-endif
 # gdbjit=on/off
 ifeq ($(gdbjit), on)
   GYPFLAGS += -Dv8_enable_gdbjit=1

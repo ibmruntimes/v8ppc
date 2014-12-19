@@ -61,8 +61,6 @@
 
     'v8_native_sim%': 'false',
 
-    'v8_enable_extra_ppcchecks%': 0,
-
     # Set to 1 to enable DCHECKs in release builds.
     'dcheck_always_on%': 0,
   },
@@ -100,9 +98,6 @@
           'NATIVE_SIMULATION',
           'USE_SIMULATOR',
         ],
-      }],
-      ['v8_enable_extra_ppcchecks==1', {
-        'defines': ['ENABLE_EXTRA_PPCCHECKS',],
       }],
       ['v8_use_external_startup_data==1', {
         'defines': ['V8_USE_EXTERNAL_STARTUP_DATA',],
