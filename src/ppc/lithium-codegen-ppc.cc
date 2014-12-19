@@ -1892,8 +1892,6 @@ void LCodeGen::DoConstantS(LConstantS* instr) {
 }
 
 
-// TODO(penguin): put const to constant pool instead
-// of storing double to stack
 void LCodeGen::DoConstantD(LConstantD* instr) {
   DCHECK(instr->result()->IsDoubleRegister());
   DoubleRegister result = ToDoubleRegister(instr->result());
