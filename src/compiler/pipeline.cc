@@ -13,6 +13,7 @@
 #include "src/compiler/basic-block-instrumentor.h"
 #include "src/compiler/change-lowering.h"
 #include "src/compiler/code-generator.h"
+#include "src/compiler/common-operator-reducer.h"
 #include "src/compiler/control-reducer.h"
 #include "src/compiler/graph-replay.h"
 #include "src/compiler/graph-visualizer.h"
@@ -421,12 +422,14 @@ struct TypedLoweringPhase {
     JSBuiltinReducer builtin_reducer(data->jsgraph());
     JSTypedLowering typed_lowering(data->jsgraph(), temp_zone);
     SimplifiedOperatorReducer simple_reducer(data->jsgraph());
+    CommonOperatorReducer common_reducer;
     GraphReducer graph_reducer(data->graph(), temp_zone);
     graph_reducer.AddReducer(&vn_reducer);
     graph_reducer.AddReducer(&builtin_reducer);
     graph_reducer.AddReducer(&typed_lowering);
     graph_reducer.AddReducer(&load_elimination);
     graph_reducer.AddReducer(&simple_reducer);
+    graph_reducer.AddReducer(&common_reducer);
     graph_reducer.ReduceGraph();
   }
 };
@@ -442,9 +445,13 @@ struct SimplifiedLoweringPhase {
     lowering.LowerAllNodes();
     ValueNumberingReducer vn_reducer(temp_zone);
     SimplifiedOperatorReducer simple_reducer(data->jsgraph());
+    MachineOperatorReducer machine_reducer(data->jsgraph());
+    CommonOperatorReducer common_reducer;
     GraphReducer graph_reducer(data->graph(), temp_zone);
     graph_reducer.AddReducer(&vn_reducer);
     graph_reducer.AddReducer(&simple_reducer);
+    graph_reducer.AddReducer(&machine_reducer);
+    graph_reducer.AddReducer(&common_reducer);
     graph_reducer.ReduceGraph();
   }
 };
@@ -460,13 +467,14 @@ struct ChangeLoweringPhase {
     ValueNumberingReducer vn_reducer(temp_zone);
     SimplifiedOperatorReducer simple_reducer(data->jsgraph());
     ChangeLowering lowering(data->jsgraph(), &linkage);
-    MachineOperatorReducer mach_reducer(data->jsgraph());
+    MachineOperatorReducer machine_reducer(data->jsgraph());
+    CommonOperatorReducer common_reducer;
     GraphReducer graph_reducer(data->graph(), temp_zone);
-    // TODO(titzer): Figure out if we should run all reducers at once here.
     graph_reducer.AddReducer(&vn_reducer);
     graph_reducer.AddReducer(&simple_reducer);
     graph_reducer.AddReducer(&lowering);
-    graph_reducer.AddReducer(&mach_reducer);
+    graph_reducer.AddReducer(&machine_reducer);
+    graph_reducer.AddReducer(&common_reducer);
     graph_reducer.ReduceGraph();
   }
 };

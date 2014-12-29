@@ -1641,6 +1641,11 @@ class HForceRepresentation FINAL : public HTemplateInstruction<1> {
 
   HValue* value() const { return OperandAt(0); }
 
+  Representation observed_input_representation(int index) OVERRIDE {
+    // We haven't actually *observed* this, but it's closer to the truth
+    // than 'None'.
+    return representation();  // Same as the output representation.
+  }
   Representation RequiredInputRepresentation(int index) OVERRIDE {
     return representation();  // Same as the output representation.
   }
@@ -6249,6 +6254,10 @@ class HObjectAccess FINAL {
 
   static HObjectAccess ForCellValue() {
     return HObjectAccess(kInobject, Cell::kValueOffset);
+  }
+
+  static HObjectAccess ForWeakCellValue() {
+    return HObjectAccess(kInobject, WeakCell::kValueOffset);
   }
 
   static HObjectAccess ForAllocationMementoSite() {

@@ -10824,7 +10824,9 @@ void Code::FindAndReplace(const FindAndReplacePattern& pattern) {
     RelocInfo* info = it.rinfo();
     Object* object = info->target_object();
     if (object->IsHeapObject()) {
-      DCHECK(!object->IsWeakCell());
+      if (object->IsWeakCell()) {
+        object = HeapObject::cast(WeakCell::cast(object)->value());
+      }
       Map* map = HeapObject::cast(object)->map();
       if (map == *pattern.find_[current_pattern]) {
         info->set_target_object(*pattern.replace_[current_pattern]);
@@ -11807,8 +11809,8 @@ MaybeHandle<Object> JSArray::SetElementsLength(
       // Skip deletions where the property was an accessor, leaving holes
       // in the array of old values.
       if (old_values[i]->IsTheHole()) continue;
-      JSObject::SetElement(
-          deleted, indices[i] - index, old_values[i], NONE, SLOPPY).Assert();
+      JSObject::SetOwnElement(deleted, indices[i] - index, old_values[i],
+                              SLOPPY).Assert();
     }
 
     SetProperty(deleted, isolate->factory()->length_string(),
@@ -11919,23 +11921,6 @@ void Map::AddDependentCode(Handle<Map> map,
   Handle<DependentCode> codes = DependentCode::Insert(
       Handle<DependentCode>(map->dependent_code()), group, code);
   if (*codes != map->dependent_code()) map->set_dependent_code(*codes);
-}
-
-
-// static
-void Map::AddDependentIC(Handle<Map> map,
-                         Handle<Code> stub) {
-  DCHECK(stub->next_code_link()->IsUndefined());
-  int n = map->dependent_code()->number_of_entries(DependentCode::kWeakICGroup);
-  if (n == 0) {
-    // Slow path: insert the head of the list with possible heap allocation.
-    Map::AddDependentCode(map, DependentCode::kWeakICGroup, stub);
-  } else {
-    // Fast path: link the stub to the existing head of the list without any
-    // heap allocation.
-    DCHECK(n == 1);
-    map->dependent_code()->AddToDependentICList(stub);
-  }
 }
 
 
@@ -12068,22 +12053,10 @@ void DependentCode::RemoveCompilationInfo(DependentCode::DependencyGroup group,
 }
 
 
-static bool CodeListContains(Object* head, Code* code) {
-  while (!head->IsUndefined()) {
-    if (head == code) return true;
-    head = Code::cast(head)->next_code_link();
-  }
-  return false;
-}
-
-
 bool DependentCode::Contains(DependencyGroup group, Code* code) {
   GroupStartIndexes starts(this);
   int start = starts.at(group);
   int end = starts.at(group + 1);
-  if (group == kWeakICGroup) {
-    return CodeListContains(object_at(start), code);
-  }
   for (int i = start; i < end; i++) {
     if (object_at(i) == code) return true;
   }
@@ -12140,24 +12113,6 @@ void DependentCode::DeoptimizeDependentCodeGroup(
 }
 
 
-void DependentCode::AddToDependentICList(Handle<Code> stub) {
-  DisallowHeapAllocation no_heap_allocation;
-  GroupStartIndexes starts(this);
-  int i = starts.at(kWeakICGroup);
-  Object* head = object_at(i);
-  // Try to insert the stub after the head of the list to minimize number of
-  // writes to the DependentCode array, since a write to the array can make it
-  // strong if it was alread marked by incremental marker.
-  if (head->IsCode()) {
-    stub->set_next_code_link(Code::cast(head)->next_code_link());
-    Code::cast(head)->set_next_code_link(*stub);
-  } else {
-    stub->set_next_code_link(head);
-    set_object_at(i, *stub);
-  }
-}
-
-
 void DependentCode::SetMarkedForDeoptimization(Code* code,
                                                DependencyGroup group) {
   code->set_marked_for_deoptimization(true);
@@ -12176,8 +12131,6 @@ void DependentCode::SetMarkedForDeoptimization(Code* code,
 
 const char* DependentCode::DependencyGroupName(DependencyGroup group) {
   switch (group) {
-    case kWeakICGroup:
-      return "weak-ic";
     case kWeakCodeGroup:
       return "weak-code";
     case kTransitionGroup:

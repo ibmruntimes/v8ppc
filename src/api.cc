@@ -402,12 +402,24 @@ i::Object** V8::CopyPersistent(i::Object** obj) {
 }
 
 
-void V8::MakeWeak(i::Object** object, void* parameters,
-                  WeakCallback weak_callback, V8::WeakHandleType weak_type) {
-  i::GlobalHandles::PhantomState phantom;
-  phantom = weak_type == V8::PhantomHandle ? i::GlobalHandles::Phantom
-                                           : i::GlobalHandles::Nonphantom;
-  i::GlobalHandles::MakeWeak(object, parameters, weak_callback, phantom);
+void V8::MakeWeak(i::Object** object, void* parameter,
+                  WeakCallback weak_callback) {
+  i::GlobalHandles::MakeWeak(object, parameter, weak_callback);
+}
+
+
+void V8::MakePhantom(i::Object** object, void* parameter,
+                     PhantomCallbackData<void>::Callback weak_callback) {
+  i::GlobalHandles::MakePhantom(object, parameter, weak_callback);
+}
+
+
+void V8::MakePhantom(
+    i::Object** object,
+    InternalFieldsCallbackData<void, void>::Callback weak_callback,
+    int internal_field_index1, int internal_field_index2) {
+  i::GlobalHandles::MakePhantom(object, weak_callback, internal_field_index1,
+                                internal_field_index2);
 }
 
 
@@ -6464,17 +6476,11 @@ void Isolate::CancelTerminateExecution() {
 
 void Isolate::RequestInterrupt(InterruptCallback callback, void* data) {
   i::Isolate* isolate = reinterpret_cast<i::Isolate*>(this);
-  isolate->set_api_interrupt_callback(callback);
-  isolate->set_api_interrupt_callback_data(data);
-  isolate->stack_guard()->RequestApiInterrupt();
+  isolate->RequestInterrupt(callback, data);
 }
 
 
 void Isolate::ClearInterrupt() {
-  i::Isolate* isolate = reinterpret_cast<i::Isolate*>(this);
-  isolate->stack_guard()->ClearApiInterrupt();
-  isolate->set_api_interrupt_callback(NULL);
-  isolate->set_api_interrupt_callback_data(NULL);
 }
 
 
@@ -6736,9 +6742,9 @@ void Isolate::LowMemoryNotification() {
 }
 
 
-int Isolate::ContextDisposedNotification() {
+int Isolate::ContextDisposedNotification(bool dependant_context) {
   i::Isolate* isolate = reinterpret_cast<i::Isolate*>(this);
-  return isolate->heap()->NotifyContextDisposed();
+  return isolate->heap()->NotifyContextDisposed(dependant_context);
 }
 
 

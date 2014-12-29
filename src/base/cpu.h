@@ -47,6 +47,8 @@ class CPU FINAL {
   static const int NVIDIA = 0x4e;
   static const int QUALCOMM = 0x51;
   int architecture() const { return architecture_; }
+  int variant() const { return variant_; }
+  static const int NVIDIA_DENVER = 0x0;
   int part() const { return part_; }
   int cache_line_size() const { return cache_line_size_; }
 
@@ -106,6 +108,7 @@ class CPU FINAL {
   int type_;
   int implementer_;
   int architecture_;
+  int variant_;
   int part_;
   int cache_line_size_;
   bool has_fpu_;

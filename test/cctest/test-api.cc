@@ -7757,8 +7757,7 @@ struct FlagAndPersistent {
 };
 
 
-static void SetFlag(
-    const v8::WeakCallbackData<v8::Object, FlagAndPersistent>& data) {
+static void SetFlag(const v8::PhantomCallbackData<FlagAndPersistent>& data) {
   data.GetParameter()->flag = true;
 }
 
@@ -7821,6 +7820,98 @@ THREADED_TEST(IndependentWeakHandle) {
   IndependentWeakHandle(false, true);
   IndependentWeakHandle(true, false);
   IndependentWeakHandle(true, true);
+}
+
+
+class Trivial {
+ public:
+  explicit Trivial(int x) : x_(x) {}
+
+  int x() { return x_; }
+  void set_x(int x) { x_ = x; }
+
+ private:
+  int x_;
+};
+
+
+class Trivial2 {
+ public:
+  Trivial2(int x, int y) : y_(y), x_(x) {}
+
+  int x() { return x_; }
+  void set_x(int x) { x_ = x; }
+
+  int y() { return y_; }
+  void set_y(int y) { y_ = y; }
+
+ private:
+  int y_;
+  int x_;
+};
+
+
+void CheckInternalFields(
+    const v8::InternalFieldsCallbackData<Trivial, Trivial2>& data) {
+  Trivial* t1 = data.GetInternalField1();
+  Trivial2* t2 = data.GetInternalField2();
+  CHECK_EQ(42, t1->x());
+  CHECK_EQ(103, t2->x());
+  t1->set_x(1729);
+  t2->set_x(33550336);
+}
+
+
+void InternalFieldCallback(bool global_gc) {
+  LocalContext env;
+  v8::Isolate* isolate = env->GetIsolate();
+  v8::HandleScope scope(isolate);
+
+  Local<v8::FunctionTemplate> templ = v8::FunctionTemplate::New(isolate);
+  Local<v8::ObjectTemplate> instance_templ = templ->InstanceTemplate();
+  Trivial* t1;
+  Trivial2* t2;
+  instance_templ->SetInternalFieldCount(2);
+  {
+    v8::HandleScope scope(isolate);
+    Local<v8::Object> obj = templ->GetFunction()->NewInstance();
+    v8::Persistent<v8::Object> handle(isolate, obj);
+    CHECK_EQ(2, obj->InternalFieldCount());
+    CHECK(obj->GetInternalField(0)->IsUndefined());
+    t1 = new Trivial(42);
+    t2 = new Trivial2(103, 9);
+
+    obj->SetAlignedPointerInInternalField(0, t1);
+    t1 = reinterpret_cast<Trivial*>(obj->GetAlignedPointerFromInternalField(0));
+    CHECK_EQ(42, t1->x());
+
+    obj->SetAlignedPointerInInternalField(1, t2);
+    t2 =
+        reinterpret_cast<Trivial2*>(obj->GetAlignedPointerFromInternalField(1));
+    CHECK_EQ(103, t2->x());
+
+    handle.SetPhantom(CheckInternalFields, 0, 1);
+    if (!global_gc) {
+      handle.MarkIndependent();
+    }
+  }
+  if (global_gc) {
+    CcTest::heap()->CollectAllGarbage(TestHeap::Heap::kNoGCFlags);
+  } else {
+    CcTest::heap()->CollectGarbage(i::NEW_SPACE);
+  }
+
+  CHECK_EQ(1729, t1->x());
+  CHECK_EQ(33550336, t2->x());
+
+  delete t1;
+  delete t2;
+}
+
+
+THREADED_TEST(InternalFieldCallback) {
+  InternalFieldCallback(false);
+  InternalFieldCallback(true);
 }
 
 
@@ -23123,8 +23214,6 @@ class RequestInterruptTestBase {
 
     TestBody();
 
-    isolate_->ClearInterrupt();
-
     // Verify we arrived here because interruptor was called
     // not due to a bug causing us to exit the loop too early.
     CHECK(!should_continue());
@@ -23373,10 +23462,9 @@ TEST(RequestInterruptTestWithMathAbs) {
 }
 
 
-class ClearInterruptFromAnotherThread
-    : public RequestInterruptTestBase {
+class RequestMultipleInterrupts : public RequestInterruptTestBase {
  public:
-  ClearInterruptFromAnotherThread() : i_thread(this), sem2_(0) { }
+  RequestMultipleInterrupts() : i_thread(this), counter_(0) {}
 
   virtual void StartInterruptThread() {
     i_thread.Start();
@@ -23393,39 +23481,33 @@ class ClearInterruptFromAnotherThread
  private:
   class InterruptThread : public v8::base::Thread {
    public:
-    explicit InterruptThread(ClearInterruptFromAnotherThread* test)
+    enum { NUM_INTERRUPTS = 10 };
+    explicit InterruptThread(RequestMultipleInterrupts* test)
         : Thread(Options("RequestInterruptTest")), test_(test) {}
 
     virtual void Run() {
       test_->sem_.Wait();
-      test_->isolate_->RequestInterrupt(&OnInterrupt, test_);
-      test_->sem_.Wait();
-      test_->isolate_->ClearInterrupt();
-      test_->sem2_.Signal();
+      for (int i = 0; i < NUM_INTERRUPTS; i++) {
+        test_->isolate_->RequestInterrupt(&OnInterrupt, test_);
+      }
     }
 
     static void OnInterrupt(v8::Isolate* isolate, void* data) {
-      ClearInterruptFromAnotherThread* test =
-          reinterpret_cast<ClearInterruptFromAnotherThread*>(data);
-      test->sem_.Signal();
-      bool success = test->sem2_.WaitFor(v8::base::TimeDelta::FromSeconds(2));
-      // Crash instead of timeout to make this failure more prominent.
-      CHECK(success);
-      test->should_continue_ = false;
+      RequestMultipleInterrupts* test =
+          reinterpret_cast<RequestMultipleInterrupts*>(data);
+      test->should_continue_ = ++test->counter_ < NUM_INTERRUPTS;
     }
 
    private:
-     ClearInterruptFromAnotherThread* test_;
+    RequestMultipleInterrupts* test_;
   };
 
   InterruptThread i_thread;
-  v8::base::Semaphore sem2_;
+  int counter_;
 };
 
 
-TEST(ClearInterruptFromAnotherThread) {
-  ClearInterruptFromAnotherThread().RunTest();
-}
+TEST(RequestMultipleInterrupts) { RequestMultipleInterrupts().RunTest(); }
 
 
 static Local<Value> function_new_expected_env;

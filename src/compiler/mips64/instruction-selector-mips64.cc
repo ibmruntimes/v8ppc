@@ -146,8 +146,9 @@ static void VisitBinop(InstructionSelector* selector, Node* node,
   DCHECK_GE(arraysize(inputs), input_count);
   DCHECK_GE(arraysize(outputs), output_count);
 
-  selector->Emit(cont->Encode(opcode), output_count, outputs, input_count,
-                 inputs);
+  Instruction* instr = selector->Emit(cont->Encode(opcode), output_count,
+                                      outputs, input_count, inputs);
+  if (cont->IsBranch()) instr->MarkAsControl();
 }
 
 
@@ -608,17 +609,17 @@ void InstructionSelector::VisitFloat64Sqrt(Node* node) {
 
 
 void InstructionSelector::VisitFloat64Floor(Node* node) {
-  VisitRR(this, kMips64FloorD, node);
+  VisitRR(this, kMips64Float64Floor, node);
 }
 
 
 void InstructionSelector::VisitFloat64Ceil(Node* node) {
-  VisitRR(this, kMips64CeilD, node);
+  VisitRR(this, kMips64Float64Ceil, node);
 }
 
 
 void InstructionSelector::VisitFloat64RoundTruncate(Node* node) {
-  VisitRR(this, kMips64RoundTruncateD, node);
+  VisitRR(this, kMips64Float64RoundTruncate, node);
 }
 
 
@@ -776,7 +777,7 @@ static void VisitCompare(InstructionSelector* selector, InstructionCode opcode,
   opcode = cont->Encode(opcode);
   if (cont->IsBranch()) {
     selector->Emit(opcode, NULL, left, right, g.Label(cont->true_block()),
-                   g.Label(cont->false_block()));
+                   g.Label(cont->false_block()))->MarkAsControl();
   } else {
     DCHECK(cont->IsSet());
     selector->Emit(opcode, g.DefineAsRegister(cont->result()), left, right);
@@ -839,7 +840,8 @@ void EmitWordCompareZero(InstructionSelector* selector, InstructionCode opcode,
   InstructionOperand* const value_operand = g.UseRegister(value);
   if (cont->IsBranch()) {
     selector->Emit(opcode, nullptr, value_operand, g.TempImmediate(0),
-                   g.Label(cont->true_block()), g.Label(cont->false_block()));
+                   g.Label(cont->true_block()),
+                   g.Label(cont->false_block()))->MarkAsControl();
   } else {
     selector->Emit(opcode, g.DefineAsRegister(cont->result()), value_operand,
                    g.TempImmediate(0));
@@ -1067,7 +1069,9 @@ void InstructionSelector::VisitFloat64LessThanOrEqual(Node* node) {
 // static
 MachineOperatorBuilder::Flags
 InstructionSelector::SupportedMachineOperatorFlags() {
-  return MachineOperatorBuilder::kNoFlags;
+  return MachineOperatorBuilder::kFloat64Floor |
+         MachineOperatorBuilder::kFloat64Ceil |
+         MachineOperatorBuilder::kFloat64RoundTruncate;
 }
 
 }  // namespace compiler

@@ -237,6 +237,7 @@ void InstructionSelector::VisitCheckedLoad(Node* node) {
     Int32Matcher mlength(length);
     Int32BinopMatcher moffset(offset);
     if (mlength.HasValue() && moffset.right().HasValue() &&
+        moffset.right().Value() >= 0 &&
         mlength.Value() >= moffset.right().Value()) {
       Emit(opcode, g.DefineAsRegister(node), g.UseRegister(buffer),
            g.UseRegister(moffset.left().node()),
@@ -285,6 +286,7 @@ void InstructionSelector::VisitCheckedStore(Node* node) {
     Int32Matcher mlength(length);
     Int32BinopMatcher moffset(offset);
     if (mlength.HasValue() && moffset.right().HasValue() &&
+        moffset.right().Value() >= 0 &&
         mlength.Value() >= moffset.right().Value()) {
       Emit(opcode, nullptr, g.UseRegister(buffer),
            g.UseRegister(moffset.left().node()),
@@ -351,8 +353,9 @@ static void VisitBinop(InstructionSelector* selector, Node* node,
   DCHECK_GE(arraysize(inputs), input_count);
   DCHECK_GE(arraysize(outputs), output_count);
 
-  selector->Emit(cont->Encode(opcode), output_count, outputs, input_count,
-                 inputs);
+  Instruction* instr = selector->Emit(cont->Encode(opcode), output_count,
+                                      outputs, input_count, inputs);
+  if (cont->IsBranch()) instr->MarkAsControl();
 }
 
 
@@ -976,7 +979,7 @@ static void VisitCompare(InstructionSelector* selector, InstructionCode opcode,
   opcode = cont->Encode(opcode);
   if (cont->IsBranch()) {
     selector->Emit(opcode, NULL, left, right, g.Label(cont->true_block()),
-                   g.Label(cont->false_block()));
+                   g.Label(cont->false_block()))->MarkAsControl();
   } else {
     DCHECK(cont->IsSet());
     selector->Emit(opcode, g.DefineAsRegister(cont->result()), left, right);

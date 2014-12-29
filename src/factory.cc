@@ -1035,7 +1035,7 @@ Handle<Object> Factory::NewNumber(double value,
   // patterns is faster than using fpclassify() et al.
   if (IsMinusZero(value)) return NewHeapNumber(-0.0, IMMUTABLE, pretenure);
 
-  int int_value = FastD2I(value);
+  int int_value = FastD2IChecked(value);
   if (value == int_value && Smi::IsValid(int_value)) {
     return handle(Smi::FromInt(int_value), isolate());
   }
@@ -1682,6 +1682,7 @@ void Factory::NewJSArrayStorage(Handle<JSArray> array,
     return;
   }
 
+  HandleScope inner_scope(isolate());
   Handle<FixedArrayBase> elms;
   ElementsKind elements_kind = array->GetElementsKind();
   if (IsFastDoubleElementsKind(elements_kind)) {

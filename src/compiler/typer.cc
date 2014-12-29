@@ -138,10 +138,10 @@ class LazyTypeCache FINAL : public ZoneObject {
 };
 
 
-class Typer::Decorator : public GraphDecorator {
+class Typer::Decorator FINAL : public GraphDecorator {
  public:
   explicit Decorator(Typer* typer) : typer_(typer) {}
-  virtual void Decorate(Node* node);
+  void Decorate(Node* node) FINAL;
 
  private:
   Typer* typer_;
@@ -184,7 +184,12 @@ Typer::Typer(Graph* graph, MaybeHandle<Context> context)
   signed32ish = Type::Union(signed32, truncating_to_zero, zone);
   unsigned32ish = Type::Union(unsigned32, truncating_to_zero, zone);
   falsish = Type::Union(Type::Undetectable(),
-      Type::Union(zeroish, undefined_or_null, zone), zone);
+                        Type::Union(Type::Union(singleton_false, zeroish, zone),
+                                    undefined_or_null, zone),
+                        zone);
+  truish = Type::Union(
+      singleton_true,
+      Type::Union(Type::DetectableReceiver(), Type::Symbol(), zone), zone);
   integer = Type::Range(minusinfinity, infinity, zone);
   weakint = Type::Union(integer, nan_or_minuszero, zone);
 
@@ -511,8 +516,8 @@ Type* Typer::Visitor::ToPrimitive(Type* type, Typer* t) {
 Type* Typer::Visitor::ToBoolean(Type* type, Typer* t) {
   if (type->Is(Type::Boolean())) return type;
   if (type->Is(t->falsish)) return t->singleton_false;
-  if (type->Is(Type::DetectableReceiver())) return t->singleton_true;
-  if (type->Is(Type::OrderedNumber()) && (type->Max() < 0 || 0 < type->Min())) {
+  if (type->Is(t->truish)) return t->singleton_true;
+  if (type->Is(Type::PlainNumber()) && (type->Max() < 0 || 0 < type->Min())) {
     return t->singleton_true;  // Ruled out nan, -0 and +0.
   }
   return Type::Boolean();
@@ -1182,7 +1187,7 @@ Bounds Typer::Visitor::TypeJSTypeOf(Node* node) {
 
 
 Bounds Typer::Visitor::TypeJSToBoolean(Node* node) {
-  return Bounds(Type::None(zone()), Type::Boolean(zone()));
+  return TypeUnaryOp(node, ToBoolean);
 }
 
 

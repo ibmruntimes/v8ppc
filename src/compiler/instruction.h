@@ -25,7 +25,8 @@ namespace compiler {
 
 // A couple of reserved opcodes are used for internal use.
 const InstructionCode kGapInstruction = -1;
-const InstructionCode kSourcePositionInstruction = -2;
+const InstructionCode kBlockStartInstruction = -2;
+const InstructionCode kSourcePositionInstruction = -3;
 
 #define INSTRUCTION_OPERAND_LIST(V)                                  \
   V(Constant, CONSTANT, 0)                                           \
@@ -63,7 +64,7 @@ class InstructionOperand : public ZoneObject {
   void ConvertTo(Kind kind, int index) {
     if (kind == REGISTER || kind == DOUBLE_REGISTER) DCHECK(index >= 0);
     value_ = KindField::encode(kind);
-    value_ |= index << KindField::kSize;
+    value_ |= bit_cast<unsigned>(index << KindField::kSize);
     DCHECK(this->index() == index);
   }
 
@@ -72,9 +73,9 @@ class InstructionOperand : public ZoneObject {
   static void TearDownCaches();
 
  protected:
-  typedef BitField<Kind, 0, 3> KindField;
+  typedef BitField64<Kind, 0, 3> KindField;
 
-  unsigned value_;
+  uint64_t value_;
 };
 
 typedef ZoneVector<InstructionOperand*> InstructionOperandVector;
@@ -127,7 +128,7 @@ class UnallocatedOperand : public InstructionOperand {
     DCHECK(policy == FIXED_SLOT);
     value_ |= VirtualRegisterField::encode(kInvalidVirtualRegister);
     value_ |= BasicPolicyField::encode(policy);
-    value_ |= index << FixedSlotIndexField::kShift;
+    value_ |= static_cast<int64_t>(index) << FixedSlotIndexField::kShift;
     DCHECK(this->fixed_slot_index() == index);
   }
 
@@ -181,22 +182,22 @@ class UnallocatedOperand : public InstructionOperand {
   //     +------------------------------------------+    P ... Policy
   //
   // The slot index is a signed value which requires us to decode it manually
-  // instead of using the BitField utility class.
+  // instead of using the BitField64 utility class.
 
   // The superclass has a KindField.
   STATIC_ASSERT(KindField::kSize == 3);
 
   // BitFields for all unallocated operands.
-  class BasicPolicyField : public BitField<BasicPolicy, 3, 1> {};
-  class VirtualRegisterField : public BitField<unsigned, 4, 18> {};
+  class BasicPolicyField : public BitField64<BasicPolicy, 3, 1> {};
+  class VirtualRegisterField : public BitField64<unsigned, 4, 30> {};
 
   // BitFields specific to BasicPolicy::FIXED_SLOT.
-  class FixedSlotIndexField : public BitField<int, 22, 10> {};
+  class FixedSlotIndexField : public BitField64<int, 34, 30> {};
 
   // BitFields specific to BasicPolicy::EXTENDED_POLICY.
-  class ExtendedPolicyField : public BitField<ExtendedPolicy, 22, 3> {};
-  class LifetimeField : public BitField<Lifetime, 25, 1> {};
-  class FixedRegisterField : public BitField<int, 26, 6> {};
+  class ExtendedPolicyField : public BitField64<ExtendedPolicy, 34, 3> {};
+  class LifetimeField : public BitField64<Lifetime, 37, 1> {};
+  class FixedRegisterField : public BitField64<int, 38, 6> {};
 
   static const int kInvalidVirtualRegister = VirtualRegisterField::kMax;
   static const int kMaxVirtualRegisters = VirtualRegisterField::kMax;
@@ -243,7 +244,8 @@ class UnallocatedOperand : public InstructionOperand {
   // [fixed_slot_index]: Only for FIXED_SLOT.
   int fixed_slot_index() const {
     DCHECK(HasFixedSlotPolicy());
-    return static_cast<int>(value_) >> FixedSlotIndexField::kShift;
+    return static_cast<int>(bit_cast<int64_t>(value_) >>
+                            FixedSlotIndexField::kShift);
   }
 
   // [fixed_register_index]: Only for FIXED_REGISTER or FIXED_DOUBLE_REGISTER.
@@ -454,7 +456,7 @@ class Instruction : public ZoneObject {
     return FlagsConditionField::decode(opcode());
   }
 
-  // TODO(titzer): make call into a flag.
+  // TODO(titzer): make control and call into flags.
   static Instruction* New(Zone* zone, InstructionCode opcode) {
     return New(zone, opcode, 0, NULL, 0, NULL, 0, NULL);
   }
@@ -476,15 +478,25 @@ class Instruction : public ZoneObject {
         opcode, output_count, outputs, input_count, inputs, temp_count, temps);
   }
 
+  // TODO(titzer): another holdover from lithium days; register allocator
+  // should not need to know about control instructions.
+  Instruction* MarkAsControl() {
+    bit_field_ = IsControlField::update(bit_field_, true);
+    return this;
+  }
   Instruction* MarkAsCall() {
     bit_field_ = IsCallField::update(bit_field_, true);
     return this;
   }
+  bool IsControl() const { return IsControlField::decode(bit_field_); }
   bool IsCall() const { return IsCallField::decode(bit_field_); }
   bool NeedsPointerMap() const { return IsCall(); }
   bool HasPointerMap() const { return pointer_map_ != NULL; }
 
-  bool IsGapMoves() const { return opcode() == kGapInstruction; }
+  bool IsGapMoves() const {
+    return opcode() == kGapInstruction || opcode() == kBlockStartInstruction;
+  }
+  bool IsBlockStart() const { return opcode() == kBlockStartInstruction; }
   bool IsSourcePosition() const {
     return opcode() == kSourcePositionInstruction;
   }
@@ -521,7 +533,8 @@ class Instruction : public ZoneObject {
   explicit Instruction(InstructionCode opcode)
       : opcode_(opcode),
         bit_field_(OutputCountField::encode(0) | InputCountField::encode(0) |
-                   TempCountField::encode(0) | IsCallField::encode(false)),
+                   TempCountField::encode(0) | IsCallField::encode(false) |
+                   IsControlField::encode(false)),
         pointer_map_(NULL) {}
 
   Instruction(InstructionCode opcode, size_t output_count,
@@ -532,7 +545,7 @@ class Instruction : public ZoneObject {
         bit_field_(OutputCountField::encode(output_count) |
                    InputCountField::encode(input_count) |
                    TempCountField::encode(temp_count) |
-                   IsCallField::encode(false)),
+                   IsCallField::encode(false) | IsControlField::encode(false)),
         pointer_map_(NULL) {
     for (size_t i = 0; i < output_count; ++i) {
       operands_[i] = outputs[i];
@@ -550,6 +563,7 @@ class Instruction : public ZoneObject {
   typedef BitField<size_t, 8, 16> InputCountField;
   typedef BitField<size_t, 24, 6> TempCountField;
   typedef BitField<bool, 30, 1> IsCallField;
+  typedef BitField<bool, 31, 1> IsControlField;
 
   InstructionCode opcode_;
   uint32_t bit_field_;
@@ -625,6 +639,30 @@ class GapInstruction : public Instruction {
   friend std::ostream& operator<<(std::ostream& os,
                                   const PrintableInstruction& instr);
   ParallelMove* parallel_moves_[LAST_INNER_POSITION + 1];
+};
+
+
+// This special kind of gap move instruction represents the beginning of a
+// block of code.
+class BlockStartInstruction FINAL : public GapInstruction {
+ public:
+  static BlockStartInstruction* New(Zone* zone) {
+    void* buffer = zone->New(sizeof(BlockStartInstruction));
+    return new (buffer) BlockStartInstruction();
+  }
+
+  static BlockStartInstruction* cast(Instruction* instr) {
+    DCHECK(instr->IsBlockStart());
+    return static_cast<BlockStartInstruction*>(instr);
+  }
+
+  static const BlockStartInstruction* cast(const Instruction* instr) {
+    DCHECK(instr->IsBlockStart());
+    return static_cast<const BlockStartInstruction*>(instr);
+  }
+
+ private:
+  BlockStartInstruction() : GapInstruction(kBlockStartInstruction) {}
 };
 
 
@@ -944,7 +982,7 @@ class InstructionSequence FINAL : public ZoneObject {
 
   void AddGapMove(int index, InstructionOperand* from, InstructionOperand* to);
 
-  GapInstruction* GetBlockStart(BasicBlock::RpoNumber rpo) const;
+  BlockStartInstruction* GetBlockStart(BasicBlock::RpoNumber rpo) const;
 
   typedef InstructionDeque::const_iterator const_iterator;
   const_iterator begin() const { return instructions_.begin(); }

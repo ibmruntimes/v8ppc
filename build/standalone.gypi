@@ -396,6 +396,7 @@
     }],  # OS=="win"
     ['OS=="mac"', {
       'xcode_settings': {
+        'SDKROOT': 'macosx',
         'SYMROOT': '<(DEPTH)/xcodebuild',
       },
       'target_defaults': {

@@ -183,9 +183,7 @@ DEFINE_IMPLICATION(es_staging, harmony)
   V(harmony_unicode, "harmony unicode escapes")
 
 // Features that are complete (but still behind --harmony/es-staging flag).
-#define HARMONY_STAGED(V)                                                 \
-  V(harmony_tostring, "harmony toString")                                 \
-  V(harmony_templates, "harmony template literals")
+#define HARMONY_STAGED(V) V(harmony_tostring, "harmony toString")
 
 // Features that are shipping (turned on by default, but internal flag remains).
 #define HARMONY_SHIPPING(V)                                               \
@@ -194,7 +192,8 @@ DEFINE_IMPLICATION(es_staging, harmony)
   V(harmony_scoping, "harmony block scoping")                             \
   V(harmony_classes,                                                      \
     "harmony classes (implies block scoping & object literal extension)") \
-  V(harmony_object_literals, "harmony object literal extensions")
+  V(harmony_object_literals, "harmony object literal extensions")         \
+  V(harmony_templates, "harmony template literals")
 
 // Once a shipping feature has proved stable in the wild, it will be dropped
 // from HARMONY_SHIPPING, all occurrences of the FLAG_ variable are removed,
@@ -357,7 +356,6 @@ DEFINE_BOOL(job_based_recompilation, false,
             "post tasks to v8::Platform instead of using a thread for "
             "concurrent recompilation")
 DEFINE_IMPLICATION(job_based_recompilation, concurrent_recompilation)
-DEFINE_NEG_IMPLICATION(job_based_recompilation, block_concurrent_recompilation)
 DEFINE_BOOL(trace_concurrent_recompilation, false,
             "track concurrent recompilation")
 DEFINE_INT(concurrent_recompilation_queue_length, 8,
@@ -557,6 +555,7 @@ DEFINE_BOOL(experimental_new_space_growth_heuristic, false,
             "Grow the new space based on the percentage of survivors instead "
             "of their absolute value.")
 DEFINE_INT(max_old_space_size, 0, "max size of the old space (in Mbytes)")
+DEFINE_INT(initial_old_space_size, 0, "initial old space size (in Mbytes)")
 DEFINE_INT(max_executable_size, 0, "max size of executable memory (in Mbytes)")
 DEFINE_BOOL(gc_global, false, "always perform global GCs")
 DEFINE_INT(gc_interval, -1, "garbage collect after <n> allocations")
@@ -582,8 +581,6 @@ DEFINE_BOOL(trace_fragmentation, false,
             "report fragmentation for old pointer and data pages")
 DEFINE_BOOL(collect_maps, true,
             "garbage collect maps from which no objects can be reached")
-DEFINE_BOOL(weak_embedded_maps_in_ic, true,
-            "make maps embedded in inline cache stubs")
 DEFINE_BOOL(weak_embedded_maps_in_optimized_code, true,
             "make maps embedded in optimized code weak")
 DEFINE_BOOL(weak_embedded_objects_in_optimized_code, true,

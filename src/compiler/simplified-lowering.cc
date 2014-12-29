@@ -11,6 +11,7 @@
 #include "src/compiler/common-operator.h"
 #include "src/compiler/diamond.h"
 #include "src/compiler/graph-inl.h"
+#include "src/compiler/linkage.h"
 #include "src/compiler/node-matchers.h"
 #include "src/compiler/node-properties-inl.h"
 #include "src/compiler/representation-change.h"
@@ -1147,14 +1148,18 @@ void SimplifiedLowering::DoLoadBuffer(Node* node, MachineType output_type,
     Node* const length = node->InputAt(2);
     Node* const effect = node->InputAt(3);
     Node* const control = node->InputAt(4);
+    Node* const index =
+        machine()->Is64()
+            ? graph()->NewNode(machine()->ChangeUint32ToUint64(), offset)
+            : offset;
 
     Node* check = graph()->NewNode(machine()->Uint32LessThan(), offset, length);
     Node* branch =
         graph()->NewNode(common()->Branch(BranchHint::kTrue), check, control);
 
     Node* if_true = graph()->NewNode(common()->IfTrue(), branch);
-    Node* etrue = graph()->NewNode(machine()->Load(type), buffer, offset,
-                                   effect, if_true);
+    Node* etrue =
+        graph()->NewNode(machine()->Load(type), buffer, index, effect, if_true);
     Node* vtrue = changer->GetRepresentationFor(etrue, type, output_type);
 
     Node* if_false = graph()->NewNode(common()->IfFalse(), branch);
