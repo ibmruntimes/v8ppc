@@ -2836,10 +2836,11 @@ void Simulator::ExecuteExt4(Instruction* instr) {
     case FRSP: {
       int frt = instr->RTValue();
       int frb = instr->RBValue();
+      // frsp round 8-byte double-precision value to
+      // single-precision value
       double frb_val = get_double_from_d_register(frb);
-      // frsp round 8-byte double-precision value to 8-byte
-      // single-precision value, ignore the round here
-      set_d_register_from_double(frt, frb_val);
+      double frt_val = static_cast<float>(frb_val);
+      set_d_register_from_double(frt, frt_val);
       if (instr->Bit(0)) {  // RC bit set
                             //  UNIMPLEMENTED();
       }
