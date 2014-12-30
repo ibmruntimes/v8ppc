@@ -160,6 +160,146 @@ class OutOfLineLoadZero FINAL : public OutOfLineCode {
 
 }  // namespace
 
+#define ASSEMBLE_FLOAT_UNOP_RC(asm_instr)                               \
+  do {                                                                  \
+    __ asm_instr(i.OutputDoubleRegister(), i.InputDoubleRegister(0),    \
+                 i.OutputRCBit());                                      \
+  } while (0)
+
+
+#define ASSEMBLE_FLOAT_BINOP_RC(asm_instr)                              \
+  do {                                                                  \
+    __ asm_instr(i.OutputDoubleRegister(), i.InputDoubleRegister(0),    \
+                 i.InputDoubleRegister(1), i.OutputRCBit());            \
+  } while (0)
+
+
+#define ASSEMBLE_BINOP(asm_instr_reg, asm_instr_imm)            \
+  do {                                                          \
+    if (HasRegisterInput(instr, 1)) {                           \
+      __ asm_instr_reg(i.OutputRegister(), i.InputRegister(0),  \
+                       i.InputRegister(1));                     \
+    } else {                                                    \
+      __ asm_instr_imm(i.OutputRegister(), i.InputRegister(0),  \
+                       i.InputImmediate(1));                    \
+    }                                                           \
+  } while (0)
+
+
+#define ASSEMBLE_BINOP_RC(asm_instr_reg, asm_instr_imm)         \
+  do {                                                          \
+    if (HasRegisterInput(instr, 1)) {                           \
+      __ asm_instr_reg(i.OutputRegister(), i.InputRegister(0),  \
+                       i.InputRegister(1), i.OutputRCBit());    \
+    } else {                                                    \
+      __ asm_instr_imm(i.OutputRegister(), i.InputRegister(0),  \
+                       i.InputImmediate(1), i.OutputRCBit());   \
+    }                                                           \
+  } while (0)
+
+
+#define ASSEMBLE_BINOP_INT_RC(asm_instr_reg, asm_instr_imm)     \
+  do {                                                          \
+    if (HasRegisterInput(instr, 1)) {                           \
+      __ asm_instr_reg(i.OutputRegister(), i.InputRegister(0),  \
+                       i.InputRegister(1), i.OutputRCBit());    \
+    } else {                                                    \
+      __ asm_instr_imm(i.OutputRegister(), i.InputRegister(0),  \
+                       i.InputInt32(1), i.OutputRCBit());       \
+    }                                                           \
+  } while (0)
+
+
+#if V8_TARGET_ARCH_PPC64
+#define ASSEMBLE_ADD_WITH_OVERFLOW()                            \
+  do {                                                          \
+    ASSEMBLE_BINOP(add, addi);                                  \
+    __ TestIfInt32(i.OutputRegister(), r0, cr0);                \
+  } while (0)
+#else
+#define ASSEMBLE_ADD_WITH_OVERFLOW()\
+  do {                                                                  \
+    if (HasRegisterInput(instr, 1)) {                                   \
+      __ AddAndCheckForOverflow(i.OutputRegister(), i.InputRegister(0), \
+                                i.InputRegister(1), kScratchReg, r0);   \
+    } else {                                                            \
+      __ AddAndCheckForOverflow(i.OutputRegister(), i.InputRegister(0), \
+                                i.InputInt32(1), kScratchReg, r0);      \
+    }                                                                   \
+  } while (0)
+#endif
+
+
+#if V8_TARGET_ARCH_PPC64
+#define ASSEMBLE_SUB_WITH_OVERFLOW()                            \
+  do {                                                          \
+    ASSEMBLE_BINOP(sub, subi);                                  \
+    __ TestIfInt32(i.OutputRegister(), r0, cr0);                \
+  } while (0)
+#else
+#define ASSEMBLE_SUB_WITH_OVERFLOW()\
+  do {                                                                  \
+    if (HasRegisterInput(instr, 1)) {                                   \
+      __ SubAndCheckForOverflow(i.OutputRegister(), i.InputRegister(0), \
+                                i.InputRegister(1), kScratchReg, r0);   \
+    } else {                                                            \
+      __ AddAndCheckForOverflow(i.OutputRegister(), i.InputRegister(0), \
+                                -i.InputInt32(1), kScratchReg, r0);     \
+    }                                                                   \
+  } while (0)
+#endif
+
+
+#define ASSEMBLE_COMPARE(cmp_instr, cmpl_instr)                         \
+  do {                                                                  \
+    const CRegister cr = cr0;                                           \
+    if (HasRegisterInput(instr, 1)) {                                   \
+      if (i.CompareLogical()) {                                         \
+        __ cmpl_instr(i.InputRegister(0), i.InputRegister(1), cr);      \
+      } else {                                                          \
+        __ cmp_instr(i.InputRegister(0), i.InputRegister(1), cr);       \
+      }                                                                 \
+    } else {                                                            \
+      if (i.CompareLogical()) {                                         \
+        __ cmpl_instr##i(i.InputRegister(0), i.InputImmediate(1), cr);  \
+      } else {                                                          \
+        __ cmp_instr##i(i.InputRegister(0), i.InputImmediate(1), cr);   \
+      }                                                                 \
+    }                                                                   \
+    DCHECK_EQ(SetRC, i.OutputRCBit());                                  \
+  } while (0)
+
+
+#define ASSEMBLE_FLOAT_COMPARE(cmp_instr)                                  \
+  do {                                                                     \
+    const CRegister cr = cr0;                                              \
+    __ cmp_instr(i.InputDoubleRegister(0), i.InputDoubleRegister(1), cr);  \
+    DCHECK_EQ(SetRC, i.OutputRCBit());                                     \
+  } while (0)
+
+
+#define ASSEMBLE_MODULO(div_instr, mul_instr)                         \
+  do {                                                                \
+    const Register scratch = kScratchReg;                             \
+    __ div_instr(scratch, i.InputRegister(0), i.InputRegister(1));    \
+    __ mul_instr(scratch, scratch, i.InputRegister(1));               \
+    __ sub(i.OutputRegister(), i.InputRegister(0), scratch, LeaveOE,  \
+           i.OutputRCBit());                                          \
+  } while (0)
+
+
+#define ASSEMBLE_FLOAT_MODULO()                                               \
+  do {                                                                        \
+    FrameScope scope(masm(), StackFrame::MANUAL);                             \
+    __ PrepareCallCFunction(0, 2, kScratchReg);                               \
+    __ MovToFloatParameters(i.InputDoubleRegister(0),                         \
+                            i.InputDoubleRegister(1));                        \
+    __ CallCFunction(ExternalReference::mod_two_doubles_operation(isolate()), \
+                     0, 2);                                                   \
+    __ MovFromFloatResult(i.OutputDoubleRegister());                          \
+    DCHECK_EQ(LeaveRC, i.OutputRCBit());                                      \
+  } while (0)
+
 
 #define ASSEMBLE_LOAD_FLOAT(asm_instr, asm_instrx)              \
   do {                                                          \
@@ -315,6 +455,21 @@ class OutOfLineLoadZero FINAL : public OutOfLineCode {
   } while (0)
 
 
+#define ASSEMBLE_STORE_WRITE_BARRIER()                                        \
+  do {                                                                        \
+    Register object = i.InputRegister(0);                                     \
+    Register index = i.InputRegister(1);                                      \
+    Register value = i.InputRegister(2);                                      \
+    __ add(index, object, index);                                             \
+    __ StoreP(value, MemOperand(index));                                      \
+    SaveFPRegsMode mode =                                                     \
+      frame()->DidAllocateDoubleRegisters() ? kSaveFPRegs : kDontSaveFPRegs;  \
+    LinkRegisterStatus lr_status = kLRHasNotBeenSaved;                        \
+    __ RecordWrite(object, index, value, lr_status, mode);                    \
+    DCHECK_EQ(LeaveRC, i.OutputRCBit());                                      \
+  } while (0)
+
+
 // Assembles an instruction after register allocation, producing machine code.
 void CodeGenerator::AssembleArchInstruction(Instruction* instr) {
   PPCOperandConverter i(this, instr);
@@ -412,63 +567,27 @@ void CodeGenerator::AssembleArchInstruction(Instruction* instr) {
       }
       break;
     case kPPC_ShiftLeft32:
-      if (HasRegisterInput(instr, 1)) {
-        __ slw(i.OutputRegister(), i.InputRegister(0), i.InputRegister(1),
-               i.OutputRCBit());
-      } else {
-        __ slwi(i.OutputRegister(), i.InputRegister(0), i.InputImmediate(1),
-                i.OutputRCBit());
-      }
+      ASSEMBLE_BINOP_RC(slw, slwi);
       break;
 #if V8_TARGET_ARCH_PPC64
     case kPPC_ShiftLeft64:
-      if (HasRegisterInput(instr, 1)) {
-        __ sld(i.OutputRegister(), i.InputRegister(0), i.InputRegister(1),
-               i.OutputRCBit());
-      } else {
-        __ sldi(i.OutputRegister(), i.InputRegister(0), i.InputImmediate(1),
-                i.OutputRCBit());
-      }
+      ASSEMBLE_BINOP_RC(sld, sldi);
       break;
 #endif
     case kPPC_ShiftRight32:
-      if (HasRegisterInput(instr, 1)) {
-        __ srw(i.OutputRegister(), i.InputRegister(0), i.InputRegister(1),
-               i.OutputRCBit());
-      } else {
-        __ srwi(i.OutputRegister(), i.InputRegister(0), i.InputImmediate(1),
-                i.OutputRCBit());
-      }
+      ASSEMBLE_BINOP_RC(srw, srwi);
       break;
 #if V8_TARGET_ARCH_PPC64
     case kPPC_ShiftRight64:
-      if (HasRegisterInput(instr, 1)) {
-        __ srd(i.OutputRegister(), i.InputRegister(0), i.InputRegister(1),
-               i.OutputRCBit());
-      } else {
-        __ srdi(i.OutputRegister(), i.InputRegister(0), i.InputImmediate(1),
-                i.OutputRCBit());
-      }
+      ASSEMBLE_BINOP_RC(srd, srdi);
       break;
 #endif
     case kPPC_ShiftRightAlg32:
-      if (HasRegisterInput(instr, 1)) {
-        __ sraw(i.OutputRegister(), i.InputRegister(0), i.InputRegister(1),
-               i.OutputRCBit());
-      } else {
-        int sh = i.InputInt32(1);
-        __ srawi(i.OutputRegister(), i.InputRegister(0), sh, i.OutputRCBit());
-      }
+      ASSEMBLE_BINOP_INT_RC(sraw, srawi);
       break;
 #if V8_TARGET_ARCH_PPC64
     case kPPC_ShiftRightAlg64:
-      if (HasRegisterInput(instr, 1)) {
-        __ srad(i.OutputRegister(), i.InputRegister(0), i.InputRegister(1),
-               i.OutputRCBit());
-      } else {
-        int sh = i.InputInt32(1);
-        __ sradi(i.OutputRegister(), i.InputRegister(0), sh, i.OutputRCBit());
-      }
+      ASSEMBLE_BINOP_INT_RC(srad, sradi);
       break;
 #endif
     case kPPC_RotRight32:
@@ -526,34 +645,11 @@ void CodeGenerator::AssembleArchInstruction(Instruction* instr) {
         DCHECK_EQ(LeaveRC, i.OutputRCBit());
       }
       break;
-    case kPPC_AddWithOverflow32: {
-      Register output = i.OutputRegister();
-      Register left = i.InputRegister(0);
-      if (HasRegisterInput(instr, 1)) {
-        Register right = i.InputRegister(1);
-#if V8_TARGET_ARCH_PPC64
-        __ add(output, left, right);
-#else
-        __ AddAndCheckForOverflow(output, left, right, kScratchReg, r0);
-#endif
-      } else {
-#if V8_TARGET_ARCH_PPC64
-        Operand right = i.InputImmediate(1);
-        __ addi(output, left, right);
-#else
-        intptr_t right = i.InputInt32(1);
-        __ AddAndCheckForOverflow(output, left, right, kScratchReg, r0);
-#endif
-      }
-#if V8_TARGET_ARCH_PPC64
-      __ TestIfInt32(output, r0, cr0);
-#endif
+    case kPPC_AddWithOverflow32:
+      ASSEMBLE_ADD_WITH_OVERFLOW();
       break;
-    }
     case kPPC_AddFloat64:
-      __ fadd(i.OutputDoubleRegister(), i.InputDoubleRegister(0),
-              i.InputDoubleRegister(1));
-      DCHECK_EQ(LeaveRC, i.OutputRCBit());
+      ASSEMBLE_FLOAT_BINOP_RC(fadd);
       break;
     case kPPC_Sub32:
     case kPPC_Sub64:
@@ -565,34 +661,11 @@ void CodeGenerator::AssembleArchInstruction(Instruction* instr) {
         DCHECK_EQ(LeaveRC, i.OutputRCBit());
       }
       break;
-    case kPPC_SubWithOverflow32: {
-      Register output = i.OutputRegister();
-      Register left = i.InputRegister(0);
-      if (HasRegisterInput(instr, 1)) {
-        Register right = i.InputRegister(1);
-#if V8_TARGET_ARCH_PPC64
-        __ sub(output, left, right);
-#else
-        __ SubAndCheckForOverflow(output, left, right, kScratchReg, r0);
-#endif
-      } else {
-#if V8_TARGET_ARCH_PPC64
-        Operand right = i.InputImmediate(1);
-        __ subi(output, left, right);
-#else
-        intptr_t right = i.InputInt32(1);
-        __ AddAndCheckForOverflow(output, left, -right, kScratchReg, r0);
-#endif
-      }
-#if V8_TARGET_ARCH_PPC64
-      __ TestIfInt32(output, r0, cr0);
-#endif
+    case kPPC_SubWithOverflow32:
+      ASSEMBLE_SUB_WITH_OVERFLOW();
       break;
-    }
     case kPPC_SubFloat64:
-      __ fsub(i.OutputDoubleRegister(), i.InputDoubleRegister(0),
-              i.InputDoubleRegister(1));
-      DCHECK_EQ(LeaveRC, i.OutputRCBit());
+      ASSEMBLE_FLOAT_BINOP_RC(fsub);
       break;
     case kPPC_Mul32:
       __ mullw(i.OutputRegister(), i.InputRegister(0), i.InputRegister(1),
@@ -613,9 +686,7 @@ void CodeGenerator::AssembleArchInstruction(Instruction* instr) {
                 i.OutputRCBit());
       break;
     case kPPC_MulFloat64:
-      __ fmul(i.OutputDoubleRegister(), i.InputDoubleRegister(0),
-              i.InputDoubleRegister(1));
-      DCHECK_EQ(LeaveRC, i.OutputRCBit());
+      ASSEMBLE_FLOAT_BINOP_RC(fmul);
       break;
     case kPPC_Div32:
       __ divw(i.OutputRegister(), i.InputRegister(0), i.InputRegister(1));
@@ -638,124 +709,62 @@ void CodeGenerator::AssembleArchInstruction(Instruction* instr) {
       break;
 #endif
     case kPPC_DivFloat64:
-      __ fdiv(i.OutputDoubleRegister(), i.InputDoubleRegister(0),
-              i.InputDoubleRegister(1));
-      DCHECK_EQ(LeaveRC, i.OutputRCBit());
+      ASSEMBLE_FLOAT_BINOP_RC(fdiv);
       break;
     case kPPC_Mod32:
-      __ divw(kScratchReg, i.InputRegister(0), i.InputRegister(1));
-      __ mullw(kScratchReg, kScratchReg, i.InputRegister(1));
-      __ sub(i.OutputRegister(), i.InputRegister(0), kScratchReg, LeaveOE,
-             i.OutputRCBit());
+      ASSEMBLE_MODULO(divw, mullw);
       break;
 #if V8_TARGET_ARCH_PPC64
     case kPPC_Mod64:
-      __ divd(kScratchReg, i.InputRegister(0), i.InputRegister(1));
-      __ mulld(kScratchReg, kScratchReg, i.InputRegister(1));
-      __ sub(i.OutputRegister(), i.InputRegister(0), kScratchReg, LeaveOE,
-             i.OutputRCBit());
+      ASSEMBLE_MODULO(divd, mulld);
       break;
 #endif
     case kPPC_ModU32:
-      __ divwu(kScratchReg, i.InputRegister(0), i.InputRegister(1));
-      __ mullw(kScratchReg, kScratchReg, i.InputRegister(1));
-      __ sub(i.OutputRegister(), i.InputRegister(0), kScratchReg, LeaveOE,
-             i.OutputRCBit());
+      ASSEMBLE_MODULO(divwu, mullw);
       break;
 #if V8_TARGET_ARCH_PPC64
     case kPPC_ModU64:
-      __ divd(kScratchReg, i.InputRegister(0), i.InputRegister(1));
-      __ mulld(kScratchReg, kScratchReg, i.InputRegister(1));
-      __ sub(i.OutputRegister(), i.InputRegister(0), kScratchReg, LeaveOE,
-             i.OutputRCBit());
+      ASSEMBLE_MODULO(divdu, mulld);
       break;
 #endif
-    case kPPC_ModFloat64: {
+    case kPPC_ModFloat64:
       // TODO(bmeurer): We should really get rid of this special instruction,
       // and generate a CallAddress instruction instead.
-      FrameScope scope(masm(), StackFrame::MANUAL);
-      __ PrepareCallCFunction(0, 2, kScratchReg);
-      __ MovToFloatParameters(i.InputDoubleRegister(0),
-                              i.InputDoubleRegister(1));
-      __ CallCFunction(ExternalReference::mod_two_doubles_operation(isolate()),
-                       0, 2);
-      // Move the result in the double result register.
-      __ MovFromFloatResult(i.OutputDoubleRegister());
-      DCHECK_EQ(LeaveRC, i.OutputRCBit());
+      ASSEMBLE_FLOAT_MODULO();
       break;
-    }
     case kPPC_Neg32:
     case kPPC_Neg64:
       __ neg(i.OutputRegister(), i.InputRegister(0), LeaveOE, i.OutputRCBit());
       break;
     case kPPC_SqrtFloat64:
-      __ fsqrt(i.OutputDoubleRegister(), i.InputDoubleRegister(0));
-      DCHECK_EQ(LeaveRC, i.OutputRCBit());
+      ASSEMBLE_FLOAT_UNOP_RC(fsqrt);
       break;
     case kPPC_FloorFloat64:
-      __ frim(i.OutputDoubleRegister(), i.InputDoubleRegister(0));
-      DCHECK_EQ(LeaveRC, i.OutputRCBit());
+      ASSEMBLE_FLOAT_UNOP_RC(frim);
       break;
     case kPPC_CeilFloat64:
-      __ frip(i.OutputDoubleRegister(), i.InputDoubleRegister(0));
-      DCHECK_EQ(LeaveRC, i.OutputRCBit());
+      ASSEMBLE_FLOAT_UNOP_RC(frip);
       break;
     case kPPC_TruncateFloat64:
-      __ friz(i.OutputDoubleRegister(), i.InputDoubleRegister(0));
-      DCHECK_EQ(LeaveRC, i.OutputRCBit());
+      ASSEMBLE_FLOAT_UNOP_RC(friz);
       break;
     case kPPC_RoundFloat64:
-      __ frin(i.OutputDoubleRegister(), i.InputDoubleRegister(0));
-      DCHECK_EQ(LeaveRC, i.OutputRCBit());
+      ASSEMBLE_FLOAT_UNOP_RC(frin);
       break;
     case kPPC_NegFloat64:
-      __ fneg(i.OutputDoubleRegister(), i.InputDoubleRegister(0));
-      DCHECK_EQ(LeaveRC, i.OutputRCBit());
+      ASSEMBLE_FLOAT_UNOP_RC(fneg);
       break;
-    case kPPC_Cmp32: {
-      CRegister cr = cr0;
-      if (HasRegisterInput(instr, 1)) {
-        if (i.CompareLogical()) {
-          __ cmplw(i.InputRegister(0), i.InputRegister(1), cr);
-        } else {
-          __ cmpw(i.InputRegister(0), i.InputRegister(1), cr);
-        }
-      } else {
-        if (i.CompareLogical()) {
-          __ cmplwi(i.InputRegister(0), i.InputImmediate(1), cr);
-        } else {
-          __ cmpwi(i.InputRegister(0), i.InputImmediate(1), cr);
-        }
-      }
-      DCHECK_EQ(SetRC, i.OutputRCBit());
+    case kPPC_Cmp32:
+      ASSEMBLE_COMPARE(cmpw, cmplw);
       break;
-    }
 #if V8_TARGET_ARCH_PPC64
-    case kPPC_Cmp64: {
-      CRegister cr = cr0;
-      if (HasRegisterInput(instr, 1)) {
-        if (i.CompareLogical()) {
-          __ cmpl(i.InputRegister(0), i.InputRegister(1), cr);
-        } else {
-          __ cmp(i.InputRegister(0), i.InputRegister(1), cr);
-        }
-      } else {
-        if (i.CompareLogical()) {
-          __ cmpli(i.InputRegister(0), i.InputImmediate(1), cr);
-        } else {
-          __ cmpi(i.InputRegister(0), i.InputImmediate(1), cr);
-        }
-      }
-      DCHECK_EQ(SetRC, i.OutputRCBit());
+    case kPPC_Cmp64:
+      ASSEMBLE_COMPARE(cmp, cmpl);
       break;
-    }
 #endif
-    case kPPC_CmpFloat64: {
-      CRegister cr = cr0;
-      __ fcmpu(i.InputDoubleRegister(0), i.InputDoubleRegister(1), cr);
-      DCHECK_EQ(SetRC, i.OutputRCBit());
+    case kPPC_CmpFloat64:
+      ASSEMBLE_FLOAT_COMPARE(fcmpu);
       break;
-    }
     case kPPC_Tst32:
       if (HasRegisterInput(instr, 1)) {
         __ and_(r0, i.InputRegister(0), i.InputRegister(1), i.OutputRCBit());
@@ -825,8 +834,7 @@ void CodeGenerator::AssembleArchInstruction(Instruction* instr) {
       DCHECK_EQ(LeaveRC, i.OutputRCBit());
       break;
     case kPPC_Float64ToFloat32:
-      __ frsp(i.OutputDoubleRegister(), i.InputDoubleRegister(0),
-              i.OutputRCBit());
+      ASSEMBLE_FLOAT_UNOP_RC(frsp);
       break;
     case kPPC_Float32ToFloat64:
       // Nothing to do.
@@ -880,19 +888,9 @@ void CodeGenerator::AssembleArchInstruction(Instruction* instr) {
     case kPPC_StoreFloat64:
       ASSEMBLE_STORE_FLOAT(stfd, stfdx);
       break;
-    case kPPC_StoreWriteBarrier: {
-      Register object = i.InputRegister(0);
-      Register index = i.InputRegister(1);
-      Register value = i.InputRegister(2);
-      __ add(index, object, index);
-      __ StoreP(value, MemOperand(index));
-      SaveFPRegsMode mode =
-          frame()->DidAllocateDoubleRegisters() ? kSaveFPRegs : kDontSaveFPRegs;
-      LinkRegisterStatus lr_status = kLRHasNotBeenSaved;
-      __ RecordWrite(object, index, value, lr_status, mode);
-      DCHECK_EQ(LeaveRC, i.OutputRCBit());
+    case kPPC_StoreWriteBarrier:
+      ASSEMBLE_STORE_WRITE_BARRIER();
       break;
-    }
     case kCheckedLoadInt8:
       ASSEMBLE_CHECKED_LOAD_INTEGER(lbz, lbzx);
       __ extsb(i.OutputRegister(), i.OutputRegister());
