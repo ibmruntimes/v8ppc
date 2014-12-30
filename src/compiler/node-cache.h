@@ -8,11 +8,6 @@
 #include "src/base/functional.h"
 #include "src/base/macros.h"
 
-// Work around older GCC not having C++11 features
-#if ((__GNUC__ <= 4) && (__GNUC_MINOR__ <= 6))
-#define nullptr __null
-#endif
-
 namespace v8 {
 namespace internal {
 
