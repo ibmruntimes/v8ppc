@@ -117,9 +117,9 @@ static inline bool HasRegisterInput(Instruction* instr, int index) {
 
 namespace {
 
-class OutOfLineLoadFloat32 FINAL : public OutOfLineCode {
+class OutOfLineLoadNAN32 FINAL : public OutOfLineCode {
  public:
-  OutOfLineLoadFloat32(CodeGenerator* gen, DoubleRegister result)
+  OutOfLineLoadNAN32(CodeGenerator* gen, DoubleRegister result)
       : OutOfLineCode(gen), result_(result) {}
 
   void Generate() FINAL {
@@ -132,9 +132,9 @@ class OutOfLineLoadFloat32 FINAL : public OutOfLineCode {
 };
 
 
-class OutOfLineLoadFloat64 FINAL : public OutOfLineCode {
+class OutOfLineLoadNAN64 FINAL : public OutOfLineCode {
  public:
-  OutOfLineLoadFloat64(CodeGenerator* gen, DoubleRegister result)
+  OutOfLineLoadNAN64(CodeGenerator* gen, DoubleRegister result)
       : OutOfLineCode(gen), result_(result) {}
 
   void Generate() FINAL {
@@ -147,9 +147,9 @@ class OutOfLineLoadFloat64 FINAL : public OutOfLineCode {
 };
 
 
-class OutOfLineLoadInteger FINAL : public OutOfLineCode {
+class OutOfLineLoadZero FINAL : public OutOfLineCode {
  public:
-  OutOfLineLoadInteger(CodeGenerator* gen, Register result)
+  OutOfLineLoadZero(CodeGenerator* gen, Register result)
       : OutOfLineCode(gen), result_(result) {}
 
   void Generate() FINAL { __ li(result_, Operand::Zero()); }
@@ -169,7 +169,6 @@ class OutOfLineLoadInteger FINAL : public OutOfLineCode {
     if (mode == kMode_MRI) {                                    \
       __ asm_instr(result, operand);                            \
     } else {                                                    \
-      DCHECK_EQ(kMode_MRR, mode);                               \
       __ asm_instrx(result, operand);                           \
     }                                                           \
     DCHECK_EQ(LeaveRC, i.OutputRCBit());                        \
@@ -184,7 +183,6 @@ class OutOfLineLoadInteger FINAL : public OutOfLineCode {
     if (mode == kMode_MRI) {                                    \
       __ asm_instr(result, operand);                            \
     } else {                                                    \
-      DCHECK_EQ(kMode_MRR, mode);                               \
       __ asm_instrx(result, operand);                           \
     }                                                           \
     DCHECK_EQ(LeaveRC, i.OutputRCBit());                        \
@@ -200,7 +198,6 @@ class OutOfLineLoadInteger FINAL : public OutOfLineCode {
     if (mode == kMode_MRI) {                                    \
       __ asm_instr(value, operand);                             \
     } else {                                                    \
-      DCHECK_EQ(kMode_MRR, mode);                               \
       __ asm_instrx(value, operand);                            \
     }                                                           \
     DCHECK_EQ(LeaveRC, i.OutputRCBit());                        \
@@ -216,7 +213,6 @@ class OutOfLineLoadInteger FINAL : public OutOfLineCode {
     if (mode == kMode_MRI) {                                    \
       __ asm_instr(value, operand);                             \
     } else {                                                    \
-      DCHECK_EQ(kMode_MRR, mode);                               \
       __ asm_instrx(value, operand);                            \
     }                                                           \
     DCHECK_EQ(LeaveRC, i.OutputRCBit());                        \
@@ -225,21 +221,21 @@ class OutOfLineLoadInteger FINAL : public OutOfLineCode {
 
 #define ASSEMBLE_CHECKED_LOAD_FLOAT(asm_instr, asm_instrx, width)    \
   do {                                                               \
-    auto result = i.OutputDoubleRegister();                          \
-    auto offset = i.InputRegister(0);                                \
-    if (HasRegisterInput(instr, 1)) {                                \
-      __ cmplw(offset, i.InputRegister(1));                          \
-    } else {                                                         \
-      __ cmplwi(offset, i.InputImmediate(1));                        \
-    }                                                                \
+    DoubleRegister result = i.OutputDoubleRegister();                \
     AddressingMode mode = kMode_None;                                \
-    MemOperand operand = i.MemoryOperand(&mode, 2);                  \
-    auto ool = new (zone()) OutOfLineLoadFloat##width(this, result); \
+    MemOperand operand = i.MemoryOperand(&mode, 0);                  \
+    DCHECK_EQ(kMode_MRR, mode);                                      \
+    Register offset = operand.rb();                                  \
+    if (HasRegisterInput(instr, 2)) {                                \
+      __ cmplw(offset, i.InputRegister(2));                          \
+    } else {                                                         \
+      __ cmplwi(offset, i.InputImmediate(2));                        \
+    }                                                                \
+    auto ool = new (zone()) OutOfLineLoadNAN##width(this, result);   \
     __ bge(ool->entry());                                            \
     if (mode == kMode_MRI) {                                         \
       __ asm_instr(result, operand);                                 \
     } else {                                                         \
-      DCHECK_EQ(kMode_MRR, mode);                                    \
       __ asm_instrx(result, operand);                                \
     }                                                                \
     __ bind(ool->exit());                                            \
@@ -249,21 +245,21 @@ class OutOfLineLoadInteger FINAL : public OutOfLineCode {
 
 #define ASSEMBLE_CHECKED_LOAD_INTEGER(asm_instr, asm_instrx)    \
   do {                                                          \
-    auto result = i.OutputRegister();                           \
-    auto offset = i.InputRegister(0);                           \
-    if (HasRegisterInput(instr, 1)) {                           \
-      __ cmplw(offset, i.InputRegister(1));                     \
-    } else {                                                    \
-      __ cmplwi(offset, i.InputImmediate(1));                   \
-    }                                                           \
+    Register result = i.OutputRegister();                       \
     AddressingMode mode = kMode_None;                           \
-    MemOperand operand = i.MemoryOperand(&mode, 2);             \
-    auto ool = new (zone()) OutOfLineLoadInteger(this, result); \
+    MemOperand operand = i.MemoryOperand(&mode, 0);             \
+    DCHECK_EQ(kMode_MRR, mode);                                 \
+    Register offset = operand.rb();                             \
+    if (HasRegisterInput(instr, 2)) {                           \
+      __ cmplw(offset, i.InputRegister(2));                     \
+    } else {                                                    \
+      __ cmplwi(offset, i.InputImmediate(2));                   \
+    }                                                           \
+    auto ool = new (zone()) OutOfLineLoadZero(this, result);    \
     __ bge(ool->entry());                                       \
     if (mode == kMode_MRI) {                                    \
       __ asm_instr(result, operand);                            \
     } else {                                                    \
-      DCHECK_EQ(kMode_MRR, mode);                               \
       __ asm_instrx(result, operand);                           \
     }                                                           \
     __ bind(ool->exit());                                       \
@@ -271,47 +267,47 @@ class OutOfLineLoadInteger FINAL : public OutOfLineCode {
   } while (0)
 
 
-#define ASSEMBLE_CHECKED_STORE_FLOAT(asm_instr, asm_instrx)             \
-  do {                                                                  \
-    Label done;                                                         \
-    auto offset = i.InputRegister(0);                                   \
-    if (HasRegisterInput(instr, 1)) {                                   \
-      __ cmplw(offset, i.InputRegister(1));                             \
-    } else {                                                            \
-      __ cmplwi(offset, i.InputImmediate(1));                           \
-    }                                                                   \
-    __ bge(&done);                                                      \
-    auto value = i.InputDoubleRegister(2);                              \
-    AddressingMode mode = kMode_None;                                   \
-    MemOperand operand = i.MemoryOperand(&mode, 3);                     \
-    if (mode == kMode_MRI) {                                            \
-      __ asm_instr(value, operand);                                     \
-    } else {                                                            \
-      DCHECK_EQ(kMode_MRR, mode);                                       \
-      __ asm_instrx(value, operand);                                    \
-    }                                                                   \
-    __ bind(&done);                                                     \
-    DCHECK_EQ(LeaveRC, i.OutputRCBit());                                \
+#define ASSEMBLE_CHECKED_STORE_FLOAT(asm_instr, asm_instrx)     \
+  do {                                                          \
+    Label done;                                                 \
+    AddressingMode mode = kMode_None;                           \
+    MemOperand operand = i.MemoryOperand(&mode, 0);             \
+    DCHECK_EQ(kMode_MRR, mode);                                 \
+    Register offset = operand.rb();                             \
+    if (HasRegisterInput(instr, 2)) {                           \
+      __ cmplw(offset, i.InputRegister(2));                     \
+    } else {                                                    \
+      __ cmplwi(offset, i.InputImmediate(2));                   \
+    }                                                           \
+    __ bge(&done);                                              \
+    DoubleRegister value = i.InputDoubleRegister(3);            \
+    if (mode == kMode_MRI) {                                    \
+      __ asm_instr(value, operand);                             \
+    } else {                                                    \
+      __ asm_instrx(value, operand);                            \
+    }                                                           \
+    __ bind(&done);                                             \
+    DCHECK_EQ(LeaveRC, i.OutputRCBit());                        \
   } while (0)
 
 
 #define ASSEMBLE_CHECKED_STORE_INTEGER(asm_instr, asm_instrx)      \
   do {                                                             \
     Label done;                                                    \
-    auto offset = i.InputRegister(0);                              \
-    if (HasRegisterInput(instr, 1)) {                              \
-      __ cmplw(offset, i.InputRegister(1));                        \
+    AddressingMode mode = kMode_None;                              \
+    MemOperand operand = i.MemoryOperand(&mode, 0);                \
+    DCHECK_EQ(kMode_MRR, mode);                                    \
+    Register offset = operand.rb();                                \
+    if (HasRegisterInput(instr, 2)) {                              \
+      __ cmplw(offset, i.InputRegister(2));                        \
     } else {                                                       \
-      __ cmplwi(offset, i.InputImmediate(1));                      \
+      __ cmplwi(offset, i.InputImmediate(2));                      \
     }                                                              \
     __ bge(&done);                                                 \
-    auto value = i.InputRegister(2);                               \
-    AddressingMode mode = kMode_None;                              \
-    MemOperand operand = i.MemoryOperand(&mode, 3);                \
+    Register value = i.InputRegister(3);                           \
     if (mode == kMode_MRI) {                                       \
       __ asm_instr(value, operand);                                \
     } else {                                                       \
-      DCHECK_EQ(kMode_MRR, mode);                                  \
       __ asm_instrx(value, operand);                               \
     }                                                              \
     __ bind(&done);                                                \
@@ -799,8 +795,8 @@ void CodeGenerator::AssembleArchInstruction(Instruction* instr) {
       DCHECK_EQ(LeaveRC, i.OutputRCBit());
       break;
     case kPPC_Uint32ToUint64:
-      // TODO(mbrandy): zero extend?
-      __ Move(i.OutputRegister(), i.InputRegister(0));
+      // Zero extend
+      __ clrldi(i.OutputRegister(), i.InputRegister(0), Operand(32));
       DCHECK_EQ(LeaveRC, i.OutputRCBit());
       break;
     case kPPC_Int64ToInt32:

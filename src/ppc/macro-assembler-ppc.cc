@@ -2086,18 +2086,17 @@ void MacroAssembler::CheckMap(Register obj, Register scratch,
 }
 
 
-void MacroAssembler::DispatchMap(Register obj, Register scratch,
-                                 Handle<Map> map, Handle<Code> success,
-                                 SmiCheckType smi_check_type) {
+void MacroAssembler::DispatchWeakMap(Register obj, Register scratch1,
+                                     Register scratch2, Handle<WeakCell> cell,
+                                     Handle<Code> success,
+                                     SmiCheckType smi_check_type) {
   Label fail;
   if (smi_check_type == DO_SMI_CHECK) {
     JumpIfSmi(obj, &fail);
   }
-  LoadP(scratch, FieldMemOperand(obj, HeapObject::kMapOffset));
-  mov(r0, Operand(map));
-  cmp(scratch, r0);
-  bne(&fail);
-  Jump(success, RelocInfo::CODE_TARGET, al);
+  LoadP(scratch1, FieldMemOperand(obj, HeapObject::kMapOffset));
+  CmpWeakValue(scratch1, cell, scratch2);
+  Jump(success, RelocInfo::CODE_TARGET, eq);
   bind(&fail);
 }
 

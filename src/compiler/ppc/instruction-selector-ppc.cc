@@ -131,8 +131,9 @@ static void VisitBinop(InstructionSelector* selector, Node* node,
   DCHECK_GE(arraysize(inputs), input_count);
   DCHECK_GE(arraysize(outputs), output_count);
 
-  selector->Emit(cont->Encode(opcode), output_count, outputs, input_count,
-                 inputs);
+  Instruction* instr = selector->Emit(cont->Encode(opcode), output_count,
+                                      outputs, input_count, inputs);
+  if (cont->IsBranch()) instr->MarkAsControl();
 }
 
 
@@ -150,7 +151,7 @@ void InstructionSelector::VisitLoad(Node* node) {
   MachineType typ = TypeOf(OpParameter<LoadRepresentation>(node));
   PPCOperandGenerator g(this);
   Node* base = node->InputAt(0);
-  Node* index = node->InputAt(1);
+  Node* offset = node->InputAt(1);
 
   ArchOpcode opcode;
   ImmediateMode mode = kInt16Imm;
@@ -189,15 +190,15 @@ void InstructionSelector::VisitLoad(Node* node) {
       UNREACHABLE();
       return;
   }
-  if (g.CanBeImmediate(index, mode)) {
+  if (g.CanBeImmediate(offset, mode)) {
     Emit(opcode | AddressingModeField::encode(kMode_MRI),
-         g.DefineAsRegister(node), g.UseRegister(base), g.UseImmediate(index));
+         g.DefineAsRegister(node), g.UseRegister(base), g.UseImmediate(offset));
   } else if (g.CanBeImmediate(base, mode)) {
     Emit(opcode | AddressingModeField::encode(kMode_MRI),
-         g.DefineAsRegister(node), g.UseRegister(index), g.UseImmediate(base));
+         g.DefineAsRegister(node), g.UseRegister(offset), g.UseImmediate(base));
   } else {
     Emit(opcode | AddressingModeField::encode(kMode_MRR),
-         g.DefineAsRegister(node), g.UseRegister(base), g.UseRegister(index));
+         g.DefineAsRegister(node), g.UseRegister(base), g.UseRegister(offset));
   }
 }
 
@@ -205,7 +206,7 @@ void InstructionSelector::VisitLoad(Node* node) {
 void InstructionSelector::VisitStore(Node* node) {
   PPCOperandGenerator g(this);
   Node* base = node->InputAt(0);
-  Node* index = node->InputAt(1);
+  Node* offset = node->InputAt(1);
   Node* value = node->InputAt(2);
 
   StoreRepresentation store_rep = OpParameter<StoreRepresentation>(node);
@@ -217,7 +218,7 @@ void InstructionSelector::VisitStore(Node* node) {
     // TODO(dcarney): handle immediate indices.
     InstructionOperand* temps[] = {g.TempRegister(r8), g.TempRegister(r9)};
     Emit(kPPC_StoreWriteBarrier, NULL, g.UseFixed(base, r7),
-         g.UseFixed(index, r8), g.UseFixed(value, r9), arraysize(temps),
+         g.UseFixed(offset, r8), g.UseFixed(value, r9), arraysize(temps),
          temps);
     return;
   }
@@ -255,15 +256,15 @@ void InstructionSelector::VisitStore(Node* node) {
       UNREACHABLE();
       return;
   }
-  if (g.CanBeImmediate(index, mode)) {
+  if (g.CanBeImmediate(offset, mode)) {
     Emit(opcode | AddressingModeField::encode(kMode_MRI), NULL,
-         g.UseRegister(base), g.UseImmediate(index), g.UseRegister(value));
+         g.UseRegister(base), g.UseImmediate(offset), g.UseRegister(value));
   } else if (g.CanBeImmediate(base, mode)) {
     Emit(opcode | AddressingModeField::encode(kMode_MRI), NULL,
-         g.UseRegister(index), g.UseImmediate(base), g.UseRegister(value));
+         g.UseRegister(offset), g.UseImmediate(base), g.UseRegister(value));
   } else {
     Emit(opcode | AddressingModeField::encode(kMode_MRR), NULL,
-         g.UseRegister(base), g.UseRegister(index), g.UseRegister(value));
+         g.UseRegister(base), g.UseRegister(offset), g.UseRegister(value));
   }
 }
 
@@ -272,7 +273,7 @@ void InstructionSelector::VisitCheckedLoad(Node* node) {
   MachineType rep = RepresentationOf(OpParameter<MachineType>(node));
   MachineType typ = TypeOf(OpParameter<MachineType>(node));
   PPCOperandGenerator g(this);
-  Node* const buffer = node->InputAt(0);
+  Node* const base = node->InputAt(0);
   Node* const offset = node->InputAt(1);
   Node* const length = node->InputAt(2);
   ArchOpcode opcode;
@@ -296,21 +297,22 @@ void InstructionSelector::VisitCheckedLoad(Node* node) {
       UNREACHABLE();
       return;
   }
+  AddressingMode addressingMode = kMode_MRR;
   InstructionOperand* offset_operand = g.UseRegister(offset);
 #if V8_TARGET_ARCH_PPC64
   // TODO(mbrandy): fix paths that produce garbage in upper 32-bits.
   Emit(kPPC_ExtendSignWord32, offset_operand, offset_operand);
 #endif
-  Emit(opcode | AddressingModeField::encode(kMode_MRR),
-       g.DefineAsRegister(node), offset_operand, g.UseRegister(length),
-       g.UseRegister(buffer), offset_operand);
+  Emit(opcode | AddressingModeField::encode(addressingMode),
+       g.DefineAsRegister(node), g.UseRegister(base), offset_operand,
+       g.UseOperand(length, kInt16Imm_Unsigned));
 }
 
 
 void InstructionSelector::VisitCheckedStore(Node* node) {
   MachineType rep = RepresentationOf(OpParameter<MachineType>(node));
   PPCOperandGenerator g(this);
-  Node* const buffer = node->InputAt(0);
+  Node* const base = node->InputAt(0);
   Node* const offset = node->InputAt(1);
   Node* const length = node->InputAt(2);
   Node* const value = node->InputAt(3);
@@ -335,14 +337,15 @@ void InstructionSelector::VisitCheckedStore(Node* node) {
       UNREACHABLE();
       return;
   }
+  AddressingMode addressingMode = kMode_MRR;
   InstructionOperand* offset_operand = g.UseRegister(offset);
 #if V8_TARGET_ARCH_PPC64
   // TODO(mbrandy): fix paths that produce garbage in upper 32-bits.
   Emit(kPPC_ExtendSignWord32, offset_operand, offset_operand);
 #endif
-  Emit(opcode | AddressingModeField::encode(kMode_MRR), nullptr, offset_operand,
-       g.UseRegister(length), g.UseRegister(value), g.UseRegister(buffer),
-       offset_operand);
+  Emit(opcode | AddressingModeField::encode(addressingMode), nullptr,
+       g.UseRegister(base), offset_operand,
+       g.UseOperand(length, kInt16Imm_Unsigned), g.UseRegister(value));
 }
 
 
@@ -1025,7 +1028,7 @@ static void VisitCompare(InstructionSelector* selector, InstructionCode opcode,
   opcode = cont->Encode(opcode);
   if (cont->IsBranch()) {
     selector->Emit(opcode, NULL, left, right, g.Label(cont->true_block()),
-                   g.Label(cont->false_block()));
+                   g.Label(cont->false_block()))->MarkAsControl();
   } else {
     DCHECK(cont->IsSet());
     selector->Emit(opcode, g.DefineAsRegister(cont->result()), left, right);
