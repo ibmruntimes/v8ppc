@@ -1379,9 +1379,7 @@ void InstructionSelector::VisitCall(Node* node) {
 // static
 MachineOperatorBuilder::Flags
 InstructionSelector::SupportedMachineOperatorFlags() {
-  return MachineOperatorBuilder::kInt32DivIsSafe |
-         MachineOperatorBuilder::kUint32DivIsSafe |
-         MachineOperatorBuilder::kFloat64Floor |
+  return MachineOperatorBuilder::kFloat64Floor |
          MachineOperatorBuilder::kFloat64Ceil |
          MachineOperatorBuilder::kFloat64RoundTruncate |
          MachineOperatorBuilder::kFloat64RoundTiesAway;

@@ -681,6 +681,10 @@ void Decoder::DecodeExt2(Instruction* instr) {
       Format(instr, "divw'o'.   'rt, 'ra, 'rb");
       return;
     }
+    case DIVWU: {
+      Format(instr, "divwu'o'.  'rt, 'ra, 'rb");
+      return;
+    }
 #if V8_TARGET_ARCH_PPC64
     case DIVD: {
       Format(instr, "divd'o'.   'rt, 'ra, 'rb");
