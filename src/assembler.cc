@@ -968,7 +968,7 @@ ExternalReference::ExternalReference(Builtins::Name name, Isolate* isolate)
 
 ExternalReference::ExternalReference(Runtime::FunctionId id,
                                      Isolate* isolate)
-#if defined(NATIVE_SIMULATION)
+#if defined(V8_PPC_SIMULATOR)
   : address_(Redirect(isolate, Runtime::FunctionForId(id)->entry,
                       (Runtime::FunctionForId(id)->result_size == 2) ?
                       BUILTIN_OBJECTPAIR_CALL : BUILTIN_CALL)) {}
@@ -979,7 +979,7 @@ ExternalReference::ExternalReference(Runtime::FunctionId id,
 
 ExternalReference::ExternalReference(const Runtime::Function* f,
                                      Isolate* isolate)
-#if defined(NATIVE_SIMULATION)
+#if defined(V8_PPC_SIMULATOR)
   : address_(Redirect(isolate, f->entry,
                       ((f->result_size == 2) ?
                        BUILTIN_OBJECTPAIR_CALL : BUILTIN_CALL))) {}

@@ -59,7 +59,7 @@
     # Enable compiler warnings when using V8_DEPRECATED apis.
     'v8_deprecation_warnings%': 0,
 
-    'v8_native_sim%': 'false',
+    'v8_use_simulator%': 'false',
 
     # Set to 1 to enable DCHECKs in release builds.
     'dcheck_always_on%': 0,
@@ -93,10 +93,10 @@
       ['v8_enable_i18n_support==1', {
         'defines': ['V8_I18N_SUPPORT',],
       }],
-      ['v8_native_sim=="true"', {
+      ['v8_use_simulator=="true"', {
         'defines': [
-          'NATIVE_SIMULATION',
           'USE_SIMULATOR',
+          'V8_PPC_SIMULATOR', # feature pending contribution
         ],
       }],
       ['v8_use_external_startup_data==1', {

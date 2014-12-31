@@ -212,9 +212,10 @@ endif
 ifeq ($(arm_test_noprobe), on)
   GYPFLAGS += -Darm_test_noprobe=on
 endif
-# nativesim=true
-ifeq ($(nativesim), true)
-  GYPFLAGS += -Dv8_native_sim=true
+# simulator=on
+# Force simulation even when the target platform matches the host.
+ifeq ($(simulator), on)
+  GYPFLAGS += -Dv8_use_simulator=true
 endif
 
 # ----------------- available targets: --------------------

@@ -1138,30 +1138,52 @@ bool Simulator::OverflowFrom(int32_t alu_out, int32_t left, int32_t right,
 }
 
 
-#if !V8_TARGET_ARCH_PPC64
-// Calls into the V8 runtime are based on this very simple interface.
-// Note: To be able to return two values from some calls the code in runtime.cc
-// uses the ObjectPair which is essentially two 32-bit values stuffed into a
-// 64-bit value. With the code below we assume that all runtime calls return
-// 64 bits of result. If they don't, the r4 result register contains a bogus
-// value, which is fine because it is caller-saved.
-typedef int64_t (*SimulatorRuntimeCall)(intptr_t arg0, intptr_t arg1,
-                                        intptr_t arg2, intptr_t arg3,
-                                        intptr_t arg4, intptr_t arg5);
-#else
-// For 64-bit, we need to be more explicit.
-typedef intptr_t (*SimulatorRuntimeCall)(intptr_t arg0, intptr_t arg1,
-                                         intptr_t arg2, intptr_t arg3,
-                                         intptr_t arg4, intptr_t arg5);
+#if V8_TARGET_ARCH_PPC64
 struct ObjectPair {
   intptr_t x;
   intptr_t y;
 };
 
-typedef struct ObjectPair (*SimulatorRuntimeObjectPairCall)(
+
+static void decodeObjectPair(ObjectPair *pair, intptr_t *x, intptr_t *y) {
+  *x = pair->x;
+  *y = pair->y;
+}
+#else
+typedef uint64_t ObjectPair;
+
+
+static void decodeObjectPair(ObjectPair *pair, intptr_t *x, intptr_t *y) {
+#if V8_TARGET_BIG_ENDIAN
+  *x = static_cast<int32_t>(*pair >> 32);
+  *y = static_cast<int32_t>(*pair);
+#else
+  *x = static_cast<int32_t>(*pair);
+  *y = static_cast<int32_t>(*pair >> 32);
+#endif
+}
+#endif
+
+#if defined(V8_PPC_SIMULATOR)
+// Calls into the V8 runtime.
+typedef intptr_t (*SimulatorRuntimeCall)(intptr_t arg0, intptr_t arg1,
+                                         intptr_t arg2, intptr_t arg3,
+                                         intptr_t arg4, intptr_t arg5);
+typedef ObjectPair (*SimulatorRuntimeObjectPairCall)(
     intptr_t arg0, intptr_t arg1, intptr_t arg2, intptr_t arg3, intptr_t arg4,
     intptr_t arg5);
-#endif
+#else  // V8_PPC_SIMULATOR
+// Calls into the V8 runtime are based on this very simple interface.
+// Note: To be able to return two values from some calls the code in
+// runtime.cc uses the ObjectPair which is essentially two pointer
+// values stuffed into a structure. With the code below we assume that
+// all runtime calls return this pair. If they don't, the r4 result
+// register contains a bogus value, which is fine because it is
+// caller-saved.
+typedef ObjectPair (*SimulatorRuntimeCall)(intptr_t arg0, intptr_t arg1,
+                                           intptr_t arg2, intptr_t arg3,
+                                           intptr_t arg4, intptr_t arg5);
+#endif  // V8_PPC_SIMULATOR
 
 // These prototypes handle the four types of FP calls.
 typedef int (*SimulatorRuntimeCompareCall)(double darg0, double darg1);
@@ -1193,7 +1215,7 @@ void Simulator::SoftwareInterrupt(Instruction* instr) {
       Redirection* redirection = Redirection::FromSwiInstruction(instr);
       const int kArgCount = 6;
       int arg0_regnum = 3;
-#if V8_TARGET_ARCH_PPC64 && !ABI_RETURNS_OBJECT_PAIRS_IN_REGS
+#if !ABI_RETURNS_OBJECT_PAIRS_IN_REGS
       intptr_t result_buffer = 0;
       if (redirection->type() == ExternalReference::BUILTIN_OBJECTPAIR_CALL) {
         result_buffer = get_register(r3);
@@ -1386,32 +1408,12 @@ void Simulator::SoftwareInterrupt(Instruction* instr) {
           PrintF("\n");
         }
         CHECK(stack_aligned);
-#if !V8_TARGET_ARCH_PPC64
-        DCHECK(redirection->type() == ExternalReference::BUILTIN_CALL);
-        SimulatorRuntimeCall target =
-            reinterpret_cast<SimulatorRuntimeCall>(external);
-        int64_t result = target(arg[0], arg[1], arg[2], arg[3], arg[4], arg[5]);
-        int32_t lo_res = static_cast<int32_t>(result);
-        int32_t hi_res = static_cast<int32_t>(result >> 32);
-#if V8_TARGET_BIG_ENDIAN
-        if (::v8::internal::FLAG_trace_sim) {
-          PrintF("Returned %08x\n", hi_res);
-        }
-        set_register(r3, hi_res);
-        set_register(r4, lo_res);
-#else
-        if (::v8::internal::FLAG_trace_sim) {
-          PrintF("Returned %08x\n", lo_res);
-        }
-        set_register(r3, lo_res);
-        set_register(r4, hi_res);
-#endif
-#else
+#if defined(V8_PPC_SIMULATOR)
         if (redirection->type() == ExternalReference::BUILTIN_CALL) {
           SimulatorRuntimeCall target =
               reinterpret_cast<SimulatorRuntimeCall>(external);
-          intptr_t result =
-              target(arg[0], arg[1], arg[2], arg[3], arg[4], arg[5]);
+          intptr_t result = target(arg[0], arg[1], arg[2], arg[3], arg[4],
+                                   arg[5]);
           if (::v8::internal::FLAG_trace_sim) {
             PrintF("Returned %08" V8PRIxPTR "\n", result);
           }
@@ -1421,21 +1423,37 @@ void Simulator::SoftwareInterrupt(Instruction* instr) {
                  ExternalReference::BUILTIN_OBJECTPAIR_CALL);
           SimulatorRuntimeObjectPairCall target =
               reinterpret_cast<SimulatorRuntimeObjectPairCall>(external);
-          struct ObjectPair result =
-              target(arg[0], arg[1], arg[2], arg[3], arg[4], arg[5]);
+          ObjectPair result = target(arg[0], arg[1], arg[2], arg[3], arg[4],
+                                     arg[5]);
+          intptr_t x;
+          intptr_t y;
+          decodeObjectPair(&result, &x, &y);
           if (::v8::internal::FLAG_trace_sim) {
-            PrintF("Returned %08" V8PRIxPTR ", %08" V8PRIxPTR "\n", result.x,
-                   result.y);
+            PrintF("Returned {%08" V8PRIxPTR ", %08" V8PRIxPTR "}\n", x, y);
           }
 #if ABI_RETURNS_OBJECT_PAIRS_IN_REGS
-          set_register(r3, result.x);
-          set_register(r4, result.y);
+          set_register(r3, x);
+          set_register(r4, y);
 #else
           memcpy(reinterpret_cast<void*>(result_buffer), &result,
-                 sizeof(struct ObjectPair));
+                 sizeof(ObjectPair));
 #endif
         }
-#endif
+#else  // V8_PPC_SIMULATOR
+        DCHECK(redirection->type() == ExternalReference::BUILTIN_CALL);
+        SimulatorRuntimeCall target =
+            reinterpret_cast<SimulatorRuntimeCall>(external);
+        ObjectPair result = target(arg[0], arg[1], arg[2], arg[3], arg[4],
+                                   arg[5]);
+        intptr_t x;
+        intptr_t y;
+        decodeObjectPair(&result, &x, &y);
+        if (::v8::internal::FLAG_trace_sim) {
+          PrintF("Returned {%08" V8PRIxPTR ", %08" V8PRIxPTR "}\n", x, y);
+        }
+        set_register(r3, x);
+        set_register(r4, y);
+#endif  // V8_PPC_SIMULATOR
       }
       set_pc(saved_lr);
       break;
