@@ -257,6 +257,7 @@
       ['v8_target_arch=="ppc" or v8_target_arch=="ppc64"', {
         'defines': [
           'V8_TARGET_ARCH_PPC',
+          'V8_PPC_PAGESIZE_OPT', # optimization pending contribution
         ],
         'conditions': [
           ['v8_target_arch=="ppc64"', {

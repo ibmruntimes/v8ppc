@@ -4895,7 +4895,11 @@ TEST(ArrayShiftSweeping) {
 
 UNINITIALIZED_TEST(PromotionQueue) {
   i::FLAG_expose_gc = true;
+#if defined(V8_PPC_PAGESIZE_OPT)
   i::FLAG_max_semi_space_size = 2 * (Page::kPageSize / MB);
+#else
+  i::FLAG_max_semi_space_size = 2;
+#endif
   v8::Isolate* isolate = v8::Isolate::New();
   i::Isolate* i_isolate = reinterpret_cast<i::Isolate*>(isolate);
   {
