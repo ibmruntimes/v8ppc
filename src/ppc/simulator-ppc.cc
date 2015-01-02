@@ -1437,6 +1437,7 @@ void Simulator::SoftwareInterrupt(Instruction* instr) {
 #else
           memcpy(reinterpret_cast<void*>(result_buffer), &result,
                  sizeof(ObjectPair));
+          set_register(r3, result_buffer);
 #endif
         }
 #else  // V8_PPC_SIMULATOR
