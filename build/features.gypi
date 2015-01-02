@@ -94,10 +94,7 @@
         'defines': ['V8_I18N_SUPPORT',],
       }],
       ['v8_use_simulator=="true"', {
-        'defines': [
-          'USE_SIMULATOR',
-          'V8_PPC_SIMULATOR', # feature pending contribution
-        ],
+        'defines': ['USE_SIMULATOR',],
       }],
       ['v8_use_external_startup_data==1', {
         'defines': ['V8_USE_EXTERNAL_STARTUP_DATA',],

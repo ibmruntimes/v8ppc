@@ -258,6 +258,7 @@
         'defines': [
           'V8_TARGET_ARCH_PPC',
           'V8_PPC_PAGESIZE_OPT', # optimization pending contribution
+          'V8_PPC_SIMULATOR', # feature pending contribution
         ],
         'conditions': [
           ['v8_target_arch=="ppc64"', {
