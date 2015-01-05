@@ -5689,7 +5689,26 @@ SMI_ACCESSORS(SharedFunctionInfo, profiler_ticks, kProfilerTicksOffset)
 #define PSEUDO_SMI_LO_ALIGN kIntSize
 #define PSEUDO_SMI_HI_ALIGN 0
 #endif
+#if defined(V8_PPC_TAGGING_OPT)
+#ifdef DEBUG
+#define PSEUDO_SMI_LO_MASK ~((1 << (31 - kSmiTagSize)) - 1)
+#endif
+#endif  // V8_PPC_TAGGING_OPT
 
+#if defined(V8_PPC_TAGGING_OPT)
+#define PSEUDO_SMI_ACCESSORS_LO(holder, name, offset)                          \
+  STATIC_ASSERT(holder::offset % kPointerSize == PSEUDO_SMI_LO_ALIGN);         \
+  int holder::name() const {                                                   \
+    int value = READ_INT_FIELD(this, offset);                                  \
+    DCHECK((value & kSmiTagMask) == kSmiTag);                                  \
+    return value >> kSmiTagSize;                                               \
+  }                                                                            \
+  void holder::set_##name(int value) {                                         \
+    DCHECK((value & PSEUDO_SMI_LO_MASK) == PSEUDO_SMI_LO_MASK ||               \
+           (value & PSEUDO_SMI_LO_MASK) == 0x0);                               \
+    WRITE_INT_FIELD(this, offset, value << kSmiTagSize);                       \
+  }
+#else  // V8_PPC_TAGGING_OPT
 #define PSEUDO_SMI_ACCESSORS_LO(holder, name, offset)                          \
   STATIC_ASSERT(holder::offset % kPointerSize == PSEUDO_SMI_LO_ALIGN);         \
   int holder::name() const {                                                   \
@@ -5703,6 +5722,7 @@ SMI_ACCESSORS(SharedFunctionInfo, profiler_ticks, kProfilerTicksOffset)
     DCHECK((value & 0xC0000000) == 0xC0000000 || (value & 0xC0000000) == 0x0); \
     WRITE_INT_FIELD(this, offset, (value << 1) & ~kHeapObjectTag);             \
   }
+#endif  // V8_PPC_TAGGING_OPT
 
 #define PSEUDO_SMI_ACCESSORS_HI(holder, name, offset)                  \
   STATIC_ASSERT(holder::offset % kPointerSize == PSEUDO_SMI_HI_ALIGN); \
@@ -5727,13 +5747,25 @@ PSEUDO_SMI_ACCESSORS_HI(SharedFunctionInfo,
 PSEUDO_SMI_ACCESSORS_LO(SharedFunctionInfo,
                         function_token_position,
                         kFunctionTokenPositionOffset)
+#if defined(V8_PPC_TAGGING_OPT)
+PSEUDO_SMI_ACCESSORS_HI(SharedFunctionInfo,
+                        opt_count_and_bailout_reason,
+                        kOptCountAndBailoutReasonOffset)
+#else
 PSEUDO_SMI_ACCESSORS_HI(SharedFunctionInfo,
                         compiler_hints,
                         kCompilerHintsOffset)
+#endif
 
+#if defined(V8_PPC_TAGGING_OPT)
+PSEUDO_SMI_ACCESSORS_LO(SharedFunctionInfo,
+                        compiler_hints,
+                        kCompilerHintsOffset)
+#else
 PSEUDO_SMI_ACCESSORS_LO(SharedFunctionInfo,
                         opt_count_and_bailout_reason,
                         kOptCountAndBailoutReasonOffset)
+#endif
 PSEUDO_SMI_ACCESSORS_HI(SharedFunctionInfo, counters, kCountersOffset)
 
 PSEUDO_SMI_ACCESSORS_LO(SharedFunctionInfo,
@@ -6868,10 +6900,21 @@ void String::SetForwardedInternalizedString(String* canonical) {
   DCHECK(SlowEquals(canonical));
   DCHECK(canonical->IsInternalizedString());
   DCHECK(canonical->HasHashCode());
+#if !defined(V8_PPC_TAGGING_OPT)
   WRITE_FIELD(this, kHashFieldSlot, canonical);
+#endif
+
   // Setting the hash field to a tagged value sets the LSB, causing the hash
   // code to be interpreted as uninitialized.  We use this fact to recognize
   // that we have a forwarded string.
+#if defined(V8_PPC_TAGGING_OPT)
+  if (kHashNotComputedMask != kHeapObjectTag) {
+    canonical = reinterpret_cast<String *>(
+        (uintptr_t)canonical | kHashNotComputedMask);
+  }
+
+  WRITE_FIELD(this, kHashFieldSlot, canonical);
+#endif
   DCHECK(!HasHashCode());
 }
 
@@ -6880,6 +6923,14 @@ String* String::GetForwardedInternalizedString() {
   DCHECK(IsInternalizedString());
   if (HasHashCode()) return this;
   String* canonical = String::cast(READ_FIELD(this, kHashFieldSlot));
+#if defined(V8_PPC_TAGGING_OPT)
+
+  if (kHashNotComputedMask != kHeapObjectTag) {
+    canonical = reinterpret_cast<String *>(
+        (uintptr_t)canonical & ~kHashNotComputedMask);
+  }
+
+#endif
   DCHECK(canonical->IsInternalizedString());
   DCHECK(SlowEquals(canonical));
   DCHECK(canonical->HasHashCode());

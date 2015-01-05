@@ -2535,8 +2535,12 @@ class IntrusiveMarking {
   }
 
  private:
+#if defined(V8_PPC_TAGGING_OPT)
+  static const uintptr_t kNotMarkedBit = kHeapObjectTag;
+#else
   static const uintptr_t kNotMarkedBit = 0x1;
   STATIC_ASSERT((kHeapObjectTag & kNotMarkedBit) != 0);  // NOLINT
+#endif
 };
 
 

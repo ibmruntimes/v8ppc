@@ -96,7 +96,11 @@ bool ZoneTypeConfig::is_class(Type* type) {
 // static
 ZoneTypeConfig::Type::bitset ZoneTypeConfig::as_bitset(Type* type) {
   DCHECK(is_bitset(type));
+#if defined(V8_PPC_TAGGING_OPT)
+  return static_cast<Type::bitset>(reinterpret_cast<uintptr_t>(type) >> 1);
+#else
   return static_cast<Type::bitset>(reinterpret_cast<uintptr_t>(type) ^ 1u);
+#endif
 }
 
 
@@ -116,7 +120,11 @@ i::Handle<i::Map> ZoneTypeConfig::as_class(Type* type) {
 
 // static
 ZoneTypeConfig::Type* ZoneTypeConfig::from_bitset(Type::bitset bitset) {
+#if defined(V8_PPC_TAGGING_OPT)
+  return reinterpret_cast<Type*>((static_cast<uintptr_t>(bitset) << 1) | 1u);
+#else
   return reinterpret_cast<Type*>(static_cast<uintptr_t>(bitset | 1u));
+#endif
 }
 
 
@@ -245,8 +253,13 @@ bool HeapTypeConfig::is_struct(Type* type, int tag) {
 
 // static
 HeapTypeConfig::Type::bitset HeapTypeConfig::as_bitset(Type* type) {
+#if defined(V8_PPC_TAGGING_OPT)
+  return static_cast<Type::bitset>(
+    reinterpret_cast<uintptr_t>(type) >> (kSmiTagSize + kSmiShiftSize));
+#else
   // TODO(rossberg): Breaks the Smi abstraction. Fix once there is a better way.
   return static_cast<Type::bitset>(reinterpret_cast<uintptr_t>(type));
+#endif
 }
 
 
@@ -264,8 +277,13 @@ i::Handle<HeapTypeConfig::Struct> HeapTypeConfig::as_struct(Type* type) {
 
 // static
 HeapTypeConfig::Type* HeapTypeConfig::from_bitset(Type::bitset bitset) {
+#if defined(V8_PPC_TAGGING_OPT)
+  return reinterpret_cast<Type*>(
+    static_cast<uintptr_t>(bitset) << (kSmiTagSize + kSmiShiftSize));
+#else
   // TODO(rossberg): Breaks the Smi abstraction. Fix once there is a better way.
   return reinterpret_cast<Type*>(static_cast<uintptr_t>(bitset));
+#endif
 }
 
 

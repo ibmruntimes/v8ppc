@@ -42,7 +42,11 @@ struct ZoneRep {
     return reinterpret_cast<Struct*>(t);
   }
   static bitset AsBitset(Type* t) {
+#if defined(V8_PPC_TAGGING_OPT)
+    return static_cast<bitset>(reinterpret_cast<uintptr_t>(t) >> 1);
+#else
     return static_cast<bitset>(reinterpret_cast<uintptr_t>(t) ^ 1u);
+#endif
   }
   static Struct* AsUnion(Type* t) {
     return AsStruct(t);
@@ -73,7 +77,12 @@ struct HeapRep {
 
   static Struct* AsStruct(Handle<HeapType> t) { return FixedArray::cast(*t); }
   static bitset AsBitset(Handle<HeapType> t) {
+#if defined(V8_PPC_TAGGING_OPT)
+    return static_cast<bitset>(
+      reinterpret_cast<uintptr_t>(*t) >> (kSmiTagSize + kSmiShiftSize));
+#else
     return static_cast<bitset>(reinterpret_cast<uintptr_t>(*t));
+#endif
   }
   static Struct* AsUnion(Handle<HeapType> t) { return AsStruct(t); }
   static int Length(Struct* structured) { return structured->length() - 1; }
@@ -171,7 +180,11 @@ struct Tests : Rep {
     CHECK(this->IsBitset(T.Any));
 
     CHECK(bitset(0) == this->AsBitset(T.None));
+#if defined(V8_PPC_TAGGING_OPT)
+    CHECK(bitset(0x7fffffffu) == this->AsBitset(T.Any));
+#else
     CHECK(bitset(0xfffffffeu) == this->AsBitset(T.Any));
+#endif
 
     // Union(T1, T2) is bitset for bitsets T1,T2
     for (TypeIterator it1 = T.types.begin(); it1 != T.types.end(); ++it1) {

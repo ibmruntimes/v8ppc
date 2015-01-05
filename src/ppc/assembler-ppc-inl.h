@@ -470,18 +470,22 @@ Address Assembler::target_address_at(Address pc,
 
 #if V8_OOL_CONSTANT_POOL
 bool Assembler::IsConstantPoolLoadStart(Address pc) {
+#if !defined(V8_PPC_TAGGING_OPT)
 #if V8_TARGET_ARCH_PPC64
   if (!IsLi(instr_at(pc))) return false;
   pc += kInstrSize;
 #endif
+#endif  // V8_PPC_TAGGING_OPT
   return GetRA(instr_at(pc)).is(kConstantPoolRegister);
 }
 
 
 bool Assembler::IsConstantPoolLoadEnd(Address pc) {
+#if !defined(V8_PPC_TAGGING_OPT)
 #if V8_TARGET_ARCH_PPC64
   pc -= kInstrSize;
 #endif
+#endif  // V8_PPC_TAGGING_OPT
   return IsConstantPoolLoadStart(pc);
 }
 

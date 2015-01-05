@@ -3647,21 +3647,29 @@ void LCodeGen::DoWrapReceiver(LWrapReceiver* instr) {
     __ lwz(scratch,
            FieldMemOperand(scratch, SharedFunctionInfo::kCompilerHintsOffset));
     __ TestBit(scratch,
+#if defined(V8_PPC_TAGGING_OPT)
+               SharedFunctionInfo::kStrictModeFunction + kSmiTagSize,
+#else  // V8_PPC_TAGGING_OPT
 #if V8_TARGET_ARCH_PPC64
                SharedFunctionInfo::kStrictModeFunction,
 #else
                SharedFunctionInfo::kStrictModeFunction + kSmiTagSize,
 #endif
+#endif  // V8_PPC_TAGGING_OPT
                r0);
     __ bne(&result_in_receiver, cr0);
 
     // Do not transform the receiver to object for builtins.
     __ TestBit(scratch,
+#if defined(V8_PPC_TAGGING_OPT)
+               SharedFunctionInfo::kNative + kSmiTagSize,
+#else  // V8_PPC_TAGGING_OPT
 #if V8_TARGET_ARCH_PPC64
                SharedFunctionInfo::kNative,
 #else
                SharedFunctionInfo::kNative + kSmiTagSize,
 #endif
+#endif  // V8_PPC_TAGGING_OPT
                r0);
     __ bne(&result_in_receiver, cr0);
   }

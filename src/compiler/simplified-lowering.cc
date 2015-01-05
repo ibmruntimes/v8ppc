@@ -1048,7 +1048,9 @@ class RepresentationSelector {
 
 Node* SimplifiedLowering::IsTagged(Node* node) {
   // TODO(titzer): factor this out to a TaggingScheme abstraction.
+#if !defined(V8_PPC_TAGGING_OPT)
   STATIC_ASSERT(kSmiTagMask == 1);  // Only works if tag is the low bit.
+#endif
   return graph()->NewNode(machine()->WordAnd(), node,
                           jsgraph()->Int32Constant(kSmiTagMask));
 }

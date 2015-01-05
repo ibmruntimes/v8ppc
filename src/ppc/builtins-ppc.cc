@@ -1101,21 +1101,29 @@ void Builtins::Generate_FunctionCall(MacroAssembler* masm) {
     __ LoadP(r5, FieldMemOperand(r4, JSFunction::kSharedFunctionInfoOffset));
     __ lwz(r6, FieldMemOperand(r5, SharedFunctionInfo::kCompilerHintsOffset));
     __ TestBit(r6,
+#if defined(V8_PPC_TAGGING_OPT)
+               SharedFunctionInfo::kStrictModeFunction + kSmiTagSize,
+#else  // V8_PPC_TAGGING_OPT
 #if V8_TARGET_ARCH_PPC64
                SharedFunctionInfo::kStrictModeFunction,
 #else
                SharedFunctionInfo::kStrictModeFunction + kSmiTagSize,
 #endif
+#endif  // V8_PPC_TAGGING_OPT
                r0);
     __ bne(&shift_arguments, cr0);
 
     // Do not transform the receiver for native (Compilerhints already in r6).
     __ TestBit(r6,
+#if defined(V8_PPC_TAGGING_OPT)
+               SharedFunctionInfo::kNative + kSmiTagSize,
+#else  // V8_PPC_TAGGING_OPT
 #if V8_TARGET_ARCH_PPC64
                SharedFunctionInfo::kNative,
 #else
                SharedFunctionInfo::kNative + kSmiTagSize,
 #endif
+#endif  // V8_PPC_TAGGING_OPT
                r0);
     __ bne(&shift_arguments, cr0);
 
@@ -1327,21 +1335,29 @@ void Builtins::Generate_FunctionApply(MacroAssembler* masm) {
     Label call_to_object, use_global_proxy;
     __ lwz(r5, FieldMemOperand(r5, SharedFunctionInfo::kCompilerHintsOffset));
     __ TestBit(r5,
+#if defined(V8_PPC_TAGGING_OPT)
+               SharedFunctionInfo::kStrictModeFunction + kSmiTagSize,
+#else  // V8_PPC_TAGGING_OPT
 #if V8_TARGET_ARCH_PPC64
                SharedFunctionInfo::kStrictModeFunction,
 #else
                SharedFunctionInfo::kStrictModeFunction + kSmiTagSize,
 #endif
+#endif  // V8_PPC_TAGGING_OPT
                r0);
     __ bne(&push_receiver, cr0);
 
     // Do not transform the receiver for strict mode functions.
     __ TestBit(r5,
+#if defined(V8_PPC_TAGGING_OPT)
+               SharedFunctionInfo::kNative + kSmiTagSize,
+#else  // V8_PPC_TAGGING_OPT
 #if V8_TARGET_ARCH_PPC64
                SharedFunctionInfo::kNative,
 #else
                SharedFunctionInfo::kNative + kSmiTagSize,
 #endif
+#endif  // V8_PPC_TAGGING_OPT
                r0);
     __ bne(&push_receiver, cr0);
 

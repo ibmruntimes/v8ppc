@@ -7121,6 +7121,15 @@ class SharedFunctionInfo: public HeapObject {
 
   static const int kFunctionTokenPositionOffset =
       kStartPositionAndTypeOffset + kIntSize;
+#if defined(V8_PPC_TAGGING_OPT)
+  static const int kOptCountAndBailoutReasonOffset =
+      kFunctionTokenPositionOffset + kIntSize;
+
+  static const int kCompilerHintsOffset =
+      kOptCountAndBailoutReasonOffset + kIntSize;
+  static const int kCountersOffset =
+      kCompilerHintsOffset + kIntSize;
+#else
   static const int kCompilerHintsOffset =
       kFunctionTokenPositionOffset + kIntSize;
 
@@ -7128,6 +7137,7 @@ class SharedFunctionInfo: public HeapObject {
       kCompilerHintsOffset + kIntSize;
   static const int kCountersOffset =
       kOptCountAndBailoutReasonOffset + kIntSize;
+#endif
 
   static const int kAstNodeCountOffset =
       kCountersOffset + kIntSize;
@@ -7149,6 +7159,17 @@ class SharedFunctionInfo: public HeapObject {
       kExpectedNofPropertiesOffset + kIntSize;
   static const int kEndPositionOffset = kStartPositionAndTypeOffset + kIntSize;
 
+#if defined(V8_PPC_TAGGING_OPT)
+  static const int kOptCountAndBailoutReasonOffset =
+      kEndPositionOffset + kIntSize;
+  static const int kFunctionTokenPositionOffset =
+      kOptCountAndBailoutReasonOffset + kIntSize;
+
+  static const int kCountersOffset = kFunctionTokenPositionOffset + kIntSize;
+  static const int kCompilerHintsOffset = kCountersOffset + kIntSize;
+
+  static const int kProfilerTicksOffset = kCompilerHintsOffset + kIntSize;
+#else
   static const int kCompilerHintsOffset = kEndPositionOffset + kIntSize;
   static const int kFunctionTokenPositionOffset =
       kCompilerHintsOffset + kIntSize;
@@ -7158,6 +7179,7 @@ class SharedFunctionInfo: public HeapObject {
 
   static const int kProfilerTicksOffset =
       kOptCountAndBailoutReasonOffset + kIntSize;
+#endif
   static const int kAstNodeCountOffset = kProfilerTicksOffset + kIntSize;
 
   // Total size.

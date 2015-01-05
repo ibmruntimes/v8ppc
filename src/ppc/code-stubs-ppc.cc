@@ -1348,6 +1348,11 @@ void InstanceofStub::Generate(MacroAssembler* masm) {
   const Register scratch = r5;
   Register scratch3 = no_reg;
 
+#if defined(V8_PPC_TAGGING_OPT)
+  // delta = mov + tagged LoadP + cmp + bne
+  const int32_t kDeltaToLoadBoolResult =
+      (Assembler::kMovInstructions + 3) * Assembler::kInstrSize;
+#else  // V8_PPC_TAGGING_OPT
 // delta = mov + unaligned LoadP + cmp + bne
 #if V8_TARGET_ARCH_PPC64
   const int32_t kDeltaToLoadBoolResult =
@@ -1356,6 +1361,7 @@ void InstanceofStub::Generate(MacroAssembler* masm) {
   const int32_t kDeltaToLoadBoolResult =
       (Assembler::kMovInstructions + 3) * Assembler::kInstrSize;
 #endif
+#endif  // V8_PPC_TAGGING_OPT
 
   Label slow, loop, is_instance, is_not_instance, not_js_object;
 
@@ -2599,21 +2605,29 @@ static void EmitContinueIfStrictOrNative(MacroAssembler* masm, Label* cont) {
   __ LoadP(r6, FieldMemOperand(r4, JSFunction::kSharedFunctionInfoOffset));
   __ lwz(r7, FieldMemOperand(r6, SharedFunctionInfo::kCompilerHintsOffset));
   __ TestBit(r7,
+#if defined(V8_PPC_TAGGING_OPT)
+             SharedFunctionInfo::kStrictModeFunction + kSmiTagSize,
+#else  // V8_PPC_TAGGING_OPT
 #if V8_TARGET_ARCH_PPC64
              SharedFunctionInfo::kStrictModeFunction,
 #else
              SharedFunctionInfo::kStrictModeFunction + kSmiTagSize,
 #endif
+#endif  // V8_PPC_TAGGING_OPT
              r0);
   __ bne(cont, cr0);
 
   // Do not transform the receiver for native.
   __ TestBit(r7,
+#if defined(V8_PPC_TAGGING_OPT)
+             SharedFunctionInfo::kNative + kSmiTagSize,
+#else  // V8_PPC_TAGGING_OPT
 #if V8_TARGET_ARCH_PPC64
              SharedFunctionInfo::kNative,
 #else
              SharedFunctionInfo::kNative + kSmiTagSize,
 #endif
+#endif  // V8_PPC_TAGGING_OPT
              r0);
   __ bne(cont, cr0);
 }

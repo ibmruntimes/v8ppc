@@ -221,7 +221,9 @@ TARGET_TEST_F(ChangeLowering32Test, ChangeInt32ToTaggedSmall) {
 
 TARGET_TEST_F(ChangeLowering32Test, ChangeTaggedToFloat64) {
   STATIC_ASSERT(kSmiTag == 0);
+#if !defined(V8_PPC_TAGGING_OPT)
   STATIC_ASSERT(kSmiTagSize == 1);
+#endif
 
   Node* val = Parameter(0);
   Node* node = graph()->NewNode(simplified()->ChangeTaggedToFloat64(), val);
@@ -248,7 +250,9 @@ TARGET_TEST_F(ChangeLowering32Test, ChangeTaggedToFloat64) {
 
 TARGET_TEST_F(ChangeLowering32Test, ChangeTaggedToInt32) {
   STATIC_ASSERT(kSmiTag == 0);
+#if !defined(V8_PPC_TAGGING_OPT)
   STATIC_ASSERT(kSmiTagSize == 1);
+#endif
 
   Node* val = Parameter(0);
   Node* node = graph()->NewNode(simplified()->ChangeTaggedToInt32(), val);
@@ -272,7 +276,9 @@ TARGET_TEST_F(ChangeLowering32Test, ChangeTaggedToInt32) {
 
 TARGET_TEST_F(ChangeLowering32Test, ChangeTaggedToUint32) {
   STATIC_ASSERT(kSmiTag == 0);
+#if !defined(V8_PPC_TAGGING_OPT)
   STATIC_ASSERT(kSmiTagSize == 1);
+#endif
 
   Node* val = Parameter(0);
   Node* node = graph()->NewNode(simplified()->ChangeTaggedToUint32(), val);
@@ -296,7 +302,9 @@ TARGET_TEST_F(ChangeLowering32Test, ChangeTaggedToUint32) {
 
 TARGET_TEST_F(ChangeLowering32Test, ChangeUint32ToTagged) {
   STATIC_ASSERT(kSmiTag == 0);
+#if !defined(V8_PPC_TAGGING_OPT)
   STATIC_ASSERT(kSmiTagSize == 1);
+#endif
 
   Node* val = Parameter(0);
   Node* node = graph()->NewNode(simplified()->ChangeUint32ToTagged(), val);
@@ -350,7 +358,9 @@ TARGET_TEST_F(ChangeLowering64Test, ChangeInt32ToTagged) {
 
 TARGET_TEST_F(ChangeLowering64Test, ChangeTaggedToFloat64) {
   STATIC_ASSERT(kSmiTag == 0);
+#if !defined(V8_PPC_TAGGING_OPT)
   STATIC_ASSERT(kSmiTagSize == 1);
+#endif
 
   Node* val = Parameter(0);
   Node* node = graph()->NewNode(simplified()->ChangeTaggedToFloat64(), val);
@@ -377,7 +387,9 @@ TARGET_TEST_F(ChangeLowering64Test, ChangeTaggedToFloat64) {
 
 TARGET_TEST_F(ChangeLowering64Test, ChangeTaggedToInt32) {
   STATIC_ASSERT(kSmiTag == 0);
+#if !defined(V8_PPC_TAGGING_OPT)
   STATIC_ASSERT(kSmiTagSize == 1);
+#endif
 
   Node* val = Parameter(0);
   Node* node = graph()->NewNode(simplified()->ChangeTaggedToInt32(), val);
@@ -402,7 +414,9 @@ TARGET_TEST_F(ChangeLowering64Test, ChangeTaggedToInt32) {
 
 TARGET_TEST_F(ChangeLowering64Test, ChangeTaggedToUint32) {
   STATIC_ASSERT(kSmiTag == 0);
+#if !defined(V8_PPC_TAGGING_OPT)
   STATIC_ASSERT(kSmiTagSize == 1);
+#endif
 
   Node* val = Parameter(0);
   Node* node = graph()->NewNode(simplified()->ChangeTaggedToUint32(), val);
@@ -427,7 +441,9 @@ TARGET_TEST_F(ChangeLowering64Test, ChangeTaggedToUint32) {
 
 TARGET_TEST_F(ChangeLowering64Test, ChangeUint32ToTagged) {
   STATIC_ASSERT(kSmiTag == 0);
+#if !defined(V8_PPC_TAGGING_OPT)
   STATIC_ASSERT(kSmiTagSize == 1);
+#endif
 
   Node* val = Parameter(0);
   Node* node = graph()->NewNode(simplified()->ChangeUint32ToTagged(), val);

@@ -2134,11 +2134,15 @@ void MacroAssembler::TryGetFunctionPrototype(Register function, Register result,
     lwz(scratch,
         FieldMemOperand(scratch, SharedFunctionInfo::kCompilerHintsOffset));
     TestBit(scratch,
+#if defined(V8_PPC_TAGGING_OPT)
+            SharedFunctionInfo::kBoundFunction + kSmiTagSize,
+#else  // V8_PPC_TAGGING_OPT
 #if V8_TARGET_ARCH_PPC64
             SharedFunctionInfo::kBoundFunction,
 #else
             SharedFunctionInfo::kBoundFunction + kSmiTagSize,
 #endif
+#endif  // V8_PPC_TAGGING_OPT
             r0);
     bne(miss, cr0);
 
@@ -3518,6 +3522,9 @@ void MacroAssembler::SetRelocatedValue(Register location, Register scratch,
 
 #if V8_OOL_CONSTANT_POOL
   if (emit_debug_code()) {
+#if defined(V8_PPC_TAGGING_OPT)
+    // Check that the instruction sequence is a load from the constant pool
+#else  // V8_PPC_TAGGING_OPT
 // Check that the instruction sequence is a load from the constant pool
 #if V8_TARGET_ARCH_PPC64
     And(scratch, scratch, Operand(kOpcodeMask | (0x1f * B16)));
@@ -3525,6 +3532,7 @@ void MacroAssembler::SetRelocatedValue(Register location, Register scratch,
     Check(eq, kTheInstructionShouldBeALi);
     lwz(scratch, MemOperand(location, kInstrSize));
 #endif
+#endif  // V8_PPC_TAGGING_OPT
     ExtractBitMask(scratch, scratch, 0x1f * B16);
     cmpi(scratch, Operand(kConstantPoolRegister.code()));
     Check(eq, kTheInstructionToPatchShouldBeALoadFromConstantPool);
@@ -3621,6 +3629,9 @@ void MacroAssembler::GetRelocatedValue(Register location, Register result,
 
 #if V8_OOL_CONSTANT_POOL
   if (emit_debug_code()) {
+#if defined(V8_PPC_TAGGING_OPT)
+    // Check that the instruction sequence is a load from the constant pool
+#else  // V8_PPC_TAGGING_OPT
 // Check that the instruction sequence is a load from the constant pool
 #if V8_TARGET_ARCH_PPC64
     And(result, result, Operand(kOpcodeMask | (0x1f * B16)));
@@ -3628,6 +3639,7 @@ void MacroAssembler::GetRelocatedValue(Register location, Register result,
     Check(eq, kTheInstructionShouldBeALi);
     lwz(result, MemOperand(location, kInstrSize));
 #endif
+#endif  // V8_PPC_TAGGING_OPT
     ExtractBitMask(result, result, 0x1f * B16);
     cmpi(result, Operand(kConstantPoolRegister.code()));
     Check(eq, kTheInstructionToPatchShouldBeALoadFromConstantPool);
@@ -4067,6 +4079,9 @@ void MacroAssembler::LoadDoubleLiteral(DoubleRegister result, double value,
   if (is_ool_constant_pool_available() && !is_constant_pool_full()) {
     RelocInfo rinfo(pc_, value);
     ConstantPoolAddEntry(rinfo);
+#if defined(V8_PPC_TAGGING_OPT)
+    lfd(result, MemOperand(kConstantPoolRegister, 0));
+#else  // V8_PPC_TAGGING_OPT
 #if V8_TARGET_ARCH_PPC64
     // We use 2 instruction sequence here for consistency with mov.
     li(scratch, Operand::Zero());
@@ -4074,6 +4089,7 @@ void MacroAssembler::LoadDoubleLiteral(DoubleRegister result, double value,
 #else
     lfd(result, MemOperand(kConstantPoolRegister, 0));
 #endif
+#endif  // V8_PPC_TAGGING_OPT
     return;
   }
 #endif
@@ -4451,6 +4467,9 @@ void MacroAssembler::LoadP(Register dst, const MemOperand& mem,
 #endif
   } else {
 #if V8_TARGET_ARCH_PPC64
+#if defined(V8_PPC_TAGGING_OPT)
+    ld(dst, mem);
+#else  // V8_PPC_TAGGING_OPT
     int misaligned = (offset & 3);
     if (misaligned) {
       // adjust base to conform to offset alignment requirements
@@ -4461,6 +4480,7 @@ void MacroAssembler::LoadP(Register dst, const MemOperand& mem,
     } else {
       ld(dst, mem);
     }
+#endif  // V8_PPC_TAGGING_OPT
 #else
     lwz(dst, mem);
 #endif
@@ -4484,6 +4504,9 @@ void MacroAssembler::StoreP(Register src, const MemOperand& mem,
 #endif
   } else {
 #if V8_TARGET_ARCH_PPC64
+#if defined(V8_PPC_TAGGING_OPT)
+    std(src, mem);
+#else  // V8_PPC_TAGGING_OPT
     int misaligned = (offset & 3);
     if (misaligned) {
       // adjust base to conform to offset alignment requirements
@@ -4499,6 +4522,7 @@ void MacroAssembler::StoreP(Register src, const MemOperand& mem,
     } else {
       std(src, mem);
     }
+#endif  // V8_PPC_TAGGING_OPT
 #else
     stw(src, mem);
 #endif
@@ -4514,6 +4538,9 @@ void MacroAssembler::LoadWordArith(Register dst, const MemOperand& mem,
     mov(scratch, Operand(offset));
     lwax(dst, MemOperand(mem.ra(), scratch));
   } else {
+#if defined(V8_PPC_TAGGING_OPT)
+    lwa(dst, mem);
+#else  // V8_PPC_TAGGING_OPT
 #if V8_TARGET_ARCH_PPC64
     int misaligned = (offset & 3);
     if (misaligned) {
@@ -4528,6 +4555,7 @@ void MacroAssembler::LoadWordArith(Register dst, const MemOperand& mem,
 #else
     lwz(dst, mem);
 #endif
+#endif  // V8_PPC_TAGGING_OPT
   }
 }
 

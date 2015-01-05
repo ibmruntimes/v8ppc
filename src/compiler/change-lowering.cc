@@ -127,7 +127,9 @@ Node* ChangeLowering::LoadHeapNumberValue(Node* value, Node* control) {
 
 Node* ChangeLowering::TestNotSmi(Node* value) {
   STATIC_ASSERT(kSmiTag == 0);
+#if !defined(V8_PPC_TAGGING_OPT)
   STATIC_ASSERT(kSmiTagMask == 1);
+#endif
   return graph()->NewNode(machine()->WordAnd(), value,
                           jsgraph()->IntPtrConstant(kSmiTagMask));
 }

@@ -2552,11 +2552,20 @@ class V8_EXPORT Object : public Value {
   /** Sets the value in an internal field. */
   void SetInternalField(int index, Handle<Value> value);
 
+#if defined(V8_PPC_TAGGING_OPT)
+  /**
+   * Gets a (2^kSmiTagSize)-byte-aligned native pointer from an
+   * internal field. This field must have been set by
+   * SetAlignedPointerInInternalField, everything else leads to
+   * undefined behavior.
+   */
+#else
   /**
    * Gets a 2-byte-aligned native pointer from an internal field. This field
    * must have been set by SetAlignedPointerInInternalField, everything else
    * leads to undefined behavior.
    */
+#endif
   V8_INLINE void* GetAlignedPointerFromInternalField(int index);
 
   /** Same as above, but works for Persistents */
@@ -2565,11 +2574,20 @@ class V8_EXPORT Object : public Value {
     return object.val_->GetAlignedPointerFromInternalField(index);
   }
 
+#if defined(V8_PPC_TAGGING_OPT)
+  /**
+   * Sets a (2^kSmiTagSize)-byte-aligned native pointer in an internal
+   * field. To retrieve such a field,
+   * GetAlignedPointerFromInternalField must be used, everything else
+   * leads to undefined behavior.
+   */
+#else
   /**
    * Sets a 2-byte-aligned native pointer in an internal field. To retrieve such
    * a field, GetAlignedPointerFromInternalField must be used, everything else
    * leads to undefined behavior.
    */
+#endif
   void SetAlignedPointerInInternalField(int index, void* value);
 
   // Testers for local properties.
@@ -5962,19 +5980,38 @@ class V8_EXPORT Context {
    */
   void SetEmbedderData(int index, Handle<Value> value);
 
+#if defined(V8_PPC_TAGGING_OPT)
+  /**
+   * Gets a (2^kSmiTagSize)-byte-aligned native pointer from the
+   * embedder data with the given index, which must have bees set by a
+   * previous call to SetAlignedPointerInEmbedderData with the same
+   * index. Note that index 0 currently has a special meaning for
+   * Chrome's debugger.
+   */
+#else
   /**
    * Gets a 2-byte-aligned native pointer from the embedder data with the given
    * index, which must have bees set by a previous call to
    * SetAlignedPointerInEmbedderData with the same index. Note that index 0
    * currently has a special meaning for Chrome's debugger.
    */
+#endif
   V8_INLINE void* GetAlignedPointerFromEmbedderData(int index);
 
+#if defined(V8_PPC_TAGGING_OPT)
+  /**
+   * Sets a (2^kSmiTagSize)-byte-aligned native pointer in the
+   * embedder data with the given index, growing the data as
+   * needed. Note that index 0 currently has a special meaning for
+   * Chrome's debugger.
+   */
+#else
   /**
    * Sets a 2-byte-aligned native pointer in the embedder data with the given
    * index, growing the data as needed. Note that index 0 currently has a
    * special meaning for Chrome's debugger.
    */
+#endif
   void SetAlignedPointerInEmbedderData(int index, void* value);
 
   /**
@@ -6165,18 +6202,45 @@ const int kApiIntSize = sizeof(int);  // NOLINT
 const int kApiInt64Size = sizeof(int64_t);  // NOLINT
 
 // Tag information for HeapObject.
+#if defined(V8_PPC_TAGGING_OPT)
+
+template <size_t ptr_size> struct HeapObjectTagging;
+
+// HeapObject tagging for 32-bit systems.
+template <> struct HeapObjectTagging<4> {
+  static const int kHeapObjectTagSize = 2;
+  static const int kHeapObjectTag = 1;
+};
+
+// HeapObject tagging for 64-bit systems.
+template <> struct HeapObjectTagging<8> {
+  static const int kHeapObjectTagSize = 3;
+  static const int kHeapObjectTag = 4;
+};
+
+typedef HeapObjectTagging<kApiPointerSize> PlatformHeapObjectTagging;
+const int kHeapObjectTag = PlatformHeapObjectTagging::kHeapObjectTag;
+const int kHeapObjectTagSize = PlatformHeapObjectTagging::kHeapObjectTagSize;
+#else  // V8_PPC_TAGGING_OPT
 const int kHeapObjectTag = 1;
 const int kHeapObjectTagSize = 2;
+#endif  // V8_PPC_TAGGING_OPT
 const intptr_t kHeapObjectTagMask = (1 << kHeapObjectTagSize) - 1;
 
 // Tag information for Smi.
+#if !defined(V8_PPC_TAGGING_OPT)
 const int kSmiTag = 0;
 const int kSmiTagSize = 1;
 const intptr_t kSmiTagMask = (1 << kSmiTagSize) - 1;
+#endif
 
 template <size_t ptr_size> struct SmiTagging;
 
+#if defined(V8_PPC_TAGGING_OPT)
+template<int kSmiTag, int kSmiTagSize, int kSmiShiftSize>
+#else
 template<int kSmiShiftSize>
+#endif
 V8_INLINE internal::Object* IntToSmi(int value) {
   int smi_shift_bits = kSmiTagSize + kSmiShiftSize;
   uintptr_t tagged_value =
@@ -6186,7 +6250,12 @@ V8_INLINE internal::Object* IntToSmi(int value) {
 
 // Smi constants for 32-bit systems.
 template <> struct SmiTagging<4> {
+#if defined(V8_PPC_TAGGING_OPT)
+  static const int kSmiTag = 0;
+  enum { kSmiTagSize = 1, kSmiShiftSize = 0, kSmiValueSize = 31 };
+#else
   enum { kSmiShiftSize = 0, kSmiValueSize = 31 };
+#endif
   static int SmiShiftSize() { return kSmiShiftSize; }
   static int SmiValueSize() { return kSmiValueSize; }
   V8_INLINE static int SmiToInt(const internal::Object* value) {
@@ -6195,7 +6264,11 @@ template <> struct SmiTagging<4> {
     return static_cast<int>(reinterpret_cast<intptr_t>(value)) >> shift_bits;
   }
   V8_INLINE static internal::Object* IntToSmi(int value) {
+#if defined(V8_PPC_TAGGING_OPT)
+    return internal::IntToSmi<kSmiTag, kSmiTagSize, kSmiShiftSize>(value);
+#else
     return internal::IntToSmi<kSmiShiftSize>(value);
+#endif
   }
   V8_INLINE static bool IsValidSmi(intptr_t value) {
     // To be representable as an tagged small integer, the two
@@ -6215,7 +6288,12 @@ template <> struct SmiTagging<4> {
 
 // Smi constants for 64-bit systems.
 template <> struct SmiTagging<8> {
+#if defined(V8_PPC_TAGGING_OPT)
+  static const int kSmiTag = 0;
+  enum { kSmiTagSize = 3, kSmiShiftSize = 29, kSmiValueSize = 32 };
+#else
   enum { kSmiShiftSize = 31, kSmiValueSize = 32 };
+#endif
   static int SmiShiftSize() { return kSmiShiftSize; }
   static int SmiValueSize() { return kSmiValueSize; }
   V8_INLINE static int SmiToInt(const internal::Object* value) {
@@ -6224,7 +6302,11 @@ template <> struct SmiTagging<8> {
     return static_cast<int>(reinterpret_cast<intptr_t>(value) >> shift_bits);
   }
   V8_INLINE static internal::Object* IntToSmi(int value) {
+#if defined(V8_PPC_TAGGING_OPT)
+    return internal::IntToSmi<kSmiTag, kSmiTagSize, kSmiShiftSize>(value);
+#else
     return internal::IntToSmi<kSmiShiftSize>(value);
+#endif
   }
   V8_INLINE static bool IsValidSmi(intptr_t value) {
     // To be representable as a long smi, the value must be a 32-bit integer.
@@ -6233,10 +6315,18 @@ template <> struct SmiTagging<8> {
 };
 
 typedef SmiTagging<kApiPointerSize> PlatformSmiTagging;
+#if defined(V8_PPC_TAGGING_OPT)
+const int kSmiTag = PlatformSmiTagging::kSmiTag;
+const int kSmiTagSize = PlatformSmiTagging::kSmiTagSize;
+#endif
 const int kSmiShiftSize = PlatformSmiTagging::kSmiShiftSize;
 const int kSmiValueSize = PlatformSmiTagging::kSmiValueSize;
+#if defined(V8_PPC_TAGGING_OPT)
+const intptr_t kSmiTagMask = (1 << kSmiTagSize) - 1;
+#endif
 V8_INLINE static bool SmiValuesAre31Bits() { return kSmiValueSize == 31; }
 V8_INLINE static bool SmiValuesAre32Bits() { return kSmiValueSize == 32; }
+
 
 /**
  * This class exports constants and functionality from within v8 that
