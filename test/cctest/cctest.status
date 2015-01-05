@@ -422,4 +422,19 @@
   'test-accessors/Gc' : [SKIP],
 
 }],  # 'arch == nacl_ia32 or arch == nacl_x64'
+
+##############################################################################
+['arch == ppc and simulator_run == True', {
+
+  # Pass but take too long with the simulator.
+  'test-api/Threading1': [SKIP],
+}],  # 'arch == ppc and simulator_run == True'
+
+##############################################################################
+['arch == ppc64 and simulator_run == True', {
+
+  # Pass but take too long with the simulator.
+  'test-api/Threading1': [SKIP],
+}],  # 'arch == ppc64 and simulator_run == True'
+
 ]
