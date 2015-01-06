@@ -360,7 +360,11 @@ class MachineNodeFactory {
     CallDescriptor* descriptor = Linkage::GetSimplifiedCDescriptor(
         ZONE(), n_args, return_type, arg_types);
     Node** passed_args =
+#ifdef __xlC__
+        (Node**) (alloca((n_args + 1) * sizeof(args[0])));
+#else
         static_cast<Node**>(alloca((n_args + 1) * sizeof(args[0])));
+#endif
     passed_args[0] = function_address;
     for (int i = 0; i < n_args; ++i) {
       passed_args[i + 1] = args[i];

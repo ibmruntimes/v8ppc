@@ -2751,7 +2751,11 @@ void Heap::CreateInitialObjects() {
 
   // The -0 value must be set before NewNumber works.
   set_minus_zero_value(*factory->NewHeapNumber(-0.0, IMMUTABLE, TENURED));
+#ifdef __xlC__
+  DCHECK(signbit(minus_zero_value()->Number()) != 0);
+#else
   DCHECK(std::signbit(minus_zero_value()->Number()) != 0);
+#endif
 
   set_nan_value(
       *factory->NewHeapNumber(base::OS::nan_value(), IMMUTABLE, TENURED));
