@@ -6676,13 +6676,14 @@ void String::SetForwardedInternalizedString(String* canonical) {
 String* String::GetForwardedInternalizedString() {
   DCHECK(IsInternalizedString());
   if (HasHashCode()) return this;
-  String* canonical = String::cast(READ_FIELD(this, kHashFieldSlot));
+  Object *object = READ_FIELD(this, kHashFieldSlot);
 
   if (kHashNotComputedMask != kHeapObjectTag) {
-    canonical = reinterpret_cast<String *>(
-        (uintptr_t)canonical & ~kHashNotComputedMask);
+    object = reinterpret_cast<Object *>(
+        (uintptr_t)object & ~kHashNotComputedMask);
   }
 
+  String* canonical = String::cast(object);
   DCHECK(canonical->IsInternalizedString());
   DCHECK(SlowEquals(canonical));
   DCHECK(canonical->HasHashCode());
