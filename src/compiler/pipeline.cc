@@ -441,7 +441,7 @@ struct SimplifiedLoweringPhase {
   void Run(PipelineData* data, Zone* temp_zone) {
     SourcePositionTable::Scope pos(data->source_positions(),
                                    SourcePosition::Unknown());
-    SimplifiedLowering lowering(data->jsgraph());
+    SimplifiedLowering lowering(data->jsgraph(), temp_zone);
     lowering.LowerAllNodes();
     ValueNumberingReducer vn_reducer(temp_zone);
     SimplifiedOperatorReducer simple_reducer(data->jsgraph());
@@ -584,11 +584,11 @@ struct AllocateDoubleRegistersPhase {
 };
 
 
-struct ReuseSpillSlotsPhase {
-  static const char* phase_name() { return "reuse spill slots"; }
+struct AssignSpillSlotsPhase {
+  static const char* phase_name() { return "assign spill slots"; }
 
   void Run(PipelineData* data, Zone* temp_zone) {
-    data->register_allocator()->ReuseSpillSlots();
+    data->register_allocator()->AssignSpillSlots();
   }
 };
 
@@ -1004,12 +1004,6 @@ void Pipeline::AllocateRegisters(const RegisterConfiguration* config,
                                  bool run_verifier) {
   PipelineData* data = this->data_;
 
-  int node_count = data->sequence()->VirtualRegisterCount();
-  if (node_count > UnallocatedOperand::kMaxVirtualRegisters) {
-    data->set_compilation_failed();
-    return;
-  }
-
   // Don't track usage for this zone in compiler stats.
   SmartPointer<Zone> verifier_zone;
   RegisterAllocatorVerifier* verifier = nullptr;
@@ -1041,18 +1035,9 @@ void Pipeline::AllocateRegisters(const RegisterConfiguration* config,
     CHECK(!data->register_allocator()->ExistsUseWithoutDefinition());
   }
   Run<AllocateGeneralRegistersPhase>();
-  if (!data->register_allocator()->AllocationOk()) {
-    data->set_compilation_failed();
-    return;
-  }
   Run<AllocateDoubleRegistersPhase>();
-  if (!data->register_allocator()->AllocationOk()) {
-    data->set_compilation_failed();
-    return;
-  }
-  if (FLAG_turbo_reuse_spill_slots) {
-    Run<ReuseSpillSlotsPhase>();
-  }
+  Run<AssignSpillSlotsPhase>();
+
   Run<CommitAssignmentPhase>();
   Run<PopulatePointerMapsPhase>();
   Run<ConnectRangesPhase>();

@@ -377,8 +377,6 @@ class RegisterAllocator FINAL : public ZoneObject {
                              InstructionSequence* code,
                              const char* debug_name = nullptr);
 
-  bool AllocationOk() { return allocation_ok_; }
-
   const ZoneVector<LiveRange*>& live_ranges() const { return live_ranges_; }
   const ZoneVector<LiveRange*>& fixed_live_ranges() const {
     return fixed_live_ranges_;
@@ -405,8 +403,8 @@ class RegisterAllocator FINAL : public ZoneObject {
   void AllocateGeneralRegisters();
   void AllocateDoubleRegisters();
 
-  // Phase 5: reassign spill splots for maximal reuse.
-  void ReuseSpillSlots();
+  // Phase 5: assign spill splots.
+  void AssignSpillSlots();
 
   // Phase 6: commit assignment.
   void CommitAssignment();
@@ -421,15 +419,7 @@ class RegisterAllocator FINAL : public ZoneObject {
   void ResolveControlFlow();
 
  private:
-  int GetVirtualRegister() {
-    int vreg = code()->NextVirtualRegister();
-    if (vreg >= UnallocatedOperand::kMaxVirtualRegisters) {
-      allocation_ok_ = false;
-      // Maintain the invariant that we return something below the maximum.
-      return 0;
-    }
-    return vreg;
-  }
+  int GetVirtualRegister() { return code()->NextVirtualRegister(); }
 
   // Checks whether the value of a given virtual register is a reference.
   // TODO(titzer): rename this to IsReference.
@@ -494,8 +484,6 @@ class RegisterAllocator FINAL : public ZoneObject {
   bool TryAllocateFreeReg(LiveRange* range);
   void AllocateBlockedReg(LiveRange* range);
   SpillRange* AssignSpillRangeToLiveRange(LiveRange* range);
-  void FreeSpillSlot(LiveRange* range);
-  InstructionOperand* TryReuseSpillSlot(LiveRange* range);
 
   // Live range splitting helpers.
 
@@ -624,9 +612,6 @@ class RegisterAllocator FINAL : public ZoneObject {
 
   BitVector* assigned_registers_;
   BitVector* assigned_double_registers_;
-
-  // Indicates success or failure during register allocation.
-  bool allocation_ok_;
 
 #ifdef DEBUG
   LifetimePosition allocation_finger_;
