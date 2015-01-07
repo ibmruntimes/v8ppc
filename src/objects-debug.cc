@@ -372,12 +372,15 @@ void FixedDoubleArray::FixedDoubleArrayVerify() {
       double value = get_scalar(i);
 #ifdef __xlC__
       CHECK(!isnan(value) ||
-#else
-      CHECK(!std::isnan(value) ||
-#endif
              (BitCast<uint64_t>(value) ==
               BitCast<uint64_t>(canonical_not_the_hole_nan_as_double())) ||
              ((BitCast<uint64_t>(value) & Double::kSignMask) != 0));
+#else
+      CHECK(!std::isnan(value) ||
+             (BitCast<uint64_t>(value) ==
+              BitCast<uint64_t>(canonical_not_the_hole_nan_as_double())) ||
+             ((BitCast<uint64_t>(value) & Double::kSignMask) != 0));
+#endif
     }
   }
 }
