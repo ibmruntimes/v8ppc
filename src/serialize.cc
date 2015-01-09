@@ -614,7 +614,9 @@ void Deserializer::DecodeReservation(
   DCHECK_EQ(0, reservations_[NEW_SPACE].length());
   STATIC_ASSERT(NEW_SPACE == 0);
   int current_space = NEW_SPACE;
-  for (const auto& r : res) {
+  for (int i = 0; i < res.length(); i++) {
+    SerializedData::Reservation r(0);
+    memcpy(&r, res.start() + i, sizeof(r));
     reservations_[current_space].Add({r.chunk_size(), NULL, NULL});
     if (r.is_last()) current_space++;
   }
@@ -860,7 +862,8 @@ void Deserializer::ReadObject(int space_number, Object** write_back) {
   // Fix up strings from serialized user code.
   if (deserializing_user_code()) obj = ProcessNewObjectFromSerializedCode(obj);
 
-  *write_back = obj;
+  Object* write_back_obj = obj;
+  UnalignedCopy(write_back, &write_back_obj);
 #ifdef DEBUG
   if (obj->IsCode()) {
     DCHECK(space_number == CODE_SPACE || space_number == LO_SPACE);
@@ -1020,7 +1023,7 @@ void Deserializer::ReadData(Object** current, Object** limit, int source_space,
         current = reinterpret_cast<Object**>(location_of_branch_data);         \
         current_was_incremented = true;                                        \
       } else {                                                                 \
-        *current = new_object;                                                 \
+        UnalignedCopy(current, &new_object);                                   \
       }                                                                        \
     }                                                                          \
     if (emit_write_barrier && write_barrier_needed) {                          \
@@ -1121,7 +1124,7 @@ void Deserializer::ReadData(Object** current, Object** limit, int source_space,
         int root_id = RootArrayConstantFromByteCode(data);
         Object* object = isolate->heap()->roots_array_start()[root_id];
         DCHECK(!isolate->heap()->InNewSpace(object));
-        *current++ = object;
+        UnalignedCopy(current++, &object);
         break;
       }
 
@@ -1133,7 +1136,7 @@ void Deserializer::ReadData(Object** current, Object** limit, int source_space,
             reinterpret_cast<intptr_t>(current) + skip);
         Object* object = isolate->heap()->roots_array_start()[root_id];
         DCHECK(!isolate->heap()->InNewSpace(object));
-        *current++ = object;
+        UnalignedCopy(current++, &object);
         break;
       }
 
@@ -1141,8 +1144,7 @@ void Deserializer::ReadData(Object** current, Object** limit, int source_space,
         int repeats = source_.GetInt();
         Object* object = current[-1];
         DCHECK(!isolate->heap()->InNewSpace(object));
-        for (int i = 0; i < repeats; i++) current[i] = object;
-        current += repeats;
+        for (int i = 0; i < repeats; i++) UnalignedCopy(current++, &object);
         break;
       }
 
@@ -1156,10 +1158,10 @@ void Deserializer::ReadData(Object** current, Object** limit, int source_space,
       case kFixedRepeat + 13:
       case kFixedRepeat + 14: {
         int repeats = RepeatsForCode(data);
-        Object* object = current[-1];
+        Object* object;
+        UnalignedCopy(&object, current - 1);
         DCHECK(!isolate->heap()->InNewSpace(object));
-        for (int i = 0; i < repeats; i++) current[i] = object;
-        current += repeats;
+        for (int i = 0; i < repeats; i++) UnalignedCopy(current++, &object);
         break;
       }
 
@@ -1271,7 +1273,8 @@ void Deserializer::ReadData(Object** current, Object** limit, int source_space,
             new NativesExternalStringResource(isolate->bootstrapper(),
                                               source_vector.start(),
                                               source_vector.length());
-        *current++ = reinterpret_cast<Object*>(resource);
+        Object* resource_obj = reinterpret_cast<Object*>(resource);
+        UnalignedCopy(current++, &resource_obj);
         break;
       }
 
@@ -1299,8 +1302,9 @@ void Deserializer::ReadData(Object** current, Object** limit, int source_space,
       FOUR_CASES(kHotObject)
       FOUR_CASES(kHotObject + 4) {
         int index = data & kHotObjectIndexMask;
-        *current = hot_objects_.Get(index);
-        if (write_barrier_needed && isolate->heap()->InNewSpace(*current)) {
+        Object* hot_object = hot_objects_.Get(index);
+        UnalignedCopy(current, &hot_object);
+        if (write_barrier_needed && isolate->heap()->InNewSpace(hot_object)) {
           Address current_address = reinterpret_cast<Address>(current);
           isolate->heap()->RecordWrite(
               current_object_address,

@@ -208,7 +208,7 @@
     ],
   },
   'conditions': [
-    ['asan==1', {
+    ['asan==1 and OS!="mac"', {
       'target_defaults': {
         'cflags_cc+': [
           '-fno-omit-frame-pointer',
@@ -216,7 +216,7 @@
           '-fsanitize=address',
           '-w',  # http://crbug.com/162783
         ],
-        'cflags_cc!': [
+        'cflags!': [
           '-fomit-frame-pointer',
         ],
         'ldflags': [
@@ -224,7 +224,7 @@
         ],
       },
     }],
-    ['tsan==1', {
+    ['tsan==1 and OS!="mac"', {
       'target_defaults': {
         'cflags+': [
           '-fno-omit-frame-pointer',
@@ -242,6 +242,29 @@
         ],
         'defines': [
           'THREAD_SANITIZER',
+        ],
+      },
+    }],
+    ['asan==1 and OS=="mac"', {
+      'target_defaults': {
+        'xcode_settings': {
+          'OTHER_CFLAGS+': [
+            '-fno-omit-frame-pointer',
+            '-gline-tables-only',
+            '-fsanitize=address',
+            '-w',  # http://crbug.com/162783
+          ],
+          'OTHER_CFLAGS!': [
+            '-fomit-frame-pointer',
+          ],
+        },
+        'target_conditions': [
+          ['_type!="static_library"', {
+            'xcode_settings': {'OTHER_LDFLAGS': ['-fsanitize=address']},
+          }],
+        ],
+        'dependencies': [
+          '<(DEPTH)/build/mac/asan.gyp:asan_dynamic_runtime',
         ],
       },
     }],
