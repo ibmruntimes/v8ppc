@@ -64,11 +64,7 @@ static AllocationResult AllocateAfterFailures() {
 
   // Large object space.
 #if defined(V8_PPC_PAGESIZE_OPT)
-#if V8_TARGET_ARCH_PPC && V8_OS_LINUX
-  static const int kLargeObjectSpaceFillerLength = 300000 << 2;
-#else
-  static const int kLargeObjectSpaceFillerLength = 300000;
-#endif
+  static const int kLargeObjectSpaceFillerLength = 3 * (Page::kPageSize/10);
 #else  // defined(V8_PPC_PAGESIZE_OPT)
   static const int kLargeObjectSpaceFillerLength = 300000;
 #endif  // defined(V8_PPC_PAGESIZE_OPT)
