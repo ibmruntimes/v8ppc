@@ -8,6 +8,7 @@
 #include "src/compiler/gap-resolver.h"
 #include "src/compiler/node-matchers.h"
 #include "src/compiler/node-properties-inl.h"
+#include "src/compiler/osr.h"
 #include "src/ppc/macro-assembler-ppc.h"
 #include "src/scopes.h"
 
@@ -157,6 +158,44 @@ class OutOfLineLoadZero FINAL : public OutOfLineCode {
  private:
   Register const result_;
 };
+
+Condition FlagsConditionToCondition(FlagsCondition condition) {
+  switch (condition) {
+    case kEqual:
+      return eq;
+    case kNotEqual:
+      return ne;
+    case kSignedLessThan:
+    case kUnsignedLessThan:
+      return lt;
+    case kSignedGreaterThanOrEqual:
+    case kUnsignedGreaterThanOrEqual:
+      return ge;
+    case kSignedLessThanOrEqual:
+    case kUnsignedLessThanOrEqual:
+      return le;
+    case kSignedGreaterThan:
+    case kUnsignedGreaterThan:
+      return gt;
+    case kOverflow:
+#if V8_TARGET_ARCH_PPC64
+      return ne;
+#else
+      return lt;
+#endif
+    case kNotOverflow:
+#if V8_TARGET_ARCH_PPC64
+      return eq;
+#else
+      return ge;
+#endif
+    case kUnorderedEqual:
+    case kUnorderedNotEqual:
+      break;
+  }
+  UNREACHABLE();
+  return kNoCondition;
+}
 
 }  // namespace
 
@@ -940,84 +979,25 @@ void CodeGenerator::AssembleArchBranch(Instruction* instr, BranchInfo* branch) {
   PPCOperandConverter i(this, instr);
   Label* tlabel = branch->true_label;
   Label* flabel = branch->false_label;
+  ArchOpcode op = instr->arch_opcode();
   FlagsCondition condition = branch->condition;
-  Condition cond = kNoCondition;
   CRegister cr = cr0;
-#if DEBUG
-  ArchOpcode op = ArchOpcodeField::decode(instr->opcode());
-#endif
-  switch (condition) {
-    case kUnorderedEqual:
-    case kUnorderedLessThan:
-      // No branch to false if unordered needed since only FU bit will be set.
-      // __ bunordered(flabel, cr);
-      break;
-    case kUnorderedLessThanOrEqual:
-      __ bunordered(flabel, cr);
-      break;
-    case kUnorderedNotEqual:
-    case kUnorderedGreaterThanOrEqual:
-      // No branch to true if unordered needed since only FU bit will be set.
-      // __ bunordered(tlabel, cr);
-      break;
-    case kUnorderedGreaterThan:
-      __ bunordered(tlabel, cr);
-      break;
-    case kOverflow:
-      // Currently used only for add/sub overflow
-      DCHECK(op == kPPC_AddWithOverflow32 || op == kPPC_SubWithOverflow32);
-#if V8_TARGET_ARCH_PPC64
-      condition = kNotEqual;
-#else
-      condition = kSignedLessThan;
-#endif
-      break;
-    case kNotOverflow:
-      // Currently used only for add/sub overflow
-      DCHECK(op == kPPC_AddWithOverflow32 || op == kPPC_SubWithOverflow32);
-#if V8_TARGET_ARCH_PPC64
-      condition = kEqual;
-#else
-      condition = kSignedGreaterThanOrEqual;
-#endif
-      break;
-    default:
-      break;
-  }
 
-  switch (condition) {
-    case kUnorderedEqual:
-    case kEqual:
-      cond = eq;
-      break;
-    case kUnorderedNotEqual:
-    case kNotEqual:
-      cond = ne;
-      break;
-    case kUnorderedLessThan:
-    case kSignedLessThan:
-    case kUnsignedLessThan:
-      cond = lt;
-      break;
-    case kUnorderedGreaterThanOrEqual:
-    case kSignedGreaterThanOrEqual:
-    case kUnsignedGreaterThanOrEqual:
-      cond = ge;
-      break;
-    case kUnorderedLessThanOrEqual:
-    case kSignedLessThanOrEqual:
-    case kUnsignedLessThanOrEqual:
-      cond = le;
-      break;
-    case kUnorderedGreaterThan:
-    case kSignedGreaterThan:
-    case kUnsignedGreaterThan:
-      cond = gt;
-      break;
-    case kOverflow:
-    case kNotOverflow:
-      UNREACHABLE();
-      break;
+  // Overflow checked for add/sub only.
+  DCHECK((condition != kOverflow && condition != kNotOverflow) ||
+         (op == kPPC_AddWithOverflow32 || op == kPPC_SubWithOverflow32));
+
+  Condition cond = FlagsConditionToCondition(condition);
+  if (op == kPPC_CmpFloat64) {
+    // check for unordered if necessary
+    if (cond == le) {
+      __ bunordered(flabel, cr);
+      // Unnecessary for eq/lt since only FU bit will be set.
+    }
+    else if (cond == gt) {
+      __ bunordered(tlabel, cr);
+      // Unnecessary for ne/ge since only FU bit will be set.
+    }
   }
   __ b(cond, tlabel, cr);
   if (!branch->fallthru) __ b(flabel);  // no fallthru to flabel.
@@ -1034,93 +1014,56 @@ void CodeGenerator::AssembleArchBoolean(Instruction* instr,
                                         FlagsCondition condition) {
   PPCOperandConverter i(this, instr);
   Label done;
+  ArchOpcode op = instr->arch_opcode();
+  bool check_unordered = (op == kPPC_CmpFloat64);
   CRegister cr = cr0;
-#if DEBUG
-  ArchOpcode op = ArchOpcodeField::decode(instr->opcode());
-#endif
+
+  // Overflow checked for add/sub only.
+  DCHECK((condition != kOverflow && condition != kNotOverflow) ||
+         (op == kPPC_AddWithOverflow32 || op == kPPC_SubWithOverflow32));
 
   // Materialize a full 32-bit 1 or 0 value. The result register is always the
   // last output of the instruction.
   DCHECK_NE(0, instr->OutputCount());
   Register reg = i.OutputRegister(instr->OutputCount() - 1);
 
-  switch (condition) {
-    case kOverflow:
-      // Currently used only for add/sub overflow
-      DCHECK(op == kPPC_AddWithOverflow32 || op == kPPC_SubWithOverflow32);
-#if V8_TARGET_ARCH_PPC64
-      condition = kNotEqual;
-#else
-      condition = kSignedLessThan;
-#endif
-      break;
-    case kNotOverflow:
-      // Currently used only for add/sub overflow
-      DCHECK(op == kPPC_AddWithOverflow32 || op == kPPC_SubWithOverflow32);
-#if V8_TARGET_ARCH_PPC64
-      condition = kEqual;
-#else
-      condition = kSignedGreaterThanOrEqual;
-#endif
-      break;
-    default:
-      break;
-  }
-
-  switch (condition) {
-    case kUnorderedEqual:
-    case kEqual:
+  Condition cond = FlagsConditionToCondition(condition);
+  switch (cond) {
+    case eq:
+    case lt:
       __ li(reg, Operand::Zero());
       __ li(kScratchReg, Operand(1));
-      if (condition == kUnorderedEqual) __ bunordered(&done, cr);
-      __ isel(eq, reg, kScratchReg, reg, cr);
+      __ isel(cond, reg, kScratchReg, reg, cr);
       break;
-    case kUnorderedNotEqual:
-    case kNotEqual:
+    case ne:
+    case ge:
       __ li(reg, Operand(1));
-      if (condition == kUnorderedNotEqual) __ bunordered(&done, cr);
-      __ isel(eq, reg, r0, reg, cr);
+      __ isel(NegateCondition(cond), reg, r0, reg, cr);
       break;
-    case kUnorderedLessThan:
-    case kSignedLessThan:
-    case kUnsignedLessThan:
-      __ li(reg, Operand::Zero());
-      __ li(kScratchReg, Operand(1));
-      if (condition == kUnorderedLessThan) __ bunordered(&done, cr);
-      __ isel(lt, reg, kScratchReg, reg, cr);
+    case gt:
+      if (check_unordered) {
+        __ li(reg, Operand(1));
+        __ li(kScratchReg, Operand::Zero());
+        __ bunordered(&done, cr);
+        __ isel(cond, reg, reg, kScratchReg, cr);
+      } else {
+        __ li(reg, Operand::Zero());
+        __ li(kScratchReg, Operand(1));
+        __ isel(cond, reg, kScratchReg, reg, cr);
+      }
       break;
-    case kUnorderedGreaterThanOrEqual:
-    case kSignedGreaterThanOrEqual:
-    case kUnsignedGreaterThanOrEqual:
-      __ li(reg, Operand(1));
-      if (condition == kUnorderedGreaterThanOrEqual) __ bunordered(&done, cr);
-      __ isel(lt, reg, r0, reg, cr);
+    case le:
+      if (check_unordered) {
+        __ li(reg, Operand::Zero());
+        __ li(kScratchReg, Operand(1));
+        __ bunordered(&done, cr);
+        __ isel(NegateCondition(cond), reg, r0, kScratchReg, cr);
+      } else {
+        __ li(reg, Operand(1));
+        __ isel(NegateCondition(cond), reg, r0, reg, cr);
+      }
       break;
-    case kUnorderedLessThanOrEqual:
-      __ li(reg, Operand::Zero());
-      __ li(kScratchReg, Operand(1));
-      __ bunordered(&done, cr);
-      __ isel(gt, reg, r0, kScratchReg, cr);
-      break;
-    case kSignedLessThanOrEqual:
-    case kUnsignedLessThanOrEqual:
-      __ li(reg, Operand(1));
-      __ isel(gt, reg, r0, reg, cr);
-      break;
-    case kUnorderedGreaterThan:
-      __ li(reg, Operand(1));
-      __ li(kScratchReg, Operand::Zero());
-      __ bunordered(&done, cr);
-      __ isel(gt, reg, reg, kScratchReg, cr);
-      break;
-    case kSignedGreaterThan:
-    case kUnsignedGreaterThan:
-      __ li(reg, Operand::Zero());
-      __ li(kScratchReg, Operand(1));
-      __ isel(gt, reg, kScratchReg, reg, cr);
-      break;
-    case kOverflow:
-    case kNotOverflow:
+   default:
       UNREACHABLE();
       break;
   }
@@ -1173,6 +1116,23 @@ void CodeGenerator::AssemblePrologue() {
         StandardFrameConstants::kFixedFrameSizeFromFp);
   }
   int stack_slots = frame()->GetSpillSlotCount();
+
+  if (info()->is_osr()) {
+    // TurboFan OSR-compiled functions cannot be entered directly.
+    __ Abort(kShouldNotDirectlyEnterOsrFunction);
+
+    // Unoptimized code jumps directly to this entrypoint while the unoptimized
+    // frame is still on the stack. Optimized code uses OSR values directly from
+    // the unoptimized frame. Thus, all that needs to be done is to allocate the
+    // remaining stack slots.
+    if (FLAG_code_comments) __ RecordComment("-- OSR entrypoint --");
+    osr_pc_offset_ = __ pc_offset();
+    int unoptimized_slots =
+        static_cast<int>(OsrHelper(info()).UnoptimizedFrameSlots());
+    DCHECK(stack_slots >= unoptimized_slots);
+    stack_slots -= unoptimized_slots;
+  }
+
   if (stack_slots > 0) {
     __ Add(sp, sp, -stack_slots * kPointerSize, r0);
   }
