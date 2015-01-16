@@ -8,6 +8,7 @@
 #include "src/compiler/gap-resolver.h"
 #include "src/compiler/node-matchers.h"
 #include "src/compiler/node-properties-inl.h"
+#include "src/compiler/osr.h"
 #include "src/ia32/assembler-ia32.h"
 #include "src/ia32/macro-assembler-ia32.h"
 #include "src/scopes.h"
@@ -730,27 +731,15 @@ void CodeGenerator::AssembleArchBranch(Instruction* instr, BranchInfo* branch) {
     case kSignedGreaterThan:
       __ j(greater, tlabel);
       break;
-    case kUnorderedLessThan:
-      __ j(parity_even, flabel, flabel_distance);
-    // Fall through.
     case kUnsignedLessThan:
       __ j(below, tlabel);
       break;
-    case kUnorderedGreaterThanOrEqual:
-      __ j(parity_even, tlabel);
-    // Fall through.
     case kUnsignedGreaterThanOrEqual:
       __ j(above_equal, tlabel);
       break;
-    case kUnorderedLessThanOrEqual:
-      __ j(parity_even, flabel, flabel_distance);
-    // Fall through.
     case kUnsignedLessThanOrEqual:
       __ j(below_equal, tlabel);
       break;
-    case kUnorderedGreaterThan:
-      __ j(parity_even, tlabel);
-    // Fall through.
     case kUnsignedGreaterThan:
       __ j(above, tlabel);
       break;
@@ -812,35 +801,15 @@ void CodeGenerator::AssembleArchBoolean(Instruction* instr,
     case kSignedGreaterThan:
       cc = greater;
       break;
-    case kUnorderedLessThan:
-      __ j(parity_odd, &check, Label::kNear);
-      __ Move(reg, Immediate(0));
-      __ jmp(&done, Label::kNear);
-    // Fall through.
     case kUnsignedLessThan:
       cc = below;
       break;
-    case kUnorderedGreaterThanOrEqual:
-      __ j(parity_odd, &check, Label::kNear);
-      __ mov(reg, Immediate(1));
-      __ jmp(&done, Label::kNear);
-    // Fall through.
     case kUnsignedGreaterThanOrEqual:
       cc = above_equal;
       break;
-    case kUnorderedLessThanOrEqual:
-      __ j(parity_odd, &check, Label::kNear);
-      __ Move(reg, Immediate(0));
-      __ jmp(&done, Label::kNear);
-    // Fall through.
     case kUnsignedLessThanOrEqual:
       cc = below_equal;
       break;
-    case kUnorderedGreaterThan:
-      __ j(parity_odd, &check, Label::kNear);
-      __ mov(reg, Immediate(1));
-      __ jmp(&done, Label::kNear);
-    // Fall through.
     case kUnsignedGreaterThan:
       cc = above;
       break;
@@ -1023,6 +992,8 @@ void CodeGenerator::AssemblePrologue() {
       frame->SetRegisterSaveAreaSize(register_save_area_size);
     }
   } else if (descriptor->IsJSFunctionCall()) {
+    // TODO(turbofan): this prologue is redundant with OSR, but needed for
+    // code aging.
     CompilationInfo* info = this->info();
     __ Prologue(info->IsCodePreAgingActive());
     frame->SetRegisterSaveAreaSize(
@@ -1032,7 +1003,25 @@ void CodeGenerator::AssemblePrologue() {
     frame->SetRegisterSaveAreaSize(
         StandardFrameConstants::kFixedFrameSizeFromFp);
   }
+
+  if (info()->is_osr()) {
+    // TurboFan OSR-compiled functions cannot be entered directly.
+    __ Abort(kShouldNotDirectlyEnterOsrFunction);
+
+    // Unoptimized code jumps directly to this entrypoint while the unoptimized
+    // frame is still on the stack. Optimized code uses OSR values directly from
+    // the unoptimized frame. Thus, all that needs to be done is to allocate the
+    // remaining stack slots.
+    if (FLAG_code_comments) __ RecordComment("-- OSR entrypoint --");
+    osr_pc_offset_ = __ pc_offset();
+    int unoptimized_slots =
+        static_cast<int>(OsrHelper(info()).UnoptimizedFrameSlots());
+    DCHECK(stack_slots >= unoptimized_slots);
+    stack_slots -= unoptimized_slots;
+  }
+
   if (stack_slots > 0) {
+    // Allocate the stack slots used by this frame.
     __ sub(esp, Immediate(stack_slots * kPointerSize));
   }
 }

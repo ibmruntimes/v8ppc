@@ -62,9 +62,16 @@ bool AstGraphBuilder::CreateGraph() {
   int parameter_count = info()->num_parameters();
   graph()->SetStart(graph()->NewNode(common()->Start(parameter_count)));
 
+  Node* start = graph()->start();
   // Initialize the top-level environment.
-  Environment env(this, scope, graph()->start());
+  Environment env(this, scope, start);
   set_environment(&env);
+
+  if (info()->is_osr()) {
+    // Use OSR normal entry as the start of the top-level environment.
+    // It will be replaced with {Dead} after typing and optimizations.
+    NewNode(common()->OsrNormalEntry());
+  }
 
   // Initialize the incoming context.
   Node* outer_context = GetFunctionContext();
@@ -589,7 +596,7 @@ void AstGraphBuilder::VisitSwitchStatement(SwitchStatement* stmt) {
 
 void AstGraphBuilder::VisitDoWhileStatement(DoWhileStatement* stmt) {
   LoopBuilder while_loop(this);
-  while_loop.BeginLoop(GetVariablesAssignedInLoop(stmt));
+  while_loop.BeginLoop(GetVariablesAssignedInLoop(stmt), IsOsrLoopEntry(stmt));
   VisitIterationBody(stmt, &while_loop, 0);
   while_loop.EndBody();
   VisitForTest(stmt->cond());
@@ -601,7 +608,7 @@ void AstGraphBuilder::VisitDoWhileStatement(DoWhileStatement* stmt) {
 
 void AstGraphBuilder::VisitWhileStatement(WhileStatement* stmt) {
   LoopBuilder while_loop(this);
-  while_loop.BeginLoop(GetVariablesAssignedInLoop(stmt));
+  while_loop.BeginLoop(GetVariablesAssignedInLoop(stmt), IsOsrLoopEntry(stmt));
   VisitForTest(stmt->cond());
   Node* condition = environment()->Pop();
   while_loop.BreakUnless(condition);
@@ -614,7 +621,7 @@ void AstGraphBuilder::VisitWhileStatement(WhileStatement* stmt) {
 void AstGraphBuilder::VisitForStatement(ForStatement* stmt) {
   LoopBuilder for_loop(this);
   VisitIfNotNull(stmt->init());
-  for_loop.BeginLoop(GetVariablesAssignedInLoop(stmt));
+  for_loop.BeginLoop(GetVariablesAssignedInLoop(stmt), IsOsrLoopEntry(stmt));
   if (stmt->cond() != NULL) {
     VisitForTest(stmt->cond());
     Node* condition = environment()->Pop();
@@ -690,7 +697,8 @@ void AstGraphBuilder::VisitForInStatement(ForInStatement* stmt) {
         environment()->Push(jsgraph()->ZeroConstant());
         // PrepareForBailoutForId(stmt->BodyId(), NO_REGISTERS);
         LoopBuilder for_loop(this);
-        for_loop.BeginLoop(GetVariablesAssignedInLoop(stmt));
+        for_loop.BeginLoop(GetVariablesAssignedInLoop(stmt),
+                           IsOsrLoopEntry(stmt));
         // Check loop termination condition.
         Node* index = environment()->Peek(0);
         Node* exit_cond =
@@ -781,9 +789,17 @@ void AstGraphBuilder::VisitForInStatement(ForInStatement* stmt) {
 
 
 void AstGraphBuilder::VisitForOfStatement(ForOfStatement* stmt) {
-  VisitForValue(stmt->subject());
-  environment()->Pop();
-  // TODO(turbofan): create and use loop builder.
+  LoopBuilder for_loop(this);
+  VisitForEffect(stmt->assign_iterator());
+  for_loop.BeginLoop(GetVariablesAssignedInLoop(stmt), IsOsrLoopEntry(stmt));
+  VisitForEffect(stmt->next_result());
+  VisitForTest(stmt->result_done());
+  Node* condition = environment()->Pop();
+  for_loop.BreakWhen(condition);
+  VisitForEffect(stmt->assign_each());
+  VisitIterationBody(stmt, &for_loop, 0);
+  for_loop.EndBody();
+  for_loop.EndLoop();
 }
 
 
@@ -910,7 +926,7 @@ void AstGraphBuilder::VisitObjectLiteral(ObjectLiteral* expr) {
     ObjectLiteral::Property* property = expr->properties()->at(i);
     if (property->IsCompileTimeValue()) continue;
 
-    Literal* key = property->key();
+    Literal* key = property->key()->AsLiteral();
     switch (property->kind()) {
       case ObjectLiteral::Property::CONSTANT:
         UNREACHABLE();
@@ -1480,6 +1496,8 @@ void AstGraphBuilder::VisitCountOperation(CountOperation* expr) {
 
   // Convert old value into a number.
   old_value = NewNode(javascript()->ToNumber(), old_value);
+  PrepareFrameState(old_value, expr->ToNumberId(),
+                    OutputFrameStateCombine::Push());
 
   // Save result for postfix expressions at correct stack depth.
   if (is_postfix) environment()->Poke(stack_depth, old_value);
@@ -2108,10 +2126,7 @@ Node* AstGraphBuilder::BuildToBoolean(Node* input) {
       return jsgraph_->BooleanConstant(!NumberMatcher(input).Is(0));
     case IrOpcode::kHeapConstant: {
       Handle<Object> object = HeapObjectMatcher<Object>(input).Value().handle();
-      if (object->IsTrue()) return jsgraph_->TrueConstant();
-      if (object->IsFalse()) return jsgraph_->FalseConstant();
-      // TODO(turbofan): other constants.
-      break;
+      return jsgraph_->BooleanConstant(object->BooleanValue());
     }
     default:
       break;
@@ -2206,6 +2221,11 @@ Node* AstGraphBuilder::BuildStackCheck() {
   Node* guard = NewNode(javascript()->CallRuntime(Runtime::kStackGuard, 0));
   stack_check.End();
   return guard;
+}
+
+
+bool AstGraphBuilder::IsOsrLoopEntry(IterationStatement* stmt) {
+  return info()->osr_ast_id() == stmt->OsrEntryId();
 }
 
 

@@ -183,16 +183,15 @@ class Genesis BASE_EMBEDDED {
   // Make the "arguments" and "caller" properties throw a TypeError on access.
   void PoisonArgumentsAndCaller(Handle<Map> map);
 
-  // Creates the global objects using the global and the template passed in
-  // through the API.  We call this regardless of whether we are building a
+  // Creates the global objects using the global proxy and the template passed
+  // in through the API.  We call this regardless of whether we are building a
   // context from scratch or using a deserialized one from the partial snapshot
   // but in the latter case we don't use the objects it produces directly, as
   // we have to used the deserialized ones that are linked together with the
   // rest of the context snapshot.
-  Handle<JSGlobalProxy> CreateNewGlobals(
+  Handle<GlobalObject> CreateNewGlobals(
       v8::Handle<v8::ObjectTemplate> global_proxy_template,
-      MaybeHandle<JSGlobalProxy> maybe_global_proxy,
-      Handle<GlobalObject>* global_object_out);
+      Handle<JSGlobalProxy> global_proxy);
   // Hooks the given global proxy into the context.  If the context was created
   // by deserialization then this will unhook the global proxy that was
   // deserialized, leaving the GC to pick it up.
@@ -201,7 +200,8 @@ class Genesis BASE_EMBEDDED {
   // Similarly, we want to use the global that has been created by the templates
   // passed through the API.  The global from the snapshot is detached from the
   // other objects in the snapshot.
-  void HookUpGlobalObject(Handle<GlobalObject> global_object);
+  void HookUpGlobalObject(Handle<GlobalObject> global_object,
+                          Handle<FixedArray> outdated_contexts);
   // New context initialization.  Used for creating a context from scratch.
   void InitializeGlobal(Handle<GlobalObject> global_object,
                         Handle<JSFunction> empty_function);
@@ -756,14 +756,13 @@ void Genesis::CreateRoots() {
 }
 
 
-Handle<JSGlobalProxy> Genesis::CreateNewGlobals(
+Handle<GlobalObject> Genesis::CreateNewGlobals(
     v8::Handle<v8::ObjectTemplate> global_proxy_template,
-    MaybeHandle<JSGlobalProxy> maybe_global_proxy,
-    Handle<GlobalObject>* global_object_out) {
+    Handle<JSGlobalProxy> global_proxy) {
   // The argument global_proxy_template aka data is an ObjectTemplateInfo.
   // It has a constructor pointer that points at global_constructor which is a
   // FunctionTemplateInfo.
-  // The global_proxy_constructor is used to create or reinitialize the
+  // The global_proxy_constructor is used to (re)initialize the
   // global_proxy. The global_proxy_constructor also has a prototype_template
   // pointer that points at js_global_object_template which is an
   // ObjectTemplateInfo.
@@ -819,11 +818,8 @@ Handle<JSGlobalProxy> Genesis::CreateNewGlobals(
   js_global_object_function->initial_map()->set_dictionary_map(true);
   Handle<GlobalObject> global_object =
       factory()->NewGlobalObject(js_global_object_function);
-  if (global_object_out != NULL) {
-    *global_object_out = global_object;
-  }
 
-  // Step 2: create or re-initialize the global proxy object.
+  // Step 2: (re)initialize the global proxy object.
   Handle<JSFunction> global_proxy_function;
   if (global_proxy_template.IsEmpty()) {
     Handle<String> name = Handle<String>(heap()->empty_string());
@@ -849,15 +845,8 @@ Handle<JSGlobalProxy> Genesis::CreateNewGlobals(
   // Set global_proxy.__proto__ to js_global after ConfigureGlobalObjects
   // Return the global proxy.
 
-  Handle<JSGlobalProxy> global_proxy;
-  if (maybe_global_proxy.ToHandle(&global_proxy)) {
-    factory()->ReinitializeJSGlobalProxy(global_proxy, global_proxy_function);
-  } else {
-    global_proxy = Handle<JSGlobalProxy>::cast(
-        factory()->NewJSObject(global_proxy_function, TENURED));
-    global_proxy->set_hash(heap()->undefined_value());
-  }
-  return global_proxy;
+  factory()->ReinitializeJSGlobalProxy(global_proxy, global_proxy_function);
+  return global_object;
 }
 
 
@@ -867,17 +856,29 @@ void Genesis::HookUpGlobalProxy(Handle<GlobalObject> global_object,
   global_object->set_native_context(*native_context());
   global_object->set_global_proxy(*global_proxy);
   global_proxy->set_native_context(*native_context());
+  // If we deserialized the context, the global proxy is already
+  // correctly set up. Otherwise it's undefined.
+  DCHECK(native_context()->get(Context::GLOBAL_PROXY_INDEX)->IsUndefined() ||
+         native_context()->global_proxy() == *global_proxy);
   native_context()->set_global_proxy(*global_proxy);
 }
 
 
-void Genesis::HookUpGlobalObject(Handle<GlobalObject> global_object) {
+void Genesis::HookUpGlobalObject(Handle<GlobalObject> global_object,
+                                 Handle<FixedArray> outdated_contexts) {
   Handle<GlobalObject> global_object_from_snapshot(
       GlobalObject::cast(native_context()->extension()));
   Handle<JSBuiltinsObject> builtins_global(native_context()->builtins());
   native_context()->set_extension(*global_object);
-  native_context()->set_global_object(*global_object);
   native_context()->set_security_token(*global_object);
+
+  // Replace outdated global objects in deserialized contexts.
+  for (int i = 0; i < outdated_contexts->length(); ++i) {
+    Context* context = Context::cast(outdated_contexts->get(i));
+    DCHECK_EQ(context->global_object(), *global_object_from_snapshot);
+    context->set_global_object(*global_object);
+  }
+
   static const PropertyAttributes attributes =
       static_cast<PropertyAttributes>(READ_ONLY | DONT_DELETE);
   Runtime::DefineObjectProperty(builtins_global, factory()->global_string(),
@@ -1596,6 +1597,7 @@ EMPTY_NATIVE_FUNCTIONS_FOR_FEATURE(harmony_tostring)
 EMPTY_NATIVE_FUNCTIONS_FOR_FEATURE(harmony_templates)
 EMPTY_NATIVE_FUNCTIONS_FOR_FEATURE(harmony_sloppy)
 EMPTY_NATIVE_FUNCTIONS_FOR_FEATURE(harmony_unicode)
+EMPTY_NATIVE_FUNCTIONS_FOR_FEATURE(harmony_computed_property_names)
 
 
 void Genesis::InstallNativeFunctions_harmony_proxies() {
@@ -1625,7 +1627,7 @@ EMPTY_INITIALIZE_GLOBAL_FOR_FEATURE(harmony_tostring)
 EMPTY_INITIALIZE_GLOBAL_FOR_FEATURE(harmony_proxies)
 EMPTY_INITIALIZE_GLOBAL_FOR_FEATURE(harmony_templates)
 EMPTY_INITIALIZE_GLOBAL_FOR_FEATURE(harmony_sloppy)
-EMPTY_INITIALIZE_GLOBAL_FOR_FEATURE(harmony_unicode)
+EMPTY_INITIALIZE_GLOBAL_FOR_FEATURE(harmony_computed_property_names)
 
 void Genesis::InitializeGlobal_harmony_regexps() {
   Handle<JSObject> builtins(native_context()->builtins());
@@ -1635,6 +1637,18 @@ void Genesis::InitializeGlobal_harmony_regexps() {
   PropertyAttributes attributes =
       static_cast<PropertyAttributes>(DONT_DELETE | READ_ONLY);
   Runtime::DefineObjectProperty(builtins, factory()->harmony_regexps_string(),
+                                flag, attributes).Assert();
+}
+
+
+void Genesis::InitializeGlobal_harmony_unicode() {
+  Handle<JSObject> builtins(native_context()->builtins());
+
+  Handle<HeapObject> flag(FLAG_harmony_unicode ? heap()->true_value()
+                                               : heap()->false_value());
+  PropertyAttributes attributes =
+      static_cast<PropertyAttributes>(DONT_DELETE | READ_ONLY);
+  Runtime::DefineObjectProperty(builtins, factory()->harmony_unicode_string(),
                                 flag, attributes).Assert();
 }
 
@@ -2180,6 +2194,7 @@ bool Genesis::InstallExperimentalNatives() {
       "native harmony-templates.js", NULL};
   static const char* harmony_sloppy_natives[] = {NULL};
   static const char* harmony_unicode_natives[] = {NULL};
+  static const char* harmony_computed_property_names_natives[] = {NULL};
 
   for (int i = ExperimentalNatives::GetDebuggerCount();
        i < ExperimentalNatives::GetBuiltinsCount(); i++) {
@@ -2558,6 +2573,11 @@ bool Genesis::ConfigureApiObject(Handle<JSObject> object,
 
 void Genesis::TransferNamedProperties(Handle<JSObject> from,
                                       Handle<JSObject> to) {
+  // If JSObject::AddProperty asserts due to already existing property,
+  // it is likely due to both global objects sharing property name(s).
+  // Merging those two global objects is impossible.
+  // The global template must not create properties that already exist
+  // in the snapshotted global object.
   if (from->HasFastProperties()) {
     Handle<DescriptorArray> descs =
         Handle<DescriptorArray>(from->map()->instance_descriptors());
@@ -2711,11 +2731,21 @@ Genesis::Genesis(Isolate* isolate,
   StackLimitCheck check(isolate);
   if (check.HasOverflowed()) return;
 
+  // The deserializer needs to hook up references to the global proxy.
+  // Create an uninitialized global proxy now if we don't have one
+  // and initialize it later in CreateNewGlobals.
+  Handle<JSGlobalProxy> global_proxy;
+  if (!maybe_global_proxy.ToHandle(&global_proxy)) {
+    global_proxy = isolate->factory()->NewUninitializedJSGlobalProxy();
+  }
+
   // We can only de-serialize a context if the isolate was initialized from
   // a snapshot. Otherwise we have to build the context from scratch.
-  if (isolate->initialized_from_snapshot()) {
-    native_context_ = Snapshot::NewContextFromSnapshot(isolate);
-  } else {
+  Handle<FixedArray> outdated_contexts;
+  if (!isolate->initialized_from_snapshot() ||
+      !Snapshot::NewContextFromSnapshot(isolate, global_proxy,
+                                        &outdated_contexts)
+           .ToHandle(&native_context_)) {
     native_context_ = Handle<Context>();
   }
 
@@ -2732,12 +2762,11 @@ Genesis::Genesis(Isolate* isolate,
       Map::TraceAllTransitions(object_fun->initial_map());
     }
 #endif
-    Handle<GlobalObject> global_object;
-    Handle<JSGlobalProxy> global_proxy = CreateNewGlobals(
-        global_proxy_template, maybe_global_proxy, &global_object);
+    Handle<GlobalObject> global_object =
+        CreateNewGlobals(global_proxy_template, global_proxy);
 
     HookUpGlobalProxy(global_object, global_proxy);
-    HookUpGlobalObject(global_object);
+    HookUpGlobalObject(global_object, outdated_contexts);
     native_context()->builtins()->set_global_proxy(
         native_context()->global_proxy());
 
@@ -2747,9 +2776,8 @@ Genesis::Genesis(Isolate* isolate,
     CreateRoots();
     Handle<JSFunction> empty_function = CreateEmptyFunction(isolate);
     CreateStrictModeFunctionMaps(empty_function);
-    Handle<GlobalObject> global_object;
-    Handle<JSGlobalProxy> global_proxy = CreateNewGlobals(
-        global_proxy_template, maybe_global_proxy, &global_object);
+    Handle<GlobalObject> global_object =
+        CreateNewGlobals(global_proxy_template, global_proxy);
     HookUpGlobalProxy(global_object, global_proxy);
     InitializeGlobal(global_object, empty_function);
     InstallJSFunctionResultCaches();
@@ -2766,10 +2794,9 @@ Genesis::Genesis(Isolate* isolate,
   if (!InstallExperimentalNatives()) return;
   InitializeExperimentalGlobal();
 
-  // We can't (de-)serialize typed arrays currently, but we are lucky: The state
-  // of the random number generator needs no initialization during snapshot
-  // creation time and we don't need trigonometric functions then.
-  if (!isolate->serializer_enabled()) {
+  // The serializer cannot serialize typed arrays. Reset those typed arrays
+  // for each new context.
+  {
     // Initially seed the per-context random number generator using the
     // per-isolate random number generator.
     const int num_elems = 2;

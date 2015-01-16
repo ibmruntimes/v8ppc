@@ -185,7 +185,7 @@ void CompilationInfo::Initialize(Isolate* isolate,
     DCHECK(strict_mode() == SLOPPY);
     SetStrictMode(shared_info_->strict_mode());
   }
-  bailout_reason_ = kUnknown;
+  bailout_reason_ = kNoReason;
 
   if (!shared_info().is_null() && shared_info()->is_compiled()) {
     // We should initialize the CompilationInfo feedback vector from the
@@ -1264,6 +1264,8 @@ Handle<SharedFunctionInfo> Compiler::CompileScript(
     v8::Extension* extension, ScriptData** cached_data,
     ScriptCompiler::CompileOptions compile_options, NativesFlag natives) {
   Isolate* isolate = source->GetIsolate();
+  HistogramTimerScope total(isolate->counters()->compile_script());
+
   if (compile_options == ScriptCompiler::kNoCompileOptions) {
     cached_data = NULL;
   } else if (compile_options == ScriptCompiler::kProduceParserCache ||

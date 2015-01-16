@@ -47,6 +47,7 @@ namespace internal {
   V(kCodeGenerationFailed, "Code generation failed")                           \
   V(kCodeObjectNotProperlyPatched, "Code object not properly patched")         \
   V(kCompoundAssignmentToLookupSlot, "Compound assignment to lookup slot")     \
+  V(kComputedPropertyName, "Computed property name")                           \
   V(kContextAllocatedArguments, "Context-allocated arguments")                 \
   V(kCopyBuffersOverlap, "Copy buffers overlap")                               \
   V(kCouldNotGenerateZero, "Could not generate +0.0")                          \
@@ -307,7 +308,6 @@ namespace internal {
     "Unexpected unused properties of string wrapper")                          \
   V(kUnimplemented, "unimplemented")                                           \
   V(kUninitializedKSmiConstantRegister, "Uninitialized kSmiConstantRegister")  \
-  V(kUnknown, "Unknown")                                                       \
   V(kUnsupportedConstCompoundAssignment,                                       \
     "Unsupported const compound assignment")                                   \
   V(kUnsupportedCountOperationWithConst,                                       \
@@ -328,6 +328,8 @@ namespace internal {
   V(kWrongFunctionContext, "Wrong context passed to function")                 \
   V(kWrongAddressOrValuePassedToRecordWrite,                                   \
     "Wrong address or value passed to RecordWrite")                            \
+  V(kShouldNotDirectlyEnterOsrFunction,                                        \
+    "Should not directly enter OSR-compiled function")                         \
   V(kYield, "Yield")
 
 

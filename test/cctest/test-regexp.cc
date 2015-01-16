@@ -94,8 +94,8 @@ static bool CheckParse(const char* input) {
   Zone zone(CcTest::i_isolate());
   FlatStringReader reader(CcTest::i_isolate(), CStrVector(input));
   RegExpCompileData result;
-  return v8::internal::RegExpParser::ParseRegExp(
-      &reader, false, &result, &zone);
+  return v8::internal::RegExpParser::ParseRegExp(&reader, false, false, &result,
+                                                 &zone);
 }
 
 
@@ -104,8 +104,8 @@ static void CheckParseEq(const char* input, const char* expected) {
   Zone zone(CcTest::i_isolate());
   FlatStringReader reader(CcTest::i_isolate(), CStrVector(input));
   RegExpCompileData result;
-  CHECK(v8::internal::RegExpParser::ParseRegExp(
-      &reader, false, &result, &zone));
+  CHECK(v8::internal::RegExpParser::ParseRegExp(&reader, false, false, &result,
+                                                &zone));
   CHECK(result.tree != NULL);
   CHECK(result.error.is_null());
   std::ostringstream os;
@@ -119,8 +119,8 @@ static bool CheckSimple(const char* input) {
   Zone zone(CcTest::i_isolate());
   FlatStringReader reader(CcTest::i_isolate(), CStrVector(input));
   RegExpCompileData result;
-  CHECK(v8::internal::RegExpParser::ParseRegExp(
-      &reader, false, &result, &zone));
+  CHECK(v8::internal::RegExpParser::ParseRegExp(&reader, false, false, &result,
+                                                &zone));
   CHECK(result.tree != NULL);
   CHECK(result.error.is_null());
   return result.simple;
@@ -137,8 +137,8 @@ static MinMaxPair CheckMinMaxMatch(const char* input) {
   Zone zone(CcTest::i_isolate());
   FlatStringReader reader(CcTest::i_isolate(), CStrVector(input));
   RegExpCompileData result;
-  CHECK(v8::internal::RegExpParser::ParseRegExp(
-      &reader, false, &result, &zone));
+  CHECK(v8::internal::RegExpParser::ParseRegExp(&reader, false, false, &result,
+                                                &zone));
   CHECK(result.tree != NULL);
   CHECK(result.error.is_null());
   int min_match = result.tree->min_match();
@@ -410,8 +410,8 @@ static void ExpectError(const char* input,
   Zone zone(CcTest::i_isolate());
   FlatStringReader reader(CcTest::i_isolate(), CStrVector(input));
   RegExpCompileData result;
-  CHECK(!v8::internal::RegExpParser::ParseRegExp(
-      &reader, false, &result, &zone));
+  CHECK(!v8::internal::RegExpParser::ParseRegExp(&reader, false, false, &result,
+                                                 &zone));
   CHECK(result.tree == NULL);
   CHECK(!result.error.is_null());
   SmartArrayPointer<char> str = result.error->ToCString(ALLOW_NULLS);
@@ -502,16 +502,17 @@ TEST(CharacterClassEscapes) {
 }
 
 
-static RegExpNode* Compile(const char* input, bool multiline, bool is_one_byte,
-                           Zone* zone) {
+static RegExpNode* Compile(const char* input, bool multiline, bool unicode,
+                           bool is_one_byte, Zone* zone) {
   Isolate* isolate = CcTest::i_isolate();
   FlatStringReader reader(isolate, CStrVector(input));
   RegExpCompileData compile_data;
-  if (!v8::internal::RegExpParser::ParseRegExp(&reader, multiline,
+  if (!v8::internal::RegExpParser::ParseRegExp(&reader, multiline, unicode,
                                                &compile_data, zone))
     return NULL;
-  Handle<String> pattern = isolate->factory()->
-      NewStringFromUtf8(CStrVector(input)).ToHandleChecked();
+  Handle<String> pattern = isolate->factory()
+                               ->NewStringFromUtf8(CStrVector(input))
+                               .ToHandleChecked();
   Handle<String> sample_subject =
       isolate->factory()->NewStringFromUtf8(CStrVector("")).ToHandleChecked();
   RegExpEngine::Compile(&compile_data, false, false, multiline, false, pattern,
@@ -520,11 +521,11 @@ static RegExpNode* Compile(const char* input, bool multiline, bool is_one_byte,
 }
 
 
-static void Execute(const char* input, bool multiline, bool is_one_byte,
-                    bool dot_output = false) {
+static void Execute(const char* input, bool multiline, bool unicode,
+                    bool is_one_byte, bool dot_output = false) {
   v8::HandleScope scope(CcTest::isolate());
   Zone zone(CcTest::i_isolate());
-  RegExpNode* node = Compile(input, multiline, is_one_byte, &zone);
+  RegExpNode* node = Compile(input, multiline, unicode, is_one_byte, &zone);
   USE(node);
 #ifdef DEBUG
   if (dot_output) {

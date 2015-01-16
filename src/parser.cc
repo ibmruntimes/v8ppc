@@ -329,8 +329,8 @@ FunctionLiteral* Parser::DefaultConstructor(bool call_super, Scope* scope,
 
 class Target BASE_EMBEDDED {
  public:
-  Target(Target** variable, AstNode* node)
-      : variable_(variable), node_(node), previous_(*variable) {
+  Target(Target** variable, BreakableStatement* statement)
+      : variable_(variable), statement_(statement), previous_(*variable) {
     *variable = this;
   }
 
@@ -339,11 +339,11 @@ class Target BASE_EMBEDDED {
   }
 
   Target* previous() { return previous_; }
-  AstNode* node() { return node_; }
+  BreakableStatement* statement() { return statement_; }
 
  private:
   Target** variable_;
-  AstNode* node_;
+  BreakableStatement* statement_;
   Target* previous_;
 };
 
@@ -407,9 +407,8 @@ bool ParserTraits::IsConstructor(const AstRawString* identifier) const {
 bool ParserTraits::IsThisProperty(Expression* expression) {
   DCHECK(expression != NULL);
   Property* property = expression->AsProperty();
-  return property != NULL &&
-      property->obj()->AsVariableProxy() != NULL &&
-      property->obj()->AsVariableProxy()->is_this();
+  return property != NULL && property->obj()->IsVariableProxy() &&
+         property->obj()->AsVariableProxy()->is_this();
 }
 
 
@@ -433,8 +432,7 @@ void ParserTraits::PushPropertyName(FuncNameInferrer* fni,
 void ParserTraits::CheckAssigningFunctionLiteralToProperty(Expression* left,
                                                            Expression* right) {
   DCHECK(left != NULL);
-  if (left->AsProperty() != NULL &&
-      right->AsFunctionLiteral() != NULL) {
+  if (left->IsProperty() && right->IsFunctionLiteral()) {
     right->AsFunctionLiteral()->set_pretenure();
   }
 }
@@ -806,6 +804,8 @@ Parser::Parser(CompilationInfo* info, ParseInfo* parse_info)
   set_allow_harmony_templates(FLAG_harmony_templates);
   set_allow_harmony_sloppy(FLAG_harmony_sloppy);
   set_allow_harmony_unicode(FLAG_harmony_unicode);
+  set_allow_harmony_computed_property_names(
+      FLAG_harmony_computed_property_names);
   for (int feature = 0; feature < v8::Isolate::kUseCounterFeatureCount;
        ++feature) {
     use_counts_[feature] = 0;
@@ -1303,9 +1303,7 @@ Module* Parser::ParseModuleLiteral(bool* ok) {
 
   {
     BlockState block_state(&scope_, scope);
-    TargetCollector collector(zone());
-    Target target(&this->target_stack_, &collector);
-    Target target_body(&this->target_stack_, body);
+    Target target(&this->target_stack_, body);
 
     while (peek() != Token::RBRACE) {
       Statement* stat = ParseModuleElement(NULL, CHECK_OK);
@@ -2064,9 +2062,7 @@ Block* Parser::ParseScopedBlock(ZoneList<const AstRawString*>* labels,
   Expect(Token::LBRACE, CHECK_OK);
   block_scope->set_start_position(scanner()->location().beg_pos);
   { BlockState block_state(&scope_, block_scope);
-    TargetCollector collector(zone());
-    Target target(&this->target_stack_, &collector);
-    Target target_body(&this->target_stack_, body);
+    Target target(&this->target_stack_, body);
 
     while (peek() != Token::RBRACE) {
       Statement* stat = ParseBlockElement(NULL, CHECK_OK);
@@ -2762,12 +2758,7 @@ TryStatement* Parser::ParseTryStatement(bool* ok) {
   Expect(Token::TRY, CHECK_OK);
   int pos = position();
 
-  TargetCollector try_collector(zone());
-  Block* try_block;
-
-  { Target target(&this->target_stack_, &try_collector);
-    try_block = ParseBlock(NULL, CHECK_OK);
-  }
+  Block* try_block = ParseBlock(NULL, CHECK_OK);
 
   Token::Value tok = peek();
   if (tok != Token::CATCH && tok != Token::FINALLY) {
@@ -2776,11 +2767,6 @@ TryStatement* Parser::ParseTryStatement(bool* ok) {
     return NULL;
   }
 
-  // If we can break out from the catch block and there is a finally block,
-  // then we will need to collect escaping targets from the catch
-  // block. Since we don't know yet if there will be a finally block, we
-  // always collect the targets.
-  TargetCollector catch_collector(zone());
   Scope* catch_scope = NULL;
   Variable* catch_variable = NULL;
   Block* catch_block = NULL;
@@ -2795,7 +2781,6 @@ TryStatement* Parser::ParseTryStatement(bool* ok) {
 
     Expect(Token::RPAREN, CHECK_OK);
 
-    Target target(&this->target_stack_, &catch_collector);
     catch_variable = catch_scope->DeclareLocal(name, VAR, kCreatedInitialized);
     BlockState block_state(&scope_, catch_scope);
     catch_block = ParseBlock(NULL, CHECK_OK);
@@ -2823,7 +2808,6 @@ TryStatement* Parser::ParseTryStatement(bool* ok) {
     TryCatchStatement* statement = factory()->NewTryCatchStatement(
         index, try_block, catch_scope, catch_variable, catch_block,
         RelocInfo::kNoPosition);
-    statement->set_escaping_targets(try_collector.targets());
     try_block = factory()->NewBlock(NULL, 1, false, RelocInfo::kNoPosition);
     try_block->AddStatement(statement, zone());
     catch_block = NULL;  // Clear to indicate it's been handled.
@@ -2841,11 +2825,8 @@ TryStatement* Parser::ParseTryStatement(bool* ok) {
     int index = function_state_->NextHandlerIndex();
     result = factory()->NewTryFinallyStatement(
         index, try_block, finally_block, pos);
-    // Combine the jump targets of the try block and the possible catch block.
-    try_collector.targets()->AddAll(*catch_collector.targets(), zone());
   }
 
-  result->set_escaping_targets(try_collector.targets());
   return result;
 }
 
@@ -3975,6 +3956,8 @@ PreParser::PreParseResult Parser::ParseLazyFunctionBodyWithPreParser(
     reusable_preparser_->set_allow_harmony_templates(allow_harmony_templates());
     reusable_preparser_->set_allow_harmony_sloppy(allow_harmony_sloppy());
     reusable_preparser_->set_allow_harmony_unicode(allow_harmony_unicode());
+    reusable_preparser_->set_allow_harmony_computed_property_names(
+        allow_harmony_computed_property_names());
   }
   PreParser::PreParseResult result =
       reusable_preparser_->PreParseLazyFunction(strict_mode(),
@@ -4034,8 +4017,11 @@ ClassLiteral* Parser::ParseClassLiteral(const AstRawString* name,
     if (fni_ != NULL) fni_->Enter();
     const bool in_class = true;
     const bool is_static = false;
-    ObjectLiteral::Property* property = ParsePropertyDefinition(
-        NULL, in_class, is_static, &has_seen_constructor, CHECK_OK);
+    bool is_computed_name = false;  // Classes do not care about computed
+                                    // property names here.
+    ObjectLiteral::Property* property =
+        ParsePropertyDefinition(NULL, in_class, is_static, &is_computed_name,
+                                &has_seen_constructor, CHECK_OK);
 
     if (has_seen_constructor && constructor == NULL) {
       constructor = GetPropertyValue(property);
@@ -4153,9 +4139,7 @@ void Parser::CheckConflictingVarDeclarations(Scope* scope, bool* ok) {
 
 bool Parser::TargetStackContainsLabel(const AstRawString* label) {
   for (Target* t = target_stack_; t != NULL; t = t->previous()) {
-    BreakableStatement* stat = t->node()->AsBreakableStatement();
-    if (stat != NULL && ContainsLabel(stat->labels(), label))
-      return true;
+    if (ContainsLabel(t->statement()->labels(), label)) return true;
   }
   return false;
 }
@@ -4165,11 +4149,9 @@ BreakableStatement* Parser::LookupBreakTarget(const AstRawString* label,
                                               bool* ok) {
   bool anonymous = label == NULL;
   for (Target* t = target_stack_; t != NULL; t = t->previous()) {
-    BreakableStatement* stat = t->node()->AsBreakableStatement();
-    if (stat == NULL) continue;
+    BreakableStatement* stat = t->statement();
     if ((anonymous && stat->is_target_for_anonymous()) ||
         (!anonymous && ContainsLabel(stat->labels(), label))) {
-      RegisterTargetUse(stat->break_target(), t->previous());
       return stat;
     }
   }
@@ -4181,27 +4163,15 @@ IterationStatement* Parser::LookupContinueTarget(const AstRawString* label,
                                                  bool* ok) {
   bool anonymous = label == NULL;
   for (Target* t = target_stack_; t != NULL; t = t->previous()) {
-    IterationStatement* stat = t->node()->AsIterationStatement();
+    IterationStatement* stat = t->statement()->AsIterationStatement();
     if (stat == NULL) continue;
 
     DCHECK(stat->is_target_for_anonymous());
     if (anonymous || ContainsLabel(stat->labels(), label)) {
-      RegisterTargetUse(stat->continue_target(), t->previous());
       return stat;
     }
   }
   return NULL;
-}
-
-
-void Parser::RegisterTargetUse(Label* target, Target* stop) {
-  // Register that a break target found at the given stop in the
-  // target stack has been used from the top of the target stack. Add
-  // the break target to any TargetCollectors passed on the stack.
-  for (Target* t = target_stack_; t != stop; t = t->previous()) {
-    TargetCollector* collector = t->node()->AsTargetCollector();
-    if (collector != NULL) collector->AddTarget(target, zone());
-  }
 }
 
 
@@ -4278,10 +4248,8 @@ void Parser::Internalize() {
 // Regular expressions
 
 
-RegExpParser::RegExpParser(FlatStringReader* in,
-                           Handle<String>* error,
-                           bool multiline,
-                           Zone* zone)
+RegExpParser::RegExpParser(FlatStringReader* in, Handle<String>* error,
+                           bool multiline, bool unicode, Zone* zone)
     : isolate_(zone->isolate()),
       zone_(zone),
       error_(error),
@@ -4292,6 +4260,7 @@ RegExpParser::RegExpParser(FlatStringReader* in,
       capture_count_(0),
       has_more_(true),
       multiline_(multiline),
+      unicode_(unicode),
       simple_(false),
       contains_anchor_(false),
       is_scanned_for_captures_(false),
@@ -4345,6 +4314,13 @@ void RegExpParser::Advance(int dist) {
 
 bool RegExpParser::simple() {
   return simple_;
+}
+
+
+bool RegExpParser::IsSyntaxCharacter(uc32 c) {
+  return c == '^' || c == '$' || c == '\\' || c == '.' || c == '*' ||
+         c == '+' || c == '?' || c == '(' || c == ')' || c == '[' || c == ']' ||
+         c == '{' || c == '}' || c == '|';
 }
 
 
@@ -4564,9 +4540,15 @@ RegExpTree* RegExpParser::ParseDisjunction() {
         }
         uc32 first_digit = Next();
         if (first_digit == '8' || first_digit == '9') {
-          // Treat as identity escape
-          builder->AddCharacter(first_digit);
-          Advance(2);
+          // If the 'u' flag is present, only syntax characters can be escaped,
+          // no other identity escapes are allowed. If the 'u' flag is not
+          // present, all identity escapes are allowed.
+          if (!FLAG_harmony_unicode || !unicode_) {
+            builder->AddCharacter(first_digit);
+            Advance(2);
+          } else {
+            return ReportError(CStrVector("Invalid escape"));
+          }
           break;
         }
       }
@@ -4622,25 +4604,41 @@ RegExpTree* RegExpParser::ParseDisjunction() {
         uc32 value;
         if (ParseHexEscape(2, &value)) {
           builder->AddCharacter(value);
-        } else {
+        } else if (!FLAG_harmony_unicode || !unicode_) {
           builder->AddCharacter('x');
+        } else {
+          // If the 'u' flag is present, invalid escapes are not treated as
+          // identity escapes.
+          return ReportError(CStrVector("Invalid escape"));
         }
         break;
       }
       case 'u': {
         Advance(2);
         uc32 value;
-        if (ParseHexEscape(4, &value)) {
+        if (ParseUnicodeEscape(&value)) {
           builder->AddCharacter(value);
-        } else {
+        } else if (!FLAG_harmony_unicode || !unicode_) {
           builder->AddCharacter('u');
+        } else {
+          // If the 'u' flag is present, invalid escapes are not treated as
+          // identity escapes.
+          return ReportError(CStrVector("Invalid unicode escape"));
         }
         break;
       }
       default:
-        // Identity escape.
-        builder->AddCharacter(Next());
-        Advance(2);
+        Advance();
+        // If the 'u' flag is present, only syntax characters can be escaped, no
+        // other identity escapes are allowed. If the 'u' flag is not present,
+        // all identity escapes are allowed.
+        if (!FLAG_harmony_unicode || !unicode_ ||
+            IsSyntaxCharacter(current())) {
+          builder->AddCharacter(current());
+          Advance();
+        } else {
+          return ReportError(CStrVector("Invalid escape"));
+        }
         break;
       }
       break;
@@ -4883,11 +4881,10 @@ uc32 RegExpParser::ParseOctalLiteral() {
 }
 
 
-bool RegExpParser::ParseHexEscape(int length, uc32 *value) {
+bool RegExpParser::ParseHexEscape(int length, uc32* value) {
   int start = position();
   uc32 val = 0;
-  bool done = false;
-  for (int i = 0; !done; i++) {
+  for (int i = 0; i < length; ++i) {
     uc32 c = current();
     int d = HexValue(c);
     if (d < 0) {
@@ -4896,11 +4893,48 @@ bool RegExpParser::ParseHexEscape(int length, uc32 *value) {
     }
     val = val * 16 + d;
     Advance();
-    if (i == length - 1) {
-      done = true;
-    }
   }
   *value = val;
+  return true;
+}
+
+
+bool RegExpParser::ParseUnicodeEscape(uc32* value) {
+  // Accept both \uxxxx and \u{xxxxxx} (if harmony unicode escapes are
+  // allowed). In the latter case, the number of hex digits between { } is
+  // arbitrary. \ and u have already been read.
+  if (current() == '{' && FLAG_harmony_unicode && unicode_) {
+    int start = position();
+    Advance();
+    if (ParseUnlimitedLengthHexNumber(0x10ffff, value)) {
+      if (current() == '}') {
+        Advance();
+        return true;
+      }
+    }
+    Reset(start);
+    return false;
+  }
+  // \u but no {, or \u{...} escapes not allowed.
+  return ParseHexEscape(4, value);
+}
+
+
+bool RegExpParser::ParseUnlimitedLengthHexNumber(int max_value, uc32* value) {
+  uc32 x = 0;
+  int d = HexValue(current());
+  if (d < 0) {
+    return false;
+  }
+  while (d >= 0) {
+    x = x * 16 + d;
+    if (x > max_value) {
+      return false;
+    }
+    Advance();
+    d = HexValue(current());
+  }
+  *value = x;
   return true;
 }
 
@@ -4959,27 +4993,41 @@ uc32 RegExpParser::ParseClassCharacterEscape() {
       if (ParseHexEscape(2, &value)) {
         return value;
       }
-      // If \x is not followed by a two-digit hexadecimal, treat it
-      // as an identity escape.
-      return 'x';
+      if (!FLAG_harmony_unicode || !unicode_) {
+        // If \x is not followed by a two-digit hexadecimal, treat it
+        // as an identity escape.
+        return 'x';
+      }
+      // If the 'u' flag is present, invalid escapes are not treated as
+      // identity escapes.
+      ReportError(CStrVector("Invalid escape"));
+      return 0;
     }
     case 'u': {
       Advance();
       uc32 value;
-      if (ParseHexEscape(4, &value)) {
+      if (ParseUnicodeEscape(&value)) {
         return value;
       }
-      // If \u is not followed by a four-digit hexadecimal, treat it
-      // as an identity escape.
-      return 'u';
+      if (!FLAG_harmony_unicode || !unicode_) {
+        return 'u';
+      }
+      // If the 'u' flag is present, invalid escapes are not treated as
+      // identity escapes.
+      ReportError(CStrVector("Invalid unicode escape"));
+      return 0;
     }
     default: {
-      // Extended identity escape. We accept any character that hasn't
-      // been matched by a more specific case, not just the subset required
-      // by the ECMAScript specification.
       uc32 result = current();
-      Advance();
-      return result;
+      // If the 'u' flag is present, only syntax characters can be escaped, no
+      // other identity escapes are allowed. If the 'u' flag is not present, all
+      // identity escapes are allowed.
+      if (!FLAG_harmony_unicode || !unicode_ || IsSyntaxCharacter(result)) {
+        Advance();
+        return result;
+      }
+      ReportError(CStrVector("Invalid escape"));
+      return 0;
     }
   }
   return 0;
@@ -5085,12 +5133,11 @@ RegExpTree* RegExpParser::ParseCharacterClass() {
 // ----------------------------------------------------------------------------
 // The Parser interface.
 
-bool RegExpParser::ParseRegExp(FlatStringReader* input,
-                               bool multiline,
-                               RegExpCompileData* result,
+bool RegExpParser::ParseRegExp(FlatStringReader* input, bool multiline,
+                               bool unicode, RegExpCompileData* result,
                                Zone* zone) {
   DCHECK(result != NULL);
-  RegExpParser parser(input, &result->error, multiline, zone);
+  RegExpParser parser(input, &result->error, multiline, unicode, zone);
   RegExpTree* tree = parser.ParsePattern();
   if (parser.failed()) {
     DCHECK(tree == NULL);

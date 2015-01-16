@@ -15,4 +15,3 @@ var foo = (function Module(stdlib, foreign, heap) {
 })(stdlib, foreign, buffer).foo;
 
 assertFalse(foo(1));
-assertTrue(foo(0));

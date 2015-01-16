@@ -598,6 +598,16 @@ Bounds Typer::Visitor::TypeParameter(Node* node) {
 }
 
 
+Bounds Typer::Visitor::TypeOsrValue(Node* node) {
+  // OSR values explicitly have type {None} before OSR form is deconstructed.
+  if (node->InputAt(0)->opcode() == IrOpcode::kOsrLoopEntry) {
+    return Bounds(Type::None(), Type::None());
+  }
+  // TODO(turbofan): preserve the type of OSR values after deconstruction.
+  return Bounds::Unbounded(zone());
+}
+
+
 Bounds Typer::Visitor::TypeInt32Constant(Node* node) {
   Factory* f = isolate()->factory();
   Handle<Object> number = f->NewNumber(OpParameter<int32_t>(node));
@@ -1452,7 +1462,7 @@ Bounds Typer::Visitor::TypeBooleanNot(Node* node) {
 
 
 Bounds Typer::Visitor::TypeBooleanToNumber(Node* node) {
-  return Bounds(Type::None(zone()), typer_->zero_or_one);
+  return TypeUnaryOp(node, ToNumber);
 }
 
 
@@ -1503,6 +1513,11 @@ Bounds Typer::Visitor::TypeNumberToInt32(Node* node) {
 
 Bounds Typer::Visitor::TypeNumberToUint32(Node* node) {
   return TypeUnaryOp(node, NumberToUint32);
+}
+
+
+Bounds Typer::Visitor::TypePlainPrimitiveToNumber(Node* node) {
+  return TypeUnaryOp(node, ToNumber);
 }
 
 
@@ -1596,14 +1611,6 @@ Bounds Typer::Visitor::TypeChangeFloat64ToTagged(Node* node) {
 }
 
 
-Bounds Typer::Visitor::TypeChangeBitToBool(Node* node) {
-  Bounds arg = Operand(node, 0);
-  // TODO(neis): DCHECK(arg.upper->Is(Type::Boolean()));
-  return Bounds(ChangeRepresentation(arg.lower, Type::TaggedPointer(), zone()),
-                ChangeRepresentation(arg.upper, Type::TaggedPointer(), zone()));
-}
-
-
 Bounds Typer::Visitor::TypeChangeBoolToBit(Node* node) {
   Bounds arg = Operand(node, 0);
   // TODO(neis): DCHECK(arg.upper->Is(Type::Boolean()));
@@ -1613,15 +1620,11 @@ Bounds Typer::Visitor::TypeChangeBoolToBit(Node* node) {
 }
 
 
-Bounds Typer::Visitor::TypeChangeWord32ToBit(Node* node) {
-  return Bounds(
-      ChangeRepresentation(Type::Boolean(), Type::UntaggedBit(), zone()));
-}
-
-
-Bounds Typer::Visitor::TypeChangeWord64ToBit(Node* node) {
-  return Bounds(
-      ChangeRepresentation(Type::Boolean(), Type::UntaggedBit(), zone()));
+Bounds Typer::Visitor::TypeChangeBitToBool(Node* node) {
+  Bounds arg = Operand(node, 0);
+  // TODO(neis): DCHECK(arg.upper->Is(Type::Boolean()));
+  return Bounds(ChangeRepresentation(arg.lower, Type::TaggedPointer(), zone()),
+                ChangeRepresentation(arg.upper, Type::TaggedPointer(), zone()));
 }
 
 

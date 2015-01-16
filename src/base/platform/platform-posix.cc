@@ -291,7 +291,7 @@ int OS::GetCurrentThreadId() {
 #elif V8_OS_AIX
   return static_cast<int>(thread_self());
 #else
-  return static_cast<int>(pthread_self());
+  return static_cast<int>(reinterpret_cast<intptr_t>(pthread_self()));
 #endif
 }
 

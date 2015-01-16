@@ -15,6 +15,8 @@
   V(Merge)                       \
   V(Return)                      \
   V(Terminate)                   \
+  V(OsrNormalEntry)              \
+  V(OsrLoopEntry)                \
   V(Throw)
 
 #define CONTROL_OP_LIST(V) \
@@ -42,6 +44,7 @@
   V(StateValues)         \
   V(Call)                \
   V(Parameter)           \
+  V(OsrValue)            \
   V(Projection)
 
 #define COMMON_OP_LIST(V) \
@@ -130,7 +133,7 @@
   JS_CONTEXT_OP_LIST(V)   \
   JS_OTHER_OP_LIST(V)
 
-// Opcodes for VirtualMachine-level operators.
+// Opcodes for VirtuaMachine-level operators.
 #define SIMPLIFIED_OP_LIST(V) \
   V(AnyToBoolean)             \
   V(BooleanNot)               \
@@ -145,6 +148,7 @@
   V(NumberModulus)            \
   V(NumberToInt32)            \
   V(NumberToUint32)           \
+  V(PlainPrimitiveToNumber)   \
   V(ReferenceEqual)           \
   V(StringEqual)              \
   V(StringLessThan)           \
@@ -157,8 +161,6 @@
   V(ChangeUint32ToTagged)     \
   V(ChangeFloat64ToTagged)    \
   V(ChangeBoolToBit)          \
-  V(ChangeWord32ToBit)        \
-  V(ChangeWord64ToBit)        \
   V(ChangeBitToBool)          \
   V(LoadField)                \
   V(LoadBuffer)               \
@@ -273,57 +275,24 @@ class IrOpcode {
   // Returns the mnemonic name of an opcode.
   static char const* Mnemonic(Value value);
 
-  static bool IsJsOpcode(Value val) {
-    switch (val) {
-// TODO(turbofan): make this a range check.
-#define RETURN_NAME(x) \
-  case k##x:           \
-    return true;
-      JS_OP_LIST(RETURN_NAME)
-#undef RETURN_NAME
-      default:
-        return false;
-    }
+  // Returns true if opcode for common operator.
+  static bool IsCommonOpcode(Value value) {
+    return kDead <= value && value <= kProjection;
   }
 
-  static bool IsControlOpcode(Value val) {
-    switch (val) {
-// TODO(turbofan): make this a range check.
-#define RETURN_NAME(x) \
-  case k##x:           \
-    return true;
-      CONTROL_OP_LIST(RETURN_NAME)
-#undef RETURN_NAME
-      default:
-        return false;
-    }
+  // Returns true if opcode for control operator.
+  static bool IsControlOpcode(Value value) {
+    return kDead <= value && value <= kEnd;
   }
 
-  static bool IsLeafOpcode(Value val) {
-    switch (val) {
-// TODO(turbofan): make this a table lookup.
-#define RETURN_NAME(x) \
-  case k##x:           \
-    return true;
-      LEAF_OP_LIST(RETURN_NAME)
-#undef RETURN_NAME
-      default:
-        return false;
-    }
+  // Returns true if opcode for JavaScript operator.
+  static bool IsJsOpcode(Value value) {
+    return kJSEqual <= value && value <= kJSDebugger;
   }
 
-  static bool IsCommonOpcode(Value val) {
-    switch (val) {
-// TODO(turbofan): make this a table lookup or a range check.
-#define RETURN_NAME(x) \
-  case k##x:           \
-    return true;
-      CONTROL_OP_LIST(RETURN_NAME)
-      COMMON_OP_LIST(RETURN_NAME)
-#undef RETURN_NAME
-      default:
-        return false;
-    }
+  // Returns true if opcode for leaf operator.
+  static bool IsLeafOpcode(Value value) {
+    return kInt32Constant <= value && value <= kHeapConstant;
   }
 };
 

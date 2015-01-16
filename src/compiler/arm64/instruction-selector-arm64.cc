@@ -1220,10 +1220,14 @@ static void VisitWord64Test(InstructionSelector* selector, Node* node,
 static void VisitFloat64Compare(InstructionSelector* selector, Node* node,
                                 FlagsContinuation* cont) {
   Arm64OperandGenerator g(selector);
-  Node* left = node->InputAt(0);
-  Node* right = node->InputAt(1);
-  VisitCompare(selector, kArm64Float64Cmp, g.UseRegister(left),
-               g.UseRegister(right), cont);
+  Float64BinopMatcher m(node);
+  if (m.right().Is(0.0)) {
+    VisitCompare(selector, kArm64Float64Cmp, g.UseRegister(m.left().node()),
+                 g.UseImmediate(m.right().node()), cont);
+  } else {
+    VisitCompare(selector, kArm64Float64Cmp, g.UseRegister(m.left().node()),
+                 g.UseRegister(m.right().node()), cont);
+  }
 }
 
 
@@ -1295,13 +1299,13 @@ void InstructionSelector::VisitBranch(Node* branch, BasicBlock* tbranch,
         return VisitWordCompare(this, value, kArm64Cmp, &cont, false,
                                 kArithmeticImm);
       case IrOpcode::kFloat64Equal:
-        cont.OverwriteAndNegateIfEqual(kUnorderedEqual);
+        cont.OverwriteAndNegateIfEqual(kEqual);
         return VisitFloat64Compare(this, value, &cont);
       case IrOpcode::kFloat64LessThan:
-        cont.OverwriteAndNegateIfEqual(kUnorderedLessThan);
+        cont.OverwriteAndNegateIfEqual(kUnsignedLessThan);
         return VisitFloat64Compare(this, value, &cont);
       case IrOpcode::kFloat64LessThanOrEqual:
-        cont.OverwriteAndNegateIfEqual(kUnorderedLessThanOrEqual);
+        cont.OverwriteAndNegateIfEqual(kUnsignedLessThanOrEqual);
         return VisitFloat64Compare(this, value, &cont);
       case IrOpcode::kProjection:
         // Check if this is the overflow output projection of an
@@ -1497,19 +1501,19 @@ void InstructionSelector::VisitUint64LessThan(Node* node) {
 
 
 void InstructionSelector::VisitFloat64Equal(Node* node) {
-  FlagsContinuation cont(kUnorderedEqual, node);
+  FlagsContinuation cont(kEqual, node);
   VisitFloat64Compare(this, node, &cont);
 }
 
 
 void InstructionSelector::VisitFloat64LessThan(Node* node) {
-  FlagsContinuation cont(kUnorderedLessThan, node);
+  FlagsContinuation cont(kUnsignedLessThan, node);
   VisitFloat64Compare(this, node, &cont);
 }
 
 
 void InstructionSelector::VisitFloat64LessThanOrEqual(Node* node) {
-  FlagsContinuation cont(kUnorderedLessThanOrEqual, node);
+  FlagsContinuation cont(kUnsignedLessThanOrEqual, node);
   VisitFloat64Compare(this, node, &cont);
 }
 
@@ -1525,6 +1529,7 @@ InstructionSelector::SupportedMachineOperatorFlags() {
          MachineOperatorBuilder::kInt32DivIsSafe |
          MachineOperatorBuilder::kUint32DivIsSafe;
 }
+
 }  // namespace compiler
 }  // namespace internal
 }  // namespace v8

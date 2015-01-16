@@ -28,6 +28,7 @@
 #include "src/compiler/load-elimination.h"
 #include "src/compiler/machine-operator-reducer.h"
 #include "src/compiler/move-optimizer.h"
+#include "src/compiler/osr.h"
 #include "src/compiler/pipeline-statistics.h"
 #include "src/compiler/register-allocator.h"
 #include "src/compiler/register-allocator-verifier.h"
@@ -246,15 +247,6 @@ class PipelineData {
 };
 
 
-static inline bool VerifyGraphs() {
-#ifdef DEBUG
-  return true;
-#else
-  return FLAG_turbo_verify;
-#endif
-}
-
-
 struct TurboCfgFile : public std::ofstream {
   explicit TurboCfgFile(Isolate* isolate)
       : std::ofstream(isolate->GetTurboCfgFileName().c_str(),
@@ -411,6 +403,18 @@ struct TyperPhase {
 };
 
 
+struct OsrDeconstructionPhase {
+  static const char* phase_name() { return "OSR deconstruction"; }
+
+  void Run(PipelineData* data, Zone* temp_zone) {
+    SourcePositionTable::Scope pos(data->source_positions(),
+                                   SourcePosition::Unknown());
+    OsrHelper osr_helper(data->info());
+    osr_helper.Deconstruct(data->jsgraph(), data->common(), temp_zone);
+  }
+};
+
+
 struct TypedLoweringPhase {
   static const char* phase_name() { return "typed lowering"; }
 
@@ -521,7 +525,7 @@ struct ComputeSchedulePhase {
   void Run(PipelineData* data, Zone* temp_zone) {
     Schedule* schedule = Scheduler::ComputeSchedule(temp_zone, data->graph());
     TraceSchedule(schedule);
-    if (VerifyGraphs()) ScheduleVerifier::Run(schedule);
+    if (FLAG_turbo_verify) ScheduleVerifier::Run(schedule);
     data->set_schedule(schedule);
   }
 };
@@ -740,24 +744,22 @@ void Pipeline::RunPrintAndVerify(const char* phase, bool untyped) {
   if (FLAG_trace_turbo) {
     Run<PrintGraphPhase>(phase);
   }
-  if (VerifyGraphs()) {
+  if (FLAG_turbo_verify) {
     Run<VerifyGraphPhase>(untyped);
   }
 }
 
 
 Handle<Code> Pipeline::GenerateCode() {
-  // This list must be kept in sync with DONT_TURBOFAN_NODE in ast.cc.
+  // This list must be kept in sync with DisableTurbofan in ast-numbering.cc.
   if (info()->function()->dont_optimize_reason() == kTryCatchStatement ||
       info()->function()->dont_optimize_reason() == kTryFinallyStatement ||
-      // TODO(turbofan): Make ES6 for-of work and remove this bailout.
-      info()->function()->dont_optimize_reason() == kForOfStatement ||
       // TODO(turbofan): Make super work and remove this bailout.
       info()->function()->dont_optimize_reason() == kSuperReference ||
       // TODO(turbofan): Make class literals work and remove this bailout.
       info()->function()->dont_optimize_reason() == kClassLiteral ||
-      // TODO(turbofan): Make OSR work and remove this bailout.
-      info()->is_osr()) {
+      // TODO(turbofan): Make OSR work with inner loops and remove this bailout.
+      (info()->is_osr() && !FLAG_turbo_osr)) {
     return Handle<Code>::null();
   }
 
@@ -829,6 +831,11 @@ Handle<Code> Pipeline::GenerateCode() {
     Run<TypedLoweringPhase>();
     RunPrintAndVerify("Lowered typed");
 
+    if (info()->is_osr()) {
+      Run<OsrDeconstructionPhase>();
+      RunPrintAndVerify("OSR deconstruction");
+    }
+
     // Lower simplified operators and insert changes.
     Run<SimplifiedLoweringPhase>();
     RunPrintAndVerify("Lowered simplified");
@@ -840,6 +847,11 @@ Handle<Code> Pipeline::GenerateCode() {
 
     Run<LateControlReductionPhase>();
     RunPrintAndVerify("Late Control reduced");
+  } else {
+    if (info()->is_osr()) {
+      Run<OsrDeconstructionPhase>();
+      RunPrintAndVerify("OSR deconstruction");
+    }
   }
 
   // Lower any remaining generic JSOperators.
@@ -969,10 +981,7 @@ void Pipeline::GenerateCode(Linkage* linkage) {
 
   BeginPhaseKind("register allocation");
 
-  bool run_verifier = false;
-#ifdef DEBUG
-  run_verifier = true;
-#endif
+  bool run_verifier = FLAG_turbo_verify_allocation;
   // Allocate registers.
   AllocateRegisters(RegisterConfiguration::ArchDefault(), run_verifier);
   if (data->compilation_failed()) {
@@ -1021,6 +1030,10 @@ void Pipeline::AllocateRegisters(const RegisterConfiguration* config,
   ZonePool::Scope zone_scope(data->zone_pool());
   data->InitializeRegisterAllocator(zone_scope.zone(), config,
                                     debug_name.get());
+  if (info()->is_osr()) {
+    OsrHelper osr_helper(info());
+    osr_helper.SetupFrame(data->frame());
+  }
 
   Run<MeetRegisterConstraintsPhase>();
   Run<ResolvePhisPhase>();

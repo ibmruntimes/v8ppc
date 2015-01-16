@@ -9,6 +9,7 @@
 #include "src/compiler/gap-resolver.h"
 #include "src/compiler/node-matchers.h"
 #include "src/compiler/node-properties-inl.h"
+#include "src/compiler/osr.h"
 #include "src/scopes.h"
 
 namespace v8 {
@@ -214,6 +215,41 @@ class OutOfLineLoadZero FINAL : public OutOfLineCode {
  private:
   Register const result_;
 };
+
+
+Condition FlagsConditionToCondition(FlagsCondition condition) {
+  switch (condition) {
+    case kEqual:
+      return eq;
+    case kNotEqual:
+      return ne;
+    case kSignedLessThan:
+      return lt;
+    case kSignedGreaterThanOrEqual:
+      return ge;
+    case kSignedLessThanOrEqual:
+      return le;
+    case kSignedGreaterThan:
+      return gt;
+    case kUnsignedLessThan:
+      return lo;
+    case kUnsignedGreaterThanOrEqual:
+      return hs;
+    case kUnsignedLessThanOrEqual:
+      return ls;
+    case kUnsignedGreaterThan:
+      return hi;
+    case kOverflow:
+      return vs;
+    case kNotOverflow:
+      return vc;
+    case kUnorderedEqual:
+    case kUnorderedNotEqual:
+      break;
+  }
+  UNREACHABLE();
+  return nv;
+}
 
 }  // namespace
 
@@ -588,7 +624,14 @@ void CodeGenerator::AssembleArchInstruction(Instruction* instr) {
       __ Tst(i.InputRegister32(0), i.InputOperand32(1));
       break;
     case kArm64Float64Cmp:
-      __ Fcmp(i.InputDoubleRegister(0), i.InputDoubleRegister(1));
+      if (instr->InputAt(1)->IsDoubleRegister()) {
+        __ Fcmp(i.InputDoubleRegister(0), i.InputDoubleRegister(1));
+      } else {
+        DCHECK(instr->InputAt(1)->IsImmediate());
+        // 0.0 is the only immediate supported by fcmp instructions.
+        DCHECK(i.InputDouble(1) == 0.0);
+        __ Fcmp(i.InputDoubleRegister(0), i.InputDouble(1));
+      }
       break;
     case kArm64Float64Add:
       __ Fadd(i.OutputDoubleRegister(), i.InputDoubleRegister(0),
@@ -684,7 +727,7 @@ void CodeGenerator::AssembleArchInstruction(Instruction* instr) {
       Register object = i.InputRegister(0);
       Register index = i.InputRegister(1);
       Register value = i.InputRegister(2);
-      __ Add(index, object, Operand(index, SXTW));
+      __ Add(index, object, index);
       __ Str(value, MemOperand(index));
       SaveFPRegsMode mode =
           frame()->DidAllocateDoubleRegisters() ? kSaveFPRegs : kDontSaveFPRegs;
@@ -785,65 +828,8 @@ void CodeGenerator::AssembleArchBranch(Instruction* instr, BranchInfo* branch) {
         UNREACHABLE();
     }
   } else {
-    switch (condition) {
-      case kUnorderedEqual:
-        // The "eq" condition will not catch the unordered case.
-        // The jump/fall through to false label will be used if the comparison
-        // was unordered.
-      case kEqual:
-        __ B(eq, tlabel);
-        break;
-      case kUnorderedNotEqual:
-        // Unordered or not equal can be tested with "ne" condtion.
-        // See ARMv8 manual C1.2.3 - Condition Code.
-      case kNotEqual:
-        __ B(ne, tlabel);
-        break;
-      case kSignedLessThan:
-        __ B(lt, tlabel);
-        break;
-      case kSignedGreaterThanOrEqual:
-        __ B(ge, tlabel);
-        break;
-      case kSignedLessThanOrEqual:
-        __ B(le, tlabel);
-        break;
-      case kSignedGreaterThan:
-        __ B(gt, tlabel);
-        break;
-      case kUnorderedLessThan:
-        // The "lo" condition will not catch the unordered case.
-        // The jump/fall through to false label will be used if the comparison
-        // was unordered.
-      case kUnsignedLessThan:
-        __ B(lo, tlabel);
-        break;
-      case kUnorderedGreaterThanOrEqual:
-        // Unordered, greater than or equal can be tested with "hs" condtion.
-        // See ARMv8 manual C1.2.3 - Condition Code.
-      case kUnsignedGreaterThanOrEqual:
-        __ B(hs, tlabel);
-        break;
-      case kUnorderedLessThanOrEqual:
-        // The "ls" condition will not catch the unordered case.
-        // The jump/fall through to false label will be used if the comparison
-        // was unordered.
-      case kUnsignedLessThanOrEqual:
-        __ B(ls, tlabel);
-        break;
-      case kUnorderedGreaterThan:
-        // Unordered or greater than can be tested with "hi" condtion.
-        // See ARMv8 manual C1.2.3 - Condition Code.
-      case kUnsignedGreaterThan:
-        __ B(hi, tlabel);
-        break;
-      case kOverflow:
-        __ B(vs, tlabel);
-        break;
-      case kNotOverflow:
-        __ B(vc, tlabel);
-        break;
-    }
+    Condition cc = FlagsConditionToCondition(condition);
+    __ B(cc, tlabel);
   }
   if (!branch->fallthru) __ B(flabel);  // no fallthru to flabel.
 }
@@ -858,85 +844,13 @@ void CodeGenerator::AssembleArchJump(BasicBlock::RpoNumber target) {
 void CodeGenerator::AssembleArchBoolean(Instruction* instr,
                                         FlagsCondition condition) {
   Arm64OperandConverter i(this, instr);
-  Label done;
 
   // Materialize a full 64-bit 1 or 0 value. The result register is always the
   // last output of the instruction.
-  Label check;
   DCHECK_NE(0, instr->OutputCount());
   Register reg = i.OutputRegister(instr->OutputCount() - 1);
-  Condition cc = nv;
-  switch (condition) {
-    case kUnorderedEqual:
-      __ B(vc, &check);
-      __ Mov(reg, 0);
-      __ B(&done);
-    // Fall through.
-    case kEqual:
-      cc = eq;
-      break;
-    case kUnorderedNotEqual:
-      __ B(vc, &check);
-      __ Mov(reg, 1);
-      __ B(&done);
-    // Fall through.
-    case kNotEqual:
-      cc = ne;
-      break;
-    case kSignedLessThan:
-      cc = lt;
-      break;
-    case kSignedGreaterThanOrEqual:
-      cc = ge;
-      break;
-    case kSignedLessThanOrEqual:
-      cc = le;
-      break;
-    case kSignedGreaterThan:
-      cc = gt;
-      break;
-    case kUnorderedLessThan:
-      __ B(vc, &check);
-      __ Mov(reg, 0);
-      __ B(&done);
-    // Fall through.
-    case kUnsignedLessThan:
-      cc = lo;
-      break;
-    case kUnorderedGreaterThanOrEqual:
-      __ B(vc, &check);
-      __ Mov(reg, 1);
-      __ B(&done);
-    // Fall through.
-    case kUnsignedGreaterThanOrEqual:
-      cc = hs;
-      break;
-    case kUnorderedLessThanOrEqual:
-      __ B(vc, &check);
-      __ Mov(reg, 0);
-      __ B(&done);
-    // Fall through.
-    case kUnsignedLessThanOrEqual:
-      cc = ls;
-      break;
-    case kUnorderedGreaterThan:
-      __ B(vc, &check);
-      __ Mov(reg, 1);
-      __ B(&done);
-    // Fall through.
-    case kUnsignedGreaterThan:
-      cc = hi;
-      break;
-    case kOverflow:
-      cc = vs;
-      break;
-    case kNotOverflow:
-      cc = vc;
-      break;
-  }
-  __ Bind(&check);
+  Condition cc = FlagsConditionToCondition(condition);
   __ Cset(reg, cc);
-  __ Bind(&done);
 }
 
 
@@ -976,6 +890,23 @@ void CodeGenerator::AssemblePrologue() {
         StandardFrameConstants::kFixedFrameSizeFromFp);
   }
   int stack_slots = frame()->GetSpillSlotCount();
+
+  if (info()->is_osr()) {
+    // TurboFan OSR-compiled functions cannot be entered directly.
+    __ Abort(kShouldNotDirectlyEnterOsrFunction);
+
+    // Unoptimized code jumps directly to this entrypoint while the unoptimized
+    // frame is still on the stack. Optimized code uses OSR values directly from
+    // the unoptimized frame. Thus, all that needs to be done is to allocate the
+    // remaining stack slots.
+    if (FLAG_code_comments) __ RecordComment("-- OSR entrypoint --");
+    osr_pc_offset_ = __ pc_offset();
+    int unoptimized_slots =
+        static_cast<int>(OsrHelper(info()).UnoptimizedFrameSlots());
+    DCHECK(stack_slots >= unoptimized_slots);
+    stack_slots -= unoptimized_slots;
+  }
+
   if (stack_slots > 0) {
     Register sp = __ StackPointer();
     if (!sp.Is(csp)) {

@@ -32,9 +32,8 @@ void IfBuilder::End() {
 }
 
 
-void LoopBuilder::BeginLoop(BitVector* assigned) {
-  builder_->NewLoop();
-  loop_environment_ = environment()->CopyForLoop(assigned);
+void LoopBuilder::BeginLoop(BitVector* assigned, bool is_osr) {
+  loop_environment_ = environment()->CopyForLoop(assigned, is_osr);
   continue_environment_ = environment()->CopyAsUnreachable();
   break_environment_ = environment()->CopyAsUnreachable();
 }
@@ -70,6 +69,16 @@ void LoopBuilder::BreakUnless(Node* condition) {
   control_if.Then();
   control_if.Else();
   Break();
+  control_if.End();
+}
+
+
+void LoopBuilder::BreakWhen(Node* condition) {
+  IfBuilder control_if(builder_);
+  control_if.If(condition);
+  control_if.Then();
+  Break();
+  control_if.Else();
   control_if.End();
 }
 

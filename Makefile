@@ -90,6 +90,13 @@ endif
 ifeq ($(extrachecks), off)
   GYPFLAGS += -Ddcheck_always_on=0 -Dv8_enable_handle_zapping=0
 endif
+# slowdchecks=on/off
+ifeq ($(slowdchecks), on)
+  GYPFLAGS += -Dv8_enable_slow_dchecks=1
+endif
+ifeq ($(slowdchecks), off)
+  GYPFLAGS += -Dv8_enable_slow_dchecks=0
+endif
 # gdbjit=on/off
 ifeq ($(gdbjit), on)
   GYPFLAGS += -Dv8_enable_gdbjit=1
@@ -100,10 +107,6 @@ endif
 # vtunejit=on
 ifeq ($(vtunejit), on)
   GYPFLAGS += -Dv8_enable_vtunejit=1
-endif
-# optdebug=on
-ifeq ($(optdebug), on)
-  GYPFLAGS += -Dv8_optimized_debug=2
 endif
 # unalignedaccess=on
 ifeq ($(unalignedaccess), on)
@@ -149,6 +152,9 @@ ifeq ($(asan), on)
   ifeq ($(lsan), on)
     GYPFLAGS += -Dlsan=1
   endif
+endif
+ifdef embedscript
+  GYPFLAGS += -Dembed_script=$(embedscript)
 endif
 
 # arm specific flags.
@@ -239,9 +245,15 @@ ANDROID_ARCHES = android_ia32 android_arm android_arm64 android_mipsel android_x
 NACL_ARCHES = nacl_ia32 nacl_x64
 
 # List of files that trigger Makefile regeneration:
-GYPFILES = build/all.gyp build/features.gypi build/standalone.gypi \
-           build/toolchain.gypi samples/samples.gyp src/d8.gyp \
-           test/cctest/cctest.gyp test/unittests/unittests.gyp tools/gyp/v8.gyp
+GYPFILES = third_party/icu/icu.gypi third_party/icu/icu.gyp \
+	   build/shim_headers.gypi build/features.gypi build/standalone.gypi \
+	   build/toolchain.gypi build/all.gyp build/mac/asan.gyp \
+	   build/android.gypi test/cctest/cctest.gyp \
+	   test/unittests/unittests.gyp tools/gyp/v8.gyp \
+	   tools/parser-shell.gyp testing/gmock.gyp testing/gtest.gyp \
+	   buildtools/third_party/libc++abi/libc++abi.gyp \
+	   buildtools/third_party/libc++/libc++.gyp samples/samples.gyp \
+	   src/third_party/vtune/v8vtune.gyp src/d8.gyp
 
 # If vtunejit=on, the v8vtune.gyp will be appended.
 ifeq ($(vtunejit), on)
@@ -420,6 +432,7 @@ $(OUT_MAKEFILES): $(GYPFILES) $(ENVFILE)
 	$(eval CXX_TARGET_ARCH:=$(shell $(CXX) -v 2>&1 | grep ^Target: | \
 	        cut -f 2 -d " " | cut -f 1 -d "-" ))
 	$(eval CXX_TARGET_ARCH:=$(subst aarch64,arm64,$(CXX_TARGET_ARCH)))
+	$(eval CXX_TARGET_ARCH:=$(subst x86_64,x64,$(CXX_TARGET_ARCH)))
 	$(eval V8_TARGET_ARCH:=$(subst .,,$(suffix $(basename $@))))
 	PYTHONPATH="$(shell pwd)/tools/generate_shim_headers:$(shell pwd)/build:$(PYTHONPATH):$(shell pwd)/build/gyp/pylib:$(PYTHONPATH)" \
 	GYP_GENERATORS=make \
@@ -428,7 +441,7 @@ $(OUT_MAKEFILES): $(GYPFILES) $(ENVFILE)
 	              -Dv8_target_arch=$(V8_TARGET_ARCH) \
 	              $(if $(findstring $(CXX_TARGET_ARCH),$(V8_TARGET_ARCH)), \
 	              -Dtarget_arch=$(V8_TARGET_ARCH),) \
-	              $(if $(findstring optdebug,$@),-Dv8_optimized_debug=2,) \
+	              $(if $(findstring optdebug,$@),-Dv8_optimized_debug=1,) \
 	              -S$(suffix $(basename $@))$(suffix $@) $(GYPFLAGS)
 
 $(OUTDIR)/Makefile.native: $(GYPFILES) $(ENVFILE)
@@ -468,6 +481,7 @@ $(ENVFILE).new:
 	$(eval CXX_TARGET_ARCH:=$(shell $(CXX) -v 2>&1 | grep ^Target: | \
 	        cut -f 2 -d " " | cut -f 1 -d "-" ))
 	$(eval CXX_TARGET_ARCH:=$(subst aarch64,arm64,$(CXX_TARGET_ARCH)))
+	$(eval CXX_TARGET_ARCH:=$(subst x86_64,x64,$(CXX_TARGET_ARCH)))
 	@mkdir -p $(OUTDIR); echo "GYPFLAGS=$(GYPFLAGS) -Dtarget_arch=$(CXX_TARGET_ARCH)" > $(ENVFILE).new;
 
 # Heap constants for grokdump.

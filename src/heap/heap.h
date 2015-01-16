@@ -227,7 +227,9 @@ namespace internal {
   V(ignore_case_string, "ignoreCase")                      \
   V(multiline_string, "multiline")                         \
   V(sticky_string, "sticky")                               \
+  V(unicode_string, "unicode")                             \
   V(harmony_regexps_string, "harmony_regexps")             \
+  V(harmony_unicode_string, "harmony_unicode")             \
   V(input_string, "input")                                 \
   V(index_string, "index")                                 \
   V(last_index_string, "lastIndex")                        \
@@ -1484,6 +1486,10 @@ class Heap {
   MUST_USE_RESULT AllocationResult
       AllocateFixedArray(int length, PretenureFlag pretenure = NOT_TENURED);
 
+  static const int kInitialStringTableSize = 2048;
+  static const int kInitialEvalCacheSize = 64;
+  static const int kInitialNumberStringCacheSize = 256;
+
  private:
   Heap();
 
@@ -2040,10 +2046,6 @@ class Heap {
   inline void UpdateAllocationsHash(HeapObject* object);
   inline void UpdateAllocationsHash(uint32_t value);
   inline void PrintAlloctionsHash();
-
-  static const int kInitialStringTableSize = 2048;
-  static const int kInitialEvalCacheSize = 64;
-  static const int kInitialNumberStringCacheSize = 256;
 
   // Object counts and used memory by InstanceType
   size_t object_counts_[OBJECT_STATS_COUNT];

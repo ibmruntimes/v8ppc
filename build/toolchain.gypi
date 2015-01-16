@@ -938,6 +938,9 @@
             'LinkIncremental': '2',
           },
         },
+        'variables': {
+          'v8_enable_slow_dchecks%': 1,
+        },
         'conditions': [
           ['OS=="linux" or OS=="freebsd" or OS=="openbsd" or OS=="netbsd" or \
             OS=="qnx" or OS=="aix"', {
@@ -957,62 +960,15 @@
                'GCC_OPTIMIZATION_LEVEL': '0',  # -O0
             },
           }],
-        ],
-        'defines': [
-          'ENABLE_SLOW_DCHECKS',
+          ['v8_enable_slow_dchecks==1', {
+            'defines': [
+              'ENABLE_SLOW_DCHECKS',
+            ],
+          }],
         ],
       },  # DebugBase0
       # Abstract configuration for v8_optimized_debug == 1.
       'DebugBase1': {
-        'abstract': 1,
-        'msvs_settings': {
-          'VCCLCompilerTool': {
-            'Optimization': '1',
-            'InlineFunctionExpansion': '2',
-            'EnableIntrinsicFunctions': 'true',
-            'FavorSizeOrSpeed': '0',
-            'StringPooling': 'true',
-            'BasicRuntimeChecks': '0',
-            'conditions': [
-              ['component=="shared_library"', {
-                'RuntimeLibrary': '3',  # /MDd
-              }, {
-                'RuntimeLibrary': '1',  # /MTd
-              }],
-            ],
-          },
-          'VCLinkerTool': {
-            'LinkIncremental': '2',
-          },
-        },
-        'defines': [
-          'ENABLE_SLOW_DCHECKS',
-        ],
-        'conditions': [
-          ['OS=="linux" or OS=="freebsd" or OS=="openbsd" or OS=="netbsd" or \
-            OS=="qnx" or OS=="aix"', {
-            'cflags!': [
-              '-O0',
-              '-O3', # TODO(2807) should be -O1.
-              '-O2',
-              '-Os',
-            ],
-            'cflags': [
-              '-fdata-sections',
-              '-ffunction-sections',
-              '-O1', # TODO(2807) should be -O3.
-            ],
-          }],
-          ['OS=="mac"', {
-            'xcode_settings': {
-               'GCC_OPTIMIZATION_LEVEL': '3',  # -O3
-               'GCC_STRICT_ALIASING': 'YES',
-            },
-          }],
-        ],
-      },  # DebugBase1
-      # Abstract configuration for v8_optimized_debug == 2.
-      'DebugBase2': {
         'abstract': 1,
         'msvs_settings': {
           'VCCLCompilerTool': {
@@ -1035,6 +991,9 @@
             'OptimizeReferences': '2',
             'EnableCOMDATFolding': '2',
           },
+        },
+        'variables': {
+          'v8_enable_slow_dchecks%': 0,
         },
         'conditions': [
           ['OS=="linux" or OS=="freebsd" or OS=="openbsd" or OS=="netbsd" or \
@@ -1065,8 +1024,13 @@
               'GCC_STRICT_ALIASING': 'YES',
             },
           }],
+          ['v8_enable_slow_dchecks==1', {
+            'defines': [
+              'ENABLE_SLOW_DCHECKS',
+            ],
+          }],
         ],
-      },  # DebugBase2
+      },  # DebugBase1
       # Common settings for the Debug configuration.
       'DebugBaseCommon': {
         'abstract': 1,
@@ -1112,16 +1076,15 @@
         'conditions': [
           ['v8_optimized_debug==0', {
             'inherit_from': ['DebugBase0'],
-          }],
-          ['v8_optimized_debug==1', {
+          }, {
             'inherit_from': ['DebugBase1'],
-          }],
-          ['v8_optimized_debug==2', {
-            'inherit_from': ['DebugBase2'],
           }],
         ],
       },  # Debug
       'Release': {
+        'variables': {
+          'v8_enable_slow_dchecks%': 0,
+        },
         'conditions': [
           ['OS=="linux" or OS=="freebsd" or OS=="openbsd" or OS=="netbsd" \
             or OS=="aix"', {
@@ -1189,6 +1152,11 @@
               },
             },
           }],  # OS=="win"
+          ['v8_enable_slow_dchecks==1', {
+            'defines': [
+              'ENABLE_SLOW_DCHECKS',
+            ],
+          }],
         ],  # conditions
       },  # Release
     },  # configurations

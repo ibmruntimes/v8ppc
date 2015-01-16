@@ -69,7 +69,7 @@ class LoopBuilder FINAL : public ControlBuilder {
         break_environment_(NULL) {}
 
   // Primitive control commands.
-  void BeginLoop(BitVector* assigned);
+  void BeginLoop(BitVector* assigned, bool is_osr = false);
   void EndBody();
   void EndLoop();
 
@@ -77,8 +77,9 @@ class LoopBuilder FINAL : public ControlBuilder {
   void Continue() FINAL;
   void Break() FINAL;
 
-  // Compound control command for conditional break.
+  // Compound control commands for conditional break.
   void BreakUnless(Node* condition);
+  void BreakWhen(Node* condition);
 
  private:
   Environment* loop_environment_;      // Environment of the loop header.

@@ -1958,6 +1958,18 @@ void Factory::ReinitializeJSProxy(Handle<JSProxy> proxy, InstanceType type,
 }
 
 
+Handle<JSGlobalProxy> Factory::NewUninitializedJSGlobalProxy() {
+  // Create an empty shell of a JSGlobalProxy that needs to be reinitialized
+  // via ReinitializeJSGlobalProxy later.
+  Handle<Map> map = NewMap(JS_GLOBAL_PROXY_TYPE, JSGlobalProxy::kSize);
+  // Maintain invariant expected from any JSGlobalProxy.
+  map->set_is_access_check_needed(true);
+  CALL_HEAP_FUNCTION(isolate(), isolate()->heap()->AllocateJSObjectFromMap(
+                                    *map, NOT_TENURED, false),
+                     JSGlobalProxy);
+}
+
+
 void Factory::ReinitializeJSGlobalProxy(Handle<JSGlobalProxy> object,
                                         Handle<JSFunction> constructor) {
   DCHECK(constructor->has_initial_map());
@@ -2137,12 +2149,6 @@ void Factory::SetNumberStringCache(Handle<Object> number,
   if (number_string_cache()->get(hash * 2) != *undefined_value()) {
     int full_size = isolate()->heap()->FullSizeNumberStringCacheLength();
     if (number_string_cache()->length() != full_size) {
-      // The first time we have a hash collision, we move to the full sized
-      // number string cache.  The idea is to have a small number string
-      // cache in the snapshot to keep  boot-time memory usage down.
-      // If we expand the number string cache already while creating
-      // the snapshot then that didn't work out.
-      DCHECK(!isolate()->serializer_enabled());
       Handle<FixedArray> new_cache = NewFixedArray(full_size, TENURED);
       isolate()->heap()->set_number_string_cache(*new_cache);
       return;

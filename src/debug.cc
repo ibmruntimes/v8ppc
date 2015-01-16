@@ -573,7 +573,7 @@ void Debug::ThreadInit() {
   thread_local_.step_out_fp_ = 0;
   // TODO(isolates): frames_are_dropped_?
   base::NoBarrier_Store(&thread_local_.current_debug_scope_,
-                        static_cast<base::AtomicWord>(NULL));
+                        static_cast<base::AtomicWord>(0));
   thread_local_.restarter_frame_function_pointer_ = NULL;
 }
 
@@ -716,7 +716,7 @@ DebugInfoListNode::DebugInfoListNode(DebugInfo* debug_info): next_(NULL) {
   debug_info_ = Handle<DebugInfo>::cast(global_handles->Create(debug_info));
   typedef PhantomCallbackData<void>::Callback Callback;
   GlobalHandles::MakePhantom(
-      reinterpret_cast<Object**>(debug_info_.location()), this,
+      reinterpret_cast<Object**>(debug_info_.location()), this, 0,
       reinterpret_cast<Callback>(Debug::HandlePhantomDebugInfo));
 }
 

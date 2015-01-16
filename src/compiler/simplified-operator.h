@@ -144,6 +144,8 @@ class SimplifiedOperatorBuilder FINAL {
   const Operator* NumberToInt32();
   const Operator* NumberToUint32();
 
+  const Operator* PlainPrimitiveToNumber();
+
   const Operator* ReferenceEqual(Type* type);
 
   const Operator* StringEqual();
@@ -157,10 +159,8 @@ class SimplifiedOperatorBuilder FINAL {
   const Operator* ChangeInt32ToTagged();
   const Operator* ChangeUint32ToTagged();
   const Operator* ChangeFloat64ToTagged();
-  const Operator* ChangeBitToBool();
   const Operator* ChangeBoolToBit();
-  const Operator* ChangeWord32ToBit();
-  const Operator* ChangeWord64ToBit();
+  const Operator* ChangeBitToBool();
 
   const Operator* ObjectIsSmi();
   const Operator* ObjectIsNonNegativeSmi();

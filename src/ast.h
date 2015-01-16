@@ -114,7 +114,6 @@ class Expression;
 class IterationStatement;
 class MaterializedLiteral;
 class Statement;
-class TargetCollector;
 class TypeFeedbackOracle;
 
 class RegExpAlternative;
@@ -225,7 +224,6 @@ class AstNode: public ZoneObject {
   AST_NODE_LIST(DECLARE_NODE_FUNCTIONS)
 #undef DECLARE_NODE_FUNCTIONS
 
-  virtual TargetCollector* AsTargetCollector() { return NULL; }
   virtual BreakableStatement* AsBreakableStatement() { return NULL; }
   virtual IterationStatement* AsIterationStatement() { return NULL; }
   virtual MaterializedLiteral* AsMaterializedLiteral() { return NULL; }
@@ -1230,53 +1228,20 @@ class IfStatement FINAL : public Statement {
 };
 
 
-// NOTE: TargetCollectors are represented as nodes to fit in the target
-// stack in the compiler; this should probably be reworked.
-class TargetCollector FINAL : public AstNode {
- public:
-  explicit TargetCollector(Zone* zone)
-      : AstNode(RelocInfo::kNoPosition), targets_(0, zone) { }
-
-  // Adds a jump target to the collector. The collector stores a pointer not
-  // a copy of the target to make binding work, so make sure not to pass in
-  // references to something on the stack.
-  void AddTarget(Label* target, Zone* zone);
-
-  // Virtual behaviour. TargetCollectors are never part of the AST.
-  void Accept(AstVisitor* v) OVERRIDE { UNREACHABLE(); }
-  NodeType node_type() const OVERRIDE { return kInvalid; }
-  TargetCollector* AsTargetCollector() OVERRIDE { return this; }
-
-  ZoneList<Label*>* targets() { return &targets_; }
-
- private:
-  ZoneList<Label*> targets_;
-};
-
-
 class TryStatement : public Statement {
  public:
-  void set_escaping_targets(ZoneList<Label*>* targets) {
-    escaping_targets_ = targets;
-  }
-
   int index() const { return index_; }
   Block* try_block() const { return try_block_; }
-  ZoneList<Label*>* escaping_targets() const { return escaping_targets_; }
 
  protected:
   TryStatement(Zone* zone, int index, Block* try_block, int pos)
-      : Statement(zone, pos),
-        index_(index),
-        try_block_(try_block),
-        escaping_targets_(NULL) { }
+      : Statement(zone, pos), index_(index), try_block_(try_block) {}
 
  private:
   // Unique (per-function) index of this handler.  This is not an AST ID.
   int index_;
 
   Block* try_block_;
-  ZoneList<Label*>* escaping_targets_;
 };
 
 
@@ -1467,10 +1432,7 @@ class ObjectLiteralProperty FINAL : public ZoneObject {
     PROTOTYPE              // Property is __proto__.
   };
 
-  ObjectLiteralProperty(Zone* zone, AstValueFactory* ast_value_factory,
-                        Literal* key, Expression* value, bool is_static);
-
-  Literal* key() { return key_; }
+  Expression* key() { return key_; }
   Expression* value() { return value_; }
   Kind kind() { return kind_; }
 
@@ -1485,20 +1447,26 @@ class ObjectLiteralProperty FINAL : public ZoneObject {
   bool emit_store();
 
   bool is_static() const { return is_static_; }
+  bool is_computed_name() const { return is_computed_name_; }
 
  protected:
   friend class AstNodeFactory;
 
-  ObjectLiteralProperty(Zone* zone, bool is_getter, FunctionLiteral* value,
-                        bool is_static);
-  void set_key(Literal* key) { key_ = key; }
+  ObjectLiteralProperty(Zone* zone, AstValueFactory* ast_value_factory,
+                        Expression* key, Expression* value, bool is_static,
+                        bool is_computed_name);
+
+  ObjectLiteralProperty(Zone* zone, bool is_getter, Expression* key,
+                        FunctionLiteral* value, bool is_static,
+                        bool is_computed_name);
 
  private:
-  Literal* key_;
+  Expression* key_;
   Expression* value_;
   Kind kind_;
   bool emit_store_;
   bool is_static_;
+  bool is_computed_name_;
   Handle<Map> receiver_type_;
 };
 
@@ -2170,13 +2138,14 @@ class CountOperation FINAL : public Expression {
   }
   void set_type(Type* type) { type_ = type; }
 
-  static int num_ids() { return parent_num_ids() + 3; }
+  static int num_ids() { return parent_num_ids() + 4; }
   BailoutId AssignmentId() const { return BailoutId(local_id(0)); }
+  BailoutId ToNumberId() const { return BailoutId(local_id(1)); }
   TypeFeedbackId CountBinOpFeedbackId() const {
-    return TypeFeedbackId(local_id(1));
+    return TypeFeedbackId(local_id(2));
   }
   TypeFeedbackId CountStoreFeedbackId() const {
-    return TypeFeedbackId(local_id(2));
+    return TypeFeedbackId(local_id(3));
   }
 
  protected:
@@ -3157,7 +3126,8 @@ class AstVisitor BASE_EMBEDDED {
     if (stack_overflow_) return true;                       \
     StackLimitCheck check(zone_->isolate());                \
     if (!check.HasOverflowed()) return false;               \
-    return (stack_overflow_ = true);                        \
+    stack_overflow_ = true;                                 \
+    return true;                                            \
   }                                                         \
                                                             \
  private:                                                   \
@@ -3377,20 +3347,21 @@ class AstNodeFactory FINAL BASE_EMBEDDED {
                                      boilerplate_properties, has_function, pos);
   }
 
-  ObjectLiteral::Property* NewObjectLiteralProperty(Literal* key,
+  ObjectLiteral::Property* NewObjectLiteralProperty(Expression* key,
                                                     Expression* value,
-                                                    bool is_static) {
-    return new (zone_) ObjectLiteral::Property(zone_, ast_value_factory_, key,
-                                               value, is_static);
+                                                    bool is_static,
+                                                    bool is_computed_name) {
+    return new (zone_) ObjectLiteral::Property(
+        zone_, ast_value_factory_, key, value, is_static, is_computed_name);
   }
 
   ObjectLiteral::Property* NewObjectLiteralProperty(bool is_getter,
+                                                    Expression* key,
                                                     FunctionLiteral* value,
-                                                    int pos, bool is_static) {
-    ObjectLiteral::Property* prop =
-        new (zone_) ObjectLiteral::Property(zone_, is_getter, value, is_static);
-    prop->set_key(NewStringLiteral(value->raw_name(), pos));
-    return prop;
+                                                    int pos, bool is_static,
+                                                    bool is_computed_name) {
+    return new (zone_) ObjectLiteral::Property(zone_, is_getter, key, value,
+                                               is_static, is_computed_name);
   }
 
   RegExpLiteral* NewRegExpLiteral(const AstRawString* pattern,

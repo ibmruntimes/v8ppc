@@ -206,7 +206,21 @@ void V8::SetSnapshotDataBlob(StartupData* snapshot_blob) {
 }
 
 
-StartupData V8::CreateSnapshotDataBlob() {
+bool RunExtraCode(Isolate* isolate, char* utf8_source) {
+  // Run custom script if provided.
+  TryCatch try_catch;
+  Local<String> source_string = String::NewFromUtf8(isolate, utf8_source);
+  if (try_catch.HasCaught()) return false;
+  ScriptOrigin origin(String::NewFromUtf8(isolate, "<embedded script>"));
+  ScriptCompiler::Source source(source_string, origin);
+  Local<Script> script = ScriptCompiler::Compile(isolate, &source);
+  if (try_catch.HasCaught()) return false;
+  script->Run();
+  return !try_catch.HasCaught();
+}
+
+
+StartupData V8::CreateSnapshotDataBlob(char* custom_source) {
   Isolate::CreateParams params;
   params.enable_serializer = true;
   Isolate* isolate = v8::Isolate::New(params);
@@ -215,9 +229,16 @@ StartupData V8::CreateSnapshotDataBlob() {
     Isolate::Scope isolate_scope(isolate);
     i::Isolate* internal_isolate = reinterpret_cast<i::Isolate*>(isolate);
     Persistent<Context> context;
+    i::Snapshot::Metadata metadata;
     {
       HandleScope handle_scope(isolate);
-      context.Reset(isolate, Context::New(isolate));
+      Handle<Context> new_context = Context::New(isolate);
+      context.Reset(isolate, new_context);
+      if (custom_source != NULL) {
+        metadata.set_embeds_script(true);
+        Context::Scope context_scope(new_context);
+        if (!RunExtraCode(isolate, custom_source)) context.Reset();
+      }
     }
     if (!context.IsEmpty()) {
       // Make sure all builtin scripts are cached.
@@ -245,7 +266,8 @@ StartupData V8::CreateSnapshotDataBlob() {
       i::SnapshotData sd(snapshot_sink, ser);
       i::SnapshotData csd(context_sink, context_ser);
 
-      result = i::Snapshot::CreateSnapshotBlob(sd.RawData(), csd.RawData());
+      result = i::Snapshot::CreateSnapshotBlob(sd.RawData(), csd.RawData(),
+                                               metadata);
     }
   }
   isolate->Dispose();
@@ -408,18 +430,22 @@ void V8::MakeWeak(i::Object** object, void* parameter,
 }
 
 
-void V8::MakePhantom(i::Object** object, void* parameter,
-                     PhantomCallbackData<void>::Callback weak_callback) {
-  i::GlobalHandles::MakePhantom(object, parameter, weak_callback);
-}
-
-
 void V8::MakePhantom(
-    i::Object** object,
-    InternalFieldsCallbackData<void, void>::Callback weak_callback,
-    int internal_field_index1, int internal_field_index2) {
-  i::GlobalHandles::MakePhantom(object, weak_callback, internal_field_index1,
-                                internal_field_index2);
+    i::Object** object, void* parameter, int internal_field_index1,
+    int internal_field_index2,
+    PhantomCallbackData<void, void, void>::Callback weak_callback) {
+  if (internal_field_index1 == 0) {
+    if (internal_field_index2 == 1) {
+      i::GlobalHandles::MakePhantom(object, parameter, 2, weak_callback);
+    } else {
+      DCHECK_EQ(internal_field_index2, Object::kNoInternalFieldIndex);
+      i::GlobalHandles::MakePhantom(object, parameter, 1, weak_callback);
+    }
+  } else {
+    DCHECK_EQ(internal_field_index1, Object::kNoInternalFieldIndex);
+    DCHECK_EQ(internal_field_index2, Object::kNoInternalFieldIndex);
+    i::GlobalHandles::MakePhantom(object, parameter, 0, weak_callback);
+  }
 }
 
 
@@ -830,11 +856,8 @@ Local<Signature> Signature::New(Isolate* isolate,
   i::Isolate* i_isolate = reinterpret_cast<i::Isolate*>(isolate);
   LOG_API(i_isolate, "Signature::New");
   ENTER_V8(i_isolate);
-  i::Handle<i::Struct> struct_obj =
-      i_isolate->factory()->NewStruct(i::SIGNATURE_INFO_TYPE);
   i::Handle<i::SignatureInfo> obj =
-      i::Handle<i::SignatureInfo>::cast(struct_obj);
-  if (!receiver.IsEmpty()) obj->set_receiver(*Utils::OpenHandle(*receiver));
+      Utils::OpenHandle(*Signature::New(isolate, receiver));
   if (argc > 0) {
     i::Handle<i::FixedArray> args = i_isolate->factory()->NewFixedArray(argc);
     for (int i = 0; i < argc; i++) {
@@ -843,6 +866,22 @@ Local<Signature> Signature::New(Isolate* isolate,
     }
     obj->set_args(*args);
   }
+  return Utils::ToLocal(obj);
+}
+
+
+Local<Signature> Signature::New(Isolate* isolate,
+                                Handle<FunctionTemplate> receiver) {
+  i::Isolate* i_isolate = reinterpret_cast<i::Isolate*>(isolate);
+  LOG_API(i_isolate, "Signature::New");
+  ENTER_V8(i_isolate);
+  i::Handle<i::Struct> struct_obj =
+      i_isolate->factory()->NewStruct(i::SIGNATURE_INFO_TYPE);
+  // TODO(jochen): Replace SignatureInfo with FunctionTemplateInfo once the
+  // deprecated API is deleted.
+  i::Handle<i::SignatureInfo> obj =
+      i::Handle<i::SignatureInfo>::cast(struct_obj);
+  if (!receiver.IsEmpty()) obj->set_receiver(*Utils::OpenHandle(*receiver));
   return Utils::ToLocal(obj);
 }
 
@@ -3041,14 +3080,6 @@ bool v8::Object::ForceDelete(v8::Handle<Value> key) {
   i::HandleScope scope(isolate);
   i::Handle<i::JSObject> self = Utils::OpenHandle(this);
   i::Handle<i::Object> key_obj = Utils::OpenHandle(*key);
-
-  // When deleting a property on the global object using ForceDelete
-  // deoptimize all functions as optimized code does not check for the hole
-  // value with DontDelete properties.  We have to deoptimize all contexts
-  // because of possible cross-context inlined functions.
-  if (self->IsJSGlobalProxy() || self->IsGlobalObject()) {
-    i::Deoptimizer::DeoptimizeAll(isolate);
-  }
 
   EXCEPTION_PREAMBLE(isolate);
   i::Handle<i::Object> obj;

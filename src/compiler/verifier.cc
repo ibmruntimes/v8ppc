@@ -247,6 +247,14 @@ void Verifier::Visitor::Pre(Node* node) {
       CHECK_EQ(1, control_count);
       CHECK_EQ(input_count, 1 + effect_count);
       break;
+    case IrOpcode::kOsrNormalEntry:
+    case IrOpcode::kOsrLoopEntry:
+      // Osr entries have
+      CHECK_EQ(1, effect_count);
+      CHECK_EQ(1, control_count);
+      // Type is empty.
+      CheckNotTyped(node);
+      break;
 
     // Common operators
     // ----------------
@@ -296,6 +304,13 @@ void Verifier::Visitor::Pre(Node* node) {
       CHECK_EQ(0, input_count);
       // Type is considered internal.
       CheckUpperIs(node, Type::Internal());
+      break;
+    case IrOpcode::kOsrValue:
+      // OSR values have a value and a control input.
+      CHECK_EQ(1, control_count);
+      CHECK_EQ(1, input_count);
+      // Type is merged from other values in the graph and could be any.
+      CheckUpperIs(node, Type::Any());
       break;
     case IrOpcode::kProjection: {
       // Projection has an input that produces enough values.
@@ -525,6 +540,11 @@ void Verifier::Visitor::Pre(Node* node) {
       CheckValueInputIs(node, 0, Type::Number());
       CheckUpperIs(node, Type::Unsigned32());
       break;
+    case IrOpcode::kPlainPrimitiveToNumber:
+      // PlainPrimitive -> Number
+      CheckValueInputIs(node, 0, Type::PlainPrimitive());
+      CheckUpperIs(node, Type::Number());
+      break;
     case IrOpcode::kStringEqual:
     case IrOpcode::kStringLessThan:
     case IrOpcode::kStringLessThanOrEqual:
@@ -612,15 +632,6 @@ void Verifier::Visitor::Pre(Node* node) {
       // CheckUpperIs(node, to));
       break;
     }
-    case IrOpcode::kChangeBitToBool: {
-      // Boolean /\ UntaggedInt1 -> Boolean /\ TaggedPtr
-      // TODO(neis): Activate once ChangeRepresentation works in typer.
-      // Type* from = Type::Intersect(Type::Boolean(), Type::UntaggedInt1());
-      // Type* to = Type::Intersect(Type::Boolean(), Type::TaggedPtr());
-      // CheckValueInputIs(node, 0, from));
-      // CheckUpperIs(node, to));
-      break;
-    }
     case IrOpcode::kChangeBoolToBit: {
       // Boolean /\ TaggedPtr -> Boolean /\ UntaggedInt1
       // TODO(neis): Activate once ChangeRepresentation works in typer.
@@ -630,13 +641,13 @@ void Verifier::Visitor::Pre(Node* node) {
       // CheckUpperIs(node, to));
       break;
     }
-    case IrOpcode::kChangeWord32ToBit: {
-      // TODO(rossberg): Check.
-      CheckValueInputIs(node, 0, Type::Integral32());
-      break;
-    }
-    case IrOpcode::kChangeWord64ToBit: {
-      // TODO(rossberg): Check.
+    case IrOpcode::kChangeBitToBool: {
+      // Boolean /\ UntaggedInt1 -> Boolean /\ TaggedPtr
+      // TODO(neis): Activate once ChangeRepresentation works in typer.
+      // Type* from = Type::Intersect(Type::Boolean(), Type::UntaggedInt1());
+      // Type* to = Type::Intersect(Type::Boolean(), Type::TaggedPtr());
+      // CheckValueInputIs(node, 0, from));
+      // CheckUpperIs(node, to));
       break;
     }
 
