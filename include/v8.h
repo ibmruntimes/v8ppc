@@ -2803,7 +2803,7 @@ class FunctionCallbackInfo {
   internal::Object** implicit_args_;
   internal::Object** values_;
   int length_;
-  bool is_construct_call_;
+  int is_construct_call_;
 };
 
 
@@ -4121,11 +4121,6 @@ class V8_EXPORT ObjectTemplate : public Template {
  */
 class V8_EXPORT Signature : public Data {
  public:
-  V8_DEPRECATED("An embedder needs to check the arguments itself",
-                static Local<Signature> New(
-                    Isolate* isolate, Handle<FunctionTemplate> receiver,
-                    int argc, Handle<FunctionTemplate> argv[] = 0));
-
   static Local<Signature> New(
       Isolate* isolate,
       Handle<FunctionTemplate> receiver = Handle<FunctionTemplate>());
@@ -6820,7 +6815,7 @@ ReturnValue<T> FunctionCallbackInfo<T>::GetReturnValue() const {
 
 template<typename T>
 bool FunctionCallbackInfo<T>::IsConstructCall() const {
-  return is_construct_call_;
+  return is_construct_call_ & 0x1;
 }
 
 

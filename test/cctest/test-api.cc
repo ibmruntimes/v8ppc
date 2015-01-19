@@ -23717,10 +23717,33 @@ Local<Object> ApiCallOptimizationChecker::callee;
 int ApiCallOptimizationChecker::count = 0;
 
 
-TEST(TestFunctionCallOptimization) {
+TEST(FunctionCallOptimization) {
   i::FLAG_allow_natives_syntax = true;
   ApiCallOptimizationChecker checker;
   checker.RunAll();
+}
+
+
+static void EmptyCallback(const v8::FunctionCallbackInfo<v8::Value>& info) {}
+
+
+TEST(FunctionCallOptimizationMultipleArgs) {
+  i::FLAG_allow_natives_syntax = true;
+  LocalContext context;
+  v8::Isolate* isolate = context->GetIsolate();
+  v8::HandleScope scope(isolate);
+  Handle<Object> global = context->Global();
+  Local<v8::Function> function = Function::New(isolate, EmptyCallback);
+  global->Set(v8_str("x"), function);
+  CompileRun(
+      "function x_wrap() {\n"
+      "  for (var i = 0; i < 5; i++) {\n"
+      "    x(1,2,3);\n"
+      "  }\n"
+      "}\n"
+      "x_wrap();\n"
+      "%OptimizeFunctionOnNextCall(x_wrap);"
+      "x_wrap();\n");
 }
 
 
@@ -24495,6 +24518,45 @@ TEST(StreamingProducesParserCache) {
   CHECK(cached_data->data != NULL);
   CHECK(!cached_data->rejected);
   CHECK_GT(cached_data->length, 0);
+}
+
+
+TEST(StreamingWithDebuggingDoesNotProduceParserCache) {
+  // If the debugger is active, we should just not produce parser cache at
+  // all. This is a regeression test: We used to produce a parser cache without
+  // any data in it (just headers).
+  i::FLAG_min_preparse_length = 0;
+  const char* chunks[] = {"function foo() { ret", "urn 13; } f", "oo(); ",
+                          NULL};
+
+  LocalContext env;
+  v8::Isolate* isolate = env->GetIsolate();
+  v8::HandleScope scope(isolate);
+
+  // Make the debugger active by setting a breakpoint.
+  CompileRun("function break_here() { }");
+  i::Handle<i::JSFunction> func = i::Handle<i::JSFunction>::cast(
+      v8::Utils::OpenHandle(*env->Global()->Get(v8_str("break_here"))));
+  v8::internal::Debug* debug = CcTest::i_isolate()->debug();
+  int position = 0;
+  debug->SetBreakPoint(func, i::Handle<i::Object>(v8::internal::Smi::FromInt(1),
+                                                  CcTest::i_isolate()),
+                       &position);
+
+  v8::ScriptCompiler::StreamedSource source(
+      new TestSourceStream(chunks),
+      v8::ScriptCompiler::StreamedSource::ONE_BYTE);
+  v8::ScriptCompiler::ScriptStreamingTask* task =
+      v8::ScriptCompiler::StartStreamingScript(
+          isolate, &source, v8::ScriptCompiler::kProduceParserCache);
+
+  // TestSourceStream::GetMoreData won't block, so it's OK to just run the
+  // task here in the main thread.
+  task->Run();
+  delete task;
+
+  // Check that we got no cached data.
+  CHECK(source.GetCachedData() == NULL);
 }
 
 
