@@ -164,12 +164,10 @@ static void GenerateKeyedLoadReceiverCheck(MacroAssembler* masm,
 
 
 // Loads an indexed element from a fast case array.
-// If not_fast_array is NULL, doesn't perform the elements map check.
 static void GenerateFastArrayLoad(MacroAssembler* masm, Register receiver,
                                   Register key, Register elements,
                                   Register scratch1, Register scratch2,
-                                  Register result, Label* not_fast_array,
-                                  Label* out_of_range) {
+                                  Register result, Label* slow) {
   // Register use:
   //
   // receiver - holds the receiver on entry.
@@ -178,8 +176,6 @@ static void GenerateFastArrayLoad(MacroAssembler* masm, Register receiver,
   // key      - holds the smi key on entry.
   //            Unchanged unless 'result' is the same register.
   //
-  // elements - holds the elements of the receiver on exit.
-  //
   // result   - holds the result on exit if the load succeeded.
   //            Allowed to be the the same as 'receiver' or 'key'.
   //            Unchanged on bailout so 'receiver' and 'key' can be safely
@@ -187,37 +183,62 @@ static void GenerateFastArrayLoad(MacroAssembler* masm, Register receiver,
   //
   // Scratch registers:
   //
-  // scratch1 - used to hold elements map and elements length.
-  //            Holds the elements map if not_fast_array branch is taken.
+  // elements - holds the elements of the receiver and its protoypes.
   //
-  // scratch2 - used to hold the loaded value.
+  // scratch1 - used to hold elements length, bit fields, base addresses.
+  //
+  // scratch2 - used to hold maps, prototypes, and the loaded value.
+  Label check_prototypes, check_next_prototype;
+  Label done, in_bounds, return_undefined;
 
   __ LoadP(elements, FieldMemOperand(receiver, JSObject::kElementsOffset));
-  if (not_fast_array != NULL) {
-    // Check that the object is in fast mode and writable.
-    __ LoadP(scratch1, FieldMemOperand(elements, HeapObject::kMapOffset));
-    __ LoadRoot(ip, Heap::kFixedArrayMapRootIndex);
-    __ cmp(scratch1, ip);
-    __ bne(not_fast_array);
-  } else {
-    __ AssertFastElements(elements);
-  }
+  __ AssertFastElements(elements);
+
   // Check that the key (index) is within bounds.
   __ LoadP(scratch1, FieldMemOperand(elements, FixedArray::kLengthOffset));
   __ cmpl(key, scratch1);
-  __ bge(out_of_range);
+  __ blt(&in_bounds);
+  // Out-of-bounds. Check the prototype chain to see if we can just return
+  // 'undefined'.
+  __ cmpi(key, Operand::Zero());
+  __ blt(slow);  // Negative keys can't take the fast OOB path.
+  __ bind(&check_prototypes);
+  __ LoadP(scratch2, FieldMemOperand(receiver, HeapObject::kMapOffset));
+  __ bind(&check_next_prototype);
+  __ LoadP(scratch2, FieldMemOperand(scratch2, Map::kPrototypeOffset));
+  // scratch2: current prototype
+  __ CompareRoot(scratch2, Heap::kNullValueRootIndex);
+  __ beq(&return_undefined);
+  __ LoadP(elements, FieldMemOperand(scratch2, JSObject::kElementsOffset));
+  __ LoadP(scratch2, FieldMemOperand(scratch2, HeapObject::kMapOffset));
+  // elements: elements of current prototype
+  // scratch2: map of current prototype
+  __ CompareInstanceType(scratch2, scratch1, JS_OBJECT_TYPE);
+  __ blt(slow);
+  __ lbz(scratch1, FieldMemOperand(scratch2, Map::kBitFieldOffset));
+  __ andi(r0, scratch1, Operand((1 << Map::kIsAccessCheckNeeded) |
+                                (1 << Map::kHasIndexedInterceptor)));
+  __ bne(slow, cr0);
+  __ CompareRoot(elements, Heap::kEmptyFixedArrayRootIndex);
+  __ bne(slow);
+  __ jmp(&check_next_prototype);
+
+  __ bind(&return_undefined);
+  __ LoadRoot(result, Heap::kUndefinedValueRootIndex);
+  __ jmp(&done);
+
+  __ bind(&in_bounds);
   // Fast case: Do the load.
   __ addi(scratch1, elements,
           Operand(FixedArray::kHeaderSize - kHeapObjectTag));
   // The key is a smi.
   __ SmiToPtrArrayOffset(scratch2, key);
   __ LoadPX(scratch2, MemOperand(scratch2, scratch1));
-  __ LoadRoot(ip, Heap::kTheHoleValueRootIndex);
-  __ cmp(scratch2, ip);
-  // In case the loaded value is the_hole we have to consult GetProperty
-  // to ensure the prototype chain is searched.
-  __ beq(out_of_range);
+  __ CompareRoot(scratch2, Heap::kTheHoleValueRootIndex);
+  // In case the loaded value is the_hole we have to check the prototype chain.
+  __ beq(&check_prototypes);
   __ mr(result, scratch2);
+  __ bind(&done);
 }
 
 
@@ -480,7 +501,7 @@ void KeyedLoadIC::GenerateGeneric(MacroAssembler* masm) {
   // Check the receiver's map to see if it has fast elements.
   __ CheckFastElements(r3, r6, &check_number_dictionary);
 
-  GenerateFastArrayLoad(masm, receiver, key, r3, r6, r7, r3, NULL, &slow);
+  GenerateFastArrayLoad(masm, receiver, key, r3, r6, r7, r3, &slow);
   __ IncrementCounter(isolate->counters()->keyed_load_generic_smi(), 1, r7, r6);
   __ Ret();
 

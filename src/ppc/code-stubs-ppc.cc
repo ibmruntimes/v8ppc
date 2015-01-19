@@ -4890,12 +4890,16 @@ void InternalArrayConstructorStub::Generate(MacroAssembler* masm) {
 }
 
 
-void CallApiFunctionStub::Generate(MacroAssembler* masm) {
+static void CallApiFunctionStubHelper(MacroAssembler* masm,
+                                      const ParameterCount& argc,
+                                      bool return_first_arg,
+                                      bool call_data_undefined) {
   // ----------- S t a t e -------------
   //  -- r3                  : callee
   //  -- r7                  : call_data
   //  -- r5                  : holder
   //  -- r4                  : api_function_address
+  //  -- r6                  : number of arguments if argc is a register
   //  -- cp                  : context
   //  --
   //  -- sp[0]               : last argument
@@ -4910,10 +4914,6 @@ void CallApiFunctionStub::Generate(MacroAssembler* masm) {
   Register api_function_address = r4;
   Register context = cp;
 
-  int argc = this->argc();
-  bool is_store = this->is_store();
-  bool call_data_undefined = this->call_data_undefined();
-
   typedef FunctionCallbackArguments FCA;
 
   STATIC_ASSERT(FCA::kContextSaveIndex == 6);
@@ -4924,6 +4924,8 @@ void CallApiFunctionStub::Generate(MacroAssembler* masm) {
   STATIC_ASSERT(FCA::kIsolateIndex == 1);
   STATIC_ASSERT(FCA::kHolderIndex == 0);
   STATIC_ASSERT(FCA::kArgsLength == 7);
+
+  DCHECK(argc.is_immediate() || r3.is(argc.reg()));
 
   // context save
   __ push(context);
@@ -4945,7 +4947,7 @@ void CallApiFunctionStub::Generate(MacroAssembler* masm) {
   // return value default
   __ push(scratch);
   // isolate
-  __ mov(scratch, Operand(ExternalReference::isolate_address(isolate())));
+  __ mov(scratch, Operand(ExternalReference::isolate_address(masm->isolate())));
   __ push(scratch);
   // holder
   __ push(holder);
@@ -4961,6 +4963,8 @@ void CallApiFunctionStub::Generate(MacroAssembler* masm) {
   //    [0] space for DirectCEntryStub's LR save
   //    [1-4] FunctionCallbackInfo
   const int kApiStackSpace = 5;
+  const int kFunctionCallbackInfoOffset =
+      (kStackFrameExtraParamSlot + 1) * kPointerSize;
 
   FrameScope frame_scope(masm, StackFrame::MANUAL);
   __ EnterExitFrame(false, kApiStackSpace);
@@ -4968,38 +4972,73 @@ void CallApiFunctionStub::Generate(MacroAssembler* masm) {
   DCHECK(!api_function_address.is(r3) && !scratch.is(r3));
   // r3 = FunctionCallbackInfo&
   // Arguments is after the return address.
-  __ addi(r3, sp, Operand((kStackFrameExtraParamSlot + 1) * kPointerSize));
+  __ addi(r3, sp, Operand(kFunctionCallbackInfoOffset));
   // FunctionCallbackInfo::implicit_args_
   __ StoreP(scratch, MemOperand(r3, 0 * kPointerSize));
-  // FunctionCallbackInfo::values_
-  __ addi(ip, scratch, Operand((FCA::kArgsLength - 1 + argc) * kPointerSize));
-  __ StoreP(ip, MemOperand(r3, 1 * kPointerSize));
-  // FunctionCallbackInfo::length_ = argc
-  __ li(ip, Operand(argc));
-  __ stw(ip, MemOperand(r3, 2 * kPointerSize));
-  // FunctionCallbackInfo::is_construct_call = 0
-  __ li(ip, Operand::Zero());
-  __ stw(ip, MemOperand(r3, 2 * kPointerSize + kIntSize));
+  if (argc.is_immediate()) {
+    // FunctionCallbackInfo::values_
+    __ addi(ip, scratch,
+            Operand((FCA::kArgsLength - 1 + argc.immediate()) * kPointerSize));
+    __ StoreP(ip, MemOperand(r3, 1 * kPointerSize));
+    // FunctionCallbackInfo::length_ = argc
+    __ li(ip, Operand(argc.immediate()));
+    __ stw(ip, MemOperand(r3, 2 * kPointerSize));
+    // FunctionCallbackInfo::is_construct_call_ = 0
+    __ li(ip, Operand::Zero());
+    __ stw(ip, MemOperand(r3, 2 * kPointerSize + kIntSize));
+  } else {
+    __ ShiftLeftImm(ip, argc.reg(), Operand(kPointerSizeLog2));
+    __ addi(ip, ip, Operand((FCA::kArgsLength - 1) * kPointerSize));
+    // FunctionCallbackInfo::values_
+    __ add(r0, scratch, ip);
+    __ StoreP(r0, MemOperand(r3, 1 * kPointerSize));
+    // FunctionCallbackInfo::length_ = argc
+    __ stw(argc.reg(), MemOperand(r3, 2 * kPointerSize));
+    // FunctionCallbackInfo::is_construct_call_
+    __ stw(ip, MemOperand(r3, 2 * kPointerSize + kIntSize));
+  }
 
-  const int kStackUnwindSpace = argc + FCA::kArgsLength + 1;
   ExternalReference thunk_ref =
-      ExternalReference::invoke_function_callback(isolate());
+      ExternalReference::invoke_function_callback(masm->isolate());
 
   AllowExternalCallThatCantCauseGC scope(masm);
   MemOperand context_restore_operand(
       fp, (2 + FCA::kContextSaveIndex) * kPointerSize);
   // Stores return the first js argument
   int return_value_offset = 0;
-  if (is_store) {
+  if (return_first_arg) {
     return_value_offset = 2 + FCA::kArgsLength;
   } else {
     return_value_offset = 2 + FCA::kReturnValueOffset;
   }
   MemOperand return_value_operand(fp, return_value_offset * kPointerSize);
-
-  __ CallApiFunctionAndReturn(api_function_address, thunk_ref,
-                              kStackUnwindSpace, return_value_operand,
+  int stack_space = 0;
+  MemOperand is_construct_call_operand =
+      MemOperand(sp, kFunctionCallbackInfoOffset + 2 * kPointerSize + kIntSize);
+  MemOperand* stack_space_operand = &is_construct_call_operand;
+  if (argc.is_immediate()) {
+    stack_space = argc.immediate() + FCA::kArgsLength + 1;
+    stack_space_operand = NULL;
+  }
+  __ CallApiFunctionAndReturn(api_function_address, thunk_ref, stack_space,
+                              stack_space_operand, return_value_operand,
                               &context_restore_operand);
+}
+
+
+void CallApiFunctionStub::Generate(MacroAssembler* masm) {
+  bool call_data_undefined = this->call_data_undefined();
+  CallApiFunctionStubHelper(masm, ParameterCount(r6), false,
+                            call_data_undefined);
+}
+
+
+void CallApiAccessorStub::Generate(MacroAssembler* masm) {
+  bool is_store = this->is_store();
+  int argc = this->argc();
+  bool call_data_undefined = this->call_data_undefined();
+  CallApiFunctionStubHelper(masm, ParameterCount(argc), is_store,
+                            call_data_undefined);
 }
 
 
@@ -5058,7 +5097,7 @@ void CallApiGetterStub::Generate(MacroAssembler* masm) {
   ExternalReference thunk_ref =
       ExternalReference::invoke_accessor_getter_callback(isolate());
   __ CallApiFunctionAndReturn(api_function_address, thunk_ref,
-                              kStackUnwindSpace,
+                              kStackUnwindSpace, NULL,
                               MemOperand(fp, 6 * kPointerSize), NULL);
 }
 

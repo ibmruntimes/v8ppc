@@ -299,6 +299,27 @@ void ApiFunctionDescriptor::Initialize(CallInterfaceDescriptorData* data) {
       r7,  // call_data
       r5,  // holder
       r4,  // api_function_address
+      r6,  // actual number of arguments
+  };
+  Representation representations[] = {
+      Representation::Tagged(),     // context
+      Representation::Tagged(),     // callee
+      Representation::Tagged(),     // call_data
+      Representation::Tagged(),     // holder
+      Representation::External(),   // api_function_address
+      Representation::Integer32(),  // actual number of arguments
+  };
+  data->Initialize(arraysize(registers), registers, representations);
+}
+
+
+void ApiAccessorDescriptor::Initialize(CallInterfaceDescriptorData* data) {
+  Register registers[] = {
+      cp,  // context
+      r3,  // callee
+      r7,  // call_data
+      r5,  // holder
+      r4,  // api_function_address
   };
   Representation representations[] = {
       Representation::Tagged(),    // context

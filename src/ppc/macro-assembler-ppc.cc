@@ -915,7 +915,8 @@ int MacroAssembler::ActivationFrameAlignment() {
 
 
 void MacroAssembler::LeaveExitFrame(bool save_doubles, Register argument_count,
-                                    bool restore_context) {
+                                    bool restore_context,
+                                    bool argument_count_is_length) {
 #if V8_OOL_CONSTANT_POOL
   ConstantPoolUnavailableScope constant_pool_unavailable(this);
 #endif
@@ -948,7 +949,9 @@ void MacroAssembler::LeaveExitFrame(bool save_doubles, Register argument_count,
   LeaveFrame(StackFrame::EXIT);
 
   if (argument_count.is_valid()) {
-    ShiftLeftImm(argument_count, argument_count, Operand(kPointerSizeLog2));
+    if (!argument_count_is_length) {
+      ShiftLeftImm(argument_count, argument_count, Operand(kPointerSizeLog2));
+    }
     add(sp, sp, argument_count);
   }
 }
@@ -2204,7 +2207,8 @@ static int AddressOffset(ExternalReference ref0, ExternalReference ref1) {
 
 void MacroAssembler::CallApiFunctionAndReturn(
     Register function_address, ExternalReference thunk_ref, int stack_space,
-    MemOperand return_value_operand, MemOperand* context_restore_operand) {
+    MemOperand* stack_space_operand, MemOperand return_value_operand,
+    MemOperand* context_restore_operand) {
   ExternalReference next_address =
       ExternalReference::handle_scope_next_address(isolate());
   const int kNextOffset = 0;
@@ -2308,8 +2312,12 @@ void MacroAssembler::CallApiFunctionAndReturn(
     LoadP(cp, *context_restore_operand);
   }
   // LeaveExitFrame expects unwind space to be in a register.
-  mov(r14, Operand(stack_space));
-  LeaveExitFrame(false, r14, !restore_context);
+  if (stack_space_operand != NULL) {
+    lwz(r14, *stack_space_operand);
+  } else {
+    mov(r14, Operand(stack_space));
+  }
+  LeaveExitFrame(false, r14, !restore_context, stack_space_operand != NULL);
   blr();
 
   bind(&promote_scheduled_exception);

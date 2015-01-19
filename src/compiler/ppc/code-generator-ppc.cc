@@ -159,6 +159,7 @@ class OutOfLineLoadZero FINAL : public OutOfLineCode {
   Register const result_;
 };
 
+
 Condition FlagsConditionToCondition(FlagsCondition condition) {
   switch (condition) {
     case kEqual:
@@ -993,8 +994,7 @@ void CodeGenerator::AssembleArchBranch(Instruction* instr, BranchInfo* branch) {
     if (cond == le) {
       __ bunordered(flabel, cr);
       // Unnecessary for eq/lt since only FU bit will be set.
-    }
-    else if (cond == gt) {
+    } else if (cond == gt) {
       __ bunordered(tlabel, cr);
       // Unnecessary for ne/ge since only FU bit will be set.
     }
