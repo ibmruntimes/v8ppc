@@ -14,7 +14,7 @@ namespace base {
 inline Atomic32 NoBarrier_CompareAndSwap(volatile Atomic32* ptr,
                                          Atomic32 old_value,
                                          Atomic32 new_value) {
-  return(__sync_val_compare_and_swap( ptr, old_value, new_value));
+  return (__sync_val_compare_and_swap(ptr, old_value, new_value));
 }
 
 inline Atomic32 NoBarrier_AtomicExchange(volatile Atomic32* ptr,
@@ -45,14 +45,12 @@ inline Atomic32 Barrier_AtomicIncrement(volatile Atomic32* ptr,
 }
 
 inline Atomic32 Acquire_CompareAndSwap(volatile Atomic32* ptr,
-                                       Atomic32 old_value,
-                                       Atomic32 new_value) {
+                                       Atomic32 old_value, Atomic32 new_value) {
   return NoBarrier_CompareAndSwap(ptr, old_value, new_value);
 }
 
 inline Atomic32 Release_CompareAndSwap(volatile Atomic32* ptr,
-                                       Atomic32 old_value,
-                                       Atomic32 new_value) {
+                                       Atomic32 old_value, Atomic32 new_value) {
   return NoBarrier_CompareAndSwap(ptr, old_value, new_value);
 }
 
@@ -65,8 +63,7 @@ inline void NoBarrier_Store(volatile Atomic32* ptr, Atomic32 value) {
 }
 
 inline void MemoryBarrier() {
-  __asm__ __volatile__("sync" : : : "memory");
-}
+  __asm__ __volatile__("sync" : : : "memory"); }
 
 inline void Acquire_Store(volatile Atomic32* ptr, Atomic32 value) {
   *ptr = value;
@@ -78,13 +75,9 @@ inline void Release_Store(volatile Atomic32* ptr, Atomic32 value) {
   *ptr = value;
 }
 
-inline Atomic8 NoBarrier_Load(volatile const Atomic8* ptr) {
-  return *ptr;
-}
+inline Atomic8 NoBarrier_Load(volatile const Atomic8* ptr) { return *ptr; }
 
-inline Atomic32 NoBarrier_Load(volatile const Atomic32* ptr) {
-  return *ptr;
-}
+inline Atomic32 NoBarrier_Load(volatile const Atomic32* ptr) { return *ptr; }
 
 inline Atomic32 Acquire_Load(volatile const Atomic32* ptr) {
   Atomic32 value = *ptr;
@@ -101,7 +94,7 @@ inline Atomic32 Release_Load(volatile const Atomic32* ptr) {
 inline Atomic64 NoBarrier_CompareAndSwap(volatile Atomic64* ptr,
                                          Atomic64 old_value,
                                          Atomic64 new_value) {
-  return(__sync_val_compare_and_swap( ptr, old_value, new_value));
+  return (__sync_val_compare_and_swap(ptr, old_value, new_value));
 }
 
 inline Atomic64 NoBarrier_AtomicExchange(volatile Atomic64* ptr,
@@ -132,14 +125,12 @@ inline Atomic64 Barrier_AtomicIncrement(volatile Atomic64* ptr,
 }
 
 inline Atomic64 Acquire_CompareAndSwap(volatile Atomic64* ptr,
-                                       Atomic64 old_value,
-                                       Atomic64 new_value) {
+                                       Atomic64 old_value, Atomic64 new_value) {
   return NoBarrier_CompareAndSwap(ptr, old_value, new_value);
 }
 
 inline Atomic64 Release_CompareAndSwap(volatile Atomic64* ptr,
-                                       Atomic64 old_value,
-                                       Atomic64 new_value) {
+                                       Atomic64 old_value, Atomic64 new_value) {
   return NoBarrier_CompareAndSwap(ptr, old_value, new_value);
 }
 
@@ -157,9 +148,7 @@ inline void Release_Store(volatile Atomic64* ptr, Atomic64 value) {
   *ptr = value;
 }
 
-inline Atomic64 NoBarrier_Load(volatile const Atomic64* ptr) {
-  return *ptr;
-}
+inline Atomic64 NoBarrier_Load(volatile const Atomic64* ptr) { return *ptr; }
 
 inline Atomic64 Acquire_Load(volatile const Atomic64* ptr) {
   Atomic64 value = *ptr;
@@ -173,7 +162,7 @@ inline Atomic64 Release_Load(volatile const Atomic64* ptr) {
 }
 
 #endif
-
-} }  // namespace v8::base
+}
+}  // namespace v8::base
 
 #endif  // V8_BASE_ATOMICOPS_INTERNALS_PPC_GCC_H_

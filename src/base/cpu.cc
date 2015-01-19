@@ -597,7 +597,7 @@ CPU::CPU()
 #ifndef USE_SIMULATOR
 #if V8_OS_LINUX
   // Read processor info from /proc/self/auxv.
-  char *auxv_cpu_type = NULL;
+  char* auxv_cpu_type = NULL;
   unsigned auxv_cache_line_size = 0;
   FILE* fp = fopen("/proc/self/auxv", "r");
   if (fp != NULL) {

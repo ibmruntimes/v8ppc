@@ -1168,9 +1168,7 @@ void JSEntryStub::Generate(MacroAssembler* masm) {
   Label invoke, handler_entry, exit;
 
 // Called from C
-#if ABI_USES_FUNCTION_DESCRIPTORS
   __ function_descriptor();
-#endif
 
   ProfileEntryHookStub::MaybeCallEntryHook(masm);
 

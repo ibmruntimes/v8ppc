@@ -258,10 +258,10 @@ class SimulatorHelper {
         Simulator::fp));
 #elif V8_TARGET_ARCH_PPC
     state->pc = reinterpret_cast<Address>(simulator_->get_pc());
-    state->sp = reinterpret_cast<Address>(simulator_->get_register(
-        Simulator::sp));
-    state->fp = reinterpret_cast<Address>(simulator_->get_register(
-        Simulator::fp));
+    state->sp =
+        reinterpret_cast<Address>(simulator_->get_register(Simulator::sp));
+    state->fp =
+        reinterpret_cast<Address>(simulator_->get_register(Simulator::fp));
 #endif
   }
 

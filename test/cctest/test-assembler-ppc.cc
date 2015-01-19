@@ -53,9 +53,7 @@ TEST(0) {
 
   Assembler assm(isolate, NULL, 0);
 
-#if ABI_USES_FUNCTION_DESCRIPTORS
   __ function_descriptor();
-#endif
 
   __ add(r3, r3, r4);
   __ blr();
@@ -69,7 +67,7 @@ TEST(0) {
 #endif
   F2 f = FUNCTION_CAST<F2>(code->entry());
   intptr_t res =
-    reinterpret_cast<intptr_t>(CALL_GENERATED_CODE(f, 3, 4, 0, 0, 0));
+      reinterpret_cast<intptr_t>(CALL_GENERATED_CODE(f, 3, 4, 0, 0, 0));
   ::printf("f() = %" V8PRIdPTR "\n", res);
   CHECK_EQ(7, static_cast<int>(res));
 }
@@ -84,9 +82,7 @@ TEST(1) {
   Assembler assm(isolate, NULL, 0);
   Label L, C;
 
-#if ABI_USES_FUNCTION_DESCRIPTORS
   __ function_descriptor();
-#endif
 
   __ mr(r4, r3);
   __ li(r3, Operand::Zero());
@@ -110,8 +106,8 @@ TEST(1) {
 #endif
   F1 f = FUNCTION_CAST<F1>(code->entry());
   intptr_t res =
-    reinterpret_cast<intptr_t>(CALL_GENERATED_CODE(f, 100, 0, 0, 0, 0));
-  ::printf("f() = %" V8PRIdPTR  "\n", res);
+      reinterpret_cast<intptr_t>(CALL_GENERATED_CODE(f, 100, 0, 0, 0, 0));
+  ::printf("f() = %" V8PRIdPTR "\n", res);
   CHECK_EQ(5050, static_cast<int>(res));
 }
 
@@ -124,9 +120,7 @@ TEST(2) {
   Assembler assm(isolate, NULL, 0);
   Label L, C;
 
-#if ABI_USES_FUNCTION_DESCRIPTORS
   __ function_descriptor();
-#endif
 
   __ mr(r4, r3);
   __ li(r3, Operand(1));
@@ -163,11 +157,10 @@ TEST(2) {
 #endif
   F1 f = FUNCTION_CAST<F1>(code->entry());
   intptr_t res =
-    reinterpret_cast<intptr_t>(CALL_GENERATED_CODE(f, 10, 0, 0, 0, 0));
+      reinterpret_cast<intptr_t>(CALL_GENERATED_CODE(f, 10, 0, 0, 0, 0));
   ::printf("f() = %" V8PRIdPTR "\n", res);
   CHECK_EQ(3628800, static_cast<int>(res));
 }
-
 
 
 TEST(3) {
@@ -185,11 +178,9 @@ TEST(3) {
   Assembler assm(Isolate::Current(), NULL, 0);
   Label L, C;
 
-#if ABI_USES_FUNCTION_DESCRIPTORS
   __ function_descriptor();
-#endif
 
-  // build a frame
+// build a frame
 #if V8_TARGET_ARCH_PPC64
   __ stdu(sp, MemOperand(sp, -32));
   __ std(fp, MemOperand(sp, 24));
@@ -219,7 +210,7 @@ TEST(3) {
   __ srwi(r5, r5, Operand(3));
   __ sth(r5, MemOperand(r4, OFFSET_OF(T, s)));
 
-  // restore frame
+// restore frame
 #if V8_TARGET_ARCH_PPC64
   __ addi(r11, fp, Operand(32));
   __ ld(fp, MemOperand(r11, -8));
@@ -242,12 +233,12 @@ TEST(3) {
   t.c = 10;
   t.s = 1000;
   intptr_t res =
-    reinterpret_cast<intptr_t>(CALL_GENERATED_CODE(f, &t, 0, 0, 0, 0));
+      reinterpret_cast<intptr_t>(CALL_GENERATED_CODE(f, &t, 0, 0, 0, 0));
   ::printf("f() = %" V8PRIdPTR "\n", res);
   CHECK_EQ(101010, static_cast<int>(res));
-  CHECK_EQ(100000/2, t.i);
-  CHECK_EQ(10*4, t.c);
-  CHECK_EQ(1000/8, t.s);
+  CHECK_EQ(100000 / 2, t.i);
+  CHECK_EQ(10 * 4, t.c);
+  CHECK_EQ(1000 / 8, t.s);
 }
 
 #if 0
@@ -1064,6 +1055,6 @@ TEST(12) {
   __ bind(&target);
   __ nop();
 }
-#endif  // roohack
+#endif
 
 #undef __

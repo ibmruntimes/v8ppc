@@ -35,7 +35,7 @@
 #include "src/vm-state-inl.h"
 
 #if V8_TARGET_ARCH_PPC && !V8_INTERPRETED_REGEXP
-#include "src/regexp-macro-assembler.h"  // NOLINT
+#include "src/regexp-macro-assembler.h"          // NOLINT
 #include "src/ppc/regexp-macro-assembler-ppc.h"  // NOLINT
 #endif
 #if V8_TARGET_ARCH_ARM && !V8_INTERPRETED_REGEXP

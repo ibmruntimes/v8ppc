@@ -88,10 +88,10 @@ class Redirection;
 class Simulator;
 #endif
 #else  // V8_PPC_SIMULATOR
-#if !defined(__arm__) && V8_TARGET_ARCH_ARM || \
+#if !defined(__arm__) && V8_TARGET_ARCH_ARM ||       \
     !defined(__aarch64__) && V8_TARGET_ARCH_ARM64 || \
-    !defined(__PPC__) && V8_TARGET_ARCH_PPC || \
-    !defined(__mips__) && V8_TARGET_ARCH_MIPS || \
+    !defined(__PPC__) && V8_TARGET_ARCH_PPC ||       \
+    !defined(__mips__) && V8_TARGET_ARCH_MIPS ||     \
     !defined(__mips__) && V8_TARGET_ARCH_MIPS64
 class Redirection;
 class Simulator;
@@ -343,10 +343,10 @@ class ThreadLocalTop BASE_EMBEDDED {
 
 #endif
 #else  // V8_PPC_SIMULATOR
-#if V8_TARGET_ARCH_ARM && !defined(__arm__) || \
+#if V8_TARGET_ARCH_ARM && !defined(__arm__) ||       \
     V8_TARGET_ARCH_ARM64 && !defined(__aarch64__) || \
-    V8_TARGET_ARCH_PPC && !defined(__PPC__) || \
-    V8_TARGET_ARCH_MIPS && !defined(__mips__) || \
+    V8_TARGET_ARCH_PPC && !defined(__PPC__) ||       \
+    V8_TARGET_ARCH_MIPS && !defined(__mips__) ||     \
     V8_TARGET_ARCH_MIPS64 && !defined(__mips__)
 
 #define ISOLATE_INIT_SIMULATOR_LIST(V)                                         \
@@ -445,10 +445,10 @@ class Isolate {
           simulator_(NULL),
 #endif
 #else  // V8_PPC_SIMULATOR
-#if !defined(__arm__) && V8_TARGET_ARCH_ARM || \
+#if !defined(__arm__) && V8_TARGET_ARCH_ARM ||       \
     !defined(__aarch64__) && V8_TARGET_ARCH_ARM64 || \
-    !defined(__PPC__) && V8_TARGET_ARCH_PPC || \
-    !defined(__mips__) && V8_TARGET_ARCH_MIPS || \
+    !defined(__PPC__) && V8_TARGET_ARCH_PPC ||       \
+    !defined(__mips__) && V8_TARGET_ARCH_MIPS ||     \
     !defined(__mips__) && V8_TARGET_ARCH_MIPS64
           simulator_(NULL),
 #endif
@@ -467,10 +467,10 @@ class Isolate {
     FIELD_ACCESSOR(Simulator*, simulator)
 #endif
 #else  // V8_PPC_SIMULATOR
-#if !defined(__arm__) && V8_TARGET_ARCH_ARM || \
+#if !defined(__arm__) && V8_TARGET_ARCH_ARM ||       \
     !defined(__aarch64__) && V8_TARGET_ARCH_ARM64 || \
-    !defined(__PPC__) && V8_TARGET_ARCH_PPC || \
-    !defined(__mips__) && V8_TARGET_ARCH_MIPS || \
+    !defined(__PPC__) && V8_TARGET_ARCH_PPC ||       \
+    !defined(__mips__) && V8_TARGET_ARCH_MIPS ||     \
     !defined(__mips__) && V8_TARGET_ARCH_MIPS64
     FIELD_ACCESSOR(Simulator*, simulator)
 #endif
@@ -491,10 +491,10 @@ class Isolate {
     Simulator* simulator_;
 #endif
 #else  // V8_PPC_SIMULATOR
-#if !defined(__arm__) && V8_TARGET_ARCH_ARM || \
+#if !defined(__arm__) && V8_TARGET_ARCH_ARM ||       \
     !defined(__aarch64__) && V8_TARGET_ARCH_ARM64 || \
-    !defined(__PPC__) && V8_TARGET_ARCH_PPC || \
-    !defined(__mips__) && V8_TARGET_ARCH_MIPS || \
+    !defined(__PPC__) && V8_TARGET_ARCH_PPC ||       \
+    !defined(__mips__) && V8_TARGET_ARCH_MIPS ||     \
     !defined(__mips__) && V8_TARGET_ARCH_MIPS64
     Simulator* simulator_;
 #endif

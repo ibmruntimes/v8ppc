@@ -1467,11 +1467,13 @@ void Assembler::divdu(Register dst, Register src1, Register src2,
 // Code address skips the function descriptor "header".
 // TOC and static chain are ignored and set to 0.
 void Assembler::function_descriptor() {
+#if ABI_USES_FUNCTION_DESCRIPTORS
   DCHECK(pc_offset() == 0);
   RecordRelocInfo(RelocInfo::INTERNAL_REFERENCE);
   emit_ptr(reinterpret_cast<uintptr_t>(pc_) + 3 * kPointerSize);
   emit_ptr(0);
   emit_ptr(0);
+#endif
 }
 
 

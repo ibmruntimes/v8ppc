@@ -91,9 +91,7 @@ void generate(MacroAssembler* masm, uint32_t key) {
   __ jr(ra);
   __ nop();
 #elif V8_TARGET_ARCH_PPC
-#if ABI_USES_FUNCTION_DESCRIPTORS
   __ function_descriptor();
-#endif
   __ push(kRootRegister);
   __ InitializeRootRegister();
   __ li(r3, Operand(key));

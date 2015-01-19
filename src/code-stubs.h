@@ -113,9 +113,9 @@ namespace internal {
 
 // List of code stubs only used on PPC platforms.
 #ifdef V8_TARGET_ARCH_PPC
-#define CODE_STUB_LIST_PPC(V)  \
-  V(DirectCEntry)              \
-  V(StoreRegistersState)       \
+#define CODE_STUB_LIST_PPC(V) \
+  V(DirectCEntry)             \
+  V(StoreRegistersState)      \
   V(RestoreRegistersState)
 #else
 #define CODE_STUB_LIST_PPC(V)
@@ -137,11 +137,11 @@ namespace internal {
 #endif
 
 // Combined list of code stubs.
-#define CODE_STUB_LIST(V)            \
-  CODE_STUB_LIST_ALL_PLATFORMS(V)    \
-  CODE_STUB_LIST_ARM(V)              \
-  CODE_STUB_LIST_ARM64(V)           \
-  CODE_STUB_LIST_PPC(V)              \
+#define CODE_STUB_LIST(V)         \
+  CODE_STUB_LIST_ALL_PLATFORMS(V) \
+  CODE_STUB_LIST_ARM(V)           \
+  CODE_STUB_LIST_ARM64(V)         \
+  CODE_STUB_LIST_PPC(V)           \
   CODE_STUB_LIST_MIPS(V)
 
 // Stub is base classes of all stubs.
