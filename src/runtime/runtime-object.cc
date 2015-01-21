@@ -615,7 +615,7 @@ RUNTIME_FUNCTION(Runtime_KeyedGetProperty) {
         // appropriate.
         LookupIterator it(receiver, key, LookupIterator::OWN);
         if (it.state() == LookupIterator::DATA &&
-            it.property_details().type() == FIELD) {
+            it.property_details().type() == DATA) {
           FieldIndex field_index = it.GetFieldIndex();
           // Do not track double fields in the keyed lookup cache. Reading
           // double values requires boxing.
@@ -632,7 +632,7 @@ RUNTIME_FUNCTION(Runtime_KeyedGetProperty) {
         NameDictionary* dictionary = receiver->property_dictionary();
         int entry = dictionary->FindEntry(key);
         if ((entry != NameDictionary::kNotFound) &&
-            (dictionary->DetailsAt(entry).type() == FIELD)) {
+            (dictionary->DetailsAt(entry).type() == DATA)) {
           Object* value = dictionary->ValueAt(entry);
           if (!receiver->IsGlobalObject()) return value;
           value = PropertyCell::cast(value)->value();
@@ -765,12 +765,9 @@ RUNTIME_FUNCTION(Runtime_DeleteProperty) {
   CONVERT_ARG_HANDLE_CHECKED(JSReceiver, object, 0);
   CONVERT_ARG_HANDLE_CHECKED(Name, key, 1);
   CONVERT_STRICT_MODE_ARG_CHECKED(strict_mode, 2);
-  JSReceiver::DeleteMode delete_mode = strict_mode == STRICT
-                                           ? JSReceiver::STRICT_DELETION
-                                           : JSReceiver::NORMAL_DELETION;
   Handle<Object> result;
   ASSIGN_RETURN_FAILURE_ON_EXCEPTION(
-      isolate, result, JSReceiver::DeleteProperty(object, key, delete_mode));
+      isolate, result, JSReceiver::DeleteProperty(object, key, strict_mode));
   return *result;
 }
 

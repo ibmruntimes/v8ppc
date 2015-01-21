@@ -414,6 +414,8 @@ DEFINE_BOOL(turbo_verify_allocation, DEBUG_BOOL,
 DEFINE_BOOL(turbo_move_optimization, true, "optimize gap moves in TurboFan")
 DEFINE_BOOL(turbo_jt, true, "enable jump threading in TurboFan")
 DEFINE_BOOL(turbo_osr, false, "enable OSR in TurboFan")
+DEFINE_BOOL(turbo_stress_loop_peeling, false,
+            "stress loop peeling optimization")
 
 DEFINE_INT(typed_array_max_size_in_heap, 64,
            "threshold for in-heap typed array")
@@ -465,6 +467,7 @@ DEFINE_BOOL(enable_vldr_imm, false,
             "enable use of constant pools for double immediate (ARM only)")
 DEFINE_BOOL(force_long_branches, false,
             "force all emitted branches to be in long mode (MIPS/PPC only)")
+DEFINE_STRING(mcpu, "auto", "enable optimization for specific cpu")
 
 // bootstrapper.cc
 DEFINE_STRING(expose_natives_as, NULL, "expose natives in global object")
@@ -857,6 +860,8 @@ DEFINE_BOOL(log_snapshot_positions, false,
 DEFINE_BOOL(log_suspect, false, "Log suspect operations.")
 DEFINE_BOOL(prof, false,
             "Log statistical profiling information (implies --log-code).")
+DEFINE_BOOL(prof_cpp, false, "Like --prof, but ignore generated code.")
+DEFINE_IMPLICATION(prof, prof_cpp)
 DEFINE_BOOL(prof_browser_mode, true,
             "Used with --prof, turns on browser-compatible mode for profiling.")
 DEFINE_BOOL(log_regexp, false, "Log regular expression execution.")
