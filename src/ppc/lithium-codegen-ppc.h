@@ -190,13 +190,11 @@ class LCodeGen : public LCodeGenBase {
   void CallRuntimeFromDeferred(Runtime::FunctionId id, int argc,
                                LInstruction* instr, LOperand* context);
 
-  enum R4State { R4_UNINITIALIZED, R4_CONTAINS_TARGET };
-
   // Generate a direct call to a known function.  Expects the function
   // to be in r4.
   void CallKnownFunction(Handle<JSFunction> function,
                          int formal_parameter_count, int arity,
-                         LInstruction* instr, R4State r4_state);
+                         LInstruction* instr);
 
   void RecordSafepointWithLazyDeopt(LInstruction* instr,
                                     SafepointMode safepoint_mode);

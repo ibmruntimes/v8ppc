@@ -3798,21 +3798,19 @@ void LCodeGen::DoDeclareGlobals(LDeclareGlobals* instr) {
 
 void LCodeGen::CallKnownFunction(Handle<JSFunction> function,
                                  int formal_parameter_count, int arity,
-                                 LInstruction* instr, R4State r4_state) {
+                                 LInstruction* instr) {
   bool dont_adapt_arguments =
       formal_parameter_count == SharedFunctionInfo::kDontAdaptArgumentsSentinel;
   bool can_invoke_directly =
       dont_adapt_arguments || formal_parameter_count == arity;
 
+  Register function_reg = r4;
+
   LPointerMap* pointers = instr->pointer_map();
 
   if (can_invoke_directly) {
-    if (r4_state == R4_UNINITIALIZED) {
-      __ Move(r4, function);
-    }
-
     // Change context.
-    __ LoadP(cp, FieldMemOperand(r4, JSFunction::kContextOffset));
+    __ LoadP(cp, FieldMemOperand(function_reg, JSFunction::kContextOffset));
 
     // Set r3 to arguments count if adaption is not needed. Assumes that r3
     // is available to write to at this point.
@@ -3826,7 +3824,7 @@ void LCodeGen::CallKnownFunction(Handle<JSFunction> function,
     if (is_self_call) {
       __ CallSelf();
     } else {
-      __ LoadP(ip, FieldMemOperand(r4, JSFunction::kCodeEntryOffset));
+      __ LoadP(ip, FieldMemOperand(function_reg, JSFunction::kCodeEntryOffset));
       __ CallJSEntry(ip);
     }
 
@@ -3836,7 +3834,7 @@ void LCodeGen::CallKnownFunction(Handle<JSFunction> function,
     SafepointGenerator generator(this, pointers, Safepoint::kLazyDeopt);
     ParameterCount count(arity);
     ParameterCount expected(formal_parameter_count);
-    __ InvokeFunction(function, expected, count, CALL_FUNCTION, generator);
+    __ InvokeFunction(function_reg, expected, count, CALL_FUNCTION, generator);
   }
 }
 
@@ -4186,7 +4184,7 @@ void LCodeGen::DoInvokeFunction(LInvokeFunction* instr) {
   } else {
     CallKnownFunction(known_function,
                       instr->hydrogen()->formal_parameter_count(),
-                      instr->arity(), instr, R4_CONTAINS_TARGET);
+                      instr->arity(), instr);
   }
 }
 
