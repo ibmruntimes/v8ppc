@@ -48,6 +48,11 @@ class zone_allocator {
   void construct(pointer p, const T& val) {
     new(static_cast<void*>(p)) T(val);
   }
+#ifdef __GXX_EXPERIMENTAL_CXX0X__
+  void construct(pointer p) {
+    new(static_cast<void*>(p)) T();
+  }
+#endif
   void destroy(pointer p) { p->~T(); }
 
   bool operator==(zone_allocator const& other) const {

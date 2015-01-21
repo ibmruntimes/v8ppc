@@ -234,7 +234,7 @@ TEST(Regress3540) {
                                           code_range_size - 2 * pageSize,
 #else
   address = code_range->AllocateRawMemory(code_range_size - 2 * MB,
-                                          code_range_size - 2 * MB, 
+                                          code_range_size - 2 * MB,
 #endif
                                           &size);
   CHECK(address != NULL);

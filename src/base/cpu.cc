@@ -630,7 +630,7 @@ CPU::CPU()
           auxv_cache_line_size = cachebsize;
         }
       }
-#else 
+#else
       }
 #endif
     }

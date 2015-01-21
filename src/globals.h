@@ -76,7 +76,11 @@ namespace internal {
 
 // Determine whether the architecture uses an out-of-line constant pool.
 #if V8_PPC_OOL_CONSTANT_POOL_OPT
+#if V8_TARGET_ARCH_PPC
 #define V8_OOL_CONSTANT_POOL 1
+#else
+#define V8_OOL_CONSTANT_POOL 0
+#endif
 #else
 #define V8_OOL_CONSTANT_POOL 0
 #endif
