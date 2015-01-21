@@ -50,7 +50,9 @@ class CPU FINAL {
   int variant() const { return variant_; }
   static const int NVIDIA_DENVER = 0x0;
   int part() const { return part_; }
+#ifdef V8_PPC_CACHE_LINE_SIZE_OPT
   int cache_line_size() const { return cache_line_size_; }
+#endif
 
   // ARM-specific part codes
   static const int ARM_CORTEX_A5 = 0xc05;
@@ -110,7 +112,9 @@ class CPU FINAL {
   int architecture_;
   int variant_;
   int part_;
+#ifdef V8_PPC_CACHE_LINE_SIZE_OPT
   int cache_line_size_;
+#endif
   bool has_fpu_;
   bool has_cmov_;
   bool has_sahf_;

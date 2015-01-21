@@ -300,8 +300,10 @@ static bool HasListItem(const char* list, const char* item) {
 
 #endif  // V8_HOST_ARCH_IA32 || V8_HOST_ARCH_X64
 
+#ifdef V8_PPC_CACHE_LINE_SIZE_OPT
 #define UNKNOWN_CACHE_LINE_SIZE 0
 
+#endif
 CPU::CPU()
     : stepping_(0),
       model_(0),
@@ -313,7 +315,9 @@ CPU::CPU()
       architecture_(0),
       variant_(-1),
       part_(0),
+#ifdef V8_PPC_CACHE_LINE_SIZE_OPT
       cache_line_size_(UNKNOWN_CACHE_LINE_SIZE),
+#endif
       has_fpu_(false),
       has_cmov_(false),
       has_sahf_(false),
@@ -598,7 +602,9 @@ CPU::CPU()
 #if V8_OS_LINUX
   // Read processor info from /proc/self/auxv.
   char* auxv_cpu_type = NULL;
+#ifdef V8_PPC_CACHE_LINE_SIZE_OPT
   unsigned auxv_cache_line_size = 0;
+#endif
   FILE* fp = fopen("/proc/self/auxv", "r");
   if (fp != NULL) {
 #if V8_TARGET_ARCH_PPC64
@@ -614,6 +620,7 @@ CPU::CPU()
       if (entry.a_type == AT_PLATFORM) {
         auxv_cpu_type = reinterpret_cast<char*>(entry.a_un.a_val);
         break;
+#ifdef V8_PPC_CACHE_LINE_SIZE_OPT
       } else if (entry.a_type == AT_DCACHEBSIZE ||
                  entry.a_type == AT_ICACHEBSIZE ||
                  entry.a_type == AT_UCACHEBSIZE) {
@@ -623,6 +630,9 @@ CPU::CPU()
           auxv_cache_line_size = cachebsize;
         }
       }
+#else 
+      }
+#endif
     }
     fclose(fp);
   }
@@ -646,9 +656,11 @@ CPU::CPU()
     }
   }
 
+#ifdef V8_PPC_CACHE_LINE_SIZE_OPT
   if (auxv_cache_line_size > 0) {
     cache_line_size_ = auxv_cache_line_size;
   }
+#endif
 #elif V8_OS_AIX
   switch (_system_configuration.implementation) {
     case POWER_8:

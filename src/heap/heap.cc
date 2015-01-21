@@ -50,7 +50,6 @@
 #include "src/regexp-macro-assembler.h"
 #include "src/mips64/regexp-macro-assembler-mips64.h"
 #endif
-#include "src/full-codegen.h"
 
 namespace v8 {
 namespace internal {

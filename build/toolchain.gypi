@@ -260,6 +260,8 @@
           'V8_PPC_PAGESIZE_OPT', # optimization pending contribution
           'V8_PPC_TAGGING_OPT', # optimization pending contribution
           'V8_PPC_SIMULATOR', # feature pending contribution
+          'V8_PPC_OOL_CONSTANT_POOL_OPT', # feature pending contribution
+          'V8_PPC_CACHE_LINE_SIZE_OPT', # feature pending contgribution
         ],
         'conditions': [
           ['v8_target_arch=="ppc64"', {

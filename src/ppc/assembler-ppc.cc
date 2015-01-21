@@ -86,9 +86,11 @@ void CpuFeatures::ProbeImpl(bool cross_compile) {
     // Assume support
     supported_ |= (1u << FPU);
   }
+#ifdef V8_PPC_CACHE_LINE_SIZE_OPT
   if (cpu.cache_line_size() != 0) {
     cache_line_size_ = cpu.cache_line_size();
   }
+#endif
 #elif V8_OS_AIX
   // Assume support FP support and default cache line size
   supported_ |= (1u << FPU);
