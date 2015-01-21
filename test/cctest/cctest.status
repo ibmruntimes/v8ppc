@@ -214,8 +214,8 @@
 
   # Can be removed when AIX debug mode replaces -O0 with -Og (GCC 4.8).
   'test-run-machops/RunFloat64Ceil': [PASS, ['mode == debug', FAIL]],
-  'test-run-machops/RunFloat64Truncate': [PASS, ['mode == debug', FAIL]],
-  'test-run-machops/RunFloat64TiesAway': [PASS, ['mode == debug', FAIL]],
+  'test-run-machops/RunFloat64RoundTruncate': [PASS, ['mode == debug', FAIL]],
+  'test-run-machops/RunFloat64RoundTiesAway': [PASS, ['mode == debug', FAIL]],
 }],  # 'system == aix'
 
 ##############################################################################
