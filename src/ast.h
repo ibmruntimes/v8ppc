@@ -1102,19 +1102,32 @@ class WithStatement FINAL : public Statement {
   Expression* expression() const { return expression_; }
   Statement* statement() const { return statement_; }
 
+  void set_base_id(int id) { base_id_ = id; }
+  static int num_ids() { return parent_num_ids() + 1; }
+  BailoutId EntryId() const { return BailoutId(local_id(0)); }
+
  protected:
-  WithStatement(
-      Zone* zone, Scope* scope,
-      Expression* expression, Statement* statement, int pos)
+  WithStatement(Zone* zone, Scope* scope, Expression* expression,
+                Statement* statement, int pos)
       : Statement(zone, pos),
         scope_(scope),
         expression_(expression),
-        statement_(statement) { }
+        statement_(statement),
+        base_id_(BailoutId::None().ToInt()) {}
+  static int parent_num_ids() { return 0; }
+
+  int base_id() const {
+    DCHECK(!BailoutId(base_id_).IsNone());
+    return base_id_;
+  }
 
  private:
+  int local_id(int n) const { return base_id() + parent_num_ids() + n; }
+
   Scope* scope_;
   Expression* expression_;
   Statement* statement_;
+  int base_id_;
 };
 
 
@@ -2621,7 +2634,7 @@ class ClassLiteral FINAL : public Expression {
   Scope* scope() const { return scope_; }
   VariableProxy* class_variable_proxy() const { return class_variable_proxy_; }
   Expression* extends() const { return extends_; }
-  Expression* constructor() const { return constructor_; }
+  FunctionLiteral* constructor() const { return constructor_; }
   ZoneList<Property*>* properties() const { return properties_; }
   int start_position() const { return position(); }
   int end_position() const { return end_position_; }
@@ -2634,7 +2647,7 @@ class ClassLiteral FINAL : public Expression {
  protected:
   ClassLiteral(Zone* zone, const AstRawString* name, Scope* scope,
                VariableProxy* class_variable_proxy, Expression* extends,
-               Expression* constructor, ZoneList<Property*>* properties,
+               FunctionLiteral* constructor, ZoneList<Property*>* properties,
                int start_position, int end_position)
       : Expression(zone, start_position),
         raw_name_(name),
@@ -2653,7 +2666,7 @@ class ClassLiteral FINAL : public Expression {
   Scope* scope_;
   VariableProxy* class_variable_proxy_;
   Expression* extends_;
-  Expression* constructor_;
+  FunctionLiteral* constructor_;
   ZoneList<Property*>* properties_;
   int end_position_;
 };
@@ -3496,7 +3509,7 @@ class AstNodeFactory FINAL BASE_EMBEDDED {
 
   ClassLiteral* NewClassLiteral(const AstRawString* name, Scope* scope,
                                 VariableProxy* proxy, Expression* extends,
-                                Expression* constructor,
+                                FunctionLiteral* constructor,
                                 ZoneList<ObjectLiteral::Property*>* properties,
                                 int start_position, int end_position) {
     return new (zone_)
