@@ -2905,8 +2905,8 @@ void MacroAssembler::LoadTransitionedArrayMapConditional(
                  Context::SlotOffset(Context::JS_ARRAY_MAPS_INDEX)));
   size_t offset = expected_kind * kPointerSize +
       FixedArrayBase::kHeaderSize;
-  LoadP(scratch, FieldMemOperand(scratch, offset));
-  cmp(map_in_out, scratch);
+  LoadP(ip, FieldMemOperand(scratch, offset));
+  cmp(map_in_out, ip);
   bne(no_map_match);
 
   // Use the transitioned cached map.
