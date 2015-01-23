@@ -4005,7 +4005,7 @@ void NameDictionaryLookupStub::GenerateNegativeLookup(
     __ and_(index, index, ip);
 
     // Scale the index by multiplying by the entry size.
-    DCHECK(NameDictionary::kEntrySize == 3);
+    STATIC_ASSERT(NameDictionary::kEntrySize == 3);
     __ ShiftLeftImm(ip, index, Operand(1));
     __ add(index, index, ip);  // index *= 3.
 

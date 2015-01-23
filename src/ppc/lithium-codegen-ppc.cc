@@ -4678,7 +4678,7 @@ void LCodeGen::DoStoreKeyedFixedDoubleArray(LStoreKeyed* instr) {
   }
 
   if (instr->NeedsCanonicalization()) {
-    // Force a canonical NaN.
+    // Turn potential sNaN value into qNaN.
     __ CanonicalizeNaN(double_scratch, value);
     __ stfd(double_scratch, MemOperand(elements, base_offset));
   } else {

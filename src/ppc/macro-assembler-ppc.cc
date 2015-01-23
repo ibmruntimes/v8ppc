@@ -613,26 +613,8 @@ MemOperand MacroAssembler::SafepointRegistersAndDoublesSlot(Register reg) {
 
 void MacroAssembler::CanonicalizeNaN(const DoubleRegister dst,
                                      const DoubleRegister src) {
-  Label done;
-
-  // Test for NaN
-  fcmpu(src, src);
-
-  if (dst.is(src)) {
-    bordered(&done);
-  } else {
-    Label is_nan;
-    bunordered(&is_nan);
-    fmr(dst, src);
-    b(&done);
-    bind(&is_nan);
-  }
-
-  // Replace with canonical NaN.
-  double nan_value = FixedDoubleArray::canonical_not_the_hole_nan_as_double();
-  LoadDoubleLiteral(dst, nan_value, r0);
-
-  bind(&done);
+  // Turn potential sNaN into qNaN.
+  fadd(dst, src, kDoubleRegZero);
 }
 
 
@@ -1943,7 +1925,7 @@ void MacroAssembler::StoreNumberToDoubleElements(
            DONT_DO_SMI_CHECK);
 
   lfd(double_scratch, FieldMemOperand(value_reg, HeapNumber::kValueOffset));
-  // Force a canonical NaN.
+  // Double value, turn potential sNaN into qNaN.
   CanonicalizeNaN(double_scratch);
   b(&store);
 
