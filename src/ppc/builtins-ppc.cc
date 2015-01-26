@@ -306,6 +306,34 @@ void Builtins::Generate_InOptimizationQueue(MacroAssembler* masm) {
 }
 
 
+static void Generate_Runtime_NewObject(MacroAssembler* masm,
+                                       bool create_memento,
+                                       Register original_constructor,
+                                       Label* count_incremented,
+                                       Label* allocated) {
+  // ----------- S t a t e -------------
+  //  -- r4: argument for Runtime_NewObject
+  // -----------------------------------
+  Register result = r7;
+
+  if (create_memento) {
+    // Get the cell or allocation site.
+    __ LoadP(r5, MemOperand(sp, 2 * kPointerSize));
+    __ Push(r5, r4, original_constructor);
+    __ CallRuntime(Runtime::kNewObjectWithAllocationSite, 3);
+    __ mr(result, r3);
+    // Runtime_NewObjectWithAllocationSite increments allocation count.
+    // Skip the increment.
+    __ b(count_incremented);
+  } else {
+    __ Push(r4, original_constructor);
+    __ CallRuntime(Runtime::kNewObject, 2);
+    __ mr(result, r3);
+    __ b(allocated);
+  }
+}
+
+
 static void Generate_JSConstructStubHelper(MacroAssembler* masm,
                                            bool is_api_function,
                                            bool create_memento) {
@@ -313,6 +341,7 @@ static void Generate_JSConstructStubHelper(MacroAssembler* masm,
   //  -- r3     : number of arguments
   //  -- r4     : constructor function
   //  -- r5     : allocation site or undefined
+  //  -- r6     : original constructor
   //  -- lr     : return address
   //  -- sp[...]: constructor arguments
   // -----------------------------------
@@ -327,18 +356,25 @@ static void Generate_JSConstructStubHelper(MacroAssembler* masm,
     FrameAndConstantPoolScope scope(masm, StackFrame::CONSTRUCT);
 
     if (create_memento) {
-      __ AssertUndefinedOrAllocationSite(r5, r6);
+      __ AssertUndefinedOrAllocationSite(r5, r7);
       __ push(r5);
     }
 
     // Preserve the two incoming parameters on the stack.
     __ SmiTag(r3);
-    __ push(r3);  // Smi-tagged arguments count.
-    __ push(r4);  // Constructor function.
+    __ Push(r3, r4);
+
+    Label rt_call, allocated, normal_new, count_incremented;
+    __ cmp(r4, r6);
+    __ beq(&normal_new);
+
+    // Original constructor and function are different.
+    Generate_Runtime_NewObject(masm, create_memento, r6, &count_incremented,
+                               &allocated);
+    __ bind(&normal_new);
 
     // Try to allocate the object without transitioning into C code. If any of
     // the preconditions is not met, the code bails out to the runtime call.
-    Label rt_call, allocated;
     if (FLAG_inline_new) {
       Label undo_allocation;
       ExternalReference debug_step_in_fp =
@@ -566,27 +602,8 @@ static void Generate_JSConstructStubHelper(MacroAssembler* masm,
     // Allocate the new receiver object using the runtime call.
     // r4: constructor function
     __ bind(&rt_call);
-    if (create_memento) {
-      // Get the cell or allocation site.
-      __ LoadP(r5, MemOperand(sp, 2 * kPointerSize));
-      __ push(r5);
-    }
-
-    __ push(r4);  // argument for Runtime_NewObject
-    if (create_memento) {
-      __ CallRuntime(Runtime::kNewObjectWithAllocationSite, 2);
-    } else {
-      __ CallRuntime(Runtime::kNewObject, 1);
-    }
-    __ mr(r7, r3);
-
-    // If we ended up using the runtime, and we want a memento, then the
-    // runtime call made it for us, and we shouldn't do create count
-    // increment.
-    Label count_incremented;
-    if (create_memento) {
-      __ b(&count_incremented);
-    }
+    Generate_Runtime_NewObject(masm, create_memento, r4, &count_incremented,
+                               &allocated);
 
     // Receiver for constructor call allocated.
     // r7: JSObject
