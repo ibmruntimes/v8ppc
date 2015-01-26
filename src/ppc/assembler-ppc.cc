@@ -444,17 +444,27 @@ void Assembler::target_at_put(int pos, int target_pos) {
   // check which type of branch this is 16 or 26 bit offset
   if (BX == opcode) {
     int imm26 = target_pos - pos;
-    DCHECK((imm26 & (kAAMask | kLKMask)) == 0);
-    instr &= ((~kImm26Mask) | kAAMask | kLKMask);
-    DCHECK(is_int26(imm26));
-    instr_at_put(pos, instr | (imm26 & kImm26Mask));
+    DCHECK(is_int26(imm26) && (imm26 & (kAAMask | kLKMask)) == 0);
+    if (imm26 == kInstrSize && !(instr & kLKMask)) {
+      // Branch to next instr without link.
+      instr = ORI;  // nop: ori, 0,0,0
+    } else {
+      instr &= ((~kImm26Mask) | kAAMask | kLKMask);
+      instr |= (imm26 & kImm26Mask);
+    }
+    instr_at_put(pos, instr);
     return;
   } else if (BCX == opcode) {
     int imm16 = target_pos - pos;
-    DCHECK((imm16 & (kAAMask | kLKMask)) == 0);
-    instr &= ((~kImm16Mask) | kAAMask | kLKMask);
-    DCHECK(is_int16(imm16));
-    instr_at_put(pos, instr | (imm16 & kImm16Mask));
+    DCHECK(is_int16(imm16) && (imm16 & (kAAMask | kLKMask)) == 0);
+    if (imm16 == kInstrSize && !(instr & kLKMask)) {
+      // Branch to next instr without link.
+      instr = ORI;  // nop: ori, 0,0,0
+    } else {
+      instr &= ((~kImm16Mask) | kAAMask | kLKMask);
+      instr |= (imm16 & kImm16Mask);
+    }
+    instr_at_put(pos, instr);
     return;
   } else if ((instr & ~kImm26Mask) == 0) {
     DCHECK(target_pos == kEndOfChain || target_pos >= 0);
