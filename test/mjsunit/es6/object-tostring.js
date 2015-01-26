@@ -131,3 +131,9 @@ function testObjectToStringPropertyDesc() {
   assertTrue(desc.configurable);
 }
 testObjectToStringPropertyDesc();
+
+function testObjectToStringOwnNonStringValue() {
+  var obj = Object.defineProperty({}, Symbol.toStringTag, { value: 1 });
+  assertEquals("[object ???]", ({}).toString.call(obj));
+}
+testObjectToStringOwnNonStringValue();

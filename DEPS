@@ -8,7 +8,7 @@ vars = {
 
 deps = {
   "v8/build/gyp":
-    Var("git_url") + "/external/gyp.git" + "@" + "adb7d24b9fc166f01ab2da50478556b518a9218f",
+    Var("git_url") + "/external/gyp.git" + "@" + "b28bd7ddd1438c98f93a8e5383b7daceb572a3fb",
   "v8/third_party/icu":
     Var("git_url") + "/chromium/deps/icu.git" + "@" + "4e3266f32c62d30a3f9e2232a753c60129d1e670",
   "v8/buildtools":
@@ -18,7 +18,7 @@ deps = {
   "v8/testing/gmock":
     Var("git_url") + "/external/googlemock.git" + "@" + "29763965ab52f24565299976b936d1265cb6a271",  # from svn revision 501
   "v8/tools/clang":
-    Var("git_url") + "/chromium/src/tools/clang.git" + "@" + "97bfed3644c03f48864c479b8714f08ed80c5d13",
+    Var("git_url") + "/chromium/src/tools/clang.git" + "@" + "853a3150b369e5dcd62d7429998bfafe8158e16e",
 }
 
 deps_os = {
@@ -86,11 +86,6 @@ hooks = [
     'name': 'clang',
     'pattern': '.',
     'action': ['python', 'v8/tools/clang/scripts/update.py', '--if-needed'],
-  },
-  {
-    # Generate v8 version based on the last git tag.
-    "pattern": ".",
-    "action": ["python", "v8/build/generate_version.py"],
   },
   {
     # A change to a .gyp, .gypi, or to GYP itself should run the generator.

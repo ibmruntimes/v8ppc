@@ -36,6 +36,7 @@ from common_includes import *
 
 PUSH_MSG_GIT_SUFFIX = " (based on %s)"
 PUSH_MSG_GIT_RE = re.compile(r".* \(based on (?P<git_rev>[a-fA-F0-9]+)\)$")
+VERSION_RE = re.compile(r"^\d+\.\d+\.\d+(?:\.\d+)?$")
 
 class Preparation(Step):
   MESSAGE = "Preparation."
@@ -43,6 +44,9 @@ class Preparation(Step):
   def RunStep(self):
     self.InitialEnvironmentChecks(self.default_cwd)
     self.CommonPrepare()
+
+    # Make sure tags are fetched.
+    self.Git("fetch origin +refs/tags/*:refs/tags/*")
 
     if(self["current_branch"] == self.Config("TRUNKBRANCH")
        or self["current_branch"] == self.Config("BRANCHNAME")):
@@ -109,55 +113,37 @@ class DetectLastPush(Step):
     self["last_push_bleeding_edge"] = last_push_bleeding_edge
 
 
-# TODO(machenbach): Code similarities with bump_up_version.py. Merge after
-# turning this script into a pure git script.
-class GetCurrentBleedingEdgeVersion(Step):
-  MESSAGE = "Get latest bleeding edge version."
+class GetLatestVersion(Step):
+  MESSAGE = "Get latest version from tags."
 
   def RunStep(self):
-    self.GitCheckoutFile(VERSION_FILE, self.vc.RemoteMasterBranch())
-
-    # Store latest version.
-    self.ReadAndPersistVersion("latest_")
+    versions = sorted(filter(VERSION_RE.match, self.vc.GetTags()),
+                      key=SortingKey, reverse=True)
+    self.StoreVersion(versions[0], "latest_")
     self["latest_version"] = self.ArrayToVersion("latest_")
-    print "Bleeding edge version: %s" % self["latest_version"]
+
+    # The version file on master can be used to bump up major/minor at
+    # branch time.
+    self.GitCheckoutFile(VERSION_FILE, self.vc.RemoteMasterBranch())
+    self.ReadAndPersistVersion("master_")
+    self["master_version"] = self.ArrayToVersion("master_")
+
+    if SortingKey(self["master_version"]) > SortingKey(self["latest_version"]):
+      self["latest_version"] = self["master_version"]
+      self.StoreVersion(self["latest_version"], "latest_")
+
+    print "Determined latest version %s" % self["latest_version"]
 
 
 class IncrementVersion(Step):
   MESSAGE = "Increment version number."
 
   def RunStep(self):
-    # Retrieve current version from last trunk push.
-    self.GitCheckoutFile(VERSION_FILE, self["last_push_trunk"])
-    self.ReadAndPersistVersion()
-    self["trunk_version"] = self.ArrayToVersion("")
-
-    if self["latest_build"] == "9999":  # pragma: no cover
-      # If version control on bleeding edge was switched off, just use the last
-      # trunk version.
-      self["latest_version"] = self["trunk_version"]
-
-    if SortingKey(self["trunk_version"]) < SortingKey(self["latest_version"]):
-      # If the version on bleeding_edge is newer than on trunk, use it.
-      self.GitCheckoutFile(VERSION_FILE, self.vc.RemoteMasterBranch())
-      self.ReadAndPersistVersion()
-
-    if self.Confirm(("Automatically increment BUILD_NUMBER? (Saying 'n' will "
-                     "fire up your EDITOR on %s so you can make arbitrary "
-                     "changes. When you're done, save the file and exit your "
-                     "EDITOR.)" % VERSION_FILE)):
-
-      text = FileToText(os.path.join(self.default_cwd, VERSION_FILE))
-      text = MSub(r"(?<=#define BUILD_NUMBER)(?P<space>\s+)\d*$",
-                  r"\g<space>%s" % str(int(self["build"]) + 1),
-                  text)
-      TextToFile(text, os.path.join(self.default_cwd, VERSION_FILE))
-    else:
-      self.Editor(os.path.join(self.default_cwd, VERSION_FILE))
-
     # Variables prefixed with 'new_' contain the new version numbers for the
     # ongoing trunk push.
-    self.ReadAndPersistVersion("new_")
+    self["new_major"] = self["latest_major"]
+    self["new_minor"] = self["latest_minor"]
+    self["new_build"] = str(int(self["latest_build"]) + 1)
 
     # Make sure patch level is 0 in a new push.
     self["new_patch"] = "0"
@@ -299,16 +285,41 @@ class ApplyChanges(Step):
   def RunStep(self):
     self.ApplyPatch(self.Config("PATCH_FILE"))
     os.remove(self.Config("PATCH_FILE"))
+    # The change log has been modified by the patch. Reset it to the version
+    # on trunk and apply the exact changes determined by this PrepareChangeLog
+    # step above.
+    self.GitCheckoutFile(CHANGELOG_FILE, self.vc.RemoteCandidateBranch())
+    # The version file has been modified by the patch. Reset it to the version
+    # on trunk.
+    self.GitCheckoutFile(VERSION_FILE, self.vc.RemoteCandidateBranch())
+
+
+class CommitSquash(Step):
+  MESSAGE = "Commit to local candidates branch."
+
+  def RunStep(self):
+    # Make a first commit with a slightly different title to not confuse
+    # the tagging.
+    msg = FileToText(self.Config("COMMITMSG_FILE")).splitlines()
+    msg[0] = msg[0].replace("(based on", "(squashed - based on")
+    self.GitCommit(message = "\n".join(msg))
+
+
+class PrepareVersionBranch(Step):
+  MESSAGE = "Prepare new branch to commit version and changelog file."
+
+  def RunStep(self):
+    self.GitCheckout("master")
+    self.Git("fetch")
+    self.GitDeleteBranch(self.Config("TRUNKBRANCH"))
+    self.GitCreateBranch(self.Config("TRUNKBRANCH"),
+                         self.vc.RemoteCandidateBranch())
 
 
 class AddChangeLog(Step):
   MESSAGE = "Add ChangeLog changes to trunk branch."
 
   def RunStep(self):
-    # The change log has been modified by the patch. Reset it to the version
-    # on trunk and apply the exact changes determined by this PrepareChangeLog
-    # step above.
-    self.GitCheckoutFile(CHANGELOG_FILE, self.vc.RemoteCandidateBranch())
     changelog_entry = FileToText(self.Config("CHANGELOG_ENTRY_FILE"))
     old_change_log = FileToText(os.path.join(self.default_cwd, CHANGELOG_FILE))
     new_change_log = "%s\n\n\n%s" % (changelog_entry, old_change_log)
@@ -320,14 +331,11 @@ class SetVersion(Step):
   MESSAGE = "Set correct version for trunk."
 
   def RunStep(self):
-    # The version file has been modified by the patch. Reset it to the version
-    # on trunk and apply the correct version.
-    self.GitCheckoutFile(VERSION_FILE, self.vc.RemoteCandidateBranch())
     self.SetVersion(os.path.join(self.default_cwd, VERSION_FILE), "new_")
 
 
-class CommitTrunk(Step):
-  MESSAGE = "Commit to local trunk branch."
+class CommitCandidate(Step):
+  MESSAGE = "Commit version and changelog to local candidates branch."
 
   def RunStep(self):
     self.GitCommit(file_name = self.Config("COMMITMSG_FILE"))
@@ -419,7 +427,7 @@ class PushToTrunk(ScriptsBase):
       FreshBranch,
       PreparePushRevision,
       DetectLastPush,
-      GetCurrentBleedingEdgeVersion,
+      GetLatestVersion,
       IncrementVersion,
       PrepareChangeLog,
       EditChangeLog,
@@ -427,10 +435,13 @@ class PushToTrunk(ScriptsBase):
       SquashCommits,
       NewBranch,
       ApplyChanges,
+      CommitSquash,
+      SanityCheck,
+      Land,
+      PrepareVersionBranch,
       AddChangeLog,
       SetVersion,
-      CommitTrunk,
-      SanityCheck,
+      CommitCandidate,
       Land,
       TagRevision,
       CleanUp,

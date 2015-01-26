@@ -7794,12 +7794,12 @@ class Trivial2 {
 };
 
 
-void CheckInternalFields(const v8::PhantomCallbackData<
-    v8::Persistent<v8::Object>, Trivial, Trivial2>& data) {
+void CheckInternalFields(
+    const v8::PhantomCallbackData<v8::Persistent<v8::Object>>& data) {
   v8::Persistent<v8::Object>* handle = data.GetParameter();
   handle->Reset();
-  Trivial* t1 = data.GetInternalField1();
-  Trivial2* t2 = data.GetInternalField2();
+  Trivial* t1 = reinterpret_cast<Trivial*>(data.GetInternalField1());
+  Trivial2* t2 = reinterpret_cast<Trivial2*>(data.GetInternalField2());
   CHECK_EQ(42, t1->x());
   CHECK_EQ(103, t2->x());
   t1->set_x(1729);
@@ -7835,8 +7835,8 @@ void InternalFieldCallback(bool global_gc) {
         reinterpret_cast<Trivial2*>(obj->GetAlignedPointerFromInternalField(1));
     CHECK_EQ(103, t2->x());
 
-    handle.SetPhantom<v8::Persistent<v8::Object>, Trivial, Trivial2>(
-        &handle, 0, 1, CheckInternalFields);
+    handle.SetPhantom<v8::Persistent<v8::Object>>(&handle, CheckInternalFields,
+                                                  0, 1);
     if (!global_gc) {
       handle.MarkIndependent();
     }
@@ -15203,6 +15203,9 @@ UNINITIALIZED_TEST(SetJitCodeEventHandler) {
   i::Isolate* i_isolate = reinterpret_cast<i::Isolate*>(isolate);
   i::Heap* heap = i_isolate->heap();
 
+  // Start with a clean slate.
+  heap->CollectAllAvailableGarbage("TestSetJitCodeEventHandler_Prepare");
+
   {
     v8::HandleScope scope(isolate);
     i::HashMap code(MatchPointers);
@@ -15236,7 +15239,7 @@ UNINITIALIZED_TEST(SetJitCodeEventHandler) {
     }
 
     // Force code movement.
-    heap->CollectAllAvailableGarbage("TestSetJitCodeEventHandler");
+    heap->CollectAllAvailableGarbage("TestSetJitCodeEventHandler_Move");
 
     isolate->SetJitCodeEventHandler(v8::kJitCodeEventDefault, NULL);
 
@@ -15298,6 +15301,12 @@ THREADED_TEST(ExternalAllocatedMemory) {
            isolate->AdjustAmountOfExternalAllocatedMemory(kSize));
   CHECK_EQ(baseline,
            isolate->AdjustAmountOfExternalAllocatedMemory(-kSize));
+  const int64_t kTriggerGCSize =
+      v8::internal::Internals::kExternalAllocationLimit + 1;
+  CHECK_EQ(baseline + kTriggerGCSize,
+           isolate->AdjustAmountOfExternalAllocatedMemory(kTriggerGCSize));
+  CHECK_EQ(baseline,
+           isolate->AdjustAmountOfExternalAllocatedMemory(-kTriggerGCSize));
 }
 
 
@@ -24255,12 +24264,11 @@ void RunStreamingTest(const char** chunks,
   task->Run();
   delete task;
 
-  v8::ScriptOrigin origin(v8_str("http://foo.com"));
-  char* full_source = TestSourceStream::FullSourceString(chunks);
-
-  // The possible errors are only produced while compiling.
+  // Possible errors are only produced while compiling.
   CHECK_EQ(false, try_catch.HasCaught());
 
+  v8::ScriptOrigin origin(v8_str("http://foo.com"));
+  char* full_source = TestSourceStream::FullSourceString(chunks);
   v8::Handle<Script> script = v8::ScriptCompiler::Compile(
       isolate, &source, v8_str(full_source), origin);
   if (expected_success) {
@@ -24599,6 +24607,48 @@ TEST(StreamingUtf8ScriptWithMultipleMultibyteCharactersSomeSplit2) {
   chunk2[1] = reference[2];
   const char* chunks[] = {chunk1, chunk2, "foo();", NULL};
   RunStreamingTest(chunks, v8::ScriptCompiler::StreamedSource::UTF8);
+}
+
+
+TEST(StreamingWithHarmonyScopes) {
+  // Don't use RunStreamingTest here so that both scripts get to use the same
+  // LocalContext and HandleScope.
+  LocalContext env;
+  v8::Isolate* isolate = env->GetIsolate();
+  v8::HandleScope scope(isolate);
+
+  // First, run a script with a let variable.
+  CompileRun("\"use strict\"; let x = 1;");
+
+  // Then stream a script which (erroneously) tries to introduce the same
+  // variable again.
+  const char* chunks[] = {"\"use strict\"; let x = 2;", NULL};
+
+  v8::TryCatch try_catch;
+  v8::ScriptCompiler::StreamedSource source(
+      new TestSourceStream(chunks),
+      v8::ScriptCompiler::StreamedSource::ONE_BYTE);
+  v8::ScriptCompiler::ScriptStreamingTask* task =
+      v8::ScriptCompiler::StartStreamingScript(isolate, &source);
+  task->Run();
+  delete task;
+
+  // Parsing should succeed (the script will be parsed and compiled in a context
+  // independent way, so the error is not detected).
+  CHECK_EQ(false, try_catch.HasCaught());
+
+  v8::ScriptOrigin origin(v8_str("http://foo.com"));
+  char* full_source = TestSourceStream::FullSourceString(chunks);
+  v8::Handle<Script> script = v8::ScriptCompiler::Compile(
+      isolate, &source, v8_str(full_source), origin);
+  CHECK(!script.IsEmpty());
+  CHECK_EQ(false, try_catch.HasCaught());
+
+  // Running the script exposes the error.
+  v8::Handle<Value> result(script->Run());
+  CHECK(result.IsEmpty());
+  CHECK(try_catch.HasCaught());
+  delete[] full_source;
 }
 
 
