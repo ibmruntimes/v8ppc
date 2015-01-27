@@ -125,6 +125,16 @@ void CallFunctionWithFeedbackDescriptor::Initialize(
 }
 
 
+void CallFunctionWithFeedbackAndVectorDescriptor::Initialize(
+    CallInterfaceDescriptorData* data) {
+  Register registers[] = {cp, r4, r6, r5};
+  Representation representations[] = {
+      Representation::Tagged(), Representation::Tagged(), Representation::Smi(),
+      Representation::Tagged()};
+  data->Initialize(arraysize(registers), registers, representations);
+}
+
+
 void CallConstructDescriptor::Initialize(CallInterfaceDescriptorData* data) {
   // r3 : number of arguments
   // r4 : the function to call
