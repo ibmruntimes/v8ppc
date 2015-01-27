@@ -1314,6 +1314,7 @@ class LConstantD FINAL : public LTemplateInstruction<1, 0, 0> {
   DECLARE_HYDROGEN_ACCESSOR(Constant)
 
   double value() const { return hydrogen()->DoubleValue(); }
+  uint64_t bits() const { return hydrogen()->DoubleValueAsBits(); }
 };
 
 

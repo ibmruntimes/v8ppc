@@ -979,7 +979,9 @@ void Simulator::GetFpArgs(double* x, double* y, intptr_t* z) {
 
 
 // The return value is in d1.
-void Simulator::SetFpResult(const double& result) { fp_registers_[1] = result; }
+void Simulator::SetFpResult(const double& result) {
+  set_d_register_from_double(1, result);
+}
 
 
 void Simulator::TrashCallerSaveRegisters() {
@@ -1834,8 +1836,8 @@ bool Simulator::ExecuteExt2_10bit(Instruction* instr) {
       int rb = instr->RBValue();
       intptr_t ra_val = ra == 0 ? 0 : get_register(ra);
       intptr_t rb_val = get_register(rb);
-      double* dptr = reinterpret_cast<double*>(ReadDW(ra_val + rb_val));
-      set_d_register_from_double(frt, *dptr);
+      int64_t* dptr = reinterpret_cast<int64_t*>(ReadDW(ra_val + rb_val));
+      set_d_register(frt, *dptr);
       if (opcode == LFDUX) {
         DCHECK(ra != 0);
         set_register(ra, ra_val + rb_val);
@@ -1865,9 +1867,8 @@ bool Simulator::ExecuteExt2_10bit(Instruction* instr) {
         int rb = instr->RBValue();
         intptr_t ra_val = ra == 0 ? 0 : get_register(ra);
         intptr_t rb_val = get_register(rb);
-        double frs_val = get_double_from_d_register(frs);
-        int64_t* p = reinterpret_cast<int64_t*>(&frs_val);
-        WriteDW(ra_val + rb_val, *p);
+        int64_t frs_val = get_d_register(frs);
+        WriteDW(ra_val + rb_val, frs_val);
         if (opcode == STFDUX) {
           DCHECK(ra != 0);
           set_register(ra, ra_val + rb_val);
@@ -2091,18 +2092,16 @@ bool Simulator::ExecuteExt2_9bit_part1(Instruction* instr) {
       DCHECK(!instr->Bit(0));
       int frt = instr->RTValue();
       int ra = instr->RAValue();
-      double frt_val = get_double_from_d_register(frt);
-      int64_t* p = reinterpret_cast<int64_t*>(&frt_val);
-      set_register(ra, *p);
+      int64_t frt_val = get_d_register(frt);
+      set_register(ra, frt_val);
       break;
     }
     case MFVSRWZ: {
       DCHECK(!instr->Bit(0));
       int frt = instr->RTValue();
       int ra = instr->RAValue();
-      double frt_val = get_double_from_d_register(frt);
-      int64_t* p = reinterpret_cast<int64_t*>(&frt_val);
-      set_register(ra, static_cast<uint32_t>(*p));
+      int64_t frt_val = get_d_register(frt);
+      set_register(ra, static_cast<uint32_t>(frt_val));
       break;
     }
     case MTVSRD: {
@@ -2110,8 +2109,7 @@ bool Simulator::ExecuteExt2_9bit_part1(Instruction* instr) {
       int frt = instr->RTValue();
       int ra = instr->RAValue();
       int64_t ra_val = get_register(ra);
-      double* p = reinterpret_cast<double*>(&ra_val);
-      set_d_register_from_double(frt, *p);
+      set_d_register(frt, ra_val);
       break;
     }
     case MTVSRWA: {
@@ -2119,8 +2117,7 @@ bool Simulator::ExecuteExt2_9bit_part1(Instruction* instr) {
       int frt = instr->RTValue();
       int ra = instr->RAValue();
       int64_t ra_val = static_cast<int32_t>(get_register(ra));
-      double* p = reinterpret_cast<double*>(&ra_val);
-      set_d_register_from_double(frt, *p);
+      set_d_register(frt, ra_val);
       break;
     }
     case MTVSRWZ: {
@@ -2128,8 +2125,7 @@ bool Simulator::ExecuteExt2_9bit_part1(Instruction* instr) {
       int frt = instr->RTValue();
       int ra = instr->RAValue();
       uint64_t ra_val = static_cast<uint32_t>(get_register(ra));
-      double* p = reinterpret_cast<double*>(&ra_val);
-      set_d_register_from_double(frt, *p);
+      set_d_register(frt, ra_val);
       break;
     }
 #endif
@@ -2984,9 +2980,8 @@ void Simulator::ExecuteExt4(Instruction* instr) {
     case FMR: {
       int frt = instr->RTValue();
       int frb = instr->RBValue();
-      double frb_val = get_double_from_d_register(frb);
-      double frt_val = frb_val;
-      set_d_register_from_double(frt, frt_val);
+      int64_t frb_val = get_d_register(frb);
+      set_d_register(frt, frb_val);
       return;
     }
     case MTFSFI: {
@@ -3003,9 +2998,8 @@ void Simulator::ExecuteExt4(Instruction* instr) {
     }
     case MTFSF: {
       int frb = instr->RBValue();
-      double frb_dval = get_double_from_d_register(frb);
-      int64_t* p = reinterpret_cast<int64_t*>(&frb_dval);
-      int32_t frb_ival = static_cast<int32_t>((*p) & 0xffffffff);
+      int64_t frb_dval = get_d_register(frb);
+      int32_t frb_ival = static_cast<int32_t>((frb_dval) & 0xffffffff);
       int l = instr->Bits(25, 25);
       if (l == 1) {
         fp_condition_reg_ = frb_ival;
@@ -3022,8 +3016,7 @@ void Simulator::ExecuteExt4(Instruction* instr) {
     case MFFS: {
       int frt = instr->RTValue();
       int64_t lval = static_cast<int64_t>(fp_condition_reg_);
-      double* p = reinterpret_cast<double*>(&lval);
-      set_d_register_from_double(frt, *p);
+      set_d_register(frt, lval);
       return;
     }
     case FABS: {
@@ -3580,8 +3573,8 @@ void Simulator::ExecuteGeneric(Instruction* instr) {
       int ra = instr->RAValue();
       int32_t offset = SIGN_EXT_IMM16(instr->Bits(15, 0));
       intptr_t ra_val = ra == 0 ? 0 : get_register(ra);
-      double* dptr = reinterpret_cast<double*>(ReadDW(ra_val + offset));
-      set_d_register_from_double(frt, *dptr);
+      int64_t* dptr = reinterpret_cast<int64_t*>(ReadDW(ra_val + offset));
+      set_d_register(frt, *dptr);
       if (opcode == LFDU) {
         DCHECK(ra != 0);
         set_register(ra, ra_val + offset);
@@ -3611,9 +3604,8 @@ void Simulator::ExecuteGeneric(Instruction* instr) {
       int ra = instr->RAValue();
       int32_t offset = SIGN_EXT_IMM16(instr->Bits(15, 0));
       intptr_t ra_val = ra == 0 ? 0 : get_register(ra);
-      double frs_val = get_double_from_d_register(frs);
-      int64_t* p = reinterpret_cast<int64_t*>(&frs_val);
-      WriteDW(ra_val + offset, *p);
+      int64_t frs_val = get_d_register(frs);
+      WriteDW(ra_val + offset, frs_val);
       if (opcode == STFDU) {
         DCHECK(ra != 0);
         set_register(ra, ra_val + offset);
