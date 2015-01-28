@@ -439,7 +439,13 @@ TEST(LargeObjectSpace) {
     { AllocationResult allocation = lo->AllocateRaw(lo_size, NOT_EXECUTABLE);
       if (allocation.IsRetry()) break;
     }
+#if defined(V8_PPC_PAGESIZE_OPT)
+    // The available value is conservative such that it may report
+    // zero prior to heap exhaustion.
+    CHECK(lo->Available() < available || available == 0);
+#else
     CHECK(lo->Available() < available);
+#endif
   }
 
   CHECK(!lo->IsEmpty());

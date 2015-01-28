@@ -214,7 +214,7 @@ TEST(CodeRange) {
       // Geometrically distributed sizes, greater than
       // Page::kMaxRegularHeapObjectSize (which is greater than code page area).
       // TODO(gc): instead of using 3 use some contant based on code_range_size
-      // kMaxHeapObjectSize.
+      // kMaxRegularHeapObjectSize.
       size_t requested =
           (Page::kMaxRegularHeapObjectSize << (Pseudorandom() % 3)) +
           Pseudorandom() % 5000 + 1;
