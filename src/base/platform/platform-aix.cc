@@ -36,7 +36,6 @@
 #include <sys/resource.h>
 #include <sys/time.h>
 #include <sys/ucontext.h>
-
 #include <errno.h>
 #include <fcntl.h>      // open
 #include <limits.h>
@@ -62,30 +61,6 @@ namespace base {
 static inline void *mmapHelper(size_t len, int prot, int flags,
                                int fildes, off_t  off) {
   void *addr = OS::GetRandomMmapAddr();
-#if V8_TARGET_ARCH_PPC64
-  if (addr) {
-    // We must use MAP_FIXED here to avoid the 0x07000000_00000000
-    // range, which causes loss of precision if addresses are
-    // converted to double precision numbers.
-    DCHECK(!(flags & MAP_VARIABLE));
-    void* mbase;
-    for (int i = 0; i < 10; i++) {
-      mbase = mmap(addr, len, prot, flags | MAP_FIXED, fildes, off);
-      if (mbase != MAP_FAILED) return mbase;
-      // Try again with a different random address.
-      addr = OS::GetRandomMmapAddr();
-    }
-  }
-  // Fall through if we can't get an address in the range we want
-  // after multiple attempts -- just let the system decide (without
-  // MAP_FIXED this time).
-
-  // N.B. This case should never happen given the size of the
-  // randomized range -- in fact looping at all is extremely rare.  If
-  // we ever do hit this case, it is better to let the system allocate
-  // a high address (and bet against its unlikely consumption
-  // introspectively as a double) than to fail outright.
-#endif
   return mmap(addr, len, prot, flags, fildes, off);
 }
 
@@ -185,7 +160,7 @@ std::vector<OS::SharedLibraryAddress> OS::GetSharedLibraryAddresses() {
     addr_buffer[0] = '0';
     addr_buffer[1] = 'x';
     addr_buffer[10] = 0;
-    int rc = read(fd, addr_buffer + 2, 8);
+    ssize_t rc = read(fd, addr_buffer + 2, 8);
     if (rc < 8) break;
     unsigned start = StringToLong(addr_buffer);
     rc = read(fd, addr_buffer + 2, 1);

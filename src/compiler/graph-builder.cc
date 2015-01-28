@@ -2,10 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#if defined(_AIX)
-#include <alloca.h>
-#endif
-
 #include "src/compiler/graph-builder.h"
 
 #include "src/bit-vector.h"

@@ -35,6 +35,7 @@
     'component%': 'static_library',
     'clang_dir%': 'third_party/llvm-build/Release+Asserts',
     'clang_xcode%': 0,
+    'visibility%': 'hidden',
     'v8_enable_backtrace%': 0,
     'v8_enable_i18n_support%': 1,
     'v8_deprecation_warnings': 1,
@@ -149,11 +150,6 @@
         'clang%': 1,
       }, {
         'clang%': 0,
-      }],
-      ['OS=="aix"', {
-        'visibility%': '',
-      }, {
-        'visibility%': 'hidden',
       }],
     ],
     # Default ARM variable settings.

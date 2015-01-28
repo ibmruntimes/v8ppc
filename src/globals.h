@@ -22,6 +22,8 @@
 # define V8_INFINITY std::numeric_limits<double>::infinity()
 #elif V8_LIBC_MSVCRT
 # define V8_INFINITY HUGE_VAL
+#elif V8_OS_AIX
+#define V8_INFINITY (__builtin_inff())
 #else
 # define V8_INFINITY INFINITY
 #endif
@@ -37,10 +39,6 @@
 #define V8_TURBOFAN_TARGET 1
 #else
 #define V8_TURBOFAN_TARGET 0
-#endif
-#if V8_OS_AIX
-#undef V8_INFINITY
-#define V8_INFINITY (__builtin_inff())
 #endif
 
 namespace v8 {

@@ -13,7 +13,7 @@
 #include <signal.h>
 #include <sys/time.h>
 
-#if !(V8_OS_QNX || V8_OS_AIX) && !V8_OS_NACL
+#if !V8_OS_QNX && !V8_OS_NACL && !V8_OS_AIX
 #include <sys/syscall.h>  // NOLINT
 #endif
 
@@ -311,10 +311,6 @@ class SignalHandler : public AllStatic {
   static void Restore() {
 #if !V8_OS_NACL
     if (signal_handler_installed_) {
-#if V8_OS_AIX
-      // Ensure delivery of any pending SIGPROF before removing the handler
-      base::Thread::YieldCPU();
-#endif
       sigaction(SIGPROF, &old_signal_handler_, 0);
       signal_handler_installed_ = false;
     }

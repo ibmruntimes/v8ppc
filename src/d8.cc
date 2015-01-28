@@ -63,6 +63,10 @@
 #endif
 
 #if V8_OS_AIX
+// On AIX if you call malloc with a size of 0 malloc fails.  On linux it
+// allocates a minimum amount.  This seems to be used for things like
+// finding out where the heap is located.  Using __linux_malloc makes
+// the behaviour when running on AIX compatible with what is seen on linux
 #define malloc __linux_malloc
 #endif
 
