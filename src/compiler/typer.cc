@@ -316,14 +316,7 @@ class Typer::Visitor : public Reducer {
     return BoundsOrNone(operand_node);
   }
 
-  Bounds ContextOperand(Node* node) {
-    Bounds result = BoundsOrNone(NodeProperties::GetContextInput(node));
-    DCHECK(result.upper->Maybe(Type::Internal()));
-    // TODO(rossberg): More precisely, instead of the above assertion, we should
-    // back-propagate the constraint that it has to be a subtype of Internal.
-    return result;
-  }
-
+  Bounds WrapContextBoundsForInput(Node* node);
   Type* Weaken(Type* current_type, Type* previous_type);
 
   Zone* zone() { return typer_->zone(); }
@@ -596,6 +589,11 @@ Bounds Typer::Visitor::TypeStart(Node* node) {
 // Common operators.
 
 
+Bounds Typer::Visitor::TypeAlways(Node* node) {
+  return Bounds(Type::None(zone()), Type::Boolean(zone()));
+}
+
+
 Bounds Typer::Visitor::TypeParameter(Node* node) {
   return Bounds::Unbounded(zone());
 }
@@ -672,6 +670,12 @@ Bounds Typer::Visitor::TypePhi(Node* node) {
 
 
 Bounds Typer::Visitor::TypeEffectPhi(Node* node) {
+  UNREACHABLE();
+  return Bounds();
+}
+
+
+Bounds Typer::Visitor::TypeEffectSet(Node* node) {
   UNREACHABLE();
   return Bounds();
 }
@@ -916,11 +920,17 @@ Type* Typer::Visitor::JSShiftRightTyper(Type* lhs, Type* rhs, Typer* t) {
     // Right-shifting a non-negative value cannot make it negative, nor larger.
     min = std::max(min, 0.0);
     max = std::min(max, lhs->Max());
+    if (rhs->Min() > 0 && rhs->Max() <= 31) {
+      max = static_cast<int>(max) >> static_cast<int>(rhs->Min());
+    }
   }
   if (lhs->Max() < 0) {
     // Right-shifting a negative value cannot make it non-negative, nor smaller.
     min = std::max(min, lhs->Min());
     max = std::min(max, -1.0);
+    if (rhs->Min() > 0 && rhs->Max() <= 31) {
+      min = static_cast<int>(min) >> static_cast<int>(rhs->Min());
+    }
   }
   if (rhs->Min() > 0 && rhs->Max() <= 31) {
     // Right-shifting by a positive value yields a small integer value.
@@ -1381,40 +1391,45 @@ Bounds Typer::Visitor::TypeJSStoreContext(Node* node) {
 }
 
 
+Bounds Typer::Visitor::WrapContextBoundsForInput(Node* node) {
+  Bounds outer = BoundsOrNone(NodeProperties::GetContextInput(node));
+  if (outer.upper->Is(Type::None())) {
+    return Bounds(Type::None());
+  } else {
+    DCHECK(outer.upper->Maybe(Type::Internal()));
+    return Bounds(Type::Context(outer.upper, zone()));
+  }
+}
+
+
 Bounds Typer::Visitor::TypeJSCreateFunctionContext(Node* node) {
-  Bounds outer = ContextOperand(node);
-  return Bounds(Type::Context(outer.upper, zone()));
+  return WrapContextBoundsForInput(node);
 }
 
 
 Bounds Typer::Visitor::TypeJSCreateCatchContext(Node* node) {
-  Bounds outer = ContextOperand(node);
-  return Bounds(Type::Context(outer.upper, zone()));
+  return WrapContextBoundsForInput(node);
 }
 
 
 Bounds Typer::Visitor::TypeJSCreateWithContext(Node* node) {
-  Bounds outer = ContextOperand(node);
-  return Bounds(Type::Context(outer.upper, zone()));
+  return WrapContextBoundsForInput(node);
 }
 
 
 Bounds Typer::Visitor::TypeJSCreateBlockContext(Node* node) {
-  Bounds outer = ContextOperand(node);
-  return Bounds(Type::Context(outer.upper, zone()));
+  return WrapContextBoundsForInput(node);
 }
 
 
 Bounds Typer::Visitor::TypeJSCreateModuleContext(Node* node) {
   // TODO(rossberg): this is probably incorrect
-  Bounds outer = ContextOperand(node);
-  return Bounds(Type::Context(outer.upper, zone()));
+  return WrapContextBoundsForInput(node);
 }
 
 
 Bounds Typer::Visitor::TypeJSCreateScriptContext(Node* node) {
-  Bounds outer = ContextOperand(node);
-  return Bounds(Type::Context(outer.upper, zone()));
+  return WrapContextBoundsForInput(node);
 }
 
 

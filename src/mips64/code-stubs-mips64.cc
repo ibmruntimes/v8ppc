@@ -1347,7 +1347,7 @@ void LoadIndexedStringStub::Generate(MacroAssembler* masm) {
 
   Register receiver = LoadDescriptor::ReceiverRegister();
   Register index = LoadDescriptor::NameRegister();
-  Register scratch = a4;
+  Register scratch = a5;
   Register result = v0;
   DCHECK(!scratch.is(receiver) && !scratch.is(index));
   DCHECK(!FLAG_vector_ics ||
@@ -2821,9 +2821,8 @@ static void EmitLoadTypeFeedbackVector(MacroAssembler* masm, Register vector) {
 void CallIC_ArrayStub::Generate(MacroAssembler* masm) {
   // a1 - function
   // a3 - slot id
+  // a2 - vector
   Label miss;
-
-  EmitLoadTypeFeedbackVector(masm, a2);
 
   __ LoadGlobalFunction(Context::ARRAY_FUNCTION_INDEX, at);
   __ Branch(&miss, ne, a1, Operand(at));
@@ -2859,6 +2858,7 @@ void CallIC_ArrayStub::Generate(MacroAssembler* masm) {
 void CallICStub::Generate(MacroAssembler* masm) {
   // a1 - function
   // a3 - slot id (Smi)
+  // a2 - vector
   const int with_types_offset =
       FixedArray::OffsetOfElementAt(TypeFeedbackVector::kWithTypesIndex);
   const int generic_offset =
@@ -2868,8 +2868,6 @@ void CallICStub::Generate(MacroAssembler* masm) {
   Label have_js_function;
   int argc = arg_count();
   ParameterCount actual(argc);
-
-  EmitLoadTypeFeedbackVector(masm, a2);
 
   // The checks. First, does r1 match the recorded monomorphic target?
   __ dsrl(a4, a3, 32 - kPointerSizeLog2);
@@ -4519,6 +4517,20 @@ void KeyedLoadICTrampolineStub::Generate(MacroAssembler* masm) {
 }
 
 
+void CallICTrampolineStub::Generate(MacroAssembler* masm) {
+  EmitLoadTypeFeedbackVector(masm, a2);
+  CallICStub stub(isolate(), state());
+  __ Jump(stub.GetCode(), RelocInfo::CODE_TARGET);
+}
+
+
+void CallIC_ArrayTrampolineStub::Generate(MacroAssembler* masm) {
+  EmitLoadTypeFeedbackVector(masm, a2);
+  CallIC_ArrayStub stub(isolate(), state());
+  __ Jump(stub.GetCode(), RelocInfo::CODE_TARGET);
+}
+
+
 void ProfileEntryHookStub::MaybeCallEntryHook(MacroAssembler* masm) {
   if (masm->isolate()->function_entry_hook() != NULL) {
     ProfileEntryHookStub stub(masm->isolate());
@@ -4887,13 +4899,10 @@ static int AddressOffset(ExternalReference ref0, ExternalReference ref1) {
 // from handle and propagates exceptions.  Restores context.  stack_space
 // - space to be unwound on exit (includes the call JS arguments space and
 // the additional space allocated for the fast call).
-static void CallApiFunctionAndReturn(MacroAssembler* masm,
-                                     Register function_address,
-                                     ExternalReference thunk_ref,
-                                     int stack_space,
-                                     MemOperand* stack_space_operand,
-                                     MemOperand return_value_operand,
-                                     MemOperand* context_restore_operand) {
+static void CallApiFunctionAndReturn(
+    MacroAssembler* masm, Register function_address,
+    ExternalReference thunk_ref, int stack_space, int32_t stack_space_offset,
+    MemOperand return_value_operand, MemOperand* context_restore_operand) {
   Isolate* isolate = masm->isolate();
   ExternalReference next_address =
       ExternalReference::handle_scope_next_address(isolate);
@@ -4987,13 +4996,14 @@ static void CallApiFunctionAndReturn(MacroAssembler* masm,
   if (restore_context) {
     __ ld(cp, *context_restore_operand);
   }
-  if (stack_space_operand != NULL) {
-    __ lw(s0, *stack_space_operand);
+  if (stack_space_offset != kInvalidStackOffset) {
+    DCHECK(kCArgsSlotsSize == 0);
+    __ ld(s0, MemOperand(sp, stack_space_offset));
   } else {
     __ li(s0, Operand(stack_space));
   }
   __ LeaveExitFrame(false, s0, !restore_context, EMIT_RETURN,
-                    stack_space_operand != NULL);
+                    stack_space_offset != kInvalidStackOffset);
   __ bind(&promote_scheduled_exception);
   {
     FrameScope frame(masm, StackFrame::INTERNAL);
@@ -5123,14 +5133,13 @@ static void CallApiFunctionStubHelper(MacroAssembler* masm,
   }
   MemOperand return_value_operand(fp, return_value_offset * kPointerSize);
   int stack_space = 0;
-  MemOperand is_construct_call_operand = MemOperand(sp, 4 * kPointerSize);
-  MemOperand* stack_space_operand = &is_construct_call_operand;
+  int32_t stack_space_offset = 4 * kPointerSize;
   if (argc.is_immediate()) {
     stack_space = argc.immediate() + FCA::kArgsLength + 1;
-    stack_space_operand = NULL;
+    stack_space_offset = kInvalidStackOffset;
   }
   CallApiFunctionAndReturn(masm, api_function_address, thunk_ref, stack_space,
-                           stack_space_operand, return_value_operand,
+                           stack_space_offset, return_value_operand,
                            &context_restore_operand);
 }
 
@@ -5179,7 +5188,7 @@ void CallApiGetterStub::Generate(MacroAssembler* masm) {
   ExternalReference thunk_ref =
       ExternalReference::invoke_accessor_getter_callback(isolate());
   CallApiFunctionAndReturn(masm, api_function_address, thunk_ref,
-                           kStackUnwindSpace, NULL,
+                           kStackUnwindSpace, kInvalidStackOffset,
                            MemOperand(fp, 6 * kPointerSize), NULL);
 }
 

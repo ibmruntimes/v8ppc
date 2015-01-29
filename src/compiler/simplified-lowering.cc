@@ -10,7 +10,6 @@
 #include "src/code-factory.h"
 #include "src/compiler/common-operator.h"
 #include "src/compiler/diamond.h"
-#include "src/compiler/graph-inl.h"
 #include "src/compiler/linkage.h"
 #include "src/compiler/node-matchers.h"
 #include "src/compiler/node-properties-inl.h"
@@ -474,6 +473,8 @@ class RepresentationSelector {
         SetOutput(node, kRepTagged | changer_->TypeFromUpperBound(upper));
         return;
       }
+      case IrOpcode::kAlways:
+        return VisitLeaf(node, kRepBit);
       case IrOpcode::kInt32Constant:
         return VisitLeaf(node, kRepWord32);
       case IrOpcode::kInt64Constant:
@@ -1033,14 +1034,16 @@ class RepresentationSelector {
              node->op()->mnemonic(), replacement->id(),
              replacement->op()->mnemonic()));
     }
-    if (replacement->id() < count_) {
-      // Replace with a previously existing node eagerly.
+    if (replacement->id() < count_ &&
+        GetInfo(replacement)->output == GetInfo(node)->output) {
+      // Replace with a previously existing node eagerly only if the type is the
+      // same.
       node->ReplaceUses(replacement);
     } else {
       // Otherwise, we are replacing a node with a representation change.
       // Such a substitution must be done after all lowering is done, because
-      // new nodes do not have {NodeInfo} entries, and that would confuse
-      // the representation change insertion for uses of it.
+      // changing the type could confuse the representation change
+      // insertion for uses of the node.
       replacements_.push_back(node);
       replacements_.push_back(replacement);
     }

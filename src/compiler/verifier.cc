@@ -11,8 +11,7 @@
 #include <string>
 
 #include "src/bit-vector.h"
-#include "src/compiler/generic-algorithm.h"
-#include "src/compiler/graph-inl.h"
+#include "src/compiler/all-nodes.h"
 #include "src/compiler/graph.h"
 #include "src/compiler/node.h"
 #include "src/compiler/node-properties-inl.h"
@@ -40,12 +39,11 @@ static bool IsUseDefChainLinkPresent(Node* def, Node* use) {
 }
 
 
-class Verifier::Visitor : public NullNodeVisitor {
+class Verifier::Visitor {
  public:
   Visitor(Zone* z, Typing typed) : zone(z), typing(typed) {}
 
-  // Fulfills the PreNodeCallback interface.
-  void Pre(Node* node);
+  void Check(Node* node);
 
   Zone* zone;
   Typing typing;
@@ -113,7 +111,7 @@ class Verifier::Visitor : public NullNodeVisitor {
 };
 
 
-void Verifier::Visitor::Pre(Node* node) {
+void Verifier::Visitor::Check(Node* node) {
   int value_count = node->op()->ValueInputCount();
   int context_count = OperatorProperties::GetContextInputCount(node->op());
   int frame_state_count =
@@ -180,6 +178,16 @@ void Verifier::Visitor::Pre(Node* node) {
   }
 
   switch (node->opcode()) {
+    case IrOpcode::kAlways:
+      // Always has no inputs.
+      CHECK_EQ(0, input_count);
+      // Always uses are Branch.
+      for (auto use : node->uses()) {
+        CHECK(use->opcode() == IrOpcode::kBranch);
+      }
+      // Type is boolean.
+      CheckUpperIs(node, Type::Boolean());
+      break;
     case IrOpcode::kStart:
       // Start has no inputs.
       CHECK_EQ(0, input_count);
@@ -234,12 +242,6 @@ void Verifier::Visitor::Pre(Node* node) {
       // TODO(rossberg): what are the constraints on these?
       // Type is empty.
       CheckNotTyped(node);
-      break;
-    case IrOpcode::kTerminate:
-      // Type is empty.
-      CheckNotTyped(node);
-      CHECK_EQ(1, control_count);
-      CHECK_EQ(input_count, 1 + effect_count);
       break;
     case IrOpcode::kOsrNormalEntry:
     case IrOpcode::kOsrLoopEntry:
@@ -348,6 +350,12 @@ void Verifier::Visitor::Pre(Node* node) {
       Node* control = NodeProperties::GetControlInput(node, 0);
       CHECK_EQ(effect_count, control->op()->ControlInputCount());
       CHECK_EQ(input_count, 1 + effect_count);
+      break;
+    }
+    case IrOpcode::kEffectSet: {
+      CHECK_EQ(0, value_count);
+      CHECK_EQ(0, control_count);
+      CHECK_LT(1, effect_count);
       break;
     }
     case IrOpcode::kValueEffect:
@@ -754,10 +762,11 @@ void Verifier::Visitor::Pre(Node* node) {
 
 
 void Verifier::Run(Graph* graph, Typing typing) {
-  Visitor visitor(graph->zone(), typing);
   CHECK_NE(NULL, graph->start());
   CHECK_NE(NULL, graph->end());
-  graph->VisitNodeInputsFromEnd(&visitor);
+  Zone zone;
+  Visitor visitor(&zone, typing);
+  for (Node* node : AllNodes(&zone, graph).live) visitor.Check(node);
 }
 
 
