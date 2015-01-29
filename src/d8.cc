@@ -62,14 +62,6 @@
 #define DCHECK(condition) assert(condition)
 #endif
 
-#if V8_OS_AIX
-// On AIX if you call malloc with a size of 0 malloc fails.  On linux it
-// allocates a minimum amount.  This seems to be used for things like
-// finding out where the heap is located.  Using __linux_malloc makes
-// the behaviour when running on AIX compatible with what is seen on linux
-#define malloc __linux_malloc
-#endif
-
 namespace v8 {
 
 
@@ -1547,8 +1539,8 @@ class ShellArrayBufferAllocator : public v8::ArrayBuffer::Allocator {
 
 class MockArrayBufferAllocator : public v8::ArrayBuffer::Allocator {
  public:
-  void* Allocate(size_t) OVERRIDE { return malloc(0); }
-  void* AllocateUninitialized(size_t length) OVERRIDE { return malloc(0); }
+  void* Allocate(size_t) OVERRIDE { return malloc(1); }
+  void* AllocateUninitialized(size_t length) OVERRIDE { return malloc(1); }
   void Free(void* p, size_t) OVERRIDE { free(p); }
 };
 

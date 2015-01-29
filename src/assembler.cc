@@ -1461,16 +1461,10 @@ double power_double_double(double x, double y) {
   if ((x == 0.0 || std::isinf(x)) && y != 0.0 && std::isfinite(y)) {
     double f;
     double result = ((x == 0.0) ^ (y > 0)) ? V8_INFINITY : 0;
-#if (defined(V8_OS_AIX))
     /* retain sign if odd integer exponent */
     return ((std::modf(y, &f) == 0.0) && (static_cast<int64_t>(y) & 1))
                ? copysign(result, x)
                : result;
-#else
-    if (std::modf(y, &f) != 0.0) {
-      return result;
-    }
-#endif
   }
 
   if (x == 2.0) {
