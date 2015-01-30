@@ -1276,6 +1276,16 @@ void Assembler::extsh(Register rs, Register ra, RCBit rc) {
 }
 
 
+void Assembler::extsw(Register rs, Register ra, RCBit rc) {
+#if V8_TARGET_ARCH_PPC64
+  emit(EXT2 | EXTSW | ra.code() * B21 | rs.code() * B16 | rc);
+#else
+  // nop on 32-bit
+  DCHECK(rs.is(ra) && rc == LeaveRC);
+#endif
+}
+
+
 void Assembler::neg(Register rt, Register ra, OEBit o, RCBit r) {
   emit(EXT2 | NEGX | rt.code() * B21 | ra.code() * B16 | o | r);
 }
@@ -1448,11 +1458,6 @@ void Assembler::rotrdi(Register ra, Register rs, int sh, RCBit r) {
 
 void Assembler::cntlzd_(Register ra, Register rs, RCBit rc) {
   x_form(EXT2 | CNTLZDX, ra, rs, r0, rc);
-}
-
-
-void Assembler::extsw(Register rs, Register ra, RCBit rc) {
-  emit(EXT2 | EXTSW | ra.code() * B21 | rs.code() * B16 | rc);
 }
 
 

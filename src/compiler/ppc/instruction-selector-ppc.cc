@@ -300,10 +300,6 @@ void InstructionSelector::VisitCheckedLoad(Node* node) {
   }
   AddressingMode addressingMode = kMode_MRR;
   InstructionOperand* offset_operand = g.UseRegister(offset);
-#if V8_TARGET_ARCH_PPC64
-  // TODO(mbrandy): fix paths that produce garbage in upper 32-bits.
-  Emit(kPPC_ExtendSignWord32, offset_operand, offset_operand);
-#endif
   Emit(opcode | AddressingModeField::encode(addressingMode),
        g.DefineAsRegister(node), g.UseRegister(base), offset_operand,
        g.UseOperand(length, kInt16Imm_Unsigned));
@@ -340,10 +336,6 @@ void InstructionSelector::VisitCheckedStore(Node* node) {
   }
   AddressingMode addressingMode = kMode_MRR;
   InstructionOperand* offset_operand = g.UseRegister(offset);
-#if V8_TARGET_ARCH_PPC64
-  // TODO(mbrandy): fix paths that produce garbage in upper 32-bits.
-  Emit(kPPC_ExtendSignWord32, offset_operand, offset_operand);
-#endif
   Emit(opcode | AddressingModeField::encode(addressingMode), nullptr,
        g.UseRegister(base), offset_operand,
        g.UseOperand(length, kInt16Imm_Unsigned), g.UseRegister(value));

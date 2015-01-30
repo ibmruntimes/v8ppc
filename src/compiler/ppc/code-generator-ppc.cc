@@ -399,6 +399,7 @@ Condition FlagsConditionToCondition(FlagsCondition condition) {
   } while (0)
 
 
+// TODO(mbrandy): fix paths that produce garbage in offset's upper 32-bits.
 #define ASSEMBLE_CHECKED_LOAD_FLOAT(asm_instr, asm_instrx, width)    \
   do {                                                               \
     DoubleRegister result = i.OutputDoubleRegister();                \
@@ -406,6 +407,7 @@ Condition FlagsConditionToCondition(FlagsCondition condition) {
     MemOperand operand = i.MemoryOperand(&mode, 0);                  \
     DCHECK_EQ(kMode_MRR, mode);                                      \
     Register offset = operand.rb();                                  \
+    __ extsw(offset, offset);                                        \
     if (HasRegisterInput(instr, 2)) {                                \
       __ cmplw(offset, i.InputRegister(2));                          \
     } else {                                                         \
@@ -423,6 +425,7 @@ Condition FlagsConditionToCondition(FlagsCondition condition) {
   } while (0)
 
 
+// TODO(mbrandy): fix paths that produce garbage in offset's upper 32-bits.
 #define ASSEMBLE_CHECKED_LOAD_INTEGER(asm_instr, asm_instrx)    \
   do {                                                          \
     Register result = i.OutputRegister();                       \
@@ -430,6 +433,7 @@ Condition FlagsConditionToCondition(FlagsCondition condition) {
     MemOperand operand = i.MemoryOperand(&mode, 0);             \
     DCHECK_EQ(kMode_MRR, mode);                                 \
     Register offset = operand.rb();                             \
+    __ extsw(offset, offset);                                   \
     if (HasRegisterInput(instr, 2)) {                           \
       __ cmplw(offset, i.InputRegister(2));                     \
     } else {                                                    \
@@ -447,6 +451,7 @@ Condition FlagsConditionToCondition(FlagsCondition condition) {
   } while (0)
 
 
+// TODO(mbrandy): fix paths that produce garbage in offset's upper 32-bits.
 #define ASSEMBLE_CHECKED_STORE_FLOAT(asm_instr, asm_instrx)     \
   do {                                                          \
     Label done;                                                 \
@@ -454,6 +459,7 @@ Condition FlagsConditionToCondition(FlagsCondition condition) {
     MemOperand operand = i.MemoryOperand(&mode, 0);             \
     DCHECK_EQ(kMode_MRR, mode);                                 \
     Register offset = operand.rb();                             \
+    __ extsw(offset, offset);                                   \
     if (HasRegisterInput(instr, 2)) {                           \
       __ cmplw(offset, i.InputRegister(2));                     \
     } else {                                                    \
@@ -471,6 +477,7 @@ Condition FlagsConditionToCondition(FlagsCondition condition) {
   } while (0)
 
 
+// TODO(mbrandy): fix paths that produce garbage in offset's upper 32-bits.
 #define ASSEMBLE_CHECKED_STORE_INTEGER(asm_instr, asm_instrx)      \
   do {                                                             \
     Label done;                                                    \
@@ -478,6 +485,7 @@ Condition FlagsConditionToCondition(FlagsCondition condition) {
     MemOperand operand = i.MemoryOperand(&mode, 0);                \
     DCHECK_EQ(kMode_MRR, mode);                                    \
     Register offset = operand.rb();                                \
+    __ extsw(offset, offset);                                      \
     if (HasRegisterInput(instr, 2)) {                              \
       __ cmplw(offset, i.InputRegister(2));                        \
     } else {                                                       \
