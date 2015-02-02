@@ -9,7 +9,6 @@
 
 #include "src/allocation.h"
 #include "src/macro-assembler.h"
-#include "src/zone-inl.h"
 
 
 namespace v8 {
@@ -96,10 +95,9 @@ class Deoptimizer : public Malloced {
     SOFT,
     // This last bailout type is not really a bailout, but used by the
     // debugger to deoptimize stack frames to allow inspection.
-    DEBUGGER
+    DEBUGGER,
+    kBailoutTypesWithCodeEntry = SOFT + 1
   };
-
-  static const int kBailoutTypesWithCodeEntry = SOFT + 1;
 
   struct Reason {
     Reason(int r, const char* m, const char* d)

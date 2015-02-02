@@ -186,7 +186,8 @@ DEFINE_IMPLICATION(es_staging, harmony)
   V(harmony_proxies, "harmony proxies")                         \
   V(harmony_sloppy, "harmony features in sloppy mode")          \
   V(harmony_unicode, "harmony unicode escapes")                 \
-  V(harmony_computed_property_names, "harmony computed property names")
+  V(harmony_computed_property_names, "harmony computed property names") \
+  V(harmony_rest_parameters, "harmony rest parameters")
 
 // Features that are complete (but still behind --harmony/es-staging flag).
 #define HARMONY_STAGED(V)                                                 \
@@ -285,11 +286,11 @@ DEFINE_BOOL(use_local_allocation_folding, false, "only fold in basic blocks")
 DEFINE_BOOL(use_write_barrier_elimination, true,
             "eliminate write barriers targeting allocations in optimized code")
 DEFINE_INT(max_inlining_levels, 5, "maximum number of inlining levels")
-DEFINE_INT(max_inlined_source_size, 600,
+DEFINE_INT(max_inlined_source_size, 1150,
            "maximum source size in bytes considered for a single inlining")
-DEFINE_INT(max_inlined_nodes, 196,
+DEFINE_INT(max_inlined_nodes, 200,
            "maximum number of AST nodes considered for a single inlining")
-DEFINE_INT(max_inlined_nodes_cumulative, 400,
+DEFINE_INT(max_inlined_nodes_cumulative, 3000,
            "maximum cumulative number of AST nodes considered for inlining")
 DEFINE_BOOL(loop_invariant_code_motion, true, "loop invariant code motion")
 DEFINE_BOOL(fast_math, true, "faster (but maybe less accurate) math functions")

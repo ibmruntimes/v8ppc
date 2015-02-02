@@ -285,7 +285,7 @@ Instruction* InstructionSequenceTest::NewInstruction(
     InstructionCode code, size_t outputs_size, InstructionOperand** outputs,
     size_t inputs_size, InstructionOperand** inputs, size_t temps_size,
     InstructionOperand** temps) {
-  CHECK_NE(nullptr, current_block_);
+  CHECK(current_block_);
   return Instruction::New(zone(), code, outputs_size, outputs, inputs_size,
                           inputs, temps_size, temps);
 }
@@ -293,34 +293,26 @@ Instruction* InstructionSequenceTest::NewInstruction(
 
 InstructionOperand* InstructionSequenceTest::Unallocated(
     TestOperand op, UnallocatedOperand::ExtendedPolicy policy) {
-  auto unallocated = new (zone()) UnallocatedOperand(policy);
-  unallocated->set_virtual_register(op.vreg_.value_);
-  return unallocated;
+  return new (zone()) UnallocatedOperand(policy, op.vreg_.value_);
 }
 
 
 InstructionOperand* InstructionSequenceTest::Unallocated(
     TestOperand op, UnallocatedOperand::ExtendedPolicy policy,
     UnallocatedOperand::Lifetime lifetime) {
-  auto unallocated = new (zone()) UnallocatedOperand(policy, lifetime);
-  unallocated->set_virtual_register(op.vreg_.value_);
-  return unallocated;
+  return new (zone()) UnallocatedOperand(policy, lifetime, op.vreg_.value_);
 }
 
 
 InstructionOperand* InstructionSequenceTest::Unallocated(
     TestOperand op, UnallocatedOperand::ExtendedPolicy policy, int index) {
-  auto unallocated = new (zone()) UnallocatedOperand(policy, index);
-  unallocated->set_virtual_register(op.vreg_.value_);
-  return unallocated;
+  return new (zone()) UnallocatedOperand(policy, index, op.vreg_.value_);
 }
 
 
 InstructionOperand* InstructionSequenceTest::Unallocated(
     TestOperand op, UnallocatedOperand::BasicPolicy policy, int index) {
-  auto unallocated = new (zone()) UnallocatedOperand(policy, index);
-  unallocated->set_virtual_register(op.vreg_.value_);
-  return unallocated;
+  return new (zone()) UnallocatedOperand(policy, index, op.vreg_.value_);
 }
 
 
@@ -419,7 +411,7 @@ InstructionBlock* InstructionSequenceTest::NewBlock() {
 
 
 void InstructionSequenceTest::WireBlocks() {
-  CHECK_EQ(nullptr, current_block());
+  CHECK(!current_block());
   CHECK(instruction_blocks_.size() == completions_.size());
   size_t offset = 0;
   for (const auto& completion : completions_) {

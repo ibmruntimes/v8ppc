@@ -23,6 +23,7 @@
 #include "src/liveedit.h"
 #include "src/messages.h"
 #include "src/parser.h"
+#include "src/prettyprinter.h"
 #include "src/rewriter.h"
 #include "src/runtime-profiler.h"
 #include "src/scanner-character-streams.h"
@@ -207,7 +208,7 @@ CompilationInfo::~CompilationInfo() {
   // Check that no dependent maps have been added or added dependent maps have
   // been rolled back or committed.
   for (int i = 0; i < DependentCode::kGroupCount; i++) {
-    DCHECK_EQ(NULL, dependencies_[i]);
+    DCHECK(!dependencies_[i]);
   }
 #endif  // DEBUG
 }
@@ -412,7 +413,9 @@ OptimizedCompileJob::Status OptimizedCompileJob::CreateGraph() {
     if (FLAG_trace_opt) {
       OFStream os(stdout);
       os << "[compiling method " << Brief(*info()->closure())
-         << " using TurboFan]" << std::endl;
+         << " using TurboFan";
+      if (info()->is_osr()) os << " OSR";
+      os << "]" << std::endl;
     }
     Timer t(this, &time_taken_to_create_graph_);
     compiler::Pipeline pipeline(info());
@@ -425,7 +428,9 @@ OptimizedCompileJob::Status OptimizedCompileJob::CreateGraph() {
   if (FLAG_trace_opt) {
     OFStream os(stdout);
     os << "[compiling method " << Brief(*info()->closure())
-       << " using Crankshaft]" << std::endl;
+       << " using Crankshaft";
+    if (info()->is_osr()) os << " OSR";
+    os << "]" << std::endl;
   }
 
   if (FLAG_trace_hydrogen) {
@@ -1264,12 +1269,11 @@ MaybeHandle<JSFunction> Compiler::GetFunctionFromEval(
 
 Handle<SharedFunctionInfo> Compiler::CompileScript(
     Handle<String> source, Handle<Object> script_name, int line_offset,
-    int column_offset, bool is_shared_cross_origin, Handle<Context> context,
+    int column_offset, bool is_embedder_debug_script,
+    bool is_shared_cross_origin, Handle<Context> context,
     v8::Extension* extension, ScriptData** cached_data,
     ScriptCompiler::CompileOptions compile_options, NativesFlag natives) {
   Isolate* isolate = source->GetIsolate();
-  HistogramTimerScope total(isolate->counters()->compile_script(), true);
-
   if (compile_options == ScriptCompiler::kNoCompileOptions) {
     cached_data = NULL;
   } else if (compile_options == ScriptCompiler::kProduceParserCache ||
@@ -1294,8 +1298,8 @@ Handle<SharedFunctionInfo> Compiler::CompileScript(
   Handle<SharedFunctionInfo> result;
   if (extension == NULL) {
     maybe_result = compilation_cache->LookupScript(
-        source, script_name, line_offset, column_offset, is_shared_cross_origin,
-        context);
+        source, script_name, line_offset, column_offset,
+        is_embedder_debug_script, is_shared_cross_origin, context);
     if (maybe_result.is_null() && FLAG_serialize_toplevel &&
         compile_options == ScriptCompiler::kConsumeCodeCache &&
         !isolate->debug()->is_loaded()) {
@@ -1329,6 +1333,7 @@ Handle<SharedFunctionInfo> Compiler::CompileScript(
       script->set_column_offset(Smi::FromInt(column_offset));
     }
     script->set_is_shared_cross_origin(is_shared_cross_origin);
+    script->set_is_embedder_debug_script(is_embedder_debug_script);
 
     // Compile the function and add it to the cache.
     CompilationInfoWithZone info(script);
@@ -1589,4 +1594,11 @@ bool CompilationPhase::ShouldProduceTraceOutput() const {
       base::OS::StrChr(const_cast<char*>(FLAG_trace_phase), name_[0]) != NULL);
 }
 
+
+#if DEBUG
+void CompilationInfo::PrintAstForTesting() {
+  PrintF("--- Source from AST ---\n%s\n",
+         PrettyPrinter(isolate(), zone()).PrintProgram(function()));
+}
+#endif
 } }  // namespace v8::internal

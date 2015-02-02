@@ -155,9 +155,6 @@ var kMessages = {
   strict_param_dupe:             ["Strict mode function may not have duplicate parameter names"],
   strict_octal_literal:          ["Octal literals are not allowed in strict mode."],
   template_octal_literal:        ["Octal literals are not allowed in template strings."],
-  strict_duplicate_property:     ["Duplicate data property in object literal not allowed in strict mode"],
-  accessor_data_property:        ["Object literal may not have data and accessor property with the same name"],
-  accessor_get_set:              ["Object literal may not have multiple get/set accessors with the same name"],
   strict_delete:                 ["Delete of an unqualified identifier in strict mode."],
   strict_delete_property:        ["Cannot delete property '", "%0", "' of ", "%1"],
   strict_const:                  ["Use of const in strict mode."],
@@ -168,8 +165,6 @@ var kMessages = {
   strict_caller:                 ["Illegal access to a strict mode caller function."],
   malformed_arrow_function_parameter_list: ["Malformed arrow function parameter list"],
   generator_poison_pill:         ["'caller' and 'arguments' properties may not be accessed on generator functions."],
-  unprotected_let:               ["Illegal let declaration in unprotected statement context."],
-  unprotected_const:             ["Illegal const declaration in unprotected statement context."],
   cant_prevent_ext_external_array_elements: ["Cannot prevent extension of an object with external array elements"],
   redef_external_array_element:  ["Cannot redefine a property of an object with external array elements"],
   harmony_const_assign:          ["Assignment to constant variable."],
@@ -184,7 +179,9 @@ var kMessages = {
   prototype_parent_not_an_object: ["Class extends value does not have valid prototype property ", "%0"],
   duplicate_constructor:         ["A class may only have one constructor"],
   sloppy_lexical:                ["Block-scoped declarations (let, const, function, class) not yet supported outside strict mode"],
-  super_constructor_call:        ["A 'super' constructor call may only appear as the first statement of a function, and its arguments may not access 'this'. Other forms are not yet supported."]
+  super_constructor_call:        ["A 'super' constructor call may only appear as the first statement of a function, and its arguments may not access 'this'. Other forms are not yet supported."],
+  duplicate_proto:               ["Duplicate __proto__ fields are not allowed in object literals"],
+  param_after_rest:              ["Rest parameter must be last formal parameter"]
 };
 
 

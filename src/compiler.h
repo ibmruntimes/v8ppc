@@ -89,7 +89,8 @@ class CompilationInfo {
     kInliningEnabled = 1 << 17,
     kTypingEnabled = 1 << 18,
     kDisableFutureOptimization = 1 << 19,
-    kToplevel = 1 << 20
+    kModule = 1 << 20,
+    kToplevel = 1 << 21
   };
 
   CompilationInfo(Handle<JSFunction> closure, Zone* zone);
@@ -105,6 +106,7 @@ class CompilationInfo {
   bool is_lazy() const { return GetFlag(kLazy); }
   bool is_eval() const { return GetFlag(kEval); }
   bool is_global() const { return GetFlag(kGlobal); }
+  bool is_module() const { return GetFlag(kModule); }
   StrictMode strict_mode() const {
     return GetFlag(kStrictMode) ? STRICT : SLOPPY;
   }
@@ -144,6 +146,11 @@ class CompilationInfo {
   void MarkAsGlobal() {
     DCHECK(!is_lazy());
     SetFlag(kGlobal);
+  }
+
+  void MarkAsModule() {
+    DCHECK(!is_lazy());
+    SetFlag(kModule);
   }
 
   void set_parameter_count(int parameter_count) {
@@ -398,6 +405,16 @@ class CompilationInfo {
     ast_value_factory_owned_ = owned;
   }
 
+  int osr_expr_stack_height() { return osr_expr_stack_height_; }
+  void set_osr_expr_stack_height(int height) {
+    DCHECK(height >= 0);
+    osr_expr_stack_height_ = height;
+  }
+
+#if DEBUG
+  void PrintAstForTesting();
+#endif
+
  protected:
   CompilationInfo(Handle<SharedFunctionInfo> shared_info,
                   Zone* zone);
@@ -519,6 +536,8 @@ class CompilationInfo {
   // This flag is used by the main thread to track whether this compilation
   // should be abandoned due to dependency change.
   bool aborted_due_to_dependency_change_;
+
+  int osr_expr_stack_height_;
 
   DISALLOW_COPY_AND_ASSIGN(CompilationInfo);
 };
@@ -697,9 +716,9 @@ class Compiler : public AllStatic {
   // Compile a String source within a context.
   static Handle<SharedFunctionInfo> CompileScript(
       Handle<String> source, Handle<Object> script_name, int line_offset,
-      int column_offset, bool is_shared_cross_origin, Handle<Context> context,
-      v8::Extension* extension, ScriptData** cached_data,
-      ScriptCompiler::CompileOptions compile_options,
+      int column_offset, bool is_debugger_script, bool is_shared_cross_origin,
+      Handle<Context> context, v8::Extension* extension,
+      ScriptData** cached_data, ScriptCompiler::CompileOptions compile_options,
       NativesFlag is_natives_code);
 
   static Handle<SharedFunctionInfo> CompileStreamedScript(CompilationInfo* info,

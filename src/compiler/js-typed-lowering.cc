@@ -7,7 +7,8 @@
 #include "src/compiler/js-typed-lowering.h"
 #include "src/compiler/node-aux-data-inl.h"
 #include "src/compiler/node-matchers.h"
-#include "src/compiler/node-properties-inl.h"
+#include "src/compiler/node-properties.h"
+#include "src/compiler/operator-properties.h"
 #include "src/types.h"
 
 namespace v8 {
@@ -30,26 +31,23 @@ static void RelaxEffects(Node* node) {
 
 JSTypedLowering::JSTypedLowering(JSGraph* jsgraph, Zone* zone)
     : jsgraph_(jsgraph), simplified_(graph()->zone()), conversions_(zone) {
-  Handle<Object> zero = factory()->NewNumber(0.0);
-  Handle<Object> one = factory()->NewNumber(1.0);
-  zero_range_ = Type::Range(zero, zero, graph()->zone());
-  one_range_ = Type::Range(one, one, graph()->zone());
-  Handle<Object> thirtyone = factory()->NewNumber(31.0);
-  zero_thirtyone_range_ = Type::Range(zero, thirtyone, graph()->zone());
+  zero_range_ = Type::Range(0.0, 1.0, graph()->zone());
+  one_range_ = Type::Range(1.0, 1.0, graph()->zone());
+  zero_thirtyone_range_ = Type::Range(0.0, 31.0, graph()->zone());
   // TODO(jarin): Can we have a correctification of the stupid type system?
   // These stupid work-arounds are just stupid!
   shifted_int32_ranges_[0] = Type::Signed32();
   if (SmiValuesAre31Bits()) {
     shifted_int32_ranges_[1] = Type::SignedSmall();
     for (size_t k = 2; k < arraysize(shifted_int32_ranges_); ++k) {
-      Handle<Object> min = factory()->NewNumber(kMinInt / (1 << k));
-      Handle<Object> max = factory()->NewNumber(kMaxInt / (1 << k));
+      double min = kMinInt / (1 << k);
+      double max = kMaxInt / (1 << k);
       shifted_int32_ranges_[k] = Type::Range(min, max, graph()->zone());
     }
   } else {
     for (size_t k = 1; k < arraysize(shifted_int32_ranges_); ++k) {
-      Handle<Object> min = factory()->NewNumber(kMinInt / (1 << k));
-      Handle<Object> max = factory()->NewNumber(kMaxInt / (1 << k));
+      double min = kMinInt / (1 << k);
+      double max = kMaxInt / (1 << k);
       shifted_int32_ranges_[k] = Type::Range(min, max, graph()->zone());
     }
   }
@@ -857,8 +855,7 @@ Reduction JSTypedLowering::ReduceJSStoreContext(Node* node) {
 Reduction JSTypedLowering::Reduce(Node* node) {
   // Check if the output type is a singleton.  In that case we already know the
   // result value and can simply replace the node if it's eliminable.
-  if (!IrOpcode::IsConstantOpcode(node->opcode()) &&
-      NodeProperties::IsTyped(node) &&
+  if (!NodeProperties::IsConstant(node) && NodeProperties::IsTyped(node) &&
       node->op()->HasProperty(Operator::kEliminatable)) {
     Type* upper = NodeProperties::GetBounds(node).upper;
     if (upper->IsConstant()) {

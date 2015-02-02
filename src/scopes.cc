@@ -77,10 +77,8 @@ Scope::Scope(Isolate* isolate, Zone* zone, Scope* outer_scope,
       params_(4, zone),
       unresolved_(16, zone),
       decls_(4, zone),
-      interface_(FLAG_harmony_modules && (scope_type == MODULE_SCOPE ||
-                                          scope_type == SCRIPT_SCOPE)
-                     ? Interface::NewModule(zone)
-                     : NULL),
+      interface_(scope_type == MODULE_SCOPE ? Interface::NewModule(zone)
+                                            : NULL),
       already_resolved_(false),
       ast_value_factory_(ast_value_factory),
       zone_(zone) {
@@ -182,6 +180,8 @@ void Scope::SetDefaults(ScopeType scope_type,
   num_heap_slots_ = 0;
   num_modules_ = 0;
   module_var_ = NULL,
+  rest_parameter_ = NULL;
+  rest_index_ = -1;
   scope_info_ = scope_info;
   start_position_ = RelocInfo::kNoPosition;
   end_position_ = RelocInfo::kNoPosition;
@@ -452,11 +452,17 @@ Variable* Scope::Lookup(const AstRawString* name) {
 }
 
 
-Variable* Scope::DeclareParameter(const AstRawString* name, VariableMode mode) {
+Variable* Scope::DeclareParameter(const AstRawString* name, VariableMode mode,
+                                  bool is_rest) {
   DCHECK(!already_resolved());
   DCHECK(is_function_scope());
   Variable* var = variables_.Declare(this, name, mode, true, Variable::NORMAL,
                                      kCreatedInitialized);
+  if (is_rest) {
+    DCHECK_NULL(rest_parameter_);
+    rest_parameter_ = var;
+    rest_index_ = num_parameters();
+  }
   params_.Add(var, zone());
   return var;
 }
@@ -1288,12 +1294,18 @@ void Scope::AllocateParameterLocals() {
     uses_sloppy_arguments = strict_mode() == SLOPPY;
   }
 
+  if (rest_parameter_ && !MustAllocate(rest_parameter_)) {
+    rest_parameter_ = NULL;
+  }
+
   // The same parameter may occur multiple times in the parameters_ list.
   // If it does, and if it is not copied into the context object, it must
   // receive the highest parameter index for that parameter; thus iteration
   // order is relevant!
   for (int i = params_.length() - 1; i >= 0; --i) {
     Variable* var = params_[i];
+    if (var == rest_parameter_) continue;
+
     DCHECK(var->scope() == this);
     if (uses_sloppy_arguments || has_forced_context_allocation()) {
       // Force context allocation of the parameter.
@@ -1360,6 +1372,10 @@ void Scope::AllocateNonParameterLocals() {
   // ScopeInfo::ScopeInfo(FunctionScope* scope) constructor).
   if (function_ != NULL) {
     AllocateNonParameterLocal(function_->proxy()->var());
+  }
+
+  if (rest_parameter_) {
+    AllocateNonParameterLocal(rest_parameter_);
   }
 }
 

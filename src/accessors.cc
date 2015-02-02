@@ -136,6 +136,12 @@ bool SetPropertyOnInstanceIfInherited(
     // This behaves sloppy since we lost the actual strict-mode.
     // TODO(verwaest): Fix by making ExecutableAccessorInfo behave like data
     // properties.
+    if (object->IsJSGlobalProxy()) {
+      PrototypeIterator iter(isolate, object);
+      if (iter.IsAtEnd()) return true;
+      DCHECK(PrototypeIterator::GetCurrent(iter)->IsJSGlobalObject());
+      object = Handle<JSObject>::cast(PrototypeIterator::GetCurrent(iter));
+    }
     if (!object->map()->is_extensible()) return true;
     JSObject::SetOwnPropertyIgnoreAttributes(object, Utils::OpenHandle(*name),
                                              value, NONE).Check();
@@ -783,6 +789,40 @@ Handle<AccessorInfo> Accessors::ScriptSourceMappingUrlInfo(
                       &ScriptSourceMappingUrlGetter,
                       &ScriptSourceMappingUrlSetter,
                       attributes);
+}
+
+
+//
+// Accessors::ScriptIsEmbedderDebugScript
+//
+
+
+void Accessors::ScriptIsEmbedderDebugScriptGetter(
+    v8::Local<v8::Name> name, const v8::PropertyCallbackInfo<v8::Value>& info) {
+  i::Isolate* isolate = reinterpret_cast<i::Isolate*>(info.GetIsolate());
+  DisallowHeapAllocation no_allocation;
+  HandleScope scope(isolate);
+  Object* object = *Utils::OpenHandle(*info.This());
+  bool is_embedder_debug_script =
+      Script::cast(JSValue::cast(object)->value())->is_embedder_debug_script();
+  Object* res = *isolate->factory()->ToBoolean(is_embedder_debug_script);
+  info.GetReturnValue().Set(Utils::ToLocal(Handle<Object>(res, isolate)));
+}
+
+
+void Accessors::ScriptIsEmbedderDebugScriptSetter(
+    v8::Local<v8::Name> name, v8::Local<v8::Value> value,
+    const v8::PropertyCallbackInfo<void>& info) {
+  UNREACHABLE();
+}
+
+
+Handle<AccessorInfo> Accessors::ScriptIsEmbedderDebugScriptInfo(
+    Isolate* isolate, PropertyAttributes attributes) {
+  Handle<String> name(isolate->factory()->InternalizeOneByteString(
+      STATIC_CHAR_VECTOR("is_debugger_script")));
+  return MakeAccessor(isolate, name, &ScriptIsEmbedderDebugScriptGetter,
+                      &ScriptIsEmbedderDebugScriptSetter, attributes);
 }
 
 

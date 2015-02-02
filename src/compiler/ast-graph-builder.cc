@@ -7,10 +7,11 @@
 #include "src/compiler.h"
 #include "src/compiler/ast-loop-assignment-analyzer.h"
 #include "src/compiler/control-builders.h"
+#include "src/compiler/linkage.h"
 #include "src/compiler/machine-operator.h"
 #include "src/compiler/node-matchers.h"
-#include "src/compiler/node-properties-inl.h"
 #include "src/compiler/node-properties.h"
+#include "src/compiler/operator-properties.h"
 #include "src/full-codegen.h"
 #include "src/parser.h"
 #include "src/scopes.h"
@@ -35,8 +36,8 @@ AstGraphBuilder::AstGraphBuilder(Zone* local_zone, CompilationInfo* info,
 
 Node* AstGraphBuilder::GetFunctionClosure() {
   if (!function_closure_.is_set()) {
-    // Parameter -1 is special for the function closure
-    const Operator* op = common()->Parameter(-1);
+    const Operator* op =
+        common()->Parameter(Linkage::kJSFunctionCallClosureParamIndex);
     Node* node = NewNode(op, graph()->start());
     function_closure_.set(node);
   }
@@ -603,7 +604,7 @@ void AstGraphBuilder::VisitSwitchStatement(SwitchStatement* stmt) {
 
 void AstGraphBuilder::VisitDoWhileStatement(DoWhileStatement* stmt) {
   LoopBuilder while_loop(this);
-  while_loop.BeginLoop(GetVariablesAssignedInLoop(stmt), IsOsrLoopEntry(stmt));
+  while_loop.BeginLoop(GetVariablesAssignedInLoop(stmt), CheckOsrEntry(stmt));
   VisitIterationBody(stmt, &while_loop, 0);
   while_loop.EndBody();
   VisitForTest(stmt->cond());
@@ -615,7 +616,7 @@ void AstGraphBuilder::VisitDoWhileStatement(DoWhileStatement* stmt) {
 
 void AstGraphBuilder::VisitWhileStatement(WhileStatement* stmt) {
   LoopBuilder while_loop(this);
-  while_loop.BeginLoop(GetVariablesAssignedInLoop(stmt), IsOsrLoopEntry(stmt));
+  while_loop.BeginLoop(GetVariablesAssignedInLoop(stmt), CheckOsrEntry(stmt));
   VisitForTest(stmt->cond());
   Node* condition = environment()->Pop();
   while_loop.BreakUnless(condition);
@@ -628,7 +629,7 @@ void AstGraphBuilder::VisitWhileStatement(WhileStatement* stmt) {
 void AstGraphBuilder::VisitForStatement(ForStatement* stmt) {
   LoopBuilder for_loop(this);
   VisitIfNotNull(stmt->init());
-  for_loop.BeginLoop(GetVariablesAssignedInLoop(stmt), IsOsrLoopEntry(stmt));
+  for_loop.BeginLoop(GetVariablesAssignedInLoop(stmt), CheckOsrEntry(stmt));
   if (stmt->cond() != NULL) {
     VisitForTest(stmt->cond());
     Node* condition = environment()->Pop();
@@ -667,24 +668,20 @@ void AstGraphBuilder::VisitForInStatement(ForInStatement* stmt) {
     PrepareFrameState(obj, stmt->ToObjectId(), OutputFrameStateCombine::Push());
     environment()->Push(obj);
     // TODO(dcarney): should do a fast enum cache check here to skip runtime.
-    environment()->Push(obj);
-    Node* cache_type = ProcessArguments(
-        javascript()->CallRuntime(Runtime::kGetPropertyNamesFast, 1), 1);
+    Node* cache_type = NewNode(
+        javascript()->CallRuntime(Runtime::kGetPropertyNamesFast, 1), obj);
     PrepareFrameState(cache_type, stmt->EnumId(),
                       OutputFrameStateCombine::Push());
     // TODO(dcarney): these next runtime calls should be removed in favour of
     //                a few simplified instructions.
-    environment()->Push(obj);
-    environment()->Push(cache_type);
-    Node* cache_pair =
-        ProcessArguments(javascript()->CallRuntime(Runtime::kForInInit, 2), 2);
+    Node* cache_pair = NewNode(
+        javascript()->CallRuntime(Runtime::kForInInit, 2), obj, cache_type);
     // cache_type may have been replaced.
     Node* cache_array = NewNode(common()->Projection(0), cache_pair);
     cache_type = NewNode(common()->Projection(1), cache_pair);
-    environment()->Push(cache_type);
-    environment()->Push(cache_array);
-    Node* cache_length = ProcessArguments(
-        javascript()->CallRuntime(Runtime::kForInCacheArrayLength, 2), 2);
+    Node* cache_length =
+        NewNode(javascript()->CallRuntime(Runtime::kForInCacheArrayLength, 2),
+                cache_type, cache_array);
     {
       // TODO(dcarney): this check is actually supposed to be for the
       //                empty enum case only.
@@ -702,90 +699,9 @@ void AstGraphBuilder::VisitForInStatement(ForInStatement* stmt) {
         environment()->Push(cache_array);
         environment()->Push(cache_length);
         environment()->Push(jsgraph()->ZeroConstant());
-        // PrepareForBailoutForId(stmt->BodyId(), NO_REGISTERS);
-        LoopBuilder for_loop(this);
-        for_loop.BeginLoop(GetVariablesAssignedInLoop(stmt),
-                           IsOsrLoopEntry(stmt));
-        // Check loop termination condition.
-        Node* index = environment()->Peek(0);
-        Node* exit_cond =
-            NewNode(javascript()->LessThan(), index, cache_length);
-        // TODO(jarin): provide real bailout id.
-        PrepareFrameState(exit_cond, BailoutId::None());
-        for_loop.BreakUnless(exit_cond);
-        // TODO(dcarney): this runtime call should be a handful of
-        //                simplified instructions that
-        //                basically produce
-        //                    value = array[index]
-        environment()->Push(obj);
-        environment()->Push(cache_array);
-        environment()->Push(cache_type);
-        environment()->Push(index);
-        Node* pair = ProcessArguments(
-            javascript()->CallRuntime(Runtime::kForInNext, 4), 4);
-        Node* value = NewNode(common()->Projection(0), pair);
-        Node* should_filter = NewNode(common()->Projection(1), pair);
-        environment()->Push(value);
-        {
-          // Test if FILTER_KEY needs to be called.
-          IfBuilder test_should_filter(this);
-          Node* should_filter_cond =
-              NewNode(javascript()->StrictEqual(), should_filter,
-                      jsgraph()->TrueConstant());
-          test_should_filter.If(should_filter_cond);
-          test_should_filter.Then();
-          value = environment()->Pop();
-          Node* builtins = BuildLoadBuiltinsObject();
-          Node* function = BuildLoadObjectField(
-              builtins,
-              JSBuiltinsObject::OffsetOfFunctionWithId(Builtins::FILTER_KEY));
-          // Callee.
-          environment()->Push(function);
-          // Receiver.
-          environment()->Push(obj);
-          // Args.
-          environment()->Push(value);
-          // result is either the string key or Smi(0) indicating the property
-          // is gone.
-          Node* res = ProcessArguments(
-              javascript()->CallFunction(3, NO_CALL_FUNCTION_FLAGS), 3);
-          // TODO(jarin): provide real bailout id.
-          PrepareFrameState(res, BailoutId::None());
-          Node* property_missing = NewNode(javascript()->StrictEqual(), res,
-                                           jsgraph()->ZeroConstant());
-          {
-            IfBuilder is_property_missing(this);
-            is_property_missing.If(property_missing);
-            is_property_missing.Then();
-            // Inc counter and continue.
-            Node* index_inc =
-                NewNode(javascript()->Add(), index, jsgraph()->OneConstant());
-            // TODO(jarin): provide real bailout id.
-            PrepareFrameState(index_inc, BailoutId::None());
-            environment()->Poke(0, index_inc);
-            for_loop.Continue();
-            is_property_missing.Else();
-            is_property_missing.End();
-          }
-          // Replace 'value' in environment.
-          environment()->Push(res);
-          test_should_filter.Else();
-          test_should_filter.End();
-        }
-        value = environment()->Pop();
-        // Bind value and do loop body.
-        VisitForInAssignment(stmt->each(), value);
-        VisitIterationBody(stmt, &for_loop, 5);
-        for_loop.EndBody();
-        // Inc counter and continue.
-        Node* index_inc =
-            NewNode(javascript()->Add(), index, jsgraph()->OneConstant());
-        // TODO(jarin): provide real bailout id.
-        PrepareFrameState(index_inc, BailoutId::None());
-        environment()->Poke(0, index_inc);
-        for_loop.EndLoop();
-        environment()->Drop(5);
-        // PrepareForBailoutForId(stmt->ExitId(), NO_REGISTERS);
+
+        // Build the actual loop body.
+        VisitForInBody(stmt);
       }
       have_no_properties.End();
     }
@@ -795,10 +711,89 @@ void AstGraphBuilder::VisitForInStatement(ForInStatement* stmt) {
 }
 
 
+// TODO(dcarney): this is a big function.  Try to clean up some.
+void AstGraphBuilder::VisitForInBody(ForInStatement* stmt) {
+  LoopBuilder for_loop(this);
+  for_loop.BeginLoop(GetVariablesAssignedInLoop(stmt), CheckOsrEntry(stmt));
+
+  // These stack values are renamed in the case of OSR, so reload them
+  // from the environment.
+  Node* index = environment()->Peek(0);
+  Node* cache_length = environment()->Peek(1);
+  Node* cache_array = environment()->Peek(2);
+  Node* cache_type = environment()->Peek(3);
+  Node* obj = environment()->Peek(4);
+
+  // Check loop termination condition.
+  Node* exit_cond = NewNode(javascript()->LessThan(), index, cache_length);
+  // TODO(jarin): provide real bailout id.
+  PrepareFrameState(exit_cond, BailoutId::None());
+  for_loop.BreakUnless(exit_cond);
+  Node* pair = NewNode(javascript()->CallRuntime(Runtime::kForInNext, 4), obj,
+                       cache_array, cache_type, index);
+  Node* value = NewNode(common()->Projection(0), pair);
+  Node* should_filter = NewNode(common()->Projection(1), pair);
+  environment()->Push(value);
+  {
+    // Test if FILTER_KEY needs to be called.
+    IfBuilder test_should_filter(this);
+    Node* should_filter_cond = NewNode(
+        javascript()->StrictEqual(), should_filter, jsgraph()->TrueConstant());
+    test_should_filter.If(should_filter_cond);
+    test_should_filter.Then();
+    value = environment()->Pop();
+    Node* builtins = BuildLoadBuiltinsObject();
+    Node* function = BuildLoadObjectField(
+        builtins,
+        JSBuiltinsObject::OffsetOfFunctionWithId(Builtins::FILTER_KEY));
+    // result is either the string key or Smi(0) indicating the property
+    // is gone.
+    Node* res = NewNode(javascript()->CallFunction(3, NO_CALL_FUNCTION_FLAGS),
+                        function, obj, value);
+    // TODO(jarin): provide real bailout id.
+    PrepareFrameState(res, BailoutId::None());
+    Node* property_missing =
+        NewNode(javascript()->StrictEqual(), res, jsgraph()->ZeroConstant());
+    {
+      IfBuilder is_property_missing(this);
+      is_property_missing.If(property_missing);
+      is_property_missing.Then();
+      // Inc counter and continue.
+      Node* index_inc =
+          NewNode(javascript()->Add(), index, jsgraph()->OneConstant());
+      // TODO(jarin): provide real bailout id.
+      PrepareFrameState(index_inc, BailoutId::None());
+      environment()->Poke(0, index_inc);
+      for_loop.Continue();
+      is_property_missing.Else();
+      is_property_missing.End();
+    }
+    // Replace 'value' in environment.
+    environment()->Push(res);
+    test_should_filter.Else();
+    test_should_filter.End();
+  }
+  value = environment()->Pop();
+  // Bind value and do loop body.
+  VisitForInAssignment(stmt->each(), value, stmt->AssignmentId());
+  VisitIterationBody(stmt, &for_loop, 5);
+  for_loop.EndBody();
+  // Inc counter and continue.
+  Node* index_inc =
+      NewNode(javascript()->Add(), index, jsgraph()->OneConstant());
+  // TODO(jarin): provide real bailout id.
+  PrepareFrameState(index_inc, BailoutId::None());
+  environment()->Poke(0, index_inc);
+  for_loop.EndLoop();
+  environment()->Drop(5);
+  // PrepareForBailoutForId(stmt->ExitId(), NO_REGISTERS);
+}
+
+
 void AstGraphBuilder::VisitForOfStatement(ForOfStatement* stmt) {
   LoopBuilder for_loop(this);
   VisitForEffect(stmt->assign_iterator());
-  for_loop.BeginLoop(GetVariablesAssignedInLoop(stmt), IsOsrLoopEntry(stmt));
+  for_loop.BeginLoop(GetVariablesAssignedInLoop(stmt), CheckOsrEntry(stmt));
   VisitForEffect(stmt->next_result());
   VisitForTest(stmt->result_done());
   Node* condition = environment()->Pop();
@@ -899,7 +894,8 @@ void AstGraphBuilder::VisitClassLiteralContents(ClassLiteral* expr) {
     environment()->Push(property->is_static() ? literal : proto);
 
     VisitForValue(property->key());
-    environment()->Push(BuildToName(environment()->Pop()));
+    environment()->Push(
+        BuildToName(environment()->Pop(), expr->GetIdForProperty(i)));
     VisitForValue(property->value());
     Node* value = environment()->Pop();
     Node* key = environment()->Pop();
@@ -1081,13 +1077,12 @@ void AstGraphBuilder::VisitObjectLiteral(ObjectLiteral* expr) {
         VisitForValue(property->value());
         Node* value = environment()->Pop();
         Node* receiver = environment()->Pop();
-        if (property->emit_store()) {
-          const Operator* op =
-              javascript()->CallRuntime(Runtime::kInternalSetPrototype, 2);
-          Node* set_prototype = NewNode(op, receiver, value);
-          // SetPrototype should not lazy deopt on an object literal.
-          PrepareFrameState(set_prototype, BailoutId::None());
-        }
+        DCHECK(property->emit_store());
+        const Operator* op =
+            javascript()->CallRuntime(Runtime::kInternalSetPrototype, 2);
+        Node* set_prototype = NewNode(op, receiver, value);
+        // SetPrototype should not lazy deopt on an object literal.
+        PrepareFrameState(set_prototype, BailoutId::None());
         break;
       }
       case ObjectLiteral::Property::GETTER:
@@ -1131,7 +1126,8 @@ void AstGraphBuilder::VisitObjectLiteral(ObjectLiteral* expr) {
 
     environment()->Push(literal);  // Duplicate receiver.
     VisitForValue(property->key());
-    environment()->Push(BuildToName(environment()->Pop()));
+    environment()->Push(BuildToName(environment()->Pop(),
+                                    expr->GetIdForProperty(property_index)));
     // TODO(mstarzinger): For ObjectLiteral::Property::PROTOTYPE the key should
     // not be on the operand stack while the value is being evaluated. Come up
     // with a repro for this and fix it. Also find a nice way to do so. :)
@@ -1226,7 +1222,8 @@ void AstGraphBuilder::VisitArrayLiteral(ArrayLiteral* expr) {
 }
 
 
-void AstGraphBuilder::VisitForInAssignment(Expression* expr, Node* value) {
+void AstGraphBuilder::VisitForInAssignment(Expression* expr, Node* value,
+                                           BailoutId bailout_id) {
   DCHECK(expr->IsValidReferenceExpression());
 
   // Left-hand side can only be a property, a global or a variable slot.
@@ -1237,8 +1234,7 @@ void AstGraphBuilder::VisitForInAssignment(Expression* expr, Node* value) {
   switch (assign_type) {
     case VARIABLE: {
       Variable* var = expr->AsVariableProxy()->var();
-      // TODO(jarin) Fill in the correct bailout id.
-      BuildVariableAssignment(var, value, Token::ASSIGN, BailoutId::None());
+      BuildVariableAssignment(var, value, Token::ASSIGN, bailout_id);
       break;
     }
     case NAMED_PROPERTY: {
@@ -1250,8 +1246,7 @@ void AstGraphBuilder::VisitForInAssignment(Expression* expr, Node* value) {
           MakeUnique(property->key()->AsLiteral()->AsPropertyName());
       Node* store =
           NewNode(javascript()->StoreNamed(strict_mode(), name), object, value);
-      // TODO(jarin) Fill in the correct bailout id.
-      PrepareFrameState(store, BailoutId::None());
+      PrepareFrameState(store, bailout_id);
       break;
     }
     case KEYED_PROPERTY: {
@@ -1263,8 +1258,7 @@ void AstGraphBuilder::VisitForInAssignment(Expression* expr, Node* value) {
       value = environment()->Pop();
       Node* store = NewNode(javascript()->StoreProperty(strict_mode()), object,
                             key, value);
-      // TODO(jarin) Fill in the correct bailout id.
-      PrepareFrameState(store, BailoutId::None());
+      PrepareFrameState(store, bailout_id);
       break;
     }
   }
@@ -2324,11 +2318,13 @@ Node* AstGraphBuilder::BuildToBoolean(Node* input) {
 }
 
 
-Node* AstGraphBuilder::BuildToName(Node* input) {
+Node* AstGraphBuilder::BuildToName(Node* input, BailoutId bailout_id) {
   // TODO(turbofan): Possible optimization is to NOP on name constants. But the
   // same caveat as with BuildToBoolean applies, and it should be factored out
   // into a JSOperatorReducer.
-  return NewNode(javascript()->ToName(), input);
+  Node* name = NewNode(javascript()->ToName(), input);
+  PrepareFrameState(name, bailout_id);
+  return name;
 }
 
 
@@ -2416,8 +2412,13 @@ Node* AstGraphBuilder::BuildStackCheck() {
 }
 
 
-bool AstGraphBuilder::IsOsrLoopEntry(IterationStatement* stmt) {
-  return info()->osr_ast_id() == stmt->OsrEntryId();
+bool AstGraphBuilder::CheckOsrEntry(IterationStatement* stmt) {
+  if (info()->osr_ast_id() == stmt->OsrEntryId()) {
+    info()->set_osr_expr_stack_height(std::max(
+        environment()->stack_height(), info()->osr_expr_stack_height()));
+    return true;
+  }
+  return false;
 }
 
 

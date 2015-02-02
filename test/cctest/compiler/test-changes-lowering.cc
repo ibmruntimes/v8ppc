@@ -7,7 +7,7 @@
 #include "src/compiler/change-lowering.h"
 #include "src/compiler/control-builders.h"
 #include "src/compiler/js-graph.h"
-#include "src/compiler/node-properties-inl.h"
+#include "src/compiler/node-properties.h"
 #include "src/compiler/pipeline.h"
 #include "src/compiler/select-lowering.h"
 #include "src/compiler/simplified-lowering.h"
@@ -242,13 +242,13 @@ TEST(RunChangeTaggedToFloat64) {
       {
         Handle<Object> number = t.factory()->NewNumber(input);
         t.Call(*number);
-        CHECK_EQ(input, result);
+        CheckDoubleEq(input, result);
       }
 
       {
         Handle<HeapNumber> number = t.factory()->NewHeapNumber(input);
         t.Call(*number);
-        CHECK_EQ(input, result);
+        CheckDoubleEq(input, result);
       }
     }
   }

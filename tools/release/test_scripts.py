@@ -33,10 +33,12 @@ import traceback
 import unittest
 
 import auto_push
-from auto_push import CheckLastPush
+from auto_push import LastReleaseBailout
 import auto_roll
 import common_includes
 from common_includes import *
+import create_release
+from create_release import CreateRelease
 import merge_to_branch
 from merge_to_branch import *
 import push_to_candidates
@@ -407,7 +409,7 @@ class ScriptTest(unittest.TestCase):
     return "1999-07-31"
 
   def GetUTCStamp(self):
-    return "100000"
+    return "1000000"
 
   def Expect(self, *args):
     """Convenience wrapper."""
@@ -782,22 +784,14 @@ Performance and stability improvements on all platforms."""
       Cmd("git branch", "  branch1\n* branch2\n"),
       Cmd("git branch", "  branch1\n* branch2\n"),
       Cmd(("git new-branch %s --upstream origin/master" %
-           TEST_CONFIG["BRANCHNAME"]),
-          ""),
-      Cmd(("git log -1 --format=%H --grep="
-           "\"^Version [[:digit:]]*\.[[:digit:]]*\.[[:digit:]]* (based\" "
-           "origin/candidates"), "hash2\n"),
-      Cmd("git log -1 hash2", "Log message\n"),
-    ]
-    if manual:
-      expectations.append(RL("Y"))  # Confirm last push.
-    expectations += [
-      Cmd("git log -1 --format=%s hash2",
-       "Version 3.4.5 (based on abc3)\n"),
+           TEST_CONFIG["BRANCHNAME"]), ""),
       Cmd("git fetch origin +refs/tags/*:refs/tags/*", ""),
       Cmd("git tag", self.TAGS),
       Cmd("git checkout -f origin/master -- src/version.cc",
           "", cb=self.WriteFakeVersionFile),
+      Cmd("git log -1 --format=%H 3.22.4", "release_hash\n"),
+      Cmd("git log -1 --format=%s release_hash",
+          "Version 3.22.4 (based on abc3)\n"),
       Cmd("git log --format=%H abc3..push_hash", "rev1\n"),
       Cmd("git log -1 --format=%s rev1", "Log text 1.\n"),
       Cmd("git log -1 --format=%B rev1", "Text\nLOG=YES\nBUG=v8:321\nText\n"),
@@ -868,6 +862,115 @@ Performance and stability improvements on all platforms."""
   def testPushToCandidatesForced(self):
     self._PushToCandidates(force=True)
 
+  def testCreateRelease(self):
+    TextToFile("", os.path.join(TEST_CONFIG["DEFAULT_CWD"], ".git"))
+
+    # The version file on master has build level 5.
+    self.WriteFakeVersionFile(build=5)
+
+    master_change_log = "2014-03-17: Sentinel\n"
+    TextToFile(master_change_log,
+               os.path.join(TEST_CONFIG["DEFAULT_CWD"], CHANGELOG_FILE))
+
+    commit_msg = """Version 3.22.5
+
+Log text 1 (issue 321).
+
+Performance and stability improvements on all platforms."""
+
+    def ResetChangeLog():
+      last_change_log = """1999-04-05: Version 3.22.4
+
+        Performance and stability improvements on all platforms.\n"""
+      TextToFile(last_change_log,
+                 os.path.join(TEST_CONFIG["DEFAULT_CWD"], CHANGELOG_FILE))
+
+
+    def CheckVersionCommit():
+      commit = FileToText(TEST_CONFIG["COMMITMSG_FILE"])
+      self.assertEquals(commit_msg, commit)
+      version = FileToText(
+          os.path.join(TEST_CONFIG["DEFAULT_CWD"], VERSION_FILE))
+      self.assertTrue(re.search(r"#define MINOR_VERSION\s+22", version))
+      self.assertTrue(re.search(r"#define BUILD_NUMBER\s+5", version))
+      self.assertFalse(re.search(r"#define BUILD_NUMBER\s+6", version))
+      self.assertTrue(re.search(r"#define PATCH_LEVEL\s+0", version))
+      self.assertTrue(re.search(r"#define IS_CANDIDATE_VERSION\s+0", version))
+
+      # Check that the change log on the candidates branch got correctly
+      # modified.
+      change_log = FileToText(
+          os.path.join(TEST_CONFIG["DEFAULT_CWD"], CHANGELOG_FILE))
+      self.assertEquals(
+"""1999-07-31: Version 3.22.5
+
+        Log text 1 (issue 321).
+
+        Performance and stability improvements on all platforms.
+
+
+1999-04-05: Version 3.22.4
+
+        Performance and stability improvements on all platforms.\n""",
+          change_log)
+
+    expectations = [
+      Cmd("git fetch origin +refs/heads/*:refs/heads/*", ""),
+      Cmd("git fetch origin +refs/branch-heads/*:refs/branch-heads/*", ""),
+      Cmd("git fetch origin +refs/pending/*:refs/pending/*", ""),
+      Cmd("git fetch origin +refs/pending-tags/*:refs/pending-tags/*", ""),
+      Cmd("git checkout -f origin/master", ""),
+      Cmd("git branch", ""),
+      Cmd("git log -1 --format=\"%H %T\" push_hash", "push_hash tree_hash"),
+      Cmd("git log -200 --format=\"%H %T\" refs/pending/heads/master",
+          "not_right wrong\npending_hash tree_hash\nsome other\n"),
+      Cmd("git fetch origin +refs/tags/*:refs/tags/*", ""),
+      Cmd("git tag", self.TAGS),
+      Cmd("git checkout -f origin/master -- src/version.cc",
+          "", cb=self.WriteFakeVersionFile),
+      Cmd("git log -1 --format=%H 3.22.4", "release_hash\n"),
+      Cmd("git log -1 --format=%s release_hash",
+          "Version 3.22.4 (based on abc3)\n"),
+      Cmd("git log --format=%H abc3..push_hash", "rev1\n"),
+      Cmd("git log -1 --format=%s rev1", "Log text 1.\n"),
+      Cmd("git log -1 --format=%B rev1", "Text\nLOG=YES\nBUG=v8:321\nText\n"),
+      Cmd("git log -1 --format=%an rev1", "author1@chromium.org\n"),
+      Cmd("git reset --hard origin/master", ""),
+      Cmd("git checkout -b work-branch pending_hash", ""),
+      Cmd("git checkout -f 3.22.4 -- ChangeLog", "", cb=ResetChangeLog),
+      Cmd("git checkout -f 3.22.4 -- src/version.cc", "",
+          cb=self.WriteFakeVersionFile),
+      Cmd("git commit -aF \"%s\"" % TEST_CONFIG["COMMITMSG_FILE"], "",
+          cb=CheckVersionCommit),
+      Cmd("git push origin "
+          "refs/heads/work-branch:refs/pending/branch-heads/3.22.5 "
+          "pending_hash:refs/pending-tags/branch-heads/3.22.5 "
+          "push_hash:refs/branch-heads/3.22.5", ""),
+      Cmd("git fetch", ""),
+      Cmd("git log -1 --format=%H --grep="
+          "\"Version 3.22.5\" branch-heads/3.22.5", "hsh_to_tag"),
+      Cmd("git tag 3.22.5 hsh_to_tag", ""),
+      Cmd("git push origin 3.22.5", ""),
+      Cmd("git checkout -f origin/master", ""),
+      Cmd("git branch", "* master\n  work-branch\n"),
+      Cmd("git branch -D work-branch", ""),
+      Cmd("git gc", ""),
+    ]
+    self.Expect(expectations)
+
+    args = ["-a", "author@chromium.org",
+            "-r", "reviewer@chromium.org",
+            "--revision", "push_hash"]
+    CreateRelease(TEST_CONFIG, self).Run(args)
+
+    cl = FileToText(os.path.join(TEST_CONFIG["DEFAULT_CWD"], CHANGELOG_FILE))
+    self.assertTrue(re.search(r"^\d\d\d\d\-\d+\-\d+: Version 3\.22\.5", cl))
+    self.assertTrue(re.search(r"        Log text 1 \(issue 321\).", cl))
+    self.assertTrue(re.search(r"1999\-04\-05: Version 3\.22\.4", cl))
+
+    # Note: The version file is on build number 5 again in the end of this test
+    # since the git command that merges to master is mocked out.
+
   C_V8_22624_LOG = """V8 CL.
 
 git-svn-id: https://v8.googlecode.com/svn/branches/bleeding_edge@22624 123
@@ -910,9 +1013,9 @@ def get_list():
 
     expectations = [
       Cmd("git fetch origin", ""),
-      Cmd(("git log -1 --format=%H --grep="
-           "\"^Version [[:digit:]]*\.[[:digit:]]*\.[[:digit:]]*\" "
-           "origin/candidates"), "push_hash\n"),
+      Cmd("git fetch origin +refs/tags/*:refs/tags/*", ""),
+      Cmd("git tag", self.TAGS),
+      Cmd("git log -1 --format=%H 3.22.4", "push_hash\n"),
       Cmd("git log -1 --format=%s push_hash",
           "Version 3.22.5 (based on abc)\n"),
       URL("https://chromium-build.appspot.com/p/chromium/sheriff_v8.js",
@@ -945,16 +1048,17 @@ def get_list():
 
   def testCheckLastPushRecently(self):
     self.Expect([
-      Cmd(("git log -1 --format=%H --grep="
-           "\"^Version [[:digit:]]*\.[[:digit:]]*\.[[:digit:]]* (based\" "
-           "origin/candidates"), "hash2\n"),
-      Cmd("git log -1 --format=%s hash2",
-          "Version 3.4.5 (based on abc123)\n"),
+      Cmd("git fetch origin +refs/tags/*:refs/tags/*", ""),
+      Cmd("git tag", self.TAGS),
+      Cmd("git log -1 --format=%H 3.22.4", "release_hash\n"),
+      Cmd("git log -1 --format=%s release_hash",
+          "Version 3.22.4 (based on abc3)\n"),
+      Cmd("git log --format=%H abc3..abc123", "\n"),
     ])
 
     self._state["candidate"] = "abc123"
     self.assertEquals(0, self.RunStep(
-        auto_push.AutoPush, CheckLastPush, AUTO_PUSH_ARGS))
+        auto_push.AutoPush, LastReleaseBailout, AUTO_PUSH_ARGS))
 
   def testAutoPush(self):
     TextToFile("", os.path.join(TEST_CONFIG["DEFAULT_CWD"], ".git"))
@@ -963,13 +1067,14 @@ def get_list():
       Cmd("git status -s -uno", ""),
       Cmd("git status -s -b -uno", "## some_branch\n"),
       Cmd("git fetch", ""),
-      Cmd("git fetch origin +refs/heads/candidate:refs/heads/candidate", ""),
-      Cmd("git show-ref -s refs/heads/candidate", "abc123\n"),
-      Cmd(("git log -1 --format=%H --grep=\""
-           "^Version [[:digit:]]*\.[[:digit:]]*\.[[:digit:]]* (based\""
-           " origin/candidates"), "push_hash\n"),
-      Cmd("git log -1 --format=%s push_hash",
-          "Version 3.4.5 (based on abc101)\n"),
+      Cmd("git fetch origin +refs/heads/roll:refs/heads/roll", ""),
+      Cmd("git show-ref -s refs/heads/roll", "abc123\n"),
+      Cmd("git fetch origin +refs/tags/*:refs/tags/*", ""),
+      Cmd("git tag", self.TAGS),
+      Cmd("git log -1 --format=%H 3.22.4", "release_hash\n"),
+      Cmd("git log -1 --format=%s release_hash",
+          "Version 3.22.4 (based on abc3)\n"),
+      Cmd("git log --format=%H abc3..abc123", "some_stuff\n"),
     ])
 
     auto_push.AutoPush(TEST_CONFIG, self).Run(AUTO_PUSH_ARGS + ["--push"])
@@ -1010,12 +1115,9 @@ deps = {
       URL("https://codereview.chromium.org/search",
           "owner=author%40chromium.org&limit=30&closed=3&format=json",
           ("{\"results\": [{\"subject\": \"different\"}]}")),
-      Cmd("git fetch", ""),
-      Cmd(("git log -1 --format=%H --grep="
-           "\"^Version [[:digit:]]*\.[[:digit:]]*\.[[:digit:]]*\" "
-           "origin/candidates"), "push_hash\n"),
-      Cmd("git log -1 --format=%B push_hash", self.C_V8_22624_LOG),
-      Cmd("git log -1 --format=%B abcd123455", self.C_V8_123455_LOG),
+      Cmd("git fetch origin +refs/tags/*:refs/tags/*", ""),
+      Cmd("git tag", self.TAGS),
+      Cmd("git log -1 --format=%H 3.22.4", "push_hash\n"),
     ])
 
     result = auto_roll.AutoRoll(TEST_CONFIG, self).Run(
@@ -1032,12 +1134,9 @@ deps = {
       URL("https://codereview.chromium.org/search",
           "owner=author%40chromium.org&limit=30&closed=3&format=json",
           ("{\"results\": [{\"subject\": \"different\"}]}")),
-      Cmd("git fetch", ""),
-      Cmd(("git log -1 --format=%H --grep="
-           "\"^Version [[:digit:]]*\.[[:digit:]]*\.[[:digit:]]*\" "
-           "origin/candidates"), "push_hash\n"),
-      Cmd("git log -1 --format=%B push_hash", self.C_V8_123456_LOG),
-      Cmd("git log -1 --format=%B abcd123455", self.C_V8_123455_LOG),
+      Cmd("git fetch origin +refs/tags/*:refs/tags/*", ""),
+      Cmd("git tag", self.TAGS),
+      Cmd("git log -1 --format=%H 3.22.4", "push_hash\n"),
     ])
 
     result = auto_roll.AutoRoll(TEST_CONFIG, self).Run(
@@ -1245,42 +1344,45 @@ Cr-Commit-Position: refs/heads/candidates@{#345}
       Cmd("git fetch", ""),
       Cmd("git branch", "  branch1\n* branch2\n"),
       Cmd("git new-branch %s" % TEST_CONFIG["BRANCHNAME"], ""),
-      Cmd("git branch -r", "  branch-heads/3.21\n  branch-heads/3.3\n"),
-      Cmd("git reset --hard branch-heads/3.3", ""),
-      Cmd("git log --format=%H", "hash1\nhash_234"),
-      Cmd("git diff --name-only hash1 hash1^", ""),
+      Cmd("git fetch origin +refs/tags/*:refs/tags/*", ""),
+      Cmd("git rev-list --max-age=395200 --tags",
+          "bad_tag\nhash_234\nhash_123\nhash_345\n"),
+      Cmd("git describe --tags bad_tag", "3.23.42-1-deadbeef"),
+      Cmd("git describe --tags hash_234", "3.3.1.1"),
+      Cmd("git describe --tags hash_123", "3.21.2"),
+      Cmd("git describe --tags hash_345", "3.22.3"),
       Cmd("git diff --name-only hash_234 hash_234^", VERSION_FILE),
       Cmd("git checkout -f hash_234 -- %s" % VERSION_FILE, "",
           cb=ResetVersion(3, 1, 1)),
+      Cmd("git branch -r --contains hash_234", "  branch-heads/3.3\n"),
       Cmd("git log -1 --format=%B hash_234", c_hash_234_commit_log),
       Cmd("git log -1 --format=%s hash_234", ""),
       Cmd("git log -1 --format=%B hash_234", c_hash_234_commit_log),
       Cmd("git log -1 --format=%ci hash_234", "18:15"),
       Cmd("git checkout -f HEAD -- %s" % VERSION_FILE, "",
           cb=ResetVersion(22, 5)),
-      Cmd("git reset --hard branch-heads/3.21", ""),
-      Cmd("git log --format=%H", "hash_123\nhash4\nhash5\n"),
+
       Cmd("git diff --name-only hash_123 hash_123^", VERSION_FILE),
       Cmd("git checkout -f hash_123 -- %s" % VERSION_FILE, "",
           cb=ResetVersion(21, 2)),
+      Cmd("git branch -r --contains hash_123", "  branch-heads/3.21\n"),
       Cmd("git log -1 --format=%B hash_123", c_hash_123_commit_log),
       Cmd("git log -1 --format=%s hash_123", ""),
       Cmd("git log -1 --format=%B hash_123", c_hash_123_commit_log),
       Cmd("git log -1 --format=%ci hash_123", "03:15"),
       Cmd("git checkout -f HEAD -- %s" % VERSION_FILE, "",
           cb=ResetVersion(22, 5)),
-      Cmd("git reset --hard origin/candidates", ""),
-      Cmd("git log --format=%H", "hash_345\n"),
+
       Cmd("git diff --name-only hash_345 hash_345^", VERSION_FILE),
       Cmd("git checkout -f hash_345 -- %s" % VERSION_FILE, "",
           cb=ResetVersion(22, 3)),
+      Cmd("git branch -r --contains hash_345", "  origin/candidates\n"),
       Cmd("git log -1 --format=%B hash_345", c_hash_345_commit_log),
       Cmd("git log -1 --format=%s hash_345", ""),
       Cmd("git log -1 --format=%B hash_345", c_hash_345_commit_log),
       Cmd("git log -1 --format=%ci hash_345", ""),
       Cmd("git checkout -f HEAD -- %s" % VERSION_FILE, "",
           cb=ResetVersion(22, 5)),
-      Cmd("git reset --hard origin/master", ""),
       Cmd("git status -s -uno", "", cwd=chrome_dir),
       Cmd("git checkout -f master", "", cwd=chrome_dir),
       Cmd("git pull", "", cwd=chrome_dir),

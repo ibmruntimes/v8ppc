@@ -9,7 +9,8 @@
 #include "src/compiler/machine-operator.h"
 #include "src/compiler/node-aux-data-inl.h"
 #include "src/compiler/node-matchers.h"
-#include "src/compiler/node-properties-inl.h"
+#include "src/compiler/node-properties.h"
+#include "src/compiler/operator-properties.h"
 #include "src/unique.h"
 
 namespace v8 {
@@ -409,8 +410,8 @@ bool JSGenericLowering::TryLowerDirectJSCall(Node* node) {
     context = jsgraph()->HeapConstant(Handle<Context>(function->context()));
   }
   node->ReplaceInput(index, context);
-  CallDescriptor* desc = linkage()->GetJSCallDescriptor(
-      jsgraph()->zone(), 1 + arg_count, FlagsForNode(node));
+  CallDescriptor* desc =
+      linkage()->GetJSCallDescriptor(1 + arg_count, FlagsForNode(node));
   PatchOperator(node, common()->Call(desc));
   return true;
 }

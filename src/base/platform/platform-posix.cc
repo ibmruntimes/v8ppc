@@ -172,19 +172,19 @@ void* OS::GetRandomMmapAddr() {
   // fulfilling our placement request.
   raw_addr &= V8_UINT64_C(0x3ffffffff000);
 #elif V8_TARGET_ARCH_PPC64
-# if V8_OS_AIX
+#if V8_OS_AIX
   // AIX: 64 bits of virtual addressing, but we limit address range to:
   //   a) minimize Segment Lookaside Buffer (SLB) misses and
   raw_addr &= V8_UINT64_C(0x3ffff000);
   // Use extra address space to isolate the mmap regions.
   raw_addr += V8_UINT64_C(0x400000000000);
-# elif V8_TARGET_BIG_ENDIAN
+#elif V8_TARGET_BIG_ENDIAN
   // Big-endian Linux: 44 bits of virtual addressing.
   raw_addr &= V8_UINT64_C(0x03fffffff000);
-# else
+#else
   // Little-endian Linux: 48 bits of virtual addressing.
   raw_addr &= V8_UINT64_C(0x3ffffffff000);
-# endif
+#endif
 #else
   raw_addr &= 0x3ffff000;
 
@@ -199,7 +199,7 @@ void* OS::GetRandomMmapAddr() {
   // no hint at all. The high hint prevents the break from getting hemmed in
   // at low values, ceding half of the address space to the system heap.
   raw_addr += 0x80000000;
-# elif V8_OS_AIX
+#elif V8_OS_AIX
   // The range 0x30000000 - 0xD0000000 is available on AIX;
   // choose the upper range.
   raw_addr += 0x90000000;

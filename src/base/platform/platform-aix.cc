@@ -1,29 +1,6 @@
-// Copyright 2013 the V8 project authors. All rights reserved.
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are
-// met:
-//
-//     * Redistributions of source code must retain the above copyright
-//       notice, this list of conditions and the following disclaimer.
-//     * Redistributions in binary form must reproduce the above
-//       copyright notice, this list of conditions and the following
-//       disclaimer in the documentation and/or other materials provided
-//       with the distribution.
-//     * Neither the name of Google Inc. nor the names of its
-//       contributors may be used to endorse or promote products derived
-//       from this software without specific prior written permission.
-//
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-// "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-// LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-// A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-// OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-// SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-// LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-// DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-// THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-// (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+// Copyright 2014 the V8 project authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
 
 // Platform specific code for AIX goes here. For the POSIX comaptible parts
 // the implementation is in platform-posix.cc.
@@ -38,7 +15,7 @@
 #include <sys/ucontext.h>
 
 #include <errno.h>
-#include <fcntl.h>      // open
+#include <fcntl.h>  // open
 #include <limits.h>
 #include <stdarg.h>
 #include <strings.h>    // index
@@ -59,16 +36,16 @@ namespace v8 {
 namespace base {
 
 
-static inline void *mmapHelper(size_t len, int prot, int flags,
-                               int fildes, off_t  off) {
-  void *addr = OS::GetRandomMmapAddr();
+static inline void* mmapHelper(size_t len, int prot, int flags, int fildes,
+                               off_t off) {
+  void* addr = OS::GetRandomMmapAddr();
   return mmap(addr, len, prot, flags, fildes, off);
 }
 
 
 const char* OS::LocalTimezone(double time, TimezoneCache* cache) {
   if (std::isnan(time)) return "";
-  time_t tv = static_cast<time_t>(floor(time/msPerSecond));
+  time_t tv = static_cast<time_t>(floor(time / msPerSecond));
   struct tm* t = localtime(&tv);
   if (NULL == t) return "";
   return tzname[0];  // The location of the timezone string on AIX.
@@ -85,9 +62,7 @@ double OS::LocalTimeOffset(TimezoneCache* cache) {
 }
 
 
-void* OS::Allocate(const size_t requested,
-                   size_t* allocated,
-                   bool executable) {
+void* OS::Allocate(const size_t requested, size_t* allocated, bool executable) {
   const size_t msize = RoundUp(requested, getpagesize());
   int prot = PROT_READ | PROT_WRITE | (executable ? PROT_EXEC : 0);
   void* mbase = mmapHelper(msize, prot, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
@@ -101,10 +76,11 @@ void* OS::Allocate(const size_t requested,
 class PosixMemoryMappedFile : public OS::MemoryMappedFile {
  public:
   PosixMemoryMappedFile(FILE* file, void* memory, int size)
-    : file_(file), memory_(memory), size_(size) { }
+      : file_(file), memory_(memory), size_(size) {}
   virtual ~PosixMemoryMappedFile();
   virtual void* memory() { return memory_; }
   virtual int size() { return size_; }
+
  private:
   FILE* file_;
   void* memory_;
@@ -126,7 +102,7 @@ OS::MemoryMappedFile* OS::MemoryMappedFile::open(const char* name) {
 
 
 OS::MemoryMappedFile* OS::MemoryMappedFile::create(const char* name, int size,
-    void* initial) {
+                                                   void* initial) {
   FILE* file = fopen(name, "w+");
   if (file == NULL) return NULL;
   int result = fwrite(initial, size, 1, file);
@@ -174,8 +150,7 @@ std::vector<OS::SharedLibraryAddress> OS::GetSharedLibraryAddresses() {
     int bytes_read = -1;
     do {
       bytes_read++;
-      if (bytes_read >= MAP_LENGTH - 1)
-        break;
+      if (bytes_read >= MAP_LENGTH - 1) break;
       rc = read(fd, buffer + bytes_read, 1);
       if (rc < 1) break;
     } while (buffer[bytes_read] != '\n');
@@ -193,31 +168,28 @@ std::vector<OS::SharedLibraryAddress> OS::GetSharedLibraryAddresses() {
 }
 
 
-void OS::SignalCodeMovingGC() {
-}
+void OS::SignalCodeMovingGC() {}
 
 
 // Constants used for mmap.
 static const int kMmapFd = -1;
 static const int kMmapFdOffset = 0;
 
-VirtualMemory::VirtualMemory() : address_(NULL), size_(0) { }
+VirtualMemory::VirtualMemory() : address_(NULL), size_(0) {}
 
 
 VirtualMemory::VirtualMemory(size_t size)
-    : address_(ReserveRegion(size)), size_(size) { }
+    : address_(ReserveRegion(size)), size_(size) {}
 
 
 VirtualMemory::VirtualMemory(size_t size, size_t alignment)
     : address_(NULL), size_(0) {
   DCHECK((alignment % OS::AllocateAlignment()) == 0);
-  size_t request_size = RoundUp(size + alignment,
-                                static_cast<intptr_t>(OS::AllocateAlignment()));
-  void* reservation = mmapHelper(request_size,
-                                 PROT_NONE,
-                                 MAP_PRIVATE | MAP_ANONYMOUS,
-                                 kMmapFd,
-                                 kMmapFdOffset);
+  size_t request_size =
+      RoundUp(size + alignment, static_cast<intptr_t>(OS::AllocateAlignment()));
+  void* reservation =
+      mmapHelper(request_size, PROT_NONE, MAP_PRIVATE | MAP_ANONYMOUS, kMmapFd,
+                 kMmapFdOffset);
   if (reservation == MAP_FAILED) return;
 
   uint8_t* base = static_cast<uint8_t*>(reservation);
@@ -256,9 +228,7 @@ VirtualMemory::~VirtualMemory() {
 }
 
 
-bool VirtualMemory::IsReserved() {
-  return address_ != NULL;
-}
+bool VirtualMemory::IsReserved() { return address_ != NULL; }
 
 
 void VirtualMemory::Reset() {
@@ -284,11 +254,8 @@ bool VirtualMemory::Guard(void* address) {
 
 
 void* VirtualMemory::ReserveRegion(size_t size) {
-  void* result = mmapHelper(size,
-                            PROT_NONE,
-                            MAP_PRIVATE | MAP_ANONYMOUS,
-                            kMmapFd,
-                            kMmapFdOffset);
+  void* result = mmapHelper(size, PROT_NONE, MAP_PRIVATE | MAP_ANONYMOUS,
+                            kMmapFd, kMmapFdOffset);
 
   if (result == MAP_FAILED) return NULL;
 
@@ -320,9 +287,6 @@ bool VirtualMemory::ReleaseRegion(void* base, size_t size) {
 }
 
 
-bool VirtualMemory::HasLazyCommits() {
-  return true;
+bool VirtualMemory::HasLazyCommits() { return true; }
 }
-
-
-} }  // namespace v8::base
+}  // namespace v8::base

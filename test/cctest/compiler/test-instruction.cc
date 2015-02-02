@@ -90,10 +90,7 @@ class InstructionTester : public HandleAndZoneScope {
   }
 
   UnallocatedOperand* NewUnallocated(int vreg) {
-    UnallocatedOperand* unallocated =
-        new (zone()) UnallocatedOperand(UnallocatedOperand::ANY);
-    unallocated->set_virtual_register(vreg);
-    return unallocated;
+    return new (zone()) UnallocatedOperand(UnallocatedOperand::ANY, vreg);
   }
 
   InstructionBlock* BlockAt(BasicBlock* block) {
@@ -135,7 +132,7 @@ TEST(InstructionBasic) {
   for (auto block : *blocks) {
     CHECK_EQ(block->rpo_number(), R.BlockAt(block)->rpo_number().ToInt());
     CHECK_EQ(block->id().ToInt(), R.BlockAt(block)->id().ToInt());
-    CHECK_EQ(NULL, block->loop_end());
+    CHECK(!block->loop_end());
   }
 }
 
@@ -278,7 +275,7 @@ TEST(InstructionAddGapMove) {
     R.code->AddGapMove(index, op1, op2);
     GapInstruction* gap = R.code->GapAt(index);
     ParallelMove* move = gap->GetParallelMove(GapInstruction::START);
-    CHECK_NE(NULL, move);
+    CHECK(move);
     const ZoneList<MoveOperands>* move_operands = move->move_operands();
     CHECK_EQ(1, move_operands->length());
     MoveOperands* cur = &move_operands->at(0);
@@ -298,23 +295,36 @@ TEST(InstructionOperands) {
     CHECK_EQ(0, static_cast<int>(i->TempCount()));
   }
 
+  int vreg = 15;
   InstructionOperand* outputs[] = {
-      new (&zone) UnallocatedOperand(UnallocatedOperand::MUST_HAVE_REGISTER),
-      new (&zone) UnallocatedOperand(UnallocatedOperand::MUST_HAVE_REGISTER),
-      new (&zone) UnallocatedOperand(UnallocatedOperand::MUST_HAVE_REGISTER),
-      new (&zone) UnallocatedOperand(UnallocatedOperand::MUST_HAVE_REGISTER)};
+      new (&zone)
+          UnallocatedOperand(UnallocatedOperand::MUST_HAVE_REGISTER, vreg),
+      new (&zone)
+          UnallocatedOperand(UnallocatedOperand::MUST_HAVE_REGISTER, vreg),
+      new (&zone)
+          UnallocatedOperand(UnallocatedOperand::MUST_HAVE_REGISTER, vreg),
+      new (&zone)
+          UnallocatedOperand(UnallocatedOperand::MUST_HAVE_REGISTER, vreg)};
 
   InstructionOperand* inputs[] = {
-      new (&zone) UnallocatedOperand(UnallocatedOperand::MUST_HAVE_REGISTER),
-      new (&zone) UnallocatedOperand(UnallocatedOperand::MUST_HAVE_REGISTER),
-      new (&zone) UnallocatedOperand(UnallocatedOperand::MUST_HAVE_REGISTER),
-      new (&zone) UnallocatedOperand(UnallocatedOperand::MUST_HAVE_REGISTER)};
+      new (&zone)
+          UnallocatedOperand(UnallocatedOperand::MUST_HAVE_REGISTER, vreg),
+      new (&zone)
+          UnallocatedOperand(UnallocatedOperand::MUST_HAVE_REGISTER, vreg),
+      new (&zone)
+          UnallocatedOperand(UnallocatedOperand::MUST_HAVE_REGISTER, vreg),
+      new (&zone)
+          UnallocatedOperand(UnallocatedOperand::MUST_HAVE_REGISTER, vreg)};
 
   InstructionOperand* temps[] = {
-      new (&zone) UnallocatedOperand(UnallocatedOperand::MUST_HAVE_REGISTER),
-      new (&zone) UnallocatedOperand(UnallocatedOperand::MUST_HAVE_REGISTER),
-      new (&zone) UnallocatedOperand(UnallocatedOperand::MUST_HAVE_REGISTER),
-      new (&zone) UnallocatedOperand(UnallocatedOperand::MUST_HAVE_REGISTER)};
+      new (&zone)
+          UnallocatedOperand(UnallocatedOperand::MUST_HAVE_REGISTER, vreg),
+      new (&zone)
+          UnallocatedOperand(UnallocatedOperand::MUST_HAVE_REGISTER, vreg),
+      new (&zone)
+          UnallocatedOperand(UnallocatedOperand::MUST_HAVE_REGISTER, vreg),
+      new (&zone)
+          UnallocatedOperand(UnallocatedOperand::MUST_HAVE_REGISTER, vreg)};
 
   for (size_t i = 0; i < arraysize(outputs); i++) {
     for (size_t j = 0; j < arraysize(inputs); j++) {
@@ -326,15 +336,15 @@ TEST(InstructionOperands) {
         CHECK(k == m->TempCount());
 
         for (size_t z = 0; z < i; z++) {
-          CHECK_EQ(outputs[z], m->OutputAt(z));
+          CHECK(outputs[z]->Equals(m->OutputAt(z)));
         }
 
         for (size_t z = 0; z < j; z++) {
-          CHECK_EQ(inputs[z], m->InputAt(z));
+          CHECK(inputs[z]->Equals(m->InputAt(z)));
         }
 
         for (size_t z = 0; z < k; z++) {
-          CHECK_EQ(temps[z], m->TempAt(z));
+          CHECK(temps[z]->Equals(m->TempAt(z)));
         }
       }
     }

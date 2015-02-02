@@ -696,7 +696,7 @@ class Parser : public ParserBase<ParserTraits> {
   static const int kMaxNumFunctionLocals = 4194303;  // 2^22-1
 
   enum VariableDeclarationContext {
-    kModuleElement,
+    kStatementListItem,
     kStatement,
     kForStatement
   };
@@ -746,22 +746,18 @@ class Parser : public ParserBase<ParserTraits> {
   // which is set to false if parsing failed; it is unchanged otherwise.
   // By making the 'exception handling' explicit, we are forced to check
   // for failure at the call sites.
-  void* ParseSourceElements(ZoneList<Statement*>* processor, int end_token,
-                            bool is_eval, bool is_global,
-                            Scope** ad_hoc_eval_scope, bool* ok);
-  Statement* ParseModuleElement(ZoneList<const AstRawString*>* labels,
-                                bool* ok);
-  Statement* ParseModuleDeclaration(ZoneList<const AstRawString*>* names,
-                                    bool* ok);
+  void* ParseStatementList(ZoneList<Statement*>* processor, int end_token,
+                           bool is_eval, Scope** ad_hoc_eval_scope, bool* ok);
+  Statement* ParseStatementListItem(bool* ok);
   Module* ParseModule(bool* ok);
-  Module* ParseModuleLiteral(bool* ok);
-  Module* ParseModulePath(bool* ok);
-  Module* ParseModuleVariable(bool* ok);
-  Module* ParseModuleUrl(bool* ok);
+  Statement* ParseModuleItem(bool* ok);
   Module* ParseModuleSpecifier(bool* ok);
-  Block* ParseImportDeclaration(bool* ok);
+  Statement* ParseImportDeclaration(bool* ok);
   Statement* ParseExportDeclaration(bool* ok);
-  Statement* ParseBlockElement(ZoneList<const AstRawString*>* labels, bool* ok);
+  Statement* ParseExportDefault(bool* ok);
+  void* ParseExportClause(ZoneList<const AstRawString*>* names,
+                          Scanner::Location* reserved_loc, bool* ok);
+  void* ParseNamedImports(ZoneList<const AstRawString*>* names, bool* ok);
   Statement* ParseStatement(ZoneList<const AstRawString*>* labels, bool* ok);
   Statement* ParseFunctionDeclaration(ZoneList<const AstRawString*>* names,
                                       bool* ok);
@@ -893,6 +889,7 @@ class Parser : public ParserBase<ParserTraits> {
   ParseData* cached_parse_data_;
 
   CompilationInfo* info_;
+  bool parsing_lazy_arrow_parameters_;  // for lazily parsed arrow functions.
 
   // Pending errors.
   bool has_pending_error_;

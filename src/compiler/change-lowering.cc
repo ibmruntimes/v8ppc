@@ -9,7 +9,8 @@
 #include "src/compiler/js-graph.h"
 #include "src/compiler/linkage.h"
 #include "src/compiler/machine-operator.h"
-#include "src/compiler/node-properties-inl.h"
+#include "src/compiler/node-properties.h"
+#include "src/compiler/operator-properties.h"
 
 namespace v8 {
 namespace internal {
@@ -165,7 +166,7 @@ Reduction ChangeLowering::ChangeInt32ToTagged(Node* value, Node* control) {
         machine()->Word64Shl(),
         graph()->NewNode(machine()->ChangeInt32ToInt64(), value),
         SmiShiftBitsConstant()));
-  } else if (NodeProperties::GetBounds(value).upper->Is(Type::SignedSmall())) {
+  } else if (NodeProperties::GetBounds(value).upper->Is(Type::Signed31())) {
     return Replace(
         graph()->NewNode(machine()->WordShl(), value, SmiShiftBitsConstant()));
   }

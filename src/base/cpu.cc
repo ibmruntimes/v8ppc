@@ -22,7 +22,7 @@
 #if V8_OS_AIX
 #include <sys/systemcfg.h>  // _system_configuration
 #ifndef POWER_8
-#define POWER_8         0x10000
+#define POWER_8 0x10000
 #endif
 #endif
 #if V8_OS_POSIX

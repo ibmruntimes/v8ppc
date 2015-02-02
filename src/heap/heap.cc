@@ -1601,7 +1601,12 @@ void Heap::Scavenge() {
   incremental_marking()->UpdateMarkingDequeAfterScavenge();
 
   ScavengeWeakObjectRetainer weak_object_retainer(this);
-  ProcessWeakReferences(&weak_object_retainer);
+  ProcessYoungWeakReferences(&weak_object_retainer);
+
+  // Collects callback info for handles referenced by young generation that are
+  // pending (about to be collected) and either phantom or internal-fields.
+  // Releases the global handles.  See also PostGarbageCollectionProcessing.
+  isolate()->global_handles()->CollectYoungPhantomCallbackData();
 
   DCHECK(new_space_front == new_space_.top());
 
@@ -1688,16 +1693,16 @@ void Heap::UpdateReferencesInExternalStringTable(
 }
 
 
-void Heap::ProcessWeakReferences(WeakObjectRetainer* retainer) {
+void Heap::ProcessAllWeakReferences(WeakObjectRetainer* retainer) {
   ProcessArrayBuffers(retainer);
   ProcessNativeContexts(retainer);
-  // TODO(mvstanton): AllocationSites only need to be processed during
-  // MARK_COMPACT, as they live in old space. Verify and address.
   ProcessAllocationSites(retainer);
-  // Collects callback info for handles that are pending (about to be
-  // collected) and either phantom or internal-fields.  Releases the global
-  // handles.  See also PostGarbageCollectionProcessing.
-  isolate()->global_handles()->CollectPhantomCallbackData();
+}
+
+
+void Heap::ProcessYoungWeakReferences(WeakObjectRetainer* retainer) {
+  ProcessArrayBuffers(retainer);
+  ProcessNativeContexts(retainer);
 }
 
 
@@ -5486,7 +5491,7 @@ bool Heap::CreateHeapObjects() {
 
   // Create initial objects
   CreateInitialObjects();
-  CHECK_EQ(0, gc_count_);
+  CHECK_EQ(0u, gc_count_);
 
   set_native_contexts_list(undefined_value());
   set_array_buffers_list(undefined_value());
