@@ -477,7 +477,7 @@ void KeyedLoadIC::GenerateRuntimeGetProperty(MacroAssembler* masm) {
 }
 
 
-void KeyedLoadIC::GenerateGeneric(MacroAssembler* masm) {
+void KeyedLoadIC::GenerateMegamorphic(MacroAssembler* masm) {
   // The return address is in lr.
   Label slow, check_name, index_smi, index_name, property_array_property;
   Label probe_dictionary, check_number_dictionary;
@@ -531,106 +531,20 @@ void KeyedLoadIC::GenerateGeneric(MacroAssembler* masm) {
   GenerateKeyedLoadReceiverCheck(masm, receiver, r3, r6,
                                  Map::kHasNamedInterceptor, &slow);
 
-  // If the receiver is a fast-case object, check the keyed lookup
-  // cache. Otherwise probe the dictionary.
+  // If the receiver is a fast-case object, check the stub cache. Otherwise
+  // probe the dictionary.
   __ LoadP(r6, FieldMemOperand(receiver, JSObject::kPropertiesOffset));
   __ LoadP(r7, FieldMemOperand(r6, HeapObject::kMapOffset));
   __ LoadRoot(ip, Heap::kHashTableMapRootIndex);
   __ cmp(r7, ip);
   __ beq(&probe_dictionary);
 
-  // Load the map of the receiver, compute the keyed lookup cache hash
-  // based on 32 bits of the map pointer and the name hash.
-  __ LoadP(r3, FieldMemOperand(receiver, HeapObject::kMapOffset));
-  __ srawi(r6, r3, KeyedLookupCache::kMapHashShift);
-  __ lwz(r7, FieldMemOperand(key, Name::kHashFieldOffset));
-  __ srawi(r7, r7, Name::kHashShift);
-  __ xor_(r6, r6, r7);
-  int mask = KeyedLookupCache::kCapacityMask & KeyedLookupCache::kHashMask;
-  __ mov(r7, Operand(mask));
-  __ and_(r6, r6, r7, LeaveRC);
-
-  // Load the key (consisting of map and unique name) from the cache and
-  // check for match.
-  Label load_in_object_property;
-  static const int kEntriesPerBucket = KeyedLookupCache::kEntriesPerBucket;
-  Label hit_on_nth_entry[kEntriesPerBucket];
-  ExternalReference cache_keys =
-      ExternalReference::keyed_lookup_cache_keys(isolate);
-
-  __ mov(r7, Operand(cache_keys));
-  __ mr(r0, r5);
-  __ ShiftLeftImm(r5, r6, Operand(kPointerSizeLog2 + 1));
-  __ add(r7, r7, r5);
-  __ mr(r5, r0);
-
-  for (int i = 0; i < kEntriesPerBucket - 1; i++) {
-    Label try_next_entry;
-    // Load map and move r7 to next entry.
-    __ LoadP(r8, MemOperand(r7));
-    __ addi(r7, r7, Operand(kPointerSize * 2));
-    __ cmp(r3, r8);
-    __ bne(&try_next_entry);
-    __ LoadP(r8, MemOperand(r7, -kPointerSize));  // Load name
-    __ cmp(key, r8);
-    __ beq(&hit_on_nth_entry[i]);
-    __ bind(&try_next_entry);
-  }
-
-  // Last entry: Load map and move r7 to name.
-  __ LoadP(r8, MemOperand(r7));
-  __ addi(r7, r7, Operand(kPointerSize));
-  __ cmp(r3, r8);
-  __ bne(&slow);
-  __ LoadP(r8, MemOperand(r7));
-  __ cmp(key, r8);
-  __ bne(&slow);
-
-  // Get field offset.
-  // r3     : receiver's map
-  // r6     : lookup cache index
-  ExternalReference cache_field_offsets =
-      ExternalReference::keyed_lookup_cache_field_offsets(isolate);
-
-  // Hit on nth entry.
-  for (int i = kEntriesPerBucket - 1; i >= 0; i--) {
-    __ bind(&hit_on_nth_entry[i]);
-    __ mov(r7, Operand(cache_field_offsets));
-    if (i != 0) {
-      __ addi(r6, r6, Operand(i));
-    }
-    __ ShiftLeftImm(r8, r6, Operand(2));
-    __ lwzx(r8, MemOperand(r8, r7));
-    __ lbz(r9, FieldMemOperand(r3, Map::kInObjectPropertiesOffset));
-    __ sub(r8, r8, r9);
-    __ cmpi(r8, Operand::Zero());
-    __ bge(&property_array_property);
-    if (i != 0) {
-      __ b(&load_in_object_property);
-    }
-  }
-
-  // Load in-object property.
-  __ bind(&load_in_object_property);
-  __ lbz(r9, FieldMemOperand(r3, Map::kInstanceSizeOffset));
-  __ add(r9, r9, r8);  // Index from start of object.
-  __ subi(receiver, receiver, Operand(kHeapObjectTag));  // Remove the heap tag.
-  __ ShiftLeftImm(r3, r9, Operand(kPointerSizeLog2));
-  __ LoadPX(r3, MemOperand(r3, receiver));
-  __ IncrementCounter(isolate->counters()->keyed_load_generic_lookup_cache(), 1,
-                      r7, r6);
-  __ Ret();
-
-  // Load property array property.
-  __ bind(&property_array_property);
-  __ LoadP(receiver, FieldMemOperand(receiver, JSObject::kPropertiesOffset));
-  __ addi(receiver, receiver,
-          Operand(FixedArray::kHeaderSize - kHeapObjectTag));
-  __ ShiftLeftImm(r3, r8, Operand(kPointerSizeLog2));
-  __ LoadPX(r3, MemOperand(r3, receiver));
-  __ IncrementCounter(isolate->counters()->keyed_load_generic_lookup_cache(), 1,
-                      r7, r6);
-  __ Ret();
+  Code::Flags flags = Code::RemoveTypeAndHolderFromFlags(
+      Code::ComputeHandlerFlags(Code::LOAD_IC));
+  masm->isolate()->stub_cache()->GenerateProbe(
+      masm, Code::LOAD_IC, flags, false, receiver, key, r6, r7, r8, r9);
+  // Cache miss.
+  GenerateMiss(masm);
 
   // Do a quick inline probe of the receiver's dictionary, if it
   // exists.

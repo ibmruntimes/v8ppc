@@ -773,6 +773,8 @@ class MacroAssembler : public Assembler {
   void CmpWeakValue(Register value, Handle<WeakCell> cell, Register scratch,
                     CRegister cr = cr7);
 
+  void GetWeakValue(Register value, Handle<WeakCell> cell);
+
   // Load the value of the weak cell in the value register. Branch to the given
   // miss label if the weak cell was cleared.
   void LoadWeakValue(Register value, Handle<WeakCell> cell, Label* miss);
@@ -789,7 +791,7 @@ class MacroAssembler : public Assembler {
     LoadP(type, FieldMemOperand(obj, HeapObject::kMapOffset));
     lbz(type, FieldMemOperand(type, Map::kInstanceTypeOffset));
     andi(r0, type, Operand(kIsNotStringMask));
-    DCHECK_EQ(0, kStringTag);
+    DCHECK_EQ(0u, kStringTag);
     return eq;
   }
 
@@ -1379,6 +1381,8 @@ class MacroAssembler : public Assembler {
   void LoadInstanceDescriptors(Register map, Register descriptors);
   void EnumLength(Register dst, Register map);
   void NumberOfOwnDescriptors(Register dst, Register map);
+  void LoadAccessor(Register dst, Register holder, int accessor_index,
+                    AccessorComponent accessor);
 
   template <typename Field>
   void DecodeField(Register dst, Register src, RCBit rc = LeaveRC) {
