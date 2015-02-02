@@ -3873,8 +3873,9 @@ void MacroAssembler::LoadAccessor(Register dst, Register holder,
   LoadInstanceDescriptors(dst, dst);
   LoadP(dst,
         FieldMemOperand(dst, DescriptorArray::GetValueOffset(accessor_index)));
-  int offset = accessor == ACCESSOR_GETTER ? AccessorPair::kGetterOffset
-                                           : AccessorPair::kSetterOffset;
+  const int getterOffset = AccessorPair::kGetterOffset;
+  const int setterOffset = AccessorPair::kSetterOffset;
+  int offset = ((accessor == ACCESSOR_GETTER) ? getterOffset : setterOffset);
   LoadP(dst, FieldMemOperand(dst, offset));
 }
 
