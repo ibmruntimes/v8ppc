@@ -1084,7 +1084,7 @@ class StoreGlobalStub : public HandlerStub {
                       CheckGlobalBits::encode(check_global));
   }
 
-  static Handle<HeapObject> global_placeholder(Isolate* isolate) {
+  static Handle<HeapObject> property_cell_placeholder(Isolate* isolate) {
     return isolate->factory()->uninitialized_value();
   }
 
@@ -1092,13 +1092,15 @@ class StoreGlobalStub : public HandlerStub {
                                        Handle<PropertyCell> cell) {
     if (check_global()) {
       Code::FindAndReplacePattern pattern;
-      pattern.Add(Handle<Map>(global_placeholder(isolate())->map()), global);
-      pattern.Add(isolate()->factory()->meta_map(), Handle<Map>(global->map()));
-      pattern.Add(isolate()->factory()->global_property_cell_map(), cell);
+      pattern.Add(isolate()->factory()->meta_map(),
+                  Map::WeakCellForMap(Handle<Map>(global->map())));
+      pattern.Add(Handle<Map>(property_cell_placeholder(isolate())->map()),
+                  isolate()->factory()->NewWeakCell(cell));
       return CodeStub::GetCodeCopy(pattern);
     } else {
       Code::FindAndReplacePattern pattern;
-      pattern.Add(isolate()->factory()->global_property_cell_map(), cell);
+      pattern.Add(Handle<Map>(property_cell_placeholder(isolate())->map()),
+                  isolate()->factory()->NewWeakCell(cell));
       return CodeStub::GetCodeCopy(pattern);
     }
   }

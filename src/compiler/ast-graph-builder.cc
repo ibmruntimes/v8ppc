@@ -20,15 +20,368 @@ namespace v8 {
 namespace internal {
 namespace compiler {
 
+
+// Each expression in the AST is evaluated in a specific context. This context
+// decides how the evaluation result is passed up the visitor.
+class AstGraphBuilder::AstContext BASE_EMBEDDED {
+ public:
+  bool IsEffect() const { return kind_ == Expression::kEffect; }
+  bool IsValue() const { return kind_ == Expression::kValue; }
+  bool IsTest() const { return kind_ == Expression::kTest; }
+
+  // Determines how to combine the frame state with the value
+  // that is about to be plugged into this AstContext.
+  OutputFrameStateCombine GetStateCombine() {
+    return IsEffect() ? OutputFrameStateCombine::Ignore()
+                      : OutputFrameStateCombine::Push();
+  }
+
+  // Plug a node into this expression context.  Call this function in tail
+  // position in the Visit functions for expressions.
+  virtual void ProduceValue(Node* value) = 0;
+
+  // Unplugs a node from this expression context.  Call this to retrieve the
+  // result of another Visit function that already plugged the context.
+  virtual Node* ConsumeValue() = 0;
+
+  // Shortcut for "context->ProduceValue(context->ConsumeValue())".
+  void ReplaceValue() { ProduceValue(ConsumeValue()); }
+
+ protected:
+  AstContext(AstGraphBuilder* owner, Expression::Context kind);
+  virtual ~AstContext();
+
+  AstGraphBuilder* owner() const { return owner_; }
+  Environment* environment() const { return owner_->environment(); }
+
+// We want to be able to assert, in a context-specific way, that the stack
+// height makes sense when the context is filled.
+#ifdef DEBUG
+  int original_height_;
+#endif
+
+ private:
+  Expression::Context kind_;
+  AstGraphBuilder* owner_;
+  AstContext* outer_;
+};
+
+
+// Context to evaluate expression for its side effects only.
+class AstGraphBuilder::AstEffectContext FINAL : public AstContext {
+ public:
+  explicit AstEffectContext(AstGraphBuilder* owner)
+      : AstContext(owner, Expression::kEffect) {}
+  ~AstEffectContext() FINAL;
+  void ProduceValue(Node* value) FINAL;
+  Node* ConsumeValue() FINAL;
+};
+
+
+// Context to evaluate expression for its value (and side effects).
+class AstGraphBuilder::AstValueContext FINAL : public AstContext {
+ public:
+  explicit AstValueContext(AstGraphBuilder* owner)
+      : AstContext(owner, Expression::kValue) {}
+  ~AstValueContext() FINAL;
+  void ProduceValue(Node* value) FINAL;
+  Node* ConsumeValue() FINAL;
+};
+
+
+// Context to evaluate expression for a condition value (and side effects).
+class AstGraphBuilder::AstTestContext FINAL : public AstContext {
+ public:
+  explicit AstTestContext(AstGraphBuilder* owner)
+      : AstContext(owner, Expression::kTest) {}
+  ~AstTestContext() FINAL;
+  void ProduceValue(Node* value) FINAL;
+  Node* ConsumeValue() FINAL;
+};
+
+
+// Scoped class tracking context objects created by the visitor. Represents
+// mutations of the context chain within the function body and allows to
+// change the current {scope} and {context} during visitation.
+class AstGraphBuilder::ContextScope BASE_EMBEDDED {
+ public:
+  ContextScope(AstGraphBuilder* owner, Scope* scope, Node* context)
+      : owner_(owner),
+        next_(owner->execution_context()),
+        outer_(owner->current_context()),
+        scope_(scope) {
+    owner_->set_execution_context(this);  // Push.
+    owner_->set_current_context(context);
+  }
+
+  ~ContextScope() {
+    owner_->set_execution_context(next_);  // Pop.
+    owner_->set_current_context(outer_);
+  }
+
+  // Current scope during visitation.
+  Scope* scope() const { return scope_; }
+
+ private:
+  AstGraphBuilder* owner_;
+  ContextScope* next_;
+  Node* outer_;
+  Scope* scope_;
+};
+
+
+// Scoped class tracking control statements entered by the visitor. There are
+// different types of statements participating in this stack to properly track
+// local as well as non-local control flow:
+//  - IterationStatement : Allows proper 'break' and 'continue' behavior.
+//  - BreakableStatement : Allows 'break' from block and switch statements.
+//  - TryCatchStatement  : Intercepts 'throw' and implicit exceptional edges.
+//  - TryFinallyStatement: Intercepts 'break', 'continue', 'throw' and 'return'.
+class AstGraphBuilder::ControlScope BASE_EMBEDDED {
+ public:
+  ControlScope(AstGraphBuilder* builder, int stack_delta)
+      : builder_(builder),
+        next_(builder->execution_control()),
+        stack_delta_(stack_delta) {
+    builder_->set_execution_control(this);  // Push.
+  }
+
+  virtual ~ControlScope() {
+    builder_->set_execution_control(next_);  // Pop.
+  }
+
+  // Either 'break' or 'continue' to the target statement.
+  void BreakTo(BreakableStatement* target);
+  void ContinueTo(BreakableStatement* target);
+
+  // Either 'return' or 'throw' the given value.
+  void ReturnValue(Node* return_value);
+  void ThrowValue(Node* exception_value);
+
+  class DeferredCommands;
+
+ protected:
+  enum Command { CMD_BREAK, CMD_CONTINUE, CMD_RETURN, CMD_THROW };
+
+  // Performs one of the above commands on this stack of control scopes. This
+  // walks through the stack giving each scope a chance to execute or defer the
+  // given command by overriding the {Execute} method appropriately. Note that
+  // this also drops extra operands from the environment for each skipped scope.
+  void PerformCommand(Command cmd, Statement* target, Node* value);
+
+  // Interface to execute a given command in this scope. Returning {true} here
+  // indicates successful execution whereas {false} requests to skip scope.
+  virtual bool Execute(Command cmd, Statement* target, Node* value) {
+    // For function-level control.
+    switch (cmd) {
+      case CMD_THROW:
+        builder()->BuildThrow(value);
+        return true;
+      case CMD_RETURN:
+        builder()->BuildReturn(value);
+        return true;
+      case CMD_BREAK:
+      case CMD_CONTINUE:
+        break;
+    }
+    return false;
+  }
+
+  Environment* environment() { return builder_->environment(); }
+  AstGraphBuilder* builder() const { return builder_; }
+  int stack_delta() const { return stack_delta_; }
+
+ private:
+  AstGraphBuilder* builder_;
+  ControlScope* next_;
+  int stack_delta_;
+};
+
+
+// Helper class for a try-finally control scope. It can record intercepted
+// control-flow commands that cause entry into a finally-block, and re-apply
+// them after again leaving that block. Special tokens are used to identify
+// paths going through the finally-block to dispatch after leaving the block.
+class AstGraphBuilder::ControlScope::DeferredCommands : public ZoneObject {
+ public:
+  explicit DeferredCommands(AstGraphBuilder* owner)
+      : owner_(owner), deferred_(owner->zone()) {}
+
+  // One recorded control-flow command.
+  struct Entry {
+    Command command;       // The command type being applied on this path.
+    Statement* statement;  // The target statement for the command or {NULL}.
+    Node* value;           // The passed value node for the command or {NULL}.
+    Node* token;           // A token identifying this particular path.
+  };
+
+  // Records a control-flow command while entering the finally-block. This also
+  // generates a new dispatch token that identifies one particular path.
+  Node* RecordCommand(Command cmd, Statement* stmt, Node* value) {
+    Node* token = NewPathTokenForDeferredCommand();
+    deferred_.push_back({cmd, stmt, value, token});
+    return token;
+  }
+
+  // Returns the dispatch token to be used to identify the implicit fall-through
+  // path at the end of a try-block into the corresponding finally-block.
+  Node* GetFallThroughToken() { return NewPathTokenForImplicitFallThrough(); }
+
+  // Applies all recorded control-flow commands after the finally-block again.
+  // This generates a dynamic dispatch on the token from the entry point.
+  void ApplyDeferredCommands(Node* token) {
+    SwitchBuilder dispatch(owner_, static_cast<int>(deferred_.size()));
+    dispatch.BeginSwitch();
+    for (size_t i = 0; i < deferred_.size(); ++i) {
+      Node* condition = NewPathDispatchCondition(token, deferred_[i].token);
+      dispatch.BeginLabel(static_cast<int>(i), condition);
+      dispatch.EndLabel();
+    }
+    for (size_t i = 0; i < deferred_.size(); ++i) {
+      dispatch.BeginCase(static_cast<int>(i));
+      owner_->execution_control()->PerformCommand(
+          deferred_[i].command, deferred_[i].statement, deferred_[i].value);
+      dispatch.EndCase();
+    }
+    dispatch.EndSwitch();
+  }
+
+ protected:
+  Node* NewPathTokenForDeferredCommand() {
+    return owner_->jsgraph()->Constant(static_cast<int>(deferred_.size()));
+  }
+  Node* NewPathTokenForImplicitFallThrough() {
+    return owner_->jsgraph()->Constant(-1);
+  }
+  Node* NewPathDispatchCondition(Node* t1, Node* t2) {
+    // TODO(mstarzinger): This should be machine()->WordEqual(), but our Phi
+    // nodes all have kRepTagged|kTypeAny, which causes representation mismatch.
+    return owner_->NewNode(owner_->javascript()->StrictEqual(), t1, t2);
+  }
+
+ private:
+  AstGraphBuilder* owner_;
+  ZoneVector<Entry> deferred_;
+};
+
+
+// Control scope implementation for a BreakableStatement.
+class AstGraphBuilder::ControlScopeForBreakable : public ControlScope {
+ public:
+  ControlScopeForBreakable(AstGraphBuilder* owner, BreakableStatement* target,
+                           ControlBuilder* control)
+      : ControlScope(owner, 0), target_(target), control_(control) {}
+
+ protected:
+  virtual bool Execute(Command cmd, Statement* target, Node* value) OVERRIDE {
+    if (target != target_) return false;  // We are not the command target.
+    switch (cmd) {
+      case CMD_BREAK:
+        control_->Break();
+        return true;
+      case CMD_CONTINUE:
+      case CMD_THROW:
+      case CMD_RETURN:
+        break;
+    }
+    return false;
+  }
+
+ private:
+  BreakableStatement* target_;
+  ControlBuilder* control_;
+};
+
+
+// Control scope implementation for an IterationStatement.
+class AstGraphBuilder::ControlScopeForIteration : public ControlScope {
+ public:
+  ControlScopeForIteration(AstGraphBuilder* owner, IterationStatement* target,
+                           LoopBuilder* control, int stack_delta)
+      : ControlScope(owner, stack_delta), target_(target), control_(control) {}
+
+ protected:
+  virtual bool Execute(Command cmd, Statement* target, Node* value) OVERRIDE {
+    if (target != target_) return false;  // We are not the command target.
+    switch (cmd) {
+      case CMD_BREAK:
+        control_->Break();
+        return true;
+      case CMD_CONTINUE:
+        control_->Continue();
+        return true;
+      case CMD_THROW:
+      case CMD_RETURN:
+        break;
+    }
+    return false;
+  }
+
+ private:
+  BreakableStatement* target_;
+  LoopBuilder* control_;
+};
+
+
+// Control scope implementation for a TryCatchStatement.
+class AstGraphBuilder::ControlScopeForCatch : public ControlScope {
+ public:
+  ControlScopeForCatch(AstGraphBuilder* owner, TryCatchBuilder* control)
+      : ControlScope(owner, 0), control_(control) {}
+
+ protected:
+  virtual bool Execute(Command cmd, Statement* target, Node* value) OVERRIDE {
+    switch (cmd) {
+      case CMD_THROW:
+        control_->Throw(value);
+        return true;
+      case CMD_BREAK:
+      case CMD_CONTINUE:
+      case CMD_RETURN:
+        break;
+    }
+    return false;
+  }
+
+ private:
+  TryCatchBuilder* control_;
+};
+
+
+// Control scope implementation for a TryFinallyStatement.
+class AstGraphBuilder::ControlScopeForFinally : public ControlScope {
+ public:
+  ControlScopeForFinally(AstGraphBuilder* owner, DeferredCommands* commands,
+                         TryFinallyBuilder* control)
+      : ControlScope(owner, 0), commands_(commands), control_(control) {}
+
+ protected:
+  virtual bool Execute(Command cmd, Statement* target, Node* value) OVERRIDE {
+    Node* token = commands_->RecordCommand(cmd, target, value);
+    control_->LeaveTry(token);
+    return true;
+  }
+
+ private:
+  DeferredCommands* commands_;
+  TryFinallyBuilder* control_;
+};
+
+
 AstGraphBuilder::AstGraphBuilder(Zone* local_zone, CompilationInfo* info,
                                  JSGraph* jsgraph, LoopAssignmentAnalysis* loop)
-    : StructuredGraphBuilder(jsgraph->isolate(), local_zone, jsgraph->graph(),
-                             jsgraph->common()),
+    : local_zone_(local_zone),
       info_(info),
       jsgraph_(jsgraph),
+      environment_(nullptr),
+      ast_context_(nullptr),
       globals_(0, local_zone),
-      breakable_(NULL),
-      execution_context_(NULL),
+      execution_control_(nullptr),
+      execution_context_(nullptr),
+      input_buffer_size_(0),
+      input_buffer_(nullptr),
+      current_context_(nullptr),
+      exit_control_(nullptr),
       loop_assignment_analysis_(loop) {
   InitializeAstVisitor(info->isolate(), local_zone);
 }
@@ -64,9 +417,11 @@ bool AstGraphBuilder::CreateGraph() {
   int parameter_count = info()->num_parameters();
   graph()->SetStart(graph()->NewNode(common()->Start(parameter_count)));
 
-  Node* start = graph()->start();
+  // Initialize control scope.
+  ControlScope control(this, 0);
+
   // Initialize the top-level environment.
-  Environment env(this, scope, start);
+  Environment env(this, scope, graph()->start());
   set_environment(&env);
 
   if (info()->is_osr()) {
@@ -124,8 +479,7 @@ bool AstGraphBuilder::CreateGraph() {
   }
 
   // Return 'undefined' in case we can fall off the end.
-  Node* control = NewNode(common()->Return(), jsgraph()->UndefinedConstant());
-  UpdateControlDependencyToLeaveFunction(control);
+  BuildReturn(jsgraph()->UndefinedConstant());
 
   // Finish the basic structure of the graph.
   environment()->UpdateControlDependency(exit_control());
@@ -151,21 +505,18 @@ static LhsKind DetermineLhsKind(Expression* expr) {
 }
 
 
-StructuredGraphBuilder::Environment* AstGraphBuilder::CopyEnvironment(
-    StructuredGraphBuilder::Environment* env) {
-  return new (zone()) Environment(*reinterpret_cast<Environment*>(env));
-}
-
-
 AstGraphBuilder::Environment::Environment(AstGraphBuilder* builder,
                                           Scope* scope,
                                           Node* control_dependency)
-    : StructuredGraphBuilder::Environment(builder, control_dependency),
+    : builder_(builder),
       parameters_count_(scope->num_parameters() + 1),
       locals_count_(scope->num_stack_slots()),
-      parameters_node_(NULL),
-      locals_node_(NULL),
-      stack_node_(NULL) {
+      values_(builder_->local_zone()),
+      control_dependency_(control_dependency),
+      effect_dependency_(control_dependency),
+      parameters_node_(nullptr),
+      locals_node_(nullptr),
+      stack_node_(nullptr) {
   DCHECK_EQ(scope->num_parameters() + 1, parameters_count());
 
   // Bind the receiver variable.
@@ -187,14 +538,21 @@ AstGraphBuilder::Environment::Environment(AstGraphBuilder* builder,
 }
 
 
-AstGraphBuilder::Environment::Environment(const Environment& copy)
-    : StructuredGraphBuilder::Environment(
-          static_cast<StructuredGraphBuilder::Environment>(copy)),
-      parameters_count_(copy.parameters_count_),
-      locals_count_(copy.locals_count_),
-      parameters_node_(copy.parameters_node_),
-      locals_node_(copy.locals_node_),
-      stack_node_(copy.stack_node_) {}
+AstGraphBuilder::Environment::Environment(
+    const AstGraphBuilder::Environment* copy)
+    : builder_(copy->builder_),
+      parameters_count_(copy->parameters_count_),
+      locals_count_(copy->locals_count_),
+      values_(copy->zone()),
+      control_dependency_(copy->control_dependency_),
+      effect_dependency_(copy->effect_dependency_),
+      parameters_node_(copy->parameters_node_),
+      locals_node_(copy->locals_node_),
+      stack_node_(copy->stack_node_) {
+  const size_t kStackEstimate = 7;  // optimum from experimentation!
+  values_.reserve(copy->values_.size() + kStackEstimate);
+  values_.insert(values_.begin(), copy->values_.begin(), copy->values_.end());
+}
 
 
 void AstGraphBuilder::Environment::UpdateStateValues(Node** state_values,
@@ -229,7 +587,7 @@ Node* AstGraphBuilder::Environment::Checkpoint(
   const Operator* op = common()->FrameState(JS_FRAME, ast_id, combine);
 
   return graph()->NewNode(op, parameters_node_, locals_node_, stack_node_,
-                          GetContext(),
+                          builder()->current_context(),
                           builder()->jsgraph()->UndefinedConstant());
 }
 
@@ -292,25 +650,43 @@ Node* AstGraphBuilder::AstTestContext::ConsumeValue() {
 }
 
 
-AstGraphBuilder::BreakableScope* AstGraphBuilder::BreakableScope::FindBreakable(
-    BreakableStatement* target) {
-  BreakableScope* current = this;
-  while (current != NULL && current->target_ != target) {
-    owner_->environment()->Drop(current->drop_extra_);
+Scope* AstGraphBuilder::current_scope() const {
+  return execution_context_->scope();
+}
+
+
+void AstGraphBuilder::ControlScope::PerformCommand(Command command,
+                                                   Statement* target,
+                                                   Node* value) {
+  Environment* env = environment()->CopyAsUnreachable();
+  ControlScope* current = this;
+  while (current != NULL) {
+    if (current->Execute(command, target, value)) break;
+    environment()->Drop(current->stack_delta());
     current = current->next_;
   }
-  DCHECK(current != NULL);  // Always found (unless stack is malformed).
-  return current;
+  builder()->set_environment(env);
+  DCHECK(current != NULL);  // Always handled (unless stack is malformed).
 }
 
 
-void AstGraphBuilder::BreakableScope::BreakTarget(BreakableStatement* stmt) {
-  FindBreakable(stmt)->control_->Break();
+void AstGraphBuilder::ControlScope::BreakTo(BreakableStatement* stmt) {
+  PerformCommand(CMD_BREAK, stmt, nullptr);
 }
 
 
-void AstGraphBuilder::BreakableScope::ContinueTarget(BreakableStatement* stmt) {
-  FindBreakable(stmt)->control_->Continue();
+void AstGraphBuilder::ControlScope::ContinueTo(BreakableStatement* stmt) {
+  PerformCommand(CMD_CONTINUE, stmt, nullptr);
+}
+
+
+void AstGraphBuilder::ControlScope::ReturnValue(Node* return_value) {
+  PerformCommand(CMD_RETURN, nullptr, return_value);
+}
+
+
+void AstGraphBuilder::ControlScope::ThrowValue(Node* exception_value) {
+  PerformCommand(CMD_THROW, nullptr, exception_value);
 }
 
 
@@ -473,7 +849,7 @@ void AstGraphBuilder::VisitModuleUrl(ModuleUrl* modl) { UNREACHABLE(); }
 
 void AstGraphBuilder::VisitBlock(Block* stmt) {
   BlockBuilder block(this);
-  BreakableScope scope(this, stmt, &block, 0);
+  ControlScopeForBreakable scope(this, stmt, &block);
   if (stmt->labels() != NULL) block.BeginBlock();
   if (stmt->scope() == NULL) {
     // Visit statements in the same scope, no declarations.
@@ -518,24 +894,19 @@ void AstGraphBuilder::VisitIfStatement(IfStatement* stmt) {
 
 
 void AstGraphBuilder::VisitContinueStatement(ContinueStatement* stmt) {
-  StructuredGraphBuilder::Environment* env = environment()->CopyAsUnreachable();
-  breakable()->ContinueTarget(stmt->target());
-  set_environment(env);
+  execution_control()->ContinueTo(stmt->target());
 }
 
 
 void AstGraphBuilder::VisitBreakStatement(BreakStatement* stmt) {
-  StructuredGraphBuilder::Environment* env = environment()->CopyAsUnreachable();
-  breakable()->BreakTarget(stmt->target());
-  set_environment(env);
+  execution_control()->BreakTo(stmt->target());
 }
 
 
 void AstGraphBuilder::VisitReturnStatement(ReturnStatement* stmt) {
   VisitForValue(stmt->expression());
   Node* result = environment()->Pop();
-  Node* control = NewNode(common()->Return(), result);
-  UpdateControlDependencyToLeaveFunction(control);
+  execution_control()->ReturnValue(result);
 }
 
 
@@ -553,7 +924,7 @@ void AstGraphBuilder::VisitWithStatement(WithStatement* stmt) {
 void AstGraphBuilder::VisitSwitchStatement(SwitchStatement* stmt) {
   ZoneList<CaseClause*>* clauses = stmt->cases();
   SwitchBuilder compare_switch(this, clauses->length());
-  BreakableScope scope(this, stmt, &compare_switch, 0);
+  ControlScopeForBreakable scope(this, stmt, &compare_switch);
   compare_switch.BeginSwitch();
   int default_index = -1;
 
@@ -806,14 +1177,70 @@ void AstGraphBuilder::VisitForOfStatement(ForOfStatement* stmt) {
 
 
 void AstGraphBuilder::VisitTryCatchStatement(TryCatchStatement* stmt) {
-  // TODO(turbofan): Implement try-catch here.
-  SetStackOverflow();
+  TryCatchBuilder try_control(this);
+
+  // Evaluate the try-block inside a control scope. This simulates a handler
+  // that is intercepting 'throw' control commands.
+  try_control.BeginTry();
+  {
+    ControlScopeForCatch scope(this, &try_control);
+    Visit(stmt->try_block());
+  }
+  try_control.EndTry();
+
+  // Create a catch scope that binds the exception.
+  Node* exception = try_control.GetExceptionNode();
+  if (exception == NULL) exception = jsgraph()->NullConstant();
+  Unique<String> name = MakeUnique(stmt->variable()->name());
+  const Operator* op = javascript()->CreateCatchContext(name);
+  Node* context = NewNode(op, exception, GetFunctionClosure());
+  PrepareFrameState(context, BailoutId::None());
+  ContextScope scope(this, stmt->scope(), context);
+  DCHECK(stmt->scope()->declarations()->is_empty());
+
+  // Evaluate the catch-block.
+  Visit(stmt->catch_block());
+  try_control.EndCatch();
+
+  // TODO(mstarzinger): Remove bailout once everything works.
+  if (!FLAG_turbo_exceptions) SetStackOverflow();
 }
 
 
 void AstGraphBuilder::VisitTryFinallyStatement(TryFinallyStatement* stmt) {
-  // TODO(turbofan): Implement try-catch here.
-  SetStackOverflow();
+  TryFinallyBuilder try_control(this);
+
+  // We keep a record of all paths that enter the finally-block to be able to
+  // dispatch to the correct continuation point after the statements in the
+  // finally-block have been evaluated.
+  //
+  // The try-finally construct can enter the finally-block in three ways:
+  // 1. By exiting the try-block normally, falling through at the end.
+  // 2. By exiting the try-block with a function-local control flow transfer
+  //    (i.e. through break/continue/return statements).
+  // 3. By exiting the try-block with a thrown exception.
+  ControlScope::DeferredCommands* commands =
+      new (zone()) ControlScope::DeferredCommands(this);
+
+  // Evaluate the try-block inside a control scope. This simulates a handler
+  // that is intercepting all control commands.
+  try_control.BeginTry();
+  {
+    ControlScopeForFinally scope(this, commands, &try_control);
+    Visit(stmt->try_block());
+  }
+  try_control.EndTry(commands->GetFallThroughToken());
+
+  // Evaluate the finally-block.
+  Visit(stmt->finally_block());
+  try_control.EndFinally();
+
+  // Dynamic dispatch after the finally-block.
+  Node* token = try_control.GetDispatchTokenNode();
+  commands->ApplyDeferredCommands(token);
+
+  // TODO(mstarzinger): Remove bailout once everything works.
+  if (!FLAG_turbo_exceptions) SetStackOverflow();
 }
 
 
@@ -1377,10 +1804,16 @@ void AstGraphBuilder::VisitYield(Yield* expr) {
 void AstGraphBuilder::VisitThrow(Throw* expr) {
   VisitForValue(expr->exception());
   Node* exception = environment()->Pop();
-  const Operator* op = javascript()->CallRuntime(Runtime::kThrow, 1);
-  Node* value = NewNode(op, exception);
-  PrepareFrameState(value, expr->id(), ast_context()->GetStateCombine());
-  ast_context()->ProduceValue(value);
+  if (FLAG_turbo_exceptions) {
+    execution_control()->ThrowValue(exception);
+    ast_context()->ProduceValue(exception);
+  } else {
+    // TODO(mstarzinger): Temporary workaround for bailout-id for debugger.
+    const Operator* op = javascript()->CallRuntime(Runtime::kThrow, 1);
+    Node* value = NewNode(op, exception);
+    PrepareFrameState(value, expr->id(), ast_context()->GetStateCombine());
+    ast_context()->ProduceValue(value);
+  }
 }
 
 
@@ -1822,8 +2255,8 @@ void AstGraphBuilder::VisitIfNotNull(Statement* stmt) {
 
 
 void AstGraphBuilder::VisitIterationBody(IterationStatement* stmt,
-                                         LoopBuilder* loop, int drop_extra) {
-  BreakableScope scope(this, stmt, loop, drop_extra);
+                                         LoopBuilder* loop, int stack_delta) {
+  ControlScopeForIteration scope(this, stmt, loop, stack_delta);
   Visit(stmt->body());
 }
 
@@ -1945,7 +2378,7 @@ Node* AstGraphBuilder::BuildPatchReceiverToGlobalProxy(Node* receiver) {
   // Sloppy mode functions and builtins need to replace the receiver with the
   // global proxy when called as functions (without an explicit receiver
   // object). Otherwise there is nothing left to do here.
-  if (info()->strict_mode() != SLOPPY || info()->is_native()) return receiver;
+  if (strict_mode() != SLOPPY || info()->is_native()) return receiver;
 
   // There is no need to perform patching if the receiver is never used. Note
   // that scope predicates are purely syntactical, a call to eval might still
@@ -2350,6 +2783,21 @@ Node* AstGraphBuilder::BuildThrowConstAssignError(BailoutId bailout_id) {
 }
 
 
+Node* AstGraphBuilder::BuildReturn(Node* return_value) {
+  Node* control = NewNode(common()->Return(), return_value);
+  UpdateControlDependencyToLeaveFunction(control);
+  return control;
+}
+
+
+Node* AstGraphBuilder::BuildThrow(Node* exception_value) {
+  NewNode(javascript()->CallRuntime(Runtime::kReThrow, 1), exception_value);
+  Node* control = NewNode(common()->Throw(), exception_value);
+  UpdateControlDependencyToLeaveFunction(control);
+  return control;
+}
+
+
 Node* AstGraphBuilder::BuildBinaryOp(Node* left, Node* right, Token::Value op) {
   const Operator* js_op;
   switch (op) {
@@ -2437,6 +2885,243 @@ BitVector* AstGraphBuilder::GetVariablesAssignedInLoop(
     IterationStatement* stmt) {
   if (loop_assignment_analysis_ == NULL) return NULL;
   return loop_assignment_analysis_->GetVariablesAssignedInLoop(stmt);
+}
+
+
+Node** AstGraphBuilder::EnsureInputBufferSize(int size) {
+  if (size > input_buffer_size_) {
+    size = size + kInputBufferSizeIncrement + input_buffer_size_;
+    input_buffer_ = local_zone()->NewArray<Node*>(size);
+    input_buffer_size_ = size;
+  }
+  return input_buffer_;
+}
+
+
+Node* AstGraphBuilder::MakeNode(const Operator* op, int value_input_count,
+                                Node** value_inputs, bool incomplete) {
+  DCHECK(op->ValueInputCount() == value_input_count);
+
+  bool has_context = OperatorProperties::HasContextInput(op);
+  bool has_framestate = OperatorProperties::HasFrameStateInput(op);
+  bool has_control = op->ControlInputCount() == 1;
+  bool has_effect = op->EffectInputCount() == 1;
+
+  DCHECK(op->ControlInputCount() < 2);
+  DCHECK(op->EffectInputCount() < 2);
+
+  Node* result = NULL;
+  if (!has_context && !has_framestate && !has_control && !has_effect) {
+    result = graph()->NewNode(op, value_input_count, value_inputs, incomplete);
+  } else {
+    int input_count_with_deps = value_input_count;
+    if (has_context) ++input_count_with_deps;
+    if (has_framestate) ++input_count_with_deps;
+    if (has_control) ++input_count_with_deps;
+    if (has_effect) ++input_count_with_deps;
+    Node** buffer = EnsureInputBufferSize(input_count_with_deps);
+    memcpy(buffer, value_inputs, kPointerSize * value_input_count);
+    Node** current_input = buffer + value_input_count;
+    if (has_context) {
+      *current_input++ = current_context();
+    }
+    if (has_framestate) {
+      // The frame state will be inserted later. Here we misuse
+      // the dead_control node as a sentinel to be later overwritten
+      // with the real frame state.
+      *current_input++ = dead_control();
+    }
+    if (has_effect) {
+      *current_input++ = environment_->GetEffectDependency();
+    }
+    if (has_control) {
+      *current_input++ = environment_->GetControlDependency();
+    }
+    result = graph()->NewNode(op, input_count_with_deps, buffer, incomplete);
+    if (has_effect) {
+      environment_->UpdateEffectDependency(result);
+    }
+    if (result->op()->ControlOutputCount() > 0 &&
+        !environment()->IsMarkedAsUnreachable()) {
+      environment_->UpdateControlDependency(result);
+    }
+  }
+
+  return result;
+}
+
+
+void AstGraphBuilder::UpdateControlDependencyToLeaveFunction(Node* exit) {
+  if (environment()->IsMarkedAsUnreachable()) return;
+  if (exit_control() != NULL) {
+    exit = MergeControl(exit_control(), exit);
+  }
+  environment()->MarkAsUnreachable();
+  set_exit_control(exit);
+}
+
+
+void AstGraphBuilder::Environment::Merge(Environment* other) {
+  DCHECK(values_.size() == other->values_.size());
+
+  // Nothing to do if the other environment is dead.
+  if (other->IsMarkedAsUnreachable()) return;
+
+  // Resurrect a dead environment by copying the contents of the other one and
+  // placing a singleton merge as the new control dependency.
+  if (this->IsMarkedAsUnreachable()) {
+    Node* other_control = other->control_dependency_;
+    Node* inputs[] = {other_control};
+    control_dependency_ =
+        graph()->NewNode(common()->Merge(1), arraysize(inputs), inputs, true);
+    effect_dependency_ = other->effect_dependency_;
+    values_ = other->values_;
+    return;
+  }
+
+  // Create a merge of the control dependencies of both environments and update
+  // the current environment's control dependency accordingly.
+  Node* control = builder_->MergeControl(this->GetControlDependency(),
+                                         other->GetControlDependency());
+  UpdateControlDependency(control);
+
+  // Create a merge of the effect dependencies of both environments and update
+  // the current environment's effect dependency accordingly.
+  Node* effect = builder_->MergeEffect(this->GetEffectDependency(),
+                                       other->GetEffectDependency(), control);
+  UpdateEffectDependency(effect);
+
+  // Introduce Phi nodes for values that have differing input at merge points,
+  // potentially extending an existing Phi node if possible.
+  for (int i = 0; i < static_cast<int>(values_.size()); ++i) {
+    values_[i] = builder_->MergeValue(values_[i], other->values_[i], control);
+  }
+}
+
+
+void AstGraphBuilder::Environment::PrepareForLoop(BitVector* assigned,
+                                                  bool is_osr) {
+  int size = static_cast<int>(values()->size());
+
+  Node* control = builder_->NewLoop();
+  if (assigned == nullptr) {
+    // Assume that everything is updated in the loop.
+    for (int i = 0; i < size; ++i) {
+      Node* phi = builder_->NewPhi(1, values()->at(i), control);
+      values()->at(i) = phi;
+    }
+  } else {
+    // Only build phis for those locals assigned in this loop.
+    for (int i = 0; i < size; ++i) {
+      if (i < assigned->length() && !assigned->Contains(i)) continue;
+      Node* phi = builder_->NewPhi(1, values()->at(i), control);
+      values()->at(i) = phi;
+    }
+  }
+  Node* effect = builder_->NewEffectPhi(1, GetEffectDependency(), control);
+  UpdateEffectDependency(effect);
+
+  if (is_osr) {
+    // Merge OSR values as inputs to the phis of the loop.
+    Graph* graph = builder_->graph();
+    Node* osr_loop_entry = builder_->graph()->NewNode(
+        builder_->common()->OsrLoopEntry(), graph->start(), graph->start());
+
+    builder_->MergeControl(control, osr_loop_entry);
+    builder_->MergeEffect(effect, osr_loop_entry, control);
+
+    for (int i = 0; i < size; ++i) {
+      Node* val = values()->at(i);
+      if (!IrOpcode::IsConstantOpcode(val->opcode())) {
+        Node* osr_value =
+            graph->NewNode(builder_->common()->OsrValue(i), osr_loop_entry);
+        values()->at(i) = builder_->MergeValue(val, osr_value, control);
+      }
+    }
+  }
+}
+
+
+Node* AstGraphBuilder::NewPhi(int count, Node* input, Node* control) {
+  const Operator* phi_op = common()->Phi(kMachAnyTagged, count);
+  Node** buffer = EnsureInputBufferSize(count + 1);
+  MemsetPointer(buffer, input, count);
+  buffer[count] = control;
+  return graph()->NewNode(phi_op, count + 1, buffer, true);
+}
+
+
+// TODO(mstarzinger): Revisit this once we have proper effect states.
+Node* AstGraphBuilder::NewEffectPhi(int count, Node* input, Node* control) {
+  const Operator* phi_op = common()->EffectPhi(count);
+  Node** buffer = EnsureInputBufferSize(count + 1);
+  MemsetPointer(buffer, input, count);
+  buffer[count] = control;
+  return graph()->NewNode(phi_op, count + 1, buffer, true);
+}
+
+
+Node* AstGraphBuilder::MergeControl(Node* control, Node* other) {
+  int inputs = control->op()->ControlInputCount() + 1;
+  if (control->opcode() == IrOpcode::kLoop) {
+    // Control node for loop exists, add input.
+    const Operator* op = common()->Loop(inputs);
+    control->AppendInput(graph_zone(), other);
+    control->set_op(op);
+  } else if (control->opcode() == IrOpcode::kMerge) {
+    // Control node for merge exists, add input.
+    const Operator* op = common()->Merge(inputs);
+    control->AppendInput(graph_zone(), other);
+    control->set_op(op);
+  } else {
+    // Control node is a singleton, introduce a merge.
+    const Operator* op = common()->Merge(inputs);
+    Node* inputs[] = {control, other};
+    control = graph()->NewNode(op, arraysize(inputs), inputs, true);
+  }
+  return control;
+}
+
+
+Node* AstGraphBuilder::MergeEffect(Node* value, Node* other, Node* control) {
+  int inputs = control->op()->ControlInputCount();
+  if (value->opcode() == IrOpcode::kEffectPhi &&
+      NodeProperties::GetControlInput(value) == control) {
+    // Phi already exists, add input.
+    value->set_op(common()->EffectPhi(inputs));
+    value->InsertInput(graph_zone(), inputs - 1, other);
+  } else if (value != other) {
+    // Phi does not exist yet, introduce one.
+    value = NewEffectPhi(inputs, value, control);
+    value->ReplaceInput(inputs - 1, other);
+  }
+  return value;
+}
+
+
+Node* AstGraphBuilder::MergeValue(Node* value, Node* other, Node* control) {
+  int inputs = control->op()->ControlInputCount();
+  if (value->opcode() == IrOpcode::kPhi &&
+      NodeProperties::GetControlInput(value) == control) {
+    // Phi already exists, add input.
+    value->set_op(common()->Phi(kMachAnyTagged, inputs));
+    value->InsertInput(graph_zone(), inputs - 1, other);
+  } else if (value != other) {
+    // Phi does not exist yet, introduce one.
+    value = NewPhi(inputs, value, control);
+    value->ReplaceInput(inputs - 1, other);
+  }
+  return value;
+}
+
+
+Node* AstGraphBuilder::dead_control() {
+  if (!dead_control_.is_set()) {
+    Node* dead_node = graph()->NewNode(common()->Dead());
+    dead_control_.set(dead_node);
+    return dead_node;
+  }
+  return dead_control_.get();
 }
 
 }  // namespace compiler

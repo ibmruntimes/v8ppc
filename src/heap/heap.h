@@ -182,7 +182,8 @@ namespace internal {
     EmptySlowElementDictionary)                                                \
   V(FixedArray, materialized_objects, MaterializedObjects)                     \
   V(FixedArray, allocation_sites_scratchpad, AllocationSitesScratchpad)        \
-  V(FixedArray, microtask_queue, MicrotaskQueue)
+  V(FixedArray, microtask_queue, MicrotaskQueue)                               \
+  V(FixedArray, keyed_load_dummy_vector, KeyedLoadDummyVector)
 
 // Entries in this list are limited to Smis and are not visited during GC.
 #define SMI_ROOT_LIST(V)                                                   \
@@ -301,7 +302,10 @@ namespace internal {
   V(promise_has_handler_symbol)     \
   V(class_script_symbol)            \
   V(class_start_position_symbol)    \
-  V(class_end_position_symbol)
+  V(class_end_position_symbol)      \
+  V(error_start_pos_symbol)         \
+  V(error_end_pos_symbol)           \
+  V(error_script_symbol)
 
 #define PUBLIC_SYMBOL_LIST(V)                                    \
   V(has_instance_symbol, symbolHasInstance, Symbol.hasInstance)  \

@@ -133,6 +133,11 @@ static void IncrementingSignatureCallback(
 }
 
 
+static void Returns42(const v8::FunctionCallbackInfo<v8::Value>& info) {
+  info.GetReturnValue().Set(42);
+}
+
+
 // Tests that call v8::V8::Dispose() cannot be threaded.
 UNINITIALIZED_TEST(InitializeAndDisposeOnce) {
   CHECK(v8::V8::Initialize());
@@ -2268,6 +2273,33 @@ THREADED_TEST(EmptyInterceptorDoesNotShadowJSAccessors) {
   ExpectBoolean("child.hasOwnProperty('age')", false);
   ExpectInt32("child.age", 10);
   ExpectInt32("child.accessor_age", 10);
+}
+
+
+THREADED_TEST(EmptyInterceptorDoesNotShadowApiAccessors) {
+  v8::Isolate* isolate = CcTest::isolate();
+  v8::HandleScope scope(isolate);
+  Handle<FunctionTemplate> parent = FunctionTemplate::New(isolate);
+  auto returns_42 = FunctionTemplate::New(isolate, Returns42);
+  parent->PrototypeTemplate()->SetAccessorProperty(v8_str("age"), returns_42);
+  Handle<FunctionTemplate> child = FunctionTemplate::New(isolate);
+  child->Inherit(parent);
+  AddInterceptor(child, EmptyInterceptorGetter, EmptyInterceptorSetter);
+  LocalContext env;
+  env->Global()->Set(v8_str("Child"), child->GetFunction());
+  CompileRun(
+      "var child = new Child;"
+      "var parent = child.__proto__;");
+  ExpectBoolean("child.hasOwnProperty('age')", false);
+  ExpectInt32("child.age", 42);
+  // Check interceptor followup.
+  ExpectInt32(
+      "var result;"
+      "for (var i = 0; i < 4; ++i) {"
+      "  result = child.age;"
+      "}"
+      "result",
+      42);
 }
 
 
@@ -14069,18 +14101,57 @@ TEST(ObjectProtoToStringES6) {
   } while (0)
 
   TEST_TOSTRINGTAG(Array, Object, Object);
-  TEST_TOSTRINGTAG(Object, Arguments, ~Arguments);
-  TEST_TOSTRINGTAG(Object, Array, ~Array);
-  TEST_TOSTRINGTAG(Object, Boolean, ~Boolean);
-  TEST_TOSTRINGTAG(Object, Date, ~Date);
-  TEST_TOSTRINGTAG(Object, Error, ~Error);
-  TEST_TOSTRINGTAG(Object, Function, ~Function);
-  TEST_TOSTRINGTAG(Object, Number, ~Number);
-  TEST_TOSTRINGTAG(Object, RegExp, ~RegExp);
-  TEST_TOSTRINGTAG(Object, String, ~String);
+  TEST_TOSTRINGTAG(Object, Arguments, Arguments);
+  TEST_TOSTRINGTAG(Object, Array, Array);
+  TEST_TOSTRINGTAG(Object, Boolean, Boolean);
+  TEST_TOSTRINGTAG(Object, Date, Date);
+  TEST_TOSTRINGTAG(Object, Error, Error);
+  TEST_TOSTRINGTAG(Object, Function, Function);
+  TEST_TOSTRINGTAG(Object, Number, Number);
+  TEST_TOSTRINGTAG(Object, RegExp, RegExp);
+  TEST_TOSTRINGTAG(Object, String, String);
   TEST_TOSTRINGTAG(Object, Foo, Foo);
 
 #undef TEST_TOSTRINGTAG
+
+  Local<v8::RegExp> valueRegExp = v8::RegExp::New(v8_str("^$"),
+                                                  v8::RegExp::kNone);
+  Local<Value> valueNumber = v8_num(123);
+  Local<v8::Symbol> valueSymbol = v8_symbol("TestSymbol");
+  Local<v8::Function> valueFunction =
+      CompileRun("(function fn() {})").As<v8::Function>();
+  Local<v8::Object> valueObject = v8::Object::New(v8::Isolate::GetCurrent());
+  Local<v8::Primitive> valueNull = v8::Null(v8::Isolate::GetCurrent());
+  Local<v8::Primitive> valueUndef = v8::Undefined(v8::Isolate::GetCurrent());
+
+#define TEST_TOSTRINGTAG(type, tagValue, expected)          \
+  do {                                                      \
+    object = CompileRun("new " #type "()");                 \
+    object.As<v8::Object>()->Set(toStringTag, tagValue);    \
+    value = object.As<v8::Object>()->ObjectProtoToString(); \
+    CHECK(value->IsString() &&                              \
+          value->Equals(v8_str("[object " #expected "]"))); \
+  } while (0)
+
+#define TEST_TOSTRINGTAG_TYPES(tagValue)                    \
+  TEST_TOSTRINGTAG(Array, tagValue, Array);                 \
+  TEST_TOSTRINGTAG(Object, tagValue, Object);               \
+  TEST_TOSTRINGTAG(Function, tagValue, Function);           \
+  TEST_TOSTRINGTAG(Date, tagValue, Date);                   \
+  TEST_TOSTRINGTAG(RegExp, tagValue, RegExp);               \
+  TEST_TOSTRINGTAG(Error, tagValue, Error);                 \
+
+  // Test non-String-valued @@toStringTag
+  TEST_TOSTRINGTAG_TYPES(valueRegExp);
+  TEST_TOSTRINGTAG_TYPES(valueNumber);
+  TEST_TOSTRINGTAG_TYPES(valueSymbol);
+  TEST_TOSTRINGTAG_TYPES(valueFunction);
+  TEST_TOSTRINGTAG_TYPES(valueObject);
+  TEST_TOSTRINGTAG_TYPES(valueNull);
+  TEST_TOSTRINGTAG_TYPES(valueUndef);
+
+#undef TEST_TOSTRINGTAG
+#undef TEST_TOSTRINGTAG_TYPES
 
   // @@toStringTag getter throws
   Local<Value> obj = v8::Object::New(isolate);
@@ -18241,29 +18312,39 @@ TEST(RethrowBogusErrorStackTrace) {
 v8::PromiseRejectEvent reject_event = v8::kPromiseRejectWithNoHandler;
 int promise_reject_counter = 0;
 int promise_revoke_counter = 0;
+int promise_reject_msg_line_number = -1;
+int promise_reject_msg_column_number = -1;
 int promise_reject_line_number = -1;
+int promise_reject_column_number = -1;
 int promise_reject_frame_count = -1;
 
-void PromiseRejectCallback(v8::PromiseRejectMessage message) {
-  if (message.GetEvent() == v8::kPromiseRejectWithNoHandler) {
+void PromiseRejectCallback(v8::PromiseRejectMessage reject_message) {
+  if (reject_message.GetEvent() == v8::kPromiseRejectWithNoHandler) {
     promise_reject_counter++;
-    CcTest::global()->Set(v8_str("rejected"), message.GetPromise());
-    CcTest::global()->Set(v8_str("value"), message.GetValue());
-    v8::Handle<v8::StackTrace> stack_trace =
-        v8::Exception::CreateMessage(message.GetValue())->GetStackTrace();
+    CcTest::global()->Set(v8_str("rejected"), reject_message.GetPromise());
+    CcTest::global()->Set(v8_str("value"), reject_message.GetValue());
+    v8::Handle<v8::Message> message =
+        v8::Exception::CreateMessage(reject_message.GetValue());
+    v8::Handle<v8::StackTrace> stack_trace = message->GetStackTrace();
+
+    promise_reject_msg_line_number = message->GetLineNumber();
+    promise_reject_msg_column_number = message->GetStartColumn() + 1;
+
     if (!stack_trace.IsEmpty()) {
       promise_reject_frame_count = stack_trace->GetFrameCount();
       if (promise_reject_frame_count > 0) {
         CHECK(stack_trace->GetFrame(0)->GetScriptName()->Equals(v8_str("pro")));
         promise_reject_line_number = stack_trace->GetFrame(0)->GetLineNumber();
+        promise_reject_column_number = stack_trace->GetFrame(0)->GetColumn();
       } else {
         promise_reject_line_number = -1;
+        promise_reject_column_number = -1;
       }
     }
   } else {
     promise_revoke_counter++;
-    CcTest::global()->Set(v8_str("revoked"), message.GetPromise());
-    CHECK(message.GetValue().IsEmpty());
+    CcTest::global()->Set(v8_str("revoked"), reject_message.GetPromise());
+    CHECK(reject_message.GetValue().IsEmpty());
   }
 }
 
@@ -18281,7 +18362,10 @@ v8::Handle<v8::Value> RejectValue() {
 void ResetPromiseStates() {
   promise_reject_counter = 0;
   promise_revoke_counter = 0;
+  promise_reject_msg_line_number = -1;
+  promise_reject_msg_column_number = -1;
   promise_reject_line_number = -1;
+  promise_reject_column_number = -1;
   promise_reject_frame_count = -1;
   CcTest::global()->Set(v8_str("rejected"), v8_str(""));
   CcTest::global()->Set(v8_str("value"), v8_str(""));
@@ -18510,6 +18594,9 @@ TEST(PromiseRejectCallback) {
   CHECK_EQ(0, promise_revoke_counter);
   CHECK_EQ(2, promise_reject_frame_count);
   CHECK_EQ(3, promise_reject_line_number);
+  CHECK_EQ(5, promise_reject_column_number);
+  CHECK_EQ(3, promise_reject_msg_line_number);
+  CHECK_EQ(5, promise_reject_msg_column_number);
 
   ResetPromiseStates();
 
@@ -18530,6 +18617,9 @@ TEST(PromiseRejectCallback) {
   CHECK_EQ(0, promise_revoke_counter);
   CHECK_EQ(2, promise_reject_frame_count);
   CHECK_EQ(5, promise_reject_line_number);
+  CHECK_EQ(23, promise_reject_column_number);
+  CHECK_EQ(5, promise_reject_msg_line_number);
+  CHECK_EQ(23, promise_reject_msg_column_number);
 
   // Throw in u3, which handles u1's rejection.
   CompileRunWithOrigin(
@@ -18553,6 +18643,9 @@ TEST(PromiseRejectCallback) {
   CHECK_EQ(2, promise_revoke_counter);
   CHECK_EQ(3, promise_reject_frame_count);
   CHECK_EQ(3, promise_reject_line_number);
+  CHECK_EQ(12, promise_reject_column_number);
+  CHECK_EQ(3, promise_reject_msg_line_number);
+  CHECK_EQ(12, promise_reject_msg_column_number);
 
   ResetPromiseStates();
 
@@ -18572,6 +18665,28 @@ TEST(PromiseRejectCallback) {
   CHECK_EQ(1, promise_revoke_counter);
   CHECK_EQ(0, promise_reject_frame_count);
   CHECK_EQ(-1, promise_reject_line_number);
+  CHECK_EQ(-1, promise_reject_column_number);
+
+  ResetPromiseStates();
+
+  // Create promise t1, which rejects by throwing syntax error from eval.
+  CompileRunWithOrigin(
+      "var t1 = new Promise(   \n"
+      "  function(res, rej) {  \n"
+      "    var content = '\\n\\\n"
+      "      }';               \n"
+      "    eval(content);      \n"
+      "  }                     \n"
+      ");                      \n",
+      "pro", 0, 0);
+  CHECK(!GetPromise("t1")->HasHandler());
+  CHECK_EQ(1, promise_reject_counter);
+  CHECK_EQ(0, promise_revoke_counter);
+  CHECK_EQ(2, promise_reject_frame_count);
+  CHECK_EQ(5, promise_reject_line_number);
+  CHECK_EQ(10, promise_reject_column_number);
+  CHECK_EQ(2, promise_reject_msg_line_number);
+  CHECK_EQ(7, promise_reject_msg_column_number);
 }
 
 
@@ -23552,11 +23667,6 @@ TEST(FunctionCallOptimization) {
   i::FLAG_allow_natives_syntax = true;
   ApiCallOptimizationChecker checker;
   checker.RunAll();
-}
-
-
-static void Returns42(const v8::FunctionCallbackInfo<v8::Value>& info) {
-  info.GetReturnValue().Set(42);
 }
 
 

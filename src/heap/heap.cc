@@ -3062,6 +3062,19 @@ void Heap::CreateInitialObjects() {
   // Number of queued microtasks stored in Isolate::pending_microtask_count().
   set_microtask_queue(empty_fixed_array());
 
+  if (FLAG_vector_ics) {
+    FeedbackVectorSpec spec(0, 1);
+    spec.SetKind(0, Code::KEYED_LOAD_IC);
+    Handle<TypeFeedbackVector> dummy_vector =
+        factory->NewTypeFeedbackVector(spec);
+    dummy_vector->Set(FeedbackVectorICSlot(0),
+                      *TypeFeedbackVector::MegamorphicSentinel(isolate()),
+                      SKIP_WRITE_BARRIER);
+    set_keyed_load_dummy_vector(*dummy_vector);
+  } else {
+    set_keyed_load_dummy_vector(empty_fixed_array());
+  }
+
   Handle<SeededNumberDictionary> slow_element_dictionary =
       SeededNumberDictionary::New(isolate(), 0, TENURED);
   slow_element_dictionary->set_requires_slow_elements();
@@ -3897,9 +3910,33 @@ AllocationResult Heap::CopyJSObject(JSObject* source, AllocationSite* site) {
     }
     Address clone_address = clone->address();
     CopyBlock(clone_address, source->address(), object_size);
-    // Update write barrier for all fields that lie beyond the header.
-    RecordWrites(clone_address, JSObject::kHeaderSize,
-                 (object_size - JSObject::kHeaderSize) / kPointerSize);
+
+    // Update write barrier for all tagged fields that lie beyond the header.
+    const int start_offset = JSObject::kHeaderSize;
+    const int end_offset = object_size;
+
+#if V8_DOUBLE_FIELDS_UNBOXING
+    LayoutDescriptorHelper helper(map);
+    bool has_only_tagged_fields = helper.all_fields_tagged();
+
+    if (!has_only_tagged_fields) {
+      for (int offset = start_offset; offset < end_offset;) {
+        int end_of_region_offset;
+        if (helper.IsTagged(offset, end_offset, &end_of_region_offset)) {
+          RecordWrites(clone_address, offset,
+                       (end_of_region_offset - offset) / kPointerSize);
+        }
+        offset = end_of_region_offset;
+      }
+    } else {
+#endif
+      // Object has only tagged fields.
+      RecordWrites(clone_address, start_offset,
+                   (end_offset - start_offset) / kPointerSize);
+#if V8_DOUBLE_FIELDS_UNBOXING
+    }
+#endif
+
   } else {
     wb_mode = SKIP_WRITE_BARRIER;
 

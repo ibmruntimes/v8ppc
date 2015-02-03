@@ -1310,22 +1310,31 @@ Handle<Code> ToBooleanStub::GenerateCode() {
 template <>
 HValue* CodeStubGraphBuilder<StoreGlobalStub>::BuildCodeInitializedStub() {
   StoreGlobalStub* stub = casted_stub();
-  Handle<Object> placeholer_value(Smi::FromInt(0), isolate());
-  Handle<PropertyCell> placeholder_cell =
-      isolate()->factory()->NewPropertyCell(placeholer_value);
-
   HParameter* value = GetParameter(StoreDescriptor::kValueIndex);
-
   if (stub->check_global()) {
     // Check that the map of the global has not changed: use a placeholder map
     // that will be replaced later with the global object's map.
+    HParameter* proxy = GetParameter(StoreDescriptor::kReceiverIndex);
+    HValue* proxy_map =
+        Add<HLoadNamedField>(proxy, nullptr, HObjectAccess::ForMap());
+    HValue* global =
+        Add<HLoadNamedField>(proxy_map, nullptr, HObjectAccess::ForPrototype());
     Handle<Map> placeholder_map = isolate()->factory()->meta_map();
-    HValue* global = Add<HConstant>(
-        StoreGlobalStub::global_placeholder(isolate()));
-    Add<HCheckMaps>(global, placeholder_map);
+    HValue* cell = Add<HConstant>(Map::WeakCellForMap(placeholder_map));
+    HValue* expected_map =
+        Add<HLoadNamedField>(cell, nullptr, HObjectAccess::ForWeakCellValue());
+    HValue* map =
+        Add<HLoadNamedField>(global, nullptr, HObjectAccess::ForMap());
+    IfBuilder map_check(this);
+    map_check.IfNot<HCompareObjectEqAndBranch>(expected_map, map);
+    map_check.ThenDeopt("Unknown map");
+    map_check.End();
   }
 
-  HValue* cell = Add<HConstant>(placeholder_cell);
+  HValue* weak_cell = Add<HConstant>(isolate()->factory()->NewWeakCell(
+      StoreGlobalStub::property_cell_placeholder(isolate())));
+  HValue* cell = Add<HLoadNamedField>(weak_cell, nullptr,
+                                      HObjectAccess::ForWeakCellValue());
   HObjectAccess access(HObjectAccess::ForCellPayload(isolate()));
   HValue* cell_contents = Add<HLoadNamedField>(cell, nullptr, access);
 
@@ -1345,7 +1354,8 @@ HValue* CodeStubGraphBuilder<StoreGlobalStub>::BuildCodeInitializedStub() {
     builder.Then();
     builder.Deopt("Unexpected cell contents in global store");
     builder.Else();
-    Add<HStoreNamedField>(cell, access, value);
+    HStoreNamedField* store = Add<HStoreNamedField>(cell, access, value);
+    store->MarkReceiverAsCell();
     builder.End();
   }
 

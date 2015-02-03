@@ -5256,6 +5256,8 @@ class Code: public HeapObject {
   // function replaces the corresponding placeholder in the code with the
   // object-to-replace. The function assumes that pairs in the pattern come in
   // the same order as the placeholders in the code.
+  // If the placeholder is a weak cell, then the value of weak cell is matched
+  // against the map-to-find.
   void FindAndReplace(const FindAndReplacePattern& pattern);
 
   // The entire code object including its header is copied verbatim to the
@@ -5399,7 +5401,8 @@ class Code: public HeapObject {
 #endif
 
 #ifdef DEBUG
-  void VerifyEmbeddedObjectsInFullCode();
+  enum VerifyMode { kNoContextSpecificPointers, kNoContextRetainingPointers };
+  void VerifyEmbeddedObjects(VerifyMode mode = kNoContextRetainingPointers);
 #endif  // DEBUG
 
   inline bool CanContainWeakObjects() {
@@ -7071,6 +7074,8 @@ class SharedFunctionInfo: public HeapObject {
   static const int kUniqueIdOffset = kFeedbackVectorOffset + kPointerSize;
   static const int kLastPointerFieldOffset = kUniqueIdOffset;
 #else
+  // Just to not break the postmortrem support with conditional offsets
+  static const int kUniqueIdOffset = kFeedbackVectorOffset;
   static const int kLastPointerFieldOffset = kFeedbackVectorOffset;
 #endif
 
@@ -7234,12 +7239,13 @@ class SharedFunctionInfo: public HeapObject {
     kIsGenerator,
     kIsConciseMethod,
     kIsDefaultConstructor,
+    kIsSubclassConstructor,
     kIsAsmFunction,
     kDeserialized,
     kCompilerHintsCount  // Pseudo entry
   };
 
-  class FunctionKindBits : public BitField<FunctionKind, kIsArrow, 4> {};
+  class FunctionKindBits : public BitField<FunctionKind, kIsArrow, 5> {};
 
   class DeoptCountBits : public BitField<int, 0, 4> {};
   class OptReenableTriesBits : public BitField<int, 4, 18> {};

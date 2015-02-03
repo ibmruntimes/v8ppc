@@ -575,9 +575,6 @@ struct AccessorDescriptor {
 #define HAS_SMI_TAG(value) \
   ((reinterpret_cast<intptr_t>(value) & kSmiTagMask) == kSmiTag)
 
-#define HAS_FAILURE_TAG(value) \
-  ((reinterpret_cast<intptr_t>(value) & kFailureTagMask) == kFailureTag)
-
 // OBJECT_POINTER_ALIGN returns the value aligned as a HeapObject pointer
 #define OBJECT_POINTER_ALIGN(value)                             \
   (((value) + kObjectAlignmentMask) & ~kObjectAlignmentMask)
@@ -789,7 +786,8 @@ enum FunctionKind {
   kGeneratorFunction = 2,
   kConciseMethod = 4,
   kConciseGeneratorMethod = kGeneratorFunction | kConciseMethod,
-  kDefaultConstructor = 8
+  kDefaultConstructor = 8,
+  kSubclassConstructor = 16
 };
 
 
@@ -799,7 +797,8 @@ inline bool IsValidFunctionKind(FunctionKind kind) {
          kind == FunctionKind::kGeneratorFunction ||
          kind == FunctionKind::kConciseMethod ||
          kind == FunctionKind::kConciseGeneratorMethod ||
-         kind == FunctionKind::kDefaultConstructor;
+         kind == FunctionKind::kDefaultConstructor ||
+         kind == FunctionKind::kSubclassConstructor;
 }
 
 
@@ -826,7 +825,10 @@ inline bool IsDefaultConstructor(FunctionKind kind) {
   return kind & FunctionKind::kDefaultConstructor;
 }
 
-
+inline bool IsSubclassConstructor(FunctionKind kind) {
+  DCHECK(IsValidFunctionKind(kind));
+  return kind & FunctionKind::kSubclassConstructor;
+}
 } }  // namespace v8::internal
 
 namespace i = v8::internal;
