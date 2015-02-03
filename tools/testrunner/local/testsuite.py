@@ -129,8 +129,6 @@ class TestSuite(object):
       slow = False
       pass_fail = False
       testname = self.CommonTestName(t)
-      if utils.IsWindows():
-        testname = testname.replace("\\", "/")
       if testname in self.rules:
         used_rules.add(testname)
         # Even for skipped tests, as the TestCase object stays around and

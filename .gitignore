@@ -13,7 +13,6 @@
 *.sln
 *.so
 *.suo
-*.swp
 *.user
 *.vcproj
 *.vcxproj
