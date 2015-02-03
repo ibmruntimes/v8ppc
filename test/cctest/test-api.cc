@@ -131,12 +131,15 @@ static void IncrementingSignatureCallback(
     result->Set(v8::Integer::New(args.GetIsolate(), i), args[i]);
   args.GetReturnValue().Set(result);
 }
+#endif
 
 
 static void Returns42(const v8::FunctionCallbackInfo<v8::Value>& info) {
   info.GetReturnValue().Set(42);
 }
 
+
+#if !defined(TEST_API_IN_PARTS) || defined(TEST_API_PART1)
 
 // Tests that call v8::V8::Dispose() cannot be threaded.
 UNINITIALIZED_TEST(InitializeAndDisposeOnce) {

@@ -1493,6 +1493,10 @@ void FullCodeGenerator::EmitVariableLoad(VariableProxy* proxy) {
         bool skip_init_check;
         if (var->scope()->DeclarationScope() != scope()->DeclarationScope()) {
           skip_init_check = false;
+        } else if (var->is_this()) {
+          CHECK((info_->shared_info()->kind() & kSubclassConstructor) != 0);
+          // TODO(dslomov): implement 'this' hole check elimination.
+          skip_init_check = false;
         } else {
           // Check that we always have valid source position.
           DCHECK(var->initializer_position() != RelocInfo::kNoPosition);
@@ -2988,7 +2992,7 @@ void FullCodeGenerator::EmitCall(Call* expr, CallICState::CallType call_type) {
   // Record source position of the IC call.
   SetSourcePosition(expr->position());
   Handle<Code> ic = CodeFactory::CallIC(isolate(), arg_count, call_type).code();
-  __ LoadSmiLiteral(r6, SmiFromSlot(expr->CallFeedbackSlot()));
+  __ LoadSmiLiteral(r6, SmiFromSlot(expr->CallFeedbackICSlot()));
   __ LoadP(r4, MemOperand(sp, (arg_count + 1) * kPointerSize), r0);
   // Don't assign a type feedback id to the IC, since type feedback is provided
   // by the vector above.
@@ -3236,6 +3240,17 @@ void FullCodeGenerator::EmitSuperConstructorCall(Call* expr) {
   EmitLoadSuperConstructor(super_ref);
   __ push(result_register());
 
+  Variable* this_var = super_ref->this_var()->var();
+
+  GetVar(r3, this_var);
+  __ CompareRoot(r3, Heap::kTheHoleValueRootIndex);
+  Label uninitialized_this;
+  __ beq(&uninitialized_this);
+  __ mov(r3, Operand(this_var->name()));
+  __ push(r3);
+  __ CallRuntime(Runtime::kThrowReferenceError, 1);
+  __ bind(&uninitialized_this);
+
   // Push the arguments ("left-to-right") on the stack.
   ZoneList<Expression*>* args = expr->arguments();
   int arg_count = args->length();
@@ -3270,8 +3285,7 @@ void FullCodeGenerator::EmitSuperConstructorCall(Call* expr) {
 
   RecordJSReturnSite(expr);
 
-  // TODO(dslomov): implement TDZ for `this`.
-  EmitVariableAssignment(super_ref->this_var()->var(), Token::ASSIGN);
+  EmitVariableAssignment(this_var, Token::INIT_CONST);
   context()->Plug(r3);
 }
 

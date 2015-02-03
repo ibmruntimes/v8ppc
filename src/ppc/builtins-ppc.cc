@@ -738,6 +738,74 @@ void Builtins::Generate_JSConstructStubApi(MacroAssembler* masm) {
 }
 
 
+void Builtins::Generate_JSConstructStubForDerived(MacroAssembler* masm) {
+  // ----------- S t a t e -------------
+  //  -- r3     : number of arguments
+  //  -- r4     : constructor function
+  //  -- r5     : allocation site or undefined
+  //  -- r6     : original constructor
+  //  -- lr     : return address
+  //  -- sp[...]: constructor arguments
+  // -----------------------------------
+
+  // TODO(dslomov): support pretenuring
+  CHECK(!FLAG_pretenuring_call_new);
+
+  {
+    FrameAndConstantPoolScope scope(masm, StackFrame::CONSTRUCT);
+
+    // Smi-tagged arguments count.
+    __ mr(r7, r3);
+    __ SmiTag(r7, SetRC);
+
+    // receiver is the hole.
+    __ LoadRoot(ip, Heap::kTheHoleValueRootIndex);
+    __ Push(r7, ip);
+
+    // Set up pointer to last argument.
+    __ addi(r5, fp, Operand(StandardFrameConstants::kCallerSPOffset));
+
+    // Copy arguments and receiver to the expression stack.
+    // r3: number of arguments
+    // r4: constructor function
+    // r5: address of last argument (caller sp)
+    // r7: number of arguments (smi-tagged)
+    // cr0: compare against zero of arguments
+    // sp[0]: receiver
+    // sp[1]: number of arguments (smi-tagged)
+    Label loop, no_args;
+    __ beq(&no_args, cr0);
+    __ ShiftLeftImm(ip, r3, Operand(kPointerSizeLog2));
+    __ mtctr(r3);
+    __ bind(&loop);
+    __ subi(ip, ip, Operand(kPointerSize));
+    __ LoadPX(r0, MemOperand(r5, ip));
+    __ push(r0);
+    __ bdnz(&loop);
+    __ bind(&no_args);
+
+    // Call the function.
+    // r3: number of arguments
+    // r4: constructor function
+    ParameterCount actual(r3);
+    __ InvokeFunction(r4, actual, CALL_FUNCTION, NullCallWrapper());
+
+    // Restore context from the frame.
+    // r3: result
+    // sp[0]: number of arguments (smi-tagged)
+    __ LoadP(cp, MemOperand(fp, StandardFrameConstants::kContextOffset));
+    __ LoadP(r4, MemOperand(sp, 0));
+
+    // Leave construct frame.
+  }
+
+  __ SmiToPtrArrayOffset(r4, r4);
+  __ add(sp, sp, r4);
+  __ addi(sp, sp, Operand(kPointerSize));
+  __ blr();
+}
+
+
 static void Generate_JSEntryTrampolineHelper(MacroAssembler* masm,
                                              bool is_construct) {
   // Called from Generate_JS_Entry

@@ -4121,9 +4121,7 @@ void LCodeGen::DoPower(LPower* instr) {
   Representation exponent_type = instr->hydrogen()->right()->representation();
 // Having marked this as a call, we can use any registers.
 // Just make sure that the input/output registers are the expected ones.
-#ifdef DEBUG
   Register tagged_exponent = MathPowTaggedDescriptor::exponent();
-#endif
   DCHECK(!instr->right()->IsDoubleRegister() ||
          ToDoubleRegister(instr->right()).is(d2));
   DCHECK(!instr->right()->IsRegister() ||
@@ -4136,8 +4134,9 @@ void LCodeGen::DoPower(LPower* instr) {
     __ CallStub(&stub);
   } else if (exponent_type.IsTagged()) {
     Label no_deopt;
-    __ JumpIfSmi(r5, &no_deopt);
-    __ LoadP(r10, FieldMemOperand(r5, HeapObject::kMapOffset));
+    __ JumpIfSmi(tagged_exponent, &no_deopt);
+    DCHECK(!r10.is(tagged_exponent));
+    __ LoadP(r10, FieldMemOperand(tagged_exponent, HeapObject::kMapOffset));
     __ LoadRoot(ip, Heap::kHeapNumberMapRootIndex);
     __ cmp(r10, ip);
     DeoptimizeIf(ne, instr, "not a heap number");
