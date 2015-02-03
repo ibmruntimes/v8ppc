@@ -572,14 +572,6 @@
 }],  # 'arch == nacl_ia32 or arch == nacl_x64'
 
 ##############################################################################
-['arch == ppc or arch == ppc64', {
-
-  # Test does not handle increased precision of multiply-add optimization
-  'numops-fuzz-part2': [PASS, FAIL]
-
-}],  # 'arch == ppc or arch == ppc64'
-
-##############################################################################
 ['deopt_fuzzer == True', {
 
   # Skip tests that are not suitable for deoptimization fuzzing.

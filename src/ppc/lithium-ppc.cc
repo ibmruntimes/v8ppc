@@ -1562,28 +1562,6 @@ LInstruction* LChunkBuilder::DoMul(HMul* instr) {
     return DefineAsRegister(mul);
 
   } else if (instr->representation().IsDouble()) {
-    if (instr->HasOneUse() &&
-        (instr->uses().value()->IsAdd() || instr->uses().value()->IsSub())) {
-      HBinaryOperation* use = HBinaryOperation::cast(instr->uses().value());
-
-      if (use->IsAdd() && instr == use->left()) {
-        // This mul is the lhs of an add. The add and mul will be folded into a
-        // multiply-add in DoAdd.
-        return NULL;
-      }
-      if (instr == use->right() && use->IsAdd() &&
-          !(use->left()->IsMul() && use->left()->HasOneUse())) {
-        // This mul is the rhs of an add, where the lhs is not another mul.
-        // The add and mul will be folded into a multiply-add in DoAdd.
-        return NULL;
-      }
-      if (instr == use->left() && use->IsSub()) {
-        // This mul is the lhs of a sub. The mul and sub will be folded into a
-        // multiply-sub in DoSub.
-        return NULL;
-      }
-    }
-
     return DoArithmeticD(Token::MUL, instr);
   } else {
     return DoArithmeticT(Token::MUL, instr);
@@ -1611,10 +1589,6 @@ LInstruction* LChunkBuilder::DoSub(HSub* instr) {
     }
     return result;
   } else if (instr->representation().IsDouble()) {
-    if (instr->left()->IsMul() && instr->left()->HasOneUse()) {
-      return DoMultiplySub(instr->right(), HMul::cast(instr->left()));
-    }
-
     return DoArithmeticD(Token::SUB, instr);
   } else {
     return DoArithmeticT(Token::SUB, instr);
@@ -1679,15 +1653,6 @@ LInstruction* LChunkBuilder::DoAdd(HAdd* instr) {
     LInstruction* result = DefineAsRegister(add);
     return result;
   } else if (instr->representation().IsDouble()) {
-    if (instr->left()->IsMul() && instr->left()->HasOneUse()) {
-      return DoMultiplyAdd(HMul::cast(instr->left()), instr->right());
-    }
-
-    if (instr->right()->IsMul() && instr->right()->HasOneUse()) {
-      DCHECK(!instr->left()->IsMul() || !instr->left()->HasOneUse());
-      return DoMultiplyAdd(HMul::cast(instr->right()), instr->left());
-    }
-
     return DoArithmeticD(Token::ADD, instr);
   } else {
     return DoArithmeticT(Token::ADD, instr);
