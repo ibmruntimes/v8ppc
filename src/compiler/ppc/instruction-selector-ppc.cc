@@ -27,7 +27,7 @@ class PPCOperandGenerator FINAL : public OperandGenerator {
   explicit PPCOperandGenerator(InstructionSelector* selector)
       : OperandGenerator(selector) {}
 
-  InstructionOperand* UseOperand(Node* node, ImmediateMode mode) {
+  InstructionOperand UseOperand(Node* node, ImmediateMode mode) {
     if (CanBeImmediate(node, mode)) {
       return UseImmediate(node);
     }
@@ -109,9 +109,9 @@ static void VisitBinop(InstructionSelector* selector, Node* node,
                        FlagsContinuation* cont) {
   PPCOperandGenerator g(selector);
   Matcher m(node);
-  InstructionOperand* inputs[4];
+  InstructionOperand inputs[4];
   size_t input_count = 0;
-  InstructionOperand* outputs[2];
+  InstructionOperand outputs[2];
   size_t output_count = 0;
 
   inputs[input_count++] = g.UseRegister(m.left().node());
@@ -217,8 +217,8 @@ void InstructionSelector::VisitStore(Node* node) {
     // TODO(dcarney): refactor RecordWrite function to take temp registers
     //                and pass them here instead of using fixed regs
     // TODO(dcarney): handle immediate indices.
-    InstructionOperand* temps[] = {g.TempRegister(r8), g.TempRegister(r9)};
-    Emit(kPPC_StoreWriteBarrier, NULL, g.UseFixed(base, r7),
+    InstructionOperand temps[] = {g.TempRegister(r8), g.TempRegister(r9)};
+    Emit(kPPC_StoreWriteBarrier, g.NoOutput(), g.UseFixed(base, r7),
          g.UseFixed(offset, r8), g.UseFixed(value, r9), arraysize(temps),
          temps);
     return;
@@ -258,13 +258,13 @@ void InstructionSelector::VisitStore(Node* node) {
       return;
   }
   if (g.CanBeImmediate(offset, mode)) {
-    Emit(opcode | AddressingModeField::encode(kMode_MRI), NULL,
+    Emit(opcode | AddressingModeField::encode(kMode_MRI), g.NoOutput(),
          g.UseRegister(base), g.UseImmediate(offset), g.UseRegister(value));
   } else if (g.CanBeImmediate(base, mode)) {
-    Emit(opcode | AddressingModeField::encode(kMode_MRI), NULL,
+    Emit(opcode | AddressingModeField::encode(kMode_MRI), g.NoOutput(),
          g.UseRegister(offset), g.UseImmediate(base), g.UseRegister(value));
   } else {
-    Emit(opcode | AddressingModeField::encode(kMode_MRR), NULL,
+    Emit(opcode | AddressingModeField::encode(kMode_MRR), g.NoOutput(),
          g.UseRegister(base), g.UseRegister(offset), g.UseRegister(value));
   }
 }
@@ -299,9 +299,8 @@ void InstructionSelector::VisitCheckedLoad(Node* node) {
       return;
   }
   AddressingMode addressingMode = kMode_MRR;
-  InstructionOperand* offset_operand = g.UseRegister(offset);
   Emit(opcode | AddressingModeField::encode(addressingMode),
-       g.DefineAsRegister(node), g.UseRegister(base), offset_operand,
+       g.DefineAsRegister(node), g.UseRegister(base), g.UseRegister(offset),
        g.UseOperand(length, kInt16Imm_Unsigned));
 }
 
@@ -335,9 +334,8 @@ void InstructionSelector::VisitCheckedStore(Node* node) {
       return;
   }
   AddressingMode addressingMode = kMode_MRR;
-  InstructionOperand* offset_operand = g.UseRegister(offset);
-  Emit(opcode | AddressingModeField::encode(addressingMode), nullptr,
-       g.UseRegister(base), offset_operand,
+  Emit(opcode | AddressingModeField::encode(addressingMode), g.NoOutput(),
+       g.UseRegister(base), g.UseRegister(offset),
        g.UseOperand(length, kInt16Imm_Unsigned), g.UseRegister(value));
 }
 
@@ -1017,12 +1015,13 @@ static bool CompareLogical(FlagsContinuation* cont) {
 
 // Shared routine for multiple compare operations.
 static void VisitCompare(InstructionSelector* selector, InstructionCode opcode,
-                         InstructionOperand* left, InstructionOperand* right,
+                         InstructionOperand left, InstructionOperand right,
                          FlagsContinuation* cont) {
   PPCOperandGenerator g(selector);
   opcode = cont->Encode(opcode);
   if (cont->IsBranch()) {
-    selector->Emit(opcode, NULL, left, right, g.Label(cont->true_block()),
+    selector->Emit(opcode, g.NoOutput(), left, right,
+                   g.Label(cont->true_block()),
                    g.Label(cont->false_block()))->MarkAsControl();
   } else {
     DCHECK(cont->IsSet());
@@ -1342,7 +1341,7 @@ void InstructionSelector::VisitCall(Node* node) {
   // TODO(mbrandy): reverse order and use push only for first
   for (auto i = buffer.pushed_nodes.rbegin(); i != buffer.pushed_nodes.rend();
        i++) {
-    Emit(kPPC_Push, nullptr, g.UseRegister(*i));
+    Emit(kPPC_Push, g.NoOutput(), g.UseRegister(*i));
   }
 
   // Select the appropriate opcode based on the call type.
@@ -1362,7 +1361,7 @@ void InstructionSelector::VisitCall(Node* node) {
   opcode |= MiscField::encode(descriptor->flags());
 
   // Emit the call instruction.
-  InstructionOperand** first_output =
+  InstructionOperand* first_output =
       buffer.outputs.size() > 0 ? &buffer.outputs.front() : NULL;
   Instruction* call_instr =
       Emit(opcode, buffer.outputs.size(), first_output,
