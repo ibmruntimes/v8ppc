@@ -42,7 +42,10 @@ static Isolate* GetIsolateFrom(LocalContext* context) {
 
 
 static Handle<JSWeakMap> AllocateJSWeakMap(Isolate* isolate) {
-  Handle<JSWeakMap> weakmap = isolate->factory()->NewJSWeakMap();
+  Factory* factory = isolate->factory();
+  Handle<Map> map = factory->NewMap(JS_WEAK_MAP_TYPE, JSWeakMap::kSize);
+  Handle<JSObject> weakmap_obj = factory->NewJSObjectFromMap(map);
+  Handle<JSWeakMap> weakmap(JSWeakMap::cast(*weakmap_obj));
   // Do not leak handles for the hash table, it would make entries strong.
   {
     HandleScope scope(isolate);
@@ -50,6 +53,16 @@ static Handle<JSWeakMap> AllocateJSWeakMap(Isolate* isolate) {
     weakmap->set_table(*table);
   }
   return weakmap;
+}
+
+static void PutIntoWeakMap(Handle<JSWeakMap> weakmap,
+                           Handle<JSObject> key,
+                           Handle<Object> value) {
+  Handle<ObjectHashTable> table = ObjectHashTable::Put(
+      Handle<ObjectHashTable>(ObjectHashTable::cast(weakmap->table())),
+      Handle<JSObject>(JSObject::cast(*key)),
+      value);
+  weakmap->set_table(*table);
 }
 
 static int NumberOfWeakCalls = 0;
@@ -89,9 +102,8 @@ TEST(Weakness) {
     HandleScope scope(isolate);
     Handle<Map> map = factory->NewMap(JS_OBJECT_TYPE, JSObject::kHeaderSize);
     Handle<JSObject> object = factory->NewJSObjectFromMap(map);
-    Handle<Smi> smi(Smi::FromInt(23), isolate);
-    Runtime::WeakCollectionSet(weakmap, key, object);
-    Runtime::WeakCollectionSet(weakmap, object, smi);
+    PutIntoWeakMap(weakmap, Handle<JSObject>(JSObject::cast(*key)), object);
+    PutIntoWeakMap(weakmap, object, Handle<Smi>(Smi::FromInt(23), isolate));
   }
   CHECK_EQ(2, ObjectHashTable::cast(weakmap->table())->NumberOfElements());
 
@@ -145,8 +157,7 @@ TEST(Shrinking) {
     Handle<Map> map = factory->NewMap(JS_OBJECT_TYPE, JSObject::kHeaderSize);
     for (int i = 0; i < 32; i++) {
       Handle<JSObject> object = factory->NewJSObjectFromMap(map);
-      Handle<Smi> smi(Smi::FromInt(i), isolate);
-      Runtime::WeakCollectionSet(weakmap, object, smi);
+      PutIntoWeakMap(weakmap, object, Handle<Smi>(Smi::FromInt(i), isolate));
     }
   }
 
@@ -198,7 +209,7 @@ TEST(Regress2060a) {
       Handle<JSObject> object = factory->NewJSObject(function, TENURED);
       CHECK(!heap->InNewSpace(object->address()));
       CHECK(!first_page->Contains(object->address()));
-      Runtime::WeakCollectionSet(weakmap, key, object);
+      PutIntoWeakMap(weakmap, key, object);
     }
   }
 
@@ -243,8 +254,9 @@ TEST(Regress2060b) {
   }
   Handle<JSWeakMap> weakmap = AllocateJSWeakMap(isolate);
   for (int i = 0; i < 32; i++) {
-    Handle<Smi> smi(Smi::FromInt(i), isolate);
-    Runtime::WeakCollectionSet(weakmap, keys[i], smi);
+    PutIntoWeakMap(weakmap,
+                   keys[i],
+                   Handle<Smi>(Smi::FromInt(i), isolate));
   }
 
   // Force compacting garbage collection. The subsequent collections are used

@@ -256,8 +256,8 @@ namespace internal {
   F(DefineDataPropertyUnchecked, 4, 1)                 \
   F(DefineAccessorPropertyUnchecked, 5, 1)             \
   F(GetDataProperty, 2, 1)                             \
-  F(DefineGetterPropertyUnchecked, 3, 1)               \
-  F(DefineSetterPropertyUnchecked, 3, 1)               \
+  F(DefineGetterPropertyUnchecked, 4, 1)               \
+  F(DefineSetterPropertyUnchecked, 4, 1)               \
                                                        \
   /* Arrays */                                         \
   F(RemoveArrayHoles, 2, 1)                            \
@@ -874,13 +874,6 @@ class Runtime : public AllStatic {
   MUST_USE_RESULT static MaybeHandle<Object> CreateArrayLiteralBoilerplate(
       Isolate* isolate, Handle<FixedArray> literals,
       Handle<FixedArray> elements);
-
-  static void WeakCollectionInitialize(
-      Isolate* isolate, Handle<JSWeakCollection> weak_collection);
-  static void WeakCollectionSet(Handle<JSWeakCollection> weak_collection,
-                                Handle<Object> key, Handle<Object> value);
-  static bool WeakCollectionDelete(Handle<JSWeakCollection> weak_collection,
-                                   Handle<Object> key);
 };
 
 
