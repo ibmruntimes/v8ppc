@@ -1536,6 +1536,32 @@ class V8_EXPORT JSON {
 };
 
 
+/**
+ * A map whose keys are referenced weakly. It is similar to JavaScript WeakMap
+ * but can be created without entering a v8::Context and hence shouldn't
+ * escape to JavaScript.
+ */
+class V8_EXPORT NativeWeakMap {
+ public:
+  static NativeWeakMap* New(Isolate* isolate);
+  ~NativeWeakMap();
+  void Set(Handle<Value> key, Handle<Value> value);
+  Local<Value> Get(Handle<Value> key);
+  bool Has(Handle<Value> key);
+  bool Delete(Handle<Value> key);
+
+ private:
+  NativeWeakMap(Isolate* isolate, Handle<Object> weak_map);
+
+  Isolate* isolate_;
+  UniquePersistent<Object> map_;
+
+  // Disallow copying and assigning.
+  NativeWeakMap(NativeWeakMap&);
+  void operator=(NativeWeakMap&);
+};
+
+
 // --- Value ---
 
 
@@ -6272,7 +6298,7 @@ class Internals {
   static const int kJSObjectHeaderSize = 3 * kApiPointerSize;
   static const int kFixedArrayHeaderSize = 2 * kApiPointerSize;
   static const int kContextHeaderSize = 2 * kApiPointerSize;
-  static const int kContextEmbedderDataIndex = 76;
+  static const int kContextEmbedderDataIndex = 74;
   static const int kFullStringRepresentationMask = 0x07;
   static const int kStringEncodingMask = 0x4;
   static const int kExternalTwoByteRepresentationTag = 0x02;
