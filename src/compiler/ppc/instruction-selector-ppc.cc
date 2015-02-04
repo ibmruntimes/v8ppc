@@ -407,6 +407,7 @@ static inline bool IsContiguousMask32(uint32_t value, int* mb, int* me) {
 }
 
 
+#if V8_TARGET_ARCH_PPC64
 static inline bool IsContiguousMask64(uint64_t value, int* mb, int* me) {
   int mask_width = base::bits::CountPopulation64(value);
   int mask_msb = base::bits::CountLeadingZeros64(value);
@@ -417,6 +418,7 @@ static inline bool IsContiguousMask64(uint64_t value, int* mb, int* me) {
   *me = mask_lsb;
   return true;
 }
+#endif
 
 
 // TODO(mbrandy): Absorb rotate-right into rlwinm?
