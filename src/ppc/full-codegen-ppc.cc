@@ -123,7 +123,7 @@ void FullCodeGenerator::Generate() {
   // Sloppy mode functions and builtins need to replace the receiver with the
   // global proxy when called as functions (without an explicit receiver
   // object).
-  if (info->strict_mode() == SLOPPY && !info->is_native()) {
+  if (is_sloppy(info->language_mode()) && !info->is_native()) {
     Label ok;
     int receiver_offset = info->scope()->num_parameters() * kPointerSize;
     __ LoadP(r5, MemOperand(sp, receiver_offset), r0);
@@ -267,7 +267,7 @@ void FullCodeGenerator::Generate() {
     // The stub will rewrite receiever and parameter count if the previous
     // stack frame was an arguments adapter frame.
     ArgumentsAccessStub::Type type;
-    if (strict_mode() == STRICT) {
+    if (is_strict(language_mode())) {
       type = ArgumentsAccessStub::NEW_STRICT;
     } else if (function()->has_duplicate_parameters()) {
       type = ArgumentsAccessStub::NEW_SLOPPY_SLOW;
@@ -1257,7 +1257,7 @@ void FullCodeGenerator::EmitNewClosure(Handle<SharedFunctionInfo> info,
   // doesn't just get a copy of the existing unoptimized code.
   if (!FLAG_always_opt && !FLAG_prepare_always_opt && !pretenure &&
       scope()->is_function_scope() && info->num_literals() == 0) {
-    FastNewClosureStub stub(isolate(), info->strict_mode(), info->kind());
+    FastNewClosureStub stub(isolate(), info->language_mode(), info->kind());
     __ mov(r5, Operand(info));
     __ CallStub(&stub);
   } else {
@@ -2653,7 +2653,7 @@ void FullCodeGenerator::EmitAssignment(Expression* expr) {
       __ Pop(StoreDescriptor::ValueRegister(),
              StoreDescriptor::ReceiverRegister());
       Handle<Code> ic =
-          CodeFactory::KeyedStoreIC(isolate(), strict_mode()).code();
+          CodeFactory::KeyedStoreIC(isolate(), language_mode()).code();
       CallIC(ic);
       break;
     }
@@ -2722,8 +2722,8 @@ void FullCodeGenerator::EmitVariableAssignment(Variable* var, Token::Value op) {
       // Assignment to var.
       __ push(r3);  // Value.
       __ mov(r4, Operand(var->name()));
-      __ mov(r3, Operand(Smi::FromInt(strict_mode())));
-      __ Push(cp, r4, r3);  // Context, name, strict mode.
+      __ mov(r3, Operand(Smi::FromInt(language_mode())));
+      __ Push(cp, r4, r3);  // Context, name, language mode.
       __ CallRuntime(Runtime::kStoreLookupSlot, 4);
     } else {
       // Assignment to var or initializing assignment to let/const in harmony
@@ -2738,7 +2738,7 @@ void FullCodeGenerator::EmitVariableAssignment(Variable* var, Token::Value op) {
       }
       EmitStoreToStackLocalOrContextSlot(var, location);
     }
-  } else if (IsSignallingAssignmentToConst(var, op, strict_mode())) {
+  } else if (IsSignallingAssignmentToConst(var, op, language_mode())) {
     __ CallRuntime(Runtime::kThrowConstAssignError, 0);
   }
 }
@@ -2772,8 +2772,8 @@ void FullCodeGenerator::EmitNamedSuperPropertyStore(Property* prop) {
 
   __ Push(key->value());
   __ Push(r3);
-  __ CallRuntime((strict_mode() == STRICT ? Runtime::kStoreToSuper_Strict
-                                          : Runtime::kStoreToSuper_Sloppy),
+  __ CallRuntime((is_strict(language_mode()) ? Runtime::kStoreToSuper_Strict
+                                             : Runtime::kStoreToSuper_Sloppy),
                  4);
 }
 
@@ -2785,8 +2785,9 @@ void FullCodeGenerator::EmitKeyedSuperPropertyStore(Property* prop) {
   DCHECK(prop != NULL);
 
   __ Push(r3);
-  __ CallRuntime((strict_mode() == STRICT ? Runtime::kStoreKeyedToSuper_Strict
-                                          : Runtime::kStoreKeyedToSuper_Sloppy),
+  __ CallRuntime(
+      (is_strict(language_mode()) ? Runtime::kStoreKeyedToSuper_Strict
+                                  : Runtime::kStoreKeyedToSuper_Sloppy),
                  4);
 }
 
@@ -2799,7 +2800,8 @@ void FullCodeGenerator::EmitKeyedPropertyAssignment(Assignment* expr) {
   __ Pop(StoreDescriptor::ReceiverRegister(), StoreDescriptor::NameRegister());
   DCHECK(StoreDescriptor::ValueRegister().is(r3));
 
-  Handle<Code> ic = CodeFactory::KeyedStoreIC(isolate(), strict_mode()).code();
+  Handle<Code> ic =
+      CodeFactory::KeyedStoreIC(isolate(), language_mode()).code();
   CallIC(ic, expr->AssignmentFeedbackId());
 
   PrepareForBailoutForId(expr->AssignmentId(), TOS_REG);
@@ -3020,8 +3022,8 @@ void FullCodeGenerator::EmitResolvePossiblyDirectEval(int arg_count) {
   int receiver_offset = 2 + info_->scope()->num_parameters();
   __ LoadP(r6, MemOperand(fp, receiver_offset * kPointerSize), r0);
 
-  // r5: strict mode.
-  __ LoadSmiLiteral(r5, Smi::FromInt(strict_mode()));
+  // r5: language mode.
+  __ LoadSmiLiteral(r5, Smi::FromInt(language_mode()));
 
   // r4: the start position of the scope the calls resides in.
   __ LoadSmiLiteral(r4, Smi::FromInt(scope()->start_position()));
@@ -4589,7 +4591,7 @@ void FullCodeGenerator::VisitUnaryOperation(UnaryOperation* expr) {
       if (property != NULL) {
         VisitForStackValue(property->obj());
         VisitForStackValue(property->key());
-        __ LoadSmiLiteral(r4, Smi::FromInt(strict_mode()));
+        __ LoadSmiLiteral(r4, Smi::FromInt(language_mode()));
         __ push(r4);
         __ InvokeBuiltin(Builtins::DELETE, CALL_FUNCTION);
         context()->Plug(r3);
@@ -4597,7 +4599,7 @@ void FullCodeGenerator::VisitUnaryOperation(UnaryOperation* expr) {
         Variable* var = proxy->var();
         // Delete of an unqualified identifier is disallowed in strict mode
         // but "delete this" is allowed.
-        DCHECK(strict_mode() == SLOPPY || var->is_this());
+        DCHECK(is_sloppy(language_mode()) || var->is_this());
         if (var->IsUnallocated()) {
           __ LoadP(r5, GlobalObjectOperand());
           __ mov(r4, Operand(var->name()));
@@ -4915,7 +4917,7 @@ void FullCodeGenerator::VisitCountOperation(CountOperation* expr) {
       __ Pop(StoreDescriptor::ReceiverRegister(),
              StoreDescriptor::NameRegister());
       Handle<Code> ic =
-          CodeFactory::KeyedStoreIC(isolate(), strict_mode()).code();
+          CodeFactory::KeyedStoreIC(isolate(), language_mode()).code();
       CallIC(ic, expr->CountStoreFeedbackId());
       PrepareForBailoutForId(expr->AssignmentId(), TOS_REG);
       if (expr->is_postfix()) {
