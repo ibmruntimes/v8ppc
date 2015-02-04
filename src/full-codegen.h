@@ -115,7 +115,11 @@ class FullCodeGenerator: public AstVisitor {
   static const int kBootCodeSizeMultiplier = 110;
 #elif V8_TARGET_ARCH_PPC64
   static const int kCodeSizeMultiplier = 200;
+#if !defined(V8_PPC_TAGGING_OPT) || !defined(V8_PPC_OOL_CONSTANT_POOL_OPT)
+  static const int kBootCodeSizeMultiplier = 170;
+#else
   static const int kBootCodeSizeMultiplier = 120;
+#endif
 #elif V8_TARGET_ARCH_PPC
   static const int kCodeSizeMultiplier = 200;
   static const int kBootCodeSizeMultiplier = 120;
