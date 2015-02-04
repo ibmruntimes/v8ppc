@@ -98,7 +98,19 @@ void FastCloneShallowObjectDescriptor::Initialize(
 void CreateAllocationSiteDescriptor::Initialize(
     CallInterfaceDescriptorData* data) {
   Register registers[] = {cp, r5, r6};
-  data->Initialize(arraysize(registers), registers, NULL);
+  Representation representations[] = {Representation::Tagged(),
+                                      Representation::Tagged(),
+                                      Representation::Smi()};
+  data->Initialize(arraysize(registers), registers, representations);
+}
+
+
+void CreateWeakCellDescriptor::Initialize(CallInterfaceDescriptorData* data) {
+  Register registers[] = {cp, r5, r6, r4};
+  Representation representations[] = {
+      Representation::Tagged(), Representation::Tagged(), Representation::Smi(),
+      Representation::Tagged()};
+  data->Initialize(arraysize(registers), registers, representations);
 }
 
 
