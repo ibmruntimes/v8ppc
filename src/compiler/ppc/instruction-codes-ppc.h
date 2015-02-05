@@ -14,12 +14,12 @@ namespace compiler {
 #define TARGET_ARCH_OPCODE_LIST(V) \
   V(PPC_And32)                     \
   V(PPC_And64)                     \
-  V(PPC_AndCompliment32)           \
-  V(PPC_AndCompliment64)           \
+  V(PPC_AndComplement32)           \
+  V(PPC_AndComplement64)           \
   V(PPC_Or32)                      \
   V(PPC_Or64)                      \
-  V(PPC_OrCompliment32)            \
-  V(PPC_OrCompliment64)            \
+  V(PPC_OrComplement32)            \
+  V(PPC_OrComplement64)            \
   V(PPC_Xor32)                     \
   V(PPC_Xor64)                     \
   V(PPC_ShiftLeft32)               \

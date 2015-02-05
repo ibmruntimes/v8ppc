@@ -582,8 +582,8 @@ void CodeGenerator::AssembleArchInstruction(Instruction* instr) {
         __ andi(i.OutputRegister(), i.InputRegister(0), i.InputImmediate(1));
       }
       break;
-    case kPPC_AndCompliment32:
-    case kPPC_AndCompliment64:
+    case kPPC_AndComplement32:
+    case kPPC_AndComplement64:
       __ andc(i.OutputRegister(), i.InputRegister(0), i.InputRegister(1),
               i.OutputRCBit());
       break;
@@ -597,8 +597,8 @@ void CodeGenerator::AssembleArchInstruction(Instruction* instr) {
         DCHECK_EQ(LeaveRC, i.OutputRCBit());
       }
       break;
-    case kPPC_OrCompliment32:
-    case kPPC_OrCompliment64:
+    case kPPC_OrComplement32:
+    case kPPC_OrComplement64:
       __ orc(i.OutputRegister(), i.InputRegister(0), i.InputRegister(1),
              i.OutputRCBit());
       break;

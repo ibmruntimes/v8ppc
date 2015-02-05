@@ -219,7 +219,7 @@ enum OpcodeExt2 {
   XORX = 316 << 1,     // Exclusive OR
   MFSPR = 339 << 1,    // Move from Special-Purpose-Register
   STHX = 407 << 1,     // store half-word w/ x-form
-  ORC = 412 << 1,      // Or with Compliment
+  ORC = 412 << 1,      // Or with Complement
   STHUX = 439 << 1,    // store half-word w/ update x-form
   ORX = 444 << 1,      // Or
   DIVDU = 457 << 1,    // Divide Double Word Unsigned

@@ -350,16 +350,16 @@ static void VisitLogical(InstructionSelector* selector, Node* node, Matcher* m,
   ArchOpcode inv_opcode = opcode;
   switch (opcode) {
     case kPPC_And32:
-      inv_opcode = kPPC_AndCompliment32;
+      inv_opcode = kPPC_AndComplement32;
       break;
     case kPPC_And64:
-      inv_opcode = kPPC_AndCompliment64;
+      inv_opcode = kPPC_AndComplement64;
       break;
     case kPPC_Or32:
-      inv_opcode = kPPC_OrCompliment32;
+      inv_opcode = kPPC_OrComplement32;
       break;
     case kPPC_Or64:
-      inv_opcode = kPPC_OrCompliment64;
+      inv_opcode = kPPC_OrComplement64;
       break;
     default:
       UNREACHABLE();
