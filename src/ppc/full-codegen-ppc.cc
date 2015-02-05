@@ -1990,16 +1990,13 @@ void FullCodeGenerator::VisitAssignment(Assignment* expr) {
     __ push(r3);  // Left operand goes on the stack.
     VisitForAccumulatorValue(expr->value());
 
-    OverwriteMode mode = expr->value()->ResultOverwriteAllowed()
-                             ? OVERWRITE_RIGHT
-                             : NO_OVERWRITE;
     SetSourcePosition(expr->position() + 1);
     AccumulatorValueContext context(this);
     if (ShouldInlineSmiCase(op)) {
-      EmitInlineSmiBinaryOp(expr->binary_operation(), op, mode, expr->target(),
+      EmitInlineSmiBinaryOp(expr->binary_operation(), op, expr->target(),
                             expr->value());
     } else {
-      EmitBinaryOp(expr->binary_operation(), op, mode);
+      EmitBinaryOp(expr->binary_operation(), op);
     }
 
     // Deoptimization point in case the binary operation may have side effects.
@@ -2404,7 +2401,6 @@ void FullCodeGenerator::EmitKeyedSuperPropertyLoad(Property* prop) {
 
 void FullCodeGenerator::EmitInlineSmiBinaryOp(BinaryOperation* expr,
                                               Token::Value op,
-                                              OverwriteMode mode,
                                               Expression* left_expr,
                                               Expression* right_expr) {
   Label done, smi_case, stub_call;
@@ -2424,7 +2420,7 @@ void FullCodeGenerator::EmitInlineSmiBinaryOp(BinaryOperation* expr,
   patch_site.EmitJumpIfSmi(scratch1, &smi_case);
 
   __ bind(&stub_call);
-  Handle<Code> code = CodeFactory::BinaryOpIC(isolate(), op, mode).code();
+  Handle<Code> code = CodeFactory::BinaryOpIC(isolate(), op).code();
   CallIC(code, expr->BinaryOperationFeedbackId());
   patch_site.EmitPatchInfo();
   __ b(&done);
@@ -2588,10 +2584,9 @@ void FullCodeGenerator::EmitClassDefineProperties(ClassLiteral* lit) {
 }
 
 
-void FullCodeGenerator::EmitBinaryOp(BinaryOperation* expr, Token::Value op,
-                                     OverwriteMode mode) {
+void FullCodeGenerator::EmitBinaryOp(BinaryOperation* expr, Token::Value op) {
   __ pop(r4);
-  Handle<Code> code = CodeFactory::BinaryOpIC(isolate(), op, mode).code();
+  Handle<Code> code = CodeFactory::BinaryOpIC(isolate(), op).code();
   JumpPatchSite patch_site(masm_);  // unbound, signals no inlined smi code.
   CallIC(code, expr->BinaryOperationFeedbackId());
   patch_site.EmitPatchInfo();
@@ -4860,8 +4855,7 @@ void FullCodeGenerator::VisitCountOperation(CountOperation* expr) {
   // Record position before stub call.
   SetSourcePosition(expr->position());
 
-  Handle<Code> code =
-      CodeFactory::BinaryOpIC(isolate(), Token::ADD, NO_OVERWRITE).code();
+  Handle<Code> code = CodeFactory::BinaryOpIC(isolate(), Token::ADD).code();
   CallIC(code, expr->CountBinOpFeedbackId());
   patch_site.EmitPatchInfo();
   __ bind(&done);
