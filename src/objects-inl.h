@@ -5852,19 +5852,21 @@ void SharedFunctionInfo::set_optimization_disabled(bool disable) {
 
 
 LanguageMode SharedFunctionInfo::language_mode() {
-  STATIC_ASSERT(LANGUAGE_END == 2);
-  return BooleanBit::get(compiler_hints(), kStrictModeFunction)
-      ? STRICT : SLOPPY;
+  STATIC_ASSERT(LANGUAGE_END == 3);
+  return construct_language_mode(
+      BooleanBit::get(compiler_hints(), kStrictModeFunction),
+      BooleanBit::get(compiler_hints(), kStrongModeFunction));
 }
 
 
 void SharedFunctionInfo::set_language_mode(LanguageMode language_mode) {
-  STATIC_ASSERT(LANGUAGE_END == 2);
+  STATIC_ASSERT(LANGUAGE_END == 3);
   // We only allow language mode transitions that set the same language mode
   // again or go up in the chain:
   DCHECK(is_sloppy(this->language_mode()) || is_strict(language_mode));
   int hints = compiler_hints();
   hints = BooleanBit::set(hints, kStrictModeFunction, is_strict(language_mode));
+  hints = BooleanBit::set(hints, kStrongModeFunction, is_strong(language_mode));
   set_compiler_hints(hints);
 }
 
@@ -6481,7 +6483,6 @@ void Code::set_stub_key(uint32_t key) {
 
 
 ACCESSORS(Code, gc_metadata, Object, kGCMetadataOffset)
-INT_ACCESSORS(Code, ic_age, kICAgeOffset)
 
 
 byte* Code::instruction_start()  {

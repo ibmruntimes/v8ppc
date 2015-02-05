@@ -274,9 +274,15 @@ FPUCondition FlagsConditionToConditionCmpD(bool& predicate,
     case kUnsignedLessThan:
       predicate = true;
       return OLT;
+    case kUnsignedGreaterThanOrEqual:
+      predicate = false;
+      return ULT;
     case kUnsignedLessThanOrEqual:
       predicate = true;
       return OLE;
+    case kUnsignedGreaterThan:
+      predicate = false;
+      return ULE;
     case kUnorderedEqual:
     case kUnorderedNotEqual:
       predicate = true;

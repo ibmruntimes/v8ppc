@@ -874,6 +874,13 @@ class Runtime : public AllStatic {
   MUST_USE_RESULT static MaybeHandle<Object> CreateArrayLiteralBoilerplate(
       Isolate* isolate, Handle<FixedArray> literals,
       Handle<FixedArray> elements);
+
+  static void WeakCollectionInitialize(
+      Isolate* isolate, Handle<JSWeakCollection> weak_collection);
+  static void WeakCollectionSet(Handle<JSWeakCollection> weak_collection,
+                                Handle<Object> key, Handle<Object> value);
+  static bool WeakCollectionDelete(Handle<JSWeakCollection> weak_collection,
+                                   Handle<Object> key);
 };
 
 
@@ -887,8 +894,8 @@ class AllocateTargetSpace : public BitField<AllocationSpace, 1, 3> {};
 
 class DeclareGlobalsEvalFlag : public BitField<bool, 0, 1> {};
 class DeclareGlobalsNativeFlag : public BitField<bool, 1, 1> {};
-STATIC_ASSERT(LANGUAGE_END == 2);
-class DeclareGlobalsLanguageMode : public BitField<LanguageMode, 2, 1> {};
+STATIC_ASSERT(LANGUAGE_END == 3);
+class DeclareGlobalsLanguageMode : public BitField<LanguageMode, 2, 2> {};
 
 }  // namespace internal
 }  // namespace v8
