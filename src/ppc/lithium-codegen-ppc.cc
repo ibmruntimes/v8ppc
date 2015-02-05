@@ -771,7 +771,7 @@ void LCodeGen::RegisterEnvironmentForDeoptimization(LEnvironment* environment,
 
 
 void LCodeGen::DeoptimizeIf(Condition cond, LInstruction* instr,
-                            const char* detail,
+                            Deoptimizer::DeoptReason deopt_reason,
                             Deoptimizer::BailoutType bailout_type,
                             CRegister cr) {
   LEnvironment* environment = instr->environment();
@@ -813,7 +813,7 @@ void LCodeGen::DeoptimizeIf(Condition cond, LInstruction* instr,
   }
 
   Deoptimizer::Reason reason(instr->hydrogen_value()->position().raw(),
-                             instr->Mnemonic(), detail);
+                             instr->Mnemonic(), deopt_reason);
   DCHECK(info()->IsStub() || frame_is_built_);
   // Go through jump table if we need to handle condition, build frame, or
   // restore caller doubles.
@@ -835,10 +835,11 @@ void LCodeGen::DeoptimizeIf(Condition cond, LInstruction* instr,
 
 
 void LCodeGen::DeoptimizeIf(Condition condition, LInstruction* instr,
-                            const char* detail, CRegister cr) {
+                            Deoptimizer::DeoptReason deopt_reason,
+                            CRegister cr) {
   Deoptimizer::BailoutType bailout_type =
       info()->IsStub() ? Deoptimizer::LAZY : Deoptimizer::EAGER;
-  DeoptimizeIf(condition, instr, detail, bailout_type, cr);
+  DeoptimizeIf(condition, instr, deopt_reason, bailout_type, cr);
 }
 
 
@@ -5303,7 +5304,7 @@ void LCodeGen::DoDeferredTaggedToI(LTaggedToI* instr) {
     __ bind(&check_false);
     __ LoadRoot(ip, Heap::kFalseValueRootIndex);
     __ cmp(input_reg, ip);
-    DeoptimizeIf(ne, instr, Deoptimizer::kNotAHeapNumberUndefinedTrueFalse);
+    DeoptimizeIf(ne, instr, Deoptimizer::kNotAHeapNumberUndefinedBoolean);
     __ li(input_reg, Operand::Zero());
   } else {
     DeoptimizeIf(ne, instr, Deoptimizer::kNotAHeapNumber);

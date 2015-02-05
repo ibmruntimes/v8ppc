@@ -1285,6 +1285,10 @@ class Assembler : public AssemblerBase {
   // Use --code-comments to enable.
   void RecordComment(const char* msg);
 
+  // Record a deoptimization reason that can be used by a log or cpu profiler.
+  // Use --trace-deopt to enable.
+  void RecordDeoptReason(const int reason, const int raw_position);
+
   // Writes a single byte or word of data in the code stream.  Used
   // for inline tables, e.g., jump-tables.
   void db(uint8_t data);
