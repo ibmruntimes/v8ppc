@@ -3001,25 +3001,20 @@ void CallICStub::Generate(MacroAssembler* masm) {
 
 
 void CallICStub::GenerateMiss(MacroAssembler* masm) {
-  // Get the receiver of the function from the stack.
-  __ LoadP(r7, MemOperand(sp, arg_count() * kPointerSize), r0);
+  FrameAndConstantPoolScope scope(masm, StackFrame::INTERNAL);
 
-  {
-    FrameAndConstantPoolScope scope(masm, StackFrame::INTERNAL);
+  // Push the function and feedback info.
+  __ Push(r4, r5, r6);
 
-    // Push the receiver and the function and feedback info.
-    __ Push(r7, r4, r5, r6);
+  // Call the entry.
+  IC::UtilityId id = GetICState() == DEFAULT ? IC::kCallIC_Miss
+                                             : IC::kCallIC_Customization_Miss;
 
-    // Call the entry.
-    IC::UtilityId id = GetICState() == DEFAULT ? IC::kCallIC_Miss
-                                               : IC::kCallIC_Customization_Miss;
+  ExternalReference miss = ExternalReference(IC_Utility(id), masm->isolate());
+  __ CallExternalReference(miss, 3);
 
-    ExternalReference miss = ExternalReference(IC_Utility(id), masm->isolate());
-    __ CallExternalReference(miss, 4);
-
-    // Move result to r4 and exit the internal frame.
-    __ mr(r4, r3);
-  }
+  // Move result to r4 and exit the internal frame.
+  __ mr(r4, r3);
 }
 
 
