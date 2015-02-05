@@ -4514,7 +4514,7 @@ void LCodeGen::DoStoreNamedField(LStoreNamedField* instr) {
       MemOperand operand = FieldMemOperand(scratch, offset);
       __ StoreRepresentation(value, operand, representation, r0);
       record_dest = scratch;
-      record_value =  value;
+      record_value = value;
       record_scratch = object;
     }
 #if V8_TARGET_ARCH_PPC64
@@ -4522,11 +4522,10 @@ void LCodeGen::DoStoreNamedField(LStoreNamedField* instr) {
 #endif
 
   if (hinstr->NeedsWriteBarrier()) {
-    __ RecordWriteField(
-        record_dest, offset, record_value, record_scratch,
-        GetLinkRegisterState(), kSaveFPRegs, EMIT_REMEMBERED_SET,
-        hinstr->SmiCheckForWriteBarrier(),
-        hinstr->PointersToHereCheckForValue());
+    __ RecordWriteField(record_dest, offset, record_value, record_scratch,
+                        GetLinkRegisterState(), kSaveFPRegs,
+                        EMIT_REMEMBERED_SET, hinstr->SmiCheckForWriteBarrier(),
+                        hinstr->PointersToHereCheckForValue());
   }
 }
 

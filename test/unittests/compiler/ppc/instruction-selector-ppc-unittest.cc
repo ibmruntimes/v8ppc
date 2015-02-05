@@ -6,8 +6,6 @@
 
 namespace v8 {
 namespace internal {
-namespace compiler {
-
-}  // namespace compiler
+namespace compiler {}  // namespace compiler
 }  // namespace internal
 }  // namespace v8

@@ -835,7 +835,7 @@ class Assembler : public AssemblerBase {
 
   void isel(Register rt, Register ra, Register rb, int cb);
   void isel(Condition cond, Register rt, Register ra, Register rb,
-            CRegister cr = cr7)  {
+            CRegister cr = cr7) {
     DCHECK(cond != al);
     DCHECK(cr.code() >= 0 && cr.code() <= 7);
 

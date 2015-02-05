@@ -37,9 +37,9 @@ class PPCOperandGenerator FINAL : public OperandGenerator {
   bool CanBeImmediate(Node* node, ImmediateMode mode) {
     int64_t value;
     if (node->opcode() == IrOpcode::kInt32Constant)
-        value = OpParameter<int32_t>(node);
+      value = OpParameter<int32_t>(node);
     else if (node->opcode() == IrOpcode::kInt64Constant)
-        value = OpParameter<int64_t>(node);
+      value = OpParameter<int64_t>(node);
     else
       return false;
     return CanBeImmediate(value, mode);
@@ -446,9 +446,8 @@ void InstructionSelector::VisitWord32And(Node* node) {
       }
     }
     if (mb >= me) {
-      Emit(kPPC_RotLeftAndMask32, g.DefineAsRegister(node),
-           g.UseRegister(left), g.TempImmediate(sh),
-           g.TempImmediate(mb), g.TempImmediate(me));
+      Emit(kPPC_RotLeftAndMask32, g.DefineAsRegister(node), g.UseRegister(left),
+           g.TempImmediate(sh), g.TempImmediate(mb), g.TempImmediate(me));
       return;
     }
   }
@@ -617,8 +616,8 @@ void InstructionSelector::VisitWord64Shl(Node* node) {
         }
         if (match) {
           Emit(opcode, g.DefineAsRegister(node),
-               g.UseRegister(mleft.left().node()),
-               g.TempImmediate(sh), g.TempImmediate(mask));
+               g.UseRegister(mleft.left().node()), g.TempImmediate(sh),
+               g.TempImmediate(mask));
           return;
         }
       }
@@ -685,8 +684,8 @@ void InstructionSelector::VisitWord64Shr(Node* node) {
         }
         if (match) {
           Emit(opcode, g.DefineAsRegister(node),
-               g.UseRegister(mleft.left().node()),
-               g.TempImmediate(sh), g.TempImmediate(mask));
+               g.UseRegister(mleft.left().node()), g.TempImmediate(sh),
+               g.TempImmediate(mask));
           return;
         }
       }
@@ -1159,9 +1158,8 @@ static void VisitWordCompareZero(InstructionSelector* selector, Node* user,
             switch (node->opcode()) {
               case IrOpcode::kInt32AddWithOverflow:
                 cont->OverwriteAndNegateIfEqual(kOverflow);
-                return VisitBinop<Int32BinopMatcher>(selector, node,
-                                                     kPPC_AddWithOverflow32,
-                                                     kInt16Imm, cont);
+                return VisitBinop<Int32BinopMatcher>(
+                    selector, node, kPPC_AddWithOverflow32, kInt16Imm, cont);
               case IrOpcode::kInt32SubWithOverflow:
                 cont->OverwriteAndNegateIfEqual(kOverflow);
                 return VisitBinop<Int32BinopMatcher>(selector, node,
@@ -1179,14 +1177,14 @@ static void VisitWordCompareZero(InstructionSelector* selector, Node* user,
         // TODO(mbandy): opportunity for rlwinm?
         return VisitWordCompare(selector, value, kPPC_Tst32, cont, true,
                                 kInt16Imm_Unsigned);
-      // TODO(mbrandy): Handle?
-      // case IrOpcode::kInt32Add:
-      // case IrOpcode::kWord32Or:
-      // case IrOpcode::kWord32Xor:
-      // case IrOpcode::kWord32Sar:
-      // case IrOpcode::kWord32Shl:
-      // case IrOpcode::kWord32Shr:
-      // case IrOpcode::kWord32Ror:
+// TODO(mbrandy): Handle?
+// case IrOpcode::kInt32Add:
+// case IrOpcode::kWord32Or:
+// case IrOpcode::kWord32Xor:
+// case IrOpcode::kWord32Sar:
+// case IrOpcode::kWord32Shl:
+// case IrOpcode::kWord32Shr:
+// case IrOpcode::kWord32Ror:
 #if V8_TARGET_ARCH_PPC64
       case IrOpcode::kInt64Sub:
         return VisitWord64Compare(selector, value, cont);
@@ -1194,14 +1192,14 @@ static void VisitWordCompareZero(InstructionSelector* selector, Node* user,
         // TODO(mbandy): opportunity for rldic?
         return VisitWordCompare(selector, value, kPPC_Tst64, cont, true,
                                 kInt16Imm_Unsigned);
-      // TODO(mbrandy): Handle?
-      // case IrOpcode::kInt64Add:
-      // case IrOpcode::kWord64Or:
-      // case IrOpcode::kWord64Xor:
-      // case IrOpcode::kWord64Sar:
-      // case IrOpcode::kWord64Shl:
-      // case IrOpcode::kWord64Shr:
-      // case IrOpcode::kWord64Ror:
+// TODO(mbrandy): Handle?
+// case IrOpcode::kInt64Add:
+// case IrOpcode::kWord64Or:
+// case IrOpcode::kWord64Xor:
+// case IrOpcode::kWord64Sar:
+// case IrOpcode::kWord64Shl:
+// case IrOpcode::kWord64Shr:
+// case IrOpcode::kWord64Ror:
 #endif
       default:
         break;

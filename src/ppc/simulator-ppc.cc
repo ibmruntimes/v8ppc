@@ -1147,7 +1147,7 @@ struct ObjectPair {
 };
 
 
-static void decodeObjectPair(ObjectPair *pair, intptr_t *x, intptr_t *y) {
+static void decodeObjectPair(ObjectPair* pair, intptr_t* x, intptr_t* y) {
   *x = pair->x;
   *y = pair->y;
 }
@@ -1155,7 +1155,7 @@ static void decodeObjectPair(ObjectPair *pair, intptr_t *x, intptr_t *y) {
 typedef uint64_t ObjectPair;
 
 
-static void decodeObjectPair(ObjectPair *pair, intptr_t *x, intptr_t *y) {
+static void decodeObjectPair(ObjectPair* pair, intptr_t* x, intptr_t* y) {
 #if V8_TARGET_BIG_ENDIAN
   *x = static_cast<int32_t>(*pair >> 32);
   *y = static_cast<int32_t>(*pair);
@@ -1185,8 +1185,8 @@ typedef ObjectPair (*SimulatorRuntimeObjectPairCall)(
 typedef ObjectPair (*SimulatorRuntimeCall)(intptr_t arg0, intptr_t arg1,
                                            intptr_t arg2, intptr_t arg3,
                                            intptr_t arg4, intptr_t arg5);
-#endif  // V8_PPC_SIMULATOR
 
+#endif  // V8_PPC_SIMULATOR
 // These prototypes handle the four types of FP calls.
 typedef int (*SimulatorRuntimeCompareCall)(double darg0, double darg1);
 typedef double (*SimulatorRuntimeFPFPCall)(double darg0, double darg1);
@@ -1446,8 +1446,8 @@ void Simulator::SoftwareInterrupt(Instruction* instr) {
         DCHECK(redirection->type() == ExternalReference::BUILTIN_CALL);
         SimulatorRuntimeCall target =
             reinterpret_cast<SimulatorRuntimeCall>(external);
-        ObjectPair result = target(arg[0], arg[1], arg[2], arg[3], arg[4],
-                                   arg[5]);
+        ObjectPair result =
+            target(arg[0], arg[1], arg[2], arg[3], arg[4], arg[5]);
         intptr_t x;
         intptr_t y;
         decodeObjectPair(&result, &x, &y);
@@ -2370,9 +2370,9 @@ bool Simulator::ExecuteExt2_9bit_part2(Instruction* instr) {
       set_register(rt, alu_out);
       if (instr->Bit(10)) {  // OE bit set
         if (overflow) {
-            special_reg_xer_ |= 0xC0000000;  // set SO,OV
+          special_reg_xer_ |= 0xC0000000;  // set SO,OV
         } else {
-            special_reg_xer_ &= ~0x40000000;  // clear OV
+          special_reg_xer_ &= ~0x40000000;  // clear OV
         }
       }
       if (instr->Bit(0)) {  // RC bit set
@@ -2811,7 +2811,7 @@ void Simulator::ExecuteExt4(Instruction* instr) {
       double frt_val = std::round(frb_val);
       set_d_register_from_double(frt, frt_val);
       if (instr->Bit(0)) {  // RC bit set
-        //  UNIMPLEMENTED();
+                            //  UNIMPLEMENTED();
       }
       return;
     }
@@ -2822,7 +2822,7 @@ void Simulator::ExecuteExt4(Instruction* instr) {
       double frt_val = std::trunc(frb_val);
       set_d_register_from_double(frt, frt_val);
       if (instr->Bit(0)) {  // RC bit set
-        //  UNIMPLEMENTED();
+                            //  UNIMPLEMENTED();
       }
       return;
     }
@@ -2833,7 +2833,7 @@ void Simulator::ExecuteExt4(Instruction* instr) {
       double frt_val = std::ceil(frb_val);
       set_d_register_from_double(frt, frt_val);
       if (instr->Bit(0)) {  // RC bit set
-        //  UNIMPLEMENTED();
+                            //  UNIMPLEMENTED();
       }
       return;
     }
@@ -2844,7 +2844,7 @@ void Simulator::ExecuteExt4(Instruction* instr) {
       double frt_val = std::floor(frb_val);
       set_d_register_from_double(frt, frt_val);
       if (instr->Bit(0)) {  // RC bit set
-        //  UNIMPLEMENTED();
+                            //  UNIMPLEMENTED();
       }
       return;
     }
@@ -2999,7 +2999,7 @@ void Simulator::ExecuteExt4(Instruction* instr) {
     case MTFSF: {
       int frb = instr->RBValue();
       int64_t frb_dval = get_d_register(frb);
-      int32_t frb_ival = static_cast<int32_t>((frb_dval) & 0xffffffff);
+      int32_t frb_ival = static_cast<int32_t>((frb_dval)&0xffffffff);
       int l = instr->Bits(25, 25);
       if (l == 1) {
         fp_condition_reg_ = frb_ival;

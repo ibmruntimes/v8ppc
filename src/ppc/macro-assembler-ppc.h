@@ -448,10 +448,8 @@ class MacroAssembler : public Assembler {
   void StoreRepresentation(Register src, const MemOperand& mem,
                            Representation r, Register scratch = no_reg);
 
-  void LoadDouble(DoubleRegister dst, const MemOperand& mem,
-                  Register scratch);
-  void StoreDouble(DoubleRegister src, const MemOperand& mem,
-                   Register scratch);
+  void LoadDouble(DoubleRegister dst, const MemOperand& mem, Register scratch);
+  void StoreDouble(DoubleRegister src, const MemOperand& mem, Register scratch);
 
   // Move values between integer and floating point registers.
   void MovIntToDouble(DoubleRegister dst, Register src, Register scratch);

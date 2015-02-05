@@ -2796,7 +2796,7 @@ void FullCodeGenerator::EmitKeyedSuperPropertyStore(Property* prop) {
   __ CallRuntime(
       (is_strict(language_mode()) ? Runtime::kStoreKeyedToSuper_Strict
                                   : Runtime::kStoreKeyedToSuper_Sloppy),
-                 4);
+      4);
 }
 
 

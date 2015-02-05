@@ -893,8 +893,8 @@ void Assembler::divw(Register dst, Register src1, Register src2, OEBit o,
 
 
 // Divide word unsigned
-void Assembler::divwu(Register dst, Register src1, Register src2,
-                      OEBit o, RCBit r) {
+void Assembler::divwu(Register dst, Register src1, Register src2, OEBit o,
+                      RCBit r) {
   xo_form(EXT2 | DIVWU, dst, src1, src2, o, r);
 }
 
@@ -1178,7 +1178,7 @@ void Assembler::lwax(Register rt, const MemOperand& src) {
   Register ra = src.ra();
   Register rb = src.rb();
   DCHECK(!ra.is(r0));
-  emit(EXT2 | LWAX | rt.code()*B21 | ra.code()*B16 | rb.code()*B11);
+  emit(EXT2 | LWAX | rt.code() * B21 | ra.code() * B16 | rb.code() * B11);
 #else
   lwzx(rt, src);
 #endif
@@ -1470,8 +1470,8 @@ void Assembler::divd(Register dst, Register src1, Register src2, OEBit o,
 }
 
 
-void Assembler::divdu(Register dst, Register src1, Register src2,
-                      OEBit o, RCBit r) {
+void Assembler::divdu(Register dst, Register src1, Register src2, OEBit o,
+                      RCBit r) {
   xo_form(EXT2 | DIVDU, dst, src1, src2, o, r);
 }
 #endif
@@ -1606,9 +1606,8 @@ void Assembler::mov(Register dst, const Operand& src) {
     RecordRelocInfo(rinfo);
   }
 
-  canOptimize =
-      !(src.must_output_reloc_info(this) ||
-        (is_trampoline_pool_blocked() && !is_int16(value)));
+  canOptimize = !(src.must_output_reloc_info(this) ||
+                  (is_trampoline_pool_blocked() && !is_int16(value)));
 
 #if V8_OOL_CONSTANT_POOL
   if (use_constant_pool_for_mov(src, canOptimize)) {

@@ -172,8 +172,7 @@ void NamedLoadHandlerCompiler::GenerateDirectLoadGlobalFunctionPrototype(
     MacroAssembler* masm, int index, Register result, Label* miss) {
   const int offset = Context::SlotOffset(Context::GLOBAL_OBJECT_INDEX);
   __ LoadP(result, MemOperand(cp, offset));
-  __ LoadP(result,
-           FieldMemOperand(result, GlobalObject::kNativeContextOffset));
+  __ LoadP(result, FieldMemOperand(result, GlobalObject::kNativeContextOffset));
   __ LoadP(result, MemOperand(result, Context::SlotOffset(index)));
   // Load its initial map. The global functions all have initial maps.
   __ LoadP(result,
@@ -378,8 +377,8 @@ void NamedStoreHandlerCompiler::GenerateConstantCheck(Register map_reg,
   DCHECK(!map_reg.is(value_reg));
   DCHECK(!value_reg.is(scratch));
   __ LoadInstanceDescriptors(map_reg, scratch);
-  __ LoadP(scratch,
-         FieldMemOperand(scratch, DescriptorArray::GetValueOffset(descriptor)));
+  __ LoadP(scratch, FieldMemOperand(
+                        scratch, DescriptorArray::GetValueOffset(descriptor)));
   __ cmp(value_reg, scratch);
   __ bne(miss_label);
 }
