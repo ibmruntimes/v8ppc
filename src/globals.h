@@ -829,7 +829,7 @@ enum FunctionKind {
   kAccessorFunction = 1 << 3,
   kDefaultConstructor = 1 << 4,
   kSubclassConstructor = 1 << 5,
-  kBaseConstructor = 1 << 6,
+  kBaseConstructor = 1 << 6
 };
 
 
