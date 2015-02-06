@@ -104,18 +104,18 @@ PreParserExpression PreParserTraits::ParseFunctionLiteral(
 
 
 PreParser::PreParseResult PreParser::PreParseLazyFunction(
-    LanguageMode language_mode, bool is_generator, ParserRecorder* log) {
+    LanguageMode language_mode, FunctionKind kind, ParserRecorder* log) {
   log_ = log;
   // Lazy functions always have trivial outer scopes (no with/catch scopes).
   PreParserScope top_scope(scope_, SCRIPT_SCOPE);
   PreParserFactory top_factory(NULL);
-  FunctionState top_state(&function_state_, &scope_, &top_scope, &top_factory);
+  FunctionState top_state(&function_state_, &scope_, &top_scope,
+                          kNormalFunction, &top_factory);
   scope_->SetLanguageMode(language_mode);
   PreParserScope function_scope(scope_, FUNCTION_SCOPE);
   PreParserFactory function_factory(NULL);
-  FunctionState function_state(&function_state_, &scope_, &function_scope,
+  FunctionState function_state(&function_state_, &scope_, &function_scope, kind,
                                &function_factory);
-  function_state.set_is_generator(is_generator);
   DCHECK_EQ(Token::LBRACE, scanner()->current_token());
   bool ok = true;
   int start_position = peek_position();
@@ -869,9 +869,8 @@ PreParser::Expression PreParser::ParseFunctionLiteral(
   ScopeType outer_scope_type = scope_->type();
   PreParserScope function_scope(scope_, FUNCTION_SCOPE);
   PreParserFactory factory(NULL);
-  FunctionState function_state(&function_state_, &scope_, &function_scope,
+  FunctionState function_state(&function_state_, &scope_, &function_scope, kind,
                                &factory);
-  function_state.set_is_generator(IsGeneratorFunction(kind));
   //  FormalParameterList ::
   //    '(' (Identifier)*[','] ')'
   Expect(Token::LPAREN, CHECK_OK);
@@ -937,36 +936,16 @@ PreParser::Expression PreParser::ParseFunctionLiteral(
   }
   Expect(Token::RBRACE, CHECK_OK);
 
-  // Validate strict mode. We can do this only after parsing the function,
-  // since the function can declare itself strict.
-  // Concise methods use StrictFormalParameters.
-  if (is_strict(language_mode()) || IsConciseMethod(kind) || is_rest) {
-    if (function_name.IsEvalOrArguments()) {
-      ReportMessageAt(function_name_location, "strict_eval_arguments");
-      *ok = false;
-      return Expression::Default();
-    }
-    if (name_is_strict_reserved) {
-      ReportMessageAt(function_name_location, "unexpected_strict_reserved");
-      *ok = false;
-      return Expression::Default();
-    }
-    if (eval_args_error_loc.IsValid()) {
-      ReportMessageAt(eval_args_error_loc, "strict_eval_arguments");
-      *ok = false;
-      return Expression::Default();
-    }
-    if (dupe_error_loc.IsValid()) {
-      ReportMessageAt(dupe_error_loc, "strict_param_dupe");
-      *ok = false;
-      return Expression::Default();
-    }
-    if (reserved_error_loc.IsValid()) {
-      ReportMessageAt(reserved_error_loc, "unexpected_strict_reserved");
-      *ok = false;
-      return Expression::Default();
-    }
+  // Validate name and parameter names. We can do this only after parsing the
+  // function, since the function can declare itself strict.
+  CheckFunctionName(language_mode(), kind, function_name,
+                    name_is_strict_reserved, function_name_location, CHECK_OK);
+  const bool use_strict_params = is_rest || IsConciseMethod(kind);
+  CheckFunctionParameterNames(language_mode(), use_strict_params,
+                              eval_args_error_loc, dupe_error_loc,
+                              reserved_error_loc, CHECK_OK);
 
+  if (is_strict(language_mode())) {
     int end_position = scanner()->location().end_pos;
     CheckStrictOctalLiteral(start_position, end_position, CHECK_OK);
   }

@@ -6940,6 +6940,9 @@ class SharedFunctionInfo: public HeapObject {
   // Indicates that this function is a concise method.
   DECL_BOOLEAN_ACCESSORS(is_concise_method)
 
+  // Indicates that this function is an accessor (getter or setter).
+  DECL_BOOLEAN_ACCESSORS(is_accessor_function)
+
   // Indicates that this function is a default constructor.
   DECL_BOOLEAN_ACCESSORS(is_default_constructor)
 
@@ -7212,7 +7215,9 @@ class SharedFunctionInfo: public HeapObject {
     kIsArrow,
     kIsGenerator,
     kIsConciseMethod,
+    kIsAccessorFunction,
     kIsDefaultConstructor,
+    kIsBaseConstructor,
     kIsSubclassConstructor,
     kIsAsmFunction,
     kDeserialized,
@@ -7221,7 +7226,7 @@ class SharedFunctionInfo: public HeapObject {
   // Add hints for other modes when they're added.
   STATIC_ASSERT(LANGUAGE_END == 3);
 
-  class FunctionKindBits : public BitField<FunctionKind, kIsArrow, 5> {};
+  class FunctionKindBits : public BitField<FunctionKind, kIsArrow, 7> {};
 
   class DeoptCountBits : public BitField<int, 0, 4> {};
   class OptReenableTriesBits : public BitField<int, 4, 18> {};
