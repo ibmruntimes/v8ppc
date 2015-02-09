@@ -1085,9 +1085,7 @@ void CodeGenerator::AssembleDeoptimizerCall(int deoptimization_id) {
 void CodeGenerator::AssemblePrologue() {
   CallDescriptor* descriptor = linkage()->GetIncomingDescriptor();
   if (descriptor->kind() == CallDescriptor::kCallAddress) {
-#if ABI_USES_FUNCTION_DESCRIPTORS
     __ function_descriptor();
-#endif
     int register_save_area_size = 0;
     RegList frame_saves = fp.bit();
     __ mflr(r0);

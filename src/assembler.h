@@ -377,7 +377,10 @@ class RelocInfo {
     STATEMENT_POSITION,  // See comment for kNoPosition above.
     DEBUG_BREAK_SLOT,    // Additional code inserted for debug break slot.
     EXTERNAL_REFERENCE,  // The address of an external C++ function.
-    INTERNAL_REFERENCE,  // An address inside the same function.
+
+    // An address inside the same function.  Two types:
+    INTERNAL_REFERENCE,       // jump table entry.
+    INTERNAL_REFERENCE_LOAD,  // load of internal address (PPC only).
 
     // Marks constant and veneer pools. Only used on ARM and ARM64.
     // They use a custom noncompact encoding.
@@ -401,7 +404,7 @@ class RelocInfo {
     LAST_GCED_ENUM = CELL,
     // Modes <= LAST_COMPACT_ENUM are guaranteed to have compact encoding.
     LAST_COMPACT_ENUM = CODE_TARGET_WITH_ID,
-    LAST_STANDARD_NONCOMPACT_ENUM = INTERNAL_REFERENCE
+    LAST_STANDARD_NONCOMPACT_ENUM = INTERNAL_REFERENCE_LOAD
   };
 
   RelocInfo() {}
@@ -460,7 +463,7 @@ class RelocInfo {
     return mode == EXTERNAL_REFERENCE;
   }
   static inline bool IsInternalReference(Mode mode) {
-    return mode == INTERNAL_REFERENCE;
+    return mode == INTERNAL_REFERENCE || mode == INTERNAL_REFERENCE_LOAD;
   }
   static inline bool IsDebugBreakSlot(Mode mode) {
     return mode == DEBUG_BREAK_SLOT;

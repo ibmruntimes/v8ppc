@@ -479,7 +479,7 @@ void RelocInfoWriter::Write(const RelocInfo* rinfo) {
                                                              : kVeneerPoolTag);
   } else {
     DCHECK(rmode > RelocInfo::LAST_COMPACT_ENUM);
-    int saved_mode = rmode - RelocInfo::LAST_COMPACT_ENUM;
+    int saved_mode = rmode - RelocInfo::LAST_COMPACT_ENUM - 1;
     // For all other modes we simply use the mode as the extra tag.
     // None of these modes need a data component.
     DCHECK(saved_mode < kPoolExtraTag);
@@ -688,7 +688,7 @@ void RelocIterator::next() {
         Advance(kIntSize);
       } else {
         AdvanceReadPC();
-        int rmode = extra_tag + RelocInfo::LAST_COMPACT_ENUM;
+        int rmode = extra_tag + RelocInfo::LAST_COMPACT_ENUM + 1;
         if (SetMode(static_cast<RelocInfo::Mode>(rmode))) return;
       }
     }
@@ -799,6 +799,8 @@ const char* RelocInfo::RelocModeName(RelocInfo::Mode rmode) {
       return "external reference";
     case RelocInfo::INTERNAL_REFERENCE:
       return "internal reference";
+    case RelocInfo::INTERNAL_REFERENCE_LOAD:
+      return "internal reference load";
     case RelocInfo::DEOPT_REASON:
       return "deopt reason";
     case RelocInfo::CONST_POOL:
@@ -884,6 +886,7 @@ void RelocInfo::Verify(Isolate* isolate) {
     case STATEMENT_POSITION:
     case EXTERNAL_REFERENCE:
     case INTERNAL_REFERENCE:
+    case INTERNAL_REFERENCE_LOAD:
     case DEOPT_REASON:
     case CONST_POOL:
     case VENEER_POOL:
