@@ -18,7 +18,7 @@ deps = {
   "v8/testing/gmock":
     Var("git_url") + "/external/googlemock.git" + "@" + "29763965ab52f24565299976b936d1265cb6a271",  # from svn revision 501
   "v8/tools/clang":
-    Var("git_url") + "/chromium/src/tools/clang.git" + "@" + "6f9d79914087cffd820021c3bb1155ad44f4b435",
+    Var("git_url") + "/chromium/src/tools/clang.git" + "@" + "4b5142322face2df2374a246dba98ae82be317b0",
 }
 
 deps_os = {
@@ -78,6 +78,17 @@ hooks = [
                 "--no_auth",
                 "--bucket", "chromium-clang-format",
                 "-s", "v8/buildtools/linux64/clang-format.sha1",
+    ],
+  },
+  # Pull binutils for linux, enabled debug fission for faster linking /
+  # debugging when used with clang on Ubuntu Precise.
+  # https://code.google.com/p/chromium/issues/detail?id=352046
+  {
+    'name': 'binutils',
+    'pattern': 'v8/third_party/binutils',
+    'action': [
+        'python',
+        'v8/third_party/binutils/download.py',
     ],
   },
   {

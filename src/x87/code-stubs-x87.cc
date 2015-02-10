@@ -1381,7 +1381,7 @@ void CompareICStub::GenerateGeneric(MacroAssembler* masm) {
     // If either is a Smi (we know that not both are), then they can only
     // be equal if the other is a HeapNumber. If so, use the slow case.
     STATIC_ASSERT(kSmiTag == 0);
-    DCHECK_EQ(0, Smi::FromInt(0));
+    DCHECK_EQ(static_cast<Smi*>(0), Smi::FromInt(0));
     __ mov(ecx, Immediate(kSmiTagMask));
     __ and_(ecx, eax);
     __ test(ecx, edx);
@@ -1836,6 +1836,9 @@ void CallConstructStub::Generate(MacroAssembler* masm) {
     __ AssertUndefinedOrAllocationSite(ebx);
   }
 
+  // Pass original constructor to construct stub.
+  __ mov(edx, edi);
+
   // Jump to the function-specific construct stub.
   Register jmp_reg = ecx;
   __ mov(jmp_reg, FieldOperand(edi, JSFunction::kSharedFunctionInfoOffset));
@@ -1876,11 +1879,10 @@ static void EmitLoadTypeFeedbackVector(MacroAssembler* masm, Register vector) {
 void CallIC_ArrayStub::Generate(MacroAssembler* masm) {
   // edi - function
   // edx - slot id
+  // ebx - vector
   Label miss;
   int argc = arg_count();
   ParameterCount actual(argc);
-
-  EmitLoadTypeFeedbackVector(masm, ebx);
 
   __ LoadGlobalFunction(Context::ARRAY_FUNCTION_INDEX, ecx);
   __ cmp(edi, ecx);
@@ -1917,6 +1919,7 @@ void CallIC_ArrayStub::Generate(MacroAssembler* masm) {
 void CallICStub::Generate(MacroAssembler* masm) {
   // edi - function
   // edx - slot id
+  // ebx - vector
   Isolate* isolate = masm->isolate();
   const int with_types_offset =
       FixedArray::OffsetOfElementAt(TypeFeedbackVector::kWithTypesIndex);
@@ -1928,12 +1931,30 @@ void CallICStub::Generate(MacroAssembler* masm) {
   int argc = arg_count();
   ParameterCount actual(argc);
 
-  EmitLoadTypeFeedbackVector(masm, ebx);
-
   // The checks. First, does edi match the recorded monomorphic target?
-  __ cmp(edi, FieldOperand(ebx, edx, times_half_pointer_size,
+  __ mov(ecx, FieldOperand(ebx, edx, times_half_pointer_size,
                            FixedArray::kHeaderSize));
+
+  // We don't know that we have a weak cell. We might have a private symbol
+  // or an AllocationSite, but the memory is safe to examine.
+  // AllocationSite::kTransitionInfoOffset - contains a Smi or pointer to
+  // FixedArray.
+  // WeakCell::kValueOffset - contains a JSFunction or Smi(0)
+  // Symbol::kHashFieldSlot - if the low bit is 1, then the hash is not
+  // computed, meaning that it can't appear to be a pointer. If the low bit is
+  // 0, then hash is computed, but the 0 bit prevents the field from appearing
+  // to be a pointer.
+  STATIC_ASSERT(WeakCell::kSize >= kPointerSize);
+  STATIC_ASSERT(AllocationSite::kTransitionInfoOffset ==
+                    WeakCell::kValueOffset &&
+                WeakCell::kValueOffset == Symbol::kHashFieldSlot);
+
+  __ cmp(edi, FieldOperand(ecx, WeakCell::kValueOffset));
   __ j(not_equal, &extra_checks_or_miss);
+
+  // The compare above could have been a SMI/SMI comparison. Guard against this
+  // convincing us that we have a monomorphic JSFunction.
+  __ JumpIfSmi(edi, &extra_checks_or_miss);
 
   __ bind(&have_js_function);
   if (CallAsMethod()) {
@@ -1963,8 +1984,6 @@ void CallICStub::Generate(MacroAssembler* masm) {
   __ bind(&extra_checks_or_miss);
   Label uninitialized, miss;
 
-  __ mov(ecx, FieldOperand(ebx, edx, times_half_pointer_size,
-                           FixedArray::kHeaderSize));
   __ cmp(ecx, Immediate(TypeFeedbackVector::MegamorphicSentinel(isolate)));
   __ j(equal, &slow_start);
 
@@ -2008,15 +2027,18 @@ void CallICStub::Generate(MacroAssembler* masm) {
   // Update stats.
   __ add(FieldOperand(ebx, with_types_offset), Immediate(Smi::FromInt(1)));
 
-  // Store the function.
-  __ mov(
-      FieldOperand(ebx, edx, times_half_pointer_size, FixedArray::kHeaderSize),
-      edi);
+  // Store the function. Use a stub since we need a frame for allocation.
+  // ebx - vector
+  // edx - slot
+  // edi - function
+  {
+    FrameScope scope(masm, StackFrame::INTERNAL);
+    CreateWeakCellStub create_stub(isolate);
+    __ push(edi);
+    __ CallStub(&create_stub);
+    __ pop(edi);
+  }
 
-  // Update the write barrier.
-  __ mov(eax, edi);
-  __ RecordWriteArray(ebx, eax, edx, kDontSaveFPRegs, EMIT_REMEMBERED_SET,
-                      OMIT_SMI_CHECK);
   __ jmp(&have_js_function);
 
   // We are here because tracing is on or we encountered a MISS case we can't
@@ -2072,6 +2094,7 @@ void CodeStub::GenerateStubsAheadOfTime(Isolate* isolate) {
   // It is important that the store buffer overflow stubs are generated first.
   ArrayConstructorStubBase::GenerateStubsAheadOfTime(isolate);
   CreateAllocationSiteStub::GenerateAheadOfTime(isolate);
+  CreateWeakCellStub::GenerateAheadOfTime(isolate);
   BinaryOpICStub::GenerateAheadOfTime(isolate);
   BinaryOpICWithAllocationSiteStub::GenerateAheadOfTime(isolate);
 }
@@ -3989,6 +4012,20 @@ void KeyedLoadICTrampolineStub::Generate(MacroAssembler* masm) {
 }
 
 
+void CallICTrampolineStub::Generate(MacroAssembler* masm) {
+  EmitLoadTypeFeedbackVector(masm, ebx);
+  CallICStub stub(isolate(), state());
+  __ jmp(stub.GetCode(), RelocInfo::CODE_TARGET);
+}
+
+
+void CallIC_ArrayTrampolineStub::Generate(MacroAssembler* masm) {
+  EmitLoadTypeFeedbackVector(masm, ebx);
+  CallIC_ArrayStub stub(isolate(), state());
+  __ jmp(stub.GetCode(), RelocInfo::CODE_TARGET);
+}
+
+
 void ProfileEntryHookStub::MaybeCallEntryHook(MacroAssembler* masm) {
   if (masm->isolate()->function_entry_hook() != NULL) {
     ProfileEntryHookStub stub(masm->isolate());
@@ -4528,12 +4565,12 @@ static void CallApiFunctionStubHelper(MacroAssembler* masm,
                                       bool return_first_arg,
                                       bool call_data_undefined) {
   // ----------- S t a t e -------------
-  //  -- eax                 : callee
+  //  -- edi                 : callee
   //  -- ebx                 : call_data
   //  -- ecx                 : holder
   //  -- edx                 : api_function_address
   //  -- esi                 : context
-  //  -- edi                 : number of arguments if argc is a register
+  //  -- eax                 : number of arguments if argc is a register
   //  --
   //  -- esp[0]              : return address
   //  -- esp[4]              : last argument
@@ -4542,11 +4579,12 @@ static void CallApiFunctionStubHelper(MacroAssembler* masm,
   //  -- esp[(argc + 1) * 4] : receiver
   // -----------------------------------
 
-  Register callee = eax;
+  Register callee = edi;
   Register call_data = ebx;
   Register holder = ecx;
   Register api_function_address = edx;
   Register context = esi;
+  Register return_address = eax;
 
   typedef FunctionCallbackArguments FCA;
 
@@ -4559,10 +4597,17 @@ static void CallApiFunctionStubHelper(MacroAssembler* masm,
   STATIC_ASSERT(FCA::kHolderIndex == 0);
   STATIC_ASSERT(FCA::kArgsLength == 7);
 
-  DCHECK(argc.is_immediate() || edi.is(argc.reg()));
+  DCHECK(argc.is_immediate() || eax.is(argc.reg()));
 
-  // pop return address and save context
-  __ xchg(context, Operand(esp, 0));
+  if (argc.is_immediate()) {
+    __ pop(return_address);
+    // context save.
+    __ push(context);
+  } else {
+    // pop return address and save context
+    __ xchg(context, Operand(esp, 0));
+    return_address = context;
+  }
 
   // callee
   __ push(callee);
@@ -4590,7 +4635,7 @@ static void CallApiFunctionStubHelper(MacroAssembler* masm,
   __ mov(scratch, esp);
 
   // push return address
-  __ push(context);
+  __ push(return_address);
 
   // load context from callee
   __ mov(context, FieldOperand(callee, JSFunction::kContextOffset));
@@ -4663,9 +4708,8 @@ static void CallApiFunctionStubHelper(MacroAssembler* masm,
 
 
 void CallApiFunctionStub::Generate(MacroAssembler* masm) {
-  // TODO(dcarney): make eax contain the function address.
   bool call_data_undefined = this->call_data_undefined();
-  CallApiFunctionStubHelper(masm, ParameterCount(edi), false,
+  CallApiFunctionStubHelper(masm, ParameterCount(eax), false,
                             call_data_undefined);
 }
 

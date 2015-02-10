@@ -8780,7 +8780,9 @@ THREADED_TEST(AccessControlGetOwnPropertyNames) {
 
 
 TEST(SuperAccessControl) {
+  i::FLAG_allow_natives_syntax = true;
   i::FLAG_harmony_classes = true;
+  i::FLAG_harmony_object_literals = true;
   v8::Isolate* isolate = CcTest::isolate();
   v8::HandleScope handle_scope(isolate);
   v8::Handle<v8::ObjectTemplate> obj_template =
@@ -8793,8 +8795,8 @@ TEST(SuperAccessControl) {
   {
     v8::TryCatch try_catch;
     CompileRun(
-        "function f() { return super.hasOwnProperty; };"
-        "var m = f.toMethod(prohibited);"
+        "var f = { m() { return super.hasOwnProperty; } }.m;"
+        "var m = %ToMethod(f, prohibited);"
         "m();");
     CHECK(try_catch.HasCaught());
   }
@@ -8802,8 +8804,8 @@ TEST(SuperAccessControl) {
   {
     v8::TryCatch try_catch;
     CompileRun(
-        "function f() { return super[42]; };"
-        "var m = f.toMethod(prohibited);"
+        "var f = {m() { return super[42]; } }.m;"
+        "var m = %ToMethod(f, prohibited);"
         "m();");
     CHECK(try_catch.HasCaught());
   }
@@ -8811,8 +8813,8 @@ TEST(SuperAccessControl) {
   {
     v8::TryCatch try_catch;
     CompileRun(
-        "function f() { super.hasOwnProperty = function () {}; };"
-        "var m = f.toMethod(prohibited);"
+        "var f = {m() { super.hasOwnProperty = function () {}; } }.m;"
+        "var m = %ToMethod(f, prohibited);"
         "m();");
     CHECK(try_catch.HasCaught());
   }
@@ -8821,11 +8823,13 @@ TEST(SuperAccessControl) {
     v8::TryCatch try_catch;
     CompileRun(
         "Object.defineProperty(Object.prototype, 'x', { set : function(){}});"
-        "function f() { "
-        "     'use strict';"
-        "     super.x = function () {}; "
-        "};"
-        "var m = f.toMethod(prohibited);"
+        "var f = {"
+        "  m() { "
+        "    'use strict';"
+        "    super.x = function () {};"
+        "  }"
+        "}.m;"
+        "var m = %ToMethod(f, prohibited);"
         "m();");
     CHECK(try_catch.HasCaught());
   }

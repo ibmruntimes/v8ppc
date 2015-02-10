@@ -107,14 +107,14 @@ PreParser::PreParseResult PreParser::PreParseLazyFunction(
     LanguageMode language_mode, FunctionKind kind, ParserRecorder* log) {
   log_ = log;
   // Lazy functions always have trivial outer scopes (no with/catch scopes).
-  PreParserScope top_scope(scope_, SCRIPT_SCOPE);
+  Scope* top_scope = NewScope(scope_, SCRIPT_SCOPE);
   PreParserFactory top_factory(NULL);
-  FunctionState top_state(&function_state_, &scope_, &top_scope,
-                          kNormalFunction, &top_factory);
+  FunctionState top_state(&function_state_, &scope_, top_scope, kNormalFunction,
+                          &top_factory);
   scope_->SetLanguageMode(language_mode);
-  PreParserScope function_scope(scope_, FUNCTION_SCOPE);
+  Scope* function_scope = NewScope(scope_, FUNCTION_SCOPE);
   PreParserFactory function_factory(NULL);
-  FunctionState function_state(&function_state_, &scope_, &function_scope, kind,
+  FunctionState function_state(&function_state_, &scope_, function_scope, kind,
                                &function_factory);
   DCHECK_EQ(Token::LBRACE, scanner()->current_token());
   bool ok = true;
@@ -156,14 +156,7 @@ PreParserExpression PreParserTraits::ParseClassLiteral(
 // it is used) are generally omitted.
 
 
-#define CHECK_OK  ok);                      \
-  if (!*ok) return kUnknownSourceElements;  \
-  ((void)0
-#define DUMMY )  // to make indentation work
-#undef DUMMY
-
-
-PreParser::Statement PreParser::ParseSourceElement(bool* ok) {
+PreParser::Statement PreParser::ParseStatementListItem(bool* ok) {
   // ECMA 262 6th Edition
   // StatementListItem[Yield, Return] :
   //   Statement[?Yield, ?Return]
@@ -200,8 +193,7 @@ PreParser::Statement PreParser::ParseSourceElement(bool* ok) {
 }
 
 
-PreParser::SourceElements PreParser::ParseSourceElements(int end_token,
-                                                         bool* ok) {
+void PreParser::ParseStatementList(int end_token, bool* ok) {
   // SourceElements ::
   //   (Statement)* <end_token>
 
@@ -210,7 +202,8 @@ PreParser::SourceElements PreParser::ParseSourceElements(int end_token,
     if (directive_prologue && peek() != Token::STRING) {
       directive_prologue = false;
     }
-    Statement statement = ParseSourceElement(CHECK_OK);
+    Statement statement = ParseStatementListItem(ok);
+    if (!*ok) return;
     if (directive_prologue) {
       if (statement.IsUseStrictLiteral()) {
         scope_->SetLanguageMode(
@@ -223,11 +216,9 @@ PreParser::SourceElements PreParser::ParseSourceElements(int end_token,
       }
     }
   }
-  return kUnknownSourceElements;
 }
 
 
-#undef CHECK_OK
 #define CHECK_OK  ok);                   \
   if (!*ok) return Statement::Default();  \
   ((void)0
@@ -387,7 +378,7 @@ PreParser::Statement PreParser::ParseBlock(bool* ok) {
   Expect(Token::LBRACE, CHECK_OK);
   while (peek() != Token::RBRACE) {
     if (allow_harmony_scoping() && is_strict(language_mode())) {
-      ParseSourceElement(CHECK_OK);
+      ParseStatementListItem(CHECK_OK);
     } else {
       ParseStatement(CHECK_OK);
     }
@@ -637,8 +628,8 @@ PreParser::Statement PreParser::ParseWithStatement(bool* ok) {
   ParseExpression(true, CHECK_OK);
   Expect(Token::RPAREN, CHECK_OK);
 
-  PreParserScope with_scope(scope_, WITH_SCOPE);
-  BlockState block_state(&scope_, &with_scope);
+  Scope* with_scope = NewScope(scope_, WITH_SCOPE);
+  BlockState block_state(&scope_, with_scope);
   ParseStatement(CHECK_OK);
   return Statement::Default();
 }
@@ -822,8 +813,8 @@ PreParser::Statement PreParser::ParseTryStatement(bool* ok) {
     ParseIdentifier(kDontAllowEvalOrArguments, CHECK_OK);
     Expect(Token::RPAREN, CHECK_OK);
     {
-      PreParserScope with_scope(scope_, WITH_SCOPE);
-      BlockState block_state(&scope_, &with_scope);
+      Scope* with_scope = NewScope(scope_, WITH_SCOPE);
+      BlockState block_state(&scope_, with_scope);
       ParseBlock(CHECK_OK);
     }
     tok = peek();
@@ -866,10 +857,10 @@ PreParser::Expression PreParser::ParseFunctionLiteral(
   //   '(' FormalParameterList? ')' '{' FunctionBody '}'
 
   // Parse function body.
-  ScopeType outer_scope_type = scope_->type();
-  PreParserScope function_scope(scope_, FUNCTION_SCOPE);
+  bool outer_is_script_scope = scope_->is_script_scope();
+  Scope* function_scope = NewScope(scope_, FUNCTION_SCOPE);
   PreParserFactory factory(NULL);
-  FunctionState function_state(&function_state_, &scope_, &function_scope, kind,
+  FunctionState function_state(&function_state_, &scope_, function_scope, kind,
                                &factory);
   //  FormalParameterList ::
   //    '(' (Identifier)*[','] ')'
@@ -924,15 +915,15 @@ PreParser::Expression PreParser::ParseFunctionLiteral(
 
   // See Parser::ParseFunctionLiteral for more information about lazy parsing
   // and lazy compilation.
-  bool is_lazily_parsed = (outer_scope_type == SCRIPT_SCOPE && allow_lazy() &&
-                           !parenthesized_function_);
+  bool is_lazily_parsed =
+      (outer_is_script_scope && allow_lazy() && !parenthesized_function_);
   parenthesized_function_ = false;
 
   Expect(Token::LBRACE, CHECK_OK);
   if (is_lazily_parsed) {
     ParseLazyFunctionLiteralBody(CHECK_OK);
   } else {
-    ParseSourceElements(Token::RBRACE, ok);
+    ParseStatementList(Token::RBRACE, CHECK_OK);
   }
   Expect(Token::RBRACE, CHECK_OK);
 
@@ -956,7 +947,7 @@ PreParser::Expression PreParser::ParseFunctionLiteral(
 
 void PreParser::ParseLazyFunctionLiteralBody(bool* ok) {
   int body_start = position();
-  ParseSourceElements(Token::RBRACE, ok);
+  ParseStatementList(Token::RBRACE, ok);
   if (!*ok) return;
 
   // Position right after terminal '}'.
@@ -983,11 +974,12 @@ PreParserExpression PreParser::ParseClassLiteral(
     return EmptyExpression();
   }
 
-  PreParserScope scope = NewScope(scope_, BLOCK_SCOPE);
-  BlockState block_state(&scope_, &scope);
+  Scope* scope = NewScope(scope_, BLOCK_SCOPE);
+  BlockState block_state(&scope_, scope);
   scope_->SetLanguageMode(
       static_cast<LanguageMode>(scope_->language_mode() | STRICT_BIT));
-  scope_->SetScopeName(name);
+  // TODO(marja): Make PreParser use scope names too.
+  // scope_->SetScopeName(name);
 
   bool has_extends = Check(Token::EXTENDS);
   if (has_extends) {

@@ -234,7 +234,6 @@ action("js2c_experimental") {
     "src/harmony-array.js",
     "src/harmony-array-includes.js",
     "src/harmony-typedarray.js",
-    "src/harmony-classes.js",
     "src/harmony-tostring.js",
     "src/harmony-templates.js",
     "src/harmony-regexp.js",
@@ -1525,6 +1524,8 @@ if ((current_toolchain == host_toolchain && v8_toolset_for_d8 == "host") ||
     sources = [
       "src/d8.cc",
       "src/d8.h",
+      "src/startup-data-util.h",
+      "src/startup-data-util.cc",
     ]
 
     configs -= [ "//build/config/compiler:chromium_code" ]

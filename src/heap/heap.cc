@@ -738,6 +738,49 @@ void Heap::GarbageCollectionEpilogue() {
 }
 
 
+void Heap::HandleGCRequest() {
+  if (incremental_marking()->request_type() ==
+      IncrementalMarking::COMPLETE_MARKING) {
+    CollectAllGarbage(Heap::kNoGCFlags, "GC interrupt");
+    return;
+  }
+  DCHECK(FLAG_overapproximate_weak_closure);
+  DCHECK(!incremental_marking()->weak_closure_was_overapproximated());
+  OverApproximateWeakClosure("GC interrupt");
+}
+
+
+void Heap::OverApproximateWeakClosure(const char* gc_reason) {
+  if (FLAG_trace_incremental_marking) {
+    PrintF("[IncrementalMarking] Overapproximate weak closure (%s).\n",
+           gc_reason);
+  }
+  {
+    GCCallbacksScope scope(this);
+    if (scope.CheckReenter()) {
+      AllowHeapAllocation allow_allocation;
+      GCTracer::Scope scope(tracer(), GCTracer::Scope::EXTERNAL);
+      VMState<EXTERNAL> state(isolate_);
+      HandleScope handle_scope(isolate_);
+      CallGCPrologueCallbacks(kGCTypeMarkSweepCompact, kNoGCCallbackFlags);
+    }
+  }
+  mark_compact_collector()->OverApproximateWeakClosure();
+  incremental_marking()->set_should_hurry(false);
+  incremental_marking()->set_weak_closure_was_overapproximated(true);
+  {
+    GCCallbacksScope scope(this);
+    if (scope.CheckReenter()) {
+      AllowHeapAllocation allow_allocation;
+      GCTracer::Scope scope(tracer(), GCTracer::Scope::EXTERNAL);
+      VMState<EXTERNAL> state(isolate_);
+      HandleScope handle_scope(isolate_);
+      CallGCEpilogueCallbacks(kGCTypeMarkSweepCompact, kNoGCCallbackFlags);
+    }
+  }
+}
+
+
 void Heap::CollectAllGarbage(int flags, const char* gc_reason,
                              const v8::GCCallbackFlags gc_callback_flags) {
   // Since we are ignoring the return value, the exact choice of space does
@@ -5137,10 +5180,10 @@ bool Heap::ConfigureHeap(int max_semi_space_size, int max_old_space_size,
     max_semi_space_size_ = max_semi_space_size * MB;
   }
   if (max_old_space_size > 0) {
-    max_old_generation_size_ = max_old_space_size * MB;
+    max_old_generation_size_ = static_cast<intptr_t>(max_old_space_size) * MB;
   }
   if (max_executable_size > 0) {
-    max_executable_size_ = max_executable_size * MB;
+    max_executable_size_ = static_cast<intptr_t>(max_executable_size) * MB;
   }
 
   // If max space size flags are specified overwrite the configuration.
@@ -5148,10 +5191,11 @@ bool Heap::ConfigureHeap(int max_semi_space_size, int max_old_space_size,
     max_semi_space_size_ = FLAG_max_semi_space_size * MB;
   }
   if (FLAG_max_old_space_size > 0) {
-    max_old_generation_size_ = FLAG_max_old_space_size * MB;
+    max_old_generation_size_ =
+        static_cast<intptr_t>(FLAG_max_old_space_size) * MB;
   }
   if (FLAG_max_executable_size > 0) {
-    max_executable_size_ = FLAG_max_executable_size * MB;
+    max_executable_size_ = static_cast<intptr_t>(FLAG_max_executable_size) * MB;
   }
 
 #if defined(V8_PPC_PAGESIZE_OPT)
