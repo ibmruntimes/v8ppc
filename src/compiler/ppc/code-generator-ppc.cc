@@ -556,6 +556,10 @@ void CodeGenerator::AssembleArchInstruction(Instruction* instr) {
       AssembleArchJump(i.InputRpo(0));
       DCHECK_EQ(LeaveRC, i.OutputRCBit());
       break;
+    case kArchSwitch:
+      AssembleArchSwitch(instr);
+      DCHECK_EQ(LeaveRC, i.OutputRCBit());
+      break;
     case kArchNop:
       // don't emit code for nops.
       DCHECK_EQ(LeaveRC, i.OutputRCBit());
@@ -1013,6 +1017,21 @@ void CodeGenerator::AssembleArchJump(BasicBlock::RpoNumber target) {
 }
 
 
+void CodeGenerator::AssembleArchSwitch(Instruction* instr) {
+  PPCOperandConverter i(this, instr);
+  size_t const label_count = instr->InputCount() - 1;
+  Label** labels = zone()->NewArray<Label*>(static_cast<int>(label_count));
+  for (size_t index = 0; index < label_count; ++index) {
+    labels[index] = GetLabel(i.InputRpo(static_cast<int>(index + 1)));
+  }
+  Label* const table = AddJumpTable(labels, label_count);
+  __ mov_label_addr(kScratchReg, table);
+  __ ShiftLeftImm(r0, i.InputRegister(0), Operand(kPointerSizeLog2));
+  __ LoadPX(kScratchReg, MemOperand(kScratchReg, r0));
+  __ Jump(kScratchReg);
+}
+
+
 // Assembles boolean materializations after an instruction.
 void CodeGenerator::AssembleArchBoolean(Instruction* instr,
                                         FlagsCondition condition) {
@@ -1327,6 +1346,13 @@ void CodeGenerator::AssembleSwap(InstructionOperand* source,
   } else {
     // No other combinations are possible.
     UNREACHABLE();
+  }
+}
+
+
+void CodeGenerator::AssembleJumpTable(Label** targets, size_t target_count) {
+  for (size_t index = 0; index < target_count; ++index) {
+    __ emit_label_addr(targets[index]);
   }
 }
 
