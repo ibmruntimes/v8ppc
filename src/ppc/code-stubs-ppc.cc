@@ -1588,6 +1588,7 @@ void LoadIndexedStringStub::Generate(MacroAssembler* masm) {
 
 
 void ArgumentsAccessStub::GenerateReadElement(MacroAssembler* masm) {
+  CHECK(!has_new_target());
   // The displacement is the offset of the last parameter (if any)
   // relative to the frame pointer.
   const int kDisplacement =
@@ -1648,6 +1649,8 @@ void ArgumentsAccessStub::GenerateNewSloppySlow(MacroAssembler* masm) {
   // sp[1] : receiver displacement
   // sp[2] : function
 
+  CHECK(!has_new_target());
+
   // Check if the calling frame is an arguments adaptor frame.
   Label runtime;
   __ LoadP(r6, MemOperand(fp, StandardFrameConstants::kCallerFPOffset));
@@ -1677,6 +1680,8 @@ void ArgumentsAccessStub::GenerateNewSloppyFast(MacroAssembler* masm) {
   // Registers used over whole function:
   //  r9 : allocated object (tagged)
   //  r11 : mapped parameter count (tagged)
+
+  CHECK(!has_new_target());
 
   __ LoadP(r4, MemOperand(sp, 0 * kPointerSize));
   // r4 = parameter count (tagged)
@@ -1960,6 +1965,10 @@ void ArgumentsAccessStub::GenerateNewStrict(MacroAssembler* masm) {
   // Patch the arguments.length and the parameters pointer.
   __ bind(&adaptor_frame);
   __ LoadP(r4, MemOperand(r5, ArgumentsAdaptorFrameConstants::kLengthOffset));
+  if (has_new_target()) {
+    // Subtract 1 from smi-tagged arguments count.
+    __ SubSmiLiteral(r4, r4, Smi::FromInt(1), r0);
+  }
   __ StoreP(r4, MemOperand(sp, 0));
   __ SmiToPtrArrayOffset(r6, r4);
   __ add(r6, r5, r6);
@@ -2763,7 +2772,13 @@ void CallConstructStub::Generate(MacroAssembler* masm) {
   }
 
   // Pass function as original constructor.
-  __ mr(r6, r4);
+  if (IsSuperConstructorCall()) {
+    __ ShiftLeftImm(r7, r3, Operand(kPointerSizeLog2));
+    __ addi(r7, r7, Operand(kPointerSize));
+    __ LoadPX(r6, MemOperand(sp, r7));
+  } else {
+    __ mr(r6, r4);
+  }
 
   // Jump to the function-specific construct stub.
   Register jmp_reg = r7;
