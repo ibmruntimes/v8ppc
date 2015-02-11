@@ -2011,14 +2011,14 @@ void Assembler::RecordRelocInfo(RelocInfo::Mode rmode, intptr_t data) {
 
 Handle<ConstantPoolArray> Assembler::NewConstantPool(Isolate* isolate) {
   // No out-of-line constant pool support.
-  DCHECK(!FLAG_enable_ool_constant_pool);
+  UNREACHABLE();
   return isolate->factory()->empty_constant_pool_array();
 }
 
 
 void Assembler::PopulateConstantPool(ConstantPoolArray* constant_pool) {
   // No out-of-line constant pool support.
-  DCHECK(!FLAG_enable_ool_constant_pool);
+  UNREACHABLE();
   return;
 }
 

@@ -122,6 +122,8 @@ class InstructionOperandConverter {
 static inline void FinishCode(MacroAssembler* masm) {
 #if V8_TARGET_ARCH_ARM64 || V8_TARGET_ARCH_ARM
   masm->CheckConstPool(true, false);
+#elif V8_TARGET_ARCH_PPC
+  masm->EmitConstantPool();
 #endif
 }
 

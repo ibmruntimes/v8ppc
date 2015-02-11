@@ -130,9 +130,9 @@ IC::IC(FrameDepth depth, Isolate* isolate)
   // running DeltaBlue and a ~25% speedup of gbemu with the '--nouse-ic' flag.
   const Address entry =
       Isolate::c_entry_fp(isolate->thread_local_top());
-  Address constant_pool = NULL;
+  Address* constant_pool = NULL;
   if (FLAG_enable_ool_constant_pool) {
-    constant_pool = Memory::Address_at(
+    constant_pool = reinterpret_cast<Address*>(
         entry + ExitFrameConstants::kConstantPoolOffset);
   }
   Address* pc_address =
@@ -143,7 +143,7 @@ IC::IC(FrameDepth depth, Isolate* isolate)
   // find the frame pointer and the return address stack slot.
   if (depth == EXTRA_CALL_FRAME) {
     if (FLAG_enable_ool_constant_pool) {
-      constant_pool = Memory::Address_at(
+      constant_pool = reinterpret_cast<Address*>(
           fp + StandardFrameConstants::kConstantPoolOffset);
     }
     const int kCallerPCOffset = StandardFrameConstants::kCallerPCOffset;
@@ -158,9 +158,7 @@ IC::IC(FrameDepth depth, Isolate* isolate)
 #endif
   fp_ = fp;
   if (FLAG_enable_ool_constant_pool) {
-    raw_constant_pool_ = handle(
-        ConstantPoolArray::cast(reinterpret_cast<Object*>(constant_pool)),
-        isolate);
+    raw_constant_pool_ = constant_pool;
   }
   pc_address_ = StackFrame::ResolveReturnAddressLocation(pc_address);
   target_ = handle(raw_target(), isolate);
@@ -443,8 +441,10 @@ void IC::RegisterWeakMapDependency(Handle<Code> stub) {
     if (maps.length() == 1 && stub->IsWeakObjectInIC(*maps.at(0))) {
       Map::AddDependentIC(maps.at(0), stub);
       stub->mark_as_weak_stub();
-      if (FLAG_enable_ool_constant_pool) {
-        stub->constant_pool()->set_weak_object_state(
+      if (FLAG_enable_ool_constant_pool_in_heapobject) {
+        ConstantPoolArray* constant_pool =
+            reinterpret_cast<ConstantPoolArray*>(stub->constant_pool());
+        constant_pool->set_weak_object_state(
             ConstantPoolArray::WEAK_OBJECTS_IN_IC);
       }
     }
@@ -471,7 +471,7 @@ void IC::InvalidateMaps(Code* stub) {
 
 
 void IC::Clear(Isolate* isolate, Address address,
-    ConstantPoolArray* constant_pool) {
+    Address constant_pool) {
   Code* target = GetTargetAtAddress(address, constant_pool);
 
   // Don't clear debug break inline cache as it will remove the break point.
@@ -505,7 +505,7 @@ void IC::Clear(Isolate* isolate, Address address,
 void KeyedLoadIC::Clear(Isolate* isolate,
                         Address address,
                         Code* target,
-                        ConstantPoolArray* constant_pool) {
+                        Address constant_pool) {
   if (IsCleared(target)) return;
   // Make sure to also clear the map used in inline fast cases.  If we
   // do not clear these maps, cached code can keep objects alive
@@ -517,7 +517,7 @@ void KeyedLoadIC::Clear(Isolate* isolate,
 void CallIC::Clear(Isolate* isolate,
                    Address address,
                    Code* target,
-                   ConstantPoolArray* constant_pool) {
+                   Address constant_pool) {
   // Currently, CallIC doesn't have state changes.
 }
 
@@ -525,7 +525,7 @@ void CallIC::Clear(Isolate* isolate,
 void LoadIC::Clear(Isolate* isolate,
                    Address address,
                    Code* target,
-                   ConstantPoolArray* constant_pool) {
+                   Address constant_pool) {
   if (IsCleared(target)) return;
   Code* code = PropertyICCompiler::FindPreMonomorphic(isolate, Code::LOAD_IC,
                                                       target->extra_ic_state());
@@ -536,7 +536,7 @@ void LoadIC::Clear(Isolate* isolate,
 void StoreIC::Clear(Isolate* isolate,
                     Address address,
                     Code* target,
-                    ConstantPoolArray* constant_pool) {
+                    Address constant_pool) {
   if (IsCleared(target)) return;
   Code* code = PropertyICCompiler::FindPreMonomorphic(isolate, Code::STORE_IC,
                                                       target->extra_ic_state());
@@ -547,7 +547,7 @@ void StoreIC::Clear(Isolate* isolate,
 void KeyedStoreIC::Clear(Isolate* isolate,
                          Address address,
                          Code* target,
-                         ConstantPoolArray* constant_pool) {
+                         Address constant_pool) {
   if (IsCleared(target)) return;
   SetTargetAtAddress(address,
       *pre_monomorphic_stub(
@@ -559,7 +559,7 @@ void KeyedStoreIC::Clear(Isolate* isolate,
 void CompareIC::Clear(Isolate* isolate,
                       Address address,
                       Code* target,
-                      ConstantPoolArray* constant_pool) {
+                      Address constant_pool) {
   DCHECK(CodeStub::GetMajorKey(target) == CodeStub::CompareIC);
   CompareIC::State handler_state;
   Token::Value op;
@@ -3033,7 +3033,7 @@ RUNTIME_FUNCTION(CompareIC_Miss) {
 
 void CompareNilIC::Clear(Address address,
                          Code* target,
-                         ConstantPoolArray* constant_pool) {
+                         Address constant_pool) {
   if (IsCleared(target)) return;
   ExtraICState state = target->extra_ic_state();
 

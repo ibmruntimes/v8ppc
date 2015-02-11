@@ -1705,6 +1705,10 @@ class MacroAssembler: public Assembler {
   void JumpIfDictionaryInPrototypeChain(Register object, Register scratch0,
                                         Register scratch1, Label* found);
 
+  // Loads the constant pool pointer (kConstantPoolRegister).
+  void LoadConstantPoolPointerRegister(Register base = no_reg,
+                                       int code_entry_delta = 0);
+
  private:
   static const int kSmiShift = kSmiTagSize + kSmiShiftSize;
 
@@ -1748,20 +1752,13 @@ class MacroAssembler: public Assembler {
   // it.  See the implementation for register usage.
   void JumpToHandlerEntry();
 
+  static const RegList kSafepointSavedRegisters;
+  static const int kNumSafepointSavedRegisters;
+
   // Compute memory operands for safepoint stack slots.
   static int SafepointRegisterStackIndex(int reg_code);
   MemOperand SafepointRegisterSlot(Register reg);
   MemOperand SafepointRegistersAndDoublesSlot(Register reg);
-
-#if V8_OOL_CONSTANT_POOL
-  // Loads the constant pool pointer (kConstantPoolRegister).
-  enum CodeObjectAccessMethod {
-    CAN_USE_IP,
-    CONSTRUCT_INTERNAL_REFERENCE
-  };
-  void LoadConstantPoolPointerRegister(CodeObjectAccessMethod access_method,
-                                       int ip_code_entry_delta = 0);
-#endif
 
   bool generating_stub_;
   bool has_frame_;
@@ -1809,26 +1806,30 @@ class CodePatcher {
 };
 
 
-#if V8_OOL_CONSTANT_POOL
 class FrameAndConstantPoolScope {
  public:
   FrameAndConstantPoolScope(MacroAssembler* masm, StackFrame::Type type)
       : masm_(masm),
         type_(type),
         old_has_frame_(masm->has_frame()),
-        old_constant_pool_available_(masm->is_constant_pool_available())  {
+        old_constant_pool_available_(FLAG_enable_ool_constant_pool &&
+                                     masm->is_constant_pool_available())  {
     // We only want to enable constant pool access for non-manual frame scopes
     // to ensure the constant pool pointer is valid throughout the scope.
     DCHECK(type_ != StackFrame::MANUAL && type_ != StackFrame::NONE);
     masm->set_has_frame(true);
-    masm->set_constant_pool_available(true);
+    if (FLAG_enable_ool_constant_pool) {
+      masm->set_constant_pool_available(true);
+    }
     masm->EnterFrame(type, !old_constant_pool_available_);
   }
 
   ~FrameAndConstantPoolScope() {
     masm_->LeaveFrame(type_);
     masm_->set_has_frame(old_has_frame_);
-    masm_->set_constant_pool_available(old_constant_pool_available_);
+    if (FLAG_enable_ool_constant_pool) {
+      masm_->set_constant_pool_available(old_constant_pool_available_);
+    }
   }
 
   // Normally we generate the leave-frame code when this object goes
@@ -1849,12 +1850,8 @@ class FrameAndConstantPoolScope {
 
   DISALLOW_IMPLICIT_CONSTRUCTORS(FrameAndConstantPoolScope);
 };
-#else
-#define FrameAndConstantPoolScope FrameScope
-#endif
 
 
-#if V8_OOL_CONSTANT_POOL
 // Class for scoping the the unavailability of constant pool access.
 class ConstantPoolUnavailableScope {
  public:
@@ -1877,7 +1874,6 @@ class ConstantPoolUnavailableScope {
 
   DISALLOW_IMPLICIT_CONSTRUCTORS(ConstantPoolUnavailableScope);
 };
-#endif
 
 
 // -----------------------------------------------------------------------------

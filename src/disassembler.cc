@@ -324,19 +324,34 @@ int Disassembler::Decode(Isolate* isolate, FILE* f, byte* begin, byte* end) {
 // Called by Code::CodePrint.
 void Disassembler::Decode(FILE* f, Code* code) {
   Isolate* isolate = code->GetIsolate();
-  int decode_size = code->is_crankshafted()
-      ? static_cast<int>(code->safepoint_table_offset())
-      : code->instruction_size();
-  // If there might be a back edge table, stop before reaching it.
-  if (code->kind() == Code::FUNCTION) {
-    decode_size =
-        Min(decode_size, static_cast<int>(code->back_edge_table_offset()));
-  }
+  int size = code->instruction_size();
+  int safepoint_offset = code->is_crankshafted()
+      ? static_cast<int>(code->safepoint_table_offset()) : size;
+  int back_edge_offset = (code->kind() == Code::FUNCTION)
+      ? static_cast<int>(code->back_edge_table_offset()) : size;
+  int constant_offset = FLAG_enable_ool_constant_pool_in_code
+      ? code->constant_pool_offset() : size;
 
+  // Stop before reaching any embedded tables
+  int code_size = Min(safepoint_offset, back_edge_offset);
   byte* begin = code->instruction_start();
-  byte* end = begin + decode_size;
+  byte* end = begin + Min(code_size, constant_offset);
   V8NameConverter v8NameConverter(code);
   DecodeIt(isolate, f, v8NameConverter, begin, end);
+
+  if (constant_offset < code_size) {
+    v8::internal::EmbeddedVector<char, kOutBufferSize> out_buffer;
+    StringBuilder out(out_buffer.start(), out_buffer.length());
+    int constant_size = code_size - constant_offset;
+    DCHECK((constant_size & kPointerAlignmentMask) == 0);
+    out.AddFormatted("\nConstant Pool (size = %d)", constant_size);
+    DumpBuffer(f, &out);
+    intptr_t* ptr = reinterpret_cast<intptr_t*>(begin + constant_offset);
+    for (int i = 0; i < constant_size; i += kPointerSize, ptr++) {
+      out.AddFormatted("%08" V8PRIxPTR "  %4d %08" V8PRIxPTR, ptr, i, *ptr);
+      DumpBuffer(f, &out);
+    }
+  }
 }
 
 #else  // ENABLE_DISASSEMBLER
