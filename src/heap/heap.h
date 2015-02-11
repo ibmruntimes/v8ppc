@@ -102,8 +102,6 @@ namespace internal {
   V(Map, short_external_one_byte_internalized_string_map,                      \
     ShortExternalOneByteInternalizedStringMap)                                 \
   V(Map, short_external_one_byte_string_map, ShortExternalOneByteStringMap)    \
-  V(Map, undetectable_string_map, UndetectableStringMap)                       \
-  V(Map, undetectable_one_byte_string_map, UndetectableOneByteStringMap)       \
   V(Map, external_int8_array_map, ExternalInt8ArrayMap)                        \
   V(Map, external_uint8_array_map, ExternalUint8ArrayMap)                      \
   V(Map, external_int16_array_map, ExternalInt16ArrayMap)                      \
@@ -402,6 +400,9 @@ class StoreBufferRebuilder {
 
 // A queue of objects promoted during scavenge. Each object is accompanied
 // by it's size to avoid dereferencing a map pointer for scanning.
+// The last page in to-space is used for the promotion queue. On conflict
+// during scavenge, the promotion queue is allocated externally and all
+// entries are copied to the external queue.
 class PromotionQueue {
  public:
   explicit PromotionQueue(Heap* heap)
@@ -424,6 +425,12 @@ class PromotionQueue {
   }
 
   void SetNewLimit(Address limit) {
+    // If we are already using an emergency stack, we can ignore it.
+    if (emergency_stack_) return;
+
+    // If the limit is not on the same page, we can ignore it.
+    if (Page::FromAllocationTop(limit) != GetHeadPage()) return;
+
     limit_ = reinterpret_cast<intptr_t*>(limit);
 
     if (limit_ <= rear_) {
@@ -434,6 +441,10 @@ class PromotionQueue {
   }
 
   bool IsBelowPromotionQueue(Address to_space_top) {
+    // If an emergency stack is used, the to-space address cannot interfere
+    // with the promotion queue.
+    if (emergency_stack_) return true;
+
     // If the given to-space top pointer and the head of the promotion queue
     // are not on the same page, then the to-space objects are below the
     // promotion queue.
@@ -461,12 +472,6 @@ class PromotionQueue {
       return;
     }
 
-    if (NewSpacePage::IsAtStart(reinterpret_cast<Address>(front_))) {
-      NewSpacePage* front_page =
-          NewSpacePage::FromAddress(reinterpret_cast<Address>(front_));
-      DCHECK(!front_page->prev_page()->is_anchor());
-      front_ = reinterpret_cast<intptr_t*>(front_page->prev_page()->area_end());
-    }
     *target = reinterpret_cast<HeapObject*>(*(--front_));
     *size = static_cast<int>(*(--front_));
     // Assert no underflow.

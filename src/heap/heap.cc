@@ -1461,14 +1461,14 @@ void StoreBufferRebuilder::Callback(MemoryChunk* page, StoreBufferEvent event) {
 
 
 void PromotionQueue::Initialize() {
-  // Assumes that a NewSpacePage exactly fits a number of promotion queue
-  // entries (where each is a pair of intptr_t). This allows us to simplify
-  // the test fpr when to switch pages.
+  // The last to-space page may be used for promotion queue. On promotion
+  // conflict, we use the emergency stack.
   DCHECK((Page::kPageSize - MemoryChunk::kBodyOffset) % (2 * kPointerSize) ==
          0);
-  limit_ = reinterpret_cast<intptr_t*>(heap_->new_space()->ToSpaceStart());
   front_ = rear_ =
       reinterpret_cast<intptr_t*>(heap_->new_space()->ToSpaceEnd());
+  limit_ = reinterpret_cast<intptr_t*>(
+      Page::FromAllocationTop(reinterpret_cast<Address>(rear_))->area_start());
   emergency_stack_ = NULL;
 }
 
@@ -2719,12 +2719,6 @@ bool Heap::CreateInitialMaps() {
       if (!allocation.To(&obj)) return false;
       set_native_source_string_map(Map::cast(obj));
     }
-
-    ALLOCATE_VARSIZE_MAP(STRING_TYPE, undetectable_string)
-    undetectable_string_map()->set_is_undetectable();
-
-    ALLOCATE_VARSIZE_MAP(ONE_BYTE_STRING_TYPE, undetectable_one_byte_string);
-    undetectable_one_byte_string_map()->set_is_undetectable();
 
     ALLOCATE_VARSIZE_MAP(FIXED_DOUBLE_ARRAY_TYPE, fixed_double_array)
     ALLOCATE_VARSIZE_MAP(BYTE_ARRAY_TYPE, byte_array)

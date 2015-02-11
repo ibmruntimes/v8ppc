@@ -254,6 +254,11 @@ void FullCodeGenerator::Generate() {
     //   function, receiver address, parameter count.
     // The stub will rewrite receiver and parameter count if the previous
     // stack frame was an arguments adapter frame.
+
+    ArgumentsAccessStub::HasNewTarget has_new_target =
+        IsSubclassConstructor(info->function()->kind())
+            ? ArgumentsAccessStub::HAS_NEW_TARGET
+            : ArgumentsAccessStub::NO_NEW_TARGET;
     ArgumentsAccessStub::Type type;
     if (is_strict(language_mode())) {
       type = ArgumentsAccessStub::NEW_STRICT;
@@ -262,7 +267,7 @@ void FullCodeGenerator::Generate() {
     } else {
       type = ArgumentsAccessStub::NEW_SLOPPY_FAST;
     }
-    ArgumentsAccessStub stub(isolate(), type);
+    ArgumentsAccessStub stub(isolate(), type, has_new_target);
     __ CallStub(&stub);
 
     SetVar(arguments, rax, rbx, rdx);
@@ -416,7 +421,12 @@ void FullCodeGenerator::EmitReturnSequence() {
     __ popq(rbp);
     int no_frame_start = masm_->pc_offset();
 
-    int arguments_bytes = (info_->scope()->num_parameters() + 1) * kPointerSize;
+    int arg_count = info_->scope()->num_parameters() + 1;
+    if (FLAG_experimental_classes &&
+        IsSubclassConstructor(info_->function()->kind())) {
+      arg_count++;
+    }
+    int arguments_bytes = arg_count * kPointerSize;
     __ Ret(arguments_bytes, rcx);
 
     // Add padding that will be overwritten by a debugger breakpoint.  We
@@ -1772,6 +1782,7 @@ void FullCodeGenerator::VisitObjectLiteral(ObjectLiteral* expr) {
     } else {
       EmitPropertyKey(property, expr->GetIdForProperty(property_index));
       VisitForStackValue(value);
+      EmitSetHomeObjectIfNeeded(value, 2);
 
       switch (property->kind()) {
         case ObjectLiteral::Property::CONSTANT:
@@ -2951,8 +2962,7 @@ void FullCodeGenerator::EmitResolvePossiblyDirectEval(int arg_count) {
 }
 
 
-void FullCodeGenerator::EmitLoadSuperConstructor(SuperReference* super_ref) {
-  DCHECK(super_ref != NULL);
+void FullCodeGenerator::EmitLoadSuperConstructor() {
   __ Push(Operand(rbp, JavaScriptFrameConstants::kFunctionOffset));
   __ CallRuntime(Runtime::kGetPrototype, 1);
 }
@@ -3069,9 +3079,9 @@ void FullCodeGenerator::VisitCall(Call* expr) {
     if (FLAG_experimental_classes) {
       EmitSuperConstructorCall(expr);
     } else {
-      SuperReference* super_ref = callee->AsSuperReference();
-      EmitLoadSuperConstructor(super_ref);
+      EmitLoadSuperConstructor();
       __ Push(result_register());
+      SuperReference* super_ref = callee->AsSuperReference();
       VisitForStackValue(super_ref->this_var());
       EmitCall(expr, CallICState::METHOD);
     }
@@ -3102,12 +3112,8 @@ void FullCodeGenerator::VisitCallNew(CallNew* expr) {
   // Push constructor on the stack.  If it's not a function it's used as
   // receiver for CALL_NON_FUNCTION, otherwise the value on the stack is
   // ignored.
-  if (expr->expression()->IsSuperReference()) {
-    EmitLoadSuperConstructor(expr->expression()->AsSuperReference());
-    __ Push(result_register());
-  } else {
-    VisitForStackValue(expr->expression());
-  }
+  DCHECK(!expr->expression()->IsSuperReference());
+  VisitForStackValue(expr->expression());
 
   // Push the arguments ("left-to-right") on the stack.
   ZoneList<Expression*>* args = expr->arguments();
@@ -3142,10 +3148,14 @@ void FullCodeGenerator::VisitCallNew(CallNew* expr) {
 
 
 void FullCodeGenerator::EmitSuperConstructorCall(Call* expr) {
-  SuperReference* super_ref = expr->expression()->AsSuperReference();
-  EmitLoadSuperConstructor(super_ref);
+  Variable* new_target_var = scope()->DeclarationScope()->new_target_var();
+  GetVar(result_register(), new_target_var);
   __ Push(result_register());
 
+  EmitLoadSuperConstructor();
+  __ Push(result_register());
+
+  SuperReference* super_ref = expr->expression()->AsSuperReference();
   Variable* this_var = super_ref->this_var()->var();
 
   GetVar(rax, this_var);
@@ -3186,10 +3196,13 @@ void FullCodeGenerator::EmitSuperConstructorCall(Call* expr) {
   __ Move(rdx, SmiFromSlot(expr->CallFeedbackSlot()));
 
   // TODO(dslomov): use a different stub and propagate new.target.
-  CallConstructStub stub(isolate(), RECORD_CONSTRUCTOR_TARGET);
+  CallConstructStub stub(isolate(), SUPER_CALL_RECORD_TARGET);
   __ call(stub.GetCode(), RelocInfo::CONSTRUCT_CALL);
 
+  __ Drop(1);
+
   RecordJSReturnSite(expr);
+
 
   EmitVariableAssignment(this_var, Token::INIT_CONST);
   context()->Plug(rax);
@@ -4054,6 +4067,55 @@ void FullCodeGenerator::EmitCallFunction(CallRuntime* expr) {
   __ bind(&done);
 
   context()->Plug(rax);
+}
+
+
+void FullCodeGenerator::EmitDefaultConstructorCallSuper(CallRuntime* expr) {
+  Variable* new_target_var = scope()->DeclarationScope()->new_target_var();
+  GetVar(result_register(), new_target_var);
+  __ Push(result_register());
+
+  EmitLoadSuperConstructor();
+  __ Push(result_register());
+
+  // Check if the calling frame is an arguments adaptor frame.
+  Label adaptor_frame, args_set_up, runtime;
+  __ movp(rdx, Operand(rbp, StandardFrameConstants::kCallerFPOffset));
+  __ movp(rcx, Operand(rdx, StandardFrameConstants::kContextOffset));
+  __ Cmp(rcx, Smi::FromInt(StackFrame::ARGUMENTS_ADAPTOR));
+  __ j(equal, &adaptor_frame);
+  // default constructor has no arguments, so no adaptor frame means no args.
+  __ movp(rax, Immediate(0));
+  __ jmp(&args_set_up);
+
+  // Copy arguments from adaptor frame.
+  {
+    __ bind(&adaptor_frame);
+    __ movp(rcx, Operand(rdx, ArgumentsAdaptorFrameConstants::kLengthOffset));
+    __ SmiToInteger64(rcx, rcx);
+
+    // Subtract 1 from arguments count, for new.target.
+    __ subp(rcx, Immediate(1));
+    __ movp(rax, rcx);
+    __ leap(rdx, Operand(rdx, rcx, times_pointer_size,
+                         StandardFrameConstants::kCallerSPOffset));
+    Label loop;
+    __ bind(&loop);
+    __ Push(Operand(rdx, -1 * kPointerSize));
+    __ subp(rdx, Immediate(kPointerSize));
+    __ decp(rcx);
+    __ j(not_zero, &loop);
+  }
+
+  __ bind(&args_set_up);
+  __ movp(rdi, Operand(rsp, rax, times_pointer_size, 0));
+
+  CallConstructStub stub(isolate(), SUPER_CONSTRUCTOR_CALL);
+  __ call(stub.GetCode(), RelocInfo::CONSTRUCT_CALL);
+
+  __ Drop(1);
+
+  context()->Plug(result_register());
 }
 
 

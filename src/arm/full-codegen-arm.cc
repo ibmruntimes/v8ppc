@@ -262,6 +262,10 @@ void FullCodeGenerator::Generate() {
     //   function, receiver address, parameter count.
     // The stub will rewrite receiever and parameter count if the previous
     // stack frame was an arguments adapter frame.
+    ArgumentsAccessStub::HasNewTarget has_new_target =
+        IsSubclassConstructor(info->function()->kind())
+            ? ArgumentsAccessStub::HAS_NEW_TARGET
+            : ArgumentsAccessStub::NO_NEW_TARGET;
     ArgumentsAccessStub::Type type;
     if (is_strict(language_mode())) {
       type = ArgumentsAccessStub::NEW_STRICT;
@@ -270,7 +274,7 @@ void FullCodeGenerator::Generate() {
     } else {
       type = ArgumentsAccessStub::NEW_SLOPPY_FAST;
     }
-    ArgumentsAccessStub stub(isolate(), type);
+    ArgumentsAccessStub stub(isolate(), type, has_new_target);
     __ CallStub(&stub);
 
     SetVar(arguments, r0, r1, r2);
@@ -450,7 +454,12 @@ void FullCodeGenerator::EmitReturnSequence() {
     // Make sure that the constant pool is not emitted inside of the return
     // sequence.
     { Assembler::BlockConstPoolScope block_const_pool(masm_);
-      int32_t sp_delta = (info_->scope()->num_parameters() + 1) * kPointerSize;
+      int32_t arg_count = info_->scope()->num_parameters() + 1;
+      if (FLAG_experimental_classes &&
+          IsSubclassConstructor(info_->function()->kind())) {
+        arg_count++;
+      }
+      int32_t sp_delta = arg_count * kPointerSize;
       CodeGenerator::RecordPositions(masm_, function()->end_position() - 1);
       // TODO(svenpanne) The code below is sometimes 4 words, sometimes 5!
       PredictableCodeSizeScope predictable(masm_, -1);
@@ -1816,6 +1825,7 @@ void FullCodeGenerator::VisitObjectLiteral(ObjectLiteral* expr) {
     } else {
       EmitPropertyKey(property, expr->GetIdForProperty(property_index));
       VisitForStackValue(value);
+      EmitSetHomeObjectIfNeeded(value, 2);
 
       switch (property->kind()) {
         case ObjectLiteral::Property::CONSTANT:
@@ -3056,8 +3066,7 @@ void FullCodeGenerator::EmitResolvePossiblyDirectEval(int arg_count) {
 }
 
 
-void FullCodeGenerator::EmitLoadSuperConstructor(SuperReference* super_ref) {
-  DCHECK(super_ref != NULL);
+void FullCodeGenerator::EmitLoadSuperConstructor() {
   __ ldr(r0, MemOperand(fp, JavaScriptFrameConstants::kFunctionOffset));
   __ Push(r0);
   __ CallRuntime(Runtime::kGetPrototype, 1);
@@ -3183,9 +3192,9 @@ void FullCodeGenerator::VisitCall(Call* expr) {
     if (FLAG_experimental_classes) {
       EmitSuperConstructorCall(expr);
     } else {
-      SuperReference* super_ref = callee->AsSuperReference();
-      EmitLoadSuperConstructor(super_ref);
+      EmitLoadSuperConstructor();
       __ Push(result_register());
+      SuperReference* super_ref = callee->AsSuperReference();
       VisitForStackValue(super_ref->this_var());
       EmitCall(expr, CallICState::METHOD);
     }
@@ -3217,12 +3226,8 @@ void FullCodeGenerator::VisitCallNew(CallNew* expr) {
   // Push constructor on the stack.  If it's not a function it's used as
   // receiver for CALL_NON_FUNCTION, otherwise the value on the stack is
   // ignored.
-  if (expr->expression()->IsSuperReference()) {
-    EmitLoadSuperConstructor(expr->expression()->AsSuperReference());
-    __ Push(result_register());
-  } else {
-    VisitForStackValue(expr->expression());
-  }
+  DCHECK(!expr->expression()->IsSuperReference());
+  VisitForStackValue(expr->expression());
 
   // Push the arguments ("left-to-right") on the stack.
   ZoneList<Expression*>* args = expr->arguments();
@@ -3257,10 +3262,15 @@ void FullCodeGenerator::VisitCallNew(CallNew* expr) {
 
 
 void FullCodeGenerator::EmitSuperConstructorCall(Call* expr) {
-  SuperReference* super_ref = expr->expression()->AsSuperReference();
-  EmitLoadSuperConstructor(super_ref);
+  Comment cmnt(masm_, "[ SuperConstructorCall");
+  Variable* new_target_var = scope()->DeclarationScope()->new_target_var();
+  GetVar(result_register(), new_target_var);
+  __ Push(result_register());
+
+  EmitLoadSuperConstructor();
   __ push(result_register());
 
+  SuperReference* super_ref = expr->expression()->AsSuperReference();
   Variable* this_var = super_ref->this_var()->var();
 
   GetVar(r0, this_var);
@@ -3300,9 +3310,10 @@ void FullCodeGenerator::EmitSuperConstructorCall(Call* expr) {
   __ Move(r2, FeedbackVector());
   __ mov(r3, Operand(SmiFromSlot(expr->CallFeedbackSlot())));
 
-  // TODO(dslomov): use a different stub and propagate new.target.
-  CallConstructStub stub(isolate(), RECORD_CONSTRUCTOR_TARGET);
+  CallConstructStub stub(isolate(), SUPER_CALL_RECORD_TARGET);
   __ Call(stub.GetCode(), RelocInfo::CONSTRUCT_CALL);
+
+  __ Drop(1);
 
   RecordJSReturnSite(expr);
 
@@ -4162,6 +4173,60 @@ void FullCodeGenerator::EmitCallFunction(CallRuntime* expr) {
   __ bind(&done);
 
   context()->Plug(r0);
+}
+
+
+void FullCodeGenerator::EmitDefaultConstructorCallSuper(CallRuntime* expr) {
+  Variable* new_target_var = scope()->DeclarationScope()->new_target_var();
+  GetVar(result_register(), new_target_var);
+  __ Push(result_register());
+
+  EmitLoadSuperConstructor();
+  __ Push(result_register());
+
+  // Check if the calling frame is an arguments adaptor frame.
+  Label adaptor_frame, args_set_up, runtime;
+  __ ldr(r2, MemOperand(fp, StandardFrameConstants::kCallerFPOffset));
+  __ ldr(r3, MemOperand(r2, StandardFrameConstants::kContextOffset));
+  __ cmp(r3, Operand(Smi::FromInt(StackFrame::ARGUMENTS_ADAPTOR)));
+  __ b(eq, &adaptor_frame);
+  // default constructor has no arguments, so no adaptor frame means no args.
+  __ mov(r0, Operand::Zero());
+  __ b(&args_set_up);
+
+  // Copy arguments from adaptor frame.
+  {
+    __ bind(&adaptor_frame);
+    __ ldr(r1, MemOperand(r2, ArgumentsAdaptorFrameConstants::kLengthOffset));
+    __ SmiUntag(r1, r1);
+
+    // Subtract 1 from arguments count, for new.target.
+    __ sub(r1, r1, Operand(1));
+    __ mov(r0, r1);
+
+    // Get arguments pointer in r2.
+    __ add(r2, r2, Operand(r1, LSL, kPointerSizeLog2));
+    __ add(r2, r2, Operand(StandardFrameConstants::kCallerSPOffset));
+    Label loop;
+    __ bind(&loop);
+    // Pre-decrement r2 with kPointerSize on each iteration.
+    // Pre-decrement in order to skip receiver.
+    __ ldr(r3, MemOperand(r2, kPointerSize, NegPreIndex));
+    __ Push(r3);
+    __ sub(r1, r1, Operand(1));
+    __ cmp(r1, Operand::Zero());
+    __ b(ne, &loop);
+  }
+
+  __ bind(&args_set_up);
+  __ ldr(r1, MemOperand(sp, r0, LSL, kPointerSizeLog2));
+
+  CallConstructStub stub(isolate(), SUPER_CONSTRUCTOR_CALL);
+  __ Call(stub.GetCode(), RelocInfo::CONSTRUCT_CALL);
+
+  __ Drop(1);
+
+  context()->Plug(result_register());
 }
 
 

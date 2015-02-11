@@ -117,7 +117,7 @@ RUNTIME_FUNCTION(Runtime_DefineClass) {
   constructor->shared()->set_name(*name_string);
 
   if (FLAG_experimental_classes) {
-    if (!super_class->IsTheHole() && !super_class->IsNull()) {
+    if (!super_class->IsTheHole()) {
       Handle<Code> stub(isolate->builtins()->JSConstructStubForDerived());
       constructor->shared()->set_construct_stub(*stub);
     }
@@ -414,7 +414,15 @@ RUNTIME_FUNCTION(Runtime_StoreKeyedToSuper_Sloppy) {
 }
 
 
+RUNTIME_FUNCTION(RuntimeReference_DefaultConstructorCallSuper) {
+  UNREACHABLE();
+  return nullptr;
+}
+
+
+// TODO(dslomov): deprecated, will remove when experimenal classes is default.
 RUNTIME_FUNCTION(Runtime_DefaultConstructorSuperCall) {
+  CHECK(!FLAG_experimental_classes);
   HandleScope scope(isolate);
   DCHECK(args.length() == 0);
 
