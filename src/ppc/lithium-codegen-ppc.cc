@@ -382,6 +382,8 @@ bool LCodeGen::GenerateJumpTable() {
     }
   }
 
+  masm()->EmitConstantPool();
+
   // The deoptimization jump table is the last part of the instruction
   // sequence. Mark the generated code as done unless we bailed out.
   if (!is_aborted()) status_ = DONE;
@@ -942,12 +944,6 @@ void LCodeGen::RecordSafepoint(LPointerMap* pointers, Safepoint::Kind kind,
       safepoint.DefinePointerRegister(ToRegister(pointer), zone());
     }
   }
-#if V8_OOL_CONSTANT_POOL
-  if (kind & Safepoint::kWithRegisters) {
-    // Register always contains a pointer to the constant pool.
-    safepoint.DefinePointerRegister(kConstantPoolRegister, zone());
-  }
-#endif
 }
 
 
@@ -5533,6 +5529,7 @@ void LCodeGen::DoCheckValue(LCheckValue* instr) {
 
 
 void LCodeGen::DoDeferredInstanceMigration(LCheckMaps* instr, Register object) {
+  Register temp = ToRegister(instr->temp());
   {
     PushSafepointRegistersScope scope(this);
     __ push(object);
@@ -5540,9 +5537,9 @@ void LCodeGen::DoDeferredInstanceMigration(LCheckMaps* instr, Register object) {
     __ CallRuntimeSaveDoubles(Runtime::kTryMigrateInstance);
     RecordSafepointWithRegisters(instr->pointer_map(), 1,
                                  Safepoint::kNoLazyDeopt);
-    __ StoreToSafepointRegisterSlot(r3, scratch0());
+    __ StoreToSafepointRegisterSlot(r3, temp);
   }
-  __ TestIfSmi(scratch0(), r0);
+  __ TestIfSmi(temp, r0);
   DeoptimizeIf(eq, instr, Deoptimizer::kInstanceMigrationFailed, cr0);
 }
 
@@ -5574,17 +5571,14 @@ void LCodeGen::DoCheckMaps(LCheckMaps* instr) {
     return;
   }
 
-  Register map_reg = scratch0();
+  Register object = ToRegister(instr->value());
+  Register map_reg = ToRegister(instr->temp());
 
-  LOperand* input = instr->value();
-  DCHECK(input->IsRegister());
-  Register reg = ToRegister(input);
-
-  __ LoadP(map_reg, FieldMemOperand(reg, HeapObject::kMapOffset));
+  __ LoadP(map_reg, FieldMemOperand(object, HeapObject::kMapOffset));
 
   DeferredCheckMaps* deferred = NULL;
   if (instr->hydrogen()->HasMigrationTarget()) {
-    deferred = new (zone()) DeferredCheckMaps(this, instr, reg);
+    deferred = new (zone()) DeferredCheckMaps(this, instr, object);
     __ bind(deferred->check_maps());
   }
 

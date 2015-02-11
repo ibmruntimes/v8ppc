@@ -460,14 +460,12 @@ void Assembler::emit_w(const Immediate& x) {
 }
 
 
-Address Assembler::target_address_at(Address pc,
-                                     ConstantPoolArray* constant_pool) {
+Address Assembler::target_address_at(Address pc, Address constant_pool) {
   return pc + sizeof(int32_t) + *reinterpret_cast<int32_t*>(pc);
 }
 
 
-void Assembler::set_target_address_at(Address pc,
-                                      ConstantPoolArray* constant_pool,
+void Assembler::set_target_address_at(Address pc, Address constant_pool,
                                       Address target,
                                       ICacheFlushMode icache_flush_mode) {
   int32_t* p = reinterpret_cast<int32_t*>(pc);

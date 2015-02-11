@@ -149,10 +149,10 @@ IC::IC(FrameDepth depth, Isolate* isolate, FeedbackNexus* nexus,
   // levels of the stack frame iteration code. This yields a ~35% speedup when
   // running DeltaBlue and a ~25% speedup of gbemu with the '--nouse-ic' flag.
   const Address entry = Isolate::c_entry_fp(isolate->thread_local_top());
-  Address constant_pool = NULL;
+  Address* constant_pool = NULL;
   if (FLAG_enable_ool_constant_pool) {
-    constant_pool =
-        Memory::Address_at(entry + ExitFrameConstants::kConstantPoolOffset);
+    constant_pool = reinterpret_cast<Address*>(
+        entry + ExitFrameConstants::kConstantPoolOffset);
   }
   Address* pc_address =
       reinterpret_cast<Address*>(entry + ExitFrameConstants::kCallerPCOffset);
@@ -162,8 +162,8 @@ IC::IC(FrameDepth depth, Isolate* isolate, FeedbackNexus* nexus,
   // find the frame pointer and the return address stack slot.
   if (depth == EXTRA_CALL_FRAME) {
     if (FLAG_enable_ool_constant_pool) {
-      constant_pool =
-          Memory::Address_at(fp + StandardFrameConstants::kConstantPoolOffset);
+      constant_pool = reinterpret_cast<Address*>(
+          fp + StandardFrameConstants::kConstantPoolOffset);
     }
     const int kCallerPCOffset = StandardFrameConstants::kCallerPCOffset;
     pc_address = reinterpret_cast<Address*>(fp + kCallerPCOffset);
@@ -177,9 +177,7 @@ IC::IC(FrameDepth depth, Isolate* isolate, FeedbackNexus* nexus,
 #endif
   fp_ = fp;
   if (FLAG_enable_ool_constant_pool) {
-    raw_constant_pool_ = handle(
-        ConstantPoolArray::cast(reinterpret_cast<Object*>(constant_pool)),
-        isolate);
+    raw_constant_pool_ = constant_pool;
   }
   pc_address_ = StackFrame::ResolveReturnAddressLocation(pc_address);
   target_ = handle(raw_target(), isolate);
@@ -481,7 +479,7 @@ void IC::PostPatching(Address address, Code* target, Code* old_target) {
 
 
 void IC::Clear(Isolate* isolate, Address address,
-               ConstantPoolArray* constant_pool) {
+               Address constant_pool) {
   Code* target = GetTargetAtAddress(address, constant_pool);
 
   // Don't clear debug break inline cache as it will remove the break point.
@@ -515,7 +513,7 @@ void IC::Clear(Isolate* isolate, Address address,
 
 
 void KeyedLoadIC::Clear(Isolate* isolate, Address address, Code* target,
-                        ConstantPoolArray* constant_pool) {
+                        Address constant_pool) {
   DCHECK(!FLAG_vector_ics);
   if (IsCleared(target)) return;
 
@@ -551,7 +549,7 @@ void CallIC::Clear(Isolate* isolate, Code* host, CallICNexus* nexus) {
 
 
 void LoadIC::Clear(Isolate* isolate, Address address, Code* target,
-                   ConstantPoolArray* constant_pool) {
+                   Address constant_pool) {
   DCHECK(!FLAG_vector_ics);
   if (IsCleared(target)) return;
   Code* code = PropertyICCompiler::FindPreMonomorphic(isolate, Code::LOAD_IC,
@@ -569,7 +567,7 @@ void LoadIC::Clear(Isolate* isolate, Code* host, LoadICNexus* nexus) {
 
 
 void StoreIC::Clear(Isolate* isolate, Address address, Code* target,
-                    ConstantPoolArray* constant_pool) {
+                    Address constant_pool) {
   if (IsCleared(target)) return;
   Code* code = PropertyICCompiler::FindPreMonomorphic(isolate, Code::STORE_IC,
                                                       target->extra_ic_state());
@@ -578,7 +576,7 @@ void StoreIC::Clear(Isolate* isolate, Address address, Code* target,
 
 
 void KeyedStoreIC::Clear(Isolate* isolate, Address address, Code* target,
-                         ConstantPoolArray* constant_pool) {
+                         Address constant_pool) {
   if (IsCleared(target)) return;
   SetTargetAtAddress(
       address, *pre_monomorphic_stub(
@@ -588,7 +586,7 @@ void KeyedStoreIC::Clear(Isolate* isolate, Address address, Code* target,
 
 
 void CompareIC::Clear(Isolate* isolate, Address address, Code* target,
-                      ConstantPoolArray* constant_pool) {
+                      Address constant_pool) {
   DCHECK(CodeStub::GetMajorKey(target) == CodeStub::CompareIC);
   CompareICStub stub(target->stub_key(), isolate);
   // Only clear CompareICs that can retain objects.
@@ -2639,7 +2637,7 @@ RUNTIME_FUNCTION(CompareIC_Miss) {
 
 
 void CompareNilIC::Clear(Address address, Code* target,
-                         ConstantPoolArray* constant_pool) {
+                         Address constant_pool) {
   if (IsCleared(target)) return;
   ExtraICState state = target->extra_ic_state();
 

@@ -78,7 +78,7 @@ class IC {
 
   // Clear the inline cache to initial state.
   static void Clear(Isolate* isolate, Address address,
-                    ConstantPoolArray* constant_pool);
+                    Address constant_pool);
 
 #ifdef DEBUG
   bool IsLoadStub() const {
@@ -167,9 +167,9 @@ class IC {
 
   // Access the target code for the given IC address.
   static inline Code* GetTargetAtAddress(Address address,
-                                         ConstantPoolArray* constant_pool);
+                                         Address constant_pool);
   static inline void SetTargetAtAddress(Address address, Code* target,
-                                        ConstantPoolArray* constant_pool);
+                                        Address constant_pool);
   static void OnTypeFeedbackChanged(Isolate* isolate, Address address,
                                     State old_state, State new_state,
                                     bool target_remains_ic_stub);
@@ -253,8 +253,8 @@ class IC {
 
  private:
   inline Code* raw_target() const;
-  inline ConstantPoolArray* constant_pool() const;
-  inline ConstantPoolArray* raw_constant_pool() const;
+  inline Address constant_pool() const;
+  inline Address raw_constant_pool() const;
 
   void FindTargetMaps() {
     if (target_maps_set_) return;
@@ -284,7 +284,7 @@ class IC {
 
   // The constant pool of the code which originally called the IC (which might
   // be for the breakpointed copy of the original code).
-  Handle<ConstantPoolArray> raw_constant_pool_;
+  Address* raw_constant_pool_;
 
   // The original code target that missed.
   Handle<Code> target_;
@@ -433,7 +433,7 @@ class LoadIC : public IC {
   Handle<Code> SimpleFieldLoad(FieldIndex index);
 
   static void Clear(Isolate* isolate, Address address, Code* target,
-                    ConstantPoolArray* constant_pool);
+                    Address constant_pool);
 
   friend class IC;
 };
@@ -496,7 +496,7 @@ class KeyedLoadIC : public LoadIC {
 
  private:
   static void Clear(Isolate* isolate, Address address, Code* target,
-                    ConstantPoolArray* constant_pool);
+                    Address constant_pool);
 
   friend class IC;
 };
@@ -574,7 +574,7 @@ class StoreIC : public IC {
   inline void set_target(Code* code);
 
   static void Clear(Isolate* isolate, Address address, Code* target,
-                    ConstantPoolArray* constant_pool);
+                    Address constant_pool);
 
   friend class IC;
 };
@@ -657,7 +657,7 @@ class KeyedStoreIC : public StoreIC {
   }
 
   static void Clear(Isolate* isolate, Address address, Code* target,
-                    ConstantPoolArray* constant_pool);
+                    Address constant_pool);
 
   KeyedAccessStoreMode GetStoreMode(Handle<JSObject> receiver,
                                     Handle<Object> key, Handle<Object> value);
@@ -705,7 +705,7 @@ class CompareIC : public IC {
   static Code* GetRawUninitialized(Isolate* isolate, Token::Value op);
 
   static void Clear(Isolate* isolate, Address address, Code* target,
-                    ConstantPoolArray* constant_pool);
+                    Address constant_pool);
 
   Token::Value op_;
 
@@ -722,7 +722,7 @@ class CompareNilIC : public IC {
   static Handle<Code> GetUninitialized();
 
   static void Clear(Address address, Code* target,
-                    ConstantPoolArray* constant_pool);
+                    Address constant_pool);
 
   static Handle<Object> DoCompareNilSlow(Isolate* isolate, NilValue nil,
                                          Handle<Object> object);

@@ -498,6 +498,7 @@ class RelocInfo {
   void set_pc(byte* pc) { pc_ = pc; }
   Mode rmode() const {  return rmode_; }
   intptr_t data() const { return data_; }
+  void set_data(intptr_t data) { data_ = data; }
   double data64() const { return data64_; }
   uint64_t raw_data64() { return bit_cast<uint64_t>(data64_); }
   Code* host() const { return host_; }

@@ -860,7 +860,9 @@ void Code::CodeIterateBody(ObjectVisitor* v) {
   IteratePointer(v, kDeoptimizationDataOffset);
   IteratePointer(v, kTypeFeedbackInfoOffset);
   IterateNextCodeLink(v, kNextCodeLinkOffset);
-  IteratePointer(v, kConstantPoolOffset);
+  if (FLAG_enable_ool_constant_pool_in_heapobject) {
+    IteratePointer(v, kConstantPoolOffset);
+  }
 
   RelocIterator it(this, mode_mask);
   Isolate* isolate = this->GetIsolate();
@@ -895,8 +897,11 @@ void Code::CodeIterateBody(Heap* heap) {
       reinterpret_cast<Object**>(this->address() + kTypeFeedbackInfoOffset));
   StaticVisitor::VisitNextCodeLink(
       heap, reinterpret_cast<Object**>(this->address() + kNextCodeLinkOffset));
-  StaticVisitor::VisitPointer(
-      heap, reinterpret_cast<Object**>(this->address() + kConstantPoolOffset));
+  if (FLAG_enable_ool_constant_pool_in_heapobject) {
+    StaticVisitor::VisitPointer(
+        heap,
+        reinterpret_cast<Object**>(this->address() + kConstantPoolOffset));
+  }
 
 
   RelocIterator it(this, mode_mask);

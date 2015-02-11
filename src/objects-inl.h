@@ -5102,12 +5102,23 @@ bool Code::is_debug_stub() {
 }
 
 
-ConstantPoolArray* Code::constant_pool() {
-  return ConstantPoolArray::cast(READ_FIELD(this, kConstantPoolOffset));
+Address Code::constant_pool() {
+  Address constant_pool = NULL;
+  if (FLAG_enable_ool_constant_pool_in_heapobject) {
+    constant_pool = reinterpret_cast<Address>(
+        READ_FIELD(this, kConstantPoolOffset));
+  } else if (FLAG_enable_ool_constant_pool_in_code) {
+    int offset = constant_pool_offset();
+    if (offset < instruction_size()) {
+      constant_pool = FIELD_ADDR(this, kHeaderSize + offset);
+    }
+  }
+  return constant_pool;
 }
 
 
 void Code::set_constant_pool(Object* value) {
+  DCHECK(FLAG_enable_ool_constant_pool_in_heapobject);
   DCHECK(value->IsConstantPoolArray());
   WRITE_FIELD(this, kConstantPoolOffset, value);
   WRITE_BARRIER(GetHeap(), this, kConstantPoolOffset, value);
@@ -6424,6 +6435,7 @@ SMI_ACCESSORS(JSMessageObject, end_position, kEndPositionOffset)
 
 INT_ACCESSORS(Code, instruction_size, kInstructionSizeOffset)
 INT_ACCESSORS(Code, prologue_offset, kPrologueOffset)
+INT_ACCESSORS(Code, constant_pool_offset, kConstantPoolOffset)
 ACCESSORS(Code, relocation_info, ByteArray, kRelocationInfoOffset)
 ACCESSORS(Code, handler_table, FixedArray, kHandlerTableOffset)
 ACCESSORS(Code, deoptimization_data, FixedArray, kDeoptimizationDataOffset)
@@ -6435,7 +6447,9 @@ void Code::WipeOutHeader() {
   WRITE_FIELD(this, kRelocationInfoOffset, NULL);
   WRITE_FIELD(this, kHandlerTableOffset, NULL);
   WRITE_FIELD(this, kDeoptimizationDataOffset, NULL);
-  WRITE_FIELD(this, kConstantPoolOffset, NULL);
+  if (FLAG_enable_ool_constant_pool_in_heapobject) {
+    WRITE_FIELD(this, kConstantPoolOffset, NULL);
+  }
   // Do not wipe out major/minor keys on a code stub or IC
   if (!READ_FIELD(this, kTypeFeedbackInfoOffset)->IsSmi()) {
     WRITE_FIELD(this, kTypeFeedbackInfoOffset, NULL);

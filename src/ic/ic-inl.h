@@ -48,11 +48,11 @@ Address IC::address() const {
 }
 
 
-ConstantPoolArray* IC::constant_pool() const {
+Address IC::constant_pool() const {
   if (!FLAG_enable_ool_constant_pool) {
     return NULL;
   } else {
-    Handle<ConstantPoolArray> result = raw_constant_pool_;
+    Address* result = raw_constant_pool_;
     Debug* debug = isolate()->debug();
     // First check if any break points are active if not just return the
     // original constant pool.
@@ -72,7 +72,7 @@ ConstantPoolArray* IC::constant_pool() const {
 }
 
 
-ConstantPoolArray* IC::raw_constant_pool() const {
+Address IC::raw_constant_pool() const {
   if (FLAG_enable_ool_constant_pool) {
     return *raw_constant_pool_;
   } else {
@@ -81,8 +81,7 @@ ConstantPoolArray* IC::raw_constant_pool() const {
 }
 
 
-Code* IC::GetTargetAtAddress(Address address,
-                             ConstantPoolArray* constant_pool) {
+Code* IC::GetTargetAtAddress(Address address, Address constant_pool) {
   // Get the target address of the IC.
   Address target = Assembler::target_address_at(address, constant_pool);
   // Convert target address to the code object. Code::GetCodeFromTargetAddress
@@ -94,7 +93,7 @@ Code* IC::GetTargetAtAddress(Address address,
 
 
 void IC::SetTargetAtAddress(Address address, Code* target,
-                            ConstantPoolArray* constant_pool) {
+                            Address constant_pool) {
   DCHECK(target->is_inline_cache_stub() || target->is_compare_ic_stub());
 
   // Don't use this for load_ics when --vector-ics is turned on.

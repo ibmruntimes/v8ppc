@@ -73,14 +73,18 @@ namespace internal {
 #endif
 
 // Determine whether the architecture uses an out-of-line constant pool.
+#define OOL_CONSTANT_POOL_NONE 0
+#define OOL_CONSTANT_POOL_HEAP_OBJECT 1
+#define OOL_CONSTANT_POOL_CODE 2
+
 #if V8_PPC_OOL_CONSTANT_POOL_OPT
 #if V8_TARGET_ARCH_PPC
-#define V8_OOL_CONSTANT_POOL 1
+#define V8_OOL_CONSTANT_POOL OOL_CONSTANT_POOL_CODE
 #else
-#define V8_OOL_CONSTANT_POOL 0
+#define V8_OOL_CONSTANT_POOL OOL_CONSTANT_POOL_NONE
 #endif
 #else
-#define V8_OOL_CONSTANT_POOL 0
+#define V8_OOL_CONSTANT_POOL OOL_CONSTANT_POOL_NONE
 #endif
 
 #ifdef V8_TARGET_ARCH_ARM
@@ -463,13 +467,15 @@ enum NativesFlag { NOT_NATIVES_CODE, NATIVES_CODE };
 // A CodeDesc describes a buffer holding instructions and relocation
 // information. The instructions start at the beginning of the buffer
 // and grow forward, the relocation information starts at the end of
-// the buffer and grows backward.
+// the buffer and grows backward.  A constant pool may exist at the
+// end of the instructions.
 //
-//  |<--------------- buffer_size ---------------->|
-//  |<-- instr_size -->|        |<-- reloc_size -->|
-//  +==================+========+==================+
-//  |   instructions   |  free  |    reloc info    |
-//  +==================+========+==================+
+//  |<--------------- buffer_size ----------------------------------->|
+//  |<------------- instr_size ---------->|        |<-- reloc_size -->|
+//  |               |<- const_pool_size ->|                           |
+//  +=====================================+========+==================+
+//  |  instructions |        data         |  free  |    reloc info    |
+//  +=====================================+========+==================+
 //  ^
 //  |
 //  buffer
@@ -479,6 +485,7 @@ struct CodeDesc {
   int buffer_size;
   int instr_size;
   int reloc_size;
+  int constant_pool_size;
   Assembler* origin;
 };
 

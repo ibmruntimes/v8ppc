@@ -113,8 +113,6 @@ Handle<Code> CodeGenerator::GenerateCode() {
     }
   }
 
-  FinishCode(masm());
-
   // Emit the jump tables.
   if (jump_tables_) {
     masm()->Align(kPointerSize);
@@ -123,6 +121,8 @@ Handle<Code> CodeGenerator::GenerateCode() {
       AssembleJumpTable(table->targets(), table->target_count());
     }
   }
+
+  FinishCode(masm());
 
   safepoints()->Emit(masm(), frame()->GetSpillSlotCount());
 
