@@ -11632,17 +11632,31 @@ void Code::Disassemble(const char* name, std::ostream& os) {  // NOLINT
   os << "Instructions (size = " << instruction_size() << ")\n";
   {
     Isolate* isolate = GetIsolate();
-    int decode_size = is_crankshafted()
-                          ? static_cast<int>(safepoint_table_offset())
-                          : instruction_size();
-    // If there might be a back edge table, stop before reaching it.
-    if (kind() == Code::FUNCTION) {
-      decode_size =
-          Min(decode_size, static_cast<int>(back_edge_table_offset()));
-    }
+    int size = instruction_size();
+    int safepoint_offset = is_crankshafted()
+        ? static_cast<int>(safepoint_table_offset()) : size;
+    int back_edge_offset = (kind() == Code::FUNCTION)
+        ? static_cast<int>(back_edge_table_offset()) : size;
+    int constant_offset = FLAG_enable_ool_constant_pool_in_code
+        ? constant_pool_offset() : size;
+
+    // Stop before reaching any embedded tables
+    int code_size = Min(safepoint_offset, back_edge_offset);
     byte* begin = instruction_start();
-    byte* end = begin + decode_size;
+    byte* end = begin + Min(code_size, constant_offset);
     Disassembler::Decode(isolate, &os, begin, end, this);
+
+    if (constant_offset < code_size) {
+      int constant_size = code_size - constant_offset;
+      DCHECK((constant_size & kPointerAlignmentMask) == 0);
+      os << "\nConstant Pool (size = " << constant_size << ")\n";
+      Vector<char> buf = Vector<char>::New(50);
+      intptr_t* ptr = reinterpret_cast<intptr_t*>(begin + constant_offset);
+      for (int i = 0; i < constant_size; i += kPointerSize, ptr++) {
+        SNPrintF(buf, "%4d %08" V8PRIxPTR, i, *ptr);
+        os << static_cast<const void*>(ptr) << "  " << buf.start() << "\n";
+      }
+    }
   }
   os << "\n";
 
@@ -11719,8 +11733,9 @@ void Code::Disassemble(const char* name, std::ostream& os) {  // NOLINT
   os << "\n";
 
 #ifdef OBJECT_PRINT
-  if (FLAG_enable_ool_constant_pool) {
-    ConstantPoolArray* pool = constant_pool();
+  if (FLAG_enable_ool_constant_pool_in_heapobject) {
+    ConstantPoolArray* pool =
+        reinterpret_cast<ConstantPoolArray*>(constant_pool());
     if (pool->length()) {
       os << "Constant Pool\n";
       pool->Print(os);

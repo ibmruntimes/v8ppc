@@ -581,14 +581,13 @@ Address Assembler::target_pointer_address_at(Address pc) {
 
 
 // Read/Modify the code target address in the branch/call instruction at pc.
-Address Assembler::target_address_at(Address pc,
-                                     ConstantPoolArray* constant_pool) {
+Address Assembler::target_address_at(Address pc, Address constant_pool) {
   return Memory::Address_at(target_pointer_address_at(pc));
 }
 
 
 Address Assembler::target_address_at(Address pc, Code* code) {
-  ConstantPoolArray* constant_pool = code ? code->constant_pool() : NULL;
+  Address constant_pool = code ? code->constant_pool() : NULL;
   return target_address_at(pc, constant_pool);
 }
 
@@ -654,8 +653,7 @@ void Assembler::deserialization_set_special_target_at(
 }
 
 
-void Assembler::set_target_address_at(Address pc,
-                                      ConstantPoolArray* constant_pool,
+void Assembler::set_target_address_at(Address pc, Address constant_pool,
                                       Address target,
                                       ICacheFlushMode icache_flush_mode) {
   Memory::Address_at(target_pointer_address_at(pc)) = target;
@@ -674,7 +672,7 @@ void Assembler::set_target_address_at(Address pc,
                                       Code* code,
                                       Address target,
                                       ICacheFlushMode icache_flush_mode) {
-  ConstantPoolArray* constant_pool = code ? code->constant_pool() : NULL;
+  Address constant_pool = code ? code->constant_pool() : NULL;
   set_target_address_at(pc, constant_pool, target, icache_flush_mode);
 }
 

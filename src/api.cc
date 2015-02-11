@@ -236,7 +236,8 @@ void CheckDefaultReservationSizes(const i::StartupSerializer& startup_ser,
     uint32_t sum = startup_reservations[space].chunk_size() +
                    context_reservations[space].chunk_size();
     uint32_t limit = 0;
-    const int constant_pool_delta = i::FLAG_enable_ool_constant_pool ? 48 : 0;
+    const int constant_pool_delta =
+        i::FLAG_enable_ool_constant_pool_in_heapobject ? 48 : 0;
     switch (space) {
       case i::NEW_SPACE:
         limit = 3 * i::kPointerSize;

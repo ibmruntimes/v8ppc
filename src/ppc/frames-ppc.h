@@ -123,13 +123,11 @@ class EntryFrameConstants : public AllStatic {
 
 class ExitFrameConstants : public AllStatic {
  public:
-#if V8_OOL_CONSTANT_POOL
-  static const int kFrameSize = 3 * kPointerSize;
-  static const int kConstantPoolOffset = -3 * kPointerSize;
-#else
-  static const int kFrameSize = 2 * kPointerSize;
-  static const int kConstantPoolOffset = 0;  // Not used.
-#endif
+  static const int kFrameSize          = FLAG_enable_ool_constant_pool ?
+                                         3 * kPointerSize : 2 * kPointerSize;
+
+  static const int kConstantPoolOffset = FLAG_enable_ool_constant_pool ?
+                                         -3 * kPointerSize : 0;
   static const int kCodeOffset = -2 * kPointerSize;
   static const int kSPOffset = -1 * kPointerSize;
 

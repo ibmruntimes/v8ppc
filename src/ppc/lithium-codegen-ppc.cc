@@ -381,6 +381,8 @@ bool LCodeGen::GenerateJumpTable() {
     }
   }
 
+  masm()->EmitConstantPool();
+
   // The deoptimization jump table is the last part of the instruction
   // sequence. Mark the generated code as done unless we bailed out.
   if (!is_aborted()) status_ = DONE;
@@ -941,12 +943,6 @@ void LCodeGen::RecordSafepoint(LPointerMap* pointers, Safepoint::Kind kind,
       safepoint.DefinePointerRegister(ToRegister(pointer), zone());
     }
   }
-#if V8_OOL_CONSTANT_POOL
-  if (kind & Safepoint::kWithRegisters) {
-    // Register always contains a pointer to the constant pool.
-    safepoint.DefinePointerRegister(kConstantPoolRegister, zone());
-  }
-#endif
 }
 
 

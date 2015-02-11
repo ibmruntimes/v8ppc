@@ -321,9 +321,6 @@ bool SafeStackFrameIterator::IsValidExitFrame(Address fp) const {
   if (!IsValidStackAddress(sp)) return false;
   StackFrame::State state;
   ExitFrame::FillState(fp, sp, &state);
-  if (!IsValidStackAddress(reinterpret_cast<Address>(state.pc_address))) {
-    return false;
-  }
   return *state.pc_address != NULL;
 }
 
@@ -529,7 +526,7 @@ void ExitFrame::Iterate(ObjectVisitor* v) const {
   // the calling frame.
   IteratePc(v, pc_address(), LookupCode());
   v->VisitPointer(&code_slot());
-  if (FLAG_enable_ool_constant_pool) {
+  if (FLAG_enable_ool_constant_pool_in_heapobject) {
     v->VisitPointer(&constant_pool_slot());
   }
 }

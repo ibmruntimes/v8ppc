@@ -129,7 +129,6 @@ class StackHandler BASE_EMBEDDED {
   inline Kind kind() const;
   inline unsigned index() const;
 
-  inline Object** constant_pool_address() const;
   inline Object** context_address() const;
   inline Object** code_address() const;
   inline void SetFp(Address slot, Address fp);
@@ -255,8 +254,8 @@ class StackFrame BASE_EMBEDDED {
   void set_pc(Address pc) { *pc_address() = pc; }
 
   Address constant_pool() const { return *constant_pool_address(); }
-  void set_constant_pool(ConstantPoolArray* constant_pool) {
-    *constant_pool_address() = reinterpret_cast<Address>(constant_pool);
+  void set_constant_pool(Address constant_pool) {
+    *constant_pool_address() = constant_pool;
   }
 
   virtual void SetCallerFp(Address caller_fp) = 0;

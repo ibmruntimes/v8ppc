@@ -1127,16 +1127,16 @@ void CodeGenerator::AssemblePrologue() {
     int register_save_area_size = 0;
     RegList frame_saves = fp.bit();
     __ mflr(r0);
-#if V8_OOL_CONSTANT_POOL
-    __ Push(r0, fp, kConstantPoolRegister);
-    // Adjust FP to point to saved FP.
-    __ subi(fp, sp, Operand(StandardFrameConstants::kConstantPoolOffset));
-    register_save_area_size += kPointerSize;
-    frame_saves |= kConstantPoolRegister.bit();
-#else
-    __ Push(r0, fp);
-    __ mr(fp, sp);
-#endif
+    if (FLAG_enable_ool_constant_pool) {
+      __ Push(r0, fp, kConstantPoolRegister);
+      // Adjust FP to point to saved FP.
+      __ subi(fp, sp, Operand(StandardFrameConstants::kConstantPoolOffset));
+      register_save_area_size += kPointerSize;
+      frame_saves |= kConstantPoolRegister.bit();
+    } else {
+      __ Push(r0, fp);
+      __ mr(fp, sp);
+    }
     // Save callee-saved registers.
     const RegList saves = descriptor->CalleeSavedRegisters() & ~frame_saves;
     for (int i = Register::kNumRegisters - 1; i >= 0; i--) {
@@ -1187,9 +1187,9 @@ void CodeGenerator::AssembleReturn() {
       }
       // Restore registers.
       RegList frame_saves = fp.bit();
-#if V8_OOL_CONSTANT_POOL
-      frame_saves |= kConstantPoolRegister.bit();
-#endif
+      if (FLAG_enable_ool_constant_pool) {
+        frame_saves |= kConstantPoolRegister.bit();
+      }
       const RegList saves = descriptor->CalleeSavedRegisters() & ~frame_saves;
       if (saves != 0) {
         __ MultiPop(saves);

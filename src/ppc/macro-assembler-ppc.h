@@ -1450,6 +1450,10 @@ class MacroAssembler : public Assembler {
   void JumpIfDictionaryInPrototypeChain(Register object, Register scratch0,
                                         Register scratch1, Label* found);
 
+  // Loads the constant pool pointer (kConstantPoolRegister).
+  void LoadConstantPoolPointerRegister(Register base = no_reg,
+                                       int code_entry_delta = 0);
+
  private:
   static const int kSmiShift = kSmiTagSize + kSmiShiftSize;
 
@@ -1489,13 +1493,6 @@ class MacroAssembler : public Assembler {
   static int SafepointRegisterStackIndex(int reg_code);
   MemOperand SafepointRegisterSlot(Register reg);
   MemOperand SafepointRegistersAndDoublesSlot(Register reg);
-
-#if V8_OOL_CONSTANT_POOL
-  // Loads the constant pool pointer (kConstantPoolRegister).
-  enum CodeObjectAccessMethod { CAN_USE_IP, CONSTRUCT_INTERNAL_REFERENCE };
-  void LoadConstantPoolPointerRegister(CodeObjectAccessMethod access_method,
-                                       int ip_code_entry_delta = 0);
-#endif
 
   bool generating_stub_;
   bool has_frame_;

@@ -550,7 +550,7 @@ bool Assembler::is_constant_pool_load(Address pc) {
 
 
 Address Assembler::constant_pool_entry_address(
-    Address pc, ConstantPoolArray* constant_pool) {
+    Address pc, Address constant_pool) {
   if (FLAG_enable_ool_constant_pool) {
     DCHECK(constant_pool != NULL);
     int cp_offset;
@@ -579,7 +579,7 @@ Address Assembler::constant_pool_entry_address(
       DCHECK(Assembler::IsLdrPpImmediateOffset(Memory::int32_at(pc)));
       cp_offset = GetLdrRegisterImmediateOffset(Memory::int32_at(pc));
     }
-    return reinterpret_cast<Address>(constant_pool) + cp_offset;
+    return constant_pool + cp_offset;
   } else {
     DCHECK(Assembler::IsLdrPcImmediateOffset(Memory::int32_at(pc)));
     Instr instr = Memory::int32_at(pc);
@@ -588,8 +588,7 @@ Address Assembler::constant_pool_entry_address(
 }
 
 
-Address Assembler::target_address_at(Address pc,
-                                     ConstantPoolArray* constant_pool) {
+Address Assembler::target_address_at(Address pc, Address constant_pool) {
   if (is_constant_pool_load(pc)) {
     // This is a constant pool lookup. Return the value in the constant pool.
     return Memory::Address_at(constant_pool_entry_address(pc, constant_pool));
@@ -620,8 +619,7 @@ Address Assembler::target_address_at(Address pc,
 }
 
 
-void Assembler::set_target_address_at(Address pc,
-                                      ConstantPoolArray* constant_pool,
+void Assembler::set_target_address_at(Address pc, Address constant_pool,
                                       Address target,
                                       ICacheFlushMode icache_flush_mode) {
   if (is_constant_pool_load(pc)) {
