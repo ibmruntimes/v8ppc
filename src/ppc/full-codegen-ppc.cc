@@ -332,6 +332,8 @@ void FullCodeGenerator::Generate() {
     __ LoadRoot(r3, Heap::kUndefinedValueRootIndex);
   }
   EmitReturnSequence();
+
+  masm_->EmitConstantPool();
 }
 
 
@@ -371,7 +373,9 @@ void FullCodeGenerator::EmitBackEdgeBookkeeping(IterationStatement* stmt,
   int weight = Min(kMaxBackEdgeWeight,
                    Max(1, distance / kCodeSizeMultiplier));
   EmitProfilingCounterDecrement(weight);
-  { Assembler::BlockTrampolinePoolScope block_trampoline_pool(masm_);
+  {
+    Assembler::BlockTrampolinePoolScope block_trampoline_pool(masm_);
+    Assembler::BlockConstantPoolEntrySharingScope prevent_entry_sharing(masm_);
     // BackEdgeTable::PatchAt manipulates this sequence.
     __ cmpi(r6, Operand::Zero());
     __ bc_short(ge, &ok);
@@ -441,9 +445,8 @@ void FullCodeGenerator::EmitReturnSequence() {
       // With 64bit we may need nop() instructions to ensure we have
       // enough space to SetDebugBreakAtReturn()
       if (is_int16(sp_delta)) {
-#if !V8_OOL_CONSTANT_POOL
-        masm_->nop();
-#endif
+        if (!FLAG_enable_ool_constant_pool)
+          masm_->nop();
         masm_->nop();
       }
 #endif
@@ -2202,12 +2205,11 @@ void FullCodeGenerator::EmitGeneratorResume(Expression *generator,
     Label slow_resume;
     __ bne(&slow_resume, cr0);
     __ LoadP(ip, FieldMemOperand(r7, JSFunction::kCodeEntryOffset));
-#if V8_OOL_CONSTANT_POOL
-    { ConstantPoolUnavailableScope constant_pool_unavailable(masm_);
-      // Load the new code object's constant pool pointer.
-      __ LoadP(kConstantPoolRegister,
-               MemOperand(ip, Code::kConstantPoolOffset - Code::kHeaderSize));
-#endif
+    {
+      ConstantPoolUnavailableScope constant_pool_unavailable(masm_);
+      if (FLAG_enable_ool_constant_pool) {
+        __ LoadConstantPoolPointerRegister(ip);
+      }
       __ LoadP(r5, FieldMemOperand(r4, JSGeneratorObject::kContinuationOffset));
       __ SmiUntag(r5);
       __ add(ip, ip, r5);
@@ -2217,9 +2219,7 @@ void FullCodeGenerator::EmitGeneratorResume(Expression *generator,
                 r0);
       __ Jump(ip);
       __ bind(&slow_resume);
-#if V8_OOL_CONSTANT_POOL
     }
-#endif
   } else {
     __ beq(&call_resume, cr0);
   }

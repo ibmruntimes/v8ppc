@@ -197,8 +197,10 @@ void LCodeGenBase::RegisterWeakObjectsInOptimizedCode(Handle<Code> code) {
       }
     }
   }
-  if (FLAG_enable_ool_constant_pool) {
-    code->constant_pool()->set_weak_object_state(
+  if (FLAG_enable_ool_constant_pool_in_heapobject) {
+    ConstantPoolArray* constant_pool =
+        reinterpret_cast<ConstantPoolArray*>(code->constant_pool());
+    constant_pool->set_weak_object_state(
         ConstantPoolArray::WEAK_OBJECTS_IN_OPTIMIZED_CODE);
   }
 #ifdef VERIFY_HEAP

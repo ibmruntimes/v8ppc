@@ -994,7 +994,8 @@ bool PagedSpace::Expand() {
 intptr_t PagedSpace::SizeOfFirstPage() {
   // If using an ool constant pool then transfer the constant pool allowance
   // from the code space to the old pointer space.
-  static const int constant_pool_delta = FLAG_enable_ool_constant_pool ? 48 : 0;
+  static const int constant_pool_delta =
+      FLAG_enable_ool_constant_pool_in_heapobject ? 48 : 0;
   int size = 0;
   switch (identity()) {
     case OLD_POINTER_SPACE:

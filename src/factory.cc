@@ -1415,8 +1415,11 @@ Handle<Code> Factory::NewCode(const CodeDesc& desc,
                               int prologue_offset,
                               bool is_debug) {
   Handle<ByteArray> reloc_info = NewByteArray(desc.reloc_size, TENURED);
-  Handle<ConstantPoolArray> constant_pool =
-      desc.origin->NewConstantPool(isolate());
+  Handle<ConstantPoolArray> constant_pool;
+
+  if (FLAG_enable_ool_constant_pool_in_heapobject) {
+    constant_pool = desc.origin->NewConstantPool(isolate());
+  }
 
   // Compute size.
   int body_size = RoundUp(desc.instr_size, kObjectAlignment);
@@ -1443,6 +1446,9 @@ Handle<Code> Factory::NewCode(const CodeDesc& desc,
   code->set_next_code_link(*undefined_value());
   code->set_handler_table(*empty_fixed_array(), SKIP_WRITE_BARRIER);
   code->set_prologue_offset(prologue_offset);
+  if (FLAG_enable_ool_constant_pool_in_code) {
+    code->set_constant_pool_offset(desc.instr_size - desc.constant_pool_size);
+  }
   if (code->kind() == Code::OPTIMIZED_FUNCTION) {
     code->set_marked_for_deoptimization(false);
   }
@@ -1452,8 +1458,10 @@ Handle<Code> Factory::NewCode(const CodeDesc& desc,
     code->set_has_debug_break_slots(true);
   }
 
-  desc.origin->PopulateConstantPool(*constant_pool);
-  code->set_constant_pool(*constant_pool);
+  if (FLAG_enable_ool_constant_pool_in_heapobject) {
+    desc.origin->PopulateConstantPool(*constant_pool);
+    code->set_constant_pool(*constant_pool);
+  }
 
   // Allow self references to created code object by patching the handle to
   // point to the newly allocated Code object.

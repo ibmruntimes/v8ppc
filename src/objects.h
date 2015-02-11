@@ -5526,6 +5526,11 @@ class Code: public HeapObject {
   inline int prologue_offset() const;
   inline void set_prologue_offset(int offset);
 
+  // [constant_pool offset]: Offset of the constant pool.
+  // Valid for FLAG_enable_ool_constant_pool_in_code only
+  inline int constant_pool_offset() const;
+  inline void set_constant_pool_offset(int offset);
+
   // Unchecked accessors to be used during GC.
   inline ByteArray* unchecked_relocation_info();
 
@@ -5653,7 +5658,8 @@ class Code: public HeapObject {
   inline void set_marked_for_deoptimization(bool flag);
 
   // [constant_pool]: The constant pool for this function.
-  inline ConstantPoolArray* constant_pool();
+  inline Address constant_pool();
+  // Valid for FLAG_enable_ool_constant_pool_in_heapobject only
   inline void set_constant_pool(Object* constant_pool);
 
   // Get the safepoint entry for the given pc.
@@ -5845,6 +5851,11 @@ class Code: public HeapObject {
   // nesting that is deeper than 5 levels into account.
   static const int kMaxLoopNestingMarker = 6;
 
+  static const int kCPHOSize =
+      FLAG_enable_ool_constant_pool_in_heapobject ? kPointerSize : 0;
+  static const int kCPCSize =
+      FLAG_enable_ool_constant_pool_in_code ? kIntSize : 0;
+
   // Layout description.
   static const int kInstructionSizeOffset = HeapObject::kHeaderSize;
   static const int kRelocationInfoOffset = kInstructionSizeOffset + kIntSize;
@@ -5864,9 +5875,13 @@ class Code: public HeapObject {
       kKindSpecificFlags1Offset + kIntSize;
   // Note: We might be able to squeeze this into the flags above.
   static const int kPrologueOffset = kKindSpecificFlags2Offset + kIntSize;
-  static const int kConstantPoolOffset = kPrologueOffset + kPointerSize;
+  static const int kConstantPoolHeapObjectOffset = kPrologueOffset + kPointerSize;
+  static const int kConstantPoolCodeOffset = kConstantPoolHeapObjectOffset + kCPHOSize;
+  static const int kHeaderPaddingStart = kConstantPoolCodeOffset + kCPCSize;
 
-  static const int kHeaderPaddingStart = kConstantPoolOffset + kPointerSize;
+  static const int kConstantPoolOffset = kCPHOSize ?
+      kConstantPoolHeapObjectOffset :
+      (kCPCSize ? kConstantPoolCodeOffset : 0);
 
   // Add padding to align the instruction start following right after
   // the Code object header.
