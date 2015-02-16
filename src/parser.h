@@ -32,6 +32,7 @@ class FunctionEntry BASE_EMBEDDED {
     kLiteralCountIndex,
     kPropertyCountIndex,
     kLanguageModeIndex,
+    kUsesSuperPropertyIndex,
     kSize
   };
 
@@ -48,6 +49,7 @@ class FunctionEntry BASE_EMBEDDED {
     DCHECK(is_valid_language_mode(backing_[kLanguageModeIndex]));
     return static_cast<LanguageMode>(backing_[kLanguageModeIndex]);
   }
+  bool uses_super_property() { return backing_[kUsesSuperPropertyIndex]; }
 
   bool is_valid() { return !backing_.is_empty(); }
 
@@ -361,7 +363,6 @@ class ParserTraits {
     typedef Variable GeneratorVariable;
 
     typedef v8::internal::AstProperties AstProperties;
-    typedef Vector<VariableProxy*> ParameterIdentifierVector;
 
     // Return types for traversing functions.
     typedef const AstRawString* Identifier;
@@ -635,16 +636,8 @@ class ParserTraits {
 
 class Parser : public ParserBase<ParserTraits> {
  public:
-  // Note that the hash seed in ParseInfo must be the hash seed from the
-  // Isolate's heap, otherwise the heap will be in an inconsistent state once
-  // the strings created by the Parser are internalized.
-  struct ParseInfo {
-    uintptr_t stack_limit;
-    uint32_t hash_seed;
-    UnicodeCache* unicode_cache;
-  };
-
-  Parser(CompilationInfo* info, ParseInfo* parse_info);
+  Parser(CompilationInfo* info, uintptr_t stack_limit, uint32_t hash_seed,
+         UnicodeCache* unicode_cache);
   ~Parser() {
     delete reusable_preparser_;
     reusable_preparser_ = NULL;
@@ -655,26 +648,14 @@ class Parser : public ParserBase<ParserTraits> {
   // Parses the source code represented by the compilation info and sets its
   // function literal.  Returns false (and deallocates any allocated AST
   // nodes) if parsing failed.
-  static bool Parse(CompilationInfo* info,
-                    bool allow_lazy = false) {
-    ParseInfo parse_info = {info->isolate()->stack_guard()->real_climit(),
-                            info->isolate()->heap()->HashSeed(),
-                            info->isolate()->unicode_cache()};
-    Parser parser(info, &parse_info);
-    parser.set_allow_lazy(allow_lazy);
-    if (parser.Parse()) {
-      info->SetLanguageMode(info->function()->language_mode());
-      return true;
-    }
-    return false;
-  }
-  bool Parse();
-  void ParseOnBackground();
+  static bool ParseStatic(CompilationInfo* info, bool allow_lazy = false);
+  bool Parse(CompilationInfo* info);
+  void ParseOnBackground(CompilationInfo* info);
 
   // Handle errors detected during parsing, move statistics to Isolate,
   // internalize strings (move them to the heap).
-  void Internalize();
-  void HandleSourceURLComments();
+  void Internalize(CompilationInfo* info);
+  void HandleSourceURLComments(CompilationInfo* info);
 
  private:
   friend class ParserTraits;
@@ -688,44 +669,29 @@ class Parser : public ParserBase<ParserTraits> {
   // https://codereview.chromium.org/7003030/ ).
   static const int kMaxNumFunctionLocals = 4194303;  // 2^22-1
 
-  enum VariableDeclarationContext {
-    kStatementListItem,
-    kStatement,
-    kForStatement
-  };
-
-  // If a list of variable declarations includes any initializers.
-  enum VariableDeclarationProperties {
-    kHasInitializers,
-    kHasNoInitializers
-  };
-
   // Returns NULL if parsing failed.
-  FunctionLiteral* ParseProgram();
+  FunctionLiteral* ParseProgram(CompilationInfo* info);
 
-  FunctionLiteral* ParseLazy();
-  FunctionLiteral* ParseLazy(Utf16CharacterStream* source);
-
-  Isolate* isolate() { return info_->isolate(); }
-  CompilationInfo* info() const { return info_; }
-  Handle<Script> script() const { return info_->script(); }
+  FunctionLiteral* ParseLazy(CompilationInfo* info);
+  FunctionLiteral* ParseLazy(CompilationInfo* info,
+                             Utf16CharacterStream* source);
 
   // Called by ParseProgram after setting up the scanner.
   FunctionLiteral* DoParseProgram(CompilationInfo* info, Scope** scope,
                                   Scope** ad_hoc_eval_scope);
 
-  void SetCachedData();
+  void SetCachedData(CompilationInfo* info);
 
   bool inside_with() const { return scope_->inside_with(); }
   ScriptCompiler::CompileOptions compile_options() const {
-    return info_->compile_options();
+    return compile_options_;
   }
   bool consume_cached_parse_data() const {
-    return compile_options() == ScriptCompiler::kConsumeParserCache &&
+    return compile_options_ == ScriptCompiler::kConsumeParserCache &&
            cached_parse_data_ != NULL;
   }
   bool produce_cached_parse_data() const {
-    return compile_options() == ScriptCompiler::kProduceParserCache;
+    return compile_options_ == ScriptCompiler::kProduceParserCache;
   }
   Scope* DeclarationScope(VariableMode mode) {
     return IsLexicalVariableMode(mode)
@@ -861,7 +827,7 @@ class Parser : public ParserBase<ParserTraits> {
       const AstRawString* function_name, int pos, Variable* fvar,
       Token::Value fvar_init_op, FunctionKind kind, bool* ok);
 
-  void ThrowPendingError();
+  void ThrowPendingError(Isolate* isolate, Handle<Script> script);
 
   TemplateLiteralState OpenTemplateLiteral(int pos);
   void AddTemplateSpan(TemplateLiteralState* state, bool tail);
@@ -875,9 +841,9 @@ class Parser : public ParserBase<ParserTraits> {
   PreParser* reusable_preparser_;
   Scope* original_scope_;  // for ES5 function declarations in sloppy eval
   Target* target_stack_;  // for break, continue statements
+  ScriptCompiler::CompileOptions compile_options_;
   ParseData* cached_parse_data_;
 
-  CompilationInfo* info_;
   bool parsing_lazy_arrow_parameters_;  // for lazily parsed arrow functions.
 
   // Pending errors.
@@ -893,6 +859,8 @@ class Parser : public ParserBase<ParserTraits> {
   int use_counts_[v8::Isolate::kUseCounterFeatureCount];
   int total_preparse_skipped_;
   HistogramTimer* pre_parse_timer_;
+
+  bool parsing_on_main_thread_;
 };
 
 

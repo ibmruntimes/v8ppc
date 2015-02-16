@@ -249,6 +249,26 @@ void FullCodeGenerator::Generate() {
     }
   }
 
+  // Possibly allocate RestParameters
+  int rest_index;
+  Variable* rest_param = scope()->rest_parameter(&rest_index);
+  if (rest_param) {
+    Comment cmnt(masm_, "[ Allocate rest parameter array");
+
+    int num_parameters = info->scope()->num_parameters();
+    int offset = num_parameters * kPointerSize;
+    __ Addu(a3, fp,
+            Operand(StandardFrameConstants::kCallerSPOffset + offset));
+    __ li(a2, Operand(Smi::FromInt(num_parameters)));
+    __ li(a1, Operand(Smi::FromInt(rest_index)));
+    __ Push(a3, a2, a1);
+
+    RestParamAccessStub stub(isolate());
+    __ CallStub(&stub);
+
+    SetVar(rest_param, v0, a1, a2);
+  }
+
   Variable* arguments = scope()->arguments();
   if (arguments != NULL) {
     // Function uses arguments object.
@@ -271,15 +291,19 @@ void FullCodeGenerator::Generate() {
     //   function, receiver address, parameter count.
     // The stub will rewrite receiever and parameter count if the previous
     // stack frame was an arguments adapter frame.
+    ArgumentsAccessStub::HasNewTarget has_new_target =
+        IsSubclassConstructor(info->function()->kind())
+            ? ArgumentsAccessStub::HAS_NEW_TARGET
+            : ArgumentsAccessStub::NO_NEW_TARGET;
     ArgumentsAccessStub::Type type;
-    if (is_strict(language_mode())) {
+    if (is_strict(language_mode()) || !is_simple_parameter_list()) {
       type = ArgumentsAccessStub::NEW_STRICT;
     } else if (function()->has_duplicate_parameters()) {
       type = ArgumentsAccessStub::NEW_SLOPPY_SLOW;
     } else {
       type = ArgumentsAccessStub::NEW_SLOPPY_FAST;
     }
-    ArgumentsAccessStub stub(isolate(), type);
+    ArgumentsAccessStub stub(isolate(), type, has_new_target);
     __ CallStub(&stub);
 
     SetVar(arguments, v0, a1, a2);
@@ -439,7 +463,11 @@ void FullCodeGenerator::EmitReturnSequence() {
     { Assembler::BlockTrampolinePoolScope block_trampoline_pool(masm_);
       // Here we use masm_-> instead of the __ macro to avoid the code coverage
       // tool from instrumenting as we rely on the code size here.
-      int32_t sp_delta = (info_->scope()->num_parameters() + 1) * kPointerSize;
+      int32_t arg_count = info_->scope()->num_parameters() + 1;
+      if (IsSubclassConstructor(info_->function()->kind())) {
+        arg_count++;
+      }
+      int32_t sp_delta = arg_count * kPointerSize;
       CodeGenerator::RecordPositions(masm_, function()->end_position() - 1);
       __ RecordJSReturn();
       masm_->mov(sp, fp);
@@ -3032,8 +3060,7 @@ void FullCodeGenerator::EmitResolvePossiblyDirectEval(int arg_count) {
 }
 
 
-void FullCodeGenerator::EmitLoadSuperConstructor(SuperReference* super_ref) {
-  DCHECK(super_ref != NULL);
+void FullCodeGenerator::EmitLoadSuperConstructor() {
   __ lw(a0, MemOperand(fp, JavaScriptFrameConstants::kFunctionOffset));
   __ Push(a0);
   __ CallRuntime(Runtime::kGetPrototype, 1);
@@ -3154,15 +3181,7 @@ void FullCodeGenerator::VisitCall(Call* expr) {
       }
     }
   } else if (call_type == Call::SUPER_CALL) {
-    if (FLAG_experimental_classes) {
-      EmitSuperConstructorCall(expr);
-    } else {
-      SuperReference* super_ref = callee->AsSuperReference();
-      EmitLoadSuperConstructor(super_ref);
-      __ Push(result_register());
-      VisitForStackValue(super_ref->this_var());
-      EmitCall(expr, CallICState::METHOD);
-    }
+    EmitSuperConstructorCall(expr);
   } else {
     DCHECK(call_type == Call::OTHER_CALL);
     // Call to an arbitrary expression not handled specially above.
@@ -3227,20 +3246,13 @@ void FullCodeGenerator::VisitCallNew(CallNew* expr) {
 
 
 void FullCodeGenerator::EmitSuperConstructorCall(Call* expr) {
-  SuperReference* super_ref = expr->expression()->AsSuperReference();
-  EmitLoadSuperConstructor(super_ref);
+  if (!ValidateSuperCall(expr)) return;
+  Variable* new_target_var = scope()->DeclarationScope()->new_target_var();
+  GetVar(result_register(), new_target_var);
+  __ Push(result_register());
+
+  EmitLoadSuperConstructor();
   __ push(result_register());
-
-  Variable* this_var = super_ref->this_var()->var();
-
-  GetVar(a0, this_var);
-  __ LoadRoot(at, Heap::kTheHoleValueRootIndex);
-  Label uninitialized_this;
-  __ Branch(&uninitialized_this, eq, a0, Operand(at));
-  __ li(a0, Operand(this_var->name()));
-  __ Push(a0);
-  __ CallRuntime(Runtime::kThrowReferenceError, 1);
-  __ bind(&uninitialized_this);
 
   // Push the arguments ("left-to-right") on the stack.
   ZoneList<Expression*>* args = expr->arguments();
@@ -3270,11 +3282,23 @@ void FullCodeGenerator::EmitSuperConstructorCall(Call* expr) {
   __ li(a2, FeedbackVector());
   __ li(a3, Operand(SmiFromSlot(expr->CallFeedbackSlot())));
 
-  // TODO(dslomov): use a different stub and propagate new.target.
-  CallConstructStub stub(isolate(), RECORD_CONSTRUCTOR_TARGET);
+  CallConstructStub stub(isolate(), SUPER_CALL_RECORD_TARGET);
   __ Call(stub.GetCode(), RelocInfo::CONSTRUCT_CALL);
 
+  __ Drop(1);
+
   RecordJSReturnSite(expr);
+
+  SuperReference* super_ref = expr->expression()->AsSuperReference();
+  Variable* this_var = super_ref->this_var()->var();
+  GetVar(a1, this_var);
+  __ LoadRoot(at, Heap::kTheHoleValueRootIndex);
+  Label uninitialized_this;
+  __ Branch(&uninitialized_this, eq, a1, Operand(at));
+  __ li(a0, Operand(this_var->name()));
+  __ Push(a0);
+  __ CallRuntime(Runtime::kThrowReferenceError, 1);
+  __ bind(&uninitialized_this);
 
   EmitVariableAssignment(this_var, Token::INIT_CONST);
   context()->Plug(v0);
@@ -4157,6 +4181,63 @@ void FullCodeGenerator::EmitCallFunction(CallRuntime* expr) {
   __ bind(&done);
 
   context()->Plug(v0);
+}
+
+
+void FullCodeGenerator::EmitDefaultConstructorCallSuper(CallRuntime* expr) {
+  Variable* new_target_var = scope()->DeclarationScope()->new_target_var();
+  GetVar(result_register(), new_target_var);
+  __ Push(result_register());
+
+  EmitLoadSuperConstructor();
+  __ Push(result_register());
+
+  // Check if the calling frame is an arguments adaptor frame.
+  Label adaptor_frame, args_set_up, runtime;
+  __ lw(a2, MemOperand(fp, StandardFrameConstants::kCallerFPOffset));
+  __ lw(a3, MemOperand(a2, StandardFrameConstants::kContextOffset));
+  __ Branch(&adaptor_frame, eq, a3,
+            Operand(Smi::FromInt(StackFrame::ARGUMENTS_ADAPTOR)));
+  // default constructor has no arguments, so no adaptor frame means no args.
+  __ mov(a0, zero_reg);
+  __ Branch(&args_set_up);
+
+  // Copy arguments from adaptor frame.
+  {
+    __ bind(&adaptor_frame);
+    __ lw(a1, MemOperand(a2, ArgumentsAdaptorFrameConstants::kLengthOffset));
+    __ SmiUntag(a1, a1);
+
+    // Subtract 1 from arguments count, for new.target.
+    __ Addu(a1, a1, Operand(-1));
+    __ mov(a0, a1);
+
+    // Get arguments pointer in a2.
+    __ sll(at, a1, kPointerSizeLog2);
+    __ addu(a2, a2, at);
+    __ Addu(a2, a2, Operand(StandardFrameConstants::kCallerSPOffset));
+    Label loop;
+    __ bind(&loop);
+    // Pre-decrement a2 with kPointerSize on each iteration.
+    // Pre-decrement in order to skip receiver.
+    __ Addu(a2, a2, Operand(-kPointerSize));
+    __ lw(a3, MemOperand(a2));
+    __ Push(a3);
+    __ Addu(a1, a1, Operand(-1));
+    __ Branch(&loop, ne, a1, Operand(zero_reg));
+  }
+
+  __ bind(&args_set_up);
+  __ sll(at, a0, kPointerSizeLog2);
+  __ Addu(at, at, Operand(sp));
+  __ lw(a1, MemOperand(at, 0));
+
+  CallConstructStub stub(isolate(), SUPER_CONSTRUCTOR_CALL);
+  __ Call(stub.GetCode(), RelocInfo::CONSTRUCT_CALL);
+
+  __ Drop(1);
+
+  context()->Plug(result_register());
 }
 
 

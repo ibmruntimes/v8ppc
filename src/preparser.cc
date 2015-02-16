@@ -180,11 +180,11 @@ PreParser::Statement PreParser::ParseStatementListItem(bool* ok) {
     case Token::CLASS:
       return ParseClassDeclaration(ok);
     case Token::CONST:
-      return ParseVariableStatement(kSourceElement, ok);
+      return ParseVariableStatement(kStatementListItem, ok);
     case Token::LET:
       DCHECK(allow_harmony_scoping());
       if (is_strict(language_mode())) {
-        return ParseVariableStatement(kSourceElement, ok);
+        return ParseVariableStatement(kStatementListItem, ok);
       }
       // Fall through.
     default:
@@ -953,9 +953,10 @@ void PreParser::ParseLazyFunctionLiteralBody(bool* ok) {
   // Position right after terminal '}'.
   DCHECK_EQ(Token::RBRACE, scanner()->peek());
   int body_end = scanner()->peek_location().end_pos;
-  log_->LogFunction(
-      body_start, body_end, function_state_->materialized_literal_count(),
-      function_state_->expected_property_count(), language_mode());
+  log_->LogFunction(body_start, body_end,
+                    function_state_->materialized_literal_count(),
+                    function_state_->expected_property_count(), language_mode(),
+                    scope_->uses_super_property());
 }
 
 

@@ -232,6 +232,26 @@ void FullCodeGenerator::Generate() {
     }
   }
 
+  // Possibly allocate RestParameters
+  int rest_index;
+  Variable* rest_param = scope()->rest_parameter(&rest_index);
+  if (rest_param) {
+    Comment cmnt(masm_, "[ Allocate rest parameter array");
+
+    int num_parameters = info->scope()->num_parameters();
+    int offset = num_parameters * kPointerSize;
+    __ leap(rdx,
+            Operand(rbp, StandardFrameConstants::kCallerSPOffset + offset));
+    __ Push(rdx);
+    __ Push(Smi::FromInt(num_parameters));
+    __ Push(Smi::FromInt(rest_index));
+
+    RestParamAccessStub stub(isolate());
+    __ CallStub(&stub);
+
+    SetVar(rest_param, rax, rbx, rdx);
+  }
+
   // Possibly allocate an arguments object.
   Variable* arguments = scope()->arguments();
   if (arguments != NULL) {
@@ -260,7 +280,7 @@ void FullCodeGenerator::Generate() {
             ? ArgumentsAccessStub::HAS_NEW_TARGET
             : ArgumentsAccessStub::NO_NEW_TARGET;
     ArgumentsAccessStub::Type type;
-    if (is_strict(language_mode())) {
+    if (is_strict(language_mode()) || !is_simple_parameter_list()) {
       type = ArgumentsAccessStub::NEW_STRICT;
     } else if (function()->has_duplicate_parameters()) {
       type = ArgumentsAccessStub::NEW_SLOPPY_SLOW;
@@ -422,8 +442,7 @@ void FullCodeGenerator::EmitReturnSequence() {
     int no_frame_start = masm_->pc_offset();
 
     int arg_count = info_->scope()->num_parameters() + 1;
-    if (FLAG_experimental_classes &&
-        IsSubclassConstructor(info_->function()->kind())) {
+    if (IsSubclassConstructor(info_->function()->kind())) {
       arg_count++;
     }
     int arguments_bytes = arg_count * kPointerSize;
@@ -3076,15 +3095,7 @@ void FullCodeGenerator::VisitCall(Call* expr) {
       }
     }
   } else if (call_type == Call::SUPER_CALL) {
-    if (FLAG_experimental_classes) {
-      EmitSuperConstructorCall(expr);
-    } else {
-      EmitLoadSuperConstructor();
-      __ Push(result_register());
-      SuperReference* super_ref = callee->AsSuperReference();
-      VisitForStackValue(super_ref->this_var());
-      EmitCall(expr, CallICState::METHOD);
-    }
+    EmitSuperConstructorCall(expr);
   } else {
     DCHECK(call_type == Call::OTHER_CALL);
     // Call to an arbitrary expression not handled specially above.
@@ -3148,24 +3159,14 @@ void FullCodeGenerator::VisitCallNew(CallNew* expr) {
 
 
 void FullCodeGenerator::EmitSuperConstructorCall(Call* expr) {
+  if (!ValidateSuperCall(expr)) return;
+
   Variable* new_target_var = scope()->DeclarationScope()->new_target_var();
   GetVar(result_register(), new_target_var);
   __ Push(result_register());
 
   EmitLoadSuperConstructor();
   __ Push(result_register());
-
-  SuperReference* super_ref = expr->expression()->AsSuperReference();
-  Variable* this_var = super_ref->this_var()->var();
-
-  GetVar(rax, this_var);
-  __ CompareRoot(rax, Heap::kTheHoleValueRootIndex);
-  Label uninitialized_this;
-  __ j(equal, &uninitialized_this);
-  __ Push(this_var->name());
-  __ CallRuntime(Runtime::kThrowReferenceError, 1);
-  __ bind(&uninitialized_this);
-
 
   // Push the arguments ("left-to-right") on the stack.
   ZoneList<Expression*>* args = expr->arguments();
@@ -3195,7 +3196,6 @@ void FullCodeGenerator::EmitSuperConstructorCall(Call* expr) {
   __ Move(rbx, FeedbackVector());
   __ Move(rdx, SmiFromSlot(expr->CallFeedbackSlot()));
 
-  // TODO(dslomov): use a different stub and propagate new.target.
   CallConstructStub stub(isolate(), SUPER_CALL_RECORD_TARGET);
   __ call(stub.GetCode(), RelocInfo::CONSTRUCT_CALL);
 
@@ -3203,6 +3203,15 @@ void FullCodeGenerator::EmitSuperConstructorCall(Call* expr) {
 
   RecordJSReturnSite(expr);
 
+  SuperReference* super_ref = expr->expression()->AsSuperReference();
+  Variable* this_var = super_ref->this_var()->var();
+  GetVar(rcx, this_var);
+  __ CompareRoot(rcx, Heap::kTheHoleValueRootIndex);
+  Label uninitialized_this;
+  __ j(equal, &uninitialized_this);
+  __ Push(this_var->name());
+  __ CallRuntime(Runtime::kThrowReferenceError, 1);
+  __ bind(&uninitialized_this);
 
   EmitVariableAssignment(this_var, Token::INIT_CONST);
   context()->Plug(rax);

@@ -1325,7 +1325,7 @@ class V8_EXPORT ScriptCompiler {
    * Compile a function for a given context. This is equivalent to running
    *
    * with (obj) {
-   *   return function() { ... }
+   *   return function(args) { ... }
    * }
    *
    * It is possible to specify multiple context extensions (obj in the above
@@ -1333,6 +1333,7 @@ class V8_EXPORT ScriptCompiler {
    */
   static Local<Function> CompileFunctionInContext(
       Isolate* isolate, Source* source, Local<Context> context,
+      size_t arguments_count, Local<String> arguments[],
       size_t context_extension_count, Local<Object> context_extensions[]);
 
  private:
@@ -6343,7 +6344,7 @@ class Internals {
   static const int kNullValueRootIndex = 7;
   static const int kTrueValueRootIndex = 8;
   static const int kFalseValueRootIndex = 9;
-  static const int kEmptyStringRootIndex = 154;
+  static const int kEmptyStringRootIndex = 155;
 
   // The external allocation limit should be below 256 MB on all architectures
   // to avoid that resource-constrained embedders run low on memory.

@@ -7,7 +7,6 @@
 #include "src/compiler.h"
 
 #include "src/ast-numbering.h"
-#include "src/ast-this-access-visitor.h"
 #include "src/bootstrapper.h"
 #include "src/codegen.h"
 #include "src/compilation-cache.h"
@@ -60,21 +59,6 @@ CompilationInfo::CompilationInfo(Handle<Script> script, Zone* zone)
       aborted_due_to_dependency_change_(false),
       osr_expr_stack_height_(0) {
   Initialize(script->GetIsolate(), BASE, zone);
-}
-
-
-CompilationInfo::CompilationInfo(Isolate* isolate, Zone* zone)
-    : flags_(kThisHasUses),
-      script_(Handle<Script>::null()),
-      source_stream_(NULL),
-      osr_ast_id_(BailoutId::None()),
-      parameter_count_(0),
-      optimization_id_(-1),
-      ast_value_factory_(NULL),
-      ast_value_factory_owned_(false),
-      aborted_due_to_dependency_change_(false),
-      osr_expr_stack_height_(0) {
-  Initialize(isolate, STUB, zone);
 }
 
 
@@ -221,6 +205,16 @@ CompilationInfo::~CompilationInfo() {
 
 
 void CompilationInfo::CommitDependencies(Handle<Code> code) {
+  bool has_dependencies = false;
+  for (int i = 0; i < DependentCode::kGroupCount; i++) {
+    has_dependencies |=
+        dependencies_[i] != NULL && dependencies_[i]->length() > 0;
+  }
+  // Avoid creating a weak cell for code with no dependencies.
+  if (!has_dependencies) return;
+
+  AllowDeferredHandleDereference get_object_wrapper;
+  WeakCell* cell = *Code::WeakCellFor(code);
   for (int i = 0; i < DependentCode::kGroupCount; i++) {
     ZoneList<Handle<HeapObject> >* group_objects = dependencies_[i];
     if (group_objects == NULL) continue;
@@ -228,9 +222,10 @@ void CompilationInfo::CommitDependencies(Handle<Code> code) {
     for (int j = 0; j < group_objects->length(); j++) {
       DependentCode::DependencyGroup group =
           static_cast<DependentCode::DependencyGroup>(i);
+      Foreign* info = *object_wrapper();
       DependentCode* dependent_code =
           DependentCode::ForObject(group_objects->at(j), group);
-      dependent_code->UpdateToFinishedCode(group, this, *code);
+      dependent_code->UpdateToFinishedCode(group, info, cell);
     }
     dependencies_[i] = NULL;  // Zone-allocated, no need to delete.
   }
@@ -238,6 +233,7 @@ void CompilationInfo::CommitDependencies(Handle<Code> code) {
 
 
 void CompilationInfo::RollbackDependencies() {
+  AllowDeferredHandleDereference get_object_wrapper;
   // Unregister from all dependent maps if not yet committed.
   for (int i = 0; i < DependentCode::kGroupCount; i++) {
     ZoneList<Handle<HeapObject> >* group_objects = dependencies_[i];
@@ -245,9 +241,10 @@ void CompilationInfo::RollbackDependencies() {
     for (int j = 0; j < group_objects->length(); j++) {
       DependentCode::DependencyGroup group =
           static_cast<DependentCode::DependencyGroup>(i);
+      Foreign* info = *object_wrapper();
       DependentCode* dependent_code =
           DependentCode::ForObject(group_objects->at(j), group);
-      dependent_code->RemoveCompilationInfo(group, this);
+      dependent_code->RemoveCompilationInfo(group, info);
     }
     dependencies_[i] = NULL;  // Zone-allocated, no need to delete.
   }
@@ -308,6 +305,11 @@ void CompilationInfo::EnsureFeedbackVector() {
     feedback_vector_ = isolate()->factory()->NewTypeFeedbackVector(
         function()->feedback_vector_spec());
   }
+}
+
+
+bool CompilationInfo::is_simple_parameter_list() {
+  return scope_->is_simple_parameter_list();
 }
 
 
@@ -660,7 +662,7 @@ MUST_USE_RESULT static MaybeHandle<Code> GetUnoptimizedCodeCommon(
   PostponeInterruptsScope postpone(info->isolate());
 
   // Parse and update CompilationInfo with the results.
-  if (!Parser::Parse(info)) return MaybeHandle<Code>();
+  if (!Parser::ParseStatic(info)) return MaybeHandle<Code>();
   Handle<SharedFunctionInfo> shared = info->shared_info();
   FunctionLiteral* lit = info->function();
   shared->set_language_mode(lit->language_mode());
@@ -751,88 +753,18 @@ static bool Renumber(CompilationInfo* info) {
 }
 
 
-static void ThrowSuperConstructorCheckError(CompilationInfo* info,
-                                            Statement* stmt) {
-  MaybeHandle<Object> obj = info->isolate()->factory()->NewTypeError(
-      "super_constructor_call", HandleVector<Object>(nullptr, 0));
-  Handle<Object> exception;
-  if (!obj.ToHandle(&exception)) return;
-
-  MessageLocation location(info->script(), stmt->position(), stmt->position());
-  USE(info->isolate()->Throw(*exception, &location));
-}
-
-
-static bool CheckSuperConstructorCall(CompilationInfo* info) {
-  FunctionLiteral* function = info->function();
-  if (FLAG_experimental_classes) return true;
-  if (!function->uses_super_constructor_call()) return true;
-  if (IsDefaultConstructor(function->kind())) return true;
-
-  ZoneList<Statement*>* body = function->body();
-  CHECK(body->length() > 0);
-
-  int super_call_index = 0;
-  // Allow 'use strict' and similiar and empty statements.
-  while (true) {
-    CHECK(super_call_index < body->length());  // We know there is a super call.
-    Statement* stmt = body->at(super_call_index);
-    if (stmt->IsExpressionStatement() &&
-        stmt->AsExpressionStatement()->expression()->IsLiteral()) {
-      super_call_index++;
-      continue;
-    }
-    if (stmt->IsEmptyStatement()) {
-      super_call_index++;
-      continue;
-    }
-    break;
-  }
-
-  Statement* stmt = body->at(super_call_index);
-  ExpressionStatement* exprStm = stmt->AsExpressionStatement();
-  if (exprStm == nullptr) {
-    ThrowSuperConstructorCheckError(info, stmt);
-    return false;
-  }
-  Call* callExpr = exprStm->expression()->AsCall();
-  if (callExpr == nullptr) {
-    ThrowSuperConstructorCheckError(info, stmt);
-    return false;
-  }
-
-  if (!callExpr->expression()->IsSuperReference()) {
-    ThrowSuperConstructorCheckError(info, stmt);
-    return false;
-  }
-
-  ZoneList<Expression*>* arguments = callExpr->arguments();
-
-  AstThisAccessVisitor this_access_visitor(info->isolate(), info->zone());
-  this_access_visitor.VisitExpressions(arguments);
-
-  if (this_access_visitor.HasStackOverflow()) return false;
-  if (this_access_visitor.UsesThis()) {
-    ThrowSuperConstructorCheckError(info, stmt);
-    return false;
-  }
-  return true;
-}
-
-
 bool Compiler::Analyze(CompilationInfo* info) {
   DCHECK(info->function() != NULL);
   if (!Rewriter::Rewrite(info)) return false;
   if (!Scope::Analyze(info)) return false;
   if (!Renumber(info)) return false;
   DCHECK(info->scope() != NULL);
-  if (!CheckSuperConstructorCall(info)) return false;
   return true;
 }
 
 
 bool Compiler::ParseAndAnalyze(CompilationInfo* info) {
-  if (!Parser::Parse(info)) return false;
+  if (!Parser::ParseStatic(info)) return false;
   return Compiler::Analyze(info);
 }
 
@@ -1073,7 +1005,7 @@ void Compiler::CompileForLiveEdit(Handle<Script> script) {
   VMState<COMPILER> state(info.isolate());
 
   info.MarkAsGlobal();
-  if (!Parser::Parse(&info)) return;
+  if (!Parser::ParseStatic(&info)) return;
 
   LiveEditFunctionTracker tracker(info.isolate(), info.function());
   if (!CompileUnoptimizedCode(&info)) return;
@@ -1123,7 +1055,7 @@ static Handle<SharedFunctionInfo> CompileToplevel(CompilationInfo* info) {
         // data while parsing eagerly is not implemented.
         info->SetCachedData(NULL, ScriptCompiler::kNoCompileOptions);
       }
-      if (!Parser::Parse(info, parse_allow_lazy)) {
+      if (!Parser::ParseStatic(info, parse_allow_lazy)) {
         return Handle<SharedFunctionInfo>::null();
       }
     }
@@ -1265,6 +1197,12 @@ Handle<SharedFunctionInfo> Compiler::CompileScript(
   isolate->counters()->total_load_size()->Increment(source_length);
   isolate->counters()->total_compile_size()->Increment(source_length);
 
+  // TODO(rossberg): The natives do not yet obey strong mode rules
+  // (for example, some macros use '==').
+  bool use_strong = FLAG_use_strong && !isolate->bootstrapper()->IsActive();
+  LanguageMode language_mode =
+      construct_language_mode(FLAG_use_strict, use_strong);
+
   CompilationCache* compilation_cache = isolate->compilation_cache();
 
   // Do a lookup in the compilation cache but not for extensions.
@@ -1273,7 +1211,8 @@ Handle<SharedFunctionInfo> Compiler::CompileScript(
   if (extension == NULL) {
     maybe_result = compilation_cache->LookupScript(
         source, script_name, line_offset, column_offset,
-        is_embedder_debug_script, is_shared_cross_origin, context);
+        is_embedder_debug_script, is_shared_cross_origin, context,
+        language_mode);
     if (maybe_result.is_null() && FLAG_serialize_toplevel &&
         compile_options == ScriptCompiler::kConsumeCodeCache &&
         !isolate->debug()->is_loaded()) {
@@ -1324,14 +1263,11 @@ Handle<SharedFunctionInfo> Compiler::CompileScript(
       info.PrepareForSerializing();
     }
 
-    LanguageMode language_mode =
-        construct_language_mode(FLAG_use_strict, FLAG_use_strong);
     info.SetLanguageMode(
         static_cast<LanguageMode>(info.language_mode() | language_mode));
-
     result = CompileToplevel(&info);
     if (extension == NULL && !result.is_null() && !result->dont_cache()) {
-      compilation_cache->PutScript(source, context, result);
+      compilation_cache->PutScript(source, context, language_mode, result);
       if (FLAG_serialize_toplevel &&
           compile_options == ScriptCompiler::kProduceCodeCache) {
         HistogramTimerScope histogram_timer(
@@ -1565,7 +1501,7 @@ CompilationPhase::CompilationPhase(const char* name, CompilationInfo* info)
 
 CompilationPhase::~CompilationPhase() {
   if (FLAG_hydrogen_stats) {
-    unsigned size = zone()->allocation_size();
+    size_t size = zone()->allocation_size();
     size += info_->zone()->allocation_size() - info_zone_start_allocation_size_;
     isolate()->GetHStatistics()->SaveTiming(name_, timer_.Elapsed(), size);
   }

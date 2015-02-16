@@ -67,10 +67,9 @@ class ParserBase : public Traits {
   typedef typename Traits::Type::Literal LiteralT;
   typedef typename Traits::Type::ObjectLiteralProperty ObjectLiteralPropertyT;
 
-  ParserBase(Isolate* isolate, Zone* zone, Scanner* scanner,
-             uintptr_t stack_limit, v8::Extension* extension,
-             AstValueFactory* ast_value_factory, ParserRecorder* log,
-             typename Traits::Type::Parser this_object)
+  ParserBase(Zone* zone, Scanner* scanner, uintptr_t stack_limit,
+             v8::Extension* extension, AstValueFactory* ast_value_factory,
+             ParserRecorder* log, typename Traits::Type::Parser this_object)
       : Traits(this_object),
         parenthesized_function_(false),
         scope_(NULL),
@@ -81,7 +80,6 @@ class ParserBase : public Traits {
         log_(log),
         mode_(PARSE_EAGERLY),  // Lazy mode must be set explicitly.
         stack_limit_(stack_limit),
-        isolate_(isolate),
         zone_(zone),
         scanner_(scanner),
         stack_overflow_(false),
@@ -171,6 +169,15 @@ class ParserBase : public Traits {
     PARSE_LAZILY,
     PARSE_EAGERLY
   };
+
+  enum VariableDeclarationContext {
+    kStatementListItem,
+    kStatement,
+    kForStatement
+  };
+
+  // If a list of variable declarations includes any initializers.
+  enum VariableDeclarationProperties { kHasInitializers, kHasNoInitializers };
 
   class Checkpoint;
   class ObjectLiteralCheckerBase;
@@ -312,13 +319,11 @@ class ParserBase : public Traits {
            kind == kNormalFunction);
     Scope* result =
         new (zone()) Scope(zone(), parent, scope_type, ast_value_factory());
-    bool uninitialized_this =
-        FLAG_experimental_classes && IsSubclassConstructor(kind);
+    bool uninitialized_this = IsSubclassConstructor(kind);
     result->Initialize(uninitialized_this);
     return result;
   }
 
-  Isolate* isolate() const { return isolate_; }
   Scanner* scanner() const { return scanner_; }
   AstValueFactory* ast_value_factory() const { return ast_value_factory_; }
   int position() { return scanner_->location().beg_pos; }
@@ -653,7 +658,6 @@ class ParserBase : public Traits {
   uintptr_t stack_limit_;
 
  private:
-  Isolate* isolate_;
   Zone* zone_;
 
   Scanner* scanner_;
@@ -1195,7 +1199,6 @@ class PreParserTraits {
     typedef void GeneratorVariable;
 
     typedef int AstProperties;
-    typedef Vector<PreParserIdentifier> ParameterIdentifierVector;
 
     // Return types for traversing functions.
     typedef PreParserIdentifier Identifier;
@@ -1507,10 +1510,9 @@ class PreParser : public ParserBase<PreParserTraits> {
     kPreParseSuccess
   };
 
-  PreParser(Isolate* isolate, Zone* zone, Scanner* scanner,
-            AstValueFactory* ast_value_factory, ParserRecorder* log,
-            uintptr_t stack_limit)
-      : ParserBase<PreParserTraits>(isolate, zone, scanner, stack_limit, NULL,
+  PreParser(Zone* zone, Scanner* scanner, AstValueFactory* ast_value_factory,
+            ParserRecorder* log, uintptr_t stack_limit)
+      : ParserBase<PreParserTraits>(zone, scanner, stack_limit, NULL,
                                     ast_value_factory, log, this) {}
 
   // Pre-parse the program from the character stream; returns true on
@@ -1556,18 +1558,6 @@ class PreParser : public ParserBase<PreParserTraits> {
   // rich enough to let us recognize and propagate the constructs that
   // are either being counted in the preparser data, or is important
   // to throw the correct syntax error exceptions.
-
-  enum VariableDeclarationContext {
-    kSourceElement,
-    kStatement,
-    kForStatement
-  };
-
-  // If a list of variable declarations includes any initializers.
-  enum VariableDeclarationProperties {
-    kHasInitializers,
-    kHasNoInitializers
-  };
 
   // All ParseXXX functions take as the last argument an *ok parameter
   // which is set to false if parsing failed; it is unchanged otherwise.
@@ -2445,6 +2435,7 @@ ParserBase<Traits>::ParseBinaryExpression(int prec, bool accept_IN, bool* ok) {
     // prec1 >= 4
     while (Precedence(peek(), accept_IN) == prec1) {
       Token::Value op = Next();
+      Scanner::Location op_location = scanner()->location();
       int pos = position();
       ExpressionT y = ParseBinaryExpression(prec1 + 1, accept_IN, CHECK_OK);
 
@@ -2463,6 +2454,11 @@ ParserBase<Traits>::ParseBinaryExpression(int prec, bool accept_IN, bool* ok) {
           case Token::NE: cmp = Token::EQ; break;
           case Token::NE_STRICT: cmp = Token::EQ_STRICT; break;
           default: break;
+        }
+        if (cmp == Token::EQ && is_strong(language_mode())) {
+          ReportMessageAt(op_location, "strong_equal");
+          *ok = false;
+          return this->EmptyExpression();
         }
         x = factory()->NewCompareOperation(cmp, x, y, pos);
         if (cmp != op) {
@@ -2740,7 +2736,6 @@ ParserBase<Traits>::ParseMemberExpression(bool* ok) {
 template <class Traits>
 typename ParserBase<Traits>::ExpressionT
 ParserBase<Traits>::ParseSuperExpression(bool is_new, bool* ok) {
-  int beg_pos = position();
   Expect(Token::SUPER, CHECK_OK);
 
   FunctionState* function_state = function_state_;
@@ -2757,14 +2752,13 @@ ParserBase<Traits>::ParseSuperExpression(bool is_new, bool* ok) {
       return this->SuperReference(scope_, factory());
     }
     // new super() is never allowed.
-    // super() is only allowed in constructor
-    if (!is_new && peek() == Token::LPAREN && i::IsConstructor(kind)) {
-      scope_->RecordSuperConstructorCallUsage();
+    // super() is only allowed in derived constructor
+    if (!is_new && peek() == Token::LPAREN && IsSubclassConstructor(kind)) {
       return this->SuperReference(scope_, factory());
     }
   }
 
-  ReportMessageAt(Scanner::Location(beg_pos, position()), "unexpected_super");
+  ReportMessageAt(scanner()->location(), "unexpected_super");
   *ok = false;
   return this->EmptyExpression();
 }

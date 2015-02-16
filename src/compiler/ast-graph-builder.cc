@@ -449,6 +449,11 @@ bool AstGraphBuilder::CreateGraph() {
   // Build the arguments object if it is used.
   BuildArgumentsObject(scope->arguments());
 
+  // Build rest arguments array if it is used.
+  int rest_index;
+  Variable* rest_parameter = scope->rest_parameter(&rest_index);
+  BuildRestArgumentsArray(rest_parameter, rest_index);
+
   // Emit tracing call if requested to do so.
   if (FLAG_trace) {
     NewNode(javascript()->CallRuntime(Runtime::kTraceEnter, 0));
@@ -1357,15 +1362,7 @@ void AstGraphBuilder::VisitClassLiteralContents(ClassLiteral* expr) {
       }
     }
 
-    // TODO(mstarzinger): This is temporary to make "super" work and replicates
-    // the existing FullCodeGenerator::NeedsHomeObject predicate.
-    if (FunctionLiteral::NeedsHomeObject(property->value())) {
-      Unique<Name> name =
-          MakeUnique(isolate()->factory()->home_object_symbol());
-      Node* store = NewNode(javascript()->StoreNamed(language_mode(), name),
-                            value, receiver);
-      PrepareFrameState(store, BailoutId::None());
-    }
+    AddHomeObjectIfNeeded(property->value(), value, receiver);
   }
 
   // Transform both the class literal and the prototype to fast properties.
@@ -1382,6 +1379,17 @@ void AstGraphBuilder::VisitClassLiteralContents(ClassLiteral* expr) {
 
   PrepareFrameState(literal, expr->id(), ast_context()->GetStateCombine());
   ast_context()->ProduceValue(literal);
+}
+
+
+void AstGraphBuilder::AddHomeObjectIfNeeded(Expression* expr, Node* function,
+                                            Node* home_object) {
+  if (FunctionLiteral::NeedsHomeObject(expr)) {
+    Unique<Name> name = MakeUnique(isolate()->factory()->home_object_symbol());
+    Node* store = NewNode(javascript()->StoreNamed(language_mode(), name),
+                          function, home_object);
+    PrepareFrameState(store, BailoutId::None());
+  }
 }
 
 
@@ -1486,6 +1494,8 @@ void AstGraphBuilder::VisitObjectLiteral(ObjectLiteral* expr) {
                 NewNode(javascript()->StoreNamed(language_mode(), name),
                         literal, value);
             PrepareFrameState(store, key->id());
+
+            AddHomeObjectIfNeeded(property->value(), value, literal);
           } else {
             VisitForEffect(property->value());
           }
@@ -1502,6 +1512,8 @@ void AstGraphBuilder::VisitObjectLiteral(ObjectLiteral* expr) {
           const Operator* op =
               javascript()->CallRuntime(Runtime::kSetProperty, 4);
           NewNode(op, receiver, key, value, language);
+
+          AddHomeObjectIfNeeded(property->value(), value, receiver);
         }
         break;
       }
@@ -1541,6 +1553,8 @@ void AstGraphBuilder::VisitObjectLiteral(ObjectLiteral* expr) {
     Node* setter = environment()->Pop();
     Node* getter = environment()->Pop();
     Node* name = environment()->Pop();
+    AddHomeObjectIfNeeded(it->second->getter, getter, literal);
+    AddHomeObjectIfNeeded(it->second->setter, setter, literal);
     Node* attr = jsgraph()->Constant(NONE);
     const Operator* op =
         javascript()->CallRuntime(Runtime::kDefineAccessorPropertyUnchecked, 5);
@@ -1572,6 +1586,8 @@ void AstGraphBuilder::VisitObjectLiteral(ObjectLiteral* expr) {
     Node* value = environment()->Pop();
     Node* key = environment()->Pop();
     Node* receiver = environment()->Pop();
+
+    AddHomeObjectIfNeeded(property->value(), value, receiver);
 
     switch (property->kind()) {
       case ObjectLiteral::Property::CONSTANT:
@@ -2463,6 +2479,22 @@ Node* AstGraphBuilder::BuildArgumentsObject(Variable* arguments) {
   DCHECK(arguments->IsContextSlot() || arguments->IsStackAllocated());
   // This should never lazy deopt, so it is fine to send invalid bailout id.
   BuildVariableAssignment(arguments, object, Token::ASSIGN, BailoutId::None());
+
+  return object;
+}
+
+
+Node* AstGraphBuilder::BuildRestArgumentsArray(Variable* rest, int index) {
+  if (rest == NULL) return NULL;
+
+  DCHECK(index >= 0);
+  const Operator* op = javascript()->CallRuntime(Runtime::kNewRestParamSlow, 1);
+  Node* object = NewNode(op, jsgraph()->SmiConstant(index));
+
+  // Assign the object to the rest array
+  DCHECK(rest->IsContextSlot() || rest->IsStackAllocated());
+  // This should never lazy deopt, so it is fine to send invalid bailout id.
+  BuildVariableAssignment(rest, object, Token::ASSIGN, BailoutId::None());
 
   return object;
 }

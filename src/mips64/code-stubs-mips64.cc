@@ -1585,6 +1585,7 @@ void FunctionPrototypeStub::Generate(MacroAssembler* masm) {
 
 
 void ArgumentsAccessStub::GenerateReadElement(MacroAssembler* masm) {
+  CHECK(!has_new_target());
   // The displacement is the offset of the last parameter (if any)
   // relative to the frame pointer.
   const int kDisplacement =
@@ -1643,6 +1644,9 @@ void ArgumentsAccessStub::GenerateNewSloppySlow(MacroAssembler* masm) {
   // sp[0] : number of parameters
   // sp[4] : receiver displacement
   // sp[8] : function
+
+  CHECK(!has_new_target());
+
   // Check if the calling frame is an arguments adaptor frame.
   Label runtime;
   __ ld(a3, MemOperand(fp, StandardFrameConstants::kCallerFPOffset));
@@ -1673,6 +1677,8 @@ void ArgumentsAccessStub::GenerateNewSloppyFast(MacroAssembler* masm) {
   // Registers used over whole function:
   //  a6 : allocated object (tagged)
   //  t1 : mapped parameter count (tagged)
+
+  CHECK(!has_new_target());
 
   __ ld(a1, MemOperand(sp, 0 * kPointerSize));
   // a1 = parameter count (tagged)
@@ -1930,6 +1936,12 @@ void ArgumentsAccessStub::GenerateNewStrict(MacroAssembler* masm) {
   // Patch the arguments.length and the parameters pointer.
   __ bind(&adaptor_frame);
   __ ld(a1, MemOperand(a2, ArgumentsAdaptorFrameConstants::kLengthOffset));
+  if (has_new_target()) {
+    // Subtract 1 from smi-tagged arguments count.
+    __ SmiUntag(a1);
+    __ Daddu(a1, a1, Operand(-1));
+    __ SmiTag(a1);
+  }
   __ sd(a1, MemOperand(sp, 0));
   __ SmiScale(at, a1, kPointerSizeLog2);
 
@@ -2010,6 +2022,34 @@ void ArgumentsAccessStub::GenerateNewStrict(MacroAssembler* masm) {
   // Do the runtime call to allocate the arguments object.
   __ bind(&runtime);
   __ TailCallRuntime(Runtime::kNewStrictArguments, 3, 1);
+}
+
+
+void RestParamAccessStub::GenerateNew(MacroAssembler* masm) {
+  // sp[0] : index of rest parameter
+  // sp[4] : number of parameters
+  // sp[8] : receiver displacement
+  // Check if the calling frame is an arguments adaptor frame.
+
+  Label runtime;
+  __ ld(a2, MemOperand(fp, StandardFrameConstants::kCallerFPOffset));
+  __ ld(a3, MemOperand(a2, StandardFrameConstants::kContextOffset));
+  __ Branch(&runtime, ne, a3,
+            Operand(Smi::FromInt(StackFrame::ARGUMENTS_ADAPTOR)));
+
+  // Patch the arguments.length and the parameters pointer.
+  __ ld(a1, MemOperand(a2, ArgumentsAdaptorFrameConstants::kLengthOffset));
+  __ sd(a1, MemOperand(sp, 1 * kPointerSize));
+  __ SmiScale(at, a1, kPointerSizeLog2);
+
+  __ Daddu(a3, a2, Operand(at));
+
+  __ Daddu(a3, a3, Operand(StandardFrameConstants::kCallerSPOffset));
+  __ sd(a3, MemOperand(sp, 2 * kPointerSize));
+
+  // Do the runtime call to allocate the arguments object.
+  __ bind(&runtime);
+  __ TailCallRuntime(Runtime::kNewRestParam, 3, 1);
 }
 
 
@@ -2740,7 +2780,15 @@ void CallConstructStub::Generate(MacroAssembler* masm) {
   }
 
   // Pass function as original constructor.
-  __ mov(a3, a1);
+  if (IsSuperConstructorCall()) {
+    __ li(a4, Operand(1 * kPointerSize));
+    __ dsll(at, a0, kPointerSizeLog2);
+    __ daddu(a4, a4, at);
+    __ daddu(at, sp, a4);
+    __ ld(a3, MemOperand(at, 0));
+  } else {
+    __ mov(a3, a1);
+  }
 
   // Jump to the function-specific construct stub.
   Register jmp_reg = a4;

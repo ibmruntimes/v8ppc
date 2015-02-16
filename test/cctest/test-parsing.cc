@@ -160,8 +160,8 @@ TEST(ScanHTMLEndComments) {
     i::Zone zone;
     i::AstValueFactory ast_value_factory(
         &zone, CcTest::i_isolate()->heap()->HashSeed());
-    i::PreParser preparser(CcTest::i_isolate(), &zone, &scanner,
-                           &ast_value_factory, &log, stack_limit);
+    i::PreParser preparser(&zone, &scanner, &ast_value_factory, &log,
+                           stack_limit);
     preparser.set_allow_lazy(true);
     i::PreParser::PreParseResult result = preparser.PreParseProgram();
     CHECK_EQ(i::PreParser::kPreParseSuccess, result);
@@ -178,8 +178,8 @@ TEST(ScanHTMLEndComments) {
     i::Zone zone;
     i::AstValueFactory ast_value_factory(
         &zone, CcTest::i_isolate()->heap()->HashSeed());
-    i::PreParser preparser(CcTest::i_isolate(), &zone, &scanner,
-                           &ast_value_factory, &log, stack_limit);
+    i::PreParser preparser(&zone, &scanner, &ast_value_factory, &log,
+                           stack_limit);
     preparser.set_allow_lazy(true);
     i::PreParser::PreParseResult result = preparser.PreParseProgram();
     // Even in the case of a syntax error, kPreParseSuccess is returned.
@@ -328,8 +328,8 @@ TEST(StandAlonePreParser) {
     i::Zone zone;
     i::AstValueFactory ast_value_factory(
         &zone, CcTest::i_isolate()->heap()->HashSeed());
-    i::PreParser preparser(CcTest::i_isolate(), &zone, &scanner,
-                           &ast_value_factory, &log, stack_limit);
+    i::PreParser preparser(&zone, &scanner, &ast_value_factory, &log,
+                           stack_limit);
     preparser.set_allow_lazy(true);
     preparser.set_allow_natives(true);
     preparser.set_allow_harmony_arrow_functions(true);
@@ -366,8 +366,8 @@ TEST(StandAlonePreParserNoNatives) {
     i::Zone zone;
     i::AstValueFactory ast_value_factory(
         &zone, CcTest::i_isolate()->heap()->HashSeed());
-    i::PreParser preparser(CcTest::i_isolate(), &zone, &scanner,
-                           &ast_value_factory, &log, stack_limit);
+    i::PreParser preparser(&zone, &scanner, &ast_value_factory, &log,
+                           stack_limit);
     preparser.set_allow_lazy(true);
     i::PreParser::PreParseResult result = preparser.PreParseProgram();
     CHECK_EQ(i::PreParser::kPreParseSuccess, result);
@@ -435,8 +435,7 @@ TEST(RegressChromium62639) {
   i::Zone zone;
   i::AstValueFactory ast_value_factory(&zone,
                                        CcTest::i_isolate()->heap()->HashSeed());
-  i::PreParser preparser(CcTest::i_isolate(), &zone, &scanner,
-                         &ast_value_factory, &log,
+  i::PreParser preparser(&zone, &scanner, &ast_value_factory, &log,
                          CcTest::i_isolate()->stack_guard()->real_climit());
   preparser.set_allow_lazy(true);
   i::PreParser::PreParseResult result = preparser.PreParseProgram();
@@ -471,8 +470,7 @@ TEST(Regress928) {
   i::Zone zone;
   i::AstValueFactory ast_value_factory(&zone,
                                        CcTest::i_isolate()->heap()->HashSeed());
-  i::PreParser preparser(CcTest::i_isolate(), &zone, &scanner,
-                         &ast_value_factory, &log,
+  i::PreParser preparser(&zone, &scanner, &ast_value_factory, &log,
                          CcTest::i_isolate()->stack_guard()->real_climit());
   preparser.set_allow_lazy(true);
   i::PreParser::PreParseResult result = preparser.PreParseProgram();
@@ -524,8 +522,8 @@ TEST(PreParseOverflow) {
   i::Zone zone;
   i::AstValueFactory ast_value_factory(&zone,
                                        CcTest::i_isolate()->heap()->HashSeed());
-  i::PreParser preparser(CcTest::i_isolate(), &zone, &scanner,
-                         &ast_value_factory, &log, stack_limit);
+  i::PreParser preparser(&zone, &scanner, &ast_value_factory, &log,
+                         stack_limit);
   preparser.set_allow_lazy(true);
   preparser.set_allow_harmony_arrow_functions(true);
   i::PreParser::PreParseResult result = preparser.PreParseProgram();
@@ -962,12 +960,10 @@ TEST(ScopeUsesArgumentsSuperThis) {
     NONE = 0,
     ARGUMENTS = 1,
     SUPER_PROPERTY = 1 << 1,
-    SUPER_CONSTRUCTOR_CALL = 1 << 2,
-    THIS = 1 << 3,
-    INNER_ARGUMENTS = 1 << 4,
-    INNER_SUPER_PROPERTY = 1 << 5,
-    INNER_SUPER_CONSTRUCTOR_CALL = 1 << 6,
-    INNER_THIS = 1 << 7
+    THIS = 1 << 2,
+    INNER_ARGUMENTS = 1 << 3,
+    INNER_SUPER_PROPERTY = 1 << 4,
+    INNER_THIS = 1 << 5
   };
 
   static const struct {
@@ -977,14 +973,13 @@ TEST(ScopeUsesArgumentsSuperThis) {
     {"", NONE},
     {"return this", THIS},
     {"return arguments", ARGUMENTS},
-    {"return super()", SUPER_CONSTRUCTOR_CALL},
     {"return super.x", SUPER_PROPERTY},
     {"return arguments[0]", ARGUMENTS},
     {"return this + arguments[0]", ARGUMENTS | THIS},
     {"return this + arguments[0] + super.x",
      ARGUMENTS | SUPER_PROPERTY | THIS},
     {"return x => this + x", INNER_THIS},
-    {"return x => super() + x", INNER_SUPER_CONSTRUCTOR_CALL},
+    {"return x => super.f() + x", INNER_SUPER_PROPERTY},
     {"this.foo = 42;", THIS},
     {"this.foo();", THIS},
     {"if (foo()) { this.f() }", THIS},
@@ -995,8 +990,8 @@ TEST(ScopeUsesArgumentsSuperThis) {
     {"if (true) { while (true) this.foo(arguments) }", ARGUMENTS | THIS},
     // Multiple nesting levels must work as well.
     {"while (true) { while (true) { while (true) return this } }", THIS},
-    {"while (true) { while (true) { while (true) return super() } }",
-     SUPER_CONSTRUCTOR_CALL},
+    {"while (true) { while (true) { while (true) return super.f() } }",
+     SUPER_PROPERTY},
     {"if (1) { return () => { while (true) new this() } }", INNER_THIS},
     // Note that propagation of the inner_uses_this() value does not
     // cross boundaries of normal functions onto parent scopes.
@@ -1011,8 +1006,8 @@ TEST(ScopeUsesArgumentsSuperThis) {
     // Flags must be correctly set when using block scoping.
     {"\"use strict\"; while (true) { let x; this, arguments; }",
      INNER_ARGUMENTS | INNER_THIS},
-    {"\"use strict\"; while (true) { let x; this, super(), arguments; }",
-     INNER_ARGUMENTS | INNER_SUPER_CONSTRUCTOR_CALL | INNER_THIS},
+    {"\"use strict\"; while (true) { let x; this, super.f(), arguments; }",
+     INNER_ARGUMENTS | INNER_SUPER_PROPERTY | INNER_THIS},
     {"\"use strict\"; if (foo()) { let x; this.f() }", INNER_THIS},
     {"\"use strict\"; if (foo()) { let x; super.f() }",
      INNER_SUPER_PROPERTY},
@@ -1034,11 +1029,8 @@ TEST(ScopeUsesArgumentsSuperThis) {
 
   for (unsigned j = 0; j < arraysize(surroundings); ++j) {
     for (unsigned i = 0; i < arraysize(source_data); ++i) {
-      // Super constructor call is only allowed in constructor.
       // Super property is only allowed in constructor and method.
-      if (((source_data[i].expected & SUPER_CONSTRUCTOR_CALL) ||
-           (source_data[i].expected & SUPER_PROPERTY) ||
-           (source_data[i].expected & INNER_SUPER_CONSTRUCTOR_CALL) ||
+      if (((source_data[i].expected & SUPER_PROPERTY) ||
            (source_data[i].expected & INNER_SUPER_PROPERTY) ||
            (source_data[i].expected == NONE)) && j != 2) {
         continue;
@@ -1054,17 +1046,15 @@ TEST(ScopeUsesArgumentsSuperThis) {
               .ToHandleChecked();
       i::Handle<i::Script> script = factory->NewScript(source);
       i::CompilationInfoWithZone info(script);
-      i::Parser::ParseInfo parse_info = {isolate->stack_guard()->real_climit(),
-                                         isolate->heap()->HashSeed(),
-                                         isolate->unicode_cache()};
-      i::Parser parser(&info, &parse_info);
+      i::Parser parser(&info, isolate->stack_guard()->real_climit(),
+                       isolate->heap()->HashSeed(), isolate->unicode_cache());
       parser.set_allow_harmony_arrow_functions(true);
       parser.set_allow_harmony_classes(true);
       parser.set_allow_harmony_object_literals(true);
       parser.set_allow_harmony_scoping(true);
       parser.set_allow_harmony_sloppy(true);
       info.MarkAsGlobal();
-      CHECK(parser.Parse());
+      CHECK(parser.Parse(&info));
       CHECK(i::Rewriter::Rewrite(&info));
       CHECK(i::Scope::Analyze(&info));
       CHECK(info.function() != NULL);
@@ -1083,15 +1073,11 @@ TEST(ScopeUsesArgumentsSuperThis) {
                scope->uses_arguments());
       CHECK_EQ((source_data[i].expected & SUPER_PROPERTY) != 0,
                scope->uses_super_property());
-      CHECK_EQ((source_data[i].expected & SUPER_CONSTRUCTOR_CALL) != 0,
-               scope->uses_super_constructor_call());
       CHECK_EQ((source_data[i].expected & THIS) != 0, scope->uses_this());
       CHECK_EQ((source_data[i].expected & INNER_ARGUMENTS) != 0,
                scope->inner_uses_arguments());
       CHECK_EQ((source_data[i].expected & INNER_SUPER_PROPERTY) != 0,
                scope->inner_uses_super_property());
-      CHECK_EQ((source_data[i].expected & INNER_SUPER_CONSTRUCTOR_CALL) != 0,
-               scope->inner_uses_super_constructor_call());
       CHECK_EQ((source_data[i].expected & INNER_THIS) != 0,
                scope->inner_uses_this());
     }
@@ -1312,16 +1298,14 @@ TEST(ScopePositions) {
     CHECK_EQ(source->length(), kProgramSize);
     i::Handle<i::Script> script = factory->NewScript(source);
     i::CompilationInfoWithZone info(script);
-    i::Parser::ParseInfo parse_info = {isolate->stack_guard()->real_climit(),
-                                       isolate->heap()->HashSeed(),
-                                       isolate->unicode_cache()};
-    i::Parser parser(&info, &parse_info);
+    i::Parser parser(&info, isolate->stack_guard()->real_climit(),
+                     isolate->heap()->HashSeed(), isolate->unicode_cache());
     parser.set_allow_lazy(true);
     parser.set_allow_harmony_scoping(true);
     parser.set_allow_harmony_arrow_functions(true);
     info.MarkAsGlobal();
     info.SetLanguageMode(source_data[i].language_mode);
-    parser.Parse();
+    parser.Parse(&info);
     CHECK(info.function() != NULL);
 
     // Check scope types and positions.
@@ -1457,8 +1441,8 @@ void TestParserSyncWithFlags(i::Handle<i::String> source,
     i::Zone zone;
     i::AstValueFactory ast_value_factory(
         &zone, CcTest::i_isolate()->heap()->HashSeed());
-    i::PreParser preparser(CcTest::i_isolate(), &zone, &scanner,
-                           &ast_value_factory, &log, stack_limit);
+    i::PreParser preparser(&zone, &scanner, &ast_value_factory, &log,
+                           stack_limit);
     SetParserFlags(&preparser, flags);
     scanner.Initialize(&stream);
     i::PreParser::PreParseResult result = preparser.PreParseProgram(
@@ -1473,13 +1457,11 @@ void TestParserSyncWithFlags(i::Handle<i::String> source,
   {
     i::Handle<i::Script> script = factory->NewScript(source);
     i::CompilationInfoWithZone info(script);
-    i::Parser::ParseInfo parse_info = {isolate->stack_guard()->real_climit(),
-                                       isolate->heap()->HashSeed(),
-                                       isolate->unicode_cache()};
-    i::Parser parser(&info, &parse_info);
+    i::Parser parser(&info, isolate->stack_guard()->real_climit(),
+                     isolate->heap()->HashSeed(), isolate->unicode_cache());
     SetParserFlags(&parser, flags);
     info.MarkAsGlobal();
-    parser.Parse();
+    parser.Parse(&info);
     function = info.function();
     if (function) {
       parser_materialized_literals = function->materialized_literal_count();
@@ -2545,7 +2527,8 @@ TEST(DontRegressPreParserDataSizes) {
     // No functions.
     {"var x = 42;", 0},
     // Functions.
-    {"function foo() {}", 1}, {"function foo() {} function bar() {}", 2},
+    {"function foo() {}", 1},
+    {"function foo() {} function bar() {}", 2},
     // Getter / setter functions are recorded as functions if they're on the top
     // level.
     {"var x = {get foo(){} };", 1},
@@ -2564,7 +2547,7 @@ TEST(DontRegressPreParserDataSizes) {
     i::CompilationInfoWithZone info(script);
     i::ScriptData* sd = NULL;
     info.SetCachedData(&sd, v8::ScriptCompiler::kProduceParserCache);
-    i::Parser::Parse(&info, true);
+    i::Parser::ParseStatic(&info, true);
     i::ParseData* pd = i::ParseData::FromCachedData(sd);
 
     if (pd->FunctionCount() != test_cases[i].functions) {
@@ -3439,12 +3422,11 @@ TEST(InnerAssignment) {
 
           i::Handle<i::Script> script = factory->NewScript(source);
           i::CompilationInfoWithZone info(script);
-          i::Parser::ParseInfo parse_info = {
-              isolate->stack_guard()->real_climit(),
-              isolate->heap()->HashSeed(), isolate->unicode_cache()};
-          i::Parser parser(&info, &parse_info);
+          i::Parser parser(&info, isolate->stack_guard()->real_climit(),
+                           isolate->heap()->HashSeed(),
+                           isolate->unicode_cache());
           parser.set_allow_harmony_scoping(true);
-          CHECK(parser.Parse());
+          CHECK(parser.Parse(&info));
           CHECK(i::Compiler::Analyze(&info));
           CHECK(info.function() != NULL);
 
@@ -3722,7 +3704,6 @@ TEST(SuperCall) {
                                    {NULL, NULL}};
 
   const char* success_data[] = {
-    "class C { constructor() { super(); } }",
     "class C extends B { constructor() { super(); } }",
     "class C extends B { constructor() { () => super(); } }",
     NULL
@@ -3738,6 +3719,7 @@ TEST(SuperCall) {
                     always_flags, arraysize(always_flags));
 
   const char* error_data[] = {
+    "class C { constructor() { super(); } }",
     "class C { method() { super(); } }",
     "class C { method() { () => super(); } }",
     "class C { *method() { super(); } }",
@@ -5052,15 +5034,13 @@ TEST(BasicImportExportParsing) {
     {
       i::Handle<i::Script> script = factory->NewScript(source);
       i::CompilationInfoWithZone info(script);
-      i::Parser::ParseInfo parse_info = {isolate->stack_guard()->real_climit(),
-                                         isolate->heap()->HashSeed(),
-                                         isolate->unicode_cache()};
-      i::Parser parser(&info, &parse_info);
+      i::Parser parser(&info, isolate->stack_guard()->real_climit(),
+                       isolate->heap()->HashSeed(), isolate->unicode_cache());
       parser.set_allow_harmony_classes(true);
       parser.set_allow_harmony_modules(true);
       parser.set_allow_harmony_scoping(true);
       info.MarkAsModule();
-      if (!parser.Parse()) {
+      if (!parser.Parse(&info)) {
         i::Handle<i::JSObject> exception_handle(
             i::JSObject::cast(isolate->pending_exception()));
         i::Handle<i::String> message_string =
@@ -5082,15 +5062,13 @@ TEST(BasicImportExportParsing) {
     {
       i::Handle<i::Script> script = factory->NewScript(source);
       i::CompilationInfoWithZone info(script);
-      i::Parser::ParseInfo parse_info = {isolate->stack_guard()->real_climit(),
-                                         isolate->heap()->HashSeed(),
-                                         isolate->unicode_cache()};
-      i::Parser parser(&info, &parse_info);
+      i::Parser parser(&info, isolate->stack_guard()->real_climit(),
+                       isolate->heap()->HashSeed(), isolate->unicode_cache());
       parser.set_allow_harmony_classes(true);
       parser.set_allow_harmony_modules(true);
       parser.set_allow_harmony_scoping(true);
       info.MarkAsGlobal();
-      CHECK(!parser.Parse());
+      CHECK(!parser.Parse(&info));
     }
   }
 }
@@ -5174,15 +5152,13 @@ TEST(ImportExportParsingErrors) {
 
     i::Handle<i::Script> script = factory->NewScript(source);
     i::CompilationInfoWithZone info(script);
-    i::Parser::ParseInfo parse_info = {isolate->stack_guard()->real_climit(),
-                                       isolate->heap()->HashSeed(),
-                                       isolate->unicode_cache()};
-    i::Parser parser(&info, &parse_info);
+    i::Parser parser(&info, isolate->stack_guard()->real_climit(),
+                     isolate->heap()->HashSeed(), isolate->unicode_cache());
     parser.set_allow_harmony_classes(true);
     parser.set_allow_harmony_modules(true);
     parser.set_allow_harmony_scoping(true);
     info.MarkAsModule();
-    CHECK(!parser.Parse());
+    CHECK(!parser.Parse(&info));
   }
 }
 
@@ -5270,13 +5246,11 @@ void TestLanguageMode(const char* source,
   i::Handle<i::Script> script =
       factory->NewScript(factory->NewStringFromAsciiChecked(source));
   i::CompilationInfoWithZone info(script);
-  i::Parser::ParseInfo parse_info = {isolate->stack_guard()->real_climit(),
-                                     isolate->heap()->HashSeed(),
-                                     isolate->unicode_cache()};
-  i::Parser parser(&info, &parse_info);
+  i::Parser parser(&info, isolate->stack_guard()->real_climit(),
+                   isolate->heap()->HashSeed(), isolate->unicode_cache());
   parser.set_allow_strong_mode(true);
   info.MarkAsGlobal();
-  parser.Parse();
+  parser.Parse(&info);
   CHECK(info.function() != NULL);
   CHECK_EQ(expected_language_mode, info.function()->language_mode());
 }

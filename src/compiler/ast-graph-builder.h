@@ -205,6 +205,9 @@ class AstGraphBuilder : public AstVisitor {
   // Builder to create an arguments object if it is used.
   Node* BuildArgumentsObject(Variable* arguments);
 
+  // Builder to create an array of rest parameters if used
+  Node* BuildRestArgumentsArray(Variable* rest, int index);
+
   // Builders for variable load and assignment.
   Node* BuildVariableAssignment(Variable* var, Node* value, Token::Value op,
                                 BailoutId bailout_id,
@@ -226,6 +229,11 @@ class AstGraphBuilder : public AstVisitor {
   // Builders for automatic type conversion.
   Node* BuildToBoolean(Node* value);
   Node* BuildToName(Node* value, BailoutId bailout_id);
+
+  // Adds the [[HomeObject]] to a value if the value came from a function
+  // literal that needs a home object.
+  void AddHomeObjectIfNeeded(Expression* expr, Node* function,
+                             Node* home_object);
 
   // Builders for error reporting at runtime.
   Node* BuildThrowReferenceError(Variable* var, BailoutId bailout_id);

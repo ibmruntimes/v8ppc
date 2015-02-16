@@ -4766,21 +4766,6 @@ void DependentCode::set_number_of_entries(DependencyGroup group, int value) {
 }
 
 
-bool DependentCode::is_code_at(int i) {
-  return get(kCodesStartIndex + i)->IsCode();
-}
-
-Code* DependentCode::code_at(int i) {
-  return Code::cast(get(kCodesStartIndex + i));
-}
-
-
-CompilationInfo* DependentCode::compilation_info_at(int i) {
-  return reinterpret_cast<CompilationInfo*>(
-      Foreign::cast(get(kCodesStartIndex + i))->foreign_address());
-}
-
-
 void DependentCode::set_object_at(int i, Object* object) {
   set(kCodesStartIndex + i, object);
 }
@@ -4788,11 +4773,6 @@ void DependentCode::set_object_at(int i, Object* object) {
 
 Object* DependentCode::object_at(int i) {
   return get(kCodesStartIndex + i);
-}
-
-
-Object** DependentCode::slot_at(int i) {
-  return RawFieldOfElementAt(kCodesStartIndex + i);
 }
 
 
@@ -4889,14 +4869,12 @@ inline void Code::set_is_crankshafted(bool value) {
 
 
 inline bool Code::is_turbofanned() {
-  DCHECK(kind() == OPTIMIZED_FUNCTION || kind() == STUB);
   return IsTurbofannedField::decode(
       READ_UINT32_FIELD(this, kKindSpecificFlags1Offset));
 }
 
 
 inline void Code::set_is_turbofanned(bool value) {
-  DCHECK(kind() == OPTIMIZED_FUNCTION || kind() == STUB);
   int previous = READ_UINT32_FIELD(this, kKindSpecificFlags1Offset);
   int updated = IsTurbofannedField::update(previous, value);
   WRITE_UINT32_FIELD(this, kKindSpecificFlags1Offset, updated);
@@ -5326,8 +5304,16 @@ void Map::UpdateDescriptors(DescriptorArray* descriptors,
     if (layout_descriptor()->IsSlowLayout()) {
       set_layout_descriptor(layout_desc);
     }
+#ifdef VERIFY_HEAP
+    // TODO(ishell): remove these checks from VERIFY_HEAP mode.
+    if (FLAG_verify_heap) {
+      CHECK(layout_descriptor()->IsConsistentWithMap(this));
+      CHECK(visitor_id() == StaticVisitorBase::GetVisitorId(this));
+    }
+#else
     SLOW_DCHECK(layout_descriptor()->IsConsistentWithMap(this));
     DCHECK(visitor_id() == StaticVisitorBase::GetVisitorId(this));
+#endif
   }
 }
 
@@ -5340,7 +5326,14 @@ void Map::InitializeDescriptors(DescriptorArray* descriptors,
 
   if (FLAG_unbox_double_fields) {
     set_layout_descriptor(layout_desc);
+#ifdef VERIFY_HEAP
+    // TODO(ishell): remove these checks from VERIFY_HEAP mode.
+    if (FLAG_verify_heap) {
+      CHECK(layout_descriptor()->IsConsistentWithMap(this));
+    }
+#else
     SLOW_DCHECK(layout_descriptor()->IsConsistentWithMap(this));
+#endif
     set_visitor_id(StaticVisitorBase::GetVisitorId(this));
   }
 }
@@ -5890,8 +5883,6 @@ void SharedFunctionInfo::set_kind(FunctionKind kind) {
 
 BOOL_ACCESSORS(SharedFunctionInfo, compiler_hints, uses_super_property,
                kUsesSuperProperty)
-BOOL_ACCESSORS(SharedFunctionInfo, compiler_hints, uses_super_constructor_call,
-               kUsesSuperConstructorCall)
 BOOL_ACCESSORS(SharedFunctionInfo, compiler_hints, native, kNative)
 BOOL_ACCESSORS(SharedFunctionInfo, compiler_hints, inline_builtin,
                kInlineBuiltin)
@@ -5993,6 +5984,11 @@ void SharedFunctionInfo::set_scope_info(ScopeInfo* value,
 
 bool SharedFunctionInfo::is_compiled() {
   return code() != GetIsolate()->builtins()->builtin(Builtins::kCompileLazy);
+}
+
+
+bool SharedFunctionInfo::is_simple_parameter_list() {
+  return scope_info()->IsSimpleParameterList();
 }
 
 
@@ -6266,6 +6262,11 @@ bool JSFunction::should_have_prototype() {
 
 bool JSFunction::is_compiled() {
   return code() != GetIsolate()->builtins()->builtin(Builtins::kCompileLazy);
+}
+
+
+bool JSFunction::is_simple_parameter_list() {
+  return shared()->is_simple_parameter_list();
 }
 
 
@@ -7282,13 +7283,18 @@ Handle<ObjectHashTable> ObjectHashTable::Shrink(
 
 template <int entrysize>
 bool WeakHashTableShape<entrysize>::IsMatch(Handle<Object> key, Object* other) {
-  return key->SameValue(other);
+  if (other->IsWeakCell()) other = WeakCell::cast(other)->value();
+  return key->IsWeakCell() ? WeakCell::cast(*key)->value() == other
+                           : *key == other;
 }
 
 
 template <int entrysize>
 uint32_t WeakHashTableShape<entrysize>::Hash(Handle<Object> key) {
-  intptr_t hash = reinterpret_cast<intptr_t>(*key);
+  intptr_t hash =
+      key->IsWeakCell()
+          ? reinterpret_cast<intptr_t>(WeakCell::cast(*key)->value())
+          : reinterpret_cast<intptr_t>(*key);
   return (uint32_t)(hash & 0xFFFFFFFF);
 }
 
@@ -7296,6 +7302,7 @@ uint32_t WeakHashTableShape<entrysize>::Hash(Handle<Object> key) {
 template <int entrysize>
 uint32_t WeakHashTableShape<entrysize>::HashForObject(Handle<Object> key,
                                                       Object* other) {
+  if (other->IsWeakCell()) other = WeakCell::cast(other)->value();
   intptr_t hash = reinterpret_cast<intptr_t>(other);
   return (uint32_t)(hash & 0xFFFFFFFF);
 }

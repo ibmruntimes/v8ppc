@@ -157,18 +157,16 @@ void Scope::SetDefaults(ScopeType scope_type,
   scope_calls_eval_ = false;
   scope_uses_arguments_ = false;
   scope_uses_super_property_ = false;
-  scope_uses_super_constructor_call_ = false;
   scope_uses_this_ = false;
   asm_module_ = false;
   asm_function_ = outer_scope != NULL && outer_scope->asm_module_;
-  // Inherit the strict mode from the parent scope.
+  // Inherit the language mode from the parent scope.
   language_mode_ = outer_scope != NULL ? outer_scope->language_mode_ : SLOPPY;
   outer_scope_calls_sloppy_eval_ = false;
   inner_scope_calls_eval_ = false;
   inner_scope_uses_arguments_ = false;
   inner_scope_uses_this_ = false;
   inner_scope_uses_super_property_ = false;
-  inner_scope_uses_super_constructor_call_ = false;
   force_eager_compilation_ = false;
   force_context_allocation_ = (outer_scope != NULL && !is_function_scope())
       ? outer_scope->has_forced_context_allocation() : false;
@@ -309,7 +307,6 @@ void Scope::Initialize(bool subclass_constructor) {
   // invoking scripts
   if (is_declaration_scope()) {
     DCHECK(!subclass_constructor || is_function_scope());
-    DCHECK(FLAG_experimental_classes || !subclass_constructor);
     Variable* var = variables_.Declare(
         this, ast_value_factory_->this_string(),
         subclass_constructor ? CONST : VAR, false, Variable::THIS,
@@ -372,8 +369,6 @@ Scope* Scope::FinalizeBlockScope() {
   // Propagate usage flags to outer scope.
   if (uses_arguments()) outer_scope_->RecordArgumentsUsage();
   if (uses_super_property()) outer_scope_->RecordSuperPropertyUsage();
-  if (uses_super_constructor_call())
-    outer_scope_->RecordSuperConstructorCallUsage();
   if (uses_this()) outer_scope_->RecordThisUsage();
 
   return NULL;
@@ -892,7 +887,9 @@ void Scope::Print(int n) {
   if (HasTrivialOuterContext()) {
     Indent(n1, "// scope has trivial outer context\n");
   }
-  if (is_strict(language_mode())) {
+  if (is_strong(language_mode())) {
+    Indent(n1, "// strong mode scope\n");
+  } else if (is_strict(language_mode())) {
     Indent(n1, "// strict mode scope\n");
   }
   if (scope_inside_with_) Indent(n1, "// scope inside 'with'\n");
@@ -901,17 +898,12 @@ void Scope::Print(int n) {
   if (scope_uses_arguments_) Indent(n1, "// scope uses 'arguments'\n");
   if (scope_uses_super_property_)
     Indent(n1, "// scope uses 'super' property\n");
-  if (scope_uses_super_constructor_call_)
-    Indent(n1, "// scope uses 'super' constructor\n");
   if (scope_uses_this_) Indent(n1, "// scope uses 'this'\n");
   if (inner_scope_uses_arguments_) {
     Indent(n1, "// inner scope uses 'arguments'\n");
   }
   if (inner_scope_uses_super_property_)
     Indent(n1, "// inner scope uses 'super' property\n");
-  if (inner_scope_uses_super_constructor_call_) {
-    Indent(n1, "// inner scope uses 'super' constructor\n");
-  }
   if (inner_scope_uses_this_) Indent(n1, "// inner scope uses 'this'\n");
   if (outer_scope_calls_sloppy_eval_) {
     Indent(n1, "// outer scope calls 'eval' in sloppy context\n");
@@ -1187,10 +1179,6 @@ void Scope::PropagateScopeInfo(bool outer_scope_calls_sloppy_eval ) {
       if (inner->scope_uses_super_property_ ||
           inner->inner_scope_uses_super_property_) {
         inner_scope_uses_super_property_ = true;
-      }
-      if (inner->uses_super_constructor_call() ||
-          inner->inner_scope_uses_super_constructor_call_) {
-        inner_scope_uses_super_constructor_call_ = true;
       }
       if (inner->scope_uses_this_ || inner->inner_scope_uses_this_) {
         inner_scope_uses_this_ = true;

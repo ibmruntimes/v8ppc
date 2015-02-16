@@ -240,6 +240,25 @@ void FullCodeGenerator::Generate() {
     }
   }
 
+  // Possibly allocate RestParameters
+  int rest_index;
+  Variable* rest_param = scope()->rest_parameter(&rest_index);
+  if (rest_param) {
+    Comment cmnt(masm_, "[ Allocate rest parameter array");
+
+    int num_parameters = info->scope()->num_parameters();
+    int offset = num_parameters * kPointerSize;
+    __ add(r3, fp, Operand(StandardFrameConstants::kCallerSPOffset + offset));
+    __ mov(r2, Operand(Smi::FromInt(num_parameters)));
+    __ mov(r1, Operand(Smi::FromInt(rest_index)));
+    __ Push(r3, r2, r1);
+
+    RestParamAccessStub stub(isolate());
+    __ CallStub(&stub);
+
+    SetVar(rest_param, r0, r1, r2);
+  }
+
   Variable* arguments = scope()->arguments();
   if (arguments != NULL) {
     // Function uses arguments object.
@@ -267,7 +286,7 @@ void FullCodeGenerator::Generate() {
             ? ArgumentsAccessStub::HAS_NEW_TARGET
             : ArgumentsAccessStub::NO_NEW_TARGET;
     ArgumentsAccessStub::Type type;
-    if (is_strict(language_mode())) {
+    if (is_strict(language_mode()) || !is_simple_parameter_list()) {
       type = ArgumentsAccessStub::NEW_STRICT;
     } else if (function()->has_duplicate_parameters()) {
       type = ArgumentsAccessStub::NEW_SLOPPY_SLOW;
@@ -455,8 +474,7 @@ void FullCodeGenerator::EmitReturnSequence() {
     // sequence.
     { Assembler::BlockConstPoolScope block_const_pool(masm_);
       int32_t arg_count = info_->scope()->num_parameters() + 1;
-      if (FLAG_experimental_classes &&
-          IsSubclassConstructor(info_->function()->kind())) {
+      if (IsSubclassConstructor(info_->function()->kind())) {
         arg_count++;
       }
       int32_t sp_delta = arg_count * kPointerSize;
@@ -3189,15 +3207,7 @@ void FullCodeGenerator::VisitCall(Call* expr) {
       }
     }
   } else if (call_type == Call::SUPER_CALL) {
-    if (FLAG_experimental_classes) {
-      EmitSuperConstructorCall(expr);
-    } else {
-      EmitLoadSuperConstructor();
-      __ Push(result_register());
-      SuperReference* super_ref = callee->AsSuperReference();
-      VisitForStackValue(super_ref->this_var());
-      EmitCall(expr, CallICState::METHOD);
-    }
+    EmitSuperConstructorCall(expr);
   } else {
     DCHECK(call_type == Call::OTHER_CALL);
     // Call to an arbitrary expression not handled specially above.
@@ -3262,25 +3272,13 @@ void FullCodeGenerator::VisitCallNew(CallNew* expr) {
 
 
 void FullCodeGenerator::EmitSuperConstructorCall(Call* expr) {
-  Comment cmnt(masm_, "[ SuperConstructorCall");
+  if (!ValidateSuperCall(expr)) return;
   Variable* new_target_var = scope()->DeclarationScope()->new_target_var();
   GetVar(result_register(), new_target_var);
   __ Push(result_register());
 
   EmitLoadSuperConstructor();
   __ push(result_register());
-
-  SuperReference* super_ref = expr->expression()->AsSuperReference();
-  Variable* this_var = super_ref->this_var()->var();
-
-  GetVar(r0, this_var);
-  __ CompareRoot(r0, Heap::kTheHoleValueRootIndex);
-  Label uninitialized_this;
-  __ b(eq, &uninitialized_this);
-  __ mov(r0, Operand(this_var->name()));
-  __ Push(r0);
-  __ CallRuntime(Runtime::kThrowReferenceError, 1);
-  __ bind(&uninitialized_this);
 
   // Push the arguments ("left-to-right") on the stack.
   ZoneList<Expression*>* args = expr->arguments();
@@ -3316,6 +3314,17 @@ void FullCodeGenerator::EmitSuperConstructorCall(Call* expr) {
   __ Drop(1);
 
   RecordJSReturnSite(expr);
+
+  SuperReference* super_ref = expr->expression()->AsSuperReference();
+  Variable* this_var = super_ref->this_var()->var();
+  GetVar(r1, this_var);
+  __ CompareRoot(r1, Heap::kTheHoleValueRootIndex);
+  Label uninitialized_this;
+  __ b(eq, &uninitialized_this);
+  __ mov(r0, Operand(this_var->name()));
+  __ Push(r0);
+  __ CallRuntime(Runtime::kThrowReferenceError, 1);
+  __ bind(&uninitialized_this);
 
   EmitVariableAssignment(this_var, Token::INIT_CONST);
   context()->Plug(r0);

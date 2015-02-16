@@ -54,7 +54,76 @@ namespace compiler {
 
 class PipelineData {
  public:
-  explicit PipelineData(ZonePool* zone_pool, CompilationInfo* info)
+  // For main entry point.
+  PipelineData(ZonePool* zone_pool, CompilationInfo* info,
+               PipelineStatistics* pipeline_statistics)
+      : isolate_(info->isolate()),
+        info_(info),
+        outer_zone_(info_->zone()),
+        zone_pool_(zone_pool),
+        pipeline_statistics_(pipeline_statistics),
+        compilation_failed_(false),
+        code_(Handle<Code>::null()),
+        graph_zone_scope_(zone_pool_),
+        graph_zone_(graph_zone_scope_.zone()),
+        graph_(nullptr),
+        loop_assignment_(nullptr),
+        machine_(nullptr),
+        common_(nullptr),
+        javascript_(nullptr),
+        jsgraph_(nullptr),
+        typer_(nullptr),
+        context_node_(nullptr),
+        schedule_(nullptr),
+        instruction_zone_scope_(zone_pool_),
+        instruction_zone_(instruction_zone_scope_.zone()),
+        sequence_(nullptr),
+        frame_(nullptr),
+        register_allocator_(nullptr) {
+    PhaseScope scope(pipeline_statistics, "init pipeline data");
+    graph_ = new (graph_zone_) Graph(graph_zone_);
+    source_positions_.Reset(new SourcePositionTable(graph_));
+    machine_ = new (graph_zone_) MachineOperatorBuilder(
+        graph_zone_, kMachPtr,
+        InstructionSelector::SupportedMachineOperatorFlags());
+    common_ = new (graph_zone_) CommonOperatorBuilder(graph_zone_);
+    javascript_ = new (graph_zone_) JSOperatorBuilder(graph_zone_);
+    jsgraph_ = new (graph_zone_)
+        JSGraph(isolate_, graph_, common_, javascript_, machine_);
+    typer_.Reset(new Typer(isolate_, graph_, info_->context()));
+  }
+
+  // For machine graph testing entry point.
+  PipelineData(ZonePool* zone_pool, CompilationInfo* info, Graph* graph,
+               Schedule* schedule)
+      : isolate_(info->isolate()),
+        info_(info),
+        outer_zone_(nullptr),
+        zone_pool_(zone_pool),
+        pipeline_statistics_(nullptr),
+        compilation_failed_(false),
+        code_(Handle<Code>::null()),
+        graph_zone_scope_(zone_pool_),
+        graph_zone_(nullptr),
+        graph_(graph),
+        source_positions_(new SourcePositionTable(graph_)),
+        loop_assignment_(nullptr),
+        machine_(nullptr),
+        common_(nullptr),
+        javascript_(nullptr),
+        jsgraph_(nullptr),
+        typer_(nullptr),
+        context_node_(nullptr),
+        schedule_(schedule),
+        instruction_zone_scope_(zone_pool_),
+        instruction_zone_(instruction_zone_scope_.zone()),
+        sequence_(nullptr),
+        frame_(nullptr),
+        register_allocator_(nullptr) {}
+
+  // For register allocation testing entry point.
+  PipelineData(ZonePool* zone_pool, CompilationInfo* info,
+               InstructionSequence* sequence)
       : isolate_(info->isolate()),
         info_(info),
         outer_zone_(nullptr),
@@ -74,47 +143,14 @@ class PipelineData {
         context_node_(nullptr),
         schedule_(nullptr),
         instruction_zone_scope_(zone_pool_),
-        instruction_zone_(nullptr),
-        sequence_(nullptr),
+        instruction_zone_(sequence->zone()),
+        sequence_(sequence),
         frame_(nullptr),
         register_allocator_(nullptr) {}
 
   ~PipelineData() {
     DeleteInstructionZone();
     DeleteGraphZone();
-  }
-
-  // For main entry point.
-  void Initialize(PipelineStatistics* pipeline_statistics) {
-    PhaseScope scope(pipeline_statistics, "init pipeline data");
-    outer_zone_ = info()->zone();
-    pipeline_statistics_ = pipeline_statistics;
-    graph_zone_ = graph_zone_scope_.zone();
-    graph_ = new (graph_zone()) Graph(graph_zone());
-    source_positions_.Reset(new SourcePositionTable(graph()));
-    machine_ = new (graph_zone()) MachineOperatorBuilder(
-        graph_zone(), kMachPtr,
-        InstructionSelector::SupportedMachineOperatorFlags());
-    common_ = new (graph_zone()) CommonOperatorBuilder(graph_zone());
-    javascript_ = new (graph_zone()) JSOperatorBuilder(graph_zone());
-    jsgraph_ = new (graph_zone())
-        JSGraph(info()->isolate(), graph(), common(), javascript(), machine());
-    typer_.Reset(new Typer(info()->isolate(), graph(), info()->context()));
-    instruction_zone_ = instruction_zone_scope_.zone();
-  }
-
-  // For machine graph testing entry point.
-  void InitializeTorTesting(Graph* graph, Schedule* schedule) {
-    graph_ = graph;
-    source_positions_.Reset(new SourcePositionTable(graph));
-    schedule_ = schedule;
-    instruction_zone_ = instruction_zone_scope_.zone();
-  }
-
-  // For register allocation testing entry point.
-  void InitializeTorTesting(InstructionSequence* sequence) {
-    instruction_zone_ = sequence->zone();
-    sequence_ = sequence;
   }
 
   Isolate* isolate() const { return isolate_; }
@@ -589,7 +625,6 @@ struct ComputeSchedulePhase {
         temp_zone, data->graph(), data->info()->is_splitting_enabled()
                                       ? Scheduler::kSplitNodes
                                       : Scheduler::kNoFlags);
-    TraceSchedule(schedule);
     if (FLAG_turbo_verify) ScheduleVerifier::Run(schedule);
     data->set_schedule(schedule);
   }
@@ -838,7 +873,7 @@ Handle<Code> Pipeline::GenerateCode() {
       if (!script->IsUndefined() && !script->source()->IsUndefined()) {
         DisallowHeapAllocation no_allocation;
         int start = function->start_position();
-        int len = function->end_position() - start + 1;
+        int len = function->end_position() - start;
         String::SubStringRange source(String::cast(script->source()), start,
                                       len);
         for (const auto& c : source) {
@@ -850,9 +885,8 @@ Handle<Code> Pipeline::GenerateCode() {
     }
   }
 
-  PipelineData data(&zone_pool, info());
+  PipelineData data(&zone_pool, info(), pipeline_statistics.get());
   this->data_ = &data;
-  data.Initialize(pipeline_statistics.get());
 
   BeginPhaseKind("graph creation");
 
@@ -949,18 +983,122 @@ Handle<Code> Pipeline::GenerateCode() {
 
   data.source_positions()->RemoveDecorator();
 
-  // Compute a schedule.
-  Run<ComputeSchedulePhase>();
+  return ScheduleAndGenerateCode(
+      Linkage::ComputeIncoming(data.instruction_zone(), info()));
+}
 
-  {
-    // Generate optimized code.
-    Linkage linkage(Linkage::ComputeIncoming(data.instruction_zone(), info()));
-    GenerateCode(&linkage);
+
+Handle<Code> Pipeline::GenerateCodeForTesting(CompilationInfo* info,
+                                              Graph* graph,
+                                              Schedule* schedule) {
+  CallDescriptor* call_descriptor =
+      Linkage::ComputeIncoming(info->zone(), info);
+  return GenerateCodeForTesting(info, call_descriptor, graph, schedule);
+}
+
+
+Handle<Code> Pipeline::GenerateCodeForTesting(Isolate* isolate,
+                                              CallDescriptor* call_descriptor,
+                                              Graph* graph,
+                                              Schedule* schedule) {
+  FakeStubForTesting stub(isolate);
+  CompilationInfo info(&stub, isolate, graph->zone());
+  return GenerateCodeForTesting(&info, call_descriptor, graph, schedule);
+}
+
+
+Handle<Code> Pipeline::GenerateCodeForTesting(CompilationInfo* info,
+                                              CallDescriptor* call_descriptor,
+                                              Graph* graph,
+                                              Schedule* schedule) {
+  // Construct a pipeline for scheduling and code generation.
+  ZonePool zone_pool;
+  PipelineData data(&zone_pool, info, graph, schedule);
+  Pipeline pipeline(info);
+  pipeline.data_ = &data;
+  if (data.schedule() == nullptr) {
+    // TODO(rossberg): Should this really be untyped?
+    pipeline.RunPrintAndVerify("Machine", true);
   }
-  Handle<Code> code = data.code();
-  info()->SetCode(code);
 
-  // Print optimized code.
+  return pipeline.ScheduleAndGenerateCode(call_descriptor);
+}
+
+
+bool Pipeline::AllocateRegistersForTesting(const RegisterConfiguration* config,
+                                           InstructionSequence* sequence,
+                                           bool run_verifier) {
+  FakeStubForTesting stub(sequence->isolate());
+  CompilationInfo info(&stub, sequence->isolate(), sequence->zone());
+  ZonePool zone_pool;
+  PipelineData data(&zone_pool, &info, sequence);
+  Pipeline pipeline(&info);
+  pipeline.data_ = &data;
+  pipeline.AllocateRegisters(config, run_verifier);
+  return !data.compilation_failed();
+}
+
+
+Handle<Code> Pipeline::ScheduleAndGenerateCode(
+    CallDescriptor* call_descriptor) {
+  PipelineData* data = this->data_;
+
+  DCHECK_NOT_NULL(data->graph());
+  CHECK(SupportedBackend());
+
+  if (data->schedule() == nullptr) Run<ComputeSchedulePhase>();
+  TraceSchedule(data->schedule());
+
+  BasicBlockProfiler::Data* profiler_data = NULL;
+  if (FLAG_turbo_profiling) {
+    profiler_data = BasicBlockInstrumentor::Instrument(info(), data->graph(),
+                                                       data->schedule());
+  }
+
+  data->InitializeInstructionSequence();
+
+  // Select and schedule instructions covering the scheduled graph.
+  Linkage linkage(call_descriptor);
+  Run<InstructionSelectionPhase>(&linkage);
+
+  if (FLAG_trace_turbo && !data->MayHaveUnverifiableGraph()) {
+    TurboCfgFile tcf(isolate());
+    tcf << AsC1V("CodeGen", data->schedule(), data->source_positions(),
+                 data->sequence());
+  }
+
+  data->DeleteGraphZone();
+
+  BeginPhaseKind("register allocation");
+
+  bool run_verifier = FLAG_turbo_verify_allocation;
+  // Allocate registers.
+  AllocateRegisters(RegisterConfiguration::ArchDefault(), run_verifier);
+  if (data->compilation_failed()) {
+    info()->AbortOptimization(kNotEnoughVirtualRegistersRegalloc);
+    return Handle<Code>();
+  }
+
+  BeginPhaseKind("code generation");
+
+  // Optimimize jumps.
+  if (FLAG_turbo_jt) {
+    Run<JumpThreadingPhase>();
+  }
+
+  // Generate final machine code.
+  Run<GenerateCodePhase>(&linkage);
+
+  Handle<Code> code = data->code();
+  if (profiler_data != NULL) {
+#if ENABLE_DISASSEMBLER
+    std::ostringstream os;
+    code->Disassemble(NULL, os);
+    profiler_data->SetCode(&os);
+#endif
+  }
+
+  info()->SetCode(code);
   v8::internal::CodeGenerator::PrintCode(code, info());
 
   if (FLAG_trace_turbo) {
@@ -987,128 +1125,6 @@ Handle<Code> Pipeline::GenerateCode() {
   }
 
   return code;
-}
-
-
-Handle<Code> Pipeline::GenerateCodeForTesting(CompilationInfo* info,
-                                              Graph* graph,
-                                              Schedule* schedule) {
-  CallDescriptor* call_descriptor =
-      Linkage::ComputeIncoming(info->zone(), info);
-  return GenerateCodeForTesting(info, call_descriptor, graph, schedule);
-}
-
-
-Handle<Code> Pipeline::GenerateCodeForTesting(Isolate* isolate,
-                                              CallDescriptor* call_descriptor,
-                                              Graph* graph,
-                                              Schedule* schedule) {
-  CompilationInfo info(isolate, graph->zone());
-  return GenerateCodeForTesting(&info, call_descriptor, graph, schedule);
-}
-
-
-Handle<Code> Pipeline::GenerateCodeForTesting(CompilationInfo* info,
-                                              CallDescriptor* call_descriptor,
-                                              Graph* graph,
-                                              Schedule* schedule) {
-  CHECK(SupportedBackend());
-  ZonePool zone_pool;
-  Pipeline pipeline(info);
-  PipelineData data(&zone_pool, info);
-  pipeline.data_ = &data;
-  data.InitializeTorTesting(graph, schedule);
-  if (schedule == NULL) {
-    // TODO(rossberg): Should this really be untyped?
-    pipeline.RunPrintAndVerify("Machine", true);
-    pipeline.Run<ComputeSchedulePhase>();
-  } else {
-    TraceSchedule(schedule);
-  }
-
-  Linkage linkage(call_descriptor);
-  pipeline.GenerateCode(&linkage);
-  Handle<Code> code = data.code();
-
-#if ENABLE_DISASSEMBLER
-  if (!code.is_null() && FLAG_print_opt_code) {
-    CodeTracer::Scope tracing_scope(info->isolate()->GetCodeTracer());
-    OFStream os(tracing_scope.file());
-    code->Disassemble("test code", os);
-  }
-#endif
-  return code;
-}
-
-
-bool Pipeline::AllocateRegistersForTesting(const RegisterConfiguration* config,
-                                           InstructionSequence* sequence,
-                                           bool run_verifier) {
-  CompilationInfo info(sequence->isolate(), sequence->zone());
-  ZonePool zone_pool;
-  PipelineData data(&zone_pool, &info);
-  data.InitializeTorTesting(sequence);
-  Pipeline pipeline(&info);
-  pipeline.data_ = &data;
-  pipeline.AllocateRegisters(config, run_verifier);
-  return !data.compilation_failed();
-}
-
-
-void Pipeline::GenerateCode(Linkage* linkage) {
-  PipelineData* data = this->data_;
-
-  DCHECK_NOT_NULL(linkage);
-  DCHECK_NOT_NULL(data->graph());
-  DCHECK_NOT_NULL(data->schedule());
-  CHECK(SupportedBackend());
-
-  BasicBlockProfiler::Data* profiler_data = NULL;
-  if (FLAG_turbo_profiling) {
-    profiler_data = BasicBlockInstrumentor::Instrument(info(), data->graph(),
-                                                       data->schedule());
-  }
-
-  data->InitializeInstructionSequence();
-
-  // Select and schedule instructions covering the scheduled graph.
-  Run<InstructionSelectionPhase>(linkage);
-
-  if (FLAG_trace_turbo && !data->MayHaveUnverifiableGraph()) {
-    TurboCfgFile tcf(isolate());
-    tcf << AsC1V("CodeGen", data->schedule(), data->source_positions(),
-                 data->sequence());
-  }
-
-  data->DeleteGraphZone();
-
-  BeginPhaseKind("register allocation");
-
-  bool run_verifier = FLAG_turbo_verify_allocation;
-  // Allocate registers.
-  AllocateRegisters(RegisterConfiguration::ArchDefault(), run_verifier);
-  if (data->compilation_failed()) {
-    info()->AbortOptimization(kNotEnoughVirtualRegistersRegalloc);
-    return;
-  }
-
-  BeginPhaseKind("code generation");
-
-  // Optimimize jumps.
-  if (FLAG_turbo_jt) {
-    Run<JumpThreadingPhase>();
-  }
-
-  // Generate final machine code.
-  Run<GenerateCodePhase>(linkage);
-
-  if (profiler_data != NULL) {
-#if ENABLE_DISASSEMBLER
-    std::ostringstream os;
-    data->code()->Disassemble(NULL, os);
-    profiler_data->SetCode(&os);
-#endif
-  }
 }
 
 
