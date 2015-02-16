@@ -437,8 +437,7 @@ void FullCodeGenerator::EmitReturnSequence() {
     {
       Assembler::BlockTrampolinePoolScope block_trampoline_pool(masm_);
       int32_t arg_count = info_->scope()->num_parameters() + 1;
-      if (FLAG_experimental_classes &&
-          IsSubclassConstructor(info_->function()->kind())) {
+      if (IsSubclassConstructor(info_->function()->kind())) {
         arg_count++;
       }
       int32_t sp_delta = arg_count * kPointerSize;
