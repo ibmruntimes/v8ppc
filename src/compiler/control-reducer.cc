@@ -54,8 +54,7 @@ class ControlReducerImpl {
         common_(common),
         state_(jsgraph->graph()->NodeCount(), kUnvisited, zone_),
         stack_(zone_),
-        revisit_(zone_),
-        dead_(NULL) {}
+        revisit_(zone_) {}
 
   Zone* zone_;
   JSGraph* jsgraph_;
@@ -63,7 +62,6 @@ class ControlReducerImpl {
   ZoneVector<VisitState> state_;
   ZoneDeque<Node*> stack_;
   ZoneDeque<Node*> revisit_;
-  Node* dead_;
 
   void Reduce() {
     Push(graph()->end());
@@ -380,10 +378,7 @@ class ControlReducerImpl {
     state_[id] = kVisited;
   }
 
-  Node* dead() {
-    if (dead_ == NULL) dead_ = graph()->NewNode(common_->Dead());
-    return dead_;
-  }
+  Node* dead() { return jsgraph_->DeadControl(); }
 
   //===========================================================================
   // Reducer implementation: perform reductions on a node.
@@ -400,6 +395,8 @@ class ControlReducerImpl {
 
     // Reduce branches, phis, and merges.
     switch (node->opcode()) {
+      case IrOpcode::kBranch:
+        return ReduceBranch(node);
       case IrOpcode::kIfTrue:
         return ReduceIfTrue(node);
       case IrOpcode::kIfFalse:
@@ -476,6 +473,14 @@ class ControlReducerImpl {
       }
     }
     return replacement == NULL ? dead() : replacement;
+  }
+
+  // Reduce branches.
+  Node* ReduceBranch(Node* branch) {
+    if (DecideCondition(branch->InputAt(0)) != kUnknown) {
+      for (Node* use : branch->uses()) Revisit(use);
+    }
+    return branch;
   }
 
   // Reduce merges by trimming away dead inputs from the merge and phis.
