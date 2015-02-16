@@ -787,10 +787,26 @@ void Builtins::Generate_JSConstructStubForDerived(MacroAssembler* masm) {
     __ bdnz(&loop);
     __ bind(&no_args);
 
+    __ addi(r3, r3, Operand(1));
+
+    // Handle step in.
+    Label skip_step_in;
+    ExternalReference debug_step_in_fp =
+        ExternalReference::debug_step_in_fp_address(masm->isolate());
+    __ mov(r5, Operand(debug_step_in_fp));
+    __ LoadP(r5, MemOperand(r5));
+    __ and_(r0, r5, r5, SetRC);
+    __ beq(&skip_step_in, cr0);
+
+    __ Push(r3, r4, r4);
+    __ CallRuntime(Runtime::kHandleStepInForDerivedConstructors, 1);
+    __ Pop(r3, r4);
+
+    __ bind(&skip_step_in);
+
     // Call the function.
     // r3: number of arguments
     // r4: constructor function
-    __ addi(r3, r3, Operand(1));  // Pushed new.target
     ParameterCount actual(r3);
     __ InvokeFunction(r4, actual, CALL_FUNCTION, NullCallWrapper());
 
