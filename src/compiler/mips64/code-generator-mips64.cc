@@ -428,6 +428,12 @@ void CodeGenerator::AssembleArchInstruction(Instruction* instr) {
     case kArchJmp:
       AssembleArchJump(i.InputRpo(0));
       break;
+    case kArchLookupSwitch:
+      AssembleArchLookupSwitch(instr);
+      break;
+    case kArchTableSwitch:
+      AssembleArchTableSwitch(instr);
+      break;
     case kArchNop:
       // don't emit code for nops.
       break;
@@ -1034,6 +1040,42 @@ void CodeGenerator::AssembleArchBoolean(Instruction* instr,
 }
 
 
+void CodeGenerator::AssembleArchLookupSwitch(Instruction* instr) {
+  MipsOperandConverter i(this, instr);
+  Register input = i.InputRegister(0);
+  for (size_t index = 2; index < instr->InputCount(); index += 2) {
+    __ Branch(GetLabel(i.InputRpo(index + 1)), eq, input,
+              Operand(i.InputInt32(index + 0)));
+  }
+  AssembleArchJump(i.InputRpo(1));
+}
+
+
+void CodeGenerator::AssembleArchTableSwitch(Instruction* instr) {
+  MipsOperandConverter i(this, instr);
+  Register input = i.InputRegister(0);
+  size_t const case_count = instr->InputCount() - 2;
+  Label here;
+
+  __ Branch(GetLabel(i.InputRpo(1)), hs, input, Operand(case_count));
+  // Ensure that dd-ed labels goes to 8 byte aligned addresses.
+  if ((masm()->pc_offset() & 7) == 0) {
+    __ nop();
+  }
+  __ bal(&here);
+  __ nop();  // Branch delay slot nop.
+  __ bind(&here);
+  __ dsll(at, input, 3);
+  __ daddu(at, at, ra);
+  __ ld(at, MemOperand(at, 5 * v8::internal::Assembler::kInstrSize));
+  __ jr(at);
+  __ nop();  // Branch delay slot nop.
+  for (size_t index = 0; index < case_count; ++index) {
+    __ dd(GetLabel(i.InputRpo(index + 2)));
+  }
+}
+
+
 void CodeGenerator::AssembleDeoptimizerCall(int deoptimization_id) {
   Address deopt_entry = Deoptimizer::GetDeoptimizationEntry(
       isolate(), deoptimization_id, Deoptimizer::LAZY);
@@ -1280,6 +1322,12 @@ void CodeGenerator::AssembleSwap(InstructionOperand* source,
     // No other combinations are possible.
     UNREACHABLE();
   }
+}
+
+
+void CodeGenerator::AssembleJumpTable(Label** targets, size_t target_count) {
+  // On 64-bit MIPS we emit the jump tables inline.
+  UNREACHABLE();
 }
 
 

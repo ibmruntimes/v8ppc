@@ -15,6 +15,7 @@
 #include "src/compiler/change-lowering.h"
 #include "src/compiler/code-generator.h"
 #include "src/compiler/common-operator-reducer.h"
+#include "src/compiler/control-flow-optimizer.h"
 #include "src/compiler/control-reducer.h"
 #include "src/compiler/graph-replay.h"
 #include "src/compiler/graph-visualizer.h"
@@ -467,7 +468,9 @@ struct InliningPhase {
     SourcePositionTable::Scope pos(data->source_positions(),
                                    SourcePosition::Unknown());
     JSInliner inliner(temp_zone, data->info(), data->jsgraph());
-    inliner.Inline();
+    GraphReducer graph_reducer(data->graph(), temp_zone);
+    AddReducer(data, &graph_reducer, &inliner);
+    graph_reducer.ReduceGraph();
   }
 };
 
@@ -538,6 +541,16 @@ struct SimplifiedLoweringPhase {
     AddReducer(data, &graph_reducer, &machine_reducer);
     AddReducer(data, &graph_reducer, &common_reducer);
     graph_reducer.ReduceGraph();
+  }
+};
+
+
+struct ControlFlowOptimizationPhase {
+  static const char* phase_name() { return "control flow optimization"; }
+
+  void Run(PipelineData* data, Zone* temp_zone) {
+    ControlFlowOptimizer optimizer(data->jsgraph(), temp_zone);
+    optimizer.Optimize();
   }
 };
 
@@ -958,6 +971,12 @@ Handle<Code> Pipeline::GenerateCode() {
     // Lower simplified operators and insert changes.
     Run<SimplifiedLoweringPhase>();
     RunPrintAndVerify("Lowered simplified");
+
+    // Optimize control flow.
+    if (FLAG_turbo_switch) {
+      Run<ControlFlowOptimizationPhase>();
+      RunPrintAndVerify("Control flow optimized");
+    }
 
     // Lower changes that have been inserted before.
     Run<ChangeLoweringPhase>();

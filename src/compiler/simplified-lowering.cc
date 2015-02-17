@@ -501,16 +501,12 @@ class RepresentationSelector {
       case IrOpcode::kHeapConstant:
         return VisitLeaf(node, kRepTagged);
 
-      case IrOpcode::kEnd:
-      case IrOpcode::kIfTrue:
-      case IrOpcode::kIfFalse:
-      case IrOpcode::kReturn:
-      case IrOpcode::kMerge:
-      case IrOpcode::kThrow:
-        return VisitInputs(node);  // default visit for all node inputs.
-
       case IrOpcode::kBranch:
         ProcessInput(node, 0, kRepBit);
+        Enqueue(NodeProperties::GetControlInput(node, 0));
+        break;
+      case IrOpcode::kSwitch:
+        ProcessInput(node, 0, kRepWord32);
         Enqueue(NodeProperties::GetControlInput(node, 0));
         break;
       case IrOpcode::kSelect:
@@ -728,15 +724,15 @@ class RepresentationSelector {
           // If the input has type uint32, pass through representation.
           VisitUnop(node, kTypeUint32 | use_rep, kTypeUint32 | use_rep);
           if (lower()) DeferReplacement(node, node->InputAt(0));
-        } else if ((in & kTypeMask) == kTypeUint32 ||
-                   in_upper->Is(Type::Unsigned32())) {
-          // Just change representation if necessary.
-          VisitUnop(node, kTypeUint32 | kRepWord32, kTypeUint32 | kRepWord32);
-          if (lower()) DeferReplacement(node, node->InputAt(0));
         } else if ((in & kTypeMask) == kTypeInt32 ||
-                   (in & kRepMask) == kRepWord32) {
+                   in_upper->Is(Type::Signed32())) {
           // Just change representation if necessary.
           VisitUnop(node, kTypeInt32 | kRepWord32, kTypeUint32 | kRepWord32);
+          if (lower()) DeferReplacement(node, node->InputAt(0));
+        } else if ((in & kTypeMask) == kTypeUint32 ||
+                   (in & kRepMask) == kRepWord32) {
+          // Just change representation if necessary.
+          VisitUnop(node, kTypeUint32 | kRepWord32, kTypeUint32 | kRepWord32);
           if (lower()) DeferReplacement(node, node->InputAt(0));
         } else {
           // Require the input in float64 format and perform truncation.

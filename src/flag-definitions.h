@@ -193,21 +193,21 @@ DEFINE_IMPLICATION(es_staging, harmony)
   V(harmony_unicode, "harmony unicode escapes")                         \
   V(harmony_unicode_regexps, "harmony unicode regexps")                 \
   V(harmony_computed_property_names, "harmony computed property names") \
-  V(harmony_rest_parameters, "harmony rest parameters")
+  V(harmony_rest_parameters, "harmony rest parameters")                 \
 
 // Features that are complete (but still behind --harmony/es-staging flag).
 #define HARMONY_STAGED(V)                                                 \
   V(harmony_tostring, "harmony toString")                                 \
-  V(harmony_classes,                                                      \
-    "harmony classes (implies block scoping & object literal extension)") \
-  V(harmony_object_literals, "harmony object literal extensions")
 
 // Features that are shipping (turned on by default, but internal flag remains).
 #define HARMONY_SHIPPING(V)                                               \
   V(harmony_numeric_literals, "harmony numeric literals")                 \
   V(harmony_strings, "harmony string methods")                            \
   V(harmony_scoping, "harmony block scoping")                             \
-  V(harmony_templates, "harmony template literals")
+  V(harmony_templates, "harmony template literals")                       \
+  V(harmony_classes,                                                      \
+    "harmony classes (implies block scoping & object literal extension)") \
+  V(harmony_object_literals, "harmony object literal extensions")         \
 
 // Once a shipping feature has proved stable in the wild, it will be dropped
 // from HARMONY_SHIPPING, all occurrences of the FLAG_ variable are removed,
@@ -424,6 +424,7 @@ DEFINE_BOOL(turbo_osr, false, "enable OSR in TurboFan")
 DEFINE_BOOL(turbo_exceptions, false, "enable exception handling in TurboFan")
 DEFINE_BOOL(turbo_stress_loop_peeling, false,
             "stress loop peeling optimization")
+DEFINE_BOOL(turbo_switch, true, "optimize switches in TurboFan")
 
 DEFINE_INT(typed_array_max_size_in_heap, 64,
            "threshold for in-heap typed array")
@@ -620,8 +621,11 @@ DEFINE_BOOL(trace_incremental_marking, false,
             "trace progress of the incremental marking")
 DEFINE_BOOL(track_gc_object_stats, false,
             "track object counts and memory usage")
-DEFINE_BOOL(track_detached_contexts, false,
+DEFINE_BOOL(track_detached_contexts, true,
             "track native contexts that are expected to be garbage collected")
+DEFINE_BOOL(trace_detached_contexts, false,
+            "trace native contexts that are expected to be garbage collected")
+DEFINE_IMPLICATION(trace_detached_contexts, track_detached_contexts)
 #ifdef VERIFY_HEAP
 DEFINE_BOOL(verify_heap, false, "verify heap pointers before and after GC")
 #endif

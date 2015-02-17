@@ -48,10 +48,6 @@ static void PeelOuterLoopsForOsr(Graph* graph, CommonOperatorBuilder* common,
     // Prepare the mapping for OSR values and the OSR loop entry.
     mapping->at(osr_normal_entry->id()) = dead;
     mapping->at(osr_loop_entry->id()) = dead;
-    // Don't duplicate the OSR values.
-    for (Node* use : osr_loop_entry->uses()) {
-      if (use->opcode() == IrOpcode::kOsrValue) mapping->at(use->id()) = use;
-    }
 
     // The outer loops are dead in this copy.
     for (LoopTree::Loop* outer = loop->parent(); outer;
@@ -69,8 +65,9 @@ static void PeelOuterLoopsForOsr(Graph* graph, CommonOperatorBuilder* common,
         // Mapping already exists.
         continue;
       }
-      if (orig->InputCount() == 0) {
-        // No need to copy leaf nodes.
+      if (orig->InputCount() == 0 || orig->opcode() == IrOpcode::kParameter ||
+          orig->opcode() == IrOpcode::kOsrValue) {
+        // No need to copy leaf nodes or parameters.
         mapping->at(orig->id()) = orig;
         continue;
       }
@@ -218,6 +215,16 @@ bool OsrHelper::Deconstruct(JSGraph* jsgraph, CommonOperatorBuilder* common,
   // and run the control reducer to clean up the graph.
   osr_normal_entry->ReplaceUses(dead);
   osr_loop_entry->ReplaceUses(graph->start());
+
+  // Normally the control reducer removes loops whose first input is dead,
+  // but we need to avoid that because the osr_loop is reachable through
+  // the second input, so reduce it and its phis manually.
+  osr_loop->ReplaceInput(0, dead);
+  Node* node = ControlReducer::ReduceMerge(jsgraph, common, osr_loop);
+  if (node != osr_loop) osr_loop->ReplaceUses(node);
+
+  // Run the normal control reduction, which naturally trims away the dead
+  // parts of the graph.
   ControlReducer::ReduceGraph(tmp_zone, jsgraph, common);
 
   return true;

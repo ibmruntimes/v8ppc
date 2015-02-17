@@ -88,7 +88,7 @@ class HBasicBlock FINAL : public ZoneObject {
   bool IsFinished() const { return end_ != NULL; }
   void AddPhi(HPhi* phi);
   void RemovePhi(HPhi* phi);
-  void AddInstruction(HInstruction* instr, HSourcePosition position);
+  void AddInstruction(HInstruction* instr, SourcePosition position);
   bool Dominates(HBasicBlock* other) const;
   bool EqualToOrDominates(HBasicBlock* other) const;
   int LoopNestingDepth() const;
@@ -114,8 +114,7 @@ class HBasicBlock FINAL : public ZoneObject {
 
   int PredecessorIndexOf(HBasicBlock* predecessor) const;
   HPhi* AddNewPhi(int merged_index);
-  HSimulate* AddNewSimulate(BailoutId ast_id,
-                            HSourcePosition position,
+  HSimulate* AddNewSimulate(BailoutId ast_id, SourcePosition position,
                             RemovableSimulate removable = FIXED_SIMULATE) {
     HSimulate* instr = CreateSimulate(ast_id, removable);
     AddInstruction(instr, position);
@@ -167,21 +166,18 @@ class HBasicBlock FINAL : public ZoneObject {
   friend class HGraphBuilder;
 
   HSimulate* CreateSimulate(BailoutId ast_id, RemovableSimulate removable);
-  void Finish(HControlInstruction* last, HSourcePosition position);
-  void FinishExit(HControlInstruction* instruction, HSourcePosition position);
-  void Goto(HBasicBlock* block,
-            HSourcePosition position,
-            FunctionState* state = NULL,
-            bool add_simulate = true);
-  void GotoNoSimulate(HBasicBlock* block, HSourcePosition position) {
+  void Finish(HControlInstruction* last, SourcePosition position);
+  void FinishExit(HControlInstruction* instruction, SourcePosition position);
+  void Goto(HBasicBlock* block, SourcePosition position,
+            FunctionState* state = NULL, bool add_simulate = true);
+  void GotoNoSimulate(HBasicBlock* block, SourcePosition position) {
     Goto(block, position, NULL, false);
   }
 
   // Add the inlined function exit sequence, adding an HLeaveInlined
   // instruction and updating the bailout environment.
-  void AddLeaveInlined(HValue* return_value,
-                       FunctionState* state,
-                       HSourcePosition position);
+  void AddLeaveInlined(HValue* return_value, FunctionState* state,
+                       SourcePosition position);
 
  private:
   void RegisterPredecessor(HBasicBlock* pred);
@@ -461,11 +457,11 @@ class HGraph FINAL : public ZoneObject {
   // identifier to each inlining and dumps function source if it was inlined
   // for the first time during the current optimization.
   int TraceInlinedFunction(Handle<SharedFunctionInfo> shared,
-                           HSourcePosition position);
+                           SourcePosition position);
 
-  // Converts given HSourcePosition to the absolute offset from the start of
+  // Converts given SourcePosition to the absolute offset from the start of
   // the corresponding script.
-  int SourcePositionToScriptPosition(HSourcePosition position);
+  int SourcePositionToScriptPosition(SourcePosition position);
 
  private:
   HConstant* ReinsertConstantIfNecessary(HConstant* constant);
@@ -509,23 +505,6 @@ class HGraph FINAL : public ZoneObject {
   int maximum_environment_size_;
   int no_side_effects_scope_count_;
   bool disallow_adding_new_values_;
-
-  class InlinedFunctionInfo {
-   public:
-    explicit InlinedFunctionInfo(Handle<SharedFunctionInfo> shared)
-      : shared_(shared), start_position_(shared->start_position()) {
-    }
-
-    Handle<SharedFunctionInfo> shared() const { return shared_; }
-    int start_position() const { return start_position_; }
-
-   private:
-    Handle<SharedFunctionInfo> shared_;
-    int start_position_;
-  };
-
-  ZoneList<InlinedFunctionInfo> inlined_functions_;
-  ZoneList<int> inlining_id_to_function_id_;
 
   DISALLOW_COPY_AND_ASSIGN(HGraph);
 };
@@ -958,7 +937,7 @@ class FunctionState FINAL {
   HArgumentsElements* arguments_elements_;
 
   int inlining_id_;
-  HSourcePosition outer_source_position_;
+  SourcePosition outer_source_position_;
 
   FunctionState* outer_;
 };
@@ -1046,7 +1025,7 @@ class HGraphBuilder {
         graph_(NULL),
         current_block_(NULL),
         scope_(info->scope()),
-        position_(HSourcePosition::Unknown()),
+        position_(SourcePosition::Unknown()),
         start_position_(0) {}
   virtual ~HGraphBuilder() {}
 
@@ -1902,18 +1881,16 @@ class HGraphBuilder {
   }
 
   // Convert the given absolute offset from the start of the script to
-  // the HSourcePosition assuming that this position corresponds to the
+  // the SourcePosition assuming that this position corresponds to the
   // same function as current position_.
-  HSourcePosition ScriptPositionToSourcePosition(int position) {
-    HSourcePosition pos = position_;
+  SourcePosition ScriptPositionToSourcePosition(int position) {
+    SourcePosition pos = position_;
     pos.set_position(position - start_position_);
     return pos;
   }
 
-  HSourcePosition source_position() { return position_; }
-  void set_source_position(HSourcePosition position) {
-    position_ = position;
-  }
+  SourcePosition source_position() { return position_; }
+  void set_source_position(SourcePosition position) { position_ = position; }
 
   template <typename ViewClass>
   void BuildArrayBufferViewInitialization(HValue* obj,
@@ -1933,7 +1910,7 @@ class HGraphBuilder {
   HGraph* graph_;
   HBasicBlock* current_block_;
   Scope* scope_;
-  HSourcePosition position_;
+  SourcePosition position_;
   int start_position_;
 };
 
@@ -2305,8 +2282,6 @@ class HOptimizedGraphBuilder : public HGraphBuilder, public AstVisitor {
   AST_NODE_LIST(DECLARE_VISIT)
 #undef DECLARE_VISIT
 
-  Type* ToType(Handle<Map> map);
-
  private:
   // Helpers for flow graph construction.
   enum GlobalPropertyAccess {
@@ -2342,13 +2317,10 @@ class HOptimizedGraphBuilder : public HGraphBuilder, public AstVisitor {
                               Handle<JSFunction> target);
 
   int InliningAstSize(Handle<JSFunction> target);
-  bool TryInline(Handle<JSFunction> target,
-                 int arguments_count,
-                 HValue* implicit_return_value,
-                 BailoutId ast_id,
-                 BailoutId return_id,
-                 InliningKind inlining_kind,
-                 HSourcePosition position);
+  bool TryInline(Handle<JSFunction> target, int arguments_count,
+                 HValue* implicit_return_value, BailoutId ast_id,
+                 BailoutId return_id, InliningKind inlining_kind,
+                 SourcePosition position);
 
   bool TryInlineCall(Call* expr);
   bool TryInlineConstruct(CallNew* expr, HValue* implicit_return_value);
@@ -2460,16 +2432,15 @@ class HOptimizedGraphBuilder : public HGraphBuilder, public AstVisitor {
   class PropertyAccessInfo {
    public:
     PropertyAccessInfo(HOptimizedGraphBuilder* builder,
-                       PropertyAccessType access_type,
-                       Type* type,
+                       PropertyAccessType access_type, Handle<Map> map,
                        Handle<String> name)
         : lookup_(builder->isolate()),
           builder_(builder),
           access_type_(access_type),
-          type_(type),
+          map_(map),
           name_(name),
           field_type_(HType::Tagged()),
-          access_(HObjectAccess::ForMap()) { }
+          access_(HObjectAccess::ForMap()) {}
 
     // Checkes whether this PropertyAccessInfo can be handled as a monomorphic
     // load named. It additionally fills in the fields necessary to generate the
@@ -2484,22 +2455,23 @@ class HOptimizedGraphBuilder : public HGraphBuilder, public AstVisitor {
     // PropertyAccessInfo is built for types->first().
     bool CanAccessAsMonomorphic(SmallMapList* types);
 
+    bool NeedsWrappingFor(Handle<JSFunction> target) const;
+
     Handle<Map> map();
-    Type* type() const { return type_; }
     Handle<String> name() const { return name_; }
 
     bool IsJSObjectFieldAccessor() {
       int offset;  // unused
-      return Accessors::IsJSObjectFieldAccessor<Type>(type_, name_, &offset);
+      return Accessors::IsJSObjectFieldAccessor(map(), name_, &offset);
     }
 
     bool GetJSObjectFieldAccess(HObjectAccess* access) {
       int offset;
-      if (Accessors::IsJSObjectFieldAccessor<Type>(type_, name_, &offset)) {
-        if (type_->Is(Type::String())) {
+      if (Accessors::IsJSObjectFieldAccessor(map(), name_, &offset)) {
+        if (IsStringType()) {
           DCHECK(String::Equals(isolate()->factory()->length_string(), name_));
           *access = HObjectAccess::ForStringLength();
-        } else if (type_->Is(Type::Array())) {
+        } else if (IsArrayType()) {
           DCHECK(String::Equals(isolate()->factory()->length_string(), name_));
           *access = HObjectAccess::ForArrayLength(map()->elements_kind());
         } else {
@@ -2532,6 +2504,11 @@ class HOptimizedGraphBuilder : public HGraphBuilder, public AstVisitor {
     bool IsConfigurable() const { return lookup_.IsConfigurable(); }
     bool IsReadOnly() const { return lookup_.IsReadOnly(); }
 
+    bool IsStringType() { return map_->instance_type() < FIRST_NONSTRING_TYPE; }
+    bool IsNumberType() { return map_->instance_type() == HEAP_NUMBER_TYPE; }
+    bool IsValueWrapped() { return IsStringType() || IsNumberType(); }
+    bool IsArrayType() { return map_->instance_type() == JS_ARRAY_TYPE; }
+
    private:
     Handle<Object> GetAccessorsFromMap(Handle<Map> map) const {
       return handle(lookup_.GetValueFromMap(*map), isolate());
@@ -2550,7 +2527,6 @@ class HOptimizedGraphBuilder : public HGraphBuilder, public AstVisitor {
     }
     Representation representation() const { return lookup_.representation(); }
 
-    Type* ToType(Handle<Map> map) { return builder_->ToType(map); }
     Zone* zone() { return builder_->zone(); }
     CompilationInfo* top_info() { return builder_->top_info(); }
     CompilationInfo* current_info() { return builder_->current_info(); }
@@ -2569,7 +2545,7 @@ class HOptimizedGraphBuilder : public HGraphBuilder, public AstVisitor {
     LookupResult lookup_;
     HOptimizedGraphBuilder* builder_;
     PropertyAccessType access_type_;
-    Type* type_;
+    Handle<Map> map_;
     Handle<String> name_;
     Handle<JSObject> holder_;
     Handle<JSFunction> accessor_;
@@ -2614,15 +2590,9 @@ class HOptimizedGraphBuilder : public HGraphBuilder, public AstVisitor {
   };
 
   HControlInstruction* BuildCompareInstruction(
-      Token::Value op,
-      HValue* left,
-      HValue* right,
-      Type* left_type,
-      Type* right_type,
-      Type* combined_type,
-      HSourcePosition left_position,
-      HSourcePosition right_position,
-      PushBeforeSimulateBehavior push_sim_result,
+      Token::Value op, HValue* left, HValue* right, Type* left_type,
+      Type* right_type, Type* combined_type, SourcePosition left_position,
+      SourcePosition right_position, PushBeforeSimulateBehavior push_sim_result,
       BailoutId bailout_id);
 
   HInstruction* BuildStringCharCodeAt(HValue* string,

@@ -331,11 +331,10 @@ MaybeHandle<Object> Object::GetPropertyWithAccessor(Handle<Object> receiver,
 }
 
 
-bool AccessorInfo::IsCompatibleReceiverType(Isolate* isolate,
-                                            Handle<AccessorInfo> info,
-                                            Handle<HeapType> type) {
+bool AccessorInfo::IsCompatibleReceiverMap(Isolate* isolate,
+                                           Handle<AccessorInfo> info,
+                                           Handle<Map> map) {
   if (!info->HasExpectedReceiverType()) return true;
-  Handle<Map> map = IC::TypeToMap(*type, isolate);
   if (!map->IsJSObjectMap()) return false;
   return FunctionTemplateInfo::cast(info->expected_receiver_type())
       ->IsTemplateFor(*map);
@@ -2243,7 +2242,7 @@ Map* Map::FindLastMatchMap(int verbatim,
   DisallowHeapAllocation no_allocation;
 
   // This can only be called on roots of transition trees.
-  DCHECK(GetBackPointer()->IsUndefined());
+  DCHECK_EQ(verbatim, NumberOfOwnDescriptors());
 
   Map* current = this;
 
@@ -2326,18 +2325,8 @@ void Map::UpdateFieldType(int descriptor, Handle<Name> name,
 Handle<HeapType> Map::GeneralizeFieldType(Handle<HeapType> type1,
                                           Handle<HeapType> type2,
                                           Isolate* isolate) {
-  static const int kMaxClassesPerFieldType = 5;
   if (type1->NowIs(type2)) return type2;
   if (type2->NowIs(type1)) return type1;
-  if (type1->NowStable() && type2->NowStable()) {
-    Handle<HeapType> type = HeapType::Union(type1, type2, isolate);
-    if (type->NumClasses() <= kMaxClassesPerFieldType) {
-      DCHECK(type->NowStable());
-      DCHECK(type1->NowIs(type));
-      DCHECK(type2->NowIs(type));
-      return type;
-    }
-  }
   return HeapType::Any(isolate);
 }
 
@@ -2492,6 +2481,16 @@ Handle<Map> Map::ReconfigureProperty(Handle<Map> old_map, int modify_index,
                                             new_kind, new_attributes,
                                             "GenAll_NotEquivalent");
   }
+
+  ElementsKind from_kind = root_map->elements_kind();
+  ElementsKind to_kind = old_map->elements_kind();
+  if (from_kind != to_kind &&
+      !(IsTransitionableFastElementsKind(from_kind) &&
+        IsMoreGeneralElementsKindTransition(from_kind, to_kind))) {
+    return CopyGeneralizeAllRepresentations(old_map, modify_index, store_mode,
+                                            new_kind, new_attributes,
+                                            "GenAll_InvalidElementsTransition");
+  }
   int root_nof = root_map->NumberOfOwnDescriptors();
   if (modify_index >= 0 && modify_index < root_nof) {
     PropertyDetails old_details = old_descriptors->GetDetails(modify_index);
@@ -2509,6 +2508,11 @@ Handle<Map> Map::ReconfigureProperty(Handle<Map> old_map, int modify_index,
                                               new_kind, new_attributes,
                                               "GenAll_RootModification2");
     }
+  }
+
+  // From here on, use the map with correct elements kind as root map.
+  if (from_kind != to_kind) {
+    root_map = Map::AsElementsKind(root_map, to_kind);
   }
 
   Handle<Map> target_map = root_map;
@@ -9666,13 +9670,13 @@ int Map::Hash() {
 
 
 static bool CheckEquivalent(Map* first, Map* second) {
-  return
-    first->constructor() == second->constructor() &&
-    first->prototype() == second->prototype() &&
-    first->instance_type() == second->instance_type() &&
-    first->bit_field() == second->bit_field() &&
-    first->bit_field2() == second->bit_field2() &&
-    first->has_instance_call_handler() == second->has_instance_call_handler();
+  return first->constructor() == second->constructor() &&
+         first->prototype() == second->prototype() &&
+         first->instance_type() == second->instance_type() &&
+         first->bit_field() == second->bit_field() &&
+         first->is_extensible() == second->is_extensible() &&
+         first->has_instance_call_handler() ==
+             second->has_instance_call_handler();
 }
 
 
@@ -9685,7 +9689,8 @@ bool Map::EquivalentToForNormalization(Map* other,
                                        PropertyNormalizationMode mode) {
   int properties = mode == CLEAR_INOBJECT_PROPERTIES
       ? 0 : other->inobject_properties();
-  return CheckEquivalent(this, other) && inobject_properties() == properties;
+  return CheckEquivalent(this, other) && bit_field2() == other->bit_field2() &&
+         inobject_properties() == properties;
 }
 
 
