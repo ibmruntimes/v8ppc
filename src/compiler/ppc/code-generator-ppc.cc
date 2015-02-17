@@ -556,8 +556,12 @@ void CodeGenerator::AssembleArchInstruction(Instruction* instr) {
       AssembleArchJump(i.InputRpo(0));
       DCHECK_EQ(LeaveRC, i.OutputRCBit());
       break;
-    case kArchSwitch:
-      AssembleArchSwitch(instr);
+    case kArchLookupSwitch:
+      AssembleArchLookupSwitch(instr);
+      DCHECK_EQ(LeaveRC, i.OutputRCBit());
+      break;
+    case kArchTableSwitch:
+      AssembleArchTableSwitch(instr);
       DCHECK_EQ(LeaveRC, i.OutputRCBit());
       break;
     case kArchNop:
@@ -1017,21 +1021,6 @@ void CodeGenerator::AssembleArchJump(BasicBlock::RpoNumber target) {
 }
 
 
-void CodeGenerator::AssembleArchSwitch(Instruction* instr) {
-  PPCOperandConverter i(this, instr);
-  size_t const label_count = instr->InputCount() - 1;
-  Label** labels = zone()->NewArray<Label*>(label_count);
-  for (size_t index = 0; index < label_count; ++index) {
-    labels[index] = GetLabel(i.InputRpo(static_cast<int>(index + 1)));
-  }
-  Label* const table = AddJumpTable(labels, label_count);
-  __ mov_label_addr(kScratchReg, table);
-  __ ShiftLeftImm(r0, i.InputRegister(0), Operand(kPointerSizeLog2));
-  __ LoadPX(kScratchReg, MemOperand(kScratchReg, r0));
-  __ Jump(kScratchReg);
-}
-
-
 // Assembles boolean materializations after an instruction.
 void CodeGenerator::AssembleArchBoolean(Instruction* instr,
                                         FlagsCondition condition) {
@@ -1091,6 +1080,35 @@ void CodeGenerator::AssembleArchBoolean(Instruction* instr,
       break;
   }
   __ bind(&done);
+}
+
+
+void CodeGenerator::AssembleArchLookupSwitch(Instruction* instr) {
+  PPCOperandConverter i(this, instr);
+  Register input = i.InputRegister(0);
+  for (size_t index = 2; index < instr->InputCount(); index += 2) {
+    __ Cmpi(input, Operand(i.InputInt32(static_cast<int>(index + 0))), r0);
+    __ beq(GetLabel(i.InputRpo(static_cast<int>(index + 1))));
+  }
+  AssembleArchJump(i.InputRpo(1));
+}
+
+
+void CodeGenerator::AssembleArchTableSwitch(Instruction* instr) {
+  PPCOperandConverter i(this, instr);
+  Register input = i.InputRegister(0);
+  int32_t const case_count = static_cast<int32_t>(instr->InputCount() - 2);
+  Label** cases = zone()->NewArray<Label*>(case_count);
+  for (int32_t index = 0; index < case_count; ++index) {
+    cases[index] = GetLabel(i.InputRpo(index + 2));
+  }
+  Label* const table = AddJumpTable(cases, case_count);
+  __ Cmpli(input, Operand(case_count), r0);
+  __ bge(GetLabel(i.InputRpo(1)));
+  __ mov_label_addr(kScratchReg, table);
+  __ ShiftLeftImm(r0, input, Operand(kPointerSizeLog2));
+  __ LoadPX(kScratchReg, MemOperand(kScratchReg, r0));
+  __ Jump(kScratchReg);
 }
 
 
