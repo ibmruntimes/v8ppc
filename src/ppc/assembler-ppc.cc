@@ -148,7 +148,7 @@ const char* DoubleRegister::AllocationIndexToString(int index) {
 // Implementation of RelocInfo
 
 const int RelocInfo::kApplyMask = 1 << RelocInfo::INTERNAL_REFERENCE |
-    1 << RelocInfo::INTERNAL_REFERENCE_LOAD;
+    1 << RelocInfo::INTERNAL_REFERENCE_ENCODED;
 
 
 bool RelocInfo::IsCodedSpecially() {
@@ -1525,7 +1525,7 @@ void Assembler::RelocateInternalReference(Address pc, intptr_t delta,
                                           Address code_start,
                                           RelocInfo::Mode rmode,
                                           ICacheFlushMode icache_flush_mode) {
-  if (rmode == RelocInfo::INTERNAL_REFERENCE) {
+  if (RelocInfo::IsInternalReference(rmode)) {
     // Jump table entry
     DCHECK(delta || code_start);
     uintptr_t* entry = reinterpret_cast<uintptr_t*>(pc);
@@ -1538,7 +1538,7 @@ void Assembler::RelocateInternalReference(Address pc, intptr_t delta,
   } else {
     // mov sequence
     DCHECK(delta || code_start);
-    DCHECK(rmode == RelocInfo::INTERNAL_REFERENCE_LOAD);
+    DCHECK(RelocInfo::IsInternalReferenceEncoded(rmode));
     ConstantPoolArray* constant_pool = NULL;
     Address addr;
     if (delta) {
@@ -1748,7 +1748,7 @@ void Assembler::mov_label_offset(Register dst, Label* label) {
 // TODO(mbrandy): allow loading internal reference from constant pool
 void Assembler::mov_label_addr(Register dst, Label* label) {
   CheckBuffer();
-  RecordRelocInfo(RelocInfo::INTERNAL_REFERENCE_LOAD);
+  RecordRelocInfo(RelocInfo::INTERNAL_REFERENCE_ENCODED);
   int position = link(label);
   if (label->is_bound()) {
     // CheckBuffer() is called too frequently. This will pre-grow
@@ -2316,7 +2316,7 @@ void Assembler::GrowBuffer() {
   }
   for (int pos : internal_reference_load_positions_) {
     RelocateInternalReference(buffer_ + pos, pc_delta, 0,
-                              RelocInfo::INTERNAL_REFERENCE_LOAD);
+                              RelocInfo::INTERNAL_REFERENCE_ENCODED);
   }
 #if V8_OOL_CONSTANT_POOL
   constant_pool_builder_.Relocate(pc_delta);

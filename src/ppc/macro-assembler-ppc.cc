@@ -675,7 +675,7 @@ void MacroAssembler::LoadConstantPoolPointerRegister(
   } else {
     DCHECK(access_method == CONSTRUCT_INTERNAL_REFERENCE);
     base = kConstantPoolRegister;
-    RecordRelocInfo(RelocInfo::INTERNAL_REFERENCE_LOAD);
+    RecordRelocInfo(RelocInfo::INTERNAL_REFERENCE_ENCODED);
 
     // CheckBuffer() is called too frequently. This will pre-grow
     // the buffer if needed to avoid spliting the relocation and instructions

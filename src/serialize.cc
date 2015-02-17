@@ -908,7 +908,8 @@ void Deserializer::ReadObject(int space_number, Object** write_back) {
     Code* code = reinterpret_cast<Code*>(HeapObject::FromAddress(address));
     for (RelocIterator it(code); !it.done(); it.next()) {
       RelocInfo::Mode rmode = it.rinfo()->rmode();
-      if (RelocInfo::IsInternalReference(rmode)) {
+      if (RelocInfo::IsInternalReference(rmode) ||
+          RelocInfo::IsInternalReferenceEncoded(rmode)) {
         Assembler::RelocateInternalReference(it.rinfo()->pc(), 0,
                                              code->instruction_start(), rmode);
       }
