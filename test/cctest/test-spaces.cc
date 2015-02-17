@@ -213,13 +213,14 @@ TEST(Regress3540) {
       memory_allocator->SetUp(heap->MaxReserved(), heap->MaxExecutableSize()));
   TestMemoryAllocatorScope test_allocator_scope(isolate, memory_allocator);
   CodeRange* code_range = new CodeRange(isolate);
-  const size_t code_range_size = 4 * MB;
+  const size_t code_range_size = 4 * Page::kPageSize;
   if (!code_range->SetUp(code_range_size)) return;
   size_t allocated_size;
   Address result;
   for (int i = 0; i < 5; i++) {
     result = code_range->AllocateRawMemory(
-        code_range_size - MB, code_range_size - MB, &allocated_size);
+        code_range_size - Page::kPageSize, code_range_size - Page::kPageSize,
+        &allocated_size);
     CHECK((result != NULL) == (i == 0));
   }
 }
