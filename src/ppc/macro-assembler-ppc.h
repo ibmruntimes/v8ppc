@@ -1489,6 +1489,9 @@ class MacroAssembler : public Assembler {
   // it.  See the implementation for register usage.
   void JumpToHandlerEntry();
 
+  static const RegList kSafepointSavedRegisters;
+  static const int kNumSafepointSavedRegisters;
+
   // Compute memory operands for safepoint stack slots.
   static int SafepointRegisterStackIndex(int reg_code);
   MemOperand SafepointRegisterSlot(Register reg);

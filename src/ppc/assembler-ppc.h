@@ -185,6 +185,32 @@ struct Register {
     return names[index];
   }
 
+  static const RegList kAllocatable =
+      1 << 3 |
+      1 << 4 |
+      1 << 5 |
+      1 << 6 |
+      1 << 7 |
+      1 << 8 |
+      1 << 9 |
+      1 << 10 |
+      1 << 14 |
+      1 << 15 |
+      1 << 16 |
+      1 << 17 |
+      1 << 18 |
+      1 << 19 |
+      1 << 20 |
+      1 << 21 |
+      1 << 22 |
+      1 << 23 |
+      1 << 24 |
+      1 << 25 |
+      1 << 26 |
+      1 << 27 |
+      (FLAG_enable_ool_constant_pool ? 0 : 1 << 28) |
+      1 << 30;
+
   static Register from_code(int code) {
     Register r = {code};
     return r;
