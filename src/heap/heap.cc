@@ -1096,8 +1096,6 @@ void Heap::UpdateSurvivalStatistics(int start_new_space_size) {
   promotion_ratio_ = (static_cast<double>(promoted_objects_size_) /
                       static_cast<double>(start_new_space_size) * 100);
 
-  if (gc_count_ > 1) tracer()->AddPromotionRatio(promotion_ratio_);
-
   if (previous_semi_space_copied_object_size_ > 0) {
     promotion_rate_ =
         (static_cast<double>(promoted_objects_size_) /
@@ -1111,6 +1109,7 @@ void Heap::UpdateSurvivalStatistics(int start_new_space_size) {
        static_cast<double>(start_new_space_size) * 100);
 
   double survival_rate = promotion_ratio_ + semi_space_copied_rate_;
+  tracer()->AddSurvivalRatio(survival_rate);
   if (survival_rate > kYoungSurvivalRateHighThreshold) {
     high_survival_rate_period_length_++;
   } else {
@@ -2422,8 +2421,8 @@ void Heap::ConfigureInitialOldGenerationSize() {
     old_generation_allocation_limit_ =
         Max(kMinimumOldGenerationAllocationLimit,
             static_cast<intptr_t>(
-                static_cast<double>(initial_old_generation_size_) *
-                (tracer()->AveragePromotionRatio() / 100)));
+                static_cast<double>(old_generation_allocation_limit_) *
+                (tracer()->AverageSurvivalRatio() / 100)));
   }
 }
 
@@ -3696,6 +3695,7 @@ AllocationResult Heap::AllocateCode(int object_size, bool immovable) {
   DCHECK(isolate_->code_range() == NULL || !isolate_->code_range()->valid() ||
          isolate_->code_range()->contains(code->address()));
   code->set_gc_metadata(Smi::FromInt(0));
+  code->set_ic_age(global_ic_age_);
   return code;
 }
 

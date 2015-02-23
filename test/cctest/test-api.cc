@@ -1967,8 +1967,6 @@ THREADED_TEST(ExecutableAccessorIsPreservedOnAttributeChange) {
   CompileRun("Object.defineProperty(a, 'length', { writable: false });");
   CHECK_EQ(i::FixedArray::cast(a->map()->instance_descriptors())->length(), 0);
   // But we should still have an ExecutableAccessorInfo.
-  i::Isolate* i_isolate = reinterpret_cast<i::Isolate*>(isolate);
-  i::LookupResult lookup(i_isolate);
   i::Handle<i::String> name(v8::Utils::OpenHandle(*v8_str("length")));
   i::LookupIterator it(a, name, i::LookupIterator::OWN_SKIP_INTERCEPTOR);
   CHECK_EQ(i::LookupIterator::ACCESSOR, it.state());
@@ -12387,14 +12385,14 @@ UNINITIALIZED_TEST(SetJitCodeEventHandler) {
   i::FLAG_incremental_marking = false;
   if (i::FLAG_never_compact) return;
   const char* script =
-    "function bar() {"
-    "  var sum = 0;"
-    "  for (i = 0; i < 100; ++i)"
-    "    sum = foo(i);"
-    "  return sum;"
-    "}"
-    "function foo(i) { return i * i; };"
-    "bar();";
+      "function bar() {"
+      "  var sum = 0;"
+      "  for (i = 0; i < 10; ++i)"
+      "    sum = foo(i);"
+      "  return sum;"
+      "}"
+      "function foo(i) { return i; };"
+      "bar();";
 
   // Run this test in a new isolate to make sure we don't
   // have remnants of state from other code.

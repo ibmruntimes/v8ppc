@@ -1190,8 +1190,9 @@ function TestSetConstructorIterableValue(ctor) {
   // Strict mode is required to prevent implicit wrapping in the getter.
   Object.defineProperty(Number.prototype, Symbol.iterator, {
     get: function() {
-      assertEquals('object', typeof this);
+      assertEquals('number', typeof this);
       return function() {
+        assertEquals('number', typeof this);
         return oneAndTwo.keys();
       };
     },
@@ -1380,8 +1381,9 @@ function TestMapConstructorIterableValue(ctor) {
   // Strict mode is required to prevent implicit wrapping in the getter.
   Object.defineProperty(Number.prototype, Symbol.iterator, {
     get: function() {
-      assertEquals('object', typeof this);
+      assertEquals('number', typeof this);
       return function() {
+        assertEquals('number', typeof this);
         return oneAndTwo.entries();
       };
     },

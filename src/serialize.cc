@@ -10,6 +10,7 @@
 #include "src/bootstrapper.h"
 #include "src/code-stubs.h"
 #include "src/compiler.h"
+#include "src/cpu-profiler.h"
 #include "src/deoptimizer.h"
 #include "src/execution.h"
 #include "src/global-handles.h"
@@ -2462,12 +2463,11 @@ void SerializedData::AllocateData(int size) {
 }
 
 
-SnapshotData::SnapshotData(const SnapshotByteSink& sink,
-                           const Serializer& ser) {
+SnapshotData::SnapshotData(const Serializer& ser) {
   DisallowHeapAllocation no_gc;
   List<Reservation> reservations;
   ser.EncodeReservations(&reservations);
-  const List<byte>& payload = sink.data();
+  const List<byte>& payload = ser.sink()->data();
 
   // Calculate sizes.
   int reservation_size = reservations.length() * kInt32Size;

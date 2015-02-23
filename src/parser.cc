@@ -382,9 +382,18 @@ class TargetScope BASE_EMBEDDED {
 // ----------------------------------------------------------------------------
 // Implementation of Parser
 
+bool ParserTraits::IsEval(const AstRawString* identifier) const {
+  return identifier == parser_->ast_value_factory()->eval_string();
+}
+
+
+bool ParserTraits::IsArguments(const AstRawString* identifier) const {
+  return identifier == parser_->ast_value_factory()->arguments_string();
+}
+
+
 bool ParserTraits::IsEvalOrArguments(const AstRawString* identifier) const {
-  return identifier == parser_->ast_value_factory()->eval_string() ||
-         identifier == parser_->ast_value_factory()->arguments_string();
+  return IsEval(identifier) || IsArguments(identifier);
 }
 
 
@@ -591,9 +600,8 @@ Expression* ParserTraits::NewThrowError(
 
 
 void ParserTraits::ReportMessageAt(Scanner::Location source_location,
-                                   const char* message,
-                                   const char* arg,
-                                   bool is_reference_error) {
+                                   const char* message, const char* arg,
+                                   ParseErrorType error_type) {
   if (parser_->stack_overflow()) {
     // Suppress the error message (syntax error or such) in the presence of a
     // stack overflow. The isolate allows only one pending exception at at time
@@ -605,30 +613,27 @@ void ParserTraits::ReportMessageAt(Scanner::Location source_location,
   parser_->pending_error_message_ = message;
   parser_->pending_error_char_arg_ = arg;
   parser_->pending_error_arg_ = NULL;
-  parser_->pending_error_is_reference_error_ = is_reference_error;
+  parser_->pending_error_type_ = error_type;
 }
 
 
-void ParserTraits::ReportMessage(const char* message,
-                                 const char* arg,
-                                 bool is_reference_error) {
+void ParserTraits::ReportMessage(const char* message, const char* arg,
+                                 ParseErrorType error_type) {
   Scanner::Location source_location = parser_->scanner()->location();
-  ReportMessageAt(source_location, message, arg, is_reference_error);
+  ReportMessageAt(source_location, message, arg, error_type);
 }
 
 
-void ParserTraits::ReportMessage(const char* message,
-                                 const AstRawString* arg,
-                                 bool is_reference_error) {
+void ParserTraits::ReportMessage(const char* message, const AstRawString* arg,
+                                 ParseErrorType error_type) {
   Scanner::Location source_location = parser_->scanner()->location();
-  ReportMessageAt(source_location, message, arg, is_reference_error);
+  ReportMessageAt(source_location, message, arg, error_type);
 }
 
 
 void ParserTraits::ReportMessageAt(Scanner::Location source_location,
-                                   const char* message,
-                                   const AstRawString* arg,
-                                   bool is_reference_error) {
+                                   const char* message, const AstRawString* arg,
+                                   ParseErrorType error_type) {
   if (parser_->stack_overflow()) {
     // Suppress the error message (syntax error or such) in the presence of a
     // stack overflow. The isolate allows only one pending exception at at time
@@ -640,7 +645,7 @@ void ParserTraits::ReportMessageAt(Scanner::Location source_location,
   parser_->pending_error_message_ = message;
   parser_->pending_error_char_arg_ = NULL;
   parser_->pending_error_arg_ = arg;
-  parser_->pending_error_is_reference_error_ = is_reference_error;
+  parser_->pending_error_type_ = error_type;
 }
 
 
@@ -788,6 +793,7 @@ Parser::Parser(CompilationInfo* info, uintptr_t stack_limit, uint32_t hash_seed,
       pending_error_message_(NULL),
       pending_error_arg_(NULL),
       pending_error_char_arg_(NULL),
+      pending_error_type_(kSyntaxError),
       total_preparse_skipped_(0),
       pre_parse_timer_(NULL),
       parsing_on_main_thread_(true) {
@@ -822,7 +828,7 @@ Parser::Parser(CompilationInfo* info, uintptr_t stack_limit, uint32_t hash_seed,
 }
 
 
-FunctionLiteral* Parser::ParseProgram(CompilationInfo* info) {
+FunctionLiteral* Parser::ParseProgram(Isolate* isolate, CompilationInfo* info) {
   // TODO(bmeurer): We temporarily need to pass allow_nesting = true here,
   // see comment for HistogramTimerScope class.
 
@@ -830,7 +836,6 @@ FunctionLiteral* Parser::ParseProgram(CompilationInfo* info) {
   // called in the main thread.
   DCHECK(parsing_on_main_thread_);
 
-  Isolate* isolate = info->isolate();
   HistogramTimerScope timer_scope(isolate->counters()->parse(), true);
   Handle<String> source(String::cast(info->script()->source()));
   isolate->counters()->total_parse_size()->Increment(source->length());
@@ -871,7 +876,7 @@ FunctionLiteral* Parser::ParseProgram(CompilationInfo* info) {
   if (eval_scope != NULL) {
     eval_scope->set_end_position(source->length());
   }
-  HandleSourceURLComments(info);
+  HandleSourceURLComments(isolate, info->script());
 
   if (FLAG_trace_parse && result != NULL) {
     double ms = timer.Elapsed().InMillisecondsF();
@@ -991,13 +996,13 @@ FunctionLiteral* Parser::DoParseProgram(CompilationInfo* info, Scope** scope,
 }
 
 
-FunctionLiteral* Parser::ParseLazy(CompilationInfo* info) {
+FunctionLiteral* Parser::ParseLazy(Isolate* isolate, CompilationInfo* info) {
   // It's OK to use the Isolate & counters here, since this function is only
   // called in the main thread.
   DCHECK(parsing_on_main_thread_);
-  HistogramTimerScope timer_scope(info->isolate()->counters()->parse_lazy());
+  HistogramTimerScope timer_scope(isolate->counters()->parse_lazy());
   Handle<String> source(String::cast(info->script()->source()));
-  info->isolate()->counters()->total_parse_size()->Increment(source->length());
+  isolate->counters()->total_parse_size()->Increment(source->length());
   base::ElapsedTimer timer;
   if (FLAG_trace_parse) {
     timer.Start();
@@ -1012,12 +1017,12 @@ FunctionLiteral* Parser::ParseLazy(CompilationInfo* info) {
         Handle<ExternalTwoByteString>::cast(source),
         shared_info->start_position(),
         shared_info->end_position());
-    result = ParseLazy(info, &stream);
+    result = ParseLazy(isolate, info, &stream);
   } else {
     GenericStringUtf16CharacterStream stream(source,
                                              shared_info->start_position(),
                                              shared_info->end_position());
-    result = ParseLazy(info, &stream);
+    result = ParseLazy(isolate, info, &stream);
   }
 
   if (FLAG_trace_parse && result != NULL) {
@@ -1029,7 +1034,7 @@ FunctionLiteral* Parser::ParseLazy(CompilationInfo* info) {
 }
 
 
-FunctionLiteral* Parser::ParseLazy(CompilationInfo* info,
+FunctionLiteral* Parser::ParseLazy(Isolate* isolate, CompilationInfo* info,
                                    Utf16CharacterStream* source) {
   Handle<SharedFunctionInfo> shared_info = info->shared_info();
   scanner_.Initialize(source);
@@ -1055,7 +1060,7 @@ FunctionLiteral* Parser::ParseLazy(CompilationInfo* info,
       // Ok to use Isolate here, since lazy function parsing is only done in the
       // main thread.
       DCHECK(parsing_on_main_thread_);
-      scope = Scope::DeserializeScopeChain(info->isolate(), zone(),
+      scope = Scope::DeserializeScopeChain(isolate, zone(),
                                            info->closure()->context(), scope);
     }
     original_scope_ = scope;
@@ -1278,17 +1283,20 @@ Statement* Parser::ParseModule(bool* ok) {
   body->set_scope(scope);
 
   // Check that all exports are bound.
-  Interface* interface = scope->interface();
-  for (Interface::Iterator it = interface->iterator();
-       !it.done(); it.Advance()) {
-    if (scope->LookupLocal(it.name()) == NULL) {
-      ParserTraits::ReportMessage("module_export_undefined", it.name());
+  ModuleDescriptor* descriptor = scope->module();
+  for (ModuleDescriptor::Iterator it = descriptor->iterator(); !it.done();
+       it.Advance()) {
+    if (scope->LookupLocal(it.local_name()) == NULL) {
+      // TODO(adamk): Pass both local_name and export_name once ParserTraits
+      // supports multiple arg error messages.
+      // Also try to report this at a better location.
+      ParserTraits::ReportMessage("module_export_undefined", it.local_name());
       *ok = false;
       return NULL;
     }
   }
 
-  scope->interface()->Freeze();
+  scope->module()->Freeze();
   return body;
 }
 
@@ -1303,7 +1311,9 @@ Literal* Parser::ParseModuleSpecifier(bool* ok) {
 }
 
 
-void* Parser::ParseExportClause(ZoneList<const AstRawString*>* names,
+void* Parser::ParseExportClause(ZoneList<const AstRawString*>* export_names,
+                                ZoneList<Scanner::Location>* export_locations,
+                                ZoneList<const AstRawString*>* local_names,
                                 Scanner::Location* reserved_loc, bool* ok) {
   // ExportClause :
   //   '{' '}'
@@ -1328,14 +1338,17 @@ void* Parser::ParseExportClause(ZoneList<const AstRawString*>* names,
         !Token::IsIdentifier(name_tok, STRICT, false)) {
       *reserved_loc = scanner()->location();
     }
-    const AstRawString* name = ParseIdentifierName(CHECK_OK);
-    names->Add(name, zone());
+    const AstRawString* local_name = ParseIdentifierName(CHECK_OK);
     const AstRawString* export_name = NULL;
     if (CheckContextualKeyword(CStrVector("as"))) {
       export_name = ParseIdentifierName(CHECK_OK);
     }
-    // TODO(ES6): Return the export_name as well as the name.
-    USE(export_name);
+    if (export_name == NULL) {
+      export_name = local_name;
+    }
+    export_names->Add(export_name, zone());
+    local_names->Add(local_name, zone());
+    export_locations->Add(scanner()->location(), zone());
     if (peek() == Token::RBRACE) break;
     Expect(Token::COMMA, CHECK_OK);
   }
@@ -1479,16 +1492,20 @@ Statement* Parser::ParseExportDefault(bool* ok) {
   //    'export' 'default' ClassDeclaration
   //    'export' 'default' AssignmentExpression[In] ';'
 
+  Expect(Token::DEFAULT, CHECK_OK);
+  Scanner::Location default_loc = scanner()->location();
+
+  ZoneList<const AstRawString*> names(1, zone());
   Statement* result = NULL;
   switch (peek()) {
     case Token::FUNCTION:
       // TODO(ES6): Support parsing anonymous function declarations here.
-      result = ParseFunctionDeclaration(NULL, CHECK_OK);
+      result = ParseFunctionDeclaration(&names, CHECK_OK);
       break;
 
     case Token::CLASS:
       // TODO(ES6): Support parsing anonymous class declarations here.
-      result = ParseClassDeclaration(NULL, CHECK_OK);
+      result = ParseClassDeclaration(&names, CHECK_OK);
       break;
 
     default: {
@@ -1500,7 +1517,20 @@ Statement* Parser::ParseExportDefault(bool* ok) {
     }
   }
 
-  // TODO(ES6): Add default export to scope_->interface()
+  const AstRawString* default_string = ast_value_factory()->default_string();
+
+  DCHECK_LE(names.length(), 1);
+  if (names.length() == 1) {
+    scope_->module()->AddLocalExport(default_string, names.first(), zone(), ok);
+    if (!*ok) {
+      ParserTraits::ReportMessageAt(default_loc, "duplicate_export",
+                                    default_string);
+      return NULL;
+    }
+  } else {
+    // TODO(ES6): Assign result to a const binding with the name "*default*"
+    // and add an export entry with "*default*" as the local name.
+  }
 
   return result;
 }
@@ -1519,10 +1549,8 @@ Statement* Parser::ParseExportDeclaration(bool* ok) {
 
   Statement* result = NULL;
   ZoneList<const AstRawString*> names(1, zone());
-  bool is_export_from = false;
   switch (peek()) {
     case Token::DEFAULT:
-      Consume(Token::DEFAULT);
       return ParseExportDefault(ok);
 
     case Token::MUL: {
@@ -1530,12 +1558,9 @@ Statement* Parser::ParseExportDeclaration(bool* ok) {
       ExpectContextualKeyword(CStrVector("from"), CHECK_OK);
       Literal* module = ParseModuleSpecifier(CHECK_OK);
       ExpectSemicolon(CHECK_OK);
-      // TODO(ES6): Do something with the return value
-      // of ParseModuleSpecifier.
+      // TODO(ES6): scope_->module()->AddStarExport(...)
       USE(module);
-      is_export_from = true;
-      result = factory()->NewEmptyStatement(pos);
-      break;
+      return factory()->NewEmptyStatement(pos);
     }
 
     case Token::LBRACE: {
@@ -1551,13 +1576,14 @@ Statement* Parser::ParseExportDeclaration(bool* ok) {
       // encountered, and then throw a SyntaxError if we are in the
       // non-FromClause case.
       Scanner::Location reserved_loc = Scanner::Location::invalid();
-      ParseExportClause(&names, &reserved_loc, CHECK_OK);
+      ZoneList<const AstRawString*> export_names(1, zone());
+      ZoneList<Scanner::Location> export_locations(1, zone());
+      ZoneList<const AstRawString*> local_names(1, zone());
+      ParseExportClause(&export_names, &export_locations, &local_names,
+                        &reserved_loc, CHECK_OK);
+      Literal* indirect_export_module_specifier = NULL;
       if (CheckContextualKeyword(CStrVector("from"))) {
-        Literal* module = ParseModuleSpecifier(CHECK_OK);
-        // TODO(ES6): Do something with the return value
-        // of ParseModuleSpecifier.
-        USE(module);
-        is_export_from = true;
+        indirect_export_module_specifier = ParseModuleSpecifier(CHECK_OK);
       } else if (reserved_loc.IsValid()) {
         // No FromClause, so reserved words are invalid in ExportClause.
         *ok = false;
@@ -1565,8 +1591,25 @@ Statement* Parser::ParseExportDeclaration(bool* ok) {
         return NULL;
       }
       ExpectSemicolon(CHECK_OK);
-      result = factory()->NewEmptyStatement(pos);
-      break;
+      const int length = export_names.length();
+      DCHECK_EQ(length, local_names.length());
+      DCHECK_EQ(length, export_locations.length());
+      if (indirect_export_module_specifier == NULL) {
+        for (int i = 0; i < length; ++i) {
+          scope_->module()->AddLocalExport(export_names[i], local_names[i],
+                                           zone(), ok);
+          if (!*ok) {
+            ParserTraits::ReportMessageAt(export_locations[i],
+                                          "duplicate_export", export_names[i]);
+            return NULL;
+          }
+        }
+      } else {
+        for (int i = 0; i < length; ++i) {
+          // TODO(ES6): scope_->module()->AddIndirectExport(...);(
+        }
+      }
+      return factory()->NewEmptyStatement(pos);
     }
 
     case Token::FUNCTION:
@@ -1589,41 +1632,18 @@ Statement* Parser::ParseExportDeclaration(bool* ok) {
       return NULL;
   }
 
-  // Every export of a module may be assigned.
+  // Extract declared names into export declarations.
+  ModuleDescriptor* descriptor = scope_->module();
   for (int i = 0; i < names.length(); ++i) {
-    Variable* var = scope_->Lookup(names[i]);
-    if (var == NULL) {
-      // TODO(sigurds) This is an export that has no definition yet,
-      // not clear what to do in this case.
-      continue;
-    }
-    if (!IsImmutableVariableMode(var->mode())) {
-      var->set_maybe_assigned();
+    descriptor->AddLocalExport(names[i], names[i], zone(), ok);
+    if (!*ok) {
+      // TODO(adamk): Possibly report this error at the right place.
+      ParserTraits::ReportMessage("duplicate_export", names[i]);
+      return NULL;
     }
   }
 
-  // TODO(ES6): Handle 'export from' once imports are properly implemented.
-  // For now we just drop such exports on the floor.
-  if (!is_export_from) {
-    // Extract declared names into export declarations and interface.
-    Interface* interface = scope_->interface();
-    for (int i = 0; i < names.length(); ++i) {
-#ifdef DEBUG
-      if (FLAG_print_interface_details)
-        PrintF("# Export %.*s ", names[i]->length(), names[i]->raw_data());
-#endif
-      // TODO(adamk): Make early errors here provide the right error message
-      // (duplicate exported names).
-      interface->Add(names[i], zone(), CHECK_OK);
-      // TODO(rossberg): Rethink whether we actually need to store export
-      // declarations (for compilation?).
-      // ExportDeclaration* declaration =
-      //     factory()->NewExportDeclaration(proxy, scope_, position);
-      // scope_->AddDeclaration(declaration);
-    }
-  }
-
-  DCHECK(result != NULL);
+  DCHECK_NOT_NULL(result);
   return result;
 }
 
@@ -1970,6 +1990,7 @@ Statement* Parser::ParseFunctionDeclaration(
   // In ES6, a function behaves as a lexical binding, except in
   // a script scope, or the initial scope of eval or another function.
   VariableMode mode =
+      is_strong(language_mode()) ? CONST :
       allow_harmony_scoping() && is_strict(language_mode()) &&
               !(scope_->is_script_scope() || scope_->is_eval_scope() ||
                 scope_->is_function_scope())
@@ -2013,13 +2034,15 @@ Statement* Parser::ParseClassDeclaration(ZoneList<const AstRawString*>* names,
   ClassLiteral* value = ParseClassLiteral(name, scanner()->location(),
                                           is_strict_reserved, pos, CHECK_OK);
 
-  VariableProxy* proxy = NewUnresolved(name, LET);
+  VariableMode mode = is_strong(language_mode()) ? CONST : LET;
+  VariableProxy* proxy = NewUnresolved(name, mode);
   Declaration* declaration =
-      factory()->NewVariableDeclaration(proxy, LET, scope_, pos);
+      factory()->NewVariableDeclaration(proxy, mode, scope_, pos);
   Declare(declaration, true, CHECK_OK);
   proxy->var()->set_initializer_position(pos);
 
-  Token::Value init_op = Token::INIT_LET;
+  Token::Value init_op =
+      is_strong(language_mode()) ? Token::INIT_CONST : Token::INIT_LET;
   Assignment* assignment = factory()->NewAssignment(init_op, proxy, value, pos);
   Statement* assignment_statement =
       factory()->NewExpressionStatement(assignment, RelocInfo::kNoPosition);
@@ -2885,19 +2908,6 @@ WhileStatement* Parser::ParseWhileStatement(
 }
 
 
-bool Parser::CheckInOrOf(bool accept_OF,
-                         ForEachStatement::VisitMode* visit_mode) {
-  if (Check(Token::IN)) {
-    *visit_mode = ForEachStatement::ENUMERATE;
-    return true;
-  } else if (accept_OF && CheckContextualKeyword(CStrVector("of"))) {
-    *visit_mode = ForEachStatement::ITERATE;
-    return true;
-  }
-  return false;
-}
-
-
 void Parser::InitializeForEachStatement(ForEachStatement* stmt,
                                         Expression* each,
                                         Expression* subject,
@@ -3226,7 +3236,8 @@ Statement* Parser::ParseForStatement(ZoneList<const AstRawString*>* labels,
       ForEachStatement::VisitMode mode;
       int each_pos = position();
 
-      if (name != NULL && CheckInOrOf(accept_OF, &mode)) {
+      if (name != NULL && CheckInOrOf(accept_OF, &mode, ok)) {
+        if (!*ok) return nullptr;
         ForEachStatement* loop =
             factory()->NewForEachStatement(mode, labels, stmt_pos);
         Target target(&this->target_stack_, loop);
@@ -3263,7 +3274,9 @@ Statement* Parser::ParseForStatement(ZoneList<const AstRawString*>* labels,
       ForEachStatement::VisitMode mode;
       int each_pos = position();
 
-      if (accept_IN && CheckInOrOf(accept_OF, &mode)) {
+      if (accept_IN && CheckInOrOf(accept_OF, &mode, ok)) {
+        if (!*ok) return nullptr;
+
         // Rewrite a for-in statement of the form
         //
         //   for (let/const x in e) b
@@ -3325,7 +3338,8 @@ Statement* Parser::ParseForStatement(ZoneList<const AstRawString*>* labels,
         expression->AsVariableProxy()->raw_name() ==
             ast_value_factory()->let_string();
 
-      if (CheckInOrOf(accept_OF, &mode)) {
+      if (CheckInOrOf(accept_OF, &mode, ok)) {
+        if (!*ok) return nullptr;
         expression = this->CheckAndRewriteReferenceExpression(
             expression, lhs_location, "invalid_lhs_in_for", CHECK_OK);
 
@@ -3871,7 +3885,7 @@ void Parser::SkipLazyFunctionBody(const AstRawString* function_name,
   if (logger.has_error()) {
     ParserTraits::ReportMessageAt(
         Scanner::Location(logger.start(), logger.end()), logger.message(),
-        logger.argument_opt(), logger.is_reference_error());
+        logger.argument_opt(), logger.error_type());
     *ok = false;
     return;
   }
@@ -4240,16 +4254,15 @@ IterationStatement* Parser::LookupContinueTarget(const AstRawString* label,
 }
 
 
-void Parser::HandleSourceURLComments(CompilationInfo* info) {
+void Parser::HandleSourceURLComments(Isolate* isolate, Handle<Script> script) {
   if (scanner_.source_url()->length() > 0) {
-    Handle<String> source_url =
-        scanner_.source_url()->Internalize(info->isolate());
-    info->script()->set_source_url(*source_url);
+    Handle<String> source_url = scanner_.source_url()->Internalize(isolate);
+    script->set_source_url(*source_url);
   }
   if (scanner_.source_mapping_url()->length() > 0) {
     Handle<String> source_mapping_url =
-        scanner_.source_mapping_url()->Internalize(info->isolate());
-    info->script()->set_source_mapping_url(*source_mapping_url);
+        scanner_.source_mapping_url()->Internalize(isolate);
+    script->set_source_mapping_url(*source_mapping_url);
   }
 }
 
@@ -4276,10 +4289,16 @@ void Parser::ThrowPendingError(Isolate* isolate, Handle<Script> script) {
 
     Handle<JSArray> array = factory->NewJSArrayWithElements(elements);
     Handle<Object> error;
-    MaybeHandle<Object> maybe_error =
-        pending_error_is_reference_error_
-            ? factory->NewReferenceError(pending_error_message_, array)
-            : factory->NewSyntaxError(pending_error_message_, array);
+    MaybeHandle<Object> maybe_error;
+    switch (pending_error_type_) {
+      case kReferenceError:
+        maybe_error = factory->NewReferenceError(pending_error_message_, array);
+        break;
+      case kSyntaxError:
+        maybe_error = factory->NewSyntaxError(pending_error_message_, array);
+        break;
+    }
+    DCHECK(!maybe_error.is_null() || isolate->has_pending_exception());
 
     if (maybe_error.ToHandle(&error)) {
       Handle<JSObject> jserror = Handle<JSObject>::cast(error);
@@ -4303,16 +4322,16 @@ void Parser::ThrowPendingError(Isolate* isolate, Handle<Script> script) {
 }
 
 
-void Parser::Internalize(CompilationInfo* info) {
+void Parser::Internalize(Isolate* isolate, Handle<Script> script, bool error) {
   // Internalize strings.
-  ast_value_factory()->Internalize(info->isolate());
+  ast_value_factory()->Internalize(isolate);
 
   // Error processing.
-  if (info->function() == NULL) {
+  if (error) {
     if (stack_overflow()) {
-      info->isolate()->StackOverflow();
+      isolate->StackOverflow();
     } else {
-      ThrowPendingError(info->isolate(), info->script());
+      ThrowPendingError(isolate, script);
     }
   }
 
@@ -4320,10 +4339,10 @@ void Parser::Internalize(CompilationInfo* info) {
   for (int feature = 0; feature < v8::Isolate::kUseCounterFeatureCount;
        ++feature) {
     for (int i = 0; i < use_counts_[feature]; ++i) {
-      info->isolate()->CountUsage(v8::Isolate::UseCounterFeature(feature));
+      isolate->CountUsage(v8::Isolate::UseCounterFeature(feature));
     }
   }
-  info->isolate()->counters()->total_preparse_skipped()->Increment(
+  isolate->counters()->total_preparse_skipped()->Increment(
       total_preparse_skipped_);
 }
 
@@ -5271,17 +5290,17 @@ bool Parser::Parse(CompilationInfo* info) {
   if (info->is_lazy()) {
     DCHECK(!info->is_eval());
     if (info->shared_info()->is_function()) {
-      result = ParseLazy(info);
+      result = ParseLazy(isolate, info);
     } else {
-      result = ParseProgram(info);
+      result = ParseProgram(isolate, info);
     }
   } else {
     SetCachedData(info);
-    result = ParseProgram(info);
+    result = ParseProgram(isolate, info);
   }
   info->SetFunction(result);
 
-  Internalize(info);
+  Internalize(isolate, info->script(), result == NULL);
   DCHECK(ast_value_factory()->IsInternalized());
   return (result != NULL);
 }

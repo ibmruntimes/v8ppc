@@ -420,6 +420,23 @@ class ParserBase : public Traits {
     }
   }
 
+  bool CheckInOrOf(
+      bool accept_OF, ForEachStatement::VisitMode* visit_mode, bool* ok) {
+    if (Check(Token::IN)) {
+      if (is_strong(language_mode())) {
+        ReportMessageAt(scanner()->location(), "strong_for_in");
+        *ok = false;
+      } else {
+        *visit_mode = ForEachStatement::ENUMERATE;
+      }
+      return true;
+    } else if (accept_OF && CheckContextualKeyword(CStrVector("of"))) {
+      *visit_mode = ForEachStatement::ITERATE;
+      return true;
+    }
+    return false;
+  }
+
   // Checks whether an octal literal was last seen between beg_pos and end_pos.
   // If so, reports an error. Only called for strict mode and template strings.
   void CheckOctalLiteral(int beg_pos, int end_pos, const char* error,
@@ -510,16 +527,15 @@ class ParserBase : public Traits {
 
   // Report syntax errors.
   void ReportMessage(const char* message, const char* arg = NULL,
-                     bool is_reference_error = false) {
+                     ParseErrorType error_type = kSyntaxError) {
     Scanner::Location source_location = scanner()->location();
-    Traits::ReportMessageAt(source_location, message, arg, is_reference_error);
+    Traits::ReportMessageAt(source_location, message, arg, error_type);
   }
 
   void ReportMessageAt(Scanner::Location location, const char* message,
-                       bool is_reference_error = false) {
-    Traits::ReportMessageAt(location, message,
-                            reinterpret_cast<const char*>(0),
-                            is_reference_error);
+                       ParseErrorType error_type = kSyntaxError) {
+    Traits::ReportMessageAt(location, message, reinterpret_cast<const char*>(0),
+                            error_type);
   }
 
   void ReportUnexpectedToken(Token::Value token);
@@ -708,17 +724,13 @@ class PreParserIdentifier {
     return PreParserIdentifier(kConstructorIdentifier);
   }
   bool IsEval() const { return type_ == kEvalIdentifier; }
-  bool IsArguments(const AstValueFactory* = NULL) const {
-    return type_ == kArgumentsIdentifier;
-  }
+  bool IsArguments() const { return type_ == kArgumentsIdentifier; }
+  bool IsEvalOrArguments() const { return IsEval() || IsArguments(); }
   bool IsLet() const { return type_ == kLetIdentifier; }
   bool IsStatic() const { return type_ == kStaticIdentifier; }
   bool IsYield() const { return type_ == kYieldIdentifier; }
   bool IsPrototype() const { return type_ == kPrototypeIdentifier; }
   bool IsConstructor() const { return type_ == kConstructorIdentifier; }
-  bool IsEvalOrArguments() const {
-    return type_ == kEvalIdentifier || type_ == kArgumentsIdentifier;
-  }
   bool IsFutureReserved() const { return type_ == kFutureReservedIdentifier; }
   bool IsFutureStrictReserved() const {
     return type_ == kFutureStrictReservedIdentifier ||
@@ -1219,6 +1231,14 @@ class PreParserTraits {
   explicit PreParserTraits(PreParser* pre_parser) : pre_parser_(pre_parser) {}
 
   // Helper functions for recursive descent.
+  static bool IsEval(PreParserIdentifier identifier) {
+    return identifier.IsEval();
+  }
+
+  static bool IsArguments(PreParserIdentifier identifier) {
+    return identifier.IsArguments();
+  }
+
   static bool IsEvalOrArguments(PreParserIdentifier identifier) {
     return identifier.IsEvalOrArguments();
   }
@@ -1324,15 +1344,12 @@ class PreParserTraits {
   }
 
   // Reporting errors.
-  void ReportMessageAt(Scanner::Location location,
-                       const char* message,
+  void ReportMessageAt(Scanner::Location location, const char* message,
                        const char* arg = NULL,
-                       bool is_reference_error = false);
-  void ReportMessageAt(int start_pos,
-                       int end_pos,
-                       const char* message,
+                       ParseErrorType error_type = kSyntaxError);
+  void ReportMessageAt(int start_pos, int end_pos, const char* message,
                        const char* arg = NULL,
-                       bool is_reference_error = false);
+                       ParseErrorType error_type = kSyntaxError);
 
   // "null" return type creators.
   static PreParserIdentifier EmptyIdentifier() {
@@ -1375,7 +1392,8 @@ class PreParserTraits {
   }
 
   static PreParserExpression ThisExpression(Scope* scope,
-                                            PreParserFactory* factory) {
+                                            PreParserFactory* factory,
+                                            int pos) {
     return PreParserExpression::This();
   }
 
@@ -1612,8 +1630,6 @@ class PreParser : public ParserBase<PreParserTraits> {
                                         Scanner::Location class_name_location,
                                         bool name_is_strict_reserved, int pos,
                                         bool* ok);
-
-  bool CheckInOrOf(bool accept_OF);
 };
 
 
@@ -1713,12 +1729,18 @@ typename ParserBase<Traits>::IdentifierT ParserBase<Traits>::ParseIdentifier(
   Token::Value next = Next();
   if (next == Token::IDENTIFIER) {
     IdentifierT name = this->GetSymbol(scanner());
-    if (allow_eval_or_arguments == kDontAllowEvalOrArguments &&
-        is_strict(language_mode()) && this->IsEvalOrArguments(name)) {
-      ReportMessage("strict_eval_arguments");
-      *ok = false;
+    if (allow_eval_or_arguments == kDontAllowEvalOrArguments) {
+      if (is_strict(language_mode()) && this->IsEvalOrArguments(name)) {
+        ReportMessage("strict_eval_arguments");
+        *ok = false;
+      }
+    } else {
+      if (is_strong(language_mode()) && this->IsArguments(name)) {
+        ReportMessage("strong_arguments");
+        *ok = false;
+      }
     }
-    if (name->IsArguments(ast_value_factory())) scope_->RecordArgumentsUsage();
+    if (this->IsArguments(name)) scope_->RecordArgumentsUsage();
     return name;
   } else if (is_sloppy(language_mode()) &&
              (next == Token::FUTURE_STRICT_RESERVED_WORD ||
@@ -1751,7 +1773,7 @@ typename ParserBase<Traits>::IdentifierT ParserBase<
   }
 
   IdentifierT name = this->GetSymbol(scanner());
-  if (name->IsArguments(ast_value_factory())) scope_->RecordArgumentsUsage();
+  if (this->IsArguments(name)) scope_->RecordArgumentsUsage();
   return name;
 }
 
@@ -1769,7 +1791,7 @@ ParserBase<Traits>::ParseIdentifierName(bool* ok) {
   }
 
   IdentifierT name = this->GetSymbol(scanner());
-  if (name->IsArguments(ast_value_factory())) scope_->RecordArgumentsUsage();
+  if (this->IsArguments(name)) scope_->RecordArgumentsUsage();
   return name;
 }
 
@@ -1850,7 +1872,7 @@ ParserBase<Traits>::ParsePrimaryExpression(bool* ok) {
     case Token::THIS: {
       Consume(Token::THIS);
       scope_->RecordThisUsage();
-      result = this->ThisExpression(scope_, factory());
+      result = this->ThisExpression(scope_, factory(), pos);
       break;
     }
 
@@ -2962,7 +2984,7 @@ ParserBase<Traits>::ParseTemplateLiteral(ExpressionT tag, int start, bool* ok) {
     } else if (next == Token::ILLEGAL) {
       Traits::ReportMessageAt(
           Scanner::Location(position() + 1, peek_position()),
-          "unexpected_token", "ILLEGAL", false);
+          "unexpected_token", "ILLEGAL", kSyntaxError);
       *ok = false;
       return Traits::EmptyExpression();
     }
@@ -2991,7 +3013,7 @@ ParserBase<Traits>::ParseTemplateLiteral(ExpressionT tag, int start, bool* ok) {
     } else if (next == Token::ILLEGAL) {
       Traits::ReportMessageAt(
           Scanner::Location(position() + 1, peek_position()),
-          "unexpected_token", "ILLEGAL", false);
+          "unexpected_token", "ILLEGAL", kSyntaxError);
       *ok = false;
       return Traits::EmptyExpression();
     }
@@ -3013,7 +3035,7 @@ typename ParserBase<Traits>::ExpressionT ParserBase<
                                                 const char* message, bool* ok) {
   if (is_strict(language_mode()) && this->IsIdentifier(expression) &&
       this->IsEvalOrArguments(this->AsIdentifier(expression))) {
-    this->ReportMessageAt(location, "strict_eval_arguments", false);
+    this->ReportMessageAt(location, "strict_eval_arguments", kSyntaxError);
     *ok = false;
     return this->EmptyExpression();
   } else if (expression->IsValidReferenceExpression()) {
@@ -3025,7 +3047,7 @@ typename ParserBase<Traits>::ExpressionT ParserBase<
     ExpressionT error = this->NewThrowReferenceError(message, pos);
     return factory()->NewProperty(expression, error, pos);
   } else {
-    this->ReportMessageAt(location, message, true);
+    this->ReportMessageAt(location, message, kReferenceError);
     *ok = false;
     return this->EmptyExpression();
   }

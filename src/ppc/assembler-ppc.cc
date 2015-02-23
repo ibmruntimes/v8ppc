@@ -148,7 +148,7 @@ const char* DoubleRegister::AllocationIndexToString(int index) {
 // Implementation of RelocInfo
 
 const int RelocInfo::kApplyMask = 1 << RelocInfo::INTERNAL_REFERENCE |
-    1 << RelocInfo::INTERNAL_REFERENCE_ENCODED;
+                                  1 << RelocInfo::INTERNAL_REFERENCE_ENCODED;
 
 
 bool RelocInfo::IsCodedSpecially() {
@@ -500,8 +500,7 @@ void Assembler::target_at_put(int pos, int target_pos) {
     case kUnboundJumpTableEntryOpcode: {
       intptr_t addr = reinterpret_cast<uintptr_t>(buffer_ + target_pos);
       CodePatcher patcher(reinterpret_cast<byte*>(buffer_ + pos),
-                          kPointerSize / kInstrSize,
-                          CodePatcher::DONT_FLUSH);
+                          kPointerSize / kInstrSize, CodePatcher::DONT_FLUSH);
       AddBoundInternalReference(pos);
       patcher.masm()->emit_ptr(addr);
       break;
@@ -1586,6 +1585,7 @@ bool Assembler::use_constant_pool_for_mov(const Operand& x,
 
   return true;
 }
+#endif
 
 
 void Assembler::EnsureSpaceFor(int space_needed) {
@@ -1593,7 +1593,6 @@ void Assembler::EnsureSpaceFor(int space_needed) {
     GrowBuffer();
   }
 }
-#endif
 
 
 bool Operand::must_output_reloc_info(const Assembler* assembler) const {
@@ -1710,11 +1709,11 @@ void Assembler::bitwise_mov(Register dst, intptr_t value) {
 
 
 void Assembler::bitwise_mov32(Register dst, int32_t value) {
-    BlockTrampolinePoolScope block_trampoline_pool(this);
-    int hi_word = static_cast<int>(value >> 16);
-    int lo_word = static_cast<int>(value & 0xffff);
-    lis(dst, Operand(SIGN_EXT_IMM16(hi_word)));
-    ori(dst, dst, Operand(lo_word));
+  BlockTrampolinePoolScope block_trampoline_pool(this);
+  int hi_word = static_cast<int>(value >> 16);
+  int lo_word = static_cast<int>(value & 0xffff);
+  lis(dst, Operand(SIGN_EXT_IMM16(hi_word)));
+  ori(dst, dst, Operand(lo_word));
 }
 
 

@@ -398,7 +398,7 @@ void InstructionSelector::InitializeCallBuffer(Node* call, CallBuffer* buffer,
                         buffer->descriptor->GetInputType(0)));
       break;
   }
-  DCHECK_EQ(1, static_cast<int>(buffer->instruction_args.size()));
+  DCHECK_EQ(1u, buffer->instruction_args.size());
 
   // If the call needs a frame state, we insert the state information as
   // follows (n is the number of value inputs to the frame state):
@@ -485,34 +485,33 @@ void InstructionSelector::VisitBlock(BasicBlock* block) {
 }
 
 
-namespace {
-
-V8_INLINE void CheckNoPhis(const BasicBlock* block) {
+void InstructionSelector::VisitControl(BasicBlock* block) {
 #ifdef DEBUG
-  // Branch targets should not have phis.
-  for (BasicBlock::const_iterator i = block->begin(); i != block->end(); ++i) {
-    const Node* node = *i;
-    CHECK_NE(IrOpcode::kPhi, node->opcode());
+  // SSA deconstruction requires targets of branches not to have phis.
+  // Edge split form guarantees this property, but is more strict.
+  if (block->SuccessorCount() > 1) {
+    for (BasicBlock* const successor : block->successors()) {
+      for (Node* const node : *successor) {
+        CHECK(!IrOpcode::IsPhiOpcode(node->opcode()));
+      }
+    }
   }
 #endif
-}
 
-}  // namespace
-
-
-void InstructionSelector::VisitControl(BasicBlock* block) {
   Node* input = block->control_input();
   switch (block->control()) {
     case BasicBlock::kGoto:
       return VisitGoto(block->SuccessorAt(0));
+    case BasicBlock::kCall: {
+      DCHECK_EQ(IrOpcode::kCall, input->opcode());
+      BasicBlock* success = block->SuccessorAt(0);
+      BasicBlock* exception = block->SuccessorAt(1);
+      return VisitCall(input, exception), VisitGoto(success);
+    }
     case BasicBlock::kBranch: {
       DCHECK_EQ(IrOpcode::kBranch, input->opcode());
       BasicBlock* tbranch = block->SuccessorAt(0);
       BasicBlock* fbranch = block->SuccessorAt(1);
-      // SSA deconstruction requires targets of branches not to have phis.
-      // Edge split form guarantees this property, but is more strict.
-      CheckNoPhis(tbranch);
-      CheckNoPhis(fbranch);
       if (tbranch == fbranch) return VisitGoto(tbranch);
       // Treat special Branch(Always, IfTrue, IfFalse) as Goto(IfTrue).
       Node* const condition = input->InputAt(0);
@@ -524,9 +523,6 @@ void InstructionSelector::VisitControl(BasicBlock* block) {
       // Last successor must be Default.
       BasicBlock* default_branch = block->successors().back();
       DCHECK_EQ(IrOpcode::kIfDefault, default_branch->front()->opcode());
-      // SSA deconstruction requires targets of branches not to have phis.
-      // Edge split form guarantees this property, but is more strict.
-      CheckNoPhis(default_branch);
       // All other successors must be cases.
       size_t case_count = block->SuccessorCount() - 1;
       DCHECK_LE(1u, case_count);
@@ -541,9 +537,6 @@ void InstructionSelector::VisitControl(BasicBlock* block) {
         case_values[index] = value;
         if (min_value > value) min_value = value;
         if (max_value < value) max_value = value;
-        // SSA deconstruction requires targets of branches not to have phis.
-        // Edge split form guarantees this property, but is more strict.
-        CheckNoPhis(branch);
       }
       DCHECK_LE(min_value, max_value);
       return VisitSwitch(input, default_branch, case_branches, case_values,
@@ -721,6 +714,8 @@ void InstructionSelector::VisitNode(Node* node) {
     case IrOpcode::kBranch:
     case IrOpcode::kIfTrue:
     case IrOpcode::kIfFalse:
+    case IrOpcode::kIfSuccess:
+    case IrOpcode::kIfException:
     case IrOpcode::kSwitch:
     case IrOpcode::kIfValue:
     case IrOpcode::kIfDefault:
@@ -760,7 +755,7 @@ void InstructionSelector::VisitNode(Node* node) {
       return VisitConstant(node);
     }
     case IrOpcode::kCall:
-      return VisitCall(node);
+      return VisitCall(node, nullptr);
     case IrOpcode::kFrameState:
     case IrOpcode::kStateValues:
       return;

@@ -383,6 +383,8 @@ class ParserTraits {
   explicit ParserTraits(Parser* parser) : parser_(parser) {}
 
   // Helper functions for recursive descent.
+  bool IsEval(const AstRawString* identifier) const;
+  bool IsArguments(const AstRawString* identifier) const;
   bool IsEvalOrArguments(const AstRawString* identifier) const;
   V8_INLINE bool IsFutureStrictReserved(const AstRawString* identifier) const;
 
@@ -490,20 +492,16 @@ class ParserTraits {
       const AstRawString* arg, int pos);
 
   // Reporting errors.
-  void ReportMessageAt(Scanner::Location source_location,
-                       const char* message,
+  void ReportMessageAt(Scanner::Location source_location, const char* message,
                        const char* arg = NULL,
-                       bool is_reference_error = false);
-  void ReportMessage(const char* message,
-                     const char* arg = NULL,
-                     bool is_reference_error = false);
-  void ReportMessage(const char* message,
-                     const AstRawString* arg,
-                     bool is_reference_error = false);
-  void ReportMessageAt(Scanner::Location source_location,
-                       const char* message,
+                       ParseErrorType error_type = kSyntaxError);
+  void ReportMessage(const char* message, const char* arg = NULL,
+                     ParseErrorType error_type = kSyntaxError);
+  void ReportMessage(const char* message, const AstRawString* arg,
+                     ParseErrorType error_type = kSyntaxError);
+  void ReportMessageAt(Scanner::Location source_location, const char* message,
                        const AstRawString* arg,
-                       bool is_reference_error = false);
+                       ParseErrorType error_type = kSyntaxError);
 
   // "null" return type creators.
   static const AstRawString* EmptyIdentifier() {
@@ -654,8 +652,8 @@ class Parser : public ParserBase<ParserTraits> {
 
   // Handle errors detected during parsing, move statistics to Isolate,
   // internalize strings (move them to the heap).
-  void Internalize(CompilationInfo* info);
-  void HandleSourceURLComments(CompilationInfo* info);
+  void Internalize(Isolate* isolate, Handle<Script> script, bool error);
+  void HandleSourceURLComments(Isolate* isolate, Handle<Script> script);
 
  private:
   friend class ParserTraits;
@@ -670,10 +668,10 @@ class Parser : public ParserBase<ParserTraits> {
   static const int kMaxNumFunctionLocals = 4194303;  // 2^22-1
 
   // Returns NULL if parsing failed.
-  FunctionLiteral* ParseProgram(CompilationInfo* info);
+  FunctionLiteral* ParseProgram(Isolate* isolate, CompilationInfo* info);
 
-  FunctionLiteral* ParseLazy(CompilationInfo* info);
-  FunctionLiteral* ParseLazy(CompilationInfo* info,
+  FunctionLiteral* ParseLazy(Isolate* isolate, CompilationInfo* info);
+  FunctionLiteral* ParseLazy(Isolate* isolate, CompilationInfo* info,
                              Utf16CharacterStream* source);
 
   // Called by ParseProgram after setting up the scanner.
@@ -711,7 +709,9 @@ class Parser : public ParserBase<ParserTraits> {
   Statement* ParseImportDeclaration(bool* ok);
   Statement* ParseExportDeclaration(bool* ok);
   Statement* ParseExportDefault(bool* ok);
-  void* ParseExportClause(ZoneList<const AstRawString*>* names,
+  void* ParseExportClause(ZoneList<const AstRawString*>* export_names,
+                          ZoneList<Scanner::Location>* export_locations,
+                          ZoneList<const AstRawString*>* local_names,
                           Scanner::Location* reserved_loc, bool* ok);
   void* ParseNamedImports(ZoneList<const AstRawString*>* names, bool* ok);
   Statement* ParseStatement(ZoneList<const AstRawString*>* labels, bool* ok);
@@ -781,8 +781,6 @@ class Parser : public ParserBase<ParserTraits> {
   // Magical syntax support.
   Expression* ParseV8Intrinsic(bool* ok);
 
-  bool CheckInOrOf(bool accept_OF, ForEachStatement::VisitMode* visit_mode);
-
   // Get odd-ball literals.
   Literal* GetLiteralUndefined(int position);
 
@@ -851,7 +849,7 @@ class Parser : public ParserBase<ParserTraits> {
   const char* pending_error_message_;
   const AstRawString* pending_error_arg_;
   const char* pending_error_char_arg_;
-  bool pending_error_is_reference_error_;
+  ParseErrorType pending_error_type_;
 
   // Other information which will be stored in Parser and moved to Isolate after
   // parsing.

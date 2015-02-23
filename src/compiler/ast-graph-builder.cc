@@ -140,10 +140,10 @@ class AstGraphBuilder::ContextScope BASE_EMBEDDED {
 //  - TryFinallyStatement: Intercepts 'break', 'continue', 'throw' and 'return'.
 class AstGraphBuilder::ControlScope BASE_EMBEDDED {
  public:
-  ControlScope(AstGraphBuilder* builder, int stack_delta)
+  explicit ControlScope(AstGraphBuilder* builder)
       : builder_(builder),
         outer_(builder->execution_control()),
-        stack_delta_(stack_delta) {
+        stack_height_(builder->environment()->stack_height()) {
     builder_->set_execution_control(this);  // Push.
   }
 
@@ -190,12 +190,12 @@ class AstGraphBuilder::ControlScope BASE_EMBEDDED {
 
   Environment* environment() { return builder_->environment(); }
   AstGraphBuilder* builder() const { return builder_; }
-  int stack_delta() const { return stack_delta_; }
+  int stack_height() const { return stack_height_; }
 
  private:
   AstGraphBuilder* builder_;
   ControlScope* outer_;
-  int stack_delta_;
+  int stack_height_;
 };
 
 
@@ -271,7 +271,7 @@ class AstGraphBuilder::ControlScopeForBreakable : public ControlScope {
  public:
   ControlScopeForBreakable(AstGraphBuilder* owner, BreakableStatement* target,
                            ControlBuilder* control)
-      : ControlScope(owner, 0), target_(target), control_(control) {}
+      : ControlScope(owner), target_(target), control_(control) {}
 
  protected:
   virtual bool Execute(Command cmd, Statement* target, Node* value) OVERRIDE {
@@ -298,8 +298,8 @@ class AstGraphBuilder::ControlScopeForBreakable : public ControlScope {
 class AstGraphBuilder::ControlScopeForIteration : public ControlScope {
  public:
   ControlScopeForIteration(AstGraphBuilder* owner, IterationStatement* target,
-                           LoopBuilder* control, int stack_delta)
-      : ControlScope(owner, stack_delta), target_(target), control_(control) {}
+                           LoopBuilder* control)
+      : ControlScope(owner), target_(target), control_(control) {}
 
  protected:
   virtual bool Execute(Command cmd, Statement* target, Node* value) OVERRIDE {
@@ -328,7 +328,12 @@ class AstGraphBuilder::ControlScopeForIteration : public ControlScope {
 class AstGraphBuilder::ControlScopeForCatch : public ControlScope {
  public:
   ControlScopeForCatch(AstGraphBuilder* owner, TryCatchBuilder* control)
-      : ControlScope(owner, 0), control_(control) {}
+      : ControlScope(owner), control_(control) {
+    builder()->try_nesting_level_++;  // Increment nesting.
+  }
+  ~ControlScopeForCatch() {
+    builder()->try_nesting_level_--;  // Decrement nesting.
+  }
 
  protected:
   virtual bool Execute(Command cmd, Statement* target, Node* value) OVERRIDE {
@@ -354,7 +359,12 @@ class AstGraphBuilder::ControlScopeForFinally : public ControlScope {
  public:
   ControlScopeForFinally(AstGraphBuilder* owner, DeferredCommands* commands,
                          TryFinallyBuilder* control)
-      : ControlScope(owner, 0), commands_(commands), control_(control) {}
+      : ControlScope(owner), commands_(commands), control_(control) {
+    builder()->try_nesting_level_++;  // Increment nesting.
+  }
+  ~ControlScopeForFinally() {
+    builder()->try_nesting_level_--;  // Decrement nesting.
+  }
 
  protected:
   virtual bool Execute(Command cmd, Statement* target, Node* value) OVERRIDE {
@@ -379,7 +389,7 @@ AstGraphBuilder::AstGraphBuilder(Zone* local_zone, CompilationInfo* info,
       globals_(0, local_zone),
       execution_control_(nullptr),
       execution_context_(nullptr),
-      function_context_(nullptr),
+      try_nesting_level_(0),
       input_buffer_size_(0),
       input_buffer_(nullptr),
       exit_control_(nullptr),
@@ -399,9 +409,10 @@ Node* AstGraphBuilder::GetFunctionClosure() {
 }
 
 
-Node* AstGraphBuilder::GetFunctionContext() {
-  DCHECK(function_context_ != nullptr);
-  return function_context_;
+void AstGraphBuilder::CreateFunctionContext(bool constant_context) {
+  function_context_.set(constant_context
+                            ? jsgraph()->HeapConstant(info()->context())
+                            : NewOuterContextParam());
 }
 
 
@@ -420,7 +431,7 @@ Node* AstGraphBuilder::NewCurrentContextOsrValue() {
 }
 
 
-bool AstGraphBuilder::CreateGraph() {
+bool AstGraphBuilder::CreateGraph(bool constant_context) {
   Scope* scope = info()->scope();
   DCHECK(graph() != NULL);
 
@@ -428,12 +439,12 @@ bool AstGraphBuilder::CreateGraph() {
   int parameter_count = info()->num_parameters();
   graph()->SetStart(graph()->NewNode(common()->Start(parameter_count)));
 
-  // Initialize control scope.
-  ControlScope control(this, 0);
-
   // Initialize the top-level environment.
   Environment env(this, scope, graph()->start());
   set_environment(&env);
+
+  // Initialize control scope.
+  ControlScope control(this);
 
   if (info()->is_osr()) {
     // Use OSR normal entry as the start of the top-level environment.
@@ -442,8 +453,8 @@ bool AstGraphBuilder::CreateGraph() {
   }
 
   // Initialize the incoming context.
-  function_context_ = NewOuterContextParam();
-  ContextScope incoming(this, scope, function_context_);
+  CreateFunctionContext(constant_context);
+  ContextScope incoming(this, scope, function_context_.get());
 
   // Build receiver check for sloppy mode if necessary.
   // TODO(mstarzinger/verwaest): Should this be moved back into the CallIC?
@@ -451,31 +462,31 @@ bool AstGraphBuilder::CreateGraph() {
   Node* patched_receiver = BuildPatchReceiverToGlobalProxy(original_receiver);
   env.Bind(scope->receiver(), patched_receiver);
 
-  bool ok;
+  // Build function context only if there are context allocated variables.
   int heap_slots = info()->num_heap_slots() - Context::MIN_CONTEXT_SLOTS;
   if (heap_slots > 0) {
     // Push a new inner context scope for the function.
     Node* closure = GetFunctionClosure();
-    Node* inner_context = BuildLocalFunctionContext(function_context_, closure);
+    Node* inner_context =
+        BuildLocalFunctionContext(function_context_.get(), closure);
     ContextScope top_context(this, scope, inner_context);
-    ok = CreateGraphBody();
+    CreateGraphBody();
   } else {
     // Simply use the outer function context in building the graph.
-    ok = CreateGraphBody();
+    CreateGraphBody();
   }
 
   // Finish the basic structure of the graph.
-  if (ok) {
-    environment()->UpdateControlDependency(exit_control());
-    graph()->SetEnd(NewNode(common()->End()));
-  }
+  graph()->SetEnd(graph()->NewNode(common()->End(), exit_control()));
 
-  return ok;
+  // Failures indicated by stack overflow.
+  return !HasStackOverflow();
 }
 
 
-bool AstGraphBuilder::CreateGraphBody() {
+void AstGraphBuilder::CreateGraphBody() {
   Scope* scope = info()->scope();
+
   // Build the arguments object if it is used.
   BuildArgumentsObject(scope->arguments());
 
@@ -503,7 +514,6 @@ bool AstGraphBuilder::CreateGraphBody() {
 
   // Visit statements in the function body.
   VisitStatements(info()->function()->body());
-  if (HasStackOverflow()) return false;
 
   // Emit tracing call if requested to do so.
   if (FLAG_trace) {
@@ -514,8 +524,6 @@ bool AstGraphBuilder::CreateGraphBody() {
 
   // Return 'undefined' in case we can fall off the end.
   BuildReturn(jsgraph()->UndefinedConstant());
-
-  return true;
 }
 
 
@@ -701,8 +709,8 @@ void AstGraphBuilder::ControlScope::PerformCommand(Command command,
   Environment* env = environment()->CopyAsUnreachable();
   ControlScope* current = this;
   while (current != NULL) {
+    environment()->Trim(current->stack_height());
     if (current->Execute(command, target, value)) break;
-    environment()->Drop(current->stack_delta());
     current = current->outer_;
   }
   builder()->set_environment(env);
@@ -1011,7 +1019,7 @@ void AstGraphBuilder::VisitSwitchStatement(SwitchStatement* stmt) {
 void AstGraphBuilder::VisitDoWhileStatement(DoWhileStatement* stmt) {
   LoopBuilder while_loop(this);
   while_loop.BeginLoop(GetVariablesAssignedInLoop(stmt), CheckOsrEntry(stmt));
-  VisitIterationBody(stmt, &while_loop, 0);
+  VisitIterationBody(stmt, &while_loop);
   while_loop.EndBody();
   VisitForTest(stmt->cond());
   Node* condition = environment()->Pop();
@@ -1026,7 +1034,7 @@ void AstGraphBuilder::VisitWhileStatement(WhileStatement* stmt) {
   VisitForTest(stmt->cond());
   Node* condition = environment()->Pop();
   while_loop.BreakUnless(condition);
-  VisitIterationBody(stmt, &while_loop, 0);
+  VisitIterationBody(stmt, &while_loop);
   while_loop.EndBody();
   while_loop.EndLoop();
 }
@@ -1043,7 +1051,7 @@ void AstGraphBuilder::VisitForStatement(ForStatement* stmt) {
   } else {
     for_loop.BreakUnless(jsgraph()->TrueConstant());
   }
-  VisitIterationBody(stmt, &for_loop, 0);
+  VisitIterationBody(stmt, &for_loop);
   for_loop.EndBody();
   VisitIfNotNull(stmt->next());
   for_loop.EndLoop();
@@ -1182,7 +1190,7 @@ void AstGraphBuilder::VisitForInBody(ForInStatement* stmt) {
   value = environment()->Pop();
   // Bind value and do loop body.
   VisitForInAssignment(stmt->each(), value, stmt->AssignmentId());
-  VisitIterationBody(stmt, &for_loop, 5);
+  VisitIterationBody(stmt, &for_loop);
   for_loop.EndBody();
   // Inc counter and continue.
   Node* index_inc =
@@ -1205,7 +1213,7 @@ void AstGraphBuilder::VisitForOfStatement(ForOfStatement* stmt) {
   Node* condition = environment()->Pop();
   for_loop.BreakWhen(condition);
   VisitForEffect(stmt->assign_each());
-  VisitIterationBody(stmt, &for_loop, 0);
+  VisitIterationBody(stmt, &for_loop);
   for_loop.EndBody();
   for_loop.EndLoop();
 }
@@ -2296,8 +2304,8 @@ void AstGraphBuilder::VisitIfNotNull(Statement* stmt) {
 
 
 void AstGraphBuilder::VisitIterationBody(IterationStatement* stmt,
-                                         LoopBuilder* loop, int stack_delta) {
-  ControlScopeForIteration scope(this, stmt, loop, stack_delta);
+                                         LoopBuilder* loop) {
+  ControlScopeForIteration scope(this, stmt, loop);
   Visit(stmt->body());
 }
 
@@ -2764,10 +2772,9 @@ Node* AstGraphBuilder::BuildLoadBuiltinsObject() {
 
 
 Node* AstGraphBuilder::BuildLoadGlobalObject() {
-  Node* context = GetFunctionContext();
   const Operator* load_op =
       javascript()->LoadContext(0, Context::GLOBAL_OBJECT_INDEX, true);
-  return NewNode(load_op, context);
+  return NewNode(load_op, function_context_.get());
 }
 
 
@@ -2978,6 +2985,7 @@ Node* AstGraphBuilder::MakeNode(const Operator* op, int value_input_count,
   if (!has_context && !has_framestate && !has_control && !has_effect) {
     result = graph()->NewNode(op, value_input_count, value_inputs, incomplete);
   } else {
+    bool inside_try_scope = try_nesting_level_ > 0;
     int input_count_with_deps = value_input_count;
     if (has_context) ++input_count_with_deps;
     if (has_framestate) ++input_count_with_deps;
@@ -3005,9 +3013,22 @@ Node* AstGraphBuilder::MakeNode(const Operator* op, int value_input_count,
     if (has_effect) {
       environment_->UpdateEffectDependency(result);
     }
-    if (result->op()->ControlOutputCount() > 0 &&
-        !environment()->IsMarkedAsUnreachable()) {
-      environment_->UpdateControlDependency(result);
+    if (!environment()->IsMarkedAsUnreachable()) {
+      // Update the current control dependency for control-producing nodes.
+      if (NodeProperties::IsControl(result)) {
+        environment_->UpdateControlDependency(result);
+      }
+      // Add implicit exception continuation for throwing nodes.
+      if (!result->op()->HasProperty(Operator::kNoThrow) && inside_try_scope) {
+        Node* on_exception = graph()->NewNode(common()->IfException(), result);
+        environment_->UpdateControlDependency(on_exception);
+        execution_control()->ThrowValue(jsgraph()->UndefinedConstant());
+      }
+      // Add implicit success continuation for throwing nodes.
+      if (!result->op()->HasProperty(Operator::kNoThrow)) {
+        Node* on_success = graph()->NewNode(common()->IfSuccess(), result);
+        environment_->UpdateControlDependency(on_success);
+      }
     }
   }
 
@@ -3027,6 +3048,7 @@ void AstGraphBuilder::UpdateControlDependencyToLeaveFunction(Node* exit) {
 
 void AstGraphBuilder::Environment::Merge(Environment* other) {
   DCHECK(values_.size() == other->values_.size());
+  // TODO(titzer): make context stack heights match.
   DCHECK(contexts_.size() <= other->contexts_.size());
 
   // Nothing to do if the other environment is dead.
@@ -3041,6 +3063,10 @@ void AstGraphBuilder::Environment::Merge(Environment* other) {
         graph()->NewNode(common()->Merge(1), arraysize(inputs), inputs, true);
     effect_dependency_ = other->effect_dependency_;
     values_ = other->values_;
+    // TODO(titzer): make context stack heights match.
+    size_t min = std::min(contexts_.size(), other->contexts_.size());
+    contexts_ = other->contexts_;
+    contexts_.resize(min, nullptr);
     return;
   }
 

@@ -346,8 +346,8 @@ static void VisitBinop(InstructionSelector* selector, Node* node,
     outputs[output_count++] = g.DefineAsRegister(cont->result());
   }
 
-  DCHECK_NE(0, static_cast<int>(input_count));
-  DCHECK_NE(0, static_cast<int>(output_count));
+  DCHECK_NE(0u, input_count);
+  DCHECK_NE(0u, output_count);
   DCHECK_GE(arraysize(inputs), input_count);
   DCHECK_GE(arraysize(outputs), output_count);
 
@@ -366,7 +366,15 @@ static void VisitBinop(InstructionSelector* selector, Node* node,
 
 
 void InstructionSelector::VisitWord32And(Node* node) {
-  VisitBinop(this, node, kX64And32);
+  X64OperandGenerator g(this);
+  Uint32BinopMatcher m(node);
+  if (m.right().Is(0xff)) {
+    Emit(kX64Movzxbl, g.DefineAsRegister(node), g.Use(m.left().node()));
+  } else if (m.right().Is(0xffff)) {
+    Emit(kX64Movzxwl, g.DefineAsRegister(node), g.Use(m.left().node()));
+  } else {
+    VisitBinop(this, node, kX64And32);
+  }
 }
 
 
@@ -463,7 +471,7 @@ void EmitLea(InstructionSelector* selector, InstructionCode opcode,
   AddressingMode mode = g.GenerateMemoryOperandInputs(
       index, scale, base, displacement, inputs, &input_count);
 
-  DCHECK_NE(0, static_cast<int>(input_count));
+  DCHECK_NE(0u, input_count);
   DCHECK_GE(arraysize(inputs), input_count);
 
   InstructionOperand outputs[1];
@@ -920,7 +928,7 @@ void InstructionSelector::VisitFloat64RoundTiesAway(Node* node) {
 }
 
 
-void InstructionSelector::VisitCall(Node* node) {
+void InstructionSelector::VisitCall(Node* node, BasicBlock* handler) {
   X64OperandGenerator g(this);
   const CallDescriptor* descriptor = OpParameter<const CallDescriptor*>(node);
 
@@ -946,6 +954,13 @@ void InstructionSelector::VisitCall(Node* node) {
     Emit(kX64Push, g.NoOutput(), value);
   }
 
+  // Pass label of exception handler block.
+  CallDescriptor::Flags flags = descriptor->flags();
+  if (handler != nullptr) {
+    flags |= CallDescriptor::kHasExceptionHandler;
+    buffer.instruction_args.push_back(g.Label(handler));
+  }
+
   // Select the appropriate opcode based on the call type.
   InstructionCode opcode;
   switch (descriptor->kind()) {
@@ -960,7 +975,7 @@ void InstructionSelector::VisitCall(Node* node) {
       UNREACHABLE();
       return;
   }
-  opcode |= MiscField::encode(descriptor->flags());
+  opcode |= MiscField::encode(flags);
 
   // Emit the call instruction.
   InstructionOperand* first_output =

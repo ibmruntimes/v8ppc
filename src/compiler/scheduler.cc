@@ -64,7 +64,6 @@ Scheduler::SchedulerData Scheduler::DefaultSchedulerData() {
 
 
 Scheduler::SchedulerData* Scheduler::GetData(Node* node) {
-  DCHECK(node->id() < static_cast<int>(node_data_.size()));
   return &node_data_[node->id()];
 }
 
@@ -286,7 +285,7 @@ class CFGBuilder : public ZoneObject {
   }
 
  private:
-  // TODO(mstarzinger): Only for Scheduler::FuseFloatingControl.
+  friend class ScheduleLateNodeVisitor;
   friend class Scheduler;
 
   void FixNode(BasicBlock* block, Node* node) {
@@ -320,6 +319,11 @@ class CFGBuilder : public ZoneObject {
       case IrOpcode::kSwitch:
         BuildBlocksForSuccessors(node);
         break;
+      case IrOpcode::kCall:
+        if (IsExceptionalCall(node)) {
+          BuildBlocksForSuccessors(node);
+        }
+        break;
       default:
         break;
     }
@@ -347,6 +351,12 @@ class CFGBuilder : public ZoneObject {
         scheduler_->UpdatePlacement(node, Scheduler::kFixed);
         ConnectThrow(node);
         break;
+      case IrOpcode::kCall:
+        if (IsExceptionalCall(node)) {
+          scheduler_->UpdatePlacement(node, Scheduler::kFixed);
+          ConnectCall(node);
+        }
+        break;
       default:
         break;
     }
@@ -364,65 +374,46 @@ class CFGBuilder : public ZoneObject {
   }
 
   void BuildBlocksForSuccessors(Node* node) {
-    size_t const successor_count = node->op()->ControlOutputCount();
-    Node** successors = zone_->NewArray<Node*>(successor_count);
-    CollectSuccessorProjections(node, successors, successor_count);
-    for (size_t index = 0; index < successor_count; ++index) {
+    size_t const successor_cnt = node->op()->ControlOutputCount();
+    Node** successors = zone_->NewArray<Node*>(successor_cnt);
+    NodeProperties::CollectControlProjections(node, successors, successor_cnt);
+    for (size_t index = 0; index < successor_cnt; ++index) {
       BuildBlockForNode(successors[index]);
     }
   }
 
-  // Collect the branch-related projections from a node, such as IfTrue,
-  // IfFalse, Case and Default.
-  void CollectSuccessorProjections(Node* node, Node** successors,
-                                   size_t successor_count) {
-#ifdef DEBUG
-    DCHECK_EQ(static_cast<int>(successor_count), node->UseCount());
-    std::memset(successors, 0, sizeof(*successors) * successor_count);
-#endif
-    size_t if_value_index = 0;
-    for (Node* const use : node->uses()) {
-      size_t index;
-      switch (use->opcode()) {
-        default:
-          UNREACHABLE();
-        // Fall through.
-        case IrOpcode::kIfTrue:
-          DCHECK_EQ(IrOpcode::kBranch, node->opcode());
-          index = 0;
-          break;
-        case IrOpcode::kIfFalse:
-          DCHECK_EQ(IrOpcode::kBranch, node->opcode());
-          index = 1;
-          break;
-        case IrOpcode::kIfValue:
-          DCHECK_EQ(IrOpcode::kSwitch, node->opcode());
-          index = if_value_index++;
-          break;
-        case IrOpcode::kIfDefault:
-          DCHECK_EQ(IrOpcode::kSwitch, node->opcode());
-          index = successor_count - 1;
-          break;
-      }
-      DCHECK_LT(if_value_index, successor_count);
-      DCHECK_LT(index, successor_count);
-      DCHECK_NULL(successors[index]);
-      successors[index] = use;
-    }
-#ifdef DEBUG
-    for (size_t index = 0; index < successor_count; ++index) {
-      DCHECK_NOT_NULL(successors[index]);
-    }
-#endif
-  }
-
   void CollectSuccessorBlocks(Node* node, BasicBlock** successor_blocks,
-                              size_t successor_count) {
+                              size_t successor_cnt) {
     Node** successors = reinterpret_cast<Node**>(successor_blocks);
-    CollectSuccessorProjections(node, successors, successor_count);
-    for (size_t index = 0; index < successor_count; ++index) {
+    NodeProperties::CollectControlProjections(node, successors, successor_cnt);
+    for (size_t index = 0; index < successor_cnt; ++index) {
       successor_blocks[index] = schedule_->block(successors[index]);
     }
+  }
+
+  BasicBlock* FindPredecessorBlock(Node* node) {
+    BasicBlock* predecessor_block = nullptr;
+    while (true) {
+      predecessor_block = schedule_->block(node);
+      if (predecessor_block != nullptr) break;
+      node = NodeProperties::GetControlInput(node);
+    }
+    return predecessor_block;
+  }
+
+  void ConnectCall(Node* call) {
+    BasicBlock* successor_blocks[2];
+    CollectSuccessorBlocks(call, successor_blocks, arraysize(successor_blocks));
+
+    // Consider the exception continuation to be deferred.
+    successor_blocks[1]->set_deferred(true);
+
+    Node* call_control = NodeProperties::GetControlInput(call);
+    BasicBlock* call_block = FindPredecessorBlock(call_control);
+    TraceConnect(call, call_block, successor_blocks[0]);
+    TraceConnect(call, call_block, successor_blocks[1]);
+    schedule_->AddCall(call_block, call, successor_blocks[0],
+                       successor_blocks[1]);
   }
 
   void ConnectBranch(Node* branch) {
@@ -448,10 +439,8 @@ class CFGBuilder : public ZoneObject {
       schedule_->InsertBranch(component_start_, component_end_, branch,
                               successor_blocks[0], successor_blocks[1]);
     } else {
-      Node* branch_block_node = NodeProperties::GetControlInput(branch);
-      BasicBlock* branch_block = schedule_->block(branch_block_node);
-      DCHECK_NOT_NULL(branch_block);
-
+      Node* branch_control = NodeProperties::GetControlInput(branch);
+      BasicBlock* branch_block = FindPredecessorBlock(branch_control);
       TraceConnect(branch, branch_block, successor_blocks[0]);
       TraceConnect(branch, branch_block, successor_blocks[1]);
       schedule_->AddBranch(branch_block, branch, successor_blocks[0],
@@ -472,14 +461,12 @@ class CFGBuilder : public ZoneObject {
       schedule_->InsertSwitch(component_start_, component_end_, sw,
                               successor_blocks, successor_count);
     } else {
-      Node* sw_block_node = NodeProperties::GetControlInput(sw);
-      BasicBlock* sw_block = schedule_->block(sw_block_node);
-      DCHECK_NOT_NULL(sw_block);
-
+      Node* switch_control = NodeProperties::GetControlInput(sw);
+      BasicBlock* switch_block = FindPredecessorBlock(switch_control);
       for (size_t index = 0; index < successor_count; ++index) {
-        TraceConnect(sw, sw_block, successor_blocks[index]);
+        TraceConnect(sw, switch_block, successor_blocks[index]);
       }
-      schedule_->AddSwitch(sw_block, sw, successor_blocks, successor_count);
+      schedule_->AddSwitch(switch_block, sw, successor_blocks, successor_count);
     }
   }
 
@@ -492,22 +479,22 @@ class CFGBuilder : public ZoneObject {
     // For all of the merge's control inputs, add a goto at the end to the
     // merge's basic block.
     for (Node* const input : merge->inputs()) {
-      BasicBlock* predecessor_block = schedule_->block(input);
+      BasicBlock* predecessor_block = FindPredecessorBlock(input);
       TraceConnect(merge, predecessor_block, block);
       schedule_->AddGoto(predecessor_block, block);
     }
   }
 
   void ConnectReturn(Node* ret) {
-    Node* return_block_node = NodeProperties::GetControlInput(ret);
-    BasicBlock* return_block = schedule_->block(return_block_node);
+    Node* return_control = NodeProperties::GetControlInput(ret);
+    BasicBlock* return_block = FindPredecessorBlock(return_control);
     TraceConnect(ret, return_block, NULL);
     schedule_->AddReturn(return_block, ret);
   }
 
   void ConnectThrow(Node* thr) {
-    Node* throw_block_node = NodeProperties::GetControlInput(thr);
-    BasicBlock* throw_block = schedule_->block(throw_block_node);
+    Node* throw_control = NodeProperties::GetControlInput(thr);
+    BasicBlock* throw_block = FindPredecessorBlock(throw_control);
     TraceConnect(thr, throw_block, NULL);
     schedule_->AddThrow(throw_block, thr);
   }
@@ -521,6 +508,13 @@ class CFGBuilder : public ZoneObject {
       Trace("Connect #%d:%s, B%d -> B%d\n", node->id(), node->op()->mnemonic(),
             block->id().ToInt(), succ->id().ToInt());
     }
+  }
+
+  bool IsExceptionalCall(Node* node) {
+    for (Node* const use : node->uses()) {
+      if (use->opcode() == IrOpcode::kIfException) return true;
+    }
+    return false;
   }
 
   bool IsFinalMerge(Node* node) {
@@ -1013,7 +1007,7 @@ class SpecialRPONumberer : public ZoneObject {
         DCHECK(block->rpo_number() == links + header->rpo_number());
         links++;
         block = block->rpo_next();
-        DCHECK(links < static_cast<int>(2 * order->size()));  // cycle?
+        DCHECK_LT(links, static_cast<int>(2 * order->size()));  // cycle?
       }
       DCHECK(links > 0);
       DCHECK(links == end->rpo_number() - header->rpo_number());
@@ -1368,7 +1362,7 @@ class ScheduleLateNodeVisitor {
     }
 
     // Schedule the node or a floating control structure.
-    if (NodeProperties::IsControl(node)) {
+    if (IrOpcode::IsMergeOpcode(node->opcode())) {
       ScheduleFloatingControl(block, node);
     } else {
       ScheduleNode(block, node);
@@ -1492,10 +1486,13 @@ class ScheduleLateNodeVisitor {
     return block;
   }
 
+  BasicBlock* FindPredecessorBlock(Node* node) {
+    return scheduler_->control_flow_builder_->FindPredecessorBlock(node);
+  }
+
   BasicBlock* GetBlockForUse(Edge edge) {
     Node* use = edge.from();
-    IrOpcode::Value opcode = use->opcode();
-    if (IrOpcode::IsPhiOpcode(opcode)) {
+    if (IrOpcode::IsPhiOpcode(use->opcode())) {
       // If the use is from a coupled (i.e. floating) phi, compute the common
       // dominator of its uses. This will not recurse more than one level.
       if (scheduler_->GetPlacement(use) == Scheduler::kCoupled) {
@@ -1504,15 +1501,23 @@ class ScheduleLateNodeVisitor {
         DCHECK_EQ(edge.to(), NodeProperties::GetControlInput(use));
         return GetCommonDominatorOfUses(use);
       }
-      // If the use is from a fixed (i.e. non-floating) phi, use the block
-      // of the corresponding control input to the merge.
+      // If the use is from a fixed (i.e. non-floating) phi, we use the
+      // predecessor block of the corresponding control input to the merge.
       if (scheduler_->GetPlacement(use) == Scheduler::kFixed) {
         Trace("  input@%d into a fixed phi #%d:%s\n", edge.index(), use->id(),
               use->op()->mnemonic());
         Node* merge = NodeProperties::GetControlInput(use, 0);
-        opcode = merge->opcode();
-        DCHECK(opcode == IrOpcode::kMerge || opcode == IrOpcode::kLoop);
-        use = NodeProperties::GetControlInput(merge, edge.index());
+        DCHECK(IrOpcode::IsMergeOpcode(merge->opcode()));
+        Node* input = NodeProperties::GetControlInput(merge, edge.index());
+        return FindPredecessorBlock(input);
+      }
+    } else if (IrOpcode::IsMergeOpcode(use->opcode())) {
+      // If the use is from a fixed (i.e. non-floating) merge, we use the
+      // predecessor block of the current input to the merge.
+      if (scheduler_->GetPlacement(use) == Scheduler::kFixed) {
+        Trace("  input@%d into a fixed merge #%d:%s\n", edge.index(), use->id(),
+              use->op()->mnemonic());
+        return FindPredecessorBlock(edge.to());
       }
     }
     BasicBlock* result = schedule_->block(use);

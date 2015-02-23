@@ -61,6 +61,9 @@
     # Similar to the ARM hard float ABI but on MIPS.
     'v8_use_mips_abi_hardfloat%': 'true',
 
+    # Force disable libstdc++ debug mode.
+    'disable_glibcxx_debug%': 0,
+
     'v8_enable_backtrace%': 0,
 
     # Enable profiling support. Only required on Windows.
@@ -374,7 +377,10 @@
             'conditions': [
               ['v8_target_arch==target_arch and android_webview_build==0', {
                 # Target built with a Mips CXX compiler.
-                'cflags': ['-EB'],
+                'cflags': [
+                  '-EB',
+                  '-Wno-error=array-bounds',  # Workaround https://gcc.gnu.org/bugzilla/show_bug.cgi?id=56273
+                ],
                 'ldflags': ['-EB'],
                 'conditions': [
                   [ 'v8_use_mips_abi_hardfloat=="true"', {
@@ -558,7 +564,10 @@
             'conditions': [
               ['v8_target_arch==target_arch and android_webview_build==0', {
                 # Target built with a Mips CXX compiler.
-                'cflags': ['-EL'],
+                'cflags': [
+                  '-EL',
+                  '-Wno-error=array-bounds',  # Workaround https://gcc.gnu.org/bugzilla/show_bug.cgi?id=56273
+                ],
                 'ldflags': ['-EL'],
                 'conditions': [
                   [ 'v8_use_mips_abi_hardfloat=="true"', {
@@ -758,7 +767,10 @@
           ['_toolset=="target"', {
             'conditions': [
               ['v8_target_arch==target_arch and android_webview_build==0', {
-                'cflags': ['-EL'],
+                'cflags': [
+                  '-EL',
+                  '-Wno-error=array-bounds',  # Workaround https://gcc.gnu.org/bugzilla/show_bug.cgi?id=56273
+                ],
                 'ldflags': ['-EL'],
                 'conditions': [
                   [ 'v8_use_mips_abi_hardfloat=="true"', {
@@ -1129,6 +1141,11 @@
           ['OS=="linux" and v8_enable_backtrace==1', {
             # Support for backtrace_symbols.
             'ldflags': [ '-rdynamic' ],
+          }],
+          ['OS=="linux" and disable_glibcxx_debug==0', {
+            # Enable libstdc++ debugging facilities to help catch problems
+            # early, see http://crbug.com/65151 .
+            'defines': ['_GLIBCXX_DEBUG=1',],
           }],
           ['OS=="aix"', {
             'ldflags': [ '-Wl,-bbigtoc' ],

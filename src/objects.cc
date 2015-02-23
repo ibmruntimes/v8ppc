@@ -291,7 +291,7 @@ MaybeHandle<Object> Object::GetPropertyWithAccessor(Handle<Object> receiver,
   if (structure->IsAccessorInfo()) {
     Handle<AccessorInfo> info = Handle<AccessorInfo>::cast(structure);
     if (!info->IsCompatibleReceiver(*receiver)) {
-      Handle<Object> args[2] = { name, receiver };
+      Handle<Object> args[] = {name, receiver};
       THROW_NEW_ERROR(isolate,
                       NewTypeError("incompatible_method_receiver",
                                    HandleVector(args, arraysize(args))),
@@ -356,7 +356,7 @@ MaybeHandle<Object> Object::SetPropertyWithAccessor(
     // api style callbacks
     ExecutableAccessorInfo* info = ExecutableAccessorInfo::cast(*structure);
     if (!info->IsCompatibleReceiver(*receiver)) {
-      Handle<Object> args[2] = { name, receiver };
+      Handle<Object> args[] = {name, receiver};
       THROW_NEW_ERROR(isolate,
                       NewTypeError("incompatible_method_receiver",
                                    HandleVector(args, arraysize(args))),
@@ -383,10 +383,11 @@ MaybeHandle<Object> Object::SetPropertyWithAccessor(
           receiver, Handle<JSReceiver>::cast(setter), value);
     } else {
       if (is_sloppy(language_mode)) return value;
-      Handle<Object> args[2] = { name, holder };
-      THROW_NEW_ERROR(
-          isolate, NewTypeError("no_setter_in_callback", HandleVector(args, 2)),
-          Object);
+      Handle<Object> args[] = {name, holder};
+      THROW_NEW_ERROR(isolate,
+                      NewTypeError("no_setter_in_callback",
+                                   HandleVector(args, arraysize(args))),
+                      Object);
     }
   }
 
@@ -731,17 +732,15 @@ MaybeHandle<Object> Object::SetElementWithReceiver(
     if (!done &&
         js_object->elements() != isolate->heap()->empty_fixed_array()) {
       ElementsAccessor* accessor = js_object->GetElementsAccessor();
-      PropertyAttributes attrs =
-          accessor->GetAttributes(receiver, js_object, index);
+      PropertyAttributes attrs = accessor->GetAttributes(js_object, index);
       if ((attrs & READ_ONLY) != 0) {
         return WriteToReadOnlyElement(isolate, receiver, index, value,
                                       language_mode);
       }
-      Handle<AccessorPair> accessor_pair;
-      if (accessor->GetAccessorPair(receiver, js_object, index)
-              .ToHandle(&accessor_pair)) {
-        return JSObject::SetElementWithCallback(
-            receiver, accessor_pair, index, value, js_object, language_mode);
+      Handle<AccessorPair> pair;
+      if (accessor->GetAccessorPair(js_object, index).ToHandle(&pair)) {
+        return JSObject::SetElementWithCallback(receiver, pair, index, value,
+                                                js_object, language_mode);
       } else {
         done = attrs != ABSENT;
       }
@@ -754,14 +753,13 @@ MaybeHandle<Object> Object::SetElementWithReceiver(
   }
   Handle<JSObject> target = Handle<JSObject>::cast(receiver);
   ElementsAccessor* accessor = target->GetElementsAccessor();
-  PropertyAttributes attrs = accessor->GetAttributes(receiver, target, index);
-  if ((attrs & READ_ONLY) != 0) {
-    return WriteToReadOnlyElement(isolate, receiver, index, value,
-                                  language_mode);
+  PropertyAttributes attrs = accessor->GetAttributes(target, index);
+  if (attrs == ABSENT) {
+    return JSObject::SetElement(target, index, value, NONE, language_mode,
+                                false);
   }
-  PropertyAttributes new_attrs = attrs != ABSENT ? attrs : NONE;
-  return JSObject::SetElement(target, index, value, new_attrs, language_mode,
-                              false);
+  return JSObject::SetElement(target, index, value, attrs, language_mode, false,
+                              DEFINE_PROPERTY);
 }
 
 
@@ -800,10 +798,16 @@ Map* Object::GetRootMap(Isolate* isolate) {
 Object* Object::GetHash() {
   // The object is either a number, a name, an odd-ball,
   // a real JS object, or a Harmony proxy.
-  if (IsNumber()) {
-    uint32_t hash = std::isnan(Number())
-                        ? Smi::kMaxValue
-                        : ComputeLongHash(double_to_uint64(Number()));
+  if (IsSmi()) {
+    int num = Smi::cast(this)->value();
+    uint32_t hash = ComputeLongHash(double_to_uint64(static_cast<double>(num)));
+    return Smi::FromInt(hash & Smi::kMaxValue);
+  }
+  if (IsHeapNumber()) {
+    double num = HeapNumber::cast(this)->value();
+    if (std::isnan(num)) return Smi::FromInt(Smi::kMaxValue);
+    if (i::IsMinusZero(num)) num = 0;
+    uint32_t hash = ComputeLongHash(double_to_uint64(num));
     return Smi::FromInt(hash & Smi::kMaxValue);
   }
   if (IsName()) {
@@ -2815,8 +2819,8 @@ Handle<Map> Map::ReconfigureProperty(Handle<Map> old_map, int modify_index,
             Handle<HeapType> old_field_type =
                 GetFieldType(isolate, old_descriptors, i,
                              old_details.location(), next_representation);
-            old_field_type =
-                GeneralizeFieldType(old_field_type, next_field_type, isolate);
+            next_field_type =
+                GeneralizeFieldType(next_field_type, old_field_type, isolate);
           }
         } else {
           Handle<HeapType> old_field_type =
@@ -3049,14 +3053,16 @@ MaybeHandle<Object> Object::SetProperty(Handle<Object> object,
 }
 
 
-MaybeHandle<Object> Object::SetProperty(LookupIterator* it,
-                                        Handle<Object> value,
-                                        LanguageMode language_mode,
-                                        StoreFromKeyed store_mode,
-                                        StorePropertyMode data_store_mode) {
+MaybeHandle<Object> Object::SetPropertyInternal(LookupIterator* it,
+                                                Handle<Object> value,
+                                                LanguageMode language_mode,
+                                                StoreFromKeyed store_mode,
+                                                bool* found) {
   // Make sure that the top context does not change when doing callbacks or
   // interceptor calls.
   AssertNoContextChange ncc(it->isolate());
+
+  *found = true;
 
   bool done = false;
   for (; it->IsFound(); it->Next()) {
@@ -3137,32 +3143,102 @@ MaybeHandle<Object> Object::SetProperty(LookupIterator* it,
   // the property did not exist yet on the global object itself, we have to
   // throw a reference error in strict mode.
   if (it->GetReceiver()->IsJSGlobalObject() && is_strict(language_mode)) {
-    Handle<Object> args[1] = {it->name()};
-    THROW_NEW_ERROR(it->isolate(),
-                    NewReferenceError("not_defined", HandleVector(args, 1)),
-                    Object);
+    Handle<Object> args[] = {it->name()};
+    THROW_NEW_ERROR(
+        it->isolate(),
+        NewReferenceError("not_defined", HandleVector(args, arraysize(args))),
+        Object);
   }
 
-  if (data_store_mode == SUPER_PROPERTY) {
-    LookupIterator own_lookup(it->GetReceiver(), it->name(),
-                              LookupIterator::OWN);
+  *found = false;
+  return MaybeHandle<Object>();
+}
 
-    return JSObject::SetProperty(&own_lookup, value, language_mode, store_mode,
-                                 NORMAL_PROPERTY);
-  }
 
+MaybeHandle<Object> Object::SetProperty(LookupIterator* it,
+                                        Handle<Object> value,
+                                        LanguageMode language_mode,
+                                        StoreFromKeyed store_mode) {
+  bool found = false;
+  MaybeHandle<Object> result =
+      SetPropertyInternal(it, value, language_mode, store_mode, &found);
+  if (found) return result;
   return AddDataProperty(it, value, NONE, language_mode, store_mode);
+}
+
+
+MaybeHandle<Object> Object::SetSuperProperty(LookupIterator* it,
+                                             Handle<Object> value,
+                                             LanguageMode language_mode,
+                                             StoreFromKeyed store_mode) {
+  bool found = false;
+  MaybeHandle<Object> result =
+      SetPropertyInternal(it, value, language_mode, store_mode, &found);
+  if (found) return result;
+
+  LookupIterator own_lookup(it->GetReceiver(), it->name(), LookupIterator::OWN);
+
+  switch (own_lookup.state()) {
+    case LookupIterator::NOT_FOUND:
+      return JSObject::AddDataProperty(&own_lookup, value, NONE, language_mode,
+                                       store_mode);
+
+    case LookupIterator::DATA: {
+      PropertyDetails details = own_lookup.property_details();
+      if (details.IsConfigurable() || !details.IsReadOnly()) {
+        return JSObject::SetOwnPropertyIgnoreAttributes(
+            Handle<JSObject>::cast(it->GetReceiver()), it->name(), value,
+            details.attributes());
+      }
+      return WriteToReadOnlyProperty(&own_lookup, value, language_mode);
+    }
+
+    case LookupIterator::ACCESSOR: {
+      PropertyDetails details = own_lookup.property_details();
+      if (details.IsConfigurable()) {
+        return JSObject::SetOwnPropertyIgnoreAttributes(
+            Handle<JSObject>::cast(it->GetReceiver()), it->name(), value,
+            details.attributes());
+      }
+
+      return RedefineNonconfigurableProperty(it->isolate(), it->name(), value,
+                                             language_mode);
+    }
+
+    case LookupIterator::TRANSITION:
+      UNREACHABLE();
+      break;
+
+    case LookupIterator::INTERCEPTOR:
+    case LookupIterator::JSPROXY:
+    case LookupIterator::ACCESS_CHECK: {
+      bool found = false;
+      MaybeHandle<Object> result = SetPropertyInternal(
+          &own_lookup, value, language_mode, store_mode, &found);
+      if (found) return result;
+      return SetDataProperty(&own_lookup, value);
+    }
+  }
+
+  UNREACHABLE();
+  return MaybeHandle<Object>();
 }
 
 
 MaybeHandle<Object> Object::WriteToReadOnlyProperty(
     LookupIterator* it, Handle<Object> value, LanguageMode language_mode) {
-  if (is_sloppy(language_mode)) return value;
+  return WriteToReadOnlyProperty(it->isolate(), it->GetReceiver(), it->name(),
+                                 value, language_mode);
+}
 
-  Handle<Object> args[] = {it->name(), it->GetReceiver()};
-  THROW_NEW_ERROR(it->isolate(),
-                  NewTypeError("strict_read_only_property",
-                               HandleVector(args, arraysize(args))),
+
+MaybeHandle<Object> Object::WriteToReadOnlyProperty(
+    Isolate* isolate, Handle<Object> receiver, Handle<Object> name,
+    Handle<Object> value, LanguageMode language_mode) {
+  if (is_sloppy(language_mode)) return value;
+  Handle<Object> args[] = {name, receiver};
+  THROW_NEW_ERROR(isolate, NewTypeError("strict_read_only_property",
+                                        HandleVector(args, arraysize(args))),
                   Object);
 }
 
@@ -3172,11 +3248,18 @@ MaybeHandle<Object> Object::WriteToReadOnlyElement(Isolate* isolate,
                                                    uint32_t index,
                                                    Handle<Object> value,
                                                    LanguageMode language_mode) {
-  if (is_sloppy(language_mode)) return value;
+  return WriteToReadOnlyProperty(isolate, receiver,
+                                 isolate->factory()->NewNumberFromUint(index),
+                                 value, language_mode);
+}
 
-  Handle<Object> args[] = {isolate->factory()->NewNumberFromUint(index),
-                           receiver};
-  THROW_NEW_ERROR(isolate, NewTypeError("strict_read_only_property",
+
+MaybeHandle<Object> Object::RedefineNonconfigurableProperty(
+    Isolate* isolate, Handle<Object> name, Handle<Object> value,
+    LanguageMode language_mode) {
+  if (is_sloppy(language_mode)) return value;
+  Handle<Object> args[] = {name};
+  THROW_NEW_ERROR(isolate, NewTypeError("redefine_disallowed",
                                         HandleVector(args, arraysize(args))),
                   Object);
 }
@@ -3245,7 +3328,7 @@ MaybeHandle<Object> Object::AddDataProperty(LookupIterator* it,
   if (it->state() != LookupIterator::TRANSITION) {
     if (is_sloppy(language_mode)) return value;
 
-    Handle<Object> args[1] = {it->name()};
+    Handle<Object> args[] = {it->name()};
     THROW_NEW_ERROR(it->isolate(),
                     NewTypeError("object_not_extensible",
                                  HandleVector(args, arraysize(args))),
@@ -3791,11 +3874,8 @@ MaybeHandle<Object> JSProxy::SetPropertyViaPrototypesWithHandler(
     DCHECK(writable->IsBoolean());
     *done = writable->IsFalse();
     if (!*done) return isolate->factory()->the_hole_value();
-    if (is_sloppy(language_mode)) return value;
-    Handle<Object> args[] = { name, receiver };
-    THROW_NEW_ERROR(isolate, NewTypeError("strict_read_only_property",
-                                          HandleVector(args, arraysize(args))),
-                    Object);
+    return WriteToReadOnlyProperty(isolate, receiver, name, value,
+                                   language_mode);
   }
 
   // We have an AccessorDescriptor.
@@ -4372,8 +4452,8 @@ Maybe<PropertyAttributes> JSObject::GetElementAttributeFromInterceptor(
 Maybe<PropertyAttributes> JSObject::GetElementAttributeWithoutInterceptor(
     Handle<JSObject> object, Handle<JSReceiver> receiver, uint32_t index,
     bool check_prototype) {
-  PropertyAttributes attr = object->GetElementsAccessor()->GetAttributes(
-      receiver, object, index);
+  PropertyAttributes attr =
+      object->GetElementsAccessor()->GetAttributes(object, index);
   if (attr != ABSENT) return maybe(attr);
 
   // Handle [] on String objects.
@@ -5154,9 +5234,10 @@ MaybeHandle<Object> JSObject::DeleteElement(Handle<JSObject> object,
     if (is_strict(language_mode)) {
       // Deleting a non-configurable property in strict mode.
       Handle<Object> name = factory->NewNumberFromUint(index);
-      Handle<Object> args[2] = { name, object };
-      THROW_NEW_ERROR(isolate, NewTypeError("strict_delete_property",
-                                            HandleVector(args, 2)),
+      Handle<Object> args[] = {name, object};
+      THROW_NEW_ERROR(isolate,
+                      NewTypeError("strict_delete_property",
+                                   HandleVector(args, arraysize(args))),
                       Object);
     }
     return factory->false_value();
@@ -5287,7 +5368,7 @@ MaybeHandle<Object> JSObject::DeleteProperty(Handle<JSObject> object,
         if (!it.IsConfigurable()) {
           // Fail if the property is not configurable.
           if (is_strict(language_mode)) {
-            Handle<Object> args[2] = {name, object};
+            Handle<Object> args[] = {name, object};
             THROW_NEW_ERROR(it.isolate(),
                             NewTypeError("strict_delete_property",
                                          HandleVector(args, arraysize(args))),
@@ -9958,11 +10039,65 @@ void SharedFunctionInfo::TrimOptimizedCodeMap(int shrink_by) {
 }
 
 
+static void GetMinInobjectSlack(Map* map, void* data) {
+  int slack = map->unused_property_fields();
+  if (*reinterpret_cast<int*>(data) > slack) {
+    *reinterpret_cast<int*>(data) = slack;
+  }
+}
+
+
+static void ShrinkInstanceSize(Map* map, void* data) {
+  int slack = *reinterpret_cast<int*>(data);
+  map->set_inobject_properties(map->inobject_properties() - slack);
+  map->set_unused_property_fields(map->unused_property_fields() - slack);
+  map->set_instance_size(map->instance_size() - slack * kPointerSize);
+
+  // Visitor id might depend on the instance size, recalculate it.
+  map->set_visitor_id(StaticVisitorBase::GetVisitorId(map));
+}
+
+
+void JSFunction::CompleteInobjectSlackTracking() {
+  DCHECK(has_initial_map());
+  Map* map = initial_map();
+
+  DCHECK(map->counter() >= Map::kSlackTrackingCounterEnd - 1);
+  map->set_counter(Map::kRetainingCounterStart);
+
+  int slack = map->unused_property_fields();
+  map->TraverseTransitionTree(&GetMinInobjectSlack, &slack);
+  if (slack != 0) {
+    // Resize the initial map and all maps in its transition tree.
+    map->TraverseTransitionTree(&ShrinkInstanceSize, &slack);
+  }
+}
+
+
+static bool PrototypeBenefitsFromNormalization(Handle<JSObject> object) {
+  DisallowHeapAllocation no_gc;
+  if (!object->HasFastProperties()) return false;
+  Map* map = object->map();
+  if (map->is_prototype_map()) return false;
+  DescriptorArray* descriptors = map->instance_descriptors();
+  for (int i = 0; i < map->NumberOfOwnDescriptors(); i++) {
+    PropertyDetails details = descriptors->GetDetails(i);
+    if (details.location() == kDescriptor) continue;
+    if (details.representation().IsHeapObject() ||
+        details.representation().IsTagged()) {
+      FieldIndex index = FieldIndex::ForDescriptor(map, i);
+      if (object->RawFastPropertyAt(index)->IsJSFunction()) return true;
+    }
+  }
+  return false;
+}
+
+
 void JSObject::OptimizeAsPrototype(Handle<JSObject> object,
                                    PrototypeOptimizationMode mode) {
   if (object->IsGlobalObject()) return;
   if (object->IsJSGlobalProxy()) return;
-  if (mode == FAST_PROTOTYPE && !object->map()->is_prototype_map()) {
+  if (mode == FAST_PROTOTYPE && PrototypeBenefitsFromNormalization(object)) {
     // First normalize to ensure all JSFunctions are DATA_CONSTANT.
     JSObject::NormalizeProperties(object, KEEP_INOBJECT_PROPERTIES, 0,
                                   "NormalizeAsPrototype");
@@ -9977,6 +10112,19 @@ void JSObject::OptimizeAsPrototype(Handle<JSObject> object,
     if (!has_just_copied_map) {
       Handle<Map> new_map = Map::Copy(handle(object->map()), "CopyAsPrototype");
       JSObject::MigrateToMap(object, new_map);
+    }
+    if (object->map()->constructor()->IsJSFunction()) {
+      JSFunction* constructor = JSFunction::cast(object->map()->constructor());
+      // Replace the pointer to the exact constructor with the Object function
+      // from the same context if undetectable from JS. This is to avoid keeping
+      // memory alive unnecessarily.
+      if (!constructor->shared()->IsApiFunction() &&
+          object->class_name() ==
+              object->GetIsolate()->heap()->Object_string()) {
+        Context* context = constructor->context()->native_context();
+        JSFunction* object_function = context->object_function();
+        object->map()->set_constructor(object_function);
+      }
     }
     object->map()->set_is_prototype_map(true);
   }
@@ -10136,6 +10284,11 @@ void JSFunction::SetInstancePrototype(Handle<JSFunction> function,
     // needed.  At that point, a new initial map is created and the
     // prototype is put into the initial map where it belongs.
     function->set_prototype_or_initial_map(*value);
+    if (value->IsJSObject()) {
+      // Optimize as prototype to detach it from its transition tree.
+      JSObject::OptimizeAsPrototype(Handle<JSObject>::cast(value),
+                                    FAST_PROTOTYPE);
+    }
   }
   isolate->heap()->ClearInstanceofCache();
 }
@@ -10659,6 +10812,10 @@ void JSFunction::StartInobjectSlackTracking() {
 
 
 void SharedFunctionInfo::ResetForNewContext(int new_ic_age) {
+  code()->ClearInlineCaches();
+  // If we clear ICs, we need to clear the type feedback vector too, since
+  // CallICs are synced with a feedback vector slot.
+  ClearTypeFeedbackInfo();
   set_ic_age(new_ic_age);
   if (code()->kind() == Code::FUNCTION) {
     code()->set_profiler_ticks(0);
@@ -10670,41 +10827,6 @@ void SharedFunctionInfo::ResetForNewContext(int new_ic_age) {
     }
     set_opt_count(0);
     set_deopt_count(0);
-  }
-}
-
-
-static void GetMinInobjectSlack(Map* map, void* data) {
-  int slack = map->unused_property_fields();
-  if (*reinterpret_cast<int*>(data) > slack) {
-    *reinterpret_cast<int*>(data) = slack;
-  }
-}
-
-
-static void ShrinkInstanceSize(Map* map, void* data) {
-  int slack = *reinterpret_cast<int*>(data);
-  map->set_inobject_properties(map->inobject_properties() - slack);
-  map->set_unused_property_fields(map->unused_property_fields() - slack);
-  map->set_instance_size(map->instance_size() - slack * kPointerSize);
-
-  // Visitor id might depend on the instance size, recalculate it.
-  map->set_visitor_id(StaticVisitorBase::GetVisitorId(map));
-}
-
-
-void JSFunction::CompleteInobjectSlackTracking() {
-  DCHECK(has_initial_map());
-  Map* map = initial_map();
-
-  DCHECK(map->counter() >= Map::kSlackTrackingCounterEnd - 1);
-  map->set_counter(Map::kRetainingCounterStart);
-
-  int slack = map->unused_property_fields();
-  map->TraverseTransitionTree(&GetMinInobjectSlack, &slack);
-  if (slack != 0) {
-    // Resize the initial map and all maps in its transition tree.
-    map->TraverseTransitionTree(&ShrinkInstanceSize, &slack);
   }
 }
 
@@ -11712,6 +11834,19 @@ void Code::Disassemble(const char* name, std::ostream& os) {  // NOLINT
 #endif
   }
 
+  if (handler_table()->length() > 0 && is_turbofanned()) {
+    os << "Handler Table (size = " << handler_table()->Size() << ")\n";
+    for (int i = 0; i < handler_table()->length(); i += 2) {
+      int pc_offset = Smi::cast(handler_table()->get(i))->value();
+      int handler = Smi::cast(handler_table()->get(i + 1))->value();
+      os << static_cast<const void*>(instruction_start() + pc_offset) << "  ";
+      Vector<char> buf = Vector<char>::New(20);
+      SNPrintF(buf, "%4d %4d\n", pc_offset, handler);
+      os << buf.start();
+    }
+    os << "\n";
+  }
+
   os << "RelocInfo (size = " << relocation_size() << ")\n";
   for (RelocIterator it(this); !it.done(); it.next()) {
     it.rinfo()->Print(GetIsolate(), os);
@@ -12525,7 +12660,7 @@ MaybeHandle<AccessorPair> JSObject::GetOwnElementAccessorPair(
   // Check for lookup interceptor.
   if (object->HasIndexedInterceptor()) return MaybeHandle<AccessorPair>();
 
-  return object->GetElementsAccessor()->GetAccessorPair(object, object, index);
+  return object->GetElementsAccessor()->GetAccessorPair(object, index);
 }
 
 
@@ -12645,10 +12780,11 @@ MaybeHandle<Object> JSObject::SetElementWithCallback(
     } else {
       if (is_sloppy(language_mode)) return value;
       Handle<Object> key(isolate->factory()->NewNumberFromUint(index));
-      Handle<Object> args[2] = { key, holder };
-      THROW_NEW_ERROR(
-          isolate, NewTypeError("no_setter_in_callback", HandleVector(args, 2)),
-          Object);
+      Handle<Object> args[] = {key, holder};
+      THROW_NEW_ERROR(isolate,
+                      NewTypeError("no_setter_in_callback",
+                                   HandleVector(args, arraysize(args))),
+                      Object);
     }
   }
 
@@ -12835,25 +12971,30 @@ MaybeHandle<Object> JSObject::SetDictionaryElement(
     if (details.type() == ACCESSOR_CONSTANT && set_mode == SET_PROPERTY) {
       return SetElementWithCallback(object, element, index, value, object,
                                     language_mode);
-    } else {
-      dictionary->UpdateMaxNumberKey(index);
+    } else if (set_mode == DEFINE_PROPERTY && !details.IsConfigurable() &&
+               details.kind() == kAccessor) {
+      return RedefineNonconfigurableProperty(
+          isolate, isolate->factory()->NewNumberFromUint(index),
+          isolate->factory()->undefined_value(), language_mode);
+
+    } else if ((set_mode == DEFINE_PROPERTY && !details.IsConfigurable() &&
+                details.IsReadOnly()) ||
+               (set_mode == SET_PROPERTY && details.IsReadOnly() &&
+                !element->IsTheHole())) {
       // If a value has not been initialized we allow writing to it even if it
-      // is read-only (a declared const that has not been initialized).  If a
-      // value is being defined we skip attribute checks completely.
+      // is read-only (a declared const that has not been initialized).
+      return WriteToReadOnlyProperty(
+          isolate, object, isolate->factory()->NewNumberFromUint(index),
+          isolate->factory()->undefined_value(), language_mode);
+    } else {
+      DCHECK(details.IsConfigurable() || !details.IsReadOnly() ||
+             element->IsTheHole());
+      dictionary->UpdateMaxNumberKey(index);
       if (set_mode == DEFINE_PROPERTY) {
         details = PropertyDetails(attributes, DATA, details.dictionary_index());
         dictionary->DetailsAtPut(entry, details);
-      } else if (details.IsReadOnly() && !element->IsTheHole()) {
-        if (is_sloppy(language_mode)) {
-          return isolate->factory()->undefined_value();
-        } else {
-          Handle<Object> number = isolate->factory()->NewNumberFromUint(index);
-          Handle<Object> args[2] = { number, object };
-          THROW_NEW_ERROR(isolate, NewTypeError("strict_read_only_property",
-                                                HandleVector(args, 2)),
-                          Object);
-        }
       }
+
       // Elements of the arguments object in slow mode might be slow aliases.
       if (is_arguments && element->IsAliasedArgumentsEntry()) {
         Handle<AliasedArgumentsEntry> entry =
@@ -12885,9 +13026,10 @@ MaybeHandle<Object> JSObject::SetDictionaryElement(
       } else {
         Handle<Object> number = isolate->factory()->NewNumberFromUint(index);
         Handle<String> name = isolate->factory()->NumberToString(number);
-        Handle<Object> args[1] = { name };
-        THROW_NEW_ERROR(isolate, NewTypeError("object_not_extensible",
-                                              HandleVector(args, 1)),
+        Handle<Object> args[] = {name};
+        THROW_NEW_ERROR(isolate,
+                        NewTypeError("object_not_extensible",
+                                     HandleVector(args, arraysize(args))),
                         Object);
       }
     }
@@ -13565,16 +13707,6 @@ void JSArray::JSArrayUpdateLengthFromIndex(Handle<JSArray> array,
 }
 
 
-bool JSArray::IsReadOnlyLengthDescriptor(Handle<Map> jsarray_map) {
-  Isolate* isolate = jsarray_map->GetIsolate();
-  DCHECK(!jsarray_map->is_dictionary_map());
-  LookupResult lookup(isolate);
-  Handle<Name> length_string = isolate->factory()->length_string();
-  jsarray_map->LookupDescriptor(NULL, *length_string, &lookup);
-  return lookup.IsReadOnly();
-}
-
-
 bool JSArray::HasReadOnlyLength(Handle<JSArray> array) {
   LookupIterator it(array, array->GetIsolate()->factory()->length_string(),
                     LookupIterator::OWN_SKIP_INTERCEPTOR);
@@ -13597,7 +13729,7 @@ bool JSArray::WouldChangeReadOnlyLength(Handle<JSArray> array,
 MaybeHandle<Object> JSArray::ReadOnlyLengthError(Handle<JSArray> array) {
   Isolate* isolate = array->GetIsolate();
   Handle<Name> length = isolate->factory()->length_string();
-  Handle<Object> args[2] = { length, array };
+  Handle<Object> args[] = {length, array};
   THROW_NEW_ERROR(isolate, NewTypeError("strict_read_only_property",
                                         HandleVector(args, arraysize(args))),
                   Object);

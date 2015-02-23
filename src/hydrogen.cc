@@ -5970,7 +5970,7 @@ bool HOptimizedGraphBuilder::PropertyAccessInfo::IsCompatible(
 
 bool HOptimizedGraphBuilder::PropertyAccessInfo::LookupDescriptor() {
   if (!map_->IsJSObjectMap()) return true;
-  map_->LookupDescriptor(NULL, *name_, &lookup_);
+  lookup_.LookupDescriptor(*map_, *name_);
   return LoadResult(map_);
 }
 
@@ -6062,7 +6062,7 @@ bool HOptimizedGraphBuilder::PropertyAccessInfo::LookupInPrototypes() {
       lookup_.NotFound();
       return false;
     }
-    map->LookupDescriptor(*holder_, *name_, &lookup_);
+    lookup_.LookupDescriptor(*map, *name_);
     if (IsFound()) return LoadResult(map);
   }
   lookup_.NotFound();
@@ -6083,7 +6083,7 @@ bool HOptimizedGraphBuilder::PropertyAccessInfo::CanAccessMonomorphic() {
   if (IsLoad()) return true;
 
   if (IsAccessorConstant()) return true;
-  map_->LookupTransition(NULL, *name_, NONE, &lookup_);
+  lookup_.LookupTransition(*map_, *name_, NONE);
   if (lookup_.IsTransitionToData() && map_->unused_property_fields() > 0) {
     // Construct the object field access.
     int descriptor = transition()->LastAdded();
@@ -6527,8 +6527,9 @@ void HOptimizedGraphBuilder::HandleGlobalVariableAssignment(
     HValue* global_object = Add<HLoadNamedField>(
         context(), nullptr,
         HObjectAccess::ForContextSlot(Context::GLOBAL_OBJECT_INDEX));
-    HStoreNamedGeneric* instr = Add<HStoreNamedGeneric>(
-        global_object, var->name(), value, function_language_mode());
+    HStoreNamedGeneric* instr =
+        Add<HStoreNamedGeneric>(global_object, var->name(), value,
+                                function_language_mode(), PREMONOMORPHIC);
     USE(instr);
     DCHECK(instr->HasObservableSideEffects());
     Add<HSimulate>(ast_id, REMOVABLE_SIMULATE);
@@ -6826,19 +6827,16 @@ HInstruction* HGraphBuilder::AddLoadStringLength(HValue* string) {
 
 
 HInstruction* HOptimizedGraphBuilder::BuildNamedGeneric(
-    PropertyAccessType access_type,
-    Expression* expr,
-    HValue* object,
-    Handle<String> name,
-    HValue* value,
-    bool is_uninitialized) {
+    PropertyAccessType access_type, Expression* expr, HValue* object,
+    Handle<String> name, HValue* value, bool is_uninitialized) {
   if (is_uninitialized) {
     Add<HDeoptimize>(
         Deoptimizer::kInsufficientTypeFeedbackForGenericNamedAccess,
         Deoptimizer::SOFT);
   }
   if (access_type == LOAD) {
-    HLoadNamedGeneric* result = New<HLoadNamedGeneric>(object, name);
+    HLoadNamedGeneric* result =
+        New<HLoadNamedGeneric>(object, name, PREMONOMORPHIC);
     if (FLAG_vector_ics) {
       Handle<SharedFunctionInfo> current_shared =
           function_state()->compilation_info()->shared_info();
@@ -6850,7 +6848,7 @@ HInstruction* HOptimizedGraphBuilder::BuildNamedGeneric(
     return result;
   } else {
     return New<HStoreNamedGeneric>(object, name, value,
-                                   function_language_mode());
+                                   function_language_mode(), PREMONOMORPHIC);
   }
 }
 
@@ -8171,13 +8169,25 @@ bool HOptimizedGraphBuilder::TryInlineBuiltinFunctionCall(Call* expr) {
 
 
 // static
+bool HOptimizedGraphBuilder::IsReadOnlyLengthDescriptor(
+    Handle<Map> jsarray_map) {
+  DCHECK(!jsarray_map->is_dictionary_map());
+  LookupResult lookup;
+  Isolate* isolate = jsarray_map->GetIsolate();
+  Handle<Name> length_string = isolate->factory()->length_string();
+  lookup.LookupDescriptor(*jsarray_map, *length_string);
+  return lookup.IsReadOnly();
+}
+
+
+// static
 bool HOptimizedGraphBuilder::CanInlineArrayResizeOperation(
     Handle<Map> receiver_map) {
   return !receiver_map.is_null() &&
          receiver_map->instance_type() == JS_ARRAY_TYPE &&
          IsFastElementsKind(receiver_map->elements_kind()) &&
          !receiver_map->is_dictionary_map() &&
-         !JSArray::IsReadOnlyLengthDescriptor(receiver_map) &&
+         !IsReadOnlyLengthDescriptor(receiver_map) &&
          !receiver_map->is_observed() && receiver_map->is_extensible();
 }
 
@@ -10476,16 +10486,21 @@ HValue* HGraphBuilder::BuildBinaryOperation(
       return AddUncasted<HInvokeFunction>(function, 2);
     }
 
-    // Fast path for empty constant strings.
-    if (left->IsConstant() &&
-        HConstant::cast(left)->HasStringValue() &&
-        HConstant::cast(left)->StringValue()->length() == 0) {
-      return right;
-    }
-    if (right->IsConstant() &&
-        HConstant::cast(right)->HasStringValue() &&
-        HConstant::cast(right)->StringValue()->length() == 0) {
-      return left;
+    // Fast paths for empty constant strings.
+    Handle<String> left_string =
+        left->IsConstant() && HConstant::cast(left)->HasStringValue()
+            ? HConstant::cast(left)->StringValue()
+            : Handle<String>();
+    Handle<String> right_string =
+        right->IsConstant() && HConstant::cast(right)->HasStringValue()
+            ? HConstant::cast(right)->StringValue()
+            : Handle<String>();
+    if (!left_string.is_null() && left_string->length() == 0) return right;
+    if (!right_string.is_null() && right_string->length() == 0) return left;
+    if (!left_string.is_null() && !right_string.is_null()) {
+      return AddUncasted<HStringAdd>(
+          left, right, allocation_mode.GetPretenureMode(),
+          STRING_ADD_CHECK_NONE, allocation_mode.feedback_site());
     }
 
     // Register the dependent code with the allocation site.

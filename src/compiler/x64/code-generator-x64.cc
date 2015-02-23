@@ -24,11 +24,13 @@ class X64OperandConverter : public InstructionOperandConverter {
   X64OperandConverter(CodeGenerator* gen, Instruction* instr)
       : InstructionOperandConverter(gen, instr) {}
 
-  Immediate InputImmediate(int index) {
+  Immediate InputImmediate(size_t index) {
     return ToImmediate(instr_->InputAt(index));
   }
 
-  Operand InputOperand(int index) { return ToOperand(instr_->InputAt(index)); }
+  Operand InputOperand(size_t index) {
+    return ToOperand(instr_->InputAt(index));
+  }
 
   Operand OutputOperand() { return ToOperand(instr_->Output()); }
 
@@ -43,8 +45,8 @@ class X64OperandConverter : public InstructionOperandConverter {
     return Operand(offset.from_stack_pointer() ? rsp : rbp, offset.offset());
   }
 
-  static int NextOffset(int* offset) {
-    int i = *offset;
+  static size_t NextOffset(size_t* offset) {
+    size_t i = *offset;
     (*offset)++;
     return i;
   }
@@ -59,7 +61,7 @@ class X64OperandConverter : public InstructionOperandConverter {
     return static_cast<ScaleFactor>(scale);
   }
 
-  Operand MemoryOperand(int* offset) {
+  Operand MemoryOperand(size_t* offset) {
     AddressingMode mode = AddressingModeField::decode(instr_->opcode());
     switch (mode) {
       case kMode_MR: {
@@ -124,7 +126,7 @@ class X64OperandConverter : public InstructionOperandConverter {
     return Operand(no_reg, 0);
   }
 
-  Operand MemoryOperand(int first_input = 0) {
+  Operand MemoryOperand(size_t first_input = 0) {
     return MemoryOperand(&first_input);
   }
 };
@@ -132,7 +134,7 @@ class X64OperandConverter : public InstructionOperandConverter {
 
 namespace {
 
-bool HasImmediateInput(Instruction* instr, int index) {
+bool HasImmediateInput(Instruction* instr, size_t index) {
   return instr->InputAt(index)->IsImmediate();
 }
 
@@ -245,6 +247,18 @@ class OutOfLineTruncateDoubleToI FINAL : public OutOfLineCode {
         __ asm_instr##_cl(i.OutputOperand());                              \
       }                                                                    \
     }                                                                      \
+  } while (0)
+
+
+#define ASSEMBLE_MOVX(asm_instr)                            \
+  do {                                                      \
+    if (instr->addressing_mode() != kMode_None) {           \
+      __ asm_instr(i.OutputRegister(), i.MemoryOperand());  \
+    } else if (instr->InputAt(0)->IsRegister()) {           \
+      __ asm_instr(i.OutputRegister(), i.InputRegister(0)); \
+    } else {                                                \
+      __ asm_instr(i.OutputRegister(), i.InputOperand(0));  \
+    }                                                       \
   } while (0)
 
 
@@ -514,7 +528,7 @@ void CodeGenerator::AssembleArchInstruction(Instruction* instr) {
         int entry = Code::kHeaderSize - kHeapObjectTag;
         __ Call(Operand(reg, entry));
       }
-      AddSafepointAndDeopt(instr);
+      RecordCallPosition(instr);
       break;
     }
     case kArchCallJSFunction: {
@@ -526,7 +540,7 @@ void CodeGenerator::AssembleArchInstruction(Instruction* instr) {
         __ Assert(equal, kWrongFunctionContext);
       }
       __ Call(FieldOperand(func, JSFunction::kCodeEntryOffset));
-      AddSafepointAndDeopt(instr);
+      RecordCallPosition(instr);
       break;
     }
     case kArchJmp:
@@ -801,20 +815,15 @@ void CodeGenerator::AssembleArchInstruction(Instruction* instr) {
       ASSEMBLE_AVX_DOUBLE_BINOP(vdivsd);
       break;
     case kX64Movsxbl:
-      if (instr->addressing_mode() != kMode_None) {
-        __ movsxbl(i.OutputRegister(), i.MemoryOperand());
-      } else if (instr->InputAt(0)->IsRegister()) {
-        __ movsxbl(i.OutputRegister(), i.InputRegister(0));
-      } else {
-        __ movsxbl(i.OutputRegister(), i.InputOperand(0));
-      }
+      ASSEMBLE_MOVX(movsxbl);
       __ AssertZeroExtended(i.OutputRegister());
       break;
     case kX64Movzxbl:
-      __ movzxbl(i.OutputRegister(), i.MemoryOperand());
+      ASSEMBLE_MOVX(movzxbl);
+      __ AssertZeroExtended(i.OutputRegister());
       break;
     case kX64Movb: {
-      int index = 0;
+      size_t index = 0;
       Operand operand = i.MemoryOperand(&index);
       if (HasImmediateInput(instr, index)) {
         __ movb(operand, Immediate(i.InputInt8(index)));
@@ -824,21 +833,15 @@ void CodeGenerator::AssembleArchInstruction(Instruction* instr) {
       break;
     }
     case kX64Movsxwl:
-      if (instr->addressing_mode() != kMode_None) {
-        __ movsxwl(i.OutputRegister(), i.MemoryOperand());
-      } else if (instr->InputAt(0)->IsRegister()) {
-        __ movsxwl(i.OutputRegister(), i.InputRegister(0));
-      } else {
-        __ movsxwl(i.OutputRegister(), i.InputOperand(0));
-      }
+      ASSEMBLE_MOVX(movsxwl);
       __ AssertZeroExtended(i.OutputRegister());
       break;
     case kX64Movzxwl:
-      __ movzxwl(i.OutputRegister(), i.MemoryOperand());
+      ASSEMBLE_MOVX(movzxwl);
       __ AssertZeroExtended(i.OutputRegister());
       break;
     case kX64Movw: {
-      int index = 0;
+      size_t index = 0;
       Operand operand = i.MemoryOperand(&index);
       if (HasImmediateInput(instr, index)) {
         __ movw(operand, Immediate(i.InputInt16(index)));
@@ -860,7 +863,7 @@ void CodeGenerator::AssembleArchInstruction(Instruction* instr) {
         }
         __ AssertZeroExtended(i.OutputRegister());
       } else {
-        int index = 0;
+        size_t index = 0;
         Operand operand = i.MemoryOperand(&index);
         if (HasImmediateInput(instr, index)) {
           __ movl(operand, i.InputImmediate(index));
@@ -869,19 +872,14 @@ void CodeGenerator::AssembleArchInstruction(Instruction* instr) {
         }
       }
       break;
-    case kX64Movsxlq: {
-      if (instr->InputAt(0)->IsRegister()) {
-        __ movsxlq(i.OutputRegister(), i.InputRegister(0));
-      } else {
-        __ movsxlq(i.OutputRegister(), i.InputOperand(0));
-      }
+    case kX64Movsxlq:
+      ASSEMBLE_MOVX(movsxlq);
       break;
-    }
     case kX64Movq:
       if (instr->HasOutput()) {
         __ movq(i.OutputRegister(), i.MemoryOperand());
       } else {
-        int index = 0;
+        size_t index = 0;
         Operand operand = i.MemoryOperand(&index);
         if (HasImmediateInput(instr, index)) {
           __ movq(operand, i.InputImmediate(index));
@@ -894,7 +892,7 @@ void CodeGenerator::AssembleArchInstruction(Instruction* instr) {
       if (instr->HasOutput()) {
         __ movss(i.OutputDoubleRegister(), i.MemoryOperand());
       } else {
-        int index = 0;
+        size_t index = 0;
         Operand operand = i.MemoryOperand(&index);
         __ movss(operand, i.InputDoubleRegister(index));
       }
@@ -903,7 +901,7 @@ void CodeGenerator::AssembleArchInstruction(Instruction* instr) {
       if (instr->HasOutput()) {
         __ movsd(i.OutputDoubleRegister(), i.MemoryOperand());
       } else {
-        int index = 0;
+        size_t index = 0;
         Operand operand = i.MemoryOperand(&index);
         __ movsd(operand, i.InputDoubleRegister(index));
       }
@@ -1082,8 +1080,8 @@ void CodeGenerator::AssembleArchBoolean(Instruction* instr,
   // Materialize a full 64-bit 1 or 0 value. The result register is always the
   // last output of the instruction.
   Label check;
-  DCHECK_NE(0, static_cast<int>(instr->OutputCount()));
-  Register reg = i.OutputRegister(static_cast<int>(instr->OutputCount() - 1));
+  DCHECK_NE(0u, instr->OutputCount());
+  Register reg = i.OutputRegister(instr->OutputCount() - 1);
   Condition cc = no_condition;
   switch (condition) {
     case kUnorderedEqual:
@@ -1144,8 +1142,8 @@ void CodeGenerator::AssembleArchLookupSwitch(Instruction* instr) {
   X64OperandConverter i(this, instr);
   Register input = i.InputRegister(0);
   for (size_t index = 2; index < instr->InputCount(); index += 2) {
-    __ cmpl(input, Immediate(i.InputInt32(static_cast<int>(index + 0))));
-    __ j(equal, GetLabel(i.InputRpo(static_cast<int>(index + 1))));
+    __ cmpl(input, Immediate(i.InputInt32(index + 0)));
+    __ j(equal, GetLabel(i.InputRpo(index + 1)));
   }
   AssembleArchJump(i.InputRpo(1));
 }

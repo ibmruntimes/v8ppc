@@ -3026,25 +3026,6 @@ PropertyDetails Map::GetLastDescriptorDetails() {
 }
 
 
-void Map::LookupDescriptor(JSObject* holder,
-                           Name* name,
-                           LookupResult* result) {
-  DescriptorArray* descriptors = this->instance_descriptors();
-  int number = descriptors->SearchWithCache(name, this);
-  if (number == DescriptorArray::kNotFound) return result->NotFound();
-  result->DescriptorResult(holder, descriptors->GetDetails(number), number);
-}
-
-
-void Map::LookupTransition(JSObject* holder, Name* name,
-                           PropertyAttributes attributes,
-                           LookupResult* result) {
-  int transition_index = this->SearchTransition(kData, name, attributes);
-  if (transition_index == TransitionArray::kNotFound) return result->NotFound();
-  result->TransitionResult(holder, this->GetTransition(transition_index));
-}
-
-
 FixedArrayBase* Map::GetInitialElements() {
   if (has_fast_smi_or_object_elements() ||
       has_fast_double_elements()) {
@@ -6490,6 +6471,7 @@ void Code::set_stub_key(uint32_t key) {
 
 
 ACCESSORS(Code, gc_metadata, Object, kGCMetadataOffset)
+INT_ACCESSORS(Code, ic_age, kICAgeOffset)
 
 
 byte* Code::instruction_start()  {

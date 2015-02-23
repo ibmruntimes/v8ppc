@@ -1102,7 +1102,7 @@ class Assembler : public AssemblerBase {
 
   // Emit the address of the label (i.e. a jump table entry) and associate with
   // an internal reference relocation.
-  void emit_label_addr(Label *label);
+  void emit_label_addr(Label* label);
 
   // Multiply instructions
   void mul(Register dst, Register src1, Register src2, OEBit s = LeaveOE,
@@ -1363,6 +1363,7 @@ class Assembler : public AssemblerBase {
 #if V8_OOL_CONSTANT_POOL
   // Decide between using the constant pool vs. a mov immediate sequence.
   bool use_constant_pool_for_mov(const Operand& x, bool canOptimize) const;
+#endif
 
   // The code currently calls CheckBuffer() too often. This has the side
   // effect of randomly growing the buffer in the middle of multi-instruction
@@ -1373,7 +1374,6 @@ class Assembler : public AssemblerBase {
   //
   // This function allows outside callers to check and grow the buffer
   void EnsureSpaceFor(int space_needed);
-#endif
 
   // Allocate a constant pool of the correct size for the generated code.
   Handle<ConstantPoolArray> NewConstantPool(Isolate* isolate);

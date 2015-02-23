@@ -38,11 +38,11 @@ class MipsOperandConverter FINAL : public InstructionOperandConverter {
   MipsOperandConverter(CodeGenerator* gen, Instruction* instr)
       : InstructionOperandConverter(gen, instr) {}
 
-  FloatRegister OutputSingleRegister(int index = 0) {
+  FloatRegister OutputSingleRegister(size_t index = 0) {
     return ToSingleRegister(instr_->OutputAt(index));
   }
 
-  FloatRegister InputSingleRegister(int index) {
+  FloatRegister InputSingleRegister(size_t index) {
     return ToSingleRegister(instr_->InputAt(index));
   }
 
@@ -52,7 +52,7 @@ class MipsOperandConverter FINAL : public InstructionOperandConverter {
     return ToDoubleRegister(op);
   }
 
-  Operand InputImmediate(int index) {
+  Operand InputImmediate(size_t index) {
     Constant constant = ToConstant(instr_->InputAt(index));
     switch (constant.type()) {
       case Constant::kInt32:
@@ -78,7 +78,7 @@ class MipsOperandConverter FINAL : public InstructionOperandConverter {
     return Operand(zero_reg);
   }
 
-  Operand InputOperand(int index) {
+  Operand InputOperand(size_t index) {
     InstructionOperand* op = instr_->InputAt(index);
     if (op->IsRegister()) {
       return Operand(ToRegister(op));
@@ -86,8 +86,8 @@ class MipsOperandConverter FINAL : public InstructionOperandConverter {
     return InputImmediate(index);
   }
 
-  MemOperand MemoryOperand(int* first_index) {
-    const int index = *first_index;
+  MemOperand MemoryOperand(size_t* first_index) {
+    const size_t index = *first_index;
     switch (AddressingModeField::decode(instr_->opcode())) {
       case kMode_None:
         break;
@@ -102,7 +102,7 @@ class MipsOperandConverter FINAL : public InstructionOperandConverter {
     return MemOperand(no_reg);
   }
 
-  MemOperand MemoryOperand(int index = 0) { return MemoryOperand(&index); }
+  MemOperand MemoryOperand(size_t index = 0) { return MemoryOperand(&index); }
 
   MemOperand ToMemOperand(InstructionOperand* op) const {
     DCHECK(op != NULL);
@@ -116,7 +116,7 @@ class MipsOperandConverter FINAL : public InstructionOperandConverter {
 };
 
 
-static inline bool HasRegisterInput(Instruction* instr, int index) {
+static inline bool HasRegisterInput(Instruction* instr, size_t index) {
   return instr->InputAt(index)->IsRegister();
 }
 
@@ -408,7 +408,7 @@ void CodeGenerator::AssembleArchInstruction(Instruction* instr) {
         __ daddiu(at, i.InputRegister(0), Code::kHeaderSize - kHeapObjectTag);
         __ Call(at);
       }
-      AddSafepointAndDeopt(instr);
+      RecordCallPosition(instr);
       break;
     }
     case kArchCallJSFunction: {
@@ -422,7 +422,7 @@ void CodeGenerator::AssembleArchInstruction(Instruction* instr) {
 
       __ ld(at, FieldMemOperand(func, JSFunction::kCodeEntryOffset));
       __ Call(at);
-      AddSafepointAndDeopt(instr);
+      RecordCallPosition(instr);
       break;
     }
     case kArchJmp:
@@ -716,7 +716,7 @@ void CodeGenerator::AssembleArchInstruction(Instruction* instr) {
       break;
     }
     case kMips64Swc1: {
-      int index = 0;
+      size_t index = 0;
       MemOperand operand = i.MemoryOperand(&index);
       __ swc1(i.InputSingleRegister(index), operand);
       break;
@@ -1044,9 +1044,10 @@ void CodeGenerator::AssembleArchLookupSwitch(Instruction* instr) {
   MipsOperandConverter i(this, instr);
   Register input = i.InputRegister(0);
   for (size_t index = 2; index < instr->InputCount(); index += 2) {
-    __ Branch(GetLabel(i.InputRpo(index + 1)), eq, input,
-              Operand(i.InputInt32(index + 0)));
+    __ li(at, Operand(i.InputInt32(index + 0)));
+    __ beq(input, at, GetLabel(i.InputRpo(index + 1)));
   }
+  __ nop();  // Branch delay slot of the last beq.
   AssembleArchJump(i.InputRpo(1));
 }
 
@@ -1058,16 +1059,16 @@ void CodeGenerator::AssembleArchTableSwitch(Instruction* instr) {
   Label here;
 
   __ Branch(GetLabel(i.InputRpo(1)), hs, input, Operand(case_count));
-  // Ensure that dd-ed labels goes to 8 byte aligned addresses.
-  if ((masm()->pc_offset() & 7) == 0) {
+  __ BlockTrampolinePoolFor(case_count * 2 + 7);
+  // Ensure that dd-ed labels use 8 byte aligned addresses.
+  if ((masm()->pc_offset() & 7) != 0) {
     __ nop();
   }
   __ bal(&here);
-  __ nop();  // Branch delay slot nop.
+  __ dsll(at, input, 3);  // Branch delay slot.
   __ bind(&here);
-  __ dsll(at, input, 3);
   __ daddu(at, at, ra);
-  __ ld(at, MemOperand(at, 5 * v8::internal::Assembler::kInstrSize));
+  __ ld(at, MemOperand(at, 4 * v8::internal::Assembler::kInstrSize));
   __ jr(at);
   __ nop();  // Branch delay slot nop.
   for (size_t index = 0; index < case_count; ++index) {

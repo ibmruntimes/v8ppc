@@ -1038,6 +1038,10 @@ bool PagedSpace::Expand() {
 
   intptr_t size = AreaSize();
 
+  if (anchor_.next_page() == &anchor_) {
+    size = Snapshot::SizeOfFirstPage(identity());
+  }
+
   Page* p = heap()->isolate()->memory_allocator()->AllocatePage(size, this,
                                                                 executable());
   if (p == NULL) return false;
@@ -1110,7 +1114,12 @@ void PagedSpace::ReleasePage(Page* page) {
     allocation_info_.set_limit(NULL);
   }
 
-  page->Unlink();
+  // If page is still in a list, unlink it from that list.
+  if (page->next_chunk() != NULL) {
+    DCHECK(page->prev_chunk() != NULL);
+    page->Unlink();
+  }
+
   if (page->IsFlagSet(MemoryChunk::CONTAINS_ONLY_DATA)) {
     heap()->isolate()->memory_allocator()->Free(page);
   } else {

@@ -723,7 +723,12 @@ void MarkCompactCollector::CollectEvacuationCandidates(PagedSpace* space) {
   while (it.has_next()) {
     Page* p = it.next();
     if (p->NeverEvacuate()) continue;
-    p->ClearEvacuationCandidate();
+
+    // Invariant: Evacuation candidates are just created when marking is
+    // started. At the end of a GC all evacuation candidates are cleared and
+    // their slot buffers are released.
+    CHECK(!p->IsEvacuationCandidate());
+    CHECK(p->slots_buffer() == NULL);
 
     if (FLAG_stress_compaction) {
       unsigned int counter = space->heap()->ms_count();
@@ -2827,10 +2832,14 @@ class PointersUpdatingVisitor : public ObjectVisitor {
 // TODO(ishell): remove, once crbug/454297 is caught.
 void PointersUpdatingVisitor::CheckLayoutDescriptorAndDie(Heap* heap,
                                                           Object** slot) {
-  const int kDataBufferSize = 1280;
+  const int kDataBufferSize = 128;
   uintptr_t data[kDataBufferSize] = {0};
   int index = 0;
   data[index++] = 0x10aaaaaaaaUL;  // begin marker
+
+  data[index++] = reinterpret_cast<uintptr_t>(slot);
+  data[index++] = 0x15aaaaaaaaUL;
+
   Address slot_address = reinterpret_cast<Address>(slot);
 
   uintptr_t space_owner_id = 0xb001;
@@ -2862,7 +2871,7 @@ void PointersUpdatingVisitor::CheckLayoutDescriptorAndDie(Heap* heap,
   Object** map_slot = slot;
   bool found = false;
   const int kMaxDistanceToMap = 64;
-  for (int i = 0; i < kMaxDistanceToMap; i++, map_slot -= kPointerSize) {
+  for (int i = 0; i < kMaxDistanceToMap; i++, map_slot--) {
     Address map_address = reinterpret_cast<Address>(*map_slot);
     if (heap->map_space()->ContainsSafe(map_address)) {
       found = true;
@@ -2871,6 +2880,9 @@ void PointersUpdatingVisitor::CheckLayoutDescriptorAndDie(Heap* heap,
   }
   data[index++] = found;
   data[index++] = 0x30aaaaaaaaUL;
+  data[index++] = reinterpret_cast<uintptr_t>(map_slot);
+  data[index++] = 0x35aaaaaaaaUL;
+
   if (found) {
     Address obj_address = reinterpret_cast<Address>(map_slot);
     Address end_of_page =
@@ -3060,6 +3072,11 @@ void MarkCompactCollector::EvacuatePages() {
       // have an emergency page and the space still has room for that.
       if (space->HasEmergencyMemory() && space->CanExpand()) {
         EvacuateLiveObjectsFromPage(p);
+        // Unlink the page from the list of pages here. We must not iterate
+        // over that page later (e.g. when scan on scavenge pages are
+        // processed). The page itself will be freed later and is still
+        // reachable from the evacuation candidates list.
+        p->Unlink();
       } else {
         // Without room for expansion evacuation is not guaranteed to succeed.
         // Pessimistically abandon unevacuated pages.

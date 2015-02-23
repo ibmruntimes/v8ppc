@@ -31,7 +31,7 @@ class AstGraphBuilder : public AstVisitor {
                   LoopAssignmentAnalysis* loop_assignment = NULL);
 
   // Creates a graph by visiting the entire AST.
-  bool CreateGraph();
+  bool CreateGraph(bool constant_context);
 
   // Helpers to create new control nodes.
   Node* NewIfTrue() { return NewNode(common()->IfTrue()); }
@@ -50,12 +50,6 @@ class AstGraphBuilder : public AstVisitor {
 
   // Visiting function for declarations list is overridden.
   void VisitDeclarations(ZoneList<Declaration*>* declarations) OVERRIDE;
-
-  // Get the node that represents the outer function context.
-  Node* GetFunctionContext();
-
-  // Get the node that represents the outer function closure.
-  Node* GetFunctionClosure();
 
  private:
   class AstContext;
@@ -77,8 +71,6 @@ class AstGraphBuilder : public AstVisitor {
   Environment* environment_;
   AstContext* ast_context_;
 
-  bool CreateGraphBody();
-
   // List of global declarations for functions and variables.
   ZoneVector<Handle<Object>> globals_;
 
@@ -90,7 +82,10 @@ class AstGraphBuilder : public AstVisitor {
 
   // Nodes representing values in the activation record.
   SetOncePointer<Node> function_closure_;
-  Node* function_context_;
+  SetOncePointer<Node> function_context_;
+
+  // Tracks how many try-blocks are currently entered.
+  int try_nesting_level_;
 
   // Temporary storage for building node input lists.
   int input_buffer_size_;
@@ -128,6 +123,15 @@ class AstGraphBuilder : public AstVisitor {
   void set_execution_control(ControlScope* ctrl) { execution_control_ = ctrl; }
   void set_execution_context(ContextScope* ctx) { execution_context_ = ctx; }
   void set_exit_control(Node* exit) { exit_control_ = exit; }
+
+  // Create the main graph body by visiting the AST.
+  void CreateGraphBody();
+
+  // Create the node that represents the outer context of the function.
+  void CreateFunctionContext(bool constant_context);
+
+  // Get or create the node that represents the outer function closure.
+  Node* GetFunctionClosure();
 
   // Node creation helpers.
   Node* NewNode(const Operator* op, bool incomplete = false) {
@@ -286,7 +290,7 @@ class AstGraphBuilder : public AstVisitor {
   void VisitForValues(ZoneList<Expression*>* exprs);
 
   // Common for all IterationStatement bodies.
-  void VisitIterationBody(IterationStatement* stmt, LoopBuilder* loop, int);
+  void VisitIterationBody(IterationStatement* stmt, LoopBuilder* loop);
 
   // Dispatched from VisitCallRuntime.
   void VisitCallJSRuntime(CallRuntime* expr);
@@ -393,6 +397,11 @@ class AstGraphBuilder::Environment : public ZoneObject {
     return values()->at(index);
   }
   void Drop(int depth) {
+    DCHECK(depth >= 0 && depth <= stack_height());
+    values()->erase(values()->end() - depth, values()->end());
+  }
+  void Trim(int trim_to_height) {
+    int depth = stack_height() - trim_to_height;
     DCHECK(depth >= 0 && depth <= stack_height());
     values()->erase(values()->end() - depth, values()->end());
   }

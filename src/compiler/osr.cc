@@ -103,6 +103,7 @@ static void PeelOuterLoopsForOsr(Graph* graph, CommonOperatorBuilder* common,
     if (backedges == 1) {
       // Simple case. Map the incoming edges to the loop to the previous copy.
       for (Node* node : loop_tree->HeaderNodes(loop)) {
+        if (!all.IsLive(node)) continue;  // dead phi hanging off loop.
         Node* copy = mapping->at(node->id());
         Node* backedge = node->InputAt(1);
         if (previous) backedge = previous->at(backedge->id());
@@ -119,6 +120,7 @@ static void PeelOuterLoopsForOsr(Graph* graph, CommonOperatorBuilder* common,
       Node* merge =
           graph->NewNode(common->Merge(backedges), backedges, &tmp_inputs[0]);
       for (Node* node : loop_tree->HeaderNodes(loop)) {
+        if (!all.IsLive(node)) continue;  // dead phi hanging off loop.
         Node* copy = mapping->at(node->id());
         if (node == loop_header) {
           // The entry to the loop is the merge.
@@ -171,6 +173,40 @@ static void PeelOuterLoopsForOsr(Graph* graph, CommonOperatorBuilder* common,
 }
 
 
+static void TransferOsrValueTypesFromLoopPhis(Zone* zone, Node* osr_loop_entry,
+                                              Node* osr_loop) {
+  // Find the index of the osr loop entry into the loop.
+  int index = 0;
+  for (index = 0; index < osr_loop->InputCount(); index++) {
+    if (osr_loop->InputAt(index) == osr_loop_entry) break;
+  }
+  if (index == osr_loop->InputCount()) return;
+
+  for (Node* osr_value : osr_loop_entry->uses()) {
+    if (osr_value->opcode() != IrOpcode::kOsrValue) continue;
+    bool unknown = true;
+    for (Node* phi : osr_value->uses()) {
+      if (phi->opcode() != IrOpcode::kPhi) continue;
+      if (NodeProperties::GetControlInput(phi) != osr_loop) continue;
+      if (phi->InputAt(index) != osr_value) continue;
+      if (NodeProperties::IsTyped(phi)) {
+        // Transfer the type from the phi to the OSR value itself.
+        Bounds phi_bounds = NodeProperties::GetBounds(phi);
+        if (unknown) {
+          NodeProperties::SetBounds(osr_value, phi_bounds);
+        } else {
+          Bounds osr_bounds = NodeProperties::GetBounds(osr_value);
+          NodeProperties::SetBounds(osr_value,
+                                    Bounds::Both(phi_bounds, osr_bounds, zone));
+        }
+        unknown = false;
+      }
+    }
+    if (unknown) NodeProperties::SetBounds(osr_value, Bounds::Unbounded(zone));
+  }
+}
+
+
 bool OsrHelper::Deconstruct(JSGraph* jsgraph, CommonOperatorBuilder* common,
                             Zone* tmp_zone) {
   Graph* graph = jsgraph->graph();
@@ -201,6 +237,9 @@ bool OsrHelper::Deconstruct(JSGraph* jsgraph, CommonOperatorBuilder* common,
 
   CHECK(osr_loop);  // Should have found the OSR loop.
 
+  // Transfer the types from loop phis to the OSR values which flow into them.
+  TransferOsrValueTypesFromLoopPhis(graph->zone(), osr_loop_entry, osr_loop);
+
   // Analyze the graph to determine how deeply nested the OSR loop is.
   LoopTree* loop_tree = LoopFinder::BuildLoopTree(graph, tmp_zone);
 
@@ -214,7 +253,9 @@ bool OsrHelper::Deconstruct(JSGraph* jsgraph, CommonOperatorBuilder* common,
   // Replace the normal entry with {Dead} and the loop entry with {Start}
   // and run the control reducer to clean up the graph.
   osr_normal_entry->ReplaceUses(dead);
+  osr_normal_entry->Kill();
   osr_loop_entry->ReplaceUses(graph->start());
+  osr_loop_entry->Kill();
 
   // Normally the control reducer removes loops whose first input is dead,
   // but we need to avoid that because the osr_loop is reachable through
