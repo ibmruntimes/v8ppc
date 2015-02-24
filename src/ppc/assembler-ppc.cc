@@ -152,22 +152,30 @@ const int RelocInfo::kApplyMask = 1 << RelocInfo::INTERNAL_REFERENCE |
 
 
 bool RelocInfo::IsCodedSpecially() {
+#if defined(V8_PPC_CONSTANT_POOL_OPT)
   // The deserializer needs to know whether a pointer is specially
   // coded.  Being specially coded on PPC means that it is a lis/ori
   // instruction sequence or is an out of line constant pool entry,
   // and these are always the case inside code objects.
+#else
+  // The deserializer needs to know whether a pointer is specially
+  // coded.  Being specially coded on PPC means that it is a lis/ori
+  // instruction sequence, and these are always the case inside code
+  // objects.
+#endif
   return true;
 }
 
 
 bool RelocInfo::IsInConstantPool() {
-  if (FLAG_enable_ool_constant_pool) {
+#if defined(V8_PPC_CONSTANT_POOL_OPT)
+  if (FLAG_enable_embedded_constant_pool) {
     Address constant_pool = host_->constant_pool();
     return (constant_pool &&
             (pc_ >= constant_pool || Assembler::IsConstantPoolLoadStart(pc_)));
-  } else {
-    return false;
   }
+#endif
+  return false;
 }
 
 
@@ -234,13 +242,17 @@ MemOperand::MemOperand(Register ra, Register rb) {
 Assembler::Assembler(Isolate* isolate, void* buffer, int buffer_size)
     : AssemblerBase(isolate, buffer, buffer_size),
       recorded_ast_id_(TypeFeedbackId::None()),
+#if defined(V8_PPC_CONSTANT_POOL_OPT)
       constant_pool_builder_(),
+#endif
       positions_recorder_(this) {
   reloc_info_writer.Reposition(buffer_ + buffer_size_, pc_);
 
   no_trampoline_pool_before_ = 0;
   trampoline_pool_blocked_nesting_ = 0;
+#if defined(V8_PPC_CONSTANT_POOL_OPT)
   constant_pool_entry_sharing_blocked_nesting_ = 0;
+#endif
   // We leave space (kMaxBlockTrampolineSectionSize)
   // for BlockTrampolinePoolScope buffer.
   next_buffer_check_ =
@@ -257,15 +269,19 @@ Assembler::Assembler(Isolate* isolate, void* buffer, int buffer_size)
 void Assembler::GetCode(CodeDesc* desc) {
   reloc_info_writer.Finish();
 
+#if defined(V8_PPC_CONSTANT_POOL_OPT)
   // Emit constant pool if necessary.
   int offset = EmitConstantPool();
 
+#endif
   // Set up code descriptor.
   desc->buffer = buffer_;
   desc->buffer_size = buffer_size_;
   desc->instr_size = pc_offset();
   desc->reloc_size = (buffer_ + buffer_size_) - reloc_info_writer.pos();
+#if defined(V8_PPC_CONSTANT_POOL_OPT)
   desc->constant_pool_size = (offset ? desc->instr_size - offset : 0);
+#endif
   desc->origin = this;
 }
 
@@ -497,7 +513,11 @@ void Assembler::target_at_put(int pos, int target_pos) {
       Register dst = Register::from_code(instr_at(pos + kInstrSize));
       intptr_t addr = reinterpret_cast<uintptr_t>(buffer_ + target_pos);
       CodePatcher patcher(reinterpret_cast<byte*>(buffer_ + pos),
+#if defined(V8_PPC_CONSTANT_POOL_OPT)
                           kMovInstructionsNoConstantPool,
+#else
+                          kMovInstructions,
+#endif
                           CodePatcher::DONT_FLUSH);
       AddBoundInternalReferenceLoad(pos);
       patcher.masm()->bitwise_mov(dst, addr);
@@ -1544,7 +1564,11 @@ void Assembler::RelocateInternalReference(Address pc, intptr_t delta,
     // mov sequence
     DCHECK(delta || code_start);
     DCHECK(RelocInfo::IsInternalReferenceEncoded(rmode));
+#if defined(V8_PPC_CONSTANT_POOL_OPT)
     Address constant_pool = NULL;
+#else
+    ConstantPoolArray* constant_pool = NULL;
+#endif
     Address addr;
     if (delta) {
       addr = target_address_at(pc, constant_pool) + delta;
@@ -1557,11 +1581,11 @@ void Assembler::RelocateInternalReference(Address pc, intptr_t delta,
 }
 
 
+#if defined(V8_PPC_CONSTANT_POOL_OPT)
 int Assembler::instructions_required_for_mov(const Operand& x) const {
   bool canOptimize =
       !(x.must_output_reloc_info(this) || is_trampoline_pool_blocked());
-  if (FLAG_enable_ool_constant_pool &&
-      use_constant_pool_for_mov(x, canOptimize)) {
+  if (use_constant_pool_for_mov(x, canOptimize)) {
     // Current usage guarantees that all constant pool references can
     // use the same sequence.
     return kMovInstructionsConstantPool;
@@ -1573,7 +1597,8 @@ int Assembler::instructions_required_for_mov(const Operand& x) const {
 
 bool Assembler::use_constant_pool_for_mov(const Operand& x,
                                           bool canOptimize) const {
-  if (!is_ool_constant_pool_available() || is_constant_pool_full()) {
+  if (!FLAG_enable_embedded_constant_pool ||
+      !is_constant_pool_available() || is_constant_pool_full()) {
     // If there is no constant pool available, we must use a mov
     // immediate sequence.
     return false;
@@ -1589,6 +1614,7 @@ bool Assembler::use_constant_pool_for_mov(const Operand& x,
 }
 
 
+#endif
 void Assembler::EnsureSpaceFor(int space_needed) {
   if (buffer_space() <= (kGap + space_needed)) {
     GrowBuffer(space_needed);
@@ -1621,9 +1647,9 @@ void Assembler::mov(Register dst, const Operand& src) {
   canOptimize = !(src.must_output_reloc_info(this) ||
                   (is_trampoline_pool_blocked() && !is_int16(value)));
 
-  if (FLAG_enable_ool_constant_pool &&
-      use_constant_pool_for_mov(src, canOptimize)) {
-    DCHECK(is_ool_constant_pool_available());
+#if defined(V8_PPC_CONSTANT_POOL_OPT)
+  if (use_constant_pool_for_mov(src, canOptimize)) {
+    DCHECK(is_constant_pool_available());
     ConstantPoolAddEntry(rinfo);
 #if V8_TARGET_ARCH_PPC64
     ld(dst, MemOperand(kConstantPoolRegister, 0));
@@ -1633,6 +1659,7 @@ void Assembler::mov(Register dst, const Operand& src) {
     return;
   }
 
+#endif
   if (canOptimize) {
     if (is_int16(value)) {
       li(dst, Operand(value));
@@ -1735,7 +1762,9 @@ void Assembler::mov_label_offset(Register dst, Label* label) {
 }
 
 
+#if defined(V8_PPC_CONSTANT_POOL_OPT)
 // TODO(mbrandy): allow loading internal reference from constant pool
+#endif
 void Assembler::mov_label_addr(Register dst, Label* label) {
   CheckBuffer();
   RecordRelocInfo(RelocInfo::INTERNAL_REFERENCE_ENCODED);
@@ -1743,7 +1772,11 @@ void Assembler::mov_label_addr(Register dst, Label* label) {
   if (label->is_bound()) {
     // CheckBuffer() is called too frequently. This will pre-grow
     // the buffer if needed to avoid spliting the relocation and instructions
+#if defined(V8_PPC_CONSTANT_POOL_OPT)
     EnsureSpaceFor(kMovInstructionsNoConstantPool * kInstrSize);
+#else
+    EnsureSpaceFor(kMovInstructions * kInstrSize);
+#endif
 
     intptr_t addr = reinterpret_cast<uintptr_t>(buffer_ + position);
     AddBoundInternalReferenceLoad(pc_offset());
@@ -1765,8 +1798,13 @@ void Assembler::mov_label_addr(Register dst, Label* label) {
     BlockTrampolinePoolScope block_trampoline_pool(this);
     emit(kUnboundMovLabelAddrOpcode | (link & kImm26Mask));
     emit(dst.code());
+#if defined(V8_PPC_CONSTANT_POOL_OPT)
     DCHECK(kMovInstructionsNoConstantPool >= 2);
     for (int i = 0; i < kMovInstructionsNoConstantPool - 2; i++) nop();
+#else
+    DCHECK(kMovInstructions >= 2);
+    for (int i = 0; i < kMovInstructions - 2; i++) nop();
+#endif
   }
 }
 
@@ -2311,7 +2349,9 @@ void Assembler::GrowBuffer(int needed) {
     RelocateInternalReference(buffer_ + pos, pc_delta, 0,
                               RelocInfo::INTERNAL_REFERENCE_ENCODED);
   }
+#if defined(V8_PPC_CONSTANT_POOL_OPT)
   constant_pool_builder_.Relocate(pc_delta);
+#endif
 }
 
 
@@ -2336,6 +2376,7 @@ void Assembler::emit_ptr(intptr_t data) {
 }
 
 
+#if defined(V8_PPC_CONSTANT_POOL_OPT)
 void Assembler::emit_constant_pool_entry(RelocInfo* rinfo) {
   CheckBuffer();
 #if !V8_TARGET_ARCH_PPC64
@@ -2350,6 +2391,7 @@ void Assembler::emit_constant_pool_entry(RelocInfo* rinfo) {
 }
 
 
+#endif
 void Assembler::RecordRelocInfo(RelocInfo::Mode rmode, intptr_t data) {
   RelocInfo rinfo(pc_, rmode, data, NULL);
   RecordRelocInfo(rinfo);
@@ -2440,14 +2482,23 @@ void Assembler::CheckTrampolinePool() {
 
 
 Handle<ConstantPoolArray> Assembler::NewConstantPool(Isolate* isolate) {
+#if defined(V8_PPC_CONSTANT_POOL_OPT)
   UNREACHABLE();
+#else
+  DCHECK(!FLAG_enable_ool_constant_pool);
+#endif
   return isolate->factory()->empty_constant_pool_array();
 }
 
 
 void Assembler::PopulateConstantPool(ConstantPoolArray* constant_pool) {
+#if defined(V8_PPC_CONSTANT_POOL_OPT)
   UNREACHABLE();
+#else
+  DCHECK(!FLAG_enable_ool_constant_pool);
+#endif
 }
+#if defined(V8_PPC_CONSTANT_POOL_OPT)
 
 
 void Assembler::ConstantPoolAddEntry(const RelocInfo& rinfo) {
@@ -2528,9 +2579,6 @@ void ConstantPoolBuilder::Relocate(intptr_t pc_delta) {
     RelocInfo* rinfo = &entry->rinfo_;
     DCHECK(!RelocInfo::IsJSReturn(rinfo->rmode()));
     rinfo->set_pc(rinfo->pc() + pc_delta);
-    if (RelocInfo::IsInternalReference(rinfo->rmode())) {
-      rinfo->set_data(rinfo->data() + pc_delta);
-    }
   }
 }
 
@@ -2586,6 +2634,7 @@ int ConstantPoolBuilder::Emit(Assembler* assm) {
 
   return position_;
 }
+#endif
 }
 }  // namespace v8::internal
 

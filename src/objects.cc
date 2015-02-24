@@ -11754,19 +11754,35 @@ void Code::Disassemble(const char* name, std::ostream& os) {  // NOLINT
   os << "Instructions (size = " << instruction_size() << ")\n";
   {
     Isolate* isolate = GetIsolate();
+#if defined(V8_PPC_CONSTANT_POOL_OPT)
     int size = instruction_size();
     int safepoint_offset = is_crankshafted()
         ? static_cast<int>(safepoint_table_offset()) : size;
     int back_edge_offset = (kind() == Code::FUNCTION)
         ? static_cast<int>(back_edge_table_offset()) : size;
-    int constant_offset = FLAG_enable_ool_constant_pool_in_code
+    int constant_offset = FLAG_enable_embedded_constant_pool
         ? constant_pool_offset() : size;
 
     // Stop before reaching any embedded tables
     int code_size = Min(safepoint_offset, back_edge_offset);
+#else
+    int decode_size = is_crankshafted()
+                          ? static_cast<int>(safepoint_table_offset())
+                          : instruction_size();
+    // If there might be a back edge table, stop before reaching it.
+    if (kind() == Code::FUNCTION) {
+      decode_size =
+          Min(decode_size, static_cast<int>(back_edge_table_offset()));
+    }
+#endif
     byte* begin = instruction_start();
+#if defined(V8_PPC_CONSTANT_POOL_OPT)
     byte* end = begin + Min(code_size, constant_offset);
+#else
+    byte* end = begin + decode_size;
+#endif
     Disassembler::Decode(isolate, &os, begin, end, this);
+#if defined(V8_PPC_CONSTANT_POOL_OPT)
 
     if (constant_offset < code_size) {
       int constant_size = code_size - constant_offset;
@@ -11779,6 +11795,7 @@ void Code::Disassemble(const char* name, std::ostream& os) {  // NOLINT
         os << static_cast<const void*>(ptr) << "  " << buf.start() << "\n";
       }
     }
+#endif
   }
   os << "\n";
 
@@ -11868,9 +11885,13 @@ void Code::Disassemble(const char* name, std::ostream& os) {  // NOLINT
   os << "\n";
 
 #ifdef OBJECT_PRINT
-  if (FLAG_enable_ool_constant_pool_in_heapobject) {
+  if (FLAG_enable_ool_constant_pool) {
+#if defined(V8_PPC_CONSTANT_POOL_OPT)
     ConstantPoolArray* pool =
         reinterpret_cast<ConstantPoolArray*>(constant_pool());
+#else
+    ConstantPoolArray* pool = constant_pool();
+#endif
     if (pool->length()) {
       os << "Constant Pool\n";
       pool->Print(os);

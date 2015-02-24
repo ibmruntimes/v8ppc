@@ -110,7 +110,7 @@ bool LCodeGen::GeneratePrologue() {
 
     // r4: Callee's JS function.
     // cp: Callee's context.
-    // pp: Callee's constant pool pointer (if FLAG_enable_ool_constant_pool)
+    // pp: Callee's constant pool pointer (if enabled)
     // fp: Caller's frame pointer.
     // lr: Caller's pc.
     // ip: Our own function entry (required by the prologue)
@@ -382,8 +382,10 @@ bool LCodeGen::GenerateJumpTable() {
     }
   }
 
+#if defined(V8_PPC_CONSTANT_POOL_OPT)
   masm()->EmitConstantPool();
 
+#endif
   // The deoptimization jump table is the last part of the instruction
   // sequence. Mark the generated code as done unless we bailed out.
   if (!is_aborted()) status_ = DONE;

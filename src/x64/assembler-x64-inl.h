@@ -248,14 +248,26 @@ void Assembler::emit_vex_prefix(XMMRegister reg, XMMRegister vreg,
 }
 
 
+#if defined(V8_PPC_CONSTANT_POOL_OPT)
 Address Assembler::target_address_at(Address pc, Address constant_pool) {
+#else
+Address Assembler::target_address_at(Address pc,
+                                     ConstantPoolArray* constant_pool) {
+#endif
   return Memory::int32_at(pc) + pc + 4;
 }
 
 
+#if defined(V8_PPC_CONSTANT_POOL_OPT)
 void Assembler::set_target_address_at(Address pc, Address constant_pool,
                                       Address target,
                                       ICacheFlushMode icache_flush_mode) {
+#else
+void Assembler::set_target_address_at(Address pc,
+                                      ConstantPoolArray* constant_pool,
+                                      Address target,
+                                      ICacheFlushMode icache_flush_mode) {
+#endif
   Memory::int32_at(pc) = static_cast<int32_t>(target - pc - 4);
   if (icache_flush_mode != SKIP_ICACHE_FLUSH) {
     CpuFeatures::FlushICache(pc, sizeof(int32_t));

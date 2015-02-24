@@ -149,11 +149,19 @@ IC::IC(FrameDepth depth, Isolate* isolate, FeedbackNexus* nexus,
   // levels of the stack frame iteration code. This yields a ~35% speedup when
   // running DeltaBlue and a ~25% speedup of gbemu with the '--nouse-ic' flag.
   const Address entry = Isolate::c_entry_fp(isolate->thread_local_top());
+#if defined(V8_PPC_CONSTANT_POOL_OPT)
   Address* constant_pool = NULL;
-  if (FLAG_enable_ool_constant_pool) {
+  if (FLAG_enable_ool_constant_pool || FLAG_enable_embedded_constant_pool) {
     constant_pool = reinterpret_cast<Address*>(
         entry + ExitFrameConstants::kConstantPoolOffset);
   }
+#else
+  Address constant_pool = NULL;
+  if (FLAG_enable_ool_constant_pool) {
+    constant_pool =
+        Memory::Address_at(entry + ExitFrameConstants::kConstantPoolOffset);
+  }
+#endif
   Address* pc_address =
       reinterpret_cast<Address*>(entry + ExitFrameConstants::kCallerPCOffset);
   Address fp = Memory::Address_at(entry + ExitFrameConstants::kCallerFPOffset);
@@ -161,10 +169,17 @@ IC::IC(FrameDepth depth, Isolate* isolate, FeedbackNexus* nexus,
   // StubFailureTrampoline, we need to look one frame further down the stack to
   // find the frame pointer and the return address stack slot.
   if (depth == EXTRA_CALL_FRAME) {
-    if (FLAG_enable_ool_constant_pool) {
+#if defined(V8_PPC_CONSTANT_POOL_OPT)
+    if (FLAG_enable_ool_constant_pool || FLAG_enable_embedded_constant_pool) {
       constant_pool = reinterpret_cast<Address*>(
           fp + StandardFrameConstants::kConstantPoolOffset);
     }
+#else
+    if (FLAG_enable_ool_constant_pool) {
+      constant_pool =
+          Memory::Address_at(fp + StandardFrameConstants::kConstantPoolOffset);
+    }
+#endif
     const int kCallerPCOffset = StandardFrameConstants::kCallerPCOffset;
     pc_address = reinterpret_cast<Address*>(fp + kCallerPCOffset);
     fp = Memory::Address_at(fp + StandardFrameConstants::kCallerFPOffset);
@@ -176,9 +191,17 @@ IC::IC(FrameDepth depth, Isolate* isolate, FeedbackNexus* nexus,
   DCHECK(fp == frame->fp() && pc_address == frame->pc_address());
 #endif
   fp_ = fp;
-  if (FLAG_enable_ool_constant_pool) {
-    raw_constant_pool_ = constant_pool;
+#if defined(V8_PPC_CONSTANT_POOL_OPT)
+  if (FLAG_enable_ool_constant_pool || FLAG_enable_embedded_constant_pool) {
+    set_raw_constant_pool(constant_pool, isolate);
   }
+#else
+  if (FLAG_enable_ool_constant_pool) {
+    raw_constant_pool_ = handle(
+        ConstantPoolArray::cast(reinterpret_cast<Object*>(constant_pool)),
+        isolate);
+  }
+#endif
   pc_address_ = StackFrame::ResolveReturnAddressLocation(pc_address);
   target_ = handle(raw_target(), isolate);
   kind_ = target_->kind();
@@ -478,8 +501,12 @@ void IC::PostPatching(Address address, Code* target, Code* old_target) {
 }
 
 
+#if defined(V8_PPC_CONSTANT_POOL_OPT)
+void IC::Clear(Isolate* isolate, Address address, Address constant_pool) {
+#else
 void IC::Clear(Isolate* isolate, Address address,
-               Address constant_pool) {
+               ConstantPoolArray* constant_pool) {
+#endif
   Code* target = GetTargetAtAddress(address, constant_pool);
 
   // Don't clear debug break inline cache as it will remove the break point.
@@ -512,8 +539,13 @@ void IC::Clear(Isolate* isolate, Address address,
 }
 
 
+#if defined(V8_PPC_CONSTANT_POOL_OPT)
 void KeyedLoadIC::Clear(Isolate* isolate, Address address, Code* target,
                         Address constant_pool) {
+#else
+void KeyedLoadIC::Clear(Isolate* isolate, Address address, Code* target,
+                        ConstantPoolArray* constant_pool) {
+#endif
   DCHECK(!FLAG_vector_ics);
   if (IsCleared(target)) return;
 
@@ -548,8 +580,13 @@ void CallIC::Clear(Isolate* isolate, Code* host, CallICNexus* nexus) {
 }
 
 
+#if defined(V8_PPC_CONSTANT_POOL_OPT)
 void LoadIC::Clear(Isolate* isolate, Address address, Code* target,
                    Address constant_pool) {
+#else
+void LoadIC::Clear(Isolate* isolate, Address address, Code* target,
+                   ConstantPoolArray* constant_pool) {
+#endif
   DCHECK(!FLAG_vector_ics);
   if (IsCleared(target)) return;
   Code* code = PropertyICCompiler::FindPreMonomorphic(isolate, Code::LOAD_IC,
@@ -566,8 +603,13 @@ void LoadIC::Clear(Isolate* isolate, Code* host, LoadICNexus* nexus) {
 }
 
 
+#if defined(V8_PPC_CONSTANT_POOL_OPT)
 void StoreIC::Clear(Isolate* isolate, Address address, Code* target,
                     Address constant_pool) {
+#else
+void StoreIC::Clear(Isolate* isolate, Address address, Code* target,
+                    ConstantPoolArray* constant_pool) {
+#endif
   if (IsCleared(target)) return;
   Code* code = PropertyICCompiler::FindPreMonomorphic(isolate, Code::STORE_IC,
                                                       target->extra_ic_state());
@@ -575,8 +617,13 @@ void StoreIC::Clear(Isolate* isolate, Address address, Code* target,
 }
 
 
+#if defined(V8_PPC_CONSTANT_POOL_OPT)
 void KeyedStoreIC::Clear(Isolate* isolate, Address address, Code* target,
                          Address constant_pool) {
+#else
+void KeyedStoreIC::Clear(Isolate* isolate, Address address, Code* target,
+                         ConstantPoolArray* constant_pool) {
+#endif
   if (IsCleared(target)) return;
   SetTargetAtAddress(
       address, *pre_monomorphic_stub(
@@ -585,8 +632,13 @@ void KeyedStoreIC::Clear(Isolate* isolate, Address address, Code* target,
 }
 
 
+#if defined(V8_PPC_CONSTANT_POOL_OPT)
 void CompareIC::Clear(Isolate* isolate, Address address, Code* target,
                       Address constant_pool) {
+#else
+void CompareIC::Clear(Isolate* isolate, Address address, Code* target,
+                      ConstantPoolArray* constant_pool) {
+#endif
   DCHECK(CodeStub::GetMajorKey(target) == CodeStub::CompareIC);
   CompareICStub stub(target->stub_key(), isolate);
   // Only clear CompareICs that can retain objects.
@@ -2636,8 +2688,12 @@ RUNTIME_FUNCTION(CompareIC_Miss) {
 }
 
 
+#if defined(V8_PPC_CONSTANT_POOL_OPT)
+void CompareNilIC::Clear(Address address, Code* target, Address constant_pool) {
+#else
 void CompareNilIC::Clear(Address address, Code* target,
-                         Address constant_pool) {
+                         ConstantPoolArray* constant_pool) {
+#endif
   if (IsCleared(target)) return;
   ExtraICState state = target->extra_ic_state();
 

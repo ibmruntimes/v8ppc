@@ -79,6 +79,17 @@ class AssemblerBase: public Malloced {
     return (enabled_cpu_features_ & (static_cast<uint64_t>(1) << f)) != 0;
   }
 
+#if defined(V8_PPC_CONSTANT_POOL_OPT)
+  bool is_constant_pool_available() const {
+    if (FLAG_enable_ool_constant_pool || FLAG_enable_embedded_constant_pool) {
+      return constant_pool_available_;
+    } else {
+      // Constant pool not supported on this architecture.
+      UNREACHABLE();
+      return false;
+    }
+  }
+#else
   bool is_ool_constant_pool_available() const {
     if (FLAG_enable_ool_constant_pool) {
       return ool_constant_pool_available_;
@@ -88,6 +99,7 @@ class AssemblerBase: public Malloced {
       return false;
     }
   }
+#endif
 
   // Overwrite a host NaN with a quiet target NaN.  Used by mksnapshot for
   // cross-snapshotting.
@@ -108,6 +120,16 @@ class AssemblerBase: public Malloced {
   int buffer_size_;
   bool own_buffer_;
 
+#if defined(V8_PPC_CONSTANT_POOL_OPT)
+  void set_constant_pool_available(bool available) {
+    if (FLAG_enable_ool_constant_pool || FLAG_enable_embedded_constant_pool) {
+      constant_pool_available_ = available;
+    } else {
+      // Constant pool not supported on this architecture.
+      UNREACHABLE();
+    }
+  }
+#else
   void set_ool_constant_pool_available(bool available) {
     if (FLAG_enable_ool_constant_pool) {
       ool_constant_pool_available_ = available;
@@ -116,6 +138,7 @@ class AssemblerBase: public Malloced {
       UNREACHABLE();
     }
   }
+#endif
 
   // The program counter, which points into the buffer above and moves forward.
   byte* pc_;
@@ -130,7 +153,11 @@ class AssemblerBase: public Malloced {
 
   // Indicates whether the constant pool can be accessed, which is only possible
   // if the pp register points to the current code object's constant pool.
+#if defined(V8_PPC_CONSTANT_POOL_OPT)
+  bool constant_pool_available_;
+#else
   bool ool_constant_pool_available_;
+#endif
 
   // Constant pool.
   friend class FrameAndConstantPoolScope;
@@ -498,7 +525,6 @@ class RelocInfo {
   void set_pc(byte* pc) { pc_ = pc; }
   Mode rmode() const {  return rmode_; }
   intptr_t data() const { return data_; }
-  void set_data(intptr_t data) { data_ = data; }
   double data64() const { return data64_; }
   uint64_t raw_data64() { return bit_cast<uint64_t>(data64_); }
   Code* host() const { return host_; }

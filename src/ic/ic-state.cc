@@ -11,8 +11,13 @@ namespace v8 {
 namespace internal {
 
 // static
+#if defined(V8_PPC_CONSTANT_POOL_OPT)
 void ICUtility::Clear(Isolate* isolate, Address address,
                       Address constant_pool) {
+#else
+void ICUtility::Clear(Isolate* isolate, Address address,
+                      ConstantPoolArray* constant_pool) {
+#endif
   IC::Clear(isolate, address, constant_pool);
 }
 

@@ -755,16 +755,34 @@ class Assembler : public AssemblerBase {
   // Return the address in the constant pool of the code target address used by
   // the branch/call instruction at pc, or the object in a mov.
   INLINE(static Address constant_pool_entry_address(
+#if defined(V8_PPC_CONSTANT_POOL_OPT)
     Address pc, Address constant_pool));
+#else
+    Address pc, ConstantPoolArray* constant_pool));
+#endif
 
   // Read/Modify the code target address in the branch/call instruction at pc.
+#if defined(V8_PPC_CONSTANT_POOL_OPT)
   INLINE(static Address target_address_at(Address pc, Address constant_pool));
   INLINE(static void set_target_address_at(Address pc, Address constant_pool,
                                            Address target,
                                            ICacheFlushMode icache_flush_mode =
                                                FLUSH_ICACHE_IF_NEEDED));
+#else
+  INLINE(static Address target_address_at(Address pc,
+                                          ConstantPoolArray* constant_pool));
+  INLINE(static void set_target_address_at(Address pc,
+                                           ConstantPoolArray* constant_pool,
+                                           Address target,
+                                           ICacheFlushMode icache_flush_mode =
+                                               FLUSH_ICACHE_IF_NEEDED));
+#endif
   INLINE(static Address target_address_at(Address pc, Code* code)) {
+#if defined(V8_PPC_CONSTANT_POOL_OPT)
     Address constant_pool = code ? code->constant_pool() : NULL;
+#else
+    ConstantPoolArray* constant_pool = code ? code->constant_pool() : NULL;
+#endif
     return target_address_at(pc, constant_pool);
   }
   INLINE(static void set_target_address_at(Address pc,
@@ -772,7 +790,11 @@ class Assembler : public AssemblerBase {
                                            Address target,
                                            ICacheFlushMode icache_flush_mode =
                                                FLUSH_ICACHE_IF_NEEDED)) {
+#if defined(V8_PPC_CONSTANT_POOL_OPT)
     Address constant_pool = code ? code->constant_pool() : NULL;
+#else
+    ConstantPoolArray* constant_pool = code ? code->constant_pool() : NULL;
+#endif
     set_target_address_at(pc, constant_pool, target, icache_flush_mode);
   }
 
@@ -1507,6 +1529,12 @@ class Assembler : public AssemblerBase {
   // Check if is time to emit a constant pool.
   void CheckConstPool(bool force_emit, bool require_jump);
 
+#if defined(V8_PPC_CONSTANT_POOL_OPT)
+  bool is_ool_constant_pool_available() const {
+    return is_constant_pool_available();
+  }
+
+#endif
   // Allocate a constant pool of the correct size for the generated code.
   Handle<ConstantPoolArray> NewConstantPool(Isolate* isolate);
 
@@ -1571,6 +1599,12 @@ class Assembler : public AssemblerBase {
     return (const_pool_blocked_nesting_ > 0) ||
            (pc_offset() < no_const_pool_before_);
   }
+#if defined(V8_PPC_CONSTANT_POOL_OPT)
+
+  void set_ool_constant_pool_available(bool available) {
+    set_constant_pool_available(available);
+  }
+#endif
 
  private:
   int next_buffer_check_;  // pc offset of next buffer check

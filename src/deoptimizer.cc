@@ -988,7 +988,11 @@ void Deoptimizer::DoComputeJSFrame(TranslationIterator* iterator,
   DCHECK(!is_bottommost || !has_alignment_padding_ ||
          (fp_value & kPointerSize) != 0);
 
+#if defined(V8_PPC_CONSTANT_POOL_OPT)
+  if (FLAG_enable_ool_constant_pool || FLAG_enable_embedded_constant_pool) {
+#else
   if (FLAG_enable_ool_constant_pool) {
+#endif
     // For the bottommost output frame the constant pool pointer can be gotten
     // from the input frame. For subsequent output frames, it can be read from
     // the previous frame.
@@ -1073,7 +1077,11 @@ void Deoptimizer::DoComputeJSFrame(TranslationIterator* iterator,
   output_frame->SetPc(pc_value);
 
   // Update constant pool.
+#if defined(V8_PPC_CONSTANT_POOL_OPT)
+  if (FLAG_enable_ool_constant_pool || FLAG_enable_embedded_constant_pool) {
+#else
   if (FLAG_enable_ool_constant_pool) {
+#endif
     intptr_t constant_pool_value =
         reinterpret_cast<intptr_t>(non_optimized_code->constant_pool());
     output_frame->SetConstantPool(constant_pool_value);
@@ -1166,7 +1174,11 @@ void Deoptimizer::DoComputeArgumentsAdaptorFrame(TranslationIterator* iterator,
            fp_value, output_offset, value);
   }
 
+#if defined(V8_PPC_CONSTANT_POOL_OPT)
+  if (FLAG_enable_ool_constant_pool || FLAG_enable_embedded_constant_pool) {
+#else
   if (FLAG_enable_ool_constant_pool) {
+#endif
     // Read the caller's constant pool from the previous frame.
     output_offset -= kPointerSize;
     value = output_[frame_index - 1]->GetConstantPool();
@@ -1221,7 +1233,11 @@ void Deoptimizer::DoComputeArgumentsAdaptorFrame(TranslationIterator* iterator,
       adaptor_trampoline->instruction_start() +
       isolate_->heap()->arguments_adaptor_deopt_pc_offset()->value());
   output_frame->SetPc(pc_value);
+#if defined(V8_PPC_CONSTANT_POOL_OPT)
+  if (FLAG_enable_ool_constant_pool || FLAG_enable_embedded_constant_pool) {
+#else
   if (FLAG_enable_ool_constant_pool) {
+#endif
     intptr_t constant_pool_value =
         reinterpret_cast<intptr_t>(adaptor_trampoline->constant_pool());
     output_frame->SetConstantPool(constant_pool_value);
@@ -1300,7 +1316,11 @@ void Deoptimizer::DoComputeConstructStubFrame(TranslationIterator* iterator,
            fp_value, output_offset, value);
   }
 
+#if defined(V8_PPC_CONSTANT_POOL_OPT)
+  if (FLAG_enable_ool_constant_pool || FLAG_enable_embedded_constant_pool) {
+#else
   if (FLAG_enable_ool_constant_pool) {
+#endif
     // Read the caller's constant pool from the previous frame.
     output_offset -= kPointerSize;
     value = output_[frame_index - 1]->GetConstantPool();
@@ -1388,7 +1408,11 @@ void Deoptimizer::DoComputeConstructStubFrame(TranslationIterator* iterator,
       construct_stub->instruction_start() +
       isolate_->heap()->construct_stub_deopt_pc_offset()->value());
   output_frame->SetPc(pc);
+#if defined(V8_PPC_CONSTANT_POOL_OPT)
+  if (FLAG_enable_ool_constant_pool || FLAG_enable_embedded_constant_pool) {
+#else
   if (FLAG_enable_ool_constant_pool) {
+#endif
     intptr_t constant_pool_value =
         reinterpret_cast<intptr_t>(construct_stub->constant_pool());
     output_frame->SetConstantPool(constant_pool_value);
@@ -1463,7 +1487,11 @@ void Deoptimizer::DoComputeAccessorStubFrame(TranslationIterator* iterator,
            fp_value, output_offset, value);
   }
 
+#if defined(V8_PPC_CONSTANT_POOL_OPT)
+  if (FLAG_enable_ool_constant_pool || FLAG_enable_embedded_constant_pool) {
+#else
   if (FLAG_enable_ool_constant_pool) {
+#endif
     // Read the caller's constant pool from the previous frame.
     output_offset -= kPointerSize;
     value = output_[frame_index - 1]->GetConstantPool();
@@ -1530,7 +1558,11 @@ void Deoptimizer::DoComputeAccessorStubFrame(TranslationIterator* iterator,
   intptr_t pc = reinterpret_cast<intptr_t>(
       accessor_stub->instruction_start() + offset->value());
   output_frame->SetPc(pc);
+#if defined(V8_PPC_CONSTANT_POOL_OPT)
+  if (FLAG_enable_ool_constant_pool || FLAG_enable_embedded_constant_pool) {
+#else
   if (FLAG_enable_ool_constant_pool) {
+#endif
     intptr_t constant_pool_value =
         reinterpret_cast<intptr_t>(accessor_stub->constant_pool());
     output_frame->SetConstantPool(constant_pool_value);
@@ -1637,7 +1669,11 @@ void Deoptimizer::DoComputeCompiledStubFrame(TranslationIterator* iterator,
            top_address + output_frame_offset, output_frame_offset, value);
   }
 
+#if defined(V8_PPC_CONSTANT_POOL_OPT)
+  if (FLAG_enable_ool_constant_pool || FLAG_enable_embedded_constant_pool) {
+#else
   if (FLAG_enable_ool_constant_pool) {
+#endif
     // Read the caller's constant pool from the input frame.
     input_frame_offset -= kPointerSize;
     value = input_->GetFrameSlot(input_frame_offset);
@@ -1779,7 +1815,11 @@ void Deoptimizer::DoComputeCompiledStubFrame(TranslationIterator* iterator,
   DCHECK(trampoline != NULL);
   output_frame->SetPc(reinterpret_cast<intptr_t>(
       trampoline->instruction_start()));
+#if defined(V8_PPC_CONSTANT_POOL_OPT)
+  if (FLAG_enable_ool_constant_pool || FLAG_enable_embedded_constant_pool) {
+#else
   if (FLAG_enable_ool_constant_pool) {
+#endif
     Register constant_pool_reg =
         StubFailureTrampolineFrame::constant_pool_pointer_register();
     intptr_t constant_pool_value =

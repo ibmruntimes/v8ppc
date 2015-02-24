@@ -504,13 +504,27 @@ class Assembler : public AssemblerBase {
   void GetCode(CodeDesc* desc);
 
   // Read/Modify the code target in the branch/call instruction at pc.
+#if defined(V8_PPC_CONSTANT_POOL_OPT)
   inline static Address target_address_at(Address pc, Address constant_pool);
   inline static void set_target_address_at(Address pc, Address constant_pool,
                                            Address target,
                                            ICacheFlushMode icache_flush_mode =
                                                FLUSH_ICACHE_IF_NEEDED);
+#else
+  inline static Address target_address_at(Address pc,
+                                          ConstantPoolArray* constant_pool);
+  inline static void set_target_address_at(Address pc,
+                                           ConstantPoolArray* constant_pool,
+                                           Address target,
+                                           ICacheFlushMode icache_flush_mode =
+                                               FLUSH_ICACHE_IF_NEEDED);
+#endif
   static inline Address target_address_at(Address pc, Code* code) {
+#if defined(V8_PPC_CONSTANT_POOL_OPT)
     Address constant_pool = code ? code->constant_pool() : NULL;
+#else
+    ConstantPoolArray* constant_pool = code ? code->constant_pool() : NULL;
+#endif
     return target_address_at(pc, constant_pool);
   }
   static inline void set_target_address_at(Address pc,
@@ -518,7 +532,11 @@ class Assembler : public AssemblerBase {
                                            Address target,
                                            ICacheFlushMode icache_flush_mode =
                                                FLUSH_ICACHE_IF_NEEDED) {
+#if defined(V8_PPC_CONSTANT_POOL_OPT)
     Address constant_pool = code ? code->constant_pool() : NULL;
+#else
+    ConstantPoolArray* constant_pool = code ? code->constant_pool() : NULL;
+#endif
     set_target_address_at(pc, constant_pool, target);
   }
 

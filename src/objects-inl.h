@@ -5102,12 +5102,13 @@ bool Code::is_debug_stub() {
 }
 
 
+#if defined(V8_PPC_CONSTANT_POOL_OPT)
 Address Code::constant_pool() {
   Address constant_pool = NULL;
-  if (FLAG_enable_ool_constant_pool_in_heapobject) {
+  if (FLAG_enable_ool_constant_pool) {
     constant_pool = reinterpret_cast<Address>(
         READ_FIELD(this, kConstantPoolOffset));
-  } else if (FLAG_enable_ool_constant_pool_in_code) {
+  } else if (FLAG_enable_embedded_constant_pool) {
     int offset = constant_pool_offset();
     if (offset < instruction_size()) {
       constant_pool = FIELD_ADDR(this, kHeaderSize + offset);
@@ -5115,10 +5116,17 @@ Address Code::constant_pool() {
   }
   return constant_pool;
 }
+#else
+ConstantPoolArray* Code::constant_pool() {
+  return ConstantPoolArray::cast(READ_FIELD(this, kConstantPoolOffset));
+}
+#endif
 
 
 void Code::set_constant_pool(Object* value) {
-  DCHECK(FLAG_enable_ool_constant_pool_in_heapobject);
+#if defined(V8_PPC_CONSTANT_POOL_OPT)
+  DCHECK(FLAG_enable_ool_constant_pool);
+#endif
   DCHECK(value->IsConstantPoolArray());
   WRITE_FIELD(this, kConstantPoolOffset, value);
   WRITE_BARRIER(GetHeap(), this, kConstantPoolOffset, value);
@@ -6435,7 +6443,9 @@ SMI_ACCESSORS(JSMessageObject, end_position, kEndPositionOffset)
 
 INT_ACCESSORS(Code, instruction_size, kInstructionSizeOffset)
 INT_ACCESSORS(Code, prologue_offset, kPrologueOffset)
+#if defined(V8_PPC_CONSTANT_POOL_OPT)
 INT_ACCESSORS(Code, constant_pool_offset, kConstantPoolOffset)
+#endif
 ACCESSORS(Code, relocation_info, ByteArray, kRelocationInfoOffset)
 ACCESSORS(Code, handler_table, FixedArray, kHandlerTableOffset)
 ACCESSORS(Code, deoptimization_data, FixedArray, kDeoptimizationDataOffset)
@@ -6447,9 +6457,13 @@ void Code::WipeOutHeader() {
   WRITE_FIELD(this, kRelocationInfoOffset, NULL);
   WRITE_FIELD(this, kHandlerTableOffset, NULL);
   WRITE_FIELD(this, kDeoptimizationDataOffset, NULL);
-  if (FLAG_enable_ool_constant_pool_in_heapobject) {
+#if defined(V8_PPC_CONSTANT_POOL_OPT)
+  if (FLAG_enable_ool_constant_pool) {
     WRITE_FIELD(this, kConstantPoolOffset, NULL);
   }
+#else
+  WRITE_FIELD(this, kConstantPoolOffset, NULL);
+#endif
   // Do not wipe out major/minor keys on a code stub or IC
   if (!READ_FIELD(this, kTypeFeedbackInfoOffset)->IsSmi()) {
     WRITE_FIELD(this, kTypeFeedbackInfoOffset, NULL);

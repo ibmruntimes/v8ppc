@@ -73,20 +73,18 @@ namespace internal {
 #endif
 
 // Determine whether the architecture uses an out-of-line constant pool.
-#define OOL_CONSTANT_POOL_NONE 0
-#define OOL_CONSTANT_POOL_HEAP_OBJECT 1
-#define OOL_CONSTANT_POOL_CODE 2
+#define V8_OOL_CONSTANT_POOL 0
 
-#if V8_PPC_OOL_CONSTANT_POOL_OPT
+#if defined(V8_PPC_CONSTANT_POOL_OPT)
+// Determine whether the architecture uses an embedded constant pool
+// (contiguous constant pool embedded in code object).
 #if V8_TARGET_ARCH_PPC
-#define V8_OOL_CONSTANT_POOL OOL_CONSTANT_POOL_CODE
+#define V8_EMBEDDED_CONSTANT_POOL 1
 #else
-#define V8_OOL_CONSTANT_POOL OOL_CONSTANT_POOL_NONE
-#endif
-#else
-#define V8_OOL_CONSTANT_POOL OOL_CONSTANT_POOL_NONE
+#define V8_EMBEDDED_CONSTANT_POOL 0
 #endif
 
+#endif
 #ifdef V8_TARGET_ARCH_ARM
 // Set stack limit lower for ARM than for other architectures because
 // stack allocating MacroAssembler takes 120K bytes.
@@ -464,6 +462,7 @@ enum VisitMode {
 enum NativesFlag { NOT_NATIVES_CODE, NATIVES_CODE };
 
 
+#if defined(V8_PPC_CONSTANT_POOL_OPT)
 // A CodeDesc describes a buffer holding instructions and relocation
 // information. The instructions start at the beginning of the buffer
 // and grow forward, the relocation information starts at the end of
@@ -479,13 +478,30 @@ enum NativesFlag { NOT_NATIVES_CODE, NATIVES_CODE };
 //  ^
 //  |
 //  buffer
+#else
+// A CodeDesc describes a buffer holding instructions and relocation
+// information. The instructions start at the beginning of the buffer
+// and grow forward, the relocation information starts at the end of
+// the buffer and grows backward.
+//
+//  |<--------------- buffer_size ---------------->|
+//  |<-- instr_size -->|        |<-- reloc_size -->|
+//  +==================+========+==================+
+//  |   instructions   |  free  |    reloc info    |
+//  +==================+========+==================+
+//  ^
+//  |
+//  buffer
+#endif
 
 struct CodeDesc {
   byte* buffer;
   int buffer_size;
   int instr_size;
   int reloc_size;
+#if defined(V8_PPC_CONSTANT_POOL_OPT)
   int constant_pool_size;
+#endif
   Assembler* origin;
 };
 

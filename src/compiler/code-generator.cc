@@ -113,6 +113,10 @@ Handle<Code> CodeGenerator::GenerateCode() {
     }
   }
 
+#if !defined(V8_PPC_CONSTANT_POOL_OPT)
+  FinishCode(masm());
+
+#endif
   // Emit the jump tables.
   if (jump_tables_) {
     masm()->Align(kPointerSize);
@@ -122,8 +126,10 @@ Handle<Code> CodeGenerator::GenerateCode() {
     }
   }
 
+#if defined(V8_PPC_CONSTANT_POOL_OPT)
   FinishCode(masm());
 
+#endif
   safepoints()->Emit(masm(), frame()->GetSpillSlotCount());
 
   Handle<Code> result = v8::internal::CodeGenerator::MakeCodeEpilogue(

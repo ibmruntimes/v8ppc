@@ -1827,7 +1827,11 @@ static void RedirectActivationsToRecompiledCodeOnThread(
              reinterpret_cast<intptr_t>(new_pc));
     }
 
+#if defined(V8_PPC_CONSTANT_POOL_OPT)
+    if (FLAG_enable_ool_constant_pool || FLAG_enable_embedded_constant_pool) {
+#else
     if (FLAG_enable_ool_constant_pool) {
+#endif
       // Update constant pool pointer for new code.
       frame->set_constant_pool(new_code->constant_pool());
     }

@@ -135,7 +135,11 @@ AssemblerBase::AssemblerBase(Isolate* isolate, void* buffer, int buffer_size)
       predictable_code_size_(false),
       // We may use the assembler without an isolate.
       serializer_enabled_(isolate && isolate->serializer_enabled()),
+#if defined(V8_PPC_CONSTANT_POOL_OPT)
+      constant_pool_available_(false) {
+#else
       ool_constant_pool_available_(false) {
+#endif
   if (FLAG_mask_constants_with_cookie && isolate != NULL)  {
     jit_cookie_ = isolate->random_number_generator()->NextInt();
   }

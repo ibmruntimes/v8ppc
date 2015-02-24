@@ -5080,11 +5080,13 @@ class Code: public HeapObject {
   inline int prologue_offset() const;
   inline void set_prologue_offset(int offset);
 
+#if defined(V8_PPC_CONSTANT_POOL_OPT)
   // [constant_pool offset]: Offset of the constant pool.
-  // Valid for FLAG_enable_ool_constant_pool_in_code only
+  // Valid for FLAG_enable_embedded_constant_pool only
   inline int constant_pool_offset() const;
   inline void set_constant_pool_offset(int offset);
 
+#endif
   // Unchecked accessors to be used during GC.
   inline ByteArray* unchecked_relocation_info();
 
@@ -5222,8 +5224,12 @@ class Code: public HeapObject {
   inline void set_marked_for_deoptimization(bool flag);
 
   // [constant_pool]: The constant pool for this function.
+#if defined(V8_PPC_CONSTANT_POOL_OPT)
   inline Address constant_pool();
-  // Valid for FLAG_enable_ool_constant_pool_in_heapobject only
+  // Valid for FLAG_enable_ool_constant_pool only
+#else
+  inline ConstantPoolArray* constant_pool();
+#endif
   inline void set_constant_pool(Object* constant_pool);
 
   // Get the safepoint entry for the given pc.
@@ -5426,11 +5432,13 @@ class Code: public HeapObject {
   // nesting that is deeper than 5 levels into account.
   static const int kMaxLoopNestingMarker = 6;
 
-  static const int kCPHOSize =
-      FLAG_enable_ool_constant_pool_in_heapobject ? kPointerSize : 0;
-  static const int kCPCSize =
-      FLAG_enable_ool_constant_pool_in_code ? kIntSize : 0;
+#if defined(V8_PPC_CONSTANT_POOL_OPT)
+  static const int kOOLCPSize =
+      FLAG_enable_ool_constant_pool ? kPointerSize : 0;
+  static const int kECPSize =
+      FLAG_enable_embedded_constant_pool ? kIntSize : 0;
 
+#endif
   // Layout description.
   static const int kRelocationInfoOffset = HeapObject::kHeaderSize;
   static const int kHandlerTableOffset = kRelocationInfoOffset + kPointerSize;
@@ -5449,22 +5457,33 @@ class Code: public HeapObject {
       kKindSpecificFlags1Offset + kIntSize;
   // Note: We might be able to squeeze this into the flags above.
   static const int kPrologueOffset = kKindSpecificFlags2Offset + kIntSize;
-  static const int kConstantPoolHeapObjectOffset =
+#if defined(V8_PPC_CONSTANT_POOL_OPT)
+  static const int kOOLConstantPoolOffset =
       kPrologueOffset + kIntSize;
-  static const int kConstantPoolCodeOffset =
-      kConstantPoolHeapObjectOffset + kCPHOSize;
-  static const int kHeaderPaddingStart = kConstantPoolCodeOffset + kCPCSize;
+  static const int kEmbeddedConstantPoolOffset =
+      kOOLConstantPoolOffset + kOOLCPSize;
+  static const int kHeaderPaddingStart = kEmbeddedConstantPoolOffset + kECPSize;
 
-  static const int kConstantPoolOffset = kCPHOSize ?
-      kConstantPoolHeapObjectOffset :
-      (kCPCSize ? kConstantPoolCodeOffset : 0);
+  static const int kConstantPoolOffset = kOOLCPSize ?
+      kOOLConstantPoolOffset :
+      (kECPSize ? kEmbeddedConstantPoolOffset : 0);
+#else
+  static const int kConstantPoolOffset = kPrologueOffset + kIntSize;
+
+  static const int kHeaderPaddingStart = kConstantPoolOffset + kPointerSize;
+#endif
 
   // Add padding to align the instruction start following right after
   // the Code object header.
   static const int kHeaderSize =
       (kHeaderPaddingStart + kCodeAlignmentMask) & ~kCodeAlignmentMask;
   // Ensure that the slot for the constant pool pointer is aligned.
-  STATIC_ASSERT((kConstantPoolHeapObjectOffset & kPointerAlignmentMask) == 0);
+#if defined(V8_PPC_CONSTANT_POOL_OPT)
+  STATIC_ASSERT(kOOLCPSize == 0 ||
+                (kOOLConstantPoolOffset & kPointerAlignmentMask) == 0);
+#else
+  STATIC_ASSERT((kConstantPoolOffset & kPointerAlignmentMask) == 0);
+#endif
 
   // Byte offsets within kKindSpecificFlags1Offset.
   static const int kOptimizableOffset = kKindSpecificFlags1Offset;

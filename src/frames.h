@@ -129,6 +129,9 @@ class StackHandler BASE_EMBEDDED {
   inline Kind kind() const;
   inline unsigned index() const;
 
+#if !defined(V8_PPC_CONSTANT_POOL_OPT)
+  inline Object** constant_pool_address() const;
+#endif
   inline Object** context_address() const;
   inline Object** code_address() const;
   inline void SetFp(Address slot, Address fp);
@@ -156,16 +159,26 @@ class StandardFrameConstants : public AllStatic {
   // constant pool (if FLAG_enable_ool_constant_pool), context, and function.
   // StandardFrame::IterateExpressions assumes that kLastObjectOffset is the
   // last object pointer.
+#if defined(V8_PPC_CONSTANT_POOL_OPT)
+  static const int kCPSlotSize =
+      (FLAG_enable_ool_constant_pool || FLAG_enable_embedded_constant_pool) ?
+      kPointerSize : 0;
+#else
   static const int kCPSlotSize =
       FLAG_enable_ool_constant_pool ? kPointerSize : 0;
+#endif
   static const int kFixedFrameSizeFromFp =  2 * kPointerSize + kCPSlotSize;
   static const int kFixedFrameSize       =  kPCOnStackSize + kFPOnStackSize +
                                             kFixedFrameSizeFromFp;
   static const int kExpressionsOffset    = -3 * kPointerSize - kCPSlotSize;
   static const int kMarkerOffset         = -2 * kPointerSize - kCPSlotSize;
   static const int kContextOffset        = -1 * kPointerSize - kCPSlotSize;
+#if defined(V8_PPC_CONSTANT_POOL_OPT)
+  static const int kConstantPoolOffset   = kCPSlotSize ? -1 * kPointerSize : 0;
+#else
   static const int kConstantPoolOffset   = FLAG_enable_ool_constant_pool ?
                                            -1 * kPointerSize : 0;
+#endif
   static const int kCallerFPOffset       =  0 * kPointerSize;
   static const int kCallerPCOffset       = +1 * kFPOnStackSize;
   static const int kCallerSPOffset       = kCallerPCOffset + 1 * kPCOnStackSize;
@@ -254,9 +267,15 @@ class StackFrame BASE_EMBEDDED {
   void set_pc(Address pc) { *pc_address() = pc; }
 
   Address constant_pool() const { return *constant_pool_address(); }
+#if defined(V8_PPC_CONSTANT_POOL_OPT)
   void set_constant_pool(Address constant_pool) {
     *constant_pool_address() = constant_pool;
   }
+#else
+  void set_constant_pool(ConstantPoolArray* constant_pool) {
+    *constant_pool_address() = reinterpret_cast<Address>(constant_pool);
+  }
+#endif
 
   virtual void SetCallerFp(Address caller_fp) = 0;
 
@@ -297,8 +316,12 @@ class StackFrame BASE_EMBEDDED {
                                 unsigned* stack_slots);
 
   virtual void Iterate(ObjectVisitor* v) const = 0;
+#if defined(V8_PPC_CONSTANT_POOL_OPT)
   static void IteratePc(ObjectVisitor* v, Address* pc_address,
                         Address* constant_pool_address, Code* holder);
+#else
+  static void IteratePc(ObjectVisitor* v, Address* pc_address, Code* holder);
+#endif
 
   // Sets a callback function for return-address rewriting profilers
   // to resolve the location of a return address to the location of the

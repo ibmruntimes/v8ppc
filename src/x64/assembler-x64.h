@@ -527,13 +527,27 @@ class Assembler : public AssemblerBase {
   // the absolute address of the target.
   // These functions convert between absolute Addresses of Code objects and
   // the relative displacements stored in the code.
+#if defined(V8_PPC_CONSTANT_POOL_OPT)
   static inline Address target_address_at(Address pc, Address constant_pool);
   static inline void set_target_address_at(Address pc, Address constant_pool,
                                            Address target,
                                            ICacheFlushMode icache_flush_mode =
+                                               FLUSH_ICACHE_IF_NEEDED);
+#else
+  static inline Address target_address_at(Address pc,
+                                          ConstantPoolArray* constant_pool);
+  static inline void set_target_address_at(Address pc,
+                                           ConstantPoolArray* constant_pool,
+                                           Address target,
+                                           ICacheFlushMode icache_flush_mode =
                                                FLUSH_ICACHE_IF_NEEDED) ;
+#endif
   static inline Address target_address_at(Address pc, Code* code) {
+#if defined(V8_PPC_CONSTANT_POOL_OPT)
     Address constant_pool = code ? code->constant_pool() : NULL;
+#else
+    ConstantPoolArray* constant_pool = code ? code->constant_pool() : NULL;
+#endif
     return target_address_at(pc, constant_pool);
   }
   static inline void set_target_address_at(Address pc,
@@ -541,7 +555,11 @@ class Assembler : public AssemblerBase {
                                            Address target,
                                            ICacheFlushMode icache_flush_mode =
                                                FLUSH_ICACHE_IF_NEEDED) {
+#if defined(V8_PPC_CONSTANT_POOL_OPT)
     Address constant_pool = code ? code->constant_pool() : NULL;
+#else
+    ConstantPoolArray* constant_pool = code ? code->constant_pool() : NULL;
+#endif
     set_target_address_at(pc, constant_pool, target, icache_flush_mode);
   }
 

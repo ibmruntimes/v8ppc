@@ -581,13 +581,22 @@ Address Assembler::target_pointer_address_at(Address pc) {
 
 
 // Read/Modify the code target address in the branch/call instruction at pc.
+#if defined(V8_PPC_CONSTANT_POOL_OPT)
 Address Assembler::target_address_at(Address pc, Address constant_pool) {
+#else
+Address Assembler::target_address_at(Address pc,
+                                     ConstantPoolArray* constant_pool) {
+#endif
   return Memory::Address_at(target_pointer_address_at(pc));
 }
 
 
 Address Assembler::target_address_at(Address pc, Code* code) {
+#if defined(V8_PPC_CONSTANT_POOL_OPT)
   Address constant_pool = code ? code->constant_pool() : NULL;
+#else
+  ConstantPoolArray* constant_pool = code ? code->constant_pool() : NULL;
+#endif
   return target_address_at(pc, constant_pool);
 }
 
@@ -653,9 +662,16 @@ void Assembler::deserialization_set_special_target_at(
 }
 
 
+#if defined(V8_PPC_CONSTANT_POOL_OPT)
 void Assembler::set_target_address_at(Address pc, Address constant_pool,
                                       Address target,
                                       ICacheFlushMode icache_flush_mode) {
+#else
+void Assembler::set_target_address_at(Address pc,
+                                      ConstantPoolArray* constant_pool,
+                                      Address target,
+                                      ICacheFlushMode icache_flush_mode) {
+#endif
   Memory::Address_at(target_pointer_address_at(pc)) = target;
   // Intuitively, we would think it is necessary to always flush the
   // instruction cache after patching a target address in the code as follows:
@@ -672,7 +688,11 @@ void Assembler::set_target_address_at(Address pc,
                                       Code* code,
                                       Address target,
                                       ICacheFlushMode icache_flush_mode) {
+#if defined(V8_PPC_CONSTANT_POOL_OPT)
   Address constant_pool = code ? code->constant_pool() : NULL;
+#else
+  ConstantPoolArray* constant_pool = code ? code->constant_pool() : NULL;
+#endif
   set_target_address_at(pc, constant_pool, target, icache_flush_mode);
 }
 

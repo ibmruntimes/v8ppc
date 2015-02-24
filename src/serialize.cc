@@ -1949,8 +1949,7 @@ void Serializer::ObjectSerializer::VisitPointers(Object** start,
 
 void Serializer::ObjectSerializer::VisitEmbeddedPointer(RelocInfo* rinfo) {
   // Out-of-line constant pool entries will be visited by the ConstantPoolArray.
-  if (FLAG_enable_ool_constant_pool_in_heapobject && rinfo->IsInConstantPool())
-    return;
+  if (FLAG_enable_ool_constant_pool && rinfo->IsInConstantPool()) return;
 
   int skip = OutputRawData(rinfo->target_address_address(),
                            kCanReturnSkipInsteadOfSkipping);
@@ -1999,8 +1998,7 @@ void Serializer::ObjectSerializer::VisitRuntimeEntry(RelocInfo* rinfo) {
 
 void Serializer::ObjectSerializer::VisitCodeTarget(RelocInfo* rinfo) {
   // Out-of-line constant pool entries will be visited by the ConstantPoolArray.
-  if (FLAG_enable_ool_constant_pool_in_heapobject && rinfo->IsInConstantPool())
-    return;
+  if (FLAG_enable_ool_constant_pool && rinfo->IsInConstantPool()) return;
 
   int skip = OutputRawData(rinfo->target_address_address(),
                            kCanReturnSkipInsteadOfSkipping);
@@ -2020,8 +2018,7 @@ void Serializer::ObjectSerializer::VisitCodeEntry(Address entry_address) {
 
 void Serializer::ObjectSerializer::VisitCell(RelocInfo* rinfo) {
   // Out-of-line constant pool entries will be visited by the ConstantPoolArray.
-  if (FLAG_enable_ool_constant_pool_in_heapobject && rinfo->IsInConstantPool())
-    return;
+  if (FLAG_enable_ool_constant_pool && rinfo->IsInConstantPool()) return;
 
   int skip = OutputRawData(rinfo->pc(), kCanReturnSkipInsteadOfSkipping);
   Cell* object = Cell::cast(rinfo->target_cell());
@@ -2069,8 +2066,7 @@ static void WipeOutRelocations(Code* code) {
       RelocInfo::ModeMask(RelocInfo::EXTERNAL_REFERENCE) |
       RelocInfo::ModeMask(RelocInfo::RUNTIME_ENTRY);
   for (RelocIterator it(code, mode_mask); !it.done(); it.next()) {
-    if (!(FLAG_enable_ool_constant_pool_in_heapobject &&
-          it.rinfo()->IsInConstantPool())) {
+    if (!(FLAG_enable_ool_constant_pool && it.rinfo()->IsInConstantPool())) {
       it.rinfo()->WipeOut();
     }
   }

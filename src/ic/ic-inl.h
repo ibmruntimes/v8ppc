@@ -48,32 +48,72 @@ Address IC::address() const {
 }
 
 
+#if defined(V8_PPC_CONSTANT_POOL_OPT)
 Address IC::constant_pool() const {
+  if (!FLAG_enable_ool_constant_pool && !FLAG_enable_embedded_constant_pool) {
+#else
+ConstantPoolArray* IC::constant_pool() const {
   if (!FLAG_enable_ool_constant_pool) {
+#endif
     return NULL;
   } else {
-    Address* result = raw_constant_pool_;
+#if defined(V8_PPC_CONSTANT_POOL_OPT)
+    Address constant_pool = raw_constant_pool();
+#else
+    Handle<ConstantPoolArray> result = raw_constant_pool_;
+#endif
     Debug* debug = isolate()->debug();
     // First check if any break points are active if not just return the
     // original constant pool.
+#if defined(V8_PPC_CONSTANT_POOL_OPT)
+    if (!debug->has_break_points()) return constant_pool;
+#else
     if (!debug->has_break_points()) return *result;
+#endif
 
     // At least one break point is active perform additional test to ensure that
     // break point locations are updated correctly.
     Address target = Assembler::target_address_from_return_address(pc());
+#if defined(V8_PPC_CONSTANT_POOL_OPT)
+    if (debug->IsDebugBreak(
+            Assembler::target_address_at(target, constant_pool))) {
+#else
     if (debug->IsDebugBreak(
             Assembler::target_address_at(target, raw_constant_pool()))) {
+#endif
       // If the call site is a call to debug break then we want to return the
       // constant pool for the original code instead of the breakpointed code.
       return GetOriginalCode()->constant_pool();
     }
+#if defined(V8_PPC_CONSTANT_POOL_OPT)
+    return constant_pool;
+#else
     return *result;
+#endif
   }
 }
 
 
+#if defined(V8_PPC_CONSTANT_POOL_OPT)
+void IC::set_raw_constant_pool(Address* constant_pool, Isolate* isolate) {
+  DCHECK(FLAG_enable_ool_constant_pool || FLAG_enable_embedded_constant_pool);
+  if (FLAG_enable_ool_constant_pool) {
+    raw_constant_pool_handle_ = handle(
+        ConstantPoolArray::cast(reinterpret_cast<Object*>(*constant_pool)),
+        isolate);
+  } else if (FLAG_enable_embedded_constant_pool) {
+    raw_constant_pool_ = constant_pool;
+  }
+}
+
 Address IC::raw_constant_pool() const {
   if (FLAG_enable_ool_constant_pool) {
+    return reinterpret_cast<Address>(*raw_constant_pool_handle_);
+  } else if (FLAG_enable_embedded_constant_pool) {
+#else
+ConstantPoolArray* IC::raw_constant_pool() const {
+  if (FLAG_enable_ool_constant_pool) {
+#endif
     return *raw_constant_pool_;
   } else {
     return NULL;
@@ -81,7 +121,12 @@ Address IC::raw_constant_pool() const {
 }
 
 
+#if defined(V8_PPC_CONSTANT_POOL_OPT)
 Code* IC::GetTargetAtAddress(Address address, Address constant_pool) {
+#else
+Code* IC::GetTargetAtAddress(Address address,
+                             ConstantPoolArray* constant_pool) {
+#endif
   // Get the target address of the IC.
   Address target = Assembler::target_address_at(address, constant_pool);
   // Convert target address to the code object. Code::GetCodeFromTargetAddress
@@ -92,8 +137,13 @@ Code* IC::GetTargetAtAddress(Address address, Address constant_pool) {
 }
 
 
+#if defined(V8_PPC_CONSTANT_POOL_OPT)
 void IC::SetTargetAtAddress(Address address, Code* target,
                             Address constant_pool) {
+#else
+void IC::SetTargetAtAddress(Address address, Code* target,
+                            ConstantPoolArray* constant_pool) {
+#endif
   DCHECK(target->is_inline_cache_stub() || target->is_compare_ic_stub());
 
   // Don't use this for load_ics when --vector-ics is turned on.

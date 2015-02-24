@@ -460,14 +460,26 @@ void Assembler::emit_w(const Immediate& x) {
 }
 
 
+#if defined(V8_PPC_CONSTANT_POOL_OPT)
 Address Assembler::target_address_at(Address pc, Address constant_pool) {
+#else
+Address Assembler::target_address_at(Address pc,
+                                     ConstantPoolArray* constant_pool) {
+#endif
   return pc + sizeof(int32_t) + *reinterpret_cast<int32_t*>(pc);
 }
 
 
+#if defined(V8_PPC_CONSTANT_POOL_OPT)
 void Assembler::set_target_address_at(Address pc, Address constant_pool,
                                       Address target,
                                       ICacheFlushMode icache_flush_mode) {
+#else
+void Assembler::set_target_address_at(Address pc,
+                                      ConstantPoolArray* constant_pool,
+                                      Address target,
+                                      ICacheFlushMode icache_flush_mode) {
+#endif
   int32_t* p = reinterpret_cast<int32_t*>(pc);
   *p = target - (pc + sizeof(int32_t));
   if (icache_flush_mode != SKIP_ICACHE_FLUSH) {
