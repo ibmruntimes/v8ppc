@@ -1652,7 +1652,8 @@ void InstanceofStub::Generate(MacroAssembler* masm) {
 
   // delta = mov + tagged LoadP + cmp + bne
   const int32_t kDeltaToLoadBoolResult =
-      (Assembler::kMovInstructions + 3) * Assembler::kInstrSize;
+      (Assembler::kMovInstructions + Assembler::kTaggedLoadInstructions + 2) *
+      Assembler::kInstrSize;
 
   Label slow, loop, is_instance, is_not_instance, not_js_object;
 
@@ -2849,13 +2850,21 @@ static void EmitContinueIfStrictOrNative(MacroAssembler* masm, Label* cont) {
   __ LoadP(r6, FieldMemOperand(r4, JSFunction::kSharedFunctionInfoOffset));
   __ lwz(r7, FieldMemOperand(r6, SharedFunctionInfo::kCompilerHintsOffset));
   __ TestBit(r7,
+#if V8_TARGET_ARCH_PPC64
+             SharedFunctionInfo::kStrictModeFunction,
+#else
              SharedFunctionInfo::kStrictModeFunction + kSmiTagSize,
+#endif
              r0);
   __ bne(cont, cr0);
 
   // Do not transform the receiver for native.
   __ TestBit(r7,
+#if V8_TARGET_ARCH_PPC64
+             SharedFunctionInfo::kNative,
+#else
              SharedFunctionInfo::kNative + kSmiTagSize,
+#endif
              r0);
   __ bne(cont, cr0);
 }

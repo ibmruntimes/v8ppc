@@ -7458,13 +7458,13 @@ class SharedFunctionInfo: public HeapObject {
 
   static const int kFunctionTokenPositionOffset =
       kStartPositionAndTypeOffset + kIntSize;
-  static const int kOptCountAndBailoutReasonOffset =
+  static const int kCompilerHintsOffset =
       kFunctionTokenPositionOffset + kIntSize;
 
-  static const int kCompilerHintsOffset =
-      kOptCountAndBailoutReasonOffset + kIntSize;
-  static const int kCountersOffset =
+  static const int kOptCountAndBailoutReasonOffset =
       kCompilerHintsOffset + kIntSize;
+  static const int kCountersOffset =
+      kOptCountAndBailoutReasonOffset + kIntSize;
 
   static const int kAstNodeCountOffset =
       kCountersOffset + kIntSize;
@@ -7490,18 +7490,18 @@ class SharedFunctionInfo: public HeapObject {
   static const int kEndPositionOffset =
       kStartPositionAndTypeOffset + kIntSize;
 
-  static const int kOptCountAndBailoutReasonOffset =
+  static const int kCompilerHintsOffset =
       kEndPositionOffset + kIntSize;
   static const int kFunctionTokenPositionOffset =
-      kOptCountAndBailoutReasonOffset + kIntSize;
+      kCompilerHintsOffset + kIntSize;
 
   static const int kCountersOffset =
       kFunctionTokenPositionOffset + kIntSize;
-  static const int kCompilerHintsOffset =
+  static const int kOptCountAndBailoutReasonOffset =
       kCountersOffset + kIntSize;
 
   static const int kProfilerTicksOffset =
-      kCompilerHintsOffset + kIntSize;
+      kOptCountAndBailoutReasonOffset + kIntSize;
   static const int kAstNodeCountOffset =
       kProfilerTicksOffset + kIntSize;
 

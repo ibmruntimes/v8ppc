@@ -2252,7 +2252,11 @@ void MacroAssembler::TryGetFunctionPrototype(Register function,
     lwz(scratch,
         FieldMemOperand(scratch, SharedFunctionInfo::kCompilerHintsOffset));
     TestBit(scratch,
+#if V8_TARGET_ARCH_PPC64
+            SharedFunctionInfo::kBoundFunction,
+#else
             SharedFunctionInfo::kBoundFunction + kSmiTagSize,
+#endif
             r0);
     bne(miss, cr0);
 
@@ -4654,7 +4658,16 @@ void MacroAssembler::LoadP(Register dst, const MemOperand& mem,
 #endif
   } else {
 #if V8_TARGET_ARCH_PPC64
-    ld(dst, mem);
+    int misaligned = (offset & 3);
+    if (misaligned) {
+      // adjust base to conform to offset alignment requirements
+      // Todo: enhance to use scratch if dst is unsuitable
+      DCHECK(!dst.is(r0));
+      addi(dst, mem.ra(), Operand((offset & 3) - 4));
+      ld(dst, MemOperand(dst, (offset & ~3) + 4));
+    } else {
+      ld(dst, mem);
+    }
 #else
     lwz(dst, mem);
 #endif
@@ -4678,7 +4691,21 @@ void MacroAssembler::StoreP(Register src, const MemOperand& mem,
 #endif
   } else {
 #if V8_TARGET_ARCH_PPC64
-    std(src, mem);
+    int misaligned = (offset & 3);
+    if (misaligned) {
+      // adjust base to conform to offset alignment requirements
+      // a suitable scratch is required here
+      DCHECK(!scratch.is(no_reg));
+      if (scratch.is(r0)) {
+        LoadIntLiteral(scratch, offset);
+        stdx(src, MemOperand(mem.ra(), scratch));
+      } else {
+        addi(scratch, mem.ra(), Operand((offset & 3) - 4));
+        std(src, MemOperand(scratch, (offset & ~3) + 4));
+      }
+    } else {
+      std(src, mem);
+    }
 #else
     stw(src, mem);
 #endif
@@ -4694,7 +4721,20 @@ void MacroAssembler::LoadWordArith(Register dst, const MemOperand& mem,
     mov(scratch, Operand(offset));
     lwax(dst, MemOperand(mem.ra(), scratch));
   } else {
-    lwa(dst, mem);
+#if V8_TARGET_ARCH_PPC64
+    int misaligned = (offset & 3);
+    if (misaligned) {
+      // adjust base to conform to offset alignment requirements
+      // Todo: enhance to use scratch if dst is unsuitable
+      DCHECK(!dst.is(r0));
+      addi(dst, mem.ra(), Operand((offset & 3) - 4));
+      lwa(dst, MemOperand(dst, (offset & ~3) + 4));
+    } else {
+      lwa(dst, mem);
+    }
+#else
+    lwz(dst, mem);
+#endif
   }
 }
 
