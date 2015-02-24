@@ -749,9 +749,11 @@ class Assembler : public AssemblerBase {
 #if V8_TARGET_ARCH_PPC64
   static const int kMovInstructionsConstantPool = 1;
   static const int kMovInstructionsNoConstantPool = 5;
+  static const int kTaggedLoadInstructions = 2;
 #else
   static const int kMovInstructionsConstantPool = 1;
   static const int kMovInstructionsNoConstantPool = 2;
+  static const int kTaggedLoadInstructions = 1;
 #endif
   static const int kMovInstructions = FLAG_enable_ool_constant_pool ?
       kMovInstructionsConstantPool : kMovInstructionsNoConstantPool;

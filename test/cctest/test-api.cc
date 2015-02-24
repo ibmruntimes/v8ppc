@@ -2614,8 +2614,7 @@ THREADED_TEST(GlobalObjectHasRealIndexedProperty) {
 
 static void CheckAlignedPointerInInternalField(Handle<v8::Object> obj,
                                                void* value) {
-  CHECK_EQ(0, static_cast<int>(
-      reinterpret_cast<uintptr_t>(value) & v8::internal::kSmiTagMask));
+  CHECK_EQ(0, static_cast<int>(reinterpret_cast<uintptr_t>(value) & 0x1));
   obj->SetAlignedPointerInInternalField(0, value);
   CcTest::heap()->CollectAllGarbage(i::Heap::kNoGCFlags);
   CHECK_EQ(value, obj->GetAlignedPointerFromInternalField(0));
@@ -2642,8 +2641,7 @@ THREADED_TEST(InternalFieldsAlignedPointers) {
   int stack_allocated[100];
   CheckAlignedPointerInInternalField(obj, stack_allocated);
 
-  void* huge = reinterpret_cast<void*>(~static_cast<uintptr_t>(
-                   v8::internal::kSmiTagMask));
+  void* huge = reinterpret_cast<void*>(~static_cast<uintptr_t>(1));
   CheckAlignedPointerInInternalField(obj, huge);
 
   v8::UniquePersistent<v8::Object> persistent(isolate, obj);
@@ -2655,8 +2653,7 @@ THREADED_TEST(InternalFieldsAlignedPointers) {
 static void CheckAlignedPointerInEmbedderData(LocalContext* env,
                                               int index,
                                               void* value) {
-  CHECK_EQ(0, static_cast<int>(
-      reinterpret_cast<uintptr_t>(value) & v8::internal::kSmiTagMask));
+  CHECK_EQ(0, static_cast<int>(reinterpret_cast<uintptr_t>(value) & 0x1));
   (*env)->SetAlignedPointerInEmbedderData(index, value);
   CcTest::heap()->CollectAllGarbage(i::Heap::kNoGCFlags);
   CHECK_EQ(value, (*env)->GetAlignedPointerFromEmbedderData(index));
@@ -2664,7 +2661,7 @@ static void CheckAlignedPointerInEmbedderData(LocalContext* env,
 
 
 static void* AlignedTestPointer(int i) {
-  return reinterpret_cast<void*>(i * (617 << v8::internal::kSmiTagSize));
+  return reinterpret_cast<void*>(i * 1234);
 }
 
 
@@ -2681,8 +2678,7 @@ THREADED_TEST(EmbedderDataAlignedPointers) {
   int stack_allocated[100];
   CheckAlignedPointerInEmbedderData(&env, 2, stack_allocated);
 
-  void* huge = reinterpret_cast<void*>(~static_cast<uintptr_t>(
-                   v8::internal::kSmiTagMask));
+  void* huge = reinterpret_cast<void*>(~static_cast<uintptr_t>(1));
   CheckAlignedPointerInEmbedderData(&env, 3, huge);
 
   // Test growing of the embedder data's backing store.
