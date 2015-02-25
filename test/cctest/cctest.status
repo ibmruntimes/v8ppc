@@ -200,15 +200,6 @@
 }],  # 'system == macos'
 
 ##############################################################################
-['system == aix', {
-
-  # Can be removed when AIX debug mode replaces -O0 with -Og (GCC 4.8).
-  'test-run-machops/RunFloat64Ceil': [PASS, ['mode == debug', FAIL]],
-  'test-run-machops/RunFloat64RoundTruncate': [PASS, ['mode == debug', FAIL]],
-  'test-run-machops/RunFloat64RoundTiesAway': [PASS, ['mode == debug', FAIL]],
-}],  # 'system == aix'
-
-##############################################################################
 ['arch == arm', {
 
   # BUG(355): Test crashes on ARM.

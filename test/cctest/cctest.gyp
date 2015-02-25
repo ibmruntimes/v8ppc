@@ -259,11 +259,6 @@
             'test-platform-linux.cc',
           ],
         }],
-        [ 'OS=="aix" and v8_target_arch=="ppc64"', {
-          'sources': [
-            'test-api2.cc',
-          ],
-        }],
         [ 'OS=="win"', {
           'sources': [
             'test-platform-win32.cc',
@@ -274,6 +269,9 @@
               'AdditionalOptions': ['/bigobj'],
             },
           },
+        }],
+        ['OS=="aix"', {
+          'ldflags': [ '-Wl,-bbigtoc' ],
         }],
         ['component=="shared_library"', {
           # cctest can't be built against a shared library, so we need to

@@ -263,8 +263,6 @@ TEST(SequenceCollectorRegression) {
 }
 
 
-// Older GCC fails, make sure to use 4.7 or better
-#if ((__GNUC__ >= 4) && (__GNUC_MINOR__ >= 7))
 TEST(CPlusPlus11Features) {
   struct S {
     bool x;
@@ -297,4 +295,3 @@ TEST(CPlusPlus11Features) {
     j += 11;
   }
 }
-#endif

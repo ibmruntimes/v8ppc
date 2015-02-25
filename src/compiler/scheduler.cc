@@ -1646,8 +1646,8 @@ void Scheduler::FuseFloatingControl(BasicBlock* block, Node* node) {
   // temporary solution and should be merged into the rest of the scheduler as
   // soon as the approach settled for all floating loops.
   NodeVector propagation_roots(control_flow_builder_->control_);
-  for (Node* n : control_flow_builder_->control_) {
-    for (Node* use : n->uses()) {
+  for (Node* node : control_flow_builder_->control_) {
+    for (Node* use : node->uses()) {
       if (NodeProperties::IsPhi(use)) propagation_roots.push_back(use);
     }
   }

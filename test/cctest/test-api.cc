@@ -50,20 +50,6 @@
 #include "src/utils.h"
 #include "src/vm-state.h"
 
-#if defined(_AIX) && defined(DEBUG) && V8_HOST_ARCH_64_BIT
-// AIX gcc is unable to compile this file in its entirety due to the
-// following open issue:
-//   http://gcc.gnu.org/bugzilla/show_bug.cgi?id=378
-// As a workaround, the file is split into two parts: test-api.cc and
-// test-api2.cc.
-# if !defined(TEST_API_PART2)
-# define TEST_API_PART1
-# endif
-#else
-#define TEST_API_PART1
-#define TEST_API_PART2
-#endif
-
 static const bool kLogThreading = false;
 
 using ::v8::Boolean;
@@ -103,7 +89,7 @@ using ::v8::Value;
   THREADED_TEST(Name)
 
 
-static void RunWithProfiler(void (*test)()) {
+void RunWithProfiler(void (*test)()) {
   LocalContext env;
   v8::HandleScope scope(env->GetIsolate());
   v8::Local<v8::String> profile_name =
@@ -116,7 +102,6 @@ static void RunWithProfiler(void (*test)()) {
 }
 
 
-#if defined(TEST_API_PART1)
 static int signature_callback_count;
 static Local<Value> signature_expected_receiver;
 static void IncrementingSignatureCallback(
@@ -131,17 +116,13 @@ static void IncrementingSignatureCallback(
     result->Set(v8::Integer::New(args.GetIsolate(), i), args[i]);
   args.GetReturnValue().Set(result);
 }
-#endif
 
 
-#if defined(TEST_API_PART2)
 static void Returns42(const v8::FunctionCallbackInfo<v8::Value>& info) {
   info.GetReturnValue().Set(42);
 }
-#endif
 
 
-#if defined(TEST_API_PART1)
 // Tests that call v8::V8::Dispose() cannot be threaded.
 UNINITIALIZED_TEST(InitializeAndDisposeOnce) {
   CHECK(v8::V8::Initialize());
@@ -351,7 +332,6 @@ THREADED_TEST(Script) {
   Local<Script> script = v8_compile(source);
   CHECK_EQ(6, script->Run()->Int32Value());
 }
-#endif  // TEST_API_PART1
 
 
 class TestResource: public String::ExternalStringResource {
@@ -413,7 +393,6 @@ class TestOneByteResource : public String::ExternalOneByteStringResource {
 };
 
 
-#if defined(TEST_API_PART1)
 THREADED_TEST(ScriptUsingStringResource) {
   int dispose_count = 0;
   const char* c_source = "1 + 2 * 3";
@@ -699,7 +678,6 @@ class RandomLengthResource : public v8::String::ExternalStringResource {
   uint16_t string_[10];
   int length_;
 };
-#endif  // TEST_API_PART1
 
 
 class RandomLengthOneByteResource
@@ -715,7 +693,6 @@ class RandomLengthOneByteResource
 };
 
 
-#if defined(TEST_API_PART1)
 THREADED_TEST(NewExternalForVeryLongString) {
   {
     LocalContext env;
@@ -1775,7 +1752,6 @@ THREADED_TEST(Boolean) {
   CHECK(v8::Number::New(isolate, 42)->BooleanValue());
   CHECK(!v8_compile("NaN")->Run()->BooleanValue());
 }
-#endif  // TEST_API_PART1
 
 
 static void DummyCallHandler(const v8::FunctionCallbackInfo<v8::Value>& args) {
@@ -1784,7 +1760,6 @@ static void DummyCallHandler(const v8::FunctionCallbackInfo<v8::Value>& args) {
 }
 
 
-#if defined(TEST_API_PART1)
 static void GetM(Local<String> name,
                  const v8::PropertyCallbackInfo<v8::Value>& info) {
   ApiTestFuzzer::Fuzz();
@@ -1939,9 +1914,7 @@ void SymbolAccessorSetter(Local<Name> name, Local<Value> value,
     return;
   SimpleAccessorSetter(Local<String>::Cast(sym->Name()), value, info);
 }
-#endif  // TEST_API_PART1
 
-#if defined(TEST_API_PART2)
 void SymbolAccessorGetterReturnsDefault(
     Local<Name> name, const v8::PropertyCallbackInfo<v8::Value>& info) {
   CHECK(name->IsSymbol());
@@ -1950,15 +1923,12 @@ void SymbolAccessorGetterReturnsDefault(
   info.GetReturnValue().Set(info.Data());
 }
 
-
 static void ThrowingSymbolAccessorGetter(
     Local<Name> name, const v8::PropertyCallbackInfo<v8::Value>& info) {
   info.GetReturnValue().Set(info.GetIsolate()->ThrowException(name));
 }
-#endif  // TEST_API_PART2
 
 
-#if defined(TEST_API_PART1)
 THREADED_TEST(ExecutableAccessorIsPreservedOnAttributeChange) {
   v8::Isolate* isolate = CcTest::isolate();
   v8::HandleScope scope(isolate);
@@ -2630,7 +2600,6 @@ class ScopedArrayBufferContents {
  private:
   const v8::ArrayBuffer::Contents contents_;
 };
-#endif  // TEST_API_PART1
 
 template <typename T>
 static void CheckInternalFieldsAreZero(v8::Handle<T> value) {
@@ -2641,7 +2610,6 @@ static void CheckInternalFieldsAreZero(v8::Handle<T> value) {
 }
 
 
-#if defined(TEST_API_PART1)
 THREADED_TEST(ArrayBuffer_ApiInternalToExternal) {
   LocalContext env;
   v8::Isolate* isolate = env->GetIsolate();
@@ -4986,17 +4954,15 @@ TEST(ExceptionOrder) {
   v8::Handle<Value> a5[argc] = {v8_num(6), v8_num(4), v8_num(3), v8_num(3)};
   fun->Call(fun, argc, a5);
 }
-#endif  // TEST_API_PART1
 
 
-static void ThrowValue(const v8::FunctionCallbackInfo<v8::Value>& args) {
+void ThrowValue(const v8::FunctionCallbackInfo<v8::Value>& args) {
   ApiTestFuzzer::Fuzz();
   CHECK_EQ(1, args.Length());
   args.GetIsolate()->ThrowException(args[0]);
 }
 
 
-#if defined(TEST_API_PART1)
 THREADED_TEST(ThrowValues) {
   v8::Isolate* isolate = CcTest::isolate();
   v8::HandleScope scope(isolate);
@@ -5272,7 +5238,6 @@ THREADED_TEST(MultiRun) {
   Local<Script> script = v8_compile("x");
   for (int i = 0; i < 10; i++) script->Run();
 }
-#endif  // TEST_API_PART1
 
 
 static void GetXValue(Local<String> name,
@@ -5284,7 +5249,6 @@ static void GetXValue(Local<String> name,
 }
 
 
-#if defined(TEST_API_PART1)
 THREADED_TEST(SimplePropertyRead) {
   LocalContext context;
   v8::Isolate* isolate = context->GetIsolate();
@@ -6279,12 +6243,11 @@ THREADED_TEST(NativeFunctionConstructCall) {
               ->Equals(CompileRun("(new C()).data")));
   }
 }
-#endif  // TEST_API_PART1
 
 
 static const char* last_location;
 static const char* last_message;
-static void StoringErrorCallback(const char* location, const char* message) {
+void StoringErrorCallback(const char* location, const char* message) {
   if (last_location == NULL) {
     last_location = location;
     last_message = message;
@@ -6292,7 +6255,6 @@ static void StoringErrorCallback(const char* location, const char* message) {
 }
 
 
-#if defined(TEST_API_PART1)
 // ErrorReporting creates a circular extensions configuration and
 // tests that the fatal error handler gets called.  This renders V8
 // unusable and therefore this test cannot be run in parallel.
@@ -7563,11 +7525,9 @@ static void TroubleCallback(const v8::FunctionCallbackInfo<v8::Value>& args) {
   args.GetReturnValue().Set(
       Function::Cast(*trouble_callee)->Call(arg_this, 0, NULL));
 }
-#endif  // TEST_API_PART1
 
 
 static int report_count = 0;
-#if defined(TEST_API_PART1)
 static void ApiUncaughtExceptionTestListener(v8::Handle<v8::Message>,
                                              v8::Handle<Value>) {
   report_count++;
@@ -7736,12 +7696,10 @@ TEST(TryCatchFinallyStoresMessageUsingTryCatchHandler) {
   String::Utf8Value finally_exception_value(try_catch.Exception());
   CHECK_EQ(0, strcmp(*finally_exception_value, "2"));
 }
-#endif  // TEST_API_PART1
 
 
 // For use within the TestSecurityHandler() test.
 static bool g_security_callback_result = false;
-#if defined(TEST_API_PART1)
 static bool NamedSecurityTestCallback(Local<v8::Object> global,
                                       Local<Value> name,
                                       v8::AccessType type,
@@ -7754,7 +7712,6 @@ static bool NamedSecurityTestCallback(Local<v8::Object> global,
   // Sometimes allow other access.
   return g_security_callback_result;
 }
-#endif  // TEST_API_PART1
 
 
 static bool IndexedSecurityTestCallback(Local<v8::Object> global,
@@ -7771,7 +7728,6 @@ static bool IndexedSecurityTestCallback(Local<v8::Object> global,
 }
 
 
-#if defined(TEST_API_PART1)
 // SecurityHandler can't be run twice
 TEST(SecurityHandler) {
   v8::Isolate* isolate = CcTest::isolate();
@@ -8647,7 +8603,6 @@ TEST(AccessControlES5) {
   value = CompileRun("other.accessible_prop == 42");
   CHECK(value->IsTrue());
 }
-#endif  // TEST_API_PART1
 
 
 static bool BlockEverythingNamed(Local<v8::Object> object, Local<Value> name,
@@ -8662,7 +8617,6 @@ static bool BlockEverythingIndexed(Local<v8::Object> object, uint32_t key,
 }
 
 
-#if defined(TEST_API_PART1)
 THREADED_TEST(AccessControlGetOwnPropertyNames) {
   v8::Isolate* isolate = CcTest::isolate();
   v8::HandleScope handle_scope(isolate);
@@ -8820,7 +8774,6 @@ THREADED_TEST(CrossDomainAccessors) {
   context1->Exit();
   context0->Exit();
 }
-#endif  // TEST_API_PART1
 
 
 static int named_access_count = 0;
@@ -8844,7 +8797,6 @@ static bool IndexedAccessCounter(Local<v8::Object> global,
 }
 
 
-#if defined(TEST_API_PART1)
 // This one is too easily disturbed by other tests.
 TEST(AccessControlIC) {
   named_access_count = 0;
@@ -10037,8 +9989,6 @@ THREADED_TEST(CrossLazyLoad) {
   CHECK_EQ(42.0, value->NumberValue());
 }
 
-#endif  // TEST_API_PART1
-#if defined(TEST_API_PART2)
 
 static void call_as_function(const v8::FunctionCallbackInfo<v8::Value>& args) {
   ApiTestFuzzer::Fuzz();
@@ -22044,4 +21994,3 @@ TEST(NewStringRangeError) {
   }
   free(buffer);
 }
-#endif  // TEST_API_PART2
