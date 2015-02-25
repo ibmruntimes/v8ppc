@@ -3791,8 +3791,9 @@ void FullCodeGenerator::EmitClassOf(CallRuntime* expr) {
   STATIC_ASSERT(LAST_NONCALLABLE_SPEC_OBJECT_TYPE == LAST_TYPE - 1);
 
   // Check if the constructor in the map is a JS function.
-  __ LoadP(r3, FieldMemOperand(r3, Map::kConstructorOffset));
-  __ CompareObjectType(r3, r4, r4, JS_FUNCTION_TYPE);
+  Register instance_type = r5;
+  __ GetMapConstructor(r3, r3, r4, instance_type);
+  __ cmpi(instance_type, Operand(JS_FUNCTION_TYPE));
   __ bne(&non_function_constructor);
 
   // r3 now contains the constructor function. Grab the
