@@ -501,6 +501,11 @@ OptimizedCompileJob::Status OptimizedCompileJob::CreateGraph() {
       if (info()->is_osr()) os << " OSR";
       os << "]" << std::endl;
     }
+
+    if (info()->shared_info()->asm_function()) {
+      info()->MarkAsContextSpecializing();
+    }
+
     Timer t(this, &time_taken_to_create_graph_);
     compiler::Pipeline pipeline(info());
     pipeline.GenerateCode();
@@ -714,10 +719,6 @@ static void RecordFunctionCompilation(Logger::LogEventsAndTags tag,
             CodeCreateEvent(log_tag, *code, *shared, info, script_name,
                             line_num, column_num));
   }
-
-  GDBJIT(AddCode(Handle<String>(shared->DebugName()),
-                 Handle<Script>(info->script()), Handle<Code>(info->code()),
-                 info));
 }
 
 
@@ -930,7 +931,8 @@ MaybeHandle<Code> Compiler::GetLazyCode(Handle<JSFunction> function) {
   // If the debugger is active, do not compile with turbofan unless we can
   // deopt from turbofan code.
   if (FLAG_turbo_asm && function->shared()->asm_function() &&
-      (FLAG_turbo_deoptimization || !isolate->debug()->is_active())) {
+      (FLAG_turbo_deoptimization || !isolate->debug()->is_active()) &&
+      !FLAG_turbo_osr) {
     CompilationInfoWithZone info(function);
 
     VMState<COMPILER> state(isolate);
@@ -1177,7 +1179,6 @@ static Handle<SharedFunctionInfo> CompileToplevel(CompilationInfo* info) {
 
     PROFILE(isolate, CodeCreateEvent(
                 log_tag, *info->code(), *result, info, *script_name));
-    GDBJIT(AddCode(script_name, script, info->code(), info));
 
     // Hint to the runtime system used when allocating space for initial
     // property space by setting the expected number of properties for

@@ -63,11 +63,7 @@ static AllocationResult AllocateAfterFailures() {
   heap->AllocateFixedArray(10000, TENURED).ToObjectChecked();
 
   // Large object space.
-#if defined(V8_PPC_PAGESIZE_OPT)
-  static const int kLargeObjectSpaceFillerLength = 3 * (Page::kPageSize/10);
-#else  // defined(V8_PPC_PAGESIZE_OPT)
-  static const int kLargeObjectSpaceFillerLength = 300000;
-#endif  // defined(V8_PPC_PAGESIZE_OPT)
+  static const int kLargeObjectSpaceFillerLength = 3 * (Page::kPageSize / 10);
   static const int kLargeObjectSpaceFillerSize = FixedArray::SizeFor(
       kLargeObjectSpaceFillerLength);
   DCHECK(kLargeObjectSpaceFillerSize > heap->old_pointer_space()->AreaSize());

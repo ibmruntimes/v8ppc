@@ -2438,15 +2438,17 @@ void LCodeGen::DoClassOfTestAndBranch(LClassOfTestAndBranch* instr) {
 
   // Now we are in the FIRST-LAST_NONCALLABLE_SPEC_OBJECT_TYPE range.
   // Check if the constructor in the map is a function.
-  __ Ldr(scratch1, FieldMemOperand(map, Map::kConstructorOffset));
-
+  {
+    UseScratchRegisterScope temps(masm());
+    Register instance_type = temps.AcquireX();
+    __ GetMapConstructor(scratch1, map, scratch2, instance_type);
+    __ Cmp(instance_type, JS_FUNCTION_TYPE);
+  }
   // Objects with a non-function constructor have class 'Object'.
   if (String::Equals(class_name, isolate()->factory()->Object_string())) {
-    __ JumpIfNotObjectType(
-        scratch1, scratch2, scratch2, JS_FUNCTION_TYPE, true_label);
+    __ B(ne, true_label);
   } else {
-    __ JumpIfNotObjectType(
-        scratch1, scratch2, scratch2, JS_FUNCTION_TYPE, false_label);
+    __ B(ne, false_label);
   }
 
   // The constructor function is in scratch1. Get its instance class name.
@@ -3695,7 +3697,9 @@ void LCodeGen::DoLoadKeyedGeneric(LLoadKeyedGeneric* instr) {
     EmitVectorLoadICRegisters<LLoadKeyedGeneric>(instr);
   }
 
-  Handle<Code> ic = CodeFactory::KeyedLoadICInOptimizedCode(isolate()).code();
+  Handle<Code> ic =
+      CodeFactory::KeyedLoadICInOptimizedCode(
+          isolate(), instr->hydrogen()->initialization_state()).code();
   CallCode(ic, RelocInfo::CODE_TARGET, instr);
 
   DCHECK(ToRegister(instr->result()).Is(x0));
@@ -5384,8 +5388,9 @@ void LCodeGen::DoStoreKeyedGeneric(LStoreKeyedGeneric* instr) {
   DCHECK(ToRegister(instr->key()).is(StoreDescriptor::NameRegister()));
   DCHECK(ToRegister(instr->value()).is(StoreDescriptor::ValueRegister()));
 
-  Handle<Code> ic =
-      CodeFactory::KeyedStoreIC(isolate(), instr->language_mode()).code();
+  Handle<Code> ic = CodeFactory::KeyedStoreICInOptimizedCode(
+                        isolate(), instr->language_mode(),
+                        instr->hydrogen()->initialization_state()).code();
   CallCode(ic, RelocInfo::CODE_TARGET, instr);
 }
 

@@ -422,9 +422,8 @@ void FullCodeGenerator::Initialize() {
   // calculating PC offsets after generating a debug version of code.  Therefore
   // we disable the production of debug code in the full compiler if we are
   // either generating a snapshot or we booted from a snapshot.
-  generate_debug_code_ = FLAG_debug_code &&
-                         !masm_->serializer_enabled() &&
-                         !Snapshot::HaveASnapshotToStartFrom();
+  generate_debug_code_ = FLAG_debug_code && !masm_->serializer_enabled() &&
+                         !info_->isolate()->snapshot_available();
   masm_->set_emit_debug_code(generate_debug_code_);
   masm_->set_predictable_code_size(true);
 }
@@ -836,22 +835,6 @@ void FullCodeGenerator::SetStatementPosition(Statement* stmt) {
 
 void FullCodeGenerator::VisitSuperReference(SuperReference* super) {
   __ CallRuntime(Runtime::kThrowUnsupportedSuperError, 0);
-}
-
-
-bool FullCodeGenerator::ValidateSuperCall(Call* expr) {
-  Variable* new_target_var = scope()->DeclarationScope()->new_target_var();
-  if (new_target_var == nullptr) {
-    // TODO(dslomov): this is not exactly correct, the spec requires us
-    // to execute the constructor and only fail when an assigment to 'this'
-    // is attempted. Will implement once we have general new.target support,
-    // but also filed spec bug 3843 to make it an early error.
-    __ CallRuntime(Runtime::kThrowUnsupportedSuperError, 0);
-    RecordJSReturnSite(expr);
-    context()->Plug(result_register());
-    return false;
-  }
-  return true;
 }
 
 

@@ -108,8 +108,9 @@ class JsonParser BASE_EMBEDDED {
         const uint8_t* expected_chars = content.ToOneByteVector().start();
         for (int i = 0; i < length; i++) {
           uint8_t c0 = input_chars[i];
-          // The expected string has to be free of \, " and characters < 0x20.
-          if (c0 != expected_chars[i]) return false;
+          if (c0 != expected_chars[i] || c0 == '"' || c0 < 0x20 || c0 == '\\') {
+            return false;
+          }
         }
         if (input_chars[length] == '"') {
           position_ = position_ + length + 1;
@@ -244,9 +245,7 @@ MaybeHandle<Object> JsonParser<seq_one_byte>::ParseJson() {
     MessageLocation location(factory->NewScript(source_),
                              position_,
                              position_ + 1);
-    Handle<Object> error;
-    ASSIGN_RETURN_ON_EXCEPTION(isolate(), error,
-                               factory->NewSyntaxError(message, array), Object);
+    Handle<Object> error = factory->NewSyntaxError(message, array);
     return isolate()->template Throw<Object>(error, &location);
   }
   return result;

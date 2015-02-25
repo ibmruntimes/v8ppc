@@ -2363,9 +2363,8 @@ void LCodeGen::DoCmpHoleAndBranch(LCmpHoleAndBranch* instr) {
 
   Register scratch = scratch0();
   __ FmoveHigh(scratch, input_reg);
-  __ dsll32(scratch, scratch, 0);  // FmoveHigh (mfhc1) sign-extends.
-  __ dsrl32(scratch, scratch, 0);  // Use only low 32-bits.
-  EmitBranch(instr, eq, scratch, Operand(kHoleNanUpper32));
+  EmitBranch(instr, eq, scratch,
+             Operand(static_cast<int32_t>(kHoleNanUpper32)));
 }
 
 
@@ -2618,14 +2617,15 @@ void LCodeGen::EmitClassOfTest(Label* is_true,
 
   // Now we are in the FIRST-LAST_NONCALLABLE_SPEC_OBJECT_TYPE range.
   // Check if the constructor in the map is a function.
-  __ ld(temp, FieldMemOperand(temp, Map::kConstructorOffset));
+  Register instance_type = scratch1();
+  DCHECK(!instance_type.is(temp));
+  __ GetMapConstructor(temp, temp, temp2, instance_type);
 
   // Objects with a non-function constructor have class 'Object'.
-  __ GetObjectType(temp, temp2, temp2);
   if (String::Equals(class_name, isolate()->factory()->Object_string())) {
-    __ Branch(is_true, ne, temp2, Operand(JS_FUNCTION_TYPE));
+    __ Branch(is_true, ne, instance_type, Operand(JS_FUNCTION_TYPE));
   } else {
-    __ Branch(is_false, ne, temp2, Operand(JS_FUNCTION_TYPE));
+    __ Branch(is_false, ne, instance_type, Operand(JS_FUNCTION_TYPE));
   }
 
   // temp now contains the constructor function. Grab the
@@ -3278,9 +3278,9 @@ void LCodeGen::DoLoadKeyedFixedDoubleArray(LLoadKeyed* instr) {
   __ ldc1(result, MemOperand(scratch));
 
   if (instr->hydrogen()->RequiresHoleCheck()) {
-    __ lwu(scratch, MemOperand(scratch, sizeof(kHoleNanLower32)));
+    __ FmoveHigh(scratch, result);
     DeoptimizeIf(eq, instr, Deoptimizer::kHole, scratch,
-                 Operand(kHoleNanUpper32));
+                 Operand(static_cast<int32_t>(kHoleNanUpper32)));
   }
 }
 
@@ -3407,7 +3407,9 @@ void LCodeGen::DoLoadKeyedGeneric(LLoadKeyedGeneric* instr) {
     EmitVectorLoadICRegisters<LLoadKeyedGeneric>(instr);
   }
 
-  Handle<Code> ic = CodeFactory::KeyedLoadICInOptimizedCode(isolate()).code();
+  Handle<Code> ic =
+      CodeFactory::KeyedLoadICInOptimizedCode(
+          isolate(), instr->hydrogen()->initialization_state()).code();
   CallCode(ic, RelocInfo::CODE_TARGET, instr);
 }
 
@@ -4570,8 +4572,9 @@ void LCodeGen::DoStoreKeyedGeneric(LStoreKeyedGeneric* instr) {
   DCHECK(ToRegister(instr->key()).is(StoreDescriptor::NameRegister()));
   DCHECK(ToRegister(instr->value()).is(StoreDescriptor::ValueRegister()));
 
-  Handle<Code> ic =
-      CodeFactory::KeyedStoreIC(isolate(), instr->language_mode()).code();
+  Handle<Code> ic = CodeFactory::KeyedStoreICInOptimizedCode(
+                        isolate(), instr->language_mode(),
+                        instr->hydrogen()->initialization_state()).code();
   CallCode(ic, RelocInfo::CODE_TARGET, instr);
 }
 

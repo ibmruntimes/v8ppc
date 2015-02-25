@@ -3273,7 +3273,6 @@ void FullCodeGenerator::VisitCallNew(CallNew* expr) {
 
 
 void FullCodeGenerator::EmitSuperConstructorCall(Call* expr) {
-  if (!ValidateSuperCall(expr)) return;
   Variable* new_target_var = scope()->DeclarationScope()->new_target_var();
   GetVar(result_register(), new_target_var);
   __ Push(result_register());
@@ -3777,8 +3776,9 @@ void FullCodeGenerator::EmitClassOf(CallRuntime* expr) {
   STATIC_ASSERT(LAST_NONCALLABLE_SPEC_OBJECT_TYPE == LAST_TYPE - 1);
 
   // Check if the constructor in the map is a JS function.
-  __ ldr(r0, FieldMemOperand(r0, Map::kConstructorOffset));
-  __ CompareObjectType(r0, r1, r1, JS_FUNCTION_TYPE);
+  Register instance_type = r2;
+  __ GetMapConstructor(r0, r0, r1, instance_type);
+  __ cmp(instance_type, Operand(JS_FUNCTION_TYPE));
   __ b(ne, &non_function_constructor);
 
   // r0 now contains the constructor function. Grab the

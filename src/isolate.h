@@ -144,20 +144,14 @@ typedef ZoneList<Handle<Object> > ZoneObjectList;
 #define ASSIGN_RETURN_ON_EXCEPTION(isolate, dst, call, T)  \
   ASSIGN_RETURN_ON_EXCEPTION_VALUE(isolate, dst, call, MaybeHandle<T>())
 
-#define THROW_NEW_ERROR(isolate, call, T)                                    \
-  do {                                                                       \
-    Handle<Object> __error__;                                                \
-    ASSIGN_RETURN_ON_EXCEPTION(isolate, __error__, isolate->factory()->call, \
-                               T);                                           \
-    return isolate->Throw<T>(__error__);                                     \
+#define THROW_NEW_ERROR(isolate, call, T)               \
+  do {                                                  \
+    return isolate->Throw<T>(isolate->factory()->call); \
   } while (false)
 
-#define THROW_NEW_ERROR_RETURN_FAILURE(isolate, call)             \
-  do {                                                            \
-    Handle<Object> __error__;                                     \
-    ASSIGN_RETURN_FAILURE_ON_EXCEPTION(isolate, __error__,        \
-                                       isolate->factory()->call); \
-    return isolate->Throw(*__error__);                            \
+#define THROW_NEW_ERROR_RETURN_FAILURE(isolate, call) \
+  do {                                                \
+    return isolate->Throw(*isolate->factory()->call); \
   } while (false)
 
 #define RETURN_ON_EXCEPTION_VALUE(isolate, call, value)            \
@@ -382,10 +376,6 @@ class ThreadLocalTop BASE_EMBEDDED {
 typedef List<HeapObject*> DebugObjectCache;
 
 #define ISOLATE_INIT_LIST(V)                                                   \
-  /* SerializerDeserializer state. */                                          \
-  V(int, serialize_partial_snapshot_cache_length, 0)                           \
-  V(int, serialize_partial_snapshot_cache_capacity, 0)                         \
-  V(Object**, serialize_partial_snapshot_cache, NULL)                          \
   /* Assembler state. */                                                       \
   V(FatalErrorCallback, exception_behavior, NULL)                              \
   V(LogEventCallback, event_logger, NULL)                                      \
@@ -412,6 +402,7 @@ typedef List<HeapObject*> DebugObjectCache;
   V(int, max_available_threads, 0)                                             \
   V(uint32_t, per_isolate_assert_data, 0xFFFFFFFFu)                            \
   V(PromiseRejectCallback, promise_reject_callback, NULL)                      \
+  V(const v8::StartupData*, snapshot_blob, NULL)                               \
   ISOLATE_INIT_SIMULATOR_LIST(V)
 
 #define THREAD_LOCAL_TOP_ACCESSOR(type, name)                        \
@@ -687,9 +678,6 @@ class Isolate {
   bool is_catchable_by_javascript(Object* exception) {
     return exception != heap()->termination_exception();
   }
-
-  // Serializer.
-  void PushToPartialSnapshotCache(Object* obj);
 
   // JS execution stack (see frames.h).
   static Address c_entry_fp(ThreadLocalTop* thread) {
@@ -1045,6 +1033,7 @@ class Isolate {
   }
 
   bool serializer_enabled() const { return serializer_enabled_; }
+  bool snapshot_available() const { return snapshot_blob_ != NULL; }
 
   bool IsDead() { return has_fatal_error_; }
   void SignalFatalError() { has_fatal_error_ = true; }
@@ -1178,9 +1167,12 @@ class Isolate {
   void AddDetachedContext(Handle<Context> context);
   void CheckDetachedContextsAfterGC();
 
- private:
+  List<Object*>* partial_snapshot_cache() { return &partial_snapshot_cache_; }
+
+ protected:
   explicit Isolate(bool enable_serializer);
 
+ private:
   friend struct GlobalState;
   friend struct InitializeGlobalState;
 
@@ -1399,6 +1391,7 @@ class Isolate {
   v8::Isolate::UseCounterCallback use_counter_callback_;
   BasicBlockProfiler* basic_block_profiler_;
 
+  List<Object*> partial_snapshot_cache_;
 
   friend class ExecutionAccess;
   friend class HandleScopeImplementer;
@@ -1413,6 +1406,7 @@ class Isolate {
   friend class v8::Isolate;
   friend class v8::Locker;
   friend class v8::Unlocker;
+  friend v8::StartupData v8::V8::CreateSnapshotDataBlob(const char*);
 
   DISALLOW_COPY_AND_ASSIGN(Isolate);
 };

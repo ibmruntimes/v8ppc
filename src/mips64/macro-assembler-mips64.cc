@@ -3884,13 +3884,14 @@ void MacroAssembler::StoreNumberToDoubleElements(Register value_reg,
   DoubleRegister double_scratch = f2;
 
   ldc1(double_result, FieldMemOperand(value_reg, HeapNumber::kValueOffset));
+  Branch(USE_DELAY_SLOT, &done);  // Canonicalization is one instruction.
   FPUCanonicalizeNaN(double_result, double_result);
-  Branch(&done);
 
   bind(&smi_value);
   // scratch1 is now effective address of the double element.
   // Untag and transfer.
-  mthc1(value_reg, double_scratch);
+  dsrl32(at, value_reg, 0);
+  mtc1(at, double_scratch);
   cvt_d_w(double_result, double_scratch);
 
   bind(&done);
@@ -4243,6 +4244,20 @@ void MacroAssembler::IsObjectNameType(Register object,
 // Support functions.
 
 
+void MacroAssembler::GetMapConstructor(Register result, Register map,
+                                       Register temp, Register temp2) {
+  Label done, loop;
+  ld(result, FieldMemOperand(map, Map::kConstructorOrBackPointerOffset));
+  bind(&loop);
+  JumpIfSmi(result, &done);
+  GetObjectType(result, temp, temp2);
+  Branch(&done, ne, temp2, Operand(MAP_TYPE));
+  ld(result, FieldMemOperand(result, Map::kConstructorOrBackPointerOffset));
+  Branch(&loop);
+  bind(&done);
+}
+
+
 void MacroAssembler::TryGetFunctionPrototype(Register function,
                                              Register result,
                                              Register scratch,
@@ -4295,7 +4310,7 @@ void MacroAssembler::TryGetFunctionPrototype(Register function,
     // Non-instance prototype: Fetch prototype from constructor field
     // in initial map.
     bind(&non_instance);
-    ld(result, FieldMemOperand(result, Map::kConstructorOffset));
+    GetMapConstructor(result, result, scratch, scratch);
   }
 
   // All done.

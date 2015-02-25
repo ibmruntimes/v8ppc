@@ -207,7 +207,7 @@ void V8::SetSnapshotDataBlob(StartupData* snapshot_blob) {
 }
 
 
-bool RunExtraCode(Isolate* isolate, char* utf8_source) {
+bool RunExtraCode(Isolate* isolate, const char* utf8_source) {
   // Run custom script if provided.
   TryCatch try_catch;
   Local<String> source_string = String::NewFromUtf8(isolate, utf8_source);
@@ -221,14 +221,13 @@ bool RunExtraCode(Isolate* isolate, char* utf8_source) {
 }
 
 
-StartupData V8::CreateSnapshotDataBlob(char* custom_source) {
-  Isolate::CreateParams params;
-  params.enable_serializer = true;
-  Isolate* isolate = v8::Isolate::New(params);
+StartupData V8::CreateSnapshotDataBlob(const char* custom_source) {
+  i::Isolate* internal_isolate = new i::Isolate(true);
+  Isolate* isolate = reinterpret_cast<Isolate*>(internal_isolate);
   StartupData result = {NULL, 0};
   {
     Isolate::Scope isolate_scope(isolate);
-    i::Isolate* internal_isolate = reinterpret_cast<i::Isolate*>(isolate);
+    internal_isolate->Init(NULL);
     Persistent<Context> context;
     i::Snapshot::Metadata metadata;
     {
@@ -2571,7 +2570,7 @@ bool Value::IsUint32() const {
 static bool CheckConstructor(i::Isolate* isolate,
                              i::Handle<i::JSObject> obj,
                              const char* class_name) {
-  i::Handle<i::Object> constr(obj->map()->constructor(), isolate);
+  i::Handle<i::Object> constr(obj->map()->GetConstructor(), isolate);
   if (!constr->IsJSFunction()) return false;
   i::Handle<i::JSFunction> func = i::Handle<i::JSFunction>::cast(constr);
   return func->shared()->native() && constr.is_identical_to(
@@ -3757,6 +3756,14 @@ static Local<Value> GetPropertyByLookup(i::LookupIterator* it) {
 }
 
 
+static Maybe<PropertyAttribute> GetPropertyAttributesByLookup(
+    i::LookupIterator* it) {
+  Maybe<PropertyAttributes> attr = i::JSReceiver::GetPropertyAttributes(it);
+  if (!it->IsFound()) return Maybe<PropertyAttribute>();
+  return Maybe<PropertyAttribute>(static_cast<PropertyAttribute>(attr.value));
+}
+
+
 Local<Value> v8::Object::GetRealNamedPropertyInPrototypeChain(
     Handle<String> key) {
   i::Isolate* isolate = Utils::OpenHandle(this)->GetIsolate();
@@ -3775,6 +3782,24 @@ Local<Value> v8::Object::GetRealNamedPropertyInPrototypeChain(
 }
 
 
+Maybe<PropertyAttribute>
+v8::Object::GetRealNamedPropertyAttributesInPrototypeChain(Handle<String> key) {
+  i::Isolate* isolate = Utils::OpenHandle(this)->GetIsolate();
+  ON_BAILOUT(isolate,
+             "v8::Object::GetRealNamedPropertyAttributesInPrototypeChain()",
+             return Maybe<PropertyAttribute>());
+  ENTER_V8(isolate);
+  i::Handle<i::JSObject> self_obj = Utils::OpenHandle(this);
+  i::Handle<i::String> key_obj = Utils::OpenHandle(*key);
+  i::PrototypeIterator iter(isolate, self_obj);
+  if (iter.IsAtEnd()) return Maybe<PropertyAttribute>();
+  i::Handle<i::Object> proto = i::PrototypeIterator::GetCurrent(iter);
+  i::LookupIterator it(self_obj, key_obj, i::Handle<i::JSReceiver>::cast(proto),
+                       i::LookupIterator::PROTOTYPE_CHAIN_SKIP_INTERCEPTOR);
+  return GetPropertyAttributesByLookup(&it);
+}
+
+
 Local<Value> v8::Object::GetRealNamedProperty(Handle<String> key) {
   i::Isolate* isolate = Utils::OpenHandle(this)->GetIsolate();
   ON_BAILOUT(isolate, "v8::Object::GetRealNamedProperty()",
@@ -3785,6 +3810,20 @@ Local<Value> v8::Object::GetRealNamedProperty(Handle<String> key) {
   i::LookupIterator it(self_obj, key_obj,
                        i::LookupIterator::PROTOTYPE_CHAIN_SKIP_INTERCEPTOR);
   return GetPropertyByLookup(&it);
+}
+
+
+Maybe<PropertyAttribute> v8::Object::GetRealNamedPropertyAttributes(
+    Handle<String> key) {
+  i::Isolate* isolate = Utils::OpenHandle(this)->GetIsolate();
+  ON_BAILOUT(isolate, "v8::Object::GetRealNamedPropertyAttributes()",
+             return Maybe<PropertyAttribute>());
+  ENTER_V8(isolate);
+  i::Handle<i::JSObject> self_obj = Utils::OpenHandle(this);
+  i::Handle<i::String> key_obj = Utils::OpenHandle(*key);
+  i::LookupIterator it(self_obj, key_obj,
+                       i::LookupIterator::PROTOTYPE_CHAIN_SKIP_INTERCEPTOR);
+  return GetPropertyAttributesByLookup(&it);
 }
 
 
@@ -6524,8 +6563,13 @@ Isolate* Isolate::GetCurrent() {
 
 
 Isolate* Isolate::New(const Isolate::CreateParams& params) {
-  i::Isolate* isolate = new i::Isolate(params.enable_serializer);
+  i::Isolate* isolate = new i::Isolate(false);
   Isolate* v8_isolate = reinterpret_cast<Isolate*>(isolate);
+  if (params.snapshot_blob != NULL) {
+    isolate->set_snapshot_blob(params.snapshot_blob);
+  } else {
+    isolate->set_snapshot_blob(i::Snapshot::DefaultSnapshotBlob());
+  }
   if (params.entry_hook) {
     isolate->set_function_entry_hook(params.entry_hook);
   }
@@ -6540,6 +6584,12 @@ Isolate* Isolate::New(const Isolate::CreateParams& params) {
   if (params.entry_hook || !i::Snapshot::Initialize(isolate)) {
     // If the isolate has a function entry hook, it needs to re-build all its
     // code stubs with entry hooks embedded, so don't deserialize a snapshot.
+    if (i::Snapshot::EmbedsScript(isolate)) {
+      // If the snapshot embeds a script, we cannot initialize the isolate
+      // without the snapshot as a fallback. This is unlikely to happen though.
+      V8_Fatal(__FILE__, __LINE__,
+               "Initializing isolate from custom startup snapshot failed");
+    }
     isolate->Init(NULL);
   }
   return v8_isolate;
@@ -6954,15 +7004,7 @@ String::Value::~Value() {
     {                                                                         \
       i::HandleScope scope(isolate);                                          \
       i::Handle<i::String> message = Utils::OpenHandle(*raw_message);         \
-      i::Handle<i::Object> result;                                            \
-      EXCEPTION_PREAMBLE(isolate);                                            \
-      i::MaybeHandle<i::Object> maybe_result =                                \
-          isolate->factory()->New##NAME(message);                             \
-      has_pending_exception = !maybe_result.ToHandle(&result);                \
-      /* TODO(yangguo): crbug/403509. Return empty handle instead. */         \
-      EXCEPTION_BAILOUT_CHECK(                                                \
-          isolate, v8::Undefined(reinterpret_cast<v8::Isolate*>(isolate)));   \
-      error = *result;                                                        \
+      error = *isolate->factory()->New##NAME(message);                        \
     }                                                                         \
     i::Handle<i::Object> result(error, isolate);                              \
     return Utils::ToLocal(result);                                            \

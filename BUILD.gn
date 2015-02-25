@@ -18,7 +18,7 @@ v8_interpreted_regexp = false
 v8_object_print = false
 v8_postmortem_support = false
 v8_use_snapshot = true
-v8_target_arch = cpu_arch
+v8_target_arch = current_cpu
 v8_random_seed = "314159265"
 v8_toolset_for_d8 = "host"
 
@@ -589,6 +589,7 @@ source_set("v8_base") {
     "src/compiler/node-cache.h",
     "src/compiler/node-marker.cc",
     "src/compiler/node-marker.h",
+    "src/compiler/node-matchers.cc",
     "src/compiler/node-matchers.h",
     "src/compiler/node-properties.cc",
     "src/compiler/node-properties.h",
@@ -858,6 +859,8 @@ source_set("v8_base") {
     "src/ostreams.h",
     "src/parser.cc",
     "src/parser.h",
+    "src/pending-compilation-error-handler.cc",
+    "src/pending-compilation-error-handler.h",
     "src/perf-jit.cc",
     "src/perf-jit.h",
     "src/preparse-data-format.h",

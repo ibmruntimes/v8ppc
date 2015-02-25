@@ -186,6 +186,28 @@ class RootIndexMap : public AddressMapBase {
 };
 
 
+class PartialCacheIndexMap : public AddressMapBase {
+ public:
+  PartialCacheIndexMap() : map_(HashMap::PointersMatch) {}
+
+  static const int kInvalidIndex = -1;
+
+  // Lookup object in the map. Return its index if found, or create
+  // a new entry with new_index as value, and return kInvalidIndex.
+  int LookupOrInsert(HeapObject* obj, int new_index) {
+    HashMap::Entry* entry = LookupEntry(&map_, obj, true);
+    if (entry->value != NULL) return GetValue(entry);
+    SetValue(entry, static_cast<uint32_t>(new_index));
+    return kInvalidIndex;
+  }
+
+ private:
+  HashMap map_;
+
+  DISALLOW_COPY_AND_ASSIGN(PartialCacheIndexMap);
+};
+
+
 class BackReference {
  public:
   explicit BackReference(uint32_t bitfield) : bitfield_(bitfield) {}
@@ -710,7 +732,6 @@ class Serializer : public SerializerDeserializer {
   bool BackReferenceIsAlreadyAllocated(BackReference back_reference);
 
   // This will return the space for an object.
-  static AllocationSpace SpaceOfObject(HeapObject* object);
   BackReference AllocateLargeObject(int size);
   BackReference Allocate(AllocationSpace space, int size);
   int EncodeExternalReference(Address addr) {
@@ -802,6 +823,7 @@ class PartialSerializer : public Serializer {
   Serializer* startup_serializer_;
   List<BackReference> outdated_contexts_;
   Object* global_object_;
+  PartialCacheIndexMap partial_cache_index_map_;
   DISALLOW_COPY_AND_ASSIGN(PartialSerializer);
 };
 
@@ -814,7 +836,7 @@ class StartupSerializer : public Serializer {
     // strong roots have been serialized we can create a partial snapshot
     // which will repopulate the cache with objects needed by that partial
     // snapshot.
-    isolate->set_serialize_partial_snapshot_cache_length(0);
+    isolate->partial_snapshot_cache()->Clear();
     InitializeCodeAddressMap();
   }
 

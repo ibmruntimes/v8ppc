@@ -207,19 +207,13 @@ static void VerifyMemoryChunk(Isolate* isolate,
 TEST(Regress3540) {
   Isolate* isolate = CcTest::i_isolate();
   Heap* heap = isolate->heap();
-#if defined(V8_PPC_PAGESIZE_OPT)
   const int pageSize = Page::kPageSize;
-#endif
   MemoryAllocator* memory_allocator = new MemoryAllocator(isolate);
   CHECK(
       memory_allocator->SetUp(heap->MaxReserved(), heap->MaxExecutableSize()));
   TestMemoryAllocatorScope test_allocator_scope(isolate, memory_allocator);
   CodeRange* code_range = new CodeRange(isolate);
-#if defined(V8_PPC_PAGESIZE_OPT)
   const size_t code_range_size = 4 * pageSize;
-#else
-  const size_t code_range_size = 4 * MB;
-#endif
   if (!code_range->SetUp(
           code_range_size +
           RoundUp(v8::base::OS::CommitPageSize() * kReservedCodeRangePages,
@@ -229,23 +223,13 @@ TEST(Regress3540) {
   }
   Address address;
   size_t size;
-#if defined(V8_PPC_PAGESIZE_OPT)
-  address = code_range->AllocateRawMemory(code_range_size - 2 * pageSize,
-                                          code_range_size - 2 * pageSize,
-#else
-  address = code_range->AllocateRawMemory(code_range_size - 2 * MB,
-                                          code_range_size - 2 * MB,
-#endif
-                                          &size);
+  address = code_range->AllocateRawMemory(
+      code_range_size - 2 * pageSize, code_range_size - 2 * pageSize, &size);
   CHECK(address != NULL);
   Address null_address;
   size_t null_size;
   null_address = code_range->AllocateRawMemory(
-#if defined(V8_PPC_PAGESIZE_OPT)
       code_range_size - pageSize, code_range_size - pageSize, &null_size);
-#else
-      code_range_size - MB, code_range_size - MB, &null_size);
-#endif
   CHECK(null_address == NULL);
   code_range->FreeRawMemory(address, size);
   delete code_range;
@@ -439,13 +423,9 @@ TEST(LargeObjectSpace) {
     { AllocationResult allocation = lo->AllocateRaw(lo_size, NOT_EXECUTABLE);
       if (allocation.IsRetry()) break;
     }
-#if defined(V8_PPC_PAGESIZE_OPT)
     // The available value is conservative such that it may report
     // zero prior to heap exhaustion.
     CHECK(lo->Available() < available || available == 0);
-#else
-    CHECK(lo->Available() < available);
-#endif
   }
 
   CHECK(!lo->IsEmpty());
@@ -457,9 +437,10 @@ TEST(LargeObjectSpace) {
 TEST(SizeOfFirstPageIsLargeEnough) {
   if (i::FLAG_always_opt) return;
   // Bootstrapping without a snapshot causes more allocations.
-  if (!i::Snapshot::HaveASnapshotToStartFrom()) return;
   CcTest::InitializeVM();
   Isolate* isolate = CcTest::i_isolate();
+  if (!isolate->snapshot_available()) return;
+  if (Snapshot::EmbedsScript(isolate)) return;
 
   // Freshly initialized VM gets by with one page per space.
   for (int i = FIRST_PAGED_SPACE; i <= LAST_PAGED_SPACE; i++) {
@@ -483,11 +464,7 @@ TEST(SizeOfFirstPageIsLargeEnough) {
 
 
 UNINITIALIZED_TEST(NewSpaceGrowsToTargetCapacity) {
-#if defined(V8_PPC_PAGESIZE_OPT)
   FLAG_target_semi_space_size = 2 * (Page::kPageSize / MB);
-#else
-  FLAG_target_semi_space_size = 2;
-#endif
   if (FLAG_optimize_for_size) return;
 
   v8::Isolate* isolate = v8::Isolate::New();

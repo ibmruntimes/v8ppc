@@ -2657,14 +2657,15 @@ void LCodeGen::EmitClassOfTest(Label* is_true,
 
   // Now we are in the FIRST-LAST_NONCALLABLE_SPEC_OBJECT_TYPE range.
   // Check if the constructor in the map is a function.
-  __ lw(temp, FieldMemOperand(temp, Map::kConstructorOffset));
+  Register instance_type = scratch1();
+  DCHECK(!instance_type.is(temp));
+  __ GetMapConstructor(temp, temp, temp2, instance_type);
 
   // Objects with a non-function constructor have class 'Object'.
-  __ GetObjectType(temp, temp2, temp2);
   if (String::Equals(class_name, isolate()->factory()->Object_string())) {
-    __ Branch(is_true, ne, temp2, Operand(JS_FUNCTION_TYPE));
+    __ Branch(is_true, ne, instance_type, Operand(JS_FUNCTION_TYPE));
   } else {
-    __ Branch(is_false, ne, temp2, Operand(JS_FUNCTION_TYPE));
+    __ Branch(is_false, ne, instance_type, Operand(JS_FUNCTION_TYPE));
   }
 
   // temp now contains the constructor function. Grab the
@@ -3391,7 +3392,9 @@ void LCodeGen::DoLoadKeyedGeneric(LLoadKeyedGeneric* instr) {
     EmitVectorLoadICRegisters<LLoadKeyedGeneric>(instr);
   }
 
-  Handle<Code> ic = CodeFactory::KeyedLoadICInOptimizedCode(isolate()).code();
+  Handle<Code> ic =
+      CodeFactory::KeyedLoadICInOptimizedCode(
+          isolate(), instr->hydrogen()->initialization_state()).code();
   CallCode(ic, RelocInfo::CODE_TARGET, instr);
 }
 
@@ -4516,8 +4519,9 @@ void LCodeGen::DoStoreKeyedGeneric(LStoreKeyedGeneric* instr) {
   DCHECK(ToRegister(instr->key()).is(StoreDescriptor::NameRegister()));
   DCHECK(ToRegister(instr->value()).is(StoreDescriptor::ValueRegister()));
 
-  Handle<Code> ic =
-      CodeFactory::KeyedStoreIC(isolate(), instr->language_mode()).code();
+  Handle<Code> ic = CodeFactory::KeyedStoreICInOptimizedCode(
+                        isolate(), instr->language_mode(),
+                        instr->hydrogen()->initialization_state()).code();
   CallCode(ic, RelocInfo::CODE_TARGET, instr);
 }
 

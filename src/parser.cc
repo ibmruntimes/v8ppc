@@ -608,12 +608,9 @@ void ParserTraits::ReportMessageAt(Scanner::Location source_location,
     // and we want to report the stack overflow later.
     return;
   }
-  parser_->has_pending_error_ = true;
-  parser_->pending_error_location_ = source_location;
-  parser_->pending_error_message_ = message;
-  parser_->pending_error_char_arg_ = arg;
-  parser_->pending_error_arg_ = NULL;
-  parser_->pending_error_type_ = error_type;
+  parser_->pending_error_handler_.ReportMessageAt(source_location.beg_pos,
+                                                  source_location.end_pos,
+                                                  message, arg, error_type);
 }
 
 
@@ -640,12 +637,9 @@ void ParserTraits::ReportMessageAt(Scanner::Location source_location,
     // and we want to report the stack overflow later.
     return;
   }
-  parser_->has_pending_error_ = true;
-  parser_->pending_error_location_ = source_location;
-  parser_->pending_error_message_ = message;
-  parser_->pending_error_char_arg_ = NULL;
-  parser_->pending_error_arg_ = arg;
-  parser_->pending_error_type_ = error_type;
+  parser_->pending_error_handler_.ReportMessageAt(source_location.beg_pos,
+                                                  source_location.end_pos,
+                                                  message, arg, error_type);
 }
 
 
@@ -789,11 +783,6 @@ Parser::Parser(CompilationInfo* info, uintptr_t stack_limit, uint32_t hash_seed,
       compile_options_(info->compile_options()),
       cached_parse_data_(NULL),
       parsing_lazy_arrow_parameters_(false),
-      has_pending_error_(false),
-      pending_error_message_(NULL),
-      pending_error_arg_(NULL),
-      pending_error_char_arg_(NULL),
-      pending_error_type_(kSyntaxError),
       total_preparse_skipped_(0),
       pre_parse_timer_(NULL),
       parsing_on_main_thread_(true) {
@@ -928,6 +917,8 @@ FunctionLiteral* Parser::DoParseProgram(CompilationInfo* info, Scope** scope,
       }
     } else if (info->is_global()) {
       *scope = NewScope(*scope, SCRIPT_SCOPE);
+    } else if (info->is_module()) {
+      *scope = NewScope(*scope, MODULE_SCOPE);
     }
     (*scope)->set_start_position(0);
     // End position will be set by the caller.
@@ -951,10 +942,7 @@ FunctionLiteral* Parser::DoParseProgram(CompilationInfo* info, Scope** scope,
     int beg_pos = scanner()->location().beg_pos;
     if (info->is_module()) {
       DCHECK(allow_harmony_modules());
-      Statement* stmt = ParseModule(&ok);
-      if (ok) {
-        body->Add(stmt, zone());
-      }
+      ParseModule(body, &ok);
     } else {
       ParseStatementList(body, Token::EOS, info->is_eval(), eval_scope, &ok);
     }
@@ -1254,7 +1242,7 @@ Statement* Parser::ParseModuleItem(bool* ok) {
 }
 
 
-Statement* Parser::ParseModule(bool* ok) {
+void* Parser::ParseModule(ZoneList<Statement*>* body, bool* ok) {
   // (Ecma 262 6th Edition, 15.2):
   // Module :
   //    ModuleBody?
@@ -1262,31 +1250,22 @@ Statement* Parser::ParseModule(bool* ok) {
   // ModuleBody :
   //    ModuleItem*
 
-  Block* body = factory()->NewBlock(NULL, 16, false, RelocInfo::kNoPosition);
-  Scope* scope = NewScope(scope_, MODULE_SCOPE);
-  scope->set_start_position(scanner()->location().beg_pos);
-  scope->SetLanguageMode(
-      static_cast<LanguageMode>(scope->language_mode() | STRICT_BIT));
+  DCHECK(scope_->is_module_scope());
+  scope_->SetLanguageMode(
+      static_cast<LanguageMode>(scope_->language_mode() | STRICT_BIT));
 
-  {
-    BlockState block_state(&scope_, scope);
-
-    while (peek() != Token::EOS) {
-      Statement* stat = ParseModuleItem(CHECK_OK);
-      if (stat && !stat->IsEmpty()) {
-        body->AddStatement(stat, zone());
-      }
+  while (peek() != Token::EOS) {
+    Statement* stat = ParseModuleItem(CHECK_OK);
+    if (stat && !stat->IsEmpty()) {
+      body->Add(stat, zone());
     }
   }
 
-  scope->set_end_position(scanner()->location().end_pos);
-  body->set_scope(scope);
-
   // Check that all exports are bound.
-  ModuleDescriptor* descriptor = scope->module();
+  ModuleDescriptor* descriptor = scope_->module();
   for (ModuleDescriptor::Iterator it = descriptor->iterator(); !it.done();
        it.Advance()) {
-    if (scope->LookupLocal(it.local_name()) == NULL) {
+    if (scope_->LookupLocal(it.local_name()) == NULL) {
       // TODO(adamk): Pass both local_name and export_name once ParserTraits
       // supports multiple arg error messages.
       // Also try to report this at a better location.
@@ -1296,8 +1275,8 @@ Statement* Parser::ParseModule(bool* ok) {
     }
   }
 
-  scope->module()->Freeze();
-  return body;
+  scope_->module()->Freeze();
+  return NULL;
 }
 
 
@@ -1359,7 +1338,8 @@ void* Parser::ParseExportClause(ZoneList<const AstRawString*>* export_names,
 }
 
 
-void* Parser::ParseNamedImports(ZoneList<const AstRawString*>* names,
+void* Parser::ParseNamedImports(ZoneList<const AstRawString*>* import_names,
+                                ZoneList<const AstRawString*>* local_names,
                                 bool* ok) {
   // NamedImports :
   //   '{' '}'
@@ -1376,27 +1356,26 @@ void* Parser::ParseNamedImports(ZoneList<const AstRawString*>* names,
 
   Expect(Token::LBRACE, CHECK_OK);
 
-  Token::Value name_tok;
-  while ((name_tok = peek()) != Token::RBRACE) {
-    const AstRawString* name = ParseIdentifierName(CHECK_OK);
-    const AstRawString* import_name = NULL;
+  while (peek() != Token::RBRACE) {
+    const AstRawString* import_name = ParseIdentifierName(CHECK_OK);
+    const AstRawString* local_name = import_name;
     // In the presence of 'as', the left-side of the 'as' can
     // be any IdentifierName. But without 'as', it must be a valid
-    // BindingIdentiifer.
+    // BindingIdentifier.
     if (CheckContextualKeyword(CStrVector("as"))) {
-      import_name = ParseIdentifier(kDontAllowEvalOrArguments, CHECK_OK);
-    } else if (!Token::IsIdentifier(name_tok, STRICT, false)) {
+      local_name = ParseIdentifierName(CHECK_OK);
+    }
+    if (!Token::IsIdentifier(scanner()->current_token(), STRICT, false)) {
       *ok = false;
-      ReportMessageAt(scanner()->location(), "unexpected_reserved");
+      ReportMessage("unexpected_reserved");
       return NULL;
-    } else if (IsEvalOrArguments(name)) {
+    } else if (IsEvalOrArguments(local_name)) {
       *ok = false;
-      ReportMessageAt(scanner()->location(), "strict_eval_arguments");
+      ReportMessage("strict_eval_arguments");
       return NULL;
     }
-    // TODO(ES6): Return the import_name as well as the name.
-    names->Add(name, zone());
-    USE(import_name);
+    import_names->Add(import_name, zone());
+    local_names->Add(local_name, zone());
     if (peek() == Token::RBRACE) break;
     Expect(Token::COMMA, CHECK_OK);
   }
@@ -1429,8 +1408,10 @@ Statement* Parser::ParseImportDeclaration(bool* ok) {
 
   // 'import' ModuleSpecifier ';'
   if (tok == Token::STRING) {
-    ParseModuleSpecifier(CHECK_OK);
+    Literal* module_specifier = ParseModuleSpecifier(CHECK_OK);
     ExpectSemicolon(CHECK_OK);
+    // TODO(ES6): Add module to the requested modules of scope_->module().
+    USE(module_specifier);
     return factory()->NewEmptyStatement(pos);
   }
 
@@ -1442,7 +1423,8 @@ Statement* Parser::ParseImportDeclaration(bool* ok) {
   }
 
   const AstRawString* module_instance_binding = NULL;
-  ZoneList<const AstRawString*> names(1, zone());
+  ZoneList<const AstRawString*> local_names(1, zone());
+  ZoneList<const AstRawString*> import_names(1, zone());
   if (imported_default_binding == NULL || Check(Token::COMMA)) {
     switch (peek()) {
       case Token::MUL: {
@@ -1454,7 +1436,7 @@ Statement* Parser::ParseImportDeclaration(bool* ok) {
       }
 
       case Token::LBRACE:
-        ParseNamedImports(&names, CHECK_OK);
+        ParseNamedImports(&import_names, &local_names, CHECK_OK);
         break;
 
       default:
@@ -1478,7 +1460,9 @@ Statement* Parser::ParseImportDeclaration(bool* ok) {
     // TODO(ES6): Add an appropriate declaration.
   }
 
-  for (int i = 0; i < names.length(); ++i) {
+  const int length = import_names.length();
+  DCHECK_EQ(length, local_names.length());
+  for (int i = 0; i < length; ++i) {
     // TODO(ES6): Add an appropriate declaration for each name
   }
 
@@ -2925,25 +2909,51 @@ void Parser::InitializeForEachStatement(ForEachStatement* stmt,
     Expression* result_done;
     Expression* assign_each;
 
-    // var iterator = subject[Symbol.iterator]();
+    // iterator = subject[Symbol.iterator]()
     assign_iterator = factory()->NewAssignment(
         Token::ASSIGN, factory()->NewVariableProxy(iterator),
         GetIterator(subject, factory()), subject->position());
 
-    // var result = iterator.next();
+    // !%_IsSpecObject(result = iterator.next()) &&
+    //     %ThrowIteratorResultNotAnObject(result)
     {
+      // result = iterator.next()
       Expression* iterator_proxy = factory()->NewVariableProxy(iterator);
       Expression* next_literal = factory()->NewStringLiteral(
           ast_value_factory()->next_string(), RelocInfo::kNoPosition);
       Expression* next_property = factory()->NewProperty(
           iterator_proxy, next_literal, RelocInfo::kNoPosition);
       ZoneList<Expression*>* next_arguments =
-          new(zone()) ZoneList<Expression*>(0, zone());
+          new (zone()) ZoneList<Expression*>(0, zone());
       Expression* next_call = factory()->NewCall(next_property, next_arguments,
                                                  subject->position());
       Expression* result_proxy = factory()->NewVariableProxy(result);
       next_result = factory()->NewAssignment(Token::ASSIGN, result_proxy,
                                              next_call, subject->position());
+
+      // %_IsSpecObject(...)
+      ZoneList<Expression*>* is_spec_object_args =
+          new (zone()) ZoneList<Expression*>(1, zone());
+      is_spec_object_args->Add(next_result, zone());
+      Expression* is_spec_object_call = factory()->NewCallRuntime(
+          ast_value_factory()->is_spec_object_string(),
+          Runtime::FunctionForId(Runtime::kInlineIsSpecObject),
+          is_spec_object_args, subject->position());
+
+      // %ThrowIteratorResultNotAnObject(result)
+      Expression* result_proxy_again = factory()->NewVariableProxy(result);
+      ZoneList<Expression*>* throw_arguments =
+          new (zone()) ZoneList<Expression*>(1, zone());
+      throw_arguments->Add(result_proxy_again, zone());
+      Expression* throw_call = factory()->NewCallRuntime(
+          ast_value_factory()->throw_iterator_result_not_an_object_string(),
+          Runtime::FunctionForId(Runtime::kThrowIteratorResultNotAnObject),
+          throw_arguments, subject->position());
+
+      next_result = factory()->NewBinaryOperation(
+          Token::AND, factory()->NewUnaryOperation(
+                          Token::NOT, is_spec_object_call, subject->position()),
+          throw_call, subject->position());
     }
 
     // result.done
@@ -4267,61 +4277,6 @@ void Parser::HandleSourceURLComments(Isolate* isolate, Handle<Script> script) {
 }
 
 
-void Parser::ThrowPendingError(Isolate* isolate, Handle<Script> script) {
-  DCHECK(ast_value_factory()->IsInternalized());
-  if (has_pending_error_) {
-    MessageLocation location(script, pending_error_location_.beg_pos,
-                             pending_error_location_.end_pos);
-    Factory* factory = isolate->factory();
-    bool has_arg =
-        pending_error_arg_ != NULL || pending_error_char_arg_ != NULL;
-    Handle<FixedArray> elements = factory->NewFixedArray(has_arg ? 1 : 0);
-    if (pending_error_arg_ != NULL) {
-      Handle<String> arg_string = pending_error_arg_->string();
-      elements->set(0, *arg_string);
-    } else if (pending_error_char_arg_ != NULL) {
-      Handle<String> arg_string =
-          factory->NewStringFromUtf8(CStrVector(pending_error_char_arg_))
-          .ToHandleChecked();
-      elements->set(0, *arg_string);
-    }
-    isolate->debug()->OnCompileError(script);
-
-    Handle<JSArray> array = factory->NewJSArrayWithElements(elements);
-    Handle<Object> error;
-    MaybeHandle<Object> maybe_error;
-    switch (pending_error_type_) {
-      case kReferenceError:
-        maybe_error = factory->NewReferenceError(pending_error_message_, array);
-        break;
-      case kSyntaxError:
-        maybe_error = factory->NewSyntaxError(pending_error_message_, array);
-        break;
-    }
-    DCHECK(!maybe_error.is_null() || isolate->has_pending_exception());
-
-    if (maybe_error.ToHandle(&error)) {
-      Handle<JSObject> jserror = Handle<JSObject>::cast(error);
-
-      Handle<Name> key_start_pos = factory->error_start_pos_symbol();
-      JSObject::SetProperty(jserror, key_start_pos,
-                            handle(Smi::FromInt(location.start_pos()), isolate),
-                            SLOPPY).Check();
-
-      Handle<Name> key_end_pos = factory->error_end_pos_symbol();
-      JSObject::SetProperty(jserror, key_end_pos,
-                            handle(Smi::FromInt(location.end_pos()), isolate),
-                            SLOPPY).Check();
-
-      Handle<Name> key_script = factory->error_script_symbol();
-      JSObject::SetProperty(jserror, key_script, script, SLOPPY).Check();
-
-      isolate->Throw(*error, &location);
-    }
-  }
-}
-
-
 void Parser::Internalize(Isolate* isolate, Handle<Script> script, bool error) {
   // Internalize strings.
   ast_value_factory()->Internalize(isolate);
@@ -4331,7 +4286,8 @@ void Parser::Internalize(Isolate* isolate, Handle<Script> script, bool error) {
     if (stack_overflow()) {
       isolate->StackOverflow();
     } else {
-      ThrowPendingError(isolate, script);
+      DCHECK(pending_error_handler_.has_pending_error());
+      pending_error_handler_.ThrowPendingError(isolate, script);
     }
   }
 

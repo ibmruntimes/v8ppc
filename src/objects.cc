@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <iomanip>
 #include <sstream>
 
 #include "src/v8.h"
@@ -219,7 +220,7 @@ bool FunctionTemplateInfo::IsTemplateFor(Map* map) {
   // There is a constraint on the object; check.
   if (!map->IsJSObjectMap()) return false;
   // Fetch the constructor function of the object.
-  Object* cons_obj = map->constructor();
+  Object* cons_obj = map->GetConstructor();
   if (!cons_obj->IsJSFunction()) return false;
   JSFunction* fun = JSFunction::cast(cons_obj);
   // Iterate through the chain of inheriting function templates to
@@ -1208,7 +1209,7 @@ void JSObject::JSObjectShortPrint(StringStream* accumulator) {
     default: {
       Map* map_of_this = map();
       Heap* heap = GetHeap();
-      Object* constructor = map_of_this->constructor();
+      Object* constructor = map_of_this->GetConstructor();
       bool printed = false;
       if (constructor->IsHeapObject() &&
           !heap->Contains(HeapObject::cast(constructor))) {
@@ -1671,8 +1672,9 @@ String* JSReceiver::class_name() {
   if (IsJSFunction() || IsJSFunctionProxy()) {
     return GetHeap()->Function_string();
   }
-  if (map()->constructor()->IsJSFunction()) {
-    JSFunction* constructor = JSFunction::cast(map()->constructor());
+  Object* maybe_constructor = map()->GetConstructor();
+  if (maybe_constructor->IsJSFunction()) {
+    JSFunction* constructor = JSFunction::cast(maybe_constructor);
     return String::cast(constructor->shared()->instance_class_name());
   }
   // If the constructor is not present, return "Object".
@@ -1681,8 +1683,9 @@ String* JSReceiver::class_name() {
 
 
 String* Map::constructor_name() {
-  if (constructor()->IsJSFunction()) {
-    JSFunction* constructor = JSFunction::cast(this->constructor());
+  Object* maybe_constructor = GetConstructor();
+  if (maybe_constructor->IsJSFunction()) {
+    JSFunction* constructor = JSFunction::cast(maybe_constructor);
     String* name = String::cast(constructor->shared()->name());
     if (name->length() > 0) return name;
     String* inferred_name = constructor->shared()->inferred_name();
@@ -1784,7 +1787,7 @@ void JSObject::AddSlowProperty(Handle<JSObject> object,
 
 
 Context* JSObject::GetCreationContext() {
-  Object* constructor = this->map()->constructor();
+  Object* constructor = this->map()->GetConstructor();
   JSFunction* function;
   if (!constructor->IsJSFunction()) {
     // Functions have null as a constructor,
@@ -2931,30 +2934,7 @@ Handle<Map> Map::GeneralizeAllFieldRepresentations(
 
 
 // static
-MaybeHandle<Map> Map::TryUpdate(Handle<Map> map) {
-  Handle<Map> proto_map(map);
-  while (proto_map->prototype()->IsJSObject()) {
-    Handle<JSObject> holder(JSObject::cast(proto_map->prototype()));
-    proto_map = Handle<Map>(holder->map());
-    if (proto_map->is_deprecated() && JSObject::TryMigrateInstance(holder)) {
-      proto_map = Handle<Map>(holder->map());
-    }
-  }
-  return TryUpdateInternal(map);
-}
-
-
-// static
-Handle<Map> Map::Update(Handle<Map> map) {
-  if (!map->is_deprecated()) return map;
-  return ReconfigureProperty(map, -1, kData, NONE, Representation::None(),
-                             HeapType::None(map->GetIsolate()),
-                             ALLOW_IN_DESCRIPTOR);
-}
-
-
-// static
-MaybeHandle<Map> Map::TryUpdateInternal(Handle<Map> old_map) {
+MaybeHandle<Map> Map::TryUpdate(Handle<Map> old_map) {
   DisallowHeapAllocation no_allocation;
   DisallowDeoptimization no_deoptimization(old_map->GetIsolate());
 
@@ -3015,6 +2995,15 @@ MaybeHandle<Map> Map::TryUpdateInternal(Handle<Map> old_map) {
   }
   if (new_map->NumberOfOwnDescriptors() != old_nof) return MaybeHandle<Map>();
   return handle(new_map);
+}
+
+
+// static
+Handle<Map> Map::Update(Handle<Map> map) {
+  if (!map->is_deprecated()) return map;
+  return ReconfigureProperty(map, -1, kData, NONE, Representation::None(),
+                             HeapType::None(map->GetIsolate()),
+                             ALLOW_IN_DESCRIPTOR);
 }
 
 
@@ -3996,10 +3985,9 @@ Maybe<PropertyAttributes> JSProxy::GetPropertyAttributesWithHandler(
     Handle<String> trap = isolate->factory()->InternalizeOneByteString(
         STATIC_CHAR_VECTOR("getPropertyDescriptor"));
     Handle<Object> args[] = { handler, trap, name };
-    Handle<Object> error;
-    MaybeHandle<Object> maybe_error = isolate->factory()->NewTypeError(
+    Handle<Object> error = isolate->factory()->NewTypeError(
         "proxy_prop_not_configurable", HandleVector(args, arraysize(args)));
-    if (maybe_error.ToHandle(&error)) isolate->Throw(*error);
+    isolate->Throw(*error);
     return maybe(NONE);
   }
 
@@ -5460,7 +5448,7 @@ bool JSObject::ReferencesObject(Object* obj) {
   DisallowHeapAllocation no_allocation;
 
   // Is the object the constructor for this object?
-  if (map_of_this->constructor() == obj) {
+  if (map_of_this->GetConstructor() == obj) {
     return true;
   }
 
@@ -5524,7 +5512,7 @@ bool JSObject::ReferencesObject(Object* obj) {
     Map* arguments_map =
         heap->isolate()->context()->native_context()->sloppy_arguments_map();
     JSFunction* arguments_function =
-        JSFunction::cast(arguments_map->constructor());
+        JSFunction::cast(arguments_map->GetConstructor());
 
     // Get the context and don't check if it is the native context.
     JSFunction* f = JSFunction::cast(this);
@@ -5539,7 +5527,7 @@ bool JSObject::ReferencesObject(Object* obj) {
       if (context->get(i)->IsJSObject()) {
         JSObject* ctxobj = JSObject::cast(context->get(i));
         // If it is an arguments array check the content.
-        if (ctxobj->map()->constructor() == arguments_function) {
+        if (ctxobj->map()->GetConstructor() == arguments_function) {
           if (ctxobj->ReferencesObject(obj)) {
             return true;
           }
@@ -6263,7 +6251,7 @@ MaybeHandle<FixedArray> JSReceiver::GetKeys(Handle<JSReceiver> object,
   Isolate* isolate = object->GetIsolate();
   Handle<FixedArray> content = isolate->factory()->empty_fixed_array();
   Handle<JSFunction> arguments_function(
-      JSFunction::cast(isolate->sloppy_arguments_map()->constructor()));
+      JSFunction::cast(isolate->sloppy_arguments_map()->GetConstructor()));
 
   // Only collect keys if access is permitted.
   for (PrototypeIterator iter(isolate, object,
@@ -6336,11 +6324,9 @@ MaybeHandle<FixedArray> JSReceiver::GetKeys(Handle<JSReceiver> object,
     // array or dictionary.  So the fast inline test for whether to
     // use the cache says yes, so we should not create a cache.
     bool cache_enum_keys =
-        ((current->map()->constructor() != *arguments_function) &&
-         !current->IsJSValue() &&
-         !current->IsAccessCheckNeeded() &&
-         !current->HasNamedInterceptor() &&
-         !current->HasIndexedInterceptor());
+        ((current->map()->GetConstructor() != *arguments_function) &&
+         !current->IsJSValue() && !current->IsAccessCheckNeeded() &&
+         !current->HasNamedInterceptor() && !current->HasIndexedInterceptor());
     // Compute the property keys and cache them if possible.
     ASSIGN_RETURN_ON_EXCEPTION(
         isolate, content,
@@ -6856,7 +6842,7 @@ Handle<Map> Map::RawCopy(Handle<Map> map, int instance_size) {
   Handle<Map> result = map->GetIsolate()->factory()->NewMap(
       map->instance_type(), instance_size);
   result->SetPrototype(handle(map->prototype(), map->GetIsolate()));
-  result->set_constructor(map->constructor());
+  result->set_constructor_or_backpointer(map->GetConstructor());
   result->set_bit_field(map->bit_field());
   result->set_bit_field2(map->bit_field2());
   int new_bit_field3 = map->bit_field3();
@@ -7692,204 +7678,35 @@ void Map::RemoveFromCodeCache(Name* name, Code* code, int index) {
 }
 
 
-// An iterator over all map transitions in an descriptor array, reusing the
-// constructor field of the map while it is running. Negative values in
-// the constructor field indicate an active map transition iteration. The
-// original constructor is restored after iterating over all entries.
-class IntrusiveMapTransitionIterator {
- public:
-  IntrusiveMapTransitionIterator(
-      Map* map, TransitionArray* transition_array, Object* constructor)
-      : map_(map),
-        transition_array_(transition_array),
-        constructor_(constructor) { }
-
-  void StartIfNotStarted() {
-    DCHECK(!(*IteratorField())->IsSmi() || IsIterating());
-    if (!(*IteratorField())->IsSmi()) {
-      DCHECK(*IteratorField() == constructor_);
-      *IteratorField() = Smi::FromInt(-1);
-    }
-  }
-
-  bool IsIterating() {
-    return (*IteratorField())->IsSmi() &&
-           Smi::cast(*IteratorField())->value() < 0;
-  }
-
-  Map* Next() {
-    DCHECK(IsIterating());
-    int value = Smi::cast(*IteratorField())->value();
-    int index = -value - 1;
-    int number_of_transitions = transition_array_->number_of_transitions();
-    if (index < number_of_transitions) {
-      *IteratorField() = Smi::FromInt(value - 1);
-      return transition_array_->GetTarget(index);
-    }
-
-    *IteratorField() = constructor_;
-    return NULL;
-  }
-
- private:
-  Object** IteratorField() {
-    return HeapObject::RawField(map_, Map::kConstructorOffset);
-  }
-
-  Map* map_;
-  TransitionArray* transition_array_;
-  Object* constructor_;
-};
-
-
-// An iterator over all prototype transitions, reusing the constructor field
-// of the map while it is running.  Positive values in the constructor field
-// indicate an active prototype transition iteration. The original constructor
-// is restored after iterating over all entries.
-class IntrusivePrototypeTransitionIterator {
- public:
-  IntrusivePrototypeTransitionIterator(
-      Map* map, HeapObject* proto_trans, Object* constructor)
-      : map_(map), proto_trans_(proto_trans), constructor_(constructor) { }
-
-  void StartIfNotStarted() {
-    if (!(*IteratorField())->IsSmi()) {
-      DCHECK(*IteratorField() == constructor_);
-      *IteratorField() = Smi::FromInt(0);
-    }
-  }
-
-  bool IsIterating() {
-    return (*IteratorField())->IsSmi() &&
-           Smi::cast(*IteratorField())->value() >= 0;
-  }
-
-  Map* Next() {
-    DCHECK(IsIterating());
-    int transitionNumber = Smi::cast(*IteratorField())->value();
-    if (transitionNumber < NumberOfTransitions()) {
-      *IteratorField() = Smi::FromInt(transitionNumber + 1);
-      return GetTransition(transitionNumber);
-    }
-    *IteratorField() = constructor_;
-    return NULL;
-  }
-
- private:
-  Object** IteratorField() {
-    return HeapObject::RawField(map_, Map::kConstructorOffset);
-  }
-
-  int NumberOfTransitions() {
-    FixedArray* proto_trans = reinterpret_cast<FixedArray*>(proto_trans_);
-    Object* num = proto_trans->get(Map::kProtoTransitionNumberOfEntriesOffset);
-    return Smi::cast(num)->value();
-  }
-
-  Map* GetTransition(int transitionNumber) {
-    FixedArray* proto_trans = reinterpret_cast<FixedArray*>(proto_trans_);
-    int index = Map::kProtoTransitionHeaderSize + transitionNumber;
-    return Map::cast(proto_trans->get(index));
-  }
-
-  Map* map_;
-  HeapObject* proto_trans_;
-  Object* constructor_;
-};
-
-
-// To traverse the transition tree iteratively, we have to store two kinds of
-// information in a map: The parent map in the traversal and which children of a
-// node have already been visited. To do this without additional memory, we
-// temporarily reuse two fields with known values:
-//
-//  (1) The map of the map temporarily holds the parent, and is restored to the
-//      meta map afterwards.
-//
-//  (2) The info which children have already been visited depends on which part
-//      of the map we currently iterate. We use the constructor field of the
-//      map to store the current index. We can do that because the constructor
-//      is the same for all involved maps.
-//
-//    (a) If we currently follow normal map transitions, we temporarily store
-//        the current index in the constructor field, and restore it to the
-//        original constructor afterwards. Note that a single descriptor can
-//        have 0, 1, or 2 transitions.
-//
-//    (b) If we currently follow prototype transitions, we temporarily store
-//        the current index in the constructor field, and restore it to the
-//        original constructor afterwards.
-//
-// Note that the child iterator is just a concatenation of two iterators: One
-// iterating over map transitions and one iterating over prototype transisitons.
-class TraversableMap : public Map {
- public:
-  // Record the parent in the traversal within this map. Note that this destroys
-  // this map's map!
-  void SetParent(TraversableMap* parent) { set_map_no_write_barrier(parent); }
-
-  // Reset the current map's map, returning the parent previously stored in it.
-  TraversableMap* GetAndResetParent() {
-    TraversableMap* old_parent = static_cast<TraversableMap*>(map());
-    set_map_no_write_barrier(GetHeap()->meta_map());
-    return old_parent;
-  }
-
-  // If we have an unvisited child map, return that one and advance. If we have
-  // none, return NULL and restore the overwritten constructor field.
-  TraversableMap* ChildIteratorNext(Object* constructor) {
-    if (!HasTransitionArray()) return NULL;
-
-    TransitionArray* transition_array = transitions();
-    if (transition_array->HasPrototypeTransitions()) {
-      HeapObject* proto_transitions =
-          transition_array->GetPrototypeTransitions();
-      IntrusivePrototypeTransitionIterator proto_iterator(this,
-                                                          proto_transitions,
-                                                          constructor);
-      proto_iterator.StartIfNotStarted();
-      if (proto_iterator.IsIterating()) {
-        Map* next = proto_iterator.Next();
-        if (next != NULL) return static_cast<TraversableMap*>(next);
+static void TraverseTransitionTreeInternal(Map* map,
+                                           Map::TraverseCallback callback,
+                                           void* data) {
+  if (map->HasTransitionArray()) {
+    TransitionArray* transitions = map->transitions();
+    if (transitions->HasPrototypeTransitions()) {
+      FixedArray* proto_trans = transitions->GetPrototypeTransitions();
+      Object* num_obj =
+          proto_trans->get(Map::kProtoTransitionNumberOfEntriesOffset);
+      int num = Smi::cast(num_obj)->value();
+      for (int i = 0; i < num; ++i) {
+        int index = Map::kProtoTransitionHeaderSize + i;
+        TraverseTransitionTreeInternal(Map::cast(proto_trans->get(index)),
+                                       callback, data);
       }
     }
-
-    IntrusiveMapTransitionIterator transition_iterator(this,
-                                                       transition_array,
-                                                       constructor);
-    transition_iterator.StartIfNotStarted();
-    if (transition_iterator.IsIterating()) {
-      Map* next = transition_iterator.Next();
-      if (next != NULL) return static_cast<TraversableMap*>(next);
+    for (int i = 0; i < transitions->number_of_transitions(); ++i) {
+      TraverseTransitionTreeInternal(transitions->GetTarget(i), callback, data);
     }
-
-    return NULL;
   }
-};
+  callback(map, data);
+}
 
 
-// Traverse the transition tree in postorder without using the C++ stack by
-// doing pointer reversal.
+// Traverse the transition tree in postorder.
 void Map::TraverseTransitionTree(TraverseCallback callback, void* data) {
   // Make sure that we do not allocate in the callback.
   DisallowHeapAllocation no_allocation;
-
-  TraversableMap* current = static_cast<TraversableMap*>(this);
-  // Get the root constructor here to restore it later when finished iterating
-  // over maps.
-  Object* root_constructor = constructor();
-  while (true) {
-    TraversableMap* child = current->ChildIteratorNext(root_constructor);
-    if (child != NULL) {
-      child->SetParent(current);
-      current = child;
-    } else {
-      TraversableMap* parent = current->GetAndResetParent();
-      callback(current, data);
-      if (current == this) break;
-      current = parent;
-    }
-  }
+  TraverseTransitionTreeInternal(this, callback, data);
 }
 
 
@@ -9739,7 +9556,7 @@ int Map::Hash() {
   // addresses.
 
   // Shift away the tag.
-  int hash = ObjectAddressForHashing(constructor()) >> 2;
+  int hash = ObjectAddressForHashing(GetConstructor()) >> 2;
 
   // XOR-ing the prototype and constructor directly yields too many zero bits
   // when the two pointers are close (which is fairly common).
@@ -9751,7 +9568,7 @@ int Map::Hash() {
 
 
 static bool CheckEquivalent(Map* first, Map* second) {
-  return first->constructor() == second->constructor() &&
+  return first->GetConstructor() == second->GetConstructor() &&
          first->prototype() == second->prototype() &&
          first->instance_type() == second->instance_type() &&
          first->bit_field() == second->bit_field() &&
@@ -10113,8 +9930,9 @@ void JSObject::OptimizeAsPrototype(Handle<JSObject> object,
       Handle<Map> new_map = Map::Copy(handle(object->map()), "CopyAsPrototype");
       JSObject::MigrateToMap(object, new_map);
     }
-    if (object->map()->constructor()->IsJSFunction()) {
-      JSFunction* constructor = JSFunction::cast(object->map()->constructor());
+    Object* maybe_constructor = object->map()->GetConstructor();
+    if (maybe_constructor->IsJSFunction()) {
+      JSFunction* constructor = JSFunction::cast(maybe_constructor);
       // Replace the pointer to the exact constructor with the Object function
       // from the same context if undetectable from JS. This is to avoid keeping
       // memory alive unnecessarily.
@@ -10123,7 +9941,7 @@ void JSObject::OptimizeAsPrototype(Handle<JSObject> object,
               object->GetIsolate()->heap()->Object_string()) {
         Context* context = constructor->context()->native_context();
         JSFunction* object_function = context->object_function();
-        object->map()->set_constructor(object_function);
+        object->map()->SetConstructor(object_function);
       }
     }
     object->map()->set_is_prototype_map(true);
@@ -10310,7 +10128,7 @@ void JSFunction::SetPrototype(Handle<JSFunction> function,
     Handle<Map> new_map = Map::Copy(handle(function->map()), "SetPrototype");
 
     JSObject::MigrateToMap(function, new_map);
-    new_map->set_constructor(*value);
+    new_map->SetConstructor(*value);
     new_map->set_non_instance_prototype(true);
     Isolate* isolate = new_map->GetIsolate();
     construct_prototype = handle(
@@ -10353,7 +10171,7 @@ void JSFunction::SetInitialMap(Handle<JSFunction> function, Handle<Map> map,
     map->SetPrototype(prototype, FAST_PROTOTYPE);
   }
   function->set_prototype_or_initial_map(*map);
-  map->set_constructor(*function);
+  map->SetConstructor(*function);
 #if TRACE_MAPS
   if (FLAG_trace_maps) {
     PrintF("[TraceMaps: InitialMap map= %p SFI= %d_%s ]\n",
@@ -11512,11 +11330,9 @@ void DeoptimizationInputData::DeoptimizationInputDataPrint(
     os << "\n";
   }
   for (int i = 0; i < deopt_count; i++) {
-    // TODO(svenpanne) Add some basic formatting to our streams.
-    Vector<char> buf1 = Vector<char>::New(128);
-    SNPrintF(buf1, "%6d  %6d  %6d %6d", i, AstId(i).ToInt(),
-             ArgumentsStackHeight(i)->value(), Pc(i)->value());
-    os << buf1.start();
+    os << std::setw(6) << i << "  " << std::setw(6) << AstId(i).ToInt() << "  "
+       << std::setw(6) << ArgumentsStackHeight(i)->value() << " "
+       << std::setw(6) << Pc(i)->value();
 
     if (!FLAG_print_code_verbose) {
       os << "\n";
@@ -11537,9 +11353,7 @@ void DeoptimizationInputData::DeoptimizationInputDataPrint(
     while (iterator.HasNext() &&
            Translation::BEGIN !=
            (opcode = static_cast<Translation::Opcode>(iterator.Next()))) {
-      Vector<char> buf2 = Vector<char>::New(128);
-      SNPrintF(buf2, "%27s    %s ", "", Translation::StringFor(opcode));
-      os << buf2.start();
+      os << std::setw(31) << "    " << Translation::StringFor(opcode) << " ";
 
       switch (opcode) {
         case Translation::BEGIN:
@@ -11671,13 +11485,10 @@ void DeoptimizationOutputData::DeoptimizationOutputDataPrint(
   os << "ast id        pc  state\n";
   for (int i = 0; i < this->DeoptPoints(); i++) {
     int pc_and_state = this->PcAndState(i)->value();
-    // TODO(svenpanne) Add some basic formatting to our streams.
-    Vector<char> buf = Vector<char>::New(100);
-    SNPrintF(buf, "%6d  %8d  %s\n", this->AstId(i).ToInt(),
-             FullCodeGenerator::PcField::decode(pc_and_state),
-             FullCodeGenerator::State2String(
-                 FullCodeGenerator::StateField::decode(pc_and_state)));
-    os << buf.start();
+    os << std::setw(6) << this->AstId(i).ToInt() << "  " << std::setw(8)
+       << FullCodeGenerator::PcField::decode(pc_and_state) << "  "
+       << FullCodeGenerator::State2String(
+              FullCodeGenerator::StateField::decode(pc_and_state)) << "\n";
   }
 }
 
@@ -11816,17 +11627,12 @@ void Code::Disassemble(const char* name, std::ostream& os) {  // NOLINT
     for (unsigned i = 0; i < table.length(); i++) {
       unsigned pc_offset = table.GetPcOffset(i);
       os << static_cast<const void*>(instruction_start() + pc_offset) << "  ";
-      // TODO(svenpanne) Add some basic formatting to our streams.
-      Vector<char> buf1 = Vector<char>::New(30);
-      SNPrintF(buf1, "%4d", pc_offset);
-      os << buf1.start() << "  ";
+      os << std::setw(4) << pc_offset << "  ";
       table.PrintEntry(i, os);
       os << " (sp -> fp)  ";
       SafepointEntry entry = table.GetEntry(i);
       if (entry.deoptimization_index() != Safepoint::kNoDeoptimizationIndex) {
-        Vector<char> buf2 = Vector<char>::New(30);
-        SNPrintF(buf2, "%6d", entry.deoptimization_index());
-        os << buf2.start();
+        os << std::setw(6) << entry.deoptimization_index();
       } else {
         os << "<none>";
       }
@@ -11848,10 +11654,9 @@ void Code::Disassemble(const char* name, std::ostream& os) {  // NOLINT
       os << "ast_id  pc_offset  loop_depth\n";
 
       for (uint32_t i = 0; i < back_edges.length(); i++) {
-        Vector<char> buf = Vector<char>::New(100);
-        SNPrintF(buf, "%6d  %9u  %10u\n", back_edges.ast_id(i).ToInt(),
-                 back_edges.pc_offset(i), back_edges.loop_depth(i));
-        os << buf.start();
+        os << std::setw(6) << back_edges.ast_id(i).ToInt() << "  "
+           << std::setw(9) << back_edges.pc_offset(i) << "  " << std::setw(10)
+           << back_edges.loop_depth(i) << "\n";
       }
 
       os << "\n";
@@ -11870,10 +11675,8 @@ void Code::Disassemble(const char* name, std::ostream& os) {  // NOLINT
     for (int i = 0; i < handler_table()->length(); i += 2) {
       int pc_offset = Smi::cast(handler_table()->get(i))->value();
       int handler = Smi::cast(handler_table()->get(i + 1))->value();
-      os << static_cast<const void*>(instruction_start() + pc_offset) << "  ";
-      Vector<char> buf = Vector<char>::New(20);
-      SNPrintF(buf, "%4d %4d\n", pc_offset, handler);
-      os << buf.start();
+      os << static_cast<const void*>(instruction_start() + pc_offset) << "  "
+         << std::setw(4) << pc_offset << " " << std::setw(4) << handler << "\n";
     }
     os << "\n";
   }
@@ -14039,7 +13842,7 @@ void Dictionary<Derived, Shape, Key>::CopyValuesTo(FixedArray* elements) {
 
 InterceptorInfo* JSObject::GetNamedInterceptor() {
   DCHECK(map()->has_named_interceptor());
-  JSFunction* constructor = JSFunction::cast(map()->constructor());
+  JSFunction* constructor = JSFunction::cast(map()->GetConstructor());
   DCHECK(constructor->shared()->IsApiFunction());
   Object* result =
       constructor->shared()->get_api_func_data()->named_property_handler();
@@ -14049,7 +13852,7 @@ InterceptorInfo* JSObject::GetNamedInterceptor() {
 
 InterceptorInfo* JSObject::GetIndexedInterceptor() {
   DCHECK(map()->has_indexed_interceptor());
-  JSFunction* constructor = JSFunction::cast(map()->constructor());
+  JSFunction* constructor = JSFunction::cast(map()->GetConstructor());
   DCHECK(constructor->shared()->IsApiFunction());
   Object* result =
       constructor->shared()->get_api_func_data()->indexed_property_handler();
@@ -15554,8 +15357,15 @@ void GlobalObject::InvalidatePropertyCell(Handle<GlobalObject> global,
     Handle<PropertyCell> new_cell = isolate->factory()->NewPropertyCell(value);
     global->property_dictionary()->ValueAtPut(entry, *new_cell);
 
-    Handle<Object> hole = global->GetIsolate()->factory()->the_hole_value();
-    PropertyCell::SetValueInferType(cell, hole);
+    Handle<Object> hole = isolate->factory()->the_hole_value();
+    if (*hole != *value) {
+      PropertyCell::SetValueInferType(cell, hole);
+    } else {
+      // If property value was the hole, set it to any other value,
+      // to ensure that LoadNonexistent ICs execute a miss.
+      Handle<Object> undefined = isolate->factory()->undefined_value();
+      PropertyCell::SetValueInferType(cell, undefined);
+    }
   }
 }
 

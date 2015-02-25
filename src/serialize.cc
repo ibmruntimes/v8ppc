@@ -998,7 +998,7 @@ void Deserializer::ReadData(Object** current, Object** limit, int source_space,
         emit_write_barrier = isolate->heap()->InNewSpace(new_object);          \
       } else if (where == kPartialSnapshotCache) {                             \
         int cache_index = source_.GetInt();                                    \
-        new_object = isolate->serialize_partial_snapshot_cache()[cache_index]; \
+        new_object = isolate->partial_snapshot_cache()->at(cache_index);       \
         emit_write_barrier = isolate->heap()->InNewSpace(new_object);          \
       } else if (where == kExternalReference) {                                \
         int skip = source_.GetInt();                                           \
@@ -1508,43 +1508,35 @@ void Serializer::EncodeReservations(
 void SerializerDeserializer::Iterate(Isolate* isolate,
                                      ObjectVisitor* visitor) {
   if (isolate->serializer_enabled()) return;
-  for (int i = 0; ; i++) {
-    if (isolate->serialize_partial_snapshot_cache_length() <= i) {
-      // Extend the array ready to get a value from the visitor when
-      // deserializing.
-      isolate->PushToPartialSnapshotCache(Smi::FromInt(0));
-    }
-    Object** cache = isolate->serialize_partial_snapshot_cache();
-    visitor->VisitPointers(&cache[i], &cache[i + 1]);
+  List<Object*>* cache = isolate->partial_snapshot_cache();
+  for (int i = 0;; ++i) {
+    // Extend the array ready to get a value when deserializing.
+    if (cache->length() <= i) cache->Add(Smi::FromInt(0));
+    visitor->VisitPointer(&cache->at(i));
     // Sentinel is the undefined object, which is a root so it will not normally
     // be found in the cache.
-    if (cache[i] == isolate->heap()->undefined_value()) {
-      break;
-    }
+    if (cache->at(i)->IsUndefined()) break;
   }
 }
 
 
 int PartialSerializer::PartialSnapshotCacheIndex(HeapObject* heap_object) {
   Isolate* isolate = this->isolate();
+  List<Object*>* cache = isolate->partial_snapshot_cache();
+  int new_index = cache->length();
 
-  for (int i = 0;
-       i < isolate->serialize_partial_snapshot_cache_length();
-       i++) {
-    Object* entry = isolate->serialize_partial_snapshot_cache()[i];
-    if (entry == heap_object) return i;
+  int index = partial_cache_index_map_.LookupOrInsert(heap_object, new_index);
+  if (index == PartialCacheIndexMap::kInvalidIndex) {
+    // We didn't find the object in the cache.  So we add it to the cache and
+    // then visit the pointer so that it becomes part of the startup snapshot
+    // and we can refer to it from the partial snapshot.
+    cache->Add(heap_object);
+    startup_serializer_->VisitPointer(reinterpret_cast<Object**>(&heap_object));
+    // We don't recurse from the startup snapshot generator into the partial
+    // snapshot generator.
+    return new_index;
   }
-
-  // We didn't find the object in the cache.  So we add it to the cache and
-  // then visit the pointer so that it becomes part of the startup snapshot
-  // and we can refer to it from the partial snapshot.
-  int length = isolate->serialize_partial_snapshot_cache_length();
-  isolate->PushToPartialSnapshotCache(heap_object);
-  startup_serializer_->VisitPointer(reinterpret_cast<Object**>(&heap_object));
-  // We don't recurse from the startup snapshot generator into the partial
-  // snapshot generator.
-  DCHECK(length == isolate->serialize_partial_snapshot_cache_length() - 1);
-  return length;
+  return index;
 }
 
 
@@ -1896,7 +1888,9 @@ void Serializer::ObjectSerializer::Serialize() {
 
   int size = object_->Size();
   Map* map = object_->map();
-  SerializePrologue(Serializer::SpaceOfObject(object_), size, map);
+  AllocationSpace space =
+      MemoryChunk::FromAddress(object_->address())->owner()->identity();
+  SerializePrologue(space, size, map);
 
   // Serialize the rest of the object.
   CHECK_EQ(0, bytes_processed_so_far_);
@@ -2133,19 +2127,6 @@ int Serializer::ObjectSerializer::OutputRawData(
     to_skip = 0;
   }
   return to_skip;
-}
-
-
-AllocationSpace Serializer::SpaceOfObject(HeapObject* object) {
-  for (int i = FIRST_SPACE; i <= LAST_SPACE; i++) {
-    AllocationSpace s = static_cast<AllocationSpace>(i);
-    if (object->GetHeap()->InSpace(object, s)) {
-      DCHECK(i < kNumberOfSpaces);
-      return s;
-    }
-  }
-  UNREACHABLE();
-  return FIRST_SPACE;
 }
 
 

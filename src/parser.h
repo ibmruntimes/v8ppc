@@ -8,6 +8,7 @@
 #include "src/allocation.h"
 #include "src/ast.h"
 #include "src/compiler.h"  // For CachedDataMode
+#include "src/pending-compilation-error-handler.h"
 #include "src/preparse-data.h"
 #include "src/preparse-data-format.h"
 #include "src/preparser.h"
@@ -703,7 +704,7 @@ class Parser : public ParserBase<ParserTraits> {
   void* ParseStatementList(ZoneList<Statement*>* body, int end_token,
                            bool is_eval, Scope** ad_hoc_eval_scope, bool* ok);
   Statement* ParseStatementListItem(bool* ok);
-  Statement* ParseModule(bool* ok);
+  void* ParseModule(ZoneList<Statement*>* body, bool* ok);
   Statement* ParseModuleItem(bool* ok);
   Literal* ParseModuleSpecifier(bool* ok);
   Statement* ParseImportDeclaration(bool* ok);
@@ -713,7 +714,8 @@ class Parser : public ParserBase<ParserTraits> {
                           ZoneList<Scanner::Location>* export_locations,
                           ZoneList<const AstRawString*>* local_names,
                           Scanner::Location* reserved_loc, bool* ok);
-  void* ParseNamedImports(ZoneList<const AstRawString*>* names, bool* ok);
+  void* ParseNamedImports(ZoneList<const AstRawString*>* import_names,
+                          ZoneList<const AstRawString*>* local_names, bool* ok);
   Statement* ParseStatement(ZoneList<const AstRawString*>* labels, bool* ok);
   Statement* ParseSubStatement(ZoneList<const AstRawString*>* labels, bool* ok);
   Statement* ParseFunctionDeclaration(ZoneList<const AstRawString*>* names,
@@ -843,13 +845,7 @@ class Parser : public ParserBase<ParserTraits> {
 
   bool parsing_lazy_arrow_parameters_;  // for lazily parsed arrow functions.
 
-  // Pending errors.
-  bool has_pending_error_;
-  Scanner::Location pending_error_location_;
-  const char* pending_error_message_;
-  const AstRawString* pending_error_arg_;
-  const char* pending_error_char_arg_;
-  ParseErrorType pending_error_type_;
+  PendingCompilationErrorHandler pending_error_handler_;
 
   // Other information which will be stored in Parser and moved to Isolate after
   // parsing.

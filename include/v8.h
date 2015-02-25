@@ -92,6 +92,7 @@ class Promise;
 class RawOperationDescriptor;
 class Script;
 class Signature;
+class StartupData;
 class StackFrame;
 class StackTrace;
 class String;
@@ -2635,11 +2636,26 @@ class V8_EXPORT Object : public Value {
   Local<Value> GetRealNamedPropertyInPrototypeChain(Handle<String> key);
 
   /**
+   * Gets the property attributes of a real property in the prototype chain,
+   * which can be None or any combination of ReadOnly, DontEnum and DontDelete.
+   * Interceptors in the prototype chain are not called.
+   */
+  Maybe<PropertyAttribute> GetRealNamedPropertyAttributesInPrototypeChain(
+      Handle<String> key);
+
+  /**
    * If result.IsEmpty() no real property was located on the object or
    * in the prototype chain.
    * This means interceptors in the prototype chain are not called.
    */
   Local<Value> GetRealNamedProperty(Handle<String> key);
+
+  /**
+   * Gets the property attributes of a real property which can be
+   * None or any combination of ReadOnly, DontEnum and DontDelete.
+   * Interceptors in the prototype chain are not called.
+   */
+  Maybe<PropertyAttribute> GetRealNamedPropertyAttributes(Handle<String> key);
 
   /** Tests for a named lookup interceptor.*/
   bool HasNamedLookupInterceptor();
@@ -4662,9 +4678,7 @@ class V8_EXPORT Isolate {
    */
   struct CreateParams {
     CreateParams()
-        : entry_hook(NULL),
-          code_event_handler(NULL),
-          enable_serializer(false) {}
+        : entry_hook(NULL), code_event_handler(NULL), snapshot_blob(NULL) {}
 
     /**
      * The optional entry_hook allows the host application to provide the
@@ -4687,9 +4701,9 @@ class V8_EXPORT Isolate {
     ResourceConstraints constraints;
 
     /**
-     * This flag currently renders the Isolate unusable.
+     * Explicitly specify a startup snapshot blob. The embedder owns the blob.
      */
-    bool enable_serializer;
+    StartupData* snapshot_blob;
   };
 
 
@@ -5415,7 +5429,7 @@ class V8_EXPORT V8 {
    * Returns { NULL, 0 } on failure.
    * The caller owns the data array in the return value.
    */
-  static StartupData CreateSnapshotDataBlob(char* custom_source = NULL);
+  static StartupData CreateSnapshotDataBlob(const char* custom_source = NULL);
 
   /**
    * Adds a message listener.
@@ -6326,7 +6340,7 @@ class Internals {
   static const int kJSObjectHeaderSize = 3 * kApiPointerSize;
   static const int kFixedArrayHeaderSize = 2 * kApiPointerSize;
   static const int kContextHeaderSize = 2 * kApiPointerSize;
-  static const int kContextEmbedderDataIndex = 74;
+  static const int kContextEmbedderDataIndex = 76;
   static const int kFullStringRepresentationMask = 0x07;
   static const int kStringEncodingMask = 0x4;
   static const int kExternalTwoByteRepresentationTag = 0x02;

@@ -855,16 +855,14 @@ RUNTIME_FUNCTION(Runtime_DeleteLookupSlot) {
 
 static Object* ComputeReceiverForNonGlobal(Isolate* isolate, JSObject* holder) {
   DCHECK(!holder->IsGlobalObject());
-  Context* top = isolate->context();
-  // Get the context extension function.
-  JSFunction* context_extension_function =
-      top->native_context()->context_extension_function();
+
   // If the holder isn't a context extension object, we just return it
   // as the receiver. This allows arguments objects to be used as
   // receivers, but only if they are put in the context scope chain
   // explicitly via a with-statement.
-  Object* constructor = holder->map()->constructor();
-  if (constructor != context_extension_function) return holder;
+  if (holder->map()->instance_type() != JS_CONTEXT_EXTENSION_OBJECT_TYPE) {
+    return holder;
+  }
   // Fall back to using the global object as the implicit receiver if
   // the property turns out to be a local variable allocated in a
   // context extension object - introduced via eval.
@@ -905,11 +903,9 @@ static ObjectPair LoadLookupSlotHelper(Arguments args, Isolate* isolate,
       case MUTABLE_CHECK_INITIALIZED:
       case IMMUTABLE_CHECK_INITIALIZED_HARMONY:
         if (value->IsTheHole()) {
-          Handle<Object> error;
-          MaybeHandle<Object> maybe_error =
-              isolate->factory()->NewReferenceError("not_defined",
-                                                    HandleVector(&name, 1));
-          if (maybe_error.ToHandle(&error)) isolate->Throw(*error);
+          Handle<Object> error = isolate->factory()->NewReferenceError(
+              "not_defined", HandleVector(&name, 1));
+          isolate->Throw(*error);
           return MakePair(isolate->heap()->exception(), NULL);
         }
       // FALLTHROUGH
@@ -935,13 +931,6 @@ static ObjectPair LoadLookupSlotHelper(Arguments args, Isolate* isolate,
   // property from it.
   if (!holder.is_null()) {
     Handle<JSReceiver> object = Handle<JSReceiver>::cast(holder);
-#ifdef DEBUG
-    if (!object->IsJSProxy()) {
-      Maybe<bool> maybe = JSReceiver::HasProperty(object, name);
-      DCHECK(maybe.has_value);
-      DCHECK(maybe.value);
-    }
-#endif
     // GetProperty below can cause GC.
     Handle<Object> receiver_handle(
         object->IsGlobalObject()
@@ -962,10 +951,9 @@ static ObjectPair LoadLookupSlotHelper(Arguments args, Isolate* isolate,
 
   if (throw_error) {
     // The property doesn't exist - throw exception.
-    Handle<Object> error;
-    MaybeHandle<Object> maybe_error = isolate->factory()->NewReferenceError(
+    Handle<Object> error = isolate->factory()->NewReferenceError(
         "not_defined", HandleVector(&name, 1));
-    if (maybe_error.ToHandle(&error)) isolate->Throw(*error);
+    isolate->Throw(*error);
     return MakePair(isolate->heap()->exception(), NULL);
   } else {
     // The property doesn't exist - return undefined.
