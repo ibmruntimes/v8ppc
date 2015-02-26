@@ -1149,9 +1149,11 @@
           }],
           ['OS=="aix"', {
             'ldflags': [ '-Wl,-bbigtoc' ],
-          }],
-          [ 'v8_target_arch=="ppc64"', {
-            'cflags': [ '-maix64 -mcmodel=large' ],
+            'conditions': [ 
+              ['v8_target_arch=="ppc64"', {
+                'cflags': [ '-maix64 -mcmodel=large' ],
+              }],
+            ],
           }],
           ['OS=="android"', {
             'variables': {
