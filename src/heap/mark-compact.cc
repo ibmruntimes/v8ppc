@@ -2794,7 +2794,7 @@ class PointersUpdatingVisitor : public ObjectVisitor {
 
 // TODO(ishell): remove, once crbug/454297 is caught.
 #if V8_TARGET_ARCH_64_BIT
-#ifndef V8_OS_AIX // no point checking on AIX as full 64 range is supported
+#ifndef V8_OS_AIX  // no point checking on AIX as full 64 range is supported
     const uintptr_t kBoundary = V8_UINT64_C(1) << 48;
     STATIC_ASSERT(kBoundary > 0);
     if (reinterpret_cast<uintptr_t>(heap_obj->address()) >= kBoundary) {
