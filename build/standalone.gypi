@@ -175,10 +175,11 @@
     'default_configuration': 'Debug',
     'configurations': {
       'DebugBaseCommon': {
-        'cflags': [ '-g', '-O0' ],
         'conditions': [
-          [ 'OS=="aix"', {
-            'cflags': [ '-gxcoff' ],
+          ['OS=="aix"', {
+            'cflags': [ '-g', '-Og', '-gxcoff' ],
+          }, {
+            'cflags': [ '-g', '-O0' ],
           }],
         ],
       },
