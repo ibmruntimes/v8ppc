@@ -555,8 +555,16 @@ void ExitFrame::FillState(Address fp, Address sp, State* state) {
   state->fp = fp;
   state->pc_address = ResolveReturnAddressLocation(
       reinterpret_cast<Address*>(sp - 1 * kPCOnStackSize));
-  state->constant_pool_address =
-      reinterpret_cast<Address*>(fp + ExitFrameConstants::kConstantPoolOffset);
+  if (FLAG_enable_ool_constant_pool_in_code) {
+    // The constant pool recorded in the exit frame is not associated
+    // with the pc in this state (the return address into a C entry
+    // stub).  ComputeCallerState will retrieve the constant pool
+    // together with the associated caller pc.
+    state->constant_pool_address = NULL;
+  } else {
+    state->constant_pool_address =
+        reinterpret_cast<Address*>(fp + ExitFrameConstants::kConstantPoolOffset);
+  }
 }
 
 
