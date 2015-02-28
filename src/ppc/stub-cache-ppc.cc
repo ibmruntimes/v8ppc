@@ -1113,11 +1113,14 @@ Handle<Code> PropertyICCompiler::CompilePolymorphic(TypeHandleList* types,
       number_of_handled_maps++;
       __ mov(ip, Operand(map));
       __ cmp(map_reg, ip);
+      Label next;
+      __ bne(&next);
       if (type->Is(HeapType::Number())) {
         DCHECK(!number_case.is_unused());
         __ bind(&number_case);
       }
-      __ Jump(handlers->at(current), RelocInfo::CODE_TARGET, eq);
+      __ Jump(handlers->at(current), RelocInfo::CODE_TARGET);
+      __ bind(&next);
     }
   }
   DCHECK(number_of_handled_maps != 0);
