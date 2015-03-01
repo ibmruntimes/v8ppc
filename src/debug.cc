@@ -1736,10 +1736,11 @@ static int ComputeCodeOffsetFromPcOffset(Code *code, int pc_offset) {
   DCHECK_LE(0, pc_offset);
   DCHECK_LT(pc_offset, code->instruction_end() - code->instruction_start());
 
+  int code_offset = pc_offset;
+#if V8_TARGET_ARCH_ARM || V8_TARGET_ARCH_ARM64
   int mask = RelocInfo::ModeMask(RelocInfo::CONST_POOL) |
              RelocInfo::ModeMask(RelocInfo::VENEER_POOL);
   byte *pc = code->instruction_start() + pc_offset;
-  int code_offset = pc_offset;
   for (RelocIterator it(code, mask); !it.done(); it.next()) {
     RelocInfo* info = it.rinfo();
     if (info->pc() >= pc) break;
@@ -1747,6 +1748,7 @@ static int ComputeCodeOffsetFromPcOffset(Code *code, int pc_offset) {
     code_offset -= static_cast<int>(info->data());
     DCHECK_LE(0, code_offset);
   }
+#endif
 
   return code_offset;
 }
@@ -1756,9 +1758,13 @@ static int ComputeCodeOffsetFromPcOffset(Code *code, int pc_offset) {
 static int ComputePcOffsetFromCodeOffset(Code *code, int code_offset) {
   DCHECK_EQ(code->kind(), Code::FUNCTION);
 
+#if V8_TARGET_ARCH_ARM || V8_TARGET_ARCH_ARM64
   int mask = RelocInfo::ModeMask(RelocInfo::DEBUG_BREAK_SLOT) |
              RelocInfo::ModeMask(RelocInfo::CONST_POOL) |
              RelocInfo::ModeMask(RelocInfo::VENEER_POOL);
+#else
+  int mask = RelocInfo::ModeMask(RelocInfo::DEBUG_BREAK_SLOT);
+#endif
   int reloc = 0;
   for (RelocIterator it(code, mask); !it.done(); it.next()) {
     RelocInfo* info = it.rinfo();

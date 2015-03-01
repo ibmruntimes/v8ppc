@@ -646,13 +646,9 @@ void Code::GetCodeAgeAndParity(Isolate* isolate, byte* sequence, Age* age,
     *age = kNoAgeCodeAge;
     *parity = NO_MARKING_PARITY;
   } else {
-#if defined(V8_PPC_CONSTANT_POOL_OPT)
-    Address constant_pool = NULL;
-#else
-    ConstantPoolArray* constant_pool = NULL;
-#endif
+    Code *code = NULL;
     Address target_address = Assembler::target_address_at(
-        sequence + kCodeAgingTargetDelta, constant_pool);
+        sequence + kCodeAgingTargetDelta, code);
     Code* stub = GetCodeFromTargetAddress(target_address);
     GetCodeAgeAndParity(stub, age, parity);
   }

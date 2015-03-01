@@ -559,13 +559,40 @@ class MemOperand BASE_EMBEDDED {
 };
 
 
+class DeferredRelocInfo {
+ public:
+  DeferredRelocInfo() {}
+  DeferredRelocInfo(int position, RelocInfo::Mode rmode, intptr_t data)
+      : position_(position), rmode_(rmode), data_(data) {
+  }
+
+  int position() const { return position_; }
+  RelocInfo::Mode rmode() const {  return rmode_; }
+  intptr_t data() const { return data_; }
+
+ private:
+  int position_;
+  RelocInfo::Mode rmode_;
+  intptr_t data_;
+};
+
+
 #if defined(V8_PPC_CONSTANT_POOL_OPT)
 // Class used to build a constant pool.
 class ConstantPoolBuilder BASE_EMBEDDED {
  public:
   ConstantPoolBuilder();
-  void AddEntry(const RelocInfo& rinfo, bool sharing_ok);
-  void Relocate(intptr_t pc_delta);
+  void AddEntry(int position, RelocInfo::Mode rmode, intptr_t value,
+                bool sharing_ok) {
+    DCHECK(rmode != RelocInfo::COMMENT && rmode != RelocInfo::POSITION &&
+           rmode != RelocInfo::STATEMENT_POSITION);
+    ConstantPoolEntry entry(position, rmode, value);
+    AddEntry(entry, sharing_ok);
+  }
+  void AddEntry(int position, double value) {
+    ConstantPoolEntry entry(position, RelocInfo::NONE64, value);
+    AddEntry(entry, true);
+  }
   int Emit(Assembler* assm);
 
   // This implementation does not currently support an unlimited constant
@@ -575,22 +602,60 @@ class ConstantPoolBuilder BASE_EMBEDDED {
   inline bool IsEmitted() const { return position_ > 0; }
 
  private:
-  struct ConstantPoolEntry {
-    ConstantPoolEntry(RelocInfo rinfo, int merged_index)
-        : rinfo_(rinfo), merged_index_(merged_index) {}
-
-    RelocInfo rinfo_;
-    int merged_index_;
+  enum Type {
+#if !V8_TARGET_ARCH_PPC64
+    INT64,
+#endif
+    PTR,
+    NUMBER_OF_TYPES,
   };
 
-  enum Type {
-    INT64 = 0,
-    CODE_PTR,
-    HEAP_PTR,
-    INT32,
-    NUMBER_OF_TYPES,
-    FIRST_TYPE = INT64,
-    LAST_TYPE = INT32
+  struct ConstantPoolEntry {
+    ConstantPoolEntry(int position, RelocInfo::Mode rmode, intptr_t value)
+      : position_(position), merged_index_(-1), rmode_(rmode), value_(value) {}
+    ConstantPoolEntry(int position, RelocInfo::Mode rmode, double value)
+      : position_(position), merged_index_(-1), rmode_(rmode),
+        value64_(value) {}
+
+    bool IsEqual(const ConstantPoolEntry& entry) const {
+      return rmode_ == entry.rmode_ &&
+#if V8_TARGET_ARCH_PPC64
+          value_ == entry.value_;
+#else
+          ((rmode_ == RelocInfo::NONE64) ?
+           raw_value64_ == entry.raw_value64_ :
+           value_ == entry.value_);
+#endif
+    }
+
+    Type type() {
+#if !V8_TARGET_ARCH_PPC64
+      if (rmode_ == RelocInfo::NONE64) {
+        return INT64;
+      }
+#endif
+      return PTR;
+    }
+
+    int size() {
+#if !V8_TARGET_ARCH_PPC64
+      if (rmode_ == RelocInfo::NONE64) {
+        return kInt64Size;
+      }
+#endif
+      return kPointerSize;
+    }
+
+    int position_;
+    int merged_index_;
+    RelocInfo::Mode rmode_;
+    union {
+      intptr_t value_;
+      double value64_;
+#if !V8_TARGET_ARCH_PPC64
+      int64_t raw_value64_;
+#endif
+    };
   };
 
   class NumberOfEntries {
@@ -611,33 +676,18 @@ class ConstantPoolBuilder BASE_EMBEDDED {
     }
 
     inline int size() {
-      int size = (count_of(INT64) * kInt64Size) +
-        (count_of(CODE_PTR) * kPointerSize) +
-        (count_of(HEAP_PTR) * kPointerSize) +
-        (count_of(INT32) * kInt32Size);
-      return RoundUp(size, kPointerSize);
+      int size = count_of(PTR) * kPointerSize;
+#if !V8_TARGET_ARCH_PPC64
+      size += count_of(INT64) * kInt64Size;
+#endif
+      return size;
     }
 
    private:
     int element_counts_[NUMBER_OF_TYPES];
   };
 
-  inline static int entry_size(Type type) {
-    switch (type) {
-      case INT32:
-        return kInt32Size;
-      case INT64:
-        return kInt64Size;
-      case CODE_PTR:
-      case HEAP_PTR:
-        return kPointerSize;
-      default:
-        UNREACHABLE();
-        return 0;
-    }
-  }
-
-  Type GetConstantPoolType(RelocInfo::Mode rmode);
+  void AddEntry(ConstantPoolEntry& entry, bool sharing_ok);
   void EmitGroup(Assembler* assm, int entrySize);
 
   int size_;
@@ -713,7 +763,7 @@ class Assembler : public AssemblerBase {
   INLINE(static bool IsConstantPoolLoadStart(Address pc));
   INLINE(static bool IsConstantPoolLoadEnd(Address pc));
   INLINE(static int GetConstantPoolOffset(Address pc));
-  INLINE(static void SetConstantPoolOffset(Address pc, int offset));
+  INLINE(void SetConstantPoolOffset(int pos, int offset));
 
   // Return the address in the constant pool of the code target address used by
   // the branch/call instruction at pc, or the object in a mov.
@@ -1414,9 +1464,7 @@ class Assembler : public AssemblerBase {
   void db(uint8_t data);
   void dd(uint32_t data);
   void emit_ptr(intptr_t data);
-#if defined(V8_PPC_CONSTANT_POOL_OPT)
-  void emit_constant_pool_entry(RelocInfo* rinfo);
-#endif
+  void emit_double(double data);
 
   PositionsRecorder* positions_recorder() { return &positions_recorder_; }
 
@@ -1502,17 +1550,10 @@ class Assembler : public AssemblerBase {
   }
 
 #endif
-  static void RelocateInternalReference(
-      Address pc, intptr_t delta, Address code_start, RelocInfo::Mode rmode,
-      ICacheFlushMode icache_flush_mode = FLUSH_ICACHE_IF_NEEDED);
+  static void RelocateInternalReference(RelocInfo* rinfo,
+      ICacheFlushMode icache_flush_mode = SKIP_ICACHE_FLUSH);
 
-  void AddBoundInternalReference(int position) {
-    internal_reference_positions_.push_back(position);
-  }
-
-  void AddBoundInternalReferenceLoad(int position) {
-    internal_reference_load_positions_.push_back(position);
-  }
+  void EmitRelocations();
 
  protected:
   // Relocation for a type-recording IC has the AST id added to it.  This
@@ -1530,9 +1571,17 @@ class Assembler : public AssemblerBase {
 
   // Record reloc info for current pc_
   void RecordRelocInfo(RelocInfo::Mode rmode, intptr_t data = 0);
-  void RecordRelocInfo(const RelocInfo& rinfo);
+  void RecordRelocInfo(const DeferredRelocInfo& rinfo);
 #if defined(V8_PPC_CONSTANT_POOL_OPT)
-  void ConstantPoolAddEntry(const RelocInfo& rinfo);
+  void ConstantPoolAddEntry(RelocInfo::Mode rmode, intptr_t value) {
+    bool sharing_ok = RelocInfo::IsNone(rmode) ||
+      !(serializer_enabled() || rmode < RelocInfo::CELL ||
+        is_constant_pool_entry_sharing_blocked());
+    constant_pool_builder_.AddEntry(pc_offset(), rmode, value, sharing_ok);
+  }
+  void ConstantPoolAddEntry(double value) {
+    constant_pool_builder_.AddEntry(pc_offset(), value);
+  }
 #endif
 
   // Block the emission of the trampoline pool before pc_offset.
@@ -1589,12 +1638,7 @@ class Assembler : public AssemblerBase {
   // Each relocation is encoded as a variable size value
   static const int kMaxRelocSize = RelocInfoWriter::kMaxSize;
   RelocInfoWriter reloc_info_writer;
-
-  // Internal reference positions, required for (potential) patching in
-  // GrowBuffer(); contains only those internal references whose labels
-  // are already bound.
-  std::deque<int> internal_reference_positions_;
-  std::deque<int> internal_reference_load_positions_;
+  std::vector<DeferredRelocInfo> relocations_;
 
   // The bound position, before this we cannot do instruction elimination.
   int last_bound_pos_;

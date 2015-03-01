@@ -689,14 +689,9 @@ void MacroAssembler::LoadConstantPoolPointerRegister(Register base,
   Register code_start_reg = kConstantPoolRegister;
   if (base.is(no_reg)) {
     RecordRelocInfo(RelocInfo::INTERNAL_REFERENCE_ENCODED);
-
-    // CheckBuffer() is called too frequently. This will pre-grow
-    // the buffer if needed to avoid spliting the relocation and instructions
-    EnsureSpaceFor(kMovInstructionsNoConstantPool * kInstrSize);
-
-    intptr_t code_start_addr = reinterpret_cast<intptr_t>(pc_) - pc_offset();
-    AddBoundInternalReferenceLoad(pc_offset());
-    bitwise_mov(code_start_reg, code_start_addr);
+    // Keep internal references relative until EmitRelocations.
+    int position = 0;
+    bitwise_mov(code_start_reg, position);
   } else if (code_start_delta) {
     addi(code_start_reg, base, Operand(code_start_delta));
   } else {
@@ -3980,8 +3975,7 @@ void MacroAssembler::LoadDoubleLiteral(DoubleRegister result, double value,
 #if defined(V8_PPC_CONSTANT_POOL_OPT)
   if (FLAG_enable_embedded_constant_pool &&
       is_constant_pool_available() && !is_constant_pool_full()) {
-    RelocInfo rinfo(pc_, value);
-    ConstantPoolAddEntry(rinfo);
+    ConstantPoolAddEntry(value);
     lfd(result, MemOperand(kConstantPoolRegister, 0));
     return;
   }

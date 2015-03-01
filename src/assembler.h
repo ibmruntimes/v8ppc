@@ -406,10 +406,10 @@ class RelocInfo {
     EXTERNAL_REFERENCE,  // The address of an external C++ function.
     INTERNAL_REFERENCE,  // An address inside the same function.
 
-    // Marks constant and veneer pools. Only used on ARM and ARM64.
+    // ARCH1/ARCH2 use is architecture dependent.
     // They use a custom noncompact encoding.
-    CONST_POOL,
-    VENEER_POOL,
+    ARCH1,
+    ARCH2,
 
     DEOPT_REASON,  // Deoptimization reason index.
 
@@ -421,12 +421,22 @@ class RelocInfo {
     CODE_AGE_SEQUENCE,  // Not stored in RelocInfo array, used explictly by
                         // code aging.
 
+#if V8_TARGET_ARCH_ARM || V8_TARGET_ARCH_ARM64
+    // Marks constant and veneer pools. Only used on ARM and ARM64.
+    CONST_POOL = ARCH1,
+    VENEER_POOL = ARCH2,
+#elif V8_TARGET_ARCH_MIPS || V8_TARGET_ARCH_MIPS64
     // Encoded internal reference, used only on MIPS and MIPS64.
-    // Re-uses previous ARM-only encoding, to fit in RealRelocMode space.
-    INTERNAL_REFERENCE_ENCODED = CONST_POOL,
+    INTERNAL_REFERENCE_ENCODED = ARCH1,
+#elif V8_TARGET_ARCH_PPC
+    // Internal references, used only on PPC.
+    // Data encodes offset relative to instruction start.
+    INTERNAL_REFERENCE_ENCODED = ARCH1,
+    INTERNAL_REFERENCE_ENTRY = ARCH2,
+#endif
 
     FIRST_REAL_RELOC_MODE = CODE_TARGET,
-    LAST_REAL_RELOC_MODE = VENEER_POOL,
+    LAST_REAL_RELOC_MODE = ARCH2,
     FIRST_PSEUDO_RELOC_MODE = CODE_AGE_SEQUENCE,
     LAST_PSEUDO_RELOC_MODE = CODE_AGE_SEQUENCE,
     LAST_CODE_ENUM = DEBUG_BREAK,
@@ -477,10 +487,18 @@ class RelocInfo {
     return mode == COMMENT;
   }
   static inline bool IsConstPool(Mode mode) {
+#if V8_TARGET_ARCH_ARM || V8_TARGET_ARCH_ARM64
     return mode == CONST_POOL;
+#else
+    return false;
+#endif
   }
   static inline bool IsVeneerPool(Mode mode) {
+#if V8_TARGET_ARCH_ARM || V8_TARGET_ARCH_ARM64
     return mode == VENEER_POOL;
+#else
+    return false;
+#endif
   }
   static inline bool IsDeoptReason(Mode mode) {
     return mode == DEOPT_REASON;
@@ -498,7 +516,18 @@ class RelocInfo {
     return mode == INTERNAL_REFERENCE;
   }
   static inline bool IsInternalReferenceEncoded(Mode mode) {
+#if V8_TARGET_ARCH_PPC || V8_TARGET_ARCH_MIPS || V8_TARGET_ARCH_MIPS64
     return mode == INTERNAL_REFERENCE_ENCODED;
+#else
+    return false;
+#endif
+  }
+  static inline bool IsInternalReferenceEntry(Mode mode) {
+#if V8_TARGET_ARCH_PPC
+    return mode == INTERNAL_REFERENCE_ENTRY;
+#else
+    return false;
+#endif
   }
   static inline bool IsDebugBreakSlot(Mode mode) {
     return mode == DEBUG_BREAK_SLOT;
@@ -534,6 +563,8 @@ class RelocInfo {
   INLINE(void apply(intptr_t delta,
                     ICacheFlushMode icache_flush_mode =
                         FLUSH_ICACHE_IF_NEEDED));
+  // Apply a relocation upon deserialization
+  INLINE(void deserialize());
 
   // Is the pointer this relocation info refers to coded like a plain pointer
   // or is it strange in some way (e.g. relative or patched into a series of
@@ -655,7 +686,9 @@ class RelocInfo {
   static const int kPositionMask = 1 << POSITION | 1 << STATEMENT_POSITION;
   static const int kDataMask =
       (1 << CODE_TARGET_WITH_ID) | kPositionMask | (1 << COMMENT);
-  static const int kApplyMask;  // Modes affected by apply. Depends on arch.
+  // Modes affected by apply / deserialize. Depends on arch.
+  static const int kApplyMask;
+  static const int kDeserializeMask;
 
  private:
   // On ARM, note that pc_ is the address of the constant pool entry
@@ -727,7 +760,7 @@ class RelocInfoWriter BASE_EMBEDDED {
   inline void WriteTaggedPC(uint32_t pc_delta, int tag);
   inline void WriteExtraTaggedPC(uint32_t pc_delta, int extra_tag);
   inline void WriteExtraTaggedIntData(int data_delta, int top_tag);
-  inline void WriteExtraTaggedPoolData(int data, int pool_type);
+  inline void WriteExtraTaggedArchData(int data, int pool_type);
   inline void WriteExtraTaggedData(intptr_t data_delta, int top_tag);
   inline void WriteTaggedData(intptr_t data_delta, int tag);
   inline void WriteExtraTag(int extra_tag, int top_tag);
@@ -786,7 +819,7 @@ class RelocIterator: public Malloced {
   void ReadTaggedPC();
   void AdvanceReadPC();
   void AdvanceReadId();
-  void AdvanceReadPoolData();
+  void AdvanceReadArchData();
   void AdvanceReadPosition();
   void AdvanceReadData();
   void AdvanceReadVariableLengthPCJump();

@@ -51,11 +51,18 @@ bool CpuFeatures::SupportsCrankshaft() { return true; }
 
 
 void RelocInfo::apply(intptr_t delta, ICacheFlushMode icache_flush_mode) {
-  if (IsInternalReference(rmode_) || IsInternalReferenceEncoded(rmode_)) {
-    // absolute code pointer inside code object moves with the code object.
-    Assembler::RelocateInternalReference(pc_, delta, 0, rmode_,
-                                         icache_flush_mode);
-  }
+  DCHECK(IsInternalReferenceEntry(rmode_) ||
+         IsInternalReferenceEncoded(rmode_));
+  // absolute code pointer inside code object moves with the code object.
+  Assembler::RelocateInternalReference(this, icache_flush_mode);
+}
+
+
+void RelocInfo::deserialize() {
+  DCHECK(IsInternalReferenceEntry(rmode_) ||
+         IsInternalReferenceEncoded(rmode_));
+  // absolute code pointer inside code object moves with the code object.
+  Assembler::RelocateInternalReference(this);
 }
 
 
@@ -506,7 +513,8 @@ int Assembler::GetConstantPoolOffset(Address pc) {
 }
 
 
-void Assembler::SetConstantPoolOffset(Address pc, int offset) {
+void Assembler::SetConstantPoolOffset(int pos, int offset) {
+  Address pc = buffer_ + pos;
   DCHECK(IsConstantPoolLoadStart(pc));
   DCHECK(is_int16(offset));
   Instr instr = instr_at(pc);

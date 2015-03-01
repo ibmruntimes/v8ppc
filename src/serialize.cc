@@ -900,23 +900,15 @@ void Deserializer::ReadObject(int space_number, Object** write_back) {
     DCHECK(space_number != CODE_SPACE);
   }
 #endif
-#if V8_TARGET_ARCH_PPC
-  // If we're on a platform that uses function descriptors
-  // these jump tables make use of RelocInfo::INTERNAL_REFERENCE.
-  // As the V8 serialization code doesn't handle that relocation type
-  // we use this to fix up code that has function descriptors.
   if (space_number == CODE_SPACE) {
-    Code* code = reinterpret_cast<Code*>(HeapObject::FromAddress(address));
-    for (RelocIterator it(code); !it.done(); it.next()) {
-      RelocInfo::Mode rmode = it.rinfo()->rmode();
-      if (RelocInfo::IsInternalReference(rmode) ||
-          RelocInfo::IsInternalReferenceEncoded(rmode)) {
-        Assembler::RelocateInternalReference(it.rinfo()->pc(), 0,
-                                             code->instruction_start(), rmode);
+    int mask = RelocInfo::kDeserializeMask;
+    if (mask != 0) {
+      Code* code = reinterpret_cast<Code*>(HeapObject::FromAddress(address));
+      for (RelocIterator it(code, mask); !it.done(); it.next()) {
+        it.rinfo()->deserialize();
       }
     }
   }
-#endif
 }
 
 

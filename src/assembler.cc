@@ -271,12 +271,12 @@ int Label::pos() const {
 //                              00 [4 bit middle_tag] 11 followed by
 //                              00 [6 bit pc delta]
 //
-//      1101: constant or veneer pool. Used only on ARM and ARM64 for now.
+//      1101: arch1 or arch2 (architecture dependent)
 //        The format is:       [2-bit sub-type] 1101 11
-//                             signed int (size of the pool).
+//                             signed int (data).
 //          The 2-bit sub-types are:
-//            00: constant pool
-//            01: veneer pool
+//            00: arch1
+//            01: arch2
 //      1110: long_data_record
 //        The format is:       [2-bit data_type_tag] 1110 11
 //                             signed intptr_t, lowest byte written first
@@ -337,9 +337,9 @@ const int kCommentTag = 3;
 // It is possible because we use kCommentTag only for the long record format.
 const int kDeoptReasonTag = 3;
 
-const int kPoolExtraTag = kPCJumpExtraTag - 2;
-const int kConstPoolTag = 0;
-const int kVeneerPoolTag = 1;
+const int kArchExtraTag = kPCJumpExtraTag - 2;
+const int kArch1Tag = 0;
+const int kArch2Tag = 1;
 
 
 uint32_t RelocInfoWriter::WriteVariableLengthPCJump(uint32_t pc_delta) {
@@ -399,8 +399,8 @@ void RelocInfoWriter::WriteExtraTaggedIntData(int data_delta, int top_tag) {
 }
 
 
-void RelocInfoWriter::WriteExtraTaggedPoolData(int data, int pool_type) {
-  WriteExtraTag(kPoolExtraTag, pool_type);
+void RelocInfoWriter::WriteExtraTaggedArchData(int data, int type) {
+  WriteExtraTag(kArchExtraTag, type);
   for (int i = 0; i < kIntSize; i++) {
     *--pos_ = static_cast<byte>(data);
     // Signed right shift is arithmetic shift.  Tested in test-utils.cc.
@@ -508,17 +508,17 @@ void RelocInfoWriter::Write(const RelocInfo* rinfo) {
     WriteExtraTaggedPC(pc_delta, kPCJumpExtraTag);
     WriteExtraTaggedData(rinfo->data(), kCommentTag);
     DCHECK(begin_pos - pos_ >= RelocInfo::kMinRelocCommentSize);
-  } else if (RelocInfo::IsConstPool(rmode) || RelocInfo::IsVeneerPool(rmode)) {
+  } else if (rmode == RelocInfo::ARCH1 || rmode == RelocInfo::ARCH2) {
       WriteExtraTaggedPC(pc_delta, kPCJumpExtraTag);
-      WriteExtraTaggedPoolData(static_cast<int>(rinfo->data()),
-                               RelocInfo::IsConstPool(rmode) ? kConstPoolTag
-                                                             : kVeneerPoolTag);
+      WriteExtraTaggedArchData(static_cast<int>(rinfo->data()),
+                               rmode == RelocInfo::ARCH1 ? kArch1Tag
+                                                         : kArch2Tag);
   } else {
     DCHECK(rmode > RelocInfo::LAST_COMPACT_ENUM);
     int saved_mode = rmode - RelocInfo::LAST_COMPACT_ENUM;
     // For all other modes we simply use the mode as the extra tag.
     // None of these modes need a data component.
-    DCHECK(saved_mode < kPoolExtraTag);
+    DCHECK(saved_mode < kArchExtraTag);
     WriteExtraTaggedPC(pc_delta, saved_mode);
   }
   last_pc_ = rinfo->pc();
@@ -564,7 +564,7 @@ void RelocIterator::AdvanceReadId() {
 }
 
 
-void RelocIterator::AdvanceReadPoolData() {
+void RelocIterator::AdvanceReadArchData() {
   int x = 0;
   for (int i = 0; i < kIntSize; i++) {
     x |= static_cast<int>(*--pos_) << i * kBitsPerByte;
@@ -713,13 +713,13 @@ void RelocIterator::next() {
           }
           Advance(kIntptrSize);
         }
-      } else if (extra_tag == kPoolExtraTag) {
-        int pool_type = GetTopTag();
-        DCHECK(pool_type == kConstPoolTag || pool_type == kVeneerPoolTag);
-        RelocInfo::Mode rmode = (pool_type == kConstPoolTag) ?
-          RelocInfo::CONST_POOL : RelocInfo::VENEER_POOL;
+      } else if (extra_tag == kArchExtraTag) {
+        int type = GetTopTag();
+        DCHECK(type == kArch1Tag || type == kArch2Tag);
+        RelocInfo::Mode rmode = (type == kArch1Tag) ?
+          RelocInfo::ARCH1 : RelocInfo::ARCH2;
         if (SetMode(rmode)) {
-          AdvanceReadPoolData();
+          AdvanceReadArchData();
           return;
         }
         Advance(kIntSize);
@@ -838,10 +838,30 @@ const char* RelocInfo::RelocModeName(RelocInfo::Mode rmode) {
       return "internal reference";
     case RelocInfo::DEOPT_REASON:
       return "deopt reason";
+#if V8_TARGET_ARCH_ARM || V8_TARGET_ARCH_ARM64
     case RelocInfo::CONST_POOL:
       return "constant pool";
     case RelocInfo::VENEER_POOL:
       return "veneer pool";
+#elif V8_TARGET_ARCH_MIPS || V8_TARGET_ARCH_MIPS64
+    case RelocInfo::INTERNAL_REFERENCE_ENCODED:
+      return "internal reference (encoded)";
+    case RelocInfo::ARCH2:
+      UNREACHABLE();
+      return "arch2";
+#elif V8_TARGET_ARCH_PPC
+    case RelocInfo::INTERNAL_REFERENCE_ENCODED:
+      return "internal reference (encoded)";
+    case RelocInfo::INTERNAL_REFERENCE_ENTRY:
+      return "internal reference (entry)";
+#else
+    case RelocInfo::ARCH1:
+      UNREACHABLE();
+      return "arch1";
+    case RelocInfo::ARCH2:
+      UNREACHABLE();
+      return "arch2";
+#endif
     case RelocInfo::DEBUG_BREAK_SLOT:
       return "debug break slot";
     case RelocInfo::CODE_AGE_SEQUENCE:
@@ -922,8 +942,8 @@ void RelocInfo::Verify(Isolate* isolate) {
     case EXTERNAL_REFERENCE:
     case INTERNAL_REFERENCE:
     case DEOPT_REASON:
-    case CONST_POOL:
-    case VENEER_POOL:
+    case ARCH1:
+    case ARCH2:
     case DEBUG_BREAK_SLOT:
     case NONE32:
     case NONE64:

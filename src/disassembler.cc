@@ -105,7 +105,8 @@ static int DecodeIt(Isolate* isolate, std::ostream* os,
         constants = num_const;
         pc += 4;
       } else if (it != NULL && !it->done() && it->rinfo()->pc() == pc &&
-          it->rinfo()->rmode() == RelocInfo::INTERNAL_REFERENCE) {
+                 (RelocInfo::IsInternalReference(it->rinfo()->rmode()) ||
+                  RelocInfo::IsInternalReferenceEntry(it->rinfo()->rmode()))) {
         // raw pointer embedded in code stream, e.g., jump table
         byte* ptr = *reinterpret_cast<byte**>(pc);
         SNPrintF(decode_buffer,
