@@ -2308,7 +2308,7 @@ void FullCodeGenerator::EmitGeneratorResume(
 #if defined(V8_PPC_CONSTANT_POOL_OPT)
       ConstantPoolUnavailableScope constant_pool_unavailable(masm_);
       if (FLAG_enable_embedded_constant_pool) {
-        __ LoadConstantPoolPointerRegister(ip);
+        __ LoadTargetConstantPoolPointerRegister(ip);
       }
 #endif
       __ LoadP(r5, FieldMemOperand(r4, JSGeneratorObject::kContinuationOffset));

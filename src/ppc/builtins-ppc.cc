@@ -1166,7 +1166,7 @@ void Builtins::Generate_OnStackReplacement(MacroAssembler* masm) {
 
 #if defined(V8_PPC_CONSTANT_POOL_OPT)
     if (FLAG_enable_embedded_constant_pool) {
-      __ LoadConstantPoolPointerRegister(r3);
+      __ LoadTargetConstantPoolPointerRegister(r3);
     }
 
 #endif

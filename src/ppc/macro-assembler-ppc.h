@@ -1465,8 +1465,9 @@ class MacroAssembler : public Assembler {
 #if defined(V8_PPC_CONSTANT_POOL_OPT)
 
   // Loads the constant pool pointer (kConstantPoolRegister).
-  void LoadConstantPoolPointerRegister(Register base = no_reg,
-                                       int code_entry_delta = 0);
+  void LoadTargetConstantPoolPointerRegister(Register target);
+  void LoadOwnConstantPoolPointerRegister(Register base = no_reg,
+                                          int code_entry_delta = 0);
 #endif
 
  private:

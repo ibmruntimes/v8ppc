@@ -684,23 +684,21 @@ void MacroAssembler::ConvertDoubleToInt64(const DoubleRegister double_input,
 
 
 #if defined(V8_PPC_CONSTANT_POOL_OPT)
-void MacroAssembler::LoadConstantPoolPointerRegister(Register base,
-                                                     int code_start_delta) {
-  Register code_start_reg = kConstantPoolRegister;
-  if (base.is(no_reg)) {
-    RecordRelocInfo(RelocInfo::INTERNAL_REFERENCE_ENCODED);
-    // Keep internal references relative until EmitRelocations.
-    int position = 0;
-    bitwise_mov(code_start_reg, position);
-  } else if (code_start_delta) {
-    addi(code_start_reg, base, Operand(code_start_delta));
-  } else {
-    code_start_reg = base;
-  }
+void MacroAssembler::LoadTargetConstantPoolPointerRegister(Register target) {
+  lwz(kConstantPoolRegister,
+      MemOperand(target, Code::kConstantPoolOffset - Code::kHeaderSize));
+  add(kConstantPoolRegister, kConstantPoolRegister, target);
+}
 
-  lwz(r0, MemOperand(code_start_reg,
-                     Code::kConstantPoolOffset - Code::kHeaderSize));
-  add(kConstantPoolRegister, code_start_reg, r0);
+
+void MacroAssembler::LoadOwnConstantPoolPointerRegister(Register base,
+                                                        int code_start_delta) {
+  if (base.is(no_reg)) {
+    mov_label_addr(kConstantPoolRegister, ConstantPoolPosition());
+  } else {
+    add_label_offset(kConstantPoolRegister, base, ConstantPoolPosition(),
+                     code_start_delta);
+  }
 }
 
 
@@ -713,7 +711,7 @@ void MacroAssembler::StubPrologue(int prologue_offset) {
 #if defined(V8_PPC_CONSTANT_POOL_OPT)
   if (FLAG_enable_embedded_constant_pool) {
     // ip contains prologue address
-    LoadConstantPoolPointerRegister(ip, -prologue_offset);
+    LoadOwnConstantPoolPointerRegister(ip, -prologue_offset);
     set_constant_pool_available(true);
   }
 #endif
@@ -752,7 +750,7 @@ void MacroAssembler::Prologue(bool code_pre_aging, int prologue_offset) {
 #if defined(V8_PPC_CONSTANT_POOL_OPT)
   if (FLAG_enable_embedded_constant_pool) {
     // ip contains prologue address
-    LoadConstantPoolPointerRegister(ip, -prologue_offset);
+    LoadOwnConstantPoolPointerRegister(ip, -prologue_offset);
     set_constant_pool_available(true);
   }
 #endif
@@ -765,7 +763,7 @@ void MacroAssembler::EnterFrame(StackFrame::Type type,
   if (FLAG_enable_embedded_constant_pool && load_constant_pool_pointer_reg) {
     PushFixedFrame();
     // This path should not rely on ip containing code entry.
-    LoadConstantPoolPointerRegister();
+    LoadOwnConstantPoolPointerRegister();
     LoadSmiLiteral(ip, Smi::FromInt(type));
     push(ip);
   } else {
@@ -1252,7 +1250,7 @@ void MacroAssembler::JumpToHandlerEntry() {
   addi(r4, r4, Operand(Code::kHeaderSize - kHeapObjectTag));  // Code start.
 #if defined(V8_PPC_CONSTANT_POOL_OPT)
   if (FLAG_enable_embedded_constant_pool) {
-    LoadConstantPoolPointerRegister(r4);
+    LoadTargetConstantPoolPointerRegister(r4);
   }
 #endif
   addi(r6, r6, Operand(FixedArray::kHeaderSize - kHeapObjectTag));

@@ -594,12 +594,13 @@ class ConstantPoolBuilder BASE_EMBEDDED {
     AddEntry(entry, true);
   }
   int Emit(Assembler* assm);
+  inline Label* Position() { return &label_; }
 
   // This implementation does not currently support an unlimited constant
   // pool size (which would require a multi-instruction sequence).
   inline bool IsFull() const { return !is_int16(size_); }
   inline bool IsEmpty() const { return entries_.size() == 0; }
-  inline bool IsEmitted() const { return position_ > 0; }
+  inline bool IsEmitted() const { return label_.is_bound(); }
 
  private:
   enum Type {
@@ -691,9 +692,9 @@ class ConstantPoolBuilder BASE_EMBEDDED {
   void EmitGroup(Assembler* assm, int entrySize);
 
   int size_;
-  int position_;
   std::vector<ConstantPoolEntry> entries_;
   NumberOfEntries number_of_entries_;
+  Label label_;
 };
 
 
@@ -1223,10 +1224,15 @@ class Assembler : public AssemblerBase {
   void mov(Register dst, const Operand& src);
   void bitwise_mov(Register dst, intptr_t value);
   void bitwise_mov32(Register dst, int32_t value);
+  void bitwise_add32(Register dst, Register src, int32_t value);
 
   // Load the position of the label relative to the generated code object
   // pointer in a register.
   void mov_label_offset(Register dst, Label* label);
+
+  // dst = base + label position + delta
+  void add_label_offset(Register dst, Register base, Label* label,
+                        int delta = 0);
 
   // Load the address of the label in a register and associate with an
   // internal reference relocation.
@@ -1527,9 +1533,6 @@ class Assembler : public AssemblerBase {
   // The code currently calls CheckBuffer() too often. This has the side
   // effect of randomly growing the buffer in the middle of multi-instruction
   // sequences.
-  // MacroAssembler::LoadConstantPoolPointerRegister() includes a relocation
-  // and multiple instructions. We cannot grow the buffer until the
-  // relocation and all of the instructions are written.
   //
   // This function allows outside callers to check and grow the buffer
   void EnsureSpaceFor(int space_needed);
@@ -1548,6 +1551,8 @@ class Assembler : public AssemblerBase {
   bool is_constant_pool_full() const {
     return constant_pool_builder_.IsFull();
   }
+
+  Label* ConstantPoolPosition() { return constant_pool_builder_.Position(); }
 
 #endif
   static void RelocateInternalReference(RelocInfo* rinfo,

@@ -434,8 +434,9 @@ const int kEndOfChain = -4;
 // Dummy opcodes for unbound label mov instructions or jump table entries.
 enum {
   kUnboundMovLabelOffsetOpcode = 0 << 26,
-  kUnboundMovLabelAddrOpcode = 1 << 26,
-  kUnboundJumpTableEntryOpcode = 2 << 26
+  kUnboundAddLabelOffsetOpcode = 1 << 26,
+  kUnboundMovLabelAddrOpcode = 2 << 26,
+  kUnboundJumpTableEntryOpcode = 3 << 26
 };
 
 
@@ -454,6 +455,7 @@ int Assembler::target_at(int pos) {
       link &= ~(kAAMask | kLKMask);  // discard AA|LK bits if present
       break;
     case kUnboundMovLabelOffsetOpcode:
+    case kUnboundAddLabelOffsetOpcode:
     case kUnboundMovLabelAddrOpcode:
     case kUnboundJumpTableEntryOpcode:
       link = SIGN_EXT_IMM26(instr & kImm26Mask);
@@ -510,6 +512,17 @@ void Assembler::target_at_put(int pos, int target_pos) {
       patcher.masm()->bitwise_mov32(dst, offset);
       break;
     }
+    case kUnboundAddLabelOffsetOpcode: {
+      // dst = base + position + immediate
+      Instr operands = instr_at(pos + kInstrSize);
+      Register dst = Register::from_code((operands >> 21) & 0x1f);
+      Register base = Register::from_code((operands >> 16) & 0x1f);
+      int32_t offset = target_pos + SIGN_EXT_IMM16(operands & kImm16Mask);
+      CodePatcher patcher(reinterpret_cast<byte*>(buffer_ + pos), 2,
+                          CodePatcher::DONT_FLUSH);
+      patcher.masm()->bitwise_add32(dst, base, offset);
+      break;
+    }
     case kUnboundMovLabelAddrOpcode: {
       // Load the address of the label in a register.
       Register dst = Register::from_code(instr_at(pos + kInstrSize));
@@ -549,6 +562,7 @@ int Assembler::max_reach_from(int pos) {
     case BCX:
       return 16;
     case kUnboundMovLabelOffsetOpcode:
+    case kUnboundAddLabelOffsetOpcode:
     case kUnboundMovLabelAddrOpcode:
     case kUnboundJumpTableEntryOpcode:
       return 0;  // no limit on reach
@@ -1720,6 +1734,21 @@ void Assembler::bitwise_mov32(Register dst, int32_t value) {
 }
 
 
+void Assembler::bitwise_add32(Register dst, Register src, int32_t value) {
+  BlockTrampolinePoolScope block_trampoline_pool(this);
+  if (is_int16(value)) {
+    addi(dst, src, Operand(value));
+    nop();
+  } else {
+    int hi_word = static_cast<int>(value >> 16);
+    int lo_word = static_cast<int>(value & 0xffff);
+    if (lo_word & 0x8000) hi_word++;
+    addis(dst, src, Operand(SIGN_EXT_IMM16(hi_word)));
+    addic(dst, dst, Operand(lo_word));
+  }
+}
+
+
 void Assembler::mov_label_offset(Register dst, Label* label) {
   int position = link(label);
   if (label->is_bound()) {
@@ -1743,6 +1772,30 @@ void Assembler::mov_label_offset(Register dst, Label* label) {
     BlockTrampolinePoolScope block_trampoline_pool(this);
     emit(kUnboundMovLabelOffsetOpcode | (link & kImm26Mask));
     emit(dst.code());
+  }
+}
+
+
+void Assembler::add_label_offset(Register dst, Register base, Label* label,
+                                 int delta) {
+  int position = link(label);
+  if (label->is_bound()) {
+    // dst = base + position + delta
+    position += delta;
+    bitwise_add32(dst, base, position);
+  } else {
+    // Encode internal reference to unbound label. We use a dummy opcode
+    // such that it won't collide with any opcode that might appear in the
+    // label's chain.  Encode the operands in the 2nd instruction.
+    int link = position - pc_offset();
+    DCHECK_EQ(0, link & 3);
+    link >>= 2;
+    DCHECK(is_int26(link));
+    DCHECK(is_int16(delta));
+
+    BlockTrampolinePoolScope block_trampoline_pool(this);
+    emit(kUnboundAddLabelOffsetOpcode | (link & kImm26Mask));
+    emit(dst.code() * B21 | base.code() * B16 | (delta & kImm16Mask));
   }
 }
 
@@ -2518,6 +2571,7 @@ void ConstantPoolBuilder::AddEntry(ConstantPoolEntry& entry, bool sharing_ok) {
 
 
 void ConstantPoolBuilder::EmitGroup(Assembler* assm, int entrySize) {
+  int base = label_.pos();
   for (std::vector<ConstantPoolEntry>::iterator entry = entries_.begin();
        entry != entries_.end(); entry++) {
 #if !V8_TARGET_ARCH_PPC64
@@ -2529,7 +2583,7 @@ void ConstantPoolBuilder::EmitGroup(Assembler* assm, int entrySize) {
     // Update constant pool if necessary and get the entry's offset.
     int offset;
     if (entry->merged_index_ < 0) {
-      offset = assm->pc_offset() - position_;
+      offset = assm->pc_offset() - base;
       entry->merged_index_ = offset;  // Stash offset for merged entries.
 #if V8_TARGET_ARCH_PPC64
       assm->emit_ptr(entry->value_);
@@ -2553,12 +2607,18 @@ void ConstantPoolBuilder::EmitGroup(Assembler* assm, int entrySize) {
 
 // Emit and return position of pool.  Zero implies no constant pool.
 int ConstantPoolBuilder::Emit(Assembler* assm) {
-  if (!(IsEmpty() || IsEmitted())) {
-    // Mark start of constant pool.
-    assm->CodeTargetAlign();
-    position_ = assm->pc_offset();
-    DCHECK(position_ > 0);
+  bool empty = IsEmpty();
+  bool emitted = IsEmitted();
 
+  if (!emitted) {
+    // Mark start of constant pool.  Align if necessary.
+    if (!empty) assm->CodeTargetAlign();
+    assm->bind(&label_);
+  }
+
+  int position = empty ? 0 : label_.pos();
+
+  if (!(emitted || empty)) {
     // Emit in groups based on size.  We don't support 32-bit
     // constants in 64-bit mode so the only non-pointer-sized entries
     // are doubles in 32-bit mode.
@@ -2569,10 +2629,11 @@ int ConstantPoolBuilder::Emit(Assembler* assm) {
     }
 #endif
     EmitGroup(assm, kPointerSize);
-    DCHECK(assm->pc_offset() - position_ == size_);
+    DCHECK(position > 0);
+    DCHECK(assm->pc_offset() - position == size_);
   }
 
-  return position_;
+  return position;
 }
 #endif
 }
