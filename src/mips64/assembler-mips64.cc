@@ -176,6 +176,7 @@ Register ToRegister(int num) {
 const int RelocInfo::kApplyMask = RelocInfo::kCodeTargetMask |
                                   1 << RelocInfo::INTERNAL_REFERENCE |
                                   1 << RelocInfo::INTERNAL_REFERENCE_ENCODED;
+const int RelocInfo::kDeserializeMask = 0;
 
 
 bool RelocInfo::IsCodedSpecially() {

@@ -3454,6 +3454,7 @@ const int RelocInfo::kApplyMask = RelocInfo::kCodeTargetMask |
     1 << RelocInfo::RUNTIME_ENTRY |
     1 << RelocInfo::INTERNAL_REFERENCE |
     1 << RelocInfo::CODE_AGE_SEQUENCE;
+const int RelocInfo::kDeserializeMask = 0;
 
 
 bool RelocInfo::IsCodedSpecially() {

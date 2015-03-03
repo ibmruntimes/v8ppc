@@ -22,6 +22,9 @@ void RelocInfo::apply(intptr_t delta, ICacheFlushMode icache_flush_mode) {
 }
 
 
+void RelocInfo::deserialize() { UNIMPLEMENTED(); }
+
+
 void RelocInfo::set_target_address(Address target,
                                    WriteBarrierMode write_barrier_mode,
                                    ICacheFlushMode icache_flush_mode) {

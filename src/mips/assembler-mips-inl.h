@@ -135,6 +135,9 @@ void RelocInfo::apply(intptr_t delta, ICacheFlushMode icache_flush_mode) {
 }
 
 
+void RelocInfo::deserialize() { UNIMPLEMENTED(); }
+
+
 Address RelocInfo::target_address() {
   DCHECK(IsCodeTarget(rmode_) || IsRuntimeEntry(rmode_));
   return Assembler::target_address_at(pc_, host_);
