@@ -3136,7 +3136,12 @@ int DescriptorArray::GetFieldIndex(int descriptor_number) {
 
 HeapType* DescriptorArray::GetFieldType(int descriptor_number) {
   DCHECK(GetDetails(descriptor_number).location() == kField);
-  return HeapType::cast(GetValue(descriptor_number));
+  Object* value = GetValue(descriptor_number);
+  if (value->IsWeakCell()) {
+    if (WeakCell::cast(value)->cleared()) return HeapType::Any();
+    value = WeakCell::cast(value)->value();
+  }
+  return HeapType::cast(value);
 }
 
 
@@ -5522,6 +5527,7 @@ void Map::SetBackPointer(Object* value, WriteBarrierMode mode) {
 
 ACCESSORS(Map, code_cache, Object, kCodeCacheOffset)
 ACCESSORS(Map, dependent_code, DependentCode, kDependentCodeOffset)
+ACCESSORS(Map, weak_cell_cache, Object, kWeakCellCacheOffset)
 ACCESSORS(Map, constructor_or_backpointer, Object,
           kConstructorOrBackPointerOffset)
 
@@ -5914,7 +5920,6 @@ BOOL_ACCESSORS(SharedFunctionInfo, compiler_hints, is_default_constructor,
 
 ACCESSORS(CodeCache, default_cache, FixedArray, kDefaultCacheOffset)
 ACCESSORS(CodeCache, normal_type_cache, Object, kNormalTypeCacheOffset)
-ACCESSORS(CodeCache, weak_cell_cache, Object, kWeakCellCacheOffset)
 
 ACCESSORS(PolymorphicCodeCache, cache, Object, kCacheOffset)
 
@@ -7038,8 +7043,7 @@ Maybe<bool> JSReceiver::HasProperty(Handle<JSReceiver> object,
     return JSProxy::HasPropertyWithHandler(proxy, name);
   }
   Maybe<PropertyAttributes> result = GetPropertyAttributes(object, name);
-  if (!result.has_value) return Maybe<bool>();
-  return maybe(result.value != ABSENT);
+  return result.IsJust() ? Just(result.FromJust() != ABSENT) : Nothing<bool>();
 }
 
 
@@ -7050,8 +7054,7 @@ Maybe<bool> JSReceiver::HasOwnProperty(Handle<JSReceiver> object,
     return JSProxy::HasPropertyWithHandler(proxy, name);
   }
   Maybe<PropertyAttributes> result = GetOwnPropertyAttributes(object, name);
-  if (!result.has_value) return Maybe<bool>();
-  return maybe(result.value != ABSENT);
+  return result.IsJust() ? Just(result.FromJust() != ABSENT) : Nothing<bool>();
 }
 
 
@@ -7110,8 +7113,7 @@ Maybe<bool> JSReceiver::HasElement(Handle<JSReceiver> object, uint32_t index) {
   }
   Maybe<PropertyAttributes> result = JSObject::GetElementAttributeWithReceiver(
       Handle<JSObject>::cast(object), object, index, true);
-  if (!result.has_value) return Maybe<bool>();
-  return maybe(result.value != ABSENT);
+  return result.IsJust() ? Just(result.FromJust() != ABSENT) : Nothing<bool>();
 }
 
 
@@ -7123,8 +7125,7 @@ Maybe<bool> JSReceiver::HasOwnElement(Handle<JSReceiver> object,
   }
   Maybe<PropertyAttributes> result = JSObject::GetElementAttributeWithReceiver(
       Handle<JSObject>::cast(object), object, index, false);
-  if (!result.has_value) return Maybe<bool>();
-  return maybe(result.value != ABSENT);
+  return result.IsJust() ? Just(result.FromJust() != ABSENT) : Nothing<bool>();
 }
 
 

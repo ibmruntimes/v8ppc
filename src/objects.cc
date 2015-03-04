@@ -15,6 +15,7 @@
 #include "src/bootstrapper.h"
 #include "src/code-stubs.h"
 #include "src/codegen.h"
+#include "src/compiler.h"
 #include "src/cpu-profiler.h"
 #include "src/date.h"
 #include "src/debug.h"
@@ -126,7 +127,7 @@ MaybeHandle<Object> Object::GetProperty(LookupIterator* it) {
         break;
       }
       case LookupIterator::ACCESS_CHECK:
-        if (it->HasAccess(v8::ACCESS_GET)) break;
+        if (it->HasAccess()) break;
         return JSObject::GetPropertyWithFailedAccessCheck(it);
       case LookupIterator::ACCESSOR:
         return GetPropertyWithAccessor(it->GetReceiver(), it->name(),
@@ -156,7 +157,7 @@ Handle<Object> JSObject::GetDataProperty(LookupIterator* it) {
       case LookupIterator::TRANSITION:
         UNREACHABLE();
       case LookupIterator::ACCESS_CHECK:
-        if (it->HasAccess(v8::ACCESS_GET)) continue;
+        if (it->HasAccess()) continue;
       // Fall through.
       case LookupIterator::JSPROXY:
         it->NotFound();
@@ -469,7 +470,7 @@ MaybeHandle<Object> JSObject::GetPropertyWithFailedAccessCheck(
     if (it->isolate()->has_scheduled_exception()) break;
     if (!result.is_null()) return result;
   }
-  it->isolate()->ReportFailedAccessCheck(checked, v8::ACCESS_GET);
+  it->isolate()->ReportFailedAccessCheck(checked);
   RETURN_EXCEPTION_IF_SCHEDULED_EXCEPTION(it->isolate(), Object);
   return it->factory()->undefined_value();
 }
@@ -480,18 +481,18 @@ Maybe<PropertyAttributes> JSObject::GetPropertyAttributesWithFailedAccessCheck(
   Handle<JSObject> checked = it->GetHolder<JSObject>();
   while (FindAllCanReadHolder(it)) {
     if (it->state() == LookupIterator::ACCESSOR) {
-      return maybe(it->property_details().attributes());
+      return Just(it->property_details().attributes());
     }
     DCHECK_EQ(LookupIterator::INTERCEPTOR, it->state());
     auto result = GetPropertyAttributesWithInterceptor(
         it->GetHolder<JSObject>(), it->GetReceiver(), it->name());
     if (it->isolate()->has_scheduled_exception()) break;
-    if (result.has_value && result.value != ABSENT) return result;
+    if (result.IsJust() && result.FromJust() != ABSENT) return result;
   }
-  it->isolate()->ReportFailedAccessCheck(checked, v8::ACCESS_HAS);
+  it->isolate()->ReportFailedAccessCheck(checked);
   RETURN_VALUE_IF_SCHEDULED_EXCEPTION(it->isolate(),
-                                      Maybe<PropertyAttributes>());
-  return maybe(ABSENT);
+                                      Nothing<PropertyAttributes>());
+  return Just(ABSENT);
 }
 
 
@@ -517,7 +518,7 @@ MaybeHandle<Object> JSObject::SetPropertyWithFailedAccessCheck(
                                    it->GetAccessors(), language_mode);
   }
 
-  it->isolate()->ReportFailedAccessCheck(checked, v8::ACCESS_SET);
+  it->isolate()->ReportFailedAccessCheck(checked);
   RETURN_EXCEPTION_IF_SCHEDULED_EXCEPTION(it->isolate(), Object);
   return value;
 }
@@ -605,7 +606,7 @@ MaybeHandle<Object> JSObject::GetElementWithFailedAccessCheck(
     if (!result.is_null()) return result;
     where_to_start = PrototypeIterator::START_AT_PROTOTYPE;
   }
-  isolate->ReportFailedAccessCheck(object, v8::ACCESS_GET);
+  isolate->ReportFailedAccessCheck(object);
   RETURN_EXCEPTION_IF_SCHEDULED_EXCEPTION(isolate, Object);
   return isolate->factory()->undefined_value();
 }
@@ -624,12 +625,12 @@ Maybe<PropertyAttributes> JSObject::GetElementAttributesWithFailedAccessCheck(
     auto result =
         JSObject::GetElementAttributeFromInterceptor(object, receiver, index);
     if (isolate->has_scheduled_exception()) break;
-    if (result.has_value && result.value != ABSENT) return result;
+    if (result.IsJust() && result.FromJust() != ABSENT) return result;
     where_to_start = PrototypeIterator::START_AT_PROTOTYPE;
   }
-  isolate->ReportFailedAccessCheck(object, v8::ACCESS_HAS);
-  RETURN_VALUE_IF_SCHEDULED_EXCEPTION(isolate, Maybe<PropertyAttributes>());
-  return maybe(ABSENT);
+  isolate->ReportFailedAccessCheck(object);
+  RETURN_VALUE_IF_SCHEDULED_EXCEPTION(isolate, Nothing<PropertyAttributes>());
+  return Just(ABSENT);
 }
 
 
@@ -664,7 +665,7 @@ MaybeHandle<Object> Object::GetElementWithReceiver(Isolate* isolate,
 
     // Check access rights if needed.
     if (js_object->IsAccessCheckNeeded()) {
-      if (!isolate->MayIndexedAccess(js_object, index, v8::ACCESS_GET)) {
+      if (!isolate->MayAccess(js_object)) {
         return JSObject::GetElementWithFailedAccessCheck(isolate, js_object,
                                                          receiver, index);
       }
@@ -711,8 +712,8 @@ MaybeHandle<Object> Object::SetElementWithReceiver(
 
     // Check access rights if needed.
     if (js_object->IsAccessCheckNeeded()) {
-      if (!isolate->MayIndexedAccess(js_object, index, v8::ACCESS_SET)) {
-        isolate->ReportFailedAccessCheck(js_object, v8::ACCESS_SET);
+      if (!isolate->MayAccess(js_object)) {
+        isolate->ReportFailedAccessCheck(js_object);
         RETURN_EXCEPTION_IF_SCHEDULED_EXCEPTION(isolate, Object);
         return isolate->factory()->undefined_value();
       }
@@ -722,12 +723,12 @@ MaybeHandle<Object> Object::SetElementWithReceiver(
       Maybe<PropertyAttributes> from_interceptor =
           JSObject::GetElementAttributeFromInterceptor(js_object, receiver,
                                                        index);
-      if (!from_interceptor.has_value) return MaybeHandle<Object>();
-      if ((from_interceptor.value & READ_ONLY) != 0) {
+      if (!from_interceptor.IsJust()) return MaybeHandle<Object>();
+      if ((from_interceptor.FromJust() & READ_ONLY) != 0) {
         return WriteToReadOnlyElement(isolate, receiver, index, value,
                                       language_mode);
       }
-      done = from_interceptor.value != ABSENT;
+      done = from_interceptor.FromJust() != ABSENT;
     }
 
     if (!done &&
@@ -1704,6 +1705,12 @@ String* JSReceiver::constructor_name() {
 }
 
 
+static Handle<Object> WrapType(Handle<HeapType> type) {
+  if (type->IsClass()) return Map::WeakCellForMap(type->AsClass()->Map());
+  return type;
+}
+
+
 MaybeHandle<Map> Map::CopyWithField(Handle<Map> map,
                                     Handle<Name> name,
                                     Handle<HeapType> type,
@@ -1729,7 +1736,10 @@ MaybeHandle<Map> Map::CopyWithField(Handle<Map> map,
     type = HeapType::Any(isolate);
   }
 
-  DataDescriptor new_field_desc(name, index, type, attributes, representation);
+  Handle<Object> wrapped_type(WrapType(type));
+
+  DataDescriptor new_field_desc(name, index, wrapped_type, attributes,
+                                representation);
   Handle<Map> new_map = Map::CopyAddDescriptor(map, &new_field_desc, flag);
   int unused_property_fields = new_map->unused_property_fields() - 1;
   if (unused_property_fields < 0) {
@@ -2305,15 +2315,16 @@ Map* Map::FindFieldOwner(int descriptor) {
 
 void Map::UpdateFieldType(int descriptor, Handle<Name> name,
                           Representation new_representation,
-                          Handle<HeapType> new_type) {
+                          Handle<Object> new_wrapped_type) {
+  DCHECK(new_wrapped_type->IsSmi() || new_wrapped_type->IsWeakCell());
   DisallowHeapAllocation no_allocation;
   PropertyDetails details = instance_descriptors()->GetDetails(descriptor);
   if (details.type() != DATA) return;
   if (HasTransitionArray()) {
     TransitionArray* transitions = this->transitions();
     for (int i = 0; i < transitions->number_of_transitions(); ++i) {
-      transitions->GetTarget(i)
-          ->UpdateFieldType(descriptor, name, new_representation, new_type);
+      transitions->GetTarget(i)->UpdateFieldType(
+          descriptor, name, new_representation, new_wrapped_type);
     }
   }
   // It is allowed to change representation here only from None to something.
@@ -2321,9 +2332,9 @@ void Map::UpdateFieldType(int descriptor, Handle<Name> name,
          details.representation().IsNone());
 
   // Skip if already updated the shared descriptor.
-  if (instance_descriptors()->GetFieldType(descriptor) == *new_type) return;
+  if (instance_descriptors()->GetValue(descriptor) == *new_wrapped_type) return;
   DataDescriptor d(name, instance_descriptors()->GetFieldIndex(descriptor),
-                   new_type, details.attributes(), new_representation);
+                   new_wrapped_type, details.attributes(), new_representation);
   instance_descriptors()->Replace(descriptor, &d);
 }
 
@@ -2371,8 +2382,10 @@ void Map::GeneralizeFieldType(Handle<Map> map, int modify_index,
 
   PropertyDetails details = descriptors->GetDetails(modify_index);
   Handle<Name> name(descriptors->GetKey(modify_index));
+
+  Handle<Object> wrapped_type(WrapType(new_field_type));
   field_owner->UpdateFieldType(modify_index, name, new_representation,
-                               new_field_type);
+                               wrapped_type);
   field_owner->dependent_code()->DeoptimizeDependentCodeGroup(
       isolate, DependentCode::kFieldTypeGroup);
 
@@ -2764,7 +2777,8 @@ Handle<Map> Map::ReconfigureProperty(Handle<Map> old_map, int modify_index,
           next_field_type =
               GeneralizeFieldType(target_field_type, old_field_type, isolate);
         }
-        DataDescriptor d(target_key, current_offset, next_field_type,
+        Handle<Object> wrapped_type(WrapType(next_field_type));
+        DataDescriptor d(target_key, current_offset, wrapped_type,
                          next_attributes, next_representation);
         current_offset += d.GetDetails().field_width_in_words();
         new_descriptors->Set(i, &d);
@@ -2832,8 +2846,10 @@ Handle<Map> Map::ReconfigureProperty(Handle<Map> old_map, int modify_index,
           next_field_type = old_field_type;
         }
 
-        DataDescriptor d(old_key, current_offset, next_field_type,
-                         next_attributes, next_representation);
+        Handle<Object> wrapped_type(WrapType(next_field_type));
+
+        DataDescriptor d(old_key, current_offset, wrapped_type, next_attributes,
+                         next_representation);
         current_offset += d.GetDetails().field_width_in_words();
         new_descriptors->Set(i, &d);
       } else {
@@ -2964,33 +2980,41 @@ MaybeHandle<Map> Map::TryUpdate(Handle<Map> old_map) {
     if (!old_details.representation().fits_into(new_details.representation())) {
       return MaybeHandle<Map>();
     }
-    Object* new_value = new_descriptors->GetValue(i);
-    Object* old_value = old_descriptors->GetValue(i);
     switch (new_details.type()) {
       case DATA: {
-        PropertyType old_type = old_details.type();
-        if (old_type == DATA) {
-          if (!HeapType::cast(old_value)->NowIs(HeapType::cast(new_value))) {
+        HeapType* new_type = new_descriptors->GetFieldType(i);
+        PropertyType old_property_type = old_details.type();
+        if (old_property_type == DATA) {
+          HeapType* old_type = old_descriptors->GetFieldType(i);
+          if (!old_type->NowIs(new_type)) {
             return MaybeHandle<Map>();
           }
         } else {
-          DCHECK(old_type == DATA_CONSTANT);
-          if (!HeapType::cast(new_value)->NowContains(old_value)) {
+          DCHECK(old_property_type == DATA_CONSTANT);
+          Object* old_value = old_descriptors->GetValue(i);
+          if (!new_type->NowContains(old_value)) {
             return MaybeHandle<Map>();
           }
         }
         break;
       }
-      case ACCESSOR:
-        DCHECK(HeapType::Any()->Is(HeapType::cast(new_value)));
+      case ACCESSOR: {
+#ifdef DEBUG
+        HeapType* new_type = new_descriptors->GetFieldType(i);
+        DCHECK(HeapType::Any()->Is(new_type));
+#endif
         break;
+      }
 
       case DATA_CONSTANT:
-      case ACCESSOR_CONSTANT:
+      case ACCESSOR_CONSTANT: {
+        Object* old_value = old_descriptors->GetValue(i);
+        Object* new_value = new_descriptors->GetValue(i);
         if (old_details.location() == kField || old_value != new_value) {
           return MaybeHandle<Map>();
         }
         break;
+      }
     }
   }
   if (new_map->NumberOfOwnDescriptors() != old_nof) return MaybeHandle<Map>();
@@ -3063,7 +3087,7 @@ MaybeHandle<Object> Object::SetPropertyInternal(LookupIterator* it,
         // TODO(verwaest): Remove the distinction. This is mostly bogus since we
         // don't know whether we'll want to fetch attributes or call a setter
         // until we find the property.
-        if (it->HasAccess(v8::ACCESS_SET)) break;
+        if (it->HasAccess()) break;
         return JSObject::SetPropertyWithFailedAccessCheck(it, value,
                                                           language_mode);
 
@@ -3094,9 +3118,9 @@ MaybeHandle<Object> Object::SetPropertyInternal(LookupIterator* it,
           Maybe<PropertyAttributes> maybe_attributes =
               JSObject::GetPropertyAttributesWithInterceptor(
                   it->GetHolder<JSObject>(), it->GetReceiver(), it->name());
-          if (!maybe_attributes.has_value) return MaybeHandle<Object>();
-          done = maybe_attributes.value != ABSENT;
-          if (done && (maybe_attributes.value & READ_ONLY) != 0) {
+          if (!maybe_attributes.IsJust()) return MaybeHandle<Object>();
+          done = maybe_attributes.FromJust() != ABSENT;
+          if (done && (maybe_attributes.FromJust() & READ_ONLY) != 0) {
             return WriteToReadOnlyProperty(it, value, language_mode);
           }
         }
@@ -3365,9 +3389,9 @@ MaybeHandle<Object> JSObject::SetElementWithCallbackSetterInPrototypes(
         Handle<JSObject>::cast(PrototypeIterator::GetCurrent(iter));
 
     if (js_proto->IsAccessCheckNeeded()) {
-      if (!isolate->MayIndexedAccess(js_proto, index, v8::ACCESS_SET)) {
+      if (!isolate->MayAccess(js_proto)) {
         *found = true;
-        isolate->ReportFailedAccessCheck(js_proto, v8::ACCESS_SET);
+        isolate->ReportFailedAccessCheck(js_proto);
         RETURN_EXCEPTION_IF_SCHEDULED_EXCEPTION(isolate, Object);
         return MaybeHandle<Object>();
       }
@@ -3637,15 +3661,11 @@ bool Map::IsMapInArrayPrototypeChain() {
 
 Handle<WeakCell> Map::WeakCellForMap(Handle<Map> map) {
   Isolate* isolate = map->GetIsolate();
-  if (map->code_cache()->IsFixedArray()) {
-    return isolate->factory()->NewWeakCell(map);
-  }
-  Handle<CodeCache> code_cache(CodeCache::cast(map->code_cache()), isolate);
-  if (code_cache->weak_cell_cache()->IsWeakCell()) {
-    return Handle<WeakCell>(WeakCell::cast(code_cache->weak_cell_cache()));
+  if (map->weak_cell_cache()->IsWeakCell()) {
+    return Handle<WeakCell>(WeakCell::cast(map->weak_cell_cache()));
   }
   Handle<WeakCell> weak_cell = isolate->factory()->NewWeakCell(map);
-  code_cache->set_weak_cell_cache(*weak_cell);
+  map->set_weak_cell_cache(*weak_cell);
   return weak_cell;
 }
 
@@ -3755,16 +3775,16 @@ Maybe<bool> JSProxy::HasPropertyWithHandler(Handle<JSProxy> proxy,
   Isolate* isolate = proxy->GetIsolate();
 
   // TODO(rossberg): adjust once there is a story for symbols vs proxies.
-  if (name->IsSymbol()) return maybe(false);
+  if (name->IsSymbol()) return Just(false);
 
   Handle<Object> args[] = { name };
   Handle<Object> result;
   ASSIGN_RETURN_ON_EXCEPTION_VALUE(
       isolate, result, CallTrap(proxy, "has", isolate->derived_has_trap(),
                                 arraysize(args), args),
-      Maybe<bool>());
+      Nothing<bool>());
 
-  return maybe(result->BooleanValue());
+  return Just(result->BooleanValue());
 }
 
 
@@ -3931,17 +3951,16 @@ Maybe<PropertyAttributes> JSProxy::GetPropertyAttributesWithHandler(
   HandleScope scope(isolate);
 
   // TODO(rossberg): adjust once there is a story for symbols vs proxies.
-  if (name->IsSymbol()) return maybe(ABSENT);
+  if (name->IsSymbol()) return Just(ABSENT);
 
   Handle<Object> args[] = { name };
   Handle<Object> result;
   ASSIGN_RETURN_ON_EXCEPTION_VALUE(
-      isolate, result,
-      proxy->CallTrap(proxy, "getPropertyDescriptor", Handle<Object>(),
-                      arraysize(args), args),
-      Maybe<PropertyAttributes>());
+      isolate, result, proxy->CallTrap(proxy, "getPropertyDescriptor",
+                                       Handle<Object>(), arraysize(args), args),
+      Nothing<PropertyAttributes>());
 
-  if (result->IsUndefined()) return maybe(ABSENT);
+  if (result->IsUndefined()) return Just(ABSENT);
 
   Handle<Object> argv[] = { result };
   Handle<Object> desc;
@@ -3949,7 +3968,7 @@ Maybe<PropertyAttributes> JSProxy::GetPropertyAttributesWithHandler(
       isolate, desc,
       Execution::Call(isolate, isolate->to_complete_property_descriptor(),
                       result, arraysize(argv), argv),
-      Maybe<PropertyAttributes>());
+      Nothing<PropertyAttributes>());
 
   // Convert result to PropertyAttributes.
   Handle<String> enum_n = isolate->factory()->InternalizeOneByteString(
@@ -3957,26 +3976,26 @@ Maybe<PropertyAttributes> JSProxy::GetPropertyAttributesWithHandler(
   Handle<Object> enumerable;
   ASSIGN_RETURN_ON_EXCEPTION_VALUE(isolate, enumerable,
                                    Object::GetProperty(desc, enum_n),
-                                   Maybe<PropertyAttributes>());
+                                   Nothing<PropertyAttributes>());
   Handle<String> conf_n = isolate->factory()->InternalizeOneByteString(
       STATIC_CHAR_VECTOR("configurable_"));
   Handle<Object> configurable;
   ASSIGN_RETURN_ON_EXCEPTION_VALUE(isolate, configurable,
                                    Object::GetProperty(desc, conf_n),
-                                   Maybe<PropertyAttributes>());
+                                   Nothing<PropertyAttributes>());
   Handle<String> writ_n = isolate->factory()->InternalizeOneByteString(
       STATIC_CHAR_VECTOR("writable_"));
   Handle<Object> writable;
   ASSIGN_RETURN_ON_EXCEPTION_VALUE(isolate, writable,
                                    Object::GetProperty(desc, writ_n),
-                                   Maybe<PropertyAttributes>());
+                                   Nothing<PropertyAttributes>());
   if (!writable->BooleanValue()) {
     Handle<String> set_n = isolate->factory()->InternalizeOneByteString(
         STATIC_CHAR_VECTOR("set_"));
     Handle<Object> setter;
     ASSIGN_RETURN_ON_EXCEPTION_VALUE(isolate, setter,
                                      Object::GetProperty(desc, set_n),
-                                     Maybe<PropertyAttributes>());
+                                     Nothing<PropertyAttributes>());
     writable = isolate->factory()->ToBoolean(!setter->IsUndefined());
   }
 
@@ -3988,14 +4007,14 @@ Maybe<PropertyAttributes> JSProxy::GetPropertyAttributesWithHandler(
     Handle<Object> error = isolate->factory()->NewTypeError(
         "proxy_prop_not_configurable", HandleVector(args, arraysize(args)));
     isolate->Throw(*error);
-    return maybe(NONE);
+    return Just(NONE);
   }
 
   int attributes = NONE;
   if (!enumerable->BooleanValue()) attributes |= DONT_ENUM;
   if (!configurable->BooleanValue()) attributes |= DONT_DELETE;
   if (!writable->BooleanValue()) attributes |= READ_ONLY;
-  return maybe(static_cast<PropertyAttributes>(attributes));
+  return Just(static_cast<PropertyAttributes>(attributes));
 }
 
 
@@ -4143,7 +4162,7 @@ void JSObject::AddProperty(Handle<JSObject> object, Handle<Name> name,
   DCHECK(!object->IsJSProxy());
   DCHECK(!name->AsArrayIndex(&index));
   Maybe<PropertyAttributes> maybe = GetPropertyAttributes(&it);
-  DCHECK(maybe.has_value);
+  DCHECK(maybe.IsJust());
   DCHECK(!it.IsFound());
   DCHECK(object->map()->is_extensible() ||
          it.isolate()->IsInternallyUsedPropertyName(name));
@@ -4174,7 +4193,7 @@ MaybeHandle<Object> JSObject::SetOwnPropertyIgnoreAttributes(
         UNREACHABLE();
 
       case LookupIterator::ACCESS_CHECK:
-        if (!it.isolate()->MayNamedAccess(object, name, v8::ACCESS_SET)) {
+        if (!it.isolate()->MayAccess(object)) {
           return SetPropertyWithFailedAccessCheck(&it, value, SLOPPY);
         }
         break;
@@ -4282,7 +4301,7 @@ Maybe<PropertyAttributes> JSObject::GetPropertyAttributesWithInterceptor(
 
   Handle<InterceptorInfo> interceptor(holder->GetNamedInterceptor());
   if (name->IsSymbol() && !interceptor->can_intercept_symbols()) {
-    return maybe(ABSENT);
+    return Just(ABSENT);
   }
   PropertyCallbackArguments args(
       isolate, interceptor->data(), *receiver, *holder);
@@ -4295,7 +4314,7 @@ Maybe<PropertyAttributes> JSObject::GetPropertyAttributesWithInterceptor(
     v8::Handle<v8::Integer> result = args.Call(query, v8::Utils::ToLocal(name));
     if (!result.IsEmpty()) {
       DCHECK(result->IsInt32());
-      return maybe(static_cast<PropertyAttributes>(result->Int32Value()));
+      return Just(static_cast<PropertyAttributes>(result->Int32Value()));
     }
   } else if (!interceptor->getter()->IsUndefined()) {
     v8::GenericNamedPropertyGetterCallback getter =
@@ -4304,11 +4323,11 @@ Maybe<PropertyAttributes> JSObject::GetPropertyAttributesWithInterceptor(
     LOG(isolate,
         ApiNamedPropertyAccess("interceptor-named-get-has", *holder, *name));
     v8::Handle<v8::Value> result = args.Call(getter, v8::Utils::ToLocal(name));
-    if (!result.IsEmpty()) return maybe(DONT_ENUM);
+    if (!result.IsEmpty()) return Just(DONT_ENUM);
   }
 
-  RETURN_VALUE_IF_SCHEDULED_EXCEPTION(isolate, Maybe<PropertyAttributes>());
-  return maybe(ABSENT);
+  RETURN_VALUE_IF_SCHEDULED_EXCEPTION(isolate, Nothing<PropertyAttributes>());
+  return Just(ABSENT);
 }
 
 
@@ -4338,19 +4357,19 @@ Maybe<PropertyAttributes> JSReceiver::GetPropertyAttributes(
         Maybe<PropertyAttributes> result =
             JSObject::GetPropertyAttributesWithInterceptor(
                 it->GetHolder<JSObject>(), it->GetReceiver(), it->name());
-        if (!result.has_value) return result;
-        if (result.value != ABSENT) return result;
+        if (!result.IsJust()) return result;
+        if (result.FromJust() != ABSENT) return result;
         break;
       }
       case LookupIterator::ACCESS_CHECK:
-        if (it->HasAccess(v8::ACCESS_HAS)) break;
+        if (it->HasAccess()) break;
         return JSObject::GetPropertyAttributesWithFailedAccessCheck(it);
       case LookupIterator::ACCESSOR:
       case LookupIterator::DATA:
-        return maybe(it->property_details().attributes());
+        return Just(it->property_details().attributes());
     }
   }
-  return maybe(ABSENT);
+  return Just(ABSENT);
 }
 
 
@@ -4361,7 +4380,7 @@ Maybe<PropertyAttributes> JSObject::GetElementAttributeWithReceiver(
 
   // Check access rights if needed.
   if (object->IsAccessCheckNeeded()) {
-    if (!isolate->MayIndexedAccess(object, index, v8::ACCESS_HAS)) {
+    if (!isolate->MayAccess(object)) {
       return GetElementAttributesWithFailedAccessCheck(isolate, object,
                                                        receiver, index);
     }
@@ -4369,7 +4388,7 @@ Maybe<PropertyAttributes> JSObject::GetElementAttributeWithReceiver(
 
   if (object->IsJSGlobalProxy()) {
     PrototypeIterator iter(isolate, object);
-    if (iter.IsAtEnd()) return maybe(ABSENT);
+    if (iter.IsAtEnd()) return Just(ABSENT);
     DCHECK(PrototypeIterator::GetCurrent(iter)->IsJSGlobalObject());
     return JSObject::GetElementAttributeWithReceiver(
         Handle<JSObject>::cast(PrototypeIterator::GetCurrent(iter)), receiver,
@@ -4399,8 +4418,9 @@ Maybe<PropertyAttributes> JSObject::GetElementAttributeWithInterceptor(
 
   Maybe<PropertyAttributes> from_interceptor =
       GetElementAttributeFromInterceptor(object, receiver, index);
-  if (!from_interceptor.has_value) return Maybe<PropertyAttributes>();
-  if (from_interceptor.value != ABSENT) return maybe(from_interceptor.value);
+  if (!from_interceptor.IsJust()) return Nothing<PropertyAttributes>();
+  if (from_interceptor.FromJust() != ABSENT)
+    return Just(from_interceptor.FromJust());
 
   return GetElementAttributeWithoutInterceptor(object, receiver, index,
                                                check_prototype);
@@ -4422,7 +4442,7 @@ Maybe<PropertyAttributes> JSObject::GetElementAttributeFromInterceptor(
         ApiIndexedPropertyAccess("interceptor-indexed-has", *object, index));
     v8::Handle<v8::Integer> result = args.Call(query, index);
     if (!result.IsEmpty())
-      return maybe(static_cast<PropertyAttributes>(result->Int32Value()));
+      return Just(static_cast<PropertyAttributes>(result->Int32Value()));
   } else if (!interceptor->getter()->IsUndefined()) {
     v8::IndexedPropertyGetterCallback getter =
         v8::ToCData<v8::IndexedPropertyGetterCallback>(interceptor->getter());
@@ -4430,10 +4450,10 @@ Maybe<PropertyAttributes> JSObject::GetElementAttributeFromInterceptor(
         ApiIndexedPropertyAccess(
             "interceptor-indexed-get-has", *object, index));
     v8::Handle<v8::Value> result = args.Call(getter, index);
-    if (!result.IsEmpty()) return maybe(NONE);
+    if (!result.IsEmpty()) return Just(NONE);
   }
-  RETURN_VALUE_IF_SCHEDULED_EXCEPTION(isolate, Maybe<PropertyAttributes>());
-  return maybe(ABSENT);
+  RETURN_VALUE_IF_SCHEDULED_EXCEPTION(isolate, Nothing<PropertyAttributes>());
+  return Just(ABSENT);
 }
 
 
@@ -4442,14 +4462,14 @@ Maybe<PropertyAttributes> JSObject::GetElementAttributeWithoutInterceptor(
     bool check_prototype) {
   PropertyAttributes attr =
       object->GetElementsAccessor()->GetAttributes(object, index);
-  if (attr != ABSENT) return maybe(attr);
+  if (attr != ABSENT) return Just(attr);
 
   // Handle [] on String objects.
   if (object->IsStringObjectWithCharacterAt(index)) {
-    return maybe(static_cast<PropertyAttributes>(READ_ONLY | DONT_DELETE));
+    return Just(static_cast<PropertyAttributes>(READ_ONLY | DONT_DELETE));
   }
 
-  if (!check_prototype) return maybe(ABSENT);
+  if (!check_prototype) return Just(ABSENT);
 
   PrototypeIterator iter(object->GetIsolate(), object);
   if (PrototypeIterator::GetCurrent(iter)->IsJSProxy()) {
@@ -4458,7 +4478,7 @@ Maybe<PropertyAttributes> JSObject::GetElementAttributeWithoutInterceptor(
         Handle<JSProxy>::cast(PrototypeIterator::GetCurrent(iter)), receiver,
         index);
   }
-  if (iter.IsAtEnd()) return maybe(ABSENT);
+  if (iter.IsAtEnd()) return Just(ABSENT);
   return GetElementAttributeWithReceiver(
       Handle<JSObject>::cast(PrototypeIterator::GetCurrent(iter)), receiver,
       index, true);
@@ -5067,8 +5087,8 @@ bool JSObject::HasHiddenProperties(Handle<JSObject> object) {
   LookupIterator it(object, hidden, LookupIterator::OWN_SKIP_INTERCEPTOR);
   Maybe<PropertyAttributes> maybe = GetPropertyAttributes(&it);
   // Cannot get an exception since the hidden_string isn't accessible to JS.
-  DCHECK(maybe.has_value);
-  return maybe.value != ABSENT;
+  DCHECK(maybe.IsJust());
+  return maybe.FromJust() != ABSENT;
 }
 
 
@@ -5211,9 +5231,8 @@ MaybeHandle<Object> JSObject::DeleteElement(Handle<JSObject> object,
   Factory* factory = isolate->factory();
 
   // Check access rights if needed.
-  if (object->IsAccessCheckNeeded() &&
-      !isolate->MayIndexedAccess(object, index, v8::ACCESS_DELETE)) {
-    isolate->ReportFailedAccessCheck(object, v8::ACCESS_DELETE);
+  if (object->IsAccessCheckNeeded() && !isolate->MayAccess(object)) {
+    isolate->ReportFailedAccessCheck(object);
     RETURN_EXCEPTION_IF_SCHEDULED_EXCEPTION(isolate, Object);
     return factory->false_value();
   }
@@ -5244,8 +5263,8 @@ MaybeHandle<Object> JSObject::DeleteElement(Handle<JSObject> object,
   bool should_enqueue_change_record = false;
   if (object->map()->is_observed()) {
     Maybe<bool> maybe = HasOwnElement(object, index);
-    if (!maybe.has_value) return MaybeHandle<Object>();
-    should_enqueue_change_record = maybe.value;
+    if (!maybe.IsJust()) return MaybeHandle<Object>();
+    should_enqueue_change_record = maybe.FromJust();
     if (should_enqueue_change_record) {
       if (!GetOwnElementAccessorPair(object, index).is_null()) {
         old_value = Handle<Object>::cast(factory->the_hole_value());
@@ -5269,8 +5288,8 @@ MaybeHandle<Object> JSObject::DeleteElement(Handle<JSObject> object,
 
   if (should_enqueue_change_record) {
     Maybe<bool> maybe = HasOwnElement(object, index);
-    if (!maybe.has_value) return MaybeHandle<Object>();
-    if (!maybe.value) {
+    if (!maybe.IsJust()) return MaybeHandle<Object>();
+    if (!maybe.FromJust()) {
       Handle<String> name = factory->Uint32ToString(index);
       RETURN_ON_EXCEPTION(
           isolate, EnqueueChangeRecord(object, "delete", name, old_value),
@@ -5332,9 +5351,8 @@ MaybeHandle<Object> JSObject::DeleteProperty(Handle<JSObject> object,
       case LookupIterator::TRANSITION:
         UNREACHABLE();
       case LookupIterator::ACCESS_CHECK:
-        if (it.HasAccess(v8::ACCESS_DELETE)) break;
-        it.isolate()->ReportFailedAccessCheck(it.GetHolder<JSObject>(),
-                                              v8::ACCESS_DELETE);
+        if (it.HasAccess()) break;
+        it.isolate()->ReportFailedAccessCheck(it.GetHolder<JSObject>());
         RETURN_EXCEPTION_IF_SCHEDULED_EXCEPTION(it.isolate(), Object);
         return it.isolate()->factory()->false_value();
       case LookupIterator::INTERCEPTOR: {
@@ -5563,10 +5581,8 @@ MaybeHandle<Object> JSObject::PreventExtensions(Handle<JSObject> object) {
 
   Isolate* isolate = object->GetIsolate();
 
-  if (object->IsAccessCheckNeeded() &&
-      !isolate->MayNamedAccess(
-          object, isolate->factory()->undefined_value(), v8::ACCESS_KEYS)) {
-    isolate->ReportFailedAccessCheck(object, v8::ACCESS_KEYS);
+  if (object->IsAccessCheckNeeded() && !isolate->MayAccess(object)) {
+    isolate->ReportFailedAccessCheck(object);
     RETURN_EXCEPTION_IF_SCHEDULED_EXCEPTION(isolate, Object);
     return isolate->factory()->false_value();
   }
@@ -5674,10 +5690,8 @@ MaybeHandle<Object> JSObject::PreventExtensionsWithTransition(
   DCHECK(!object->map()->is_observed());
 
   Isolate* isolate = object->GetIsolate();
-  if (object->IsAccessCheckNeeded() &&
-      !isolate->MayNamedAccess(
-          object, isolate->factory()->undefined_value(), v8::ACCESS_KEYS)) {
-    isolate->ReportFailedAccessCheck(object, v8::ACCESS_KEYS);
+  if (object->IsAccessCheckNeeded() && !isolate->MayAccess(object)) {
+    isolate->ReportFailedAccessCheck(object);
     RETURN_EXCEPTION_IF_SCHEDULED_EXCEPTION(isolate, Object);
     return isolate->factory()->false_value();
   }
@@ -5926,8 +5940,8 @@ MaybeHandle<JSObject> JSObjectWalkVisitor<ContextObject>::StructureWalk(
         Handle<String> key_string(String::cast(names->get(i)));
         Maybe<PropertyAttributes> maybe =
             JSReceiver::GetOwnPropertyAttributes(copy, key_string);
-        DCHECK(maybe.has_value);
-        PropertyAttributes attributes = maybe.value;
+        DCHECK(maybe.IsJust());
+        PropertyAttributes attributes = maybe.FromJust();
         // Only deep copy fields from the object literal expression.
         // In particular, don't try to copy the length attribute of
         // an array.
@@ -6282,10 +6296,8 @@ MaybeHandle<FixedArray> JSReceiver::GetKeys(Handle<JSReceiver> object,
         Handle<JSObject>::cast(PrototypeIterator::GetCurrent(iter));
 
     // Check access rights if required.
-    if (current->IsAccessCheckNeeded() &&
-        !isolate->MayNamedAccess(
-            current, isolate->factory()->undefined_value(), v8::ACCESS_KEYS)) {
-      isolate->ReportFailedAccessCheck(current, v8::ACCESS_KEYS);
+    if (current->IsAccessCheckNeeded() && !isolate->MayAccess(current)) {
+      isolate->ReportFailedAccessCheck(current);
       RETURN_EXCEPTION_IF_SCHEDULED_EXCEPTION(isolate, FixedArray);
       break;
     }
@@ -6554,9 +6566,8 @@ MaybeHandle<Object> JSObject::DefineAccessor(Handle<JSObject> object,
                                              PropertyAttributes attributes) {
   Isolate* isolate = object->GetIsolate();
   // Check access rights if needed.
-  if (object->IsAccessCheckNeeded() &&
-      !isolate->MayNamedAccess(object, name, v8::ACCESS_SET)) {
-    isolate->ReportFailedAccessCheck(object, v8::ACCESS_SET);
+  if (object->IsAccessCheckNeeded() && !isolate->MayAccess(object)) {
+    isolate->ReportFailedAccessCheck(object);
     RETURN_EXCEPTION_IF_SCHEDULED_EXCEPTION(isolate, Object);
     return isolate->factory()->undefined_value();
   }
@@ -6589,18 +6600,18 @@ MaybeHandle<Object> JSObject::DefineAccessor(Handle<JSObject> object,
       Maybe<bool> maybe = HasOwnElement(object, index);
       // Workaround for a GCC 4.4.3 bug which leads to "‘preexists’ may be used
       // uninitialized in this function".
-      if (!maybe.has_value) {
+      if (!maybe.IsJust()) {
         DCHECK(false);
         return isolate->factory()->undefined_value();
       }
-      preexists = maybe.value;
+      preexists = maybe.FromJust();
       if (preexists && GetOwnElementAccessorPair(object, index).is_null()) {
         old_value =
             Object::GetElement(isolate, object, index).ToHandleChecked();
       }
     } else {
       LookupIterator it(object, name, LookupIterator::HIDDEN_SKIP_INTERCEPTOR);
-      CHECK(GetPropertyAttributes(&it).has_value);
+      CHECK(GetPropertyAttributes(&it).IsJust());
       preexists = it.IsFound();
       if (preexists && (it.state() == LookupIterator::DATA ||
                         it.GetAccessors()->IsAccessorInfo())) {
@@ -6648,9 +6659,8 @@ MaybeHandle<Object> JSObject::SetAccessor(Handle<JSObject> object,
   Handle<Name> name(Name::cast(info->name()));
 
   // Check access rights if needed.
-  if (object->IsAccessCheckNeeded() &&
-      !isolate->MayNamedAccess(object, name, v8::ACCESS_SET)) {
-    isolate->ReportFailedAccessCheck(object, v8::ACCESS_SET);
+  if (object->IsAccessCheckNeeded() && !isolate->MayAccess(object)) {
+    isolate->ReportFailedAccessCheck(object);
     RETURN_EXCEPTION_IF_SCHEDULED_EXCEPTION(isolate, Object);
     return factory->undefined_value();
   }
@@ -6707,7 +6717,7 @@ MaybeHandle<Object> JSObject::SetAccessor(Handle<JSObject> object,
   } else {
     // Lookup the name.
     LookupIterator it(object, name, LookupIterator::HIDDEN_SKIP_INTERCEPTOR);
-    CHECK(GetPropertyAttributes(&it).has_value);
+    CHECK(GetPropertyAttributes(&it).IsJust());
     // ES5 forbids turning a property into an accessor if it's not
     // configurable. See 8.6.1 (Table 5).
     if (it.IsFound() && (it.IsReadOnly() || !it.IsConfigurable())) {
@@ -6739,10 +6749,8 @@ MaybeHandle<Object> JSObject::GetAccessor(Handle<JSObject> object,
       Handle<Object> current = PrototypeIterator::GetCurrent(iter);
       // Check access rights if needed.
       if (current->IsAccessCheckNeeded() &&
-          !isolate->MayNamedAccess(Handle<JSObject>::cast(current), name,
-                                   v8::ACCESS_HAS)) {
-        isolate->ReportFailedAccessCheck(Handle<JSObject>::cast(current),
-                                         v8::ACCESS_HAS);
+          !isolate->MayAccess(Handle<JSObject>::cast(current))) {
+        isolate->ReportFailedAccessCheck(Handle<JSObject>::cast(current));
         RETURN_EXCEPTION_IF_SCHEDULED_EXCEPTION(isolate, Object);
         return isolate->factory()->undefined_value();
       }
@@ -6773,9 +6781,8 @@ MaybeHandle<Object> JSObject::GetAccessor(Handle<JSObject> object,
           UNREACHABLE();
 
         case LookupIterator::ACCESS_CHECK:
-          if (it.HasAccess(v8::ACCESS_HAS)) continue;
-          isolate->ReportFailedAccessCheck(it.GetHolder<JSObject>(),
-                                           v8::ACCESS_HAS);
+          if (it.HasAccess()) continue;
+          isolate->ReportFailedAccessCheck(it.GetHolder<JSObject>());
           RETURN_EXCEPTION_IF_SCHEDULED_EXCEPTION(isolate, Object);
           return isolate->factory()->undefined_value();
 
@@ -6880,7 +6887,7 @@ Handle<Map> Map::Normalize(Handle<Map> fast_map, PropertyNormalizationMode mode,
     if (FLAG_enable_slow_asserts) {
       // The cached map should match newly created normalized map bit-by-bit,
       // except for the code cache, which can contain some ics which can be
-      // applied to the shared map.
+      // applied to the shared map, dependent code and weak cell cache.
       Handle<Map> fresh = Map::CopyNormalized(fast_map, mode);
 
       DCHECK(memcmp(fresh->address(),
@@ -6888,7 +6895,9 @@ Handle<Map> Map::Normalize(Handle<Map> fast_map, PropertyNormalizationMode mode,
                     Map::kCodeCacheOffset) == 0);
       STATIC_ASSERT(Map::kDependentCodeOffset ==
                     Map::kCodeCacheOffset + kPointerSize);
-      int offset = Map::kDependentCodeOffset + kPointerSize;
+      STATIC_ASSERT(Map::kWeakCellCacheOffset ==
+                    Map::kDependentCodeOffset + kPointerSize);
+      int offset = Map::kWeakCellCacheOffset + kPointerSize;
       DCHECK(memcmp(fresh->address() + offset,
                     new_map->address() + offset,
                     Map::kSize - offset) == 0);
@@ -10233,11 +10242,6 @@ void JSFunction::PrintName(FILE* out) {
 }
 
 
-Context* JSFunction::NativeContextFromLiterals(FixedArray* literals) {
-  return Context::cast(literals->get(JSFunction::kLiteralNativeContextIndex));
-}
-
-
 // The filter is a pattern that matches function names in this way:
 //   "*"      all; the default
 //   "-"      all but the top-level function
@@ -11261,9 +11265,16 @@ Code* Code::GetCodeAgeStub(Isolate* isolate, Age age, MarkingParity parity) {
 
 void Code::PrintDeoptLocation(FILE* out, int bailout_id) {
   Deoptimizer::DeoptInfo info = Deoptimizer::GetDeoptInfo(this, bailout_id);
-  if (info.deopt_reason != Deoptimizer::kNoReason || info.raw_position != 0) {
-    PrintF(out, "            ;;; deoptimize at %d: %s\n", info.raw_position,
-           Deoptimizer::GetDeoptReason(info.deopt_reason));
+  class SourcePosition pos = info.position;
+  if (info.deopt_reason != Deoptimizer::kNoReason || !pos.IsUnknown()) {
+    if (FLAG_hydrogen_track_positions) {
+      PrintF(out, "            ;;; deoptimize at %d_%d: %s\n",
+             pos.inlining_id(), pos.position(),
+             Deoptimizer::GetDeoptReason(info.deopt_reason));
+    } else {
+      PrintF(out, "            ;;; deoptimize at %d: %s\n", pos.raw(),
+             Deoptimizer::GetDeoptReason(info.deopt_reason));
+    }
   }
 }
 
@@ -11830,9 +11841,9 @@ static bool GetOldValue(Isolate* isolate,
                         List<uint32_t>* indices) {
   Maybe<PropertyAttributes> maybe =
       JSReceiver::GetOwnElementAttribute(object, index);
-  DCHECK(maybe.has_value);
-  DCHECK(maybe.value != ABSENT);
-  if (maybe.value == DONT_DELETE) return false;
+  DCHECK(maybe.IsJust());
+  DCHECK(maybe.FromJust() != ABSENT);
+  if (maybe.FromJust() == DONT_DELETE) return false;
   Handle<Object> value;
   if (!JSObject::GetOwnElementAccessorPair(object, index).is_null()) {
     value = Handle<Object>::cast(isolate->factory()->the_hole_value());
@@ -13066,8 +13077,8 @@ MaybeHandle<Object> JSObject::SetElement(Handle<JSObject> object,
 
   // Check access rights if needed.
   if (object->IsAccessCheckNeeded()) {
-    if (!isolate->MayIndexedAccess(object, index, v8::ACCESS_SET)) {
-      isolate->ReportFailedAccessCheck(object, v8::ACCESS_SET);
+    if (!isolate->MayAccess(object)) {
+      isolate->ReportFailedAccessCheck(object);
       RETURN_EXCEPTION_IF_SCHEDULED_EXCEPTION(isolate, Object);
       return value;
     }
@@ -13112,8 +13123,8 @@ MaybeHandle<Object> JSObject::SetElement(Handle<JSObject> object,
 
   Maybe<PropertyAttributes> maybe =
       JSReceiver::GetOwnElementAttribute(object, index);
-  if (!maybe.has_value) return MaybeHandle<Object>();
-  PropertyAttributes old_attributes = maybe.value;
+  if (!maybe.IsJust()) return MaybeHandle<Object>();
+  PropertyAttributes old_attributes = maybe.FromJust();
 
   Handle<Object> old_value = isolate->factory()->the_hole_value();
   Handle<Object> old_length_handle;
@@ -13143,8 +13154,8 @@ MaybeHandle<Object> JSObject::SetElement(Handle<JSObject> object,
 
   Handle<String> name = isolate->factory()->Uint32ToString(index);
   maybe = GetOwnElementAttribute(object, index);
-  if (!maybe.has_value) return MaybeHandle<Object>();
-  PropertyAttributes new_attributes = maybe.value;
+  if (!maybe.IsJust()) return MaybeHandle<Object>();
+  PropertyAttributes new_attributes = maybe.FromJust();
 
   if (old_attributes == ABSENT) {
     if (object->IsJSArray() &&
@@ -13941,8 +13952,8 @@ Maybe<bool> JSObject::HasRealNamedProperty(Handle<JSObject> object,
                                            Handle<Name> key) {
   LookupIterator it(object, key, LookupIterator::OWN_SKIP_INTERCEPTOR);
   Maybe<PropertyAttributes> maybe_result = GetPropertyAttributes(&it);
-  if (!maybe_result.has_value) return Maybe<bool>();
-  return maybe(it.IsFound());
+  if (!maybe_result.IsJust()) return Nothing<bool>();
+  return Just(it.IsFound());
 }
 
 
@@ -13952,17 +13963,17 @@ Maybe<bool> JSObject::HasRealElementProperty(Handle<JSObject> object,
   HandleScope scope(isolate);
   // Check access rights if needed.
   if (object->IsAccessCheckNeeded()) {
-    if (!isolate->MayIndexedAccess(object, index, v8::ACCESS_HAS)) {
-      isolate->ReportFailedAccessCheck(object, v8::ACCESS_HAS);
-      RETURN_VALUE_IF_SCHEDULED_EXCEPTION(isolate, Maybe<bool>());
-      return maybe(false);
+    if (!isolate->MayAccess(object)) {
+      isolate->ReportFailedAccessCheck(object);
+      RETURN_VALUE_IF_SCHEDULED_EXCEPTION(isolate, Nothing<bool>());
+      return Just(false);
     }
   }
 
   if (object->IsJSGlobalProxy()) {
     HandleScope scope(isolate);
     PrototypeIterator iter(isolate, object);
-    if (iter.IsAtEnd()) return maybe(false);
+    if (iter.IsAtEnd()) return Just(false);
     DCHECK(PrototypeIterator::GetCurrent(iter)->IsJSGlobalObject());
     return HasRealElementProperty(
         Handle<JSObject>::cast(PrototypeIterator::GetCurrent(iter)), index);
@@ -13970,8 +13981,7 @@ Maybe<bool> JSObject::HasRealElementProperty(Handle<JSObject> object,
 
   Maybe<PropertyAttributes> result =
       GetElementAttributeWithoutInterceptor(object, object, index, false);
-  if (!result.has_value) return Maybe<bool>();
-  return maybe(result.value != ABSENT);
+  return result.IsJust() ? Just(result.FromJust() != ABSENT) : Nothing<bool>();
 }
 
 
@@ -13979,8 +13989,8 @@ Maybe<bool> JSObject::HasRealNamedCallbackProperty(Handle<JSObject> object,
                                                    Handle<Name> key) {
   LookupIterator it(object, key, LookupIterator::OWN_SKIP_INTERCEPTOR);
   Maybe<PropertyAttributes> maybe_result = GetPropertyAttributes(&it);
-  if (!maybe_result.has_value) return Maybe<bool>();
-  return maybe(it.state() == LookupIterator::ACCESSOR);
+  return maybe_result.IsJust() ? Just(it.state() == LookupIterator::ACCESSOR)
+                               : Nothing<bool>();
 }
 
 
@@ -16752,12 +16762,14 @@ void DebugInfo::SetBreakPoint(Handle<DebugInfo> debug_info,
 
 
 // Get the break point objects for a code position.
-Object* DebugInfo::GetBreakPointObjects(int code_position) {
+Handle<Object> DebugInfo::GetBreakPointObjects(int code_position) {
   Object* break_point_info = GetBreakPointInfo(code_position);
   if (break_point_info->IsUndefined()) {
-    return GetHeap()->undefined_value();
+    return GetIsolate()->factory()->undefined_value();
   }
-  return BreakPointInfo::cast(break_point_info)->break_point_objects();
+  return Handle<Object>(
+      BreakPointInfo::cast(break_point_info)->break_point_objects(),
+      GetIsolate());
 }
 
 
@@ -16776,22 +16788,22 @@ int DebugInfo::GetBreakPointCount() {
 }
 
 
-Object* DebugInfo::FindBreakPointInfo(Handle<DebugInfo> debug_info,
-                                      Handle<Object> break_point_object) {
-  Heap* heap = debug_info->GetHeap();
-  if (debug_info->break_points()->IsUndefined()) return heap->undefined_value();
-  for (int i = 0; i < debug_info->break_points()->length(); i++) {
-    if (!debug_info->break_points()->get(i)->IsUndefined()) {
-      Handle<BreakPointInfo> break_point_info =
-          Handle<BreakPointInfo>(BreakPointInfo::cast(
-              debug_info->break_points()->get(i)));
-      if (BreakPointInfo::HasBreakPointObject(break_point_info,
-                                              break_point_object)) {
-        return *break_point_info;
+Handle<Object> DebugInfo::FindBreakPointInfo(
+    Handle<DebugInfo> debug_info, Handle<Object> break_point_object) {
+  Isolate* isolate = debug_info->GetIsolate();
+  if (!debug_info->break_points()->IsUndefined()) {
+    for (int i = 0; i < debug_info->break_points()->length(); i++) {
+      if (!debug_info->break_points()->get(i)->IsUndefined()) {
+        Handle<BreakPointInfo> break_point_info = Handle<BreakPointInfo>(
+            BreakPointInfo::cast(debug_info->break_points()->get(i)), isolate);
+        if (BreakPointInfo::HasBreakPointObject(break_point_info,
+                                                break_point_object)) {
+          return break_point_info;
+        }
       }
     }
   }
-  return heap->undefined_value();
+  return isolate->factory()->undefined_value();
 }
 
 

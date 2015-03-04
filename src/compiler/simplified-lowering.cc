@@ -124,6 +124,11 @@ class RepresentationSelector {
       Node* node = *i;
       Node* replacement = *(++i);
       node->ReplaceUses(replacement);
+      // We also need to replace the node in the rest of the vector.
+      for (NodeVector::iterator j = i + 1; j != replacements_.end(); ++j) {
+        ++j;
+        if (*j == node) *j = replacement;
+      }
     }
   }
 
@@ -324,7 +329,8 @@ class RepresentationSelector {
       } else if (upper->Is(Type::Signed32()) || upper->Is(Type::Unsigned32())) {
         // multiple uses, but we are within 32 bits range => pick kRepWord32.
         return kRepWord32;
-      } else if ((use & kRepMask) == kRepWord32 ||
+      } else if (((use & kRepMask) == kRepWord32 &&
+                  !CanObserveNonWord32(use)) ||
                  (use & kTypeMask) == kTypeInt32 ||
                  (use & kTypeMask) == kTypeUint32) {
         // We only use 32 bits or we use the result consistently.
@@ -449,6 +455,10 @@ class RepresentationSelector {
     return IsSafeIntAdditiveOperand(node->InputAt(0)) &&
            IsSafeIntAdditiveOperand(node->InputAt(1)) &&
            !CanObserveNonUint32(use);
+  }
+
+  bool CanObserveNonWord32(MachineTypeUnion use) {
+    return (use & ~(kTypeUint32 | kTypeInt32)) != 0;
   }
 
   bool CanObserveNonInt32(MachineTypeUnion use) {
@@ -1056,7 +1066,7 @@ class RepresentationSelector {
       replacements_.push_back(node);
       replacements_.push_back(replacement);
     }
-    // TODO(titzer) node->RemoveAllInputs();  // Node is now dead.
+    node->RemoveAllInputs();  // Node is now dead.
   }
 
   void PrintUseInfo(Node* node) {
@@ -1137,10 +1147,15 @@ Node* SimplifiedLowering::OffsetMinusTagConstant(int32_t offset) {
 }
 
 
-static WriteBarrierKind ComputeWriteBarrierKind(BaseTaggedness base_is_tagged,
-                                                MachineType representation,
-                                                Type* type) {
-  // TODO(turbofan): skip write barriers for Smis, etc.
+namespace {
+
+WriteBarrierKind ComputeWriteBarrierKind(BaseTaggedness base_is_tagged,
+                                         MachineType representation,
+                                         Type* type) {
+  if (type->Is(Type::TaggedSigned())) {
+    // Write barriers are only for writes of heap objects.
+    return kNoWriteBarrier;
+  }
   if (base_is_tagged == kTaggedBase &&
       RepresentationOf(representation) == kRepTagged) {
     // Write barriers are only for writes into heap objects (i.e. tagged base).
@@ -1148,6 +1163,8 @@ static WriteBarrierKind ComputeWriteBarrierKind(BaseTaggedness base_is_tagged,
   }
   return kNoWriteBarrier;
 }
+
+}  // namespace
 
 
 void SimplifiedLowering::DoLoadField(Node* node) {
@@ -1160,8 +1177,9 @@ void SimplifiedLowering::DoLoadField(Node* node) {
 
 void SimplifiedLowering::DoStoreField(Node* node) {
   const FieldAccess& access = FieldAccessOf(node->op());
-  WriteBarrierKind kind = ComputeWriteBarrierKind(
-      access.base_is_tagged, access.machine_type, access.type);
+  Type* type = NodeProperties::GetBounds(node->InputAt(1)).upper;
+  WriteBarrierKind kind =
+      ComputeWriteBarrierKind(access.base_is_tagged, access.machine_type, type);
   node->set_op(
       machine()->Store(StoreRepresentation(access.machine_type, kind)));
   Node* offset = jsgraph()->IntPtrConstant(access.offset - access.tag());
@@ -1266,10 +1284,11 @@ void SimplifiedLowering::DoLoadElement(Node* node) {
 
 void SimplifiedLowering::DoStoreElement(Node* node) {
   const ElementAccess& access = ElementAccessOf(node->op());
-  node->set_op(machine()->Store(StoreRepresentation(
-      access.machine_type,
-      ComputeWriteBarrierKind(access.base_is_tagged, access.machine_type,
-                              access.type))));
+  Type* type = NodeProperties::GetBounds(node->InputAt(2)).upper;
+  node->set_op(machine()->Store(
+      StoreRepresentation(access.machine_type,
+                          ComputeWriteBarrierKind(access.base_is_tagged,
+                                                  access.machine_type, type))));
   node->ReplaceInput(1, ComputeIndex(access, node->InputAt(1)));
 }
 

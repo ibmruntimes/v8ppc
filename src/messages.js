@@ -168,6 +168,7 @@ var kMessages = {
   strong_var:                    ["Please don't use 'var' in strong mode, use 'let' or 'const' instead"],
   strong_for_in:                 ["Please don't use 'for'-'in' loops in strong mode, use 'for'-'of' instead"],
   strong_empty:                  ["Please don't use empty sub-statements in strong mode, make them explicit with '{}' instead"],
+  strong_use_before_declaration: ["Please declare variable '", "%0", "' before use in strong mode"],
   sloppy_lexical:                ["Block-scoped declarations (let, const, function, class) not yet supported outside strict mode"],
   malformed_arrow_function_parameter_list: ["Malformed arrow function parameter list"],
   generator_poison_pill:         ["'caller' and 'arguments' properties may not be accessed on generator functions."],
@@ -186,7 +187,8 @@ var kMessages = {
   super_constructor_call:        ["A 'super' constructor call may only appear as the first statement of a function, and its arguments may not access 'this'. Other forms are not yet supported."],
   duplicate_proto:               ["Duplicate __proto__ fields are not allowed in object literals"],
   param_after_rest:              ["Rest parameter must be last formal parameter"],
-  constructor_noncallable:       ["Class constructors cannot be invoked without 'new'"]
+  constructor_noncallable:       ["Class constructors cannot be invoked without 'new'"],
+  array_not_subclassable:        ["Subclassing Arrays is not currently supported."]
 };
 
 

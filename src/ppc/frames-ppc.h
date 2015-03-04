@@ -117,13 +117,13 @@ class EntryFrameConstants : public AllStatic {
 class ExitFrameConstants : public AllStatic {
  public:
 #if defined(V8_PPC_CONSTANT_POOL_OPT)
-  static const int kFrameSize          = FLAG_enable_embedded_constant_pool ?
-                                         3 * kPointerSize : 2 * kPointerSize;
+  static const int kFrameSize = FLAG_enable_embedded_constant_pool ?
+                                3 * kPointerSize : 2 * kPointerSize;
 
   static const int kConstantPoolOffset = FLAG_enable_embedded_constant_pool ?
                                          -3 * kPointerSize : 0;
 #else
-  static const int kFrameSize          = 2 * kPointerSize;
+  static const int kFrameSize = 2 * kPointerSize;
   static const int kConstantPoolOffset = 0;  // Not used.
 #endif
   static const int kCodeOffset = -2 * kPointerSize;

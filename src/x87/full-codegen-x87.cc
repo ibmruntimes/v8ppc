@@ -1442,7 +1442,7 @@ void FullCodeGenerator::EmitVariableLoad(VariableProxy* proxy) {
         __ mov(VectorLoadICDescriptor::SlotRegister(),
                Immediate(SmiFromSlot(proxy->VariableFeedbackSlot())));
       }
-      CallLoadIC(CONTEXTUAL);
+      CallGlobalLoadIC(var->name());
       context()->Plug(eax);
       break;
     }
@@ -3652,8 +3652,8 @@ void FullCodeGenerator::EmitClassOf(CallRuntime* expr) {
   STATIC_ASSERT(LAST_NONCALLABLE_SPEC_OBJECT_TYPE == LAST_TYPE - 1);
 
   // Check if the constructor in the map is a JS function.
-  __ mov(eax, FieldOperand(eax, Map::kConstructorOffset));
-  __ CmpObjectType(eax, JS_FUNCTION_TYPE, ebx);
+  __ GetMapConstructor(eax, eax, ebx);
+  __ CmpInstanceType(ebx, JS_FUNCTION_TYPE);
   __ j(not_equal, &non_function_constructor);
 
   // eax now contains the constructor function. Grab the
@@ -4108,7 +4108,7 @@ void FullCodeGenerator::EmitDefaultConstructorCallSuper(CallRuntime* expr) {
   __ bind(&args_set_up);
 
   __ mov(edi, Operand(esp, eax, times_pointer_size, 0));
-
+  __ mov(ebx, Immediate(isolate()->factory()->undefined_value()));
   CallConstructStub stub(isolate(), SUPER_CONSTRUCTOR_CALL);
   __ call(stub.GetCode(), RelocInfo::CONSTRUCT_CALL);
 

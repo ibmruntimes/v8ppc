@@ -555,6 +555,12 @@ void CodeGenerator::AssembleArchInstruction(Instruction* instr) {
     case kArchNop:
       // don't emit code for nops.
       break;
+    case kArchDeoptimize: {
+      int deopt_state_id =
+          BuildTranslation(instr, -1, 0, OutputFrameStateCombine::Ignore());
+      AssembleDeoptimizerCall(deopt_state_id, Deoptimizer::EAGER);
+      break;
+    }
     case kArchRet:
       AssembleReturn();
       break;
@@ -1165,9 +1171,10 @@ void CodeGenerator::AssembleArchTableSwitch(Instruction* instr) {
 }
 
 
-void CodeGenerator::AssembleDeoptimizerCall(int deoptimization_id) {
+void CodeGenerator::AssembleDeoptimizerCall(
+    int deoptimization_id, Deoptimizer::BailoutType bailout_type) {
   Address deopt_entry = Deoptimizer::GetDeoptimizationEntry(
-      isolate(), deoptimization_id, Deoptimizer::LAZY);
+      isolate(), deoptimization_id, bailout_type);
   __ call(deopt_entry, RelocInfo::RUNTIME_ENTRY);
 }
 
@@ -1309,9 +1316,18 @@ void CodeGenerator::AssembleMove(InstructionOperand* source,
         case Constant::kExternalReference:
           __ Move(dst, src.ToExternalReference());
           break;
-        case Constant::kHeapObject:
-          __ Move(dst, src.ToHeapObject());
+        case Constant::kHeapObject: {
+          Handle<HeapObject> src_object = src.ToHeapObject();
+          if (info()->IsOptimizing() &&
+              src_object.is_identical_to(info()->context())) {
+            // Loading the context from the frame is way cheaper than
+            // materializing the actual context heap object address.
+            __ movp(dst, Operand(rbp, StandardFrameConstants::kContextOffset));
+          } else {
+            __ Move(dst, src_object);
+          }
           break;
+        }
         case Constant::kRpoNumber:
           UNREACHABLE();  // TODO(dcarney): load of labels on x64.
           break;
@@ -1344,7 +1360,7 @@ void CodeGenerator::AssembleMove(InstructionOperand* source,
     XMMRegister src = g.ToDoubleRegister(source);
     if (destination->IsDoubleRegister()) {
       XMMRegister dst = g.ToDoubleRegister(destination);
-      __ movsd(dst, src);
+      __ movaps(dst, src);
     } else {
       DCHECK(destination->IsDoubleStackSlot());
       Operand dst = g.ToOperand(destination);
@@ -1395,9 +1411,9 @@ void CodeGenerator::AssembleSwap(InstructionOperand* source,
     // available as a fixed scratch register.
     XMMRegister src = g.ToDoubleRegister(source);
     XMMRegister dst = g.ToDoubleRegister(destination);
-    __ movsd(xmm0, src);
-    __ movsd(src, dst);
-    __ movsd(dst, xmm0);
+    __ movaps(xmm0, src);
+    __ movaps(src, dst);
+    __ movaps(dst, xmm0);
   } else if (source->IsDoubleRegister() && destination->IsDoubleStackSlot()) {
     // XMM register-memory swap.  We rely on having xmm0
     // available as a fixed scratch register.

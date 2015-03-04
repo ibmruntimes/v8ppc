@@ -19,6 +19,7 @@
 #include <stdint.h>
 #include <stdio.h>
 
+#include "v8-version.h"
 #include "v8config.h"
 
 // We reserve the V8_* prefix for macros defined in V8 public API and
@@ -80,6 +81,8 @@ class ImplementationUtilities;
 class Int32;
 class Integer;
 class Isolate;
+template <class T>
+class Maybe;
 class Name;
 class Number;
 class NumberObject;
@@ -105,6 +108,8 @@ class Utils;
 class Value;
 template <class T> class Handle;
 template <class T> class Local;
+template <class T>
+class MaybeLocal;
 template <class T> class Eternal;
 template<class T> class NonCopyablePersistentTraits;
 template<class T> class PersistentBase;
@@ -321,6 +326,8 @@ template <class T> class Handle {
   template<class F> friend class PersistentBase;
   template<class F> friend class Handle;
   template<class F> friend class Local;
+  template <class F>
+  friend class MaybeLocal;
   template<class F> friend class FunctionCallbackInfo;
   template<class F> friend class PropertyCallbackInfo;
   template<class F> friend class internal::CustomArguments;
@@ -398,6 +405,8 @@ template <class T> class Local : public Handle<T> {
   template<class F, class M> friend class Persistent;
   template<class F> friend class Handle;
   template<class F> friend class Local;
+  template <class F>
+  friend class MaybeLocal;
   template<class F> friend class FunctionCallbackInfo;
   template<class F> friend class PropertyCallbackInfo;
   friend class String;
@@ -412,6 +421,39 @@ template <class T> class Local : public Handle<T> {
 
   template <class S> V8_INLINE Local(S* that) : Handle<T>(that) { }
   V8_INLINE static Local<T> New(Isolate* isolate, T* that);
+};
+
+
+template <class T>
+class MaybeLocal {
+ public:
+  V8_INLINE MaybeLocal() : val_(nullptr) {}
+  template <class S>
+  V8_INLINE MaybeLocal(Local<S> that)
+      : val_(reinterpret_cast<T*>(*that)) {
+    TYPE_CHECK(T, S);
+  }
+
+  V8_INLINE bool IsEmpty() const { return val_ == nullptr; }
+
+  template <class S>
+  V8_WARN_UNUSED_RESULT V8_INLINE bool ToLocal(Local<S>* out) const {
+    out->val_ = IsEmpty() ? nullptr : this->val_;
+    return IsEmpty();
+  }
+
+  V8_INLINE Local<T> ToLocalChecked() {
+    // TODO(dcarney): add DCHECK.
+    return Local<T>(val_);
+  }
+
+  template <class S>
+  V8_INLINE Local<S> FromMaybe(Local<S> default_value) const {
+    return IsEmpty() ? default_value : Local<S>(val_);
+  }
+
+ private:
+  T* val_;
 };
 
 
@@ -931,28 +973,6 @@ class V8_EXPORT EscapableHandleScope : public HandleScope {
 
   internal::Object** escape_slot_;
 };
-
-
-/**
- * A simple Maybe type, representing an object which may or may not have a
- * value.
- */
-template<class T>
-struct Maybe {
-  Maybe() : has_value(false) {}
-  explicit Maybe(T t) : has_value(true), value(t) {}
-  Maybe(bool has, T t) : has_value(has), value(t) {}
-
-  bool has_value;
-  T value;
-};
-
-
-// Convenience wrapper.
-template <class T>
-inline Maybe<T> maybe(T t) {
-  return Maybe<T>(t);
-}
 
 
 // --- Special objects ---
@@ -1846,6 +1866,16 @@ class V8_EXPORT Value : public Data {
    */
   bool IsDataView() const;
 
+  MaybeLocal<Boolean> ToBoolean(Local<Context> context) const;
+  MaybeLocal<Number> ToNumber(Local<Context> context) const;
+  MaybeLocal<String> ToString(Local<Context> context) const;
+  MaybeLocal<String> ToDetailString(Local<Context> context) const;
+  MaybeLocal<Object> ToObject(Local<Context> context) const;
+  MaybeLocal<Integer> ToInteger(Local<Context> context) const;
+  MaybeLocal<Uint32> ToUint32(Local<Context> context) const;
+  MaybeLocal<Int32> ToInt32(Local<Context> context) const;
+
+  // TODO(dcarney): deprecate all these.
   Local<Boolean> ToBoolean(Isolate* isolate) const;
   Local<Number> ToNumber(Isolate* isolate) const;
   Local<String> ToString(Isolate* isolate) const;
@@ -1855,7 +1885,7 @@ class V8_EXPORT Value : public Data {
   Local<Uint32> ToUint32(Isolate* isolate) const;
   Local<Int32> ToInt32(Isolate* isolate) const;
 
-  // TODO(dcarney): deprecate all these.
+  // TODO(dcarney): deprecate all these as well.
   inline Local<Boolean> ToBoolean() const;
   inline Local<Number> ToNumber() const;
   inline Local<String> ToString() const;
@@ -1871,6 +1901,13 @@ class V8_EXPORT Value : public Data {
    */
   Local<Uint32> ToArrayIndex() const;
 
+  Maybe<bool> BooleanValue(Local<Context> context) const;
+  Maybe<double> NumberValue(Local<Context> context) const;
+  Maybe<int64_t> IntegerValue(Local<Context> context) const;
+  Maybe<uint32_t> Uint32Value(Local<Context> context) const;
+  Maybe<int32_t> Int32Value(Local<Context> context) const;
+
+  // TODO(dcarney): deprecate all these.
   bool BooleanValue() const;
   double NumberValue() const;
   int64_t IntegerValue() const;
@@ -2453,9 +2490,13 @@ enum AccessControl {
  */
 class V8_EXPORT Object : public Value {
  public:
+  // TODO(dcarney): deprecate
   bool Set(Handle<Value> key, Handle<Value> value);
+  Maybe<bool> Set(Local<Context> context, Local<Value> key, Local<Value> value);
 
+  // TODO(dcarney): deprecate
   bool Set(uint32_t index, Handle<Value> value);
+  Maybe<bool> Set(Local<Context> context, uint32_t index, Local<Value> value);
 
   // Sets an own property on this object bypassing interceptors and
   // overriding accessors or read-only properties.
@@ -2465,46 +2506,74 @@ class V8_EXPORT Object : public Value {
   // will only be returned if the interceptor doesn't return a value.
   //
   // Note also that this only works for named properties.
+  // TODO(dcarney): deprecate
   bool ForceSet(Handle<Value> key,
                 Handle<Value> value,
                 PropertyAttribute attribs = None);
+  Maybe<bool> ForceSet(Local<Context> context, Local<Value> key,
+                       Local<Value> value, PropertyAttribute attribs = None);
 
+  // TODO(dcarney): deprecate
   Local<Value> Get(Handle<Value> key);
+  MaybeLocal<Value> Get(Local<Context> context, Local<Value> key);
 
+  // TODO(dcarney): deprecate
   Local<Value> Get(uint32_t index);
+  MaybeLocal<Value> Get(Local<Context> context, uint32_t index);
 
   /**
    * Gets the property attributes of a property which can be None or
    * any combination of ReadOnly, DontEnum and DontDelete. Returns
    * None when the property doesn't exist.
    */
+  // TODO(dcarney): deprecate
   PropertyAttribute GetPropertyAttributes(Handle<Value> key);
+  Maybe<PropertyAttribute> GetPropertyAttributes(Local<Context> context,
+                                                 Local<Value> key);
 
   /**
    * Returns Object.getOwnPropertyDescriptor as per ES5 section 15.2.3.3.
    */
+  // TODO(dcarney): deprecate
   Local<Value> GetOwnPropertyDescriptor(Local<String> key);
+  MaybeLocal<Value> GetOwnPropertyDescriptor(Local<Context> context,
+                                             Local<String> key);
 
+  // TODO(dcarney): deprecate
   bool Has(Handle<Value> key);
+  Maybe<bool> Has(Local<Context> context, Local<Value> key);
 
+  // TODO(dcarney): deprecate
   bool Delete(Handle<Value> key);
+  Maybe<bool> Delete(Local<Context> context, Local<Value> key);
 
+  // TODO(dcarney): deprecate
   bool Has(uint32_t index);
+  Maybe<bool> Has(Local<Context> context, uint32_t index);
 
+  // TODO(dcarney): deprecate
   bool Delete(uint32_t index);
+  Maybe<bool> Delete(Local<Context> context, uint32_t index);
 
+  // TODO(dcarney): deprecate
   bool SetAccessor(Handle<String> name,
                    AccessorGetterCallback getter,
                    AccessorSetterCallback setter = 0,
                    Handle<Value> data = Handle<Value>(),
                    AccessControl settings = DEFAULT,
                    PropertyAttribute attribute = None);
-  bool SetAccessor(Handle<Name> name,
-                   AccessorNameGetterCallback getter,
+  // TODO(dcarney): deprecate
+  bool SetAccessor(Handle<Name> name, AccessorNameGetterCallback getter,
                    AccessorNameSetterCallback setter = 0,
                    Handle<Value> data = Handle<Value>(),
                    AccessControl settings = DEFAULT,
                    PropertyAttribute attribute = None);
+  Maybe<bool> SetAccessor(Local<Context> context, Local<Name> name,
+                          AccessorNameGetterCallback getter,
+                          AccessorNameSetterCallback setter = 0,
+                          MaybeLocal<Value> data = MaybeLocal<Value>(),
+                          AccessControl settings = DEFAULT,
+                          PropertyAttribute attribute = None);
 
   void SetAccessorProperty(Local<Name> name,
                            Local<Function> getter,
@@ -2518,6 +2587,7 @@ class V8_EXPORT Object : public Value {
    * Note: Private properties are inherited. Do not rely on this, since it may
    * change.
    */
+  // TODO(dcarney): convert these or remove?
   bool HasPrivate(Handle<Private> key);
   bool SetPrivate(Handle<Private> key, Handle<Value> value);
   bool DeletePrivate(Handle<Private> key);
@@ -2529,14 +2599,18 @@ class V8_EXPORT Object : public Value {
    * array returned by this method contains the same values as would
    * be enumerated by a for-in statement over this object.
    */
+  // TODO(dcarney): deprecate
   Local<Array> GetPropertyNames();
+  MaybeLocal<Array> GetPropertyNames(Local<Context> context);
 
   /**
    * This function has the same functionality as GetPropertyNames but
    * the returned array doesn't contain the names of properties from
    * prototype objects.
    */
+  // TODO(dcarney): deprecate
   Local<Array> GetOwnPropertyNames();
+  MaybeLocal<Array> GetOwnPropertyNames(Local<Context> context);
 
   /**
    * Get the prototype object.  This does not skip objects marked to
@@ -2550,7 +2624,9 @@ class V8_EXPORT Object : public Value {
    * be skipped by __proto__ and it does not consult the security
    * handler.
    */
+  // TODO(dcarney): deprecate
   bool SetPrototype(Handle<Value> prototype);
+  Maybe<bool> SetPrototype(Local<Context> context, Local<Value> prototype);
 
   /**
    * Finds an instance of the given function template in the prototype
@@ -2563,7 +2639,9 @@ class V8_EXPORT Object : public Value {
    * This is different from Value::ToString() that may call
    * user-defined toString function. This one does not.
    */
+  // TODO(dcarney): deprecate
   Local<String> ObjectProtoToString();
+  MaybeLocal<String> ObjectProtoToString(Local<Context> context);
 
   /**
    * Returns the name of the function invoked as a constructor for this object.
@@ -2624,38 +2702,59 @@ class V8_EXPORT Object : public Value {
   void SetAlignedPointerInInternalField(int index, void* value);
 
   // Testers for local properties.
+  // TODO(dcarney): deprecate
   bool HasOwnProperty(Handle<String> key);
+  Maybe<bool> HasOwnProperty(Local<Context> context, Local<Name> key);
+  // TODO(dcarney): deprecate
   bool HasRealNamedProperty(Handle<String> key);
+  Maybe<bool> HasRealNamedProperty(Local<Context> context, Local<Name> key);
+  // TODO(dcarney): deprecate
   bool HasRealIndexedProperty(uint32_t index);
+  Maybe<bool> HasRealIndexedProperty(Local<Context> context, uint32_t index);
+  // TODO(dcarney): deprecate
   bool HasRealNamedCallbackProperty(Handle<String> key);
+  Maybe<bool> HasRealNamedCallbackProperty(Local<Context> context,
+                                           Local<Name> key);
 
   /**
    * If result.IsEmpty() no real property was located in the prototype chain.
    * This means interceptors in the prototype chain are not called.
    */
+  // TODO(dcarney): deprecate
   Local<Value> GetRealNamedPropertyInPrototypeChain(Handle<String> key);
+  MaybeLocal<Value> GetRealNamedPropertyInPrototypeChain(Local<Context> context,
+                                                         Local<Name> key);
 
   /**
    * Gets the property attributes of a real property in the prototype chain,
    * which can be None or any combination of ReadOnly, DontEnum and DontDelete.
    * Interceptors in the prototype chain are not called.
    */
+  // TODO(dcarney): deprecate
   Maybe<PropertyAttribute> GetRealNamedPropertyAttributesInPrototypeChain(
       Handle<String> key);
+  Maybe<PropertyAttribute> GetRealNamedPropertyAttributesInPrototypeChain(
+      Local<Context> context, Local<Name> key);
 
   /**
    * If result.IsEmpty() no real property was located on the object or
    * in the prototype chain.
    * This means interceptors in the prototype chain are not called.
    */
+  // TODO(dcarney): deprecate
   Local<Value> GetRealNamedProperty(Handle<String> key);
+  MaybeLocal<Value> GetRealNamedProperty(Local<Context> context,
+                                         Local<Name> key);
 
   /**
    * Gets the property attributes of a real property which can be
    * None or any combination of ReadOnly, DontEnum and DontDelete.
    * Interceptors in the prototype chain are not called.
    */
+  // TODO(dcarney): deprecate
   Maybe<PropertyAttribute> GetRealNamedPropertyAttributes(Handle<String> key);
+  Maybe<PropertyAttribute> GetRealNamedPropertyAttributes(
+      Local<Context> context, Local<Name> key);
 
   /** Tests for a named lookup interceptor.*/
   bool HasNamedLookupInterceptor();
@@ -2668,6 +2767,7 @@ class V8_EXPORT Object : public Value {
    * a template that has access check callbacks. If an object has no
    * access check info, the object cannot be accessed by anyone.
    */
+  // TODO(dcarney): deprecate
   void TurnOnAccessCheck();
 
   /**
@@ -2685,6 +2785,7 @@ class V8_EXPORT Object : public Value {
    * C++ API. Hidden properties introduced by V8 internally (for example the
    * identity hash) are prefixed with "v8::".
    */
+  // TODO(dcarney): convert these to take a isolate and optionally bailout?
   bool SetHiddenValue(Handle<String> key, Handle<Value> value);
   Local<Value> GetHiddenValue(Handle<String> key);
   bool DeleteHiddenValue(Handle<String> key);
@@ -2693,6 +2794,7 @@ class V8_EXPORT Object : public Value {
    * Clone this object with a fast but shallow copy.  Values will point
    * to the same values as the original object.
    */
+  // TODO(dcarney): take an isolate and optionally bail out?
   Local<Object> Clone();
 
   /**
@@ -2741,6 +2843,8 @@ class V8_EXPORT Object : public Value {
   Local<Value> CallAsFunction(Handle<Value> recv,
                               int argc,
                               Handle<Value> argv[]);
+  MaybeLocal<Value> CallAsFunction(Local<Context> context, Handle<Value> recv,
+                                   int argc, Handle<Value> argv[]);
 
   /**
    * Call an Object as a constructor if a callback is set by the
@@ -2748,10 +2852,13 @@ class V8_EXPORT Object : public Value {
    * Note: This method behaves like the Function::NewInstance method.
    */
   Local<Value> CallAsConstructor(int argc, Handle<Value> argv[]);
+  MaybeLocal<Value> CallAsConstructor(Local<Context> context, int argc,
+                                      Local<Value> argv[]);
 
   /**
    * Return the isolate to which the Object belongs to.
    */
+  // TODO(dcarney): deprecate - this is an implementation detail.
   Isolate* GetIsolate();
 
   static Local<Object> New(Isolate* isolate);
@@ -5692,13 +5799,73 @@ class V8_EXPORT V8 {
                          int* index);
   static Local<Value> GetEternal(Isolate* isolate, int index);
 
+  static void CheckIsJust(bool is_just);
+
   template <class T> friend class Handle;
   template <class T> friend class Local;
+  template <class T>
+  friend class Maybe;
   template <class T> friend class Eternal;
   template <class T> friend class PersistentBase;
   template <class T, class M> friend class Persistent;
   friend class Context;
 };
+
+
+/**
+ * A simple Maybe type, representing an object which may or may not have a
+ * value, see https://hackage.haskell.org/package/base/docs/Data-Maybe.html.
+ */
+template <class T>
+class Maybe {
+ public:
+  V8_INLINE bool IsNothing() const { return !has_value; }
+  V8_INLINE bool IsJust() const { return has_value; }
+
+  V8_INLINE T FromJust() const {
+#ifdef V8_ENABLE_CHECKS
+    V8::CheckIsJust(IsJust());
+#endif
+    return value;
+  }
+
+  V8_INLINE T FromMaybe(const T& default_value) const {
+    return has_value ? value : default_value;
+  }
+
+  V8_INLINE bool operator==(const Maybe& other) const {
+    return (IsJust() == other.IsJust()) &&
+           (!IsJust() || FromJust() == other.FromJust());
+  }
+
+  V8_INLINE bool operator!=(const Maybe& other) const {
+    return !operator==(other);
+  }
+
+ private:
+  Maybe() : has_value(false) {}
+  explicit Maybe(const T& t) : has_value(true), value(t) {}
+
+  bool has_value;
+  T value;
+
+  template <class U>
+  friend Maybe<U> Nothing();
+  template <class U>
+  friend Maybe<U> Just(const U& u);
+};
+
+
+template <class T>
+inline Maybe<T> Nothing() {
+  return Maybe<T>();
+}
+
+
+template <class T>
+inline Maybe<T> Just(const T& t) {
+  return Maybe<T>(t);
+}
 
 
 /**

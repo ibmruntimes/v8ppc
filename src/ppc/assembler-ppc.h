@@ -44,6 +44,7 @@
 #include <vector>
 
 #include "src/assembler.h"
+#include "src/compiler.h"
 #include "src/ppc/constants-ppc.h"
 #include "src/serialize.h"
 
@@ -192,28 +193,9 @@ struct Register {
   }
 
   static const RegList kAllocatable =
-      1 << 3 |
-      1 << 4 |
-      1 << 5 |
-      1 << 6 |
-      1 << 7 |
-      1 << 8 |
-      1 << 9 |
-      1 << 10 |
-      1 << 14 |
-      1 << 15 |
-      1 << 16 |
-      1 << 17 |
-      1 << 18 |
-      1 << 19 |
-      1 << 20 |
-      1 << 21 |
-      1 << 22 |
-      1 << 23 |
-      1 << 24 |
-      1 << 25 |
-      1 << 26 |
-      1 << 27 |
+      1 << 3 | 1 << 4 | 1 << 5 | 1 << 6 | 1 << 7 | 1 << 8 | 1 << 9 | 1 << 10 |
+      1 << 14 | 1 << 15 | 1 << 16 | 1 << 17 | 1 << 18 | 1 << 19 | 1 << 20 |
+      1 << 21 | 1 << 22 | 1 << 23 | 1 << 24 | 1 << 25 | 1 << 26 | 1 << 27 |
 #if defined(V8_PPC_CONSTANT_POOL_OPT)
       (FLAG_enable_embedded_constant_pool ? 0 : 1 << 28) |
 #else
@@ -885,7 +867,7 @@ class Assembler : public AssemblerBase {
   //   blrl
   static const int kPatchDebugBreakSlotAddressOffset = 0 * kInstrSize;
 
-  // This is the length of the BreakLocationIterator::SetDebugBreakAtReturn()
+  // This is the length of the BreakLocation::SetDebugBreakAtReturn()
   // code patch FIXED_SEQUENCE
   static const int kJSReturnSequenceInstructions =
 #if defined(V8_PPC_CONSTANT_POOL_OPT)
@@ -893,6 +875,8 @@ class Assembler : public AssemblerBase {
 #else
       kMovInstructions + 3;
 #endif
+  static const int kJSReturnSequenceLength =
+      kJSReturnSequenceInstructions * kInstrSize;
 
   // This is the length of the code sequence from SetDebugBreakAtSlot()
   // FIXED_SEQUENCE
@@ -1463,7 +1447,7 @@ class Assembler : public AssemblerBase {
 
   // Record a deoptimization reason that can be used by a log or cpu profiler.
   // Use --trace-deopt to enable.
-  void RecordDeoptReason(const int reason, const int raw_position);
+  void RecordDeoptReason(const int reason, const SourcePosition position);
 
   // Writes a single byte or word of data in the code stream.  Used
   // for inline tables, e.g., jump-tables.

@@ -150,8 +150,8 @@ class AddressMapBase {
     return static_cast<uint32_t>(reinterpret_cast<intptr_t>(entry->value));
   }
 
-  static HashMap::Entry* LookupEntry(HashMap* map, HeapObject* obj,
-                                     bool insert) {
+  inline static HashMap::Entry* LookupEntry(HashMap* map, HeapObject* obj,
+                                            bool insert) {
     return map->Lookup(Key(obj), Hash(obj), insert);
   }
 
@@ -195,9 +195,9 @@ class PartialCacheIndexMap : public AddressMapBase {
   // Lookup object in the map. Return its index if found, or create
   // a new entry with new_index as value, and return kInvalidIndex.
   int LookupOrInsert(HeapObject* obj, int new_index) {
-    HashMap::Entry* entry = LookupEntry(&map_, obj, true);
-    if (entry->value != NULL) return GetValue(entry);
-    SetValue(entry, static_cast<uint32_t>(new_index));
+    HashMap::Entry* entry = LookupEntry(&map_, obj, false);
+    if (entry != NULL) return GetValue(entry);
+    SetValue(LookupEntry(&map_, obj, true), static_cast<uint32_t>(new_index));
     return kInvalidIndex;
   }
 
@@ -703,6 +703,8 @@ class Serializer : public SerializerDeserializer {
     // External strings are serialized in a way to resemble sequential strings.
     void SerializeExternalString();
 
+    Address PrepareCode();
+
     Serializer* serializer_;
     HeapObject* object_;
     SnapshotByteSink* sink_;
@@ -749,6 +751,8 @@ class Serializer : public SerializerDeserializer {
   // of the serializer.  Initialize it on demand.
   void InitializeCodeAddressMap();
 
+  Code* CopyCode(Code* code);
+
   inline uint32_t max_chunk_size(int space) const {
     DCHECK_LE(0, space);
     DCHECK_LT(space, kNumberOfSpaces);
@@ -782,6 +786,8 @@ class Serializer : public SerializerDeserializer {
   // We map serialized large objects to indexes for back-referencing.
   uint32_t large_objects_total_size_;
   uint32_t seen_large_objects_index_;
+
+  List<byte> code_buffer_;
 
   DISALLOW_COPY_AND_ASSIGN(Serializer);
 };
@@ -981,7 +987,7 @@ class SerializedCodeData : public SerializedData {
     SOURCE_MISMATCH = 3,
     CPU_FEATURES_MISMATCH = 4,
     FLAGS_MISMATCH = 5,
-    CHECKSUM_MISMATCH = 6,
+    CHECKSUM_MISMATCH = 6
   };
 
   SanityCheckResult SanityCheck(String* source) const;

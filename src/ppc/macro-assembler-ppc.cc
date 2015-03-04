@@ -565,7 +565,7 @@ void MacroAssembler::PopFixedFrame(Register marker_reg) {
 
 const RegList MacroAssembler::kSafepointSavedRegisters = Register::kAllocatable;
 const int MacroAssembler::kNumSafepointSavedRegisters =
-      Register::kMaxNumAllocatableRegisters;
+    Register::kMaxNumAllocatableRegisters;
 
 // Push and pop all registers that can hold pointers.
 void MacroAssembler::PushSafepointRegisters() {

@@ -251,6 +251,14 @@ bool IC::AddressIsOptimizedCode() const {
 }
 
 
+bool IC::AddressIsDeoptimizedCode() const {
+  Code* host =
+      isolate()->inner_pointer_to_code_cache()->GetCacheEntry(address())->code;
+  return host->kind() == Code::OPTIMIZED_FUNCTION &&
+         host->marked_for_deoptimization();
+}
+
+
 static void LookupForRead(LookupIterator* it) {
   for (; it->IsFound(); it->Next()) {
     switch (it->state()) {
@@ -270,8 +278,7 @@ static void LookupForRead(LookupIterator* it) {
       case LookupIterator::ACCESS_CHECK:
         // PropertyHandlerCompiler::CheckPrototypes() knows how to emit
         // access checks for global proxies.
-        if (it->GetHolder<JSObject>()->IsJSGlobalProxy() &&
-            it->HasAccess(v8::ACCESS_GET)) {
+        if (it->GetHolder<JSObject>()->IsJSGlobalProxy() && it->HasAccess()) {
           break;
         }
         return;
@@ -989,6 +996,41 @@ Handle<Code> LoadIC::initialize_stub(Isolate* isolate,
   }
 
   return PropertyICCompiler::ComputeLoad(isolate, UNINITIALIZED, extra_state);
+}
+
+
+Handle<Code> LoadIC::load_global(Isolate* isolate, Handle<GlobalObject> global,
+                                 Handle<String> name) {
+  // This special IC doesn't work with vector ics.
+  DCHECK(!FLAG_vector_ics);
+
+  Handle<ScriptContextTable> script_contexts(
+      global->native_context()->script_context_table());
+
+  ScriptContextTable::LookupResult lookup_result;
+  if (ScriptContextTable::Lookup(script_contexts, name, &lookup_result)) {
+    return initialize_stub(isolate, LoadICState(CONTEXTUAL).GetExtraICState());
+  }
+
+  Handle<Map> global_map(global->map());
+  Handle<Code> handler = PropertyHandlerCompiler::Find(
+      name, global_map, Code::LOAD_IC, kCacheOnReceiver, Code::NORMAL);
+  if (handler.is_null()) {
+    LookupIterator it(global, name);
+    if (!it.IsFound() || !it.GetHolder<JSObject>().is_identical_to(global) ||
+        it.state() != LookupIterator::DATA) {
+      return initialize_stub(isolate,
+                             LoadICState(CONTEXTUAL).GetExtraICState());
+    }
+    NamedLoadHandlerCompiler compiler(isolate, global_map, global,
+                                      kCacheOnReceiver);
+    Handle<PropertyCell> cell = it.GetPropertyCell();
+    handler = compiler.CompileLoadGlobal(cell, name, it.IsConfigurable());
+    Map::UpdateCodeCache(global_map, name, handler);
+  }
+  return PropertyICCompiler::ComputeMonomorphic(
+      Code::LOAD_IC, name, handle(global->map()), handler,
+      LoadICState(CONTEXTUAL).GetExtraICState());
 }
 
 
@@ -2566,9 +2608,17 @@ MaybeHandle<Object> BinaryOpIC::Transition(
       isolate(), result, Execution::Call(isolate(), function, left, 1, &right),
       Object);
 
+  // Do not try to update the target if the code was marked for lazy
+  // deoptimization. (Since we do not relocate addresses in these
+  // code objects, an attempt to access the target could fail.)
+  if (AddressIsDeoptimizedCode()) {
+    return result;
+  }
+
   // Execution::Call can execute arbitrary JavaScript, hence potentially
   // update the state of this very IC, so we must update the stored state.
   UpdateTarget();
+
   // Compute the new state.
   BinaryOpICState old_state(isolate(), target()->extra_ic_state());
   state.Update(left, right, result);

@@ -1511,7 +1511,7 @@ void FullCodeGenerator::EmitVariableLoad(VariableProxy* proxy) {
         __ li(VectorLoadICDescriptor::SlotRegister(),
               Operand(SmiFromSlot(proxy->VariableFeedbackSlot())));
       }
-      CallLoadIC(CONTEXTUAL);
+      CallGlobalLoadIC(var->name());
       context()->Plug(v0);
       break;
     }
@@ -2896,7 +2896,8 @@ void FullCodeGenerator::EmitCallWithLoadIC(Call* expr) {
     }
     // Push undefined as receiver. This is patched in the method prologue if it
     // is a sloppy mode method.
-    __ Push(isolate()->factory()->undefined_value());
+    __ LoadRoot(at, Heap::kUndefinedValueRootIndex);
+    __ push(at);
   } else {
     // Load the function from the receiver.
     DCHECK(callee->IsProperty());
@@ -4234,6 +4235,7 @@ void FullCodeGenerator::EmitDefaultConstructorCallSuper(CallRuntime* expr) {
   __ dsll(at, a0, kPointerSizeLog2);
   __ Daddu(at, at, Operand(sp));
   __ ld(a1, MemOperand(at, 0));
+  __ LoadRoot(a2, Heap::kUndefinedValueRootIndex);
 
   CallConstructStub stub(isolate(), SUPER_CONSTRUCTOR_CALL);
   __ Call(stub.GetCode(), RelocInfo::CONSTRUCT_CALL);

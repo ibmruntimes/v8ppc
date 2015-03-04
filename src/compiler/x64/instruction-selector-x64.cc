@@ -832,15 +832,12 @@ void InstructionSelector::VisitTruncateInt64ToInt32(Node* node) {
 
 void InstructionSelector::VisitFloat64Add(Node* node) {
   X64OperandGenerator g(this);
-  Node* left = node->InputAt(0);
-  Node* right = node->InputAt(1);
-  if (g.CanBeBetterLeftOperand(right)) std::swap(left, right);
   if (IsSupported(AVX)) {
-    Emit(kAVXFloat64Add, g.DefineAsRegister(node), g.UseRegister(left),
-         g.Use(right));
+    Emit(kAVXFloat64Add, g.DefineAsRegister(node),
+         g.UseRegister(node->InputAt(0)), g.Use(node->InputAt(1)));
   } else {
-    Emit(kSSEFloat64Add, g.DefineSameAsFirst(node), g.UseRegister(left),
-         g.Use(right));
+    Emit(kSSEFloat64Add, g.DefineSameAsFirst(node),
+         g.UseRegister(node->InputAt(0)), g.Use(node->InputAt(1)));
   }
 }
 
@@ -859,15 +856,12 @@ void InstructionSelector::VisitFloat64Sub(Node* node) {
 
 void InstructionSelector::VisitFloat64Mul(Node* node) {
   X64OperandGenerator g(this);
-  Node* left = node->InputAt(0);
-  Node* right = node->InputAt(1);
-  if (g.CanBeBetterLeftOperand(right)) std::swap(left, right);
   if (IsSupported(AVX)) {
-    Emit(kAVXFloat64Mul, g.DefineAsRegister(node), g.UseRegister(left),
-         g.Use(right));
+    Emit(kAVXFloat64Mul, g.DefineAsRegister(node),
+         g.UseRegister(node->InputAt(0)), g.Use(node->InputAt(1)));
   } else {
-    Emit(kSSEFloat64Mul, g.DefineSameAsFirst(node), g.UseRegister(left),
-         g.Use(right));
+    Emit(kSSEFloat64Mul, g.DefineSameAsFirst(node),
+         g.UseRegister(node->InputAt(0)), g.Use(node->InputAt(1)));
   }
 }
 
@@ -1068,25 +1062,12 @@ void InstructionSelector::VisitBranch(Node* branch, BasicBlock* tbranch,
   FlagsContinuation cont(kNotEqual, tbranch, fbranch);
 
   // Try to combine with comparisons against 0 by simply inverting the branch.
-  while (CanCover(user, value)) {
-    if (value->opcode() == IrOpcode::kWord32Equal) {
-      Int32BinopMatcher m(value);
-      if (m.right().Is(0)) {
-        user = value;
-        value = m.left().node();
-        cont.Negate();
-      } else {
-        break;
-      }
-    } else if (value->opcode() == IrOpcode::kWord64Equal) {
-      Int64BinopMatcher m(value);
-      if (m.right().Is(0)) {
-        user = value;
-        value = m.left().node();
-        cont.Negate();
-      } else {
-        break;
-      }
+  while (CanCover(user, value) && value->opcode() == IrOpcode::kWord32Equal) {
+    Int32BinopMatcher m(value);
+    if (m.right().Is(0)) {
+      user = value;
+      value = m.left().node();
+      cont.Negate();
     } else {
       break;
     }
@@ -1393,13 +1374,14 @@ void InstructionSelector::VisitFloat64LessThanOrEqual(Node* node) {
 // static
 MachineOperatorBuilder::Flags
 InstructionSelector::SupportedMachineOperatorFlags() {
+  MachineOperatorBuilder::Flags flags =
+      MachineOperatorBuilder::kWord32ShiftIsSafe;
   if (CpuFeatures::IsSupported(SSE4_1)) {
-    return MachineOperatorBuilder::kFloat64Floor |
-           MachineOperatorBuilder::kFloat64Ceil |
-           MachineOperatorBuilder::kFloat64RoundTruncate |
-           MachineOperatorBuilder::kWord32ShiftIsSafe;
+    flags |= MachineOperatorBuilder::kFloat64Floor |
+             MachineOperatorBuilder::kFloat64Ceil |
+             MachineOperatorBuilder::kFloat64RoundTruncate;
   }
-  return MachineOperatorBuilder::kNoFlags;
+  return flags;
 }
 
 }  // namespace compiler

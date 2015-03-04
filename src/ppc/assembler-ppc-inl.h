@@ -290,8 +290,8 @@ Address RelocInfo::call_address() {
   DCHECK((IsJSReturn(rmode()) && IsPatchedReturnSequence()) ||
          (IsDebugBreakSlot(rmode()) && IsPatchedDebugBreakSlotSequence()));
   // The pc_ offset of 0 assumes patched return sequence per
-  // BreakLocationIterator::SetDebugBreakAtReturn(), or debug break
-  // slot per BreakLocationIterator::SetDebugBreakAtSlot().
+  // BreakLocation::SetDebugBreakAtReturn(), or debug break
+  // slot per BreakLocation::SetDebugBreakAtSlot().
   return Assembler::target_address_at(pc_, host_);
 }
 
@@ -333,7 +333,7 @@ void RelocInfo::WipeOut() {
 bool RelocInfo::IsPatchedReturnSequence() {
   //
   // The patched return sequence is defined by
-  // BreakLocationIterator::SetDebugBreakAtReturn()
+  // BreakLocation::SetDebugBreakAtReturn()
   // FIXED_SEQUENCE
 
   Instr instr0 = Assembler::instr_at(pc_);

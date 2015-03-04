@@ -456,10 +456,10 @@ void FullCodeGenerator::EmitReturnSequence() {
 
     // Make sure that the constant pool is not emitted inside of the return
     // sequence. This sequence can get patched when the debugger is used. See
-    // debug-arm64.cc:BreakLocationIterator::SetDebugBreakAtReturn().
+    // debug-arm64.cc:BreakLocation::SetDebugBreakAtReturn().
     {
       InstructionAccurateScope scope(masm_,
-                                     Assembler::kJSRetSequenceInstructions);
+                                     Assembler::kJSReturnSequenceInstructions);
       CodeGenerator::RecordPositions(masm_, function()->end_position() - 1);
       __ RecordJSReturn();
       // This code is generated using Assembler methods rather than Macro
@@ -1508,7 +1508,7 @@ void FullCodeGenerator::EmitVariableLoad(VariableProxy* proxy) {
         __ Mov(VectorLoadICDescriptor::SlotRegister(),
                SmiFromSlot(proxy->VariableFeedbackSlot()));
       }
-      CallLoadIC(CONTEXTUAL);
+      CallGlobalLoadIC(var->name());
       context()->Plug(x0);
       break;
     }
@@ -2603,7 +2603,12 @@ void FullCodeGenerator::EmitCallWithLoadIC(Call* expr) {
     }
     // Push undefined as receiver. This is patched in the method prologue if it
     // is a sloppy mode method.
-    __ Push(isolate()->factory()->undefined_value());
+    {
+      UseScratchRegisterScope temps(masm_);
+      Register temp = temps.AcquireX();
+      __ LoadRoot(temp, Heap::kUndefinedValueRootIndex);
+      __ Push(temp);
+    }
   } else {
     // Load the function from the receiver.
     DCHECK(callee->IsProperty());
@@ -3936,6 +3941,7 @@ void FullCodeGenerator::EmitDefaultConstructorCallSuper(CallRuntime* expr) {
 
   __ bind(&args_set_up);
   __ Peek(x1, Operand(x0, LSL, kPointerSizeLog2));
+  __ LoadRoot(x2, Heap::kUndefinedValueRootIndex);
 
   CallConstructStub stub(isolate(), SUPER_CONSTRUCTOR_CALL);
   __ Call(stub.GetCode(), RelocInfo::CONSTRUCT_CALL);

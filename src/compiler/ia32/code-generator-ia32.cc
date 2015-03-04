@@ -321,6 +321,12 @@ void CodeGenerator::AssembleArchInstruction(Instruction* instr) {
     case kArchNop:
       // don't emit code for nops.
       break;
+    case kArchDeoptimize: {
+      int deopt_state_id =
+          BuildTranslation(instr, -1, 0, OutputFrameStateCombine::Ignore());
+      AssembleDeoptimizerCall(deopt_state_id, Deoptimizer::EAGER);
+      break;
+    }
     case kArchRet:
       AssembleReturn();
       break;
@@ -870,9 +876,10 @@ void CodeGenerator::AssembleArchTableSwitch(Instruction* instr) {
 }
 
 
-void CodeGenerator::AssembleDeoptimizerCall(int deoptimization_id) {
+void CodeGenerator::AssembleDeoptimizerCall(
+    int deoptimization_id, Deoptimizer::BailoutType bailout_type) {
   Address deopt_entry = Deoptimizer::GetDeoptimizationEntry(
-      isolate(), deoptimization_id, Deoptimizer::LAZY);
+      isolate(), deoptimization_id, bailout_type);
   __ call(deopt_entry, RelocInfo::RUNTIME_ENTRY);
 }
 
@@ -1119,7 +1126,19 @@ void CodeGenerator::AssembleMove(InstructionOperand* source,
     Constant src_constant = g.ToConstant(source);
     if (src_constant.type() == Constant::kHeapObject) {
       Handle<HeapObject> src = src_constant.ToHeapObject();
-      if (destination->IsRegister()) {
+      if (info()->IsOptimizing() && src.is_identical_to(info()->context())) {
+        // Loading the context from the frame is way cheaper than materializing
+        // the actual context heap object address.
+        if (destination->IsRegister()) {
+          Register dst = g.ToRegister(destination);
+          __ mov(dst, Operand(ebp, StandardFrameConstants::kContextOffset));
+        } else {
+          DCHECK(destination->IsStackSlot());
+          Operand dst = g.ToOperand(destination);
+          __ push(Operand(ebp, StandardFrameConstants::kContextOffset));
+          __ pop(dst);
+        }
+      } else if (destination->IsRegister()) {
         Register dst = g.ToRegister(destination);
         __ LoadHeapObject(dst, src);
       } else {

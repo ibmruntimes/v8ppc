@@ -542,7 +542,8 @@ class ParserTraits {
                                  int end_pos);
   Literal* ExpressionFromLiteral(Token::Value token, int pos, Scanner* scanner,
                                  AstNodeFactory* factory);
-  Expression* ExpressionFromIdentifier(const AstRawString* name, int pos,
+  Expression* ExpressionFromIdentifier(const AstRawString* name,
+                                       int start_position, int end_position,
                                        Scope* scope, AstNodeFactory* factory);
   Expression* ExpressionFromString(int pos, Scanner* scanner,
                                    AstNodeFactory* factory);
@@ -704,9 +705,9 @@ class Parser : public ParserBase<ParserTraits> {
   void* ParseStatementList(ZoneList<Statement*>* body, int end_token,
                            bool is_eval, Scope** ad_hoc_eval_scope, bool* ok);
   Statement* ParseStatementListItem(bool* ok);
-  void* ParseModule(ZoneList<Statement*>* body, bool* ok);
+  void* ParseModuleItemList(ZoneList<Statement*>* body, bool* ok);
   Statement* ParseModuleItem(bool* ok);
-  Literal* ParseModuleSpecifier(bool* ok);
+  const AstRawString* ParseModuleSpecifier(bool* ok);
   Statement* ParseImportDeclaration(bool* ok);
   Statement* ParseExportDeclaration(bool* ok);
   Statement* ParseExportDefault(bool* ok);
@@ -714,8 +715,7 @@ class Parser : public ParserBase<ParserTraits> {
                           ZoneList<Scanner::Location>* export_locations,
                           ZoneList<const AstRawString*>* local_names,
                           Scanner::Location* reserved_loc, bool* ok);
-  void* ParseNamedImports(ZoneList<const AstRawString*>* import_names,
-                          ZoneList<const AstRawString*>* local_names, bool* ok);
+  ZoneList<ImportDeclaration*>* ParseNamedImports(int pos, bool* ok);
   Statement* ParseStatement(ZoneList<const AstRawString*>* labels, bool* ok);
   Statement* ParseSubStatement(ZoneList<const AstRawString*>* labels, bool* ok);
   Statement* ParseFunctionDeclaration(ZoneList<const AstRawString*>* names,
@@ -763,8 +763,8 @@ class Parser : public ParserBase<ParserTraits> {
                                   Expression* each,
                                   Expression* subject,
                                   Statement* body);
-  Statement* DesugarLetBindingsInForStatement(
-      Scope* inner_scope, ZoneList<const AstRawString*>* names,
+  Statement* DesugarLexicalBindingsInForStatement(
+      Scope* inner_scope, bool is_const, ZoneList<const AstRawString*>* names,
       ForStatement* loop, Statement* init, Expression* cond, Statement* next,
       Statement* body, bool* ok);
 
@@ -799,7 +799,7 @@ class Parser : public ParserBase<ParserTraits> {
 
   // Parser support
   VariableProxy* NewUnresolved(const AstRawString* name, VariableMode mode);
-  void Declare(Declaration* declaration, bool resolve, bool* ok);
+  Variable* Declare(Declaration* declaration, bool resolve, bool* ok);
 
   bool TargetStackContainsLabel(const AstRawString* label);
   BreakableStatement* LookupBreakTarget(const AstRawString* label, bool* ok);

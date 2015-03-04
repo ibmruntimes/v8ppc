@@ -47,6 +47,15 @@ RUNTIME_FUNCTION(Runtime_ThrowConstructorNonCallableError) {
 }
 
 
+RUNTIME_FUNCTION(Runtime_ThrowArrayNotSubclassableError) {
+  HandleScope scope(isolate);
+  DCHECK(args.length() == 0);
+  THROW_NEW_ERROR_RETURN_FAILURE(
+      isolate,
+      NewTypeError("array_not_subclassable", HandleVector<Object>(NULL, 0)));
+}
+
+
 RUNTIME_FUNCTION(Runtime_ToMethod) {
   HandleScope scope(isolate);
   DCHECK(args.length() == 2);
@@ -223,9 +232,8 @@ RUNTIME_FUNCTION(Runtime_ClassGetSourceCode) {
 
 static Object* LoadFromSuper(Isolate* isolate, Handle<Object> receiver,
                              Handle<JSObject> home_object, Handle<Name> name) {
-  if (home_object->IsAccessCheckNeeded() &&
-      !isolate->MayNamedAccess(home_object, name, v8::ACCESS_GET)) {
-    isolate->ReportFailedAccessCheck(home_object, v8::ACCESS_GET);
+  if (home_object->IsAccessCheckNeeded() && !isolate->MayAccess(home_object)) {
+    isolate->ReportFailedAccessCheck(home_object);
     RETURN_FAILURE_IF_SCHEDULED_EXCEPTION(isolate);
   }
 
@@ -243,9 +251,8 @@ static Object* LoadFromSuper(Isolate* isolate, Handle<Object> receiver,
 static Object* LoadElementFromSuper(Isolate* isolate, Handle<Object> receiver,
                                     Handle<JSObject> home_object,
                                     uint32_t index) {
-  if (home_object->IsAccessCheckNeeded() &&
-      !isolate->MayIndexedAccess(home_object, index, v8::ACCESS_GET)) {
-    isolate->ReportFailedAccessCheck(home_object, v8::ACCESS_GET);
+  if (home_object->IsAccessCheckNeeded() && !isolate->MayAccess(home_object)) {
+    isolate->ReportFailedAccessCheck(home_object);
     RETURN_FAILURE_IF_SCHEDULED_EXCEPTION(isolate);
   }
 
@@ -297,9 +304,8 @@ RUNTIME_FUNCTION(Runtime_LoadKeyedFromSuper) {
 static Object* StoreToSuper(Isolate* isolate, Handle<JSObject> home_object,
                             Handle<Object> receiver, Handle<Name> name,
                             Handle<Object> value, LanguageMode language_mode) {
-  if (home_object->IsAccessCheckNeeded() &&
-      !isolate->MayNamedAccess(home_object, name, v8::ACCESS_SET)) {
-    isolate->ReportFailedAccessCheck(home_object, v8::ACCESS_SET);
+  if (home_object->IsAccessCheckNeeded() && !isolate->MayAccess(home_object)) {
+    isolate->ReportFailedAccessCheck(home_object);
     RETURN_FAILURE_IF_SCHEDULED_EXCEPTION(isolate);
   }
 
@@ -322,9 +328,8 @@ static Object* StoreElementToSuper(Isolate* isolate,
                                    Handle<Object> receiver, uint32_t index,
                                    Handle<Object> value,
                                    LanguageMode language_mode) {
-  if (home_object->IsAccessCheckNeeded() &&
-      !isolate->MayIndexedAccess(home_object, index, v8::ACCESS_SET)) {
-    isolate->ReportFailedAccessCheck(home_object, v8::ACCESS_SET);
+  if (home_object->IsAccessCheckNeeded() && !isolate->MayAccess(home_object)) {
+    isolate->ReportFailedAccessCheck(home_object);
     RETURN_FAILURE_IF_SCHEDULED_EXCEPTION(isolate);
   }
 

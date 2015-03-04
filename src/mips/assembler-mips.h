@@ -41,6 +41,7 @@
 #include <set>
 
 #include "src/assembler.h"
+#include "src/compiler.h"
 #include "src/mips/constants-mips.h"
 #include "src/serialize.h"
 
@@ -609,6 +610,8 @@ class Assembler : public AssemblerBase {
   // Number of instructions used for the JS return sequence. The constant is
   // used by the debugger to patch the JS return sequence.
   static const int kJSReturnSequenceInstructions = 7;
+  static const int kJSReturnSequenceLength =
+      kJSReturnSequenceInstructions * kInstrSize;
   static const int kDebugBreakSlotInstructions = 4;
   static const int kDebugBreakSlotLength =
       kDebugBreakSlotInstructions * kInstrSize;
@@ -1039,7 +1042,7 @@ class Assembler : public AssemblerBase {
 
   // Record a deoptimization reason that can be used by a log or cpu profiler.
   // Use --trace-deopt to enable.
-  void RecordDeoptReason(const int reason, const int raw_position);
+  void RecordDeoptReason(const int reason, const SourcePosition position);
 
 
   static int RelocateInternalReference(RelocInfo::Mode rmode, byte* pc,

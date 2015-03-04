@@ -1021,6 +1021,66 @@ void CEntryStub::GenerateAheadOfTime(Isolate* isolate) {
 }
 
 
+static void ThrowPendingException(MacroAssembler* masm, Register scratch1,
+                                  Register scratch2) {
+  Isolate* isolate = masm->isolate();
+
+  ExternalReference pending_handler_context_address(
+      Isolate::kPendingHandlerContextAddress, isolate);
+  ExternalReference pending_handler_code_address(
+      Isolate::kPendingHandlerCodeAddress, isolate);
+  ExternalReference pending_handler_offset_address(
+      Isolate::kPendingHandlerOffsetAddress, isolate);
+  ExternalReference pending_handler_fp_address(
+      Isolate::kPendingHandlerFPAddress, isolate);
+  ExternalReference pending_handler_sp_address(
+      Isolate::kPendingHandlerSPAddress, isolate);
+
+  // Ask the runtime for help to determine the handler. This will set x0 to
+  // contain the current pending exception, don't clobber it.
+  ExternalReference find_handler(Runtime::kFindExceptionHandler, isolate);
+  DCHECK(csp.Is(masm->StackPointer()));
+  {
+    FrameScope scope(masm, StackFrame::MANUAL);
+    __ Mov(x0, 0);  // argc.
+    __ Mov(x1, 0);  // argv.
+    __ Mov(x2, ExternalReference::isolate_address(isolate));
+    __ CallCFunction(find_handler, 3);
+  }
+
+  // We didn't execute a return case, so the stack frame hasn't been updated
+  // (except for the return address slot). However, we don't need to initialize
+  // jssp because the throw method will immediately overwrite it when it
+  // unwinds the stack.
+  __ SetStackPointer(jssp);
+
+  // Retrieve the handler context, SP and FP.
+  __ Mov(cp, Operand(pending_handler_context_address));
+  __ Ldr(cp, MemOperand(cp));
+  __ Mov(jssp, Operand(pending_handler_sp_address));
+  __ Ldr(jssp, MemOperand(jssp));
+  __ Mov(fp, Operand(pending_handler_fp_address));
+  __ Ldr(fp, MemOperand(fp));
+
+  // If the handler is a JS frame, restore the context to the frame.
+  // (kind == ENTRY) == (fp == 0) == (cp == 0), so we could test either fp
+  // or cp.
+  Label not_js_frame;
+  __ Cbz(cp, &not_js_frame);
+  __ Str(cp, MemOperand(fp, StandardFrameConstants::kContextOffset));
+  __ Bind(&not_js_frame);
+
+  // Compute the handler entry address and jump to it.
+  __ Mov(scratch1, Operand(pending_handler_code_address));
+  __ Ldr(scratch1, MemOperand(scratch1));
+  __ Mov(scratch2, Operand(pending_handler_offset_address));
+  __ Ldr(scratch2, MemOperand(scratch2));
+  __ Add(scratch1, scratch1, Code::kHeaderSize - kHeapObjectTag);
+  __ Add(scratch1, scratch1, scratch2);
+  __ Br(scratch1);
+}
+
+
 void CEntryStub::Generate(MacroAssembler* masm) {
   // The Abort mechanism relies on CallRuntime, which in turn relies on
   // CEntryStub, so until this stub has been generated, we have to use a
@@ -1187,48 +1247,7 @@ void CEntryStub::Generate(MacroAssembler* masm) {
 
   // Handling of exception.
   __ Bind(&exception_returned);
-
-  // Retrieve the pending exception.
-  ExternalReference pending_exception_address(
-      Isolate::kPendingExceptionAddress, isolate());
-  const Register& exception = result;
-  const Register& exception_address = x11;
-  __ Mov(exception_address, Operand(pending_exception_address));
-  __ Ldr(exception, MemOperand(exception_address));
-
-  // Clear the pending exception.
-  __ Mov(x10, Operand(isolate()->factory()->the_hole_value()));
-  __ Str(x10, MemOperand(exception_address));
-
-  //  x0    exception   The exception descriptor.
-  //  x21   argv
-  //  x22   argc
-  //  x23   target
-
-  // Special handling of termination exceptions, which are uncatchable by
-  // JavaScript code.
-  Label throw_termination_exception;
-  __ Cmp(exception, Operand(isolate()->factory()->termination_exception()));
-  __ B(eq, &throw_termination_exception);
-
-  // We didn't execute a return case, so the stack frame hasn't been updated
-  // (except for the return address slot). However, we don't need to initialize
-  // jssp because the throw method will immediately overwrite it when it
-  // unwinds the stack.
-  __ SetStackPointer(jssp);
-
-  ASM_LOCATION("Throw normal");
-  __ Mov(argv, 0);
-  __ Mov(argc, 0);
-  __ Mov(target, 0);
-  __ Throw(x0, x10, x11, x12, x13);
-
-  __ Bind(&throw_termination_exception);
-  ASM_LOCATION("Throw termination");
-  __ Mov(argv, 0);
-  __ Mov(argc, 0);
-  __ Mov(target, 0);
-  __ ThrowUncatchable(x0, x10, x11, x12, x13);
+  ThrowPendingException(masm, x10, x11);
 }
 
 
@@ -2661,18 +2680,9 @@ void RegExpExecStub::Generate(MacroAssembler* masm) {
   __ Cmp(x10, exception_value);
   __ B(eq, &runtime);
 
-  __ Str(x10, MemOperand(x11));  // Clear pending exception.
-
-  // Check if the exception is a termination. If so, throw as uncatchable.
-  Label termination_exception;
-  __ JumpIfRoot(exception_value,
-                Heap::kTerminationExceptionRootIndex,
-                &termination_exception);
-
-  __ Throw(exception_value, x10, x11, x12, x13);
-
-  __ Bind(&termination_exception);
-  __ ThrowUncatchable(exception_value, x10, x11, x12, x13);
+  // For exception, throw the exception again.
+  __ EnterExitFrame(false, x10);
+  ThrowPendingException(masm, x10, x11);
 
   __ Bind(&failure);
   __ Mov(x0, Operand(isolate()->factory()->null_value()));
@@ -3071,6 +3081,9 @@ void CallIC_ArrayStub::Generate(MacroAssembler* masm) {
 
   Register allocation_site = feedback_vector;
   __ Mov(allocation_site, scratch);
+
+  Register original_constructor = x3;
+  __ Mov(original_constructor, function);
   ArrayConstructorStub stub(masm->isolate(), arg_count());
   __ TailCallStub(&stub);
 
@@ -5003,14 +5016,15 @@ void ArrayConstructorStub::GenerateDispatchToArrayStub(
 void ArrayConstructorStub::Generate(MacroAssembler* masm) {
   ASM_LOCATION("ArrayConstructorStub::Generate");
   // ----------- S t a t e -------------
-  //  -- x0 : argc (only if argument_count() == ANY)
+  //  -- x0 : argc (only if argument_count() is ANY or MORE_THAN_ONE)
   //  -- x1 : constructor
   //  -- x2 : AllocationSite or undefined
-  //  -- sp[0] : return address
-  //  -- sp[4] : last argument
+  //  -- x3 : original constructor
+  //  -- sp[0] : last argument
   // -----------------------------------
   Register constructor = x1;
   Register allocation_site = x2;
+  Register original_constructor = x3;
 
   if (FLAG_debug_code) {
     // The array construct code is only set for the global and natives
@@ -5032,6 +5046,10 @@ void ArrayConstructorStub::Generate(MacroAssembler* masm) {
     __ AssertUndefinedOrAllocationSite(allocation_site, x10);
   }
 
+  Label subclassing;
+  __ Cmp(original_constructor, constructor);
+  __ B(ne, &subclassing);
+
   Register kind = x3;
   Label no_info;
   // Get the elements kind and case on that.
@@ -5045,6 +5063,25 @@ void ArrayConstructorStub::Generate(MacroAssembler* masm) {
 
   __ Bind(&no_info);
   GenerateDispatchToArrayStub(masm, DISABLE_ALLOCATION_SITES);
+
+  // Subclassing support.
+  __ Bind(&subclassing);
+  __ Push(constructor, original_constructor);
+  // Adjust argc.
+  switch (argument_count()) {
+    case ANY:
+    case MORE_THAN_ONE:
+      __ add(x0, x0, Operand(2));
+      break;
+    case NONE:
+      __ Mov(x0, Operand(2));
+      break;
+    case ONE:
+      __ Mov(x0, Operand(3));
+      break;
+  }
+  __ JumpToExternalReference(
+      ExternalReference(Runtime::kArrayConstructorWithSubclassing, isolate()));
 }
 
 

@@ -181,13 +181,20 @@ intptr_t Heap::Capacity() {
 }
 
 
-intptr_t Heap::CommittedMemory() {
+intptr_t Heap::CommittedOldGenerationMemory() {
   if (!HasBeenSetUp()) return 0;
 
-  return new_space_.CommittedMemory() + old_pointer_space_->CommittedMemory() +
+  return old_pointer_space_->CommittedMemory() +
          old_data_space_->CommittedMemory() + code_space_->CommittedMemory() +
          map_space_->CommittedMemory() + cell_space_->CommittedMemory() +
          property_cell_space_->CommittedMemory() + lo_space_->Size();
+}
+
+
+intptr_t Heap::CommittedMemory() {
+  if (!HasBeenSetUp()) return 0;
+
+  return new_space_.CommittedMemory() + CommittedOldGenerationMemory();
 }
 
 
@@ -2453,6 +2460,7 @@ AllocationResult Heap::AllocatePartialMap(InstanceType instance_type,
                    Map::OwnsDescriptors::encode(true) |
                    Map::Counter::encode(Map::kRetainingCounterStart);
   reinterpret_cast<Map*>(result)->set_bit_field3(bit_field3);
+  reinterpret_cast<Map*>(result)->set_weak_cell_cache(Smi::FromInt(0));
   return result;
 }
 
@@ -2475,6 +2483,7 @@ AllocationResult Heap::AllocateMap(InstanceType instance_type,
   map->set_code_cache(empty_fixed_array(), SKIP_WRITE_BARRIER);
   map->set_dependent_code(DependentCode::cast(empty_fixed_array()),
                           SKIP_WRITE_BARRIER);
+  map->set_weak_cell_cache(Smi::FromInt(0));
   map->init_transitions(undefined_value());
   map->set_unused_property_fields(0);
   map->set_instance_descriptors(empty_descriptor_array());

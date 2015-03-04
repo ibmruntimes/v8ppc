@@ -62,6 +62,7 @@ namespace internal {
   F(GetFunctionDelegate, 1, 1)                 \
   F(GetConstructorDelegate, 1, 1)              \
   F(DeoptimizeFunction, 1, 1)                  \
+  F(DeoptimizeNow, 0, 1)                       \
   F(ClearFunctionTypeFeedback, 1, 1)           \
   F(RunningInSimulator, 0, 1)                  \
   F(IsConcurrentRecompilationSupported, 0, 1)  \
@@ -192,6 +193,7 @@ namespace internal {
   F(LoadFromSuper, 3, 1)                       \
   F(LoadKeyedFromSuper, 3, 1)                  \
   F(ThrowConstructorNonCallableError, 0, 1)    \
+  F(ThrowArrayNotSubclassableError, 0, 1)      \
   F(ThrowNonMethodError, 0, 1)                 \
   F(ThrowUnsupportedSuperError, 0, 1)          \
   F(HandleStepInForDerivedConstructors, 1, 1)  \
@@ -464,6 +466,7 @@ namespace internal {
                                                              \
   /* Arrays */                                               \
   F(ArrayConstructor, -1, 1)                                 \
+  F(ArrayConstructorWithSubclassing, -1, 1)                  \
   F(InternalArrayConstructor, -1, 1)                         \
                                                              \
   /* Literals */                                             \
@@ -485,6 +488,7 @@ namespace internal {
   F(ThrowConstAssignError, 0, 1)                             \
   F(StackGuard, 0, 1)                                        \
   F(Interrupt, 0, 1)                                         \
+  F(FindExceptionHandler, 0, 1)                              \
   F(PromoteScheduledException, 0, 1)                         \
                                                              \
   /* Contexts */                                             \

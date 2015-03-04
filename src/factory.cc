@@ -802,7 +802,6 @@ Handle<CodeCache> Factory::NewCodeCache() {
       Handle<CodeCache>::cast(NewStruct(CODE_CACHE_TYPE));
   code_cache->set_default_cache(*empty_fixed_array(), SKIP_WRITE_BARRIER);
   code_cache->set_normal_type_cache(*undefined_value(), SKIP_WRITE_BARRIER);
-  code_cache->set_weak_cell_cache(*undefined_value(), SKIP_WRITE_BARRIER);
   return code_cache;
 }
 
@@ -1385,13 +1384,6 @@ Handle<JSFunction> Factory::NewFunctionFromSharedFunctionInfo(
   if (!info->bound() && index < 0) {
     int number_of_literals = info->num_literals();
     Handle<FixedArray> literals = NewFixedArray(number_of_literals, pretenure);
-    if (number_of_literals > 0) {
-      // Store the native context in the literals array prefix. This
-      // context will be used when creating object, regexp and array
-      // literals in this function.
-      literals->set(JSFunction::kLiteralNativeContextIndex,
-                    context->native_context());
-    }
     result->set_literals(*literals);
   }
 
@@ -2051,14 +2043,7 @@ Handle<SharedFunctionInfo> Factory::NewSharedFunctionInfo(
   shared->set_scope_info(*scope_info);
   shared->set_feedback_vector(*feedback_vector);
   shared->set_kind(kind);
-  int literals_array_size = number_of_literals;
-  // If the function contains object, regexp or array literals,
-  // allocate extra space for a literals array prefix containing the
-  // context.
-  if (number_of_literals > 0) {
-    literals_array_size += JSFunction::kLiteralsPrefixSize;
-  }
-  shared->set_num_literals(literals_array_size);
+  shared->set_num_literals(number_of_literals);
   if (IsGeneratorFunction(kind)) {
     shared->set_instance_class_name(isolate()->heap()->Generator_string());
     shared->DisableOptimization(kGenerator);

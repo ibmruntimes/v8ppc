@@ -706,14 +706,11 @@ UNINITIALIZED_DEPENDENT_TEST(CustomContextDeserialization,
 
 
 TEST(PerIsolateSnapshotBlobs) {
-  // Disable experimental natives that are loaded after deserialization.
-  FLAG_harmony_shipping = false;
-  FlagList::EnforceFlagImplications();
-
   const char* source1 = "function f() { return 42; }";
   const char* source2 =
       "function f() { return g() * 2; }"
-      "function g() { return 43; }";
+      "function g() { return 43; }"
+      "/./.test('a')";
 
   v8::StartupData data1 = v8::V8::CreateSnapshotDataBlob(source1);
   v8::StartupData data2 = v8::V8::CreateSnapshotDataBlob(source2);
@@ -745,6 +742,38 @@ TEST(PerIsolateSnapshotBlobs) {
     CHECK_EQ(43, CompileRun("g()")->ToInt32(isolate2)->Int32Value());
   }
   isolate2->Dispose();
+}
+
+
+TEST(PerIsolateSnapshotBlobsWithLocker) {
+  v8::Isolate* isolate0 = v8::Isolate::New();
+  {
+    v8::Locker locker(isolate0);
+    v8::Isolate::Scope i_scope(isolate0);
+    v8::HandleScope h_scope(isolate0);
+    v8::Local<v8::Context> context = v8::Context::New(isolate0);
+    v8::Context::Scope c_scope(context);
+    CHECK_EQ(1, CompileRun("Math.cos(0)")->ToInt32(isolate0)->Int32Value());
+  }
+  isolate0->Dispose();
+
+  const char* source1 = "function f() { return 42; }";
+
+  v8::StartupData data1 = v8::V8::CreateSnapshotDataBlob(source1);
+
+  v8::Isolate::CreateParams params1;
+  params1.snapshot_blob = &data1;
+  v8::Isolate* isolate1 = v8::Isolate::New(params1);
+  {
+    v8::Locker locker(isolate1);
+    v8::Isolate::Scope i_scope(isolate1);
+    v8::HandleScope h_scope(isolate1);
+    v8::Local<v8::Context> context = v8::Context::New(isolate1);
+    delete[] data1.data;  // We can dispose of the snapshot blob now.
+    v8::Context::Scope c_scope(context);
+    CHECK_EQ(42, CompileRun("f()")->ToInt32(isolate1)->Int32Value());
+  }
+  isolate1->Dispose();
 }
 
 

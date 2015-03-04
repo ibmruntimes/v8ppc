@@ -1441,27 +1441,43 @@ TEST(LowerLoadField_to_load) {
 
 
 TEST(LowerStoreField_to_store) {
-  TestingGraph t(Type::Any(), Type::Signed32());
+  {
+    TestingGraph t(Type::Any(), Type::Signed32());
 
-  for (size_t i = 0; i < arraysize(kMachineReps); i++) {
+    for (size_t i = 0; i < arraysize(kMachineReps); i++) {
+      FieldAccess access = {kTaggedBase, FixedArrayBase::kHeaderSize,
+                            Handle<Name>::null(), Type::Any(), kMachineReps[i]};
+
+
+      Node* val = t.ExampleWithOutput(kMachineReps[i]);
+      Node* store = t.graph()->NewNode(t.simplified()->StoreField(access), t.p0,
+                                       val, t.start, t.start);
+      t.Effect(store);
+      t.Lower();
+      CHECK_EQ(IrOpcode::kStore, store->opcode());
+      CHECK_EQ(val, store->InputAt(2));
+      CheckFieldAccessArithmetic(access, store);
+
+      StoreRepresentation rep = OpParameter<StoreRepresentation>(store);
+      if (kMachineReps[i] & kRepTagged) {
+        CHECK_EQ(kFullWriteBarrier, rep.write_barrier_kind());
+      }
+      CHECK_EQ(kMachineReps[i], rep.machine_type());
+    }
+  }
+  {
+    TestingGraph t(Type::Any(),
+                   Type::Intersect(Type::SignedSmall(), Type::TaggedSigned()));
     FieldAccess access = {kTaggedBase, FixedArrayBase::kHeaderSize,
-                          Handle<Name>::null(), Type::Any(), kMachineReps[i]};
-
-
-    Node* val = t.ExampleWithOutput(kMachineReps[i]);
+                          Handle<Name>::null(), Type::Any(), kMachAnyTagged};
     Node* store = t.graph()->NewNode(t.simplified()->StoreField(access), t.p0,
-                                     val, t.start, t.start);
+                                     t.p1, t.start, t.start);
     t.Effect(store);
     t.Lower();
     CHECK_EQ(IrOpcode::kStore, store->opcode());
-    CHECK_EQ(val, store->InputAt(2));
-    CheckFieldAccessArithmetic(access, store);
-
+    CHECK_EQ(t.p1, store->InputAt(2));
     StoreRepresentation rep = OpParameter<StoreRepresentation>(store);
-    if (kMachineReps[i] & kRepTagged) {
-      CHECK_EQ(kFullWriteBarrier, rep.write_barrier_kind());
-    }
-    CHECK_EQ(kMachineReps[i], rep.machine_type());
+    CHECK_EQ(kNoWriteBarrier, rep.write_barrier_kind());
   }
 }
 
@@ -1489,26 +1505,42 @@ TEST(LowerLoadElement_to_load) {
 
 
 TEST(LowerStoreElement_to_store) {
-  TestingGraph t(Type::Any(), Type::Signed32());
+  {
+    TestingGraph t(Type::Any(), Type::Signed32());
 
-  for (size_t i = 0; i < arraysize(kMachineReps); i++) {
+    for (size_t i = 0; i < arraysize(kMachineReps); i++) {
+      ElementAccess access = {kTaggedBase, FixedArrayBase::kHeaderSize,
+                              Type::Any(), kMachineReps[i]};
+
+      Node* val = t.ExampleWithOutput(kMachineReps[i]);
+      Node* store = t.graph()->NewNode(t.simplified()->StoreElement(access),
+                                       t.p0, t.p1, val, t.start, t.start);
+      t.Effect(store);
+      t.Lower();
+      CHECK_EQ(IrOpcode::kStore, store->opcode());
+      CHECK_EQ(val, store->InputAt(2));
+      CheckElementAccessArithmetic(access, store);
+
+      StoreRepresentation rep = OpParameter<StoreRepresentation>(store);
+      if (kMachineReps[i] & kRepTagged) {
+        CHECK_EQ(kFullWriteBarrier, rep.write_barrier_kind());
+      }
+      CHECK_EQ(kMachineReps[i], rep.machine_type());
+    }
+  }
+  {
+    TestingGraph t(Type::Any(), Type::Signed32(),
+                   Type::Intersect(Type::SignedSmall(), Type::TaggedSigned()));
     ElementAccess access = {kTaggedBase, FixedArrayBase::kHeaderSize,
-                            Type::Any(), kMachineReps[i]};
-
-    Node* val = t.ExampleWithOutput(kMachineReps[i]);
+                            Type::Any(), kMachAnyTagged};
     Node* store = t.graph()->NewNode(t.simplified()->StoreElement(access), t.p0,
-                                     t.p1, val, t.start, t.start);
+                                     t.p1, t.p2, t.start, t.start);
     t.Effect(store);
     t.Lower();
     CHECK_EQ(IrOpcode::kStore, store->opcode());
-    CHECK_EQ(val, store->InputAt(2));
-    CheckElementAccessArithmetic(access, store);
-
+    CHECK_EQ(t.p2, store->InputAt(2));
     StoreRepresentation rep = OpParameter<StoreRepresentation>(store);
-    if (kMachineReps[i] & kRepTagged) {
-      CHECK_EQ(kFullWriteBarrier, rep.write_barrier_kind());
-    }
-    CHECK_EQ(kMachineReps[i], rep.machine_type());
+    CHECK_EQ(kNoWriteBarrier, rep.write_barrier_kind());
   }
 }
 
@@ -1938,10 +1970,10 @@ TEST(NumberModulus_TruncatingToUint32) {
     Node* k = t.jsgraph.Constant(constants[i]);
     Node* mod = t.graph()->NewNode(t.simplified()->NumberModulus(), t.p0, k);
     Node* trunc = t.graph()->NewNode(t.simplified()->NumberToUint32(), mod);
-    Node* ret = t.Return(trunc);
+    t.Return(trunc);
     t.Lower();
 
-    CHECK_EQ(IrOpcode::kUint32Mod, ret->InputAt(0)->opcode());
+    CHECK_EQ(IrOpcode::kUint32Mod, t.ret->InputAt(0)->InputAt(0)->opcode());
   }
 }
 
