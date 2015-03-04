@@ -4940,7 +4940,25 @@ void ArrayConstructorStub::Generate(MacroAssembler* masm) {
   GenerateDispatchToArrayStub(masm, DISABLE_ALLOCATION_SITES);
 
   __ bind(&subclassing);
-  __ TailCallRuntime(Runtime::kThrowArrayNotSubclassableError, 0, 1);
+  __ push(r4);
+  __ push(r6);
+
+  // Adjust argc.
+  switch (argument_count()) {
+    case ANY:
+    case MORE_THAN_ONE:
+      __ addi(r3, r3, Operand(2));
+      break;
+    case NONE:
+      __ li(r3, Operand(2));
+      break;
+    case ONE:
+      __ li(r3, Operand(3));
+      break;
+  }
+
+  __ JumpToExternalReference(
+      ExternalReference(Runtime::kArrayConstructorWithSubclassing, isolate()));
 }
 
 
