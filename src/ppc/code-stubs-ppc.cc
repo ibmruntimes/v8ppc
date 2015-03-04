@@ -999,6 +999,68 @@ void CEntryStub::GenerateAheadOfTime(Isolate* isolate) {
 }
 
 
+static void ThrowPendingException(MacroAssembler* masm) {
+  Isolate* isolate = masm->isolate();
+
+  ExternalReference pending_handler_context_address(
+      Isolate::kPendingHandlerContextAddress, isolate);
+  ExternalReference pending_handler_code_address(
+      Isolate::kPendingHandlerCodeAddress, isolate);
+  ExternalReference pending_handler_offset_address(
+      Isolate::kPendingHandlerOffsetAddress, isolate);
+  ExternalReference pending_handler_fp_address(
+      Isolate::kPendingHandlerFPAddress, isolate);
+  ExternalReference pending_handler_sp_address(
+      Isolate::kPendingHandlerSPAddress, isolate);
+
+  // Ask the runtime for help to determine the handler. This will set r3 to
+  // contain the current pending exception, don't clobber it.
+  ExternalReference find_handler(Runtime::kFindExceptionHandler, isolate);
+  {
+    FrameScope scope(masm, StackFrame::MANUAL);
+    __ PrepareCallCFunction(3, 0, r3);
+    __ li(r3, Operand::Zero());
+    __ li(r4, Operand::Zero());
+    __ mov(r5, Operand(ExternalReference::isolate_address(isolate)));
+    __ CallCFunction(find_handler, 3);
+  }
+
+  // Retrieve the handler context, SP and FP.
+  __ mov(cp, Operand(pending_handler_context_address));
+  __ LoadP(cp, MemOperand(cp));
+  __ mov(sp, Operand(pending_handler_sp_address));
+  __ LoadP(sp, MemOperand(sp));
+  __ mov(fp, Operand(pending_handler_fp_address));
+  __ LoadP(fp, MemOperand(fp));
+
+  // If the handler is a JS frame, restore the context to the frame.
+  // (kind == ENTRY) == (fp == 0) == (cp == 0), so we could test either fp
+  // or cp.
+  Label skip;
+  __ cmpi(cp, Operand::Zero());
+  __ beq(&skip);
+  __ StoreP(cp, MemOperand(fp, StandardFrameConstants::kContextOffset));
+  __ bind(&skip);
+
+  // Compute the handler entry address and jump to it.
+#if defined(V8_PPC_CONSTANT_POOL_OPT)
+  ConstantPoolUnavailableScope constant_pool_unavailable(masm);
+#endif
+  __ mov(r4, Operand(pending_handler_code_address));
+  __ LoadP(r4, MemOperand(r4));
+  __ mov(r5, Operand(pending_handler_offset_address));
+  __ LoadP(r5, MemOperand(r5));
+  __ addi(r4, r4, Operand(Code::kHeaderSize - kHeapObjectTag));  // Code start
+#if defined(V8_PPC_CONSTANT_POOL_OPT)
+  if (FLAG_enable_embedded_constant_pool) {
+    __ LoadTargetConstantPoolPointerRegister(r4);
+  }
+#endif
+  __ add(ip, r4, r5);
+  __ Jump(ip);
+}
+
+
 void CEntryStub::Generate(MacroAssembler* masm) {
   // Called from JavaScript; parameters are on stack as if calling JS function.
   // r3: number of arguments including receiver
@@ -1103,13 +1165,13 @@ void CEntryStub::Generate(MacroAssembler* masm) {
   __ CompareRoot(r3, Heap::kExceptionRootIndex);
   __ beq(&exception_returned);
 
-  ExternalReference pending_exception_address(Isolate::kPendingExceptionAddress,
-                                              isolate());
-
   // Check that there is no pending exception, otherwise we
   // should have returned the exception sentinel.
   if (FLAG_debug_code) {
     Label okay;
+    ExternalReference pending_exception_address(
+        Isolate::kPendingExceptionAddress, isolate());
+
     __ mov(r5, Operand(pending_exception_address));
     __ LoadP(r5, MemOperand(r5));
     __ CompareRoot(r5, Heap::kTheHoleValueRootIndex);
@@ -1130,25 +1192,7 @@ void CEntryStub::Generate(MacroAssembler* masm) {
   // Handling of exception.
   __ bind(&exception_returned);
 
-  // Retrieve the pending exception.
-  __ mov(r5, Operand(pending_exception_address));
-  __ LoadP(r3, MemOperand(r5));
-
-  // Clear the pending exception.
-  __ LoadRoot(r6, Heap::kTheHoleValueRootIndex);
-  __ StoreP(r6, MemOperand(r5));
-
-  // Special handling of termination exceptions which are uncatchable
-  // by javascript code.
-  Label throw_termination_exception;
-  __ CompareRoot(r3, Heap::kTerminationExceptionRootIndex);
-  __ beq(&throw_termination_exception);
-
-  // Handle normal exception.
-  __ Throw(r3);
-
-  __ bind(&throw_termination_exception);
-  __ ThrowUncatchable(r3);
+  ThrowPendingException(masm);
 }
 
 
@@ -2378,18 +2422,9 @@ void RegExpExecStub::Generate(MacroAssembler* masm) {
   __ cmp(r3, r4);
   __ beq(&runtime);
 
-  __ StoreP(r4, MemOperand(r5, 0));  // Clear pending exception.
-
-  // Check if the exception is a termination. If so, throw as uncatchable.
-  __ CompareRoot(r3, Heap::kTerminationExceptionRootIndex);
-
-  Label termination_exception;
-  __ beq(&termination_exception);
-
-  __ Throw(r3);
-
-  __ bind(&termination_exception);
-  __ ThrowUncatchable(r3);
+  // For exception, throw the exception again.
+  __ EnterExitFrame(false);
+  ThrowPendingException(masm);
 
   __ bind(&failure);
   // For failure and exception return null.
