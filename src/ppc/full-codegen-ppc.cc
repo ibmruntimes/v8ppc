@@ -2911,7 +2911,8 @@ void FullCodeGenerator::EmitCallWithLoadIC(Call* expr) {
     }
     // Push undefined as receiver. This is patched in the method prologue if it
     // is a sloppy mode method.
-    __ Push(isolate()->factory()->undefined_value());
+    __ LoadRoot(r0, Heap::kUndefinedValueRootIndex);
+    __ push(r0);
   } else {
     // Load the function from the receiver.
     DCHECK(callee->IsProperty());
@@ -2920,8 +2921,8 @@ void FullCodeGenerator::EmitCallWithLoadIC(Call* expr) {
     EmitNamedPropertyLoad(callee->AsProperty());
     PrepareForBailoutForId(callee->AsProperty()->LoadId(), TOS_REG);
     // Push the target function under the receiver.
-    __ LoadP(ip, MemOperand(sp, 0));
-    __ push(ip);
+    __ LoadP(r0, MemOperand(sp, 0));
+    __ push(r0);
     __ StoreP(r3, MemOperand(sp, kPointerSize));
   }
 

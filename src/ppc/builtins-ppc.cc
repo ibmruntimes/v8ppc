@@ -946,7 +946,9 @@ static void CallCompileOptimized(MacroAssembler* masm, bool concurrent) {
   // Push function as parameter to the runtime call.
   __ Push(r4, r4);
   // Whether to compile in a background thread.
-  __ Push(masm->isolate()->factory()->ToBoolean(concurrent));
+  __ LoadRoot(
+      r0, concurrent ? Heap::kTrueValueRootIndex : Heap::kFalseValueRootIndex);
+  __ push(r0);
 
   __ CallRuntime(Runtime::kCompileOptimized, 2);
   // Restore receiver.
