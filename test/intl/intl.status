@@ -44,5 +44,10 @@
   'date-format/parse-mdyhms': [FAIL],
   'number-format/parse-decimal': [FAIL],
   'number-format/parse-percent': [FAIL],
+
+  ##############################################################################
+  # TurboFan compiler failures.
+
+  'overrides/string': [PASS, NO_VARIANTS],
 }],  # ALWAYS
 ]
