@@ -414,6 +414,9 @@ static void CheckCodeForUnsafeLiteral(Handle<JSFunction> f) {
     int decode_size =
         Min(f->code()->instruction_size(),
             static_cast<int>(f->code()->back_edge_table_offset()));
+    if (FLAG_enable_ool_constant_pool_in_code) {
+      decode_size = Min(decode_size, f->code()->constant_pool_offset());
+    }
     Address end = pc + decode_size;
 
     v8::internal::EmbeddedVector<char, 128> decode_buffer;
