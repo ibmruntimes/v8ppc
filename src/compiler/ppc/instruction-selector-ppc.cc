@@ -1111,19 +1111,9 @@ static void VisitWordCompareZero(InstructionSelector* selector, Node* user,
         cont->OverwriteAndNegateIfEqual(kUnsignedLessThanOrEqual);
         return VisitWord32Compare(selector, value, cont);
 #if V8_TARGET_ARCH_PPC64
-      case IrOpcode::kWord64Equal: {
-        // Combine with comparisons against 0 by simply inverting the
-        // continuation.
-        Int64BinopMatcher m(value);
-        if (m.right().Is(0)) {
-          user = value;
-          value = m.left().node();
-          cont->Negate();
-          continue;
-        }
+      case IrOpcode::kWord64Equal:
         cont->OverwriteAndNegateIfEqual(kEqual);
         return VisitWord64Compare(selector, value, cont);
-      }
       case IrOpcode::kInt64LessThan:
         cont->OverwriteAndNegateIfEqual(kSignedLessThan);
         return VisitWord64Compare(selector, value, cont);
