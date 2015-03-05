@@ -1426,6 +1426,52 @@ void InstructionSelector::VisitCall(Node* node, BasicBlock* handler) {
 }
 
 
+void InstructionSelector::VisitFloat64ExtractLowWord32(Node* node) {
+  PPCOperandGenerator g(this);
+  Emit(kPPC_Float64ExtractLowWord32, g.DefineAsRegister(node),
+       g.UseRegister(node->InputAt(0)));
+}
+
+
+void InstructionSelector::VisitFloat64ExtractHighWord32(Node* node) {
+  PPCOperandGenerator g(this);
+  Emit(kPPC_Float64ExtractHighWord32, g.DefineAsRegister(node),
+       g.UseRegister(node->InputAt(0)));
+}
+
+
+void InstructionSelector::VisitFloat64InsertLowWord32(Node* node) {
+  PPCOperandGenerator g(this);
+  Node* left = node->InputAt(0);
+  Node* right = node->InputAt(1);
+  if (left->opcode() == IrOpcode::kFloat64InsertHighWord32 &&
+      CanCover(node, left)) {
+    left = left->InputAt(1);
+    Emit(kPPC_Float64Construct, g.DefineAsRegister(node), g.UseRegister(left),
+         g.UseRegister(right));
+    return;
+  }
+  Emit(kPPC_Float64InsertLowWord32, g.DefineSameAsFirst(node),
+       g.UseRegister(left), g.UseRegister(right));
+}
+
+
+void InstructionSelector::VisitFloat64InsertHighWord32(Node* node) {
+  PPCOperandGenerator g(this);
+  Node* left = node->InputAt(0);
+  Node* right = node->InputAt(1);
+  if (left->opcode() == IrOpcode::kFloat64InsertLowWord32 &&
+      CanCover(node, left)) {
+    left = left->InputAt(1);
+    Emit(kPPC_Float64Construct, g.DefineAsRegister(node), g.UseRegister(right),
+         g.UseRegister(left));
+    return;
+  }
+  Emit(kPPC_Float64InsertHighWord32, g.DefineSameAsFirst(node),
+       g.UseRegister(left), g.UseRegister(right));
+}
+
+
 // static
 MachineOperatorBuilder::Flags
 InstructionSelector::SupportedMachineOperatorFlags() {

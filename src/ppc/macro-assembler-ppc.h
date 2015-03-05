@@ -468,6 +468,8 @@ class MacroAssembler : public Assembler {
   void MovInt64ComponentsToDouble(DoubleRegister dst, Register src_hi,
                                   Register src_lo, Register scratch);
 #endif
+  void InsertDoubleLow(DoubleRegister dst, Register src, Register scratch);
+  void InsertDoubleHigh(DoubleRegister dst, Register src, Register scratch);
   void MovDoubleLowToInt(Register dst, DoubleRegister src);
   void MovDoubleHighToInt(Register dst, DoubleRegister src);
   void MovDoubleToInt64(

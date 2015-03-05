@@ -4005,6 +4005,46 @@ void MacroAssembler::MovInt64ComponentsToDouble(DoubleRegister dst,
 #endif
 
 
+void MacroAssembler::InsertDoubleLow(DoubleRegister dst, Register src,
+                                     Register scratch) {
+#if V8_TARGET_ARCH_PPC64
+  if (CpuFeatures::IsSupported(FPR_GPR_MOV)) {
+    mffprd(scratch, dst);
+    rldimi(scratch, src, 0, 32);
+    mtfprd(dst, scratch);
+    return;
+  }
+#endif
+
+  subi(sp, sp, Operand(kDoubleSize));
+  stfd(dst, MemOperand(sp));
+  stw(src, MemOperand(sp, Register::kMantissaOffset));
+  nop(GROUP_ENDING_NOP);  // LHS/RAW optimization
+  lfd(dst, MemOperand(sp));
+  addi(sp, sp, Operand(kDoubleSize));
+}
+
+
+void MacroAssembler::InsertDoubleHigh(DoubleRegister dst, Register src,
+                                      Register scratch) {
+#if V8_TARGET_ARCH_PPC64
+  if (CpuFeatures::IsSupported(FPR_GPR_MOV)) {
+    mffprd(scratch, dst);
+    rldimi(scratch, src, 32, 0);
+    mtfprd(dst, scratch);
+    return;
+  }
+#endif
+
+  subi(sp, sp, Operand(kDoubleSize));
+  stfd(dst, MemOperand(sp));
+  stw(src, MemOperand(sp, Register::kExponentOffset));
+  nop(GROUP_ENDING_NOP);  // LHS/RAW optimization
+  lfd(dst, MemOperand(sp));
+  addi(sp, sp, Operand(kDoubleSize));
+}
+
+
 void MacroAssembler::MovDoubleLowToInt(Register dst, DoubleRegister src) {
 #if V8_TARGET_ARCH_PPC64
   if (CpuFeatures::IsSupported(FPR_GPR_MOV)) {
