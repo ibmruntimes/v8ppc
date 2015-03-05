@@ -86,7 +86,6 @@
     'werror%': '-Werror',
     'use_goma%': '<(use_goma)',
     'gomadir%': '<(gomadir)',
-    'host_clang%': '1',
 
     # .gyp files or targets should set v8_code to 1 if they build V8 specific
     # code, as opposed to external code.  This variable is used to control such
@@ -151,6 +150,11 @@
         'clang%': 1,
       }, {
         'clang%': 0,
+      }],
+      ['host_arch!="ppc" and host_arch!="ppc64" and host_arch!="ppc64le"', {
+        'host_clang%': '1',
+      }, {
+        'host_clang%': '0',
       }],
     ],
     # Default ARM variable settings.
