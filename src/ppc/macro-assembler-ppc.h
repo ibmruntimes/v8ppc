@@ -383,8 +383,9 @@ class MacroAssembler : public Assembler {
   void Prologue(bool code_pre_aging, int prologue_offset = 0);
 
   // Enter exit frame.
-  // stack_space - extra stack space, used for alignment before call to C.
-  void EnterExitFrame(bool save_doubles, int stack_space = 0);
+  // stack_space - extra stack space, used for parameters before call to C.
+  // At least one slot (for the return address) should be provided.
+  void EnterExitFrame(bool save_doubles, int stack_space = 1);
 
   // Leave the current exit frame. Expects the return value in r0.
   // Expect the number of values, pushed prior to the exit frame, to

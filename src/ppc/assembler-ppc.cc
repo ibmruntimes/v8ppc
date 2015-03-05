@@ -1707,7 +1707,7 @@ void Assembler::bitwise_add32(Register dst, Register src, int32_t value) {
     int lo_word = static_cast<int>(value & 0xffff);
     if (lo_word & 0x8000) hi_word++;
     addis(dst, src, Operand(SIGN_EXT_IMM16(hi_word)));
-    addic(dst, dst, Operand(lo_word));
+    addic(dst, dst, Operand(SIGN_EXT_IMM16(lo_word)));
   }
 }
 
