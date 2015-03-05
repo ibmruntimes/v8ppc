@@ -755,10 +755,11 @@ class Assembler : public AssemblerBase {
 
   // Return the address in the constant pool of the code target address used by
   // the branch/call instruction at pc, or the object in a mov.
-  INLINE(static Address constant_pool_entry_address(
 #if defined(V8_PPC_CONSTANT_POOL_OPT)
+  INLINE(static Address constant_pool_entry_address(
     Address pc, Address constant_pool));
 #else
+  INLINE(static Address constant_pool_entry_address(
     Address pc, ConstantPoolArray* constant_pool));
 #endif
 
