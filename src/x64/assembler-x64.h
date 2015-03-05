@@ -1080,6 +1080,7 @@ class Assembler : public AssemblerBase {
 
   // SSE2 instructions
   void movd(XMMRegister dst, Register src);
+  void movd(XMMRegister dst, const Operand& src);
   void movd(Register dst, XMMRegister src);
   void movq(XMMRegister dst, Register src);
   void movq(Register dst, XMMRegister src);
@@ -1148,8 +1149,16 @@ class Assembler : public AssemblerBase {
 
   void movmskpd(Register dst, XMMRegister src);
 
+  void punpckldq(XMMRegister dst, XMMRegister src);
+  void punpckhdq(XMMRegister dst, XMMRegister src);
+
   // SSE 4.1 instruction
   void extractps(Register dst, XMMRegister src, byte imm8);
+
+  void pextrd(Register dst, XMMRegister src, int8_t imm8);
+
+  void pinsrd(XMMRegister dst, Register src, int8_t imm8);
+  void pinsrd(XMMRegister dst, const Operand& src, int8_t imm8);
 
   enum RoundingMode {
     kRoundToNearest = 0x0,

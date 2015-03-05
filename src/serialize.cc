@@ -898,13 +898,18 @@ void Deserializer::ReadObject(int space_number, Object** write_back) {
     DCHECK(space_number != CODE_SPACE);
   }
 #endif
-  if (space_number == CODE_SPACE) {
-    int mask = RelocInfo::kDeserializeMask;
-    if (mask != 0) {
-      Code* code = reinterpret_cast<Code*>(HeapObject::FromAddress(address));
-      for (RelocIterator it(code, mask); !it.done(); it.next()) {
-        it.rinfo()->deserialize();
-      }
+
+  if (obj->IsCode()) {
+    // Turn internal references encoded as offsets back to absolute addresses.
+    Code* code = Code::cast(obj);
+    Address entry = code->entry();
+    int mode_mask = RelocInfo::ModeMask(RelocInfo::INTERNAL_REFERENCE);
+    for (RelocIterator it(code, mode_mask); !it.done(); it.next()) {
+      RelocInfo* rinfo = it.rinfo();
+      intptr_t offset =
+          reinterpret_cast<intptr_t>(rinfo->target_internal_reference());
+      DCHECK(0 <= offset && offset <= code->instruction_size());
+      rinfo->set_target_internal_reference(entry + offset);
     }
   }
 }
@@ -1962,7 +1967,7 @@ void Serializer::ObjectSerializer::VisitExternalReference(RelocInfo* rinfo) {
   HowToCode how_to_code = rinfo->IsCodedSpecially() ? kFromCode : kPlain;
   sink_->Put(kExternalReference + how_to_code + kStartOfObject, "ExternalRef");
   sink_->PutInt(skip, "SkipB4ExternalRef");
-  Address target = rinfo->target_reference();
+  Address target = rinfo->target_external_reference();
   sink_->PutInt(serializer_->EncodeExternalReference(target), "reference id");
   bytes_processed_so_far_ += rinfo->target_address_size();
 }
@@ -2039,17 +2044,26 @@ void Serializer::ObjectSerializer::VisitExternalOneByteString(
 Address Serializer::ObjectSerializer::PrepareCode() {
   // To make snapshots reproducible, we make a copy of the code object
   // and wipe all pointers in the copy, which we then serialize.
-  Code* code = serializer_->CopyCode(Code::cast(object_));
+  Code* original = Code::cast(object_);
+  Code* code = serializer_->CopyCode(original);
   // Code age headers are not serializable.
   code->MakeYoung(serializer_->isolate());
-  int mode_mask =
-      RelocInfo::kCodeTargetMask |
-      RelocInfo::ModeMask(RelocInfo::EMBEDDED_OBJECT) |
-      RelocInfo::ModeMask(RelocInfo::EXTERNAL_REFERENCE) |
-      RelocInfo::ModeMask(RelocInfo::RUNTIME_ENTRY);
+  Address entry = original->entry();
+  int mode_mask = RelocInfo::kCodeTargetMask |
+                  RelocInfo::ModeMask(RelocInfo::EMBEDDED_OBJECT) |
+                  RelocInfo::ModeMask(RelocInfo::EXTERNAL_REFERENCE) |
+                  RelocInfo::ModeMask(RelocInfo::RUNTIME_ENTRY) |
+                  RelocInfo::ModeMask(RelocInfo::INTERNAL_REFERENCE);
   for (RelocIterator it(code, mode_mask); !it.done(); it.next()) {
-    if (!(FLAG_enable_ool_constant_pool && it.rinfo()->IsInConstantPool())) {
-      it.rinfo()->WipeOut();
+    RelocInfo* rinfo = it.rinfo();
+    if (RelocInfo::IsInternalReference(rinfo->rmode())) {
+      // Convert internal references to relative offsets.
+      Address target = rinfo->target_internal_reference();
+      intptr_t offset = target - entry;
+      DCHECK(0 <= offset && offset <= original->instruction_size());
+      rinfo->set_target_internal_reference(reinterpret_cast<Address>(offset));
+    } else if (!(FLAG_enable_ool_constant_pool && rinfo->IsInConstantPool())) {
+      rinfo->WipeOut();
     }
   }
   // We need to wipe out the header fields *after* wiping out the

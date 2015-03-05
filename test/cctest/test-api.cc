@@ -2137,7 +2137,7 @@ THREADED_TEST(InternalFieldsAlignedPointers) {
 #endif
   CheckAlignedPointerInInternalField(obj, huge);
 
-  v8::UniquePersistent<v8::Object> persistent(isolate, obj);
+  v8::Global<v8::Object> persistent(isolate, obj);
   CHECK_EQ(1, Object::InternalFieldCount(persistent));
   CHECK_EQ(huge, Object::GetAlignedPointerFromInternalField(persistent, 0));
 }
@@ -3062,20 +3062,20 @@ THREADED_TEST(ResettingGlobalHandleToEmpty) {
 
 
 template <class T>
-static v8::UniquePersistent<T> PassUnique(v8::UniquePersistent<T> unique) {
+static v8::Global<T> PassUnique(v8::Global<T> unique) {
   return unique.Pass();
 }
 
 
 template <class T>
-static v8::UniquePersistent<T> ReturnUnique(v8::Isolate* isolate,
-                                            const v8::Persistent<T>& global) {
-  v8::UniquePersistent<String> unique(isolate, global);
+static v8::Global<T> ReturnUnique(v8::Isolate* isolate,
+                                  const v8::Persistent<T>& global) {
+  v8::Global<String> unique(isolate, global);
   return unique.Pass();
 }
 
 
-THREADED_TEST(UniquePersistent) {
+THREADED_TEST(Global) {
   v8::Isolate* isolate = CcTest::isolate();
   v8::Persistent<String> global;
   {
@@ -3086,11 +3086,11 @@ THREADED_TEST(UniquePersistent) {
       reinterpret_cast<v8::internal::Isolate*>(isolate)->global_handles();
   int initial_handle_count = global_handles->global_handles_count();
   {
-    v8::UniquePersistent<String> unique(isolate, global);
+    v8::Global<String> unique(isolate, global);
     CHECK_EQ(initial_handle_count + 1, global_handles->global_handles_count());
     // Test assignment via Pass
     {
-      v8::UniquePersistent<String> copy = unique.Pass();
+      v8::Global<String> copy = unique.Pass();
       CHECK(unique.IsEmpty());
       CHECK(copy == global);
       CHECK_EQ(initial_handle_count + 1,
@@ -3099,7 +3099,7 @@ THREADED_TEST(UniquePersistent) {
     }
     // Test ctor via Pass
     {
-      v8::UniquePersistent<String> copy(unique.Pass());
+      v8::Global<String> copy(unique.Pass());
       CHECK(unique.IsEmpty());
       CHECK(copy == global);
       CHECK_EQ(initial_handle_count + 1,
@@ -3108,7 +3108,7 @@ THREADED_TEST(UniquePersistent) {
     }
     // Test pass through function call
     {
-      v8::UniquePersistent<String> copy = PassUnique(unique.Pass());
+      v8::Global<String> copy = PassUnique(unique.Pass());
       CHECK(unique.IsEmpty());
       CHECK(copy == global);
       CHECK_EQ(initial_handle_count + 1,
@@ -3119,7 +3119,7 @@ THREADED_TEST(UniquePersistent) {
   }
   // Test pass from function call
   {
-    v8::UniquePersistent<String> unique = ReturnUnique(isolate, global);
+    v8::Global<String> unique = ReturnUnique(isolate, global);
     CHECK(unique == global);
     CHECK_EQ(initial_handle_count + 1, global_handles->global_handles_count());
   }
@@ -3153,8 +3153,7 @@ class WeakStdMapTraits : public v8::StdMapTraits<K, V> {
     return data.GetParameter()->key;
   }
   static void DisposeCallbackData(WeakCallbackDataType* data) { delete data; }
-  static void Dispose(v8::Isolate* isolate, v8::UniquePersistent<V> value,
-                      K key) {}
+  static void Dispose(v8::Isolate* isolate, v8::Global<V> value, K key) {}
 };
 
 
@@ -3180,7 +3179,7 @@ static void TestPersistentValueMap() {
       typename Map::PersistentValueReference ref = map.GetReference(7);
       CHECK(expected->Equals(ref.NewLocal(isolate)));
     }
-    v8::UniquePersistent<v8::Object> removed = map.Remove(7);
+    v8::Global<v8::Object> removed = map.Remove(7);
     CHECK_EQ(0, static_cast<int>(map.Size()));
     CHECK(expected == removed);
     removed = map.Remove(7);
@@ -3192,8 +3191,7 @@ static void TestPersistentValueMap() {
     {
       typename Map::PersistentValueReference ref;
       Local<v8::Object> expected2 = v8::Object::New(isolate);
-      removed = map.Set(8, v8::UniquePersistent<v8::Object>(isolate, expected2),
-                        &ref);
+      removed = map.Set(8, v8::Global<v8::Object>(isolate, expected2), &ref);
       CHECK_EQ(1, static_cast<int>(map.Size()));
       CHECK(expected == removed);
       CHECK(expected2->Equals(ref.NewLocal(isolate)));
@@ -3236,7 +3234,7 @@ TEST(PersistentValueVector) {
 
   Local<v8::Object> obj1 = v8::Object::New(isolate);
   Local<v8::Object> obj2 = v8::Object::New(isolate);
-  v8::UniquePersistent<v8::Object> obj3(isolate, v8::Object::New(isolate));
+  v8::Global<v8::Object> obj3(isolate, v8::Object::New(isolate));
 
   CHECK(vector.IsEmpty());
   CHECK_EQ(0, static_cast<int>(vector.Size()));
@@ -3918,6 +3916,7 @@ static void check_message_3(v8::Handle<v8::Message> message,
   CHECK(message->GetScriptOrigin().ResourceIsSharedCrossOrigin()->Value());
   CHECK(message->GetScriptOrigin().ResourceIsEmbedderDebugScript()->Value());
   CHECK_EQ(6.75, message->GetScriptOrigin().ResourceName()->NumberValue());
+  CHECK_EQ(7.40, message->GetScriptOrigin().SourceMapUrl()->NumberValue());
   message_received = true;
 }
 
@@ -3929,10 +3928,10 @@ TEST(MessageHandler3) {
   CHECK(!message_received);
   v8::V8::AddMessageListener(check_message_3);
   LocalContext context;
-  v8::ScriptOrigin origin =
-      v8::ScriptOrigin(v8_str("6.75"), v8::Integer::New(isolate, 1),
-                       v8::Integer::New(isolate, 2), v8::True(isolate),
-                       Handle<v8::Integer>(), v8::True(isolate));
+  v8::ScriptOrigin origin = v8::ScriptOrigin(
+      v8_str("6.75"), v8::Integer::New(isolate, 1),
+      v8::Integer::New(isolate, 2), v8::True(isolate), Handle<v8::Integer>(),
+      v8::True(isolate), v8_str("7.40"));
   v8::Handle<v8::Script> script =
       Script::Compile(v8_str("throw 'error'"), &origin);
   script->Run();
@@ -16304,7 +16303,8 @@ THREADED_TEST(ScriptOrigin) {
       v8::String::NewFromUtf8(env->GetIsolate(), "test"),
       v8::Integer::New(env->GetIsolate(), 1),
       v8::Integer::New(env->GetIsolate(), 1), v8::True(env->GetIsolate()),
-      v8::Handle<v8::Integer>(), v8::True(env->GetIsolate()));
+      v8::Handle<v8::Integer>(), v8::True(env->GetIsolate()),
+      v8::String::NewFromUtf8(env->GetIsolate(), "http://sourceMapUrl"));
   v8::Handle<v8::String> script = v8::String::NewFromUtf8(
       env->GetIsolate(), "function f() {}\n\nfunction g() {}");
   v8::Script::Compile(script, &origin)->Run();
@@ -16319,6 +16319,10 @@ THREADED_TEST(ScriptOrigin) {
   CHECK_EQ(1, script_origin_f.ResourceLineOffset()->Int32Value());
   CHECK(script_origin_f.ResourceIsSharedCrossOrigin()->Value());
   CHECK(script_origin_f.ResourceIsEmbedderDebugScript()->Value());
+  printf("is name = %d\n", script_origin_f.SourceMapUrl()->IsUndefined());
+
+  CHECK_EQ(0, strcmp("http://sourceMapUrl",
+                     *v8::String::Utf8Value(script_origin_f.SourceMapUrl())));
 
   v8::ScriptOrigin script_origin_g = g->GetScriptOrigin();
   CHECK_EQ(0, strcmp("test",
@@ -16326,6 +16330,8 @@ THREADED_TEST(ScriptOrigin) {
   CHECK_EQ(1, script_origin_g.ResourceLineOffset()->Int32Value());
   CHECK(script_origin_g.ResourceIsSharedCrossOrigin()->Value());
   CHECK(script_origin_g.ResourceIsEmbedderDebugScript()->Value());
+  CHECK_EQ(0, strcmp("http://sourceMapUrl",
+                     *v8::String::Utf8Value(script_origin_g.SourceMapUrl())));
 }
 
 

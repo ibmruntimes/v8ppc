@@ -1601,7 +1601,7 @@ MaybeHandle<Object> StoreIC::Store(Handle<Object> object, Handle<Name> name,
       Handle<Context> script_context = ScriptContextTable::GetContext(
           script_contexts, lookup_result.context_index);
       if (lookup_result.mode == CONST) {
-        return TypeError("harmony_const_assign", object, name);
+        return TypeError("const_assign", object, name);
       }
 
       if (FLAG_use_ic &&

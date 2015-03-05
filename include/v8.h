@@ -115,7 +115,8 @@ template<class T> class NonCopyablePersistentTraits;
 template<class T> class PersistentBase;
 template<class T,
          class M = NonCopyablePersistentTraits<T> > class Persistent;
-template<class T> class UniquePersistent;
+template <class T>
+class Global;
 template<class K, class V, class T> class PersistentValueMap;
 template <class K, class V, class T>
 class PersistentValueMapBase;
@@ -439,7 +440,7 @@ class MaybeLocal {
   template <class S>
   V8_WARN_UNUSED_RESULT V8_INLINE bool ToLocal(Local<S>* out) const {
     out->val_ = IsEmpty() ? nullptr : this->val_;
-    return IsEmpty();
+    return !IsEmpty();
   }
 
   V8_INLINE Local<T> ToLocalChecked() {
@@ -656,7 +657,8 @@ template <class T> class PersistentBase {
   template<class F> friend class Handle;
   template<class F> friend class Local;
   template<class F1, class F2> friend class Persistent;
-  template<class F> friend class UniquePersistent;
+  template <class F>
+  friend class Global;
   template<class F> friend class PersistentBase;
   template<class F> friend class ReturnValue;
   template <class F1, class F2, class F3>
@@ -665,8 +667,8 @@ template <class T> class PersistentBase {
   friend class Object;
 
   explicit V8_INLINE PersistentBase(T* val) : val_(val) {}
-  PersistentBase(PersistentBase& other); // NOLINT
-  void operator=(PersistentBase&);
+  PersistentBase(PersistentBase& other) = delete;  // NOLINT
+  void operator=(PersistentBase&) = delete;
   V8_INLINE static T* New(Isolate* isolate, T* that);
 
   T* val_;
@@ -812,70 +814,67 @@ template <class T, class M> class Persistent : public PersistentBase<T> {
  *
  * Note: Persistent class hierarchy is subject to future changes.
  */
-template<class T>
-class UniquePersistent : public PersistentBase<T> {
-  struct RValue {
-    V8_INLINE explicit RValue(UniquePersistent* obj) : object(obj) {}
-    UniquePersistent* object;
-  };
-
+template <class T>
+class Global : public PersistentBase<T> {
  public:
   /**
-   * A UniquePersistent with no storage cell.
+   * A Global with no storage cell.
    */
-  V8_INLINE UniquePersistent() : PersistentBase<T>(0) { }
+  V8_INLINE Global() : PersistentBase<T>(nullptr) {}
   /**
-   * Construct a UniquePersistent from a Handle.
+   * Construct a Global from a Handle.
    * When the Handle is non-empty, a new storage cell is created
    * pointing to the same object, and no flags are set.
    */
   template <class S>
-  V8_INLINE UniquePersistent(Isolate* isolate, Handle<S> that)
+  V8_INLINE Global(Isolate* isolate, Handle<S> that)
       : PersistentBase<T>(PersistentBase<T>::New(isolate, *that)) {
     TYPE_CHECK(T, S);
   }
   /**
-   * Construct a UniquePersistent from a PersistentBase.
+   * Construct a Global from a PersistentBase.
    * When the Persistent is non-empty, a new storage cell is created
    * pointing to the same object, and no flags are set.
    */
   template <class S>
-  V8_INLINE UniquePersistent(Isolate* isolate, const PersistentBase<S>& that)
-    : PersistentBase<T>(PersistentBase<T>::New(isolate, that.val_)) {
+  V8_INLINE Global(Isolate* isolate, const PersistentBase<S>& that)
+      : PersistentBase<T>(PersistentBase<T>::New(isolate, that.val_)) {
     TYPE_CHECK(T, S);
   }
   /**
    * Move constructor.
    */
-  V8_INLINE UniquePersistent(RValue rvalue)
-    : PersistentBase<T>(rvalue.object->val_) {
-    rvalue.object->val_ = 0;
+  V8_INLINE Global(Global&& other) : PersistentBase<T>(other.val_) {
+    other.val_ = nullptr;
   }
-  V8_INLINE ~UniquePersistent() { this->Reset(); }
+  V8_INLINE ~Global() { this->Reset(); }
   /**
    * Move via assignment.
    */
-  template<class S>
-  V8_INLINE UniquePersistent& operator=(UniquePersistent<S> rhs) {
+  template <class S>
+  V8_INLINE Global& operator=(Global<S>&& rhs) {
     TYPE_CHECK(T, S);
-    this->Reset();
-    this->val_ = rhs.val_;
-    rhs.val_ = 0;
+    if (this != &rhs) {
+      this->Reset();
+      this->val_ = rhs.val_;
+      rhs.val_ = nullptr;
+    }
     return *this;
   }
   /**
-   * Cast operator for moves.
-   */
-  V8_INLINE operator RValue() { return RValue(this); }
-  /**
    * Pass allows returning uniques from functions, etc.
    */
-  UniquePersistent Pass() { return UniquePersistent(RValue(this)); }
+  Global Pass() { return static_cast<Global&&>(*this); }
 
  private:
-  UniquePersistent(UniquePersistent&);
-  void operator=(UniquePersistent&);
+  Global(Global&) = delete;
+  void operator=(Global&) = delete;
 };
+
+
+// UniquePersistent is an alias for Global for historical reason.
+template <class T>
+using UniquePersistent = Global<T>;
 
 
  /**
@@ -998,13 +997,15 @@ class ScriptOrigin {
       Handle<Integer> resource_column_offset = Handle<Integer>(),
       Handle<Boolean> resource_is_shared_cross_origin = Handle<Boolean>(),
       Handle<Integer> script_id = Handle<Integer>(),
-      Handle<Boolean> resource_is_embedder_debug_script = Handle<Boolean>())
+      Handle<Boolean> resource_is_embedder_debug_script = Handle<Boolean>(),
+      Handle<Value> source_map_url = Handle<Value>())
       : resource_name_(resource_name),
         resource_line_offset_(resource_line_offset),
         resource_column_offset_(resource_column_offset),
         resource_is_embedder_debug_script_(resource_is_embedder_debug_script),
         resource_is_shared_cross_origin_(resource_is_shared_cross_origin),
-        script_id_(script_id) {}
+        script_id_(script_id),
+        source_map_url_(source_map_url) {}
   V8_INLINE Handle<Value> ResourceName() const;
   V8_INLINE Handle<Integer> ResourceLineOffset() const;
   V8_INLINE Handle<Integer> ResourceColumnOffset() const;
@@ -1014,6 +1015,7 @@ class ScriptOrigin {
   V8_INLINE Handle<Boolean> ResourceIsEmbedderDebugScript() const;
   V8_INLINE Handle<Boolean> ResourceIsSharedCrossOrigin() const;
   V8_INLINE Handle<Integer> ScriptID() const;
+  V8_INLINE Handle<Value> SourceMapUrl() const;
 
  private:
   Handle<Value> resource_name_;
@@ -1022,6 +1024,7 @@ class ScriptOrigin {
   Handle<Boolean> resource_is_embedder_debug_script_;
   Handle<Boolean> resource_is_shared_cross_origin_;
   Handle<Integer> script_id_;
+  Handle<Value> source_map_url_;
 };
 
 
@@ -1066,10 +1069,14 @@ class V8_EXPORT Script {
   /**
    * A shorthand for ScriptCompiler::Compile().
    */
+  // TODO(dcarney): deprecate.
   static Local<Script> Compile(Handle<String> source,
-                               ScriptOrigin* origin = NULL);
+                               ScriptOrigin* origin = nullptr);
+  static MaybeLocal<Script> Compile(Local<Context> context,
+                                    Handle<String> source,
+                                    ScriptOrigin* origin = nullptr);
 
-  // To be decprecated, use the Compile above.
+  // TODO(dcarney): deprecate.
   static Local<Script> Compile(Handle<String> source,
                                Handle<String> file_name);
 
@@ -1167,6 +1174,7 @@ class V8_EXPORT ScriptCompiler {
     Handle<Integer> resource_column_offset;
     Handle<Boolean> resource_is_embedder_debug_script;
     Handle<Boolean> resource_is_shared_cross_origin;
+    Handle<Value> source_map_url;
 
     // Cached data from previous compilation (if a kConsume*Cache flag is
     // set), or hold newly generated cache data (kProduce*Cache flags) are
@@ -1265,7 +1273,11 @@ class V8_EXPORT ScriptCompiler {
    * \return Compiled script object (context independent; for running it must be
    *   bound to a context).
    */
+  // TODO(dcarney): deprecate
   static Local<UnboundScript> CompileUnbound(
+      Isolate* isolate, Source* source,
+      CompileOptions options = kNoCompileOptions);
+  static MaybeLocal<UnboundScript> CompileUnboundScript(
       Isolate* isolate, Source* source,
       CompileOptions options = kNoCompileOptions);
 
@@ -1280,9 +1292,12 @@ class V8_EXPORT ScriptCompiler {
    *   when this function was called. When run it will always use this
    *   context.
    */
+  // TODO(dcarney): deprecate
   static Local<Script> Compile(
       Isolate* isolate, Source* source,
       CompileOptions options = kNoCompileOptions);
+  static MaybeLocal<Script> Compile(Local<Context> context, Source* source,
+                                    CompileOptions options = kNoCompileOptions);
 
   /**
    * Returns a task which streams script data into V8, or NULL if the script
@@ -1306,9 +1321,14 @@ class V8_EXPORT ScriptCompiler {
    * (ScriptStreamingTask has been run). V8 doesn't construct the source string
    * during streaming, so the embedder needs to pass the full source here.
    */
+  // TODO(dcarney): deprecate
   static Local<Script> Compile(Isolate* isolate, StreamedSource* source,
                                Handle<String> full_source_string,
                                const ScriptOrigin& origin);
+  static MaybeLocal<Script> Compile(Local<Context> context,
+                                    StreamedSource* source,
+                                    Handle<String> full_source_string,
+                                    const ScriptOrigin& origin);
 
   /**
    * Return a version tag for CachedData for the current V8 version & flags.
@@ -1338,8 +1358,12 @@ class V8_EXPORT ScriptCompiler {
    * TODO(adamk): Script is likely the wrong return value for this;
    * should return some new Module type.
    */
+  // TODO(dcarney): deprecate.
   static Local<Script> CompileModule(
       Isolate* isolate, Source* source,
+      CompileOptions options = kNoCompileOptions);
+  static MaybeLocal<Script> CompileModule(
+      Local<Context> context, Source* source,
       CompileOptions options = kNoCompileOptions);
 
   /**
@@ -1352,16 +1376,19 @@ class V8_EXPORT ScriptCompiler {
    * It is possible to specify multiple context extensions (obj in the above
    * example).
    */
+  // TODO(dcarney): deprecate.
   static Local<Function> CompileFunctionInContext(
       Isolate* isolate, Source* source, Local<Context> context,
       size_t arguments_count, Local<String> arguments[],
       size_t context_extension_count, Local<Object> context_extensions[]);
+  static MaybeLocal<Function> CompileFunctionInContext(
+      Local<Context> context, Source* source, size_t arguments_count,
+      Local<String> arguments[], size_t context_extension_count,
+      Local<Object> context_extensions[]);
 
  private:
-  static Local<UnboundScript> CompileUnboundInternal(Isolate* isolate,
-                                                     Source* source,
-                                                     CompileOptions options,
-                                                     bool is_module);
+  static MaybeLocal<UnboundScript> CompileUnboundInternal(
+      Isolate* isolate, Source* source, CompileOptions options, bool is_module);
 };
 
 
@@ -7075,6 +7102,9 @@ Handle<Integer> ScriptOrigin::ScriptID() const {
 }
 
 
+Handle<Value> ScriptOrigin::SourceMapUrl() const { return source_map_url_; }
+
+
 ScriptCompiler::Source::Source(Local<String> string, const ScriptOrigin& origin,
                                CachedData* data)
     : source_string(string),
@@ -7083,6 +7113,7 @@ ScriptCompiler::Source::Source(Local<String> string, const ScriptOrigin& origin,
       resource_column_offset(origin.ResourceColumnOffset()),
       resource_is_embedder_debug_script(origin.ResourceIsEmbedderDebugScript()),
       resource_is_shared_cross_origin(origin.ResourceIsSharedCrossOrigin()),
+      source_map_url(origin.SourceMapUrl()),
       cached_data(data) {}
 
 

@@ -1870,16 +1870,8 @@ void AstGraphBuilder::VisitYield(Yield* expr) {
 void AstGraphBuilder::VisitThrow(Throw* expr) {
   VisitForValue(expr->exception());
   Node* exception = environment()->Pop();
-  if (FLAG_turbo_exceptions) {
-    execution_control()->ThrowValue(exception);
-    ast_context()->ProduceValue(exception);
-  } else {
-    // TODO(mstarzinger): Temporary workaround for bailout-id for debugger.
-    const Operator* op = javascript()->CallRuntime(Runtime::kThrow, 1);
-    Node* value = NewNode(op, exception);
-    PrepareFrameState(value, expr->id(), ast_context()->GetStateCombine());
-    ast_context()->ProduceValue(value);
-  }
+  Node* value = BuildThrowError(exception, expr->id());
+  ast_context()->ProduceValue(value);
 }
 
 
@@ -2701,7 +2693,7 @@ Node* AstGraphBuilder::BuildVariableAssignment(
           value = BuildHoleCheckSilent(current, value, current);
         }
       } else if (mode == CONST_LEGACY && op != Token::INIT_CONST_LEGACY) {
-        // Non-initializing assignments to legacy const is
+        // Non-initializing assignment to legacy const is
         // - exception in strict mode.
         // - ignored in sloppy mode.
         if (is_strict(language_mode())) {
@@ -2720,7 +2712,13 @@ Node* AstGraphBuilder::BuildVariableAssignment(
           value = BuildHoleCheckThrow(current, variable, value, bailout_id);
         }
       } else if (mode == CONST && op != Token::INIT_CONST) {
-        // Non-initializing assignments to const is exception in all modes.
+        // Assignment to const is exception in all modes.
+        Node* current = environment()->Lookup(variable);
+        if (current->op() == the_hole->op()) {
+          return BuildThrowReferenceError(variable, bailout_id);
+        } else if (value->opcode() == IrOpcode::kPhi) {
+          BuildHoleCheckThrow(current, variable, value, bailout_id);
+        }
         return BuildThrowConstAssignError(bailout_id);
       }
       environment()->Bind(variable, value);
@@ -2735,7 +2733,7 @@ Node* AstGraphBuilder::BuildVariableAssignment(
         Node* current = NewNode(op, current_context());
         value = BuildHoleCheckSilent(current, value, current);
       } else if (mode == CONST_LEGACY && op != Token::INIT_CONST_LEGACY) {
-        // Non-initializing assignments to legacy const is
+        // Non-initializing assignment to legacy const is
         // - exception in strict mode.
         // - ignored in sloppy mode.
         if (is_strict(language_mode())) {
@@ -2749,7 +2747,11 @@ Node* AstGraphBuilder::BuildVariableAssignment(
         Node* current = NewNode(op, current_context());
         value = BuildHoleCheckThrow(current, variable, value, bailout_id);
       } else if (mode == CONST && op != Token::INIT_CONST) {
-        // Non-initializing assignments to const is exception in all modes.
+        // Assignment to const is exception in all modes.
+        const Operator* op =
+            javascript()->LoadContext(depth, variable->index(), false);
+        Node* current = NewNode(op, current_context());
+        BuildHoleCheckThrow(current, variable, value, bailout_id);
         return BuildThrowConstAssignError(bailout_id);
       }
       const Operator* op = javascript()->StoreContext(depth, variable->index());
@@ -2849,9 +2851,16 @@ Node* AstGraphBuilder::BuildSetHomeObject(Node* value, Node* home_object,
 }
 
 
+Node* AstGraphBuilder::BuildThrowError(Node* exception, BailoutId bailout_id) {
+  const Operator* op = javascript()->CallRuntime(Runtime::kThrow, 1);
+  Node* call = NewNode(op, exception);
+  PrepareFrameState(call, bailout_id);
+  return call;
+}
+
+
 Node* AstGraphBuilder::BuildThrowReferenceError(Variable* variable,
                                                 BailoutId bailout_id) {
-  // TODO(mstarzinger): Should be unified with the VisitThrow implementation.
   Node* variable_name = jsgraph()->Constant(variable->name());
   const Operator* op =
       javascript()->CallRuntime(Runtime::kThrowReferenceError, 1);
@@ -2862,7 +2871,6 @@ Node* AstGraphBuilder::BuildThrowReferenceError(Variable* variable,
 
 
 Node* AstGraphBuilder::BuildThrowConstAssignError(BailoutId bailout_id) {
-  // TODO(mstarzinger): Should be unified with the VisitThrow implementation.
   const Operator* op =
       javascript()->CallRuntime(Runtime::kThrowConstAssignError, 0);
   Node* call = NewNode(op);

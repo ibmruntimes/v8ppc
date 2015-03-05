@@ -294,6 +294,9 @@ class StackFrame BASE_EMBEDDED {
   // Checks if this frame includes any stack handlers.
   bool HasHandler() const;
 
+  // Get the top handler from the current stack iterator.
+  inline StackHandler* top_handler() const;
+
   // Get the type of this frame.
   virtual Type type() const = 0;
 
@@ -332,7 +335,6 @@ class StackFrame BASE_EMBEDDED {
   // Resolves pc_address through the resolution address function if one is set.
   static inline Address* ResolveReturnAddressLocation(Address* pc_address);
 
-
   // Printing support.
   enum PrintMode { OVERVIEW, DETAILS };
   virtual void Print(StringStream* accumulator,
@@ -352,9 +354,6 @@ class StackFrame BASE_EMBEDDED {
   static void PrintIndex(StringStream* accumulator,
                          PrintMode mode,
                          int index);
-
-  // Get the top handler from the current stack iterator.
-  inline StackHandler* top_handler() const;
 
   // Compute the stack frame type for the given state.
   static Type ComputeType(const StackFrameIteratorBase* iterator, State* state);
