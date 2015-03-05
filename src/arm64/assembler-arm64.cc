@@ -172,7 +172,6 @@ CPURegList CPURegList::GetSafepointSavedRegisters() {
 // Implementation of RelocInfo
 
 const int RelocInfo::kApplyMask = 0;
-const int RelocInfo::kDeserializeMask = 0;
 
 
 bool RelocInfo::IsCodedSpecially() {

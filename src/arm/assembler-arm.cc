@@ -230,7 +230,6 @@ const char* DwVfpRegister::AllocationIndexToString(int index) {
 
 // static
 const int RelocInfo::kApplyMask = 1 << RelocInfo::INTERNAL_REFERENCE;
-const int RelocInfo::kDeserializeMask = 0;
 
 
 bool RelocInfo::IsCodedSpecially() {
